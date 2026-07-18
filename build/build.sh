@@ -86,13 +86,9 @@ prepare_kernel() {
     patch -s -d "$tree" -p1 < "$ROOT/patches/kernel/$p"
     n=$((n+1))
   done < "$ROOT/patches/kernel/series"
-  # our arm64 additions (see patches/kernel/README.md)
+  # our arm64 defconfig (the R-CCU arm64 enable is patch 0023; see patches/kernel/README.md)
   cp "$ROOT/patches/kernel/board/$KERNEL_DEFCONFIG" "$tree/arch/arm64/configs/"
-  if grep -q 'depends on MACH_SUN8I || RISCV || COMPILE_TEST' "$tree/drivers/clk/sunxi-ng/Kconfig"; then
-    sed -i 's/\(depends on MACH_SUN8I || RISCV\) || COMPILE_TEST/\1 || ARM64 || COMPILE_TEST/' \
-      "$tree/drivers/clk/sunxi-ng/Kconfig"
-  fi
-  note "applied $n series patches + arm64 defconfig + R-CCU arm64 enable" >&2
+  note "applied $n series patches + arm64 defconfig" >&2
   echo "$tree"
 }
 build_kernel() {

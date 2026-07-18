@@ -9,10 +9,12 @@ kernel` fetches `linux-$KERNEL_VERSION`, applies these in `series` order with
 ## Provenance
 
 Patches **0001–0022** are the H713 driver series by **well0nez**
-(`github`/ `~/Projects/allwinner-h713-linux`), **GPL-2.0**, carried here
-verbatim **with attribution**. They are architecture-neutral (only `drivers/`
-and `include/dt-bindings/`, no `arch/`), which is why the same series that
-backed the 32-bit port also applies cleanly to the arm64 build:
+(`github`/ `~/Projects/allwinner-h713-linux`), **GPL-2.0**, carried here **with
+attribution**. They are architecture-neutral (only `drivers/` and
+`include/dt-bindings/`, no `arch/`), which is why the same series that backed
+the 32-bit port also builds on arm64. Six were adapted from their original
+6.16 form to apply/build against the pinned kernel — see the table in
+[../../docs/kernel-bump.md](../../docs/kernel-bump.md); the rest are unchanged.
 
 | # | Area |
 |---|------|
@@ -35,11 +37,11 @@ backed the 32-bit port also applies cleanly to the arm64 build:
 - **`board/hy310_arm64_defconfig`** — the arm64 defconfig (base arm64 defconfig
   slimmed, plus the H713 drivers above + PPU/LRADC/R-CCU). Copied into
   `arch/arm64/configs/` by the build. *(ours)*
-- **R-CCU on arm64** — upstream gates `SUN20I_D1_R_CCU` to
-  `MACH_SUN8I || RISCV || COMPILE_TEST`; the H713 reuses the D1 R-CCU, so the
-  build adds `|| ARM64` to that `depends` (without it R-PIO / PPU power domains
-  never probe). Applied as a scripted one-liner by `build/build.sh` today; to
-  be promoted to a proper numbered patch at upstream-submission time. *(ours)*
+- **0023 — R-CCU on arm64** — upstream gates `SUN20I_D1_R_CCU` to
+  `MACH_SUN8I || RISCV || COMPILE_TEST`; the H713 reuses the D1 R-CCU, so this
+  adds `|| ARM64` to that `depends` (without it R-PIO / PPU power domains never
+  probe). A proper patch, anchored to the `SUN20I_D1_R_CCU` block so it does not
+  also touch `SUN20I_D1_CCU`. *(ours)*
 
 ## Not yet folded in — the board DTS (closes with the 6.18.38 bump)
 

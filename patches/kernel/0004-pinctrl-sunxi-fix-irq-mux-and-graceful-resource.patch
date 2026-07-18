@@ -1,6 +1,6 @@
---- a/drivers/pinctrl/sunxi/pinctrl-sunxi.c	2025-09-11 17:23:23.000000000 +0200
-+++ b/drivers/pinctrl/sunxi/pinctrl-sunxi.c	2026-04-01 20:47:17.141460828 +0200
-@@ -1052,8 +1052,13 @@
+--- a/drivers/pinctrl/sunxi/pinctrl-sunxi.c
++++ b/drivers/pinctrl/sunxi/pinctrl-sunxi.c
+@@ -1054,8 +1054,13 @@ static int sunxi_pinctrl_irq_request_resources(struct irq_data *d)
  		return ret;
  	}
  
@@ -16,7 +16,7 @@
  
  	return 0;
  }
-@@ -1644,47 +1649,59 @@
+@@ -1646,47 +1651,59 @@ int sunxi_pinctrl_init_with_flags(struct platform_device *pdev,
  	}
  
  	for (i = 0; i < pctl->desc->irq_banks; i++) {
@@ -38,16 +38,18 @@
  		}
  	}
  
--	pctl->domain = irq_domain_create_linear(of_fwnode_handle(node),
-+	if (pctl->irq) {
-+		pctl->domain = irq_domain_create_linear(of_fwnode_handle(node),
- 						pctl->desc->irq_banks * IRQ_PER_BANK,
- 						&sunxi_pinctrl_irq_domain_ops, pctl);
+-	pctl->domain = irq_domain_create_linear(dev_fwnode(&pdev->dev),
+-						pctl->desc->irq_banks * IRQ_PER_BANK,
+-						&sunxi_pinctrl_irq_domain_ops, pctl);
 -	if (!pctl->domain) {
 -		dev_err(&pdev->dev, "Couldn't register IRQ domain\n");
 -		ret = -ENOMEM;
 -		goto gpiochip_error;
 -	}
++	if (pctl->irq) {
++		pctl->domain = irq_domain_create_linear(dev_fwnode(&pdev->dev),
++							pctl->desc->irq_banks * IRQ_PER_BANK,
++							&sunxi_pinctrl_irq_domain_ops, pctl);
 +		if (!pctl->domain) {
 +			dev_err(&pdev->dev, "Couldn't register IRQ domain\n");
 +			ret = -ENOMEM;
@@ -60,33 +62,36 @@
 +			int irqno = irq_create_mapping(pctl->domain, i);
  
 -		irq_set_lockdep_class(irqno, &sunxi_pinctrl_irq_lock_class,
-+			irq_set_lockdep_class(irqno, &sunxi_pinctrl_irq_lock_class,
- 				      &sunxi_pinctrl_irq_request_class);
+-				      &sunxi_pinctrl_irq_request_class);
 -		irq_set_chip_and_handler(irqno, &sunxi_pinctrl_edge_irq_chip,
-+			irq_set_chip_and_handler(irqno, &sunxi_pinctrl_edge_irq_chip,
- 					 handle_edge_irq);
+-					 handle_edge_irq);
 -		irq_set_chip_data(irqno, pctl);
 -	}
++			irq_set_lockdep_class(irqno, &sunxi_pinctrl_irq_lock_class,
++					      &sunxi_pinctrl_irq_request_class);
++			irq_set_chip_and_handler(irqno, &sunxi_pinctrl_edge_irq_chip,
++						 handle_edge_irq);
 +			irq_set_chip_data(irqno, pctl);
 +		}
  
 -	for (i = 0; i < pctl->desc->irq_banks; i++) {
 -		/* Mask and clear all IRQs before registering a handler */
 -		writel(0, pctl->membase +
-+		for (i = 0; i < pctl->desc->irq_banks; i++) {
-+			/* Mask and clear all IRQs before registering a handler */
-+			writel(0, pctl->membase +
- 			  sunxi_irq_ctrl_reg_from_bank(pctl->desc, i));
+-			  sunxi_irq_ctrl_reg_from_bank(pctl->desc, i));
 -		writel(0xffffffff,
 -		       pctl->membase +
 -		       sunxi_irq_status_reg_from_bank(pctl->desc, i));
++		for (i = 0; i < pctl->desc->irq_banks; i++) {
++			/* Mask and clear all IRQs before registering a handler */
++			writel(0, pctl->membase +
++				  sunxi_irq_ctrl_reg_from_bank(pctl->desc, i));
 +			writel(0xffffffff,
 +			       pctl->membase +
 +			       sunxi_irq_status_reg_from_bank(pctl->desc, i));
 +
 +			irq_set_chained_handler_and_data(pctl->irq[i],
-+					 sunxi_pinctrl_irq_handler,
-+					 pctl);
++							 sunxi_pinctrl_irq_handler,
++							 pctl);
 +		}
  
 -		irq_set_chained_handler_and_data(pctl->irq[i],

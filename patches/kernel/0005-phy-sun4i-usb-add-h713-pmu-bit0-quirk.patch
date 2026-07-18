@@ -25,7 +25,7 @@
  
 +
 +static const struct sun4i_usb_phy_cfg sun50i_h713_cfg = {
-+	.num_phys = 3,
++	.missing_phys = BIT(3),
 +	.phyctl_offset = REG_PHYCTL_A33,
 +	.dedicated_clocks = true,
 +	.phy0_dual_route = true,

@@ -793,7 +793,7 @@
 +		 * explicitly to ensure the pin is driven HIGH even after
 +		 * rmmod/insmod cycles when the DTS gpio-hog is no longer active.
 +		 */
-+		ret = devm_gpio_request(dev, fan->power_gpio, "fan-power");
++		ret = devm_gpio_request_one(dev, fan->power_gpio, 0, "fan-power");
 +		if (ret) {
 +			/* Hog might still own it — just ensure it's HIGH */
 +			dev_info(dev, "%s: fan-power-gpio %d (managed by hog)\n",

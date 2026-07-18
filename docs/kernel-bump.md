@@ -2,8 +2,29 @@
 
 The kernel is carried as a patch series (`patches/kernel/`) on a pinned
 mainline tarball, so a version bump is a **rebase**, not a merge. This is the
-planned move off the current hardware-verified `6.16.7` onto the newer
-**6.18.38 longterm** kernel.
+move off `6.16.7` onto the newer **6.18.38 longterm** kernel.
+
+## Status: rebased and building (2026-07-18)
+
+`config/versions.env` is pinned to **6.18.38**; `build/build.sh kernel` applies
+all 23 patches cleanly and builds `Image.gz`. Of the 22 driver patches, 18
+applied clean; the rebase needed five small fixes, all captured in the series:
+
+| Patch | 6.18 change | Fix |
+|-------|-------------|-----|
+| 0004 pinctrl | `of_fwnode_handle(node)` → `dev_fwnode(&pdev->dev)` shifted the hunk | re-derived hunk #2 (`if (pctl->irq)` wrap + `-ENXIO` grace) on current code |
+| 0005 usb-phy | `struct sun4i_usb_phy_cfg.num_phys` → `missing_phys` bitmask | `.num_phys = 3` → `.missing_phys = BIT(3)` (MAX_PHYS=4) |
+| 0008/0009 hy310 | legacy `devm_gpio_request` removed | → `devm_gpio_request_one(..., 0, ...)` (direction set separately) |
+| 0015 misc | Kconfig/Makefile neighbours added (`rp1`) | re-derived the registration hunks |
+| 0020 pmdomain | Kconfig/Makefile neighbours added (`pck600`) | re-derived the registration hunks |
+
+The `SUN20I_D1_R_CCU` arm64 enable is now a proper patch (**0023**), replacing
+the earlier scripted sed (which was too broad — it also hit `SUN20I_D1_CCU`).
+
+**Remaining before this is a bootable kernel:** the arm64 board **DTS** (below)
+and a hardware boot on the HY200 bench board. Until then the kernel stage emits
+`Image.gz` but no DTB/FIT, and `6.18.38` is build-verified, **not** yet
+boot-verified (last kernel booted on hardware was 6.16.7).
 
 ## Why 6.18.38 (longterm), not 7.1.3 (stable)
 

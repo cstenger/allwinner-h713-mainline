@@ -1,9 +1,9 @@
---- a/drivers/misc/Kconfig	2025-09-11 17:23:23.000000000 +0200
-+++ b/drivers/misc/Kconfig	2026-03-22 22:31:57.335983906 +0100
-@@ -660,4 +660,57 @@
- source "drivers/misc/mchp_pci1xxxx/Kconfig"
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -661,4 +661,57 @@ source "drivers/misc/mchp_pci1xxxx/Kconfig"
  source "drivers/misc/keba/Kconfig"
  source "drivers/misc/amd-sbi/Kconfig"
+ source "drivers/misc/rp1/Kconfig"
 +
 +config SUNXI_MIPSLOADER
 +	tristate "Allwinner MIPS Co-processor Loader"
@@ -58,12 +58,12 @@
  endmenu
 +source "drivers/misc/sunxi_tvtop/Kconfig"
 +source "drivers/misc/sunxi_decd/Kconfig"
---- a/drivers/misc/Makefile	2025-09-11 17:23:23.000000000 +0200
-+++ b/drivers/misc/Makefile	2026-03-22 22:31:56.023977554 +0100
-@@ -75,3 +75,10 @@
- obj-$(CONFIG_MCHP_LAN966X_PCI)	+= lan966x-pci.o
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -75,3 +75,10 @@ obj-$(CONFIG_MCHP_LAN966X_PCI)	+= lan966x-pci.o
  obj-y				+= keba/
  obj-y				+= amd-sbi/
+ obj-$(CONFIG_MISC_RP1)		+= rp1/
 +obj-$(CONFIG_SUNXI_MIPSLOADER)	+= sunxi-mipsloader.o
 +obj-$(CONFIG_SUNXI_NSI)		+= sunxi-nsi.o
 +obj-$(CONFIG_SUNXI_CPU_COMM)	+= sunxi-cpu-comm.o

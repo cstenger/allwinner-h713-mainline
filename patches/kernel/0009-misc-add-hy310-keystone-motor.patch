@@ -714,7 +714,7 @@
 +			return gpio;
 +		}
 +
-+		ret = devm_gpio_request(dev, gpio, name);
++		ret = devm_gpio_request_one(dev, gpio, 0, name);
 +		if (ret) {
 +			dev_err(dev, "failed to request %s (gpio %d)\n",
 +				name, gpio);
@@ -730,7 +730,7 @@
 +	m->limiter_num = 0;
 +	gpio = of_get_named_gpio(np, "limiter-up-gpio", 0);
 +	if (gpio >= 0) {
-+		ret = devm_gpio_request(dev, gpio, "limiter-up-gpio");
++		ret = devm_gpio_request_one(dev, gpio, 0, "limiter-up-gpio");
 +		if (ret == 0) {
 +			desc = gpio_to_desc(gpio);
 +			gpiod_direction_input(desc);
@@ -745,7 +745,7 @@
 +	/* Optional: limiter-dn-gpio */
 +	gpio = of_get_named_gpio(np, "limiter-dn-gpio", 0);
 +	if (gpio >= 0) {
-+		ret = devm_gpio_request(dev, gpio, "limiter-dn-gpio");
++		ret = devm_gpio_request_one(dev, gpio, 0, "limiter-dn-gpio");
 +		if (ret == 0) {
 +			desc = gpio_to_desc(gpio);
 +			gpiod_direction_input(desc);
