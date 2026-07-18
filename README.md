@@ -65,4 +65,7 @@ Until then see [docs/build.md](docs/build.md) and [docs/flash.md](docs/flash.md)
 - **fastboot buffer is 32 MiB** → large images must be Android-sparse
   (`img2simg`); the host tool chunks them.
 
+For the full set of driver-level findings, silicon quirks, and the dead-ends
+behind the current design, see [docs/bringup-notes.md](docs/bringup-notes.md).
+
 See [docs/status.md](docs/status.md) for what works and what's next.
