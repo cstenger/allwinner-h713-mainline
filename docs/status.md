@@ -38,9 +38,10 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 ## Limitations / open items
 
 - **Boot is not standalone yet.** The kernel FIT is loaded over the CDC console
-  each boot rather than from eMMC. Making power-on → Debian autonomous means
-  writing the kernel FIT to the `boot_a` partition and setting a U-Boot
-  `bootcmd`. _(reorg step #6)_
+  each boot rather than from eMMC. The procedure to make power-on → Debian
+  autonomous (flash the FIT to `boot_a`, set a `bootcmd`) is written up and
+  scripted — see [standalone-boot.md](standalone-boot.md) and
+  `tools/flash-standalone.sh` — but not yet run on hardware. _(reorg step #6)_
 - **Kernel bumped to 6.18.38 LTS** — the full 22-driver series plus the arm64
   board DTS builds end to end (`build/build.sh kernel` emits `Image.gz`, the
   DTB, and a bootable FIT). But it is **build-verified, not yet boot-verified**:

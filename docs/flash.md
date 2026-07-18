@@ -76,6 +76,12 @@ FEL-loads once, rewrites the vendor boot0 to eMMC sector 16, and halts; power
 cycle to boot the stock firmware. `git am` that patch into `external/u-boot` to
 build it.
 
+## Standalone boot (power-on → Debian)
+
+To boot the kernel from eMMC with no host attached — flash the FIT to `boot_a`
+and set a U-Boot `bootcmd` — see [standalone-boot.md](standalone-boot.md)
+(`tools/flash-standalone.sh`).
+
 ## Safety
 
 - Always name the board a flash ran on — feeding HY310 (LPDDR3) params to the
