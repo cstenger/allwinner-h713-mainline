@@ -11,4 +11,5 @@ Resolve the board's CDC tty by USB vendor id `1f3a` (it renames across
 re-enumeration); the UART is `/dev/ttyUSB0`. See ../README.md gotchas.
 
 `rootfs/` — `customize.sh` is the mmdebstrap customize-hook for the arm64
-Debian rootfs (root user, serial getty, fstab). Full recipe in docs/rootfs.md (TODO).
+Debian rootfs (root user, serial getty, fstab). Full recipe in
+[../docs/rootfs.md](../docs/rootfs.md).
