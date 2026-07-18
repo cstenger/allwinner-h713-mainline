@@ -41,14 +41,12 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
   each boot rather than from eMMC. Making power-on → Debian autonomous means
   writing the kernel FIT to the `boot_a` partition and setting a U-Boot
   `bootcmd`. _(reorg step #6)_
-- **Reproducible kernel build is incomplete.** `build/build.sh kernel` builds a
-  bootable `Image` but not a DTB/FIT — the arm64 board DTS
-  (`sun50i-h713-hy310`) was a scratch file that wasn't preserved and needs
-  reconstruction. _(folded into the 6.18.38 bump — [kernel-bump.md](kernel-bump.md))_
-- **Kernel bumped to 6.18.38 LTS** — the full 22-driver series applies and
-  builds cleanly (`build/build.sh kernel`), but it is **build-verified, not yet
-  boot-verified**: the last kernel actually booted on hardware was 6.16.7.
-  Boot validation is gated on the board DTS above. _(reorg step #5)_
+- **Kernel bumped to 6.18.38 LTS** — the full 22-driver series plus the arm64
+  board DTS builds end to end (`build/build.sh kernel` emits `Image.gz`, the
+  DTB, and a bootable FIT). But it is **build-verified, not yet boot-verified**:
+  the last kernel actually booted on hardware was 6.16.7. Flash
+  `build/out/h713-kernel.fit` and re-confirm SMP + eMMC + root login to close
+  this out. _(reorg step #5 — see [kernel-bump.md](kernel-bump.md))_
 - **32-bit SMP** — secondaries don't come up for a 32-bit kernel (BL31 brings
   cores up in AArch64; a 32-bit caller needs AArch32 secondaries). arm64 gets
   all four cores, so this is shelved.

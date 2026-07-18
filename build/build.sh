@@ -91,16 +91,72 @@ prepare_kernel() {
   note "applied $n series patches + arm64 defconfig" >&2
   echo "$tree"
 }
+# locate a mkimage: prefer one the U-Boot stage already built, else build tools-only
+find_mkimage() {
+  local m
+  for m in "$ROOT"/build/uboot-*/tools/mkimage; do [ -x "$m" ] && { echo "$m"; return; }; done
+  m="$ROOT/build/uboot-tools/tools/mkimage"
+  if [ ! -x "$m" ]; then
+    log "building mkimage (u-boot tools-only)" >&2
+    make -C "$UBOOT" O="$ROOT/build/uboot-tools" HOSTCC=clang tools-only_defconfig >/dev/null 2>&1
+    make -C "$UBOOT" O="$ROOT/build/uboot-tools" HOSTCC=clang -j"$JOBS" tools-only >/dev/null 2>&1
+  fi
+  [ -x "$m" ] && echo "$m"
+}
+
 build_kernel() {
   local tree; tree=$(prepare_kernel)
   log "Linux kernel  ($KERNEL_DEFCONFIG, arch=$KERNEL_ARCH)"
   make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 "$KERNEL_DEFCONFIG"
-  make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 -j"$JOBS" Image
+  make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 -j"$JOBS" Image dtbs
   gzip -9 -kf "$tree/arch/arm64/boot/Image"
   cp "$tree/arch/arm64/boot/Image.gz" "$OUT/Image.gz"
-  log "Image.gz -> $OUT/Image.gz ($(stat -c%s "$OUT/Image.gz") bytes)"
-  note "DTB + bootable FIT are not built yet — the arm64 board DTS is pending."
-  note "See patches/kernel/README.md and docs/kernel-bump.md."
+  cp "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB.dtb" "$OUT/$KERNEL_DTB.dtb"
+  log "Image.gz -> $OUT/Image.gz ($(stat -c%s "$OUT/Image.gz") bytes); $KERNEL_DTB.dtb built"
+  build_kernel_fit
+}
+
+# package Image.gz + DTB into a bootable FIT (bootm at KERNEL_LOAD)
+build_kernel_fit() {
+  local mkimage; mkimage=$(find_mkimage)
+  [ -n "$mkimage" ] || { note "no mkimage — skipping FIT (install u-boot-tools or run the uboot stage)"; return; }
+  cat > "$OUT/h713-kernel.its" <<ITS
+/dts-v1/;
+/ {
+	description = "H713 arm64 kernel ($KERNEL_VERSION) + DTB";
+	#address-cells = <1>;
+	images {
+		kernel {
+			description = "Linux $KERNEL_VERSION";
+			data = /incbin/("$OUT/Image.gz");
+			type = "kernel";
+			arch = "arm64";
+			os = "linux";
+			compression = "gzip";
+			load = <$KERNEL_LOAD>;
+			entry = <$KERNEL_LOAD>;
+		};
+		fdt-1 {
+			description = "$KERNEL_DTB";
+			data = /incbin/("$OUT/$KERNEL_DTB.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+		};
+	};
+	configurations {
+		default = "conf-1";
+		conf-1 {
+			description = "H713 HY310";
+			kernel = "kernel";
+			fdt = "fdt-1";
+		};
+	};
+};
+ITS
+  "$mkimage" -f "$OUT/h713-kernel.its" "$OUT/h713-kernel.fit" >/dev/null
+  log "FIT -> $OUT/h713-kernel.fit ($(stat -c%s "$OUT/h713-kernel.fit") bytes)"
+  note "Boot: load to DRAM + 'bootm' (arch=arm64, load $KERNEL_LOAD). See docs/flash.md."
 }
 
 # --- Images / summary -------------------------------------------------------

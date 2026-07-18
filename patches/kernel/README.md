@@ -43,17 +43,12 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   probe). A proper patch, anchored to the `SUN20I_D1_R_CCU` block so it does not
   also touch `SUN20I_D1_CCU`. *(ours)*
 
-## Not yet folded in — the board DTS (closes with the 6.18.38 bump)
+- **0024 — arm64 board DTS** (`arch/arm64/boot/dts/allwinner/sun50i-h713-hy310.dts`
+  + its Makefile entry). Reconstructed from well0nez's 32-bit board DTS
+  (GPL-2.0, with attribution) with three arm64 changes: `arm,armv7-timer` →
+  `arm,armv8-timer`, a `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map`
+  reservation so the kernel leaves TF-A BL31 alone, and eMMC-root bootargs.
+  `#address-cells = <1>` is kept (all addresses fit in 32 bits). *(ours)*
 
-The arm64 board **device tree** (`sun50i-h713-hy310` with `arm,armv8-timer`
-instead of armv7, a `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map`
-reserved-memory node, and baked bootargs) is **not yet in this series** — the
-last working copy was a standalone scratch DTS that was not preserved. It must
-be reconstructed from the 32-bit board DTS in `allwinner-h713-linux/dts/` plus
-those arm64 tweaks. Until then `build/build.sh kernel` builds a bootable
-**Image** (drivers + defconfig) but stops short of a DTB / bootable FIT.
-
-This is the natural first task of the **6.18.38 LTS rebase**
-(`KERNEL_TARGET`): re-verify 0001–0022 against the new tree, re-derive the
-arm64 defconfig + R-CCU patch, and land the board DTS — see
-[../../docs/kernel-bump.md](../../docs/kernel-bump.md).
+With 0024 in place `build/build.sh kernel` emits the DTB and a bootable FIT
+(`build/out/h713-kernel.fit`: gzip Image + DTB, load/entry `0x48000000`).

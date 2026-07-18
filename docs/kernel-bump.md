@@ -21,10 +21,14 @@ applied clean; the rebase needed five small fixes, all captured in the series:
 The `SUN20I_D1_R_CCU` arm64 enable is now a proper patch (**0023**), replacing
 the earlier scripted sed (which was too broad — it also hit `SUN20I_D1_CCU`).
 
-**Remaining before this is a bootable kernel:** the arm64 board **DTS** (below)
-and a hardware boot on the HY200 bench board. Until then the kernel stage emits
-`Image.gz` but no DTB/FIT, and `6.18.38` is build-verified, **not** yet
-boot-verified (last kernel booted on hardware was 6.16.7).
+The arm64 board **DTS** is now reconstructed and in the series (**patch 0024**),
+so `build/build.sh kernel` emits the DTB and a bootable FIT
+(`build/out/h713-kernel.fit`: gzip Image + DTB, load/entry `0x48000000`).
+
+**Remaining:** a hardware boot on the HY200 bench board. `6.18.38` is
+build-verified end to end but **not** yet boot-verified (last kernel booted on
+hardware was 6.16.7) — flash the FIT and confirm 4-core SMP + eMMC + Debian to
+root login before treating 6.18.38 as boot-good.
 
 ## Why 6.18.38 (longterm), not 7.1.3 (stable)
 
