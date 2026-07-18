@@ -32,8 +32,10 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000 in DRAM)
 
 ## Layout
 
-- `u-boot/`, `arm-trusted-firmware/`, `sunxi-tools/` — git submodules pinned
-  to our GitHub forks (curated H713 commit series on top of upstream).
+- `external/` — the three firmware components as git submodules pinned to our
+  GitHub forks (curated H713 commit series on top of upstream):
+  `external/u-boot/`, `external/arm-trusted-firmware/`, `external/sunxi-tools/`.
+  Fetch them with `git submodule update --init`.
 - `patches/kernel/` — kernel patch series (well0nez H713 drivers + our arm64
   additions), applied to a pinned mainline tag. See
   [patches/kernel/README.md](patches/kernel/README.md).
