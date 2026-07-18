@@ -2,6 +2,12 @@
 
 The whole stack builds with **LLVM (clang / ld.lld)** — no aarch64 GCC needed.
 
+**The fast path is the orchestrator:** `build/build.sh [all|bl31|uboot|kernel|images]`
+(board via `BOARD=ddr3|lpddr3`). It reads pinned versions from
+`config/versions.env`, builds each stage from the `external/` submodules and
+`patches/kernel/`, and drops artifacts in `build/out/`. The sections below
+document the underlying recipes it runs (and the gotchas behind them).
+
 ## Host prerequisites (Arch/CachyOS)
 
 - `clang`, `lld`, `llvm` (llvm-* binutils)
@@ -14,7 +20,7 @@ The whole stack builds with **LLVM (clang / ld.lld)** — no aarch64 GCC needed.
 ## 1. TF-A BL31 (build first — U-Boot embeds it)
 
 ```
-cd arm-trusted-firmware            # submodule, branch sun50i-h713
+cd external/arm-trusted-firmware   # submodule, branch sun50i-h713
 make -j PLAT=sun50i_h713 DEBUG=0 BL31_IN_DRAM=1 \
   CC=clang LD=ld.lld AR=llvm-ar OC=llvm-objcopy OD=llvm-objdump \
   NM=llvm-nm READELF=llvm-readelf \
@@ -27,7 +33,7 @@ make -j PLAT=sun50i_h713 DEBUG=0 BL31_IN_DRAM=1 \
 Use `build/uboot-build.sh <O-dir> <defconfig>`, or directly:
 
 ```
-make -C u-boot O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-linux-gnu' \
+make -C external/u-boot O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-linux-gnu' \
   LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
   READELF=llvm-readelf STRIP=llvm-strip \
   KAFLAGS=-fintegrated-as \
@@ -49,18 +55,18 @@ make -C u-boot O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-linux-gnu' 
 
 ## 3. Kernel (arm64)
 
-Tree `~/Projects/h713-arm64/linux-6.16.7` (fresh mainline + the 22 well0nez
-patches + the `SUN20I_D1_R_CCU` arm64 Kconfig fix). Config
-`hy310_arm64_defconfig`.
+Carried as a **patch series on a pinned mainline tarball**, not a fork:
+`build/build.sh kernel` fetches `linux-$KERNEL_VERSION`, applies
+`patches/kernel/series` (the 22 well0nez drivers) plus our arm64 defconfig and
+the `SUN20I_D1_R_CCU` `|| ARM64` Kconfig enable, then builds `Image` with
+`ARCH=arm64 LLVM=1`. See [../patches/kernel/README.md](../patches/kernel/README.md).
 
-```
-make -C <tree> ARCH=arm64 LLVM=1 -j Image
-# DTB: cpp the standalone DTS with the tree's headers, then dtc (see below).
-```
-
-DTS: `sun50i-h713-hy310` with `arm,armv8-timer` (not armv7) and a
-`secure-bl31@40000000 reg=<0x40000000 0x100000> no-map` reservation.
-Boot via FIT `arch=arm64`, Image at load/entry `0x48000000`.
+**Known gap:** the arm64 board **DTS** (`sun50i-h713-hy310` with
+`arm,armv8-timer` and a `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map`
+reservation) is not yet in the series, so the kernel stage builds a bootable
+`Image` but not a DTB / FIT. Boot is via FIT `arch=arm64`, Image at load/entry
+`0x48000000`. Landing the DTS is the first task of the 6.18.38 rebase —
+[kernel-bump.md](kernel-bump.md).
 
 ## Local-only recovery tool
 
