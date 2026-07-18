@@ -1,0 +1,18 @@
+# Build artifacts and large binaries — never committed
+build/out/
+*.bin
+*.fit
+*.img
+*.ext4
+*.simg
+*.tar
+*.dtb
+Image
+Image.gz
+zImage*
+# Pinned source trees are fetched by the build, not vendored
+linux-*/
+rootfs-build/
+# Editor/OS cruft
+*.swp
+.DS_Store
