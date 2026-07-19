@@ -7,7 +7,8 @@ fully open boot chain (U-Boot SPL → TF-A BL31 → U-Boot → Linux) with a
 > **Status (2026-07-18):** arm64 Debian 13 on Linux **6.18.38 LTS** boots from
 > eMMC to a root login, 4-core SMP, HS400 eMMC — and boots **standalone**
 > (power-on → Debian, no host). All hardware-verified on the HY200 bench board.
-> 32-bit Linux also boots (single-core). See [docs/status.md](docs/status.md).
+> 32-bit Linux also boots (single-core). See [docs/status.md](docs/status.md)
+> for what works and [docs/roadmap.md](docs/roadmap.md) for what's next.
 
 ## Hardware
 
