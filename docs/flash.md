@@ -51,8 +51,8 @@ Rootless host I/O is possible via udisks2 `OpenForRestore` (D-Bus) if you can't
 ## Method 3 — fastboot
 
 ```
-# in U-Boot (release the ACM console as above, then):
-setenv stdout serial; setenv stderr serial; setenv stdin serial; fastboot usb 0
+# in U-Boot (the helper releases the ACM console before fastboot starts):
+run fastboot_mode
 # host:
 fastboot flash bootloader u-boot-sunxi-with-spl-ddr3.bin
 fastboot flash UDISK rootfs.simg          # rootfs (Android-sparse, see below)
@@ -70,7 +70,12 @@ require resetting the rest of the environment.
   **Android-sparse** (`img2simg in.img out.simg`); the host tool chunks them
   (e.g. a ~220 MiB sparse rootfs uploads in ~7 chunks / ~155 s).
 - `fastboot usb 0` fails `g_dnl -22` if the ACM console still holds the USB
-  device controller — hence releasing it in the same line first.
+  device controller. `run fastboot_mode` performs the release and restores ACM
+  if fastboot exits without rebooting. The helper is also injected when an
+  older saved environment does not contain it.
+- U-Boot's current `g_dnl` gadget layer registers one USB function at a time,
+  so ACM and fastboot intentionally appear as two successive USB devices rather
+  than simultaneous interfaces in one composite device.
 
 ## Method 4 — cold recovery via FEL
 

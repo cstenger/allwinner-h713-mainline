@@ -193,9 +193,8 @@ These were removed from the final series *(`53d1921`, `0fd8b99`)* but the
   for bulk loads. Resolve the ACM device by USB VID `1f3a`, not a fixed
   `/dev/ttyACM*` path (it moves across re-enumeration).
 - The ACM console **holds the USB device controller**: `fastboot usb 0` fails
-  `g_dnl -22` until released. Issue `setenv stdout serial; setenv stderr serial;
-  setenv stdin serial; fastboot usb 0` as **one line over CDC** (U-Boot buffers
-  the whole line before releasing the console); the change is RAM-only, a
-  `reset` restores the ACM console.
+  `g_dnl -22` until released. Issue `run fastboot_mode` as **one line over
+  CDC**. The helper releases ACM, starts fastboot, and restores ACM if fastboot
+  returns; a reset restores the compiled `serial,usbacm` default as well.
 - fastboot download buffer is 32 MiB → large images must be Android-sparse
   (`img2simg`); the host tool chunks them.

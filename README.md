@@ -70,9 +70,9 @@ See [docs/build.md](docs/build.md) for the underlying recipes and
   — use it only when you must watch a boot. Best: stash images on eMMC.
 - **fastboot/ums vs console:** the ACM console holds the USB device controller;
   `fastboot usb 0` fails `g_dnl -22` until you release it. Issue
-  `setenv stdout serial;setenv stderr serial;setenv stdin serial;fastboot usb 0`
-  as **one line over CDC** (U-Boot buffers the whole line before releasing the
-  console). The change is RAM-only — a `reset` restores the ACM console.
+  `run fastboot_mode` as **one line over CDC**. The helper releases ACM before
+  fastboot registers, then restores ACM if fastboot returns without resetting;
+  a fastboot reboot also restores the compiled `serial,usbacm` default.
 - **fastboot buffer is 32 MiB** → large images must be Android-sparse
   (`img2simg`); the host tool chunks them.
 

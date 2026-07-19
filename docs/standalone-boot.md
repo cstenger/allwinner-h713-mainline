@@ -35,7 +35,7 @@ console, release the ACM console and start fastboot in one line (it holds the
 USB controller otherwise):
 
 ```
-setenv stdout serial; setenv stderr serial; setenv stdin serial; fastboot usb 0
+run fastboot_mode
 ```
 
 Then from the host (the FIT is 7.7 MiB < the 32 MiB fastboot buffer, so **no
