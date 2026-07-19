@@ -13,7 +13,7 @@ and point `bootcmd` at it.
 ## The plan
 
 - `build/build.sh kernel` produces `build/out/h713-kernel.fit` (gzip Image +
-  `sun50i-h713-hy310` DTB, load/entry `0x48000000`).
+  `sun50i-h713-hy200-qz713df-a1` DTB, load/entry `0x48000000`).
 - `boot_a` is **GPT partition 5**, start LBA `0x32400` (205824), **64 MiB** —
   the factory Android boot slot, unused by our stack, so we repurpose it as a
   raw FIT blob (7.7 MiB fits with room to spare).

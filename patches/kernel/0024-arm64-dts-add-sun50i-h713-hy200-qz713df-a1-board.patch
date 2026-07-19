@@ -4,16 +4,16 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-h.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-plus.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-sp.dtb
-+dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h713-hy310.dtb
++dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h713-hy200-qz713df-a1.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-a527-cubie-a5e.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-h728-x96qpro+.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
 --- /dev/null
-+++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy310.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
 @@ -0,0 +1,1796 @@
 +/dts-v1/;
 +/*
-+ * Device tree for the HY310 projector / HY200 board (Allwinner H713).
++ * Device tree for the HY200 QZ713DF_A1 (bench) board, Allwinner H713.
 + *
 + * arm64 kernel DTS, derived from the 32-bit board DTS by well0nez
 + * (github/allwinner-h713-linux, GPL-2.0). arm64 changes: armv8 timer,
@@ -32,7 +32,7 @@
 +#include <dt-bindings/thermal/thermal.h>
 +
 +/ {
-+	model = "HY310 Projector H713";
++	model = "HY200 QZ713DF_A1 (Allwinner H713)";
 +	compatible = "allwinner,sun50i-h713";
 +
 +	#address-cells = <1>;

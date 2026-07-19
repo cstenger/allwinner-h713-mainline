@@ -11,7 +11,7 @@
 #   build/build.sh [all|bl31|uboot|kernel|images]   # default: all
 #
 # Env:
-#   BOARD=ddr3|lpddr3   which U-Boot board profile (default: ddr3 = HY200 bench)
+#   BOARD=ddr3|lpddr3   board profile (default ddr3): ddr3=HY200 QZ713DF_A1 bench, lpddr3=HY200 QZ713_V2 projector
 #   JOBS=N              parallelism (default: nproc)
 set -euo pipefail
 
@@ -147,7 +147,7 @@ build_kernel_fit() {
 	configurations {
 		default = "conf-1";
 		conf-1 {
-			description = "H713 HY310";
+			description = "H713 HY200";
 			kernel = "kernel";
 			fdt = "fdt-1";
 		};

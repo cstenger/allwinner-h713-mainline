@@ -1,5 +1,8 @@
 # H713 U-Boot to Linux/Debian Bring-up Review
 
+> **Board naming (2026-07-18):** "HY200" = the bench board `HY200_QZ713DF_A1`; "HY310" refers to the projector, now correctly identified as `HY200_QZ713_V2`. This historical doc predates that correction.
+
+
 Date: 2026-07-14 (v2 — revised after independent review)
 U-Boot branch: `h713-sun50iw12-dram`
 Reviewed U-Boot commit: `7df83b95a364cf5a29ef5381db8c56211e83091b`

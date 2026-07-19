@@ -84,6 +84,6 @@ and set a U-Boot `bootcmd` — see [standalone-boot.md](standalone-boot.md)
 
 ## Safety
 
-- Always name the board a flash ran on — feeding HY310 (LPDDR3) params to the
+- Always name the board a flash ran on — feeding the projector's HY200 QZ713_V2 (LPDDR3) params to the
   HY200 (DDR3) board trains "OK" but reads hang.
 - A full eMMC backup exists in `~/Projects/h713-lab` (do not commit — proprietary).

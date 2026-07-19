@@ -1,5 +1,8 @@
 # H713 FEL notes
 
+> **Board naming (2026-07-18):** "HY200" = the bench board `HY200_QZ713DF_A1`; "HY310" refers to the projector, now correctly identified as `HY200_QZ713_V2`. This historical doc predates that correction.
+
+
 This file tracks the H713-specific FEL facts we have imported from local
 hardware testing and from `<local>/sun50iw12p1-research/`.
 

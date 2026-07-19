@@ -1,7 +1,7 @@
 # Status
 
 What works on the H713 mainline stack, and what's next. All hardware results are
-on the **HY200 bench board (DDR3)** unless noted — the HY310 projector (LPDDR3)
+on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
 _Last updated: 2026-07-18._
@@ -27,7 +27,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 
 | Area | State |
 |------|-------|
-| DRAM init | ✅ DDR3 (HY200) hardware-proven; LPDDR3 (HY310) replay-verified, untested on HW |
+| DRAM init | ✅ DDR3 (HY200) hardware-proven; LPDDR3 (HY200 QZ713_V2) replay-verified, untested on HW |
 | U-Boot proper | ✅ interactive prompt, persistent env (raw eMMC @4 MiB), `reset` via PSCI + `wdt` |
 | BL31 / PSCI | ✅ `SYSTEM_RESET`, `CPU_ON` (all 4 cores), `CPU_SUSPEND` |
 | arm64 Linux | ✅ **mainline 6.18.38 LTS** boots to Debian root login, **4-core SMP** (HW-verified) |
@@ -52,8 +52,8 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 
 | Board | Silkscreen | DRAM | Bring-up status |
 |-------|-----------|------|-----------------|
-| Bench | HY200 | DDR3 (1 GiB) | primary target — everything above validated here |
-| Projector | HY310 | LPDDR3 (1 GiB) | DRAM replay-verified only; **do not risk it first** |
+| Bench | HY200_QZ713DF_A1 | DDR3 (1 GiB) | primary target — everything above validated here |
+| Projector | HY200_QZ713_V2 | LPDDR3 (1 GiB) | DRAM replay-verified only; **do not risk it first** |
 
 See [bringup-notes.md](bringup-notes.md) for the driver-level findings behind
 this, and [build.md](build.md) / [flash.md](flash.md) to reproduce it.

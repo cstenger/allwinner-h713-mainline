@@ -76,7 +76,7 @@ Diagnosed by FEL register probing from a cold power-on before writing any code.
   Pointing the mmc nodes at the bare `osc24M` fixed clock made *every* probe
   fail `-ENOENT` and left U-Boot proper with **no MMC devices at all**.
   Reference the `ccu` node instead. *(`96bc4c9`)*
-- **`mmc0` is disabled deliberately.** HY200/HY310 have no SD slot, and a cold
+- **`mmc0` is disabled deliberately.** neither HY200 board (QZ713DF_A1 / QZ713_V2) has an SD slot, and a cold
   `mmc0` probe bus-hangs in `sunxi_mmc_reset()` because nothing in the DM path
   opens the SMHC0 gate — the eMMC only works because the SPL already warmed its
   controller. eMMC is **`mmc1`** (`mmc@4022000`), HS400, 26-partition Android GPT.

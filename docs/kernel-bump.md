@@ -48,10 +48,10 @@ boot-good kernel.
    fuzz/rejects — resolve per subsystem, in `series` order. The arch-neutral
    0001–0022 are the most likely to need touch-ups in CCU/pinctrl/cedrus.
 3. Re-derive the two arm64 additions against the new tree:
-   - refresh `board/hy310_arm64_defconfig` (new/renamed symbols),
+   - refresh `board/hy200_qz713df_a1_defconfig` (new/renamed symbols),
    - re-confirm the `SUN20I_D1_R_CCU` `|| ARM64` Kconfig enable still applies.
 4. **Land the board DTS** (the piece missing today): reconstruct
-   `sun50i-h713-hy310` for arm64 from the 32-bit board DTS in
+   `sun50i-h713-hy200-qz713df-a1` for arm64 from the 32-bit board DTS in
    `allwinner-h713-linux/dts/` plus `arm,armv8-timer` and the
    `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map` reservation. Add it
    as a board patch so `build/build.sh kernel` can emit a DTB + bootable FIT.

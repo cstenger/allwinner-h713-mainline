@@ -4,7 +4,7 @@ The H713 has no mainline kernel support yet, so the kernel is carried as a
 **patch series applied to a pinned mainline tarball** (see
 `config/versions.env` → `KERNEL_VERSION`), rather than a fork. `build/build.sh
 kernel` fetches `linux-$KERNEL_VERSION`, applies these in `series` order with
-`patch -p1`, then builds with `board/hy310_arm64_defconfig`.
+`patch -p1`, then builds with `board/hy200_qz713df_a1_defconfig`.
 
 ## Provenance
 
@@ -34,7 +34,7 @@ the 32-bit port also builds on arm64. Six were adapted from their original
 
 ## Our arm64 additions
 
-- **`board/hy310_arm64_defconfig`** — the arm64 defconfig (base arm64 defconfig
+- **`board/hy200_qz713df_a1_defconfig`** — the arm64 defconfig (base arm64 defconfig
   slimmed, plus the H713 drivers above + PPU/LRADC/R-CCU). Copied into
   `arch/arm64/configs/` by the build. *(ours)*
 - **0023 — R-CCU on arm64** — upstream gates `SUN20I_D1_R_CCU` to
@@ -43,7 +43,7 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   probe). A proper patch, anchored to the `SUN20I_D1_R_CCU` block so it does not
   also touch `SUN20I_D1_CCU`. *(ours)*
 
-- **0024 — arm64 board DTS** (`arch/arm64/boot/dts/allwinner/sun50i-h713-hy310.dts`
+- **0024 — arm64 board DTS** (`arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts`
   + its Makefile entry). Reconstructed from well0nez's 32-bit board DTS
   (GPL-2.0, with attribution) with three arm64 changes: `arm,armv7-timer` →
   `arm,armv8-timer`, a `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map`

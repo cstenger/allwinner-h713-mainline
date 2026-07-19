@@ -15,8 +15,8 @@ Two physically different H713 boards exist — **know which one you have**:
 
 | Board | Silkscreen | DRAM | Notes |
 |-------|-----------|------|-------|
-| **Bench** | HY200 | **DDR3** (Samsung K4B2G, 1 GiB) | All FEL/bring-up runs on this one |
-| **Projector** | HY310 | **LPDDR3** (1 GiB) | Inside a projector; do not risk it |
+| **Bench** | HY200_QZ713DF_A1 | **DDR3** (Samsung K4B2G, 1 GiB) | All FEL/bring-up runs on this one |
+| **Projector** | HY200_QZ713_V2 | **LPDDR3** (1 GiB) | Inside a projector; do not risk it |
 
 Feeding the wrong DRAM parameters trains "OK" but reads hang. Always name the
 board a test ran on. Neither board has an SD slot — boot media is **eMMC or

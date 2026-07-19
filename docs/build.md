@@ -39,7 +39,7 @@ make -C external/u-boot O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-li
   KAFLAGS=-fintegrated-as \
   KCFLAGS='-fintegrated-as -Wno-error=deprecated-non-prototype -fno-stack-protector' \
   BL31=<path>/build/sun50i_h713/release/bl31.bin \
-  hy200_h713_ddr3_defconfig            # then the same without the defconfig arg
+  hy200_qz713df_a1_defconfig            # then the same without the defconfig arg
 ```
 
 **Recipe gotchas (each cost real time — do not drop):**
@@ -50,7 +50,7 @@ make -C external/u-boot O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-li
   own dtc (which knows the `graph_child_address` check the system dtc lacks)
   and its own pylibfdt (binman needs it). The old `DTC=$O/scripts/dtc/dtc`
   recipe was for SPL-only and breaks the full image build.
-- defconfigs: `hy200_h713_ddr3_defconfig` (DDR3 bench), `hy310_h713_defconfig`
+- defconfigs: `hy200_qz713df_a1_defconfig` (DDR3 bench), `hy200_qz713_v2_defconfig`
   (LPDDR3 projector). Working image is ~844377 bytes.
 
 ## 3. Kernel (arm64)
@@ -61,7 +61,7 @@ Carried as a **patch series on a pinned mainline tarball**, not a fork:
 the `SUN20I_D1_R_CCU` `|| ARM64` Kconfig enable, then builds `Image` with
 `ARCH=arm64 LLVM=1`. See [../patches/kernel/README.md](../patches/kernel/README.md).
 
-**Known gap:** the arm64 board **DTS** (`sun50i-h713-hy310` with
+**Known gap:** the arm64 board **DTS** (`sun50i-h713-hy200-qz713df-a1` with
 `arm,armv8-timer` and a `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map`
 reservation) is not yet in the series, so the kernel stage builds a bootable
 `Image` but not a DTB / FIT. Boot is via FIT `arch=arm64`, Image at load/entry
