@@ -43,6 +43,10 @@ img2simg rootfs.ext4 rootfs.simg          # Android-sparse for fastboot
 Exclude `/dev/*` from the tar (devtmpfs populates it at boot); a `mknod` would
 need real root.
 
+The 2 GiB size is intentional — kept small and **partition-agnostic** so the
+same image comes up correctly on either HY200 board whatever its eMMC/partition
+size; it grows to fill the partition on first boot (see *After first boot*).
+
 ## 3. Write it to the board
 
 Flash `rootfs.simg` to the `UDISK` (p26) partition — see
@@ -51,8 +55,11 @@ exceeds the 32 MiB fastboot buffer.
 
 ## After first boot
 
-- **Resize:** the image is 2 GiB on a ~4.6 GiB partition — `resize2fs
-  /dev/mmcblk0p26` to fill it.
+- **Resize is automatic.** The image is a deliberately small 2 GiB, and the
+  root `fstab` entry (written by `customize.sh`) carries `x-systemd.growfs`, so
+  `systemd-growfs` expands root to fill whatever partition it lands on at first
+  boot — the bench (`HY200_QZ713DF_A1`) or the projector (`HY200_QZ713_V2`),
+  regardless of their (possibly different) eMMC sizes. No manual `resize2fs`.
 - **Harden:** drop an SSH key into `/root/.ssh/authorized_keys` and disable
   password auth before any real use (root password is `root`).
 

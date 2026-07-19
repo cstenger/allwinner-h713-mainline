@@ -10,7 +10,7 @@ cat > "$R/etc/hosts" <<EOF
 127.0.1.1	h713-arm64
 EOF
 # root filesystem lives on the eMMC UDISK partition
-echo "/dev/mmcblk0p26  /  ext4  defaults,noatime  0  1" > "$R/etc/fstab"
+echo "/dev/mmcblk0p26  /  ext4  defaults,noatime,x-systemd.growfs  0  1" > "$R/etc/fstab"
 
 # bring up eth via DHCP if present (harmless if no NIC)
 mkdir -p "$R/etc/network"
