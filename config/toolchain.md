@@ -13,7 +13,7 @@ required for BL31, U-Boot, or the arm64 kernel. Host is Arch/CachyOS.
 | dtc | 1.8.1 | device-tree compiler | system dtc is only a fallback |
 | swig | 4.4.1 | **required** | U-Boot builds its own dtc + pylibfdt; pylibfdt needs swig |
 | python libfdt | importable | binman | comes with `python-libfdt` |
-| mmdebstrap | (AUR) | arm64 Debian rootfs | only for `tools/rootfs` |
+| mmdebstrap | 1.5.7 | arm64 Debian rootfs | used with a private rootless QEMU binfmt namespace |
 
 These are the versions this project has been built and hardware-verified with.
 Newer LLVM should work; the pins record a known-good set, not a hard floor.
@@ -33,4 +33,9 @@ Newer LLVM should work; the pins record a known-good set, not a hard floor.
 ```
 sudo pacman -S clang lld llvm dtc python-libfdt swig
 # mmdebstrap from the AUR (rootfs only)
+sudo pacman -S apt qemu-user-static-binfmt e2fsprogs kmod android-tools curl libarchive openssh
 ```
+
+`debian-archive-keyring` is optional on the host. If absent, the rootfs builder
+downloads its Arch package, verifies the package signature, and extracts the
+bootstrap trust anchor into the ignored build cache.

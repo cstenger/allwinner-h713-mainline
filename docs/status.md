@@ -4,7 +4,7 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-07-18._
+_Last updated: 2026-07-19._
 
 ## Summary
 
@@ -43,9 +43,11 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 - **32-bit SMP** — secondaries don't come up for a 32-bit kernel (BL31 brings
   cores up in AArch64; a 32-bit caller needs AArch32 secondaries). arm64 gets
   all four cores, so this is shelved.
-- **rootfs** — the flashed 2 GiB bring-up image predates the growfs hook and
-  module-install flow. Rebuild it signed, include `/lib/modules/6.18.38`, add an
-  SSH key, and disable password SSH before real use. See [rootfs.md](rootfs.md).
+- **new rootfs hardware validation** — the signed, key-only rootfs has been
+  built and inspected offline with all 24 Linux 6.18.38 modules, growfs, and a
+  byte-exact fastboot sparse round-trip. The board still runs the older
+  bring-up image; flash the new artifact and validate first-boot resize, serial
+  autologin, and module loading. See [rootfs.md](rootfs.md).
 
 ## Board matrix
 

@@ -57,6 +57,7 @@ git clone --recurse-submodules <this repo>       # or: git submodule update --in
 # host tools (Arch/CachyOS): see config/toolchain.md
 build/build.sh all              # BL31 -> U-Boot -> kernel -> images, into build/out/
 build/build.sh uboot            # or a single stage; BOARD=ddr3 (default) | lpddr3
+tools/rootfs/build.sh --ssh-key ~/.ssh/id_ed25519.pub  # signed Debian + modules
 ```
 
 See [docs/build.md](docs/build.md) for the underlying recipes and

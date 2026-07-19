@@ -15,6 +15,7 @@ not in the supported tool set. See ../README.md gotchas.
 fastboot) and print the U-Boot `bootcmd` for power-on → Debian. See
 [../docs/standalone-boot.md](../docs/standalone-boot.md).
 
-`rootfs/` — `customize.sh` is the mmdebstrap customize-hook for the arm64
-Debian rootfs (root user, serial getty, fstab). Full recipe in
-[../docs/rootfs.md](../docs/rootfs.md).
+`rootfs/` — `build.sh --ssh-key FILE` builds the signed Debian arm64 rootfs,
+installs matching kernel modules, validates the ext4 image, and emits an
+Android-sparse fastboot image. `customize.sh` performs target customization
+without executing target binaries. Full recipe in [../docs/rootfs.md](../docs/rootfs.md).

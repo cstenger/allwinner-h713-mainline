@@ -15,7 +15,9 @@ document the underlying recipes it runs (and the gotchas behind them).
 - **`swig`** — required. U-Boot builds its own dtc + pylibfdt, and pylibfdt
   needs swig. Without it the build fails at `scripts/dtc/pylibfdt`.
   `sudo pacman -S swig`
-- `mmdebstrap` (AUR) — only for the arm64 rootfs.
+- Rootfs only: `mmdebstrap` (AUR), `apt`, `qemu-user-static-binfmt`,
+  `e2fsprogs`, `kmod`, `android-tools`, `curl`, and `libarchive`. See
+  [rootfs.md](rootfs.md); its QEMU registration is private and rootless.
 
 ## 1. TF-A BL31 (build first — U-Boot embeds it)
 

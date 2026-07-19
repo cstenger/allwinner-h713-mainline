@@ -19,14 +19,12 @@ just priority. See [status.md](status.md) for what already works.
 
 ## Phase 1 — Build & OS polish (bench, near-term)
 
-- **Kernel modules into the rootfs — the biggest current gap.** Only built-in
-  (`=y`) drivers run today; `=m` modules aren't installed (`/lib/modules/6.18.38`
-  is absent), so any loadable-module subsystem silently can't load. Add
-  `make modules_install INSTALL_MOD_PATH=<rootfs>` to the build/rootfs flow.
-- **Rootfs**: the `x-systemd.growfs` hook is implemented, but the existing
-  artifact predates it. Fold the manual `mmdebstrap` steps into a
-  `tools/rootfs/build.sh`; ssh-key + disable password auth; rebuild the
-  bootstrap **signed** (Debian keyring) for a trustworthy image.
+- **Rootfs workflow — implemented, hardware validation pending.** The rootless
+  `tools/rootfs/build.sh` verifies signed Debian metadata, requires an SSH key,
+  disables password SSH, installs all 24 Linux 6.18.38 modules, builds
+  raw+sparse ext4 images, and validates growfs plus filesystem integrity. Flash
+  the new artifact to the bench and validate resize, serial, SSH (after
+  networking), and representative module loading.
 - **Dev workflow**: a persistent, hackable kernel worktree (separate from the
   ephemeral `build/linux-*`) + a fast "rebuild module → load on target" path.
 
