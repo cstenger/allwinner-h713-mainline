@@ -33,7 +33,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | arm64 Linux | ✅ **mainline 6.18.38 LTS** boots to Debian root login, **4-core SMP** (HW-verified) |
 | 32-bit Linux | ✅ boots to userspace, **single-core** (see limitations) |
 | eMMC | ✅ HS400, 26-partition Android GPT, read+write verified across reboots |
-| Debian 13 rootfs | ✅ boots from eMMC UDISK (p26) to root login over serial |
+| Debian 13 rootfs | ✅ signed, key-only image boots from UDISK; growfs, serial autologin, persistent first-boot identity, modules, and sshd HW-verified |
 | Standalone boot | ✅ power-on/reset → `boot_a` FIT → Debian, **no host attached** (HW-verified) |
 | USB gadget | ✅ CDC ACM console, UMS (`ums 0 mmc 1`), fastboot |
 | Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, crypto, LRADC, IR, RTC, board-mgr, watchdog |
@@ -43,11 +43,20 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 - **32-bit SMP** — secondaries don't come up for a 32-bit kernel (BL31 brings
   cores up in AArch64; a 32-bit caller needs AArch32 secondaries). arm64 gets
   all four cores, so this is shelved.
-- **new rootfs hardware validation** — the signed, key-only rootfs has been
-  built and inspected offline with all 24 Linux 6.18.38 modules, growfs, and a
-  byte-exact fastboot sparse round-trip. The board still runs the older
-  bring-up image; flash the new artifact and validate first-boot resize, serial
-  autologin, and module loading. See [rootfs.md](rootfs.md).
+- **Installed U-Boot is stale** — eMMC still contains the July 14 dirty build,
+  which identifies the bench as `HY310 Projector H713` and lacks the current
+  `fastboot_mode` helper/raw bootloader target. The `boot_a` FIT does contain the
+  correct bench DTB, so Linux identifies as `HY200 QZ713DF_A1`. Update U-Boot
+  through a separately verified raw eMMC path; do not invent a raw target in
+  the older Fastboot implementation.
+- **Kernel diagnostic residue** — the H713 CCU patch still contains temporary
+  `MIPS_DIAG` mappings of reserved RAM at `0x4e300000`. arm64 rejects these with
+  repeated `__ioremap_prot` warnings during boot. Remove the diagnostic-only
+  code and revalidate the FIT.
+- **Minor boot warnings** — systemd probes for `autofs4`, which is not enabled
+  in the bench kernel, and Panfrost uses a dummy `mali` regulator. Neither
+  prevents a clean userspace boot, but both should be resolved as kernel/DT
+  polish.
 
 ## Board matrix
 

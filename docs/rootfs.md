@@ -12,7 +12,8 @@ and emits both raw ext4 and Android-sparse images.
 - The physical `ttyS0` console autologins as root for board recovery and
   bring-up. Physical serial access is therefore privileged access.
 - SSH host keys, the machine ID, and the systemd random seed are removed from
-  the image and generated independently on first boot.
+  the image and generated independently on first boot. An idempotent service
+  runs `ssh-keygen -A` before SSH so a missing key can never race sshd startup.
 - Debian `InRelease` and packages are verified with the Debian archive
   keyring. The final deb822 source uses
   `Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`; there is no
@@ -87,6 +88,14 @@ growfs configuration, and the installed module dependency database. It then
 runs read-only `e2fsck`. The first completed build contained all 24 modules for
 kernel `6.18.38`; sparse-to-raw conversion was byte-exact in offline testing.
 
+**Hardware-verified on the HY200 bench board (2026-07-19):** the sparse image
+flashed through U-Boot Fastboot, booted twice, and expanded from 2 GiB to the
+full 4.5 GiB filesystem. `ttyS0` root autologin, udev, dbus, growfs, SSH host-key
+generation, and sshd all completed successfully with zero failed systemd units.
+The machine ID and all three generated SSH host keys persisted unchanged across
+the second boot. All 24 modules were present; Cedrus and Panfrost loaded and
+bound to their devices.
+
 ## Flash
 
 Enter fastboot from the U-Boot ACM console:
@@ -118,9 +127,10 @@ modprobe sunxi-cedrus
 systemctl --no-pager status systemd-growfs-root.service ssh.service
 ```
 
-Expected kernel release is `6.18.38`. SSH becomes useful once a supported
-network interface is available; networking hardware/firmware bring-up remains
-a separate roadmap item.
+Expected kernel release is `6.18.38`. The bench currently exposes only loopback,
+so sshd was verified listening with the configured public-key-only policy but a
+remote login cannot be tested until a supported network interface is brought
+up. Networking hardware/firmware remains a separate roadmap item.
 
 The artifacts under `local/h713-arm64/rootfs-build/` are historical. They
 predate signed bootstrapping, module installation, growfs, and key-only SSH.

@@ -164,7 +164,7 @@ mmdebstrap \
   --skip=check/qemu \
   --keyring="$BOOTSTRAP_KEYRING" \
   --aptopt='Acquire::Languages "none"' \
-  --include=systemd-sysv,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring \
+  --include=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring \
   "$DEBIAN_SUITE" "$ROOTFS_TAR" \
   "deb [signed-by=$BOOTSTRAP_KEYRING] $DEBIAN_MIRROR $DEBIAN_SUITE main"
 
@@ -203,6 +203,9 @@ env \
       "$ROOTFS_TREE/etc/apt/sources.list.d/debian.sources"
     test -L "$ROOTFS_TREE/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"
     test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/ssh.service"
+    test -L "$ROOTFS_TREE/etc/systemd/system/ssh.service.wants/h713-ssh-host-keys.service"
+    test -f "$ROOTFS_TREE/usr/lib/systemd/system/systemd-udevd.service"
+    test -f "$ROOTFS_TREE/usr/lib/systemd/system/dbus.service"
     test -z "$(find "$ROOTFS_TREE/etc/ssh" -maxdepth 1 -type f -name "ssh_host_*" -print -quit)"
     root_hash=$(awk -F: '\''$1 == "root" { print $2 }'\'' "$ROOTFS_TREE/etc/shadow")
     case "$root_hash" in "!"*) ;; *) echo "error: root password is not locked" >&2; exit 1 ;; esac

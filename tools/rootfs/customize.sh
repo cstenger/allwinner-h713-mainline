@@ -64,8 +64,10 @@ AuthenticationMethods publickey
 X11Forwarding no
 EOF
 
-# Never clone host keys or machine identity across images. Debian's
-# sshd-keygen.service creates host keys during the first boot.
+# Never clone host keys or machine identity across images. Generate missing
+# host keys before ssh.service on every boot; ssh-keygen -A is idempotent and
+# avoids relying on ConditionFirstBoot ordering while /etc/machine-id is being
+# initialized.
 rm -f "$R"/etc/ssh/ssh_host_*
 rm -f "$R/etc/machine-id" "$R/var/lib/dbus/machine-id"
 : > "$R/etc/machine-id"
@@ -81,8 +83,18 @@ ln -sfn /usr/lib/systemd/system/serial-getty@.service \
   "$systemd_dir/getty.target.wants/serial-getty@ttyS0.service"
 ln -sfn /usr/lib/systemd/system/ssh.service \
   "$systemd_dir/multi-user.target.wants/ssh.service"
-ln -sfn /usr/lib/systemd/system/sshd-keygen.service \
-  "$systemd_dir/ssh.service.wants/sshd-keygen.service"
+cat > "$systemd_dir/h713-ssh-host-keys.service" <<EOF
+[Unit]
+Description=Generate missing SSH host keys
+Before=ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+RemainAfterExit=yes
+EOF
+ln -sfn ../h713-ssh-host-keys.service \
+  "$systemd_dir/ssh.service.wants/h713-ssh-host-keys.service"
 ln -sfn /dev/null "$systemd_dir/systemd-networkd-wait-online.service"
 
 cat > "$systemd_dir/serial-getty@ttyS0.service.d/autologin.conf" <<EOF

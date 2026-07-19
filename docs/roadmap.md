@@ -19,12 +19,16 @@ just priority. See [status.md](status.md) for what already works.
 
 ## Phase 1 — Build & OS polish (bench, near-term)
 
-- **Rootfs workflow — implemented, hardware validation pending.** The rootless
+- **Rootfs workflow — complete and hardware-verified.** The rootless
   `tools/rootfs/build.sh` verifies signed Debian metadata, requires an SSH key,
   disables password SSH, installs all 24 Linux 6.18.38 modules, builds
-  raw+sparse ext4 images, and validates growfs plus filesystem integrity. Flash
-  the new artifact to the bench and validate resize, serial, SSH (after
-  networking), and representative module loading.
+  raw+sparse ext4 images, and validates growfs plus filesystem integrity. On
+  the bench it boots repeatedly with a 4.5 GiB root filesystem, serial
+  autologin, stable per-device identity, Cedrus/Panfrost modules, and active
+  public-key-only sshd. A remote SSH login remains gated on networking.
+- **Boot cleanup:** remove the CCU `MIPS_DIAG` residue, enable or suppress the
+  expected autofs probe cleanly, model the Mali regulator, and replace the old
+  installed U-Boot through a verified raw eMMC update path.
 - **Dev workflow**: a persistent, hackable kernel worktree (separate from the
   ephemeral `build/linux-*`) + a fast "rebuild module → load on target" path.
 
