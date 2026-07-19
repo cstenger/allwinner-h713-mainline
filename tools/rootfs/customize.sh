@@ -103,4 +103,13 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I \$TERM
 EOF
 
-echo "[customize] configured key-only SSH and ttyS0 root autologin"
+# Load the AIC8800 WiFi/BT modules at boot. bsp registers the SDIO glue and
+# powers the chip; fdrv (WiFi) and btlpm (BT) depend on it, so ordering matters.
+install -d -m 0755 "$R/etc/modules-load.d"
+cat > "$R/etc/modules-load.d/aic8800.conf" <<EOF
+aic8800_bsp
+aic8800_fdrv
+aic8800_btlpm
+EOF
+
+echo "[customize] configured key-only SSH, ttyS0 root autologin, and AIC8800 autoload"

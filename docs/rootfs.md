@@ -133,10 +133,14 @@ modprobe sunxi-cedrus
 systemctl --no-pager status systemd-growfs-root.service ssh.service
 ```
 
-Expected kernel release is `6.18.38`. The bench currently exposes only loopback,
-so sshd was verified listening with the configured public-key-only policy but a
-remote login cannot be tested until a supported network interface is brought
-up. Networking hardware/firmware remains a separate roadmap item.
+Expected kernel release is `6.18.38`. The rootfs build now also installs the
+AIC8800 WiFi/BT out-of-tree modules (`aic8800_bsp`/`aic8800_fdrv`/`aic8800_btlpm`
+into `/lib/modules/$KREL/updates/aic8800/`, autoloaded via
+`/etc/modules-load.d/aic8800.conf`) and the pinned firmware blob (verified
+against `modules/aic8800/firmware.sha256sums`, installed to
+`/usr/lib/firmware/aic8800_sdio/aic8800`). See
+[../modules/aic8800/README.md](../modules/aic8800/README.md). Association itself
+still needs on-hardware bring-up, but the driver + firmware now ship in the image.
 
 The artifacts under `local/h713-arm64/rootfs-build/` are historical. They
 predate signed bootstrapping, module installation, growfs, and key-only SSH.

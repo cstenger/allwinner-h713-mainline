@@ -171,6 +171,33 @@ build_kernel() {
   build_kernel_fit
 }
 
+# --- AIC8800 WiFi/BT out-of-tree modules (SDIO WiFi + UART BT) ---------------
+# Built against the same pinned kernel tree with the same arm64/LLVM toolchain.
+# bsp first, then fdrv/btlpm with bsp's Module.symvers (they export/import
+# symbols). CONFIG_PLATFORM_MAINLINE_SUNXI=y selects the H713 platform glue.
+build_aic8800() {
+  local tree; tree=$(prepare_kernel)
+  [ -f "$tree/Module.symvers" ] || {
+    echo "error: kernel not built (no Module.symvers in $tree) — run build/build.sh kernel first" >&2
+    return 1
+  }
+  local moddir="$ROOT/modules/aic8800"
+  local common=(ARCH=arm64 LLVM=1 CONFIG_PLATFORM_MAINLINE_SUNXI=y)
+  log "AIC8800 modules (SDIO WiFi + UART BT, arch=arm64)"
+  make -C "$tree" M="$moddir/aic8800_bsp" "${common[@]}" modules
+  local bsp_syms="$moddir/aic8800_bsp/Module.symvers"
+  make -C "$tree" M="$moddir/aic8800_fdrv"  "${common[@]}" KBUILD_EXTRA_SYMBOLS="$bsp_syms" modules
+  make -C "$tree" M="$moddir/aic8800_btlpm" "${common[@]}" KBUILD_EXTRA_SYMBOLS="$bsp_syms" modules
+  install -d "$OUT/modules"
+  install -m 0644 \
+    "$moddir/aic8800_bsp/aic8800_bsp.ko" \
+    "$moddir/aic8800_fdrv/aic8800_fdrv.ko" \
+    "$moddir/aic8800_btlpm/aic8800_btlpm.ko" \
+    "$OUT/modules/"
+  log "modules -> $OUT/modules/ (aic8800_bsp, aic8800_fdrv, aic8800_btlpm)"
+  note "Firmware (blob) is pinned + installed into the rootfs by tools/rootfs/, not here."
+}
+
 # package Image.gz + DTB into a bootable FIT (bootm at KERNEL_LOAD)
 build_kernel_fit() {
   local mkimage; mkimage=$(find_mkimage)
@@ -244,10 +271,11 @@ build_images() {
 }
 
 case "${1:-all}" in
-  bl31)   build_bl31 ;;
-  uboot)  build_uboot ;;
-  kernel) build_kernel ;;
-  images) build_images ;;
-  all)    build_bl31; build_uboot; build_kernel; build_images ;;
-  *) echo "usage: $0 [all|bl31|uboot|kernel|images]" >&2; exit 2 ;;
+  bl31)    build_bl31 ;;
+  uboot)   build_uboot ;;
+  kernel)  build_kernel ;;
+  aic8800) build_aic8800 ;;
+  images)  build_images ;;
+  all)     build_bl31; build_uboot; build_kernel; build_aic8800; build_images ;;
+  *) echo "usage: $0 [all|bl31|uboot|kernel|aic8800|images]" >&2; exit 2 ;;
 esac

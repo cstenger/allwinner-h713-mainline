@@ -42,7 +42,7 @@ ssh-keygen -lf "$SSH_KEY" -E sha256 >/dev/null || {
   exit 1
 }
 
-required_tools=(mmdebstrap unshare mke2fs e2fsck img2simg depmod ssh-keygen curl bsdtar pacman pacman-key)
+required_tools=(mmdebstrap unshare mke2fs e2fsck img2simg depmod modinfo ssh-keygen curl bsdtar pacman pacman-key)
 for tool in "${required_tools[@]}"; do
   command -v "$tool" >/dev/null || { echo "error: required tool not found: $tool" >&2; exit 1; }
 done
@@ -147,6 +147,27 @@ KERNEL_RELEASE=$(make -s -C "$KERNEL_TREE" ARCH=arm64 LLVM=1 kernelrelease)
 module_build_count=$(find "$KERNEL_TREE" -type f -name '*.ko' | wc -l)
 ((module_build_count > 0)) || { echo "error: no built kernel modules found" >&2; exit 1; }
 
+# AIC8800 WiFi/BT: out-of-tree modules (staged by build/build.sh aic8800) plus
+# the pinned firmware blob. Verify both on the host before entering the mount
+# namespace, so failures are reported early and clearly.
+AIC_KO_DIR="$PROJECT_ROOT/build/out/modules"
+AIC_MODULES=(aic8800_bsp aic8800_fdrv aic8800_btlpm)
+for m in "${AIC_MODULES[@]}"; do
+  ko="$AIC_KO_DIR/$m.ko"
+  [ -f "$ko" ] || { echo "error: missing $ko — run build/build.sh aic8800 first" >&2; exit 1; }
+  vm=$(modinfo -F vermagic "$ko" 2>/dev/null | awk '{print $1}')
+  [ "$vm" = "$KERNEL_RELEASE" ] || {
+    echo "error: $m.ko vermagic '$vm' != kernel '$KERNEL_RELEASE' — rerun build/build.sh aic8800" >&2
+    exit 1
+  }
+done
+AIC_FW_SRC_ABS="$PROJECT_ROOT/$AIC8800_FW_SRC"
+[ -d "$AIC_FW_SRC_ABS" ] || { echo "error: AIC8800 firmware source not found: $AIC_FW_SRC_ABS" >&2; exit 1; }
+( cd "$AIC_FW_SRC_ABS" && sha256sum -c "$PROJECT_ROOT/$AIC8800_FW_SUMS" ) >/dev/null || {
+  echo "error: AIC8800 firmware failed SHA-256 verification against $AIC8800_FW_SUMS" >&2
+  exit 1
+}
+
 mkdir -p "$PROJECT_ROOT/build" "$OUTPUT_DIR"
 WORK_DIR=$(mktemp -d "$PROJECT_ROOT/build/.rootfs.XXXXXX")
 
@@ -164,7 +185,7 @@ mmdebstrap \
   --skip=check/qemu \
   --keyring="$BOOTSTRAP_KEYRING" \
   --aptopt='Acquire::Languages "none"' \
-  --include=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring \
+  --include=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq \
   "$DEBIAN_SUITE" "$ROOTFS_TAR" \
   "deb [signed-by=$BOOTSTRAP_KEYRING] $DEBIAN_MIRROR $DEBIAN_SUITE main"
 
@@ -179,6 +200,9 @@ env \
   CUSTOMIZE="$PROJECT_ROOT/tools/rootfs/customize.sh" \
   KERNEL_TREE="$KERNEL_TREE" \
   KERNEL_RELEASE="$KERNEL_RELEASE" \
+  AIC_KO_DIR="$AIC_KO_DIR" \
+  AIC_FW_SRC="$AIC_FW_SRC_ABS" \
+  AIC_FW_DEST="$AIC8800_FW_DEST" \
   DEBIAN_MIRROR="$DEBIAN_MIRROR" \
   DEBIAN_SUITE="$DEBIAN_SUITE" \
   bash -ceu '
@@ -190,6 +214,16 @@ env \
       INSTALL_MOD_PATH="$ROOTFS_TREE" modules_install
     find "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE" -maxdepth 1 -type l \
       \( -name build -o -name source \) -delete
+
+    # AIC8800 out-of-tree modules go in updates/ (takes precedence, survives an
+    # in-tree modules_install); firmware blob to the driver CONFIG_AIC_FW_PATH.
+    install -d "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/updates/aic8800"
+    install -m 0644 "$AIC_KO_DIR/aic8800_bsp.ko" "$AIC_KO_DIR/aic8800_fdrv.ko" \
+      "$AIC_KO_DIR/aic8800_btlpm.ko" \
+      "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/updates/aic8800/"
+    install -d "$ROOTFS_TREE/$AIC_FW_DEST"
+    install -m 0644 "$AIC_FW_SRC"/* "$ROOTFS_TREE/$AIC_FW_DEST/"
+
     depmod -b "$ROOTFS_TREE" -F "$KERNEL_TREE/System.map" "$KERNEL_RELEASE"
 
     test "$(stat -c %a "$ROOTFS_TREE/root/.ssh")" = 700
@@ -211,6 +245,13 @@ env \
     case "$root_hash" in "!"*) ;; *) echo "error: root password is not locked" >&2; exit 1 ;; esac
     test -s "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/modules.dep"
     test "$(find "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE" -type f -name "*.ko*" | wc -l)" -gt 0
+    # AIC8800 WiFi/BT: modules installed, indexed by depmod, firmware + autoload present
+    test -f "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/updates/aic8800/aic8800_fdrv.ko"
+    test -f "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/updates/aic8800/aic8800_btlpm.ko"
+    grep -q "updates/aic8800/aic8800_fdrv.ko" "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/modules.dep"
+    test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfw_8800d80_u02.bin"
+    test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfwbt_8800d80_u02.bin"
+    grep -qx "aic8800_fdrv" "$ROOTFS_TREE/etc/modules-load.d/aic8800.conf"
 
     tar --numeric-owner --xattrs --acls -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
     truncate -s "$IMAGE_SIZE" "$ROOTFS_EXT4"
