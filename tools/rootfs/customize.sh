@@ -153,4 +153,70 @@ EOF
 ln -sfn ../h713-bt-attach.service \
   "$systemd_dir/multi-user.target.wants/h713-bt-attach.service"
 
+# Optional boot WiFi hotspot (AP). Enabled only when the build passed
+# HOTSPOT_ENABLED=1 (i.e. local/hotspot.conf existed). A dedicated AP owns wlan0
+# and DHCP, so mask the STA supplicant and the default dnsmasq.
+if [ "${HOTSPOT_ENABLED:-0}" = 1 ]; then
+  install -d -m 0755 "$R/etc/hostapd"
+  cat > "$R/etc/hostapd/hotspot.conf" <<EOF
+interface=wlan0
+driver=nl80211
+ssid=$HOTSPOT_SSID
+hw_mode=g
+channel=$HOTSPOT_CHANNEL
+auth_algs=1
+wpa=2
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+wpa_passphrase=$HOTSPOT_PASSPHRASE
+EOF
+  chmod 0600 "$R/etc/hostapd/hotspot.conf"
+  cat > "$R/etc/default/h713-hotspot" <<EOF
+HOTSPOT_IP=$HOTSPOT_IP
+HOTSPOT_DHCP_START=$HOTSPOT_DHCP_START
+HOTSPOT_DHCP_END=$HOTSPOT_DHCP_END
+EOF
+  install -d -m 0755 "$R/usr/local/sbin"
+  cat > "$R/usr/local/sbin/h713-hotspot-up" <<'EOS'
+#!/bin/sh
+# Bring up the H713 WiFi hotspot (AP) on wlan0: hostapd + a DHCP-only dnsmasq.
+CONF=/etc/hostapd/hotspot.conf
+[ -f "$CONF" ] || exit 0
+HOTSPOT_IP=192.168.4.1; HOTSPOT_DHCP_START=192.168.4.10; HOTSPOT_DHCP_END=192.168.4.100
+[ -f /etc/default/h713-hotspot ] && . /etc/default/h713-hotspot
+rfkill unblock wifi 2>/dev/null || true
+i=0; while [ ! -e /sys/class/net/wlan0 ] && [ "$i" -lt 30 ]; do i=$((i + 1)); sleep 1; done
+pkill -x hostapd 2>/dev/null || true
+ip link set wlan0 down 2>/dev/null || true
+ip addr flush dev wlan0 2>/dev/null || true
+hostapd -B "$CONF" || exit 1
+ip addr add "${HOTSPOT_IP}/24" dev wlan0
+exec dnsmasq --keep-in-foreground --interface=wlan0 --bind-interfaces \
+  --except-interface=lo \
+  --dhcp-range="${HOTSPOT_DHCP_START},${HOTSPOT_DHCP_END},255.255.255.0,12h" \
+  --dhcp-authoritative --port=0
+EOS
+  chmod 0755 "$R/usr/local/sbin/h713-hotspot-up"
+  cat > "$systemd_dir/h713-hotspot.service" <<EOF
+[Unit]
+Description=H713 WiFi hotspot (hostapd + dnsmasq on wlan0)
+After=systemd-modules-load.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/h713-hotspot-up
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  ln -sfn ../h713-hotspot.service \
+    "$systemd_dir/multi-user.target.wants/h713-hotspot.service"
+  ln -sfn /dev/null "$systemd_dir/wpa_supplicant.service"
+  ln -sfn /dev/null "$systemd_dir/dnsmasq.service"
+  echo "[customize] boot hotspot enabled: SSID=$HOTSPOT_SSID ch=$HOTSPOT_CHANNEL ip=$HOTSPOT_IP"
+fi
+
 echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach"

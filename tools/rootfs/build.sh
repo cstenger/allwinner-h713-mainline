@@ -168,6 +168,25 @@ AIC_FW_SRC_ABS="$PROJECT_ROOT/$AIC8800_FW_SRC"
   exit 1
 }
 
+# Optional boot hotspot: baked in only if the local-only config exists. The
+# SSID/passphrase live in that gitignored file, never in the repo.
+HOTSPOT_ENABLED=0
+HOTSPOT_SSID= HOTSPOT_PASSPHRASE= HOTSPOT_CHANNEL= HOTSPOT_IP=
+HOTSPOT_DHCP_START= HOTSPOT_DHCP_END=
+if [ -n "${HOTSPOT_CONF:-}" ] && [ -f "$PROJECT_ROOT/$HOTSPOT_CONF" ]; then
+  # shellcheck disable=SC1090
+  . "$PROJECT_ROOT/$HOTSPOT_CONF"
+  : "${HOTSPOT_CHANNEL:=6}" "${HOTSPOT_IP:=192.168.4.1}"
+  : "${HOTSPOT_DHCP_START:=192.168.4.10}" "${HOTSPOT_DHCP_END:=192.168.4.100}"
+  [ -n "${HOTSPOT_SSID:-}" ] && [ "${#HOTSPOT_SSID}" -le 32 ] || {
+    echo "error: HOTSPOT_SSID missing or >32 chars in $HOTSPOT_CONF" >&2; exit 1; }
+  { [ "${#HOTSPOT_PASSPHRASE}" -ge 8 ] && [ "${#HOTSPOT_PASSPHRASE}" -le 63 ]; } || {
+    echo "error: HOTSPOT_PASSPHRASE must be 8-63 chars (WPA2) in $HOTSPOT_CONF" >&2; exit 1; }
+  HOTSPOT_ENABLED=1
+  printf '\n==> Boot hotspot: SSID %q on ch %s, %s (from %s)\n' \
+    "$HOTSPOT_SSID" "$HOTSPOT_CHANNEL" "$HOTSPOT_IP" "$HOTSPOT_CONF"
+fi
+
 mkdir -p "$PROJECT_ROOT/build" "$OUTPUT_DIR"
 WORK_DIR=$(mktemp -d "$PROJECT_ROOT/build/.rootfs.XXXXXX")
 
@@ -203,6 +222,13 @@ env \
   AIC_KO_DIR="$AIC_KO_DIR" \
   AIC_FW_SRC="$AIC_FW_SRC_ABS" \
   AIC_FW_DEST="$AIC8800_FW_DEST" \
+  HOTSPOT_ENABLED="$HOTSPOT_ENABLED" \
+  HOTSPOT_SSID="$HOTSPOT_SSID" \
+  HOTSPOT_PASSPHRASE="$HOTSPOT_PASSPHRASE" \
+  HOTSPOT_CHANNEL="$HOTSPOT_CHANNEL" \
+  HOTSPOT_IP="$HOTSPOT_IP" \
+  HOTSPOT_DHCP_START="$HOTSPOT_DHCP_START" \
+  HOTSPOT_DHCP_END="$HOTSPOT_DHCP_END" \
   DEBIAN_MIRROR="$DEBIAN_MIRROR" \
   DEBIAN_SUITE="$DEBIAN_SUITE" \
   bash -ceu '
@@ -255,6 +281,13 @@ env \
     test -x "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     grep -q "noflow" "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-bt-attach.service"
+    if [ "$HOTSPOT_ENABLED" = 1 ]; then
+      grep -qx "ssid=$HOTSPOT_SSID" "$ROOTFS_TREE/etc/hostapd/hotspot.conf"
+      test "$(stat -c %a "$ROOTFS_TREE/etc/hostapd/hotspot.conf")" = 600
+      test -x "$ROOTFS_TREE/usr/local/sbin/h713-hotspot-up"
+      test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-hotspot.service"
+      test -L "$ROOTFS_TREE/etc/systemd/system/wpa_supplicant.service"   # masked
+    fi
 
     tar --numeric-owner --xattrs --acls -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
     truncate -s "$IMAGE_SIZE" "$ROOTFS_EXT4"

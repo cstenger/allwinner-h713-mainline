@@ -142,5 +142,15 @@ against `modules/aic8800/firmware.sha256sums`, installed to
 [../modules/aic8800/README.md](../modules/aic8800/README.md). Association itself
 still needs on-hardware bring-up, but the driver + firmware now ship in the image.
 
+## Optional boot hotspot
+
+If the file named by `HOTSPOT_CONF` in `config/versions.env` exists (default
+`local/hotspot.conf`, which is gitignored so the SSID/passphrase stay out of the
+repo), the build bakes in an on-boot WiFi AP: `hostapd` + a DHCP-only `dnsmasq`
+on `wlan0` via `h713-hotspot.service`. Because a dedicated AP owns `wlan0` and
+DHCP, the STA `wpa_supplicant` and the default `dnsmasq` are masked. Remove the
+file to build an image with no hotspot. Format: see
+[hotspot.conf.example](../tools/rootfs/hotspot.conf.example).
+
 The artifacts under `local/h713-arm64/rootfs-build/` are historical. They
 predate signed bootstrapping, module installation, growfs, and key-only SSH.
