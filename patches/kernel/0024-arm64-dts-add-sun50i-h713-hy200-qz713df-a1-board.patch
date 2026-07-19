@@ -11,7 +11,7 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -0,0 +1,1803 @@
+@@ -0,0 +1,1809 @@
 +/*
 + * Shared device tree for the Allwinner H713 SoC and HY200 family.
 + *
@@ -841,7 +841,13 @@
 +			no-mmc;
 +			no-sd;
 +			keep-power-in-suspend;
-+			max-frequency = <50000000>;
++			/*
++			 * 25 MHz, not 50: the AIC8800 port hits CMD53 DMA errors on
++			 * large transfers at 50 MHz with the V1 sunxi-mmc glue. This
++			 * is the known-good rate from the earlier bring-up; revisit
++			 * once the V5 aicsdio.c SDIO-stability hunks are evaluated.
++			 */
++			max-frequency = <25000000>;
 +			#address-cells = <1>;
 +			#size-cells = <0>;
 +			status = "okay";
