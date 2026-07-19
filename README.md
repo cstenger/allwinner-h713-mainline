@@ -4,9 +4,10 @@ Mainline firmware and Linux for the **Allwinner H713 (sun50iw12)** SoC — a
 fully open boot chain (U-Boot SPL → TF-A BL31 → U-Boot → Linux) with a
 64-bit Debian userland, replacing the vendor Android stack.
 
-> **Status (2026-07-17):** arm64 Debian 13 boots from eMMC to a root login,
-> 4-core SMP, HS400 eMMC. 32-bit Linux also boots (single-core). See
-> [docs/status.md](docs/status.md).
+> **Status (2026-07-18):** arm64 Debian 13 on Linux **6.18.38 LTS** boots from
+> eMMC to a root login, 4-core SMP, HS400 eMMC — and boots **standalone**
+> (power-on → Debian, no host). All hardware-verified on the HY200 bench board.
+> 32-bit Linux also boots (single-core). See [docs/status.md](docs/status.md).
 
 ## Hardware
 

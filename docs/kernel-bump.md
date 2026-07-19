@@ -25,10 +25,11 @@ The arm64 board **DTS** is now reconstructed and in the series (**patch 0024**),
 so `build/build.sh kernel` emits the DTB and a bootable FIT
 (`build/out/h713-kernel.fit`: gzip Image + DTB, load/entry `0x48000000`).
 
-**Remaining:** a hardware boot on the HY200 bench board. `6.18.38` is
-build-verified end to end but **not** yet boot-verified (last kernel booted on
-hardware was 6.16.7) — flash the FIT and confirm 4-core SMP + eMMC + Debian to
-root login before treating 6.18.38 as boot-good.
+**Boot-verified (2026-07-18):** `h713-kernel.fit` was booted on the HY200 bench
+board — `uname -r` = `6.18.38`, `nproc` = 4, root on eMMC `mmcblk0p26`, Debian
+13 to a root login. Also verified booting **standalone** from the `boot_a`
+partition (see [standalone-boot.md](standalone-boot.md)). 6.18.38 is the
+boot-good kernel.
 
 ## Why 6.18.38 (longterm), not 7.1.3 (stable)
 

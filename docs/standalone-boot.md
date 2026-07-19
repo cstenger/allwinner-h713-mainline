@@ -5,6 +5,11 @@ boot (which just spams BOOTP/PXE). To make **power-on boot straight into
 Debian** with nothing attached, write the kernel FIT to the `boot_a` partition
 and point `bootcmd` at it.
 
+> **Validated on hardware (2026-07-18):** on the HY200 bench board this flow
+> boots Debian 6.18.38 from `boot_a` after a plain `reset`, with no host
+> attached (verified byte-exact `mmc write`, then autonomous boot to a root
+> login on all 4 cores).
+
 ## The plan
 
 - `build/build.sh kernel` produces `build/out/h713-kernel.fit` (gzip Image +

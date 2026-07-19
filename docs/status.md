@@ -8,9 +8,11 @@ _Last updated: 2026-07-18._
 
 ## Summary
 
-A fully open boot chain — U-Boot SPL → TF-A BL31 → U-Boot → Linux — boots a
-**64-bit Debian 13** userland from eMMC to a **root login**, on all four cores,
-with HS400 eMMC. This replaces the vendor Android stack end to end.
+A fully open boot chain — U-Boot SPL → TF-A BL31 → U-Boot → Linux **6.18.38
+LTS** — boots a **64-bit Debian 13** userland from eMMC to a **root login**, on
+all four cores, with HS400 eMMC. It boots **standalone** (power-on → Debian, no
+host), replacing the vendor Android stack end to end. All hardware-verified on
+the HY200 bench board.
 
 ## Boot chain
 
@@ -28,26 +30,16 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | DRAM init | ✅ DDR3 (HY200) hardware-proven; LPDDR3 (HY310) replay-verified, untested on HW |
 | U-Boot proper | ✅ interactive prompt, persistent env (raw eMMC @4 MiB), `reset` via PSCI + `wdt` |
 | BL31 / PSCI | ✅ `SYSTEM_RESET`, `CPU_ON` (all 4 cores), `CPU_SUSPEND` |
-| arm64 Linux | ✅ mainline 6.16.7 boots to userspace, **4-core SMP** |
+| arm64 Linux | ✅ **mainline 6.18.38 LTS** boots to Debian root login, **4-core SMP** (HW-verified) |
 | 32-bit Linux | ✅ boots to userspace, **single-core** (see limitations) |
 | eMMC | ✅ HS400, 26-partition Android GPT, read+write verified across reboots |
 | Debian 13 rootfs | ✅ boots from eMMC UDISK (p26) to root login over serial |
+| Standalone boot | ✅ power-on/reset → `boot_a` FIT → Debian, **no host attached** (HW-verified) |
 | USB gadget | ✅ CDC ACM console, UMS (`ums 0 mmc 1`), fastboot |
 | Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, crypto, LRADC, IR, RTC, board-mgr, watchdog |
 
 ## Limitations / open items
 
-- **Boot is not standalone yet.** The kernel FIT is loaded over the CDC console
-  each boot rather than from eMMC. The procedure to make power-on → Debian
-  autonomous (flash the FIT to `boot_a`, set a `bootcmd`) is written up and
-  scripted — see [standalone-boot.md](standalone-boot.md) and
-  `tools/flash-standalone.sh` — but not yet run on hardware. _(reorg step #6)_
-- **Kernel bumped to 6.18.38 LTS** — the full 22-driver series plus the arm64
-  board DTS builds end to end (`build/build.sh kernel` emits `Image.gz`, the
-  DTB, and a bootable FIT). But it is **build-verified, not yet boot-verified**:
-  the last kernel actually booted on hardware was 6.16.7. Flash
-  `build/out/h713-kernel.fit` and re-confirm SMP + eMMC + root login to close
-  this out. _(reorg step #5 — see [kernel-bump.md](kernel-bump.md))_
 - **32-bit SMP** — secondaries don't come up for a 32-bit kernel (BL31 brings
   cores up in AArch64; a 32-bit caller needs AArch32 secondaries). arm64 gets
   all four cores, so this is shelved.
