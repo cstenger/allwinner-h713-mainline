@@ -11,7 +11,7 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -0,0 +1,1792 @@
+@@ -0,0 +1,1803 @@
 +/*
 + * Shared device tree for the Allwinner H713 SoC and HY200 family.
 + *
@@ -162,6 +162,16 @@
 +		regulator-name = "vcc-1v8";
 +		regulator-min-microvolt = <1800000>;
 +		regulator-max-microvolt = <1800000>;
++		regulator-always-on;
++	};
++
++	/* Stock gpu-supply is the always-on 0.96 V vdd_sys rail. */
++	reg_vdd_sys: regulator-vdd-sys {
++		compatible = "regulator-fixed";
++		regulator-name = "vdd_sys";
++		regulator-min-microvolt = <960000>;
++		regulator-max-microvolt = <960000>;
++		regulator-boot-on;
 +		regulator-always-on;
 +	};
 +
@@ -1014,6 +1024,7 @@
 +			clocks = <&ccu CLK_GPU>, <&ccu CLK_BUS_GPU>;
 +			clock-names = "core", "bus";
 +			resets = <&ccu RST_BUS_GPU>;
++			mali-supply = <&reg_vdd_sys>;
 +			/*
 +			 * Power domain index 2 = GPU (always-on in H713 PPU).
 +			 * IDA RE confirmed: domain_info[2] is all-zeros in stock binary,

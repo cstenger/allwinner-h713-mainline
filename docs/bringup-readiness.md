@@ -82,7 +82,7 @@ risk beyond this vector, since FEL does not depend on eMMC state.
 ## Hardware and software context
 
 - SoC: Allwinner H713 (sun50iw12), four Cortex-A53 cores.
-- Board currently identifies itself as `HY310 Projector H713`.
+- Board identifies itself as `HY200 QZ713DF_A1 (Allwinner H713)`.
 - DRAM: 1 GiB DDR3 using the locally derived H713 initialization path.
 - Storage: 7.3 GiB eMMC, currently U-Boot device `mmc 1`.
 - Firmware chain: sunxi SPL → TF-A BL31 → U-Boot proper (all local builds).
@@ -93,15 +93,15 @@ risk beyond this vector, since FEL does not depend on eMMC state.
   (PSCI `CPU_SUSPEND`). Build: `make PLAT=sun50i_h713 DEBUG=0
   BL31_IN_DRAM=1` with the clang/LLVM toolchain settings recorded in the
   project notes. Any reproduction of this chain must pin that tree.
-- Debug transport: UART plus a persistent CDC ACM U-Boot console over the
-  peripheral USB port.
+- Debug transport: UART is the persistent/default U-Boot console; `run
+  acm_mode` explicitly enables the CDC ACM console over the peripheral USB
+  port. ACM, UMS, and fastboot use that one controller successively.
 - Current U-Boot image is stored in the eMMC user area beginning at LBA 16;
-  it is approximately 844377 bytes (1650 sectors, ending at LBA 1665).
+  clean build `g8a601c1` is 844417 bytes (1650 sectors, ending at LBA 1665).
 - Persistent U-Boot environment offset: `0x400000` (4 MiB, LBA 8192).
 
-The current board configuration is `configs/hy200_h713_ddr3_defconfig`, while
-the selected device tree and runtime model use the HY310 name. That naming
-mismatch should be resolved before submitting anything upstream.
+The current board configuration is `configs/hy200_h713_ddr3_defconfig`; the
+selected device tree and runtime model use the matching HY200 QZ713DF_A1 name.
 
 ## Functionality already demonstrated
 
@@ -113,8 +113,9 @@ The following has been exercised on hardware:
 - PSCI system reset works (requires the keyed watchdog sequence, see below).
 - The eMMC user area can be read and written from U-Boot.
 - U-Boot environment load/save works at the configured raw offset.
-- USB CDC ACM works as a console, including persistent console multiplexing
-  with UART and host disconnect/reconnect.
+- USB CDC ACM works as an opt-in console multiplexed with UART. A transition
+  issued from ACM to `run fastboot_mode` was hardware-verified; the helper
+  returns the console to serial-only mode when fastboot exits.
 - USB Mass Storage has exposed the eMMC to the host and has been used to
   write and verify a U-Boot image.
 - UART S-record/YMODEM loading works as an alternate update mechanism.

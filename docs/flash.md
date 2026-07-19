@@ -25,11 +25,11 @@ No host root needed; works on the soldered UART. ~80 s for a 768 KiB image.
 loady 0x42000000
 # host: send the file via YMODEM
 tools/serial/ymodem_send.py u-boot-sunxi-with-spl-ddr3.bin --port /dev/ttyUSB0
-# back in U-Boot — block count must ROUND UP (e.g. 844377 B = 0x673 blocks):
+# back in U-Boot — block count must ROUND UP (844417 B = 0x672 blocks):
 mmc dev 1
-mmc write 0x42000000 0x10 0x673
-mmc read 0x43000000 0x10 0x673
-cmp.b 0x42000000 0x43000000 0xce259   # use the exact file length
+mmc write 0x42000000 0x10 0x672
+mmc read 0x43000000 0x10 0x672
+cmp.b 0x42000000 0x43000000 0xce281   # use the exact file length
 ```
 
 Prefer the CDC gadget (`tools/serial/load_fit.py`, ~171 KB/s) over the UART
@@ -38,20 +38,19 @@ Prefer the CDC gadget (`tools/serial/load_fit.py`, ~171 KB/s) over the UART
 ## Method 2 — expose the whole eMMC to the host (UMS)
 
 ```
-# in U-Boot — release the ACM console first (it holds the USB controller),
-# as ONE line over the CDC console:
-setenv stdout serial; setenv stderr serial; setenv stdin serial; ums 0 mmc 1
+# in U-Boot; if entered over ACM, keep this on one line because ACM disconnects:
+run serial_mode; ums 0 mmc 1
 # host: the eMMC appears as /dev/sdX with all 26 partitions
 sudo dd if=u-boot-sunxi-with-spl-ddr3.bin of=/dev/sdX bs=512 seek=16 conv=fsync
 ```
 
 Rootless host I/O is possible via udisks2 `OpenForRestore` (D-Bus) if you can't
-`dd` as root. `reset` restores the ACM console afterward.
+`dd` as root. Stop UMS with Ctrl-C on UART; the console remains serial-only.
 
 ## Method 3 — fastboot
 
 ```
-# in U-Boot (the helper releases the ACM console before fastboot starts):
+# in U-Boot (safe to issue from UART or as one line from ACM):
 run fastboot_mode
 # host:
 fastboot flash bootloader u-boot-sunxi-with-spl-ddr3.bin
@@ -69,13 +68,16 @@ require resetting the rest of the environment.
 - The fastboot **download buffer is 32 MiB** → images larger than that must be
   **Android-sparse** (`img2simg in.img out.simg`); the host tool chunks them
   (e.g. a ~220 MiB sparse rootfs uploads in ~7 chunks / ~155 s).
-- `fastboot usb 0` fails `g_dnl -22` if the ACM console still holds the USB
-  device controller. `run fastboot_mode` performs the release and restores ACM
-  if fastboot exits without rebooting. The helper is also injected when an
-  older saved environment does not contain it.
+- `fastboot usb 0` fails `g_dnl -22` if ACM still owns the USB controller.
+  `run fastboot_mode` selects serial-only consoles before registering fastboot
+  and returns to serial-only mode if fastboot exits. The helper is also injected
+  when an older saved environment does not contain it.
 - U-Boot's current `g_dnl` gadget layer registers one USB function at a time,
   so ACM and fastboot intentionally appear as two successive USB devices rather
   than simultaneous interfaces in one composite device.
+- Close the old ACM/fastboot/UMS handle before switching. Resolve each new
+  device by VID/serial rather than a fixed path; if the host retains a stale
+  `1f3a:1010` identity across a board reset, use a full power cycle.
 
 ## Method 4 — cold recovery via FEL
 

@@ -98,7 +98,8 @@ bound to their devices.
 
 ## Flash
 
-Enter fastboot from the U-Boot ACM console:
+Enter fastboot from the default U-Boot UART console, or issue this as one line
+from the opt-in ACM console:
 
 ```
 run fastboot_mode

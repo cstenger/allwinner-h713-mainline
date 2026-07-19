@@ -30,9 +30,8 @@ Full chain, no host: `BROM → SPL (DRAM) → BL31 → U-Boot → read boot_a �
 build/build.sh kernel        # -> build/out/h713-kernel.fit
 ```
 
-**2. Flash it to `boot_a`.** Put the board in fastboot mode — over the CDC
-console, release the ACM console and start fastboot in one line (it holds the
-USB controller otherwise):
+**2. Flash it to `boot_a`.** Put the board in fastboot mode from the default
+UART console, or issue the helper as one line from the opt-in ACM console:
 
 ```
 run fastboot_mode

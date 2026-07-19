@@ -66,15 +66,16 @@ See [docs/build.md](docs/build.md) for the underlying recipes and
 
 ## Gotchas (read before touching hardware)
 
-- **Transfers:** the USB-CDC gadget (`ttyACM*`, resolve by USB VID `1f3a`) is
-  ~15× faster than the UART for bulk loads; the hardwired UART (`ttyUSB0`) is
-  the only console that survives kernel handoffs but is **intermittently flaky**
-  — use it only when you must watch a boot. Best: stash images on eMMC.
-- **fastboot/ums vs console:** the ACM console holds the USB device controller;
-  `fastboot usb 0` fails `g_dnl -22` until you release it. Issue
-  `run fastboot_mode` as **one line over CDC**. The helper releases ACM before
-  fastboot registers, then restores ACM if fastboot returns without resetting;
-  a fastboot reboot also restores the compiled `serial,usbacm` default.
+- **Consoles/transfers:** hardwired UART (`ttyUSB0`) is the safe U-Boot default
+  and the only console that survives kernel handoff. Run `run acm_mode` to opt
+  into the faster USB-CDC console (`ttyACM*`, resolve by USB VID `1f3a`); it is
+  ~15× faster for bulk loads. Stashing large images on eMMC is faster still.
+- **One USB controller:** ACM, UMS, and fastboot are successive gadget modes,
+  not simultaneous interfaces. `run fastboot_mode` first returns all consoles
+  to UART, starts fastboot, and returns to UART when fastboot exits. It is safe
+  to issue as one line from either UART or ACM. Close stale host device handles
+  and resolve the new USB device after every transition; power-cycle the board
+  if the host retains a stale gadget identity across a reset.
 - **fastboot buffer is 32 MiB** → large images must be Android-sparse
   (`img2simg`); the host tool chunks them.
 

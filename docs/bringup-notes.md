@@ -189,12 +189,15 @@ These were removed from the final series *(`53d1921`, `0fd8b99`)* but the
 ## Transfer speeds (bench workflow)
 
 - Real UART @115200 ≈ 11 KB/s (a 7 MB image is ~10 min).
-- USB-CDC ACM gadget ≈ 171 KB/s (USB bulk, baud-independent) — **prefer CDC**
-  for bulk loads. Resolve the ACM device by USB VID `1f3a`, not a fixed
-  `/dev/ttyACM*` path (it moves across re-enumeration).
-- The ACM console **holds the USB device controller**: `fastboot usb 0` fails
-  `g_dnl -22` until released. Issue `run fastboot_mode` as **one line over
-  CDC**. The helper releases ACM, starts fastboot, and restores ACM if fastboot
-  returns; a reset restores the compiled `serial,usbacm` default as well.
+- USB-CDC ACM gadget ≈ 171 KB/s (USB bulk, baud-independent). UART is the
+  compiled and saved safe default; run `run acm_mode` to opt into CDC for bulk
+  loads. Resolve the device by USB VID `1f3a`, not a fixed `/dev/ttyACM*` path
+  (it moves across re-enumeration).
+- ACM, UMS, and fastboot share one device controller and must run successively.
+  `run fastboot_mode` first selects serial-only consoles, starts fastboot, and
+  restores serial-only consoles if fastboot returns. This transition was
+  hardware-verified when issued directly from ACM. Close the old host handle
+  before switching modes; if Linux retains a stale USB identity after reset,
+  power-cycle the board before continuing.
 - fastboot download buffer is 32 MiB → large images must be Android-sparse
   (`img2simg`); the host tool chunks them.

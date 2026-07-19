@@ -14,8 +14,9 @@ just priority. See [status.md](status.md) for what already works.
   is too big to fork, and this keeps our delta reviewable + rebasable). Driver
   work = edit the series + `build/build.sh kernel`. No "kernel fork" is needed;
   what *is* worth adding is a hackable persistent tree for iteration (Phase 1).
-- **The UART is flaky.** Getting a faster console (WiFi/SSH, Phase 2) early pays
-  for itself many times over — most bring-up iteration is bottlenecked on it.
+- **UART is the recovery anchor.** It is now the reliable U-Boot default, while
+  ACM is an explicit faster mode. Networking/SSH still removes the throughput
+  bottleneck for Linux-side iteration.
 
 ## Phase 1 — Build & OS polish (bench, near-term)
 
@@ -26,9 +27,9 @@ just priority. See [status.md](status.md) for what already works.
   the bench it boots repeatedly with a 4.5 GiB root filesystem, serial
   autologin, stable per-device identity, Cedrus/Panfrost modules, and active
   public-key-only sshd. A remote SSH login remains gated on networking.
-- **Boot cleanup:** remove the CCU `MIPS_DIAG` residue, enable or suppress the
-  expected autofs probe cleanly, model the Mali regulator, and replace the old
-  installed U-Boot through a verified raw eMMC update path.
+- **Boot cleanup — complete and hardware-verified:** removed the CCU
+  `MIPS_DIAG` residue, enabled autofs, modeled the Mali supply, installed clean
+  U-Boot `g8a601c1`, and verified UART, ACM, fastboot, and normal Debian boot.
 - **Dev workflow**: a persistent, hackable kernel worktree (separate from the
   ephemeral `build/linux-*`) + a fast "rebuild module → load on target" path.
 
