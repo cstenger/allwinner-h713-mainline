@@ -252,6 +252,9 @@ env \
     test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfw_8800d80_u02.bin"
     test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfwbt_8800d80_u02.bin"
     grep -qx "aic8800_fdrv" "$ROOTFS_TREE/etc/modules-load.d/aic8800.conf"
+    test -x "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
+    grep -q "noflow" "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
+    test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-bt-attach.service"
 
     tar --numeric-owner --xattrs --acls -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
     truncate -s "$IMAGE_SIZE" "$ROOTFS_EXT4"

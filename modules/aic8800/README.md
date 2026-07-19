@@ -84,5 +84,11 @@ symlinks — the install layout is the compiled default.
   `max-frequency = <25000000>` (was 50 MHz) because the V1 sunxi-mmc glue hits
   CMD53 DMA errors on large transfers at 50 MHz. Revisit if the V5 `aicsdio.c`
   SDIO-stability hunks are later imported.
-- BT autostart has a cold-boot baud quirk; manual
-  `hciattach /dev/ttyS1 any 1500000 flow` works.
+- **Bluetooth** is on UART1 (`ttyS1`), H4, 1.5 Mbaud. Attach with **`noflow`**,
+  not `flow`: mainline's dw-apb-uart RTS/CTS handshake blocks the controller
+  (HCI command timeout `-110`), whereas `hciattach /dev/ttyS1 any 1500000 noflow`
+  brings up `hci0` (HCI/LMP 5.4, BD = WiFi MAC + 1). `hciattach` returns 0 even
+  when the controller is mute, so verify with `hciconfig hci0 up`. The rootfs
+  ships `/usr/local/sbin/h713-bt-attach` + `h713-bt-attach.service` to do this
+  (with retry) automatically on boot. Hardware-verified: bluez discovers BLE
+  devices over the air.

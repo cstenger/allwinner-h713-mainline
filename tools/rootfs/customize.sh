@@ -112,4 +112,45 @@ aic8800_fdrv
 aic8800_btlpm
 EOF
 
-echo "[customize] configured key-only SSH, ttyS0 root autologin, and AIC8800 autoload"
+# AIC8800 Bluetooth: attach the HCI UART on ttyS1 (H4, 1.5 Mbaud). Use NO host
+# flow control — mainline dw-apb-uart RTS/CTS blocks the controller (HCI cmd
+# timeout), whereas 'noflow' works. hciattach returns 0 even when the controller
+# is mute, so the loop verifies 'hciconfig hci0 up' and retries, which also
+# absorbs the cold-boot timing before the BT firmware is ready on the UART.
+install -d -m 0755 "$R/usr/local/sbin"
+cat > "$R/usr/local/sbin/h713-bt-attach" <<'EOS'
+#!/bin/sh
+# Bring up the AIC8800 Bluetooth controller (hci0) on UART1.
+rfkill unblock bluetooth 2>/dev/null || true
+modprobe hci_uart 2>/dev/null || true
+i=0
+while [ "$i" -lt 10 ]; do
+	i=$((i + 1))
+	pkill -x hciattach 2>/dev/null || true
+	hciattach /dev/ttyS1 any 1500000 noflow || true
+	if hciconfig hci0 up 2>/dev/null && hciconfig hci0 2>/dev/null | grep -q "UP RUNNING"; then
+		exit 0
+	fi
+	sleep 2
+done
+exit 1
+EOS
+chmod 0755 "$R/usr/local/sbin/h713-bt-attach"
+cat > "$systemd_dir/h713-bt-attach.service" <<EOF
+[Unit]
+Description=AIC8800 Bluetooth HCI attach (ttyS1, H4, noflow)
+After=systemd-modules-load.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/h713-bt-attach
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -sfn ../h713-bt-attach.service \
+  "$systemd_dir/multi-user.target.wants/h713-bt-attach.service"
+
+echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach"
