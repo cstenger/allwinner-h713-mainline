@@ -583,7 +583,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	struct device *dev = &pdev->dev;
 +	struct device_node *np = dev->of_node;
 +	struct tvtop_device *tdev;
-+	int i, ret;
++	int i = 0, ret;
 +
 +	/*
 +	 * Stock driver checks strstr(pdev->name, "tvtop_pm"):

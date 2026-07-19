@@ -1,7 +1,7 @@
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/misc/sunxi_decd/decd_core.c b/drivers/misc/sunxi_decd/decd_core.c
 --- a/drivers/misc/sunxi_decd/decd_core.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/misc/sunxi_decd/decd_core.c	2026-04-03 21:07:08.077699016 +0200
-@@ -0,0 +1,252 @@
+@@ -0,0 +1,250 @@
 +// SPDX-License-Identifier: GPL-2.0
 +
 +#include <linux/cdev.h>
@@ -67,8 +67,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return dec_event_poll(file->private_data, file, wait);
 +}
 +
-+long dec_ioctl_file(struct file *file, unsigned int cmd, unsigned long arg);
-+
 +static const struct file_operations dec_fops = {
 +	.owner = THIS_MODULE,
 +	.open = dec_open,
@@ -102,8 +100,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (!dec->regs || !dec->debug || !dec->vsync)
 +		return -ENOMEM;
 +
-+	dec->regs->top = of_iomap(dev->of_node, 0);
-+	dec->regs->afbd = of_iomap(dev->of_node, 1);
++	dec->regs->afbd = of_iomap(dev->of_node, 0);
++	dec->regs->top = of_iomap(dev->of_node, 1);
 +	if (!dec->regs->top || !dec->regs->afbd)
 +		return -ENOMEM;
 +	dec->regs->workaround = dec->regs->afbd + 0x60;
@@ -571,7 +569,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	.release = single_release,
 +};
 +
-+static int video_buffer_init(struct device *dev)
++static int __maybe_unused video_buffer_init(struct device *dev)
 +{
 +	if (video_buffer_dev)
 +		return 0;
@@ -884,7 +882,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		return -ENOMEM;
 +	for (i = 0; i < nr_pages; i++)
 +		pages[i] = phys_to_page(rmem->base + i * PAGE_SIZE);
-+	vbase = vmap(pages, nr_pages, VM_MAP, pgprot_kernel);
++	vbase = vmap(pages, nr_pages, VM_MAP, PAGE_KERNEL);
 +	vfree(pages);
 +	if (!vbase)
 +		return -ENOMEM;
@@ -1435,7 +1433,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return item && item->alt_y_valid;
 +}
 +
-+static int dec_frame_queue_make_interlace_pause_sequence(struct dec_frame_queue *q)
++static int __maybe_unused dec_frame_queue_make_interlace_pause_sequence(struct dec_frame_queue *q)
 +{
 +	dec_frame_defer_release(q, q->slots[2]);
 +	if (q->slots[1])
@@ -1991,7 +1989,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/misc/sunxi_decd/decd_hw.c b/drivers/misc/sunxi_decd/decd_hw.c
 --- a/drivers/misc/sunxi_decd/decd_hw.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/misc/sunxi_decd/decd_hw.c	2026-04-03 21:07:08.077699016 +0200
-@@ -0,0 +1,532 @@
+@@ -0,0 +1,531 @@
 +// SPDX-License-Identifier: GPL-2.0
 +
 +#include <linux/bitops.h>
@@ -2414,7 +2412,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	goto out;
 +err_irq:
 +	disable_irq(dec->irq);
-+err_afbd:
 +	clk_disable_unprepare(dec->clk_afbd);
 +err_bus:
 +	clk_disable_unprepare(dec->clk_bus_disp);
@@ -2725,7 +2722,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/misc/sunxi_decd/decd_types.h b/drivers/misc/sunxi_decd/decd_types.h
 --- a/drivers/misc/sunxi_decd/decd_types.h	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/misc/sunxi_decd/decd_types.h	2026-04-03 21:07:08.081699046 +0200
-@@ -0,0 +1,345 @@
+@@ -0,0 +1,346 @@
 +// SPDX-License-Identifier: GPL-2.0
 +#pragma once
 +
@@ -2762,6 +2759,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +#define DECD_IOC_MAP_LINEAR_BUFFER 0xc010640bu
 +
 +extern int sunxi_tvtop_client_register(struct device *dev);
++long dec_ioctl_file(struct file *file, unsigned int cmd, unsigned long arg);
 +
 +struct dec_device;
 +struct dec_frame_manager;

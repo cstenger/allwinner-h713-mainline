@@ -9,7 +9,7 @@ kernel` fetches `linux-$KERNEL_VERSION`, applies these in `series` order with
 ## Provenance
 
 Patches **0001–0022** are the H713 driver series by **well0nez**
-(`github`/ `~/Projects/allwinner-h713-linux`), **GPL-2.0**, carried here **with
+(`github`/ `local/allwinner-h713-linux`), **GPL-2.0**, carried here **with
 attribution**. They are architecture-neutral (only `drivers/` and
 `include/dt-bindings/`, no `arch/`), which is why the same series that backed
 the 32-bit port also builds on arm64. Six were adapted from their original
@@ -34,8 +34,13 @@ the 32-bit port also builds on arm64. Six were adapted from their original
 
 ## Our arm64 additions
 
-- **`board/hy200_qz713df_a1_defconfig`** — the arm64 defconfig (base arm64 defconfig
-  slimmed, plus the H713 drivers above + PPU/LRADC/R-CCU). Copied into
+- **`board/hy200_qz713df_a1_defconfig`** — the bench arm64 defconfig (base
+  arm64 defconfig slimmed, plus the SoC-general H713 drivers + PPU/LRADC/R-CCU).
+  Projector-only vendor drivers (`board-mgr`, keystone motor, `tvtop`, `decd`,
+  and `cpu-comm`) are deliberately disabled here; they need a separate,
+  hardware-tested projector configuration. In particular, `cpu-comm` retains
+  the vendor 32-bit shared-pointer ABI and is not safe to enable in an arm64
+  kernel until that address model is ported. Copied into
   `arch/arm64/configs/` by the build. *(ours)*
 - **0023 — R-CCU on arm64** — upstream gates `SUN20I_D1_R_CCU` to
   `MACH_SUN8I || RISCV || COMPILE_TEST`; the H713 reuses the D1 R-CCU, so this
@@ -43,12 +48,15 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   probe). A proper patch, anchored to the `SUN20I_D1_R_CCU` block so it does not
   also touch `SUN20I_D1_CCU`. *(ours)*
 
-- **0024 — arm64 board DTS** (`arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts`
-  + its Makefile entry). Reconstructed from well0nez's 32-bit board DTS
-  (GPL-2.0, with attribution) with three arm64 changes: `arm,armv7-timer` →
-  `arm,armv8-timer`, a `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map`
-  reservation so the kernel leaves TF-A BL31 alone, and eMMC-root bootargs.
-  `#address-cells = <1>` is kept (all addresses fit in 32 bits). *(ours)*
+- **0024 — arm64 SoC + board devicetrees.** The reconstructed vendor tree is
+  split into shared `sun50i-h713.dtsi`, a clean
+  `sun50i-h713-hy200-qz713df-a1.dts` bench overlay that disables projector-only
+  hardware, and `sun50i-h713-hy200-qz713-v2.dts` for the projector. Both DTBs
+  have Makefile entries. Arm64 changes include `arm,armv8-timer` and a
+  `secure-bl31@40000000` reservation so Linux leaves TF-A BL31 alone. The
+  projector definition is structural only and remains untested on hardware.
+  *(ours, reconstructed from well0nez's GPL-2.0 DTS with attribution)*
 
-With 0024 in place `build/build.sh kernel` emits the DTB and a bootable FIT
-(`build/out/h713-kernel.fit`: gzip Image + DTB, load/entry `0x48000000`).
+With 0024 in place `build/build.sh kernel` emits both DTBs and a bench-only
+bootable FIT (`build/out/h713-kernel.fit`: gzip Image + bench DTB, load/entry
+`0x48000000`).

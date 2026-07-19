@@ -51,25 +51,27 @@ make -C external/u-boot O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-li
   and its own pylibfdt (binman needs it). The old `DTC=$O/scripts/dtc/dtc`
   recipe was for SPL-only and breaks the full image build.
 - defconfigs: `hy200_qz713df_a1_defconfig` (DDR3 bench), `hy200_qz713_v2_defconfig`
-  (LPDDR3 projector). Working image is ~844377 bytes.
+  (LPDDR3 projector). Current images are about 845 KiB.
 
 ## 3. Kernel (arm64)
 
 Carried as a **patch series on a pinned mainline tarball**, not a fork:
 `build/build.sh kernel` fetches `linux-$KERNEL_VERSION`, applies
-`patches/kernel/series` (the 22 well0nez drivers) plus our arm64 defconfig and
-the `SUN20I_D1_R_CCU` `|| ARM64` Kconfig enable, then builds `Image` with
+`patches/kernel/series` (22 well0nez driver patches plus our two arm64
+patches) and the arm64 defconfig, then builds `Image` with
 `ARCH=arm64 LLVM=1`. See [../patches/kernel/README.md](../patches/kernel/README.md).
 
-**Known gap:** the arm64 board **DTS** (`sun50i-h713-hy200-qz713df-a1` with
-`arm,armv8-timer` and a `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map`
-reservation) is not yet in the series, so the kernel stage builds a bootable
-`Image` but not a DTB / FIT. Boot is via FIT `arch=arm64`, Image at load/entry
-`0x48000000`. Landing the DTS is the first task of the 6.18.38 rebase —
-[kernel-bump.md](kernel-bump.md).
+The series includes shared H713 arm64 hardware plus separate bench and
+projector board DTS files, with `arm,armv8-timer` and a
+`secure-bl31@40000000` reservation. The kernel stage emits `Image.gz`, both
+DTBs, and a bench-only FIT with SHA-256 hashes (`arch=arm64`, load/entry
+`0x48000000`).
+Kernel preparation is keyed by a digest of the version, defconfig, series, and
+patch contents, so editing the series cannot silently reuse a stale tree.
 
 ## Local-only recovery tool
 
 `local/0001-h713-emmc-recovery-tool-LOCAL-ONLY.patch` embeds the vendor boot0
-blob — **never commit or push it**. Reapply into u-boot with `git am` only for
-hardware un-bricking.
+blob. The entire `local/` directory is ignored and purged from repository
+history; **never force-add or publish it**. Reapply into U-Boot with `git am`
+only for hardware un-bricking.

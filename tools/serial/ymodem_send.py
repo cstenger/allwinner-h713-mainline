@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Minimal YMODEM-1K sender for U-Boot `loady`. Port 'auto' resolves via USB path 1-4."""
-import os, sys, time, termios, argparse, glob
+"""Minimal YMODEM-1K sender for U-Boot ``loady``."""
+import argparse
+import os
+import sys
+import termios
+import time
+
+from h713_tty import resolve_port
 
 SOH, STX, EOT, ACK, NAK, CAN, CRCC = 0x01, 0x02, 0x04, 0x06, 0x15, 0x18, 0x43
-
-def resolve_port(path):
-    if path != "auto":
-        return path
-    t = glob.glob("/sys/bus/usb/devices/1-4:1.0/tty/*")
-    if not t:
-        raise SystemExit("board tty not found under 1-4:1.0")
-    return "/dev/" + os.path.basename(t[0])
 
 def open_port(path):
     fd = os.open(resolve_port(path), os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)

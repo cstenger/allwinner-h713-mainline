@@ -43,10 +43,9 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 - **32-bit SMP** — secondaries don't come up for a 32-bit kernel (BL31 brings
   cores up in AArch64; a 32-bit caller needs AArch32 secondaries). arm64 gets
   all four cores, so this is shelved.
-- **rootfs** — 2 GiB image on a 4.6 GiB partition; `resize2fs` to fill it and
-  swap the root password for an SSH key before any real use. The bootstrap is
-  unsigned (no Debian keyring on the Arch host) — rebuild with a keyring for
-  production. See [rootfs.md](rootfs.md).
+- **rootfs** — the flashed 2 GiB bring-up image predates the growfs hook and
+  module-install flow. Rebuild it signed, include `/lib/modules/6.18.38`, add an
+  SSH key, and disable password SSH before real use. See [rootfs.md](rootfs.md).
 
 ## Board matrix
 

@@ -7,7 +7,7 @@ move off `6.16.7` onto the newer **6.18.38 longterm** kernel.
 ## Status: rebased and building (2026-07-18)
 
 `config/versions.env` is pinned to **6.18.38**; `build/build.sh kernel` applies
-all 23 patches cleanly and builds `Image.gz`. Of the 22 driver patches, 18
+all 24 patches cleanly and builds `Image.gz`. Of the 22 driver patches, 18
 applied clean; the rebase needed five small fixes, all captured in the series:
 
 | Patch | 6.18 change | Fix |

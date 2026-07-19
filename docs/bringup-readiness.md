@@ -1,6 +1,12 @@
 # H713 U-Boot to Linux/Debian Bring-up Review
 
-> **Board naming (2026-07-18):** "HY200" = the bench board `HY200_QZ713DF_A1`; "HY310" refers to the projector, now correctly identified as `HY200_QZ713_V2`. This historical doc predates that correction.
+> **Board naming (2026-07-18):** "HY200" = the bench board `HY200_QZ713DF_A1`; "HY310" refers to the projector, now correctly identified as `HY200_QZ713_V2`. This historical doc predates that correction. Its legacy `~/Projects/...` evidence paths were consolidated under the ignored `local/` directory; use the matching basename there.
+
+> **Historical planning record:** the execution plan in this document has been
+> superseded by [status.md](status.md) and [roadmap.md](roadmap.md). In
+> particular, the project retained the factory GPT, completed the arm64 path,
+> and now boots Debian standalone. Keep this file for the evidence and decision
+> history, not as current instructions.
 
 
 Date: 2026-07-14 (v2 — revised after independent review)

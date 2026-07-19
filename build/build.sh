@@ -37,6 +37,29 @@ log()  { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 note() { printf '    \033[33m%s\033[0m\n' "$*"; }
 have() { [ -e "$ROOT/external/u-boot/Makefile" ] || { echo "error: submodules not checked out — run: git submodule update --init" >&2; exit 1; }; }
 
+hash_file() {
+  sha256sum "$1" | awk '{print $1}'
+}
+
+kernel_inputs_digest() {
+  local p
+  {
+    printf 'versions.env %s\n' "$(hash_file "$ROOT/config/versions.env")"
+    printf 'series %s\n' "$(hash_file "$ROOT/patches/kernel/series")"
+    printf 'defconfig %s\n' "$(hash_file "$ROOT/patches/kernel/board/$KERNEL_DEFCONFIG")"
+    while IFS= read -r p || [ -n "$p" ]; do
+      [ -n "$p" ] || continue
+      printf '%s %s\n' "$p" "$(hash_file "$ROOT/patches/kernel/$p")"
+    done < "$ROOT/patches/kernel/series"
+  } | sha256sum | awk '{print $1}'
+}
+
+verify_kernel_tarball() {
+  local tarball="$1"
+  printf '%s  %s\n' "$KERNEL_TARBALL_SHA256" "$tarball" |
+    sha256sum --check --status
+}
+
 # --- TF-A BL31 --------------------------------------------------------------
 build_bl31() {
   have
@@ -46,7 +69,7 @@ build_bl31() {
     CC=clang LD=ld.lld AR=llvm-ar OC=llvm-objcopy OD=llvm-objdump \
     NM=llvm-nm READELF=llvm-readelf \
     CFLAGS='-Wno-error=deprecated-non-prototype -fno-stack-protector' bl31
-  cp "$ATF/build/$ATF_PLAT/release/bl31.bin" "$OUT/bl31.bin"
+  install -m 0644 "$ATF/build/$ATF_PLAT/release/bl31.bin" "$OUT/bl31.bin"
   log "bl31.bin -> $OUT/bl31.bin ($(stat -c%s "$OUT/bl31.bin") bytes)"
 }
 
@@ -68,26 +91,56 @@ build_uboot() {
   log "U-Boot  ($UBOOT_DEFCONFIG, board=$BOARD)"
   uboot_make "$O" "$UBOOT_DEFCONFIG"
   uboot_make "$O" -j"$JOBS"
-  cp "$O/u-boot-sunxi-with-spl.bin" "$OUT/u-boot-sunxi-with-spl-$BOARD.bin"
+  install -m 0644 "$O/u-boot-sunxi-with-spl.bin" "$OUT/u-boot-sunxi-with-spl-$BOARD.bin"
   log "image -> $OUT/u-boot-sunxi-with-spl-$BOARD.bin ($(stat -c%s "$OUT/u-boot-sunxi-with-spl-$BOARD.bin") bytes)"
 }
 
 # --- Kernel (mainline tarball + patches/kernel) -----------------------------
 prepare_kernel() {
-  local tree="$ROOT/build/linux-$KERNEL_VERSION"
+  local digest tree
+  digest=$(kernel_inputs_digest)
+  tree="$ROOT/build/linux-$KERNEL_VERSION-$digest"
   local tarball="$CACHE/linux-$KERNEL_VERSION.tar.xz"
-  if [ -d "$tree" ]; then echo "$tree"; return; fi
-  [ -f "$tarball" ] || { log "fetch linux-$KERNEL_VERSION" >&2; curl -fL "$KERNEL_TARBALL_URL" -o "$tarball"; }
+  if [ -f "$tree/.h713-inputs-$digest" ]; then echo "$tree"; return; fi
+  if [ -e "$tree" ]; then
+    echo "error: incomplete kernel tree exists at $tree; remove it and retry" >&2
+    return 1
+  fi
+
+  if [ -f "$tarball" ]; then
+    verify_kernel_tarball "$tarball" || {
+      echo "error: checksum mismatch for $tarball; remove it and retry" >&2
+      return 1
+    }
+  else
+    local partial="$tarball.part"
+    log "fetch linux-$KERNEL_VERSION" >&2
+    curl --fail --location --retry 3 --output "$partial" "$KERNEL_TARBALL_URL"
+    verify_kernel_tarball "$partial" || {
+      rm -f "$partial"
+      echo "error: downloaded linux-$KERNEL_VERSION tarball failed SHA-256 verification" >&2
+      return 1
+    }
+    mv "$partial" "$tarball"
+  fi
+
+  local tmp
+  tmp=$(mktemp -d "$ROOT/build/.linux-$KERNEL_VERSION.XXXXXX")
   log "extract + patch linux-$KERNEL_VERSION" >&2
-  tar -C "$ROOT/build" -xf "$tarball"
+  tar -C "$tmp" --strip-components=1 -xf "$tarball"
   local n=0 p
   while read -r p; do
     [ -n "$p" ] || continue
-    patch -s -d "$tree" -p1 < "$ROOT/patches/kernel/$p"
+    if ! patch -s -d "$tmp" -p1 < "$ROOT/patches/kernel/$p"; then
+      rm -rf "$tmp"
+      return 1
+    fi
     n=$((n+1))
   done < "$ROOT/patches/kernel/series"
   # our arm64 defconfig (the R-CCU arm64 enable is patch 0023; see patches/kernel/README.md)
-  cp "$ROOT/patches/kernel/board/$KERNEL_DEFCONFIG" "$tree/arch/arm64/configs/"
+  cp "$ROOT/patches/kernel/board/$KERNEL_DEFCONFIG" "$tmp/arch/arm64/configs/"
+  : > "$tmp/.h713-inputs-$digest"
+  mv "$tmp" "$tree"
   note "applied $n series patches + arm64 defconfig" >&2
   echo "$tree"
 }
@@ -108,11 +161,13 @@ build_kernel() {
   local tree; tree=$(prepare_kernel)
   log "Linux kernel  ($KERNEL_DEFCONFIG, arch=$KERNEL_ARCH)"
   make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 "$KERNEL_DEFCONFIG"
-  make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 -j"$JOBS" Image dtbs
+  make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 -j"$JOBS" Image dtbs modules
   gzip -9 -kf "$tree/arch/arm64/boot/Image"
-  cp "$tree/arch/arm64/boot/Image.gz" "$OUT/Image.gz"
-  cp "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB.dtb" "$OUT/$KERNEL_DTB.dtb"
-  log "Image.gz -> $OUT/Image.gz ($(stat -c%s "$OUT/Image.gz") bytes); $KERNEL_DTB.dtb built"
+  install -m 0644 "$tree/arch/arm64/boot/Image.gz" "$OUT/Image.gz"
+  install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB.dtb" "$OUT/$KERNEL_DTB.dtb"
+  install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB_PROJECTOR.dtb" \
+    "$OUT/$KERNEL_DTB_PROJECTOR.dtb"
+  log "Image.gz -> $OUT/Image.gz ($(stat -c%s "$OUT/Image.gz") bytes); bench + projector DTBs built"
   build_kernel_fit
 }
 
@@ -135,6 +190,9 @@ build_kernel_fit() {
 			compression = "gzip";
 			load = <$KERNEL_LOAD>;
 			entry = <$KERNEL_LOAD>;
+			hash-1 {
+				algo = "sha256";
+			};
 		};
 		fdt-1 {
 			description = "$KERNEL_DTB";
@@ -142,6 +200,9 @@ build_kernel_fit() {
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
+			hash-1 {
+				algo = "sha256";
+			};
 		};
 	};
 	configurations {
@@ -161,9 +222,25 @@ ITS
 
 # --- Images / summary -------------------------------------------------------
 build_images() {
+  local files=(bl31.bin Image.gz "$KERNEL_DTB.dtb" "$KERNEL_DTB_PROJECTOR.dtb" h713-kernel.fit)
+  local image
+  for image in "$OUT"/u-boot-sunxi-with-spl-*.bin; do
+    [ -f "$image" ] && files+=("${image##*/}")
+  done
+  for image in "${files[@]}"; do
+    [ -f "$OUT/$image" ] || {
+      echo "error: missing $OUT/$image; run build/build.sh all first" >&2
+      return 1
+    }
+  done
   log "Artifacts in $OUT"
   ls -la "$OUT" 2>/dev/null || true
-  note "Flash u-boot-sunxi-with-spl-*.bin to eMMC sector 16 — see docs/flash.md (TODO)."
+  (
+    cd "$OUT"
+    sha256sum "${files[@]}" > SHA256SUMS
+  )
+  note "SHA-256 manifest -> $OUT/SHA256SUMS"
+  note "Flash U-Boot to eMMC sector 16 using a verified raw write — see docs/flash.md."
 }
 
 case "${1:-all}" in

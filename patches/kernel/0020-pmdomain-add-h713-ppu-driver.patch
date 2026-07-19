@@ -23,7 +23,7 @@
 +obj-$(CONFIG_SUN50I_H713_PPU)	+= sun50i-h713-ppu.o
 --- /dev/null
 +++ b/drivers/pmdomain/sunxi/sun50i-h713-ppu.c
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,289 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Allwinner H713 R_CCU-embedded power domain (PPU) driver.
@@ -59,7 +59,9 @@
 + *   DT index 3 -> hw domain_id 3   (VE)
 + *   DT index 4 -> hw domain_id 4   (DE)
 + *
-+ * Note: PPU registers are embedded in the R_CCU physical range (0x07010000).
++ * Note: PPU registers are embedded in the R_CCU physical range. The DT maps
++ * the PPU window from 0x07010014, avoiding a duplicate unit address while
++ * preserving the physical register layout below.
 + * This driver uses of_iomap() (no resource request) to avoid conflict with
 + * the R_CCU clock driver which already owns that resource via
 + * devm_platform_ioremap_resource(). This is an explicit out-of-tree
@@ -77,12 +79,12 @@
 +#include <linux/pm_domain.h>
 +#include <linux/reset.h>
 +
-+/* Register offsets (relative to R_CCU base) */
-+#define H713_PPU_WAIT_MODE_OFF	0x14
-+#define H713_PPU_PWR_OFF_DELAY	0x18
-+#define H713_PPU_PWR_ON_DELAY	0x1C
-+#define H713_PPU_PWR_CTRL	0x20
-+#define H713_PPU_STATUS		0x24
++/* Register offsets relative to the DT window at R_CCU + 0x14 */
++#define H713_PPU_WAIT_MODE_OFF	0x00
++#define H713_PPU_PWR_OFF_DELAY	0x04
++#define H713_PPU_PWR_ON_DELAY	0x08
++#define H713_PPU_PWR_CTRL	0x0c
++#define H713_PPU_STATUS		0x10
 +#define H713_PPU_STRIDE		0x80	/* bytes between domains */
 +
 +/* Power control commands */

@@ -18,7 +18,7 @@ intended to be upstreamable (H713/HY200 support) once validated.
 
 The bulk of the H713 driver support (CCU, pinctrl, MMC, USB PHY, PPU, LRADC,
 board-mgr, cpu-comm, tvtop, decd, cedrus, …) originates from **well0nez**
-(`~/Projects/allwinner-h713-linux`), GPL-2.0. These patches are carried here
+(`local/allwinner-h713-linux`), GPL-2.0. These patches are carried here
 **with attribution to well0nez**. Our own additions (arm64 DTS, arm64
 defconfig, the `SUN20I_D1_R_CCU` arm64 Kconfig enablement) are marked as such
 in the series.
@@ -27,12 +27,13 @@ in the series.
 
 - **Vendor boot0 / eGON blob** and the U-Boot `H713_EMMC_RECOVERY` tool that
   embeds it (`board/sunxi/h713_recovery.c`, `h713_vendor_boot0.h`). This is
-  proprietary Allwinner code — it stays **local-only**, is excluded from the
-  upstreamable series, and must not be pushed to public forks.
-- **eMMC backups, BROM dumps, captures** (`~/Projects/h713-lab`, ~84 GB) —
+  proprietary Allwinner code — it stays under the ignored `local/` directory,
+  is excluded from repository history and the upstreamable series, and must
+  not be pushed to public forks.
+- **eMMC backups, BROM dumps, captures** (`local/h713-lab`, ~84 GB) —
   contain proprietary firmware; never commit or share.
 
 ## Toolchain
 
-Built with LLVM (clang / ld.lld) — no aarch64 GCC required. Exact pinned
-versions in `config/toolchain.md` (TODO).
+Built with LLVM (clang / ld.lld) — no aarch64 GCC required. Verified host-tool
+versions are recorded in `config/toolchain.md`.

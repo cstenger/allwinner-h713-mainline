@@ -23,10 +23,8 @@ just priority. See [status.md](status.md) for what already works.
   (`=y`) drivers run today; `=m` modules aren't installed (`/lib/modules/6.18.38`
   is absent), so any loadable-module subsystem silently can't load. Add
   `make modules_install INSTALL_MOD_PATH=<rootfs>` to the build/rootfs flow.
-- **DTS split** — the current `qz713df-a1` DTS still carries well0nez's
-  projector-only nodes. Split into a shared `sun50i-h713.dtsi` + a clean bench
-  DTS (no projector nodes) + a real `qz713-v2` projector DTS (Phase 3).
-- **Rootfs**: `x-systemd.growfs` ✅; fold the manual `mmdebstrap` steps into a
+- **Rootfs**: the `x-systemd.growfs` hook is implemented, but the existing
+  artifact predates it. Fold the manual `mmdebstrap` steps into a
   `tools/rootfs/build.sh`; ssh-key + disable password auth; rebuild the
   bootstrap **signed** (Debian keyring) for a trustworthy image.
 - **Dev workflow**: a persistent, hackable kernel worktree (separate from the
@@ -54,7 +52,10 @@ Independent of the projector; ordered to unblock the dev loop first.
   replay-verified only, never run on hardware**.
 - **FEL-boot first**, verify DRAM + console, *before* writing anything to its
   eMMC. Confirm the recovery vector exists on this board.
-- Land the projector DTS; validate boot to Debian (rootfs auto-grows).
+- Audit the existing projector DTS against the physical board, enable its
+  vendor-only drivers in a separate config, and port `cpu-comm` away from its
+  inherited 32-bit virtual-pointer ABI before enabling it on arm64. Then
+  validate boot to Debian (rootfs auto-grows).
 
 ## Phase 4 — Projector subsystems (needs Phase 3)
 

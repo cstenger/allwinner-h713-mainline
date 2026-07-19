@@ -28,7 +28,8 @@ tools/serial/ymodem_send.py u-boot-sunxi-with-spl-ddr3.bin --port /dev/ttyUSB0
 # back in U-Boot — block count must ROUND UP (e.g. 844377 B = 0x673 blocks):
 mmc dev 1
 mmc write 0x42000000 0x10 0x673
-cmp.b 0x42000000 <readback> <len>     # verify
+mmc read 0x43000000 0x10 0x673
+cmp.b 0x42000000 0x43000000 0xce259   # use the exact file length
 ```
 
 Prefer the CDC gadget (`tools/serial/load_fit.py`, ~171 KB/s) over the UART
@@ -53,9 +54,17 @@ Rootless host I/O is possible via udisks2 `OpenForRestore` (D-Bus) if you can't
 # in U-Boot (release the ACM console as above, then):
 setenv stdout serial; setenv stderr serial; setenv stdin serial; fastboot usb 0
 # host:
-fastboot flash bootloader_a u-boot-sunxi-with-spl-ddr3.bin
+fastboot flash bootloader u-boot-sunxi-with-spl-ddr3.bin
 fastboot flash UDISK rootfs.simg          # rootfs (Android-sparse, see below)
 ```
+
+`bootloader` is an H713-specific raw fastboot target: LBA `0x10`, size
+`0x1ff0` sectors, ending immediately before the persistent environment at
+4 MiB. The size guard rejects an oversized image. Do **not** substitute the
+factory GPT name `bootloader_a`; that is a different partition at 36 MiB and
+is not the BROM-loaded first stage. U-Boot supplies this target at runtime
+when an older saved environment does not contain it, so upgrading does not
+require resetting the rest of the environment.
 
 - The fastboot **download buffer is 32 MiB** → images larger than that must be
   **Android-sparse** (`img2simg in.img out.simg`); the host tool chunks them
@@ -86,4 +95,4 @@ and set a U-Boot `bootcmd` — see [standalone-boot.md](standalone-boot.md)
 
 - Always name the board a flash ran on — feeding the projector's HY200 QZ713_V2 (LPDDR3) params to the
   HY200 (DDR3) board trains "OK" but reads hang.
-- A full eMMC backup exists in `~/Projects/h713-lab` (do not commit — proprietary).
+- A full eMMC backup exists in `local/h713-lab` (do not commit — proprietary).

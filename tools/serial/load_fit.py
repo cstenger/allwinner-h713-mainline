@@ -4,22 +4,20 @@
 Opens the port once, issues `loady <addr>`, waits for the receiver's 'C',
 then streams the file — no close/reopen race. For large FITs over serial.
 
-Usage: load_fit.py FILE [--port /dev/ttyUSB0] [--addr 0x50000000]
+Usage: load_fit.py FILE [--port auto|/dev/ttyUSB0] [--addr 0x50000000]
 """
-import os, sys, time, termios, argparse, glob
+import argparse
+import os
+import sys
+import termios
+import time
+
+from h713_tty import resolve_port
 
 SOH, STX, EOT, ACK, NAK, CAN, CRCC = 0x01, 0x02, 0x04, 0x06, 0x15, 0x18, 0x43
 
-def resolve(path):
-    if path != "auto":
-        return path
-    t = glob.glob("/sys/bus/usb/devices/1-4:1.0/tty/*")
-    if not t:
-        raise SystemExit("board tty not found")
-    return "/dev/" + os.path.basename(t[0])
-
 def open_port(path):
-    fd = os.open(resolve(path), os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    fd = os.open(resolve_port(path), os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     a = termios.tcgetattr(fd)
     a[0] = 0; a[1] = 0
     a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
@@ -78,7 +76,7 @@ def send_block(fd, blknum, payload):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("file")
-    ap.add_argument("--port", default="/dev/ttyUSB0")
+    ap.add_argument("--port", default="auto")
     ap.add_argument("--addr", default="0x50000000")
     args = ap.parse_args()
 

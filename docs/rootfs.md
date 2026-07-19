@@ -12,10 +12,12 @@ eMMC `UDISK` partition (`/dev/mmcblk0p26`) to a serial root login.
 
 ## 1. Bootstrap the tree
 
+Run the following from the repository root:
+
 ```
 mmdebstrap --arch=arm64 --skip=check/qemu \
   --include=systemd-sysv,ifupdown,isc-dhcp-client,openssh-server \
-  --customize-hook='../tools/rootfs/customize.sh "$1"' \
+  --customize-hook='tools/rootfs/customize.sh "$1"' \
   trixie rootfs.tar \
   'deb [trusted=yes] https://deb.debian.org/debian trixie main'
 ```
@@ -63,5 +65,6 @@ exceeds the 32 MiB fastboot buffer.
 - **Harden:** drop an SSH key into `/root/.ssh/authorized_keys` and disable
   password auth before any real use (root password is `root`).
 
-The working artifacts of a prior build live in `~/Projects/h713-arm64/rootfs-build/`
-(not committed).
+The prior bring-up artifacts under `local/h713-arm64/rootfs-build/`
+predate the growfs hook and are historical only. The next rootfs build will be
+owned by the planned repository `tools/rootfs/build.sh` flow.

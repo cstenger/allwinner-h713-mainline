@@ -47,6 +47,8 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000 in DRAM)
   here, **not** in the submodules.
 - `build/` — reproducible build orchestrator (`build.sh`).
 - `config/` — pinned version + toolchain manifest (`versions.env`, `toolchain.md`).
+- `local/` — ignored local-only captures, historical research/build trees, and
+  proprietary recovery material. It is part of the workspace, never Git.
 
 ## Quick start
 

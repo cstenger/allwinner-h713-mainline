@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """Send one command to the U-Boot console on the H713 ACM tty and print the reply.
 
-Port defaults to 'auto': resolves the board tty from USB path 1-4:1.0
-(survives the ttyACM1<->ttyACM2 rename across re-enumeration).
+Port defaults to 'auto': resolves the board tty by USB vendor ID 1f3a
+(survives USB-port and ttyACM-number changes across re-enumeration).
 """
-import os, sys, time, termios, argparse, glob
+import argparse
+import os
+import sys
+import termios
+import time
 
-def resolve_port(path):
-    if path != "auto":
-        return path
-    t = glob.glob("/sys/bus/usb/devices/1-4:1.0/tty/*")
-    if not t:
-        raise SystemExit("board tty not found under 1-4:1.0")
-    return "/dev/" + os.path.basename(t[0])
+from h713_tty import resolve_port
 
 def open_port(path):
     path = resolve_port(path)

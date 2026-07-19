@@ -1,6 +1,6 @@
 --- a/drivers/clk/sunxi-ng/ccu-sun50i-h713.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/clk/sunxi-ng/ccu-sun50i-h713.c	2026-03-30 18:00:07.698397641 +0200
-@@ -0,0 +1,1149 @@
+@@ -0,0 +1,1143 @@
 +﻿// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (c) 2024 Project HY310
@@ -533,16 +533,10 @@
 +
 +static SUNXI_CCU_GATE(usb_ohci0_clk, "usb-ohci0", "osc12M",
 +		      0xa70, BIT(31), 0);
-+static SUNXI_CCU_GATE(usb_phy0_clk, "usb-phy0", "osc24M",
-+		      0xa70, BIT(29), 0);
 +static SUNXI_CCU_GATE(usb_ohci1_clk, "usb-ohci1", "osc12M",
 +		      0xa78, BIT(31), 0);
-+static SUNXI_CCU_GATE(usb_phy1_clk, "usb-phy1", "osc24M",
-+		      0xa78, BIT(29), 0);
 +static SUNXI_CCU_GATE(usb_ohci2_clk, "usb-ohci2", "osc12M",
 +		      0xa80, BIT(31), 0);
-+static SUNXI_CCU_GATE(usb_phy2_clk, "usb-phy2", "osc24M",
-+		      0xa80, BIT(29), 0);
 +
 +static SUNXI_CCU_GATE(bus_ohci0_clk, "bus-ohci0", "ahb", 0xa8c, BIT(0), 0);
 +static SUNXI_CCU_GATE(bus_ohci1_clk, "bus-ohci1", "ahb", 0xa8c, BIT(1), 0);
@@ -1152,7 +1146,7 @@
 +late_initcall(mips_flag_late);
 --- a/drivers/clk/sunxi-ng/ccu-sun50i-h713.h	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/clk/sunxi-ng/ccu-sun50i-h713.h	2026-03-26 03:09:31.077080457 +0100
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,28 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (c) 2024 Project HY310
@@ -1170,11 +1164,6 @@
 + * Internal clock IDs — fixed-factor clocks not exported to DT consumers.
 + * These sit between the exported PLL entries and the total count.
 + */
-+#define CLK_OSC12M		130
-+#define CLK_PLL_PERIPH0_2X	131
-+#define CLK_PLL_PERIPH0_4X	132
-+#define CLK_PLL_PERIPH1_2X	133
-+#define CLK_PLL_PERIPH1_4X	134
 +#define CLK_PLL_VIDEO0_4X	135
 +#define CLK_PLL_VIDEO1_4X	136
 +#define CLK_PLL_VIDEO2_4X	137
