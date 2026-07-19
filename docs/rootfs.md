@@ -61,7 +61,12 @@ Optional arguments:
 
 The default kernel-tree discovery intentionally requires exactly one complete
 content-addressed `build/linux-6.18.38-*` tree. This prevents modules from a
-stale kernel build being installed accidentally.
+stale kernel build being installed accidentally. If a series/defconfig/`versions.env`
+edit has left several trees behind, the build aborts with `expected one ...
+found N`; prune the stale `build/linux-6.18.38-*` trees (git-ignored, safe to
+`rm -rf` — see [build.md](build.md#build-cache-cleanup)) or pass `--kernel-tree DIR`
+to select one explicitly. `build/out/rootfs.manifest` records the `kernel_tree`
+that was actually used.
 
 ## Outputs and validation
 

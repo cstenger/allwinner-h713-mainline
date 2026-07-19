@@ -71,6 +71,18 @@ DTBs, and a bench-only FIT with SHA-256 hashes (`arch=arm64`, load/entry
 Kernel preparation is keyed by a digest of the version, defconfig, series, and
 patch contents, so editing the series cannot silently reuse a stale tree.
 
+### Build cache cleanup
+
+Each distinct digest is materialized as its own `build/linux-$KERNEL_VERSION-<digest>`
+tree (~2 GiB once built), so editing the series, defconfig, or `versions.env`
+leaves the previous tree behind rather than overwriting it. These accumulate
+under `build/` (git-ignored); only the newest matches the current HEAD. Rerun
+`build/build.sh kernel` — its make output prints the tree path it uses
+(`Entering directory .../build/linux-$KERNEL_VERSION-<digest>`), and it is fast
+when that tree is warm — then `rm -rf` every other `build/linux-$KERNEL_VERSION-*`.
+Pruning matters because the rootfs builder's kernel-tree auto-detect requires
+**exactly one** such tree (see [rootfs.md](rootfs.md)); it aborts otherwise.
+
 ## Local-only recovery tool
 
 `local/0001-h713-emmc-recovery-tool-LOCAL-ONLY.patch` embeds the vendor boot0
