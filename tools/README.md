@@ -15,6 +15,14 @@ not in the supported tool set. See ../README.md gotchas.
 fastboot) and print the U-Boot `bootcmd` for power-on → Debian. See
 [../docs/standalone-boot.md](../docs/standalone-boot.md).
 
+`cpufreq-thermal-validate.sh` — runs **on the target** to validate the
+voltage-scaling CPU OPP table and its thermal cooling-device binding. It sweeps
+every OPP in both directions while reporting VDD-CPU, restores the original
+frequency and governor on every exit, and can run a bounded maximum-frequency
+stress test with an 85 C default stop threshold. It changes voltage only via
+cpufreq and never writes a regulator or thermal trip point directly. See
+[../docs/status.md](../docs/status.md).
+
 `rootfs/` — `build.sh --ssh-key FILE` builds the signed Debian arm64 rootfs,
 installs matching kernel modules, validates the ext4 image, and emits an
 Android-sparse fastboot image. `customize.sh` performs target customization
