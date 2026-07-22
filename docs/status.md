@@ -4,7 +4,7 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-07-19._
+_Last updated: 2026-07-21._
 
 ## Summary
 
@@ -36,6 +36,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | Debian 13 rootfs | ✅ signed, key-only image boots from UDISK; growfs, serial autologin, persistent first-boot identity, modules, and sshd HW-verified |
 | Standalone boot | ✅ power-on/reset → `boot_a` FIT → Debian, **no host attached** (HW-verified) |
 | USB gadget | ✅ serial-default console; opt-in CDC ACM, UMS, and fastboot modes; ACM→fastboot transition and bounded raw bootloader target HW-verified |
+| CPU frequency/thermal | ✅ PWM DVFS from 480 MHz/0.90 V through 1416 MHz/1.10 V; full-range transitions and peak load HW-verified; cpufreq cooling device backs 75/85 C passive trips |
 | Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, crypto, LRADC, IR, RTC, board-mgr, watchdog |
 
 ## Limitations / open items
@@ -47,12 +48,28 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
   successive modes, not a composite gadget. UART remains available throughout.
   Some Linux hosts retain a stale gadget identity across a warm reset; close
   the old device handle and power-cycle the board if re-enumeration is stale.
+- **PWM register map corrected for DVFS — fan/backlight not re-verified.** Patch
+  0007 was rewritten to the H713's second-generation PWM IP layout (the previous
+  map had wrong register offsets and even swapped the duty/period fields). The
+  CPU `vdd-cpu` PWM is DMM-verified against the corrected map, but the fan
+  (`board-mgr`) and panel backlight drive the same controller and have **not**
+  been re-checked against it. Re-verify both during fan/backlight bring-up.
 
 The July 19 cleanup removed the CCU `MIPS_DIAG` mappings, enabled autofs in the
 kernel, modeled the fixed 0.96 V `vdd-sys`/Mali supply from the stock DT, and
 installed the clean U-Boot build through a bounded backup/write/readback path.
 The rebuilt FIT boots with no diagnostic ioremap, autofs, or dummy-regulator
 warning; Cedrus and Panfrost still bind and zero systemd units fail.
+
+The July 21 thermal work added safe PLL_CPUX clock transitions, recovered the
+R_PWM functional clock from the captured stock kernel, and wired the PL7 PWM
+to VDD-CPU. DMM measurements validated 0.909 V for a 0.901 V request, 1.005 V
+for a 0.999 V request, and 1.107 V idle for a 1.1005 V request. Every OPP from
+480 to 1416 MHz transitions correctly. A two-minute four-core peak-frequency
+load held 1416 MHz, raised the measured rail only to 1.127 V (below the 1.16 V
+regulator ceiling), stayed below the 75 C passive trip at 68 C, and produced no
+thermal, cpufreq, OPP, PWM, clock, or PLL errors. Both 75/85 C passive trips
+are bound to the eight-state cpufreq cooling device.
 
 ## Board matrix
 

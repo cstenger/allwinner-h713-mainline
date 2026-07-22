@@ -59,8 +59,9 @@ make -C external/u-boot O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-li
 
 Carried as a **patch series on a pinned mainline tarball**, not a fork:
 `build/build.sh kernel` fetches `linux-$KERNEL_VERSION`, applies
-`patches/kernel/series` (22 well0nez driver patches plus our two arm64
-patches) and the arm64 defconfig, then builds `Image` with
+`patches/kernel/series` (22 well0nez driver patches plus our arm64 board,
+clock-transition, R-PWM clock, and voltage-scaling cpufreq patches) and the arm64 defconfig,
+then builds `Image` with
 `ARCH=arm64 LLVM=1`. See [../patches/kernel/README.md](../patches/kernel/README.md).
 
 The series includes shared H713 arm64 hardware plus separate bench and

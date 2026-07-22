@@ -57,6 +57,27 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   projector definition is structural only and remains untested on hardware.
   *(ours, reconstructed from well0nez's GPL-2.0 DTS with attribution)*
 
-With 0024 in place `build/build.sh kernel` emits both DTBs and a bench-only
+- **0025 — safe CPU clock transitions.** Registers the CPUX mux and PLL
+  notifiers used by cpufreq. CPUX temporarily switches to the 24 MHz oscillator
+  while PLL_CPUX is reprogrammed, and the notifier enables the H713 PLL lock
+  detector with `LOCK_ENABLE` (BIT 29). *(ours, hardware verified)*
+
+- **0026 — CPU cpufreq foundation.** Adds the shared initial OPP table from 480
+  to 1008 MHz and binds it to all four Cortex-A53s, providing the cooling device
+  required by the 75/85 C passive trips. Patch 0028 upgrades this table to full
+  voltage scaling. *(ours, hardware verified)*
+
+- **0027 — H713 R-PWM clocks.** Exports the recovered R-PWM functional mux/gate
+  at R-CCU offset `0x130`, plus its bus gate and reset at `0x13c`. Both clocks
+  are required for the PL7 VDD-CPU PWM output. *(ours, hardware verified)*
+
+- **0028 — voltage-scaling CPU DVFS.** Models VDD-CPU as the stock R-PWM
+  channel 1 / PL7 regulator and extends the default-bin OPP table from 480 MHz
+  at 0.90 V through 1416 MHz at 1.10 V. DMM measurements validate the complete
+  PWM transfer direction and representative low/mid/high voltage points; all
+  transitions, the thermal bindings, and a two-minute four-core peak load are
+  hardware verified. *(ours, hardware verified)*
+
+With these patches in place `build/build.sh kernel` emits both DTBs and a bench-only
 bootable FIT (`build/out/h713-kernel.fit`: gzip Image + bench DTB, load/entry
 `0x48000000`).
