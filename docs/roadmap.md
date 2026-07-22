@@ -32,6 +32,23 @@ just priority. See [status.md](status.md) for what already works.
   U-Boot `g8a601c1`, and verified UART, ACM, fastboot, and normal Debian boot.
 - **Dev workflow**: a persistent, hackable kernel worktree (separate from the
   ephemeral `build/linux-*`) + a fast "rebuild module → load on target" path.
+- **WiFi SDIO stability — fixed for load; bench-validated (no regression).**
+  The AIC8800 `mmc1` link wedged under sustained load: `FIFO_RUN_ERROR` on CMD53
+  that the phase-rotation retry can't recover (phase fixes CRC, not underruns) →
+  CMD53 timeout → `aic8800_fdrv` `cmdqueue drain timeout` leaks an atomic context
+  → `scheduling while atomic`. Patch 0006 now **classifies the CMD53 error**: FIFO
+  underruns (`FIFO_RUN_ERROR`/`HARD_WARE_LOCKED`) get FIFO/DMA-reset recovery with
+  a short AHB back-off and *no* phase rotation (which would only knock a good link
+  off its stock sampling phase); CRC/timing errors keep the phase-rotation path.
+  Independent retry budgets (7 phase / 15 FIFO) keep a burst of load-induced
+  underruns from exhausting the CRC budget and surfacing as a hard `-ETIMEDOUT`.
+  **Bench (2026-07-22):** 384 MB of sustained WiFi transfer completed with zero
+  SDIO errors and no wedge (previously ~12 MB wedged it); the old failure is gone.
+  The FIFO recovery path itself was **not provoked** — the SDIO data path never
+  underran this session (the marginal weak-RF placement that produced the original
+  `FIFO_RUN_ERROR` didn't reproduce), so it stands as defense-in-depth; to observe
+  it firing, retest from the −71…−80 dBm spot. DVFS was ruled out (wedged even
+  pinned at 1416 MHz).
 
 ## Phase 2 — Bench subsystem bring-up (SoC-general)
 
