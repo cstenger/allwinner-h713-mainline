@@ -62,6 +62,21 @@ just priority. See [status.md](status.md) for what already works.
   `FIFO_RUN_ERROR` didn't reproduce), so it stands as defense-in-depth; to observe
   it firing, retest from the −71…−80 dBm spot. DVFS was ruled out (wedged even
   pinned at 1416 MHz).
+- **AIC8800 firmware-command crash — detected + logged; no auto-recovery
+  (by design).** Under *pathological* CPU/bus starvation (perf-pinned +
+  memcpy/eMMC contention), the vendor driver's firmware command→confirm handshake
+  times out (`cmd timed-out` → `wlan error reset flow`, `rwnx_cmds.c`), marking the
+  cmd queue `CRASHED` and firing a `DHDISDOWN=1` uevent → WiFi/BT stay down (kernel
+  survives; no atomic wedge). Distinct from the sunxi-mmc FIFO bug (no CMD53 error
+  occurs). **Auto-recovery was attempted and abandoned as unsafe:** an
+  unbind+reload of the SDIO stack races the mmc/driver core into a NULL-deref Oops
+  (`__device_attach_driver` via `mmc_rescan`), and a graceful reboot fallback hung
+  on BT teardown — bench-observed, board needed a power-cycle. The chip only comes
+  back cleanly on a full boot. So the rootfs ships a **log-only notifier**
+  (`h713-wifi-crashlog`, udev on `DHDISDOWN=1` → journal + console line); the
+  operator reboots. Only reproduces under unrealistic load. Minor follow-up: a
+  `TimeoutStopSec` on `h713-bt-attach.service` so a post-crash graceful reboot
+  doesn't wait ~3 min on BT teardown.
 
 ## Phase 2 — Bench subsystem bring-up (SoC-general)
 

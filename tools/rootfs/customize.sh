@@ -112,6 +112,18 @@ aic8800_fdrv
 aic8800_btlpm
 EOF
 
+# Quiet the WiFi driver for production. aic8800_fdrv's aicwf_dbg_level defaults
+# to LOGERROR|LOGINFO|LOGDEBUG|LOGTRACE|LOGFW (0x40F); the DEBUG/TRACE bits flood
+# the serial console under load (per-command rwnx_send_msg / rwnx_fill_station_info
+# spam). Keep errors only. Flags (aicwf_debug.h): ERROR=0x1 INFO=0x2 TRACE=0x4
+# DEBUG=0x8 FW=0x400. It stays a live knob: raise it for debugging via
+# echo N > /sys/module/aic8800_fdrv/parameters/aicwf_dbg_level  and read it back
+# from `journalctl -k` (kernel log), not the console (e.g. 0x403 adds firmware logs).
+install -d -m 0755 "$R/etc/modprobe.d"
+cat > "$R/etc/modprobe.d/aic8800.conf" <<EOF
+options aic8800_fdrv aicwf_dbg_level=0x1
+EOF
+
 # AIC8800 Bluetooth: attach the HCI UART on ttyS1 (H4, 1.5 Mbaud). Use NO host
 # flow control — mainline dw-apb-uart RTS/CTS blocks the controller (HCI cmd
 # timeout), whereas 'noflow' works. hciattach returns 0 even when the controller
@@ -152,6 +164,50 @@ WantedBy=multi-user.target
 EOF
 ln -sfn ../h713-bt-attach.service \
   "$systemd_dir/multi-user.target.wants/h713-bt-attach.service"
+
+# AIC8800 WiFi firmware-crash notifier (log only -- no auto-recovery). Under
+# heavy load the vendor fdrv can time out on its firmware command handshake
+# ("cmd timed-out / wlan error reset flow"), mark its cmd queue CRASHED, and
+# fire a KOBJ_CHANGE uevent with DHDISDOWN=1. There is NO safe in-place
+# recovery: unbinding+reloading the SDIO stack races the mmc/driver core into a
+# NULL-deref Oops (bench-observed), and the chip only comes back cleanly on a
+# full boot. So this handler just records the fault clearly (journal + console);
+# WiFi and BT (same combo chip) stay down until the operator reboots the device.
+install -d -m 0755 "$R/usr/local/sbin"
+cat > "$R/usr/local/sbin/h713-wifi-crashlog" <<'WIFICRASHLOG'
+#!/bin/sh
+# h713-wifi-crashlog: record an AIC8800 WiFi firmware crash (DHDISDOWN).
+#
+# The vendor driver (aic8800_fdrv) times out on its firmware command->confirm
+# handshake under load, prints "cmd timed-out / wlan error reset flow", marks
+# its command queue CRASHED, and fires a KOBJ_CHANGE uevent with DHDISDOWN=1
+# (rwnx_cmds.c: aic8800_start_system_reset_flow). There is no reliable in-place
+# recovery from userspace -- unbinding+reloading the SDIO stack races the mmc
+# driver core into a kernel Oops -- so this handler only logs the fault. WiFi
+# and BT (the same combo chip) stay down until the device is rebooted.
+TAG=h713-wifi-crashlog
+MSG="AIC8800 WiFi firmware crashed (DHDISDOWN) -- WiFi/BT are down until the device is rebooted"
+logger -t "$TAG" -- "$MSG" 2>/dev/null || true
+printf '%s: %s\n' "$TAG" "$MSG" > /dev/kmsg 2>/dev/null || true
+WIFICRASHLOG
+chmod 0755 "$R/usr/local/sbin/h713-wifi-crashlog"
+
+# udev fires the notifier on the driver's DHDISDOWN=1 uevent. The unit is
+# triggered on demand (no [Install]/enable); systemd coalesces repeats.
+install -d -m 0755 "$R/etc/udev/rules.d"
+cat > "$R/etc/udev/rules.d/70-h713-wifi-crashlog.rules" <<'EOF'
+# AIC8800 firmware crash -> aic8800_fdrv sends KOBJ_CHANGE with DHDISDOWN=1.
+ACTION=="change", ENV{DHDISDOWN}=="1", TAG+="systemd", ENV{SYSTEMD_WANTS}+="h713-wifi-crashlog.service"
+EOF
+cat > "$systemd_dir/h713-wifi-crashlog.service" <<EOF
+[Unit]
+Description=Log an AIC8800 WiFi firmware crash (DHDISDOWN); no auto-recovery
+# Launched by udev (70-h713-wifi-crashlog.rules); not started at boot.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/h713-wifi-crashlog
+EOF
 
 # Optional boot WiFi hotspot (AP). Enabled only when the build passed
 # HOTSPOT_ENABLED=1 (i.e. local/hotspot.conf existed). A dedicated AP owns wlan0
