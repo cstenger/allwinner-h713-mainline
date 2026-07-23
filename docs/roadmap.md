@@ -120,3 +120,8 @@ were curated with this in mind (see [../PROVENANCE.md](../PROVENANCE.md)).
   fallback) if a flash goes wrong?
 - **Display output on the bench** — is there HDMI (or only the projector's LCD
   path)? Determines how far GPU/display bring-up can go on the bench alone.
+- **Status-LED source** — the power LED goes red → blue (the board's "up and
+  running" colour) on Linux boot, but nothing we wrote drives it: there is no
+  `gpio-leds` node (PL0/PL1 appear only in the U-Boot/ARISC `prj` node) and no
+  U-Boot status-LED config. Some R_PIO consumer during Linux boot asserts PL1;
+  identify it when doing status-LED / R-block work. Benign, possibly useful.
