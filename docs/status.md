@@ -48,12 +48,26 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
   successive modes, not a composite gadget. UART remains available throughout.
   Some Linux hosts retain a stale gadget identity across a warm reset; close
   the old device handle and power-cycle the board if re-enumeration is stale.
-- **PWM register map corrected for DVFS — fan/backlight not re-verified.** Patch
-  0007 was rewritten to the H713's second-generation PWM IP layout (the previous
-  map had wrong register offsets and even swapped the duty/period fields). The
-  CPU `vdd-cpu` PWM is DMM-verified against the corrected map, but the fan
-  (`board-mgr`) and panel backlight drive the same controller and have **not**
-  been re-checked against it. Re-verify both during fan/backlight bring-up.
+- **Main-PWM output validated; cooling fan is a power-enable, not PWM.** Patch
+  0007's second-generation PWM map (previously proven only indirectly via the
+  R_PWM `vdd-cpu` rail, patch 0028) was confirmed on real output during fan
+  bring-up: on the bench, main `pwm@2000c00` channel 0 read back `enabled,
+  39958/40000 ns` in `/sys/kernel/debug/pwm` with PH17 muxed to `pwm0`. But the
+  fan itself is a **3-wire (VCC/GND/tach) on/off part**, not PWM-speed-controlled
+  — DMM on the header showed the tach line at its 3.3 V pull-up (sense wired) and
+  the +V pin floating (~1.1 V, decaying = unpowered). It stayed dead because the
+  `fan_power_hog` for PB5 (shared backlight/fan enable) was malformed (linear
+  `<37>` on a 3-cell controller → hog skipped → rail off). Patch 0030 fixes the
+  hog to `<1 5>`; the earlier `pwm-fan`-on-PWM0 model was dropped (PH17 is the
+  tach). **Bench-confirmed: the fan spins.** The fan and the LED backlight now
+  both come up **at power-on from U-Boot** — `board_init` drives the shared PB5
+  fan/backlight-enable under a bench-only `CONFIG_H713_POWERON_LIGHT_FAN`, so the
+  panel is lit and cooled from reset (projector-as-boot-monitor), with the fan a
+  hard interlock for the light. **Backlight brightness is still open:** the light
+  is dim and PB4/PWM2 (the projector `panel_pwm_ch`) was proven *not* to control
+  it — a correct running 25 kHz PWM on PB4 changed nothing — so brightness is set
+  by an LED-driver mechanism yet to be RE'd, and is a U-Boot-level TODO. Panel
+  backlight (channel 2 / PB4) also still needs its own re-verification.
 
 The July 19 cleanup removed the CCU `MIPS_DIAG` mappings, enabled autofs in the
 kernel, modeled the fixed 0.96 V `vdd-sys`/Mali supply from the stock DT, and

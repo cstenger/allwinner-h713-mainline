@@ -59,6 +59,26 @@ Independent of the projector; ordered to unblock the dev loop first.
    reference points at an **AIC8800** combo, SDIO or USB); then driver +
    firmware + DT node. Everything downstream gets easier once this lands.
 2. **Thermal / cpufreq / DVFS** — safety + real performance.
+   - **Bench cooling fan (0030) — DONE; fan + backlight power-on in U-Boot.**
+     The fan is a 3-wire (VCC/GND/tach) on/off part, not PWM-speed-controlled
+     (DMM: tach at its 3.3 V pull-up, +V floating/unpowered). It stayed dead
+     because the PB5 backlight/fan power-enable hog was malformed (`<37>` on a
+     3-cell sunxi controller → skipped). 0030 fixes the hog to `<1 5>`; the
+     earlier `pwm-fan`-on-PWM0 model was dropped once PH17 proved to be the tach
+     line, not a control output (main-PWM output itself *was* validated in the
+     process). **Bench-confirmed: the fan spins.** Both the fan and the LED
+     backlight now come up **at power-on from U-Boot** (`board_init` drives PB5
+     under `CONFIG_H713_POWERON_LIGHT_FAN`, bench-only), so the panel is lit and
+     cooled from reset like a monitor showing the boot process; PB5 being the
+     shared enable makes the fan a hard interlock for the light.
+   - **Backlight BRIGHTNESS — open, wanted at the U-Boot level.** The light
+     comes on but dim, and brightness is **not** yet controllable. PB4/PWM2 (the
+     projector DTS's `panel_pwm_ch`) was proven **not** to be this board's
+     control — a correct, running 25 kHz PWM on PB4 (counter advancing, pin
+     muxed) changed brightness not at all — so the LED level is set elsewhere
+     (LED-driver IC / separate rail, part of the display pipeline) and needs RE.
+     Do not re-attempt PB4/PWM2. Tach read-back on PH17 and the projector's
+     fan+NTC via `board-mgr` also remain later work.
 3. **Crypto (sun8i-ce) + RNG.**
 4. **Video decode (Cedrus / VE3)** — headless-testable (patch 0022 in series).
 5. **GPU (Mali-G31 / Panfrost)** — driver is mainline; needs a working display

@@ -78,6 +78,26 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   transitions, the thermal bindings, and a two-minute four-core peak load are
   hardware verified. *(ours, hardware verified)*
 
+- **0030 — fix fan-power gpio-hog cell count.** The bench cooling fan is a
+  3-wire (VCC/GND/tach) on/off fan, not a PWM-speed part, and it never spun
+  because its +V rail was never enabled: the `fan_power_hog` for PB5 (the shared
+  backlight/fan power enable) used `gpios = <37 ...>` — a linear GPIO number on a
+  `#gpio-cells = <3>` sunxi controller, which gpiolib can't parse, so the hog was
+  silently skipped (`/sys/kernel/debug/gpio` showed zero claimed lines on
+  gpiochip0). Corrects it to the 3-cell `<1 5 GPIO_ACTIVE_HIGH>` (bank B, pin 5),
+  which also restores the projector's shared backlight-enable rail. Supersedes an
+  earlier `pwm-fan`-on-PWM0 attempt: PWM0/PH17 was verified emitting on real
+  silicon (debugfs register read-back + pinmux), which *did* validate the
+  corrected main-PWM map (0007), but PH17 is the fan's tachometer, not a control
+  line, so PWM drive does nothing to a 3-wire motor. `pwm-fan`, its `&pwm` mux,
+  and `CONFIG_HWMON`/`CONFIG_SENSORS_PWM_FAN` are dropped. **Bench-confirmed: the
+  fan spins**, and it (plus the LED backlight) now comes up at power-on from
+  U-Boot — `board_init` drives the shared PB5 enable, so the panel is lit and
+  cooled from reset with the fan a hard interlock. Backlight *brightness* is
+  still open: PB4/PWM2 was proven not to control this LED (a running 25 kHz PWM
+  changed nothing), so it needs a U-Boot-level RE — see the roadmap.
+  *(ours, hardware-confirmed)*
+
 With these patches in place `build/build.sh kernel` emits both DTBs and a bench-only
 bootable FIT (`build/out/h713-kernel.fit`: gzip Image + bench DTB, load/entry
 `0x48000000`).

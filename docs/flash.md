@@ -53,16 +53,20 @@ Rootless host I/O is possible via udisks2 `OpenForRestore` (D-Bus) if you can't
 # in U-Boot (safe to issue from UART or as one line from ACM):
 run fastboot_mode
 # host:
-fastboot flash bootloader u-boot-sunxi-with-spl-ddr3.bin
+fastboot flash uboot u-boot-sunxi-with-spl-ddr3.bin   # raw first stage @ LBA 0x10
 fastboot flash UDISK rootfs.simg          # rootfs (Android-sparse, see below)
 ```
 
-`bootloader` is an H713-specific raw fastboot target: LBA `0x10`, size
-`0x1ff0` sectors, ending immediately before the persistent environment at
-4 MiB. The size guard rejects an oversized image. Do **not** substitute the
-factory GPT name `bootloader_a`; that is a different partition at 36 MiB and
-is not the BROM-loaded first stage. U-Boot supplies this target at runtime
-when an older saved environment does not contain it, so upgrading does not
+`uboot` and `bootloader` are the same H713-specific raw fastboot target: LBA
+`0x10`, size `0x1ff0` sectors, ending immediately before the persistent
+environment at 4 MiB. The size guard rejects an oversized image. **Prefer the
+`uboot` alias** — a slot-aware fastboot host silently rewrites `bootloader`
+into the A/B slot name `bootloader_a` and writes the unused 36 MiB GPT
+partition there instead of the LBA-0x10 first stage (a flash that "succeeds"
+but changes nothing that boots). `uboot` is not a GPT partition name, so the
+host passes it through verbatim. Both aliases are in U-Boot's default env
+(`fastboot_raw_partition_{uboot,bootloader}`), and U-Boot injects them at
+runtime when an older saved environment lacks them, so upgrading does not
 require resetting the rest of the environment.
 
 - The fastboot **download buffer is 32 MiB** → images larger than that must be
