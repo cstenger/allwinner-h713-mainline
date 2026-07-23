@@ -4,7 +4,7 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-07-21._
+_Last updated: 2026-07-23._
 
 ## Summary
 
@@ -37,7 +37,8 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | Standalone boot | ✅ power-on/reset → `boot_a` FIT → Debian, **no host attached** (HW-verified) |
 | USB gadget | ✅ serial-default console; opt-in CDC ACM, UMS, and fastboot modes; ACM→fastboot transition and bounded raw bootloader target HW-verified |
 | CPU frequency/thermal | ✅ PWM DVFS from 480 MHz/0.90 V through 1416 MHz/1.10 V; full-range transitions and peak load HW-verified; cpufreq cooling device backs 75/85 C passive trips |
-| Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, crypto, LRADC, IR, RTC, board-mgr, watchdog |
+| Reboot → fastboot / U-Boot | ✅ **done, both modes HW-validated (2026-07-23).** Two `nvmem-reboot-mode` modes over RTC GP7: `reboot fastboot` (magic `0xfa57b007`) → U-Boot `preboot` → fastboot, and `reboot bootloader` (magic `0xb007c0de`) → `preboot` sets `bootdelay -1` → U-Boot `=>` prompt — both confirmed console-free on the bench. `RTC_DRV_SUN6I` owns the region and exposes GP7 as an nvmem cell (`nvmem-cells` → `reboot-mode-magic@1c`); the old overlapping `syscon-reboot-mode` is gone. |
+| Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, crypto, LRADC, IR, board-mgr, watchdog, **RTC** (`sun6i-rtc`, enabled — the canonical osc32k/iosc clock provider and the GP-register nvmem device, both HW-confirmed; `rtc0` reads back but the RTC is unset at first boot, and full set/read timekeeping was not exercised on the minimal bench rootfs — no `hwclock`). |
 
 ## Limitations / open items
 
@@ -84,6 +85,38 @@ load held 1416 MHz, raised the measured rail only to 1.127 V (below the 1.16 V
 regulator ceiling), stayed below the 75 C passive trip at 68 C, and produced no
 thermal, cpufreq, OPP, PWM, clock, or PLL errors. Both 75/85 C passive trips
 are bound to the eight-state cpufreq cooling device.
+
+The July 23 reboot→fastboot work finished the mechanism in code. `RTC_DRV_SUN6I`
+is now enabled: the H713 RTC (H6-compatible block at `0x07090000`) gets a real
+`sun6i-rtc` driver, which registers the previously-orphaned osc32k/iosc clocks,
+provides timekeeping, and exposes the eight general-purpose registers as a
+battery-backed nvmem device. The reboot handoff moved off the `syscon-reboot-mode`
+window (which overlapped the RTC register region) onto **`nvmem-reboot-mode`** over
+a fixed nvmem cell (`reboot-mode-magic@1c` → GP7, physical `0x0709011c`) defined
+as a child of the rtc node; mainline's `add_legacy_fixed_of_cells` makes the cell
+phandle-referenceable with no driver change. The magic (`0xfa57b007`), the
+physical address, and the entire U-Boot side are unchanged, so no U-Boot rework
+was needed. **Hardware-validated on the bench (2026-07-23):** the new kernel
+boots to Debian, `sun6i-rtc` binds as `rtc0`, the RTC nvmem device
+(`7090000.rtc/nvmem0`) and the `reboot-mode-magic@1c` cell both register, and the
+`nvmem-reboot-mode` consumer binds to that cell; the reboot trigger then landed
+the board in U-Boot fastboot with no console interaction (host saw the fastboot
+device). One loose end, not blocking: `rtc0` read back as unset at first boot
+(hctosys `unable to read` = an invalid, never-set time — expected), and full
+set/read timekeeping was not exercised because the minimal rootfs ships no
+`hwclock` (use `timedatectl` or add util-linux to check it later).
+
+A follow-on refinement (2026-07-23) split the single handoff into **two modes**
+so the two reboot verbs mean different things: `reboot fastboot` keeps magic
+`0xfa57b007` → fastboot, while `reboot bootloader` now uses magic `0xb007c0de`
+and, in `preboot`, runs `setenv bootdelay -1` to fall through to the U-Boot
+prompt instead of fastboot. The DTS `reboot-mode` node carries both
+(`mode-fastboot`/`mode-bootloader`); the U-Boot side is the runtime `preboot` env
+(MMC @ `0x400000`):
+`if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi; usb start`.
+Both verbs were **hardware-validated on the bench (2026-07-23):** `reboot
+fastboot` lands in fastboot and `reboot bootloader` drops to the U-Boot `=>`
+prompt, each console-free.
 
 ## Board matrix
 

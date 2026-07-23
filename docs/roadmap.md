@@ -32,6 +32,19 @@ just priority. See [status.md](status.md) for what already works.
   U-Boot `g8a601c1`, and verified UART, ACM, fastboot, and normal Debian boot.
 - **Dev workflow**: a persistent, hackable kernel worktree (separate from the
   ephemeral `build/linux-*`) + a fast "rebuild module → load on target" path.
+- **Reboot → fastboot / U-Boot — done, both modes HW-validated (2026-07-23).**
+  `RTC_DRV_SUN6I` is enabled (real RTC driver, the
+  previously-orphaned osc32k/iosc clocks, GP registers as nvmem), and reboot-mode
+  moved off the overlapping `syscon-reboot-mode` onto **`nvmem-reboot-mode`** over
+  a fixed nvmem cell (`reboot-mode-magic@1c`) under the rtc node — no `sun6i-rtc`
+  patch needed (`add_legacy_fixed_of_cells` makes the DT cell
+  phandle-referenceable). The nvmem→GP7→`preboot`→fastboot chain was proven
+  console-free on the bench. A follow-on split gives the two reboot verbs
+  distinct meanings: `reboot fastboot` (`0xfa57b007`) → fastboot;
+  `reboot bootloader` (`0xb007c0de`) → `preboot` runs `setenv bootdelay -1` →
+  U-Boot prompt. DTS carries both modes; the U-Boot side is the runtime `preboot`
+  env. Both verbs were confirmed console-free on the bench. Minor loose end: RTC
+  timekeeping (set/read) unexercised on the minimal rootfs (no `hwclock`).
 - **WiFi SDIO stability — fixed for load; bench-validated (no regression).**
   The AIC8800 `mmc1` link wedged under sustained load: `FIFO_RUN_ERROR` on CMD53
   that the phase-rotation retry can't recover (phase fixes CRC, not underruns) →
