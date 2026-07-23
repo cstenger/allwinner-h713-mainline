@@ -148,8 +148,16 @@ were curated with this in mind (see [../PROVENANCE.md](../PROVENANCE.md)).
   fallback) if a flash goes wrong?
 - **Display output on the bench** — is there HDMI (or only the projector's LCD
   path)? Determines how far GPU/display bring-up can go on the bench alone.
-- **Status-LED source** — the power LED goes red → blue (the board's "up and
-  running" colour) on Linux boot, but nothing we wrote drives it: there is no
-  `gpio-leds` node (PL0/PL1 appear only in the U-Boot/ARISC `prj` node) and no
-  U-Boot status-LED config. Some R_PIO consumer during Linux boot asserts PL1;
-  identify it when doing status-LED / R-block work. Benign, possibly useful.
+- **Status-LED source — RESOLVED (hardware rail indicator; bench-probed
+  2026-07-23).** The power LED goes red → blue at main power-on and it is **not**
+  software-driven. Probed live at the U-Boot prompt (via `reboot bootloader`):
+  blue is already lit pre-Linux, so it is no Linux consumer. U-Boot configures
+  only PL6 (the vdd-cpu/sys enable from `standby_param`) and leaves PL0/PL1
+  **disabled** (`R_PIO CFG0 @0x07022000 = 0xf1ffffff`). Muxing PL1 (blue) then
+  PL0 (red) as outputs and driving each high *and* low (`mw.l 0x07022010` /
+  `0x07022000`) moved neither LED. So the status LED is a bi-colour power
+  indicator wired to the rails (red = standby rail, blue = main rails up); it
+  flips at the same instant PB5 enables the lamp/fan — hence the apparent PB5
+  correlation, but there is no shared line and no GPIO involved. The vendor
+  `led0/led1 = PL0/PL1` + `standby_param` mapping is not honoured at runtime on
+  this revision (ARISC-only during real standby entry, or a different board rev).
