@@ -38,7 +38,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | USB gadget | ✅ serial-default console; opt-in CDC ACM, UMS, and fastboot modes; ACM→fastboot transition and bounded raw bootloader target HW-verified |
 | CPU frequency/thermal | ✅ PWM DVFS from 480 MHz/0.90 V through 1416 MHz/1.10 V; full-range transitions and peak load HW-verified; cpufreq cooling device backs 75/85 C passive trips |
 | Reboot → fastboot / U-Boot | ✅ **done, both modes HW-validated (2026-07-23).** Two `nvmem-reboot-mode` modes over RTC GP7: `reboot fastboot` (magic `0xfa57b007`) → U-Boot `preboot` → fastboot, and `reboot bootloader` (magic `0xb007c0de`) → `preboot` sets `bootdelay -1` → U-Boot `=>` prompt — both confirmed console-free on the bench. `RTC_DRV_SUN6I` owns the region and exposes GP7 as an nvmem cell (`nvmem-cells` → `reboot-mode-magic@1c`); the old overlapping `syscon-reboot-mode` is gone. |
-| Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, crypto, LRADC, IR, board-mgr, watchdog, **RTC** (`sun6i-rtc`, enabled — the canonical osc32k/iosc clock provider and the GP-register nvmem device, both HW-confirmed; `rtc0` reads back but the RTC is unset at first boot, and full set/read timekeeping was not exercised on the minimal bench rootfs — no `hwclock`). |
+| Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, crypto, LRADC, IR, board-mgr, watchdog, **RTC** (`sun6i-rtc`, enabled — the canonical osc32k/iosc clock provider and the GP-register nvmem device, both HW-confirmed; `rtc0` reads back but the RTC is unset at first boot; set/read timekeeping is now HW-confirmed via the H713 linear-day variant (patch 0031) — `hwclock`/`timedatectl` read the correct date). |
 
 ## Limitations / open items
 
@@ -103,8 +103,10 @@ boots to Debian, `sun6i-rtc` binds as `rtc0`, the RTC nvmem device
 the board in U-Boot fastboot with no console interaction (host saw the fastboot
 device). One loose end, not blocking: `rtc0` read back as unset at first boot
 (hctosys `unable to read` = an invalid, never-set time — expected), and full
-set/read timekeeping was not exercised because the minimal rootfs ships no
-`hwclock` (use `timedatectl` or add util-linux to check it later).
+set/read timekeeping is now HW-validated: with `hwclock` (`util-linux-extra`)
+shipped and the H713 modeled as a linear-day RTC (patch 0031 — the H6 model
+read the year as 1970 because the sun50iw12 stores a linear day count),
+`date`/`hwclock`/`timedatectl` set and read the correct 2026 date.
 
 A follow-on refinement (2026-07-23) split the single handoff into **two modes**
 so the two reboot verbs mean different things: `reboot fastboot` keeps magic

@@ -155,7 +155,13 @@ CONFIG_LEDS_TRIGGERS=y
 CONFIG_LEDS_TRIGGER_HEARTBEAT=y
 CONFIG_LEDS_TRIGGER_DEFAULT_ON=y
 CONFIG_RTC_CLASS=y
-# CONFIG_RTC_INTF_SYSFS is not set
+# Expose the RTC over sysfs (/sys/class/rtc/rtc0/{time,date,since_epoch}) and
+# emulate the once-per-second update interrupt in software. sun6i-rtc provides
+# no hardware UIE, so without these `hwclock -r` select()-times-out and the
+# sysfs time files are absent; with them `hwclock`/`timedatectl` read the clock.
+CONFIG_RTC_INTF_SYSFS=y
+CONFIG_RTC_INTF_DEV=y
+CONFIG_RTC_INTF_DEV_UIE_EMUL=y
 # CONFIG_RTC_INTF_PROC is not set
 CONFIG_RTC_NVMEM=y
 CONFIG_RTC_DRV_AC100=y
