@@ -37,8 +37,9 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | Standalone boot | ✅ power-on/reset → `boot_a` FIT → Debian, **no host attached** (HW-verified) |
 | USB gadget | ✅ serial-default console; opt-in CDC ACM, UMS, and fastboot modes; ACM→fastboot transition and bounded raw bootloader target HW-verified |
 | CPU frequency/thermal | ✅ PWM DVFS from 480 MHz/0.90 V through 1416 MHz/1.10 V; full-range transitions and peak load HW-verified; cpufreq cooling device backs 75/85 C passive trips |
+| Crypto Engine + RNG | ⚠️ **disabled — mainline `sun8i-ce` can't drive the H713 CE** (bench-proven). Enabling it registers every algorithm, then each fails its known-answer self-test. Wiring the stock's 2nd interrupt fixes task completion, but the CE then rejects mainline's descriptors — ciphers `address invalid`, AES/SHA `algorithm not supported` — a different descriptor **format** (vendor two-bank block), not an IRQ/clock/addressing gap. No CE TRNG. The A53's ARMv8 AES/SHA (software ~2 GB/s) is faster anyway. Re-enabling needs descriptor-level RE of the vendor `sunxi-ce` (no source). |
 | Reboot → fastboot / U-Boot | ✅ **done, both modes HW-validated (2026-07-23).** Two `nvmem-reboot-mode` modes over RTC GP7: `reboot fastboot` (magic `0xfa57b007`) → U-Boot `preboot` → fastboot, and `reboot bootloader` (magic `0xb007c0de`) → `preboot` sets `bootdelay -1` → U-Boot `=>` prompt — both confirmed console-free on the bench. `RTC_DRV_SUN6I` owns the region and exposes GP7 as an nvmem cell (`nvmem-cells` → `reboot-mode-magic@1c`); the old overlapping `syscon-reboot-mode` is gone. |
-| Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, crypto, LRADC, IR, board-mgr, watchdog, **RTC** (`sun6i-rtc`, enabled — the canonical osc32k/iosc clock provider and the GP-register nvmem device, both HW-confirmed; `rtc0` reads back but the RTC is unset at first boot; set/read timekeeping is now HW-confirmed via the H713 linear-day variant (patch 0031) — `hwclock`/`timedatectl` read the correct date). |
+| Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, LRADC, IR, board-mgr, watchdog, **RTC** (`sun6i-rtc`, enabled — the canonical osc32k/iosc clock provider and the GP-register nvmem device, both HW-confirmed; `rtc0` reads back but the RTC is unset at first boot; set/read timekeeping is now HW-confirmed via the H713 linear-day variant (patch 0031) — `hwclock`/`timedatectl` read the correct date). (Crypto engine deliberately disabled — see above.) |
 
 ## Limitations / open items
 
@@ -85,6 +86,36 @@ load held 1416 MHz, raised the measured rail only to 1.127 V (below the 1.16 V
 regulator ceiling), stayed below the 75 C passive trip at 68 C, and produced no
 thermal, cpufreq, OPP, PWM, clock, or PLL errors. Both 75/85 C passive trips
 are bound to the eight-state cpufreq cooling device.
+
+The Crypto Engine was investigated to a definitive dead end (2026-07-23) and is
+disabled (`# CONFIG_CRYPTO_DEV_SUN8I_CE is not set`, `HW_RANDOM` off); the CE node
+stays in the DTS but inert (H6-compatible `allwinner,sun50i-h6-crypto`). The
+investigation, in order:
+
+- **Baseline.** The four A53s carry the ARMv8 crypto extensions (`aes pmull sha1
+  sha2`), so software AES/SHA run in-core at ~2 GB/s across the four cores —
+  10–50× the device's eMMC/WiFi throughput. The CE offers no performance benefit;
+  driving it is a completeness question, not a speed one.
+- **Enable + real self-tests.** With `CRYPTO_SELFTESTS=y` the driver binds, sets
+  its clocks, registers every algorithm — then each fails its known-answer test.
+  (The earlier `/proc/crypto` `selftest: passed` was a vacuous default with
+  `CRYPTO_SELFTESTS` off, never a real KAT.)
+- **The stock CE has two interrupts** (SPI 73 + 74); mainline requests only the
+  first, and the first operation used to hang. Wiring the second (same handler)
+  **fixes completion** — operations now return status. But the CE's error status
+  is then damning: ciphers report `address invalid` + every error bit, hashes
+  report `algorithm not supported` — for *standard* AES and SHA. That only happens
+  if the engine reads a bogus algorithm ID and bogus buffer addresses out of the
+  descriptor: the H713 uses a different **task-descriptor format** (the vendor
+  two-register-bank block), not a different IRQ, clock, or byte-vs-word address.
+- **No CE TRNG:** it returns `algorithm not supported`; with `HW_RANDOM` the
+  kernel's hwrng core just spam-polls it.
+
+So mainline `sun8i-ce` fundamentally cannot drive this CE. Making it work would
+mean reverse-engineering the H713 descriptor format from the vendor
+`allwinner,sunxi-ce` driver (whose source we don't have — full BSP or `boot_a`
+RE) and adding a new descriptor path: a large effort for zero gain, so it is left
+disabled. Software crypto is correct and faster. See [roadmap.md](roadmap.md).
 
 The July 23 reboot→fastboot work finished the mechanism in code. `RTC_DRV_SUN6I`
 is now enabled: the H713 RTC (H6-compatible block at `0x07090000`) gets a real

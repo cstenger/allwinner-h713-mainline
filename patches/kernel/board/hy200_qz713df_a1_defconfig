@@ -200,7 +200,17 @@ CONFIG_NFS_V4=y
 CONFIG_ROOT_NFS=y
 CONFIG_NLS_CODEPAGE_437=y
 CONFIG_NLS_ISO8859_1=y
-CONFIG_CRYPTO_DEV_SUN8I_CE=y
+# Crypto Engine DISABLED — mainline sun8i-ce cannot drive the H713 CE (bench-
+# proven 2026-07-23). Enabling it registers every algorithm, then each fails its
+# known-answer self-test. Wiring the stock's 2nd interrupt (SPI 74) fixes task
+# completion, but the CE then rejects mainline's task descriptors: ciphers report
+# "address invalid", AES/SHA "algorithm not supported" — a different descriptor
+# FORMAT (the vendor two-register-bank block), not an IRQ/clock/addressing gap.
+# No CE TRNG either. Re-enabling needs descriptor-level RE of the vendor
+# allwinner,sunxi-ce driver (source unavailable); the A53 has ARMv8 AES/SHA
+# (software crypto ~2 GB/s, faster than this CE) so there is no benefit.
+# See docs/status.md and docs/roadmap.md.
+# CONFIG_CRYPTO_DEV_SUN8I_CE is not set
 CONFIG_DMA_CMA=y
 CONFIG_PRINTK_TIME=y
 CONFIG_DYNAMIC_DEBUG=y

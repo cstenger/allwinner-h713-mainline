@@ -107,7 +107,17 @@ Independent of the projector; ordered to unblock the dev loop first.
      (LED-driver IC / separate rail, part of the display pipeline) and needs RE.
      Do not re-attempt PB4/PWM2. Tach read-back on PH17 and the projector's
      fan+NTC via `board-mgr` also remain later work.
-3. **Crypto (sun8i-ce) + RNG.**
+3. **Crypto (sun8i-ce) + RNG — investigated to a definitive dead end; disabled.**
+   Mainline `sun8i-ce` cannot drive the H713 CE, bench-proven step by step: the
+   A53s already have ARMv8 AES/SHA (software crypto ~2 GB/s, faster than this CE,
+   so no performance case); enabling the CE registers every algorithm then fails
+   each self-test; wiring the stock's second interrupt (SPI 74) fixes task
+   completion, but the CE then rejects mainline's task descriptors (`address
+   invalid` for ciphers, `algorithm not supported` for standard AES/SHA) — a
+   different descriptor **format** (the vendor two-bank block), not an
+   IRQ/clock/addressing gap. No CE TRNG. Reopening means descriptor-level RE of
+   the vendor `allwinner,sunxi-ce` driver (source unavailable) for no gain —
+   left disabled; software crypto is fast and correct.
 4. **Video decode (Cedrus / VE3)** — headless-testable (patch 0022 in series).
 5. **GPU (Mali-G31 / Panfrost)** — driver is mainline; needs a working display
    output (HDMI?) to be useful, so partly gated on the display path.

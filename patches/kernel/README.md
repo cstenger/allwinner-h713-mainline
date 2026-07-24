@@ -41,7 +41,10 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   hardware-tested projector configuration. In particular, `cpu-comm` retains
   the vendor 32-bit shared-pointer ABI and is not safe to enable in an arm64
   kernel until that address model is ported. Copied into
-  `arch/arm64/configs/` by the build. *(ours)*
+  `arch/arm64/configs/` by the build. It also **disables the Crypto Engine**
+  (`# CONFIG_CRYPTO_DEV_SUN8I_CE is not set`, `HW_RANDOM` off): mainline
+  `sun8i-ce` cannot drive the H713 CE — see the crypto note below and the
+  roadmap. *(ours)*
 - **0023 — R-CCU on arm64** — upstream gates `SUN20I_D1_R_CCU` to
   `MACH_SUN8I || RISCV || COMPILE_TEST`; the H713 reuses the D1 R-CCU, so this
   adds `|| ARM64` to that `depends` (without it R-PIO / PPU power domains never
@@ -97,6 +100,21 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   still open: PB4/PWM2 was proven not to control this LED (a running 25 kHz PWM
   changed nothing), so it needs a U-Boot-level RE — see the roadmap.
   *(ours, hardware-confirmed)*
+
+The Crypto Engine device (`ce@3040000`) stays in 0024's device tree as an
+H6-compatible node (`allwinner,sun50i-h6-crypto`, three clocks) but is **not
+driven**: mainline `sun8i-ce` cannot run it, proven on the bench (2026-07-23).
+Enabling the driver registers every algorithm, then each fails its boot-time
+known-answer self-test. Wiring the stock CE's second interrupt (SPI 74) *does*
+fix task completion, but the engine then rejects the task descriptors mainline
+builds — ciphers report `address invalid`, hashes `algorithm not supported` for
+standard AES/SHA, which only happens when the CE reads bogus algorithm IDs and
+addresses out of the descriptor. So the H713 uses a different descriptor
+**format** (the stock two-register-bank / two-IRQ block), not a different IRQ or
+byte-vs-word addressing, and there is no CE TRNG. Re-enabling would require
+descriptor-level RE of the vendor `allwinner,sunxi-ce` driver (source
+unavailable) for no benefit — the A53's ARMv8 AES/SHA already outrun it. See the
+roadmap and `docs/status.md`.
 
 With these patches in place `build/build.sh kernel` emits both DTBs and a bench-only
 bootable FIT (`build/out/h713-kernel.fit`: gzip Image + bench DTB, load/entry
