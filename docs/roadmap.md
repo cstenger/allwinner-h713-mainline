@@ -99,14 +99,37 @@ Independent of the projector; ordered to unblock the dev loop first.
      under `CONFIG_H713_POWERON_LIGHT_FAN`, bench-only), so the panel is lit and
      cooled from reset like a monitor showing the boot process; PB5 being the
      shared enable makes the fan a hard interlock for the light.
-   - **Backlight BRIGHTNESS — open, wanted at the U-Boot level.** The light
-     comes on but dim, and brightness is **not** yet controllable. PB4/PWM2 (the
-     projector DTS's `panel_pwm_ch`) was proven **not** to be this board's
-     control — a correct, running 25 kHz PWM on PB4 (counter advancing, pin
-     muxed) changed brightness not at all — so the LED level is set elsewhere
-     (LED-driver IC / separate rail, part of the display pipeline) and needs RE.
-     Do not re-attempt PB4/PWM2. Tach read-back on PH17 and the projector's
-     fan+NTC via `board-mgr` also remain later work.
+   - **Backlight BRIGHTNESS — open; PB4/PWM2 re-opened with stock evidence.**
+     The light comes on but sits dim at a fixed level. An earlier bench note
+     concluded PB4/PWM2 "changed brightness not at all, don't re-attempt" — but
+     three independent stock sources say PB4/PWM2 **is** the dimmer: the captured
+     vendor DTB sets `panel_pwm_ch = 2` at 25 kHz on a 0..100 duty scale
+     (`panel_backlight = 75`); stock U-Boot fastlogo drives it via
+     `pwm_request(2, "fastlogo")` (boot log: "Display fastlogo finish!"); and the
+     vendor Linux port ships a working `backlight`-class driver dimming on PWM
+     ch2. The leading explanation for the negative bench result: this is a
+     **serially-programmed LED panel** whose drive currents and PWM-dim
+     acceptance are set over the panel's SPI link by fastlogo before Linux runs;
+     on the bench that init never happens, so the panel ignores the PWM pin and
+     stays at its power-on-default level. Patch 0032 wires a mainline
+     `pwm-backlight` on PWM2/PB4 (25 kHz, 0..100 scale, PB5 left hogged — never
+     toggled, it's the fan interlock). **Bench-tested 2026-07-24: the panel-side
+     gate is confirmed.** `/sys/kernel/debug/pwm` shows channel 2 driving the
+     correct duty (0/20000/40000 ns for brightness 0/50/100, `actual` ==
+     `requested`) with PB4 muxed to `pwm2` — but the panel's light does not
+     change at any level. The SoC emits the stock waveform and the panel ignores
+     it, so brightness is blocked on the panel init (LED-driver PWM-dim enable /
+     LVDS serial program) that stock fastlogo runs before Linux. That is Phase-4
+     MIPS-display work; 0032 is kept as the correct foundation — dimming will work
+     through it unchanged once the panel init lands. Next steps, cheap first:
+     (1) a safe probe that never touches PB5 — DMM the PB4 pad to confirm it
+     physically toggles (0/~1.6/~3.3 V across the sweep), then drive the panel
+     control GPIOs (PH19 power, PH16/PH15/PH8/PH9) high via gpio-hogs and re-test
+     the sweep; if dimming comes alive the gate was just the panel power/enable
+     GPIOs (~1-in-4 odds). (2) If not, the real fix is extracting fastlogo's panel
+     init sequence (GPIO + SPI register stream over PH10/11/12) from the stock
+     bootloader / `display.bin` — the Phase-4 MIPS-pipeline effort. Tach read-back
+     on PH17 and the projector's fan+NTC via `board-mgr` also remain later work.
 3. **Crypto (sun8i-ce) + RNG — investigated to a definitive dead end; disabled.**
    Mainline `sun8i-ce` cannot drive the H713 CE, bench-proven step by step: the
    A53s already have ARMv8 AES/SHA (software crypto ~2 GB/s, faster than this CE,

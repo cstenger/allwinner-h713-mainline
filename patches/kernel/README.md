@@ -97,9 +97,27 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   fan spins**, and it (plus the LED backlight) now comes up at power-on from
   U-Boot — `board_init` drives the shared PB5 enable, so the panel is lit and
   cooled from reset with the fan a hard interlock. Backlight *brightness* is
-  still open: PB4/PWM2 was proven not to control this LED (a running 25 kHz PWM
-  changed nothing), so it needs a U-Boot-level RE — see the roadmap.
-  *(ours, hardware-confirmed)*
+  handled separately by 0032. *(ours, hardware-confirmed)*
+
+- **0032 — pwm-backlight on PWM2/PB4.** Wires the panel dimmer the mainline way
+  so brightness is controllable from `/sys/class/backlight`. An earlier note
+  said "PB4/PWM2 changed nothing, don't re-attempt," but the captured stock DTB
+  (`panel_pwm_ch = 2`, 25 kHz, `panel_backlight = 75` on 0..100), stock fastlogo
+  (`pwm_request(2, "fastlogo")`), and the vendor Linux backlight driver all agree
+  PB4/PWM2 **is** the dimmer. The likely reason the bench poke did nothing: this
+  is a serially-programmed LED panel whose PWM-dim path is enabled by fastlogo's
+  panel SPI init, which never runs on mainline — so the un-initialized panel
+  ignores PB4. The node uses `<&pwm 2 40000 0>` (25 kHz, normal polarity per
+  stock), a linear 0..100 brightness scale (default 75), and `&pwm2_pins`; it
+  carries **no** `enable-gpios`, because PB5 (`panel_bl_en`) is shared with fan
+  power and stays held high by `fan_power_hog` — this node varies PWM duty only.
+  Bench-tested 2026-07-24: `/sys/kernel/debug/pwm` shows ch2 driving the correct
+  duty (0/20000/40000 ns for brightness 0/50/100, `actual` == `requested`) with
+  PB4 muxed to `pwm2`, but the panel's light does not change — so brightness is
+  gated on the panel-side init that fastlogo runs before Linux (Phase-4 MIPS
+  display work), not on this node. Kept as the correct foundation; dimming will
+  work through it unchanged once the panel init lands.
+  *(ours, hardware-tested — PWM correct, panel-init gate confirmed)*
 
 The Crypto Engine device (`ce@3040000`) stays in 0024's device tree as an
 H6-compatible node (`allwinner,sun50i-h6-crypto`, three clocks) but is **not

@@ -65,11 +65,26 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
   both come up **at power-on from U-Boot** — `board_init` drives the shared PB5
   fan/backlight-enable under a bench-only `CONFIG_H713_POWERON_LIGHT_FAN`, so the
   panel is lit and cooled from reset (projector-as-boot-monitor), with the fan a
-  hard interlock for the light. **Backlight brightness is still open:** the light
-  is dim and PB4/PWM2 (the projector `panel_pwm_ch`) was proven *not* to control
-  it — a correct running 25 kHz PWM on PB4 changed nothing — so brightness is set
-  by an LED-driver mechanism yet to be RE'd, and is a U-Boot-level TODO. Panel
-  backlight (channel 2 / PB4) also still needs its own re-verification.
+  hard interlock for the light. **Backlight brightness is open, PB4/PWM2 now
+  re-opened (patch 0032, awaiting bench test).** The earlier "PB4/PWM2 changed
+  nothing" result is contradicted by the stock config: the vendor DTB sets
+  `panel_pwm_ch = 2` at 25 kHz (`panel_backlight = 75` on a 0..100 scale), stock
+  fastlogo drives it via `pwm_request(2, "fastlogo")`, and the vendor Linux port
+  dims on PWM ch2. Most likely the bench negative came from the panel's
+  serial-init (run by fastlogo, not on mainline) never enabling the PWM-dim path,
+  so the un-initialized panel ignores PB4 and holds its power-on-default level.
+  Patch 0032 adds a mainline `pwm-backlight` on PWM2/PB4 (25 kHz, 0..100 duty,
+  PB5 left hogged so the fan is untouched). **Bench-tested 2026-07-24 — gate
+  confirmed panel-side.** With 0032 the PWM is provably correct on PB4:
+  `/sys/kernel/debug/pwm` shows channel 2 (`backlight`) duty scaling exactly
+  0/20000/40000 ns for brightness 0/50/100 with `actual` matching `requested`,
+  and PB4 is muxed to `function pwm2` owned by the backlight — yet the panel's
+  light output does not change at any level. So the SoC emits the stock waveform
+  and the panel ignores it: brightness is gated on the panel-side init (LED-driver
+  PWM-dim enable / LVDS panel serial program) that stock fastlogo runs before
+  Linux and mainline does not. That init is part of the Phase-4 MIPS display
+  bring-up. 0032 is correct and kept as the foundation — dimming will work through
+  this exact node, unchanged, once the panel init lands.
 
 The July 19 cleanup removed the CCU `MIPS_DIAG` mappings, enabled autofs in the
 kernel, modeled the fixed 0.96 V `vdd-sys`/Mali supply from the stock DT, and
