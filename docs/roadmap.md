@@ -121,15 +121,20 @@ Independent of the projector; ordered to unblock the dev loop first.
      it, so brightness is blocked on the panel init (LED-driver PWM-dim enable /
      LVDS serial program) that stock fastlogo runs before Linux. That is Phase-4
      MIPS-display work; 0032 is kept as the correct foundation — dimming will work
-     through it unchanged once the panel init lands. Next steps, cheap first:
-     (1) a safe probe that never touches PB5 — DMM the PB4 pad to confirm it
-     physically toggles (0/~1.6/~3.3 V across the sweep), then drive the panel
-     control GPIOs (PH19 power, PH16/PH15/PH8/PH9) high via gpio-hogs and re-test
-     the sweep; if dimming comes alive the gate was just the panel power/enable
-     GPIOs (~1-in-4 odds). (2) If not, the real fix is extracting fastlogo's panel
-     init sequence (GPIO + SPI register stream over PH10/11/12) from the stock
-     bootloader / `display.bin` — the Phase-4 MIPS-pipeline effort. Tach read-back
-     on PH17 and the projector's fan+NTC via `board-mgr` also remain later work.
+     through it unchanged once the panel init lands. The cheap probe (driving the
+     panel control GPIOs PH19/16/15/8/9 high at boot, no PB5) was **tried and is
+     negative** — so it's not just the power/enable GPIOs; brightness is gated on
+     the panel **serial program** over PH10/11/12 that stock fastlogo runs before
+     Linux. Path forward, cheapest-first: (1) **capture it off the wire** — a
+     logic-analyzer on PH10=cs/PH11=scl/PH12=sda during a full *stock* boot,
+     decode the SPI up to "Display fastlogo finish!", then replay that byte
+     sequence in mainline (U-Boot board_init or a tiny spi-gpio panel driver);
+     this sidesteps disassembling `display.bin`. (2) Fallback: static RE of the
+     fastlogo panel-init routine in the stock bootloader. Mind the enable-ordering
+     trap — mainline asserts PB5 before any init, so if the LED driver latches
+     mode at enable we must re-sequence PB5 after the panel init (constrained by
+     the fan interlock). Tach read-back on PH17 and the projector's fan+NTC via
+     `board-mgr` also remain later work.
 3. **Crypto (sun8i-ce) + RNG — investigated to a definitive dead end; disabled.**
    Mainline `sun8i-ce` cannot drive the H713 CE, bench-proven step by step: the
    A53s already have ARMv8 AES/SHA (software crypto ~2 GB/s, faster than this CE,
