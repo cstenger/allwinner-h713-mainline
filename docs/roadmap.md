@@ -78,87 +78,78 @@ just priority. See [status.md](status.md) for what already works.
   `TimeoutStopSec` on `h713-bt-attach.service` so a post-crash graceful reboot
   doesn't wait ~3 min on BT teardown.
 
-## Phase 2 — Bench subsystem bring-up (SoC-general)
+## Phase 2 — Bench subsystem bring-up
 
-Independent of the projector; ordered to unblock the dev loop first.
+On the bench board. Most items are SoC-general and mutually independent; the
+**display path** is the exception and the linchpin — the whole *visible* stack
+(GPU-on-screen, a compositor, even confirming the backlight brightness fix) hangs
+off it. Because the bench board is itself a projector variant with the panel
+attached, the display path can be brought up here, not only on the projector
+(Phase 3/4). Ordered by dependency, not just priority.
 
-1. **Networking (WiFi + BT) — highest value.** Unlocks SSH and ends the UART
-   pain. First verify *what's populated and on which bus* (the well0nez
-   reference points at an **AIC8800** combo, SDIO or USB); then driver +
-   firmware + DT node. Everything downstream gets easier once this lands.
-2. **Thermal / cpufreq / DVFS** — safety + real performance.
-   - **Bench cooling fan (0030) — DONE; fan + backlight power-on in U-Boot.**
-     The fan is a 3-wire (VCC/GND/tach) on/off part, not PWM-speed-controlled
-     (DMM: tach at its 3.3 V pull-up, +V floating/unpowered). It stayed dead
-     because the PB5 backlight/fan power-enable hog was malformed (`<37>` on a
-     3-cell sunxi controller → skipped). 0030 fixes the hog to `<1 5>`; the
-     earlier `pwm-fan`-on-PWM0 model was dropped once PH17 proved to be the tach
-     line, not a control output (main-PWM output itself *was* validated in the
-     process). **Bench-confirmed: the fan spins.** Both the fan and the LED
-     backlight now come up **at power-on from U-Boot** (`board_init` drives PB5
-     under `CONFIG_H713_POWERON_LIGHT_FAN`, bench-only), so the panel is lit and
-     cooled from reset like a monitor showing the boot process; PB5 being the
-     shared enable makes the fan a hard interlock for the light.
-   - **Backlight BRIGHTNESS — open; PB4/PWM2 re-opened with stock evidence.**
-     The light comes on but sits dim at a fixed level. An earlier bench note
-     concluded PB4/PWM2 "changed brightness not at all, don't re-attempt" — but
-     three independent stock sources say PB4/PWM2 **is** the dimmer: the captured
-     vendor DTB sets `panel_pwm_ch = 2` at 25 kHz on a 0..100 duty scale
-     (`panel_backlight = 75`); stock U-Boot fastlogo drives it via
-     `pwm_request(2, "fastlogo")` (boot log: "Display fastlogo finish!"); and the
-     vendor Linux port ships a working `backlight`-class driver dimming on PWM
-     ch2. The leading explanation for the negative bench result: this is a
-     **serially-programmed LED panel** whose drive currents and PWM-dim
-     acceptance are set over the panel's SPI link by fastlogo before Linux runs;
-     on the bench that init never happens, so the panel ignores the PWM pin and
-     stays at its power-on-default level. Patch 0032 wires a mainline
-     `pwm-backlight` on PWM2/PB4 (25 kHz, 0..100 scale, PB5 left hogged — never
-     toggled, it's the fan interlock). **Bench-tested 2026-07-24: the panel-side
-     gate is confirmed.** `/sys/kernel/debug/pwm` shows channel 2 driving the
-     correct duty (0/20000/40000 ns for brightness 0/50/100, `actual` ==
-     `requested`) with PB4 muxed to `pwm2` — but the panel's light does not
-     change at any level. The SoC emits the stock waveform and the panel ignores
-     it, so brightness is blocked on the panel init (LED-driver PWM-dim enable /
-     LVDS serial program) that stock fastlogo runs before Linux. That is Phase-4
-     MIPS-display work; 0032 is kept as the correct foundation — dimming will work
-     through it unchanged once the panel init lands. The cheap probe (driving the
-     panel control GPIOs PH19/16/15/8/9 high at boot, no PB5) was **tried and is
-     negative** — so it's not just the power/enable GPIOs; brightness is gated on
-     the panel **serial program** over PH10/11/12 that stock fastlogo runs before
-     Linux. Path forward, cheapest-first: (1) **capture it off the wire** — a
-     logic-analyzer on PH10=cs/PH11=scl/PH12=sda during a full *stock* boot,
-     decode the SPI up to "Display fastlogo finish!", then replay that byte
-     sequence in mainline (U-Boot board_init or a tiny spi-gpio panel driver);
-     this sidesteps disassembling `display.bin`. (2) Fallback: static RE of the
-     fastlogo panel-init routine in the stock bootloader. Mind the enable-ordering
-     trap — mainline asserts PB5 before any init, so if the LED driver latches
-     mode at enable we must re-sequence PB5 after the panel init (constrained by
-     the fan interlock). Tach read-back on PH17 and the projector's fan+NTC via
-     `board-mgr` also remain later work.
-3. **Crypto (sun8i-ce) + RNG — investigated to a definitive dead end; disabled.**
-   Mainline `sun8i-ce` cannot drive the H713 CE, bench-proven step by step: the
-   A53s already have ARMv8 AES/SHA (software crypto ~2 GB/s, faster than this CE,
-   so no performance case); enabling the CE registers every algorithm then fails
-   each self-test; wiring the stock's second interrupt (SPI 74) fixes task
-   completion, but the CE then rejects mainline's task descriptors (`address
-   invalid` for ciphers, `algorithm not supported` for standard AES/SHA) — a
-   different descriptor **format** (the vendor two-bank block), not an
-   IRQ/clock/addressing gap. No CE TRNG. Reopening means descriptor-level RE of
-   the vendor `allwinner,sunxi-ce` driver (source unavailable) for no gain —
-   left disabled; software crypto is fast and correct.
-4. **Video decode (Cedrus / VE3)** — headless-testable (patch 0022 in series).
-5. **GPU (Mali-G31 / Panfrost)** — driver is mainline and binds now, but there
-   is no display output to present to except the projector's **LVDS/LCD panel**.
-   The HDMI connector is an HDMI-RX *input* (Synopsys DW-HDMI-RX; the SoC has no
-   HDMI-TX and the stock DTB has no output/encoder/connector node), so it cannot
-   be turned into an output. Panfrost can still render offscreen/headless
-   (EGL/GBM, PRIME buffer sharing) for driver validation, but anything *visible*
-   is gated on the display pipeline (LVDS panel + MIPS display path, Phase 3/4).
-   So GPU is effectively downstream of the LCD display work, not a standalone
-   bench item.
+1. **Networking (WiFi + BT) — highest value; unlocks SSH, ends the UART pain.**
+   Verify *what's populated and on which bus* (the well0nez reference points at an
+   **AIC8800** combo, SDIO or USB), then driver + firmware + DT node. Everything
+   downstream gets easier once this lands.
+2. **Thermal / cpufreq / DVFS — done; safety + real performance.**
+   - **Bench cooling fan (0030) — DONE.** The fan is a 3-wire (VCC/GND/tach)
+     on/off part, not PWM-speed-controlled (DMM: tach at its 3.3 V pull-up, +V
+     floating/unpowered). It stayed dead because the PB5 backlight/fan
+     power-enable hog was malformed (`<37>` on a 3-cell sunxi controller →
+     skipped). 0030 fixes the hog to `<1 5>`; the earlier `pwm-fan`-on-PWM0 model
+     was dropped once PH17 proved to be the tach line, not a control output
+     (main-PWM output itself *was* validated in the process). **Bench-confirmed:
+     the fan spins.** Both the fan and the LED backlight now come up **at
+     power-on from U-Boot** (`board_init` drives the shared PB5 enable under
+     `CONFIG_H713_POWERON_LIGHT_FAN`, bench-only), so the panel is lit and cooled
+     from reset like a monitor showing the boot process; PB5 being the shared
+     enable makes the fan a hard interlock for the light.
+   - **Backlight brightness** is a display-path task, not a thermal one — tracked
+     under item 3.
+3. **Display path (LVDS panel → backlight → MIPS pipeline) — the linchpin;
+   bench-doable.** The only display *output* is the projector's LVDS/LCD panel
+   (HDMI is input-only — see Open questions), so this gates every *visible* thing:
+   GPU-on-screen, a compositor, and confirming the backlight dimmer. Two coupled
+   pieces:
+   - **Backlight brightness.** PB4/PWM2 is the stock dimmer (vendor DTB
+     `panel_pwm_ch = 2`, 25 kHz, `panel_backlight = 75` on 0..100; stock fastlogo
+     `pwm_request(2, "fastlogo")`; the vendor Linux port dims on ch2). Patch 0032
+     wires a mainline `pwm-backlight` on PWM2/PB4 and is **HW-correct** — debugfs
+     shows channel 2 duty scaling 0/20000/40000 ns with PB4 muxed to `pwm2` — but
+     the panel ignores it: brightness is gated on the panel **serial init**
+     (LED-driver PWM-dim enable / LVDS program over PH10/11/12) that stock
+     fastlogo runs before Linux. A cheap gpio-hog probe of the panel control
+     lines (PH19/16/15/8/9, PB5 untouched) was **tried and is negative**,
+     confirming it's the serial program, not the power/enable GPIOs. Cheapest way
+     in: **capture the SPI off the wire** during a *stock* boot (logic-analyzer on
+     PH10=cs/PH11=scl/PH12=sda up to "Display fastlogo finish!") and replay it in
+     mainline, rather than disassembling `display.bin`. Watch the enable-ordering
+     trap: mainline asserts PB5 before any init, and PB5 can't be freely toggled
+     (fan interlock). 0032 stays as the correct front-end.
+   - **LVDS panel bring-up + MIPS display coprocessor pipeline** (`mipsloader` +
+     `nsi` + `cpu-comm` + `tvtop` + `decd`) — the projector's scanout path (RE'd
+     by well0nez; the hardest, least-understood piece). Same hardware as Phase 4,
+     but startable here on the bench.
+4. **GPU (Mali-G31 / Panfrost).** Driver is mainline and binds now; Panfrost can
+   render offscreen/headless (EGL/GBM, PRIME buffer sharing) for validation, but
+   anything *visible* is gated on the display path (item 3), so it is downstream
+   of that work, not a standalone bench item.
+5. **Video decode (Cedrus / VE3)** — genuinely headless-testable (patch 0022 in
+   series); independent of the display path.
 6. **Audio** (I2S / codec / HDMI-in audio captured off the HDMI-RX) — depends on
    what's populated.
 7. **IR receiver (sunxi-cir)** — patch 0021; needs the receiver populated.
+8. **Crypto (sun8i-ce) + RNG — CLOSED: investigated to a definitive dead end;
+   disabled.** Mainline `sun8i-ce` cannot drive the H713 CE, bench-proven step by
+   step: the A53s already have ARMv8 AES/SHA (software crypto ~2 GB/s, faster than
+   this CE, so no performance case); enabling the CE registers every algorithm
+   then fails each self-test; wiring the stock's second interrupt (SPI 74) fixes
+   task completion, but the CE then rejects mainline's task descriptors (`address
+   invalid` for ciphers, `algorithm not supported` for standard AES/SHA) — a
+   different descriptor **format** (the vendor two-bank block), not an
+   IRQ/clock/addressing gap. No CE TRNG. Reopening means descriptor-level RE of
+   the vendor `allwinner,sunxi-ce` driver (source unavailable) for no gain — left
+   disabled; software crypto is fast and correct.
 
 ## Phase 3 — Projector board bring-up (`HY200_QZ713_V2`, LPDDR3)
 
@@ -171,12 +162,12 @@ Independent of the projector; ordered to unblock the dev loop first.
   inherited 32-bit virtual-pointer ABI before enabling it on arm64. Then
   validate boot to Debian (rootfs auto-grows).
 
-## Phase 4 — Projector subsystems (needs Phase 3)
+## Phase 4 — Projector-specific subsystems (needs Phase 3)
 
-- **LCD panel + backlight** (PWM).
-- **MIPS display coprocessor pipeline** — `mipsloader` + `nsi` + `cpu-comm` +
-  `tvtop` + `decd`: the projector's display path (RE'd by well0nez; the hardest
-  and least-understood piece).
+- **Display path (LCD panel + backlight + MIPS pipeline)** — the *same* hardware
+  as the bench board, so bring-up starts in Phase 2 (item 3), not here. Phase 4's
+  only display job is re-validating that path on the LPDDR3 projector board once
+  Phase 3 boots.
 - **Keystone motor** (GPIO stepper, patch 0009).
 - **Fans + NTC** (board-mgr, patch 0008).
 
