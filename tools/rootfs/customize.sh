@@ -209,6 +209,19 @@ Type=oneshot
 ExecStart=/usr/local/sbin/h713-wifi-crashlog
 EOF
 
+# Diagnostics / crypto-test tooling (installed via tools/rootfs/build.sh):
+#   hwclock (util-linux-extra) -- lets us set/read the RTC and exercise the
+#     sun6i-rtc timekeeping path (the reboot-to-fastboot loose end);
+#   kcapi-dgst/enc/rng (kcapi-tools) -- drive the kernel crypto API over AF_ALG
+#     for real known-answer tests when the Crypto Engine is re-attempted;
+#   rngtest (rng-tools5) + openssl -- RNG stream tests and reference vectors.
+# rng-tools5 also ships the rngd daemon, which would auto-start and seed the
+# kernel entropy pool from its built-in CPU-jitter source. On this bench image
+# we want to *observe* RNG sources under test (e.g. /dev/hwrng arbitration for a
+# CE/SMCCC TRNG), not have a daemon feeding the pool in the background, so mask
+# rngd. The rngtest binary stays available for manual runs.
+ln -sfn /dev/null "$systemd_dir/rngd.service"
+
 # Optional boot WiFi hotspot (AP). Enabled only when the build passed
 # HOTSPOT_ENABLED=1 (i.e. local/hotspot.conf existed). A dedicated AP owns wlan0
 # and DHCP, so mask the STA supplicant and the default dnsmasq.

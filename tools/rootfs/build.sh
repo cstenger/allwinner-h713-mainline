@@ -204,7 +204,7 @@ mmdebstrap \
   --skip=check/qemu \
   --keyring="$BOOTSTRAP_KEYRING" \
   --aptopt='Acquire::Languages "none"' \
-  --include=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra \
+  --include=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,openssl,kcapi-tools,rng-tools5 \
   "$DEBIAN_SUITE" "$ROOTFS_TAR" \
   "deb [signed-by=$BOOTSTRAP_KEYRING] $DEBIAN_MIRROR $DEBIAN_SUITE main"
 

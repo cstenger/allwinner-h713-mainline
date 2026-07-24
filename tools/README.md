@@ -23,6 +23,19 @@ stress test with an 85 C default stop threshold. It changes voltage only via
 cpufreq and never writes a regulator or thermal trip point directly. See
 [../docs/status.md](../docs/status.md).
 
+`crypto-rng-validate.sh` — a **target-side** validator for the Crypto Engine
+(`sun8i-ce`) and its RNG, retained for a **future re-attempt**. The CE is
+currently disabled because mainline `sun8i-ce` cannot drive the H713 (see
+[../docs/status.md](../docs/status.md)), so it has nothing to check on today's
+kernel — it only exercises a kernel that re-enables `sun8i-ce`. It is read-only
+with respect to hardware (no register/tunable writes); `--rng-bytes N` sets the
+RNG sample size and `--rngtest` runs the FIPS stream test (`rng-tools5`).
+**Known limitation to fix before relying on it:** it currently treats
+`/proc/crypto`'s `selftest: passed` as the correctness gate, but that field is a
+vacuous default unless `CONFIG_CRYPTO_SELFTESTS=y` — the real gate is a
+known-answer test against the live engine (`kcapi-dgst`/`openssl` for hashes and
+ciphers, `kcapi-rng`/`/dev/hwrng` for the RNG).
+
 `rootfs/` — `build.sh --ssh-key FILE` builds the signed Debian arm64 rootfs,
 installs matching kernel modules, validates the ext4 image, and emits an
 Android-sparse fastboot image. `customize.sh` performs target customization
