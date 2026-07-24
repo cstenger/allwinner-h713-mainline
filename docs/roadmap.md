@@ -147,9 +147,17 @@ Independent of the projector; ordered to unblock the dev loop first.
    the vendor `allwinner,sunxi-ce` driver (source unavailable) for no gain —
    left disabled; software crypto is fast and correct.
 4. **Video decode (Cedrus / VE3)** — headless-testable (patch 0022 in series).
-5. **GPU (Mali-G31 / Panfrost)** — driver is mainline; needs a working display
-   output (HDMI?) to be useful, so partly gated on the display path.
-6. **Audio** (I2S / codec / HDMI audio) — depends on what's populated.
+5. **GPU (Mali-G31 / Panfrost)** — driver is mainline and binds now, but there
+   is no display output to present to except the projector's **LVDS/LCD panel**.
+   The HDMI connector is an HDMI-RX *input* (Synopsys DW-HDMI-RX; the SoC has no
+   HDMI-TX and the stock DTB has no output/encoder/connector node), so it cannot
+   be turned into an output. Panfrost can still render offscreen/headless
+   (EGL/GBM, PRIME buffer sharing) for driver validation, but anything *visible*
+   is gated on the display pipeline (LVDS panel + MIPS display path, Phase 3/4).
+   So GPU is effectively downstream of the LCD display work, not a standalone
+   bench item.
+6. **Audio** (I2S / codec / HDMI-in audio captured off the HDMI-RX) — depends on
+   what's populated.
 7. **IR receiver (sunxi-cir)** — patch 0021; needs the receiver populated.
 
 ## Phase 3 — Projector board bring-up (`HY200_QZ713_V2`, LPDDR3)
@@ -184,8 +192,12 @@ were curated with this in mind (see [../PROVENANCE.md](../PROVENANCE.md)).
   bus, HDMI, audio codec, IR receiver, fans, panel connector?
 - **Projector safety**: can `HY200_QZ713_V2` be FEL-recovered (button / BROM
   fallback) if a flash goes wrong?
-- **Display output on the bench** — is there HDMI (or only the projector's LCD
-  path)? Determines how far GPU/display bring-up can go on the bench alone.
+- **Display output on the bench — RESOLVED.** The only display *output* is the
+  projector's LVDS/LCD panel; the HDMI connector is an HDMI-RX **input** (DW-HDMI-RX,
+  no HDMI-TX on this SoC, no output/encoder node in the stock DTB), so it cannot
+  be a monitor output. Consequence: all *visible* GPU/display bring-up is gated on
+  the LVDS panel + MIPS display path (Phase 3/4) — there is no HDMI-monitor
+  shortcut. Panfrost/Cedrus stay headless-testable meanwhile.
 - **Status-LED source — RESOLVED (hardware rail indicator; bench-probed
   2026-07-23).** The power LED goes red → blue at main power-on and it is **not**
   software-driven. Probed live at the U-Boot prompt (via `reboot bootloader`):
