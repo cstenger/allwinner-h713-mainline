@@ -83,6 +83,35 @@ require resetting the rest of the environment.
   device by VID/serial rather than a fixed path; if the host retains a stale
   `1f3a:1010` identity across a board reset, use a full power cycle.
 
+### Fastboot RAM staging and lifecycle commands
+
+U-Boot can point its fastboot download buffer at a bounded RAM window. This is
+useful for repeatedly loading the display coprocessor firmware without writing
+eMMC:
+
+```
+# in U-Boot: exact display.bin address and size
+run serial_mode; fastboot -l 0x4b100000 -s 0x132b18 usb 0; run serial_mode
+
+# host: download directly to 0x4b100000, then warm-reset to the U-Boot prompt
+fastboot stage display.bin
+fastboot reboot bootloader
+```
+
+The second command writes the same one-shot `0xb007c0de` marker to RTC GP7
+(`0x0709011c`) as Linux `reboot bootloader`. Preboot consumes and clears the
+marker, disables autoboot, and leaves the board at the U-Boot prompt. The warm
+reset preserves the staged RAM on H713.
+
+Power the board down through the same PSCI path used by Linux:
+
+```
+fastboot oem poweroff
+```
+
+The command acknowledges the host before powering off. A physical power cycle
+is required afterward.
+
 ## Method 4 — cold recovery via FEL
 
 Hold the **FEL button** at power-on to enter the BROM's USB FEL mode, then use
