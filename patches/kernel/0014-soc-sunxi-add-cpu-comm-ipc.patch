@@ -293,7 +293,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +int AddtoWaitComm(void *list_base, u32 wait_entry)
 +{
 +	u8 *lb = list_base;
-+	u32 new_node;
++	unsigned long new_node;
 +	u32 *prev;
 +
 +	if (WARN_ON(!list_base || !wait_entry))
@@ -348,15 +348,15 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +{
 +	u8 *lb = list_base;
 +	u32 sentinel = (u32)(lb + 56);
-+	u32 cur_node;
-+	u32 entry_base;
++	unsigned long cur_node;
++	unsigned long entry_base;
 +
 +	if (WARN_ON(!list_base || !result))
 +		return 1;
 +
 +	cpu_comm_sem_down((void *)(lb + 64));
 +
-+	cur_node = *(u32 *)(lb + 56);	/* head.next */
++	cur_node = __ptr64(*(u32 *)(lb + 56));	/* head.next */
 +
 +	while (cur_node != sentinel) {
 +		/* Wait entry base is 24 bytes before the node */
@@ -364,8 +364,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +		if (*(u32 *)entry_base == session_id) {
 +			/* Found — unlink: prev->next = next, next->prev = prev */
-+			u32 node_next = *(u32 *)(cur_node);
-+			u32 node_prev = *(u32 *)(cur_node + 4);
++			unsigned long node_next = __ptr64(*(u32 *)(cur_node));
++			unsigned long node_prev = __ptr64(*(u32 *)(cur_node + 4));
 +
 +			*(u32 *)node_prev = node_next;
 +			*(u32 *)(node_next + 4) = node_prev;
@@ -379,7 +379,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			return 0;
 +		}
 +
-+		cur_node = *(u32 *)cur_node;	/* follow ->next */
++		cur_node = __ptr64(*(u32 *)cur_node);	/* follow ->next */
 +	}
 +
 +	cpu_comm_sem_up((void *)(lb + 64));
@@ -402,15 +402,15 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +{
 +	u8 *lb = list_base;
 +	u32 sentinel = (u32)(lb + 56);
-+	u32 cur_node;
-+	u32 entry_base;
++	unsigned long cur_node;
++	unsigned long entry_base;
 +
 +	if (WARN_ON(!list_base || !result))
 +		return 1;
 +
 +	cpu_comm_sem_down((void *)(lb + 64));
 +
-+	cur_node = *(u32 *)(lb + 56);	/* head.next */
++	cur_node = __ptr64(*(u32 *)(lb + 56));	/* head.next */
 +
 +	while (cur_node != sentinel) {
 +		entry_base = cur_node - 24;
@@ -421,7 +421,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			return 0;
 +		}
 +
-+		cur_node = *(u32 *)cur_node;
++		cur_node = __ptr64(*(u32 *)cur_node);
 +	}
 +
 +	cpu_comm_sem_up((void *)(lb + 64));
@@ -485,12 +485,12 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		return 0;
 +
 +	sentinel = (u32)list;
-+	cur = *(u32 *)list;	/* head.next */
++	cur = __ptr64(*(u32 *)list);	/* head.next */
 +
 +	while (cur != sentinel) {
 +		if (cur == (u32)item)
 +			return 1;
-+		cur = *(u32 *)cur;	/* follow ->next */
++		cur = __ptr64(*(u32 *)cur);	/* follow ->next */
 +	}
 +
 +	return 0;
@@ -701,15 +701,15 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * Returns 0 always (result=NULL if not found, per IDA).
 + */
-+int GetReturnbySessionId(u32 session_id, u32 cpu, u32 *result)
++int GetReturnbySessionId(u32 session_id, u32 cpu, unsigned long *result)
 +{
 +	u32 *sock;
 +	u32 *fifo_hdr;
 +	u32 sentinel;
-+	u32 cur_node;
-+	u32 next_node;
++	unsigned long cur_node;
++	unsigned long next_node;
 +	u32 *sem;
-+	u32 entry_base;
++	unsigned long entry_base;
 +
 +	if (cpu > 1) {
 +		pr_err("cpu_comm: GetReturnbySessionId: invalid cpu %u\n", cpu);
@@ -732,7 +732,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	cur_node = fifo_hdr[14];	/* head.next */
 +
 +	while (cur_node != sentinel) {
-+		next_node = *(u32 *)cur_node;
++		next_node = __ptr64(*(u32 *)cur_node);
 +
 +		/*
 +		 * Return entry (comm_msg) node is at entry + 84 bytes.
@@ -745,8 +745,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +			/* list_del: unlink node from list */
 +			{
-+				u32 node_next = *(u32 *)(cur_node);
-+				u32 node_prev = *(u32 *)(cur_node + 4);
++				unsigned long node_next = __ptr64(*(u32 *)(cur_node));
++				unsigned long node_prev = __ptr64(*(u32 *)(cur_node + 4));
 +
 +				*(u32 *)node_prev = node_next;
 +				*(u32 *)(node_next + 4) = node_prev;
@@ -796,7 +796,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void returnPipeLine(void *data)
 +{
 +	u32 cpu = (u32)(unsigned long)data;
-+	u32 share_seq_r;
++	unsigned long share_seq_r;
 +	u32 *fifo;
 +	u32 *sock;
 +	u32 *sem;
@@ -822,7 +822,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	while (item_addr) {
 +		/* Read the entry pointer from the FIFO slot */
-+		entry_vir = *(u32 *)item_addr;
++		entry_vir = __ptr64(*(u32 *)item_addr);
 +
 +		/* Validate slot index */
 +		if (*(u16 *)(entry_vir + 4) > 19) {
@@ -839,7 +839,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		 * List tail pointer:  sock[282] (f[15])
 +		 */
 +		{
-+			u32 new_node = entry_vir + 84;
++			unsigned long new_node = entry_vir + 84;
 +			u32 *prev = (u32 *)sock[282];	/* current tail */
 +			u32 head_sentinel = (u32)&sock[281];
 +
@@ -1904,10 +1904,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		return -ENOMEM;
 +	}
 +
-+	ShMemAddrBase = (u32)(unsigned long)vaddr;
++	ShMemAddrBase = (unsigned long)vaddr;
 +	ShMemAddrVir = ShMemAddrBase;
 +
-+	pr_info("cpu_comm: shared memory mapped: phys=0x%x virt=0x%x size=0x%x\n",
++	pr_info("cpu_comm: shared memory mapped: phys=0x%x virt=0x%lx size=0x%x\n",
 +		ShMemAddr, ShMemAddrBase, ShMemSize);
 +
 +	pr_info("cpu_comm: PRE-WIPE: ARM=0x%x MIPS=0x%x magic1=0x%x magic2=0x%x\n",
@@ -2106,7 +2106,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		u32 *mips_flag = (u32 *)(ShMemAddrBase + 0x4CE0);
 +		u32 *arm_flag = (u32 *)(ShMemAddrBase + 0x4CDC);
 +
-+		setCPUAppReady(getCurCPUID(0));
++		setCPUAppReady(0);
 +
 +		pr_info("cpu_comm: POST-INIT: magic1=0x%x magic2=0x%x ARM=0x%x MIPS=0x%x\n",
 +			*(u32 *)(ShMemAddrBase + 0x90),
@@ -2457,7 +2457,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * FIFO layout: f[0]=rd, f[1]=wr, f[4]=cap, f[5]=item_size, f[6]=base
 + */
-+u32 fifo_getItemWr(u32 *f)
++unsigned long fifo_getItemWr(u32 *f)
 +{
 +	u32 rd, wr, cap;
 +
@@ -2479,7 +2479,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	/* Return address of current write slot */
-+	return f[6] + f[5] * wr;
++	return __ptr64(f[6]) + f[5] * wr;
 +}
 +
 +/*
@@ -2488,7 +2488,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * Call AFTER writing data to the slot returned by fifo_getItemWr.
 + * Returns: address of NEW write slot, or 0 if now full.
 + */
-+u32 fifo_requestItemWr(u32 *f)
++unsigned long fifo_requestItemWr(u32 *f)
 +{
 +	u32 rd, wr, cap, next_wr;
 +	int count;
@@ -2520,7 +2520,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	/* Return address of new write slot */
-+	return f[6] + f[5] * next_wr;
++	return __ptr64(f[6]) + f[5] * next_wr;
 +}
 +
 +/*
@@ -2528,7 +2528,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * Returns: virtual address of read slot, or 0 if FIFO is empty
 + */
-+u32 fifo_getItemRd(u32 *f)
++unsigned long fifo_getItemRd(u32 *f)
 +{
 +	u32 rd, wr, cap;
 +
@@ -2546,7 +2546,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (rd == wr)
 +		return 0;
 +
-+	return f[6] + f[5] * rd;
++	return __ptr64(f[6]) + f[5] * rd;
 +}
 +
 +/*
@@ -2554,7 +2554,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * Returns: address of new read slot, or 0 if now empty
 + */
-+u32 fifo_ItemRdNext(u32 *f)
++unsigned long fifo_ItemRdNext(u32 *f)
 +{
 +	u32 rd, wr, cap, next_rd;
 +	int count;
@@ -2587,7 +2587,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (wr == next_rd)
 +		return 0;
 +
-+	return f[6] + f[5] * next_rd;
++	return __ptr64(f[6]) + f[5] * next_rd;
 +}
 +
 +/*
@@ -2652,7 +2652,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm.h b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h	2026-03-31 23:39:35.064018354 +0200
-@@ -0,0 +1,642 @@
+@@ -0,0 +1,645 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * HY310 CPU_COMM — ARM ↔ MIPS Inter-Processor Communication
@@ -2669,6 +2669,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +#ifndef _CPU_COMM_H_
 +#define _CPU_COMM_H_
++
++static inline unsigned long __ptr64(u32 p) { return p ? (unsigned long)p | 0xffff800000000000UL : 0; }
 +
 +#include <linux/types.h>
 +#include <linux/list.h>
@@ -2751,7 +2753,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +#define CPU_ID_MIPS		1
 +#define CPU_ID_MAX		2	/* only 0 and 1 used, though max_cpu=3 in init */
 +
-+/* MIPS control register base (ioremapped separately by mipsloader) */
++/* MIPS control register base */
 +#define MIPS_CTRL_BASE		0x03061000
 +#define MIPS_REG_STATUS		0x1C
 +#define MIPS_REG_SHARE14	0x24	/* SharedMemAddr written here */
@@ -3108,8 +3110,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +/* These mirror the globals from the stock module */
 +extern u32 ShMemAddr;		/* physical base of shared memory */
 +extern u32 ShMemSize;		/* size (5MB) */
-+extern u32 ShMemAddrVir;	/* kernel virtual after vmap */
-+extern u32 ShMemAddrBase;	/* uncacheable mapping base (= ShMemAddrVir) */
++extern unsigned long ShMemAddrVir;	/* kernel virtual after vmap */
++extern unsigned long ShMemAddrBase;	/* uncacheable mapping base (= ShMemAddrVir) */
 +extern struct cpu_comm_dev *pcpu_comm_dev;
 +
 +/* Secondary shared memory (optional, for extended SMM) */
@@ -3117,7 +3119,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +extern u32 ShMemSize1;
 +
 +/* HW spinlock handles */
-+extern void *hwlocks[HW_SPINLOCK_COUNT * 2]; /* [0..13]=handles, [14..27]=counters */
++extern void *hwlocks[HW_SPINLOCK_COUNT];
++extern u32 hwlock_counters[HW_SPINLOCK_COUNT];
 +
 +/* MIPS app-ready assumption flag (cache coherency workaround) */
 +extern int mips_app_ready_assumed;
@@ -3163,10 +3166,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* cpu_comm_fifo.c — ring buffer FIFO */
 +void InitMsgFIFO(void *fifo, const char *prefix, const char *suffix, int mode);
-+u32  fifo_getItemWr(u32 *fifo);
-+u32  fifo_requestItemWr(u32 *fifo);
-+u32  fifo_getItemRd(u32 *fifo);
-+u32  fifo_ItemRdNext(u32 *fifo);
++unsigned long  fifo_getItemWr(u32 *fifo);
++unsigned long  fifo_requestItemWr(u32 *fifo);
++unsigned long  fifo_getItemRd(u32 *fifo);
++unsigned long  fifo_ItemRdNext(u32 *fifo);
 +int  fifo_getCount(u32 *fifo);
 +int  fifo_isNearlyFull(u32 *fifo, int margin);
 +void fifo_setmode(u32 *fifo, int mode);
@@ -3178,7 +3181,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void InitCommShareSeqMem(u32 cpu_id, u32 direction);
 +void InitComponentPool(void *pool);
 +void InitMessagerPool(void *pool);
-+int  Trid_SMM_Init(u32 base, u32 size);
++int  Trid_SMM_Init(unsigned long base, u32 size);
 +u32  Trid_SMM_Malloc(u32 size);
 +u32  Trid_SMM_MallocAttr(u32 size);
 +int  Trid_SMM_Free(u32 mid_addr);
@@ -3187,14 +3190,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void cleanupFDCPUReset(u32 cpu_id);
 +u32  Mid2Phy(u32 cpu, u32 mid);
 +u32  Phy2Mid(u32 phy);
-+u32  Mid2Vir(u32 cpu, u32 mid);
-+u32  Vir2Mid(u32 cpu, u32 vir);
++unsigned long  Mid2Vir(u32 cpu, u32 mid);
++u32  Vir2Mid(u32 cpu, unsigned long vir);
 +
 +/* cpu_comm_proto.c — communication protocol */
 +void init_intrsem(int dummy);
 +int  SendCommLow(u8 *share_seq, u32 slot, u8 msg_type, u32 param, u32 sem_ptr);
-+int  SendComm2CPUEx(u32 msg, u32 target_cpu, int from_user);
-+int  SendComm2CPU(u32 msg, int from_user);
++int  SendComm2CPUEx(unsigned long msg, u32 target_cpu, int from_user);
++int  SendComm2CPU(unsigned long msg, int from_user);
 +void SendAckLow(void *data, u32 a2, u8 a3, u32 a4, u32 a5);
 +void command_action(u32 remote_cpu, u32 direction);
 +void comm_Action(int type, int cpu);
@@ -3226,7 +3229,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void Comm_ReleaseFreeCall(void *share_seq, void *call);
 +int  AddReturn2Fifo(u32 *fifo, void *data);
 +void returnPipeLine(void *data);
-+int  GetReturnbySessionId(u32 session_id, u32 cpu, u32 *result);
++int  GetReturnbySessionId(u32 session_id, u32 cpu, unsigned long *result);
 +
 +/* cpu_comm_rpc.c — high-level RPC API */
 +void *getComponentPool(void);
@@ -3280,10 +3283,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +const char *getCurCPUName(int dummy);
 +const char *getCPUIDName(u32 cpu_id);
 +u32  CPUId2Index(u32 cpu_id);
-+u32  getSeq(u32 cpu_id);
-+u32  getShareSeq(u32 cpu, u32 remote, u32 dir);
-+u32  getShareSeqR(u32 cpu, u32 dir);
-+u32  getShareSeqW(u32 cpu, u32 dir);
++unsigned long  getSeq(u32 cpu_id);
++unsigned long  getShareSeq(u32 cpu, u32 remote, u32 dir);
++unsigned long  getShareSeqR(u32 cpu, u32 dir);
++unsigned long  getShareSeqW(u32 cpu, u32 dir);
 +
 +/* export for other modules (tvtop, decd, etc.) */
 +void sunxi_cpu_comm_send_intr_to_mips(u32 cpu, u32 type, u32 value);
@@ -3324,7 +3327,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* ── Globals ───────────────────────────────────────────────── */
 +
-+void *hwlocks[HW_SPINLOCK_COUNT * 2];	/* [0..13]=lock handles, [14..27]=counters */
++void *hwlocks[HW_SPINLOCK_COUNT];
++u32 hwlock_counters[HW_SPINLOCK_COUNT];
 +
 +/*
 + * Known register addresses — the only registers io_accessor will touch.
@@ -3616,8 +3620,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		return ret;
 +	}
 +
-+	/* Increment lock counter (stored at hwlocks[lock_id + 14]) */
-+	((u32 *)hwlocks)[lock_id + HW_SPINLOCK_COUNT]++;
++	hwlock_counters[lock_id]++;
 +	return 0;
 +}
 +
@@ -3631,7 +3634,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	ret = __hwspin_trylock(hwlocks[lock_id], HWLOCK_RAW, NULL);
 +	if (ret == 0) {
-+		((u32 *)hwlocks)[lock_id + HW_SPINLOCK_COUNT]++;
++		hwlock_counters[lock_id]++;
 +		return 1; /* acquired */
 +	}
 +	return 0; /* failed */
@@ -3723,8 +3726,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		entry[1] = SPINLOCK_FREE;	/* status */
 +		entry[2] = 0;			/* mutex_flag */
 +		entry[3] = SPINLOCK_FREE;	/* owner_cpu = free */
-+		*(u32 *)(entry + 4) = 0;	/* ref_count */
-+		*(u32 *)(entry + 8) = SPINLOCK_HWID_NONE; /* thread_id */
++		writel(0, entry + 4);	/* ref_count */
++		writel(SPINLOCK_HWID_NONE, entry + 8); /* thread_id */
 +	}
 +
 +	return 0;
@@ -3830,17 +3833,17 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			 *      → enterCritical claimed it but thread_id not set yet
 +			 *   b) Recursive lock: thread_id == our tgid
 +			 */
-+			if (*(u32 *)(entry + 8) == SPINLOCK_HWID_NONE) {
++			if (readl(entry + 8) == SPINLOCK_HWID_NONE) {
 +				/* First acquisition — set thread_id + ref_count */
-+				*(u32 *)(entry + 8) = (u32)current->tgid;
-+				(*(u32 *)(entry + 4))++;
++				writel((u32)current->tgid, entry + 8);
++				writel(readl(entry + 4) + 1, entry + 4);
 +				leaveCritical(lock_id);
 +				return 2;	/* new lock acquired */
 +			}
 +			if (!entry[2] && /* mutex_flag clear */
-+			    *(u32 *)(entry + 8) == (u32)current->tgid) {
++			    readl(entry + 8) == (u32)current->tgid) {
 +				/* Same thread — recursive lock */
-+				(*(u32 *)(entry + 4))++;
++				writel(readl(entry + 4) + 1, entry + 4);
 +				leaveCritical(lock_id);
 +				return 1;	/* recursive */
 +			}
@@ -3858,8 +3861,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			 * Handle defensively: claim it now.
 +			 */
 +			entry[SPINLOCK_OFF_OWNER] = cur_cpu;
-+			*(u32 *)(entry + 8) = (u32)current->tgid;
-+			(*(u32 *)(entry + 4))++;
++			writel((u32)current->tgid, entry + 8);
++			writel(readl(entry + 4) + 1, entry + 4);
 +			dmb(ish);
 +			leaveCritical(lock_id);
 +			return 2;	/* new lock acquired */
@@ -3907,14 +3910,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	if (entry[SPINLOCK_OFF_OWNER] == SPINLOCK_FREE)
 +		BUG(); /* unlocking a free lock */
-+	if (*(u32 *)(entry + 8) == SPINLOCK_HWID_NONE)
++	if (readl(entry + 8) == SPINLOCK_HWID_NONE)
 +		BUG(); /* unlocking with no thread_id */
 +
 +	/* Decrement ref_count */
-+	if (--(*(u32 *)(entry + 4)) == 0) {
++	if ((writel(readl(entry + 4) - 1, entry + 4), readl(entry + 4)) == 0) {
 +		/* Last unlock — release fully */
 +		entry[SPINLOCK_OFF_OWNER] = SPINLOCK_FREE;
-+		*(u32 *)(entry + 8) = SPINLOCK_HWID_NONE;
++		writel(SPINLOCK_HWID_NONE, entry + 8);
 +	}
 +
 +	leaveCritical(lock_id);
@@ -3968,11 +3971,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	for (id = HW_SPINLOCK_APP_START; id <= HW_SPINLOCK_APP_END; id++) {
 +		entry = base + SPINLOCK_ENTRY_SIZE * id;
 +		if (entry[SPINLOCK_OFF_OWNER] == SPINLOCK_FREE) {
-+			if (*(u32 *)(entry + 4) != 0)
++			if (readl(entry + 4) != 0)
 +				BUG();
 +			if (entry[0] != SPINLOCK_FREE)
 +				BUG();
-+			if (*(u32 *)(entry + 8) != SPINLOCK_HWID_NONE)
++			if (readl(entry + 8) != SPINLOCK_HWID_NONE)
 +				BUG();
 +			entry[SPINLOCK_OFF_MUTEX] = 0;
 +			entry[SPINLOCK_OFF_OWNER] = getCurCPUID(0);
@@ -4002,7 +4005,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	spinlockhwReg(1);
 +
-+	if (*(u32 *)(entry + 4) != 0 || *(u32 *)(entry + 8) != SPINLOCK_HWID_NONE) {
++	if (readl(entry + 4) != 0 || readl(entry + 8) != SPINLOCK_HWID_NONE) {
 +		pr_err("cpu_comm: spinlock %d still in use\n", lock_id);
 +		spinUnlockhwReg(1);
 +		return -1;
@@ -4075,8 +4078,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			pr_info("cpu_comm: force-releasing lock %d (held by CPU %u)\n",
 +				i, cpu_id);
 +			entry[SPINLOCK_OFF_OWNER] = SPINLOCK_FREE;
-+			*(u32 *)(entry + 4) = 0;		/* ref_count = 0 */
-+			*(u32 *)(entry + 8) = SPINLOCK_HWID_NONE; /* thread_id = none */
++			writel(0, entry + 4);		/* ref_count = 0 */
++			writel(SPINLOCK_HWID_NONE, entry + 8); /* thread_id = none */
 +		}
 +	}
 +}
@@ -4220,8 +4223,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +u32 ShMemAddr;		/* physical base address */
 +u32 ShMemSize;		/* total size (5MB) */
-+u32 ShMemAddrVir;	/* kernel virtual (after vmap) */
-+u32 ShMemAddrBase;	/* uncacheable mapping base */
++unsigned long ShMemAddrVir;	/* kernel virtual (after vmap) */
++unsigned long ShMemAddrBase;	/* uncacheable mapping base */
 +u32 ShMemAddr1;		/* secondary region physical (optional) */
 +u32 ShMemSize1;		/* secondary region size */
 +
@@ -4665,7 +4668,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return phy;
 +}
 +
-+u32 Mid2Vir(u32 cpu, u32 mid)
++unsigned long Mid2Vir(u32 cpu, u32 mid)
 +{
 +	u32 phy = Mid2Phy(cpu, mid);
 +
@@ -4675,7 +4678,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return phy + (ShMemAddrBase - ShMemAddr);
 +}
 +
-+u32 Vir2Mid(u32 cpu, u32 vir)
++u32 Vir2Mid(u32 cpu, unsigned long vir)
 +{
 +	u32 phy;
 +
@@ -4688,11 +4691,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* ── Sequence helpers ──────────────────────────────────────── */
 +
-+u32 getSeq(u32 cpu_id)
++unsigned long getSeq(u32 cpu_id)
 +{
 +	if (WARN_ON(cpu_id > 1))
 +		return 0;
-+	return (u32)&s_CommSockt[cpu_id * (COMM_SOCKET_SIZE / 4)];
++	return (unsigned long)&s_CommSockt[cpu_id * (COMM_SOCKET_SIZE / 4)];
 +}
 +
 +/*
@@ -4705,7 +4708,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *   Each entry is 2440 bytes (share sequence with embedded FIFOs + call slots)
 + *   2 CPUs × 2 remotes × 2 directions = 8 entries
 + */
-+u32 getShareSeq(u32 cpu, u32 remote, u32 dir)
++unsigned long getShareSeq(u32 cpu, u32 remote, u32 dir)
 +{
 +	if (WARN_ON(!ShMemAddrBase || cpu > 1 || remote > 1 || dir > 1))
 +		return 0;
@@ -4717,7 +4720,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * getShareSeqR — Get read sequence (messages FROM remote TO us)
 + * "R" = we Read what remote sent. Local = getCurCPUID(), remote = cpu arg.
 + */
-+u32 getShareSeqR(u32 cpu, u32 dir)
++unsigned long getShareSeqR(u32 cpu, u32 dir)
 +{
 +	return getShareSeq(getCurCPUID(0), cpu, dir);
 +}
@@ -4726,7 +4729,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * getShareSeqW — Get write sequence (messages FROM us TO remote)
 + * "W" = we Write to remote. Local = cpu arg, remote = getCurCPUID().
 + */
-+u32 getShareSeqW(u32 cpu, u32 dir)
++unsigned long getShareSeqW(u32 cpu, u32 dir)
 +{
 +	return getShareSeq(cpu, getCurCPUID(0), dir);
 +}
@@ -5072,12 +5075,12 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		return;
 +
 +	for (i = 0; i < 2; i++) {
-+		u32 seq = getShareSeq(cpu_id, direction, i);
++		unsigned long seq = getShareSeq(cpu_id, direction, i);
 +		u8 *s = (u8 *)seq;
 +		u32 *fifo;
-+		u32 buf_vir;	/* virtual address of FIFO buffer */
++		unsigned long buf_vir;	/* virtual address of FIFO buffer */
 +		u32 buf_phy;	/* physical address of FIFO buffer */
-+		u32 entry_base;	/* virtual address of first call entry */
++		unsigned long entry_base;	/* virtual address of first call entry */
 +		int j;
 +
 +		if (!seq)
@@ -5099,7 +5102,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		if (buf_vir) {
 +			buf_phy = buf_vir - ShMemAddrBase + ShMemAddr;
 +			if (buf_phy) {
-+				u32 tmp_vir = buf_phy + ShMemAddrBase - ShMemAddr;
++				unsigned long tmp_vir = buf_phy + ShMemAddrBase - ShMemAddr;
 +				if (tmp_vir)
 +					memset_io((void *)tmp_vir, 0,
 +						  21 * 4); /* 21 slots × 4 bytes */
@@ -5144,7 +5147,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		entry_base = seq + 360;
 +
 +		for (j = 0; j < 20; j++) {
-+			u32 entry_vir = entry_base + j * COMM_MSG_SIZE;
++			unsigned long entry_vir = entry_base + j * COMM_MSG_SIZE;
 +			u32 entry_phy;
 +			u32 wr_slot_phy;
 +			u32 *wr_slot_vir;
@@ -5240,14 +5243,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * All pointers stored in the heap (page table, free lists) are physical
 + * addresses.  Access requires conversion to kernel virtual.
 + */
-+static inline u32 smm_phy2vir(u32 phy)
++static inline unsigned long smm_phy2vir(u32 phy)
 +{
 +	if (!phy)
 +		return 0;
 +	return phy + ShMemAddrBase - ShMemAddr;
 +}
 +
-+static inline u32 smm_vir2phy(u32 vir)
++static inline u32 smm_vir2phy(unsigned long vir)
 +{
 +	if (!vir)
 +		return 0;
@@ -5265,7 +5268,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * IDA RE @ 0xa184.
 + */
-+static int __shmalloc_brk(u32 *heap, int a2)
++static unsigned long __shmalloc_brk(u32 *heap, int a2)
 +{
 +	int new_break;
 +	int cur_break_phys;
@@ -5299,7 +5302,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +{
 +	int ptr;
 +	int waste;
-+	int page_table_vir;
++	unsigned long page_table_vir;
 +	int end;
 +	int needed_pages;
 +
@@ -5313,7 +5316,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (ptr) {
 +		/* page_table_vir = virtual address of page table base */
 +		if (heap[0])
-+			page_table_vir = (int)heap[0] + (int)ShMemAddrBase - (int)ShMemAddr;
++			page_table_vir = (int)heap[0] + ShMemAddrBase - ShMemAddr;
 +		else
 +			page_table_vir = 0;
 +
@@ -5326,7 +5329,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +		/* Update page_table_vir after potential null-correction */
 +		if (heap[0])
-+			page_table_vir = (int)heap[0] + (int)ShMemAddrBase - (int)ShMemAddr;
++			page_table_vir = (int)heap[0] + ShMemAddrBase - ShMemAddr;
 +		else
 +			page_table_vir = 0;
 +
@@ -5353,9 +5356,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * IDA RE @ 0xa3b8.
 + */
-+static int __shmalloc(u32 *heap, unsigned int size)
++static unsigned long __shmalloc(u32 *heap, unsigned int size)
 +{
-+	int page_table_vir;	/* virtual address of page table base */
++	unsigned long page_table_vir;	/* virtual address of page table base */
 +	unsigned int i;
 +	u32 *free_list_slot;
 +	int free_head_phy;
@@ -5369,7 +5372,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	/* page_table_vir = virt(heap[1]) */
 +	page_table_vir = (int)heap[1];
 +	if (page_table_vir)
-+		page_table_vir = page_table_vir + (int)ShMemAddrBase - (int)ShMemAddr;
++		page_table_vir = page_table_vir + ShMemAddrBase - ShMemAddr;
 +
 +	/* Round up small sizes */
 +	if (size <= 7)
@@ -5383,8 +5386,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		u32 *pte;
 +		unsigned int free_count;
 +		int result;
-+		int data_base_vir;
-+		int brk_vir;
++		unsigned long data_base_vir;
++		unsigned long brk_vir;
 +		int last_free_page;
 +		int last_free_count;
 +		int extra_pages;
@@ -5402,7 +5405,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +					data_base_vir = (int)heap[0];
 +					if (data_base_vir)
 +						data_base_vir = data_base_vir +
-+							(int)ShMemAddrBase - (int)ShMemAddr;
++							ShMemAddrBase - ShMemAddr;
 +
 +					/*
 +					 * PTE index → virtual address:
@@ -5459,7 +5462,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			data_base_vir = (int)heap[0];
 +			if (data_base_vir)
 +				data_base_vir = data_base_vir +
-+					(int)ShMemAddrBase - (int)ShMemAddr;
++					ShMemAddrBase - ShMemAddr;
 +
 +			if (brk_vir != data_base_vir +
 +			    (last_free_page - 1) * 4096)
@@ -5489,7 +5492,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +			if (data_base_v)
 +				data_base_v = data_base_v +
-+					(int)ShMemAddrBase - (int)ShMemAddr;
++					ShMemAddrBase - ShMemAddr;
 +
 +			pte = (u32 *)(page_table_vir + 12 *
 +				((page_alloc - data_base_v) / 4096) + 12);
@@ -5516,32 +5519,32 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	if (free_head_phy &&
 +	    (free_head_vir = (u32 *)(free_head_phy +
-+				     (int)ShMemAddrBase - (int)ShMemAddr)) != 0) {
++				     ShMemAddrBase - ShMemAddr)) != 0) {
 +		/*
 +		 * Validate pointer: must be 4-byte aligned and within heap bounds.
 +		 * If invalid, raise SIGSEGV (stock behaviour) — we use WARN+return.
 +		 */
 +		u32 heap_data_base = heap[47];
-+		u32 heap_data_base_vir = heap_data_base ?
++		unsigned long heap_data_base_vir = heap_data_base ?
 +			heap_data_base + ShMemAddrBase - ShMemAddr : 0;
 +
-+		if ((u32)free_head_vir <= heap_data_base_vir ||
-+		    (u32)free_head_vir >= heap_data_base_vir + heap[46]) {
++		if ((unsigned long)free_head_vir <= heap_data_base_vir ||
++		    (unsigned long)free_head_vir >= heap_data_base_vir + heap[46]) {
 +			/* Out of bounds */
 +			WARN(1, "cpu_comm: SMM free list head out of bounds (class=%u ptr=0x%x)\n",
-+			     i, (u32)free_head_vir);
++			     i, (unsigned long)free_head_vir);
 +			return 0;
 +		}
-+		if ((u32)free_head_vir & 3) {
++		if ((unsigned long)free_head_vir & 3) {
 +			WARN(1, "cpu_comm: SMM free list head misaligned (class=%u ptr=0x%x)\n",
-+			     i, (u32)free_head_vir);
++			     i, (unsigned long)free_head_vir);
 +			return 0;
 +		}
 +
 +		/* Validate prev pointer (free_head_vir[1]) */
 +		{
 +			u32 prev_phy = free_head_vir[1];
-+			u32 prev_vir;
++			unsigned long prev_vir;
 +
 +			if (heap_data_base >= prev_phy ||
 +			    prev_phy >= heap_data_base + heap[46]) {
@@ -5562,9 +5565,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +				if (next_vir) {
 +					/* Validate next pointer too */
-+					if ((u32)next_vir <= heap_data_base_vir ||
-+					    (u32)next_vir >= heap_data_base_vir + heap[46] ||
-+					    ((u32)next_vir & 3)) {
++					if ((unsigned long)next_vir <= heap_data_base_vir ||
++					    (unsigned long)next_vir >= heap_data_base_vir + heap[46] ||
++					    ((unsigned long)next_vir & 3)) {
 +						WARN(1, "cpu_comm: SMM free list next invalid\n");
 +						return 0;
 +					}
@@ -5585,10 +5588,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +				if (data_base_v)
 +					data_base_v = data_base_v +
-+						(int)ShMemAddrBase - (int)ShMemAddr;
++						ShMemAddrBase - ShMemAddr;
 +
 +				{
-+					u32 page_idx = ((u32)free_head_vir - data_base_v +
++					u32 page_idx = ((unsigned long)free_head_vir - data_base_v +
 +							4095) >> 12;
 +					u32 *page_pte = (u32 *)(page_table_vir +
 +								12 * page_idx + 12);
@@ -5607,7 +5610,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		}
 +	} else {
 +		/* Free list empty — allocate a whole page and carve it up */
-+		u32 page_vir = (u32)__shmalloc(heap, 4096);
++		unsigned long page_vir = (unsigned long)__shmalloc(heap, 4096);
 +
 +		if (page_vir) {
 +			unsigned int sub_count = 4096 >> i;
@@ -5619,7 +5622,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +			/* Chain sub-blocks j=1..sub_count-1 into the free list */
 +			for (j = 1; j < sub_count; ++j) {
-+				u32 block_vir = page_vir + (j << i);
++				unsigned long block_vir = page_vir + (j << i);
 +				u32 *block = (u32 *)block_vir;
 +				int list_head_phys;
 +
@@ -5632,7 +5635,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +				 * can update the list head via prev->next)
 +				 */
 +				list_head_phys = (int)&free_list_slot[17] +
-+					(int)ShMemAddr - (int)ShMemAddrBase;
++					ShMemAddr - ShMemAddrBase;
 +
 +				block[1] = list_head_phys;
 +
@@ -5660,7 +5663,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +				data_base_v = (int)heap[0];
 +				if (data_base_v)
 +					data_base_v = data_base_v +
-+						(int)ShMemAddrBase - (int)ShMemAddr;
++						ShMemAddrBase - ShMemAddr;
 +
 +				pte = (u32 *)(page_table_vir +
 +					12 * ((int)(page_vir - data_base_v) / 4096) + 12);
@@ -5682,10 +5685,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		} else {
 +			pr_err("cpu_comm: SMM small alloc failed (class=%u)\n", i);
 +		}
-+		return (int)page_vir;
++		return (unsigned long)page_vir;
 +	}
 +
-+	return (int)free_head_vir;
++	return (unsigned long)free_head_vir;
 +}
 +
 +/*
@@ -5777,7 +5780,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return result;
 +}
 +
-+int Trid_SMM_Init(u32 base, u32 size)
++int Trid_SMM_Init(unsigned long base, u32 size)
 +{
 +	u32 *heap;
 +	u32 page_count;
@@ -5802,8 +5805,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	 * in __shmalloc → crash on any allocation attempt.
 +	 */
 +	{
-+		u32 pt_vir = (u32)(heap + 1024);  /* page table virtual */
-+		u32 pt_phy = pt_vir - ShMemAddrBase + ShMemAddr; /* to physical */
++		unsigned long pt_vir = (unsigned long)(heap + 1024);  /* page table virtual */
++		u32 pt_phy = (u32)(pt_vir - ShMemAddrBase + ShMemAddr); /* to physical */
 +
 +		heap[0] = pt_phy;	/* free_list_head = page_table physical */
 +		heap[1] = pt_phy;	/* free_list_cur */
@@ -5825,7 +5828,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	{
 +		u32 pt_size_aligned = (12 * page_count + 4095) & ~4095UL;
 +		u32 data_start = pt_size_aligned + 4096; /* header(4096) + page_table */
-+		u32 heap_phy = (u32)heap - ShMemAddrBase + ShMemAddr;
++		u32 heap_phy = (u32)((unsigned long)heap - ShMemAddrBase + ShMemAddr);
 +
 +		heap[0xB4 / 4] = data_start;	/* data_start_offset (NOT brk, NOT capacity) */
 +		heap[0xB8 / 4] = size;		/* raw capacity */
@@ -5839,7 +5842,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	{
 +		u32 *shmem = (u32 *)ShMemAddrBase;
 +		u32 slot = 0; /* first heap slot */
-+		u32 heap_phy = (u32)heap - ShMemAddrBase + ShMemAddr;
++		u32 heap_phy = (u32)((unsigned long)heap - ShMemAddrBase + ShMemAddr);
 +
 +		/*
 +		 * IDA: v17[2462] = heap_phy where v17 = &ShMemAddrBase[9*slot]
@@ -5899,13 +5902,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	u32 slot_size;
 +	u64 *slot_entry;
 +	u32 *heap;
-+	int page_table_vir;
-+	int data_base_vir;
++	unsigned long page_table_vir;
++	unsigned long data_base_vir;
 +	u32 page_idx;
 +	u32 *pte;		/* page table entry for addr's page */
 +	u32 size_class;
 +	u32 alloc_count_or_pages;
-+	u32 vaddr;		/* virtual address of the block */
++	unsigned long vaddr;		/* virtual address of the block */
 +
 +	phy_addr = Mid2Phy(0, mid_addr);
 +	if (!phy_addr)
@@ -5941,11 +5944,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	page_table_vir = (int)heap[1];
 +	if (page_table_vir)
-+		page_table_vir = page_table_vir + (int)ShMemAddrBase - (int)ShMemAddr;
++		page_table_vir = page_table_vir + ShMemAddrBase - ShMemAddr;
 +
 +	data_base_vir = (int)heap[0];
 +	if (data_base_vir)
-+		data_base_vir = data_base_vir + (int)ShMemAddrBase - (int)ShMemAddr;
++		data_base_vir = data_base_vir + ShMemAddrBase - ShMemAddr;
 +
 +	vaddr = phy_addr + ShMemAddrBase - ShMemAddr;
 +
@@ -5956,7 +5959,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	 * real pages start at index 1.  So page_idx = (addr - data_base) / 4096
 +	 * and pte = &page_table[(page_idx + 1) * 3].
 +	 */
-+	page_idx = (vaddr - (u32)data_base_vir) / 4096;
++	page_idx = (vaddr - (unsigned long)data_base_vir) / 4096;
 +	pte = (u32 *)(page_table_vir + 12 * (page_idx + 1));
 +
 +	size_class = pte[0];
@@ -6049,11 +6052,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			u32 *mp = (u32 *)(page_table_vir + 12 * merged_page);
 +
 +			if (mp[0] > 7 && merged_page + mp[0] == heap[4]) {
-+				int brk_vir = __shmalloc_brk(heap, 0);
-+				int db = (int)heap[0];
++				unsigned long brk_vir = __shmalloc_brk(heap, 0);
++				unsigned long db = (int)heap[0];
 +
 +				if (db)
-+					db = db + (int)ShMemAddrBase - (int)ShMemAddr;
++					db = db + ShMemAddrBase - ShMemAddr;
 +
 +				if (brk_vir == db + (merged_page - 1) * 4096 +
 +				    (int)(mp[0] << 12)) {
@@ -6081,7 +6084,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		 */
 +		u32 *free_list_slot = &heap[2 * size_class];
 +		u32 heap_data_base = heap[47];
-+		u32 heap_data_base_vir = heap_data_base ?
++		unsigned long heap_data_base_vir = heap_data_base ?
 +			heap_data_base + ShMemAddrBase - ShMemAddr : 0;
 +
 +		/* Validate vaddr */
@@ -6106,7 +6109,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			 */
 +			u32 sub_count = 4096u >> size_class;
 +			u32 i;
-+			u32 page_base_vir = vaddr & ~0xFFFu;
++			unsigned long page_base_vir = vaddr & ~0xFFFu;
 +			u32 cur_block;
 +
 +			if (free_list_slot[5] > 1) {
@@ -6116,7 +6119,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +				for (i = 1, cur_block = (u32)free_list_slot[17];
 +				     i < sub_count && cur_block;
 +				     ++i) {
-+					u32 cur_vir;
++					unsigned long cur_vir;
 +
 +					if (!cur_block)
 +						break;
@@ -6135,9 +6138,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +						u32 *blk = (u32 *)cur_vir;
 +						u32 next_phy = blk[0];
 +						u32 prev_phy = blk[1];
-+						u32 next_vir2 = next_phy ?
++						unsigned long next_vir2 = next_phy ?
 +							next_phy + ShMemAddrBase - ShMemAddr : 0;
-+						u32 prev_vir2 = prev_phy ?
++						unsigned long prev_vir2 = prev_phy ?
 +							prev_phy + ShMemAddrBase - ShMemAddr : 0;
 +
 +						if (next_vir2)
@@ -6161,7 +6164,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +				heap[44] -= 4096 - (1u << size_class);
 +
 +				/* Convert page to a "1-page large allocation" and free it */
-+				page_idx = (page_base_vir - (u32)data_base_vir) / 4096;
++				page_idx = (page_base_vir - (unsigned long)data_base_vir) / 4096;
 +				pte = (u32 *)(page_table_vir + 12 * (page_idx + 1));
 +				pte[0] = 0;
 +				pte[1] = 1;
@@ -6189,7 +6192,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +			/* Update old head's prev to point to us */
 +			if (old_head_phy) {
-+				u32 old_head_vir = old_head_phy + ShMemAddrBase - ShMemAddr;
++				unsigned long old_head_vir = old_head_phy + ShMemAddrBase - ShMemAddr;
 +
 +				if (old_head_vir > heap_data_base_vir &&
 +				    old_head_vir < heap_data_base_vir + heap[46] &&
@@ -6236,7 +6239,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +int InitCommMem(int mode)
 +{
-+	u32 base = ShMemAddrBase;
++	unsigned long base = ShMemAddrBase;
 +	u32 *shmem;
 +	int i;
 +
@@ -6580,7 +6583,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * @target_cpu: 0=local (ARM), 1=remote (MIPS)
 + * @from_user:  non-zero if msg_ptr is in userspace
 + */
-+int SendComm2CPUEx(u32 msg_ptr, u32 target_cpu, int from_user)
++int SendComm2CPUEx(unsigned long msg_ptr, u32 target_cpu, int from_user)
 +{
 +	u8     *share_seq_w;	/* write-side share sequence */
 +	u32     seq_base;	/* comm_socket base for dst_cpu */
@@ -6859,7 +6862,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return ret;
 +}
 +
-+int SendComm2CPU(u32 msg_ptr, int from_user)
++int SendComm2CPU(unsigned long msg_ptr, int from_user)
 +{
 +	u16 target;
 +
@@ -7041,10 +7044,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + */
 +void command_action(u32 remote_cpu, u32 direction)
 +{
-+	u32 share_seq_r;	/* read sequence (messages FROM remote) */
++	unsigned long share_seq_r;	/* read sequence (messages FROM remote) */
 +	u32 share_seq_w;	/* write sequence (for sending ACK TO remote) */
 +	u32 seq_idx;		/* current sequence index */
-+	u32 entry_base;		/* virtual address of the call entry */
++	unsigned long entry_base;		/* virtual address of the call entry */
 +	u16 component_id;
 +	u32 session_id;
 +
@@ -7198,7 +7201,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + */
 +void ack_action(u32 cpu, u32 direction)
 +{
-+	u32 share_seq;
++	unsigned long share_seq;
 +
 +	if (WARN_ON(cpu > 1))
 +		return;
@@ -7377,7 +7380,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* Offsets from ShMemAddrBase */
 +#define RT_VERSION_OFF		30144	/* u32 version counter */
-+#define RT_COUNT_OFF		30148	/* u32 entry count (checked <= 1223) */
++#define RT_COUNT_OFF		30148	/* unsigned long entry count (checked <= 1223) */
 +#define RT_TABLE_OFF		30152	/* start of 96-byte entries */
 +
 +/* Entry field offsets */
@@ -7877,7 +7880,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	*(u16 *)(local_msg + 6) &= ~MSG_FLAG_NOTIFY;
 +
 +	/* Send via SendComm2CPUEx (target_cpu=0 = auto-detect via FindRoutine) */
-+	ret = SendComm2CPUEx((u32)local_msg, 0, 0);
++	ret = SendComm2CPUEx((unsigned long)local_msg, 0, 0);
 +	if (ret) {
 +		pr_err("cpu_comm: CPUComm_CallEx: SendComm2CPUEx failed (%d)\n",
 +		       ret);
@@ -7911,7 +7914,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	/* Get the return message from the return FIFO */
-+	ret = GetReturnbySessionId(session_ptr, dst_cpu, (u32 *)&return_entry);
++	ret = GetReturnbySessionId(session_ptr, dst_cpu, (unsigned long *)&return_entry);
 +	if (ret) {
 +		pr_err("cpu_comm: CPUComm_CallEx: return not found (session=0x%x)\n",
 +		       session_ptr);
@@ -7931,7 +7934,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		if (return_entry[4] != 15 && return_entry[4] <= 10) {
 +			*result = return_entry[4]; /* result count */
 +			for (i = 0; i < (int)return_entry[4]; i++)
-+				result[i + 1] = *(u32 *)&return_entry[2 * i + 22];
++				result[i + 1] = *(unsigned long *)&return_entry[2 * i + 22];
 +		}
 +
 +		/* Release the call slot back to the share sequence */
@@ -8025,7 +8028,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	*(u16 *)(local_msg + 6) |= MSG_FLAG_NOTIFY;
 +
 +	/* Send via auto-detect target (target_cpu=0) */
-+	return SendComm2CPUEx((u32)local_msg, 0, 0);
++	return SendComm2CPUEx((unsigned long)local_msg, 0, 0);
 +}
 +
 +int CPUComm_Notify_Ex(void *name, void *params)
@@ -8255,7 +8258,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +				}
 +
 +				/* Send response back to caller */
-+				if (SendComm2CPUEx((u32)local_msg, 1, 0))
++				if (SendComm2CPUEx((unsigned long)local_msg, 1, 0))
 +					pr_warn("cpu_comm: comm_CallWorkAction: "
 +						"SendComm2CPUEx failed\n");
 +			}

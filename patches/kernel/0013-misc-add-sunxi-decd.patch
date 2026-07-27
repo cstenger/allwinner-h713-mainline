@@ -1,7 +1,7 @@
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/misc/sunxi_decd/decd_core.c b/drivers/misc/sunxi_decd/decd_core.c
 --- a/drivers/misc/sunxi_decd/decd_core.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/misc/sunxi_decd/decd_core.c	2026-04-03 21:07:08.077699016 +0200
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,252 @@
 +// SPDX-License-Identifier: GPL-2.0
 +
 +#include <linux/cdev.h>
@@ -12,6 +12,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +#include <linux/of.h>
 +#include <linux/of_address.h>
 +#include <linux/of_irq.h>
++#include <linux/of_platform.h>
 +#include <linux/platform_device.h>
 +#include <linux/pm_runtime.h>
 +#include <linux/reset.h>
@@ -198,6 +199,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (ret)
 +		goto err_pm;
 +	g_dec = dec;
++	of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
 +	dev_info(&pdev->dev, "reconstructed decd probed\n");
 +	return 0;
 +err_pm:

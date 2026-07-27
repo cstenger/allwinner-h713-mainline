@@ -11,7 +11,7 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -0,0 +1,1809 @@
+@@ -0,0 +1,1789 @@
 +/*
 + * Shared device tree for the Allwinner H713 SoC and HY200 family.
 + *
@@ -74,7 +74,7 @@
 +		 *   Framebuffer: 26MB  @ 0x4be01000
 +		 *   Total:       40MB
 +		 */
-+		mips_reserved: mipsloader@4b100000 {
++		mips_reserved: mips-firmware@4b100000 {
 +			compatible = "shared-dma-pool";
 +			reg = <0x4b100000 0x0e41000>;
 +			no-map;
@@ -1210,26 +1210,7 @@
 +		 * MIPS Display Co-processor (dec@5600000)
 +		 * The DEC node is the parent container for the MIPS subsystem.
 +		 * Stock DTS: compatible = "allwinner,sunxi-dec", "simple-bus"
-+		 * Contains the mipsloader child node.
 +		 */
-+		/*
-+		 * MIPS Co-processor Loader
-+		 * Loads display.bin firmware to 0x4b100000 (40MB region)
-+		 * Controls MIPS boot/halt via bus-reset, cold-reset, soft-reset
-+		 * Stock: child of dec@5600000, but we make it standalone for cleaner probe
-+		 */
-+		mipsloader: mipsloader@3061000 {
-+			compatible = "allwinner,sunxi-mipsloader";
-+			reg = <0x03061000 0x100>;
-+			resets = <&ccu RST_BUS_MIPS>,
-+				 <&ccu RST_BUS_MIPS_DBG>,
-+				 <&ccu RST_BUS_MIPS_CFG>;
-+			reset-names = "bus-reset", "cold-reset", "soft-reset";
-+			clocks = <&ccu CLK_BUS_MIPS>, <&ccu CLK_MIPS>;
-+			clock-names = "bus-clk", "mips-clk";
-+			memory-region = <&mips_reserved>;
-+			status = "okay";
-+		};
 +
 +		/*
 +		 * GE2D Display Controller (trix,ge2d)
@@ -1417,7 +1398,6 @@
 +			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>;
 +			clocks = <&ccu CLK_BUS_MSGBOX>;
 +			resets = <&ccu RST_BUS_MSGBOX>;
-+			mips-loader = <&mipsloader>;
 +			shared-memory = <&cpu_comm_reserved>;
 +			hwlocks = <&hwspinlock 0>;
 +			status = "okay";
@@ -1823,7 +1803,7 @@
 +};
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,34 @@
 +/dts-v1/;
 +
 +#include "sun50i-h713.dtsi"
@@ -1833,11 +1813,11 @@
 +	compatible = "cstenger,hy200-qz713df-a1", "allwinner,sun50i-h713";
 +
 +	chosen {
-+		bootargs = "console=ttyS0,115200 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M";
++		bootargs = "console=ttyS0,115200 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M";
 +	};
 +};
 +
-+&mips_reserved { status = "disabled"; };
++&mips_reserved { status = "okay"; };
 +&cpu_comm_reserved { status = "disabled"; };
 +&mips_framebuf { status = "disabled"; };
 +&framebuf_reserved { status = "disabled"; };
@@ -1851,7 +1831,6 @@
 +&spdif { status = "disabled"; };
 +&spdif1 { status = "disabled"; };
 +&audio_bridge { status = "disabled"; };
-+&mipsloader { status = "disabled"; };
 +&ge2d { status = "disabled"; };
 +&tvtop { status = "disabled"; };
 +&dec { status = "disabled"; };

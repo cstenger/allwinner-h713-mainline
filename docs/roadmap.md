@@ -126,10 +126,29 @@ attached, the display path can be brought up here, not only on the projector
      mainline, rather than disassembling `display.bin`. Watch the enable-ordering
      trap: mainline asserts PB5 before any init, and PB5 can't be freely toggled
      (fan interlock). 0032 stays as the correct front-end.
-   - **LVDS panel bring-up + MIPS display coprocessor pipeline** (`mipsloader` +
-     `nsi` + `cpu-comm` + `tvtop` + `decd`) — the projector's scanout path (RE'd
-     by well0nez; the hardest, least-understood piece). Same hardware as Phase 4,
-     but startable here on the bench.
+   - **LVDS panel bring-up + MIPS display coprocessor pipeline** (U-Boot
+     `h713_mips` + Linux `nsi` + `cpu-comm` + `tvtop` + `decd`) — the
+     projector's scanout path (RE'd by well0nez; the hardest, least-understood
+     piece). Same hardware as Phase 4, but startable here on the bench. Gemini's
+     first integrated Linux-loader attempt exposed patch-integrity, arm64
+     pointer-width, probe-ordering, and reproducibility failures. Bring-up now
+     follows the gated [MIPS display recovery plan](mips-display-recovery.md):
+     safe kernel → manual U-Boot loader → readiness witness → CPU_COMM
+     address-model port → TVTOP/DECD → GE2D. Firmware validation and reset
+     release are hardware-verified in U-Boot proper. A cache-coherent BSS-clear
+     witness has now independently proven MIPS instruction execution on three
+     pristine firmware loads. Higher-level firmware readiness still needs a
+     bounded mailbox/IPC acknowledgement before autoboot or Linux clients are
+     enabled. The live-MIPS Panfrost stall is now resolved: U-Boot prepares the
+     video2 parent, four display module clocks, the recovered TVTOP routing, and
+     mixer control before MIPS release. The installed implementation passes its
+     BSS execution witness, hands off to Linux with Panfrost enabled, registers
+     the G31 and DRM render node, and reaches `systemd` state `running` with no
+     failed units. Broader factory PH/TVCAP/HDMI/LVDS phases remain excluded
+     after a combined diagnostic path wedged, and direct INCAP access is a
+     separate hard stall. The next gate before autoboot or Linux clients is a
+     bounded mailbox/IPC readiness acknowledgement. Linux currently only
+     protects the firmware DRAM and does not touch MIPS control registers.
 4. **GPU (Mali-G31 / Panfrost).** Driver is mainline and binds now; Panfrost can
    render offscreen/headless (EGL/GBM, PRIME buffer sharing) for validation, but
    anything *visible* is gated on the display path (item 3), so it is downstream

@@ -485,7 +485,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/misc/sunxi_tvtop/sunxi_tvtop_drv.c b/drivers/misc/sunxi_tvtop/sunxi_tvtop_drv.c
 --- a/drivers/misc/sunxi_tvtop/sunxi_tvtop_drv.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/misc/sunxi_tvtop/sunxi_tvtop_drv.c	2026-04-03 21:26:27.314710757 +0200
-@@ -0,0 +1,457 @@
+@@ -0,0 +1,455 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Allwinner H713 TV Subsystem Top — Platform Driver
@@ -904,10 +904,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +int sunxi_tvtop_client_register(struct device *client_dev)
 +{
-+	if (!tvtopdev)
-+		return -EINVAL;
-+	if (!tvtopdev->pdev_dev)
-+		return -EINVAL;
++	if (!tvtopdev || !tvtopdev->pdev_dev)
++		return -EPROBE_DEFER;
 +
 +	/* Stock passes flag value 2 = DL_FLAG_AUTOREMOVE_CONSUMER */
 +	device_link_add(client_dev, tvtopdev->pdev_dev,
