@@ -93,15 +93,33 @@ eMMC:
 # in U-Boot: exact display.bin address and size
 run serial_mode; fastboot -l 0x4b100000 -s 0x132b18 usb 0; run serial_mode
 
-# host: download directly to 0x4b100000, then warm-reset to the U-Boot prompt
+# host: download directly to 0x4b100000, then leave fastboot WITHOUT resetting
 fastboot stage display.bin
-fastboot reboot bootloader
+fastboot continue
 ```
 
-The second command writes the same one-shot `0xb007c0de` marker to RTC GP7
-(`0x0709011c`) as Linux `reboot bootloader`. Preboot consumes and clears the
-marker, disables autoboot, and leaves the board at the U-Boot prompt. The warm
-reset preserves the staged RAM on H713.
+**Exit staging with `fastboot continue`, never `fastboot reboot bootloader`.**
+`continue` trips `g_dnl_detach()`, so `do_fastboot` returns, the rest of the
+`;` sequence runs, and the board lands at the prompt with DRAM untouched.
+Ctrl-C on UART breaks the same loop and is an equally clean escape.
+
+A warm reset does **not** preserve staged RAM on H713, contrary to what this
+section previously claimed: SPL re-runs DDR3 init and training, and
+`0x4b100000` comes back as uninitialized DRAM. Bench-verified 2026-07-28 —
+after `fastboot reboot bootloader` the window read `a41ef7f5 effffeff …` and
+`h713_mips verify` reported SHA-256 `991c1364…`, the hash of noise. The same
+stage exited with `fastboot continue` verified as the pinned `16c74a28…`.
+
+This failure is quiet and dangerous: the staged region hashes to a plausible
+value rather than reading back empty, so any experiment that skips
+verification silently runs against garbage. Always `h713_mips verify` after
+staging and before `start`, `probe-ready`, or `probe-trace`.
+
+The lifecycle verbs below still reset by design. `fastboot reboot bootloader`
+writes the same one-shot `0xb007c0de` marker to RTC GP7 (`0x0709011c`) as Linux
+`reboot bootloader`; preboot consumes and clears the marker, disables autoboot,
+and leaves the board at the U-Boot prompt. Use it to *reach* a prompt, not to
+preserve anything in DRAM.
 
 Power the board down through the same PSCI path used by Linux:
 

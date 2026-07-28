@@ -223,12 +223,95 @@ also excluded. LVDS registers become ARM-accessible once the display clock tree
 is prepared, but no LVDS write is required for the proven Linux handoff, so
 they remain out of `h713_mips`.
 
+The specific claim that stock register `0x051c0010 <- 0x01800045` stalls ARM
+UART and USB ACM is **withdrawn**. That observation predates
+`h713_display_prepare()` and was a clocking artifact, not a property of the
+register. Retested on the bench on 2026-07-28 with the MIPS held in reset and
+only the prepared clock tree applied by hand:
+
+- the whole LVDS window `0x051c0000..0x051c0057` reads back zero, so the block
+  is idle rather than absent;
+- `0x051c0010` is readable, and the stock write lands and persists — a
+  subsequent read returns `0x01800045`;
+- the write is repeatable: two back-to-back writes both completed, and no other
+  register in the window changed, so it behaves as a standalone enable rather
+  than the entry point of a state machine;
+- UART stayed responsive throughout. An observed reset during the first attempt
+  was the 16 s watchdog expiring (`wdt start` does not self-service), not a
+  stall; re-running the whole sequence inside a single `;`-separated line
+  reproduced the writes with no reset.
+
+The cold module-clock dividers were captured in the same session and
+independently corroborate the recovered frequencies: `0x02001050` is
+`0x08003101` (N=49, 1200 MHz), and deint/panel `0x00000007` (÷8 = 150 MHz) and
+SVP-DTL `0x00000005` (÷6 = 200 MHz) match the documented rates. AFBD
+`0x00000000` (÷1) implies 1200 MHz, not the 600 MHz recorded earlier; treat the
+AFBD figure as unverified. `0x02001dd8` already reads `0x00010001` cold, so
+that line of `h713_display_prepare()` is a no-op against the current SPL.
+
+The general lesson is that "this register wedges the interconnect" has meant
+"this block was unclocked" every time it has been run down. Apply the same
+suspicion to the remaining exclusions — INCAP at `0x06940000` in particular —
+before treating them as hardware limits.
+
+## Firmware startup trace (2026-07-28)
+
+`h713_mips probe-trace` instruments the authenticated image with 671 volatile
+word patches — code caves plus `j`/`jal` redirection — that store marker ids to
+the firmware's uncached `0xae340000` alias, visible to the ARM at
+`H713_MIPS_SHMEM_ADDR + H713_MIPS_TRACE_OFF`. Markers are streamed to UART as
+they change rather than dumped after the poll loop, because the failure being
+chased stalls the interconnect and kills the ARM console; a post-hoc dump
+returns nothing in exactly the case that matters.
+
+A marker fires when its call is **entered**, so the last marker reported names
+a call that never returned. Relevant sites:
+
+| Marker | Site | Enters |
+| --- | --- | --- |
+| 17 | `0x4b152cf0` | `0x4b10e770` |
+| 18 | `0x4b152cf8` | `0x4b10d40c` |
+| 29 | `0x4b10d584` | `0x4b114a8c` |
+| 30 | `0x4b10d598` | `0x4b115cec` |
+| 31 | `0x4b10d5a4` | `0x4b1140c0` |
+
+Two runs from a hash-verified pristine image differ only in whether the ARM
+releases TVCAP when marker 14 appears:
+
+- **Without the TVCAP release** the firmware reaches markers 10-14, 16, 17,
+  26-30 and stops. Marker 30's call into `0x4b115cec` never returns. The ARM
+  survives the full timeout, `status=1`, the BSS witness is clear, both CPU_COMM
+  magics read `deadbeef`, and the ARM flag reads back `0x5` — but MIPS READY is
+  never set.
+- **With the TVCAP release** markers 18, 19, 20 and 31 additionally fire, and
+  then the interconnect stalls and takes ARM's UART with it.
+
+The TVCAP release is therefore a genuine prerequisite, not the fault: it is what
+lets `0x4b115cec` return. The wedge lives on the path it unblocks. The firmware
+references INCAP `0x06940000` (9 sites), HDMI-RX `0x06840000` (15) and
+`0x068c0000` (48), which is consistent with the independent finding that direct
+INCAP access wedges even after the display and TVCAP clocks are reconstructed.
+
+The next bisect therefore runs **with** TVCAP released and adds markers beyond
+20/31 to find the first capture-block access that stalls the bus. Markers
+130-132 (trace slots 148-150) are already installed across the four-registration
+group at `0x8b128020` — ids `0x12e`, `0x130`, `3`, `8` — and will report once
+execution reaches it.
+
+Treat the earlier note that a run reached the `0x130` registration as
+unverified. It predates hash-verified staging and live streaming, and no trace
+output was preserved from it.
+
 Do not add MIPS autoboot yet. The next prerequisite is a bounded mailbox/IPC
 acknowledgement that proves higher-level firmware readiness; CPU_COMM remains
 downstream of that work.
 
 The filesystem `load`/`boot` path is build-tested but has not yet been exercised
-against a target filesystem containing `display.bin`. Before installing
+against a target filesystem containing `display.bin`. The working way to get a
+pristine image into the firmware window is fastboot RAM staging into the
+`-l 0x4b100000 -s 0x132b18` buffer, exited with `fastboot continue` — a warm
+reset destroys the staged image (see [flash.md](flash.md)). Always confirm with
+`h713_mips verify` before any `start`, `probe-ready`, or `probe-trace`. Before installing
 U-Boot, the prior one-megabyte LBA-16 region was backed up on the board as
 `/root/u-boot-lba16-pre-mips-backup.bin`, SHA-256
 `db98d1b15c59349fec96b28ac332e850de932d0bab7786db4a44173db323829e`.
