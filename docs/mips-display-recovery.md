@@ -415,93 +415,137 @@ all, so every clock it depends on must come from the ARM.
 
 ## The ARM display path, and why it is not independent
 
-`LogoRegData.bin` is a fourth vendor artifact, loaded by stock U-Boot from
-`mips/LogoRegData.bin`. The ARM consumes it: stock parses and applies it
-itself, as its own strings show — `Invalid logo regbin:%s`,
-`Get logo table:%d fail!`, `create_fastlogo_inst fail!`,
-`Display fastlogo finish!`.
-
-It is a masked register write-table: 16-byte `{address, value, mask, type}`
-records where type 1/2/4 is the access width, plus control records with a zero
-address and type `0xff` carrying a delay. Roughly 700 register writes across
-the CCU, TVTOP, DE, mixer and LVDS. Records are 16 bytes but only 4-byte
-aligned, and the stream changes phase between runs, so a walker must
+`LogoRegData.bin` is a fourth vendor artifact that stock U-Boot parses and
+applies itself before blitting its logo, as its own strings show
+(`Invalid logo regbin:%s`, `create_fastlogo_inst fail!`,
+`Display fastlogo finish!`). It is a masked register write-table of 16-byte
+`{address, value, mask, type}` records where type 1/2/4 is the access width and
+a zero address with type `0xff` carries a delay. Records are 16 bytes but only
+4-byte aligned and the stream changes phase between runs, so a walker must
 resynchronise rather than step a fixed lattice.
 
-The container holds **alternatives, not one sequence**: a CCU/TVTOP prologue,
-eleven timing variants, and seven DE/mixer blocks. Applying a whole range
-leaves the *last* variant in force. The block matching this panel is
-`0x15d4..0x180c` — `0x05880020 = 0x02f80550` (1360x760 total),
-`0x05880024 = 0x02d00500` (1280x720 active), `0x05880028 = 0x00140028`
-(bp 40/20), `0x0588002c = 0x00000014` (hs 20), which reproduces
-`display_cfg.xml` field for field.
+The container is **indexed**. Descriptors of `0x18` bytes start at offset `0x10`,
+their count given by the header at `+0x08` divided by `0x18`. Each begins with a
+project ID matching the `ProjectID_*.TSE` filenames, and two words select that
+project's tables:
 
-**An earlier revision claimed the ARM path and the MIPS pipeline were
-independent, and that a boot console needed only the ARM side. That is wrong.**
-Stock's own fastlogo releases the coprocessor as an integral step of putting
-its logo on screen. The display requires the MIPS to be running; the two are
-one path.
+| Field | Selects |
+| --- | --- |
+| word3 & 0xffff | prologue variant, 1-based |
+| word3 >> 16 | timing variant, 0-based |
+| word4 & 0xffff | DE/mixer variant, 0-based |
+
+A working configuration is a *consistent triple*, not three ranges picked by
+eye; choosing them by hand produced combinations no project uses.
+
+**The ARM path is not independent of the MIPS.** Stock's fastlogo releases the
+coprocessor as an integral step of putting its logo on screen, so a boot console
+cannot be reached from the ARM alone.
+
+### Use the board's own artifacts
+
+Everything in this project had been derived from a captured dump that is **a
+different firmware revision than the bench board carries**:
+
+| Artifact | Board | The dump previously used |
+| --- | --- | --- |
+| `display.bin` | 1255696 B, `4380f1b3...` | 1256216 B, `16c74a28...` |
+| `LogoRegData.bin` | 15652 B, 15 descriptors | 14380 B, 13 descriptors |
+| stock U-Boot | `2018.05-00027-ge159793` (Aug 2025) | `2018.05-00021-g346d3eb` (Mar 2025) |
+
+Consequently the pinned hash, every block offset, the project-to-table mapping,
+the HDCP wait address, the BSS bounds and the 671-entry trace table were all
+wrong. Any conclusion measured against them is void, including the earlier
+four-project sweep and the whole marker map.
+
+The board's copies live in the stock FAT bootloader partition at `mmc 1:2`, and
+`h713_disp auto <project>` reads them from there. Extracted copies are kept in
+`local/mips-display/board-b-mips/`, and the board's real stock bootloader --
+pulled from its TOC1 container at `0xc00800` in the eMMC capture -- in
+`local/mips-display/board-b-stock/`. Slots A and B are byte-identical.
+
+Stock's fastlogo sequence is **byte-identical between the two U-Boot builds**,
+so the transcription below stands; what was wrong was the data it was pointed
+at.
 
 ### Stock fastlogo, transcribed
 
-The stock U-Boot is **Thumb**, not ARM — its first word is only the exception
-vector. Load base is `0x4a000000`, verified by every string address appearing
-as a literal. `"Display fastlogo finish!"` is printed at `0x4a022bc6`.
-
-The tail, from `0x4a022a3c`, with 12 ms between steps:
+The stock U-Boot is **Thumb**, not ARM -- its first word is only the exception
+vector. Load base `0x4a000000`, verified by every string address appearing as a
+literal. In the board's build `"Display fastlogo finish!"` prints at
+`0x4a022c3a`.
 
 ```
 0x02000150 <- 0x22ffff22    PH pin mux (PH0/1 stay UART0)
 0x02001d88 <- 0x00010001    TVCAP gate/reset
-0x02001040 <- 0xb8003501    PLL enable (same rate, cold state is off)
+0x02001040 <- 0xb8003501    PLL enable (cold state is off)
 0x02001d6c <- 0x80000305
-0x02001020 <- 0xb8006301    PLL_PERIPH0  -- SEE HAZARD BELOW
+0x02001020 <- 0xb8006301    PLL_PERIPH0  -- SEE HAZARD
 0x02001d74 <- 0x81000001
 0x02001068 <- 0xb8002f01    PLL enable (cold state is off)
 0x02001d84 <- 0x80000000
 0x02001d80 <- 0xc0000000
-0x06e00004 <- 0x01111117 ; 0x06e00008 <- 0x404 ; 0x06e00000 <- 0x00111111
-   ... same three <- 0 ... then the same three restored   (reset pulse)
+0x06e00004/8/0 set, cleared, set again   (reset pulse)
 0x06940000 <- 1             INCAP
 0x051c0010 <- 0x01800045    LVDS enable
-<MIPS clock/reset/bootaddr/release, identical to h713_mips>
+<MIPS clock/reset/bootaddr/release>
 delay 300 ms
 0x051c0010 <- 0x45          LVDS finalise
 ```
 
-**INCAP does not wedge.** `0x06940000 <- 1` is recorded elsewhere in this
-document as wedging independently. With the vendor fabric configured it is
-fine, on stock and on ours. Another "unclocked, not forbidden" case.
+Within the table-application loop, stock also issues an LVDS FIFO reset after
+the timing table -- pulse bit 8 of `0x05700088`, then **rewrite `0x0588000c`
+with its saved value** -- and writes `0x0525c038 <- 0x100` before the DE table.
 
-**Hazard: do not write `0x02001020`.** That is PLL_PERIPH0, which clocks MMC
-and the AHB/APB buses. Our U-Boot runs it at `0xb8003100`; stock's fastlogo
-writes `0xb8006301`. Replaying that write from a U-Boot prompt powered the
-bench board off. Stock is writing a value that is already in force in its own
-boot context; ours is not. `0x02001040` and `0x02001068` are safe because both
-are *disabled* in our cold state, so nothing depends on them.
+**INCAP does not wedge.** `0x06940000 <- 1` is safe once the fabric is
+configured, on stock and on ours.
 
-### Where this stops
+**TVCAP is enabled by the ARM**, with the explicit values above rather than by
+OR-ing an enable bit onto the cold state.
 
-Replaying the above, with all four artifacts staged and the MIPS executing
-(BSS witness clear), leaves the panel dark. The LVDS FIFO status at
-`0x05880FE0` does respond — `0x2` cold, `0x0` after a FIFO reset via
-`0x05700088` bit 8, `0x3` after the full sequence — but never changes between
-consecutive reads, so nothing is scanning.
+**Hazard: do not write `0x02001020`.** That is PLL_PERIPH0, which clocks MMC and
+the buses. Stock writes a value already in force in its own boot context; ours
+runs at `0xb8003100`, and replaying stock's write powers the bench board off.
+`0x02001040` and `0x02001068` are safe because both are disabled cold.
 
-The untranscribed half of the function is the likely gap: **`0x4a022860`**
-is the function prologue, and `0x4a022860..0x4a022a04` covers panel power
-sequencing, the table-application path (parser around `0x4a0248xx`,
-write helper `0x4a024878`), and the bitmap blit. Transcribe and replay that
-before drawing further conclusions.
+**Bench hazard: unplug USB after staging.** With the DC adapter and USB both
+connected the board browns out when the display fabric comes up. Two brown-outs
+were misattributed to register writes before this was identified.
 
-### Hardware note
+### Firmware facts, re-derived from the board's image
 
-The bench board's display is an **LCD panel** — `HY200-1-3-W` on a 30-pin
-`Z20HD720M-V03` flex, 1280x720, driven directly over LVDS. It is not a DLP
-system. `local/allwinner-h713-linux/` documents **HY310** hardware
-(1920x1080, `LVDS -> DLPC3435 -> DLP imager`) and must not be treated as
-authoritative for this board; doing so sent an entire investigation after a
-DLP controller that does not exist here.
+- boot vector erets to `0x8b1b1148`
+- BSS is cleared from `0x8b232c00` to `0x8bac7c40`
+- `Rx_HDCP14_LoadKey` polls HDMI-RX `0x06840093` with its wait bound at
+  `0x4b13d6f8`; `h713_disp ... nowait` rewrites it so the wait expires at once
+- the execution witness sits *inside* BSS, so the firmware zeroes it and then
+  reuses that memory. Only the seed surviving proves non-execution; a zero or
+  any other value proves the write
+
+### Where it stops
+
+With the board's own artifacts, a consistent project triple, stock's sequence
+and the coprocessor executing, the panel stays dark and the LVDS FIFO at
+`0x05880FE0` never changes between consecutive reads. Projects `0x16`, `0x33`,
+`0x34` and `0x35` -- the ones selecting the timing variant that matches this
+panel -- were all tried, with and without the HDCP override.
+
+`display_cfg.xml` carries an `elog_init_setting`. With `mode='2'` (buffer) and
+`async_display='0'` the firmware runs and logs **nothing at ERROR level**, so by
+its own account startup completes without faults. It does, however, wedge the
+interconnect some seconds *after* the sequence completes, which suggests live
+activity that later fails rather than a coprocessor sitting idle.
+
+Open threads, in priority order:
+
+1. `source_id` in `display_cfg.xml` is `1` (VideoDecoder), not `2` (Image). A
+   faithfully-displayed empty decoder stream is black by design and would log
+   no error. Patch it at `0x4be01e48` after `h713_disp load`.
+2. Raise the elog level with `async_display='0'` and read the firmware's own
+   account of what it does before it wedges.
+3. Time the delayed hang; a consistent interval points at a firmware timer.
+4. Rebuild the trace instrumentation against `4380f1b3...` if markers are needed
+   again -- the existing 671-entry table targets the wrong image.
 
 ## Safety rules
 
