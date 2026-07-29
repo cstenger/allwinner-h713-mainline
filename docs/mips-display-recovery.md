@@ -269,56 +269,96 @@ a call that never returned. Relevant sites:
 
 | Marker | Site | Enters |
 | --- | --- | --- |
-| 17 | `0x4b152cf0` | `0x4b10e770` |
-| 18 | `0x4b152cf8` | `0x4b10d40c` |
-| 29 | `0x4b10d584` | `0x4b114a8c` |
+| 17 | `0x4b152cf0` | `0x4b10e770` (config parser, passed `0xabe01000`) |
+| 20 | `0x4b152d10` | `0x4b159a60` (`memset`) |
+| 24 | `0x4b152d30` | `0x4b152b2c` (early system init) |
 | 30 | `0x4b10d598` | `0x4b115cec` |
-| 31 | `0x4b10d5a4` | `0x4b1140c0` |
+| 44 | `0x4b152c24` | `0x4b152a5c` (nine `0x3003xxxx` resource loads) |
+| 45 | `0x4b152c2c` | `0x4b1895c4` |
 
-Two runs from a hash-verified pristine image differ only in whether the ARM
-releases TVCAP when marker 14 appears:
+### The firmware needs three artifacts, not one
 
-- **Without the TVCAP release** the firmware reaches markers 10-14, 16, 17,
-  26-30 and stops. Marker 30's call into `0x4b115cec` never returns. The ARM
-  survives the full timeout, `status=1`, the BSS witness is clear, both CPU_COMM
-  magics read `deadbeef`, and the ARM flag reads back `0x5` — but MIPS READY is
-  never set.
-- **With the TVCAP release** markers 18, 19, 20 and 31 additionally fire, and
-  then the interconnect stalls and takes ARM's UART with it.
+The startup hang was **missing vendor artifacts**, not a hardware gate. Stock
+U-Boot loads a firmware image, a config blob, and a set of TSE databases; every
+earlier run staged only the firmware.
 
-The TVCAP release is therefore a genuine prerequisite, not the fault: it is what
-lets `0x4b115cec` return. The wedge lives on the path it unblocks. The firmware
-references INCAP `0x06940000` (9 sites), HDMI-RX `0x06840000` (15) and
-`0x068c0000` (48), which is consistent with the independent finding that direct
-INCAP access wedges even after the display and TVCAP clocks are reconstructed.
+Marker 20 is `memset(cfg["sys:dbg_buf"], 0, cfg["sys:dbg_buf_size"])`. Both
+arguments come from config lookups (`0x4b10d40c` and `0x4b10d444`, each fetching
+a singleton at `0x8b2536bc` and calling its `vtable[0x14]` with a string key).
+With no config staged the parser at marker 17 reads uninitialized DRAM at
+`0xabe01000`, the keys resolve to garbage, and `memset` walks a bad pointer
+until the bus stalls.
 
-The next bisect therefore runs **with** TVCAP released and adds markers beyond
-20/31 to find the first capture-block access that stalls the bus. Markers
-130-132 (trace slots 148-150) are already installed across the four-registration
-group at `0x8b128020` — ids `0x12e`, `0x130`, `3`, `8` — and will report once
-execution reaches it.
+`display_cfg.xml` documents the layout, and the parser's `0xabe01000` argument
+is exactly the uncached alias of its `cfg_file` LMA:
 
-Treat the earlier note that a run reached the `0x130` registration as
-unverified. It predates hash-verified staging and live streaming, and no trace
-output was preserved from it.
+| Region | LMA | Size | Staged from |
+| --- | --- | --- | --- |
+| boot code + C code | `0x4b100000` | `0xc01000` | `display.bin` |
+| debug buffer | `0x4bd01000` | `0x100000` | — (cleared) |
+| cfg file | `0x4be01000` | `0x40000` | `display_cfg.xml` |
+| TSE data | `0x4be41000` | `0x100000` | concatenated `*.TSE` |
+| frame buffer | `0x4bf41000` | `0x1a00000` | — (cleared) |
 
-Do not add MIPS autoboot yet. The next prerequisite is a bounded mailbox/IPC
-acknowledgement that proves higher-level firmware readiness; CPU_COMM remains
-downstream of that work.
+The TSE window takes `database.TSE`, `projecttable.TSE`,
+`ProjectID_0x0012.TSE`, and `pq_custom.TSE` **simply concatenated** in that
+order (347,816 bytes; kept as `local/mips-display/tse_blob.bin`). Each file is
+magic-tagged `TSE` plus a type byte, so the firmware evidently scans for the
+magic rather than indexing fixed offsets. Stock U-Boot selects the ProjectID
+file via a `mips_projectID` value; `0x0012` is the literal in its binary.
 
-The filesystem `load`/`boot` path is build-tested but has not yet been exercised
-against a target filesystem containing `display.bin`. The working way to get a
-pristine image into the firmware window is fastboot RAM staging into the
-`-l 0x4b100000 -s 0x132b18` buffer, exited with `fastboot continue` — a warm
-reset destroys the staged image (see [flash.md](flash.md)). Always confirm with
-`h713_mips verify` before any `start`, `probe-ready`, or `probe-trace`. Before installing
-U-Boot, the prior one-megabyte LBA-16 region was backed up on the board as
-`/root/u-boot-lba16-pre-mips-backup.bin`, SHA-256
-`db98d1b15c59349fec96b28ac332e850de932d0bab7786db4a44173db323829e`.
+Stage each window with its own fastboot pass and exit with `fastboot continue`
+— a warm reset destroys staged DRAM (see [flash.md](flash.md)). `probe-trace`
+clears everything above the image except the config and TSE windows, so those
+two survive; the firmware image must be re-staged for every run because both
+the trace patches and the running firmware modify it.
 
-Instruction execution is now independently proven, but higher-level firmware
-readiness is not. There is no bounded mailbox/IPC acknowledgement yet, so the
-command remains outside autoboot and no Linux IPC/display driver is enabled.
+### Run protocol: one probe per boot
+
+**A `probe-trace` or `probe-ready` run leaves hardware state that breaks the
+next run**, and `h713_mips_stop()` does not clean it. The symptom is a stall at
+marker 12, the firmware's interrupt init. After a run, even U-Boot's `reset`
+command hangs, so recovery is a physical power cycle.
+
+This single rule accounts for every irreproducible result recorded earlier in
+this document. Runs that looked like they proved TVCAP ordering, TSE damage, or
+non-determinism were second-or-later runs on one boot. Bench procedure:
+
+1. power cycle;
+2. `mw.l 0x4be01000 0 0x50000`;
+3. stage `display_cfg.xml`, the TSE blob, then `display.bin`;
+4. `h713_mips verify` — must print `16c74a28...`;
+5. exactly one `h713_mips probe-trace` (or `probe-ready`).
+
+Treat any result from a second run on the same boot as void.
+
+### The ARM-side TVCAP release is not required
+
+An earlier revision concluded it was a prerequisite. That was wrong. The stall
+it appeared to fix was the missing config: the unresolved `sys:dbg_buf` pointer
+landed in unclocked capture MMIO, and releasing TVCAP merely let the stalled
+writes retire. With the artifacts staged, the firmware needs no ARM help, and
+releasing TVCAP wedges the interconnect. `probe-trace` therefore leaves it
+alone; `probe-trace tvcap` is an opt-in board-wedging diagnostic.
+
+### Current state: instrumented startup completes, READY does not
+
+With all three artifacts staged and one run per boot, the firmware executes
+every instrumented point: markers 10-14, 16-24, 26-53, 62-66, 68-78, 84-89,
+93-96, 101-104, 111, and 130-132. The gaps are untaken branches, not stalls.
+Notably:
+
+- markers 95 and 96 both fire, so the HDMI-RX byte load at physical
+  `0x06840093` succeeds — the access this instrumentation was built to catch;
+- markers 130-132 fire, so the four-registration group at `0x8b128020`
+  (ids `0x12e`, `0x130`, `3`, `8`) completes;
+- the probe returns cleanly and the ARM survives.
+
+`status` is 1, the BSS witness is clear, both CPU_COMM magics read `deadbeef`,
+and the ARM flag reads back `0x5` — but the MIPS READY flag stays `0`. The
+trace has run out of instrumented ground, so locating what remains needs either
+markers past 132 or an uninstrumented `probe-ready` run, whose timeout was
+raised from 1 s to 10 s now that the firmware runs a full startup.
 
 ## Safety rules
 
