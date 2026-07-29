@@ -681,6 +681,62 @@ which runs inside the MIPS-release step, i.e. *after* all three tables — narro
 it to `0xfff11111`, and `+0x04` from `0xffffffff` to `1`. Stock has no equivalent
 step. Untested as a cause, and cheap to test.
 
+### Where the 1080p comes from — found, and it is one byte
+
+Traced in `display.bin` (MIPS32 LE, raw image; external review, verified here
+against the artifacts).
+
+`_LoadTFDPanelTiming` builds the `Output_Resolution` selector `0x00060004` from
+a hardcoded immediate pair at raw offset `0x88120`:
+
+```
+0x88120:  06 00 02 3c    lui   v0, 0x0006
+0x88124:  04 00 42 24    addiu v0, v0, 4
+```
+
+Parameter 6 is `Output_Resolution`. Selector `0x00060004` resolves through
+`database.TSE`'s `OUTPUT_TIMING_PROJECTOR` (name at `0x30c77`, with `04 00 06 00`
+immediately after it) to the 1080p record at `0x1e86f`:
+
+```
+[ ... 2200, 1125, 1920, 1080, 31, 4, 41, 14 ... ]   u16 fields
+      └─0x04650898─┘└─0x04380780─┘
+```
+
+Those two u16 pairs are **byte-identical** to what `0x05880020` / `0x05880024`
+read back on the bench. The registers are a verbatim copy of the record, which
+upgrades the total/active decode from inference to confirmation, and supplies
+positive evidence for the coprocessor attribution rather than mere exhaustion —
+the record it selects matches all four observed dimensions exactly.
+
+So the timing is a **hybrid**: geometry in the database, selector compiled into
+the firmware. Rewriting the `addiu` immediate from 4 to 3 asks for the adjacent
+resolution, which is a single byte at `0x4b188124` once loaded.
+
+**Correction to the review's reading:** selector `0x00060003` does *not* select a
+"1360/760 total" record — that geometry appears nowhere in `database.TSE`. In
+fact `1360/760` occurs exactly once across every artifact on the board, in
+`LogoRegData.bin` at `0x1838`, the value field of the record that writes
+`0x05880020`. The 720p-active records the database actually holds carry totals
+of 858/750, 1440/741, 1650/750, 1664/748, 1696/750, 1696/751, 1696/755,
+1980/750, 3300/750 and 3960/750.
+
+**One of them is already in use.** The mixer at `0x0525c000+0x00` and DE at
+`0x0524c000+0x10` both read `02e4059f` = 1439/740, which is the
+`(1440, 741, 1280, 720)` record in size-minus-one form. So the firmware's DE path
+already picks 720p out of the same database while its TCON path is hardcoded to
+1080p — it is inconsistent with itself, and that identifies which 720p record the
+rest of the pipeline expects.
+
+Predicted after the patch: `0x05880024` = `02d00500` (1280x720 active) and
+`0x05880020` = `02e505a0` (1440/741 total) — *not* LogoRegData's `02f80550`.
+`0x05880024` reaching `02d00500` is the win condition on its own; whichever total
+appears teaches us the enum mapping.
+
+`h713_disp auto <project> 720p` applies it, after the SHA-256 identity check so
+the gate still verifies stock bytes, and refuses if the selector byte is not the
+expected `0x04`.
+
 ## `0x05880FE0` is not a scan-liveness signal
 
 Reading the LVDS page wider than the sequence touches:
@@ -714,12 +770,9 @@ uncharacterised and is now the practical limit on bench iteration.
 
 ### Where to go next
 
-1. **Reverse-engineer `display.bin`** (MIPS32 LE, raw image at `0x4b100000`,
-   entry erets to `0x8b1b1148`): find the writes to `0x05880020`/`0x24` and work
-   back to where `1920x1080` originates — a parsed config field, a table indexed
-   by project, or a constant. This needs no hardware and runs in parallel with
-   bench work. If it is a config field, the fix is a patch rather than an
-   instrument session.
+1. **Test the selector patch** — `h713_disp auto 0x33 720p`, then read
+   `0x05880020`/`0x24`. See the prediction above. (The `display.bin` RE that this
+   came out of is done; what remains is the bench run.)
 2. **Logic analyzer**, answering two questions in one hookup: is there
    differential activity on the LVDS pairs while the sequence runs, and what
    serial init does stock send the panel on PH10/11/12 (cs/scl/sda). The second
