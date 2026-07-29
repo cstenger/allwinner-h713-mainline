@@ -137,16 +137,66 @@ Hold the **FEL button** at power-on to enter the BROM's USB FEL mode, then use
 stalls on large bulk transfers — our sunxi-tools carries the 16 KiB-cap fix that
 makes loading a >~48 KiB SPL reliable (see [reference/h713-fel-notes.md](reference/h713-fel-notes.md)).
 
+### Recovering a clobbered first stage (verified 2026-07-29)
+
+This is the procedure that works. It needs only a 64 KiB FEL transfer and no
+host-side U-Boot upload.
+
+1. Regenerate the payload — our own SPL, the first 32 KiB of the image whose
+   U-Boot proper is already on eMMC:
+
+   ```
+   python3 - <<'EOF'
+   d = open('build/out/u-boot-sunxi-with-spl-ddr3.bin','rb').read()[:32768]
+   with open('external/u-boot/arch/arm/mach-sunxi/h713_spl_payload.h','w') as f:
+       f.write("static const unsigned char h713_spl_payload[] = {\n")
+       for i in range(0, len(d), 12):
+           f.write("\t" + " ".join(f"0x{b:02x}," for b in d[i:i+12]) + "\n")
+       f.write("};\n")
+   EOF
+   ```
+
+2. Build the restore SPL:
+
+   ```
+   build/uboot-build.sh "$PWD/build/uboot-felmmc" hy200_h713_felmmc_defconfig spl/sunxi-spl.bin
+   cp build/uboot-felmmc/spl/sunxi-spl.bin build/out/h713-restore-spl.bin
+   ```
+
+3. Power on holding the **FEL button**, then:
+
+   ```
+   external/sunxi-tools/sunxi-fel version
+   external/sunxi-tools/sunxi-fel -p spl build/out/h713-restore-spl.bin
+   ```
+
+   UART should show `=== H713 SPL RESTORE ===`, the mmc scan, and
+   `wrote 64/64 RESTORED-OK`.
+
+4. Power-cycle. The board boots from eMMC again; reflash the full image with
+   `run fastboot_mode` + `fastboot flash uboot ...`.
+
+Why it works: sectors 16..79 are the only range a first stage occupies, and
+U-Boot proper at sector 80 survives, so restoring the SPL reconnects an intact
+chain. The hook runs after the SPL framework has already brought eMMC up, and
+picks the device by scanning for a non-zero `lba` — **mmc0 is the absent SD
+slot here**, and using it fails with "Card did not respond to voltage select".
+
+Requires the `fel_lib` stall fix in `external/sunxi-tools` (commit "survive
+zero-progress bulk stalls"); without it the 64 KiB upload aborts part-way and
+the SPL runs half-loaded, hanging right after its first print.
+
 **Known gap — `sunxi-fel uboot` does not work on H713 (2026-07-29).** Loading
 the SPL alone is reliable (`sunxi-fel spl ...` returns and FEL still responds
 afterwards), but transferring U-Boot proper fails: the upstream build reports
 `usb_bulk_recv() ERROR -8: Overflow` and even our patched build times out with
 `usb_bulk_send() ERROR -7` partway through the ~790 KB payload. `exe` and
-`reset64` at `CONFIG_TEXT_BASE` do not start it either. The 16 KiB chunk cap
-fixes SPL-sized transfers but evidently not this one, so **FEL recovery must go
-through a small SPL-resident payload**, not a full U-Boot upload. Worth
-revisiting: raise `USB_TIMEOUT`/lower `AW_USB_MAX_BULK_SEND` in
-`external/sunxi-tools/fel_lib.c`, or drive the post-SPL handoff explicitly.
+`reset64` at `CONFIG_TEXT_BASE` do not start it either. Even with the stall fix
+the transfer completes but the SPL still sits at "Trying to boot from FEL", so
+the **post-SPL handoff itself is broken**, not just the transfer. Use the
+restore SPL above instead. Worth revisiting if anyone wants `uboot` working:
+the `fel_stash` continuation path, which is what should resume the SPL after
+the host writes U-Boot.
 
 **Un-bricking a clobbered first stage:** the local-only recovery SPL
 (`local/0001-...LOCAL-ONLY.patch`, embeds the vendor boot0 — never published)
