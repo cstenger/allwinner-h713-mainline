@@ -341,24 +341,56 @@ writes retire. With the artifacts staged, the firmware needs no ARM help, and
 releasing TVCAP wedges the interconnect. `probe-trace` therefore leaves it
 alone; `probe-trace tvcap` is an opt-in board-wedging diagnostic.
 
-### Current state: instrumented startup completes, READY does not
+### Current state: the MIPS never receives a timer interrupt
 
 With all three artifacts staged and one run per boot, the firmware executes
 every instrumented point: markers 10-14, 16-24, 26-53, 62-66, 68-78, 84-89,
-93-96, 101-104, 111, and 130-132. The gaps are untaken branches, not stalls.
-Notably:
+93-96, 101-104, 111, and 130-132. The HDMI-RX byte load at physical
+`0x06840093` succeeds, and the four-registration group at `0x8b128020`
+completes. `status` is 1, the BSS witness is clear, both CPU_COMM magics read
+`deadbeef`, and the ARM flag reads back `0x5`. An uninstrumented `probe-ready`
+with a ten-second budget behaves the same.
 
-- markers 95 and 96 both fire, so the HDMI-RX byte load at physical
-  `0x06840093` succeeds — the access this instrumentation was built to catch;
-- markers 130-132 fire, so the four-registration group at `0x8b128020`
-  (ids `0x12e`, `0x130`, `3`, `8`) completes;
-- the probe returns cleanly and the ARM survives.
+`MIPS READY` is never set, and the trace explains why. Markers 1-9 — the entire
+CPU_COMM path — never fire:
 
-`status` is 1, the BSS witness is clear, both CPU_COMM magics read `deadbeef`,
-and the ARM flag reads back `0x5` — but the MIPS READY flag stays `0`. The
-trace has run out of instrumented ground, so locating what remains needs either
-markers past 132 or an uninstrumented `probe-ready` run, whose timeout was
-raised from 1 s to 10 s now that the firmware runs a full startup.
+```
+0x4b15257c   ThreadX thread entry           (markers 6, 7)
+  0x4b12423c   CPU_COMM init                (markers 8, 9)
+    0x4b123828   share-register reader      (markers 1, 2, 3)
+    0x4b11abbc   spinlock + slave init      (markers 4, 5)
+```
+
+`0x4b15257c` has no direct callers; its address is materialised into `$a3` at
+`0x4b152d38`/`0x4b152d44` and handed to a thread-creation call. That call sits
+between marker 24's site (`0x4b152d30`) and marker 25's (`0x4b152d54`). Marker
+24 fires and marker 25 does not, so the early-system-init call never returns
+and the thread is never created.
+
+The innermost stall is marker 53's call into `0x4b1839dc` (marker 54 does not
+fire). Inside it, trace slots 104 and 105 — which capture the polling loop's
+current and initial tick rather than marker ids — both read **zero**. The loop
+is `while ((now - start) < 0x33)`, so a tick that never advances never expires.
+
+The tick source is a software counter at `0x4b252cc0` (BSS), read under an
+interrupt-disable/restore pair at `0x4b104b04` and incremented by a timer ISR.
+It reads zero, so **the MIPS is receiving no timer interrupt**. The complete
+chain is:
+
+> no MIPS timer IRQ -> tick counter stays 0 -> the wait loop never expires ->
+> `0x4b1839dc` never returns -> thread creation never runs -> the CPU_COMM
+> thread never starts -> `MIPS READY` is never set.
+
+The firmware does program an interrupt block: marker 12's function
+`0x4b147950` clears CP0 Cause IP bits and writes `0x03061300..0x03061320` in
+the MIPS control window. What is not yet established is where the timer source
+lives, whether its clock or reset needs releasing from the ARM the way the
+display tree did, and whether the CP0 `Status` interrupt enable is being set.
+That is the next thing to recover.
+
+The `0x4b22cf68` flag consulted before each tick read is initialised data whose
+image value is `1`, so the stub path is not the issue; the real read is taken
+and returns zero.
 
 ## Safety rules
 
