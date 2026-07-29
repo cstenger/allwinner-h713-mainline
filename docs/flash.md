@@ -133,9 +133,20 @@ is required afterward.
 ## Method 4 — cold recovery via FEL
 
 Hold the **FEL button** at power-on to enter the BROM's USB FEL mode, then use
-`sunxi-fel` (from the `external/sunxi-tools` build). Note the H713 FEL BROM
-stalls on large bulk transfers — our sunxi-tools carries the 16 KiB-cap fix that
-makes loading a >~48 KiB SPL reliable (see [reference/h713-fel-notes.md](reference/h713-fel-notes.md)).
+`sunxi-fel` (from the `external/sunxi-tools` build).
+
+**The H713 FEL BROM does not stall on large bulk transfers** (corrected
+2026-07-29). That earlier conclusion was a misdiagnosis, and the chunking
+workarounds built on it have been removed. Measured on hardware: 48 KiB in a
+single bulk request, 92.4 ms, ~530 KB/s, read back byte-identical. The link is
+full-speed USB 1.1 with **64-byte** bulk packets, not high-speed 512.
+
+What actually caused the "stalls": a raw `sunxi-fel write` bypasses the
+swap-buffer relocation the SPL loader does, so a write based at `0x104000` runs
+through the BROM's own IRQ stack (`0x105000`) and BSS (`0x10b300`). That kills
+the BROM's USB stack mid-transfer and looks exactly like a bulk stall — timeout,
+device still in `lsusb`, every later command hangs. `sunxi-fel` now refuses such
+writes with an explicit error (see [reference/h713-fel-notes.md](reference/h713-fel-notes.md)).
 
 ### Recovering a clobbered first stage (verified 2026-07-29)
 
@@ -182,21 +193,26 @@ chain. The hook runs after the SPL framework has already brought eMMC up, and
 picks the device by scanning for a non-zero `lba` — **mmc0 is the absent SD
 slot here**, and using it fails with "Card did not respond to voltage select".
 
-Requires the `fel_lib` stall fix in `external/sunxi-tools` (commit "survive
-zero-progress bulk stalls"); without it the 64 KiB upload aborts part-way and
-the SPL runs half-loaded, hanging right after its first print.
+The 64 KiB upload goes through the SPL loader, which relocates around the
+BROM-reserved regions, so it is unaffected by the raw-write hazard above.
 
-**Known gap — `sunxi-fel uboot` does not work on H713 (2026-07-29).** Loading
-the SPL alone is reliable (`sunxi-fel spl ...` returns and FEL still responds
-afterwards), but transferring U-Boot proper fails: the upstream build reports
-`usb_bulk_recv() ERROR -8: Overflow` and even our patched build times out with
-`usb_bulk_send() ERROR -7` partway through the ~790 KB payload. `exe` and
-`reset64` at `CONFIG_TEXT_BASE` do not start it either. Even with the stall fix
-the transfer completes but the SPL still sits at "Trying to boot from FEL", so
-the **post-SPL handoff itself is broken**, not just the transfer. Use the
-restore SPL above instead. Worth revisiting if anyone wants `uboot` working:
-the `fel_stash` continuation path, which is what should resume the SPL after
-the host writes U-Boot.
+**Known gap — `sunxi-fel uboot` does not work on H713.** Loading the SPL alone
+is reliable (`sunxi-fel spl ...` returns and FEL still responds afterwards), but
+transferring U-Boot proper fails, and the transfer completes yet the SPL still
+sits at "Trying to boot from FEL" — so the **post-SPL handoff itself is broken**,
+not just the transfer. `exe` and `reset64` at `CONFIG_TEXT_BASE` do not start it
+either. Use the restore SPL above instead. Worth revisiting if anyone wants
+`uboot` working: the `fel_stash` continuation path, which is what should resume
+the SPL after the host writes U-Boot.
+
+Two of the symptoms once cited here have since been explained and should not be
+read as evidence about the handoff (2026-07-29): the `usb_bulk_recv() ERROR -8:
+Overflow` was an undersized bulk IN buffer, now fixed; and the
+`usb_bulk_send() ERROR -7` timeouts came from the raw-write hazard above.
+**This gap has not been retested since those fixes landed** — do that first
+before investigating `fel_stash`, because the transfer half of the problem may
+already be gone. U-Boot proper also lands in DRAM, which is its own unresolved
+issue on this board.
 
 **Un-bricking a clobbered first stage:** the local-only recovery SPL
 (`local/0001-...LOCAL-ONLY.patch`, embeds the vendor boot0 — never published)

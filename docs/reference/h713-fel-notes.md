@@ -6,6 +6,40 @@
 This file tracks the H713-specific FEL facts we have imported from local
 hardware testing and from `<local>/sun50iw12p1-research/`.
 
+## USB TRANSPORT — CORRECTED 2026-07-29 (read before trusting any FEL result below)
+
+The long-standing "H713 FEL BROM stalls on large bulk transfers" conclusion is
+**wrong**, and several results in this file were shaped by it. Measured on
+hardware 2026-07-29:
+
+- The FEL link is **full-speed USB 1.1 with 64-byte bulk packets** (`bcdUSB
+  1.10`, 12 Mbit/s, `wMaxPacketSize=64` on both endpoints), not high-speed with
+  512-byte packets. Any reasoning that assumed 512 was wrong.
+- Large contiguous transfers are **fine**: 49152 bytes in a single bulk request,
+  92.4 ms, ~530 KB/s, read back byte-identical. 32 KiB unchunked likewise.
+  The 4 KiB/16 KiB chunk caps have been removed.
+- A healthy session replies with **exactly** 13/32/8 bytes. It does *not*
+  over-send, contrary to the premise of the "oversized FEL status reads" commit.
+  An oversized reply means the stream had already desynced upstream.
+
+The real cause of the "stalls": a raw `sunxi-fel write` bypasses the swap-buffer
+relocation the SPL loader performs, so a write based at `0x104000` runs straight
+through the BROM's own IRQ stack (`0x105000`) and BSS (`0x10b300`), killing the
+BROM's USB stack mid-transfer. Reproduced deliberately: 32 KiB at `0x104000`
+wedges the session; 4 KiB at the same base (stopping just below `0x105000`)
+completes in 7.8 ms. `sunxi-fel` now refuses such writes up front.
+
+**Consequence for the record below:** any experiment that used a raw `write`/
+`readl`/`writel` into `0x104000`–`0x124000` may have been measuring BROM
+corruption rather than the effect under test. Results obtained via the SPL
+loader (`sunxi-fel spl`) are *not* implicated — it relocates around these
+regions by design, which covers most of the DRAM bring-up ladder. Re-verify
+before relying on any raw-write result.
+
+Useful knobs now available: `SUNXI_FEL_TRACE=1` (per-request wire trace),
+`SUNXI_FEL_TIMEOUT=<ms>` (bound diagnostic runs), `SUNXI_FEL_MAX_CHUNK=<bytes>`,
+`SUNXI_FEL_ALLOW_UNSAFE=1` (override the reserved-region guard).
+
 ## CURRENT STATE (read this first; updated 2026-07-04 UTC)
 
 - HANDOFF FOR CLAUDE: start with
@@ -193,13 +227,16 @@ hardware testing and from `<local>/sun50iw12p1-research/`.
 - `docs/H713_BROM_MEMORY_MAP.md` confirms that H713 uses SRAM A2 for SPL
   loading and that the old H616-style `0x20000` SPL address is wrong for this
   board.
-- `FEL_USB_OVERFLOW_FIX_TESTING.md` documents that H713 can return a larger
-  response for tiny FEL status reads. The local `fel_lib.c` keeps a 64-byte
-  temporary receive buffer for reads of 8 bytes or less.
-- `FEL_USB_WRITE_SUCCESS.md` supersedes the earlier "slow USB" experiment:
-  reducing write chunks to 16 KiB or 4 KiB caused timeouts. The local
-  `fel_lib.c` uses the original 512 KiB normal send chunk and 128 KiB progress
-  chunk sizes, with a 20 second USB timeout.
+- `FEL_USB_OVERFLOW_FIX_TESTING.md` claims H713 returns a larger response for
+  tiny FEL status reads. **Disproven 2026-07-29** — a healthy session replies
+  with exactly 13/32/8 bytes. The real requirement is that a bulk IN buffer be a
+  multiple of `wMaxPacketSize` (64 here); the old 64-byte bounce for `<=8`-byte
+  reads satisfied that by coincidence and missed the 13-byte `AWUS` read.
+  `fel_lib.c` now sizes the bounce from the endpoint descriptor.
+- `FEL_USB_WRITE_SUCCESS.md` and the chunk-size experiments are **superseded**:
+  the transfer sizes were never the variable. See the corrected transport
+  section at the top. `fel_lib.c` is back to upstream chunk sizes (512 KiB
+  normal / 128 KiB progress) with a 20 second default USB timeout.
 - `SCTLR_WARNING_ANALYSIS.md` matches local testing: H713 FEL starts with MMU
   disabled, so `SCTLR = 0` is expected and not a blocker by itself.
 - `<local>/h713-lab/` contains an earlier conservative evidence
