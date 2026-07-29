@@ -137,11 +137,37 @@ Hold the **FEL button** at power-on to enter the BROM's USB FEL mode, then use
 stalls on large bulk transfers — our sunxi-tools carries the 16 KiB-cap fix that
 makes loading a >~48 KiB SPL reliable (see [reference/h713-fel-notes.md](reference/h713-fel-notes.md)).
 
+**Known gap — `sunxi-fel uboot` does not work on H713 (2026-07-29).** Loading
+the SPL alone is reliable (`sunxi-fel spl ...` returns and FEL still responds
+afterwards), but transferring U-Boot proper fails: the upstream build reports
+`usb_bulk_recv() ERROR -8: Overflow` and even our patched build times out with
+`usb_bulk_send() ERROR -7` partway through the ~790 KB payload. `exe` and
+`reset64` at `CONFIG_TEXT_BASE` do not start it either. The 16 KiB chunk cap
+fixes SPL-sized transfers but evidently not this one, so **FEL recovery must go
+through a small SPL-resident payload**, not a full U-Boot upload. Worth
+revisiting: raise `USB_TIMEOUT`/lower `AW_USB_MAX_BULK_SEND` in
+`external/sunxi-tools/fel_lib.c`, or drive the post-SPL handoff explicitly.
+
 **Un-bricking a clobbered first stage:** the local-only recovery SPL
 (`local/0001-...LOCAL-ONLY.patch`, embeds the vendor boot0 — never published)
 FEL-loads once, rewrites the vendor boot0 to eMMC sector 16, and halts; power
 cycle to boot the stock firmware. `git am` that patch into `external/u-boot` to
 build it.
+
+The same tool recovers **our** first stage instead, which is usually what you
+want: replace `board/sunxi/h713_vendor_boot0.h` with an `xxd -i`-style array of
+the first 32 KiB of `u-boot-sunxi-with-spl-ddr3.bin` and build
+`hy200_h713_recovery_defconfig`. That range is sectors 16..79, and U-Boot proper
+lives at sector 80 (`CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x40` plus
+`DATA_PART_OFFSET=0x10`), so restoring only the SPL reconnects an otherwise
+intact chain. Apply the patch with `git apply`, not `git am`, so the vendor blob
+never reaches a commit.
+
+**Do not restore stock boot0 alone.** It comes up and inits DRAM correctly but
+then reports `bad magic` / `Loading boot-pkg fail(error=4)`: it looks for its
+payload at an offset inside the range our own writes occupy, and it also finds
+its MMC info region damaged (`region magic is not right`). Restoring stock needs
+the whole original boot region from a pre-flash capture, not just sector 16.
 
 ## Standalone boot (power-on → Debian)
 
