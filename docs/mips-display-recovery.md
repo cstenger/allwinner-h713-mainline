@@ -547,6 +547,89 @@ Open threads, in priority order:
 4. Rebuild the trace instrumentation against `4380f1b3...` if markers are needed
    again -- the existing 671-entry table targets the wrong image.
 
+## Next task: the walker drops `type 0xfe` poll records
+
+`h713_logo_walk()` in `arch/arm/mach-sunxi/h713_mips.c` understands three
+record types: 1/2/4 (a masked write of that width) and `0xff` with a zero
+address (a delay). It skips anything else by advancing four bytes and
+resynchronising. That silently discards a fourth type.
+
+**`type 0xfe` is a poll:** *wait until `(readl(addr) & mask) == value`*. There
+are four in `LogoRegData.bin`, and every one polls the display PLL:
+
+```
+poll 0x058c0014 until (reg & 0x80000000) == 0x00000000
+```
+
+They sit at container offsets `0x0ec4`, `0x1734`, `0x1d1c`, `0x1fa4`. The one
+at `0x1734` is inside **timing block 6 — the block this panel uses** — in the
+middle of a PLL re-lock:
+
+```
++0x16e4 0x058c0014 <- 0x08000000 mask 0x08000000
++0x16f4 DELAY 500
++0x1704 0x058c0028 <- 0x00000000
++0x1714 0x058c0014 <- 0x0000001e mask 0x0000fffe   reprogram divider
++0x1724 DELAY 15000
++0x1734 POLL  0x058c0014 until (reg & 0x80000000) == 0
++0x1744 DELAY 15000
++0x1754 0x058c0014 <- 0x00002a00 mask 0x0000ffff   restore divider
++0x1764 0x058c0028 <- 0x00030000
+```
+
+So the vendor reprograms the PLL, waits for bit 31 to clear, and only then
+restores it. We skip the wait entirely and charge on, which means every
+register written after that point in the block is applied while the PLL is in
+an indeterminate state.
+
+### What to fix
+
+1. Handle `0xfe` in `h713_logo_walk()`: poll `addr` until `(val & mask) ==
+   value`, with a bounded timeout, and report if it expires. Do not treat a
+   timeout as fatal — stock evidently tolerates it, since the surrounding
+   delays are large.
+2. Revisit the delay units. `H713_LOGO_MAX_DELAY_MS` caps at 200, and the
+   values seen are 1, 20, 100, 500 and 15000. If they are milliseconds, 15000
+   is 15 seconds, which is implausible; if microseconds, 15000 is 15 ms, which
+   fits a PLL re-lock. **The unit is unverified** and the cap is currently
+   silently truncating the two largest waits in the block.
+3. Re-check the other three poll sites once the type is handled; they are in
+   timing blocks the other projects use.
+
+Also worth noting: `+0x1664` writes `0x058c002c <- 0x00070010`. The superseded
+extract had `0x00000010` at the equivalent place, so values differ between
+firmware revisions, not just offsets.
+
+### Where the display stands, for a cold start
+
+Hardware is an **LCD panel** (`HY200-1-3-W`, 1280x720) over LVDS. It is known
+to work: the stock firmware displays a logo.
+
+Everything needed is on the board and loaded automatically:
+
+```
+h713_disp auto 0x33            # load from eMMC, run the full sequence
+h713_disp test 0x33            # same, plus config patches, timed sampling, log
+h713_disp list 0x4e000000      # project -> prologue/timing/DE table
+h713_mips log                  # scan the firmware workspace for its own text
+```
+
+Verified: artifacts load from `mmc 1:2`, `display.bin` verifies against
+`4380f1b3...`, the coprocessor executes (witness overwritten), stock's fastlogo
+sequence is replayed faithfully, and the panel timing reaches the TCON.
+
+Not working: the LVDS FIFO at `0x05880FE0` never changes between consecutive
+reads, at any point across four seconds, in any project or configuration. The
+scan never starts.
+
+Ruled out: table selection (`0x16`, `0x33`, `0x34`, `0x35` all tried, with and
+without the HDCP override), `source_id` (2 is invalid — the firmware logs
+`Element name=source_` and gets *less* far than stock's 1), and the HDCP
+key-load wait. At ERROR level the firmware logs nothing, so by its own account
+startup succeeds. Its elog `route='0'` means uart, so raising the level does
+not put anything in memory; capturing it properly needs the elog buffer
+addresses re-derived for `4380f1b3...`.
+
 ## Safety rules
 
 - Keep a known-good FIT available and preserve UART as the recovery path.
