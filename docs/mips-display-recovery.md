@@ -392,6 +392,53 @@ The `0x4b22cf68` flag consulted before each tick read is initialised data whose
 image value is `1`, so the stub path is not the issue; the real read is taken
 and returns zero.
 
+## Two display paths, and which one the boot console needs
+
+`LogoRegData.bin` is a fourth vendor artifact, loaded by stock U-Boot from
+`mips/LogoRegData.bin` and never staged by any experiment here. Despite living
+under `mips/`, **the ARM consumes it**: stock U-Boot parses and applies it
+itself, as its own strings show — `Invalid logo regbin:%s`,
+`Not valid logo data bin!`, `Get logo table:%d fail!`, `Logo table size:%u`,
+`create_fastlogo_inst fail!`, `Display fastlogo finish!` — before blitting
+`bootlogo.bmp`.
+
+It is a masked register write-table: 16-byte records of
+`{address, value, mask, width}`, roughly 800 entries covering
+
+| Block | Entries |
+| --- | --- |
+| `0x058c0000` (unidentified) | 128 |
+| `0x05240000` DE/mixer | 112 |
+| `0x05600000` (unidentified) | 99 |
+| `0x0525c000` mixer | 99 |
+| `0x05700000` TVTOP | 82 |
+| `0x05880000`, `0x05800000` | 75, 66 |
+| `0x02001xxx` CCU | 52 |
+| `0x051c0000` LVDS | 35 |
+
+`h713_display_prepare()` is a hand-recovered dozen of these. The table contains
+no HDMI-RX (`0x0684xxxx`) or INCAP (`0x0694xxxx`) addresses, so it is the
+display *output* path only.
+
+This splits the work in two, and they are independent:
+
+- **ARM-side output (fastlogo replay).** Apply `LogoRegData.bin`, point the
+  hardware at a framebuffer, and the panel shows pixels. No coprocessor, no
+  proprietary firmware at runtime, no IPC. This is what stock does before Linux
+  starts, and it is what a boot console or a `simple-framebuffer` handoff to
+  Linux needs. The DT already carries `framebuf_reserved: uboot-scanout@78541000`
+  from earlier analysis of the stock scanout address.
+- **MIPS coprocessor pipeline.** HDMI-RX capture, deinterlace, AFBD, and the
+  TSE/PQ picture-quality databases. Needed for projector features — HDMI input
+  and video post-processing — and it is what CPU_COMM, TVTOP and DECD exist to
+  drive. It is not on the path to a boot console.
+
+An earlier note in this project concluded that scanout must be MIPS-owned
+because `display.bin` contains the LVDS/TCON/DE base addresses while stock
+U-Boot contains none of them. That inference does not hold: the ARM path is
+data-driven, so those addresses live in `LogoRegData.bin` rather than in code
+literals. Both processors can reach the display blocks.
+
 ## Safety rules
 
 - Keep a known-good FIT available and preserve UART as the recovery path.
