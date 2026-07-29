@@ -332,14 +332,25 @@ non-determinism were second-or-later runs on one boot. Bench procedure:
 
 Treat any result from a second run on the same boot as void.
 
-### The ARM-side TVCAP release is not required
+### TVCAP: the ARM does enable it, with specific values
 
-An earlier revision concluded it was a prerequisite. That was wrong. The stall
-it appeared to fix was the missing config: the unresolved `sys:dbg_buf` pointer
-landed in unclocked capture MMIO, and releasing TVCAP merely let the stalled
-writes retire. With the artifacts staged, the firmware needs no ARM help, and
-releasing TVCAP wedges the interconnect. `probe-trace` therefore leaves it
-alone; `probe-trace tvcap` is an opt-in board-wedging diagnostic.
+This section previously said the ARM must leave TVCAP alone. That was drawn
+from `probe-trace` A/B runs which set the gates with `|= BIT(31)` and released
+them mid-run from the poll loop; both harmed firmware startup.
+
+Stock U-Boot's fastlogo disproves the general claim. It enables TVCAP with
+explicit values as part of bringing up the display:
+
+```
+0x02001d88 <- 0x00010001    bus gate + reset
+0x02001d6c <- 0x80000305    TCD3
+0x02001d74 <- 0x81000001    VINCAP DMA
+0x02001d84 <- 0x80000000    HDMI audio
+0x02001d80 <- 0xc0000000    TVCAP bus
+```
+
+So the rule is about *values and ordering*, not about ownership. Do not set
+these gates by OR-ing an enable bit onto whatever the cold state happens to be.
 
 ### Current state: the MIPS never receives a timer interrupt
 
@@ -392,52 +403,105 @@ The `0x4b22cf68` flag consulted before each tick read is initialised data whose
 image value is `1`, so the stub path is not the issue; the real read is taken
 and returns zero.
 
-## Two display paths, and which one the boot console needs
+**Framing correction.** Calling "no timer interrupt" the root cause is too
+strong. The tick is a ThreadX software counter incremented by the CP0 Compare
+ISR, and interrupts are legitimately masked this early in startup, so a
+stopped tick is expected at that point rather than a fault. The real defect is
+that `Rx_HDCP14_LoadKey` polls HDMI-RX `0x06840093` for an acknowledgement
+that never arrives, and its timeout — which stock relies on to recover — cannot
+expire while the tick is stopped. The timer needs no CCU gate either: it is the
+MIPS core's own CP0 Count/Compare, and the coprocessor cannot reach the CCU at
+all, so every clock it depends on must come from the ARM.
+
+## The ARM display path, and why it is not independent
 
 `LogoRegData.bin` is a fourth vendor artifact, loaded by stock U-Boot from
-`mips/LogoRegData.bin` and never staged by any experiment here. Despite living
-under `mips/`, **the ARM consumes it**: stock U-Boot parses and applies it
+`mips/LogoRegData.bin`. The ARM consumes it: stock parses and applies it
 itself, as its own strings show — `Invalid logo regbin:%s`,
-`Not valid logo data bin!`, `Get logo table:%d fail!`, `Logo table size:%u`,
-`create_fastlogo_inst fail!`, `Display fastlogo finish!` — before blitting
-`bootlogo.bmp`.
+`Get logo table:%d fail!`, `create_fastlogo_inst fail!`,
+`Display fastlogo finish!`.
 
-It is a masked register write-table: 16-byte records of
-`{address, value, mask, width}`, roughly 800 entries covering
+It is a masked register write-table: 16-byte `{address, value, mask, type}`
+records where type 1/2/4 is the access width, plus control records with a zero
+address and type `0xff` carrying a delay. Roughly 700 register writes across
+the CCU, TVTOP, DE, mixer and LVDS. Records are 16 bytes but only 4-byte
+aligned, and the stream changes phase between runs, so a walker must
+resynchronise rather than step a fixed lattice.
 
-| Block | Entries |
-| --- | --- |
-| `0x058c0000` (unidentified) | 128 |
-| `0x05240000` DE/mixer | 112 |
-| `0x05600000` (unidentified) | 99 |
-| `0x0525c000` mixer | 99 |
-| `0x05700000` TVTOP | 82 |
-| `0x05880000`, `0x05800000` | 75, 66 |
-| `0x02001xxx` CCU | 52 |
-| `0x051c0000` LVDS | 35 |
+The container holds **alternatives, not one sequence**: a CCU/TVTOP prologue,
+eleven timing variants, and seven DE/mixer blocks. Applying a whole range
+leaves the *last* variant in force. The block matching this panel is
+`0x15d4..0x180c` — `0x05880020 = 0x02f80550` (1360x760 total),
+`0x05880024 = 0x02d00500` (1280x720 active), `0x05880028 = 0x00140028`
+(bp 40/20), `0x0588002c = 0x00000014` (hs 20), which reproduces
+`display_cfg.xml` field for field.
 
-`h713_display_prepare()` is a hand-recovered dozen of these. The table contains
-no HDMI-RX (`0x0684xxxx`) or INCAP (`0x0694xxxx`) addresses, so it is the
-display *output* path only.
+**An earlier revision claimed the ARM path and the MIPS pipeline were
+independent, and that a boot console needed only the ARM side. That is wrong.**
+Stock's own fastlogo releases the coprocessor as an integral step of putting
+its logo on screen. The display requires the MIPS to be running; the two are
+one path.
 
-This splits the work in two, and they are independent:
+### Stock fastlogo, transcribed
 
-- **ARM-side output (fastlogo replay).** Apply `LogoRegData.bin`, point the
-  hardware at a framebuffer, and the panel shows pixels. No coprocessor, no
-  proprietary firmware at runtime, no IPC. This is what stock does before Linux
-  starts, and it is what a boot console or a `simple-framebuffer` handoff to
-  Linux needs. The DT already carries `framebuf_reserved: uboot-scanout@78541000`
-  from earlier analysis of the stock scanout address.
-- **MIPS coprocessor pipeline.** HDMI-RX capture, deinterlace, AFBD, and the
-  TSE/PQ picture-quality databases. Needed for projector features — HDMI input
-  and video post-processing — and it is what CPU_COMM, TVTOP and DECD exist to
-  drive. It is not on the path to a boot console.
+The stock U-Boot is **Thumb**, not ARM — its first word is only the exception
+vector. Load base is `0x4a000000`, verified by every string address appearing
+as a literal. `"Display fastlogo finish!"` is printed at `0x4a022bc6`.
 
-An earlier note in this project concluded that scanout must be MIPS-owned
-because `display.bin` contains the LVDS/TCON/DE base addresses while stock
-U-Boot contains none of them. That inference does not hold: the ARM path is
-data-driven, so those addresses live in `LogoRegData.bin` rather than in code
-literals. Both processors can reach the display blocks.
+The tail, from `0x4a022a3c`, with 12 ms between steps:
+
+```
+0x02000150 <- 0x22ffff22    PH pin mux (PH0/1 stay UART0)
+0x02001d88 <- 0x00010001    TVCAP gate/reset
+0x02001040 <- 0xb8003501    PLL enable (same rate, cold state is off)
+0x02001d6c <- 0x80000305
+0x02001020 <- 0xb8006301    PLL_PERIPH0  -- SEE HAZARD BELOW
+0x02001d74 <- 0x81000001
+0x02001068 <- 0xb8002f01    PLL enable (cold state is off)
+0x02001d84 <- 0x80000000
+0x02001d80 <- 0xc0000000
+0x06e00004 <- 0x01111117 ; 0x06e00008 <- 0x404 ; 0x06e00000 <- 0x00111111
+   ... same three <- 0 ... then the same three restored   (reset pulse)
+0x06940000 <- 1             INCAP
+0x051c0010 <- 0x01800045    LVDS enable
+<MIPS clock/reset/bootaddr/release, identical to h713_mips>
+delay 300 ms
+0x051c0010 <- 0x45          LVDS finalise
+```
+
+**INCAP does not wedge.** `0x06940000 <- 1` is recorded elsewhere in this
+document as wedging independently. With the vendor fabric configured it is
+fine, on stock and on ours. Another "unclocked, not forbidden" case.
+
+**Hazard: do not write `0x02001020`.** That is PLL_PERIPH0, which clocks MMC
+and the AHB/APB buses. Our U-Boot runs it at `0xb8003100`; stock's fastlogo
+writes `0xb8006301`. Replaying that write from a U-Boot prompt powered the
+bench board off. Stock is writing a value that is already in force in its own
+boot context; ours is not. `0x02001040` and `0x02001068` are safe because both
+are *disabled* in our cold state, so nothing depends on them.
+
+### Where this stops
+
+Replaying the above, with all four artifacts staged and the MIPS executing
+(BSS witness clear), leaves the panel dark. The LVDS FIFO status at
+`0x05880FE0` does respond — `0x2` cold, `0x0` after a FIFO reset via
+`0x05700088` bit 8, `0x3` after the full sequence — but never changes between
+consecutive reads, so nothing is scanning.
+
+The untranscribed half of the function is the likely gap: **`0x4a022860`**
+is the function prologue, and `0x4a022860..0x4a022a04` covers panel power
+sequencing, the table-application path (parser around `0x4a0248xx`,
+write helper `0x4a024878`), and the bitmap blit. Transcribe and replay that
+before drawing further conclusions.
+
+### Hardware note
+
+The bench board's display is an **LCD panel** — `HY200-1-3-W` on a 30-pin
+`Z20HD720M-V03` flex, 1280x720, driven directly over LVDS. It is not a DLP
+system. `local/allwinner-h713-linux/` documents **HY310** hardware
+(1920x1080, `LVDS -> DLPC3435 -> DLP imager`) and must not be treated as
+authoritative for this board; doing so sent an entire investigation after a
+DLP controller that does not exist here.
 
 ## Safety rules
 
