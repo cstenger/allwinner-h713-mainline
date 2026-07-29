@@ -547,58 +547,187 @@ Open threads, in priority order:
 4. Rebuild the trace instrumentation against `4380f1b3...` if markers are needed
    again -- the existing 671-entry table targets the wrong image.
 
-## Next task: the walker drops `type 0xfe` poll records
+## Fixed: the walker dropped `type 0xfe`, and its delays were in the wrong unit
 
-`h713_logo_walk()` in `arch/arm/mach-sunxi/h713_mips.c` understands three
-record types: 1/2/4 (a masked write of that width) and `0xff` with a zero
-address (a delay). It skips anything else by advancing four bytes and
-resynchronising. That silently discards a fourth type.
+`h713_logo_walk()` in `arch/arm/mach-sunxi/h713_mips.c` understood three record
+types: 1/2/4 (a masked write of that width) and `0xff` with a zero address (a
+delay). Anything else it skipped by advancing four bytes and resynchronising,
+which silently discarded a fourth type. The delay unit was a guess.
 
-**`type 0xfe` is a poll:** *wait until `(readl(addr) & mask) == value`*. There
-are four in `LogoRegData.bin`, and every one polls the display PLL:
+Both are now settled by reading the vendor applier, not by inference. Stock
+U-Boot 2018.05 for this board (`local/mips-display/board-b-stock/u-boot-stock.bin`)
+is **32-bit ARM, Thumb-2, load base `0x4a000000`** — not AArch64, which is why
+earlier disassembly attempts produced noise. The record applier is at
+`0x4a025164`, reached through the ops table at `0x4a025488+0x24`; it belongs to
+the LogoRegData module, whose neighbouring strings are `LogRegData.bin version
+is %u-%u-%u-%u`, `Get reg of type:%u fail!` and `null fastlogo inst!!!`.
 
-```
-poll 0x058c0014 until (reg & 0x80000000) == 0x00000000
-```
+It walks a `{?, records, count}` descriptor, stride 16, type word at `+0xc`:
 
-They sit at container offsets `0x0ec4`, `0x1734`, `0x1d1c`, `0x1fa4`. The one
-at `0x1734` is inside **timing block 6 — the block this panel uses** — in the
-middle of a PLL re-lock:
+| type | what stock does |
+| --- | --- |
+| `<= 4` | `*addr = (*addr & ~mask) \| value`, **always a 32-bit access** |
+| `0xfe` | one read, then `*addr = cur & ~mask`, then `*addr = cur \| mask` |
+| `0xff` | `udelay(value)` |
+
+Three corrections fall out of that:
+
+**`type 0xfe` is not a poll — it is a masked bit pulse.** The `value` word is
+never read. Our four records all carry `mask 0x80000000` on the display PLL at
+`0x058c0014`, and bit 31 there is PLL_ENABLE, so each one is a **PLL restart**:
+drop enable, raise it again. They sit at container offsets `0x0ec4`, `0x1734`,
+`0x1d1c`, `0x1fa4`, and the one at `0x1734` is inside **timing block 6 — the
+block this panel uses** — in the middle of a divider reprogram:
 
 ```
 +0x16e4 0x058c0014 <- 0x08000000 mask 0x08000000
-+0x16f4 DELAY 500
++0x16f4 DELAY 500 us
 +0x1704 0x058c0028 <- 0x00000000
 +0x1714 0x058c0014 <- 0x0000001e mask 0x0000fffe   reprogram divider
-+0x1724 DELAY 15000
-+0x1734 POLL  0x058c0014 until (reg & 0x80000000) == 0
-+0x1744 DELAY 15000
++0x1724 DELAY 15000 us
++0x1734 PULSE 0x058c0014 mask 0x80000000            PLL off, PLL on
++0x1744 DELAY 15000 us
 +0x1754 0x058c0014 <- 0x00002a00 mask 0x0000ffff   restore divider
 +0x1764 0x058c0028 <- 0x00030000
 ```
 
-So the vendor reprograms the PLL, waits for bit 31 to clear, and only then
-restores it. We skip the wait entirely and charge on, which means every
-register written after that point in the block is applied while the PLL is in
-an indeterminate state.
+We were skipping the restart outright, so everything written after that point
+in the block landed on a PLL that had never been re-locked.
 
-### What to fix
+**The delays are microseconds.** `0x4a000d74`, the thunk the walker calls, tail-
+branches to the delay core at `0x4a000d50`, which reads CNTPCT and busy-waits
+`value * 0x18` ticks — 24 ticks per microsecond on the 24 MHz arch timer. The
+`x1000` wrapper immediately after it at `0x4a000d78` is `mdelay`, and the walker
+does *not* use it. So the old `mdelay()` path was 1000x too long before the cap
+and wrong after it: the whole container is ~126 ms of delay in stock and was
+about 4.6 s for us, with the two 15000 waits bracketing the PLL restart cut to
+200 ms each. `H713_LOGO_MAX_DELAY_MS` is replaced by `H713_LOGO_MAX_DELAY_US`
+at 100000, which only bounds a walk that has fallen into garbage — stock has no
+ceiling at all, and the largest genuine value is 15000.
 
-1. Handle `0xfe` in `h713_logo_walk()`: poll `addr` until `(val & mask) ==
-   value`, with a bounded timeout, and report if it expires. Do not treat a
-   timeout as fatal — stock evidently tolerates it, since the surrounding
-   delays are large.
-2. Revisit the delay units. `H713_LOGO_MAX_DELAY_MS` caps at 200, and the
-   values seen are 1, 20, 100, 500 and 15000. If they are milliseconds, 15000
-   is 15 seconds, which is implausible; if microseconds, 15000 is 15 ms, which
-   fits a PLL re-lock. **The unit is unverified** and the cap is currently
-   silently truncating the two largest waits in the block.
-3. Re-check the other three poll sites once the type is handled; they are in
-   timing blocks the other projects use.
+**The width field is vestigial.** Stock uses a 32-bit `ldr`/`str` for every
+type in `0..4`. Moot for this container — all 838 write records are type 4, and
+there is not a single type 1 or 2 — so the width switch is left in place.
 
-Also worth noting: `+0x1664` writes `0x058c002c <- 0x00070010`. The superseded
-extract had `0x00000010` at the equivalent place, so values differ between
-firmware revisions, not just offsets.
+The four `0xfe` records are also *new in this firmware revision*: the superseded
+`research/bootloader_fat` extract has 774 writes, 89 delays and no `0xfe` at
+all. Same for values — `+0x1664` writes `0x058c002c <- 0x00070010` where the old
+extract had `0x00000010`.
+
+### Bench result (2026-07-29): the fix works, the panel stays dark
+
+Timing block 6 now applies `32 records, 1 pulse, 7 delays, 0 resync steps`, and
+`0x058c0014` reads back `b9002a00` against the `a9002a00` the table writes. The
+one differing bit is 28 — **PLL lock, set by hardware**. It cannot have been set
+with the restart skipped, so the vendor's PLL sequence now completes correctly
+for the first time. That is the `0xfe` defect closed, on hardware.
+
+It did not light the panel, and it did not move `0x05880FE0`.
+
+Two details from the same disassembly that our sequence still does not model,
+both in the fastlogo state machine at `0x4a0228d4`, which applies groups
+`0..count-1` where count is a `u16` at `inst->0x34 + 0x104`:
+
+- stock's FIFO reset after group 1 is **conditional** on `readl(0x05880fe0)`
+  being non-zero; `h713_disp_fifo_reset()` does it unconditionally.
+- the mixer write (`0x100` to `0x0525c038`) happens *before* group 2 is applied,
+  which is where we put it — that much is confirmed.
+
+## The firmware overrides the panel timing with 1080p
+
+Dumping the display blocks after `h713_disp auto 0x33`, with the coprocessor
+running, and diffing against a replay of what prologue 3 + timing 6 + DE 5
+actually wrote: **54 of 65 dumped registers hold exactly the written value.**
+Eleven do not.
+
+| register | table wrote | reads | who |
+| --- | --- | --- | --- |
+| `0x05700000` | `ffffffff` | `fff11111` | **ours** |
+| `0x05700004` | `ffffffff` | `00000001` | **ours** |
+| `0x0588001c` | `00000004` | `00000002` | firmware |
+| `0x05880020` | `02f80550` | `04650898` | firmware |
+| `0x05880024` | `02d00500` | `04380780` | firmware |
+| `0x05880028` | `00140028` | `00290114` | firmware |
+| `0x0588002c` | `00000014` | `8000003e` | firmware |
+| `0x05880030` | `00010003` | `80040007` | firmware |
+| `0x058c0014` | `a9002a00` | `b9002a00` | hardware (PLL lock) |
+| `0x051c0014` | `18000000` | `18000040` | unattributed |
+| `0x05600168` | `000003b2` | `00000000` | firmware? (AFBD) |
+
+Reading `+0x20` as total geometry and `+0x24` as active, the LVDS group goes from
+**1280x720 active / 1360x760 total** — the panel — to **1920x1080 active /
+2200x1125 total**, standard 1080p60. `+0x28` moves consistently with it and
+`+0x2c`/`+0x30` come back with bit 31 set.
+
+Nothing in the container writes those values: timing block 6 is the only block
+that touches `0x05880020`/`0x24` and it writes 720p, and no record anywhere in
+the file writes `04650898` or `04380780` to them. The only ARM code after the DE
+table is the clocks/TVCAP step, INCAP, `0x051c0010` and the MIPS release, none in
+`0x0588xxxx`. So the coprocessor is the only candidate — **an inference from
+exhaustion, not an observation**, and it should be treated as such.
+
+Meanwhile the mixer, DE and AFBD stay at 720p (`mixer +0x20`/`+0x30` =
+`02d00010`, AFBD `+0x20` = `02d00500`). The pipeline feeds 720p into a TCON
+programmed for 1080p.
+
+**The firmware does not defend the registers.** Re-imposing 720p after it has
+run sticks — verified both with the raw table records and, when that turned out
+to clear the firmware's bit 31 on `+0x2c`/`+0x30`, again with those bits
+preserved. Neither changed anything observable.
+
+**Our own divergence from stock, found in the same diff:** the vendor prologue
+opens TVTOP `0x05700000` fully (`0xffffffff`), and `h713_display_prepare()` —
+which runs inside the MIPS-release step, i.e. *after* all three tables — narrows
+it to `0xfff11111`, and `+0x04` from `0xffffffff` to `1`. Stock has no equivalent
+step. Untested as a cause, and cheap to test.
+
+## `0x05880FE0` is not a scan-liveness signal
+
+Reading the LVDS page wider than the sequence touches:
+
+```
+05880040: 3fffffff 38f8f8f8 deadabba deadabba
+05880050 .. 058800f0: deadabba throughout
+```
+
+`deadabba` is the interconnect's **undecoded-read signature**. The block decodes
+only `0x00..0x44`; there is no status or counter register anywhere in that page,
+so "read the block twice and look for a tick" cannot work — and back-to-back
+reads of the decoded window are indeed byte-identical.
+
+`0x05880FE0` is the exception: it reads `00000000`, not `deadabba`, so it is
+decoded — a real register that is simply always zero. Combined with stock gating
+its reset on that register being *non-zero*, the likeliest reading is a
+fault/underrun status where zero means "no fault".
+
+**So the criterion this investigation has been measured against for months is
+not a signal.** Every "the FIFO never moves" result should be re-read as "we
+were watching a constant". Project selection in particular was ruled out on the
+basis of a dark panel, which was never a sensitive test; `0x05880024` now gives
+a direct readout and that thread should be reopened.
+
+Also recorded from these runs: the MIPS execution witness differed between two
+otherwise identical runs (`0x8baa0000` vs `0x00000000`) — both count as executed,
+but firmware startup is **not deterministic**. And the board hangs 5-30 s after
+the sequence, once powering off outright; the delayed hang remains
+uncharacterised and is now the practical limit on bench iteration.
+
+### Where to go next
+
+1. **Reverse-engineer `display.bin`** (MIPS32 LE, raw image at `0x4b100000`,
+   entry erets to `0x8b1b1148`): find the writes to `0x05880020`/`0x24` and work
+   back to where `1920x1080` originates — a parsed config field, a table indexed
+   by project, or a constant. This needs no hardware and runs in parallel with
+   bench work. If it is a config field, the fix is a patch rather than an
+   instrument session.
+2. **Logic analyzer**, answering two questions in one hookup: is there
+   differential activity on the LVDS pairs while the sequence runs, and what
+   serial init does stock send the panel on PH10/11/12 (cs/scl/sda). The second
+   is already the last open path on the backlight thread.
+3. Re-check the other three `0xfe` sites; they are in timing blocks the other
+   projects use.
+4. Test the two cheap divergences above: leave TVTOP as the prologue set it, and
+   gate the FIFO reset the way stock does.
 
 ### Where the display stands, for a cold start
 
@@ -615,17 +744,27 @@ h713_mips log                  # scan the firmware workspace for its own text
 ```
 
 Verified: artifacts load from `mmc 1:2`, `display.bin` verifies against
-`4380f1b3...`, the coprocessor executes (witness overwritten), stock's fastlogo
-sequence is replayed faithfully, and the panel timing reaches the TCON.
+`4380f1b3...`, the coprocessor executes (witness overwritten), the replay
+follows stock's group order and is now faithful record-for-record, the display
+PLL locks, and 54 of 65 dumped registers hold exactly what the tables wrote.
+Every "not working" result recorded before 2026-07-29 predates the `0xfe` and
+delay-unit fixes, so the replay that produced them was not faithful.
 
-Not working: the LVDS FIFO at `0x05880FE0` never changes between consecutive
-reads, at any point across four seconds, in any project or configuration. The
-scan never starts.
+Not working: the panel stays dark. **Do not use `0x05880FE0` as the criterion** —
+it is decoded but constant-zero and is most likely a fault status where zero
+means "no fault"; see the section above. There is no known scan-liveness signal
+in the LVDS block, because the block only decodes `0x00..0x44`.
 
 Ruled out: table selection (`0x16`, `0x33`, `0x34`, `0x35` all tried, with and
-without the HDCP override), `source_id` (2 is invalid — the firmware logs
-`Element name=source_` and gets *less* far than stock's 1), and the HDCP
-key-load wait. At ERROR level the firmware logs nothing, so by its own account
+without the HDCP override), `source_id` (2 is invalid — the board's own
+`display_cfg.xml` already carries 1, and forcing 2 makes the firmware log
+`Element name=source_` and get *less* far), and the HDCP key-load wait.
+
+**Each of those was judged on "the panel stayed dark", which was never a
+sensitive test.** Table selection especially deserves re-testing, now that
+`0x05880024` gives a direct readout of what timing the firmware settles on.
+
+At ERROR level the firmware logs nothing, so by its own account
 startup succeeds. Its elog `route='0'` means uart, so raising the level does
 not put anything in memory; capturing it properly needs the elog buffer
 addresses re-derived for `4380f1b3...`.
