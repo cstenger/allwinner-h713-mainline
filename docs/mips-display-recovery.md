@@ -388,18 +388,64 @@ So `dir` selects the call queue versus the return queue, which is what a
 synchronous RPC needs and matches the protocol doc's "session pool, FreeCall
 pool, returnPipeLine".
 
-### Still not decoded
+### The message slot loop, and the complete share_seq layout
+
+The tail of `0x8b1197d4` runs 20 iterations over a message slot array:
 
 ```
-0x8b119bb4   per-CPU comm object, called once for cpu 0 and once for cpu 1
+fp = share_seq + 0x168
+loop i = 0..19:
+    sh   i,  4(fp)                     ; slot[+0x04] = i
+    sw  -1,  slot + 0x0c               ; slot[+0x0c] = -1
+    *ring_entry = (slot & 0x1fffffff) + 0x40000000    ; ARM-physical
+    jal 0x8b118430                     ; FIFO push/commit
+    fp += 0x68                         ; 104 bytes
+until i == 0x14
 ```
 
-This is the last significant unknown in the master init. It is also the
-function our CPU_COMM marker 5 redirected into during the startup trace, so it
-is already partly characterised.
+`slot[+0x04] = i` and `slot[+0x0c] = -1` are the driver's `comm_msg.slot_index`
+and `comm_msg.session_id`. The arithmetic closes the structure:
+`0x168 + 20*104 = 0x988`, exactly the struct size.
 
-Do not attempt a call before it is understood. A malformed message to a live
-coprocessor wedges it, and every wedge costs a power cycle.
+```
++0x000  cpu (byte), dir (byte), 0
++0x008  0
++0x010  20            +0x014  -1
++0x068  20            +0x06c  -1
++0x078  comm_fifo   rd=0 wr=0 peak=0 track=1
+                    capacity=21 item_size=4
+                    base_addr = ARM-phys(share_seq + 0xc0)
++0x098  name: "FreeCall" (dir 0) or "FreeReturn" (dir 1)
++0x0b8  0
++0x0c0  FIFO ring, 21 x u32
++0x168  20 message slots x 104 bytes  -> ends exactly at 0x988
+```
+
+The 20 slots are pushed onto the FIFO at init, each as its ARM-physical
+address, so the ring starts full of free slots -- 20 entries in a 21-capacity
+ring, which is the "one wasted for full detection" the driver documents.
+`0x8b11825c` allocates a ring position, `0x8b118430` commits it.
+
+### Firmware-local, not needed by U-Boot
+
+```
+0x8b124ba4   allocates into firmware BSS, bumps a counter at 0x8b27198c
+0x8b119bb4   per-CPU object at BSS 0x8b253a98 + 1168*cpu
+0x8b1190c0   validation loop only
+```
+
+`0x8b119bb4` never loads the shared-memory base -- that is only reachable
+through the global at `0x8b2543d4`, which it does not touch. Both it and
+`0x8b124ba4` write only firmware BSS, so the ARM side has no shared-memory
+obligation for either.
+
+### The master init is fully decoded
+
+Nothing unknown remains. What U-Boot must add, specified to the byte:
+
+- 8 x `share_seq` at `0x98 + 9760*cpu + 4880*dir + 2440*idx`, layout above
+- 5 list heads at `0x4d10/0x4d28/0x4d58/0x4d70/0x4d88`, each `{self,0,self,0}`
+- 256-record free pool `0x4db0..0x75b0` stride `0x28`, chained onto `0x4d80`
 
 ## Board-B OSD handoff (2026-07-31)
 
