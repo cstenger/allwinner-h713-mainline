@@ -384,9 +384,13 @@ direction:
 0x8b1edb28  "FreeReturn"
 ```
 
-So `dir` selects the call queue versus the return queue, which is what a
-synchronous RPC needs and matches the protocol doc's "session pool, FreeCall
-pool, returnPipeLine".
+**`idx`, not `dir`, selects which.** `0x8b1197d4` runs its body twice per
+`(cpu, dir)` call: `idx 0` names the FIFO "FreeCall" at `0x8b119b84`, then the
+tail at `0x8b119bac` sets `idx` to 1 and repeats for "FreeReturn". That is what
+the `idx` term in the addressing formula is for, and it means all eight
+structures are live rather than four. The pair is the call queue and the return
+queue, which is what a synchronous RPC needs and matches the protocol doc's
+"session pool, FreeCall pool, returnPipeLine".
 
 ### The message slot loop, and the complete share_seq layout
 
@@ -415,7 +419,7 @@ and `comm_msg.session_id`. The arithmetic closes the structure:
 +0x078  comm_fifo   rd=0 wr=0 peak=0 track=1
                     capacity=21 item_size=4
                     base_addr = ARM-phys(share_seq + 0xc0)
-+0x098  name: "FreeCall" (dir 0) or "FreeReturn" (dir 1)
++0x098  name: "FreeCall" (idx 0) or "FreeReturn" (idx 1)
 +0x0b8  0
 +0x0c0  FIFO ring, 21 x u32
 +0x168  20 message slots x 104 bytes  -> ends exactly at 0x988
@@ -444,6 +448,7 @@ obligation for either.
 Nothing unknown remains. What U-Boot must add, specified to the byte:
 
 - 8 x `share_seq` at `0x98 + 9760*cpu + 4880*dir + 2440*idx`, layout above
+  -- all eight, with the name chosen by `idx`
 - 5 list heads at `0x4d10/0x4d28/0x4d58/0x4d70/0x4d88`, each `{self,0,self,0}`
 - 256-record free pool `0x4db0..0x75b0` stride `0x28`, chained onto `0x4d80`
 
