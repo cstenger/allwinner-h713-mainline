@@ -8,6 +8,202 @@ that merely links is not evidence that the shared-memory protocol is safe.
 The DDR3 `HY200_QZ713DF_A1` bench board is the only target in scope. Do not
 flash these experiments to the untested LPDDR3 projector board.
 
+## CPU_COMM: the routine map is recovered (2026-07-31)
+
+The firmware's HAL routines are addressable, and the identities are confirmed
+against this exact firmware rather than inferred.
+
+### How a routine is named
+
+The transport addresses a routine by a hashed id computed over
+`<name>_<cpu_id>_<pid_low12>` -- `cpu_id` 1 for MIPS-side routines callable
+from the ARM, 0 for MIPS-to-ARM callbacks, and `pid_low12` `000` for both
+sides of the firmware's own registrations. The hash is an Allwinner CRC32
+variant:
+
+```python
+def comp_id(name, seed=0x123456):
+    crc = seed
+    for b in name.encode():
+        crc ^= b
+        for _ in range(8):
+            crc = (crc >> 1) ^ (0xEDB88320 if crc & 1 else 0)
+    return crc & 0xFFFFFFFF
+```
+
+### Why this is trusted
+
+Three independent checks, in increasing strength:
+
+1. The function reproduces 10/10 ids documented externally.
+2. `display.bin` contains 85 `THal_Vp_` and `MipsHalCallback_` name strings,
+   against the 82 registrations counted on hardware.
+3. **Decisive:** the live call table stores each routine's *name* alongside its
+   id, and the stored name hashes to the stored id. Verified on hardware for
+   `THal_Vp_GetSNR_1_000`, `THal_Vp_SetHDCP22Key_1_000`,
+   `THal_Vp_SetBrightness_1_000` and `THal_Vp_AtvSetRegion_1_000`. The third
+   also reproduces the externally documented `0x7221d017`.
+
+### Call-table entry layout
+
+1224 entries of 0x60 bytes at `shared+0x75c8`, count at `+0x75c4`, version at
+`+0x75c0`. Version is exactly twice the count -- each insertion bumps it twice.
+
+```
++0x00   00010000     flags/type
++0x04   8b8f32b0     owner/vtable pointer, identical across entries
++0x08   comp_id
++0x0c   routine name, NUL-terminated ASCII, stored in place
++0x50   handler function pointer (MIPS VA, unique per entry)
++0x5c   next/free link, 0xffffffff when free
+```
+
+The handler pointer at `+0x50` means any routine can be disassembled in
+`display.bin` before it is called.
+
+### Reading it on hardware
+
+```
+h713_disp panel-test 0x33     # or mips-test -- the table only exists
+h713_disp calltable           # after a launch
+```
+
+`calltable` is read-only: no writes, no messages. It does **not** consume the
+one-launch-per-power-cycle budget, so run it at the prompt on the same boot
+while the firmware is still up. Observed: `version=164 count=82`, all 13
+embedded ids matched at entry offset `+0x08`.
+
+### Entries that matter for the display problem
+
+| entry | routine | why |
+| --- | --- | --- |
+| 989 | `THal_Vp_GetImageBufferAddr` | read-only; asks the firmware where the image buffer is |
+| 703 | `THal_Vp_SetImageBufferAddr` | the OSD path in the vendor's own terms |
+| 472 | `THal_Vp_DisableBlackScreen` | zero-parameter; would explain every observation if asserted at power-on |
+| 107 | `THal_Vp_EnableBlackScreen` | its peer |
+| 485 | `THal_Vp_SetSource` | source selection |
+| 969 | `THal_Vp_GetSource` | read-only |
+| 325 | `Thal_Vp_SetBacklightPwmInfo` | the unresolved PWM5 question |
+| 894 | `Thal_Vp_SetBacklightLevel` | brightness |
+
+### What a CALL still needs
+
+Sending is **not** implemented and is not a small addition. A call goes through
+routine lookup, session allocation, message allocation, FIFO enqueue, the
+msgbox doorbell at `0x03003874`, an ACK wait and a return read. Those run on
+master-side structures U-Boot does not initialise:
+
+```
+0x04CE8   va_offset
+0x04D0C   linked lists (5 pairs)
+0x04DB0   rec entries + wait/share-seq structures
+0x240E8   component pool
+0x2C068   messager pool      <- messages are allocated from here
+0x2CCF0   SMM heap
+```
+
+What we do initialise -- magic words, `max_cpu`, CPU flags, 12 spinlocks, call
+table sentinels -- is exactly enough for the MIPS to register and report ready,
+which is why everything to date has worked. It is not enough to send.
+
+Recovering the rest is the same job as `comm_InitSpinLock` and the call-table
+sentinels, both of which were read out of `display.bin` successfully. Do not
+guess at it: a malformed message to a live coprocessor can wedge it, and every
+wedge costs a power cycle.
+
+### Complete routine map
+
+Ids for the ARM-to-MIPS direction (`_1_000`), or `_0_000` for the
+`MipsHalCallback_` entries, computed from the 85 names in `display.bin`.
+
+| routine | comp_id |
+| --- | --- |
+| `MipsHalCallback_DisplayLatencyChange` | `0xad9f0a86` |
+| `MipsHalCallback_HdmiHotPlugByPortHandler` | `0x38d780e2` |
+| `MipsHalCallback_SignalChange` | `0x3e7fbc46` |
+| `THal_Vp_AtvChannelChange` | `0xa138c8fe` |
+| `THal_Vp_AtvChannelScanEnd` | `0x9558d223` |
+| `THal_Vp_AtvChannelScanStart` | `0x39d6eec4` |
+| `THal_Vp_AtvEnableSnowScreen` | `0x6e857547` |
+| `THal_Vp_AtvSetRegion` | `0xa16b7c24` |
+| `THal_Vp_AtvSetSignalStd` | `0x80e56656` |
+| `THal_Vp_CvbsSetPedestalMode` | `0x24f44438` |
+| `THal_Vp_Deinit` | `0xeaaa24c9` |
+| `THal_Vp_DisableBlackScreen` | `0xb66041d8` |
+| `THal_Vp_DisableScreenCover` | `0x143ffc87` |
+| `THal_Vp_DisableVideoFreeze` | `0x3ab1d1dc` |
+| `THal_Vp_EnableBlackScreen` | `0xa30d4c6b` |
+| `THal_Vp_EnableScreenCover` | `0x0152f134` |
+| `THal_Vp_EnableVBILine` | `0xf3772724` |
+| `THal_Vp_EnableVideoFreeze` | `0x2fdcdc6f` |
+| `THal_Vp_GetBlackExtension` | `0x5d3d7258` |
+| `THal_Vp_GetBrightness` | `0x880be6ff` |
+| `THal_Vp_GetColorManagement` | `0xe661461f` |
+| `THal_Vp_GetContrast` | `0x6665fe81` |
+| `THal_Vp_GetDCI` | `0xf9b94e50` |
+| `THal_Vp_GetDisplayLatency` | `0x434567b0` |
+| `THal_Vp_GetHue` | `0x5432b456` |
+| `THal_Vp_GetImageBufferAddr` | `0x2f02f7dd` |
+| `THal_Vp_GetLowLatencyMode` | `0xc32fe5ff` |
+| `THal_Vp_GetPictureMode` | `0x2d8338c3` |
+| `THal_Vp_GetSNR` | `0xcfc4bc0d` |
+| `THal_Vp_GetSaturation` | `0x5263b52b` |
+| `THal_Vp_GetSharpness` | `0x563e60ab` |
+| `THal_Vp_GetSignalInfo` | `0x24b17fb7` |
+| `THal_Vp_GetSource` | `0x24efc7c9` |
+| `THal_Vp_GetTNR` | `0xaba5d1c4` |
+| `THal_Vp_GetVBIAddr` | `0x8f5859c2` |
+| `THal_Vp_GetVBIData` | `0x096b60b1` |
+| `THal_Vp_GetVBIOffset` | `0xec2ca0b4` |
+| `THal_Vp_GetVBISize` | `0x96046e19` |
+| `THal_Vp_GetVideoRange` | `0x623d9729` |
+| `THal_Vp_HDMI_GetPortStatus` | `0xcbf83247` |
+| `THal_Vp_HDMI_ReloadHdcp14Key` | `0x449effe8` |
+| `THal_Vp_HDMI_SetHPDTimeInterval` | `0x6eb4c96a` |
+| `THal_Vp_HDMI_SetPortMap` | `0x9ce74c48` |
+| `THal_Vp_Init` | `0x1c6ff747` |
+| `THal_Vp_RegisterCallbackOfDisplayLatencyChange` | `0x87a96488` |
+| `THal_Vp_RegisterSignalChangeCallback` | `0x671ceca6` |
+| `THal_Vp_ResetVBI` | `0x9c91450e` |
+| `THal_Vp_SeamlessDisable` | `0xc5429d4a` |
+| `THal_Vp_SeamlessEnable` | `0xcb6d765f` |
+| `THal_Vp_SetBacklightWorkMode` | `0x4d80db0e` |
+| `THal_Vp_SetBlackExtension` | `0x5c135587` |
+| `THal_Vp_SetBrightness` | `0x7221d017` |
+| `THal_Vp_SetColorManagement` | `0xf00ca77d` |
+| `THal_Vp_SetContrast` | `0x023c4033` |
+| `THal_Vp_SetDCI` | `0xf6a798d3` |
+| `THal_Vp_SetGamma` | `0x1a116843` |
+| `THal_Vp_SetHDCP22Key` | `0x50817813` |
+| `THal_Vp_SetHDCP22Pkf` | `0xfa085aaa` |
+| `THal_Vp_SetHDMIHotPlugByPortCallback` | `0xba3e5a70` |
+| `THal_Vp_SetHue` | `0x5b2c62d5` |
+| `THal_Vp_SetImageBufferAddr` | `0x396f16bf` |
+| `THal_Vp_SetLowLatencyMode` | `0xc201c220` |
+| `THal_Vp_SetPictureMode` | `0x83a878bf` |
+| `THal_Vp_SetSNR` | `0xc0da6a8e` |
+| `THal_Vp_SetSaturation` | `0xa84983c3` |
+| `THal_Vp_SetSharpness` | `0x7335ebb5` |
+| `THal_Vp_SetSource` | `0xeaf13de5` |
+| `THal_Vp_SetTNR` | `0xa4bb0747` |
+| `THal_Vp_SetVideoRange` | `0x9817a1c1` |
+| `THal_Vp_SetWhiteBalance` | `0xfc42fe0c` |
+| `THal_Vp_StartVBI` | `0x0fe1790c` |
+| `THal_Vp_StopVBI` | `0x8a0d26cb` |
+| `THal_Vp_SwitchARCTXPath` | `0xe9b4464d` |
+| `THal_Vp_TurnOnARCAudioPath` | `0x93965d14` |
+| `THal_Vp_UnregisterCallbackOfDisplayLatencyChange` | `0x72341984` |
+| `THal_Vp_UnregisterSignalChangeCallback` | `0x2692bdbe` |
+| `THal_Vp_Wce_DisablePixel2PixelMode` | `0xea7ffef5` |
+| `THal_Vp_Wce_EnablePixel2PixelMode` | `0x8f8a9581` |
+| `THal_Vp_Wce_GetActiveWindow` | `0x7bbd5772` |
+| `THal_Vp_Wce_GetWindow` | `0xfd483f67` |
+| `THal_Vp_Wce_SetMirrorMode` | `0x09ffc6eb` |
+| `THal_Vp_Wce_SetWindow` | `0x3356c54b` |
+| `Thal_Vp_AtvIsFastSyncLock` | `0x71a4c888` |
+| `Thal_Vp_SetBacklightLevel` | `0x51ad877e` |
+| `Thal_Vp_SetBacklightPwmInfo` | `0xb46ce545` |
+
 ## Board-B OSD handoff (2026-07-31)
 
 This section supersedes the 2026-07-30 handoff below for anything it contradicts.
