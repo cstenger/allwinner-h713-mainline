@@ -204,6 +204,120 @@ Ids for the ARM-to-MIPS direction (`_1_000`), or `_0_000` for the
 | `Thal_Vp_SetBacklightLevel` | `0x51ad877e` |
 | `Thal_Vp_SetBacklightPwmInfo` | `0xb46ce545` |
 
+## CPU_COMM: the master-side init, recovered (2026-07-31)
+
+Sending a call needs shared-memory structures U-Boot does not build. This is
+what the firmware's own master path builds, read out of the authenticated
+`display.bin` and cross-checked against `cpu_comm.h` in the 32-bit Linux tree.
+Every field that both sources describe agrees.
+
+### The master init function
+
+`0x8b11ace8` (raw `display.bin+0x1ace8`). It is the combined init: it calls
+`getCurCPUID` at `0x8b1227b4` and `bnez` sends CPU 1 to `0x8b11b118`, so this
+path is the ARM master's. It is idempotent -- it reads `shared+0x90` and skips
+the whole body if the magic is already `0xdeadbeef`.
+
+```
+jal 0x8b124ba4                        (1)  first init, NOT YET DECODED
+jal 0x8b124d38                        (2)  comm_InitSpinLock      -- U-Boot has
+memset(shared+0x75c0, 0, 0x1cb08)     (3)  call table             -- U-Boot has
+    count=0, version=0, 1224 sentinels
+memset(shared+0x90, ...)              (4)
+sw max_cpu -> 0x4cd8                  (5)                         -- U-Boot has
+jal 0x8b119bb4  (cpu 0)               (6)  per-CPU comm object    NOT DECODED
+jal 0x8b1197d4  (cpu 0, dir 0)        (7)  share_seq -- decoded below
+jal 0x8b1197d4  (cpu 0, dir 1)        (8)
+jal 0x8b119bb4  (cpu 1)               (9)
+jal 0x8b1197d4  (cpu 1, dir 0)       (10)
+jal 0x8b1197d4  (cpu 1, dir 1)       (11)
+jal 0x8b1190c0                       (12)  final init, NOT DECODED
+    five self-referencing list heads (13)
+    256-entry record loop            (14)
+magic1 = magic2 = 0xdeadbeef         (15)                         -- U-Boot has
+```
+
+### share_seq addressing
+
+`0x8b1193d8(cpu, dir, idx)`, all three arguments validated `< 2`:
+
+```
+shared + 0x98 + 9760*cpu + 4880*dir + 2440*idx
+```
+
+Eight structs of 0x988 bytes spanning `shared+0x00098..0x04CD8`. The array ends
+exactly where `max_cpu` begins, which is the check that the formula is right.
+
+| cpu | dir | idx | offset |
+| --- | --- | --- | --- |
+| 0 | 0 | 0 | `0x00098` |
+| 0 | 0 | 1 | `0x00a20` |
+| 0 | 1 | 0 | `0x013a8` |
+| 0 | 1 | 1 | `0x01d30` |
+| 1 | 0 | 0 | `0x026b8` |
+| 1 | 0 | 1 | `0x03040` |
+| 1 | 1 | 0 | `0x039c8` |
+| 1 | 1 | 1 | `0x04350` |
+
+### share_seq contents
+
+`0x8b1197d4(cpu, dir)` writes, relative to the struct base:
+
+```
++0x00  cpu (byte)        +0x78  rd_idx     = 0
++0x01  dir (byte)        +0x7c  wr_idx     = 0
++0x02  0    (byte)       +0x80  peak_count = 0
++0x08  0    (byte)       +0x84  track      = 1
++0x10  20   (byte)       +0x88  capacity   = 21
++0x14  -1                +0x8c  item_size  = 4
++0x68  20   (byte)       +0x90  base_addr  = ARM-phys of (struct + 0xc0)
++0x69  0    (byte)       +0x94  0
++0x6c  -1                +0x98  FIFO name string
+                         +0xb8  0
+```
+
+The block at `+0x78` is the driver's `comm_fifo` field for field: `rd_idx`,
+`wr_idx`, `peak_count`, `track_stats`, `capacity`, `item_size`, `base_addr`.
+Capacity 21 with one slot wasted for full-detection gives 20 usable, matching
+the driver's documented sequence maximum of 19.
+
+`base_addr` is `((VA + 0xc0) & 0x1fffffff) + 0x40000000` -- the firmware
+converting its own KSEG address into an ARM-visible physical one. `struct+0xc0`
+is the message slot array; the slot stride computes as `104 * i`, which is
+`COMM_MSG_SIZE`.
+
+### Directly replicable today
+
+Five self-referencing empty circular lists, each `{self, 0, self, 0}`:
+
+```
+shared+0x4d10  0x4d28  0x4d58  0x4d70  0x4d88
+```
+
+A 256-entry record array from `shared+0x4db0` to `+0x75b0`, stride `0x28`
+(`0x2800/0x28 = 256`), each with the same `{self, 0, self, 0}` head plus a call
+to `0x8b1234c8(2, 0, entry-0x18)`. It lands exactly on `magic2` at `0x75b8`.
+
+### The gap, stated precisely
+
+U-Boot memsets the whole 5 MB then writes magic, flags, spinlocks and the call
+table. **The entire `0x98..0x4CD8` share_seq region is left zero** -- capacity
+0, `base_addr` 0, no FIFOs at all. That is enough for the MIPS to register its
+82 routines and report ready, which is why every run to date has worked, and it
+is why a call would find an empty transport.
+
+### Still not decoded
+
+```
+0x8b124ba4   first init
+0x8b1190c0   final init
+0x8b1234c8   per-record init, 256 calls
+0x8b11825c   FIFO slot allocator, called on the comm_fifo
+```
+
+Do not attempt a call before these are understood. A malformed message to a
+live coprocessor wedges it, and every wedge costs a power cycle.
+
 ## Board-B OSD handoff (2026-07-31)
 
 This section supersedes the 2026-07-30 handoff below for anything it contradicts.
