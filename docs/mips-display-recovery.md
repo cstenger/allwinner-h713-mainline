@@ -452,6 +452,71 @@ Nothing unknown remains. What U-Boot must add, specified to the byte:
 - 5 list heads at `0x4d10/0x4d28/0x4d58/0x4d70/0x4d88`, each `{self,0,self,0}`
 - 256-record free pool `0x4db0..0x75b0` stride `0x28`, chained onto `0x4d80`
 
+## CPU_COMM: the send path (2026-07-31)
+
+Partial. Enough is known to say where a send goes; not enough to send one.
+
+### SendComm2CPUEx
+
+`0x8b11fd58` (raw `display.bin+0x1fd58`), 224-byte frame. Arguments match the
+Linux driver's prototype: `a0` = message pointer, `a1` = target cpu, `a2` =
+flags. `a1 == 0` means auto-detect via routine lookup, and that path's work
+begins at `0x8b11ffb4`. `a0 == 0` is rejected.
+
+The function contains no msgbox constants -- the doorbell is rung by a helper.
+Note this firmware runs on the MIPS, so its own notification path is
+MIPS-to-ARM; the ARM-to-MIPS doorbell is the other half and comes from the
+Linux driver.
+
+### The ARM-to-MIPS doorbell
+
+A single write, no interrupt-enable pulse. The pulse workaround in that tree is
+for the ARISC path, not MIPS.
+
+```c
+raw = ((msg_type & 0x3) << 16) | (intr_type & 0xFFFF);
+writel(raw, 0x03003874);
+```
+
+`msg_type` 0=CALL, 1=RETURN, 2=CALL_ACK, 3=RETURN_ACK; `intr_type` is 2 in
+stock. So a CALL is `0x00000002` written to `0x03003874`.
+
+**Verified against our own firmware.** The MIPS TX function at `0x8b121870`
+forms both addresses from the msgbox base:
+
+```
+addiu $s6, $s0, 0x3864     ; FIFO count, port 1
+addiu $s5, $s0, 0x3874     ; MSG_DATA,   port 1
+jal   0x8b180550($s6)      ; poll the count
+```
+
+With `$s0 = 0x03000000` those are `0x03003864` and `0x03003874`, matching the
+driver's constants and the protocol doc.
+
+### Open question: the message layout
+
+The two sources disagree, and this is the field that decides whether a message
+is malformed:
+
+| | protocol doc | driver `CPUComm_CallEx` |
+| --- | --- | --- |
+| size | 168 bytes | 104 bytes (`comm_msg`) |
+| `comp_id` | `+40` | `+40` |
+| param count | `+64` | `+8` (`cmd_type`) |
+| params | `+68` | `+44` |
+
+They agree only on `comp_id`. The 104-byte form matches the slot size we build,
+and it is the one in code that reportedly runs -- but pick this by reading the
+firmware's receive side, not by plausibility.
+
+### Still needed for a send
+
+- session allocation from the 256-record free pool
+- message fill, at whichever layout the receive side proves
+- enqueue via `0x8b11825c` (allocate ring position) and `0x8b118430` (commit)
+- the doorbell above
+- polling the return ring
+
 ## Board-B OSD handoff (2026-07-31)
 
 This section supersedes the 2026-07-30 handoff below for anything it contradicts.
