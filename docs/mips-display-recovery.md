@@ -306,17 +306,100 @@ table. **The entire `0x98..0x4CD8` share_seq region is left zero** -- capacity
 82 routines and report ready, which is why every run to date has worked, and it
 is why a call would find an empty transport.
 
+### Why reading this block is safe to trust
+
+`getCurCPUID` at `0x8b1227b4` is two instructions and always returns 1:
+
+```
+jr    $ra
+addiu $v0, $zero, 1
+```
+
+So the `bnez $v0` at `0x8b11adac` is always taken and **the firmware never
+executes the master-init block above**. It is compiled-in reference code for
+the ARM side. That is exactly why replicating from it has worked twice already
+-- `comm_InitSpinLock` and the call-table sentinels both came from here and
+both were correct on hardware.
+
+One caveat for replication: helpers that call `getCurCPUID` internally take the
+CPU-1 path when read here, so trace each helper's `cpu == 0` branch rather than
+copying its literal behaviour.
+
+### The helpers, decoded
+
+`0x8b150948` is the assertion logger, `"ASSERT FAILED, File:%s Line:%d
+Routine:%s"`. Most branching in these functions is assertion paths, not
+structural work, which makes them smaller than they look.
+
+`0x8b118ff8(cpu, dir)` -- argument validator, both `< 2`, returns 0.
+
+`0x8b1190c0` -- loop over `dir` in {0,1}, from `./comm_request.c`, guarding
+`comm_WriteRegWord`. The `cpu == dir` case falls through to the tail, so on the
+master only the cross direction does work.
+
+`0x8b124ba4(type)` -- **not shared state.** Allocates a bookkeeping object into
+the firmware's own BSS and bumps a counter at `0x8b27198c + type*4`. Called
+with type 0. U-Boot does not need to replicate it; the ARM side allocates its
+own equivalent in its own memory.
+
+`0x8b1234c8(2, 0, record)` -- free-list insertion. Appends the record onto the
+list header at `shared+0x4d80`, anchor `0x4d88`, incrementing a `u16` count at
+`+0x02`:
+
+```
+[0x4d80+0x10] = record + 0x18      ; list tail
+[record+0x20] = old tail           ; back link
+[record+0x18] = 0x4d88             ; list anchor
+```
+
+So the 256 records at `0x4db0..0x75b0` are a **free pool**, pre-chained at init.
+
+`0x8b11825c(fifo)` -- the FIFO slot allocator, called on `share_seq+0x78`:
+
+```
+if (rd_idx >= capacity) assert
+if (wr_idx >= capacity) assert
+if ((wr_idx + 1) % capacity == rd_idx) return NULL     ; full
+return base_addr + wr_idx * item_size
+```
+
+confirming the `comm_fifo` layout from a second direction:
+
+```
++0x00 rd_idx   +0x10 capacity    +0x18 base_addr
++0x04 wr_idx   +0x14 item_size   +0x40 debug_flags
++0x08 peak     +0x0c track
+```
+
+It does **not** advance `wr_idx`; commit is a separate operation. That matters
+for getting a send right.
+
+### The two FIFO names
+
+The share_seq initialiser copies one of these into `struct+0x98` depending on
+direction:
+
+```
+0x8b1edb1c  "FreeCall"
+0x8b1edb28  "FreeReturn"
+```
+
+So `dir` selects the call queue versus the return queue, which is what a
+synchronous RPC needs and matches the protocol doc's "session pool, FreeCall
+pool, returnPipeLine".
+
 ### Still not decoded
 
 ```
-0x8b124ba4   first init
-0x8b1190c0   final init
-0x8b1234c8   per-record init, 256 calls
-0x8b11825c   FIFO slot allocator, called on the comm_fifo
+0x8b119bb4   per-CPU comm object, called once for cpu 0 and once for cpu 1
 ```
 
-Do not attempt a call before these are understood. A malformed message to a
-live coprocessor wedges it, and every wedge costs a power cycle.
+This is the last significant unknown in the master init. It is also the
+function our CPU_COMM marker 5 redirected into during the startup trace, so it
+is already partly characterised.
+
+Do not attempt a call before it is understood. A malformed message to a live
+coprocessor wedges it, and every wedge costs a power cycle.
 
 ## Board-B OSD handoff (2026-07-31)
 
