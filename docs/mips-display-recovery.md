@@ -493,21 +493,40 @@ jal   0x8b180550($s6)      ; poll the count
 With `$s0 = 0x03000000` those are `0x03003864` and `0x03003874`, matching the
 driver's constants and the protocol doc.
 
-### Open question: the message layout
+### The message layout, settled by the receive side
 
-The two sources disagree, and this is the field that decides whether a message
-is malformed:
+`command_action` at `0x8b120bc0` is the consumer. It resolves a share_seq via
+`0x8b1195b8(cpu, ...)`, reads a slot index from `share_seq+0x10` and rejects it
+unless `< 20`, then forms the message base as `share_seq + 0x168 + 104*index`.
+Subtracting `0x168` from its accesses gives the layout:
 
-| | protocol doc | driver `CPUComm_CallEx` |
-| --- | --- | --- |
-| size | 168 bytes | 104 bytes (`comm_msg`) |
-| `comp_id` | `+40` | `+40` |
-| param count | `+64` | `+8` (`cmd_type`) |
-| params | `+68` | `+44` |
+```
++0x00  lhu        src/dst pair
++0x02  lhu / sh   dst_cpu        compared against getCurCPUID
++0x04  lhu        slot_index
++0x06  lhu        flags
++0x08  lhu        cmd_type       <- parameter count
++0x0A  lhu / sh   flags2         bit 3 set on receipt
++0x0C  lw         session_id
++0x20  lw         payload[0]
++0x24  lw         payload[1]
++0x28  lw         comp_id        <- 40 decimal
+```
 
-They agree only on `comp_id`. The 104-byte form matches the slot size we build,
-and it is the one in code that reportedly runs -- but pick this by reading the
-firmware's receive side, not by plausibility.
+This is the Linux driver's `CPUComm_CallEx` layout, field for field:
+`dst_cpu` at `+2`, parameter count in `cmd_type` at `+8`, `comp_id` at `+40`,
+parameters from `+44`. **The protocol doc's 168-byte form is wrong for this
+path** -- its parameter count at `+64` and parameters at `+68` are not what the
+firmware parses. The 104-byte form is also what fits the slots we build.
+
+One correction to the driver's own header: it labels `+0x02` `component_id`,
+but the firmware compares it with `getCurCPUID`, so it is `dst_cpu`. The
+driver's code has this right; only its struct comment is misleading.
+
+Note this also validates our init from the consumer's side: the message base is
+`share_seq + 0x168 + 104*index` with a slot index bounded by 20, which is
+exactly the array we build and the value 20 we write at `+0x10` as the
+out-of-range/empty marker.
 
 ### Still needed for a send
 
