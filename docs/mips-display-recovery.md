@@ -528,13 +528,46 @@ Note this also validates our init from the consumer's side: the message base is
 exactly the array we build and the value 20 we write at `+0x10` as the
 out-of-range/empty marker.
 
+### Which queue a message goes in
+
+The send and receive resolvers are mirrors of `0x8b1193d8`:
+
+```
+receiver  0x8b1195b8(peer, idx) = share_seq(my_cpu, peer, idx)
+sender    0x8b1195ec(peer, idx) = share_seq(peer, my_cpu, idx)
+```
+
+So a message from X to Y lives in `share_seq(Y, X, idx)` -- indexed by
+**(destination, source)** -- and Y reads that same structure. `idx` selects
+FreeCall (0) or FreeReturn (1). Against the eight transports U-Boot builds:
+
+```
+ARM(0) -> MIPS(1) CALL     share_seq(1,0,0) = shared+0x026b8   FreeCall
+MIPS(1) -> ARM(0) RETURN   share_seq(0,1,1) = shared+0x01d30   FreeReturn
+```
+
+Both offsets are in memory we already initialise and have dumped live.
+
+### The ARM does not participate in the locking
+
+`0x8b119618(cpu)` returns `0x8b253a98 + 1168*cpu` -- the firmware's own BSS
+object, the same one `0x8b119bb4` initialises. The semaphores `SendComm2CPUEx`
+takes at `+0x8` and `+0x3e0` of that object are MIPS-local ThreadX primitives,
+not shared memory. The ARM side has no obligation to them.
+
+`0x8b11a920(cpu)` and `0x8b11a720(cpu)` are readiness guards -- shared base
+non-null, cpu in range, `magic1 == 0xdeadbeef` -- not publication.
+
 ### Still needed for a send
 
-- session allocation from the 256-record free pool
-- message fill, at whichever layout the receive side proves
-- enqueue via `0x8b11825c` (allocate ring position) and `0x8b118430` (commit)
-- the doorbell above
-- polling the return ring
+Only one thing is genuinely unknown: **how a filled slot is published.** The
+receiver reads a slot index from `share_seq+0x10` and rejects it unless `< 20`,
+but the code that writes it has not been found, and whether allocation pops the
+FreeCall ring is unconfirmed. `SendComm2CPUEx` does this inside a helper past
+the guards.
+
+Everything else is settled: the queue, the message layout, the doorbell, the
+absence of any shared locking obligation.
 
 ## Board-B OSD handoff (2026-07-31)
 
