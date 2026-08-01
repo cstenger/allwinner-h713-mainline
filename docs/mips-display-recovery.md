@@ -558,16 +558,56 @@ not shared memory. The ARM side has no obligation to them.
 `0x8b11a920(cpu)` and `0x8b11a720(cpu)` are readiness guards -- shared base
 non-null, cpu in range, `magic1 == 0xdeadbeef` -- not publication.
 
+### The publication step
+
+The enqueue helper is `0x8b11f9ec`, called once from `SendComm2CPUEx` at
+`0x8b12046c`. Its signature is
+`publish(share_seq, slot_index, state, session, wait_ptr)`, and the call site
+sources every argument from the message being sent:
+
+```
+memcpy(slot, msg, 0x68)          ; 104 bytes, COMM_MSG_SIZE
+msg[+0x0A] |= 4                  ; set bit 2 in flags2
+
+publish( share_seq,
+         msg[+0x04],             ; -> share_seq[+0x10]  slot index
+         msg[+0x06] & 0xff,      ; -> share_seq[+0x08]  state
+         msg[+0x0C],             ; -> share_seq[+0x14]  session id
+         s7 + 4 )                ; -> share_seq[+0x18]  wait pointer
+```
+
+with `share_seq[+0x04]` bumped by one and `[+0x1c]` cleared. This closes the
+loop with the receive side: `command_action` reads the index from `+0x10` and
+tests bit 2 of `+0x08`, and bit 2 is exactly what is OR'd into `flags2`
+immediately before publishing.
+
+### The slot carries its own index
+
+The sender does not pop a ring to choose a slot index. It reads it back out of
+the slot: `lhu $s6, 4($fp)` takes `slot[+0x04]`. That is the field U-Boot
+stamps with `i` for each of the twenty slots, so **our slot initialisation is
+load-bearing**, not decorative. The allocator is `0x8b118be8(share_seq)`.
+
+### Hazard: the published wait pointer
+
+`s7` is `0x8b119618(cpu) + 8` or `+ 0x3e0` -- a pointer into the firmware's own
+BSS per-CPU object, i.e. a ThreadX wait object. So `share_seq[+0x18]` is a
+wait-object pointer and `[+0x1c]` its zero high half, matching the driver's
+`comm_msg.wait_ptr_lo`/`wait_ptr_hi`.
+
+The receiver signals through that pointer on completion. U-Boot polls rather
+than sleeps and has no wait object, so **publishing a bogus pointer would have
+the firmware write into arbitrary MIPS memory.** Resolve this before any send:
+either find a value the firmware treats as "no waiter", or point it somewhere
+harmless and verified.
+
 ### Still needed for a send
 
-Only one thing is genuinely unknown: **how a filled slot is published.** The
-receiver reads a slot index from `share_seq+0x10` and rejects it unless `< 20`,
-but the code that writes it has not been found, and whether allocation pops the
-FreeCall ring is unconfirmed. `SendComm2CPUEx` does this inside a helper past
-the guards.
-
-Everything else is settled: the queue, the message layout, the doorbell, the
-absence of any shared locking obligation.
+- the memcpy operand order at `0x8b120438` reads as `dst=s5, src=fp`, opposite
+  to the unambiguous branch at `0x8b1201b8`. Either they are different
+  operations or `0x8b1bcf34`'s argument order needs checking. Do not guess a
+  copy direction.
+- a safe value for the published wait pointer, per the hazard above.
 
 ## Board-B OSD handoff (2026-07-31)
 
