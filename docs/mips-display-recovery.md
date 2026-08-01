@@ -1,3 +1,103 @@
+# SESSION HANDOFF -- 2026-07-31
+
+Read this first. It supersedes anything below it that it contradicts.
+
+## Where the two threads stand
+
+**The panel lights.** PF6 is board B's `panel_power_en`; with it asserted the
+firmware's internal colour source is plainly visible. Every earlier "not
+working" verdict was measured through an unpowered panel and is void.
+
+**The OSD still does not display.** The firmware owns the LVDS PHY and the
+raster -- proven by holding the MIPS in reset, where the PHY registers and the
+scan counter all read zero and nothing reaches the panel at all.
+
+**CPU_COMM transport works.** The firmware drains an ARM-sent msgbox
+notification in 0 ms. It does not consume the shared-memory message. That is
+the single open failure.
+
+## What is settled, and must not be re-derived
+
+- `panel_config.ini`: the DT/INI merge, the bitfield-insert helper at
+  `0x4a024894`, all 32 patch sites, implemented and verified live (18 patched,
+  8 guarded). The compare at `+0x24e12` matches **either** `0x0524c010` or
+  `0x0525c000`; transcribing one leaves the DE at 1440x741 under a mixer at
+  1360x760.
+- No ARM-side difference from stock remains. Every MMIO literal in stock's
+  fastlogo was enumerated and diffed.
+- `0x05880000` is a live scan counter. This document previously claimed no
+  scan-liveness signal existed, which sent the investigation to `0x05880FE0` --
+  a constant -- for months.
+- AFBD is clocked, globally enabled, correctly addressed, and its trigger
+  latches. Not the fault.
+- The CPU_COMM master init, decoded and implemented: 8 share_seq at
+  `0x98 + 9760*cpu + 4880*dir + 2440*idx`, 5 list heads, a 256-record pool.
+- The routine map: all 85 names with comp_ids, verified three ways.
+- The msgbox is **gated from cold** and must be enabled at `0x0200171c`
+  (bits 0 and 16) **before reset release**, or the firmware never arms its
+  receive side.
+
+## The open question
+
+How a msgbox notification selects a receive handler.
+
+```
+handler table 0x8b1ef1a4, ./msgbox.c, 4 entries per cpu:
+  [0] comm_handle_CPU2_return   [1] comm_handle_CPU2_call
+  [2] call_ack_action           [3] return_ack_action
+
+each -> 0x8b1212cc(ctx), ctx = [0x8b22efe4] + 0x6d4 + (cpu*4 + index)*32
+        ctx[+0x18] = cpu, ctx[+0x1c] = index   (both set at init)
+        dispatcher routes on ctx[+0x1c]
+```
+
+So the handler that runs *is* the type; the doorbell must select it. **Five
+doorbell encodings were tested on hardware and behaved identically** --
+`0x00000002`, `0x00010000`, `0x00000000`, `0x00010002`, `0x00000001`. Each
+drained the FIFO in 0 ms and left the published index unconsumed. The drain
+happens even for values the Linux tree documents as no-ops, so a drain proves
+the interrupt ran, not that the message was understood.
+
+**The encoding is not the variable.** Do not spend more runs on it.
+
+## Next session, in order
+
+1. **Read the msgbox interrupt registration.** The init at `0x8b1221e0`
+   populates the contexts and holds the table pointer in `$s6`. Find what it
+   binds the table to -- which IRQ, and how a FIFO word reaches an index. That
+   is the last unknown in the notification path.
+2. If that stalls, **switch threads**: the OSD failure is independent of
+   CPU_COMM. AFBD status at `0x05600168` sits at 2 and never moves, and the
+   mixer/DE composition path has never been explained.
+3. **Stock register parity** remains the decisive comparison and is now cheap:
+   the registers that matter are known (`0x051c0000..0xcc`, the mixer layer
+   words, AFBD). One dump from a stopped stock boot would likely settle the OSD
+   question outright.
+
+## Bench notes
+
+- `h713_disp mips-test 0x33` brings the firmware up with no display phases --
+  use it for CPU_COMM work. `panel-test` is now slim (~20 s); `full` restores
+  the long-form phases.
+- `commcall`, `calltable` and `commstate` all run at the prompt on the same
+  boot. Only `commcall` writes.
+- The FreeCall ring has 20 slots, so ~20 sends fit in one boot.
+- One MIPS launch per physical power cycle still holds.
+- The receive dispatcher **hangs** on a type outside 0..3; `commcall` refuses a
+  doorbell word where either half exceeds 3.
+
+## Traps
+
+- Do not re-test doorbell encodings.
+- Do not add `h713_display_prepare()` to the fastlogo replay; the vendor
+  prologue already does its clock work.
+- Do not use `0x05880FE0` as a criterion.
+- `0x8b119bb4` and `0x8b124ba4` touch only firmware BSS -- the ARM owes them
+  nothing.
+- `getCurCPUID` always returns 1, so the master-init block in `display.bin` is
+  compiled in but never executed by the firmware. That is *why* it is a
+  reliable specification of what the ARM must build.
+
 # MIPS display recovery plan
 
 This plan recovers the H713 bench kernel first, then brings up the display
@@ -705,6 +805,38 @@ because the dispatcher asserts and hangs.
 This cannot be settled by guessing. Trace whatever writes `ctx[+0x1c]`: it
 determines which half is the type, and therefore whether `db=00000004` is safe
 or fatal.
+
+### The handler contexts are pre-typed at init
+
+`0x8b1221e0` populates them:
+
+```
+ctx = [0x8b22efe4] + 0x6d4 + (cpu*4 + index)*32
+ctx[+0x18] = cpu
+ctx[+0x1c] = index
+```
+
+confirmed against both handlers traced independently -- index 0 at `+0x6d4`,
+index 3 at `+0x734`, 96 bytes apart, and `128*cpu` matching `(cpu*4)*32`.
+
+So `ctx[+0x1c]` is **not** parsed from the message; it is the handler's own
+index, fixed at init. The dispatcher at `0x8b1212cc` therefore routes on *which
+handler ran*, which means the doorbell has to select the handler. Five
+encodings say it does not, at least not by the model tried.
+
+### The doorbell encodings tested, all negative
+
+| word | high | low | result |
+| --- | --- | --- | --- |
+| `0x00000002` | 0 | 2 | drained 0 ms, not consumed |
+| `0x00010000` | 1 | 0 | drained 0 ms, not consumed |
+| `0x00000000` | 0 | 0 | drained 0 ms, not consumed |
+| `0x00010002` | 1 | 2 | drained 0 ms, not consumed |
+| `0x00000001` | 0 | 1 | drained 0 ms, not consumed |
+
+The handler table order is `[0]=return, [1]=call, [2]=call_ack,
+[3]=return_ack`, which is *not* the enum the Linux tree documents
+(`0=CALL, 1=RETURN`). That made `type 1` look like the answer; it was not.
 
 ### Where the send stands
 
