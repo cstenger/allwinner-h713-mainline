@@ -1,6 +1,7 @@
-# SESSION HANDOFF -- 2026-07-31
+# SESSION HANDOFF -- 2026-07-31 (evening)
 
-Read this first. It supersedes anything below it that it contradicts.
+Read this first. It supersedes anything below it that it contradicts,
+**including the earlier handoff of the same date.**
 
 ## Where the two threads stand
 
@@ -12,9 +13,326 @@ working" verdict was measured through an unpowered panel and is void.
 raster -- proven by holding the MIPS in reset, where the PHY registers and the
 scan counter all read zero and nothing reaches the panel at all.
 
-**CPU_COMM transport works.** The firmware drains an ARM-sent msgbox
-notification in 0 ms. It does not consume the shared-memory message. That is
-the single open failure.
+**CPU_COMM works in both directions. Proven on hardware.** The ARM sent a CALL,
+the firmware accepted it, consumed the descriptor, and acknowledged over the
+mailbox. Two ARM-side defects had to be fixed together, because either one
+alone produced the identical symptom:
+
+1. **The doorbell word is the bare message type, 0..3.** A CALL is
+   `0x00000000`. We were sending `0x00000002`, which is CALL_ACK.
+2. **`share_seq[+0x08]` bit 2 is the presence gate**, and U-Boot published
+   zero there. Every handler returns immediately when that bit is clear, so
+   *no* doorbell value could ever have worked.
+
+That is why five encodings "behaved identically": the flag, not the encoding,
+was the invariant blocker. The previous handoff's conclusion that the encoding
+is not the variable was half right for the wrong reason, and its instruction
+not to re-test encodings is now withdrawn.
+
+The bench transcript, `commcall 2f02f7dd` (`THal_Vp_GetImageBufferAddr`):
+
+```
+doorbell 0x00000000 rung + IRQ pulsed; fifo count now 0
+MIPS drained the FIFO after 0 ms
+firmware accepted the message after 0 ms (state bit 2 cleared)
+published idx changed -- consumed
+FreeCall  rd=1 wr=20  idx=14 state=00
+```
+
+`idx=14` is hex -- 20, the empty-slot sentinel that `command_action` writes
+back at `0x8b120f84`. The firmware did not merely read the descriptor, it
+reset it. Then, at `0x03003164`/`0x03003174` -- the **MIPS-to-ARM** half of the
+mailbox, which nothing on the ARM side had ever read:
+
+```
+md.l 0x03003164 1   ->  00000001
+md.l 0x03003174 1   ->  00000002      CALL_ACK
+```
+
+which is exactly the acknowledgement mapping at `0x8b11eadc` (`0 -> 2`,
+`1 -> 3`). Both directions of the encoding model are now confirmed against
+hardware rather than inferred.
+
+## Current state in one screen
+
+Everything below was measured on the DDR3 bench board this session unless
+marked otherwise.
+
+**Works, hardware-proven:**
+
+| step | evidence |
+| --- | --- |
+| doorbell delivery | FIFO drains in 0 ms |
+| message recognised | `share_seq[+0x08]` bit 2 cleared by the firmware |
+| descriptor consumed | `share_seq[+0x10]` reset to `0x14` (the sentinel) |
+| acknowledgement | `0x00000002` CALL_ACK read at `0x03003174` |
+| channel resolved | `chan=0 pid=0x8b8f32b0`, key `0xb8f32b00`, slot 0 |
+| worker dequeue | staging `CallCmd rd=1 wr=1` |
+| slot recycled | `FreeCall wr` wraps 20 -> 0 |
+| routine located | call-table entry read live, handler `0x8b10a110` valid |
+
+**Does not work:** no RETURN is ever published. `FreeReturn` and `ReturnCmd`
+never move, no second doorbell is rung, and the worker does not come back to
+its dequeue loop -- so exactly **one CALL per boot** is possible.
+
+**The four ARM-side defects fixed to get here**, all in
+`external/u-boot/arch/arm/mach-sunxi/h713_mips.c`:
+
+1. doorbell word is the bare message type; a CALL is `0x00000000`
+2. `msg[+0x06]` bit 2 (`MSG_FLAG_SENT`) is the presence gate
+3. `chan`/`pid` must address a registered channel
+4. the MIPS-to-ARM mailbox at `0x03003164`/`0x03003174` was never drained
+
+**Ruled out this session, with evidence -- do not re-test:**
+
+- the CallCmd/ReturnCmd staging FIFOs: the MIPS builds all four of its own
+  (`cap=21 isz=4`, MIPS-local rings)
+- the ARM-side staging FIFOs being empty: `SendComm2CPUEx` allocates from no
+  FIFO at all
+- the routine handler: `0x8b10a110` is a clean `(params, out)` adapter that
+  calls `0x8b149948` and returns 0
+- the call-table entry: read live, `comp_id`, name and handler all correct
+- the channel's call semaphore: a real object, and its post **succeeds**
+  (`0x8b103504` returns 1 on both branches)
+- the per-CPU `Seq` semaphores: both exist, named, `count=1 capacity=0x20`,
+  and the get takes the acquire path
+- the worker being asleep on `0x8b232c00`: it *posts* that, never waits on it
+- `msg[+0x01] = 1`: tried, regressed the channel match, reverted
+
+**Unlocated:** the wedge is inside `SendComm2CPUEx` (`0x8b11fd58`) somewhere
+past its `0x8b12002c` semaphore wait. Four candidate frames were checked and
+all came back healthy.
+
+**Why the firmware's own log is not available:** it uses SEGGER RTT at
+`0x4bd01000`, and the Terminal channel's `WrOff` is 8 -- the assert strings go
+to a UART instead. `display_cfg.xml` carries no logging settings, so there is
+no reroute from the files we load. See the RTT section below for the buffer
+addresses.
+
+## How the RETURN gap was narrowed
+
+### The staging FIFO is healthy -- that hypothesis is dead
+
+`command_action` hands an accepted CALL to `0x8b11d544`, which allocates from a
+FIFO at **`share_seq + 0x20`** -- not the FreeCall ring at `+0x78`. The Linux
+driver names this the **CallCmd staging FIFO**: header at `+0x20`, name
+`"CallCmd"` at `+0x40`, capacity 21, item_size 4, `base_addr` pointing at the
+**receiver's own local memory**. Neither U-Boot nor `0x8b1197d4` writes
+`+0x20..+0x3f`, which made "the MIPS never built it" look like the answer.
+
+It is not. On hardware the MIPS builds all four of its own:
+
+```
+cpu=1 dir=0 idx=0  staging +0x20 CallCmd    rd=0 wr=1 cap=21 isz=4 base=8b253e24
+cpu=1 dir=0 idx=1  staging +0x20 ReturnCmd  rd=0 wr=0 cap=21 isz=4 base=8b253ed4
+```
+
+The `cpu=0` rows are the ARM's own receive-side staging and stay empty, which
+is fine -- U-Boot polls the header instead of using them.
+
+### What the indices proved, before the channel was addressed correctly
+
+*This subsection describes the state with `chan=0 pid=0`, i.e. before the
+channel fix. It is kept because it is how the channel requirement was found.
+With `chan=0 pid=0x8b8f32b0` the lookup succeeds and `rd` advances to 1.*
+
+After one CALL, `wr` advanced to 1 and `rd` stayed 0. The message was pushed
+and never popped. `0x8b11d544` does the push **before** it does anything else:
+
+```
+0x8b11d5a4  0x8b11825c(share_seq + 0x20)      ; allocate a ring position
+0x8b11d5b4  0x8b118430(share_seq + 0x20)      ; COMMIT -- wr++ happens here
+0x8b11d5b8  *slot = msg
+0x8b11d5d4  msg[+0x0A] |= 0x10                ; "in work queue"
+0x8b11d5ec  0x8b11ccec(dev + 0x18, key)       ; session lookup -- FAILS
+0x8b11d62c  beqz -> 0x8b11d8dc                ; error path
+0x8b11d93c  return -2
+```
+
+`0x8b1212a0` never checks that return value, so the CALL_ACK goes out anyway
+and the message is abandoned in the FIFO. Every observation is accounted for.
+
+### The error, in the firmware's own words
+
+The path at `0x8b11d8dc` logs:
+
+```
+ERROR!!! no Channel for chan:%d, pid:%d, pCommPara=%p, index=%d,
+         SessionId=%x, tgetCpu=%d, funcId=%lx
+```
+
+Decoding the varargs against the stack slots it fills, the message fields are:
+
+```
+chan      = msg[+0x00]        index     = msg[+0x04]
+pid       = msg[+0x10]        SessionId = msg[+0x0C]
+tgetCpu   = msg[+0x02]        funcId    = msg[+0x28]
+```
+
+so the kernel header's `src_cpu` at `+0x00` and `sequence` at `+0x10` are
+really **`chan`** and **`pid`**. That is the second field mislabelled in that
+struct, after `+0x02`.
+
+`0x8b11ccec` is the raw lookup: a 16-entry direct-mapped table of 48-byte
+records at `dev + 0x18 + 0x9c`, keyed by
+
+```
+key = (pid << 4) | (chan & 0xf)
+```
+
+matching the Linux driver's `Comm_AddNewChannel`, which builds
+`channel_id = comp_id | (cpu << 4)` -- same packing, different names. U-Boot
+memsets both fields, so we ask for `chan=0, pid=0`, and no channel is
+registered for it.
+
+### Where channels come from
+
+`0x8b122554` is the channel-open API. It takes a `pCommPara` block, computes
+the same `key = (pid << 4) | (chan & 0xf)`, calls `Comm_QueryChannel`
+(`0x8b11ce08`, matching the Linux driver's signature exactly), and on a miss
+calls `0x8b11ce34` to add one. Its only caller is `0x8b12486c`, inside the
+**routine-registration** path -- so the firmware's own 82 registrations are
+what populate this table, and the fields come from:
+
+```
+pCommPara[+0x00] u16  chan       (from $s2 at the registration site)
+pCommPara[+0x02] u16  TargetCPU  getCurCPUID() = 1
+pCommPara[+0x04]      pid        0x8b15be70 -> 0x8b104fac, tx_thread_identify()
+pCommPara[+0x08]      comp_id    0x8b1249d0, the 0x123456-seeded CRC
+```
+
+**`pid` is a runtime ThreadX thread identifier.** It is whatever thread ran the
+registrations on that boot, so it cannot be derived from `display.bin` at all
+and must be read from the live table. Do not try to guess it.
+
+Note this is a different `pid` from the one in the routine *name*
+(`<name>_<cpu_id>_<pid_low12>` with `pid_low12 = 000`), which feeds the comp_id
+hash and is 0 for firmware-side registrations. Two unrelated fields, same word.
+
+### Reading it: `h713_disp commdev`
+
+```
+key  = (pid << 4) | (chan & 0xf)
+idx  = ((key >> 2) & 0xc) | (key & 3)      = (pid & 3) << 2 | (chan & 3)
+rec  = pcpu_comm_dev + 0x18 + 0x90 + 48*idx
+hit  = rec[+0x0c] == key,  then rec[+0x02] == chan and rec[+0x08] == pid
+```
+
+`commdev` resolves `pcpu_comm_dev` from `[0x8b22efe4]`, converts KSEG to the
+ARM alias, and dumps all 16 slots. `commcall` now takes `chan=` and `pid=` so
+the values it reports can be used on the same boot without a reflash.
+
+Both use an **invalidating** read. A plain `md` of firmware BSS returns the
+zeros U-Boot left before the coprocessor started -- that is why
+`md.l 0x4b253e24` showed all zeros on a boot where the FIFO indices clearly
+proved the MIPS had written.
+
+### What the table actually holds (read on hardware)
+
+Exactly one live channel. Slots 1..15 are `0xffffffff`, the same free sentinel
+the call table uses.
+
+```
+pcpu_comm_dev = 0x8b254410
+table         = 0x8b2544b8   (ARM 0x4b2544b8)
+
+[ 0] key=b8f32b00  chan=0000  pid=8b8f32b0   <== the only live row
+```
+
+It checks out against the addressing: `key = (pid << 4) | chan =
+(0x8b8f32b0 << 4) | 0 = 0xb8f32b00`, and
+`idx = ((key >> 2) & 0xc) | (key & 3) = 0`, so it sits in slot 0.
+
+`pid = 0x8b8f32b0` is the same owner pointer that appears at `+0x04` of every
+call-table entry, which is what a `tx_thread_identify()` value should look
+like -- the one thread that registered all 82 routines.
+
+So the CALL to send is:
+
+```
+h713_disp commcall 2f02f7dd chan=0 pid=8b8f32b0
+```
+
+**Trap, and it cost a run:** `commdev` originally printed `pid` in decimal while
+`commcall` parses hex, so `2341417648` was read back as `0x41417648`. Both are
+hex now. Always check the `key`/`channel slot` values echoed in the published
+line before trusting an attempt.
+
+### The channel is right, and the receive thread now stalls past it
+
+`commcall 2f02f7dd chan=0 pid=8b8f32b0` behaves **differently** from every
+earlier send, which is what proves the addressing is now correct:
+
+```
+                       chan=0 pid=0        chan=0 pid=8b8f32b0
+state bit 2 cleared    yes                 yes
+share_seq[+0x10]       reset to 0x14       stays 0x03      <-- diverges
+CALL_ACK returned      yes                 none
+```
+
+With the lookup failing, `0x8b11d544` returned -2 and `command_action` ran to
+completion, writing the empty marker back at `0x8b120f84` and sending the ACK.
+With the lookup succeeding it never gets there, so the divergence is inside
+`0x8b11d544`'s hit path at `0x8b11d7a0`:
+
+```
+0x8b11d7cc   s4 = channel_record + 0x10        ; the channel's call semaphore
+0x8b11d808   0x8b15c1d0(s4)                    ; osal_semaphore_set -- POST
+0x8b11d810   beqz v0 -> 0x8b11d858             ; log "_r=0", return 0
+             ...else assert, then b . at 0x8b11d850   <-- infinite loop
+```
+
+**Correction to an earlier reading in this document.** `0x8b15c1d0` is
+`osal_semaphore_set` -- the *post* -- not a wait. The success target at
+`0x8b11d858` logs `'osal_semaphore_set()->_r=%d, sem = %p'` with `_r=0` and the
+object just operated on, which fixes the operation's identity. The wait with a
+timeout is `0x8b15c0f8`, and `0x8b15c27c` is neither -- it takes an out-pointer
+and returns a value through it. Anywhere this document earlier described
+`0x8b15c1d0` as "pending on a semaphore" (notably in the `SendComm2CPUEx`
+notes), read *post*.
+
+So a correctly addressed CALL posts the channel semaphore and either that post
+fails and the thread spins at `0x8b11d850`, or it blocks inside. Either way the
+CPU_COMM receive thread is stuck and the board needs a power cycle. The LISR
+still runs -- interrupt context is unaffected -- so a later send would still
+clear the state bit while never being processed. Do not read that as progress.
+
+`0x8b15c1d0` also has an ISR-context branch at `0x8b15c218` which stores to
+`0x8b232c04` and raises a CP0 software interrupt (set `Cause` IP0, then clear).
+That address is adjacent to the worker semaphore `0x8b232c00`, which is worth
+remembering when chasing how the worker is ever woken.
+
+`commdev` now dumps the object behind `record[+0x10]`, checking for ThreadX's
+`'SEMA'` tag at `+0x00` and printing the count at `+0x08`. If it is not a valid
+semaphore, the post failing is explained outright.
+
+### Where that leaves the next session
+
+There are two candidate routes and they need to be told apart before any code
+is written:
+
+1. **A channel must be opened first.** `0x8b11d948` -- logged as
+   `Comm_GetCallbyChannel`, called only from the worker thread `0x8b123b10` --
+   is a get-**or-create** wrapper: it calls the raw `0x8b11ccec`, and on a miss
+   creates one, logging `chan%d: Chanpid:%x, new call semi:%p got!`. It also
+   pops the staging FIFO at `0x8b11dc0c`. So the create path exists and the
+   worker owns it.
+2. **The worker is asleep.** `0x8b123b10` blocks on the semaphore at
+   `0x8b232c00`. Its only three references in the whole image are the C-runtime
+   BSS clear at `0x8b1b1164`, the create at `0x8b1243c4`, and this wait at
+   `0x8b123c74`. **Nothing found so far signals it.** If that survives a closer
+   look, the worker never runs, the channel is never created, and no CALL can
+   ever complete regardless of what the ARM sends.
+
+Read the worker `0x8b123b10` and settle (2) first -- it is cheap, static, and
+it decides whether (1) is even reachable. If the worker is genuinely unsignalled
+from the firmware side, then the signal has to come from something the ARM does,
+and that is the next thing to find in `display.bin`.
+
+Do not guess a `chan`/`pid` pair and retry blind: the lookup is a direct-mapped
+table read at `dev + 0x18 + 0x9c + 48*i`, which the ARM can read directly
+(`dev = 0x8b254410`, ARM-physical alias `0x4b254428 + 0x9c`). Dump it first and
+see whether any channel exists at all.
 
 ## What is settled, and must not be re-derived
 
@@ -37,39 +355,380 @@ the single open failure.
   (bits 0 and 16) **before reset release**, or the firmware never arms its
   receive side.
 
-## The open question
+## The notification path, end to end
 
-How a msgbox notification selects a receive handler.
+Every hop below is read out of `display.bin`; none of it is inferred.
 
 ```
-handler table 0x8b1ef1a4, ./msgbox.c, 4 entries per cpu:
-  [0] comm_handle_CPU2_return   [1] comm_handle_CPU2_call
-  [2] call_ack_action           [3] return_ack_action
-
-each -> 0x8b1212cc(ctx), ctx = [0x8b22efe4] + 0x6d4 + (cpu*4 + index)*32
-        ctx[+0x18] = cpu, ctx[+0x1c] = index   (both set at init)
-        dispatcher routes on ctx[+0x1c]
+msgbox IRQ 4
+  -> LISR 0x8b121698 (./msgbox.c)
+       walks the registered channel list at [0x8b2543d8]
+       while (readl(0x03003864))            ; RX FIFO count, port 1
+           word = readl(0x03003874)         ; RX MSG_DATA,   port 1
+           handler[+0x14](word)             ; $a0 = the raw word, only arg
+       writel(0x03003824, 1 << 2)           ; ack status, port 1
+  -> channel callback 0x8b121d78
+       cb = [0x8b2543f0]; if (!cb) return
+       tail-call cb($a0 = word, $a1 = 0)    ; <-- $a1 is HARDCODED ZERO
+  -> cpu_comm_cb 0x8b122678 (./trid_cpucomm_hal.c)
+       logs "******** cpu_comm_cb : comm_type: %d, cpu_type=%d"
+       cpu_type 0 -> 0, 2 -> 1, else 2      ; always 0 here, so PLF-CPU
+       switch (comm_type)                   ; the WHOLE 32-bit word
+         0 -> 0x8b11f0a4(cpu)   CALL
+         1 -> 0x8b11f360(cpu)   RETURN
+         2 -> 0x8b11f61c(cpu)   CALL_ACK
+         3 -> 0x8b11f804(cpu)   RETURN_ACK
+         default -> silently dropped
+  -> queueAction 0x8b11ef00(index, cpu)     ; ./cpu_comm_core.c
+       asserts ctx.cpu == cpu and ctx.index == index
+       osa_hisr_activate(ctx)  ->  tx_queue_send([0x8b2543e4], &ctx, 0)
+  -> HISR worker pops ctx, runs ctx[+0x14]
+  -> dispatcher 0x8b1212cc(ctx) routes on ctx[+0x1c] = index
 ```
 
-So the handler that runs *is* the type; the doorbell must select it. **Five
-doorbell encodings were tested on hardware and behaved identically** --
-`0x00000002`, `0x00010000`, `0x00000000`, `0x00010002`, `0x00000001`. Each
-drained the FIFO in 0 ms and left the published index unconsumed. The drain
-happens even for values the Linux tree documents as no-ops, so a drain proves
-the interrupt ran, not that the message was understood.
+### Consequences
 
-**The encoding is not the variable.** Do not spend more runs on it.
+**The doorbell word is the message type and nothing else.** There is no
+`msg_type << 16` field and no `intr_type` field in what this firmware parses.
+The Linux tree's `((msg_type & 3) << 16) | intr_type` packing does not apply
+here. A CALL is `0x00000000`.
+
+**Out-of-range words are inert, not fatal.** `cpu_comm_cb` drops them without
+dispatching. The old warning that a bad type hangs the firmware was about
+`0x8b1212cc`, which routes on `ctx[+0x1c]` -- a value fixed at init to 0..3 and
+never derived from the message. It can never be out of range. Doorbell
+experiments are cheap and safe.
+
+**The handler-table order was recorded backwards.** The four HISR records are
+named from the format strings the init passes to `osa_hisr_init`:
+
+| index | name | table entry (cpu 0 / cpu 1) | dispatched by word |
+| --- | --- | --- | --- |
+| 0 | `"%s CALL HISR"` | `0x8b121410` / `0x8b121418` | 0 |
+| 1 | `"%s RETURN HISR"` | `0x8b1214cc` / `0x8b1214d4` | 1 |
+| 2 | `"%s CALL_ACK HISR"` | `0x8b121588` / `0x8b121590` | 2 |
+| 3 | `"%s RETURN_ACK HISR"` | `0x8b121644` / `0x8b12164c` | 3 |
+
+This matches the Linux enum (`0=CALL, 1=RETURN, 2=CALL_ACK, 3=RETURN_ACK`)
+exactly. The earlier claim that `[0]` was RETURN and `[1]` was CALL was wrong,
+and it is what made `type 1` look like the answer.
+
+**The `0x8b119354` "open tension" is closed, and it was a false lead.** The
+function is `get_cpu_name(cpu)`. It returns `0x8b22efbc + 4` or `+ 0x18`, which
+are pointers into a 0x14-stride CPU descriptor array holding the inline strings
+`"PLF-CPU"` (cpu 0) and `"DISP-CPU"` (cpu 1). The 4 and 0x18 are **struct
+offsets to a name**, used only to format HISR and log strings. They have
+nothing to do with the doorbell. `db=00000004` was never meaningful.
+
+### The presence gate -- the actual blocker
+
+`comm_handle_call` at `0x8b11f0a4`, in order:
+
+```
+assert cpu < 2
+assert cpu != getCurCPUID()                  ; getCurCPUID() == 1, so cpu must be 0
+sq = 0x8b1195b8(cpu, 0) = share_seq(1,0,0)   ; = shared+0x026b8, the queue we write
+if (!(sq[+0x08] & 4)) { log; return; }       ; <-- THE GATE. Bails here, always.
+if ((sq[+0x10] & 0xff) >= 20) assert-hang    ; slot index bound
+get_cpu_name(sq[+0x01]); get_cpu_name(sq[+0x00])   ; logging only
+sq[+0x08] &= ~4                              ; <-- CONSUMPTION, observable from the ARM
+queueAction(0, cpu)
+```
+
+U-Boot published `sq[+0x08] = 0`. So the interrupt ran, the FIFO drained in
+0 ms, and the handler returned without looking at anything -- which is exactly
+what the bench reported, for every encoding, every time.
+
+The publish helper `0x8b11f9ec` takes the state byte from `msg[+0x06] & 0xff`
+(the `flags` halfword) at its call site `0x8b12046c`. Bit 2 there is the
+kernel patch's own `MSG_FLAG_SENT`. Note this is a *different* field from the
+`msg[+0x0A] |= 4` that the same call site performs on `flags2`; the earlier
+write-up conflated the two.
+
+**Ordering hazard.** Once bit 2 is up, `sq[+0x10]` must hold an index below 20
+or `0x8b11f24c` asserts and spins the firmware forever. Init writes exactly 20
+there as the empty marker, so the flag must never be raised over a stale index.
+`h713_comm_call` writes the index first and flushes before the doorbell.
+
+### The msgbox register map, derived rather than guessed
+
+`msgbox_init` at `0x8b1217c4` and the channel registration at `0x8b121918`
+compute their addresses as `base + (chan << 2) + (field << 10) + (user << 8)`:
+
+```
+MIPS RX (ARM -> MIPS)   count 0x03003864   data 0x03003874
+                        irq enable 0x03003820 bit 2   status 0x03003824 bit 2
+MIPS TX (MIPS -> ARM)   count 0x03003164   data 0x03003174
+```
+
+The TX pair is confirmed live: after the first accepted CALL, `0x03003164`
+read 1 and `0x03003174` read `0x00000002`. `H713_COMM_MSGBOX_COUNT` in U-Boot
+is the **RX** counter `0x03003864` -- correct for proving the MIPS drained our
+doorbell, but it says nothing about replies, and for a long time it was the
+only mailbox register the ARM ever read.
+
+The firmware registers user 0, channel 1 and enables its own RX bit, so the
+ARM's write to `0x03003874` is correct and always was. `msgbox_init` also
+drains any stale RX words at startup, logging them as "msgbox fifo garbage
+data".
 
 ## Next session, in order
 
-1. **Read the msgbox interrupt registration.** The init at `0x8b1221e0`
-   populates the contexts and holds the table pointer in `$s6`. Find what it
-   binds the table to -- which IRQ, and how a FIFO word reaches an index. That
-   is the last unknown in the notification path.
-2. If that stalls, **switch threads**: the OSD failure is independent of
-   CPU_COMM. AFBD status at `0x05600168` sits at 2 and never moves, and the
+1. **`h713_disp mips-test 0x33` then `h713_disp commdev`.** Read-only, same
+   boot. This prints the 16 channel slots with their `key`, `chan` and `pid`.
+   - **Populated slots** -- take a `chan`/`pid` pair from the table and retry
+     `h713_disp commcall 2f02f7dd chan=<C> pid=<P>` on the same boot. The
+     FreeCall ring has 20 slots, so several attempts fit in one power cycle.
+   - **All empty** -- the firmware registered 82 routines without creating a
+     channel, which means `0x8b122554` bailed early at `0x8b11c5f0` or the
+     registration path took a different branch. Read `0x8b12486c`'s caller for
+     which `chan` (`$s2`) it passes.
+2. **The worker is not asleep on `0x8b232c00` -- that reading was wrong.**
+   `0x8b123c70` calls `0x8b15c1d0` on it, and `0x8b15c1d0` is
+   `osal_semaphore_set`, a **post**, confirmed by the log at its success target
+   `0x8b123cc0`. So the worker *signals* `0x8b232c00` at startup and moves on;
+   it never waits there. An earlier revision of this document claimed nothing
+   posts that semaphore and concluded the worker could never run. Ignore that.
+
+   The worker's real loop is:
+
+   ```
+   0x8b123d1c   0x8b11d948(dev + 0x18, key, &msg_out)   ; wait + dequeue
+   0x8b123d2c   non-zero return -> error exit
+   0x8b123d38   msg_out == NULL -> loop again
+   ```
+
+   and `0x8b11d948` is where it blocks, on the **channel's own call
+   semaphore** -- the object at `channel_record + 0x10`, which it obtains
+   lazily and logs as `chan%d: Chanpid:%x, new call semi:%p got!`. That closes
+   the loop with the receive side: `0x8b11d544` posts exactly that semaphore at
+   `0x8b11d808` to wake the worker. The two halves of the design fit.
+
+   Which makes the failing post the whole problem. Read on hardware, with the
+   reader self-test passing against `getCurCPUID`'s known instructions:
+
+   ```
+   record[+0x10] = 0x8b915200
+
+   sem@8b915200: 8b915200 8b915200 8b915200 8b915200
+                 00000000 8b915218 ffffffff 8b915218
+                 8b915218 00000001 8b91522c ffffffff
+   ```
+
+   A real object, not a bad read -- four self-pointers followed by
+   self-referencing list heads at `self+0x18` and `self+0x2c`, the same
+   `{self, ...}` idiom the shared-memory list heads use. But **no ThreadX
+   `'SEMA'` tag**, so whatever `record[+0x10]` addresses, it is not a plain
+   semaphore control block.
+
+   The wider dump settles what it is and what the post does:
+
+   ```
+   +0x30: 8b955268 8b955268    read/write pointers, both at start
+   +0x38: 00000000 00000020    count 0, capacity 32
+   +0x40: 00000000 8b00ffff
+   +0x4c: 8b499dc8 8b499dc8    suspension list, empty
+   ```
+
+   A queue-like object with room, not a full one. Tracing `0x8b103504` with
+   those values: `a1 = 0` sends it via `0x8b103780`, `handle[+0x40] == 0`
+   returns it to the main body, `count(0) < capacity(0x20)` takes
+   `0x8b10364c`, and `handle[+0x24] == 1` takes `0x8b103720` -- where **both**
+   branches converge on `0x8b103684`, which returns **1**. `osal_semaphore_set`
+   maps a non-zero return to 0, i.e. success.
+
+   **So the post succeeds.** An earlier revision of this section claimed it
+   failed and that `0x8b11d544` was spinning at `0x8b11d850`; that was inferred
+   from the missing completion without tracing the return path, and it is
+   wrong. `0x8b103720` also sets `[0x8b232c04] = 1` and raises the CP0 IP0
+   software interrupt -- it wakes a waiter and requests a context switch.
+
+   That relocates the fault to the **worker** side. Its loop retries with no
+   blocking of its own:
+
+   ```
+   0x8b123d1c   0x8b11d948(dev + 0x18, key, &msg_out)
+   0x8b123d38   msg_out == NULL -> branch straight back to 0x8b123d1c
+   ```
+
+   so a `0x8b11d948` that keeps returning NULL spins and starves whichever
+   thread is running `command_action` -- which matches the symptom exactly:
+   `share_seq[+0x10]` never reset, no CALL_ACK, interrupts still serviced.
+
+   **Resolved on hardware: `rd=1 wr=1`. The worker pops it.** With
+   `chan=0 pid=8b8f32b0` the entire receive chain runs:
+
+   ```
+   CALL_ACK returned                   yes
+   share_seq[+0x10] reset to 0x14      yes   command_action completed
+   staging CallCmd   rd=1 wr=1         yes   the worker dequeued it
+   FreeCall          rd=1 wr=0         yes   firmware recycled the slot
+   ```
+
+   `wr` going 20 -> 0 is the 21-capacity ring wrapping: the firmware pushed our
+   message slot back onto the free pool. Receive-side bookkeeping is complete
+   and correct. **Only the RETURN is missing** -- `FreeReturn` and `ReturnCmd`
+   are untouched and no second msgbox word arrives.
+
+### The worker's dispatch, and where it stops
+
+```
+0x8b123db8   memcpy(local, msg, 0x68)          ; local copy at sp+0x30
+0x8b123dec   0x8b118cb0(share_seq, msg)        ; free the slot -- the wr 20->0
+0x8b123df4   a0 = local[+0x28]                 ; comp_id
+0x8b123df8   0x8b11c5e8(comp_id, &out)         ; routine lookup
+0x8b123e00   beqz -> 0x8b123eb0                ; found: marshal params, invoke
+             else  -> log "[S]Find no matched Routine for FuncID:%#lx"
+                      msg[+0x08] = 0xf         ; error code, reusing cmd_type
+```
+
+`sp+0x38` is `local[+0x08]`, the parameter count, and the found path copies
+`count` words from `local + 0x2c` -- exactly the layout U-Boot builds.
+
+Note both paths normally publish a RETURN: not-found replies with error `0xf`.
+The only escape is flags bit 0 (`MSG_FLAG_NOTIFY`) at `local[+0x06]`, which
+sends the worker straight back to its dequeue with no reply. U-Boot sets flags
+to `4` (SENT), so bit 0 is clear and a reply is expected either way.
+
+Since **no** RETURN appears and no second doorbell is rung, the worker stalls at
+or after the invocation rather than failing the lookup.
+
+### The stall is generic, and it costs one CALL per boot
+
+`THal_Vp_DisableBlackScreen` (`0xb66041d8`, zero-parameter) as the **first**
+call of a fresh boot behaves identically to `GetImageBufferAddr`: CALL_ACK,
+`idx` reset to `0x14`, `FreeCall wr` wrapping 20 -> 0, no RETURN, no visible
+change on the panel. So the stall is in dispatch generally, not in one handler.
+
+Two operational facts worth carrying:
+
+- **One usable CALL per boot.** After the first, `staging CallCmd` reads
+  `rd=1 wr=2`: the second is pushed and never popped. Any test that sends two
+  CALLs in a boot has a contaminated second result.
+- Reaching "slot recycled" proves only that the worker got as far as
+  `0x8b118cb0` at `0x8b123dec`, which runs **before** the routine lookup. It is
+  not evidence that any routine executed.
+
+The rest of the worker, decoded:
+
+```
+0x8b123f44   v0 = sp[0xe4]                    ; routine pointer from the lookup
+0x8b123f4c   jalr v0                          ; invoke: (params@sp+0xe8, out@sp+0x124)
+0x8b123e3c   flags bit 0 (NOTIFY) -> no reply, back to dequeue
+0x8b123e4c   retcode = sp[0x124] -> local[+0x08]
+0x8b123e5c   retcode != 0xf -> marshal output params back into local + 0x2c
+0x8b123e68   0x8b1208c8(local, 1)             ; publish the RETURN
+0x8b123e70   ok -> back to dequeue
+             else log "[S]Failed to send return, FuncID:%#lx"
+                  -> back to dequeue
+```
+
+**Every path after the invocation returns to the dequeue loop at
+`0x8b123d1c`.** So the worker cannot wedge in the reply logic as written --
+which leaves the `jalr` itself, or a blocking call inside `0x8b1208c8`.
+
+The handler is not the problem. `DisableBlackScreen`'s call-table entry, read
+live at shared `+0x126c8`, is exactly as documented and its handler is a clean
+adapter:
+
+```
++0x00 00010000  +0x04 8b8f32b0  +0x08 b66041d8
++0x0c "THal_Vp_DisableBlackScreen_1_000"
++0x50 8b10a110  +0x5c ffffffff
+
+0x8b10a110:  jal 0x8b149948 ; *out = 0 ; return    (params, out) -- valid code
+```
+
+`+0x04` being `8b8f32b0` is also an independent confirmation that the channel's
+`pid` is the registering thread's owner pointer.
+
+### The firmware logs over SEGGER RTT, and it is nearly silent
+
+The debug region at `0x4bd01000` (`sys:dbg_buf`) holds an **RTT control block**,
+not text:
+
+```
+MaxNumUp=3  MaxNumDown=3
+aUp[0]   = { "Terminal", buf=0xabd01300, size=0x41c00, WrOff=8, RdOff=0 }
+aUp[1]   = { "SysView",  buf=0xabd43000, size=0x7d000, WrOff=0 }
+aDown[0] = { "Terminal", buf=0xabd01200, size=0x100 }
+aDown[1] = { "SysView",  buf=0xabd42f00, size=0x100 }
+```
+
+`WrOff = 8` -- eight bytes have ever been written to the Terminal channel. So
+the assert and log strings this document has been reading all session do **not**
+land in memory; `elog route='0'` sends them to a UART. `display_cfg.xml` was
+checked and carries no logging settings at all, so there is no reroute
+available from the files we load.
+
+Reaching the firmware's own log therefore needs either the MIPS UART pins on
+the board, or a patch to `display.bin`'s log routing. Both are bigger jobs than
+anything attempted here, and the RTT buffer addresses above are the starting
+point for the second.
+
+### A misattribution worth not repeating: `msg[+0x01]`
+
+`0x8b1208c8` is **`SendAckLow`**, and it guards on the message before doing
+anything:
+
+```
+0x8b12093c   msg == NULL                    -> assert, line 0x2bd
+0x8b120948   s7 = msg[+0x01]                ; BYTE
+0x8b12094c   s7 != getCurCPUID() (== 1)     -> assert, line 0x2be  <-- fires
+0x8b12095c   msg[+0x02] (byte) >= 2         -> assert, line 0x2bf
+0x8b12096c   msg[+0x69] & 4                 -> assert, line 0x2c2
+```
+
+Each assert logs `SendAckLow` and then spins in `b .`.
+
+**Those guards are not on the worker's path, and setting that byte regressed a
+working run.** `0x8b1208c8` is a two-instruction thunk:
+
+```
+0x8b1208c8   j 0x8b11fd58            ; tail-jump to SendComm2CPUEx
+0x8b1208cc   addiu a2, zero, -1
+```
+
+`SendAckLow` is the **next** function, at `0x8b1208d0`. Disassembling from
+`0x8b1208c8` runs straight through the thunk into it, and its asserts get
+attributed to the wrong function. Always find the entry and the `jr $ra` before
+reading a function's guards.
+
+Tried on hardware, `msg[+0x01] = 1` made things worse: `command_action` stopped
+completing (`idx` stayed `00`, `wr` stayed 20, no CALL_ACK), because
+`0x8b11d544` compares the **full u16** at `msg[+0x00]` against the channel
+record's `+0x02` at `0x8b11d63c`. `chan` is a halfword and must stay 0.
+Reverted.
+
+So the reply really goes through `SendComm2CPUEx`. Its only unbounded wait is
+
+```
+0x8b12000c   0x8b119618(peer)        ; per-CPU BSS object
+0x8b120018   s7 = obj + 0x3e0        ; obj + 8 when idx == 0
+0x8b12002c   0x8b15c0fc(s7, -1)      ; osal_semaphore_get, wait forever
+```
+
+and that is **not** the blocker either. Read live, both objects exist and are
+named: `obj+0x008 -> 0x8b9140c8` and `obj+0x3e0 -> 0x8b9147e8`, with inline
+names `"Seq(cpu[0]) ..."` and `"Seq(cpu[0]) Retu..."`. Both carry `+0x38 = 1`
+(count) and `+0x3c = 0x20` (capacity), and `0x8b103f5c` takes the acquire path
+at `0x8b103fc4` whenever the count is non-zero. The Return object's list heads
+at `+0x08..+0x34` are zero where the Call object's are self-referencing, which
+looks wrong, but nothing on the get path dereferences them.
+
+**Where the wedge actually is remains unlocated.** It is somewhere in
+`SendComm2CPUEx` past that wait. Static reading has resolved four frames in a
+row to "this one is fine", which is a poor return per bench cycle -- see the
+RTT note above for why the firmware's own log is not currently reachable.
+
+   `h713_disp fwmd <mips-va> [words]` now dumps any firmware address with the
+   cache invalidated, so chasing this no longer costs a reflash per address.
+3. Do not brute-force `chan`/`pid`. `pid` is a live thread id; the space is far
+   too large and each wrong guess is only worth one FreeCall slot.
+4. If CPU_COMM stalls here, **switch threads**: the OSD failure is independent
+   of it. AFBD status at `0x05600168` sits at 2 and never moves, and the
    mixer/DE composition path has never been explained.
-3. **Stock register parity** remains the decisive comparison and is now cheap:
+5. **Stock register parity** remains the decisive comparison and is now cheap:
    the registers that matter are known (`0x051c0000..0xcc`, the mixer layer
    words, AFBD). One dump from a stopped stock boot would likely settle the OSD
    question outright.
@@ -83,12 +742,11 @@ the interrupt ran, not that the message was understood.
   boot. Only `commcall` writes.
 - The FreeCall ring has 20 slots, so ~20 sends fit in one boot.
 - One MIPS launch per physical power cycle still holds.
-- The receive dispatcher **hangs** on a type outside 0..3; `commcall` refuses a
-  doorbell word where either half exceeds 3.
+- `commcall` now refuses a doorbell word above 3, because the word *is* the
+  type. Out-of-range is inert, not fatal -- it just wastes a slot.
 
 ## Traps
 
-- Do not re-test doorbell encodings.
 - Do not add `h713_display_prepare()` to the fastlogo replay; the vendor
   prologue already does its clock work.
 - Do not use `0x05880FE0` as a criterion.
@@ -677,9 +1335,15 @@ publish( share_seq,
 ```
 
 with `share_seq[+0x04]` bumped by one and `[+0x1c]` cleared. This closes the
-loop with the receive side: `command_action` reads the index from `+0x10` and
-tests bit 2 of `+0x08`, and bit 2 is exactly what is OR'd into `flags2`
-immediately before publishing.
+loop with the receive side: the handler reads the index from `+0x10` and tests
+bit 2 of `+0x08`.
+
+**Correction.** An earlier revision said bit 2 of `+0x08` "is exactly what is
+OR'd into `flags2` immediately before publishing." Those are two different
+fields. `share_seq[+0x08]` comes from `msg[+0x06]` (`flags`); the `|= 4` at
+`0x8b120450` lands in `msg[+0x0A]` (`flags2`) and is never published. The ARM
+must set bit 2 in **`flags`**, and that is what gates the whole receive path --
+see the handoff at the top of this document.
 
 ### The slot carries its own index
 
@@ -745,7 +1409,14 @@ This also explains the `+0x68`/`+0x6c` pair the init writes alongside
 message, one for the pending reply -- and `0x8b1208d0` fills the second set
 (`+0x68`, `+0x69`, `+0x6c`, `+0x70`, `+0x74`) on receipt.
 
-## CPU_COMM: the msgbox delivers (2026-07-31)
+## CPU_COMM: the msgbox delivers (2026-07-31, morning)
+
+**Superseded in part.** The msgbox gating result below stands and is still
+load-bearing. Everything in this section about *doorbell encoding* is
+superseded by the handoff at the top of this document: the word is the bare
+message type, the handler table order was recorded backwards, and the
+`0x8b119354` "open tension" was a misread of a name lookup. Read the handoff
+first; this section is kept for the gating history.
 
 ### The msgbox was gated from cold
 
