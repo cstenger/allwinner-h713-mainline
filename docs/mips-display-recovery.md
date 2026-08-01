@@ -645,6 +645,74 @@ This also explains the `+0x68`/`+0x6c` pair the init writes alongside
 message, one for the pending reply -- and `0x8b1208d0` fills the second set
 (`+0x68`, `+0x69`, `+0x6c`, `+0x70`, `+0x74`) on receipt.
 
+## CPU_COMM: the msgbox delivers (2026-07-31)
+
+### The msgbox was gated from cold
+
+Its bus gate and reset at `0x0200171c` read `0x00000000` on a cold boot. Linux
+takes `CLK_BUS_MSGBOX`/`RST_BUS_MSGBOX` for `msgbox@3003000`; U-Boot never did,
+so every doorbell this project ever wrote went into a dead block.
+
+Enabling bits 0 and 16 brings it up. The per-sub-block version register then
+reads `0x00020000`, its documented value, which is the check that the block is
+really alive.
+
+**Enable it before reset release, not at send time.** The firmware configures
+its own receive side during startup, so with the block gated that configuration
+went nowhere. Enabling at send time left the message reaching the FIFO -- count
+0 to 1 -- and the MIPS never draining it. Moving the enable into the shared
+memory preparation fixed that: the firmware now drains the notification in
+0 ms.
+
+**That is the first successful ARM-to-MIPS delivery in this project.**
+
+### The receive dispatch table
+
+```
+thunks 0x8b121644 / 0x8b12164c  ->  cpu 0 / cpu 1
+  0x8b121598(cpu):  ctx = [0x8b22efe4] + 0x734 + 128*cpu
+    0x8b1212cc(ctx):  type = ctx[+0x1c]
+      0 or 1  ->  0x8b120bc0  command_action   (CALL / RETURN)
+      2       ->  0x8b11ec9c(ctx, 0)           (CALL_ACK)
+      3       ->  0x8b11ec9c(ctx, 1)           (RETURN_ACK)
+      other   ->  assert, infinite loop
+```
+
+Two consequences. A type outside 0..3 **hangs the firmware**, so any doorbell
+experiment must keep the type in range. And the type is read from a persistent
+per-CPU context, not from the FIFO word directly -- something between the
+interrupt and this dispatcher sets `ctx[+0x1c]`, and that path is not yet
+traced.
+
+### The doorbell encoding is not the variable
+
+Four encodings were tried in one boot -- `0x00000002`, `0x00010000`,
+`0x00000000`, `0x00010002` -- covering the type in either half with the
+direction field at 0 or 2. **All four behaved identically**: FIFO drained in
+0 ms, published index never consumed, no reply, board healthy.
+
+The drain happens even for `0x00000000`, which the Linux tree documents as a
+no-op the MIPS ignores. So a drain proves the interrupt handler ran, not that
+the message was understood.
+
+### The open tension
+
+`0x8b119354` maps **cpu 0 -> 4** and **cpu 1 -> 0x18**. If the low half of the
+doorbell is the direction field, `4` is the right value for an ARM-sourced
+message. But a `4` in the low half is fatal if that half is instead the type,
+because the dispatcher asserts and hangs.
+
+This cannot be settled by guessing. Trace whatever writes `ctx[+0x1c]`: it
+determines which half is the type, and therefore whether `db=00000004` is safe
+or fatal.
+
+### Where the send stands
+
+Transport works; content does not. The firmware takes the doorbell and never
+consumes the shared-memory message. Everything through the notification is
+proven on hardware; the failure is now isolated to how the message is
+recognised.
+
 ## Board-B OSD handoff (2026-07-31)
 
 This section supersedes the 2026-07-30 handoff below for anything it contradicts.
