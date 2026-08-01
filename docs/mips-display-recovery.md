@@ -601,13 +601,49 @@ the firmware write into arbitrary MIPS memory.** Resolve this before any send:
 either find a value the firmware treats as "no waiter", or point it somewhere
 harmless and verified.
 
-### Still needed for a send
+### The two memcpys are a fill and a sync-back
 
-- the memcpy operand order at `0x8b120438` reads as `dst=s5, src=fp`, opposite
-  to the unambiguous branch at `0x8b1201b8`. Either they are different
-  operations or `0x8b1bcf34`'s argument order needs checking. Do not guess a
-  copy direction.
-- a safe value for the published wait pointer, per the hazard above.
+`0x8b1bcf34` is `memcpy(dst=a0, src=a1, n=a2)` -- confirmed from its byte loop,
+which reads through `a1` and writes through the saved `a0`. Both call sites are
+on the CALL path, which converges at `0x8b120430` from the slot-address check
+at `0x8b120330`:
+
+```
+0x8b1201b8   memcpy(slot, msg, 104)      ; fill the slot
+             slot[+0x04] = index
+             slot[+0x0A] = 2             ; CALL marker
+             assert slot == share_seq + 0x168 + 104*index
+0x8b120438   memcpy(msg, slot, 104)      ; sync back into the caller's buffer
+             msg[+0x0A] |= 4
+0x8b12046c   publish(...)
+0x8b1203a8   0x8b15c1d0(wait_obj)        ; sender pends on its own semaphore
+```
+
+The sync-back exists so the caller can read fields the send path filled in --
+which is exactly why the Linux driver reads `session_id` from its own buffer
+*after* `SendComm2CPUEx` returns.
+
+### The wait pointer: publish zero
+
+Resolved. Three pieces of evidence:
+
+1. The receiver **stores** the pointer without dereferencing it. In
+   `0x8b1208d0` it copies the two stack arguments into `share_seq[+0x70]` and
+   `[+0x74]`.
+2. The eventual signal null-checks. `0x8b15c27c` does `beqz $a0 -> return 5`,
+   as does its wait counterpart `0x8b15c1d0`. A zero pointer yields an error
+   return, never a write.
+3. U-Boot polls and does not need signalling; it reads the reply from the
+   FreeReturn queue at `shared+0x01d30`.
+
+So publishing `0` at `+0x18`/`+0x1c` is memory-safe. The residual risk is
+behavioural, not corrupting: the firmware gets an error code from the signal
+attempt and may log it or take an error path.
+
+This also explains the `+0x68`/`+0x6c` pair the init writes alongside
+`+0x10`/`+0x14`. They are a **mirror descriptor** -- one for the inbound
+message, one for the pending reply -- and `0x8b1208d0` fills the second set
+(`+0x68`, `+0x69`, `+0x6c`, `+0x70`, `+0x74`) on receipt.
 
 ## Board-B OSD handoff (2026-07-31)
 
