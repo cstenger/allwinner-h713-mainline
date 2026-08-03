@@ -807,6 +807,44 @@ across a same-geometry change. Scoring rules, decided before the run:
 The artifact is `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes,
 SHA-256 `8b5912d5a5a253bdf1e1ebffdca2b6c74328b8a19315faa6fc484fcd77d625b5`.
 
+### CORRECTION: 0x05880000 is not a raster position counter
+
+Measured with `h713_disp scanrate`:
+
+```
+784312 samples in 200000 us (3921 kHz sampling), timing HT=1360 VT=760
+high half max 1023, 3599 wrap(s) -> 17995 Hz
+low  half max 1023, 3600 wrap(s) -> 18000 Hz
+```
+
+Both 16-bit halves are **10-bit** counters -- maximum exactly 1023 -- wrapping
+at the same ~18 kHz. A raster position counter for a 1360x760 frame would max at
+1359 and 759, and its two rates would differ by a factor of VT. The measurement's
+own consistency check caught this: a frame rate of 17995 Hz against a `line/VT`
+of 23 Hz is impossible.
+
+The DCLK figure that command printed, 24.48 MHz, is therefore meaningless. It is
+`wrap_rate * HT` where the wrap rate is not a line rate. Discard it. The PLL
+arithmetic below stands unverified, not refuted.
+
+**Every "scan=... proves the raster is live" claim in this document is void.**
+That includes the quiesce warning path, the AFBD and plane gate tests, the
+generator runs, and the frame-commit traces. The register moves, so something is
+clocked, but nothing in this log establishes that a raster is scanning at the
+programmed timing. The claim originated as an assumption about the register's
+meaning and was repeated as evidence thereafter.
+
+For the record the counters run at 18000 x 1024 = 18.432 MHz almost exactly,
+which is a standard oscillator frequency and not an obvious divisor of the
+computed 516 MHz panel clock. One measurement is not enough to say what they are.
+
+`h713_disp regscan [base] [words]` sweeps a register range and reports which
+words change, with their observed minima, maxima and change counts. A real
+horizontal or vertical counter is identifiable by maxing at HT-1 or VT-1, which
+the command prints for the live timing; anything maxing at a power of two minus
+one is free-running. Finding the real counter is a prerequisite for measuring
+DCLK, and for restoring any liveness check at all.
+
 ### RESOLVED: the link carries colour and no spatial information
 
 `test_17` ran the chroma sweep. `local/lcd-photos/test_17/IMG_0568.MOV`, 64.4 s.
