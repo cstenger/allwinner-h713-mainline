@@ -807,6 +807,72 @@ across a same-geometry change. Scoring rules, decided before the run:
 The artifact is `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes,
 SHA-256 `8b5912d5a5a253bdf1e1ebffdca2b6c74328b8a19315faa6fc484fcd77d625b5`.
 
+### RESOLVED: the link carries colour and no spatial information
+
+`test_17` ran the chroma sweep. `local/lcd-photos/test_17/IMG_0568.MOV`, 64.4 s.
+The chroma markers were visible at every phase boundary -- the first optical
+alignment aid in this project that actually worked -- so the phases are read
+directly off the recording rather than inferred.
+
+**The positive control passes.** All three primaries are separately
+controllable, measured over the rectangle interior:
+
+| phase | R | G | B | R-B | G-(R+B)/2 |
+| --- | --- | --- | --- | --- | --- |
+| baseline | 183.4 | 189.4 | 227.9 | -44.5 | -16.3 |
+| SOLID RED | **213.3** | 191.5 | 221.0 | **-7.7** | -25.7 |
+| SOLID GREEN | 204.2 | **233.0** | 217.5 | -13.3 | **+22.2** |
+| SOLID BLUE | 196.7 | 187.9 | **231.8** | **-35.0** | -26.4 |
+| CHECKER 128px | 203.3 | 190.9 | 228.5 | -25.2 | -25.0 |
+| CHECKER 32px | 199.2 | 189.2 | 226.2 | -27.0 | -23.5 |
+
+The green phase is unmistakable both in the numbers and in the photograph. The
+TCON generator, the LVDS serialiser, the panel and the optical engine all
+deliver a requested colour correctly.
+
+**Both checkers arrive as a uniform blend.** `CHECKER 128px` reads `R-B = -25.2`
+against red at `-7.7` and blue at `-35.0` -- almost exactly their midpoint. The
+column profile shows no alternation whatever:
+
+```
+baseline       -21 -32 -36 -38 -39 -41 -42 -45 -47 -48 -48 -50 -51 -51 -51 -51 -49 -48 -45
+CHECKER 128px  -22 -29 -28 -27 -26 -23 -21 -20 -20 -22 -24 -24 -24 -27 -40 -34 -35 -36 -38
+CHECKER 32px   -24 -32 -32 -31 -28 -26 -23 -22 -22 -23 -24 -25 -25 -30 -34 -35 -34 -38 -40
+```
+
+A 128-pixel cell is ten cells across a 1280-pixel line and roughly nine samples
+wide in this profile: trivially resolvable if it were present. It is not there.
+The photograph shows a uniform magenta field. The 32-pixel result agrees but is
+undersampled and adds nothing on its own.
+
+**The link carries colour but no positional content. Every pixel receives the
+same value -- the spatial average of the pattern.**
+
+The consequence is large, because the TCON pattern generator bypasses the
+framebuffer, AFBD, OSD, DE, vblender and mixer entirely. All of them are
+therefore exonerated. Every compositor-level investigation in this log -- OSD
+plane gates, AFBD enable and ready bits, the Board-B plane-open bit, framebuffer
+contents, byte order, the vendor bootlogo control -- was working a layer that
+was never the problem. Those results stand as measurements and are worthless as
+explanations.
+
+What remains is the pixel clocking and serialisation path between the generator
+and the panel's receiver: DCLK frequency, lane and bit mapping, single versus
+dual port, and the 7:1 serialisation ratio. A uniform blend is the signature of
+a receiver that is not latching per-pixel data at all and is integrating the
+line instead.
+
+The highest-value open item is now the one the handoff already lists and nobody
+has done: **verify that the project table's PLL and divider sequence actually
+produces the 62 MHz `PanelDCLK` the panel asks for.** The current implementation
+takes the clock programming from the vendor table without recomputing it. A
+DCLK far from the panel's expectation would produce exactly this result --
+correct DC colour, no resolvable pixels -- and it is checkable offline from the
+`0x058c00xx` register values already captured in every transcript.
+
+This does not explain the `test_13` bands, and that observation should now be
+treated as unexplained rather than load-bearing.
+
 ### The optical path responds to chroma and ignores luminance
 
 `test_16` ran the bracketed-control build with the DE replay gated out of the
