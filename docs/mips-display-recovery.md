@@ -1,4 +1,1121 @@
-# SESSION HANDOFF -- 2026-07-31 (evening)
+# SESSION HANDOFF -- 2026-08-01 (CPU_COMM ring wrap and marshalling hardware-proven)
+
+Read this first. It supersedes the earlier 2026-08-01 static handoff and every
+older claim that `THal_Vp_GetImageBufferAddr` uses handler `0x8b10a110`.
+
+The peak-count fix completed the first CPU_COMM round trip on hardware. The
+authenticated board-B firmware accepted the CALL, returned
+CALL_ACK and RETURN in 0 ms, and U-Boot received the matching reply, published
+RETURN_ACK, observed the low-level interrupt handler consume that publication,
+and recycled FreeReturn slot 0:
+
+```
+reply after 1 ms, session=1 comp_id=2f02f7dd
+ReturnCmd queued slot 0
+RETURN_ACK publication consumed after 1 ms
+FreeReturn slot 0 recycled (rd=1 wr=20 -> 0)
+```
+
+The post-run dump exposed and verified the receiver-ownership fix: ARM
+ReturnCmd now advances from `rd=0 wr=1` to `rd=1 wr=1`. The MIPS sender does
+not consume that receiver-local staging FIFO, so advancing ARM `rd` is correct.
+
+An earlier two-call run exposed a deeper ACK boundary. The second CALL
+was published and accepted by the interrupt handler, but MIPS CallCmd stayed
+at `rd=1 wr=2` and produced no second reply. The trace remained at `0xc009`.
+Therefore no worker dequeued the second CALL. Because `0xc009` was the old
+trace's final marker, that run alone could not tell whether the first worker
+was still in the ACK wait, stalled during post-ACK cleanup, or had returned
+before the second-call failure.
+
+The expanded trace has now resolved that ambiguity on hardware. The ACK copied
+session 1 and the valid MIPS wait pointer `0x8b253e7c`; the interrupt consumed
+the publication after 1 ms, and the trace reached `0xc013` before U-Boot's
+next 1 ms poll:
+
+```
+RETURN_ACK metadata session=00000001 wait=00000000:8b253e7c
+RETURN_ACK publication consumed by interrupt handler after 1 ms
+MIPS sender completed RETURN after 0 ms
+```
+
+This proves the deferred ACK action posted the wait semaphore,
+`SendComm2CPUEx` resumed, released its send semaphore, and returned to the CALL
+worker. The earlier `c009` value was merely the last marker available in that
+build, not evidence of an ACK stall. The ACK path is cleared.
+
+The second CALL on that same boot reproduced the failure. Its msgbox FIFO was
+drained and the CALL publication bit was cleared in 0 ms, but it produced no
+second CALL_ACK or RETURN. The independent trace then proved the global HISR
+queue send succeeded, the prior RETURN_ACK wrapper fully returned (`f003`),
+and CALL #2 reached **`e008`, inside `SendAckLow` immediately before sending
+CALL_ACK**. The stall is therefore not in queue reuse or dispatch.
+
+This exposes the missing receiver operation. `SendAckLow` publishes CALL_ACK
+metadata in the opposite-direction `share_seq(0,1,0)` at shared `+0x13a8`,
+fields `+0x68..+0x74`; it raises `+0x69` bit 2 and rings mailbox type 2. U-Boot
+drained that mailbox word but never cleared the shared publication bit. On
+CALL #2, `SendAckLow` checks `+0x69` at
+`0x8b120964`, sees the first ACK still outstanding, and assert-spins at
+`0x8b120b28` before sending anything.
+
+The current source now mirrors the stock ARM CALL_ACK handler: on mailbox type
+2 it reads and validates index 20, session 1, and the raised state bit, then
+clears `share_seq(0,1,0)[+0x69]` bit 2 and flushes the exact containing cache
+line.
+It also prints the ACK metadata and refuses malformed publications. This is
+the protocol fix, not a timing workaround.
+
+The first implementation deliberately validated before writing and caught an
+addressing error on hardware: reading ACK fields from the original
+`share_seq(1,0,0)` returned untouched init values `index=20 session=ffffffff
+state=00`, so U-Boot refused to consume them. The wrapper at `0x8b1195ec`
+settles the mapping: `getShareSeqW(remote=0, dir=0)` calls the core lookup with
+`(remote=0, current=1, dir=0)`, which is shared `+0x13a8`. The current build
+uses that exact sequence.
+
+The corrected build completed **two consecutive transactions on one boot**.
+Both CALL_ACK publications were read as `index=20 session=1 state=04` and
+consumed; both matching RETURNs were acknowledged; and both MIPS senders
+reached `0xc013`. Afterward, all receiver staging FIFOs were empty and both
+active free rings retained all twenty descriptors:
+
+```
+MIPS CallCmd       rd=2 wr=2
+ARM  ReturnCmd     rd=2 wr=2
+MIPS FreeCall      rd=2 wr=1   count=20
+ARM  FreeReturn    rd=2 wr=1   count=20
+```
+
+This is the first hardware proof of repeatable, leak-free ARM-to-MIPS
+CALL/CALL_ACK/RETURN/RETURN_ACK traffic in this project.
+
+The ring-wrap test is now complete as well. On one boot the trace build ran 22
+consecutive calls, crossing the 21-entry boundary. Every call received and
+consumed CALL_ACK, received RETURN, completed the deferred RETURN_ACK wakeup,
+consumed ReturnCmd, and recycled FreeReturn. The post-run state matched the
+modulo-21 prediction exactly:
+
+```
+MIPS CallCmd       rd=1 wr=1
+ARM  ReturnCmd     rd=1 wr=1
+MIPS FreeCall      rd=1 wr=0   count=20
+ARM  FreeReturn    rd=1 wr=0   count=20
+```
+
+The same boot then completed another 22-call loop. The transcript contains 44
+matching replies, 44 consumed CALL_ACK publications, and 44 recycled
+FreeReturn descriptors with no timeout or malformed-publication report. The
+final snapshot was exactly `FreeCall rd=2 wr=1`, `CallCmd rd=2 wr=2`,
+`FreeReturn rd=2 wr=1`, and `ReturnCmd rd=2 wr=2`; the persistent trace remained
+at CALL `e011`, sender `c013`, RETURN_ACK `f003`, with HISR queue send zero.
+Thus the active rings crossed their wrap boundary more than once without a
+descriptor leak or stale staging entry.
+
+The result is not dependent on the diagnostic firmware patches. After a power
+cycle, ordinary `h713_disp mips-test 0x33` (no CPU_COMM progress trace
+installed) completed a separate 22-call wrap run. It produced 22 matching
+replies, consumed all 22 CALL_ACK publications and ReturnCmd entries, and
+recycled all 22 FreeReturn descriptors. The final state again matched the
+modulo-21 prediction exactly: `FreeCall rd=1 wr=0`, `CallCmd rd=1 wr=1`,
+`FreeReturn rd=1 wr=0`, and `ReturnCmd rd=1 wr=1`. Successful descriptor reuse
+after the wrap also proves the sender cleanup completed even though the
+trace-only `MIPS sender completed RETURN` message is intentionally unavailable
+in this mode. Production-mode CPU_COMM ring wrap is therefore hardware-proven.
+
+The current artifact adds a guarded real-handler marshalling test. Static
+analysis of the authenticated board-B image identified the safest
+getter/setter pair:
+
+- `THal_Vp_GetPictureMode` (`0x2d8338c3`, handler `0x8b10a8ec`) returns one
+  word read from the live picture-mode state at `0x8b272988`;
+- `THal_Vp_SetPictureMode` (`0x83a878bf`, handler `0x8b10a8c0`) accepts one
+  word and compares it with that same state before doing anything else. An
+  equal value branches around the hardware update.
+
+`h713_disp comm-pq-test` first verifies both live call-table entries, including
+their ids, owner PID, and exact authenticated handler addresses. It gets the
+current mode, sets precisely that value back, then gets it again. The command
+requires getter `nret=1`, setter `nret=0`, and an identical final value. This
+exercises zero-input/one-output and one-input/zero-output marshalling while
+deliberately taking the setter's side-effect-free equality path. It refuses to
+run if any guard differs. Generic `commcall` now also captures the returned
+count and up to ten returned words; raw count `0x0f` is correctly retained as
+the worker's no-output sentinel and normalized to zero, preserving the proven
+no-op probe.
+
+Hardware validation passed on the production `mips-test` path. The live guards
+found SetPictureMode at entry 191 with handler `0x8b10a8c0` and GetPictureMode
+at entry 195 with handler `0x8b10a8ec`. The three transactions returned:
+
+```
+GetPictureMode  nret=1  ret[0]=00000000
+SetPictureMode  nret=0
+GetPictureMode  nret=1  ret[0]=00000000
+picture-mode marshalling PASS
+```
+
+Every CALL_ACK and RETURN_ACK publication was consumed and every ReturnCmd and
+FreeReturn descriptor was reconciled. The final transport state was exactly
+`FreeCall rd=3 wr=2`, `CallCmd rd=3 wr=3`, `FreeReturn rd=3 wr=2`, and
+`ReturnCmd rd=3 wr=3`. Zero-input/one-output and one-input/zero-output
+marshalling are therefore hardware-proven without changing the picture-mode
+state. To reproduce after flashing and power-cycling, run:
+
+```
+h713_disp mips-test 0x33
+h713_disp commdev
+h713_disp comm-pq-test chan=0 pid=8b8f32b0
+h713_disp commstate
+```
+
+On a fresh transport, three successful transactions leave FreeCall and
+FreeReturn at `rd=3 wr=2` and both active staging FIFOs at `rd=3 wr=3`.
+
+The same production boot then invoked the real state-changing
+`THal_Vp_DisableBlackScreen` component (`0xb66041d8`). The firmware accepted
+the zero-input CALL, returned matching `comp_id=b66041d8` with `nret=0`, and
+completed the full acknowledgement and recycling path. The post-call state was
+exactly `FreeCall rd=4 wr=3`, `CallCmd rd=4 wr=4`, `FreeReturn rd=4 wr=3`, and
+`ReturnCmd rd=4 wr=4`. This hardware-proves dispatch through a nontrivial
+state-changing adapter as well as transport and marshalling. The bench
+operator reported no visible panel difference after the successful call. The
+firmware black-screen gate is therefore not the sole visible blocker; the next
+narrow gate test was `THal_Vp_DisableScreenCover` with selector 0. That
+one-input call also completed with `nret=0`; its queues balanced at
+`FreeCall/FreeReturn rd=5 wr=4` and `CallCmd/ReturnCmd rd=5 wr=5`, but the
+operator again saw no screen difference. The default cover target is not the
+visible blocker. Selectors 1, 2, and 3 were then invoked individually; all
+three returned matching `comp_id=143ffc87` with `nret=0`, completed every ACK
+and recycle operation, and produced no visible difference. The final state was
+exactly `FreeCall/FreeReturn rd=8 wr=7` and `CallCmd/ReturnCmd rd=8 wr=8`.
+Black-screen and all four mapped screen-cover targets are now excluded as the
+sole cause. Further work moves below the overlay-gate layer into composition,
+buffer publication/fetch, and DE/AFBD state.
+
+A fresh `panel-test 0x33` then published known 1280x720 ARGB8888 patterns at
+`0x6c100000` before calling `THal_Vp_SetSource(2)` (`0xeaf13de5`). The RPC
+completed with `nret=0` and balanced at `FreeCall/FreeReturn rd=1 wr=0` and
+`CallCmd/ReturnCmd rd=1 wr=1`. Comparing all 212 words in the pre-call and
+post-call display dumps found exactly one difference: `0x05880000`, the live
+scan counter. TVTOP, mixer, DE, AFBD, buffer address, routing, PLL, and module
+clock values were otherwise byte-identical. Thus SetSource(2) caused no
+synchronous change in the sampled hardware composition path. Static
+disassembly shows the setter calls the source object through
+`[0x8b253578]->vtable[3]` and then stores the requested value at firmware state
+word `0x8b2729ac`.
+
+The first boundary read returned `0x8b2729ac=0` while the source object pointer
+was live at `0x8b253578=0x8b8c8ecc`. That zero does **not** show that the
+setter rejected 2: both are ordinary cached MIPS KSEG0 locations, and ARM
+cache invalidation cannot evict a dirty MIPS data-cache line. Static analysis
+settles the part that can be proven without another artifact. The object's
+vtable is `0x8b1eb594`; slot 3 is `0x8b107574`. That callback does not touch
+display MMIO. It submits the 16-byte `{event=0, source}` record to the object's
+nonblocking queue at `0x8b15c460`. The object's worker at `0x8b1091f4` later
+dequeues event zero, compares the requested source against its private current
+source at object `+0xe0`, and only then runs the transition path. The stock
+`THal_Vp_GetSource` component cannot expose this state: handler `0x8b10a244`
+calls `0x8b14b524`, which returns one output word containing zero
+unconditionally.
+
+The current communication-trace build therefore instruments this asynchronous
+worker through the MIPS uncached `0xae34xxxx` alias. It records the event,
+requested source, worker's previous source, raw queue result, and final stage:
+
+| source stage | meaning |
+| --- | --- |
+| `0x5101` | source callback received the event |
+| `0x5102` | callback's nonblocking queue send returned |
+| `0x5201` | worker dequeued a source-change event |
+| `0x5202` | worker found requested source equal to current source and skipped it |
+| `0x5203` | worker completed the source-transition path |
+
+The first hardware run returned callback stage `0x5102`, `event=0`, `new=2`,
+`old=0`, and queue result zero. This already proves that the worker dequeued
+the event: `old` was initialized to `0xffffffff` and only the worker writes
+that field. It also proves this was a real 0-to-2 change, not the equality
+shortcut. The higher-priority worker preempted the callback during the queue
+send, wrote a `0x52xx` stage and `old=0`, then the resumed callback overwrote
+the shared stage with `0x5102`. Thus that run cannot distinguish worker entry
+from worker completion. The corrected trace stores callback and worker stages
+in separate words so this scheduling race cannot erase either result.
+
+The corrected trace then closed the path on hardware. It retained callback
+`0x5102` and worker `0x5203` simultaneously with `event=0 new=2 old=0
+queue=00000000`. Thus the firmware performed and returned from the complete
+0-to-2 source transition. CPU_COMM and source selection are not the remaining
+display blocker. Combined with the earlier byte-identical pre/post MMIO dump,
+this proves that a source transition does not itself publish an image buffer
+or alter the sampled DE/AFBD composition state.
+
+Static inspection also closes the tempting next CPU_COMM call. In this exact
+firmware, `THal_Vp_SetImageBufferAddr` entry 703 uses handler `0x8b10ada8` and
+`THal_Vp_GetImageBufferAddr` entry 989 uses `0x8b10adb0`; both handlers are
+only `jr ra; nop`. Despite their exported names, neither can register, set, or
+return an image buffer. Do not spend a run calling `0x396f16bf` with guessed
+parameters. Image publication must use another internal interface, or the
+already recovered direct AFBD/DE path.
+
+The nearest asynchronous source event is not that interface either. The event
+one producer at `0x8b1075bc` is `CallbackOfSignalChange` in
+`app_top_projector.cpp`. It copies a 0xac-byte input-signal descriptor into
+firmware state at `0x8b25357c` and queues `{event=1, descriptor}` to the same
+source worker. It describes input timing/signal state; it does not carry or
+publish an OSD framebuffer. Do not patch or synthesize event one as a display
+test.
+
+A prior artifact tested a concrete but provisional related-platform inference:
+after writing AFBD channel-1 ready `0x05600144[0]`, it also set bit 0 in the
+selected OSD control word at `0x0524c000`. `panel-test` had previously left
+that word at the authenticated board-B value `0x00fc0202`. The experiment
+preserved every other format/routing bit and printed both immediate readbacks.
+
+Hardware accepted both writes. All four frames immediately read
+`AFBD=00000001 OSD=00fc0203`; `0x05880000` continued advancing, and
+`0x05600168` remained 2. The attached photograph shows a large, uniform lit
+image rectangle rather than the eight coloured bars. The second OSD write is
+therefore real and materially changes the active-plane boundary, but it has
+not yet demonstrated that the supplied ARGB pixels reach the output.
+
+Static cross-check against the recovered `ge2d_dev.ko` AFBD hard IRQ gives
+`0x05600168` a precise meaning: it is channel 1's write-one-to-clear IRQ
+status, and bit 1 is writeback complete. Stock reads it and writes the same
+value back before advancing the AFBD state machine. U-Boot had no handler and
+left completion `2` pending before every moving-frame commit. The current
+artifact now mirrors that ownership explicitly: before each frame it writes
+back any pending status, verifies the cleared readback, submits AFBD then OSD,
+and waits at most 50 ms for bit 1 to reassert. Its one-line trace reports
+`irq=<pending>-><cleared>-><done> wait=<us>`. A `2->0->2` transition proves a
+fresh AFBD transaction completed; failure to clear or reassert localizes the
+fault inside AFBD instead of downstream composition.
+
+The hardware run closed that boundary. Every frame cleared the old status and
+generated a new completion well inside one refresh interval:
+
+```
+pattern 1: irq=00000002->00000000->00000002 wait=9700us
+pattern 2: irq=00000002->00000000->00000002 wait=6900us
+pattern 3: irq=00000002->00000000->00000002 wait=7000us
+pattern 4: irq=00000002->00000000->00000002 wait=7000us
+```
+
+The OSD control remained at the experimental `00fc0203`, the LVDS scan counter
+moved throughout, and the operator still saw no clean bar image. This rules
+out a stale AFBD interrupt and a submission that never finishes. It proves a
+fresh channel-1 hardware transaction for every supplied frame; it does not by
+itself validate the resulting pixels. The extra OSD write is not evidence for
+a missing latch; the exact stock-driver cross-check below supersedes that
+interpretation.
+
+Stock U-Boot provides no additional post-blit show/commit write to copy. Its
+BMP path fills the same 1280x720 32-bit surface, patches the AFBD `+0x178`
+record, applies the ordinary register table, and only then starts the display
+fabric/MIPS. The tempting `0x0520003c` bit-24 sequence is not valid evidence
+for this board: it came from a related Linux reverse-engineering table later
+identified in that tree as a wrong-base transcription. Do not write it here.
+
+The next artifact adds an ownership discriminator instead of guessing another
+mux bit. `quiesce` starts the firmware normally through application readiness,
+then asserts only the MIPS core reset while retaining every display clock. It
+samples `0x05880000` twice after reset, re-latches 720p, replays the
+authenticated DE block, and submits the moving frames. It also expands the
+read-only dump over the vblender, both OSD/DE2 channel companions, and AFBD
+global/source-mux windows omitted from all prior comparisons.
+
+After flashing and power-cycling, run only:
+
+```
+h713_disp panel-test 0x33 quiesce
+```
+
+Record the `MIPS core quiesced` line, the complete post-quiesce dump, the four
+`frame commit` lines, and what is visible. If its last two scan words differ
+and the moving bars appear, the firmware was actively owning/hiding the plane.
+If the scan remains live and the bars do not appear, the fault is static
+channel-1 DE/vblender routing and the new dump is the input for the next
+single-register test. If the scan words are zero or equal, the command prints
+a warning and the visual result is not a compositor verdict. Another
+source-selection CALL is not useful in any of these cases.
+
+The quiesced hardware run closed the ownership branch. Core reset and status
+both read zero, while the scan counter continued through
+`00ba033c->00800301->004202c4`. The 720p timing re-latched, the authenticated
+DE block replayed, and all four submissions completed `2->0->2` with the MIPS
+still held in reset. OSD channel 0 and both extra DE2 companion windows were
+all zero; the selected channel-1 OSD/AFBD state remained populated. The AFBD
+global source/mux windows also remained live, including buffer pointers
+`0x4c5ee000` and `0x4cbeb000`. Therefore neither continued MIPS execution nor
+a hidden channel-0 software plane explains the missing bars. The supplied
+transcript did not include a visual observation, so do not infer one from the
+register result.
+
+### Exact AFBD submission and selected-plane gate
+
+Board B's own `ge2d_dev.ko`, extracted directly from `vendor_a` inside the
+`super` partition of `board-b-mmcblk0-20260705T072349Z.img`, has SHA-256
+`a79017e5d3bc9563135e463404d3bb38bf6f263d5b31fbe122768f2dca11583f` and
+build ID `0e41eee871447a0f1d8c89ae0d19c9a13c7c5513`. It is an unstripped ARMv7
+module with the display symbols intact. This supersedes the differently hashed
+board-A module for register semantics. Its read-only `OSD_AFBD_REG_OFFSET`
+table contains
+`{0x05600100, 0x05600140}`. Disassembly of `osd_ready_for_update()` indexes
+that table and writes literal 1 to the selected base plus 4. For plane 1 this
+is `0x05600144`, not `0x0524c004` and not `0x0524c000`.
+`tgd_put_plane_info()` immediately precedes it by setting bit 0 at AFBD base
+`0x05600140`. There is no per-frame write to OSD control bit 0. The earlier
+related-platform OSD-bit inference is therefore retired.
+
+The earlier board-A inference assigned plane visibility to
+`0x0524c000[31]`. Board B's driver proves that assignment wrong:
+`tgd_is_plane_open()` selects the plane's `0x0524c000` base, reads **base
++0x1c**, and returns bit 0. The live Board-B word is `0x0524c01c=79860601`,
+so the exact plane-open gate is its low bit. The historical `quiesce`
+diagnostic instead:
+
+1. submits frames in stock order: AFBD `+0x00[0]`, then literal 1 to AFBD
+   `+0x04`, without changing the OSD word;
+2. set the now-retired `0x0524c000[31]` hypothesis for five seconds;
+3. restores the complete original word for five seconds and crosses another
+   frame boundary;
+4. performs the AFBD enable-bit gate in the same labelled fashion;
+5. publishes one static eight-bar frame and holds it for fifteen seconds.
+
+The rotating animation is intentionally disabled in `quiesce` mode. Until one
+bar frame appears, additional phases only repeat the same failed publication
+and make hand-recorded observations harder to associate with a label. Other
+`panel-test` modes retain their animation.
+
+After flashing and power-cycling, run the same command and report what happens
+during the two explicitly labelled intervals:
+
+```
+h713_disp panel-test 0x33 quiesce
+```
+
+Those old `plane DISABLED/RESTORED` labels do not represent stock visibility
+and must not be used to conclude whether channel 1 reaches the final mix. The
+AFBD gate and fresh-completion evidence remain valid.
+
+The hardware accepted the discriminator exactly: `0x0524c000` changed
+`00fc0202 -> 80fc0202 -> 00fc0202`; both frame-boundary submissions completed
+`2->0->2`, and the raster remained live. The earlier `test_8` photographs were
+not phase-labelled, so their warmer/brighter difference could not be assigned
+to the gate.
+
+The next discriminator moves one boundary upstream without guessing a format
+field. The exact stock update path sets `0x05600140[0]` immediately before
+writing AFBD ready, and stock disabled-channel state has bit 0 clear. The
+current `quiesce` test now clears only that channel-enable bit for five seconds,
+then restores the entire saved word, submits a normal frame, and holds another
+five seconds. It prints two additional labels:
+
+```
+H713 panel: AFBD DISABLED ...
+H713 panel: AFBD RESTORED ...
+```
+
+This historical run requested observations for both labelled pairs. Board-B
+RE now supersedes any interpretation of its `plane DISABLED/RESTORED` pair;
+only the AFBD pair exercised a confirmed gate. In every case, the authenticated AFBD
+`+0x0c=00000080` must not yet be replaced with board-A's `00ff0080`: those are
+the proven XRGB and NV12 channel modes respectively, not an established alpha
+omission.
+
+The phase-labelled `test_9` photographs close the visual half of both gate
+tests. Baseline, AFBD enable, `plane DISABLED`, `plane RESTORED`, and `AFBD
+RESTORED` all show the same uniform illuminated rectangle; no bar structure or
+gate transition is visible. The transcript simultaneously proves that the OSD
+and AFBD gate writes took effect, every restored submission completed a fresh
+`2->0->2` transaction, and scanout remained live. Only the AFBD bit is now
+known to have been an enable bit; Board-B RE retires the other candidate. This
+supersedes the unlabeled `test_8` visual inference, but does not replace the
+exact Board-B plane-open test below.
+
+Before assigning a negative static-bar result to routing, the artifact also
+contains a stricter pixel-source control:
+
+```
+h713_disp panel-test 0x33 vendor-logo
+```
+
+This mode uses `bootlogo.bmp` from Board B's bootloader partition alongside
+the MIPS artifacts. Both `bootloader_a` and `bootloader_b` in
+`board-b-mmcblk0-20260705T072349Z.img` contain byte-identical copies; the
+runtime `mmc 1:2` path selects the latter. It is a 1280x720, 24-bit BMP of
+2,764,854 bytes with SHA-256
+`e812cd928c67b89608c7424ac80066c19633e76b150378abf4de9d62698eb22c`.
+It happens to be byte-identical to the board-A copy, but Board B is the pinned
+provenance. At runtime the command reads the board's own file from `mmc 1:2`
+and refuses it unless that complete hash matches.
+
+`vendor-logo` reproduces the statically verified stock blitter literally:
+bottom-up BMP B,G,R triples become little-endian `0xffRRGGBB` framebuffer
+words. It then performs the normal firmware initialization, quiesces the MIPS
+owner, restores the authenticated 720p timing and DE block, and submits one
+frame. It deliberately skips the OSD gate, AFBD gate, enable probe, bar frames,
+and every animation. Photograph only the fifteen-second interval labelled
+`EXACT VENDOR LOGO COMMITTED`. If the logo is absent while the fresh AFBD
+transaction and scan counter remain live, the generated bar contents and BMP
+conversion are eliminated together; the remaining fault is downstream of the
+pixel buffer.
+
+The `test_10` hardware run produced exactly that negative control. Both reads
+of `bootlogo.bmp` matched the pinned Board-B SHA-256, both conversions
+published the expected `0xffRRGGBB` surface, the final submission completed a
+fresh `00000002 -> 00000000 -> 00000002` AFBD transaction in 5.4 ms, and the
+720p scan counter was live. The expected source image is a black frame with
+centered white `SMART PROJECTOR` text. The phase-labelled `baseline.jpeg` and
+`logo.jpeg` instead contain only the same uniform illuminated rectangle; no
+letterform, edge, or other source-image structure is present. The latter is
+somewhat brighter and has a faint vertical tint boundary, but the camera moved
+between frames and automatic white balance remained enabled. Both captures
+used 1/60 s, ISO 800, and f/2.2, so the luminance change is worth retaining as
+an observation but is not evidence that logo pixels were fetched.
+
+This closes the test-pattern-content branch: bars, BMP selection, BMP row
+order, per-pixel byte order, cache clean, and stale completion are no longer
+productive variables. It does **not** prove AFBD decoded the surface or that
+channel 1 reached the final mixer. Board B's exact plane-open bit must be tested
+before moving downstream to static mixer/vblender routing; do not spend another
+run changing framebuffer contents.
+
+The follow-up `test_11` run independently repeated the upstream result. The
+console proves the retired `0x0524c000[31]` candidate changed
+`00fc0202 -> 80fc0202 -> 00fc0202`, the AFBD channel changed
+`03001901 -> 03001900 -> 03001901`, each restored frame generated a fresh
+completion, and the 720p scan counter remained live. `test.jpeg` was taken
+during the labelled DISABLED/RESTORED tests, not during the later static-bar
+hold. The operator saw no transition during either the gates or the final bar
+publication. Its vertical tinting is therefore not bar evidence; the capture
+also used substantially different automatic exposure from `baseline.jpeg`.
+Photo filesystem timestamps are deliberately not used to assign phases.
+
+The next artifact uses the newly recovered Board-B plane-open control and omits
+the invalid old OSD gate and already-settled AFBD gate:
+
+```
+h713_disp panel-test 0x33 plane-gate
+```
+
+It starts the firmware, quiesces only the MIPS core while retaining display
+clocks, restores the authenticated 720p/DE state, publishes one static bar
+frame, and proves a fresh AFBD completion. It then saves `0x0524c01c`, clears
+only bit 0 for five seconds, and restores the exact saved word for five
+seconds. Observe `BOARD-B PLANE CLOSED` and `BOARD-B PLANE RESTORED`. A visible
+transition proves the selected OSD/AFBD plane reaches the optical path. No
+transition with a moving scan counter and fresh AFBD completions moves the
+boundary downstream to the static mixer/vblender route.
+
+The phase-labelled `test_12` run produced the exact electrical transaction but
+no visual transition. `0x0524c01c` changed
+`79860601 -> 79860600 -> 79860601`; all three submissions completed a fresh
+`00000002 -> 00000000 -> 00000002` AFBD cycle, and the scan counter moved in
+every interval. `BASELINE.jpeg`, `CLOSED.jpeg`, and `RESTORED.jpeg` retain the
+same uniform illuminated rectangle without bar structure. `CLOSED.jpeg` used
+different automatic exposure, so its small luminance difference is not a
+structural display result. This proves the stock plane-open status bit is
+writable but also shows that changing that bit alone does not control the
+visible rectangle.
+
+Board B's unstripped module provides a stronger downstream split without
+another guessed mixer field. The style-selection tail of
+`tgd_set_checkboard_style(8)` enables the TCON's own checker generator using a
+literal sequence: mode 5 at `0x0588001c`, bit 3 at `0x0588000c`, cell size
+`0x00800080` at `0x05880038`, and packed colours
+`0xff000000`/`0x000000ff` at `0x0588003c/40`. Its preceding writes only rebuild
+TCON timing from cached panel geometry; this command has already latched the
+authenticated 720p timing. The next artifact reproduces the Board-B style tail
+after firmware initialization and MIPS quiesce:
+
+```
+h713_disp panel-test 0x33 tcon-checker
+```
+
+It holds one static 128x128-cell checker for fifteen seconds under the label
+`BOARD-B TCON CHECKER ACTIVE`, then restores every touched word exactly and
+holds another five seconds. If the checker appears, the TCON/LVDS/panel path is
+good and the remaining fault is upstream composition. If the illuminated
+rectangle does not change while the programmed words read back and the scan
+counter moves, the optical output is not responding to the LVDS pixel stream
+being programmed; further OSD/AFBD/mixer format tests cannot fix that boundary.
+
+The phase-labelled `test_13` run produced a third and more useful result. The
+hardware accepted every exact style-8 word:
+
+```
+ctrl  00e40202 -> 00e4020a -> 00e40202
+mode  00000004 -> 00000005 -> 00000004
+size  00080008 -> 00800080 -> 00080008
+rgb   00000000/3fffffff -> 3f000000/000000ff -> 00000000/3fffffff
+scan  ... -> 00e10363 -> 00870309
+```
+
+The top two requested colour bits are not implemented, so the literal
+`ff000000` correctly reads back as `3f000000`. While style 8 was active, the
+projected rectangle changed to **three vertical colour bands**. It did not show
+the expected 128x128 red/blue checker cells. The operator confirmed that the
+three bands were visible directly and matched the photographs, so this is not
+a camera rolling-shutter artefact. Restoration removed the test response.
+
+This is the first positive pixel-path boundary result. The optical engine is
+not merely showing fallback illumination: TCON-local generated data reaches
+the LVDS/downstream optical chain and changes the projected image. It is
+nevertheless being interpreted incorrectly. Since this generator bypasses
+framebuffer, AFBD, OSD, DE and vblender, no further compositor gate test can
+explain the malformed checker. Attention moves to the downstream link:
+packed-colour interpretation, lane/bit mapping, and receiver input geometry.
+
+Board B's same stock function has a stronger discriminator in style 1. It uses
+the identical mode, enable bit, and 128x128 cell size, but supplies black and
+white (`00000000`/`3fffffff`). The next artifact exposes that exact static
+variant without bringing any animation back:
+
+```
+h713_disp panel-test 0x33 tcon-checker-mono
+```
+
+A roughly 10-column by 5-to-6-row black/white grid means geometry and lane
+ordering are intact and isolates the style-8 failure to colour packing. Three
+monochrome vertical bands instead implicate row/lane or receiver input geometry.
+The command again holds for fifteen seconds, restores all five saved words,
+and leaves the MIPS core quiesced.
+
+The style-1 hardware run accepted the command exactly but produced **no visual
+change**:
+
+```
+ctrl  00e40202 -> 00e4020a -> 00e40202
+mode  00000004 -> 00000005 -> 00000004
+size  00080008 -> 00800080 -> 00080008
+rgb   00000000/3fffffff (unchanged black/white)
+scan  ... -> 00e40366 -> 00830305
+```
+
+The stock logo being white text on black does not make this a null test: ten
+by roughly six 128-pixel checker cells would dominate the entire 1280x720
+frame. The combined style result is therefore narrower than either run alone.
+Changing the two generated colour words in style 8 visibly creates three
+colour bands, but enabling the same generator and cell geometry with stock
+black/white words produces no spatial grid. A simple ARGB/packed-colour error
+cannot by itself explain the missing row and column alternation. The receiver
+input geometry or LVDS lane/bit interpretation remain the leading candidates.
+
+After that observation, use the already-built non-register-writing address
+probe on the same boot:
+
+```
+h713_i2c scan
+```
+
+The hardware scan answered only at `0x18`:
+
+```
+H713 i2c: scanning PH2/PH3
+  0x18 ACK
+H713 i2c: 1 device(s) responded
+```
+
+That address matches Board B's enabled STK8BA58 accelerometer node, proving
+the PH2/PH3 bus, address convention, and scanner. The earlier expectation that
+`0x6a` was the positive control was stale: the stock DT lists several
+alternative accelerometers, and this board populated the `0x18` choice.
+
+There was no response at `0x1b` after the stock PF6/PH16 power sequence and a
+live TCON run. Board B's stock DT also contains no DLPC node. Its unstripped
+`ge2d_dev.ko` does contain a legacy optional `DLPC3435` driver, but the exact
+`tv_i2c_detect()` implementation restricts detection to adapter 1, which is
+the PH2/PH3 bus just proven. The callback's presence therefore does not prove
+this board uses that optional controller path. Do not issue the recovered
+DLPC initialization writes on this hardware.
+
+The same freshly extracted Board-B module confirms the current diagnostic's
+store order exactly: mode 5, control bit 3, then size and the two color words.
+It also provides solid-black style 2 and solid-white style 3. The next
+diagnostic applies those two exact styles for 7.5 seconds each:
+
+```
+h713_disp panel-test 0x33 tcon-solid
+```
+
+A full black-to-white transition proves that the generator replaces the
+source image and isolates the checker failure to its spatial/lane handling.
+No change during either solid phase means the style-8 bands came from the
+color-word path without a functioning source replacement; the next work must
+reproduce more of the TCON setup rather than chase an absent I2C peripheral.
+
+Hardware instead produced a decisive inversion-like response. Exact stock
+style 2 (both color words zero) made the field lighter; exact stock style 3
+(both color words `0x3fffffff`) made it darker, yellowish, and nonuniform, with
+an oval region visible near the centre. The persistent far-left column and
+jittering white line at the top survived both spatially uniform sources. This
+proves that the TCON generator is controlling the visible output, rules out
+the framebuffer, AFBD decoder, and checker geometry as the cause of those
+boundary artifacts, and places the fault in the downstream timing/link
+interpretation. The response is not clean enough to call it a simple logical
+color inversion; sampling edge, LVDS lane/bit mapping, and timing remain live
+possibilities.
+
+Every generator diagnostic above quiesced the firmware and immediately
+replaced its final 1920x1080 TCON timing with the reconstructed 1280x720 panel
+timing. Preserve the firmware timing while applying the identical solid
+styles to isolate that overwrite:
+
+```
+h713_disp panel-test 0x33 tcon-solid-native
+```
+
+The command must report the retained firmware tuple, expected from the known
+image as mode 2, 2200x1125 total, and 1920x1080 active, before announcing the
+black phase. If the left column, top jitter, or intensity ordering materially
+improves, the 720p relatch is wrong for the live receiver even though the XML
+and vendor table describe a 1280x720 panel. If the result is unchanged, timing
+selection is substantially de-risked and the next controlled sweep should
+change only the LVDS sampling-edge polarity, then lane/dual-port mapping, under
+the same spatially uniform source.
+
+The native-timing run was clearly worse. At boot the output was mostly white
+with a dark left column, then gradually drifted blue. Its first observation
+was a fixed white oval with dark edges, and neither the all-zero nor all-one
+generator phase caused a visible transition. The firmware's mismatched 1080p
+TCON timing is therefore closed as a route to a usable diagnostic image; keep
+the explicit 720p relatch for subsequent tests.
+
+The next diagnostic keeps that 720p timing and the exact style-2 all-zero TCON
+source fixed, and changes only `PanelInvDCLK` at `0x05800000[24]` in an
+inverted/normal/inverted A/B/A sequence:
+
+```
+h713_disp panel-test 0x33 tcon-dclk
+```
+
+The bit position was rechecked directly against Board B's stock U-Boot patch
+function before adding the test. The apparently contradictory older notes use
+a differently ordered panel-setting array; the actual calls map DCLK to bit
+24, DE to bit 18, HSync to bit 16, and VSync to bit 17, matching the current
+recovery implementation. A real edge effect must appear in the middle
+`DCLK B NORMAL ACTIVE` phase and reverse in `DCLK A INVERTED RESTORED`.
+
+Hardware showed a synchronized edge effect. Before the test the output was a
+nearly uniform dark blue and the far-left column was only slightly different.
+The first inverted-DCLK observation was uniformly dark with the familiar
+white artifact at the top. On entry to the normal-DCLK phase, many vertical
+lines appeared for a fraction of a second while the link resynchronized; it
+then settled to uniform dark blue **without the top white artifact**. After
+the test restored the prior state, the field briefly became light and faded
+back to dark blue with the top artifact present again. This is stronger than
+the unrelated slow optical drift: the transition was phase-locked to the bit
+change and the most persistent boundary artifact followed the edge selection.
+
+Because changing the edge on a live serial stream visibly resynchronizes the
+receiver, do not yet treat the normal setting as a permanent configuration
+fix. Select normal DCLK before enabling the generator, let it settle, and run
+the exact zero/one solid comparison entirely under that edge:
+
+```
+h713_disp panel-test 0x33 tcon-solid-dclk-normal
+```
+
+The corresponding DDR3 artifact is
+`build/out/u-boot-sunxi-with-spl-ddr3.bin` (915761 bytes), SHA-256
+`10bf71d2e52bc782c2e90c660fc1fd4c38667f2ac8c99d0771c3ae8989f5081d`.
+
+If the two solid codes now produce a stable, repeatable transition without the
+top line or strong left-column boundary, normal DCLK becomes the leading
+candidate configuration correction. If the boundary improves but the codes
+remain misinterpreted, keep normal DCLK for the next test and move one variable
+downstream to LVDS mapping/port selection.
+
+### The test_14 run is inconclusive, and it invalidates the method
+
+That run happened and produced neither outcome. It is recorded as
+`local/lcd-photos/test_14/IMG_0565.MOV`, a 37.33 s 3840x2160 30 fps capture
+started immediately before the command was entered. The console shows every
+programmed write landing: `lane=00e0a404` (bit 24 cleared, saved `01e0a404`),
+solid black `rgb=00000000/00000000`, solid white `rgb=3fffffff/3fffffff`, all
+five words restored, and a live scan counter in every phase.
+
+Frame analysis was required because the camera's automatic exposure had already
+corrupted earlier photographic comparisons. Measuring the projected rectangle
+against an ambient wall region cancels that: auto-exposure moves both, the
+projector moves only the rectangle. The resulting ratio has exactly three real
+optical events in the whole recording, all inside the first 3.1 s:
+
+| video time | rect/wall | note |
+| --- | --- | --- |
+| 0 -- 1.4 s | 1.825 flat | idle |
+| 1.4 s | +0.072 step | real; ambient flat at 102.5 |
+| 2.1 -- 3.1 s | +0.194 step, plateau 2.05 | real; left column, top bar and central oval all visible |
+| 3.1 s | -0.143 step | returns to featureless |
+| **3.1 -- 37.3 s** | **1.925 -- 1.965** | **flat for 34 s** |
+
+The largest ratio step anywhere after 4 s is 0.032. Column profiles across the
+rectangle interior are identical between the phases; the only per-column
+differences are at the rectangle's edges and track slow camera drift. Across
+the black/white boundary the interior luminance moves 0.3 units in 200, 0.15 %.
+
+The command's visible portion is 21 s (1 s settle, 7.5 s, 7.5 s, 5 s), and its
+pre-test portion -- MMC loads, the 550 ms power pre-delay, a 1.2 MB SHA-256,
+MIPS release and readiness, and two full register dumps -- cannot complete in
+3.1 s. The entire test therefore ran inside the flat window. The panel's last
+structured output was roughly thirteen seconds **before** the DCLK write.
+
+That is why this run does not answer the question. A featureless result during
+the solid phases is equally consistent with "normal DCLK silenced the link" and
+with "the link was already silent when the edge was changed", and the timing
+favours the second. Recording the artifacts appearing for one second near the
+start and never again is itself unexplained; every prior generator run had them
+persisting throughout.
+
+Two method failures, both fixed in the current artifact:
+
+- **No in-run liveness evidence.** Every generator test so far has been scored
+  against expectations from a different boot. Without a positive control on the
+  same boot, a null phase cannot be distinguished from a dead link. Style 8 is
+  the only generator state with a confirmed optical response on this hardware
+  (`test_13`, three vertical colour bands, operator-confirmed by eye), so it is
+  the control.
+- **No optical phase labels.** Serial labels are invisible to a camera, so
+  test_14 had to be aligned by inference. Alignment must be carried in the
+  optical channel itself.
+
+The current artifact brackets the single variable with controls and blinks a
+countable marker before every phase:
+
+```
+h713_disp panel-test 0x33 tcon-solid-dclk-normal
+```
+
+```
+1 blink   style 8 under the stock inverted edge
+2 blinks  style 8 under the normal edge
+3 blinks  solid all-zero, normal edge
+4 blinks  solid all-one, normal edge
+5 blinks  fully restored
+```
+
+The generator is also switched off between the two solid codes, so a null
+result cannot be attributed to the receiver holding its last decoded value
+across a same-geometry change. Scoring rules, decided before the run:
+
+- control 1 blank -> the run is invalid; nothing after it counts;
+- control 1 banded, control 2 blank -> the normal edge breaks the link, and
+  inverted DCLK is correct, which is also what Board B's `panel_config.ini`
+  requests;
+- both banded -> the solid comparison is meaningful for the first time.
+
+The artifact is `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes,
+SHA-256 `8b5912d5a5a253bdf1e1ebffdca2b6c74328b8a19315faa6fc484fcd77d625b5`.
+
+### The optical path responds to chroma and ignores luminance
+
+`test_16` ran the bracketed-control build with the DE replay gated out of the
+generator modes. The console confirms the gate took effect and all three
+firmware words survived to the test: `0x051c0014=18000005`,
+`0x051c0028=1f300030`, `0x05140054=40000080`. This is the first generator run in
+the project with the firmware's PHY and routing configuration standing.
+
+Frame analysis of `local/lcd-photos/test_16/IMG_0567.MOV` (47.2 s) shows exactly
+two optical events, matching the two positive controls. Neither reproduces the
+`test_13` colour bands, so **by the pre-declared rule this run is invalid and
+the solid comparison downstream of it does not count.** Gating out the replay
+did not restore the banded response.
+
+But the controls are not blank. Both produce a large, repeatable shift of the
+whole field, measured as R-B across the rectangle interior:
+
+```
+baseline   26  24 -17 -20 -23 -24 -25 -25 -28 -30 -32 -33 -35 -36 -38 -39 -42
+CONTROL 1  16 -17 -21 -21  10   9   8   8   6   6   4   3   2   2  -2  -4  -5
+CONTROL 2  32   6 -18 -20  10  11  10   9   8   7   5   4   3   3   1  -2  -6
+solids     26  24 -16 -20 -23 -24 -26 -26 -28 -30 -32 -33 -35 -36 -38 -39 -43
+```
+
+Two things follow.
+
+**The DCLK edge has no optical effect.** Controls 1 and 2 differ only in
+`0x05800000[24]` and their profiles are indistinguishable. This is the first
+same-boot A/B of that bit under an identical source, and it closes the DCLK
+avenue that has been open since the `tcon-dclk` run. The earlier "phase-locked
+edge effect" was a live-resynchronisation transient, not a configuration result.
+
+**There is no spatial information in the link.** The profile is a smooth
+gradient in every phase; maximum adjacent-column contrast *falls* during the
+controls (48.3 and 44.2) versus baseline (70.8, which is the left column). A
+128x128 checker would raise it sharply. The generator changes the field
+uniformly and carries no positional content.
+
+The stronger pattern is a perfect correlation across five generator styles and
+four bench runs:
+
+| style | cell size | colour words | words differ in | observed |
+| --- | --- | --- | --- | --- |
+| 8 red/blue checker | `0x00800080` | `3f000000`/`000000ff` | **chroma** | **visible** |
+| 1 b/w checker | `0x00800080` | `00000000`/`3fffffff` | luminance | no change |
+| 2 solid black | `0x00000000` | `00000000`/`00000000` | luminance | no change |
+| 3 solid white | `0x00000000` | `3fffffff`/`3fffffff` | luminance | no change |
+| marker blink | `0x00000000` | `3fffffff`/`3fffffff` | luminance | never detected |
+
+Every style that differs in chroma is visible. Every style that differs only in
+luminance is invisible, independent of cell size. A projector light engine with
+dynamic contrast or auto-brightness would produce exactly this: it normalises
+luminance changes away and cannot normalise a hue change.
+
+If that reading holds, **every luminance-based result in this log is void** --
+the solid black/white comparisons, the monochrome checker, the optical blink
+markers, and the "field became lighter/darker" observations, including the
+inversion-like response attributed to styles 2 and 3. Those did not measure the
+link. Diagnostics must be rebuilt on chroma-differing sources before any further
+optical conclusion is drawn.
+
+This does not yet explain why `test_13` produced three spatial bands from the
+same style-8 source that now produces a uniform shift.
+
+### RESOLVED: the firmware sets those bits, and the DE replay destroys them
+
+A four-point probe across a single boot settles the ownership question that two
+sessions of disassembly could not:
+
+| register | ARM records applied | MIPS ready | MIPS quiesced | after DE replay |
+| --- | --- | --- | --- | --- |
+| `0x051c0014` | `18000000` | **`18000005`** | `18000005` | `18000000` |
+| `0x051c0028` | `00000030` | **`1f300030`** | `1f300030` | `00000030` |
+| `0x05140054` | `40000000` | `40000000` | **`40000080`** | `40000000` |
+
+The coprocessor sets `0x051c0014[2:0]=5` and `0x051c0028[28:16]=0x1f30` by MIPS
+readiness, and `0x05140054[7]` later, during application readiness. Replaying DE
+block 5 returns all three to their pre-release values.
+
+This **contradicts the static analysis**, which resolved 604 of the firmware's
+845 register-helper call sites and found none of them touching these three
+words. The unresolved remainder computes addresses from runtime tables, and the
+answer was in there. Treat the static write map as a lower bound on firmware
+register access, never as an exhaustive one.
+
+The current artifact skips the DE replay in the TCON generator modes, which
+take nothing from the OSD/AFBD path and were therefore paying pure damage for
+it. Artifact `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes, SHA-256
+`fe322515e2a77bdbad30c37308941039de72258a69f500305a9230b1025d1760`.
+
+**This does not by itself explain the generator's boot-to-boot
+irreproducibility.** `test_13` produced three colour bands on this same code
+path with the replay included. Removing a demonstrably destructive step is
+correct regardless; whether it restores the banded response is the open
+question for the next run.
+
+### The DE replay clears LVDS PHY and routing bits
+
+Independently, test_14's two dumps -- taken after firmware init with the MIPS
+quiesced, and again after the DE block 5 replay -- differ in four words:
+
+| register | after firmware init | after DE re-assert |
+| --- | --- | --- |
+| `0x051c0014` LVDS PHY | `18000005` | `18000000` |
+| `0x051c0028` LVDS PHY | `1f300030` | `00000030` |
+| `0x05140054` display-route | `40000080` | `40000000` |
+| `0x0560030c` AFBD mux | `00804258` | `0080c258` |
+
+`quiesce` is set for every TCON mode, so `h713_disp_reassert_osd()` runs before
+every generator test performed so far, clearing two LVDS PHY words and a
+display-route bit shortly before the panel is asked to decode a pattern. This
+is a candidate for the missing structure but is not yet a conclusion: `test_13`
+took the identical path and still produced three colour bands. The TCON
+generator needs nothing from the OSD/AFBD path, so gating the replay out of the
+generator modes is a cheap single-variable test -- but it must wait until a run
+with positive controls establishes what a live link looks like on that boot.
+
+The separate source trace patches every instruction only after checking the
+authenticated image. That path is already closed on hardware; reproduce it
+only if needed with:
+
+```
+h713_disp mips-comm-trace 0x33
+h713_disp commcall eaf13de5 chan=0 pid=8b8f32b0 2
+h713_disp commtrace
+h713_disp commstate
+```
+
+`callback=0x5102 event=0 new=2 queue=00000000` proves correct submission.
+Worker `0x5202` means the requested source was already selected; worker
+`0x5203` proves the full asynchronous transition ran and moves the remaining
+fault boundary downstream into source-buffer publication/composition. Worker
+stage zero after callback `0x5102` means the object worker did not dequeue the
+accepted event.
+
+The trace-cleanup artifact itself (SHA-256 `1b03781e...`) has now repeated the
+same two-call result: CALL ends at `e011`, RETURN_ACK ends at `f003`, and the
+global HISR queue send returns zero. Removing the generic `e002` overwrite did
+not change protocol behaviour and makes the persistent CALL stage accurate.
+
+Static disassembly resolves the apparent contradiction. The RETURN_ACK
+interrupt handler at `0x8b11f804` clears that bit at `0x8b11f9bc..c4`, then
+only queues action type 3 at `0x8b11f9dc`. The deferred ACK action at
+`0x8b11ec9c` later reads the wait pointer from ACK sequence `+0x70/+0x74` and
+posts it through `osal_semaphore_set` at `0x8b11edb4`. Only after that post can
+the blocked sender resume at `0x8b120504`. Thus bit-clear proves interrupt
+receipt, not completion of the ACK action; the deferred action is now the
+boundary that the expanded hardware trace has now proven successful.
+
+The current trace instruments every one of those boundaries plus the entire
+post-ACK cleanup. In trace mode, `commcall` waits up to one second for
+`0xc013` (the sender returning to its CALL worker) before consuming ARM
+ReturnCmd or recycling FreeReturn. It prints the exact session and 64-bit wait
+pointer copied into the ACK. This prevents a merely consumed ACK publication
+from being reported as a completed round trip and distinguishes a wakeup
+failure from a cleanup failure in the same run.
+
+The channel is live and internally consistent. `pcpu_comm_dev=0x8b254410`,
+slot 0 has key `0xb8f32b00`, channel 0, pid `0x8b8f32b0`, and a populated
+semaphore object. The live call-table entry at `0x8e31e8a8` also settles an
+important disassembly error: entry 989 is `THal_Vp_GetImageBufferAddr`
+(`0x2f02f7dd`), but its handler is **`0x8b10adb0`**, whose complete body is
+`jr ra; nop`. `0x8b10a110` is the `THal_Vp_DisableBlackScreen` adapter and
+must not be used to reason about this CALL.
+
+The first communication-trace build returned `stage=0x0000`. In the same run,
+`FreeCall wr` wrapped 20 -> 0 and MIPS `CallCmd` became `rd=1 wr=1`, proving
+that the worker dequeued and recycled the descriptor but never reached the
+handler-return marker. This rules out `SendComm2CPUEx`, its semaphore, the
+receiver FIFO-space check, and FreeReturn allocation as the current stall.
+
+The second trace build returned **`stage=0xa001`** with the same ring state.
+The worker therefore enters `Comm_ReleaseFreeCall`, and that helper commits the
+slot back to the FIFO (`wr: 20 -> 0`), but the helper never returns to routine
+lookup. Its remaining operations are a sequence-semaphore post and two log
+calls, so the current build instruments those internal boundaries.
+
+The third trace build returned **`stage=0xa004`**, not `a005`: the worker is
+still inside `fifo_requestItemWr()` after it updates `wr`, before it attempts
+the sequence-semaphore post. The semaphore wrapper at `0x8b253e20` is also
+valid and points to `0x8b914880`, so the semaphore was another false lead.
+
+This exposed the exact ARM initialization error. The vendor initializer starts
+each free FIFO at `wr=0` and pushes twenty slots through
+`fifo_requestItemWr()`. Because tracking is enabled, those pushes leave
+`peak_count=20`. U-Boot populated the ring directly and set `wr=20`, but left
+`peak_count=0`. On the first recycle, the helper restores `count=20` and
+`fifo_getCount()` asserts that `count > peak_count + 1`, then spins forever.
+The current source publishes `peak_count=20` for every pre-populated
+FreeCall/FreeReturn ring, matching the final state of the vendor algorithm. It
+also updates the peak when U-Boot manually enqueues an ARM-side `ReturnCmd`,
+preserving the same tracking invariant throughout the reply handshake.
+
+The trace now also covers descriptor recycling, routine lookup, the pre-call
+logger, and the indirect handler entry. It records the last stage reached
+through the MIPS uncached shared-memory alias:
+
+One concrete risk now exposed by the correct handler is that the worker passes
+`sp+0x124` as the output-count pointer but does not initialise that word on the
+successful lookup path. The no-op handler does not write it. A fresh ThreadX
+stack is likely zero-filled, but that is an assumption; a stale non-zero count
+would send the worker through its output-copy loop before `SendComm2CPUEx`.
+That case will stop at `0xc001`, while any send-side stall reaches at least
+`0xc002`.
+
+| stage | last proven point |
+| --- | --- |
+| `0xa001` | entered `FreeCall` recycling |
+| `0xa002` | release semaphore acquired; pre-commit log entered |
+| `0xa003` | pre-commit log returned; requesting FIFO write slot |
+| `0xa004` | committing the recycled slot to `FreeCall` |
+| `0xa005` | posting the release semaphore |
+| `0xa105` | release-semaphore post returned an error |
+| `0xa006` | release-semaphore post succeeded |
+| `0xa007` | final release log entered |
+| `0xb001` | routine lookup entered; recycling returned |
+| `0xb002` | routine lookup returned |
+| `0xb003` | handler arguments prepared; pre-call log entered |
+| `0xb004` | component handler entered |
+| `0xc001` | component handler returned |
+| `0xc002` | `SendComm2CPUEx` entered |
+| `0xc003` | blocked in the send-semaphore wait |
+| `0xc103` | send-semaphore wait returned an error |
+| `0xc004` | send semaphore acquired |
+| `0xc005` | checking receiver `ReturnCmd` FIFO space |
+| `0xc006` | receiver FIFO has space |
+| `0xc007` | attempting to allocate `FreeReturn` |
+| `0xc008` | publishing RETURN through `SendLow` |
+| `0xc009` | waiting for `RETURN_ACK` |
+| `0xd001` | RETURN_ACK interrupt queued the deferred action |
+| `0xd005` | `queueAction` returned to the RETURN_ACK interrupt handler |
+| `0xd002` | deferred ACK action reached the sender-wakeup path |
+| `0xd003` | deferred action entered `osal_semaphore_set` |
+| `0xd103` | sender wait-semaphore post returned an error |
+| `0xd004` | sender wait-semaphore post succeeded |
+| `0xc010` | `SendComm2CPUEx` resumed after RETURN_ACK |
+| `0xc011` | `SendComm2CPUEx` is releasing its send semaphore |
+| `0xc111` | send-semaphore release returned an error |
+| `0xc012` | send semaphore released successfully |
+| `0xc013` | `SendComm2CPUEx` returned to the CALL worker |
+
+The build now records the CALL interrupt/HISR lifecycle independently at
+trace `+0x0c`, so asynchronous worker activity cannot overwrite it. The raw
+return from the global HISR queue send is retained at trace `+0x08`:
+
+| CALL stage | last proven point |
+| --- | --- |
+| `0xe001` | CALL interrupt is invoking `queueAction` |
+| `0xe004` | `queueAction` returned to the CALL interrupt handler |
+| `0xe005` | CALL HISR wrapper invoked the dispatcher |
+| `0xe006` | `command_action` entered for CALL |
+| `0xe007` | enqueueing the high-priority CALL worker |
+| `0xe008` | sending CALL_ACK through `SendAckLow` |
+| `0xe009` | `SendAckLow` returned |
+| `0xe010` | `command_action` is returning to the CALL HISR wrapper |
+| `0xe011` | CALL HISR dispatcher returned |
+
+RETURN_ACK wrapper completion is retained separately at trace `+0x10`. This
+tests whether the shared queue consumer is still trapped in the previous
+callback when CALL #2 is enqueued:
+
+| ACK stage | last proven point |
+| --- | --- |
+| `0xf001` | `ack_action` is returning to the RETURN_ACK HISR wrapper |
+| `0xf002` | RETURN_ACK HISR dispatcher returned |
+| `0xf003` | RETURN_ACK HISR wrapper is returning |
+
+The trace only changes the authenticated `4380f1b3...` image after its SHA-256
+check, validates every original instruction before patching, and is mutually
+exclusive with the startup and stability traces. Run exactly once after a
+power cycle:
+
+```
+h713_disp mips-comm-trace 0x33
+h713_disp commcall 2f02f7dd chan=0 pid=8b8f32b0
+h713_disp commstate
+```
+
+The first `commcall` now reports the decisive ACK-action stage automatically;
+`h713_disp commtrace` can read it again. Only if the first reaches `0xc013`
+and returns normally, run the second call:
+
+```
+h713_disp commcall 2f02f7dd chan=0 pid=8b8f32b0
+h713_disp commstate
+```
+
+The current build containing this trace, the source-worker extension, all
+queue fixes, returned-parameter capture, guarded picture-mode marshalling, the
+exact AFBD frame submission, MIPS-owner quiesce, selected-plane gate, static
+bar, exact Board-B vendor-logo diagnostics, and the corrected Board-B
+`0x0524c01c[0]` plane-open gate, red/blue and monochrome TCON checkers, the
+exact solid-black/solid-white TCON discriminator, and corrected I2C device
+labels is
+`build/out/u-boot-sunxi-with-spl-ddr3.bin`, 911,665 bytes, SHA-256
+`39b280c59cda2123f5e59eb77c5e0ef9ad45a974c582370031ea17d7f9686fdd`.
+
+Forty-four complete consecutive CALL/CALL_ACK/RETURN/RETURN_ACK transactions,
+including ACK publications, deferred wakeups, sender cleanup, slot recycling,
+and repeated ring wrap, are hardware-proven on one boot. Longer-duration,
+concurrent, and opposite-direction traffic remain useful transport coverage.
+The zero-parameter no-op call used for the ring test did not exercise
+parameter/output marshalling; the guarded hardware test above now closes that
+case. The same source rejects the unsafe
+`commcall db=` override, supports all ten CALL parameters, validates FIFO
+headers before following pointers, and expands `h713_disp dump` over the
+missing DE/LVDS ranges.
+
+# SESSION HANDOFF -- 2026-07-31 (evening; superseded where noted above)
 
 Read this first. It supersedes anything below it that it contradicts,
 **including the earlier handoff of the same date.**
@@ -69,7 +1186,7 @@ marked otherwise.
 | channel resolved | `chan=0 pid=0x8b8f32b0`, key `0xb8f32b00`, slot 0 |
 | worker dequeue | staging `CallCmd rd=1 wr=1` |
 | slot recycled | `FreeCall wr` wraps 20 -> 0 |
-| routine located | call-table entry read live, handler `0x8b10a110` valid |
+| routine located | entry 989 read live; handler `0x8b10adb0` is a valid no-op |
 
 **Does not work:** no RETURN is ever published. `FreeReturn` and `ReturnCmd`
 never move, no second doorbell is rung, and the worker does not come back to
@@ -85,12 +1202,12 @@ its dequeue loop -- so exactly **one CALL per boot** is possible.
 
 **Ruled out this session, with evidence -- do not re-test:**
 
-- the CallCmd/ReturnCmd staging FIFOs: the MIPS builds all four of its own
-  (`cap=21 isz=4`, MIPS-local rings)
-- the ARM-side staging FIFOs being empty: `SendComm2CPUEx` allocates from no
-  FIFO at all
-- the routine handler: `0x8b10a110` is a clean `(params, out)` adapter that
-  calls `0x8b149948` and returns 0
+- the MIPS-owned CallCmd/ReturnCmd staging FIFOs: the MIPS builds all four of
+  its own (`cap=21 isz=4`, MIPS-local rings). This did not validate the
+  separately owned ARM-side headers; see the 2026-08-01 handoff.
+- the selected routine handler: `GetImageBufferAddr` points to the two-word
+  no-op at `0x8b10adb0`; `0x8b10a110` instead belongs to
+  `DisableBlackScreen` and calls `0x8b149948`
 - the call-table entry: read live, `comp_id`, name and handler all correct
 - the channel's call semaphore: a real object, and its post **succeeds**
   (`0x8b103504` returns 1 on both branches)
@@ -99,9 +1216,11 @@ its dequeue loop -- so exactly **one CALL per boot** is possible.
 - the worker being asleep on `0x8b232c00`: it *posts* that, never waits on it
 - `msg[+0x01] = 1`: tried, regressed the channel match, reverted
 
-**Unlocated:** the wedge is inside `SendComm2CPUEx` (`0x8b11fd58`) somewhere
-past its `0x8b12002c` semaphore wait. Four candidate frames were checked and
-all came back healthy.
+**Superseded twice:** the static audit placed the wedge at the receiver
+staging-FIFO space check, but the next hardware run published a valid
+`cap=21` header and still produced no RETURN. The guarded communication trace
+in the current handoff now distinguishes every blocking point across that
+path.
 
 **Why the firmware's own log is not available:** it uses SEGGER RTT at
 `0x4bd01000`, and the Terminal channel's `WrOff` is 8 -- the assert strings go
@@ -111,7 +1230,7 @@ addresses.
 
 ## How the RETURN gap was narrowed
 
-### The staging FIFO is healthy -- that hypothesis is dead
+### The MIPS-owned staging FIFO is healthy; the ARM-owned half needed fixing
 
 `command_action` hands an accepted CALL to `0x8b11d544`, which allocates from a
 FIFO at **`share_seq + 0x20`** -- not the FreeCall ring at `+0x78`. The Linux
@@ -127,8 +1246,13 @@ cpu=1 dir=0 idx=0  staging +0x20 CallCmd    rd=0 wr=1 cap=21 isz=4 base=8b253e24
 cpu=1 dir=0 idx=1  staging +0x20 ReturnCmd  rd=0 wr=0 cap=21 isz=4 base=8b253ed4
 ```
 
-The `cpu=0` rows are the ARM's own receive-side staging and stay empty, which
-is fine -- U-Boot polls the header instead of using them.
+The `cpu=0` rows are the ARM's receive-side staging FIFOs. Their payload rings
+may be empty while U-Boot polls, but their headers still require valid
+`capacity`, `item_size`, and `base_addr` fields: the remote sender checks this
+FIFO for space before publishing. Leaving the zeroed header in place blocks a
+MIPS-to-ARM RETURN before it can allocate a FreeReturn slot. Publishing the
+valid header was therefore necessary, but the subsequent hardware run proves
+it was not sufficient: `FreeReturn` still did not move.
 
 ### What the indices proved, before the channel was addressed correctly
 
@@ -835,8 +1959,8 @@ embedded ids matched at entry offset `+0x08`.
 
 | entry | routine | why |
 | --- | --- | --- |
-| 989 | `THal_Vp_GetImageBufferAddr` | read-only; asks the firmware where the image buffer is |
-| 703 | `THal_Vp_SetImageBufferAddr` | the OSD path in the vendor's own terms |
+| 989 | `THal_Vp_GetImageBufferAddr` | exported but handler `0x8b10adb0` is a two-word no-op |
+| 703 | `THal_Vp_SetImageBufferAddr` | exported but handler `0x8b10ada8` is a two-word no-op |
 | 472 | `THal_Vp_DisableBlackScreen` | zero-parameter; would explain every observation if asserted at power-on |
 | 107 | `THal_Vp_EnableBlackScreen` | its peer |
 | 485 | `THal_Vp_SetSource` | source selection |
@@ -1577,6 +2701,12 @@ the six-bit DE current in `0x3f`, `MirrorMode` (0..3) in a two-bit AFBD field.
 
 Two traps for whoever revisits this:
 
+- The two fields in `0x05800000` do not consume the same setting. Bits 7:6
+  take `Mapping`; bits 4:3 take `ColorDepth`. Board B supplies 0 and 8
+  respectively, and the helper masks the latter to two bits, so both happen
+  to insert zero on this board. The recovery model now represents the two
+  inputs separately even though correcting the field name makes no MMIO or
+  patch-count change for Board B.
 - The compare at `+0x24e12`/`+0x24e26` matches **either** `0x0524c010` **or**
   `0x0525c000` and patches whichever record it found. Transcribing only one
   leaves the DE composing 1440x741 under a mixer at 1360x760. All 32 sites were
