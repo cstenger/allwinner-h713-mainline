@@ -44,9 +44,9 @@ Applied as a write after the DE replay, for every mode except `fb-band`. Whateve
 sets 123 does so before that point and survives the replay, so it is LogoRegData
 or the firmware, and a patched record would not be the last word.
 
-**Still to confirm:** the vendor bootlogo on real content. Run
-`h713_disp panel-test 0x33 vendor-logo` -- no stride override, the stock value
-is right.
+**Still to confirm:** real content. Use
+`h713_disp panel-test 0x33 vendor-logo-chroma`, **not** `vendor-logo` -- see
+below for why the stock logo cannot show you anything.
 
 Consequences, for anyone reading older notes: horizontal variation in a
 framebuffer image used to become vertical stripes and the bootlogo arrived as a
@@ -81,16 +81,35 @@ the commit is the source identity, not the hash. Rebuild with
 `./build/build.sh uboot`.
 
 ```
-h713_disp panel-test 0x33 vendor-logo
+h713_disp panel-test 0x33 vendor-logo-chroma
 ```
 
-**No stride override.** The stock `0x05600170` is correct; the fix is already
-applied during the run. The bootlogo arriving un-sheared and full-width is the
-end of this bug.
+**Not `vendor-logo`.** The stock `bootlogo.bmp` is 99% black and its lit pixels
+are **pure grey -- chroma `|R-B|` is exactly 0 across the whole file, maximum
+0**. This optical path normalises luminance away; that is the oldest and most
+expensive rule in this bring-up. A blank result from `vendor-logo` therefore
+carries no information at all: it looks the same whether the framebuffer path is
+perfect or the panel never lit. One such run has already been spent.
 
-`fbcheck` already proves the conversion is right -- content in rows 343..378,
-columns 368..912, matching the file -- so anything wrong in the photograph is
-the display path, not the image.
+`vendor-logo-chroma` keeps the same file, hash check, geometry and `fbcheck`
+bounds, and swaps only the palette -- lit to red, unlit to blue. Same asset, same
+spatial structure, in the axis this path can actually show.
+
+Expect a **red bar on blue**, occupying rows 343..378 of 720 and columns
+368..912 of 1280 -- so about 5% of the height, a third of the way up, centred
+horizontally with a wider gap on the right.
+
+- **crisp, level, correctly placed** -> the framebuffer path is confirmed on the
+  real vendor asset, and this bug is closed
+- **sheared into a diagonal streak** -> the origin fix did not stick
+- **shifted right with a blue column at the left** -> the band is back
+
+**No stride override.** The stock `0x05600170` is correct; the fix is applied
+during the run.
+
+`fbcheck` already proves the conversion in memory -- content in rows 343..378,
+columns 368..912, matching the file -- so anything wrong in the photograph is the
+display path, not the image.
 
 To re-confirm the framebuffer path itself:
 
