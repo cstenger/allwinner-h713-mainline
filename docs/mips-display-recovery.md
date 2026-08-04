@@ -807,6 +807,43 @@ across a same-geometry change. Scoring rules, decided before the run:
 The artifact is `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes,
 SHA-256 `8b5912d5a5a253bdf1e1ebffdca2b6c74328b8a19315faa6fc484fcd77d625b5`.
 
+### CORRECTION: PLL_VIDEO2 is not the panel clock source
+
+The PLL arithmetic below computes the CCU chain correctly and then attributes it
+to the wrong PLL. Retuning `PLL_VIDEO2` from N+1 = 43 to 36 proved it: the write
+landed -- readback `0xb9002300` -- and the free-running counter did not move by
+a single kHz, 18432 before and 18432 after. Lock never dropped either. The CCU's
+`PLL_VIDEO2` does not feed the TCON.
+
+The display block has its own PLL. `0x058c0014` reads `0xb8002a00`: the same
+`0x2a` in bits 15:8 and near-identical control bits to `PLL_VIDEO2`'s
+`0xb9002a00`, so the same N+1 = 43 and the same 1032 MHz. And it is what the
+panel configuration actually writes:
+
+```
++0x1694  058c0014  01000000 -> 00000000  shift 24 mask 0x1
++0x18c4  058c0024  00000000 -> 2f000000  shift 24 mask 0x3f
++0x18c4  058c0024  2f000000 -> 2f000007  shift 0 mask 0x7
+```
+
+Panel-derived values into `0x058c0014` and `0x058c0024`. The clock path runs
+through the display block, not the CCU.
+
+The counter arithmetic is unaffected -- 1032/56 = 18.4286 MHz against 18432
+measured is the same 0.02% agreement, just with a different PLL producing the
+1032. The computed 516 MHz panel clock and 73.71 MHz DCLK therefore remain
+plausible but are now attributed to an unverified source, so treat the figure as
+open rather than established.
+
+`h713_disp clkfind` perturbs one candidate field at a time in the display PLL
+block and watches the counter, restoring each before the next and aborting if
+the counter fails to return to baseline. Whichever field moves the counter is in
+the chain. That replaces one build per guess with one boot for the set.
+
+The retune guard is what kept this from becoming another wrong reading: it
+required the clock witness to confirm the change before any visual result
+counted, and it correctly declared the run meaningless.
+
 ### CORRECTION: 0x05880000 is not a raster position counter
 
 Measured with `h713_disp scanrate`:
