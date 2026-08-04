@@ -26,6 +26,23 @@ not the two this page spent a day describing:
 > shear**: `fb-fix`'s stock-stride step is one dead-vertical red/blue edge
 > drifting 0.0 px per row.
 
+**The root cause was an omission in our own patch table.** `h713_disp_panel_patch`
+transcribes stock's panel-patch sites, and left two out on the grounds that
+stock's literal zero at `0x05280084[31:16]` and `0x0528008c[15:0]` "may be a
+decode artefact rather than a real store; writing a zero we cannot justify is
+worse than leaving the vendor default in place." The vendor default is another
+panel's, and it is 123. The static analysis was right; the caution was wrong;
+what it lacked was hardware.
+
+Restored 2026-08-04 and confirmed (test_35): the record at blob `+0x3584` patches
+`0000007b -> 00000000`, the count goes 21 -> 22, and `0x0528008c` reads
+`00000000` in **both** dumps -- including after the DE replay, which used to
+restore 123. Fixed at source, so no path can miss it.
+
+`0x05280084[31:16]` is still omitted on the same reasoning and is now *more*
+suspicious, not less. It holds 720 and stock appears to zero it. It has earned
+its own two-sided perturbation before anyone touches it.
+
 Both symptoms came from it. The pale left band was the origin directly. The
 stride deficit -- the source pointer advancing ~1238 words per row instead of
 1280 -- was a *consequence* of it, and disappeared when it was zeroed.
@@ -100,6 +117,11 @@ why its output was always perfect.
 Artifact hashes move on every rebuild -- U-Boot embeds a build timestamp -- so
 the commit is the source identity, not the hash. Rebuild with
 `./build/build.sh uboot`.
+
+**The banner names the last commit, not the code.** A build made with
+uncommitted edits reports `g<previous-commit>-dirty`, so a log can truthfully
+show an older hash while running newer behaviour -- test_35 did exactly that.
+Trust `-dirty` and the behaviour, not the hash.
 
 **The display bring-up is done.** Both deferred-load vendor modes render the
 stock asset correctly:
