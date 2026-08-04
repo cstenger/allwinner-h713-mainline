@@ -807,6 +807,56 @@ across a same-geometry change. Scoring rules, decided before the run:
 The artifact is `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes,
 SHA-256 `8b5912d5a5a253bdf1e1ebffdca2b6c74328b8a19315faa6fc484fcd77d625b5`.
 
+### DISPLAY BRING-UP COMPLETE
+
+Three independent paths now render correctly with `pll_n_plus_1 = 36` applied
+through the ordinary panel init:
+
+| path | result |
+| --- | --- |
+| TCON pattern generator | vivid, geometrically correct red/blue checkerboard at 128px and 32px |
+| framebuffer / AFBD / OSD / DE | eight horizontal colour bands, correct order, correct hues, full height |
+| vendor `bootlogo.bmp` | renders faithfully |
+
+**Correction: there was never a vertical-collapse bug.** The previous entry
+reported the vendor logo "collapsed into a thin horizontal band rather than
+occupying its proper height". The logo *is* a thin horizontal band. The BMP is a
+black frame whose only content sits in rows 340-380 of 720:
+
+```
+row-band mean luminance, bootlogo.bmp downscaled to 36 rows
+  rows  0-16    3.0    (black)
+  rows 17-18   42.4, 39.0
+  rows 19-35    3.0    (black)
+```
+
+The projection matched it. The apparent "light field" behind the text is the
+projector's black level in a dark room plus camera exposure, not image content.
+
+That fault was diagnosed by comparing the projection against this document's
+description of the image -- "a black frame with centered white SMART PROJECTOR
+text", which is accurate but reads as though the text is large -- rather than
+against the file, which has been in `local/mips-display/research/bootloader_fat/`
+throughout. Render the asset before concluding the hardware mangled it.
+
+`fb-vprobe` was built to chase that phantom and is worth keeping anyway: it
+independently confirmed the framebuffer path end to end, which no previous test
+in this log had done. Eight bands in the right order rules out vertical scale
+error, row-repeat, and stride or tiling mismatch in one frame.
+
+## Summary of the bring-up
+
+The single defect was the display PLL at `0x058c0014`. The vendor table leaves
+N+1 = 43, giving 1032 MHz and 73.71 MHz of DCLK; the panel needs N+1 = 36,
+giving 864 MHz and 61.71 MHz against the 62.00 MHz `panel_config.ini` requests.
+At 43 every pattern arrives as a uniform blur carrying colour but no position;
+at 36 the panel decodes correctly.
+
+Everything else investigated at length in this document -- OSD plane gates, AFBD
+enable and ready bits, the Board-B plane-open bit, framebuffer contents and byte
+order, the DCLK sampling edge, CPU_COMM framing, source selection -- was working
+the whole time.
+
 ### SOLVED: the display decodes correctly at a display-PLL N+1 of 36
 
 The panel produces a **crisp red/blue checkerboard** -- square cells, clean
