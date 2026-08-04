@@ -18,44 +18,40 @@ spatial information at all. Carried as
 `h713_panel_cfg_board_b.pll_n_plus_1 = 36`, patched into the LogoRegData record
 for `0x058c0014`, so it applies to every path that runs the display sequence.
 
-**Two faults remained in the framebuffer path. One is now fixed.**
+**The framebuffer path is fixed** as of 2026-08-04, and it was **one register**,
+not the two this page spent a day describing:
 
-> **Fixed 2026-08-04.** The left band was `0x0528008c`, the layer's pixel X
-> origin, coming up at 123. It is 1:1 with nothing else in it: zeroed, content
-> starts at column 0 and fills all 1280. Now written to 0 after the DE replay,
-> so every mode gets it.
+> `0x0528008c`, the layer's pixel X origin, came up holding **123**. Written to
+> **0**, content starts at column 0, fills all 1280, and renders with **zero
+> shear**: `fb-fix`'s stock-stride step is one dead-vertical red/blue edge
+> drifting 0.0 px per row.
 
-> **Open.** The source pointer advances **~1238 words per display row where we
-> write 1280**, and **`0x05600170` controls it**, with unit slope: `S = V - 42`.
-> `fb-fix` sweeps for the value that makes it 1280; predicted 1322 (`0x14a8`).
+Both symptoms came from it. The pale left band was the origin directly. The
+stride deficit -- the source pointer advancing ~1238 words per row instead of
+1280 -- was a *consequence* of it, and disappeared when it was zeroed.
+`0x05600170` turns out to be a plain byte stride that was correct all along:
+with the origin at 0, `fb-fix` measures **`S = V`** across 1300..1340.
 
-Measured twice, by unrelated routes, on 2026-08-03:
+**This is worth reading as a method failure, not just a fix.** The stride was
+measured twice, by unrelated experiments, and both agreed on 1237-1238. Neither
+was wrong about what it measured -- `S` really was 1238 while the origin was 123
+-- and both were wrong about what it *meant*, because a number measured
+downstream of a fault got modelled as a fault of its own. That is exactly what
+the old log did when it read the pale band as a stride. The same mistake, one
+level up, made by the page correcting it.
 
-- **test_30**, `fb-edge`: five photographed steps, stripe counts 34.1/31.9/29.9/
-  25.3/22.9. A search over every stride from 2 to 4000 leaves one solution.
-  Robust to the step-to-pitch mapping (only five of six steps were photographed):
-  re-solving under all six possible mappings gives 1236..1240, best fit 1237.
-- **test_31**, `fb-stride`: sweeping the register and fitting `S(V)` puts the
-  default `V = 1280` at `S = 1238`.
+Applied as a write after the DE replay, for every mode except `fb-band`. Whatever
+sets 123 does so before that point and survives the replay, so it is LogoRegData
+or the firmware, and a patched record would not be the last word.
 
-Those two share no assumption beyond the stripe model itself, so the value is
-**1237-1238** and the *sign and scale* are not in doubt. That matters, because
+**Still to confirm:** the vendor bootlogo on real content. Run
+`h713_disp panel-test 0x33 vendor-logo` -- no stride override, the stock value
+is right.
 
-**this is two numbers, and the old log had them as one.**
-
-| | what it is | what measures it | value |
-| --- | --- | --- | --- |
-| stride `S` | how far the source pointer advances per display row | the stripes | **1237** |
-| width `W` | how much of the display line receives content | the pale band | **1155 +- 5**, all of the shortfall at the **left** |
-
-The old "~1187 px/line" was `W`, inferred from the band, and then used to predict
-`S`. They are different quantities and neither equals the other, which is why the
-`fb-edge` sweep was aimed at 1180..1200 and every one of its six steps missed --
-the answer was 37 to 57 px outside the range, in the direction nobody swept.
-
-Consequences of what is left: horizontal variation in a framebuffer image
-becomes vertical stripes, and the vendor bootlogo arrives as a sheared streak. The TCON pattern generator bypasses this
-path entirely, which is why its output is perfect.
+Consequences, for anyone reading older notes: horizontal variation in a
+framebuffer image used to become vertical stripes and the bootlogo arrived as a
+sheared streak. The TCON pattern generator bypasses this path entirely, which is
+why its output was always perfect.
 
 ## What is proven, and how
 
@@ -66,7 +62,9 @@ path entirely, which is why its output is perfect.
 | DCLK = PLL/14 | the panel decodes at 864 MHz and 864/14 = 61.71 vs the 62.00 requested |
 | the free-running counter is PLL/56 | 18432 kHz measured against 18428.6 computed |
 | the framebuffer conversion is correct | `fbcheck` reads the framebuffer back: bootlogo content in rows 343..378, columns 368..912, exactly matching the file |
-| the stride is 1237-1238 px/row | test_30: five `fb-edge` steps give 34.1/31.9/29.9/25.3/22.9 stripes; `S mod P` from five pitches leaves one candidate in 2..4000. test_31 gets 1238 from the register fit, sharing no assumption with it |
+| the stride was 1237-1238 px/row **while the origin was 123** | test_30: five `fb-edge` steps give 34.1/31.9/29.9/25.3/22.9 stripes; `S mod P` from five pitches leaves one candidate in 2..4000. test_31 gets 1238 from the register fit, sharing no assumption with it. Both correct, and both were about a symptom |
+| `S = V`, once the origin is 0 | test_33: registers 1300..1340 give S = 1300.1/1309.8/1319.4/1329.1/1338.7, and the stock 0x1400 renders a vertical edge |
+| the framebuffer path is correct | test_33: red/blue boundary drifts **0.0 display px per row** at the stock stride, full width, no band |
 | `0x05600170` controls the stride | test_31: counts track the register 2.96/5.24/7.58/10.01 against 2.3/4.7/7.0/9.3 predicted, and the below-default step leans the other way |
 | `0x0528008c` is the layer X origin | test_32: 123 -> band 119.4, **0 -> 0.0**, 400 -> 406.2. Four other candidates screened in the same run moved it by 1 px |
 | the band was never framebuffer content | test_32 step 1: it stays pale against a saturated red fill, so a geometry fault, not addressing |
@@ -83,89 +81,29 @@ the commit is the source identity, not the hash. Rebuild with
 `./build/build.sh uboot`.
 
 ```
+h713_disp panel-test 0x33 vendor-logo
+```
+
+**No stride override.** The stock `0x05600170` is correct; the fix is already
+applied during the run. The bootlogo arriving un-sheared and full-width is the
+end of this bug.
+
+`fbcheck` already proves the conversion is right -- content in rows 343..378,
+columns 368..912, matching the file -- so anything wrong in the photograph is
+the display path, not the image.
+
+To re-confirm the framebuffer path itself:
+
+```
 h713_disp panel-test 0x33 fb-fix
 ```
 
-The register is live, so this is the run that closes the framebuffer path
-rather than measuring it again. The pattern is written at the **natural 1280**
--- what any real client will use -- and the register is swept for the value that
-renders it with no shear at all. Predicted, from `S = V - 42`:
+Six steps at registers 1300/1310/1320/1330/1340/**1280**, predicting
+11.3/16.9/22.5/28.1/33.8 stripes and, at the stock 1280, **one vertical edge**.
+That last step is the whole framebuffer path, correct.
 
-| register | 1300 | 1310 | 1320 | 1330 | 1340 | 1280 (control) |
-| --- | --- | --- | --- | --- | --- | --- |
-| stripes | 12.4 | 6.8 | **1.1** | 4.5 | 10.1 | 23.6 |
-
-> **A step showing ONE vertical edge is the framebuffer path fixed.**
-
-The control is the same pattern at today's register value, so the run carries
-its own before-and-after in one strip of photographs.
-
-Steps are a coarse 10 px because 1322 is extrapolated 42 px beyond anything yet
-measured. A wide sweep still measures if the offset is off; a tight bracket
-around 1322 would simply miss.
-
-Then confirm it on real content, using the trailing-stride argument so no
-rebuild is needed between:
-
-```
-h713_disp panel-test 0x33 vendor-logo 0x14a8
-```
-
-`0x14a8` is 5288 bytes, 1322 px -- substitute whatever `fb-fix` actually picks.
-**The bootlogo arriving un-sheared is the end of this bug.**
-
-The band is already gone -- the run applies `0x0528008c = 0` before the sweep --
-so `fb-fix` reads against a full-width image. If a left band reappears, the
-correction did not stick and that is a finding in itself.
-
-### The band, for the record (fixed 2026-08-04)
-
-Kept because the method transfers, not because the question is open.
-
-Content used to start ~120 px into every display line -- left 119.4, right 0.9,
-**top 0.0**, bottom 6. Horizontal only, at the *head* of the line.
-
-The zero top pad is what cracked it. `0x05280088` and `0x0528008c` hold 22 and
-123, which read like a `(y, x)` origin, and 123 was within a few px of the band
--- but a `y` of 22 would blank 22 rows at the top, and nothing was blank at the
-top. That ruled out the pairing while leaving 123 the closest value in the dump,
-which is why `0x0528008c` was screened both ways rather than swept alone.
-
-`fb-band` runs six steps on a **solid red** fill -- immune to the stride bug, so
-the band edge is the only thing in frame and each step scores as one number.
-
-| step | written | left pad |
-| --- | --- | --- |
-| 1 | control | 119.4 |
-| 2 | `0x0528008c` 123 -> 0 | **0.0** |
-| 3 | `0x0528008c` 123 -> 400 | **406.2** |
-| 4 | mixer `0x0525c01c`+`034` low 60 -> 0 | 120.6 |
-| 5 | de `0x0524c004` low 22 -> 0 | 121.3 |
-| 6 | vblender `0x0520000c`+`024` low 49 -> 0 | 105.6 |
-
-Score with `tools/display/edge-measure.py --band IMG_*.jpeg`.
-
-Three things about this run are worth reusing:
-
-- **Two-sided perturbation.** Zero alone would have been weak evidence -- plenty
-  of registers could blank a band by breaking something. 400 landing on 406 is
-  what makes it a *measurement* of an origin rather than a knockout.
-- **The control step earned its photograph.** The band stayed pale against a
-  saturated fill, so it was never framebuffer content: a geometry fault, not
-  addressing. Nothing else in the run separated those.
-- **The noise floor was measured first**, by running the scorer over test_31
-  where nothing could have moved: 8 px. Steps 4 and 5 came back at 1-2 px, so
-  they are real nulls rather than hopeful ones.
-
-Two loose ends, neither load-bearing:
-
-- **Step 6 moved the band 14 px**, above that floor. Its pairing was also wrong:
-  `0x05200024` holds `02d00016`, so the sibling of `0x0520000c` by value is
-  `0x05200020`, not the register that was written. Since `0x0528008c` accounts
-  for the band exactly, this is at most a small second contribution.
-- **What writes 123 is still unknown.** It survives the DE replay, so it is
-  LogoRegData or the firmware. The fix is a write afterwards, not a patched
-  record, for exactly that reason.
+`fb-edge-fine` and `fb-stride` measured the fault and are superseded by the fix.
+`fb-band` still needs its untouched origin, so it alone skips the correction.
 
 ### Scoring any of these
 
