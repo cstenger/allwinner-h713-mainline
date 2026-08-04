@@ -44,9 +44,16 @@ Applied as a write after the DE replay, for every mode except `fb-band`. Whateve
 sets 123 does so before that point and survives the replay, so it is LogoRegData
 or the firmware, and a patched record would not be the last word.
 
-**Still to confirm:** real content. Use
-`h713_disp panel-test 0x33 vendor-logo-chroma`, **not** `vendor-logo` -- see
-below for why the stock logo cannot show you anything.
+**Confirmed on real content, 2026-08-04.** The stock vendor asset renders as
+legible red "SMART PROJECTOR" text on a blue field. Legible means unsheared, so
+the framebuffer path is correct end to end on the actual file, not just on
+synthetic patterns.
+
+Which mode produced it is still to be pinned down, and it matters: if it was
+`vendor-logo-late`, then deferring the FAT read until after the display sequence
+is what made the difference, and the pre-run load is a real fault to fix. If it
+was `vendor-logo-chroma`, the load position is innocent and the earlier blank
+runs need another explanation.
 
 Consequences, for anyone reading older notes: horizontal variation in a
 framebuffer image used to become vertical stripes and the bootlogo arrived as a
