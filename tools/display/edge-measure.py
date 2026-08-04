@@ -96,15 +96,27 @@ def content_pads(path):
     lum = a.sum(2)
     sat = np.abs(a[:, :, 0] - a[:, :, 2])
 
-    cols = np.where(lum.mean(0) > lum.mean(0).max() * 0.55)[0]
-    rows = np.where(lum.mean(1) > lum.mean(1).max() * 0.55)[0]
-    left, right, top, bottom = cols.min(), cols.max(), rows.min(), rows.max()
+    rows = np.where(lum.mean(1) > lum.mean(1).max() * 0.5)[0]
+    top, bottom = rows.min(), rows.max()
+    inset_y = int((bottom - top) * 0.25)
+    xs_lum = lum[top + inset_y:bottom - inset_y].mean(0)
+    xs = sat[top + inset_y:bottom - inset_y].mean(0)
 
-    inset_y = int((bottom - top) * 0.2)
-    xs = sat[top + inset_y:bottom - inset_y, :].mean(0)
+    # The panel edge is half way between wall and panel, not a fraction of the
+    # panel's own peak. Thresholding on the peak puts the edge inside the pale
+    # band -- which is dimmer than saturated content -- and eats ~20 px off a
+    # narrow band while barely touching a wide one. That read 123 as 102 and
+    # 400 as 401, which looked like a nonlinearity and was not.
+    wall = np.median(np.r_[xs_lum[:40], xs_lum[-40:]])
+    panel = np.percentile(xs_lum, 90)
+    on = np.where(xs_lum > (wall + panel) / 2)[0]
+    left, right = on.min(), on.max()
+
     ys = sat[:, left + (right - left) // 2:right - (right - left) // 10].mean(1)
-    cx = np.where(xs[left:right] > xs[left:right].max() * 0.35)[0] + left
-    cy = np.where(ys[top:bottom] > ys[top:bottom].max() * 0.35)[0] + top
+    smax = np.percentile(xs[left:right], 90)
+    cx = np.where(xs[left:right] > smax * 0.5)[0] + left
+    cy = np.where(ys[top:bottom] > np.percentile(ys[top:bottom], 90) * 0.5)[0]
+    cy = cy + top
 
     return (WIDTH * (cx.min() - left) / (right - left),
             WIDTH * (right - cx.max()) / (right - left),
