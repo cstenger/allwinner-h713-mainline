@@ -807,6 +807,54 @@ across a same-geometry change. Scoring rules, decided before the run:
 The artifact is `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes,
 SHA-256 `8b5912d5a5a253bdf1e1ebffdca2b6c74328b8a19315faa6fc484fcd77d625b5`.
 
+### CONFIRMED: 0x058c0014 is the display PLL that drives the TCON
+
+Measured, not inferred:
+
+```
+h713_disp init 0x33 quiesce
+h713_disp clkfind 0
+
+baseline counter 18421 kHz
+perturbing 0x058c0014[15:8] 0x2a->0x29, b8002a00 -> b8002900
+counter 18421 -> 18001 kHz (-2.2%), restored to 18432
+IN THE CLOCK PATH
+```
+
+N+1 going 43 to 42 predicts -2.326%; the measurement gives -2.28%, inside one
+quantization step of the counter (~10 kHz at a 100 ms window, which is also the
+18421/18432 baseline spread). So the display block's PLL uses the same
+`24 MHz * (N+1)` form as the CCU video PLLs, runs at 1032 MHz, and the
+free-running counter is PLL/56.
+
+This is the first positive identification in the clock work. Everything before
+it -- the CCU chain arithmetic, the PLL_VIDEO2 retune -- computed a correct
+number for a PLL that turned out not to feed the display.
+
+**What is still unknown is the divider between the PLL and DCLK.** The counter
+is PLL/56 and 56 = 8 * 7, but how that splits between the LVDS serialisation
+ratio and any counter prescale is not determined, so DCLK could be 1032/14 =
+73.7 MHz, 1032/7 = 147.4 MHz, or 18.43 MHz, and nothing measured so far
+distinguishes them. The 73.71 MHz figure elsewhere in this document is one of
+three candidates, not a result.
+
+The panel config writes two fields in the neighbouring register, which are the
+obvious next candidates:
+
+```
++0x18c4  058c0024  00000000 -> 2f000000  shift 24 mask 0x3f
++0x18c4  058c0024  2f000000 -> 2f000007  shift 0 mask 0x7
+```
+
+`clkfind 1` perturbs `0x058c0024[2:0]` from 7 to 6 and `clkfind 2` perturbs
+`[29:24]` from 0x2f to 0x2e. A divide-by-7 field moving to 6 shifts the counter
+by +16.7%, or +14.3% if the field is N+1; either is unmistakable against the
+2.3% just measured. A 47-to-46 change on the other field gives +2.2%, close
+enough to the PLL result that it needs the exact number rather than the flag.
+
+Both restore cleanly, so they can run in sequence on one boot after a single
+`h713_disp init 0x33 quiesce`.
+
 ### CORRECTION: PLL_VIDEO2 is not the panel clock source
 
 The PLL arithmetic below computes the CCU chain correctly and then attributes it
