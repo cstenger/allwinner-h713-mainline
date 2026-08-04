@@ -807,6 +807,49 @@ across a same-geometry change. Scoring rules, decided before the run:
 The artifact is `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes,
 SHA-256 `8b5912d5a5a253bdf1e1ebffdca2b6c74328b8a19315faa6fc484fcd77d625b5`.
 
+### SOLVED: the display decodes correctly at a display-PLL N+1 of 36
+
+The panel produces a **crisp red/blue checkerboard** -- square cells, clean
+edges, correct two-dimensional structure -- when the display PLL at
+`0x058c0014` is set to N+1 = 36. At the vendor table's N+1 = 43 the same
+pattern is the uniform magenta blur every earlier test in this document
+recorded. The frame is in `local/lcd-photos/test_20/IMG_0577.MOV` at the
+second sweep step.
+
+The arithmetic closes exactly:
+
+```
+N+1 = 36   ->  PLL = 24 MHz x 36 = 864 MHz
+counter      15421 kHz measured, 864/56 = 15.429 predicted
+DCLK         864/14 = 61.71 MHz   (panel_config.ini asks 62.00, 0.46% low)
+refresh      59.71 Hz             (1360x760 total; 59.98 Hz nominal)
+
+stock N+1 = 43 -> 1032 MHz -> 73.71 MHz DCLK, 18.9% fast, 71.32 Hz
+```
+
+That confirms **K = 14** -- the 7:1 serialisation with a further /2 -- which had
+been one of three candidates and could not be resolved by the counter alone.
+
+The original PLL analysis in this document computed the right answer and applied
+it to the wrong register. "N+1 = 36 lands at 61.71 MHz, 0.46% low" was correct;
+it was written about the CCU's `PLL_VIDEO2`, which does not feed the TCON. The
+value transferred unchanged once `clkfind` identified the real PLL.
+
+`h713_panel_cfg_board_b.pll_n_plus_1 = 36` now carries this, patched into the
+LogoRegData record for `0x058c0014` alongside the other panel fields.
+
+**Correction to the previous entry.** It reported "no row alternation" from the
+`tcon-nsweep` scoring. That claim was produced by a column-only chroma metric
+which could not see rows at all, and it is wrong: the N+1 = 36 step has full
+two-dimensional checker structure. The operator observed it directly. Prefer the
+photograph to the metric when the two disagree, and do not report a property an
+instrument cannot measure.
+
+The amplitude ranking in that entry is also unreliable for the same reason: it
+scored N+1 = 52 highest at 8.26 against 5.68 for 36, but 52 produces vertical
+banding while 36 produces a correct checker. Column amplitude does not
+distinguish them.
+
 ### BREAKTHROUGH: the pixel clock controls spatial resolution
 
 `tcon-nsweep` stepped the display PLL across six values with the red/blue 128px
