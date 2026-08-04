@@ -1,3 +1,67 @@
+# The framebuffer stride is 1237, and it was never two numbers (2026-08-03, test_30)
+
+`fb-edge` ran six steps at 1180..1200. Five were photographed (test_30). Every
+one of them missed, and the run still produced the answer, because the stripe
+count is a slope rather than a match.
+
+## What the photographs say
+
+| photo | assumed pitch | stripes (FFT / autocorr) | band width |
+| --- | --- | --- | --- |
+| IMG_0604 | 1180 | 34.80 / 34.43 | 1122 |
+| IMG_0605 | 1184 | 32.24 / 31.30 | 1129 |
+| IMG_0606 | 1188 | 30.06 / 29.79 | 1135 |
+| IMG_0608 | 1196 | 25.45 / 24.90 | 1144 |
+| IMG_0611 | 1200 | 22.89 / 23.03 | 1138 |
+
+Row Y begins at source word `Y*S`, so the boundary slides `S mod P` px per row
+and wraps, painting `N = 720*min(S mod P, P - S mod P)/P` stripes. A count fixes
+`S mod P` but not its sign, so `S` came from searching every stride in 2..4000
+for one consistent with all five pitches. There is exactly one:
+
+```
+S=1237  rms=0.471      S=1238  rms=0.619      S=1236  rms=0.890
+```
+
+**S = 1237 +- 1 px/row.** `fb-edge-fine` closes the last pixel. Reproduce with
+`tools/display/edge-measure.py --pitches 1180,1184,1188,1196,1200 IMG_*.jpeg`.
+
+Two guards were run before crediting this. Three counting methods were compared
+and FFT and autocorrelation agree to ~1% (zero-crossing undercounts on the two
+blurriest frames, as expected). And the stripes are 17..26 image px apart
+against a ~600 px content height, so they are resolved several times over, not
+moire -- the trap that cost two numbers the day before.
+
+## The mistake this corrects
+
+The band and the stripes were both being called "the pitch". They are not the
+same quantity:
+
+- **stride S = 1237** -- how far the source pointer advances per display row.
+  Only the stripes see it.
+- **width W = 1133 +- 8** -- how much of the display line receives content. Only
+  the band sees it.
+
+The old "~1187 px/line" was `W`, inferred from the band, then used to *predict*
+`S` and to centre a sweep at 1180..1200. The answer was 37..57 px outside that
+range, in the direction nobody swept. `W` held at 1133 +- 8 across all five
+steps while the stripe count moved 34 -> 23, which is exactly how a
+pattern-independent hardware property must behave, and is the internal check
+that the two are distinct.
+
+The prediction made before the run -- 4.3/1.8/0.6/3.0/5.4/7.8 stripes for
+S = 1187 -- was falsified outright by counts of 34/32/30/25/23. Stating it as a
+number is what made the miss legible within one run instead of a session.
+
+## Next
+
+`0x05600170` holds `00001400` (5120 B, 1280 px) while the fetch measures 1237,
+so it is either not consulted or consulted through some transform. `fb-stride`
+holds the pattern at 1237 and sweeps the register over 1280/1284/1288/1292/1296/
+1272 px: live-with-unit-slope predicts 0/2.3/4.7/7.0/9.3 stripes with step 6
+leaning opposite to step 3, inert predicts six identical vertical edges. Step 1
+leaves the register alone and so re-measures the stride for free.
+
 # SESSION HANDOFF -- 2026-08-01 (CPU_COMM ring wrap and marshalling hardware-proven)
 
 Read this first. It supersedes the earlier 2026-08-01 static handoff and every
