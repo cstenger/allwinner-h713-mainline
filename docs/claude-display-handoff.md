@@ -111,6 +111,57 @@ The pale band will *not* close here. It is a content width, not a stride, and
 nothing in this sweep addresses it. Expect it to survive; that is the next
 thread, not a failure of this one.
 
+### The band, separately
+
+```
+h713_disp panel-test 0x33 fb-band
+```
+
+Content starts **~105 px into every display line** -- left pad 105.6 +- 2.7,
+right 1.4, **top 0.0**, bottom 5, across all eleven photographs so far. So the
+fault is horizontal only and at the *head* of the line, not the tail.
+
+The zero top pad is what makes it interesting. `0x05280088` and `0x0528008c`
+hold 22 and 123, which read like a `(y, x)` origin, and 123 is within a few px
+of the band -- but a `y` of 22 would blank 22 rows at the top and nothing is
+blank at the top. So that pairing is out, even though 123 remains the closest
+value anywhere in the dump.
+
+No candidate is strong enough to sweep alone, so six steps screen several. The
+fill is **solid red**: immune to the stride bug, so the band edge is the only
+thing in frame and each step scores as one number.
+
+| step | written |
+| --- | --- |
+| 1 | control, nothing written |
+| 2 | `0x0528008c` 123 -> 0 |
+| 3 | `0x0528008c` 123 -> 400 |
+| 4 | mixer `0x0525c01c`+`034` low 60 -> 0 |
+| 5 | de `0x0524c004` low 22 -> 0 |
+| 6 | vblender `0x0520000c`+`024` low 49 -> 0 |
+
+Everything is restored after its own step. Registers holding identical values
+are written as pairs, since moving one half of a producer/consumer pair can be
+a no-op that reads as a null.
+
+Score with the same tool:
+
+```bash
+tools/display/edge-measure.py --band IMG_*.jpeg
+```
+
+**A step whose left pad moves names the register.** Six identical steps means
+none of these carries it and the fault is not one of these offsets.
+
+The detection threshold is known, not guessed: running this scorer over test_31
+-- a sweep that could not have moved the band -- gives a spread of **8 px**.
+That is the noise floor, and the perturbations here are 60 to 400 px.
+
+**Photograph step 1 even if it looks like nothing.** If the band stays pale
+against a saturated fill it is not framebuffer content, and this is a geometry
+fault; if it turns red, it *is* framebuffer content, and this is an addressing
+or fetch fault instead. Nothing else in the run separates those two.
+
 To close the stride value itself to the pixel (not needed if `fb-fix` lands):
 
 ```
@@ -164,6 +215,7 @@ wasted a run.
 | `panel-test <id> fb-edge-fine` | 1232..1240, closes the stride to the pixel |
 | `panel-test <id> fb-stride` | pattern fixed, AFBD `0x05600170` swept -- answered: live, `S = V - 42` |
 | `panel-test <id> fb-fix` | pattern at the natural 1280, swept for the register that unshears it |
+| `panel-test <id> fb-band` | solid fill, screens offset registers for the ~105 px left band |
 | `panel-test <id> <mode> <stride>` | any mode with `0x05600170` forced to `<stride>` bytes, applied after the DE replay |
 | `panel-test <id> fb-vprobe` / `fb-hprobe` / `fb-quad` / `fb-grid` | framebuffer geometry probes |
 | `panel-test <id> vendor-logo` | the vendor bootlogo, with `fbcheck` verifying the conversion |

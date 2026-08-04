@@ -83,6 +83,35 @@ def stripe_count(chroma, x0, x1, y0, y1):
     return fft_n, acorr_n
 
 
+def content_pads(path):
+    """Where content starts and ends, in display px, for the band probe.
+
+    Keys off colour saturation rather than row-to-row alternation. The band is
+    pale and the content is strongly red or blue, which holds whatever the
+    pattern is -- including a solid fill, where there is no alternation at all.
+    The alternation route silently returned 29..254 px on coarse stripes, so it
+    was never usable for this.
+    """
+    a = load(path)
+    lum = a.sum(2)
+    sat = np.abs(a[:, :, 0] - a[:, :, 2])
+
+    cols = np.where(lum.mean(0) > lum.mean(0).max() * 0.55)[0]
+    rows = np.where(lum.mean(1) > lum.mean(1).max() * 0.55)[0]
+    left, right, top, bottom = cols.min(), cols.max(), rows.min(), rows.max()
+
+    inset_y = int((bottom - top) * 0.2)
+    xs = sat[top + inset_y:bottom - inset_y, :].mean(0)
+    ys = sat[:, left + (right - left) // 2:right - (right - left) // 10].mean(1)
+    cx = np.where(xs[left:right] > xs[left:right].max() * 0.35)[0] + left
+    cy = np.where(ys[top:bottom] > ys[top:bottom].max() * 0.35)[0] + top
+
+    return (WIDTH * (cx.min() - left) / (right - left),
+            WIDTH * (right - cx.max()) / (right - left),
+            HEIGHT * (cy.min() - top) / (bottom - top),
+            HEIGHT * (bottom - cy.max()) / (bottom - top))
+
+
 def half_max_edge(profile, start, direction):
     inside = np.median(profile[max(0, start - 30):start + 30])
     j = start
@@ -122,10 +151,30 @@ def solve_stride(pitches, counts, lo=2, hi=4000):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("photos", nargs="+")
-    ap.add_argument("--pitches", required=True,
+    ap.add_argument("--pitches",
                     help="assumed pitch per photo, in step order")
+    ap.add_argument("--band", action="store_true",
+                    help="score fb-band instead: where content starts")
     args = ap.parse_args()
 
+    if args.band:
+        print(f'{"photo":24}{"left":>8}{"right":>8}{"top":>8}{"bottom":>8}'
+              "   display px")
+        pads = []
+        for path in args.photos:
+            p = content_pads(path)
+            pads.append(p)
+            name = path.rsplit("/", 1)[-1]
+            print(f"{name:24}{p[0]:8.1f}{p[1]:8.1f}{p[2]:8.1f}{p[3]:8.1f}")
+        left = np.array([p[0] for p in pads])
+        print(f"\nleft pad {left.mean():.1f} +- {left.std():.1f} px, "
+              f"spread {left.max() - left.min():.1f}")
+        print("A step that moves the left pad names the register. A spread of "
+              "a few px across every step means none of them carries it.")
+        return
+
+    if not args.pitches:
+        sys.exit("need --pitches (stripe modes) or --band (fb-band)")
     pitches = [int(p) for p in args.pitches.split(",")]
     if len(pitches) != len(args.photos):
         sys.exit(f"{len(args.photos)} photos but {len(pitches)} pitches -- "
