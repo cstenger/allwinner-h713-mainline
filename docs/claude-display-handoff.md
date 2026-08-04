@@ -49,11 +49,24 @@ legible red "SMART PROJECTOR" text on a blue field. Legible means unsheared, so
 the framebuffer path is correct end to end on the actual file, not just on
 synthetic patterns.
 
-Which mode produced it is still to be pinned down, and it matters: if it was
-`vendor-logo-late`, then deferring the FAT read until after the display sequence
-is what made the difference, and the pre-run load is a real fault to fix. If it
-was `vendor-logo-chroma`, the load position is innocent and the earlier blank
-runs need another explanation.
+It was `vendor-logo-late`, which settles the bisection: **the logo must be
+loaded after the display sequence, not before it.** That is now the default for
+every vendor-logo variant.
+
+Loading before is why `vendor-logo` never showed anything across five runs.
+Every `fb-*` mode seeds with a plain memory write and renders; `vendor-logo`
+instead selected a block device, read 2.7 MB off FAT to `0x6d000000` and hashed
+it, all between `h713_disp_load()` and `h713_disp_run()`. The panel stayed dark
+with every register dump byte-identical to a working run, `fbcheck` proving the
+framebuffer correct, and the TCON marker equally absent. Moving that work after
+init -- changing nothing else -- renders it.
+
+**The mechanism is not established, and the obvious guess is wrong.**
+`h713_disp_load()` reads the same filesystem in every mode, so FAT access before
+the sequence is not the problem by itself. What is new is the extra read plus a
+SHA-256 over it: seconds of work, and a lot of cache traffic, in a window where
+nothing else does any. `vendor-logo-early` reproduces the broken ordering for
+whoever wants to chase it.
 
 Consequences, for anyone reading older notes: horizontal variation in a
 framebuffer image used to become vertical stripes and the bootlogo arrived as a
