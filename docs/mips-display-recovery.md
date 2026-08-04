@@ -1,3 +1,63 @@
+# S = V: there was never a second fault (2026-08-04, test_33)
+
+`fb-fix` was built to test S = V - 42 and find a minimum near register 1322. It
+falsified that model instead.
+
+| photo | register | stripes | implied S |
+| --- | --- | --- | --- |
+| IMG_0626 | 1300 | 11.63 | 1300.7 |
+| IMG_0627 | 1310 | 16.18 | 1308.8 |
+| IMG_0628 | 1320 | 22.71 | 1320.4 |
+| IMG_0629 | 1330 | 27.06 | 1328.1 |
+| IMG_0630 | 1340 | 33.30 | 1339.2 |
+| IMG_0631 | **1280** (stock) | **0** | **1280** |
+
+**S = V.** `0x05600170` is a plain byte stride and was correct all along. At the
+stock 0x1400 the pattern renders as one red/blue boundary drifting **0.0 display
+px per row**, full width, no band. IMG_0625, an extra frame before the sweep,
+shows the same thing at -0.01 px/row.
+
+So zeroing `0x0528008c` fixed the shear as well as the band. The stride deficit
+was a consequence of the origin, not an independent fault.
+
+## The mapping was checked, not assumed
+
+Seven photographs arrived for six steps, and an off-by-one produces a plausible
+constant offset rather than an obvious mess -- aligning IMG_0625 to step 1 fits
+S = V - 11 across the first five steps quite happily. Only one alignment is
+self-consistent: under the other, the stock-register step needs S = 1221 while
+its own photograph shows 33 stripes. The consistency check is what distinguishes
+them, not the quality of the fit.
+
+## What this says about the previous two days
+
+The stride was measured twice, by experiments sharing no assumptions, and they
+agreed on 1237-1238. That agreement was used here as licence to model it as an
+independent fault with its own register. It was not.
+
+Both measurements were *correct*. S really was 1238 while the origin was 123.
+What was wrong was the causal reading: a number measured downstream of a fault
+got promoted to a fault of its own.
+
+That is precisely the error this log recorded on 2026-08-03, when the old "~1187
+px/line" turned out to be a content width being used to predict a stride. The
+same mistake, one level up, made by the correction. Two independent measurements
+agreeing constrains a *value*; it says nothing about what causes it.
+
+The cheap guard that would have caught it: after identifying the origin, predict
+what the stride sweep should do *if the two are independent* and check it. The
+prediction was in the source (12.4/6.8/1.1/4.5/10.1) and the observation
+(11.3/16.9/22.5/28.1/33.8) falsified it on the first photograph.
+
+## Open
+
+- Why an origin of 123 costs 42 px of advance per row. Not understood, and no
+  longer load-bearing.
+- What writes 123 in the first place. It survives the DE replay, so LogoRegData
+  or the firmware.
+- The vendor bootlogo on real content: `panel-test 0x33 vendor-logo`, no
+  override.
+
 # The left band is 0x0528008c, the layer X origin (2026-08-04, test_32)
 
 Named in one run, and fixed.
