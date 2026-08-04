@@ -101,44 +101,44 @@ Artifact hashes move on every rebuild -- U-Boot embeds a build timestamp -- so
 the commit is the source identity, not the hash. Rebuild with
 `./build/build.sh uboot`.
 
+**The display bring-up is done.** Both deferred-load vendor modes render the
+stock asset correctly:
+
 ```
 h713_disp panel-test 0x33 vendor-logo-chroma
 ```
 
+Expect one blink, then two, then a **red "SMART PROJECTOR" on blue** filling the
+frame -- rows 343..378 of 720, columns 368..912 of 1280, so about 5% of the
+height a third of the way up. `vendor-logo-late` is an alias and behaves
+identically.
+
+A brief wrong-looking frame before the logo is normal: the framebuffer is seeded
+with `fill_pattern(0)` so that the pre-run FAT read can be avoided, and that seed
+is on the panel from the end of init until the logo is published and committed.
+
 **Not `vendor-logo`.** The stock `bootlogo.bmp` is 99% black and its lit pixels
 are **pure grey -- chroma `|R-B|` is exactly 0 across the whole file, maximum
 0**. This optical path normalises luminance away; that is the oldest and most
-expensive rule in this bring-up. A blank result from `vendor-logo` therefore
-carries no information at all: it looks the same whether the framebuffer path is
-perfect or the panel never lit. One such run has already been spent.
+expensive rule in this bring-up. A blank result from `vendor-logo` carries no
+information: it looks the same whether the path is perfect or the panel never
+lit. One run was spent on exactly that.
 
 `vendor-logo-chroma` keeps the same file, hash check, geometry and `fbcheck`
-bounds, and swaps only the palette -- lit to red, unlit to blue. Same asset, same
-spatial structure, in the axis this path can actually show.
+bounds, and swaps only the palette -- lit to red, unlit to blue.
 
 **Read `fbcheck` before you read the panel.** It runs against the framebuffer in
-memory, so it tells you whether the frame is even worth photographing. Its first
-outing caught a broken build that the rest of the console cheerfully denied:
-`content rows 720..0, columns 1280..0` are the untouched initial bounds, meaning
-*no pixel matched at all*. Two blank runs were spent before that line was read.
+memory, so it says whether the frame is even worth photographing. Its first
+outing caught a broken build the rest of the console cheerfully denied:
+`content rows 720..0, columns 1280..0` are untouched initial bounds, meaning *no
+pixel matched at all*.
 
-Expect a **red bar on blue**, occupying rows 343..378 of 720 and columns
-368..912 of 1280 -- so about 5% of the height, a third of the way up, centred
-horizontally with a wider gap on the right.
+**A dark panel is not evidence about the framebuffer.** Every mode emits a TCON
+chroma marker, which reaches the panel without touching the framebuffer path. No
+blinks means the panel is not lit and nothing downstream is being tested. Five
+runs were spent before that control existed.
 
-- **crisp, level, correctly placed** -> the framebuffer path is confirmed on the
-  real vendor asset, and this bug is closed
-- **sheared into a diagonal streak** -> the origin fix did not stick
-- **shifted right with a blue column at the left** -> the band is back
-
-**No stride override.** The stock `0x05600170` is correct; the fix is applied
-during the run.
-
-`fbcheck` already proves the conversion in memory -- content in rows 343..378,
-columns 368..912, matching the file -- so anything wrong in the photograph is the
-display path, not the image.
-
-To re-confirm the framebuffer path itself:
+To re-measure the framebuffer path itself:
 
 ```
 h713_disp panel-test 0x33 fb-fix
@@ -146,10 +146,10 @@ h713_disp panel-test 0x33 fb-fix
 
 Six steps at registers 1300/1310/1320/1330/1340/**1280**, predicting
 11.3/16.9/22.5/28.1/33.8 stripes and, at the stock 1280, **one vertical edge**.
-That last step is the whole framebuffer path, correct.
 
-`fb-edge-fine` and `fb-stride` measured the fault and are superseded by the fix.
-`fb-band` still needs its untouched origin, so it alone skips the correction.
+`fb-edge`, `fb-edge-fine`, `fb-stride` and `fb-band` measured the faults and are
+superseded by the fixes. `fb-band` alone still skips the origin correction, since
+it needs the untouched value for its control step.
 
 ### Scoring any of these
 
