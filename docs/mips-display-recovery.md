@@ -807,6 +807,48 @@ across a same-geometry change. Scoring rules, decided before the run:
 The artifact is `build/out/u-boot-sunxi-with-spl-ddr3.bin`, 915761 bytes,
 SHA-256 `8b5912d5a5a253bdf1e1ebffdca2b6c74328b8a19315faa6fc484fcd77d625b5`.
 
+### BREAKTHROUGH: the pixel clock controls spatial resolution
+
+`tcon-nsweep` stepped the display PLL across six values with the red/blue 128px
+checker at each, every step verified by the counter tracking N proportionally
+(all six within 0.1% of prediction). Scored from
+`local/lcd-photos/test_20/IMG_0577.MOV` by detrended column-chroma amplitude,
+which removes the projector's lens falloff and leaves only banding:
+
+| N+1 | PLL | band amplitude | verdict |
+| --- | --- | --- | --- |
+| 32 | 768 MHz | 5.16 | structure |
+| 36 | 864 MHz | 5.68 | structure |
+| 40 | 960 MHz | 1.10 | noise floor |
+| **43** | **1032 MHz** | **0.97** | **noise floor -- this is the stock setting** |
+| 47 | 1128 MHz | 0.76 | noise floor |
+| 52 | 1248 MHz | **8.26** | **strongest, visible vertical bands** |
+
+At N+1 = 52 the projected image shows plainly separated vertical bands. At the
+stock N+1 = 43 it is the uniform magenta blur every previous test produced.
+
+**This is the first time anything in this project has put spatial content on the
+panel.** It also establishes the direction: the pixel clock controls whether
+position survives the link, and the vendor table's value sits in the dead zone.
+
+Three cautions, none of which the result needs to be useful.
+
+The response is not a single peak. Structure appears at 32 and 36, disappears
+across 40 to 47, and returns strongly at 52. A single correct DCLK would give one
+optimum, so this looks more like a beat or lock-range effect than a simple
+focus. Do not read N+1 = 52 as "the correct clock" yet.
+
+No step produced a correct checker. At its best the output is vertical bands with
+no row alternation, where a 128px checker on 1280x720 should give a 10 by 5.6
+grid. Horizontal position is partially resolved; vertical is not.
+
+52 was the top of the swept range and gave the strongest response, so the
+optimum may lie beyond it. `tcon-nsweep-hi` extends to N+1 = 50..60.
+
+The earlier reasoning that put DCLK at 73.71 MHz assumed a 7:1 ratio that was
+never verified. If N+1 = 52 is near-correct and the panel wants 62 MHz, the
+divider is nearer 20 than 14. Treat the ratio as still unmeasured.
+
 ### CONFIRMED: 0x058c0014 is the display PLL that drives the TCON
 
 Measured, not inferred:
