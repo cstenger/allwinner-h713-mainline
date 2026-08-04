@@ -44,8 +44,9 @@ Then `panel-test 0x33 vendor-logo 0x14a8` puts it on real content.
 The extrapolation is 42 px beyond anything measured, hence 10 px steps rather
 than a bracket around 1322 -- a wide sweep still measures if the offset is off.
 
-The band is untouched by any of this: the stride moved 60 px across the sweep
-and the band did not follow. It is a content width and remains open.
+The band is untouched by any of this: the stride moved 24 px across the sweep
+(1230..1254) and the band held at 1158 +- 4. It is a content width and remains
+open.
 
 # The framebuffer stride is 1237, and it was never two numbers (2026-08-03, test_30)
 
@@ -94,12 +95,12 @@ same quantity:
 
 - **stride S = 1237** -- how far the source pointer advances per display row.
   Only the stripes see it.
-- **width W = 1133 +- 8** -- how much of the display line receives content. Only
+- **width W = 1155 +- 5** -- how much of the display line receives content. Only
   the band sees it.
 
 The old "~1187 px/line" was `W`, inferred from the band, then used to *predict*
 `S` and to centre a sweep at 1180..1200. The answer was 37..57 px outside that
-range, in the direction nobody swept. `W` held at 1133 +- 8 across all five
+range, in the direction nobody swept. `W` held flat across all five
 steps while the stripe count moved 34 -> 23, which is exactly how a
 pattern-independent hardware property must behave, and is the internal check
 that the two are distinct.

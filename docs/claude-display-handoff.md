@@ -40,7 +40,7 @@ Those two share no assumption beyond the stripe model itself, so the value is
 | | what it is | what measures it | value |
 | --- | --- | --- | --- |
 | stride `S` | how far the source pointer advances per display row | the stripes | **1237** |
-| width `W` | how much of the display line receives content | the pale band | **1133 +- 8** |
+| width `W` | how much of the display line receives content | the pale band | **1155 +- 5**, all of the shortfall at the **left** |
 
 The old "~1187 px/line" was `W`, inferred from the band, and then used to predict
 `S`. They are different quantities and neither equals the other, which is why the
@@ -48,7 +48,7 @@ The old "~1187 px/line" was `W`, inferred from the band, and then used to predic
 the answer was 37 to 57 px outside the range, in the direction nobody swept.
 
 Consequences: horizontal variation in a framebuffer image becomes vertical
-stripes; a pale band sits at one side where the fetch runs out; the vendor
+stripes; a pale band sits at the left of every frame; the vendor
 bootlogo arrives as a sheared streak. The TCON pattern generator bypasses this
 path entirely, which is why its output is perfect.
 
@@ -64,7 +64,9 @@ path entirely, which is why its output is perfect.
 | the stride is 1237-1238 px/row | test_30: five `fb-edge` steps give 34.1/31.9/29.9/25.3/22.9 stripes; `S mod P` from five pitches leaves one candidate in 2..4000. test_31 gets 1238 from the register fit, sharing no assumption with it |
 | `0x05600170` controls the stride | test_31: counts track the register 2.96/5.24/7.58/10.01 against 2.3/4.7/7.0/9.3 predicted, and the below-default step leans the other way |
 | the slope is unity, `S = V - 42` | same run, fitting the four well-determined steps: rms 0.04 stripes |
-| stride and width are different numbers | test_30: stripe count varies 34->23 across the steps while the band holds at 1133 +- 8, exactly as a pattern-independent hardware property must. test_31 moves the stride over 60 px and the band does not follow |
+| stride and width are different numbers | test_31 sweeps the stride 1230..1254 and the band holds at 1158 +- 4; test_30 sweeps the pattern and it holds at 1152 +- 2. Neither knob touches it |
+| the band is at the **head** of the line, not the tail | ~122 px blank on the left, content running to the right edge with 1..10 px to spare, in all eleven photographs |
+| the photographs are not mirrored | the stripe lean matches the model in absolute sign across five steps of test_31, including the flip at the one step below default; so left is left |
 | the band belongs to the framebuffer path | operator observation: TCON generator patterns fill the whole screen, framebuffer patterns are truncated |
 
 ## Ready to run
@@ -218,6 +220,6 @@ Do not resurrect these; each cost bench time.
   text only in rows 343..378, and it rendered faithfully once the PLL was fixed.
 - **"The display fetches ~1187 pixels per line" conflated two numbers.** 1187 was
   a content width taken off the band and then used as though it were the source
-  stride. The stride is 1237; the width measures 1133 +- 8 in test_30. Any
+  stride. The stride is 1237-1238; the width measures 1155 +- 5. Any
   reasoning that treats one figure as both is void, including the sweep ranges it
   produced -- 1180..1200 could not have contained the answer.
