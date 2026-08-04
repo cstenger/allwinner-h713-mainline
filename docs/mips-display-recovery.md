@@ -1,3 +1,52 @@
+# The stride register is live, and unit-slope (2026-08-03, test_31)
+
+`fb-stride` held the pattern at 1237 and swept AFBD `0x05600170`. Every write
+read back. The display followed:
+
+| photo | register | stripes (FFT / acorr) | predicted if live | tilt |
+| --- | --- | --- | --- | --- |
+| IMG_0612 | 1280 (default) | 3.77 / 2.88 | 0 | - |
+| IMG_0614 | 1284 | 2.94 / 2.98 | 2.3 | - |
+| IMG_0615 | 1288 | 5.18 / 5.29 | 4.7 | - |
+| IMG_0616 | 1292 | 7.54 / 7.62 | 7.0 | - |
+| IMG_0617 | 1296 | 9.98 / 10.04 | 9.3 | - |
+| IMG_0618 | 1272 | 4.05 / 4.09 | 4.7 | **+** |
+
+**The register is consulted.** The control passes too: 1272, the only step below
+the default, is the only one whose stripes lean the other way, so this is a real
+response and not a count that happens to grow.
+
+Fitting `N = (720/P)|a(V - V0)|` over the four well-determined steps:
+
+```
+a = 1.006 px stride per px register     V0 = 1279.0     rms = 0.04 stripes
+S(V) = V - 42        S(1280) = 1238
+```
+
+The two lowest-count steps are excluded. At about one cycle in the frame an FFT
+has nothing to resolve, and 1280's two methods disagree 3.77 against 2.88 where
+every other step agrees to 1%. They are not needed: the photograph settles the
+ordering they would have decided, since step 1 carries visibly fewer stripes
+than step 2, putting the minimum at or below 1280 exactly where the fit has it.
+
+**S(1280) = 1238 against test_30's 1237 +- 2, from an unrelated experiment.**
+test_30 swept the pattern and held the hardware fixed; test_31 held the pattern
+and swept the hardware. They share no assumption beyond the stripe model, so the
+stride is settled at 1237-1238.
+
+## Next
+
+`S = V - 42` says the framebuffer path comes right at V = 1322 px, `0x14a8`
+bytes. `fb-fix` writes the pattern at the natural 1280 and sweeps 1300..1340 for
+it, with a control at today's value; a step with one vertical edge is the fix.
+Then `panel-test 0x33 vendor-logo 0x14a8` puts it on real content.
+
+The extrapolation is 42 px beyond anything measured, hence 10 px steps rather
+than a bracket around 1322 -- a wide sweep still measures if the offset is off.
+
+The band is untouched by any of this: the stride moved 60 px across the sweep
+and the band did not follow. It is a content width and remains open.
+
 # The framebuffer stride is 1237, and it was never two numbers (2026-08-03, test_30)
 
 `fb-edge` ran six steps at 1180..1200. Five were photographed (test_30). Every

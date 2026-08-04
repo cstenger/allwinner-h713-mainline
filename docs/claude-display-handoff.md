@@ -20,16 +20,20 @@ for `0x058c0014`, so it applies to every path that runs the display sequence.
 
 **One bug remains**, and it is in the framebuffer path only:
 
-> The source pointer advances **1237 words per display row where we write 1280**.
+> The source pointer advances **~1238 words per display row where we write 1280**,
+> and **`0x05600170` controls it**, with unit slope: `S = V - 42`.
 
-Measured 2026-08-03 from test_30, five photographed steps of `fb-edge`. A search
-over every stride from 2 to 4000 has exactly one solution. The runner-up is 1238
-at 0.15 stripes worse, and since only five of the six steps were photographed the
-step-to-pitch mapping is inferred -- but re-solving under all six possible
-mappings gives 1236..1240, and the best-fitting one (step 1192 unphotographed,
-rms 0.471 against 0.90..1.13 for the rest) gives 1237. So read this as **1237
-+- 2**, which `fb-edge-fine` is sized to cover, until it closes the value; the
-*sign and scale* are not in doubt, and that is what matters, because
+Measured twice, by unrelated routes, on 2026-08-03:
+
+- **test_30**, `fb-edge`: five photographed steps, stripe counts 34.1/31.9/29.9/
+  25.3/22.9. A search over every stride from 2 to 4000 leaves one solution.
+  Robust to the step-to-pitch mapping (only five of six steps were photographed):
+  re-solving under all six possible mappings gives 1236..1240, best fit 1237.
+- **test_31**, `fb-stride`: sweeping the register and fitting `S(V)` puts the
+  default `V = 1280` at `S = 1238`.
+
+Those two share no assumption beyond the stripe model itself, so the value is
+**1237-1238** and the *sign and scale* are not in doubt. That matters, because
 
 **this is two numbers, and the old log had them as one.**
 
@@ -57,8 +61,10 @@ path entirely, which is why its output is perfect.
 | DCLK = PLL/14 | the panel decodes at 864 MHz and 864/14 = 61.71 vs the 62.00 requested |
 | the free-running counter is PLL/56 | 18432 kHz measured against 18428.6 computed |
 | the framebuffer conversion is correct | `fbcheck` reads the framebuffer back: bootlogo content in rows 343..378, columns 368..912, exactly matching the file |
-| the stride is 1237 px/row | test_30: five `fb-edge` steps give 34.1/31.9/29.9/25.3/22.9 stripes; `S mod P` from five pitches leaves one candidate in 2..4000 |
-| stride and width are different numbers | the same five photographs: stripe count varies 34->23 across the steps while the band holds at 1133 +- 8, exactly as a pattern-independent hardware property must |
+| the stride is 1237-1238 px/row | test_30: five `fb-edge` steps give 34.1/31.9/29.9/25.3/22.9 stripes; `S mod P` from five pitches leaves one candidate in 2..4000. test_31 gets 1238 from the register fit, sharing no assumption with it |
+| `0x05600170` controls the stride | test_31: counts track the register 2.96/5.24/7.58/10.01 against 2.3/4.7/7.0/9.3 predicted, and the below-default step leans the other way |
+| the slope is unity, `S = V - 42` | same run, fitting the four well-determined steps: rms 0.04 stripes |
+| stride and width are different numbers | test_30: stripe count varies 34->23 across the steps while the band holds at 1133 +- 8, exactly as a pattern-independent hardware property must. test_31 moves the stride over 60 px and the band does not follow |
 | the band belongs to the framebuffer path | operator observation: TCON generator patterns fill the whole screen, framebuffer patterns are truncated |
 
 ## Ready to run
@@ -68,32 +74,42 @@ the commit is the source identity, not the hash. Rebuild with
 `./build/build.sh uboot`.
 
 ```
-h713_disp panel-test 0x33 fb-stride
+h713_disp panel-test 0x33 fb-fix
 ```
 
-**Is anything reading the stride register?** `0x05600170` holds `00001400` --
-5120 bytes, 1280 px -- while the fetch measures 1237. So it is either not
-consulted, or consulted through something that is not the identity. Only writing
-it can tell those apart, and that is the difference between knowing the number
-and being able to fix it.
+The register is live, so this is the run that closes the framebuffer path
+rather than measuring it again. The pattern is written at the **natural 1280**
+-- what any real client will use -- and the register is swept for the value that
+renders it with no shear at all. Predicted, from `S = V - 42`:
 
-Six steps hold the pattern at 1237 and move the register instead: 1280, 1284,
-1288, 1292, 1296, 1272 px.
+| register | 1300 | 1310 | 1320 | 1330 | 1340 | 1280 (control) |
+| --- | --- | --- | --- | --- | --- | --- |
+| stripes | 12.4 | 6.8 | **1.1** | 4.5 | 10.1 | 23.6 |
 
-- **LIVE, unit slope** -> stripes appear as `720*k/1237`: **0, 2.3, 4.7, 7.0,
-  9.3**, and step 6 matches step 3's count leaning the other way
-- **INERT** -> six identical single vertical edges
-- **anything else** -> the register is consulted through a transform; the counts
-  give it directly
+> **A step showing ONE vertical edge is the framebuffer path fixed.**
 
-Step 6 is the control. It predicts the same count as step 3 with the opposite
-lean, so a response that is real can be told from a count that merely grows.
+The control is the same pattern at today's register value, so the run carries
+its own before-and-after in one strip of photographs.
 
-Step 1 also re-measures the stride for free: it leaves the register alone, so a
-truly vertical edge confirms 1237 and a visible lean says the fetch is `1237 +-
-720/N`.
+Steps are a coarse 10 px because 1322 is extrapolated 42 px beyond anything yet
+measured. A wide sweep still measures if the offset is off; a tight bracket
+around 1322 would simply miss.
 
-Then, to close the value to the pixel:
+Then confirm it on real content, using the trailing-stride argument so no
+rebuild is needed between:
+
+```
+h713_disp panel-test 0x33 vendor-logo 0x14a8
+```
+
+`0x14a8` is 5288 bytes, 1322 px -- substitute whatever `fb-fix` actually picks.
+**The bootlogo arriving un-sheared is the end of this bug.**
+
+The pale band will *not* close here. It is a content width, not a stride, and
+nothing in this sweep addresses it. Expect it to survive; that is the next
+thread, not a failure of this one.
+
+To close the stride value itself to the pixel (not needed if `fb-fix` lands):
 
 ```
 h713_disp panel-test 0x33 fb-edge-fine
@@ -144,7 +160,9 @@ wasted a run.
 | `panel-test <id> tcon-chroma` | RGB solids and red/blue checkers -- the reference that must render correctly |
 | `panel-test <id> fb-edge` | the stride measurement, 1180..1200 -- the range that produced 1237 by extrapolation |
 | `panel-test <id> fb-edge-fine` | 1232..1240, closes the stride to the pixel |
-| `panel-test <id> fb-stride` | pattern fixed, AFBD `0x05600170` swept: is it consulted? |
+| `panel-test <id> fb-stride` | pattern fixed, AFBD `0x05600170` swept -- answered: live, `S = V - 42` |
+| `panel-test <id> fb-fix` | pattern at the natural 1280, swept for the register that unshears it |
+| `panel-test <id> <mode> <stride>` | any mode with `0x05600170` forced to `<stride>` bytes, applied after the DE replay |
 | `panel-test <id> fb-vprobe` / `fb-hprobe` / `fb-quad` / `fb-grid` | framebuffer geometry probes |
 | `panel-test <id> vendor-logo` | the vendor bootlogo, with `fbcheck` verifying the conversion |
 | `tools/display/edge-measure.py` | host-side: stripe count -> stride, from the photographs |
