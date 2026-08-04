@@ -1,3 +1,72 @@
+# The framebuffer fault was our own omission (2026-08-04, test_35)
+
+`h713_disp_panel_patch` transcribes stock's panel-patch sites and left two out:
+
+> Two sites are deliberately omitted. Stock's `0x05280084[31:16]` and
+> `0x0528008c[15:0]` both resolve to a literal zero in static analysis, which
+> may be a decode artefact rather than a real store; writing a zero we cannot
+> justify is worse than leaving the vendor default in place.
+
+The vendor default at `0x0528008c` is another panel's, and it is **123** -- the
+pale left band in every framebuffer photograph of this bring-up, and through the
+source advance the shear as well. The static analysis was right, the caution was
+wrong, and what it lacked was hardware.
+
+Restored and confirmed:
+
+```
++0x3584  0528008c  0000007b -> 00000000  shift 0 mask 0xffff
+H713 panel: config applied, 22 record field(s) patched, 12 guarded by record mask
+```
+
+`0x0528008c` now reads `00000000` in both dumps **including after the DE
+replay**, which previously restored 123, and the backstop stayed silent. Fixed
+at source, so no path can miss it -- which matters, because for a day the fix
+lived only in panel-test while `auto` still produced the band.
+
+The blob carries one such record per DE block (block 5's at `+0x3584` = 0x7b;
+others hold 0x73 and 0x10) -- exactly the "another panel's defaults" the
+original comment described.
+
+`0x05280084[31:16]` is still omitted on the same reasoning, holds 720, and is
+now *more* suspicious rather than less. It has earned its own two-sided
+perturbation.
+
+## A wrong call, and what caught it
+
+The preceding run was read as "the record patch did not take" -- count still
+21/12, backstop firing. It had not been flashed yet: the console's own wording
+gave it away, since that build printed the older message text. The version
+banner said `g937b06f1de16-dirty`, naming the last *commit* while running newer
+uncommitted code.
+
+So: trust `-dirty` and the behaviour, not the hash. A stale flash and a failed
+patch look identical in the counter and are distinguishable in the prose.
+
+## Config files, read properly at last
+
+Reading the vendor config for the teardown work turned up four things worth
+recording:
+
+- **The panel declares its own off-timings.** `PanelOffTiming0/1/2 = 20/250/75`
+  against `PanelOnTiming0/1/2 = 20/550/75`. The on-side mapping is already
+  confirmed in our code: 550 is the "stock power pre-delay", 20 the wait before
+  display clocks. The off-side semantics -- which step each delay separates --
+  are still unknown.
+- **`display_cfg.xml` declares the firmware's memory map**, and it matches the
+  DT reservations exactly: `frame_buffer 0x4bf41000 size 0x1A00000` is the
+  `framebuf@4bf41000` node. Our scanout at `0x6c100000` is outside all of it and
+  unreserved -- but it is also where the vendor's own LogoRegData points AFBD,
+  so there are genuinely two buffers, not one misplaced one.
+- **Two PWM configs disagree.** `display_cfg.xml` says channel 0, high-active,
+  1.2 MHz; `panel_config.ini` says channel 5, low-active, 40 kHz. We drive PWM2
+  on PB4, which matches neither. Polarity alone could explain a dimmer that is
+  "HW-correct" and ignored.
+- **The firmware has a UART logger we can turn up.** `elog_init_setting` sits at
+  level 1 (ERROR) with per-tag overrides available, and `display_cfg.xml` is a
+  file on the eMMC FAT that `h713_disp load` exists to let us patch. Raising it
+  may answer the shutdown sequence and the pre-run-read fault directly.
+
 # The display bring-up is done (2026-08-04, test_34)
 
 The stock vendor asset renders correctly: legible red "SMART PROJECTOR" on blue,
