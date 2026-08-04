@@ -24,8 +24,12 @@ for `0x058c0014`, so it applies to every path that runs the display sequence.
 
 Measured 2026-08-03 from test_30, five photographed steps of `fb-edge`. A search
 over every stride from 2 to 4000 has exactly one solution. The runner-up is 1238
-at 0.15 stripes worse, so read this as **1237 +- 1** until `fb-edge-fine` closes
-it; the *sign and scale* are not in doubt, and that is what matters, because
+at 0.15 stripes worse, and since only five of the six steps were photographed the
+step-to-pitch mapping is inferred -- but re-solving under all six possible
+mappings gives 1236..1240, and the best-fitting one (step 1192 unphotographed,
+rms 0.471 against 0.90..1.13 for the rest) gives 1237. So read this as **1237
++- 2**, which `fb-edge-fine` is sized to cover, until it closes the value; the
+*sign and scale* are not in doubt, and that is what matters, because
 
 **this is two numbers, and the old log had them as one.**
 

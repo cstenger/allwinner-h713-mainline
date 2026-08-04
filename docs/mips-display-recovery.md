@@ -23,7 +23,13 @@ for one consistent with all five pitches. There is exactly one:
 S=1237  rms=0.471      S=1238  rms=0.619      S=1236  rms=0.890
 ```
 
-**S = 1237 +- 1 px/row.** `fb-edge-fine` closes the last pixel. Reproduce with
+Only five of the six steps were photographed, so the step-to-pitch mapping is
+inferred. Re-solving under all six possible mappings gives 1236..1240, and the
+best-fitting one -- step 1192 unphotographed, rms 0.471 against 0.90..1.13 for
+every alternative -- gives 1237.
+
+**S = 1237 +- 2 px/row.** `fb-edge-fine` sweeps 1232..1240 and closes it.
+Reproduce with
 `tools/display/edge-measure.py --pitches 1180,1184,1188,1196,1200 IMG_*.jpeg`.
 
 Two guards were run before crediting this. Three counting methods were compared
