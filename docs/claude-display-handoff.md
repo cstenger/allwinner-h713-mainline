@@ -50,12 +50,26 @@ h713_disp panel-test 0x33 fb-edge
 ```
 
 Six steps, assumed pitch 1180/1184/1188/1192/1196/1200, each preceded by that
-many chroma blinks. One red/blue boundary per step.
+many chroma blinks.
 
-- **edge vertical** -> that step is the true fetch pitch
-- **edge leaning** -> the slope is (true - assumed) pixels per row, so measure it
-  and compute the answer directly
+**Count the diagonal red/blue stripes in each step.** Row Y starts at word
+`Y*P_hw`, so the boundary slides `D = P_hw - P` pixels per row and wraps every
+`P/|D|` rows. A 720-row frame therefore shows `N = 720*|D|/P` stripes, and
+
+> `|P_hw - P| = N * P / 720` -- about **1.64 px per stripe** at these pitches.
+
+So every step measures the pitch independently and the six must agree. That is
+a far stronger result than picking the vertical one, and it survives a blurry
+photograph: counting a few coarse diagonals is easy.
+
+- **fewest stripes** -> closest step
 - **two steps leaning opposite ways** -> the answer is bracketed between them
+- **a single edge** -> only from a step within ~1.6 px of the truth. With 4 px
+  steps at most one can be; expect 2, 3, 5, 8 stripes from the others.
+
+Do **not** read a multi-stripe step as a failed step, or as moire. It is the
+measurement. (An earlier version of this page promised "one boundary per step"
+and would have made every step but one look broken.)
 
 Do **not** score this on the pale band. The band is a hardware property and
 cannot respond to the pattern; that criterion was wrong and wasted a run.
