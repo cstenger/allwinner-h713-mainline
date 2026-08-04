@@ -95,6 +95,12 @@ perfect or the panel never lit. One such run has already been spent.
 bounds, and swaps only the palette -- lit to red, unlit to blue. Same asset, same
 spatial structure, in the axis this path can actually show.
 
+**Read `fbcheck` before you read the panel.** It runs against the framebuffer in
+memory, so it tells you whether the frame is even worth photographing. Its first
+outing caught a broken build that the rest of the console cheerfully denied:
+`content rows 720..0, columns 1280..0` are the untouched initial bounds, meaning
+*no pixel matched at all*. Two blank runs were spent before that line was read.
+
 Expect a **red bar on blue**, occupying rows 343..378 of 720 and columns
 368..912 of 1280 -- so about 5% of the height, a third of the way up, centred
 horizontally with a wider gap on the right.
