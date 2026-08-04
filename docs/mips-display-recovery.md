@@ -1,3 +1,60 @@
+# The left band is 0x0528008c, the layer X origin (2026-08-04, test_32)
+
+Named in one run, and fixed.
+
+| step | written | left pad |
+| --- | --- | --- |
+| 1 | control (`0x0528008c` = 123) | 119.4 |
+| 2 | `0x0528008c` -> 0 | **0.0** |
+| 3 | `0x0528008c` -> 400 | **406.2** |
+| 4 | mixer `0x0525c01c`+`034` low 60 -> 0 | 120.6 |
+| 5 | de `0x0524c004` low 22 -> 0 | 121.3 |
+| 6 | vblender `0x0520000c`+`024` low 49 -> 0 | 105.6 |
+
+`0x0528008c` is a plain pixel X origin for the layer, 1:1 with nothing else in
+it. At 0 the content starts at column 0 and fills all 1280. Now written to 0
+after the DE replay, for every mode but `fb-band`.
+
+The two-sided perturbation is what makes this a measurement. Zero alone would
+have been weak -- many registers could blank a band by breaking something --
+but only an origin puts content at 406 when set to 400.
+
+The control step separated two hypotheses nothing else in the run could. The
+band stayed **pale** against a saturated red fill, so it was never framebuffer
+content: a geometry fault, not addressing or fetch.
+
+Steps 4 and 5 are real nulls, not hopeful ones, because the noise floor was
+measured first -- re-scoring test_31, where nothing could have moved the band,
+gives 8 px. They came back at 1-2.
+
+## A scorer bug this exposed
+
+The `--band` scorer thresholded the panel edge at a fraction of the panel's own
+peak brightness. The pale band is dimmer than saturated content, so that put the
+edge *inside* the band, eating ~20 px off a narrow one and barely touching a
+wide one. It read 123 as 102 while reading 400 as 401, which looked like a
+nonlinearity in the hardware and was nothing of the sort. Half way between wall
+and panel gives 119.4 and 406.2, and the register is linear after all.
+
+Worth remembering: the shape of a systematic error can imitate a physical
+effect, and "the small case disagrees, the large case is exact" is a signature
+of a threshold problem, not of hardware.
+
+## Loose ends, neither load-bearing
+
+- **Step 6 moved the band 14 px**, above the 8 px floor. Its pairing was also
+  wrong: `0x05200024` holds `02d00016`, so the value-sibling of `0x0520000c` is
+  `0x05200020`, not what was written. Since `0x0528008c` accounts for the band
+  exactly, this is at most a small second contribution.
+- **What writes 123 is unknown.** It survives the DE replay, so it is
+  LogoRegData or the firmware itself -- which is why the fix is a write
+  afterwards rather than a patched record.
+
+## Next
+
+The stride is the only fault left. `fb-fix` now sweeps it against a full-width
+image.
+
 # The stride register is live, and unit-slope (2026-08-03, test_31)
 
 `fb-stride` held the pattern at 1237 and swept AFBD `0x05600170`. Every write
