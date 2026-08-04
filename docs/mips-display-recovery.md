@@ -1,3 +1,73 @@
+# The display bring-up is done (2026-08-04, test_34)
+
+The stock vendor asset renders correctly: legible red "SMART PROJECTOR" on blue,
+via `vendor-logo-late` and then `vendor-logo-chroma`, which now share the same
+deferred-load path. Legible is the load-bearing word -- a sheared frame smears
+those glyphs into diagonals.
+
+## The last fault was the load ordering, not the framebuffer
+
+`vendor-logo` selected a block device, read 2.7 MB off FAT to `0x6d000000` and
+hashed it, all between `h713_disp_load()` and `h713_disp_run()`. Moving that work
+after init, and changing nothing else, renders the logo.
+
+Five runs were spent before that. The reason it took five is worth recording,
+because none of the evidence was missing -- it was all being read as being about
+something else:
+
+- every register dump came back **byte-identical** to a run that rendered;
+- `fbcheck` proved the framebuffer in memory **correct**, rows 343..378 and
+  columns 367..912 against the expected bounds;
+- the frame **committed**, AFBD completion bit set.
+
+Three independent signals all said "the framebuffer path is fine", and they were
+all true. The conclusion drawn from them -- that the fault must therefore be in
+framebuffer scanout -- did not follow. Identical register state cannot produce
+different panel output, and that contradiction was visible from the first run.
+It should have redirected attention to what the mode did *outside* the dumped
+state, which is exactly where the fault was.
+
+The mechanism is unestablished, and the obvious guess is already ruled out:
+`h713_disp_load()` reads the same filesystem in every mode, so FAT access before
+the sequence is not the problem by itself. What is new is the extra read plus a
+SHA-256 over it -- seconds of work and heavy cache traffic in a window where
+nothing else does any. `vendor-logo-early` reproduces the break.
+
+## Two controls that came out of it
+
+Both were missing for the whole investigation, and both are now permanent:
+
+- **A refusal on a second `panel-test` per power-on.** Every mode ends holding
+  the MIPS in reset, so a second run initialises from a torn-down state: the
+  console re-reports success, the dumps come back identical, the panel stays
+  dark. Undetectable from the log, and it cost four results before it became one
+  line of output. It belonged in the tool, not in a note on this page.
+- **A positive control in every mode.** "Nothing on the panel" is unfalsifiable
+  without one. The TCON chroma marker reaches the panel without touching the
+  framebuffer path, so no blinks means the panel is not lit and nothing
+  downstream is being tested. `vendor-logo` never had one.
+
+## Also fixed along the way
+
+`vendor-logo` cannot confirm anything on its own: the stock `bootlogo.bmp` is 99%
+black with lit pixels at pure grey, chroma `|R-B|` exactly 0, maximum 0 -- the
+one content class this optical path is documented to normalise away.
+`vendor-logo-chroma` keeps the file, hash, geometry and `fbcheck` bounds and
+swaps only the palette.
+
+A scripted `str.replace` silently missed the pixel loop while landing on the
+adjacent `printf`, so one build asserted on the console that the chroma palette
+was active while the grey conversion ran. `fbcheck` caught it -- "no matching
+pixel anywhere" -- and the message was too soft to be read as the alarm it was.
+Both fixed: the edit, and the message.
+
+## Open, none load-bearing
+
+- Why an origin of 123 costs 42 px of source advance per row.
+- What writes 123 to `0x0528008c` in the first place. It survives the DE replay,
+  so LogoRegData or the firmware.
+- Why the extra pre-run read kills the display.
+
 # S = V: there was never a second fault (2026-08-04, test_33)
 
 `fb-fix` was built to test S = V - 42 and find a minimum near register 1322. It
