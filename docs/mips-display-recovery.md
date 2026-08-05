@@ -1,3 +1,91 @@
+# The firmware talks, and it exposes a teardown HAL (2026-08-04)
+
+`h713_disp test 0x33 1` produced the first full firmware narrative. The command
+already existed; what was missing was the **source id**.
+
+## The logger was never the problem
+
+`h713_disp test` defaults `source_id` to 2 (Image). The file default is 1
+(VideoDecoder). With 2 the firmware logs
+
+```
+E/src_mgr [17] (./source_manager.cpp 200)Can not find device for channel: 0x00000002
+```
+
+and abandons most of init, so the ~2.6 KB ring only ever held the tail errors.
+Two runs were spent concluding that ERROR was a compile-time ceiling and that
+`elog_i()` had been compiled out. **That was wrong.** With `source_id=1` the log
+is full of `I/` and `W/` lines. Always pass the source: `h713_disp test 0x33 1`.
+
+The lesson is the same one this log keeps recording: a null result was read as a
+property of the system when it was a property of how we had configured it.
+
+## What the full log shows
+
+**TSE loading works, and task 13 was probably a false alarm.** The firmware
+reads a run of headers -- types 0,1,3,4,5,6,2,5 -- and loads groups
+(`SYSTEM_INIT_SOC`, `V_PANEL`, `ProjectID_0x0033` with 4 modules, `UI_Feature`,
+`PQ`, ...). The `magic code incorrect` error fires *after* the last good header
+and is immediately followed by `Load TSE used:0`, which reads like
+sequential-read termination rather than a corrupt blob.
+
+**The memory allocator is being handed nothing**, and this looks like the real
+cause of the PQ and gamma failures:
+
+```
+I/NO_TAG (./dp_mem_group.c 446)<Memory Allocator> Error:
+  p_mem_group->dwAllo[0]:0x4bf42000-0x4d4f3000   RealOffer:0x4bf41000-0x4bf41000
+```
+
+It asks for ~25.7 MB and is offered a zero-length range -- at exactly the
+`frame_buffer` address `display_cfg.xml` declares. That ties directly to the
+unreserved-scanout question.
+
+**A timing discrepancy:** `I/wce_top (WCETop.cpp 431) hs_size:20,
+h_back_porch:57`, where our config and patch table use HBP 40.
+
+## The HAL, which changes how teardown should be done
+
+The firmware exposes a CPU_COMM-callable HAL, and the names are in the binary:
+
+| module | entry points |
+| --- | --- |
+| `thal_display_misc.cpp` | `THal_Vp_Init`, **`THal_Vp_Deinit`**, `THal_Vp_EnableBlackScreen` / `Disable`, `THal_Vp_EnableVideoFreeze` / `Disable`, `THal_Vp_EnableScreenCover` / `Disable`, `THal_Vp_SetBrightness` |
+| `thal_display_backlight.cpp` | `THal_Vp_SetBacklightWorkMode`, **`Thal_Vp_SetBacklightPwmInfo`**, **`Thal_Vp_SetBacklightLevel`** |
+| `crtc_ctrl/crtc_base.cpp` | `swpll_stop`, `swpll_start`, `hwpll_stop`, `hwpll_start`, `active`, `crtc is disable` |
+
+So the teardown sequence this project was about to reverse-engineer and replay
+as raw registers is **already implemented in the firmware**, and CPU_COMM works
+end to end with a `commcall` command and a live 1224-entry call table.
+
+Asking the firmware to blank, drop the backlight and deinit is far safer than
+replaying a guessed register order into a panel with power-sequencing
+requirements.
+
+`Thal_Vp_SetBacklightPwmInfo` also bears on the backlight question: the firmware
+owns the PWM configuration, so the disagreement between `display_cfg.xml`
+(channel 0) and `panel_config.ini` (channel 5) may be resolvable by asking it.
+
+## What is still missing
+
+Call ids are **not** a hash of the name -- crc32, djb2, sdbm, FNV and ELF all
+fail against the known pair `THal_Vp_GetImageBufferAddr` -> `0x2f02f7dd`. The
+name strings are not referenced through a 32-bit pointer table either, so they
+are reached by `lui`/`addiu` immediates.
+
+The practical route is therefore the **live call table** (`h713_disp calltable`,
+1224 entries) rather than static derivation.
+
+## Dead ends, recorded
+
+- The `debug_buffer` declared at `0x4bd01000` is not where elog writes.
+- The 7.6 MB above `0x4b560000` holds only firmware name tables.
+- Sync mode produced no console output, so the firmware's UART route is not the
+  U-Boot console UART.
+- `u-boot.bin` disassembled at base `0x4a000000` puts the cited `0x4a024894`
+  inside device-tree strings, so either that base or that binary is wrong for
+  the stock-U-Boot addresses this project has been citing.
+
 # The framebuffer fault was our own omission (2026-08-04, test_35)
 
 `h713_disp_panel_patch` transcribes stock's panel-patch sites and left two out:
