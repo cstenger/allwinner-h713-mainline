@@ -139,15 +139,27 @@ A brief wrong-looking frame before the logo is normal: the framebuffer is seeded
 with `fill_pattern(0)` so that the pre-run FAT read can be avoided, and that seed
 is on the panel from the end of init until the logo is published and committed.
 
-**Not `vendor-logo`.** The stock `bootlogo.bmp` is 99% black and its lit pixels
-are **pure grey -- chroma `|R-B|` is exactly 0 across the whole file, maximum
-0**. This optical path normalises luminance away; that is the oldest and most
-expensive rule in this bring-up. A blank result from `vendor-logo` carries no
-information: it looks the same whether the path is perfect or the panel never
-lit. One run was spent on exactly that.
+**`vendor-logo` works too, and renders the real asset visibly** -- confirmed
+2026-08-04. The stock `bootlogo.bmp` is 99% black with pure grey lit pixels
+(chroma `|R-B|` exactly 0), and it shows up fine: a light-grey bar on black.
 
-`vendor-logo-chroma` keeps the same file, hash check, geometry and `fbcheck`
-bounds, and swaps only the palette -- lit to red, unlit to blue.
+That corrects something this page asserted for most of a day. The repeated blank
+results from `vendor-logo` were the **load ordering**, not the palette -- the
+2.7 MB FAT read before the display sequence left the panel dark, and every one of
+those failures predates the fix. "This path cannot show luminance content" was a
+plausible reading of a null that had a different cause, and it was wrong.
+
+The older rule it leaned on is narrower than it was stated. What the old log
+established is that *full-field* black/white and greyscale tests read blank --
+a uniformly grey screen against a uniformly white one is genuinely hard to
+judge. Structured, high-contrast luminance content like a grey bar on black is
+not that, and it is perfectly visible.
+
+`vendor-logo-chroma` is still the better instrument when a result must survive a
+photograph, since it keeps the same file, hash check, geometry and `fbcheck`
+bounds and swaps only the palette -- lit to red, unlit to blue. Use it for
+measurement. Use `vendor-logo` when the question is what the product actually
+shows.
 
 **Read `fbcheck` before you read the panel.** It runs against the framebuffer in
 memory, so it says whether the frame is even worth photographing. Its first
