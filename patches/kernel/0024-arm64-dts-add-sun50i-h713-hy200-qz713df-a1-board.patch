@@ -68,11 +68,11 @@
 +		/*
 +		 * MIPS co-processor firmware and working memory
 +		 * Layout from factory Android analysis:
-+		 *   Boot code:    4KB  @ 0x4b100000
-+		 *   Firmware:    12MB  @ 0x4b101000
-+		 *   TSE/Config:   1MB  @ 0x4bd01000
-+		 *   Framebuffer: 26MB  @ 0x4be01000
-+		 *   Total:       40MB
++		 *   Boot code:    4KB  @ 0x4b100000   debug:  1MB @ 0x4bd01000
++		 *   Firmware:    12MB  @ 0x4b101000   cfg:  256KB @ 0x4be01000
++		 *   TSE:          1MB  @ 0x4be41000   (all from display_cfg.xml)
++		 *   Framebuffer: 26MB  @ 0x4bf41000   -- the mips_framebuf node
++		 *   Total:       40MB, matching the vendor's one mipsloader node
 +		 */
 +		mips_reserved: mips-firmware@4b100000 {
 +			compatible = "shared-dma-pool";
@@ -91,15 +91,15 @@
 +			no-map;
 +		};
 +
-+		/* MIPS config says FB at 0x4bf41000 but actual scanout is at 0x78541000 */
++		/* The firmware's own framebuffer, per display_cfg.xml frame_buffer */
 +		mips_framebuf: framebuf@4bf41000 {
 +			reg = <0x4bf41000 0x1a00000>;
 +			no-map;
 +		};
 +
-+		/* U-Boot active scanout address -- display reads from here */
-+		framebuf_reserved: uboot-scanout@78541000 {
-+			reg = <0x78541000 0x1a00000>;
++		/* U-Boot's OSD surface: AFBD fetches here while the panel is on */
++		framebuf_reserved: uboot-scanout@6c100000 {
++			reg = <0x6c100000 0x400000>;
 +			no-map;
 +		};
 +	};
@@ -1818,9 +1818,9 @@
 +};
 +
 +&mips_reserved { status = "okay"; };
-+&cpu_comm_reserved { status = "disabled"; };
-+&mips_framebuf { status = "disabled"; };
-+&framebuf_reserved { status = "disabled"; };
++&cpu_comm_reserved { status = "okay"; };
++&mips_framebuf { status = "okay"; };
++&framebuf_reserved { status = "okay"; };
 +&twi1 { status = "disabled"; };
 +&codec { status = "disabled"; };
 +&dummy_cpudai { status = "disabled"; };
