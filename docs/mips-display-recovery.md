@@ -1,3 +1,68 @@
+# PWM2/PB4 verifiably does not dim this panel (2026-08-05)
+
+The parked result -- "a running 25 kHz PWM on PB4 changed brightness not at
+all" -- now stands on evidence it never had. It took two runs to get there, and
+the first was worthless.
+
+## Run one was a null from a dead instrument
+
+Every PWM register read back zero:
+
+```
+CTL=00000000 PERIOD=00000000 EN=00000000
+```
+
+The PWM block is gated and held in reset out of cold boot and nothing in the
+display path ungates it, so every write went nowhere. CCU 0x7ac carries both:
+BIT(0) is bus-pwm's gate, BIT(16) is RST_BUS_PWM.
+
+Only the register read-back caught this. Without it the run would have read as
+"PWM drives the panel and nothing happens", which is the conclusion the parked
+note already recorded -- and possibly for the same reason.
+
+## Run two: the instrument is on, and the answer is still no
+
+```
+BGR=00010001   gate and reset both released
+CTL=00000100   bit 8 active-high, prescaler 0
+PERIOD=03bf03c0 -> 03bf02d0 -> 03bf01e0 -> 03bf00f0 -> 03bf0000
+EN=00000004    channel 2 enabled
+```
+
+960 cycles a period from the 24 MHz HOSC, so 25 kHz, duty tracking 100/75/50/
+25/0 exactly as asked, against a full-white field, with the panel initialised
+and rendering. No brightness change at any step.
+
+Everything about the configuration matches the stock runtime DTB's tvtop panel
+block: channel 2, PB4 at mux 2, 25 kHz, active high. The mux is the value from
+the h713 pinctrl driver our DT actually binds, and the vendor DT independently
+supports it by giving pwm3 on the neighbouring PB5 muxsel 2.
+
+## So what is left
+
+The panel is lit and rendering, so the light engine is on and something is
+driving it. PWM2 is provably not that something, on this board, in this state.
+
+The next candidate is the firmware. Its HAL exposes
+`Thal_Vp_SetBacklightLevel` (0x51ad877e) and `Thal_Vp_SetBacklightPwmInfo`
+(0xb46ce545), CPU_COMM works, and `commcall` already passes parameters --
+`p[n++] = hextoul(argv[k], NULL)`. That needs no new code, only a run with the
+MIPS left alive.
+
+Note also that PB5, which the DT calls panel_bl_en and warns is shared with fan
+power, is only ever driven by h713_disp_panel_control_test. Nothing in the
+normal display path touches it, so during the sweep it sat wherever boot left
+it.
+
+## The method point
+
+Two runs, and the difference between them was one register read-back. A test
+that cannot tell "the thing I am driving is off" from "the thing I am driving
+does not work" produces the same output either way, and this bring-up has now
+been caught by that pattern four separate times: the dark panel that was a load
+ordering bug, the ERROR-only log that was a source_id, the blank vendor logo
+that was neither of the things proposed, and this.
+
 # Teardown works, and the power-cycle rule is retired (2026-08-04)
 
 `panel-test 0x33 vendor-logo-chroma` twice in one boot. The second run tore down
