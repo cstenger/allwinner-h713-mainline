@@ -1,3 +1,72 @@
+# Teardown works, and the power-cycle rule is retired (2026-08-04)
+
+`panel-test 0x33 vendor-logo-chroma` twice in one boot. The second run tore down
+first and rendered correctly -- both chroma markers and the red SMART PROJECTOR
+on blue. That is task 2's acceptance test, met.
+
+```
+H713 teardown: second run this boot, tearing down first
+H713 teardown: panel down (PF_DAT=00000000 PH_DAT=00000000), PHY 18000000/00000030,
+               route 40000000, MIPS reset=00000000
+```
+
+PF6 low, PH16 low, LVDS PHY and display route back at the cold values every
+probe in this bring-up records, MIPS reset asserted -- `0x00000000` is the
+asserted state, per `H713_MIPS_RESET_ASSERTED`.
+
+The second bring-up then re-ran the whole sequence and re-reached `firmware
+execution proven`, `CPU_COMM magic=deadbeef/deadbeef` and `application readiness
+proven`. It could not have re-released the MIPS from an unrecoverable state.
+
+## What the rule actually was
+
+"Power-cycle between every run" was never a property of the hardware. It was the
+absence of a teardown. Every mode ended by abandoning the panel powered and the
+MIPS in reset, so the next run initialised into a torn-down state and stayed
+dark behind a console that looked perfect.
+
+The mechanism is visible in the teardown line. The bring-up powers the panel by
+driving PF6 high and pulsing PH16; with the panel still powered from the
+previous run, that "power on" was a no-op and the panel never re-ran its own
+init. Dropping the rail properly is what makes a second bring-up behave like a
+first.
+
+That rule cost at least four results in this project -- two recorded in the
+handoff, plus the vendor-logo runs where a dark panel was chased as a
+framebuffer fault while `fbcheck` was simultaneously proving the framebuffer
+correct.
+
+## Scope
+
+Implemented ARM-side, because the firmware cannot do it: `THal_Vp_Deinit` was
+tested and changes four words inside AFBD, leaving LVDS, the PHY, the display
+PLL, the mixer and the DE byte-identical.
+
+Order is stop scanout, park the MIPS, signal off, then the panel rail -- the
+general LVDS rule of signal before VCC, because that is the part with real
+hardware risk.
+
+Two deliberate gaps, both commented in the source:
+
+- **The backlight is not touched.** Which PWM drives it is unresolved:
+  `display_cfg.xml` says channel 0, `panel_config.ini` says channel 5, and the
+  dimmer we implemented drives PWM2 on PB4, matching neither. Correct ordering
+  puts backlight off *first*, so this wants revisiting once that is settled.
+- **The PLLs and mod clocks are left running.** Disabling a clock while
+  something still reaches for the block is the documented way to wedge this
+  interconnect, and the bring-up rewrites that state absolutely. The acceptance
+  test passes without touching them.
+
+The off-timing *assignment* -- Off0 after signal, Off2 between reset and power,
+Off1 as discharge -- is symmetry with the confirmed on-side mapping, not
+knowledge. It works. That is not the same as being right, and the source says
+so.
+
+## Consequence
+
+Repeatability testing just got cheap: what needed five power cycles now needs
+one boot.
+
 # The firmware HAL is not a teardown lever (2026-08-04)
 
 CPU_COMM calls work. They just do not do what task 2 needed.
