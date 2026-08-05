@@ -1236,7 +1236,7 @@
 +			 * PWM channel 2 for backlight dimming.
 +			 * Stock uses pwm_request(2, "fastlogo"), period = 1/25kHz = 40us.
 +			 * ge2d_backlight.c calls devm_pwm_get(dev, NULL) to find this.
-+			 * Polarity is set at runtime via panel_pwm_pol in tvtop node.
++			 * Polarity is panel_pwm_pol in tvtop, and stock sets it 0.
 +			 */
 +			pwms = <&pwm 2 40000 0>;
 +			status = "okay";
@@ -1303,8 +1303,8 @@
 +			panel_gpio_3 = <&pio 7 9 1 2 3 1>;
 +			panel_pwm_ch = <2>;
 +			panel_pwm_freq = <25000>;
-+			panel_pwm_pol = <1>;
-+			panel_backlight = <100>;
++			panel_pwm_pol = <0>;
++			panel_backlight = <75>;
 +			panel_pwm_min = <0>;
 +			panel_pwm_max = <100>;
 +			panel_protocol = <0>;
@@ -1471,8 +1471,8 @@
 +			/* Panel PWM / backlight */
 +			panel_pwm_ch = <2>;         /* PWM2 = PB4 */
 +			panel_pwm_freq = <25000>;
-+			panel_pwm_pol = <1>;
-+			panel_backlight = <100>;
++			panel_pwm_pol = <0>;
++			panel_backlight = <75>;
 +			panel_pwm_min = <0>;
 +			panel_pwm_max = <100>;
 +
