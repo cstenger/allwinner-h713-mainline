@@ -1,3 +1,77 @@
+# The firmware HAL is not a teardown lever (2026-08-04)
+
+CPU_COMM calls work. They just do not do what task 2 needed.
+
+## What was tested
+
+Three argument-free routines, on a live firmware with the panel lit and the MIPS
+left running (`h713_disp panel-test 0x33`, which proves readiness and does not
+quiesce):
+
+```
+commcall a30d4c6b   THal_Vp_EnableBlackScreen   clean round trip, nret=0
+commcall b66041d8   THal_Vp_DisableBlackScreen  clean round trip, nret=0
+commcall eaaa24c9   THal_Vp_Deinit              CALL_ACK + RETURN, nret=0
+```
+
+The protocol is proven: published, CALL_ACK, RETURN, ReturnCmd queued and
+consumed, FreeReturn recycled, ring advancing correctly across calls. That
+capability is real and reusable.
+
+## Why it does not help
+
+**The black-screen calls have no visual effect at all.** The firmware's own log
+said why, before we ever called them:
+
+```
+I/crtc (crtc_cfg/crtc_cfg.cpp 192) panel crtc is NOT enabled!
+I/crtc (crtc_ctrl/crtc_base.cpp 37)  crtc is NOT eabled !
+```
+
+The firmware never enables its own CRTC in our configuration. We light the panel
+from the ARM side -- LogoRegData replay into DE/mixer/AFBD/LVDS, plus our own
+frame commits. `THal_Vp_*` is the video-processing HAL, and with its CRTC
+disabled and no source bound, blanking its video window changes nothing.
+
+**`THal_Vp_Deinit` changes four words, all inside AFBD:**
+
+```
+0x05600058  00000000 -> 00000045
+0x0560005c  00000000 -> 0000003a
+0x05600300  00800210 -> 00804218   (xor 00004008)
+0x05600304  00800000 -> 00804000   (xor 00004000)
+```
+
+LVDS, LVDS PHY, display PLL, mixer, DE, de-layers, vblender, tvtop,
+display-route and disp-modclk are byte-identical before and after. It stops no
+clock, disables no PHY, blanks nothing. The panel stays lit.
+
+**And it is a one-way door within a boot.** After Deinit the RETURN_ACK
+publication went unconsumed for 100 ms and the tooling preserved unreconciled
+ReturnCmd and FreeReturn state -- the firmware's low-level handler stopped
+servicing the protocol. So Deinit does tear something down: its own messaging,
+not the display.
+
+## The conclusion, and the cost of not having it earlier
+
+Teardown has to be implemented ARM-side, exactly as first scoped. The firmware
+is not the owner of the path we light, so its HAL cannot release it.
+
+Worth being precise about what the detour bought, because it was not nothing:
+CPU_COMM calling is now proven for argument-free routines, the full call table
+is documented, and the reason the firmware cannot help is understood rather than
+assumed. But the register route was the answer from the start, and the signal
+that would have said so -- "panel crtc is NOT enabled!" -- was sitting in the
+first good firmware log, read and not acted on.
+
+## Diffing dumps
+
+The four-word result came from diffing two `h713_disp dump` outputs
+programmatically rather than by eye. On dumps this size that is not optional:
+the changed words were four out of several hundred, three of them differing in a
+single nibble, in a block that also contains a free-running counter that changes
+every read.
+
 # The firmware talks, and it exposes a teardown HAL (2026-08-04)
 
 `h713_disp test 0x33 1` produced the first full firmware narrative. The command
