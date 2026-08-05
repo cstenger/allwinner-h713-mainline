@@ -215,6 +215,119 @@ Do **not** score any of this on the pale band. The band measures `W`, not the
 stride, and cannot respond to the pattern at all; that criterion was wrong and
 wasted a run.
 
+## Open work, in value order
+
+Session of 2026-08-04/05 closed the display path. What follows is everything
+still outstanding, with the exact next step for each.
+
+### 1. Animated framebuffer test signal
+
+The last thing static frames cannot test. Every render so far is one frame held
+still, so sustained commits, frame timing and liveness are all unverified.
+`h713_disp_commit_osd_frame` hand-manages what stock does in an IRQ handler
+(*"without an ARM IRQ handler the old completion otherwise remains pending
+forever"*), and at most six chained commits have ever been exercised. Observed
+commit waits span 600 us to 16400 us; the upper end is about one frame at
+59.71 Hz, which *suggests* vsync-locked completion but does not establish it.
+
+Build a moving chroma bar: reuse `fill_edge` with a per-frame offset, commit
+continuously, encode the frame number in the bar position and print a committed
+count so one photograph cross-checks against the console. Smooth motion means
+sustained commits work; a stall after *k* frames localises where the handshake
+breaks; tearing shows as a horizontal discontinuity.
+
+Deliberately **not** decoded video -- keep DECD separate so a decoder fault
+cannot present as a display fault. This becomes the reference for DECD later.
+
+If sustained commits do break, the likely cause is the missing ARM IRQ handler,
+which is real work rather than a tweak. Better found now than under a
+compositor.
+
+### 2. Teardown as the single exit
+
+`h713_disp_teardown()` works and is verified, but `h713_disp_panel_test` still
+bails with bare `return ret` in about a dozen places, each leaving the panel
+powered and the MIPS live. Not hypothetical: that is exactly what happened when
+`vendor-logo-late` hit its bootlogo hash refusal.
+
+Convert to a single exit -- `goto out` onto teardown-and-return, or wrap the
+body in a helper called by a thin outer function that always tears down.
+Deferred during the session because a background task is refactoring that
+function's 19-bool signature and restructuring the body would collide.
+
+Check whether `h713_disp_init_only`, `h713_disp_test` and the mips-test path
+want the same treatment; they have the same shape of early returns.
+
+### 3. The backlight, and what it blocks
+
+PWM2/PB4 provably does **not** dim this panel -- see the evidence log. The
+configuration is right in every respect (channel 2, PB4 mux 2, 25 kHz, active
+high, all matching the stock DTB) and the registers read back correct.
+
+Next, and it needs no new code: the firmware HAL exposes
+`Thal_Vp_SetBacklightLevel` (`0x51ad877e`) and `Thal_Vp_SetBacklightPwmInfo`
+(`0xb46ce545`), CPU_COMM works, and `commcall` already passes parameters.
+
+```
+h713_disp panel-test 0x33
+h713_disp commcall 51ad877e chan=0 pid=8b8f32b0 64
+h713_disp commcall 51ad877e chan=0 pid=8b8f32b0 0
+```
+
+Temper expectations: `THal_Vp_EnableBlackScreen` returned cleanly and did
+nothing, because the firmware's own CRTC is not enabled in our configuration.
+The backlight may be in the same category.
+
+**Do not drive PB5 low.** The DT calls it `panel_bl_en` and it is shared with
+fan power. On a projector with an LED light engine that is a thermal risk.
+
+This blocks finishing the teardown, which should turn the backlight off first
+and currently cannot.
+
+### 4. Linux handoff
+
+Unblocked now that the reservations are correct. Nothing has checked that the
+framebuffer survives into Linux. Milestone 2b passed *before* any of the
+framebuffer fixes existed, and "reaches userspace" is not "the panel still
+shows a correct image".
+
+Check: after handoff, is the panel still showing the U-Boot frame intact, and
+for how long? Does anything in Linux disturb the display clocks, the layer X
+origin, or the AFBD source address?
+
+### 5. `auto`, and a design call that is not mine
+
+`auto` cannot render as it stands -- no framebuffer content **and**
+`stock_panel_power = false`. It is a MIPS-launch/prep path, not a display path,
+which looks deliberate and matches Milestone 2b.
+
+So either it is correctly prep-only, and the real question is whether the fixes
+hold with the MIPS live and unquiesced (largely answered -- plain
+`panel-test 0x33` runs that way and renders), or the product wants a boot logo
+and `auto` should publish it. That is a behaviour change to the documented boot
+path and wants a decision.
+
+### 6. Smaller, opportunistic
+
+- **`0x05280084[31:16]`** -- the *other* site `h713_disp_panel_patch` omitted on
+  the same reasoning that turned out to be wrong for `0x0528008c`. It holds 720
+  and stock appears to zero it. It has earned the same two-sided perturbation,
+  via the `fb-band` harness. Do not change it blind.
+- **Why a pre-run FAT read kills the display.** We have a workaround, not a
+  cause, and it is a latent fragility: anything occupying that window might do
+  the same. `vendor-logo-early` reproduces it. Three runs should isolate it --
+  a bare `mdelay()` of equivalent duration, then read-without-hash, then
+  hash-without-read.
+- **The firmware's UART shell.** `shell_thread_uart` and `shell_thread_monitor`
+  are in the binary, and `display_cfg.xml` references *"How to use elog
+  command.md"* -- a command interface, not just an output stream. Establish
+  from the binary which UART it binds and whether the thread starts in our
+  configuration before spending bench time.
+- **Two pinctrl patches disagree.** Patch 0002 gives PB4 `pwm2` mux 2, patch
+  0018 gives 3 for the same pin and function. Only 0002's driver binds here
+  (`allwinner,sun50i-h713-pinctrl`), and the vendor DT supports 2, so 0018 is
+  probably wrong -- but it is inert, so this is tidiness.
+
 ## Working tools in `h713_disp`
 
 | command | purpose |
