@@ -220,11 +220,41 @@ wasted a run.
 | `panel-test <id> <mode> <stride>` | any mode with `0x05600170` forced to `<stride>` bytes, applied after the DE replay |
 | `panel-test <id> fb-vprobe` / `fb-hprobe` / `fb-quad` / `fb-grid` | framebuffer geometry probes |
 | `panel-test <id> vendor-logo` | the vendor bootlogo, with `fbcheck` verifying the conversion |
+| `teardown` | stop scanout, park the MIPS, drop the panel rail; run twice to prove it |
 | `tools/display/edge-measure.py` | host-side: stripe count -> stride, from the photographs |
 
-**Power-cycle between every run.** Each mode ends holding the MIPS in reset;
-running two in a row leaves the second starting from a torn-down state and the
-panel dark. Two blank results in this session were that, not bugs.
+**Power-cycling between runs is no longer needed.** `panel-test` tears down
+first when it has already run this boot, and the second run renders correctly --
+verified on hardware 2026-08-04, both chroma markers and the logo.
+
+The old rule was: each mode ended holding the MIPS in reset, so a second run
+initialised into a torn-down state and the panel stayed dark while the console
+looked perfect. That cost at least four results. It was never a property of the
+hardware -- it was the absence of a teardown.
+
+`h713_disp teardown` also runs it standalone. What it does, in order: stop
+scanout, park the MIPS, return the LVDS PHY and display route to their cold
+values, then drop PH16 and PF6 with the panel's declared off timings
+(20/75/250 ms). Confirmed output:
+
+```
+panel down (PF_DAT=00000000 PH_DAT=00000000), PHY 18000000/00000030,
+route 40000000, MIPS reset=00000000
+```
+
+`0x00000000` on the reset register is the **asserted** state.
+
+The likely reason a second run used to fail is visible in that line: the
+bring-up powers the panel by driving PF6 high and pulsing PH16, so with the
+panel still powered from the previous run that "power on" was a no-op and the
+panel never re-ran its own init.
+
+Two gaps remain, both deliberate and both commented in the source. The backlight
+is not touched, because which PWM drives it is unresolved. The PLLs and mod
+clocks are left running, because disabling a clock while something still reaches
+for the block is the documented way to wedge this interconnect -- and the
+bring-up rewrites that state absolutely, so the acceptance test passes without
+it.
 
 ## Method notes that cost real time
 
