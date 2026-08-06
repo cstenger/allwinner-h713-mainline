@@ -32,7 +32,7 @@ defconfig, and with a U-Boot preboot that dispatches on the two magics.
 
 --- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -30,6 +30,19 @@
+@@ -30,6 +30,20 @@
  		stdout-path = "serial0:115200n8";
  	};
  
@@ -47,6 +47,7 @@ defconfig, and with a U-Boot preboot that dispatches on the two magics.
 +		nvmem-cell-names = "reboot-mode";
 +		mode-fastboot = <0xfa57b007>;
 +		mode-bootloader = <0xb007c0de>;
++		mode-vendor = <0x001db007>;
 +	};
 +
  	aliases {
