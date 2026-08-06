@@ -241,8 +241,148 @@ To boot the kernel from eMMC with no host attached — flash the FIT to `boot_a`
 and set a U-Boot `bootcmd` — see [standalone-boot.md](standalone-boot.md)
 (`tools/flash-standalone.sh`).
 
+## Method 5 — boot stock temporarily, to read its U-Boot console
+
+Worked out 2026-08-05. The goal is **not** to run Android — it is to see the two
+seconds of stock U-Boot output that say whether the vendor's own backlight setup
+succeeds (`Display fastlogo finish!`) or fails (`Pwm enable fail:%d`,
+`backlight enable fail:%d`, `Create backlight instance fail!`).
+
+### ⚠ Prerequisite that does NOT hold as of 2026-08-05
+
+This method was first written assuming stock's boot package was still intact
+below the GPT, making it a single 32 KiB write. **That assumption is false on
+this unit.** Bench-checked, all with `mmc dev 1;` prefixed on the same line:
+
+| sector | expected | actually contains |
+| --- | --- | --- |
+| `0x6000` (12 MiB) | `sunxi-package` | high-entropy data, unidentified |
+| `0x8020` (32800, the Allwinner standard) | `sunxi-package` | records `1,3,4,0x202` / `1,3,4,0x7d`, unidentified |
+| `0x10000` (32 MiB) | `sunxi-package` | all zeros |
+
+Those three sectors are the only ones stock `boot0` references as literals
+(offsets `0x5d80`, `0x5e68`, `0x5e6c` in `boot0_sdcard.fex`; the pair 32800 /
+24576 is `{start_sector, max_size_sectors}` — the 24576 is a **size**, 12 MiB,
+which is where this document's original "12 MiB boot package" claim came from
+and it was a misreading).
+
+So restoring stock now requires writing **both** `boot0_sdcard.fex` (sector 16)
+**and** `boot_package.fex` (sector 32800, inferred), the latter over data of
+unknown purpose. **Take a real backup first** — see the warning below about how
+easy it is to produce a fake one.
+
+### The 12 MiB figure below is retained only for the layout argument
+
+Stock's layout puts **boot0 at sector 16** and the boot package somewhere in the
+reserved region ahead of the GPT. Our own image occupies sector 16 for ~940 KiB,
+so:
+
+| region | state |
+| --- | --- |
+| sector 16, first 32 KiB | **ours** — this is all that must change |
+| 12 MiB boot package | **stock, untouched** — we have never written there |
+| `boot_a`, `super`, `vendor_boot_a`, `dtbo_a`, `vbmeta*` | **stock, untouched** |
+| `UDISK` (last partition) | our Debian rootfs |
+
+So restoring stock boot0 is enough: it loads stock U-Boot from the intact boot
+package, which runs fastlogo and prints what we need.
+
+### Always put `mmc dev 1;` on the same line
+
+The current MMC device resets to slot 0 between commands, and slot 0 is disabled
+on this board (no SD). A bare `mmc read` then fails with `MMC Device 0 not
+found` — but `md` afterwards happily prints whatever was already in DRAM, which
+looks like plausible data. This wrecked three separate results on 2026-08-05,
+including a `cmp.b` verify and, worse, a **backup**:
+
+```
+mmc read 0x48000000 0x8020 0x980     <- failed, device 0 not found
+fatwrite mmc 1:2 0x48000000 backup_8020.bin 0x130000
+1245184 bytes written in 95 ms       <- wrote 1.2 MB of uninitialised DRAM
+```
+
+That file is not a backup and restoring from it would destroy the region it
+claims to protect. Always:
+
+```
+mmc dev 1; mmc read <addr> <lba> <cnt>; md.b <addr> 0x20
+```
+
+and confirm the `MMC read: ... blocks read: OK` line before trusting the dump.
+
+### Do this first
+
+Confirm the Android partitions really are intact — read-only, costs nothing:
+
+```
+part list mmc 1
+```
+
+**Verified 2026-08-05:** all 26 partitions present and matching
+`sys_partition.fex` exactly (`bootloader_a` at LBA `0x12000`, `boot_a` 131072
+sectors, `super` 4194304 sectors, `UDISK` last). Note `mmc 1:2` is
+`bootloader_b`, which this project has repurposed to hold the MIPS artifacts, so
+the stock B-slot resource is already gone.
+
+Expect `boot_a`, `super`, `vendor_boot_a`, `misc`, `UDISK` and friends. If they
+are gone, stop; stock will not boot and this method does not apply.
+
+### To stock
+
+`local/stock-boot/boot0_sdcard.fex` (32768 B, `eGON.BT0`), extracted from the
+OTA package — see the evidence log for provenance.
+
+```
+run fastboot_mode
+```
+
+```
+fastboot flash uboot local/stock-boot/boot0_sdcard.fex
+```
+
+Use the `uboot` alias, not `bootloader`, for the reason in Method 3. Then power
+cycle — **not** `fastboot reboot bootloader`, whose RTC marker is consumed by
+*our* preboot, which will no longer be there.
+
+**Capture the UART from the first byte.** The interesting lines appear within
+about two seconds, before Android starts.
+
+### Then power off, and do not let Android settle
+
+Once `Display fastlogo finish!` or a `Pwm enable fail` has been printed, cut the
+power. Letting stock Android boot fully risks it reformatting `UDISK` — where
+the Debian rootfs lives — and touching `misc`/`metadata`. Nothing in this test
+needs userspace.
+
+### Back to ours
+
+Stock boot0 is now at sector 16, so our U-Boot is not running and its fastboot
+is unavailable. Return via the **FEL button** and the procedure in Method 4,
+which is verified, then rewrite:
+
+```
+fastboot flash uboot build/out/u-boot-sunxi-with-spl-ddr3.bin
+```
+
+Equivalently `mmc write 0x42000000 0x10 0x72d` after a `loady`, per Method 1.
+
+### Risks, stated plainly
+
+- **No eMMC backup exists on this machine** (see below), so the return path is
+  "rebuild our image", not "restore a byte-exact copy". That is fine for the
+  boot region, which is reproducible from source, and is *not* fine for anything
+  else — so touch nothing else.
+- If stock boot0 does not find a boot package it will hang. FEL recovers it.
+- Android booting to completion is the one outcome that can lose real data. Pull
+  power early.
+
 ## Safety
 
 - Always name the board a flash ran on — feeding the projector's HY200 QZ713_V2 (LPDDR3) params to the
   HY200 (DDR3) board trains "OK" but reads hang.
-- A full eMMC backup exists in `local/h713-lab` (do not commit — proprietary).
+- **There is no full eMMC backup on this machine.** This document previously
+  claimed one existed in `local/h713-lab`; it does not, and nothing over 200 MB
+  is there (checked 2026-08-05). The retail OTA package at
+  `~/Documents/projector_firmware/H713 Magcubic projector.20250922.093247/update.img`
+  is currently the only source of stock images. Taking a real backup before the
+  next destructive operation would be cheap insurance.

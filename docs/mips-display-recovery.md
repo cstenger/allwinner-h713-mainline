@@ -1,4 +1,469 @@
-# PWM2/PB4 verifiably does not dim this panel (2026-08-05)
+# The vendor firmware says the backlight is channel 5, and Linux never touches it (2026-08-05)
+
+Recovered from the retail OTA package,
+`~/Documents/projector_firmware/H713 Magcubic projector.20250922.093247/update.img`
+(1.9 GB, `IMAGEWTY`, 53 entries). Header layout, derived empirically rather than
+guessed: filename at `block+0x24`, stored length `+0x124`, original length
+`+0x12c`, offset `+0x134`, blocks of 1024 bytes from offset 1024.
+
+## The vendor kernel has no backlight at all
+
+`vmlinux.fex` is bzip2 -> tar -> a **220 MB ARM 32-bit `vmlinux` with DWARF and
+full symbols**: `Linux version 5.4.99-00049-g34f0974adef4-dirty`, built
+2025-09-22, `arm-linux-gnueabi-gcc`. Note 32-bit -- our port is arm64.
+
+| probe | result |
+| --- | --- |
+| `backlight_device_register` / backlight class | **0 symbols** |
+| `panel_pwm_ch`, `panel_backlight`, `panel_bl_en`, `panel_pwm_freq`, `panel_pwm_pol` | **0 string references** |
+| `Thal_Vp*` / `SetBacklight*` | **0 strings** |
+| `pwms =` consumers in the shipping DTB | exactly one -- the CPU regulator on `s_pwm` |
+| PWM sysfs (`pwmchip_sysfs_export`) | present |
+
+So stock Android exposes no `/sys/class/backlight`, and the kernel never reads a
+single panel backlight property. **Booting the vendor OS to look for a
+brightness control would not have answered the question** -- there is nothing in
+the kernel to find. That was worth establishing before spending a bench day on
+it.
+
+## Stock U-Boot is the only thing that sets the backlight
+
+`u-boot.fex` from the package is **sha256-identical** to
+`local/mips-display/board-b-stock/u-boot-stock.bin`, so everything below is
+about the real shipping bootloader. It is **Thumb**, load base **`0x4a000000`**
+(recovered by matching literal-pool words against known string offsets; all five
+probe strings agree).
+
+It contains the whole backlight implementation:
+
+```
+pwm_request   sunxi_pwm_pin_set_state   Pwm enable fail:%d   backlight enable fail:%d
+Create backlight instance fail!   Display fastlogo finish!
+Error backlight parameter:pwm_ch:%d pwm_freq:%u max_duty_ratio:%d min_duty_ratio:%d
+```
+
+And it has **two parameter sources**, which is where this project's long-running
+"channel 2 or channel 5" contradiction actually comes from -- both are real, in
+one binary:
+
+| source | keys | literal pool |
+| --- | --- | --- |
+| `panel_config.ini` `[PWMSetting]` | `pwm_channel` `pwm_freq` `pwm_polarity` `pwm_min` `pwm_max` `default_backlight` | `0x23bec`..`0x23c18` |
+| device tree | `panel_pwm_ch` `panel_pwm_freq` `panel_pwm_pol` `panel_backlight` `panel_pwm_min` `panel_pwm_max` | `0x23c20`..`0x23c34` |
+
+Both branches populate the same registers and converge on the same
+backlight-create call at `0x4a0255a0` (the DT branch literally jumps into the
+INI branch's tail at `0x4a023ae0`). The selector is at **`0x4a0239e0`**:
+
+```
+ldr r0, [pc, #0x210]   ; -> "pwm_freq"        (the INI key)
+bl  0x4a0258ec         ; ini_get()
+cmp r0, #0
+bne 0x4a023a8e         ; found -> INI branch
+ldr r1, [pc, #0x20c]   ; -> "Get pwm freq fail!"
+b   0x4a023a50         ; else -> log and abort
+```
+
+Board B's `panel_config.ini` has `[PWMSetting]` with `pwm_freq = 40000` and
+`pwm_channel = 5`, which for a while looked like it settled the question in
+favour of channel 5. **It does not, and the shipping DTB overrules it.**
+
+## The shipping DTB settles it: channel 2, and channel 5 is unroutable
+
+`sunxi.fex` from the OTA package -- the device tree the retail unit actually
+boots -- carries a complete, self-consistent backlight configuration:
+
+```
+panel_pwm_ch   = <0x02>      channel 2
+panel_pwm_freq = <0x61a8>    25000 Hz
+panel_pwm_pol  = <0x00>      active high
+panel_backlight= <0x4b>      75
+panel_bl_en    -> PB5
+```
+
+and pin groups for **pwm0..pwm4 only**. `pwm5` has a controller node
+(`pwm5@2000c15`) and **no pin group anywhere in the file**. Stock calls
+`sunxi_pwm_pin_set_state`, which needs one, so channel 5 can never be muxed on
+the retail unit.
+
+Therefore stock either uses channel 2 -- matching that DT block exactly -- or
+asks for channel 5 and fails. **Either way the only configuration stock can
+successfully apply is channel 2 / PB4 / 25 kHz / active high**, which is exactly
+what this project has now run with a hardware-verified counter, and which does
+not change brightness.
+
+`panel_config.ini` appears to be a vendor build artifact rather than a runtime
+input: our own bring-up loads `display.bin`, `display_cfg.xml` and the `.TSE`
+files from `mmc 1:2` and **never loads `panel_config.ini`**.
+
+**Booting stock is therefore unnecessary** -- the shipping DTB answers the
+question that boot was meant to answer. `docs/flash.md` "Method 5" is retained
+for the eMMC-layout facts it records, but its premise turned out false (stock's
+boot package is not present at any sector `boot0` references) and it should not
+be run without a real backup and a better reason.
+
+**Method note, worth keeping.** The channel question flipped twice in one
+session because the reasoning kept starting from board-A and board-B
+*development* trees. The shipping DTB is the artifact that governs the retail
+unit and should have been the first source consulted, not the last.
+
+## Package inventory (what is now available)
+
+Extracted to `local/stock-boot/` (do not commit -- proprietary):
+
+| file | offset | size | magic |
+| --- | --- | --- | --- |
+| `boot0_sdcard.fex` | 175104 | 32768 | `eGON.BT0` |
+| `u-boot.fex` | 207872 | 638976 | `uboot` |
+| `boot_package.fex` | 864256 | 1245184 | `sunxi-package` |
+| `env.fex` | 145324032 | 131072 | env |
+| `sunxi.fex` | 68608 | 73728 | `d00dfeed` |
+
+Also in the package and not yet extracted: `boot.fex` (64 MB Android boot),
+`super.fex` (1.6 GB), `vendor_boot.fex`, `dtbo.fex`, `misc.fex`, `vbmeta*.fex`,
+`sys_partition.fex` (the authoritative partition table), `sunxi_gpt.fex`,
+`sunxi_mbr.fex`, `arisc.fex`, `boot-resource.fex`.
+
+**There is no full eMMC backup on this machine.** `docs/flash.md` claims one
+exists in `local/h713-lab`; it does not, and nothing over 200 MB is there. The
+OTA package is now the only source of stock images, which is why it is worth
+recording where it came from.
+
+# PB4's pwm2 is mux 3, and that is why every backlight test failed (2026-08-05)
+
+**One transcription error explains both null results, across two years of
+tooling and two different software stacks.**
+
+`patches/kernel/0002-pinctrl-sunxi-add-h713-pio-driver.patch` gives PB4 the
+`pwm2` function at **mux 2**. It is mux **3**. Three independent sources say so:
+
+| source | PB4 / pwm2 mux |
+| --- | --- |
+| board B's own stock U-Boot DTB, `pwm2@0 { allwinner,pins = "PB4"; allwinner,muxsel = <0x03>; }` | **3** |
+| upstream mainline H616 pinctrl table | **3** |
+| patch 0018 | **3** |
+| patch 0002 -- *the table the kernel actually binds* | 2 |
+
+Patch 0002 additionally invents `PB4 mux 5 = twi2`, which upstream does not
+have. That row is simply wrong.
+
+**What it cost.** The sweep of 2026-08-05 ran with a verifiably correct PWM --
+`CLK_CFG=00000080`, `PERIOD=03c003c0 -> 02d003c0 -> 01e003c0 -> 00f003c0 ->
+000003c0`, `EN=00000004`, 25 kHz, duty stepping exactly as asked, against a
+full-white field on an initialised and rendering panel -- and changed brightness
+not at all, because the waveform was driven into a pad muxed to a different
+function. The console printed `PB4 mux=2` and that was checked against patch
+0002, the same wrong source, so the read-back confirmed the error rather than
+catching it.
+
+The Linux `pwm-backlight` run of 2026-07-24 had the identical fault. Its
+debugfs line -- `pin 36 (PB4): device backlight function pwm2` -- was true at
+the pinctrl abstraction level and wrong at the register level, because the
+function-to-mux mapping underneath it is patch 0002's. So the two independent
+negatives that made this look like a panel-side problem were one bug, in our own
+pin table, seen twice.
+
+**Fixed** in U-Boot: `H713_BL_PWM_MUX` 2 -> 3, rebuilt and verified in the
+image. **Patch 0002 still needs the same correction for Linux**, and every
+other row in that table is now suspect until checked against board B's stock
+DTB -- it is a transcription, and this is the second load-bearing error found
+in it.
+
+Retest:
+
+```
+h713_disp panel-test 0x33 bl-sweep
+```
+
+### Result: the first clean negative, and what is still unverified
+
+Run of 2026-08-05 with everything correct at once, for the first time:
+
+```
+PB4 mux=3  BGR=00010001  PCCR=00000000  CTL=00000100
+PERIOD=03bf03c0 -> 03bf02d0 -> 03bf01e0 -> 03bf00f0 -> 03bf0000
+GATE=00000004  EN=00000004  CNT advancing +176/7us, wrapping at 960
+```
+
+Channel 2, PB4, mux 3, HOSC/1, 25.0 kHz proven by the counter wrap, duty
+stepping 960/720/480/240/0 against a fixed entire of 960, channel gated,
+enabled and demonstrably counting, panel initialised and rendering a full-white
+field. **No brightness change at any step.**
+
+Every earlier null had at least one of these wrong, so this is the first result
+that is evidence about the panel rather than about our code.
+
+**One thing is still not verified: that the waveform reaches the pad.** The
+counter proves the channel generates internally; it says nothing about PB4
+itself. The PIO data register cannot answer this -- it reports the output latch,
+not the pin, as PC's data register reading `00000000` for an active eMMC bank
+shows. The instrument for this is a **DMM on PB4 in DC mode** during the sweep:
+at 25 kHz it averages, so 100% reads ~3.3 V, 50% ~1.65 V, 0% ~0 V.
+
+- PB4 tracks duty -> the pin is driven correctly and the panel genuinely ignores
+  it. The ARM-side PWM route is then exhausted and the serial-panel-init
+  hypothesis of 2026-07-24 is what remains.
+- PB4 sits flat -> the waveform is not reaching the pad, and mux 3 vs 2 becomes
+  an A/B test with the DMM as the judge.
+
+Do not spend another bench run on register reads before this measurement. Three
+separate register-level readings in this session turned out not to mean what
+they appeared to -- the enable bit at `0x080`, the PIO data register, and the
+`pwm-sun8i` field order -- and the physical measurement is worth more than a
+fourth.
+
+**The method point, and it is the same one as `0x0528008c`.** A read-back
+checked against the source that produced the value cannot detect an error in
+that source. `PB4 mux=2` was printed, read, and approved three separate times.
+What was never done until now was to check the mux against the *vendor's* table
+rather than ours -- and board B's own stock DTB had been sitting in
+`local/mips-display/board-b-stock/u-boot-stock.bin` the whole time, with the
+answer in it.
+
+Two further corrections fell out of reading it:
+
+- Board B's `lcd1@1` node gives `panel_pwm_ch = <0x02>` and `panel_bl_en` on
+  PB5, confirming channel 2 and PB4 from **board B's own** device tree. Every
+  earlier citation of `panel_pwm_ch = 2` in this log came from board A's
+  `tv303` DTB and was a cross-board inference.
+- Board B's `panel_backlight` is `<0x64>` = **100**, not board A's `<0x4b>` =
+  75. Commit `7b0a75f` set our DT to 75 from board A's capture.
+
+`panel_config.ini`'s `pwm_channel = 5` remains unexplained and now
+*contradicts* board B's own DTB. Its comment reads `#map to hardware PWM
+channel 0~7`, so it is not a firmware-internal index. Board B's DTB has no
+pwm5 pin group and defines pin groups only for pwm0/pwm1/pwm2. Treat the INI
+field as unresolved rather than authoritative; the DTB is the stronger source
+because it names a pin.
+
+# The backlight: the firmware cannot drive it, and the PB4 null was ours (2026-08-05)
+
+Two findings, from one bench session and a disassembly of `display.bin`. The
+first stands. The second was **right that our PWM register map was broken and
+wrong that fixing it was sufficient** -- see the section above, which supersedes
+its conclusion. The register-map analysis below is still correct and still
+needed; it simply was not the only fault.
+
+## 1. The firmware HAL backlight route is closed
+
+`h713_disp commcall 51ad877e chan=0 pid=8b8f32b0 64` and the same with `0`
+both returned `nret=1 ret[0]=00000001`. Neither number means anything.
+
+**The arguments were not what the handoff intended.** `commcall` parses with
+`hextoul`, so `64` is 0x64 = 100 and the pair was max and zero, not 100 and 0.
+
+**The return is a hardcoded constant.** The worker behind
+`Thal_Vp_SetBacklightLevel` is at `0x8b148ca4` (file offset `0x48ca4`; the
+firmware maps 1:1, MIPS `0x8b100000` = file 0 = ARM `0x4b100000`). It contains
+no conditional branch at all and ends:
+
+```
+0x8b148d50: addiu $v0, $zero, 1
+0x8b148d54: jr    $ra
+```
+
+`THal_Vp_SetBacklightWorkMode` (`0x8b148acc`) and `Thal_Vp_SetBacklightPwmInfo`
+(`0x8b148b80`) have the identical shape. All three return 1 unconditionally, so
+identical returns for different levels were guaranteed before the call was made.
+
+**What the call actually does.** Each worker logs `ENTER` (the strings confirm
+it: `'./thal_display_backlight.cpp'`, `'Thal_Vp_SetBacklightLevel'`), packs
+`{opcode, arg}` on the stack -- WorkMode 0, PwmInfo 1, Level 2 -- calls
+`0x8b106bec`, logs `LEAVE`, returns 1. That dispatcher is a C++ virtual call:
+
+```
+lw   $v0, 0x3570($v0)   # service pointer at 0x8b253570
+beqz $v0, ->return 0    # NULL: silently do nothing
+lw   $v1, ($v0)         # vtable
+lw   $t9, 0xc($v1)      # slot 3
+jr   $t9
+```
+
+Slot 3 (`0x8b106a70`) calls `0x8b15c460` -- a queue send whose third argument is
+a timeout, `-1` meaning block -- with **0**. So the HAL call is a *non-blocking
+post to another thread*, and it reports success before the message is dequeued.
+The vtable is at `0x8b1eb07c`, immediately preceded by the RTTI names
+`7IThread` and `10CAppBottom` and the module string `app_bottom`.
+
+**And the consumer cannot reach the hardware.** An exhaustive effective-address
+scan over all 240,266 instructions finds **zero** loads or stores resolving into
+`0x02000000`-`0x02002000` -- no PIO, no PWM, no CCU. The scan was run twice, the
+second time preserving callee-saved registers across `jal` so a base held in
+`$s0`-`$s7` could not hide. All 13 `lui 0x0200` sites are constants (12 into
+argument/temp registers; spot checks show them in `jal` delay slots, passing
+0x02000000 as a value). The only MMIO the firmware touches is display blocks --
+`0x0500`, `0x0504`, `0x0508`, `0x050c`, `0x0514`, `0x051b`, `0x051c`, `0x0520`,
+`0x053e`, `0x0555`, `0xa54f` -- and those are ARM physical addresses, the same
+ones we dump from the ARM side, so the peripheral map is 1:1 and `0x02000c00`
+would be the PWM for the MIPS too.
+
+Either leg closes it on its own. **`Thal_Vp_SetBacklightLevel` cannot dim this
+panel with any argument, and cannot report that it didn't.**
+
+One correction worth keeping, because it is the project's own rule biting: the
+static scan found *no writer* for `0x8b253570` and predicted NULL. A runtime
+read disproved that -- `md.l 0x4b253540 0x20` shows `8b8ae340 8b89df8c 8b8c8ecc`,
+three live service objects. A static write map is a lower bound, never an
+inventory. The conclusion survives only because it never depended on that.
+
+## 2. "PWM2/PB4 does not dim this panel" was a test artifact
+
+The pin was right. The code never drove it.
+
+### The stock DTB settles the pin, and it is not channel 5
+
+From the stock U-Boot DTB (`local/mips-display/research/uboot_dtb.dts`):
+
+| property | value | meaning |
+| --- | --- | --- |
+| `panel_pwm_ch` | `<0x02>` | the panel backlight is channel 2 |
+| `pwm2_pin_a` | `pins = "PB4"; function = "pwm2"` | channel 2 is PB4 |
+| `panel_backlight` | `<0x4b>` | default brightness 75, not a phandle (0x4b resolves to an SD pinctrl node) |
+| pwm5/6/7 | controller nodes only | **no pin group exists for channel 5** |
+
+So `panel_config.ini`'s `pwm_channel = 5` is not a SoC PWM channel, and the rule
+this log has carried since 2026-07-29 -- *"Do not return to PB4/PWM2"*, on the
+grounds that the INI overrides `panel_pwm_ch=2` -- has been aiming away from the
+correct pin. Withdraw it.
+
+This also resolves the parked pinctrl disagreement in patch 0002's favour. The
+stock DTB gives PH17/pwm0 muxsel 3, PH18/pwm1 muxsel 3, PB5/pwm3 muxsel 2 and
+PA12 = **pwm4**, all matching patch 0002. Patch 0018's `PA12 = pwm5` and
+`PB4 = mux 3` are upstream *H616* values and do not apply to H713. (PA12 is a
+gmac0 pin on this board in any case.)
+
+### The register map was NOT wrong -- this subsection is retracted (2026-08-05)
+
+**Everything in the rest of this subsection is wrong and was reverted the same
+day.** The original map is mainline's `pwm-sun20i-d1`, and it is **proven
+correct on this hardware**.
+
+Two pieces of evidence, in order. First, switching to patch 0007's map produced
+a full block dump reading `0x02000c40 = 0` and `0x02000c80 = 0` -- under the
+`sun20i-d1` map the per-channel CLK_GATE and ENABLE, both clear -- with `CNT(2)`
+at `0x02000d48` reading `0`, so the channel was configured but not running.
+Under patch 0007's map every field had been set correctly and the counter should
+have been counting.
+
+Second, and decisive: with the map reverted, the counter runs. Every sweep step
+advanced by **exactly 176** counts across a 7 us window, and the last step
+wrapped `0x315 -> 0x005`, i.e. +176 modulo **960**. That fixes both unknowns at
+once -- a ~24 MHz count rate, and an entire-cycle count of exactly 960, which is
+25.0 kHz. It also confirms the field order directly: `PERIOD = 0x03bf03c0` with
+a wrap at 960 means `[31:16] = 959` is **entire - 1**, not an active count.
+
+The evidence originally cited for patch 0007 does not hold. Its "verified from
+live hardware" capture, `PERIOD2 = 0x03BF03C0`, is **degenerate**: 0x3bf = 959
+and 0x3c0 = 960, so it reads as 25 kHz at ~100% duty under *either* field order.
+It cannot discriminate between the two layouts and must never be cited as proof
+of one again.
+
+Whether patch 0007 is also wrong for the `r_pwm` instance it was DMM-validated
+against is open -- that block may be a different generation. Nothing in the
+backlight work depends on the answer.
+
+The counter check is now permanent: `h713_disp_backlight_set()` samples `CNT`
+twice per step and prints `counter is static` if it does not move, so a dead
+channel can never again be mistaken for a panel result.
+
+Kept below because the reasoning is a good example of how a plausible
+cross-check can be degenerate without looking like it.
+
+### (RETRACTED) The register map was wrong in four places
+
+`h713_disp_backlight_set()` did not match patch 0007, the H713 PWM driver:
+
+| | patch 0007 | what we had |
+| --- | --- | --- |
+| ENABLE | `0x060` | `0x080` -- that is CAPTURE |
+| PERIOD fields | `[31:16]` active, `[15:0]` entire | `(period-1)<<16 \| duty` -- inverted |
+| pair clock gate | CLK_CFG `BIT(7)` | mask `0x18f`, which **clears** bit 7 |
+| CTL | ACT_HIGH `BIT(1)`, CLK_SRC_EN `BIT(5)` | `BIT(8)`, an undefined bit |
+| `0x040` | dead-zone control | used as a clock gate |
+
+Patch 0007's map is hardware-validated twice: the CPU DVFS regulator runs on the
+same driver and the same `allwinner,sun50i-h713-pwm` compatible and was
+DMM-checked across 480..1416 MHz, and the driver carries a live capture of this
+very channel, `PERIOD2 = 0x03BF03C0` -- entire 960 (25 kHz), active 959 (~100%
+duty), which is the stock backlight state and matches a lit panel at full
+brightness. Caveat: the DMM validation exercised the `r_pwm` instance at
+`0x07020c00`, not the main block; same driver and compatible, but the transfer
+is inference.
+
+### The parked run's own numbers explain its null
+
+Re-reading the values that run logged, under the validated field order:
+
+| asked | register written | what the hardware had |
+| --- | --- | --- |
+| 100% | `0x03bf03c0` | 99.9% duty at 25.0 kHz |
+| 75% | `0x03bf02d0` | active 959 >= entire 720 -- saturated, stuck on |
+| 50% | `0x03bf01e0` | active 959 >= entire 480 -- saturated, stuck on |
+| 25% | `0x03bf00f0` | active 959 >= entire 240 -- saturated, stuck on |
+| 0% | `0x03bf0000` | entire 0 -- reads as never configured |
+
+Every step was either ~100% duty or saturated on. Never anything dimmer. And
+`EN=00000004` was read back from `0x080`, the capture register the enable bit
+was written to -- the real ENABLE at `0x060` was never touched, and `CTL=0x100`
+set neither polarity nor the pair clock. **The channel was never enabled**, and
+"no brightness change at any step" is precisely what that configuration
+produces. The reconstruction reproduces all five logged words exactly.
+
+### Fixed -- but do not expect this to be the whole answer
+
+`h713_disp_backlight_set()` now writes CLK_CFG gate, `(active << 16) | entire`,
+`CLK_SRC_EN | ACT_HIGH`, then ENABLE at `0x060`. The read-back guard now tests
+this channel's bit rather than the whole register, which any other enabled
+channel would satisfy. Retest with:
+
+```
+h713_disp panel-test 0x33 bl-sweep
+```
+
+Six steps, 100/75/50/25/0/100 at four seconds each against a full-white field.
+
+**There is a prior correct-map negative, and it must not be forgotten.** Patch
+0007's map was corrected in `aebd67a` on 2026-07-21, three days *before* the
+Linux bench test of 2026-07-24. That test drove PB4 through the kernel
+`pwm-backlight` path with debugfs showing duty scaling 0/20000/40000 ns for
+brightness 0/50/100, `actual == requested`, pinmux `pin 36 (PB4): function
+pwm2` -- and the panel did not change. So it was a valid test of a correctly
+programmed PWM, and it still came back null.
+
+What separates the two runs is the panel:
+
+| run | register map | panel state | result |
+| --- | --- | --- | --- |
+| 2026-07-24, Linux | correct | **not initialised** (display path did not work until 2026-08-04) | no dimming -- valid null |
+| 2026-08-05, U-Boot | **wrong** | initialised and rendering | no dimming -- void, channel never enabled |
+| next | correct | initialised and rendering | **never yet tested** |
+
+That third row is the whole point of the retest. The standing hypothesis from
+2026-07-24 -- that the panel's LED driver ignores PWM until its own serial init
+has run, and stock fastlogo runs that init before Linux -- survives untouched
+and is still the best explanation if the sweep comes back null again. What has
+changed is that the panel now *is* initialised, so the hypothesis is finally
+testable, and the instrument driving it is finally correct.
+
+### The method point
+
+The parked result was not a measurement failure and not a wrong pin. It was a
+correct measurement of an instrument that had been misconfigured in a way its
+own read-back could not reveal -- because the read-back read the same wrong
+addresses the writes went to. The previous session added a read-back precisely
+to catch a dead instrument, and it did catch the gated block; it could not catch
+a wrong register map, because every value read back exactly as written.
+
+A read-back proves writes land. It does not prove they land *somewhere useful*.
+When a null result rests on one, check the map against an independently
+validated consumer of the same block before recording the null.
+
+# PWM2/PB4 verifiably does not dim this panel (2026-08-05) -- SUPERSEDED
+
+**Superseded by the section above.** The null recorded here is real as an
+observation and wrong as a conclusion: the pin is correct and the PWM register
+map was not, so the channel was never enabled. Kept for the register captures,
+which are what proved it.
 
 The parked result -- "a running 25 kHz PWM on PB4 changed brightness not at
 all" -- now stands on evidence it never had. It took two runs to get there, and

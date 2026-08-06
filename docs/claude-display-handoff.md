@@ -258,25 +258,94 @@ function's 19-bool signature and restructuring the body would collide.
 Check whether `h713_disp_init_only`, `h713_disp_test` and the mips-test path
 want the same treatment; they have the same shape of early returns.
 
-### 3. The backlight, and what it blocks
+### 3. The backlight -- ready to retest, needs one bench run
 
-PWM2/PB4 provably does **not** dim this panel -- see the evidence log. The
-configuration is right in every respect (channel 2, PB4 mux 2, 25 kHz, active
-high, all matching the stock DTB) and the registers read back correct.
+**Both of this item's former premises were wrong**, and both were corrected on
+2026-08-05. See the evidence log's top section.
 
-Next, and it needs no new code: the firmware HAL exposes
-`Thal_Vp_SetBacklightLevel` (`0x51ad877e`) and `Thal_Vp_SetBacklightPwmInfo`
-(`0xb46ce545`), CPU_COMM works, and `commcall` already passes parameters.
+- The firmware HAL route is **closed**. `Thal_Vp_SetBacklightLevel` is a
+  non-blocking post to the `app_bottom` thread that returns a hardcoded `1`
+  before the message is dequeued, and the firmware makes **zero** MMIO accesses
+  to PIO, PWM or CCU. It cannot dim the panel and cannot report that it didn't.
+  Do not spend bench time on `commcall` for backlight.
+- "PWM2/PB4 does not dim this panel" was a **test artifact**. The stock DTB is
+  explicit that PB4/channel 2 *is* the backlight (`panel_pwm_ch = 2`,
+  `pwm2_pin_a = PB4`, default brightness 75) and has no pwm5 pin group at all,
+  so `panel_config.ini`'s `pwm_channel = 5` is not a SoC channel. Our PWM
+  register map was wrong in four places and the channel was never enabled.
+
+`h713_disp_backlight_set()` is fixed against patch 0007's validated map and
+builds. **The next step is one bench run:**
 
 ```
-h713_disp panel-test 0x33
-h713_disp commcall 51ad877e chan=0 pid=8b8f32b0 64
-h713_disp commcall 51ad877e chan=0 pid=8b8f32b0 0
+h713_disp panel-test 0x33 bl-sweep
 ```
 
-Temper expectations: `THal_Vp_EnableBlackScreen` returned cleanly and did
-nothing, because the firmware's own CRTC is not enabled in our configuration.
-The backlight may be in the same category.
+Six steps, 100/75/50/25/0/100 at four seconds each against a full-white field.
+
+**A third fault was found after that sweep, and it is the big one.** The sweep
+ran with a verifiably correct PWM and still did nothing, because **PB4's `pwm2`
+function is mux 3 and we were driving mux 2**. Patch 0002 -- our own pin table,
+and the one the kernel binds -- has it wrong; board B's stock DTB, upstream
+H616 and patch 0018 all say 3. That single error also explains the Linux
+negative of 2026-07-24, so both prior nulls were one bug in our pin table.
+`H713_BL_PWM_MUX` is now 3, rebuilt and verified.
+
+**Run and result, 2026-08-05.** Everything correct at once for the first time:
+mux 3, `GATE=00000004`, `EN=00000004`, `PCCR=0` (HOSC/1), duty stepping
+960/720/480/240/0, and the counter **proven running** -- +176 counts per 7 us,
+wrapping at exactly 960, so 24 MHz and 25.0 kHz confirmed from hardware. Panel
+initialised and rendering a full-white field. **No brightness change.**
+
+That is the first clean negative in this investigation. Every earlier null had
+the register map or the mux wrong.
+
+**The one remaining unverified link is the pad**, and it needs the DMM, not more
+`md`: PB4 in DC mode during the sweep should read ~3.3 V / ~1.65 V / ~0 V at
+100/50/0% if the waveform reaches the pin. The PIO data register cannot answer
+it -- it reports the output latch, not the pin.
+
+- **tracks duty** -> the panel genuinely ignores a correct PWM, the ARM-side
+  route is exhausted, and the 2026-07-24 serial-panel-init hypothesis is what
+  remains: the LED driver ignores PWM until its own init has run, which stock
+  fastlogo does before Linux. That is the PH10/11/12 logic-analyser capture.
+- **flat** -> the waveform is not reaching the pad, and mux 3 vs 2 becomes an
+  A/B with the DMM as judge.
+
+**STILL OPEN.** No software experiment has been found that can change the
+outcome, but the question is deliberately *not* closed — the conclusion below
+rests partly on inference, and a second opinion is being sought. The full
+consolidated case, including what is proven versus inferred and which
+conclusions were reversed during the investigation, is in
+**[backlight-investigation.md](backlight-investigation.md)** — read that rather
+than reconstructing it from this file or the evidence log.
+
+The shipping device tree (`sunxi.fex`, extracted from the OTA package) carries a
+complete backlight config -- `panel_pwm_ch = 2`, `panel_pwm_freq = 25000`,
+`panel_pwm_pol = 0`, `panel_backlight = 75`, `panel_bl_en` -> PB5 -- and pin
+groups for **pwm0..pwm4 only**. `pwm5` has a controller node and **no pin group**,
+so it can never be muxed. `panel_config.ini`'s `pwm_channel = 5` is a vendor
+build artifact; nothing loads that file at runtime.
+
+So the only configuration stock can successfully apply is **channel 2 / PB4 /
+25 kHz / active high** -- exactly what we have now run with a hardware-verified
+counter (CNT advancing, wrapping at 960), and it does not change brightness.
+
+And the **vendor kernel has no backlight class at all** and never reads a single
+`panel_*` property, so stock has no runtime brightness control either. Booting
+stock would add nothing; `docs/flash.md` "Method 5" is documented but its
+premise proved false and it should not be run.
+
+**What remains is a hardware question, not a software one.** The light is a
+2-wire (power + ground) engine, and 53 board photographs show **no LED driver
+and no boost converter anywhere on the mainboard** -- every inductor is a 2R2
+buck for the SoC rails. So the 48 V supply is generated off-board, and no SoC
+PWM can reach it unless a control wire does. Next step is tracing where the
+light's cable actually terminates, not another register.
+
+**Follow-up regardless of the outcome:** patch 0002 needs the same mux fix for
+Linux, and the rest of that table is now suspect. It is a transcription, and
+this is the second load-bearing error found in it (after `0x0528008c`).
 
 **Do not drive PB5 low.** The DT calls it `panel_bl_en` and it is shared with
 fan power. On a projector with an LED light engine that is a thermal risk.
@@ -323,10 +392,11 @@ path and wants a decision.
   command.md"* -- a command interface, not just an output stream. Establish
   from the binary which UART it binds and whether the thread starts in our
   configuration before spending bench time.
-- **Two pinctrl patches disagree.** Patch 0002 gives PB4 `pwm2` mux 2, patch
-  0018 gives 3 for the same pin and function. Only 0002's driver binds here
-  (`allwinner,sun50i-h713-pinctrl`), and the vendor DT supports 2, so 0018 is
-  probably wrong -- but it is inert, so this is tidiness.
+- **Two pinctrl patches disagree** -- *resolved 2026-08-05, in 0002's favour.*
+  The stock U-Boot DTB gives PH17/pwm0 muxsel 3, PH18/pwm1 muxsel 3, PB5/pwm3
+  muxsel 2 and PA12 = `pwm4`, all matching patch 0002. Patch 0018's
+  `PA12 = pwm5` and `PB4 = mux 3` are upstream *H616* values that do not apply
+  to H713. 0018 is inert, so removing the stale entries is still only tidiness.
 
 ## Working tools in `h713_disp`
 
