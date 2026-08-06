@@ -1,9 +1,79 @@
 # H713 projector backlight: the case so far
 
-**Status: OPEN.** Written 2026-08-05 for external review. This consolidates a
-thread that runs across `docs/mips-display-recovery.md` (300 KB, chronological)
-and `docs/claude-display-handoff.md`. Read this instead of reconstructing it
-from those.
+**Status: ANSWERED 2026-08-06 — the vendor firmware does not drive a backlight
+PWM on this board either.** Written 2026-08-05 for external review; the result
+below arrived when the vendor stack was booted on the bench for the first time.
+This consolidates a thread that runs across `docs/mips-display-recovery.md`
+(300 KB, chronological) and `docs/claude-display-handoff.md`. Read this instead
+of reconstructing it from those.
+
+---
+
+## 0. The answer, from the vendor's own U-Boot
+
+Booted via the persistent first-stage swap (`docs/flash.md` Method 5), with the
+vendor's `bootloader_a` FAT restored so its display path could run for real:
+
+```
+[01.863]LogRegData.bin version is 25-4-10-157
+[01.868]Project id:0x34 version:25-1-6-3
+[01.872]pwm_request: err: get reg-base err.
+[01.876]pwm5 request for fastlogo fail!
+...
+[03.334]Display fastlogo finish!
+```
+
+Four findings, all direct runtime observations rather than inference:
+
+1. **Stock asks for PWM channel 5**, not channel 2. `panel_config.ini` is read
+   at runtime — from `Reserve0`, after `/oem` misses — and `pwm_channel = 5` is
+   what reaches `pwm_request`.
+2. **That request fails on this hardware**, with `get reg-base err`: pwm5 has a
+   controller node but no pin group, exactly as the static analysis predicted.
+   So the vendor never obtains a PWM for the backlight.
+3. **`Display fastlogo finish!` prints anyway.** It is *not* a backlight
+   success indicator, and no `Pwm enable fail` is emitted. The plan of using
+   one message versus the other to discriminate was based on a false dichotomy.
+4. **The panel lit and the light engine came on regardless** (operator
+   observation, same boot). The vendor firmware reaches full brightness with no
+   working PWM request at any point.
+
+### The kernel and the app say the same thing
+
+Vendor Android was then booted end to end on the same board (its `userdata`
+had to be reformatted f2fs first — `UDISK` held our ext4 Debian rootfs, which
+`fs_mgr` refused with `invalid magic`). Linux 5.4.99, launcher up, projector
+app running. From its boot log:
+
+```
+[  0.098] sunxi_pwm_probe: can't get pwm  bus clk
+[  3.932] sunxi_pwm_enable_dual: can't parse pwm device
+[  6.330] __switch_pwm_state: can't parse pwm device
+[199.039] sunxi_pwm_enable_dual: can't parse pwm device     <- runtime
+[202.364] init: ... Received control message after shutdown <- operator powered down
+```
+
+**The vendor kernel's PWM driver never probes** (`can't get pwm bus clk` at
+0.098 s), so every later request fails. The entry at 199 s is not boot-time
+probing — it is a *runtime* attempt, three seconds before the operator shut the
+board down, i.e. while they were moving the brightness slider in the projector
+app. The UI control does reach a PWM path, and that path fails.
+
+Operator observation across the slider's full range, same session: **some
+change on screen, no change in the light spilling from the panel cable.**
+Unaided visual, not instrumented — the one claim here still resting on an
+eyeball. It is, however, exactly what the log predicts: the on-screen change is
+digital (picture-quality gain in the DE/MIPS path, the `pq_custom.TSE` side)
+while the light engine is never addressed.
+
+**Conclusion.** Every layer of the shipping firmware — boot0's U-Boot, the
+Linux PWM driver, and the projector app's own brightness control — fails to
+acquire a PWM on this board, and the light engine runs at full brightness
+throughout. Our bring-up reached the same place from the opposite direction,
+driving a verified-live PWM2/PB4 with no optical effect. Two independent stacks,
+same result. The leading hypothesis in section 1 — that the light is 2-wire with
+its driver off the mainboard — is now the only one left standing, and the
+remaining question is physical, not software: where those two wires terminate.
 
 The question is narrow: **can the brightness of this projector's light engine be
 controlled from the SoC, and if so how?** Everything else about the display —
@@ -62,15 +132,14 @@ the PWM verified live, and it does nothing.
 
 A reviewer should attack these first.
 
-1. **That `panel_config.ini` is not a runtime input.** It says
-   `pwm_channel = 5`, contradicting the shipping DTB's channel 2. The argument
-   for discounting it: our own bring-up loads `display.bin`, `display_cfg.xml`
-   and the `.TSE` files from `mmc 1:2` and never loads it; and channel 5 has no
-   pin group so it could not work anyway. But stock U-Boot *does* contain INI
-   parsing for exactly those keys, gated at `0x4a0239e0` on
-   `ini_get("pwm_freq")`. **The instruction that loads `pwm_channel` into the
-   backlight-create call was never located.** If someone can trace that data
-   flow, it either confirms or overturns this.
+1. ~~**That `panel_config.ini` is not a runtime input.**~~ **REFUTED
+   2026-08-06.** It is a runtime input: the vendor's U-Boot reads it from
+   `Reserve0` (after trying `/oem`), and its `pwm_channel = 5` is what reaches
+   `pwm_request` — which then fails, because channel 5 has no pin group. Both
+   halves of the old argument were wrong in the same direction: the file *is*
+   loaded, and "channel 5 could not work anyway" was true but irrelevant, since
+   stock asks for it regardless and simply fails. The shipping DTB's
+   `panel_pwm_ch=2` is not what the fastlogo path uses.
 2. **That the light has no dimming path at all.** Based on the 2-wire cable plus
    the absence of a driver on the mainboard. Nobody has traced the cable to its
    other end or identified an off-board driver.
@@ -96,12 +165,14 @@ informative.
   evidence cited for patch 0007, a live capture of `PERIOD2 = 0x03BF03C0`, is
   **degenerate**: 959 vs 960 reads as 25 kHz at ~100% duty under *either* field
   order, so it cannot discriminate between the layouts.
-- **"Stock uses PWM channel 5."** Overstated, then withdrawn. It rested on the
-  `pwm_freq` gate plus the parallel key sets, without a traced data flow. The
-  shipping DTB is stronger evidence and says channel 2. This question flipped
-  twice in one session, both times because the reasoning started from board-A
-  and board-B *development* trees; **the shipping DTB governs the retail unit
-  and should be consulted first.**
+- **"Stock uses PWM channel 5."** Overstated, then withdrawn — **and then
+  confirmed on hardware 2026-08-06**: `pwm5 request for fastlogo fail!`. The
+  original claim was right and the withdrawal was wrong. The withdrawal rested
+  on the shipping DTB's `panel_pwm_ch=2` being "stronger evidence", but the DTB
+  is not what the fastlogo path reads; `panel_config.ini` is. This question
+  flipped three times across two sessions, and only running the code settled
+  it. **Static evidence about which of two config sources wins is not evidence
+  at all — only the runtime knows.**
 - **"PWM2/PB4 verifiably does not dim this panel" (commit `ec1d759`).** The
   observation was real but the conclusion was not earned — at the time PB4 was
   muxed to 2 instead of 3, so the waveform never reached the pad. The result
@@ -119,6 +190,10 @@ compared it against the vendor's own pin table.
 
 ## 5. What would actually settle it
 
+Items 3 and 4 are done (see section 0). **What is left is items 1 and 2, both
+physical** — and item 2 is now worth doing purely to put a number on the
+operator's visual observation rather than to test the SoC side.
+
 In rough order of cost.
 
 1. **Trace the light's two wires to their other end.** If they reach a separate
@@ -132,13 +207,13 @@ In rough order of cost.
 3. **Trace `pwm_channel` into the backlight-create call in stock U-Boot**
    (`u-boot.fex`, Thumb, base `0x4a000000`, create call at `0x4a0255a0`,
    selector at `0x4a0239e0`). Settles inference #1. *Static, no hardware.*
-4. **Boot stock and read its U-Boot console** for `Display fastlogo finish!`
-   versus `Pwm enable fail:%d`. Procedure drafted as `docs/flash.md` "Method 5"
-   — **but its premise proved false**: stock's boot package is at none of the
-   sectors `boot0` references (`0x6000`, `0x8020`, `0x10000` all checked and
-   none contain `sunxi-package`). Would require writing an inferred sector over
-   unidentified data with **no eMMC backup in existence**. Not recommended
-   without a backup and a better reason.
+4. ~~**Boot stock and read its U-Boot console**~~ — **DONE 2026-08-06, see
+   section 0.** The blocker was real but misdiagnosed: the vendor's boot package
+   had been destroyed by this project's own 32-bit smoke-test FIT, flashed to
+   raw LBA `0x4000` during early bring-up, which sat on top of both package
+   copies and the `sdmmc_arg` timing region. Restored from the 2026-07-05
+   capture (`docs/flash.md` Method 5), after which the vendor stack boots
+   end to end.
 
 ---
 

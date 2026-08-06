@@ -501,3 +501,27 @@ Do not resurrect these; each cost bench time.
   stride. The stride is 1237-1238; the width measures 1155 +- 5. Any
   reasoning that treats one figure as both is void, including the sweep ranges it
   produced -- 1180..1200 could not have contained the answer.
+
+## Vendor runtime facts, from booting the stock stack (2026-08-06)
+
+First observation of the vendor display path running on the bench, via the
+first-stage swap in `docs/flash.md` Method 5. Two things here contradict
+assumptions this project has been building on:
+
+- **The vendor selects project id `0x34` on this board, not `0x33`.**
+  `[01.868]Project id:0x34 version:25-1-6-3`, and it then loads
+  `mips/ProjectID_0x0034.TSE`. Our own bring-up has been running
+  `h713_disp panel-test 0x33` throughout. Worth re-testing the display path
+  against 0x34 before treating any 0x33 result as the vendor's behaviour.
+- **`panel_config.ini` is a runtime input**, read from `Reserve0` when `/oem`
+  misses. It carries the PWM channel the fastlogo path requests. See
+  `docs/backlight-investigation.md` section 0.
+
+The vendor's load order, for comparison with `h713_disp_run()`:
+`panel_config.ini` -> `LogoRegData.bin` (version 25-4-10-157) -> pwm request ->
+`display.bin` (0x132910 to 0x4b100000) -> `display_cfg.xml` (0x1287 to
+0x4be01000) -> `database.TSE` (0x44f60 to 0x4be41000) -> `pq_custom.TSE`
+(0x3aa8 to 0x4be85f60) -> `projecttable.TSE` (0x568 to 0x4be89a08) ->
+`ProjectID_0x0034.TSE` (0x4398 to 0x4be89f70) -> `Display fastlogo finish!`.
+Those addresses match the ones our recovery already uses; the sizes and the
+project id are the new information.
