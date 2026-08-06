@@ -4,6 +4,31 @@ How to write images to the H713 eMMC. Neither board has an SD slot — boot medi
 is **eMMC or FEL only**. There is a hardware **FEL button** (recovery vector),
 so a bad first stage is recoverable.
 
+## ⚠ State of the bench board as of 2026-08-06
+
+Read this before assuming anything about what is on the eMMC. The board is
+**not** in the state older docs describe.
+
+| | |
+| --- | --- |
+| first stage at LBA `0x10` | whichever was installed last — `boot-switch.sh status` tells you. The vendor's boot0 was left there at the end of the 2026-08-06 session; FEL-restore to get ours back |
+| our U-Boot proper / env / SPL stash | `empty` partition, LBA `0x49ac00` / `0x49ec00` / `0x49cc00` |
+| our kernel FIT | a **file** in the FAT on `mmc 1:2`, `h713-kernel.fit`; `bootcmd` is `fatload mmc 1:2 0x50000000 h713-kernel.fit; bootm` |
+| `boot_a` | **the vendor's stock Android boot image**, restored from the capture — no longer ours |
+| `UDISK` (p26) | **f2fs, Android's userdata.** The Debian rootfs was destroyed to let Android boot. Restore it from the pre-Android backup when needed |
+| `bootloader_a` | the vendor's FAT16 (its `mips/` display artifacts), restored |
+| `Reserve0_a` | vendor's, **with one byte modified by us**: `panel_config.ini` `pwm_channel` is `2`, stock is `5`. LBA `0x53c51f` offset `0x89`, write `0x35` to revert |
+| `super` | repaired — see the warning in Safety |
+
+**Backups.** `local/h713-lab/captures/board-b/` holds four factory captures from
+2026-07-05 plus `board-b-mmcblk0-20260806-preandroid.img`, which is the only
+copy of the board carrying *our* stack after the layout migration. Restore the
+Debian rootfs from the latter with:
+
+```
+sudo dd if=<preandroid.img> of=/dev/sda bs=512 skip=5555200 seek=5555200 count=9714655 conv=fsync
+```
+
 ## eMMC layout (what goes where)
 
 The board carries **two complete boot chains**. Only the 32 KiB first stage is
@@ -589,10 +614,88 @@ The trampoline is copied to DRAM and run from there, because the copy
 overwrites the SPL's own text at `0x104000`. It is position-independent with no
 literal pool — check the disassembly if you change it.
 
+## Method 6 — boot the vendor's Android
+
+Reaching the projector app (and its brightness control, and anything else only
+the UI exposes) needs three things beyond a vendor bootloader. Verified
+2026-08-06: Android boots to the launcher.
+
+**1. `boot_a` must hold the vendor's boot image.** This project had been using
+it for our kernel FIT, which makes the vendor's U-Boot data-abort immediately
+after `update bootcmd`. Restore it, and put our kernel somewhere else first —
+a file in the FAT on `mmc 1:2` works and needs no layout change:
+
+```
+fatwrite mmc 1:2 0x50000000 h713-kernel.fit 0x758238
+setenv bootcmd 'fatload mmc 1:2 0x50000000 h713-kernel.fit; bootm 0x50000000'
+```
+
+Prove Debian still boots that way **before** giving up `boot_a`. Then, over UMS
+(`sda5` is `boot_a`):
+
+```
+sudo dd if=local/stock-boot/boot_a-board-b.img of=/dev/sda5 bs=1M conv=fsync
+```
+
+**2. `UDISK` must be f2fs.** Android's `userdata` is `by-name/userdata` =
+`mmcblk0p26` = `UDISK`, the same partition our Debian rootfs lives on. `fs_mgr`
+checks the magic, finds ext4, and refuses:
+
+```
+mount_with_alternatives(): skipping mount due to invalid magic, ... rec[3].fs_type=f2fs
+vdc: Command: cryptfs init_user0 Failed
+init: Failure (reboot suppressed): init_user0_failed
+```
+
+It does **not** format for you — the rootfs survives that failure untouched, it
+just never reaches the launcher. There is no free 4 GiB elsewhere on this eMMC,
+so the two stacks genuinely contend for it. Back up `UDISK` first, then:
+
+```
+sudo make_f2fs -g android /dev/sda26
+```
+
+The retail image is a `user` build with no `su` and no `sudo`, so this cannot be
+done from the Android console shell — `make_f2fs` exists at `/system/bin/` but
+fails with `Failed to open the device!`. Do it from the host over UMS.
+
+**3. `super` must be intact** — see Safety.
+
+Everything else in slot A (`vendor_boot_a`, `dtbo_a`, `vbmeta*`, `misc`) was
+never touched by this project and verified byte-identical to the capture.
+
+### Vendor-derived artifacts
+
+All extracted from `board-b-mmcblk0-20260705T075628Z.img`, all in the ignored
+`local/stock-boot/`, none committed.
+
+| file | goes to | size |
+| --- | --- | --- |
+| `boot0-board-b-emmc-sector16.bin` | LBA `0x10` / `0x100` | 32 KiB |
+| `boot-package-board-b.bin` | LBA 24576 and 32800 | 1.2 MiB |
+| `reserved-8-18MiB-board-b.bin` | LBA `0x4000` (8–18 MiB) | 10 MiB |
+| `bootloader_a-board-b.bin` | LBA `0x12000` = `bootloader_a` = `sda1` | 32 MiB |
+| `boot_a-board-b.img` | `boot_a` / `sda5` | 64 MiB |
+| `super-repair-1MiB.bin` | LBA 3337216 | 1 MiB |
+
 ## Safety
 
 - Always name the board a flash ran on — feeding the projector's HY200 QZ713_V2 (LPDDR3) params to the
   HY200 (DDR3) board trains "OK" but reads hang.
+- **Read a region back and diff it against the capture after flashing to any new
+  offset.** This project has written somewhere it did not intend three separate
+  times, each invisible until something read the region back:
+  - a 32-bit smoke-test FIT at raw LBA `0x4000`, on top of both vendor
+    boot-package copies and the `sdmmc_arg` timing region;
+  - U-Boot proper at LBA `0x12000`, over `bootloader_a`'s FAT16 boot sector;
+  - **64 KiB of U-Boot environment inside `super`** at LBA 3337216
+    (`0x65d80000`), from a `saveenv` under some earlier `CONFIG_ENV_OFFSET`.
+    `super` carries dm-verity-protected images and `vbmeta_*` still expects the
+    original, so this would have presented as "Android just doesn't boot".
+    Repaired from `local/stock-boot/super-repair-1MiB.bin`.
+
+  All three were found by diffing a full read against the 2026-07-05 captures.
+  None would have been found by verifying the write itself.
 - **Full eMMC backups do exist**, contrary to what this document said between
   2026-08-05 and 2026-08-06: `local/h713-lab/captures/board-b/` (four images of
   the bench board, 2026-07-05, pre-modification) and
