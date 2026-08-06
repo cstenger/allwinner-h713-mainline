@@ -6,13 +6,47 @@ so a bad first stage is recoverable.
 
 ## eMMC layout (what goes where)
 
-| Offset | Contents |
-|--------|----------|
-| sector 16 (8 KiB) | `u-boot-sunxi-with-spl.bin` (SPL + BL31 + U-Boot, <1 MiB) |
-| 4 MiB | U-Boot environment (raw) |
-| 12 MiB | vendor boot package (toc1, factory) |
-| 36 MiB | first Android GPT partition |
-| `UDISK` (p26) | Debian root filesystem |
+The board carries **two complete boot chains**. Only the 32 KiB first stage is
+shared ground: the BROM reads it from LBA `0x10` and nowhere else, so that is
+what gets swapped to change stacks. Android's A/B slots cover kernel and OS
+only — they do not slot the bootloader — so the rest of each chain is given a
+permanent home that the other chain never reads.
+
+| LBA | Offset | Contents | Chain |
+|-----|--------|----------|-------|
+| `0x10` | 8 KiB | **first stage — our SPL *or* the vendor's boot0** | contended |
+| `0x100` | 128 KiB | vendor boot0, second copy (the vendor's own location) | vendor |
+| `0x6000`, `0x8020` | 12 MiB, 16.4 MiB | vendor boot package (TOC1: U-Boot, BL31, SCP, OP-TEE, DTB) — two copies, byte-identical to the OTA's `boot_package.fex` | vendor |
+| `0x3000` | 6 MiB | vendor secure storage (`hdcpkey`, `wifiBleDatas`) — per-unit, irreplaceable | vendor |
+| `0x49ac00` | 2.30 GiB | our U-Boot proper, at the start of the `empty` partition | ours |
+| `0x49cc00` | +4 MiB | our SPL, stashed so the vendor side can switch back | ours |
+| `0x49ec00` | +8 MiB | our U-Boot environment | ours |
+| `bootloader_a` | 36 MiB | **the vendor's FAT16** — `mips/display.bin`, `mips/LogoRegData.bin`, `bootlogo` | vendor |
+| `boot_a` | — | our kernel FIT | ours |
+| `boot_b`, `vendor_boot_b`, `dtbo_b`, `vbmeta*_b`, `super` | — | vendor Android | vendor |
+| `UDISK` (p26) | last | Debian root filesystem | ours |
+
+Everything of ours except LBA `0x10` sits in the `empty` partition or in slot A,
+clear of both the reserved region the vendor's boot0 reads and every partition
+the vendor's U-Boot touches. Two bench findings drove that, in order:
+
+- U-Boot proper used to live at LBA `0x50`, inside the reserved region, which is
+  why restoring the vendor's boot0 alone failed.
+- It then lived at LBA `0x12000`, the first sector of `bootloader_a` — which
+  looked like OTA staging and is **not**. It is a live FAT16 holding the
+  vendor's `mips/display.bin`, `mips/LogoRegData.bin` and `bootlogo`, and our
+  image over its boot sector made the vendor's U-Boot print
+  `** Unrecognized filesystem type **` and fail every display artifact load
+  (bench 2026-08-06). Restore it from `local/stock-boot/bootloader_a-board-b.bin`.
+
+`empty` (LBA `0x49ac00`, 15 MiB) is all zeros in the factory image and is named
+in nothing the vendor boots — the only partition on this eMMC that is genuinely
+free.
+
+`bootloader_b` is the one remaining exception to the A/B split — this project
+repurposed it to hold our copies of the MIPS display artifacts (`mmc 1:2`). It
+is OTA staging, not part of the vendor's runtime chain, so the vendor still
+boots without it.
 
 `mmc1` is the eMMC in U-Boot; `mmc0` is disabled (no SD slot).
 
@@ -20,16 +54,22 @@ so a bad first stage is recoverable.
 
 No host root needed; works on the soldered UART. ~80 s for a 768 KiB image.
 
+The image is written in two pieces now (see the layout above): the first 32 KiB
+to LBA `0x10`, the remainder to LBA `0x12000`.
+
 ```
 # in U-Boot:
 loady 0x42000000
 # host: send the file via YMODEM
 tools/serial/ymodem_send.py u-boot-sunxi-with-spl-ddr3.bin --port /dev/ttyUSB0
-# back in U-Boot — block count must ROUND UP (844417 B = 0x672 blocks):
+# back in U-Boot — U-Boot proper first, then the first stage, so that an
+# interrupted sequence leaves the old working first stage in place.
+# Block counts must ROUND UP (907521 B = 0x6ed blocks).
 mmc dev 1
-mmc write 0x42000000 0x10 0x672
-mmc read 0x43000000 0x10 0x672
-cmp.b 0x42000000 0x43000000 0xce281   # use the exact file length
+mmc write 0x42008000 0x12000 0x6ed
+mmc write 0x42000000 0x10 0x40
+mmc read 0x43000000 0x10 0x40
+cmp.b 0x42000000 0x43000000 0x8000
 ```
 
 Prefer the CDC gadget (`tools/serial/load_fit.py`, ~171 KB/s) over the UART
@@ -41,8 +81,11 @@ Prefer the CDC gadget (`tools/serial/load_fit.py`, ~171 KB/s) over the UART
 # in U-Boot; if entered over ACM, keep this on one line because ACM disconnects:
 run serial_mode; ums 0 mmc 1
 # host: the eMMC appears as /dev/sdX with all 26 partitions
-sudo dd if=u-boot-sunxi-with-spl-ddr3.bin of=/dev/sdX bs=512 seek=16 conv=fsync
+tools/boot-switch.sh install --dev /dev/sdX      # splits the image, verifies both halves
 ```
+
+`boot-switch.sh` refuses to write a device whose partition table is not this
+board's, and refuses any first stage that fails its own eGON checksum.
 
 Rootless host I/O is possible via udisks2 `OpenForRestore` (D-Bus) if you can't
 `dd` as root. Stop UMS with Ctrl-C on UART; the console remains serial-only.
@@ -53,21 +96,28 @@ Rootless host I/O is possible via udisks2 `OpenForRestore` (D-Bus) if you can't
 # in U-Boot (safe to issue from UART or as one line from ACM):
 run fastboot_mode
 # host:
-fastboot flash uboot u-boot-sunxi-with-spl-ddr3.bin   # raw first stage @ LBA 0x10
+tools/boot-switch.sh install --via fastboot   # ubootp @ 0x12000, then uboot @ 0x10
 fastboot flash UDISK rootfs.simg          # rootfs (Android-sparse, see below)
 ```
 
-`uboot` and `bootloader` are the same H713-specific raw fastboot target: LBA
-`0x10`, size `0x1ff0` sectors, ending immediately before the persistent
-environment at 4 MiB. The size guard rejects an oversized image. **Prefer the
+The H713-specific raw targets are `uboot`/`bootloader` (LBA `0x10`, `0x40`
+sectors — **the first stage only**), `ubootp` (LBA `0x12000`, U-Boot proper),
+`vboot0` (LBA `0x100`, the vendor's boot0) and `splstash` (LBA `0x14000`). The
+first-stage guard is deliberately exactly 32 KiB, so flashing the whole
+concatenated image to `uboot` is rejected rather than quietly recreating the
+old layout that overlapped the vendor's region. **Prefer the
 `uboot` alias** — a slot-aware fastboot host silently rewrites `bootloader`
-into the A/B slot name `bootloader_a` and writes the unused 36 MiB GPT
-partition there instead of the LBA-0x10 first stage (a flash that "succeeds"
-but changes nothing that boots). `uboot` is not a GPT partition name, so the
-host passes it through verbatim. Both aliases are in U-Boot's default env
-(`fastboot_raw_partition_{uboot,bootloader}`), and U-Boot injects them at
-runtime when an older saved environment lacks them, so upgrading does not
-require resetting the rest of the environment.
+into the A/B slot name `bootloader_a` and writes that GPT partition instead of
+the LBA-0x10 first stage. That used to be merely useless (a flash that
+"succeeds" but changes nothing that boots); now that `bootloader_a` holds our
+U-Boot proper, **it corrupts the running chain**. `uboot` is not a GPT
+partition name, so the host passes it through verbatim.
+
+All the aliases are in U-Boot's default env, and U-Boot injects any that an
+older saved environment lacks. It also narrows a first-stage guard still left
+at the pre-split `0x10 0x1ff0`, since that value is wide enough to write the
+whole concatenated image back over the vendor's boot region; a value someone
+set deliberately is left alone.
 
 - The fastboot **download buffer is 32 MiB** → images larger than that must be
   **Android-sparse** (`img2simg in.img out.simg`); the host tool chunks them
@@ -184,12 +234,14 @@ host-side U-Boot upload.
    UART should show `=== H713 SPL RESTORE ===`, the mmc scan, and
    `wrote 64/64 RESTORED-OK`.
 
-4. Power-cycle. The board boots from eMMC again; reflash the full image with
-   `run fastboot_mode` + `fastboot flash uboot ...`.
+4. Power-cycle. The board boots from eMMC again. Nothing else needs reflashing
+   in the split layout: this writes sectors 16..79, and U-Boot proper at LBA
+   `0x12000` was never in the contended range. Under the old layout it had to be
+   followed by a full reflash, because U-Boot proper sat at LBA `0x50`.
 
 Why it works: sectors 16..79 are the only range a first stage occupies, and
-U-Boot proper at sector 80 survives, so restoring the SPL reconnects an intact
-chain. The hook runs after the SPL framework has already brought eMMC up, and
+U-Boot proper survives at LBA `0x12000`, so restoring the SPL reconnects an
+intact chain. The hook runs after the SPL framework has already brought eMMC up, and
 picks the device by scanning for a non-zero `lba` — **mmc0 is the absent SD
 slot here**, and using it fails with "Card did not respond to voltage select".
 
@@ -224,16 +276,21 @@ The same tool recovers **our** first stage instead, which is usually what you
 want: replace `board/sunxi/h713_vendor_boot0.h` with an `xxd -i`-style array of
 the first 32 KiB of `u-boot-sunxi-with-spl-ddr3.bin` and build
 `hy200_h713_recovery_defconfig`. That range is sectors 16..79, and U-Boot proper
-lives at sector 80 (`CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x40` plus
-`DATA_PART_OFFSET=0x10`), so restoring only the SPL reconnects an otherwise
+lives at LBA `0x12000` (`CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x12000` with
+`DATA_PART_OFFSET=0x0`), so restoring only the SPL reconnects an otherwise
 intact chain. Apply the patch with `git apply`, not `git am`, so the vendor blob
 never reaches a commit.
 
-**Do not restore stock boot0 alone.** It comes up and inits DRAM correctly but
-then reports `bad magic` / `Loading boot-pkg fail(error=4)`: it looks for its
-payload at an offset inside the range our own writes occupy, and it also finds
-its MMC info region damaged (`region magic is not right`). Restoring stock needs
-the whole original boot region from a pre-flash capture, not just sector 16.
+The blob it embeds is board B's own boot0, byte-identical to LBA 16 of the
+2026-07-05 capture and checksum-valid — not the OTA's `boot0_sdcard.fex`.
+
+**Restoring the vendor's boot0 alone failed under the old layout.** It came up
+and inited DRAM correctly, then reported `bad magic` / `Loading boot-pkg
+fail(error=4)` and `region magic is not right`. Both strings live in boot0
+itself. The most likely cause is that our U-Boot proper then occupied LBA
+`0x50`, inside the reserved region boot0 reads and which is all zeros on a
+stock board; the split layout above moves it out. Retest before assuming
+either way.
 
 ## Standalone boot (power-on → Debian)
 
@@ -241,51 +298,160 @@ To boot the kernel from eMMC with no host attached — flash the FIT to `boot_a`
 and set a U-Boot `bootcmd` — see [standalone-boot.md](standalone-boot.md)
 (`tools/flash-standalone.sh`).
 
-## Method 5 — boot stock temporarily, to read its U-Boot console
+## Method 5 — switching between our stack and the vendor's
 
-Worked out 2026-08-05. The goal is **not** to run Android — it is to see the two
-seconds of stock U-Boot output that say whether the vendor's own backlight setup
-succeeds (`Display fastlogo finish!`) or fails (`Pwm enable fail:%d`,
-`backlight enable fail:%d`, `Create backlight instance fail!`).
+Rewritten 2026-08-06. The immediate goal is the two seconds of vendor U-Boot
+output that say whether the vendor's own backlight setup succeeds (`Display
+fastlogo finish!`) or fails (`Pwm enable fail:%d`, `backlight enable fail:%d`,
+`Create backlight instance fail!`) — but the mechanism below is general, and
+leaves both chains permanently installed so the board can be moved either way.
 
-### ⚠ Prerequisite that does NOT hold as of 2026-08-05
+### What the earlier version of this section got wrong
 
-This method was first written assuming stock's boot package was still intact
-below the GPT, making it a single 32 KiB write. **That assumption is false on
-this unit.** Bench-checked, all with `mmc dev 1;` prefixed on the same line:
+It said stock's boot package was gone from every sector `boot0` references, so
+restoring stock would mean writing an inferred sector over unidentified data
+with no backup in existence. Three of those premises are false:
 
-| sector | expected | actually contains |
-| --- | --- | --- |
-| `0x6000` (12 MiB) | `sunxi-package` | high-entropy data, unidentified |
-| `0x8020` (32800, the Allwinner standard) | `sunxi-package` | records `1,3,4,0x202` / `1,3,4,0x7d`, unidentified |
-| `0x10000` (32 MiB) | `sunxi-package` | all zeros |
+- **The backups exist.** `local/h713-lab/captures/board-b/` holds four full
+  7.8 GB images of this board taken 2026-07-05, before anything of ours was
+  written. All four agree byte-for-byte over the first 36 MiB, the boot0 in
+  them has a valid eGON checksum, and their boot package is byte-identical to
+  the OTA's `boot_package.fex`. `bench_bt0.img` matches their LBA-16 boot0
+  exactly, which is what identifies the bench board as board B.
+- **The boot package is in the capture** at LBA 24576 *and* 32800, byte-identical
+  to the OTA's `boot_package.fex`. It is **not on the live board**: re-read
+  2026-08-06 with `mmc dev 1;` on the same line, LBA 24576 holds high-entropy
+  data and LBA 32800 holds the big-endian records `1,3,4,0x202` / `1,3,4,0x7d`,
+  exactly as first reported. The vendor's own boot0 independently agrees —
+  chainloaded on a working eMMC it reads both locations and prints
+  `error:bad magic.` twice, then `Loading boot-pkg fail(error=4)`.
+  A guess that this was a stale-DRAM misread is **refuted**; the original bench
+  finding was correct. `mmc partconf 1` also rules out the boot hardware
+  partitions: `BOOT_PARTITION_ENABLE 0x0`, `PARTITION_ACCESS 0x0 (user)`, so
+  boot0 is reading the user area, which is what the captures cover.
+  **The live board diverged from its own 2026-07-05 capture in this region and
+  we do not yet know what wrote it.**
+- **The OTA's `boot0_sdcard.fex` is the wrong file for this board.** It differs
+  from board B's own boot0 in 18 bytes: the checksum plus four fields inside
+  the header's `dram_para` block. Feeding one board's DRAM parameters to
+  another is the documented way to make training "succeed" and reads hang. Use
+  `local/stock-boot/boot0-board-b-emmc-sector16.bin`, extracted from the
+  capture (sha256 `b769a415…`), which `tools/boot-switch.sh` checksums before
+  every write.
 
-Those three sectors are the only ones stock `boot0` references as literals
-(offsets `0x5d80`, `0x5e68`, `0x5e6c` in `boot0_sdcard.fex`; the pair 32800 /
-24576 is `{start_sector, max_size_sectors}` — the 24576 is a **size**, 12 MiB,
-which is where this document's original "12 MiB boot package" claim came from
-and it was a misreading).
+What *was* right is that restoring the vendor's boot0 alone does not work: it
+comes up, inits DRAM, then reports `bad magic` / `Loading boot-pkg
+fail(error=4)` and `region magic is not right`. Both messages are strings in
+boot0 itself. In the capture, the reserved region is zeros everywhere except
+boot0 (16–79), its second copy (256–319), the secure-storage block at 6 MiB and
+the boot packages — so the only thing that could have looked "damaged" to it
+was our U-Boot proper, which used to sit at LBA `0x50`. **This is a hypothesis,
+not a proven diagnosis**; it is the reason for the layout change above, and the
+first switch attempt is also its test.
 
-So restoring stock now requires writing **both** `boot0_sdcard.fex` (sector 16)
-**and** `boot_package.fex` (sector 32800, inferred), the latter over data of
-unknown purpose. **Take a real backup first** — see the warning below about how
-easy it is to produce a fake one.
+### One-time migration to the split layout
 
-### The 12 MiB figure below is retained only for the layout argument
+Do this in order, from our U-Boot, with the FEL button within reach. Until step
+3 completes the board still boots the old way, so an interruption is survivable.
 
-Stock's layout puts **boot0 at sector 16** and the boot package somewhere in the
-reserved region ahead of the GPT. Our own image occupies sector 16 for ~940 KiB,
-so:
+1. Rebuild. `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x12000`,
+   `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_DATA_PART_OFFSET=0x0` and
+   `CONFIG_ENV_OFFSET=0x3400000` in `hy200_qz713df_a1_defconfig` move U-Boot
+   proper and the environment out of the vendor's reserved region. Verified in
+   the artifact, not just the config: `spl_mmc_load_image` passes `0x12000`.
+2. **Regenerate the FEL restore SPL from the new build** before writing
+   anything (the procedure in Method 4). The one on disk embeds an SPL that
+   looks for U-Boot proper at the old LBA `0x50`, and step 6 zeroes that — so a
+   stale restore SPL would "recover" the board into something that cannot boot.
+3. **Teach the running (old) U-Boot the new fastboot targets.** It predates
+   them, and its runtime injection only knows the old set:
 
-| region | state |
-| --- | --- |
-| sector 16, first 32 KiB | **ours** — this is all that must change |
-| 12 MiB boot package | **stock, untouched** — we have never written there |
-| `boot_a`, `super`, `vendor_boot_a`, `dtbo_a`, `vbmeta*` | **stock, untouched** |
-| `UDISK` (last partition) | our Debian rootfs |
+   ```
+   setenv fastboot_raw_partition_ubootp 0x12000 0x2000
+   setenv fastboot_raw_partition_vboot0 0x100 0x40
+   setenv fastboot_raw_partition_splstash 0x14000 0x40
+   saveenv
+   ```
+4. Write both halves. `install` flashes U-Boot proper **first**, so a
+   half-finished run leaves the old working first stage rather than a new one
+   pointing at nothing:
 
-So restoring stock boot0 is enough: it loads stock U-Boot from the intact boot
-package, which runs fastlogo and prints what we need.
+   ```
+   tools/boot-switch.sh install --via fastboot
+   ```
+5. Power cycle. The new chain boots. Re-apply any saved settings and `saveenv`:
+   the environment moved to LBA `0x1a000`, so the old one at 4 MiB is gone,
+   including the standalone `bootcmd`.
+6. Zero what we abandoned in the vendor's region — the old U-Boot proper at
+   LBA `0x50` onwards and the old environment at `0x2000`. In the capture that
+   whole range is zeros, and it is the prime suspect for `region magic is not
+   right`. **This must come before step 7**, because the old U-Boot proper
+   covers LBA `0x100`, where the vendor's boot0 is about to go.
+7. Make both chains resident: the vendor's boot0 to LBA `0x100`, its own
+   second-copy location, and our SPL stashed at LBA `0x14000`:
+
+   ```
+   tools/boot-switch.sh stage --via fastboot
+   ```
+
+### Switching, once migrated
+
+**To the vendor for one boot** — the normal way. Ours stays installed at LBA
+`0x10` and stays the default; nothing is written to eMMC at all:
+
+```
+run boot_vendor          # from our U-Boot: arms the RTC marker and resets
+reboot vendor            # from Debian: same marker, via nvmem-reboot-mode
+```
+
+The SPL sees marker `0x001db007` in RTC GP7 (`0x0709011c`, the same word that
+already carries the fastboot and prompt markers), **consumes it before doing
+anything else**, reads the vendor's boot0 from LBA `0x100`, verifies its eGON
+checksum, and enters it in AArch32. Because the marker is one-shot:
+
+- the next reset after the excursion comes back to ours, with nothing to undo;
+- a vendor chain that hangs costs a power cycle, not the FEL button;
+- any failure in the SPL — no marker, bad checksum, eMMC not there — prints why
+  and boots ours normally.
+
+`tools/boot-switch.sh stage` is what puts the vendor's boot0 at LBA `0x100`; the
+chainload prints `no valid vendor boot0` and carries on booting ours if it is
+missing.
+
+**To the vendor persistently**, when you want it to survive resets — this one
+does write LBA `0x10`, and then ours is not running any more:
+
+```
+run switch_vendor
+```
+
+It copies LBA `0x100` → `0x10`, refusing to write unless what it read carries
+the `eGON` magic. Power cycle to boot it. **Back to ours** after that, either
+the FEL button:
+
+```
+tools/boot-switch.sh ours --via fel
+```
+
+or, if the vendor's U-Boot gives you a prompt, the stash — no host at all:
+
+```
+mmc dev 1; mmc read 0x48000000 0x14000 0x40; mmc write 0x48000000 0x10 0x40
+```
+
+The vendor's U-Boot does contain `fastboot`, `sunxi_flash` and `dump_boot0`
+(strings in `u-boot-stock.bin`), and rooted `adb` + `dd` on vendor Android is
+proven — that is how the 2026-07-05 captures were taken. **Whether the vendor
+gives an interruptible prompt at all is untested**, so do not treat the stash
+as the primary return path until someone has seen it work. FEL is the one that
+has been verified.
+
+**Reading which is installed** needs the eMMC visible to the host
+(`run serial_mode; ums 0 mmc 1`):
+
+```
+tools/boot-switch.sh status --dev /dev/sdX
+```
 
 ### Always put `mmc dev 1;` on the same line
 
@@ -327,62 +493,114 @@ the stock B-slot resource is already gone.
 Expect `boot_a`, `super`, `vendor_boot_a`, `misc`, `UDISK` and friends. If they
 are gone, stop; stock will not boot and this method does not apply.
 
-### To stock
+### Capturing the vendor console
 
-`local/stock-boot/boot0_sdcard.fex` (32768 B, `eGON.BT0`), extracted from the
-OTA package — see the evidence log for provenance.
-
-```
-run fastboot_mode
-```
-
-```
-fastboot flash uboot local/stock-boot/boot0_sdcard.fex
-```
-
-Use the `uboot` alias, not `bootloader`, for the reason in Method 3. Then power
-cycle — **not** `fastboot reboot bootloader`, whose RTC marker is consumed by
-*our* preboot, which will no longer be there.
-
-**Capture the UART from the first byte.** The interesting lines appear within
+Power cycle after `run switch_vendor` — **not** `fastboot reboot bootloader`,
+whose RTC marker is consumed by *our* preboot, which will no longer be running.
+**Capture the UART from the first byte:** the interesting lines appear within
 about two seconds, before Android starts.
 
-### Then power off, and do not let Android settle
-
 Once `Display fastlogo finish!` or a `Pwm enable fail` has been printed, cut the
-power. Letting stock Android boot fully risks it reformatting `UDISK` — where
-the Debian rootfs lives — and touching `misc`/`metadata`. Nothing in this test
-needs userspace.
+power. Letting vendor Android boot to completion risks it reformatting `UDISK` —
+where the Debian rootfs lives — and touching `misc`/`metadata`. Nothing in this
+test needs userspace.
 
-### Back to ours
-
-Stock boot0 is now at sector 16, so our U-Boot is not running and its fastboot
-is unavailable. Return via the **FEL button** and the procedure in Method 4,
-which is verified, then rewrite:
-
-```
-fastboot flash uboot build/out/u-boot-sunxi-with-spl-ddr3.bin
-```
-
-Equivalently `mmc write 0x42000000 0x10 0x72d` after a `loady`, per Method 1.
+The vendor's Android is in **slot B** (`boot_b`, `vendor_boot_b`, `dtbo_b`,
+`vbmeta*_b`, plus the shared `super`); slot A's `boot_a` holds our kernel FIT,
+so with `misc` still selecting slot A the vendor will fail AVB and may retry or
+sit there. That is harmless for reading the U-Boot console, and is the reason
+the A/B split is worth keeping tidy.
 
 ### Risks, stated plainly
 
-- **No eMMC backup exists on this machine** (see below), so the return path is
-  "rebuild our image", not "restore a byte-exact copy". That is fine for the
-  boot region, which is reproducible from source, and is *not* fine for anything
-  else — so touch nothing else.
-- If stock boot0 does not find a boot package it will hang. FEL recovers it.
 - Android booting to completion is the one outcome that can lose real data. Pull
-  power early.
+  power early. Worst case is a rootfs rebuild, not a lost board: the boot region
+  is reproducible from source and the 2026-07-05 captures cover everything else.
+- If the vendor's boot0 does not find its boot package it will hang. FEL
+  recovers it.
+- With a valid vendor boot0 at LBA `0x100`, a corrupt first stage at `0x10` may
+  now boot **the vendor** instead of dropping to FEL. Whether the BROM really
+  falls back to 128 KiB is inferred from the vendor keeping a copy there, not
+  tested. Run `tools/boot-switch.sh status` before concluding what is installed.
+- Never write the OTA's `boot0_sdcard.fex` to this board — wrong DRAM
+  parameters, see above.
+
+### What the chainload assumes — bench results, 2026-08-06
+
+The three assumptions the design rested on all **held on the first run**:
+
+1. **The vendor's boot0 tolerates a live DRAM controller.** This was the
+   biggest unknown: the handoff happens after `sunxi_dram_init()`, because the
+   SPL's BSS lives in DRAM (`CONFIG_SPL_BSS_START_ADDR=0x4ff80000`) and the MMC
+   stack needs it. boot0 re-inits DRAM unconditionally and did so happily —
+   `DRAM CLK = 624 MHz`, `Type = 3 (DDR3)`, `DRAM simple test OK`, 1024 MiB.
+2. **`eret` with `SCR_EL3.RW=0` lands boot0 somewhere it can work** — for
+   everything boot0 does under its own power. It runs at Secure EL1 rather than
+   AArch32 Secure PL1 and does not care while setting PLLs, initialising DRAM
+   and the eMMC, or loading and enumerating its boot package. **It does care at
+   the very last step.** boot0's `monitor` entry is an AArch64 BL31, so
+   entering it means writing `RMR` — EL3-only. From EL1 that faults to a vector
+   nobody set up, and the console goes silent immediately after
+   `Jump to second Boot.`
+
+   **The RVBAR route does not fix this (bench 2026-08-06, negative result).**
+   Pointing Allwinner's writable RVBAR alias at `0x104000` and warm-resetting
+   this core into AArch32 via `RMR_EL3` (`RR=1`, `AA64=0`) does not enter boot0
+   at EL3: the core lands at the AArch32 reset vector, the BROM re-runs, reads
+   LBA `0x10`, and boots **our** first stage instead. The SPL banner simply
+   appears twice. So on this SoC RVBAR governs the AArch64 reset address only,
+   as the Cortex-A53 TRM implies, and there is no way to hand boot0 a real EL3
+   from inside a running AArch64 SPL.
+
+   Consequences: a *complete* vendor boot needs the BROM to load boot0 itself,
+   which means the persistent swap (`run switch_vendor`). The one-shot
+   chainload remains valuable as a diagnostic — it is how the destroyed boot
+   package was found — and could be made to boot the vendor fully only by
+   having our SPL do boot0's second half itself: parse the TOC1 package and
+   enter BL31 in AArch64 EL3 directly, never entering AArch32 at all.
+3. **`0x00104000` is where boot0 wants to be.** Independently confirmed by
+   `CONFIG_SUNXI_SRAM_ADDRESS=0x104000` — the same address the BROM loads our
+   own first stage to.
+
+What the first run *did* find is a handoff detail with no counterpart in the
+BROM-less path:
+
+**`boot_media` is written by the BROM into the header of the copy in SRAM, and
+is not part of the image on disk.** A pristine boot0 therefore reads it as 0,
+concludes it was booted from MMC0 — the absent SD slot — and fails:
+
+```
+[333][mmc]: Wrong media type 0x0
+[337][mmc]: ***Try SD card 0***
+[390][mmc]: ***SD/MMC 0 init error!!!***
+[543]Loading boot-pkg fail(error=2)
+```
+
+The chainloader now copies that byte (header offset `0x28`, which mainline
+calls `boot_media` and the vendor layout calls `platform[0]`) out of our own
+BROM-patched header into the staged image, after the checksum check and before
+the handoff — the same order the BROM itself uses. No media code is hardcoded.
+
+The trampoline is copied to DRAM and run from there, because the copy
+overwrites the SPL's own text at `0x104000`. It is position-independent with no
+literal pool — check the disassembly if you change it.
+
+The trampoline is copied to DRAM and run from there, because the copy
+overwrites the SPL's own text at `0x104000`. It is position-independent with no
+literal pool — check the disassembly if you change it.
 
 ## Safety
 
 - Always name the board a flash ran on — feeding the projector's HY200 QZ713_V2 (LPDDR3) params to the
   HY200 (DDR3) board trains "OK" but reads hang.
-- **There is no full eMMC backup on this machine.** This document previously
-  claimed one existed in `local/h713-lab`; it does not, and nothing over 200 MB
-  is there (checked 2026-08-05). The retail OTA package at
+- **Full eMMC backups do exist**, contrary to what this document said between
+  2026-08-05 and 2026-08-06: `local/h713-lab/captures/board-b/` (four images of
+  the bench board, 2026-07-05, pre-modification) and
+  `local/h713-lab/captures/board-a/` (two, 2026-06-22). They are 7.8 GB each and
+  carry per-unit secrets — the secure-storage block at 6 MiB holds `hdcpkey` and
+  `wifiBleDatas` — so they stay in the ignored `local/` tree and are never
+  committed. The retail OTA package at
   `~/Documents/projector_firmware/H713 Magcubic projector.20250922.093247/update.img`
-  is currently the only source of stock images. Taking a real backup before the
-  next destructive operation would be cheap insurance.
+  is a *different board's* firmware build; prefer the captures.
+- Take a fresh capture before the next destructive operation anyway. The
+  existing ones predate every write this project has made.
