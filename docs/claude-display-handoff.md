@@ -753,10 +753,16 @@ path and wants a decision.
   all. That text is in `display.bin`, which also carries
   `-r, --route  set elog output route: uart/net`.
 
+  **The password is `default user`.** The gate at `0x8b1831dc` is
+  `strcmp(entered, record+8)`, plaintext, no hash; the user record at
+  `0x8b20dee0` is `{ "VS", "", "default user", 0x2000 }` and `+8` is the stored
+  string. It occurs once in the binary, so there is no competing reading.
+
   **Next, and it is cheap:** read the PIO config for PH6/PH7 with the MIPS
-  running. Already muxed to function 2 -> the shell is live on a pin pair and
-  needs a wire. Not muxed -> mux and retry. The password is a static question,
-  not a bench one, and should be answered before wiring anything.
+  running. Already muxed to function 2 -> the shell is live on a pin pair, and
+  `regr`/`regw` are one `default user` away. Not muxed -> mux and retry. The
+  whole path to a MIPS-side register interface is a pin pair, a terminal and
+  that password.
 - **Two pinctrl patches disagree** -- *resolved 2026-08-05, in 0002's favour.*
   The stock U-Boot DTB gives PH17/pwm0 muxsel 3, PH18/pwm1 muxsel 3, PB5/pwm3
   muxsel 2 and PA12 = `pwm4`, all matching patch 0002. Patch 0018's

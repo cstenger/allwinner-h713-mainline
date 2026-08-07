@@ -88,12 +88,42 @@ Usage: cmd [-o on/off] [-r uart/net] [-m sync/async/buf] [-l tag level] ...
 
 The attribution was wrong; the capability is real and larger than claimed.
 
+## The password is `default user`
+
+Recovered statically, and the check is plaintext. The prompt handler at
+`0x8b1831dc`:
+
+```
+lw    $2, 0($4)        ; $4 = list node -> record pointer
+lw    $4, 16($4)       ; a0 = the text the user typed
+jal   strcmp           ; 0x8b1bdbc0, the word-at-a-time strcmp with
+lw    $5, 8($2)        ; a1 = record+8 = the stored password
+beqzl $2, ...          ; strcmp == 0 -> authenticated; else "password error"
+```
+
+The user record at `0x8b20dee0` is `{ "VS", "", "default user", 0x2000 }`, and
+the compared field is `+8`:
+
+```
++0x10dee0  8b201bc4 -> "VS"             name
++0x10dee4  8b201bc0 -> ""               (empty)
++0x10dee8  8b201bb0 -> "default user"   <-- record+8, the password
++0x10deec  00002000                     flags
+```
+
+`strcmp(entered, "default user") == 0` is the whole gate. No hashing, no salt --
+the function at `0x8b1bdbc0` is a plain `strcmp` (the `0x01010101`/`0x7f7f7f7f`
+zero-detect idiom, not a digest). `"default user"` occurs exactly once in the
+binary, as this field, so there is no competing reading.
+
 ## The bench step is now cheap and bounded
 
 Read the PIO config for PH6/PH7 from U-Boot with the MIPS running. If they are
 already muxed to function 2, the shell is live on a pin pair and needs only a
-wire. If not, mux them and retry. `regr` behind a password prompt is the thing
-worth reaching -- and the password is the next static question, not a bench one.
+wire, and `regr`/`regw` are one `default user` away. If not, mux them and retry.
+
+That is the whole path to a MIPS-side register interface: a pin pair, a
+terminal, and a known password.
 
 # The pre-run FAT read never killed the display -- REFUTED (2026-08-07)
 
