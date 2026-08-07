@@ -362,20 +362,52 @@ If sustained commits do break, the likely cause is the missing ARM IRQ handler,
 which is real work rather than a tweak. Better found now than under a
 compositor.
 
-### 2. Teardown as the single exit
+### 2. Teardown on failure -- DONE 2026-08-07, needs one bench check
 
-`h713_disp_teardown()` works and is verified, but `h713_disp_panel_test` still
-bails with bare `return ret` in about a dozen places, each leaving the panel
-powered and the MIPS live. Not hypothetical: that is exactly what happened when
-`vendor-logo-late` hit its bootlogo hash refusal.
+Every error path in `h713_disp_panel_test`, `h713_disp_init_only` and
+`h713_disp_test` now goes through **`h713_disp_fail()`**, which tears down
+instead of leaving the panel powered and the MIPS live. Nine error paths
+converted; the four success returns deliberately bypass it.
 
-Convert to a single exit -- `goto out` onto teardown-and-return, or wrap the
-body in a helper called by a thin outer function that always tears down.
-Deferred during the session because a background task is refactoring that
-function's 19-bool signature and restructuring the body would collide.
+The deferral reason was stale -- nothing was refactoring that signature, and it
+has since grown to 28 parameters.
 
-Check whether `h713_disp_init_only`, `h713_disp_test` and the mips-test path
-want the same treatment; they have the same shape of early returns.
+**It is a shared failure handler, not the single exit the plan asked for, and
+that is deliberate: success must NOT tear down.** `panel-test` leaving the
+display up is load-bearing -- it is what lets `panel-test ... ; boot` hand a live
+frame to Linux, which is how item 4 was verified. A single exit covering both
+paths would have silently broken that. `init_only` is the same: its whole
+purpose is to leave the display up for `scanrate`/`regscan`/`clkfind`.
+
+**The handler is guarded, and the guard is a hang rather than caution.**
+`h713_disp_teardown()` opens by reading the AFBD control register, and those
+blocks are gated until the sequence completes -- reading them cold stalls the
+interconnect and takes the board with it, which is why `h713_disp dump` has
+always refused the same thing. `h713_disp_configured` goes true at the end of
+`h713_disp_run()`, so a failure *before* that point reports that it cannot clean
+up rather than wedging.
+
+**Also fixed, found while doing this:** `h713_disp teardown` from the prompt was
+unguarded, so typing it after a reset would hang the board. It now refuses with
+a message. `h713_disp_configured` is never cleared, so teardown-twice still
+works -- which is the documented way to prove teardown is correct.
+
+To verify on hardware, cheapest first:
+
+```
+h713_disp teardown
+```
+
+on a cold boot, which should now refuse rather than hang; then
+
+```
+h713_disp panel-test 0x99 vendor-logo-chroma
+```
+
+which fails in `h713_disp_load` before the sequence and should print
+*"NOT tearing down: those blocks are still gated"*. The remaining case -- a
+failure *after* the sequence, which actually tears down -- has no easy trigger
+short of corrupting `bootlogo.bmp`, and is **untested on hardware**.
 
 ### 3. The backlight -- SOLVED; implementation deferred on hardware
 
