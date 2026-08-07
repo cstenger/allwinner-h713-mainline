@@ -1,4 +1,4 @@
-# The pre-run FAT read is not the cause, and may never have been (2026-08-07)
+# The pre-run FAT read never killed the display -- REFUTED (2026-08-07)
 
 Three probes, each isolating one candidate, each followed by the identical
 `fill_pattern(0)` and run a working path uses. **All three lit the panel.**
@@ -44,18 +44,32 @@ does not reproduce anything, and the three probes above were testing a fault
 that had already been fixed by something else -- which is exactly what three
 clean passes look like.
 
-## The decisive test needs no new code
+## The control settles it: the fault does not exist
 
 ```
 h713_disp panel-test 0x34 vendor-logo-early
 ```
 
-as the **first** command after a power cycle, so teardown is not involved.
-Renders -> the ordering rule is an artifact of the missing teardown, and this
-item closes as a misattribution. Dark -> the fault is real, none of read, hash
-or time explains it, and what remains is the BMP conversion itself.
+First command after a power cycle, so teardown could not be involved. The 2.7 MB
+FAT read, the SHA-256 and the BMP conversion all ran before `h713_disp_run()`,
+and **it rendered correctly** -- both chroma markers, `fbcheck` bounds
+343..378 / 367..912, frame committed, operator confirms no problem.
 
-Test the control before building a fourth probe.
+So the rule this log has carried since 2026-08-04 -- "the logo must be loaded
+after the display sequence, not before it" -- is **false**, and the reproducer
+kept to chase it reproduces nothing.
+
+The five blank runs remain unexplained in their own right, but the missing
+teardown is the obvious candidate: its signature is "the panel stayed dark while
+the console looked perfect", it cost "at least four results" elsewhere in this
+log, and it had no fix on 2026-08-04. The bisection that produced the ordering
+rule changed the ordering *and* the starting state together, so it never
+separated them. That is inference. What is demonstrated is only that the rule is
+false today.
+
+**Testing the control cost one run and closed the item.** Three probes were
+built to explain a mechanism, and the thing that settled it was asking whether
+there was still anything to explain -- which should have come first.
 
 # 0x05280084[31:16] is the layer height, and the omission was right (2026-08-07, test_38)
 

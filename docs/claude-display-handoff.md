@@ -68,23 +68,30 @@ legible red "SMART PROJECTOR" text on a blue field. Legible means unsheared, so
 the framebuffer path is correct end to end on the actual file, not just on
 synthetic patterns.
 
-It was `vendor-logo-late`, which settles the bisection: **the logo must be
-loaded after the display sequence, not before it.** That is now the default for
-every vendor-logo variant.
+**The load-ordering rule was an artifact. REFUTED on hardware 2026-08-07.**
 
-Loading before is why `vendor-logo` never showed anything across five runs.
-Every `fb-*` mode seeds with a plain memory write and renders; `vendor-logo`
-instead selected a block device, read 2.7 MB off FAT to `0x6d000000` and hashed
-it, all between `h713_disp_load()` and `h713_disp_run()`. The panel stayed dark
-with every register dump byte-identical to a working run, `fbcheck` proving the
-framebuffer correct, and the TCON marker equally absent. Moving that work after
-init -- changing nothing else -- renders it.
+This page said, from 2026-08-04 until now: *"the logo must be loaded after the
+display sequence, not before it"*, and that loading before it *"is why
+`vendor-logo` never showed anything across five runs"*. `vendor-logo-early` was
+kept as a reproducer.
 
-**The mechanism is not established, and as of 2026-08-07 the bisection itself is
-in doubt.** Read, hash and time were each isolated and each lit the panel, and
-the "seconds of work" this page claimed is really **220 ms**. The five blank runs
-carry the same signature as the missing-teardown bug -- dark panel, perfect
-console -- which did not have a fix when they were taken. See item 6.
+**It does not reproduce.** Run as the first command after a power cycle, with
+the 2.7 MB FAT read, the SHA-256 and the BMP conversion all before
+`h713_disp_run()`, it renders the logo correctly -- chroma markers, `fbcheck`
+bounds, committed frame. Before that, three probes isolating the read (178 ms),
+the hash (42 ms) and 3000 ms of pure delay each lit the panel too.
+
+**The best explanation for the original five blank runs is the missing
+teardown.** Its documented signature is *"the panel stayed dark while the
+console looked perfect"*, costing *"at least four results"* -- and teardown did
+not exist when those runs were taken. The bisection that produced the ordering
+rule changed the ordering *and* the starting state together, so it never
+separated them. That is inference, not proof: what is proven is that the rule is
+false today.
+
+`vendor-logo-late` stays the default. It works, nothing prefers early, and
+changing it would only churn. But it is **not load-bearing**, and no future
+sequencing decision should cite it.
 
 Consequences, for anyone reading older notes: horizontal variation in a
 framebuffer image used to become vertical stripes and the bootlogo arrived as a
@@ -106,7 +113,6 @@ why its output was always perfect.
 | `0x05600170` controls the stride | test_31: counts track the register 2.96/5.24/7.58/10.01 against 2.3/4.7/7.0/9.3 predicted, and the below-default step leans the other way |
 | `0x0528008c` is the layer X origin | test_32: 123 -> band 119.4, **0 -> 0.0**, 400 -> 406.2. Four other candidates screened in the same run moved it by 1 px |
 | the band was never framebuffer content | test_32 step 1: it stays pale against a saturated red fill, so a geometry fault, not addressing |
-| the logo must load **after** the display sequence | five blank runs with the pre-run load; moving it after init, changing nothing else, renders legible text (test_34) |
 | stride and width are different numbers | test_31 sweeps the stride 1230..1254 and the band holds at 1158 +- 4; test_30 sweeps the pattern and it holds at 1152 +- 2. Neither knob touches it |
 | the real vendor asset renders correctly | test_34: legible red "SMART PROJECTOR" on blue -- a sheared frame smears those glyphs into diagonals |
 | the band was at the **head** of the line, not the tail | ~120 px blank on the left, content running to the right edge, in all eleven photographs before the fix |
@@ -693,51 +699,28 @@ path and wants a decision.
   different, and it turned out to be right here. Two adjacent sites, omitted in
   one sentence for one reason: one a catastrophe, one correct. Only measuring
   each separated them. `h713_disp_panel_patch` needs no change.
-- **Why a pre-run FAT read kills the display** -- *three probes run
-  2026-08-07; all three lit the panel. The cause is not what this page said,
-  and may not exist any more.*
+- **Why a pre-run FAT read kills the display** -- *CLOSED 2026-08-07. It does
+  not, and the evidence says it never did.*
 
-  | probe | isolates | duration | result |
-  | --- | --- | --- | --- |
-  | `preread-read` | the second FAT read | **178 ms** | panel lit |
-  | `preread-hash` | SHA-256 traffic | **42 ms** | panel lit |
-  | `preread-delay` | time alone | 3000 ms | panel lit |
+  Three probes, each isolating one candidate and each followed by the identical
+  `fill_pattern(0)` and run a working path uses: the FAT read (**178 ms**), the
+  SHA-256 (**42 ms**), and 3000 ms of pure delay. **All three lit the panel.**
+  Then the control: `vendor-logo-early`, first command after a power cycle,
+  everything before `h713_disp_run()` -- **it renders correctly.**
 
-  **"Seconds of work" was wrong by 15x** -- read and hash together are **220 ms**,
-  and the delay probe ran thirteen times that and still worked. That estimate
-  had been written down as a characteristic and was steering the hypothesis.
+  Two things this page had wrong. The pre-run work is **220 ms**, not the
+  "seconds of work" claimed since 2026-08-04 -- an estimate written down as a
+  characteristic, which made a timing story plausible for three days. And the
+  five blank runs carry the missing-teardown signature exactly: "panel dark,
+  console perfect", which cost "at least four results" elsewhere on this page.
+  Teardown did not exist when they were taken, and the bisection changed the
+  ordering *and* the starting state together.
 
-  **The five blank runs match the missing-teardown signature exactly.** They are
-  described as "panel dark, register dumps byte-identical, fbcheck correct,
-  marker absent"; the no-teardown bug is described on this same page as "the
-  panel stayed dark while the console looked perfect... cost at least four
-  results". Teardown did not exist when those five runs were taken, and the
-  bisection changed the ordering *and* the starting state together.
+  So the reproducer reproduces nothing, and `vendor-logo-late` is a default
+  rather than a requirement. What is proven is that the rule is false today;
+  that the teardown explains the original runs is the best available inference,
+  not a demonstration.
 
-  **Next, and it needs no new code:** `panel-test 0x34 vendor-logo-early` as the
-  first command after a power cycle. Renders -> the rule is an artifact and this
-  closes as a misattribution. Dark -> the fault is real and what remains is the
-  BMP conversion itself. Test the control before building a fourth probe.
-- **The TSE load order now matches the vendor's** -- *changed and confirmed on
-  hardware 2026-08-06. Closed.*
-
-  ```
-  vendor, and now ours:  database -> pq_custom -> projecttable -> ProjectID
-  ours, before:          database -> projecttable -> ProjectID -> pq_custom
-  ```
-
-  All four addresses now print byte-identical to stock's, and every readiness
-  observable passes. `h713_disp_load_tse()`'s comment already said "project file
-  last", which is what the **vendor** does and what the code did not -- intent
-  and behaviour disagreed, which is how the last two transcription bugs hid.
-
-  **It was not cosmetic.** The unexplained `afbd-mux` shift from the 0x34 A/B
-  tracked the *order*, not the project id: same id and same files, stock's order
-  returns the 0x33 values. The old order put the variable-sized ProjectID file
-  third, so `pq_custom.TSE` moved by exactly the ProjectID size delta between
-  projects; stock puts the fixed blobs first so their addresses are stable
-  whatever project is selected. Our order perturbed the firmware's own
-  allocations without breaking the display. Full account in the evidence log.
 - **The firmware's UART shell.** `shell_thread_uart` and `shell_thread_monitor`
   are in the binary, and `display_cfg.xml` references *"How to use elog
   command.md"* -- a command interface, not just an output stream. Establish
@@ -850,6 +833,11 @@ Do not resurrect these; each cost bench time.
 - A static write map of the firmware is a **lower bound** on register access,
   never an inventory. It resolved 604 of 845 call sites and the answer to the
   contested-register question was among the rest.
+- **"The logo must be loaded after the display sequence."** Refuted 2026-08-07:
+  `vendor-logo-early` renders correctly, and read, hash and time each lit the
+  panel on their own. The five blank runs that produced this rule match the
+  missing-teardown signature, which had no fix when they were taken. Do not
+  re-derive a sequencing constraint from them.
 - The pale edge band is **not** a panel or TCON artefact.
 - The bootlogo was never "vertically collapsed" -- the BMP is a black frame with
   text only in rows 343..378, and it rendered faithfully once the PLL was fixed.
