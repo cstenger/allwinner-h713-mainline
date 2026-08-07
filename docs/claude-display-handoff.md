@@ -265,10 +265,45 @@ function's 19-bool signature and restructuring the body would collide.
 Check whether `h713_disp_init_only`, `h713_disp_test` and the mips-test path
 want the same treatment; they have the same shape of early returns.
 
-### 3. The backlight -- ready to retest, needs one bench run
+### 3. The backlight -- SOLVED; implementation deferred on hardware
 
-**Both of this item's former premises were wrong**, and both were corrected on
-2026-08-05. See the evidence log's top section.
+**The light dims, and the control is PB5.**
+
+```
+h713_disp bl-gpio 500 10 3
+```
+
+`panel_bl_en` (PB5) is the enable of an **on-board boost converter** lifting 36 V
+to the 52.6 V the `LED` header delivers, and that converter **dims on
+PWM-of-enable** -- the standard technique for LED boost drivers. 500 Hz at 10 %
+duty is visibly dimmer with no flicker. Brightness was reachable from the SoC the
+whole time, on a pin this project had been holding statically high since the fan
+work.
+
+**Not PB4/PWM2**, where every stock source points. Our waveform there was correct
+all along; it simply is not what gates the converter.
+
+**But enable-PWM will not be the implementation**, and `bl-gpio` stays a
+diagnostic. It dims by starving the converter, so the LED runs below its designed
+forward voltage, the usable window is a narrow 7-14 % duty that drifts with
+temperature and input rail, and PB5 also powers the fan -- so the whole usable
+band starves cooling. **The chosen path is an inline low-side MOSFET in the LED's
+negative return**, chopping downstream of the converter's output capacitor: the
+converter runs undisturbed, PB5 stays statically high, the fan is untouched.
+Module is on hand, hardware not yet fitted. Constraints, the CV-vs-CC check to
+run first, and the polarity trap are in
+**[backlight-investigation.md](backlight-investigation.md)** section 7.
+
+**One constraint reaches into this tree already:** the module's PWM input is
+rated 0-2.5 kHz, so `H713_BL_PWM_HZ` (25 kHz) and patch 0032's
+`pwms = <&pwm 2 40000 0>` must both drop to <= 2.5 kHz when it is fitted. 1 kHz
+gives 2.5x margin and stays above flicker fusion. Both are deliberately left
+alone until then, so the constant keeps matching the measurement that documents
+it.
+
+The rest of this item is the historical trail, kept because the reasoning
+pattern matters. **Both of its original premises were wrong**, and both were
+corrected on 2026-08-05. See the evidence log's top section.
 
 - The firmware HAL route is **closed**. `Thal_Vp_SetBacklightLevel` is a
   non-blocking post to the `app_bottom` thread that returns a hardcoded `1`
@@ -319,11 +354,16 @@ it -- it reports the output latch, not the pin.
 - **flat** -> the waveform is not reaching the pad, and mux 3 vs 2 becomes an
   A/B with the DMM as judge.
 
-**STILL OPEN.** No software experiment has been found that can change the
-outcome, but the question is deliberately *not* closed — the conclusion below
-rests partly on inference, and a second opinion is being sought. The full
-consolidated case, including what is proven versus inferred and which
-conclusions were reversed during the investigation, is in
+**This once read "STILL OPEN", and the caution that kept it open was right.**
+The claim was that no software experiment could change the outcome; the question
+was held open anyway because the conclusion rested partly on inference. The
+inference was that no driver stage existed on the board, and it was false. Had
+the item been closed when the software case looked airtight, the answer would
+still be undiscovered.
+
+The software case below holds on its own terms -- our PWM is verified live on
+PB4 and nothing dims. What it never established is that nothing *could*. The
+full consolidated case is in
 **[backlight-investigation.md](backlight-investigation.md)** — read that rather
 than reconstructing it from this file or the evidence log.
 
@@ -343,12 +383,30 @@ And the **vendor kernel has no backlight class at all** and never reads a single
 stock would add nothing; `docs/flash.md` "Method 5" is documented but its
 premise proved false and it should not be run.
 
-**What remains is a hardware question, not a software one.** The light is a
-2-wire (power + ground) engine, and 53 board photographs show **no LED driver
-and no boost converter anywhere on the mainboard** -- every inductor is a 2R2
-buck for the SoC rails. So the 48 V supply is generated off-board, and no SoC
-PWM can reach it unless a control wire does. Next step is tracing where the
-light's cable actually terminates, not another register.
+**Three claims this page carried were load-bearing and all three were wrong:**
+
+| was | is |
+| --- | --- |
+| the rail is ~48 V | **36 V** in, dual-output brick (12 V board / 36 V light) |
+| the `LED` header is the indicator | it is **the light engine's feed** |
+| no LED driver or boost converter on the board | **there is a boost**, 36 -> 52.6 V |
+
+The third was the one that mattered. The argument that closed this question ran:
+the light is 2-wire, no driver exists on the mainboard, therefore the supply is
+made off-board and no SoC PWM can reach it. The middle premise is false, so the
+conclusion never followed -- and the driver being on the board is exactly why
+PB5 could reach it.
+
+That premise came from **53 photographs and a component-by-component survey**.
+One DMM probe on the output connector refuted it in a second. A photographic
+survey is a **lower bound** on what a board contains, the same way a static write
+map is a lower bound on register access -- a lesson this project had already
+learned once and did not transfer.
+
+What survives, and is narrower than it was read as: **stock does not dim this
+panel.** It requests pwm5, the request fails, and the light comes up full anyway.
+That is a fact about the vendor's software, not a limit on the hardware, and the
+two were being conflated.
 
 **Follow-up regardless of the outcome:** patch 0002 needs the same mux fix for
 Linux, and the rest of that table is now suspect. It is a transcription, and
