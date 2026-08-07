@@ -1,6 +1,6 @@
 # H713 display handoff
 
-Last updated 2026-08-06. Operational companion to `docs/mips-display-recovery.md`
+Last updated 2026-08-07. Operational companion to `docs/mips-display-recovery.md`
 (detailed evidence log) and `docs/board-bringup-sequence.md` (boot chain and
 state machines).
 
@@ -111,6 +111,9 @@ why its output was always perfect.
 | the band was at the **head** of the line, not the tail | ~120 px blank on the left, content running to the right edge, in all eleven photographs before the fix |
 | the photographs are not mirrored | the stripe lean matches the model in absolute sign across five steps of test_31, including the flip at the one step below default; so left is left |
 | the band belongs to the framebuffer path | operator observation: TCON generator patterns fill the whole screen, framebuffer patterns are truncated |
+| sustained commits work | fb-anim 2026-08-07: 600 frames committed, **0 timeouts**; the manual write-one-to-clear suffices without an ARM IRQ handler |
+| completion is **vsync-locked** | same run: 600 frames in 10042 ms = 59.749 Hz vs the panel's computed 59.71 Hz (0.07%), and fill mean + wait max = 16.754 ms vs a 16.747 ms frame period (0.04%) |
+| the framebuffer path is single-buffered, and AFBD does not latch the surface | same run: the bar tears during motion and is whole when static -- rewriting the buffer after commit could not tear it if the commit had snapshotted it |
 | project 0x34 drives the same display path as 0x33 | 2026-08-06 A/B: both select prologue 3 + timing 6, both patch 22/12, `fbcheck` bounds identical, panel indistinguishable; the only surviving register difference is `0x0525c038` (`0x100` vs `0x40`) |
 
 ## Ready to run
@@ -227,15 +230,44 @@ wasted a run.
 Session of 2026-08-04/05 closed the display path. What follows is everything
 still outstanding, with the exact next step for each.
 
-### 1. Animated framebuffer test signal
+### 1. Animated test signal -- RUN 2026-08-07; commits pass, the path tears
 
-The last thing static frames cannot test. Every render so far is one frame held
-still, so sustained commits, frame timing and liveness are all unverified.
-`h713_disp_commit_osd_frame` hand-manages what stock does in an IRQ handler
-(*"without an ARM IRQ handler the old completion otherwise remains pending
-forever"*), and at most six chained commits have ever been exercised. Observed
-commit waits span 600 us to 16400 us; the upper end is about one frame at
-59.71 Hz, which *suggests* vsync-locked completion but does not establish it.
+**Answered.** 600 frames, zero timeouts, and two facts that were not previously
+established.
+
+```
+H713 anim: committed 600, timeouts 0 -- sustained commits OK
+H713 anim: complete after 600 frame(s) in 10042 ms
+H713 anim: commit wait min/mean/max 6800/14620/14800 us; fill min/mean/max 1949/1954/1969 us
+```
+
+- **Sustained commits work.** The worry was that `h713_disp_commit_osd_frame`
+  hand-manages what stock does in an IRQ handler, and that the old completion
+  would remain pending forever without one. 600/600 committed. The manual
+  write-one-to-clear before each submission is sufficient; the missing ARM IRQ
+  handler is not a blocker for single-buffer output.
+- **Completion is vsync-locked -- now measured, not inferred.** 600 frames in
+  10042 ms is 16.7367 ms/frame = **59.749 Hz** against the panel's computed
+  **59.71 Hz**, a 0.07 % match; and fill mean + wait max = 1.954 + 14.800 =
+  **16.754 ms** against a **16.747 ms** frame period, 0.04 %. The commit returns
+  when the raster reaches its completion point, so the wait is exactly the rest
+  of the frame after the fill. This page previously said 16400 us "suggests"
+  this; 600 samples settle it.
+- **The path is single-buffered and tears.** Operator: the bar is broken during
+  motion and whole once it stops. AFBD streams live from `0x6c100000` while the
+  CPU rewrites it -- so the commit does **not** latch the surface, or rewriting
+  it afterwards could not tear it. Harmless for a static boot logo, fatal for
+  anything animated. See item 1b.
+
+### 1b. Double buffering -- the successor, and it is well specified
+
+The lever already exists: **`0x05600178` is the AFBD source address**, currently
+holding `0x6c100000`. Write a second surface, point that register at it, then
+commit. Because completion is vsync-locked (above), the flip lands on a frame
+boundary and the tear goes away.
+
+Score it with `fb-anim` unchanged: the bar becomes whole *during* motion. That
+is a clean before/after on an instrument that already has a baseline.
 
 **Built 2026-08-07, not yet run on hardware.**
 

@@ -1,3 +1,85 @@
+# Sustained commits work, completion is vsync-locked, and the path tears (2026-08-07, fb-anim)
+
+First animated test signal in this bring-up. 600 frames, a 64 px red bar on blue
+stepping 16 px/frame, committed continuously.
+
+```
+H713 anim: complete after 600 frame(s) in 10042 ms
+H713 anim: committed 600, timeouts 0 -- sustained commits OK
+H713 anim: commit wait min/mean/max 6800/14620/14800 us; fill min/mean/max 1949/1954/1969 us
+```
+
+## 1. Sustained commits work -- 600/600, no timeouts
+
+The open worry was that `h713_disp_commit_osd_frame()` hand-manages what stock
+does in an IRQ handler, and that without an ARM IRQ handler the old completion
+would remain pending forever. At most six chained commits had ever been run.
+
+**600 committed, zero timeouts.** The manual write-one-to-clear of the channel-1
+IRQ status before each submission is sufficient; nothing accumulates. The
+missing ARM IRQ handler is not a blocker for sustained single-buffer output.
+
+## 2. Completion is vsync-locked -- established, not suggested
+
+The old note said observed waits of 600..16400 us "suggest vsync-locked
+completion but do not establish it". 600 samples settle it two independent ways:
+
+| quantity | value |
+| --- | --- |
+| 600 frames in 10042 ms | **16.7367 ms/frame = 59.749 Hz** |
+| panel timing, computed from the PLL | 16.747 ms = **59.71 Hz** |
+| fill mean + wait max (1.954 + 14.800) | **16.754 ms** |
+| frame period | **16.747 ms** |
+
+The achieved rate matches the panel's computed refresh to **0.07 %**, and
+fill-plus-wait matches one frame period to **0.007 ms -- 0.04 %**. The commit
+does not return until the raster reaches its completion point, so the wait is
+exactly "the rest of the frame after the fill". That is what vsync-locked means,
+and it is now a measurement rather than an inference.
+
+The `min` of 6800 us is the first frame, which starts at an arbitrary raster
+phase. Every subsequent frame lands in the 14700..14800 us band.
+
+## 3. The path is single-buffered, and it tears
+
+**Operator observation: the bar is broken during motion, and complete top to
+bottom once the animation stops.**
+
+That is tearing, and it is the expected consequence of what this path is: the
+AFBD streams live from `0x6c100000` during scanout while the CPU rewrites the
+same buffer. The fill takes 1.954 ms of a 16.747 ms frame -- about 12 % of the
+frame height -- and it begins immediately after the previous commit completes,
+so it races the top of the new scanout. The last frame is never overwritten,
+which is why the static bar is whole.
+
+**This also tells us the commit does not latch or snapshot the surface.** Had
+AFBD captured the frame at submission, rewriting the buffer afterwards could not
+have torn it. It streams.
+
+Two consequences worth carrying forward:
+
+- **A static boot logo is unaffected.** Nothing in the shipping use of this path
+  animates, which is why this never showed up before.
+- **Anything animated needs double buffering**, and the lever exists:
+  `0x05600178` is the AFBD source address, already known and already carrying
+  `0x6c100000`. Write a second surface, point that register at it, then commit.
+  Since completion is vsync-locked (section 2), the flip lands on a frame
+  boundary and the tear goes away. That is the next piece of work, and it is now
+  a well-specified one rather than a worry.
+
+## Method note
+
+The instrument was designed so a pass and a failure both measure. It returned a
+pass on its primary question *and* two facts nobody asked it for -- the refresh
+lock and the tear -- because it reported fill and commit-wait separately instead
+of a single frame time. A single "frames per second" number would have shown
+59.7 Hz and hidden both.
+
+Deliberately not decoded video, for the reason recorded when it was built: a
+decoder would have contributed its own buffers, format conversion and timing, so
+the tear would have had five candidate causes instead of one. Video is the
+integration test now that this is the reference.
+
 # Project 0x34 renders exactly as 0x33, and the delta is one register (2026-08-06)
 
 Booting the vendor stack established that this board selects project id **0x34**
