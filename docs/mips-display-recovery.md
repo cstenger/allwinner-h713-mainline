@@ -1,3 +1,100 @@
+# The firmware's UART shell: it starts, and it is on UART4 (2026-08-07)
+
+Static analysis of `display.bin`, no bench time. Both questions the item asked
+are answered, and one of its premises is wrong.
+
+## The threads start unconditionally
+
+`shell_thread_uart` and `shell_thread_monitor` are constructed at exactly one
+site each, in a spawner at `0x8b1834c4`:
+
+```
+0x8b1834c4  addiu $sp, $sp, -32
+0x8b1834d8  addiu $6, $6, 0x1bc8   ; a2 = "shell_thread_uart"
+0x8b1834d4  addiu $7, $7, 0x33a4   ; a3 = entry 0x8b1833a4
+0x8b1834e8  jal   0x8b15c894       ; thread create
+0x8b1834ec  addiu $4, $zero, 4     ; a0 = 4
+0x8b183500  addiu $6, $6, 0x1bdc   ; a2 = "shell_thread_monitor"
+0x8b18350c  jal   0x8b15c894       ; a0 = 5, entry 0x8b183434
+0x8b183518  jr    $ra
+```
+
+**Straight-line. No branch, no flag, no config test.** Its single caller is
+`0x8b153608`, in the main startup path, immediately after the config at
+`0xabe01000` is parsed -- and `0xabe01000` is the uncached alias of ARM
+`0x4be01000`, the `display_cfg.xml` window we load ourselves.
+
+So **in our configuration the shell is already running**, every time the MIPS
+reaches readiness. Nothing needs enabling.
+
+## It is UART instance 4, not our console
+
+The shell's input and output routines resolve to one register block:
+
+| MIPS VA | offset | DesignWare register |
+| --- | --- | --- |
+| `0xb7501000` | +0x00 | RBR / THR -- read and written |
+| `0xb750107c` | +0x7c | USR, polled before every byte |
+| `0xb75010a4` | +0xa4 | HALT |
+
+`USR` at `0x7c` and `HALT` at `0xa4` are **DesignWare-specific**, which
+identifies the IP: the same `snps,dw-apb-uart` the H713 DTs use. It is a full
+putc/getc pair -- poll USR, then read or write THR.
+
+H713 UARTs are `0x400` apart (`serial@2500000`, `serial@2500400`), so an
+instance at window `+0x1000` is **instance 4, ARM `0x02501000`**. That is
+**inference, not proof**: the MIPS-to-ARM window base register has not been
+found, and the DRAM offset does not apply here (DRAM is uncached = physical +
+`0x60000000`, which would put this in the middle of DRAM). What is solid is the
+`+0x1000` offset against `0x400` spacing, and that only offsets of `n * 0x400`
+can be UART bases.
+
+**It is not UART0**, which is our console on PH0/PH1 -- consistent with never
+having seen a byte of it in three days of logs.
+
+Our pin table gives UART4 two routes: **PH6/PH7/PH8/PH9 at mux 2**, or
+**PD8..PD11 at mux 3**.
+
+## What the shell actually is
+
+Not a log stream. A full interactive console: `Command List:` / `Var List:` /
+`User List:` / `Key List:`, `help [cmd]`, line editing (backspace, left, right,
+up, down), `Warning: Command is too long`, `Command not Found`, and a
+`Please input password:` / `password error` gate.
+
+And, from `./reg_access.c`:
+
+```
+regw   write register
+regr   read register
+       Invalid Address: 0x%x        IsInvalidRegAddr
+```
+
+**Register read/write from the coprocessor's own side of the fabric**, with an
+address validator. That is a materially different instrument from anything we
+have: every register result in this log so far is an ARM-side view.
+
+## The premise that was wrong
+
+The item said *"`display_cfg.xml` references 'How to use elog command.md'"*. **No
+`display_cfg.xml` on this system contains the string `elog` at all** -- not the
+board-B copy, not board A, not the research extraction. The elog help text lives
+in `display.bin`, which also carries the full option set:
+
+```
+Usage: cmd [-o on/off] [-r uart/net] [-m sync/async/buf] [-l tag level] ...
+  -r, --route    set elog output route: uart/net
+```
+
+The attribution was wrong; the capability is real and larger than claimed.
+
+## The bench step is now cheap and bounded
+
+Read the PIO config for PH6/PH7 from U-Boot with the MIPS running. If they are
+already muxed to function 2, the shell is live on a pin pair and needs only a
+wire. If not, mux them and retry. `regr` behind a password prompt is the thing
+worth reaching -- and the password is the next static question, not a bench one.
+
 # The pre-run FAT read never killed the display -- REFUTED (2026-08-07)
 
 Three probes, each isolating one candidate, each followed by the identical

@@ -721,11 +721,42 @@ path and wants a decision.
   that the teardown explains the original runs is the best available inference,
   not a demonstration.
 
-- **The firmware's UART shell.** `shell_thread_uart` and `shell_thread_monitor`
-  are in the binary, and `display_cfg.xml` references *"How to use elog
-  command.md"* -- a command interface, not just an output stream. Establish
-  from the binary which UART it binds and whether the thread starts in our
-  configuration before spending bench time.
+- **The firmware's UART shell** -- *static analysis done 2026-08-07. It starts
+  unconditionally, it is on UART4, and it is a register interface.*
+
+  **The threads start with no gate.** `shell_thread_uart` and
+  `shell_thread_monitor` are spawned by a straight-line function at
+  `0x8b1834c4` -- no branch, no flag, no config test -- whose single caller sits
+  in the main startup path just after the config at `0xabe01000` (the uncached
+  alias of the `display_cfg.xml` window we load). **So it is already running in
+  our configuration**, whenever the MIPS reaches readiness.
+
+  **It is UART instance 4, not our console.** Input and output both resolve to
+  one block: `0xb7501000` (RBR/THR), `+0x7c` (USR, polled per byte), `+0xa4`
+  (HALT). USR at `0x7c` and HALT at `0xa4` are DesignWare-specific, matching the
+  `snps,dw-apb-uart` the H713 DTs use. H713 UARTs are `0x400` apart, so window
+  `+0x1000` is instance 4 -- ARM `0x02501000`. *Inference, not proof:* the
+  MIPS-to-ARM window base register has not been found. But it is definitely not
+  UART0, which is why three days of logs never showed a byte of it.
+
+  Our pin table routes UART4 to **PH6/PH7/PH8/PH9 at mux 2**, or PD8..PD11 at
+  mux 3.
+
+  **It is a register interface, not a log stream.** Command/var/user/key lists,
+  `help [cmd]`, line editing, a `Please input password:` gate -- and from
+  `./reg_access.c`, **`regr` and `regw`**, register read and write with an
+  address validator. That is the coprocessor's own view of the fabric; every
+  register result in this project so far is the ARM's.
+
+  **The item's premise was wrong.** It said `display_cfg.xml` references "How to
+  use elog command.md". No `display_cfg.xml` on this system contains `elog` at
+  all. That text is in `display.bin`, which also carries
+  `-r, --route  set elog output route: uart/net`.
+
+  **Next, and it is cheap:** read the PIO config for PH6/PH7 with the MIPS
+  running. Already muxed to function 2 -> the shell is live on a pin pair and
+  needs a wire. Not muxed -> mux and retry. The password is a static question,
+  not a bench one, and should be answered before wiring anything.
 - **Two pinctrl patches disagree** -- *resolved 2026-08-05, in 0002's favour.*
   The stock U-Boot DTB gives PH17/pwm0 muxsel 3, PH18/pwm1 muxsel 3, PB5/pwm3
   muxsel 2 and PA12 = `pwm4`, all matching patch 0002. Patch 0018's
