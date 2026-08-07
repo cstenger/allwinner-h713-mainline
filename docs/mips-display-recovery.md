@@ -1,3 +1,174 @@
+# Project 0x34 renders exactly as 0x33, and the delta is one register (2026-08-06)
+
+Booting the vendor stack established that this board selects project id **0x34**
+(`Project id:0x34 version:25-1-6-3`, then `mips/ProjectID_0x0034.TSE`), while
+every bring-up run in this project has used `panel-test 0x33`. That put a
+question mark over the whole display log: if 0x34 drove different tables, no
+0x33 result described the vendor's behaviour.
+
+**It does not. Every 0x33 result stands.** Predicted statically, then confirmed
+on hardware in a back-to-back A/B.
+
+## The blob analysed is the blob the board runs
+
+`LogoRegData.bin` word 1 is a packed version: `[31:24]` year, `[23:20]` month,
+`[19:12]` day, `[11:0]` build. `local/mips-display/board-b-mips/LogoRegData.bin`
+carries `0x1940a09d` -> **25-4-10-157**, which is exactly what the vendor
+firmware printed on the bench. So the static analysis below and the hardware run
+are about the same bytes.
+
+Do **not** analyse against `local/mips-display/research/bootloader_fat/` or the
+board-A capture. Both are `0x18603052` -> 24-6-3-82, 13 descriptors, `0x382c`
+bytes -- and DE block 6 (`0x361c..0x39a4`) runs off the end of that file.
+
+## The two ids share everything except the DE block
+
+Board B's table carries 15 descriptors:
+
+| project | prologue | timing | de |
+| --- | --- | --- | --- |
+| 0x33 | 3 | 6 | **5** |
+| 0x34 | 3 | 6 | **6** |
+
+Prologue and timing are shared outright, so the display PLL, the LVDS lane map,
+the panel timing and every `h713_disp_panel_patch` site outside the DE block are
+bit-identical between the two. Only the DE/mixer table differs.
+
+Walking both DE blocks with `h713_logo_walk`'s exact framing rules gives 55
+records for block 5 and 56 for block 6, differing in **four**:
+
+| register | de5 | de6 | after our patch |
+| --- | --- | --- | --- |
+| `0x0525c004` | `00001003` | `00000404` | both -> `00001402` |
+| `0x0525c01c` | `05000054` | `05000014` | both -> `0500003c` |
+| `0x0525c034` | `05000054` | `05000014` | both -> `0500003c` |
+| `0x0525c038` | *absent* | `00000040` | **not patched -- survives** |
+
+Three of the four sit at sites the patch table overwrites and converge on the
+same value. The fourth is `H713_DISPLAY_MIXER_CTRL_REG`, which our sequence
+writes `0x100` to before the DE walk; under 0x34 the vendor's own table
+overwrites that with `0x40` immediately afterwards.
+
+**So the entire predicted difference was one register.**
+
+## The hardware agrees, to the offset
+
+`panel-test 0x33 vendor-logo-chroma` then `panel-test 0x34 vendor-logo-chroma`,
+same boot, teardown between (the second run tore down first, as designed).
+
+| observable | 0x33 | 0x34 |
+| --- | --- | --- |
+| triple | prologue 3, timing 6, de 5 | prologue 3, timing 6, de 6 |
+| patched / guarded | 22 / 12 | **22 / 12** |
+| DE records applied | 55 | **56** |
+| `0x0528008c` | `7b -> 0` at `+0x3584` | `7b -> 0` at `+0x390c` |
+| `0x0525c038` | `00000100` | **`00000040`** |
+| fbcheck | rows 343..378, cols 367..912 | **identical** |
+| panel | legible logo | **no visible difference** (operator) |
+
+All eleven DE-block patch offsets landed where the static walk put them, and
+both differing pre-patch values appeared as predicted -- the console shows
+`00000404 -> 00001404 -> 00001402` under 0x34 against
+`00001003 -> 00001403 -> 00001402` under 0x33.
+
+**A corollary worth keeping.** Our explicit `writel(0x100, 0x0525c038)` ahead of
+the DE walk is **not load-bearing**: 0x34 overwrites it with `0x40` and the panel
+renders identically. Whatever that field selects, it does not change the output
+in this configuration.
+
+## Two differences this run cannot explain
+
+Recorded because they are real, not because they mean anything yet.
+
+- **`afbd-mux +0x20` moved**: `4c5ee000 4cbeb000` -> `4c7ed000 4cdea000`, both by
+  exactly `+0x1ff000`. These are firmware allocations and they differ in the
+  *first* dump, i.e. after the MIPS read the TSE, so the smaller
+  `ProjectID_0x0034.TSE` plausibly drives a different buffer layout. The shift is
+  not the TSE size delta (`0xa80`), so that is inference, not a finding.
+
+  > **Refuted the same day. It was the TSE load order, not the project id.**
+  > Re-running 0x34 with stock's order returns `4c5ee000 4cbeb000` -- the values
+  > 0x33 produced. Same id, same TSE files, only the placement changed. The
+  > guess above named the right cause family and the wrong member, which is what
+  > "inference, not a finding" was there to flag. See the section below.
+- **`ready=00000000` vs `ready=00000001`** on the commit line, with `wait=5700us`
+  against `4700us`. One sample each, against an observed commit-wait range of
+  600..16400 us, so this is not separable from sampling. Still unresolved: the
+  vendor-order run reads `ready=00000000` at `wait=9700us`, a third distinct
+  pair, which is what sampling noise looks like.
+
+Neither changed the render. `0x05880000` and the `scan=` values also differ, and
+those are the free-running counter doing what it always does.
+
+## Our TSE load order does not match the vendor's
+
+Visible for the first time from the vendor's own bench log, and unrelated to the
+project id:
+
+```
+vendor:  database -> pq_custom -> projecttable -> ProjectID
+         0x4be41000  0x4be85f60   0x4be89a08     0x4be89f70
+ours:    database -> projecttable -> ProjectID -> pq_custom
+         0x4be41000  0x4be85f60     0x4be864c8   0x4be8a860
+```
+
+Both sets of addresses are confirmed -- the vendor's from its fastlogo log, ours
+from today's console. `h713_disp_load_tse()`'s comment says "project file last",
+which is what the **vendor** does and what our code does not.
+
+Each blob is self-describing (`TSE` magic, a type byte -- database `0x00`,
+ProjectID `0x02`, pq_custom `0x05`, projecttable `0x06` -- and, for three of the
+four, an accurate total size at `+0x12`), and `ProjectID_0x0034.TSE` carries
+`34 00` at `+0x0e`. That supports the MIPS chaining on the headers rather than on
+placement, which would make the order harmless. **It is not proof**, and the
+display path would not expose it either way, since the ARM's LogoRegData replay
+is what renders.
+
+**Changed to the vendor's order and confirmed on hardware the same day.** All
+four addresses now print byte-identical to stock's -- `0x4be41000`,
+`0x4be85f60`, `0x4be89a08`, `0x4be89f70` -- and every readiness observable
+passes: `status=0x00000001`, `firmware execution proven`,
+`CPU_COMM magic=deadbeef/deadbeef ARM=00000005 MIPS=00000005`,
+`firmware readiness proven by MIPS READY`, `application readiness proven`, plus
+the render and `fbcheck` at rows 343..378 / columns 367..912.
+
+**And it was not cosmetic.** The `afbd-mux` addresses the previous run could not
+explain move with the order:
+
+| run | `afbd-mux +0x20` |
+| --- | --- |
+| 0x33, old order | `4c5ee000 4cbeb000` |
+| 0x34, old order | `4c7ed000 4cdea000` |
+| 0x34, **stock order** | `4c5ee000 4cbeb000` |
+
+Same project id, same TSE files, only the placement changed -- so **the old
+order perturbed the firmware's own allocations.** "Probably harmless" was too
+generous; what is true is that it changed firmware behaviour without breaking
+the display.
+
+The mechanism is visible in the layout. Our old order put the **variable-sized**
+ProjectID file third, so `pq_custom.TSE` landed at `0x4be8b2e0` under 0x33 and
+`0x4be8a860` under 0x34 -- a shift of exactly `0xa80`, the ProjectID size delta.
+Stock puts the fixed-size databases first and the variable file last, so every
+fixed blob has a stable address whatever project is selected. That is very
+likely *why* stock orders them that way, and our order defeated it.
+
+This does not establish that the MIPS parses by placement rather than by header
+-- the display rendered correctly under both orders, and the allocation delta
+is not itself a fault. It does retire the argument that the order could not
+matter.
+
+## Method note
+
+The static pass predicted the descriptor triple, all eleven patch offsets, both
+differing pre-patch values, the 55/56 record counts, the 22/12 patch counts and
+the one surviving register -- everything the run then printed. That is what a
+transcribed vendor table is *for*, and it is the opposite of the failure recorded
+below in "The framebuffer fault was our own omission", where the static analysis
+was right and got overruled by caution. The difference is that this time the
+prediction was written down as numbers **before** the board was powered, so the
+run could only confirm or refute it.
+
 # The vendor firmware says the backlight is channel 5, and Linux never touches it (2026-08-05)
 
 Recovered from the retail OTA package,

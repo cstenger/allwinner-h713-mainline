@@ -1,6 +1,6 @@
 # H713 display handoff
 
-Last updated 2026-08-04. Operational companion to `docs/mips-display-recovery.md`
+Last updated 2026-08-06. Operational companion to `docs/mips-display-recovery.md`
 (detailed evidence log) and `docs/board-bringup-sequence.md` (boot chain and
 state machines).
 
@@ -111,6 +111,7 @@ why its output was always perfect.
 | the band was at the **head** of the line, not the tail | ~120 px blank on the left, content running to the right edge, in all eleven photographs before the fix |
 | the photographs are not mirrored | the stripe lean matches the model in absolute sign across five steps of test_31, including the flip at the one step below default; so left is left |
 | the band belongs to the framebuffer path | operator observation: TCON generator patterns fill the whole screen, framebuffer patterns are truncated |
+| project 0x34 drives the same display path as 0x33 | 2026-08-06 A/B: both select prologue 3 + timing 6, both patch 22/12, `fbcheck` bounds identical, panel indistinguishable; the only surviving register difference is `0x0525c038` (`0x100` vs `0x40`) |
 
 ## Ready to run
 
@@ -127,8 +128,14 @@ Trust `-dirty` and the behaviour, not the hash.
 stock asset correctly:
 
 ```
-h713_disp panel-test 0x33 vendor-logo-chroma
+h713_disp panel-test 0x34 vendor-logo-chroma
 ```
+
+**Use `0x34`.** It is what this board declares in `panel_config.ini`
+(`ProjectID = 52`) and what stock's own log selects. `0x33` renders identically
+-- proven, see below -- so no earlier result is invalidated, but new work should
+not keep using a value nothing supports. `h713_disp` now prints a note whenever
+it is given anything else.
 
 Expect one blink, then two, then a **red "SMART PROJECTOR" on blue** filling the
 frame -- rows 343..378 of 720, columns 368..912 of 1280, so about 5% of the
@@ -175,7 +182,7 @@ runs were spent before that control existed.
 To re-measure the framebuffer path itself:
 
 ```
-h713_disp panel-test 0x33 fb-fix
+h713_disp panel-test 0x34 fb-fix
 ```
 
 Six steps at registers 1300/1310/1320/1330/1340/**1280**, predicting
@@ -278,7 +285,7 @@ want the same treatment; they have the same shape of early returns.
 builds. **The next step is one bench run:**
 
 ```
-h713_disp panel-test 0x33 bl-sweep
+h713_disp panel-test 0x34 bl-sweep
 ```
 
 Six steps, 100/75/50/25/0/100 at four seconds each against a full-white field.
@@ -387,6 +394,26 @@ path and wants a decision.
   the same. `vendor-logo-early` reproduces it. Three runs should isolate it --
   a bare `mdelay()` of equivalent duration, then read-without-hash, then
   hash-without-read.
+- **The TSE load order now matches the vendor's** -- *changed and confirmed on
+  hardware 2026-08-06. Closed.*
+
+  ```
+  vendor, and now ours:  database -> pq_custom -> projecttable -> ProjectID
+  ours, before:          database -> projecttable -> ProjectID -> pq_custom
+  ```
+
+  All four addresses now print byte-identical to stock's, and every readiness
+  observable passes. `h713_disp_load_tse()`'s comment already said "project file
+  last", which is what the **vendor** does and what the code did not -- intent
+  and behaviour disagreed, which is how the last two transcription bugs hid.
+
+  **It was not cosmetic.** The unexplained `afbd-mux` shift from the 0x34 A/B
+  tracked the *order*, not the project id: same id and same files, stock's order
+  returns the 0x33 values. The old order put the variable-sized ProjectID file
+  third, so `pq_custom.TSE` moved by exactly the ProjectID size delta between
+  projects; stock puts the fixed blobs first so their addresses are stable
+  whatever project is selected. Our order perturbed the firmware's own
+  allocations without breaking the display. Full account in the evidence log.
 - **The firmware's UART shell.** `shell_thread_uart` and `shell_thread_monitor`
   are in the binary, and `display_cfg.xml` references *"How to use elog
   command.md"* -- a command interface, not just an output stream. Establish
@@ -511,8 +538,8 @@ assumptions this project has been building on:
 - **The vendor selects project id `0x34` on this board, not `0x33`.**
   `[01.868]Project id:0x34 version:25-1-6-3`, and it then loads
   `mips/ProjectID_0x0034.TSE`. Our own bring-up has been running
-  `h713_disp panel-test 0x33` throughout. Worth re-testing the display path
-  against 0x34 before treating any 0x33 result as the vendor's behaviour.
+  `h713_disp panel-test 0x33` throughout. **Retested 2026-08-06 and settled:
+  every 0x33 result stands** -- see below.
 - **`panel_config.ini` is a runtime input**, read from `Reserve0` when `/oem`
   misses. It carries the PWM channel the fastlogo path requests. See
   `docs/backlight-investigation.md` section 0.
@@ -523,5 +550,49 @@ The vendor's load order, for comparison with `h713_disp_run()`:
 0x4be01000) -> `database.TSE` (0x44f60 to 0x4be41000) -> `pq_custom.TSE`
 (0x3aa8 to 0x4be85f60) -> `projecttable.TSE` (0x568 to 0x4be89a08) ->
 `ProjectID_0x0034.TSE` (0x4398 to 0x4be89f70) -> `Display fastlogo finish!`.
-Those addresses match the ones our recovery already uses; the sizes and the
-project id are the new information.
+The window base and the two big artifacts match ours; the sizes and the project
+id are the new information. **The four TSE files do not match** -- see the load
+order item under "Smaller, opportunistic".
+
+### The 0x34 retest, 2026-08-06
+
+`panel-test 0x33 vendor-logo-chroma` then `panel-test 0x34 vendor-logo-chroma`,
+same boot. Full evidence and the static prediction that preceded it are in the
+evidence log's top section.
+
+| observable | 0x33 | 0x34 |
+| --- | --- | --- |
+| triple | prologue 3, timing 6, de 5 | prologue 3, timing 6, de 6 |
+| patched / guarded | 22 / 12 | 22 / 12 |
+| DE records applied | 55 | 56 |
+| `0x0528008c` | `7b -> 0` at `+0x3584` | `7b -> 0` at `+0x390c` |
+| `0x0525c038` | `00000100` | **`00000040`** |
+| fbcheck | rows 343..378, cols 367..912 | identical |
+| panel | legible logo | no visible difference |
+
+The two ids **share prologue 3 and timing 6 outright**, so the PLL, the LVDS
+lane map, the panel timing and every patch site outside the DE block are
+bit-identical. Their DE blocks differ in four records, three of which sit at
+sites the patch table overwrites and converge on the same value. The only
+surviving difference is `0x0525c038` (`H713_DISPLAY_MIXER_CTRL_REG`).
+
+**Consequence: no 0x33 result needs revisiting.** New work should still use
+`0x34` -- see "Ready to run". The equivalence above covers the ARM's LogoRegData
+replay; the `ProjectID_*.TSE` payloads differ by 2688 bytes, feed the MIPS, and
+are exercised by nothing we have.
+
+**Corollary:** our explicit `writel(0x100, 0x0525c038)` before the DE walk is
+**not load-bearing**. Under 0x34 the vendor's own table overwrites it with
+`0x40` and the panel renders identically.
+
+Two differences went unexplained at the time. **One is now answered**: the
+`afbd-mux +0x20` shift was the **TSE load order**, not the project id -- see the
+load-order item above. The other, `ready=0` vs `ready=1` on the commit line,
+still has one sample per configuration and a third value since, which is what
+sampling noise looks like. Neither changed the render.
+
+**Analyse against the right blob.** `LogoRegData.bin` word 1 is a packed version
+(`[31:24]` year, `[23:20]` month, `[19:12]` day, `[11:0]` build).
+`local/mips-display/board-b-mips/` is `0x1940a09d` -> 25-4-10-157, which is what
+the board printed. `research/bootloader_fat/` and the board-A capture are
+24-6-3-82 with 13 descriptors, and DE block 6 runs off the end of that file.
