@@ -88,7 +88,11 @@ scope here.
 - Panel: 1280x720 LVDS, driven via a MIPS coprocessor running vendor
   `display.bin`. **This all works** — the panel renders correct images.
 - The light engine is a separate module. **Its cable has only two conductors,
-  power and ground** (operator observation). It is believed to run at ~48 V.
+  power and ground** (operator observation). It runs at **36 V** — corrected
+  2026-08-06; earlier text throughout said ~48 V, which was a guess. The AC/DC
+  brick has two outputs: **12 V feeds the board, 36 V feeds the light**, and the
+  36 V passes through the mainboard, arriving and leaving via the 2-pin `LED`
+  header next to `IR` (see section 3, inference 3).
 - **53 photographs of the mainboard show no LED driver and no boost converter.**
   Every inductor is a 2R2 (2.2 µH) buck for the SoC rails, clustered near the DC
   jack. There is no high-voltage electrolytic, no power FET pair, no current
@@ -143,8 +147,31 @@ A reviewer should attack these first.
 2. **That the light has no dimming path at all.** Based on the 2-wire cable plus
    the absence of a driver on the mainboard. Nobody has traced the cable to its
    other end or identified an off-board driver.
-3. **That the `LED` 2-pin connector is the indicator, not the light.** Based on
-   trace width and absence of a power stage, not on continuity testing.
+3. ~~**That the `LED` 2-pin connector is the indicator, not the light.**~~
+   **REFUTED 2026-08-06, by two independent facts from the operator:** that
+   connector *is* the light engine's feed, and the indicator LEDs are mounted on
+   the board itself with no connector at all. The reasoning that produced the
+   wrong answer — thin traces, no adjacent power stage — was a correct
+   *observation*: photo `IMG_0362` shows the `LED` header beside `IR` with only
+   chip passives around it. A 2-pin JST at ~1 A does not need wide traces, and
+   the absence of a driver beside it means something else: the rail arrives
+   already regulated.
+
+   **The supply is a dual-output AC/DC brick: 12 V for the board, 36 V for the
+   light** (not the ~48 V assumed throughout this document), and the 36 V enters
+   the mainboard and leaves again through this connector. That is why no boost
+   converter or LED driver was ever found — none is needed.
+
+   **Still unknown, and now the whole question:** whether anything on the board
+   *switches* that 36 V between its input and this connector. `panel_bl_en` on
+   PB5 exists, which implies something is gated, but no switching device has
+   been located. Settled by two continuity checks, board unpowered:
+   - `LED` pin (return) to board ground — continuity means no low-side switch.
+   - `LED` pin (+) to the 36 V input — continuity means no high-side switch.
+
+   If either is open, there is a switch in the path and its gate is the dimming
+   lever. If both are closed, the board is a pass-through, the light is
+   unswitched, and an inline modulator is the only route.
 4. **That the waveform physically reaches the PB4 pad.** The counter proves the
    channel generates internally. Nothing has measured the pin. The PIO data
    register cannot answer this — it reports the output latch, not the pad
