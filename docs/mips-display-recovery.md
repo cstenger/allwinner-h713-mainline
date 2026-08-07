@@ -88,42 +88,72 @@ Usage: cmd [-o on/off] [-r uart/net] [-m sync/async/buf] [-l tag level] ...
 
 The attribution was wrong; the capability is real and larger than claimed.
 
-## The password is `default user`
+## The password: static derivation points at `default user`, UNCONFIRMED
 
-Recovered statically, and the check is plaintext. The prompt handler at
-`0x8b1831dc`:
+The check is plaintext -- that much is solid. The prompt handler at `0x8b1831dc`:
 
 ```
-lw    $2, 0($4)        ; $4 = list node -> record pointer
+lw    $2, 0($4)        ; $4 = runtime list node -> record pointer
 lw    $4, 16($4)       ; a0 = the text the user typed
-jal   strcmp           ; 0x8b1bdbc0, the word-at-a-time strcmp with
-lw    $5, 8($2)        ; a1 = record+8 = the stored password
+jal   strcmp           ; 0x8b1bdbc0, the word-at-a-time strcmp
+lw    $5, 8($2)        ; a1 = record+8  (branch-delay slot)
 beqzl $2, ...          ; strcmp == 0 -> authenticated; else "password error"
 ```
 
-The user record at `0x8b20dee0` is `{ "VS", "", "default user", 0x2000 }`, and
-the compared field is `+8`:
+`0x8b1bdbc0` is a plain `strcmp` (the `0x01010101`/`0x7f7f7f7f` zero-detect
+idiom, not a digest), so **whatever string is at `record+8`, you type it
+verbatim**. No hash, no salt.
+
+What is at `record+8` is a static inference, not a proof. The only `"default
+user"` string in the binary (`0x8b201bb0`) is pointed to from exactly one place:
+the `+8` field of a single table entry at `0x8b20dee0`, whose flags `0x2000`
+distinguish it from the commands (`0x800`) and key bindings around it:
 
 ```
-+0x10dee0  8b201bc4 -> "VS"             name
-+0x10dee4  8b201bc0 -> ""               (empty)
-+0x10dee8  8b201bb0 -> "default user"   <-- record+8, the password
-+0x10deec  00002000                     flags
++0x10ded0  8b201ba8  8b1825b8  8b201ba0  0800   "setVar" {name, code, "set var"}   a COMMAND
++0x10dee0  8b201bc4  8b201bc0  8b201bb0  2000   "VS"     {name, "",   "default user"}  flags 0x2000
++0x10def0  8b206e30  8b19fe00  8b206e18  0000   "win"    {name, code, "for window debug"}
 ```
 
-`strcmp(entered, "default user") == 0` is the whole gate. No hashing, no salt --
-the function at `0x8b1bdbc0` is a plain `strcmp` (the `0x01010101`/`0x7f7f7f7f`
-zero-detect idiom, not a digest). `"default user"` occurs exactly once in the
-binary, as this field, so there is no competing reading.
+So the derivation is: the compare reads `record+8`; the runtime record is very
+likely this `0x2000` entry (nothing else holds `"default user"`); therefore the
+password is `"default user"`.
 
-## The bench step is now cheap and bounded
+**Two gaps keep this from being fact:**
 
-Read the PIO config for PH6/PH7 from U-Boot with the MIPS running. If they are
-already muxed to function 2, the shell is live on a pin pair and needs only a
-wire, and `regr`/`regw` are one `default user` away. If not, mux them and retry.
+1. **The runtime-vs-static link is inferred.** The strcmp walks a runtime list
+   node; I did not trace the user list's construction to prove its nodes point
+   at this static table. The `0x8b20dee0` base is referenced by no stored word,
+   so the list is built by iterating the array at run time -- plausible, unproven.
+2. **The field semantics are unproven.** For this entry `+4` is an empty string
+   and `+8` is `"default user"`. If the layout is `{user, password, display}`
+   the password would be the *empty string* and `"default user"` a label; the
+   code reads `+8` regardless, but that makes `"default user"` either the
+   password or a mislabelled compare. Only typing it settles which.
 
-That is the whole path to a MIPS-side register interface: a pin pair, a
-terminal, and a known password.
+**The definitive test is to type it, and that needs the bench** -- there is no
+way to reach the shell from this side. It reads UART4's RX register, which is
+filled by the pin, not by any ARM MMIO write (writing `0x02501000` hits THR, the
+transmit side). So this stays a derivation until someone types `default user`
+at the prompt and, if that fails, an empty line.
+
+## The bench path, and what it still needs
+
+Three unknowns gate the test, none of them the password:
+
+- **Who muxes and gates UART4.** The shell driver touches only the data
+  registers (`RBR`/`THR`/`USR`/`HALT`), never the CCU gate or the PIO mux. So
+  something else must enable UART4's clock and mux `PH6/PH7` to function 2 --
+  and if nothing in our configuration does, the shell is polling a dead block
+  and no wire helps. Check the PIO and CCU state from U-Boot with the MIPS
+  running before wiring anything.
+- **The baud rate.** Also set by whoever configures the UART, which may be
+  nobody; unknown until measured or found.
+- **TX/RX assignment** on `PH6`/`PH7`.
+
+Then: 3.3 V adapter on the pins, terminal, press enter, expect `Please input
+password:`, try `default user`, then an empty line if that fails. Only that
+run promotes this from derivation to fact.
 
 # The pre-run FAT read never killed the display -- REFUTED (2026-08-07)
 

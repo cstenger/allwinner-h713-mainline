@@ -753,16 +753,22 @@ path and wants a decision.
   all. That text is in `display.bin`, which also carries
   `-r, --route  set elog output route: uart/net`.
 
-  **The password is `default user`.** The gate at `0x8b1831dc` is
-  `strcmp(entered, record+8)`, plaintext, no hash; the user record at
-  `0x8b20dee0` is `{ "VS", "", "default user", 0x2000 }` and `+8` is the stored
-  string. It occurs once in the binary, so there is no competing reading.
+  **The password derives statically to `default user`, but is UNCONFIRMED.**
+  The gate at `0x8b1831dc` is a plaintext `strcmp(entered, record+8)` -- so you
+  type whatever is at `record+8`. The only `"default user"` in the binary is the
+  `+8` field of the one `flags=0x2000` entry at `0x8b20dee0`, so that is the
+  derived answer. Two gaps stop it being fact: the runtime user list is inferred
+  to point at this static entry (not traced), and `+4` is an empty string, so if
+  the layout is `{user, password, display}` the password could be empty and
+  `"default user"` a label. Only typing it settles it, and the shell cannot be
+  reached from the ARM side (it reads UART4's RX pin, not an MMIO-writable
+  register).
 
-  **Next, and it is cheap:** read the PIO config for PH6/PH7 with the MIPS
-  running. Already muxed to function 2 -> the shell is live on a pin pair, and
-  `regr`/`regw` are one `default user` away. Not muxed -> mux and retry. The
-  whole path to a MIPS-side register interface is a pin pair, a terminal and
-  that password.
+  **Before it can even be tried,** three things need checking with the MIPS
+  running, none of them the password: who muxes `PH6/PH7` to function 2 and gates
+  UART4's clock (the shell driver touches neither -- if nothing does, it polls a
+  dead block), the baud rate, and TX/RX. Then a 3.3 V adapter, a terminal, and
+  `default user` (or an empty line if that fails). See the evidence log.
 - **Two pinctrl patches disagree** -- *resolved 2026-08-05, in 0002's favour.*
   The stock U-Boot DTB gives PH17/pwm0 muxsel 3, PH18/pwm1 muxsel 3, PB5/pwm3
   muxsel 2 and PA12 = `pwm4`, all matching patch 0002. Patch 0018's
