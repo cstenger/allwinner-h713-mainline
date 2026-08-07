@@ -1,3 +1,62 @@
+# The pre-run FAT read is not the cause, and may never have been (2026-08-07)
+
+Three probes, each isolating one candidate, each followed by the identical
+`fill_pattern(0)` and run a working path uses. **All three lit the panel.**
+
+| probe | what it isolates | duration | result |
+| --- | --- | --- | --- |
+| `preread-read` | the second FAT read | **178 ms** | panel lit |
+| `preread-hash` | SHA-256 CPU/cache traffic | **42 ms** | panel lit |
+| `preread-delay` | time alone | 3000 ms | panel lit |
+
+Two more candidates were dead before the bench: it is not "writing the
+framebuffer before run" (the working path calls `fill_pattern(0)` in that exact
+slot), and it is not "touching FAT before run" (`h713_disp_load()` reads ~1.5 MB
+off the same filesystem immediately beforehand, on every path that works).
+
+## "Seconds of work" was wrong by a factor of fifteen
+
+This log has said since 2026-08-04 that the pre-run work is *"seconds of work,
+and a lot of cache traffic, in a window where nothing else does any."* Measured:
+**220 ms** for read and hash together. That was an estimate written down as a
+characteristic, and it has been steering the hypothesis ever since -- "seconds"
+makes a timing story plausible, 220 ms does not. The `preread-delay` probe ran
+3000 ms, **thirteen times** the real figure, and still lit the panel.
+
+## The likelier explanation is that the fault was never about ordering
+
+The five blank `vendor-logo` runs are described here as: *"The panel stayed dark
+with every register dump byte-identical to a working run, fbcheck proving the
+framebuffer correct, and the TCON marker equally absent."*
+
+This same page describes the missing-teardown bug as: *"each mode ended holding
+the MIPS in reset, so a second run initialised into a torn-down state and **the
+panel stayed dark while the console looked perfect**. That cost at least four
+results."*
+
+**That is the same signature, and the counts nearly match.** Teardown did not
+exist when those five runs were taken. The bisection that "settled" the load
+ordering changed the ordering *and* ran from a different starting state, so the
+two variables were never separated.
+
+If that is right, then: the load-ordering rule is an artifact, `vendor-logo-early`
+does not reproduce anything, and the three probes above were testing a fault
+that had already been fixed by something else -- which is exactly what three
+clean passes look like.
+
+## The decisive test needs no new code
+
+```
+h713_disp panel-test 0x34 vendor-logo-early
+```
+
+as the **first** command after a power cycle, so teardown is not involved.
+Renders -> the ordering rule is an artifact of the missing teardown, and this
+item closes as a misattribution. Dark -> the fault is real, none of read, hash
+or time explains it, and what remains is the BMP conversion itself.
+
+Test the control before building a fourth probe.
+
 # 0x05280084[31:16] is the layer height, and the omission was right (2026-08-07, test_38)
 
 The last of the two sites `h713_disp_panel_patch` left out, owed a two-sided

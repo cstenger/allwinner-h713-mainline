@@ -80,12 +80,11 @@ with every register dump byte-identical to a working run, `fbcheck` proving the
 framebuffer correct, and the TCON marker equally absent. Moving that work after
 init -- changing nothing else -- renders it.
 
-**The mechanism is not established, and the obvious guess is wrong.**
-`h713_disp_load()` reads the same filesystem in every mode, so FAT access before
-the sequence is not the problem by itself. What is new is the extra read plus a
-SHA-256 over it: seconds of work, and a lot of cache traffic, in a window where
-nothing else does any. `vendor-logo-early` reproduces the broken ordering for
-whoever wants to chase it.
+**The mechanism is not established, and as of 2026-08-07 the bisection itself is
+in doubt.** Read, hash and time were each isolated and each lit the panel, and
+the "seconds of work" this page claimed is really **220 ms**. The five blank runs
+carry the same signature as the missing-teardown bug -- dark panel, perfect
+console -- which did not have a fix when they were taken. See item 6.
 
 Consequences, for anyone reading older notes: horizontal variation in a
 framebuffer image used to become vertical stripes and the bootlogo arrived as a
@@ -694,11 +693,31 @@ path and wants a decision.
   different, and it turned out to be right here. Two adjacent sites, omitted in
   one sentence for one reason: one a catastrophe, one correct. Only measuring
   each separated them. `h713_disp_panel_patch` needs no change.
-- **Why a pre-run FAT read kills the display.** We have a workaround, not a
-  cause, and it is a latent fragility: anything occupying that window might do
-  the same. `vendor-logo-early` reproduces it. Three runs should isolate it --
-  a bare `mdelay()` of equivalent duration, then read-without-hash, then
-  hash-without-read.
+- **Why a pre-run FAT read kills the display** -- *three probes run
+  2026-08-07; all three lit the panel. The cause is not what this page said,
+  and may not exist any more.*
+
+  | probe | isolates | duration | result |
+  | --- | --- | --- | --- |
+  | `preread-read` | the second FAT read | **178 ms** | panel lit |
+  | `preread-hash` | SHA-256 traffic | **42 ms** | panel lit |
+  | `preread-delay` | time alone | 3000 ms | panel lit |
+
+  **"Seconds of work" was wrong by 15x** -- read and hash together are **220 ms**,
+  and the delay probe ran thirteen times that and still worked. That estimate
+  had been written down as a characteristic and was steering the hypothesis.
+
+  **The five blank runs match the missing-teardown signature exactly.** They are
+  described as "panel dark, register dumps byte-identical, fbcheck correct,
+  marker absent"; the no-teardown bug is described on this same page as "the
+  panel stayed dark while the console looked perfect... cost at least four
+  results". Teardown did not exist when those five runs were taken, and the
+  bisection changed the ordering *and* the starting state together.
+
+  **Next, and it needs no new code:** `panel-test 0x34 vendor-logo-early` as the
+  first command after a power cycle. Renders -> the rule is an artifact and this
+  closes as a misattribution. Dark -> the fault is real and what remains is the
+  BMP conversion itself. Test the control before building a fourth probe.
 - **The TSE load order now matches the vendor's** -- *changed and confirmed on
   hardware 2026-08-06. Closed.*
 
