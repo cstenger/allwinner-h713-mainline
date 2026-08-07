@@ -1,3 +1,84 @@
+# The U-Boot frame survives into Linux (2026-08-07)
+
+`panel-test 0x34 vendor-logo-chroma`, then `boot`. **The logo stayed on the
+panel through the entire Linux boot, was still there at the login prompt, and
+remained after it.** All twelve registers that would have to survive for that to
+be true read back their U-Boot values from userspace: `0 of 12 changed`.
+
+Milestone 2b established only that Linux *reaches userspace*, and it passed
+before any of the framebuffer fixes existed. This is the first time the picture
+itself has been checked, and the two are not the same claim.
+
+## The registers, read from the target
+
+| register | value | what |
+| --- | --- | --- |
+| `0x058c0014` | `b8002300` | display PLL, N+1 = 36 |
+| `0x0525c000` | `02f80550` | mixer H/V total |
+| `0x0524c000` | `00fc0202` | DE/OSD control |
+| `0x0528008c` | `00000000` | layer X origin |
+| `0x05280084` | `02d00500` | layer size |
+| `0x05600140` | `03001901` | AFBD control |
+| `0x05600170` | `00001400` | AFBD stride |
+| `0x05600178` | `6c100000` | AFBD source address |
+| `0x05140054` | `40000080` | display route |
+| `0x051c0014` | `18000005` | LVDS PHY |
+| `0x051c0028` | `1f300030` | LVDS PHY mid |
+| `0x05700000` | `fff11111` | TVTOP |
+
+The register read is confirmatory rather than primary: every one of these would
+corrupt the image visibly if it moved -- a wrong PLL is the uniform blur that
+started this whole investigation, a wrong X origin brings back the band and
+shear, a wrong source address shows different content, gated clocks go dark. An
+intact picture already implied they held. What the readback adds is the
+*absence* of a latent change that has not surfaced yet.
+
+## The dependency worth knowing about
+
+`clk_ignore_unused` and `pd_ignore_unused` are on the kernel command line, and
+the boot log confirms both took effect: `clk: Not disabling unused clocks`,
+`PM: genpd: Not disabling unused power domains`. Without them the clock
+framework would gate the display PLL as an unclaimed clock and the panel would
+go dark at exactly that point in boot. **This result depends on them**, which is
+not obvious from the outcome and is easy to break while tidying a command line.
+
+Panfrost probed, Cedrus registered, the DRM module loaded and
+`systemd-backlight@backlight` ran, and none disturbed the image.
+`Console: colour dummy device` -- nothing claimed a console framebuffer.
+
+## What this did not cover
+
+The kernel under test carried the **4 MiB** `uboot-scanout` reservation, so this
+validates the front buffer at `0x6c100000` -- the one a boot logo uses. The
+8 MiB version covering the `fb-anim-db` back buffer at `0x6c500000` is built but
+was not flashed; until it is, that region is ordinary allocatable memory and the
+kernel log shows it inside `node 0: [mem 0x6c500000-0x7fffffff]`. A handoff
+after a double-buffered run would be allocated over.
+
+## You cannot read MMIO with od or dd on arm64
+
+Recorded because it cost a bench round-trip and looks exactly like a hardware
+failure. `read()` on `/dev/mem` is gated by `valid_phys_addr_range()`, which on
+arm64 requires `memblock_is_region_memory() && memblock_is_map_memory()`.
+Registers are not memory, so every read returns `-EFAULT` -- and a first version
+of `handoff-check.sh` duly reported all twelve registers `UNREADABLE` on a
+perfectly healthy board.
+
+`CONFIG_STRICT_DEVMEM` *does* permit MMIO, but it governs `mmap()`, not
+`read()`. The two were conflated. Only mmap works.
+
+The shipping rootfs had no `busybox`, no `devmem2` and no `python3`, so nothing
+on the target could do it at all. Two fixes: `tools/display/devmem32.c` is a
+freestanding aarch64 reader, no libc and about 3 KB, which is small enough to
+base64 onto the board over the serial console when there is no network -- that
+is what produced the table above. And `busybox` is now in the rootfs package
+list so the next session just has `devmem`.
+
+The guard that made this cheap rather than expensive: the script refused to
+report a pass when reads failed, and said the result meant nothing until access
+was fixed. A tool that had printed twelve zeros and compared them unequal would
+have looked like twelve register faults.
+
 # Double buffering fixes the tear, and the obvious metric measured the camera (2026-08-07, test_37)
 
 `fb-anim` against `fb-anim-db` on one boot, filmed at 4K30

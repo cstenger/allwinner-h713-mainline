@@ -17,8 +17,15 @@
 #   handoff-check.sh -w [SECS]    re-read every SECS (default 5) until Ctrl-C,
 #                                 reporting only when something changes
 #
-# Needs /dev/mem. CONFIG_STRICT_DEVMEM permits MMIO and denies RAM, which is
-# exactly the access this wants, so it works on the shipping config.
+# Needs /dev/mem AND an mmap-based reader. On arm64 you cannot read MMIO with
+# od or dd: the read() path is gated by valid_phys_addr_range(), which requires
+# memblock_is_map_memory(), and device registers are not memory. Every read
+# returns -EFAULT. CONFIG_STRICT_DEVMEM does permit MMIO, but that governs
+# mmap(), not read() -- an earlier version of this script conflated the two and
+# reported all twelve registers UNREADABLE on a perfectly healthy board.
+#
+# So this uses, in order of preference: busybox devmem, devmem2, or python3's
+# mmap. If none is present it says so instead of inventing a result.
 
 set -u
 
@@ -40,9 +47,52 @@ regs() {
 EOF
 }
 
+READER=""
+pick_reader() {
+	if command -v busybox >/dev/null 2>&1 && busybox devmem 0 >/dev/null 2>&1
+	then
+		READER=busybox
+	elif command -v devmem2 >/dev/null 2>&1; then
+		READER=devmem2
+	elif command -v python3 >/dev/null 2>&1; then
+		READER=python3
+	elif command -v devmem >/dev/null 2>&1; then
+		READER=devmem
+	else
+		READER=""
+	fi
+}
+
 read_reg() {
-	# od seeks by byte offset and prints one little-endian word.
-	od -An -tx4 -N4 -j "$(printf '%d' "$1")" /dev/mem 2>/dev/null | tr -d ' \n'
+	case "$READER" in
+	busybox)
+		busybox devmem "$1" 32 2>/dev/null |
+			sed 's/^0[xX]//' | tr 'A-Z' 'a-z' |
+			awk '{printf "%08s\n", $0}' | tr ' ' 0
+		;;
+	devmem)
+		devmem "$1" 32 2>/dev/null |
+			sed 's/^0[xX]//' | tr 'A-Z' 'a-z' |
+			awk '{printf "%08s\n", $0}' | tr ' ' 0
+		;;
+	devmem2)
+		devmem2 "$1" w 2>/dev/null |
+			sed -n 's/.*: 0x\([0-9A-Fa-f]*\).*/\1/p' |
+			tail -1 | tr 'A-Z' 'a-z' |
+			awk '{printf "%08s\n", $0}' | tr ' ' 0
+		;;
+	python3)
+		python3 - "$1" <<-'EOF' 2>/dev/null
+		import mmap, os, sys
+		a = int(sys.argv[1], 16)
+		pg = os.sysconf("SC_PAGE_SIZE")
+		base, off = a - (a % pg), a % pg
+		f = os.open("/dev/mem", os.O_RDONLY | os.O_SYNC)
+		m = mmap.mmap(f, pg, mmap.MAP_SHARED, mmap.PROT_READ, offset=base)
+		print("%08x" % int.from_bytes(m[off:off+4], "little"))
+		EOF
+		;;
+	esac
 }
 
 snapshot() {
@@ -80,8 +130,16 @@ report() {
 
 	echo
 	if [ "$unread" -gt 0 ]; then
-		echo "$unread of $total unreadable -- /dev/mem denied or absent."
-		echo "This says nothing until that is fixed. Do not read the rest as a pass."
+		if [ -z "$READER" ]; then
+			echo "No mmap-capable register reader found."
+			echo "Install one of: busybox, devmem2, python3."
+			echo "od and dd CANNOT do this on arm64 -- read() on /dev/mem"
+			echo "rejects anything that is not mapped memory, and MMIO is not."
+		else
+			echo "$unread of $total unreadable via '$READER'."
+			echo "Check /dev/mem exists and this is running as root."
+		fi
+		echo "This says nothing until that is fixed. Do not read it as a pass."
 		return 2
 	fi
 	if [ "$bad" -eq 0 ]; then
@@ -93,6 +151,9 @@ report() {
 	fi
 	return 0
 }
+
+pick_reader
+[ -n "$READER" ] && echo "reader: $READER"
 
 if [ "${1:-}" = "-w" ]; then
 	iv=${2:-5}

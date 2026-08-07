@@ -111,6 +111,7 @@ why its output was always perfect.
 | the band was at the **head** of the line, not the tail | ~120 px blank on the left, content running to the right edge, in all eleven photographs before the fix |
 | the photographs are not mirrored | the stripe lean matches the model in absolute sign across five steps of test_31, including the flip at the one step below default; so left is left |
 | the band belongs to the framebuffer path | operator observation: TCON generator patterns fill the whole screen, framebuffer patterns are truncated |
+| the U-Boot frame survives into Linux | 2026-08-07: logo still on the panel at the login prompt, and all 12 display registers read back their U-Boot values from the target (`devmem32`). Depends on `clk_ignore_unused`/`pd_ignore_unused` |
 | sustained commits work | fb-anim 2026-08-07: 600 frames committed, **0 timeouts**; the manual write-one-to-clear suffices without an ARM IRQ handler |
 | completion is **vsync-locked** | same run: 600 frames in 10042 ms = 59.749 Hz vs the panel's computed 59.71 Hz (0.07%), and fill mean + wait max = 16.754 ms vs a 16.747 ms frame period (0.04%) |
 | the framebuffer path is single-buffered, and AFBD does not latch the surface | same run: the bar tears during motion and is whole when static -- rewriting the buffer after commit could not tear it if the commit had snapshotted it |
@@ -529,16 +530,48 @@ fan power. On a projector with an LED light engine that is a thermal risk.
 This blocks finishing the teardown, which should turn the backlight off first
 and currently cannot.
 
-### 4. Linux handoff
+### 4. Linux handoff -- PASSED 2026-08-07, visually and by register
 
-Unblocked now that the reservations are correct. Nothing has checked that the
-framebuffer survives into Linux. Milestone 2b passed *before* any of the
-framebuffer fixes existed, and "reaches userspace" is not "the panel still
-shows a correct image".
+**The frame survives.** `panel-test 0x34 vendor-logo-chroma` then `boot`: the
+logo stayed on the panel through the whole Linux boot, was still there at the
+login prompt, and remained after it. And all twelve registers that would have to
+survive for that to be true still hold their U-Boot values:
 
-Check: after handoff, is the panel still showing the U-Boot frame intact, and
-for how long? Does anything in Linux disturb the display clocks, the layer X
-origin, or the AFBD source address?
+```
+0x058c0014 b8002300 PLL   0x0525c000 02f80550 mixer   0x0524c000 00fc0202 DE/OSD
+0x0528008c 00000000 X org 0x05280084 02d00500 size    0x05600140 03001901 AFBD
+0x05600170 00001400 stride 0x05600178 6c100000 source 0x05140054 40000080 route
+0x051c0014 18000005 PHY   0x051c0028 1f300030 PHY mid 0x05700000 fff11111 TVTOP
+                                                          0 of 12 changed
+```
+
+Milestone 2b only ever established that Linux *reaches userspace*, and it passed
+before any of the framebuffer fixes existed. This is the first time the picture
+itself has been checked.
+
+**One dependency is load-bearing and easy to break:** `clk_ignore_unused` and
+`pd_ignore_unused` are on the kernel command line, and the boot log confirms
+`clk: Not disabling unused clocks` / `PM: genpd: Not disabling unused power
+domains`. Without them the clock framework would gate the display PLL as an
+unclaimed clock and the panel would go dark. Anyone tidying the command line
+needs to know that.
+
+Panfrost probed, Cedrus registered, the DRM module loaded and
+`systemd-backlight@backlight` ran, and none of them disturbed the image.
+`Console: colour dummy device` -- nothing claimed a console framebuffer.
+
+**Caveat on scope.** This ran on the kernel with the **4 MiB** reservation, so it
+validates the front buffer at `0x6c100000` -- which is what a boot logo uses, so
+the result stands. The 8 MiB reservation covering the `fb-anim-db` back buffer at
+`0x6c500000` is built but was not the kernel under test; until it is flashed,
+that region is ordinary allocatable memory and a handoff after a double-buffered
+run would be allocated over.
+
+**Reading MMIO on the target needs `mmap`, not `od`.** On arm64 `read()` on
+`/dev/mem` is gated by `valid_phys_addr_range()` -> `memblock_is_map_memory()`,
+and registers are not memory, so `od` and `dd` return `-EFAULT` on a healthy
+board. Use `tools/display/devmem32.c` (freestanding, ~3 KB, small enough to
+base64 over serial) or `busybox devmem`, which is now in the rootfs package list.
 
 ### 5. `auto`, and a design call that is not mine
 
@@ -615,6 +648,8 @@ path and wants a decision.
 | `panel-test <id> vendor-logo` | the vendor bootlogo, with `fbcheck` verifying the conversion |
 | `teardown` | stop scanout, park the MIPS, drop the panel rail; run twice to prove it |
 | `tools/display/edge-measure.py` | host-side: stripe count -> stride, from the photographs |
+| `tools/display/devmem32.c` | target-side: read MMIO from Linux. Freestanding aarch64, no libc, ~3 KB so it base64s over serial. **`od`/`dd` cannot do this on arm64** |
+| `tools/display/handoff-check.sh` | target-side: the same registers as a pass/fail table, with a `-w` watch mode; needs busybox/devmem2/python3 |
 | `tools/display/tear-measure.py` | host-side: counts rows with no bar in an `fb-anim` video -- the tearing metric that is **not** confounded by the camera's rolling shutter |
 
 **Power-cycling between runs is no longer needed.** `panel-test` tears down
