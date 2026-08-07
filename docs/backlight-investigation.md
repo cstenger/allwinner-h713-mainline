@@ -21,8 +21,16 @@ shipping software does not use.
 
 **The blocker for a real feature is the fan, not the light.** PB5 is shared with
 fan power, so modulating it modulates cooling in lockstep: at 10 % duty the fan
-gets 10 % too. Fine for a three-second test, not for use. Turning this into a
-usable backlight means separating the two nets — see section 5.
+gets 10 % too. Fine for a three-second test, not for use. **Section 7 has the
+chosen path** — an inline chopper downstream of the converter, which leaves PB5
+static and the fan untouched — and why enable-PWM will not be the
+implementation.
+
+The question this document set out to answer was narrow: **can the brightness of
+this projector's light engine be controlled from the SoC, and if so how?**
+Answered: yes, and the how is above. Everything else about the display — panel
+init, timing, framebuffer, the MIPS coprocessor — works and was always out of
+scope.
 
 **PB5 has no PWM function** in this SoC's pinmux (`gpio_in`/`gpio_out` only,
 confirmed against `pinctrl-sun50i-h616.c`), so the SoC cannot drive it with
@@ -96,19 +104,19 @@ eyeball. It is, however, exactly what the log predicts: the on-screen change is
 digital (picture-quality gain in the DE/MIPS path, the `pq_custom.TSE` side)
 while the light engine is never addressed.
 
-**Conclusion.** Every layer of the shipping firmware — boot0's U-Boot, the
-Linux PWM driver, and the projector app's own brightness control — fails to
-acquire a PWM on this board, and the light engine runs at full brightness
-throughout. Our bring-up reached the same place from the opposite direction,
-driving a verified-live PWM2/PB4 with no optical effect. Two independent stacks,
-same result. The leading hypothesis in section 1 — that the light is 2-wire with
-its driver off the mainboard — is now the only one left standing, and the
-remaining question is physical, not software: where those two wires terminate.
+**What this section establishes, and what it does not.** Every layer of the
+shipping firmware — boot0's U-Boot, the Linux PWM driver, and the projector
+app's own brightness control — fails to acquire a PWM, and the light runs at
+full brightness throughout. That is a complete account of the *vendor's
+software*.
 
-The question is narrow: **can the brightness of this projector's light engine be
-controlled from the SoC, and if so how?** Everything else about the display —
-panel init, timing, framebuffer, the MIPS coprocessor — works and is out of
-scope here.
+It is **not** a statement about the hardware, and this document spent a while
+treating it as one. The conclusion originally drawn here — that the only
+surviving hypothesis was an off-board driver, leaving a purely physical question
+about where the light's two wires terminate — was wrong in both halves. The
+driver is on the mainboard (section 1), and the light dims from PB5 (status,
+top). Stock not using a capability is weak evidence that the capability is
+absent, and it was being read as strong.
 
 ---
 
@@ -133,12 +141,22 @@ scope here.
   a boost converter on this mainboard**, and the photographic survey missed it.
   Fifty-three photographs and a component-by-component reading were not enough
   to see a power stage that a single DMM probe found immediately.
-- The board has a 2-pin connector silkscreened `LED`, next to a 3-pin `IR`. It
+- ~~The board has a 2-pin connector silkscreened `LED`, next to a 3-pin `IR`. It
   has thin signal-width traces and no adjacent power stage, so it is very
   unlikely to be the light engine feed; it matches the DT's indicator LEDs
-  (`led0` on PL0 red, `led1` on PL1 blue).
-- `PB5` is `panel_bl_en` and is **shared with fan power**. Never drive it low —
-  on a projector with an LED light engine that is a thermal risk.
+  (`led0` on PL0 red, `led1` on PL1 blue).~~
+  **REFUTED 2026-08-06** — that header *is* the light's feed, and the indicator
+  LEDs are board-mounted with no connector at all. See section 3, inference 3.
+- `PB5` is `panel_bl_en` and is **shared with fan power**. It is the enable of
+  the boost converter feeding the light, and `h713_disp bl-gpio` modulates it
+  deliberately.
+
+  **The old warning here — "never drive it low, thermal risk" — had the
+  reasoning backwards.** Driving PB5 low turns the light *and* the fan off
+  together, which is the safe combination. The real hazard is the opposite end:
+  **sustained low duty**, where the light still emits while the fan runs at the
+  same fraction of power. Short runs are fine; leaving it modulated is not, and
+  that is exactly why enable-PWM is not the shipping plan (section 7).
 
 ~~**Implication, and the current leading hypothesis:** if the light is 2-wire and
 no driver exists on the mainboard, the supply is generated off-board, and no SoC
@@ -176,6 +194,13 @@ cannot be dimmed", and only the second one was resting on the missing driver.
 **Net:** the only backlight configuration stock can successfully apply is
 channel 2 / PB4 / 25 kHz / active high — which is exactly what we now run, with
 the PWM verified live, and it does nothing.
+
+**Why it does nothing, established 2026-08-06:** PB4 is not connected to
+anything that reaches the light. The converter's control is PB5, and PB4's
+waveform — correct in every respect the rows above measure — has no path to the
+hardware. Every row in this table stands; the inference drawn from the fourth
+one, that a running PWM with no optical effect means the light cannot be
+dimmed, does not. It means *that pin* does not reach it.
 
 ---
 
@@ -277,20 +302,23 @@ compared it against the vendor's own pin table.
 
 ## 5. What would actually settle it
 
-Items 3 and 4 are done (see section 0). **What is left is items 1 and 2, both
-physical** — and item 2 is now worth doing purely to put a number on the
-operator's visual observation rather than to test the SoC side.
+**All four items are now moot** — kept only to show what the question looked
+like before it was answered, and how far off the shortlist the answer sat. None
+of these four is what settled it; a three-second GPIO toggle did. Section 7 has
+the work that actually remains.
 
 In rough order of cost.
 
-1. **Trace the light's two wires to their other end.** If they reach a separate
-   driver PCB, that board's control input is the real dimming path and its part
-   number tells us what it expects. If they reach the PSU directly, brightness
-   is not electronically controllable and this thread is over. *No bench time,
-   no risk.*
-2. **DMM on PB4, DC mode, during `bl-sweep`.** At 25 kHz a meter averages, so
-   100/50/0 % should read ~3.3 / ~1.65 / ~0 V if the waveform reaches the pad.
-   Settles inference #4 outright. *Minutes.*
+1. ~~**Trace the light's two wires to their other end.** If they reach a
+   separate driver PCB, that board's control input is the real dimming path. If
+   they reach the PSU directly, brightness is not electronically controllable
+   and this thread is over.~~ **Obsolete** — both branches were wrong. The
+   driver is neither on a separate PCB nor absent: it is on this mainboard, and
+   the light dims.
+2. ~~**DMM on PB4, DC mode, during `bl-sweep`.**~~ **Obsolete for this
+   question.** Whether PB4's waveform reaches its pad no longer matters, because
+   the pad reaches nothing. Still worth ten minutes *if* the inline dimmer of
+   section 7 is fitted, since that design depends on PB4 driving a module input.
 3. **Trace `pwm_channel` into the backlight-create call in stock U-Boot**
    (`u-boot.fex`, Thumb, base `0x4a000000`, create call at `0x4a0255a0`,
    selector at `0x4a0239e0`). Settles inference #1. *Static, no hardware.*
