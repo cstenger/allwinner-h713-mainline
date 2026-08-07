@@ -97,9 +97,15 @@
 +			no-map;
 +		};
 +
-+		/* U-Boot's OSD surface: AFBD fetches here while the panel is on */
++		/*
++		 * U-Boot's OSD surfaces: AFBD fetches here while the panel is
++		 * on. Two 4 MiB slots, not one -- the front at 0x6c100000 and
++		 * the back at 0x6c500000. Double buffering flips the AFBD
++		 * source address (0x05600178) between them, so both are live
++		 * scanout targets and the kernel must not use either.
++		 */
 +		framebuf_reserved: uboot-scanout@6c100000 {
-+			reg = <0x6c100000 0x400000>;
++			reg = <0x6c100000 0x800000>;
 +			no-map;
 +		};
 +	};

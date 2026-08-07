@@ -259,15 +259,40 @@ H713 anim: commit wait min/mean/max 6800/14620/14800 us; fill min/mean/max 1949/
   it afterwards could not tear it. Harmless for a static boot logo, fatal for
   anything animated. See item 1b.
 
-### 1b. Double buffering -- the successor, and it is well specified
+### 1b. Double buffering -- BUILT 2026-08-07, needs the A/B run
 
-The lever already exists: **`0x05600178` is the AFBD source address**, currently
-holding `0x6c100000`. Write a second surface, point that register at it, then
-commit. Because completion is vsync-locked (above), the flip lands on a frame
-boundary and the tear goes away.
+```
+h713_disp panel-test 0x34 fb-anim        <- single-buffered, tears (the baseline)
+h713_disp panel-test 0x34 fb-anim-db     <- double-buffered, should not
+```
 
-Score it with `fb-anim` unchanged: the bar becomes whole *during* motion. That
-is a clean before/after on an instrument that already has a baseline.
+**Run both on one boot; the A/B is the measurement.** `fb-anim` deliberately
+keeps the single-buffered behaviour rather than being upgraded in place, so the
+comparison is one variable on the same instrument instead of a comparison
+against a remembered result.
+
+Two surfaces, 4 MiB apart: front `0x6c100000`, back `0x6c500000` (each is
+3.74 MiB, so they do not overlap, and both sit below the vendor BMP staging at
+`0x6d000000`). Each frame draws into the buffer the hardware is *not* reading,
+writes its address to **`0x05600178`**, then commits.
+
+**patches/kernel/0024's `uboot-scanout@6c100000` reservation went from
+`0x400000` to `0x800000`** to cover both. Both are live scanout targets now, so
+keep the DT and `H713_DISP_OSD_FB_ADDR_B` in step.
+
+A double-buffered run restores the front buffer to `0x6c100000` before it
+returns, re-rendering the same frame so the picture does not change while the
+state does. Every other mode writes that address and none of them touch the
+source register, so finishing on the back buffer would silently break the next
+command in the session.
+
+**The way this can still fail, and what it would mean.** The flip assumes the
+source register is shadowed in hardware and latched at the frame boundary when
+the ready bit is set -- which the existence of a ready register plus a
+completion bit strongly suggests. If `fb-anim-db` *still* tears, that assumption
+is wrong: AFBD is re-reading the address mid-scan, and the write must instead be
+placed inside vblank. That is a different fix, not a broken idea, and the run
+distinguishes them.
 
 **Built 2026-08-07, not yet run on hardware.**
 
@@ -556,7 +581,8 @@ path and wants a decision.
 | `panel-test <id> fb-band` | solid fill, screens offset registers for the ~105 px left band |
 | `panel-test <id> <mode> <stride>` | any mode with `0x05600170` forced to `<stride>` bytes, applied after the DE replay |
 | `panel-test <id> fb-vprobe` / `fb-hprobe` / `fb-quad` / `fb-grid` | framebuffer geometry probes |
-| `panel-test <id> fb-anim [frames]` | moving red bar -- the only test of **sustained** commits, frame timing and liveness; everything else is one static frame |
+| `panel-test <id> fb-anim [frames]` | moving red bar, **single-buffered** -- the sustained-commit test, and the tearing baseline |
+| `panel-test <id> fb-anim-db [frames]` | same bar, **double-buffered** via the AFBD source address; run both on one boot |
 | `panel-test <id> vendor-logo` | the vendor bootlogo, with `fbcheck` verifying the conversion |
 | `teardown` | stop scanout, park the MIPS, drop the panel rail; run twice to prove it |
 | `tools/display/edge-measure.py` | host-side: stripe count -> stride, from the photographs |
