@@ -764,14 +764,20 @@ path and wants a decision.
   reached from the ARM side (it reads UART4's RX pin, not an MMIO-writable
   register).
 
-  **PARKED -- there is no pin to reach.** UART4's only routes are `PH6/PH7` or
-  `PD8/PD9`, which carry nothing broken out on this board (no ethernet, no serial
-  pads beyond the console -- operator confirmed). Physical access means
-  microsoldering the SoC. The wire-free route is a firmware redirect: patch
-  `display.bin`'s getc/putc to a CPU_COMM shared-memory ring the ARM pumps -- a
-  real feature (moves the loader's expected SHA-256), not opportunistic. Payoff
-  is a MIPS-side `regr`/`regw` we have never needed; revisit only if DECD
-  bring-up wants the coprocessor's own register view. See the evidence log.
+  **No pin to reach, but a memory mailbox already exists.** UART4's only routes
+  are `PH6/PH7` or `PD8/PD9`, nothing broken out on this board (no ethernet, no
+  serial pads beyond the console -- operator confirmed), so a wire means
+  microsoldering the SoC. **But feasibility for DECD, checked 2026-08-07,
+  upgraded this:** there are *two* shell threads, and `shell_thread_monitor` is
+  memory-driven, not UART -- it reads a DRAM ring via a device object at
+  `*(0x8b232c20)` = system `0x4b232c20` (the `+0x40000000` kseg0 window), inside
+  the image the ARM stages. So the wire-free route likely needs **no firmware
+  patch**, just writes to a pre-built mailbox. The confirming step is read-only:
+  `md.l 0x4b232c20` with the MIPS running, follow the pointer, read the ring
+  (`+0` enabled, head/tail `+0x6c`/`+0x70`). It also advances DECD, which locates
+  MIPS frame buffers through the same window -- so fold it into DECD bring-up
+  rather than run it alone. Payoff is a MIPS-side `regr`/`regw`. See the evidence
+  log.
 - **Two pinctrl patches disagree** -- *resolved 2026-08-05, in 0002's favour.*
   The stock U-Boot DTB gives PH17/pwm0 muxsel 3, PH18/pwm1 muxsel 3, PB5/pwm3
   muxsel 2 and PA12 = `pwm4`, all matching patch 0002. Patch 0018's
