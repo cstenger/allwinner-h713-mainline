@@ -237,11 +237,36 @@ forever"*), and at most six chained commits have ever been exercised. Observed
 commit waits span 600 us to 16400 us; the upper end is about one frame at
 59.71 Hz, which *suggests* vsync-locked completion but does not establish it.
 
-Build a moving chroma bar: reuse `fill_edge` with a per-frame offset, commit
-continuously, encode the frame number in the bar position and print a committed
-count so one photograph cross-checks against the console. Smooth motion means
-sustained commits work; a stall after *k* frames localises where the handshake
-breaks; tearing shows as a horizontal discontinuity.
+**Built 2026-08-07, not yet run on hardware.**
+
+```
+h713_disp panel-test 0x34 fb-anim
+```
+
+A 64 px red bar on blue, stepping 16 px/frame, 600 frames by default (an
+optional decimal frame count is argv[5]; Ctrl-C stops it). Scoring:
+
+- **smooth motion** -> sustained commits work
+- **a stall** -> the console names the frame it first failed at, then keeps
+  going, so "wedged" and "recovered" are distinguishable
+- **tearing** -> a *horizontal* discontinuity in the bar. Note the bar also
+  *wraps*, appearing at both edges at once -- that is a full-height vertical
+  split and is not tearing
+- **the position is the frame number.** `x = (frame * 16) mod 1280`, so a
+  photograph gives frame mod 80 and the console prints the committed count. If
+  the predicted and photographed `x` disagree, the panel is not showing the
+  frame the ARM believes it committed -- which no static frame can detect
+
+The summary reports commit wait and fill time separately (min/mean/max), so if
+the frame rate is low it is visible *which* half is the limit rather than being
+confounded. `h713_disp_commit_osd_frame()` was split for this: its per-frame
+printf is ~130 bytes, which at 115200 baud is ~11 ms, comparable to a whole
+frame -- printing per commit would have measured the UART. The animation uses a
+silent variant and aggregates.
+
+Do **not** combine it with a stride override; the bar would shear and the
+position would stop meaning the frame number. The command enforces this by
+reading argv[5] as a frame count in this mode.
 
 Deliberately **not** decoded video -- keep DECD separate so a decoder fault
 cannot present as a display fault. This becomes the reference for DECD later.
@@ -499,6 +524,7 @@ path and wants a decision.
 | `panel-test <id> fb-band` | solid fill, screens offset registers for the ~105 px left band |
 | `panel-test <id> <mode> <stride>` | any mode with `0x05600170` forced to `<stride>` bytes, applied after the DE replay |
 | `panel-test <id> fb-vprobe` / `fb-hprobe` / `fb-quad` / `fb-grid` | framebuffer geometry probes |
+| `panel-test <id> fb-anim [frames]` | moving red bar -- the only test of **sustained** commits, frame timing and liveness; everything else is one static frame |
 | `panel-test <id> vendor-logo` | the vendor bootlogo, with `fbcheck` verifying the conversion |
 | `teardown` | stop scanout, park the MIPS, drop the panel rail; run twice to prove it |
 | `tools/display/edge-measure.py` | host-side: stripe count -> stride, from the photographs |
