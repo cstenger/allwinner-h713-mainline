@@ -154,6 +154,49 @@ entirely through DRAM. That is a real feature, not an opportunistic one: a
 `display.bin` patch (which breaks the SHA-256 the loader verifies, so the
 expected hash moves with it), a ring getc/putc, and an ARM-side pump.
 
+## Feasibility for DECD: there is a second, memory-driven shell (2026-08-07)
+
+Asked before starting video decode, since DECD is the trigger named below. The
+answer upgrades the item.
+
+**Two shell threads are spawned, not one.** `shell_thread_uart` polls the UART
+directly (`0xb7501000`). `shell_thread_monitor` does not -- its getc/putc/avail
+(`0x8b19d3b4/bc/64`) tail-call a shared trio (`0x8b155f2c` getc, `0x8b155f78`,
+`0x8b155e08`) that reads and writes a **ring buffer in DRAM** through a device
+object: a global pointer at `0x8b232c20`, an `enabled` byte at object `+0`, and
+ring head/tail at `+0x6c`/`+0x70`. Same command parser, so driving that ring is
+driving a shell -- `regr`/`regw` included.
+
+**The ring is ARM-reachable.** The MIPS addresses are kseg0 (`0x8b232c20` ->
+kseg-phys `0x0b232c20`), and the firmware the ARM loads at `0x4b100000` is
+kseg-phys `0x0b100000` -- a **+0x40000000 window**. So `0x8b232c20` is system
+`0x4b232c20`, inside the image we stage, and the object it points at
+(another kseg0 address) converts the same way. The ARM already writes this
+region.
+
+**So the wire-free route needs no firmware patch after all**, if that ring is
+writable and the device is registered. That is a strict improvement on the
+"patch getc/putc + move the SHA-256" estimate above: the vendor built the
+mailbox.
+
+**The confirming probe is read-only and cheap**, and it is the next step rather
+than any patch. With the MIPS running: `md.l 0x4b232c20` to get the device
+pointer, convert `0x8b..`->`0x4b..`, and read the object -- `+0` enabled, ring
+indices at `+0x6c/+0x70`, and the buffer -- to learn whether the monitor stream
+is registered, where the ring is, and whether it is the CPU_COMM channel or a
+separate device. No patch, no risk.
+
+**This recon has dual payoff.** Pinning the MIPS->system window and the ring
+layout is exactly what DECD needs anyway, since the decoder moves frames through
+buffers the ARM must locate. Two open questions survive it: cache coherency of a
+cached-kseg0 ring the ARM writes (CPU_COMM already crosses this boundary, so a
+known class of problem), and whether the exact UART *peripheral* address matters
+at all now that the monitor route avoids it.
+
+**Verdict: feasible, and cheaper than the firmware-patch estimate.** Worth the
+one read-only probe when the board is next up with the MIPS running -- ideally
+folded into DECD bring-up, not as a separate errand.
+
 **Parked, deliberately.** The payoff is `regr`/`regw` -- the MIPS's own view of
 the fabric -- and it has never been needed: every register result in this
 project came from the ARM side, and the display path is done. The trigger to
