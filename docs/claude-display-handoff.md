@@ -421,6 +421,31 @@ uses cold.
 boot. They now refuse -- a refusal rather than an ungate, because they only
 measure, and everything they measure is driven by the display PLL.
 
+**All four checks passed on hardware, 2026-08-07:**
+
+| check | result |
+| --- | --- |
+| `teardown` cold | works; prints `display clocks/routing prepared` (cold branch) |
+| `scanrate` cold | **refuses** instead of hanging |
+| `panel-test 0x99` | `cannot read mips/ProjectID_0x0099.TSE` -> `run failed, tearing down` -> panel down. Previously returned silently and left the panel powered |
+| `panel-test 0x34` after that | renders, `fbcheck` rows 343..378 / cols 367..912 |
+| `teardown` twice, warm | both clean, and **no** `prepare()` line either time |
+
+That last row is the cold/warm branch proving itself: `prepare()` runs only when
+`h713_disp_configured` is false, so its absence on the warm path is the
+behaviour working, not a missing step.
+
+Incidental: the run after a teardown now reports `FIFO status clear; reset
+skipped` where it used to say `status 0x00000002; reset applied`. Teardown is
+leaving the FIFO clean, which is a small independent confirmation that it does
+real work rather than just dropping rails.
+
+**Still untested**, and only as a combination: an error return *after* the
+sequence completes, which would take the warm teardown path. Both halves are
+now proven separately -- failure-triggered teardown (cold, via 0x99) and warm
+teardown (twice, plus the automatic one at the head of a second run) -- so this
+is a missing trigger rather than an untested path.
+
 Remaining to check:
 
 ```
