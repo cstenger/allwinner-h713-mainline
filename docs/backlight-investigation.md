@@ -1,11 +1,41 @@
 # H713 projector backlight: the case so far
 
-**Status: ANSWERED 2026-08-06 — the vendor firmware does not drive a backlight
-PWM on this board either.** Written 2026-08-05 for external review; the result
-below arrived when the vendor stack was booted on the bench for the first time.
-This consolidates a thread that runs across `docs/mips-display-recovery.md`
-(300 KB, chronological) and `docs/claude-display-handoff.md`. Read this instead
-of reconstructing it from those.
+**Status: SOLVED 2026-08-06 (late) — the light dims, from PB5.**
+
+```
+h713_disp bl-gpio 500 10 3     -> noticeable drop in brightness
+```
+
+`panel_bl_en` (PB5) is the enable of the on-board boost converter that lifts
+36 V to the 52.6 V the `LED` header delivers, and **that converter dims on
+PWM-of-enable** — the standard technique for LED boost drivers. 500 Hz at 10 %
+duty is visibly dimmer, with no flicker at that rate. Brightness has been
+controllable from the SoC the entire time, on a pin this project has been
+holding statically high since the fan work.
+
+**Not on PB4/PWM2.** Every stock source points there — the shipping DTB's
+`panel_pwm_ch = 2`, our patch 0032 `pwm-backlight`, `bl-sweep` — and it does
+nothing, because it is not what gates the converter. The vendor's own firmware
+never dims either (section 0), so this is a capability of the hardware that the
+shipping software does not use.
+
+**The blocker for a real feature is the fan, not the light.** PB5 is shared with
+fan power, so modulating it modulates cooling in lockstep: at 10 % duty the fan
+gets 10 % too. Fine for a three-second test, not for use. Turning this into a
+usable backlight means separating the two nets — see section 5.
+
+**PB5 has no PWM function** in this SoC's pinmux (`gpio_in`/`gpio_out` only,
+confirmed against `pinctrl-sun50i-h616.c`), so the SoC cannot drive it with
+hardware PWM as wired. Either bit-bang it, or move the converter's enable to a
+pin that has a PWM function — PB4 being the obvious candidate, already routed
+for exactly this role and already carrying a correct 25 kHz waveform.
+
+Written 2026-08-05 for external review; the section-0 result arrived when the
+vendor stack was booted on the bench, and the boost measurement the same
+evening. This consolidates a thread that runs across
+`docs/mips-display-recovery.md` (300 KB, chronological) and
+`docs/claude-display-handoff.md`. Read this instead of reconstructing it from
+those.
 
 ---
 
@@ -93,10 +123,16 @@ scope here.
   brick has two outputs: **12 V feeds the board, 36 V feeds the light**, and the
   36 V passes through the mainboard, arriving and leaving via the 2-pin `LED`
   header next to `IR` (see section 3, inference 3).
-- **53 photographs of the mainboard show no LED driver and no boost converter.**
-  Every inductor is a 2R2 (2.2 µH) buck for the SoC rails, clustered near the DC
-  jack. There is no high-voltage electrolytic, no power FET pair, no current
-  shunt. Photos in `local/board_images/`.
+- ~~**53 photographs of the mainboard show no LED driver and no boost
+  converter.** Every inductor is a 2R2 (2.2 µH) buck for the SoC rails,
+  clustered near the DC jack. There is no high-voltage electrolytic, no power
+  FET pair, no current shunt. Photos in `local/board_images/`.~~
+
+  **REFUTED 2026-08-06 by direct measurement.** The `LED` output connector reads
+  **52.6 V** against a **36 V** input. Nothing passive produces that: **there is
+  a boost converter on this mainboard**, and the photographic survey missed it.
+  Fifty-three photographs and a component-by-component reading were not enough
+  to see a power stage that a single DMM probe found immediately.
 - The board has a 2-pin connector silkscreened `LED`, next to a 3-pin `IR`. It
   has thin signal-width traces and no adjacent power stage, so it is very
   unlikely to be the light engine feed; it matches the DT's indicator LEDs
@@ -104,10 +140,21 @@ scope here.
 - `PB5` is `panel_bl_en` and is **shared with fan power**. Never drive it low —
   on a projector with an LED light engine that is a thermal risk.
 
-**Implication, and the current leading hypothesis:** if the light is 2-wire and
-no driver exists on the mainboard, the 48 V is generated off-board, and no SoC
+~~**Implication, and the current leading hypothesis:** if the light is 2-wire and
+no driver exists on the mainboard, the supply is generated off-board, and no SoC
 PWM can affect it unless a control wire physically reaches that off-board
-driver. Nobody has yet traced where the light's cable terminates.
+driver.~~
+
+**Dead, 2026-08-06.** Its premise was "no driver exists on the mainboard", and
+the 36 V -> 52.6 V measurement refutes exactly that. The driver is *on the
+board*, so a control wire does not have to leave it, and the argument that no SoC
+PWM could ever reach the light collapses with the premise. **This reopens the
+backlight question rather than closing it.**
+
+What survives independently of this paragraph: stock requests pwm5, that request
+fails, and the light still comes up at full brightness. So stock has no working
+PWM path either -- but "stock does not dim it" is a much weaker claim than "it
+cannot be dimmed", and only the second one was resting on the missing driver.
 
 ---
 
@@ -162,16 +209,29 @@ A reviewer should attack these first.
    the mainboard and leaves again through this connector. That is why no boost
    converter or LED driver was ever found — none is needed.
 
-   **Still unknown, and now the whole question:** whether anything on the board
-   *switches* that 36 V between its input and this connector. `panel_bl_en` on
-   PB5 exists, which implies something is gated, but no switching device has
-   been located. Settled by two continuity checks, board unpowered:
-   - `LED` pin (return) to board ground — continuity means no low-side switch.
-   - `LED` pin (+) to the 36 V input — continuity means no high-side switch.
+   **There is a high-side switch in the 36 V path** (continuity, board
+   unpowered, 2026-08-06): the return pin is uninterrupted to board ground, and
+   **the positive is not** — something sits between the 36 V input and the
+   connector's `+`. That is almost certainly what `panel_bl_en` on PB5 drives.
 
-   If either is open, there is a switch in the path and its gate is the dimming
-   lever. If both are closed, the board is a pass-through, the light is
-   unswitched, and an inline modulator is the only route.
+   This separates two claims that had been running together. *The shipping
+   firmware never dims this light* is established (section 0). *The hardware
+   cannot dim it* is *not* — there is a switching element in the light's supply,
+   and if it is a MOSFET its gate is a dimming lever the vendor never used.
+
+   Open, and the next thing to chase:
+   - **What the part is.** Probe from the `LED` `+` pin to neighbouring pads to
+     find its output, then read the package and marking.
+   - **What drives its gate.** A 3.3 V GPIO cannot drive a gate referenced to a
+     36 V source directly, so expect a small NPN or N-FET level-shifting stage.
+     *That stage's input is what to PWM*, not the power device itself.
+   - **Whether that gate drive is fast enough to modulate.** A stage sized for
+     on/off with a large pull-up resistor will have slow edges and dissipate
+     badly at 25 kHz. Measure the rise/fall before committing to a frequency;
+     an inline module with a proper gate driver remains the fallback.
+   - **Whether its input is shared with fan power.** If PB5 drives both, the
+     vendor interlocked them, and dimming means separating the nets: fan enable
+     stays on PB5, the light's gate stage moves to PB4.
 4. **That the waveform physically reaches the PB4 pad.** The counter proves the
    channel generates internally. Nothing has measured the pin. The PIO data
    register cannot answer this — it reports the output latch, not the pad
