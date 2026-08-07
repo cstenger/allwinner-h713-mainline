@@ -39,9 +39,11 @@ Restored 2026-08-04 and confirmed (test_35): the record at blob `+0x3584` patche
 `00000000` in **both** dumps -- including after the DE replay, which used to
 restore 123. Fixed at source, so no path can miss it.
 
-`0x05280084[31:16]` is still omitted on the same reasoning and is now *more*
-suspicious, not less. It holds 720 and stock appears to zero it. It has earned
-its own two-sided perturbation before anyone touches it.
+`0x05280084[31:16]` stayed omitted on the same reasoning, and **that turned out
+to be correct** -- settled 2026-08-07 by `fb-vsize`. It is the layer's display
+height: writing stock's apparent zero blanks the panel. Same sentence, same
+argument, opposite verdicts, and only a measurement per site could tell them
+apart.
 
 Both symptoms came from it. The pale left band was the origin directly. The
 stride deficit -- the source pointer advancing ~1238 words per row instead of
@@ -111,6 +113,7 @@ why its output was always perfect.
 | the band was at the **head** of the line, not the tail | ~120 px blank on the left, content running to the right edge, in all eleven photographs before the fix |
 | the photographs are not mirrored | the stripe lean matches the model in absolute sign across five steps of test_31, including the flip at the one step below default; so left is left |
 | the band belongs to the framebuffer path | operator observation: TCON generator patterns fill the whole screen, framebuffer patterns are truncated |
+| `0x05280084[31:16]` and `0x05280080[31:16]` are layer heights | test_38 `fb-vsize`: 0 blanks the layer (contrast 195->21), 360 crops to the top half with blank below, 1080 reads as baseline because the panel is 720 tall. So stock's apparent zero cannot be a real store, and the omission was correct |
 | the U-Boot frame survives into Linux | 2026-08-07: logo still on the panel at the login prompt, and all 12 display registers read back their U-Boot values from the target (`devmem32`). Depends on `clk_ignore_unused`/`pd_ignore_unused` |
 | sustained commits work | fb-anim 2026-08-07: 600 frames committed, **0 timeouts**; the manual write-one-to-clear suffices without an ARM IRQ handler |
 | completion is **vsync-locked** | same run: 600 frames in 10042 ms = 59.749 Hz vs the panel's computed 59.71 Hz (0.07%), and fill mean + wait max = 16.754 ms vs a 16.747 ms frame period (0.04%) |
@@ -669,10 +672,28 @@ path and wants a decision.
 
 ### 6. Smaller, opportunistic
 
-- **`0x05280084[31:16]`** -- the *other* site `h713_disp_panel_patch` omitted on
-  the same reasoning that turned out to be wrong for `0x0528008c`. It holds 720
-  and stock appears to zero it. It has earned the same two-sided perturbation,
-  via the `fb-band` harness. Do not change it blind.
+- **`0x05280084[31:16]`** -- *CLOSED 2026-08-07 by `fb-vsize` (test_38). It is
+  the layer's display height, and the omission was **correct**.*
+
+  | step | write | result |
+  | --- | --- | --- |
+  | 1 | control | 4 stripes at 26.3 / 50.8 / 74.1 % |
+  | 2 | **0** | **layer gone** -- white field, contrast 195 -> 21 |
+  | 3 | **360** | **cropped to the top half**, blank below |
+  | 4 | **1080** | identical to baseline; the panel is only 720 tall |
+  | 5 | neighbour `0x05280080[31:16]` = 360 | identical to step 3 |
+
+  Writing stock's apparent zero **blanks the display**, so it cannot be a real
+  store at this point -- either the static read is the decode artefact the
+  original caution suspected, or stock writes it where the value is replaced
+  before it matters. Restoring it by analogy with `0x0528008c`, which this page
+  had been inviting since 2026-08-04, would have blanked the panel.
+
+  **The framing this page carried was wrong.** The justification was not
+  "discredited" by having failed at `0x0528008c`; it was *unreliable*, which is
+  different, and it turned out to be right here. Two adjacent sites, omitted in
+  one sentence for one reason: one a catastrophe, one correct. Only measuring
+  each separated them. `h713_disp_panel_patch` needs no change.
 - **Why a pre-run FAT read kills the display.** We have a workaround, not a
   cause, and it is a latent fragility: anything occupying that window might do
   the same. `vendor-logo-early` reproduces it. Three runs should isolate it --
@@ -732,6 +753,7 @@ path and wants a decision.
 | `tools/display/edge-measure.py` | host-side: stripe count -> stride, from the photographs |
 | `tools/display/devmem32.c` | target-side: read MMIO from Linux. Freestanding aarch64, no libc, ~3 KB so it base64s over serial. **`od`/`dd` cannot do this on arm64** |
 | `tools/display/handoff-check.sh` | target-side: the same registers as a pass/fail table, with a `-w` watch mode; needs busybox/devmem2/python3 |
+| `tools/display/vsize-measure.py` | host-side: red/blue stripe boundaries per frame from an `fb-vsize` video, as a fraction of the lit height so keystone does not matter |
 | `tools/display/tear-measure.py` | host-side: counts rows with no bar in an `fb-anim` video -- the tearing metric that is **not** confounded by the camera's rolling shutter |
 
 **Power-cycling between runs is no longer needed.** `panel-test` tears down

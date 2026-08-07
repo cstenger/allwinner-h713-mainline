@@ -1,3 +1,56 @@
+# 0x05280084[31:16] is the layer height, and the omission was right (2026-08-07, test_38)
+
+The last of the two sites `h713_disp_panel_patch` left out, owed a two-sided
+perturbation since 2026-08-04. `fb-vsize`: four red/blue horizontal stripes of
+180 rows, boundaries at 25/50/75 %, five steps.
+
+| step | write | result |
+| --- | --- | --- |
+| 1 | control, nothing | 4 stripes, edges at **26.3 / 50.8 / 74.1 %** |
+| 2 | `0x05280084[31:16]` = **0** | **layer gone.** Uniform white field; measured contrast collapses 195 -> 21 |
+| 3 | = **360** | **cropped to the top half.** Red 0-25 %, blue 25-50 %, blank below |
+| 4 | = **1080** | identical to baseline -- the panel is only 720 tall |
+| 5 | `0x05280080[31:16]` = 360 (control) | **identical to step 3** |
+
+**`0x05280084[31:16]` is the layer's display height**, and `0x05280080[31:16]`
+is a second one that crops the same way. Both are live and load-bearing. Step 4
+behaving exactly like the baseline is the confirmation: a height cannot show
+more rows than the panel has.
+
+## The omission was correct, and the caution that produced it was right
+
+The argument that left this site out was:
+
+> stock's literal zero at `0x05280084[31:16]` and `0x0528008c[15:0]` "may be a
+> decode artefact rather than a real store; writing a zero we cannot justify is
+> worse than leaving the vendor default in place."
+
+For `0x0528008c` that was wrong, and it was the entire framebuffer fault. **For
+`0x05280084[31:16]` it was right.** Writing the zero blanks the layer -- step 2
+is a white screen. So stock's apparent zero cannot be a real store at this point
+in the sequence: either the static read is the decode artefact the caution
+suspected, or stock writes it somewhere the value is replaced before it matters.
+
+**Had this been "restored" by analogy with `0x0528008c` -- which is what this log
+has been inviting since 2026-08-04 -- the display would have gone blank.**
+
+## The method point, and a correction to how this run was framed
+
+Going in, this was described as testing "a discredited justification". That was
+wrong, and the run says so: the justification was **correct here**. An argument
+that fails once is not discredited, it is *unreliable* -- which is a different
+thing and demands exactly what was done, a measurement per site rather than a
+verdict carried from one site to another.
+
+The two sites were adjacent, in the same register block, omitted in the same
+sentence for the same reason. One was a catastrophe and one was correct. Nothing
+short of driving each one and watching could have separated them.
+
+Also worth keeping: the run was designed expecting a null, and the console said
+so before it ran -- "ALL FIVE IDENTICAL is the likely outcome and is a real
+result". Predicting the boring outcome in advance is what makes the interesting
+one credible when it arrives.
+
 # The vendor's shutdown, compared with ours (2026-08-07)
 
 Our teardown was written from first principles against a boot log. The vendor's
