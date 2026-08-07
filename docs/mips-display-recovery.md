@@ -35,11 +35,40 @@ day refused otherwise -- which left the exact case it existed for, a failure
 part-way through the sequence with the panel powered and the MIPS live,
 uncleaned. **Ungating is the fix; refusing was not.**
 
-`h713_display_clocks_on()` is now the clock half of `h713_display_prepare()`,
-split out so teardown uses the same sequence. Every register in it is CCU
-(`0x02001xxx`), always clocked, and `setbits` is idempotent, so it is safe from
-any state. Both guards -- in `h713_disp_fail()` and on the standalone `teardown`
-command -- are gone.
+**The clocks alone were not enough, and that cost a hang.** The first attempt
+called only `h713_display_clocks_on()` -- the module clocks and their video2
+parent. On a cold boot `h713_disp teardown` printed its first line and hung on
+the very next AFBD read.
+
+`h713_display_prepare()` had the answer in a comment that predated the whole
+attempt: *"the initial SPL values open only part of the display fabric"*. The
+TVTOP routing at `0x05700000` is part of what makes those blocks **reachable**,
+not merely part of configuring them.
+
+So teardown calls the whole of `prepare()` when the sequence has not run. That
+is evidence rather than a third guess: **every normal run calls `prepare()` cold
+before any display access**, so it is the one primitive already proven safe from
+exactly this state. The warm path is untouched.
+
+**Verified on hardware 2026-08-07**, cold boot, nothing run first:
+
+```
+H713 teardown: requested from the prompt
+H713 MIPS: display clocks/routing prepared
+H713 teardown: panel down (PF_DAT=00000000 PH_DAT=00000000), PHY 18000000/00000030, route 40000000, MIPS reset=00000000
+```
+
+The middle line only appears on the cold path, so it doubles as a marker for
+which branch ran. Both guards -- in `h713_disp_fail()` and on the standalone
+`teardown` command -- are gone.
+
+**A second latent hang turned up while bisecting this.** `h713_disp scanrate` on
+a cold boot wedged the board: `h713_disp_scan_rate()` reads `0x05880000` three
+times unguarded. `regscan` defaults to the same base and `clkfind` watches the
+same witness. All three now refuse rather than hang -- deliberately a refusal
+and not the ungate teardown got, because they only *measure*, and everything
+they measure is driven by the display PLL, so an ungated read with no sequence
+run would return a confident number that means nothing.
 
 ## What we are deliberately keeping that the vendor does not do
 

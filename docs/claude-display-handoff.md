@@ -399,17 +399,29 @@ two delays on the common path.
 **Consequence:** `h713_disp teardown` from the prompt now works on a cold boot
 too. It previously would have hung the board, and briefly refused instead.
 
-**To verify on hardware, and the first one is the risky one:**
+**Cold-boot teardown is VERIFIED on hardware, 2026-08-07:**
 
 ```
-h713_disp teardown
+H713 teardown: requested from the prompt
+H713 MIPS: display clocks/routing prepared
+H713 teardown: panel down (PF_DAT=00000000 PH_DAT=00000000), PHY 18000000/00000030, route 40000000, MIPS reset=00000000
 ```
 
-on a **cold boot**, with nothing run before it. This is the path that used to
-hang, and the clock acquire is the only thing making it safe. It should print
-the usual `panel down (PF_DAT=... PH_DAT=...)` line. If it hangs, the acquire is
-insufficient -- power-cycle, and the answer is that something needs a reset
-deassert as well as a gate.
+The middle line only appears on the cold path, so it marks which branch ran.
+
+It took two attempts. The first ungated only the module clocks and their video2
+parent, and hung on the next AFBD read -- **clocks do not open the fabric on
+their own.** `h713_display_prepare()`'s own comment says so: *"the initial SPL
+values open only part of the display fabric"*. Teardown now calls the whole of
+`prepare()` on the cold path, which is the primitive every normal run already
+uses cold.
+
+**Also fixed after it wedged the board during this test:** `h713_disp scanrate`,
+`regscan` and `clkfind` all read display blocks unguarded and hang on a cold
+boot. They now refuse -- a refusal rather than an ungate, because they only
+measure, and everything they measure is driven by the display PLL.
+
+Remaining to check:
 
 ```
 h713_disp panel-test 0x99 vendor-logo-chroma
