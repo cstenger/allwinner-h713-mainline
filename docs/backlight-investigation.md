@@ -323,3 +323,50 @@ same line as any `mmc read`/`write`, because a failed read leaves plausible
 looking stale DRAM and this has corrupted three results including a "backup".
 `backup_8020.bin` currently on `mmc 1:2` is 1.2 MB of uninitialised DRAM — not a
 backup. And never drive PB5 low.
+
+---
+
+## 7. The chosen path (deferred 2026-08-06, hardware not yet fitted)
+
+Dimming via PWM-of-enable on PB5 **works but will not be used**: it dims by
+starving the boost converter, so the LED runs below its designed forward
+voltage, the usable window is a narrow 7–14 % duty that will drift with
+temperature and input rail, and — decisively — PB5 also powers the fan, so the
+whole usable band starves cooling. `h713_disp bl-gpio` stays as a diagnostic,
+not an implementation.
+
+**The plan is an inline low-side MOSFET module in the LED's negative return**,
+chopping the current downstream of the converter's output capacitor. The
+converter then runs undisturbed at a steady 52.6 V, PB5 stays statically high,
+and the fan is unaffected. That is the isolation the enable-PWM approach cannot
+give.
+
+Module on hand: dual parallel MOSFETs, DC 4–60 V, 10 A / 600 W, trigger input
+3.0–24 V high-level or 0–0.6 V low-level. Comfortably over-specced for ~1 A at
+52.6 V, and 3.3 V drives it directly with no level shifter.
+
+**Constraints to honour when it is fitted:**
+
+- **Its PWM input is rated 0–2.5 kHz.** `H713_BL_PWM_HZ` is 25 kHz and DT patch
+  0032 uses `pwms = <&pwm 2 40000 0>` (40000 ns). Both must drop to ≤ 2.5 kHz —
+  1 kHz gives 2.5x margin and stays above flicker fusion. Driving the module's
+  gate stage at 25 kHz would hold its FETs in the linear region for much of
+  each cycle. Left at 25 kHz for now so the constant keeps matching the
+  measurement documenting it (counter wraps at 960).
+- **Establish whether the converter is CV or CC first**, by measuring the `LED`
+  header with the light unplugged. Still ~52.6 V means constant-voltage and
+  chopping the load is straightforward. Climbing or hiccuping means constant
+  current with the LED in the feedback path — and at ≤ 2.5 kHz the off-time is
+  long enough for that loop to respond. The output capacitor then charges while
+  the LED is disconnected (`dV = I·t/C`: at 0.7 A and 500 µs, a 10 µF cap rises
+  ~35 V, a 100 µF cap ~3.5 V), and reconnecting drives an inrush through the
+  LED. Watch the header voltage while chopping before trusting it.
+- **Check polarity on first light.** `panel_config.ini` says
+  `pwm_polarity = 1` (active low) while our DT uses normal. If 100 % duty gives
+  darkness, invert: `pwms = <&pwm 2 <period> 1>`. The module supports both
+  trigger senses, so either side can be the fix.
+
+**Everything else already exists.** `h713_disp panel-test 0x33 bl-sweep` and
+patch 0032's `pwm-backlight` (`/sys/class/backlight/backlight/brightness`,
+0..100) both drive PWM2/PB4 with a waveform verified correct on the pin. The
+only thing ever missing was hardware between that pin and the light.
