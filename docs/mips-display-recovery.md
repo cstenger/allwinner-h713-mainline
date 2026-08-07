@@ -1,3 +1,67 @@
+# The vendor's shutdown, compared with ours (2026-08-07)
+
+Our teardown was written from first principles against a boot log. The vendor's
+*shutdown* was captured during the Android boot session, and comparing them
+produced one change worth making.
+
+The vendor's entire display shutdown is five lines:
+
+```
+[209.567628] ge2d 5240000.ge2d: acquire tvdisp clock on emergency shutdown
+[210.210128] Invalid pin          <- 643 ms gap
+[210.212881] Invalid pin
+[210.215651] Invalid pin
+[210.218428] ge2d 5240000.ge2d: ge2d suspend
+[210.454291] reboot: Power down
+```
+
+| | vendor | ours |
+| --- | --- | --- |
+| display clock | **acquires** `tvdisp` in order to shut down | left running; teardown *refused* if the block was not already clocked |
+| MIPS | never parked -- no `mipsloader` line at shutdown at all | parked, reset asserted |
+| panel rails | not sequenced; they die at `Power down` | PH16 then PF6, with the panel's declared 20/75/250 ms off timings |
+| LVDS PHY / route | not restored | returned to cold values |
+| backlight | never touched | never touched |
+
+## What we took: the clock acquire
+
+**The vendor turns the display clock on in order to turn the display off.**
+
+That is the answer to a problem our teardown had and that the first version of
+the single-exit work papered over. `h713_disp_teardown()` opens by *reading* the
+AFBD control register, and those blocks wedge the interconnect when read gated,
+so it could only run after a completed sequence. The guard added earlier that
+day refused otherwise -- which left the exact case it existed for, a failure
+part-way through the sequence with the panel powered and the MIPS live,
+uncleaned. **Ungating is the fix; refusing was not.**
+
+`h713_display_clocks_on()` is now the clock half of `h713_display_prepare()`,
+split out so teardown uses the same sequence. Every register in it is CCU
+(`0x02001xxx`), always clocked, and `setbits` is idempotent, so it is safe from
+any state. Both guards -- in `h713_disp_fail()` and on the standalone `teardown`
+command -- are gone.
+
+## What we are deliberately keeping that the vendor does not do
+
+The vendor's teardown is thin because **it only ever tears down on the way to
+losing power.** It never re-initialises a panel it just shut down, so it does not
+need the hardware left re-initialisable.
+
+Ours does. The whole acceptance test for `h713_disp_teardown()` is that a second
+`panel-test` in the same boot renders correctly, which is why we park the MIPS,
+restore the PHY and route, and honour the panel's off timings. The vendor's
+silence on all three is not a gap in ours -- it is the difference between
+shutdown and teardown, and reading it as a gap would have been the wrong lesson.
+
+## Incidental
+
+Three `Invalid pin` errors inside the vendor's display shutdown, and
+`mipsloader 3061000.mipsloader: request pins failed: -19` at boot. Its pin
+configuration is broken in more places than the pwm5 group already recorded.
+And it confirms once more that stock never touches the backlight on the way
+down -- so what we do about PB5 in teardown is a decision to make, not a
+behaviour to copy.
+
 # The U-Boot frame survives into Linux (2026-08-07)
 
 `panel-test 0x34 vendor-logo-chroma`, then `boot`. **The logo stayed on the

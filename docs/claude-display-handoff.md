@@ -379,35 +379,48 @@ frame to Linux, which is how item 4 was verified. A single exit covering both
 paths would have silently broken that. `init_only` is the same: its whole
 purpose is to leave the display up for `scanrate`/`regscan`/`clkfind`.
 
-**The handler is guarded, and the guard is a hang rather than caution.**
-`h713_disp_teardown()` opens by reading the AFBD control register, and those
-blocks are gated until the sequence completes -- reading them cold stalls the
-interconnect and takes the board with it, which is why `h713_disp dump` has
-always refused the same thing. `h713_disp_configured` goes true at the end of
-`h713_disp_run()`, so a failure *before* that point reports that it cannot clean
-up rather than wedging.
+**Teardown now acquires the display clocks first, which is what the vendor
+does.** Its shutdown log reads `ge2d 5240000.ge2d: acquire tvdisp clock on
+emergency shutdown` -- it turns the display clock *on* in order to turn the
+display off.
 
-**Also fixed, found while doing this:** `h713_disp teardown` from the prompt was
-unguarded, so typing it after a reset would hang the board. It now refuses with
-a message. `h713_disp_configured` is never cleared, so teardown-twice still
-works -- which is the documented way to prove teardown is correct.
+That solves a real problem. `h713_disp_teardown()` opens by *reading* the AFBD
+control register, and those blocks wedge the interconnect when read gated, so it
+could only ever run after a completed sequence. The first version of this item
+guarded on `h713_disp_configured` and simply refused otherwise -- leaving the
+exact case it was meant to fix (a failure part-way through the sequence, panel
+powered, MIPS live) uncleaned. Ungating is the fix; refusing was not.
 
-To verify on hardware, cheapest first:
+`h713_display_clocks_on()` is the clock half of `h713_display_prepare()`, split
+out so both use it. Every register in it is CCU (`0x02001xxx`), which is always
+clocked, and `setbits` is idempotent -- so it is safe from any state and costs
+two delays on the common path.
+
+**Consequence:** `h713_disp teardown` from the prompt now works on a cold boot
+too. It previously would have hung the board, and briefly refused instead.
+
+**To verify on hardware, and the first one is the risky one:**
 
 ```
 h713_disp teardown
 ```
 
-on a cold boot, which should now refuse rather than hang; then
+on a **cold boot**, with nothing run before it. This is the path that used to
+hang, and the clock acquire is the only thing making it safe. It should print
+the usual `panel down (PF_DAT=... PH_DAT=...)` line. If it hangs, the acquire is
+insufficient -- power-cycle, and the answer is that something needs a reset
+deassert as well as a gate.
 
 ```
 h713_disp panel-test 0x99 vendor-logo-chroma
 ```
 
-which fails in `h713_disp_load` before the sequence and should print
-*"NOT tearing down: those blocks are still gated"*. The remaining case -- a
-failure *after* the sequence, which actually tears down -- has no easy trigger
-short of corrupting `bootlogo.bmp`, and is **untested on hardware**.
+fails in `h713_disp_load` before the sequence, so it exercises teardown from a
+partly-cold state. Then a normal `panel-test 0x34 vendor-logo-chroma` to confirm
+the common path still renders after the extra ungate.
+
+**Untested:** a failure *after* the sequence, which has no easy trigger short of
+corrupting `bootlogo.bmp`.
 
 ### 3. The backlight -- SOLVED; implementation deferred on hardware
 
