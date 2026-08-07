@@ -137,23 +137,29 @@ filled by the pin, not by any ARM MMIO write (writing `0x02501000` hits THR, the
 transmit side). So this stays a derivation until someone types `default user`
 at the prompt and, if that fails, an empty line.
 
-## The bench path, and what it still needs
+## There is no pin to reach, so the item is PARKED
 
-Three unknowns gate the test, none of them the password:
+The shell binds UART4, whose only routes are `PH6/PH7` (mux 2) or `PD8/PD9`
+(mux 3). Those pins carry nothing else broken out on this board -- besides GPIO
+they are `uart4`, `gmac` and `twi0`, and the projector has no ethernet -- and
+the operator confirms there are no serial pads beyond the existing console
+(UART0). So UART4 does not surface anywhere probeable; physical access would
+mean microsoldering to the SoC ball or a via, if it exists at all.
 
-- **Who muxes and gates UART4.** The shell driver touches only the data
-  registers (`RBR`/`THR`/`USR`/`HALT`), never the CCU gate or the PIO mux. So
-  something else must enable UART4's clock and mux `PH6/PH7` to function 2 --
-  and if nothing in our configuration does, the shell is polling a dead block
-  and no wire helps. Check the PIO and CCU state from U-Boot with the MIPS
-  running before wiring anything.
-- **The baud rate.** Also set by whoever configures the UART, which may be
-  nobody; unknown until measured or found.
-- **TX/RX assignment** on `PH6`/`PH7`.
+**The wire-free alternative is a firmware redirect, not a wire.** The shell
+takes input through a function pointer -- the getc at `0x8b19d344` that polls the
+UART -- and we load `display.bin` ourselves. Patching getc/putc to read and
+write a ring in the CPU_COMM shared memory would let the ARM drive the shell
+entirely through DRAM. That is a real feature, not an opportunistic one: a
+`display.bin` patch (which breaks the SHA-256 the loader verifies, so the
+expected hash moves with it), a ring getc/putc, and an ARM-side pump.
 
-Then: 3.3 V adapter on the pins, terminal, press enter, expect `Please input
-password:`, try `default user`, then an empty line if that fails. Only that
-run promotes this from derivation to fact.
+**Parked, deliberately.** The payoff is `regr`/`regw` -- the MIPS's own view of
+the fabric -- and it has never been needed: every register result in this
+project came from the ARM side, and the display path is done. The trigger to
+revisit is DECD/video bring-up, if the MIPS firmware turns out to do things the
+ARM side cannot observe. Not before. The password derivation above stands as the
+one thing already in hand should that day come.
 
 # The pre-run FAT read never killed the display -- REFUTED (2026-08-07)
 

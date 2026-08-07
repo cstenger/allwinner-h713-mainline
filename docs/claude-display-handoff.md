@@ -764,11 +764,14 @@ path and wants a decision.
   reached from the ARM side (it reads UART4's RX pin, not an MMIO-writable
   register).
 
-  **Before it can even be tried,** three things need checking with the MIPS
-  running, none of them the password: who muxes `PH6/PH7` to function 2 and gates
-  UART4's clock (the shell driver touches neither -- if nothing does, it polls a
-  dead block), the baud rate, and TX/RX. Then a 3.3 V adapter, a terminal, and
-  `default user` (or an empty line if that fails). See the evidence log.
+  **PARKED -- there is no pin to reach.** UART4's only routes are `PH6/PH7` or
+  `PD8/PD9`, which carry nothing broken out on this board (no ethernet, no serial
+  pads beyond the console -- operator confirmed). Physical access means
+  microsoldering the SoC. The wire-free route is a firmware redirect: patch
+  `display.bin`'s getc/putc to a CPU_COMM shared-memory ring the ARM pumps -- a
+  real feature (moves the loader's expected SHA-256), not opportunistic. Payoff
+  is a MIPS-side `regr`/`regw` we have never needed; revisit only if DECD
+  bring-up wants the coprocessor's own register view. See the evidence log.
 - **Two pinctrl patches disagree** -- *resolved 2026-08-05, in 0002's favour.*
   The stock U-Boot DTB gives PH17/pwm0 muxsel 3, PH18/pwm1 muxsel 3, PB5/pwm3
   muxsel 2 and PA12 = `pwm4`, all matching patch 0002. Patch 0018's
