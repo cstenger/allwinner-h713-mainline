@@ -1,3 +1,65 @@
+# Double buffering fixes the tear, and the obvious metric measured the camera (2026-08-07, test_37)
+
+`fb-anim` against `fb-anim-db` on one boot, filmed at 4K30
+(`local/lcd-photos/test_37/`). Analysed with `tools/display/tear-measure.py`.
+
+| | rows with **no bar** |
+| --- | --- |
+| `fb-anim`, single-buffered | median **5.97 %**, mean 5.41 %, worst 11.12 % |
+| `fb-anim-db`, double-buffered | median **0.00 %**, mean 0.15 %, worst 4.95 % |
+
+55 and 54 frames respectively. **More than half of all double-buffered frames
+are perfectly clean.** The fix works.
+
+## Why "rows with no bar" is the right observable, and the step is not
+
+The instinctive metric is the size of the horizontal step in the bar. It is
+worthless here, and two runs were spent finding that out.
+
+A 30 fps rolling-shutter camera against a 59.75 Hz panel sees **about one
+panel-frame boundary cross the sensor per readout**, so a 16 px step appears in
+essentially every camera frame whether or not the panel tears. Measured that
+way the two videos are indistinguishable -- largest step, median 5.88 px against
+6.03 px, worst 14.73 against 13.51. That is not evidence of no difference; it is
+the camera's own sampling artefact swamping the signal, and reporting it as a
+verdict would have been the luminance mistake again in a new costume.
+
+What the camera *can* see is a row carrying **no bar at all**. Rolling shutter
+shifts the bar; it cannot delete it. The single-buffered fill blues the whole
+surface and draws the bar afterwards, so a raster passing through mid-fill finds
+no bar anywhere on those rows -- and the console already reports how long that
+window is.
+
+**The prediction was there before the measurement.** The fill is 1.95 ms of a
+16.75 ms frame, so about **11.7 %** of rows should lose the bar. Measured 5.97 %
+median, 11.12 % worst. The shortfall is the camera's exposure integrating over
+part of a frame, so a row that lost the bar for only part of its exposure still
+records some red; 5.97 % is therefore a lower bound on a fault predicted at
+11.7 %. Right order, right sign, and it goes to zero when the cause is removed.
+
+## What this also settles
+
+The flip assumed the AFBD source address at `0x05600178` is shadowed in hardware
+and latched at the ready write. **It is.** Had AFBD been re-reading the address
+mid-scan, pointing it at a different surface each frame would have torn at least
+as badly as the single-buffered case, not cleared it to a 0.00 % median. The
+vblank-write fallback recorded as the alternative is not needed.
+
+## Method note
+
+Three metrics were tried. The first was confounded by the bar wrapping -- rows
+where the bar sits at both screen edges averaged to a centre in the middle of
+the screen where there is no bar, producing "steps" of 400 px and a
+peak-to-peak of 2032 px on a 1280 px panel. Numbers that absurd are a broken
+instrument announcing itself, and the fix was to accept only rows containing
+exactly one contiguous red run.
+
+The second was correctly measured and still meaningless, because it measured the
+camera. The third works because it is specific to the fault's mechanism rather
+than to its appearance, and because its magnitude was predicted from timing the
+console already prints. **Prefer an observable the fault must produce over one
+the fault merely looks like.**
+
 # Sustained commits work, completion is vsync-locked, and the path tears (2026-08-07, fb-anim)
 
 First animated test signal in this bring-up. 600 frames, a 64 px red bar on blue

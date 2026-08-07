@@ -114,6 +114,7 @@ why its output was always perfect.
 | sustained commits work | fb-anim 2026-08-07: 600 frames committed, **0 timeouts**; the manual write-one-to-clear suffices without an ARM IRQ handler |
 | completion is **vsync-locked** | same run: 600 frames in 10042 ms = 59.749 Hz vs the panel's computed 59.71 Hz (0.07%), and fill mean + wait max = 16.754 ms vs a 16.747 ms frame period (0.04%) |
 | the framebuffer path is single-buffered, and AFBD does not latch the surface | same run: the bar tears during motion and is whole when static -- rewriting the buffer after commit could not tear it if the commit had snapshotted it |
+| double buffering removes the tear, and `0x05600178` is latched at the ready write | test_37: rows with no bar go from a **5.97%** median (single-buffered, predicted 11.7% from the 1.95 ms fill in a 16.75 ms frame) to **0.00%** median; a mid-scan re-read of the address could not have cleared it |
 | project 0x34 drives the same display path as 0x33 | 2026-08-06 A/B: both select prologue 3 + timing 6, both patch 22/12, `fbcheck` bounds identical, panel indistinguishable; the only surviving register difference is `0x0525c038` (`0x100` vs `0x40`) |
 
 ## Ready to run
@@ -259,7 +260,35 @@ H713 anim: commit wait min/mean/max 6800/14620/14800 us; fill min/mean/max 1949/
   it afterwards could not tear it. Harmless for a static boot logo, fatal for
   anything animated. See item 1b.
 
-### 1b. Double buffering -- BUILT 2026-08-07, needs the A/B run
+### 1b. Double buffering -- DONE 2026-08-07, confirmed on hardware
+
+**It works.** `fb-anim` against `fb-anim-db` on one boot, filmed and measured
+(`local/lcd-photos/test_37/`, `tools/display/tear-measure.py`):
+
+| | rows with **no bar** |
+| --- | --- |
+| single-buffered | median **5.97 %**, worst 11.12 % |
+| double-buffered | median **0.00 %**, mean 0.15 % |
+
+More than half the double-buffered frames are perfectly clean, against a
+single-buffered fault predicted at 11.7 % from the fill occupying 1.95 ms of a
+16.75 ms frame.
+
+**This also settles the open question about the flip.** The AFBD source address
+*is* shadowed and latched at the ready write -- had it been re-read mid-scan the
+flip would have torn at least as badly, not cleared. The vblank-write fallback
+below is not needed.
+
+**Do not score this on the size of the step in the bar.** A 30 fps
+rolling-shutter camera against a 59.75 Hz panel puts about one panel-frame
+boundary across the sensor per readout, so a 16 px step is in every camera frame
+regardless. Measured that way the two runs are indistinguishable. Use
+`tear-measure.py`, which counts rows carrying no bar at all -- something rolling
+shutter cannot cause.
+
+The original plan follows.
+
+### 1b-orig. Double buffering -- BUILT 2026-08-07, needs the A/B run
 
 ```
 h713_disp panel-test 0x34 fb-anim        <- single-buffered, tears (the baseline)
@@ -586,6 +615,7 @@ path and wants a decision.
 | `panel-test <id> vendor-logo` | the vendor bootlogo, with `fbcheck` verifying the conversion |
 | `teardown` | stop scanout, park the MIPS, drop the panel rail; run twice to prove it |
 | `tools/display/edge-measure.py` | host-side: stripe count -> stride, from the photographs |
+| `tools/display/tear-measure.py` | host-side: counts rows with no bar in an `fb-anim` video -- the tearing metric that is **not** confounded by the camera's rolling shutter |
 
 **Power-cycling between runs is no longer needed.** `panel-test` tears down
 first when it has already run this boot, and the second run renders correctly --
