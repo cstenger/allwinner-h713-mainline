@@ -663,17 +663,38 @@ and registers are not memory, so `od` and `dd` return `-EFAULT` on a healthy
 board. Use `tools/display/devmem32.c` (freestanding, ~3 KB, small enough to
 base64 over serial) or `busybox devmem`, which is now in the rootfs package list.
 
-### 5. `auto`, and a design call that is not mine
+### 5. `auto` -- DECIDED 2026-08-07: opt-in boot logo, prep stays default
 
-`auto` cannot render as it stands -- no framebuffer content **and**
-`stock_panel_power = false`. It is a MIPS-launch/prep path, not a display path,
-which looks deliberate and matches Milestone 2b.
+The call: **the product should show the vendor boot logo, `auto` is the command
+that does it, and it is opt-in (`auto <id> logo`), not the `auto` default.**
 
-So either it is correctly prep-only, and the real question is whether the fixes
-hold with the MIPS live and unquiesced (largely answered -- plain
-`panel-test 0x33` runs that way and renders), or the product wants a boot logo
-and `auto` should publish it. That is a behaviour change to the documented boot
-path and wants a decision.
+Why opt-in rather than a default flip. `auto` is **not on the boot path** -- the
+standalone bootcmd is `mmc read; bootm`, and `auto` is only ever a manual
+diagnostic. So making render the default would change no boot behaviour while
+adding a `bootlogo.bmp` dependency and ~1.5 s to a command the diagnostics use.
+The capability belongs in `auto`; forcing it on does not.
+
+Why a logo at all. It is a projector -- a dark panel through ~10 s of Linux boot
+reads as broken, and the vendor shows one. And it is nearly free: item 4 proved
+Linux preserves the U-Boot frame, so a logo `auto` publishes **persists through
+boot with no Linux display driver**. Cheapest possible boot logo.
+
+**Implemented** as `h713_disp_auto_logo()`: the `panel-test <id> vendor-logo`
+sequence (run with the panel powered, quiesce, latch timing, DE reassert with
+the PHY/routing saved across it, X-origin fix, publish, commit) with the
+diagnostics stripped -- no dumps, no markers, no `fbcheck`, and crucially no
+15 s dwell. It replicates the exact state item 4's handoff was verified in
+(MIPS quiesced, logo up), so the logo it leaves should survive into Linux the
+same way.
+
+```
+h713_disp auto 0x34 logo
+```
+
+**Built, not yet run on hardware.** The bench check is one command, and then
+`boot` to confirm the logo survives -- same as item 4. To ship it, a product
+image puts `h713_disp auto 0x34 logo` in `bootcmd` before `bootm`; the dev
+standalone boot in `docs/standalone-boot.md` is deliberately left unchanged.
 
 ### 6. Smaller, opportunistic
 
