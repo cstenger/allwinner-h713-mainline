@@ -688,13 +688,27 @@ diagnostics stripped -- no dumps, no markers, no `fbcheck`, and crucially no
 same way.
 
 ```
-h713_disp auto 0x34 logo
+h713_disp auto 0x34 logo              # hashed vendor bootlogo.bmp
+h713_disp auto 0x34 logo <file.bmp>   # custom 1280x720 24-bit BMP on mmc 1:2, no hash
 ```
 
-**Built, not yet run on hardware.** The bench check is one command, and then
-`boot` to confirm the logo survives -- same as item 4. To ship it, a product
-image puts `h713_disp auto 0x34 logo` in `bootcmd` before `bootm`; the dev
-standalone boot in `docs/standalone-boot.md` is deliberately left unchanged.
+**VERIFIED on hardware 2026-08-07, both the vendor and a custom logo.** A custom
+`boot-logo.bmp` (converted to 1280x720 24-bit via `tools/display/`... a plain
+PIL `convert("RGB").save(...,"BMP")`) published cleanly and **survived `boot` to
+the Linux login prompt**, same as the vendor logo in item 4. The teardown-on-
+failure path also fired for real when the file was first missing from the FAT --
+an unplanned confirmation of item 2.
+
+The custom BMP must be **exactly 1280x720, 24-bit, uncompressed (BI_RGB)**; the
+parser refuses anything else rather than mangle it. A standard 24-bit BMP is
+2,764,854 bytes, the same as the vendor asset. It goes on **`mmc 1:2`**, which is
+`bootloader_b` -- GPT partition 2, host `sda2` under `ums 0 mmc 1`, **not**
+`bootloader_a`/`sda1`. The firmware hardcodes `1:2` regardless of the Android A/B
+active slot.
+
+To ship it, a product image puts `h713_disp auto 0x34 logo [file]` in `bootcmd`
+before `bootm`; the dev standalone boot in `docs/standalone-boot.md` is
+deliberately left unchanged.
 
 ### 6. Smaller, opportunistic
 
