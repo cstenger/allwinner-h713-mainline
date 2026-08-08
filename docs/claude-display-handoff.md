@@ -772,12 +772,13 @@ path and wants a decision.
   memory-driven, not UART -- it reads a DRAM ring via a device object at
   `*(0x8b232c20)` = system `0x4b232c20` (the `+0x40000000` kseg0 window), inside
   the image the ARM stages. So the wire-free route likely needs **no firmware
-  patch**, just writes to a pre-built mailbox. The confirming step is read-only:
-  `md.l 0x4b232c20` with the MIPS running, follow the pointer, read the ring
-  (`+0` enabled, head/tail `+0x6c`/`+0x70`). It also advances DECD, which locates
-  MIPS frame buffers through the same window -- so fold it into DECD bring-up
-  rather than run it alone. Payoff is a MIPS-side `regr`/`regw`. See the evidence
-  log.
+  patch**, just writes to a pre-built mailbox. **Confirmed on hardware 2026-08-07:** the global holds `0xabd01000` ->
+  `0x4bd01000`, a registered `Terminal`/`SysView` device in the uncached
+  `debug_buffer`. Window measured, no cache problem, no patch, no pin -- the
+  wire-free route is real. It is idle (buffers zero), so there is no passive log
+  to read for free; driving it (push a command into the input ring, poll the
+  output) is DECD-time static work, methods already located. Payoff is a
+  MIPS-side `regr`/`regw`. See the evidence log.
 - **Two pinctrl patches disagree** -- *resolved 2026-08-05, in 0002's favour.*
   The stock U-Boot DTB gives PH17/pwm0 muxsel 3, PH18/pwm1 muxsel 3, PB5/pwm3
   muxsel 2 and PA12 = `pwm4`, all matching patch 0002. Patch 0018's

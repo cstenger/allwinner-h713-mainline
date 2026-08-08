@@ -197,6 +197,34 @@ at all now that the monitor route avoids it.
 one read-only probe when the board is next up with the MIPS running -- ideally
 folded into DECD bring-up, not as a separate errand.
 
+## Confirmed on hardware, 2026-08-07
+
+The read-only probe ran. `h713_disp init 0x34` to bring the MIPS up, then:
+
+```
+md.l 0x4b232c20 4   -> abd01000 00000001 00000000 00000000
+md.l 0x4bd01000 ..  -> a "Terminal" device: name, two SysView ring-streams
+md.l 0x4bd43000 ..  -> all zero (the 512 KB stream is idle, not a passive log)
+```
+
+- The device global holds `0xabd01000` (kseg1) -> system **`0x4bd01000`**, the
+  start of the 1 MB `debug_buffer`. **The `+0x40000000` window is now measured,
+  not inferred.**
+- The object is a C++ `Terminal` (RTTI type-name at `0x8b1fb914`) built from
+  `SysView` ring-streams (vtable `0x8b1fb850`, methods at
+  `0x8b1547dc/824/870/834/860`). Buffers at `0x4bd01200` (256 B), `0x4bd01300`,
+  `0x4bd42f00` (256 B) and `0x4bd43000` (**512 KB**), all in the debug region.
+- **All buffers are kseg1/uncached**, so the ARM and MIPS see the same bytes
+  with no cache flush. The one open risk from the feasibility note is closed.
+- Ring indices read `0/0` and the 512 KB stream is all-zero: registered but
+  idle, nothing sent, no passive log to read for free.
+
+**Verdict, upgraded from feasible to confirmed:** the wire-free path needs no
+firmware patch, no pin, and no cache workaround. Driving it is the remaining
+work -- push a command into the input SysView ring, advance the write index,
+poll the output ring -- and the SysView methods are all in the file image, so
+that is static work for DECD time, not another bench trip.
+
 **Parked, deliberately.** The payoff is `regr`/`regw` -- the MIPS's own view of
 the fabric -- and it has never been needed: every register result in this
 project came from the ARM side, and the display path is done. The trigger to
