@@ -4,7 +4,7 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-07-23._
+_Last updated: 2026-08-07._
 
 ## Summary
 
@@ -13,6 +13,18 @@ LTS** — boots a **64-bit Debian 13** userland from eMMC to a **root login**, o
 all four cores, with HS400 eMMC. It boots **standalone** (power-on → Debian, no
 host), replacing the vendor Android stack end to end. All hardware-verified on
 the HY200 bench board.
+
+**Display bring-up is complete (2026-08-07).** The 1280×720 LVDS panel renders
+correctly through the MIPS coprocessor path: the vendor boot logo and a custom
+logo both display, double-buffered animation is tear-free, the frame survives
+the handoff into Linux, teardown cleans up on failure, and a boot logo can be
+published from U-Boot (`h713_disp auto <id> logo [file.bmp]`). Backlight dimming
+is understood (PB5 enable-PWM of an on-board 36→52.6 V boost; the shipped path
+never dims) and the fix is an inline MOSFET, hardware not yet fitted. The
+firmware's MIPS-side debug shell is confirmed reachable for register access.
+Full detail in [claude-display-handoff.md](claude-display-handoff.md) and
+[mips-display-recovery.md](mips-display-recovery.md). **Next: video decode
+(DECD).**
 
 ## Boot chain
 

@@ -106,55 +106,36 @@ attached, the display path can be brought up here, not only on the projector
      enable makes the fan a hard interlock for the light.
    - **Backlight brightness** is a display-path task, not a thermal one — tracked
      under item 3.
-3. **Display path (LVDS panel → backlight → MIPS pipeline) — the linchpin;
-   bench-doable.** The only display *output* is the projector's LVDS/LCD panel
-   (HDMI is input-only — see Open questions), so this gates every *visible* thing:
-   GPU-on-screen, a compositor, and confirming the backlight dimmer. Two coupled
-   pieces:
-   - **Backlight brightness.** PB4/PWM2 is the stock dimmer (vendor DTB
-     `panel_pwm_ch = 2`, 25 kHz, `panel_backlight = 75` on 0..100; stock fastlogo
-     `pwm_request(2, "fastlogo")`; the vendor Linux port dims on ch2). Patch 0032
-     wires a mainline `pwm-backlight` on PWM2/PB4 and is **HW-correct** — debugfs
-     shows channel 2 duty scaling 0/20000/40000 ns with PB4 muxed to `pwm2` — but
-     the panel ignores it: brightness is gated on the panel **serial init**
-     (LED-driver PWM-dim enable / LVDS program over PH10/11/12) that stock
-     fastlogo runs before Linux. A cheap gpio-hog probe of the panel control
-     lines (PH19/16/15/8/9, PB5 untouched) was **tried and is negative**,
-     confirming it's the serial program, not the power/enable GPIOs. Cheapest way
-     in: **capture the SPI off the wire** during a *stock* boot (logic-analyzer on
-     PH10=cs/PH11=scl/PH12=sda up to "Display fastlogo finish!") and replay it in
-     mainline, rather than disassembling `display.bin`. Watch the enable-ordering
-     trap: mainline asserts PB5 before any init, and PB5 can't be freely toggled
-     (fan interlock). 0032 stays as the correct front-end.
-   - **LVDS panel bring-up + MIPS display coprocessor pipeline** (U-Boot
-     `h713_mips` + Linux `nsi` + `cpu-comm` + `tvtop` + `decd`) — the
-     projector's scanout path (RE'd by well0nez; the hardest, least-understood
-     piece). Same hardware as Phase 4, but startable here on the bench. Gemini's
-     first integrated Linux-loader attempt exposed patch-integrity, arm64
-     pointer-width, probe-ordering, and reproducibility failures. Bring-up now
-     follows the gated [MIPS display recovery plan](mips-display-recovery.md):
-     safe kernel → manual U-Boot loader → readiness witness → CPU_COMM
-     address-model port → TVTOP/DECD → GE2D. Firmware validation and reset
-     release are hardware-verified in U-Boot proper. A cache-coherent BSS-clear
-     witness has now independently proven MIPS instruction execution on three
-     pristine firmware loads. Higher-level firmware readiness still needs a
-     bounded mailbox/IPC acknowledgement before autoboot or Linux clients are
-     enabled. The live-MIPS Panfrost stall is now resolved: U-Boot prepares the
-     video2 parent, four display module clocks, the recovered TVTOP routing, and
-     mixer control before MIPS release. The installed implementation passes its
-     BSS execution witness, hands off to Linux with Panfrost enabled, registers
-     the G31 and DRM render node, and reaches `systemd` state `running` with no
-     failed units. Broader factory PH/TVCAP/HDMI/LVDS phases remain excluded
-     after a combined diagnostic path wedged, and direct INCAP access is a
-     separate hard stall. The next gate before autoboot or Linux clients is a
-     bounded mailbox/IPC readiness acknowledgement. Linux currently only
-     protects the firmware DRAM and does not touch MIPS control registers.
+3. **Display path (LVDS panel + MIPS pipeline) — DONE 2026-08-07; backlight
+   understood, dimmer hardware pending.** The projector's LVDS panel renders
+   correctly through the MIPS coprocessor path from U-Boot, and the frame
+   survives the handoff into Linux. Vendor and custom boot logos display
+   (`h713_disp auto <id> logo [file.bmp]`), double-buffered animation is
+   tear-free, and teardown cleans up on failure. This was the linchpin for
+   every *visible* thing, and it is no longer blocking.
+   - **Backlight.** The refuted PB4/serial-init theory in earlier revisions
+     of this item was wrong. The light is an on-board 36→52.6 V boost whose
+     PB5 enable dims on PWM (`h713_disp bl-gpio`), but that starves the
+     shared fan; the shipped software never dims at all. The chosen fix is an
+     inline low-side MOSFET on the LED return driven from PB4/PWM2, hardware
+     not yet fitted. Full case in [backlight-investigation.md](backlight-investigation.md).
+   - **A MIPS-side register shell is confirmed reachable** for DECD, via a
+     memory-mapped debug terminal — see the display docs.
+   - Detail: [claude-display-handoff.md](claude-display-handoff.md),
+     [mips-display-recovery.md](mips-display-recovery.md).
 4. **GPU (Mali-G31 / Panfrost).** Driver is mainline and binds now; Panfrost can
    render offscreen/headless (EGL/GBM, PRIME buffer sharing) for validation, but
    anything *visible* is gated on the display path (item 3), so it is downstream
    of that work, not a standalone bench item.
-5. **Video decode (Cedrus / VE3)** — genuinely headless-testable (patch 0022 in
-   series); independent of the display path.
+5. **Video decode (Cedrus / VE3) — NEXT, and now well-provisioned.** Genuinely
+   headless-testable (patch 0022 in series), and independent of the display path
+   for *decoding*, but the display path (now done) gives it what it needs to be
+   *seen* and debugged: a tear-free double-buffered scanout to present frames, a
+   proven frame→Linux handoff, the AFBD flip lever (`0x05600178`), and a
+   confirmed MIPS-side register shell. The shared fact is the address window:
+   MIPS-side buffers convert to the ARM side by kseg0/1 physical `+0x40000000`.
+   See "Starting point for video decode" in
+   [claude-display-handoff.md](claude-display-handoff.md).
 6. **Audio** (I2S / codec / HDMI-in audio captured off the HDMI-RX) — depends on
    what's populated.
 7. **IR receiver (sunxi-cir)** — patch 0021; needs the receiver populated.

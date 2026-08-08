@@ -4,6 +4,16 @@ Last updated 2026-08-07. Operational companion to `docs/mips-display-recovery.md
 (detailed evidence log) and `docs/board-bringup-sequence.md` (boot chain and
 state machines).
 
+> **Display bring-up is COMPLETE as of 2026-08-07.** Every item in "Open work"
+> below is closed and hardware-verified: the panel renders, double buffering
+> removes the tear, the frame survives into Linux, teardown cleans up on
+> failure, `0x05280084` is settled, the pre-run FAT-read rule was refuted, the
+> `auto` boot logo works (vendor and custom), and the firmware's MIPS-side debug
+> shell is confirmed reachable. **The next work is video decode (DECD)**, and it
+> starts well-provisioned -- see "Starting point for video decode" at the end.
+> Two spent probes from this session (`fb-vsize`, `preread-*`) were removed after
+> answering their questions; their findings are recorded and stand.
+
 ## Executive state
 
 **The panel works.** It renders a correct red/blue checkerboard, correct solid
@@ -712,7 +722,8 @@ deliberately left unchanged.
 
 ### 6. Smaller, opportunistic
 
-- **`0x05280084[31:16]`** -- *CLOSED 2026-08-07 by `fb-vsize` (test_38). It is
+- **`0x05280084[31:16]`** -- *CLOSED 2026-08-07 by `fb-vsize` (test_38); the
+  `fb-vsize` diagnostic has since been removed, the finding stands. It is
   the layer's display height, and the omission was **correct**.*
 
   | step | write | result |
@@ -734,7 +745,8 @@ deliberately left unchanged.
   different, and it turned out to be right here. Two adjacent sites, omitted in
   one sentence for one reason: one a catastrophe, one correct. Only measuring
   each separated them. `h713_disp_panel_patch` needs no change.
-- **Why a pre-run FAT read kills the display** -- *CLOSED 2026-08-07. It does
+- **Why a pre-run FAT read kills the display** -- *CLOSED 2026-08-07; the
+  `preread-*` probes have since been removed. It does
   not, and the evidence says it never did.*
 
   Three probes, each isolating one candidate and each followed by the identical
@@ -843,7 +855,6 @@ deliberately left unchanged.
 | `tools/display/edge-measure.py` | host-side: stripe count -> stride, from the photographs |
 | `tools/display/devmem32.c` | target-side: read MMIO from Linux. Freestanding aarch64, no libc, ~3 KB so it base64s over serial. **`od`/`dd` cannot do this on arm64** |
 | `tools/display/handoff-check.sh` | target-side: the same registers as a pass/fail table, with a `-w` watch mode; needs busybox/devmem2/python3 |
-| `tools/display/vsize-measure.py` | host-side: red/blue stripe boundaries per frame from an `fb-vsize` video, as a fraction of the lit height so keystone does not matter |
 | `tools/display/tear-measure.py` | host-side: counts rows with no bar in an `fb-anim` video -- the tearing metric that is **not** confounded by the camera's rolling shutter |
 
 **Power-cycling between runs is no longer needed.** `panel-test` tears down
@@ -1002,3 +1013,35 @@ sampling noise looks like. Neither changed the render.
 `local/mips-display/board-b-mips/` is `0x1940a09d` -> 25-4-10-157, which is what
 the board printed. `research/bootloader_fat/` and the board-A capture are
 24-6-3-82 with 13 descriptors, and DE block 6 runs off the end of that file.
+
+## Starting point for video decode (DECD)
+
+Display is done; DECD is next. What this bring-up leaves ready for it:
+
+- **A liveness/tearing reference signal.** `panel-test <id> fb-anim` (single-
+  buffered, tears) and `fb-anim-db` (double-buffered, clean) are the moving-bar
+  instruments, scored by `tools/display/tear-measure.py`. Video is the
+  integration test *after* the decoder works; the bar is the controlled
+  reference that a decoder fault cannot masquerade as.
+- **Sustained commits and vsync lock are proven.** 600 frames, 0 timeouts,
+  59.75 Hz measured against a 59.71 Hz panel. The commit handshake works without
+  an ARM IRQ handler.
+- **Double buffering, and the flip lever.** `0x05600178` is the AFBD source
+  address, shadowed and latched at the ready write. A decoder that produces
+  frames drives the same flip.
+- **The frame survives into Linux**, depending on `clk_ignore_unused` /
+  `pd_ignore_unused` on the command line. Reservations are correct; the 8 MiB
+  `uboot-scanout` covers both buffers (flash the current kernel before any
+  handoff after a double-buffered run).
+- **A MIPS-side debug channel, confirmed reachable.** `shell_thread_monitor` is
+  memory-driven: a `Terminal`/`SysView` device at `*(0x4b232c20)` = system
+  `0x4bd01000` (the `+0x40000000` kseg0 window, measured), uncached, in the 1 MB
+  `debug_buffer`. Driving its ring gives `regr`/`regw` from the coprocessor's own
+  side of the fabric -- the register view every result so far has lacked. No
+  patch, no wire; see the evidence log. This is exactly the visibility DECD wants
+  when the MIPS is moving frames through buffers the ARM must locate.
+- **The address window is the shared fact.** DECD frame buffers on the MIPS side
+  convert to the ARM side the same way: MIPS kseg0/1 physical `+0x40000000`.
+
+Read `docs/mips-display-recovery.md` top sections for the evidence behind each of
+these; this page is the operational summary.
