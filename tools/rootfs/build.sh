@@ -11,15 +11,25 @@ OUTPUT_DIR="$PROJECT_ROOT/build/out"
 IMAGE_SIZE=$ROOTFS_IMAGE_SIZE
 SSH_KEY=
 KERNEL_TREE=
+EXTRA_PACKAGES=
 ORIGINAL_ARGS=("$@")
+
+# The shipped product image is deliberately minimal. --extra-packages appends to
+# the bootstrap set for bring-up images (video tooling, an on-target compiler)
+# without making those part of the default artifact.
+BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox
 
 usage() {
   cat <<EOF
 usage: $0 --ssh-key FILE [--kernel-tree DIR] [--output-dir DIR] [--image-size SIZE]
+          [--extra-packages LIST]
 
 Build Debian $DEBIAN_SUITE/$DEBIAN_ARCH into rootfs.ext4 and rootfs.simg.
 The SSH public key is required and is copied into root's authorized_keys; it is
 never copied into the repository outside the generated, ignored artifacts.
+
+--extra-packages takes a comma-separated list appended to the bootstrap set.
+Bring-up only; the default image stays minimal. Larger sets need --image-size.
 EOF
 }
 
@@ -29,6 +39,7 @@ while (($#)); do
     --kernel-tree) KERNEL_TREE=${2:?missing value for --kernel-tree}; shift 2 ;;
     --output-dir)  OUTPUT_DIR=${2:?missing value for --output-dir}; shift 2 ;;
     --image-size)  IMAGE_SIZE=${2:?missing value for --image-size}; shift 2 ;;
+    --extra-packages) EXTRA_PACKAGES=${2:?missing value for --extra-packages}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -196,6 +207,12 @@ ROOTFS_TREE="$WORK_DIR/tree"
 ROOTFS_EXT4="$WORK_DIR/rootfs.ext4"
 ROOTFS_SIMG="$WORK_DIR/rootfs.simg"
 
+INCLUDE_PACKAGES=$BASE_PACKAGES
+if [ -n "$EXTRA_PACKAGES" ]; then
+  INCLUDE_PACKAGES="$BASE_PACKAGES,$EXTRA_PACKAGES"
+  printf '\n==> Extra packages requested: %s\n' "$EXTRA_PACKAGES"
+fi
+
 printf '\n==> Bootstrap signed Debian %s/%s\n' "$DEBIAN_SUITE" "$DEBIAN_ARCH"
 mmdebstrap \
   --mode=unshare \
@@ -204,7 +221,7 @@ mmdebstrap \
   --skip=check/qemu \
   --keyring="$BOOTSTRAP_KEYRING" \
   --aptopt='Acquire::Languages "none"' \
-  --include=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox \
+  --include="$INCLUDE_PACKAGES" \
   "$DEBIAN_SUITE" "$ROOTFS_TAR" \
   "deb [signed-by=$BOOTSTRAP_KEYRING] $DEBIAN_MIRROR $DEBIAN_SUITE main"
 
