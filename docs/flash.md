@@ -4,18 +4,18 @@ How to write images to the H713 eMMC. Neither board has an SD slot — boot medi
 is **eMMC or FEL only**. There is a hardware **FEL button** (recovery vector),
 so a bad first stage is recoverable.
 
-## ⚠ State of the bench board as of 2026-08-06
+## ⚠ State of the bench board as of 2026-08-09
 
 Read this before assuming anything about what is on the eMMC. The board is
 **not** in the state older docs describe.
 
 | | |
 | --- | --- |
-| first stage at LBA `0x10` | whichever was installed last — `boot-switch.sh status` tells you. The vendor's boot0 was left there at the end of the 2026-08-06 session; FEL-restore to get ours back |
+| first stage at LBA `0x10` | ours — the board boots our U-Boot (`2026.07-rc5`, banner confirmed 2026-08-09). `boot-switch.sh status` tells you for certain |
 | our U-Boot proper / env / SPL stash | `empty` partition, LBA `0x49ac00` / `0x49ec00` / `0x49cc00` |
-| our kernel FIT | a **file** in the FAT on `mmc 1:2`, `h713-kernel.fit`; `bootcmd` is `fatload mmc 1:2 0x50000000 h713-kernel.fit; bootm` |
-| `boot_a` | **the vendor's stock Android boot image**, restored from the capture — no longer ours |
-| `UDISK` (p26) | **f2fs, Android's userdata.** The Debian rootfs was destroyed to let Android boot. Restore it from the pre-Android backup when needed |
+| our kernel FIT | a **file** in the FAT on `mmc 1:2`, `h713-kernel.fit`; `bootcmd` is `fatload mmc 1:2 0x50000000 h713-kernel.fit; bootm`. **Carries the 8 MiB `uboot-scanout` reservation** as of 2026-08-09; the previous 4 MiB build is kept at `local/h713-kernel-prev-20260809.fit` |
+| `boot_a` | **the vendor's stock Android boot image**, restored from the capture — no longer ours. Not on our boot path; `bootcmd` reads the FAT |
+| `UDISK` (p26) | **ext4, our Debian** — 4.6 GiB partition. The 2026-08-06 "f2fs Android userdata" claim was **stale**: it was verified ext4 and healthy on 2026-08-09, and has since been rewritten with the video-decode bring-up rootfs |
 | `bootloader_a` | the vendor's FAT16 (its `mips/` display artifacts), restored |
 | `Reserve0_a` | vendor's, **with one byte modified by us**: `panel_config.ini` `pwm_channel` is `2`, stock is `5`. LBA `0x53c51f` offset `0x89`, write `0x35` to revert |
 | `super` | repaired — see the warning in Safety |
@@ -114,6 +114,62 @@ board's, and refuses any first stage that fails its own eGON checksum.
 
 Rootless host I/O is possible via udisks2 `OpenForRestore` (D-Bus) if you can't
 `dd` as root. Stop UMS with Ctrl-C on UART; the console remains serial-only.
+
+### The USB gadget only works if Linux has not run since power-on (2026-08-09)
+
+**Cold power-on → interrupt at `=>` → gadget mode works. Anything after a Linux
+boot does not, and a warm `reboot bootloader` does not clear it.**
+
+Observed repeatedly in one session. Every gadget success (a UMS session, a
+fastboot rootfs flash) came from a cold boot stopped at the U-Boot prompt before
+Linux ran. Every failure — UMS *and* fastboot, so it is not mode-specific — came
+after Linux had booted, including immediately after a power cycle where the board
+was allowed to autoboot into Linux first. The board sits spinning its `|/-\`
+waiting for a host that never appears; the host logs no USB events at all.
+
+Linux binds musb and leaves the controller in a state U-Boot's warm-reset path
+does not reinitialise. The board prints `musb-hdrc: peripheral reset irq lost!`
+when it is in this state.
+
+**So to flash over USB: power-cycle and press a key during the boot delay.**
+Letting it autoboot to Linux and then issuing `reboot bootloader` puts you right
+back in the broken state — the RTC reboot-mode handoff is a *warm* reset.
+
+**The wire-free fallback needs no USB at all** and is fully scriptable:
+
+```
+# host, ~12 min for a 7.7 MB FIT at 10.8 KB/s
+tools/serial/load_fit.py build/out/h713-kernel.fit --port /dev/ttyUSB0 --addr 0x50000000
+# then in U-Boot, persist it into the FAT:
+fatwrite mmc 1:2 0x50000000 h713-kernel.fit ${filesize}
+```
+
+`loady` sets `filesize`, so use it rather than a hand-computed length. This is
+slow but it is the path that always works, and it does not care what Linux did to
+the USB controller.
+
+### UMS is for small, targeted writes — not for flashing a rootfs (2026-08-09)
+
+**A 4 GB `dd` to `UDISK` over UMS failed at ~1 GB and reported success.** Use
+**fastboot (Method 3)** for anything rootfs-sized; it is the path with a hardware
+precedent. Two independent faults, both worth knowing:
+
+- **The desktop auto-mounted `sda26` read/write** the moment the gadget
+  enumerated, so the raw `dd` was writing sectors underneath a live, journalling
+  ext4 on the same device. `udisksctl unmount -b /dev/sdaN` **before** any raw
+  partition write, and check `lsblk` rather than assuming.
+- **The gadget dropped under a sustained stream.** The board printed
+  `musb-hdrc: peripheral reset irq lost!`; the host logged `usb 5-1: USB
+  disconnect` followed by `device offline error ... op 0x1:(WRITE)` and
+  `EXT4-fs (sda26): Aborting journal`. It needed a power cycle, not another
+  gadget mode.
+
+**`dd` reported "4.3 GB copied, 1.0 GB/s" and exited 0.** That rate is ~30x what
+USB 2.0 can carry, which is the tell: the write went to the page cache, the
+device went offline, and `conv=fsync` had nothing left to flush to. **Score a
+bulk write by its throughput, not its exit status** — any figure that beats the
+transport is a measurement of RAM. `oflag=direct` makes the rate honest and
+surfaces the error where it happens.
 
 ## Method 3 — fastboot
 
