@@ -326,16 +326,73 @@ failing mean completely different things.
 **This is a gate, not a formality.** If VE3 diverges from the H6 register map,
 it is found here for the cost of one boot, before anything is built on top.
 
-### M2 — one decoded frame on the panel
+### M2 — decoded video on the panel — DONE 2026-08-09
 
-Reuse the path the display bring-up proved rather than inventing one: take a
-decoded frame, get it into the scanout buffer at `0x6c100000`, flip
-`0x05600178`. The frame already survives U-Boot → Linux, the flip is already
-proven latched at the ready write, and the commit is already vsync-locked.
+**Decoded H.264 plays on the projector panel, with correct colour and geometry,
+at roughly real time.** Operator-confirmed on hardware. No kernel driver, no DRM:
+plain userspace through `/dev/mem`.
 
-Needs the current kernel flashed (8 MiB `uboot-scanout`) before any
-double-buffered work, or the back buffer at `0x6c500000` is ordinary allocatable
-memory.
+The whole chain, with no intermediate file:
+
+```
+mkfifo /tmp/v.fifo
+gst-launch-1.0 -q filesrc location=clip.h264 ! h264parse ! v4l2slh264dec \
+  ! video/x-raw,format=NV12 ! filesink location=/tmp/v.fifo &
+./h713-present nv12 /tmp/v.fifo
+```
+
+Confirmed in order, each before the next was believed:
+
+| step | result |
+| --- | --- |
+| `/dev/mem` mmap of the `no-map` scanout under `STRICT_DEVMEM` | works — the reasoning in the header of `h713-present.c` holds |
+| AFBD registers from userspace | `ctrl=03001901 stride=00001400 src=6c100000`, matching the handoff exactly |
+| `fill` — solid colour, one commit | 342.8 MB/s, commit ok in 16367 us (one frame at 59.75 Hz) |
+| `bar` — synthetic moving bar, double-buffered | **59.40 fps**, 0 timeouts, operator saw a red bar sweeping on blue |
+| `nv12` — decoded video | 300 frames, 0 timeouts, **operator confirms the picture is correct** |
+
+**The synthetic bar came first, deliberately.** It is decoder-independent, so a
+decoder fault cannot masquerade as a display fault — the same discipline the
+display bring-up used with `fb-anim`.
+
+### Performance: the hardware was never the limit
+
+| version | fps | read | convert | blit | commit-wait |
+| --- | --- | --- | --- | --- | --- |
+| first working | 11.95 | — | 84.0 | — | — |
+| staging buffer + 4 threads | 19.65 | 31.71 | 10.99 | 4.12 | 4.06 |
+| raw `read()` + bigger pipe | **28.33** | 14.83 | 8.68 | 3.82 | 7.96 |
+
+Against a 30 fps clip. Both bottlenecks were bugs in the presenter, not silicon:
+
+- **A `volatile` destination in the conversion loop.** Writing straight into the
+  mmap'd framebuffer through a volatile pointer forbids vectorising or merging
+  stores — one scalar store per pixel, 921,600 times, 84 ms/frame. Converting
+  into an ordinary cached staging buffer and doing one bulk copy is **7.6x**
+  faster, and the bulk copy also beats the per-pixel volatile fill (3.8 ms vs
+  12 ms for the same bytes).
+- **stdio's 4 KB buffer on a pipe.** `fread()` turned each 1.38 MB frame into
+  ~337 blocking reads ping-ponging with the writer: 31.7 ms/frame. Raw `read()`
+  in frame-sized gulps plus `F_SETPIPE_SZ` halved it.
+
+**For scale, the actual hardware:** the VE decodes this clip at **268 fps**
+(`gst-launch ... ! fakesink`, 300 frames in 1.117 s) with `ve-core` at 600 MHz —
+the top rate in the vendor's OPP table. The panel commits at 59.7 Hz. Both have
+enormous headroom; every limit hit so far was userspace glue.
+
+Remaining headroom, best first:
+
+1. **Scan out YUV directly** — kills convert *and* blit (12.5 ms/frame) and lets
+   decoder output go straight to the scanout buffer. See the open question below.
+2. **Overlap the read** — a reader thread fetching frame N+1 during frame N's
+   convert/commit hides most of the remaining 14.8 ms. Worth ~40-50 fps.
+3. **NEON the conversion** — the compiler autovectorises now, but hand-written
+   NEON would still beat it.
+
+**Still unmeasured on this path:** tearing. Double buffering is proven for the
+U-Boot side (test_37: 5.97% torn rows single-buffered vs 0.00% double), and the
+Linux path uses the same flip, but it has not been scored with
+`tools/display/tear-measure.py`. Do not claim it is tear-free until it has.
 
 **Open design question: can the layer scan out NV12 directly?** The U-Boot path
 writes **1280x720 ARGB8888, stride 0x1400** and the layer's format was never
@@ -374,6 +431,15 @@ U-Boot currently owns the AFBD registers, and DECD would want them.
   11 KB/s UART is how this project has previously spent whole sessions. `gcc` on
   the board turns that into seconds.
 - **`tools/video/make-test-streams.sh`** — the ladder above.
+- **`tools/video/h713-present.c`** — the Linux-side presenter (`regs`, `fill`,
+  `bar`, `nv12`). Build on the target: `gcc -O2 -o h713-present h713-present.c
+  -lpthread`. Refuses to run unless the AFBD clock gate is open, because reading
+  those blocks while gated hangs the board.
+- **`tools/serial/send_file.py`** — copy a file to the target over the Linux
+  serial console when the USB gadget is unavailable. Chunks base64 and verifies
+  by md5. **The console is a canonical-mode tty, so a single input line is capped
+  at ~4 KB by the line discipline** — anything longer is silently truncated,
+  which presents as a corrupt file rather than a transfer error.
 
 ## Open items
 

@@ -31,6 +31,7 @@
  */
 #define _GNU_SOURCE
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,25 +103,44 @@ static void flip_to(unsigned long phys)
 	wr(regs, AFBD_SRC, (uint32_t)phys);
 }
 
-/* BT.709 for >=720p, BT.601 below it. Integer math, limited range in. */
-static void nv12_to_argb(const uint8_t *y, const uint8_t *uv, int w, int h,
-			 int ystride, int uvstride, volatile uint32_t *out, int bt709)
+/*
+ * BT.709 for >=720p, BT.601 below it. Integer math, limited range in.
+ *
+ * PERFORMANCE, learned the hard way (2026-08-09): the destination MUST NOT be
+ * `volatile`. The first version wrote straight into the mmap'd framebuffer
+ * through a volatile pointer, which forbids the compiler from vectorising or
+ * merging stores -- one scalar store per pixel, 921600 times. That measured
+ * 84 ms/frame, i.e. 11.95 fps on a 30 fps clip.
+ *
+ * Converting into an ordinary cached staging buffer lets the compiler
+ * autovectorise, and a single bulk copy then moves it to the framebuffer at the
+ * ~307 MB/s the `bar` fill demonstrates. Splitting rows across cores is nearly
+ * free on top: three of the four A53s are idle during playback.
+ */
+struct conv_job {
+	const uint8_t *y, *uv;
+	uint32_t *out;
+	int w, ystride, uvstride, bt709, row0, row1;
+};
+
+static void *conv_worker(void *arg)
 {
-	const int kr = bt709 ? 459 : 409;       /* 1.793 / 1.596 in Q8 */
-	const int kb = bt709 ? 541 : 516;       /* 2.115 / 2.017 */
-	const int kgu = bt709 ? 55 : 100;
-	const int kgv = bt709 ? 136 : 208;
-	int i, j;
+	const struct conv_job *j = arg;
+	const int kr = j->bt709 ? 459 : 409;    /* 1.793 / 1.596 in Q8 */
+	const int kb = j->bt709 ? 541 : 516;    /* 2.115 / 2.017 */
+	const int kgu = j->bt709 ? 55 : 100;
+	const int kgv = j->bt709 ? 136 : 208;
+	int x, row;
 
-	for (j = 0; j < h; j++) {
-		const uint8_t *yr = y + (size_t)j * ystride;
-		const uint8_t *cr = uv + (size_t)(j / 2) * uvstride;
-		volatile uint32_t *o = out + (size_t)j * W;
+	for (row = j->row0; row < j->row1; row++) {
+		const uint8_t *yr = j->y + (size_t)row * j->ystride;
+		const uint8_t *cr = j->uv + (size_t)(row >> 1) * j->uvstride;
+		uint32_t *o = j->out + (size_t)row * W;
 
-		for (i = 0; i < w; i++) {
-			int c = yr[i] - 16;
-			int d = cr[(i / 2) * 2] - 128;
-			int e = cr[(i / 2) * 2 + 1] - 128;
+		for (x = 0; x < j->w; x++) {
+			int c = yr[x] - 16;
+			int d = cr[(x & ~1)] - 128;
+			int e = cr[(x & ~1) + 1] - 128;
 			int r = (298 * c + kr * e + 128) >> 8;
 			int g = (298 * c - kgu * d - kgv * e + 128) >> 8;
 			int b = (298 * c + kb * d + 128) >> 8;
@@ -128,9 +148,41 @@ static void nv12_to_argb(const uint8_t *y, const uint8_t *uv, int w, int h,
 			r = r < 0 ? 0 : (r > 255 ? 255 : r);
 			g = g < 0 ? 0 : (g > 255 ? 255 : g);
 			b = b < 0 ? 0 : (b > 255 ? 255 : b);
-			o[i] = 0xff000000u | (r << 16) | (g << 8) | b;
+			o[x] = 0xff000000u | (r << 16) | (g << 8) | b;
 		}
 	}
+	return NULL;
+}
+
+#define CONV_THREADS 4
+
+static void nv12_to_argb(const uint8_t *y, const uint8_t *uv, int w, int h,
+			 int ystride, int uvstride, uint32_t *out, int bt709)
+{
+	pthread_t th[CONV_THREADS];
+	struct conv_job jobs[CONV_THREADS];
+	int started[CONV_THREADS];
+	int n, rows = h / CONV_THREADS;
+
+	for (n = 0; n < CONV_THREADS; n++) {
+		jobs[n] = (struct conv_job){
+			.y = y, .uv = uv, .out = out, .w = w,
+			.ystride = ystride, .uvstride = uvstride, .bt709 = bt709,
+			.row0 = n * rows,
+			.row1 = (n == CONV_THREADS - 1) ? h : (n + 1) * rows,
+		};
+		/*
+		 * Splitting at any row is safe, even an odd one: every row
+		 * derives its own chroma row as uv + (row >> 1) * uvstride, so
+		 * the halves of a chroma pair never share mutable state.
+		 */
+		started[n] = (pthread_create(&th[n], NULL, conv_worker, &jobs[n]) == 0);
+		if (!started[n])
+			conv_worker(&jobs[n]);      /* degrade to inline */
+	}
+	for (n = 0; n < CONV_THREADS; n++)
+		if (started[n])
+			pthread_join(th[n], NULL);
 }
 
 static void fill_bar(volatile uint32_t *fb, int x0)
@@ -257,26 +309,65 @@ int main(int argc, char **argv)
 		int frames = argc >= 4 ? atoi(argv[3]) : 1 << 30;
 		size_t fsz = (size_t)W * H * 3 / 2;
 		uint8_t *buf = malloc(fsz);
-		FILE *f = fopen(argv[2], "rb");
+		uint32_t *stage = aligned_alloc(64, FB_BYTES);
+		int vfd = open(argv[2], O_RDONLY);
 		int n = 0, timeouts = 0;
+		double read_tot = 0, conv_tot = 0, blit_tot = 0, wait_tot = 0;
 		double t0 = now_ms();
 
-		if (!f || !buf) { perror("open nv12"); return 1; }
-		while (n < frames && fread(buf, 1, fsz, f) == fsz) {
+		if (vfd < 0 || !buf || !stage) { perror("nv12 setup"); return 1; }
+		/*
+		 * Raw read() in frame-sized gulps, NOT stdio. fread() on a FILE*
+		 * uses a 4 KB buffer, so a 1.38 MB frame became ~337 blocking
+		 * reads that ping-pong with the writer -- measured at 31.7 ms
+		 * per frame, which dwarfed decode (268 fps) and conversion
+		 * (11 ms) combined. Enlarging the pipe cuts the round trips
+		 * further; failure is harmless, so it is not checked.
+		 */
+		fcntl(vfd, F_SETPIPE_SZ, 4 << 20);
+		while (n < frames) {
 			volatile uint32_t *target = (n & 1) ? fb_back : fb_front;
 			unsigned long phys = (n & 1) ? FB_BACK : FB_FRONT;
-			double us;
+			double a, b, c, d, us;
+			size_t got = 0;
 
-			nv12_to_argb(buf, buf + (size_t)W * H, W, H, W, W, target, 1);
+			a = now_ms();
+			while (got < fsz) {
+				ssize_t r = read(vfd, buf + got, fsz - got);
+				if (r <= 0)
+					break;
+				got += (size_t)r;
+			}
+			if (got != fsz)
+				break;
+			b = now_ms();
+			nv12_to_argb(buf, buf + (size_t)W * H, W, H, W, W, stage, 1);
+			c = now_ms();
+			/*
+			 * One bulk copy rather than per-pixel volatile stores.
+			 * The cast is deliberate: the framebuffer is only
+			 * volatile to stop the compiler caching the register
+			 * window, and memcpy to it is exactly what we want.
+			 */
+			memcpy((void *)target, stage, FB_BYTES);
+			d = now_ms();
 			flip_to(phys);
 			us = commit();
 			if (us < 0) timeouts++;
+
+			read_tot += b - a; conv_tot += c - b;
+			blit_tot += d - c; wait_tot += us < 0 ? 0 : us / 1000.0;
 			n++;
 		}
-		fclose(f);
+		close(vfd);
 		flip_to(FB_FRONT);
-		printf("nv12: %d frames in %.0f ms (%.2f fps), %d timeouts\n",
-		       n, now_ms() - t0, n / ((now_ms() - t0) / 1000.0), timeouts);
+		if (n)
+			printf("nv12: %d frames in %.0f ms (%.2f fps), %d timeouts\n"
+			       "      mean read %.2f  convert %.2f  blit %.2f  "
+			       "commit-wait %.2f ms\n",
+			       n, now_ms() - t0, n / ((now_ms() - t0) / 1000.0),
+			       timeouts, read_tot / n, conv_tot / n,
+			       blit_tot / n, wait_tot / n);
 		return n ? 0 : 1;
 	}
 
