@@ -1,0 +1,390 @@
+# H713 video decode (VE / Cedrus → panel)
+
+Started 2026-08-07, immediately after display bring-up completed. Operational
+companion to [claude-display-handoff.md](claude-display-handoff.md), which is
+what this work builds on.
+
+Goal for this phase: **decoded video visible on the projector panel.**
+
+## Three blocks, and the naming trap
+
+The existing docs use "DECD" and "Cedrus/VE3" interchangeably for "next: video
+decode" ([status.md](status.md) says DECD, [roadmap.md](roadmap.md) says
+Cedrus/VE3). They are different silicon and only one of them is a codec.
+
+| block | node | what it is | state |
+| --- | --- | --- | --- |
+| **VE / Cedrus** | `video-codec@1c0e000` | the decoder — H.264/H.265/MPEG-2/VP8, V4L2 stateless M2M | binds, `/dev/video0` (2026-08-07) |
+| **AV1** | `av1-decoder@1c0d000` | separate AV1 block | node exists, compatible `allwinner,sunxi-google-ve`, **no driver in our tree binds it** — inert |
+| **DECD** | `dec@5600000` | **not a codec** — the AFBD frame-submission path that scans decoded frames out to the panel | patch 0013 present, `CONFIG_SUNXI_DECD` off, node `disabled` |
+
+DECD owns the `0x05600xxx` AFBD window — the same registers
+`h713_mips.c` already drives by hand (`0x05600140` ctrl, `0x05600170` stride,
+`0x05600178` source). So the display bring-up did not merely leave DECD
+"provisioned"; it left us already driving DECD's registers from U-Boot, which is
+why the presentation plan below starts there rather than with the vendor driver.
+
+**A research-tree claim to not repeat.**
+`local/sun50iw12p1-research/docs/AV1_HARDWARE_DECODER_ANALYSIS.md` presents an
+ioctl table as an AV1 decoder API ("MAJOR DISCOVERY"). It is not. That is
+`decoder_display.h` — the DECD frame-submit interface — and
+`DEC_FORMAT_YUV420P_10BIT_AV1` is a *pixel format the display path accepts*, not
+a codec entry point. Same over-read pattern as the six load-bearing false claims
+already caught in that tree; treat its video conclusions as unverified.
+
+## Proven on hardware, 2026-08-07
+
+| fact | evidence |
+| --- | --- |
+| Cedrus binds and registers a node | `cedrus 1c0e000.video-codec: Device registered as /dev/video0`; `/sys/class/video4linux/video0/name` = `cedrus` |
+| the VE is behind the IOMMU | `platform 1c0e000.video-codec: Adding to iommu group 0` |
+| the flashed kernel has the **4 MiB** scanout reservation | `OF: reserved mem: 0x6c100000..0x6c4fffff (4096 KiB) nomap non-reusable uboot-scanout@6c100000` — the 8 MiB version covering the `0x6c500000` back buffer is built but was never flashed |
+| the target had **no** V4L2 userspace | no `v4l2-ctl`, `ffmpeg`, `gcc` or `python3` in the minimal rootfs |
+
+**Binding is not decoding.** Cedrus binds on the strength of a DT compatible
+(`allwinner,sun50i-h6-video-engine`) and its clock/reset handles; nothing in a
+successful probe touches a codec register. Whether the H713's VE3 answers to the
+H6 register map is the open question, and it is the same shape as the Crypto
+Engine question that turned out negative after the driver had happily registered
+every algorithm. Assume nothing from the probe line.
+
+## Debian's ffmpeg cannot drive this decoder
+
+Checked before building a rootfs around it. Debian 13 ships ffmpeg **7.1.5**,
+whose `debian/rules` configures `--enable-libdrm` and **not**
+`--enable-v4l2-request` (nor `--enable-libudev`, which the hwaccel needs). So
+stock `ffmpeg -hwaccel v4l2request` is unavailable no matter what the version
+number suggests.
+
+**Consequence:** the off-the-shelf decode client is **GStreamer's
+`v4l2slh264dec`** (gst-plugins-good's V4L2 stateless codec support, registered at
+runtime when a compatible `/dev/videoN` exists). ffmpeg stays useful for stream
+preparation, demuxing and software reference decodes. A custom ffmpeg build with
+`--enable-v4l2-request` remains an option if GStreamer disappoints, but it is not
+the starting point.
+
+## The test-vector ladder
+
+`tools/video/make-test-streams.sh` → `local/video-test/` (gitignored).
+
+Each step adds exactly one coding feature, so a failure names the feature rather
+than just failing. Annex-B elementary streams, because a container demuxer in the
+decode path only adds a way to be wrong about something that is not the decoder.
+
+| vector | size | profile | adds |
+| --- | --- | --- | --- |
+| `v01-320x240-baseline` | 320x240, 8 frames | Constrained Baseline | nothing — I+P, CAVLC, no B. If this fails the fault is fundamental |
+| `v02-1280x720-baseline` | 1280x720, 60 | Constrained Baseline | panel-native size — separates "cannot decode" from "cannot decode at this size" (stride, buffer sizing, IOMMU mapping) |
+| `v03-1280x720-main` | 1280x720, 60 | Main | B-frames + CABAC — reference-list construction and output reordering, which is what stateless userspace gets wrong first |
+| `v04-1280x720-high` | 1280x720, 60 | High | 8x8 transform — what real-world files actually use |
+| `v05-1920x1080-high` | 1920x1080, 60 | High | the real clip; integration test, no exact reference |
+
+Every synthetic vector ships an NV12 **host software-decoded reference**
+alongside it (`.nv12`), because "the decoder produced output" and "the decoder
+produced the *right* output" are different claims. Source is `testsrc2`, which is
+deterministic frame-for-frame, so the reference is a fixed artifact rather than
+something that drifts between runs; and it moves, because a static scene never
+exercises inter prediction.
+
+## M1 RESULT — PASSED, 2026-08-09. The H713 decodes H.264 in hardware.
+
+**Every vector in the ladder is bit-exact against its host software reference.**
+
+| vector | | bytes |
+| --- | --- | --- |
+| `v01-320x240-baseline` | **PASS** | 921,600 |
+| `v02-1280x720-baseline` | **PASS** | 82,944,000 |
+| `v03-1280x720-main` (B-frames, CABAC) | **PASS** | 82,944,000 |
+| `v04-1280x720-high` (8x8 transform) | **PASS** | 82,944,000 |
+| `v05-1920x1080-high` (real clip) | **PASS** | 186,624,000 |
+
+Mainline cedrus drives the H713 VE correctly, up to 1080p High profile, with no
+driver changes at all. The pipeline is:
+
+```
+gst-launch-1.0 filesrc location=X.h264 ! h264parse ! v4l2slh264dec \
+  ! video/x-raw,format=NV12 ! filesink location=out.nv12
+```
+
+### The entire fault was one device-tree property
+
+`iommus = <&iommu 0>` on the `ve` node, pointing at an IOMMU that does not exist
+at that address. Removing it fixed **both** symptoms at once — the kernel stopped
+being corrupted *and* the decoder started working. No driver patch, no register
+RE, no clock or IRQ change.
+
+**Force the output caps.** Without `video/x-raw,format=NV12` the decoder
+negotiates `NV12_32L32` — Allwinner's 32x32 tiled layout — and emits
+`320x256` frames (122,880 bytes each, `ALIGN(240,32)=256`). That output is
+correct but *tiled*, so it will never match a linear reference and looks like a
+failure if scored naively. The 983,040-byte tiled result was the first evidence
+the hardware was decoding at all.
+
+### What this cost, and the lesson
+
+The first diagnosis — "the inert IOMMU is the cause" — was **right**, and was
+then talked out of on two grounds that both looked sound: that IOVAs allocate
+top-down near 4 GiB and so should miss a 1 GiB DRAM at `0x40000000`, and that the
+crash landed *after* clean pipeline teardown. Neither objection was silly; both
+were wrong. The retraction cost more than the original error would have.
+
+**The lesson is about what settles a question.** The IOMMU claim was testable
+with a one-line DTS change from the moment it was made. Instead it was argued
+about — refined, hedged, re-derived from register dumps and vendor DTBs — while
+the deciding experiment went unrun. Worse, when the experiment was finally built
+it was **bundled with a second change** (`power-domains`), which broke probe
+before decode was reached and destroyed the run's ability to answer anything.
+
+Rules earned here:
+
+- **A one-line change that would settle it beats any amount of reasoning about
+  whether it will.** Run it first, then theorise about the residue.
+- **One variable per bench run.** The bundled build wasted a full
+  build-plus-12-minute-transfer cycle and answered nothing.
+- **A retraction needs evidence, not just a counter-argument.** "Here is why
+  that mechanism seems implausible" is not the same as "here is a measurement
+  showing it is not the cause."
+
+## The diagnostic trail (kept — this is how it was found)
+
+What follows is the failing state as it was investigated, retained because the
+refutations are reusable and several are load-bearing for future work.
+
+**The VE decoded nothing, and trying crashed the kernel.** Not "decoded
+incorrectly" — zero frames out, on the easiest vector in the ladder.
+
+| observation | evidence |
+| --- | --- |
+| the decoder advertises the right codecs | `--list-formats-out`: `MG2S` MPEG-2, **`S264` H.264**, `S265` HEVC, `VP8F`. Capture side offers `NV12`, `ST12` (32x32 tiled), `NV21`, `YU12`, `YV12` |
+| GStreamer accepts the device | `v4l2slh264dec` + h265/mpeg2/vp8 all register from `libgstv4l2codecs.so` (gst-plugins-bad). `/dev/media0` exists, so the request API is present |
+| format negotiation works | `Probed caps: ... format=(string)NV12, width=320, height=240` — `VIDIOC_ENUM_FMT` and `ENUM_FRAMESIZES` return sane values |
+| **but nothing decodes** | pipeline goes PREROLLED -> PLAYING -> **EOS in 2.6-25 ms**, exits *cleanly* with no error, and the output file is **0 bytes** |
+| **and the kernel dies** | recursive `Unable to handle kernel paging request`, then `Kernel panic - not syncing: kernel stack overflow`. Reproduced on 3 of 4 runs; `panic=5` reboots the board |
+
+**The crash is memory corruption, not a decoder fault.** The faulting context is
+`pc : _prb_read_valid+0x10` / `lr : desc_make_final+0x88`, `Comm: systemd-journal`
+— the **printk ring buffer**. Something scribbled over kernel memory, and the
+crash surfaced when journald next read the log. The infinite recursion follows
+mechanically: printing the fault re-enters the ring buffer, which faults again.
+
+**Timing matters and reframes it:** gst-launch reaches EOS, tears down, prints
+`Freeing pipeline ...` and *exits* — the fault lands afterwards, at the shell
+prompt. So this looks like a late DMA or a use-after-free at teardown, not a
+fault while decoding.
+
+### The control that makes this conclusive
+
+```
+gst-launch-1.0 filesrc location=v01-320x240-baseline.h264 ! h264parse \
+  ! avdec_h264 ! videoconvert ! video/x-raw,format=NV12 ! filesink location=/root/sw.nv12
+```
+
+**921600 bytes, md5 `98a4dbc6e165766cbdfa4d8d4cc1238f` — bit-exact against the
+host reference.** Software decode of the same file, on the same board, through
+the same parse chain and the same NV12 convention, is perfect.
+
+That single run validates the vector, `h264parse`, the pixel convention, and the
+whole scoring method at once, and leaves the fault nowhere to hide but
+`v4l2slh264dec` / cedrus / the H713 VE. **Run this control before believing any
+future hardware-decode result.**
+
+## The IOMMU is inert — and it WAS the cause (confirmed by removing it)
+
+Read back on hardware with the driver bound and `iommu group 0` created:
+
+```
+0x030f0000 0x00000000   0x030f0010 0x00000000   0x030f0020 0x00000000  <- ENABLE
+0x030f0030 0x00000000   <- TTB      0x030f0080/84/88 all 0x00000000
+```
+
+Every register reads zero, including `ENABLE` (+0x20) and `TTB` (+0x30), both of
+which an attached domain writes. **Nothing is responding at that address.** The
+DTS says so itself, in a comment directly above the node: *"Address 0x02010000 is
+the H713 IOMMU MMIO base (unverified)"* — while the node uses `0x030f0000`, the
+**H6** base. Its `resets = <&ccu 11>` is a bare index rather than a symbolic
+`RST_*`, which is the same kind of transcription this project has been bitten by
+twice already.
+
+So cedrus was attached to an IOMMU that does not exist, and the DMA layer handed
+it IOVAs believing they would be translated and bounded. **An inert IOMMU is
+worse than no IOMMU**, because it removes bounds everything above it assumes are
+enforced. Fixed regardless of whether it is this bug: `iommus` removed from the
+`ve` node, node set `status = "disabled"`, both with the evidence in-tree.
+
+**Confirmed on hardware.** Removing `iommus` from the `ve` node — with nothing
+else changed — stopped the corruption and made the decoder work, all five vectors
+bit-exact. The IOMMU was the fault.
+
+Two objections were raised against this diagnosis before it was tested, and both
+were wrong: that IOVAs allocate top-down near 4 GiB and so should miss a 1 GiB
+DRAM at `0x40000000`, and that the crash landing after clean pipeline teardown
+pointed at use-after-free rather than DMA. The IOVA argument presumably fails
+because the addresses the VE actually emitted landed in DRAM anyway (aperture
+base, or truncation) — but the point is that **neither objection was a
+measurement**, and the one-line experiment that settled it was available the
+whole time.
+
+## Candidates, after a round of cheap live checks (2026-08-09)
+
+All of these were checked on the running board with no flash cycle. Two of the
+four are refuted, and **read the built artifact, not the DTS comment** — the
+comments lie about this node twice.
+
+**REFUTED — "the SRAM property is missing."** The DTS comment says *"Testing
+without SRAM property first - may be optional on H713"*. The **built DTB has
+`allwinner,sram = <0x1a 0x01>`**, and both `1a00000.sram` and `28000.sram` are
+bound platform devices. The comment is stale relative to its own node.
+
+**REFUTED — "a foreign interrupt drives cedrus into a freed context."**
+
+```
+327:   0  0  0  0   GICv2 107 Level   1c0e000.video-codec
+```
+
+hwirq 107 = SPI 75 + 32, so the IRQ is wired exactly as declared, is exclusively
+cedrus's, and has fired **zero times**. The handler has never run, so it cannot
+be completing work against freed state. *What survives* is the weaker form: a
+count of 0 is equally consistent with "SPI 75 is simply not the VE's interrupt on
+H713", and the DTS itself flags the divergence (*"IRQ: SPI 75 (H6 uses SPI 89)"*).
+Zero is the expected reading either way, so this measurement cannot separate them.
+
+**NARROWED — register-map divergence.** Full window dump with runtime PM forced
+on (`echo on > .../power/control`, status `active`), via `tools/video/vedump.py`:
+
+```
+0000: c0000007 00000300 00000000 00000000
+0010: 00000000 00000000 00000000 00010000
+0030: 00000200 ...        0040: 0000000f ...
+0080: 00001c55 000fffff 00008000 00000000
+00e0: 00033110 00012011 00000000 00000000
+00f0: 00000000   <- VE_VERSION
+*
+1000: c0000007 00000300 ...   <- identical to 0x000
+# 12 non-zero rows of 512
+```
+
+Three facts:
+
+- **The VE is present and reachable at the H6 base.** `0xC0000007` at `VE_MODE`
+  is a plausible value, not a bus-error pattern.
+- **The block aliases every 0x1000.** `0x1000` mirrors `0x000` exactly, so the
+  decoded region is 4 KB while the DTS declares `reg = <0x01c0e000 0x2000>`.
+  Only `0x000..0x0ff` decode while idle, which is expected — the H.264 engine
+  bank at `0x200` appears only once `VE_MODE` selects it.
+- **`VE_VERSION` (0xf0) is genuinely 0** on live, clocked, de-reset silicon.
+
+**But it is NOT the fault, and an earlier revision of this page was wrong to
+imply it.** `VE_VERSION` appears in mainline cedrus **only as a `#define` in
+`cedrus_regs.h`** — `grep -rn VE_VERSION drivers/staging/media/sunxi/cedrus/`
+returns the definition and its shift, and no reader. The driver never consults
+it. So the zero is a real divergence signal about the silicon and a useful
+fingerprint, and it explains nothing about the failure.
+
+**Clock and reset management is correct** — worth recording, because it removes a
+whole class of suspicion. CCU `0x0200169c` (gates in `[2:0]`, resets in
+`[18:16]`) reads `0x00000000` when the VE is runtime-suspended and `0x00050005`
+when active: BUS_VE and BUS_VE3 both gated on and out of reset, exactly as
+patch 0022 intends.
+
+**Do not read `0x01c0d000` (the AV1 block).** The same word shows AV1 gated
+**off** with its reset **asserted** (bit 1 clear, bit 17 clear) — precisely the
+condition the reset-before-gate rule says wedges the interconnect. Check
+`0x0200169c` before probing anything in the VE family; the CCU is always clocked,
+so that read is free.
+
+**CLOSED — buffer sizing.** Not a bug. Cedrus sizes `NV12_32L32` correctly
+(`ALIGN(width,32)`, `ALIGN(height,32)`, chroma `ALIGN(height,64)/2`), and the
+hardware honours it: the tiled run produced exactly 122,880 bytes/frame for
+320x240 (= `320 * ALIGN(240,32) * 3/2`). The 16-row alignment on the plain `NV12`
+path is also fine — forcing `format=NV12` yields bit-exact 320x240 output. Both
+paths are correct; `a01-320x256`/`a02-1280x736` were generated to test this and
+were not needed.
+
+**The zero IRQ count was the real tell, and it was misread.** With the IOMMU
+attached the VE never raised SPI 75 — because it never successfully completed a
+job, not because the IRQ number was wrong. Once the IOMMU was gone the same SPI
+75 worked fine for 60-frame 1080p decodes. A zero interrupt count means "the
+device never finished", which is a symptom, and it was briefly treated as
+evidence about the interrupt *number*.
+
+**Restore `power/control` to `auto` after any such probe.** Leaving the VE forced
+on keeps it clocked indefinitely and changes the state every later test starts
+from.
+
+## Milestones
+
+### M1 — the decoder decodes (the gate) — PASSED, see above
+
+Flash the bring-up rootfs, then, in order: confirm `v4l2-ctl --list-formats-out`
+advertises the stateless codecs; run `v4l2-compliance`; decode `v01` with
+`v4l2slh264dec`; compare the output against the NV12 reference. Then climb the
+ladder.
+
+Scoring is per-vector and the ladder is the instrument: v01 failing and v03
+failing mean completely different things.
+
+**This is a gate, not a formality.** If VE3 diverges from the H6 register map,
+it is found here for the cost of one boot, before anything is built on top.
+
+### M2 — one decoded frame on the panel
+
+Reuse the path the display bring-up proved rather than inventing one: take a
+decoded frame, get it into the scanout buffer at `0x6c100000`, flip
+`0x05600178`. The frame already survives U-Boot → Linux, the flip is already
+proven latched at the ready write, and the commit is already vsync-locked.
+
+Needs the current kernel flashed (8 MiB `uboot-scanout`) before any
+double-buffered work, or the back buffer at `0x6c500000` is ordinary allocatable
+memory.
+
+**Open design question: can the layer scan out NV12 directly?** The U-Boot path
+writes **1280x720 ARGB8888, stride 0x1400** and the layer's format was never
+chosen explicitly — it arrives via the LogoRegData replay. If the layer has a
+YUV mode, the CPU colour conversion disappears and with it most of the per-frame
+cost. The evidence log identified `0x05280084` (width / height) and
+`0x0528008c` (X origin) in that block but never a format field, and this display
+path is *not* the mainline `sun8i-mixer` layout, so it cannot be read off
+upstream. This is a `regscan`-shaped hardware question, not a documentation one.
+
+### M3 — sustained playback
+
+Double-buffered flip at the vsync-locked commit, scored with
+`tools/display/tear-measure.py` against the `fb-anim-db` reference. Keeping the
+synthetic moving bar on the same instrument is deliberate: a decoder fault must
+not be able to present as a display fault.
+
+### M4 — productize
+
+DECD (`dec@5600000`) versus a real DRM plane. Deliberately last — both are large,
+and the choice is uninformed until M1–M3 have run. Note that cedrus emits linear
+NV12 or Allwinner tiled, **not** AFBC, so DECD's compressed path does not match
+cedrus output as-is; its "raw" path is the relevant one. The evidence log's
+Milestone 4 warning about resource ownership (shared display clocks, resets, IRQs
+and overlapping register windows needing one clear owner) applies directly:
+U-Boot currently owns the AFBD registers, and DECD would want them.
+
+## Tooling changes made for this phase
+
+- **`tools/rootfs/build.sh --extra-packages LIST`** — appends to the bootstrap
+  set. The shipped product image stays minimal; bring-up images opt in. Used
+  here for `v4l-utils`, the GStreamer stack, `ffmpeg`, `build-essential`,
+  `libdrm-dev`, `libv4l-dev`, `python3` and `strace`.
+- **An on-target compiler is deliberate.** M2/M3 are register-poking experiments
+  against a framebuffer; cross-compiling and shipping each iteration over an
+  11 KB/s UART is how this project has previously spent whole sessions. `gcc` on
+  the board turns that into seconds.
+- **`tools/video/make-test-streams.sh`** — the ladder above.
+
+## Open items
+
+- The `ve` node declares **no `power-domains`**, although the PPU driver defines
+  a `"VE"` domain (index 3, patch 0020) and the GPU node uses `<&ppu 2>`. It
+  works today only because `pd_ignore_unused` is on the command line — the same
+  load-bearing flag the display handoff depends on. Worth wiring properly before
+  anything depends on VE runtime PM.
+- **AV1 is inert** and should stay that way until H.264 works. A driver exists
+  in `local/allwinner-h713-linux/drivers/media/av1/` (never enabled, never
+  tested); the DT node's compatible matches nothing in our tree.
+- The bench board is a **WiFi AP at 192.168.4.1** with sshd running. Joining it
+  from the host would give a fast file path, at the cost of the host's own
+  network. `ums` from U-Boot is the transfer route used instead.

@@ -11,7 +11,7 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -0,0 +1,1795 @@
+@@ -0,0 +1,1895 @@
 +/*
 + * Shared device tree for the Allwinner H713 SoC and HY200 family.
 + *
@@ -968,6 +968,44 @@
 +		 * module probes. This is a confirmed, tested showstopper.
 +		 * Address 0x02010000 is the H713 IOMMU MMIO base (unverified).
 +		 */
++		/*
++		 * DISABLED 2026-08-09 -- this node is inert on H713 and was
++		 * actively harmful while the VE referenced it.
++		 *
++		 * Read back on hardware with the driver bound and iommu group 0
++		 * created: every register at 0x030f0000 is 0, including ENABLE
++		 * (+0x20) and TTB (+0x30). An attached domain writes both, so
++		 * nothing is responding at this address.
++		 *
++		 * 0x030f0000 is the H6 base and is simply wrong here. The
++		 * stock DTB is unambiguous:
++		 *
++		 *   mmu_aw: iommu@2010000 {
++		 *       compatible = "allwinner,sunxi-iommu";
++		 *       reg = <0x2010000 0x1000>;
++		 *       interrupts = <0 0x47 4>;      // SPI 71
++		 *       clocks = <&ccu 0x30>;
++		 *       #iommu-cells = <2>;
++		 *   };
++		 *
++		 * and its ve@1c0e000 references it as iommus = <&mmu_aw 0 1>
++		 * (master 0), av1@1c0d000 as <&mmu_aw 5 1>.
++		 *
++		 * Two reasons this is not just a reg fix. The vendor binding is
++		 * `allwinner,sunxi-iommu` with #iommu-cells = <2>, while
++		 * mainline's sun50i-iommu is #iommu-cells = <1> -- so the cell
++		 * count and the driver both differ, and whether the H713 block
++		 * is register-compatible with the H6 one is untested. And
++		 * probing it wants the CCU gate checked first (read
++		 * 0x0200169c-style gates; the CCU is always clocked so that
++		 * read is free) because an ungated block hangs this
++		 * interconnect.
++		 *
++		 * Until someone does that deliberately, the honest state is
++		 * "no IOMMU", which is also the safer one: cedrus falls back to
++		 * dma-direct on CMA instead of being handed IOVAs that nothing
++		 * translates.
++		 */
 +		iommu: iommu@30f0000 {
 +			compatible = "allwinner,sun50i-h6-iommu";
 +			reg = <0x030f0000 0x10000>;
@@ -975,7 +1013,7 @@
 +			clocks = <&ccu CLK_BUS_IOMMU>;
 +			resets = <&ccu 11>;
 +			#iommu-cells = <1>;
-+			status = "okay";
++			status = "disabled";
 +		};
 +
 +		/*
@@ -1013,14 +1051,76 @@
 +
 +		ve: video-codec@1c0e000 {
 +			compatible = "allwinner,sun50i-h6-video-engine";
-+			reg = <0x01c0e000 0x2000>;
++			/*
++			 * 0x1000, not 0x2000 -- the stock DTB says
++			 * reg = <0x1c0e000 0x1000>, and a hardware dump
++			 * confirms it: the window aliases, 0x1000 mirroring
++			 * 0x000 exactly.
++			 */
++			reg = <0x01c0e000 0x1000>;
++			/*
++			 * SPI 75 is VENDOR-CONFIRMED: the stock DTB's
++			 * ve@1c0e000 carries interrupts = <0 0x4b 4>, and
++			 * 0x4b = 75. Registered as hwirq 107 (75 + 32).
++			 * Do not "fix" this to the H6 value of 89.
++			 */
 +			interrupts = <GIC_SPI 75 IRQ_TYPE_LEVEL_HIGH>;
 +			allwinner,sram = <&ve_sram 1>;
 +			clocks = <&ccu CLK_BUS_VE>, <&ccu CLK_VE_CORE>, <&ccu CLK_MBUS_VE3>, <&ccu CLK_BUS_VE3>;
 +			clock-names = "ahb", "mod", "ram", "bus_ve3";
 +			resets = <&ccu RST_BUS_VE>, <&ccu RST_BUS_VE3>;
 +			reset-names = "ve", "ve3";
-+			iommus = <&iommu 0>;
++			/*
++			 * NO power-domains -- TRIED AND REVERTED 2026-08-09.
++			 *
++			 * The stock DTB does carry power-domains = <&ppu 3>,
++			 * and PPU index 3 is "VE" in patch 0020's name table,
++			 * so adding it looked like closing a real gap. On
++			 * hardware it is a REGRESSION: cedrus stops probing
++			 * entirely.
++			 *
++			 *   platform 1c0e000.video-codec: deferred probe pending
++			 *   sun50i-h713-ppu: sync_state() pending due to
++			 *                    1c0e000.video-codec
++			 *
++			 * with no /dev/video0 and no /dev/media0 at all.
++			 *
++			 * The cause is in patch 0020, not here.
++			 * pm_genpd_summary reports DE, VE, SYS and CPUS all
++			 * "off-0" and only GPU "on" -- and GPU only because it
++			 * is flagged GENPD_FLAG_ALWAYS_ON. SYS reading "off" on
++			 * a running system proves the driver's power state is
++			 * not tracking hardware. The VE domain is physically on
++			 * (its registers answered: VE_MODE = 0xC0000007), so
++			 * this is a modelling defect, not a dead rail.
++			 *
++			 * Restore this line only after the H713 PPU driver can
++			 * actually report and control these domains. Until then
++			 * pd_ignore_unused leaves them as the bootloader set
++			 * them, which is what works.
++			 */
++			/*
++			 * NO iommus PROPERTY -- deliberate, 2026-08-09.
++			 *
++			 * `iommus = <&iommu 0>` here crashed the kernel on the
++			 * first decode: rogue VE DMA corrupted the printk
++			 * ringbuffer, faulting in _prb_read_valid() with a
++			 * recursive fault storm and a stack-overflow panic,
++			 * before a single frame was emitted (0-byte output).
++			 *
++			 * Cause: the iommu node below is inert. Every register
++			 * at 0x030f0000 reads 0 on hardware, including ENABLE
++			 * (+0x20) and TTB (+0x30), which an attached domain
++			 * would have written. So the DMA layer handed cedrus
++			 * IOVAs expecting translation, nothing translated them,
++			 * and the VE wrote them as raw physical addresses.
++			 *
++			 * Without the property cedrus uses dma-direct on CMA,
++			 * where the addresses it programs are real allocations.
++			 * Restore this only once the IOMMU is verified live --
++			 * an inert IOMMU is worse than none, because it removes
++			 * the bounds the DMA layer believes are being enforced.
++			 */
 +			status = "okay";
 +		};
 +

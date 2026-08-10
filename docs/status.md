@@ -23,8 +23,17 @@ is understood (PB5 enable-PWM of an on-board 36→52.6 V boost; the shipped path
 never dims) and the fix is an inline MOSFET, hardware not yet fitted. The
 firmware's MIPS-side debug shell is confirmed reachable for register access.
 Full detail in [claude-display-handoff.md](claude-display-handoff.md) and
-[mips-display-recovery.md](mips-display-recovery.md). **Next: video decode
-(DECD).**
+[mips-display-recovery.md](mips-display-recovery.md).
+
+**Hardware H.264 decode works (2026-08-09).** Mainline `cedrus` drives the H713
+VE with no driver changes: Constrained Baseline, Main (B-frames + CABAC) and High
+(8x8 transform) all decode **bit-exact** against host software references, 320x240
+through 1920x1080. The whole failure was one device-tree property — `iommus` on
+the `ve` node pointed at an IOMMU that does not exist at that address, so the DMA
+layer handed the VE untranslated IOVAs; it corrupted the kernel's printk
+ringbuffer and panicked before emitting a frame. Removing it fixed both symptoms
+at once. **Next: getting decoded frames onto the panel.** See
+[video-decode.md](video-decode.md).
 
 ## Boot chain
 
@@ -51,6 +60,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | CPU frequency/thermal | ✅ PWM DVFS from 480 MHz/0.90 V through 1416 MHz/1.10 V; full-range transitions and peak load HW-verified; cpufreq cooling device backs 75/85 C passive trips |
 | Crypto Engine + RNG | ⚠️ **disabled — mainline `sun8i-ce` can't drive the H713 CE** (bench-proven). Enabling it registers every algorithm, then each fails its known-answer self-test. Wiring the stock's 2nd interrupt fixes task completion, but the CE then rejects mainline's descriptors — ciphers `address invalid`, AES/SHA `algorithm not supported` — a different descriptor **format** (vendor two-bank block), not an IRQ/clock/addressing gap. No CE TRNG. The A53's ARMv8 AES/SHA (software ~2 GB/s) is faster anyway. Re-enabling needs descriptor-level RE of the vendor `sunxi-ce` (no source). |
 | Reboot → fastboot / U-Boot | ✅ **done, both modes HW-validated (2026-07-23).** Two `nvmem-reboot-mode` modes over RTC GP7: `reboot fastboot` (magic `0xfa57b007`) → U-Boot `preboot` → fastboot, and `reboot bootloader` (magic `0xb007c0de`) → `preboot` sets `bootdelay -1` → U-Boot `=>` prompt — both confirmed console-free on the bench. `RTC_DRV_SUN6I` owns the region and exposes GP7 as an nvmem cell (`nvmem-cells` → `reboot-mode-magic@1c`); the old overlapping `syscon-reboot-mode` is gone. |
+| Video decode (Cedrus / VE) | ✅ **H.264 hardware decode, bit-exact** (2026-08-09). Mainline `cedrus`, unmodified, via GStreamer `v4l2slh264dec`. All five ladder vectors match their host software references byte-for-byte: 320x240 Constrained Baseline, 1280x720 Baseline/Main/High, 1920x1080 High. Force `video/x-raw,format=NV12` — unforced it negotiates `NV12_32L32` (32x32 tiled), which is correct output but will not match a linear reference. **The `iommus` property must stay off the `ve` node** until the real IOMMU (stock DTB: `0x2010000`, `allwinner,sunxi-iommu`, `#iommu-cells = <2>`) is verified live; ours pointed at the H6 address `0x030f0000`, which reads all zeros. Not yet on the panel — that is the next step. |
 | Peripherals (drivers probe) | pinctrl, PWM, PPU (5 power domains), both MMC, EHCI/OHCI ×3, LRADC, IR, board-mgr, watchdog, **RTC** (`sun6i-rtc`, enabled — the canonical osc32k/iosc clock provider and the GP-register nvmem device, both HW-confirmed; `rtc0` reads back but the RTC is unset at first boot; set/read timekeeping is now HW-confirmed via the H713 linear-day variant (patch 0031) — `hwclock`/`timedatectl` read the correct date). (Crypto engine deliberately disabled — see above.) |
 
 ## Limitations / open items

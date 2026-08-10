@@ -127,7 +127,20 @@ attached, the display path can be brought up here, not only on the projector
    render offscreen/headless (EGL/GBM, PRIME buffer sharing) for validation, but
    anything *visible* is gated on the display path (item 3), so it is downstream
    of that work, not a standalone bench item.
-5. **Video decode (Cedrus / VE3) — NEXT, and now well-provisioned.** Genuinely
+5. **Video decode (Cedrus / VE3) — DECODE WORKS 2026-08-09; presentation is
+   what remains.** Mainline `cedrus` decodes H.264 on the H713 **bit-exact**
+   against host software references — Constrained Baseline, Main (B-frames +
+   CABAC) and High (8x8 transform), 320x240 through 1920x1080 — with **no driver
+   changes**. The blocker was a single device-tree property: `iommus` on the `ve`
+   node named an IOMMU that does not exist at `0x030f0000` (the H6 address; the
+   stock DTB puts it at `0x2010000` with a different binding and 2 cells), so the
+   VE was handed untranslated IOVAs, corrupted kernel memory and panicked before
+   emitting a frame. Removing it fixed the crash and the decode together.
+   Remaining: get frames onto the panel (reuse the proven AFBD scanout +
+   `0x05600178` flip), then sustained playback. Full account in
+   [video-decode.md](video-decode.md). Original framing follows.
+
+   Genuinely
    headless-testable (patch 0022 in series), and independent of the display path
    for *decoding*, but the display path (now done) gives it what it needs to be
    *seen* and debugged: a tear-free double-buffered scanout to present frames, a
