@@ -53,6 +53,26 @@
 #define AFBD_STATUS     0x168
 #define AFBD_STRIDE     0x170
 #define AFBD_SRC        0x178
+#define AFBD_DIRTY      0x6c
+
+/*
+ * The real vblank signal, from the vendor's dec_irq_query() (patch 0013,
+ * decd_hw.c). Its base is regs->workaround = afbd + 0x60, and it reads +96 and
+ * +100, so 0x056000c0 and 0x056000c4; it requires bit 0 in BOTH, then acks by
+ * writing bit 0 back to +0xc0. A register dump taken while the panel was live
+ * showed 0x056000c0 = 0x00000001, so the bit is real and set.
+ *
+ * This matters because the vendor swaps buffers INSIDE the vsync interrupt --
+ * dec_vsync_handler -> dec_frame_manager_handle_vsync -> sync_cb, which is
+ * dec_sync_frame_to_hardware -- rather than by polling a completion bit the way
+ * this tool has been doing. AFBD_STATUS bit 1 was assumed to be vsync and never
+ * verified. If it is not, every swap lands at an arbitrary point in the scan,
+ * which is exactly the shape of the measured tearing and explains why waiting
+ * an extra frame (EXTRA_VSYNC, verified to halve the frame rate) did not help:
+ * more waiting on the wrong signal is still the wrong phase.
+ */
+#define AFBD_IRQ_ST0    0xc0
+#define AFBD_IRQ_ST1    0xc4
 
 /*
  * CCU, always clocked, so reading it is safe from any state. Bit 31 is the
@@ -101,6 +121,39 @@ static double commit(void)
 static void flip_to(unsigned long phys)
 {
 	wr(regs, AFBD_SRC, (uint32_t)phys);
+}
+
+/*
+ * Poll the vendor's vsync condition and ack it, mirroring dec_irq_query().
+ * Returns the wait in ms, or -1 on timeout. Reading a byte register through the
+ * 32-bit accessor would straddle neighbours, so use the byte view.
+ */
+static double wait_vblank(void)
+{
+	volatile uint8_t *b = (volatile uint8_t *)regs;
+	double t0 = now_ms();
+
+	/*
+	 * 0xc0 ONLY, not the vendor's 0xc0 && 0xc4.
+	 *
+	 * dec_irq_query() requires bit 0 in both, but 0xc4 reads 00 in our
+	 * configuration -- it is an interrupt-enable the vendor sets and we do
+	 * not -- so the AND is never true and every wait timed out (300 misses
+	 * out of 300).
+	 *
+	 * 0xc0 bit 0 on its own is MEASURED to be the vblank event: acked and
+	 * re-polled 20 times it fires at 16.74 ms intervals, 19 of them
+	 * identical, against the panel's computed 16.75 ms period (0.06%).
+	 * That is the real vsync this tool has been missing -- AFBD_STATUS
+	 * bit 1 was only ever assumed to be one.
+	 */
+	while (now_ms() - t0 < 50.0) {
+		if (b[AFBD_IRQ_ST0] & 1u) {
+			b[AFBD_IRQ_ST0] = b[AFBD_IRQ_ST0] | 1u;   /* ack */
+			return now_ms() - t0;
+		}
+	}
+	return -1.0;
 }
 
 /*
@@ -163,6 +216,21 @@ static void *conv_worker(void *arg)
  */
 #define CONV_THREADS_MAX 4
 static int conv_threads = CONV_THREADS_MAX;
+static int extra_vsync;
+/*
+ * Bar step in px/frame, default 16. BAR_STEP=0 gives a MOVING-BAR-FREE
+ * control that still does the identical per-frame work: same two-phase
+ * fill, same buffer alternation, same vblank swap, same rate -- only the
+ * motion is removed.
+ *
+ * This exists because the negative control used so far was a STATIC panel
+ * with nothing running (0.74%), while every test run had a bar sweeping at
+ * ~955 px/s. An LCD's pixel response smears a moving bar, and the metric
+ * needs redness > 40 over a contiguous run, so motion alone can drop rows
+ * below threshold. If BAR_STEP=0 also reads ~26%, the tearing figure is a
+ * motion artefact and the presentation path is fine.
+ */
+static int bar_step = 16;
 
 static void conv_threads_init(void)
 {
@@ -287,16 +355,33 @@ static void reader_release(struct reader *r)
 	pthread_mutex_unlock(&r->m);
 }
 
+/*
+ * TWO PHASE, and it must stay that way: blue the whole surface, THEN draw the
+ * bar. tools/display/tear-measure.py scores "rows with no bar at all", which
+ * only exists as a signal because of this ordering -- a raster passing through
+ * mid-fill finds a surface that has been blued but not yet barred.
+ *
+ * A single-pass fill (bar-or-blue per pixel, which this was originally) leaves
+ * every row carrying a bar at either the old or the new position, so the metric
+ * reads 0% whether or not the panel tears. That is a meaningless pass, not a
+ * clean one.
+ *
+ * Rolling shutter can shift the bar but can never delete it, which is why this
+ * metric is specific to single-buffered corruption and the step size is not.
+ */
 static void fill_bar(volatile uint32_t *fb, int x0)
 {
-	int y, x;
+	uint32_t *p = (uint32_t *)fb;           /* non-volatile: let it vectorise */
+	int y, k;
+	size_t i;
+
+	for (i = 0; i < (size_t)W * H; i++)
+		p[i] = 0xff0000ffu;                     /* phase 1: all blue */
 
 	for (y = 0; y < H; y++) {
-		volatile uint32_t *row = fb + (size_t)y * W;
-		for (x = 0; x < W; x++) {
-			int in = (x - x0 + W) % W < 64;
-			row[x] = in ? 0xffff0000u : 0xff0000ffu;
-		}
+		uint32_t *row = p + (size_t)y * W;
+		for (k = 0; k < 64; k++)                /* phase 2: the bar */
+			row[(x0 + k) % W] = 0xffff0000u;
 	}
 }
 
@@ -332,7 +417,7 @@ static void fill_bar(volatile uint32_t *fb, int x0)
  * rows packed into each display row -- the picture repeated 4x horizontally in
  * greyscale (test_39/IMG_0659.jpeg).
  */
-#define AFBD_DIRTY      0x6c
+
 
 static volatile uint8_t *regs8;
 
@@ -411,6 +496,7 @@ static void usage(void)
 		"  regs                 dump the AFBD registers (safe once display is up)\n"
 		"  fill <0xAARRGGBB>    solid fill of the front buffer, then commit\n"
 		"  bar [frames]         moving red bar on blue, double-buffered (default 600)\n"
+		"  bar-sb [frames]      same bar, SINGLE-buffered — the tearing positive control\n"
 		"  nv12 <file> [frames] present NV12 frames from a raw file\n"
 		"  yuvtry <f.nv12> <code> [ms]  try one AFBD format code, then restore\n"
 		"\nThe display must already be up (h713_disp in U-Boot). This refuses to\n"
@@ -459,6 +545,9 @@ int main(int argc, char **argv)
 
 	regs8 = (volatile uint8_t *)regs;
 	conv_threads_init();
+	extra_vsync = getenv("EXTRA_VSYNC") && atoi(getenv("EXTRA_VSYNC"));
+	if (getenv("BAR_STEP"))
+		bar_step = atoi(getenv("BAR_STEP"));
 
 	if (!strcmp(argv[1], "regs"))
 		return 0;
@@ -483,6 +572,233 @@ int main(int argc, char **argv)
 		return us < 0 ? 1 : 0;
 	}
 
+	/*
+	 * bar-sb is the POSITIVE CONTROL for the tearing measurement, not a
+	 * leftover. It writes into the buffer the hardware is scanning, so the
+	 * raster can catch the surface blued-but-not-yet-barred. Without a run
+	 * that the metric is known to flag, a 0% double-buffered result cannot
+	 * be told apart from a metric that does not work.
+	 *
+	 * Expected magnitude is predicted, not guessed: rows with no bar should
+	 * be about (phase-1 fill time / frame period). The console prints the
+	 * fill time, so the prediction can be checked against the measurement.
+	 */
+	/*
+	 * Does writing AFBD_SRC actually move the scanout? Everything in the
+	 * double-buffered path assumes it does, and the tearing measurement
+	 * says otherwise: 25.65% of rows lose the bar when it should be ~0%,
+	 * which is about half the single-buffered rate -- exactly what you get
+	 * if the flip is ignored and only the frames landing in fb_front are
+	 * visible.
+	 *
+	 * Two solid colours, no motion, no metric: if the panel does not go
+	 * red -> green -> red, the flip is not working and double buffering is
+	 * an illusion.
+	 */
+	if (!strcmp(argv[1], "flip-test")) {
+		unsigned dwell = argc >= 3 ? strtoul(argv[2], NULL, 0) : 5000;
+		size_t i;
+
+		for (i = 0; i < FB_BYTES / 4; i++) {
+			((uint32_t *)fb_front)[i] = 0xffff0000u;   /* red  */
+			((uint32_t *)fb_back)[i]  = 0xff00ff00u;   /* green */
+		}
+
+		flip_to(FB_FRONT); commit();
+		printf("FRONT: expect RED    src=%08x\n", rd(regs, AFBD_SRC));
+		usleep(dwell * 1000);
+
+		flip_to(FB_BACK); commit();
+		printf("BACK:  expect GREEN  src=%08x\n", rd(regs, AFBD_SRC));
+		usleep(dwell * 1000);
+
+		flip_to(FB_FRONT); commit();
+		printf("FRONT: expect RED    src=%08x\n", rd(regs, AFBD_SRC));
+		return 0;
+	}
+
+	/*
+	 * bar-noflip isolates WHICH activity corrupts the picture.
+	 *
+	 * It does the full per-frame workload -- fill a buffer, commit, at the
+	 * panel rate -- but always fills fb_back and always leaves scanout
+	 * pointed at fb_front, which is written once at the start and then
+	 * never touched. The displayed surface is therefore static by
+	 * construction, exactly like the `bar 1` negative control that
+	 * measured 0.74%.
+	 *
+	 * Reads ~0.74%  -> writing the OTHER buffer is harmless, and the
+	 *                  corruption comes from presenting a freshly filled
+	 *                  buffer (a latch/coherency problem at the flip).
+	 * Reads ~25%    -> the corruption is caused by the commit/scanout
+	 *                  activity itself, independent of what we write, and
+	 *                  the double-buffering model is not the issue at all.
+	 *
+	 * Either answer eliminates half the search space; the current evidence
+	 * cannot distinguish them, which is why guessing again would be wrong.
+	 */
+	/*
+	 * bar-vs swaps the way the vendor does: wait for the real vblank
+	 * (dec_irq_query's condition), THEN write the address, THEN latch it
+	 * with the dirty bit -- rather than writing the address whenever the
+	 * fill happens to finish and polling AFBD_STATUS bit 1.
+	 *
+	 * If this drops rows-with-no-bar from 25.65% toward the 0.74% floor,
+	 * the defect was swapping at an arbitrary point in the scan, and the
+	 * fix is to keep the address write inside vblank.
+	 */
+	/*
+	 * Is 0x056000c0 bit 0 a per-vblank event, or just a static bit?
+	 *
+	 * bar-vs measured 300 vblank misses out of 300 because dec_irq_query()
+	 * ANDs +0xc0 with +0xc4, and a live dump shows 0xc4 = 0 -- the vendor's
+	 * second condition is not enabled in our configuration. Before relaxing
+	 * the condition to 0xc0 alone, find out what 0xc0 actually does:
+	 * ack it, time how long until it sets again, repeat.
+	 *
+	 * ~16.75 ms intervals  -> it is vblank, and we have the signal we need.
+	 * instant re-set        -> it is a level/static bit, useless as an event.
+	 * never re-sets         -> acking clears it for good; not an event either.
+	 */
+	if (!strcmp(argv[1], "vbprobe")) {
+		volatile uint8_t *b = (volatile uint8_t *)regs;
+		int i, hits = 0;
+		double last;
+
+		printf("initial: 0xc0=%02x 0xc4=%02x  (status %08x)\n",
+		       b[AFBD_IRQ_ST0], b[AFBD_IRQ_ST1], rd(regs, AFBD_STATUS));
+
+		b[AFBD_IRQ_ST0] = b[AFBD_IRQ_ST0] | 1u;         /* ack */
+		last = now_ms();
+		for (i = 0; i < 20; i++) {
+			double t0 = now_ms();
+
+			while (!(b[AFBD_IRQ_ST0] & 1u) && now_ms() - t0 < 100.0)
+				;
+			if (b[AFBD_IRQ_ST0] & 1u) {
+				printf("  event %2d after %6.2f ms  (0xc4=%02x)\n",
+				       i, now_ms() - last, b[AFBD_IRQ_ST1]);
+				hits++;
+				b[AFBD_IRQ_ST0] = b[AFBD_IRQ_ST0] | 1u; /* ack */
+				last = now_ms();
+			} else {
+				printf("  event %2d TIMEOUT after 100 ms\n", i);
+				last = now_ms();
+			}
+		}
+		printf("%d/20 events; a 59.7 Hz panel would give ~16.75 ms\n", hits);
+		return 0;
+	}
+
+	if (!strcmp(argv[1], "bar-vs")) {
+		int frames = argc >= 3 ? atoi(argv[2]) : 600;
+		int n, timeouts = 0, vmiss = 0;
+		double fill_tot = 0, vb_tot = 0, t0 = now_ms();
+
+		for (n = 0; n < frames; n++) {
+			volatile uint32_t *target = (n & 1) ? fb_back : fb_front;
+			unsigned long phys = (n & 1) ? FB_BACK : FB_FRONT;
+			double a = now_ms(), b, vb, us;
+
+			fill_bar(target, (n * bar_step) % W);
+			b = now_ms();
+
+			vb = wait_vblank();
+			if (vb < 0) vmiss++;
+			flip_to(phys);
+			wr(regs, AFBD_DIRTY, 1);        /* latch, as the vendor does */
+			us = commit();
+			if (us < 0) timeouts++;
+			/*
+			 * BAR_LATCH_WAIT=1 waits for the vblank AFTER the flip,
+			 * so the new address has actually taken effect before we
+			 * touch the other buffer.
+			 *
+			 * The zero-motion control (BAR_STEP=0) reads 30.46%
+			 * against 0.74% for an idle panel, so the raster really
+			 * is catching a half-filled surface -- with identical
+			 * content every frame, motion cannot explain it. The
+			 * remaining candidate is a one-frame flip latency: if
+			 * the address written after vblank N only takes effect
+			 * at vblank N+1, then with just two buffers the one we
+			 * fill is still the one being scanned, every frame.
+			 *
+			 * If this drops the metric toward 0.74% (at half the
+			 * frame rate), that is the mechanism, and the real fix
+			 * is a third buffer -- which needs a bigger
+			 * uboot-scanout reservation, i.e. a kernel change.
+			 */
+			if (getenv("BAR_LATCH_WAIT"))
+				wait_vblank();
+
+			fill_tot += b - a;
+			vb_tot += vb < 0 ? 0 : vb;
+		}
+		fill_bar(fb_front, ((frames - 1) * bar_step) % W);
+		flip_to(FB_FRONT);
+		wr(regs, AFBD_DIRTY, 1);
+		commit();
+
+		printf("bar-vs: %d frames in %.0f ms (%.2f fps), %d timeouts, "
+		       "%d vblank misses\n"
+		       "        fill mean %.2f ms, vblank wait mean %.2f ms\n",
+		       frames, now_ms() - t0, frames / ((now_ms() - t0) / 1000.0),
+		       timeouts, vmiss, fill_tot / frames, vb_tot / frames);
+		return timeouts ? 1 : 0;
+	}
+
+	if (!strcmp(argv[1], "bar-noflip")) {
+		int frames = argc >= 3 ? atoi(argv[2]) : 600;
+		int n, timeouts = 0;
+		double t0;
+
+		fill_bar(fb_front, 0);                  /* the one visible frame */
+		flip_to(FB_FRONT);
+		commit();
+
+		t0 = now_ms();
+		for (n = 0; n < frames; n++) {
+			double us;
+
+			fill_bar(fb_back, (n * bar_step) % W);   /* never displayed */
+			flip_to(FB_FRONT);                 /* scanout stays put */
+			us = commit();
+			if (us < 0) timeouts++;
+		}
+		printf("bar-noflip: %d frames in %.0f ms (%.2f fps), %d timeouts\n"
+		       "            panel shows a STATIC bar; expect the 0.74%% floor\n"
+		       "            unless commit/scanout activity is itself the cause\n",
+		       frames, now_ms() - t0, frames / ((now_ms() - t0) / 1000.0),
+		       timeouts);
+		return timeouts ? 1 : 0;
+	}
+
+	if (!strcmp(argv[1], "bar-sb")) {
+		int frames = argc >= 3 ? atoi(argv[2]) : 600;
+		int n, timeouts = 0;
+		double fill_tot = 0, wait_tot = 0, t0 = now_ms();
+
+		flip_to(FB_FRONT);
+		for (n = 0; n < frames; n++) {
+			double a = now_ms(), b, us;
+
+			fill_bar(fb_front, (n * bar_step) % W);   /* the live surface */
+			b = now_ms();
+			us = commit();
+			if (us < 0) timeouts++;
+			fill_tot += b - a;
+			wait_tot += us < 0 ? 0 : us / 1000.0;
+		}
+		printf("bar-sb: %d frames in %.0f ms (%.2f fps), %d timeouts\n"
+		       "        fill mean %.2f ms, commit wait mean %.2f ms\n"
+		       "        predicted rows-with-no-bar ~%.1f%% "
+		       "(fill / 16.75 ms frame)\n",
+		       frames, now_ms() - t0, frames / ((now_ms() - t0) / 1000.0),
+		       timeouts, fill_tot / frames, wait_tot / frames,
+		       100.0 * (fill_tot / frames) / 16.75);
+		return timeouts ? 1 : 0;
+	}
+
 	if (!strcmp(argv[1], "bar")) {
 		int frames = argc >= 3 ? atoi(argv[2]) : 600;
 		int n, timeouts = 0;
@@ -493,10 +809,26 @@ int main(int argc, char **argv)
 			unsigned long phys = (n & 1) ? FB_BACK : FB_FRONT;
 			double a = now_ms(), b, us;
 
-			fill_bar(target, (n * 16) % W);
+			fill_bar(target, (n * bar_step) % W);
 			b = now_ms();
 			flip_to(phys);
 			us = commit();
+			/*
+			 * EXTRA_VSYNC=1 burns one more frame before the next
+			 * fill begins. It is a diagnostic for the 25.65%
+			 * rows-with-no-bar that double buffering should have
+			 * removed: the flip itself is proven working
+			 * (flip-test alternates the panel red/green and src
+			 * reads back correctly), so what remains is when the
+			 * new address is LATCHED relative to the raster. The
+			 * fill takes 12.07 ms of a 16.75 ms frame, leaving
+			 * ~4.7 ms of margin; if the latch lands a frame later
+			 * than assumed we overwrite the live surface every
+			 * time. If this halves the frame rate AND drops the
+			 * metric to ~0, that is the answer.
+			 */
+			if (extra_vsync)
+				commit();
 			if (us < 0) { timeouts++; if (timeouts == 1)
 				printf("first commit timeout at frame %d\n", n); }
 			fill_tot += b - a;
@@ -508,7 +840,7 @@ int main(int argc, char **argv)
 		 * register, so leaving the hardware reading the back buffer would
 		 * silently break whatever runs next.
 		 */
-		fill_bar(fb_front, ((frames - 1) * 16) % W);
+		fill_bar(fb_front, ((frames - 1) * bar_step) % W);
 		flip_to(FB_FRONT);
 		commit();
 

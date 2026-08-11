@@ -429,10 +429,101 @@ Remaining headroom, best first:
 3. **NEON the conversion** — last, and only if something above changes the
    picture. Currently it optimises a stage that is not the constraint.
 
-**Still unmeasured on this path:** tearing. Double buffering is proven for the
-U-Boot side (test_37: 5.97% torn rows single-buffered vs 0.00% double), and the
-Linux path uses the same flip, but it has not been scored with
-`tools/display/tear-measure.py`. Do not claim it is tear-free until it has.
+### Tearing: MEASURED 2026-08-10, and the Linux path is NOT clean
+
+Previously this section said tearing was unmeasured and that double buffering was
+"proven". **The proof was from the U-Boot path (test_37) and was carried across
+without retesting.** Measured here, the Linux path corrupts a large fraction of
+scanned rows.
+
+| run | motion | fill+swap running | rows with no bar |
+| --- | --- | --- | --- |
+| `bar 1`, program exited | none | **no** | **0.74%** |
+| `BAR_STEP=0 bar-vs` | **none** | yes | **30.46%** |
+| `bar-vs` (vblank-locked) | yes | yes | 27.84% |
+| `bar` + `EXTRA_VSYNC` | yes | yes | 31.30% |
+| `bar` (as shipped at M2) | yes | yes | 25.65% |
+| `bar-sb` single-buffered | yes | yes | 59.38% |
+| `BAR_STEP=0 bar-vs` + `BAR_LATCH_WAIT` | none | yes | **22.14%** |
+
+**The zero-motion control is the one that establishes it.** It differs from the
+idle panel *only* in whether the fill/swap cycle runs — identical content every
+frame, nothing to tear in the image itself — and it goes 0.74% -> 30.46%. So the
+raster genuinely catches surfaces blued but not yet barred: **the displayed
+buffer is being written.**
+
+**Getting to a trustworthy number needed three controls, and two were missing at
+first:**
+
+- **Positive control** (`bar-sb`, single-buffered): without a run the metric is
+  known to flag, a low reading cannot be told from an insensitive metric.
+- **Negative control** (`bar 1`, idle): without it, 25.65% cannot be told from
+  the metric's own detection floor.
+- **Zero-motion control** (`BAR_STEP=0`): the idle control changed *two*
+  variables at once — motion and activity. A moving red bar at ~955 px/s smears
+  on an LCD and the metric needs `redness > 40` over a contiguous run, so motion
+  alone could plausibly have produced the whole effect. It does not, but that
+  was an assumption until measured.
+
+**The two-phase fill is load-bearing for the metric.** `fill_bar()` must blue the
+whole surface and then draw the bar. A single-pass bar-or-blue fill leaves every
+row carrying a bar at some position, so the metric reads 0% whether or not the
+panel tears — a meaningless pass. This was originally single-pass and was fixed
+before any of these numbers were taken.
+
+### Four mechanisms tested, none sufficient
+
+Each manipulation was verified to have actually taken effect before its result
+was credited — the failure mode this project already knows about.
+
+| hypothesis | test | verified by | result |
+| --- | --- | --- | --- |
+| the flip register does not work | `flip-test`, two solid colours | panel alternates red/green; `src` reads back | **refuted** |
+| buffer reused before scanout finished | `EXTRA_VSYNC=1` | frame rate 59.53 -> 29.82, a clean halving | **refuted**, 31.30% |
+| swapping at an arbitrary scan phase | `bar-vs`: real vblank + dirty latch | 0 vblank misses, 59.49 fps | **refuted**, 27.84% |
+| one-frame flip latency vs two buffers | `BAR_LATCH_WAIT=1` | frame rate 59.46 -> 29.88 | **partial**, 30.46 -> 22.14% |
+
+### What the vendor binaries gave up (and it is worth keeping)
+
+Asked whether the deconstructed board-B binaries could help — they could, and
+this is the durable result even though it did not fix the number:
+
+- **The vendor swaps buffers inside the vsync IRQ**, not by polling:
+  `dec_vsync_handler` -> `dec_frame_manager_handle_vsync` -> `sync_cb`
+  (`dec_sync_frame_to_hardware`).
+- **A real vblank register: `0x056000c0` bit 0**, from `dec_irq_query()`
+  (`workaround + 96`, `workaround = afbd + 0x60`), acked by writing bit 0 back.
+  **Measured: 20/20 events at 16.74 ms** against the panel's computed 16.75 ms
+  period, 0.06%. This is a genuine vsync source and is exactly what a DRM driver
+  would need.
+- The vendor ANDs it with `+0xc4`, which reads **00** on our configuration — an
+  interrupt-enable we never set. Transcribing the vendor condition literally gave
+  300 vblank misses out of 300; poll `0xc0` alone.
+- **Config changes are latched by the dirty bit at `0x0560006c`**, written after
+  the address. `flip_to()` never did this.
+
+**`AFBD_STATUS` bit 1 was assumed to be vsync since M2 and never checked.** It
+correlates with the frame period — 59.4 fps, 16.75 ms totals — which is why it
+went unquestioned. Correlating with the frame period is not the same as being the
+frame boundary.
+
+### Where to take it
+
+**Not a fifth hypothesis.** The next step needs a different instrument: mark each
+buffer with a distinct signature so a captured frame reports *which* buffer was
+on screen and how stale it was, rather than inferring mechanism from an aggregate
+percentage.
+
+**And probably not in this tool at all.** `h713-present` is a `/dev/mem` poke;
+correct buffer management belongs in the DRM driver where page-flip and vblank
+are first-class, which is the M4 decision. The measured vblank register above is
+the piece that work will need. A third buffer — the obvious fix if the latency
+theory is right — needs a larger `uboot-scanout` reservation and therefore a
+kernel change, so it is not a userspace tweak either.
+
+**What this does not undermine:** the throughput results stand. 58.93 fps
+vsync-limited presentation, 268 fps decode, bit-exact frames. Those were never
+evidence about tearing, and tearing was never evidence against them.
 
 ### Direct YUV scanout — ATTEMPTED AND FAILED 2026-08-09; not a register tweak
 
