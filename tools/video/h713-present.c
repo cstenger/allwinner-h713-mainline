@@ -154,14 +154,32 @@ static void *conv_worker(void *arg)
 	return NULL;
 }
 
-#define CONV_THREADS 4
+/*
+ * Tunable because the obvious value is not the best one. With 4 threads the
+ * conversion saturates all four A53s and starves the decoder feeding our pipe:
+ * a reader thread added on top moved 2 ms out of "read" and straight into
+ * "convert" for no net gain (28.33 -> 28.14 fps). Leaving a core for GStreamer
+ * may beat using every core for pixels. Set CONV_THREADS=n to sweep it.
+ */
+#define CONV_THREADS_MAX 4
+static int conv_threads = CONV_THREADS_MAX;
+
+static void conv_threads_init(void)
+{
+	const char *e = getenv("CONV_THREADS");
+	int v = e ? atoi(e) : 0;
+
+	if (v >= 1 && v <= CONV_THREADS_MAX)
+		conv_threads = v;
+}
 
 static void nv12_to_argb(const uint8_t *y, const uint8_t *uv, int w, int h,
 			 int ystride, int uvstride, uint32_t *out, int bt709)
 {
-	pthread_t th[CONV_THREADS];
-	struct conv_job jobs[CONV_THREADS];
-	int started[CONV_THREADS];
+	pthread_t th[CONV_THREADS_MAX];
+	struct conv_job jobs[CONV_THREADS_MAX];
+	int started[CONV_THREADS_MAX];
+	const int CONV_THREADS = conv_threads;
 	int n, rows = h / CONV_THREADS;
 
 	for (n = 0; n < CONV_THREADS; n++) {
@@ -183,6 +201,90 @@ static void nv12_to_argb(const uint8_t *y, const uint8_t *uv, int w, int h,
 	for (n = 0; n < CONV_THREADS; n++)
 		if (started[n])
 			pthread_join(th[n], NULL);
+}
+
+/*
+ * Frame reader, on its own thread.
+ *
+ * Reading was the single largest per-frame cost once the conversion was fixed
+ * (14.8 ms of a ~35 ms frame) and it is pure waiting -- the decoder filling a
+ * pipe. Overlapping it with convert/blit/commit hides nearly all of it. The VE
+ * decodes this content at 268 fps, so the reader is never the limit; it just
+ * has to run ahead.
+ *
+ * A short ring rather than a single handoff, so a hiccup in either stage does
+ * not immediately stall the other.
+ */
+#define RING_SLOTS 3
+
+struct reader {
+	int fd;
+	size_t fsz;
+	uint8_t *slot[RING_SLOTS];
+	int filled[RING_SLOTS];
+	int head, tail;                 /* producer writes head, consumer takes tail */
+	int eof, stop;
+	pthread_mutex_t m;
+	pthread_cond_t space, item;
+};
+
+static void *reader_thread(void *arg)
+{
+	struct reader *r = arg;
+
+	for (;;) {
+		size_t got = 0;
+		int slot;
+
+		pthread_mutex_lock(&r->m);
+		while (r->filled[r->head] && !r->stop)
+			pthread_cond_wait(&r->space, &r->m);
+		if (r->stop) { pthread_mutex_unlock(&r->m); return NULL; }
+		slot = r->head;
+		pthread_mutex_unlock(&r->m);
+
+		while (got < r->fsz) {
+			ssize_t k = read(r->fd, r->slot[slot] + got, r->fsz - got);
+			if (k <= 0)
+				break;
+			got += (size_t)k;
+		}
+
+		pthread_mutex_lock(&r->m);
+		if (got != r->fsz) {
+			r->eof = 1;
+			pthread_cond_broadcast(&r->item);
+			pthread_mutex_unlock(&r->m);
+			return NULL;
+		}
+		r->filled[slot] = 1;
+		r->head = (r->head + 1) % RING_SLOTS;
+		pthread_cond_signal(&r->item);
+		pthread_mutex_unlock(&r->m);
+	}
+}
+
+/* Returns the next frame buffer, or NULL at end of stream. */
+static uint8_t *reader_get(struct reader *r)
+{
+	uint8_t *p;
+
+	pthread_mutex_lock(&r->m);
+	while (!r->filled[r->tail] && !r->eof)
+		pthread_cond_wait(&r->item, &r->m);
+	if (!r->filled[r->tail]) { pthread_mutex_unlock(&r->m); return NULL; }
+	p = r->slot[r->tail];
+	pthread_mutex_unlock(&r->m);
+	return p;
+}
+
+static void reader_release(struct reader *r)
+{
+	pthread_mutex_lock(&r->m);
+	r->filled[r->tail] = 0;
+	r->tail = (r->tail + 1) % RING_SLOTS;
+	pthread_cond_signal(&r->space);
+	pthread_mutex_unlock(&r->m);
 }
 
 static void fill_bar(volatile uint32_t *fb, int x0)
@@ -356,6 +458,7 @@ int main(int argc, char **argv)
 	       rd(regs, AFBD_STRIDE), rd(regs, AFBD_SRC));
 
 	regs8 = (volatile uint8_t *)regs;
+	conv_threads_init();
 
 	if (!strcmp(argv[1], "regs"))
 		return 0;
@@ -419,14 +522,15 @@ int main(int argc, char **argv)
 	if (!strcmp(argv[1], "nv12") && argc >= 3) {
 		int frames = argc >= 4 ? atoi(argv[3]) : 1 << 30;
 		size_t fsz = (size_t)W * H * 3 / 2;
-		uint8_t *buf = malloc(fsz);
 		uint32_t *stage = aligned_alloc(64, FB_BYTES);
 		int vfd = open(argv[2], O_RDONLY);
-		int n = 0, timeouts = 0;
+		int n = 0, timeouts = 0, i;
 		double read_tot = 0, conv_tot = 0, blit_tot = 0, wait_tot = 0;
-		double t0 = now_ms();
+		double t0;
+		struct reader rd_ctx = { 0 };
+		pthread_t rd_th;
 
-		if (vfd < 0 || !buf || !stage) { perror("nv12 setup"); return 1; }
+		if (vfd < 0 || !stage) { perror("nv12 setup"); return 1; }
 		/*
 		 * Raw read() in frame-sized gulps, NOT stdio. fread() on a FILE*
 		 * uses a 4 KB buffer, so a 1.38 MB frame became ~337 blocking
@@ -436,24 +540,38 @@ int main(int argc, char **argv)
 		 * further; failure is harmless, so it is not checked.
 		 */
 		fcntl(vfd, F_SETPIPE_SZ, 4 << 20);
+
+		rd_ctx.fd = vfd;
+		rd_ctx.fsz = fsz;
+		for (i = 0; i < RING_SLOTS; i++) {
+			rd_ctx.slot[i] = malloc(fsz);
+			if (!rd_ctx.slot[i]) { perror("ring"); return 1; }
+		}
+		pthread_mutex_init(&rd_ctx.m, NULL);
+		pthread_cond_init(&rd_ctx.space, NULL);
+		pthread_cond_init(&rd_ctx.item, NULL);
+		if (pthread_create(&rd_th, NULL, reader_thread, &rd_ctx)) {
+			perror("reader thread");
+			return 1;
+		}
+
+		t0 = now_ms();
 		while (n < frames) {
 			volatile uint32_t *target = (n & 1) ? fb_back : fb_front;
 			unsigned long phys = (n & 1) ? FB_BACK : FB_FRONT;
 			double a, b, c, d, us;
-			size_t got = 0;
+			uint8_t *buf;
 
 			a = now_ms();
-			while (got < fsz) {
-				ssize_t r = read(vfd, buf + got, fsz - got);
-				if (r <= 0)
-					break;
-				got += (size_t)r;
-			}
-			if (got != fsz)
+			buf = reader_get(&rd_ctx);
+			if (!buf)
 				break;
 			b = now_ms();
 			nv12_to_argb(buf, buf + (size_t)W * H, W, H, W, W, stage, 1);
 			c = now_ms();
+			/* buf is consumed once converted -- hand the slot back
+			 * before the blit so the reader can run further ahead. */
+			reader_release(&rd_ctx);
 			/*
 			 * One bulk copy rather than per-pixel volatile stores.
 			 * The cast is deliberate: the framebuffer is only
@@ -470,6 +588,11 @@ int main(int argc, char **argv)
 			blit_tot += d - c; wait_tot += us < 0 ? 0 : us / 1000.0;
 			n++;
 		}
+		pthread_mutex_lock(&rd_ctx.m);
+		rd_ctx.stop = 1;
+		pthread_cond_broadcast(&rd_ctx.space);
+		pthread_mutex_unlock(&rd_ctx.m);
+		pthread_join(rd_th, NULL);
 		close(vfd);
 		flip_to(FB_FRONT);
 		if (n)

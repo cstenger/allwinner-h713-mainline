@@ -380,14 +380,54 @@ Against a 30 fps clip. Both bottlenecks were bugs in the presenter, not silicon:
 the top rate in the vendor's OPP table. The panel commits at 59.7 Hz. Both have
 enormous headroom; every limit hit so far was userspace glue.
 
+### The 28 fps ceiling is the cross-process handoff, not decode or scanout
+
+Measured 2026-08-10. **Fed from a page-cached file instead of a pipe, the same
+code runs at the panel's refresh rate:**
+
+```
+from page-cached file:  58.93 fps   read 0.13  convert 7.48  blit 5.83  wait 3.53
+live through the FIFO:  28.17 fps   read 11.87 convert 11.05 blit 3.80  wait 8.78
+```
+
+convert + blit + wait = **16.8 ms**, one frame period at 59.7 Hz. The
+presentation path is **vsync-limited**, not compute-limited.
+
+The live figure is not a limit of either end: the VE decodes this clip at
+**268 fps** and presentation sustains **59 fps**. What costs ~19 ms/frame is
+moving 1.4 MB between two processes and the contention that creates. Note that
+*every* stage got faster without GStreamer alongside — conversion 11.05 -> 7.48,
+commit-wait 8.78 -> 3.53 — so it is contention, not just the read.
+
+**Two optimisations were tried and neither helped**, which is what located the
+real cause:
+
+- **A reader thread** (ring of 3, prefetching during convert/commit):
+  28.33 -> 28.14 fps. It moved 2 ms out of `read` and straight into `convert`.
+- **Conversion thread count**, swept 2/3/4: **28.35 / 28.16 / 28.17 fps.** As
+  threads rise `convert` rises and `read` falls by the same amount, total pinned
+  at ~35.3 ms. Stages trading time against a fixed ceiling is the signature of a
+  shared resource, not of CPU shortage — and it is why more parallelism did
+  nothing.
+
+A memory-bandwidth explanation was proposed for that ceiling and **refuted** by
+the page-cached run: if DRAM were the limit, removing the pipe could not have
+doubled the frame rate while *also* making conversion faster.
+
+**So do not micro-optimise the conversion.** NEON would attack 7.5 ms of a
+16.8 ms budget that is already vsync-bound when fed properly. The win is
+architectural: decode and present in **one process**, using V4L2 with dmabuf so
+the decoder's own buffer is what gets presented, with no copy between them. That
+is also the natural shape of whatever M4 becomes.
+
 Remaining headroom, best first:
 
-1. **Scan out YUV directly** — kills convert *and* blit (12.5 ms/frame) and lets
-   decoder output go straight to the scanout buffer. See the open question below.
-2. **Overlap the read** — a reader thread fetching frame N+1 during frame N's
-   convert/commit hides most of the remaining 14.8 ms. Worth ~40-50 fps.
-3. **NEON the conversion** — the compiler autovectorises now, but hand-written
-   NEON would still beat it.
+1. **Single-process V4L2 + dmabuf** — removes the handoff entirely. The measured
+   headroom says this reaches vsync.
+2. **Scan out YUV directly** — would kill convert *and* blit (13.3 ms), but see
+   the negative result below: not available on this plane.
+3. **NEON the conversion** — last, and only if something above changes the
+   picture. Currently it optimises a stage that is not the constraint.
 
 **Still unmeasured on this path:** tearing. Double buffering is proven for the
 U-Boot side (test_37: 5.97% torn rows single-buffered vs 0.00% double), and the
