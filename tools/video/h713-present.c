@@ -198,6 +198,110 @@ static void fill_bar(volatile uint32_t *fb, int x0)
 	}
 }
 
+/*
+ * AFBD global config, from the vendor sunxi_decd driver (patch 0013,
+ * dec_reg_video_channel_attr_config), whose `base` is the AFBD block base:
+ *
+ *   +0x10 bit 4  clear = AFBC-compressed source, set = linear
+ *   +0x11        format selector. Vendor writes 1 (compressed), 6 (10-bit
+ *                YUV420 linear), 7 (AV1 10-bit linear). Ours runs 0 for the
+ *                ARGB8888 path that works today.
+ *   +0x13        0x03 on the linear path
+ *   +0x40/+0x44  plane strides   +0x48/+0x4c  luma / chroma plane geometry
+ *
+ * The 8-bit NV12 code is NOT derivable from that driver: its only
+ * format-to-register function handles the two 10-bit modes and has no caller
+ * in the port. Hence this sweep.
+ */
+#define AFBD_G_FLAGS    0x10
+#define AFBD_G_FORMAT   0x11
+#define AFBD_G_LINEAR   0x13
+#define AFBD_G_STRIDE0  0x40
+#define AFBD_G_STRIDE1  0x44
+/*
+ * The latch. The vendor's regs->workaround is afbd + 0x60, and
+ * dec_reg_set_dirty() writes workaround + 12 -- so afbd + 0x6c. Every vendor
+ * config change is followed by writing 1 here; dec_reg_bypass_config() does it
+ * inline after touching a single byte.
+ *
+ * Without it the format byte at +0x11 sits in a shadow register and never
+ * reaches the hardware. Measured: setting format+stride without the latch left
+ * the fetch at 4 bytes/pixel while the stride change DID take, so four source
+ * rows packed into each display row -- the picture repeated 4x horizontally in
+ * greyscale (test_39/IMG_0659.jpeg).
+ */
+#define AFBD_DIRTY      0x6c
+
+static volatile uint8_t *regs8;
+
+/*
+ * Try one candidate format code with a real NV12 frame, then put every register
+ * back exactly as found. Self-restoring on purpose: a wrong code shows garbage,
+ * and without the restore the panel would stay broken until a U-Boot reboot.
+ */
+static int yuvtry(const char *path, unsigned code, unsigned dwell_ms)
+{
+	uint32_t save_10, save_stride, save_src, save_s0, save_s1;
+	size_t fsz = (size_t)W * H * 3 / 2;
+	uint8_t *buf = malloc(fsz);
+	int fd2 = open(path, O_RDONLY);
+	size_t got = 0;
+	double us;
+
+	if (fd2 < 0 || !buf) { perror("yuvtry"); return 1; }
+	while (got < fsz) {
+		ssize_t r = read(fd2, buf + got, fsz - got);
+		if (r <= 0) break;
+		got += (size_t)r;
+	}
+	close(fd2);
+	if (got != fsz) { fprintf(stderr, "short frame\n"); return 1; }
+
+	save_10 = rd(regs, AFBD_G_FLAGS);
+	save_stride = rd(regs, AFBD_STRIDE);
+	save_src = rd(regs, AFBD_SRC);
+	save_s0 = rd(regs, AFBD_G_STRIDE0);
+	save_s1 = rd(regs, AFBD_G_STRIDE1);
+	printf("saved: +0x10=%08x stride=%08x src=%08x s0=%08x s1=%08x\n",
+	       save_10, save_stride, save_src, save_s0, save_s1);
+
+	/* NV12 into the front buffer: Y plane then interleaved chroma. */
+	memcpy((void *)fb_front, buf, fsz);
+
+	regs8[AFBD_G_FORMAT] = (uint8_t)code;
+	/*
+	 * BOTH stride registers. The channel stride at +0x170 is not the only
+	 * one: the global plane strides at +0x40/+0x44 came up holding 1920,
+	 * and at that pitch a 1280-wide 8-bit luma plane consumes 720 * 1920 =
+	 * 1382400 bytes -- the whole NV12 frame -- so the lower part of the
+	 * picture is chroma being read as luma. Setting only +0x170 produced
+	 * exactly that: correct at the bottom, a grey band, black above.
+	 */
+	wr(regs, AFBD_STRIDE, W);                  /* luma stride, 1 byte/px */
+	wr(regs, AFBD_G_STRIDE0, W);
+	wr(regs, AFBD_G_STRIDE1, W);               /* NV12 chroma pitch == luma */
+	wr(regs, AFBD_DIRTY, 1);                   /* latch the shadow config */
+	flip_to(FB_FRONT);
+	us = commit();
+	printf("code %2u: +0x10=%08x stride=%08x s0=%08x s1=%08x commit %s %.0f us\n",
+	       code, rd(regs, AFBD_G_FLAGS), rd(regs, AFBD_STRIDE),
+	       rd(regs, AFBD_G_STRIDE0), rd(regs, AFBD_G_STRIDE1),
+	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
+
+	usleep(dwell_ms * 1000);
+
+	wr(regs, AFBD_G_FLAGS, save_10);
+	wr(regs, AFBD_STRIDE, save_stride);
+	wr(regs, AFBD_SRC, save_src);
+	wr(regs, AFBD_G_STRIDE0, save_s0);
+	wr(regs, AFBD_G_STRIDE1, save_s1);
+	wr(regs, AFBD_DIRTY, 1);                   /* latch the restore too */
+	commit();
+	printf("restored\n");
+	free(buf);
+	return 0;
+}
+
 static void usage(void)
 {
 	fprintf(stderr,
@@ -206,6 +310,7 @@ static void usage(void)
 		"  fill <0xAARRGGBB>    solid fill of the front buffer, then commit\n"
 		"  bar [frames]         moving red bar on blue, double-buffered (default 600)\n"
 		"  nv12 <file> [frames] present NV12 frames from a raw file\n"
+		"  yuvtry <f.nv12> <code> [ms]  try one AFBD format code, then restore\n"
 		"\nThe display must already be up (h713_disp in U-Boot). This refuses to\n"
 		"touch the display blocks otherwise -- reading them gated hangs the board.\n");
 }
@@ -250,8 +355,14 @@ int main(int argc, char **argv)
 	       rd(regs, AFBD_CTRL), rd(regs, AFBD_READY), rd(regs, AFBD_STATUS),
 	       rd(regs, AFBD_STRIDE), rd(regs, AFBD_SRC));
 
+	regs8 = (volatile uint8_t *)regs;
+
 	if (!strcmp(argv[1], "regs"))
 		return 0;
+
+	if (!strcmp(argv[1], "yuvtry") && argc >= 4)
+		return yuvtry(argv[2], strtoul(argv[3], NULL, 0),
+			      argc >= 5 ? strtoul(argv[4], NULL, 0) : 4000);
 
 	if (!strcmp(argv[1], "fill") && argc >= 3) {
 		uint32_t v = strtoul(argv[2], NULL, 0);

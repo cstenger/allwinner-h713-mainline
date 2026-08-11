@@ -394,14 +394,75 @@ U-Boot side (test_37: 5.97% torn rows single-buffered vs 0.00% double), and the
 Linux path uses the same flip, but it has not been scored with
 `tools/display/tear-measure.py`. Do not claim it is tear-free until it has.
 
-**Open design question: can the layer scan out NV12 directly?** The U-Boot path
-writes **1280x720 ARGB8888, stride 0x1400** and the layer's format was never
-chosen explicitly — it arrives via the LogoRegData replay. If the layer has a
-YUV mode, the CPU colour conversion disappears and with it most of the per-frame
-cost. The evidence log identified `0x05280084` (width / height) and
-`0x0528008c` (X origin) in that block but never a format field, and this display
-path is *not* the mainline `sun8i-mixer` layout, so it cannot be read off
-upstream. This is a `regscan`-shaped hardware question, not a documentation one.
+### Direct YUV scanout — ATTEMPTED AND FAILED 2026-08-09; not a register tweak
+
+The prize was killing the CPU colour conversion (convert 8.7 ms + blit 3.8 ms =
+12.5 ms/frame, most of the per-frame budget). **Three variants were tried on
+hardware and all fail identically**, `h713-present yuvtry` with the `testsrc2`
+colour-bar frame (photos in `local/lcd-photos/test_39/`, `test_40/`):
+
+| attempt | result |
+| --- | --- |
+| format byte only | picture correct at the bottom, grey band ~1/3 down, black above |
+| format + all three strides at 1280 | picture repeats **4x horizontally**, near-greyscale |
+| format + strides + config latch | **identical** — no change at all, stable across 60 s |
+| the same, re-run from a **clean boot** | **identical again** (`test_42` reference vs `test_43` test, same session, same camera position) |
+
+**The last row exists because provenance matters.** A photo in `test_41` showed
+correct colour bars and could not be attributed to a command — it was equally
+consistent with `yuvtry` succeeding or with the ARGB restore that follows it.
+Rather than publish a negative resting on that, the whole A/B was re-run from a
+cold boot with the reference shot first. `test_41` was the restore. Four
+attempts, one outcome.
+
+**The 4x repeat is arithmetic, and it is the whole diagnosis.** 4 bytes/pixel
+divided by 1 byte/pixel is 4: with the stride at 1280 *bytes*, one display row
+consumes 320 ARGB pixels, so four source rows pack into each display row. **The
+fetch is still 4 bytes/pixel — the format never changed.** The greys are the Y
+plane being read as RGB components.
+
+**And the write was not lost.** The readback prints `+0x10=03000310`, i.e. byte
+`0x11` holds `3` after the write and after the latch. The register accepts the
+value, retains it, and the fetch does not change. So this is not a shadowing or
+sequencing problem, which is what the latch attempt was testing.
+
+**Most likely explanation — inference, not proven.** The plane this path drives
+is an **OSD/UI channel**, and on Allwinner display engines UI channels are
+RGB-only; YUV formats belong to **VI (video input) channels**. If that holds
+here, no value written to an AFBD format byte can produce YUV on this plane, and
+the change needed is to route through a VI channel in the mixer — which means
+owning the DE configuration that currently arrives wholesale from the vendor's
+`LogoRegData` replay. That is M4-scale work, not a poke.
+
+**What was established anyway, and is durable:**
+
+- `0x05600011` is a real format selector: it accepts and retains values.
+- The code is the **`fmt_attr_tbl` row index**, not the `DEC_FORMAT_*` id. Three
+  independent points fit: row 0 = RGB888 (matching the live ARGB path's `0`),
+  row 6 = YUV420 10-bit and row 7 = AV1 10-bit (matching the vendor's writes of
+  `6` and `7`). By that mapping 8-bit NV12 is row **3**.
+- There are **three** stride registers, not one: the channel stride at
+  `0x05600170` plus global plane strides at `0x05600040`/`0x44`. The first
+  attempt's grey band was luma read at the wrong pitch through the two that were
+  missed.
+- `0x0560006c` is the config latch (vendor `dec_reg_set_dirty()`, and
+  `dec_reg_bypass_config()` writes 1 there right after changing a config byte).
+- `0x05600048`/`0x4c` already hold NV12-shaped plane geometry (1280x720 and
+  1280x360), and the vendor's Y/C plane address registers at `0x05600070` /
+  `0x05600084` read **zero** on our path — we feed AFBD through the channel
+  block's single source at `+0x178` instead.
+
+**Recommendation: do not chase this further as a register experiment.** Take the
+cheap software wins first (overlapped read, NEON), which clear 30 fps with
+margin, and revisit YUV when M4 decides between DECD and a DRM plane — at which
+point the mixer channel type is a design input rather than something to poke.
+
+**Method note.** Both diagnoses came from photographs, not the console. Every one
+of these three runs reported success at every step: format written, strides
+written, latch written, commit OK, registers restored. The panel said otherwise
+each time, and the *specific* defect — band position, repeat count — is what
+identified the register. This is the display bring-up's "prefer the photograph to
+the metric" rule earning its place again.
 
 ### M3 — sustained playback
 
