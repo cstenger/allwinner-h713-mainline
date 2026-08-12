@@ -660,6 +660,60 @@ int main(int argc, char **argv)
 	 * instant re-set        -> it is a level/static bit, useless as an event.
 	 * never re-sets         -> acking clears it for good; not an event either.
 	 */
+	/*
+	 * How many vblanks after the flip does scanout ACTUALLY switch?
+	 *
+	 * Four tearing hypotheses have been eliminated and every one of them
+	 * assumed an answer to this. It is measurable without reading the panel,
+	 * by using the fill as the probe: flip to the other buffer, then
+	 * immediately repaint the OLD buffer white. If white ever reaches the
+	 * screen, the old buffer was still live when we wrote it -- which is
+	 * precisely the corruption the tearing metric keeps reporting.
+	 *
+	 *   stays GREEN            -> the flip is effective immediately; writing
+	 *                             the other buffer is safe, and the tearing
+	 *                             comes from somewhere else entirely.
+	 *   flashes WHITE then GREEN -> the flip lands late; the count of frames
+	 *                             painted before it takes tells us how late.
+	 *   stays WHITE            -> the flip never took effect at 60 Hz
+	 *                             timescales at all, despite flip-test
+	 *                             working across 5-second dwells.
+	 */
+	if (!strcmp(argv[1], "latency-probe")) {
+		unsigned dwell = argc >= 3 ? strtoul(argv[2], NULL, 0) : 4000;
+		size_t i;
+
+		for (i = 0; i < FB_BYTES / 4; i++) {
+			((uint32_t *)fb_front)[i] = 0xffff0000u;   /* red   */
+			((uint32_t *)fb_back)[i]  = 0xff00ff00u;   /* green */
+		}
+		flip_to(FB_FRONT);
+		wr(regs, AFBD_DIRTY, 1);
+		commit();
+		printf("phase 1: panel should be RED (front live), %u ms\n", dwell);
+		usleep(dwell * 1000);
+
+		wait_vblank();
+		flip_to(FB_BACK);
+		wr(regs, AFBD_DIRTY, 1);
+		commit();
+		/* No pause: repaint the buffer we just flipped AWAY from. */
+		for (i = 0; i < FB_BYTES / 4; i++)
+			((uint32_t *)fb_front)[i] = 0xffffffffu;  /* white */
+		printf("phase 2: flipped to BACK, then repainted FRONT white.\n"
+		       "         GREEN  = flip effective, front write invisible\n"
+		       "         WHITE  = front still live when written (the bug)\n");
+		usleep(dwell * 1000);
+
+		for (i = 0; i < FB_BYTES / 4; i++)
+			((uint32_t *)fb_front)[i] = 0xffff0000u;
+		flip_to(FB_FRONT);
+		wr(regs, AFBD_DIRTY, 1);
+		commit();
+		printf("phase 3: back to RED. src=%08x\n", rd(regs, AFBD_SRC));
+		return 0;
+	}
+
 	if (!strcmp(argv[1], "vbprobe")) {
 		volatile uint8_t *b = (volatile uint8_t *)regs;
 		int i, hits = 0;

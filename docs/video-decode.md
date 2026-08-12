@@ -482,6 +482,26 @@ was credited — the failure mode this project already knows about.
 | buffer reused before scanout finished | `EXTRA_VSYNC=1` | frame rate 59.53 -> 29.82, a clean halving | **refuted**, 31.30% |
 | swapping at an arbitrary scan phase | `bar-vs`: real vblank + dirty latch | 0 vblank misses, 59.49 fps | **refuted**, 27.84% |
 | one-frame flip latency vs two buffers | `BAR_LATCH_WAIT=1` | frame rate 59.46 -> 29.88 | **partial**, 30.46 -> 22.14% |
+| the flip lands late | `latency-probe` | panel: red -> green -> red | **refuted**, white never appears |
+
+**`latency-probe` is the one measurement here that needs no metric and no camera
+analysis** — it uses the fill as its own probe. Flip to the back buffer, then
+immediately repaint the *front* buffer white: if white ever reaches the screen,
+the front was still live when written, which is the corruption caught in the act.
+It stayed green. Scope: `commit()` waits ~10 ms before the repaint, so this
+proves the flip lands within ~10 ms rather than within one 16.74 ms frame — but
+`bar-vs` has the same commit between its flip and its next fill, so by identical
+reasoning its fills do target a buffer that is no longer live.
+
+It also supersedes `flip-test` as evidence. That showed clean red/green
+alternation but across **5-second dwells**, which only proves the flip works on a
+long timescale and says nothing about a 16.74 ms frame.
+
+**So the mechanism is still unknown**, and every straightforward explanation is
+now eliminated by measurement rather than by argument. What remains untested is
+whether the corruption involves our framebuffer writes at all — the DE or panel
+may have internal line buffering that the "rows with no bar" metric is reading.
+Distinguishing that needs per-buffer content signatures, not another fix attempt.
 
 ### What the vendor binaries gave up (and it is worth keeping)
 
