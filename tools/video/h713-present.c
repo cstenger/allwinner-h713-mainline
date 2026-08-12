@@ -161,10 +161,16 @@ static double wait_vblank(void)
 	/*
 	 * 0xc0 ONLY, not the vendor's 0xc0 && 0xc4.
 	 *
-	 * dec_irq_query() requires bit 0 in both, but 0xc4 reads 00 in our
-	 * configuration -- it is an interrupt-enable the vendor sets and we do
-	 * not -- so the AND is never true and every wait timed out (300 misses
-	 * out of 300).
+	 * dec_irq_query() requires bit 0 in both. 0xc4 is the HARDWARE
+	 * INTERRUPT ENABLE: dec_reg_enable() writes it via
+	 * `regs->workaround + 100`, and workaround is afbd + 0x60, so
+	 * 0x60 + 100 = 0xc4. Nothing in this tool ever calls that, so the bit
+	 * stays 0, the AND is never true, and every wait timed out (300 misses
+	 * out of 300). The vendor's condition is simply "status set AND
+	 * interrupt enabled" -- correct for a handler, wrong for a poller.
+	 *
+	 * Polling 0xc0 alone is right here precisely BECAUSE we never enable
+	 * the interrupt: the status bit ticks either way.
 	 *
 	 * 0xc0 bit 0 on its own is MEASURED to be the vblank event: acked and
 	 * re-polled 20 times it fires at 16.74 ms intervals, 19 of them
