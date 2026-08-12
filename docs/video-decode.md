@@ -429,7 +429,52 @@ Remaining headroom, best first:
 3. **NEON the conversion** — last, and only if something above changes the
    picture. Currently it optimises a stage that is not the constraint.
 
-### Tearing: MEASURED 2026-08-10, and the Linux path is NOT clean
+### Tearing: RESOLVED 2026-08-11 — double buffering works; the "defect" was a bad baseline
+
+**Read this before the section below, which is kept as the trail and whose
+conclusion is wrong.** The workload-matched control settles it:
+
+| run | is the DISPLAYED buffer written? | rows with no bar |
+| --- | --- | --- |
+| idle panel, nothing running | no | 0.74% |
+| **`bar-noflip`: full workload, scanout pinned to a buffer written once** | **no** | **23.03%** |
+| double-buffered, no fixes | no | 30.46% |
+| + post-flip vblank wait | no | 22.14% |
+| + memory barrier | no | 16.91% |
+| **single-buffered** | **yes** | **59.38%** |
+
+`bar-noflip` does the identical per-frame work -- same two-phase fill, same
+commit, 59.71 fps -- but fills `fb_back` while scanout stays pinned to an
+`fb_front` written once. The displayed surface **cannot** be corrupted, and the
+metric still reads **23.03%**. So ~23% is this instrument's floor *for a run
+doing this workload*, not corruption.
+
+Against that floor every double-buffered variant is at or below it, and only the
+single-buffered control clearly exceeds it. **Double buffering works on the Linux
+path.** M2's original claim was right; the retraction of it was wrong.
+
+**The mistake, and it was made three times: a baseline that differed in more than
+one variable.** The idle panel differs from a real run in motion *and* in whether
+the fill/commit cycle runs at all. The motion confound was spotted and
+controlled (`BAR_STEP=0`); the workload confound was not, so 0.74% was never the
+right floor and every number built on it was misread. Five mechanisms were then
+investigated against a phantom.
+
+**What is real:**
+- Single-buffered tearing: 59.38% vs a 23.03% floor. Genuine, and the reason
+  double buffering exists.
+- The metric is only trustworthy for large differences. 25 vs 30 vs 22 vs 17 are
+  all inside the floor's variation, which also moves with camera framing
+  (interior rows/frame ranged 1227-1758 across these recordings).
+- The barrier in `flip_to()` and the vblank work are kept: both are *correct*
+  independent of this, and the vblank register is what a DRM driver needs. But
+  neither should be credited with fixing a defect that was not there.
+
+**Rule earned:** a control must match the run in every respect except the one
+variable under test. "Nothing is running" is not the baseline for "something is
+running".
+
+### The original investigation (conclusion WRONG, kept as the trail)
 
 Previously this section said tearing was unmeasured and that double buffering was
 "proven". **The proof was from the U-Boot path (test_37) and was carried across

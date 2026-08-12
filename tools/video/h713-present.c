@@ -118,8 +118,33 @@ static double commit(void)
 	return -1.0;
 }
 
+/*
+ * Barrier before the flip, and it is not paranoia.
+ *
+ * leak-test proved writes to the OFF-SCREEN buffer never reach the panel:
+ * 1799 full-screen repaints at ~450/s while the other buffer was live, and the
+ * capture is solid green for the whole 8 s window. So the tearing is not our
+ * writes landing on a live surface.
+ *
+ * What leak-test never does is SWAP to the buffer it just wrote -- which is
+ * exactly what every torn run does. That isolates the remaining candidate: the
+ * fill's stores may not have drained to DRAM when the AFBD_SRC write reaches
+ * the display block. The framebuffer is written through a plain (non-volatile)
+ * pointer so the compiler can vectorise it, while the register goes through a
+ * volatile one to a different peripheral; nothing orders the two. If the
+ * display starts reading the new buffer while the tail of the fill is still in
+ * flight, the raster sees a half-written surface -- which is precisely the
+ * "rows with no bar" signal, and it would be immune to every timing fix tried
+ * so far, because the problem is not WHEN we flip.
+ *
+ * BARRIER=0 disables it so the A/B can be measured rather than assumed.
+ */
+static int use_barrier = 1;
+
 static void flip_to(unsigned long phys)
 {
+	if (use_barrier)
+		__sync_synchronize();           /* dsb: drain the fill first */
 	wr(regs, AFBD_SRC, (uint32_t)phys);
 }
 
@@ -546,6 +571,8 @@ int main(int argc, char **argv)
 	regs8 = (volatile uint8_t *)regs;
 	conv_threads_init();
 	extra_vsync = getenv("EXTRA_VSYNC") && atoi(getenv("EXTRA_VSYNC"));
+	if (getenv("BARRIER"))
+		use_barrier = atoi(getenv("BARRIER"));
 	if (getenv("BAR_STEP"))
 		bar_step = atoi(getenv("BAR_STEP"));
 
@@ -679,6 +706,61 @@ int main(int argc, char **argv)
 	 *                             timescales at all, despite flip-test
 	 *                             working across 5-second dwells.
 	 */
+	/*
+	 * leak-test amplifies latency-probe so a transient cannot hide.
+	 *
+	 * latency-probe repaints the off-screen buffer white ONCE. If the front
+	 * were live for a single frame that is one 16.74 ms flash -- easy for an
+	 * eye to miss, and a 30 fps camera samples every 33 ms so it can fall
+	 * between samples too.
+	 *
+	 * Here BACK (green) is made live and then FRONT is hammered between
+	 * white and red continuously for several seconds. The panel must stay
+	 * SOLID GREEN. Any flicker of white or red means the front buffer is
+	 * reaching the screen while we write it, and at this repetition rate a
+	 * leak becomes a visible strobe rather than a single missable frame.
+	 */
+	if (!strcmp(argv[1], "leak-test")) {
+		unsigned secs = argc >= 3 ? strtoul(argv[2], NULL, 0) : 8;
+		double t0;
+		size_t i;
+		unsigned long cycles = 0;
+
+		for (i = 0; i < FB_BYTES / 4; i++) {
+			((uint32_t *)fb_front)[i] = 0xffff0000u;   /* red   */
+			((uint32_t *)fb_back)[i]  = 0xff00ff00u;   /* green */
+		}
+		wait_vblank();
+		flip_to(FB_BACK);
+		wr(regs, AFBD_DIRTY, 1);
+		commit();
+		wait_vblank();
+
+		printf("BACK (green) is live; hammering FRONT white<->red for %u s.\n"
+		       "  SOLID GREEN      = front writes never reach the panel\n"
+		       "  ANY white/red    = front is live while being written\n",
+		       secs);
+
+		t0 = now_ms();
+		while (now_ms() - t0 < secs * 1000.0) {
+			for (i = 0; i < FB_BYTES / 4; i++)
+				((uint32_t *)fb_front)[i] = 0xffffffffu;
+			for (i = 0; i < FB_BYTES / 4; i++)
+				((uint32_t *)fb_front)[i] = 0xffff0000u;
+			cycles++;
+		}
+		printf("%lu white/red cycles in %u s; src=%08x\n",
+		       cycles, secs, rd(regs, AFBD_SRC));
+
+		for (i = 0; i < FB_BYTES / 4; i++)
+			((uint32_t *)fb_front)[i] = 0xffff0000u;
+		wait_vblank();
+		flip_to(FB_FRONT);
+		wr(regs, AFBD_DIRTY, 1);
+		commit();
+		return 0;
+	}
+
 	if (!strcmp(argv[1], "latency-probe")) {
 		unsigned dwell = argc >= 3 ? strtoul(argv[2], NULL, 0) : 4000;
 		size_t i;
