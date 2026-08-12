@@ -809,6 +809,88 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	/*
+	 * yuv-stream: successive NV12 frames via the vendor's plane addresses.
+	 *
+	 * Still copies the frame into the scanout region (we cannot resolve a
+	 * V4L2 buffer to a physical address from userspace -- that is exactly
+	 * why the vendor has a kernel driver), but it does NO colour conversion
+	 * and no ARGB blit. It answers whether direct YUV survives motion and
+	 * what the per-frame cost becomes once convert+blit are gone.
+	 *
+	 * Two frame slots inside the 8 MiB reservation: an NV12 frame is
+	 * 1.38 MB so both fit with room to spare.
+	 */
+	if (!strcmp(argv[1], "yuv-stream") && argc >= 3) {
+		int frames = argc >= 4 ? atoi(argv[3]) : 1 << 30;
+		static const unsigned y_off[] = { 0x70, 0x74, 0x78, 0x7c };
+		static const unsigned c_off[] = { 0x84, 0x88, 0x8c, 0x90 };
+		size_t fsz = (size_t)W * H * 3 / 2;
+		uint8_t *buf = malloc(fsz);
+		int vfd = open(argv[2], O_RDONLY);
+		uint32_t s_flags = rd(regs, AFBD_G_FLAGS), s_str = rd(regs, AFBD_STRIDE);
+		uint32_t s_src = rd(regs, AFBD_SRC), s_s0 = rd(regs, AFBD_G_STRIDE0);
+		uint32_t s_s1 = rd(regs, AFBD_G_STRIDE1);
+		uint32_t s_y = rd(regs, y_off[0]), s_c = rd(regs, c_off[0]);
+		int n = 0, timeouts = 0;
+		double copy_tot = 0, wait_tot = 0, t0;
+
+		if (vfd < 0 || !buf) { perror("yuv-stream"); return 1; }
+		fcntl(vfd, F_SETPIPE_SZ, 4 << 20);
+
+		regs8[AFBD_G_FORMAT] = 3;               /* 8-bit YUV420 */
+		wr(regs, AFBD_G_STRIDE0, W);
+		wr(regs, AFBD_G_STRIDE1, W);
+		wr(regs, AFBD_STRIDE, W);
+		wr(regs, AFBD_DIRTY, 1);
+
+		t0 = now_ms();
+		while (n < frames) {
+			unsigned long base = (n & 1) ? FB_BACK : FB_FRONT;
+			double a, b, us;
+			size_t got = 0;
+
+			a = now_ms();
+			while (got < fsz) {
+				ssize_t r = read(vfd, buf + got, fsz - got);
+				if (r <= 0) break;
+				got += (size_t)r;
+			}
+			if (got != fsz) break;
+			memcpy((void *)(uintptr_t)((char *)fb_front +
+			       (base - FB_FRONT)), buf, fsz);
+			__sync_synchronize();
+			b = now_ms();
+
+			wr(regs, y_off[0], (uint32_t)base);
+			wr(regs, c_off[0], (uint32_t)(base + (unsigned long)W * H));
+			wr(regs, AFBD_DIRTY, 1);
+			us = commit();
+			if (us < 0) timeouts++;
+			copy_tot += b - a;
+			wait_tot += us < 0 ? 0 : us / 1000.0;
+			n++;
+		}
+		close(vfd);
+
+		wr(regs, y_off[0], s_y);
+		wr(regs, c_off[0], s_c);
+		wr(regs, AFBD_G_FLAGS, s_flags);
+		wr(regs, AFBD_G_STRIDE0, s_s0);
+		wr(regs, AFBD_G_STRIDE1, s_s1);
+		wr(regs, AFBD_STRIDE, s_str);
+		wr(regs, AFBD_SRC, s_src);
+		wr(regs, AFBD_DIRTY, 1);
+		commit();
+
+		if (n)
+			printf("yuv-stream: %d frames in %.0f ms (%.2f fps), %d timeouts\n"
+			       "            mean read+copy %.2f ms, commit wait %.2f ms\n",
+			       n, now_ms() - t0, n / ((now_ms() - t0) / 1000.0),
+			       timeouts, copy_tot / n, wait_tot / n);
+		return n ? 0 : 1;
+	}
+
 	if (!strcmp(argv[1], "leak-test")) {
 		unsigned secs = argc >= 3 ? strtoul(argv[2], NULL, 0) : 8;
 		double t0;
