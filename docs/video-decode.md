@@ -6,6 +6,96 @@ what this work builds on.
 
 Goal for this phase: **decoded video visible on the projector panel.**
 
+---
+
+# HANDOFF — state as of 2026-08-12
+
+## What works, hardware-verified
+
+| | |
+| --- | --- |
+| **H.264 decode** | **bit-exact** vs host software references. Constrained Baseline, Main (B-frames + CABAC), High (8x8 transform), 320x240 through 1920x1080. Unmodified mainline cedrus. Decodes this content at **268 fps** |
+| **Decoded video on the panel** | operator-confirmed, correct colour and geometry |
+| **Direct YUV scanout** | NV12 straight to the display, **no CPU colour conversion**, via the vendor's plane-address path. Streaming: **57.77 fps**, 0 timeouts |
+| **Presentation ceiling** | **58.93 fps** against a 59.7 Hz panel — vsync-limited |
+| **Double buffering** | works (single-buffered 59.38% torn rows vs a 23.03% workload floor) |
+| **DECD driver** | probes, `/dev/decd`, survives 20 s of 60 Hz vsync interrupts; `FRAME_SUBMIT` returns a real `fence_fd` |
+
+## THE ONE OPEN QUESTION
+
+**Did the panel show the colour bars during the last `decd-client show` run?**
+
+That run completed cleanly — `fence_fd=4`, no crash, 20 s hold — but nobody
+reported what the panel displayed. The answer decides the next step:
+
+- **Colour bars** -> the full vendor path works end to end. Zero-copy achieved:
+  userspace passes a physical address, the driver programs the plane registers
+  on vsync, the CPU never touches pixels. Move to feeding it decoder buffers.
+- **Still the boot logo** -> submission and fencing work but the frame is not
+  reaching scanout. Most likely the **format register**:
+  `dec_reg_video_channel_attr_config()` only handles the two 10-bit modes
+  (mode 1 and mode 20) and may never program code 3 for 8-bit NV12. `yuv2` sets
+  `0x05600011` by hand and works; the driver may not. Check that register while
+  a frame is submitted, and if it is not 3, that is the gap.
+
+Reproduce with:
+
+```
+cd /root && ./decd-client show /root/bars.nv12 20000
+```
+
+## Board state right now
+
+- **FAT `mmc 1:2` holds the DECD kernel** (persistent; `fatwrite` done). It has
+  `dec@5600000` enabled and `CONFIG_SUNXI_DECD=m`.
+- **`CONFIG_MODVERSIONS` is off**, so driver iteration needs only the ~63 KB
+  `.ko` over serial (~1 min), not a 12-minute kernel transfer.
+- `/root` on the target holds `h713-present`, `decd-client`, `sunxi-decd.ko`,
+  `vedump.py`, the NV12 frames (`bars.nv12`, `one.nv12`, `frames30.nv12`) and
+  `video-test/` with the H.264 ladder. Plus a lot of `*.log` scratch worth
+  deleting.
+- **The module is NOT auto-loaded**: `insmod /root/sunxi-decd.ko` after boot.
+- **The display must be brought up in U-Boot before booting Linux**, every time:
+
+```
+reboot bootloader          # from Linux, lands at the U-Boot prompt
+h713_disp auto 0x34 logo   # panel up; plain autoboot does NOT do this
+boot
+```
+
+`h713-present` refuses to run if this was skipped (it checks the AFBD clock
+gate) rather than hanging the board on gated registers.
+
+## Gotchas that cost real time
+
+- **The USB gadget only enumerates if Linux has not run since power-on.** Cold
+  boot, interrupt at `=>`, then UMS/fastboot. Otherwise use YMODEM +
+  `fatwrite ... ${filesize}`. See [flash.md](flash.md).
+- **Score a bulk write by throughput, not exit status.** `dd` reported
+  "4.3 GB, 1.0 GB/s" and exited 0 on a write that never reached the device.
+- **A control must match the run in every respect except the variable under
+  test.** "Nothing is running" is not the baseline for "something is running" —
+  that error produced a phantom tearing defect and five wasted investigations.
+- **The vendor is a strong prior, not a rule.** Copying its `reg` order would
+  have pointed the driver at the wrong block.
+- **`dec_frame_submit()` always returns 0**, even when disabled or when it drops
+  the frame. The `fence_fd` is the only real feedback.
+
+## Next steps, in order
+
+1. **Answer the open question above.** One run, one look at the panel.
+2. If the format register is the gap, program it from the driver (or from
+   `h713-present` alongside, as a bridge) and re-test.
+3. **Feed DECD real decoder buffers.** `DECD_IOC_MAP_LINEAR_BUFFER` wraps a
+   physical region as a dma_buf; `FRAME_SUBMIT` also takes `image_fd`. Cedrus
+   CAPTURE buffers can be exported with `VIDIOC_EXPBUF`. That closes the loop:
+   decode -> submit fd -> display, with no copy anywhere.
+4. **Use the fence.** `FRAME_SUBMIT` returns a `fence_fd` that signals when the
+   display is done with a buffer — exactly the V4L2 buffer-recycling signal.
+5. Revisit `clock-frequency` (we run 100 MHz, vendor asks 200) once it works.
+
+---
+
 ## Three blocks, and the naming trap
 
 The existing docs use "DECD" and "Cedrus/VE3" interchangeably for "next: video

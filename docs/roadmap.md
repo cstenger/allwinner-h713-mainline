@@ -127,8 +127,18 @@ attached, the display path can be brought up here, not only on the projector
    render offscreen/headless (EGL/GBM, PRIME buffer sharing) for validation, but
    anything *visible* is gated on the display path (item 3), so it is downstream
    of that work, not a standalone bench item.
-5. **Video decode (Cedrus / VE3) — DECODE WORKS 2026-08-09; presentation is
-   what remains.** Mainline `cedrus` decodes H.264 on the H713 **bit-exact**
+5. **Video decode (Cedrus / VE3) — DECODE AND PRESENTATION BOTH WORK
+   (2026-08-12); zero-copy is the remaining step.** Decoded H.264 plays on the
+   panel. Direct YUV scanout works via the vendor's plane-address path, so no
+   CPU colour conversion is needed; streaming runs at 57.77 fps against a
+   vsync-limited ceiling of 58.93. The vendor's DECD driver is enabled as a
+   module and accepts frame submissions with a working fence, after two bugs in
+   it were fixed. Remaining: confirm the DECD-submitted frame reaches the panel,
+   then feed it cedrus CAPTURE buffers via dma-buf so nothing is copied at all.
+   **Read the HANDOFF section at the top of
+   [video-decode.md](video-decode.md).** Earlier framing follows.
+
+   **Superseded detail (2026-08-09):** Mainline `cedrus` decodes H.264 on the H713 **bit-exact**
    against host software references — Constrained Baseline, Main (B-frames +
    CABAC) and High (8x8 transform), 320x240 through 1920x1080 — with **no driver
    changes**. The blocker was a single device-tree property: `iommus` on the `ve`
