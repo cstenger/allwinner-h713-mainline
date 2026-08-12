@@ -311,6 +311,57 @@ evidence about the interrupt *number*.
 on keeps it clocked indefinitely and changes the state every later test starts
 from.
 
+## DECD enabled — probes clean, display untouched (2026-08-12)
+
+The vendor driver (patch 0013) is the only way to reach zero-copy, because
+userspace can neither resolve a V4L2 buffer to a physical address nor program
+display registers. Enabled and loaded on hardware:
+
+```
+decd 5600000.dec: tvtop link unavailable (-19); continuing unordered
+decd 5600000.dec: reconstructed decd probed
+```
+
+| check | result |
+| --- | --- |
+| `/dev/decd` | created, char 243:0 |
+| AFBD registers after load | `ctrl=03001901 stride=00001400 src=6c100000` — **identical to before** |
+| panel | boot logo still displayed (operator-confirmed) |
+| IRQ | `GICv2 142` = SPI 110, named `decd`, count 0 (requested then disabled, as probe intends) |
+
+**Built as a module on purpose.** `dec_probe()` calls `pm_runtime_enable()` with
+no `get`, so `dec_enable()` — which sets the AFBD clock rate, writes `0xffffffff`
+into TVTOP `0x05700008..0x1c` via `dec_reg_top_enable()`, and calls
+`dec_reg_mux_select(regs, 2)` — only runs on runtime resume. Loading is therefore
+observable and reversible; none of that has fired yet.
+
+### Where our DT deliberately differs from the vendor's
+
+Checked against the stock DTB rather than assumed:
+
+| property | vendor | ours | why |
+| --- | --- | --- | --- |
+| `reg` order | `0x5700000` then `0x5600000` | `0x5600000` then `0x5700000` | **Copying the vendor here would break it.** The driver does `afbd = of_iomap(node, 0)`. Every measurement says AFBD is at `0x05600000`: the flag bytes at `+0x10/11/13` match the vendor's linear branch, vblank at `+0xc0` ticks at 16.74 ms, and plane addresses at `+0x70/84` rendered colour bars |
+| `clock-frequency` | 200 MHz | **100 MHz** | Three figures exist: vendor 200, U-Boot comments 600, `clk_summary` reports the live clock as 100. `dec_enable()` does `clk_set_rate()`; 100 makes it a no-op under a running panel. Raise once it works |
+| `iommus` | `<&mmu_aw 2 0>` | absent | our IOMMU node is inert; attaching cedrus to it corrupted kernel memory |
+| TVTOP | shipped and enabled | disabled | isolation — see patch 0033 |
+| node children | `simple-bus` containing `mipsloader@3061000` | none | `of_platform_populate()` in probe would instantiate it; U-Boot already owns the MIPS side |
+
+### Patch 0033: the TVTOP link, guarded at compile time
+
+`sunxi_tvtop_client_register()` returns `-EPROBE_DEFER` without TVTOP, so DECD
+would defer forever. Its whole body is a `device_link_add()` for ordering — no
+hardware. **Merely ignoring the return value is not enough:** the symbol is an
+`EXPORT_SYMBOL` owned by the tvtop module, so `depmod` records a dependency and
+`modprobe sunxi-decd` pulls TVTOP in anyway. The guard has to be
+`#if IS_ENABLED(CONFIG_SUNXI_TVTOP)` with a stub. Verified: `depends:` is empty
+and no tvtop symbols remain in the `.ko`.
+
+TVTOP is kept off because its probe owns `CLK_PANEL`, `CLK_DEINT`,
+`CLK_SVP_DTL`, `CLK_BUS_DISP` and `RST_BUS_DISP` — the display resources U-Boot
+programs and that the handoff depends on. A second owner of those clocks in the
+same session that first enables DECD would confound any failure between them.
+
 ## Milestones
 
 ### M1 — the decoder decodes (the gate) — PASSED, see above

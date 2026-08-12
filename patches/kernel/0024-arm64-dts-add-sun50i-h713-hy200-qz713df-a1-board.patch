@@ -11,7 +11,7 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -0,0 +1,1895 @@
+@@ -0,0 +1,1902 @@
 +/*
 + * Shared device tree for the Allwinner H713 SoC and HY200 family.
 + *
@@ -1466,7 +1466,14 @@
 +			resets = <&ccu RST_BUS_DISP>;
 +			reset-names = "rst_bus_disp";
 +			memory-region = <&decd_reserved>;
-+			clock-frequency = <200000000>;
++			/*
++			 * 100 MHz, not the vendor's 200: dec_enable() does
++			 * clk_set_rate(clk_afbd, this) on runtime resume, and
++			 * clk_summary shows afbd running at 100 MHz under the
++			 * display U-Boot established. Asking for 200 would move
++			 * a divider beneath a live panel. Match what is there.
++			 */
++			clock-frequency = <100000000>;
 +			status = "okay";
 +		};
 +
@@ -1909,7 +1916,7 @@
 +};
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,40 @@
 +/dts-v1/;
 +
 +#include "sun50i-h713.dtsi"
@@ -1939,7 +1946,13 @@
 +&audio_bridge { status = "disabled"; };
 +&ge2d { status = "disabled"; };
 +&tvtop { status = "disabled"; };
-+&dec { status = "disabled"; };
++/*
++ * DECD enabled 2026-08-12 for zero-copy video: it is the only way to
++ * hand the display a decoder buffer, since userspace can neither resolve
++ * a V4L2 buffer to a physical address nor program display registers.
++ * Built as a module so it is loaded deliberately, after U-Boot has set
++ * up the panel. TVTOP stays disabled -- see patch 0033.
++ */
 +&cpu_comm { status = "disabled"; };
 +&motor_ctr { status = "disabled"; };
 +&adc_keys { status = "disabled"; };

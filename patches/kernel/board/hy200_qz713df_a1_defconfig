@@ -36,7 +36,11 @@ CONFIG_DEVTMPFS_MOUNT=y
 # CONFIG_HY310_KEYSTONE_MOTOR is not set
 # CONFIG_SUNXI_NSI is not set
 # CONFIG_SUNXI_TVTOP is not set
-# CONFIG_SUNXI_DECD is not set
+# DECD: the vendor AFBD frame-submission path. Built as a MODULE on purpose
+# so it can be loaded deliberately after U-Boot has established the display,
+# and unloaded if it disturbs it. Its probe touches no display hardware
+# (pm_runtime_enable with no get; dec_enable only runs on runtime resume).
+CONFIG_SUNXI_DECD=m
 CONFIG_BLK_DEV_SD=y
 CONFIG_ATA=y
 CONFIG_AHCI_SUNXI=y
