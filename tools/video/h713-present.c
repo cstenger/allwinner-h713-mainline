@@ -720,6 +720,95 @@ int main(int argc, char **argv)
 	 * reaching the screen while we write it, and at this repetition rate a
 	 * leak becomes a visible strobe rather than a single missable frame.
 	 */
+	/*
+	 * yuv2 -- direct YUV the way the VENDOR does it, with the plane
+	 * addresses, not just the format byte.
+	 *
+	 * The earlier attempt (yuvtry) set the format at +0x11 and the strides
+	 * and kept feeding the single packed source at +0x178. That is the RGB
+	 * data path. dec_sync_frame_to_hardware() shows the vendor writes TWO
+	 * plane addresses instead, via dec_reg_set_address() with
+	 * base = afbd + 0x60:
+	 *
+	 *     Y: base + {16,20,24,28}[idx]   -> 0x05600070 for idx 0
+	 *     C: base + {36,40,44,48}[idx]   -> 0x05600084 for idx 0
+	 *
+	 * and they come from item->y_addr / item->c_addr -- the decoder's own
+	 * buffers, submitted by DECD_IOC_FRAME_SUBMIT. The CPU never reads the
+	 * frame. Our register dump showed both plane registers reading zero,
+	 * which was noted and then dismissed as "a parallel mechanism we do not
+	 * use"; it is in fact what makes YUV work.
+	 *
+	 * usage: yuv2 <file.nv12> <format-code> <idx> [dwell-ms]
+	 */
+	if (!strcmp(argv[1], "yuv2") && argc >= 5) {
+		unsigned code = strtoul(argv[3], NULL, 0);
+		unsigned idx = strtoul(argv[4], NULL, 0);
+		unsigned dwell = argc >= 6 ? strtoul(argv[5], NULL, 0) : 8000;
+		static const unsigned y_off[] = { 0x70, 0x74, 0x78, 0x7c };
+		static const unsigned c_off[] = { 0x84, 0x88, 0x8c, 0x90 };
+		size_t fsz = (size_t)W * H * 3 / 2;
+		uint8_t *buf = malloc(fsz);
+		int fd2 = open(argv[2], O_RDONLY);
+		uint32_t s_flags, s_str, s_src, s_s0, s_s1, s_y, s_c;
+		unsigned long y_phys = FB_FRONT, c_phys = FB_FRONT + (unsigned long)W * H;
+		size_t got = 0;
+		double us;
+
+		if (idx > 3) { fprintf(stderr, "idx must be 0..3\n"); return 2; }
+		if (fd2 < 0 || !buf) { perror("yuv2"); return 1; }
+		while (got < fsz) {
+			ssize_t r = read(fd2, buf + got, fsz - got);
+			if (r <= 0) break;
+			got += (size_t)r;
+		}
+		close(fd2);
+		if (got != fsz) { fprintf(stderr, "short frame\n"); return 1; }
+
+		s_flags = rd(regs, AFBD_G_FLAGS);
+		s_str = rd(regs, AFBD_STRIDE);
+		s_src = rd(regs, AFBD_SRC);
+		s_s0 = rd(regs, AFBD_G_STRIDE0);
+		s_s1 = rd(regs, AFBD_G_STRIDE1);
+		s_y = rd(regs, y_off[idx]);
+		s_c = rd(regs, c_off[idx]);
+		printf("saved: flags=%08x stride=%08x src=%08x s0=%08x s1=%08x "
+		       "Y[%u]=%08x C[%u]=%08x\n",
+		       s_flags, s_str, s_src, s_s0, s_s1, idx, s_y, idx, s_c);
+
+		/* NV12 laid out contiguously: Y plane, then interleaved chroma. */
+		memcpy((void *)fb_front, buf, fsz);
+		__sync_synchronize();
+
+		regs8[AFBD_G_FORMAT] = (uint8_t)code;
+		wr(regs, AFBD_G_STRIDE0, W);
+		wr(regs, AFBD_G_STRIDE1, W);
+		wr(regs, AFBD_STRIDE, W);
+		wr(regs, y_off[idx], (uint32_t)y_phys);   /* the vendor's Y plane */
+		wr(regs, c_off[idx], (uint32_t)c_phys);   /* the vendor's C plane */
+		wr(regs, AFBD_DIRTY, 1);
+		us = commit();
+		printf("code %u idx %u: Y=%08x C=%08x flags=%08x commit %s %.0f us\n",
+		       code, idx, rd(regs, y_off[idx]), rd(regs, c_off[idx]),
+		       rd(regs, AFBD_G_FLAGS), us < 0 ? "TIMEOUT" : "ok",
+		       us < 0 ? 0 : us);
+
+		usleep(dwell * 1000);
+
+		wr(regs, y_off[idx], s_y);
+		wr(regs, c_off[idx], s_c);
+		wr(regs, AFBD_G_FLAGS, s_flags);
+		wr(regs, AFBD_G_STRIDE0, s_s0);
+		wr(regs, AFBD_G_STRIDE1, s_s1);
+		wr(regs, AFBD_STRIDE, s_str);
+		wr(regs, AFBD_SRC, s_src);
+		wr(regs, AFBD_DIRTY, 1);
+		commit();
+		printf("restored\n");
+		free(buf);
+		return 0;
+	}
+
 	if (!strcmp(argv[1], "leak-test")) {
 		unsigned secs = argc >= 3 ? strtoul(argv[2], NULL, 0) : 8;
 		double t0;
@@ -1007,7 +1096,24 @@ int main(int argc, char **argv)
 		 * (11 ms) combined. Enlarging the pipe cuts the round trips
 		 * further; failure is harmless, so it is not checked.
 		 */
-		fcntl(vfd, F_SETPIPE_SZ, 4 << 20);
+		/*
+		 * Verify, do not assume. F_SETPIPE_SZ is capped by
+		 * /proc/sys/fs/pipe-max-size (1 MB by default) and silently
+		 * clamps; a 64 KB pipe needs ~22 fill/drain round trips per
+		 * 1.38 MB frame, each waiting on the writer to be scheduled,
+		 * which is the right order to explain a 12-15 ms "read" that
+		 * should take 2-3 ms.
+		 */
+		if (fcntl(vfd, F_SETPIPE_SZ, 4 << 20) < 0)
+			fcntl(vfd, F_SETPIPE_SZ, 1 << 20);
+		{
+			int got = fcntl(vfd, F_GETPIPE_SZ);
+			if (got > 0)
+				printf("pipe size: %d bytes (%.2f frames)\n",
+				       got, got / (double)fsz);
+			else
+				printf("pipe size: not a pipe (regular file)\n");
+		}
 
 		rd_ctx.fd = vfd;
 		rd_ctx.fsz = fsz;

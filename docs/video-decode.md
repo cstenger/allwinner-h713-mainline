@@ -590,7 +590,74 @@ kernel change, so it is not a userspace tweak either.
 vsync-limited presentation, 268 fps decode, bit-exact frames. Those were never
 evidence about tearing, and tearing was never evidence against them.
 
-### Direct YUV scanout — ATTEMPTED AND FAILED 2026-08-09; not a register tweak
+### Direct YUV scanout — WORKS 2026-08-12. The earlier negative was my own null.
+
+**Confirmed on hardware:** an NV12 frame renders correctly on the panel with no
+CPU colour conversion, using the vendor's plane-address path.
+
+```
+saved:  Y[0]=00000000  C[0]=00000000          <- both plane registers empty
+set:    Y=6c100000  C=6c1e1000  flags=03000310  commit ok
+```
+
+`h713-present yuv2 <file.nv12> 3 0` — format code 3 (`fmt_attr_tbl` row index for
+8-bit YUV420), plane strides 1280, and crucially:
+
+| register | value | meaning |
+| --- | --- | --- |
+| `0x05600011` | `3` | format selector (table row index) |
+| `0x05600040`/`44` | 1280 | plane strides |
+| **`0x05600070`** | **Y address** | `dec_reg_set_address` idx 0, `base = afbd + 0x60`, `+16` |
+| **`0x05600084`** | **C address** | same, `+36`; here Y + 1280*720 |
+| `0x0560006c` | 1 | dirty latch |
+
+**Why the earlier attempt failed, and it was not the hardware.** The 2026-08-09
+attempts set the format byte and the strides but kept feeding the single packed
+source at `0x05600178` — the **RGB data path**. A YUV format needs two plane
+addresses. Our own register dump showed `0x05600070`/`0x05600084` reading zero,
+which was noted at the time and dismissed as "a parallel mechanism we do not
+use"; it is precisely what makes YUV work.
+
+The conclusion recorded then — "the plane is an OSD/UI channel and Allwinner UI
+channels are RGB-only" — was an **inference invented to explain a null I had
+produced myself**. It was labelled as inference, which is something, but it was
+still wrong, and it was committed as a reason to stop.
+
+**Found by reading the vendor driver rather than by more experiments**, on the
+operator's suggestion to establish the vendor's direction first.
+`dec_sync_frame_to_hardware()` -> `dec_reg_set_address()` writes
+`item->y_addr`/`item->c_addr` into those registers, and those come straight from
+`DECD_IOC_FRAME_SUBMIT`'s `y_phys`/`c_phys`/`image_fd`.
+
+### The vendor never reads the decoded frame on the CPU
+
+This is the important architectural consequence, and it was measured
+independently before the YUV result:
+
+```
+A  fakesink, never touches the buffer     0.255 s   sys 0.034
+B  tmpfs file (real read + copy)          1.079 s   sys 0.901
+C  FIFO                                   1.079 s   sys 0.882
+   raw pipe bandwidth (dd, 419 MB)        423 MB/s
+```
+
+**B and C are identical**, and the pipe on its own runs at 423 MB/s — so the
+handoff is nearly free and the cost is the **CPU reading the decoder's output
+buffer** at roughly 48 MB/s. Cedrus CAPTURE buffers are CMA/dmabuf and are not
+read through the cache.
+
+**That invalidates the plan this section previously implied.** "Single-process
+V4L2 + dmabuf to remove the handoff" was aimed at a cost that measurement shows
+is small. Merging processes removes a nearly free copy and leaves the expensive
+read exactly where it is. The vendor's design avoids the read entirely: decode
+into a buffer, submit its physical addresses, let the display consume it.
+
+**So the target pipeline is:** decode to a CMA/dmabuf buffer, write its Y/C
+physical addresses to `0x05600070`/`0x05600084` with format 3 and the dirty
+latch, commit. That removes the CPU read (~48 MB/s), the conversion (7.5 ms) and
+the blit (3.8 ms) together.
+
+### The original attempts (conclusion WRONG, kept as the trail)
 
 The prize was killing the CPU colour conversion (convert 8.7 ms + blit 3.8 ms =
 12.5 ms/frame, most of the per-frame budget). **Three variants were tried on
