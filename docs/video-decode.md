@@ -8,41 +8,57 @@ Goal for this phase: **decoded video visible on the projector panel.**
 
 ---
 
-# HANDOFF — state as of 2026-08-12
+# HANDOFF — state as of 2026-08-14
 
 ## What works, hardware-verified
 
 | | |
 | --- | --- |
 | **H.264 decode** | **bit-exact** vs host software references. Constrained Baseline, Main (B-frames + CABAC), High (8x8 transform), 320x240 through 1920x1080. Unmodified mainline cedrus. Decodes this content at **268 fps** |
-| **Decoded video on the panel** | operator-confirmed, correct colour and geometry |
-| **Direct YUV scanout** | NV12 straight to the display, **no CPU colour conversion**, via the vendor's plane-address path. Streaming: **57.77 fps**, 0 timeouts |
+| **Decoded video on the panel** | operator-confirmed, correct colour and geometry — via **CPU colour conversion to ARGB8888**, which is 4 bytes/pixel and therefore matches what the panel is actually configured to fetch |
 | **Presentation ceiling** | **58.93 fps** against a 59.7 Hz panel — vsync-limited |
 | **Double buffering** | works (single-buffered 59.38% torn rows vs a 23.03% workload floor) |
-| **DECD driver** | probes, `/dev/decd`, survives 20 s of 60 Hz vsync interrupts; `FRAME_SUBMIT` returns a real `fence_fd` |
+| **DECD driver** | probes, `/dev/decd`, survives 60 Hz vsync interrupts; `FRAME_SUBMIT` returns a real `fence_fd` and **does** program its plane registers |
 
-## THE ONE OPEN QUESTION
+## RETRACTED: direct YUV scanout does not work
 
-**Did the panel show the colour bars during the last `decd-client show` run?**
+**The 2026-08-12 claim "Direct YUV scanout — WORKS" is withdrawn.** It did not
+reproduce. See [the refutation](#direct-yuv-refuted-2026-08-14) for the run.
 
-That run completed cleanly — `fence_fd=4`, no crash, 20 s hold — but nobody
-reported what the panel displayed. The answer decides the next step:
+The old row claimed "NV12 straight to the display, no CPU colour conversion, via
+the vendor's plane-address path, streaming 57.77 fps". The 57.77 fps is real
+timing, but of a frame that was never correct on the panel: `yuv-stream` measures
+loop rate and never inspects a pixel.
 
-- **Colour bars** -> the full vendor path works end to end. Zero-copy achieved:
-  userspace passes a physical address, the driver programs the plane registers
-  on vsync, the CPU never touches pixels. Move to feeding it decoder buffers.
-- **Still the boot logo** -> submission and fencing work but the frame is not
-  reaching scanout. Most likely the **format register**:
-  `dec_reg_video_channel_attr_config()` only handles the two 10-bit modes
-  (mode 1 and mode 20) and may never program code 3 for 8-bit NV12. `yuv2` sets
-  `0x05600011` by hand and works; the driver may not. Check that register while
-  a frame is submitted, and if it is not 3, that is the gap.
+## THE OPEN QUESTION, answered
 
-Reproduce with:
+**Did the panel show the colour bars during the `decd-client show` run?** No.
 
-```
-cd /root && ./decd-client show /root/bars.nv12 20000
-```
+Answered twice over on 2026-08-14 — once by register readout and once by
+photograph. The format register was the gap as suspected, but fixing it did not
+help, because **that register is not in the path that feeds the panel at all**.
+
+## Where the work stands now
+
+The AFBD window has (at least) two distinct register groups, and the whole
+direct-YUV effort has been driving the wrong one:
+
+| group | who drives it | what it does |
+| --- | --- | --- |
+| `0x05600000`, `0x05600140`–`0x05600178` | **U-Boot**, replaying the vendor's `LogoRegData.bin` DE block | the live scanout: ctrl, geometry, stride, source address. **Always 4 bytes/pixel** |
+| `0x05600010`–`0x13`, `0x40`/`0x44`, `0x60`–`0xa8` | `h713-present yuv2`, and `sunxi-decd` | format byte, plane strides, plane addresses, dirty latch. The vendor's table **never writes any of these** |
+
+So the format byte at `0x11` is accepted, retained, and ignored: it is not in the
+active fetch path. The 2026-08-09 inference that got retracted in favour of the
+direct-YUV claim — that this is the wrong plane for YUV — is back, and now rests
+on positive evidence rather than on a null.
+
+**The next question is which register in the scanout group selects the pixel
+format.** The vendor's `ge2d` header narrows it to four; sweeping them with
+`load` + `poke` costs nothing and is step 1 below. Only if that dead-ends does
+this become a question about the running Android stack — and that route is far
+more expensive than it looks, because reaching the vendor UI destroys the Debian
+rootfs. See step 2.
 
 ## Board state right now
 
@@ -53,7 +69,8 @@ cd /root && ./decd-client show /root/bars.nv12 20000
 - `/root` on the target holds `h713-present`, `decd-client`, `sunxi-decd.ko`,
   `vedump.py`, the NV12 frames (`bars.nv12`, `one.nv12`, `frames30.nv12`) and
   `video-test/` with the H.264 ladder. Plus a lot of `*.log` scratch worth
-  deleting.
+  deleting. The on-target `h713-present` is current as of 2026-08-14 — it has
+  `regs` (now dumping the whole channel), `fmt`, `info` and `poke`.
 - **The module is NOT auto-loaded**: `insmod /root/sunxi-decd.ko` after boot.
 - **The display must be brought up in U-Boot before booting Linux**, every time:
 
@@ -65,6 +82,111 @@ boot
 
 `h713-present` refuses to run if this was skipped (it checks the AFBD clock
 gate) rather than hanging the board on gated registers.
+
+## Direct YUV refuted, 2026-08-14
+
+Photos in `local/lcd-photos/test_54/`, one camera position, cold boot, logo
+reference shot first — the provenance discipline the `test_41` misattribution
+forced on this project, applied to the claim that misattribution produced.
+
+| phase | command | photo | result |
+| --- | --- | --- | --- |
+| 1 reference | logo from U-Boot | `IMG_0690` | logo, clean |
+| 2 **control A** | `h713-present yuv2 bars.nv12 3 0` | `IMG_0691` | **4x repeat, greyscale** |
+| 3 | DECD `FRAME_SUBMIT`, format untouched | `IMG_0693` | frame over logo (reproduces `test_53`) |
+| 3b | + `h713-present fmt 3 1280` | `IMG_0694` | 4x repeat, greyscale |
+| 4 | + `h713-present info 0` | `IMG_0695` | 4x repeat, greyscale |
+
+**Control A is the finding.** It is the exact command the 2026-08-12 section
+credits with working, run from a cold boot, and it produces the *same* 4x-repeat
+greyscale that section says it fixed. Reference: `testsrc2` is 6 colour bars with
+**one** diagonal; every failing photo shows ~16 stripes and **four** diagonals.
+
+The arithmetic is the diagnosis, and it is the same one written down on
+2026-08-09: 4 bytes/pixel over a 1280-*byte* stride packs four source rows into
+each display row, and the greys are the Y plane landing in the RGB components.
+The fetch never stopped being 4 bytes/pixel.
+
+**The info page was not the cause.** `dec_frame_submit()`'s linear path sets the
+info address to `y_phys + 4096` (`video_info_buffer_init()`), which on hardware
+reads `info=6c101000` — 4 KB inside a Y plane that starts at `6c100000`. That is
+a real bug, independently found in the research tree's RE notes, and it is worth
+fixing. It is not what blocks YUV: `info 0` changed nothing.
+
+### Why the format byte cannot work, from the vendor's own table
+
+`LogoRegData.bin` DE blocks parsed with the record walker from
+`h713_logo_walk()` (16-byte records, 4-byte resync). Every one of the 8 blocks
+writes exactly this AFBD set and nothing else:
+
+```
+05600000 <- 80000020
+05600140 <- 03001901   ctrl          05600164 <- 00000808
+05600148 <- 008000ff                 05600168 <- 000003b2
+0560014c <- 00000080                 0560016c <- 00000021
+05600150 <- 02cf04ff   (h-1, w-1)    05600170 <- 00001400   stride
+05600154 <- 002c004f                 05600174 <- 02d01400   (h, stride)
+05600160 <- 02d00500   (h, w)        05600178 <- 6c100000   source
+                                     05600144 <- 00000001   ready
+```
+
+| block | geometry | stride | bytes/pixel |
+| --- | --- | --- | --- |
+| 0 | 1920x1080 | 7680 | 4.0 |
+| 1, 2, 5, 6 | 1280x720 | 5120 | 4.0 |
+| 3 | 640x360 | 2560 | 4.0 |
+| 4 | 864x480 | 3456 | 4.0 |
+| 7 | 1024x608 | 4096 | 4.0 |
+
+**Not one write to `0x05600010`–`0x13`, `0x40`, `0x44`, `0x70` or `0x84`.** The
+registers this project has spent four sessions poking are not in the vendor's
+scanout configuration.
+
+### Which register holds the format — the candidates, narrowed
+
+The vendor's own `sunxi_ge2d.h` gives the structure. AFBD channels are at
+`0x05600100` (ch0) and `0x05600140` (ch1), **channel stride `0x40`**, so every
+register in the table above is one channel's block at ch1. It also names two of
+them outright, from `osd_interrupt_init()`:
+
+```
+#define GE2D_OSD_IRQ_CLEAR   0x168   /* WriteRegWord(90177896, -1) */
+#define GE2D_OSD_IRQ_ENABLE  0x16C   /* WriteRegWord(90177900, 16) */
+```
+
+So `0x0560016c` is an **interrupt enable, not a format field**. That leaves four
+registers in the channel block that could carry it:
+
+| offset | reg | value | note |
+| --- | --- | --- | --- |
+| +0x00 | `0x05600140` | `03001901` | ctrl; bits [3:2] are `mirror_mode` per U-Boot |
+| +0x08 | `0x05600148` | `008000ff` | |
+| +0x0c | `0x0560014c` | `00000080` | |
+| +0x24 | `0x05600164` | `00000808` | **best candidate** — two 8s reads like a per-component bit depth |
+
+All four are constant across all 8 blocks while geometry and stride vary, which
+is what a format field should do. **Sweep these before anything expensive:**
+`load` puts pixels in place without touching a register, and `poke` changes one
+field against an otherwise untouched vendor configuration. Success is the 4x
+horizontal repeat collapsing to 1x.
+
+## DECD's runtime suspend resets the display, 2026-08-14
+
+`dec_disable()` calls `reset_control_assert(dec->rst_bus_disp)` on the **shared**
+display reset, then drops `clk_bus_disp`. Measured: one `PM_HINT off` -> `on`
+cycle took the AFBD window from `ctrl=03001901 stride=00001400 src=6c100000` to
+all zeros, and the panel went black. U-Boot's programming does not survive it,
+and `dec_enable()` cannot restore what it never wrote.
+
+This is the Milestone 4 resource-ownership warning arriving early: U-Boot owns
+these registers and DECD wants them. Consequences for anyone running this:
+
+- `decd-client show` ends with `PM_HINT off`, so **the panel blanks when the
+  dwell expires** — including the 2026-08-12 run, which is why nobody could
+  report what it showed.
+- Any test that needs the display alive must take **one** `pm on` and never
+  suspend. Recovery is `reboot bootloader` -> `h713_disp auto 0x34 logo` ->
+  `boot`.
 
 ## Gotchas that cost real time
 
@@ -80,19 +202,48 @@ gate) rather than hanging the board on gated registers.
   have pointed the driver at the wrong block.
 - **`dec_frame_submit()` always returns 0**, even when disabled or when it drops
   the frame. The `fence_fd` is the only real feedback.
+- **A register readback is not a picture.** `+0x11` accepts 3, retains 3 across a
+  latch, and the panel does not change — because that register is not in the
+  fetch path. Twice now a readback has been scored as a visual result. The panel
+  is the instrument for a display claim; the register only says the write landed.
+- **Re-run the control before believing an old success.** Two claims in this file
+  were produced by attributing a photo to the wrong command. A control costs one
+  boot and one photo.
 
 ## Next steps, in order
 
-1. **Answer the open question above.** One run, one look at the panel.
-2. If the format register is the gap, program it from the driver (or from
-   `h713-present` alongside, as a bridge) and re-test.
-3. **Feed DECD real decoder buffers.** `DECD_IOC_MAP_LINEAR_BUFFER` wraps a
-   physical region as a dma_buf; `FRAME_SUBMIT` also takes `image_fd`. Cedrus
-   CAPTURE buffers can be exported with `VIDIOC_EXPBUF`. That closes the loop:
-   decode -> submit fd -> display, with no copy anywhere.
-4. **Use the fence.** `FRAME_SUBMIT` returns a `fence_fd` that signals when the
-   display is done with a buffer — exactly the V4L2 buffer-recycling signal.
-5. Revisit `clock-frequency` (we run 100 MHz, vendor asks 200) once it works.
+1. **Sweep the four candidate format registers.** Costs nothing and risks
+   nothing: `h713-present load bars.nv12` (pixels in place, no register
+   touched), then `fmt 3 1280 0`, then `poke <reg> <val> 0` one field at a time,
+   photographing each. `0x05600164` first. Success is the 4x repeat collapsing
+   to 1x. See the candidate table above.
+2. **Only if that dead-ends: capture the vendor configuring a video plane.**
+   `LogoRegData.bin` is ARGB8888 only, so the answer is in the running Android
+   stack. **This is expensive — do not treat it as a reboot.** Reaching the
+   Android UI needs `boot_a` restored to the vendor image, `super` intact, and
+   `UDISK` formatted f2fs, **which destroys the Debian rootfs** — they contend
+   for the same partition and there is no free 4 GiB elsewhere — see
+   [flash.md](flash.md), Methods 5 and 6. `run switch_vendor`
+   alone gets the vendor *boot chain*, not the UI. It is also unproven that
+   `/dev/mem` at `0x0560xxxx` is readable under stock Android's SELinux, so this
+   can cost a rootfs rebuild and still yield nothing. If it is run anyway: a
+   1280x720 H.264 clip diffs against DE blocks 1/2/5/6 with identical geometry,
+   making the format the only variable; 1080p content diffs against block 0.
+3. **Decide whether DECD is even the right block.** Its whole register window
+   (`afbd + 0x60` onward) is disjoint from the scanout registers U-Boot drives.
+   The research tree independently concluded `decd` drives AFBC-compressed video
+   frames, and cedrus emits linear NV12 or Allwinner-tiled, never AFBC. Settle
+   this before writing any more driver code against it.
+4. **Fix `video_info_buffer_init()` regardless.** `y_phys + 4096` lands inside
+   the luma plane. Confirmed on hardware (`info=6c101000`, `Y=6c100000`). It is
+   not what blocks YUV, but it is wrong.
+5. **Give DECD its own display reset, or none.** `dec_disable()` asserting the
+   shared `rst_bus_disp` destroys U-Boot's display setup; see above.
+6. **The CPU-conversion path still works** and is the fallback that already puts
+   decoded video on the panel. If the plane question turns out to be M4-scale
+   (owning the DE configuration), shipping on the ARGB path is a real option —
+   measure whether the conversion cost actually caps the frame rate first.
+7. Revisit `clock-frequency` (we run 100 MHz, vendor asks 200) once it works.
 
 ---
 
@@ -731,7 +882,25 @@ kernel change, so it is not a userspace tweak either.
 vsync-limited presentation, 268 fps decode, bit-exact frames. Those were never
 evidence about tearing, and tearing was never evidence against them.
 
-### Direct YUV scanout — WORKS 2026-08-12. The earlier negative was my own null.
+### Direct YUV scanout — RETRACTED. Claimed 2026-08-12, refuted 2026-08-14.
+
+**This section's conclusion is wrong and is kept as trail.** Control A on
+2026-08-14 ran the very command below from a cold boot and got the 4x-repeat
+greyscale this section says it fixed — see
+[the refutation](#direct-yuv-refuted-2026-08-14).
+
+The retraction it performs — of the 2026-08-09 "wrong plane for YUV" inference —
+is itself withdrawn. That inference was reinstated by the vendor's register
+table, which never programs any of the registers below.
+
+**How this happened is worth more than the result.** The `test_41`
+misattribution is described a few paragraphs down, in this same section, as the
+reason a whole A/B was re-run from a cold boot. The claim written directly
+beneath that warning was then accepted without the control it prescribes. A
+register readback (`+0x10=03000310`) was treated as evidence the *picture* had
+changed; it only ever showed the register had.
+
+**The original text follows.**
 
 **Confirmed on hardware:** an NV12 frame renders correctly on the panel with no
 CPU colour conversion, using the vendor's plane-address path.

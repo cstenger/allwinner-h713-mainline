@@ -453,6 +453,238 @@ static void fill_bar(volatile uint32_t *fb, int x0)
 static volatile uint8_t *regs8;
 
 /*
+ * dump_channel -- the video-channel half of the block, which the one-line `regs`
+ * dump does not cover.
+ *
+ * It exists because sunxi-decd and this tool program DIFFERENT halves of the
+ * same registers. The driver writes the plane addresses (0x70/0x84, via its
+ * regs->workaround = afbd + 0x60) and the dirty latch, and nothing else: its
+ * only format-programming function, dec_reg_video_channel_attr_config(), has no
+ * caller anywhere in the port, and it handles only the two 10-bit modes even if
+ * one were added. So after a DECD FRAME_SUBMIT the plane registers should carry
+ * the submitted addresses while the format byte still carries whatever U-Boot's
+ * logo left behind. Printing both halves is what tells those two apart, and it
+ * settles by readout what would otherwise be a question about what the panel
+ * looked like.
+ */
+static void dump_channel(void)
+{
+	static const unsigned y_off[] = { 0x70, 0x74, 0x78, 0x7c };
+	static const unsigned c_off[] = { 0x84, 0x88, 0x8c, 0x90 };
+	unsigned i;
+
+	printf("AFBD cfg   flags=%08x fmt=%u linear=%02x stride0=%08x stride1=%08x\n",
+	       rd(regs, AFBD_G_FLAGS), regs8[AFBD_G_FORMAT], regs8[AFBD_G_LINEAR],
+	       rd(regs, AFBD_G_STRIDE0), rd(regs, AFBD_G_STRIDE1));
+	printf("AFBD ch    enable=%02x mux=%02x dirty=%08x irq=%08x/%08x\n",
+	       regs8[0x60], regs8[0x68], rd(regs, AFBD_DIRTY),
+	       rd(regs, AFBD_IRQ_ST0), rd(regs, AFBD_IRQ_ST1));
+	for (i = 0; i < 4; i++)
+		printf("AFBD plane%u Y=%08x C=%08x info=%08x\n", i,
+		       rd(regs, y_off[i]), rd(regs, c_off[i]),
+		       rd(regs, 0x98 + 4 * i));
+}
+
+/*
+ * fmt -- program ONLY the format and strides, then latch and commit.
+ *
+ * This is the bridge, and more importantly the isolating control, for the DECD
+ * test: sunxi-decd supplies the plane addresses via FRAME_SUBMIT and this
+ * supplies the format the driver never programs. It deliberately does NOT touch
+ * 0x70/0x84, so if the panel comes up after this and only after this, the gap is
+ * named exactly -- the driver's half worked and the format byte was the whole
+ * of what was missing.
+ *
+ * Same register set yuv2 writes minus the plane addresses, because yuv2 is the
+ * configuration known to put NV12 on this panel; a minimal delta can come later,
+ * once something works.
+ *
+ * dwell 0 means set and exit WITHOUT restoring -- for leaving the format in
+ * place while something else runs. Any other dwell restores, on the yuvtry
+ * principle that a wrong code must not outlive the run that tried it.
+ */
+static int fmt_bridge(unsigned code, unsigned stride, unsigned dwell_ms)
+{
+	uint32_t s_10, s_s0, s_s1, s_str;
+	double us;
+
+	s_10 = rd(regs, AFBD_G_FLAGS);          /* covers bytes 0x10..0x13 */
+	s_s0 = rd(regs, AFBD_G_STRIDE0);
+	s_s1 = rd(regs, AFBD_G_STRIDE1);
+	s_str = rd(regs, AFBD_STRIDE);
+	printf("saved: 0x10=%08x s0=%08x s1=%08x stride=%08x\n",
+	       s_10, s_s0, s_s1, s_str);
+
+	regs8[AFBD_G_FORMAT] = (uint8_t)code;
+	wr(regs, AFBD_G_STRIDE0, stride);
+	wr(regs, AFBD_G_STRIDE1, stride);
+	wr(regs, AFBD_STRIDE, stride);
+	wr(regs, AFBD_DIRTY, 1);
+	us = commit();
+	printf("fmt %u stride %u: commit %s %.0f us\n", code, stride,
+	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
+	dump_channel();
+
+	if (!dwell_ms) {
+		printf("left in place (dwell 0) -- restore with a reboot or 'fmt %u %u 1'\n",
+		       (unsigned)(s_10 >> 8) & 0xff, s_s0);
+		return us < 0 ? 1 : 0;
+	}
+
+	printf("holding %u ms -- look at the panel\n", dwell_ms);
+	usleep(dwell_ms * 1000);
+
+	wr(regs, AFBD_G_STRIDE0, s_s0);
+	wr(regs, AFBD_G_STRIDE1, s_s1);
+	wr(regs, AFBD_STRIDE, s_str);
+	wr(regs, AFBD_G_FLAGS, s_10);
+	wr(regs, AFBD_DIRTY, 1);
+	commit();
+	printf("restored\n");
+	return us < 0 ? 1 : 0;
+}
+
+/*
+ * info -- rewrite the four per-slot video-info-page addresses, latch, commit.
+ *
+ * This is a single-variable probe against sunxi-decd. Its linear path computes
+ * the info address as video_info_buffer_init() = y_phys + 4096, which for our
+ * y_phys lands 4 KB INSIDE the luma plane -- the "info page" the hardware reads
+ * is pixel data. Measured on hardware: info=6c101000 with Y=6c100000.
+ *
+ * That is the only non-zero register DECD writes that the working userspace path
+ * (yuv2) never wrote: yuv2 left these at 0 and got colour, DECD sets them and we
+ * get the 4x-repeat greyscale of the old test_43 failure. Zeroing them isolates
+ * it. The offsets are dec_reg_set_address()'s info table, workaround + {56, 60,
+ * 64, 68} with workaround = afbd + 0x60.
+ */
+static int info_probe(uint32_t val, unsigned dwell_ms)
+{
+	static const unsigned off[] = { 0x98, 0x9c, 0xa0, 0xa4 };
+	uint32_t save[4];
+	unsigned i;
+	double us;
+
+	for (i = 0; i < 4; i++)
+		save[i] = rd(regs, off[i]);
+	printf("saved info: %08x %08x %08x %08x\n",
+	       save[0], save[1], save[2], save[3]);
+
+	for (i = 0; i < 4; i++)
+		wr(regs, off[i], val);
+	wr(regs, AFBD_DIRTY, 1);
+	us = commit();
+	printf("info <- %08x: commit %s %.0f us\n", val,
+	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
+	dump_channel();
+
+	if (!dwell_ms)
+		return us < 0 ? 1 : 0;
+
+	printf("holding %u ms -- look at the panel\n", dwell_ms);
+	usleep(dwell_ms * 1000);
+	for (i = 0; i < 4; i++)
+		wr(regs, off[i], save[i]);
+	wr(regs, AFBD_DIRTY, 1);
+	commit();
+	printf("restored\n");
+	return us < 0 ? 1 : 0;
+}
+
+/*
+ * load -- copy a raw NV12 frame into the scanout buffer and exit, touching no
+ * registers at all.
+ *
+ * The sweep for the real format field needs the pixels in place while the
+ * registers stay exactly as the vendor's DE-block replay left them, so that a
+ * following `poke` changes ONE field against an otherwise untouched vendor
+ * configuration. Neither yuv2 nor fmt can do that: both program format, strides
+ * and (for yuv2) plane addresses as a package, which is three variables at once
+ * and is how this file talked itself into a false positive before.
+ *
+ * With the vendor's stride of 5120 still in place a 1280x720 NV12 frame covers
+ * the top 270 rows as ARGB garbage -- the test_53 picture. That is the expected
+ * starting point, not a fault.
+ */
+static int load_raw_frame(const char *path)
+{
+	size_t fsz = (size_t)W * H * 3 / 2;
+	uint8_t *buf;
+	size_t got = 0;
+	int fd2;
+
+	if (fsz > FB_WINDOW) {
+		fprintf(stderr, "frame larger than the mapped window\n");
+		return 1;
+	}
+	buf = malloc(fsz);
+	fd2 = open(path, O_RDONLY);
+	if (fd2 < 0 || !buf) {
+		perror("load");
+		free(buf);
+		if (fd2 >= 0)
+			close(fd2);
+		return 1;
+	}
+	while (got < fsz) {
+		ssize_t r = read(fd2, buf + got, fsz - got);
+
+		if (r <= 0)
+			break;
+		got += (size_t)r;
+	}
+	close(fd2);
+	if (got != fsz) {
+		fprintf(stderr, "short frame: %zu of %zu\n", got, fsz);
+		free(buf);
+		return 1;
+	}
+
+	memcpy((void *)fb_front, buf, fsz);
+	__sync_synchronize();
+	free(buf);
+	printf("loaded %s: %zu bytes -> %#lx, registers untouched\n",
+	       path, fsz, FB_FRONT);
+	dump_channel();
+	return 0;
+}
+
+/*
+ * poke -- one 32-bit write into the AFBD window, latched and committed.
+ *
+ * For bisecting the rest of what DECD writes and userspace does not (the aux
+ * bytes at +0x80/+0x94, the field bytes at +0xa8). Restores unless dwell is 0.
+ */
+static int poke(unsigned off, uint32_t val, unsigned dwell_ms)
+{
+	uint32_t save;
+	double us;
+
+	if (off > 0xffc || (off & 3)) {
+		fprintf(stderr, "offset must be 32-bit aligned and < 0x1000\n");
+		return 2;
+	}
+	save = rd(regs, off);
+	wr(regs, off, val);
+	wr(regs, AFBD_DIRTY, 1);
+	us = commit();
+	printf("poke +%#05x: %08x -> %08x, commit %s %.0f us\n", off, save, val,
+	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
+	dump_channel();
+
+	if (!dwell_ms)
+		return us < 0 ? 1 : 0;
+
+	printf("holding %u ms -- look at the panel\n", dwell_ms);
+	usleep(dwell_ms * 1000);
+	wr(regs, off, save);
+	wr(regs, AFBD_DIRTY, 1);
+	commit();
+	printf("restored +%#05x = %08x\n", off, save);
+	return us < 0 ? 1 : 0;
+}
+
+/*
  * Try one candidate format code with a real NV12 frame, then put every register
  * back exactly as found. Self-restoring on purpose: a wrong code shows garbage,
  * and without the restore the panel would stay broken until a U-Boot reboot.
@@ -530,6 +762,15 @@ static void usage(void)
 		"  bar-sb [frames]      same bar, SINGLE-buffered — the tearing positive control\n"
 		"  nv12 <file> [frames] present NV12 frames from a raw file\n"
 		"  yuvtry <f.nv12> <code> [ms]  try one AFBD format code, then restore\n"
+		"  fmt <code> [stride] [ms]  set ONLY format+strides, latch, commit,\n"
+		"                       then restore (ms=0 leaves it set). The plane\n"
+		"                       addresses are left alone -- pair with DECD's\n"
+		"                       FRAME_SUBMIT, which programs those and nothing else\n"
+		"  load <file.nv12>     copy a frame into the scanout buffer, touch NO\n"
+		"                       registers -- the base state for a poke sweep\n"
+		"  info <val> [ms]      rewrite the 4 video-info-page addresses, latch,\n"
+		"                       commit. 'info 0' undoes DECD's y_phys+4096 bug\n"
+		"  poke <off> <val> [ms]  one 32-bit write into the AFBD window + commit\n"
 		"\nThe display must already be up (h713_disp in U-Boot). This refuses to\n"
 		"touch the display blocks otherwise -- reading them gated hangs the board.\n");
 }
@@ -582,8 +823,26 @@ int main(int argc, char **argv)
 	if (getenv("BAR_STEP"))
 		bar_step = atoi(getenv("BAR_STEP"));
 
-	if (!strcmp(argv[1], "regs"))
+	if (!strcmp(argv[1], "regs")) {
+		dump_channel();
 		return 0;
+	}
+
+	if (!strcmp(argv[1], "fmt") && argc >= 3)
+		return fmt_bridge(strtoul(argv[2], NULL, 0),
+				  argc >= 4 ? strtoul(argv[3], NULL, 0) : W,
+				  argc >= 5 ? strtoul(argv[4], NULL, 0) : 8000);
+
+	if (!strcmp(argv[1], "load") && argc >= 3)
+		return load_raw_frame(argv[2]);
+
+	if (!strcmp(argv[1], "info") && argc >= 3)
+		return info_probe(strtoul(argv[2], NULL, 0),
+				  argc >= 4 ? strtoul(argv[3], NULL, 0) : 0);
+
+	if (!strcmp(argv[1], "poke") && argc >= 4)
+		return poke(strtoul(argv[2], NULL, 0), strtoul(argv[3], NULL, 0),
+			    argc >= 5 ? strtoul(argv[4], NULL, 0) : 0);
 
 	if (!strcmp(argv[1], "yuvtry") && argc >= 4)
 		return yuvtry(argv[2], strtoul(argv[3], NULL, 0),
