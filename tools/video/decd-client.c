@@ -251,7 +251,17 @@ int main(int argc, char **argv)
 		ret = submit(fd, 1);
 		printf("holding %u ms -- look at the panel\n", dwell);
 		usleep(dwell * 1000);
-		pm_hint(fd, 0);
+		/*
+		 * Deliberately NOT pm off. dec_disable() asserts the SHARED
+		 * rst_bus_disp, which resets the whole display block and wipes
+		 * U-Boot's programming -- measured 2026-08-14: one off/on cycle
+		 * zeroed ctrl/stride/src and blanked the panel until a U-Boot
+		 * reboot. It is also how the 2026-08-12 run's panel state was
+		 * lost before anyone looked. `decd-client pm off` does it
+		 * explicitly if the reset is actually wanted.
+		 */
+		printf("leaving device enabled; 'pm off' would reset the display "
+		       "block (shared rst_bus_disp)\n");
 	} else {
 		usage();
 		ret = 2;

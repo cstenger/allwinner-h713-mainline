@@ -57,19 +57,10 @@
 
 /*
  * The real vblank signal, from the vendor's dec_irq_query() (patch 0013,
- * decd_hw.c). Its base is regs->workaround = afbd + 0x60, and it reads +96 and
- * +100, so 0x056000c0 and 0x056000c4; it requires bit 0 in BOTH, then acks by
- * writing bit 0 back to +0xc0. A register dump taken while the panel was live
- * showed 0x056000c0 = 0x00000001, so the bit is real and set.
- *
- * This matters because the vendor swaps buffers INSIDE the vsync interrupt --
- * dec_vsync_handler -> dec_frame_manager_handle_vsync -> sync_cb, which is
- * dec_sync_frame_to_hardware -- rather than by polling a completion bit the way
- * this tool has been doing. AFBD_STATUS bit 1 was assumed to be vsync and never
- * verified. If it is not, every swap lands at an arbitrary point in the scan,
- * which is exactly the shape of the measured tearing and explains why waiting
- * an extra frame (EXTRA_VSYNC, verified to halve the frame rate) did not help:
- * more waiting on the wrong signal is still the wrong phase.
+ * decd_hw.c): status at workaround+96 = 0x056000c0, interrupt enable at
+ * +100 = 0x056000c4, acked by writing bit 0 back to +0xc0. The vendor swaps
+ * buffers INSIDE this interrupt (dec_vsync_handler -> sync_cb); bar-vs
+ * mirrors that order from userspace via wait_vblank().
  */
 #define AFBD_IRQ_ST0    0xc0
 #define AFBD_IRQ_ST1    0xc4
@@ -119,32 +110,15 @@ static double commit(void)
 }
 
 /*
- * Barrier before the flip, and it is not paranoia.
- *
- * leak-test proved writes to the OFF-SCREEN buffer never reach the panel:
- * 1799 full-screen repaints at ~450/s while the other buffer was live, and the
- * capture is solid green for the whole 8 s window. So the tearing is not our
- * writes landing on a live surface.
- *
- * What leak-test never does is SWAP to the buffer it just wrote -- which is
- * exactly what every torn run does. That isolates the remaining candidate: the
- * fill's stores may not have drained to DRAM when the AFBD_SRC write reaches
- * the display block. The framebuffer is written through a plain (non-volatile)
- * pointer so the compiler can vectorise it, while the register goes through a
- * volatile one to a different peripheral; nothing orders the two. If the
- * display starts reading the new buffer while the tail of the fill is still in
- * flight, the raster sees a half-written surface -- which is precisely the
- * "rows with no bar" signal, and it would be immune to every timing fix tried
- * so far, because the problem is not WHEN we flip.
- *
- * BARRIER=0 disables it so the A/B can be measured rather than assumed.
+ * Barrier before the flip, and it is not paranoia: the framebuffer is written
+ * through a plain pointer so the compiler can vectorise the fill, while the
+ * source register goes through a volatile one to a different peripheral --
+ * nothing else orders the two. Flipping to a buffer whose stores have not
+ * drained shows the raster a half-written surface.
  */
-static int use_barrier = 1;
-
 static void flip_to(unsigned long phys)
 {
-	if (use_barrier)
-		__sync_synchronize();           /* dsb: drain the fill first */
+	__sync_synchronize();                   /* dsb: drain the fill first */
 	wr(regs, AFBD_SRC, (uint32_t)phys);
 }
 
@@ -159,24 +133,13 @@ static double wait_vblank(void)
 	double t0 = now_ms();
 
 	/*
-	 * 0xc0 ONLY, not the vendor's 0xc0 && 0xc4.
-	 *
-	 * dec_irq_query() requires bit 0 in both. 0xc4 is the HARDWARE
-	 * INTERRUPT ENABLE: dec_reg_enable() writes it via
-	 * `regs->workaround + 100`, and workaround is afbd + 0x60, so
-	 * 0x60 + 100 = 0xc4. Nothing in this tool ever calls that, so the bit
-	 * stays 0, the AND is never true, and every wait timed out (300 misses
-	 * out of 300). The vendor's condition is simply "status set AND
-	 * interrupt enabled" -- correct for a handler, wrong for a poller.
-	 *
-	 * Polling 0xc0 alone is right here precisely BECAUSE we never enable
-	 * the interrupt: the status bit ticks either way.
-	 *
-	 * 0xc0 bit 0 on its own is MEASURED to be the vblank event: acked and
-	 * re-polled 20 times it fires at 16.74 ms intervals, 19 of them
-	 * identical, against the panel's computed 16.75 ms period (0.06%).
-	 * That is the real vsync this tool has been missing -- AFBD_STATUS
-	 * bit 1 was only ever assumed to be one.
+	 * 0xc0 ONLY, not the vendor's 0xc0 && 0xc4. dec_irq_query() requires
+	 * bit 0 in both, but 0xc4 is the hardware interrupt ENABLE, which
+	 * nothing in this tool sets -- the vendor's condition is "status set
+	 * AND interrupt enabled", correct for a handler, wrong for a poller.
+	 * 0xc0 bit 0 alone is MEASURED to be the vblank event: acked and
+	 * re-polled it fires at 16.74 ms intervals (19 of 20 identical)
+	 * against the panel's computed 16.75 ms period.
 	 */
 	while (now_ms() - t0 < 50.0) {
 		if (b[AFBD_IRQ_ST0] & 1u) {
@@ -247,7 +210,6 @@ static void *conv_worker(void *arg)
  */
 #define CONV_THREADS_MAX 4
 static int conv_threads = CONV_THREADS_MAX;
-static int extra_vsync;
 /*
  * Bar step in px/frame, default 16. BAR_STEP=0 gives a MOVING-BAR-FREE
  * control that still does the identical per-frame work: same two-phase
@@ -417,19 +379,17 @@ static void fill_bar(volatile uint32_t *fb, int x0)
 }
 
 /*
- * AFBD global config, from the vendor sunxi_decd driver (patch 0013,
- * dec_reg_video_channel_attr_config), whose `base` is the AFBD block base:
+ * The DECD-half registers: format byte, plane strides, plane addresses. Names
+ * from the vendor sunxi_decd driver (patch 0013), whose only format function,
+ * dec_reg_video_channel_attr_config(), writes +0x10/+0x11/+0x13 -- and has no
+ * caller anywhere in the port.
  *
- *   +0x10 bit 4  clear = AFBC-compressed source, set = linear
- *   +0x11        format selector. Vendor writes 1 (compressed), 6 (10-bit
- *                YUV420 linear), 7 (AV1 10-bit linear). Ours runs 0 for the
- *                ARGB8888 path that works today.
- *   +0x13        0x03 on the linear path
- *   +0x40/+0x44  plane strides   +0x48/+0x4c  luma / chroma plane geometry
- *
- * The 8-bit NV12 code is NOT derivable from that driver: its only
- * format-to-register function handles the two 10-bit modes and has no caller
- * in the port. Hence this sweep.
+ * KNOWN NOT TO REACH SCANOUT (test_54, 2026-08-14): the format byte at +0x11
+ * accepts a value, retains it across the latch, and the fetch stays 4
+ * bytes/pixel. The vendor's LogoRegData.bin DE blocks -- the thing that
+ * actually configures the panel -- never write any register in this group.
+ * The instruments below still program them because DECD does, and isolating
+ * DECD's half from the scanout half is exactly what refuted the claim.
  */
 #define AFBD_G_FLAGS    0x10
 #define AFBD_G_FORMAT   0x11
@@ -437,20 +397,54 @@ static void fill_bar(volatile uint32_t *fb, int x0)
 #define AFBD_G_STRIDE0  0x40
 #define AFBD_G_STRIDE1  0x44
 /*
- * The latch. The vendor's regs->workaround is afbd + 0x60, and
- * dec_reg_set_dirty() writes workaround + 12 -- so afbd + 0x6c. Every vendor
- * config change is followed by writing 1 here; dec_reg_bypass_config() does it
- * inline after touching a single byte.
- *
- * Without it the format byte at +0x11 sits in a shadow register and never
- * reaches the hardware. Measured: setting format+stride without the latch left
- * the fetch at 4 bytes/pixel while the stride change DID take, so four source
- * rows packed into each display row -- the picture repeated 4x horizontally in
- * greyscale (test_39/IMG_0659.jpeg).
+ * The latch: dec_reg_set_dirty() writes workaround + 12 = afbd + 0x6c after
+ * every config change. Without it the bytes at +0x10..+0x13 sit in a shadow
+ * register (measured: a stride change took while the format did not).
  */
 
-
 static volatile uint8_t *regs8;
+
+/* Read a whole raw NV12 frame; returns a malloc'd buffer or NULL. */
+static uint8_t *read_frame(const char *path, size_t fsz)
+{
+	uint8_t *buf = malloc(fsz);
+	int fd = open(path, O_RDONLY);
+	size_t got = 0;
+
+	if (fd < 0 || !buf) {
+		perror(path);
+		free(buf);
+		if (fd >= 0)
+			close(fd);
+		return NULL;
+	}
+	while (got < fsz) {
+		ssize_t r = read(fd, buf + got, fsz - got);
+
+		if (r <= 0)
+			break;
+		got += (size_t)r;
+	}
+	close(fd);
+	if (got != fsz) {
+		fprintf(stderr, "%s: short frame, %zu of %zu\n", path, got, fsz);
+		free(buf);
+		return NULL;
+	}
+	return buf;
+}
+
+/* Latch the shadow config, commit, report. Returns the commit wait in us. */
+static double latch_commit(const char *what)
+{
+	double us;
+
+	wr(regs, AFBD_DIRTY, 1);
+	us = commit();
+	printf("%s: commit %s %.0f us\n", what,
+	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
+	return us;
+}
 
 /*
  * dump_channel -- the video-channel half of the block, which the one-line `regs`
@@ -488,24 +482,19 @@ static void dump_channel(void)
 /*
  * fmt -- program ONLY the format and strides, then latch and commit.
  *
- * This is the bridge, and more importantly the isolating control, for the DECD
- * test: sunxi-decd supplies the plane addresses via FRAME_SUBMIT and this
- * supplies the format the driver never programs. It deliberately does NOT touch
- * 0x70/0x84, so if the panel comes up after this and only after this, the gap is
- * named exactly -- the driver's half worked and the format byte was the whole
- * of what was missing.
+ * The isolating control for the DECD test: sunxi-decd supplies the plane
+ * addresses via FRAME_SUBMIT and this supplies the format the driver never
+ * programs, touching nothing else. Outcome so far (test_54): the combination
+ * does NOT change the fetch -- see the group comment above.
  *
- * Same register set yuv2 writes minus the plane addresses, because yuv2 is the
- * configuration known to put NV12 on this panel; a minimal delta can come later,
- * once something works.
- *
- * dwell 0 means set and exit WITHOUT restoring -- for leaving the format in
- * place while something else runs. Any other dwell restores, on the yuvtry
- * principle that a wrong code must not outlive the run that tried it.
+ * dwell 0 means set and exit WITHOUT restoring, for leaving the state in place
+ * while something else runs. Any other dwell restores, so a wrong code cannot
+ * outlive the run that tried it.
  */
 static int fmt_bridge(unsigned code, unsigned stride, unsigned dwell_ms)
 {
 	uint32_t s_10, s_s0, s_s1, s_str;
+	char what[64];
 	double us;
 
 	s_10 = rd(regs, AFBD_G_FLAGS);          /* covers bytes 0x10..0x13 */
@@ -519,15 +508,12 @@ static int fmt_bridge(unsigned code, unsigned stride, unsigned dwell_ms)
 	wr(regs, AFBD_G_STRIDE0, stride);
 	wr(regs, AFBD_G_STRIDE1, stride);
 	wr(regs, AFBD_STRIDE, stride);
-	wr(regs, AFBD_DIRTY, 1);
-	us = commit();
-	printf("fmt %u stride %u: commit %s %.0f us\n", code, stride,
-	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
+	snprintf(what, sizeof(what), "fmt %u stride %u", code, stride);
+	us = latch_commit(what);
 	dump_channel();
 
 	if (!dwell_ms) {
-		printf("left in place (dwell 0) -- restore with a reboot or 'fmt %u %u 1'\n",
-		       (unsigned)(s_10 >> 8) & 0xff, s_s0);
+		printf("left in place (dwell 0) -- a reboot restores\n");
 		return us < 0 ? 1 : 0;
 	}
 
@@ -538,30 +524,25 @@ static int fmt_bridge(unsigned code, unsigned stride, unsigned dwell_ms)
 	wr(regs, AFBD_G_STRIDE1, s_s1);
 	wr(regs, AFBD_STRIDE, s_str);
 	wr(regs, AFBD_G_FLAGS, s_10);
-	wr(regs, AFBD_DIRTY, 1);
-	commit();
-	printf("restored\n");
+	latch_commit("restore");
 	return us < 0 ? 1 : 0;
 }
 
 /*
  * info -- rewrite the four per-slot video-info-page addresses, latch, commit.
  *
- * This is a single-variable probe against sunxi-decd. Its linear path computes
- * the info address as video_info_buffer_init() = y_phys + 4096, which for our
- * y_phys lands 4 KB INSIDE the luma plane -- the "info page" the hardware reads
- * is pixel data. Measured on hardware: info=6c101000 with Y=6c100000.
- *
- * That is the only non-zero register DECD writes that the working userspace path
- * (yuv2) never wrote: yuv2 left these at 0 and got colour, DECD sets them and we
- * get the 4x-repeat greyscale of the old test_43 failure. Zeroing them isolates
- * it. The offsets are dec_reg_set_address()'s info table, workaround + {56, 60,
- * 64, 68} with workaround = afbd + 0x60.
+ * sunxi-decd's linear path sets the info address to y_phys + 4096
+ * (video_info_buffer_init()), which lands 4 KB INSIDE the luma plane -- the
+ * "info page" is pixel data. Confirmed on hardware: info=6c101000 with
+ * Y=6c100000. `info 0` undoes that while testing DECD. Probed as the blocker
+ * on 2026-08-14 (test_54/IMG_0695): it is not -- zeroing changed nothing.
+ * Offsets are dec_reg_set_address()'s info table, workaround + {56,60,64,68}.
  */
 static int info_probe(uint32_t val, unsigned dwell_ms)
 {
 	static const unsigned off[] = { 0x98, 0x9c, 0xa0, 0xa4 };
 	uint32_t save[4];
+	char what[32];
 	unsigned i;
 	double us;
 
@@ -572,10 +553,8 @@ static int info_probe(uint32_t val, unsigned dwell_ms)
 
 	for (i = 0; i < 4; i++)
 		wr(regs, off[i], val);
-	wr(regs, AFBD_DIRTY, 1);
-	us = commit();
-	printf("info <- %08x: commit %s %.0f us\n", val,
-	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
+	snprintf(what, sizeof(what), "info <- %08x", val);
+	us = latch_commit(what);
 	dump_channel();
 
 	if (!dwell_ms)
@@ -585,9 +564,7 @@ static int info_probe(uint32_t val, unsigned dwell_ms)
 	usleep(dwell_ms * 1000);
 	for (i = 0; i < 4; i++)
 		wr(regs, off[i], save[i]);
-	wr(regs, AFBD_DIRTY, 1);
-	commit();
-	printf("restored\n");
+	latch_commit("restore");
 	return us < 0 ? 1 : 0;
 }
 
@@ -609,37 +586,10 @@ static int info_probe(uint32_t val, unsigned dwell_ms)
 static int load_raw_frame(const char *path)
 {
 	size_t fsz = (size_t)W * H * 3 / 2;
-	uint8_t *buf;
-	size_t got = 0;
-	int fd2;
+	uint8_t *buf = read_frame(path, fsz);
 
-	if (fsz > FB_WINDOW) {
-		fprintf(stderr, "frame larger than the mapped window\n");
+	if (!buf)
 		return 1;
-	}
-	buf = malloc(fsz);
-	fd2 = open(path, O_RDONLY);
-	if (fd2 < 0 || !buf) {
-		perror("load");
-		free(buf);
-		if (fd2 >= 0)
-			close(fd2);
-		return 1;
-	}
-	while (got < fsz) {
-		ssize_t r = read(fd2, buf + got, fsz - got);
-
-		if (r <= 0)
-			break;
-		got += (size_t)r;
-	}
-	close(fd2);
-	if (got != fsz) {
-		fprintf(stderr, "short frame: %zu of %zu\n", got, fsz);
-		free(buf);
-		return 1;
-	}
-
 	memcpy((void *)fb_front, buf, fsz);
 	__sync_synchronize();
 	free(buf);
@@ -658,6 +608,7 @@ static int load_raw_frame(const char *path)
 static int poke(unsigned off, uint32_t val, unsigned dwell_ms)
 {
 	uint32_t save;
+	char what[48];
 	double us;
 
 	if (off > 0xffc || (off & 3)) {
@@ -666,10 +617,8 @@ static int poke(unsigned off, uint32_t val, unsigned dwell_ms)
 	}
 	save = rd(regs, off);
 	wr(regs, off, val);
-	wr(regs, AFBD_DIRTY, 1);
-	us = commit();
-	printf("poke +%#05x: %08x -> %08x, commit %s %.0f us\n", off, save, val,
-	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
+	snprintf(what, sizeof(what), "poke +%#05x: %08x -> %08x", off, save, val);
+	us = latch_commit(what);
 	dump_channel();
 
 	if (!dwell_ms)
@@ -678,78 +627,8 @@ static int poke(unsigned off, uint32_t val, unsigned dwell_ms)
 	printf("holding %u ms -- look at the panel\n", dwell_ms);
 	usleep(dwell_ms * 1000);
 	wr(regs, off, save);
-	wr(regs, AFBD_DIRTY, 1);
-	commit();
-	printf("restored +%#05x = %08x\n", off, save);
+	latch_commit("restore");
 	return us < 0 ? 1 : 0;
-}
-
-/*
- * Try one candidate format code with a real NV12 frame, then put every register
- * back exactly as found. Self-restoring on purpose: a wrong code shows garbage,
- * and without the restore the panel would stay broken until a U-Boot reboot.
- */
-static int yuvtry(const char *path, unsigned code, unsigned dwell_ms)
-{
-	uint32_t save_10, save_stride, save_src, save_s0, save_s1;
-	size_t fsz = (size_t)W * H * 3 / 2;
-	uint8_t *buf = malloc(fsz);
-	int fd2 = open(path, O_RDONLY);
-	size_t got = 0;
-	double us;
-
-	if (fd2 < 0 || !buf) { perror("yuvtry"); return 1; }
-	while (got < fsz) {
-		ssize_t r = read(fd2, buf + got, fsz - got);
-		if (r <= 0) break;
-		got += (size_t)r;
-	}
-	close(fd2);
-	if (got != fsz) { fprintf(stderr, "short frame\n"); return 1; }
-
-	save_10 = rd(regs, AFBD_G_FLAGS);
-	save_stride = rd(regs, AFBD_STRIDE);
-	save_src = rd(regs, AFBD_SRC);
-	save_s0 = rd(regs, AFBD_G_STRIDE0);
-	save_s1 = rd(regs, AFBD_G_STRIDE1);
-	printf("saved: +0x10=%08x stride=%08x src=%08x s0=%08x s1=%08x\n",
-	       save_10, save_stride, save_src, save_s0, save_s1);
-
-	/* NV12 into the front buffer: Y plane then interleaved chroma. */
-	memcpy((void *)fb_front, buf, fsz);
-
-	regs8[AFBD_G_FORMAT] = (uint8_t)code;
-	/*
-	 * BOTH stride registers. The channel stride at +0x170 is not the only
-	 * one: the global plane strides at +0x40/+0x44 came up holding 1920,
-	 * and at that pitch a 1280-wide 8-bit luma plane consumes 720 * 1920 =
-	 * 1382400 bytes -- the whole NV12 frame -- so the lower part of the
-	 * picture is chroma being read as luma. Setting only +0x170 produced
-	 * exactly that: correct at the bottom, a grey band, black above.
-	 */
-	wr(regs, AFBD_STRIDE, W);                  /* luma stride, 1 byte/px */
-	wr(regs, AFBD_G_STRIDE0, W);
-	wr(regs, AFBD_G_STRIDE1, W);               /* NV12 chroma pitch == luma */
-	wr(regs, AFBD_DIRTY, 1);                   /* latch the shadow config */
-	flip_to(FB_FRONT);
-	us = commit();
-	printf("code %2u: +0x10=%08x stride=%08x s0=%08x s1=%08x commit %s %.0f us\n",
-	       code, rd(regs, AFBD_G_FLAGS), rd(regs, AFBD_STRIDE),
-	       rd(regs, AFBD_G_STRIDE0), rd(regs, AFBD_G_STRIDE1),
-	       us < 0 ? "TIMEOUT" : "ok", us < 0 ? 0 : us);
-
-	usleep(dwell_ms * 1000);
-
-	wr(regs, AFBD_G_FLAGS, save_10);
-	wr(regs, AFBD_STRIDE, save_stride);
-	wr(regs, AFBD_SRC, save_src);
-	wr(regs, AFBD_G_STRIDE0, save_s0);
-	wr(regs, AFBD_G_STRIDE1, save_s1);
-	wr(regs, AFBD_DIRTY, 1);                   /* latch the restore too */
-	commit();
-	printf("restored\n");
-	free(buf);
-	return 0;
 }
 
 static void usage(void)
@@ -759,18 +638,17 @@ static void usage(void)
 		"  regs                 dump the AFBD registers (safe once display is up)\n"
 		"  fill <0xAARRGGBB>    solid fill of the front buffer, then commit\n"
 		"  bar [frames]         moving red bar on blue, double-buffered (default 600)\n"
-		"  bar-sb [frames]      same bar, SINGLE-buffered — the tearing positive control\n"
-		"  nv12 <file> [frames] present NV12 frames from a raw file\n"
-		"  yuvtry <f.nv12> <code> [ms]  try one AFBD format code, then restore\n"
-		"  fmt <code> [stride] [ms]  set ONLY format+strides, latch, commit,\n"
-		"                       then restore (ms=0 leaves it set). The plane\n"
-		"                       addresses are left alone -- pair with DECD's\n"
-		"                       FRAME_SUBMIT, which programs those and nothing else\n"
+		"  bar-sb [frames]      same bar, SINGLE-buffered -- the tearing positive control\n"
+		"  bar-vs [frames]      same bar, flip inside vblank -- the M3 candidate\n"
+		"  nv12 <file> [frames] present NV12 frames from a raw file (the working path)\n"
 		"  load <file.nv12>     copy a frame into the scanout buffer, touch NO\n"
 		"                       registers -- the base state for a poke sweep\n"
-		"  info <val> [ms]      rewrite the 4 video-info-page addresses, latch,\n"
-		"                       commit. 'info 0' undoes DECD's y_phys+4096 bug\n"
-		"  poke <off> <val> [ms]  one 32-bit write into the AFBD window + commit\n"
+		"  poke <off> <val> [ms]  one 32-bit write into the AFBD window + commit;\n"
+		"                       ms=0 leaves it set, otherwise restores\n"
+		"  fmt <code> [stride] [ms]  set format byte + strides only (the DECD half;\n"
+		"                       known NOT to reach scanout -- see test_54)\n"
+		"  info <val> [ms]      rewrite the 4 video-info-page addresses\n"
+		"  yuv2 <f.nv12> <code> <idx> [ms]  the refuted direct-YUV control (test_54)\n"
 		"\nThe display must already be up (h713_disp in U-Boot). This refuses to\n"
 		"touch the display blocks otherwise -- reading them gated hangs the board.\n");
 }
@@ -817,9 +695,6 @@ int main(int argc, char **argv)
 
 	regs8 = (volatile uint8_t *)regs;
 	conv_threads_init();
-	extra_vsync = getenv("EXTRA_VSYNC") && atoi(getenv("EXTRA_VSYNC"));
-	if (getenv("BARRIER"))
-		use_barrier = atoi(getenv("BARRIER"));
 	if (getenv("BAR_STEP"))
 		bar_step = atoi(getenv("BAR_STEP"));
 
@@ -844,10 +719,6 @@ int main(int argc, char **argv)
 		return poke(strtoul(argv[2], NULL, 0), strtoul(argv[3], NULL, 0),
 			    argc >= 5 ? strtoul(argv[4], NULL, 0) : 0);
 
-	if (!strcmp(argv[1], "yuvtry") && argc >= 4)
-		return yuvtry(argv[2], strtoul(argv[3], NULL, 0),
-			      argc >= 5 ? strtoul(argv[4], NULL, 0) : 4000);
-
 	if (!strcmp(argv[1], "fill") && argc >= 3) {
 		uint32_t v = strtoul(argv[2], NULL, 0);
 		double t0 = now_ms(), t1, us;
@@ -865,144 +736,15 @@ int main(int argc, char **argv)
 	}
 
 	/*
-	 * bar-sb is the POSITIVE CONTROL for the tearing measurement, not a
-	 * leftover. It writes into the buffer the hardware is scanning, so the
-	 * raster can catch the surface blued-but-not-yet-barred. Without a run
-	 * that the metric is known to flag, a 0% double-buffered result cannot
-	 * be told apart from a metric that does not work.
+	 * yuv2 -- CONTROL A of the 2026-08-14 refutation, kept to reproduce it.
 	 *
-	 * Expected magnitude is predicted, not guessed: rows with no bar should
-	 * be about (phase-1 fill time / frame period). The console prints the
-	 * fill time, so the prediction can be checked against the measurement.
-	 */
-	/*
-	 * Does writing AFBD_SRC actually move the scanout? Everything in the
-	 * double-buffered path assumes it does, and the tearing measurement
-	 * says otherwise: 25.65% of rows lose the bar when it should be ~0%,
-	 * which is about half the single-buffered rate -- exactly what you get
-	 * if the flip is ignored and only the frames landing in fb_front are
-	 * visible.
-	 *
-	 * Two solid colours, no motion, no metric: if the panel does not go
-	 * red -> green -> red, the flip is not working and double buffering is
-	 * an illusion.
-	 */
-	if (!strcmp(argv[1], "flip-test")) {
-		unsigned dwell = argc >= 3 ? strtoul(argv[2], NULL, 0) : 5000;
-		size_t i;
-
-		for (i = 0; i < FB_BYTES / 4; i++) {
-			((uint32_t *)fb_front)[i] = 0xffff0000u;   /* red  */
-			((uint32_t *)fb_back)[i]  = 0xff00ff00u;   /* green */
-		}
-
-		flip_to(FB_FRONT); commit();
-		printf("FRONT: expect RED    src=%08x\n", rd(regs, AFBD_SRC));
-		usleep(dwell * 1000);
-
-		flip_to(FB_BACK); commit();
-		printf("BACK:  expect GREEN  src=%08x\n", rd(regs, AFBD_SRC));
-		usleep(dwell * 1000);
-
-		flip_to(FB_FRONT); commit();
-		printf("FRONT: expect RED    src=%08x\n", rd(regs, AFBD_SRC));
-		return 0;
-	}
-
-	/*
-	 * bar-noflip isolates WHICH activity corrupts the picture.
-	 *
-	 * It does the full per-frame workload -- fill a buffer, commit, at the
-	 * panel rate -- but always fills fb_back and always leaves scanout
-	 * pointed at fb_front, which is written once at the start and then
-	 * never touched. The displayed surface is therefore static by
-	 * construction, exactly like the `bar 1` negative control that
-	 * measured 0.74%.
-	 *
-	 * Reads ~0.74%  -> writing the OTHER buffer is harmless, and the
-	 *                  corruption comes from presenting a freshly filled
-	 *                  buffer (a latch/coherency problem at the flip).
-	 * Reads ~25%    -> the corruption is caused by the commit/scanout
-	 *                  activity itself, independent of what we write, and
-	 *                  the double-buffering model is not the issue at all.
-	 *
-	 * Either answer eliminates half the search space; the current evidence
-	 * cannot distinguish them, which is why guessing again would be wrong.
-	 */
-	/*
-	 * bar-vs swaps the way the vendor does: wait for the real vblank
-	 * (dec_irq_query's condition), THEN write the address, THEN latch it
-	 * with the dirty bit -- rather than writing the address whenever the
-	 * fill happens to finish and polling AFBD_STATUS bit 1.
-	 *
-	 * If this drops rows-with-no-bar from 25.65% toward the 0.74% floor,
-	 * the defect was swapping at an arbitrary point in the scan, and the
-	 * fix is to keep the address write inside vblank.
-	 */
-	/*
-	 * Is 0x056000c0 bit 0 a per-vblank event, or just a static bit?
-	 *
-	 * bar-vs measured 300 vblank misses out of 300 because dec_irq_query()
-	 * ANDs +0xc0 with +0xc4, and a live dump shows 0xc4 = 0 -- the vendor's
-	 * second condition is not enabled in our configuration. Before relaxing
-	 * the condition to 0xc0 alone, find out what 0xc0 actually does:
-	 * ack it, time how long until it sets again, repeat.
-	 *
-	 * ~16.75 ms intervals  -> it is vblank, and we have the signal we need.
-	 * instant re-set        -> it is a level/static bit, useless as an event.
-	 * never re-sets         -> acking clears it for good; not an event either.
-	 */
-	/*
-	 * How many vblanks after the flip does scanout ACTUALLY switch?
-	 *
-	 * Four tearing hypotheses have been eliminated and every one of them
-	 * assumed an answer to this. It is measurable without reading the panel,
-	 * by using the fill as the probe: flip to the other buffer, then
-	 * immediately repaint the OLD buffer white. If white ever reaches the
-	 * screen, the old buffer was still live when we wrote it -- which is
-	 * precisely the corruption the tearing metric keeps reporting.
-	 *
-	 *   stays GREEN            -> the flip is effective immediately; writing
-	 *                             the other buffer is safe, and the tearing
-	 *                             comes from somewhere else entirely.
-	 *   flashes WHITE then GREEN -> the flip lands late; the count of frames
-	 *                             painted before it takes tells us how late.
-	 *   stays WHITE            -> the flip never took effect at 60 Hz
-	 *                             timescales at all, despite flip-test
-	 *                             working across 5-second dwells.
-	 */
-	/*
-	 * leak-test amplifies latency-probe so a transient cannot hide.
-	 *
-	 * latency-probe repaints the off-screen buffer white ONCE. If the front
-	 * were live for a single frame that is one 16.74 ms flash -- easy for an
-	 * eye to miss, and a 30 fps camera samples every 33 ms so it can fall
-	 * between samples too.
-	 *
-	 * Here BACK (green) is made live and then FRONT is hammered between
-	 * white and red continuously for several seconds. The panel must stay
-	 * SOLID GREEN. Any flicker of white or red means the front buffer is
-	 * reaching the screen while we write it, and at this repetition rate a
-	 * leak becomes a visible strobe rather than a single missable frame.
-	 */
-	/*
-	 * yuv2 -- direct YUV the way the VENDOR does it, with the plane
-	 * addresses, not just the format byte.
-	 *
-	 * The earlier attempt (yuvtry) set the format at +0x11 and the strides
-	 * and kept feeding the single packed source at +0x178. That is the RGB
-	 * data path. dec_sync_frame_to_hardware() shows the vendor writes TWO
-	 * plane addresses instead, via dec_reg_set_address() with
-	 * base = afbd + 0x60:
-	 *
-	 *     Y: base + {16,20,24,28}[idx]   -> 0x05600070 for idx 0
-	 *     C: base + {36,40,44,48}[idx]   -> 0x05600084 for idx 0
-	 *
-	 * and they come from item->y_addr / item->c_addr -- the decoder's own
-	 * buffers, submitted by DECD_IOC_FRAME_SUBMIT. The CPU never reads the
-	 * frame. Our register dump showed both plane registers reading zero,
-	 * which was noted and then dismissed as "a parallel mechanism we do not
-	 * use"; it is in fact what makes YUV work.
+	 * Programs the DECD half in full: format byte, plane strides, and the
+	 * per-slot Y/C plane addresses (workaround + {16,36}[idx], i.e.
+	 * 0x70/0x84 for idx 0) the way dec_sync_frame_to_hardware() does.
+	 * Refuted as a scanout path: run cold, it produces the 4x-repeat
+	 * greyscale (test_54/IMG_0691), because none of these registers are in
+	 * the fetch path the vendor's DE table configures. It was once believed
+	 * to put NV12 on the panel; that claim rested on a misattributed photo.
 	 *
 	 * usage: yuv2 <file.nv12> <format-code> <idx> [dwell-ms]
 	 */
@@ -1013,22 +755,15 @@ int main(int argc, char **argv)
 		static const unsigned y_off[] = { 0x70, 0x74, 0x78, 0x7c };
 		static const unsigned c_off[] = { 0x84, 0x88, 0x8c, 0x90 };
 		size_t fsz = (size_t)W * H * 3 / 2;
-		uint8_t *buf = malloc(fsz);
-		int fd2 = open(argv[2], O_RDONLY);
 		uint32_t s_flags, s_str, s_src, s_s0, s_s1, s_y, s_c;
 		unsigned long y_phys = FB_FRONT, c_phys = FB_FRONT + (unsigned long)W * H;
-		size_t got = 0;
+		uint8_t *buf;
 		double us;
 
 		if (idx > 3) { fprintf(stderr, "idx must be 0..3\n"); return 2; }
-		if (fd2 < 0 || !buf) { perror("yuv2"); return 1; }
-		while (got < fsz) {
-			ssize_t r = read(fd2, buf + got, fsz - got);
-			if (r <= 0) break;
-			got += (size_t)r;
-		}
-		close(fd2);
-		if (got != fsz) { fprintf(stderr, "short frame\n"); return 1; }
+		buf = read_frame(argv[2], fsz);
+		if (!buf)
+			return 1;
 
 		s_flags = rd(regs, AFBD_G_FLAGS);
 		s_str = rd(regs, AFBD_STRIDE);
@@ -1075,193 +810,12 @@ int main(int argc, char **argv)
 	}
 
 	/*
-	 * yuv-stream: successive NV12 frames via the vendor's plane addresses.
-	 *
-	 * Still copies the frame into the scanout region (we cannot resolve a
-	 * V4L2 buffer to a physical address from userspace -- that is exactly
-	 * why the vendor has a kernel driver), but it does NO colour conversion
-	 * and no ARGB blit. It answers whether direct YUV survives motion and
-	 * what the per-frame cost becomes once convert+blit are gone.
-	 *
-	 * Two frame slots inside the 8 MiB reservation: an NV12 frame is
-	 * 1.38 MB so both fit with room to spare.
+	 * bar-vs: the vendor's swap order -- wait for the real vblank, THEN
+	 * write the address, THEN latch. This is M3's candidate presentation
+	 * loop, kept alongside plain `bar` (which flips whenever the fill
+	 * happens to finish) so the two orders can be scored against each
+	 * other with tools/display/tear-measure.py.
 	 */
-	if (!strcmp(argv[1], "yuv-stream") && argc >= 3) {
-		int frames = argc >= 4 ? atoi(argv[3]) : 1 << 30;
-		static const unsigned y_off[] = { 0x70, 0x74, 0x78, 0x7c };
-		static const unsigned c_off[] = { 0x84, 0x88, 0x8c, 0x90 };
-		size_t fsz = (size_t)W * H * 3 / 2;
-		uint8_t *buf = malloc(fsz);
-		int vfd = open(argv[2], O_RDONLY);
-		uint32_t s_flags = rd(regs, AFBD_G_FLAGS), s_str = rd(regs, AFBD_STRIDE);
-		uint32_t s_src = rd(regs, AFBD_SRC), s_s0 = rd(regs, AFBD_G_STRIDE0);
-		uint32_t s_s1 = rd(regs, AFBD_G_STRIDE1);
-		uint32_t s_y = rd(regs, y_off[0]), s_c = rd(regs, c_off[0]);
-		int n = 0, timeouts = 0;
-		double copy_tot = 0, wait_tot = 0, t0;
-
-		if (vfd < 0 || !buf) { perror("yuv-stream"); return 1; }
-		fcntl(vfd, F_SETPIPE_SZ, 4 << 20);
-
-		regs8[AFBD_G_FORMAT] = 3;               /* 8-bit YUV420 */
-		wr(regs, AFBD_G_STRIDE0, W);
-		wr(regs, AFBD_G_STRIDE1, W);
-		wr(regs, AFBD_STRIDE, W);
-		wr(regs, AFBD_DIRTY, 1);
-
-		t0 = now_ms();
-		while (n < frames) {
-			unsigned long base = (n & 1) ? FB_BACK : FB_FRONT;
-			double a, b, us;
-			size_t got = 0;
-
-			a = now_ms();
-			while (got < fsz) {
-				ssize_t r = read(vfd, buf + got, fsz - got);
-				if (r <= 0) break;
-				got += (size_t)r;
-			}
-			if (got != fsz) break;
-			memcpy((void *)(uintptr_t)((char *)fb_front +
-			       (base - FB_FRONT)), buf, fsz);
-			__sync_synchronize();
-			b = now_ms();
-
-			wr(regs, y_off[0], (uint32_t)base);
-			wr(regs, c_off[0], (uint32_t)(base + (unsigned long)W * H));
-			wr(regs, AFBD_DIRTY, 1);
-			us = commit();
-			if (us < 0) timeouts++;
-			copy_tot += b - a;
-			wait_tot += us < 0 ? 0 : us / 1000.0;
-			n++;
-		}
-		close(vfd);
-
-		wr(regs, y_off[0], s_y);
-		wr(regs, c_off[0], s_c);
-		wr(regs, AFBD_G_FLAGS, s_flags);
-		wr(regs, AFBD_G_STRIDE0, s_s0);
-		wr(regs, AFBD_G_STRIDE1, s_s1);
-		wr(regs, AFBD_STRIDE, s_str);
-		wr(regs, AFBD_SRC, s_src);
-		wr(regs, AFBD_DIRTY, 1);
-		commit();
-
-		if (n)
-			printf("yuv-stream: %d frames in %.0f ms (%.2f fps), %d timeouts\n"
-			       "            mean read+copy %.2f ms, commit wait %.2f ms\n",
-			       n, now_ms() - t0, n / ((now_ms() - t0) / 1000.0),
-			       timeouts, copy_tot / n, wait_tot / n);
-		return n ? 0 : 1;
-	}
-
-	if (!strcmp(argv[1], "leak-test")) {
-		unsigned secs = argc >= 3 ? strtoul(argv[2], NULL, 0) : 8;
-		double t0;
-		size_t i;
-		unsigned long cycles = 0;
-
-		for (i = 0; i < FB_BYTES / 4; i++) {
-			((uint32_t *)fb_front)[i] = 0xffff0000u;   /* red   */
-			((uint32_t *)fb_back)[i]  = 0xff00ff00u;   /* green */
-		}
-		wait_vblank();
-		flip_to(FB_BACK);
-		wr(regs, AFBD_DIRTY, 1);
-		commit();
-		wait_vblank();
-
-		printf("BACK (green) is live; hammering FRONT white<->red for %u s.\n"
-		       "  SOLID GREEN      = front writes never reach the panel\n"
-		       "  ANY white/red    = front is live while being written\n",
-		       secs);
-
-		t0 = now_ms();
-		while (now_ms() - t0 < secs * 1000.0) {
-			for (i = 0; i < FB_BYTES / 4; i++)
-				((uint32_t *)fb_front)[i] = 0xffffffffu;
-			for (i = 0; i < FB_BYTES / 4; i++)
-				((uint32_t *)fb_front)[i] = 0xffff0000u;
-			cycles++;
-		}
-		printf("%lu white/red cycles in %u s; src=%08x\n",
-		       cycles, secs, rd(regs, AFBD_SRC));
-
-		for (i = 0; i < FB_BYTES / 4; i++)
-			((uint32_t *)fb_front)[i] = 0xffff0000u;
-		wait_vblank();
-		flip_to(FB_FRONT);
-		wr(regs, AFBD_DIRTY, 1);
-		commit();
-		return 0;
-	}
-
-	if (!strcmp(argv[1], "latency-probe")) {
-		unsigned dwell = argc >= 3 ? strtoul(argv[2], NULL, 0) : 4000;
-		size_t i;
-
-		for (i = 0; i < FB_BYTES / 4; i++) {
-			((uint32_t *)fb_front)[i] = 0xffff0000u;   /* red   */
-			((uint32_t *)fb_back)[i]  = 0xff00ff00u;   /* green */
-		}
-		flip_to(FB_FRONT);
-		wr(regs, AFBD_DIRTY, 1);
-		commit();
-		printf("phase 1: panel should be RED (front live), %u ms\n", dwell);
-		usleep(dwell * 1000);
-
-		wait_vblank();
-		flip_to(FB_BACK);
-		wr(regs, AFBD_DIRTY, 1);
-		commit();
-		/* No pause: repaint the buffer we just flipped AWAY from. */
-		for (i = 0; i < FB_BYTES / 4; i++)
-			((uint32_t *)fb_front)[i] = 0xffffffffu;  /* white */
-		printf("phase 2: flipped to BACK, then repainted FRONT white.\n"
-		       "         GREEN  = flip effective, front write invisible\n"
-		       "         WHITE  = front still live when written (the bug)\n");
-		usleep(dwell * 1000);
-
-		for (i = 0; i < FB_BYTES / 4; i++)
-			((uint32_t *)fb_front)[i] = 0xffff0000u;
-		flip_to(FB_FRONT);
-		wr(regs, AFBD_DIRTY, 1);
-		commit();
-		printf("phase 3: back to RED. src=%08x\n", rd(regs, AFBD_SRC));
-		return 0;
-	}
-
-	if (!strcmp(argv[1], "vbprobe")) {
-		volatile uint8_t *b = (volatile uint8_t *)regs;
-		int i, hits = 0;
-		double last;
-
-		printf("initial: 0xc0=%02x 0xc4=%02x  (status %08x)\n",
-		       b[AFBD_IRQ_ST0], b[AFBD_IRQ_ST1], rd(regs, AFBD_STATUS));
-
-		b[AFBD_IRQ_ST0] = b[AFBD_IRQ_ST0] | 1u;         /* ack */
-		last = now_ms();
-		for (i = 0; i < 20; i++) {
-			double t0 = now_ms();
-
-			while (!(b[AFBD_IRQ_ST0] & 1u) && now_ms() - t0 < 100.0)
-				;
-			if (b[AFBD_IRQ_ST0] & 1u) {
-				printf("  event %2d after %6.2f ms  (0xc4=%02x)\n",
-				       i, now_ms() - last, b[AFBD_IRQ_ST1]);
-				hits++;
-				b[AFBD_IRQ_ST0] = b[AFBD_IRQ_ST0] | 1u; /* ack */
-				last = now_ms();
-			} else {
-				printf("  event %2d TIMEOUT after 100 ms\n", i);
-				last = now_ms();
-			}
-		}
-		printf("%d/20 events; a 59.7 Hz panel would give ~16.75 ms\n", hits);
-		return 0;
-	}
-
 	if (!strcmp(argv[1], "bar-vs")) {
 		int frames = argc >= 3 ? atoi(argv[2]) : 600;
 		int n, timeouts = 0, vmiss = 0;
@@ -1281,28 +835,6 @@ int main(int argc, char **argv)
 			wr(regs, AFBD_DIRTY, 1);        /* latch, as the vendor does */
 			us = commit();
 			if (us < 0) timeouts++;
-			/*
-			 * BAR_LATCH_WAIT=1 waits for the vblank AFTER the flip,
-			 * so the new address has actually taken effect before we
-			 * touch the other buffer.
-			 *
-			 * The zero-motion control (BAR_STEP=0) reads 30.46%
-			 * against 0.74% for an idle panel, so the raster really
-			 * is catching a half-filled surface -- with identical
-			 * content every frame, motion cannot explain it. The
-			 * remaining candidate is a one-frame flip latency: if
-			 * the address written after vblank N only takes effect
-			 * at vblank N+1, then with just two buffers the one we
-			 * fill is still the one being scanned, every frame.
-			 *
-			 * If this drops the metric toward 0.74% (at half the
-			 * frame rate), that is the mechanism, and the real fix
-			 * is a third buffer -- which needs a bigger
-			 * uboot-scanout reservation, i.e. a kernel change.
-			 */
-			if (getenv("BAR_LATCH_WAIT"))
-				wait_vblank();
-
 			fill_tot += b - a;
 			vb_tot += vb < 0 ? 0 : vb;
 		}
@@ -1319,32 +851,14 @@ int main(int argc, char **argv)
 		return timeouts ? 1 : 0;
 	}
 
-	if (!strcmp(argv[1], "bar-noflip")) {
-		int frames = argc >= 3 ? atoi(argv[2]) : 600;
-		int n, timeouts = 0;
-		double t0;
-
-		fill_bar(fb_front, 0);                  /* the one visible frame */
-		flip_to(FB_FRONT);
-		commit();
-
-		t0 = now_ms();
-		for (n = 0; n < frames; n++) {
-			double us;
-
-			fill_bar(fb_back, (n * bar_step) % W);   /* never displayed */
-			flip_to(FB_FRONT);                 /* scanout stays put */
-			us = commit();
-			if (us < 0) timeouts++;
-		}
-		printf("bar-noflip: %d frames in %.0f ms (%.2f fps), %d timeouts\n"
-		       "            panel shows a STATIC bar; expect the 0.74%% floor\n"
-		       "            unless commit/scanout activity is itself the cause\n",
-		       frames, now_ms() - t0, frames / ((now_ms() - t0) / 1000.0),
-		       timeouts);
-		return timeouts ? 1 : 0;
-	}
-
+	/*
+	 * bar-sb is the POSITIVE CONTROL for the tearing measurement: it
+	 * writes into the buffer the hardware is scanning, so the raster can
+	 * catch the surface blued-but-not-yet-barred. Without a run the metric
+	 * is known to flag, a 0% double-buffered result cannot be told apart
+	 * from a metric that does not work. Expected magnitude is printed with
+	 * the results: about (phase-1 fill time / frame period).
+	 */
 	if (!strcmp(argv[1], "bar-sb")) {
 		int frames = argc >= 3 ? atoi(argv[2]) : 600;
 		int n, timeouts = 0;
@@ -1385,22 +899,6 @@ int main(int argc, char **argv)
 			b = now_ms();
 			flip_to(phys);
 			us = commit();
-			/*
-			 * EXTRA_VSYNC=1 burns one more frame before the next
-			 * fill begins. It is a diagnostic for the 25.65%
-			 * rows-with-no-bar that double buffering should have
-			 * removed: the flip itself is proven working
-			 * (flip-test alternates the panel red/green and src
-			 * reads back correctly), so what remains is when the
-			 * new address is LATCHED relative to the raster. The
-			 * fill takes 12.07 ms of a 16.75 ms frame, leaving
-			 * ~4.7 ms of margin; if the latch lands a frame later
-			 * than assumed we overwrite the live surface every
-			 * time. If this halves the frame rate AND drops the
-			 * metric to ~0, that is the answer.
-			 */
-			if (extra_vsync)
-				commit();
 			if (us < 0) { timeouts++; if (timeouts == 1)
 				printf("first commit timeout at frame %d\n", n); }
 			fill_tot += b - a;

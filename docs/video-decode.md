@@ -69,8 +69,11 @@ rootfs. See step 2.
 - `/root` on the target holds `h713-present`, `decd-client`, `sunxi-decd.ko`,
   `vedump.py`, the NV12 frames (`bars.nv12`, `one.nv12`, `frames30.nv12`) and
   `video-test/` with the H.264 ladder. Plus a lot of `*.log` scratch worth
-  deleting. The on-target `h713-present` is current as of 2026-08-14 — it has
-  `regs` (now dumping the whole channel), `fmt`, `info` and `poke`.
+  deleting. Both tools are current as of the 2026-08-14 simplification: the
+  closed-investigation diagnostics (`yuvtry`, `flip-test`, `bar-noflip`,
+  `vbprobe`, `leak-test`, `latency-probe`, `yuv-stream`) are gone — git has
+  them if an old trail needs re-running — and every surviving command was
+  re-verified on hardware after the rebuild.
 - **The module is NOT auto-loaded**: `insmod /root/sunxi-decd.ko` after boot.
 - **The display must be brought up in U-Boot before booting Linux**, every time:
 
@@ -181,9 +184,12 @@ and `dec_enable()` cannot restore what it never wrote.
 This is the Milestone 4 resource-ownership warning arriving early: U-Boot owns
 these registers and DECD wants them. Consequences for anyone running this:
 
-- `decd-client show` ends with `PM_HINT off`, so **the panel blanks when the
-  dwell expires** — including the 2026-08-12 run, which is why nobody could
-  report what it showed.
+- `decd-client show` used to end with `PM_HINT off`, so **the panel blanked
+  when the dwell expired** — including the 2026-08-12 run, which is why nobody
+  could report what it showed. **Fixed 2026-08-14:** `show` now leaves the
+  device enabled and says so; `decd-client pm off` still does the reset
+  explicitly if wanted. Verified on hardware: the AFBD window survives a full
+  `show` cycle intact.
 - Any test that needs the display alive must take **one** `pm on` and never
   suspend. Recovery is `reboot bootloader` -> `h713_disp auto 0x34 logo` ->
   `boot`.
