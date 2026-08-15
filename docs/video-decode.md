@@ -1246,6 +1246,70 @@ redirected and fully buffered the log was **empty**, hiding every printf up to
 the crash. Geometry now comes from the driver's readback, and the tool sets
 `setvbuf(_IONBF)`.
 
+### THE ZERO-COPY PATH WORKS — 59.73 fps, 2026-08-15
+
+**Decoded H.264 through the GPU to the panel, with the CPU never touching a
+pixel.** `tools/video/gles-play.c`:
+
+```
+decoded 1280x720 NV12, planes=2 memories=1 fd=12
+600 frames in 10046 ms (59.73 fps), 0 commit timeouts
+  mean gpu 4.11 ms, commit-wait 12.50 ms
+```
+
+Against M3's **28.30 fps** on the CPU path. 59.73 fps is the vsync ceiling
+(58.93 fps measured independently), so the limit is now the panel rather than
+the 44 MB/s uncached read. Sustained over 600 frames with no droop — the
+60-frame run measured 59.31, the 600-frame run 59.73.
+
+The chain: VE decodes into a CMA buffer -> GStreamer hands over that buffer's
+dma-buf FD -> GPU imports it as an NV12 `EGLImage` and samples through
+`samplerExternalOES` -> renders into a scanout slot imported from
+`sunxi-scanout-dmabuf` -> `AFBD_SRC` points at the slot the GPU just filled ->
+commit. Double buffered across `0x6c100000` / `0x6c500000`.
+
+| stage | CPU path (M3) | zero-copy |
+| --- | --- | --- |
+| read decoder output | ~31 ms (44 MB/s uncached) | **0** |
+| YUV->RGB convert | 10.8 ms | in the 4.1 ms GPU pass |
+| blit to scanout | 3.85 ms | **0**, renders in place |
+| **result** | **28.30 fps** | **59.73 fps** |
+
+#### The (memory:DMABuf) caps feature is a red herring
+
+Forcing `video/x-raw(memory:DMABuf)` looks like the way to make the decoder
+hand out FDs. It is not, and it actively breaks the pipeline:
+
+```
+ERROR v4l2codecs-h264dec: DMABuf caps negotiated without the mandatory
+                          support of VideoMeta
+ERROR v4l2codecs-h264dec: Failed to negotiate with downstream
+```
+
+which surfaces to the user as the far less helpful **"No valid frames decoded
+before end of stream"** — that is what a `not-negotiated (-4)` looks like from
+outside. `fakesink` cannot advertise VideoMeta, so the gst-launch form of this
+pipeline could never have worked, and adding the meta via appsink's
+`propose-allocation` signal did not fix it either.
+
+**Under plain `video/x-raw` caps the v4l2codecs decoder hands out dma-buf backed
+memory anyway.** `gst_is_dmabuf_memory()` is true and the FD is real. So
+`gles-play` uses plain caps and **verifies rather than negotiates**: it refuses
+any buffer that is not dma-buf backed instead of silently falling back to a
+copy, which is exactly the cost this path exists to remove. `GLES_CAPS`
+overrides the caps for experiments.
+
+Also note `format=DMA_DRM`, not `format=NV12`, if anyone retries the feature:
+since GStreamer 1.24 the DMABuf caps carry a DRM fourcc plus modifier in
+`drm-format` and `format` is the literal token `DMA_DRM`.
+
+#### Geometry comes from GstVideoMeta
+
+With dma-buf the real strides and offsets belong to the allocation, not to what
+the caps format implies. `gles-play` prefers `gst_buffer_get_video_meta()` and
+falls back to `GstVideoInfo` — the same meta the decoder insists downstream
+support.
+
 ### The other end: the GPU renders into the scanout carveout (2026-08-15)
 
 **`PASS: GPU rendered directly into the scanout carveout`.** Both ends of the
