@@ -194,6 +194,56 @@ these registers and DECD wants them. Consequences for anyone running this:
   suspend. Recovery is `reboot bootloader` -> `h713_disp auto 0x34 logo` ->
   `boot`.
 
+## The plane-0 hunt — live-poke campaign, all null, and the map it bought (2026-08-14)
+
+One evening of operator-watched probes, every one register-verified as landing
+and every one visually null except the calibrations. The value is the map.
+
+### What was tried, in order
+
+| probe | result |
+| --- | --- |
+| format sweep: `0x140/0x148/0x14c/0x164` bit variants, `0x000` bit 5 | null; writes verified sticking by pair-poke; `0x164` is 16-bit, holds reset default `0x808` in **both** channels |
+| ch0 (`0x05600100`) enabled as a ch1 clone, ARGB source | null; status never leaves 0 |
+| ch0 with the **vendor's own** ctrl `0x83000201` (from `ge2d_plane_afbd_writes[]`) + full `ge2d_plane_init()` write set + planar config | null; status never leaves 0 |
+| the complete `dec_reg_video_channel_attr_config()` linear recipe incl. plane geometry `0x48/0x4c` | null — and `0x48/0x4c` were **already correct** (`(720,1280)/(360,1280)`, someone programs them every boot) |
+| bypass byte `0x69` bit 0 cleared | null |
+| mux `0x68` values 0/1/3 | null |
+| ch1 ctrl "disabled" (`0x00010000` + ready) | **panel unaffected** — the disable does not latch |
+| VBlender window geometry halved/moved | null; its `0x00` reads 0; MIPS-programmed geometry present (two windows `1280x720@(49,22)`) but pokes are not consumed |
+| plane 0 DE-layer window (`0x05280040`) opened, cloned from plane 1 | null |
+| OSD0 (`0x05248000`) cloned from **live** OSD1 incl. the plane-open bit `+0x1c[0]` | null |
+| DE2 subs `0x05288000/0x0529c000` | both read all-zero — not in the live path |
+| mixer ctrl `0x0525c038` bit sweep — including **removing** the live bit | null both ways; live value is `0x40`, not the `0x100` U-Boot writes, so something rewrites it post-boot |
+
+Calibrations that DID show, proving the instrument: framebuffer content +
+ch1 commit (the white-flash beacon), and the plane-1 layer X origin
+`0x0528008c` (picture shifted ~400 px, the band fix's two-sided mover).
+
+### The model this forces
+
+The per-commit latch consumes **addresses, strides and origins** — that is why
+flips, the 4x-repeat stride change, and the layer origin all work. It does not
+consume **topology**: which planes exist, enables, routing. Removing the mixer's
+only live bit and "disabling" ch1 both change nothing, so topology is latched
+once at pipeline bring-up and never re-read. Every plane-0 resource accepts
+writes that nothing consumes because plane 0 was not in the topology when U-Boot
+brought the pipeline up.
+
+Corollary: **no register poke can add a plane to a running pipeline.** The
+plane-open ACTION is a bring-up-time sequence, and `tgd_is_plane_open()`
+(OSD base `+0x1c` bit 0) is only its status readout — writing the bit does
+nothing, confirmed live.
+
+### Where the answer is
+
+`local/h713-lab` holds board B's own `ge2d_dev.ko` — **unstripped, display
+symbols intact** (SHA-256 `a79017e5d3bc...`, see mips-display-recovery.md).
+The plane-open sequence is in there, statically recoverable: callers of
+`ge2d_plane_init`, the tgd plane ioctls, and whatever orders VBlender/OSD0/ch0
+enables against a pipeline restart. No more live pokes until that names a
+candidate sequence.
+
 ## Gotchas that cost real time
 
 - **The USB gadget only enumerates if Linux has not run since power-on.** Cold
@@ -215,14 +265,20 @@ these registers and DECD wants them. Consequences for anyone running this:
 - **Re-run the control before believing an old success.** Two claims in this file
   were produced by attributing a photo to the wrong command. A control costs one
   boot and one photo.
+- **Operator watch windows need a panel-side beacon and an explicit go.** A
+  probe launched while the operator reads the announcement is a probe nobody
+  watched. Flash the panel white twice before the first trial, and never fire
+  until the operator says go. A calibration trial must be UNMISSABLE (the
+  400 px origin jump), not subtle (a 49 px window nudge that history recorded
+  as a ~14 px wiggle).
 
 ## Next steps, in order
 
-1. **Sweep the four candidate format registers.** Costs nothing and risks
-   nothing: `h713-present load bars.nv12` (pixels in place, no register
-   touched), then `fmt 3 1280 0`, then `poke <reg> <val> 0` one field at a time,
-   photographing each. `0x05600164` first. Success is the 4x repeat collapsing
-   to 1x. See the candidate table above.
+1. ~~Sweep the four candidate format registers.~~ **DONE 2026-08-14 — all
+   null**, and the whole live-poke approach is closed by the topology-latch
+   model above. The next step is **static RE of board B's unstripped
+   `ge2d_dev.ko`**: recover the plane-open sequence (callers of
+   `ge2d_plane_init`, the tgd plane ioctls). Desk work, no panel time.
 2. **Only if that dead-ends: capture the vendor configuring a video plane.**
    `LogoRegData.bin` is ARGB8888 only, so the answer is in the running Android
    stack. **This is expensive — do not treat it as a reboot.** Reaching the
