@@ -257,11 +257,30 @@ int main(int argc, char **argv)
 	glVertexAttribPointer(uploc, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glViewport(0, 0, W, H);
 
-	/* noflip: the displayed surface is written once and then never again. */
+	/*
+	 * noflip: the displayed surface is written ONCE -- with a real bar --
+	 * and then never touched again, while the per-frame workload renders
+	 * into the other slot.
+	 *
+	 * It must be a BAR, not a blue clear. The metric counts rows that have
+	 * lost the bar, so a solid-blue reference scores every row as missing
+	 * and the scorer reports "no frame yielded a usable bar" instead. The
+	 * first version of this cleared to blue and produced exactly that,
+	 * wasting a capture: the floor run has to be visually identical to the
+	 * runs it is the floor FOR, differing only in that its pixels cannot
+	 * change.
+	 */
 	if (mode == 2) {
+		GLfloat bar0[] = { -1, -1, -1 + 128.0f / W, -1,
+				   -1, 1, -1 + 128.0f / W, 1 };
+
 		glBindFramebuffer(GL_FRAMEBUFFER, tgt[0].fbo);
-		glClearColor(0, 0, 1, 1);
-		glClear(GL_COLOR_BUFFER_BIT);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(full), full, GL_DYNAMIC_DRAW);
+		glUniform4f(ucol, 0, 0, 1, 1);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(bar0), bar0, GL_DYNAMIC_DRAW);
+		glUniform4f(ucol, 1, 0, 0, 1);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		glFinish();
 		wr(AFBD_SRC, (uint32_t)FB_FRONT);
 		commit_frame();

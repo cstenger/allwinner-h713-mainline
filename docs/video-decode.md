@@ -1615,6 +1615,52 @@ do anything for video. It is no longer obviously cheaper than the
 `ge2d_dev.ko` RE. It is still a *known kind* of problem for this project, which
 the plane RE is not, and its blocker is one testable hypothesis away.
 
+### Tearing on the GPU path: none. Scored 2026-08-15
+
+**`db` median 0.00% rows-with-no-bar against a positive control at 16.94%.**
+The GPU presentation path does not tear.
+
+| mode | interior rows | median | mean | worst |
+| --- | --- | --- | --- | --- |
+| `sb` single-buffered, positive control | 1260 | **16.94%** | 17.06 | 25.68 |
+| `noflip` intended floor | 1465 | 16.42% | 10.85 | 21.74 |
+| **`db` the real path** | 1239 | **0.00%** | 0.54 | 3.05 |
+
+Instrument `tools/video/gles-tear.c`, scored with `tear-measure.py`. All three
+recorded in **one continuous take** (`local/lcd-photos/test_56/IMG_0707.MOV`)
+with 6 s solid-blue gaps between runs, because the metric's floor moves with
+camera framing and "roughly the same position" cannot be compared across takes.
+Segment boundaries were located from the blue gaps rather than from assumed
+offsets — which caught that the recording began ~3 s early and ended ~3 s short.
+
+Workload match across the three runs: 59.7 fps each, render means 3.11 / 3.01 /
+3.00 ms. They differ only in which buffer is written and whether the flip
+happens.
+
+**The metric works here.** That was the open question: Mali is a tile-based
+renderer, so a clear plus a draw resolve together and the two-phase window the
+metric depends on would not exist naturally. `gles-tear` forces it with a
+`glFinish()` between passes, and the positive control duly reads ~17% against a
+predicted ~18% (3.0 ms of a 16.75 ms frame).
+
+#### The floor run is flawed, and it does not change the result
+
+`noflip` shows a **static** bar that cannot change, so it should score at or
+below `db`. It read 16.42%. Two tells: the score varies frame to frame
+(mean 10.85 vs median 16.42) although the image is pixel-identical, and the
+static bar sits at the **left edge**, where keystone and lamp falloff make
+detection marginal. That is a detection artifact, not a workload floor.
+
+The conclusion survives because `db` is *below* the broken floor, and there is
+no less corruption than "corruption impossible". A floor matters for
+interpreting an elevated number; `db` is not elevated.
+
+**Hypothesis, not a finding:** the CPU path's 23.03% floor used the same
+left-edge static bar (`fill_bar(fb_front, 0)`), so it may have been inflated the
+same way. That would explain why that floor sat so high, and it does not change
+the CPU-path conclusion — double buffering worked there too. Testing it costs
+one capture with the static bar centred.
+
 ### M3 — DONE 2026-08-15, via the GPU rather than the CPU
 
 Sustained playback achieved at 59.71 fps zero-copy, vsync-limited, operator
