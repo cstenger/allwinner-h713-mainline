@@ -1201,6 +1201,66 @@ RE's success chain is three stacked unknowns — find the plane-open sequence,
 make it work against a U-Boot-initialised pipeline, then discover whether DECD
 can feed it at all given its registers are not in the scanout path.
 
+### GLES video pass: the import works, 0.64 ms/frame (2026-08-15)
+
+**`PASS: GPU sampled a cedrus dma-buf and converted it`.** The question M3 left
+open — can the GPU read the decoder's output without the CPU touching it — is
+answered yes, on a real cedrus buffer.
+
+```
+cedrus CAPTURE: 1280x720 NV12 bytesperline=1280 sizeimage=1382400
+EXPBUF ok: dmabuf fd=4
+EGLImage from cedrus dma-buf: ok
+bound as GL_TEXTURE_EXTERNAL_OES: ok
+  red   got 255, 24,  0   ok
+  green got   0,216,  0   ok
+  blue  got   0, 15,255   ok
+100 NV12->RGB passes at 1280x720: 63.5 ms (0.64 ms/frame, 1574 fps equivalent)
+```
+
+Instrument is `tools/video/gles-nv12.c`. The buffer is obtained with
+`VIDIOC_REQBUFS` + `VIDIOC_EXPBUF` on `/dev/video0` — a genuine cedrus CAPTURE
+allocation, because a buffer from anywhere else would not answer the question.
+Neither ioctl needs streaming, so the import path is testable without also
+driving a stateless decoder. The CPU fills it once as a test harness only.
+
+| cost | CPU path (M3) | GPU |
+| --- | --- | --- |
+| read decoder output | ~31 ms (44 MB/s uncached) | **0** — GPU DMA |
+| YUV->RGB convert | 10.8 ms | **0.64 ms** (whole pass) |
+| blit to scanout | 3.85 ms | 0 once rendering direct |
+
+`samplerExternalOES` applies the YUV->RGB itself, so the conversion that costs
+10.8 ms of CPU is a texture unit's ordinary work.
+
+**Capability probe** (`tools/video/gles-probe.c`), all present:
+`EGL_EXT_image_dma_buf_import`, `..._modifiers`, `EGL_KHR_image_base`,
+`GL_OES_EGL_image_external` (+`_essl3`), `GL_OES_rgb8_rgba8`, and
+`EGL_MESA_image_dma_buf_export`.
+
+**Two traps worth keeping.** `VIDIOC_S_FMT` on CAPTURE alone yields the 16x16
+minimum (384 bytes) — a stateless decoder derives CAPTURE geometry from the
+coded OUTPUT format, so `V4L2_PIX_FMT_H264_SLICE` must be set first. Writing a
+1280x720 pattern into that 384-byte mapping segfaulted, and with stdout
+redirected and fully buffered the log was **empty**, hiding every printf up to
+the crash. Geometry now comes from the driver's readback, and the tool sets
+`setvbuf(_IONBF)`.
+
+**What remains for the full pass**, both plumbing rather than unknowns:
+
+1. **Feed it real decoded frames.** Either drive cedrus directly (request API,
+   H.264 slice controls) or take GStreamer's dma-buf fds from an `appsink`.
+2. **A dma-buf for the scanout region** as the render target. `/dev/dma_heap`
+   and `/dev/udmabuf` are both absent from this kernel, and DECD's
+   `MAP_LINEAR_BUFFER` returns `EINVAL` — and returns a `dma_addr`, not an fd,
+   so it could not feed EGL even if it worked. The clean answer is a small
+   out-of-tree module exporting `0x6c100000` as a dma-buf; module iteration on
+   this board is a 63 KB transfer, so that is cheap.
+
+Until (2) exists, rendering to an FBO and reading back would reintroduce a CPU
+read of 3.7 MB/frame — worse than the current path. Do not benchmark that and
+call it the GPU path.
+
 ### GPU checkpoint: SOLVED 2026-08-15 — the PPU base address was wrong
 
 **`PASS: GPU ran the job`.** Mali-G31 executes fragment shaders, 1252 Mpixel/s,
