@@ -279,6 +279,9 @@ candidate sequence.
    model above. The next step is **static RE of board B's unstripped
    `ge2d_dev.ko`**: recover the plane-open sequence (callers of
    `ge2d_plane_init`, the tgd plane ioctls). Desk work, no panel time.
+1b. **Do the GPU path first.** Mali-G31 is already bound by panfrost with mesa's
+   gallium driver in place; a GLES pass removes all three M3 costs and needs no
+   display RE at all. Next checkpoint is one session. See the section above.
 2. **Only if that dead-ends: capture the vendor configuring a video plane.**
    `LogoRegData.bin` is ARGB8888 only, so the answer is in the running Android
    stack. **This is expensive — do not treat it as a reboot.** Reaching the
@@ -1153,6 +1156,48 @@ conversion, same blit, same commit. Only the cost of obtaining pixels differs.
   CAPTURE buffers are mapped. If a cached mapping is possible, the same
   architecture gets real-time without any plane work. Worth an hour before
   committing to the `ge2d_dev.ko` RE.
+
+### The GPU is bound and nobody noticed (2026-08-14)
+
+Checked because M3 makes the CPU read the thing to eliminate, and the plane RE
+is not the only way to eliminate it:
+
+```
+panfrost 1800000.gpu: clock rate = 864000000
+panfrost 1800000.gpu: mali-g31 id 0x7093 major 0x0 minor 0x0 status 0x0
+panfrost 1800000.gpu: shader_present=0x1 l2_present=0x1
+[drm] Initialized panfrost 1.4.0 for 1800000.gpu on minor 0
+```
+
+**Mali-G31 Bifrost, bound by mainline panfrost, auto-loaded at boot.**
+`/dev/dri/card0` and `renderD128` have existed every session. `panfrost_dri.so`,
+`libEGL_mesa` and `libgbm` are all in the rootfs. The only missing piece is
+`libGLESv2` (Debian `libgles2` / `libgles-dev`, ~100 KB — seconds over serial;
+apt's lists do not have it, so send the .deb).
+
+**Why this matters more than the plane RE.** A GLES pass that samples the
+decoder's dma-buf as an NV12 texture and renders into the scanout region:
+
+| M3 cost | GPU path |
+| --- | --- |
+| 44 MB/s uncached CPU read (the actual cap) | gone — the GPU reads over its own DMA path |
+| 10.8 ms convert | gone — YUV->RGB in hardware |
+| 3.85 ms blit | gone — renders straight into the target |
+
+It targets the **ARGB scanout path that already works at 58.9 fps**, so it needs
+no format field, no second plane, and no topology change — precisely the things
+the plane hunt proved unreachable. `DECD_IOC_MAP_LINEAR_BUFFER` already wraps a
+physical region as a dma_buf, which is the render target.
+
+Capacity is not a concern: 921,600 px at 30 fps is 27.6 Mpixel/s of
+sample-and-convert on a core clocked at 864 MHz, and ~153 MB/s of traffic
+against a bus that already sustains 350 MB/s of CPU fill.
+
+**Sequencing:** do this before `ge2d_dev.ko`. Its next checkpoint is one
+session (send `libgles2`, import a decoder dma-buf, render one frame); the plane
+RE's success chain is three stacked unknowns — find the plane-open sequence,
+make it work against a U-Boot-initialised pipeline, then discover whether DECD
+can feed it at all given its registers are not in the scanout path.
 
 ### M3 — sustained playback (original plan)
 
