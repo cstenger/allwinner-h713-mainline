@@ -15,7 +15,7 @@ Goal for this phase: **decoded video visible on the projector panel.**
 | | |
 | --- | --- |
 | **ZERO-COPY PLAYBACK** | **DONE 2026-08-15. 59.71 fps sustained over 2700 frames, 0 timeouts, operator-confirmed moving picture.** VE decode -> dma-buf -> GPU convert -> scanout, CPU never touches a pixel. `tools/video/gles-play.c` |
-| **H.264 decode** | **bit-exact** vs host software references. Constrained Baseline, Main (B-frames + CABAC), High (8x8 transform), 320x240 through 1920x1080. Unmodified mainline cedrus. Decodes this content at **268 fps** (311 fps re-measured 2026-08-14) |
+| **H.264 decode** | **bit-exact** vs host software references, **re-verified on the current kernel 2026-08-15** (all five vectors). Constrained Baseline, Main (B-frames + CABAC), High (8x8 transform), 320x240 through 1920x1080. Unmodified mainline cedrus. Decodes this content at **268 fps** (311 fps re-measured 2026-08-14) |
 | **GPU** | Mali-G31 via mainline panfrost, GLES 3.1 on mesa 25.0.7. Needed the PPU base-address fix |
 | **Decoded video on the panel** | operator-confirmed, correct colour and geometry. Now via the GPU; the older **CPU colour conversion** path also works and is capped at 28.30 fps |
 | **Presentation ceiling** | **58.93 fps** against a 59.7 Hz panel — vsync-limited, and now the actual limit |
@@ -267,6 +267,15 @@ candidate sequence.
 - **Re-run the control before believing an old success.** Two claims in this file
   were produced by attributing a photo to the wrong command. A control costs one
   boot and one photo.
+- **Use the project's own instrument before writing an ad-hoc command.** The
+  "M1 md5 drift" of 2026-08-15 was entirely a hand-typed pipeline missing
+  `! video/x-raw,format=NV12 !`, which `m1-decode-test.sh` has always carried
+  and whose comment predicts the exact wrong byte count. The script existed and
+  I did not run it.
+- **A control cannot validate a measurement it shares a defect with.** That same
+  false drift survived a control — old kernel vs new kernel, byte-identical —
+  because both runs used the same broken command. The control correctly showed
+  "not caused by this change" and I over-read it as "the effect is real".
 - **Operator watch windows need a panel-side beacon and an explicit go.** A
   probe launched while the operator reads the announcement is a probe nobody
   watched. Flash the panel white twice before the first trial, and never fire
@@ -1433,15 +1442,32 @@ forever. The line is restored and is now mandatory, not optional.
 | panel | boot logo displays normally (operator-confirmed) |
 | genpd | `GPU, TVFE, TVCAP, VE, AV1`; gpu and video-codec both attached and `suspended` |
 
-**Pre-existing, NOT from this change: the M1 reference md5s no longer match.**
-All five ladder vectors mismatch `reference-md5.txt`, with output larger than
-M1 recorded (v01 983040 vs 921600 — 320x**256**, i.e. height-aligned). A control
-boot of the *flashed* kernel, which has no `power-domains` on the video-codec
-node at all, produces **byte-identical md5s and sizes** to the new kernel. So
-decode output is unchanged by this work; the drift dates from a kernel bump
-after M1 was scored on 2026-08-09. Worth re-baselining, separately. Note the
-`a01-320x256` / `a02-1280x736` aligned references already in
-`local/video-test/`, which suggest alignment was known about.
+**RETRACTED 2026-08-15: the "M1 md5 drift" reported here never existed.**
+This paragraph originally claimed all five ladder vectors had stopped matching
+`reference-md5.txt` and needed re-baselining. They match. **M1 still passes
+bit-exact on the current kernel**, verified across all five vectors:
+
+```
+v01-320x240-baseline PASS 921600      v04-1280x720-high  PASS 82944000
+v02-1280x720-baseline PASS 82944000   v05-1920x1080-high PASS 186624000
+v03-1280x720-main    PASS 82944000
+```
+
+The fault was in my ad-hoc test command, which omitted
+`! video/x-raw,format=NV12 !`. Unconstrained, the decoder negotiates
+**NV12_32L32** — Allwinner's 32x32 tiled layout — and emits `ALIGN(height,32)`
+rows, so 320x240 becomes 122880 bytes/frame instead of 115200. That output is
+correct but tiled, and can never match a linear reference.
+`tools/video/m1-decode-test.sh` has always forced the caps, and its comment
+predicts this exact byte count. I did not use the project's own instrument.
+
+**The control failed to catch it, and that is the more useful lesson.** I ran
+the old kernel against the new one and got byte-identical results, which is
+true and proves the kernel change was not responsible — then I read it as
+evidence the drift was real and pre-existing. Both runs carried the *same*
+broken command, so the control varied the wrong thing. This file already
+warns: *"a control must match the run in every respect except the variable
+under test."* A control cannot validate a measurement it shares a defect with.
 
 ### The original negative (kept as trail): panfrost does NOT run jobs (2026-08-14)
 
