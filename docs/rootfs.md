@@ -59,6 +59,87 @@ Optional arguments:
 --image-size SIZE   initial ext4 size (default: 2G)
 ```
 
+## Video runtime, and the `dev` profile
+
+**Every image carries the video runtime.** This is a projector; a build that
+cannot play video is not a useful build of it, so these are in the base set
+rather than something a bring-up image opts into:
+
+| package | why |
+|---------|-----|
+| `gstreamer1.0-plugins-bad` | `libgstv4l2codecs.so`, i.e. `v4l2slh264dec`. It is in "bad", not "good", and it is why this set is large — it pulls GTK3, x265, aom |
+| `gstreamer1.0-libav` | `avdec_h264`, the software control `m1-decode-test.sh` scores hardware decode against |
+| `libgl1-mesa-dri` | `panfrost_dri.so`; without it EGL comes up with no renderer for the Mali-G31 |
+| `libgles2`, `libegl1` | the runtime dispatch libraries (`libegl1` pulls `libegl-mesa0`) |
+| `v4l-utils` | `v4l2-ctl`, the M1 decode gate |
+| `mpv` | play a file from the device with no host in the loop; ~8 MB on top of the above |
+
+That costs about 680 MB installed, nearly all of it `plugins-bad`'s dependency
+tree. One caveat on `mpv`: its video outputs want DRM/KMS, X or Wayland, and
+this panel is driven through AFBD registers with panfrost as a render-only
+device — so mpv exercises decode and file handling, not scanout.
+
+Every image also gets `/etc/modules-load.d/h713-video.conf` so
+`sunxi_scanout_dmabuf` loads at boot. That module is a plain misc device with no
+DT compatible and no module alias — `modinfo` shows none — so udev can never
+autoload it the way it does cedrus and panfrost, and anything that presents a
+frame through the carveout fails without it.
+
+**`--profile dev` adds the on-target build environment** (repeatable;
+`--extra-packages LIST` still takes an ad-hoc comma-separated list):
+
+```
+tools/rootfs/build.sh --ssh-key ~/.ssh/id_ed25519.pub --profile dev
+```
+
+This half is genuinely optional — the product never compiles its own tools — but
+without it a rootfs rebuild silently produces an image where `gles-play` no
+longer builds, which is exactly what happened when the first video image got its
+headers from `.deb`s extracted over the serial console. The two traps in the
+list:
+
+| package | why |
+|---------|-----|
+| `libgles-dev` | GLES2 headers + `libGLESv2.so`; depends on `libgl-dev`, which is where `KHR/khrplatform.h` actually lives — nothing needs fetching from the Khronos registry |
+| `libgstreamer-plugins-base1.0-dev` | `gst/app`, `gst/allocators`, `gst/video` headers; pulls `libgstreamer1.0-dev`, `pkgconf` and `libglib2.0-dev` — which is transitional in trixie, `glib.h` comes from `libgio-2.0-dev` |
+
+plus `build-essential`, `libv4l-dev`, `libdrm-dev`, `python3` and `strace`
+(+376 MB), and it raises the image to 3 GiB. The compiler on the board is
+deliberate: the register experiments are edited in place, not cross-compiled
+over an 11 KB/s UART.
+
+The build asserts the individual headers, `.so` link targets, `.pc` files,
+plugin paths and binaries these resolve — not merely that the packages installed
+— so a package rename or split fails the build here instead of on the target
+hours later. `build/out/rootfs.manifest` records `profiles=` and
+`extra_packages=`, so an image states what is in it.
+
+### Verifying that an image can rebuild the tooling
+
+Package presence still is not proof that a compile works. `verify-video-tooling.sh`
+unpacks the image, chroots into it under `qemu-aarch64` (privately registered
+binfmt, no host state touched, no root), and builds every `tools/video/*.c` with
+the **image's own** `gcc`, using the exact command documented in each tool's
+source header:
+
+```
+tools/rootfs/verify-video-tooling.sh build/out/rootfs.tar
+```
+
+It also checks the output really is aarch64, since a silent fall-through to the
+host compiler would make every pass meaningless.
+
+Results, 2026-08-15:
+
+| image | result |
+|-------|--------|
+| the previous `build/out/rootfs.tar` | **2/8** — `EGL/egl.h: No such file or directory`, no `gstreamer-1.0.pc`; only the two plain-gcc tools built |
+| `build.sh --profile dev` | **8/8** |
+
+The first row is the debt this closes, measured rather than assumed. The run
+also caught that `gles-play.c`'s own documented build command omitted
+`gstreamer-video-1.0` and had therefore never linked as written.
+
 The default kernel-tree discovery intentionally requires exactly one complete
 content-addressed `build/linux-6.18.38-*` tree. This prevents modules from a
 stale kernel build being installed accidentally. If a series/defconfig/`versions.env`

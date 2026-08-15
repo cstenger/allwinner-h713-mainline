@@ -53,16 +53,38 @@ Read these before trusting anything historical here:
 
 ## LOOSE ENDS — start here next session
 
-In priority order. The first two are real debt; the rest are cheap.
+In priority order. Item 1 is closed; item 2 is the remaining real debt, and the
+rest are cheap.
 
-1. **The rootfs cannot rebuild the video tooling.** `libgles2` and the
-   GStreamer/glib dev headers were installed by extracting Debian `.deb`s and
-   pushing them over serial. A rootfs rebuild loses them and `gles-play`,
-   `gles-nv12`, `gles-scanout` and `gles-tear` stop compiling. Fix properly with
-   `tools/rootfs/build.sh --extra-packages libgles2,libgles-dev,libegl-dev,libglvnd-core-dev,libgio-2.0-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev`.
-   Note `libglib2.0-dev` is a transitional package in trixie — the headers are in
-   `libgio-2.0-dev` — and `KHR/khrplatform.h` ships in no Debian package at all
-   (take it from the Khronos registry).
+1. **The rootfs can rebuild the video tooling — DONE 2026-08-15.** The video
+   *runtime* now ships in the base package set, because this is a projector and a
+   build that cannot play video is not a useful build of it; `--profile dev` adds
+   the on-target compiler and headers. Details and the package rationale are in
+   [rootfs.md](rootfs.md#video-runtime-and-the-dev-profile).
+
+   Measured, not assumed. `tools/rootfs/verify-video-tooling.sh` chroots into a
+   built image under qemu and compiles every tool with the image's own gcc:
+
+   | image | result |
+   | --- | --- |
+   | the previous `build/out/rootfs.tar` (the debt) | **2/8** — `EGL/egl.h: No such file or directory`, and no `gstreamer-1.0.pc` at all. Only the two plain-gcc tools built |
+   | `build.sh --profile dev` | **8/8** |
+
+   Four things this turned up, three of them corrections to the note that used to
+   be here:
+   - `KHR/khrplatform.h` **does** ship in Debian — in `libgl-dev`, which
+     `libgles-dev` depends on. Nothing needs to come from the Khronos registry.
+   - `libglvnd-core-dev` is not needed; in trixie it ships only glvnd ABI
+     headers.
+   - **`gles-play.c`'s own documented build command had never linked.** It omits
+     `gstreamer-video-1.0`, so `gst_video_info_from_caps`,
+     `gst_buffer_get_video_meta` and `gst_video_meta_api_get_type` are undefined
+     references. Whatever built the working binary on the board, it was not the
+     command in the file. Fixed in the source header.
+   - `sunxi_scanout_dmabuf` is a plain misc device with **no DT compatible and no
+     module alias**, so udev could never have autoloaded it — the board must have
+     been doing it by hand. Every image now carries
+     `/etc/modules-load.d/h713-video.conf`.
 2. **The display still needs U-Boot every boot.** `h713_disp auto 0x34 logo`
    before `boot`, or the panel stays dark and every tool refuses. Linux cannot
    bring the panel up itself. This is the largest remaining gap between "works on

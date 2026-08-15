@@ -209,6 +209,17 @@ Type=oneshot
 ExecStart=/usr/local/sbin/h713-wifi-crashlog
 EOF
 
+# Load the scanout carveout exporter at boot. Unlike cedrus and panfrost, which
+# udev autoloads off their DT compatibles, this module is a plain misc device
+# with no device table -- modinfo shows no alias at all -- so nothing will ever
+# load it on its own, and everything that presents a frame through
+# /dev/scanout-dmabuf fails without it. Its defaults are the working carveout
+# (0x6c100000, 8 MiB = both buffers), so no options are needed.
+install -d -m 0755 "$R/etc/modules-load.d"
+cat > "$R/etc/modules-load.d/h713-video.conf" <<EOF
+sunxi_scanout_dmabuf
+EOF
+
 # Optional boot WiFi hotspot (AP). Enabled only when the build passed
 # HOTSPOT_ENABLED=1 (i.e. local/hotspot.conf existed). A dedicated AP owns wlan0
 # and DHCP, so mask the STA supplicant and the default dnsmasq.
@@ -275,4 +286,4 @@ EOF
   echo "[customize] boot hotspot enabled: SSID=$HOTSPOT_SSID ch=$HOTSPOT_CHANNEL ip=$HOTSPOT_IP"
 fi
 
-echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach"
+echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload"

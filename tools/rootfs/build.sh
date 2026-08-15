@@ -12,24 +12,79 @@ IMAGE_SIZE=$ROOTFS_IMAGE_SIZE
 SSH_KEY=
 KERNEL_TREE=
 EXTRA_PACKAGES=
+PROFILES=
+DEV_PROFILE=0
 ORIGINAL_ARGS=("$@")
 
-# The shipped product image is deliberately minimal. --extra-packages appends to
-# the bootstrap set for bring-up images (video tooling, an on-target compiler)
-# without making those part of the default artifact.
-BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox
+# The image is otherwise minimal, but this is a projector: the video RUNTIME is
+# not optional equipment on it, so it is part of the base set rather than
+# something a bring-up image opts into. Each entry was resolved against the real
+# trixie/main/arm64 Contents index (2026-08-15) rather than guessed, and the
+# non-obvious ones are why the first, hand-installed set was hard to reproduce:
+#
+#   gstreamer1.0-plugins-bad   libgstv4l2codecs.so, i.e. v4l2slh264dec -- the
+#                              decoder element gles-play drives. It is in "bad",
+#                              not "good", and it is the reason this set is
+#                              large: it pulls GTK3, x265, aom and friends.
+#   gstreamer1.0-libav         avdec_h264, the software control that
+#                              m1-decode-test.sh scores hardware decode against.
+#   libgl1-mesa-dri            panfrost_dri.so. Without it EGL comes up with no
+#                              renderer for the Mali-G31 and every GLES tool
+#                              fails at init.
+#   libgles2 / libegl1         the runtime dispatch libraries; libegl1 pulls
+#                              libegl-mesa0.
+#   mpv                        play a file from the device without a host in the
+#                              loop. Only ~8 MB on top of the above. Note its
+#                              video outputs want DRM/KMS, X or Wayland, and
+#                              this panel is driven through AFBD registers with
+#                              panfrost as a render-only device -- so mpv tests
+#                              decode and file handling, not scanout.
+VIDEO_RUNTIME_PACKAGES=libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-libav,v4l-utils,mpv
+BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
+
+# --profile dev: rebuild tools/video ON the board. This half is genuinely
+# optional -- the product never compiles its own tools -- but without it a
+# rootfs rebuild silently produces an image where gles-play no longer builds,
+# which is exactly what happened when the first video image got its headers from
+# .debs extracted over the serial console. The two traps in this list:
+#
+#   libgles-dev   GLES2 headers + libGLESv2.so. It depends on libgl-dev, which
+#                 is where KHR/khrplatform.h actually lives -- the file the
+#                 video notes claimed no Debian package ships at all.
+#   libgstreamer-plugins-base1.0-dev
+#                 gst/app, gst/allocators and gst/video headers; pulls
+#                 libgstreamer1.0-dev, pkgconf and libglib2.0-dev, which is
+#                 transitional in trixie -- glib.h comes from libgio-2.0-dev.
+#
+# build-essential is deliberate: M2/M3 are register experiments against a live
+# framebuffer, and cross-compiling each iteration over an 11 KB/s UART is how
+# this project has previously spent whole sessions.
+DEV_PACKAGES=build-essential,libgles-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libv4l-dev,libdrm-dev,python3,strace
+# Measured 2026-08-15: base + runtime + dev is 1.45 GiB on disk, so it fits the
+# 2G default with little headroom. Raise the floor rather than have the next
+# added package fail in mke2fs at the end of a ~10 minute bootstrap.
+DEV_MIN_IMAGE_SIZE=3G
 
 usage() {
   cat <<EOF
 usage: $0 --ssh-key FILE [--kernel-tree DIR] [--output-dir DIR] [--image-size SIZE]
-          [--extra-packages LIST]
+          [--profile NAME] [--extra-packages LIST]
 
 Build Debian $DEBIAN_SUITE/$DEBIAN_ARCH into rootfs.ext4 and rootfs.simg.
 The SSH public key is required and is copied into root's authorized_keys; it is
 never copied into the repository outside the generated, ignored artifacts.
 
+Every image carries the video runtime (mesa/GLES, the GStreamer stack incl.
+v4l2slh264dec, v4l-utils, mpv): this is a projector.
+
+--profile NAME installs a named bring-up package set (repeatable). Known:
+  dev     rebuild tools/video on the board: an on-target compiler plus the
+          GLES/EGL, GStreamer, v4l and DRM development headers.
+          Raises --image-size to at least $DEV_MIN_IMAGE_SIZE.
+
 --extra-packages takes a comma-separated list appended to the bootstrap set.
-Bring-up only; the default image stays minimal. Larger sets need --image-size.
+Bring-up only; the image carries nothing else beyond the base set by default.
+Larger sets need --image-size.
 EOF
 }
 
@@ -39,9 +94,39 @@ while (($#)); do
     --kernel-tree) KERNEL_TREE=${2:?missing value for --kernel-tree}; shift 2 ;;
     --output-dir)  OUTPUT_DIR=${2:?missing value for --output-dir}; shift 2 ;;
     --image-size)  IMAGE_SIZE=${2:?missing value for --image-size}; shift 2 ;;
+    --profile)     PROFILES=${PROFILES:+$PROFILES,}${2:?missing value for --profile}; shift 2 ;;
     --extra-packages) EXTRA_PACKAGES=${2:?missing value for --extra-packages}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+size_to_bytes() {
+  case "$1" in
+    *[Kk]) echo $(( ${1%[Kk]} * 1024 )) ;;
+    *[Mm]) echo $(( ${1%[Mm]} * 1024 * 1024 )) ;;
+    *[Gg]) echo $(( ${1%[Gg]} * 1024 * 1024 * 1024 )) ;;
+    *[!0-9]*) echo "error: cannot parse size: $1" >&2; return 1 ;;
+    *) echo "$1" ;;
+  esac
+}
+
+for profile in ${PROFILES//,/ }; do
+  case "$profile" in
+    dev)
+      DEV_PROFILE=1
+      EXTRA_PACKAGES=${EXTRA_PACKAGES:+$EXTRA_PACKAGES,}$DEV_PACKAGES
+      if (( $(size_to_bytes "$IMAGE_SIZE") < $(size_to_bytes "$DEV_MIN_IMAGE_SIZE") )); then
+        # Print only in the namespace pass: the script re-execs itself with the
+        # same arguments and would otherwise report this twice.
+        if [ "${H713_ROOTFS_NAMESPACE:-0}" = 1 ]; then
+          printf '==> profile dev: raising image size %s -> %s\n' \
+            "$IMAGE_SIZE" "$DEV_MIN_IMAGE_SIZE"
+        fi
+        IMAGE_SIZE=$DEV_MIN_IMAGE_SIZE
+      fi
+      ;;
+    *) echo "error: unknown profile: $profile (known: dev)" >&2; exit 2 ;;
   esac
 done
 
@@ -248,6 +333,7 @@ env \
   HOTSPOT_DHCP_END="$HOTSPOT_DHCP_END" \
   DEBIAN_MIRROR="$DEBIAN_MIRROR" \
   DEBIAN_SUITE="$DEBIAN_SUITE" \
+  DEV_PROFILE="$DEV_PROFILE" \
   bash -ceu '
     mkdir -p "$ROOTFS_TREE"
     tar --numeric-owner --xattrs --acls --exclude="./dev/*" -C "$ROOTFS_TREE" -xf "$ROOTFS_TAR"
@@ -298,6 +384,41 @@ env \
     test -x "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     grep -q "noflow" "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-bt-attach.service"
+    # Video runtime: assert the files that are actually dlopened and linked, not
+    # just that the packages installed. A package rename or split would
+    # otherwise ship an image that fails on the target hours later.
+    L=$ROOTFS_TREE/usr/lib/aarch64-linux-gnu
+    test -e "$L/libGLESv2.so.2"                                 # libgles2
+    test -e "$L/libEGL.so.1"                                    # libegl1
+    test -e "$L/dri/panfrost_dri.so"                            # the renderer
+    test -e "$L/gstreamer-1.0/libgstv4l2codecs.so"              # v4l2slh264dec
+    test -x "$ROOTFS_TREE/usr/bin/gst-launch-1.0"
+    test -x "$ROOTFS_TREE/usr/bin/gst-inspect-1.0"
+    test -x "$ROOTFS_TREE/usr/bin/v4l2-ctl"
+    test -x "$ROOTFS_TREE/usr/bin/mpv"
+    grep -qx "sunxi_scanout_dmabuf" "$ROOTFS_TREE/etc/modules-load.d/h713-video.conf"
+    test -n "$(find "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE" -name "sunxi-scanout-dmabuf.ko*" -print -quit)"
+    if [ "$DEV_PROFILE" = 1 ]; then
+      # The exact headers, link targets and .pc files tools/video resolves.
+      test -f "$ROOTFS_TREE/usr/include/KHR/khrplatform.h"      # via libgl-dev
+      test -f "$ROOTFS_TREE/usr/include/GLES2/gl2.h"
+      test -f "$ROOTFS_TREE/usr/include/GLES2/gl2ext.h"
+      test -f "$ROOTFS_TREE/usr/include/EGL/egl.h"
+      test -f "$ROOTFS_TREE/usr/include/EGL/eglext.h"
+      test -f "$ROOTFS_TREE/usr/include/glib-2.0/glib.h"        # via libgio-2.0-dev
+      test -f "$L/glib-2.0/include/glibconfig.h"
+      test -f "$ROOTFS_TREE/usr/include/gstreamer-1.0/gst/gst.h"
+      test -f "$ROOTFS_TREE/usr/include/gstreamer-1.0/gst/app/gstappsink.h"
+      test -f "$ROOTFS_TREE/usr/include/gstreamer-1.0/gst/allocators/gstdmabuf.h"
+      test -f "$ROOTFS_TREE/usr/include/gstreamer-1.0/gst/video/video-info-dma.h"
+      for pc in gstreamer-1.0 gstreamer-app-1.0 gstreamer-allocators-1.0 gstreamer-video-1.0; do
+        test -f "$L/pkgconfig/$pc.pc"
+      done
+      test -e "$L/libGLESv2.so"                                 # -lGLESv2 target
+      test -e "$L/libEGL.so"                                    # -lEGL target
+      test -x "$ROOTFS_TREE/usr/bin/gcc"
+      test -x "$ROOTFS_TREE/usr/bin/pkg-config"
+    fi
     if [ "$HOTSPOT_ENABLED" = 1 ]; then
       grep -qx "ssid=$HOTSPOT_SSID" "$ROOTFS_TREE/etc/hostapd/hotspot.conf"
       test "$(stat -c %a "$ROOTFS_TREE/etc/hostapd/hotspot.conf")" = 600
@@ -326,6 +447,8 @@ kernel_release=$KERNEL_RELEASE
 kernel_tree=${KERNEL_TREE#$PROJECT_ROOT/}
 kernel_modules=$module_build_count
 image_size=$IMAGE_SIZE
+profiles=${PROFILES:-none}
+extra_packages=${EXTRA_PACKAGES:-none}
 ssh_key_fingerprint=$SSH_FINGERPRINT
 EOF
 

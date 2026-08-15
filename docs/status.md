@@ -54,7 +54,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | arm64 Linux | ✅ **mainline 6.18.38 LTS** boots to Debian root login, **4-core SMP** (HW-verified) |
 | 32-bit Linux | ✅ boots to userspace, **single-core** (see limitations) |
 | eMMC | ✅ HS400, 26-partition Android GPT, read+write verified across reboots |
-| Debian 13 rootfs | ✅ signed, key-only image boots from UDISK; growfs, serial autologin, persistent first-boot identity, modules, and sshd HW-verified |
+| Debian 13 rootfs | ✅ signed, key-only image boots from UDISK; growfs, serial autologin, persistent first-boot identity, modules, and sshd HW-verified. Since 2026-08-15 the base set also carries the **video runtime** (mesa/GLES, the GStreamer stack incl. `v4l2slh264dec`, `v4l-utils`, `mpv`) and autoloads `sunxi_scanout_dmabuf`, with `--profile dev` for an on-target compiler — built and compile-verified under qemu, not yet booted on hardware |
 | Standalone boot | ✅ power-on/reset → `boot_a` FIT → Debian, **no host attached** (HW-verified) |
 | USB gadget | ✅ serial-default console; opt-in CDC ACM, UMS, and fastboot modes; ACM→fastboot transition and bounded raw bootloader target HW-verified |
 | CPU frequency/thermal | ✅ PWM DVFS from 480 MHz/0.90 V through 1416 MHz/1.10 V; full-range transitions and peak load HW-verified; cpufreq cooling device backs 75/85 C passive trips |

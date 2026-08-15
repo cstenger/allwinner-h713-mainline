@@ -4,10 +4,18 @@
  *
  * Runs ON THE TARGET. Build:
  *   gcc -O2 -o gles-play gles-play.c $(pkg-config --cflags --libs \
- *       gstreamer-1.0 gstreamer-app-1.0 gstreamer-allocators-1.0) -lEGL -lGLESv2
+ *       gstreamer-1.0 gstreamer-app-1.0 gstreamer-allocators-1.0 \
+ *       gstreamer-video-1.0) -lEGL -lGLESv2
  *   run with EGL_PLATFORM=surfaceless, after:
- *     insmod sunxi-scanout-dmabuf.ko
+ *     modprobe sunxi_scanout_dmabuf   (images built since 2026-08-15 autoload
+ *                                      it from /etc/modules-load.d)
  *     (display already up from U-Boot)
+ *
+ * gstreamer-video-1.0 in that list is required, not decoration:
+ * gst_video_info_from_caps, gst_buffer_get_video_meta and
+ * gst_video_meta_api_get_type all live in libgstvideo and nothing else here
+ * pulls it. It was missing until 2026-08-15, when compiling this file inside a
+ * freshly built rootfs showed the documented command had never linked.
  *
  * The whole point, and what M3 says it is worth: the CPU read of the decoder's
  * output was the 28.3 fps ceiling, at ~44 MB/s uncached. Here the VE decodes
