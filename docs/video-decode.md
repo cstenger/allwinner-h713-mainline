@@ -1278,6 +1278,67 @@ base is not what the driver comment implies, and **that dump is not a valid
 diagnostic**. Establish a register view that reports CPUS/SYS as ON before
 trusting anything it says about the GPU.
 
+#### The stock DTB says our GPU wiring is wrong in two places
+
+Checked against `local/stock-boot/sunxi.fex` — the DTB from the retail firmware,
+not the research tree, and not H616 mainline. **Going to H616 first was a
+mistake**; it is the assumption that has repeatedly burned this project, and the
+operator called it before it cost anything.
+
+Stock `gpu@0x01800000`:
+
+```
+compatible    = "arm,mali-midgard"
+interrupts    = <0 0x75 4>, <0 0x76 4>, <0 0x4c 4>   /* SPI 117, 118, 76 */
+clock-names   = "clk_parent", "clk_mali", "clk_bus"  /* CCU idx 7, 28, 29 */
+power-domains = <&pd 0>
+operating-points-v2 = <gpu_opp_table>
+gpu-supply    = <&reg_vdd_sys>
+```
+
+| property | stock | ours | verdict |
+| --- | --- | --- | --- |
+| interrupts | SPI 117/118/76 | SPI 117/118/76 | **match** |
+| supply | `reg_vdd_sys`, fixed 0.96 V, always-on | same | **match** |
+| power domain | **`<&pd 0>`** | `<&ppu 2>` | **WRONG** |
+| clocks | **three** (`clk_parent`, `clk_mali`, `clk_bus`) | two (`core`, `bus`) | **missing one** |
+| frequency | OPP table, **max 700 MHz** | fixed 864 MHz, no OPP | over the vendor max |
+
+**And the PPU driver's whole domain map is wrong.** Stock's controller is
+`allwinner,tv303-power-controller` with children:
+
+```
+pd_gpu@0  pd_tvfe@1  pd_tvcap@2  pd_ve@3  pd_av1@4
+```
+
+against patch 0020's `{ "CPUS", "SYS", "GPU", "VE", "DE" }` / `{0, 1, -1, 3, 4}`.
+Four of five names are wrong: index 0 is **GPU** (not CPUS), 1 is TVFE, 2 is
+**TVCAP** (not GPU), 4 is AV1 (not DE). Only VE at 3 is right, by luck. So our
+`power-domains = <&ppu 2>` aims the GPU at TVCAP *and* resolves to `hw_id -1`,
+which is a no-op — nothing in Linux powers the GPU domain, and the "no hardware
+power sequencer" claim in the DT comment is refuted by `pd_gpu@0` existing.
+
+**Audit item beyond the GPU:** every `<&ppu N>` reference in our tree is suspect
+until re-checked against this list.
+
+#### Still unexplained
+
+The GPU nonetheless *looks* powered: `GPU_ID` reads `0x70930000`, and
+`SHADER_READY`/`TILER_READY`/`L2_READY` are all 1 with no faults raised
+(`GPU_IRQ_RAWSTAT = 0x600`, POWER_CHANGED only). Jobs still time out at 864, 432
+and 216 MHz, and the rail is fixed at 0.96 V for every vendor OPP, so neither
+undervolt nor over-clock explains 216 MHz failing.
+
+Note also that genpd's `off-0` for every domain is an **artifact of the broken
+register map**, not a hardware reading — `h713_ppu_is_on()` polls a register
+that reads zero, so every domain reports off. Do not treat that summary as
+evidence either way.
+
+**Next test:** correct patch 0020's domain table to the vendor's, point the GPU
+at domain 0, add the third clock and an OPP table capped at 700 MHz, rebuild,
+retest. That is a kernel rebuild rather than a poke, but it is ordinary work
+against known-good vendor data.
+
 #### What this does to the plan
 
 The checkpoint was proposed as cheap, and it was — one evening, and it returned
