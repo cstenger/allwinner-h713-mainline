@@ -14,11 +14,13 @@ Goal for this phase: **decoded video visible on the projector panel.**
 
 | | |
 | --- | --- |
-| **H.264 decode** | **bit-exact** vs host software references. Constrained Baseline, Main (B-frames + CABAC), High (8x8 transform), 320x240 through 1920x1080. Unmodified mainline cedrus. Decodes this content at **268 fps** |
-| **Decoded video on the panel** | operator-confirmed, correct colour and geometry — via **CPU colour conversion to ARGB8888**, which is 4 bytes/pixel and therefore matches what the panel is actually configured to fetch |
-| **Presentation ceiling** | **58.93 fps** against a 59.7 Hz panel — vsync-limited |
+| **ZERO-COPY PLAYBACK** | **DONE 2026-08-15. 59.71 fps sustained over 2700 frames, 0 timeouts, operator-confirmed moving picture.** VE decode -> dma-buf -> GPU convert -> scanout, CPU never touches a pixel. `tools/video/gles-play.c` |
+| **H.264 decode** | **bit-exact** vs host software references. Constrained Baseline, Main (B-frames + CABAC), High (8x8 transform), 320x240 through 1920x1080. Unmodified mainline cedrus. Decodes this content at **268 fps** (311 fps re-measured 2026-08-14) |
+| **GPU** | Mali-G31 via mainline panfrost, GLES 3.1 on mesa 25.0.7. Needed the PPU base-address fix |
+| **Decoded video on the panel** | operator-confirmed, correct colour and geometry. Now via the GPU; the older **CPU colour conversion** path also works and is capped at 28.30 fps |
+| **Presentation ceiling** | **58.93 fps** against a 59.7 Hz panel — vsync-limited, and now the actual limit |
 | **Double buffering** | works (single-buffered 59.38% torn rows vs a 23.03% workload floor) |
-| **DECD driver** | probes, `/dev/decd`, survives 60 Hz vsync interrupts; `FRAME_SUBMIT` returns a real `fence_fd` and **does** program its plane registers |
+| **DECD driver** | probes, `/dev/decd`, survives 60 Hz vsync interrupts; `FRAME_SUBMIT` returns a real `fence_fd` and **does** program its plane registers. **Not used by the working path** — its registers are not in the scanout fetch path |
 
 ## RETRACTED: direct YUV scanout does not work
 
@@ -1253,14 +1255,20 @@ pixel.** `tools/video/gles-play.c`:
 
 ```
 decoded 1280x720 NV12, planes=2 memories=1 fd=12
-600 frames in 10046 ms (59.73 fps), 0 commit timeouts
-  mean gpu 4.11 ms, commit-wait 12.50 ms
+2700 frames in 45216 ms (59.71 fps), 0 commit timeouts
+  mean gpu 4.01 ms, commit-wait 12.60 ms
 ```
 
-Against M3's **28.30 fps** on the CPU path. 59.73 fps is the vsync ceiling
+**Operator-confirmed on the panel: moving colour bars with the sweeping
+diagonal**, for the full 45 s. That check is the point — the frame rate is
+identical whether the picture is right or garbage, and most of this file's
+history is about that distinction.
+
+Against M3's **28.30 fps** on the CPU path. 59.71 fps is the vsync ceiling
 (58.93 fps measured independently), so the limit is now the panel rather than
-the 44 MB/s uncached read. Sustained over 600 frames with no droop — the
-60-frame run measured 59.31, the 600-frame run 59.73.
+the 44 MB/s uncached read. Flat across three runs of increasing length —
+60 frames 59.31, 600 frames 59.73, 2700 frames 59.71 — so no thermal or
+buffer-pressure droop.
 
 The chain: VE decodes into a CMA buffer -> GStreamer hands over that buffer's
 dma-buf FD -> GPU imports it as an NV12 `EGLImage` and samples through
@@ -1580,6 +1588,14 @@ bring-up** (power domain, and possibly a supply and an OPP table) before it can
 do anything for video. It is no longer obviously cheaper than the
 `ge2d_dev.ko` RE. It is still a *known kind* of problem for this project, which
 the plane RE is not, and its blocker is one testable hypothesis away.
+
+### M3 — DONE 2026-08-15, via the GPU rather than the CPU
+
+Sustained playback achieved at 59.71 fps zero-copy, vsync-limited, operator
+confirmed. The original plan below (tear-measure against the fb-anim-db
+reference) was written for the CPU path; the tearing question it targets is
+still worth scoring on the GPU path, but the throughput question M3 existed to
+answer is settled.
 
 ### M3 — sustained playback (original plan)
 
