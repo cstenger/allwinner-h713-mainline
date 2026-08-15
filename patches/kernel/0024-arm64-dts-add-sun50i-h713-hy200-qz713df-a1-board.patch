@@ -11,7 +11,7 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -0,0 +1,1902 @@
+@@ -0,0 +1,1908 @@
 +/*
 + * Shared device tree for the Allwinner H713 SoC and HY200 family.
 + *
@@ -1071,34 +1071,33 @@
 +			resets = <&ccu RST_BUS_VE>, <&ccu RST_BUS_VE3>;
 +			reset-names = "ve", "ve3";
 +			/*
-+			 * NO power-domains -- TRIED AND REVERTED 2026-08-09.
++			 * RESTORED 2026-08-15, and now mandatory.
 +			 *
-+			 * The stock DTB does carry power-domains = <&ppu 3>,
-+			 * and PPU index 3 is "VE" in patch 0020's name table,
-+			 * so adding it looked like closing a real gap. On
-+			 * hardware it is a REGRESSION: cedrus stops probing
-+			 * entirely.
-+			 *
-+			 *   platform 1c0e000.video-codec: deferred probe pending
-+			 *   sun50i-h713-ppu: sync_state() pending due to
-+			 *                    1c0e000.video-codec
-+			 *
-+			 * with no /dev/video0 and no /dev/media0 at all.
-+			 *
-+			 * The cause is in patch 0020, not here.
-+			 * pm_genpd_summary reports DE, VE, SYS and CPUS all
-+			 * "off-0" and only GPU "on" -- and GPU only because it
-+			 * is flagged GENPD_FLAG_ALWAYS_ON. SYS reading "off" on
-+			 * a running system proves the driver's power state is
-+			 * not tracking hardware. The VE domain is physically on
-+			 * (its registers answered: VE_MODE = 0xC0000007), so
-+			 * this is a modelling defect, not a dead rail.
-+			 *
++			 * This line was tried and reverted on 2026-08-09 because
++			 * cedrus stopped probing entirely (deferred probe
++			 * pending, no /dev/video0). That revert's own diagnosis
++			 * was right: "the cause is in patch 0020, not here...
++			 * SYS reading off on a running system proves the
++			 * driver's power state is not tracking hardware.
 +			 * Restore this line only after the H713 PPU driver can
-+			 * actually report and control these domains. Until then
-+			 * pd_ignore_unused leaves them as the bootloader set
-+			 * them, which is what works.
++			 * actually report and control these domains."
++			 *
++			 * That condition is met. Patch 0020 was pointing at
++			 * 0x07010014 -- a transposition of the PMU base
++			 * 0x07001000 that landed in R_CCU -- so every domain
++			 * register read zero, is_on() always said off, and
++			 * power_on() timed out waiting for a DONE bit that
++			 * could never set. Hence the probe deferral. With the
++			 * base corrected the domain sequences for real:
++			 * writing CMD_ON took VE from status=0x00020000 (off)
++			 * to 0x00010002 (on + done) on hardware.
++			 *
++			 * It is mandatory now rather than optional: once the
++			 * PPU domains are genuinely managed, an unclaimed VE
++			 * domain gets powered off and decode dies with
++			 * "frame processing timed out!". Measured, 2026-08-15.
 +			 */
++			power-domains = <&ppu 3>;
 +			/*
 +			 * NO iommus PROPERTY -- deliberate, 2026-08-09.
 +			 *
@@ -1138,13 +1137,13 @@
 +			resets = <&ccu RST_BUS_GPU>;
 +			mali-supply = <&reg_vdd_sys>;
 +			/*
-+			 * Power domain index 2 = GPU (always-on in H713 PPU).
-+			 * IDA RE confirmed: domain_info[2] is all-zeros in stock binary,
-+			 * meaning no hardware power sequencer for GPU. The sun50i-h713-ppu
-+			 * driver marks index 2 as GENPD_FLAG_ALWAYS_ON.
-+			 * GPU is powered on at boot; Panfrost uses runtime PM via genpd.
++			 * Power domain index 0 = GPU, per the stock DTB's pd_gpu@0.
++			 * The previous <&ppu 2> aimed at what stock calls TVCAP, and
++			 * resolved to a hw_id of -1 (always-on stub), so nothing ever
++			 * touched the GPU domain. It reads ON at boot regardless, which
++			 * is why the GPU's own SHADER_READY/L2_READY are set.
 +			 */
-+			power-domains = <&ppu 2>;
++			power-domains = <&ppu 0>;
 +			#cooling-cells = <2>;
 +			status = "okay";
 +		};
@@ -1232,26 +1231,33 @@
 +		};
 +
 +		/*
-+		 * H713 PRCM PPU — power domain controller (IDA RE from stock kernel).
++		 * H713 PPU — power domain controller.
 +		 *
-+		 * The PPU register block is embedded within the R_CCU physical
-+		 * address range (0x07010000). The driver uses of_iomap() (no
-+		 * resource request) to avoid EBUSY conflict with the R_CCU driver.
++		 * Source is now the STOCK DTB (local/stock-boot/sunxi.fex), which
++		 * describes power-management@ff000000, compatible
++		 * "allwinner,tv303-pmu","syscon","simple-mfd", reg = <0x07001000
++		 * 0x400>, carrying a "allwinner,tv303-power-controller" child with
++		 * pd_gpu@0, pd_tvfe@1, pd_tvcap@2, pd_ve@3, pd_av1@4.
 +		 *
-+		 * 5 domains (DT indices 0-4):
-+		 *   0: CPUS (hw domain_id=0, registers at 0x07010020/24)
-+		 *   1: SYS  (hw domain_id=1, registers at 0x070100A0/A4)
-+		 *   2: GPU  (always-on; domain_info[2] is all-zeros in stock binary)
-+		 *   3: VE   (hw domain_id=3, registers at 0x070101A0/A4)
-+		 *   4: DE   (hw domain_id=4, registers at 0x07010220/24)
++		 * 5 domains (DT indices 0-4), all with real hardware sequencers:
++		 *   0: GPU   (registers at 0x07001014 + 0x00)
++		 *   1: TVFE  (+0x80)
++		 *   2: TVCAP (+0x100)
++		 *   3: VE    (+0x180)
++		 *   4: AV1   (+0x200)
 +		 *
-+		 * Source: IDA analysis of vmlinux.fex, sunxi_pmu_info @ 0xC0EA3D90,
-+		 *         compatible "allwinner,tv303-power-controller".
++		 * The previous version of this node was wrong twice, both from an
++		 * IDA read that the stock DTB overrules: the base was 0x07010014,
++		 * a transposition of 0x07001000 that landed in the R_CCU range so
++		 * every domain register read zero; and the domain names were
++		 * CPUS/SYS/GPU/VE/DE with the GPU marked sequencer-less always-on.
++		 * Verified on hardware at the corrected base: all five domains read
++		 * wait=0x8, delays=0x00080808, ctrl=1, status=0x00010000 (ON).
 +		 */
-+		ppu: power-controller@7010014 {
++		ppu: power-controller@7001014 {
 +			compatible = "allwinner,sun50i-h713-ppu";
-+			/* Same physical range as R_CCU; driver uses of_iomap (no request) */
-+			reg = <0x07010014 0x22c>;
++			/* Inside the PMU block; driver uses of_iomap (no request) */
++			reg = <0x07001014 0x22c>;
 +			clocks = <&r_ccu CLK_BUS_R_PPU>;
 +			clock-names = "ppu";
 +			resets = <&r_ccu RST_BUS_R_PPU>;

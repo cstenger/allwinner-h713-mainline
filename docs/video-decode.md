@@ -279,12 +279,11 @@ candidate sequence.
    model above. The next step is **static RE of board B's unstripped
    `ge2d_dev.ko`**: recover the plane-open sequence (callers of
    `ge2d_plane_init`, the tgd plane ioctls). Desk work, no panel time.
-1b. **GPU path — checkpoint RUN, negative.** panfrost binds and mesa targets the
-   Mali, but jobs time out (`head == tail`) at every clock. Live suspect: the
-   PPU driver never powers the GPU domain, on an inherited "no sequencer" RE
-   claim. Next test is the domain-2 power-on by hand — see the section above,
-   including the warning that the first register view read zeros for domains
-   known to be powered.
+1b. **GPU path — UNBLOCKED 2026-08-15.** panfrost runs jobs (`PASS`, 1252
+   Mpixel/s) after fixing the PPU base address and domain table from the stock
+   DTB. The GLES video pass is now the live next step: import a cedrus CAPTURE
+   dma-buf as an NV12 texture and render into the scanout region (wrapped by
+   `DECD_IOC_MAP_LINEAR_BUFFER`), which removes all three M3 costs at once.
 2. **Only if that dead-ends: capture the vendor configuring a video plane.**
    `LogoRegData.bin` is ARGB8888 only, so the answer is in the running Android
    stack. **This is expensive — do not treat it as a reboot.** Reaching the
@@ -1202,7 +1201,84 @@ RE's success chain is three stacked unknowns — find the plane-open sequence,
 make it work against a U-Boot-initialised pipeline, then discover whether DECD
 can feed it at all given its registers are not in the scanout path.
 
-### GPU checkpoint: panfrost does NOT run jobs (2026-08-14)
+### GPU checkpoint: SOLVED 2026-08-15 — the PPU base address was wrong
+
+**`PASS: GPU ran the job`.** Mali-G31 executes fragment shaders, 1252 Mpixel/s,
+reproduced 3/3 after the fix below. The negative recorded in the next section
+stands as the trail.
+
+```
+  ( 16, 16) =   0,  0, 51  expect ~16,16   ok
+  (128,128) = 119,119, 51  expect ~128,128 ok
+  (240,240) = 238,238, 51  expect ~240,240 ok
+PASS: GPU ran the job
+```
+
+The gradient is computed, not cleared — 119 and 238 are the shader evaluating
+`gl_FragCoord`, and the constant 51 is the 0.25 blue channel through RGBA4.
+
+**The fix, in two parts.** Both came from the stock DTB
+(`local/stock-boot/sunxi.fex`) after the operator vetoed reasoning from H616
+mainline — which had led to the confident and wrong conclusion "the GPU domain
+is already on, so power is not the problem".
+
+1. **Patch 0020's register base was `0x07010014`**, a transposition of the PMU
+   base `0x07001000` that landed inside R_CCU. Every domain register read zero,
+   `h713_ppu_is_on()` reported every domain off, `power_on()` waited forever for
+   a DONE bit that could never set, and the init writes went into unused R_CCU
+   space. At the corrected base all five domains read `wait=0x8`,
+   `delays=0x00080808`, `ctrl=1`, `status=0x00010000` — matching the driver's own
+   constants exactly.
+2. **The domain table was wrong at four of five positions.** Stock has
+   `pd_gpu@0, pd_tvfe@1, pd_tvcap@2, pd_ve@3, pd_av1@4`; ours claimed
+   `{CPUS, SYS, GPU, VE, DE}` with the GPU at index 2 mapped to `hw_id -1`. So
+   the GPU node aimed at TVCAP *and* resolved to an always-on stub.
+
+**Why "all domains read ON" was a red herring.** They were on because boot0 left
+them on, not because Linux managed them. With `hw_id -1` the domain was a stub,
+so panfrost's runtime PM could never sequence the GPU. Once the domain is real,
+panfrost powers it down when idle and brings it up on demand — and jobs land.
+
+**A prediction I got wrong, recorded because the reasoning was the error:** on
+seeing every domain read ON I predicted this fix "probably won't fix the GPU".
+Powered-at-boot and powered-by-a-driver-that-can-sequence-it are different
+states, and only the second lets runtime PM work.
+
+### The VE regression this exposed, and the loop it closed
+
+Making the domains real broke H.264 decode: `cedrus: frame processing timed
+out!`. An unclaimed domain gets powered off, and the `ve` node declared no
+`power-domains`. Confirmed by hand — writing `CMD_ON` took VE from
+`status=0x00020000` (off) to `0x00010002` (on + done) and decode returned.
+
+`power-domains = <&ppu 3>` on the `ve` node had been **tried and reverted on
+2026-08-09**, because cedrus stopped probing entirely. That revert's diagnosis
+was correct and is now vindicated: *"the cause is in patch 0020, not here...
+Restore this line only after the H713 PPU driver can actually report and control
+these domains."* The base-address bug is exactly why `power_on()` deferred
+forever. The line is restored and is now mandatory, not optional.
+
+### Verified after the fix, 2026-08-15
+
+| check | result |
+| --- | --- |
+| `gputest` | **PASS 3/3**, no sched timeout |
+| cedrus probe | `Device registered as /dev/video0`, no deferral |
+| H.264 decode | works, `VE_RC=0` |
+| panel | boot logo displays normally (operator-confirmed) |
+| genpd | `GPU, TVFE, TVCAP, VE, AV1`; gpu and video-codec both attached and `suspended` |
+
+**Pre-existing, NOT from this change: the M1 reference md5s no longer match.**
+All five ladder vectors mismatch `reference-md5.txt`, with output larger than
+M1 recorded (v01 983040 vs 921600 — 320x**256**, i.e. height-aligned). A control
+boot of the *flashed* kernel, which has no `power-domains` on the video-codec
+node at all, produces **byte-identical md5s and sizes** to the new kernel. So
+decode output is unchanged by this work; the drift dates from a kernel bump
+after M1 was scored on 2026-08-09. Worth re-baselining, separately. Note the
+`a01-320x256` / `a02-1280x736` aligned references already in
+`local/video-test/`, which suggest alignment was known about.
+
+### The original negative (kept as trail): panfrost does NOT run jobs (2026-08-14)
 
 The checkpoint proposed above was run the same evening. **Negative, with a
 specific cause to chase.** The software stack is entirely fine:
