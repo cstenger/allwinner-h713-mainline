@@ -301,10 +301,13 @@ candidate sequence.
    not what blocks YUV, but it is wrong.
 5. **Give DECD its own display reset, or none.** `dec_disable()` asserting the
    shared `rst_bus_disp` destroys U-Boot's display setup; see above.
-6. **The CPU-conversion path still works** and is the fallback that already puts
-   decoded video on the panel. If the plane question turns out to be M4-scale
-   (owning the DE configuration), shipping on the ARGB path is a real option —
-   measure whether the conversion cost actually caps the frame rate first.
+6. ~~The CPU-conversion path is the fallback; measure whether conversion caps
+   the frame rate first.~~ **MEASURED 2026-08-14 — it does not ship.** 28.3 fps
+   sustained against 30 fps content, and the cap is the ~44 MB/s CPU read of the
+   decoder's output buffer, not conversion (which is worth 3.7 ms/frame total).
+   See the M3 result. **Try a cached V4L2 CAPTURE mapping before the plane RE**
+   — if the buffer can be read at cache speed the existing architecture reaches
+   real time with no display work at all.
 7. Revisit `clock-frequency` (we run 100 MHz, vendor asks 200) once it works.
 
 ---
@@ -1099,7 +1102,59 @@ each time, and the *specific* defect — band position, repeat count — is what
 identified the register. This is the display bring-up's "prefer the photograph to
 the metric" rule earning its place again.
 
-### M3 — sustained playback
+### M3 RESULT — 2026-08-14. Sustained 28.3 fps, and the cap is the decoder buffer read.
+
+**The CPU-conversion path cannot sustain 30 fps 720p.** Measured over 2700
+frames (90 s of content, `v04-1280x720-high` concatenated 45x), four
+independent runs, no thermal degradation (55 -> 71 C, fps flat start to end).
+
+| run | fps | read | convert | blit | commit-wait |
+| --- | --- | --- | --- | --- | --- |
+| 2700 frames, 4 threads | **28.30** | 12.21 | 10.80 | 3.85 | 8.46 |
+| 900 frames, 3 threads | 28.28 | 12.19 | 11.00 | 3.81 | 8.30 |
+| 900 frames, 2 threads | 28.41 | 12.94 | 9.73 | 3.61 | 8.85 |
+| 900 frames, 1 thread | 28.14 | 5.03 | 18.99 | 3.68 | 7.77 |
+
+**`CONV_THREADS` is irrelevant** — the doc's standing suggestion to sweep it is
+now answered. fps is flat within 1% across 1-4 threads; time only moves between
+phases (1 thread: `read` 12.2->5.0, `convert` 10.8->19.0, total unchanged). That
+is the signature of an external pacer, not a CPU bottleneck.
+
+### What the pacer is
+
+| pipeline | rate | what it proves |
+| --- | --- | --- |
+| `! fakesink` | **311 fps** | the VE has 10x headroom, sustained |
+| `! filesink /dev/null` | **311 fps** | identical — `/dev/null` never copies, so the pixels are never touched |
+| same, `sync=false` | 311 fps | GStreamer is **not** clock-pacing; that hypothesis is dead |
+| `! filesink fifo` + `cat > /dev/null` | **31.7 fps** | a consumer doing NOTHING but draining. 3.73 GB in 85.1 s = **43.8 MB/s**, and 22.1 s of it is system time |
+| full presenter | 28.30 fps | our entire convert+blit+present adds only ~3.7 ms/frame on top |
+
+**The cap is the CPU read of the decoder's CMA output buffer**, at ~44 MB/s —
+the same figure the 2026-08-12 A/B/C found (48 MB/s) and the reason `fakesink`
+and `/dev/null` look fast: neither ever touches a pixel. It is charged to
+whoever first reads the buffer, which is the kernel copying into the pipe,
+before our code runs.
+
+The clean A/B on our own side: the identical presenter reading page-cached NV12
+runs at **51.62 fps** (`read` 0.52 ms) versus 28.30 fps from the decoder — same
+conversion, same blit, same commit. Only the cost of obtaining pixels differs.
+
+### The verdict, and what it decides
+
+- **30 fps content fails by ~6%** (28.3 sustained). Not a stutter to tune away.
+- **A perfect zero-cost consumer would still only reach 31.7 fps** — 5% of
+  margin over 30, with a 44 MB/s wall behind it. Optimising our presenter
+  cannot fix this; it is worth 3.7 ms/frame in total.
+- **This justifies the zero-copy work.** Not touching the decoder's output on
+  the CPU removes the 44 MB/s bottleneck, the conversion and the blit together,
+  leaving the vsync ceiling (58.9 fps) as the limit.
+- **Cheaper thing to try first:** the buffer is uncached because of how the V4L2
+  CAPTURE buffers are mapped. If a cached mapping is possible, the same
+  architecture gets real-time without any plane work. Worth an hour before
+  committing to the `ge2d_dev.ko` RE.
+
+### M3 — sustained playback (original plan)
 
 Double-buffered flip at the vsync-locked commit, scored with
 `tools/display/tear-measure.py` against the `fb-anim-db` reference. Keeping the
