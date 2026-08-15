@@ -127,16 +127,23 @@ attached, the display path can be brought up here, not only on the projector
    render offscreen/headless (EGL/GBM, PRIME buffer sharing) for validation, but
    anything *visible* is gated on the display path (item 3), so it is downstream
    of that work, not a standalone bench item.
-5. **Video decode (Cedrus / VE3) — DECODE AND PRESENTATION BOTH WORK
-   (2026-08-12); zero-copy is the remaining step.** Decoded H.264 plays on the
-   panel. Direct YUV scanout works via the vendor's plane-address path, so no
-   CPU colour conversion is needed; streaming runs at 57.77 fps against a
-   vsync-limited ceiling of 58.93. The vendor's DECD driver is enabled as a
-   module and accepts frame submissions with a working fence, after two bugs in
-   it were fixed. Remaining: confirm the DECD-submitted frame reaches the panel,
-   then feed it cedrus CAPTURE buffers via dma-buf so nothing is copied at all.
+5. **Video decode (Cedrus / VE3) — DONE 2026-08-15. Zero-copy playback at
+   59.71 fps, vsync-limited, no tearing.** VE decodes into a CMA buffer,
+   GStreamer hands over its dma-buf FD, the Mali-G31 samples it as an NV12
+   EGLImage and renders into the scanout carveout, AFBD scans it out. The CPU
+   never touches a pixel. Getting there needed a fix to the H713 PPU driver
+   (its register base was a transposition landing in R_CCU, so no power domain
+   could be sequenced and the GPU could not run jobs) and a new dma-buf
+   exporter for the `no-map` scanout carveout (patch 0036).
+
+   **Retracted along the way:** "direct YUV scanout via the vendor's
+   plane-address path" did not reproduce — those registers are not in the
+   scanout fetch path — and the "28 fps cross-process handoff ceiling" was
+   really the ~44 MB/s uncached read of the decoder's output buffer.
+
    **Read the HANDOFF section at the top of
-   [video-decode.md](video-decode.md).** Earlier framing follows.
+   [video-decode.md](video-decode.md)**, which also carries the loose ends to
+   tidy before starting audio. Earlier framing follows.
 
    **Superseded detail (2026-08-09):** Mainline `cedrus` decodes H.264 on the H713 **bit-exact**
    against host software references — Constrained Baseline, Main (B-frames +
@@ -159,8 +166,20 @@ attached, the display path can be brought up here, not only on the projector
    MIPS-side buffers convert to the ARM side by kseg0/1 physical `+0x40000000`.
    See "Starting point for video decode" in
    [claude-display-handoff.md](claude-display-handoff.md).
-6. **Audio** (I2S / codec / HDMI-in audio captured off the HDMI-RX) — depends on
-   what's populated.
+6. **Audio (I2S / codec / HDMI-in audio off the HDMI-RX) — NEXT.** Starting
+   position gathered 2026-08-15, not yet acted on. The stock DTB
+   (`local/stock-boot/sunxi.fex`, and it is the authority — see the PPU lesson)
+   carries `codec@2030000` compatible `allwinner,sunxi-internal-codec` with
+   `pll_audio`/`pll_tvfe`/`codec_dac`/`codec_adc`/`codec_bus` clocks,
+   `sndcodec@2030330` compatible `allwinner,sunxi-codec-machine`, `daudio2`
+   pins on function `d_i2s2`, a `vs,trid-audio-bridge`, and a
+   `sunxi,simple-audio-card`. Vendor driver sources exist in
+   `local/allwinner-h713-linux/drivers/audio/`
+   (`snd-soc-sunxi-h713-{codec,cpudai,machine}.c`) — unverified RE like the rest
+   of that tree, but they name registers. **First question is what is actually
+   populated**: it is a projector with speakers, so a codec and amp should be
+   there, but that is an assumption until someone looks at the board or gets a
+   sound out of it.
 7. **IR receiver (sunxi-cir)** — patch 0021; needs the receiver populated.
 8. **Crypto (sun8i-ce) + RNG — CLOSED: investigated to a definitive dead end;
    disabled.** Mainline `sun8i-ce` cannot drive the H713 CE, bench-proven step by

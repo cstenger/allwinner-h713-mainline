@@ -8,60 +8,101 @@ Goal for this phase: **decoded video visible on the projector panel.**
 
 ---
 
-# HANDOFF — state as of 2026-08-14
+# HANDOFF — state as of 2026-08-15
+
+**Video decode is DONE.** Decoded H.264 reaches the panel through the GPU with
+the CPU never touching a pixel, at the vsync ceiling, without tearing.
 
 ## What works, hardware-verified
 
 | | |
 | --- | --- |
-| **ZERO-COPY PLAYBACK** | **DONE 2026-08-15. 59.71 fps sustained over 2700 frames, 0 timeouts, operator-confirmed moving picture.** VE decode -> dma-buf -> GPU convert -> scanout, CPU never touches a pixel. `tools/video/gles-play.c` |
-| **H.264 decode** | **bit-exact** vs host software references, **re-verified on the current kernel 2026-08-15** (all five vectors). Constrained Baseline, Main (B-frames + CABAC), High (8x8 transform), 320x240 through 1920x1080. Unmodified mainline cedrus. Decodes this content at **268 fps** (311 fps re-measured 2026-08-14) |
-| **GPU** | Mali-G31 via mainline panfrost, GLES 3.1 on mesa 25.0.7. Needed the PPU base-address fix |
-| **Decoded video on the panel** | operator-confirmed, correct colour and geometry. Now via the GPU; the older **CPU colour conversion** path also works and is capped at 28.30 fps |
-| **Presentation ceiling** | **58.93 fps** against a 59.7 Hz panel — vsync-limited, and now the actual limit |
-| **Double buffering** | works (single-buffered 59.38% torn rows vs a 23.03% workload floor) |
-| **DECD driver** | probes, `/dev/decd`, survives 60 Hz vsync interrupts; `FRAME_SUBMIT` returns a real `fence_fd` and **does** program its plane registers. **Not used by the working path** — its registers are not in the scanout fetch path |
+| **ZERO-COPY PLAYBACK** | **59.71 fps** sustained over 2700 frames, 0 timeouts, operator-confirmed moving picture. VE decode -> dma-buf -> GPU convert -> scanout. `tools/video/gles-play.c` |
+| **Tearing** | **none.** `db` 0.00% rows-with-no-bar vs a 16.94% positive control. `tools/video/gles-tear.c` |
+| **H.264 decode** | **bit-exact** vs host software references, all five ladder vectors, re-verified on the current kernel. 311 fps standalone |
+| **GPU** | Mali-G31 via mainline panfrost, GLES 3.1 on mesa 25.0.7 |
+| **Presentation ceiling** | **58.93 fps** against a 59.7 Hz panel — the actual limit now |
+| **CPU-conversion path** | still works, capped at 28.30 fps by the ~44 MB/s uncached read of the decoder's buffer. Superseded, kept as fallback |
 
-## RETRACTED: direct YUV scanout does not work
+## How to run it
 
-**The 2026-08-12 claim "Direct YUV scanout — WORKS" is withdrawn.** It did not
-reproduce. See [the refutation](#direct-yuv-refuted-2026-08-14) for the run.
+```
+reboot bootloader          # from Linux
+h713_disp auto 0x34 logo   # REQUIRED every boot; plain autoboot does not do it
+boot
+```
+then, on the target:
+```
+EGL_PLATFORM=surfaceless ./gles-play video-test/v04-1280x720-high.h264
+```
+`sunxi-scanout-dmabuf` auto-loads at boot. `gles-play` refuses to run if the
+AFBD clock is gated rather than hanging the board on gated registers.
 
-The old row claimed "NV12 straight to the display, no CPU colour conversion, via
-the vendor's plane-address path, streaming 57.77 fps". The 57.77 fps is real
-timing, but of a frame that was never correct on the panel: `yuv-stream` measures
-loop rate and never inspects a pixel.
+## Three claims in this file were wrong and are retracted
 
-## THE OPEN QUESTION, answered
+Read these before trusting anything historical here:
 
-**Did the panel show the colour bars during the `decd-client show` run?** No.
+- **"Direct YUV scanout WORKS" (2026-08-12) — WITHDRAWN.** Did not reproduce;
+  the same command produces the 4x-repeat greyscale it claimed to fix. It rested
+  on a photo attributed to the wrong command, the second time that happened.
+- **"The 28 fps ceiling is the cross-process handoff" (2026-08-10) — WRONG.**
+  The handoff is nearly free; the cost is reading an uncached CMA buffer.
+- **"The M1 md5 baseline has drifted" (2026-08-15) — WRONG, and mine.** A
+  hand-typed pipeline missing `! video/x-raw,format=NV12 !`. The baseline was
+  always intact.
 
-Answered twice over on 2026-08-14 — once by register readout and once by
-photograph. The format register was the gap as suspected, but fixing it did not
-help, because **that register is not in the path that feeds the panel at all**.
+## LOOSE ENDS — start here next session
 
-## Where the work stands now
+In priority order. The first two are real debt; the rest are cheap.
 
-The AFBD window has (at least) two distinct register groups, and the whole
-direct-YUV effort has been driving the wrong one:
+1. **The rootfs cannot rebuild the video tooling.** `libgles2` and the
+   GStreamer/glib dev headers were installed by extracting Debian `.deb`s and
+   pushing them over serial. A rootfs rebuild loses them and `gles-play`,
+   `gles-nv12`, `gles-scanout` and `gles-tear` stop compiling. Fix properly with
+   `tools/rootfs/build.sh --extra-packages libgles2,libgles-dev,libegl-dev,libglvnd-core-dev,libgio-2.0-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev`.
+   Note `libglib2.0-dev` is a transitional package in trixie — the headers are in
+   `libgio-2.0-dev` — and `KHR/khrplatform.h` ships in no Debian package at all
+   (take it from the Khronos registry).
+2. **The display still needs U-Boot every boot.** `h713_disp auto 0x34 logo`
+   before `boot`, or the panel stays dark and every tool refuses. Linux cannot
+   bring the panel up itself. This is the largest remaining gap between "works on
+   the bench" and "works as a product", and it is display work, not video work.
+3. **The tearing floor run is flawed.** `gles-tear noflip` paints its static bar
+   at the left edge, where keystone and lamp falloff make detection marginal, so
+   it scored 16.42% when it should sit at or below `db`. Centre the bar and
+   re-capture; one 17 s take. The result does not depend on it (`db` came in
+   *below* the broken floor) but the floor is not usable evidence as it stands.
+4. **Hypothesis worth one capture:** the CPU path's 23.03% floor used the same
+   left-edge static bar and may have been inflated the same way.
+5. **Decide what DECD is for.** It probes, works, and is *not* used by the
+   working path — its registers are not in the scanout fetch path. Either find it
+   a job or stop carrying it.
 
-| group | who drives it | what it does |
-| --- | --- | --- |
-| `0x05600000`, `0x05600140`–`0x05600178` | **U-Boot**, replaying the vendor's `LogoRegData.bin` DE block | the live scanout: ctrl, geometry, stride, source address. **Always 4 bytes/pixel** |
-| `0x05600010`–`0x13`, `0x40`/`0x44`, `0x60`–`0xa8` | `h713-present yuv2`, and `sunxi-decd` | format byte, plane strides, plane addresses, dirty latch. The vendor's table **never writes any of these** |
+## NEXT PHASE — audio
 
-So the format byte at `0x11` is accepted, retained, and ignored: it is not in the
-active fetch path. The 2026-08-09 inference that got retracted in favour of the
-direct-YUV claim — that this is the wrong plane for YUV — is back, and now rests
-on positive evidence rather than on a null.
+The starting position, gathered but not yet acted on:
 
-**The next question is which register in the scanout group selects the pixel
-format.** The vendor's `ge2d` header narrows it to four; sweeping them with
-`load` + `poke` costs nothing and is step 1 below. Only if that dead-ends does
-this become a question about the running Android stack — and that route is far
-more expensive than it looks, because reaching the vendor UI destroys the Debian
-rootfs. See step 2.
+- **Stock DTB** (`local/stock-boot/sunxi.fex`, the authority — see the PPU
+  lesson) carries `codec@2030000` compatible `allwinner,sunxi-internal-codec`
+  with `pll_audio`/`pll_tvfe`/`codec_dac`/`codec_adc`/`codec_bus` clocks;
+  `sndcodec@2030330` compatible `allwinner,sunxi-codec-machine`; `daudio2` pins
+  on function `d_i2s2`; a `vs,trid-audio-bridge`; and a `sunxi,simple-audio-card`.
+- **Vendor driver sources exist** in
+  `local/allwinner-h713-linux/drivers/audio/`: `snd-soc-sunxi-h713-codec.c`,
+  `-cpudai.c`, `-machine.c`. Treat as unverified RE like everything else in that
+  tree, but they name registers.
+- **Mainline has `sun4i`/`sun8i` codec drivers** that may or may not fit; the
+  H713 is sun50iw12 and the display work has repeatedly shown it is *not* H616.
+- The roadmap entry is item 6, "Audio (I2S / codec / HDMI-in audio captured off
+  the HDMI-RX) — depends on what's populated". **What is populated is the first
+  question**: this is a projector with speakers, so a codec and amp should be
+  there, but that is an assumption until someone looks at the board or gets a
+  sound out of it.
 
+**Method that worked all through video decode, and should carry over:** check
+the stock DTB before mainline for anything H713-specific; build one instrument
+per question; keep a positive control for every measurement; and confirm on
+hardware before believing a claim, especially a convenient one.
 ## Board state right now
 
 - **FAT `mmc 1:2` holds the DECD kernel** (persistent; `fatwrite` done). It has
@@ -283,7 +324,34 @@ candidate sequence.
   400 px origin jump), not subtle (a 49 px window nudge that history recorded
   as a ~14 px wiggle).
 
-## Next steps, in order
+## Next steps, in order — SUPERSEDED, kept for the trail
+
+**All of the below is historical.** It was the plan while the GPU path was
+still unknown; the GPU path then worked and made most of it moot. The live
+plan is in LOOSE ENDS at the top of this file.
+
+What actually happened to each item:
+
+1. **Sweep the format registers** — done, all null. Closed by the
+   topology-latch model.
+2. **Capture the vendor configuring a video plane** — never needed. It was
+   correctly costed as expensive (reaching the Android UI destroys the Debian
+   rootfs) and the GPU path made it unnecessary.
+3. **Decide whether DECD is the right block** — answered: it is not, for this
+   purpose. Its registers are not in the scanout fetch path. Still carried; see
+   loose end 5.
+4. **Fix `video_info_buffer_init()`** — still unfixed and still wrong
+   (`y_phys + 4096` lands inside the luma plane). Harmless while DECD is unused.
+5. **Give DECD its own display reset** — moot unless DECD gets a job.
+6. **The CPU-conversion path as fallback** — measured at 28.30 fps, below the
+   30 fps content rate, and superseded by the GPU path at 59.71.
+7. **`clock-frequency`** (we run 100 MHz, vendor asks 200) — never revisited;
+   nothing depends on it now.
+
+The original text follows.
+
+## Next steps, in order (original, superseded)
+
 
 1. ~~Sweep the four candidate format registers.~~ **DONE 2026-08-14 — all
    null**, and the whole live-poke approach is closed by the topology-latch
