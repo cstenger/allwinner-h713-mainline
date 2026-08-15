@@ -279,9 +279,12 @@ candidate sequence.
    model above. The next step is **static RE of board B's unstripped
    `ge2d_dev.ko`**: recover the plane-open sequence (callers of
    `ge2d_plane_init`, the tgd plane ioctls). Desk work, no panel time.
-1b. **Do the GPU path first.** Mali-G31 is already bound by panfrost with mesa's
-   gallium driver in place; a GLES pass removes all three M3 costs and needs no
-   display RE at all. Next checkpoint is one session. See the section above.
+1b. **GPU path — checkpoint RUN, negative.** panfrost binds and mesa targets the
+   Mali, but jobs time out (`head == tail`) at every clock. Live suspect: the
+   PPU driver never powers the GPU domain, on an inherited "no sequencer" RE
+   claim. Next test is the domain-2 power-on by hand — see the section above,
+   including the warning that the first register view read zeros for domains
+   known to be powered.
 2. **Only if that dead-ends: capture the vendor configuring a video plane.**
    `LogoRegData.bin` is ARGB8888 only, so the answer is in the running Android
    stack. **This is expensive — do not treat it as a reboot.** Reaching the
@@ -1198,6 +1201,91 @@ session (send `libgles2`, import a decoder dma-buf, render one frame); the plane
 RE's success chain is three stacked unknowns — find the plane-open sequence,
 make it work against a U-Boot-initialised pipeline, then discover whether DECD
 can feed it at all given its registers are not in the scanout path.
+
+### GPU checkpoint: panfrost does NOT run jobs (2026-08-14)
+
+The checkpoint proposed above was run the same evening. **Negative, with a
+specific cause to chase.** The software stack is entirely fine:
+
+```
+EGL 1.5, EGL_VENDOR: Mesa Project
+GL_RENDERER : Mali-G31 (Panfrost)
+GL_VERSION  : OpenGL ES 3.1 Mesa 25.0.7-2+deb13u1
+```
+
+EGL initialises surfaceless, mesa targets the real hardware path (not llvmpipe),
+shaders compile, the FBO is complete. Then:
+
+```
+panfrost 1800000.gpu: gpu sched timeout, js=1, config=0x7b00, status=0x8,
+                      head=0xa027300, tail=0xa027300
+```
+
+`head == tail`: submitted, never advanced. All pixels read back zero.
+Test is `tools/video/gputest.c` — a fragment shader whose output is a function
+of `gl_FragCoord`, so a correct image cannot be faked by a clear or a memset.
+
+**Getting there needed `libgles2` from Debian trixie** (`libGLESv2.so.2` +
+GLES2/EGL headers, plus `KHR/khrplatform.h` from the Khronos registry — no
+Debian package ships it). Sent over serial, ~79 KB tarball. That part is done
+and lives on the target.
+
+#### Not the clock
+
+`gpu0` (CCU + 0x670, and **the H713 CCU base is 0x02001000**, not H616's
+0x03001000) has a plain 2-bit M divider. Jobs fail identically at 864, 432 and
+216 MHz. The draw-loop time scaled ~4x with the divider, so the change took
+effect in hardware — this is a real negative, not a no-op.
+
+| register | value | meaning |
+| --- | --- | --- |
+| `PLL_GPU` 0x02001030 | `b8002301` | enabled, locked, N=35 -> 36 x 24 = 864 MHz |
+| `gpu0` 0x02001670 | `80000000` | gated on, mux = pll-gpu, M=0 -> /1 |
+
+#### The live suspect: nothing ever powers the GPU domain
+
+`patches/kernel/0020-pmdomain-add-h713-ppu-driver.patch`:
+
+```c
+static const int h713_ppu_hw_ids[5] = { 0, 1, -1, 3, 4 };
+                             /* CPUS SYS  GPU  VE  DE */
+```
+
+Hardware IDs run 0, 1, **[2 skipped]**, 3, 4. The GPU is `-1` = always-on, so
+`h713_ppu_set_power()` is **never called for it** and no code in Linux touches
+its power hardware — whether it is on depends entirely on what U-Boot left.
+`pm_genpd_summary` confirms the bookkeeping is vacuous: GPU reads `on` purely
+from the flag, while VE reads `off-0` while decoding at 311 fps.
+
+The justification for `-1` is an inherited RE claim, quoted in the DT node:
+*"domain_info[2] is all-zeros in stock binary, meaning no hardware power
+sequencer for GPU"*. That is the same shape as the claims in
+[h713-inherited-claims-were-wrong] — an absence in a table read as a positive
+fact. An equally consistent reading is that stock populates it elsewhere. The
+conspicuous positional gap at hardware ID 2 is the tell.
+
+**Next test:** perform the domain-2 power-on sequence by hand and re-run
+`gputest`. Registers are at PPU base `0x07010014` + `id * 0x80`: wait_mode
+`+0x00`, pwr_off_delay `+0x04`, pwr_on_delay `+0x08`, pwr_ctrl `+0x0c`
+(1 = on), status `+0x10` (bit3 idle, bit1 done, bits[17:16] state, 01 = on).
+Write the three init values (`0x8`, `0x00080808`, `0x00080808`), then 1 to
+pwr_ctrl, then reload panfrost.
+
+**A caution for whoever does it:** a first attempt read those status registers
+at `0x07010014 + id*0x80 + 0x10` and got zeros for all five domains, including
+CPUS and SYS, which are unquestionably powered. So either the offset or the
+base is not what the driver comment implies, and **that dump is not a valid
+diagnostic**. Establish a register view that reports CPUS/SYS as ON before
+trusting anything it says about the GPU.
+
+#### What this does to the plan
+
+The checkpoint was proposed as cheap, and it was — one evening, and it returned
+a definite answer. But the answer means the GPU path now needs **its own
+bring-up** (power domain, and possibly a supply and an OPP table) before it can
+do anything for video. It is no longer obviously cheaper than the
+`ge2d_dev.ko` RE. It is still a *known kind* of problem for this project, which
+the plane RE is not, and its blocker is one testable hypothesis away.
 
 ### M3 — sustained playback (original plan)
 
