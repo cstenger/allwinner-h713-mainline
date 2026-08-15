@@ -41,6 +41,7 @@ CONFIG_DEVTMPFS_MOUNT=y
 # and unloaded if it disturbs it. Its probe touches no display hardware
 # (pm_runtime_enable with no get; dec_enable only runs on runtime resume).
 CONFIG_SUNXI_DECD=m
+CONFIG_SUNXI_SCANOUT_DMABUF=m
 CONFIG_BLK_DEV_SD=y
 CONFIG_ATA=y
 CONFIG_AHCI_SUNXI=y

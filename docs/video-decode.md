@@ -1246,20 +1246,53 @@ redirected and fully buffered the log was **empty**, hiding every printf up to
 the crash. Geometry now comes from the driver's readback, and the tool sets
 `setvbuf(_IONBF)`.
 
-**What remains for the full pass**, both plumbing rather than unknowns:
+### The other end: the GPU renders into the scanout carveout (2026-08-15)
 
-1. **Feed it real decoded frames.** Either drive cedrus directly (request API,
-   H.264 slice controls) or take GStreamer's dma-buf fds from an `appsink`.
-2. **A dma-buf for the scanout region** as the render target. `/dev/dma_heap`
-   and `/dev/udmabuf` are both absent from this kernel, and DECD's
-   `MAP_LINEAR_BUFFER` returns `EINVAL` — and returns a `dma_addr`, not an fd,
-   so it could not feed EGL even if it worked. The clean answer is a small
-   out-of-tree module exporting `0x6c100000` as a dma-buf; module iteration on
-   this board is a 63 KB transfer, so that is cheap.
+**`PASS: GPU rendered directly into the scanout carveout`.** Both ends of the
+zero-copy path are now proven: GPU DMA in from the decoder, GPU DMA out to the
+region AFBD fetches.
 
-Until (2) exists, rendering to an FBO and reading back would reintroduce a CPU
-read of 3.7 MB/frame — worse than the current path. Do not benchmark that and
-call it the GPU path.
+```
+scanout-dmabuf: carveout 0x000000006c100000 + 8192 KiB
+EGLImage over the carveout: ok
+carveout is a complete FBO: ok
+  phys (  64, 64) = ff0d1780  r= 13 g= 23  want ~13,23  ok
+  phys ( 640,360) = ff808080  r=128 g=128  want ~128,128  ok
+  phys (1216,656) = fff2e880  r=242 g=232  want ~242,232  ok
+100 full-frame renders into the carveout: 62.2 ms (0.62 ms/frame)
+```
+
+`patches/kernel/0036` adds `sunxi-scanout-dmabuf`, a misc device whose one
+ioctl hands out a dma-buf fd over the carveout. **The design constraint is that
+`uboot-scanout@6c100000` is a `no-map` reservation with no `struct page`**, so
+an sg_table built with `sg_set_page()` would be a lie; the exporter uses
+`dma_map_resource()`, which exists for exactly this. panfrost walks the table
+with `for_each_sgtable_dma_sg()` and consumes `sg_dma_address()`, so a
+page-less table suits it. `CONFIG_SUNXI_SCANOUT_DMABUF=m`.
+
+Verification is deliberately **not** through GL: `tools/video/gles-scanout.c`
+renders a position-dependent gradient, then reads the same physical memory back
+through `/dev/mem`. Reading back through GL would only prove GL is
+self-consistent; the question is whether the bytes are where AFBD will fetch
+them.
+
+**A weak test caught and tightened.** The first revision expected `g=56` at
+y=64 — an arithmetic slip, the right answer is 23 — and *passed anyway* on a
+±40 tolerance. Tolerances are now ±4 and the expected values are computed
+(`x/W*255`, `y/H*255`). The rising gradient in both axes also pins orientation:
+a flipped image would read ~232 at y=64.
+
+**What remains: feed it real decoded frames.** Either drive cedrus directly
+(request API, H.264 slice controls) or take GStreamer's dma-buf fds from an
+`appsink`. That is the last piece; both hard halves are done.
+
+Projected against M3's 28.3 fps: decode is 3.2 ms/frame at 311 fps, the GPU
+pass is 0.64 ms, and the vsync commit is ~8.5 ms — leaving the 58.9 fps panel
+ceiling as the limit rather than a 44 MB/s memory wall.
+
+**Do not shortcut this**: rendering to an ordinary FBO and reading back would
+reintroduce a 3.7 MB/frame CPU read and be *worse* than the current CPU path.
+That number would look like progress and would not be.
 
 ### GPU checkpoint: SOLVED 2026-08-15 — the PPU base address was wrong
 
