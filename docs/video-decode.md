@@ -89,6 +89,9 @@ rest are cheap.
    before `boot`, or the panel stays dark and every tool refuses. Linux cannot
    bring the panel up itself. This is the largest remaining gap between "works on
    the bench" and "works as a product", and it is display work, not video work.
+   The KMS driver added on 2026-08-15 does **not** close this: it adopts the
+   display U-Boot brought up and deliberately never touches timing, the LVDS PHY
+   or the display reset. See [kms-display.md](kms-display.md).
 3. **The tearing floor run is flawed.** `gles-tear noflip` paints its static bar
    at the left edge, where keystone and lamp falloff make detection marginal, so
    it scored 16.42% when it should sit at or below `db`. Centre the bar and
@@ -96,9 +99,13 @@ rest are cheap.
    *below* the broken floor) but the floor is not usable evidence as it stands.
 4. **Hypothesis worth one capture:** the CPU path's 23.03% floor used the same
    left-edge static bar and may have been inflated the same way.
-5. **Decide what DECD is for.** It probes, works, and is *not* used by the
-   working path — its registers are not in the scanout fetch path. Either find it
-   a job or stop carrying it.
+5. **Decide what DECD is for — ANSWERED 2026-08-15, and the answer is "its
+   registers".** DECD probes and works but has no job, while holding exactly the
+   two resources a display driver needs: the AFBD window at `0x05600000` and the
+   60 Hz vsync interrupt on SPI 110. Both now belong to the new KMS driver
+   (patches 0037/0038) and `dec@5600000` is `status = "disabled"`. It is still
+   built as a module and the node is one word from coming back.
+   See [kms-display.md](kms-display.md).
 
 ## NEXT PHASE — audio
 

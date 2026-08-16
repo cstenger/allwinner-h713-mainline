@@ -122,7 +122,13 @@ CONFIG_VIDEO_SUN6I_CSI=y
 CONFIG_VIDEO_SUN8I_DEINTERLACE=y
 CONFIG_VIDEO_SUN8I_ROTATE=y
 CONFIG_DRM=y
-# CONFIG_DRM_FBDEV_EMULATION is not set
+# fbdev emulation gives the AFBD KMS driver a /dev/fb0 and a console on the
+# projector, which is the cheapest possible check that scanout is live.
+CONFIG_DRM_FBDEV_EMULATION=y
+# KMS over the AFBD scanout engine (patches 0037/0038). A module: it adopts a
+# display U-Boot has already brought up, so nothing is lost by loading it late,
+# and a bad load can be undone without reflashing a kernel.
+CONFIG_DRM_SUN50I_H713_AFBD=m
 CONFIG_DRM_SUN4I=y
 CONFIG_DRM_PANEL_LVDS=y
 CONFIG_DRM_PANEL_EDP=y
