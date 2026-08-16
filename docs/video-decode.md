@@ -116,10 +116,18 @@ The starting position, gathered but not yet acted on:
   with `pll_audio`/`pll_tvfe`/`codec_dac`/`codec_adc`/`codec_bus` clocks;
   `sndcodec@2030330` compatible `allwinner,sunxi-codec-machine`; `daudio2` pins
   on function `d_i2s2`; a `vs,trid-audio-bridge`; and a `sunxi,simple-audio-card`.
-- **Vendor driver sources exist** in
+- **Third-party RE drivers exist** in
   `local/allwinner-h713-linux/drivers/audio/`: `snd-soc-sunxi-h713-codec.c`,
-  `-cpudai.c`, `-machine.c`. Treat as unverified RE like everything else in that
-  tree, but they name registers.
+  `-cpudai.c`, `-machine.c`. **These are not vendor sources** — that tree is
+  another project's mainline port ("HY300/HY310 Linux Porting Project",
+  Copyright 2026), and the codec file says so in its own header: *"Reverse-
+  engineered from stock vmlinux (sun50iw12) via IDA Pro"*. They name registers,
+  which is useful, but they carry exactly the authority of an unverified
+  decompilation — the same class of claim as
+  [h713-inherited-claims-were-wrong]. The vendor's own Android stack is the
+  authority; that tree is a peer, and its README still reports the same 4x1
+  XRGB greyscale tiling this project diagnosed as a 4-bytes-per-pixel stride
+  fault.
 - **Mainline has `sun4i`/`sun8i` codec drivers** that may or may not fit; the
   H713 is sun50iw12 and the display work has repeatedly shown it is *not* H616.
 - The roadmap entry is item 6, "Audio (I2S / codec / HDMI-in audio captured off
