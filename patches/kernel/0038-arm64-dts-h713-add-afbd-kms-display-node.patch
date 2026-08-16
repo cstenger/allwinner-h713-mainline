@@ -21,15 +21,24 @@ uboot-scanout@6c100000 becomes a shared-dma-pool so framebuffers can be
 allocated from it. It stays no-map: on arm64 rmem_dma_setup() has no
 objection (the no-map requirement is #ifdef CONFIG_ARM), and
 dma_init_coherent_memory() memremaps it write-combine, which is what a
-framebuffer wants. The alternative -- allocating from the 16 MiB system
-CMA pool -- would have taken two 3.5 MiB framebuffers out from under
-cedrus, which decodes into that same pool.
+framebuffer wants. The alternative was the system CMA pool, which is not
+short of room (bootargs carry cma=128M) but is what cedrus decodes into;
+the carveout is the memory AFBD is already proven to scan out of, and
+keeping the two paths in separate pools stops them competing as they grow.
 
 It also grows from 8 to 16 MiB. At 1280x720x4 the old size held exactly
 the two scanout slots U-Boot uses and nothing else, which is enough to
 flip between but not to also serve a client's buffers or the fbdev
 console. The region is above every other reservation, so growing it takes
 memory from the kernel's general pool and from nothing else.
+
+The sizing was not theoretical: on hardware the fbdev console takes
+0x6c100000 and a client's two flip buffers land at 0x6c500000 and
+0x6c900000 -- the third would not have fitted in the old 8 MiB.
+
+Verified booted: "Reserved memory: created DMA memory pool at
+0x000000006c100000, size 16 MiB / initialized node uboot-scanout@6c100000,
+compatible id shared-dma-pool".
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---

@@ -38,10 +38,18 @@ handler crashed the board every ~100 vsyncs, i.e. every ~1.7 s, which only
 happens if the interrupt genuinely fires at 60 Hz.
 
 Framebuffers come from the scanout carveout via memory-region rather than
-from system CMA, because cedrus decodes into CMA and two 3.5 MiB
-framebuffers would starve the decode path this display exists to show.
+from system CMA. Not because CMA is short -- the board's bootargs carry
+cma=128M, so it is roomy -- but because the carveout is the memory AFBD is
+already proven to scan out of, and keeping display buffers out of the pool
+cedrus decodes into keeps the two paths from competing as either grows.
 
-Not yet run on hardware: this builds clean at W=1 and links, nothing more.
+Hardware-verified on the bench board (2026-08-15), after this was written:
+probe reads back "adopting 1280x720, stride 5120, source 6c100000", and
+1020 page flips across two runs complete at 59.71 fps with zero timeouts
+-- the panel's exact refresh rate. Sampling AFBD's source register during
+a run shows it alternating between 0x6c900000 and 0x6c500000, so scanout
+really is being reprogrammed. 2254 interrupts on GICv2 142 confirm the
+vblank bits inherited from DECD are right.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
