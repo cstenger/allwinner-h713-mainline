@@ -18,10 +18,14 @@ through `/dev/mem` and reimplementing the AFBD commit sequence for itself.
 | fbdev | `Console: switching to colour frame buffer device 160x45`, `fb0: sun50i-h713-afb` |
 | **mpv** | **`mpv --vo=drm` plays 720p to the panel, 0 dropped frames over 25 s of looped playback.** mpv reports `Driver: sun50i-h713-afbd 1.0.0`, `Selected mode: 1280x720 (1280x720@59.97Hz)`, `DRM Atomic support found`, `Using primary plane 34 as draw plane` |
 
-**Operator-confirmed the same day:** a **Linux login prompt on the projector** —
-the first time this project has put Linux's own output on the panel rather than
-a U-Boot-published image. That is fbcon on `/dev/fb0`, i.e. the KMS driver
-driving scanout end to end.
+**Operator-confirmed, twice, and this is the evidence registers cannot give:**
+
+- A **Linux login prompt on the projector** — the first time this project has put
+  Linux's own output on the panel rather than an image U-Boot published. That is
+  fbcon on `/dev/fb0`, i.e. the KMS driver driving scanout end to end.
+- During the mpv run, **the colour bars with the diagonal, played through at
+  least twice** — that is `testsrc2`, the content of `v04-1280x720-high.h264`,
+  so mpv's decoded frames demonstrably reached the panel.
 
 One thing to expect and not mistake for a fault: **after any reboot the panel is
 dark until `h713_disp auto 0x34 logo` runs again.** The driver adopts a display
@@ -249,6 +253,6 @@ of the same registers and will fight it. Unbind the driver, or do not run them.
   complaint — so the likely cause is `drm_simple_kms_plane_atomic_check()`,
   which rejects any state where the CRTC and its plane are not enabled or
   disabled together. mpv's exit path appears to commit exactly that. Harmless
-  for playback; it may leave the panel on the last frame rather than restoring
-  the console, and it is the first thing to look at if a compositor misbehaves.
+  for playback, and **observed not to strand the panel**: the console was back after mpv
+  exited. Still the first thing to look at if a compositor misbehaves.
 - Still does **not** close the "display needs U-Boot every boot" gap.

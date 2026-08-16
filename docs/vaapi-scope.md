@@ -9,6 +9,95 @@ half is a rewrite, and 10-bit is blocked in the kernel rather than in userspace.
 
 ---
 
+# HANDOFF — start here, 2026-08-16
+
+**The decision already made:** do not patch mpv, ffmpeg or GStreamer. Adapt our
+own code to fit them. That is what makes libva-v4l2-request the route — it is a
+VA-API *driver*, so stock players use it unmodified.
+
+**The goal for the next session:** get `libva-v4l2-request` decoding H.264 on
+the VE, validated to bit-exactness with **no display involved**. Display comes
+after, because it is a separate and larger risk.
+
+## Board state as of this handoff
+
+| | |
+| --- | --- |
+| Kernel | `6.18.38`, built from the current series, **persisted** to the FAT (`fatwrite mmc 1:2 h713-kernel.fit`) and booting from it via `bootcmd` |
+| Rootfs | flashed 2026-08-16 with `--profile dev`; `/` grew to 4.5 G |
+| KMS | `sun50i-h713-afbd` **autoloads at boot** (it is in `/lib/modules` with an OF alias); panel shows a Linux console |
+| `/root` | `drm-flip{,.c}`, `sun50i-h713-afbd.ko`, `v04-1280x720-high.h264`, `h01-640x480-main.h265`, `h02-1280x720-main.h265`, `h03-1280x720-main10.h265` |
+| Missing for this work | **nothing on the board** — `libva-dev`, `meson`, `ninja-build` and `ffmpeg` were added to `--profile dev` *after* that flash, so the rootfs must be rebuilt and reflashed first |
+
+**The panel needs `h713_disp auto 0x34 logo` at the U-Boot prompt before `boot`,
+every single time.** Without it the KMS driver correctly refuses to probe. For
+decode-only work you can skip it — nothing about VA-API needs the display.
+
+## Operational gotchas this session cost time on
+
+- **Serial writes must be paced.** Long command lines sent in one burst come
+  back with doubled characters (`ddrivers`, `afbbd`) and the *shell runs the
+  corrupted line*. `tools/serial/console.py` writes one character at a time and
+  is the tool to use. This looks like a display artifact and is not.
+- **`modprobe` is a silent no-op if a stale build is already loaded.** udev
+  autoloads the module at boot, so after copying a new `.ko` you must `rmmod
+  sun50i_h713_afbd` first or you will test the old one and misread the result.
+- **Fastboot needs a cold power cycle.** Linux leaves musb in a state U-Boot's
+  warm-reset path does not reinitialise, so `reboot bootloader` lands at a
+  prompt with `No USB controllers found`. Flashing the rootfs therefore needs a
+  human to pull power and press a key during the boot delay.
+- **A FIT transfer over serial is ~12 minutes** at 10.8 KB/s. Budget for it.
+- **mpv needs `--drm-device=/dev/dri/card1`** — panfrost holds minor 0 as a
+  render-only node.
+
+## The plan, in order
+
+1. **Rebuild and reflash the rootfs** to get the build dependencies:
+   `tools/rootfs/build.sh --ssh-key KEY --profile dev`, then fastboot it (needs
+   the cold power cycle above). ~10 min build, ~5 min flash.
+2. **Clone and fix the driver.** `git clone
+   https://github.com/bootlin/libva-v4l2-request`, then `git fetch origin
+   refs/pull/38/head:pr38 && git checkout pr38` — master is the 2019
+   pre-stabilization code and is *not* the starting point. Two fixes, both
+   measured here by actually building it:
+   - drop `h265.c` and `include/hevc-ctrls.h` from the build (they collide with
+     the now-upstream HEVC controls — 5 redefinition errors across 3 files);
+   - add the missing `#include` for `request_log` in `h264.c` (1 error).
+3. **Build on the board** (`meson setup build && ninja -C build`) and install as
+   `/usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so`.
+4. **`LIBVA_DRIVER_NAME=v4l2_request vainfo`** — does it initialise and
+   advertise H.264 profiles? First real go/no-go.
+5. **Decode to a file and check it byte-for-byte.** This is the gate, and the
+   references already exist: `local/video-test/v0*.nv12` from the M1 ladder, and
+   `/root/v04-1280x720-high.h264` is already on the board. Force NV12, compare
+   md5 — exactly as `m1-decode-test.sh` does. **Do not skip to mpv here.** A
+   failure at this step is in the shim; a failure after mpv is added could be
+   either half.
+6. **Only then the display path**: `mpv --hwdec=vaapi --vo=gpu
+   --gpu-context=drm --drm-device=/dev/dri/card1`. Expect this to be where the
+   time goes.
+
+## What to expect to go wrong
+
+The compile is measured and safe; the *runtime* is not. PR #38 is unmerged
+third-party work whose own commit message says "POC", developed against H3/A64
+VEs rather than this one, and one of its commits is literally *"Don't advertise
+broken profiles"*. Our cedrus is proven bit-exact through GStreamer, so the
+kernel half is sound — what is unproven is whether this shim drives it
+correctly. If step 5 produces frames that are *close but not identical*, suspect
+the reference-list or DPB mapping before suspecting the hardware.
+
+The display path in step 6 wants EGL-on-GBM against a KMS driver that only
+scans out physically contiguous memory. GBM's split render/display arrangement
+should handle it, but nobody has run it here.
+
+**Fallback that needs none of this:** GStreamer already decodes H.264 *and*
+HEVC on this hardware today. If the shim disappoints, a GStreamer sink wrapping
+the proven `gles-play` path gets hardware-decoded video to the panel with no
+third-party dependency at all.
+
+---
+
 ## Why mpv cannot do it today
 
 V4L2 has two decoder APIs and they are not interchangeable:

@@ -59,7 +59,13 @@ BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-s
 # build-essential is deliberate: M2/M3 are register experiments against a live
 # framebuffer, and cross-compiling each iteration over an 11 KB/s UART is how
 # this project has previously spent whole sessions.
-DEV_PACKAGES=build-essential,libgles-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libv4l-dev,libdrm-dev,python3,strace
+#
+# libva-dev, meson, ninja-build and ffmpeg are for the VA-API work in
+# docs/vaapi-scope.md: building libva-v4l2-request on the board (it needs only
+# libva and libdrm), and validating a hardware decode with the ffmpeg CLI
+# against the M1 ladder's references before any display path is involved. The
+# libva *runtime* is already present via mpv; only the headers were missing.
+DEV_PACKAGES=build-essential,libgles-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libv4l-dev,libdrm-dev,libva-dev,meson,ninja-build,ffmpeg,python3,strace
 # Measured 2026-08-15: base + runtime + dev is 1.45 GiB on disk, so it fits the
 # 2G default with little headroom. Raise the floor rather than have the next
 # added package fail in mke2fs at the end of a ~10 minute bootstrap.
@@ -416,7 +422,11 @@ env \
       done
       test -e "$L/libGLESv2.so"                                 # -lGLESv2 target
       test -e "$L/libEGL.so"                                    # -lEGL target
+      test -f "$ROOTFS_TREE/usr/include/va/va.h"                # libva-dev
+      test -f "$L/pkgconfig/libva.pc"
       test -x "$ROOTFS_TREE/usr/bin/gcc"
+      test -x "$ROOTFS_TREE/usr/bin/meson"
+      test -x "$ROOTFS_TREE/usr/bin/ffmpeg"
       test -x "$ROOTFS_TREE/usr/bin/pkg-config"
     fi
     if [ "$HOTSPOT_ENABLED" = 1 ]; then
