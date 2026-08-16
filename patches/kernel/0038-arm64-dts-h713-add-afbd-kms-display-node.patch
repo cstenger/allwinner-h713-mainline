@@ -17,58 +17,40 @@ and asserting rst_bus_disp would kill a display this driver cannot bring
 back. Leaving the reset out of the DT makes that a property of the
 hardware description rather than a rule the C code has to remember.
 
-uboot-scanout@6c100000 becomes a shared-dma-pool so framebuffers can be
-allocated from it. It stays no-map: on arm64 rmem_dma_setup() has no
-objection (the no-map requirement is #ifdef CONFIG_ARM), and
-dma_init_coherent_memory() memremaps it write-combine, which is what a
-framebuffer wants. The alternative was the system CMA pool, which is not
-short of room (bootargs carry cma=128M) but is what cedrus decodes into;
-the carveout is the memory AFBD is already proven to scan out of, and
-keeping the two paths in separate pools stops them competing as they grow.
+It also does not carry `memory-region`, which is the interesting one.
+uboot-scanout@6c100000 stays a plain no-map reservation: its job is to
+stop Linux scribbling on the buffer AFBD is actively scanning out of
+before the driver takes over, and that is all. Handing it to the driver as
+a shared-dma-pool was tried first and is wrong -- a dma-coherent pool
+allocates in power-of-two page orders, so a 3.6 MiB framebuffer occupies a
+4 MiB slot and a 16 MiB region yields exactly four. Measured on hardware:
+with the fbdev console holding one, a client gets three, and mpv wants
+more than that and dies at CREATE_DUMB with ENOMEM.
 
-It also grows from 8 to 16 MiB. At 1280x720x4 the old size held exactly
-the two scanout slots U-Boot uses and nothing else, which is enough to
-flip between but not to also serve a client's buffers or the fbdev
-console. The region is above every other reservation, so growing it takes
-memory from the kernel's general pool and from nothing else.
-
-The sizing was not theoretical: on hardware the fbdev console takes
-0x6c100000 and a client's two flip buffers land at 0x6c500000 and
-0x6c900000 -- the third would not have fitted in the old 8 MiB.
-
-Verified booted: "Reserved memory: created DMA memory pool at
-0x000000006c100000, size 16 MiB / initialized node uboot-scanout@6c100000,
-compatible id shared-dma-pool".
+So the driver allocates from system CMA (cma=128M in this board's
+bootargs), which allocates by range rather than by order and has room for
+cedrus too. The region reverts to its original 8 MiB, since it no longer
+needs to hold anything but U-Boot's two scanout slots.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
 --- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -103,9 +103,22 @@
+@@ -103,6 +103,13 @@
  		 * the back at 0x6c500000. Double buffering flips the AFBD
  		 * source address (0x05600178) between them, so both are live
  		 * scanout targets and the kernel must not use either.
 +		 *
-+		 * shared-dma-pool, so the KMS driver allocates framebuffers
-+		 * here rather than from the 16 MiB system CMA pool, which
-+		 * cedrus decodes into. no-map is correct on arm64:
-+		 * rmem_dma_setup() only demands a mapping under CONFIG_ARM, and
-+		 * dma_init_coherent_memory() memremaps the region
-+		 * write-combine, which is what a framebuffer wants.
-+		 *
-+		 * 16 MiB, not 8: U-Boot's two slots fill 8 MiB exactly, leaving
-+		 * nothing for a client's buffers or the fbdev console. This
-+		 * region sits above every other reservation, so growing it
-+		 * takes memory from the kernel's general pool and nothing else.
++		 * It is a plain reservation, NOT a dma-pool: it exists so Linux
++		 * cannot scribble on the buffer AFBD is scanning out of before
++		 * the KMS driver takes over. The driver allocates from system
++		 * CMA instead, because a dma-coherent pool allocates in
++		 * power-of-two page orders -- a 3.6 MiB framebuffer takes a
++		 * 4 MiB slot, so 16 MiB yielded exactly four and mpv ran out.
  		 */
  		framebuf_reserved: uboot-scanout@6c100000 {
--			reg = <0x6c100000 0x800000>;
-+			compatible = "shared-dma-pool";
-+			reg = <0x6c100000 0x1000000>;
- 			no-map;
- 		};
- 	};
-@@ -1597,6 +1610,33 @@
+ 			reg = <0x6c100000 0x800000>;
+@@ -1597,6 +1604,32 @@
  			 * a divider beneath a live panel. Match what is there.
  			 */
  			clock-frequency = <100000000>;
@@ -98,7 +80,6 @@ Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 +			clocks = <&ccu CLK_AFBD>,
 +				 <&ccu CLK_BUS_DISP>;
 +			clock-names = "clk_afbd", "clk_bus_disp";
-+			memory-region = <&framebuf_reserved>;
  			status = "okay";
  		};
  

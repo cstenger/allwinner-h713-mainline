@@ -16,6 +16,7 @@ through `/dev/mem` and reimplementing the AFBD commit sequence for itself.
 | Scanout | AFBD source sampled *during* a run alternates `0x6c900000` / `0x6c500000` — real buffers, not the logo address |
 | Node | `/dev/dri/card1` (**not** card0 — panfrost takes minor 0 as a render-only device), connector 33 type 7 (LVDS), connected |
 | fbdev | `Console: switching to colour frame buffer device 160x45`, `fb0: sun50i-h713-afb` |
+| **mpv** | **`mpv --vo=drm` plays 720p to the panel, 0 dropped frames over 25 s of looped playback.** mpv reports `Driver: sun50i-h713-afbd 1.0.0`, `Selected mode: 1280x720 (1280x720@59.97Hz)`, `DRM Atomic support found`, `Using primary plane 34 as draw plane` |
 
 **Operator-confirmed the same day:** a **Linux login prompt on the projector** —
 the first time this project has put Linux's own output on the panel rather than
@@ -118,27 +119,49 @@ display driver needs, the AFBD window and SPI 110. Two drivers cannot own one
 window and one interrupt. It is still built (`CONFIG_SUNXI_DECD=m`) and the node
 is one word from coming back.
 
-## Memory
+## Memory — and the mistake that mpv exposed
 
-Framebuffers come from the scanout carveout via `memory-region`, not system CMA.
-Not because CMA is short — the bootargs carry `cma=128M`, so it is roomy — but
-because the carveout is the memory AFBD is already proven to scan out of, and
-keeping display buffers out of the pool cedrus decodes into stops the two paths
-competing as either grows.
+Framebuffers come from **system CMA**. The first design used the scanout
+carveout as a `shared-dma-pool` via `memory-region`, and that was wrong in a way
+worth keeping written down, because the arithmetic looks fine right up until it
+fails.
 
-`uboot-scanout@6c100000` therefore became a `shared-dma-pool` and grew from 8 to
-16 MiB. It stays `no-map`, which is correct on arm64: `rmem_dma_setup()` only
-demands a mapping under `CONFIG_ARM`, and `dma_init_coherent_memory()` memremaps
-the region write-combine, which is what a framebuffer wants. Confirmed at boot:
+**A dma-coherent reserved pool allocates in power-of-two page orders.** A
+1280x720x4 buffer is 3,686,400 bytes → 900 pages → rounded to 1024 pages, so it
+occupies a **4 MiB slot**. A 16 MiB pool therefore yields exactly four buffers,
+not the four-and-a-half the division suggests. The fbdev console holds one:
 
 ```
-Reserved memory: created DMA memory pool at 0x000000006c100000, size 16 MiB
-OF: reserved mem: initialized node uboot-scanout@6c100000, compatible id shared-dma-pool
+$ drm-flip alloc
+  buffer 1: handle 1, 3686400 bytes
+  buffer 2: handle 2, 3686400 bytes
+  buffer 3: handle 3, 3686400 bytes
+allocation 4 failed: Cannot allocate memory
+3 full-screen buffer(s) available to a client
 ```
 
-The resize was not theoretical. On hardware the fbdev console takes
-`0x6c100000`, and a client's two flip buffers land at `0x6c500000` and
-`0x6c900000` — the third would not have fitted in the old 8 MiB.
+mpv wants more than three and died at `CREATE_DUMB` with `ENOMEM`. Unbinding
+fbcon does **not** help — the console switches to a dummy device but the DRM
+fbdev client keeps its buffer, and the count stays at 3.
+
+CMA allocates by range instead: no power-of-two rounding, no small ceiling. The
+same probe on CMA returns **64** (the probe's own cap), flips still run at 59.71
+fps, and the AFBD source register reads `0x76d00000` — inside the CMA region at
+`0x76c00000`, which also settles the question of whether AFBD is happy scanning
+out of ordinary CMA memory rather than the carveout. It is.
+
+`cma=128M` is in this board's bootargs, so there is room for both this and
+cedrus. Note the earlier justification for the carveout — "CMA is only 16 MiB" —
+was simply wrong: 16 MiB is the *config default*, overridden on the command line.
+
+`uboot-scanout@6c100000` is therefore back to a plain 8 MiB `no-map`
+reservation. Its remaining job is real but narrow: stop Linux using the memory
+AFBD is actively scanning out of between boot and the driver taking over.
+
+The driver still honours a `memory-region` if one is present, and logs which
+allocator it used (`framebuffers from the system CMA pool`). Point it at a
+carveout if scanout ever needs to live in a specific region — and inherit the
+ceiling along with it.
 
 ---
 
@@ -180,13 +203,19 @@ run:
 (./drm-flip flip 900 &) ; busybox devmem 0x05600178   # 0x6c900000 / 0x6c500000
 ```
 
-### mpv is not yet testable here
+### mpv
 
-`mpv --vo=drm` is the eventual client, but mpv is not on this image — it is in
-the rootfs built on 2026-08-15 (`--profile dev`), which has not been flashed. And
-when it is, mpv will decode in **software**: Debian's ffmpeg has no
-V4L2-stateless hwaccel, so it cannot drive cedrus. `gles-play` remains the
-hardware-decoded path.
+```
+mpv --vo=drm --drm-device=/dev/dri/card1 --no-audio v04-1280x720-high.h264
+```
+
+`--drm-device` is worth passing explicitly: mpv defaults to `card0`, which is
+panfrost's render-only node here.
+
+This decodes in **software** — Debian's ffmpeg has no V4L2-stateless hwaccel, so
+mpv cannot drive cedrus, and `gles-play` remains the hardware-decoded path. It
+still keeps up: 0 dropped frames over 25 s of looped 720p25. What this test
+proves is the display half, not the decode half.
 
 ### Do not run these at the same time
 
@@ -214,6 +243,12 @@ of the same registers and will fight it. Unbind the driver, or do not run them.
   does not autoload. That is deliberate for now: autoloading would replace the
   boot logo with a console on every boot, which is a product-visible change
   nobody has asked for. The rootfs build is where it should land when it does.
-- **Atomic modesetting is not exposed** (`DRIVER_ATOMIC` is set but the driver
-  uses the legacy simple-pipe path); no plane properties, no async flips.
+- **An atomic commit fails at mpv's teardown**: `Failed to commit atomic request:
+  Error number 22` (EINVAL), after playback has finished. Atomic *is* exposed —
+  mpv finds it (`DRM Atomic support found`) and uses it for playback without
+  complaint — so the likely cause is `drm_simple_kms_plane_atomic_check()`,
+  which rejects any state where the CRTC and its plane are not enabled or
+  disabled together. mpv's exit path appears to commit exactly that. Harmless
+  for playback; it may leave the panel on the last frame rather than restoring
+  the console, and it is the first thing to look at if a compositor misbehaves.
 - Still does **not** close the "display needs U-Boot every boot" gap.

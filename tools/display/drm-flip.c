@@ -16,6 +16,8 @@
  *   set       allocate a dumb buffer, fill it, and SETCRTC to it
  *   flip N    page-flip between two differently coloured buffers N times,
  *             waiting for each completion event, and report the rate
+ *   alloc     allocate full-screen dumb buffers until one fails, and report
+ *             how many the driver's memory actually yielded
  *
  * `flip` is the one that matters. The driver arms the page-flip event against
  * the vblank interrupt, so an event that never arrives means the vblank bits
@@ -246,6 +248,40 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	/*
+	 * How many full-screen buffers can this driver actually hand out? The
+	 * answer is not "pool size / buffer size": a dma-coherent reserved pool
+	 * allocates in power-of-two page orders, so a 3.6 MiB buffer occupies a
+	 * 4 MiB aligned slot and a 16 MiB pool yields four, not the four-and-a-
+	 * half the arithmetic suggests. A client that wants more than are left
+	 * fails with ENOMEM at CREATE_DUMB, which is how this mode came to
+	 * exist -- mpv did exactly that.
+	 */
+	if (!strcmp(cmd, "alloc")) {
+		int n = 0;
+
+		for (;;) {
+			struct drm_mode_create_dumb creq;
+
+			memset(&creq, 0, sizeof(creq));
+			creq.width = mode.hdisplay;
+			creq.height = mode.vdisplay;
+			creq.bpp = 32;
+			if (ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq) < 0) {
+				printf("allocation %d failed: %s\n", n + 1,
+				       strerror(errno));
+				break;
+			}
+			n++;
+			printf("  buffer %d: handle %u, %llu bytes\n", n,
+			       creq.handle, (unsigned long long)creq.size);
+			if (n >= 64)
+				break;
+		}
+		printf("%d full-screen buffer(s) available to a client\n", n);
+		return 0;
+	}
+
 	printf("mode: %s %ux%u@%u Hz, clock %u kHz\n", mode.name, mode.hdisplay,
 	       mode.vdisplay, mode.vrefresh, mode.clock);
 
@@ -270,7 +306,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (strcmp(cmd, "flip")) {
-		fprintf(stderr, "usage: drm-flip [info|set|flip [N]]\n");
+		fprintf(stderr, "usage: drm-flip [info|set|alloc|flip [N]]\n");
 		return 2;
 	}
 

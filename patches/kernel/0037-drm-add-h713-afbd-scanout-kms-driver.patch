@@ -1,11 +1,12 @@
 drm: add a KMS driver for the H713 AFBD scanout engine
 
-This gives the projector a /dev/dri/card0, so any DRM client -- mpv
+This gives the projector a DRM card node, so any DRM client -- mpv
 --vo=drm, a compositor, fbcon -- can present on the panel. Until now the
 only way to put a frame on screen was a tool that mapped 0x05600000
 through /dev/mem and poked the AFBD registers itself, which meant every
 program that wanted the display had to reimplement the commit sequence and
-no two could share it.
+no two could share it. (It comes up as card1 in practice: panfrost takes
+minor 0 as a render-only device.)
 
 The driver adopts a display that is ALREADY RUNNING and deliberately keeps
 its hands off everything else. On this board the panel is brought up
@@ -37,19 +38,23 @@ but this one carries hardware evidence: an out-of-bounds write in that
 handler crashed the board every ~100 vsyncs, i.e. every ~1.7 s, which only
 happens if the interrupt genuinely fires at 60 Hz.
 
-Framebuffers come from the scanout carveout via memory-region rather than
-from system CMA. Not because CMA is short -- the board's bootargs carry
-cma=128M, so it is roomy -- but because the carveout is the memory AFBD is
-already proven to scan out of, and keeping display buffers out of the pool
-cedrus decodes into keeps the two paths from competing as either grows.
+Framebuffers come from the system CMA pool. A dedicated memory-region is
+supported but optional, and not used by default, because a dma-coherent
+reserved pool allocates in power-of-two page orders: a 3.6 MiB framebuffer
+occupies a 4 MiB slot, so a 16 MiB pool yields exactly four. That is not a
+theoretical limit -- it was measured. With the fbdev console holding one,
+a client can get three, and mpv wants more: it dies at CREATE_DUMB with
+ENOMEM. CMA allocates by range, neither rounding up nor imposing that
+ceiling, and cma=128M on this board leaves room for cedrus as well.
 
-Hardware-verified on the bench board (2026-08-15), after this was written:
-probe reads back "adopting 1280x720, stride 5120, source 6c100000", and
-1020 page flips across two runs complete at 59.71 fps with zero timeouts
--- the panel's exact refresh rate. Sampling AFBD's source register during
-a run shows it alternating between 0x6c900000 and 0x6c500000, so scanout
-really is being reprogrammed. 2254 interrupts on GICv2 142 confirm the
-vblank bits inherited from DECD are right.
+HARDWARE-VERIFIED on the bench board (2026-08-15): probe reads back
+"adopting 1280x720, stride 5120, source 6c100000"; 1320 page flips across
+three runs complete at 59.71 fps -- the panel's exact rate -- with zero
+timeouts; sampling AFBD's source register during a run shows it
+alternating between two client buffers, so scanout really is being
+reprogrammed; and 2254 interrupts on GICv2 142 confirm the vblank bits
+inherited from DECD are right. Operator-confirmed as a Linux login prompt
+on the projector.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
@@ -93,7 +98,7 @@ Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
  obj-$(CONFIG_TINYDRM_ILI9225)		+= ili9225.o
 --- /dev/null
 +++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
-@@ -0,0 +1,425 @@
+@@ -0,0 +1,434 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * sun50i-h713-afbd -- KMS for the H713 AFBD scanout engine.
@@ -427,14 +432,23 @@ Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 +		return ret;
 +
 +	/*
-+	 * Framebuffers come from the scanout carveout, not the system CMA pool.
-+	 * CMA is 16 MiB and cedrus decodes into it; taking two 3.5 MiB
-+	 * framebuffers from there would starve the decode path this display is
-+	 * meant to show.
++	 * A dedicated memory-region is optional, and deliberately not used by
++	 * default. A dma-coherent reserved pool allocates in power-of-two page
++	 * orders, so a 3.6 MiB framebuffer occupies a 4 MiB slot and a 16 MiB
++	 * pool yields exactly four. The fbdev console holds one, and mpv wants
++	 * more than the three that leaves -- it fails at CREATE_DUMB with
++	 * ENOMEM. The system CMA pool (cma=128M here) allocates by range, so it
++	 * neither rounds a buffer up to the next power of two nor imposes that
++	 * ceiling, and there is room for both this and cedrus.
++	 *
++	 * Point memory-region at a carveout to override that, e.g. to keep
++	 * scanout inside a known-good region; the ceiling comes with it.
 +	 */
 +	ret = of_reserved_mem_device_init(dev);
-+	if (ret)
-+		return dev_err_probe(dev, ret, "no scanout memory-region\n");
++	if (ret && ret != -ENODEV)
++		return dev_err_probe(dev, ret, "bad scanout memory-region\n");
++	dev_info(dev, "framebuffers from %s\n",
++		 ret ? "the system CMA pool" : "a reserved memory-region");
 +
 +	ret = h713_afbd_read_mode(h);
 +	if (ret)
