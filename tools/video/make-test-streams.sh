@@ -12,9 +12,11 @@
 #   v03  1280x720  Main                   + B-frames, CABAC     reference reorder
 #   v04  1280x720  High                   + 8x8 transform       what real files use
 #   v05  1920x1080 High                   real-world clip       integration test
+#   h01  640x480   HEVC Main              8-bit                 HEVC minimum
+#   h02  1280x720  HEVC Main              8-bit                 HEVC panel-native
 #
-# Streams are Annex-B elementary (.h264) because the target has no container
-# demuxer in the decode path -- keep the test about the decoder.
+# Streams are Annex-B elementary (.h264/.h265) because the target has no
+# container demuxer in the decode path -- keep the test about the decoder.
 #
 # References are NV12, which is what cedrus emits, so a target-side capture can
 # be compared byte-for-byte rather than eyeballed.
@@ -53,6 +55,32 @@ gen() {
     "$(( $(stat -c%s "$name.nv12") / (w * h * 3 / 2) ))" "$frames"
 }
 
+# HEVC, same shape: deterministic source, Annex-B elementary stream, NV12
+# reference decoded on the host. The VE decodes H.265 as well as H.264 -- both
+# bit-exact -- and these are the vectors that established it.
+#
+# 10-bit is deliberately absent. Main10 does not decode: mainline cedrus (6.18)
+# exposes no 10-bit capture format at all, so nothing can negotiate one, and the
+# pipeline reaches EOS having produced zero frames. See docs/vaapi-scope.md.
+gen_hevc() {
+  local name=$1 w=$2 h=$3 frames=$4 profile=$5
+  shift 5
+
+  echo "==> $name  (${w}x${h}, $frames frames, $profile)"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "testsrc2=size=${w}x${h}:rate=25" -frames:v "$frames" \
+    -pix_fmt yuv420p -c:v libx265 -profile:v "$profile" \
+    -x265-params "log-level=error:keyint=10" "$@" \
+    -f hevc "$name.h265"
+
+  ffmpeg -hide_banner -loglevel error -y \
+    -i "$name.h265" -pix_fmt nv12 -f rawvideo "$name.nv12"
+
+  printf '    stream %s bytes, reference %s bytes (%s frames of %d)\n' \
+    "$(stat -c%s "$name.h265")" "$(stat -c%s "$name.nv12")" \
+    "$(( $(stat -c%s "$name.nv12") / (w * h * 3 / 2) ))" "$frames"
+}
+
 # v01 -- the minimum. Constrained Baseline: no B-frames, no CABAC, no 8x8.
 # If this does not decode, nothing else will, and the fault is fundamental.
 gen v01-320x240-baseline 320 240 8 baseline \
@@ -71,6 +99,12 @@ gen v03-1280x720-main 1280 720 60 main \
 # v04 -- adds the 8x8 transform. This is what real-world High-profile files use.
 gen v04-1280x720-high 1280 720 60 high \
   -x264-params "bframes=2:cabac=1:ref=3:8x8dct=1"
+
+# h01/h02 -- HEVC Main, 8-bit. Both verified bit-exact against these references
+# on the bench board (2026-08-16), through gst v4l2slh265dec with no driver
+# changes, at ~550 fps for 720p.
+gen_hevc h01-640x480-main   640 480 25 main
+gen_hevc h02-1280x720-main 1280 720 25 main
 
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host

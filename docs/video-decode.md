@@ -107,6 +107,29 @@ rest are cheap.
    built as a module and the node is one word from coming back.
    See [kms-display.md](kms-display.md).
 
+## HEVC decodes too — 2026-08-16
+
+The VE decodes H.265 as well as H.264, bit-exact, with no driver changes. Same
+method as the M1 gate: deterministic `testsrc2` source, host software decode to
+linear NV12 as ground truth, target decode through
+`filesrc ! h265parse ! v4l2slh265dec ! video/x-raw,format=NV12`, md5 compared.
+
+| vector | result |
+| --- | --- |
+| `h01-640x480-main`, 25 frames | **bit-exact** (`9ebd49ec…`) |
+| `h02-1280x720-main`, 25 frames | **bit-exact** (`c898a8f0…`) |
+| throughput | **~550 fps**, 500 frames of 720p in 0.905 s |
+
+Forcing NV12 is required for the same reason as H.264: unforced it negotiates
+the 32x32 tiled `ST12`, which is correct output that can never match a linear
+reference. Vectors come from `tools/video/make-test-streams.sh`.
+
+**10-bit does not work**, and the blocker is in the kernel, not this SoC:
+mainline cedrus exposes no 10-bit capture format at all, so `Main10` reaches EOS
+having decoded zero frames even though the capability bit and the hardware
+registers are both present. Full analysis, and what it would take for stock mpv
+to use the VE at all, in [vaapi-scope.md](vaapi-scope.md).
+
 ## NEXT PHASE — audio
 
 The starting position, gathered but not yet acted on:
