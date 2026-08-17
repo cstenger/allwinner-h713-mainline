@@ -184,7 +184,38 @@ dereferences NULL doing it — so the workqueue the scheduler is submitting to i
 NULL or freed underneath it. That is a **lifetime/teardown race in
 drm_sched + panfrost**, provoked by the VE-decode-plus-display combination, and
 it is not a VA-API bug: nothing in the shim, cedrus or the AFBD driver appears
-in that path. `kworker … exited with irqs disabled` is why the board then
+in that path.
+
+Decoded further against the `vmlinux` that produced it, so the next session does
+not have to. The `Code:` bytes in the Oops match `pwq_tryinc_nr_active+0xfc`
+exactly:
+
+```
+b5d4: 88e87d6c   casa w8, w12, [x11]      <- raw_spin_lock(&nna->lock)
+b5d8: 350006e8   cbnz w8, <slowpath>
+b5dc: f9400128   ldr  x8, [x9]            <- FAULTS, x9 = 0
+b5e0: eb09011f   cmp  x8, x9
+```
+
+`ldr` then `cmp` against the same register is `list_empty()`, so the faulting
+line is the `if (list_empty(&pwq->pending_node))` immediately after
+`raw_spin_lock(&nna->lock)` in `pwq_tryinc_nr_active()`. Two things follow.
+That branch is only reachable for a **`WQ_UNBOUND`** workqueue (`wq_node_nr_active()`
+returns NULL otherwise and the function takes the early `!nna` exit), which fits:
+`drm_sched_init()` gives each scheduler its own `alloc_ordered_workqueue()`, and
+ordered implies unbound. And `+0x4d8/0x504` in `drm_sched_run_job_work` is the
+**final** `drm_sched_run_job_queue(sched)`, the requeue at the very end of the
+function — not the early no-job path.
+
+So the shape to look for is: the scheduler requeues its own run-job work at the
+tail of that function while something concurrently tears the workqueue (or its
+`pool_workqueue`) down. `drm_sched_run_job_queue()` only checks
+`READ_ONCE(sched->pause_submit)` before `queue_work()`, which is not
+synchronised against a teardown running on another CPU. panfrost's reset path
+(`panfrost_job_timedout` → `drm_sched_stop`/`drm_sched_start`, `panfrost_job.c`)
+is the obvious thing to audit against it — and note the `cedrus: frame
+processing timed out!` in the very first capture, which would be exactly the
+kind of event that triggers a reset. `kworker … exited with irqs disabled` is why the board then
 hard-locks rather than merely oopsing — sysrq gets no response afterwards, so
 recovery is the power switch.
 
