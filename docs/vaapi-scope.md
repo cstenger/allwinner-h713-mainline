@@ -219,6 +219,69 @@ kind of event that triggers a reset. `kworker … exited with irqs disabled` is 
 hard-locks rather than merely oopsing — sysrq gets no response afterwards, so
 recovery is the power switch.
 
+### Upstream has not fixed it — checked 2026-08-17
+
+- **The race is still there in current master.** `drm_sched_run_job_queue()` was
+  refactored to `if (!drm_sched_is_stopped(sched)) queue_work(...)`, but
+  `drm_sched_is_stopped()` is literally `return READ_ONCE(sched->pause_submit);`
+  — a rename, not a fix. Queueing is still an unsynchronised check-then-act
+  against a teardown that may be running on another CPU.
+- **The one panfrost fix that looks relevant is already in our tree.**
+  `796a9f55a8d1` ("drm/sched: Use struct for drm_sched_init() params", which
+  carried the panfrost `timeout_wq` regression fix) — our `panfrost_job.c` sets
+  `args.timeout_wq = pfdev->reset.wq`, so we are not hitting that.
+- `panfrost_job.c` has no post-6.18 commits touching reset or scheduler
+  lifetime. The newest adjacent work is Philipp Stanner's Feb 2026
+  "drm/sched: Remove racy hack from drm_sched_fini()", which targets the
+  entity-teardown `FIXME` still present in our `drm_sched_fini()` — a real race,
+  but not the one in our trace.
+
+### A better hypothesis than the drm_sched race — rogue VE DMA
+
+Before spending another kernel cycle on drm_sched, weigh the competing
+explanation, because it fits *all* the evidence and the scheduler race fits only
+some of it. **The VE has no IOMMU** — deliberately, and documented at length in
+patch 0024:
+
+> `NO iommus PROPERTY -- deliberate, 2026-08-09.` `iommus = <&iommu 0>` here
+> crashed the kernel on the first decode: **rogue VE DMA corrupted the printk
+> ringbuffer**, faulting in `_prb_read_valid()` … the iommu node is inert, so
+> the DMA layer handed cedrus IOVAs expecting translation, nothing translated
+> them, and the VE wrote them as raw physical addresses.
+
+So this board already has a precedent for the VE writing outside its buffers and
+corrupting whatever kernel memory happened to be there. And crucially, **KASAN
+cannot see device DMA** — it instruments CPU accesses only. That explains the
+otherwise-odd result that KASAN was not merely quiet but produced *no report at
+all*, while the crash vanished.
+
+It also explains the control matrix better than a scheduler race does:
+
+| | VE DMA active | display/GPU active | result |
+|---|---|---|---|
+| `--vo=null` | yes | no | stable — a stray write lands in idle memory |
+| software decode on panel | **no** | yes | stable — nothing writes out of bounds |
+| hardware decode on panel | yes | yes | **crashes** — panfrost's structures are the neighbour |
+
+What I checked and did *not* find: cedrus's own geometry is internally
+consistent, `cedrus_video.c` sizing the NV12 buffer with `ALIGN(width,16)` /
+`ALIGN(height,16)` and `cedrus_hw.c` programming the same 16-alignment into
+`VE_PRIMARY_FB_LINE_STRIDE_*`. So there is no obvious under-allocation to point
+at — the hypothesis needs the H713's VE3 to want more than mainline cedrus
+assumes, which is unproven.
+
+**Two cheap experiments distinguish the hypotheses without building anything:**
+
+1. **Change `cma=128M` on the kernel command line** (e.g. to 192M or 256M). That
+   changes which allocation sits next to which. If the crash moves, disappears,
+   or changes shape, it is an adjacency/stray-write problem and *not* drm_sched,
+   which cannot care.
+2. **Compare clip heights.** 720p allocates `ALIGN(720,16)=720` rows, which is
+   *not* 32-aligned; 1080p allocates `ALIGN(1080,16)=1088`, which *is*. If a
+   1080p loop is stable where the 720p loop crashes — the opposite of what raw
+   load would predict — that points straight at rows written past a
+   16-aligned-but-not-32-aligned buffer.
+
 **Next steps, in order of cost:**
 
 1. `CONFIG_DEBUG_OBJECTS` + `DEBUG_OBJECTS_WORK` — targets exactly this (a work
