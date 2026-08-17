@@ -137,3 +137,23 @@ roadmap and `docs/status.md`.
 With these patches in place `build/build.sh kernel` emits both DTBs and a bench-only
 bootable FIT (`build/out/h713-kernel.fit`: gzip Image + bench DTB, load/entry
 `0x48000000`).
+
+## Debug kernels (`board/*.config`)
+
+`KERNEL_CONFIG=name[,name…] build/build.sh kernel` merges
+`board/<name>.config` over the board defconfig. This is for **diagnostics
+only** — the shipping kernel is the defconfig alone.
+
+| fragment | for |
+|---|---|
+| `kasan.config` | generic KASAN + `MAGIC_SYSRQ`, hunting the kernel memory corruption behind the mpv-on-panel crash (`docs/vaapi-scope.md`) |
+
+Two properties are deliberate and worth not breaking. Fragments are part of the
+**input digest**, so a debug build gets its own source tree rather than quietly
+reusing the production tree's objects; and outputs are **suffixed**
+(`h713-kernel-kasan.fit`), so a debug build cannot overwrite the FIT the board
+boots from. The build also verifies the config that was *built* rather than the
+one that was requested — `merge_config` warns about a request it cannot honour,
+but `olddefconfig` can drop a symbol afterwards for an unmet dependency and say
+nothing, and a KASAN kernel that silently did not enable KASAN is worse than no
+kernel, because every clean run after it reads as evidence.

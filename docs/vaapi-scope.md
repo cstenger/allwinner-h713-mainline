@@ -87,13 +87,83 @@ culprit. In play: `sun50i_h713_afbd`, `sunxi_cedrus`, `sunxi_scanout_dmabuf`,
 | software decode, on the panel, 48 s | **stable**, played to completion |
 | hardware decode **on the panel**, 48 s | **2 of 4 runs panicked** |
 
-**Start the next session by making the crash legible rather than by guessing:**
-build the kernel with **`CONFIG_KASAN`** and reproduce — a use-after-free or an
-out-of-bounds write is exactly what KASAN names in one run, and this tree has
-form here (`patches/kernel/0034-misc-decd-fix-oob-write-in-vsync-handler.patch`).
-Add **`CONFIG_PSTORE`/ramoops** so a panic survives the reboot (nothing reached
-the journal — journald cannot flush during a panic), and **`CONFIG_MAGIC_SYSRQ`**,
-whose absence has now cost two physical power cycles this session.
+### The KASAN kernel — built, and how to run it
+
+Make the crash legible rather than guessing at it. The debug kernel exists:
+
+```
+KERNEL_CONFIG=kasan build/build.sh kernel     # -> build/out/h713-kernel-kasan.fit
+```
+
+`patches/kernel/board/kasan.config` turns on generic KASAN (outline, plus
+`KASAN_VMALLOC` because module text and DRM/GEM allocations live there) and
+builds cedrus, the AFBD KMS driver, panfrost and scanout-dmabuf **in** rather
+than as modules — KASAN only instruments what is compiled in its tree, so as
+modules the four suspects would be the only unchecked code. It also sets
+`CONFIG_LOCALVERSION="-kasan"`, which is not cosmetic: `uname -r` becomes
+`6.18.38-kasan`, so `/lib/modules/6.18.38-kasan` does not exist, udev loads
+nothing, and the production kernel's modules cannot be loaded into a KASAN
+kernel by accident. (They must not be: KASAN changes core struct layouts, so a
+stale `.ko` reads wrong offsets and corrupts memory itself.) `MAGIC_SYSRQ` is on
+there too, with serial-BREAK support.
+
+Getting it onto the board **does not go over WiFi** — see the gotcha above; that
+link cannot carry a file. One YMODEM transfer at the U-Boot prompt, made
+permanent so later boots are instant:
+
+```
+python3 tools/serial/load_fit.py build/out/h713-kernel-kasan.fit --port /dev/ttyUSB0 --addr 0x50000000
+```
+
+~17 minutes at 10.8 KB/s. Then, at the prompt:
+
+```
+fatwrite mmc 1:2 0x50000000 h713-kernel-kasan.fit ${filesize}
+h713_disp auto 0x34 logo
+bootm 0x50000000
+```
+
+and on any later boot, `fatload mmc 1:2 0x50000000 h713-kernel-kasan.fit; bootm
+0x50000000`. The production `h713-kernel.fit` is never touched, so the way back
+from a bad debug kernel is an ordinary boot.
+
+Two things change when this kernel boots, and both will trip you up:
+
+- **The DRM card numbers swap.** Built-in drivers probe in a different order
+  than modules, so on the KASAN kernel `card0` is `sun50i-h713-afbd` and `card1`
+  is panfrost — the reverse of the production kernel. mpv wants
+  `--drm-device=/dev/dri/card0` here. `renderD128` is panfrost either way.
+- **Usable RAM drops to 780 MB** from ~1 GiB; that is the shadow, and it is the
+  cheapest confirmation that KASAN is really on, alongside
+  `KernelAddressSanitizer initialized (generic)` in dmesg.
+
+### Result of the first KASAN reproduction attempt — the crash did not fire
+
+Decode is still bit-exact under KASAN (`v04` → `a991db21…`), so the kernel is
+sound. But **the crash did not reproduce**, across 540 seconds of looping
+720p playback on the panel — roughly 16,000 frames, confirmed by the VE
+interrupt count — with **zero KASAN reports**. The pre-KASAN kernel failed 3 of
+4 runs, usually inside 48 seconds.
+
+That is a real result, not a non-result, and it narrows things to two
+candidates. Either KASAN's 2–3x slowdown moved a timing-sensitive race out of
+its window, or **building those four drivers in rather than as modules is
+itself what changed the behaviour** — this kernel differs from the crashing one
+in both respects at once, which is the flaw in the experiment as run.
+
+**The decisive next experiment is one variable:** build the same drivers
+built-in *without* KASAN (a fragment with just the four `=y` lines and
+`LOCALVERSION`), and run the same playback. If it still crashes, KASAN's timing
+was masking it, and the answer is to slow the *hardware* instead — try
+`DEBUG_OBJECTS`/`DEBUG_OBJECTS_WORK`, which targets the observed signature (a
+work item with a NULL function pointer) at far lower cost than KASAN. If it
+stays clean, the module path is implicated and the next kernel should carry
+KASAN with those drivers back as modules, instrumented, installed into
+`/lib/modules/6.18.38-kasan`.
+
+Also worth adding if a crash ever fails to reach the serial line:
+`CONFIG_PSTORE`/ramoops, since nothing reaches the journal (journald cannot
+flush during a panic).
 
 **Still open:** the crash above, zero-copy display, HEVC in the shim, and 10-bit.
 
