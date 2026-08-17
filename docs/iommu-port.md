@@ -41,13 +41,28 @@ mmu_aw: iommu@2010000 {
 | `av1` | `av1@1c0d000` | `<&mmu_aw 5 1>` | AV1 decoder |
 | `audbrg`, `demux`, `dtmb` | | `<&mmu_aw 6 1>` | |
 
-Both engines in the combination that corrupts memory here — the video decoder
-and the display — are translated in the vendor stack. That is very likely why
-the vendor never had to notice cedrus's missing reset.
+### The second cell means "translate this master" — read from the vendor driver
 
-The second cell is not a master ID. Masters run 0–6 in the first cell; the
-second is 0 or 1 and its meaning still needs establishing (bypass/permission or
-a sub-port selector are the obvious candidates — check `sunxi_iommu_of_xlate`).
+`sunxi_iommu_of_xlate` allocates a 20-byte per-device struct, stores `args[0]`
+as a word (the master ID) and **booleanises `args[1]`** into a byte at +0x04
+(`adds r3, r3, #0; movne r3, #1; strb`). `sunxi_iommu_add_device` then reads
+that byte and passes it as the second argument to the exported
+`sunxi_enable_device_iommu(master, enable)`, which indexes a per-master bitmask
+table and:
+
+- `enable != 0` → `bic` — **clears** the master's bits
+- `enable == 0` → `orr` — **sets** them
+
+…before writing register `#48` = `0x30` = `IOMMU_BYPASS_REG`. So **cell 1 = 1
+means translate; 0 means leave bypassing**, and that matches the `0x7F` (all
+seven masters bypassing) read out of the hardware at rest.
+
+**Correction to an earlier claim in this project's notes:** it is *not* true
+that both engines are translated in the vendor stack. `dec@5600000` and `ge2d`
+are both `<&mmu_aw 2 0>` — **bypass**. The vendor translates the video engine
+and leaves the display untranslated. That does not weaken the case for the port
+(the VE is the engine that corrupts memory here), but the display must not be
+switched into translation just because it appears in the master list.
 
 ## The block is register-compatible with mainline's H6 driver
 
@@ -116,18 +131,40 @@ pattern shows bits 16–17 carry something beyond the per-master field, which th
 H6 driver does not know about and which must be preserved rather than
 overwritten.
 
-## What still has to be decided before writing code
+## The port — written, compiles, NOT yet run on hardware
 
-1. **The binding.** The vendor is `#iommu-cells = <2>`; mainline's
-   `sun50i-iommu` is `<1>`. Either extend `of_xlate` to accept two cells under a
-   new `allwinner,sun50i-h713-iommu` compatible, or normalise to one cell in our
-   DT and document why. This is the part that has to go upstream, so decide it
-   before writing the DTS. The second cell's meaning is still unknown — check
-   `sunxi_iommu_of_xlate` in the vendor `vmlinux`.
-2. **`DM_AUT_CTRL` layout for 7 masters.** H6's driver computes
-   `0x0b0 + (d/2)*4`; whether that covers seven masters here is untested.
-3. **Bits 16–17** in `RESET`/`TLB_ENABLE`, and the meaning of `+0x000`,
-   `+0x1c0`, `+0x1dc`, `+0x1f0`. Read-modify-write, do not assume zero.
+Three pieces, all in the series:
+
+- **`patches/kernel/0041`** extends `drivers/iommu/sun50i-iommu.c`: a variant
+  struct carrying master count and DT cell count, runtime per-master masks
+  instead of the fixed six-master constants, `of_xlate` honouring the second
+  cell, and a `bypass` shadow that starts all-bypass on two-cell variants so a
+  master is only translated once its DT asks. H6/H616 behaviour is unchanged.
+- **`patches/kernel/0042`** moves the DT node to `0x2010000` with the new
+  compatible, SPI 71, two cells and no `resets`, and gives the VE
+  `iommus = <&iommu 0 1>` — master 0, translation on, matching stock. The
+  display and ge2d are deliberately left alone.
+- **`patches/kernel/board/iommu.config`** turns the driver on for a debug
+  kernel (`KERNEL_CONFIG=iommu`), leaving the shipping defconfig untouched.
+
+Verified in the built artifacts rather than the source: `CONFIG_SUN50I_IOMMU=y`,
+`drivers/iommu/sun50i-iommu.o` compiled, and the DTB contains `iommu@2010000`
+with `#iommu-cells = <0x02>` and the VE's `iommus = <phandle 0 1>`.
+
+**It has not been booted.** What to watch for, in `iommu.config`'s header.
+
+## Still open
+
+1. **`DM_AUT_CTRL` layout for seven masters.** H6's driver computes
+   `0x0b0 + (d/2)*4`, indexed by *domain* rather than master, so seven masters
+   should not change it — but that reasoning is untested.
+2. **Bits 16–17** in `RESET` (`0x8003007f`) and `TLB_ENABLE` (`0x0003007f`), and
+   the meaning of `+0x000` (`0x14`), `+0x1c0`, `+0x1dc`, `+0x1f0`. The driver
+   never writes `TLB_ENABLE`, so those survive; anything that starts writing
+   them must read-modify-write rather than assume zero.
+3. **Whether translating the VE alone is coherent** when the display shares CMA
+   with it. The vendor's answer is yes — it translates the VE and bypasses the
+   display — but the vendor is not running our KMS driver.
 
 ## Why this is worth doing
 
