@@ -9,25 +9,122 @@ half is a rewrite, and 10-bit is blocked in the kernel rather than in userspace.
 
 ---
 
+# RESULT — H.264 decodes on the VE through stock ffmpeg, 2026-08-16
+
+**Done, and validated bit-exact on hardware.** `libva-v4l2-request` (PR #38 plus
+[three patches](../patches/libva-v4l2-request/)) drives cedrus from unmodified
+ffmpeg. All five vectors of the M1 ladder — 320x240 baseline through 1920x1080
+high — decode **bit-exact** against the host-generated references, and the VE's
+interrupt count rises by exactly one per frame, so the hardware is doing it.
+
+| | |
+| --- | --- |
+| `vainfo` | loads `__vaDriverInit_1_22`, advertises 5 H.264 profiles, `VAEntrypointVLD` |
+| bit-exactness | 5 of 5 vectors, `tools/video/va-decode-test.sh` |
+| decode cost | **1.233 s wall / 0.637 s CPU** for 60 frames of 1080p (software: 2.72 s CPU) |
+| what blocked it | *not* the codec — the shim created the bitstream queue with zero buffers, because ffmpeg no longer preallocates a VA surface pool. See patch 0003. |
+
+**The one number to carry into the display work:** copying decoded frames back
+to system memory with `hwdownload` costs *more than the decode* (1.8 s extra for
+186 MB of 1080p) because V4L2 MMAP buffers are uncached. Decode-to-file pays
+that; a display path that maps the surface as a dma-buf does not.
+
+## The display path — plays on the panel, and crashes the kernel intermittently
+
+Step 6 was attempted the same session. It gets **all the way to video on the
+panel**: `mpv` hardware-decodes on the VE and renders through EGL-on-GBM against
+our KMS driver, and a 1200-frame 720p25 clip has played to completion.
+
+The two things worth knowing before picking this up:
+
+**1. It must be `--hwdec=vaapi-copy`, not `--hwdec=vaapi`.** Plain `vaapi`
+fails with `Could not create a VA display`, and the reason is structural rather
+than a misconfiguration: mpv's `vo=gpu` DRM path asks for a **render node on the
+KMS device** (`drm_params_v2.render_fd`) and our display-only driver has none —
+`renderD128` belongs to panfrost on `card0`. `--vaapi-device` is accepted and
+*ignored* on this path. Our shim ignores the DRM fd entirely, so any node would
+do; mpv just will not offer one. Patching mpv is out of scope by standing
+constraint, so `vaapi-copy` — which builds its own VA display and honours
+`--vaapi-device` — is the working invocation:
+
+```
+LIBVA_DRIVER_NAME=v4l2_request mpv --hwdec=vaapi-copy \
+  --vaapi-device=/dev/dri/renderD128 \
+  --vo=gpu --gpu-context=drm --drm-device=/dev/dri/card1 clip.mp4
+```
+
+That costs the copy-out measured above. Zero-copy would need either a render
+node on `card1` or the `drmprime-overlay` path (mpv reports `Failed to find
+drmprime plane with idx=-2` today).
+
+**2. It panics intermittently — and it is memory corruption, not a codec bug.**
+Two of four runs of the same 48-second clip took the board down. Captured on
+serial:
+
+```
+Unable to handle kernel NULL pointer dereference at virtual address 0000000000000010
+CPU: 3  Comm: kworker/u16:1
+Workqueue:  0x0 (pan_js)             <- panfrost job scheduler, work fn is NULL
+pc : stmmac_hw_setup+0x844/0xbd4     <- nonsense; this board has no Ethernet
+Call trace: dequeue_entities / dequeue_task_fair / __schedule / worker_thread
+...
+cedrus 1c0e000.video-codec: frame processing timed out!
+rcu: INFO: rcu_sched detected stalls on CPUs/tasks: 0-...! 1-...! 3-...!
+```
+
+A workqueue whose work function is `0x0` and a PC that resolves to an unrelated
+built-in symbol are both signatures of **corrupted kernel memory**, not of a
+driver returning an error. It surfaces in panfrost's job scheduler because that
+is what runs constantly during playback, which does not mean panfrost is the
+culprit. In play: `sun50i_h713_afbd`, `sunxi_cedrus`, `sunxi_scanout_dmabuf`,
+`panfrost`.
+
+**The controls say it is the combination, not either half:**
+
+| run | result |
+| --- | --- |
+| hardware decode, `--vo=null`, 48 s / 1200 frames | **stable** (VE IRQ count exactly 1200) |
+| software decode, on the panel, 48 s | **stable**, played to completion |
+| hardware decode **on the panel**, 48 s | **2 of 4 runs panicked** |
+
+**Start the next session by making the crash legible rather than by guessing:**
+build the kernel with **`CONFIG_KASAN`** and reproduce — a use-after-free or an
+out-of-bounds write is exactly what KASAN names in one run, and this tree has
+form here (`patches/kernel/0034-misc-decd-fix-oob-write-in-vsync-handler.patch`).
+Add **`CONFIG_PSTORE`/ramoops** so a panic survives the reboot (nothing reached
+the journal — journald cannot flush during a panic), and **`CONFIG_MAGIC_SYSRQ`**,
+whose absence has now cost two physical power cycles this session.
+
+**Still open:** the crash above, zero-copy display, HEVC in the shim, and 10-bit.
+
+---
+
 # HANDOFF — start here, 2026-08-16
 
 **The decision already made:** do not patch mpv, ffmpeg or GStreamer. Adapt our
 own code to fit them. That is what makes libva-v4l2-request the route — it is a
 VA-API *driver*, so stock players use it unmodified.
 
-**The goal for the next session:** get `libva-v4l2-request` decoding H.264 on
-the VE, validated to bit-exactness with **no display involved**. Display comes
-after, because it is a separate and larger risk.
+**The goal for the next session:** ~~get `libva-v4l2-request` decoding H.264 on
+the VE, validated to bit-exactness with no display involved~~ — **done, see
+RESULT above.** What remains is the display path, and it is deliberately the
+next thing rather than something to have done at the same time: with decode
+proven bit-exact on its own, a playback failure now has only one place to hide.
 
 ## Board state as of this handoff
 
 | | |
 | --- | --- |
 | Kernel | `6.18.38`, built from the current series, **persisted** to the FAT (`fatwrite mmc 1:2 h713-kernel.fit`) and booting from it via `bootcmd` |
-| Rootfs | flashed 2026-08-16 with `--profile dev`; `/` grew to 4.5 G |
-| KMS | `sun50i-h713-afbd` **autoloads at boot** (it is in `/lib/modules` with an OF alias); panel shows a Linux console |
-| `/root` | `drm-flip{,.c}`, `sun50i-h713-afbd.ko`, `v04-1280x720-high.h264`, `h01-640x480-main.h265`, `h02-1280x720-main.h265`, `h03-1280x720-main10.h265` |
-| Missing for this work | **nothing on the board** — `libva-dev`, `meson`, `ninja-build` and `ffmpeg` were added to `--profile dev` *after* that flash, so the rootfs must be rebuilt and reflashed first |
+| Rootfs | **reflashed 2026-08-16** with `--profile dev`, which now also carries `vainfo` and `gdb`; `/` is 4.5 G with ~3.1 G free |
+| KMS | `sun50i-h713-afbd` autoloads at boot, but **did not probe on this boot** — the panel needs the U-Boot incantation below, which decode work skips. `/dev/dri` therefore has only `card0`/`renderD128` (panfrost) |
+| VA-API | driver installed at `/usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so`, source + build tree in `/root/libva-v4l2-request` |
+| `/root` | `video-test/` (the five M1 vectors, `reference-md5.txt`, `m1-decode-test.sh`, `va-decode-test.sh`), `libva-v4l2-request/`, `h713-va-bringup.tar.gz` |
+| Missing for this work | nothing |
+
+The vectors and the patched source were put there by injecting a tarball into
+`rootfs.ext4` with `debugfs -w -R "write ..."` before `img2simg` — no root
+needed, and it beats pushing 2.4 MB over a serial console after every flash.
 
 **The panel needs `h713_disp auto 0x34 logo` at the U-Boot prompt before `boot`,
 every single time.** Without it the KMS driver correctly refuses to probe. For
@@ -49,43 +146,73 @@ decode-only work you can skip it — nothing about VA-API needs the display.
 - **A FIT transfer over serial is ~12 minutes** at 10.8 KB/s. Budget for it.
 - **mpv needs `--drm-device=/dev/dri/card1`** — panfrost holds minor 0 as a
   render-only node.
+- **WiFi gets you ssh, and it took the board down.** `tools/wifi/sta-connect.sh`
+  turns the boot hotspot into a station on a real network; ssh then works at
+  3.6 ms and file transfer stops being the constraint. But the first sustained
+  use of that link — an `apt-get update` — **wedged the board hard**: no ssh, no
+  serial, tty echo alive but the shell dead. This kernel has no
+  `CONFIG_MAGIC_SYSRQ`, so recovery was a physical power cycle. Keep the serial
+  console attached, and prefer baking what you need into the image.
+- **The board's clock can be months behind**, which makes `meson setup` abort
+  with `Clock skew detected` on files newer than "now". `date -u -s` from the
+  host, then `hwclock -w`.
+- **`/tmp` is a 467 MB tmpfs.** One 1080p vector decodes to 186 MB of raw NV12,
+  so a ladder run fills it and ffmpeg's ENOSPC leaves a *truncated file with a
+  valid md5* — which scores as a MISMATCH and reads as a decode bug. Write raw
+  output to `/var/tmp`.
 
 ## The plan, in order
 
-1. **Rebuild and reflash the rootfs** to get the build dependencies:
-   `tools/rootfs/build.sh --ssh-key KEY --profile dev`, then fastboot it (needs
-   the cold power cycle above). ~10 min build, ~5 min flash.
-2. **Clone and fix the driver.** `git clone
-   https://github.com/bootlin/libva-v4l2-request`, then `git fetch origin
-   refs/pull/38/head:pr38 && git checkout pr38` — master is the 2019
-   pre-stabilization code and is *not* the starting point. Two fixes, both
-   measured here by actually building it:
-   - drop `h265.c` and `include/hevc-ctrls.h` from the build (they collide with
-     the now-upstream HEVC controls — 5 redefinition errors across 3 files);
-   - add the missing `#include` for `request_log` in `h264.c` (1 error).
-3. **Build on the board** (`meson setup build && ninja -C build`) and install as
-   `/usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so`.
-4. **`LIBVA_DRIVER_NAME=v4l2_request vainfo`** — does it initialise and
-   advertise H.264 profiles? First real go/no-go.
-5. **Decode to a file and check it byte-for-byte.** This is the gate, and the
-   references already exist: `local/video-test/v0*.nv12` from the M1 ladder, and
-   `/root/v04-1280x720-high.h264` is already on the board. Force NV12, compare
-   md5 — exactly as `m1-decode-test.sh` does. **Do not skip to mpv here.** A
-   failure at this step is in the shim; a failure after mpv is added could be
-   either half.
-6. **Only then the display path**: `mpv --hwdec=vaapi --vo=gpu
-   --gpu-context=drm --drm-device=/dev/dri/card1`. Expect this to be where the
-   time goes.
+Steps 1–5 are **done** (2026-08-16); they are kept here because they are how you
+reproduce the result, not as work outstanding.
+
+1. ~~Rebuild and reflash the rootfs~~ — done. `tools/rootfs/build.sh --ssh-key
+   KEY --kernel-tree build/linux-6.18.38-<hash> --profile dev --image-size 4G`,
+   then `run fastboot_mode` at the U-Boot prompt and `fastboot flash UDISK
+   rootfs.simg`. The 1.4 GB sparse image uploads in 45 chunks / **6 min**.
+2. ~~Clone and fix the driver~~ — done, and the fixes are now a tracked series
+   in [`patches/libva-v4l2-request/`](../patches/libva-v4l2-request/) on the
+   pinned PR #38 head. There were **three**, not two: the missing `#include`,
+   the vestigial `hevc-ctrls.h`, and the one that actually blocked decoding
+   (patch 0003, the empty bitstream queue).
+3. ~~Build on the board~~ — done, ~40 s. Build **on the board** and nowhere
+   else: the driver's entry point is `__vaDriverInit_<major>_<minor>` taken from
+   the libva version at build time, so a host build against libva 1.24 produces
+   a `.so` the board's 1.22 loader will never call.
+4. ~~`vainfo`~~ — passes; five H.264 profiles, `VAEntrypointVLD`, nothing else
+   advertised.
+5. ~~Decode to a file and check it byte-for-byte~~ — **5 of 5 bit-exact**, via
+   `tools/video/va-decode-test.sh`.
+6. **The display path** — attempted, and it plays; see the section above for the
+   `--hwdec=vaapi-copy` requirement and the intermittent kernel panic that is
+   now the open problem. Note `card1` only exists if the panel was brought up
+   first with `h713_disp auto 0x34 logo` at the U-Boot prompt; on a decode-only
+   boot there is no KMS device at all. To get back to that prompt without a
+   human at the power switch, `tools/serial/reboot-to-uboot.py` reboots and
+   types through the autoboot delay.
 
 ## What to expect to go wrong
 
-The compile is measured and safe; the *runtime* is not. PR #38 is unmerged
-third-party work whose own commit message says "POC", developed against H3/A64
-VEs rather than this one, and one of its commits is literally *"Don't advertise
-broken profiles"*. Our cedrus is proven bit-exact through GStreamer, so the
-kernel half is sound — what is unproven is whether this shim drives it
-correctly. If step 5 produces frames that are *close but not identical*, suspect
-the reference-list or DPB mapping before suspecting the hardware.
+The prediction below was written before step 5 ran. It was right that the
+runtime was the risk and wrong about where: the failure was not in the codec
+mapping at all, but in buffer allocation — the shim assumed a VA-API client
+contract (a preallocated surface pool) that ffmpeg no longer follows. Worth
+remembering as a pattern: *the error message named the codec, and the codec was
+fine.* `strace` found it in one run; reading h264.c would not have.
+
+> The compile is measured and safe; the *runtime* is not. PR #38 is unmerged
+> third-party work whose own commit message says "POC", developed against H3/A64
+> VEs rather than this one. Our cedrus is proven bit-exact through GStreamer, so
+> the kernel half is sound — what is unproven is whether this shim drives it
+> correctly. If step 5 produces frames that are *close but not identical*,
+> suspect the reference-list or DPB mapping before suspecting the hardware.
+
+That last sentence never got tested: the frames were identical on the first run
+that reached the decoder. The DPB and reference-list mapping in PR #38 is
+correct for H.264 on this VE across all five vectors — and the ladder is built
+to exercise exactly that, since `v03` and `v04` are `bframes=2:cabac=1:ref=3`,
+so reference list construction and reordering are under test rather than
+assumed.
 
 The display path in step 6 wants EGL-on-GBM against a KMS driver that only
 scans out physically contiguous memory. GBM's split render/display arrangement

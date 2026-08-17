@@ -65,7 +65,14 @@ BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-s
 # libva and libdrm), and validating a hardware decode with the ffmpeg CLI
 # against the M1 ladder's references before any display path is involved. The
 # libva *runtime* is already present via mpv; only the headers were missing.
-DEV_PACKAGES=build-essential,libgles-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libv4l-dev,libdrm-dev,libva-dev,meson,ninja-build,ffmpeg,python3,strace
+#
+#   vainfo   the go/no-go for that work -- it is what says whether the driver
+#            loads at all and which profiles it advertises, before a single
+#            frame is decoded. Separate package from libva-dev.
+#   gdb      the shim is unmerged POC-quality C being pointed at a VE it was
+#            not developed against, so a backtrace is the expected first
+#            question, not an unlikely one.
+DEV_PACKAGES=build-essential,libgles-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libv4l-dev,libdrm-dev,libva-dev,vainfo,meson,ninja-build,ffmpeg,gdb,python3,strace
 # Measured 2026-08-15: base + runtime + dev is 1.45 GiB on disk, so it fits the
 # 2G default with little headroom. Raise the floor rather than have the next
 # added package fail in mke2fs at the end of a ~10 minute bootstrap.
