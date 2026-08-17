@@ -34,6 +34,11 @@ starts all-bypass and of_xlate opts each master in.
 
 H6 and H616 behaviour is unchanged: one cell, six masters, BYPASS = 0.
 
+The reset line becomes optional while here: the H713's stock node has only a
+clock, and our CCU exposes no IOMMU reset to point at, so requiring one made
+probe fail with -ENOENT. reset_control_assert/deassert are no-ops on a NULL
+control, so nothing else changes.
+
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
 --- a/drivers/iommu/sun50i-iommu.c
@@ -243,7 +248,22 @@ Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
  	iommu->pt_pool = kmem_cache_create(dev_name(&pdev->dev),
  					   PT_SIZE, PT_SIZE,
  					   SLAB_HWCACHE_ALIGN | SLAB_CACHE_DMA32,
-@@ -1069,8 +1151,12 @@
+@@ -1033,7 +1115,13 @@
+ 		goto err_free_cache;
+ 	}
+ 
+-	iommu->reset = devm_reset_control_get(&pdev->dev, NULL);
++	/*
++	 * Optional: the H713's block has no reset line. Its stock device tree
++	 * gives the node a clock and nothing else, and our CCU exposes no
++	 * IOMMU reset to point at. reset_control_assert/deassert are no-ops on
++	 * a NULL control, so the rest of the driver needs no changes.
++	 */
++	iommu->reset = devm_reset_control_get_optional(&pdev->dev, NULL);
+ 	if (IS_ERR(iommu->reset)) {
+ 		dev_err(&pdev->dev, "Couldn't get our reset line.\n");
+ 		ret = PTR_ERR(iommu->reset);
+@@ -1069,8 +1157,12 @@
  }
  
  static const struct of_device_id sun50i_iommu_dt[] = {

@@ -131,7 +131,58 @@ pattern shows bits 16–17 carry something beyond the per-master field, which th
 H6 driver does not know about and which must be preserved rather than
 overwritten.
 
-## The port — written, compiles, NOT yet run on hardware
+## Tested on hardware 2026-08-17 — it works, with one caveat
+
+```
+platform 1c0e000.video-codec: Adding to iommu group 0
+```
+
+`/sys/class/iommu/2010000.iommu` exists, group 0 holds the video codec,
+`ENABLE` reads 1 with a real `TTB` (`0x42048000`), and **`BYPASS` reads
+`0x0000007C`** — masters 0 and 1 translated, the rest bypassing, exactly as
+intended. **The full M1/VA1 ladder is 5 of 5 bit-exact through translation**, so
+the page tables are right and nothing about decode regressed.
+
+Two failures on the way there, both worth keeping because both looked like
+something else:
+
+**The reset line.** Mainline requires one; the H713's node has none, so probe
+died with `Couldn't get our reset line` / `-2` and cedrus quietly fell back to
+dma-direct (`deferred probe timeout, ignoring dependency`). Fixed by making the
+reset optional — `reset_control_assert/deassert` are no-ops on a NULL control.
+
+**One master port is not enough, and it fails silently.** Attaching only
+`<&iommu 0 1>` produced an IOMMU that probed, enabled, installed a page table
+and reported **no faults at all**, while every vector came out corrupt.
+`BYPASS` read `0x7E`: port 0 translated, port 1 still emitting physical
+addresses. The stock tree says why — `ve@1c0e000` and `ve1@1c0e000` are the
+same block declared twice, as masters 0 and 1, because the engine issues
+traffic through two ports. Half the traffic followed the IOVAs the DMA layer
+handed out and half went straight to memory, and nothing ever touched an
+unmapped IOVA, so there was nothing to fault on. `iommus = <&iommu 0 1>,
+<&iommu 1 1>` fixes it and `BYPASS` becomes `0x7C`.
+
+### Does it contain the cedrus bug? Partly, and not yet explained
+
+With `sunxi_cedrus.stop_reset=0` — patch 0040's fix deliberately disabled, so
+the use-after-free is live again — the workload that killed this board five
+times (113 s to 848 s, always kernel corruption) ran **~6,500 frames and left
+the kernel intact**. That is the result the port was for.
+
+But it is not a clean win, and the honest reading is:
+
+- **mpv died with SIGSEGV** after roughly four minutes. Userspace, not kernel.
+- **No IOMMU fault was logged.** A write to an unmapped IOVA should fault, and
+  the domain is in strict invalidation mode, so the absence needs explaining.
+
+The most likely story is that the stray writes now land inside IOVA space that
+is still mapped — hitting another live buffer rather than a hole — so they
+corrupt userspace-visible data instead of kernel structures, with nothing to
+fault on. That would be containment in the sense that matters (the kernel is no
+longer at risk) without being detection. Establishing it needs a repeat run and
+a look at whether the faulting write is to a stale mapping.
+
+## The port — written, compiles, tested
 
 Three pieces, all in the series:
 
@@ -151,7 +202,7 @@ Verified in the built artifacts rather than the source: `CONFIG_SUN50I_IOMMU=y`,
 `drivers/iommu/sun50i-iommu.o` compiled, and the DTB contains `iommu@2010000`
 with `#iommu-cells = <0x02>` and the VE's `iommus = <phandle 0 1>`.
 
-**It has not been booted.** What to watch for, in `iommu.config`'s header.
+**Tested on hardware — see above.**
 
 ## Still open
 
