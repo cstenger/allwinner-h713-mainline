@@ -312,20 +312,50 @@ that the CPU never issues: **DMA from a device**, which KASAN cannot see, into
 memory it does not own. The VE has no IOMMU and this board has a documented
 precedent for exactly that (patch 0024, quoted above).
 
+### VA-API is ruled out — it reproduces with no VA-API at all (2026-08-17)
+
+| run | decode | scanout buffers | result |
+| --- | --- | --- | --- |
+| A/B/C | VA-API shim → cedrus | mpv KMS/GBM, **from CMA** | crashes, 113–457 s |
+| **D** | **GStreamer** `v4l2slh264dec` → cedrus | `gles-play`, **reserved carveout** `0x6c100000` | **clean** — 480 s, ~28,437 frames |
+| **E** | **GStreamer** `v4l2slh264dec` → cedrus (to `fakesink`, no display) + mpv **software** decode to the panel | mpv KMS/GBM, **from CMA** | **crashes** — `stack-protector: Kernel stack is corrupted in: internal_add_timer` |
+
+Run E is the one that settles it. There is **no VA-API in it anywhere** — the
+hardware decode is GStreamer's, going nowhere but `fakesink`, and the picture on
+the panel is *software*-decoded. It still corrupts the kernel, this time
+tripping the stack protector: a fifth distinct victim, after a
+`pool_workqueue`, the hrtimer rbtree, a `dma_fence` and the deadline scheduler.
+
+So the earlier claim in this document that the crash "is not a VA-API bug" was
+right, but for the wrong reason and on the wrong evidence — it now rests on a
+direct experiment rather than on reading a call trace. **mpv, ffmpeg and the
+libva-v4l2-request shim are all exonerated.** The necessary and sufficient
+ingredients are:
+
+> **cedrus decoding into CMA buffers, concurrently with a KMS/GBM scanout
+> buffer that is also allocated from CMA.**
+
+Run D is the control that shows the second half matters: the *same* hardware
+decode, with scanout coming from the reserved carveout instead of CMA, is clean
+over 28,000 frames. Which is also why every earlier "decode alone is fine"
+result held — with `--vo=null` nothing else was claiming CMA.
+
 **Where to point the next session:**
 
-- It is *not* a VA-API bug and probably not a cedrus-geometry bug either —
-  decode alone is bit-exact and stable indefinitely. Something about the two
-  engines running together puts a DMA write outside its allocation.
-- Suspects, in order: the AFBD scanout/KMS path and `sunxi-scanout-dmabuf`
-  (which hand physical addresses to display hardware), then cedrus.
-- Cheap instruments that see what KASAN cannot: `CONFIG_DMA_API_DEBUG`,
-  and guard/poison pages either side of the CMA allocations so a stray write is
-  caught at the boundary rather than three structures away.
-- A useful narrowing run: drive hardware decode into the panel through the
-  *GStreamer* path (`v4l2slh264dec` + `gles-play`) instead of VA-API/mpv. If
-  that corrupts too, the fault is in the decode-plus-scanout combination
-  generally and the whole VA-API layer is exonerated.
+- It is **kernel-side**, in cedrus and/or the AFBD KMS/scanout path — not in
+  any userspace video component.
+- The question to answer is which side writes out of bounds: does the VE
+  overrun its capture buffer into a neighbouring CMA allocation, or does the
+  KMS/scanout path overrun its own? Guard/poison pages either side of both
+  allocations answer it directly, and they see what KASAN cannot — KASAN
+  instruments CPU accesses, and neither of these writes comes from the CPU.
+- `CONFIG_DMA_API_DEBUG` is the other cheap instrument.
+- Also worth a look while in there: **`kmssink` cannot drive our KMS driver at
+  all.** It fails negotiation, and with `videoconvert` in the pipeline it
+  produces `GStreamer-CRITICAL … range start is not smaller than end for
+  'GstIntRange'` — our driver is advertising a degenerate size range in its
+  plane/mode caps. Unrelated to the corruption, but it blocked the cleanest
+  version of this experiment and is a real bug.
 
 **Next steps, in order of cost:**
 
