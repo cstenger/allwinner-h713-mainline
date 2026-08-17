@@ -340,6 +340,65 @@ decode, with scanout coming from the reserved carveout instead of CMA, is clean
 over 28,000 frames. Which is also why every earlier "decode alone is fine"
 result held — with `--vo=null` nothing else was claiming CMA.
 
+### The guard says it is not an overrun (2026-08-17)
+
+`patches/kernel/0039-media-cedrus-add-runtime-dma-guard.patch` pads every cedrus
+capture buffer, poisons the padding, and checks it once the VE has completed the
+frame — the only way to witness a write that no MMU mediates. Off by default;
+arm it with `sunxi_cedrus.dma_guard=65536` on the kernel command line.
+
+First, the IOMMU claim this rests on, verified on the running board rather than
+taken from a comment: `/sys/class/iommu/` and `/sys/kernel/iommu_groups/` are
+both **empty**, the DT node `iommu@30f0000` has `status = "disabled"`, and the
+`video-codec` node carries **no `iommus` property**. Nothing translates VE DMA.
+(That proves no IOMMU is *active*, not that the silicon lacks the block — patch
+0024 records every register at `0x030f0000` reading zero on this hardware, which
+is why it is disabled.)
+
+Results, both informative and both negative for the obvious theory:
+
+- **Decode-only with the guard armed: zero reports**, output still bit-exact
+  (`a991db21…`). The VE does not write past the frame it is given.
+- **The full crashing workload with the guard armed: 13,391 frames over 450 s,
+  no crash and zero reports** — where that exact workload died three times
+  before, at 113 s, 198 s and 457 s. The 64 KiB of padding *changed the CMA
+  layout*, exactly as `cma=256M` did, and the crash went away without the guard
+  ever being touched.
+
+**So it is not a bounded overrun past the capture buffer.** There is a stronger
+argument for that conclusion than the guard alone: the victims — a kernel
+stack, the hrtimer rbtree, a `pool_workqueue`, a `dma_fence`, the deadline
+runqueue — are **slab and stack allocations, which are unmovable and therefore
+never placed in CMA**. A write running off the end of a CMA buffer lands in
+neighbouring *CMA* pages, which host only movable allocations. To corrupt a
+kernel stack, the write has to go somewhere else entirely — a stale or wrong
+address, not an off-by-a-bit.
+
+### The concrete candidate: cedrus frees DMA buffers without halting the VE
+
+`cedrus_stop_streaming()` does not reset the engine. For the OUTPUT queue it
+calls `ctx->current_codec->stop(ctx)` — which for H.264 **frees
+`pic_info_buf` and `neighbor_info_buf`** (`dma_alloc_attrs` with
+`DMA_ATTR_NO_KERNEL_MAPPING`) — then `pm_runtime_put()`, then returns the
+buffers. Nothing anywhere in that path asserts the VE's reset or waits for it to
+go idle. The driver's *only* `reset_control_reset()` is in the watchdog timeout
+handler, and `cedrus: frame processing timed out!` appeared in the very first
+crash capture.
+
+If the VE is still executing when those pages are freed, it keeps writing into
+memory the allocator has since handed to slab or a kernel stack. That mechanism
+predicts everything observed: arbitrary victims rather than one, layout
+dependence, invisibility to KASAN, and the fact that it takes a second engine
+competing for CMA to make the freed pages get reused quickly enough to matter.
+
+**The next step is an experiment that doubles as a candidate fix:** halt the
+engine in `cedrus_stop_streaming()` — `cancel_delayed_work_sync(&dev->watchdog_work)`
+then `reset_control_reset()` on `rstc` (and `rstc_ve3` on H713) — *before*
+`codec->stop()` frees anything, while the device is still powered. If the
+corruption stops, the mechanism is confirmed and the fix is in hand. Caveat to
+handle before shipping it: a reset is device-wide, so it must not fire while a
+second m2m context is mid-job.
+
 **Where to point the next session:**
 
 - It is **kernel-side**, in cedrus and/or the AFBD KMS/scanout path — not in
