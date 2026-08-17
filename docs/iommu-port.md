@@ -179,8 +179,22 @@ The most likely story is that the stray writes now land inside IOVA space that
 is still mapped — hitting another live buffer rather than a hole — so they
 corrupt userspace-visible data instead of kernel structures, with nothing to
 fault on. That would be containment in the sense that matters (the kernel is no
-longer at risk) without being detection. Establishing it needs a repeat run and
-a look at whether the faulting write is to a stale mapping.
+longer at risk) without being detection.
+
+**Confirmed by re-running with the fix on.** The segfault is not a second bug;
+it is the same use-after-free with somewhere else to land. Same kernel, same
+workload, one runtime toggle:
+
+| | cedrus fix off (`stop_reset=0`) | cedrus fix on (`stop_reset=1`) |
+| --- | --- | --- |
+| **no IOMMU** | kernel corrupted — six different structures, 113–848 s | clean, 450 s / 13,338 frames |
+| **IOMMU on** | **mpv SIGSEGV** after ~6,500 frames, kernel intact | **clean, 450 s / ~13,400 frames** |
+
+So there is nothing extra to fix: patch 0040 removes the segfault, and it is
+already the default. The IOMMU's contribution is that the *same* bug, left
+unfixed, can no longer reach kernel memory — it degrades from a panic to a
+crashed player. Both arms of the bottom row are one run each; a longer soak is
+still owed before calling either closed.
 
 ## The port — written, compiles, tested
 
