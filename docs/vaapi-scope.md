@@ -391,13 +391,41 @@ predicts everything observed: arbitrary victims rather than one, layout
 dependence, invisibility to KASAN, and the fact that it takes a second engine
 competing for CMA to make the freed pages get reused quickly enough to matter.
 
-**The next step is an experiment that doubles as a candidate fix:** halt the
-engine in `cedrus_stop_streaming()` — `cancel_delayed_work_sync(&dev->watchdog_work)`
-then `reset_control_reset()` on `rstc` (and `rstc_ve3` on H713) — *before*
-`codec->stop()` frees anything, while the device is still powered. If the
-corruption stops, the mechanism is confirmed and the fix is in hand. Caveat to
-handle before shipping it: a reset is device-wide, so it must not fire while a
-second m2m context is mid-job.
+### Confirmed by A/B in a single boot — halting the VE stops the corruption
+
+`patches/kernel/0040-media-cedrus-halt-ve-before-freeing-dma-buffers.patch`
+pulses the engine's reset in `cedrus_stop_streaming()` before `codec->stop()`
+frees anything, while the device is still powered. It is behind
+`sunxi_cedrus.stop_reset` (default on, **writable at runtime**), which is what
+makes the test worth trusting: both arms ran in the **same boot**, with the same
+CMA layout and the same workload, so nothing but the reset differs.
+
+Critically, `dma_guard` was left at **0** for this — the padding from patch 0039
+masks the crash by itself, and would have invalidated the whole comparison.
+
+| arm | `stop_reset` | result |
+| --- | --- | --- |
+| **A** | `Y` | 450 s, **13,338 frames, clean** |
+| **B** | `0`, flipped via sysfs, same boot | **crash** — NULL deref, `Workqueue: 0x0 (pan_js)`, `pc : dequeue_entities` (the CFS scheduler — a sixth distinct victim) |
+
+So the mechanism is established: **cedrus frees DMA buffers that the VE may
+still be writing into, and the page allocator hands those pages to slab or a
+kernel stack.** Everything observed follows from that — arbitrary victims rather
+than one repeatable site, layout dependence, KASAN blindness (the writer is a
+device, and this SoC has no usable IOMMU), and the need for a second CMA
+consumer to make the freed pages get reused quickly enough to matter.
+
+**How much this proves, honestly.** One clean 450-second arm against one crash
+is not a long baseline, and crash latency has ranged from 113 s to 848 s. What
+makes it convincing is the within-boot flip plus the prior record: five earlier
+reproductions, four of them inside 457 s. The confirmation still owed is a long
+soak with `stop_reset=Y` — an hour, not eight minutes.
+
+**Before this ships as a fix**, the caveat in the patch has to be closed: a
+reset is device-wide, so it must not fire while a second m2m context is mid-job.
+Either check that no job is running, or perform the reset from the m2m job
+context. Upstream cedrus has the same hole on every SoC it supports; it is
+merely harmless where an IOMMU contains the engine.
 
 **Where to point the next session:**
 
