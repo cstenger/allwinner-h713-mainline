@@ -140,30 +140,71 @@ Two things change when this kernel boots, and both will trip you up:
 ### Result of the first KASAN reproduction attempt — the crash did not fire
 
 Decode is still bit-exact under KASAN (`v04` → `a991db21…`), so the kernel is
-sound. But **the crash did not reproduce**, across 540 seconds of looping
-720p playback on the panel — roughly 16,000 frames, confirmed by the VE
-interrupt count — with **zero KASAN reports**. The pre-KASAN kernel failed 3 of
-4 runs, usually inside 48 seconds.
+sound. But **the crash did not reproduce**, across **~24 minutes of continuous
+looping 720p playback on the panel — 42,773 frames by the VE's interrupt
+count — with zero crashes and zero KASAN reports** (three runs: 240 s, 300 s
+and a 900 s soak). The pre-KASAN kernel failed 3 of 4 runs, usually inside 48
+seconds.
 
-That is a real result, not a non-result, and it narrows things to two
-candidates. Either KASAN's 2–3x slowdown moved a timing-sensitive race out of
-its window, or **building those four drivers in rather than as modules is
-itself what changed the behaviour** — this kernel differs from the crashing one
-in both respects at once, which is the flaw in the experiment as run.
+That kernel changed two things at once, unavoidably — KASAN only instruments
+what is compiled in its tree, so covering the four suspect drivers meant
+building them in. So the control was run: **the same four drivers built in,
+without KASAN** (`patches/kernel/board/builtin-drivers.config`).
 
-**The decisive next experiment is one variable:** build the same drivers
-built-in *without* KASAN (a fragment with just the four `=y` lines and
-`LOCALVERSION`), and run the same playback. If it still crashes, KASAN's timing
-was masking it, and the answer is to slow the *hardware* instead — try
-`DEBUG_OBJECTS`/`DEBUG_OBJECTS_WORK`, which targets the observed signature (a
-work item with a NULL function pointer) at far lower cost than KASAN. If it
-stays clean, the module path is implicated and the next kernel should carry
-KASAN with those drivers back as modules, instrumented, installed into
-`/lib/modules/6.18.38-kasan`.
+### The control settles it — KASAN was hiding the bug
 
-Also worth adding if a crash ever fails to reach the serial line:
-`CONFIG_PSTORE`/ramoops, since nothing reaches the journal (journald cannot
-flush during a panic).
+**It crashed at T+198 s**, on the same playback. So built-in versus module is
+*not* the variable; KASAN's presence is. And note KASAN produced no report
+either — it did not miss a detection, the racing access appears not to have
+happened at all, which points at its 2–3x slowdown moving the window rather
+than at coverage.
+
+The control's trace is also far better than the original, because with these
+drivers built in there are no module offsets to confuse the symbolizer. Where
+the first capture said `Workqueue: 0x0 (pan_js)` and a PC in an unrelated
+built-in, this says exactly what is happening:
+
+```
+Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
+CPU: 3  Comm: kworker/u16:2  Not tainted 6.18.38-builtin
+Workqueue: pan_js drm_sched_run_job_work
+pc : pwq_tryinc_nr_active+0xfc/0x204
+lr : __queue_work+0x520/0x648
+Call trace:
+ pwq_tryinc_nr_active+0xfc/0x204 (P)
+ __queue_work+0x520/0x648
+ queue_work_on+0x3c/0xa0
+ drm_sched_run_job_work+0x4d8/0x504
+ process_scheduled_works+0x170/0x300
+ worker_thread+0x2fc/0x45c
+```
+
+The DRM GPU scheduler queues its run-job work, and the workqueue core
+dereferences NULL doing it — so the workqueue the scheduler is submitting to is
+NULL or freed underneath it. That is a **lifetime/teardown race in
+drm_sched + panfrost**, provoked by the VE-decode-plus-display combination, and
+it is not a VA-API bug: nothing in the shim, cedrus or the AFBD driver appears
+in that path. `kworker … exited with irqs disabled` is why the board then
+hard-locks rather than merely oopsing — sysrq gets no response afterwards, so
+recovery is the power switch.
+
+**Next steps, in order of cost:**
+
+1. `CONFIG_DEBUG_OBJECTS` + `DEBUG_OBJECTS_WORK` — targets exactly this (a work
+   item used after free or never initialised) at a fraction of KASAN's overhead,
+   so it is far less likely to perturb the window shut the way KASAN did.
+2. Read `drm_sched_run_job_work()` against panfrost's scheduler teardown in
+   6.18 with the question "who can free `submit_wq` while a job work is still
+   queued?", and check whether upstream has already fixed it.
+3. Only then reach for KASAN again, and if so with those drivers back as
+   *instrumented modules* in `/lib/modules/6.18.38-kasan`, plus
+   `CONFIG_PSTORE`/ramoops so a report survives the lockup — nothing reaches the
+   journal, because journald cannot flush during a panic.
+
+Note that `CONFIG_MAGIC_SYSRQ` (in both debug fragments, with
+`tools/serial/sysrq.py` to drive it over a UART BREAK) did **not** rescue this
+particular wedge: with every CPU spinning interrupts-disabled, nothing runs the
+handler. It is still worth having for the softer hangs.
 
 **Still open:** the crash above, zero-copy display, HEVC in the shim, and 10-bit.
 
