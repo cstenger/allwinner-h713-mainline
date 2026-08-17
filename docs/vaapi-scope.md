@@ -270,17 +270,62 @@ consistent, `cedrus_video.c` sizing the NV12 buffer with `ALIGN(width,16)` /
 at — the hypothesis needs the H713's VE3 to want more than mainline cedrus
 assumes, which is unproven.
 
-**Two cheap experiments distinguish the hypotheses without building anything:**
+### Both experiments run, 2026-08-17 — it is memory corruption, and drm_sched is a victim
 
-1. **Change `cma=128M` on the kernel command line** (e.g. to 192M or 256M). That
-   changes which allocation sits next to which. If the crash moves, disappears,
-   or changes shape, it is an adjacency/stray-write problem and *not* drm_sched,
-   which cannot care.
-2. **Compare clip heights.** 720p allocates `ALIGN(720,16)=720` rows, which is
-   *not* 32-aligned; 1080p allocates `ALIGN(1080,16)=1088`, which *is*. If a
-   1080p loop is stable where the 720p loop crashes — the opposite of what raw
-   load would predict — that points straight at rows written past a
-   16-aligned-but-not-32-aligned buffer.
+Run on the control kernel with `oops=panic` added to the command line, which
+turns each crash into a 5-second self-reboot and takes the human out of the
+loop entirely (`panic=5` was already there). Highly recommended for this work.
+
+| run | clip | `cma=` | outcome |
+| --- | --- | --- | --- |
+| (first) | 1280x720 | 128M | fatal Oops T+198 s — `pwq_tryinc_nr_active`, workqueue internals |
+| **A** | 1280x720 | 128M | fatal Oops T+457 s — `rb_erase` ← `timerqueue_del` ← `__hrtimer_run_queues`, faulting on `0x3fd945c0` |
+| **B** | 1280x**736** | 128M | fatal Oops T+113 s — `dma_fence_add_callback` ← `drm_sched_run_job_work` |
+| **C** | 1280x720 | **256M** | no fatal Oops in 480 s; **530 ×** `WARNING … enqueue_dl_entity` (deadline scheduler), then rebooted after the window |
+
+**Four different corrupted structures across four runs** — a workqueue's
+`pool_workqueue`, the hrtimer red-black tree, a dma_fence, and the deadline
+scheduler's runqueue. Three of those have nothing whatever to do with video or
+graphics. **A code race faults in the same place; random corruption does not.**
+So the drm_sched teardown race is not the bug — `drm_sched_run_job_work` is
+simply the hottest code during playback and therefore the most likely thing to
+trip over whatever got scribbled on. That also retires the earlier reading of
+the first trace.
+
+Note the faulting address in run A: `0x3fd945c0` is not a kernel virtual
+address, it is a **physical-looking address inside the 1 GiB of DRAM** — a
+pointer field holding something that looks like a DMA address.
+
+**Experiment 2 (height alignment): refuted.** A 32-aligned 1280x736 clip did not
+merely fail to help, it crashed *sooner* (113 s vs 457 s). The
+16-versus-32-row-overrun mechanism is not what is happening. Good — that
+hypothesis was cheap to kill and would have been expensive to chase.
+
+**Experiment 1 (CMA size): the symptom moved.** At `cma=256M` the same clip
+produced no fatal fault in the observed window, but a storm of corruption
+warnings against a *different* structure. **drm_sched cannot care how big the
+CMA pool is; a stray write must.** Layout-dependence is the signature.
+
+Taken with KASAN's silence — no crash *and* no report, from a kernel where all
+four suspect drivers were instrumented — the remaining explanation is a write
+that the CPU never issues: **DMA from a device**, which KASAN cannot see, into
+memory it does not own. The VE has no IOMMU and this board has a documented
+precedent for exactly that (patch 0024, quoted above).
+
+**Where to point the next session:**
+
+- It is *not* a VA-API bug and probably not a cedrus-geometry bug either —
+  decode alone is bit-exact and stable indefinitely. Something about the two
+  engines running together puts a DMA write outside its allocation.
+- Suspects, in order: the AFBD scanout/KMS path and `sunxi-scanout-dmabuf`
+  (which hand physical addresses to display hardware), then cedrus.
+- Cheap instruments that see what KASAN cannot: `CONFIG_DMA_API_DEBUG`,
+  and guard/poison pages either side of the CMA allocations so a stray write is
+  caught at the boundary rather than three structures away.
+- A useful narrowing run: drive hardware decode into the panel through the
+  *GStreamer* path (`v4l2slh264dec` + `gles-play`) instead of VA-API/mpv. If
+  that corrupts too, the fault is in the decode-plus-scanout combination
+  generally and the whole VA-API layer is exonerated.
 
 **Next steps, in order of cost:**
 
