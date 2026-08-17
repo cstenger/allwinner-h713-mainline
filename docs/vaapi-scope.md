@@ -427,6 +427,41 @@ Either check that no job is running, or perform the reset from the m2m job
 context. Upstream cedrus has the same hole on every SoC it supports; it is
 merely harmless where an IOMMU contains the engine.
 
+### And the vendor does contain it — checked against board B's binaries
+
+Patch 0024 already documents the vendor's `mmu_aw: iommu@2010000`
+(`allwinner,sunxi-iommu`, `#iommu-cells = <2>`, SPI 71, `clocks = <&ccu 0x30>`),
+that mainline's `iommu@30f0000` is the H6 base and simply wrong here, and that
+`ve@1c0e000` attaches as master 0. Re-derived from `local/stock-boot/sunxi.fex`
+and confirmed. Two things that comment does **not** say, and both matter now:
+
+- **The display block is behind the IOMMU too.** `dec@5600000` — the same
+  address our AFBD KMS driver binds — is `iommus = <&mmu_aw 2 0>`. So is
+  `ge2d@5240000` (master 2), `demux` and `audbrg` (master 6), `ve1` (1),
+  `av1@1c0d000` (5). **Both engines in our crashing combination are translated
+  in the vendor stack and untranslated in ours.**
+- **The vendor kernel genuinely drives it**, rather than merely declaring it in
+  DT. `strings` on `boot_a-board-b.img` gives 159 IOMMU symbols including
+  `sunxi iommu init tlb failed`, `sunxi iommu: irq = %d`, `sunxi iommu int
+  error!!!`, `Attached IOMMU controller to %s device.`, plus
+  `arm_iommu_attach_device` and the build path
+  `H713_SDK_V1.3_Branch/longan/kernel/linux-5.4/drivers/iommu/`.
+
+That reframes patch 0024's conclusion. "The honest state is no IOMMU, which is
+also the safer one" was the right call at the time — being handed IOVAs that
+nothing translates is worse than dma-direct. But it is now clear what running
+untranslated costs: cedrus's post-free writes reach arbitrary kernel memory, and
+this investigation spent a session chasing six different victims that an IOMMU
+would have reported as one fault naming the offending master.
+
+So porting the vendor IOMMU stops being a nice-to-have. It is the containment
+mechanism for this entire class of bug, and the reason the vendor never had to
+notice that `stop_streaming` does not halt the engine. The work it needs is
+already scoped in patch 0024: a driver for `allwinner,sunxi-iommu` (the cell
+count and register layout both differ from mainline's `sun50i-iommu`, and
+register compatibility with the H6 block is untested), and the CCU gate checked
+before probing because an ungated block hangs this interconnect.
+
 **Where to point the next session:**
 
 - It is **kernel-side**, in cedrus and/or the AFBD KMS/scanout path — not in
