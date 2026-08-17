@@ -146,13 +146,17 @@ decode-only work you can skip it — nothing about VA-API needs the display.
 - **A FIT transfer over serial is ~12 minutes** at 10.8 KB/s. Budget for it.
 - **mpv needs `--drm-device=/dev/dri/card1`** — panfrost holds minor 0 as a
   render-only node.
-- **WiFi gets you ssh, and it took the board down.** `tools/wifi/sta-connect.sh`
-  turns the boot hotspot into a station on a real network; ssh then works at
-  3.6 ms and file transfer stops being the constraint. But the first sustained
-  use of that link — an `apt-get update` — **wedged the board hard**: no ssh, no
-  serial, tty echo alive but the shell dead. This kernel has no
-  `CONFIG_MAGIC_SYSRQ`, so recovery was a physical power cycle. Keep the serial
-  console attached, and prefer baking what you need into the image.
+- **WiFi gets you a shell, and it cannot carry a file.**
+  `tools/wifi/sta-connect.sh` turns the boot hotspot into a station on a real
+  network; ssh then answers in 3.6 ms. But **two of two** sustained transfers
+  wedged the board hard — no ssh, no serial, tty echo alive and the shell dead,
+  recoverable only by pulling power. The second attempt showed the mechanism: a
+  10.8 MB `scp` sat at **zero bytes for six minutes** with the board still
+  responsive, then the console printed `cmd timed-out` (the aic8800 firmware
+  command/confirm crash path already documented for this chip) and it went down.
+  Use it for a shell and log reading; use the serial console or a baked rootfs
+  for anything file-sized. This kernel also has no `CONFIG_MAGIC_SYSRQ`, so
+  there is no software way back — which is why the KASAN fragment enables it.
 - **The board's clock can be months behind**, which makes `meson setup` abort
   with `Clock skew detected` on files newer than "now". `date -u -s` from the
   host, then `hwclock -w`.

@@ -13,10 +13,19 @@
 #
 #   usage: ./sta-connect.sh SSID PASSPHRASE [interface]
 #
-# ⚠ Sustained transfers over this link have wedged the board hard enough to
-# take the serial console with them (2026-08-16, during an `apt-get update`).
-# Keep the serial console attached and logging while you use it, and do not
-# put anything on the WiFi path that you cannot afford to restart.
+# ⚠ DO NOT MOVE BULK DATA OVER THIS LINK. Twice out of two attempts
+# (2026-08-16) a sustained transfer wedged the board hard enough to take the
+# serial console with it -- tty echo alive, shell dead, recoverable only by
+# pulling power. The second attempt is the one that shows what happens: a
+# 10.8 MB scp sat at *zero bytes transferred* for six minutes with the board
+# still responsive, then the console printed `cmd timed-out` -- the aic8800
+# firmware command/confirm handshake failing, the crash path already documented
+# for this chip -- and the box went down. The link associates, gets DHCP,
+# answers ssh in 3.6 ms, and then does not carry a file.
+#
+# So this is for interactive work only: a shell, a few kilobytes, reading logs.
+# For anything file-sized use the serial console (tools/serial/send_file.py) or
+# bake it into the rootfs image, and keep the serial console attached either way.
 
 set -eu
 
@@ -49,9 +58,12 @@ umask 077
 wpa_passphrase "$SSID" "$PSK" | grep -v '#psk' > "$CONF"
 wpa_supplicant -B -i "$IFACE" -c "$CONF" -f /var/log/wpa-sta.log
 
+# The `|| true` is load-bearing under `set -e`: on every iteration before the
+# link comes up the grep fails, and an unguarded AND-list would abort the script
+# on the first pass rather than wait.
 for i in $(seq 20); do
   sleep 1
-  iw dev "$IFACE" link 2>/dev/null | grep -q "^Connected" && break
+  if iw dev "$IFACE" link 2>/dev/null | grep -q "^Connected"; then break; fi
 done
 iw dev "$IFACE" link | head -3
 

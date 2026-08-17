@@ -21,6 +21,12 @@ source "$ROOT/config/versions.env"
 
 BOARD=${BOARD:-ddr3}
 JOBS=${JOBS:-$(nproc)}
+# KERNEL_CONFIG=name[,name...] merges patches/kernel/board/<name>.config over the
+# board defconfig. Debug kernels only -- the shipping kernel is the defconfig
+# alone. Fragments are part of the input digest, so a debug build gets its own
+# source tree instead of quietly reusing the production one's objects, and its
+# outputs are suffixed so it cannot overwrite the FIT the board boots from.
+KERNEL_CONFIG=${KERNEL_CONFIG:-}
 OUT="$ROOT/build/out"
 CACHE="$ROOT/build/cache"
 UBOOT="$ROOT/external/u-boot"
@@ -47,6 +53,9 @@ kernel_inputs_digest() {
     printf 'versions.env %s\n' "$(hash_file "$ROOT/config/versions.env")"
     printf 'series %s\n' "$(hash_file "$ROOT/patches/kernel/series")"
     printf 'defconfig %s\n' "$(hash_file "$ROOT/patches/kernel/board/$KERNEL_DEFCONFIG")"
+    for p in ${KERNEL_CONFIG//,/ }; do
+      printf 'fragment %s %s\n' "$p" "$(hash_file "$ROOT/patches/kernel/board/$p.config")"
+    done
     while IFS= read -r p || [ -n "$p" ]; do
       [ -n "$p" ] || continue
       printf '%s %s\n' "$p" "$(hash_file "$ROOT/patches/kernel/$p")"
@@ -159,16 +168,46 @@ find_mkimage() {
 
 build_kernel() {
   local tree; tree=$(prepare_kernel)
-  log "Linux kernel  ($KERNEL_DEFCONFIG, arch=$KERNEL_ARCH)"
+  local suffix=""
+  [ -n "$KERNEL_CONFIG" ] && suffix="-${KERNEL_CONFIG//,/-}"
+  log "Linux kernel  ($KERNEL_DEFCONFIG${KERNEL_CONFIG:+ + $KERNEL_CONFIG}, arch=$KERNEL_ARCH)"
   make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 "$KERNEL_DEFCONFIG"
+  for frag in ${KERNEL_CONFIG//,/ }; do
+    local path="$ROOT/patches/kernel/board/$frag.config"
+    [ -f "$path" ] || { echo "error: no config fragment: $path" >&2; return 1; }
+    ARCH="$KERNEL_ARCH" "$tree/scripts/kconfig/merge_config.sh" -m -O "$tree" \
+      "$tree/.config" "$path" >/dev/null
+  done
+  if [ -n "$KERNEL_CONFIG" ]; then
+    make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 olddefconfig
+    # merge_config warns about a request it could not honour, but olddefconfig
+    # can drop a symbol afterwards for an unmet dependency and say nothing.
+    # Check the config that was BUILT, not the one that was asked for: a KASAN
+    # kernel that silently did not enable KASAN is worse than no kernel at all,
+    # because every clean run after it reads as evidence.
+    local want missing=""
+    for frag in ${KERNEL_CONFIG//,/ }; do
+      while IFS= read -r want || [ -n "$want" ]; do
+        case "$want" in
+          ''|'#'*' is not set') ;;      # a real request to disable; check it
+          '#'*|'') continue ;;          # ordinary comment or blank
+        esac
+        grep -F -x -q -- "$want" "$tree/.config" || missing="$missing$(printf '\n      %s' "$want")"
+      done < "$ROOT/patches/kernel/board/$frag.config"
+    done
+    [ -z "$missing" ] || {
+      printf 'error: config fragment did not survive olddefconfig:%s\n' "$missing" >&2
+      return 1
+    }
+  fi
   make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 -j"$JOBS" Image dtbs modules
   gzip -9 -kf "$tree/arch/arm64/boot/Image"
-  install -m 0644 "$tree/arch/arm64/boot/Image.gz" "$OUT/Image.gz"
+  install -m 0644 "$tree/arch/arm64/boot/Image.gz" "$OUT/Image$suffix.gz"
   install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB.dtb" "$OUT/$KERNEL_DTB.dtb"
   install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB_PROJECTOR.dtb" \
     "$OUT/$KERNEL_DTB_PROJECTOR.dtb"
-  log "Image.gz -> $OUT/Image.gz ($(stat -c%s "$OUT/Image.gz") bytes); bench + projector DTBs built"
-  build_kernel_fit
+  log "Image$suffix.gz -> $OUT/Image$suffix.gz ($(stat -c%s "$OUT/Image$suffix.gz") bytes); bench + projector DTBs built"
+  build_kernel_fit "$suffix"
 }
 
 # --- AIC8800 WiFi/BT out-of-tree modules (SDIO WiFi + UART BT) ---------------
@@ -200,17 +239,18 @@ build_aic8800() {
 
 # package Image.gz + DTB into a bootable FIT (bootm at KERNEL_LOAD)
 build_kernel_fit() {
+  local suffix=${1:-}
   local mkimage; mkimage=$(find_mkimage)
   [ -n "$mkimage" ] || { note "no mkimage — skipping FIT (install u-boot-tools or run the uboot stage)"; return; }
-  cat > "$OUT/h713-kernel.its" <<ITS
+  cat > "$OUT/h713-kernel$suffix.its" <<ITS
 /dts-v1/;
 / {
-	description = "H713 arm64 kernel ($KERNEL_VERSION) + DTB";
+	description = "H713 arm64 kernel ($KERNEL_VERSION$suffix) + DTB";
 	#address-cells = <1>;
 	images {
 		kernel {
 			description = "Linux $KERNEL_VERSION";
-			data = /incbin/("$OUT/Image.gz");
+			data = /incbin/("$OUT/Image$suffix.gz");
 			type = "kernel";
 			arch = "arm64";
 			os = "linux";
@@ -242,8 +282,8 @@ build_kernel_fit() {
 	};
 };
 ITS
-  "$mkimage" -f "$OUT/h713-kernel.its" "$OUT/h713-kernel.fit" >/dev/null
-  log "FIT -> $OUT/h713-kernel.fit ($(stat -c%s "$OUT/h713-kernel.fit") bytes)"
+  "$mkimage" -f "$OUT/h713-kernel$suffix.its" "$OUT/h713-kernel$suffix.fit" >/dev/null
+  log "FIT -> $OUT/h713-kernel$suffix.fit ($(stat -c%s "$OUT/h713-kernel$suffix.fit") bytes)"
   note "Boot: load to DRAM + 'bootm' (arch=arm64, load $KERNEL_LOAD). See docs/flash.md."
 }
 
