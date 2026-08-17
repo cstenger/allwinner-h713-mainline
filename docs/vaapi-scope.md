@@ -391,7 +391,42 @@ predicts everything observed: arbitrary victims rather than one, layout
 dependence, invisibility to KASAN, and the fact that it takes a second engine
 competing for CMA to make the freed pages get reused quickly enough to matter.
 
-### Confirmed by A/B in a single boot — halting the VE stops the corruption
+### ⚠ RETRACTED — the A/B below was underpowered, and a one-hour soak refutes it
+
+**Read this before the section that follows.** On 2026-08-17 the full
+configuration — IOMMU translating both VE ports *and* `stop_reset=Y`, i.e. both
+mitigations on — was soaked, and it **crashed after 390 seconds**:
+
+```
+Internal error: Oops - Undefined instruction: 0000000002000000 [#1]  SMP
+CPU: 3  PID: 3266  Comm: kworker/u16:2
+Workqueue:  0x0 (pan_js)          <- work function NULL, as in the very first crash
+pc : __schedule+0x284/0x794
+Call trace: __schedule / schedule / worker_thread / kthread
+```
+
+So kernel memory is still being corrupted, with the same signature this
+investigation started from. **`cedrus_stop_streaming()` not halting the engine
+is therefore not established as the root cause.** The A/B that appeared to
+establish it was one run per arm, and crash latency across this whole
+investigation has ranged 113 s to 848 s — a single clean 450 s arm was never
+strong enough to carry the conclusion, and I should have said so at the time
+rather than after the counterexample.
+
+What survives from that experiment: the *fix-off* arm did crash, and the
+IOMMU-on/fix-off arm degraded a kernel panic to an mpv segfault. Both remain
+consistent with cedrus contributing. What is now false is "root cause found".
+
+**The control this investigation never ran with adequate exposure** is the one
+that would settle it: the display path active for ten-plus minutes with **no
+hardware decode at all**. The only such run was 48 seconds. Every long run that
+crashed had cedrus decoding in it, but so did nearly every long run, so that
+correlation is much weaker than it looked. The display block (`dec@5600000`,
+IOMMU master 2) is in **bypass** in our DT, exactly as the vendor has it, so it
+can still write anywhere — and `sunxi-scanout-dmabuf` hands physical addresses
+to display hardware by design.
+
+### The A/B that suggested halting the VE stops the corruption (superseded)
 
 `patches/kernel/0040-media-cedrus-halt-ve-before-freeing-dma-buffers.patch`
 pulses the engine's reset in `cedrus_stop_streaming()` before `codec->stop()`
