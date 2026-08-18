@@ -220,6 +220,15 @@ cat > "$R/etc/modules-load.d/h713-video.conf" <<EOF
 sunxi_scanout_dmabuf
 EOF
 
+# WiFi baseline capture tool. Shipped in the image because it has to run ON the
+# board and STA WiFi cannot currently carry a file to it -- without this it
+# would have to be pasted over an 11 KB/s serial console every time.
+if [ -n "${WIFI_BASELINE_SRC:-}" ] && [ -f "${WIFI_BASELINE_SRC}" ]; then
+  install -d -m 0755 "$R/usr/local/sbin"
+  install -m 0755 "$WIFI_BASELINE_SRC" "$R/usr/local/sbin/wifi-baseline"
+  echo "[customize] installed /usr/local/sbin/wifi-baseline"
+fi
+
 # Optional boot WiFi hotspot (AP). Enabled only when the build passed
 # HOTSPOT_ENABLED=1 (i.e. local/hotspot.conf existed). A dedicated AP owns wlan0
 # and DHCP, so mask the STA supplicant and the default dnsmasq.
