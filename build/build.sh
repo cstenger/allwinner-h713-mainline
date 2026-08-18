@@ -3,12 +3,13 @@
 #
 #   TF-A BL31  ->  U-Boot (SPL + BL31 + proper)  ->  Linux kernel  ->  images
 #
-# Sources are the git submodules under external/ and the kernel patch series in
-# patches/kernel/; versions are pinned in config/versions.env. LLVM-only
+# Sources are the git submodules under external/ and two curated patch series on
+# pinned upstream tarballs — patches/kernel/ and patches/aic8800/ (see
+# patches/README.md); versions are pinned in config/versions.env. LLVM-only
 # (clang / ld.lld) — see config/toolchain.md.
 #
 # Usage:
-#   build/build.sh [all|bl31|uboot|kernel|images]   # default: all
+#   build/build.sh [all|bl31|uboot|kernel|aic8800|images]   # default: all
 #
 # Env:
 #   BOARD=ddr3|lpddr3   board profile (default ddr3): ddr3=HY200 QZ713DF_A1 bench, lpddr3=HY200 QZ713_V2 projector
@@ -50,7 +51,13 @@ hash_file() {
 kernel_inputs_digest() {
   local p
   {
-    printf 'versions.env %s\n' "$(hash_file "$ROOT/config/versions.env")"
+    # Only the KERNEL_* pins, not the whole file: versions.env is shared with
+    # TF-A, U-Boot and the AIC8800 driver, and hashing it wholesale meant an
+    # unrelated pin bump (e.g. AIC8800_COMMIT) silently invalidated every cached
+    # kernel tree and forced a full rebuild. Matching on the prefix rather than
+    # naming variables means a new KERNEL_* pin is covered automatically.
+    printf 'versions.env %s\n' \
+      "$(grep '^KERNEL_' "$ROOT/config/versions.env" | sha256sum | awk '{print $1}')"
     printf 'series %s\n' "$(hash_file "$ROOT/patches/kernel/series")"
     printf 'defconfig %s\n' "$(hash_file "$ROOT/patches/kernel/board/$KERNEL_DEFCONFIG")"
     for p in ${KERNEL_CONFIG//,/ }; do
@@ -211,6 +218,108 @@ build_kernel() {
 }
 
 # --- AIC8800 WiFi/BT out-of-tree modules (SDIO WiFi + UART BT) ---------------
+# Source is a pinned radxa-pkg/aic8800 tarball, not vendored: their debian/
+# patches are applied to the whole repo first (they patch PCIE/SDIO/USB in the
+# same hunks), then the SDIO subtree is extracted and patches/aic8800/ applied
+# on top. See patches/aic8800/README.md.
+aic8800_inputs_digest() {
+  local p
+  {
+    printf 'commit %s\n' "$AIC8800_COMMIT"
+    printf 'series %s\n' "$(hash_file "$ROOT/patches/aic8800/series")"
+    while IFS= read -r p || [ -n "$p" ]; do
+      [ -n "$p" ] || continue
+      printf '%s %s\n' "$p" "$(hash_file "$ROOT/patches/aic8800/$p")"
+    done < "$ROOT/patches/aic8800/series"
+  } | sha256sum | awk '{print $1}'
+}
+
+verify_aic8800_tarball() {
+  printf '%s  %s\n' "$AIC8800_TARBALL_SHA256" "$1" | sha256sum --check --status
+}
+
+prepare_aic8800() {
+  local digest tree tarball
+  digest=$(aic8800_inputs_digest)
+  tree="$ROOT/build/aic8800-${AIC8800_COMMIT:0:12}-$digest"
+  tarball="$CACHE/aic8800-${AIC8800_COMMIT:0:12}.tar.gz"
+  if [ -f "$tree/.h713-inputs-$digest" ]; then echo "$tree"; return; fi
+  if [ -e "$tree" ]; then
+    echo "error: incomplete aic8800 tree exists at $tree; remove it and retry" >&2
+    return 1
+  fi
+
+  if [ -f "$tarball" ]; then
+    verify_aic8800_tarball "$tarball" || {
+      echo "error: checksum mismatch for $tarball; remove it and retry" >&2
+      return 1
+    }
+  else
+    local partial="$tarball.part"
+    log "fetch aic8800 ${AIC8800_COMMIT:0:12}" >&2
+    curl --fail --location --retry 3 --output "$partial" "$AIC8800_TARBALL_URL"
+    verify_aic8800_tarball "$partial" || {
+      rm -f "$partial"
+      echo "error: downloaded aic8800 tarball failed SHA-256 verification" >&2
+      return 1
+    }
+    mv "$partial" "$tarball"
+  fi
+
+  local tmp; tmp=$(mktemp -d "$ROOT/build/.aic8800.XXXXXX")
+  log "extract + patch aic8800 (vendor series, then ours)" >&2
+  tar -C "$tmp" --strip-components=1 -xf "$tarball" \
+    "aic8800-$AIC8800_COMMIT/src" "aic8800-$AIC8800_COMMIT/debian"
+
+  # Vendor's own kernel-compat series. Failures are only tolerated for the
+  # names pinned in AIC8800_VENDOR_PATCH_SKIP; anything else stops the build.
+  local n=0 skipped=0 p
+  while IFS= read -r p || [ -n "$p" ]; do
+    [ -n "$p" ] || continue
+    if patch -s -d "$tmp" -p1 --no-backup-if-mismatch < "$tmp/debian/patches/$p" >/dev/null 2>&1; then
+      n=$((n+1))
+    elif [[ " $AIC8800_VENDOR_PATCH_SKIP " == *" $p "* ]]; then
+      skipped=$((skipped+1))
+    else
+      rm -rf "$tmp"
+      echo "error: vendor patch failed unexpectedly: $p" >&2
+      echo "       if this is expected after a bump, add it to AIC8800_VENDOR_PATCH_SKIP" >&2
+      return 1
+    fi
+  done < "$tmp/debian/patches/series"
+  note "vendor series: $n applied, $skipped skipped (expected)" >&2
+
+  # Keep only the SDIO driver. A throwaway git repo makes the base blobs
+  # available so our series applies with real three-way merge instead of
+  # context matching -- which is what makes the next upstream bump survivable.
+  local sub="$tmp/$AIC8800_SUBTREE"
+  [ -d "$sub" ] || { rm -rf "$tmp"; echo "error: subtree missing: $AIC8800_SUBTREE" >&2; return 1; }
+  local stage; stage=$(mktemp -d "$ROOT/build/.aic8800-sdio.XXXXXX")
+  cp -a "$sub/." "$stage/"
+  rm -rf "$tmp"
+  git -C "$stage" init -q
+  git -C "$stage" add -A
+  git -C "$stage" -c user.email=build@h713 -c user.name=h713 commit -qm \
+    "aic8800 vendor $AIC8800_COMMIT + vendor compat series"
+  local m=0
+  while IFS= read -r p || [ -n "$p" ]; do
+    [ -n "$p" ] || continue
+    if ! git -C "$stage" -c user.email=build@h713 -c user.name=h713 \
+           am -3 --keep-non-patch "$ROOT/patches/aic8800/$p" >/dev/null 2>&1; then
+      git -C "$stage" am --abort >/dev/null 2>&1 || true
+      echo "error: patches/aic8800/$p did not apply (three-way merge failed)" >&2
+      echo "       tree left at $stage for inspection" >&2
+      return 1
+    fi
+    m=$((m+1))
+  done < "$ROOT/patches/aic8800/series"
+  note "aic8800 series: $m patches applied" >&2
+
+  : > "$stage/.h713-inputs-$digest"
+  mv "$stage" "$tree"
+  echo "$tree"
+}
+
 # Built against the same pinned kernel tree with the same arm64/LLVM toolchain.
 # bsp first, then fdrv/btlpm with bsp's Module.symvers (they export/import
 # symbols). CONFIG_PLATFORM_MAINLINE_SUNXI=y selects the H713 platform glue.
@@ -220,7 +329,7 @@ build_aic8800() {
     echo "error: kernel not built (no Module.symvers in $tree) — run build/build.sh kernel first" >&2
     return 1
   }
-  local moddir="$ROOT/modules/aic8800"
+  local moddir; moddir=$(prepare_aic8800)
   local common=(ARCH=arm64 LLVM=1 CONFIG_PLATFORM_MAINLINE_SUNXI=y)
   log "AIC8800 modules (SDIO WiFi + UART BT, arch=arm64)"
   make -C "$tree" M="$moddir/aic8800_bsp" "${common[@]}" modules

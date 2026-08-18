@@ -336,6 +336,7 @@ env \
   KERNEL_RELEASE="$KERNEL_RELEASE" \
   AIC_KO_DIR="$AIC_KO_DIR" \
   AIC_FW_SRC="$AIC_FW_SRC_ABS" \
+  WIFI_BASELINE_SRC="$PROJECT_ROOT/tools/wifi/wifi-baseline.sh" \
   AIC_FW_DEST="$AIC8800_FW_DEST" \
   HOTSPOT_ENABLED="$HOTSPOT_ENABLED" \
   HOTSPOT_SSID="$HOTSPOT_SSID" \
@@ -393,6 +394,13 @@ env \
     grep -q "updates/aic8800/aic8800_fdrv.ko" "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/modules.dep"
     test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfw_8800d80_u02.bin"
     test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfwbt_8800d80_u02.bin"
+    # The HY200 chip reports as an "h" variant (is_chip_id_h, read from register
+    # 0x40500000), so the 2026 driver loads the _h_ firmware and nothing else
+    # will do -- without this the driver enumerates the chip, fails to upload
+    # fmacfw, and wlan0 never appears.
+    test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfw_8800d80_h_u02.bin"
+    # the baseline tool must be on the board: it cannot be copied there later
+    test -x "$ROOTFS_TREE/usr/local/sbin/wifi-baseline"
     grep -qx "aic8800_fdrv" "$ROOTFS_TREE/etc/modules-load.d/aic8800.conf"
     test -x "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     grep -q "noflow" "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
