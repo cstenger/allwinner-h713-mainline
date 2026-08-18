@@ -1,5 +1,5 @@
---- a/drivers/mmc/host/sunxi-mmc.c	2025-09-11 17:23:23.000000000 +0200
-+++ b/drivers/mmc/host/sunxi-mmc.c	2026-04-06 20:36:03.687870512 +0200
+--- a/drivers/mmc/host/sunxi-mmc.c	2026-08-17 21:43:11.982737614 -0700
++++ b/drivers/mmc/host/sunxi-mmc.c	2026-08-17 21:43:12.165351990 -0700
 @@ -73,6 +73,11 @@
  #define SDXC_REG_DRV_DL		0x140 /* Drive Delay Control Register */
  #define SDXC_REG_SAMP_DL_REG	0x144 /* SMC sample delay control */
@@ -12,7 +12,7 @@
  
  #define mmc_readl(host, reg) \
  	readl((host)->reg_base + SDXC_##reg)
-@@ -264,8 +269,37 @@
+@@ -264,8 +269,41 @@
  
  	/* clock hardware can switch between old and new timing modes */
  	bool ccu_has_timings_switch;
@@ -45,12 +45,16 @@
 + * command timeout.
 + */
 +#define SUNXI_MMC_CMD53_PHASE_RETRIES	7	/* sampling-phase rotations (CRC/timing) */
++/* Upper bound on a re-issued CMD53.  Generous next to a 0.67 s hardware data
++ * timeout; this only ever fires when the transfer produced no completion at
++ * all. */
++#define SUNXI_MMC_CMD53_RETRY_TIMEOUT_MS	2000
 +#define SUNXI_MMC_CMD53_FIFO_RETRIES	15	/* FIFO underrun / AHB bus-contention */
 +
  struct sunxi_mmc_host {
  	struct device *dev;
  	struct mmc_host	*mmc;
-@@ -301,8 +335,40 @@
+@@ -301,8 +339,51 @@
  
  	/* timings */
  	bool		use_new_timings;
@@ -61,8 +65,19 @@
 +	int retry_cnt;              /* phase-rotation attempts (CRC/timing errors) */
 +	int fifo_retry_cnt;         /* FIFO-underrun recovery attempts */
 +	u32 error_rint;             /* RINT error bits saved for bottom-half */
++	/*
++	 * Watchdog for the CMD53 retry.  If a re-issued transfer never
++	 * completes, mmc_wait_for_req_done() blocks forever -- and when the
++	 * caller is ksdioirqd that deadlocks the SDIO interrupt thread, so the
++	 * card interrupt is never re-enabled and the SDIO link goes dead until
++	 * a power cycle.  Bound it.
++	 */
++	struct timer_list retry_timer;
++	struct mmc_request *retry_timer_mrq;
  };
  
++static void sunxi_mmc_retry_timeout(struct timer_list *t);
++
 +/*
 + * A FIFO_RUN_ERROR (or hardware-locked) on a CMD53 is a data-path/FIFO stall,
 + * not a sampling-phase problem: rotating the sample/drive phase cannot fix it
@@ -91,7 +106,7 @@
  static int sunxi_mmc_reset_host(struct sunxi_mmc_host *host)
  {
  	unsigned long expire = jiffies + msecs_to_jiffies(250);
-@@ -329,6 +395,38 @@
+@@ -329,6 +410,38 @@
  		return -EIO;
  
  	/*
@@ -130,7 +145,7 @@
  	 * Burst 8 transfers, RX trigger level: 7, TX trigger level: 8
  	 *
  	 * TODO: sun9i has a larger FIFO and supports higher trigger values
-@@ -361,32 +459,49 @@
+@@ -361,32 +474,49 @@
  {
  	struct sunxi_idma_des *pdes = (struct sunxi_idma_des *)host->sg_cpu;
  	dma_addr_t next_desc = host->sg_dma;
@@ -166,6 +181,17 @@
 +				pdes[n].buf_size = 0;
 +			else
 +				pdes[n].buf_size = cpu_to_le32(chunk_len);
++
++			next_desc += sizeof(struct sunxi_idma_des);
++			pdes[n].buf_addr_ptr1 =
++				cpu_to_le32((sg_addr + j * max_len) >>
++					    host->cfg->idma_des_shift);
++			pdes[n].buf_addr_ptr2 =
++				cpu_to_le32(next_desc >>
++					    host->cfg->idma_des_shift);
++			sg_remaining -= chunk_len;
++		}
++	}
  
 -		next_desc += sizeof(struct sunxi_idma_des);
 -		pdes[i].buf_addr_ptr1 =
@@ -181,17 +207,6 @@
 -					  SDXC_IDMAC_DES0_ER);
 -	pdes[i - 1].config &= cpu_to_le32(~SDXC_IDMAC_DES0_DIC);
 -	pdes[i - 1].buf_addr_ptr2 = 0;
-+			next_desc += sizeof(struct sunxi_idma_des);
-+			pdes[n].buf_addr_ptr1 =
-+				cpu_to_le32((sg_addr + j * max_len) >>
-+					    host->cfg->idma_des_shift);
-+			pdes[n].buf_addr_ptr2 =
-+				cpu_to_le32(next_desc >>
-+					    host->cfg->idma_des_shift);
-+			sg_remaining -= chunk_len;
-+		}
-+	}
-+
 +	if (n > 0) {
 +		pdes[0].config |= cpu_to_le32(SDXC_IDMAC_DES0_FD);
 +		pdes[n - 1].config |= cpu_to_le32(SDXC_IDMAC_DES0_LD |
@@ -202,7 +217,7 @@
  
  	/*
  	 * Avoid the io-store starting the idmac hitting io-mem before the
-@@ -424,20 +539,47 @@
+@@ -424,20 +554,47 @@
  				struct mmc_data *data)
  {
  	u32 rval;
@@ -239,10 +254,10 @@
 +		;
 +	if (timeout <= 0)
 +		dev_warn(mmc_dev(host->mmc), "DMA reset timeout\n");
- 
++
 +	/* Step 3: IDMA soft reset */
 +	sunxi_mmc_reset_dmactl(host);
-+
+ 
 +	/* Step 4: Enable DMA in GCTRL */
 +	rval = mmc_readl(host, REG_GCTRL);
 +	mmc_writel(host, REG_GCTRL, rval | SDXC_DMA_ENABLE_BIT);
@@ -255,7 +270,7 @@
  	mmc_writel(host, REG_DMAC,
  		   SDXC_IDMAC_FIX_BURST | SDXC_IDMAC_IDMA_ON);
  }
-@@ -513,11 +655,40 @@
+@@ -513,11 +670,40 @@
  	struct mmc_request *mrq = host->mrq;
  	struct mmc_data *data = mrq->data;
  	u32 rval;
@@ -297,7 +312,7 @@
  		sunxi_mmc_dump_errinfo(host);
  		mrq->cmd->error = -ETIMEDOUT;
  
-@@ -552,17 +723,27 @@
+@@ -552,17 +738,27 @@
  		mmc_writel(host, REG_GCTRL, rval);
  		rval |= SDXC_FIFO_RESET;
  		mmc_writel(host, REG_GCTRL, rval);
@@ -328,7 +343,7 @@
  }
  
  static irqreturn_t sunxi_mmc_irq(int irq, void *dev_id)
-@@ -588,15 +769,22 @@
+@@ -588,15 +784,22 @@
  			host->wait_dma = false;
  
  		host->int_sum |= msk_int;
@@ -353,7 +368,59 @@
  		else if ((host->int_sum & SDXC_INTERRUPT_DONE_BIT) &&
  				!host->wait_dma)
  			finalize = true;
-@@ -628,7 +816,177 @@
+@@ -622,13 +825,266 @@
+ 	return ret;
+ }
+ 
++/*
++ * The re-issued CMD53 never completed.  Fail the request rather than let the
++ * caller block indefinitely: an I/O error is recoverable, a wedged SDIO IRQ
++ * thread is not.
++ */
++static void sunxi_mmc_retry_timeout(struct timer_list *t)
++{
++	struct sunxi_mmc_host *host = timer_container_of(host, t, retry_timer);
++	struct mmc_request *mrq;
++	unsigned long iflags;
++
++	spin_lock_irqsave(&host->lock, iflags);
++	mrq = host->mrq;
++	if (!mrq || mrq != host->retry_timer_mrq) {
++		/* completed normally in the meantime -- nothing to do */
++		spin_unlock_irqrestore(&host->lock, iflags);
++		return;
++	}
++
++	dev_err(mmc_dev(host->mmc),
++		"cmd53 retry did not complete within %u ms - failing the request\n",
++		SUNXI_MMC_CMD53_RETRY_TIMEOUT_MS);
++
++	mmc_writel(host, REG_IMASK, host->sdio_imask);
++	mmc_writel(host, REG_IDIE, 0);
++
++	host->mrq = NULL;
++	host->retry_timer_mrq = NULL;
++	host->dma_retry_mrq = NULL;
++	host->manual_stop_mrq = NULL;
++	host->int_sum = 0;
++	host->idma_int_sum = 0;
++	host->wait_dma = false;
++	host->retry_cnt = 0;
++	host->fifo_retry_cnt = 0;
++
++	mrq->cmd->error = -ETIMEDOUT;
++	if (mrq->data)
++		mrq->data->error = -ETIMEDOUT;
++	if (mrq->stop)
++		mrq->stop->error = -ETIMEDOUT;
++	spin_unlock_irqrestore(&host->lock, iflags);
++
++	mmc_request_done(host->mmc, mrq);
++}
++
+ static irqreturn_t sunxi_mmc_handle_manual_stop(int irq, void *dev_id)
+ {
+ 	struct sunxi_mmc_host *host = dev_id;
  	struct mmc_request *mrq;
  	unsigned long iflags;
  
@@ -386,7 +453,7 @@
 +		struct mmc_data *data = mrq->data;
 +		u32 imask = SDXC_INTERRUPT_ERROR_BIT;
 +		u32 cmd_val = SDXC_START | (mrq->cmd->opcode & 0x3f);
-+		u32 ntsr_saved, drv_dl_saved, ntsr_new;
++		u32 ntsr_saved, drv_dl_saved, ntsr_new, gctrl;
 +		bool fifo_err;
 +		int retry_idx, retry_limit;
 +		int ret;
@@ -455,6 +522,40 @@
 +		mmc_writel(host, REG_SD_NTSR, ntsr_saved);
 +		writel(drv_dl_saved, host->reg_base + SDXC_REG_DRV_DL);
 +
++		/*
++		 * reset_control_reset() above is a FULL controller reset: it
++		 * clears the global control and DMA-descriptor state that
++		 * sunxi_mmc_init_host() set up at probe.  Restoring only the two
++		 * timing registers leaves SDXC_INTERRUPT_ENABLE_BIT cleared, and
++		 * sunxi_mmc_start_dma() below only read-modify-writes GCTRL, so
++		 * it never puts that bit back.
++		 *
++		 * The retried transfer still completes, which is precisely why
++		 * this looked like a successful recovery -- but the controller
++		 * never raises another interrupt again.  The SDIO link goes
++		 * permanently deaf: inbound data is never fetched, and the
++		 * card's command channel times out minutes later.  Because the
++		 * FIFO error only occurs on CMD53 *reads*, this is invisible
++		 * until something drives sustained receive traffic.
++		 *
++		 * Re-establish what the reset destroyed, mirroring the register
++		 * programming in sunxi_mmc_init_host().  NTSR/DRV_DL are left as
++		 * restored above (and rotated below for the CRC path), so the
++		 * recovery's timing behaviour is unchanged.
++		 */
++		mmc_writel(host, REG_DLBA,
++			   host->sg_dma >> host->cfg->idma_des_shift);
++		mmc_writel(host, REG_FTRGL, 0x20070008);
++		mmc_writel(host, REG_TMOUT, 0xffffffff);
++		mmc_writel(host, REG_IMASK, host->sdio_imask);
++		mmc_writel(host, REG_RINTR, 0xffffffff);
++		mmc_writel(host, REG_DBGC, 0xdeb);
++		mmc_writel(host, REG_FUNS, SDXC_CEATA_ON);
++		gctrl = mmc_readl(host, REG_GCTRL);
++		gctrl |= SDXC_INTERRUPT_ENABLE_BIT;
++		gctrl &= ~SDXC_ACCESS_DONE_DIRECT;
++		mmc_writel(host, REG_GCTRL, gctrl);
++
 +		if (fifo_err) {
 +			/*
 +			 * Step 3 (FIFO underrun / hardware-locked): do NOT
@@ -522,6 +623,9 @@
 +		mmc_writel(host, REG_IMASK, host->sdio_imask | imask);
 +		mmc_writel(host, REG_CARG, mrq->cmd->arg);
 +		mmc_writel(host, REG_CMDR, cmd_val);
++		host->retry_timer_mrq = mrq;
++		mod_timer(&host->retry_timer,
++			  jiffies + msecs_to_jiffies(SUNXI_MMC_CMD53_RETRY_TIMEOUT_MS));
 +		spin_unlock_irqrestore(&host->lock, iflags);
 +		return IRQ_HANDLED;
 +	}
@@ -531,7 +635,7 @@
  	mrq = host->manual_stop_mrq;
  	spin_unlock_irqrestore(&host->lock, iflags);
  
-@@ -637,7 +995,29 @@
+@@ -637,7 +1093,29 @@
  		return IRQ_HANDLED;
  	}
  
@@ -562,7 +666,7 @@
  
  	/*
  	 * We will never have more than one outstanding request,
-@@ -676,7 +1056,9 @@
+@@ -676,7 +1154,9 @@
  
  	mmc_writel(host, REG_CLKCR, rval);
  
@@ -573,7 +677,7 @@
  	mmc_writel(host, REG_CMDR, rval);
  
  	do {
-@@ -775,6 +1157,10 @@
+@@ -775,6 +1255,10 @@
  	if (!ios->clock)
  		return 0;
  
@@ -584,7 +688,7 @@
  	/*
  	 * Under the old timing mode, 8 bit DDR requires the module
  	 * clock to be double the card clock. Under the new timing
-@@ -825,6 +1211,9 @@
+@@ -825,6 +1309,9 @@
  
  	/* update card clock rate to account for internal divider */
  	rate /= div;
@@ -594,7 +698,7 @@
  
  	/*
  	 * Configure the controller to use the new timing mode if needed.
-@@ -849,12 +1238,35 @@
+@@ -849,12 +1336,35 @@
  		return ret;
  
  	/*
@@ -635,7 +739,7 @@
  
  	ret = sunxi_mmc_oclk_onoff(host, 1);
  	if (ret)
-@@ -1109,6 +1521,20 @@
+@@ -1109,6 +1619,20 @@
  	return !!(mmc_readl(host, REG_STAS) & SDXC_CARD_DATA_BUSY);
  }
  
@@ -656,7 +760,7 @@
  static const struct mmc_host_ops sunxi_mmc_ops = {
  	.request	 = sunxi_mmc_request,
  	.set_ios	 = sunxi_mmc_set_ios,
-@@ -1118,6 +1544,7 @@
+@@ -1118,6 +1642,7 @@
  	.start_signal_voltage_switch = sunxi_mmc_volt_switch,
  	.card_hw_reset	 = sunxi_mmc_hw_reset,
  	.card_busy	 = sunxi_mmc_card_busy,
@@ -664,7 +768,7 @@
  };
  
  static const struct sunxi_mmc_clk_delay sunxi_mmc_clk_delays[] = {
-@@ -1199,6 +1626,25 @@
+@@ -1199,6 +1724,25 @@
  	.needs_new_timings = true,
  };
  
@@ -690,7 +794,7 @@
  static const struct sunxi_mmc_cfg sun50i_a100_emmc_cfg = {
  	.idma_des_size_bits = 13,
  	.idma_des_shift = 2,
-@@ -1219,6 +1665,8 @@
+@@ -1219,6 +1763,8 @@
  	{ .compatible = "allwinner,sun50i-a100-mmc", .data = &sun20i_d1_cfg },
  	{ .compatible = "allwinner,sun50i-a100-emmc", .data = &sun50i_a100_emmc_cfg },
  	{ .compatible = "allwinner,sun50i-h616-mmc", .data = &sun50i_h616_cfg },
@@ -699,7 +803,15 @@
  	{ /* sentinel */ }
  };
  MODULE_DEVICE_TABLE(of, sunxi_mmc_of_match);
-@@ -1454,8 +1902,12 @@
+@@ -1379,6 +1925,7 @@
+ 	host->dev = &pdev->dev;
+ 	host->mmc = mmc;
+ 	spin_lock_init(&host->lock);
++	timer_setup(&host->retry_timer, sunxi_mmc_retry_timeout, 0);
+ 
+ 	ret = sunxi_mmc_resource_request(host, pdev);
+ 	if (ret)
+@@ -1454,8 +2001,12 @@
  		mmc->caps2 &= ~MMC_CAP2_HS200;
  	}
  
@@ -714,3 +826,11 @@
  
  	ret = sunxi_mmc_init_host(host);
  	if (ret)
+@@ -1486,6 +2037,7 @@
+ 	struct mmc_host	*mmc = platform_get_drvdata(pdev);
+ 	struct sunxi_mmc_host *host = mmc_priv(mmc);
+ 
++	timer_delete_sync(&host->retry_timer);
+ 	mmc_remove_host(mmc);
+ 	pm_runtime_disable(&pdev->dev);
+ 	if (!pm_runtime_status_suspended(&pdev->dev)) {
