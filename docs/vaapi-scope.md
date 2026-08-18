@@ -319,6 +319,7 @@ precedent for exactly that (patch 0024, quoted above).
 | A/B/C | VA-API shim → cedrus | mpv KMS/GBM, **from CMA** | crashes, 113–457 s |
 | **D** | **GStreamer** `v4l2slh264dec` → cedrus | `gles-play`, **reserved carveout** `0x6c100000` | **clean** — 480 s, ~28,437 frames |
 | **E** | **GStreamer** `v4l2slh264dec` → cedrus (to `fakesink`, no display) + mpv **software** decode to the panel | mpv KMS/GBM, **from CMA** | **crashes** — `stack-protector: Kernel stack is corrupted in: internal_add_timer` |
+| **I** | **none at all** — the VE is never opened, `ve=0` interrupts from boot to panic | mpv KMS/GBM, **from CMA** | **crashes** — `kernel stack overflow` at ~940 s. Cedrus is not necessary; see Experiment I below |
 
 Run E is the one that settles it. There is **no VA-API in it anywhere** — the
 hardware decode is GStreamer's, going nowhere but `fakesink`, and the picture on
@@ -332,8 +333,11 @@ direct experiment rather than on reading a call trace. **mpv, ffmpeg and the
 libva-v4l2-request shim are all exonerated.** The necessary and sufficient
 ingredients are:
 
-> **cedrus decoding into CMA buffers, concurrently with a KMS/GBM scanout
-> buffer that is also allocated from CMA.**
+> ⚠ **The first half of this is now refuted — see "Experiment I" below. Cedrus
+> is NOT necessary.** What survives is the second half, the CMA-backed scanout.
+>
+> ~~cedrus decoding into CMA buffers, concurrently with~~ a KMS/GBM scanout
+> buffer that is allocated from CMA.
 
 Run D is the control that shows the second half matters: the *same* hardware
 decode, with scanout coming from the reserved carveout instead of CMA, is clean
@@ -425,6 +429,84 @@ correlation is much weaker than it looked. The display block (`dec@5600000`,
 IOMMU master 2) is in **bypass** in our DT, exactly as the vendor has it, so it
 can still write anywhere — and `sunxi-scanout-dmabuf` hands physical addresses
 to display hardware by design.
+
+### Experiment I — that control ran, and it crashes with the VE at zero (2026-08-17)
+
+**Cedrus is not necessary for the corruption.** The display path alone panicked
+the kernel after ~940 seconds with the video engine never once interrupted.
+
+Trace and full heartbeat series:
+[`docs/reference/expI-display-only-no-ve-crashes.log`](reference/expI-display-only-no-ve-crashes.log).
+Harness: [`tools/video/soak-display-only.sh`](../tools/video/soak-display-only.sh)
+and [`tools/serial/soak-capture.py`](../tools/serial/soak-capture.py).
+
+Same kernel as every crashing run (`6.18.38-builtin`), same `cma=128M`, no
+IOMMU (verified on the board: `/sys/class/iommu/` empty, zero iommu groups),
+`oops=panic`. Workload was `mpv --hwdec=no --vo=gpu --gpu-context=drm` looping
+720p to the panel — run E's display half with the GStreamer/cedrus half
+subtracted. Thirty-two consecutive 30-second heartbeats, every one of them:
+
+```
+SOAK t=931s ve=0 ve_delta=0 gpu=418868 gpu_rate=452/s cma=112544kB deaths=0
+[ 1008.405674] Insufficient stack space to handle exception!
+[ 1008.405716] CPU: 2 UID: 0 PID: 41 Comm: kworker/u16:1  6.18.38-builtin
+[ 1008.405737] Workqueue:  0x0 (pan_js)
+[ 1008.405862] Kernel panic - not syncing: kernel stack overflow
+```
+
+`ve=0` is a **positive** witness, not an assumption: cedrus is built into this
+kernel and cannot be removed, so the `1c0e000.video-codec` interrupt count
+staying at zero from boot to panic is direct evidence that no frame ever
+reached the engine. `deaths=0` says mpv ran continuously, so the display path
+was driven for the whole 940 s rather than quietly idling.
+
+**On the strength of one run.** The retraction above is about an underpowered
+*clean* arm, and that caution does not transfer here. This claim is a
+refutation of a necessity — "cedrus must be decoding" — and a single
+counterexample is logically sufficient to kill one. What one crash does *not*
+establish is any positive claim about rate or cause.
+
+`Workqueue: 0x0 (pan_js)` is the same NULL work function as the very first
+crash and as the retracted soak, so this is the same bug, not a new one.
+
+**A sharper forensic clue than "random victim".** The panic is a stack
+overflow, and the reason is a truncated pointer:
+
+```
+sp        : 0000000081350040
+Task stack: [0xffff800081350000..0xffff800081354000]
+```
+
+The stack pointer should be `ffff8000_81350040`. Its **upper 32 bits have been
+zeroed** — the low half is intact and correct. That is the signature of a
+32-bit write landing on the high word of a 64-bit pointer, which also fits a
+`work_struct` function pointer reading as `0x0`. Previous crashes were recorded
+as "a different victim every time"; this one additionally says *what shape* the
+write is.
+
+**What that narrows to.** The obvious suspect for a stray 32-bit write
+clobbering a `work_struct` would be DECD — patch 0034 fixed exactly that bug,
+`jiffies_hist[jpos + 2]` running off a `u32[100]` into the adjacent
+`struct work_struct`. **It is not DECD here.** On `-builtin` there is no module
+tree at all, DECD is a module, and its `"decd"` interrupt is absent from the
+run's `/proc/interrupts` baseline. The live display path was only: the AFBD KMS
+driver (0037), panfrost, and `sunxi-scanout-dmabuf` (0036).
+
+Combined with run D — GPU rendering *and* hardware decode, scanout from the
+reserved carveout, clean over 480 s — the discriminating variable across every
+run in this document is now **where the scanout buffer lives**, not what feeds
+it.
+
+#### A second ve=0 failure, weaker but consistent
+
+The first attempt at this control (same file, appended) lost mpv to a signal at
+~250 s with `ve=0`, leaving the kernel up. It is weaker evidence because the
+signal was not recoverable, and *why* is worth carrying forward:
+**`/proc/sys/debug/exception-trace` is 0 on this rootfs**, so the kernel prints
+nothing for a userspace fault. An empty `dmesg` after a mysterious process
+death is therefore not evidence of anything. The harness now sets it to 1,
+records mpv's exit status through `wait()`, and restarts mpv so a single death
+no longer ends an hour-long run.
 
 ### The A/B that suggested halting the VE stops the corruption (superseded)
 
