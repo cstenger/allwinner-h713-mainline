@@ -188,6 +188,41 @@ now has a locally verified cause and fix. Do not spend time on CE, TCP ACK
 filtering, RF strength, skb allocation, or generic retry-count increases; those
 paths were tested or rendered irrelevant by the zero-error passing run.
 
+## Quick 25 MHz vs 50 MHz A/B
+
+Use the current `patches/kernel/series` unchanged as the 25 MHz control. It
+includes 0045 (SDR25/25 MHz plus the validated delay state) and 0046 (the
+required 4096-byte v5p3x IDMA descriptor fix).
+
+For a **RAM-only** 50 MHz experiment, temporarily remove only this line from
+`patches/kernel/series`:
+
+```text
+0045-mmc-sunxi-use-validated-sdr25-for-h713-wifi.patch
+```
+
+Keep 0043, 0044, and especially 0046 enabled. With 0045 omitted, 0043 exposes
+all UHS modes and a 50 MHz maximum; the previously observed negotiation was
+SDR104 at 50 MHz. Also keep AIC `FEATURE_SDIO_CLOCK_V3=0` so the module does
+not replace the MMC core's negotiated clock. Build the kernel normally (or
+with `KERNEL_CONFIG=sysrq` when debug access is needed), record the FIT hash,
+and load it from RAM rather than flashing it.
+
+After boot, check `/sys/kernel/debug/mmc1/ios`: the control should report
+25,000,000 Hz and SDR25, while the experiment should report 50,000,000 Hz.
+Then require the same two-direction 8 MiB hash test and a clean:
+
+```sh
+dmesg | grep -E 'cmd53|fifo error|phase error|CRC|HARD|timed-out'
+```
+
+Do not count successful 50 MHz enumeration as a pass. The prior 50 MHz run
+enumerated but failed its first 512-byte CMD53 transfer with CRC/end-bit
+errors, including across the attempted phase sweep. Restore the 0045 `series`
+line after the experiment. For further tuning, vary only the 50 MHz timing or
+delay setting while retaining 0046 and using the unchanged 25 MHz result as
+the control.
+
 ## Boot-test gotcha
 
 `tools/serial/boot_kernel.py` currently installs initramfs-only bootargs

@@ -1201,11 +1201,9 @@ df1738e mmc: sunxi: add H713 v5p3x UHS negotiation
 ```
 
 The two hardware-passing patches and their `series` entries are committed.
-Remaining uncommitted state:
+Remaining intentionally untracked state at handoff:
 
 ```text
-M  docs/handoff-wifi-sdio-2026-08-17.md  # this handoff update
-M  docs/wifi-failure-2026-08-17.md       # this evidence update
 ?? patches/kernel/board/sysrq.config     # debug only
 ?? .backup/                              # user-owned; do not touch
 ```
@@ -1218,3 +1216,25 @@ broken for board RX.
 Next: build a normal non-sysrq FIT, repeat a cold-boot two-direction 8 MiB test
 plus a longer soak, then ask before flashing. The extra board USB/OTG cable is
 not used; UART is the only required cable.
+
+## 10. Quick 25 MHz vs 50 MHz comparison recipe
+
+The committed `patches/kernel/series` is the known-good 25 MHz control. Leave
+it unchanged for baseline tests: 0045 selects SDR25 at 25 MHz and initializes
+the validated delay state, while 0046 fixes exact-4096-byte v5p3x IDMA
+descriptors.
+
+To make a temporary **RAM-only** 50 MHz comparison build, remove only the 0045
+line from `patches/kernel/series`; keep 0043, 0044, and 0046. This re-exposes
+0043's all-UHS, 50 MHz configuration without losing the bidirectional IDMA
+fix. Keep AIC `FEATURE_SDIO_CLOCK_V3=0`, record the resulting FIT hash, and do
+not flash the experiment.
+
+Confirm the selected rate and mode in `/sys/kernel/debug/mmc1/ios`, then repeat
+the two-direction 8 MiB hash test and the final SDIO error grep. The expected
+control is 25,000,000 Hz/SDR25. A previous 50,000,000 Hz/SDR104 build
+enumerated successfully but failed its first 512-byte CMD53 data transfer with
+CRC/end-bit errors, so enumeration alone is not acceptance. Restore the 0045
+line after the A/B run; any later 50 MHz tuning should change only timing/delay
+variables while retaining 0046 and comparing against the unchanged 25 MHz
+control.
