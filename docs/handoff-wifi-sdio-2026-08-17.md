@@ -1,238 +1,210 @@
-# Handoff — WiFi / SDIO, 2026-08-17
+# Handoff — WiFi / SDIO
 
-Branch: **`h713-aic8800-vendor-rebase`** (4 commits, **not pushed**).
-Full evidence log: [wifi-failure-2026-08-17.md](wifi-failure-2026-08-17.md) (~930 lines).
-This file is the orientation; that file is the detail.
+Updated: **2026-08-18**
 
----
+Branch: **`h713-aic8800-vendor-rebase`**
 
-## The goal
+Full chronological evidence: [wifi-failure-2026-08-17.md](wifi-failure-2026-08-17.md)
 
-Make WiFi dependable. Concretely: **the board cannot receive a file over WiFi.**
-An 8 MB `scp` to it stalls and, before this session's fix, wedged the board hard
-enough to need a power cycle.
-
-That is still true. What changed is that we now know *what* is broken, *which
-direction*, and *why the board wedged* — and the wedge is fixed.
-
----
+This is the orientation document. The evidence log is intentionally long and
+contains the commands, register values, failed hypotheses, and raw outcomes.
 
 ## Bottom line
 
-| | status |
+The original acceptance test now passes in both directions on a RAM-loaded
+kernel:
+
+| direction | result |
 |---|---|
-| Vendor driver rebase 2024_0109 → 2026_0123 | **done, committed, runs on hardware** |
-| Board wedging on every failed transfer | **fixed and verified** (`ksdioirqd` deadlock) |
-| Station churn (16 → 0 reassociations/min) | **fixed** by the rebase |
-| **Receiving a file over WiFi** | **still broken** — root cause narrowed, not solved |
+| workstation → board (board RX), 8 MiB | **PASS**, SHA-256 exact |
+| board → workstation (board TX), 8 MiB | **PASS**, SHA-256 exact |
+| SDIO errors/retries during boot and both copies | **zero** |
+| `ksdioirqd/mmc1` afterward | healthy, `S` in `sdio_irq_thread` |
 
----
+Test payload SHA-256:
+`4896f3533e373a1f4b8e898750461c9f837d303178fa6b03bf3dc3b31fec4269`.
 
-## The single most useful fact
+The root cause was the v5p3x IDMA descriptor encoding for an exact maximum-size
+segment. Linux splits a large SDIO transfer into 4096-byte SG entries because
+the v5p3x host advertises `max_seg_size = 4096`. Our descriptor builder encoded
+an exact 4096-byte entry as zero, inherited from older sunxi controllers. The
+Allwinner v5p3x driver writes **4096 explicitly**. Making that distinction for
+`host->cfg->v5p3x` eliminates the board-RX FIFO/hardware-lock failure.
 
-**The failure is direction-specific.** Same link, same session, same signal:
+## What is committed
 
-| direction | size | result |
-|---|---|---|
-| board **TX** (client pulls *from* board) | 8 MB | 6 s, md5 exact |
-| board **TX** | 64 MB | 67 s (0.96 MB/s), md5 exact, **zero faults after 72 MB** |
-| board **RX** (client pushes *to* board) | 8 MB | fails, wedges |
-| board **RX** | **256 KB** | **also fails** |
+Four hardware-tested changes were committed during this session:
 
-Every failing run has exactly **one** `cmd53 fifo error`; every passing run has
-none. No exceptions across two driver versions, two SDIO clocks, 40 dB of RF, and
-several instrumented builds.
+- `df1738e mmc: sunxi: add H713 v5p3x UHS negotiation`
+  - per-speed v5p3x delay programming
+  - v5p3x CMD11/update-clock semantics
+  - v5p3x card-read threshold support
+  - stock FIFO trigger value
+  - UHS capability declarations
+  - AIC V3 clock override changed to `0`, preserving the MMC core's negotiated
+    clock
+- `977244c mmc: sunxi: restore bus state before CMD53 retry`
+  - restores `CLKCR` and `WIDTH` after the controller reset
+  - keeps retry bounded and mechanically functional
+  - also carries the one-character hunk-count repair found by applying the
+    complete patch series from scratch
+- `9d7054c mmc: sunxi: use validated SDR25 timing for H713 WiFi`
+  - selects UHS-SDR25 at 25 MHz and programs the cold-start phase state that
+    avoids the first two CRC errors
+- `7ac0845 mmc: sunxi: encode v5p3x max IDMA segment explicitly`
+  - applies the Allwinner v5p3x 4096-byte descriptor contract
+  - makes the original inbound WiFi acceptance test pass
 
-Two framings that were wrong and are now dead:
+The important boundary on `df1738e`: our code successfully negotiates and
+enumerates 4-bit UHS-SDR104 at 50 MHz, but the first 512-byte CMD53 at that rate
+still fails with data CRC/end-bit errors. The commit is a UHS-negotiation
+milestone, not a claim that 50 MHz payload transfer works.
 
-- **"sustained load"** — 256 KB fails. It is not throughput or contention.
-- **"STA mode"** — the failing path is AP mode (client → board's own hotspot).
+## Working configuration
 
-Why it hid for months: the 2026-07-22 bench that recorded "384 MB clean" was a
-client scp-**pull**, i.e. board TX — the direction that works. Sustained board RX
-had apparently never been benchmarked.
+The successful 25 MHz configuration is the final pair in the committed series:
 
----
+- `patches/kernel/0045-mmc-sunxi-use-validated-sdr25-for-h713-wifi.patch`
+  - limits the SDIO node to UHS-SDR25 at 25 MHz
+  - programs the validated cold-start state before the first CMD53:
+    `DRV=00030000`, `NTSR=81710010`
+  - avoids the two initial data-CRC errors rather than relying on recovery
+- `patches/kernel/0046-mmc-sunxi-use-v5p3x-max-idma-descriptor-size.patch`
+  - encodes an exact 4096-byte v5p3x IDMA buffer as `4096`, not `0`
+  - this is the change that made the original inbound copy pass
 
-## Root cause of the *wedge* (fixed)
+`patches/kernel/series` includes both 0045 and 0046 in the tested order.
 
-`CONFIG_OOB=n` and the driver uses `sdio_claim_irq()`, so it depends on the
-in-band SDIO card interrupt. Linux masks that interrupt, wakes `ksdioirqd`, runs
-the driver's handler, and re-enables it **only when the handler returns**.
+Still untracked:
 
-1. Card IRQ → core masks it → wakes `ksdioirqd`
-2. handler issues the inbound CMD53 **read**
-3. read hits the FIFO error; patch 0006's retry runs
-4. **the re-issued request never completes** — `mmc_wait_for_req_done()` has no
-   timeout, so the thread blocks in **D state forever**
-5. handler never returns → card interrupt never re-enabled → link deaf
-6. `cmd timed-out` follows 84–250 s later (same thread)
+- `patches/kernel/board/sysrq.config` — debug/test configuration only
+- `.backup/` — user-owned; **do not touch or add it**
 
-Captured directly:
+## Decisive evidence
 
+### Clean cold initialization
+
+With 0045 and 0046 applied, the board logged:
+
+```text
+v5p3x delay: rate=400000 timing=4 width=4 DRV=00030000 NTSR=81710010
+v5p3x delay: rate=25000000 timing=4 width=4 DRV=00030000 NTSR=81710010
+mmc1: new UHS-I speed SDR25 SDIO card at address 85e2
 ```
-ksdioirqd/mmc1  D  mmc_wait_for_req_done
-  mmc_io_rw_extended / sdio_readsb
-  aicwf_sdio_readframes [aic8800_fdrv]
-  aicwf_sdio_hal_irqhandler / process_sdio_pending_irqs / sdio_irq_thread
+
+The firmware loaded and `wlan0`/the hotspot came up with no `cmd53`, CRC,
+FIFO, hardware-lock, phase-retry, or timeout messages.
+
+### Failure immediately before the descriptor fix
+
+At the same SDR25 rate and phase state, but with the old zero encoding, startup
+was clean and the 8 MiB inbound copy later failed under load. Its first fault
+was:
+
+```text
+RINT=0x00000800 IDST=0x0000a000
 ```
 
-with `IMASK` bit 16 clear and the SDIO IRQ counter frozen, against a healthy idle
-value of `IMASK = 0x00010000`.
+`RINT=0x800` is `HARD_WARE_LOCKED`; `IDST=0xa000` is the IDMA
+`WRITE_REQUEST_WAIT` state. Retries then showed response timeouts
+(`RINT=0x200`) interleaved with IDMA receive completion (`IDST=0x2`). The
+kernel remained responsive and `ksdioirqd` returned to `S`, proving the earlier
+deadlock fix still held, but the AIC command channel was dead.
 
-**Fixed in `patches/kernel/0006`** (commit `7f3d70c`), verified on the flashed
-kernel: a 2 s watchdog fails the request and calls `mmc_request_done()`;
-`ksdioirqd` returns to `S`, `IMASK` comes back as `0x0001BBC6`. Also restores
-`GCTRL`/`DLBA`/`IMASK` etc. after `reset_control_reset()`, which the retry
-previously destroyed and never put back.
+### Success with explicit 4096-byte descriptor lengths
 
-**Both reference trees (`local/linux-6.16.7`, `local/h713-arm64/linux-6.16.7`)
-carry the identical retry code, so the same latent deadlock is in them.**
+FIT boot and both subimage hashes were verified by U-Boot. The board mounted
+the normal Debian root and negotiated:
 
-⚠ **The fix does NOT make shutdown graceful.** I predicted the
-`systemd-shutdown ... Waiting for process: hostapd` hang would clear; **it does
-not**. `hostapd` blocks separately — most likely in nl80211 on the aic8800
-command queue, which is dead after `cmd timed-out`. Board recovers on its own,
-but reboot after a failed transfer is still slow.
+```text
+clock:          25000000 Hz
+actual clock:   25000000 Hz
+bus width:      4 bits
+timing spec:    sd uhs SDR25
+signal voltage: 3.30 V
+```
 
----
+Then:
 
-## Hypotheses tested on hardware and REFUTED
+1. workstation `192.168.4.78` copied 8 MiB to board `192.168.4.1`
+2. board file size was 8,388,608 bytes and SHA-256 matched
+3. the same file was copied back to the workstation
+4. workstation size and SHA-256 matched
+5. final `dmesg` contained no SDIO error/retry messages
 
-Do not repeat these.
+This isolates the bulk-RX fix from the earlier phase work: 0045 removed the two
+startup CRC errors; 0046 removed the later inbound-load failure.
 
-| hypothesis | how it died |
-|---|---|
-| RX skb allocation failure | instrumented both failure branches; **never fired** |
-| Driver TCP-ACK filtering (`CONFIG_FILTER_TCP_ACK`) | rebuilt with it `=n`; **identical failure** |
-| `FTRGL` misconfiguration | stock programs the **same** `0x20070008` |
-| Card read threshold as an independent factor | stock disables it below SDR50 too |
-| SDIO clock | 25 MHz → stalls; 150 MHz (vendor default) → **worse**. Not the axis |
-| Weak RF / antenna | fails identically at **−31 dBm** after the antenna was fitted |
-| Client WiFi power-save (for the churn) | disabling it left the rate unchanged at 16/min |
+## What was learned about the controller
 
----
+- The SD/MMC command path, four-bit setup, UHS negotiation, firmware transfers,
+  and bidirectional bulk transfer all work with the correct v5p3x contracts.
+- The eMMC on the separate controller continues to enumerate at HS400.
+- The CRC/end-bit checks are performed by the MMC controller/card protocol.
+  The cryptography engine (CE) is not involved.
+- A generic “controller is broken” explanation is now refuted. The remaining
+  50 MHz error is a high-speed timing/signal-integrity problem, separate from
+  the fixed 4096-byte IDMA descriptor bug.
+- Recovery remains valuable containment, but the passing run generated no
+  errors for recovery to handle.
 
-## Two real differences vs stock that remain unexamined
+## Current hardware state
 
-Stock has five `v5p3x`-specific routines; we have none of them. Three matter:
+The board is currently running the successful image from RAM, with the hotspot
+up and both 8 MiB directions verified. Nothing from this session was flashed.
 
-1. **`sunxi_mmc_thld_ctl_for_sdmmc_v5p3x`** — card read threshold.
-   **Register contract fully recovered by disassembly:** THLD (`0x100`)
-   bits `[27:16]` = threshold size (`data->blksz`), bit 0 = enable; applied only
-   when `data->flags & MMC_DATA_READ`; gated on `ios->timing` ∈ {5 SDR50,
-   6 SDR104, 9 HS200}.
-2. **`sunxi_mmc_clk_set_rate_for_sdmmc_v5p3x` / `set_clk_dly`** — per-speed
-   sampling-delay tuning, fed by DT properties we do not have:
-   ```
-   sunxi-dly-52M-ddr4 = <1 0 0 0 2>;
-   sunxi-dly-104M     = <1 1 0 0 1>;
-   sunxi-dly-208M     = <1 0 0 0 1>;
-   ```
-   (full ordered set in stock: `400k, 26M, 52M, 52M-ddr4, 52M-ddr8, 104M, 208M,
-   104M-ddr, 208M-ddr`). We hardcode one `NTSR = 0x81710110` for 25 MHz.
-3. **`sunxi_mmc_judge_retry_v5p3x`** — version-aware retry decision. Ours is the
-   hand-rolled phase/FIFO split in patch 0006.
+A power cycle returns to the previously flashed kernel, which does **not**
+contain 0045/0046 and therefore should still be treated as broken for board RX.
+The extra board USB/OTG cable is not required; the UART cable is the only cable
+used for the test.
 
-Plus the DT gap that connects them:
+Test artifact:
 
-| property | stock | ours |
-|---|---|---|
-| `max-frequency` | 50 MHz | 25 MHz |
-| `sd-uhs-sdr25/sdr50/ddr50/sdr104` | all four | **none** |
-| `vqmmc-supply` | none | none (so 1.8 V is *not* the blocker) |
+```text
+build/out/h713-kernel-sysrq.fit
+size   7745528 bytes
+sha256 b057085e8f61d079806d0f9fb31b41e1dffcebbdef9948da6f48eb72351d06fe
+kernel 1ff4ccbd087a04e588bec929186b4024bc2d37fdf224c362d18b5f57c2500516
+DTB    04b36cda64e51dbbe87ee9c398dcb7e2c8b5ac26a80122a12dcad5ee97ddb80c
+```
 
-Our link therefore runs `timing 2 (sd high-speed)`, where the read threshold can
-never engage.
+Prepared kernel tree:
+`build/linux-6.18.38-7fe9c8012b420d50f3c780e37beb11572244602694ea9576cd633d7e33501105`.
 
-**Tested and it fails:** adding the `sd-uhs-*` properties alone **hangs SDIO init
-outright** (`systemd-modules-load` timed out twice, no `wlan0`, console dead).
-The delay tuning is a **prerequisite, not an optional companion**. That also
-retro-explains the DTS comment left during the original bring-up — *"CMD53 DMA
-errors on large transfers at 50 MHz"*.
+## Recommended next steps
 
----
+1. Build the normal production FIT without the `sysrq` fragment.
+2. From a true cold boot, repeat:
+   - 8 MiB workstation → board with hash verification
+   - 8 MiB board → workstation with hash verification
+   - a longer/repeated transfer (for example 64 MiB or an 8 MiB loop) to turn
+     this from a minimal acceptance pass into a soak result
+3. Only after those pass, ask before flashing the kernel persistently.
+4. Treat 50 MHz SDR104 data tuning as optional follow-up. The reliable target
+   currently demonstrated is UHS-SDR25 at 25 MHz.
 
-## Ordered next steps
+Do **not** begin with stock Android/vendor boot anymore; the original failure
+now has a locally verified cause and fix. Do not spend time on CE, TCP ACK
+filtering, RF strength, skb allocation, or generic retry-count increases; those
+paths were tested or rendered irrelevant by the zero-error passing run.
 
-Each gates the next. Do not skip.
+## Boot-test gotcha
 
-0. **(cheap, do first) Verify stock can actually receive bulk data.**
-   Everything below assumes it can — inferred from "it's a casting projector", never
-   measured. Android did not boot this session. Costs one `switch_vendor` +
-   FEL recovery, both now proven procedures. If stock's RX *also* fails, steps
-   1–4 are wasted effort.
-1. **Recover the BSP `sunxi_mmc_host` struct layout** from the stripped ARM32
-   stock kernel. Both remaining routines are gated on this — every offset
-   (`0x288`, `0x488`, `0x290`, …) is meaningless without it. This is the real
-   project; budget hours, start deliberately.
-2. **Implement per-speed delay tuning** using the `sunxi-dly-*` values above.
-3. **Then** declare the `sd-uhs-*` capabilities and check
-   `/sys/kernel/debug/mmc1/ios` reports `timing spec: 5`.
-4. **Then** implement `thld_ctl` (contract already known, see above).
+`tools/serial/boot_kernel.py` currently installs initramfs-only bootargs
+(`rdinit=/init`) and must not be used unchanged for this Debian-root FIT. That
+mistake caused one harmless RAM boot to panic before WiFi and overwrote the
+uploaded image when U-Boot restarted, requiring a second UART upload.
 
-Independent of all that: **the aic8800 driver does not recover from a failed
-read.** Even with the watchdog returning a clean `-ETIMEDOUT`, its command
-channel dies and the interface stays down until reboot. Making the driver
-survive an I/O error would be valuable on its own.
+For this board, set the normal root arguments before `bootm`:
 
----
+```text
+setenv fdt_high 0x4f000000
+setenv initrd_high 0x4f000000
+setenv bootargs 'console=ttyS0,115200 earlycon loglevel=8 root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=10 clk_ignore_unused pd_ignore_unused cma=128M'
+iminfo 0x50000000
+bootm 0x50000000
+```
 
-## Practical notes (things that cost time to learn)
-
-- **Serial is the only reliable channel.** `tools/serial/console.py` (paced
-  writes), `send_file.py` (~11 KB/s, md5-verified), `load_fit.py` (YMODEM a FIT
-  into RAM at `0x50000000`, ~12 min for 7.7 MB, then `bootm` — no flash write,
-  power cycle reverts).
-- **`sudo` needs a password**; `/proc/interrupts` and `busybox devmem` are the
-  cheapest diagnostics on the board. mmc1 = SDIO = `0x04021000`; mmc0 = eMMC =
-  `0x04022000`. Identify which IRQ is which by driving eMMC I/O and seeing which
-  counter moves — both are named `sunxi-mmc`.
-- **Healthy vs stuck registers** (mmc1): healthy idle `GCTRL=0x20000010
-  IMASK=0x00010000`; stuck mid-request `GCTRL=0x20000330 IMASK=0x0000BBCA`.
-- **Stock kernel**: `local/stock-boot/boot_a-board-b.img` is an Android boot
-  header **v3** (offset 12 is `ramdisk_size`, *not* `kernel_addr` — parsing it as
-  v0/v2 gives garbage). Kernel at offset 4096, uncompressed, Linux 5.4.99 ARM32.
-  **Virtual base = `0xC0008000`**, so `vaddr = 0xC0008000 + file_offset` — that is
-  what makes reference-finding possible.
-- **`boot_vendor` is a no-op** while our boot0 is installed. **`switch_vendor`**
-  writes the vendor boot0 over sector `0x10` (persistent; needs FEL to undo).
-  Vendor U-Boot 2018.05 then comes up, but with a generic default env
-  (`bootcmd=run distro_bootcmd`, undefined) and `BOOTMODE=standby`, so Android
-  does not auto-boot; `sunxi_flash read 0x48000000 boot_a` produced no valid
-  header.
-- **FEL recovery works** (`docs/flash.md` Method 4) — but **regenerate the SPL
-  payload header first**. The committed one was stale (built against an older
-  U-Boot, 648 bytes differed) and nothing warns you.
-- **Kernel deploy**: `load_fit.py` then
-  `fatwrite mmc 1:2 0x50000000 h713-kernel.fit ${filesize}`.
-- **`tools/wifi/wifi-baseline.sh`** ships in the image at
-  `/usr/local/sbin/wifi-baseline`; it refuses to run off-target (a baseline of
-  the wrong machine is worse than none). Fault counters are split into a
-  kernel-side **control** group and the AIC8800 group under test — if the control
-  moves after a driver swap, the experiment is wrong, not the driver.
-
----
-
-## Things that were nearly missed
-
-- **The board runs a mismatched firmware variant.** The chip reports
-  `is_chip_id_h` (register `0x40500000`); only the 2026 driver has a D80 `_h_`
-  list, so it loads `fmacfw_8800d80_h_u02.bin`. The 2024 driver had no such list
-  and silently used the non-`_h_` file — for the board's whole life. Impact
-  unquantified.
-- **Driver and firmware are NOT independently swappable** despite a byte-identical
-  `lmac_msg.h`. The wire protocol is unchanged; the *file-selection logic* is not.
-- **`kernel_inputs_digest` hashed all of `versions.env`**, so any unrelated pin
-  bump invalidated every cached kernel tree — which is why `build/` had 28 of
-  them. Fixed to hash only `KERNEL_*`.
-- **`fault.fifo_run_error` read 0 through runs that had errors.** `FIFO_RUN_ERROR`
-  is a register-bit macro, never log text; the real string is `cmd53 fifo error`.
-
----
-
-## Housekeeping
-
-- `sudo rm baseline-2024-driver.txt` (root-owned workstation capture, repo root)
-- `build/linux-debug-mmcinstr` — 2.1 GB debug tree, deletable
-- Board currently: flashed kernel **with** the watchdog, healthy, hotspot up.
+The workstation also prints a changed-host-key warning for `192.168.4.1`
+(offending entry currently reported at `~/.ssh/known_hosts:16`), although the
+key-based copies completed. Do not modify the user's known-hosts file silently.

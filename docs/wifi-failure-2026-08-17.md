@@ -926,3 +926,295 @@ what this test did -- breaks SDIO init outright.
 **Board state:** the change was RAM-loaded only. A power cycle returns the board
 to the flashed 25 MHz kernel, which works. `patches/kernel/0024` was never
 modified; the edit lives only in `build/linux-debug-mmcinstr`.
+
+---
+
+# 2026-08-18 continuation — UHS works, startup CRCs removed, board RX fixed
+
+This section supersedes the old “ordered next steps” above. The investigation
+continued from repeated cold boots at the U-Boot prompt and ended with the
+original acceptance test passing in both directions. No image was flashed.
+
+## 1. Recovered and implemented the v5p3x controller contracts
+
+The mainline host was extended with the pieces recovered from Allwinner's
+v5p3x driver:
+
+- separate per-speed command/data drive and sample phases
+- the v5p3x CMD11 and update-clock voltage-switch bits
+- v5p3x `WAIT_PRE_OVER` behavior
+- v5p3x read-threshold register programming
+- the stock v5p3x FIFO trigger value (`FTRGL=0x200700f8`)
+- UHS declarations in the H713 SDIO node
+- AIC `FEATURE_SDIO_CLOCK_V3=0`, so the vendor module no longer overwrites the
+  rate negotiated by the MMC core
+
+This became `patches/kernel/0043-mmc-sunxi-v5p3x-delays-threshold-and-uhs.patch`
+and was committed as:
+
+```text
+df1738e mmc: sunxi: add H713 v5p3x UHS negotiation
+```
+
+### Hardware result at 50 MHz
+
+The board successfully negotiated and enumerated:
+
+```text
+4-bit UHS-SDR104
+clock/actual: 50000000 Hz
+DRV=00030000
+NTSR=81710110
+mmc1: new UHS-I speed SDR104 SDIO card
+```
+
+Therefore the UHS transition and controller command path work. The boundary is
+equally important: the first 512-byte CMD53 failed at 50 MHz. A bounded sweep
+of seven command/data sample and data-drive combinations produced data-CRC or
+end-bit errors (`RINT=0x80` or `0x8000`), always with `IDST=0`. UHS negotiation
+works; 50 MHz UHS payload transfer is not yet reliable.
+
+## 2. Repaired the retry mechanism without treating it as the solution
+
+`reset_control_reset()` erases the SDIO bus clock and width. The old retry path
+restored timing registers but then reissued CMD53 with no card clock and in
+one-bit mode, so it could never complete. The repair saves/restores `CLKCR` and
+`WIDTH`, turns the output clock back on, cancels a retry watchdog when a retried
+request reaches IRQ, and makes the phase sweep match the v5p3x fields.
+
+This became:
+
+```text
+patches/kernel/0044-mmc-sunxi-restore-bus-state-for-cmd53-phase-retry.patch
+977244c mmc: sunxi: restore bus state before CMD53 retry
+```
+
+The seven-state 50 MHz run completed every attempt and then failed cleanly;
+`ksdioirqd/mmc1` did not wedge. This proved that recovery mechanics were fixed,
+not that recovery could make an invalid sampling state reliable.
+
+## 3. CRC is MMC/SDIO, not the cryptography engine
+
+The CRC and end-bit status comes from the SD/MMC controller/card protocol. The
+CE is not on the CMD53 data path and does not generate or validate these CRCs.
+Nothing in this session enabled or depended on the CE. The errors at 50 MHz
+were genuine MMC sampling/data-integrity errors, not malformed output from a
+disabled crypto engine.
+
+## 4. SDR25 isolated and removed the first two errors
+
+For the next diagnostic, the DT advertised only `sd-uhs-sdr25` and capped the
+host at 25 MHz. The first run negotiated 4-bit SDR25 at 25 MHz but began at the
+v5p3x 26 MHz default:
+
+```text
+DRV=00010000 NTSR=81710000
+```
+
+The first CMD53 produced two data-CRC errors. The retry sweep reached:
+
+```text
+DRV=00030000 NTSR=81710010
+```
+
+and firmware loading then succeeded. This was an empirical, reproducible
+known-good SDR25 state, not a reason to accept two startup failures.
+
+`patches/kernel/0045-mmc-sunxi-use-validated-sdr25-for-h713-wifi.patch`
+programs that state before the first CMD53 by separating command and data
+sample phases:
+
+- command drive = 1
+- data drive = 1
+- command sample phase = 1
+- data sample phase = 0
+
+On the next cold initialization, the same state was present before enumeration,
+firmware loaded, the hotspot started, and there were **zero startup CRCs or
+retries**. This directly satisfies the requirement to avoid the errors rather
+than rely on recovery.
+
+## 5. SDR25 still failed under board-RX load before the IDMA fix
+
+With clean startup and the known-good SDR25 phase, the original 8 MiB
+workstation-to-board copy still failed later under load. This was a different
+failure from the immediate 50 MHz sampling errors.
+
+The first fault was:
+
+```text
+cmd53 fifo error (RINT=0x00000800 IDST=0x0000a000)
+```
+
+- `RINT=0x800` = `HARD_WARE_LOCKED`
+- `IDST=0xa000` = IDMA state `WRITE_REQUEST_WAIT`
+
+Retries then alternated FIFO/hardware-lock errors with response timeouts:
+
+```text
+RINT=0x00000200 IDST=0x00000002
+```
+
+where `IDST=0x2` is the IDMA receive-interrupt bit. After the bounded retries,
+the AIC command queue died, but the console remained responsive and
+`ksdioirqd/mmc1` was `S` in `sdio_irq_thread`. The deadlock fix still held.
+
+This changed the diagnosis: UHS-SDR25 and phase selection solved initialization
+but did not solve the original receive-path failure. The first under-load state
+pointed at the controller's IDMA destination path.
+
+## 6. Root cause: v5p3x maximum descriptor size is explicit, not zero
+
+The decisive comparison was between:
+
+- our `sunxi_mmc_init_idma_des()` in `drivers/mmc/host/sunxi-mmc.c`
+- Allwinner's `/tmp/linux-orangepi-v5p3x/drivers/mmc/host/sunxi-mmc.c`
+- v5p3x limits in `sunxi-mmc-v5p3x.c`
+- Linux SDIO request construction in `drivers/mmc/core/sdio_ops.c`
+
+The v5p3x host advertises `max_seg_size = 1 << 12 = 4096`. Linux therefore
+splits a large CMD53 buffer into exact 4096-byte SG entries. Our descriptor
+builder inherited this rule from older sunxi controllers:
+
+```c
+if (chunk_len == max_len)
+        pdes[n].buf_size = 0;
+```
+
+Allwinner's v5p3x driver does not use the zero shorthand. It writes the actual
+length, including `4096`, into every descriptor. This aligns exactly with the
+observed receive failure: IDMA had no valid destination progress while the card
+continued filling the receive FIFO, ending in `HARD_WARE_LOCKED`.
+
+The diagnostic fix is intentionally variant-specific:
+
+```c
+if (chunk_len == max_len && !host->cfg->v5p3x)
+        pdes[n].buf_size = 0;
+else
+        pdes[n].buf_size = cpu_to_le32(chunk_len);
+```
+
+It is stored as:
+
+```text
+patches/kernel/0046-mmc-sunxi-use-v5p3x-max-idma-descriptor-size.patch
+```
+
+## 7. Decisive passing run
+
+The complete 45-patch series (through 0046) applied cleanly to a fresh
+Linux 6.18.38 tree and built with the `sysrq` debug fragment:
+
+```text
+tree: build/linux-6.18.38-7fe9c8012b420d50f3c780e37beb11572244602694ea9576cd633d7e33501105
+FIT:  build/out/h713-kernel-sysrq.fit
+size: 7745528 bytes
+FIT sha256: b057085e8f61d079806d0f9fb31b41e1dffcebbdef9948da6f48eb72351d06fe
+kernel sha256: 1ff4ccbd087a04e588bec929186b4024bc2d37fdf224c362d18b5f57c2500516
+DTB sha256:    04b36cda64e51dbbe87ee9c398dcb7e2c8b5ac26a80122a12dcad5ee97ddb80c
+```
+
+U-Boot `iminfo` verified both FIT subimage hashes before execution.
+
+### Boot result
+
+Cold SDIO initialization selected the validated state directly:
+
+```text
+v5p3x delay: rate=400000 timing=4 width=4 DRV=00030000 NTSR=81710010
+v5p3x delay: rate=25000000 timing=4 width=4 DRV=00030000 NTSR=81710010
+mmc1: new UHS-I speed SDR25 SDIO card at address 85e2
+```
+
+The AIC firmware loaded and the AP started without any CMD53 error or retry.
+The workstation associated as `192.168.4.78`; the board was `192.168.4.1`.
+
+### Board RX: workstation → board
+
+Source:
+
+```text
+/tmp/h713-sdr25-8m.bin
+8388608 bytes
+sha256 4896f3533e373a1f4b8e898750461c9f837d303178fa6b03bf3dc3b31fec4269
+```
+
+Destination `/tmp/h713-idma-8m.bin` on the board was 8,388,608 bytes and had
+the identical SHA-256. This is the direction that had failed in every prior
+acceptance run.
+
+### Board TX: board → workstation
+
+The board file was copied back to `/tmp/h713-idma-back.bin`. It was 8,388,608
+bytes and had the identical SHA-256.
+
+### Final controller state
+
+```text
+clock:          25000000 Hz
+actual clock:   25000000 Hz
+bus width:      4 bits
+timing spec:    4 (sd uhs SDR25)
+signal voltage: 0 (3.30 V)
+ksdioirqd/mmc1: S in sdio_irq_thread
+```
+
+Final `dmesg` grep for `cmd53|fifo error|phase error|CRC|HARD|timed-out`
+contained only the CPU's “CRC32 instructions” feature line: **zero SDIO faults
+or retries across boot and both transfers**.
+
+## 8. Harness mistake during the passing build (do not repeat)
+
+`tools/serial/boot_kernel.py` sets:
+
+```text
+rdinit=/init
+```
+
+but this FIT has no initramfs and must mount Debian from eMMC. The first launch
+therefore panicked at `VFS: Unable to mount root fs`, rebooted, and U-Boot
+overwrote the RAM address while attempting its default boot. The FIT itself had
+already passed hash verification; no SDIO conclusion was drawn from this run.
+
+After a second UART upload, the successful boot used:
+
+```text
+setenv fdt_high 0x4f000000
+setenv initrd_high 0x4f000000
+setenv bootargs 'console=ttyS0,115200 earlycon loglevel=8 root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=10 clk_ignore_unused pd_ignore_unused cma=128M'
+iminfo 0x50000000
+bootm 0x50000000
+```
+
+Update the helper before using it for this Debian-root workflow.
+
+## 9. Repository and board handoff state
+
+Committed:
+
+```text
+df1738e mmc: sunxi: add H713 v5p3x UHS negotiation
+977244c mmc: sunxi: restore bus state before CMD53 retry
+9d7054c mmc: sunxi: use validated SDR25 timing for H713 WiFi
+7ac0845 mmc: sunxi: encode v5p3x max IDMA segment explicitly
+```
+
+The two hardware-passing patches and their `series` entries are committed.
+Remaining uncommitted state:
+
+```text
+M  docs/handoff-wifi-sdio-2026-08-17.md  # this handoff update
+M  docs/wifi-failure-2026-08-17.md       # this evidence update
+?? patches/kernel/board/sysrq.config     # debug only
+?? .backup/                              # user-owned; do not touch
+```
+
+The board is left running the successful kernel from RAM, hotspot up, after
+both passing transfers. Nothing was flashed. A power cycle returns to the
+previously flashed kernel, which lacks 0045/0046 and must still be considered
+broken for board RX.
+
+Next: build a normal non-sysrq FIT, repeat a cold-boot two-direction 8 MiB test
+plus a longer soak, then ask before flashing. The extra board USB/OTG cable is
+not used; UART is the only required cable.
