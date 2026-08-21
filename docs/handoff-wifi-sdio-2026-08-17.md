@@ -181,43 +181,49 @@ startup CRC errors; 0046 removed the later inbound-load failure.
 
 ## Current hardware state
 
-Updated 2026-08-21: the board is running the patch-0048 FIT, loaded from its own
-rootfs by U-Boot, at a genuine 50 MHz — four-bit UHS-SDR104, stock parity —
-hotspot up, after 8 MiB and 128 MiB both directions with zero faults. Its rootfs
-carries `/root/fits/`: `test.fit` (the 0048 image below), `good-25mhz.fit` (the
-previous known-good), `timing2.fit` (CMD53 timing instrumentation) and
-`knobs2.fit`, so any of these is one `ext4load` away.
+Updated 2026-08-21: the board is running the **production** patch-0048 FIT — no
+`sysrq` fragment — cold-booted after a physical power cycle and `ext4load`ed
+from its own rootfs, at a genuine 50 MHz, four-bit UHS-SDR104, stock parity.
+8 MiB and 128 MiB both directions with zero faults. Its rootfs carries
+`/root/fits/`: `prod.fit` (the production image below), `test.fit` (the same
+change with `sysrq`), `good-25mhz.fit` (the previous known-good), `timing2.fit`
+(CMD53 timing instrumentation) and `knobs2.fit`, so any of these is one
+`ext4load` away.
 
-**Nothing has ever been flashed for this work.** A power cycle returns to the
-previously flashed kernel, which does **not** contain 0045/0046/0048 and should
-still be treated as broken for board RX. Keep `good-25mhz.fit` in place so a
-failed experiment is one reboot away from a working link. The extra board
-USB/OTG cable is not required; the UART cable is the only cable used.
+**Nothing has ever been flashed for this work.** An unattended power-on still
+runs the previously flashed kernel, which does **not** contain 0045/0046/0048
+and should still be treated as broken for board RX. Keep `good-25mhz.fit` in
+place so a failed experiment is one reboot away from a working link. The extra
+board USB/OTG cable is not required; the UART cable is the only cable used.
 
-Test artifact (patch 0048, `KERNEL_CONFIG=sysrq`):
+Production artifact (patch 0048, no config fragment):
 
 ```text
-build/out/h713-kernel-sysrq.fit
-size   7745700 bytes
-sha256 b82642aedf10f54a1ef9e47cde217e62471f3b987011a4abda51248128884b22
+build/out/h713-kernel.fit
+size   7741216 bytes
+sha256 51044da6e73441420d81d4fb6e387e6d351efb6b1574e7527e35016d14f5b0a1
+tree   build/linux-6.18.38-577fb0d96df8c37211b6d8c0da6fdc2f7f2937eb365032bfa6307ac117bb2cf6
 ```
 
-Prepared kernel tree:
-`build/linux-6.18.38-36796f34b1250048e9800380d365e7c660fb3b3f534b5ea0fd3ba6262f3e4194`.
+Its `.config` differs from the validated `sysrq` kernel by exactly four symbols
+(`CONFIG_MAGIC_SYSRQ`, `_SERIAL`, `_SERIAL_SEQUENCE`, `_DEFAULT_ENABLE`) and
+nothing else. Confirmed on the running board by the absence of
+`/proc/sys/kernel/sysrq`. Note the consequence: **there is no sysrq escape on
+this kernel**, so a wedge needs a physical power cycle.
 
-The previous 25 MHz reference artifact was
+Earlier artifacts, for reference: the `sysrq` 0048 build was
+`b82642aedf10f54a1ef9e47cde217e62471f3b987011a4abda51248128884b22` (7745700
+bytes, tree `…-36796f34b125…`); the 25 MHz reference was
 `b057085e8f61d079806d0f9fb31b41e1dffcebbdef9948da6f48eb72351d06fe` (7745528
-bytes), tree `…-7fe9c8012b42…`.
+bytes, tree `…-7fe9c8012b42…`).
 
 ## Recommended next steps
 
-1. Build the normal production FIT without the `sysrq` fragment and re-run the
-   acceptance test against it. Everything validated so far carries
-   `CONFIG_MAGIC_SYSRQ`, which is the one config difference from what would
-   ship.
-2. From a true cold boot (not a `bootm` of a RAM/rootfs image), repeat the
-   8 MiB and 128 MiB round trips with hash verification.
-3. Only after those pass, ask before flashing the kernel persistently.
+1. ~~Build the normal production FIT and re-run the acceptance test~~ — **done
+   2026-08-21**, see [Cold boot, production kernel](#cold-boot-production-kernel-2026-08-21).
+2. ~~Repeat the round trips from a true cold boot~~ — **done 2026-08-21**.
+3. Flashing is the remaining step, and it is **blocked on the FAT geometry
+   problem** below — do not write to `mmc 1:2` until that is resolved.
 4. Optional, and no longer blocking: confirm by measurement that the eMMC's
    retained POSTDIV is doing the work the register values suggest (see
    [What happened to the eMMC](#what-happened-to-the-emmc)). Nothing depends on
@@ -355,6 +361,56 @@ mmc1: new UHS-I speed SDR104 SDIO card at address 6721
 | SDIO faults | **zero** — no cmd53, CRC, FIFO, hardware-lock, phase-retry or timeout lines |
 | `ksdioirqd/mmc1` | healthy, `S` in `sdio_irq_thread` |
 | eMMC | unchanged: HS400, 8-bit, 200 MHz; rootfs healthy |
+
+### Cold boot, production kernel (2026-08-21)
+
+Everything above was a `sysrq` debug kernel booted by `bootm` without an
+intervening power cycle. Repeated on the production kernel from a genuine
+power-on reset — mains cycled by hand, autoboot interrupted, FIT `ext4load`ed
+from p26:
+
+```text
+v5p3x delay: rate=50000000 timing=6 width=4 DRV=00030000 NTSR=81710110
+mmc1: new UHS-I speed SDR104 SDIO card at address 6721
+```
+
+| check | result |
+|---|---|
+| mmc1 negotiated | 4-bit UHS-SDR104, clock and actual clock 50000000 Hz |
+| CCU `0x02001834` | `0x8100000B`, unchanged after the soak |
+| 8 MiB both directions | PASS, SHA-256 exact |
+| 128 MiB both directions | PASS, SHA-256 exact (1:41 in, 0:57 out) |
+| SDIO faults | **zero** |
+| `ksdioirqd/mmc1` | `S` in `sdio_irq_thread` |
+| eMMC | HS400, 8-bit, 200 MHz; rootfs `rw` |
+
+Cold init is clean on the first CMD53 — the single `v5p3x delay` line at
+50 MHz, with no 400 kHz retry storm and no phase rotation before it.
+
+### The FAT on `mmc 1:2` is larger than its partition
+
+Found while looking at whether the FIT could be flashed for an unattended cold
+boot. **It cannot, yet.** This is pre-existing and unrelated to 0048, but it
+blocks the flashing step and it is an easy trap:
+
+- `/dev/mmcblk0p2` (`bootloader_b`, label `Volumn`) is **32 MiB** —
+  `blockdev --getsize64` = 33554432, `--getsz` = 65536 sectors.
+- The vfat superblock on it describes a **128 MiB** volume; `df` reports
+  128M total, 69M used. It catalogues roughly 57 MB of files.
+- From Linux, anything whose clusters land past 32 MiB is unreadable:
+  `attempt to access beyond end of device, mmcblk0p2: sector=140701,
+  limit=65536`. `sha256sum` of the flashed `h713-kernel.fit` fails this way.
+
+**U-Boot reads it fine**, which is why the board has always booted: `fatload
+mmc 1:2 0x50000000 h713-kernel.fit` returns all 7739580 bytes at 14.9 MiB/s.
+U-Boot does not clamp the read to the partition-table entry, and the FAT's data
+physically exists on the eMMC beyond it. So the boot path works; it is Linux
+access, and **any write from either side**, that are unsafe — a write can land
+outside the partition, on whatever the GPT says lives there.
+
+Do not `fatwrite` to it and do not mount it `rw` until the geometry is
+reconciled. Unresolved: whether the GPT entry is too small or the filesystem was
+built too large, and what the FAT's upper ~96 MiB overlaps.
 
 ### Reading the clock without instrumenting anything
 

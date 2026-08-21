@@ -1615,3 +1615,80 @@ value, which is what is decoded above.)
 Still open, and unchanged by this work: whether stock Android actually sustains
 50 MHz here (its device tree asks for it; it has never been observed), and the
 mismatched `is_chip_id_h` firmware variant.
+
+## 7. Production kernel, cold boot (2026-08-21)
+
+Sections 1–6 used a `sysrq` debug kernel started by `bootm` with no intervening
+power cycle. Both gaps are now closed.
+
+Production FIT — `build/build.sh kernel` with no `KERNEL_CONFIG`:
+
+```text
+build/out/h713-kernel.fit
+size   7741216 bytes
+sha256 51044da6e73441420d81d4fb6e387e6d351efb6b1574e7527e35016d14f5b0a1
+tree   build/linux-6.18.38-577fb0d96df8c37211b6d8c0da6fdc2f7f2937eb365032bfa6307ac117bb2cf6
+```
+
+`diff` of the two `.config` files is exactly four symbols and nothing else:
+
+```text
+< CONFIG_MAGIC_SYSRQ=y
+< CONFIG_MAGIC_SYSRQ_SERIAL=y
+< CONFIG_MAGIC_SYSRQ_SERIAL_SEQUENCE=""
+< CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1
+```
+
+Confirmed on the running board by the absence of `/proc/sys/kernel/sysrq`. The
+0048 changes were re-verified in the fresh tree rather than assumed: `mmc1_clk`
+on the non-POSTDIV macro, no `H713 v5p3x: 2X timing` doubling, mmc1
+`max-frequency = <50000000>` with the eMMC node still at `<200000000>`.
+
+Boot was a real power-on reset: mains cycled by hand, autoboot interrupted at
+the U-Boot prompt, then `ext4load mmc 1:1a` + `bootm` of `/root/fits/prod.fit`.
+Nothing flashed.
+
+```text
+v5p3x delay: rate=50000000 timing=6 width=4 DRV=00030000 NTSR=81710110
+mmc1: new UHS-I speed SDR104 SDIO card at address 6721
+```
+
+| test | result |
+|---|---|
+| 8 MiB workstation → board | SHA-256 exact |
+| 8 MiB board → workstation | SHA-256 exact |
+| 128 MiB workstation → board | SHA-256 exact, 1 m 41 s |
+| 128 MiB board → workstation | SHA-256 exact, 0 m 57 s |
+
+Fault grep empty; `ksdioirqd/mmc1` `S` in `sdio_irq_thread`; CCU `0x02001834`
+still `0x8100000B` after the soak; eMMC HS400 8-bit 200 MHz, rootfs `rw`.
+
+Cold SDIO init is clean on the first CMD53 — one `v5p3x delay` line at 50 MHz,
+no 400 kHz retry storm, no phase rotation ahead of it.
+
+## 8. Blocker for flashing: the FAT on `mmc 1:2` overruns its partition
+
+Pre-existing, unrelated to 0048, found while checking whether the production FIT
+could be flashed for an unattended cold boot.
+
+`bootcmd` is `fatload mmc 1:2 0x50000000 h713-kernel.fit; bootm 0x50000000`.
+
+- `/dev/mmcblk0p2` is **32 MiB**: `blockdev --getsize64` 33554432, `--getsz`
+  65536.
+- Its vfat superblock describes **128 MiB**; `df` says 128M total / 69M used,
+  and it catalogues ~57 MB of files.
+- Linux errors on anything past the partition end:
+  `attempt to access beyond end of device, mmcblk0p2: sector=140701,
+  limit=65536`. `sha256sum /mnt/fat/h713-kernel.fit` → `Input/output error`.
+
+**U-Boot is unaffected** and this is the correction that matters: `fatload
+mmc 1:2 0x50000000 h713-kernel.fit` returns all 7739580 bytes in 496 ms
+(14.9 MiB/s). U-Boot does not clamp to the partition-table entry, and the FAT's
+clusters physically exist on the eMMC past it. The board's boot path has never
+been broken by this; only Linux-side access is.
+
+Consequence for this work: writing the FIT there — from Linux or via `fatwrite`
+— could place data outside the partition, over whatever the GPT assigns to that
+region. So flashing stays blocked, and `mmc 1:2` should not be mounted `rw`,
+until it is established whether the GPT entry is undersized or the filesystem
+was built oversized, and what the upper ~96 MiB overlaps.
