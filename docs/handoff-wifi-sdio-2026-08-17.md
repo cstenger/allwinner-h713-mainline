@@ -1,6 +1,6 @@
 # Handoff — WiFi / SDIO
 
-Updated: **2026-08-18**
+Updated: **2026-08-21**
 
 Branch: **`h713-aic8800-vendor-rebase`**
 
@@ -10,6 +10,20 @@ This is the orientation document. The evidence log is intentionally long and
 contains the commands, register values, failed hypotheses, and raw outcomes.
 
 ## Bottom line
+
+**The SDIO link is done.** It runs at the stock configuration — four-bit
+UHS-SDR104 with a 50 MHz ceiling — and the device tree number now means what it
+says. Bulk transfer passes both directions with zero faults.
+
+Two separate problems had to be fixed to get here, and they are easy to
+conflate:
+
+1. **Bulk RX failed** (2026-08-18). Cause: the v5p3x IDMA descriptor encoding
+   for an exact maximum-size segment. Fixed by patch 0046.
+2. **The reported clock was ~4x lower than the physical one** (2026-08-19), so
+   every rate ever configured was four times what it claimed. Fixed by patch
+   0048 and validated on hardware 2026-08-21 — see
+   [The 50 MHz question](#the-50-mhz-question--2026-08-19-the-reported-clock-is-not-the-real-one).
 
 The original acceptance test now passes in both directions on a RAM-loaded
 kernel:
@@ -60,20 +74,35 @@ enumerates 4-bit UHS-SDR104 at 50 MHz, but the first 512-byte CMD53 at that rate
 still fails with data CRC/end-bit errors. The commit is a UHS-negotiation
 milestone, not a claim that 50 MHz payload transfer works.
 
+That boundary was resolved on 2026-08-19, and not the way it first looked: the
+reported SDIO clock was about 4x lower than the physical one, so "50 MHz" was
+asking the link for ~200 MHz. The accounting was corrected on 2026-08-21 by
+patch 0048, so `max-frequency = <50000000>` is now genuinely 50 MHz and it
+passes. See [The 50 MHz question](#the-50-mhz-question--2026-08-19-the-reported-clock-is-not-the-real-one).
+
 ## Working configuration
 
-The successful 25 MHz configuration is the final pair in the committed series:
+**Current (2026-08-21, hardware-validated):** `patches/kernel/0048-mmc-sunxi-h713-run-sdio-at-stock-sdr104-50mhz.patch`,
+on top of 0043–0046. Four-bit UHS-SDR104, `max-frequency = <50000000>`, honest
+clock accounting. This is stock parity and it is what the series ships.
+
+The 25 MHz configuration below is the previous state, kept because the evidence
+for 0045/0046 was gathered against it. Note that its "25 MHz" was physically
+~100 MHz; see the correction section.
 
 - `patches/kernel/0045-mmc-sunxi-use-validated-sdr25-for-h713-wifi.patch`
-  - limits the SDIO node to UHS-SDR25 at 25 MHz
+  - limits the SDIO node to UHS-SDR25 at 25 MHz — **superseded by 0048**, which
+    restores the UHS modes and the 50 MHz ceiling
   - programs the validated cold-start state before the first CMD53:
-    `DRV=00030000`, `NTSR=81710010`
+    `DRV=00030000`, `NTSR=81710010`. **Still live**; 0048 does not touch it, and
+    the per-speed table selects the 104M entry (`NTSR=81710110`) at 50 MHz
   - avoids the two initial data-CRC errors rather than relying on recovery
 - `patches/kernel/0046-mmc-sunxi-use-v5p3x-max-idma-descriptor-size.patch`
   - encodes an exact 4096-byte v5p3x IDMA buffer as `4096`, not `0`
   - this is the change that made the original inbound copy pass
+  - **still required**; 0048 deliberately keeps it
 
-`patches/kernel/series` includes both 0045 and 0046 in the tested order.
+`patches/kernel/series` includes 0045, 0046 and 0048 in the tested order.
 
 Still untracked:
 
@@ -144,93 +173,297 @@ startup CRC errors; 0046 removed the later inbound-load failure.
   The cryptography engine (CE) is not involved.
 - A generic “controller is broken” explanation is now refuted. The remaining
   50 MHz error is a high-speed timing/signal-integrity problem, separate from
-  the fixed 4096-byte IDMA descriptor bug.
+  the fixed 4096-byte IDMA descriptor bug — and, per the 2026-08-19 section, it
+  was a signal-integrity problem at ~200 MHz, because the reported clock is ~4x
+  lower than the physical one.
 - Recovery remains valuable containment, but the passing run generated no
   errors for recovery to handle.
 
 ## Current hardware state
 
-The board is currently running the successful image from RAM, with the hotspot
-up and both 8 MiB directions verified. Nothing from this session was flashed.
+Updated 2026-08-21: the board is running the patch-0048 FIT, loaded from its own
+rootfs by U-Boot, at a genuine 50 MHz — four-bit UHS-SDR104, stock parity —
+hotspot up, after 8 MiB and 128 MiB both directions with zero faults. Its rootfs
+carries `/root/fits/`: `test.fit` (the 0048 image below), `good-25mhz.fit` (the
+previous known-good), `timing2.fit` (CMD53 timing instrumentation) and
+`knobs2.fit`, so any of these is one `ext4load` away.
 
-A power cycle returns to the previously flashed kernel, which does **not**
-contain 0045/0046 and therefore should still be treated as broken for board RX.
-The extra board USB/OTG cable is not required; the UART cable is the only cable
-used for the test.
+**Nothing has ever been flashed for this work.** A power cycle returns to the
+previously flashed kernel, which does **not** contain 0045/0046/0048 and should
+still be treated as broken for board RX. Keep `good-25mhz.fit` in place so a
+failed experiment is one reboot away from a working link. The extra board
+USB/OTG cable is not required; the UART cable is the only cable used.
 
-Test artifact:
+Test artifact (patch 0048, `KERNEL_CONFIG=sysrq`):
 
 ```text
 build/out/h713-kernel-sysrq.fit
-size   7745528 bytes
-sha256 b057085e8f61d079806d0f9fb31b41e1dffcebbdef9948da6f48eb72351d06fe
-kernel 1ff4ccbd087a04e588bec929186b4024bc2d37fdf224c362d18b5f57c2500516
-DTB    04b36cda64e51dbbe87ee9c398dcb7e2c8b5ac26a80122a12dcad5ee97ddb80c
+size   7745700 bytes
+sha256 b82642aedf10f54a1ef9e47cde217e62471f3b987011a4abda51248128884b22
 ```
 
 Prepared kernel tree:
-`build/linux-6.18.38-7fe9c8012b420d50f3c780e37beb11572244602694ea9576cd633d7e33501105`.
+`build/linux-6.18.38-36796f34b1250048e9800380d365e7c660fb3b3f534b5ea0fd3ba6262f3e4194`.
+
+The previous 25 MHz reference artifact was
+`b057085e8f61d079806d0f9fb31b41e1dffcebbdef9948da6f48eb72351d06fe` (7745528
+bytes), tree `…-7fe9c8012b42…`.
 
 ## Recommended next steps
 
-1. Build the normal production FIT without the `sysrq` fragment.
-2. From a true cold boot, repeat:
-   - 8 MiB workstation → board with hash verification
-   - 8 MiB board → workstation with hash verification
-   - a longer/repeated transfer (for example 64 MiB or an 8 MiB loop) to turn
-     this from a minimal acceptance pass into a soak result
+1. Build the normal production FIT without the `sysrq` fragment and re-run the
+   acceptance test against it. Everything validated so far carries
+   `CONFIG_MAGIC_SYSRQ`, which is the one config difference from what would
+   ship.
+2. From a true cold boot (not a `bootm` of a RAM/rootfs image), repeat the
+   8 MiB and 128 MiB round trips with hash verification.
 3. Only after those pass, ask before flashing the kernel persistently.
-4. Treat 50 MHz SDR104 data tuning as optional follow-up. The reliable target
-   currently demonstrated is UHS-SDR25 at 25 MHz.
+4. Optional, and no longer blocking: confirm by measurement that the eMMC's
+   retained POSTDIV is doing the work the register values suggest (see
+   [What happened to the eMMC](#what-happened-to-the-emmc)). Nothing depends on
+   the answer unless someone wants to change mmc0/mmc2.
+
+Items 4 and 5 of the previous list — fixing the clock accounting and then
+choosing the rate deliberately — are **done**; that is patch 0048.
 
 Do **not** begin with stock Android/vendor boot anymore; the original failure
 now has a locally verified cause and fix. Do not spend time on CE, TCP ACK
 filtering, RF strength, skb allocation, or generic retry-count increases; those
 paths were tested or rendered irrelevant by the zero-error passing run.
 
-## Quick 25 MHz vs 50 MHz A/B
+## The 50 MHz question — 2026-08-19: the reported clock is not the real one
 
-Use the current `patches/kernel/series` unchanged as the 25 MHz control. It
-includes 0045 (SDR25/25 MHz plus the validated delay state) and 0046 (the
-required 4096-byte v5p3x IDMA descriptor fix).
+**Corrected conclusion.** An earlier version of this section said 50 MHz was
+unreachable on this board. That was wrong, and the reason is worth stating
+plainly: **the SDIO clock this stack reports is about 4x lower than the clock on
+the wire.** Asking for "50 MHz" was asking the link for roughly 200 MHz, which
+is why it failed in every mode, at every phase, and with every card-side pad
+setting. Stock is proven to transfer both directions at 4-bit UHS-SDR104 /
+50 MHz; so does this board, and in our current accounting that is spelled
+`max-frequency = <12500000>`.
 
-For a **RAM-only** 50 MHz experiment, temporarily remove only this line from
-`patches/kernel/series`:
+### How the factor arises
+
+Two independent doublings compound:
+
+- `sunxi_mmc_clk_set_rate()` doubles the module clock for the v5p3x 2X timing
+  mode (`clock <<= 1`, guarded by `cfg->no_wait_pre_over`), ported from the
+  vendor driver, and halves the rate it reports back.
+- mainline's H616 CCU declares the MMC clocks with
+  `SUNXI_CCU_MP_WITH_MUX_GATE_POSTDIV(..., 2, 0)` — a fixed /2 post-divider — so
+  `clk_set_rate(R)` programs the divider chain to `2R`.
+
+Nothing then halves the result the way both layers assume, so the card sees
+about `4 x ios.clock`.
+
+### The measurements
+
+`patches/kernel/0047` (untracked, debug) times individual CMD53 payloads.
+Per-request software overhead is ~4 us against milliseconds of bus time, so the
+slope of duration against transfer size reads the bus rate directly:
+
+| reported `ios.clock` | measured slope | implied bus clock |
+|---|---|---|
+| 12.5 MHz | 41.1 ns/byte (24.3 MB/s) | **48.6 MHz** |
+| 25 MHz | 20.6 ns/byte (48.5 MB/s) | **96.9 MHz** |
+
+Both fits are clean — constant ~4.4 us intercept, 957 and 645 samples, sizes
+512 B to 32,256 B — and scale exactly 2x with the requested rate.
+
+Independent of that instrumentation, an ordinary `scp` settles it: at a reported
+1 MHz the board received 8 MiB at **568 KB/s**, and a genuine 1 MHz 4-bit bus
+cannot exceed 500 KB/s. Nothing moves data faster than its own bus.
+
+### What each configuration really was
+
+These are the numbers **in the old, 4x accounting** — before patch 0048. Read
+the left column as "what the device tree said at the time", not as anything you
+would write today.
+
+| `max-frequency` | physical clock | result |
+|---|---|---|
+| 12.5 MHz | ~50 MHz | **PASS** — 4 x 8 MiB both directions, 0 faults. This is stock's configuration |
+| 25 MHz (committed) | ~100 MHz | PASS, plus a 128 MiB soak — roughly double stock |
+| 30 / 35 MHz | ~120 / ~133 MHz | PASS, 128 MiB soak at ~133 MHz |
+| 40 MHz | ~150 MHz | fail — start-bit and CRC errors at every phase |
+| 50 MHz | ~200 MHz | fail — data CRC on the first CMD53, every mode and phase |
+
+The "wall between 33 and 37.5 MHz" recorded earlier is a real analog wall, but
+it sits at roughly **133–150 MHz on the wire**, not at 33–37.5.
+
+Everything eliminated during the sweeps still stands as fact — mode, host phase
+space, stock's re-latch, the AIC8800 iopad registers — those runs simply took
+place at ~200 MHz, where no timing setting was going to help.
+
+### What this means for the tree
+
+The committed configuration (`max-frequency = <25000000>`, patch 0045) has been
+running the AIC8800 at about 100 MHz — twice stock — for the whole bring-up. It
+passes acceptance and soaks, but it was never a deliberate choice, and it leaves
+modest margin below a wall that starts near 133 MHz.
+
+Two things follow, in this order:
+
+1. **Fix the accounting, not the rate.** The link speed should be whatever the
+   device tree says. That means removing one of the two doublings on the SDIO
+   path; the candidate is the driver's `clock <<= 1` / `rate >>= 1` pair, which
+   `patches/kernel/0047` already makes switchable via
+   `sunxi_mmc.h713_nodouble=1`. Before committing that, instrument the eMMC
+   (`mmc@4022000`, a different cfg with no doubling — one gate change in 0047):
+   if its clock is also 2x its label, the post-divider assumption is wrong for
+   the whole SoC and the fix belongs in `ccu-sun50i-h616.c` instead.
+2. **Then choose the rate deliberately.** With honest numbers, stock parity is
+   `max-frequency = <50000000>`, and the measured headroom above it is real but
+   modest (~133 MHz passes, ~150 MHz does not).
+
+The 33.33 MHz patch drafted earlier was withdrawn: it was an unintentional
+~133 MHz overclock premised on the wrong reading.
+
+### 2026-08-21 — resolved: patch 0048, validated on hardware
+
+`patches/kernel/0048-mmc-sunxi-h713-run-sdio-at-stock-sdr104-50mhz.patch`
+removes **both** compensations, for MMC1 only, and restores the vendor device
+tree's modes and ceiling:
+
+- drops the driver's `clock <<= 1` / `rate >>= 1` pair in
+  `sunxi_mmc_clk_set_rate()`. That pair is gated on `cfg->no_wait_pre_over`,
+  which only `sun50i_h713_cfg` sets — and only `mmc@4021000` uses that
+  compatible — so the eMMC cfg is untouched by construction, not by luck.
+- changes `mmc1_clk` from `SUNXI_CCU_MP_WITH_MUX_GATE_POSTDIV(…, 2, 0)` to plain
+  `SUNXI_CCU_MP_WITH_MUX_GATE(…)` in `ccu-sun50i-h713.c`. `mmc0_clk`/`mmc2_clk`
+  keep the post-divider.
+- restores `sd-uhs-sdr50` / `sd-uhs-sdr104` / `sd-uhs-ddr50` and
+  `max-frequency = <50000000>`.
+- keeps 0046's explicit 4096-byte IDMA descriptor encoding.
+
+The remaining `clock <<= 1` in that function is mainline's `MMC_TIMING_MMC_DDR52`
+block and is deliberately left alone.
+
+**Hardware result.** RAM/rootfs-loaded FIT, nothing flashed:
 
 ```text
-0045-mmc-sunxi-use-validated-sdr25-for-h713-wifi.patch
+v5p3x delay: rate=50000000 timing=6 width=4 DRV=00030000 NTSR=81710110
+mmc1: new UHS-I speed SDR104 SDIO card at address 6721
 ```
 
-Keep 0043, 0044, and especially 0046 enabled. With 0045 omitted, 0043 exposes
-all UHS modes and a 50 MHz maximum; the previously observed negotiation was
-SDR104 at 50 MHz. Also keep AIC `FEATURE_SDIO_CLOCK_V3=0` so the module does
-not replace the MMC core's negotiated clock. Build the kernel normally (or
-with `KERNEL_CONFIG=sysrq` when debug access is needed), record the FIT hash,
-and load it from RAM rather than flashing it.
+| check | result |
+|---|---|
+| mmc1 negotiated | 4-bit UHS-SDR104, clock and actual clock both 50000000 Hz |
+| 8 MiB workstation → board | PASS, SHA-256 exact |
+| 8 MiB board → workstation | PASS, SHA-256 exact |
+| 128 MiB both directions | PASS, SHA-256 exact (1:49 in, 1:00 out) |
+| SDIO faults | **zero** — no cmd53, CRC, FIFO, hardware-lock, phase-retry or timeout lines |
+| `ksdioirqd/mmc1` | healthy, `S` in `sdio_irq_thread` |
+| eMMC | unchanged: HS400, 8-bit, 200 MHz; rootfs healthy |
 
-After boot, check `/sys/kernel/debug/mmc1/ios`: the control should report
-25,000,000 Hz and SDR25, while the experiment should report 50,000,000 Hz.
-Then require the same two-direction 8 MiB hash test and a clean:
+### Reading the clock without instrumenting anything
+
+This is the part worth reusing. Do not trust `/sys/kernel/debug/clk/mmc1/clk_rate`
+to check a change to the clock model — it is computed *by* the model you just
+edited. Read the CCU register instead.
+
+**The H713 CCU is at `0x02001000`, not H616's `0x03001000`.** MMC0/1/2 clock
+registers are `0x02001830` / `0x834` / `0x838`.
 
 ```sh
-dmesg | grep -E 'cmd53|fifo error|phase error|CRC|HARD|timed-out'
+busybox devmem 0x02001834        # -> 0x8100000B
 ```
 
-Do not count successful 50 MHz enumeration as a pass. The prior 50 MHz run
-enumerated but failed its first 512-byte CMD53 transfer with CRC/end-bit
-errors, including across the attempted phase sweep. Restore the 0045 `series`
-line after the experiment. For further tuning, vary only the 50 MHz timing or
-delay setting while retaining 0046 and using the unchanged 25 MHz result as
-the control.
+Decoding `0x8100000B` against `SUNXI_CCU_MP_WITH_MUX_GATE(…, 0, 4, 8, 2, 24, 2, BIT(31), 0)`:
+bit 31 = gate on; mux `[25:24]` = 1 = `pll-periph0-2x`; P `[9:8]` = 0 → 1;
+M `[3:0]` = 11 → 12. `clk_summary` gives `pll-periph0-2x` = 600 MHz (and
+`pll-periph0-4x` = 1200 MHz, so the naming is internally consistent). Therefore
+**600 / 12 = 50 MHz at the pin**.
+
+The decisive part: that is the *same divider* the old nominal-12.5 MHz
+configuration programmed — doubled to 25 MHz by the driver, then multiplied by
+the modelled post-divider to a 50 MHz chain target, giving M=12 — and patch
+0047's CMD53 timing instrumentation measured that configuration at **48.6 MHz on
+the wire**. Same register value, same physical rate. So the current setting is
+confirmed against a prior physical measurement, with no need to re-instrument.
+
+### What happened to the eMMC
+
+Patch 0048 leaves `mmc0_clk`/`mmc2_clk` on the post-divider model, and the
+register values suggest that is not merely cautious but necessary:
+
+`0x02001838` reads `0x02000002` → mux 2 = `pll-periph1-2x` (1200 MHz), M = 3,
+P = 1, so the divider chain emits **400 MHz**, which the model reports as
+200 MHz. HS400 is a DDR mode and needs the module clock at twice the card clock,
+but mainline's `sunxi_mmc_clk_set_rate()` only applies that doubling for
+`MMC_TIMING_MMC_DDR52`. So the "wrong" post-divider appears to be supplying
+exactly the doubling HS400 requires, and removing it SoC-wide would break the
+eMMC rather than fix it.
+
+**This is inference from register values, not a measurement.** It is recorded
+because it reverses the earlier recommendation to fix the post-divider in the
+shared CCU file. Confirm it before anyone touches mmc0/mmc2; nothing else
+depends on it.
+
+(The gate bit reads 0 for `mmc2` when the eMMC is idle — sunxi-mmc drops the
+module clock on runtime suspend. The divider fields still show the last
+programmed value.)
+
+## Running another rate experiment
+
+The old recipe (remove 0045, rebuild, YMODEM the FIT) works but costs an
+11-minute UART upload per boot. Use this loop instead — it is what produced the
+table above, at roughly 2.5 minutes per configuration.
+
+**1. Deliver FITs over the working WiFi link, boot them from eMMC.** With a
+good kernel running, copy the FIT into the board's own rootfs, then have U-Boot
+read it back:
+
+```sh
+scp build/out/h713-kernel-sysrq.fit root@192.168.4.1:/root/fits/test.fit
+python3 tools/serial/reboot-to-uboot.py /dev/ttyUSB0 45
+python3 tools/serial/boot_kernel.py --load /root/fits/test.fit --secs 60
+```
+
+`boot_kernel.py` now defaults to the Debian root args and takes `--load`
+(pass `--rdinit` for an initramfs smoke FIT). **U-Boot parses the partition
+index as hex**: p26 is `mmc 1:1a`, and `mmc 1:26` silently means partition 38.
+Keep a known-good FIT there (`/root/fits/good-25mhz.fit`) so a failed
+experiment is one reboot away from a working link, with no UART upload.
+
+**2. Sweep from the kernel command line, not from rebuilds.**
+`patches/kernel/0047-mmc-sunxi-h713-sdio-tuning-knobs.patch` (untracked, debug
+only, inert by default) adds:
+
+| parameter | effect |
+|---|---|
+| `sunxi_mmc.h713_fmax=<Hz>` | override `f_max` — the rate ladder |
+| `sunxi_mmc.h713_uhs=<0\|25\|50\|104>` | lower the advertised UHS ceiling |
+| `sunxi_mmc.h713_dly=<cmd_drv,dat_drv,cmd_ph,dat_ph>` | force the delay state above 26 MHz |
+| `sunxi_mmc.h713_sampdl=<raw>` | raw `SAMP_DL`/`DS_DL` value |
+| `sunxi_mmc.h713_relatch=1` | stock's 2X-timing re-latch after a phase change |
+
+`patches/aic8800/aic8800-0005-D80-card-side-SDIO-iopad-controls.patch` (also
+untracked) does the same for the card: `aic8800_bsp.aic_iopad_ctrl`,
+`aic_iopad_dly1`, `aic_iopad_dly2`, all `-1` (untouched) by default. Module
+parameters on the kernel command line reach modules loaded later, so both sets
+are settable through `--extra`.
+
+**3. Judge the run correctly.** Enumeration is not a pass — every failing 50 MHz
+configuration enumerated. A pass needs `rwnx_load_firmware` lines, the hotspot
+up, 8 MiB copied both ways with matching SHA-256, and:
+
+```sh
+dmesg | grep -E 'cmd53|fifo error|phase error|data error|HARD|timed-out'
+```
+
+empty. Then soak it before believing it.
 
 ## Boot-test gotcha
 
-`tools/serial/boot_kernel.py` currently installs initramfs-only bootargs
-(`rdinit=/init`) and must not be used unchanged for this Debian-root FIT. That
-mistake caused one harmless RAM boot to panic before WiFi and overwrote the
-uploaded image when U-Boot restarted, requiring a second UART upload.
+**Fixed in the tool.** `tools/serial/boot_kernel.py` used to install
+initramfs-only bootargs (`rdinit=/init`) unconditionally, which is wrong for
+this Debian-root FIT: one RAM boot panicked before WiFi, and U-Boot then
+overwrote the uploaded image on restart, costing a second 11-minute UART upload.
+It now defaults to the Debian root arguments and takes `--rdinit` for the
+initramfs smoke FIT.
 
-For this board, set the normal root arguments before `bootm`:
+The equivalent by hand, if you are driving U-Boot directly:
 
 ```text
 setenv fdt_high 0x4f000000
@@ -243,3 +476,11 @@ bootm 0x50000000
 The workstation also prints a changed-host-key warning for `192.168.4.1`
 (offending entry currently reported at `~/.ssh/known_hosts:16`), although the
 key-based copies completed. Do not modify the user's known-hosts file silently.
+The 2026-08-21 run sidestepped it with a throwaway known-hosts for the duration:
+
+```sh
+scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no build/out/h713-kernel-sysrq.fit root@192.168.4.1:/root/fits/test.fit
+```
+
+The workstation joins the board's hotspot with a saved NetworkManager profile
+(SSID `spirits`, DHCP) and lands on `192.168.4.78`.
