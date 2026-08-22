@@ -63,14 +63,17 @@ gen() {
 # exposes no 10-bit capture format at all, so nothing can negotiate one, and the
 # pipeline reaches EOS having produced zero frames. See docs/vaapi-scope.md.
 gen_hevc() {
-  local name=$1 w=$2 h=$3 frames=$4 profile=$5
-  shift 5
+  local name=$1 w=$2 h=$3 frames=$4 profile=$5 xtra=${6:-}
+  shift 5; [ $# -gt 0 ] && shift
+  # Extra x265 params are appended to the base set rather than passed as a
+  # second -x265-params, which would silently override the first.
+  local xp="log-level=error:keyint=10${xtra:+:$xtra}"
 
   echo "==> $name  (${w}x${h}, $frames frames, $profile)"
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i "testsrc2=size=${w}x${h}:rate=25" -frames:v "$frames" \
     -pix_fmt yuv420p -c:v libx265 -profile:v "$profile" \
-    -x265-params "log-level=error:keyint=10" "$@" \
+    -x265-params "$xp" "$@" \
     -f hevc "$name.h265"
 
   ffmpeg -hide_banner -loglevel error -y \
@@ -105,6 +108,20 @@ gen v04-1280x720-high 1280 720 60 high \
 # changes, at ~550 fps for 720p.
 gen_hevc h01-640x480-main   640 480 25 main
 gen_hevc h02-1280x720-main 1280 720 25 main
+
+# h03 -- the same source with WPP OFF, and the reason matters for the shim port.
+# x265 enables wavefront parallel processing by DEFAULT (it prints
+# `wpp(8 rows)` in its own tool line), so h01/h02 set
+# entropy_coding_sync_enabled_flag and every slice carries entry point offsets.
+# cedrus genuinely consumes those -- cedrus_h265.c copies them into a 4 KiB
+# entry-points buffer and programs it -- so h01/h02 cannot decode without
+# V4L2_CID_STATELESS_HEVC_ENTRY_POINT_OFFSETS being filled correctly.
+#
+# h03 removes that requirement, which makes it the simplest stream that can
+# possibly decode and the right first milestone for porting src/h265.c: it
+# separates "my control filling is wrong" from "I have not done entry points
+# yet". Both are bit-exact through gst v4l2slh265dec today.
+gen_hevc h03-640x480-nowpp  640 480 25 main wpp=0
 
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host
