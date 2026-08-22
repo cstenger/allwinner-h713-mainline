@@ -516,6 +516,46 @@ interface`. This driver reports a max MPDU length mask of 1, so the highest
 valid value is `[MAX-MPDU-7991]`. The failure message names the capability, but
 only in the first few lines of the attempt.
 
+### Simultaneous 2.4 + 5 GHz: possible, and a bad trade
+
+Tested 2026-08-21 because "let the client pick the band" is the obvious thing to
+want. It works, and you should still not do it.
+
+`iw phy` advertises `#{ AP } <= 1`, but that is not enforced — a second AP vif
+can be created with `iw dev wlan0 interface add ap2 type __ap`, and a second
+hostapd on it comes up fine. Both really do beacon: a scan from the workstation
+saw the same SSID on **2437 MHz (ch 6) and 5180 MHz (ch 36) at once**, both at
+full signal, with the interfaces reporting 40 MHz and 80 MHz respectively.
+
+The cost is the problem. This is a **1x1 part with a single RF chain**, so it
+time-slices between the two channels, and the 5 GHz link pays for it:
+
+| configuration | board RX | board TX | 5 GHz rx rate |
+|---|---|---|---|
+| 5 GHz alone | 13.25 MB/s | 14.41 MB/s | 433 Mbit/s VHT-MCS9 80 MHz |
+| 5 GHz **+ 2.4 GHz concurrent** | **3.82 MB/s** | **6.85 MB/s** | 86.7 Mbit/s |
+| 5 GHz alone (control, after teardown) | 13.21 MB/s | 14.58 MB/s | 433 Mbit/s |
+
+The control rules out drift: tearing the second AP down restores the original
+numbers exactly, so the loss is attributable to concurrency.
+
+Two details that make it worse than the table looks:
+
+- **The 2.4 GHz AP had no clients at all.** That 71% RX loss is the cost of
+  beaconing on a second channel, before any second-band traffic exists.
+- **Dual-band 5 GHz (3.82/6.85) is slower than single-band 2.4 GHz HT40
+  (4.85/7.65).** If the goal is reaching the widest set of clients, plain
+  2.4 GHz HT40 beats dual-band on both compatibility *and* speed.
+
+So the choice is one band, and it is a genuine trade rather than a default:
+2.4 GHz HT40 for compatibility and range, 5 GHz VHT80 for roughly 3x the
+throughput and no RX/TX asymmetry. True simultaneous dual-band needs a second
+radio — a USB adapter running its own hostapd — not this chip.
+
+Not tested, and it would be needed before anyone deploys the dual setup anyway:
+no client ever associated to the second AP, and `dnsmasq` only serves `wlan0`,
+so a usable version needs both APs bridged with DHCP on the bridge.
+
 ## Running another rate experiment
 
 The old recipe (remove 0045, rebuild, YMODEM the FIT) works but costs an
