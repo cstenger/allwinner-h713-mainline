@@ -243,9 +243,13 @@ CONFIG_DEBUG_FS=y
 # -- systemd was alive and printing throughout.
 #
 # MAGIC_SYSRQ_SERIAL is what makes the BREAK path work; the empty sequence
-# means BREAK alone arms it. Debian's sysctl may still restrict the runtime
-# mask in /proc/sys/kernel/sysrq, so check that before relying on a given
-# command.
+# means BREAK alone arms it.
+#
+# Verified live on hardware 2026-08-22, not merely compiled in:
+# `echo h > /proc/sysrq-trigger` prints the banner including reboot(b),
+# show-blocked-tasks(w) and show-task-states(t) -- the three that would have
+# resolved the wedge above -- and /proc/sys/kernel/sysrq reads 1, so this
+# rootfs does not restrict the mask the way a stock Debian sysctl can.
 CONFIG_MAGIC_SYSRQ=y
 CONFIG_MAGIC_SYSRQ_SERIAL=y
 CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1

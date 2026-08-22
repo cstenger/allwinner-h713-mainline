@@ -143,6 +143,14 @@ regulator ceiling), stayed below the 75 C passive trip at 68 C, and produced no
 thermal, cpufreq, OPP, PWM, clock, or PLL errors. Both 75/85 C passive trips
 are bound to the eight-state cpufreq cooling device.
 
+**The flashed production kernel carries patch 0055 and Magic SysRq as of
+2026-08-22.** `h713-kernel.fit` on the FAT at `mmc 1:2` was replaced in place
+(7,745,120 bytes, SHA-256 verified by re-reading from disk after unmount) and
+`bootcmd` autoboots it unattended. The previous 0048-era kernel is kept at
+`/root/fits/h713-kernel-prev-20260822.fit` on the board. Note the FAT has only
+~3.4 MiB free, so a kernel can only be replaced in place, never staged
+alongside -- back the old one up to the rootfs first.
+
 **1416 MHz has since been removed (2026-08-22, patch 0055).** It corrupts
 kernel memory under sustained load, which surfaced as the display path killing
 the board in 40-90 s and cost most of a session searching the video stack --
