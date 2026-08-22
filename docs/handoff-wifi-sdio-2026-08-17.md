@@ -238,6 +238,46 @@ now has a locally verified cause and fix. Do not spend time on CE, TCP ACK
 filtering, RF strength, skb allocation, or generic retry-count increases; those
 paths were tested or rendered irrelevant by the zero-error passing run.
 
+### Upstream: an AIC8800 FullMAC driver is in review (noted 2026-08-21)
+
+AIC Semiconductor has posted an RFC to `wireless-next` adding a mainline SDIO
+FullMAC driver for **AIC8801, AIC8800DC and AIC8800D80** — our exact chip, our
+exact interface. Four patches, 132 files, 67k+ insertions, authored by Zhirun
+Liu.
+
+- v2: <https://lwn.net/Articles/1084468/> (2026-07-23)
+- v1: <https://lwn.net/Articles/1083998/>
+
+If it lands it replaces the out-of-tree vendor `aic8800_fdrv` that
+`patches/aic8800/` patches. Three things follow, and the first is the reassuring
+one:
+
+1. **The SDIO transport work survives it.** Patches 0046 (v5p3x IDMA descriptor)
+   and 0048 (clock accounting) live in `drivers/mmc/host/sunxi-mmc.c` and
+   `ccu-sun50i-h713.c` — the MMC host controller and clock tree, not the WiFi
+   driver. They are independent of whatever sits on top of the SDIO bus.
+2. **The regulatory patch would be obsoleted, and the problem is open upstream
+   too.** `aic8800-0006` exists only because the vendor driver self-manages
+   regulatory with a compiled-in `"00"`. The RFC's own stated limitations list
+   "the regulatory database" as requiring follow-up work, so this is not solved
+   there yet either. If a mainline driver moves to standard cfg80211 regulatory,
+   the `regulatory.db` load-ordering bug recorded in
+   [evidence log section 11](wifi-failure-2026-08-17.md) stops being academic —
+   cfg80211 is built in and requests the database ~373 ms before the rootfs
+   mounts, so it would need `CONFIG_EXTRA_FIRMWARE`, a modular cfg80211, or an
+   initramfs.
+3. **It does not help Bluetooth.** The series carries `aic_btsdio.c`, which is
+   BT over *SDIO*. This board wires BT over *UART* (`ttyS1`, H4), so our attach
+   path is untouched by it.
+
+**Do not reorient around this yet.** It is an RFC at v2, unmerged, and its own
+limitations note that "firmware redistribution permission and the corresponding
+linux-firmware submission are not yet available" — which blocks it regardless of
+code review, since the driver is inert without firmware. DT power and wake
+bindings are also absent. A 67k-line vendor contribution usually takes several
+rounds or a substantial rewrite. Worth tracking; not worth planning against.
+
+
 ## The 50 MHz question — 2026-08-19: the reported clock is not the real one
 
 **Corrected conclusion.** An earlier version of this section said 50 MHz was
