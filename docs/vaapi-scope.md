@@ -1685,6 +1685,52 @@ GStreamer decodes the same stream correctly. Therefore the difference is not in
 the stream and not in cedrus's branch: **it is in what the shim sends versus
 what GStreamer sends for the identical stream.**
 
+### The controls were diffed, and there are three bugs (2026-08-22)
+
+`patches/kernel/0056` dumps the controls cedrus receives. Same stream (h03),
+same frame, two clients — GStreamer (decodes correctly) against the shim
+(stalls):
+
+```
+GST:  ppsflags=0x104144  nal=1  bits=19536  slice_bytes=7326  stcb=[0 255 255 255]
+VA:   ppsflags=0x084144  nal=0  bits=19472  slice_bytes=7329  stcb=[0 0 0 0]
+```
+
+**1. `nal_unit_type` is wrong, and this is almost certainly the stall.**
+GStreamer sends 1 (`TRAIL_R`, a sub-layer **reference** picture); the shim
+sends 0 (`TRAIL_N`, a sub-layer **non-reference** picture). Told the frame is
+not a reference, the VE does not retain it, and the next frame that references
+it has nothing to reference — which is exactly the observed behaviour: the IDR
+decodes, then the inter frames stall.
+
+**2. The 3-byte Annex-B start code is left in the OUTPUT buffer**, and it
+*causes* bug 1. `slice_bytes` is 7329 against GStreamer's 7326 — exactly three
+bytes. #44 reads the NAL type as
+
+```c
+	b = source_data + slice->slice_data_offset;
+	nal_unit_type = (b[0] >> H265_NAL_UNIT_TYPE_SHIFT) & H265_NAL_UNIT_TYPE_MASK;
+```
+
+so with the start code present `b[0]` is `0x00`, giving `(0 >> 1) & 0x3F == 0`.
+cedrus only supports start-code-free data — `V4L2_CID_STATELESS_HEVC_START_CODE`
+has `.max` and `.def` both `START_CODE_NONE` — so the buffer must not carry it.
+
+**3. Two PPS flag bits are wrong.** The shim sets
+`DEBLOCKING_FILTER_CONTROL_PRESENT` (bit 19), which the parsed PPS says is
+**0**, and fails to set `UNIFORM_SPACING` (bit 20), which GStreamer does.
+
+Minor, noted but probably harmless: unused `poc_st_curr_*` and `ref_idx_*`
+entries are zero in the shim where GStreamer writes `0xFF`, the "invalid"
+convention.
+
+**Why h01 survives all this** is not yet explained and should not be
+hand-waved — the same three bugs are present there. A WPP stream evidently
+tolerates a mislabelled reference picture where a non-WPP one does not, which
+is worth understanding before calling any of this fixed.
+
+### Superseded: the earlier plan for this experiment
+
 **The decisive next experiment** is therefore to see GStreamer's controls, which
 needs a kernel-side dump: instrument `cedrus_h265_setup()` to print the received
 `v4l2_ctrl_hevc_slice_params` / `decode_params`, then run h03 through GStreamer
