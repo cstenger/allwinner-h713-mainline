@@ -2202,3 +2202,58 @@ loop stays as the backstop.
 
 Result: zero timeouts, `hci0` up on attempt 1, `MGMT ver` at ~9.0 s instead of
 ~13.9 s — about 5 seconds off every boot — and scanning still works.
+
+### Cross-check against the vendor binaries (2026-08-21)
+
+The fix above was derived empirically. Checked afterwards against the factory
+Android capture (`local/h713-lab/captures/board-b/board-b-mmcblk0-20260705T075628Z.img`,
+`super` extracted from LBA 599040). Confirmed by `ANDROID!` at `boot_a`, so it is
+a stock image and not our stack.
+
+**Baud and flow control match exactly.** From the AIC BT config in the vendor
+image:
+
+```text
+# RELEASE NAME: AIC_BT_BLUEDROID
+# UART hci commnication bandrate
+Uartbandrate=1500000
+```
+
+and from the HAL's own option help:
+
+```text
+bt uart baud rate, default 1500000
+enable ap uart flow control, default disable
+bt uart parity, default none
+```
+
+So the vendor runs `/dev/ttyS1` at **1.5 Mbaud with flow control disabled** —
+which is what this project already used (`hciattach ... 1500000 noflow`), and
+independent confirmation that the RE port notes' "default 115200 baud, hciattach
+negotiates up" is wrong. The cold-boot experiment and the vendor binary agree.
+
+**Flushing has a vendor analogue.** `tcflush` is referenced five times inside the
+BT HAL region, interleaved with `bt_userial_vendor`, `/dev/ttyS1`,
+`userial_vendor_open` and `BT_VND_OP_USERIAL_OPEN`. That is a symbol reference,
+not proof of the call site — the binaries were not disassembled — but flushing
+the port is clearly part of the vendor's serial handling, as it is now part of
+ours.
+
+**The mechanism does not match, and cannot.** The vendor image contains **zero**
+occurrences of `hciattach` and **zero** of `hci_uart`. Stock Android drives BT
+through the Bluedroid vendor HAL (`libbt-vendor`, `bluetooth.default`,
+`BLUETOOTH_VENDOR_LIB_INTERFACE`, `userial_vendor_open`), which opens
+`/dev/ttyS1` from userspace and feeds HCI to the stack itself. It never attaches
+the `N_HCI` line discipline, so the desync that the prime step works around
+cannot arise there. Related vendor init, for reference:
+
+```text
+setprop persist.vendor.bluetooth_port /dev/ttyS1
+setprop ro.bt.bdaddr_path /sys/class/addr_mgt/addr_bt
+/dev/ttyS1  u:object_r:hci_attach_dev:s0
+```
+
+So the prime/attach-detach step is specific to the mainline `hci_uart` path and
+has no stock counterpart — but the two settings that could plausibly have been
+wrong, baud and flow control, are confirmed correct against the vendor's own
+configuration.
