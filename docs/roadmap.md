@@ -61,7 +61,9 @@ just priority. See [status.md](status.md) for what already works.
   underran this session (the marginal weak-RF placement that produced the original
   `FIFO_RUN_ERROR` didn't reproduce), so it stands as defense-in-depth; to observe
   it firing, retest from the −71…−80 dBm spot. DVFS was ruled out (wedged even
-  pinned at 1416 MHz).
+  pinned at 1416 MHz) — note that finding is about *this* SDIO wedge only and
+  does not transfer; 1416 MHz was later found to corrupt memory under a
+  different load and was removed (item 2 below).
   **Superseded 2026-08-18/21 — the link is now done.** Patch 0046 fixed the real
   bulk-RX defect (the v5p3x IDMA descriptor encoding for an exact 4096-byte
   segment), and 0048 fixed a 4x clock-accounting error that had every rate
@@ -113,7 +115,19 @@ attached, the display path can be brought up here, not only on the projector
    untested against a real crash, and coverage is one client at close range on one
    board. See [status.md](status.md) and
    [handoff-wifi-sdio-2026-08-17.md](handoff-wifi-sdio-2026-08-17.md).
-2. **Thermal / cpufreq / DVFS — done; safety + real performance.**
+2. **Thermal / cpufreq / DVFS — done, with the ceiling now 1296 MHz.**
+   - **1416 MHz was REMOVED 2026-08-22 (patch 0055).** It corrupts kernel
+     memory under sustained load. It surfaced as the *display* path killing
+     the board in 40-90 s, and cost most of a session in the video stack --
+     cedrus, VA-API, the IOMMU, panfrost and CMA were each excluded by
+     experiment before the operating point was suspected. Capping at 1296
+     (or 1200) gives 20 minutes clean; *transitions* are innocent, since the
+     capped arms ran schedutil throughout. The vendor never uses 1416 at any
+     voltage. See [vaapi-scope.md](vaapi-scope.md). The original
+     qualification was a 2-minute CPU-only load at 68 C, against a failing
+     workload of tens of minutes of GPU + display at 78 C -- a correct
+     measurement generalised past its power. 1392 MHz at 1100 mV is the
+     vendor's top usable point and would recover most of the loss, untested.
    - **Bench cooling fan (0030) — DONE.** The fan is a 3-wire (VCC/GND/tach)
      on/off part, not PWM-speed-controlled (DMM: tach at its 3.3 V pull-up, +V
      floating/unpowered). It stayed dead because the PB5 backlight/fan

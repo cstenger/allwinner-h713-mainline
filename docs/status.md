@@ -70,7 +70,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | Debian 13 rootfs | ✅ signed, key-only image boots from UDISK; growfs, serial autologin, persistent first-boot identity, modules, and sshd HW-verified. Since 2026-08-15 the base set also carries the **video runtime** (mesa/GLES, the GStreamer stack incl. `v4l2slh264dec`, `v4l-utils`, `mpv`) and autoloads `sunxi_scanout_dmabuf`, with `--profile dev` for an on-target compiler — built and compile-verified under qemu, not yet booted on hardware |
 | Standalone boot | ✅ power-on/reset → `boot_a` FIT → Debian, **no host attached** (HW-verified) |
 | USB gadget | ✅ serial-default console; opt-in CDC ACM, UMS, and fastboot modes; ACM→fastboot transition and bounded raw bootloader target HW-verified |
-| CPU frequency/thermal | ✅ PWM DVFS from 480 MHz/0.90 V through 1416 MHz/1.10 V; full-range transitions and peak load HW-verified; cpufreq cooling device backs 75/85 C passive trips |
+| CPU frequency/thermal | ✅ PWM DVFS from 480 MHz/0.90 V through **1296 MHz/1.06 V**; cpufreq cooling device backs 75/85 C passive trips. **1416 MHz was removed 2026-08-22 (patch 0055): it corrupts kernel memory under sustained GPU+display load, and the vendor never uses that point at any voltage** |
 | Crypto Engine + RNG | ⚠️ **disabled — mainline `sun8i-ce` can't drive the H713 CE** (bench-proven). Enabling it registers every algorithm, then each fails its known-answer self-test. Wiring the stock's 2nd interrupt fixes task completion, but the CE then rejects mainline's descriptors — ciphers `address invalid`, AES/SHA `algorithm not supported` — a different descriptor **format** (vendor two-bank block), not an IRQ/clock/addressing gap. No CE TRNG. The A53's ARMv8 AES/SHA (software ~2 GB/s) is faster anyway. Re-enabling needs descriptor-level RE of the vendor `sunxi-ce` (no source). |
 | Reboot → fastboot / U-Boot | ✅ **done, both modes HW-validated (2026-07-23).** Two `nvmem-reboot-mode` modes over RTC GP7: `reboot fastboot` (magic `0xfa57b007`) → U-Boot `preboot` → fastboot, and `reboot bootloader` (magic `0xb007c0de`) → `preboot` sets `bootdelay -1` → U-Boot `=>` prompt — both confirmed console-free on the bench. `RTC_DRV_SUN6I` owns the region and exposes GP7 as an nvmem cell (`nvmem-cells` → `reboot-mode-magic@1c`); the old overlapping `syscon-reboot-mode` is gone. |
 | KMS / `/dev/dri/card1` | ✅ **DONE 2026-08-16, HW-verified — `mpv --vo=drm` plays 720p to the panel, 0 dropped frames; 1320 page flips at 59.71 fps, 0 timeouts.** `sun50i-h713-afbd` (patches 0037/0038) is a simple-KMS driver over the AFBD scanout engine: one CRTC, one plane, page flip via the same `0x05600178` + `READY` sequence that measured 0.00% tearing in gles-play, vblank off SPI 110 (bits confirmed by 2254 IRQs and zero stalled flips). Probe reads geometry back from the hardware (`adopting 1280x720, stride 5120`). Framebuffers come from **system CMA** — a reserved dma-pool allocates in power-of-two page orders, so a 16 MiB pool yielded exactly 4 buffers and mpv ran out of them. **card1, not card0** — panfrost holds minor 0 as render-only. It **adopts** the display U-Boot brought up and never touches timing, the LVDS PHY or `rst_bus_disp`, so it does not remove the U-Boot dependency. Took the AFBD window and IRQ from DECD, now `disabled`. Operator-confirmed: a Linux login prompt on the projector. [kms-display.md](kms-display.md) |
@@ -142,6 +142,25 @@ load held 1416 MHz, raised the measured rail only to 1.127 V (below the 1.16 V
 regulator ceiling), stayed below the 75 C passive trip at 68 C, and produced no
 thermal, cpufreq, OPP, PWM, clock, or PLL errors. Both 75/85 C passive trips
 are bound to the eight-state cpufreq cooling device.
+
+**1416 MHz has since been removed (2026-08-22, patch 0055).** It corrupts
+kernel memory under sustained load, which surfaced as the display path killing
+the board in 40-90 s and cost most of a session searching the video stack --
+cedrus, VA-API, the IOMMU, panfrost and CMA were each excluded by experiment
+before the operating point was suspected. Capping the ceiling at 1296 MHz, or
+at 1200, turns that into 20 minutes clean; frequency *transitions* are innocent,
+since the capped arms ran schedutil throughout. The vendor never uses 1416 at
+any voltage: its `allwinner,sun50i-operating-points` driver keys
+`opp-microvolt-<efuse>` off a two-byte cell, every key in the stock CPU table
+exceeds 0xFFFF and so can never match, and in the fallback column 1416 reads
+`<0x00>`. Details and traces in [vaapi-scope.md](vaapi-scope.md).
+
+**The measurement above is not wrong, it was over-generalised** -- and that is
+the transferable lesson. Two minutes of four-core CPU load at 68 C is a
+different power and thermal envelope from tens of minutes of GPU + display +
+scanout at 78 C. The DMM voltages were correct; the frequency point was never
+in the vendor's table to begin with. 1392 MHz at 1100 mV is the vendor's top
+usable point and would recover most of the loss, but it is untested here.
 
 The Crypto Engine was investigated to a definitive dead end (2026-07-23) and is
 disabled (`# CONFIG_CRYPTO_DEV_SUN8I_CE is not set`, `HW_RANDOM` off); the CE node
