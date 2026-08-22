@@ -1794,3 +1794,120 @@ experimental FITs there is what created the overflow in the first place, and
 there is no longer room for it. A larger debug image — the 10.8 MB KASAN build,
 for instance — will not fit alongside the production one. Stage experiments on
 the ext4 rootfs and `ext4load` them instead.
+
+## 10. Measuring the eMMC clock (2026-08-21) — attempted, NOT settled
+
+The open question from section 7: `mmc2`'s CCU divider chain physically emits
+400 MHz while the driver labels the card clock 200 MHz. Is the eMMC running at
+its label, or at twice it?
+
+**The payload-timing method cannot answer it.** That is the result. What follows
+is why, and what it did establish, because the negative is reusable.
+
+### The probe
+
+`patches/kernel/0049-mmc-sunxi-h713-payload-timing-probe.patch` (untracked,
+debug). Unlike 0047 it is *not* gated on `cfg->v5p3x`, so it sees both
+controllers, and it logs raw `bytes`/`ns` plus bus geometry rather than baking
+in a 4-bit-SDR conversion — 0047's formula is hardcoded for SDIO and would be
+wrong by 4x on an 8-bit DDR link. Inert unless `sunxi_mmc.h713_probe=1`;
+`h713_probe_min` sets a size floor to keep rootfs chatter out.
+
+### The method is sound — the SDIO control proves it
+
+| host | samples | fitted slope | implied card clock | label |
+|---|---|---|---|---|
+| mmc1 SDIO | 201 | 41.03 ns/B → 24.4 MB/s | **48.7 MHz** | 50 MHz |
+| mmc0 eMMC | 147 | 8.47 ns/B → 118.0 MB/s | 59.0 MHz | 200 MHz |
+
+mmc1 reads 48.7 MHz against a known 50 — 2.6% low, and independently equal to
+the 48.6 MHz the 2026-08-19 CMD53 instrumentation measured. The arithmetic is
+right.
+
+### Why the eMMC number is meaningless
+
+The shapes differ, and that is the whole story:
+
+- **mmc1 is flat**: 22.9 MB/s at 2 KiB, 24.2 MB/s at 32 KiB. Bus-limited
+  throughout, so throughput reads the clock.
+- **mmc0 climbs**: 46.9 → 75.3 → 91.7 → 103.0 → 109.7 → 112.4 MB/s from 16 KiB
+  to 512 KiB, still rising. That is a fixed per-transfer cost amortised over
+  larger reads — the NAND — not a bus ceiling.
+
+Re-reading the *same* 512 KiB region 60 times does not help: min 4.682 ms,
+median 4.689 ms, max 4.760 ms, a 1.6% spread. There is no device read cache to
+hide behind. The media caps at ~118 MB/s, far below either candidate bus rate
+(400 MB/s at 200 MHz, 800 MB/s at 400 MHz), so the probe only ever sees flash.
+
+**All it establishes is a lower bound: the eMMC card clock is at least 59 MHz.**
+
+### Forcing a bus-limited regime still did not settle it
+
+`patches/kernel/0050-arm64-dts-h713-debug-cap-emmc-to-25mhz.patch` (untracked,
+debug) caps `mmc@4022000` to 25 MHz and drops the HS200/HS400/DDR flags. The
+card enumerated 8-bit DDR52 at 25 MHz, rootfs mounted clean, and the registers
+read `CLKCR=0x00010001` (divider 2), CCU `0x81000005` (mux 1 =
+`pll-periph0-2x` 600 MHz, M=6, P=1 → 100 MHz chain).
+
+That makes the two hypotheses concrete and far apart:
+
+| | chain | ÷CLKCR | card clock | expected |
+|---|---|---|---|---|
+| post-divider real | 50 MHz | 2 | 25 MHz | 50 MB/s |
+| no post-divider | 100 MHz | 2 | 50 MHz | 100 MB/s |
+
+Measured: **29.5 MB/s**, implying 14.8 MHz at the 2 bytes/card-clock that 8-bit
+DDR requires. That is neither 25 nor 50.
+
+The regime change is real — an 8x label cut (200 → 25 MHz) produced only a
+3.85x slowdown (112.4 → 29.2 MB/s on the same 512 KiB read), which independently
+confirms the 200 MHz case was media-limited and the 25 MHz case is not. But the
+bus-limited number lands where it should only if bytes-per-card-clock were about
+1.17, and no bus geometry gives that.
+
+**So there is an unexplained ~1.7x factor in the eMMC data path**, and until it
+is identified, eMMC throughput cannot be converted into a card clock the way
+SDIO throughput can. Reporting 14.8 MHz — or forcing it to the nearer
+hypothesis — would be reading a number the method has not earned.
+
+### The competing signal, unresolved
+
+Register evidence leans the *other* way from the section-7 inference. Both
+controllers are configured identically: `CLKCR = 0x00010000` (divider 1) and
+`NTSR` bit 31 (`SDXC_2X_TIMING_MODE`) set on each, at their normal settings. On
+mmc1 — the one that can be measured — the card clock equals the CCU chain
+output (50 MHz chain, 48.7 MHz measured, ratio 1.0). If mmc0 behaved the same
+way its 400 MHz chain would mean a 400 MHz card clock, i.e. HS400 at twice its
+rated maximum.
+
+Against that: HS400 is specified to 200 MHz, and this eMMC has run at 112 MB/s
+with zero errors throughout the project. A silent 2x overclock that never fails
+is possible on a short point-to-point bus with a data strobe, but it is not the
+way to bet.
+
+The difference between the two controllers that could explain it is that mmc1 is
+SDR and mmc0 is DDR, and the controller may halve the module clock for DDR modes
+— which is exactly what `SDXC_2X_TIMING_MODE` is named for. That would make the
+label honest and the section-7 inference right. Nothing measured here confirms
+or refutes it.
+
+### Where this leaves it
+
+Unchanged from section 7 in substance: **the eMMC clock is not established**,
+the section-7 explanation remains an inference, and nothing in the tree depends
+on the answer. What is new is that the cheap way of answering it has been tried
+and does not work, so the next attempt should not repeat it.
+
+What would actually settle it, in rough order of cost:
+
+1. Identify the ~1.7x factor — instrument block-gap/CRC overhead, or time a
+   single multi-block read against its theoretical duration at a known-good
+   mode. If eMMC throughput can be calibrated the way SDIO was, the capped-clock
+   experiment becomes decisive immediately.
+2. Read the controller's DDR handling out of the vendor `sunxi-mmc` source or
+   the H713 manual to settle whether `SDXC_2X_TIMING_MODE` halves for DDR.
+3. Scope the eMMC clock pin. Definitive, and the only method with no model in
+   the middle.
+
+Board was returned to the flashed production kernel afterwards: HS400 200 MHz,
+SDR104 50 MHz, zero faults.

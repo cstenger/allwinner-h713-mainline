@@ -456,10 +456,25 @@ but mainline's `sunxi_mmc_clk_set_rate()` only applies that doubling for
 exactly the doubling HS400 requires, and removing it SoC-wide would break the
 eMMC rather than fix it.
 
-**This is inference from register values, not a measurement.** It is recorded
-because it reverses the earlier recommendation to fix the post-divider in the
-shared CCU file. Confirm it before anyone touches mmc0/mmc2; nothing else
-depends on it.
+**This is inference from register values, not a measurement**, and an attempt
+to measure it on 2026-08-21 **failed to settle it** — see
+[evidence log section 10](wifi-failure-2026-08-17.md). Short version: the eMMC
+is media-limited at ~118 MB/s, far below either candidate bus rate, so payload
+timing only yields a lower bound (card clock ≥ 59 MHz). Capping the eMMC to
+25 MHz does make it bus-limited, but the resulting figure matches neither
+hypothesis, so there is an unidentified ~1.7x factor in the eMMC data path and
+throughput cannot be converted to a card clock there the way it can on SDIO.
+
+Register evidence actually leans the *other* way: both controllers run
+`CLKCR` divider 1 with `SDXC_2X_TIMING_MODE` set, and on mmc1 — the measurable
+one — the card clock equals the CCU chain output. Applied to mmc0 that would
+mean 400 MHz, i.e. HS400 at twice its rated maximum. Against that, this eMMC has
+never produced an error. The likely reconciler is that the controller halves for
+DDR modes and mmc1 is SDR, which would make the label honest — unconfirmed.
+
+Still true: confirm before anyone touches mmc0/mmc2, and nothing else depends on
+it. What is new is that the cheap method has been tried and does not work, so
+do not start there again.
 
 (The gate bit reads 0 for `mmc2` when the eMMC is idle — sunxi-mmc drops the
 module clock on runtime suspend. The divider fields still show the last
