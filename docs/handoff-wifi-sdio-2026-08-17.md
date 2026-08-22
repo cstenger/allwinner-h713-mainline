@@ -222,8 +222,9 @@ bytes, tree `…-7fe9c8012b42…`).
 1. ~~Build the normal production FIT and re-run the acceptance test~~ — **done
    2026-08-21**, see [Cold boot, production kernel](#cold-boot-production-kernel-2026-08-21).
 2. ~~Repeat the round trips from a true cold boot~~ — **done 2026-08-21**.
-3. Flashing is the remaining step, and it is **blocked on the FAT geometry
-   problem** below — do not write to `mmc 1:2` until that is resolved.
+3. ~~Flashing~~ — **done 2026-08-21**. The FAT geometry was reconciled and the
+   production FIT written; `bootcmd` now boots it unattended. See
+   [the FAT section](#the-fat-on-mmc-12-was-larger-than-its-partition--fixed-2026-08-21).
 4. Optional, and no longer blocking: confirm by measurement that the eMMC's
    retained POSTDIV is doing the work the register values suggest (see
    [What happened to the eMMC](#what-happened-to-the-emmc)). Nothing depends on
@@ -387,30 +388,34 @@ mmc1: new UHS-I speed SDR104 SDIO card at address 6721
 Cold init is clean on the first CMD53 — the single `v5p3x delay` line at
 50 MHz, with no 400 kHz retry storm and no phase rotation before it.
 
-### The FAT on `mmc 1:2` is larger than its partition
+### The FAT on `mmc 1:2` was larger than its partition — fixed 2026-08-21
 
-Found while looking at whether the FIT could be flashed for an unattended cold
-boot. **It cannot, yet.** This is pre-existing and unrelated to 0048, but it
-blocks the flashing step and it is an easy trap:
+**Resolved.** The filesystem was oversized; the GPT was right. `mmcblk0p2`
+(`bootloader_b`) is 65536 sectors = 32 MiB, and its FAT16 `total_sectors_32`
+said 262144 = 128 MiB. That window runs through `env_a`, `env_b`, `boot_a` and
+half of `boot_b`, all occupied, so growing the partition was never an option.
 
-- `/dev/mmcblk0p2` (`bootloader_b`, label `Volumn`) is **32 MiB** —
-  `blockdev --getsize64` = 33554432, `--getsz` = 65536 sectors.
-- The vfat superblock on it describes a **128 MiB** volume; `df` reports
-  128M total, 69M used. It catalogues roughly 57 MB of files.
-- From Linux, anything whose clusters land past 32 MiB is unreadable:
-  `attempt to access beyond end of device, mmcblk0p2: sector=140701,
-  limit=65536`. `sha256sum` of the flashed `h713-kernel.fit` fails this way.
+Only our six `h713-kernel*.fit` files were beyond the boundary; all 45 vendor
+artifacts were already inside it. The fix deleted those six, patched
+`total_sectors_32` to 65536, and put the validated production FIT back —
+verified on a copy first, all 45 vendor files bit-identical.
 
-**U-Boot reads it fine**, which is why the board has always booted: `fatload
-mmc 1:2 0x50000000 h713-kernel.fit` returns all 7739580 bytes at 14.9 MiB/s.
-U-Boot does not clamp the read to the partition-table entry, and the FAT's data
-physically exists on the eMMC beyond it. So the boot path works; it is Linux
-access, and **any write from either side**, that are unsafe — a write can land
-outside the partition, on whatever the GPT says lives there.
+The board now autoboots the 0048 production kernel unattended from the FAT.
+Full account, including the cluster arithmetic and the exact commands, in
+[the evidence log](wifi-failure-2026-08-17.md) section 9.
 
-Do not `fatwrite` to it and do not mount it `rw` until the geometry is
-reconciled. Unresolved: whether the GPT entry is too small or the filesystem was
-built too large, and what the FAT's upper ~96 MiB overlaps.
+Two things to carry forward:
+
+- **Never run `fsck.vfat -a` on this volume.** It would rename
+  `mips/ProjectID_0x0014.TSE` to `FSCK0000.000` and rewrite the volume label.
+  Read-only checks (`-n`) only.
+- **3.4 MB free.** One kernel FIT fits and no more — parking several
+  experimental FITs there is what caused the overflow. Stage experiments on the
+  ext4 rootfs and `ext4load` them.
+
+Note for anyone re-deriving this: Linux writes to that filesystem failed
+*safely* (the block layer clamps to the partition), so Linux could never have
+corrupted `boot_a`. U-Boot's `fatwrite` does not clamp and was the real hazard.
 
 ### Reading the clock without instrumenting anything
 

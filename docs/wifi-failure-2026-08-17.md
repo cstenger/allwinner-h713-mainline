@@ -1692,3 +1692,105 @@ Consequence for this work: writing the FIT there — from Linux or via `fatwrite
 region. So flashing stays blocked, and `mmc 1:2` should not be mounted `rw`,
 until it is established whether the GPT entry is undersized or the filesystem
 was built oversized, and what the upper ~96 MiB overlaps.
+
+## 9. The FAT geometry, reconciled (2026-08-21)
+
+The section 8 blocker is fixed. **The filesystem was oversized; the GPT was
+right.**
+
+### Diagnosis
+
+| | |
+|---|---|
+| `mmcblk0p2` (`bootloader_b`) | LBA 139264–204799, 65536 sectors = **32 MiB** |
+| FAT16 `total_sectors_32`, boot-sector offset 32 | `0x00040000` = 262144 sectors = **128 MiB** |
+
+The partition table cannot be the error. A 128 MiB volume starting at LBA
+139264 ends at 401407, running through `env_a` (204800), `env_b` (205312),
+`boot_a` (205824–336895) and half of `boot_b` — and those are occupied:
+`boot_a` begins with an `ANDROID!` header, `env_a` with a live U-Boot
+environment (`BOOTMODE=standby…`). There is nowhere to grow into.
+
+`fsck.vfat -n` names it exactly: `Failed to read sector 262143.`
+
+**Correction to section 8:** it said a write "from either side" was unsafe.
+Linux writes fail *safely* — the block layer clamps to the partition and
+returns `attempt to access beyond end of device`, so Linux physically cannot
+reach `boot_a` through this filesystem. The hazard is U-Boot's `fatwrite`,
+which does not clamp. That is why the repair was done from Linux.
+
+### What was actually at risk: none of the vendor data
+
+Testing every file for readability partitions the set cleanly:
+
+- **All 45 vendor artifacts are inside 32 MiB** — `mips/*`, `wavefile/*`,
+  `bat/*`, `bootlogo.bmp`, `boot-logo.bmp`, `fastbootlogo.bmp`, `font24.sft`,
+  `font32.sft`, `magic.bin`, `backup_8020.bin`.
+- **Only the six `h713-kernel*.fit` files were out of range** — all ours.
+
+### The repair
+
+Proven on a copy of the backup before the board was touched:
+
+1. `mdel` the six out-of-range kernel FITs. Deletion only rewrites the FAT
+   table and root directory, both inside the first 545 sectors.
+2. Patch `total_sectors_32` at offset 32: 262144 → 65536
+   (`printf '\x00\x00\x01\x00' | dd of=IMG bs=1 seek=32 count=4 conv=notrunc`).
+3. `mcopy` the validated production FIT in as `h713-kernel.fit`.
+
+Cluster arithmetic stays valid: 65536 − 545 reserved/FAT/root = 64991 data
+sectors ÷ 4 = **16247 clusters**, comfortably inside FAT16's 4085–65524 range,
+and the existing 256-sector FAT indexes far more than that. Nothing needs
+reformatting — the FAT table and directories are untouched.
+
+Verification on the copy: `fsck.vfat -n` clean, no unreachable sector, and all
+45 vendor files extracted bit-identical against the original
+(`checked=45 mismatches=0`).
+
+**Never run `fsck.vfat -a` on this volume.** The read-only pass shows it would
+rename `mips/ProjectID_0x0014.TSE` to `FSCK0000.000` (a pre-existing bad short
+name) and rewrite the volume label. Both were previously invisible because fsck
+aborted at the unreachable-sector check.
+
+### Result on hardware
+
+Written with `dd of=/dev/mmcblk0p2 bs=1M conv=fsync`; read-back SHA-256 matches
+the prepared image exactly. From Linux: 32M volume on a 32M partition, 46 files,
+**0 unreadable**, 0 `beyond end of device` messages, 3.4M free, and
+`sha256sum h713-kernel.fit` — previously an `Input/output error` — now returns
+`51044da6…`, the validated production build.
+
+Then `bootcmd` was allowed to run untouched:
+
+```text
+Hit any key to stop autoboot: 2  1  0
+7741216 bytes read in 497 ms (14.9 MiB/s)
+## Loading kernel (any) from FIT Image at 50000000 ... sha256+ OK
+## Loading fdt (any) from FIT Image at 50000000 ...    sha256+ OK
+v5p3x delay: rate=50000000 timing=6 width=4 DRV=00030000 NTSR=81710110
+mmc1: new UHS-I speed SDR104 SDIO card at address 6721
+```
+
+The board now boots the validated 0048 production kernel unattended from its
+own eMMC, at stock 4-bit SDR104/50 MHz, and an 8 MiB round trip afterwards is
+SHA-256 exact with zero SDIO faults.
+
+### Images kept
+
+```text
+local/stock-boot/bootloader_b-p2-32MiB-20260821.img           dfa4ad99…  pre-repair, verified against a re-read of p2
+local/stock-boot/bootloader_b-p2-REPAIRED-32MiB-20260821.img  64c700e2…  what was written
+```
+
+Restoring is the same `dd` with the pre-repair image. The one thing not
+preserved is the previously flashed `h713-kernel.fit`: it lived beyond 32 MiB,
+so it is not in the backup. It predates 0045/0046/0048 and was already
+documented as broken for board RX.
+
+### Remaining constraint
+
+3.4 MB free. One kernel FIT fits; the old habit of parking five or six
+experimental FITs there is what created the overflow in the first place, and
+there is no longer room for it. A larger debug image — the 10.8 MB KASAN build,
+for instance — will not fit alongside the production one. Stage experiments on
+the ext4 rootfs and `ext4load` them instead.

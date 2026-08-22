@@ -94,10 +94,22 @@ def main():
     ap.add_argument("--wait", type=float, default=2.0,
                     help="seconds of silence that ends a read (raise for slow commands)")
     ap.add_argument("--listen", type=float, default=0.0,
-                    help="just read for N seconds and exit")
+                    help="just read for N seconds and exit; IGNORES any commands")
     ap.add_argument("--per-char", type=float, default=0.002)
     ap.add_argument("cmds", nargs="*")
     args = ap.parse_args()
+
+    # --listen is a pure read mode, so combining it with commands silently does
+    # nothing at all -- the commands are never typed and the board just sits
+    # there. That looked exactly like "the board ignored `reboot`" and cost two
+    # debugging cycles. To type something and then watch, use --wait instead:
+    #   console.py --wait 30 'reboot'
+    if args.listen and args.cmds:
+        sys.stderr.write(
+            "error: --listen only reads; it would discard %d command(s).\n"
+            "       To send a command and then watch, use --wait N instead.\n"
+            % len(args.cmds))
+        return 2
 
     fd = open_port(args.port)
     try:
