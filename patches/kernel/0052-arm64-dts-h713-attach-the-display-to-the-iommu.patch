@@ -1,0 +1,73 @@
+arm64: dts: h713: attach the AFBD display to the IOMMU
+
+EXPERIMENT, not a fix. It departs from the vendor configuration on purpose,
+and it is here to answer one question.
+
+Something corrupts kernel memory whenever a CMA-backed KMS/GBM scanout runs
+(docs/vaapi-scope.md). Six-plus different victims across runs -- a
+pool_workqueue, the hrtimer rbtree, a dma_fence, the deadline runqueue, a
+kernel stack, the CFS scheduler -- which is the signature of a stray write
+rather than a code race. VA-API, mpv, ffmpeg, the shim and cedrus have all
+been ruled out by direct experiment, the last of them by a control that
+crashed with the video engine at zero interrupts. KASAN sees nothing and
+cannot, if the writer is a device rather than the CPU. The one variable
+that discriminates every run on record is where the scanout buffer lives:
+from the reserved carveout it is clean, from CMA it corrupts.
+
+So translate the display and let the hardware name the write. Under
+translation a stray address is a page fault carrying the master ID and the
+IOVA, instead of a silent write onto whatever occupied that memory. Both
+outcomes are worth the boot:
+
+  - a fault on master 2 identifies the display as the writer, with the
+    address it went for;
+  - a full soak with no fault at all, given cedrus is already translated
+    and clean, says no device on this IOMMU is doing it -- which leaves the
+    CPU, and makes a stale userspace mapping of a freed dumb buffer the
+    next thing to chase.
+
+Master 2 in the stock tree is `dec@5600000`, this driver's register window,
+and it is shared with `ge2d@5240000`. Nothing in our tree drives ge2d, so a
+fault on master 2 is unambiguously the display.
+
+Cell 1 = 1 (translate). The vendor leaves master 2 at 0, which is why this
+is a deliberate departure rather than a correction.
+
+Two consequences to expect, neither a bug:
+
+  - `sunxi-scanout-dmabuf` will fault. It hands out physical addresses from
+    the 0x6c100000 carveout by design, so `gles-play` stops working while
+    this is applied. mpv's GBM path is unaffected -- the KMS driver takes
+    its scanout address from drm_fb_dma_get_gem_addr(), which under
+    translation is already an IOVA.
+  - A fault burst during boot, if the panel was brought up by U-Boot. The
+    IOMMU attaches the device when the platform device is created, seconds
+    before the KMS driver probes and programs an IOVA, and in between the
+    panel is still fetching U-Boot's physical carveout address. Patch 0051
+    rate-limits that so it stays a log line instead of a hang.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1669,6 +1669,20 @@
+ 			clocks = <&ccu CLK_AFBD>,
+ 				 <&ccu CLK_BUS_DISP>;
+ 			clock-names = "clk_afbd", "clk_bus_disp";
++			/*
++			 * Master 2, translation ON -- a departure from the
++			 * stock tree, which leaves this master bypassing
++			 * (`<&mmu_aw 2 0>`). It is an experiment: something
++			 * corrupts kernel memory whenever a CMA-backed
++			 * scanout runs, every software layer above it has
++			 * been ruled out, and translation turns a stray write
++			 * into a fault that names the master and the address.
++			 *
++			 * Master 2 is shared with ge2d@5240000, which nothing
++			 * in this tree drives, so a fault on master 2 is this
++			 * display.
++			 */
++			iommus = <&iommu 2 1>;
+ 			status = "okay";
+ 		};
+ 

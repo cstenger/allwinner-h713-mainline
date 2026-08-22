@@ -1,0 +1,107 @@
+arm64: dts: h713: EXPERIMENT -- allocate scanout from a carveout, not CMA
+
+EXPERIMENT, not a fix. Keep it out of `series` except while running it.
+
+Something writes pixel-shaped data over kernel memory whenever mpv renders
+on the GPU into a CMA-backed scanout buffer. The evidence for that shape is
+a 2x2 (docs/vaapi-scope.md):
+
+  GPU + carveout scanout  clean, 480 s      (run D, gles-play)
+  GPU + CMA scanout       crash, 40-90 s    (n=3)
+  no GPU + CMA scanout    clean, 2406 s / 143,646 commits
+
+Neither ingredient is sufficient alone. But the clean carveout arm used
+gles-play, so it changed the renderer AND the memory source at once, and
+the two have never been separated. This patch separates them: same mpv,
+same panfrost, same KMS scanout, same everything -- only the memory the
+scanout buffer comes from changes.
+
+Reading the code first did not find the writer. panfrost's import path is
+sound (mappings are krefed and torn down, imported pages are pinned by the
+dma_buf reference, get_pgsize() cannot over-map), the CMA-page-migration
+idea is dead (an allocated CMA buffer is out of the buddy allocator, and
+drm_gem_shmem_create() deliberately drops __GFP_MOVABLE), and patch 0053 --
+which fixed a genuine cacheability mismatch on exactly these buffers --
+made no difference to the crash schedule. Notably there has never been a
+single panfrost MMU fault, so the GPU is not escaping its page tables.
+
+The pool is 64 MiB and the size is derived, not guessed. A shared-dma-pool
+is a coherent pool, so dma_alloc_from_dev_coherent() allocates in
+power-of-two page orders: mesa's scanout buffer measures 3,723,264 bytes
+(/sys/kernel/debug/dma_buf/bufinfo, four of them attached to 1800000.gpu),
+which takes a 4 MiB slot. 64 MiB is 16 slots against the four mpv's
+swapchain uses plus one held by the fbcon console. The attempt recorded in
+patch 0038 failed for exactly this reason and no other -- 16 MiB gave four
+slots, fbcon took one, and mpv died at CREATE_DUMB with ENOMEM.
+
+`no-map` is the point, not an incidental: it keeps the region out of the
+page allocator entirely, so these pages are never recycled into slab or
+stacks, which is what makes this arm differ from CMA in the way that
+matters.
+
+Placement is clear of everything, checked against /proc/iomem on the
+running board: above the 8 MiB uboot-scanout at 0x6c100000, above the
+0x6d000000 where U-Boot stages bootlogo.bmp (which is pre-Linux only), and
+below the 128 MiB CMA the kernel reserves at 0x76c00000.
+
+Expected outcomes, both useful:
+
+  - clean for well past 90 s -> the CMA-ness of the scanout buffer is
+    necessary, with the renderer held constant. That makes a carveout a
+    real candidate shipping configuration, and narrows the writer to
+    something that only misbehaves against recyclable memory.
+  - crashes on the old schedule -> the memory source is NOT the variable,
+    run D was clean for some other reason, and the difference is in
+    gles-play versus mpv/mesa.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -115,6 +115,31 @@
+ 			reg = <0x6c100000 0x800000>;
+ 			no-map;
+ 		};
++
++		/*
++		 * EXPERIMENT (docs/vaapi-scope.md): scanout memory that is not
++		 * CMA. Something scribbles pixel-shaped data over kernel memory
++		 * whenever panfrost renders into a CMA-backed scanout buffer, and
++		 * the one arm that has ever been clean with the GPU running took
++		 * its scanout from a reserved carveout. This makes that the ONLY
++		 * difference, with mpv and the GPU otherwise identical.
++		 *
++		 * 64 MiB, and the size is chosen not guessed. A shared-dma-pool
++		 * allocates in power-of-two page orders, so mesa's 3,723,264-byte
++		 * scanout buffer (measured, /sys/kernel/debug/dma_buf/bufinfo)
++		 * occupies a 4 MiB slot: 16 slots here, against the four mpv's
++		 * swapchain uses plus one for the fbcon console. The earlier
++		 * attempt at this failed only because 16 MiB gave exactly four.
++		 *
++		 * Placement is clear of everything: above uboot-scanout, above
++		 * the 0x6d000000 where U-Boot stages bootlogo.bmp (pre-Linux
++		 * only), and below the 128 MiB CMA the kernel puts at 0x76c00000.
++		 */
++		afbd_pool: framebuffer-pool@70000000 {
++			compatible = "shared-dma-pool";
++			reg = <0x70000000 0x4000000>;
++			no-map;
++		};
+ 	};
+ 
+ 	psci {
+@@ -1672,6 +1697,14 @@
+ 			clocks = <&ccu CLK_AFBD>,
+ 				 <&ccu CLK_BUS_DISP>;
+ 			clock-names = "clk_afbd", "clk_bus_disp";
++			/*
++			 * EXPERIMENT. This deliberately contradicts the note on
++			 * uboot-scanout above, which records that handing this
++			 * driver a dma pool was tried and abandoned. That was a
++			 * sizing failure at 16 MiB, not a design verdict; the
++			 * pool here is 64 MiB. Revert both hunks together.
++			 */
++			memory-region = <&afbd_pool>;
+ 			status = "okay";
+ 		};
+ 
