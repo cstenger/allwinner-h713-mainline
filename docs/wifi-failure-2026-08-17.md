@@ -2002,3 +2002,77 @@ wiphy, but both matter if `custregd=0` is ever used.
    kernel image, building cfg80211 as a module so the request happens after
    `/` is up, or an initramfs. Not done, because with a self-managed wiphy it
    changes nothing observable — do it only alongside `custregd=0`.
+
+## 12. Firmware-crash recovery (2026-08-21) — the reboot made reliable
+
+The 2026-07-23 conclusion stands: **there is no safe in-place recovery.**
+Unbinding and reloading the SDIO stack races the mmc/driver core into a
+NULL-deref Oops (`__device_attach_driver` via `mmc_rescan` -> `mmc_attach_sdio`).
+Do not try it again. Only a full boot revives the chip.
+
+What was wrong was not that conclusion but what followed from it. The fallback
+reboot itself hung — roughly three minutes on `h713-bt-attach` stop — and left
+the board needing a physical power cycle, so the project gave up on automatic
+recovery entirely and shipped a log-only notifier. The fix is to make the reboot
+reliable rather than to keep avoiding it.
+
+### Three changes
+
+1. **The handler reboots.** `/usr/local/sbin/h713-wifi-recover` (was
+   `h713-wifi-crashlog`) logs the fault, waits `GRACE_SECONDS`, then
+   `systemctl reboot`. Policy lives in `/etc/default/h713-wifi-recovery`:
+   `AUTO_REBOOT=yes|no`, `GRACE_SECONDS`. Editable on a deployed unit.
+
+2. **BT cannot stall the shutdown.** `h713-bt-attach.service` gets
+   `TimeoutStopSec=10s`. After a firmware crash `hciattach` blocks in the
+   HCI/UART path where SIGTERM does not reach it, and systemd was waiting out
+   the full default timeout on a chip that cannot tear down. Nothing useful
+   happens in that window.
+
+3. **Hardware backstop.** `/etc/systemd/system.conf.d/h713-watchdog.conf` sets
+   `RebootWatchdogSec=16s`, so systemd arms the sunxi watchdog across the
+   shutdown transition. A stuck unit now costs 16 seconds and a SoC reset
+   instead of a trip to the board. Confirmed on hardware:
+
+   ```text
+   systemd-shutdown[1]: Using hardware watchdog 'sunxi-wdt', version 0, device /dev/watchdog0
+   systemd-shutdown[1]: Watchdog running with a hardware timeout of 16s.
+   ```
+
+   This opens `/dev/watchdog` only for the shutdown, so it does **not** arm a
+   runtime watchdog and cannot reset a healthy but busy system. `RuntimeWatchdogSec`
+   would add that, but 16 s is the sunxi hardware maximum and is tight under
+   load, so it is left off deliberately.
+
+### What was verified, and what was not
+
+Verified on hardware:
+
+- `AUTO_REBOOT=no` logs to journal and `/dev/kmsg` and does not reboot.
+- `AUTO_REBOOT=yes` reboots, the watchdog arms as quoted above, and the board
+  is back in about 30 s with the AP up, US regdomain restored and zero SDIO
+  faults.
+
+**Not verified: recovery from a real firmware crash.** The trigger was
+synthetic — the unit was started directly, not by a `DHDISDOWN` uevent from a
+genuinely dead chip. That matters, because the dead chip is exactly the state
+that makes `hciattach` unkillable, and a healthy `hciattach` sits in `S`/
+`do_sys_poll` where SIGTERM works fine. The watchdog bounds the shutdown either
+way, which is why this is worth shipping despite the gap, but it is a gap.
+
+An attempt to provoke a real crash failed: 4 minutes of the documented
+starvation recipe (performance governor, 4x `yes`, a large memcpy `dd`,
+continuous eMMC-write `dd`, load average 7.97) with six concurrent 64 MiB WiFi
+round-trips produced **zero** `DHDISDOWN`, zero `cmd timed-out`, zero SDIO
+faults, and every hash exact. The crash may simply be less reachable now — the
+vendor rebase, the 0046 IDMA fix and the 0048 clock fix all landed since it was
+last seen — or this load was not pathological enough. Either way it is no longer
+reproducible on demand, so the recovery path stays untested against the real
+fault.
+
+### Policy note
+
+`AUTO_REBOOT=yes` is the default because an unattended unit that reboots itself
+beats one that sits dead until someone notices. For a projector that must never
+interrupt playback for a network fault, set `AUTO_REBOOT=no` and keep the older
+log-and-wait behaviour; the handler is one config line either way.
