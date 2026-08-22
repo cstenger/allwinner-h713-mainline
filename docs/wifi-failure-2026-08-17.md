@@ -2076,3 +2076,62 @@ fault.
 beats one that sits dead until someone notices. For a projector that must never
 interrupt playback for a network fault, set `AUTO_REBOOT=no` and keep the older
 log-and-wait behaviour; the handler is one config line either way.
+
+## 13. STA mode retested (2026-08-21) — the standing rule is refuted
+
+STA mode was the last untested path, and historically *the* failing one: two
+attempts out of two on 2026-08-16 wedged the board, and the project adopted the
+rule "WiFi for an interactive shell and log reading only; serial or a baked
+image for anything file-sized."
+
+**That rule is dead.** STA mode carries files, and faster than the shipped AP.
+
+### Method
+
+No credentials were needed and the control path never depended on the link under
+test. Roles were inverted: the **workstation** hosted a throwaway AP
+(`nmcli device wifi hotspot`, generated passphrase, 10.42.0.1) and the **board**
+joined it as a station via `/root/sta-connect.sh`. Serial stayed as the control
+channel throughout, which is the only reason the mode switch was safe to make
+remotely.
+
+DHCP did not complete, so the board was given `10.42.0.50/24` statically. Not
+investigated — it was in the way, not the subject.
+
+### Results
+
+| transfer | board RX | board TX | hash |
+|---|---|---|---|
+| 8 MiB | 4.46 MB/s | — | exact |
+| 64 MiB | 8.11 MB/s | 9.20 MB/s | exact |
+| 128 MiB | **8.90 MB/s** | **9.62 MB/s** | exact |
+
+Zero `cmd53`, `cmd timed-out`, `DHDISDOWN`, FIFO or CRC messages throughout, and
+the board stayed up continuously across all of it. The 8 MiB board-RX case is
+the exact shape of the 2026-08-16 failure — a ~10 MB inbound scp — and it
+completed in 1.9 s.
+
+STA throughput (8.9/9.6 MB/s) **beats** the shipped 2.4 GHz HT40 hotspot
+(5.1-7.7 MB/s), because the workstation's AP is 802.11ax and the link negotiated
+HE rates (`rx bitrate: 143.3 MBit/s HE-MCS 11`). Nothing about the board changed
+between the two measurements, so this is a property of the peer, not of STA mode.
+
+### Why the old result was real but misattributed
+
+The 2026-08-16 failures were genuine. They were the SDIO bulk-RX defect — the
+v5p3x IDMA descriptor encoding for an exact maximum-size segment — which
+**patch 0046** fixed on 2026-08-18. That defect was never STA-specific; section
+"three corrections" already recorded that it reproduced in AP mode too. STA mode
+simply got the blame because it was where the transfers happened.
+
+`tools/wifi/sta-connect.sh` carried the warning in its header, where it would be
+read by exactly the person about to do this. It has been replaced with the
+measurements above.
+
+### One thing that looks like a wedge and is not
+
+After `sta-connect.sh` associates, it runs `dhclient` in the **foreground**. The
+serial console then echoes typed characters but produces no command output —
+which is precisely the signature the old notes describe as "tty echo alive,
+shell dead, recoverable only by pulling power". It is not. **Ctrl-C returns the
+shell.** Check that before concluding the board is wedged.

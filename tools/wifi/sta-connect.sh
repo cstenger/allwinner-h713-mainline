@@ -13,19 +13,26 @@
 #
 #   usage: ./sta-connect.sh SSID PASSPHRASE [interface]
 #
-# ⚠ DO NOT MOVE BULK DATA OVER THIS LINK. Twice out of two attempts
-# (2026-08-16) a sustained transfer wedged the board hard enough to take the
-# serial console with it -- tty echo alive, shell dead, recoverable only by
-# pulling power. The second attempt is the one that shows what happens: a
-# 10.8 MB scp sat at *zero bytes transferred* for six minutes with the board
-# still responsive, then the console printed `cmd timed-out` -- the aic8800
-# firmware command/confirm handshake failing, the crash path already documented
-# for this chip -- and the box went down. The link associates, gets DHCP,
-# answers ssh in 3.6 ms, and then does not carry a file.
+# ⚠ THE BULK-DATA WARNING THAT USED TO BE HERE IS OBSOLETE -- retested and
+# refuted on 2026-08-21. It said, correctly for its time, that a sustained
+# transfer over this link wedged the board twice out of two attempts (a 10.8 MB
+# scp sat at zero bytes for six minutes, then `cmd timed-out` and the box went
+# down). That was the SDIO bulk-RX defect, and it was not STA-specific: it failed
+# in AP mode too. Patch 0046 (the v5p3x IDMA descriptor encoding) fixed it.
 #
-# So this is for interactive work only: a shell, a few kilobytes, reading logs.
-# For anything file-sized use the serial console (tools/serial/send_file.py) or
-# bake it into the rootfs image, and keep the serial console attached either way.
+# Retested in STA mode against an 802.11ax AP, board at 10.42.0.50:
+#
+#   8 MiB   board-RX               4.46 MB/s   hash exact
+#   64 MiB  RX 8.11 / TX 9.20 MB/s             hash exact
+#   128 MiB RX 8.90 / TX 9.62 MB/s             hash exact
+#
+# Zero cmd53, cmd timed-out, DHDISDOWN or SDIO faults throughout, board up
+# continuously. STA mode carries files, and on an HE-capable AP it is faster
+# than the 2.4 GHz HT40 hotspot the image ships.
+#
+# Still worth keeping the serial console attached: it is the only control path
+# once wlan0 leaves AP mode, and dhclient runs in the foreground here, so an
+# unresponsive-looking shell is usually just DHCP waiting -- Ctrl-C returns it.
 
 set -eu
 
