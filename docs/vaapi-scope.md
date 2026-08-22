@@ -1666,11 +1666,30 @@ below was measured, not reasoned.
 *inter* frames after it. That points at reference handling rather than at
 anything WPP-specific — even though WPP is the only PPS difference.
 
-**The gap in the analysis above:** only the PPS was diffed. The SPS and the
-slice headers were not. x265 with `wpp=0` may well change something else that
-matters for inter prediction, in which case "WPP is the only difference" is
-true of the PPS and false of the stream. That is the next thing to check, and
-it is cheap.
+**That gap is now closed, and it did not help.** `tools/video/hevc-bitstream-dump.py`
+parses SPS and slice headers as well: **SPS 0 fields differ, slice headers 0
+fields differ** (identical I/P/B/B sequence, same `first_slice_segment_in_pic`,
+same PPS id). So the two streams really do differ only by
+`entropy_coding_sync_enabled_flag`. The "x265 changed something else" theory is
+dead, and the paradox is sharper rather than resolved.
+
+Worth noting from that dump: `num_short_term_ref_pic_sets = 0`, so every RPS is
+signalled in the slice header rather than the SPS — which is the part of the
+port with the least test coverage.
+
+**Where that leaves it.** cedrus branches on the flag, but both branches compute
+the *same* register values here (`TILE_START_CTB = TILE_END_CTB = 0`, because
+with tiles disabled `column_width_minus1[]` and `row_height_minus1[]` are zero).
+So the only thing reaching the VE that differs is the flag itself — and
+GStreamer decodes the same stream correctly. Therefore the difference is not in
+the stream and not in cedrus's branch: **it is in what the shim sends versus
+what GStreamer sends for the identical stream.**
+
+**The decisive next experiment** is therefore to see GStreamer's controls, which
+needs a kernel-side dump: instrument `cedrus_h265_setup()` to print the received
+`v4l2_ctrl_hevc_slice_params` / `decode_params`, then run h03 through GStreamer
+and through the shim and diff the two. That is one kernel build and it ends the
+guessing, which three refuted hypotheses have now earned.
 
 **Operational note that cost a confusing result:** a `cedrus: frame processing
 timed out!` leaves the video engine wedged for *every* client, GStreamer
