@@ -1,0 +1,27 @@
+SOAK start kernel=6.18.38 bin=/root/video-test/gles-play clip=/var/tmp/long.h264 minutes=20
+SOAK t=30s ve_delta=1759 gpu=4110 gpu_rate=116/s afbd_delta=0 passes=1
+SOAK t=60s ve_delta=3531 gpu=7654 gpu_rate=118/s afbd_delta=0 passes=2
+SOAK t=90s ve_delta=5280 gpu=11156 gpu_rate=116/s afbd_delta=0 passes=4
+SOAK t=120s ve_delta=7052 gpu=14699 gpu_rate=118/s afbd_delta=0 passes=5
+SOAK t=150s ve_delta=8803 gpu=18201 gpu_rate=116/s afbd_delta=0 passes=7
+SOAK t=180s ve_delta=10572 gpu=21742 gpu_rate=118/s afbd_delta=0 passes=8
+SOAK t=210s ve_delta=12319 gpu=25236 gpu_rate=116/s afbd_delta=0 passes=10
+SOAK t=240s ve_delta=14091 gpu=28781 gpu_rate=118/s afbd_delta=0 passes=11
+SOAK t=270s ve_delta=15837 gpu=32275 gpu_rate=116/s afbd_delta=0 passes=13
+SOAK t=300s ve_delta=17605 gpu=35813 gpu_rate=117/s afbd_delta=0 passes=14
+SOAK t=331s ve_delta=19352 gpu=39310 gpu_rate=116/s afbd_delta=0 passes=16
+SOAK t=361s ve_delta=21120 gpu=42853 gpu_rate=118/s afbd_delta=0 passes=17
+SOAK t=391s ve_delta=22873 gpu=46354 gpu_rate=116/s afbd_delta=0 passes=19
+SOAK t=421s ve_delta=24644 gpu=49896 gpu_rate=118/s afbd_delta=0 passes=20
+SOAK t=451s ve_delta=26400 gpu=53423 gpu_rate=117/s afbd_delta=0 passes=22
+SOAK t=481s ve_delta=28163 gpu=56937 gpu_rate=117/s afbd_delta=0 passes=23
+SOAK t=511s ve_delta=29934 gpu=60480 gpu_rate=118/s afbd_delta=0 passes=24
+SOAK t=541s ve_delta=31680 gpu=63978 gpu_rate=116/s afbd_delta=0 passes=26
+SOAK t=571s ve_delta=33452 gpu=67520 gpu_rate=118/s afbd_delta=0 passes=27
+SOAK t=601s ve_delta=35200 gpu=71019 gpu_rate=116/s afbd_delta=0 passes=29
+SOAK t=631s ve_delta=36972 gpu=74564 gpu_rate=118/s afbd_delta=0 passes=30
+SOAK t=661s ve_delta=38723 gpu=78064 gpu_rate=116/s afbd_delta=0 passes=32
+SOAK t=691s ve_delta=40494 gpu=81608 gpu_rate=118/s afbd_delta=0 passes=33
+SOAK t=721s ve_delta=42240 gpu=85103 gpu_rate=116/s afbd_delta=0 passes=35
+SOAK t=751s ve_delta=44011 gpu=88646 gpu_rate=118/s afbd_delta=0 passes=36
+SOAK t=781s ve_delta=45760 gpu=92150 gpu_rate=116/s afbd_delta=0 passes=38

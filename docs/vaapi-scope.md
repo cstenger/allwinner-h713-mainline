@@ -618,6 +618,707 @@ handler. It is still worth having for the softer hangs.
 
 ---
 
+## The display IS translatable — and the soak that should have settled it hit a different bug (2026-08-21)
+
+The primary experiment finally ran: `iommus = <&iommu 2 1>` on the AFBD node
+(patch 0052), on a kernel otherwise **bit-identical to production** — the
+`dispiommu` fragment changes no config symbol, so `uname -r` stays `6.18.38`,
+`/lib/modules/6.18.38` loads unchanged, WiFi and BT come up, and the DRM card
+numbering stays `card0` panfrost / `card1` AFBD. That last part is what made the
+run observable over ssh instead of over a 115200-baud console, and it is worth
+keeping for every future display experiment.
+
+**Four things are now established, and they hold regardless of the soak.**
+
+1. **A second master can share this IOMMU.** The worry was real — sun50i-iommu
+   installs one page table at a time (`iommu->domain`), and its `attach_dev`
+   detaches whatever was there — but `.device_group` is
+   `generic_single_device_group`, which caches **one** group on the
+   `iommu_device` and hands it to every master behind it. So the display joins
+   cedrus's group rather than displacing it:
+   ```
+   [0.800646] platform 1c0e000.video-codec: Adding to iommu group 0
+   [0.806856] platform 5600000.display:   Adding to iommu group 0
+   ```
+   Read the helper's name as "singleton group", not "single-device group".
+2. **Master 2 really is translated**, and the proof is a fault:
+   ```
+   [0.812726] sun50i-iommu 2010000.iommu: Page fault for 0x000000006c3d5000 (master 2, dir rd)
+   ```
+   That is the panel still fetching U-Boot's physical carveout in the window
+   between the IOMMU attaching the device and the KMS driver programming an
+   IOVA. It is a *positive control*: the master faults, so it is not bypassing.
+3. **The handover works, and it is the reason a null result would mean
+   something.** There is exactly **one** such fault, not a storm — the block
+   stops re-fetching after the IOMMU resets its port — and after AFBD probes at
+   6.39 s (`adopting 1280x720, stride 5120, source 6c100000`) there are none at
+   all. A translated master that fetches successfully is by definition fetching
+   *mapped* IOVAs, so the scanout is genuinely going through the page table. No
+   register read is needed to establish that, and it is better evidence than one
+   would be.
+4. **Decode is unaffected by the shared domain:** the full VA1 ladder is 5/5
+   bit-exact with the display attached, and `ve` interrupts still rise one per
+   frame.
+
+Patch 0051 (rate-limit the fault print) was written for the storm that did not
+materialise. Keep it anyway: `sun50i_iommu_report_fault()` runs in hard IRQ with
+`iommu_lock` held and called `dev_err()` once per faulting transaction, which is
+a console-bound hang waiting for a master that faults per-frame.
+
+### The soak is INVALID — the display stopped being exercised at 30 s
+
+`mmu_delta` stayed at 0 for the whole run and the board never corrupted, but
+**none of that counts**, because the display stopped being exercised after
+roughly half a minute:
+
+```
+SOAK t=30s  ve=0 gpu=11253 gpu_rate=375/s mmu_delta=0
+SOAK t=60s  ve=0 gpu=11253 gpu_rate=0/s   mmu_delta=0
+...          gpu frozen at 11253 for the next nine minutes, deaths=0
+```
+
+`gpu` frozen with mpv still alive is exactly the false-survival the harness
+header warns about. What actually happened is on the console at the same
+instant:
+
+```
+[159.550902] sunxi-mmc 4022000.mmc: send stop command failed
+[159.556572] panfrost 1800000.gpu: unexpectedly high interrupt latency
+```
+
+`mmc@4022000` is the **eMMC**, i.e. the rootfs. From there the filesystem was
+gone: journald went unkillable (`Processes still around after SIGKILL` — D
+state), a `dd` hung, and every shell command that touched a path hung while
+`/proc` kept answering normally. mpv froze because it could not read the next
+block of the clip.
+
+At the time this was read as a storage bug unrelated to the corruption. The
+production control below makes that unlikely: it is more probably **the same
+stray write, landing in the mmc path instead of a task_struct**. A different
+victim every run is this bug's signature, so a wedged eMMC needs no separate
+explanation.
+
+**Do not read the clean `mmu_delta=0` as evidence.** Thirty seconds of exposure
+against a bug whose crash latency ranges 113–848 s is the same mistake the
+retraction earlier in this document is about.
+
+### What to run next, and why it is a control rather than a fix
+
+The two candidate explanations are not distinguishable from this run:
+
+- **pre-existing** — concurrent display + GPU + WiFi + eMMC load wedges the
+  eMMC on any kernel. Note the eMMC still carries the 4x clock-accounting error
+  that patch 0048 fixed **only for mmc1**: `max-frequency = <200000000>` on a
+  controller whose driver doubles the rate and whose CCU carries a fictional /2
+  post-divider. `d957eea` records that the measurement was attempted and does
+  not settle it.
+- **caused by this patch** — and there is a mechanism, which is why it cannot
+  just be waved off. This kernel reports `iommu: DMA domain TLB invalidation
+  policy: strict mode`, and sun50i-iommu's flush path spins with `iommu_lock`
+  held and interrupts disabled. Adding a second, actively-allocating master
+  lengthens those IRQ-off windows, and *both* symptoms landing in the same
+  6 ms — a GPU complaining about interrupt latency and an eMMC missing a command
+  completion — is what that would look like.
+
+So the next run is the **production kernel, same clip, same mpv invocation, no
+display IOMMU**. If the eMMC wedges there too it is pre-existing and becomes the
+blocker for all display work; if production runs clean, patch 0052 caused it and
+`iommu.strict=0` (a cmdline knob, no rebuild) is the first thing to try.
+
+### That control ran, and it panicked in forty seconds (2026-08-21)
+
+Neither branch above. The production kernel — panel up, same clip on the same
+eMMC, same bootargs, same mpv invocation, **no display IOMMU** — reproduced the
+corruption almost immediately:
+
+```
+SOAK MPV-DIED #1 by t=30s rc=139 SIGSEGV
+[141.125261] Kernel panic - not syncing: kernel stack overflow
+```
+
+**Two conclusions, and the first retires a worry rather than a hypothesis.**
+
+1. **Patch 0052 did not cause the wedge.** The bug is present without it. The
+   eMMC wedge in the dispiommu run is best read as the *same stray write*
+   landing in a different victim — the signature of this bug has always been a
+   different victim every run, and an mmc structure is as good a target as a
+   `pool_workqueue`. It does not need a separate explanation, and the
+   `iommu.strict=0` idea can be shelved.
+2. **The reproduction is fast.** Forty seconds of display exposure, against a
+   documented range of 113–848 s. If that holds it changes how this bug can be
+   worked: controls become minutes rather than hours. Treat it as one sample
+   until a second run agrees.
+
+### The best trace yet — the victim is a task_struct
+
+`docs/reference/expJ-production-control-stack-overflow.log`. The registers pin
+down what the earlier runs could only describe:
+
+```
+Workqueue:  0x0 (pan_js)
+pc : el1h_64_sync+0x0/0x70
+lr : process_scheduled_works+0x214/0x300
+sp : 0000000081320040
+x29: ffff800081323d90
+```
+
+`x29` is intact and sits in the task's 16 KiB stack
+(`0xffff800081320000..0xffff800081324000`). `sp` holds **the same low 32 bits
+with the top half zeroed** — `0x0000000081320040` where
+`0xffff800081320040` belongs. It is not a stack that overflowed by recursing;
+it is a stack pointer that came back wrong.
+
+That points at one structure. `cpu_switch_to()` restores `fp` and `sp` from
+`task->thread.cpu_context`, where they are adjacent:
+
+```c
+struct cpu_context { unsigned long x19..x28, fp, sp, pc; };
+```
+
+`fp` (+80) survived, `sp` (+88) lost its high word, and `pc` (+96) is
+consistent with `lr` pointing into `process_scheduled_works` — exactly where
+this kworker would have been switched out. So the write was **four bytes of
+zero at `cpu_context.sp + 4`**, inside a slab-allocated `task_struct`, and the
+task died on the *next* context switch into it rather than at the moment of the
+write.
+
+This is the same "upper 32 bits zeroed, low half intact" shape recorded earlier,
+now with a named victim and a named mechanism. It also explains why the faulting
+site is different every time: the corruption is silent until something *uses*
+the field.
+
+And note `MPV-DIED ... SIGSEGV` **before** the panic. Userspace was hit too, so
+whatever writes is not confined to kernel allocations.
+
+### Panfrost is the remaining unisolated variable
+
+The GPU has been live in every run on record — the crashing ones *and* run D,
+which was clean — so it has never been in the "changed" column of any
+comparison. It is also the one candidate that neither of this project's
+detectors can see: KASAN does not instrument device DMA, and panfrost maps the
+scanout dma-buf into its **own** MMU, so the sun50i IOMMU cannot fault on it no
+matter how long patch 0052 soaks.
+
+`VO=drm` is the control that removes it. mpv renders on the CPU into the same
+CMA dumb buffers and page-flips them, so the scanout path is unchanged:
+
+```
+SOAK start ... vo=drm
+SOAK t=30s ve=0 gpu=0 gpu_rate=0/s afbd_rate=57/s mmu_delta=0
+```
+
+`gpu=0` is positive proof the GPU never ran — panfrost is loaded and could
+fire — and `afbd_rate=57/s` proves the panel is being driven at very nearly
+60 Hz throughout. That is the pairing the earlier runs lacked: a null result
+that is *known* to have been exposed.
+
+### It ran clean for forty minutes, and the GPU arm crashed twice more
+
+```
+SOAK DONE vo=drm t=2406s deaths=0 ve_delta=0 gpu_delta=0 afbd_delta=143646 mmu_delta=0
+```
+
+**143,646 scanout commits, zero GPU interrupts, zero mpv deaths, zero faults,
+no reboot.** Cross-checked against the console: the serial capture matched no
+stop pattern at all, and `panfrost-job` read **0** in `/proc/interrupts`
+afterwards while `h713-afbd` read **144,430**. Log:
+`docs/reference/expL-vodrm-no-gpu-clean-40min.log`.
+
+The GPU arm was then re-run and crashed again in ~60–90 s
+(`docs/reference/expK-gpu-arm-rerun-ccu-pointer.log`), so the fast latency is
+n=2, not a fluke.
+
+**This closes a 2x2 that supersedes "where the scanout buffer lives".**
+
+| GPU renders | scanout buffer | result |
+| --- | --- | --- |
+| yes | reserved carveout | clean, 480 s (run D) |
+| yes | **CMA** | **crash — ~40 s, then ~60–90 s** |
+| **no** | CMA | clean, 2406 s / 143,646 commits |
+
+Neither ingredient is sufficient alone. The corruption needs **panfrost
+rendering into a CMA-backed scanout buffer**. That is a much sharper statement
+than the earlier "the discriminating variable is where the scanout buffer
+lives, not what feeds it" — *what feeds it* turns out to matter just as much,
+and the earlier phrasing should be read as superseded.
+
+Two caveats kept deliberately: `VO=drm` removes several things at once — job
+execution, panfrost's MMU mappings, GBM allocation, and the dma-buf
+export/import between `card1` and `card0` — so this indicts that *set*, not
+panfrost's DMA specifically. And the clean arm is 2406 s against a crash
+latency whose full recorded range is 113–848 s, so it is ~2.8x the longest
+crash on record rather than 60x the fastest.
+
+### The second trace: two CPUs, kernel and userspace, in the same microsecond
+
+`expK` is the most informative crash yet, because two independent faults land
+together:
+
+```
+CPU 3  sugov:0        pc : ccu_helper_wait_for_lock+0x54/0xbc
+                      x20: faef800080111000        <- should be ffff8000_...
+CPU 0  av:h264:df1    DABT (lower EL) ... level 1 translation fault
+                      in libavcodec.so.61.19.101[15a79c,...]   (WnR=1, a write)
+```
+
+`x20` is `common->base + reg` inside the **clock driver** — a fresh victim,
+neither of the earlier ones. And at the same instant a *userspace* libavcodec
+thread faulted writing to an unmapped address. One bad pointer does not do
+that. A single event scribbled over memory belonging to the kernel **and** to a
+user process at once, which is what a device writing a block to the wrong
+physical address looks like.
+
+**The corrupted values look like pixel data.** The high half of the CCU pointer
+went `ffff` → `faef`; in `expJ` the high word of `cpu_context.sp` went
+`ffff8000` → `00000000`. Black, and a colour. A GPU writing a frame of a video
+into recycled memory would produce exactly that distribution — mostly zeros
+with occasional non-zero words — and it explains why every victim is a
+different structure: one stray render pass covers a great many of them.
+
+Migration metering (`mig_delta`, `pgmigrate_success`) is now in the harness on
+the hypothesis that CMA page migration moves a page out from under a live GPU
+mapping. First data point is `mig_delta=10` over 30 s on the GPU arm — real but
+small, and there is no clean-arm comparison yet because the counter was added
+after that run. **Not evidence of anything yet**; it is instrumentation for the
+next pass.
+
+### Where this leaves the investigation
+
+The suspect list is finally short, and for the first time it excludes the
+display itself:
+
+- **cedrus** — exonerated (crashes with `ve=0`).
+- **VA-API / mpv / ffmpeg / the shim** — exonerated (reproduces with none of them).
+- **AFBD / the KMS scanout** — now effectively exonerated too: it ran 143,646
+  commits at full rate for 40 minutes with nothing else touching the buffers.
+  It is also read-only by construction — the driver programs `AFBD_SRC` and a
+  stride, and a scanout engine that reads a recycled page shows garbage, it
+  does not corrupt.
+- **panfrost, or the dma-buf import path it requires** — the remaining suspect.
+
+### Reading the import path — what it ruled out, and the one fact that matters
+
+The chain was read end to end: `panfrost_gem_prime_import_sg_table()` →
+`drm_gem_shmem_prime_import_sg_table()` → `panfrost_gem_open()` →
+`panfrost_mmu_map()` → `mmu_map_sg()`, plus the teardown side. **No smoking gun
+in it**, and it kills two hypotheses including one of mine.
+
+Confirmed empirically first, from `/sys/kernel/debug/dma_buf/bufinfo` during
+playback — the split-render path is real and is exactly what was assumed:
+
+```
+size 03723264  exp_name drm   Attached Devices: 1800000.gpu     (x4, 14,893,056 B total)
+panfrost gems:  3723264  ... 0x3  "GEM PRIME buffer"   (imported|exported)
+                134217728 resident 2097152                       <- growable tiler heap
+```
+
+Four ~3.55 MiB dumb buffers allocated on `card1` (AFBD → CMA), exported, and
+imported **only** by panfrost.
+
+- **Mapping lifetime is properly refcounted.** `panfrost_gem_mapping` is a kref;
+  release runs `panfrost_mmu_unmap()`, removes the `drm_mm` node, then drops the
+  GEM reference, and `panfrost_gem_free_object()` `WARN_ON_ONCE`s if any mapping
+  survives. No leak path found.
+- **Imported pages cannot be freed under the GPU.** The importer holds a dma_buf
+  reference, which holds the exporter's GEM object, which holds the CMA
+  allocation.
+- **The CMA-migration hypothesis is DEAD.** Two independent reasons. An
+  allocated CMA buffer is out of the buddy allocator and is not a migration
+  candidate. And panfrost's own heap pages — the only movable-looking memory it
+  maps — come from `drm_gem_shmem_create()`, which does
+  `mapping_set_gfp_mask(..., GFP_HIGHUSER | ...)` **without `__GFP_MOVABLE`**,
+  with a comment saying in as many words that MOVABLE "conflicts with CMA...
+  if you're going to pin these pages". The `mig_delta` counter stays as
+  background noise; it is not evidence and should not be cited as such.
+- **`get_pgsize()` cannot over-map.** It returns 2 MiB only when the address is
+  2 MiB-aligned *and* `size >= SZ_2M`, and `*count` is an integer division of
+  `size`, so a mapping never runs past its sg entry.
+
+**The fact that matters: neither crash log contains a single panfrost MMU
+fault.** No `Unhandled Page fault in AS%d`, no MMU messages at all, in `expJ` or
+`expK`. The GPU never touched an unmapped VA. So this is **not** "the GPU
+escapes its page tables" — it is writing through mappings the driver installed,
+which means either those mappings point somewhere they should not, or the page
+tables themselves were already corrupted by the first event in a chain.
+
+Two real defects found on the way, both worth reporting upstream, neither
+matching our symptom:
+
+1. **A failed GPU mapping is silent.** `mmu_map_sg()` discards
+   `ops->map_pages()`'s return, and `panfrost_mmu_map()` returns 0
+   unconditionally. Worse, on failure `mapped = max(mapped, pgsize)` fabricates
+   forward progress, so `iova`/`paddr` advance as though the map succeeded and
+   the region is left with a hole. Would surface as MMU faults, which we do not
+   have.
+2. **`panfrost_mmu_map()` hardcodes `IOMMU_CACHE` for every BO, including
+   imports.** Our AFBD buffers come from `drm_gem_dma`, i.e. `dma_alloc_wc` —
+   *write-combine, non-cached*. So the same physical pages are mapped
+   non-cacheable by the display and CPU and cacheable by the GPU. On ARM,
+   mismatched memory attributes for one physical address are architecturally
+   unpredictable. This is a genuine bug in our configuration; its expected
+   symptom is torn or stale pixels rather than corruption of unrelated memory,
+   so it does not obviously explain the crash — but it is wrong regardless.
+
+### Patch 0053 was written and tested — it does NOT fix the corruption
+
+The cacheability mismatch is real, and both ends of it were verified rather than
+assumed. `drm_gem_dma_create()` takes the `else` branch to `dma_alloc_wc()`
+(our AFBD driver never sets `map_noncoherent`), so the scanout pages are Normal
+Non-cacheable. Neither `gpu@1800000` nor `display@5600000` declares
+`dma-coherent`, so `pfdev->coherent` is false. Our Mali is a **G31** and
+Allwinner does not set `GPU_QUIRK_FORCE_AARCH64_PGTABLE`, so panfrost uses
+`ARM_MALI_LPAE`, where `IOMMU_CACHE` selects `ARM_LPAE_MAIR_ATTR_IDX_CACHE` →
+`ARM_MALI_LPAE_MEMATTR_WRITE_ALLOC`. Cacheable on one side, non-cacheable on the
+other, same physical pages.
+
+Patch 0053 drops `IOMMU_CACHE` for imported BOs. **The GPU arm still panicked,
+at 75 s** — squarely inside the 40–90 s baseline.
+`docs/reference/expM-0053-noncached-imports-still-crashes.log`.
+
+So the mismatch was a real bug and is now fixed, but it is not the corruption.
+The patch is worth keeping on its own terms — aliasing one physical address with
+mismatched cacheability is architecturally undefined on ARM regardless of
+whether it is what is killing this board — but it buys no stability here.
+
+A mechanism worth recording, because it was considered and does *not* hold: a
+cacheable GPU mapping could leave dirty L2 lines that get written back after the
+buffer is freed and its pages recycled, which would look exactly like our
+symptom. It is guarded. `panfrost_mmu_unmap()` calls `panfrost_mmu_flush_range()`,
+whose `AS_COMMAND_FLUSH_PT` (0x04) is documented in `panfrost_regs.h` as "flush
+all L2 caches then issue a flush region command", and `panfrost_mmu_disable()`
+issues a full `AS_COMMAND_FLUSH_MEM` when an address space is released.
+
+### What the crash site is now telling us
+
+The last two crashes are the **same site**, which is new — every earlier run had
+a different victim:
+
+```
+CPU 1  Comm: sugov:0    pc : ccu_helper_wait_for_lock+0x54/0xbc
+   ccu_pll_notifier_cb  <- clk_change_rate <- clk_set_rate
+   <- dev_pm_opp_set_rate <- __cpufreq_driver_target <- sugov_work
+```
+
+That is the **CPU DVFS path**: schedutil changes frequency, the sunxi-ng PLL
+notifier polls a lock bit through `common->base`, and the dereference faults.
+In `expK` that pointer had its high half corrupted (`faef8000…`); in `expM` it is
+a well-formed vmalloc-range address that takes a **level 3 translation fault**,
+i.e. plausibly a corruption that happened to land back inside the vmalloc range
+at an unmapped page.
+
+Do not over-read the repetition. GPU load drives constant frequency changes, so
+this path runs hot and dereferences a long-lived pointer — a busy target rather
+than necessarily a meaningful one. But `ccu_common` is long-lived driver data,
+not a recycled allocation, which makes it a slightly different class of victim
+from the `task_struct` and `pool_workqueue` seen earlier.
+
+Still **zero panfrost MMU faults** in this run, as in every other.
+
+### ⚠ The carveout experiment ran, and it REFUTES the 2x2 above
+
+Patch 0054 gives the AFBD driver a 64 MiB `no-map` `shared-dma-pool` at
+0x70000000 as its scanout source, with mpv and panfrost otherwise untouched.
+**It crashed at ~31 s**, in `pwq_dec_nr_in_flight` — a `pool_workqueue`, which
+is the very first victim this investigation ever saw.
+`docs/reference/expN-carveout-scanout-still-crashes.log`.
+
+The arm was valid, and this was **proven rather than inferred**, because a
+silent fallback to CMA would have looked exactly like a clean result
+(`docs/reference/expN-carveout-buffers-proof.txt`):
+
+```
+CmaFree_before=130688kB / CmaFree: 130688 kB     <- flat; the CMA arm dropped to ~112,544
+dma_addr=0x0000000071000000  size=3723264        <- all three scanout FBs
+dma_addr=0x0000000070c00000  size=3723264           inside the 0x70000000 pool,
+dma_addr=0x0000000070800000  size=3723264           on 4 MiB slot boundaries
+panfrost-job: 3785                               <- the GPU really was rendering
+```
+
+There is also no silent-fallback path to worry about by construction: once
+`of_reserved_mem_device_init()` succeeds, `dma_alloc_wc()` on that device goes
+through `dma_alloc_from_dev_coherent()`, which fails with ENOMEM rather than
+reaching for CMA.
+
+**So "the corruption needs panfrost rendering into a CMA-backed scanout buffer"
+is wrong, and the table that concluded it is superseded.** The CMA half does not
+survive. Corrected:
+
+| renderer | scanout | result |
+| --- | --- | --- |
+| mesa/GBM via panfrost (`mpv --vo=gpu`) | CMA | crash, 40–90 s |
+| mesa/GBM via panfrost (`mpv --vo=gpu`) | **carveout** | **crash, ~31 s** |
+| CPU (`mpv --vo=drm`) | CMA | clean, 2406 s |
+| `gles-play` (minimal GLES) | carveout | clean, 480 s |
+
+Where the scanout buffer lives is **not** the variable — that idea has now been
+tested directly and failed. What survives every run is narrower and simpler:
+**panfrost doing real rendering work**. The two clean arms are the two where the
+GPU either never ran at all, or ran a trivial program.
+
+That also demotes run D. It was read as "GPU + carveout is clean", but it used
+`gles-play`, which does far less GPU work than mesa driving a full GL
+compositing path with a growable tiler heap. Its 480 s may be low stress rather
+than a protective memory configuration, and it should no longer be cited as
+evidence that the carveout protects anything.
+
+### What is still standing
+
+- **panfrost doing substantial rendering is necessary.** `--vo=drm` ran 2406 s
+  with 143,646 scanout commits and `gpu_delta=0`.
+- **cedrus, VA-API, mpv/ffmpeg, the shim, AFBD/KMS scanout, and the scanout
+  memory source are all excluded.**
+- **The GPU never faults.** Zero panfrost MMU faults across every crash.
+- **The import path reads clean**, and `IOMMU_CACHE` on imports (a real bug,
+  fixed by 0053) was not it.
+
+The next thing to separate is the one difference left between the crashing and
+clean GPU arms: mesa/GBM importing a `card1` dumb buffer into panfrost, versus
+`gles-play` rendering into a `sunxi-scanout-dmabuf` export. Both use panfrost;
+only one crashes. Either the import/export pairing matters, or — the duller and
+now more likely reading — it is simply the *amount* of GPU work, in which case
+the question becomes what panfrost does under load that corrupts memory without
+ever raising an MMU fault.
+
+### A hypothesis this investigation has been mis-reading: DVFS, not DMA
+
+Worth stating plainly because it reframes everything above, and because the
+evidence for it has been sitting in the traces being explained away.
+
+**The last two crashes are inside the CPU DVFS path**, not merely near it:
+
+```
+ccu_helper_wait_for_lock  <- ccu_pll_notifier_cb <- clk_change_rate
+<- clk_set_rate <- dev_pm_opp_set_rate <- __cpufreq_driver_target <- sugov_work
+```
+
+That was dismissed as "schedutil runs hot under GPU load, so it is a busy
+target". That reasoning is only sound if the corruption is independent of what
+the CPU is doing. If instead the **frequency/voltage transition itself** is the
+corrupting event, then faulting inside the transition code is not coincidence,
+it is the signature.
+
+The whole investigation has assumed a *device writing to memory it should not*.
+Every result is at least as consistent with **marginal DVFS** — a voltage or
+PLL transition that is not stable under a heavy load, producing bit flips:
+
+| observation | DMA-write reading | DVFS reading |
+| --- | --- | --- |
+| different victim every run | stray target address | flips land anywhere |
+| KASAN blind | device DMA is not instrumented | not a CPU store at all |
+| no IOMMU fault, ever | the write bypasses that master | nothing is translated |
+| **no panfrost MMU fault, ever** | awkward — needs a valid mapping | expected |
+| kernel + userspace faulting together | one wide DMA burst | expected |
+| `ffff` → `faef` in a pointer | pixel data | **three bit flips (XOR 0x0510)** |
+| `ffff8000` → `00000000` | black pixels | a flipped/zeroed half |
+| needs heavy GPU load | GPU is the writer | GPU load drives thermals, the Mali rail, and constant CPU OPP changes |
+| scanout memory source irrelevant | awkward — refuted 0054 | expected |
+| `--vo=drm` clean over 2406 s | no GPU DMA | **the weak point: CPU rendering is also heavy load** |
+
+The last row is the honest objection: software rendering pegs the CPU, which
+should exercise CPU DVFS hard, and it ran 40 minutes clean. But it never
+touches the **Mali rail** (`mali-supply`) or panfrost's devfreq, and it draws
+far less total power, so it stresses a different transition and a different
+thermal envelope.
+
+`ffff` → `faef` deserves emphasis. As pixel data it is arbitrary. As
+corruption it is `XOR 0x0510` — bits 4, 8 and 10 of a 16-bit field, with the
+rest of the 64-bit pointer intact. A DMA burst overwriting a word would not
+usually leave 13 of 16 bits correct.
+
+**The test is cheap and needs no rebuild.** Pin both rails and re-run the mpv
+GPU arm:
+
+```bash
+echo performance > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+echo performance > /sys/class/devfreq/1800000.gpu/governor
+```
+
+If the crash goes away with frequencies pinned, this is a power/clock
+integrity problem and not a memory-corruption bug at all, and the whole
+`cedrus / IOMMU / panfrost / CMA` line of enquiry has been chasing a symptom.
+If it still crashes on schedule, DVFS is excluded properly rather than by
+assumption, which it never has been. Note the earlier "DVFS was ruled out"
+in the roadmap refers to the **SDIO wedge**, a different bug, and does not
+transfer.
+
+### It ran, and it is the first thing that has ever changed the outcome
+
+**20 minutes clean on the arm that dies in 40–90 s.**
+
+```
+SOAK DONE vo=gpu t=1205s deaths=0 ve_delta=0 gpu_delta=587576 afbd_delta=71742
+```
+
+587,576 GPU interrupts and 71,742 scanout commits, `deaths=0` throughout, zero
+crash patterns on the serial capture, board still up afterwards with no reboot.
+`docs/reference/expP-cpu-pinned-20min-clean.log`. Against a baseline of n=3
+crashes at 40 s, ~60–90 s and 75 s, this is the **first intervention in the
+entire investigation to move the crash latency at all.**
+
+**But it is confounded, and the `khz=` meter is what caught it.** The
+`performance` governor did *not* hold 1416 MHz: thermal throttling pulled the
+CPU to 1200–1296 MHz within about two minutes and held it there at 78 °C. So
+the run changed two things at once — far fewer frequency transitions **and**
+never reaching the top OPP. Had the heartbeat only recorded the governor name,
+this would have been written up as "pinning fixes it", which is not what
+happened.
+
+### The vendor bins its CPU per die, and we do not
+
+Read out of the stock DTB (`local/h713-lab/analysis/board-a-stock-20260622/`).
+The vendor's table is not a plain `operating-points-v2`:
+
+```
+cpu-opp-table {
+	compatible = "allwinner,sun50i-operating-points";
+	nvmem-cells = <&speed>;   nvmem-cell-names = "speed";
+```
+
+An efuse selects a **speed bin**, and every OPP carries a voltage *per bin*
+(`opp-microvolt-0x00010042`, `-0x0002001f`, …). A bin whose entry reads
+`microvolt = 0` does not get that OPP **at all**. There are two ladders:
+
+| bin family | top OPP the vendor allows |
+| --- | --- |
+| `…0042` / `…0043` | **1320 MHz @ 1100 mV** — 1392, 1416 and 1512 all unsupported |
+| `…001f` / `…002f` / `…0040` | 1416 MHz @ **1060 mV**, 1512 MHz @ 1100 mV |
+
+Ours is one fixed table applied to every die, with no efuse read;
+`CONFIG_ARM_SUN50I_CPUFREQ_NVMEM` is not even enabled, though mainline carries
+that driver for h6/a100/h616/h618/h700.
+
+| freq | ours | vendor |
+| --- | --- | --- |
+| 792 | 900 mV | 900 mV ✓ |
+| 1008 | 940 | 940 ✓ |
+| 1104 | 960 | 960 ✓ |
+| 1200 | 1000 | 1000 ✓ |
+| 1296 | 1060 | 1060 as `default`; **unsupported** for `…0042/0043` |
+| **1416** | **1100 mV** | **in neither ladder** — fast bins use 1060 mV, slow bins do not run it |
+
+The low half of our table is vendor-exact, so it was derived properly. The top
+entry is the outlier: 1416 MHz at 1100 mV is a point the vendor never programs
+on any bin.
+
+**And the efuse suggests this die is a slow bin.** SID word 0 reads
+`0x03400042` — low half `0x0042`. Treat that as *suggestive, not proven*: it is
+a pattern match against the vendor's key suffix, the high half (`0x0340`) does
+not correspond to any vendor key prefix, and the real extraction lives in the
+vendor cpufreq driver, which has not been disassembled. But if it holds, we have
+been running a 1320 MHz-max die at 1416 MHz.
+
+That would explain the whole shape of this bug without any rogue DMA: an
+out-of-spec top OPP under sustained GPU + display load produces bit flips, which
+land anywhere, which is why the victim is different every run, why KASAN and
+both IOMMUs see nothing, why kernel and userspace fault together, and why
+`ffff` → `faef` is three flipped bits rather than an overwrite.
+
+### It is the OPP, not the transitions
+
+`schedutil` with `scaling_max_freq=1200000` — frequency changes **on**, top two
+OPPs gone — ran **20 minutes clean**:
+
+```
+SOAK DONE vo=gpu t=1205s deaths=0 gpu_delta=577790 afbd_delta=71716
+```
+
+`docs/reference/expQ-cap1200-schedutil-20min-clean.log`, zero crash patterns on
+serial. So the corruption is **not** caused by DVFS transitions — they ran
+throughout. It is caused by reaching the top of our OPP table.
+
+| arm | governor | ceiling | result |
+| --- | --- | --- | --- |
+| baseline | schedutil | 1416 | **crash, 40–90 s (n=3)** |
+| pinned | performance | 1416 (thermally held ≈1200) | clean, 1205 s |
+| capped | schedutil | **1200** | clean, 1205 s |
+
+### The vendor cpufreq driver, disassembled
+
+The vendor kernel is an **uncompressed 32-bit ARM image** (`boot_a-unpack/kernel`,
+load base `0xC0008000`, found by counting literal-pool hits on known strings).
+Its `sun50i_cpufreq_nvmem` probe is at `0xc074f808`; the efuse helper decodes as:
+
+```asm
+c074f89c:  bl   nvmem_cell_read(cell, &len)
+c074f8bc:  cmp  r1, #4               ; len > 4 -> "Invalid nvmem cell length"
+c074f8d8:  cmp  r3, r1               ; for (i = 0; i < len; i++)
+c074f8dc:  ldrbne ip, [r5, r3]       ;   b = buf[i]
+c074f8e0:  lslne  r0, r3, #3         ;   shift = i * 8
+c074f8e8:  orrne  r2, r2, ip, lsl r0 ;   value |= b << shift
+c074f8f0:  str  r2, [r7]             ; *out = value
+```
+
+**No shift, no mask, no combining with anything else** — the raw little-endian
+cell value becomes the key, formatted `"0x%8.8x"` and installed as the OPP prop
+name, so the core looks up `opp-microvolt-<key>`.
+
+The `speed` cell is `vf-table@00`, `reg = <0x00 0x02>` — **2 bytes at SID offset
+0**. This board's SID begins `42 00`, so our key is `0x00000042`.
+
+**And that exposes a contradiction worth stating plainly: none of the 17 keys in
+the vendor's CPU table can ever match a 2-byte cell.** Every one —
+`0x00010042`, `0x000a0042`, `0x0002001f`, … — exceeds `0xFFFF`. So on this DTB
+the per-bin voltages are unreachable for *any* die, and every die falls back to
+the plain `opp-microvolt`, i.e. the `default` column.
+
+That correction matters, because an earlier reading of this table ("slow bins
+top out at 1320 MHz") was based on the bin columns and is **not** the operative
+ladder. The operative one is:
+
+| freq | vendor `default` | ours |
+| --- | --- | --- |
+| 1200 | 1000 mV | 1000 mV ✓ |
+| 1296 | 1060 mV | 1060 mV ✓ |
+| 1392 | 1100 mV | *(absent from our table)* |
+| **1416** | **`<0x00>` — no voltage** | **1100 mV** |
+
+So the durable statement is narrower and still damning: **1416 MHz carries a
+nonzero voltage only under keys that can never be selected. Under the vendor's
+actual working configuration it is never used at any voltage.** We ship it as
+our top OPP, at 1100 mV, on every die.
+
+Caveats kept: this is **board A**'s DTB; no board-B DTB has been extracted (only
+the 51 GB raw images), and a different `vf-table` length there would change the
+analysis. And the 1200 cap removed 1296 *and* 1416 together, while 1296 at
+1060 mV matches the vendor exactly — so 1416 is implicated but not yet isolated.
+The 1296-ceiling arm that separates them is running.
+
+Two harness changes went in for this:
+
+- **`VO=drm`** runs the same CMA-backed KMS scanout and page flips with mpv
+  rendering on the CPU, so **panfrost never runs**. That control has never been
+  run, and panfrost has been live in every run on record — clean and crashing
+  alike — so it has never been isolated. It also maps the scanout dma-buf into
+  its **own** MMU, which the sun50i IOMMU cannot see or fault on; if a stale one
+  of those is the stray writer, no amount of soaking patch 0052 will ever show
+  it. On this arm `gpu=` flat is positive proof the GPU never ran, exactly as
+  `ve=0` was for cedrus.
+- **`afbd_rate=`** meters scanout commits, so exposure stays measurable on an
+  arm where the GPU is deliberately absent and `gpu_rate` cannot be the meter.
+  Had it been there for this run, the collapse would have been obvious at t=60s
+  rather than at t=600s.
+
+### Operational lessons from the wedge
+
+- **Do not probe a running soak.** A `/dev/mem` read of the AFBD registers hung
+  in D state and cost a process; a `/root/*` glob typed at the serial console
+  hung **the console shell itself**, which was the last interactive path in.
+  Both were mine, and both were avoidable — the question they were asked to
+  answer (is the scanout translated?) was already answered by the fault log.
+- **There is no software reset from a wedged rootfs on this board.**
+  `reboot`/`systemctl` are external binaries on the dead filesystem;
+  `CONFIG_MAGIC_SYSRQ` is **off in the production config** (it is only in the
+  debug fragments); and `exec 3>/dev/watchdog0` does not reset the board,
+  almost certainly because systemd already holds and pets it. That leaves a
+  physical power cycle. **Worth fixing before the next long run:** put
+  `CONFIG_MAGIC_SYSRQ=y` in the shipping defconfig, or set
+  `RuntimeWatchdogSec=0` so the watchdog can be claimed by hand.
+- **Keep soak clips on tmpfs.** `/tmp` is a 467 MB tmpfs and the clip is 15 MB.
+  Playing from `/var/tmp` puts the eMMC in the path of every display soak, which
+  is how a storage bug got to masquerade as a display result.
+
+---
+
 # HANDOFF — start here, 2026-08-16
 
 **The decision already made:** do not patch mpv, ffmpeg or GStreamer. Adapt our

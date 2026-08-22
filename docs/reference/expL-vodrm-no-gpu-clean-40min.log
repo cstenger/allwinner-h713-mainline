@@ -1,0 +1,91 @@
+SOAK start kernel=6.18.38 card=/dev/dri/card1 clip=/var/tmp/long.mp4 minutes=40 vo=drm
+SOAK cmdline: console=ttyS0,115200 earlycon loglevel=8 panic=10 clk_ignore_unused pd_ignore_unused root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 cma=128M oops=panic
+SOAK irq0 248:          0          0          0          0    GICv2 103 Level     2010000.iommu
+SOAK irq0 327:          0          0          0          0    GICv2 107 Level     1c0e000.video-codec
+SOAK irq0 328:          0          0          0          0    GICv2 108 Level     panfrost-gpu
+SOAK irq0 329:          0          0          0          0    GICv2 150 Level     panfrost-mmu
+SOAK irq0 330:          0          0          0          0    GICv2 149 Level     panfrost-job
+SOAK irq0 331:        602          0          0          0    GICv2 142 Level     h713-afbd
+SOAK iommu-attach group 0 1c0e000.video-codec
+SOAK exception-trace=1
+SOAK t=30s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=57/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=60s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=90s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=120s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=150s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=180s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=210s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=240s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=270s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=300s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=330s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=360s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=390s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=420s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=451s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=481s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=511s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=541s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=571s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=601s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=631s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=661s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=691s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=721s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=751s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=781s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=811s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=841s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=871s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=901s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=931s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=962s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=992s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1022s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1052s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1082s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1112s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1142s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1172s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1202s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1232s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1262s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1292s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1322s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1352s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1382s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1412s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1442s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1473s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1503s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1533s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1563s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1593s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1623s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1653s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1683s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1713s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1743s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1773s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1803s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1833s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1863s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1893s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1923s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1953s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=1984s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2014s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2044s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2074s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2104s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2134s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2164s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2194s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2224s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2254s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2284s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2314s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2344s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2374s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK t=2404s ve=0 ve_delta=0 gpu=0 gpu_rate=0/s afbd_rate=59/s mmu_delta=0 cma=112688kB deaths=0
+SOAK DONE vo=drm t=2406s deaths=0 ve_delta=0 gpu_delta=0 afbd_delta=143646 mmu_delta=0
