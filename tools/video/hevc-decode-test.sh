@@ -105,18 +105,33 @@ if LIBVA_DRIVER_NAME=v4l2_request vainfo 2>/dev/null | grep -qiE 'HEVC|H265'; th
 	for v in $VECTORS; do
 		[ -r "$DIR/$v.h265" ] || continue
 		v0=$(ve_irq)
-		LIBVA_DRIVER_NAME=v4l2_request ffmpeg -hide_banner -loglevel error -y \
-			-hwaccel vaapi -i "$DIR/$v.h265" -pix_fmt nv12 -f rawvideo \
-			"$OUT/$v.va" 2>/dev/null
+		# -hwaccel_output_format vaapi is LOAD-BEARING. Without it ffmpeg
+		# silently falls back to software when hwaccel init fails, and
+		# software decode reproduces the reference md5 by definition --
+		# so the run reports PASS having never touched the VE. That
+		# happened on the first PR#44 run and only ve+0 gave it away.
+		LIBVA_DRIVER_NAME=v4l2_request ffmpeg -hide_banner -v error -y \
+			-hwaccel vaapi -hwaccel_output_format vaapi \
+			-i "$DIR/$v.h265" -vf 'hwdownload,format=nv12' \
+			-f rawvideo -pix_fmt nv12 "$OUT/$v.va" 2>"$OUT/$v.err"
 		v1=$(ve_irq)
+		ve=$((v1 - v0))
 		got=$(md5sum "$OUT/$v.va" 2>/dev/null | cut -d' ' -f1)
-		if [ "$got" = "$(want_md5 "$v")" ]; then
-			printf '     %-24s PASS (va) bit-exact, ve+%d\n' "$v" "$((v1 - v0))"
+		if [ "$ve" -eq 0 ]; then
+			# Bit-exact with a flat VE counter is a software decode
+			# wearing a hardware result's clothes. Never a pass.
+			printf '     %-24s FAIL (va) SOFTWARE FALLBACK — ve+0, no frame reached the engine\n' "$v"
+			head -1 "$OUT/$v.err" 2>/dev/null | sed 's/^/          /'
+			fail=$((fail + 1))
+		elif [ "$got" = "$(want_md5 "$v")" ]; then
+			printf '     %-24s PASS (va) bit-exact, ve+%d\n' "$v" "$ve"
 			pass=$((pass + 1))
 		else
-			printf '     %-24s MISMATCH (va) ve+%d\n' "$v" "$((v1 - v0))"
+			printf '     %-24s MISMATCH (va) ve+%d\n' "$v" "$ve"
+			head -1 "$OUT/$v.err" 2>/dev/null | sed 's/^/          /'
 			fail=$((fail + 1))
 		fi
+		rm -f "$OUT/$v.err"
 		rm -f "$OUT/$v.va"
 	done
 else
