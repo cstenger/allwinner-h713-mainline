@@ -506,10 +506,19 @@ other, where 11g differed by 1.8x. At 14 MB/s the link finally uses a
 substantial fraction of the 24.4 MB/s bus, so the SDIO work now actually matters.
 
 `tools/rootfs/customize.sh` generates the AP config, and it now enables HT
-always and takes `HOTSPOT_BAND=2.4|5`. The default is 2.4 GHz HT40 —
-conservative, because 5 GHz has shorter range, drops 2.4-only clients, and
-carries stricter regulatory obligations, which is pointed here given
-`regulatory.db` is absent and the stack runs under permissive rules.
+always and takes `HOTSPOT_BAND=2.4|5`.
+
+**Decided 2026-08-21: 2.4 GHz HT40 is the default**, chosen for client
+compatibility and range rather than accepted as a fallback. 5 GHz VHT80 is about
+3x faster and removes the RX/TX asymmetry, but it drops 2.4-only clients, has
+shorter range, and carries stricter regulatory obligations — pointed here
+because `regulatory.db` is absent and the stack runs under permissive rules.
+Running both at once is worse than either alone (see below), so this is a real
+choice, not a compromise between two things you can have.
+
+The bench board runs this configuration and it survives a reboot: channel 6,
+40 MHz, MCS7, ~6.5–7.7 MB/s each way with zero SDIO faults. Deployments that
+want 5 GHz set `HOTSPOT_BAND=5` in the hotspot config.
 
 One trap: `vht_capab=[MAX-MPDU-11454]` makes hostapd die with `Unable to setup
 interface`. This driver reports a max MPDU length mask of 1, so the highest
