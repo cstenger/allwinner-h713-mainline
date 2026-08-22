@@ -234,12 +234,51 @@ fi
 # and DHCP, so mask the STA supplicant and the default dnsmasq.
 if [ "${HOTSPOT_ENABLED:-0}" = 1 ]; then
   install -d -m 0755 "$R/etc/hostapd"
+  # Band/width. The AIC8800D80 is a 1x1 dual-band VHT80 part, but the AP used to
+  # be emitted as plain 802.11g -- 20 MHz, no HT, 54 Mbit/s -- which capped file
+  # transfer at about 1.3 MB/s in and 2.4 MB/s out against an SDIO bus measured
+  # at 24.4 MB/s. Measured on hardware, 128 MiB each way, SHA-256 exact and zero
+  # SDIO faults in every case:
+  #
+  #   2.4 GHz 11g (old)   1.33 MB/s in   2.37 MB/s out
+  #   2.4 GHz HT40        4.85 MB/s in   7.65 MB/s out
+  #   5 GHz   VHT80      13.25 MB/s in  14.41 MB/s out
+  #
+  # HOTSPOT_BAND picks between them. 5 GHz is much faster and removes the
+  # long-standing in/out asymmetry, but has shorter range, excludes 2.4-only
+  # clients, and carries stricter regulatory obligations -- which matters here
+  # because regulatory.db is not installed and the stack falls back to
+  # permissive rules. 2.4 GHz HT40 is the conservative default.
+  #
+  # MAX-MPDU-11454 is NOT supported by this driver (it reports max 1, i.e.
+  # 7991); asking for it makes hostapd fail with "Unable to setup interface".
+  case "${HOTSPOT_BAND:-2.4}" in
+    5)
+      _hw=a
+      _chan=${HOTSPOT_CHANNEL_5G:-36}
+      # 80 MHz centre index: 42 covers channels 36-48 (UNII-1, non-DFS).
+      _modes="ieee80211n=1
+ieee80211ac=1
+ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40]
+vht_capab=[SHORT-GI-80][MAX-MPDU-7991]
+vht_oper_chwidth=1
+vht_oper_centr_freq_seg0_idx=${HOTSPOT_VHT_SEG0:-42}"
+      ;;
+    *)
+      _hw=g
+      _chan=$HOTSPOT_CHANNEL
+      _modes="ieee80211n=1
+ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40][MAX-AMSDU-7935]"
+      ;;
+  esac
   cat > "$R/etc/hostapd/hotspot.conf" <<EOF
 interface=wlan0
 driver=nl80211
 ssid=$HOTSPOT_SSID
-hw_mode=g
-channel=$HOTSPOT_CHANNEL
+hw_mode=$_hw
+channel=$_chan
+$_modes
+wmm_enabled=1
 auth_algs=1
 wpa=2
 wpa_key_mgmt=WPA-PSK

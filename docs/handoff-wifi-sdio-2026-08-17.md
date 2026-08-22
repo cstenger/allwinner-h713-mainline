@@ -480,6 +480,42 @@ do not start there again.
 module clock on runtime suspend. The divider fields still show the last
 programmed value.)
 
+## The AP configuration was the throughput limit, not SDIO (2026-08-21)
+
+Worth reading before anyone optimises the SDIO path further. With 0048 the SDIO
+bus measures **24.4 MB/s**, but the hotspot was emitting plain 802.11g — `hw_mode=g`
+with no `ieee80211n`, which `iw` confirmed as `width: 20 MHz (no HT)` at
+48/54 Mbit/s. So the validated bus was being fed through an 11g straw, and every
+"WiFi is slow" observation in this project may have been this rather than SDIO.
+
+The radio is a 1x1 dual-band part: `HT supp 1, VHT supp 1, HE supp 1`, HT20/HT40
+on both bands, VHT 1-stream MCS 0-9 with 80 MHz short GI.
+
+Measured on hardware, 128 MiB each direction, SHA-256 exact and **zero SDIO
+faults** in every case:
+
+| AP configuration | negotiated | board RX | board TX |
+|---|---|---|---|
+| 2.4 GHz, no HT (as shipped) | 48 / 54 Mbit/s | 1.33 MB/s | 2.37 MB/s |
+| 2.4 GHz HT40 | 150 / 135 Mbit/s MCS7 | 4.85 MB/s | 7.65 MB/s |
+| 5 GHz VHT80 ch36 | 180 / 292 Mbit/s VHT | **13.25 MB/s** | **14.41 MB/s** |
+
+5 GHz is about 10x the shipped configuration and, notably, **removes the
+long-standing RX/TX asymmetry** — the two directions come out within 9% of each
+other, where 11g differed by 1.8x. At 14 MB/s the link finally uses a
+substantial fraction of the 24.4 MB/s bus, so the SDIO work now actually matters.
+
+`tools/rootfs/customize.sh` generates the AP config, and it now enables HT
+always and takes `HOTSPOT_BAND=2.4|5`. The default is 2.4 GHz HT40 —
+conservative, because 5 GHz has shorter range, drops 2.4-only clients, and
+carries stricter regulatory obligations, which is pointed here given
+`regulatory.db` is absent and the stack runs under permissive rules.
+
+One trap: `vht_capab=[MAX-MPDU-11454]` makes hostapd die with `Unable to setup
+interface`. This driver reports a max MPDU length mask of 1, so the highest
+valid value is `[MAX-MPDU-7991]`. The failure message names the capability, but
+only in the first few lines of the attempt.
+
 ## Running another rate experiment
 
 The old recipe (remove 0045, rebuild, YMODEM the FIT) works but costs an
