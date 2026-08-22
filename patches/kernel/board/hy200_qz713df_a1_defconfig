@@ -227,6 +227,28 @@ CONFIG_DMA_CMA=y
 CONFIG_PRINTK_TIME=y
 CONFIG_DYNAMIC_DEBUG=y
 CONFIG_DEBUG_FS=y
+# Magic SysRq, in the SHIPPING config and not just the debug fragments.
+#
+# On 2026-08-22 a wedged rootfs cost a physical power cycle: the eMMC stopped
+# answering, so reboot and systemctl -- external binaries on the dead
+# filesystem -- could not run, /proc still worked but nothing that touched a
+# path did, and `exec 3>/dev/watchdog0` did not reset the board because systemd
+# already holds and pets the watchdog. That left no software path out.
+#
+# `echo b > /proc/sysrq-trigger` needs no filesystem, and neither does a UART
+# BREAK (tools/serial/sysrq.py). Note the standing finding that sysrq did NOT
+# rescue an earlier *hard* lockup still holds and is not contradicted here:
+# with every CPU spinning interrupts-disabled nothing runs the handler. This is
+# for the softer case, which is the one that actually cost a trip to the board
+# -- systemd was alive and printing throughout.
+#
+# MAGIC_SYSRQ_SERIAL is what makes the BREAK path work; the empty sequence
+# means BREAK alone arms it. Debian's sysctl may still restrict the runtime
+# mask in /proc/sys/kernel/sysrq, so check that before relying on a given
+# command.
+CONFIG_MAGIC_SYSRQ=y
+CONFIG_MAGIC_SYSRQ_SERIAL=y
+CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1
 # Reboot-to-fastboot handoff over the RTC GP7 nvmem cell (see the RTC section and
 # the reboot-mode node in sun50i-h713.dtsi). Replaces the earlier syscon window
 # that overlapped the RTC register region.
