@@ -62,8 +62,16 @@ just priority. See [status.md](status.md) for what already works.
   `FIFO_RUN_ERROR` didn't reproduce), so it stands as defense-in-depth; to observe
   it firing, retest from the −71…−80 dBm spot. DVFS was ruled out (wedged even
   pinned at 1416 MHz).
-- **AIC8800 firmware-command crash — detected + logged; no auto-recovery
-  (by design).** Under *pathological* CPU/bus starvation (perf-pinned +
+  **Superseded 2026-08-18/21 — the link is now done.** Patch 0046 fixed the real
+  bulk-RX defect (the v5p3x IDMA descriptor encoding for an exact 4096-byte
+  segment), and 0048 fixed a 4x clock-accounting error that had every rate
+  meaning four times its label. The link runs stock four-bit UHS-SDR104 at a
+  register-verified 50 MHz, passing 128 MiB both directions with SHA-256 exact
+  and zero faults, in AP and STA mode alike. The 384 MB bench above was a
+  scp-*pull* — the working direction — which is why it looked healthy while
+  inbound transfer was broken.
+- **AIC8800 firmware-command crash — detected, and since 2026-08-21 recovered
+  automatically.** Under *pathological* CPU/bus starvation (perf-pinned +
   memcpy/eMMC contention), the vendor driver's firmware command→confirm handshake
   times out (`cmd timed-out` → `wlan error reset flow`, `rwnx_cmds.c`), marking the
   cmd queue `CRASHED` and firing a `DHDISDOWN=1` uevent → WiFi/BT stay down (kernel
@@ -72,11 +80,19 @@ just priority. See [status.md](status.md) for what already works.
   unbind+reload of the SDIO stack races the mmc/driver core into a NULL-deref Oops
   (`__device_attach_driver` via `mmc_rescan`), and a graceful reboot fallback hung
   on BT teardown — bench-observed, board needed a power-cycle. The chip only comes
-  back cleanly on a full boot. So the rootfs ships a **log-only notifier**
-  (`h713-wifi-crashlog`, udev on `DHDISDOWN=1` → journal + console line); the
-  operator reboots. Only reproduces under unrealistic load. Minor follow-up: a
-  `TimeoutStopSec` on `h713-bt-attach.service` so a post-crash graceful reboot
-  doesn't wait ~3 min on BT teardown.
+  back cleanly on a full boot. So the rootfs *shipped* a **log-only notifier**
+  (`h713-wifi-crashlog`, udev on `DHDISDOWN=1` → journal + console line) and the
+  operator rebooted. Only reproduces under unrealistic load.
+  **Resolved 2026-08-21 — recovery now happens automatically.** The "no safe
+  in-place recovery" finding stands and should not be retried; what was broken
+  was the *fallback*, and that is fixed. `h713-wifi-recover` reboots on
+  `DHDISDOWN` (policy in `/etc/default/h713-wifi-recovery`), the
+  `TimeoutStopSec` follow-up noted here is done (10 s), and — the piece the 2026-07-23
+  attempt lacked — `RebootWatchdogSec=16s` arms the sunxi hardware watchdog
+  across the shutdown, so a stuck unit costs a SoC reset instead of a trip to the
+  board. Recovery takes ~30 s. **Caveat: verified with a synthetic trigger
+  only** — the real crash would not reproduce under 4 minutes of the documented
+  starvation recipe, so recovery under the actual fault is still unproven.
 
 ## Phase 2 — Bench subsystem bring-up
 
@@ -87,10 +103,16 @@ off it. Because the bench board is itself a projector variant with the panel
 attached, the display path can be brought up here, not only on the projector
 (Phase 3/4). Ordered by dependency, not just priority.
 
-1. **Networking (WiFi + BT) — highest value; unlocks SSH, ends the UART pain.**
-   Verify *what's populated and on which bus* (the well0nez reference points at an
-   **AIC8800** combo, SDIO or USB), then driver + firmware + DT node. Everything
-   downstream gets easier once this lands.
+1. **Networking (WiFi + BT) — DONE 2026-08-21.** AIC8800D80 combo: WiFi on SDIO
+   (`mmc1`), BT on UART1 (`ttyS1`, H4, 1.5 Mbaud, no flow control — confirmed
+   against the vendor Android binaries). WiFi runs stock four-bit UHS-SDR104 at a
+   verified 50 MHz with 128 MiB clean both directions in AP and STA mode, under a
+   real `US`/FCC regulatory domain, with automatic recovery from a firmware crash.
+   BT attaches with no HCI timeouts. It did unlock SSH and end the UART pain, as
+   predicted. Remaining gaps are evidence rather than code: crash recovery is
+   untested against a real crash, and coverage is one client at close range on one
+   board. See [status.md](status.md) and
+   [handoff-wifi-sdio-2026-08-17.md](handoff-wifi-sdio-2026-08-17.md).
 2. **Thermal / cpufreq / DVFS — done; safety + real performance.**
    - **Bench cooling fan (0030) — DONE.** The fan is a 3-wire (VCC/GND/tach)
      on/off part, not PWM-speed-controlled (DMM: tach at its 3.3 V pull-up, +V
@@ -219,10 +241,26 @@ Clean the H713 driver series (CCU, pinctrl, PPU, LRADC, USB-PHY, MMC, …) + DT
 bindings for mainline submission; upstream the board DTS once stable. The forks
 were curated with this in mind (see [../PROVENANCE.md](../PROVENANCE.md)).
 
+**Watch the AIC8800 FullMAC RFC.** AIC Semiconductor has posted an SDIO FullMAC
+WiFi driver to `wireless-next` covering AIC8801/8800DC/**8800D80** — our chip on
+our bus (<https://lwn.net/Articles/1084468/>, RFC v2, 2026-07-23). If it lands it
+replaces the out-of-tree vendor driver that `patches/aic8800/` patches. Our SDIO
+*host* work (0046, 0048) is in `sunxi-mmc` and the H713 CCU and survives it
+either way; the `aic8800-0006` regulatory patch would be obsoleted, though the
+RFC lists the regulatory database as follow-up work so it is unsolved there too.
+It does nothing for Bluetooth — its `aic_btsdio` is BT over SDIO and this board
+is BT over UART. Not worth planning against yet: RFC v2, unmerged, and firmware
+redistribution permission is not granted, which blocks it independently of
+review. Detail under future work in
+[handoff-wifi-sdio-2026-08-17.md](handoff-wifi-sdio-2026-08-17.md).
+
 ## Open questions — verify before committing effort
 
-- **Board population**: what's actually fitted on each board — WiFi/BT chip +
-  bus, HDMI, audio codec, IR receiver, fans, panel connector?
+- **Board population**: what's actually fitted on each board — HDMI, audio codec,
+  IR receiver, fans, panel connector? The **WiFi/BT part is answered**: an
+  AIC8800D80 combo, WiFi on SDIO (`mmc1` @ `0x04021000`, PG0–PG5, power via PM1
+  `wlan_regon` on R_PIO) and BT on UART1 (`ttyS1`, H4, 1.5 Mbaud, no flow
+  control). Both are working — see [status.md](status.md).
 - **Projector safety**: can `HY200_QZ713_V2` be FEL-recovered (button / BROM
   fallback) if a flash goes wrong?
 - **Display output on the bench — RESOLVED.** The only display *output* is the
