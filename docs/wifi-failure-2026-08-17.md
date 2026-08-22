@@ -2135,3 +2135,70 @@ serial console then echoes typed characters but produces no command output —
 which is precisely the signature the old notes describe as "tty echo alive,
 shell dead, recoverable only by pulling power". It is not. **Ctrl-C returns the
 shell.** Check that before concluding the board is wedged.
+
+## 14. The BT `Opcode 0x1003` timeout (2026-08-21) — fixed
+
+Two lines on every cold boot:
+
+```text
+Bluetooth: hci0: command 0x1003 tx timeout
+Bluetooth: hci0: Opcode 0x1003 failed: -110
+```
+
+`0x1003` is OGF 0x04 / OCF 0x03 = **HCI_Read_Local_Supported_Features**, and
+`-110` is `ETIMEDOUT`. It cost two 2-second stalls and pushed `MGMT ver` out to
+~13.9 s.
+
+### It was never a functional fault
+
+BT works. `hciconfig` shows `UP RUNNING` with valid features
+(`0xbf 0x2e 0x4d 0xfe 0xd8 0x3f 0x7b 0x87`), HCI 5.4, `errors:0`, and a
+`bluetoothctl` scan discovers real devices (12 unique in 10 s). The retry loop
+in `h713-bt-attach` was absorbing the failure.
+
+Note `hcitool lescan` returns `Set scan parameters failed: Input/output error`
+on this system and that is **not** evidence of a fault: it is the deprecated raw
+HCI path conflicting with `bluetoothd`, which owns the adapter. Test through
+`bluetoothctl`.
+
+### What it actually was
+
+Four hypotheses, measured on cold boots:
+
+| change | result |
+|---|---|
+| baseline | 2 timeouts, up on attempt 2, MGMT at 13.9 s |
+| +5 s settle before attaching | 2 timeouts, just 5 s later — **not a timing race** |
+| 115200 instead of 1.5 Mbaud | **fails completely**: 10 attempts, 30 timeouts, hci0 never up |
+| + drain `ttyS1` before attach | 0 timeouts, then 1 on the next boot — helps, not deterministic |
+| + drain + prime attach/detach | **0 timeouts, attempt 1, on 3 cold boots out of 3** |
+
+Two things fall out of that table.
+
+**The chip is at 1.5 Mbaud from power-on.** The RE port notes
+(`local/allwinner-h713-linux/docs/subsystems/wifi-bt.md`) say "the BT chip is at
+default 115200 baud at startup, hciattach negotiates up to 1500000, but the
+cold-boot timing is off" and recommend baud-rate negotiation as the real fix.
+That is wrong for this firmware: attaching at 115200 does not work at all. The
+retry loop they and we both shipped was masking a different problem.
+
+**The retry never worked because of elapsed time — it worked because it was the
+second attach.** The 5 s settle test is what proves this: waiting longer moved
+the timeouts later without removing them. The first `N_HCI` attach after power-on
+leaves the controller unable to answer the first HCI command; a detach/re-attach
+cycle clears it.
+
+The mechanism is that the BT core emits bytes on `ttyS1` as it boots, and if
+`N_HCI` attaches while those are still buffered the H4 parser locks onto the
+wrong offset, so the response to the first command is never recognised.
+
+### The fix
+
+`h713-bt-attach` now drains `ttyS1` (`stty` + a 1 s `cat`) and then primes with a
+throwaway attach/detach before the real attach. Priming sends no HCI commands, so
+a desynced controller costs nothing rather than two 2-second timeouts. Tunable
+via `/etc/default/h713-bt-attach` (`BT_BAUD`, `BT_DRAIN`, `BT_PRIME`); the retry
+loop stays as the backstop.
+
+Result: zero timeouts, `hci0` up on attempt 1, `MGMT ver` at ~9.0 s instead of
+~13.9 s — about 5 seconds off every boot — and scanning still works.

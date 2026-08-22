@@ -162,24 +162,78 @@ fi
 # AIC8800 Bluetooth: attach the HCI UART on ttyS1 (H4, 1.5 Mbaud). Use NO host
 # flow control — mainline dw-apb-uart RTS/CTS blocks the controller (HCI cmd
 # timeout), whereas 'noflow' works. hciattach returns 0 even when the controller
-# is mute, so the loop verifies 'hciconfig hci0 up' and retries, which also
-# absorbs the cold-boot timing before the BT firmware is ready on the UART.
+# is mute, so the loop verifies 'hciconfig hci0 up' and retries.
+#
+# Cold boot used to log two "opcode 0x1003 tx timeout" errors (Read Local
+# Supported Features) and take until ~14s to reach MGMT, because the first
+# N_HCI attach after power-on leaves the controller unable to answer the first
+# HCI command. Measured 2026-08-21:
+#
+#   baseline                      2 timeouts, up on attempt 2, MGMT at 13.9s
+#   +5s settle before attaching   2 timeouts (just later) -- NOT a timing race
+#   115200 instead of 1.5 Mbaud   FAILS: 10 attempts, 30 timeouts, never up
+#   +drain ttyS1 before attach    0 then 1 timeout -- helps, not deterministic
+#   +drain +prime attach/detach   0 timeouts, attempt 1, 3 cold boots out of 3
+#
+# So the chip is at 1.5 Mbaud from power-on (the RE port notes in
+# local/allwinner-h713-linux/docs/subsystems/wifi-bt.md claim 115200 and a baud
+# race; that is wrong for this firmware), and the retry never worked because of
+# elapsed time -- it worked because it was the SECOND attach. The script now
+# drains stale bytes and primes with an attach/detach cycle, so the real attach
+# is the second one and no HCI command is ever sent to a desynced controller.
 install -d -m 0755 "$R/usr/local/sbin"
+cat > "$R/etc/default/h713-bt-attach" <<'EOF'
+# BT UART attach tuning. 115200 was tested on a cold boot 2026-08-21 and fails
+# completely (10 attempts, 30 x opcode 0x1003 timeout, hci0 never up): the chip
+# is at 1.5 Mbaud from power-on. BT_DRAIN flushes stale boot bytes off ttyS1;
+# BT_PRIME does a throwaway attach/detach so the real attach is the second one.
+BT_BAUD=1500000
+BT_DRAIN=1
+BT_PRIME=1
+EOF
 cat > "$R/usr/local/sbin/h713-bt-attach" <<'EOS'
 #!/bin/sh
 # Bring up the AIC8800 Bluetooth controller (hci0) on UART1.
+CONF=/etc/default/h713-bt-attach
+BT_BAUD=1500000
+BT_DRAIN=1
+BT_PRIME=1
+[ -r "$CONF" ] && . "$CONF"
+
 rfkill unblock bluetooth 2>/dev/null || true
 modprobe hci_uart 2>/dev/null || true
+
+# The BT core emits bytes on ttyS1 as it boots. If N_HCI attaches while those are
+# still buffered the H4 parser locks onto the wrong offset and the first HCI
+# command response is lost.
+if [ "$BT_DRAIN" = 1 ]; then
+	stty -F /dev/ttyS1 "$BT_BAUD" raw -echo -crtscts 2>/dev/null || true
+	timeout 1 cat /dev/ttyS1 >/dev/null 2>&1 || true
+fi
+
+# Draining alone is not deterministic. The retry has always succeeded on the
+# SECOND attach, so make that explicit: prime with an attach/detach cycle and let
+# the real attach below be the second one. Priming sends no HCI commands, so a
+# desynced controller costs nothing instead of two 2s timeouts.
+if [ "$BT_PRIME" = 1 ]; then
+	hciattach /dev/ttyS1 any "$BT_BAUD" noflow >/dev/null 2>&1 || true
+	sleep 1
+	pkill -x hciattach 2>/dev/null || true
+	sleep 1
+fi
+
 i=0
 while [ "$i" -lt 10 ]; do
 	i=$((i + 1))
 	pkill -x hciattach 2>/dev/null || true
-	hciattach /dev/ttyS1 any 1500000 noflow || true
+	hciattach /dev/ttyS1 any "$BT_BAUD" noflow || true
 	if hciconfig hci0 up 2>/dev/null && hciconfig hci0 2>/dev/null | grep -q "UP RUNNING"; then
+		logger -t h713-bt-attach "hci0 up on attempt $i baud=$BT_BAUD drain=$BT_DRAIN prime=$BT_PRIME"
 		exit 0
 	fi
 	sleep 2
 done
+logger -t h713-bt-attach "hci0 did NOT come up after $i attempts baud=$BT_BAUD"
 exit 1
 EOS
 chmod 0755 "$R/usr/local/sbin/h713-bt-attach"
