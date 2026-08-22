@@ -1642,6 +1642,44 @@ this hardware wants. So the port is **six** controls, not eight.
 
 ---
 
+## The h03 stall: what is ruled out, and what is left (2026-08-22)
+
+`h03-640x480-nowpp` decodes through GStreamer bit-exact but stalls through the
+shim after the IDR: `Timeout when waiting for media request`, reproducibly, at
+`ve+2`..`ve+5`. h01/h02 (identical source, WPP on) pass bit-exact. Everything
+below was measured, not reasoned.
+
+**Ruled out:**
+
+| candidate | how |
+| --- | --- |
+| stream differences beyond WPP | full PPS parsed for both (`tools/video/hevc-pps-dump.py`): **exactly one field differs**, `ENTROPY_CODING_SYNC_ENABLED` 1 vs 0 |
+| the shim misreading that field | instrumented: `va_sync=1` for h01, `0` for h03 — correct |
+| PPS flag assembly | `flags=0x144` decodes to SIGN_DATA_HIDING \| CU_QP_DELTA \| WEIGHTED_PRED, matching the parsed PPS exactly |
+| `data_byte_offset` / `bit_size` | self-consistent (`bits = (size − dbo) × 8`) and match true header sizes: h03 = 2-byte NAL + 3-byte header = 5; h01 = 2 + 15 with ~14 entry-point offsets = 17 |
+| an off-by-one in that offset | tested `+1` directly: **no change** — h01/h02 still pass, h03 still fails |
+| missing entry-point offsets | ffmpeg reports `num_entry_point_offsets = 0` for **both** streams; VA-API does not convey them |
+| cedrus's tile registers | both paths compute `TILE_START_CTB = TILE_END_CTB = 0` — h01 through `cedrus_h265_write_tiles()` with zeroed tile arrays, h03 through the `else` |
+| a regression in our changes | after a reboot the same driver gives 5 pass / 1 fail again |
+
+**The clue not yet followed:** the IDR decodes and the stall happens on the
+*inter* frames after it. That points at reference handling rather than at
+anything WPP-specific — even though WPP is the only PPS difference.
+
+**The gap in the analysis above:** only the PPS was diffed. The SPS and the
+slice headers were not. x265 with `wpp=0` may well change something else that
+matters for inter prediction, in which case "WPP is the only difference" is
+true of the PPS and false of the stream. That is the next thing to check, and
+it is cheap.
+
+**Operational note that cost a confusing result:** a `cedrus: frame processing
+timed out!` leaves the video engine wedged for *every* client, GStreamer
+included. A run right after a failing one reported 0 pass / 6 fail with the
+oracle failing too, which reads exactly like a regression and is not. Reboot
+between runs once anything has timed out.
+
+---
+
 ## 10-bit does not work, and the blocker is in the kernel
 
 `Main10` prerolls, reaches EOS in 40 ms having produced **zero frames**, and
