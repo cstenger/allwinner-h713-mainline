@@ -47,6 +47,18 @@ failing workload is tens of minutes of GPU + display + scanout at 78 C.
 The DMM voltage measurements were correct; the frequency point was never
 in the vendor's table to begin with.
 
+Validated on the BUILT kernel, not merely as a runtime sysfs cap. The GPU
+display arm ran 45 min / 2707 s with deaths=0, gpu_delta=1,316,959 and
+afbd_delta=161,473, zero crash patterns on the console, 90 heartbeats with
+no gaps, and the board up 52 minutes without a reboot
+(docs/reference/expS-0055-validation-45min-clean.log). Both validity gates
+hold: khz= shows 1104/1200/1296 and never 1416, so transitions were
+happening and the ceiling was genuinely in force, and afbd_rate held 59/s
+throughout, so the panel was driven for the whole run rather than the soak
+going quietly idle. That is 3.2x the longest crash latency ever recorded
+for this bug (848 s) and ~30-65x the latency this configuration used to die
+at. VA-API decode is still 5/5 bit-exact on the same kernel.
+
 1392 MHz at 1100 mV would recover most of the lost headroom and is what
 the vendor ships, but it is untested on this board and is deliberately not
 added here.

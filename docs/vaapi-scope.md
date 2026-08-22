@@ -1213,6 +1213,30 @@ land anywhere, which is why the victim is different every run, why KASAN and
 both IOMMUs see nothing, why kernel and userspace fault together, and why
 `ffff` → `faef` is three flipped bits rather than an overwrite.
 
+### VALIDATED — 45 minutes clean on the built kernel (2026-08-22)
+
+The fix is patch 0055: drop the 1416 MHz OPP. On a kernel actually carrying
+it — `scaling_available_frequencies` ending at 1296000 with no sysfs override —
+the GPU display arm ran:
+
+```
+SOAK DONE vo=gpu t=2707s deaths=0 gpu_delta=1316959 afbd_delta=161473 mmu_delta=0
+=== SURVIVED after 2820 s (47.0 min) ===
+```
+
+Zero crash patterns on the console, 90 heartbeats with no gaps, no mpv deaths,
+board up 52 minutes without a reboot, VA-API decode still 5/5 bit-exact.
+`docs/reference/expS-0055-validation-45min-clean.log`.
+
+**Both validity gates hold**, which is what makes it evidence rather than a
+quiet run: `khz` shows 1104/1200/1296 and **never 1416**, so frequency
+transitions were happening and the ceiling was genuinely in force; and
+`afbd_rate` held 59/s throughout, so the panel was driven for the entire run.
+2707 s is **3.2x the longest crash latency ever recorded** for this bug (848 s)
+and roughly 30–65x what this exact configuration used to die at.
+
+---
+
 ### It is the OPP, not the transitions
 
 `schedutil` with `scaling_max_freq=1200000` — frequency changes **on**, top two
