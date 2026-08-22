@@ -1911,3 +1911,94 @@ What would actually settle it, in rough order of cost:
 
 Board was returned to the flashed production kernel afterwards: HS400 200 MHz,
 SDR104 50 MHz, zero faults.
+
+## 11. The regulatory domain (2026-08-21) — fixed, and not where it looked
+
+`regulatory.db failed to load` is the visible symptom, and fixing it would not
+have changed the radio's behaviour at all. Worth reading before anyone chases
+the log line.
+
+### The wiphy is self-managed, so regulatory.db is irrelevant to it
+
+`aic8800_fdrv` sets `REGULATORY_WIPHY_SELF_MANAGED` and installs its own domain
+in `rwnx_custregd()` (`rwnx_mod_params.c`), gated on the `custregd` module
+parameter, which defaults to `Y`. cfg80211's database never applies to that
+wiphy. `iw reg get` confirms it: `phy#0 (self-managed)`.
+
+What was actually in force:
+
+```text
+phy#0 (self-managed)
+country 00: DFS-UNSET
+	(2380 - 2520 @ 40), (N/A, 20), (N/A)
+	(5140 - 5980 @ 80), (N/A, 20), (N/A)
+```
+
+`DFS-UNSET`, no `NO_IR`, no passive-scan: transmit permitted across the whole
+5 GHz range including DFS and weather-radar spectrum (5600-5650), and past the
+2.4 GHz ISM edges.
+
+### The driver's own database is fine; only the selector was stuck
+
+`regdb.c` holds **185 countries with 98 distinct rule sets**, with correct DFS
+regions, `NO_IR`/`NO_OUTDOOR` flags and per-subband power. It is selected by
+`default_ccode` — a compiled-in `char[4] = "00"`, not a module parameter, so
+there was no way to change it without editing the source.
+
+> A first pass at this concluded the table was 189 identical permissive entries.
+> That was a bad regex: the real entries use `REG_RULE_EXT` with `.dfs_region`,
+> and only the `"00"` fallback uses the wide `REG_RULE` form. The table is real.
+
+`patches/aic8800/aic8800-0006-make-the-regulatory-domain-settable.patch` exposes
+the selector as a module parameter. `tools/rootfs/customize.sh` writes
+`/etc/modprobe.d/aic8800-regdomain.conf` with `WIFI_REGDOMAIN` (default `US`).
+
+Result on hardware:
+
+```text
+phy#0 (self-managed)
+country US: DFS-FCC
+	(2400 - 2472 @ 40), (N/A, 30), (N/A)
+	(5150 - 5250 @ 80), (N/A, 23), (N/A), AUTO-BW
+	(5250 - 5350 @ 80), (N/A, 24), (0 ms), DFS, AUTO-BW
+	(5470 - 5730 @ 160), (N/A, 24), (0 ms), DFS
+	(5730 - 5850 @ 80), (N/A, 30), (N/A), AUTO-BW
+	(5850 - 5895 @ 40), (N/A, 27), (N/A), NO-OUTDOOR, AUTO-BW
+	(5925 - 7125 @ 320), (N/A, 12), (N/A), NO-OUTDOOR, PASSIVE-SCAN
+```
+
+The AP kept working: 2.4 GHz HT40, 5.13/7.39 MB/s each way, SHA-256 exact, zero
+SDIO faults.
+
+**The `CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES` banner still prints.**
+It is on the *success* branch of `regulatory_set_wiphy_regd_sync()` in
+`rwnx_custregd()`, so it fires whatever domain was applied. Judge the domain
+with `iw reg get`, never with that message.
+
+### regulatory.db itself: two separate bugs, one still open
+
+Both were found while chasing the log line. Neither affects the self-managed
+wiphy, but both matter if `custregd=0` is ever used.
+
+1. **Broken alternatives, fixed.** `wireless-regdb` is installed and the variant
+   files exist, but `/lib/firmware/regulatory.db` — the master alternatives
+   symlink — was missing, and alternatives pointed at the Debian variant anyway.
+   Our mainline kernel carries only the upstream certs
+   (`net/wireless/certs/{sforshee,wens}.hex`) and cannot verify Debian's
+   `benh@debian.org` signature, so the Debian pair could never validate.
+   `update-alternatives --set regulatory.db /lib/firmware/regulatory.db-upstream`
+   selects the wens-signed pair; `customize.sh` now does this at image build.
+
+2. **Load ordering, still unfixed.** cfg80211 is built into the kernel and
+   requests the database before the root filesystem is mounted:
+
+   ```text
+   [    1.045334] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2
+   [    1.418365] EXT4-fs (mmcblk0p26): mounted filesystem ... r/w
+   ```
+
+   373 ms too early. No amount of fixing the file helps. The options are
+   `CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"` to embed it in the
+   kernel image, building cfg80211 as a module so the request happens after
+   `/` is up, or an initramfs. Not done, because with a self-managed wiphy it
+   changes nothing observable — do it only alongside `custregd=0`.

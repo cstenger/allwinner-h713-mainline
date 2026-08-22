@@ -124,6 +124,41 @@ cat > "$R/etc/modprobe.d/aic8800.conf" <<EOF
 options aic8800_fdrv aicwf_dbg_level=0x1
 EOF
 
+# Regulatory domain. The aic8800 wiphy is SELF-MANAGED (custregd=Y), so
+# cfg80211's regulatory.db never applies to it -- the driver installs a domain
+# from its own table in regdb.c, selected by default_ccode. That table is real
+# (185 countries, 98 distinct rule sets, correct DFS regions and power limits),
+# but default_ccode was a compiled-in "00", which resolves to a permissive world
+# entry:
+#
+#   country 00: DFS-UNSET  (2380-2520 @ 40) 20dBm  (5140-5980 @ 80) 20dBm
+#
+# -- wider than the ISM band, covering DFS and weather-radar spectrum with no DFS
+# or passive-scan constraint. patches/aic8800/aic8800-0006 exposes the selector;
+# this sets it. With WIFI_REGDOMAIN=US the radio reports instead:
+#
+#   country US: DFS-FCC  (2400-2472) 30dBm, DFS on 5250-5350 and 5470-5730, ...
+#
+# Set WIFI_REGDOMAIN to the ISO 3166-1 alpha-2 code where the unit operates.
+# Note the driver still prints "CAUTION: USING PERMISSIVE CUSTOM REGULATORY
+# RULES" afterwards -- that message is on the SUCCESS branch in rwnx_custregd(),
+# so it fires whatever domain is applied. Check `iw reg get`, not the log.
+cat > "$R/etc/modprobe.d/aic8800-regdomain.conf" <<EOF
+options aic8800_fdrv default_ccode=${WIFI_REGDOMAIN:-US}
+EOF
+
+# wireless-regdb ships Debian- and upstream-signed copies and defaults to the
+# Debian one (alternatives priority 100 vs 50). Our kernel is mainline, so it
+# only carries the upstream certs (net/wireless/certs: sforshee, wens) and
+# cannot verify Debian's benh@debian.org signature. Select the upstream pair.
+# This governs cfg80211's global domain rather than the self-managed wiphy
+# above, so it matters if custregd is ever turned off -- and a correct link
+# costs nothing either way.
+if [ -e "$R/lib/firmware/regulatory.db-upstream" ]; then
+  chroot "$R" update-alternatives --set regulatory.db \
+    /lib/firmware/regulatory.db-upstream >/dev/null 2>&1 || true
+fi
+
 # AIC8800 Bluetooth: attach the HCI UART on ttyS1 (H4, 1.5 Mbaud). Use NO host
 # flow control — mainline dw-apb-uart RTS/CTS blocks the controller (HCI cmd
 # timeout), whereas 'noflow' works. hciattach returns 0 even when the controller
