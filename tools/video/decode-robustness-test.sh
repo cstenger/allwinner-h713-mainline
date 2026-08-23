@@ -29,6 +29,7 @@
 set -u
 
 DIR=$(cd "$(dirname "$0")" && pwd)
+DECODE_RC=0
 BAD=${1:-$DIR/bad}
 CASE_TIMEOUT=${CASE_TIMEOUT:-30}
 
@@ -46,12 +47,19 @@ kmsg_count() { dmesg | grep -ciE "$1" || true; }
 want_hevc_md5() { grep " $GOOD_HEVC\$" "$DIR/hevc-reference-md5.txt" | cut -d' ' -f1; }
 want_h264_md5() { grep "^$GOOD_H264 WHOLE" "$DIR/reference-md5.txt" | awk '{print $NF}'; }
 
+# DECODE_RC is set as a side effect on purpose. ${PIPESTATUS[0]} read after a
+# FUNCTION CALL reports the function's own status -- bash resets PIPESTATUS for
+# every simple command, and the function returns md5sum's status, which is 0
+# whatever ffmpeg did. Reading it that way would have scored a `timeout` kill
+# (124) as a clean decode, i.e. reported HUNG cases as passes: the exact
+# failure this harness exists to catch.
 decode_to_md5() {
 	LIBVA_DRIVER_NAME=v4l2_request timeout "$CASE_TIMEOUT" \
 		ffmpeg -hide_banner -v error -y \
 		-hwaccel vaapi -hwaccel_output_format vaapi \
 		-i "$1" -vf 'hwdownload,format=nv12' \
 		-f rawvideo -pix_fmt nv12 pipe:1 2>"$ERR" | md5sum | cut -d' ' -f1
+	DECODE_RC=${PIPESTATUS[0]}
 }
 
 # The recovery check, and the reason the whole harness exists.
@@ -99,7 +107,7 @@ for f in "$BAD"/*.h265 "$BAD"/*.h264; do
 
 	a=$(ve_irq)
 	decode_to_md5 "$f" >/dev/null
-	rc=${PIPESTATUS[0]}
+	rc=$DECODE_RC
 	ve=$(( $(ve_irq) - a ))
 
 	if [ "$rc" -eq 124 ]; then
@@ -115,7 +123,9 @@ for f in "$BAD"/*.h265 "$BAD"/*.h264; do
 	if [ "$(kmsg_count "timed out waiting to skip bits")" -ne "$skip0" ]; then
 		note="${note:+$note, }skip-bits timeout"
 	fi
+	oops_note=""
 	if [ "$(kmsg_count "Oops|BUG:|Call trace|kernel panic")" -ne "$oops0" ]; then
+		oops_note="KERNEL OOPS"
 		note="${note:+$note, }KERNEL OOPS"
 	fi
 
@@ -125,9 +135,15 @@ for f in "$BAD"/*.h265 "$BAD"/*.h264; do
 		rec=WEDGED
 	fi
 
-	# The verdict ignores the case's own exit status on purpose: only a hang,
-	# a kernel complaint, or a dead engine afterwards is a failure.
-	if [ "$rec" = ok ] && [ "$outcome" != HUNG ] && [ -z "$note" ]; then
+	# The verdict ignores the case's own exit status on purpose, AND it ignores
+	# a watchdog timeout. Both were failures in the first version of this
+	# harness and neither should be: the engine stalling on deliberately
+	# corrupted slice data is the hardware behaving reasonably, and the driver
+	# timing out, resetting and returning an error is the recovery path doing
+	# its job. Measured on this board, a stall is followed by a bit-exact
+	# decode every time. Only a hang, a kernel complaint, or a dead engine
+	# afterwards is a failure.
+	if [ "$rec" = ok ] && [ "$outcome" != HUNG ] && [ -z "$oops_note" ]; then
 		pass=$((pass + 1))
 	else
 		fail=$((fail + 1))

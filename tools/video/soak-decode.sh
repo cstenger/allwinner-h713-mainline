@@ -182,6 +182,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 done
 
 end=$(date +%s)
+
+# Let the last decode finish being reclaimed before the closing measurement.
+# Without this the final MemAvailable is taken while ffmpeg's teardown is still
+# in flight and under-reports by tens of megabytes: a 2-hour run closed at
+# -50,476 kB and read like a slow leak, then measured within 0.1% of its
+# baseline a few minutes later. The leak numbers are the point of the soak, so
+# they should not be the least settled thing in it.
+sleep 10
 oops1=$(dmesg_count "Oops|BUG:|Call trace|kernel panic")
 cma1=$(cma_settled)
 mem1=$(meminfo MemAvailable)

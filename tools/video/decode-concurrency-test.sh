@@ -48,8 +48,13 @@ want_md5() {
 	esac
 }
 
+# `timeout` is not belt-and-braces here. Three concurrent clients can leave a
+# decoder stuck in D state inside v4l2_m2m_cancel_job(), where it ignores
+# SIGKILL, and `wait` on such a child never returns -- the first run of this
+# harness hung for eleven minutes and had to be ended by rebooting the board.
 decode() {
-	LIBVA_DRIVER_NAME=v4l2_request ffmpeg -hide_banner -v error -y \
+	LIBVA_DRIVER_NAME=v4l2_request timeout "${CLIENT_TIMEOUT:-90}" \
+		ffmpeg -hide_banner -v error -y \
 		-hwaccel vaapi -hwaccel_output_format vaapi \
 		-i "$DIR/$1.$2" -vf 'hwdownload,format=nv12' \
 		-f rawvideo -pix_fmt nv12 pipe:1 2>"$OUT/$1.err" \

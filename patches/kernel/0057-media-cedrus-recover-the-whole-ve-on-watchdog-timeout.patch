@@ -40,9 +40,18 @@ rather than argued from a log.
 Safety of the sequence is not assumed: the device is powered throughout,
 because pm_runtime_resume_and_get() is taken in start_streaming() and held
 until stop_streaming(), so register access and reset pulses from the
-watchdog work are legal. And the same two-reset pulse already runs once per
-decode in stop_streaming -- several hundred times in the first ten minutes
-of a decode soak -- without incident.
+watchdog work are legal. The pulse pair itself is not new either -- it is
+what cedrus_stop_streaming() performs on every teardown since patch 0040.
+
+That second point needs a caveat I got wrong once and would rather write
+down than repeat: it is a claim about the code in series, NOT about what
+this board had been running. The installed sunxi-cedrus.ko turned out to
+predate 0039 and 0040 entirely -- /sys/module/sunxi_cedrus/ had no
+parameters directory at all, so neither dma_guard nor stop_reset existed on
+the running system, and the two-reset teardown had never once executed here.
+cedrus is a MODULE: patches to it do not reach the board by flashing a
+kernel FIT, which contains only the Image. Installing a module built from
+the current series is part of landing this, and is how it was tested.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---

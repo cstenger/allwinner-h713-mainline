@@ -1,9 +1,14 @@
 #!/bin/bash
 # Does the VE come back after a decode timeout? RUNS ON THE TARGET.
 #
-# Needs a kernel carrying patch 0058 (the fault injector), which is DEBUG and
-# not in the shipping series. Without it there is no way to stall the engine on
-# purpose, and "wait for a malformed stream to get lucky" is not a test.
+# The stall comes from a MALFORMED STREAM, not from fault injection, and that
+# is the second design of this test rather than the first. Patch 0058 tried to
+# starve the VLD by programming four times the bit length; the engine decoded
+# all 25 frames anyway (ve+25, with the injection message in dmesg proving the
+# knob fired), so VE_DEC_H265_BITS_LEN is an upper bound and not a promise the
+# hardware waits on. What DOES stall it reliably is real damage to the slice
+# payload -- bad/b03-h-bitflip-payload.h265 fires the watchdog every time.
+# Better test anyway: it is the failure a real file causes.
 #
 # THE EXPERIMENT IS AN A/B INSIDE ONE BOOT. Both arms run against the same
 # hardware state, the same CMA layout and the same stream; the only difference
@@ -25,9 +30,10 @@ set -u
 DIR=$(cd "$(dirname "$0")" && pwd)
 VECTOR=${VECTOR:-h01-640x480-main}
 PARAM=/sys/module/sunxi_cedrus/parameters
+STALLER=${STALLER:-$DIR/bad/b03-h-bitflip-payload.h265}
 
-[ -w "$PARAM/fault_stall_hevc" ] || {
-	echo "FATAL: no fault injector. This needs a kernel built with patch 0058."
+[ -r "$STALLER" ] || {
+	echo "FATAL: no stalling stream at $STALLER (run make-bad-streams.sh)."
 	exit 1
 }
 [ -w "$PARAM/watchdog_full_reset" ] || {
@@ -46,7 +52,7 @@ decode() {
 	LIBVA_DRIVER_NAME=v4l2_request timeout 30 \
 		ffmpeg -hide_banner -v error -y \
 		-hwaccel vaapi -hwaccel_output_format vaapi \
-		-i "$DIR/$VECTOR.h265" -vf 'hwdownload,format=nv12' \
+		-i "${1:-$DIR/$VECTOR.h265}" -vf 'hwdownload,format=nv12' \
 		-f rawvideo -pix_fmt nv12 pipe:1 2>/dev/null | md5sum | cut -d' ' -f1
 }
 
@@ -65,16 +71,15 @@ arm() {
 	echo "     pre-check: good vector bit-exact"
 
 	wd0=$(wd_count); ve0=$(ve_irq)
-	echo 1 > "$PARAM/fault_stall_hevc"
-	decode >/dev/null
+	decode "$STALLER" >/dev/null
 	wd1=$(wd_count)
 
 	if [ "$wd1" -eq "$wd0" ]; then
 		echo "     INCONCLUSIVE — no watchdog timeout fired (ve+$(( $(ve_irq) - ve0 )))."
-		echo "     The injector did not stall the engine; raise the multiplier in 0058."
+		echo "     $(basename "$STALLER") did not stall the engine this time."
 		return 3
 	fi
-	echo "     injected stall -> watchdog fired ($wd0 -> $wd1), ve+$(( $(ve_irq) - ve0 ))"
+	echo "     stalling stream -> watchdog fired ($wd0 -> $wd1), ve+$(( $(ve_irq) - ve0 ))"
 
 	if good_decode; then
 		echo "     RECOVERED — the very next decode is bit-exact"
@@ -84,7 +89,7 @@ arm() {
 	return 1
 }
 
-echo "kernel $(uname -r), vector $VECTOR"
+echo "kernel $(uname -r), good vector $VECTOR, staller $(basename "$STALLER")"
 echo
 
 arm FIXED Y; fixed=$?
@@ -114,8 +119,9 @@ case "$fixed:$broken" in
 0:1) echo "W1: PASS — recovery works with the fix and fails without it, same boot"
      echo "     Restore the default before leaving: echo Y > $PARAM/watchdog_full_reset"
      exit 0 ;;
-0:0) echo "W1: INCONCLUSIVE — both arms recovered. The second reset line is not what"
-     echo "     was wedging this board, or the injected stall is milder than a real one." ;;
+0:0) echo "W1: BOTH ARMS RECOVERED — the second reset line changes nothing observable"
+     echo "     here. On this hardware the engine comes back from a decode timeout"
+     echo "     with or without it, so patch 0057 fixes no symptom this test can see." ;;
 *)   echo "W1: FAIL — the fixed arm did not recover (code $fixed); broken arm code $broken" ;;
 esac
 exit 1

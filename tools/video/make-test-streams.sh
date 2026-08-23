@@ -141,6 +141,14 @@ gen_hevc h04-640x480-scaling 640 480 25 main "scaling-list=default"
 gen_hevc h05-640x480-scaling-custom 640 480 25 main \
   "scaling-list=$PROJECT_ROOT/tools/video/scaling-list-custom.txt"
 
+# h06 -- lossless, i.e. transquant_bypass_enabled_flag = 1, a coding tool no
+# other vector here uses. In lossless coding the transform and quantisation are
+# skipped entirely for a CU, which is a different path through the VE than
+# anything h01-h05 exercises. Named as an untested gap in the readiness review
+# and closed here; TILES remain uncovered because x265 cannot produce them (it
+# does WPP and slices only) and no tiling HEVC encoder is installed.
+gen_hevc h06-640x480-lossless 640 480 25 main "lossless=1"
+
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host
 # software decode of the same stream.
