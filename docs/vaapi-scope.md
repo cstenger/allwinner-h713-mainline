@@ -1642,14 +1642,19 @@ this hardware wants. So the port is **six** controls, not eight.
 
 ---
 
-## HEVC DONE — all three vectors bit-exact through stock ffmpeg (2026-08-22)
+## HEVC DONE — all five vectors bit-exact through stock ffmpeg (2026-08-22)
 
 ```
-h01-640x480-main    PASS (va) bit-exact, ve+25
-h02-1280x720-main   PASS (va) bit-exact, ve+25
-h03-640x480-nowpp   PASS (va) bit-exact, ve+25      H1: 6 pass, 0 fail
-H.264                                               VA1: 5 pass, 0 fail
+h01-640x480-main            PASS (va) bit-exact, ve+25
+h02-1280x720-main           PASS (va) bit-exact, ve+25
+h03-640x480-nowpp           PASS (va) bit-exact, ve+25
+h04-640x480-scaling         PASS (va) bit-exact, ve+25   H1: 10 pass, 0 fail
+h05-640x480-scaling-custom  PASS (va) bit-exact, ve+25   VA1: 5 pass, 0 fail
 ```
+
+(h04/h05 are the scaling-list vectors, added later the same day with the patch
+that made them pass — see below. The first three were the state at the time of
+the paragraph that follows.)
 
 **The h03 stall was an uninitialised variable.** `context->h264_start_code`
 decides whether the shim prepends an Annex-B start code to each slice, and it
@@ -1679,12 +1684,54 @@ one thing userspace could not show was what the working client sends.
 The scaling-matrix idea was killed before a line was written, by checking that
 `cedrus_h265_write_scaling_list()` is gated on
 `V4L2_HEVC_SPS_FLAG_SCALING_LIST_ENABLED` and that our streams have it clear.
+That reasoning was right about the *stall* and it also described, exactly, a
+gap the gate was blind to — closed the same day, below.
+
+### Scaling lists now pass, and the gate can finally see them (2026-08-22)
+
+```
+h04-640x480-scaling         PASS (va) bit-exact, ve+25
+h05-640x480-scaling-custom  PASS (va) bit-exact, ve+25    H1: 10 pass, 0 fail
+H.264 (unregressed)                                       VA1: 5 pass, 0 fail
+```
+
+The control was never set by either upstream tree —
+`patches/libva-v4l2-request/0005` sets it. (That corrects "#44 dropped the
+iqmatrix handling", above and in patch 0004: PR #38's own pre-#44 `h265.c`
+mentions `iqmatrix` only in a declaration block it never reads, and sets three
+controls, none of them a scaling matrix.) The gate could not have caught it,
+because h01/h02/h03 all have
+`scaling_list_enabled_flag = 0` and cedrus writes the scaling SRAM only when
+that SPS flag is set. **A driver that fills nothing scores bit-exact on all
+three.** Two vectors close the hole: `h04` (`--scaling-list default`: the SPS
+enables lists and carries no data, so the HEVC defaults apply — non-flat from
+8x8 up) and `h05` (explicit custom lists from
+`tools/video/scaling-list-custom.txt`, non-flat at 4x4 as well, with DC
+coefficients that differ from their own matrix, which is what `h04` alone is
+blind to since every default DC is 16).
+
+Both read `MISMATCH (va) ve+25` before the patch: 25 frames decoded on the
+engine, to the wrong answer. Not a stall, not a rejected control — a completed
+decode with the wrong quantisation. The oracle scored bit-exact on both
+throughout, so **cedrus handles scaling lists correctly today**, custom DC
+coefficients included; the entire gap was in userspace.
+
+**A straight copy is correct, and that is not obvious.** HEVC codes scaling
+lists in up-right diagonal scan order, so the natural assumption is that the
+shim owes a permutation. It does not: `va_dec_hevc.h` says "Matrix entries are
+in raster scan order which follows HEVC spec", the V4L2 control's kernel doc
+says "expected in raster scan order" for every member, and ffmpeg's
+`scaling_list_data()` (`libavcodec/hevc/ps.c`) already stores each coefficient
+at its raster position, with `vaapi_hevc.c` copying the arrays across
+unchanged. `h05` is the evidence rather than the reading: lists non-flat at
+every size cannot come out bit-exact under a wrong permutation.
+
+One version dependency worth recording: ffmpeg 6.1 and 7.1 both copy
+`sl[size][matrix][j]` straight into the VA buffer. An older ffmpeg that
+converted to diagonal order on the way out would silently produce wrong pixels
+here, and there is no way for the shim to detect it.
 
 ### What remains, stated rather than hidden
-
-- **Scaling lists are not passed.** #44 dropped the iqmatrix handling. Our
-  vectors have `scaling_list_enabled = 0`, so the gate cannot see this; a
-  stream that uses scaling lists will decode wrong.
 - **Entry point offsets are not passed**, and do not need to be: ffmpeg reports
   `num_entry_point_offsets = 0` even for WPP streams, and h01/h02 are
   bit-exact regardless. Entry points parallelise WPP substreams; they are not

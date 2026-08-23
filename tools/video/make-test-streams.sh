@@ -123,6 +123,24 @@ gen_hevc h02-1280x720-main 1280 720 25 main
 # yet". Both are bit-exact through gst v4l2slh265dec today.
 gen_hevc h03-640x480-nowpp  640 480 25 main wpp=0
 
+# h04/h05 -- scaling lists, and the reason they exist is that h01-h03 cannot
+# test them. All three have scaling_list_enabled_flag = 0, cedrus gates its
+# write of V4L2_CID_STATELESS_HEVC_SCALING_MATRIX on that SPS flag, and so a
+# decoder that never fills the control at all scores bit-exact on every one of
+# them. That is how the shim shipped without it.
+#
+#   h04  --scaling-list default: the SPS enables scaling lists but carries no
+#        data, so the HEVC default matrices (Table 7-5/7-6) apply. They are
+#        non-flat from 8x8 up, which is enough to catch a matrix that is not
+#        passed -- but every default DC coefficient is 16 and the 4x4 lists are
+#        flat 16, so h04 alone cannot see a bug in those two fields.
+#   h05  explicit custom lists from scaling-list-custom.txt, non-flat at every
+#        size with DC values that differ from their own matrix. Covers what h04
+#        is blind to, and exercises sps_scaling_list_data_present_flag = 1.
+gen_hevc h04-640x480-scaling 640 480 25 main "scaling-list=default"
+gen_hevc h05-640x480-scaling-custom 640 480 25 main \
+  "scaling-list=$PROJECT_ROOT/tools/video/scaling-list-custom.txt"
+
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host
 # software decode of the same stream.

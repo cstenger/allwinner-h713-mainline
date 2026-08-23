@@ -42,6 +42,8 @@ board's libva 1.22 loader will not call.
 | 0001 | `#include "utils.h"` in `h264.c` | `request_log()` is called but never declared; implicit declarations have been an error since GCC 14 |
 | 0002 | Build H.264 only; advertise only what `RequestCreateConfig` accepts | see below |
 | 0003 | Create the bitstream buffer with the surface, not with the context | the one that actually blocked decoding — see below |
+| 0004 | Port HEVC: PR #44's `h265.c` on this base, plus the four sites it needs | HEVC on the stabilized uAPI. Neither upstream PR decodes here alone: #38 has the format ordering cedrus requires, #44 has the modern port |
+| 0005 | `h265`: pass the scaling matrix | `V4L2_CID_STATELESS_HEVC_SCALING_MATRIX` was never set by *either* upstream tree, so any stream with `scaling_list_enabled_flag = 1` decoded against flat matrices — see below |
 
 Patch 0002 does two things that look separate and are not:
 
@@ -80,6 +82,31 @@ so the queue was created empty and `STREAMON` was correctly refused. The buffer
 now belongs to the surface, which is where the OUTPUT format was already being
 set for the same underlying reason.
 
+Patch 0005 is worth reading for how it was found rather than for its size. The
+control was simply never set — by either upstream tree, which corrects patch
+0004's "#44 dropped the iqmatrix handling": PR #38's own pre-#44 `h265.c`
+mentions `iqmatrix` three times, all in the declaration block of
+`h265_set_controls()`, and then sets three controls that do not include a
+scaling matrix. #44 merely removed the unused declarations. And **the gate
+could not see that**: h01, h02 and
+h03 all have `scaling_list_enabled_flag = 0`, and cedrus writes its scaling-list
+SRAM only when that SPS flag is set, so a driver that fills nothing at all
+scores bit-exact on all three. Two vectors were added to close the blind spot
+(`h04`, implicit HEVC default lists; `h05`, explicit custom lists that are
+non-flat at 4x4 and whose DC coefficients differ from their own matrix), and
+they showed `MISMATCH (va) ve+25` — the engine decoding all 25 frames, to the
+wrong answer — before the fix and bit-exact after it.
+
+No scan conversion is needed, which is the opposite of what the bitstream syntax
+suggests. HEVC codes scaling lists in up-right diagonal order, but **both APIs
+specify raster**: `va_dec_hevc.h` says "Matrix entries are in raster scan order
+which follows HEVC spec" and the V4L2 control's kernel doc says "expected in
+raster scan order". ffmpeg's parser already undoes the scan
+(`scaling_list_data()` in `libavcodec/hevc/ps.c` stores at the raster position;
+`vaapi_hevc.c` copies across unchanged), so the shim's job is a straight copy.
+`h05` is the evidence — its lists are non-flat at every size, so a wrong
+permutation could not have come out bit-exact.
+
 ## Status — validated on hardware 2026-08-16
 
 `vainfo` loads the driver (`__vaDriverInit_1_22`) and advertises the five H.264
@@ -108,3 +135,25 @@ surface as a dma-buf never pays it.
 Reproduce with [`tools/video/va-decode-test.sh`](../../tools/video/va-decode-test.sh),
 which scores a software control first so a hardware mismatch cannot be confused
 with a broken yardstick.
+
+## HEVC — validated on hardware 2026-08-22
+
+`vainfo` additionally advertises `VAProfileHEVCMain` with `VAEntrypointVLD`, and
+every HEVC vector decodes **bit-exact** through stock ffmpeg, with the GStreamer
+oracle scoring the same 5/5 on the same run:
+
+| vector | what it adds | result |
+|---|---|---|
+| `h01-640x480-main` (25 frames) | HEVC Main, WPP on | bit-exact |
+| `h02-1280x720-main` (25) | panel-native size | bit-exact |
+| `h03-640x480-nowpp` (25) | WPP off | bit-exact |
+| `h04-640x480-scaling` (25) | scaling lists, implicit defaults | bit-exact |
+| `h05-640x480-scaling-custom` (25) | explicit custom lists + DC coefficients | bit-exact |
+
+Reproduce with [`tools/video/hevc-decode-test.sh`](../../tools/video/hevc-decode-test.sh).
+The H.264 ladder is unregressed at 5/5 in the same session.
+
+**Still not covered:** 10-bit (Main10) is blocked in the kernel — mainline
+cedrus exposes no 10-bit capture format — and the two inert PPS flag bits noted
+in patch 0004 are still wrong. Tiles, `transquant_bypass` and long-term
+references have no vector yet.

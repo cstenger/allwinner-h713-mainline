@@ -36,8 +36,16 @@
 #            simplest thing that can possibly decode, and it is the right first
 #            milestone for the shim port -- it decomposes "my control filling is
 #            wrong" from "I have not implemented entry points yet".
+#   h04/h05  scaling lists. h01-h03 all have scaling_list_enabled_flag = 0, and
+#            cedrus gates its scaling-matrix write on that SPS flag, so those
+#            three vectors CANNOT SEE whether the matrix is passed at all --
+#            which is exactly how the shim shipped without passing it. h04 uses
+#            the implicit HEVC default lists (non-flat from 8x8 up, every DC
+#            coefficient 16); h05 carries explicit custom lists that are
+#            non-flat at 4x4 too and whose DC values differ from their matrix,
+#            so it also covers the two fields h04 is blind to.
 #
-#   usage: ./hevc-decode-test.sh [vector-name ...]      (default: all three)
+#   usage: ./hevc-decode-test.sh [vector-name ...]      (default: all five)
 
 set -u
 
@@ -51,7 +59,8 @@ mkdir -p "$OUT"
 
 [ -r "$REF" ] || { echo "FATAL: no reference md5 file at $REF"; exit 1; }
 
-VECTORS=${*:-"h01-640x480-main h02-1280x720-main h03-640x480-nowpp"}
+VECTORS=${*:-"h01-640x480-main h02-1280x720-main h03-640x480-nowpp \
+	h04-640x480-scaling h05-640x480-scaling-custom"}
 
 # Sum the per-CPU columns of the video-codec interrupt line. A rise of exactly
 # one per frame is positive proof the VE did the work -- stronger than "we
