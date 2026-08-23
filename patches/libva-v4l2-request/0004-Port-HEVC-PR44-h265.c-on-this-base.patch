@@ -1,95 +1,82 @@
 Port HEVC: PR #44's h265.c on this base, plus the four sites it needs
 
 HEVC now decodes bit-exact on the VE through stock ffmpeg. H.264 is
-untouched and still 5/5 bit-exact.
+
+HEVC now decodes bit-exact on the VE through stock ffmpeg -- all three
+vectors, WPP and non-WPP -- and H.264 is unregressed at 5/5.
 
     h01-640x480-main    PASS (va) bit-exact, ve+25
     h02-1280x720-main   PASS (va) bit-exact, ve+25
-    h03-640x480-nowpp   MISMATCH (va) ve+2   <- known, see below
+    h03-640x480-nowpp   PASS (va) bit-exact, ve+25
 
-WHERE THIS COMES FROM. src/h265.c is taken verbatim from bootlin PR #44
-(head c488d8df, "Kernel 6.18" by Cn8001), which ports HEVC to the
-stabilized V4L2 stateless uAPI: V4L2_CID_STATELESS_HEVC_* names, the
-flags-bitfield SPS/PPS/slice_params, a new h265_fill_decode_params(), and
-the reference-picture-set restructure that maps VA-API's ReferenceFrames[]
-into poc_st_curr_before/after[] and poc_lt_curr[]. That last part was the
-only piece of this work with real design risk, and it is correct.
+src/h265.c is taken verbatim from bootlin PR #44 (head c488d8df, "Kernel
+6.18" by Cn8001), which ports HEVC to the stabilized V4L2 stateless uAPI --
+V4L2_CID_STATELESS_HEVC_* names, flags-bitfield SPS/PPS/slice_params, a new
+h265_fill_decode_params(), and the reference-picture-set restructure that
+maps VA-API's ReferenceFrames[] into poc_st_curr_before/after[] and
+poc_lt_curr[]. That last part carried the real design risk and is correct.
 
-WHY NOT JUST USE PR #44. It cannot decode anything on cedrus -- H.264 or
-HEVC -- because it is based on master and never had this branch's
-format-ordering fix. Measured, both codecs fail identically:
+PR #44 cannot decode anything on cedrus by itself -- H.264 or HEVC --
+because it is based on master and lacks this branch's format-ordering fix.
+Both codecs fail identically with the CAPTURE format clamped to 16x16 and
+then EBUSY on the OUTPUT format, which is the V4L2 stateless spec's
+mandated order (dev-decoder.rst, "Initialization") enforced deliberately by
+cedrus_s_fmt_vid_out(). This branch already sets the coded format first, in
+RequestCreateSurfaces2.
 
-    s_fmt type=1 (CAPTURE) 640x480 -> 16x16
-    create_bufs type=1 ... index=0
-    Unable to set format for type 2: Device or resource busy
+THE THREE BUGS FIXED HERE, each found by measurement rather than reading:
 
-That is not a missing feature. cedrus_s_fmt_vid_out() refuses an OUTPUT
-format change once the CAPTURE queue has buffers, and says why in a
-comment; and cedrus_try_fmt_vid_cap_p() *derives* the capture size from
-the coded format, so asking for it first yields the 16x16 minimum. The
-V4L2 stateless spec (Documentation/userspace-api/media/v4l/dev-decoder.rst,
-"Initialization") mandates OUTPUT-coded-format first. This branch already
-does that, in RequestCreateSurfaces2, which is why lifting h265.c onto it
-works where #44 does not.
+1. The Annex-B start code was prepended based on UNINITIALISED MEMORY.
+   context->h264_start_code is never assigned anywhere: h264_get_controls(),
+   which would set it, is defined and never called. H.264 had been decoding
+   bit-exact purely because the heap happened to hold zero there. cedrus
+   accepts only START_CODE_NONE, for BOTH codecs -- .max and .def are NONE
+   for V4L2_CID_STATELESS_H264_START_CODE and the HEVC one alike -- so the
+   flag is now set explicitly to false. This is what fixed the non-WPP
+   stall, and it also makes H.264's previously-lucky behaviour deliberate.
 
-THE FOUR SITES h265.c NEEDED, all of them places our H.264-only patch had
-stripped HEVC from, each found by a distinct failure rather than by
-reading:
+2. nal_unit_type was read from that start code, yielding 0 (TRAIL_N, a
+   NON-reference picture) instead of the real type. cedrus passes it
+   straight to the hardware in VE_DEC_H265_DEC_NAL_HDR_NAL_UNIT_TYPE().
+   Fixed by skipping a start code before reading the NAL header, which is
+   still correct now that we no longer add one -- a caller that does will
+   not be misparsed.
 
-  meson.build   h265.c was not built at all -> dlopen: undefined symbol
-                h265_set_controls.
-  config.c      three of them: RequestCreateConfig refused the profile;
-                RequestQueryConfigProfiles never advertised it; and
-                RequestQueryConfigEntrypoints returned zero entrypoints,
-                which is why vainfo silently omitted HEVC even after the
-                first two were fixed.
-  picture.c     four switches: the picture/slice/IQ-matrix buffer copies
-                and the EndPicture dispatch to h265_set_controls.
+3. The coded pixelformat was hardcoded to V4L2_PIX_FMT_H264_SLICE in
+   surface.c, so an HEVC stream set S264 on the OUTPUT queue, cedrus
+   selected its H.264 codec ops, and the engine ran producing an all-zero
+   frame. It now comes from driver_data->coded_pixelformat, recorded at
+   RequestCreateConfig because the format must be set before any buffer
+   exists -- earlier than the context that knows the profile.
 
-THE CODED FORMAT WAS HARDCODED. surface.c had
+Plus the sites our H.264-only patch had stripped HEVC from: meson.build
+(h265.c was never compiled), three in config.c (CreateConfig refused the
+profile, QueryConfigProfiles never advertised it, and
+QueryConfigEntrypoints returned zero entrypoints, which is why vainfo kept
+omitting HEVC after the first two were fixed), and four in picture.c.
 
-    unsigned int pixelformat = V4L2_PIX_FMT_H264_SLICE;
+KNOWN LIMITATIONS, stated rather than hidden:
 
-so an HEVC stream set S264 on the OUTPUT queue, cedrus selected its H.264
-codec ops, and the engine ran 25 times producing an all-zero frame -- mean
-0.0, not tiled, not garbage, simply never written. It now comes from
-driver_data->coded_pixelformat, recorded in RequestCreateConfig. It has to
-live on driver_data because the format must be set before any buffer
-exists, which is earlier than the context that knows the profile;
-vaCreateConfig always precedes vaCreateSurfaces, so that is early enough.
+  * HEVC scaling lists are not passed. PR #44 dropped the iqmatrix handling
+    and never sets V4L2_CID_STATELESS_HEVC_SCALING_MATRIX. Our vectors have
+    scaling_list_enabled = 0 and cedrus gates the write on that SPS flag, so
+    the gate cannot see this. A stream that uses scaling lists will decode
+    wrong.
+  * Entry point offsets are not passed either. ffmpeg reports
+    num_entry_point_offsets = 0 for WPP streams, so VA-API does not convey
+    them at all; h01/h02 decode bit-exact regardless, because entry points
+    let a decoder parallelise WPP substreams rather than being needed for
+    correctness.
+  * Two PPS flag bits are wrong -- DEBLOCKING_FILTER_CONTROL_PRESENT is set
+    when the stream says 0 (#44 derives it instead of reading it, and
+    VA-API does not expose the field), and UNIFORM_SPACING is never set.
+    Neither is referenced anywhere in cedrus, so both are inert here and
+    left alone rather than guessed at.
+  * h264_start_code being hardcoded false is right for cedrus and wrong in
+    general. Querying the per-codec START_CODE control is the correct form.
 
-KNOWN LIMITATIONS, both stated rather than hidden:
-
-  * h03-640x480-nowpp stalls: "Timeout when waiting for media request"
-    after 2-5 frames, reproducibly. It differs from h01 only by wpp=0 --
-    identical NAL structure, one slice per frame -- and GStreamer decodes
-    it bit-exact, so cedrus can. Something we send is wrong specifically
-    when entropy_coding_sync is off. Not yet diagnosed.
-  * HEVC scaling lists are not passed to the kernel. PR #44 dropped the
-    iqmatrix handling from h265_set_controls and never sets
-    V4L2_CID_STATELESS_HEVC_SCALING_MATRIX. Our vectors do not use scaling
-    lists, so the gate does not see it.
-  * Entry point offsets are still not passed. NOTE this corrects an
-    earlier claim in this tree that h01/h02 would REQUIRE them: they pass
-    bit-exact without. Entry points let a decoder start WPP substreams in
-    parallel; a sequential decoder does not need them for correctness.
-
-MPEG-2 remains unadvertised on purpose -- RequestCreateConfig still
-refuses it, and advertising what vaCreateConfig rejects is worse than
-advertising nothing.
-
-Co-Authored-By: Christopher Stenger <chris.h.stenger@gmail.com>
-
-UPDATE: one of the three bugs found by diffing controls against GStreamer is
-now fixed here. nal_unit_type was being read from the Annex-B start code that
-ffmpeg prepends, yielding 0 (TRAIL_N, a NON-reference picture) instead of the
-real type. cedrus passes that straight to the hardware, so the engine did not
-retain frames as references. Skipping the start code before reading the header
-makes our value match GStreamer's exactly (20, 1, 1, 0 across the first four
-frames, verified with patch 0056).
-
-It did NOT fix h03, which still stalls. Every field cedrus actually consumes
-now matches GStreamer; see docs/vaapi-scope.md for what remains.
+MPEG-2 stays unadvertised: RequestCreateConfig still refuses it, and
+advertising what vaCreateConfig rejects is worse than advertising nothing.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
@@ -132,6 +119,39 @@ Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
  		entrypoints[0] = VAEntrypointVLD;
  		*entrypoints_count = 1;
  		break;
+--- a/src/context.c
++++ b/src/context.c
+@@ -83,6 +83,30 @@
+ 	memset(&context_object->dpb, 0, sizeof(context_object->dpb));
+ 
+ 	/*
++	 * Whether RequestRenderPicture prepends an Annex-B start code to each
++	 * slice. It was never initialised anywhere: h264_get_controls(), which
++	 * is what should set it, is defined and never called, so the flag has
++	 * been whatever the heap happened to hold. H.264 has been decoding
++	 * bit-exact by luck.
++	 *
++	 * cedrus wants no start code for EITHER codec -- it advertises
++	 * V4L2_STATELESS_H264_START_CODE_NONE and
++	 * V4L2_STATELESS_HEVC_START_CODE_NONE, both as .max and .def, so NONE is
++	 * the only value it accepts. Measured both ways: prepending one makes
++	 * HEVC hand the decoder three bytes it was told not to expect (the
++	 * OUTPUT payload came out three bytes longer than GStreamer's for the
++	 * same stream, and the NAL type then read out of the start code as 0),
++	 * and it makes H.264 decode non-bit-exact.
++	 *
++	 * Hardcoding false is right for this driver and wrong in general. The
++	 * correct form is to query the per-codec START_CODE control and honour
++	 * whatever it reports, which is what the dead h264_get_controls() was
++	 * reaching for; a driver that wants ANNEX_B would need that.
++	 */
++	context_object->h264_start_code = false;
++
++
++	/*
+ 	 * The surface_ids array has been allocated by the caller and
+ 	 * we don't have any indication wrt its life time. Let's make sure
+ 	 * its life span is under our control.
 --- a/src/h265.c
 +++ b/src/h265.c
 @@ -36,7 +36,7 @@

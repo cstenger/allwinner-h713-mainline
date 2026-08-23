@@ -1642,140 +1642,63 @@ this hardware wants. So the port is **six** controls, not eight.
 
 ---
 
-## The h03 stall: what is ruled out, and what is left (2026-08-22)
-
-`h03-640x480-nowpp` decodes through GStreamer bit-exact but stalls through the
-shim after the IDR: `Timeout when waiting for media request`, reproducibly, at
-`ve+2`..`ve+5`. h01/h02 (identical source, WPP on) pass bit-exact. Everything
-below was measured, not reasoned.
-
-**Ruled out:**
-
-| candidate | how |
-| --- | --- |
-| stream differences beyond WPP | full PPS parsed for both (`tools/video/hevc-pps-dump.py`): **exactly one field differs**, `ENTROPY_CODING_SYNC_ENABLED` 1 vs 0 |
-| the shim misreading that field | instrumented: `va_sync=1` for h01, `0` for h03 — correct |
-| PPS flag assembly | `flags=0x144` decodes to SIGN_DATA_HIDING \| CU_QP_DELTA \| WEIGHTED_PRED, matching the parsed PPS exactly |
-| `data_byte_offset` / `bit_size` | self-consistent (`bits = (size − dbo) × 8`) and match true header sizes: h03 = 2-byte NAL + 3-byte header = 5; h01 = 2 + 15 with ~14 entry-point offsets = 17 |
-| an off-by-one in that offset | tested `+1` directly: **no change** — h01/h02 still pass, h03 still fails |
-| missing entry-point offsets | ffmpeg reports `num_entry_point_offsets = 0` for **both** streams; VA-API does not convey them |
-| cedrus's tile registers | both paths compute `TILE_START_CTB = TILE_END_CTB = 0` — h01 through `cedrus_h265_write_tiles()` with zeroed tile arrays, h03 through the `else` |
-| a regression in our changes | after a reboot the same driver gives 5 pass / 1 fail again |
-
-**The clue not yet followed:** the IDR decodes and the stall happens on the
-*inter* frames after it. That points at reference handling rather than at
-anything WPP-specific — even though WPP is the only PPS difference.
-
-**That gap is now closed, and it did not help.** `tools/video/hevc-bitstream-dump.py`
-parses SPS and slice headers as well: **SPS 0 fields differ, slice headers 0
-fields differ** (identical I/P/B/B sequence, same `first_slice_segment_in_pic`,
-same PPS id). So the two streams really do differ only by
-`entropy_coding_sync_enabled_flag`. The "x265 changed something else" theory is
-dead, and the paradox is sharper rather than resolved.
-
-Worth noting from that dump: `num_short_term_ref_pic_sets = 0`, so every RPS is
-signalled in the slice header rather than the SPS — which is the part of the
-port with the least test coverage.
-
-**Where that leaves it.** cedrus branches on the flag, but both branches compute
-the *same* register values here (`TILE_START_CTB = TILE_END_CTB = 0`, because
-with tiles disabled `column_width_minus1[]` and `row_height_minus1[]` are zero).
-So the only thing reaching the VE that differs is the flag itself — and
-GStreamer decodes the same stream correctly. Therefore the difference is not in
-the stream and not in cedrus's branch: **it is in what the shim sends versus
-what GStreamer sends for the identical stream.**
-
-### The controls were diffed, and there are three bugs (2026-08-22)
-
-`patches/kernel/0056` dumps the controls cedrus receives. Same stream (h03),
-same frame, two clients — GStreamer (decodes correctly) against the shim
-(stalls):
+## HEVC DONE — all three vectors bit-exact through stock ffmpeg (2026-08-22)
 
 ```
-GST:  ppsflags=0x104144  nal=1  bits=19536  slice_bytes=7326  stcb=[0 255 255 255]
-VA:   ppsflags=0x084144  nal=0  bits=19472  slice_bytes=7329  stcb=[0 0 0 0]
+h01-640x480-main    PASS (va) bit-exact, ve+25
+h02-1280x720-main   PASS (va) bit-exact, ve+25
+h03-640x480-nowpp   PASS (va) bit-exact, ve+25      H1: 6 pass, 0 fail
+H.264                                               VA1: 5 pass, 0 fail
 ```
 
-**1. `nal_unit_type` is wrong, and this is almost certainly the stall.**
-GStreamer sends 1 (`TRAIL_R`, a sub-layer **reference** picture); the shim
-sends 0 (`TRAIL_N`, a sub-layer **non-reference** picture). Told the frame is
-not a reference, the VE does not retain it, and the next frame that references
-it has nothing to reference — which is exactly the observed behaviour: the IDR
-decodes, then the inter frames stall.
+**The h03 stall was an uninitialised variable.** `context->h264_start_code`
+decides whether the shim prepends an Annex-B start code to each slice, and it
+is assigned **nowhere** — `h264_get_controls()`, which would set it, is defined
+and never called. H.264 had been decoding bit-exact purely because the heap
+happened to hold zero there.
 
-**2. The 3-byte Annex-B start code is left in the OUTPUT buffer**, and it
-*causes* bug 1. `slice_bytes` is 7329 against GStreamer's 7326 — exactly three
-bytes. #44 reads the NAL type as
+cedrus accepts only `START_CODE_NONE`, for **both** codecs (`.max` and `.def`
+are NONE for the H.264 control and the HEVC one alike). Setting the flag
+explicitly to false fixes HEVC and makes H.264's luck deliberate.
 
-```c
-	b = source_data + slice->slice_data_offset;
-	nal_unit_type = (b[0] >> H265_NAL_UNIT_TYPE_SHIFT) & H265_NAL_UNIT_TYPE_MASK;
-```
+### How it was found, and what that cost
 
-so with the start code present `b[0]` is `0x00`, giving `(0 >> 1) & 0x3F == 0`.
-cedrus only supports start-code-free data — `V4L2_CID_STATELESS_HEVC_START_CODE`
-has `.max` and `.def` both `START_CODE_NONE` — so the buffer must not carry it.
+Three hypotheses were tested and refuted from userspace before the kernel was
+instrumented: an off-by-one in `data_byte_offset` (tested `+1` and `+3` — no
+change), missing entry-point offsets (ffmpeg reports zero for WPP streams
+anyway), and "x265 changed something else with `wpp=0`" (SPS, PPS and slice
+headers all diff to zero). Each was cheap; none was the answer.
 
-**3. Two PPS flag bits are wrong.** The shim sets
-`DEBLOCKING_FILTER_CONTROL_PRESENT` (bit 19), which the parsed PPS says is
-**0**, and fails to set `UNIFORM_SPACING` (bit 20), which GStreamer does.
+What ended it was `patches/kernel/0056`, dumping the controls cedrus receives
+so the same stream could be run through GStreamer and the shim and diffed
+directly. That produced three real bugs in one pass, and eliminated every
+remaining difference as inert by checking it against what cedrus actually
+consumes. **The lesson is to reach for the oracle's own values sooner** — the
+one thing userspace could not show was what the working client sends.
 
-Minor, noted but probably harmless: unused `poc_st_curr_*` and `ref_idx_*`
-entries are zero in the shim where GStreamer writes `0xFF`, the "invalid"
-convention.
+The scaling-matrix idea was killed before a line was written, by checking that
+`cedrus_h265_write_scaling_list()` is gated on
+`V4L2_HEVC_SPS_FLAG_SCALING_LIST_ENABLED` and that our streams have it clear.
 
-### Bug 1 is fixed. h03 still stalls, and every remaining difference is inert
+### What remains, stated rather than hidden
 
-Skipping the start code before reading the NAL header makes our values match
-GStreamer's exactly — `nal=20, 1, 1, 0` across the first four frames, verified
-with 0056. **It did not fix h03.**
-
-`data_byte_offset` was then tested at `+1` and `+3` (the latter being the start
-code's width, since our OUTPUT buffer carries it and GStreamer's does not).
-**Neither changed anything.** That retires the offset theory properly.
-
-With the NAL fix in, every remaining difference was checked against what cedrus
-actually consumes, and all of them are inert:
-
-| difference | why it cannot be the cause |
-| --- | --- |
-| `ppsflags` bits 19/20 | `DEBLOCKING_FILTER_CONTROL_PRESENT` and `UNIFORM_SPACING` are **not referenced anywhere in cedrus** |
-| `col=255` vs `0` | `COLLOCATED_REF_IDX` is bits 15:12 and `SHIFT_AND_MASK_BITS` truncates 255 to 15; it is on the I-slice, where it is unused |
-| padding `0` vs `255` in `poc_st_curr_*` / `ref_idx_*` | cedrus iterates only `num_ref_idx_lN_active_minus1 + 1` entries, never the padding |
-| `bit_size` differing by `dbo * 8` | cedrus does not use `bit_size` at all — it writes `BITS_LEN` from the vb2 payload |
-| `slice_bytes` +3 | the start code; reaches `BITS_LEN`/`BITS_END_ADDR` as three trailing bytes |
-
-**So the controls are not where the remaining difference lives.** What has NOT
-been examined, in order of suspicion:
-
-1. **The scaling matrix control is never set.** GStreamer sets
-   `V4L2_CID_STATELESS_HEVC_SCALING_MATRIX`; #44 dropped the iqmatrix handling
-   entirely. An unset control holds its default, and a zero scaling matrix
-   would be nonsense to the hardware.
-2. **The SPS control was not dumped.** Only `slice_params` and `decode_params`
-   were. Extending 0056 to print the SPS is a five-line change.
-3. **The OUTPUT buffer contents.** Ours carries the Annex-B start code while
-   `START_CODE` is `START_CODE_NONE` (cedrus supports nothing else — `.max`
-   and `.def` are both NONE). Stripping it is a real change and untested.
-
-**Why h01 survives all this** is not yet explained and should not be
-hand-waved — the same three bugs are present there. A WPP stream evidently
-tolerates a mislabelled reference picture where a non-WPP one does not, which
-is worth understanding before calling any of this fixed.
-
-### Superseded: the earlier plan for this experiment
-
-**The decisive next experiment** is therefore to see GStreamer's controls, which
-needs a kernel-side dump: instrument `cedrus_h265_setup()` to print the received
-`v4l2_ctrl_hevc_slice_params` / `decode_params`, then run h03 through GStreamer
-and through the shim and diff the two. That is one kernel build and it ends the
-guessing, which three refuted hypotheses have now earned.
-
-**Operational note that cost a confusing result:** a `cedrus: frame processing
-timed out!` leaves the video engine wedged for *every* client, GStreamer
-included. A run right after a failing one reported 0 pass / 6 fail with the
-oracle failing too, which reads exactly like a regression and is not. Reboot
-between runs once anything has timed out.
+- **Scaling lists are not passed.** #44 dropped the iqmatrix handling. Our
+  vectors have `scaling_list_enabled = 0`, so the gate cannot see this; a
+  stream that uses scaling lists will decode wrong.
+- **Entry point offsets are not passed**, and do not need to be: ffmpeg reports
+  `num_entry_point_offsets = 0` even for WPP streams, and h01/h02 are
+  bit-exact regardless. Entry points parallelise WPP substreams; they are not
+  required for correctness.
+- **Two PPS flag bits are wrong** — `DEBLOCKING_FILTER_CONTROL_PRESENT` is set
+  when the stream says 0 (#44 derives it because VA-API does not expose the
+  field) and `UNIFORM_SPACING` is never set. Neither is referenced anywhere in
+  cedrus, so both are inert here and were left alone rather than guessed at.
+- **`h264_start_code = false` is right for cedrus and wrong in general.**
+  Querying the per-codec `START_CODE` control is the correct form.
+- **A cedrus timeout wedges the VE for every client**, GStreamer included. A
+  run straight after a failing one reported 0 pass / 6 fail with the oracle
+  failing too, which reads exactly like a regression. Reboot between runs once
+  anything has timed out.
 
 ---
 
