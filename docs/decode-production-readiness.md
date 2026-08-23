@@ -286,11 +286,38 @@ Two smaller things found on the way, neither of them the cause:
   if `irq_status()` reads NONE or if the context has gone. Either early return
   leaves a job with `TRANS_RUNNING` set and **no watchdog armed** to finish it
   — the same deadlock, from a spurious interrupt rather than from a reset.
-  With 0040 removed this stops being reachable in practice, so it is recorded
-  as a latent hazard rather than patched on speculation: the fix (re-arm the
-  watchdog on both early returns) is one line, but there is now no way to show
-  it matters, and this project has been burned by shipping changes in that
-  state.
+  **Patch 0059 fixes it, and patch 0060 (debug) made it reproducible.** See
+  below — the fix is written and the failure is demonstrated, but the fixed
+  arm has not run yet.
+
+### The orphan, demonstrated (2026-08-23)
+
+Patch 0060 forces the "not ours" branch on demand
+(`sunxi_cedrus.fault_irq_none=N`). Unlike patch 0058 it injects into the
+driver's own logic rather than into the hardware, so it cannot silently fail
+to fire — 0058 tried to stall the engine through a register the engine
+ignored.
+
+On the **unfixed** driver, one injected spurious interrupt:
+
+- the decode never returned. `timeout 60` could not end it, because the
+  process was in `D` state where SIGKILL is not delivered — the orphan
+  exactly as predicted: watchdog cancelled, `TRANS_RUNNING` still set,
+  nothing left alive to finish the job;
+- and then **the whole board stopped executing userspace**. ssh still
+  accepted connections, but no command completed, and a sysrq write never
+  ran. A power cycle was required.
+
+That second part is consistent with the other half of the bug — the early
+return leaves the engine's status bit set, this interrupt line is
+`IRQ_TYPE_LEVEL_HIGH`, and nothing acknowledges it, so it is re-raised
+forever — but it is **not proven**: with the board unreachable there was no
+console to confirm an interrupt storm, and `/proc/interrupts` could not be
+read. Recorded as consistent-with, not as established.
+
+**The fixed arm has not been run.** Patch 0059 is therefore NOT in `series`
+yet; the module is built and staged. Moving it in is a one-line change once
+the A/B completes on a board that has been power-cycled.
 
 ### Final battery, on the shipping configuration
 
