@@ -1724,6 +1724,40 @@ Minor, noted but probably harmless: unused `poc_st_curr_*` and `ref_idx_*`
 entries are zero in the shim where GStreamer writes `0xFF`, the "invalid"
 convention.
 
+### Bug 1 is fixed. h03 still stalls, and every remaining difference is inert
+
+Skipping the start code before reading the NAL header makes our values match
+GStreamer's exactly — `nal=20, 1, 1, 0` across the first four frames, verified
+with 0056. **It did not fix h03.**
+
+`data_byte_offset` was then tested at `+1` and `+3` (the latter being the start
+code's width, since our OUTPUT buffer carries it and GStreamer's does not).
+**Neither changed anything.** That retires the offset theory properly.
+
+With the NAL fix in, every remaining difference was checked against what cedrus
+actually consumes, and all of them are inert:
+
+| difference | why it cannot be the cause |
+| --- | --- |
+| `ppsflags` bits 19/20 | `DEBLOCKING_FILTER_CONTROL_PRESENT` and `UNIFORM_SPACING` are **not referenced anywhere in cedrus** |
+| `col=255` vs `0` | `COLLOCATED_REF_IDX` is bits 15:12 and `SHIFT_AND_MASK_BITS` truncates 255 to 15; it is on the I-slice, where it is unused |
+| padding `0` vs `255` in `poc_st_curr_*` / `ref_idx_*` | cedrus iterates only `num_ref_idx_lN_active_minus1 + 1` entries, never the padding |
+| `bit_size` differing by `dbo * 8` | cedrus does not use `bit_size` at all — it writes `BITS_LEN` from the vb2 payload |
+| `slice_bytes` +3 | the start code; reaches `BITS_LEN`/`BITS_END_ADDR` as three trailing bytes |
+
+**So the controls are not where the remaining difference lives.** What has NOT
+been examined, in order of suspicion:
+
+1. **The scaling matrix control is never set.** GStreamer sets
+   `V4L2_CID_STATELESS_HEVC_SCALING_MATRIX`; #44 dropped the iqmatrix handling
+   entirely. An unset control holds its default, and a zero scaling matrix
+   would be nonsense to the hardware.
+2. **The SPS control was not dumped.** Only `slice_params` and `decode_params`
+   were. Extending 0056 to print the SPS is a five-line change.
+3. **The OUTPUT buffer contents.** Ours carries the Annex-B start code while
+   `START_CODE` is `START_CODE_NONE` (cedrus supports nothing else — `.max`
+   and `.def` are both NONE). Stripping it is a real change and untested.
+
 **Why h01 survives all this** is not yet explained and should not be
 hand-waved — the same three bugs are present there. A WPP stream evidently
 tolerates a mislabelled reference picture where a non-WPP one does not, which

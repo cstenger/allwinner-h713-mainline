@@ -79,6 +79,19 @@ refuses it, and advertising what vaCreateConfig rejects is worse than
 advertising nothing.
 
 Co-Authored-By: Christopher Stenger <chris.h.stenger@gmail.com>
+
+UPDATE: one of the three bugs found by diffing controls against GStreamer is
+now fixed here. nal_unit_type was being read from the Annex-B start code that
+ffmpeg prepends, yielding 0 (TRAIL_N, a NON-reference picture) instead of the
+real type. cedrus passes that straight to the hardware, so the engine did not
+retain frames as references. Skipping the start code before reading the header
+makes our value match GStreamer's exactly (20, 1, 1, 0 across the first four
+frames, verified with patch 0056).
+
+It did NOT fix h03, which still stalls. Every field cedrus actually consumes
+now matches GStreamer; see docs/vaapi-scope.md for what remains.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
 --- a/src/config.c
 +++ b/src/config.c
@@ -364,7 +377,7 @@ Co-Authored-By: Christopher Stenger <chris.h.stenger@gmail.com>
  }
  
  static void h265_fill_slice_params(VAPictureParameterBufferHEVC *picture,
-@@ -163,21 +251,13 @@
+@@ -163,159 +251,122 @@
  				   void *source_data,
  				   struct v4l2_ctrl_hevc_slice_params *slice_params)
  {
@@ -387,7 +400,33 @@ Co-Authored-By: Christopher Stenger <chris.h.stenger@gmail.com>
  
  	/* Extract the missing NAL header information. */
  
-@@ -188,134 +268,81 @@
+ 	b = source_data + slice->slice_data_offset;
+ 
++	/*
++	 * Skip an Annex-B start code before reading the NAL header.
++	 *
++	 * ffmpeg's VA-API HEVC path prepends a 3-byte start code to the slice
++	 * data buffer, so slice_data_offset lands on 0x00 and the NAL type read
++	 * here comes out as 0 -- TRAIL_N, a sub-layer NON-reference picture --
++	 * instead of the real type. That is not cosmetic: cedrus hands the value
++	 * straight to the hardware in
++	 * VE_DEC_H265_DEC_NAL_HDR_NAL_UNIT_TYPE(), so the engine does not retain
++	 * the frame as a reference and the next frame that references it stalls
++	 * with "Timeout when waiting for media request".
++	 *
++	 * Found by dumping the controls cedrus receives and diffing them against
++	 * GStreamer's for the same stream: nal=0 from here, nal=1 from the client
++	 * that decodes correctly.
++	 */
++	if (b[0] == 0x00 && b[1] == 0x00) {
++		if (b[2] == 0x01)
++			b += 3;
++		else if (b[2] == 0x00 && b[3] == 0x01)
++			b += 4;
++	}
++
+ 	nal_unit_type = (b[0] >> H265_NAL_UNIT_TYPE_SHIFT) &
+ 			H265_NAL_UNIT_TYPE_MASK;
  	nuh_temporal_id_plus1 = (b[1] >> H265_NUH_TEMPORAL_ID_PLUS1_SHIFT) &
  				H265_NUH_TEMPORAL_ID_PLUS1_MASK;
  
@@ -422,6 +461,7 @@ Co-Authored-By: Christopher Stenger <chris.h.stenger@gmail.com>
 +	 */
 +	slice_params->bit_size = (slice->slice_data_size -
 +				  slice->slice_data_byte_offset) * 8;
++	/* DBO_EXPERIMENT */
 +	slice_params->data_byte_offset =
 +		slice->slice_data_offset + slice->slice_data_byte_offset;
 +	slice_params->num_entry_point_offsets = slice->num_entry_point_offsets;
@@ -562,7 +602,7 @@ Co-Authored-By: Christopher Stenger <chris.h.stenger@gmail.com>
  	count = slice_params->num_ref_idx_l0_active_minus1 + 1;
  
  	for (i = 0; i < count && slice_type != V4L2_HEVC_SLICE_TYPE_I; i++)
-@@ -323,13 +350,9 @@
+@@ -323,13 +374,9 @@
  
  	count = slice_params->num_ref_idx_l1_active_minus1 + 1;
  
@@ -577,7 +617,7 @@ Co-Authored-By: Christopher Stenger <chris.h.stenger@gmail.com>
  	slice_params->pred_weight_table.luma_log2_weight_denom =
  		slice->luma_log2_weight_denom;
  	slice_params->pred_weight_table.delta_chroma_log2_weight_denom =
-@@ -372,25 +395,32 @@
+@@ -372,25 +419,32 @@
  		&surface_object->params.h265.picture;
  	VASliceParameterBufferHEVC *slice =
  		&surface_object->params.h265.slice;
@@ -616,7 +656,7 @@ Co-Authored-By: Christopher Stenger <chris.h.stenger@gmail.com>
  	if (rc < 0)
  		return VA_STATUS_ERROR_OPERATION_FAILED;
  
-@@ -398,7 +428,7 @@
+@@ -398,7 +452,7 @@
  			       surface_object->source_data, &slice_params);
  
  	rc = v4l2_set_control(driver_data->video_fd, surface_object->request_fd,
