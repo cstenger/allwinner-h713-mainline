@@ -303,6 +303,26 @@ VA1 (5 H.264 vectors)        5 pass, 0 fail
 R1 (16 malformed streams)   16 pass, 0 fail   engine recovered from every one
 ```
 
+And a confirmation soak, because the two-hour one had run against the module
+the board came with rather than this one:
+
+```
+SOAK-DECODE DONE t=2400s
+  iterations   1745  (1745 pass, 0 fail, 0 software fallbacks)
+  frames on VE 65027
+  timeouts     +0
+  CmaFree      130628kB -> 130684kB   (delta 56kB, both after reclaim)
+  MemAvailable 871212kB -> 867792kB   (delta -3420kB)
+```
+
+Dropping 0040 costs nothing in single-client durability: 65,027 more frames,
+every iteration bit-exact, no new timeouts, no leak.
+
+> The first version of this summary printed the raw dmesg timeout tally rather
+> than the delta, so this run reported "timeouts 6" — six inherited from the
+> robustness gate minutes earlier, none of its own. It read as six failures and
+> meant the opposite. The harness now prints `+0` and the baseline separately.
+
 ---
 
 ## 4. Where decode actually stands

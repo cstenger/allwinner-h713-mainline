@@ -117,7 +117,8 @@ done
 start=$(date +%s)
 deadline=$((start + DURATION))
 ve0=$(ve_irq)
-to0=$(dmesg_count "timed out")
+to0=$(dmesg_count "frame processing timed out")
+to_start=$to0
 oops0=$(dmesg_count "Oops|BUG:|Call trace|kernel panic")
 cma0=$(cma_settled)
 mem0=$(meminfo MemAvailable)
@@ -161,7 +162,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 		# A timeout is worth reporting the moment it happens, not at the end:
 		# it wedges the engine for every client on this board, so everything
 		# after it is a consequence rather than an independent sample.
-		to=$(dmesg_count "timed out")
+		to=$(dmesg_count "frame processing timed out")
 		if [ "$to" -ne "$to0" ]; then
 			echo "SOAK-EVENT iter=$iter VE TIMEOUT (dmesg count $to0 -> $to) t=$(( $(date +%s) - start ))s"
 			to0=$to
@@ -198,7 +199,11 @@ echo
 echo "SOAK-DECODE DONE $(date -Is) t=$((end - start))s"
 echo "  iterations   $iter  ($pass pass, $fail fail, $fallback software fallbacks)"
 echo "  frames on VE $(( $(ve_irq) - ve0 ))"
-echo "  timeouts     $(( $(dmesg_count "timed out") ))  (baseline was at start of run)"
+# Print the DELTA, not the absolute count. The first version printed the raw
+# dmesg tally, so a run that inherited six timeouts from an earlier test and
+# added none of its own reported "timeouts 6" -- which reads as six failures in
+# this run and is the opposite of the truth.
+echo "  timeouts     +$(( $(dmesg_count "frame processing timed out") - to_start ))  (was $to_start at start)"
 echo "  oops/BUG     $oops0 -> $oops1"
 echo "  CmaFree      ${cma0}kB -> ${cma1}kB   (delta $((cma1 - cma0))kB, both after reclaim)"
 echo "  MemAvailable ${mem0}kB -> ${mem1}kB   (delta $((mem1 - mem0))kB)"
