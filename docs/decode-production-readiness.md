@@ -227,43 +227,81 @@ engine decoded all 25 frames anyway, with the injection message in dmesg
 proving the knob fired. **That register is an upper bound, not a promise the
 hardware waits on.** The stall that does work is real damage to slice data.
 
-### Concurrency: FAIL — three clients deadlock the engine
+### Concurrency: a real deadlock, root-caused to one of our own patches
 
-The one gate that found a defect, on its first run.
-
-| clients | mix | result |
-| --- | --- | --- |
-| 2 | both HEVC, through GStreamer | bit-exact, 0 faults, 0 timeouts |
-| 2 | both HEVC, through the shim | bit-exact, 0 faults, 0 timeouts |
-| 2 | **HEVC + H.264**, through the shim | bit-exact, 0 faults, 0 timeouts |
-| **3** | mixed | **deadlock** (n=2 reproductions) |
-
-Three concurrent decoders leave one stuck in `D` state and unkillable —
-`SIGKILL` is pending but never delivered, because the task is inside:
+The one gate that found a defect, on its first run. Three concurrent decoders
+left one stuck in `D` state and unkillable — `SIGKILL` pending but never
+delivered, because the task sat in:
 
 ```
 [<0>] v4l2_m2m_cancel_job+0xe0/0x1e8
 [<0>] v4l2_m2m_streamoff+0x2c/0x1c4
 [<0>] v4l2_m2m_ioctl_streamoff+0x18/0x24
-[<0>] v4l_streamoff+0x20/0x2c
 ```
 
 `v4l2_m2m_cancel_job()` waits for `TRANS_RUNNING` to clear on a job that never
-completes. From there the VE is dead for every client and only a reboot
-recovers it — **this, not a decode timeout, is the wedge this project has
-been describing.**
+completes. From there the VE was dead for every client and only a reboot
+recovered it — **this, not a decode timeout, is the wedge this project has
+been describing for weeks.**
 
-Two observations narrow it. The first reproduction came with IOMMU page faults
-on both VE master ports (2 on master 0, 8 on master 1) and 28 watchdog
-timeouts; **the second had neither — zero faults, zero timeouts, same
-deadlock.** So the faults are a symptom of the same disorder, not its cause,
-and the defect is in job/context lifetime rather than in addressing. Worth
-noting that cedrus supplies no `job_abort` op, which is exactly what
-`v4l2_m2m_cancel_job()` calls before it starts waiting.
+**The cause is patch 0040**, and its own comment predicted it in as many words:
 
-**Not fixed here, and deliberately not guessed at.** It is a real kernel bug
-in territory (m2m job lifetime across contexts) where a wrong fix is worse
-than a documented limitation.
+> *Diagnostic before fix, deliberately: a reset is device-wide, so with a
+> second m2m context mid-job this would break that job.*
+
+0040 pulses the engine reset in `cedrus_stop_streaming()`. With three clients,
+one client's teardown resets the engine while another's job is in flight. The
+job's completion interrupt never arrives in a usable form, `TRANS_RUNNING` is
+never cleared, and the next `STREAMOFF` waits forever. cedrus supplies no
+`job_abort` op — the hook `v4l2_m2m_cancel_job()` calls before it starts
+waiting — so nothing else can rescue it.
+
+The A/B is within one boot, flipping `sunxi_cedrus.stop_reset` through sysfs
+between arms, with the same streams and the same hardware state:
+
+| `stop_reset` | 3 clients x 3 rounds |
+| --- | --- |
+| `N` | **9/9 bit-exact**, 0 timeouts, 0 IOMMU faults, no stuck processes |
+| `Y` | **deadlock on round 1**, ffmpeg in D state in `v4l2_m2m_cancel_job` |
+
+Three deadlocks on `Y` in total (two across boots, one in the flip); zero on
+`N`.
+
+**So patch 0040 is out of `series`.** That is not only because it breaks
+concurrency — it is because *it no longer has a reason to exist*. 0040 was
+written to stop the memory corruption that this project later traced to the
+CPU's 1416 MHz operating point (patch 0055), and the A/B that appeared to
+support it was retracted in `vaapi-scope.md` as underpowered at the time. A
+patch whose motivating bug turned out to be something else, whose own evidence
+was withdrawn, and which demonstrably breaks three-client decode, has nothing
+left on its side of the ledger.
+
+Two smaller things found on the way, neither of them the cause:
+
+- **The first reproduction came with IOMMU page faults on both VE master ports
+  and 28 watchdog timeouts; the second had zero of each and deadlocked
+  identically.** So the faults are a symptom, not the mechanism.
+- **`cedrus_irq()` can orphan a job.** It calls `cancel_delayed_work()` on the
+  watchdog *before* it knows the interrupt is its own, then returns `IRQ_NONE`
+  if `irq_status()` reads NONE or if the context has gone. Either early return
+  leaves a job with `TRANS_RUNNING` set and **no watchdog armed** to finish it
+  — the same deadlock, from a spurious interrupt rather than from a reset.
+  With 0040 removed this stops being reachable in practice, so it is recorded
+  as a latent hazard rather than patched on speculation: the fix (re-arm the
+  watchdog on both early returns) is one line, but there is now no way to show
+  it matters, and this project has been burned by shipping changes in that
+  state.
+
+### Final battery, on the shipping configuration
+
+Module built from `series` with 0040 removed, installed and reloaded:
+
+```
+C1 (3 clients x 6 rounds)   18 pass, 0 fail   0 timeouts, no survivors
+H1 (6 HEVC vectors)         12 pass, 0 fail   oracle + shim, bit-exact
+VA1 (5 H.264 vectors)        5 pass, 0 fail
+R1 (16 malformed streams)   16 pass, 0 fail   engine recovered from every one
+```
 
 ---
 
@@ -274,9 +312,11 @@ vectors including scaling lists and lossless, 195,332 frames of soak with no
 drift, survives every malformed stream tested, and recovers from decode
 timeouts by itself.
 
-**Not ready:** three or more simultaneous decoders deadlock the engine. Two
-are safe, including across codecs. Anything scheduling decode work should
-serialise it or hold to two clients until the m2m lifetime bug is fixed.
+**Concurrency: fixed.** Three simultaneous decoders were deadlocking the
+engine; the cause was our own patch 0040, now dropped from `series`. Six
+rounds of three concurrent clients are bit-exact with zero timeouts. The
+latent `cedrus_irq()` orphan above is the remaining known hazard in this area
+and is not reachable today.
 
 **Still out of scope, unchanged:** 10-bit (no 10-bit capture format in
 mainline cedrus), and tiles (no encoder here can produce them).

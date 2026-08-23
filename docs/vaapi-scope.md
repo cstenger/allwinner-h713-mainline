@@ -1747,10 +1747,13 @@ here, and there is no way for the shim to detect it.
   decodes bit-exact; the GStreamer oracle decodes bit-exact immediately after a
   timeout too. The engine self-recovers, and the "reboot between runs once
   anything has timed out" rule can be dropped. What DOES wedge it is **three or
-  more concurrent decode clients**, which deadlock a client in
+  more concurrent decode clients**, which deadlocked a client in
   `v4l2_m2m_cancel_job()` beyond the reach of SIGKILL — the observation that
   produced the original rule was almost certainly that, since a failing run
-  leaves processes behind. See `docs/decode-production-readiness.md`.
+  leaves processes behind. **Root-caused 2026-08-23 to patch 0040** (a
+  device-wide reset in `stop_streaming()` killing another context's in-flight
+  job) and fixed by dropping it from `series`. See
+  `docs/decode-production-readiness.md`.
 
 ---
 
