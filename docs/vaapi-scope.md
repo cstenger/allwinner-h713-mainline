@@ -1742,10 +1742,15 @@ here, and there is no way for the shim to detect it.
   cedrus, so both are inert here and were left alone rather than guessed at.
 - **`h264_start_code = false` is right for cedrus and wrong in general.**
   Querying the per-codec `START_CODE` control is the correct form.
-- **A cedrus timeout wedges the VE for every client**, GStreamer included. A
-  run straight after a failing one reported 0 pass / 6 fail with the oracle
-  failing too, which reads exactly like a regression. Reboot between runs once
-  anything has timed out.
+- ~~**A cedrus timeout wedges the VE for every client**~~ — **REFUTED
+  2026-08-23 by direct test.** Ten consecutive watchdog timeouts, then the shim
+  decodes bit-exact; the GStreamer oracle decodes bit-exact immediately after a
+  timeout too. The engine self-recovers, and the "reboot between runs once
+  anything has timed out" rule can be dropped. What DOES wedge it is **three or
+  more concurrent decode clients**, which deadlock a client in
+  `v4l2_m2m_cancel_job()` beyond the reach of SIGKILL — the observation that
+  produced the original rule was almost certainly that, since a failing run
+  leaves processes behind. See `docs/decode-production-readiness.md`.
 
 ---
 
