@@ -1,12 +1,12 @@
 From: Christopher Stenger <chris.h.stenger@gmail.com>
-Subject: [PATCH] WIP: set the coded format again when the resolution changes
+Subject: [PATCH] WIP: compare the coded geometry instead of latching it
 
-*** NOT IN patches/libva-v4l2-request/series. INCOMPLETE AND UNSAFE. ***
+*** NOT IN patches/libva-v4l2-request/series. FIXES NOTHING OBSERVABLE. ***
 ***
-*** It fixes the HEVC case and WEDGES THE BOARD on the H.264 one, which is
-*** worse than the bug it replaces: the failure needs a physical power cycle,
-*** not a reboot. Do not install this without reading
-*** docs/hevc-resolution-change.md.
+*** It addresses a real latent bug and does NOT fix the resolution-change
+*** failure it was written for: ffmpeg never asks for the second geometry, so
+*** the comparison fires once at startup and never again. Read
+*** docs/hevc-resolution-change.md before spending time on this.
 
 PR #38 sets the coded format exactly once, behind a process-wide latch. A
 stream that changes resolution mid-way needs it set again: ffmpeg reacts to a
@@ -21,22 +21,21 @@ released their buffers by that point, so S_FMT is legal there, and the cached
 video_format has to be dropped with it because the capture format the driver
 derives is what the surface sizes come from.
 
-WHAT IS STILL WRONG. With this applied, r01 (HEVC, 640x480 -> 320x240 ->
-640x480) decodes. r02 (H.264, 1280x720 -> 320x240 -> 1280x720) takes the
-whole board down -- ssh still accepts connections, no command completes, and
-only a power cycle recovers it.
+WHAT IT DOES NOT DO, established by tracing rather than by argument: ffmpeg's
+hwaccel path never propagates a mid-stream resolution change. Every surface is
+requested at the original geometry for the whole stream, no context is
+destroyed or recreated, and the SPS handed to the driver never changes -- while
+the same ffmpeg decoding in software reports "Reconfiguring filter graph
+because video parameters changed to 320x240". The driver is not told, so it
+cannot renegotiate, and this comparison never fires a second time.
 
-So per-surface V4L2 state is still not being rebuilt in step with the format,
-and the H.264 path reaches something the HEVC path does not. Earlier heap
-corruption blamed on this patch was probably NOT its fault: those runs hit a
-device already poisoned by a previous crash ("Failed to setup decoding job:
--22" for every client, GStreamer included), which was only discovered later.
-That misattribution is the reason this note exists.
+Kept only as a record. A process-wide latch is wrong for any client that DOES
+recreate surfaces at a new size, so this is strictly more correct -- but
+nothing here exercises that, and shipping an unvalidated change is the mistake
+this project has corrected three times in one session.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
-diff --git a/src/request.h b/src/request.h
-index 4f82813..70d9b4f 100644
 --- a/src/request.h
 +++ b/src/request.h
 @@ -70,6 +70,13 @@ struct request_data {

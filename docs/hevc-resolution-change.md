@@ -1,98 +1,81 @@
-# Mid-stream resolution change: a confirmed shim bug, not fixed
+# Mid-stream resolution change — NOT our bug, and the earlier write-up was wrong
 
-Measured 2026-08-24 with `tools/video/decode-reinit-test.sh`.
+Investigated 2026-08-24 with `tools/video/decode-reinit-test.sh`. This document
+replaces two earlier explanations, both of which were wrong. The corrections
+are kept visible because each one cost real board time.
 
-## What happens
+## What actually happens
 
-Every vector before this one holds one resolution from first frame to last,
-which is not what real files do — adaptive streams, broadcast splices and
-concatenated recordings all change resolution mid-stream. Two vectors now
-cover it (`r01` HEVC, `r02` H.264: three segments, two changes each).
+A stream whose resolution changes mid-way (`r01`: 640x480 → 320x240 → 640x480)
+decodes correctly in software and through GStreamer, and fails through our
+VA-API shim at 26 frames of 75 with `Timeout when waiting for media request`.
 
-| path | result |
-| --- | --- |
-| software | 75 / 150 frames, correct |
-| **GStreamer `v4l2slh265dec`** | **ve+75 — decodes it in full** |
-| our VA-API shim | **26 of 75 frames**, then `Timeout when waiting for media request` |
+The tempting conclusion — ours, since GStreamer works — is wrong. Tracing what
+the client actually asks the driver to do:
 
-The engine recovers afterwards, and the oracle handling the same stream on the
-same kernel is what makes this ours rather than cedrus's.
-
-## Why
-
-PR #38 sets the coded format exactly once, behind a process-wide flag its own
-comment calls a HACK:
-
-```c
-// we declare SET_FORMAT_OF_OUTPUT_ONCE to ensure v4l2_set_format only gets
-// called once (in the first RequestCreateSurfaces2 call ...)
+```
+TRACE CreateSurfaces2 640x480 count=1 (current 0x0)
+TRACE   re-setting coded format
+TRACE CreateContext 640x480
+TRACE CreateSurfaces2 640x480 count=1 (current 640x480)   <- and again, and again
+v4l2-request: Timeout when waiting for media request
 ```
 
-ffmpeg reacts to a new SPS by destroying the context and its surfaces and
-creating both again at the new size. With the flag latched, the driver is never
-told: the engine keeps decoding at the old geometry until it stalls.
+**Every surface is requested at 640x480, for the whole stream. No context is
+ever destroyed or recreated. The SPS geometry handed to the driver never
+changes** — a trace comparing `pic_width_in_luma_samples` against the
+programmed format never fires once.
 
-## Attempt 2, and a correction to attempt 1 — still NOT landed
+Meanwhile the same ffmpeg, decoding the same file in software, says:
 
-**The heap corruption blamed on the fix below was probably not its fault.**
-Those runs hit a device that had already been poisoned by an earlier crash —
-`Failed to setup decoding job: -22` for *every* client, GStreamer included —
-which was only discovered afterwards, because the "restore verified" check
-compared md5 alone and a software decode reproduces it. Re-run from a clean
-boot, the geometry fix gets `r01` (HEVC) through the resolution changes.
+```
+Reconfiguring filter graph because video parameters changed to yuv420p, 320x240
+```
 
-**But `r02` (H.264, 1280x720 → 320x240 → 1280x720) takes the whole board
-down.** ssh still accepts connections, no command completes, and only a
-*power cycle* recovers it — not even a reboot, because reboot needs a command
-to run. That is worse than the bug it replaces, which merely failed the
-decode.
+So ffmpeg's *software* path handles the change and its *hwaccel* path does not
+propagate it: the decoder keeps the original geometry, feeds 320x240 slice data
+to an engine programmed for 640x480, and the VLD stalls. **The shim is never
+given the information it would need to renegotiate.** GStreamer succeeds
+because it drives V4L2 directly and renegotiates itself — that comparison does
+not implicate the shim, which is what the first version of this document got
+wrong.
 
-So the H.264 path reaches something the HEVC path does not, and per-surface
-V4L2 state is still not being rebuilt in step with the format. The
-work-in-progress diff is kept as
-`patches/libva-v4l2-request/WIP-0007-resolution-change-INCOMPLETE.patch`, out
-of `series`, with that warning in its header.
+## The two wrong explanations, and why they looked right
 
-**A practical note for whoever picks this up:** every failed attempt here can
-cost a physical power cycle, because a client that dies mid-decode takes the
-engine down for everything (see below). Budget for that, and prefer the HEVC
-vector for iteration — it is the one that fails safely.
+**"It is `SET_FORMAT_OF_OUTPUT_ONCE`."** PR #38 latches the coded format with a
+process-wide flag, so a genuine resolution change could never reach the driver.
+The reasoning is sound and the latch is a real latent bug — it just is not what
+fails here, because no client ever asks for the second geometry. Replacing it
+with a geometry comparison (`WIP-0007`) is a **no-op for this stream**: the
+comparison fires once at startup and never again.
 
-## The original diagnosis — the flag
+**"The fix causes heap corruption / wedges the board."** Two runs were scored
+against a driver that was never loaded: the variable is `LIBVA_DRIVERS_PATH`,
+not `VA_DRIVERS_PATH`, so every "WIP build" test until the last one silently
+exercised the installed shipping driver. One heap corruption did happen with
+the fix installed, but on a device already poisoned by an earlier crash.
+**Neither observation supported the conclusion drawn from it.**
 
-Replacing the latch with a geometry comparison is obviously right, and
-`RequestDestroyContext` has already streamed both queues off and released their
-buffers by that point, so `S_FMT` is legal there. It is also **not sufficient**.
-With that change the failure moves rather than disappears:
+## What is genuinely broken, and it is not the picture
 
-- non-ASAN build: `malloc(): invalid size (unsorted)` — ffmpeg aborts
-- ASAN build: no memory error at all, and the true fault surfaces —
-  **`VIDIOC_QBUF` returns EINVAL** after the change
+Each mismatched picture stalls the engine until the 2-second watchdog fires. A
+short vector survives that — `r01` finishes, the engine recovers, and the
+follow-up decode is bit-exact. A long one does not: `r02` (H.264, 150 frames)
+put the board into the state where ssh answers but no command completes, and
+only a **power cycle** recovers it.
 
-So per-surface V4L2 state (buffer indices, mapped lengths, the cached
-`video_format` and the sizes derived from it) has to be rebuilt in step with the
-format, not just the format itself. That is a state-machine change across
-`surface.c`, `picture.c` and `image.c`, and a half-done version corrupts a
-client's heap — which is precisely the kind of change this project has twice
-this session refused to ship on a partial result.
+That is the same robustness gap recorded in
+[`decode-production-readiness.md`](decode-production-readiness.md): repeated
+stalls, or a client dying mid-decode, take the video engine down for every
+client. It is the bug worth fixing next, and fixing it would make this one
+merely annoying instead of expensive to investigate.
 
-**Left as a known limitation with a reproducer.** The work-in-progress diff is
-not in `patches/libva-v4l2-request/series`.
+## Where that leaves things
 
-## A second finding, worth as much as the first
-
-While the broken build was crashing mid-decode, **the engine was left unusable
-for every client**: `cedrus 1c0e000.video-codec: Failed to setup decoding job:
--22`, repeatedly, for GStreamer as well as the shim, until a reboot. So a client
-that dies mid-decode can take the device down for everything else.
-
-That is a robustness gap in the same family as the concurrency deadlock fixed
-earlier — a production system meets it the first time a player segfaults — and
-it is not fixed here either. It was found only because a *crashing* client was
-in play, which no gate had produced before.
-
-**And it nearly poisoned two other results.** After restoring the good driver I
-"verified" it by md5 alone, which passes for a software decode, so a stuck
-engine went unnoticed and the first two leak-test runs measured a CPU decoder.
-Both harnesses now fail on `ve+0` rather than reporting a number, which is the
-rule every other gate here already applied.
+- **`r01`/`r02` and `decode-reinit-test.sh` stay** as a regression test for a
+  known-failing case, with the attribution recorded here.
+- **`WIP-0007` stays out of `series`.** It is more correct than a process-wide
+  latch and fixes nothing observable, which by this project's own standard is
+  not a shipping change.
+- **Iterate on `r01`, never `r02`**, if this is picked up again: one fails
+  safely and the other costs physical access to the board.

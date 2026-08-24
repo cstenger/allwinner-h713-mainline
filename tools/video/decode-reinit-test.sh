@@ -29,7 +29,13 @@
 # output must equal software output -- and it no longer depends on two machines
 # agreeing about a scaler that has nothing to do with the decoder.
 #
-#   usage: ./decode-reinit-test.sh
+# ITERATE ON THE HEVC VECTOR. r02 (H.264) can wedge the board outright with a
+# work-in-progress fix installed -- ssh answers, no command completes, and only
+# a power cycle recovers -- while r01 fails safely. Pass vector names to pick:
+#
+#   ./decode-reinit-test.sh r01-resolution-change
+#
+#   usage: ./decode-reinit-test.sh [vector ...]
 
 set -u
 
@@ -49,7 +55,16 @@ pass=0; fail=0
 # frame size and scales every later resolution back to that one. Assuming
 # 640x480 for every vector made r02 (which starts at 1280x720) count 450
 # frames instead of 150 and fail as a harness error.
-for spec in r01-resolution-change:h265:75:640:480 r02-resolution-change:h264:150:1280:720; do
+SPECS="r01-resolution-change:h265:75:640:480 r02-resolution-change:h264:150:1280:720"
+if [ $# -gt 0 ]; then
+	want="$*"; picked=""
+	for spec in $SPECS; do
+		case " $want " in *" ${spec%%:*} "*) picked="$picked $spec" ;; esac
+	done
+	SPECS=$picked
+fi
+
+for spec in $SPECS; do
 	v=$(echo "$spec" | cut -d: -f1); ext=$(echo "$spec" | cut -d: -f2)
 	frames=$(echo "$spec" | cut -d: -f3)
 	fw=$(echo "$spec" | cut -d: -f4); fh=$(echo "$spec" | cut -d: -f5)
