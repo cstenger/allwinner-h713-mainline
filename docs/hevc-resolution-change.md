@@ -56,19 +56,35 @@ exercised the installed shipping driver. One heap corruption did happen with
 the fix installed, but on a device already poisoned by an earlier crash.
 **Neither observation supported the conclusion drawn from it.**
 
-## What is genuinely broken, and it is not the picture
+## The wedge blamed on this — a third correction
 
-Each mismatched picture stalls the engine until the 2-second watchdog fires. A
-short vector survives that — `r01` finishes, the engine recovers, and the
-follow-up decode is bit-exact. A long one does not: `r02` (H.264, 150 frames)
-put the board into the state where ssh answers but no command completes, and
-only a **power cycle** recovers it.
+Each mismatched picture stalls the engine until the 2-second watchdog fires,
+and `r02` (H.264, 150 frames) once put the board into the state where ssh
+answers but no command completes. That was written up as a separate robustness
+bug: "a client that stalls or dies mid-decode takes the engine down for
+everyone".
 
-That is the same robustness gap recorded in
-[`decode-production-readiness.md`](decode-production-readiness.md): repeated
-stalls, or a client dying mid-decode, take the video engine down for every
-client. It is the bug worth fixing next, and fixing it would make this one
-merely annoying instead of expensive to investigate.
+**It does not reproduce on the shipping stack.** Measured on a clean boot:
+
+| provocation | result |
+| --- | --- |
+| 12 watchdog timeouts from stalled decodes | healthy after every one |
+| 5 clients SIGKILLed mid-decode | healthy after every one |
+| 3 clients SIGKILLed while a stall was pending | healthy after every one |
+| 2 clients SIGKILLed out of three running concurrently | healthy after every one |
+
+Zero `Failed to setup decoding job` in dmesg across all of it. **Every
+observation behind the original claim came from runs with the WIP
+resolution-change driver installed** — the one that re-sets the coded format
+mid-life. That driver poisoned the engine, not the client crashes.
+
+The fragility it was written for is nonetheless real by inspection:
+`cedrus_h265_setup()` reads the engine's own bit reader while building a job
+and returns `-EINVAL` if it reads back zero, so a genuinely stuck VLD would
+fail every later job for every client. `patches/kernel/0062` hardens that by
+resetting from `device_run()` — the one context where a device-wide reset is
+safe by construction, and the alternative patch 0040's own comment named. It is
+**out of `series`**: it fixes nothing that can be shown to happen.
 
 ## Where that leaves things
 

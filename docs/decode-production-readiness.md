@@ -393,6 +393,15 @@ vectors including scaling lists and lossless, 195,332 frames of soak with no
 drift, survives every malformed stream tested, and recovers from decode
 timeouts by itself.
 
+**Robustness under abuse: measured, 2026-08-24.** The engine absorbs 12
+watchdog timeouts from stalled decodes, clients SIGKILLed mid-decode, clients
+killed while a stall is pending, and one of three concurrent clients killed —
+healthy after every one, with zero `Failed to setup decoding job` in dmesg. An
+earlier claim that a crashing client takes the engine down for everyone was
+**withdrawn**: every observation behind it came from runs with an experimental
+driver installed. `patches/kernel/0062` hardens the code path anyway and stays
+out of `series` because it fixes nothing demonstrable.
+
 **Concurrency: fixed.** Three simultaneous decoders were deadlocking the
 engine; the cause was our own patch 0040, now dropped from `series`. Six
 rounds of three concurrent clients are bit-exact with zero timeouts. The
