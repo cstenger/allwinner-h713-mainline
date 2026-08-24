@@ -1,9 +1,27 @@
 # KMS for the H713 panel
 
-Started 2026-08-15. Gives the projector a DRM card node (`card1` in practice —
-panfrost holds minor 0) so ordinary DRM clients — `mpv --vo=drm`, a compositor,
-fbcon — can present on the panel, instead of every program mapping `0x05600000`
-through `/dev/mem` and reimplementing the AFBD commit sequence for itself.
+Started 2026-08-15. Gives the projector a DRM card node so ordinary DRM
+clients — `mpv --vo=drm`, a compositor, fbcon — can present on the panel,
+instead of every program mapping `0x05600000` through `/dev/mem` and
+reimplementing the AFBD commit sequence for itself.
+
+> **The card number changed on 2026-08-24 and every `card1` below is stale.**
+> The driver became built-in (`CONFIG_DRM_SUN50I_H713_AFBD=y`) so the boot log
+> would reach the panel, and it now probes before panfrost's module loads:
+> **the panel is `card0` and panfrost is `card1`**, the reverse of what this
+> document records. The numbering is only ever probe order — resolve it at
+> runtime rather than hardcoding either value:
+>
+> ```bash
+> for d in /sys/class/drm/card*/device/driver; do
+>   [ "$(basename "$(readlink -f "$d")")" = sun50i-h713-afbd ] && echo "$d" | cut -d/ -f5
+> done
+> ```
+>
+> Note also that **`kmssink` needs `driver-name=sun50i-h713-afbd`** — its
+> auto-detection only tries a hardcoded list of driver names that this one is
+> not on, and never worked here. See
+> [`handoff-2026-08-24-display.md`](handoff-2026-08-24-display.md).
 
 **Status: WORKS, hardware-verified on the bench board 2026-08-15.**
 

@@ -78,7 +78,8 @@ install -d -m 0755 \
   "$systemd_dir/getty.target.wants" \
   "$systemd_dir/multi-user.target.wants" \
   "$systemd_dir/ssh.service.wants" \
-  "$systemd_dir/serial-getty@ttyS0.service.d"
+  "$systemd_dir/serial-getty@ttyS0.service.d" \
+  "$systemd_dir/getty@tty1.service.d"
 ln -sfn /usr/lib/systemd/system/serial-getty@.service \
   "$systemd_dir/getty.target.wants/serial-getty@ttyS0.service"
 ln -sfn /usr/lib/systemd/system/ssh.service \
@@ -101,6 +102,18 @@ cat > "$systemd_dir/serial-getty@ttyS0.service.d/autologin.conf" <<EOF
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I \$TERM
+EOF
+
+# Keep the boot log on the panel. getty@.service ships TTYVTDisallocate=yes,
+# which clears tty1 when the getty starts -- on this board that lands at about
+# 7.8 s and wipes everything fbcon has painted, so the projector showed a login
+# prompt and nothing of the boot. Turning it off appends the login banner below
+# the boot log instead of erasing it; the prompt still works. TTYReset is not
+# the culprit and is left alone. Verified on hardware 2026-08-24 by restarting
+# the getty and reading the surviving text back out of /dev/vcs1.
+cat > "$systemd_dir/getty@tty1.service.d/10-keep-boot-log.conf" <<EOF
+[Service]
+TTYVTDisallocate=no
 EOF
 
 # Load the AIC8800 WiFi/BT modules at boot. bsp registers the SDIO glue and

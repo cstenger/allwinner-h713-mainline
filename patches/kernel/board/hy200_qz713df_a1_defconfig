@@ -125,10 +125,14 @@ CONFIG_DRM=y
 # fbdev emulation gives the AFBD KMS driver a /dev/fb0 and a console on the
 # projector, which is the cheapest possible check that scanout is live.
 CONFIG_DRM_FBDEV_EMULATION=y
-# KMS over the AFBD scanout engine (patches 0037/0038). A module: it adopts a
-# display U-Boot has already brought up, so nothing is lost by loading it late,
-# and a bad load can be undone without reflashing a kernel.
-CONFIG_DRM_SUN50I_H713_AFBD=m
+# KMS over the AFBD scanout engine (patches 0037/0038). Built in, not a module.
+# It was =m on the reasoning that it only adopts a display U-Boot has already
+# brought up, so "nothing is lost by loading it late". Something is: the boot
+# log. As a module, udev did not modprobe it until 6.41 s, fbcon took over at
+# 6.49 s, and the 410 kernel lines printed before that never reached the panel.
+# A bad load is no longer undoable without reflashing a kernel -- that is the
+# price, and tools/install-kernel-fit.sh backs up the outgoing FIT for it.
+CONFIG_DRM_SUN50I_H713_AFBD=y
 CONFIG_DRM_SUN4I=y
 CONFIG_DRM_PANEL_LVDS=y
 CONFIG_DRM_PANEL_EDP=y
