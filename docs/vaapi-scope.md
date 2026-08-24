@@ -589,12 +589,14 @@ before probing because an ungated block hangs this interconnect.
   allocations answer it directly, and they see what KASAN cannot — KASAN
   instruments CPU accesses, and neither of these writes comes from the CPU.
 - `CONFIG_DMA_API_DEBUG` is the other cheap instrument.
-- Also worth a look while in there: **`kmssink` cannot drive our KMS driver at
-  all.** It fails negotiation, and with `videoconvert` in the pipeline it
-  produces `GStreamer-CRITICAL … range start is not smaller than end for
-  'GstIntRange'` — our driver is advertising a degenerate size range in its
-  plane/mode caps. Unrelated to the corruption, but it blocked the cleanest
-  version of this experiment and is a real bug.
+- ~~**`kmssink` cannot drive our KMS driver at all.**~~ **REFUTED 2026-08-24.**
+  It drives it fine; the original attempt asked for NV12, which this plane does
+  not support, and read the resulting `not-negotiated` as "cannot". Asked for
+  `BGRx` at the panel size it displays, and a full stock pipeline
+  (`v4l2slh265dec ! videoconvert ! kmssink`) plays 720p HEVC at **24 fps** with
+  the decode on the VE. The `GstIntRange` criticals were real but separate and
+  are fixed by patch 0063. Measured numbers for every display path are in
+  [`kms-display.md`](kms-display.md).
 
 **Next steps, in order of cost:**
 

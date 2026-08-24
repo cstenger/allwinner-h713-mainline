@@ -237,6 +237,36 @@ of the same registers and will fight it. Unbind the driver, or do not run them.
   replaces the logo. The driver is a module, so `rmmod` and a reboot are always
   available.
 
+## What plays on the panel today — measured 2026-08-24
+
+1000 frames of 720p HEVC, decoded on the VE, displayed. Same clip, same board,
+same boot.
+
+| path | fps | bounded by |
+| --- | --- | --- |
+| `v4l2slh265dec ! videoconvert ! kmssink` | **24** | the CPU colour conversion |
+| `mpv --hwdec=vaapi-copy --vo=gpu --gpu-context=drm --drm-device=/dev/dri/card1` | **32** | the copy round-trip |
+| `gles-play` (GPU samples the decoder's dma-buf, zero copy) | **59.71** | vsync |
+
+**Both stock paths work.** That corrects the standing claim that `kmssink`
+could not drive this driver: it can, in `BGRx` at the panel size. The original
+attempt asked for NV12 — which this plane does not support — and read
+`not-negotiated` as "cannot".
+
+**The CPU conversion is the whole cost, and it is not CPU-bound.** Decode alone
+runs at 560 fps; adding `videoconvert` drops it to 25; adding the sink costs
+almost nothing after that. `n-threads=2` and `n-threads=4` make no difference,
+which points at memory bandwidth rather than compute — consistent with the
+~44 MB/s uncached read of the decoder's V4L2 buffers measured earlier. cedrus
+does not set `allow_cache_hints`, so a client cannot even ask for cached
+buffers; that is the lever if this path ever needs to be faster, and it would
+help `hwdownload` for VA-API just as much.
+
+**A stock GPU path could not be tested**: `gstreamer1.0-gl` is not installed
+and this board has no route to a package mirror. If it were, `glupload !
+glcolorconvert` with a GBM window is the obvious candidate for a stock 60 fps
+path, since the bespoke `gles-play` already proves the hardware does it.
+
 ## Still open
 
 - **Nobody has looked at the projector yet.** Every check above is a register,
