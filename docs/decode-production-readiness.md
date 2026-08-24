@@ -315,9 +315,43 @@ forever — but it is **not proven**: with the board unreachable there was no
 console to confirm an interrupt storm, and `/proc/interrupts` could not be
 read. Recorded as consistent-with, not as established.
 
-**The fixed arm has not been run.** Patch 0059 is therefore NOT in `series`
-yet; the module is built and staged. Moving it in is a one-line change once
-the A/B completes on a board that has been power-cycled.
+**The fixed arm ran, and the fix is better than its own commit message
+predicted.** The same injection that took the board down is a non-event:
+
+| injected spurious interrupts | result |
+| --- | --- |
+| 1 | decode **bit-exact** in 1 s, no watchdog timeout |
+| 5 | decode **bit-exact** in 1 s, no watchdog timeout |
+| 25 (one per frame of a 25-frame clip) | decode **bit-exact** in 1 s, no watchdog timeout |
+
+Nothing stuck, no timeouts, engine healthy throughout. The reason there is no
+timeout at all is worth stating, because 0059's message expected the watchdog
+to clean up after 2 s: the handler now returns *without disarming the watchdog
+and without acknowledging the engine*, so on a level-triggered line the real
+interrupt is simply re-delivered and the job completes normally on the next
+entry. A spurious interrupt costs one wasted handler call rather than a dead
+device.
+
+Patch 0059 is therefore in `series`, and the four gates pass on a module built
+from it:
+
+```
+H1  (6 HEVC vectors)        12 pass, 0 fail
+VA1 (5 H.264 vectors)        5 pass, 0 fail
+R1  (16 malformed streams)  16 pass, 0 fail
+C1  (3 clients x 6 rounds)  18 pass, 0 fail
+```
+
+> **One false alarm, recorded because it cost a reboot and could cost someone
+> else an afternoon.** R1 was first run *immediately after* the 25-injection
+> experiment and a module swap, and it failed: an IOMMU fault storm (6,850
+> reports suppressed), repeated watchdog timeouts, and a decoder that returned
+> wrong pixels rather than hanging. From a clean boot the same module scores
+> 16/16. So the debug injector is not free at scale — hammering it and then
+> swapping the module leaves the engine in a state that a later malformed
+> stream turns into garbage output. **Reboot before scoring a gate that
+> follows fault injection.** The failure was not patch 0059; it was the
+> measurement disturbing what it measured.
 
 ### Final battery, on the shipping configuration
 
