@@ -426,5 +426,11 @@ case "${1:-all}" in
   aic8800) build_aic8800 ;;
   images)  build_images ;;
   all)     build_bl31; build_uboot; build_kernel; build_aic8800; build_images ;;
-  *) echo "usage: $0 [all|bl31|uboot|kernel|aic8800|images]" >&2; exit 2 ;;
+  # Print where THIS configuration's kernel tree lives, without building
+  # anything. Tools that need to answer "is the board running what the tree
+  # says?" must identify the tree the same way the build does, and the only
+  # way to guarantee that is to ask the build. Honours KERNEL_CONFIG.
+  kernel-tree)
+    printf '%s/linux-%s-%s\n' "$ROOT/build" "$KERNEL_VERSION" "$(kernel_inputs_digest)" ;;
+  *) echo "usage: $0 [all|bl31|uboot|kernel|aic8800|images|kernel-tree]" >&2; exit 2 ;;
 esac

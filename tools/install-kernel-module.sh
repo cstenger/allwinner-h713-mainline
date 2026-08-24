@@ -78,6 +78,13 @@ $SSH "set -e
 	fi
 	modprobe $MOD
 	sleep 1
+	# Record what is installed so drift is detectable. A stale module that
+	# still loads is this project's most expensive silent failure.
+	sed -i '/^kernel_module_/d' /etc/h713-video-stack 2>/dev/null || true
+	{
+		echo "kernel_module_md5=$sum"
+		echo "kernel_module_installed=$STAMP"
+	} >> /etc/h713-video-stack
 	echo '    loaded; parameters now exposed:'
 	for p in /sys/module/$MOD/parameters/*; do
 		[ -e \"\$p\" ] || { echo '      (none)'; break; }

@@ -27,8 +27,23 @@
 # truncated file with a perfectly valid md5 (which scores as MISMATCH and reads
 # as a decode bug).
 #
+# CLIENTS>1 SOAKS CONCURRENCY, which is a different failure mode and the one
+# that produced the only real deadlock this project has found: three decoders
+# at once used to wedge the engine inside v4l2_m2m_cancel_job() past SIGKILL.
+# That is fixed, but the fix has six rounds behind it and this is how it earns
+# hours instead. Clients decode DIFFERENT vectors across a codec boundary so a
+# state mix-up between contexts cannot hide behind identical output.
+#
+# The per-decode VE interrupt delta cannot separate concurrent clients --
+# /proc/interrupts is global -- so with CLIENTS>1 the harness calibrates first:
+# one solo decode per vector to learn its frame count, then every concurrent
+# iteration checks that the TOTAL rise equals the sum of what was launched.
+# A client that silently fell back to software still shows up, which a simple
+# "did the counter move" check would miss.
+#
 #   usage: ./soak-decode.sh [seconds]          (default 7200 = 2 hours)
 #          DURATION=600 ./soak-decode.sh       same thing
+#          CLIENTS=3 ./soak-decode.sh 10800    three at once, three hours
 #          VECTORS="h01-640x480-main" ./soak-decode.sh 300
 #
 # Run it detached so an ssh drop does not kill it:
@@ -39,6 +54,8 @@ set -u
 DIR=$(cd "$(dirname "$0")" && pwd)
 DURATION=${1:-${DURATION:-7200}}
 HEARTBEAT=${HEARTBEAT:-120}
+CLIENTS=${CLIENTS:-1}
+CLIENT_TIMEOUT=${CLIENT_TIMEOUT:-120}
 
 HEVC_REF="$DIR/hevc-reference-md5.txt"
 H264_REF="$DIR/reference-md5.txt"
@@ -114,8 +131,51 @@ for v in $VECTORS; do
 	[ -n "$(want_md5 "$v")" ] || { echo "FATAL: no reference md5 for $v"; exit 1; }
 done
 
+declare -A ve_expect     # vector -> frames the engine reports for it solo
+
+# One decode into a file of its own, for the concurrent path. `timeout` is not
+# decoration: a wedged decoder sits in D state where SIGKILL is not delivered,
+# and `wait` on such a child never returns.
+decode_one() {
+	local v=$1 out=$2
+	LIBVA_DRIVER_NAME=v4l2_request timeout "$CLIENT_TIMEOUT" \
+		ffmpeg -hide_banner -v error -y \
+		-hwaccel vaapi -hwaccel_output_format vaapi \
+		-i "$(stream_of "$v")" -vf 'hwdownload,format=nv12' \
+		-f rawvideo -pix_fmt nv12 pipe:1 2>/dev/null |
+		md5sum | cut -d' ' -f1 > "$out"
+}
+
+calibrate() {
+	local v a
+	echo "SOAK-DECODE calibrating frame counts for $CLIENTS-client checking"
+	for v in $VECTORS; do
+		a=$(ve_irq)
+		decode_md5 "$(stream_of "$v")" >/dev/null
+		ve_expect[$v]=$(( $(ve_irq) - a ))
+		[ "${ve_expect[$v]}" -gt 0 ] || {
+			echo "FATAL: $v decoded with ve+0 during calibration"
+			exit 1
+		}
+	done
+	echo "SOAK-DECODE expected frames: $(for v in $VECTORS; do printf '%s=%s ' "$v" "${ve_expect[$v]}"; done)"
+}
+
+# Fingerprint the stack the soak is measuring. Twice now a measurement here
+# has been disturbed by the thing measuring it -- once by reinstalling the VA
+# driver mid-run (a decode picked up the library between write and close, fell
+# back to software, and reported a mismatch one second after the install), once
+# by scoring a gate straight after fault injection. A soak that cannot tell
+# "the stack broke" from "somebody changed the stack" is worth much less than
+# one that can.
+stack_fingerprint() {
+	md5sum /usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so 2>/dev/null | cut -d' ' -f1
+	md5sum "$(modinfo -n sunxi_cedrus 2>/dev/null)" 2>/dev/null | cut -d' ' -f1
+}
+
 start=$(date +%s)
 deadline=$((start + DURATION))
+stack0=$(stack_fingerprint)
 ve0=$(ve_irq)
 to0=$(dmesg_count "frame processing timed out")
 to_start=$to0
@@ -130,9 +190,75 @@ echo "SOAK-DECODE start $(date -Is) duration=${DURATION}s vectors=$(echo $VECTOR
 echo "SOAK-DECODE baseline ve=$ve0 timeouts=$to0 oops=$oops0 cma=${cma0}kB memavail=${mem0}kB"
 echo "SOAK-DECODE kernel=$(uname -r) maxfreq=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null)"
 
+[ "$CLIENTS" -gt 1 ] && calibrate
+
 next_beat=$((start + HEARTBEAT))
 
+set -- $VECTORS
+vec_count=$#
+vec_pos=0
+
 while [ "$(date +%s)" -lt "$deadline" ]; do
+	if [ "$CLIENTS" -gt 1 ]; then
+		# A round: CLIENTS different vectors decoded at once.
+		picked=""; expect=0
+		for i in $(seq 1 "$CLIENTS"); do
+			eval "v=\${$(( vec_pos % vec_count + 1 ))}"
+			vec_pos=$((vec_pos + 1))
+			picked="$picked $v"
+			expect=$(( expect + ${ve_expect[$v]} ))
+		done
+
+		a=$(ve_irq)
+		t0=$(date +%s%N)
+		for v in $picked; do
+			decode_one "$v" "$ERR.$v" &
+		done
+		wait
+		t1=$(date +%s%N)
+		ve=$(( $(ve_irq) - a ))
+		iter=$((iter + 1))
+
+		bad=0
+		for v in $picked; do
+			if [ "$(cat "$ERR.$v" 2>/dev/null)" != "$(want_md5 "$v")" ]; then
+				echo "SOAK-FAIL iter=$iter $v MISMATCH t=$(( $(date +%s) - start ))s"
+				bad=1
+			fi
+			rm -f "$ERR.$v"
+		done
+		if [ "$ve" -ne "$expect" ]; then
+			# Not pedantry: a client that fell back to software still
+			# produces the right md5, and this is the only thing that
+			# catches it once the counter cannot be read per client.
+			echo "SOAK-FAIL iter=$iter VE COUNT ve+$ve expected $expect (round:$picked) t=$(( $(date +%s) - start ))s"
+			bad=1
+		fi
+		[ "$bad" -eq 0 ] && pass=$((pass + 1)) || fail=$((fail + 1))
+
+		to=$(dmesg_count "frame processing timed out")
+		if [ "$to" -ne "$to0" ]; then
+			echo "SOAK-EVENT iter=$iter VE TIMEOUT ($to0 -> $to) t=$(( $(date +%s) - start ))s"
+			to0=$to
+		fi
+
+		now=$(date +%s)
+		if [ "$now" -ge "$next_beat" ]; then
+			if [ "$(stack_fingerprint)" != "$stack0" ]; then
+				echo "SOAK-DISTURBED t=$((now - start))s the driver or module changed UNDER this run."
+				echo "                 Everything after this point measures a different stack."
+				stack0=$(stack_fingerprint)
+			fi
+			echo "SOAK t=$((now - start))s iter=$iter pass=$pass fail=$fail" \
+			     "clients=$CLIENTS round_ms=$(( (t1 - t0) / 1000000 ))" \
+			     "ve_delta=$(( $(ve_irq) - ve0 )) cma_raw=$(meminfo CmaFree)kB" \
+			     "memavail=$(meminfo MemAvailable)kB" \
+			     "temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)"
+			next_beat=$((now + HEARTBEAT))
+		fi
+		continue
+	fi
+
 	for v in $VECTORS; do
 		[ "$(date +%s)" -lt "$deadline" ] || break
 
@@ -170,6 +296,11 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 
 		now=$(date +%s)
 		if [ "$now" -ge "$next_beat" ]; then
+			if [ "$(stack_fingerprint)" != "$stack0" ]; then
+				echo "SOAK-DISTURBED t=$((now - start))s the driver or module changed UNDER this run."
+				echo "                 Everything after this point measures a different stack."
+				stack0=$(stack_fingerprint)
+			fi
 			drift=""
 			[ -n "${first_ms[$v]:-}" ] && drift=" ${v}_ms=$ms(first=${first_ms[$v]})"
 			echo "SOAK t=$((now - start))s iter=$iter pass=$pass fail=$fail" \
