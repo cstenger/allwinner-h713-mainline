@@ -242,30 +242,61 @@ of the same registers and will fight it. Unbind the driver, or do not run them.
 1000 frames of 720p HEVC, decoded on the VE, displayed. Same clip, same board,
 same boot.
 
-| path | fps | bounded by |
-| --- | --- | --- |
-| `v4l2slh265dec ! videoconvert ! kmssink` | **24** | the CPU colour conversion |
-| `mpv --hwdec=vaapi-copy --vo=gpu --gpu-context=drm --drm-device=/dev/dri/card1` | **32** | the copy round-trip |
-| `gles-play` (GPU samples the decoder's dma-buf, zero copy) | **59.71** | vsync |
+| path | delivered fps | dropped | bounded by |
+| --- | --- | --- | --- |
+| `videoconvert ! kmssink` (default) | **3.15** | **50%** | CPU colour conversion |
+| `videoconvert n-threads=4 ! kmssink` | **14.15** | 4.4% | the same, four ways |
+| `mpv --hwdec=vaapi-copy --vo=gpu --drm-device=/dev/dri/card1` | **32** | none (untimed) | the copy round-trip |
+| `gles-play` (GPU samples the decoder's dma-buf, zero copy) | **59.71** | none | vsync |
 
 **Both stock paths work.** That corrects the standing claim that `kmssink`
 could not drive this driver: it can, in `BGRx` at the panel size. The original
 attempt asked for NV12 — which this plane does not support — and read
 `not-negotiated` as "cannot".
 
-**The CPU conversion is the whole cost, and it is not CPU-bound.** Decode alone
-runs at 560 fps; adding `videoconvert` drops it to 25; adding the sink costs
-almost nothing after that. `n-threads=2` and `n-threads=4` make no difference,
-which points at memory bandwidth rather than compute — consistent with the
-~44 MB/s uncached read of the decoder's V4L2 buffers measured earlier. cedrus
-does not set `allow_cache_hints`, so a client cannot even ask for cached
-buffers; that is the lever if this path ever needs to be faster, and it would
-help `hwdownload` for VA-API just as much.
+> **MEASURE DELIVERED FRAMES, NOT WALL CLOCK.** The first version of this table
+> reported 24 fps for the CPU path, from timing a 1000-frame run at 40 s. That
+> number was the *stream's own duration*: the sink was syncing to the clock and
+> QoS was making `videoconvert` skip late buffers, so half the frames were never
+> converted at all. `fpsdisplaysink` reports `rendered: 127, dropped: 125`. A
+> pipeline that keeps up with the clock and one that drops half its frames take
+> exactly the same wall time.
 
-**A stock GPU path could not be tested**: `gstreamer1.0-gl` is not installed
-and this board has no route to a package mirror. If it were, `glupload !
-glcolorconvert` with a GBM window is the obvious candidate for a stock 60 fps
-path, since the bespoke `gles-play` already proves the hardware does it.
+### `n-threads` is worth 4.5x, and free
+
+Default `videoconvert` is single-threaded. On this board that is 3.15 fps
+delivered with half the frames dropped; `n-threads=4` gives 14.15 fps with 4.4%
+dropped. Nothing else about the pipeline changes.
+
+### Why it is slow at all: the read, not the arithmetic
+
+The same NV12 → BGRx conversion, single-threaded, measured two ways:
+
+| source of the NV12 | fps |
+| --- | --- |
+| ordinary memory (`videotestsrc`) | 26 |
+| the decoder's V4L2 buffers | **7** |
+
+A 3.7x penalty for reading the decoder's output, which is uncached — the same
+~44 MB/s wall that `hwdownload` hits for VA-API. Threads help because they
+overlap that latency, not because the conversion is compute-bound.
+
+**Cached buffers are not available today.** `cedrus` does not set
+`allow_cache_hints`, so a client cannot request non-coherent (cached) buffers —
+and neither GStreamer's `v4l2` allocator nor its `v4l2codecs` allocator ever
+asks: `V4L2_MEMORY_FLAG_NON_COHERENT` appears in neither. Enabling the flag
+alone would therefore change nothing measurable, which is why it has not been
+enabled.
+
+**The hardware way out exists and is unwritten.** The vendor device tree has
+`ge2d@5240000`, a 2D engine with colour-space conversion, and mainline 6.18 has
+no driver for it — `drivers/media/platform/sunxi/` carries CSI, deinterlace and
+DE2 rotate, but no GE2D. With one, `v4l2convert` would do this conversion in
+hardware and the CPU path would stop mattering. That is a new driver, not a
+tuning change.
+
+**For real-time playback today, do not use the CPU.** mpv at 32 fps and
+`gles-play` at 59.71 both already work.
 
 ## Still open
 
