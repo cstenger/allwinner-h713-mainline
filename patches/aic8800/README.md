@@ -32,6 +32,8 @@ it as reversed/previously applied).
 | 0002 | H713 `wlan_regon` GPIO, power sequencing, SDIO rescan | The actual bring-up glue: PM1 (GPIO 385) power enable, `4021000.mmc` host lookup, `mmc_detect_change()` rescan, hostwake input, DDR50 disable. All inside `#ifdef CONFIG_PLATFORM_MAINLINE_SUNXI`. |
 | 0003 | SDIO clock and chip-up timeout tuning | See below — the most consequential patch in the series. |
 | 0004 | Guard the firmware-array include | Vendor `#include`s `aicwf_firmware_array.h` unconditionally even though its only caller is `#ifdef CONFIG_FIRMWARE_ARRAY`. `aicwf_firmware_array.c` is a **1.9 MB proprietary blob-as-C-array**; guarding the include is what lets the build exclude it. |
+| 0006 | Make the self-managed regulatory domain settable | The wiphy is self-managed, so `regulatory.db` never applies; the compiled-in `"00"` world domain is wider than ISM and DFS-unconstrained. Exposes the selector as a module parameter. |
+| 0007 | Route the association chatter through `aicwf_dbg_level` | Ten `printk()`/`netdev_info()` sites printed a six-line burst on **every** association, ignoring the driver's own log-level knob. Since the console is on the projector panel, a client that re-associates every few seconds buried the login prompt inside a minute. Logging only — no control flow touched. |
 
 ## Patch 0003 deserves attention
 
