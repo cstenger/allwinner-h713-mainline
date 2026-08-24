@@ -32,7 +32,33 @@ ffmpeg reacts to a new SPS by destroying the context and its surfaces and
 creating both again at the new size. With the flag latched, the driver is never
 told: the engine keeps decoding at the old geometry until it stalls.
 
-## The fix is bigger than the flag — attempted and NOT landed
+## Attempt 2, and a correction to attempt 1 — still NOT landed
+
+**The heap corruption blamed on the fix below was probably not its fault.**
+Those runs hit a device that had already been poisoned by an earlier crash —
+`Failed to setup decoding job: -22` for *every* client, GStreamer included —
+which was only discovered afterwards, because the "restore verified" check
+compared md5 alone and a software decode reproduces it. Re-run from a clean
+boot, the geometry fix gets `r01` (HEVC) through the resolution changes.
+
+**But `r02` (H.264, 1280x720 → 320x240 → 1280x720) takes the whole board
+down.** ssh still accepts connections, no command completes, and only a
+*power cycle* recovers it — not even a reboot, because reboot needs a command
+to run. That is worse than the bug it replaces, which merely failed the
+decode.
+
+So the H.264 path reaches something the HEVC path does not, and per-surface
+V4L2 state is still not being rebuilt in step with the format. The
+work-in-progress diff is kept as
+`patches/libva-v4l2-request/WIP-0007-resolution-change-INCOMPLETE.patch`, out
+of `series`, with that warning in its header.
+
+**A practical note for whoever picks this up:** every failed attempt here can
+cost a physical power cycle, because a client that dies mid-decode takes the
+engine down for everything (see below). Budget for that, and prefer the HEVC
+vector for iteration — it is the one that fails safely.
+
+## The original diagnosis — the flag
 
 Replacing the latch with a geometry comparison is obviously right, and
 `RequestDestroyContext` has already streamed both queues off and released their

@@ -1,0 +1,149 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] WIP: set the coded format again when the resolution changes
+
+*** NOT IN patches/libva-v4l2-request/series. INCOMPLETE AND UNSAFE. ***
+***
+*** It fixes the HEVC case and WEDGES THE BOARD on the H.264 one, which is
+*** worse than the bug it replaces: the failure needs a physical power cycle,
+*** not a reboot. Do not install this without reading
+*** docs/hevc-resolution-change.md.
+
+PR #38 sets the coded format exactly once, behind a process-wide latch. A
+stream that changes resolution mid-way needs it set again: ffmpeg reacts to a
+new SPS by destroying the context and its surfaces and creating both at the
+new size, and with the latch held the driver is never told, so the engine
+keeps decoding at the old geometry until it stalls -- 26 frames of 75 on a
+vector GStreamer decodes in full.
+
+Comparing the geometry instead of latching is narrower and correct as far as
+it goes. RequestDestroyContext has already streamed both queues off and
+released their buffers by that point, so S_FMT is legal there, and the cached
+video_format has to be dropped with it because the capture format the driver
+derives is what the surface sizes come from.
+
+WHAT IS STILL WRONG. With this applied, r01 (HEVC, 640x480 -> 320x240 ->
+640x480) decodes. r02 (H.264, 1280x720 -> 320x240 -> 1280x720) takes the
+whole board down -- ssh still accepts connections, no command completes, and
+only a power cycle recovers it.
+
+So per-surface V4L2 state is still not being rebuilt in step with the format,
+and the H.264 path reaches something the HEVC path does not. Earlier heap
+corruption blamed on this patch was probably NOT its fault: those runs hit a
+device already poisoned by a previous crash ("Failed to setup decoding job:
+-22" for every client, GStreamer included), which was only discovered later.
+That misattribution is the reason this note exists.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/src/request.h b/src/request.h
+index 4f82813..70d9b4f 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -70,6 +70,13 @@ struct request_data {
+ 	 * depth BEFORE capture buffers exist -- see surface.c.
+ 	 */
+ 	unsigned int coded_bit_depth;
++	/*
++	 * The coded geometry currently programmed on the OUTPUT queue. Zero
++	 * until the first surface is created. Compared rather than latched so
++	 * a mid-stream resolution change reaches the driver -- see surface.c.
++	 */
++	unsigned int coded_width;
++	unsigned int coded_height;
+ };
+ 
+ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context);
+diff --git a/src/surface.c b/src/surface.c
+index b4cba1e..993495c 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -46,7 +46,6 @@
+ #include "v4l2.h"
+ #include "video.h"
+ 
+-bool SET_FORMAT_OF_OUTPUT_ONCE = false;
+ 
+ 
+ /*
+@@ -111,30 +110,45 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	bool found;
+ 	int rc;
+ 
+-	//////////// HACK: this portion of the code should get cleaned up.
+-
+-	// v4l2_set_format needs to be called BEFORE we create any buffers
+-	//
+-	// we originally did this for the output stream in context.c, but 
+-	// RequestCreateSurfaces2 gets called multiple times before RequestCreateContext 
+-	// to allocate & map buffers. this doesn't seem to work in recent kernel versions.
+-	// 
+-	// we declare SET_FORMAT_OF_OUTPUT_ONCE to ensure v4l2_set_format only gets called once
+-	// (in the first RequestCreateSurfaces2 call BEFORE any buffers are created later on)
++	/*
++	 * The coded format must be set before any buffer exists on the queue,
++	 * and RequestCreateSurfaces2 is called repeatedly before the context
++	 * is created, so it cannot simply be set every time. The original code
++	 * solved that with a process-wide "only ever once" flag.
++	 *
++	 * ONCE IS WRONG FOR A STREAM THAT CHANGES RESOLUTION. ffmpeg reacts to
++	 * a new SPS by destroying the context and its surfaces and creating
++	 * both again at the new size; with the flag latched, the driver was
++	 * never told, kept decoding at the old geometry, and the decode died
++	 * partway with "Timeout when waiting for media request" -- 26 frames of
++	 * 75 on a vector that GStreamer decodes in full.
++	 *
++	 * Comparing the geometry instead is both narrower and correct: repeat
++	 * calls at the same size still do nothing, and a real change reaches
++	 * the driver. Setting it is legal at this point because
++	 * RequestDestroyContext has already streamed both queues off and
++	 * released their buffers, which is the state S_FMT requires.
++	 */
+ 	unsigned int pixelformat = driver_data->coded_pixelformat;
+ 	unsigned int output_type = v4l2_type_video_output(false);
+ 
+-	if (!SET_FORMAT_OF_OUTPUT_ONCE) {
+-		rc = v4l2_set_format(driver_data->video_fd, output_type, pixelformat,
+-				width, height);
+-		if (rc < 0) {
++	if (driver_data->coded_width != width ||
++	    driver_data->coded_height != height) {
++		rc = v4l2_set_format(driver_data->video_fd, output_type,
++				     pixelformat, width, height);
++		if (rc < 0)
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
+-		}
+ 
+-		SET_FORMAT_OF_OUTPUT_ONCE = true;
+-	}
++		driver_data->coded_width = width;
++		driver_data->coded_height = height;
+ 
+-	/////////// ENDHACK
++		/*
++		 * The capture format is derived by the driver from the coded
++		 * one, so the cached video_format and its sizes have to be
++		 * re-read rather than reused from the previous resolution.
++		 */
++		driver_data->video_format = NULL;
++	}
+ 
+ 	/*
+ 	 * YUV420_10 is accepted and then served with 8-bit surfaces. cedrus
+diff --git a/src/v4l2.c b/src/v4l2.c
+index 3addb33..b54c945 100644
+--- a/src/v4l2.c
++++ b/src/v4l2.c
+@@ -363,7 +363,12 @@ int v4l2_queue_buffer(int video_fd, int request_fd, unsigned int type,
+ 
+ 	rc = ioctl(video_fd, VIDIOC_QBUF, &buffer);
+ 	if (rc < 0) {
+-		request_log("Unable to queue buffer: %s\n", strerror(errno));
++		/* Say WHICH queue and WHICH buffer: "Invalid argument" alone
++		 * cannot distinguish a bad index from a bad size from a
++		 * request FD in the wrong state. */
++		request_log("Unable to queue buffer: %s (type %u index %u size %u planes %u request_fd %d)\n",
++			    strerror(errno), type, index, size, buffers_count,
++			    request_fd);
+ 		return -1;
+ 	}
+ 
