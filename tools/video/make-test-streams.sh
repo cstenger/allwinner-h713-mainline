@@ -59,9 +59,11 @@ gen() {
 # reference decoded on the host. The VE decodes H.265 as well as H.264 -- both
 # bit-exact -- and these are the vectors that established it.
 #
-# 10-bit is deliberately absent. Main10 does not decode: mainline cedrus (6.18)
-# exposes no 10-bit capture format at all, so nothing can negotiate one, and the
-# pipeline reaches EOS having produced zero frames. See docs/vaapi-scope.md.
+# 10-bit is h07, below, and it DOES decode -- the comment that used to stand
+# here ("Main10 does not decode ... zero frames") was wrong. cedrus writes an
+# 8-bit plane plus a separate 2-bit plane; the 8-bit plane is a correct
+# rendition. It is not scored by md5 because the engine truncates where swscale
+# dithers. See docs/hevc-10bit-findings.md.
 gen_hevc() {
   local name=$1 w=$2 h=$3 frames=$4 profile=$5 xtra=${6:-}
   shift 5; [ $# -gt 0 ] && shift
@@ -148,6 +150,18 @@ gen_hevc h05-640x480-scaling-custom 640 480 25 main \
 # and closed here; TILES remain uncovered because x265 cannot produce them (it
 # does WPP and slices only) and no tiling HEVC encoder is installed.
 gen_hevc h06-640x480-lossless 640 480 25 main "lossless=1"
+
+# h07 -- Main10. It decodes: the engine writes an 8-bit plane plus a separate
+# 2-bit plane, and the 8-bit plane is a correct rendition (57 dB PSNR against
+# this software reference). It is NOT scored by md5 for that reason -- the VE
+# truncates where swscale dithers -- so it lives in hevc-10bit-test.sh rather
+# than the H1 gate. 10 frames is plenty; this is a format question, not an
+# endurance one.
+ffmpeg -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=size=640x480:rate=25" -frames:v 10 \
+  -pix_fmt yuv420p10le -c:v libx265 -profile:v main10 \
+  -x265-params "log-level=error:keyint=5" -f hevc h07-640x480-main10.h265
+echo "==> h07-640x480-main10  (640x480, 10 frames, main10) $(stat -c%s h07-640x480-main10.h265) bytes"
 
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host

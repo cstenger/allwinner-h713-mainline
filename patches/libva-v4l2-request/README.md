@@ -44,6 +44,7 @@ board's libva 1.22 loader will not call.
 | 0003 | Create the bitstream buffer with the surface, not with the context | the one that actually blocked decoding — see below |
 | 0004 | Port HEVC: PR #44's `h265.c` on this base, plus the four sites it needs | HEVC on the stabilized uAPI. Neither upstream PR decodes here alone: #38 has the format ordering cedrus requires, #44 has the modern port |
 | 0005 | `h265`: pass the scaling matrix | `V4L2_CID_STATELESS_HEVC_SCALING_MATRIX` was never set by *either* upstream tree, so any stream with `scaling_list_enabled_flag = 1` decoded against flat matrices — see below |
+| 0006 | Advertise HEVC Main10, and declare the bit depth before capture buffers exist | Main10 was refused outright; now it decodes on the engine (`ve+10`, 57 dB PSNR, byte-identical to GStreamer). Output is 8-bit — see [`docs/hevc-10bit-findings.md`](../../docs/hevc-10bit-findings.md) |
 
 Patch 0002 does two things that look separate and are not:
 

@@ -1,0 +1,243 @@
+From 904b8c7cf2b730187603c4efcc4d35345509e80e Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Mon, 24 Aug 2026 00:37:23 -0700
+Subject: [PATCH] Advertise HEVC Main10, and tell the driver before it is too
+ late
+
+Main10 files could not be hardware-decoded through this driver at all: the
+profile was refused at vaCreateConfig, so every client fell back to software.
+The hardware has never been the obstacle -- cedrus decodes Main10 correctly
+today, into Allwinner's 8-bit plane plus a separate 2-bit plane, and the
+8-bit plane is a correct rendition of the picture (57 dB PSNR against a
+software decode; the residual is the engine truncating where swscale
+dithers).
+
+Advertising the profile is four sites in config.c, four in picture.c, and
+accepting VA_RT_FORMAT_YUV420_10 in RequestCreateSurfaces2 while still
+serving 8-bit surfaces. Doing only that gets a clean vainfo entry and a
+decode that runs entirely on the CPU:
+
+    v4l2-request: Unable to set control(s): Invalid argument
+    ve+0
+
+BECAUSE OF WHEN, NOT WHAT. cedrus derives bit depth from the HEVC SPS and
+refuses a later INCREASE once capture buffers exist -- correctly, since those
+buffers were sized for 8 bits and a 10-bit frame needs the extra 2-bit plane
+appended. VA-API creates every surface up front, so by the time the real SPS
+arrives with the first picture the refusal is guaranteed. GStreamer never
+hits it because it sets controls first and negotiates the capture queue
+afterwards.
+
+So declare the depth before allocating: send a minimal SPS on the file
+descriptor itself, outside any request, carrying only the fields cedrus
+validates -- chroma_format_idc and the two bit depths. The driver then sets
+ctx->bit_depth, re-runs its capture format so the buffers get room for the
+2-bit plane, and the real SPS later is an equal rather than an increase.
+
+    before   ve+0,  every frame on the CPU
+    after    ve+10, every frame on the engine, 57.07 dB PSNR
+
+And the check that needs no reference at all: the shim's output is
+BYTE-FOR-BYTE IDENTICAL to GStreamer's for the same stream. Both take the
+same 8-bit plane out of the same engine, so agreement is the strongest
+statement available here -- stronger than either PSNR figure.
+
+H1 is unregressed at 12/12 and the H.264 ladder at 5/5.
+
+What this does NOT do is deliver 10 bits to the client. That needs a V4L2
+fourcc for the 8+2 layout, which does not exist and is where the upstream
+kernel series stalled; see docs/hevc-10bit-findings.md. On a panel that is
+8-bit after GPU conversion, playing the file is most of the value.
+---
+ src/config.c  | 21 ++++++++++++++++++++-
+ src/picture.c |  4 ++++
+ src/request.h |  5 +++++
+ src/surface.c | 49 ++++++++++++++++++++++++++++++++++++++++++++++++-
+ 4 files changed, 77 insertions(+), 2 deletions(-)
+
+diff --git a/src/config.c b/src/config.c
+index 338ac29..51c5e3f 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -59,9 +59,13 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 	case VAProfileH264MultiviewHigh:
+ 	case VAProfileH264StereoHigh:
+ 		driver_data->coded_pixelformat = V4L2_PIX_FMT_H264_SLICE;
++		driver_data->coded_bit_depth = 8;
+ 		break;
+ 	case VAProfileHEVCMain:
++	case VAProfileHEVCMain10:
+ 		driver_data->coded_pixelformat = V4L2_PIX_FMT_HEVC_SLICE;
++		driver_data->coded_bit_depth =
++			(profile == VAProfileHEVCMain10) ? 10 : 8;
+ 		break;
+ 	case VAProfileMPEG2Simple:
+ 	case VAProfileMPEG2Main:
+@@ -81,6 +85,18 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 	config_object->entrypoint = entrypoint;
+ 	config_object->attributes[0].type = VAConfigAttribRTFormat;
+ 	config_object->attributes[0].value = VA_RT_FORMAT_YUV420;
++
++	/*
++	 * Main10 must additionally claim the 10-bit RT format or ffmpeg
++	 * refuses the config outright ("surface RT format not supported")
++	 * before any surface exists. The surfaces themselves stay 8-bit: the
++	 * pixel-format attribute list still offers NV12 alone, so the client
++	 * picks NV12 and receives the engine's 8-bit rendition of a 10-bit
++	 * stream. See docs/hevc-10bit-findings.md for why that is the whole
++	 * of what the hardware can hand back today.
++	 */
++	if (profile == VAProfileHEVCMain10)
++		config_object->attributes[0].value |= VA_RT_FORMAT_YUV420_10;
+ 	config_object->attributes_count = 1;
+ 
+ 	for (i = 1; i < attributes_count; i++) {
+@@ -140,8 +156,10 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 	found = v4l2_find_format(driver_data->video_fd,
+ 				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+ 				 V4L2_PIX_FMT_HEVC_SLICE);
+-	if (found && index < (V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES - 1))
++	if (found && index < (V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES - 2)) {
+ 		profiles[index++] = VAProfileHEVCMain;
++		profiles[index++] = VAProfileHEVCMain10;
++	}
+ 
+ 	*profiles_count = index;
+ 
+@@ -160,6 +178,7 @@ VAStatus RequestQueryConfigEntrypoints(VADriverContextP context,
+ 	case VAProfileH264MultiviewHigh:
+ 	case VAProfileH264StereoHigh:
+ 	case VAProfileHEVCMain:
++	case VAProfileHEVCMain10:
+ 		entrypoints[0] = VAEntrypointVLD;
+ 		*entrypoints_count = 1;
+ 		break;
+diff --git a/src/picture.c b/src/picture.c
+index a65dd7f..0fd036e 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -101,6 +101,7 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			break;
+ 
+ 		case VAProfileHEVCMain:
++		case VAProfileHEVCMain10:
+ 			memcpy(&surface_object->params.h265.picture,
+ 			       buffer_object->data,
+ 			       sizeof(surface_object->params.h265.picture));
+@@ -124,6 +125,7 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			break;
+ 
+ 		case VAProfileHEVCMain:
++		case VAProfileHEVCMain10:
+ 			memcpy(&surface_object->params.h265.slice,
+ 			       buffer_object->data,
+ 			       sizeof(surface_object->params.h265.slice));
+@@ -155,6 +157,7 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			break;
+ 
+ 		case VAProfileHEVCMain:
++		case VAProfileHEVCMain10:
+ 			memcpy(&surface_object->params.h265.iqmatrix,
+ 			       buffer_object->data,
+ 			       sizeof(surface_object->params.h265.iqmatrix));
+@@ -200,6 +203,7 @@ static VAStatus codec_set_controls(struct request_data *driver_data,
+ 		break;
+ 
+ 	case VAProfileHEVCMain:
++	case VAProfileHEVCMain10:
+ 		rc = h265_set_controls(driver_data, context, surface_object);
+ 		if (rc < 0)
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
+diff --git a/src/request.h b/src/request.h
+index 0b0b225..4f82813 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -65,6 +65,11 @@ struct request_data {
+ 	 * vaCreateSurfaces, so recording it there is early enough.
+ 	 */
+ 	unsigned int coded_pixelformat;
++	/*
++	 * 8 unless the config is a 10-bit profile. cedrus needs to know the
++	 * depth BEFORE capture buffers exist -- see surface.c.
++	 */
++	unsigned int coded_bit_depth;
+ };
+ 
+ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context);
+diff --git a/src/surface.c b/src/surface.c
+index 754f045..b4cba1e 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -48,6 +48,43 @@
+ 
+ bool SET_FORMAT_OF_OUTPUT_ONCE = false;
+ 
++
++/*
++ * Declare the bit depth to the driver before any capture buffer exists.
++ *
++ * cedrus derives the depth from the HEVC SPS, and refuses a LATER increase
++ * once buffers are allocated -- v4l2_m2m_get_vq(CAPTURE) is busy by then and
++ * the buffers it holds were sized for 8-bit, which is a correct refusal: a
++ * 10-bit frame needs an extra 2-bit plane appended and would run off the end.
++ *
++ * VA-API creates all surfaces up front, so by the time the real SPS arrives
++ * with the first picture, that refusal is guaranteed and the client falls back
++ * to software decoding. GStreamer never hits it because it sets controls first
++ * and negotiates the capture queue afterwards.
++ *
++ * So send a minimal SPS on the file descriptor itself, outside any request,
++ * carrying nothing but the fields cedrus validates: chroma_format_idc and the
++ * two bit depths. That makes it set ctx->bit_depth and re-run its capture
++ * format, so the buffers below are allocated with room for the 2-bit plane and
++ * the real SPS is then an equal, not an increase.
++ */
++static void surface_declare_bit_depth(struct request_data *driver_data)
++{
++	struct v4l2_ctrl_hevc_sps sps;
++
++	if (driver_data->coded_bit_depth <= 8 ||
++	    driver_data->coded_pixelformat != V4L2_PIX_FMT_HEVC_SLICE)
++		return;
++
++	memset(&sps, 0, sizeof(sps));
++	sps.chroma_format_idc = 1;
++	sps.bit_depth_luma_minus8 = driver_data->coded_bit_depth - 8;
++	sps.bit_depth_chroma_minus8 = driver_data->coded_bit_depth - 8;
++
++	v4l2_set_control(driver_data->video_fd, -1,
++			 V4L2_CID_STATELESS_HEVC_SPS, &sps, sizeof(sps));
++}
++
+ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 				unsigned int width, unsigned int height,
+ 				VASurfaceID *surfaces_ids,
+@@ -99,7 +136,15 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 
+ 	/////////// ENDHACK
+ 
+-	if (format != VA_RT_FORMAT_YUV420)
++	/*
++	 * YUV420_10 is accepted and then served with 8-bit surfaces. cedrus
++	 * decodes 10-bit into Allwinner's 8-bit plane plus a separate 2-bit
++	 * plane, and no V4L2 fourcc describes that pair, so the 8-bit plane is
++	 * what can be handed over. Refusing the RT format instead would mean
++	 * Main10 files do not play at all, which is strictly worse on a panel
++	 * that is 8-bit after GPU conversion anyway.
++	 */
++	if (format != VA_RT_FORMAT_YUV420 && format != VA_RT_FORMAT_YUV420_10)
+ 		return VA_STATUS_ERROR_UNSUPPORTED_RT_FORMAT;
+ 
+         if (!driver_data->video_format) {
+@@ -131,6 +176,8 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 	}
+ 
++	surface_declare_bit_depth(driver_data);
++
+ 	rc = v4l2_get_format(driver_data->video_fd, capture_type, &format_width,
+ 			     &format_height, destination_bytesperlines,
+ 			     destination_sizes, NULL);
+-- 
+2.55.0
+
