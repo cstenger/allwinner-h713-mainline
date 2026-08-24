@@ -1757,6 +1757,16 @@ here, and there is no way for the shim to detect it.
 
 ---
 
+## 10-bit — ⚠ THIS SECTION IS SUPERSEDED, see docs/hevc-10bit-findings.md
+
+> **Measured 2026-08-24: 10-bit DOES decode, correctly.** A Main10 clip decodes
+> all frames through GStreamer with no timeouts and no faults, at 57 dB PSNR
+> against a software decode. cedrus negotiates an 8-bit fourcc and quietly
+> grows the buffer for Allwinner's extra 2-bit plane, so the consumer reads a
+> correct 8-bit rendition. What is missing is a fourcc describing the 8+2
+> layout, not the ability to decode. The text below is kept for its register
+> detail and should not be quoted for its conclusion.
+
 ## 10-bit does not work, and the blocker is in the kernel
 
 `Main10` prerolls, reaches EOS in 40 ms having produced **zero frames**, and
