@@ -17,6 +17,62 @@ This document is those three, plus one more that turned up while writing them
 
 ---
 
+## 0. Current status — the reference tables
+
+*Everything below this section is how these numbers were arrived at, in the
+order they were found. If you only want to know where decode stands, section 0
+is the answer and the rest is the evidence.*
+
+### What decode is
+
+| property | status |
+| --- | --- |
+| correctness | 11 vectors bit-exact: H.264 ladder, HEVC Main, Main10, scaling lists, lossless |
+| endurance | 483,433 frames over 3 h of 3-client concurrency; 195,332 more single-client |
+| bad input | 16/16 malformed streams, engine usable after each |
+| leaks | none: 7500 frames in one process, RSS +12 kB, FDs flat |
+| abuse | survives stall storms and clients killed mid-decode |
+| concurrency | 3 clients, hours, zero failures |
+| deployment | reproducible build, verified entry point, stamped provenance, drift check |
+| known-failing | mid-stream resolution change — ffmpeg-side, see `hevc-resolution-change.md` |
+| not supported | full 10-bit output (needs a uAPI fourcc), tiles (no encoder emits them) |
+
+### The gates, and what each one is for
+
+| gate | what it scores | result |
+| --- | --- | --- |
+| `hevc-decode-test.sh` / `va-decode-test.sh` | bit-exactness for good input | **12/12**, **5/5** |
+| `soak-decode.sh` | hours of decoding, md5 re-asserted **every** iteration | **5238/5238**, 195,332 frames, 2 h single-client |
+| `soak-decode.sh CLIENTS=3` | the same, three at once, for hours | **4317/4317 rounds, 483,433 frames, 3 h** |
+| `decode-robustness-test.sh` | survival of 16 malformed streams; the verdict is a good decode **afterwards** | **16/16** |
+| `decode-concurrency-test.sh` | 3 clients, different vectors across a codec boundary | **18/18** |
+| `decode-leak-test.sh` | one process, one long session — the leak class a per-iteration soak cannot see | **7500 frames, RSS +12 kB, FDs flat** |
+| `hevc-10bit-test.sh` | Main10: PSNR vs software **and** byte-equality with the oracle | **PASS** |
+| `decode-reinit-test.sh` | mid-stream resolution change | **known-failing, attributed** |
+| `check-video-stack.sh` | is the board running what the tree says? | **in sync** |
+
+The concurrent soak carries the most weight: the deadlock fix in §3 had six
+rounds behind it when it landed and now has three hours. Its calibration pass —
+one solo decode per vector to learn its frame count — means a client silently
+falling back to software is caught by the total interrupt count, which is
+exactly how it caught the driver being reinstalled underneath it at
+`ve+68 expected 93`.
+
+### Robustness under abuse, on a clean boot
+
+| provocation | result |
+| --- | --- |
+| 12 watchdog timeouts from stalled decodes | healthy after every one |
+| 5 clients SIGKILLed mid-decode | healthy after every one |
+| 3 clients SIGKILLed while a stall was pending | healthy after every one |
+| 2 of 3 concurrent clients SIGKILLed | healthy after every one |
+
+Zero `Failed to setup decoding job` across all of it. An earlier claim that a
+crashing client takes the engine down for everyone was **withdrawn** — every
+observation behind it came from runs with an experimental driver installed.
+
+---
+
 ## 1. The timeout path: a real code defect that costs nothing
 
 > **Read §3 before acting on this section.** The premise it was written from —
@@ -386,27 +442,29 @@ every iteration bit-exact, no new timeouts, no leak.
 
 ---
 
-## 4. Where decode actually stands
+## 4. What is left, and what was left deliberately
 
-**Ready:** single-client decode of 8-bit H.264 and HEVC. Bit-exact on 11
-vectors including scaling lists and lossless, 195,332 frames of soak with no
-drift, survives every malformed stream tested, and recovers from decode
-timeouts by itself.
+The status tables are in §0; this is only the residue that is not a number.
 
-**Robustness under abuse: measured, 2026-08-24.** The engine absorbs 12
-watchdog timeouts from stalled decodes, clients SIGKILLed mid-decode, clients
-killed while a stall is pending, and one of three concurrent clients killed —
-healthy after every one, with zero `Failed to setup decoding job` in dmesg. An
-earlier claim that a crashing client takes the engine down for everyone was
-**withdrawn**: every observation behind it came from runs with an experimental
-driver installed. `patches/kernel/0062` hardens the code path anyway and stays
-out of `series` because it fixes nothing demonstrable.
+**Out of `series`, each with its negative result in its own header** — 0057
+(watchdog resets one reset line, no observable effect), 0058 (the injector that
+could not stall the engine), 0062 (hardens a stuck-VLD path that does not occur
+here), and `WIP-0007` (a resolution-change fix for a failure that is ffmpeg's).
+All four were written for problems that looked real and turned out not to be
+reachable. Re-adding any of them needs new evidence, not a second reading of
+the old evidence.
 
-**Concurrency: fixed.** Three simultaneous decoders were deadlocking the
-engine; the cause was our own patch 0040, now dropped from `series`. Six
-rounds of three concurrent clients are bit-exact with zero timeouts. The
-latent `cedrus_irq()` orphan above is the remaining known hazard in this area
-and is not reachable today.
+**Known-failing:** mid-stream resolution change, attributed to ffmpeg's hwaccel
+path never propagating the change —
+[`hevc-resolution-change.md`](hevc-resolution-change.md). Kept as a regression
+test. Iterate on `r01`; `r02` has twice cost a physical power cycle.
 
-**Still out of scope, unchanged:** 10-bit (no 10-bit capture format in
-mainline cedrus), and tiles (no encoder here can produce them).
+**Out of scope, unchanged:** full 10-bit *output* needs a V4L2 fourcc for
+Allwinner's 8+2 layout, which does not exist and is where the upstream series
+stalled — Main10 files play at 8-bit today
+([`hevc-10bit-findings.md`](hevc-10bit-findings.md)). Tiles have no vector
+because no encoder here emits them.
+
+**The one manual deployment step:** `tools/video/build-va-driver.sh --install`
+after a fresh flash. Folding it into the image build needs a cross-build
+against the target's libva, which is why it was not done here.
