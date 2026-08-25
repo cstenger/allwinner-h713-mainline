@@ -141,12 +141,83 @@ The value of the test is that it cost one write to learn the plane does not
 open on the ctrl bit alone, before anyone built a 22-register sequence on that
 assumption.
 
+## The struct-offset map — RESOLVED 2026-08-25
+
+The address argument is `[table + offset]`, where the table is a per-plane set
+of register bases. Recovered by emulating the stores across the whole module:
+
+| offset | plane 0 | plane 1 | fixed (set by `init_svp`) |
+| --- | --- | --- | --- |
+| +0x1c | | | `0x05240000` GE2D core |
+| +0x20 | | | `0x0525c000` mixer |
+| +0x24 | `0x05280040` | `0x05280080` | |
+| +0x28 | `0x05248000` | `0x0524c000` | OSD |
+| +0x2c | `0x05288000` | `0x0529c000` | |
+| +0x30 | `0x05600100` | `0x05600140` | AFBD channel |
+| +0x34 | | | `0x05600000` AFBD base |
+| +0x38 | | | `0x051c0000` LVDS base |
+| +0x3c | `0x0520002c` | `0x05200034` | |
+| +0x40 | `0x051c0060` | `0x051c006c` | |
+| +0x44 | `0x051c0180` | `0x051c019c` | |
+
+**`init_osd_plane` stores only the plane-0 set, so it operates on channel 0** —
+the channel the 2026-08-14 poke campaign tried to clone by hand and got null
+from. Our KMS driver drives channel 1.
+
+## The sequence
+
+Addresses resolved for 21 of 22 operations; values are literal for 15, the rest
+computed at runtime (geometry and buffer addresses).
+
+```
+0x05600100 <- 0x83001901      AFBD ch0 ctrl   (ch1 live: 0x03001901)
+0x05600108 <- 0x008000ff                      (ch1 live: 0x008000ff)  same
+0x0560010c <- 0x00ff0080                      (ch1 live: 0x00000080)
+0x05600124 <- 0x00000808                      (ch1 live: 0x00000808)  same
+0x05600128 <- 0x00000082                      (ch1 live: 0x000003b2)
+0x0560012c <- 0x00000021                      (ch1 live: 0x00000021)  same
+
+0x051c001c -> read ; 0x051c0010 <- computed   LVDS read-modify-write, x3
+
+<unresolved addr> <- 0x80fc0208
+
+0x05248010 <- 0x04650898      OSD plane 0
+0x05248014 <- computed
+0x05248050 <- 0x0000ff00
+0x0524807c <- 0x03000140
+0x05248080 <- 0x02000000
+0x05248004 <- 0x00100010
+0x05248018 <- 0x03000000
+0x05248058 <- 0x01000100
+0x0524805c <- 0x00000100
+```
+
+**Two independent cross-checks say this decode is right.** The channel offsets
+used are `+0x00/+0x08/+0x0c/+0x24/+0x28/+0x2c`, which are exactly the six
+registers the LogoRegData block set writes on channel 1 at
+`0x05600140/148/14c/164/168/16c` — confirming the 0x40 channel stride from a
+completely different direction. And four of the six values are byte-identical
+to what channel 1 holds on a running board.
+
+So what `init_osd_plane` does is **configure channel 0 to mirror the channel 1
+that is already scanning out**, then program its OSD block. That is what
+"opening a plane" means here.
+
+The peer tree's partial decodes line up too, one plane over: their
+`0x0524c004` (OSD v_active), `0x0524c010` (htotal+hsync) and `0x0524c014`
+(timing) are the plane-1 counterparts of `0x05248004`, `0x05248010` and
+`0x05248014` here.
+
+**A trap for the replay.** `0x05248010 <- 0x04650898` unpacks as 0x0898 = 2200
+and 0x0465 = 1125 — 1080p60 totals, not the 1650x750 this 1280x720 panel runs.
+That matches the stock driver initialising its framebuffer at 1920x1080. The
+sequence cannot be replayed verbatim on our timing; the geometry writes need
+recomputing for the mode actually running, and that is a second reason the
+2026-08-14 attempt to clone ch0 from ch1 by hand could not have worked.
+
 ## Next
 
-1. Resolve the struct-offset → MMIO map from `ge2d_drv_probe`, giving an exact
-   address/value/mask list. Without it the remaining 21 operations cannot be
-   replayed in the right order to the right registers, and order is now the
-   most likely place the effect lives.
+1. ~~Resolve the struct-offset → MMIO map.~~ **Done, above.**
 2. Replay the full sequence, not fragments of it. The single-register result
    above is the argument against further piecemeal poking.
 3. Read the peer tree's `sunxi_ge2d_firmware.c` alongside step 1 — it has
