@@ -215,9 +215,68 @@ sequence cannot be replayed verbatim on our timing; the geometry writes need
 recomputing for the mode actually running, and that is a second reason the
 2026-08-14 attempt to clone ch0 from ch1 by hand could not have worked.
 
+## Does the sequence work against the U-Boot pipeline? NO — tested 2026-08-25
+
+The load-bearing assumption, tested directly rather than argued about.
+
+**A clean success criterion exists.** `tgd_is_plane_open()` reads OSD base
+`+0x1c` bit 0. On a running board:
+
+```
+0x0524c01c = 0x79860601   plane 1 (live)  -- bit 0 SET
+0x0524801c = 0x00000000   plane 0         -- bit 0 clear
+```
+
+So "did the plane open" is answerable by reading one register. No eyes needed.
+
+**Pre-state also resolved the 22nd write.** OSD plane 0 (`0x05248000`) reads
+all zeros — completely unconfigured, so writing it cannot disturb the live
+path. And live plane 1 base `0x0524c000` reads `0x00fc0202`, which makes the
+vendor's unresolved `0x80fc0208` obviously the plane-0 analogue at OSD `+0x00`.
+That is the write whose address would not resolve statically.
+
+Four more OSD literals — `0x0000ff00`, `0x01000100`, `0x00000100`,
+`0x03000140` — are byte-identical to live plane 1, which is a third
+independent confirmation of the decode.
+
+**The test.** All 15 literal writes applied verbatim in disassembly order (the
+3 LVDS read-modify-writes and the computed values were skipped, being
+runtime-dependent):
+
+```
+plane0 open bit BEFORE: 0x00000000
+plane0 open bit AFTER : 0x00000000
+```
+
+**Unmoved.** Every write landed and read back; nothing else in the snapshot
+latched; plane 1 was unaffected throughout. One incidental finding: the write
+to `0x05600128` did **not** stick — it stayed 0 — so that register is
+read-only or gated, unlike its neighbours.
+
+Restored afterwards; display re-verified with a BGRx commit, `rc=0`.
+
+**What this says.** Configuring a plane is not the same as opening it. The
+registers `init_osd_plane` writes are the plane's *configuration*; something
+else must route it into the output before the status bit reflects anything.
+`init_osd_plane` never writes the mixer (`0x0525c000`) or the VBlender
+(`0x0520002c` / `0x05200034`) — it only *stores their bases in the table* — so
+the enabling step is somewhere else, most plausibly `tgd_put_plane_info` at
+11064 bytes, the largest function in the module and still unexamined.
+
+It is also possible the bit only ever reflects real scanout, in which case no
+amount of configuration will set it until the mixer routes the plane.
+
+**What this does not say.** It does not show the sequence is wrong — every
+cross-check says the decode is right. It shows the sequence is *incomplete*.
+And it leaves the original question open in one respect: the LVDS
+read-modify-writes were skipped, so "verbatim" here means 15 of 22 operations.
+
 ## Next
 
 1. ~~Resolve the struct-offset → MMIO map.~~ **Done, above.**
+0. **Disassemble `tgd_put_plane_info`** (11064 B). It is the biggest function,
+   it is an exported entry point, and it is where the enable most likely lives.
+   Desk work; no board time.
 2. Replay the full sequence, not fragments of it. The single-register result
    above is the argument against further piecemeal poking.
 3. Read the peer tree's `sunxi_ge2d_firmware.c` alongside step 1 — it has
