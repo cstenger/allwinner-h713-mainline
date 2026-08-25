@@ -133,6 +133,22 @@ CONFIG_DRM_FBDEV_EMULATION=y
 # A bad load is no longer undoable without reflashing a kernel -- that is the
 # price, and tools/install-kernel-fit.sh backs up the outgoing FIT for it.
 CONFIG_DRM_SUN50I_H713_AFBD=y
+# Match dummycon to the panel. Until the AFBD driver probes at 1.25 s the VT is
+# backed by dummycon, and everything console=tty0 prints before then lives only
+# in that buffer -- at the 80x25 default, kernel lines wrap past 80 columns and
+# only the last ~13 messages survive to be painted at the handover. 1280x720
+# with the 8x16 font is 160x45 (confirmed: "Console: switching to colour frame
+# buffer device 160x45"), so matching it retains ~45 unwrapped lines and makes
+# vc_resize at the handover a no-op instead of a truncation.
+#
+# This does NOT touch the serial console: ttyS0 is a UART tty sized by termios
+# (24x80 on the board), not a VT, and is unaffected either way.
+#
+# Do not raise these ABOVE the panel geometry -- the VC is resized down at the
+# handover and the excess is simply dropped. Both numbers are tied to this panel
+# and this font; change either and they need recomputing.
+CONFIG_DUMMY_CONSOLE_COLUMNS=160
+CONFIG_DUMMY_CONSOLE_ROWS=45
 CONFIG_DRM_SUN4I=y
 CONFIG_DRM_PANEL_LVDS=y
 CONFIG_DRM_PANEL_EDP=y

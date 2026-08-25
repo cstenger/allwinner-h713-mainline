@@ -174,12 +174,55 @@ sources from it and asserts its HEAD against `AIC8800_COMMIT`. The rebuilt
 changed nothing but where the source lives. There is one readable tree now;
 `build/aic8800-<commit>-<digest>/` remains the patched build artifact.
 
-### What still limits it
+### The pre-takeover window: dummycon matched to the panel
 
-The remaining 163 lines are a harder floor: the takeover cannot precede the
-driver's own probe, and before fbcon the VC is dummycon-sized (80x25), so only
-the last ~25 rows get painted at the switch. Earlier lines would need
-`earlycon`-style scanout, which nothing here provides.
+The takeover cannot precede the driver's own probe, so the 163 lines before
+1.25 s were never going to stream past — they can only appear as one painted
+screenful at the handover, holding whatever the VT still had in memory. That
+retention was capped by dummycon:
+
+```
+CONFIG_DUMMY_CONSOLE_COLUMNS=160    # was 80
+CONFIG_DUMMY_CONSOLE_ROWS=45        # was 25
+```
+
+1280x720 with the 8x16 font is 160x45. At the 80x25 default, kernel lines wrap
+past 80 columns, so 25 rows held only ~13 messages and `vc_resize` at the
+handover was a truncation. Matched, it retains ~45 unwrapped lines and the
+resize is a no-op.
+
+**Verified by A/B, because the obvious check is ambiguous.** Unbinding fbcon
+(`echo 0 > /sys/class/vtconsole/vtcon1/bind`) hands the VT back to dummycon and
+exposes its geometry — but on the new kernel it reads 45x160, which is equally
+consistent with "the setting worked" and "unbinding does not resize at all".
+Booting the previous kernel from its backup FIT settled it:
+
+| | fbcon bound | fbcon unbound (= the boot-time size) |
+| --- | --- | --- |
+| before | 45 x 160 | **25 x 80** |
+| after | 45 x 160 | **45 x 160** |
+
+The unbind does resize, so the new reading is the setting taking effect. The
+kernel says it directly too: `Console: switching to colour dummy device
+160x45`.
+
+**This does not touch the serial console.** `ttyS0` is a UART tty sized by
+termios — 24x80 on this board — not a VT. Both were read off the same running
+kernel to confirm they are independent.
+
+**What it is actually worth, measured rather than assumed.** An early-userspace
+snapshot unit dumping `/dev/vcs1` ran at 3.37 s and the oldest line still on the
+panel was already from 3.046 s: systemd floods the console fast enough that
+everything painted at the handover is gone within about two seconds. So in a
+*healthy* boot this change only widens what flashes past between 1.25 s and
+~3 s. **Its real value is the failure case** — if the kernel hangs or panics
+early, nothing further prints and the panel keeps what was painted, so it holds
+~45 lines of context instead of ~13. Worth having for exactly the boot you
+cannot ssh into.
+
+Going below 1.25 s at all would need an early framebuffer console. `earlycon`
+is serial-only on DT platforms; there is no generic fb equivalent to enable
+here, so that is a project, not a config change.
 
 One smaller leftover, not hiding the prompt: **`get_txpwr_max:txpwr_max:18` /
 `change_if:`**, 8 lines between 6.4 s and 8.6 s. Also bare `printk()`, but a
