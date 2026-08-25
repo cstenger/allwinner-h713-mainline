@@ -271,12 +271,75 @@ cross-check says the decode is right. It shows the sequence is *incomplete*.
 And it leaves the original question open in one respect: the LVDS
 read-modify-writes were skipped, so "verbatim" here means 15 of 22 operations.
 
-## Next
+## `tgd_put_plane_info`, the latch, and the answer
 
-1. ~~Resolve the struct-offset → MMIO map.~~ **Done, above.**
-0. **Disassemble `tgd_put_plane_info`** (11064 B). It is the biggest function,
-   it is an exported entry point, and it is where the enable most likely lives.
-   Desk work; no board time.
+`tgd_put_plane_info` makes 42 writes, 35 reads, and calls two primitives
+`init_osd_plane` does not: **`osd_ready_for_update`** and
+**`osd_wait_update_finish`**. The first is the commit our earlier test omitted:
+
+```
+osd_ready_for_update(plane):
+    ldr r5, [r3, r0, lsl #2]    ; OSD_AFBD_REG_OFFSET[plane]
+    add r5, r5, #4              ; base + 4
+    mov r2, #1                  ; value 1
+    bl  io_accessor_write_reg
+```
+
+`OSD_AFBD_REG_OFFSET` dumped from `.rodata+0x280` is
+`00016005 40016005` — `{0x05600100, 0x05600140}`. So the plane-0 latch is
+**`0x05600104`**, plane-1's is `0x05600144`, which is the register our own KMS
+driver already writes every flip.
+
+**Retested with the latch, and with geometry.** ch1's `SIZE_M1`, `SIZE`,
+`STRIDE` and `SRC` were mirrored into ch0 first, so that if the plane did open
+it would scan valid pixels instead of address zero; then the config writes;
+then `write 1 -> 0x05600104`.
+
+```
+open bit before latch: 0x00000000
+open bit AFTER latch : 0x00000000
+ch0 ctrl = 0x83001901   latch = 0x00000001
+```
+
+Still closed. And the latch **stayed set** — it does not self-clear, and
+writing 0 to it does not clear it either.
+
+### That last detail is the answer
+
+```
+0x05600144   ch1 latch   reads 0    -- consumed at each vsync
+0x05600104   ch0 latch   reads 1    -- never consumed
+```
+
+Channel 1 is serviced by the pipeline, so its READY is taken every vblank.
+Channel 0's READY is never taken. **Channel 0 is not part of the running
+pipeline at all**, which is why every write to it is inert: not wrong values,
+not a missing step in the sequence — an unserviced channel.
+
+This is the "topology latch" model the 2026-08-14 poke campaign inferred, now
+with a mechanical demonstration rather than an inference from nulls. And it
+answers the question this file was opened to answer:
+
+**The sequence does not work against a U-Boot-initialised pipeline, and no
+CPU-side register sequence will make it, because the plane set is fixed before
+Linux starts.** U-Boot's `h713_disp` loads the MIPS co-processor, and the MIPS
+firmware programs the VBlender topology with one plane. The vendor's stack gets
+two because *its* bring-up asks for two.
+
+The stuck latch cleared on reboot; the board came back clean (`adopting
+1280x720`, zero warnings) and plane 1 is unaffected throughout.
+
+## Where that leaves it
+
+Getting a video plane requires changing what the **MIPS bring-up** does — which
+is open item 2, kernel-side panel init, the large port. It is not reachable by
+driving `ge2d_dev.ko`'s plane registers from Linux, and this file should stop
+anyone else spending a session finding that out.
+
+Everything else here stands and is worth keeping: the extraction recipe, the
+struct-offset map, the decoded 22-operation sequence, and the fact that
+plane-init is a runtime-callable function rather than probe-only. If the MIPS
+bring-up is ever ported, that is the sequence to run afterwards.
 2. Replay the full sequence, not fragments of it. The single-register result
    above is the argument against further piecemeal poking.
 3. Read the peer tree's `sunxi_ge2d_firmware.c` alongside step 1 — it has
