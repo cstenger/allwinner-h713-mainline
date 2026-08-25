@@ -306,12 +306,20 @@ asks: `V4L2_MEMORY_FLAG_NON_COHERENT` appears in neither. Enabling the flag
 alone would therefore change nothing measurable, which is why it has not been
 enabled.
 
-**The hardware way out exists and is unwritten.** The vendor device tree has
-`ge2d@5240000`, a 2D engine with colour-space conversion, and mainline 6.18 has
-no driver for it — `drivers/media/platform/sunxi/` carries CSI, deinterlace and
-DE2 rotate, but no GE2D. With one, `v4l2convert` would do this conversion in
-hardware and the CPU path would stop mattering. That is a new driver, not a
-tuning change.
+**~~The hardware way out exists and is unwritten.~~ WRONG — corrected
+2026-08-25.** This paragraph claimed `ge2d@5240000` was "a 2D engine with
+colour-space conversion" and that a driver for it would let `v4l2convert` do
+the work in hardware. It is not a 2D engine: `compatible = "trix,ge2d"`, its reg
+windows are OSD/LVDS/AFBD, and its vendor sources drive the panel, backlight and
+a TI DLP controller. It is the projector's display controller. There is no
+Allwinner G2D on this SoC either, and direct NV12 scanout was implemented and
+refuted on hardware (patch 0065, out of series). The full investigation is in
+[`handoff-2026-08-24-display.md`](handoff-2026-08-24-display.md) under "Hardware
+colour conversion".
+
+**The hardware colour conversion on this board is the GPU**, and it already
+works: `gles-play` sustains 59.71 fps zero-copy with `samplerExternalOES` doing
+YUV→RGB in the texture unit.
 
 **For real-time playback today, do not use the CPU.** mpv at 32 fps and
 `gles-play` at 59.71 both already work.

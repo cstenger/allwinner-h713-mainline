@@ -1176,6 +1176,27 @@ physical addresses to `0x05600070`/`0x05600084` with format 3 and the dirty
 latch, commit. That removes the CPU read (~48 MB/s), the conversion (7.5 ms) and
 the blit (3.8 ms) together.
 
+> **TRIED IT — 2026-08-25. The registers are not in the scanout path.** Kernel
+> patch 0065 implements exactly the above in `sun50i-h713-afbd`. `kmssink`
+> negotiated NV12 (it had refused before) and every value landed in hardware:
+> `0x05600011 = 3`, both strides 1280, `Y = 0x77100000`, `C = 0x771E1000` —
+> `C - Y = 0xE1000`, precisely one 1280x720 luma plane. **The panel did not
+> change**; it kept showing the console. Read back during the same run, the
+> channel-1 block this driver scans out of was untouched: stride `0x1400`
+> (5120 = 1280x4) and source `0x76D00000`, the fbcon framebuffer. The dirty
+> latch read back 0.
+>
+> These registers are DECD's frame-submit file for a **separate video plane**,
+> not a YUV mode of the AFBD channel. Configuring them programs a plane that is
+> not in the active pipeline — which is the question the sequencing note below
+> raised ("whether DECD can feed it at all given its registers are not in the
+> scanout path") and it is now answered: not without opening the plane first,
+> and the plane hunt established that plane-open cannot be poked into a running
+> pipeline. The register semantics recovered from the vendor driver still look
+> right; what is missing is the topology step. Patch 0065 is **out of series**
+> with the full result attached, because on its own it only adds a format that
+> negotiates and then shows nothing.
+
 ### The original attempts (conclusion WRONG, kept as the trail)
 
 The prize was killing the CPU colour conversion (convert 8.7 ms + blit 3.8 ms =

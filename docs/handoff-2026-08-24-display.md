@@ -361,12 +361,10 @@ takeover cost nothing: the `n-threads=4` path gives **1000 rendered, 0 dropped,
 
 ## Open work, in value order
 
-1. **A GE2D driver.** `ge2d@5240000` is in the vendor DT — a 2D engine with
-   colour-space conversion — and mainline 6.18 has no driver
-   (`drivers/media/platform/sunxi/` has CSI, deinterlace, DE2 rotate, no GE2D).
-   With one, `v4l2convert` does the conversion in hardware and the CPU path
-   stops mattering. This is the largest remaining display win and it is a new
-   driver, not tuning.
+1. ~~**A GE2D driver.**~~ **DEAD — the premise was wrong. See
+   "Hardware colour conversion" below.** `ge2d@5240000` is not a 2D engine; it
+   is the projector's display controller, and there is no 2D/CSC block on this
+   SoC to write a driver for. Do not spend a session on this.
 2. **Kernel-side panel init.** The driver still only *adopts* what U-Boot set
    up. A fresh boot without the preboot command has no display. Moving the init
    into the kernel is a large port (MIPS coprocessor, PLL, DE, timings) — the
@@ -382,6 +380,54 @@ takeover cost nothing: the `n-threads=4` path gives **1000 rendered, 0 dropped,
 5. **Zero-copy for stock clients.** mpv needs `--hwdec=vaapi-copy` because the
    AFBD card has no render node; `gstreamer1.0-gl` is not installed and the
    board has no package mirror, so a stock GPU pipeline could not be tested.
+
+## Hardware colour conversion: what is real, 2026-08-25
+
+Investigated because open item 1 proposed a GE2D driver. **That item was built
+on a name.** Three things were established, two of them negative.
+
+**1. `ge2d@5240000` is the display controller, not a 2D engine.** The stock DTB
+gives it `compatible = "trix,ge2d"` — not an Allwinner compatible — and its reg
+windows are OSD, LVDS and `0x5600000`, the AFBD window this KMS driver already
+owns. Its clocks are `clk_afbd`/`clk_bus_disp`; its vendor sources are
+`sunxi_ge2d_panel.c`, `_backlight.c`, `_dlpc3435.c` (a TI DLP projector
+controller), `_osd.c`; its symbols are `tgd_put_plane_info`, `tgd_vblender_irq`,
+`tgd_flip_plane`, `lvds_reset_fifo`. The RE notes call it "the real display
+driver" outright. GE2D on this SoC is a display engine; Amlogic's GE2D is a
+blitter, and the name carried the wrong expectation over.
+
+**2. There is no Allwinner G2D on this SoC either**, which was the obvious next
+hypothesis since H713 is H616-adjacent and H616 genuinely has G2D at
+`0x05410000`. Evidence, in order of weight: the stock kernel binary contains
+**no `g2d` string in any case**, measured against a calibration showing clock
+names *are* readable in it (`bus-uart`, `bus-mmc`, `bus-ve`, `pll-video`,
+`mbus`); `g2d|mixer|rotate|blit` returns **zero** nodes across the whole vendor
+DTB; and the H713 CCU diverges from H616 exactly in this register range —
+`mips_clk` sits at `0x600` and `RST_BUS_MIPS` at `0x60c`, where H616 puts DE and
+G2D. Writing H616's `BUS_G2D` offset on H713 does not stick while a control
+offset does. H713 appears to have spent that part of the die on the MIPS display
+coprocessor. *(One tempting false positive: `# CONFIG_SUNXI_G2D is not set` in
+the vendor defconfig. That symbol comes from Allwinner's BSP tree, which is
+shared across every sunxi SoC; its presence says the option existed to be
+disabled, not that this silicon has the block. `# CONFIG_SUNXI_DI is not set`
+sits beside it for the same reason.)*
+
+**3. Direct NV12 scanout does not work either — tested, not assumed.** The
+vendor does no conversion at all: it decodes into a buffer and hands the
+display the physical addresses. `video-decode.md` recovered the recipe from the
+vendor driver (format selector `0x05600011` row 3, plane strides
+`0x05600040/44`, Y/C addresses `0x05600070/84`, dirty latch `0x0560006c`) and
+recorded it as the target pipeline. Patch **0065** implements it. On hardware
+every register lands correctly — including `C - Y = 0xE1000`, exactly one
+1280x720 luma plane — and **nothing appears**: the channel this driver scans out
+of keeps fetching packed RGB at stride 5120 from `0x05600178`. Those registers
+are DECD's frame-submit file for a *separate video plane*, not a YUV mode of the
+AFBD channel. The patch is out of series with the full result attached.
+
+**So hardware colour conversion on this board is the GPU, and it already
+works** — `gles-play`, 59.71 fps, zero copy, `samplerExternalOES` doing YUV→RGB
+in the texture unit. The remaining gap is not conversion, it is that stock
+clients cannot reach that path (item 5). That is the real target.
 
 ## Board state
 
