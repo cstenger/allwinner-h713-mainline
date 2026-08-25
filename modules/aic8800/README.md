@@ -4,12 +4,12 @@ Out-of-tree kernel modules for the **AIC8800D80** combo chip fitted on the HY200
 boards: **WiFi over SDIO** (`mmc1@0x04021000`) and **Bluetooth over UART HCI**
 (`uart1@2500400`). SDIO transport, not the USB dongle variant.
 
-## Where the source comes from (changed 2026-08-17)
+## Where the source comes from
 
-The driver is **no longer vendored here**. It is fetched and patched by
-`build/build.sh aic8800`, the same way the kernel is:
+**Not here.** The source is the `external/aic8800` submodule, patched by
+`build/build.sh aic8800` the same way the kernel is:
 
-    radxa-pkg/aic8800 @ AIC8800_COMMIT (pinned tarball + SHA-256)
+    external/aic8800 @ AIC8800_COMMIT (submodule, HEAD asserted at build time)
       -> apply the repo's own debian/patches/series   (vendor kernel-compat)
       -> extract src/SDIO/driver_fw/driver/aic8800
       -> apply patches/aic8800/series                 (our H713 series)
@@ -18,22 +18,28 @@ The driver is **no longer vendored here**. It is fetched and patched by
 Pins live in `config/versions.env`; the series and its rationale are in
 [../../patches/aic8800/README.md](../../patches/aic8800/README.md).
 
-**This directory now carries only `firmware.sha256sums`** (the firmware pin) and
-this file. The `aic8800_bsp/`, `aic8800_fdrv/` and `aic8800_btlpm/` source trees
-still physically present here are the **superseded 2024_0109 copy** — nothing
-builds from them any more. They are safe to delete:
+**This directory carries only `firmware.sha256sums`** (the firmware pin) and
+this file.
 
-    rm -rf modules/aic8800/aic8800_{bsp,fdrv,btlpm}
+### The stale copy, and what it cost (removed 2026-08-24)
 
-Kept only so the previous driver stays diffable while the rebase settles.
+`aic8800_bsp/`, `aic8800_fdrv/` and `aic8800_btlpm/` used to sit here holding
+the **superseded 2024_0109 driver**. Nothing had built from them since
+2026-08-17, and this file said so — but a full, plausible-looking driver tree at
+an obvious path outranks a paragraph of prose. On 2026-08-24 it was read as the
+real source while diagnosing a WiFi logging bug, and the two trees had diverged
+enough to matter: the stale copy is missing the
+`rwnx_dbgfs_unregister_rc_stat()` call the shipping driver makes on station
+delete, which produced a confident diagnosis of a bug that does not exist in the
+driver actually running. They were deleted the same day, and the upstream became
+a submodule so there is exactly one readable tree.
 
-### Previous provenance (for the record)
-
-That superseded copy was the GPL SDIO driver from
+For the record, that copy was the GPL SDIO driver from
 `local/allwinner-h713-linux/drivers/wifi/` (well0nez H713 port of the
 Aicsemi/Radxa V5 driver), release `2024_0109_ec460377`, re-ported by hand to
-6.18/arm64. The rebase replaced it with vendor release `2026_0123_5f7be68d` —
-a two-year jump — and folded the hand port into `patches/aic8800/`.
+6.18/arm64. The 2026-08-17 rebase replaced it with vendor release
+`2026_0123_5f7be68d` — a two-year jump — and folded the hand port into
+`patches/aic8800/`. Git history has it if it is ever needed again.
 
 ## Modules (load order)
 

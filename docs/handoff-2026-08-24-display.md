@@ -154,13 +154,22 @@ and the panel ends on `h713-arm64 login:` with `[ OK ]` lines above it —
 operator-confirmed on the glass. The last kernel message of any kind is at
 11.1 s, so nothing pushes the prompt afterwards.
 
-**Watch out for this one when reading the source.** `modules/aic8800/` still
-physically contains a driver tree and **nothing builds from it** — it is the
-superseded 2024_0109 copy, as its own README says. The tree that builds is
-`build/aic8800-<commit>-<digest>/`, extracted from the pinned tarball with
-`patches/aic8800/series` applied. The two differ: the stale copy is missing the
-`rwnx_dbgfs_unregister_rc_stat()` call that the real one makes on station
-delete, which is enough to send you diagnosing a bug that was fixed upstream.
+**This cost a wrong diagnosis, and the layout has since been fixed.** While
+tracking the chatter down, `modules/aic8800/` was read as the driver source. It
+was the superseded 2024_0109 copy that nothing had built from since 2026-08-17 —
+its own README said so, and a full driver tree at an obvious path won anyway.
+The trees had diverged: the stale copy lacks the
+`rwnx_dbgfs_unregister_rc_stat()` call the shipping driver makes on station
+delete, which produced a confident diagnosis of a bug that does not exist in the
+running driver.
+
+Fixed structurally rather than with a warning: the stale copy is deleted,
+upstream is now the **`external/aic8800` submodule** (same repo, same commit —
+the old tarball URL was codeload's endpoint for exactly it), and `build.sh`
+sources from it and asserts its HEAD against `AIC8800_COMMIT`. The rebuilt
+`aic8800_fdrv.ko` is byte-identical to the tarball-built one, so the switch
+changed nothing but where the source lives. There is one readable tree now;
+`build/aic8800-<commit>-<digest>/` remains the patched build artifact.
 
 ### What still limits it
 

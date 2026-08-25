@@ -234,42 +234,51 @@ aic8800_inputs_digest() {
   } | sha256sum | awk '{print $1}'
 }
 
-verify_aic8800_tarball() {
-  printf '%s  %s\n' "$AIC8800_TARBALL_SHA256" "$1" | sha256sum --check --status
+# The submodule replaces a pinned tarball + SHA-256 (removed 2026-08-24). The
+# tarball URL was codeload's tar.gz for this same repo at this same commit, so
+# nothing about the source changed -- `diff -rq` over src/ and debian/ between a
+# checkout and the old tarball is empty. What changed is that the source is now
+# readable at a stable path instead of being a build artifact, which is why the
+# superseded copy under modules/aic8800/ could go.
+#
+# The SHA-256 was the pin, so something has to replace it: the submodule's
+# checked-out commit is asserted against AIC8800_COMMIT here. A submodule left
+# on some other commit -- easy to do by hand, and silent -- would otherwise
+# build a driver that no pin describes.
+verify_aic8800_checkout() {
+  local head
+  [ -d "$1/.git" ] || [ -f "$1/.git" ] || {
+    echo "error: external/aic8800 is not checked out." >&2
+    echo "       run: git submodule update --init external/aic8800" >&2
+    return 1
+  }
+  head=$(git -C "$1" rev-parse HEAD 2>/dev/null) || {
+    echo "error: cannot read HEAD in $1" >&2; return 1; }
+  [ "$head" = "$AIC8800_COMMIT" ] || {
+    echo "error: external/aic8800 is at $head" >&2
+    echo "       versions.env pins  $AIC8800_COMMIT" >&2
+    echo "       run: git submodule update --checkout external/aic8800" >&2
+    return 1
+  }
 }
 
 prepare_aic8800() {
-  local digest tree tarball
+  local digest tree src
   digest=$(aic8800_inputs_digest)
   tree="$ROOT/build/aic8800-${AIC8800_COMMIT:0:12}-$digest"
-  tarball="$CACHE/aic8800-${AIC8800_COMMIT:0:12}.tar.gz"
+  src="$ROOT/external/aic8800"
   if [ -f "$tree/.h713-inputs-$digest" ]; then echo "$tree"; return; fi
   if [ -e "$tree" ]; then
     echo "error: incomplete aic8800 tree exists at $tree; remove it and retry" >&2
     return 1
   fi
 
-  if [ -f "$tarball" ]; then
-    verify_aic8800_tarball "$tarball" || {
-      echo "error: checksum mismatch for $tarball; remove it and retry" >&2
-      return 1
-    }
-  else
-    local partial="$tarball.part"
-    log "fetch aic8800 ${AIC8800_COMMIT:0:12}" >&2
-    curl --fail --location --retry 3 --output "$partial" "$AIC8800_TARBALL_URL"
-    verify_aic8800_tarball "$partial" || {
-      rm -f "$partial"
-      echo "error: downloaded aic8800 tarball failed SHA-256 verification" >&2
-      return 1
-    }
-    mv "$partial" "$tarball"
-  fi
+  verify_aic8800_checkout "$src" || return 1
 
   local tmp; tmp=$(mktemp -d "$ROOT/build/.aic8800.XXXXXX")
-  log "extract + patch aic8800 (vendor series, then ours)" >&2
-  tar -C "$tmp" --strip-components=1 -xf "$tarball" \
-    "aic8800-$AIC8800_COMMIT/src" "aic8800-$AIC8800_COMMIT/debian"
+  log "copy + patch aic8800 (vendor series, then ours)" >&2
+  # Only src/ and debian/ are used, matching what the tarball extraction took.
+  cp -a "$src/src" "$src/debian" "$tmp/"
 
   # Vendor's own kernel-compat series. Failures are only tolerated for the
   # names pinned in AIC8800_VENDOR_PATCH_SKIP; anything else stops the build.

@@ -1,19 +1,26 @@
 # AIC8800 driver patches
 
 The AIC8800 WiFi/BT driver is carried as a **patch series applied to a pinned
-vendor tarball**, the same way the kernel is (see `../kernel/README.md`) rather
-than as a fork. Filenames are prefixed `aic8800-` so a patch is identifiable on
-sight even out of context — these are **not** kernel patches and are never
-applied to the kernel tree.
+upstream checkout**, the same way the kernel is (see `../kernel/README.md`)
+rather than as a fork. Filenames are prefixed `aic8800-` so a patch is
+identifiable on sight even out of context — these are **not** kernel patches and
+are never applied to the kernel tree.
 
 ## Base
 
 | | |
 |---|---|
-| Upstream | `radxa-pkg/aic8800`, commit `df4c783b` |
+| Upstream | `external/aic8800` submodule, `radxa-pkg/aic8800` at `df4c783b` |
 | Vendor driver release | `2026_0123_5f7be68d` |
 | Subtree used | `src/SDIO/driver_fw/driver/aic8800` |
 | Applied first | the repo's own `debian/patches/series` |
+
+**Where to read the source.** `external/aic8800` — that is the tree the build
+actually consumes. It was a downloaded tarball until 2026-08-24, and before that
+there was also a vendored copy under `modules/aic8800/` that had gone three
+releases stale while still looking authoritative. Both are gone; there is one
+tree now. `build/aic8800-<commit>-<digest>/` is still where the *patched* result
+is materialized, and it remains a build artifact.
 
 **Order matters.** Radxa's `debian/patches` are applied to the *whole* repo
 first (they patch `src/PCIE`, `src/SDIO` and `src/USB` together), and only then

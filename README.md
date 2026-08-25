@@ -35,9 +35,11 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000 in DRAM)
 
 ## Layout
 
-- `external/` — the three firmware components as git submodules pinned to our
-  GitHub forks (curated H713 commit series on top of upstream):
-  `external/u-boot/`, `external/arm-trusted-firmware/`, `external/sunxi-tools/`.
+- `external/` — pinned upstream sources as git submodules. The three firmware
+  components track our GitHub forks (curated H713 commit series on top of
+  upstream): `external/u-boot/`, `external/arm-trusted-firmware/`,
+  `external/sunxi-tools/`. `external/aic8800/` tracks `radxa-pkg/aic8800`
+  unforked, with our changes carried in `patches/aic8800/` instead.
   Fetch them with `git submodule update --init`.
 - `patches/kernel/` — kernel patch series (well0nez H713 drivers + our arm64
   additions), applied to a pinned mainline tag. See
