@@ -106,9 +106,12 @@ Measured from the boot itself: the 1.25 s takeover, its position before
 `Freeing unused kernel memory`, and the 163-line count. Measured separately, by
 the marker test below: that `getty@tty1` no longer wipes. *Not* caught in one
 shot: the composite — a `/dev/vcs1` dump taken minutes after that boot showed
-only WiFi spam, because the boot log had already scrolled away (see below). The
-two halves are each verified; nobody has yet watched the whole thing land on the
-glass in one boot.
+only WiFi spam, because the boot log had already scrolled away (see below).
+
+**The composite was closed by eye, not by instrument.** The operator watched a
+boot and saw the systemd `[ OK ]` lines scroll past on the panel. That is the
+one part `/dev/vcs1` could not answer after the fact, because by the time
+anything could be dumped the evidence had already scrolled.
 
 The getty half was proven **without a reboot**, which is the reusable trick
 here: write a marker to `/dev/tty1`, `systemctl restart getty@tty1`, then read
@@ -178,29 +181,72 @@ driver's own probe, and before fbcon the VC is dummycon-sized (80x25), so only
 the last ~25 rows get painted at the switch. Earlier lines would need
 `earlycon`-style scanout, which nothing here provides.
 
-Two smaller leftovers, neither hiding the prompt:
+One smaller leftover, not hiding the prompt: **`get_txpwr_max:txpwr_max:18` /
+`change_if:`**, 8 lines between 6.4 s and 8.6 s. Also bare `printk()`, but a
+one-time init burst rather than a repeating one, so it lands in the boot log
+where it belongs.
 
-- **`get_txpwr_max:txpwr_max:18` / `change_if:`**, 8 lines between 6.4 s and
-  8.6 s. Also bare `printk()`, but a one-time init burst rather than a repeating
-  one, so it lands in the boot log where it belongs. Same treatment would work
-  if it ever becomes annoying.
-- **A debugfs collision on rapid re-association**, which is a real driver bug
-  and was *not* fixed here:
-  ```
-  debugfs: '68:ef:dc:2f:c3:95' already exists in 'rc'
-  aicwf_sdio mmc1:6721:1: Error while (un)registering debug entry for sta 2
-  ```
-  Register and unregister are the *same* function — both call
-  `_rwnx_dbgfs_rc_stat_write(&rwnx_hw->debugfs, sta->sta_idx)` — and
-  `rwnx_rc_stat_work()` decides which one it meant by testing whether
-  `dir_sta[sta_idx]` is NULL. That toggle is resolved on a workqueue, so a
-  station that leaves as index 1 and returns as index 2 within ~26 ms can hit
-  the create before the remove has run, and the MAC-named directory is still
-  there. These are `dev_err`/`pr_err`, deliberately left audible: they report a
-  genuine fault, and silencing them would be the wrong fix. Fixing it means
-  making register/unregister explicit instead of a deferred toggle — a
-  concurrency change in vendor WiFi teardown code, which does not belong in a
-  logging patch.
+## The debugfs errors — fixed, after a wrong diagnosis worth recording
+
+These survived patch 0007 and kept pushing the prompt up the panel, two lines
+per re-association:
+
+```
+debugfs: '08:5b:d6:d9:c2:13' already exists in 'rc'
+aicwf_sdio mmc1:6721:1: Error while (un)registering debug entry for sta 7
+```
+
+**The cause is a `#ifdef` on a macro that does not exist.** The register and
+unregister calls are guarded differently:
+
+```c
+#ifdef CONFIG_DEBUG_FS           /* defined — the kernel has debugfs */
+        rwnx_dbgfs_register_rc_stat(rwnx_hw, sta);
+
+#ifdef CONFIG_DEBUG_FS_AIC       /* defined NOWHERE */
+            rwnx_dbgfs_unregister_rc_stat(rwnx_hw, cur);
+```
+
+`CONFIG_DEBUG_FS_AIC` appears in no Makefile, no header and no kernel config.
+Both AP-mode station-delete paths use it, so in AP mode the register compiles in
+and the unregister compiles out. The MAC-named directory is created on first
+association and never removed; every later association with that MAC collides.
+The TDLS unregister a thousand lines away uses plain `CONFIG_DEBUG_FS`, which is
+what marks this as a typo rather than a decision. Patch **0009** is two
+characters of real change.
+
+**The wrong diagnosis, because the shape of it will recur.** This was first
+diagnosed as a workqueue race: register and unregister *are* the same function,
+`rwnx_rc_stat_work()` *does* infer intent from whether `dir_sta[sta_idx]` is
+NULL when it runs, and that really is fragile. A patch was written, built,
+installed and booted on that theory — and the errors came back completely
+unchanged, 6 for 6. The mechanism was read carefully and the one question never
+asked was whether the code was compiled in at all. **A plausible mechanism is
+not evidence that it is the mechanism in play.** What settled it in a minute,
+after the theory had cost an hour, was looking at the filesystem instead of the
+source: one directory under `rc/`, timestamped at boot, unchanged across ten
+re-associations. Nothing was removing it, so nothing could be racing.
+
+Patch **0008** is what came out of the wrong theory and is kept, with its claims
+corrected: the one-entry-per-run queue drop is real (`schedule_work()` is a
+no-op while a work is pending, so entries were silently dropped), and it also
+fixes an out-of-bounds write — `dir_sta[]` and `rc_config[]` were sized
+`NX_REMOTE_STA_MAX` (32) while the index is validated against
+`NX_REMOTE_STA_MAX + NX_VIRT_DEV_MAX` (36) and the `bc_mc` pseudo-stations sit
+above 32. 0009 turns the unregister path on and doubles the traffic through that
+queue, so both had to be fixed alongside it rather than left latent.
+
+**Verified on hardware**, same test before and after — ten forced
+re-associations driven from the serial console so the WiFi link was not the
+lifeline:
+
+| | before | after |
+| --- | --- | --- |
+| `debugfs`/`debug entry` error lines | 12 | **0** |
+| `WARN`s | 0 | 0 |
+| `rc/<mac>` directory ctime across a cycle | unchanged since boot | **advances** — removed and recreated |
+
+The ctime check is the one that proves the fix rather than merely the silence.
 
 ### The card renumbered: `card1` → `card0`
 
@@ -282,19 +328,15 @@ takeover cost nothing: the `n-threads=4` path gives **1000 rendered, 0 dropped,
    up. A fresh boot without the preboot command has no display. Moving the init
    into the kernel is a large port (MIPS coprocessor, PLL, DE, timings) — the
    U-Boot implementation in `arch/arm/mach-sunxi/h713_mips.c` is the reference.
-3. **The aic8800 debugfs re-association race** (details above). A real bug,
-   deliberately left audible rather than silenced. It costs two error lines per
-   rapid re-association and fixes as making register/unregister explicit instead
-   of a workqueue toggle.
-4. **U-Boot is not reflashed.** The board gets the preboot behaviour from its
+3. **U-Boot is not reflashed.** The board gets the preboot behaviour from its
    *saved environment*; the defconfig change is built but unflashed, so a
    bootloader reflash or an env wipe reverts it. `build/out/u-boot-sunxi-with-spl-ddr3.bin`
    carries it. Flashing the bootloader is the riskiest write available — decide
    deliberately.
-5. **Cached decoder buffers: a dead end today.** `cedrus` does not set
+4. **Cached decoder buffers: a dead end today.** `cedrus` does not set
    `allow_cache_hints`, and neither GStreamer allocator passes
    `V4L2_MEMORY_FLAG_NON_COHERENT`, so enabling it changes nothing measurable.
-6. **Zero-copy for stock clients.** mpv needs `--hwdec=vaapi-copy` because the
+5. **Zero-copy for stock clients.** mpv needs `--hwdec=vaapi-copy` because the
    AFBD card has no render node; `gstreamer1.0-gl` is not installed and the
    board has no package mirror, so a stock GPU pipeline could not be tested.
 
