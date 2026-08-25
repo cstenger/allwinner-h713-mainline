@@ -103,14 +103,55 @@ This is a hypothesis derived from a value comparison. It is not established.
 - **Whether opening a plane is sufficient** to then feed it from cedrus. That
   was always the third of the "three stacked unknowns" and remains untouched.
 
+## The bit-31 test: NEGATIVE, 2026-08-25
+
+Run on hardware, on the running U-Boot-initialised pipeline. Cost: one register
+write, fully reversed afterwards.
+
+```
+write 0x83001901 -> 0x05600140      (live value 0x03001901, bit 31 added)
+readback immediate : 0x83001901
+readback after 1s  : 0x83001901
+readback after 4s  : 0x83001901
+changed registers  : 0x05600140 only
+```
+
+Snapshot covered `0x05600100`–`0x05600178` (both AFBD channel blocks) and the
+OSD blocks `0x05248000`/`0x0524c000` including their `+0x1c` status words.
+
+**Bit 31 is sticky, not a trigger.** It does not self-clear, which is what a
+commit/update-enable bit would do. Nothing else latched.
+
+Second half of the test: with bit 31 still set, a normal page flip was issued
+(the driver's commit path is read-modify-write, `CTRL |= 1` then `READY = 1`,
+so the flip carries bit 31). Result: `rc=0`, **no register changed**, no
+`flip_done` timeouts, no driver errors. Restored to `0x03001901` afterwards and
+the display path re-verified with a BGRx commit.
+
+**So the cheap hypothesis is dead.** Setting the ctrl bit the vendor sets, on
+its own, does not open a plane.
+
+What this does *not* rule out: that bit 31 is meaningful *within* the full
+sequence. The vendor writes it as the first of 22 operations, and the ones that
+follow — nine writes to the `0x0524c000` OSD block, a read-modify-write triple
+against LVDS `0x051c006c`, and the `0x80fc0208` write — are untested. A bit
+that gates a later write would look exactly like this in isolation.
+
+The value of the test is that it cost one write to learn the plane does not
+open on the ctrl bit alone, before anyone built a 22-register sequence on that
+assumption.
+
 ## Next
 
 1. Resolve the struct-offset → MMIO map from `ge2d_drv_probe`, giving an exact
-   address/value/mask list.
-2. Test the cheap half of the hypothesis first: write `0x05600140` with bit 31
-   set on the running pipeline and see whether anything latches that did not
-   before. One register, immediately reversible.
-3. Only then consider the full sequence.
+   address/value/mask list. Without it the remaining 21 operations cannot be
+   replayed in the right order to the right registers, and order is now the
+   most likely place the effect lives.
+2. Replay the full sequence, not fragments of it. The single-register result
+   above is the argument against further piecemeal poking.
+3. Read the peer tree's `sunxi_ge2d_firmware.c` alongside step 1 — it has
+   partial decodes of the same OSD registers (`0x0524c004` v_active,
+   `0x0524c010` htotal+hsync, `0x0524c014` timing).
 
 The peer tree's `sunxi_ge2d_firmware.c` has partial decodes of the same
 territory (`0x05600140` dual-port bit, `0x0524c010` htotal+hsync,
