@@ -350,3 +350,58 @@ The peer tree's `sunxi_ge2d_firmware.c` has partial decodes of the same
 territory (`0x05600140` dual-port bit, `0x0524c010` htotal+hsync,
 `0x0524c004` OSD v_active, `0x0524c014` OSD timing) and is worth reading
 alongside step 1 rather than after it.
+
+## What would it take to make the MIPS do it? — answered 2026-08-25
+
+The topology is not authored by MIPS code. **U-Boot programs it**, on the ARM
+side, by replaying `LogoRegData.bin` before releasing the coprocessor. That file
+is indexed: 13 project descriptors of 0x18 bytes from offset 0x10, each
+selecting a *consistent triple* — prologue variant (3 exist), timing variant
+(11), and **DE/mixer variant (8)**. Stock's order is prologue, timing, LVDS FIFO
+reset, mixer write, DE table, clocks/INCAP/LVDS, coprocessor release, LVDS
+finalise.
+
+That made the question tractable, because if any DE variant configured a second
+plane this would be a **table selection**, not a port. Records are
+`{addr, val, mask, type}` u32 with 4-byte resync. Parsing every block:
+
+```
+block            recs   ch0   ch1  OSD0  OSD1
+DE variant 0       55     0    13     0    14
+DE variant 1       55     0    13     0    14
+   ... variants 2-5 identical ...
+DE variant 6       56     0    13     0    14
+DE variant 7       56     0    13     0    14
+
+ANY record anywhere touching ch0:  NONE
+ANY record anywhere touching OSD0: NONE
+```
+
+**Not one record in the file touches channel 0 or OSD plane 0** — across all 8
+DE variants, all 3 prologues and all 11 timing variants. Every shipped
+configuration programs exactly one plane: ch1 (13 records) and OSD1 (14).
+
+### So there is no configuration that gives a second plane
+
+Not by selecting a different project, not by mixing tables. The vendor's own
+bootloader data never opens one, on any variant, for any product in this family.
+
+That also resolves the apparent contradiction with stock Android running
+`ge2d_dev.ko`: the plane-0/plane-1 duality in that driver is **generic vendor
+code**, and this product only ever uses plane 1. Our board's state — plane 1
+open, plane 0 closed — is most likely stock's steady state too, not a
+regression from it.
+
+### What it would actually take
+
+Authoring DE/mixer programming the vendor never ships: working out the layer
+topology of an undocumented display engine well enough to add a second layer
+from scratch, and applying it at bring-up before scanout starts. There is no
+example to copy — which is the difference between a port and original bring-up
+work on undocumented hardware.
+
+**Recommendation: stop here.** The remaining payoff was never throughput — the
+GPU path already sustains 59.71 fps against a ~58.9 fps vsync ceiling. It was
+freeing the GPU and fixing stock clients, and stock clients are reachable far
+more cheaply through the GPU path (open item 5). This thread is closed on
+evidence, not fatigue.
