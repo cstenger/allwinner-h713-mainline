@@ -26,6 +26,8 @@ is materialized, and it remains a build artifact.
 first (they patch `src/PCIE`, `src/SDIO` and `src/USB` together), and only then
 is the SDIO subtree extracted and this series applied on top.
 
+**0005 is deliberately not in `series`.** `aic8800-0005-D80-card-side-SDIO-iopad-controls.patch` sits in this directory unapplied. It configured the card-side SDIO iopad drive/pull registers, and it was superseded by the mmc1 work that landed in the kernel series instead (the SDIO link runs stock 4-bit SDR104/50 MHz with the driver-side compensations removed). It is kept for the record rather than deleted, the same way the kernel series keeps patches with negative results attached. The numbering gap between 0004 and 0006 is this, not a missing file.
+
 Two of Radxa's patches do not apply at this commit and that is expected:
 `fix-usb-firmware-path` (USB only, zero SDIO hunks) and
 `fix-Lower-the-debugging-log-level` (already merged upstream — `patch` reports
