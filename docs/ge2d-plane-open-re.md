@@ -687,3 +687,29 @@ pre-existing defconfig change. The register table above is the artifact worth
 keeping — if `display.bin` is ever replaced or its VBlender programming
 understood, that is the sequence to apply, and it is now known to survive
 bring-up when applied at this point.
+
+
+---
+
+## SUPERSEDED FRAMING — read this before acting on anything above
+
+Everything above investigates "why can we not open a second plane". Late on
+2026-08-25 that framing was shown to be wrong.
+
+The vendor's `panel_config.ini` (beside the MIPS firmware) says
+`PanelDualPort = 0`, with `PanelODDDataCurrent`/`PanelEvenDataCurrent` present —
+odd/even LVDS lanes. The peer project decodes `0x05600140` as carrying a
+`dual_port` bit. **AFBD "channel 0" and "channel 1" are most likely the odd and
+even LVDS ports, not compositing layers.**
+
+Confirmed in hardware: the operator drove this panel from a Geekworm
+HDMI-to-LVDS board as **1-port LVDS**. And all 8 DE variants carry identical
+`ctrl=0x03001901` / `global=0x80000020` across every resolution — port config
+never varies.
+
+So channel 0 is unused hardware on a single-port panel. The register-level work
+above is still accurate and worth keeping; its *conclusion* — that something
+mysterious refuses to service a configured plane — has a mundane answer. The
+goal is a **serviced YUV fetch route on the one working channel**, not a second
+plane. See `plane-brief-for-external-review.md` section 10 and
+`handoff-2026-08-25.md`.
