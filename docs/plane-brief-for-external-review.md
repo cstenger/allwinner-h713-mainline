@@ -276,3 +276,55 @@ This is the section we most want reviewed.
 - The panel is brought up by U-Boot; Linux cannot re-initialise it, so a broken
   display needs a reboot.
 - We have full stock firmware, both eMMC images, and can boot vendor Android.
+
+---
+
+## 10. LATE AND POSSIBLY DECISIVE: the two "planes" may be LVDS ports
+
+Added after the brief was written, prompted by the operator noting the panel is
+LVDS. The vendor's own `panel_config.ini`, shipped beside the MIPS firmware and
+never previously read:
+
+```
+ProjectID       = 52
+PanelWidth      = 1280      PanelHeight = 720
+PanelDualPort   =   0       <-- single-port LVDS
+OddEven         =   0
+PanelODDDataCurrent  = 7    <-- odd/even lane drive strengths exist
+PanelEvenDataCurrent = 7
+PanelHTotal = 1360   PanelVTotal = 760   PanelDCLK = 62000000
+```
+
+Independently, the peer project's `LogoRegData` parser decodes `0x05600140`
+— the AFBD channel-1 control register — as carrying a **`dual_port` bit**.
+
+**Hypothesis: AFBD "channel 0" and "channel 1" are the odd and even LVDS
+ports, not two compositing layers.** If so, channel 0 is unused *hardware* on a
+single-port panel, and no amount of configuration will ever make it serviced.
+
+This fits every negative result in this investigation, with nothing left over:
+
+| observation | explained by |
+| --- | --- |
+| ch0 READY latch never consumed, ch1's consumed every vsync | no second port is clocked |
+| no `LogoRegData` variant touches ch0/OSD0 | no shipped panel here is dual-port |
+| per-plane LVDS register pairs (`0x051c0060`/`006c`, `0x051c0180`/`019c`) | one set per LVDS port |
+| mixer window pairs holding *identical* full-screen geometry | one per port, both fed the same frame |
+| configuring ch0 correctly at bring-up still inert | the port does not physically exist in this build |
+
+It also reframes the goal. If there is only ever one scanout channel, the
+question was never "how do we open a second plane" but **"how do we make the one
+channel fetch YUV"** — which is the reviewer's point 5 arrived at from a
+different direction, and much more strongly.
+
+**Cheapest tests of this hypothesis:**
+
+1. Decode the `dual_port` bit in `0x05600140` (live value `0x03001901`) and see
+   whether toggling it changes what channel 0 does. One register.
+2. Check whether any of the 8 DE variants in `LogoRegData.bin` sets that bit —
+   if some do, those are the dual-port panels, and the variants that set it
+   should *also* be the only ones touching ch0. If that correlation holds, the
+   hypothesis is confirmed from the file alone, with no hardware.
+3. Look for a `PanelDualPort = 1` product in the 13 `ProjectID_*.TSE` sets.
+
+Test 2 is free and needs no board. **Do it before anything else in section 7.**
