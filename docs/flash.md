@@ -342,7 +342,28 @@ Two of the symptoms once cited here have since been explained and should not be
 read as evidence about the handoff (2026-07-29): the `usb_bulk_recv() ERROR -8:
 Overflow` was an undersized bulk IN buffer, now fixed; and the
 `usb_bulk_send() ERROR -7` timeouts came from the raw-write hazard above.
-**This gap has not been retested since those fixes landed** — do that first
+**RETESTED 2026-08-25, after those fixes: the gap persists.** `sunxi-fel uboot
+build/out/u-boot-sunxi-with-spl-ddr3.bin` returns rc=0 — the transfer itself is
+clean now — and the serial console shows the SPL reaching exactly the same
+place and stopping:
+
+```
+U-Boot SPL 2026.07-rc5-g7b178056c329-dirty (Aug 24 2026 - 15:37:16 -0700)
+DRAM: 1024 MiB
+Trying to boot from FEL
+```
+
+U-Boot proper never starts. Afterwards the board still enumerates as
+`1f3a:efe8` but **the FEL protocol stops responding** (`sunxi-fel version`
+returns nothing), so the SPL is holding the USB while waiting for a
+continuation that never arrives — recovery is a power cycle, not another FEL
+command.
+
+So the transport fixes were necessary but not sufficient: this is the
+`fel_stash` continuation path, as suspected, and it is a real bug rather than
+an artifact of the old raw-write hazard. **The practical consequence is that
+U-Boot code changes cannot be tested without flashing the bootloader**, which
+matters for any experiment needing modified bring-up. Use the restore SPL below
 before investigating `fel_stash`, because the transfer half of the problem may
 already be gone. U-Boot proper also lands in DRAM, which is its own unresolved
 issue on this board.
