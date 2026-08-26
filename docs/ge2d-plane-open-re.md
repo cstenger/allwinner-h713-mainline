@@ -512,8 +512,26 @@ write in the project off the table.
 dwells, long enough that a steady change would be as visible as a transient,
 with the operator watching: no flash, no change, either cycle. Layer 0 is inert.
 
-*(An unexplained flash reported mid-session was traced to the verify step used
-throughout this page — `videotestsrc num-buffers=1 ! kmssink` puts a single
-frame on the panel and exits, which on an idle login prompt looks like a flash.
-Use a register read to check the display path instead; it answers the same
-question without writing to the screen.)*
+### The flash, and a process note
+
+An unexplained flash was reported mid-session, with the operator specifying it
+happened while the Linux prompt was already up — **not** during the U-Boot to
+Linux transition, which rules out the bring-up flash.
+
+It was the verify step used throughout this page: `videotestsrc num-buffers=1
+! kmssink` puts a single frame on the panel and exits, and on an idle login
+prompt that reads as a flash. **Confirmed by controlled re-run**, not by
+assumption: 8 s of steady panel, one frame at 19:46:39, 6 s steady, a second
+frame at 19:46:45 — operator reported exactly two flashes.
+
+Check the display path with a register read instead. It answers the same
+question without writing to the screen.
+
+**The process note is the more useful part.** That explanation was first
+written into this document as "traced to", before any test had been run. It
+happened to be right. Had it been wrong it would have sent the next reader
+chasing a phantom, in a document whose whole value is separating what was
+measured from what was assumed. The same slip appears twice earlier on this
+page — bit 31 called a commit enable on a value comparison, and the mixer pairs
+called layer slots before they were toggled. Both were labelled as inference at
+the time; this one was not.
