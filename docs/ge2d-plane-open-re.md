@@ -507,3 +507,13 @@ point, which means building a modified U-Boot.
 That does **not** require flashing the bootloader: FEL-booting a modified
 U-Boot tests it without touching the flashed one, which keeps the riskiest
 write in the project off the table.
+
+**Confirmed under observation.** The mixer bit was re-toggled with 15-second
+dwells, long enough that a steady change would be as visible as a transient,
+with the operator watching: no flash, no change, either cycle. Layer 0 is inert.
+
+*(An unexplained flash reported mid-session was traced to the verify step used
+throughout this page — `videotestsrc num-buffers=1 ! kmssink` puts a single
+frame on the panel and exits, which on an idle login prompt looks like a flash.
+Use a register read to check the display path instead; it answers the same
+question without writing to the screen.)*
