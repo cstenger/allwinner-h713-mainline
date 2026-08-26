@@ -175,10 +175,67 @@ so the restore logic is sound. It is out of series anyway: on this result it
 would leave a format that negotiates and then displays garbage, which is a
 worse trap for the next person than no NV12 support at all.
 
+=======================================================================
+ADDENDUM 2026-08-25: `fmt` param, and why "do not run a fourth variant"
+above is WITHDRAWN.
+=======================================================================
+
+An external agent review rejected the closure above and was right. The refusal
+to permute further rested on "the register space is now covered", which is
+false. Two things settle it:
+
+  * 0x05600320 = 0x4C7ED000 and 0x05600324 = 0x4CDEA000 -- a live, non-zero
+    address pair in this very window that neither this patch nor the driver
+    ever writes, with what looks like queue slots at 0x300-0x31c.
+
+  * dec_reg_video_channel_attr_config() in patch 0013 is the ONLY writer of
+    afbd+17 (= 0x011) in the whole reconstructed vendor driver, and it never
+    writes the selector alone:
+
+        writeb(b16 | 0x10,  base + 16);
+        writeb(6,           base + 17);
+        writeb((b19 & 0x78) | 3 | ((val & 1) << 7), base + 19);
+        writel(2 * cfg[2],  base + 64);     /* stride = 2 * width */
+
+    surrounded by dec_reg_mux_select() -- a 2-bit MUX at workaround+8, written
+    into bits [1:0] and [5:4] -- plus dec_reg_top_enable() and dec_reg_enable().
+    This patch calls none of them and does not map the top or workaround
+    windows at all.
+
+So the photograph proves the fetch was linear 32-bit under THIS recipe. It does
+not prove why, and the claim above that it proves the UI-channel inference
+asserts a cause for a null result. Correctly scoped: direct NV12 does not work
+through the tested AFBD_SRC recipe; whether another configuration does is open.
+
+Checked while there and NOT the blocker: bytes 0x10 and 0x13 were already in the
+uncompressed configuration (live 0x10 and 0x03), matching what the vendor's
+uncompressed branch sets.
+
+WHAT THE `fmt` PARAM IS FOR. The selector row is now sweepable live at
+/sys/module/sun50i_h713_afbd/parameters/fmt; the selector is rewritten whenever
+it changes, and the one-shot dump re-arms so each step gets its own line. The
+dump also reports bytes 0x10 and 0x13 now, so a sweep records its own companion
+state instead of needing a separate devmem pass.
+
+Sweep 0, 1, 2, 4, 6, 7 against the default 3. Rows 0-3 are the four bpp_class-8
+entries of fmt_attr_tbl (format_ids 6, 4, 2, 0) and NOTHING distinguishes
+semi-planar from planar among them -- "8-bit NV12 is row 3" only ever rested on
+elimination. Rows 4-7 are bpp_class 10, so pair those with chan_stride=2560,
+since the vendor writes 2*width for them.
+
+One thing the review had backwards, recorded so it is not re-litigated: the
+selector IS a row index, so 3 was a defensible value. Vendor mode 1 is
+format_id 1, which lives at row 6, and it writes 6; mode 20 is format_id 20, at
+row 7, and it writes 7. Value equals row index both times. The vocabulary the
+vendor is observed to emit is {1, 6, 7}.
+
+Compile-tested (ARCH=arm64 LLVM=1, clean); all three params confirmed in the
+built object. The fmt sweep has NOT been run on hardware.
+
 ---
 --- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
 +++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
-@@ -67,9 +67,49 @@
+@@ -67,9 +67,69 @@
  #define AFBD_STRIDE		0x170	/* bytes per line */
  #define AFBD_SRC		0x178	/* source physical address */
  
@@ -225,19 +282,40 @@ worse trap for the next person than no NV12 support at all.
 +MODULE_PARM_DESC(chan_stride,
 +		 "NV12: override the channel stride in bytes (default 0 = use the luma pitch)");
 +
++/*
++ * The selector row to write. Default 3 is where "8-bit NV12" was placed by
++ * elimination, and elimination is all it ever rested on: rows 0-3 are the four
++ * bpp_class-8 entries of fmt_attr_tbl (format_ids 6, 4, 2, 0) and nothing
++ * distinguishes semi-planar from planar among them. Worth sweeping.
++ *
++ * That the selector takes a ROW INDEX rather than a format_id is settled by the
++ * vendor's own dec_reg_video_channel_attr_config(): mode 1 is format_id 1, which
++ * lives at row 6, and it writes 6; mode 20 is format_id 20, at row 7, and it
++ * writes 7. Value equals row index both times.
++ *
++ * The vocabulary the vendor is actually observed to emit is {1, 6, 7}. Rows 4-7
++ * are the bpp_class-10 entries, so a sweep that reaches them should expect the
++ * fetch to want 2 bytes per sample -- pair those with chan_stride=2560.
++ */
++static int fmt = AFBD_FMT_NV12;
++module_param(fmt, int, 0644);
++MODULE_PARM_DESC(fmt,
++		 "NV12: fmt_attr_tbl row to write to the selector at 0x011 (default 3; 8-bit rows are 0-3, 10-bit are 4-7)");
++
  struct h713_afbd {
  	struct drm_device drm;
  	struct drm_simple_display_pipe pipe;
-@@ -79,6 +119,8 @@
+@@ -79,6 +139,9 @@
  	struct clk *clk_bus;
  	struct drm_display_mode mode;
  	unsigned int stride;
 +	u32 format;		/* last DRM fourcc programmed */
-+	bool logged;		/* NV12 readback dumped once */
++	u8 sel;			/* last selector byte written to 0x011 */
++	bool logged;		/* NV12 readback dumped once per selector */
  };
  
  static inline struct h713_afbd *to_h713(struct drm_device *drm)
-@@ -87,28 +129,140 @@
+@@ -87,28 +150,150 @@
  }
  
  /*
@@ -305,11 +383,18 @@ worse trap for the next person than no NV12 support at all.
 +	dma_addr_t c = drm_fb_dma_get_gem_addr(fb, state, 1);
 +	unsigned int stride = chan_stride ? chan_stride : fb->pitches[0];
 +
-+	if (h->format != DRM_FORMAT_NV12) {
-+		writeb(AFBD_FMT_NV12, h->regs + AFBD_FORMAT);
++	/*
++	 * Rewrite the selector when entering NV12 *or* when fmt was changed
++	 * live, so a sweep costs a sysfs write rather than a rebuild.
++	 */
++	if (h->format != DRM_FORMAT_NV12 || h->sel != (u8)fmt) {
++		writeb((u8)fmt, h->regs + AFBD_FORMAT);
++		h->sel = (u8)fmt;
 +		h->format = DRM_FORMAT_NV12;
 +		/* Force the RGB stride to be rewritten on the way back. */
 +		h->stride = 0;
++		/* Re-arm the dump so every sweep step gets its own line. */
++		h->logged = false;
 +	}
 +
 +	writel(fb->pitches[0], h->regs + AFBD_PLANE_STRIDE0);
@@ -332,8 +417,10 @@ worse trap for the next person than no NV12 support at all.
 +	if (!h->logged) {
 +		h->logged = true;
 +		drm_info(&h->drm,
-+			 "NV12 union: fmt=%02x pstride=%u/%u Y=%08x C=%08x chan_src=%d stride=%u src=%08x dirty=%u\n",
-+			 readb(h->regs + AFBD_FORMAT),
++			 "NV12 union: fmt=%02x (asked %d) b10=%02x b13=%02x pstride=%u/%u Y=%08x C=%08x chan_src=%d stride=%u src=%08x dirty=%u\n",
++			 readb(h->regs + AFBD_FORMAT), fmt,
++			 readb(h->regs + AFBD_FORMAT - 1),
++			 readb(h->regs + AFBD_FORMAT + 2),
 +			 readl(h->regs + AFBD_PLANE_STRIDE0),
 +			 readl(h->regs + AFBD_PLANE_STRIDE1),
 +			 readl(h->regs + AFBD_PLANE_ADDR0),
@@ -359,6 +446,7 @@ worse trap for the next person than no NV12 support at all.
 +
 +	if (h->format != fb->format->format) {
 +		writeb(AFBD_FMT_RGB888, h->regs + AFBD_FORMAT);
++		h->sel = AFBD_FMT_RGB888;
 +		h->format = fb->format->format;
 +	}
 +
@@ -389,7 +477,7 @@ worse trap for the next person than no NV12 support at all.
  }
  
  static void h713_afbd_pipe_enable(struct drm_simple_display_pipe *pipe,
-@@ -122,10 +276,7 @@
+@@ -122,10 +307,7 @@
  	 * buffer the client handed us so the first commit is not a no-op.
  	 */
  	if (plane_state->fb)
@@ -401,7 +489,7 @@ worse trap for the next person than no NV12 support at all.
  
  	drm_crtc_vblank_on(&pipe->crtc);
  }
-@@ -150,9 +301,7 @@
+@@ -150,9 +332,7 @@
  	unsigned long flags;
  
  	if (state->fb)
@@ -412,7 +500,7 @@ worse trap for the next person than no NV12 support at all.
  
  	spin_lock_irqsave(&crtc->dev->event_lock, flags);
  	event = crtc->state->event;
-@@ -256,6 +405,13 @@
+@@ -256,6 +436,13 @@
  static const u32 h713_afbd_formats[] = {
  	DRM_FORMAT_XRGB8888,
  	DRM_FORMAT_ARGB8888,
@@ -426,7 +514,7 @@ worse trap for the next person than no NV12 support at all.
  };
  
  /*
-@@ -280,8 +436,14 @@
+@@ -280,8 +467,15 @@
  	}
  
  	h->stride = readl(h->regs + AFBD_STRIDE);
@@ -437,6 +525,7 @@ worse trap for the next person than no NV12 support at all.
 +	 * commit does not rewrite a selector that is already correct.
 +	 */
 +	h->format = DRM_FORMAT_XRGB8888;
++	h->sel = readb(h->regs + AFBD_FORMAT);
 +	drm_info(drm, "adopting %ux%u, stride %u, source %08x, format %02x\n",
 +		 w, hgt, h->stride, readl(h->regs + AFBD_SRC),
 +		 readb(h->regs + AFBD_FORMAT));
