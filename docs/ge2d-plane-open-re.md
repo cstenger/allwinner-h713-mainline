@@ -22,9 +22,36 @@ Disassemble with `llvm-objdump -d --triple=armv7-none-linux-gnueabi`.
 
 ## Finding 1: plane-init is reachable at runtime
 
+> ### ⚠ CORRECTED 2026-08-25 — this finding was built on a method error
+>
+> External review caught it and hardware-independent re-checking confirms it.
+> The caller analysis below matched only **resolved `bl` targets in the
+> disassembly text**. In an `ET_REL` object, intra-module calls also go through
+> **`R_ARM_CALL` relocations**, which that pass never looked at. So "no
+> intra-module callers" meant "none I searched for".
+>
+> The real picture:
+>
+> ```
+> tgd_init_planesetting  <- init_svp        @ 0x99ac   (probe-time path)
+> tgd_put_plane_info     <- svp_ioctl       @ 0x8ffc   (the actual ioctl path)
+> ```
+>
+> And the module exports only **`AllocateFB`, `FreeFB`, `InitFBManagement`** —
+> none of the `tgd_` functions. So `tgd_init_planesetting` is *not* an exported
+> ioctl entry; it is called from probe-time setup.
+>
+> **What survives:** `ge2d_resume_operation` really does call `init_osd_plane`
+> against live hardware with no reset, so plane configuration is still
+> re-appliable at runtime. **What does not:** the claim that
+> `tgd_init_planesetting` is the runtime entry point. The runtime entry is
+> `svp_ioctl -> tgd_put_plane_info`, and recovering that ioctl's command number
+> and payload is now the most promising vendor-driver experiment — it is the
+> path Android actually uses.
+
 ```
 init_osd_plane.constprop.12  <- ge2d_resume_operation, tgd_init_planesetting
-tgd_init_planesetting        <- no intra-module callers  (exported entry)
+tgd_init_planesetting        <- no intra-module callers  (WRONG -- see above)
 ```
 
 Two independent reasons this is not probe-only work:
