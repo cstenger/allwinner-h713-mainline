@@ -99,6 +99,82 @@ this inherits the same rule.
 Compile-tested only (ARCH=arm64 LLVM=1, clean, no warnings). NOT RUN ON
 HARDWARE at the time of writing.
 
+
+=======================================================================
+RUN ON HARDWARE 2026-08-25. NEGATIVE, AND DECISIVE. NOT IN series.
+=======================================================================
+
+The union works as a test and answers the question against us. Both halves
+were confirmed in hardware simultaneously, live, mid-stream -- which is what
+neither previous attempt could say:
+
+    0x05600010 = 0x03000310    format byte 0x11 = 03, the NV12 row
+    0x05600040 = 0x00000500    luma stride 1280
+    0x05600044 = 0x00000500    chroma stride 1280
+    0x05600070 = 0x77300000    Y plane
+    0x05600084 = 0x773E1000    C plane   (C - Y = 0xE1000, one luma plane)
+    0x05600170 = 0x00000500    channel stride 1280   <-- 0065 never wrote this
+    0x05600178 = 0x77100000    channel source = luma <-- nor this
+    0x05600140 = 0x03001901    ctrl unchanged, READY consumed every vsync
+
+kmssink negotiated NV12 and streamed; the AFBD IRQ advanced throughout.
+
+THE PANEL SHOWED THE 4x REPEAT AGAIN. Photographed in
+local/lcd-photos/test_57/IMG_0728.MOV.
+
+Then the chan_stride sweep, which is what makes this decisive rather than one
+more null. Two settings, and a packed 4-bytes/pixel fetch predicts both
+exactly:
+
+  chan_stride=1280   720 display rows x 1280 bytes = 921600 bytes, which is
+                     the luma plane precisely. So the whole screen is luma:
+                     ALL GREYSCALE, 4x repeat. Observed: greyscale bars,
+                     repeating 4 times.
+
+  chan_stride=5120   Each display row now advances 5120 and consumes 5120, so
+                     the buffer is walked contiguously. Luma (921600 bytes)
+                     fills 921600/5120 = 180 rows; chroma (1280x360 = 460800)
+                     fills 460800/5120 = 90 rows; past that is unrelated
+                     memory. Predicts a luma band over a chroma band in a
+                     STRICT 2:1 HEIGHT RATIO, then white.
+
+                     Observed, measured off the photograph: greyscale band
+                     ~115 px, green/magenta band ~60 px. Ratio 1.9:1 against a
+                     required 2.0:1, hand-held, off-axis. The green/magenta is
+                     interleaved UV read as packed BGRA -- that is what chroma
+                     looks like through an RGB fetch.
+
+So the channel stride at 0x170 IS honoured -- it moved the band boundaries
+exactly where the arithmetic put them -- and the format selector at 0x011 is
+NOT. The fetch stayed 4 bytes/pixel with byte 0x11 reading 03 the whole time,
+and the hardware walked the NV12 buffer LINEARLY, as one packed RGB surface,
+never as two planes. The plane addresses and plane strides changed nothing that
+the channel registers did not already account for.
+
+WHAT THIS SETTLES. The 2026-08-14 inference was right after all: this is a UI
+channel, Allwinner UI channels are RGB-only, and YUV belongs to a VI channel.
+0065's postmortem was wrong to call 0x011/0x040/0x044/0x06c/0x070/0x084 "a
+SEPARATE video plane" -- they are global to the window and they do reach the
+live path -- but its null and yuvtry's null were both, in the end, the same
+fact seen from different sides.
+
+Hardware YUV fetch on this display is not reachable by any register write to
+the AFBD window. It needs the DE/mixer topology that decides channel type, and
+that arrives wholesale from the MIPS firmware's LogoRegData replay. That is the
+M4-scale work the 2026-08-14 note named, and this patch is the third and last
+confirmation that pokes will not substitute for it.
+
+Do not run a fourth variant of this experiment. The register space is now
+covered: format alone (yuvtry), format + plane file (0065), and both plus the
+channel block (here), across two stride regimes. There is nothing left to
+permute.
+
+The RGB path restored itself cleanly when the stream stopped -- format byte
+back to 00, channel back to stride 5120 and the fbcon framebuffer, no oops --
+so the restore logic is sound. It is out of series anyway: on this result it
+would leave a format that negotiates and then displays garbage, which is a
+worse trap for the next person than no NV12 support at all.
+
 ---
 --- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
 +++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c

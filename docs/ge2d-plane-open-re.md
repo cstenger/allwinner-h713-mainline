@@ -713,3 +713,78 @@ mysterious refuses to service a configured plane — has a mundane answer. The
 goal is a **serviced YUV fetch route on the one working channel**, not a second
 plane. See `plane-brief-for-external-review.md` section 10 and
 `handoff-2026-08-25.md`.
+
+---
+
+## THE YUV FETCH QUESTION IS CLOSED — 2026-08-25, negative
+
+The reframed goal above lasted a few hours. Patch 0066 answered it on hardware
+and the answer is no: **there is no register write to the AFBD window that makes
+the live channel fetch YUV.**
+
+### Why the two earlier nulls did not settle it
+
+Each wrote half the register set, and neither could speak for the other.
+
+| | `0x011` fmt | `0x040/44` plane strides | `0x070/084` Y/C addrs | `0x170/178` channel | result |
+| --- | --- | --- | --- | --- | --- |
+| yuvtry, 08-09/12/14 | yes | yes | **no** (read 0) | yes | 4x repeat, greyscale |
+| patch 0065, 08-25 | yes | yes | yes | **no** (skipped) | panel unchanged |
+| **patch 0066, 08-25** | yes | yes | yes | yes | **4x repeat, and the proof** |
+
+0065's postmortem concluded those registers drive "a SEPARATE video plane". That
+was wrong, and the offsets say so: the AFBD channel stride is `0x40`, so channel
+0 begins at `0x100` and channel 1 at `0x140`. Everything at
+`0x011/0x040/0x044/0x06c/0x070/0x084` sits *below* that, in global space common
+to the window, and does reach the live fetch. 0065's null was not evidence about
+YUV — it was evidence that a channel nobody repointed keeps scanning what it
+already had (`0x1400`, `0x76D00000`, the fbcon framebuffer).
+
+### What 0066 established
+
+Both halves confirmed in hardware simultaneously, read back live mid-stream:
+format byte `0x11` = `03`, plane strides 1280/1280, Y = `0x77300000`,
+C = `0x773E1000`, **channel stride `0x500` and channel source on the luma
+plane**, ctrl `0x03001901`, READY consumed every vsync, AFBD IRQ advancing.
+
+The panel showed the 4x repeat again — `local/lcd-photos/test_57/IMG_0728.MOV`.
+
+**The `chan_stride` sweep is what makes it decisive.** A packed 4-bytes/pixel
+fetch predicts both settings exactly:
+
+- **1280** — 720 rows × 1280 B = 921600 B, precisely the luma plane. The whole
+  screen is luma, so *all greyscale*, 4x repeat. Observed exactly that.
+- **5120** — rows now advance and consume 5120, walking the buffer contiguously.
+  Luma fills 921600/5120 = **180 rows**, chroma (1280×360 = 460800 B) fills
+  460800/5120 = **90 rows**, then unrelated memory. Predicts a luma band over a
+  chroma band at a **strict 2:1 height ratio**, then white. Measured off the
+  photograph: **~115 px over ~60 px, i.e. 1.9:1**, hand-held and off-axis. The
+  green/magenta is interleaved UV read as packed BGRA.
+
+So `0x170` **is** honoured — it moved the band boundaries to where the
+arithmetic put them — and `0x011` **is not**. The fetch stayed 4 bytes/pixel
+with the selector reading `03` throughout, and the hardware walked the NV12
+buffer linearly as one packed RGB surface, never as two planes.
+
+### The standing conclusion
+
+The 2026-08-14 inference was right: **this is a UI channel, Allwinner UI
+channels are RGB-only, and YUV belongs to a VI channel.** Recorded then as
+"inference, not proven"; it is now proven, from the opposite direction, by a
+test built to disprove it.
+
+Hardware YUV fetch here needs the DE/mixer topology that decides channel type,
+and that topology arrives wholesale from the MIPS firmware's `LogoRegData`
+replay. Register pokes are not a substitute and never were.
+
+**Do not run a fourth variant.** The space is covered: format alone, format +
+plane file, and both plus the channel block, across two stride regimes. There is
+nothing left to permute. The remaining no-GPU routes are the ones the external
+review listed — snapshot the registers during real Android playback, recover the
+`svp_ioctl` that reaches `tgd_put_plane_info`, or own the DE topology outright —
+and all three are topology work, not this.
+
+**The zero-copy target is unaffected and still close.** The mpv `render_fd`
+patch remains the highest-value next step; it keeps panfrost in the loop for
+YUV→RGB, which this result confirms is the only colour-conversion engine this
+board has.

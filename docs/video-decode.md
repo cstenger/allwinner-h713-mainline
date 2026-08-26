@@ -1237,6 +1237,18 @@ the change needed is to route through a VI channel in the mixer — which means
 owning the DE configuration that currently arrives wholesale from the vendor's
 `LogoRegData` replay. That is M4-scale work, not a poke.
 
+> **PROVEN 2026-08-25, and this inference was correct.** Patch 0066 wrote the
+> format selector, both plane strides, both Y/C plane addresses *and* the
+> channel block's own stride and source in a single commit — the combination
+> neither this attempt nor patch 0065 ever ran — and confirmed all of it in
+> hardware live mid-stream. The 4x repeat came back. Sweeping the channel stride
+> 1280 → 5120 then reproduced a packed 4-bytes/pixel fetch to the pixel: luma
+> over chroma at a measured 1.9:1 against the 2:1 NV12 requires. `0x170` is
+> honoured, `0x011` is inert, and the hardware walks the NV12 buffer linearly as
+> one packed RGB surface. Full account in
+> [ge2d-plane-open-re.md](ge2d-plane-open-re.md) — and do not run a fourth
+> variant, the register space is covered.
+
 **What was established anyway, and is durable:**
 
 - `0x05600011` is a real format selector: it accepts and retains values.
