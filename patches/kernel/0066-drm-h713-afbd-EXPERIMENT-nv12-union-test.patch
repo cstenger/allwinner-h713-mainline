@@ -1,0 +1,369 @@
+From: h713 <h713@local>
+Date: Tue, 25 Aug 2026 21:40:00 -0700
+Subject: [PATCH] drm: h713-afbd: EXPERIMENT: the NV12 union test
+
+Two experiments have attacked hardware YUV fetch on this display and each one
+wrote half of the register set. Neither half worked, and the two nulls were
+read as one conclusion. They are not.
+
+  yuvtry, 2026-08-09/12/14      format selector 0x011 + all three strides +
+                                AFBD_SRC. The Y/C plane addresses at 0x070/0x084
+                                were left reading zero and dismissed at the time
+                                as "a parallel mechanism we do not use".
+                                Result: the fetch honoured the strides and
+                                ignored the format -- the 4x horizontal repeat
+                                is that arithmetic exactly, 1280 bytes per row
+                                consumed as 320 ARGB pixels. Four runs, one
+                                outcome, and explicitly NOT a shadowing or
+                                sequencing problem: the selector read back 3
+                                after the write and after the latch.
+
+  patch 0065, 2026-08-25        format + plane strides + plane addresses +
+                                dirty latch, and deliberately NOT AFBD_STRIDE or
+                                AFBD_SRC, on the stated assumption that
+                                "AFBD_SRC takes a single packed source and is
+                                the RGB path". Result: every global register
+                                landed correctly (Y=0x77100000, C=0x771E1000,
+                                C-Y = 0xE1000 = one 1280x720 luma plane) and the
+                                panel did not change, because the channel block
+                                was still pointed at the fbcon framebuffer --
+                                read back live during the same run as stride
+                                0x1400 and source 0x76D00000.
+
+So 0065's null is not evidence about YUV. It is evidence that a channel which
+was never repointed keeps scanning what it was already scanning. The register
+file it wrote is in AFBD *global* space, below the per-channel blocks: the
+channel stride is 0x40, channel 0 starts at 0x100 and channel 1 at 0x140, so
+0x011/0x040/0x044/0x06c/0x070/0x084 are common to the window and DO apply to
+the live fetch path. 0065's conclusion that they drive "a SEPARATE video plane"
+does not follow from its own data.
+
+THIS PATCH WRITES BOTH HALVES IN ONE COMMIT, which nobody has done: the global
+two-plane descriptor AND the channel block repointed at the luma plane.
+Configure everything, publish with the dirty latch, then arm the channel --
+"configure early, latch late", the same ordering note the external review made
+about the plane experiments.
+
+Two module parameters, because a hardware cycle on this board costs a build, a
+flash, a boot and a photograph, and there are exactly two uncertain axes:
+
+  chan_src=1     (default) write AFBD_STRIDE and AFBD_SRC from the luma plane.
+                 chan_src=0 reproduces patch 0065 byte for byte, which makes
+                 the A/B a module-parameter write rather than a rebuild.
+  chan_stride=N  override the channel stride. Default 0 uses the luma pitch,
+                 which is what yuvtry used. 5120 is worth a sweep: if the fetch
+                 is still packed at 4 bytes/pixel, a correctly-pitched
+                 greyscale distinguishes "wrong pitch" from "format inert".
+
+WHAT THE OUTCOMES MEAN. All three are diagnostic, which is the point.
+
+  correct colour bars     The route exists. Cedrus -> NV12 dma-buf -> display
+                          -> panel with neither CPU nor GPU touching the pixels.
+                          This is the no-GPU target.
+
+  4x repeat / greyscale   The fetch is still packed RGB with both halves
+                          written, so the format selector really is inert on
+                          this channel and the "UI channel, and Allwinner UI
+                          channels are RGB-only, YUV belongs to a VI channel"
+                          reading stands. The route then needs DE/mixer
+                          topology -- which arrives wholesale from the MIPS
+                          firmware's LogoRegData replay -- and not register
+                          pokes. Take the format back out and stop.
+
+  no change at all        Neither half reached the fetch. Suspect the dirty
+                          latch or the ordering before suspecting the
+                          hypothesis; try chan_stride and the dirty-latch
+                          position first.
+
+THE PANEL IS THE VERDICT, NOT THE READBACK. Every one of the yuvtry runs
+reported success at every register step -- format written, strides written,
+latch written, commit OK -- while the glass said otherwise, and the *specific*
+defect in the photograph is what identified the register each time. The
+one-shot drm_info() dump here is for correlating a result, never for calling
+one. Photograph the panel.
+
+RISK. The RGB path is byte-for-byte as it was: the format selector is written
+only on an actual format change, and h->format is seeded at probe from what
+U-Boot leaves running, so an RGB-only session issues exactly the same register
+writes as without this patch. A bad NV12 configuration produces garbage on the
+projector, which a reboot clears -- yuvtry and 0065 both did this and both
+restored cleanly. This driver never touches timing, the LVDS PHY or the display
+reset, so it cannot strand the panel dark.
+
+OUT OF SERIES, like 0054 and the DEBUG patches. Add it to series to run the
+test, and remove it afterwards whatever the answer: on a negative it leaves a
+format that negotiates and then displays nothing, which is a worse trap for the
+next person than no NV12 support at all. That is why 0065 is out of series and
+this inherits the same rule.
+
+Compile-tested only (ARCH=arm64 LLVM=1, clean, no warnings). NOT RUN ON
+HARDWARE at the time of writing.
+
+---
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -67,9 +67,49 @@
+ #define AFBD_STRIDE		0x170	/* bytes per line */
+ #define AFBD_SRC		0x178	/* source physical address */
+ 
++/*
++ * AFBD *global* block, below the per-channel blocks at 0x100/0x140. These are
++ * not channel 0's registers -- the channel stride is 0x40, so channel 0 starts
++ * at 0x100 and everything here is common to the window. That matters, because
++ * it means these apply to the live fetch path rather than to the unserviced
++ * channel.
++ *
++ * Semantics recovered from the vendor's dec_reg_set_address() (base + 0x60,
++ * index 0 at +16 and +36) and dec_reg_set_dirty().
++ */
++#define AFBD_FORMAT		0x011	/* byte: fmt_attr_tbl row index */
++#define AFBD_PLANE_STRIDE0	0x040	/* luma bytes per line */
++#define AFBD_PLANE_STRIDE1	0x044	/* chroma bytes per line */
++#define AFBD_DIRTY		0x06c	/* write 1 to publish the config */
++#define AFBD_PLANE_ADDR0	0x070	/* Y plane physical address */
++#define AFBD_PLANE_ADDR1	0x084	/* C plane physical address */
++
++/*
++ * fmt_attr_tbl row indices, not DEC_FORMAT_* ids. Row 0 is what the live path
++ * U-Boot leaves running reads as; the vendor writes 6 and 7 for 10-bit YUV420
++ * and AV1, which puts 8-bit NV12 at row 3.
++ */
++#define AFBD_FMT_RGB888		0
++#define AFBD_FMT_NV12		3
++
+ #define AFBD_IRQ_VSYNC		BIT(0)
+ #define AFBD_STATUS_DONE	BIT(1)
+ 
++/*
++ * The variable actually under test. See the header comment on
++ * h713_afbd_set_nv12(): with chan_src=1 this is the union of the two previous
++ * experiments; with chan_src=0 it reproduces patch 0065 exactly.
++ */
++static bool chan_src = true;
++module_param(chan_src, bool, 0644);
++MODULE_PARM_DESC(chan_src,
++		 "NV12: also point the channel block (STRIDE/SRC) at the luma plane (default 1; 0 reproduces patch 0065)");
++
++static int chan_stride;
++module_param(chan_stride, int, 0644);
++MODULE_PARM_DESC(chan_stride,
++		 "NV12: override the channel stride in bytes (default 0 = use the luma pitch)");
++
+ struct h713_afbd {
+ 	struct drm_device drm;
+ 	struct drm_simple_display_pipe pipe;
+@@ -79,6 +119,8 @@
+ 	struct clk *clk_bus;
+ 	struct drm_display_mode mode;
+ 	unsigned int stride;
++	u32 format;		/* last DRM fourcc programmed */
++	bool logged;		/* NV12 readback dumped once */
+ };
+ 
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+@@ -87,28 +129,140 @@
+ }
+ 
+ /*
+- * Point AFBD at a buffer and latch it. Identical in order and content to
+- * gles-play's commit path, minus its 50 ms poll for STATUS_DONE: here the
+- * vblank interrupt reports completion, so nothing spins.
++ * Arm the channel commit. Identical in order and content to gles-play's commit
++ * path, minus its 50 ms poll for STATUS_DONE: here the vblank interrupt reports
++ * completion, so nothing spins.
+  */
+-static void h713_afbd_set_source(struct h713_afbd *h, dma_addr_t addr,
+-				 unsigned int stride)
++static void h713_afbd_commit(struct h713_afbd *h)
+ {
+ 	u32 pending;
+ 
++	pending = readl(h->regs + AFBD_STATUS);
++	if (pending)
++		writel(pending, h->regs + AFBD_STATUS);
++
++	writel(readl(h->regs + AFBD_CTRL) | 1u, h->regs + AFBD_CTRL);
++	writel(1, h->regs + AFBD_READY);
++}
++
++/*
++ * THE UNION TEST. Two earlier experiments each wrote half of this and each was
++ * inconclusive for a different reason:
++ *
++ *   yuvtry (2026-08-14)  format + all three strides + AFBD_SRC, but the Y/C
++ *                        plane addresses were left at zero. The fetch honoured
++ *                        the strides -- the "4x horizontal repeat" photograph
++ *                        is that arithmetic, 1280 bytes/row consumed as 320
++ *                        ARGB pixels -- and ignored the format. From that came
++ *                        "this is a UI channel and UI channels are RGB-only".
++ *
++ *   patch 0065 (08-25)   format + plane strides + plane addresses + dirty, but
++ *                        deliberately NOT AFBD_STRIDE/AFBD_SRC, on the stated
++ *                        assumption that "AFBD_SRC is the RGB path". So the
++ *                        channel block still pointed at the fbcon framebuffer
++ *                        (read back live: stride 0x1400, source 0x76D00000) and
++ *                        the panel never changed.
++ *
++ * Nobody has written both halves in one commit. This does: the global two-plane
++ * descriptor AND the channel block repointed at the luma plane. Configure
++ * everything first, publish, then latch -- the review's "configure early, latch
++ * late" note about the plane experiments applies here too.
++ *
++ * Three outcomes, all diagnostic:
++ *
++ *   correct colour bars     the route exists; this is the no-GPU path
++ *   4x repeat / greyscale   fetch is still packed RGB, the format selector is
++ *                           inert on this channel, and the UI-vs-VI channel-type
++ *                           reading stands. Route needs DE topology, not pokes.
++ *   no change at all        neither half reached the fetch; suspect the dirty
++ *                           latch or the ordering, not the hypothesis.
++ *
++ * The panel is the verdict, not the readback. Every one of the yuvtry runs
++ * reported success at every register step while the glass said otherwise.
++ */
++static void h713_afbd_set_nv12(struct h713_afbd *h,
++			       struct drm_plane_state *state)
++{
++	struct drm_framebuffer *fb = state->fb;
++	dma_addr_t y = drm_fb_dma_get_gem_addr(fb, state, 0);
++	dma_addr_t c = drm_fb_dma_get_gem_addr(fb, state, 1);
++	unsigned int stride = chan_stride ? chan_stride : fb->pitches[0];
++
++	if (h->format != DRM_FORMAT_NV12) {
++		writeb(AFBD_FMT_NV12, h->regs + AFBD_FORMAT);
++		h->format = DRM_FORMAT_NV12;
++		/* Force the RGB stride to be rewritten on the way back. */
++		h->stride = 0;
++	}
++
++	writel(fb->pitches[0], h->regs + AFBD_PLANE_STRIDE0);
++	writel(fb->pitches[1], h->regs + AFBD_PLANE_STRIDE1);
++	writel(lower_32_bits(y), h->regs + AFBD_PLANE_ADDR0);
++	writel(lower_32_bits(c), h->regs + AFBD_PLANE_ADDR1);
++
++	/*
++	 * The half patch 0065 left out. Without this the channel keeps
++	 * scanning whatever it scanned before, which is exactly what happened.
++	 */
++	if (chan_src) {
++		writel(stride, h->regs + AFBD_STRIDE);
++		writel(lower_32_bits(y), h->regs + AFBD_SRC);
++		h->stride = stride;
++	}
++
++	writel(1, h->regs + AFBD_DIRTY);
++
++	if (!h->logged) {
++		h->logged = true;
++		drm_info(&h->drm,
++			 "NV12 union: fmt=%02x pstride=%u/%u Y=%08x C=%08x chan_src=%d stride=%u src=%08x dirty=%u\n",
++			 readb(h->regs + AFBD_FORMAT),
++			 readl(h->regs + AFBD_PLANE_STRIDE0),
++			 readl(h->regs + AFBD_PLANE_STRIDE1),
++			 readl(h->regs + AFBD_PLANE_ADDR0),
++			 readl(h->regs + AFBD_PLANE_ADDR1),
++			 chan_src,
++			 readl(h->regs + AFBD_STRIDE),
++			 readl(h->regs + AFBD_SRC),
++			 readl(h->regs + AFBD_DIRTY));
++	}
++}
++
++/*
++ * The packed RGB path, byte-for-byte as it was. The format selector is only
++ * touched when coming back from NV12: U-Boot leaves it on the RGB row and
++ * h->format is seeded at probe to match, so an RGB-only session issues exactly
++ * the same register writes as before this patch.
++ */
++static void h713_afbd_set_rgb(struct h713_afbd *h,
++			      struct drm_plane_state *state)
++{
++	struct drm_framebuffer *fb = state->fb;
++	unsigned int stride = fb->pitches[0];
++
++	if (h->format != fb->format->format) {
++		writeb(AFBD_FMT_RGB888, h->regs + AFBD_FORMAT);
++		h->format = fb->format->format;
++	}
++
+ 	if (stride != h->stride) {
+ 		writel(stride, h->regs + AFBD_STRIDE);
+ 		h->stride = stride;
+ 	}
+ 
+-	writel(lower_32_bits(addr), h->regs + AFBD_SRC);
++	writel(lower_32_bits(drm_fb_dma_get_gem_addr(fb, state, 0)),
++	       h->regs + AFBD_SRC);
++}
+ 
+-	pending = readl(h->regs + AFBD_STATUS);
+-	if (pending)
+-		writel(pending, h->regs + AFBD_STATUS);
++static void h713_afbd_set_source(struct h713_afbd *h,
++				 struct drm_plane_state *state)
++{
++	if (state->fb->format->format == DRM_FORMAT_NV12)
++		h713_afbd_set_nv12(h, state);
++	else
++		h713_afbd_set_rgb(h, state);
+ 
+-	writel(readl(h->regs + AFBD_CTRL) | 1u, h->regs + AFBD_CTRL);
+-	writel(1, h->regs + AFBD_READY);
++	h713_afbd_commit(h);
+ }
+ 
+ static void h713_afbd_pipe_enable(struct drm_simple_display_pipe *pipe,
+@@ -122,10 +276,7 @@
+ 	 * buffer the client handed us so the first commit is not a no-op.
+ 	 */
+ 	if (plane_state->fb)
+-		h713_afbd_set_source(h,
+-				     drm_fb_dma_get_gem_addr(plane_state->fb,
+-							     plane_state, 0),
+-				     plane_state->fb->pitches[0]);
++		h713_afbd_set_source(h, plane_state);
+ 
+ 	drm_crtc_vblank_on(&pipe->crtc);
+ }
+@@ -150,9 +301,7 @@
+ 	unsigned long flags;
+ 
+ 	if (state->fb)
+-		h713_afbd_set_source(h,
+-				     drm_fb_dma_get_gem_addr(state->fb, state, 0),
+-				     state->fb->pitches[0]);
++		h713_afbd_set_source(h, state);
+ 
+ 	spin_lock_irqsave(&crtc->dev->event_lock, flags);
+ 	event = crtc->state->event;
+@@ -256,6 +405,13 @@
+ static const u32 h713_afbd_formats[] = {
+ 	DRM_FORMAT_XRGB8888,
+ 	DRM_FORMAT_ARGB8888,
++	/*
++	 * Advertised so a client will hand us two-plane YUV at all. This is an
++	 * experiment: if the union test below comes back negative this format
++	 * must come straight back out, because one that negotiates and then
++	 * displays nothing is a worse trap than no support.
++	 */
++	DRM_FORMAT_NV12,
+ };
+ 
+ /*
+@@ -280,8 +436,14 @@
+ 	}
+ 
+ 	h->stride = readl(h->regs + AFBD_STRIDE);
+-	drm_info(drm, "adopting %ux%u, stride %u, source %08x\n",
+-		 w, hgt, h->stride, readl(h->regs + AFBD_SRC));
++	/*
++	 * U-Boot leaves the packed RGB path running; match it so the first RGB
++	 * commit does not rewrite a selector that is already correct.
++	 */
++	h->format = DRM_FORMAT_XRGB8888;
++	drm_info(drm, "adopting %ux%u, stride %u, source %08x, format %02x\n",
++		 w, hgt, h->stride, readl(h->regs + AFBD_SRC),
++		 readb(h->regs + AFBD_FORMAT));
+ 
+ 	cvt = drm_cvt_mode(drm, w, hgt, 60, false, false, false);
+ 	if (!cvt)
