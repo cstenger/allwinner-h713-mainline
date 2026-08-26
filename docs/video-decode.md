@@ -1237,7 +1237,18 @@ the change needed is to route through a VI channel in the mixer — which means
 owning the DE configuration that currently arrives wholesale from the vendor's
 `LogoRegData` replay. That is M4-scale work, not a poke.
 
-> **PROVEN 2026-08-25, and this inference was correct.** Patch 0066 wrote the
+> **⚠ The block below over-claims — corrected later the same day.** What patch
+> 0066 established is that the live channel fetched **linear packed 32-bit under
+> the tested recipe**. It does NOT identify the cause, and so does not prove this
+> inference: an incomplete recipe, or a wrong format encoding (row 3 is a
+> three-point fit, not established), produces an identical photograph. A
+> never-tested address pair at `0x05600320/324` holds live DRAM addresses on the
+> running board, so "the register space is covered" is false. Correctly scoped:
+> *direct NV12 does not work through the tested AFBD_SRC channel recipe; whether
+> another AFBD/DECD/video-plane configuration does is open.* See
+> [ge2d-plane-open-re.md](ge2d-plane-open-re.md) § "SCOPE CORRECTION".
+>
+> **Patch 0066, as run.** Patch 0066 wrote the
 > format selector, both plane strides, both Y/C plane addresses *and* the
 > channel block's own stride and source in a single commit — the combination
 > neither this attempt nor patch 0065 ever ran — and confirmed all of it in

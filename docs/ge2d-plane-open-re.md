@@ -716,6 +716,70 @@ plane. See `plane-brief-for-external-review.md` section 10 and
 
 ---
 
+> ## ⚠ SCOPE CORRECTION — 2026-08-25, later the same day
+>
+> **The section below over-closes. Read this first.** An external agent review
+> went over it and was right on the scope; two of its claims were then verified
+> here on the live board and by arithmetic:
+>
+> - **`0x05600320` = `0x4C7ED000` and `0x05600324` = `0x4CDEA000`** — a
+>   non-zero address pair in the AFBD window, holding live DRAM addresses that
+>   neither our driver nor patch 0066 ever writes. So *"the register space is now
+>   covered, there is nothing left to permute"* below is **false**, and
+>   *"do not run a fourth variant"* was bad advice. Nearby at `0x05600300`–`0x31c`
+>   is a repeating 8-byte structure (`00800210`/`00800000`, `00800210`/`0080C258`,
+>   `00800210`/`0`) consistent with queue slots.
+> - **The photograph cannot identify *why* the fetch stayed packed.** It proves
+>   the fetch was linear 32-bit under the tested recipe. It cannot distinguish
+>   "UI channel, RGB-only in silicon" from "`3` is the wrong format encoding" or
+>   "the recipe is incomplete — queue slots, info descriptors, an enable/bypass
+>   or a mux". The claim below that this *proves* the 2026-08-14 UI-channel
+>   inference asserts a specific cause for a null result, and does not follow.
+>   Row 3 remains a three-point fit (rows 0/6/7), not an established encoding.
+>
+> **The correctly scoped conclusion:** direct NV12 does not work through the
+> tested AFBD_SRC channel recipe, and the active channel remains a packed 32-bit
+> fetch. Whether some *other* AFBD/DECD/video-plane configuration gives no-GPU
+> YUV scanout is **open**.
+>
+> What survives unchanged: `0x170`/`0x178` do control the live fetch (new, and it
+> corrects 0065); the fetch was linear 4 bytes/pixel under this recipe; and
+> 0065's "SEPARATE video plane" postmortem was wrong about the global/channel
+> offset split. The reviewer's own perspective-corrected read of the photograph
+> *confirms* the band arithmetic and refines it — Y ends row 180 predicted vs
+> ~183 observed, UV 270 vs ~276, and the 2 MiB allocation boundary at 409.6 vs
+> ~419, which also explains the white band and the flashing.
+>
+> **And the vendor never writes the format selector alone.** `patches/kernel/0013`
+> reconstructs `dec_reg_video_channel_attr_config()`, the *only* writer of
+> `afbd + 17` (= `0x011`) in the whole driver. Every write is accompanied by:
+>
+> ```c
+> writeb(b16 | 0x10,  base + 16);        /* uncompressed: bit 4 of 0x10 */
+> writeb(6,           base + 17);        /* selector */
+> writeb((b19 & 0x78) | 3 | ((val & 1) << 7), base + 19);
+> writel(2 * cfg[2],  base + 64);        /* plane strides = 2 * width */
+> ```
+>
+> plus `dec_reg_mux_select()` (a 2-bit **mux** at `workaround + 8`, written into
+> bits [1:0] *and* [5:4]), `dec_reg_top_enable()` (a separate `top` block and
+> `afbd + 0x03` bit 7) and `dec_reg_enable()` (`workaround` +0/+9/+100).
+> **Patch 0066 called none of these and does not even map the `top` or
+> `workaround` windows.** Codex's "enable/bypass controls, or another mux" is
+> confirmed by our own reconstruction. (`0x10` and `0x13` were, as it happens,
+> already in the uncompressed configuration — live bytes `0x10` and `0x03` —
+> so those two were not the blocker.)
+>
+> **The selector really is a row index, so our 0066 value was defensible.**
+> Vendor `mode` is a format_id: `mode == 1` (row 6) writes selector **6**, and
+> `mode == 20` (row 7) writes selector **7**. Selector value equals row index in
+> both cases, which confirms the row-index reading in `video-decode.md` rather
+> than overturning it. The vocabulary the vendor actually emits is `{1, 6, 7}`,
+> and row 3 is one of *four* 8-bit entries (rows 0–3, format_ids 6/4/2/0); the
+> claim that 8-bit NV12 is specifically row 3 rests on elimination, not evidence.
+>
+> See "The DECD ABI is broken by construction" below.
+
 ## THE YUV FETCH QUESTION IS CLOSED — 2026-08-25, negative
 
 The reframed goal above lasted a few hours. Patch 0066 answered it on hardware
@@ -788,3 +852,59 @@ and all three are topology work, not this.
 patch remains the highest-value next step; it keeps panfrost in the loop for
 YUV→RGB, which this result confirms is the only colour-conversion engine this
 board has.
+
+---
+
+## The DECD ABI is broken by construction — 2026-08-25
+
+This is why the earlier DECD experiments could not establish anything, and it is
+independent of everything above.
+
+`DECD_IOC_FRAME_SUBMIT` is `0x40706400`. Decoding it is arithmetic:
+dir = `_IOC_WRITE`, type = `0x64` = `'d'`, nr = 0, **size = `0x070` = 112 bytes**.
+
+`struct dec_frame_submit_desc` in patch 0013 is **128 bytes**. Computed offsets:
+
+```
+linear     +0x00     align      +0x40
+image_fd   +0x04     info_fd    +0x4c
+format     +0x08     field_sel0 +0x64
+width      +0x28     field_sel1 +0x68
+height     +0x2c     y_phys     +0x70   <-- past the 112-byte transfer
+                     c_phys     +0x78   <-- past the 112-byte transfer
+```
+
+Every field up to byte 112 matches the stock layout recovered from the vendor
+HWC. **`y_phys` and `c_phys` do not — they sit entirely outside the bytes the
+ioctl copies, so the physical addresses our client sets can never arrive.** Any
+result from the "linear physical address" path is therefore uninformative: it
+was never testing what it claimed to test.
+
+Two further defects reported by the reviewer, consistent with our header but
+**not verified here** — flag them before relying on them:
+
+- the repeat count is at header `+0x10` in stock; our `dec_ioctl_header` has
+  `arg0` at `+0x10` and `arg1` at `+0x18`, and the driver reads `+0x18`;
+- stock leaves the flag at `+0x68` always zero and submits **two dma-buf FDs**
+  (pixels plus a 32 KiB VideoInfo block) rather than raw physical addresses, so
+  setting `+0x68` enters a branch stock never exercises.
+
+**And stock userspace does consume DECD.** The repo has said the opposite in
+several places — `video-decode.md` ("DECD probes and works but has no job"),
+`kms-display.md`, and `plane-brief-for-external-review.md` §10 (an "AFBC
+playback dead end"). The reviewer reports stock HWC opening `/dev/decd` and
+issuing this ioctl for ordinary video, the call site having been missed because
+the immediate is assembled as `movw 0x6400` / `movt 0x4070` and a byte-pattern
+search does not see it. **Unverified here, but it is the same failure mode this
+project already documented once** — "relocations are calls too", the
+`tgd_init_planesetting` caller analysis — and it should be checked before any
+more of the register map is reasoned from.
+
+### Hazards for whoever tests DECD next
+
+- DECD's node is `disabled` and **our KMS driver owns the `0x05600xxx` window and
+  the IRQ** (`kms-display.md`, "What this cost DECD, and why"). Loading DECD
+  means two owners for one register window; decide the owner first.
+- **DECD's runtime suspend resets the display** (`video-decode.md`, 2026-08-14):
+  `dec_disable()` asserts the display reset, and this KMS driver cannot bring the
+  panel back. That is a dark projector until reboot, not a soft failure.
