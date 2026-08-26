@@ -328,3 +328,47 @@ different direction, and much more strongly.
 3. Look for a `PanelDualPort = 1` product in the 13 `ProjectID_*.TSE` sets.
 
 Test 2 is free and needs no board. **Do it before anything else in section 7.**
+
+### Corroboration, 2026-08-25
+
+**Hardware-verified, independent of this project.** The operator has driven this
+same panel from a Geekworm HDMI-to-LVDS board **configured as 1-port LVDS**, and
+it worked. That confirms `PanelDualPort = 0` from equipment with no stake in the
+theory — the panel is genuinely single-port.
+
+**And the file agrees.** If AFBD channels map to LVDS ports, no shipped variant
+should differ in port configuration, since none of them touches channel 0.
+Checked across all 8 DE variants:
+
+```
+DE 0: ctrl=0x03001901  global=0x80000020  1920x1080
+DE 1: ctrl=0x03001901  global=0x80000020  1280x720
+DE 2: ctrl=0x03001901  global=0x80000020  1280x720
+DE 3: ctrl=0x03001901  global=0x80000020  640x360
+DE 4: ctrl=0x03001901  global=0x80000020  864x480
+DE 5: ctrl=0x03001901  global=0x80000020  1280x720
+DE 6: ctrl=0x03001901  global=0x80000020  1024x608
+DE 7: ctrl=0x03001901  global=0x80000020  1024x608
+
+distinct ctrl values: {0x03001901}
+```
+
+**Identical everywhere**, across resolutions from 640x360 to 1920x1080. Only
+geometry varies between variants; the channel/port configuration never does.
+
+### What this does and does not establish
+
+**Established:** the panel is single-port LVDS (hardware); no shipped
+configuration enables a second channel or differs in port setup (file); channel
+0's commit latch is never consumed (live board).
+
+**Still inference:** that channel 0 *is* the second LVDS port. An absent or
+fused-off block would produce identical evidence, and we cannot distinguish
+those without a datasheet.
+
+**Why it does not matter much which:** both readings give the same practical
+answer. Channel 0 is not usable on this hardware, and the video path has to go
+through the single channel that works. The remaining question is therefore
+**"how do we make one channel fetch YUV"**, not "how do we open a second plane"
+— and the two-plane framing that shaped this entire investigation was wrong from
+the start.
