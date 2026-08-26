@@ -464,3 +464,46 @@ identical pairs that may be two layer slots). That block *is* the live
 compositor, so a wrong write there breaks the working display rather than an
 idle channel — a materially different risk from everything above, and worth
 taking deliberately rather than incidentally.
+
+### The mixer probe — also negative
+
+The mixer decodes cleanly and does have two window slots. Live values, which
+differ from the table because something rewrites them for 720p after the
+replay:
+
+```
+0x0525c01c / 0x0525c034 = 0x0500003C   width 1280, x-offset 60   (pair)
+0x0525c020 / 0x0525c030 = 0x02D00016   height 720, y-offset 22   (pair)
+0x0525c004 = 0x00001402                table wrote 0x00001003
+```
+
+The low bits of `0x0525c004` looked like a layer-enable mask: the table writes
+`0b11`, the live value is `0b10`, i.e. layer 0 enabled at bring-up and cleared
+afterwards. Setting bit 0 back (`0x1403`) with plane 0 fully configured and its
+source pointed at the U-Boot logo buffer:
+
+- the write takes and reads back
+- `0x05600104` still never consumed
+- **operator confirms: console text unchanged, no logo, nothing composited**
+
+So layer 0 is inert end to end — not merely unlatched at the AFBD level, but
+producing nothing through the DE/mixer path either.
+
+### Where the attempt got to
+
+Everything the vendor's own bring-up writes for the working plane has now been
+applied to plane 0 from Linux, and verified reading back: all 12 AFBD channel
+records, all 14 OSD records including the open word `0x79860601`, the latch,
+the global AFBD control low bits, and the mixer layer-enable bit. The pipeline
+services channel 1 and ignores channel 0 under every combination.
+
+**The one variation not tried is timing, not content.** Every write above
+happened *after* bring-up. The topology model predicts the writes must land
+*during* the sequence, before scanout starts — and that cannot be tested from
+Linux or from the U-Boot prompt, both of which are post-bring-up. It needs
+`h713_disp` itself extended to emit the mirrored ch0/OSD0 records at the right
+point, which means building a modified U-Boot.
+
+That does **not** require flashing the bootloader: FEL-booting a modified
+U-Boot tests it without touching the flashed one, which keeps the riskiest
+write in the project off the table.
