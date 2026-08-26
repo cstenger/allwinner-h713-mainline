@@ -583,3 +583,80 @@ sequences rather than passing many arguments.
 
 Board returned to Linux and verified: ch1 `0x03001901`, plane 1 open, mixer
 `0x1402`, panel on the login prompt, zero warnings.
+
+## THE DECIDING EXPERIMENT — bring-up injection, 2026-08-25
+
+The bootloader was flashed to run the mirror writes *inside* the bring-up
+sequence, which was the one placement never tested. Result: **negative, and
+conclusive.**
+
+### Method
+
+`h713_disp_run()` gained 26 register writes plus the plane-0 latch, injected
+immediately after the DE-table replay and before the clocks/INCAP/LVDS tail —
+the same point stock's own order would use. Values are DE variant 1 (this
+panel's 1280x720) shifted ch1 → ch0 by `-0x40` and OSD1 → OSD0 by `-0x4000`.
+
+Only **U-Boot proper** was rewritten, at LBA `0x49ac00` in the `empty`
+partition. The contended first stage at LBA `0x10` was never touched, which
+keeps the bricking risk off the table entirely. Write verified byte-for-byte on
+readback, with the outgoing image backed up to `/root/uboot-backup/` and to the
+host first.
+
+### Result
+
+At bring-up, immediately after the DE table:
+
+```
+H713 plane0: mirrored 26 registers onto ch0/OSD0, ctrl=03001901 latch=00000001 open=79860601
+```
+
+With Linux fully up — past the clocks/INCAP/LVDS tail, the MIPS release and
+live scanout:
+
+```
+ch0 ctrl = 0x03001901   ch0 latch = 0x00000001   survived bring-up, NEVER consumed
+ch1 ctrl = 0x03001901   ch1 latch = 0x00000000   consumed every vsync
+plane0   = 0x79860601   plane1    = 0x79860601   identical
+```
+
+**Placement was the real variable, and it is now controlled for.** The
+configuration survives when injected here, unlike the teardown/init attempt
+where the prologue zeroed it. So this is the first test where channel 0 entered
+live scanout fully and correctly configured — and its latch is still never
+taken. Operator confirms the panel shows the console only: no logo, no blend,
+despite ch0 pointing at `0x6c100000`.
+
+### What that settles
+
+The plane set is **not determined by these registers at all.** Not the AFBD
+channel block, not the OSD block, not the open word, not the mixer enable, and
+not the timing of any of them. Every register the vendor's own bring-up writes
+for the working plane has now been written for plane 0, at the same point in
+the same sequence, and the pipeline ignores it.
+
+What remains is the one thing this project replays rather than authors: the
+MIPS firmware's own VBlender programming. `LogoRegData.bin` contains no ch0 or
+OSD0 record in any of its 8 DE variants, 3 prologues or 11 timing variants —
+the vendor never opens a second plane on this product, and the plane count is
+fixed by `display.bin` before any of these registers matter.
+
+### Two notes for whoever reads this next
+
+**The env gate was wrong and the experiment ran anyway.** `env_get_yesno()`
+returns **-1** when a variable is unset, not 0, so `if (!env_get_yesno(...))
+return;` does not gate anything — it only suppresses on an explicit `n`. The
+injection ran on a boot intended as a control. It was harmless and produced the
+result early, but the "safety flag" was not one.
+
+**Restoring was clean.** The backup was written back to the same LBA, verified
+identical, and the board rebooted on `U-Boot 2026.07-rc5-gdbad200ca799` with no
+injection line, the logo published, and zero warnings. Board state afterwards:
+ch0 idle `0x00010000`, OSD0 zero, plane 1 open, mixer `0x1402`, WiFi noise 0,
+oops 0, panel on the login prompt.
+
+The U-Boot source change was reverted; the submodule carries only its
+pre-existing defconfig change. The register table above is the artifact worth
+keeping — if `display.bin` is ever replaced or its VBlender programming
+understood, that is the sequence to apply, and it is now known to survive
+bring-up when applied at this point.
