@@ -535,3 +535,51 @@ measured from what was assumed. The same slip appears twice earlier on this
 page — bit 31 called a commit enable on a value comparison, and the mixer pairs
 called layer slots before they were toggled. Both were labelled as inference at
 the time; this one was not.
+
+## Bring-up-time injection: the cheap version, and why it fails
+
+The FEL route turned out to be blocked before it started: `docs/flash.md`
+records that **`sunxi-fel uboot` does not work on H713** — the SPL loads, but
+the post-SPL handoff is broken. So FEL-booting a modified U-Boot is not
+available, and code changes would mean flashing the bootloader.
+
+But the existing U-Boot already exposes enough to test the timing hypothesis
+with no rebuild at all:
+
+```
+h713_disp teardown   - stop scanout, park the MIPS, drop the panel rail
+h713_disp init <id>  - bring the display up and stop
+```
+
+The DE table only writes ch1, so pre-setting ch0/OSD0 while the pipeline is
+*down* should have survived into a freshly started pipeline. Tried it: teardown,
+then all 26 ch0/OSD0 mirror writes via `mw.l`, then `init 0x34`.
+
+**`init` zeroes them.**
+
+```
+after init:  0x05600100 = 0x00010000   (pre-set 0x03001901 gone)
+             0x0524801c = 0x00000000   (open word gone)
+             0x05600140 = 0x03001901   ch1 normal
+             0x0524c01c = 0x79860601   plane 1 normal
+```
+
+The bring-up sequence clears the channel registers on its way through — almost
+certainly the prologue, which runs before the DE table. So there is no window
+between "pipeline down" and "pipeline up" that a CPU-side write can occupy: the
+sequence overwrites anything staged beforehand, and everything after it is
+post-bring-up, which is the case already shown not to work.
+
+**Injection therefore requires modifying the sequence itself**, i.e. changing
+`h713_disp` and running the result. With FEL boot unavailable on this SoC, that
+means flashing the bootloader — the riskiest write in this project, and the one
+the display handoff explicitly says to decide deliberately.
+
+That is where this stops being a probe and starts being a commitment. Two other
+practical notes from the attempt: `init` prints "Power-cycle before another
+init", so this is one shot per boot; and `--wait` in `tools/serial/console.py`
+is a *per-command* dwell, so chaining with `;` is required for long register
+sequences rather than passing many arguments.
+
+Board returned to Linux and verified: ch1 `0x03001901`, plane 1 open, mixer
+`0x1402`, panel on the login prompt, zero warnings.
