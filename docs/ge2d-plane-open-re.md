@@ -405,3 +405,62 @@ GPU path already sustains 59.71 fps against a ~58.9 fps vsync ceiling. It was
 freeing the GPU and fixing stock clients, and stock clients are reachable far
 more cheaply through the GPU path (open item 5). This thread is closed on
 evidence, not fatigue.
+
+## The attempt, 2026-08-25 — configured but never serviced
+
+Made rather than argued about, after the "stop here" recommendation was
+overruled. It got further than expected and then hit the same wall from a new
+direction, which is worth recording precisely.
+
+**Three things the DE-table dump corrected**, all of which undercut the earlier
+reasoning:
+
+1. **`0x0524c01c = 0x79860601` is *written* by the DE table.** The "plane open"
+   word is not a hardware status readout — it is a value bring-up writes, and
+   `tgd_is_plane_open()` reads back what was written. Every earlier test had
+   treated it as a status bit.
+2. **`init_osd_plane` never writes it.** So the plane-open test on this page had
+   been applying the OSD configuration *without* the word that marks the plane
+   open. That was a real gap, not a quibble.
+3. **`0x05600000 = 0x80000020` is a global AFBD control** written first — which
+   is where bit 31 actually lives, not on the per-channel ctrl.
+
+Also: DE variants 1, 2, 5 and 6 all carry our 1280x720 geometry; variant 0 is
+1920x1088. Earlier work using variant 0's values was using the wrong panel.
+
+**What was applied**, from Linux, using DE variant 1 (our panel):
+
+- all 12 AFBD ch1 records mirrored to ch0 (`addr - 0x40`)
+- all 14 OSD1 records mirrored to OSD0 (`addr - 0x4000`), **including
+  `0x0524801c = 0x79860601`**
+- the plane-0 latch, `0x05600104 = 1`
+- then, as a separate probe, global AFBD control bits: `0x80000030` (bit 4, on
+  the theory that bit 5 gates ch1) and `0x800000f0`
+
+**Result.** Plane 0's open word reads back `0x79860601`, identical to plane 1 —
+the configuration takes. But:
+
+```
+0x05600144   ch1 latch   0    -- consumed every vsync
+0x05600104   ch0 latch   1    -- never consumed, under every variation above
+```
+
+Channel 0 is fully configured, byte-identical to the channel that works,
+carrying the open word, with the global control's low bits swept — and its
+latch is still never taken.
+
+**So the wall is not configuration.** It is not missing registers, wrong values,
+the wrong DE variant, or the open word. Everything the vendor's own bring-up
+writes for the working plane has now been written for plane 0, and the pipeline
+still does not service it. Whatever admits a channel happens before this point
+and is not in `LogoRegData.bin`, which contains no ch0 or OSD0 record anywhere.
+
+Restored by reboot; board clean (`adopting 1280x720`, zero warnings), plane 1
+unaffected, display verified.
+
+**Not probed, deliberately:** the mixer block (`0x0525c000`–`0x0525c034`, 14
+registers, with `0x0525c01c`/`0x034` and `0x0525c020`/`0x030` written as
+identical pairs that may be two layer slots). That block *is* the live
+compositor, so a wrong write there breaks the working display rather than an
+idle channel — a materially different risk from everything above, and worth
+taking deliberately rather than incidentally.
