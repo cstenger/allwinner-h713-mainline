@@ -1,0 +1,94 @@
+From: h713 <h713@local>
+Date: Thu, 28 Aug 2026 18:10:00 -0700
+Subject: [PATCH] EXPERIMENT: attach DECD to IOMMU master 2, as stock does at
+ playback
+
+This is the last unported step of stock's post-THal_Vp_Init resume, and it
+pairs with 0068. On its own it does nothing: the `dec` node is disabled in
+the production DT, so no platform device is created and no IOMMU attachment
+happens. It only takes effect on an 0068 boot.
+
+What stock actually does, recovered from board-B `ge2d_dev.ko`. HWC's SVP
+resume path runs four operations after `THal_Vp_Init` returns, and three of
+them we already have:
+
+  powerCtrl(1)             /dev/ge2d ioctl 0x4680 -> __pm_runtime_resume(dev, 4)
+                           i.e. pm_runtime_get_sync().  We have this as
+                           DECD_IOC_PM_HINT; ioctl 0x4680 with a zero payload
+                           is __pm_runtime_idle(dev, 4), our PM_HINT off.
+  DecoderDisplay::enable(1)  /dev/decd enable -> our dec_enable().
+  frame submit             /dev/decd DECD_IOC_FRAME_SUBMIT -> patch 0067.
+  iommuEnable()            /dev/ge2d ioctl 0x4681 -> THIS, and only this,
+                           was missing.
+
+`0x4681` is four instructions and leaves no room for interpretation:
+
+    92d0: mov  r1, #1
+    92d4: mov  r0, #2
+    92d8: bl   sunxi_enable_device_iommu     <- R_ARM_CALL relocation
+    92dc: ldr  r8, [r4]
+    92e0: b    <return>
+
+So: master 2, translation on. Master 2 is `dec@5600000` -- this device's own
+register window -- shared with `ge2d@5240000`. The stock DTB ships that master
+as `<&mmu_aw 2 0>`, bypassing; stock turns translation *on* at runtime, when
+HWC is about to present video. Our `dec` node has carried no `iommus` property
+at all, so every DECD test so far has fetched untranslated physical addresses.
+That is why the four-slot register file held `Y=0x6c500000` rather than an
+IOVA.
+
+`video_buffer_map()` already does the right thing either way: it attaches the
+dma-buf to this device and takes `sg_dma_address()`, which becomes an IOVA once
+the device is translated. No driver change is needed for the addresses.
+
+WHY THIS IS OUT OF SERIES, and the hazard to expect.
+
+Master 2 is shared with the live display. On an 0068 boot the panel is still
+showing U-Boot's logo, fetched by the AFBD hardware from the physical carveout
+at 0x6c100000 through this same master. Translating master 2 while that fetch
+is in flight makes it fault: the adopted scanout has no mapping. Patch 0051
+keeps that a rate-limited log line rather than a hang, but the logo may go
+away the moment the device attaches.
+
+For this experiment that is tolerable and arguably wanted -- the DECD tests
+already hide the logo channel deliberately, and the open question is whether
+DECD output ever reaches the panel. But it is a real departure from the
+adopted-display model the rest of the tree is built on, where Linux never
+disturbs what U-Boot left running. Do not put this in series on the strength
+of "stock does it": stock owns composition from the ground up and never adopts
+a foreign scanout, so it never has a live untranslated fetch to break.
+
+The prediction worth recording before the run: if DECD frames become visible
+only with this applied, the missing piece was address translation and the
+firmware/hardware was discarding untranslated fetches. If the panel goes black
+at attach and stays black, this tells us master 2 is genuinely shared and the
+adopted display cannot coexist with a translated DECD -- which would mean the
+no-GPU route needs Linux to own the whole display, not adopt it.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1663,6 +1663,21 @@
+ 			resets = <&ccu RST_BUS_DISP>;
+ 			reset-names = "rst_bus_disp";
+ 			memory-region = <&decd_reserved>;
++			/*
++			 * Master 2, translation on -- the port of stock's
++			 * /dev/ge2d ioctl 0x4681, which is exactly
++			 * sunxi_enable_device_iommu(2, 1) and runs in HWC's
++			 * SVP resume just before the first video frame.
++			 *
++			 * The stock DTB ships this master bypassing
++			 * (`<&mmu_aw 2 0>`) and flips it at runtime. Master 2
++			 * is shared with ge2d@5240000 and with whatever is
++			 * already scanning out, so on an adopted U-Boot
++			 * display this will fault the logo fetch. Inert in the
++			 * production DT, where this node is disabled; only an
++			 * 0068 boot creates the device.
++			 */
++			iommus = <&iommu 2 1>;
+ 			/*
+ 			 * 100 MHz, not the vendor's 200: dec_enable() does
+ 			 * clk_set_rate(clk_afbd, this) on runtime resume, and

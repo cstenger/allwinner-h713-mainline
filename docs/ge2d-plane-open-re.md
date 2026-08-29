@@ -972,6 +972,46 @@ to its branch target and the first call there:
 | `0x4680` | 4 | `_dev_info` | `0x4671` | 8 | (fence list) |
 | `0x4681` | — | `sunxi_enable_device_iommu` | `0x4777`/`0x4778` | 8 | `get_afbd_wb_inst` |
 
+### `0x4680` and `0x4681` resolved (2026-08-28)
+
+The two control ioctls in that table are the SVP-resume pair HWC issues after
+`THal_Vp_Init`, and both are small enough to state exactly. Dispatch is at
+`svp_ioctl+0xc58` and `svp_ioctl+0xce4`.
+
+**`0x4681` — `iommuEnable()`.** Four instructions, no payload:
+
+```
+92d0: mov  r1, #1
+92d4: mov  r0, #2
+92d8: bl   sunxi_enable_device_iommu    <- R_ARM_CALL relocation
+92dc: ldr  r8, [r4]
+92e0: b    <return>
+```
+
+Master **2**, translation **on**. Master 2 is `dec@5600000` — the DECD/AFBD
+register window — shared with `ge2d@5240000`. The stock DTB ships that master
+*bypassing* (`<&mmu_aw 2 0>`); this call flips it to translating at playback
+time. Ported as patch 0069, out of series, because master 2 is shared with
+whatever is already scanning out.
+
+**`0x4680` — `powerCtrl(on)`.** Reads a 4-byte payload, then keys off a driver
+state word at `priv->[0x18c]` (`priv = dev->[0x150]`):
+
+```
+copy_from_user(&val, arg, 4)
+if (val)  { if (priv[0x18c] == 2 && !(priv[0x180] & 7))
+                __pm_runtime_resume(dev, 4);   /* pm_runtime_get_sync  */
+            else _dev_info(...); }
+else      { if (priv[0x18c] != 2)
+                __pm_runtime_idle(dev, 4); }   /* pm_runtime_put_sync  */
+```
+
+So it is plain runtime PM on the display device, gated on the driver already
+being in state 2. Our `DECD_IOC_PM_HINT` is the same operation in both
+directions and needs no change.
+
+Neither ioctl touches a DECD data register, so neither is the routing step.
+
 That is an fbdev-shaped graphics device: screeninfo, colour maps, framebuffer
 allocation, plane flip, writeback. **There is no video-layer ioctl.** The
 `0x4631` half of stock HWC's per-present pair is HWC committing its *UI* layer;

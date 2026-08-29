@@ -350,6 +350,46 @@ handler addresses such as `0x8b109f04` as routine IDs, even though the verified
 call-table entry separates that handler address from callable component ID
 `0x1c6ff747`.  Enabling that patch now would test two known ABI errors at once.
 
+### The CPU_COMM surface is exhausted for this problem (2026-08-28)
+
+With `THal_Vp_Init` working, the obvious next move was to drive the rest of
+stock's resume over CPU_COMM from U-Boot. It cannot be done, and the reason is
+worth recording so nobody tries again.
+
+**The live call table under `0x34` holds 82 populated entries and every one is
+`THal_Vp_*`.** There is no resume, power, IOMMU, decoder-enable or
+frame-submit routine anywhere in it. The firmware's RPC surface is purely the
+video-processing HAL -- picture quality, backlight, window geometry, source
+selection, HDMI/ATV/VBI, callbacks. Everything HWC does after `THal_Vp_Init`
+is an ARM-side driver operation on `/dev/ge2d` and `/dev/decd`, not a call
+into the display CPU.
+
+The two routines that looked like the frame handoff are **stubs on this
+firmware**:
+
+```
+THal_Vp_SetImageBufferAddr  0x8b10ada8:  jr ra ; nop
+THal_Vp_GetImageBufferAddr  0x8b10adb0:  jr ra ; nop
+```
+
+Source selection is also not the missing lever, and this is the more
+interesting half. On a clean `0x34` boot, in order:
+
+- `THal_Vp_Init([0, 1, phys])` returns `1`.
+- `THal_Vp_GetSource` returns `0` (`Dummy`).
+- But the firmware's own source trace shows it **already transitioned `0 -> 1`
+  (`kSourceId_VideoDec`) during startup**: `worker=0x5203 (source worker
+  completed transition), new=1 old=0`.
+- `THal_Vp_SetSource(1)` is accepted (`nret=0`) and changes nothing -- no new
+  worker transition, `GetSource` still `0`, and the AFBD window byte-identical.
+
+So the firmware boots itself into VideoDec and stays there. The video source
+at `0x05600010` still reads enable `0` / format `0` not because the wrong
+source is selected, but because **nothing is presenting**: no IOMMU, no DECD
+enable, no frames. That is consistent with the format writer being firmware
+code driven by DECD's VideoInfo, and it means the remaining work is entirely
+on the Linux side.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
@@ -585,12 +625,28 @@ This is the section we most want reviewed.
    MIPS, wait roughly 800 ms, complete `THal_Vp_Init`, then let HWC resume the
    SVP display and DECD.
 
-2. **Port the board-B GE2D control ioctls needed at SVP resume.** HWC calls
-   ioctl `0x4680` (`powerCtrl(1)`) and `0x4681` (`iommuEnable()`) before DECD
-   presentation.  Board-B `ge2d_dev.ko` shows `0x4680` runtime-resuming the
-   GE2D/display device and `0x4681` calling
-   `sunxi_enable_device_iommu(2, 1)`.  These are separate from the RGB-only
-   `0x4631` plane flip and have not been reproduced in the isolated test.
+2. ~~**Port the board-B GE2D control ioctls needed at SVP resume.**~~
+   **RESOLVED 2026-08-28.** Both were disassembled to their relocations, and
+   three of the four resume steps are already ported:
+
+   | HWC step | stock | our side |
+   | --- | --- | --- |
+   | `powerCtrl(1)` | ge2d `0x4680` -> `__pm_runtime_resume(dev, 4)` | `DECD_IOC_PM_HINT` on |
+   | `powerCtrl(0)` | ge2d `0x4680`, zero payload -> `__pm_runtime_idle(dev, 4)` | `DECD_IOC_PM_HINT` off |
+   | `DecoderDisplay::enable(1)` | decd enable | `dec_enable()` |
+   | frame submit | decd `0x40706400` | patch 0067 |
+   | `iommuEnable()` | ge2d `0x4681` -> `sunxi_enable_device_iommu(2, 1)` | **was missing** |
+
+   `0x4681` is four instructions -- `mov r1,#1; mov r0,#2; bl
+   sunxi_enable_device_iommu` -- so it is master 2, translation on. Master 2
+   is `dec@5600000`, this device's own window, shared with `ge2d@5240000`. The
+   stock DTB ships it *bypassing* (`<&mmu_aw 2 0>`) and turns translation on at
+   runtime, right before presenting video. Our `dec` node carried no `iommus`
+   property at all, which is why every DECD test to date fetched untranslated
+   physical addresses -- the four-slot file held `Y=0x6c500000` rather than an
+   IOVA. Patch 0069 adds it, out of series: master 2 is shared with the live
+   adopted scanout, so translating it will fault U-Boot's logo fetch. See the
+   patch header for the hazard and the prediction.
 
 3. ~~**Resolve the project-0x34 scheduler failure before another live MIPS
    handoff.**~~ **CLOSED 2026-08-28 -- there was no scheduler failure.** Under
