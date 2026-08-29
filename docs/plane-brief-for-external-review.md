@@ -390,6 +390,96 @@ enable, no frames. That is consistent with the format writer being firmware
 code driven by DECD's VideoInfo, and it means the remaining work is entirely
 on the Linux side.
 
+### DECISIVE: the firmware DOES program the video source (2026-08-28, late)
+
+The experiment this brief has been building toward was finally run: **the MIPS
+left running into Linux**, with the 0068 DECD-exclusive kernel and **IOMMU
+bypass** (translation would fault the firmware's own physical fetches, and one
+fault wedges the engine).
+
+Setup: `preboot` calls `h713_disp init 0x34` instead of `auto 0x34 logo`.
+`auto` calls `h713_disp_quiesce_mips_owner()`, which is why every previously
+measured boot had a parked coprocessor; `init` does not. U-Boot prints
+"display initialised **with the firmware running**", and Linux comes up with
+`0x0306101c = 0x00000001`.
+
+**The result, and it settles the central question of this document.** Submitting
+one NV12 frame through `/dev/decd` with the coprocessor alive causes the
+firmware to configure the video source:
+
+```
+                    MIPS parked        MIPS running + DECD submitting
+0x05600010          0x03000010    ->   0x03000413    enable[1:0] 0->3, fmt 0->4
+0x05600020          0x043F077F    ->   0x02CF04FF    1920x1088 -> 1280x720 - 1
+0x05600040/44       0x00000780    ->   0x00000500    stride 1920 -> 1280
+0x0560004c          0x01680500    ->   0x02D00500    360 -> 720 rows
+```
+
+Seven sessions of ARM-side register work never moved `0x05600010`. It moved on
+the first submit with the firmware alive, and the geometry was rewritten to
+match our exact frame. **"The MIPS firmware configures the video source, fed by
+DECD's VideoInfo" is no longer an inference -- it was observed.** The
+`dec_reg_video_channel_attr_config()`-is-dead-code finding predicted precisely
+this.
+
+Also newly established: **source 0's commit latch at `0x05600014` is consumed by
+hardware.** Written `1`, it reads back `0`, repeatedly -- the behaviour of the
+serviced OSD channel, and the opposite of channel 0's latch at `0x05600104`
+which sticks at `1` forever. Source 0 is in the serviced path.
+
+**And the panel stayed black.** Every one of these was applied, cumulatively,
+each verified by readback, with the raster alive at 59.7 Hz throughout and every
+write sticking (the firmware did not revert them):
+
+| applied | register | result |
+| --- | --- | --- |
+| firmware-configured source | `0x05600010 = 0x03000413` | black |
+| logo channel hidden | `0x05600140 = 0x03001900` | black |
+| mixer video layer | `0x0525c004 = 0x1403`, then `0x1003` | black |
+| `dec_reg_int_to_display()` | `0x05600060` bit 4 set, `0x01 -> 0x11` | black |
+| `dec_reg_bypass_config()` non-zero branch | `0x05600069` bit 0 cleared, `0x0560006c = 1` | black |
+| source-0 commit latch | `0x05600014 = 1`, consumed | black |
+| **DECD internal blue generator** | `0x05600065` bit 0, `0x05600064 = 0x0100` | **black** |
+
+The last row is the discriminator. Internal blue bypasses Y, C, stride,
+dma-buf, VideoInfo and the whole frame data path -- the source generates its own
+pixels. With the source enabled, formatted, geometry-correct, commit-latched and
+generating internally, **nothing reaches the panel**.
+
+**So the remaining gap is downstream of DECD entirely**, in the mixer / VBlender
+/ LVDS composition the firmware owns. No further DECD-side configuration will
+reach it. That is a much smaller and better-located target than "how do we make
+a channel fetch YUV".
+
+Positive controls for this boot, so the black is not a dead pipeline: the U-Boot
+logo was visible on this same boot until it was deliberately hidden; vsync held
+59.7 Hz (16.74 ms deltas) after every write; DECD ran at 60 IRQ/s throughout;
+panfrost GPU/MMU/job stayed at 0; the SoC never locked and Wi-Fi/serial stayed
+up the whole time.
+
+A complete 154-line register dump of this configured-but-black state is saved at
+[reference/decd-firmware-configured-black-2026-08-28.txt](reference/decd-firmware-configured-black-2026-08-28.txt)
+-- AFBD `0x05600000`-`0x056001ff`, mixer `0x0525c000`-`0x0525c03f`, TVTOP. It is
+the obvious thing to diff against a stock Android playback capture.
+
+**What I would do next, in order:**
+
+1. Diff that snapshot against stock Android during real video playback. The
+   remaining difference is in composition, and this dump makes it a diff rather
+   than a search.
+2. `THal_Vp_SetSource` / the display-CPU resume (`tvserverHal::dispCpuResume()`)
+   from the ARM side while the firmware is running. Stock does this and we never
+   have; CPU_COMM is not reachable from Linux today (patch 0014 disabled, known
+   ABI errors), so this likely means either fixing that port or driving it from
+   U-Boot before handing off.
+3. The mixer window slots `0x0525c01c`/`020` versus `0x030`/`034` -- two slots
+   with identical geometry, never separated, and a plausible video-vs-OSD pair.
+4. The AFBD writeback engine (`0x4777`/`0x4778`, `get_afbd_wb_inst`), untouched.
+
+**Do not** spend more time on DECD-side format/enable/mux permutations. The blue
+generator result closes that space: the source is doing its job and the output
+is being discarded after it.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
