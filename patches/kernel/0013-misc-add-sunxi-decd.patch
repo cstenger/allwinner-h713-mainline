@@ -366,7 +366,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/misc/sunxi_decd/decd_frame.c b/drivers/misc/sunxi_decd/decd_frame.c
 --- a/drivers/misc/sunxi_decd/decd_frame.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/misc/sunxi_decd/decd_frame.c	2026-04-03 21:07:08.077699016 +0200
-@@ -0,0 +1,1621 @@
+@@ -0,0 +1,1616 @@
 +// SPDX-License-Identifier: GPL-2.0
 +
 +#include <linux/debugfs.h>
@@ -2719,7 +2719,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/misc/sunxi_decd/decd_types.h b/drivers/misc/sunxi_decd/decd_types.h
 --- a/drivers/misc/sunxi_decd/decd_types.h	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/misc/sunxi_decd/decd_types.h	2026-04-03 21:07:08.081699046 +0200
-@@ -0,0 +1,346 @@
+@@ -0,0 +1,347 @@
 +// SPDX-License-Identifier: GPL-2.0
 +#pragma once
 +

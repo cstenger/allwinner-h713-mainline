@@ -65,6 +65,49 @@ at attach and stays black, this tells us master 2 is genuinely shared and the
 adopted display cannot coexist with a translated DECD -- which would mean the
 no-GPU route needs Linux to own the whole display, not adopt it.
 
+RUN ON HARDWARE 2026-08-28. The second branch happened, and the run is
+CONFOUNDED -- it says nothing about DECD routing. Do not cite it as a negative
+for the no-GPU path.
+
+Boot sequence, operator watching: U-Boot logo appears, then goes black and
+stays black. One fault, at attach:
+
+  platform 5600000.dec: Adding to iommu group 0
+  sun50i-iommu 2010000.iommu: Page fault for 0x000000006c332000 (master 2, dir rd)
+
+0x6c332000 is inside U-Boot's logo carveout at 0x6c100000. So master 2 really
+is the display's own fetch path, and translating it invalidates the adopted
+scanout's physical source address immediately.
+
+What this patch DOES achieve, and it is worth keeping: the iommuEnable port is
+mechanically correct. With a frame held, DECD queued proper IOVAs --
+
+  0x05600070 = 0xFFC00000   Y
+  0x05600084 = 0xFFCE1000   C, delta 0xE1000 = one 1280x720 luma plane
+
+-- and fetched them at 60 IRQ/s with ZERO further page faults and zero
+panfrost GPU/MMU/job interrupts. Translation works; DECD is happy behind it.
+
+Why the run is confounded. The panel was black, but a positive control failed:
+the live OSD channel was repointed at DECD's own IOVA (0x05600178 = 0xFFC00000)
+and its READY latch was consumed (0x05600144 -> 0), with no page fault -- and
+the panel stayed black anyway. A channel fetching a valid, mapped, populated
+buffer rendered nothing. Meanwhile vsync stayed at 59.7 Hz (16.75 ms deltas)
+and the latch kept being consumed, so the timing generator and commit logic
+were alive the whole time.
+
+The reading is that ONE translation fault wedges the AFBD fetch engine for the
+rest of the boot. Latch consumption and vsync prove the commit path, not the
+fetch path. So nothing could have appeared on this boot regardless of DECD
+routing, and the black screen carries no information about it.
+
+The fix that would make this experiment valid is concrete: map the display
+carveout into the same IOMMU domain so the adopted scanout survives
+translation -- an identity mapping for 0x6c100000, via a reserved-memory region
+with iommu-addresses, or by having the driver map it at attach. Until the
+adopted scanout can fetch under translation, master 2 cannot be translated on a
+display Linux inherited rather than programmed.
+
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
 diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi

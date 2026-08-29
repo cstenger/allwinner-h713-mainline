@@ -645,8 +645,25 @@ This is the section we most want reviewed.
    property at all, which is why every DECD test to date fetched untranslated
    physical addresses -- the four-slot file held `Y=0x6c500000` rather than an
    IOVA. Patch 0069 adds it, out of series: master 2 is shared with the live
-   adopted scanout, so translating it will fault U-Boot's logo fetch. See the
-   patch header for the hazard and the prediction.
+   adopted scanout, so translating it will fault U-Boot's logo fetch.
+
+   **Run 2026-08-28. The port works; the boot is confounded.** DECD queued
+   proper IOVAs (`0x05600070 = 0xFFC00000`, `0x05600084 = 0xFFCE1000`, delta
+   `0xE1000` = one luma plane) and fetched them at 60 IRQ/s with zero further
+   faults and zero panfrost interrupts. But the panel was black, and a
+   **positive control failed**: repointing the live OSD channel at DECD's own
+   IOVA, with its READY latch consumed and no fault, still rendered nothing --
+   while vsync stayed at 59.7 Hz. One translation fault at attach
+   (`0x6c332000`, master 2, inside U-Boot's logo carveout) appears to wedge the
+   AFBD **fetch** engine for the rest of the boot; latch consumption and vsync
+   only prove the **commit** path. So this boot says nothing about DECD routing
+   and must not be cited as a negative for the no-GPU path.
+
+   The concrete unblock: map the display carveout into the same IOMMU domain
+   (identity mapping for `0x6c100000`, via a reserved-memory region with
+   `iommu-addresses`, or mapped by the driver at attach) so the adopted scanout
+   survives translation. Master 2 cannot be translated on a display Linux
+   inherited rather than programmed.
 
 3. ~~**Resolve the project-0x34 scheduler failure before another live MIPS
    handoff.**~~ **CLOSED 2026-08-28 -- there was no scheduler failure.** Under
