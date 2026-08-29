@@ -5,6 +5,376 @@ who knows Allwinner display hardware and might spot something we have missed.
 
 ---
 
+## 0. Important correction after stock-HWC reverse engineering (2026-08-26)
+
+The original brief's central framing -- that hardware YUV requires opening a
+second copy of the working OSD/AFBD channel -- is no longer tenable. Two new
+pieces of evidence separate the OSD path we tested from the vendor video path.
+
+### What the photographed patch-0066 result actually proved
+
+Patch 0066 put a 1280x720 NV12 test frame under the live channel while its
+source stride remained 5120 bytes (1280 packed pixels x 4 bytes). The panel
+showed repeated grey blocks followed by a purple/green band and then unrelated
+memory. Those boundaries are diagnostic:
+
+```
+NV12 Y bytes:  1280 * 720       / 5120 = 180 displayed rows
+NV12 UV bytes: 1280 * 720 / 2   / 5120 =  90 displayed rows
+total NV12:                                      270 displayed rows
+```
+
+That is what the photograph shows. The hardware was walking the byte stream as
+packed 32-bit pixels: luma became the repeated grey pattern and interleaved UV
+became purple/green. It did **not** perform YUV-to-RGB. This is strong evidence
+that writes to `0x05600011` and the DECD queue registers did not change the
+fetch mode of the active OSD source at `0x05600178`.
+
+It does **not** prove that the SoC lacks a no-GPU YUV route. It proves that our
+test mixed registers from two different paths.
+
+### Stock Android does submit ordinary video through `/dev/decd`
+
+Disassembly of the shipped, unstripped-enough userspace and kernel binaries
+found the consumer that earlier string/immediate searches missed:
+
+- `hwcomposer.ares.so` constructs ioctl `0x40706400` with a split Thumb-2
+  `movw #0x6400` / `movt #0x4070` sequence and calls it from
+  `DecoderDisplay::present()`.
+- `0x40706400` is exactly `DECD_IOC_FRAME_SUBMIT` and encodes a 112-byte frame
+  descriptor.
+- `VideoTunnel::commitFrameBuffer()` passes an image dma-buf FD, decoder
+  format, width/height, and a second dma-buf FD containing `VideoInfo` metadata.
+- HWC allocates the metadata dma-buf as 32 KiB and copies a 0x104-byte structure
+  to offset 4096. Its magic is `0x61770000`, checked by stock `decd.ko`.
+- The uncompressed path is real: HWC's descriptor byte 0 is a compression
+  boolean and is zero for ordinary buffers. Stock `decd.ko` then calculates C
+  as `Y + height * aligned_stride` for its 8-bit format class.
+
+The simple progressive descriptor produced by stock HWC is:
+
+| offset | value or meaning |
+| --- | --- |
+| `+0x00` | compressed boolean; `0` for linear video |
+| `+0x01` | blue-screen enable; nonzero skips frame creation |
+| `+0x04` | image dma-buf FD |
+| `+0x08` | decoder format (HWC maps one common video format to `6`) |
+| `+0x28/+0x2c` | width / height |
+| `+0x40/+0x44/+0x48` | buffer alignment value |
+| `+0x4c` | VideoInfo dma-buf FD |
+| `+0x50/+0x54` | `0x8000` / `0x10` |
+| `+0x64` | `1` for the normal progressive submission |
+| `+0x68` | `0`; the stock HWC never selects the legacy/direct branch |
+
+This also found three fatal errors in our reconstructed Linux ABI/client:
+
+1. Our descriptor was 128 bytes, but the ioctl copies exactly 112.
+2. HWC places the repeat count at ioctl-wrapper offset `+0x10`; our code used
+   `+0x18`, so the vendor enqueue loop received zero.
+3. Our client invented `y_phys`/`c_phys` fields beyond byte 112, while our
+   reconstructed kernel misread byte `+0x00` as a linear/direct selector.
+   Stock uses `+0x00` for compression, leaves its separate `+0x68` legacy
+   branch clear, and submits two dma-bufs instead. The invented addresses
+   cannot reach the stock ioctl at all.
+
+The metadata check in our port was also wrong (`0x61766b40` rather than the
+stock `0x61770000`). These are corrected in kernel patch 0067. The replacement
+`decd-client` now builds the same two-dma-buf submission shape as HWC and has
+compile-time assertions for the 112-byte ABI. The client passes a strict host
+compile and the current 53-patch 6.18.38 stack (including patches 0066 and
+0067) builds fully, including `sunxi-decd.ko`.
+
+### Controlled live result: the queue works, but it is not routed (2026-08-26)
+
+The mutually-exclusive patch-0068 boot has now been run. KMS was absent, DECD
+alone owned `0x05600000` and SPI 110, and the shared display reset was withheld.
+The corrected module bound and accepted the stock-shaped two-dma-buf request:
+
+```
+FRAME_SUBMIT format=6 desc=112 repeat@+0x10=1 fence_fd=7
+```
+
+This was not a quiet no-op. The DECD IRQ advanced at 59.7 Hz, returned vsync
+timestamps were 16.75 ms apart, the frame manager reported sequence 1, and the
+four-slot file contained `Y=0x6c500000`, `C=0x6c5e1000` and a valid copied
+VideoInfo page. There were no DMA or DECD errors. Panfrost's GPU, job and MMU
+interrupt counts remained exactly zero, so this was a genuine no-GPU queue
+exercise. The submitted NV12 source was host-decoded separately and is a bright
+test pattern, not a black frame.
+
+The panel nevertheless continued to show the U-Boot logo. Hiding its serviced
+OSD channel produced black, not the submitted frame. Correcting the inherited
+global geometry from 1920x1088/1920-byte stride to 1280x720/1280-byte stride did
+not change that result. A stronger discriminator used stock DECD's internal
+blue-output control (`workaround + 5` bit 0), which bypasses the YUV buffers and
+VideoInfo completely. With blue enabled and the logo channel hidden, the panel
+remained black throughout. This proves the failure is routing/topology, not the
+synthetic frame contents or metadata. The decisive live register split was:
+
+```
+DECD queue:       Y 0x05600070 = 0x6c500000
+                  C 0x05600084 = 0x6c5e1000
+serviced channel: source 0x05600178 = 0x6c100000 (U-Boot logo)
+                  format byte 0x05600011 = 0 (packed OSD)
+```
+
+Thus corrected `/dev/decd` submission is necessary but not sufficient. It
+queues and clocks the vendor video path, but does not replace or compose into
+the already-serviced U-Boot OSD channel.
+
+Stock HWC also identifies the missing companion operation. Its composition
+path opens `/dev/ge2d` and issues command **`0x4631`** with an exact **80-byte
+`_plane_info`** record. Stock `ge2d_dev.ko` dispatches that command at
+`svp_ioctl+0x9a4`, copies 80 bytes, calls `tgd_put_plane_info()` at `0x8ffc`,
+and copies the record back with its release fence. This resolves the command
+number and payload size that the earlier plane analysis left open. The vendor
+runtime therefore uses two coordinated calls: `/dev/decd` supplies video
+frames, while `/dev/ge2d`/`tgd_put_plane_info()` configures and commits the
+display plane/topology.
+
+> **⚠ The last sentence is wrong and is retracted, same day.**
+> `tgd_put_plane_info()` has since been disassembled end to end. Its colour
+> format field takes four values, all RGB (32/32/24/16 bpp, written to channel
+> `ctrl[15:8]` as `0x19`/`0x19`/`0x17`/`0x18`); it carries one source address
+> and no chroma plane; and `ge2d_dev.ko` never touches `0x05600060`–`0x056000ff`
+> or writes the mixer at all. `/dev/ge2d`'s whole ioctl table is fbdev-shaped
+> OSD management — screeninfo, colour maps, FB allocation, plane flip,
+> writeback — with **no video-layer ioctl**. `0x4631` is the RGB OSD flip, which
+> `sun50i-h713-afbd` already performs every atomic commit. HWC pairs the two
+> calls because it has a UI layer and a video layer to present, which is what a
+> hwcomposer does.
+>
+> The same disassembly produced a better lead, and it is in
+> [ge2d-plane-open-re.md](ge2d-plane-open-re.md) under "ioctl `0x4631` is the RGB
+> OSD flip": the AFBD writeback engine treats the window as **three** sources
+> with a uniform (enable, format, size) interface — `0x05600010` with a *two-bit*
+> enable at bits 1:0, `0x05600100`, and `0x05600140`. Source 0 is the video
+> source and is exactly what DECD programs. Patch 0066 configured source 0's
+> format byte while measuring source 2's fetch, which is why it could not decide
+> anything. Nothing we have run, and neither stock driver, sets source 0's enable
+> bits; their live value has never been read. The next step is that read, then
+> the same read under stock Android playing video.
+
+One more reconstruction bug was found directly in stock `decd.ko` while making
+a routing discriminator: `dec_reg_blue_en()` controls `workaround + 5` bit 0,
+not `workaround + 16` bit 4. Patch 0013 has been corrected. The old code edited
+the low byte of a queued Y address; it happened not to corrupt this test because
+that address ended in `0x00` and blue was clear.
+
+**Revised question:** what is the smallest safe port of the `0x4631`
+`tgd_put_plane_info()` path that can coexist with DECD under one MMIO/IRQ owner?
+The next experiment should reproduce that paired stock transaction, not try
+more format/address values on the packed OSD channel.
+
+> **Superseded, same day.** The `0x4631` port is not worth doing — see the
+> retraction above. The revised question was: **what sets bits 1:0 of
+> `0x05600010`, the video source's enable?**
+>
+> **Answered 2026-08-26, negative.** Read live: they are `0`. Set to 1, 2 and 3
+> with DECD provably submitting at 60 Hz and valid Y/C queued, all readbacks
+> taking — **the panel did not change.** Writable, never set, and not
+> sufficient.
+>
+> The real result is next door: `dec_reg_video_channel_attr_config`, the only
+> writer of the video source's pixel-format selector, is **dead code in stock
+> `decd.ko`** (no relocations reference it; the module exports nothing). So
+> **nothing on the ARM side programs the video source's format** — live it reads
+> `0`. The configuring component is almost certainly the **MIPS firmware**, fed
+> by DECD's VideoInfo dma-buf, and U-Boot parks the MIPS on every boot we have
+> tested. That predicts the null and explains the blue-generator null too.
+>
+> The next experiment is CPU_COMM/VideoInfo — whether the MIPS can be left
+> running or restarted with DECD feeding it. Not more AFBD registers.
+
+### Controlled follow-up: ARM submission is stable; visible routing is still absent (2026-08-28)
+
+Later tests supersede the proposed experiment above and narrow the failure
+further:
+
+- A diagnostic module bypassed the reconstructed queue/IRQ path, mapped one
+  stock-shaped NV12 submission, programmed all four hardware slots directly,
+  masked the ARM DECD IRQ, and retained the dma-buf mappings.  With the display
+  MIPS stopped, this state is indefinitely stable.  Hardware consumes the
+  address/dirty latches, and the held values are `Y=0x6c500000`,
+  `C=0x6c5e1000`, plus a valid VideoInfo page.
+- Source-0 enable values 1, 2 and 3 at `0x05600010[1:0]` all took but produced
+  no visible frame.  Enabling mixer layer 0 (`0x0525c004: 0x1402 -> 0x1403`)
+  did not help.
+- The corrected internal-blue control (`0x05600065[0]`) also remained black
+  with mixer `0x1403`; the fuller firmware-table candidate `0x1003` was
+  negative too.  Because internal blue bypasses Y, C, stride, dma-buf and
+  VideoInfo, the remaining failure is after DECD's input fetch/format stage.
+- TVTOP's live extended route table already exactly matches the authenticated
+  firmware/U-Boot values (`0x05700000 = 0xfff11111`, `+0x40 = 0x00011111`,
+  `+0x44 = 0x11111111`, `+0x80 = 0x00001111`, `+0x84 = 0xfff000ef`,
+  `+0x88 = 0x11111111`).  Replaying `dec_reg_top_enable()` is therefore not a
+  missing route-table initialization.
+- Releasing the display MIPS under Linux after the ARM configuration did not
+  reveal video.  It first reported running and then hard-locked the SoC,
+  including Wi-Fi and serial.  The panel stayed black.  This is evidence of
+  unsafe shared ownership, not a usable presentation path; another blind MIPS
+  restart is not the next experiment.
+
+Static cross-checking also changes how the board captures should be used.
+Board A and board B contain byte-identical `hwcomposer.ares.so`, and its video
+path performs only `/dev/decd` enable/frame/stop ioctls; `/dev/ge2d` is the
+independent RGB UI path.  Their `decd.ko` and `ge2d_dev.ko` files have different
+build IDs, but normalized disassembly of the relevant DECD enable, mux, blue,
+top-enable and IRQ routines is functionally identical.  We therefore expect
+the same video architecture on both boards while using **board B** as the
+ground truth for DT, kernel-module build and boot-state comparisons.
+
+One concrete board-B mismatch remained: stock DT requests a 200 MHz AFBD
+clock, whereas the isolated Linux test ran it at 100 MHz.  A controlled 200 MHz
+test was started with the direct frame held, ARM IRQ masked, source 0 enabled,
+internal blue enabled, logo hidden and mixer layer 0 enabled.  Register and
+clock readback remained stable, but the operator saw black throughout.  The
+100-versus-200 MHz difference is therefore eliminated as the visible-routing
+cause.
+
+A subsequent board-B userspace audit found an important qualification to
+"HWC only submits video through `/dev/decd`".  `DecoderDisplay::present()` is
+indeed only the DECD frame ioctl, but the surrounding HWC SVP power manager's
+resume path calls `powerCtrl(1)`, `DecoderDisplay::enable(1)`, `iommuEnable()`
+and `tvserverHal::dispCpuResume()`.  The board-B vendor image also contains a
+`loadmips`/`libmips.so` path that opens `/dev/mipsloader`, loads `display.bin`,
+and waits for `cpu_comm`/`sys.svp_drvload_done`; HWC waits for the
+`display.mips.bootfinish` property before notifying its video input path.  This
+is the first concrete evidence of the coordinated initialization that the raw
+MIPS release experiment omitted.  The next work should reconstruct or invoke
+that handshake under single ownership, not guess more DECD format/mixer bits.
+
+That distinction was first tested directly on 2026-08-28.  After physical
+power cycles with the normal logo preboot temporarily disabled, U-Boot launched
+the authenticated board-B firmware exactly once per boot.  Firmware execution,
+MIPS READY, application-ready and both CPU_COMM magic/ready words all passed.
+A purported zero-argument call to `THal_Vp_Init` (`0x1c6ff747`) was accepted
+immediately and produced a valid `CALL_ACK`, but no `RETURN`.  This occurred
+with both the historical project `0x33` recipe and board B's declared project
+`0x34`.
+
+**That zero-argument test was malformed and its initialization conclusion is
+retracted.**  The disassembly helper had also used a firmware virtual base
+4 KiB too high (`0x8b101000` rather than `0x8b100000`), so its earlier view of
+the registered adapter was unrelated code.  Disassembly at the corrected base,
+then an independent trace through board-B stock `libhaldisplay.so`, recovered
+the real ABI:
+
+- ARM allocates a `0xd800`-byte CPU_COMM buffer and converts it to a physical
+  address.
+- It submits three input words: `0`, `1`, and that physical address.
+- The MIPS adapter invokes its local VP initializer, copies `0xd800` bytes of
+  state to the supplied address through an uncached alias, returns one value,
+  and installs an application callback.
+
+The no-parameter call therefore supplied address zero for the copy and was not
+a valid test of standalone initialization.  Register changes made after that
+unresolved call, including the internal-blue experiment, cannot establish how
+far valid initialization progressed.
+
+The corrected stock-shaped call was first run on a clean project-0x34 boot
+with inputs `[0, 1, 0x4df00000]`.  It was consumed immediately and returned a
+valid `CALL_ACK`, but no `RETURN`.  A persistent trace then settled where it
+stopped: the CALL HISR enqueued the high-priority worker successfully and
+returned (`e011`, queue status zero), but the worker never reached descriptor
+recycling or routine lookup and the `THal_Vp_Init` adapter was never entered.
+The live call table nevertheless contained the exact expected entry,
+`1c6ff747 -> 8b109f04`.  The ThreadX clock remained fixed while the hardware
+raster advanced.  Thus the project-0x34 failure is upstream of VP init: an
+accepted work item is not being serviced, most likely because another firmware
+thread is spinning or because project-0x34 state prevents the CALL worker from
+being scheduled.
+
+The same traced ABI call was then repeated after a clean reset with project
+`0x33`.  It completed the full transport in 1 ms, returned one word equal to
+`1`, reached every VP boundary through callback installation (`7101` through
+`7105`), and completed RETURN/RETURN_ACK cleanup (`c013`, `f003`).  A final
+cache-coherent run used physical destination `0x4d800000` inside the workspace
+that U-Boot clears and flushes before releasing MIPS.  The sampled output words
+matched the firmware's source at `0x8b48c304` exactly, starting
+`00040000 000c0008 00150010 ...`; this directly proves that the local VP
+initializer, `0xd800`-byte bulk copy and callback-install tail all return.
+The earlier `0x4df00000` destination was cleared through dirty ARM cache lines,
+so its later all-zero read was not valid copy evidence and is superseded by the
+coherent framebuffer test.
+
+This materially changes the next step.  Do not instrument deeper inside
+`THal_Vp_Init`; it works.  Instead compare the `ProjectID_0x0033.TSE` and
+`ProjectID_0x0034.TSE` initialization paths and trace the current/runnable
+ThreadX threads just before the first CALL.  Also verify from stock boot state
+which project ID is actually passed to the display CPU: `panel_config.ini`
+declares 0x34, but the only project with a proven live RPC worker is 0x33.  The
+apparent whole-board lock after an earlier run was caused by querying
+`h713_disp commstate` while a transaction was unresolved, not by the call
+itself.
+
+> **The project-0x34 half of the paragraph above is retracted, 2026-08-28.**
+> Tested directly on clean board-B boots, and it does not reproduce. Under
+> `0x34`: the 60-second stability window is **tick-for-tick identical to
+> `0x33`** (210 -> 60665, ~1008/s, zero exceptions); a no-op CALL (`2f02f7dd`,
+> `chan=0 pid=0x8b8f275c` from `commdev`) round-trips in **1 ms**; and
+> `THal_Vp_Init([0, 1, 0x4d800000])` returns **`1`** in under a millisecond,
+> with the `0xd800` copy landing. There is no frozen tick, no unscheduled
+> worker, and no project-dependent RPC failure. Item 3 of section 7 is closed,
+> negative.
+>
+> The failing runs used the **comm-trace** patch set and these used the
+> **stability** set; two of the five new `THal_Vp_Init` trampolines
+> (`0x4b109f28`, `0x4b109f50`) displace a live instruction with `jal`, which
+> clobbers the enclosing function's `ra`. That is a plausible cause with the
+> right shape, but it is a hypothesis, not a finding.
+>
+> **New and positive:** the copied VP state is project-specific --
+> `00050000 0011000b 001d0017 00290023 ...` under `0x34` against
+> `00040000 000c0008 00150010 ...` under `0x33`. **New and negative:**
+> `THal_Vp_Init` does not touch the video path at all. `0x05600000`-`0x0560007f`
+> is byte-identical immediately before and after the call and across two
+> independent boots, with source 0 still reading `0x03000010` (enable `0`,
+> format `0`) and an empty Y/C queue. Completing VP init is therefore not the
+> missing step that programs the video source.
+>
+> Operationally: **a U-Boot `reset` is a sufficient clean MIPS launch.** Drop
+> `h713_disp auto` from `preboot`, `saveenv`, and the whole MIPS experiment loop
+> runs over serial with no operator and no physical power cycle.
+
+The existing Linux CPU_COMM reconstruction is not ready to fill this gap.  Its
+own kernel README correctly leaves it disabled because the vendor protocol
+stores 32-bit shared pointers, while the current arm64 port still reconstructs
+some of them by OR-ing a guessed kernel-VA prefix.  It also auto-registers MIPS
+handler addresses such as `0x8b109f04` as routine IDs, even though the verified
+call-table entry separates that handler address from callable component ID
+`0x1c6ff747`.  Enabling that patch now would test two known ABI errors at once.
+
+### How this should reach mpv if the one-frame test works
+
+Decode and presentation are separate choices. VA-API already drives Cedrus
+through the `libva-v4l2-request` shim and exports linear NV12 dma-bufs; a native
+FFmpeg V4L2-request path can expose the same buffers as DRM PRIME. Neither API
+requires a GPU, but mpv's `vo=gpu` does: it imports Y and UV as textures and
+runs the colour conversion in panfrost.
+
+The clean production design is therefore to merge DECD's queue/register code
+into `sun50i-h713-afbd` and expose a PRIME-importing NV12 DRM plane (or NV12
+mode of the full-screen plane). Then mpv's DRM-PRIME overlay/direct-scanout
+path can consume either VA-API-exported or native V4L2-request dma-bufs while
+the one KMS driver owns MMIO, vblank, fences and teardown. The DECD release
+fence must control when a decoder surface may be reused; the synthetic client
+closes it only because its static carveout is never recycled during the test.
+
+A small custom mpv `vo_decd` would be a faster product-specific bridge after
+the hardware proof, but would duplicate buffer lifetime, scaling, seek/EOS and
+colour-metadata policy in userspace. The existing proposed mpv `render_fd`
+fallback remains worthwhile as a zero-copy compatibility path, but it still
+uses the GPU shader and is not the no-GPU solution.
+
+One product question remains even if full-screen DECD works: subtitles and UI.
+They need either a simultaneously serviced RGB OSD over DECD video, hardware
+subtitle blending, or a fallback to GPU composition. The first Android
+playback register capture should therefore include a visible subtitle/overlay
+case as well as plain full-screen video.
+
+---
+
 ## 1. The goal
 
 Play video without the CPU or GPU doing colour-space conversion.
@@ -21,12 +391,14 @@ The GPU path already saturates the panel (vsync ceiling ~58.9 fps), so this is
 **not** about throughput. It is about freeing the GPU and letting stock clients
 (`mpv`, GStreamer `kmssink`) work without a GLES pipeline.
 
-The vendor's own stack does neither: it decodes into a buffer and hands the
-display the physical addresses, letting the **display hardware** do YUV→RGB at
-scanout. We want that path. It requires a second display plane — a video plane
-alongside the RGB one currently showing the console.
+The vendor's own stack does neither: it decodes into a dma-buf and submits that
+plus a metadata dma-buf to `/dev/decd`, letting the **display hardware** do
+YUV→RGB. We want that path. The earlier assertion that it must be a second copy
+of the OSD/AFBD channel was an inference, not a fact, and patch 0066 tested only
+that OSD channel.
 
-**The question we cannot answer: why can we not bring up the second plane?**
+**The question we cannot yet answer: how is DECD video routed into the serviced
+display output, and can Linux reproduce that stock route safely?**
 
 ---
 
@@ -199,30 +571,59 @@ function); "bit 31 is a commit enable" (false).
 
 This is the section we most want reviewed.
 
-1. **`display.bin` (1.2 MB MIPS firmware) has never been disassembled.** If the
-   VBlender/plane topology is programmed there, this is where the answer is.
-   MIPS32, loads at `0x4b100000`, VMA `0xbfc00000` for the boot stub. We have
-   the binary and a memory map from `display_cfg.xml`.
+1. **Reproduce the complete board-B SVP startup under one owner.** The exact
+   board-B `display.bin` (`4380f1b3...`) and support files are available and
+   already extensively disassembled.  The remaining question is not what
+   firmware to run, but how to hand ownership from boot firmware to Linux
+   without the raw-reset hard lock.  Stock order is: load `cpu_comm_dev`, load
+   the MIPS image/config/TSE set through `mipsloader`, wait for CPU_COMM, restart
+   MIPS, wait roughly 800 ms, complete `THal_Vp_Init`, then let HWC resume the
+   SVP display and DECD.
 
-2. **CPU_COMM — the ARM↔MIPS RPC interface — is live and we never asked it to
-   open a plane.** There is a call table with ~1224 entries, working
-   magic/handshake (`deadbeef`), and our U-Boot already has a `commcall` command
-   that sends arbitrary calls. If the firmware owns plane topology, *asking it*
-   is the natural route and we went straight to register poking instead.
+2. **Port the board-B GE2D control ioctls needed at SVP resume.** HWC calls
+   ioctl `0x4680` (`powerCtrl(1)`) and `0x4681` (`iommuEnable()`) before DECD
+   presentation.  Board-B `ge2d_dev.ko` shows `0x4680` runtime-resuming the
+   GE2D/display device and `0x4681` calling
+   `sunxi_enable_device_iommu(2, 1)`.  These are separate from the RGB-only
+   `0x4631` plane flip and have not been reproduced in the isolated test.
 
-3. **`display_cfg.xml`, `panel_config.ini`, and the `.TSE` data files** are read
-   by the firmware. We read the memory-layout header of the XML and never
-   examined the panel/plane sections, the `ProjectID_*.TSE` files (13 of them,
-   matching the 13 LogoRegData descriptors), or `database.TSE`.
+3. ~~**Resolve the project-0x34 scheduler failure before another live MIPS
+   handoff.**~~ **CLOSED 2026-08-28 -- there was no scheduler failure.** Under
+   `0x34` the firmware is healthy for 60 s (tick identical to `0x33`, zero
+   exceptions), a no-op CALL round-trips in 1 ms, and `THal_Vp_Init` returns
+   `1`. See the retraction in section 0. What survives from this item is the
+   Linux-side work: replace the arm64 guessed-pointer conversions with explicit
+   shared-memory offsets/physical handles, register callable component ids
+   rather than MIPS handler addresses, and add tracing for inbound MIPS-to-ARM
+   calls. Original text follows.
 
-4. **The `ge2d_dev.ko` ioctl surface was never exercised**, only mined for
-   register sequences. `tgd_init_planesetting` and `tgd_put_plane_info` are
-   entry points. We could load the vendor module under Android and call them.
+   The authenticated board-B firmware's call table and transport
+   were reconstructed, and clean round trips were completed for black-screen,
+   all screen-cover selectors, picture-mode and `THal_Vp_SetSource(2)`.  None
+   changed visible composition.  More importantly, the corrected stock-shaped
+   `THal_Vp_Init([0, 1, physical_buffer])` now completes under project 0x33:
+   every adapter boundary fires, the RPC returns `1`, and sampled output is an
+   exact copy of the firmware's VP state.  Under project 0x34, the same CALL is
+   acknowledged and enqueued but never reaches the generic CALL worker, before
+   the VP adapter.  Compare the two ProjectID TSE paths, capture the runnable
+   ThreadX thread/queue state, and verify the project ID stock actually gives
+   MIPS.  In parallel, replace the Linux arm64 guessed-pointer conversions with
+   explicit shared-memory offsets/physical handles, register callable component
+   IDs rather than MIPS handler addresses, and add tracing for inbound
+   MIPS-to-ARM calls.  Only then combine it with display-CPU resume.
 
-5. **We never checked whether stock Android actually has two planes.** We can
-   boot the vendor stack (`run switch_vendor`) and read `0x0524801c` there. If
-   stock also shows one plane, the whole thing is settled; if it shows two, our
-   model is wrong and something in the Android boot opens it.
+4. **Determine which side services DECD/display interrupts after the handoff.**
+   Direct ARM submission is stable only with ARM IRQ 331 masked; blindly
+   running MIPS and the ARM reconstruction together locks the SoC.  A correct
+   design must assign each level interrupt and shared register block to one
+   owner, or implement the same coordination as the stock stack.
+
+5. **A stock playback register trace remains useful but must be captured
+   safely.** Booting Android on this unit risks the Debian filesystem because
+   both use the shared `UDISK`; do not switch the live board merely to obtain
+   it.  If a disposable image/board becomes available, diff TVTOP, GE2D power,
+   IOMMU, VBlender, DECD, CPU_COMM flags and MIPS status before and during a
+   real video-tunnel frame.
 
 6. **Three LVDS read-modify-write operations in `init_osd_plane` were skipped**
    (runtime-computed values against `0x051c001c`/`0x051c0010`). Probably
@@ -239,10 +640,10 @@ This is the section we most want reviewed.
    explain every result exactly, and we have no way to distinguish that from
    "present but not enabled".
 
-10. **`decd.ko`** — a separate vendor driver for AFBC-compressed video playback,
-    with its own frame-submit ioctl and register file at `0x05600000`-ish. Prior
-    work concluded it is dead code for the HDMI-RX path, but our use case is
-    video playback, which is exactly what it was built for.
+10. **`decd.ko` -- now the primary route, not an unexplored avenue.** Stock HWC
+    calls its frame-submit ioctl for video and supports an uncompressed dma-buf
+    path. See section 0. The remaining work is a controlled Linux reproduction,
+    not another direct write to guessed format/address registers.
 
 ---
 
@@ -259,12 +660,11 @@ This is the section we most want reviewed.
 4. Is there a plausible reason a vendor would ship a display controller with
    two plane register banks and use only one — beyond simple product
    segmentation?
-5. Are we wrong that this needs a second plane at all? Is there a way to make a
-   single scanout channel fetch two-plane YUV (NV12) directly? We found a format
-   selector (`0x05600011`, table row 3 = 8-bit YUV420) and two plane-address
-   registers (`0x05600070` Y, `0x05600084` C) in the vendor decoder path, but
-   writing them had no effect — they belong to a separate frame-submit register
-   file that is not in the scanout path.
+5. How does DECD's four-slot Y/C/info queue become the displayed source? The
+   photographed test establishes that changing DECD state does not mutate the
+   active packed-OSD fetch at `0x05600178`; it does not establish that the DECD
+   output is absent. Is the selection made by the MIPS display firmware, the
+   mixer, the `+0x30c` mux state, or a vendor display ioctl/RPC?
 
 ---
 

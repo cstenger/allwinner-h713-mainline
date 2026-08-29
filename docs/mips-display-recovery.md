@@ -687,6 +687,15 @@ question mark over the whole display log: if 0x34 drove different tables, no
 **It does not. Every 0x33 result stands.** Predicted statically, then confirmed
 on hardware in a back-to-back A/B.
 
+> **Scope correction, 2026-08-28.** That sentence is true of what it measured --
+> the LogoRegData replay and the rendered panel -- and it was over-generalised.
+> It does **not** extend to the firmware's runtime RPC. Under `0x34` the CPU_COMM
+> CALL worker never runs: calls are accepted and `CALL_ACK`ed and then nothing is
+> serviced, while the identical traced call completes under `0x33`. See
+> "Project 0x34 is not 0x33 for RPC" below. The A/B above compared *rendering*,
+> and rendering is exactly the part of the firmware that turns out not to
+> discriminate.
+
 ## The blob analysed is the blob the board runs
 
 `LogoRegData.bin` word 1 is a packed version: `[31:24]` year, `[23:20]` month,
@@ -835,6 +844,101 @@ This does not establish that the MIPS parses by placement rather than by header
 -- the display rendered correctly under both orders, and the allocation delta
 is not itself a fault. It does retire the argument that the order could not
 matter.
+
+## Project 0x34 RPC: the reported scheduler failure does not reproduce (2026-08-28)
+
+An external review reported that under project `0x34` a CPU_COMM CALL is
+accepted and `CALL_ACK`ed but never serviced -- no adapter entered, no RETURN,
+ThreadX clock frozen at tick `0x2c` -- while the same call completes under
+`0x33`. That was written up here as "0x34 is not 0x33 for RPC" and then tested
+directly the same day. **It does not reproduce. Under `0x34` the firmware is
+healthy and CPU_COMM works.**
+
+Measured on board B, diagnostic U-Boot `g7b178056c329-dirty`, clean boots:
+
+| | project `0x33` | project `0x34` |
+| --- | --- | --- |
+| readiness chain (execution, MIPS READY, app ready, magic) | passes | passes |
+| ThreadX tick over 60 s | 210 -> 60665, ~1008/s | **210 -> 60665, tick-for-tick identical** |
+| recorded exceptions | 0 | **0** |
+| `status` / `MIPS` flags throughout | `1` / `5` | `1` / `5` |
+| no-op CALL (`2f02f7dd`) | round trip | **round trip, 1 ms, `nret=0`, slot recycled** |
+| `THal_Vp_Init([0, 1, phys])` | returns `1` | **returns `1`, under 1 ms** |
+| `0xd800` bulk copy | lands | **lands** |
+
+The 60-second stability window under `0x34` is not merely "fine", it is
+*numerically identical* to `0x33` at every one-second sample. There is no
+frozen tick, no wedged scheduler, and no project-dependent RPC failure.
+
+So the roadmap item "resolve the project-0x34 scheduler failure before another
+live MIPS handoff" is **closed, negative -- there was no failure to resolve.**
+
+### What the reported failure probably was
+
+Not established, but there is one concrete candidate, and it is worth checking
+before anyone re-runs that instrumentation. The failing runs used the
+**comm-trace** patch set; the runs here used the **stability** patch set. The
+comm-trace table gained five `THal_Vp_Init` trampolines (markers `7101`-`7105`),
+and two of them displace a live instruction with `jal` rather than `j`:
+
+```
+{ 0x4b109f28, 0x8e24000c, 0x0ec40280 },  /* jal 0x8b100a00 -- clobbers ra */
+{ 0x4b109f50, 0x24020001, 0x0ec40288 },  /* jal 0x8b100a20 -- clobbers ra */
+```
+
+The other three use `j` (`0x0ac4xxxx`) and are fine. A `jal` planted mid-function
+destroys the enclosing function's live `ra`; if that function still needs it,
+the return goes to the trampoline's return site instead of its caller, which
+presents exactly as "the worker never reached routine lookup." **This is a
+hypothesis with the right shape, not a finding** -- whether it is fatal depends
+on whether `ra` is already spilled at those two sites.
+
+The general lesson is the project's own: **instrumentation is a change to the
+system under test.** A null observed only through a new trampoline set needs the
+uninstrumented control before it becomes a fact about the firmware.
+
+### What is true, and newly measured
+
+- **`THal_Vp_Init` works under both project ids** with the corrected
+  `[0, 1, phys]` ABI. The bare-argument call remains malformed.
+- **The VP state it copies is project-specific.** Destination `0x4d800000` reads
+  `00050000 0011000b 001d0017 00290023 0035002f 0041003b 004d0047 00590053`
+  under `0x34`, against the reported `00040000 000c0008 00150010 ...` under
+  `0x33`. Same structure, different table -- which is what a ProjectID file is
+  for, and is the first positive evidence that the id reaches the VP layer.
+- **`THal_Vp_Init` does not touch the video path.** `0x05600000`-`0x0560007f`
+  is byte-identical immediately before and immediately after the call, and
+  across two independent boots:
+
+```
+05600000: 80000020 00000000 00000000 00000000
+05600010: 03000010 00000000 00000000 00000000   <- source 0: enable[1:0]=0, fmt[15:8]=0
+05600020: 043f077f 00420077 00000000 00000000   <- 1920x1088
+05600030: 02d00500 00080808 00000000 00000000   <- 1280x720
+05600040: 00000780 00000780 02d00500 01680500
+05600050: 00000000 00000000 00000000 00000000
+05600060: 00000001 00000000 00000122 00000000
+05600070: 00000000 00000000 00000000 00000000   <- Y/C queue empty
+```
+
+  So completing VP init is *not* what programs the video source. The video
+  source's enable and format both still read zero with the MIPS running and VP
+  initialised. That does not refute "the MIPS firmware configures it" -- stock
+  does more after VP init (`powerCtrl`, `DecoderDisplay::enable(1)`,
+  `iommuEnable`, `dispCpuResume`, then DECD frames) -- but it does remove
+  `THal_Vp_Init` alone as the missing step.
+
+### Two operational rules
+
+- **A U-Boot `reset` is sufficient for a clean MIPS launch.** It is not a
+  physical power cycle, but the full readiness chain passes after one, and the
+  60-second stability window is clean. The one-launch-per-power-cycle budget is
+  really one-launch-per-*reset*. This removes the operator from the loop for any
+  MIPS experiment that does not need someone watching the panel: neutralise
+  `preboot`'s `h713_disp auto`, `saveenv`, and drive the whole sequence over
+  serial.
+- **Do not issue `h713_disp commstate` while a transaction is unresolved.** That,
+  not the call, caused the earlier apparent whole-board lock.
 
 ## Method note
 

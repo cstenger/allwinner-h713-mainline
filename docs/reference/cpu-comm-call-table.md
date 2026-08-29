@@ -8,6 +8,16 @@ run that proves it. `h713_disp mips-test 0x33` does; `h713_disp test` does not
 (it passes `prove_ready=false` and patches `source_id` to 2, which makes the
 firmware abandon init).
 
+> **This table is also live under project `0x34` (2026-08-28).** A report that
+> `0x34` accepts CALLs and never services them was tested directly and **does
+> not reproduce**: under `0x34` the 60-second stability window is tick-for-tick
+> identical to `0x33`, a no-op call (`2f02f7dd`) round-trips in 1 ms, and
+> `THal_Vp_Init` returns `1`. The channel row differs per boot -- read it from
+> `h713_disp commdev` rather than reusing a pid from these notes (a `0x34` boot
+> gave `chan=0 pid=0x8b8f275c`, not the `0x8b8f32b0` recorded below). See
+> "Project 0x34 RPC: the reported scheduler failure does not reproduce" in
+> [../mips-display-recovery.md](../mips-display-recovery.md).
+
 ## Entry layout
 
 | offset | contents |
@@ -28,6 +38,41 @@ Invocation form, known good:
 ```
 h713_disp commcall 2f02f7dd chan=0 pid=8b8f32b0
 ```
+
+## Arguments: `THal_Vp_Init` is not a no-argument call
+
+Most routines here were exercised with no parameters, which is correct for the
+getters and the black-screen/screen-cover toggles. **`THal_Vp_Init` is not one
+of them, and calling it bare is a malformed test.** Recovered 2026-08-28 by
+disassembling the registered adapter and independently tracing board-B stock
+`libhaldisplay.so`:
+
+```
+h713_disp commcall 1c6ff747 chan=<chan> pid=<pid> 0 1 <phys>
+```
+
+- ARM allocates a **`0xd800`-byte** buffer and passes its **physical** address.
+- The three input words are `0`, `1`, and that address.
+- The adapter runs a local state reset, then the VP initializer, then copies
+  `0xd800` bytes of VP state to the supplied address through an uncached alias,
+  returns one value, and installs an application callback.
+
+A bare call supplies destination address `0`, so the bulk copy has nowhere to
+go. Any earlier "standalone `THal_Vp_Init` does not initialise the display"
+result taken from a zero-argument call is void, as is any register observation
+made after it -- that transaction never resolved.
+
+Under project `0x33` the corrected call completes the whole transport in ~1 ms,
+returns `1`, fires every adapter boundary, and the destination holds an exact
+copy of the firmware's VP state at `0x8b48c304` (`00040000 000c0008 00150010
+...`). Use a destination inside the workspace U-Boot clears and flushes before
+releasing MIPS (e.g. `0x4d800000`); a destination the ARM has dirty cache lines
+over reads back as zeros and proves nothing about the copy.
+
+Related correction: the firmware's virtual base is **`0x8b100000`**, not
+`0x8b101000`. A disassembly helper carrying the 4 KiB-high base described
+unrelated code as the registered adapter, which is how the zero-argument ABI
+was believed in the first place.
 
 ## Display state -- the teardown set
 
