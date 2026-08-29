@@ -8,6 +8,54 @@ Goal for this phase: **decoded video visible on the projector panel.**
 
 ---
 
+## 2026-08-29: the premise is confirmed, and the stock diff is exhausted
+
+Newest state; the sections below are the record of how it was reached. Full
+account in [handoff-2026-08-29.md](handoff-2026-08-29.md).
+
+**The no-GPU premise is measured, not inferred.** With stock Android playing
+video and the player's transport controls auto-hidden, Mali runtime PM reads
+`active +0 ms, suspended +15115 ms` over 15 seconds — the GPU is fully asleep
+while video is on the panel. Measured with the controls *visible* it reads 100%
+active, which is the player's UI, and a single sample would have supported the
+opposite conclusion.
+
+**Only AFBD is driven per frame.** Sweeping eleven register windows at idle twice
+and during playback, the only video-driven registers are AFBD's Y bases
+`0x05600070`-`7c` and C bases `0x05600084`-`90`, cycling as a ring. TVTOP, the
+mixer, DE/OSD, LAYER, ROUTE, LVDS PHY, PLL, GE2D and the IOMMU show **zero**
+registers differing between idle and playback. They are load-bearing but
+configured once, so the per-frame surface is just AFBD's buffer slots.
+
+**Overlays are a GPU composite on stock.** Video alone runs decoder → dma-buf →
+AFBD source 0 → panel with the GPU asleep; video *with* UI wakes the GPU to
+composite both into one buffer that AFBD scans out. There is no hardware
+subtitle blending on this path.
+
+**Every candidate difference has been forced onto working stock hardware and
+none causes the black:**
+
+| forced onto stock | result |
+| --- | --- |
+| bit 31 on `0x05600100`/`0x05600140`, committed | no effect |
+| fmt 4 rather than stock's fmt 0, committed | tiled, half-height, colour-shifted |
+| IOMMU master 2 bypassed | coloured static |
+| mixer layer control, our value and zeroed, ±latch | no effect |
+
+Since *every* way of breaking source 0 still puts something on the panel, the
+black is source 0's output **not reaching composition** rather than a
+misconfigured source. fmt 0 is still a real fix worth making — stock's value is
+correct for NV12 and ours is not — but it is necessary, not sufficient.
+
+**Two rules that change how to test here.** Writes to the AFBD block are **inert
+until the per-register commit latch is pulsed** (control at `+0x00`, latch at
+`+0x04`): an uncommitted write lands, reads back, holds indefinitely and does
+nothing, so readback proves nothing. And the mixer, DE and TCON H/V totals are
+**coupled** — changing two of three to match stock blanked the panel; the revert
+restored it. Capture `0x05880020` on stock before revisiting that.
+
+---
+
 ## 2026-08-26 correction: DECD is the vendor no-GPU display path
 
 The older handoff below says DECD "has no job." That is now disproved by stock

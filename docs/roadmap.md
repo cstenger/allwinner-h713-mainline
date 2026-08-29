@@ -177,6 +177,19 @@ attached, the display path can be brought up here, not only on the projector
    scanout fetch path — and the "28 fps cross-process handoff ceiling" was
    really the ~44 MB/s uncached read of the decoder's output buffer.
 
+   **The no-GPU variant of this is a separate, still-open goal**, and as of
+   2026-08-29 its premise is confirmed rather than inferred: with stock Android
+   playing video and the player UI hidden, the Mali runtime-PM counters read
+   `active +0 ms, suspended +15115 ms` over 15 s, so the vendor really does put
+   video on the panel with the GPU asleep. Scope is also now bounded — only
+   AFBD's Y/C buffer bases are driven per frame; TVTOP, mixer, DE/OSD, PLL,
+   LVDS PHY and GE2D are configured once and never touched during playback.
+   What remains unexplained is why our DECD path is black: every difference
+   between our state and stock has been forced onto working stock hardware and
+   none of them reproduces it, which places the fault in source 0's output not
+   reaching composition rather than in source 0 itself. See
+   [handoff-2026-08-29.md](handoff-2026-08-29.md).
+
    **Read the HANDOFF section at the top of
    [video-decode.md](video-decode.md)**, which also carries the loose ends to
    tidy before starting audio. Earlier framing follows.

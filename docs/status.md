@@ -4,7 +4,7 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-08-21._
+_Last updated: 2026-08-29._
 
 ## Summary
 
@@ -34,6 +34,45 @@ layer handed the VE untranslated IOVAs; it corrupted the kernel's printk
 ringbuffer and panicked before emitting a frame. Removing it fixed both symptoms
 at once. **Next: getting decoded frames onto the panel.** See
 [video-decode.md](video-decode.md).
+
+**The no-GPU video premise is confirmed on hardware (2026-08-29), and the search
+for why our path is black has narrowed sharply.** Video already reaches the panel
+through the GPU (below); the open goal is doing it the vendor's way, with the
+display hardware performing YUV→RGB and the GPU idle. That the vendor stack
+*does* this had been inferred from `hwcomposer` reverse-engineering. It is now
+measured: with stock Android playing video and the player's transport controls
+auto-hidden, the Mali runtime-PM counters read **`active +0 ms, suspended
++15115 ms` across 15 seconds** — the GPU is fully asleep while video plays. The
+same measurement with the controls *visible* reads 100% active, which is the
+player's UI and nearly produced the opposite conclusion from a single sample.
+
+Two things follow. **Scope: only AFBD is driven per frame** — a sweep of eleven
+register windows at idle and during playback found the sole video-driven
+registers are AFBD's Y and C buffer bases, cycling as a ring; TVTOP, the mixer,
+DE/OSD, GE2D, the PLL and the LVDS PHY are byte-identical between the two states.
+They are load-bearing but *configured once*, so the runtime surface is much
+smaller than "implement the display pipeline". **Overlays: stock wakes the GPU
+and composites** video and UI into one buffer that AFBD scans out — there is no
+hardware subtitle blending to find, which closes a product question that had been
+open.
+
+**Every difference between our black state and stock has now been forced onto
+working stock hardware, and none of them causes the black:** bit 31 on the AFBD
+channel controls does nothing; the format field does matter (fmt 4 gives a tiled,
+colour-shifted picture where stock's fmt 0 is correct for NV12) but yields visible
+garbage rather than blackness; IOMMU bypass gives coloured static; and the mixer
+turns out not to be in the video path at all. Since *every* way of breaking
+source 0 on stock still puts something on the panel, our black is **source 0's
+output not reaching composition**, not a misconfigured source. Full account in
+[handoff-2026-08-29.md](handoff-2026-08-29.md) and
+[plane-brief-for-external-review.md](plane-brief-for-external-review.md).
+
+Two operational rules came out of it. **Writes to the AFBD block are inert until
+the per-register commit latch is pulsed** (control at `+0x00`, latch at `+0x04`);
+an uncommitted write lands, reads back, holds indefinitely and does nothing, so
+readback proves nothing there. And **the mixer, DE and TCON H/V totals are
+coupled** — changing two of the three to match stock blanked the panel, and the
+revert restored it.
 
 **WiFi and Bluetooth are done (2026-08-21).** The AIC8800D80 SDIO link runs at
 the stock configuration — four-bit UHS-SDR104 at a **verified** 50 MHz — after
