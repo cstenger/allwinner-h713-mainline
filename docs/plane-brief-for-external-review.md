@@ -318,11 +318,16 @@ itself.
 > worker, and no project-dependent RPC failure. Item 3 of section 7 is closed,
 > negative.
 >
-> The failing runs used the **comm-trace** patch set and these used the
-> **stability** set; two of the five new `THal_Vp_Init` trampolines
-> (`0x4b109f28`, `0x4b109f50`) displace a live instruction with `jal`, which
-> clobbers the enclosing function's `ra`. That is a plausible cause with the
-> right shape, but it is a hypothesis, not a finding.
+> **Nor is it the instrumentation.** The first guess was that two of the five
+> new `THal_Vp_Init` trampolines (`0x4b109f28`, `0x4b109f50`) break the adapter
+> by displacing a live instruction with `jal`, clobbering `ra`. Disassembly
+> refutes it -- the adapter spills `ra` at `0x8b109f10` and does not reload it
+> until `0x8b109f58`, so `ra` is dead at both sites, and the delay-slot
+> reordering each one introduces touches independent registers. Re-run under
+> `0x34` **with the comm-trace set installed**, the call completes and every
+> boundary fires: `stage=0xc013`, `CALL=0xe011`, `RETURN_ACK=0xf003`,
+> `VP-init stage=0x7105`, `nret=1`, `ret[0]=1`. The reported failure does not
+> reproduce instrumented or uninstrumented.
 >
 > **New and positive:** the copied VP state is project-specific --
 > `00050000 0011000b 001d0017 00290023 ...` under `0x34` against

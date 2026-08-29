@@ -873,29 +873,64 @@ frozen tick, no wedged scheduler, and no project-dependent RPC failure.
 So the roadmap item "resolve the project-0x34 scheduler failure before another
 live MIPS handoff" is **closed, negative -- there was no failure to resolve.**
 
-### What the reported failure probably was
+### The instrumentation is not the cause either
 
-Not established, but there is one concrete candidate, and it is worth checking
-before anyone re-runs that instrumentation. The failing runs used the
-**comm-trace** patch set; the runs here used the **stability** patch set. The
-comm-trace table gained five `THal_Vp_Init` trampolines (markers `7101`-`7105`),
-and two of them displace a live instruction with `jal` rather than `j`:
+The first guess was that the comm-trace trampolines were at fault. Two of the
+five `THal_Vp_Init` trampolines displace a live instruction with `jal` rather
+than `j`, and a `jal` planted mid-function destroys the enclosing function's
+live `ra`:
 
 ```
-{ 0x4b109f28, 0x8e24000c, 0x0ec40280 },  /* jal 0x8b100a00 -- clobbers ra */
-{ 0x4b109f50, 0x24020001, 0x0ec40288 },  /* jal 0x8b100a20 -- clobbers ra */
+{ 0x4b109f28, 0x8e24000c, 0x0ec40280 },  /* jal 0x8b100a00 */
+{ 0x4b109f50, 0x24020001, 0x0ec40288 },  /* jal 0x8b100a20 */
 ```
 
-The other three use `j` (`0x0ac4xxxx`) and are fine. A `jal` planted mid-function
-destroys the enclosing function's live `ra`; if that function still needs it,
-the return goes to the trampoline's return site instead of its caller, which
-presents exactly as "the worker never reached routine lookup." **This is a
-hypothesis with the right shape, not a finding** -- whether it is fatal depends
-on whether `ra` is already spilled at those two sites.
+**That hypothesis is refuted, statically and then on hardware.** The adapter
+spills `ra` on entry and does not reload it until after both sites:
 
-The general lesson is the project's own: **instrumentation is a change to the
-system under test.** A null observed only through a new trampoline set needs the
-uninstrumented control before it becomes a fact about the firmware.
+```
+8b109f04: addiu sp, sp, -0x20
+8b109f10: sw    ra, 0x1c(sp)      <-- ra spilled
+8b109f18: jal   0x8b149d70        <-- 7101 site
+8b109f20: jal   0x8b149754        <-- 7102 site
+8b109f28: lw    a0, 0xc(s1)       <-- 7103 site
+8b109f2c: lui   v1, 0xa000            (becomes the delay slot)
+8b109f50: addiu v0, zero, 1       <-- 7104 site
+8b109f54: lw    s1, 0x18(sp)          (becomes the delay slot)
+8b109f58: lw    ra, 0x1c(sp)      <-- ra restored
+8b109f74: j     0x8b14c174        <-- 7105 site, tail call
+```
+
+`ra` is dead at both `jal` sites, so clobbering it costs nothing. The other
+hazard these two introduce -- displacing a *data* instruction means its original
+successor runs first, as the jump's delay slot -- is also harmless here:
+`lui v1,0xa000` does not touch `a0`/`s1`, and `lw s1,0x18(sp)` does not touch
+`v0`. All five trampolines are correct as written, and the caves at
+`0x8b1009c0`-`0x8b100a60` are confirmed zero in the image.
+
+Re-run with the comm-trace set installed under `0x34`, the call completes and
+every boundary fires:
+
+```
+comm trace: stage=0xc013 (SendComm2CPUEx returned to CALL worker)
+comm trace: CALL=0xe011, HISR queue send=00000000 (success)
+comm trace: RETURN_ACK=0xf003
+VP-init trace: stage=0x7105 (entering callback installation)
+reply after 1 ms, nret=1, ret[0]=00000001
+```
+
+So the reported failure does not reproduce **instrumented or uninstrumented**.
+Whatever produced it was specific to that session -- a stale or mismatched
+U-Boot, or the malformed zero-argument call whose transaction never resolved --
+and it is not a property of project `0x34`, of the firmware, or of these
+trampolines.
+
+Two lessons, both ones this project keeps paying for. **Instrumentation is a
+change to the system under test**, so a null seen only through a new trampoline
+set needs the uninstrumented control before it is a fact. And **a hypothesis
+with the right shape is still a guess**: "`jal` clobbers `ra`" was mechanically
+plausible, cheap to check against the disassembly, and wrong -- checking it cost
+one `python3` dump of forty words.
 
 ### What is true, and newly measured
 
