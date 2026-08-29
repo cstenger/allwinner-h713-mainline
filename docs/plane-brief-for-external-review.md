@@ -765,6 +765,83 @@ and diff them against
 That is the one comparison that has never been made, and it covers exactly the
 statically-configured path the evidence now points at.
 
+### The comparison that had never been made (2026-08-29)
+
+Booted back to our stack and swept the same eleven windows with
+`tools/display/mmio-read.c` -- the arm64 counterpart of the stock reader, going
+through `/dev/mem` and emitting a byte-identical format so the two captures diff
+line-for-line. Saved as
+[reference/linux-block-sweep-2026-08-29.txt](reference/linux-block-sweep-2026-08-29.txt).
+
+**49 of 340 registers differ.** By block:
+
+| block | regs | differ |
+| --- | --- | --- |
+| TVTOP | 48 | **0 -- identical** |
+| LAYER | 16 | **0 -- identical** |
+| ROUTE | 8 | **0 -- identical** |
+| MIXER | 32 | 1 |
+| DE_OSD | 32 | 1 |
+| PLL | 8 | 1 |
+| GE2D | 16 | 1 |
+| MIPS | 4 | 1 |
+| IOMMU | 32 | 3 |
+| LVDS_PHY | 16 | **4** |
+| AFBD | 128 | 37 (expected -- different video state) |
+
+**State caveat, and it matters:** stock was playing video; ours is an idle console
+with the MIPS parked (`0x0306101c` = 0 here, 1 on stock) and no DECD activity. The
+AFBD deltas are therefore expected. TVTOP, LAYER and ROUTE being byte-identical
+independently confirms the earlier conclusion that those are configure-once and
+already correct on our side.
+
+**The cleanest finding: our H/V total encoding is off by one, in two independent
+blocks.**
+
+```
+MIXER   0x0525c000   stock 0x02F7054F   ours 0x02F80550
+DE_OSD  0x0524c010   stock 0x02F7054F   ours 0x02F80550
+```
+
+`0x54F` = 1359 against our 1360, `0x2F7` = 759 against our 760. Stock encodes
+total-minus-one and we encode the total, and the *same* value appears in both
+blocks. This was previously visible only as one odd mixer value and easy to
+dismiss; a second independent block carrying the identical discrepancy makes it a
+convention error rather than a curiosity.
+
+**The biggest new difference is the LVDS PHY** -- four of sixteen registers, in
+the block that physically drives the panel, which had never been compared:
+
+```
+0x051c0010   stock 0x00000000   ours 0x00000045
+0x051c0014   stock 0x1A000005   ours 0x18000005
+0x051c0024   stock 0x00350000   ours 0x00300000
+0x051c0028   stock 0x08100035   ours 0x1F300030
+```
+
+**Tempering that before anyone spends a week on it:** our values are exactly the
+ones `tools/display/devmem32.c` and the handoff doc record as the *working* logo
+configuration, so they demonstrably can drive this panel. And on stock the MIPS
+firmware owns the display while on ours U-Boot does, so this may be two valid
+configurations rather than one broken one. It is the strongest new lead, not a
+smoking gun.
+
+**The IOMMU difference is now concrete rather than inferred:**
+
+```
+0x02010030 BYPASS         stock 0x00000000   ours 0x0000007C
+0x02010050 TTB            stock 0x6F3A0000   ours 0x41F28000
+0x02010070 TLB_PREFETCH   stock 0x0003007F   ours 0x0000007F
+```
+
+`0x7C` is masters 2,3,4,5,6 bypassed -- master 2 is `dec@5600000`, so our side
+really is running the video master untranslated, in the register rather than by
+inference. Bypass was already shown on stock to produce coloured static rather
+than black, so this remains a difference rather than a cause.
+
+Also new: `PLL 0x058c0018` is `0xC950311E` on ours and **zero** on stock, and
+`GE2D 0x05240018` is `0x00004000` on stock against zero on ours.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
