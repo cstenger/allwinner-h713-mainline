@@ -51,7 +51,11 @@ def run(port, cmd, timeout=20.0):
         if b:
             out += b
             last = time.time()
-            if out.rstrip().endswith(b"#"):
+            # Root Linux gives "#", the stock Android console gives "$". Match
+            # both: with only "#" every chunk on Android falls through to the
+            # 1.5 s idle timeout below, which is ~20x the time the chunk itself
+            # takes and turns a 30-second transfer into three and a half minutes.
+            if out.rstrip().endswith(b"#") or out.rstrip().endswith(b"$"):
                 break
         else:
             if out and time.time() - last > 1.5:

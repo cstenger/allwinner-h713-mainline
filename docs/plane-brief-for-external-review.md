@@ -480,6 +480,66 @@ the obvious thing to diff against a stock Android playback capture.
 generator result closes that space: the source is doing its job and the output
 is being discarded after it.
 
+### The stock Android playback capture (2026-08-28, later)
+
+Step 1 above was run. Stock Android, `com.softwinner.TvdVideo` playing a 1280x720
+H.264 Main clip, verified on the panel by the operator and by 114 decoder log
+lines, sampled once a second for eight seconds from inside the playback window.
+Captures: [reference/stock-android-playback-2026-08-28.txt](reference/stock-android-playback-2026-08-28.txt)
+and an idle baseline in [reference/stock-android-idle-2026-08-28.txt](reference/stock-android-idle-2026-08-28.txt),
+both in the reference dump's exact format so they diff line-for-line.
+
+**The pipeline is unmistakably live.** The Y base at `0x05600070` cycles through
+a ring -- `0x00200000`, `0x01900000`, `0x00400000`, `0x02900000` -- with the C
+base at `0x05600084` always exactly `Y + 0xE1000`, which is 921600, the 1280x720
+NV12 luma plane. Frame counters at `0x05600058`/`0x0560005c` advance throughout.
+
+Three findings, in descending order of how much they should change what we do.
+
+**1. Stock never sets the format nibble we set.** Across all eight samples,
+`0x05600010` reads `0x03000013` -- enable 3, **fmt 0**. Our DECD submit drove it
+to `0x03000413`, fmt 4. This brief read that transition as the firmware
+configuring the source correctly. It did configure it, but *not to the value
+stock uses while putting real video on the panel*. Whatever our VideoInfo
+declares, it is not what the vendor path declares. The idle baseline already
+reads `0x03000013`, so fmt 0 is the resting and the playing value alike.
+
+**2. Stock has a channel fully configured at `0x05600100` that Linux leaves
+empty, and bit 31 set on two channel-control registers.**
+
+| register | Linux (black) | stock (playing) |
+| --- | --- | --- |
+| `0x05600100` | `0x00010000` | `0x83001901` |
+| `0x05600108` | `0x00000000` | `0x008000FF` |
+| `0x0560010c` | `0x00000000` | `0x00FF0080` |
+| `0x05600140` | `0x03001900` | `0x83001900` |
+
+The structural tell: `0x05600148`/`0x0560014c` are `0x008000FF`/`0x00000080` in
+**both** dumps, so the `0x140` channel has its pair programmed either way -- but
+the `0x100` channel's corresponding pair is programmed **only** on stock. And
+bit 31 is set on both control words on stock, in idle and in playback, and was
+never set by any ARM-side write we have made. That is a static enable, not a
+playback artifact, and it sits exactly where this brief predicted the gap:
+downstream of the source, in composition.
+
+**3. Stock runs translated, we ran bypassed.** Every stock buffer address is a
+low IOVA (`0x00200000`-`0x02900000`); ours were raw physical (`0x6C500000`).
+Item 4 of the earlier list assumed IOMMU bypass was a safe simplification for
+the firmware's own fetches. Stock does not use it.
+
+Also worth noting, smaller: the mixer layer control at `0x0525c004` is `0x1402`
+on stock. The DECD experiments tried `0x1403` and `0x1003`; **neither is the
+stock value**. And `0x0525c000` is `0x02F7054F` on stock against our
+`0x02F80550` -- both H and V totals off by exactly one.
+
+**Operational note for repeating this.** The vendor player silently refuses a
+video-only file: a 1280x720 H.264 clip with no audio track produced "Video
+Problem: Do not support this video" on screen, while the byte-identical video
+muxed with a silent AAC track played immediately. A file pushed to `/sdcard`
+also lands `-rw-------` under a FUSE-synthesised uid that `chmod` cannot change,
+so the player cannot open a `file://` path to it; scan it with
+`MEDIA_SCANNER_SCAN_FILE` and launch the resulting `content://` URI instead.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
