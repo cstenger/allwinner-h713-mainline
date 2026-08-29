@@ -665,6 +665,54 @@ This is the section we most want reviewed.
    survives translation. Master 2 cannot be translated on a display Linux
    inherited rather than programmed.
 
+   **Done, as patch 0070, and it works (2026-08-28).** With the carveout
+   identity-mapped the board boots with master 2 translating, zero page faults,
+   and the **logo still on the panel** -- the first healthy fetch engine under
+   translation. Getting there also exposed a real `sun50i-iommu` bug: the driver
+   cannot map before attach, because `sun50i_table_flush()` and the page-table
+   allocator dereference `sun50i_domain->iommu`, which only `attach_domain()`
+   sets, so any `IOMMU_RESV_DIRECT` region NULL-derefs inside
+   `iommu_device_register()`. Fixed by binding the instance in
+   `domain_alloc_paging()`, which already receives the device. That fix is
+   upstream-shaped and independent of this project.
+
+### The clean negative, at last (2026-08-28)
+
+On that one boot, fetch engine verified working throughout:
+
+| step | state | panel |
+| --- | --- | --- |
+| boot, master 2 translated, carveout identity-mapped | 0 faults | **logo** |
+| DECD holding red NV12 | 60 IRQ/s, `Y=0xFFE00000` `C=0xFFEE1000`, 0 faults, panfrost 0 | logo |
+| logo channel disabled | DECD still 60 IRQ/s, 0 faults | **black** |
+| OSD repointed at DECD's own IOVA | fetched 1.38 MB, then ran off the mapping | **white -- panel responded** |
+
+The last row is the control 0069 could not produce. Panel, raster and IOMMU all
+work; DECD's buffer is fetchable under translation; the frame is genuinely red
+(`Y=0x81, U=0x5A, V=0xF0`). So the black is **specifically DECD's output not
+being routed** -- not a wedged engine, not a bad address, not an empty buffer.
+
+And throughout, unchanged:
+
+```
+0x05600010 = 0x03000010    video source 0: enable[1:0]=0, format[15:8]=0
+```
+
+Frames at vsync, addresses translated exactly as stock's hardware sees them,
+all three ARM-side resume steps reproduced -- and the video source is still
+neither enabled nor formatted. Stock's only writer of that field,
+`dec_reg_video_channel_attr_config()`, is dead code. Nothing ARM-side programs
+it, and nothing ARM-side can make it unnecessary. **The MIPS firmware fed by
+DECD's VideoInfo dma-buf is the only remaining candidate**, and U-Boot parks it
+on every boot tested. That makes "MIPS running + DECD submitting" the one
+experiment left, and it is now well-posed rather than a guess.
+
+**Operational rule, reproducible:** one IOMMU page fault on master 2 wedges the
+AFBD fetch engine for the whole boot -- seen on the 0069 boot and again here
+(fault at `0xFFF52000`, one page past the DECD buffer end at `0xFFF51800`;
+panel stuck white, unrecoverable by register writes). Budget one fault per boot
+and design experiments so the fault comes last.
+
 3. ~~**Resolve the project-0x34 scheduler failure before another live MIPS
    handoff.**~~ **CLOSED 2026-08-28 -- there was no scheduler failure.** Under
    `0x34` the firmware is healthy for 60 s (tick identical to `0x33`, zero
