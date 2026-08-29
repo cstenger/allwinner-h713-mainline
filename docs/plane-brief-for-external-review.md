@@ -623,6 +623,57 @@ repetition as the video. What AFBD source 0 fetches therefore already contains
 the player's overlay, so composition happens upstream of this fetch. That has
 implications for the subtitle/OSD question raised earlier in this brief.
 
+### Which blocks are actually used for video, and the GPU answer (2026-08-28)
+
+A scoping question worth more than another register permutation: which of these
+components does stock actually drive per frame? Answered by sweeping eleven
+known-safe windows at idle twice, two seconds apart, then once during playback --
+the double idle sample separates free-running counters from anything genuinely
+video-driven. Full capture in
+[reference/stock-android-block-sweep-2026-08-28.txt](reference/stock-android-block-sweep-2026-08-28.txt).
+
+| block | regs | free-running | video-driven | verdict |
+| --- | --- | --- | --- | --- |
+| **AFBD** | 128 | 8 | **8** | **active in the video path** |
+| TVTOP | 48 | 0 | 0 | static |
+| MIXER | 32 | 0 | 0 | static |
+| DE_OSD | 32 | 0 | 0 | static |
+| LAYER / ROUTE / LVDS_PHY / PLL / GE2D / MIPS / IOMMU | — | 0 | 0 | static |
+
+**Only AFBD moves**, and only its Y bases (`0x05600070`-`7c`) and C bases
+(`0x05600084`-`90`), flipping as a ring. **TVTOP is not driven for video** -- its
+48 registers are byte-identical idle versus playback.
+
+The caveat that keeps this honest: *static is not unused*. TVTOP still routes the
+signal, the LVDS PHY still drives the panel, the PLL still clocks it. They are
+load-bearing but **configured once at init and never touched per frame**. That is
+the useful shape for scoping: get them right once, and the only per-frame driving
+required is AFBD's buffer slots.
+
+**And the GPU is genuinely off during video.** Measured through the Mali runtime
+PM counters at `/sys/devices/platform/1800000.gpu/power`:
+
+```
+idle, 12 s                      gpu active +0 ms      suspended +12114 ms
+playing, controls visible, 12 s gpu active +12128 ms  suspended +0 ms
+playing, controls hidden, 15 s  gpu active +0 ms      suspended +15115 ms
+```
+
+The middle row is the player's transport controls, not the video -- a trap worth
+naming, because measured alone it looks like stock composites video on the GPU.
+Once the controls auto-hide and the video is still playing, the GPU is
+**completely suspended**. This document's central premise -- that the vendor
+stack puts video on the panel without the GPU doing colour conversion -- is now
+**directly confirmed on hardware** rather than inferred from `hwcomposer`.
+
+**This also answers the open subtitle/OSD product question.** Stock has two
+modes: video alone runs decoder -> dma-buf -> AFBD source 0 -> panel with the GPU
+asleep, and video *with* UI wakes the GPU to composite both into one buffer which
+AFBD then scans out. That is why the transport controls appeared tiled *inside*
+source 0's corruption in the fmt-4 photographs -- they share the video's buffer.
+So the vendor answer to overlays is **wake the GPU and composite**, not hardware
+subtitle blending over video. Section 0's third option was the right one.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
