@@ -45,6 +45,14 @@
  * Phase 4 was originally read as evidence that the Android UI is not composited
  * through this block.  That inference was wrong -- phase 4 simply was not
  * committed, so it never reached hardware.  It remains untested.
+ *
+ * Phase 'f' sets the format field to 4, the value our Linux black state carries
+ * (0x03000013 -> 0x03000413).  Result: the picture broke -- repeated about twice
+ * horizontally, squashed into the top ~45%, flat below, colours shifted -- which
+ * is the signature of the fetch consuming ~two source lines per output line and
+ * misreading chroma.  So fmt 4 is causal and stock's fmt 0 is correct for NV12.
+ * It does NOT explain our black state, though: fmt 4 here is distorted but
+ * plainly visible, while ours shows nothing.  Necessary, not sufficient.
  */
 typedef unsigned int u32;
 typedef unsigned long usize;
@@ -61,7 +69,13 @@ typedef unsigned long usize;
 #define CH2_CTRL   0x140
 #define BIT31      0x80000000u
 
+/* Overridable at build time: -DHOLD_SECONDS=25 gives time to photograph the
+ * panel, which is the only way to record what composition actually did --
+ * adb screencap reads the Android surface, and the video is on a hardware
+ * overlay that never appears there. */
+#ifndef HOLD_SECONDS
 #define HOLD_SECONDS 6
+#endif
 #define SAMPLE_NS    20000000  /* 20 ms */
 #define MAX_TARGETS  2
 
@@ -212,17 +226,21 @@ __attribute__((used, noinline)) int run(long *stack)
 	volatile u32 *registers;
 	u32 offset[MAX_TARGETS];
 	u32 mask[MAX_TARGETS];
+	u32 set_mask[MAX_TARGETS];
 	u32 saved[MAX_TARGETS];
+	u32 target[MAX_TARGETS];
 	u32 samples, held, first_revert, i;
 	int targets = 0;
 	int commit = 0;
 	long result;
 	int fd;
 
-	if (!arg || arg[0] < '1' || arg[0] > '9' || arg[1]) {
-		output_string("usage: hidtvreg-poke 1|2|3|4|5|6|7|8|9\n");
+	if (!arg || arg[1] || (arg[0] != 'f' && (arg[0] < '1' || arg[0] > '9'))) {
+		output_string("usage: hidtvreg-poke 1|2|3|4|5|6|7|8|9|f\n");
 		return 2;
 	}
+	for (i = 0; i < MAX_TARGETS; ++i)
+		set_mask[i] = 0;
 
 	switch (arg[0]) {
 	case '1':
@@ -278,6 +296,18 @@ __attribute__((used, noinline)) int run(long *stack)
 		offset[1] = CH2_CTRL; mask[1] = BIT31; targets = 2;
 		commit = 1;
 		break;
+	case 'f':
+		/*
+		 * The format field, bits 11:8 of 0x05600010. Stock plays at 0;
+		 * our Linux DECD submit produces 4. Setting stock to 4 -- the
+		 * exact value our black state carries -- asks whether the format
+		 * is what breaks composition, without rebuilding a kernel.
+		 * 0x03000013 -> 0x03000413.
+		 */
+		offset[0] = SRC_CTRL; mask[0] = 0xF00u; set_mask[0] = 0x400u;
+		targets = 1;
+		commit = 1;
+		break;
 	}
 
 	fd = syscall3(5, (long)device, O_RDWR, 0); /* open */
@@ -300,8 +330,10 @@ __attribute__((used, noinline)) int run(long *stack)
 		output_register(AFBD_PAGE + offset[i], saved[i]);
 	}
 
-	for (i = 0; i < (u32)targets; ++i)
-		registers[offset[i] / 4] = saved[i] & ~mask[i];
+	for (i = 0; i < (u32)targets; ++i) {
+		target[i] = (saved[i] & ~mask[i]) | set_mask[i];
+		registers[offset[i] / 4] = target[i];
+	}
 
 	if (commit) {
 		for (i = 0; i < (u32)targets; ++i) {
@@ -312,7 +344,7 @@ __attribute__((used, noinline)) int run(long *stack)
 		}
 	}
 
-	output_string("cleared, holding\n");
+	output_string("written, holding\n");
 	for (i = 0; i < (u32)targets; ++i)
 		output_register(AFBD_PAGE + offset[i],
 				registers[offset[i] / 4]);
@@ -331,7 +363,7 @@ __attribute__((used, noinline)) int run(long *stack)
 		u32 t;
 
 		for (t = 0; t < (u32)targets; ++t)
-			if (registers[offset[t] / 4] & mask[t])
+			if (registers[offset[t] / 4] != target[t])
 				cleared = 0;
 		if (cleared)
 			++held;
@@ -340,7 +372,7 @@ __attribute__((used, noinline)) int run(long *stack)
 		sleep_ns(0, SAMPLE_NS);
 	}
 
-	output_string("held cleared in ");
+	output_string("held at target in ");
 	output_decimal(held);
 	output_string("/");
 	output_decimal(samples);

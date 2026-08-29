@@ -586,6 +586,43 @@ Two cautions on this session's method, both of which cost a result:
   Android UI is not composited through this block. That inference was wrong: the
   write was simply uncommitted. Whether the UI runs through AFBD is untested.
 
+### fmt 4 is causal, and it is NOT what makes our state black (2026-08-28)
+
+Same method as the bit-31 test: set stock to the value our black state carries,
+during playback, with the latch pulsed. `0x05600010` `0x03000013` ->
+`0x03000413`, held 1250/1250 samples across 25 seconds, photographed off the
+panel. (`adb screencap` is useless for this -- it reads the Android surface, and
+the video is on a hardware overlay that never appears there.)
+
+**The picture broke, and it broke in a specific way.** The image repeated
+roughly twice horizontally and was squashed into the top ~45% of the frame, with
+the remainder flat. That combination is one signature, not two: the fetch is
+consuming about two source lines per output line, so content repeats across the
+width and exhausts the buffer at about half the height. Everything below is
+fetch past valid data, which is why the flat region was a different colour in
+each of two photographs (teal, then yellow-green) rather than stable.
+
+Colours in the valid region were also shifted -- saturated neon pink/green/cyan
+rather than the clip's colour bars -- so the chroma plane is misread as well,
+not only the line stride. Both are consistent with the format field selecting
+buffer interpretation, and 4 assuming a different bytes-per-pixel packing than
+the NV12 the buffer actually contains.
+
+**So finding 1 of the stock diff is causal: fmt 4 is wrong for our data and
+stock's fmt 0 is right.** Making DECD's VideoInfo produce fmt 0 is a concrete,
+targeted change.
+
+**But it does not explain the black.** fmt 4 on stock yields a distorted,
+clearly visible picture. Our Linux state has fmt 4 *and* shows nothing at all.
+Setting fmt 0 is therefore necessary and demonstrably not sufficient; at least
+one other difference is still doing the work. Do not treat this as solved.
+
+**Unplanned observation, worth its own look:** the player's own UI -- seek bar
+and transport icons -- was tiled *inside* the distorted region, in the same
+repetition as the video. What AFBD source 0 fetches therefore already contains
+the player's overlay, so composition happens upstream of this fetch. That has
+implications for the subtitle/OSD question raised earlier in this brief.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
