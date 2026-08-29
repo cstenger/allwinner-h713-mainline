@@ -65,6 +65,12 @@ typedef unsigned long usize;
 #define AFBD_PAGE  0x05600000
 #define IOMMU_PAGE 0x02010000
 #define IOMMU_BYPASS 0x030
+#define MIXER_PAGE 0x0525c000
+#define MIXER_TOTAL 0x000
+#define MIXER_CTRL  0x004
+/* By analogy with mainline sun8i-mixer, where offset 0x008 is GLOBAL_DBUFF and
+ * writing 1 latches the shadow bank. Reads 0 in every capture. */
+#define MIXER_DBUFF 0x008
 #define SRC_CTRL   0x010
 #define SRC_COMMIT 0x014
 #define CH1_CTRL   0x100
@@ -235,13 +241,16 @@ __attribute__((used, noinline)) int run(long *stack)
 	int targets = 0;
 	int commit = 0;
 	u32 page = AFBD_PAGE;
+	u32 dbuff = 0;
 	long result;
 	int fd;
 
 	if (!arg || arg[1] ||
-	    (arg[0] != 'f' && arg[0] != 'i' &&
+	    (arg[0] != 'f' && arg[0] != 'i' && arg[0] != 'm' &&
+	     arg[0] != 'n' && arg[0] != 'o' && arg[0] != 'p' &&
+	     arg[0] != 'q' &&
 	     (arg[0] < '1' || arg[0] > '9'))) {
-		output_string("usage: hidtvreg-poke 1|2|3|4|5|6|7|8|9|f|i\n");
+		output_string("usage: hidtvreg-poke 1|2|3|4|5|6|7|8|9|f|i|m|n|o|p|q\n");
 		return 2;
 	}
 	for (i = 0; i < MAX_TARGETS; ++i)
@@ -313,6 +322,57 @@ __attribute__((used, noinline)) int run(long *stack)
 		targets = 1;
 		commit = 1;
 		break;
+	case 'p':
+	case 'q':
+		/*
+		 * 'o' zeroed the layer control, held it 300/300 samples, and the
+		 * panel did not change -- so mixer writes are not reaching
+		 * hardware, exactly as uncommitted AFBD writes did not. These
+		 * two repeat it with 0x0525c008 pulsed as a double-buffer latch.
+		 * 'p' is the positive control (zero the layer control), 'q' is
+		 * our black state's value.
+		 */
+		page = MIXER_PAGE;
+		offset[0] = MIXER_CTRL;
+		mask[0] = 0xFFFFFFFFu;
+		set_mask[0] = arg[0] == 'p' ? 0x00000000u : 0x00001003u;
+		targets = 1;
+		commit = 0;
+		dbuff = MIXER_DBUFF;
+		break;
+	case 'm':
+	case 'n':
+	case 'o':
+		/*
+		 * Mixer, downstream of source 0, where the fault was localised.
+		 * Stock runs 0x0525c004 = 0x1402 and 0x0525c000 = 0x02F7054F;
+		 * our black state runs 0x1003 and 0x02F80550. mask 0xFFFFFFFF
+		 * with set_mask carrying the whole word writes an exact value
+		 * rather than flipping bits.
+		 *
+		 * commit stays 0, and here that is a correctness requirement,
+		 * not just a default: on this block 0x0525c004 is the layer
+		 * control, NOT a latch for 0x0525c000, so pulsing offset+4 for
+		 * phase 'n' would clobber a live register.
+		 *
+		 * 'm' = our mixer control, 'n' = our H/V total, 'o' = positive
+		 * control, zero the layer control outright. If 'o' also does
+		 * nothing then mixer writes are not reaching hardware and a null
+		 * from 'm'/'n' means nothing -- the same trap phases 1-5 fell
+		 * into on AFBD.
+		 */
+		page = MIXER_PAGE;
+		mask[0] = 0xFFFFFFFFu;
+		targets = 1;
+		commit = 0;
+		if (arg[0] == 'm') {
+			offset[0] = MIXER_CTRL;  set_mask[0] = 0x00001003u;
+		} else if (arg[0] == 'n') {
+			offset[0] = MIXER_TOTAL; set_mask[0] = 0x02F80550u;
+		} else {
+			offset[0] = MIXER_CTRL;  set_mask[0] = 0x00000000u;
+		}
+		break;
 	case 'i':
 		/*
 		 * IOMMU_BYPASS_REG bit 2 -- master 2 is dec@5600000, shared with
@@ -360,6 +420,12 @@ __attribute__((used, noinline)) int run(long *stack)
 	for (i = 0; i < (u32)targets; ++i) {
 		target[i] = (saved[i] & ~mask[i]) | set_mask[i];
 		registers[offset[i] / 4] = target[i];
+	}
+
+	if (dbuff) {
+		registers[dbuff / 4] = 1;
+		output_string("dbuff latch pulsed; reads back ");
+		output_register(page + dbuff, registers[dbuff / 4]);
 	}
 
 	if (commit) {
@@ -416,6 +482,8 @@ __attribute__((used, noinline)) int run(long *stack)
 	if (commit)
 		for (i = 0; i < (u32)targets; ++i)
 			registers[(offset[i] + 4) / 4] = 1;
+	if (dbuff)
+		registers[dbuff / 4] = 1;
 
 	output_string("restored\n");
 	for (i = 0; i < (u32)targets; ++i)

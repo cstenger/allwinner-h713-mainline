@@ -717,6 +717,54 @@ obvious next experiment is to write our values into stock's mixer during playbac
 and see whether the panel goes black rather than merely corrupt. Black would be
 the first time any forced difference reproduced our symptom.
 
+### The mixer is not in the video path, and the stock diff is exhausted (2026-08-29)
+
+The two remaining differences were both in the mixer, so they were forced onto
+stock during playback. All three attempts are null:
+
+| written to `0x0525c004` | latch | panel |
+| --- | --- | --- |
+| our `0x1003` (stock `0x1402`) | none | no change |
+| `0x00000000`, layer control zeroed | none | no change |
+| `0x00000000`, layer control zeroed | `0x0525c008` pulsed | **no change** |
+
+Each held its value 300/300 samples across six seconds. The second and third are
+positive controls, not experiments: zeroing a block's layer control outright
+should do *something*. It does nothing, latched or not.
+
+**So the mixer at `0x0525c000` is not in the live video path**, and two
+independent lines say so. The block-sweep found zero of its registers moving
+between idle and playback, and now zeroing its control word changes nothing on
+screen. The two mixer differences from the stock diff are therefore almost
+certainly irrelevant, including `0x0525c004`, which had looked like the strongest
+remaining lead precisely because neither value we had tried was stock's.
+
+One caveat kept deliberately: `0x0525c008` as a double-buffer latch is a guess by
+analogy with mainline `sun8i-mixer`, and it read back `1` rather than being
+consumed, so "mixer writes never reach hardware at all" is not fully excluded.
+The sweep result does not rest on that guess.
+
+**The stock-side search is now exhausted.** Every difference the stock capture
+revealed has been forced onto working hardware: bit 31 (nothing), fmt 4
+(tiling), IOMMU bypass (static), mixer control and H/V total (nothing). None
+reproduces black.
+
+**What is actually left, and it is a gap in the data rather than a new theory.**
+The sweep shows every block except AFBD is static during playback, so the path
+from AFBD to the panel is statically configured. But we have only ever captured
+three of those blocks on the Linux side -- AFBD, mixer and TVTOP -- and TVTOP
+already matched exactly. **DE_OSD, LAYER, ROUTE, LVDS_PHY, PLL, GE2D and the
+IOMMU have never been compared between stock and our black state at all.** A
+static-configuration difference in any of them would not have shown up in
+anything done so far.
+
+The next experiment is therefore not another poke: it is to capture those same
+eleven windows under our Linux with `tools/display/hidtvreg-read.c`'s equivalent
+and diff them against
+[reference/stock-android-block-sweep-2026-08-28.txt](reference/stock-android-block-sweep-2026-08-28.txt).
+That is the one comparison that has never been made, and it covers exactly the
+statically-configured path the evidence now points at.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
