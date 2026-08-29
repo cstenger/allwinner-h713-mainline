@@ -63,6 +63,8 @@ typedef unsigned long usize;
 #define O_RDWR     2
 
 #define AFBD_PAGE  0x05600000
+#define IOMMU_PAGE 0x02010000
+#define IOMMU_BYPASS 0x030
 #define SRC_CTRL   0x010
 #define SRC_COMMIT 0x014
 #define CH1_CTRL   0x100
@@ -232,11 +234,14 @@ __attribute__((used, noinline)) int run(long *stack)
 	u32 samples, held, first_revert, i;
 	int targets = 0;
 	int commit = 0;
+	u32 page = AFBD_PAGE;
 	long result;
 	int fd;
 
-	if (!arg || arg[1] || (arg[0] != 'f' && (arg[0] < '1' || arg[0] > '9'))) {
-		output_string("usage: hidtvreg-poke 1|2|3|4|5|6|7|8|9|f\n");
+	if (!arg || arg[1] ||
+	    (arg[0] != 'f' && arg[0] != 'i' &&
+	     (arg[0] < '1' || arg[0] > '9'))) {
+		output_string("usage: hidtvreg-poke 1|2|3|4|5|6|7|8|9|f|i\n");
 		return 2;
 	}
 	for (i = 0; i < MAX_TARGETS; ++i)
@@ -308,6 +313,28 @@ __attribute__((used, noinline)) int run(long *stack)
 		targets = 1;
 		commit = 1;
 		break;
+	case 'i':
+		/*
+		 * IOMMU_BYPASS_REG bit 2 -- master 2 is dec@5600000, shared with
+		 * ge2d. Stock reads 0x00000000 here: nothing bypassing, so
+		 * master 2 translates. Our black state ran it bypassed.
+		 *
+		 * commit stays 0 deliberately. The IOMMU has no per-register
+		 * commit latch, and offset+4 here is 0x02010034, a neighbouring
+		 * IOMMU register -- pulsing it would be a write we never
+		 * intended.
+		 *
+		 * RISK: with master 2 bypassed its fetches stop being
+		 * translated, so IOVAs like 0x00400000 are used as raw physical
+		 * addresses. H713 DRAM starts at 0x40000000, so those land below
+		 * DRAM, on non-memory. Expect a garbage picture; a wedged fetch
+		 * engine or bus abort is possible and may outlast the restore.
+		 */
+		page = IOMMU_PAGE;
+		offset[0] = IOMMU_BYPASS; mask[0] = 0u; set_mask[0] = 1u << 2;
+		targets = 1;
+		commit = 0;
+		break;
 	}
 
 	fd = syscall3(5, (long)device, O_RDWR, 0); /* open */
@@ -317,7 +344,7 @@ __attribute__((used, noinline)) int run(long *stack)
 	}
 
 	result = syscall6(192, 0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-			  AFBD_PAGE >> 12); /* mmap2, offset in pages */
+			  page >> 12); /* mmap2, offset in pages */
 	if ((unsigned long)result >= (unsigned long)-4095) {
 		output_string("ERROR mmap AFBD read-write\n");
 		return 1;
@@ -327,7 +354,7 @@ __attribute__((used, noinline)) int run(long *stack)
 	output_string("before\n");
 	for (i = 0; i < (u32)targets; ++i) {
 		saved[i] = registers[offset[i] / 4];
-		output_register(AFBD_PAGE + offset[i], saved[i]);
+		output_register(page + offset[i], saved[i]);
 	}
 
 	for (i = 0; i < (u32)targets; ++i) {
@@ -339,14 +366,14 @@ __attribute__((used, noinline)) int run(long *stack)
 		for (i = 0; i < (u32)targets; ++i) {
 			registers[(offset[i] + 4) / 4] = 1;
 			output_string("commit latch pulsed; reads back ");
-			output_register(AFBD_PAGE + offset[i] + 4,
+			output_register(page + offset[i] + 4,
 					registers[(offset[i] + 4) / 4]);
 		}
 	}
 
 	output_string("written, holding\n");
 	for (i = 0; i < (u32)targets; ++i)
-		output_register(AFBD_PAGE + offset[i],
+		output_register(page + offset[i],
 				registers[offset[i] / 4]);
 
 	/*
@@ -392,7 +419,7 @@ __attribute__((used, noinline)) int run(long *stack)
 
 	output_string("restored\n");
 	for (i = 0; i < (u32)targets; ++i)
-		output_register(AFBD_PAGE + offset[i],
+		output_register(page + offset[i],
 				registers[offset[i] / 4]);
 
 	syscall1(6, fd); /* close */

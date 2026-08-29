@@ -674,6 +674,49 @@ source 0's corruption in the fmt-4 photographs -- they share the video's buffer.
 So the vendor answer to overlays is **wake the GPU and composite**, not hardware
 subtitle blending over video. Section 0's third option was the right one.
 
+### All three stock-diff findings are tested, and none of them is the black (2026-08-29)
+
+The IOMMU was the last of the three. Bypassing master 2 on stock during playback
+-- `IOMMU_BYPASS_REG` at `0x02010030`, bit 2, `0x00000000` -> `0x00000004`, held
+300/300 samples across six seconds -- produced **coloured static**. Which is what
+bypass should do: the registers hold IOVAs like `0x00400000`, and unstranslated
+they address below the H713's `0x40000000` DRAM base, so the fetch reads
+non-memory. The engine did not wedge, the bypass restored cleanly, and uptime was
+unbroken.
+
+| finding | forced onto stock | result |
+| --- | --- | --- |
+| bit 31 on the channel controls | cleared, committed | **no effect** |
+| fmt 4 rather than fmt 0 | set, committed | tiled, half-height, colour-shifted |
+| IOMMU master 2 bypassed | bypass bit set | **coloured static** |
+
+**None produces black.** Two produce visible corruption, one does nothing at all.
+The three differences this brief identified as the candidate answers have yielded
+none.
+
+**What that negative is actually worth.** On stock, *every* way source 0 can be
+broken still puts something on the panel: green when starved of data, tiling when
+misformatted, static when misaddressed. The path downstream of source 0 passes
+whatever it produces, unconditionally. Our state shows nothing at all. So the
+black is not a misconfiguration of source 0 -- it is source 0's output not
+reaching composition in the first place. That was this brief's conclusion from
+the blue-generator result; it now has direct hardware support rather than
+inference, and from the opposite direction.
+
+**Where that leaves the search.** Two differences from the stock diff remain
+untested, and both are in the mixer -- downstream, where the fault was localised:
+
+```
+0x0525c004   stock 0x1402       ours 0x1003
+0x0525c000   stock 0x02F7054F   ours 0x02F80550
+```
+
+`0x0525c004` is the more interesting of the two: the DECD experiments tried
+`0x1403` and the vendor table's `0x1003`, and **neither is what stock runs**. The
+obvious next experiment is to write our values into stock's mixer during playback
+and see whether the panel goes black rather than merely corrupt. Black would be
+the first time any forced difference reproduced our symptom.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
