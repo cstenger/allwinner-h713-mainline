@@ -16,6 +16,7 @@ interrupts disabled, nothing gets to run the handler, and the power switch is
 still the answer. Try `h` first: silence there means sysrq is not being reached.
 """
 import argparse
+import fcntl
 import os
 import sys
 import termios
@@ -42,11 +43,19 @@ def main():
     ap.add_argument("key", help="sysrq command character (h, b, s, w, ...)")
     ap.add_argument("--port", default="/dev/ttyUSB0")
     ap.add_argument("--listen", type=float, default=6.0)
+    ap.add_argument("--break-ms", type=float, default=250.0,
+                    help="explicit UART BREAK duration (default: 250 ms)")
     args = ap.parse_args()
 
     fd = open_port(args.port)
     try:
-        termios.tcsendbreak(fd, 0)
+        # tcsendbreak(fd, 0) is allowed to be implemented as a fixed-duration
+        # driver request.  CP210x adapters have occasionally failed to turn
+        # that into a receive-side BREAK on this board, so assert/deassert the
+        # line explicitly and make the duration selectable.
+        fcntl.ioctl(fd, 0x5427)  # TIOCSBRK
+        time.sleep(args.break_ms / 1000.0)
+        fcntl.ioctl(fd, 0x5428)  # TIOCCBRK
         time.sleep(0.15)
         os.write(fd, args.key[:1].encode())
         end = time.time() + args.listen

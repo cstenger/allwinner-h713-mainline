@@ -1,0 +1,54 @@
+From: h713 <h713@local>
+Date: Wed, 26 Aug 2026 12:30:00 -0700
+Subject: [PATCH] EXPERIMENT: give DECD exclusive ownership without display reset
+
+This is scaffolding for one controlled DECD frame-submit test.  The normal
+H713 DT deliberately gives AFBD MMIO 0x05600000 and SPI 110 to the KMS driver
+and disables DECD.  Enabling DECD alongside KMS would create two owners for
+the same registers and interrupt, so swap the owner for this boot.
+
+The display was adopted from U-Boot and Linux cannot reconstruct it after a
+shared display reset.  Withhold rst_bus_disp from DECD and make that reset
+optional in the reconstructed driver.  reset_control_*() is a no-op for the
+NULL optional handle.  Do not issue PM_HINT off or unload the module during
+the test: those operations also disable shared display clocks.
+
+OUT OF SERIES.  This boot has no KMS device or framebuffer console.  Use the
+serial console, load sunxi-decd.ko deliberately, submit one synthetic frame,
+and reboot afterward.
+
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -38,3 +38,18 @@
+ &motor_ctr { status = "disabled"; };
+ &adc_keys { status = "disabled"; };
+ &board_mgr { status = "disabled"; };
++
++/*
++ * One-boot DECD experiment: KMS and DECD share AFBD MMIO and SPI 110, so
++ * exactly one may be enabled.  The adopted panel reset is intentionally not
++ * exposed to DECD; a reset would blank the projector until reboot.
++ */
++&display {
++	status = "disabled";
++};
++
++&dec {
++	/delete-property/ resets;
++	/delete-property/ reset-names;
++	status = "okay";
++};
+diff --git a/drivers/misc/sunxi_decd/decd_core.c b/drivers/misc/sunxi_decd/decd_core.c
+--- a/drivers/misc/sunxi_decd/decd_core.c
++++ b/drivers/misc/sunxi_decd/decd_core.c
+@@ -117,7 +117,8 @@ int dec_init(struct dec_device *dec)
+ 	dec->clk_bus_disp = devm_clk_get(dev, "clk_bus_disp");
+ 	if (IS_ERR(dec->clk_bus_disp))
+ 		return PTR_ERR(dec->clk_bus_disp);
+-	dec->rst_bus_disp = devm_reset_control_get_shared(dev, "rst_bus_disp");
++	dec->rst_bus_disp =
++		devm_reset_control_get_optional_shared(dev, "rst_bus_disp");
+ 	if (IS_ERR(dec->rst_bus_disp))
+ 		return PTR_ERR(dec->rst_bus_disp);
+ 

@@ -45,9 +45,8 @@ Disassemble with `llvm-objdump -d --triple=armv7-none-linux-gnueabi`.
 > against live hardware with no reset, so plane configuration is still
 > re-appliable at runtime. **What does not:** the claim that
 > `tgd_init_planesetting` is the runtime entry point. The runtime entry is
-> `svp_ioctl -> tgd_put_plane_info`, and recovering that ioctl's command number
-> and payload is now the most promising vendor-driver experiment — it is the
-> path Android actually uses.
+> `svp_ioctl -> tgd_put_plane_info`. Its command and payload have since been
+> recovered exactly from stock HWC: command `0x4631`, 80-byte `_plane_info`.
 
 ```
 init_osd_plane.constprop.12  <- ge2d_resume_operation, tgd_init_planesetting
@@ -69,6 +68,28 @@ to a running pipeline" came from writing `tgd_is_plane_open`'s status bit
 (OSD base `+0x1c` bit 0) and observing nothing. That reading was right about
 the bit and wrong about the mechanism: the bit is a *readout*, and the action
 is a function — one that is callable at runtime.
+
+## Finding 1a: the runtime ABI is now exact (2026-08-26)
+
+Stock `hwcomposer.ares.so` opens `/dev/ge2d` and its `submitLayer()` wrapper
+issues:
+
+```
+ioctl(fd, 0x4631, plane_info)
+```
+
+Before the call it sets `_plane_info + 0x4c` to `-1`; on return that word is
+the release-fence fd. The object is exactly 80 bytes. Stock `ge2d_dev.ko`
+confirms the other side independently: `svp_ioctl` compares command `0x4631`,
+copies 80 bytes from userspace, calls `tgd_put_plane_info()` at `0x8ffc`, then
+copies all 80 bytes back. This closes the command-number/payload-size unknown.
+
+The controlled DECD-only boot in
+[plane-brief-for-external-review.md](plane-brief-for-external-review.md) also
+shows why this operation matters. `/dev/decd` accepted and serviced a valid
+NV12 frame at 59.7 Hz, but the panel remained on the U-Boot packed-OSD source.
+Hiding that OSD produced black. Stock therefore uses a paired design:
+`/dev/decd` queues frame data and `/dev/ge2d` commits the plane/topology.
 
 ## Finding 2: writes go through `io_accessor_write_reg`
 
@@ -832,26 +853,33 @@ buffer linearly as one packed RGB surface, never as two planes.
 
 ### The standing conclusion
 
-The 2026-08-14 inference was right: **this is a UI channel, Allwinner UI
-channels are RGB-only, and YUV belongs to a VI channel.** Recorded then as
-"inference, not proven"; it is now proven, from the opposite direction, by a
-test built to disprove it.
+> **Superseded 2026-08-26.** Patch 0066 proves only that this serviced OSD fetch
+> remained packed 32-bit under that recipe. It does not prove that the SoC has
+> no other hardware YUV path, or that the GPU is its only colour-conversion
+> engine.
 
-Hardware YUV fetch here needs the DE/mixer topology that decides channel type,
-and that topology arrives wholesale from the MIPS firmware's `LogoRegData`
-replay. Register pokes are not a substitute and never were.
+The corrected, stock-shaped `/dev/decd` test has now exercised a separate
+hardware video queue at 59.7 Hz with zero panfrost interrupts. Its Y, C and
+VideoInfo addresses reached the four-slot register file, but its output was not
+routed to the panel: the U-Boot OSD stayed visible, and hiding it produced
+black. DECD's internal blue generator also remained black, eliminating the
+submitted NV12 data and metadata as causes.
 
-**Do not run a fourth variant.** The space is covered: format alone, format +
-plane file, and both plus the channel block, across two stride regimes. There is
-nothing left to permute. The remaining no-GPU routes are the ones the external
-review listed — snapshot the registers during real Android playback, recover the
-`svp_ioctl` that reaches `tgd_put_plane_info`, or own the DE topology outright —
-and all three are topology work, not this.
+> **The paragraph below was wrong and is retracted — see "ioctl `0x4631` is the
+> RGB OSD flip" further down.** `tgd_put_plane_info()` was disassembled in full
+> on 2026-08-26. It has no YUV format and never touches a DECD register. It is
+> not the missing companion operation.
 
-**The zero-copy target is unaffected and still close.** The mpv `render_fd`
-patch remains the highest-value next step; it keeps panfrost in the loop for
-YUV→RGB, which this result confirms is the only colour-conversion engine this
-board has.
+Stock Android supplies the missing operation. HWC pairs the DECD frame submit
+with `/dev/ge2d` ioctl `0x4631`, passing an 80-byte `_plane_info`; stock
+`svp_ioctl` calls `tgd_put_plane_info()` for that command. The next experiment
+is therefore a controlled reproduction of this paired queue-plus-plane commit
+under one MMIO/IRQ owner. More format/address permutations on the adopted packed
+OSD channel are not useful.
+
+The mpv `render_fd` path remains a useful zero-copy compatibility fallback, but
+it uses panfrost for YUV-to-RGB. It is not evidence against, or a replacement
+for, the now-confirmed DECD no-GPU hardware route.
 
 ---
 
@@ -880,8 +908,8 @@ ioctl copies, so the physical addresses our client sets can never arrive.** Any
 result from the "linear physical address" path is therefore uninformative: it
 was never testing what it claimed to test.
 
-Two further defects reported by the reviewer, consistent with our header but
-**not verified here** — flag them before relying on them:
+Two further defects reported by the reviewer have now been verified against
+stock HWC and `decd.ko`:
 
 - the repeat count is at header `+0x10` in stock; our `dec_ioctl_header` has
   `arg0` at `+0x10` and `arg1` at `+0x18`, and the driver reads `+0x18`;
@@ -892,13 +920,12 @@ Two further defects reported by the reviewer, consistent with our header but
 **And stock userspace does consume DECD.** The repo has said the opposite in
 several places — `video-decode.md` ("DECD probes and works but has no job"),
 `kms-display.md`, and `plane-brief-for-external-review.md` §10 (an "AFBC
-playback dead end"). The reviewer reports stock HWC opening `/dev/decd` and
-issuing this ioctl for ordinary video, the call site having been missed because
+playback dead end"). Disassembly verifies stock HWC issuing this ioctl from
+`DecoderDisplay::present()` for ordinary video. The call site was missed because
 the immediate is assembled as `movw 0x6400` / `movt 0x4070` and a byte-pattern
-search does not see it. **Unverified here, but it is the same failure mode this
-project already documented once** — "relocations are calls too", the
-`tgd_init_planesetting` caller analysis — and it should be checked before any
-more of the register map is reasoned from.
+search does not see it. This is the same class of method failure the project
+already documented as "relocations are calls too" in the
+`tgd_init_planesetting` caller analysis.
 
 ### Hazards for whoever tests DECD next
 
@@ -908,3 +935,382 @@ more of the register map is reasoned from.
 - **DECD's runtime suspend resets the display** (`video-decode.md`, 2026-08-14):
   `dec_disable()` asserts the display reset, and this KMS driver cannot bring the
   panel back. That is a dark projector until reboot, not a soft failure.
+
+---
+
+# ioctl `0x4631` is the RGB OSD flip — 2026-08-26
+
+`tgd_put_plane_info` has now been disassembled end to end rather than inferred
+from its callers. **It cannot route DECD output to the panel**, and the "port
+the `0x4631` path and run a paired one-frame test" plan recorded above and in
+the two companion docs is withdrawn. Doing it would have reimplemented what
+`sun50i-h713-afbd` already does on every atomic flip.
+
+Stock `decd.ko` was extracted alongside it, by the same recipe as `ge2d_dev.ko`
+but `dump /lib/modules/decd.ko` — 97936 bytes, ARM 32-bit, **unstripped, 835
+symbols**, SHA-256
+`42dece532c7088a2ce5d9462ca2daf0905ccf14413c299d389f8eb067d2bfb49`. Having both
+sides with symbols is what made this tractable; `patches/kernel/0013`'s
+reconstruction was previously named from an IDA session nobody kept.
+
+## What the ioctl surface says on its own
+
+`svp_ioctl`'s full dispatch table, recovered by matching each `movw r3, #0x46xx`
+to its branch target and the first call there:
+
+| cmd | payload | handler | cmd | payload | handler |
+| --- | --- | --- | --- | --- | --- |
+| `0x4601` | 160 | `svp_set_var` | `0x4640` | 8 | `tgd_set_vmirror` |
+| `0x4602` | — | `svp_get_fix` | `0x4641` | 8 | `tgd_set_vinterpolation` |
+| `0x4604` | 24 | `svp_get_cmap` | `0x4650` | 4 | `InitFBManagement` |
+| `0x4605` | 24 | `svp_set_cmap` | `0x4651` | 4 | `DestroyFBManagement` |
+| `0x4630` | 80 | `tgd_get_plane_info` | `0x4652` | 16 | `AllocateFB` |
+| `0x4631` | 80 | `tgd_put_plane_info` | `0x4653` | 4 | `FreeFB` |
+| `0x4632` | 8 | `tgd_show_plane` | `0x4660` | 28 | `tgd_set_plane_cmap` |
+| `0x4633` | 12 | `tgd_flip_plane` | `0x4661` | 28 | `tgd_get_plane_cmap` |
+| `0x4635` | 4 | `tgd_set_fastlogomode` | `0x4670` | 8 | `ion_alloc` |
+| `0x4680` | 4 | `_dev_info` | `0x4671` | 8 | (fence list) |
+| `0x4681` | — | `sunxi_enable_device_iommu` | `0x4777`/`0x4778` | 8 | `get_afbd_wb_inst` |
+
+That is an fbdev-shaped graphics device: screeninfo, colour maps, framebuffer
+allocation, plane flip, writeback. **There is no video-layer ioctl.** The
+`0x4631` half of stock HWC's per-present pair is HWC committing its *UI* layer;
+the `/dev/decd` half is the *video* layer. Two layers, not two halves of one
+operation — which is what a hwcomposer does, and is the whole of the "vendor
+division of labour" the earlier note read as a missing companion call.
+
+## The 80-byte `_plane_info`
+
+Twenty `u32`s. Field roles from the uses in `tgd_put_plane_info`:
+
+| off | meaning |
+| --- | --- |
+| `+0x00` | plane id, 0 or 1; anything else reaches `panic("Invalid osd id: %d")` |
+| `+0x08` | colour format, 0–3 (see below) |
+| `+0x28` | AFBC-compressed flag → channel `ctrl` bit 31 |
+| `+0x2c` / `+0x30` | source width / height |
+| `+0x34` / `+0x38` | y / x offset, folded into the source address |
+| `+0x3c` / `+0x40` | second width / height pair, written to channel `+0x34` |
+| `+0x44` | FB handle: `>= 0` → `ge2d_create_osd_frame()`; `< 0` → use `+0x48` |
+| `+0x48` | direct source DRAM address |
+| `+0x4c` | **out**: release-fence fd from `osd_fence_fd_create()` |
+
+`+0x04`, `+0x0c`, `+0x10`–`+0x24` carry geometry consumed by the scaling and
+resolution code. On success the whole record is `memcpy`'d into
+`Plane_Setting[id]` and copied back to userspace.
+
+**Bit 31 is finally explained**: it is `+0x28`, the compressed flag. That
+retires the "same value with bit 31 set" puzzle in Finding 3 — stock's
+`init_osd_plane` writes `0x83001901` because it brings its framebuffer up
+AFBC-compressed, and the live `0x03001901` is the same plane uncompressed. It
+was never a commit enable.
+
+## The colour formats are RGB-only
+
+`+0x08` indexes a four-entry bytes-per-pixel table at `.rodata+0x00`, then
+selects the value for `ctrl[15:8]`:
+
+| `+0x08` | bytes/pixel | `ctrl[15:8]` | format |
+| --- | --- | --- | --- |
+| 0 | 4 | `0x19` | 32-bit |
+| 1 | 4 | `0x19` | 32-bit |
+| 2 | 3 | `0x17` | 24-bit |
+| 3 | 2 | `0x18` | 16-bit |
+
+Anything else falls into `printk("Invalid colorformat %d for GD!")`. Live ch1
+holds `0x03001901`, i.e. `0x19` — the 32-bit entry. **There is no YUV format,
+no chroma plane, and no second address anywhere in the ioctl.**
+
+## Everything it writes
+
+For plane 1 the base table is `OSD 0x0524c000`, `AFBD ch 0x05600140`,
+`0x05280080`, `0x0529c000`, VBlender `0x05200034`, LVDS `0x051c006c` /
+`0x051c019c`; plane 0's set is the `-0x40`/`-0x4000` mirror already in the
+struct-offset map above. The commit path is:
+
+```
+0x051c0010      bits 24:23 cleared, set, cleared      LVDS FIFO reset pulse
+0x0524c04c      written                                (resolution path)
+0x05600140      bit 31    = plane_info[+0x28]          compressed
+0x05600140      bits 15:8 = 0x19 / 0x17 / 0x18         format
+0x05600150      = ((align16(h)-1) << 16) | (align16(w)-1)
+0x05600154      = ((h_blk-1) << 16) | (w_blk-1)
+0x05600170      = bytes_per_pixel * width              stride
+0x05600174      = (plane_info[+0x40] << 16) | bpp * plane_info[+0x3c]
+0x05600140      bits 3:2  from a per-plane driver flag
+0x05600178      = source DRAM address                  <- the fetch pointer
+0x05600140      bit 0     = 1                          enable
+0x05600144      = 1                                    osd_ready_for_update
+```
+
+Then `osd_wait_update_finish`. Additional writes to `0x05200034/38`,
+`0x051c006c/70` and `0x05240030/34` sit on the "reset vsync delay" sub-path,
+not the per-frame commit.
+
+Two negative facts worth as much as the positive ones:
+
+- **`ge2d_dev.ko` never touches `0x05600060`–`0x056000ff`** — DECD's queue and
+  `workaround` block. Verified by resolving every `movw`/`movt` immediate in the
+  module that lands in `0x05000000`–`0x06000000`.
+- **`ge2d_dev.ko` never writes the mixer.** `0x0525c000` appears twice: once in
+  `init_svp` storing the base, once in `__get_panel_resolution` *reading*
+  `0x0525c01c`/`0x020` for the panel size. The mixer remains the MIPS's.
+
+## What this means for the AFBD register window
+
+The writeback engine gives the block's own view of itself, and it is the most
+useful thing in either binary. `__afbd_is_ch_en(id)`, `__afbd_get_pixel_fmt(id)`
+and `__afbd_get_pic_size(id)` take **three** ids:
+
+| id | ctrl reg | enable | pixel format | picture size |
+| --- | --- | --- | --- | --- |
+| 0 | `0x05600010` | bits **1:0** | bits 15:8 | `0x05600030` |
+| 1 | `0x05600100` | bit 0 | bits 15:8 | `0x05600134` |
+| 2 | `0x05600140` | bit 0 | bits 15:8 | `0x05600174` |
+
+Ids 1 and 2 are the two OSD channels. **Id 0 is the video source, and it is
+exactly what DECD programs**: `dec_reg_video_channel_attr_config` writes
+`afbd + 0x10` bit 4, the format selector at `afbd + 0x11` (= `0x05600010`
+bits 15:8), `afbd + 0x13`, the sizes at `+0x20`–`+0x26` and the plane strides at
+`+0x40`/`+0x44`. Three sources with the same (enable, format, size) shape, one
+of which is fed by the decoder.
+
+### This gives patch 0066's null a mundane explanation
+
+0066 wrote **source 0's** format byte at `0x05600011` and then observed
+**source 2's** fetch at `0x05600140`/`0x170`/`0x178`. Those are different
+sources. The channel honoured its own stride and ignored a format field that was
+never its own, which is precisely the photographed result. The experiment
+configured one source and measured another; it could not have answered the
+question either way, and the scope correction above that refused to close it was
+right for a reason nobody had yet identified.
+
+### The gap that is actually open
+
+**Nothing we have ever run sets `0x05600010` bits 1:0** — source 0's enable, by
+the vendor's own accessor. Neither does stock `decd.ko`: its only writes to that
+byte are bit 4 in `dec_reg_video_channel_attr_config`. Neither does
+`ge2d_dev.ko`. So the video source's enable is set by something else — the MIPS
+bring-up, the U-Boot replay, or reset default — and its live value has never
+been read on this board. The 2026-08-26 DECD boot recorded `0x05600011 = 0`, the
+format byte, but not the low half of the same word.
+
+That makes the next step a **measurement, not another permutation**:
+
+1. Read `0x05600010`, `0x05600030` and `0x05600140` on a running board, then
+   again with DECD submitting frames. Three registers, no writes.
+2. Read the same three under stock Android playing video (`run switch_vendor`).
+   The diff between "Android idle" and "Android playing" answers the routing
+   question outright, and is the capture both companion docs have been asking
+   for in a less specific form.
+
+## Step 1 done — the video source is provisioned and switched off
+
+Read on the production kernel, 2026-08-26, DECD not loaded, panel on the login
+prompt. `busybox devmem`, no writes.
+
+```
+0x05600000 0x80000020    AFBD global
+0x05600010 0x03000010    source 0 ctrl     <- enable bits 1:0 = 0
+0x05600020 0x043F077F    source 0  w-1 = 1919, h-1 = 1087
+0x05600024 0x00420077    source 0  (w-1)>>4 = 119
+0x05600030 0x02D00500    source 0 size     1280 x 720
+0x05600040 0x00000780    source 0 plane stride 0 = 1920
+0x05600044 0x00000780    source 0 plane stride 1 = 1920
+0x05600060 0x00000001    DECD enable       bit 0 SET
+0x05600064 0x00000000
+0x05600068 0x00000122    DECD mux          bits 1:0 = 2, bits 5:4 = 2
+0x0560006c 0x00000000    dirty
+0x05600070 0x00000000    Y   (nothing queued)
+0x05600084 0x00000000    C
+0x05600100 0x00010000    ch0 ctrl          disabled
+0x05600104 0x00000000    ch0 latch
+0x05600134 0x00000000    ch0 size          unconfigured
+0x05600140 0x03001901    ch1 ctrl          enabled, format 0x19
+0x05600144 0x00000000    ch1 latch         consumed every vsync
+0x05600170 0x00001400    ch1 stride        5120
+0x05600174 0x02D01400    ch1               (720 << 16) | 5120
+0x05600178 0x76D00000    ch1 source        fbcon
+0x05600300 0x00800210    queue slot
+0x05600310 0x00800210    queue slot
+0x05600320 0x4C7ED000    live DRAM address, written by nothing in our stack
+0x05600324 0x4CDEA000
+```
+
+**The answer to the question this section opened with: bits 1:0 of `0x05600010`
+are zero.** By `__afbd_is_ch_en(0)`, the video source is disabled.
+
+**And it is disabled in a block that is otherwise already turned on for it.**
+`0x05600060` bit 0 is set — DECD's own enable — and `0x05600068` holds `2` in
+both mux fields, which is exactly what stock's `dec_decoder_display_init()`
+writes (`dec_reg_mux_select(regs, 2)`). DECD is not loaded on this kernel and
+our KMS driver writes none of these, so **U-Boot's bring-up left the video path
+enabled and mux'd, with the source itself switched off**. `0x05600010` bit 4 is
+also set, the uncompressed bit that `dec_reg_video_channel_attr_config` sets.
+
+Two things this is worth being precise about:
+
+- **The enable is not on the live channel.** `0x05600010` and `0x05600140` are
+  different sources. Setting bits 1:0 does not write the register the panel is
+  currently scanning from, which makes it a much smaller risk than the mixer
+  probe that was deliberately deferred earlier on this page.
+- **Its geometry is currently inconsistent.** `0x05600030` says 1280x720 (our
+  panel) while `0x05600020`/`0x024` say 1920x1088 and the plane strides at
+  `0x40`/`0x44` say 1920 — stock's framebuffer geometry, the same 1080p trap the
+  replay note above flags. Whoever enables this source has to reconcile them
+  first; DECD rewrites `0x20`–`0x26` and `0x40`/`0x44` per frame, `0x30` it does
+  not touch.
+
+**This also confirms the `tgd_put_plane_info` decode against live silicon.** The
+two formulas recovered from the disassembly predict the live channel exactly:
+`0x170` = bytes-per-pixel × width = 4 × 1280 = `0x1400`, and `0x174` =
+`(height << 16) | (bpp × width)` = `(720 << 16) | 5120` = `0x02D01400`. Both
+match to the bit, on a channel the vendor driver has never touched on this
+board.
+
+One correction to the three-source table above, from these values: for ids 1
+and 2 the "size" register holds a **byte stride** and a height, not a pixel
+width (`0x174` = 5120, not 1280), while id 0's `0x030` holds true pixel
+dimensions. Consistent with id 0 being a planar source and ids 1/2 packed.
+
+## Step 2 — the enable test, built and staged 2026-08-26
+
+`tools/video/decd-enable-test.sh`, staged on the board at
+`/root/decd-enable-test.sh`. It writes **only** `0x05600010`, **only** bits 1:0,
+read-modify-write, and restores on every exit path including Ctrl-C. That is not
+the register the panel scans from (`0x05600140`), which is what makes it a much
+smaller risk than the mixer probe deferred earlier on this page.
+
+**The gate is the point of the script.** It refuses to touch the enable until it
+has proven frames are flowing — DECD IRQ advancing at ≥30/s and a non-zero Y in
+the queue register. The 2026-08-25 mixer layer-0 test was run with DECD idle, so
+it had nothing to composite and could not have shown anything either way; this
+gate is what stops that from happening twice. It also refuses to run at all if
+`/dev/dri/card0` exists, since KMS and DECD cannot both own `0x05600000` and
+SPI 110 (verified: it correctly refuses on the production kernel).
+
+It sweeps enable = 1, 2, 3 with an operator dwell at each, dumping the same
+18-register set every time so observations are comparable. `--hide-osd` is
+opt-in and additionally clears ch1 bit 0, blanking the panel until restore.
+
+**Transient boot path — nothing to persist or restore.** The FAT at `mmc 1:2` has
+only 3.4 MB free, too little for a second 7.7 MB FIT, but the test kernel is
+already in the ext4 rootfs. Verified working:
+
+```
+reboot bootloader
+mmc dev 1
+ext4load mmc 1:1a 0x50000000 /root/h713-kernel-decd-test.fit
+bootm 0x50000000
+```
+
+**`1a`, not `26` — U-Boot parses the partition number as hex.** `mmc 1:26` is
+partition 0x26 = 38 and fails with `** Invalid partition 38 **`. The load itself
+takes 497 ms at 14.9 MiB/s. A plain power cycle returns to the production kernel
+because `bootcmd` still reads the FAT.
+
+Then on the target:
+
+```
+insmod /root/sunxi-decd-test.ko
+/root/decd-enable-test.sh /root/decd-test-frame.nv12 --dwell 15
+```
+
+A built-in check worth watching: after submit, `0x05600020` should read
+`0x02CF04FF` (1280x720). If it still reads `0x043F077F` then DECD did not
+reconfigure the source and it is still carrying stock's 1920x1088 — which the
+live read found there, and which would need fixing before a null means anything.
+
+**A readback that does not take is itself a result.** It would mean bits 1:0 are
+gated rather than merely unset, which is a different answer from "enabled and
+still nothing".
+
+## Step 2 result — NEGATIVE, and properly gated this time (2026-08-26)
+
+Run on the 0068 boot, DECD bound, operator watching. Enable swept 1, 2, 3 at
+20 s each.
+
+```
+DT: display@5600000=disabled, dec@5600000=okay
+DECD irq: 18568 -> 18688 over 2 s  (~60/s, expect ~60)
+queued Y=0x6C500000  C=0x6C5E1000
+readback 0x03000011 / 0x03000012 / 0x03000013   (all took)
+```
+
+**Operator: no change at any of the three values. The panel showed the U-Boot
+logo throughout.** Every register outside `0x05600010` was unchanged across all
+four dumps, `ch1_ready` stayed consumed, and `mixer_en` stayed `0x00001402`.
+
+Unlike the 2026-08-25 mixer test, this null means something: frames were
+demonstrably flowing at the vsync rate with valid Y/C in the queue registers
+before the enable was touched, and the enable demonstrably took. So:
+
+- **bits 1:0 are writable, not gated** — they were simply never set, and setting
+  them is **not sufficient** to route DECD to the panel.
+
+### The finding that came out of the failed geometry check
+
+The script flags `src0_wh` staying `0x043F077F` (1920x1088) instead of becoming
+`0x02CF04FF` (1280x720). That check was written expecting DECD to reprogram the
+source per frame. **That expectation was wrong, and being wrong is the useful
+part.**
+
+`dec_reg_video_channel_attr_config` — the only writer of the format selector at
+`0x05600011` and of `0x20`–`0x26`, `0x40`/`0x44` — is **dead code in stock
+`decd.ko`**. Zero relocations reference it (positive control:
+`dec_reg_mux_select` shows 1, from `dec_decoder_display_init`), its address is
+never taken, and `decd.ko` has **no `__ksymtab` at all**, so nothing outside the
+module can reach it either.
+
+So our port not calling it mirrors stock exactly, and the inconsistent geometry
+(`0x20` = 1920x1088 vs `0x30` = 1280x720) is not a defect we introduced — both
+values were present in the 2026-08-26 production-kernel read, before DECD was
+ever loaded. They are U-Boot-era values that neither vendor driver touches.
+
+**Consequence: nothing on the ARM side programs the video source's pixel
+format.** Live, `0x05600011` reads `0`, where stock's dead function would have
+written `6`. Neither `decd.ko` nor `ge2d_dev.ko` writes it.
+
+### Where that points — labelled as inference
+
+If no ARM-side vendor driver configures the video source, the component that
+does is the **MIPS display firmware**, which already owns the VBlender/mixer
+topology and which DECD feeds through the 32 KiB VideoInfo dma-buf. That fits
+every measurement on this page better than any AFBD-register theory has.
+
+**And it predicts this exact null.** U-Boot's bring-up parks the coprocessor —
+`H713 panel: MIPS core quiesced, display clocks retained; reset=00000000` — so
+on every boot we have ever tested, the thing that would consume DECD's frames
+and program the source is held in reset. That would make the enable bits inert
+no matter what value they hold, and it would equally explain the 2026-08-26
+result that DECD's *internal blue generator* also showed nothing, which no
+frame-contents or format theory can account for.
+
+This is inference, not measurement. The measurement that would settle it is
+whether the MIPS can be left running, or restarted, with DECD feeding it — which
+is CPU_COMM/VideoInfo work, not AFBD register work. **Stop permuting the AFBD
+window.**
+
+An earlier negative is also weaker than it reads. The mixer layer-0 enable test
+(`0x0525c004`, live `0x1402` vs table `0x1003`) was run with DECD idle and the
+video source unconfigured, so if mixer layer 0 is the *video* layer rather than
+AFBD plane 0, it had nothing to composite. That variable is uncontrolled, not
+eliminated.
+
+## Two reconstruction claims checked against stock, both good
+
+Having the real `decd.ko` lets the 2026-08-26 patch edits be verified rather
+than argued:
+
+- **`dec_reg_blue_en` really is `workaround + 5` bit 0** — confirmed at the
+  symbol's true address `0x3818`. The change to patch 0013 is correct. The
+  address cited in its comment, `0x37e8`, is not the function: it lands inside
+  `dec_reg_int_to_display`, whose body is `workaround + 0 |= 0x10`.
+- **Patch 0067's ABI is confirmed from the kernel side**, independently of the
+  HWC disassembly it was derived from. Stock `dec_ioctl` copies a 32-byte
+  header, and for frame submit copies exactly **112 bytes** of descriptor; the
+  header's `+0x10` is passed straight to the submit handler as the repeat count,
+  and `+0x08` is the userspace pointer that receives the 4-byte fence fd.
+
+`dec_decoder_display_init` is also verbatim what patch 0013 says it is: a tail
+call to `dec_reg_mux_select(regs, 2)`.

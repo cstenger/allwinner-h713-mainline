@@ -8,6 +8,110 @@ Goal for this phase: **decoded video visible on the projector panel.**
 
 ---
 
+## 2026-08-26 correction: DECD is the vendor no-GPU display path
+
+The older handoff below says DECD "has no job." That is now disproved by stock
+Android: `hwcomposer.ares.so` calls `DECD_IOC_FRAME_SUBMIT` from
+`DecoderDisplay::present()` for ordinary uncompressed video, passing an image
+dma-buf plus a 32 KiB VideoInfo dma-buf. The missed ioctl is assembled as split
+Thumb-2 `movw`/`movt` immediates, so the earlier byte search could not find it.
+
+The photographed patch-0066 result remains useful, but only establishes that
+the tested live OSD source fetched the NV12 bytes as packed 32-bit pixels. It
+does not rule out DECD's distinct hardware YUV-to-RGB route. The corrected
+112-byte ABI, metadata magic, and repeat-count offset are in patch 0067; the
+mutually-exclusive, no-shared-reset test boot is patch 0068 (out of series).
+
+That controlled boot was run on 2026-08-26. The request returned a real release
+fence, the frame manager advanced, DECD/vsync ran at 59.7 Hz, the expected Y/C
+and VideoInfo addresses reached its four-slot register file, and panfrost stayed
+at zero interrupts. The panel still showed the U-Boot logo; hiding its serviced
+packed-OSD channel showed black. Geometry correction did not expose DECD. So
+the submission path works, but its output is not routed into the adopted
+U-Boot display topology. Enabling DECD's stock internal blue generator while
+the OSD was hidden also remained black for the entire observation. Because that
+generator bypasses NV12 and VideoInfo, this isolates the failure to downstream
+routing/plane topology rather than frame contents, format or metadata.
+
+**The `/dev/ge2d` `0x4631` plan is withdrawn (2026-08-26, later).**
+`tgd_put_plane_info()` was disassembled in full. It is the RGB OSD plane flip —
+four colour formats, all RGB, no chroma plane, no DECD register anywhere in
+`ge2d_dev.ko` — and it does what `sun50i-h713-afbd` already does every atomic
+flip. Stock HWC pairs it with DECD because HWC has two layers to present, not
+because it commits the video path.
+
+What replaced it is better. The AFBD writeback engine in the same module
+enumerates **three** sources with a uniform (enable, pixel format, size)
+interface: `0x05600010` (bits 1:0 enable), `0x05600100` and `0x05600140`. Ids 1
+and 2 are the OSD channels; **id 0 is the video source, and it is exactly the
+register set DECD programs.** Patch 0066 wrote source 0's format byte and then
+observed source 2's fetch, so it was never able to answer the YUV question.
+
+**Tested 2026-08-26 and negative.** `tools/video/decd-enable-test.sh` set source
+0's enable bits with DECD provably submitting at 60 Hz and valid Y/C in the
+queue: all three values read back, and the panel did not change. Bits 1:0 are
+writable and were never set, but setting them is not sufficient.
+
+The finding that matters came from the test's own geometry check:
+`dec_reg_video_channel_attr_config`, the only writer of the video source's
+pixel-format selector, is **dead code in stock `decd.ko`** — no relocations
+reference it and the module exports nothing. **So nothing on the ARM side
+programs the video source's format**, and the component that does is almost
+certainly the **MIPS firmware**, fed by DECD's VideoInfo dma-buf — which U-Boot
+parks (`MIPS core quiesced`) on every boot we have tested. That predicts this
+null and also explains why DECD's internal blue generator showed nothing.
+
+Next work is CPU_COMM/VideoInfo, not AFBD registers. See
+[ge2d-plane-open-re.md](ge2d-plane-open-re.md), "ioctl `0x4631` is the RGB OSD
+flip". Historical conclusions below are retained as an audit trail, not as
+current guidance.
+
+### Where that went, 2026-08-28
+
+Chased through, and the blocker moved. Full account in
+[plane-brief-for-external-review.md](plane-brief-for-external-review.md) §0;
+the short version:
+
+- **ARM-side DECD submission is solid.** A diagnostic module that bypasses the
+  reconstructed queue, programs all four hardware slots directly and masks the
+  ARM DECD IRQ holds a frame indefinitely with the MIPS stopped. Nothing about
+  the frame, format, stride, dma-buf or VideoInfo is the problem.
+- **Routing is still absent, and it is downstream of fetch/format.** Source-0
+  enable 1/2/3, mixer layer 0 (`0x0525c004: 0x1402 -> 0x1403`) and the fuller
+  `0x1003` candidate were all negative, and so was the corrected internal-blue
+  generator (`0x05600065[0]`) -- which bypasses Y, C, stride, dma-buf and
+  VideoInfo entirely. Black in every combination.
+- **Two candidate causes eliminated.** TVTOP's live route table already matches
+  the authenticated firmware values exactly, so `dec_reg_top_enable()` is not a
+  missing initialisation; and the stock-DT 200 MHz AFBD clock (we ran 100 MHz)
+  makes no difference.
+- **Releasing the MIPS under Linux is not the answer.** It reports running and
+  then hard-locks the SoC -- Wi-Fi and serial with it. Shared ownership between
+  the ARM reconstruction and the firmware is unsafe as currently built.
+- **The real blocker is now CPU_COMM under project `0x34`.** Stock's startup is
+  a handshake (`cpu_comm_dev` -> `mipsloader` loads image/config/TSE -> wait for
+  CPU_COMM -> restart MIPS -> ~800 ms -> `THal_Vp_Init` -> HWC resumes SVP and
+  DECD), and board B's vendor image has the `loadmips`/`libmips.so` /
+  `display.mips.bootfinish` path to prove it. `THal_Vp_Init` now completes
+  end to end under project `0x33` with its real ABI. Under `0x34` the firmware
+  accepts the call and never schedules it. See
+  [mips-display-recovery.md](mips-display-recovery.md), "Project 0x34 is not
+  0x33 for RPC".
+
+Also corrected in passing: `dec_reg_blue_en()` drives `workaround + 5` bit 0,
+not `workaround + 16` bit 4 (patch 0013 was editing the low byte of a queued Y
+address); the DECD frame descriptor is **112** bytes, not 128; the repeat count
+lives at ioctl-wrapper `+0x10`, not `+0x18`; and the VideoInfo magic is
+`0x61770000`, not `0x61766b40`. Patch 0067 carries these.
+
+One more thing worth trusting: board A and board B ship a **byte-identical**
+`hwcomposer.ares.so`, and their `decd.ko` / `ge2d_dev.ko` differ only in build
+id -- the DECD enable, mux, blue, top-enable and IRQ routines normalise to the
+same code. Use **board B** as ground truth for DT, module builds and boot-state
+comparisons, but expect the video architecture to be shared.
+
+---
+
 # HANDOFF — state as of 2026-08-15
 
 **Video decode is DONE.** Decoded H.264 reaches the panel through the GPU with
@@ -1257,8 +1361,9 @@ owning the DE configuration that currently arrives wholesale from the vendor's
 > over chroma at a measured 1.9:1 against the 2:1 NV12 requires. `0x170` is
 > honoured, `0x011` is inert, and the hardware walks the NV12 buffer linearly as
 > one packed RGB surface. Full account in
-> [ge2d-plane-open-re.md](ge2d-plane-open-re.md) — and do not run a fourth
-> variant, the register space is covered.
+> [ge2d-plane-open-re.md](ge2d-plane-open-re.md). This conclusion is retained
+> only as history; the 2026-08-26 correction at the top of this file supersedes
+> it.
 
 **What was established anyway, and is durable:**
 
