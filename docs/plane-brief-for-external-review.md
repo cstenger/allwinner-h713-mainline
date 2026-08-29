@@ -540,6 +540,52 @@ also lands `-rw-------` under a FUSE-synthesised uid that `chmod` cannot change,
 so the player cannot open a `file://` path to it; scan it with
 `MEDIA_SCANNER_SCAN_FILE` and launch the resulting `content://` URI instead.
 
+### Writes to AFBD need the commit latch, and bit 31 is not the answer (2026-08-28)
+
+Rather than rebuild a kernel to set bit 31 on the black side, it was cleared on
+the working side: stock Android, clip playing, `tools/display/hidtvreg-poke.c`.
+A working system that breaks when you remove one bit says more than a broken
+system that stays broken when you add it.
+
+**The rule that came out of it, which matters more than the bit: a write to this
+block does nothing until the per-register commit latch is pulsed.** Control at
+`+0x00`, latch at `+0x04`. Clearing the source enable at `0x05600010` and
+holding it -- verified held, 300/300 samples over six seconds, never reverted by
+the firmware -- left the playing video completely unaffected. The *identical*
+write with `0x05600014` pulsed replaced the video with **solid green**, which
+reverted cleanly on restore.
+
+So an uncommitted write to this block lands in the register, reads back, holds
+indefinitely, and is inert. **Readback proves nothing here.** Any earlier result
+that rests on "the write stuck" without a latch pulse should be re-checked.
+
+Green rather than black is itself a useful signature: `Y=0, Cb=0, Cr=0` is about
+`RGB(0,135,0)`. The composition dropped to zero luma, which confirms AFBD source
+0 is genuinely the live video path to the panel and gives this line of testing
+the positive control the DECD work lacked for so long.
+
+**Bit 31 is not load-bearing.** With the latch pulsed, cleared on `0x05600100`
+alone, on `0x05600140` alone, and on both together, held six seconds each during
+playback of a clip verified frame-by-frame to contain motion: the video was
+unaffected every time. Finding 2 of the stock diff is eliminated as the
+mechanism -- the bit differs between stock and our black state, but it is not
+what makes the difference.
+
+One behavioural difference worth recording: on stock, `0x05600014` written 1
+**reads back 1**. This brief documents it as consumed on Linux -- written 1,
+reads back 0. Same register, opposite behaviour, and unexplained.
+
+Two cautions on this session's method, both of which cost a result:
+
+- A first pass used a clip generated as flat navy with a `drawbox` overlay that
+  silently never rendered. With a static image "playing" and "frozen" look
+  identical, so the observation was uninterpretable. Verify the test clip
+  contains motion -- hash frames at several timestamps and confirm they differ --
+  *before* it reaches the board.
+- Clearing the channel enable at `0x05600100` was read as evidence that the
+  Android UI is not composited through this block. That inference was wrong: the
+  write was simply uncommitted. Whether the UI runs through AFBD is untested.
+
 ### How this should reach mpv if the one-frame test works
 
 Decode and presentation are separate choices. VA-API already drives Cedrus
