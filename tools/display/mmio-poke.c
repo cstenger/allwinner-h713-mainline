@@ -45,6 +45,18 @@
  *
  * Run with a DECD frame in flight, or there is nothing for the channel to
  * consume. Root.
+ *
+ * RESULT 2026-08-29: the model above is REFUTED. Stock's 0x100 configuration was
+ * written verbatim with 0x140 disabled, latched, and held 1000/1000 samples over
+ * twenty seconds with readback confirming every write. The panel did not change,
+ * and clearing 0x140's enable did not even blank it.
+ *
+ * Before using this again, establish that the panel is live: in that run it did
+ * not respond to disabling the channel supposedly feeding it, so the image may
+ * have been frozen, which would make any result here unfalsifiable. Boot with
+ * 'h713_disp auto 0x34 logo' so a known image is on the panel and confirm it is
+ * visible first. Do NOT read 0x05600058/0x0560005c as a liveness check -- they
+ * are source-0 counters and read zero on a working display.
  */
 typedef unsigned int u32;
 typedef unsigned long u64;
