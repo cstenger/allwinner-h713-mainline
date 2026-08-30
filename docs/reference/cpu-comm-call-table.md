@@ -18,6 +18,55 @@ firmware abandon init).
 > "Project 0x34 RPC: the reported scheduler failure does not reproduce" in
 > [../mips-display-recovery.md](../mips-display-recovery.md).
 
+## RE-EXAMINED 2026-08-30: the "exhausted" verdict was wrong
+
+This table was closed with "CPU_COMM cannot carry any of it -- 82 entries, all
+`THal_Vp_*`, no resume/power/IOMMU/decoder-enable routine exists. Don't go
+looking again." The search was accurate and the question was wrong. It looked for
+a routine that would *start* something, and never asked whether the firmware
+might be actively *suppressing* output.
+
+The 82 entries reduce to 22 unique routines, and three of them are suppression
+mechanisms that would each produce precisely our symptom -- everything configured
+correctly, nothing on the panel:
+
+| routine | id | handler | code? |
+| --- | --- | --- | --- |
+| `THal_Vp_EnableBlackScreen` | `a30d4c6b` | `8b10a0e8` | **real** |
+| `THal_Vp_DisableBlackScreen` | `b66041d8` | `8b10a110` | **real** |
+| `THal_Vp_EnableVideoFreeze` | `2fdcdc6f` | `8b10a138` | **real** |
+| `THal_Vp_DisableVideoFreeze` | `3ab1d1dc` | `8b10a160` | **real** |
+| `THal_Vp_EnableScreenCover` | `0152f134` | `8b10a188` | **real** |
+| `THal_Vp_DisableScreenCover` | `143ffc87` | `8b10a1ec` | **real** |
+| `THal_Vp_Wce_SetWindow` | `3356c54b` | `8b109d54` | **real** |
+| `THal_Vp_Wce_GetWindow` | `fd483f67` | `8b109dc0` | **real** |
+| `THal_Vp_Wce_GetActiveWindow` | `7bbd5772` | `8b109e2c` | **real** |
+| `THal_Vp_GetSignalInfo` | `24b17fb7` | `8b109b40` | stub |
+
+"Real" means the handler begins with an actual prologue (`addiu sp,sp,-24; ...`)
+rather than `jr ra; nop`. Verified against
+`local/mips-display/board-b-mips/display.bin` at file offset `VA - 0x8b100000`.
+
+**The method is self-validating.** The previously established stubs
+`THal_Vp_SetImageBufferAddr` (`0x8b10ada8`) and `GetImageBufferAddr`
+(`0x8b10adb0`) both read `03e00008 00000000` at their computed offsets, which
+independently reproduces that finding and confirms the base and the
+little-endian encoding. `GetSignalInfo` reading as a stub is a second control:
+the check discriminates, so "real" is not an artifact of pointing at the wrong
+place.
+
+**What to do with it, cheapest first.** `Wce_GetWindow` and `Wce_GetActiveWindow`
+are **read-only** and take no state change to try. If the firmware's video window
+is empty, off-screen or zero-sized, that is the black, and one query says so.
+`DisableBlackScreen`, `DisableVideoFreeze` and `DisableScreenCover` are each a
+single call that would clear a suppression if one is latched.
+
+This does not overturn the other findings on this path -- `THal_Vp_Init` still
+does not touch the video path, `SetSource` still changes nothing, and the
+frame-handoff routines are still stubs. It overturns the *conclusion* drawn from
+them, which was that the RPC surface has nothing to offer. It has ten live
+routines nobody has called.
+
 ## Entry layout
 
 | offset | contents |
