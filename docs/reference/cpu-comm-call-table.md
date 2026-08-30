@@ -120,7 +120,112 @@ configured default that is not in use. Do not skip that check.
 `THal_Vp_Wce_SetWindow` (`3356c54b`) is the lever if it does matter, and it takes
 the same argument shape.
 
-## Entry layout## Entry layout
+### Settled 2026-08-30 by disassembly: the window is NOT the black
+
+The check above ("do not skip that check") is now done, statically, with no
+hardware time. Disassembled with `tools/mips/disasm.py`. **The 1080p window is a
+linked-in default that nothing reads back into the display, and
+`Wce_SetWindow` cannot change what is on the panel.**
+
+The three routines are not peers. Two are pure accessors over firmware globals
+and one is a live query:
+
+| routine | what it actually does |
+| --- | --- |
+| `Wce_GetWindow` (`0x8b14cef0`) | copies **globals** `0x8b22f1b0`, `0x8b22f1a0`, `0x8b22f19c` to the caller. Touches no hardware. |
+| `Wce_SetWindow` (`0x8b14cd18`) | stores the caller's structs **into those same globals**, then calls `0x8b1099c8` |
+| `Wce_GetActiveWindow` (`0x8b14cf64`) | resolves an object via `0x8b1ac5f8` and makes a **virtual call** through its vtable `+0x24` -- a genuine live query |
+
+The load-bearing fact: **`0x8b1099c8` is a stub** -- `jr $ra; addiu $v0, $zero, 1`.
+It is the only thing `SetWindow` calls that is not a trace or a `memcpy`, so
+`SetWindow` is a write to three globals that only `GetWindow` reads back.
+
+And the globals have never been written. `0x8b22f1b0` in the **static image**
+already reads `00000000 00007800 00000000 00004380`, byte-identical to what the
+live board returned, so no call has ever modified it -- consistent with
+`SetWindow` having exactly one caller path (ours, never used). The 1920x1080 is
+also materialised as a literal inside `SetWindow`'s own prologue
+(`addiu $v1, $zero, 0x7800` / `addiu $v0, $zero, 0x4380`) as the default it
+substitutes for null arguments.
+
+So `GetActiveWindow` returning 1280x720 was the live answer all along, and the
+`GetWindow`/`GetActiveWindow` discrepancy is exactly the benign case the caveat
+described: a configured default that is not in use. **Do not spend hardware time
+calling `SetWindow`.** It would change what `GetWindow` returns and nothing else.
+
+Two corroborations worth keeping, because both were free:
+
+- The adapter disassembly **confirms the measured ABI independently**. Each
+  adapter reads `4($a0)`, `8($a0)`, `0xc($a0)` -- so `param[0]` is genuinely
+  unused -- and maps each with `ext rX, rX, 0, 0x1c` then `or 0xa0000000`, i.e.
+  low 28 bits into the MIPS uncached window. That is why the **unmodified ARM
+  physical address is correct** and subtracting `0x40000000` was wrong. `movz`
+  preserves a null, so a null argument stays null rather than becoming
+  `0xa0000000`.
+- The trace strings inside `SetWindow` are `%s() ENTER`, `hal`,
+  `./thal_display_wce.cpp`, `THal_Vp_Wce_SetWindow`. This is the **first
+  confirmation of the call table's name-to-handler mapping from outside the
+  table itself**.
+
+One correction to the entry above: `0x8b12bb30` is a plain 16-byte copy, not a
+converter. The 1/16 fixed-point reading rests solely on the 1280x720 match, which
+is still good evidence, but nothing in the firmware independently labels the
+units.
+
+`Wce_GetWindow` also fills **two** structs and a scalar, not one. Only `p1` was
+read on hardware; from the static image `p2` is also 1920x1080 and the scalar is
+`2`. No re-run needed.
+
+### The suppression routines are real -- and they are the surviving lead
+
+The same deeper check was applied to the six suppression routines, because the
+previous entry's "ten live routines" claim was measured at the **adapter** level
+only, and `Wce_SetWindow` proves that test is too shallow: a real prologue can
+still bottom out in a stub. These do not.
+
+`EnableBlackScreen` (`0x8b1498a4`) and `DisableBlackScreen` (`0x8b149948`) are
+trace / **`jal 0x8b106bec`** / trace, passing a 12-byte message whose first word
+is an opcode -- `0xc` to enable, `0xd` to disable. `0x8b106bec` is a real
+dispatcher:
+
+```
+lui  $v0, 0x8b25
+lw   $v0, 0x3570($v0)   ; the singleton pointer at 0x8b253570
+beqz $v0, +0x20         ; NOT registered -> jr ra with v0 = 0, silently no-op
+lw   $v1, ($v0)         ; vtable
+lw   $t9, 0xc($v1)      ; method
+jr   $t9                ; tail-call, $a0 = object, $a1 = message
+```
+
+The method at vtable `+0xc` (`0x8b106a70`) posts the message to a **ThreadX
+queue** created by the constructor (`0x8b15c320(obj+4, 0x390, 0xc)` -- 12-byte
+messages), so these are genuine asynchronous commands to a live worker, not
+state flags.
+
+**The gate is closed only if nothing registered the singleton, and something
+does.** `0x8b253570` is past the end of `display.bin` (image ends `0x8b232910`),
+so it is BSS and starts at zero; it is written by a lazy singleton initialiser at
+`0x8b106b7c` (allocate `0xc`, construct, store). That initialiser has exactly one
+caller, `0x8b153598`, which is an **unconditional straight-line `jal`** near the
+end of the early-system-init function `0x8b15340c` -- our **marker 55**. Since
+CPU_COMM registration runs *after* `0x8b15340c` returns, and the call table is
+demonstrably populated and serving calls, that init completes on our board.
+Therefore the singleton exists and the dispatch is live.
+
+So the cheapest experiment from the previous entry is now justified rather than
+speculative: **`DisableBlackScreen` (`b66041d8`), `DisableVideoFreeze`
+(`3ab1d1dc`), `DisableScreenCover` (`143ffc87`)**, each a bare call, no
+arguments. If one of them is latched, clearing it is the black.
+
+A near-miss worth recording as method. The first cross-reference scan for writes
+to `0x8b253570` reported **zero stores**, which would have supported a confident
+and wrong "nothing ever registers it". It missed `sw $s1, 0x3570($s0)` at
+`0x8b106bc0` because the scan only tracked `lui`-formed bases. Re-running it as a
+base-register-independent opcode/immediate match over the raw image found the
+store immediately. When a scan's answer is "none", check that the scan could have
+seen one.
+
+## Entry layout
 
 | offset | contents |
 | --- | --- |
