@@ -953,6 +953,65 @@ symbols**, SHA-256
 sides with symbols is what made this tractable; `patches/kernel/0013`'s
 reconstruction was previously named from an IDA session nobody kept.
 
+## The AFBD writeback engine, and why it is not the video path (2026-08-30)
+
+`0x4777`/`0x4778` -> `get_afbd_wb_inst` was the last untouched item on the plane
+brief's next-steps list, and the reasoning for it was appealing: the panel scans
+out an RGB buffer and shows writes to it immediately, source 0 produces YUV, so
+something has to convert and deposit RGB into that buffer -- which is what a
+writeback engine does.
+
+**It is disabled on stock during playback, so it is not that.**
+
+The register map, recovered from `__afbd_wb_en` and `__afbd_wb_set_outbuf_addr`
+(`movw`/`movt` pairs building `0x0560_0xxx`):
+
+| register | meaning |
+| --- | --- |
+| `0x056001C0` | writeback enable -- the word `__afbd_wb_en` writes |
+| `0x056001D0` + `0x056001D4` | channel 0 output, **two planes** |
+| `0x056001EC` | channel 1 output, single address |
+| `0x05600200` | channel 2 output, single address |
+| `0x05600224` | written `0x2222` after every address set |
+
+Channel 0 taking two addresses is the planar case: the code computes
+`align64(stride) * height * 2` and writes `base + that` to the second register,
+while channels 1 and 2 take one packed address each.
+
+Against the three captured states -- stock playing video, our working idle, our
+configured-but-black:
+
+```
+0x056001C0   stock 0x00000000   idle 0x00000000   black 0x00000000
+0x056001D0   stock 0x00000000   idle 0x00000000   black 0x00000000
+0x056001D4   stock 0x00000000   idle 0x00000000   black 0x00000000
+0x056001EC   stock 0x00000000   idle 0x00000000   black 0x00000000
+```
+
+The enable is zero and no output buffer is set, **on stock, while video is on the
+panel**. The engine is not running, so it cannot be the mechanism. Closed.
+
+**What that implies about the real path.** With no writeback there is no memory
+round-trip, so source 0's output must be colour-converted and blended into the
+outgoing raster in hardware and sent straight to the panel. The missing piece is
+therefore a *composition* stage, not a *deposit* stage -- consistent with every
+fetch-side experiment having come back null while the panel demonstrably scans
+out and responds to buffer writes.
+
+**Two limits on this analysis, so it is not over-read.**
+
+`0x05600200` and `0x05600224` are the only referenced registers beyond
+`0x056001fc`, where every sweep we have taken stops -- that window came from the
+original reference dump and had never been questioned. They are both
+writeback-related and the enable gating them is zero, so the blind spot is
+almost certainly immaterial, but it has not been measured.
+
+And the seventeen registers recovered here are **`ge2d_dev.ko`'s view only**. The
+extraction matches `movw`/`movt` absolute-address construction, which is how
+`ge2d` addresses AFBD; `decd.ko` uses `of_iomap`, so its accesses are
+base-relative and invisible to it. "decd references none" is a property of the
+method, not of decd.
+
 ## What the ioctl surface says on its own
 
 `svp_ioctl`'s full dispatch table, recovered by matching each `movw r3, #0x46xx`
