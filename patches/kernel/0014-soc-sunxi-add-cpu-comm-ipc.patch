@@ -2716,7 +2716,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm.h b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h	2026-03-31 23:39:35.064018354 +0200
-@@ -0,0 +1,699 @@
+@@ -0,0 +1,702 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * HY310 CPU_COMM — ARM ↔ MIPS Inter-Processor Communication
@@ -3356,8 +3356,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +int  msgRemoveListener(void *pool, void *listener);
 +int  msgEventName2Index(const char *name);
 +int  CPUComm_Call(void *msg_buf, void *params, void *result);
++int  CPUComm_Call_Ex(void *msg_buf, void *params, void *result);
 +int  CPUComm_CallEx(int comp_id, int *params, u32 *result);
 +int  CPUComm_Notify(void *name, void *params);
++int  CPUComm_Notify_Ex(void *name, void *params);
 +int  CPUComm_InstallRoutine(void *data);
 +int  CPUComm_UnInstallRoutine(void *data);
 +int  Comm_Name2ID(const char *name);
@@ -3367,8 +3369,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +int  RemoveRoutine(void *data);
 +void RemovePidRoutines(pid_t pid);
 +void RoutineCleanupInCPUReset(void *data);
++void RoutineCleanupExpKernel(void *data);
 +void Comm_Add2Call2WQ(void *data);
-+void comm_CallWorkAction(void *data);
++void comm_CallWorkAction(struct work_struct *work);
 +void comm_WorkAction(struct work_struct *work);
 +
 +/* cpu_comm_dev.c — kernel interface */
@@ -3419,7 +3422,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c	2026-03-31 23:46:55.062791843 +0200
-@@ -0,0 +1,952 @@
+@@ -0,0 +1,951 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_hw.c — Hardware abstraction for CPU_COMM
@@ -3898,7 +3901,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	u8 *base = getSpinLockMemArea();
 +	u8 *entry = base + SPINLOCK_ENTRY_SIZE * lock_id;
 +	int hw_id = lock_id + SPINLOCK_HW_OFFSET;
-+	int spins = 0;
 +	u8 cur_cpu;
 +
 +	pr_debug("cpu_comm: enterCritical(%d) hw_id=%d entry=[%02x %02x %02x %02x]\n",
@@ -4375,7 +4377,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c	2026-03-31 23:50:39.812216590 +0200
-@@ -0,0 +1,2320 @@
+@@ -0,0 +1,2317 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_mem.c — Shared memory initialization and management
@@ -4417,9 +4419,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* Call session ID counter */
 +u32 s_CallSessionId;
-+
-+/* Memory init flag */
-+static int iniMemflag;
 +
 +/*
 + * MIPS APP_READY assumption.
@@ -7610,7 +7609,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_rpc.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_rpc.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_rpc.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_rpc.c	2026-03-31 16:48:00.665337983 +0200
-@@ -0,0 +1,1069 @@
+@@ -0,0 +1,1078 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_rpc.c — High-level RPC API
@@ -8346,7 +8345,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + */
 +int CPUComm_InstallRoutine(void *data)
 +{
-+	u16 *desc = (u16 *)data;
 +	u32 comp_id;
 +	u32 channel_id;
 +	u32 thread_id;
@@ -8413,9 +8411,20 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	ret = RemoveRoutine(data);
 +
 +	if (ret == 0) {
-+		/* Routine was ours — also remove the channel */
-+		u32 channel_id = (comp_id & 0xF) | (thread_id << 4);
-+
++		/*
++		 * Routine was ours — also remove the channel.
++		 * Comm_RemoveChannel() forms the id itself.
++		 *
++		 * Note a discrepancy this dead local used to hide: the
++		 * lookups here and in Comm_Add2NewCallFifo() build the id
++		 * as `(comp_id & 0xF) | (cpu << 4)`, while
++		 * Comm_AddNewChannel()/Comm_RemoveChannel() store it as
++		 * `comp_id | (cpu << 4)`, unmasked. The two agree only
++		 * while comp_id <= 0xF; above that a channel would be
++		 * stored under one id and searched for under another.
++		 * Which side is right is not established, so this is left
++		 * as it was rather than guessed at.
++		 */
 +		Comm_RemoveChannel((void *)((u8 *)pcpu_comm_dev + 0x30),
 +				   comp_id, thread_id);
 +	}
@@ -8444,22 +8453,22 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *   6. Sends the response back via SendComm2CPUEx(msg, 1, 0) if needed
 + *   7. Frees the work allocation
 + *
-+ * @data: pointer to work_struct (allocated by Comm_Add2Call2WQ)
++ * @work: the work_struct embedded in our comm_work_item
 + */
-+void comm_CallWorkAction(void *data)
++void comm_CallWorkAction(struct work_struct *work)
 +{
-+	u8 *work = data;
++	struct comm_work_item *item =
++		container_of(work, struct comm_work_item, work);
 +	u16 *call_entry;
 +	u8 local_msg[COMM_MSG_SIZE];
 +	u8 routine_info[96];
-+	u8 routine_name[4];
 +	u8 *share_seq;
 +
-+	if (!data)
++	if (!work)
 +		BUG();
 +
 +	/* The call entry pointer is stored in our comm_work_item struct */
-+	call_entry = ((struct comm_work_item *)data)->call_entry;
++	call_entry = item->call_entry;
 +	if (!call_entry)
 +		BUG();
 +
@@ -8553,7 +8562,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +out_free:
 +	/* Free the work allocation (40 bytes from Comm_Add2Call2WQ) */
-+	kfree(data);
++	kfree(item);
 +}
 +
 +/*
@@ -8568,7 +8577,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void Comm_Add2Call2WQ(void *data)
 +{
 +	u16 *call_entry = data;
-+	struct work_struct *work;
 +
 +	if (!call_entry || *call_entry <= 4) {
 +		pr_err("cpu_comm: Comm_Add2Call2WQ: invalid call entry\n");
@@ -8593,7 +8601,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		call_entry[5] |= 0x20;
 +
 +		/* Initialize and schedule the work */
-+		INIT_WORK(&item->work, (work_func_t)comm_CallWorkAction);
++		INIT_WORK(&item->work, comm_CallWorkAction);
 +		schedule_work(&item->work);
 +	}
 +}
