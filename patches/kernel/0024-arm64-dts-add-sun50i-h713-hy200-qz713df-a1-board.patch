@@ -11,7 +11,7 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -0,0 +1,1908 @@
+@@ -0,0 +1,1913 @@
 +/*
 + * Shared device tree for the Allwinner H713 SoC and HY200 family.
 + *
@@ -1511,9 +1511,14 @@
 +			status = "okay";
 +		};
 +
++		/*
++		 * 0x1000, not 0x400: the ARM -> MIPS doorbell is at
++		 * 0x03003874 and its FIFO count at 0x03003864, both
++		 * past the end of a 0x400 window.
++		 */
 +		cpu_comm: cpu-comm@3003000 {
 +			compatible = "allwinner,sunxi-cpu-comm";
-+			reg = <0x03003000 0x400>;
++			reg = <0x03003000 0x1000>;
 +			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>;
 +			clocks = <&ccu CLK_BUS_MSGBOX>;
 +			resets = <&ccu RST_BUS_MSGBOX>;
@@ -1922,7 +1927,7 @@
 +};
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,48 @@
 +/dts-v1/;
 +
 +#include "sun50i-h713.dtsi"
@@ -1959,7 +1964,15 @@
 + * Built as a module so it is loaded deliberately, after U-Boot has set
 + * up the panel. TVTOP stays disabled -- see patch 0033.
 + */
-+&cpu_comm { status = "disabled"; };
++/*
++ * CPU_COMM enabled 2026-08-30 to reach the display firmware's RPC
++ * surface from Linux. Its transport now matches what U-Boot has
++ * round-tripped on hardware (doorbell 0x03003874, bare message type,
++ * TX_IRQ_EN pulse); the shared-memory pointer model above it is still
++ * the vendor 32-bit one and is unverified on arm64. Built as a module
++ * so it is loaded deliberately, like DECD.
++ */
++&cpu_comm { status = "okay"; };
 +&motor_ctr { status = "disabled"; };
 +&adc_keys { status = "disabled"; };
 +&board_mgr { status = "disabled"; };

@@ -36,11 +36,17 @@ the 32-bit port also builds on arm64. Six were adapted from their original
 
 - **`board/hy200_qz713df_a1_defconfig`** — the bench arm64 defconfig (base
   arm64 defconfig slimmed, plus the SoC-general H713 drivers + PPU/LRADC/R-CCU).
-  Projector-only vendor drivers (`board-mgr`, keystone motor, `tvtop`, `decd`,
-  and `cpu-comm`) are deliberately disabled here; they need a separate,
-  hardware-tested projector configuration. In particular, `cpu-comm` retains
-  the vendor 32-bit shared-pointer ABI and is not safe to enable in an arm64
-  kernel until that address model is ported. Copied into
+  Projector-only vendor drivers (`board-mgr`, keystone motor, `tvtop`, `decd`)
+  are deliberately disabled here; they need a separate, hardware-tested
+  projector configuration. **`cpu-comm` was enabled 2026-08-30** (`=m`, plus
+  `&cpu_comm { status = "okay" }` in the board DTS) so the display firmware's
+  RPC surface is reachable from Linux — settling the suppression-routine lead
+  needs calls made while video is composited, which U-Boot cannot do. Its
+  msgbox transport now matches what U-Boot has round-tripped on hardware; the
+  vendor 32-bit shared-pointer ABI above it is **still unported**, so treat a
+  loaded module as an experiment, not a working IPC channel. See
+  [../../docs/handoff-2026-08-30.md](../../docs/handoff-2026-08-30.md).
+  Copied into
   `arch/arm64/configs/` by the build. It also **disables the Crypto Engine**
   (`# CONFIG_CRYPTO_DEV_SUN8I_CE is not set`, `HW_RANDOM` off): mainline
   `sun8i-ce` cannot drive the H713 CE — see the crypto note below and the

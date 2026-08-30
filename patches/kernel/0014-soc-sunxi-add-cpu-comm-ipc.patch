@@ -866,7 +866,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c	2026-03-31 23:55:00.797296910 +0200
-@@ -0,0 +1,1521 @@
+@@ -0,0 +1,1552 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_dev.c — Kernel interface for CPU_COMM
@@ -891,6 +891,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +#include <linux/io.h>
 +#include <linux/delay.h>
 +#include <linux/of_irq.h>
++#include <linux/clk.h>
++#include <linux/reset.h>
 +#include "cpu_comm.h"
 +
 +#define DEVICE_NAME	"cpu_comm"
@@ -2326,7 +2328,36 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	struct device_node *np = pdev->dev.of_node;
 +	struct device_node *mem_node;
 +	struct reserved_mem *rmem;
++	struct reset_control *rstc;
++	struct clk *clk;
 +	int ret;
++
++	/*
++	 * Claim the msgbox bus gate and release its reset before anything
++	 * touches the block: an unclocked msgbox accepts a doorbell write
++	 * and drops it, with no error anywhere. U-Boot enables the same
++	 * gate (CCU 0x0200171c bits 0 and 16) and the board's cmdline
++	 * carries clk_ignore_unused, so in practice it is already on —
++	 * but that is a property of how we happen to boot, not something
++	 * to depend on.
++	 *
++	 * Deassert only. reset_control_reset() would pulse the block, and
++	 * the MIPS may be mid-conversation with a queue we do not own.
++	 */
++	clk = devm_clk_get_optional_enabled(&pdev->dev, NULL);
++	if (IS_ERR(clk))
++		return dev_err_probe(&pdev->dev, PTR_ERR(clk),
++				     "failed to enable msgbox bus clock\n");
++
++	rstc = devm_reset_control_get_optional_exclusive(&pdev->dev, NULL);
++	if (IS_ERR(rstc))
++		return dev_err_probe(&pdev->dev, PTR_ERR(rstc),
++				     "failed to get msgbox reset\n");
++
++	ret = reset_control_deassert(rstc);
++	if (ret)
++		return dev_err_probe(&pdev->dev, ret,
++				     "failed to deassert msgbox reset\n");
 +
 +	/* Get shared memory region from DTS */
 +	mem_node = of_parse_phandle(np, "shared-memory", 0);
@@ -3289,7 +3320,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +unsigned long  getShareSeqW(u32 cpu, u32 dir);
 +
 +/* export for other modules (tvtop, decd, etc.) */
-+void sunxi_cpu_comm_send_intr_to_mips(u32 cpu, u32 type, u32 value);
++void sunxi_cpu_comm_send_intr_to_mips(u32 msg_type, u32 type, u32 value);
 +
 +/* H713 direct msgbox IRQ handler (replaces mailbox framework) */
 +int  cpu_comm_msgbox_request_irq(int irq, void *callback);
@@ -3301,7 +3332,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c	2026-03-31 23:46:55.062791843 +0200
-@@ -0,0 +1,888 @@
+@@ -0,0 +1,952 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_hw.c — Hardware abstraction for CPU_COMM
@@ -3347,72 +3378,102 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +/*
 + * ── H713 Msgbox Register Layout ─────────────────────────────
 + *
-+ * The H713 uses a custom Allwinner msgbox with per-user regions
-+ * (0x400 bytes each). ARM = User 0 @ 0x03003000.
++ * These are absolute addresses that have been rung on hardware, not
++ * offsets derived from a layout model. The previous version of this
++ * comment assumed 0x400-byte per-user regions with ARM = user 0, put
++ * TX at +0x474 and RX at +0x60/+0x70, and was wrong in both
++ * directions; nothing in this driver had ever exchanged a message, so
++ * the error was never caught.
 + *
-+ * Register offsets within ARM user region (verified from stock
-+ * vmlinux IDA RE + live hardware register dump):
++ * The addresses below come from U-Boot's h713_mips.c, which derives
++ * them from the firmware's own msgbox send at MIPS 0x8b12199c and has
++ * completed round trips with them: a CALL is accepted, the firmware
++ * clears the shared-memory presence bit, and a CALL_ACK comes back on
++ * the RX FIFO. Do not "simplify" them back into a stride formula
++ * without re-deriving it — the obvious one does not reproduce them.
 + *
-+ *   +0x010: MSG_DATA   — FIFO read/write (MIPS→ARM messages)
-+ *   +0x024: IRQ_EN     — RX IRQ enable (bit pattern 0x55 = all RX)
-+ *   +0x034: IRQ_EN2    — TX IRQ enable (bit pattern 0xAA = all TX)
-+ *   +0x050: IRQ_STATUS — RX pending (write-1-to-clear)
-+ *   +0x060: FIFO_STAT  — Number of messages in FIFO
++ *   0x03003810  version    reads 0x00020000 on a live (clocked) msgbox
++ *   0x03003830  TX_IRQ_EN  pulse BIT(2*port + 1); MIPS is port 1
++ *   0x03003864  TX count   ARM -> MIPS FIFO occupancy
++ *   0x03003874  doorbell   ARM -> MIPS MSG_DATA
++ *   0x03003164  RX count   MIPS -> ARM FIFO occupancy
++ *   0x03003174  RX data    MIPS -> ARM MSG_DATA, auto-pop
 + *
-+ * TX to MIPS: write message to msgbox_ctrl_base + 0x20
-+ * (ARM→MIPS FIFO data register, confirmed working).
++ * Two properties of this block that are easy to get wrong:
 + *
-+ * GIC IRQ: SPI 21 (verified: permanently asserted when FIFO
-+ * has unread messages; SPI 46 was wrong — never asserts).
++ *  - It is edge-triggered, unlike H6's. Writing MSG_DATA alone leaves
++ *    the word in the FIFO without waking the receiver — observed
++ *    directly, count went 0 -> 1 and the MIPS never drained it. Every
++ *    doorbell write must be followed by a TX_IRQ_EN pulse.
++ *  - An unclocked msgbox swallows the doorbell silently. The bus gate
++ *    and reset are claimed in the probe; the version register is the
++ *    proof that it worked.
 + */
++#define H713_MSGBOX_VERSION	0x810	/* expect 0x00020000 when clocked */
++#define H713_MSGBOX_TX_IRQ_EN	0x830	/* TX interrupt enable            */
++#define H713_MSGBOX_TX_FIFO	0x864	/* ARM -> MIPS FIFO count         */
++#define H713_MSGBOX_TX_DATA	0x874	/* ARM -> MIPS MSG_DATA, doorbell */
++#define H713_MSGBOX_RX_FIFO	0x164	/* MIPS -> ARM FIFO count         */
++#define H713_MSGBOX_RX_DATA	0x174	/* MIPS -> ARM MSG_DATA           */
++
++#define H713_MSGBOX_VERSION_ALIVE 0x00020000
++#define H713_MSGBOX_TX_IRQ_BIT	BIT(3)	/* BIT(2*port + 1), MIPS = port 1 */
++
 +/*
-+ * Verified from stock vmlinux IDA (sunxi_msgbox_irq):
-+ *   RX: sx_base(mdev, ARM=0) + port*4 + offset
-+ *   TX: sx_base(mdev, MIPS=1) + port*4 + offset
-+ * With port=0, ARM_base=0x03003000, MIPS_base=0x03003400:
++ * Every word in the RX FIFO is sent by the display MIPS, so the source
++ * is not encoded in the message and does not need decoding. This is
++ * the "direction" code cpu_comm_msg_cb() maps to CPU_ID_MIPS.
 + */
-+#define H713_MSGBOX_RX_FIFO	0x60	/* ARM base+0x60: RX FIFO count */
-+#define H713_MSGBOX_RX_DATA	0x70	/* ARM base+0x70: RX auto-pop read */
-+#define H713_MSGBOX_RX_IRQ_EN	0x20	/* ARM base+0x20: RX IRQ enable */
-+#define H713_MSGBOX_RX_IRQ_CLR	0x24	/* ARM base+0x24: RX IRQ clear (W1C) */
-+#define H713_MSGBOX_TX_DATA	0x474	/* MIPS User1 Port1 FIFO write */
-+#define H713_MSGBOX_TX_FIFO	0x464	/* MIPS User1 Port1 FIFO status */
++#define H713_MSGBOX_RX_FROM_MIPS 2
 +
-+#define H713_MSGBOX_RX_IRQ_BIT	BIT(0)	/* RX IRQ bit for port 0 */
-+
-+static int msgbox_irq_num = -1;
 +static void (*msgbox_rx_callback)(int type, int direction);
 +static struct delayed_work msgbox_poll_work;
 +static bool msgbox_poll_active;
 +
++static const char *cpu_comm_msgbox_type_name(u32 raw)
++{
++	static const char * const names[] = {
++		"CALL", "RETURN", "CALL_ACK", "RETURN_ACK"
++	};
++
++	return raw < ARRAY_SIZE(names) ? names[raw] : "unknown";
++}
++
 +/*
 + * Polling work function — processes msgbox FIFO messages.
 + *
-+ * The H713 msgbox IRQ is level-triggered and stays asserted as long
-+ * as the FIFO contains data. Since the MIPS sends messages faster
-+ * than we can process+reply, a pure IRQ handler triggers the kernel's
-+ * IRQ storm detector (100k limit). Instead we use a polling approach:
-+ * drain the FIFO periodically, dispatch messages, reschedule.
++ * The RX FIFO is drained on a timer rather than from the GIC line.
++ * The IRQ path is unverified on this board (no message has ever been
++ * received through it), and the FIFO holds 8 entries against a
++ * firmware sender that blocks when it fills, so a 1 ms drain is
++ * comfortably ahead of it. Revisit once the transport is proven.
++ *
++ * The received word is a bare message type, 0..3 — the same encoding
++ * this driver sends. There is no packed type/direction pair: the
++ * firmware's cpu_comm_cb at 0x8b122678 switches on the whole 32-bit
++ * value and drops anything above 3, and its sender at 0x8b11eadc maps
++ * a received CALL to 2 (CALL_ACK) and a RETURN to 3 (RETURN_ACK).
 + */
 +static void cpu_comm_msgbox_poll_fn(struct work_struct *work)
 +{
 +	u32 raw;
-+	int type, direction;
 +	int count = 0;
 +
 +	if (!msgbox_poll_active || !msgbox_ctrl_base)
 +		return;
 +
-+	while (readl(msgbox_ctrl_base + H713_MSGBOX_RX_FIFO) & 0xF) {
++	while (readl(msgbox_ctrl_base + H713_MSGBOX_RX_FIFO)) {
 +		raw = readl(msgbox_ctrl_base + H713_MSGBOX_RX_DATA);
-+		type = (raw >> 16) & 0xFFFF;
-+		direction = raw & 0xFFFF;
 +
-+		pr_info_ratelimited("cpu_comm: msgbox rx raw=0x%08x type=%d dir=%d\n",
-+				    raw, type, direction);
++		pr_info_ratelimited("cpu_comm: msgbox rx raw=0x%08x (%s)\n",
++				    raw, cpu_comm_msgbox_type_name(raw));
 +
-+		if (msgbox_rx_callback)
-+			msgbox_rx_callback(type, direction);
++		if (raw > MSG_TYPE_RETURN_ACK) {
++			pr_warn_ratelimited("cpu_comm: dropping unknown msgbox word 0x%08x\n",
++					    raw);
++		} else if (msgbox_rx_callback) {
++			msgbox_rx_callback(raw, H713_MSGBOX_RX_FROM_MIPS);
++		}
 +
 +		if (++count > 32)
 +			break;
@@ -3429,9 +3490,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	msgbox_rx_callback = callback;
 +
 +	/* Drain stale messages before starting the poll */
-+	while (readl(msgbox_ctrl_base + H713_MSGBOX_RX_FIFO) & 0xF) {
++	while (readl(msgbox_ctrl_base + H713_MSGBOX_RX_FIFO)) {
 +		raw = readl(msgbox_ctrl_base + H713_MSGBOX_RX_DATA);
-+		pr_info("cpu_comm: drained stale msgbox message: 0x%08x\n", raw);
++		pr_info("cpu_comm: drained stale msgbox message: 0x%08x (%s)\n",
++			raw, cpu_comm_msgbox_type_name(raw));
 +	}
 +
 +	INIT_DELAYED_WORK(&msgbox_poll_work, cpu_comm_msgbox_poll_fn);
@@ -4085,17 +4147,25 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +}
 +
 +/*
-+ * sunxi_cpu_comm_send_intr_to_mips — Trigger msgbox interrupt to MIPS.
++ * sunxi_cpu_comm_send_intr_to_mips — ring the MIPS doorbell.
 + *
-+ * The stock module writes directly to the msgbox MMIO registers.
-+ * On our mainline kernel, we write to the msgbox channel 2 register
-+ * at 0x03003000 + offset. The write value encodes the message type.
++ * The doorbell word is the message type and nothing else. The firmware's
++ * msgbox LISR at 0x8b121698 drains the FIFO and hands the raw word to
++ * cpu_comm_cb at 0x8b122678, which switches on the whole 32-bit value:
 + *
-+ * @cpu: message type in stock HAL path (0=CALL,1=RETURN,2=CALL_ACK,3=RETURN_ACK)
-+ * @type: interrupt route/type (stock uses constant 2)
-+ * @value: payload value (unused in current path)
++ *     0 -> CALL        2 -> CALL_ACK
++ *     1 -> RETURN      3 -> RETURN_ACK
++ *
++ * and silently drops anything else. So a CALL is doorbell 0x00000000.
++ * There is no msg_type<<16 field and no intr_type field — an earlier
++ * comment here described such a packing, which this firmware does not
++ * parse. @type is retained for call-site compatibility and is not sent.
++ *
++ * @msg_type: 0=CALL, 1=RETURN, 2=CALL_ACK, 3=RETURN_ACK
++ * @type:     stock intr_type; not part of the wire format, ignored
++ * @value:    payload value (unused in current path)
 + */
-+void sunxi_cpu_comm_send_intr_to_mips(u32 cpu, u32 type, u32 value)
++void sunxi_cpu_comm_send_intr_to_mips(u32 msg_type, u32 type, u32 value)
 +{
 +	u32 raw;
 +
@@ -4104,24 +4174,29 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		return;
 +	}
 +
-+	/*
-+	 * Stock HAL semantics recovered from IDA:
-+	 *   sunxi_cpu_comm_send_intr_to_mips(msg_type, intr_type, payload)
-+	 * Message format:
-+	 *   raw[31:16] = msg_type (0..3)
-+	 *   raw[15:0]  = direction/intr_type (stock: 2)
-+	 */
-+	raw = cpu & 0x3;	/* MIPS expects plain 0-3 comm_type */
++	raw = msg_type & 0x3;
 +
-+	/* TX goes to MIPS base (0x400 offset) + 0x70 */
++	/*
++	 * Edge-triggered: MSG_DATA on its own leaves the word in the FIFO
++	 * with the receiver asleep. The TX_IRQ_EN pulse is what wakes it,
++	 * and it must follow the data write.
++	 */
 +	writel(raw, msgbox_ctrl_base + H713_MSGBOX_TX_DATA);
-+	pr_info_ratelimited("cpu_comm: msgbox tx raw=0x%08x\n", raw);
++	writel(H713_MSGBOX_TX_IRQ_BIT, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);
++	udelay(10);
++	writel(0, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);
++
++	pr_info_ratelimited("cpu_comm: msgbox tx raw=0x%08x (%s), fifo now %u\n",
++			    raw, cpu_comm_msgbox_type_name(raw),
++			    readl(msgbox_ctrl_base + H713_MSGBOX_TX_FIFO));
 +}
 +
 +/* ── Register mapping init/cleanup ─────────────────────────── */
 +
 +int cpu_comm_hw_init(void)
 +{
++	u32 version;
++
 +	mips_ctrl_base = ioremap(MIPS_CTRL_BASE, 0x100);
 +	if (!mips_ctrl_base) {
 +		pr_err("cpu_comm: failed to map MIPS ctrl @ 0x%08x\n",
@@ -4129,7 +4204,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		return -ENOMEM;
 +	}
 +
-+	msgbox_ctrl_base = ioremap(0x03003000, 0x800);
++	/*
++	 * 0x1000, not 0x800: the doorbell is at +0x874 and the TX FIFO
++	 * count at +0x864, both outside the old mapping. This also makes
++	 * reg_to_iomem()'s 0x03003000..0x03004000 claim true, which it
++	 * was not before.
++	 */
++	msgbox_ctrl_base = ioremap(0x03003000, 0x1000);
 +	if (!msgbox_ctrl_base) {
 +		pr_err("cpu_comm: failed to map msgbox ctrl\n");
 +		iounmap(mips_ctrl_base);
@@ -4137,8 +4218,22 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		return -ENOMEM;
 +	}
 +
-+	pr_info("cpu_comm: HW mapped — MIPS ctrl @ %p, msgbox @ %p\n",
-+		mips_ctrl_base, msgbox_ctrl_base);
++	/*
++	 * An unclocked msgbox accepts writes and drops them, so prove the
++	 * block is alive before anything depends on it. The probe claims
++	 * the bus gate and releases the reset; this is the readback.
++	 */
++	version = readl(msgbox_ctrl_base + H713_MSGBOX_VERSION);
++	if (version != H713_MSGBOX_VERSION_ALIVE)
++		pr_warn("cpu_comm: msgbox version 0x%08x, expected 0x%08x — "
++			"block may be unclocked; doorbells will be swallowed\n",
++			version, H713_MSGBOX_VERSION_ALIVE);
++
++	pr_info("cpu_comm: HW mapped — MIPS ctrl @ %p, msgbox @ %p "
++		"(version 0x%08x, tx fifo %u, rx fifo %u)\n",
++		mips_ctrl_base, msgbox_ctrl_base, version,
++		readl(msgbox_ctrl_base + H713_MSGBOX_TX_FIFO),
++		readl(msgbox_ctrl_base + H713_MSGBOX_RX_FIFO));
 +	return 0;
 +}
 +
