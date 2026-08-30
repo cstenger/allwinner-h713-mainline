@@ -476,6 +476,15 @@ the obvious thing to diff against a stock Android playback capture.
    with identical geometry, never separated, and a plausible video-vs-OSD pair.
 4. The AFBD writeback engine (`0x4777`/`0x4778`, `get_afbd_wb_inst`), untouched.
 
+**Status update 2026-08-30.** Item 4 is **eliminated** -- the writeback engine is
+disabled on stock and is not the video path. Item 2 is now the live one, and is
+better specified than it was: the CPU_COMM `Wce_*` window path is **dead** (its
+worker is a stub), the suppression routines are **real but tested negative at the
+U-Boot prompt with an invalid observable**, and settling them requires calls made
+while video is composited -- i.e. CPU_COMM from Linux. A disabled 8440-line port
+already exists (`patch 0014`, `# CONFIG_HY310_CPU_COMM is not set`) with at least
+one located ABI defect. See [handoff-2026-08-30.md](handoff-2026-08-30.md).
+
 **Do not** spend more time on DECD-side format/enable/mux permutations. The blue
 generator result closes that space: the source is doing its job and the output
 is being discarded after it.
