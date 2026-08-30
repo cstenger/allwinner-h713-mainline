@@ -244,6 +244,53 @@ than always sending 1080p and letting the pipeline scale. Capturing stock's
 VideoInfo would settle it; until then this is an internal-consistency fix with a
 plausible mechanism, not a demonstrated one.
 
+### Tested on hardware 2026-08-30: no observable effect, and one routine hangs the SoC
+
+Run at the U-Boot prompt, `h713_disp init 0x34` (MIPS alive), live row
+`chan=0 pid=8b8f275c`, panel showing the vendor logo.
+
+| call | transport | panel |
+| --- | --- | --- |
+| `2f02f7dd` no-op (control) | reply 1 ms | -- |
+| `a30d4c6b` `EnableBlackScreen` | reply 0 ms | **no change** |
+| `b66041d8` `DisableBlackScreen` | reply 0 ms | no change |
+| `2fdcdc6f` `EnableVideoFreeze` | reply 0 ms | no change |
+| `0152f134` `EnableScreenCover` | **no reply, FIFO never drained** | no change |
+
+**`THal_Vp_EnableScreenCover` wedges CPU_COMM.** After it, the same no-op that
+had round-tripped in 1 ms was never accepted. U-Boot's `reset` then printed
+`resetting ...` and produced no further output at all -- the board needed a
+physical power cycle. Do not call `0152f134` unless that is the experiment.
+
+**Register evidence, which is the part that does not depend on anyone watching.**
+With black screen enabled, `h713_disp dump` was captured; `DisableBlackScreen`
+was then called and it was captured again. Across all 22 blocks the dump covers
+-- TVTOP, LVDS, LVDS PHY x3, disp-PLL, mixer, display-route, VBlender, OSD ch0,
+DE-top, DE-layers, DE2 ch0/ch1, DE, AFBD x4, PLL-video2, disp-modclk -- the two
+are **identical except for `lvds` `0x05880000+0x00`, the free-running scan
+position counter**. Baseline saved as
+`uboot-init34-mips-alive-idle-2026-08-30.txt`.
+
+**What this does and does not establish.** The transport control makes this a
+genuine negative rather than a dead channel: the calls reached the firmware and
+it replied. In this state the suppression routines change nothing, anywhere we
+can see.
+
+It does **not** prove they are inert in general, and the earlier
+positive-control design was flawed: the logo renders on the **OSD** channel
+`0x05600140`, while these are `THal_Vp_*` -- *video processor* -- routines that
+would act on the video channel `0x05600100`, which is empty in this state. So
+the test could not discriminate "inert" from "working, aimed at a layer with
+nothing in it". The static side agrees that this is possible: `0x8b1177ac` does
+a registered-handler lookup keyed on a field of its argument, and with no video
+window registered it would legitimately do nothing.
+
+A valid test needs video actually being composited, which needs Linux + DECD
+with the MIPS alive -- the combination that hard-locks the SoC in seconds --
+and `commcall` only exists in U-Boot. **That is the blocker, and it is why this
+lead is being left here rather than closed.** The cheap experiments are spent;
+what remains needs a way to issue CPU_COMM calls from Linux.
+
 A near-miss worth recording as method. The first cross-reference scan for writes
 to `0x8b253570` reported **zero stores**, which would have supported a confident
 and wrong "nothing ever registers it". It missed `sw $s1, 0x3570($s0)` at
