@@ -67,47 +67,60 @@ frame-handoff routines are still stubs. It overturns the *conclusion* drawn from
 them, which was that the RPC surface has nothing to offer. It has ten live
 routines nobody has called.
 
-### First live call attempt (2026-08-30) -- routes, but the output ABI is not cracked
+### The argument ABI, cracked (2026-08-30)
 
-`THal_Vp_Wce_GetWindow` was called on hardware, MIPS alive under `init 0x34`,
-live row read from `commdev` (`chan=0 pid=8b8f275c` this boot):
+Two read-only calls, MIPS alive under `init 0x34`, live row from `commdev`:
 
 ```
-h713_disp commcall fd483f67 chan=0 pid=8b8f275c
-  firmware accepted the message after 0 ms
-  CALL_ACK -> RETURN, reply after 1 ms
-  session=00000001 comp_id=fd483f67 nret=1  ret[0]=00000001
+h713_disp commcall fd483f67 chan=0 pid=8b8f275c 0 4d800000 4d810000 4d820000
+h713_disp commcall 7bbd5772 chan=0 pid=8b8f275c 0 4d830000 4d840000 4d850000
 ```
 
-**The routine runs and returns cleanly.** That alone is worth having: a routine
-this path was declared incapable of carrying round-trips in a millisecond.
+```
+GetWindow        4d800000: 00000000 00007800 00000000 00004380
+GetActiveWindow  4d830000: 00000000 00005000 00000000 00002d00
+```
 
-**But its output was not retrieved, and the ABI guess was wrong.** The wrapper at
-`0x8b109dc0` reads three words from the argument block (`+4`, `+8`, `+12`), ORs
-each with `0xA0000000` (KSEG1 uncached) unless zero, and passes them to the
-implementation at `0x8b157bf0`; it writes `1` and the implementation's return
-value through a separate pointer in `$a1`. Reading that as "three caller-supplied
-output pointers", buffers were planted at ARM `0x50000000`/`0x50001000`/
-`0x50002000` (MIPS physical = ARM - `0x40000000`, so args `0x10000000`...) and
-passed both with and without a leading dummy, since the message layout puts
-params at `+0x2C` and the wrapper skips `param[0]`. **Both attempts left all
-three buffers untouched at their `0xdeadbeef` sentinels** while still returning
-`ret[0]=1`. So the argument block is not laid out the way that reading assumed.
+**The ABI:**
 
-Do not repeat those two permutations. Recovering this properly needs the wrapper
-disassembled with its register inputs resolved -- `$2`, `$3` and `$7` are used
-before any visible load in the window examined, so the entry state matters and
-was not established.
+- Parameters are `0` then up to three **ARM physical addresses**. The adapter
+  reads them from the block at `+4`, `+8`, `+12`, so `param[0]` is a dummy.
+- **Pass the ARM physical address unmodified.** The `0xA0000000` OR inside the
+  adapter is its own business; translating to "MIPS physical" by subtracting
+  `0x40000000` is wrong and was the error that made the first attempt fail.
+- Output is a **four-word struct `{x, width, y, height}`** in **1/16-pixel fixed
+  point**.
+- The destination must be **untouched workspace** U-Boot cleared. Planting
+  sentinels first creates dirty ARM cache lines and the read comes back stale --
+  this build has no `dcache` command to flush them.
 
-**One observation that tempers the suppression hypothesis.** During this session
-the panel was *displaying content* (a stale logo plus a written red band) with
-the firmware alive. A globally latched `BlackScreen` or `ScreenCover` would not
-allow that, so neither is asserted in this state. That does not clear them for
-the DECD black state, where the OSD shows and only the video does not -- which is
-what makes `Wce_SetWindow`, a *video window* control, the more interesting of the
-two families.
+**The encoding is self-validating.** `GetActiveWindow` returns `0x5000`/`0x2d00`,
+which divided by 16 is exactly **1280x720** -- the panel. The fixed-point reading
+was not assumed; the panel-sized answer confirmed it, and the same layout then
+reads `GetWindow` as a clean 1920x1080.
 
-## Entry layout
+### The discrepancy
+
+| call | value |
+| --- | --- |
+| `Wce_GetActiveWindow` | **1280 x 720** at (0,0) -- the panel |
+| `Wce_GetWindow` | **1920 x 1080** at (0,0) |
+
+The firmware's configured video window is **1080p on a 720p panel**. That
+corroborates a long-standing observation from the register side: with the MIPS
+parked, `0x05600020` reads `0x043F077F` = 1920x1088, and it took a DECD submit to
+rewrite it to 1280x720.
+
+**What this does and does not establish.** It establishes the ABI, the encoding,
+and the discrepancy -- all measured. It does **not** establish that the 1080p
+window causes the black. `GetActiveWindow` already reporting 1280x720 is
+consistent with the effective window being correct and the 1920x1080 being a
+configured default that is not in use. Do not skip that check.
+
+`THal_Vp_Wce_SetWindow` (`3356c54b`) is the lever if it does matter, and it takes
+the same argument shape.
+
+## Entry layout## Entry layout
 
 | offset | contents |
 | --- | --- |
