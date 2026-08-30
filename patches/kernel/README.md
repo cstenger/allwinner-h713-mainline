@@ -46,9 +46,14 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   across the handoff on 2026-08-30, and the panel did not change.) Its
   msgbox transport now matches what U-Boot has round-tripped on hardware, and
   the vendor 32-bit shared-pointer ABI above it is ported to arm64 (see the
-  `cc_ref` block in `cpu_comm.h`). Neither is verified on hardware, so treat a
-  loaded module as an experiment rather than a working IPC channel. See
-  [../../docs/handoff-2026-08-30.md](../../docs/handoff-2026-08-30.md).
+  `cc_ref` block in `cpu_comm.h`). **It probes on hardware** (2026-08-30): clean
+  bind, both chardevs, 18/18 VP routes, no WARN across ~120 `cc_ref()` calls,
+  and the shared encoding reproduces ring addresses U-Boot recorded
+  independently from the firmware's side. **No message has been exchanged
+  yet** — the MIPS is parked, so the doorbell and the tagged-local half of the
+  encoding are still unexercised. Console evidence in
+  [../../docs/reference/cpu-comm-linux-probe-2026-08-30.txt](../../docs/reference/cpu-comm-linux-probe-2026-08-30.txt);
+  background in [../../docs/handoff-2026-08-30.md](../../docs/handoff-2026-08-30.md).
   Copied into
   `arch/arm64/configs/` by the build. It also **disables the Crypto Engine**
   (`# CONFIG_CRYPTO_DEV_SUN8I_CE is not set`, `HW_RANDOM` off): mainline
