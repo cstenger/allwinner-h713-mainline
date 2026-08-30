@@ -871,7 +871,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c	2026-03-31 23:55:00.797296910 +0200
-@@ -0,0 +1,1573 @@
+@@ -0,0 +1,1612 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_dev.c — Kernel interface for CPU_COMM
@@ -901,6 +901,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +#include "cpu_comm.h"
 +
 +#define DEVICE_NAME	"cpu_comm"
++
++static bool force_init;
++module_param(force_init, bool, 0444);
++MODULE_PARM_DESC(force_init,
++		 "reinitialise shared memory even if a running MIPS is using it (destructive)");
 +
 +/* ── Module globals ────────────────────────────────────────── */
 +
@@ -1917,26 +1922,60 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	pr_info("cpu_comm: shared memory mapped: phys=0x%x virt=0x%lx size=0x%x\n",
 +		ShMemAddr, ShMemAddrBase, ShMemSize);
 +
-+	pr_info("cpu_comm: PRE-WIPE: ARM=0x%x MIPS=0x%x magic1=0x%x magic2=0x%x\n",
-+		readl(vaddr + 0x4CDC), readl(vaddr + 0x4CE0),
-+		readl(vaddr + 0x90), readl(vaddr + 0x75B8));
-+
 +	/*
-+	 * Stock "not 1st APP" path: if magics are already set (by U-Boot
-+	 * or previous boot), skip the full wipe. The MIPS may have already
-+	 * completed init (including setCPUAppReady) using the existing
-+	 * shared memory state. A full wipe would destroy MIPS flags,
-+	 * causing MIPS APP_READY to be lost permanently since the MIPS
-+	 * thread only calls setCPUAppReady once.
-+	 *
-+	 * Stock firmware checks magic1+magic2 in InitCommMem master path
-+	 * and takes a lightweight reinit if both are DEADBEEF.
++	 * Map the hardware before deciding what to do with the region --
++	 * the decision needs to read the MIPS status register, and there is
++	 * no reason to touch shared memory before a mapping failure would
++	 * have aborted us anyway.
 +	 */
-+	memset_io(vaddr, 0, SHMEM_OFF_SMM_HEAP + 8);
-+
 +	ret = cpu_comm_hw_init();
 +	if (ret)
 +		goto err_unmap;
++
++	/*
++	 * Decide whether to initialise the region or adopt it.
++	 *
++	 * This comment used to describe the conditional and the code then
++	 * wiped unconditionally. The harm is not hypothetical: on a normal
++	 * boot the region already reads magic1 = magic2 = 0xDEADBEEF with
++	 * both CPU flags at 0x5, because U-Boot set it up -- and the first
++	 * hardware run of this driver was observed taking MIPS from 0x5 to
++	 * 0x0 across the wipe, exactly the loss the comment warns about.
++	 * With the coprocessor parked that costs nothing. With the firmware
++	 * running -- the only configuration in which this driver is useful
++	 * -- it destroys the live queues out from under it.
++	 *
++	 * The rule is deliberately narrower than stock's. Stock keys only
++	 * on the magics, but stock always runs with the firmware alive; we
++	 * spend most of our time with it parked, where a clean init gives a
++	 * known state and is proven harmless. So adopt only when the region
++	 * is valid AND the MIPS is actually out of reset, and let
++	 * force_init override either way.
++	 */
++	{
++		u32 magic1 = readl(vaddr + SHMEM_OFF_MAGIC1);
++		u32 magic2 = readl(vaddr + SHMEM_OFF_MAGIC2);
++		bool valid = (magic1 == CPU_COMM_MAGIC &&
++			      magic2 == CPU_COMM_MAGIC);
++		bool mips_up = cpu_comm_mips_running();
++
++		pr_info("cpu_comm: on entry: ARM=0x%x MIPS=0x%x magic1=0x%x magic2=0x%x, coprocessor %s\n",
++			readl(vaddr + CPU_FLAG_OFFSET(CPU_ID_ARM)),
++			readl(vaddr + CPU_FLAG_OFFSET(CPU_ID_MIPS)),
++			magic1, magic2, mips_up ? "running" : "parked");
++
++		cpu_comm_shmem_adopted = valid && mips_up && !force_init;
++
++		if (cpu_comm_shmem_adopted) {
++			pr_info("cpu_comm: adopting the live shared region -- not reinitialising it\n");
++		} else {
++			if (valid && mips_up)
++				pr_warn("cpu_comm: force_init set: wiping a region a running MIPS is using\n");
++			pr_info("cpu_comm: initialising shared memory (valid=%d mips=%d)\n",
++				valid, mips_up);
++			memset_io(vaddr, 0, SHMEM_OFF_SMM_HEAP + 8);
++		}
++	}
 +
 +	if (getCurCPUID(0) == CPU_ID_ARM) {
 +		comm_WriteShareReg(SHARE_REG_ADDR, ShMemAddr);
@@ -2716,7 +2755,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm.h b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h	2026-03-31 23:39:35.064018354 +0200
-@@ -0,0 +1,702 @@
+@@ -0,0 +1,715 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * HY310 CPU_COMM — ARM ↔ MIPS Inter-Processor Communication
@@ -2896,6 +2935,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +#define SHMEM_OFF_LIST_BASE	19724	/* 0x4D0C — first linked list */
 +#define SHMEM_OFF_REC_ENTRIES	19888	/* 0x4DB0 — addRec() entries */
 +#define SHMEM_OFF_MAGIC2	30136	/* 0x75B8 */
++
++/* Per-CPU ready/app-ready flag words, and the app-ready bit within them */
++#define CPU_FLAG_OFFSET(cpu)	(0x4CDC + 4 * (cpu))
++#define CPU_FLAG_APP_READY	BIT(2)
 +#define SHMEM_OFF_CALL_ENTRIES	30144	/* 0x75C0 */
 +#define SHMEM_OFF_COMP_POOL	147656	/* 0x240E8 */
 +#define SHMEM_OFF_MSG_POOL	180328	/* 0x2C068 */
@@ -3199,6 +3242,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +/* Suspend flag */
 +extern int cpu_comm_suspend_flag;
 +
++/*
++ * True when cpu_comm_init() found the shared region already live and chose
++ * to adopt it instead of reinitialising it. Everything that writes shared
++ * memory during init must honour this; ARM-private structures are rebuilt
++ * either way.
++ */
++extern bool cpu_comm_shmem_adopted;
++
 +/* ══════════════════════════════════════════════════════════════
 + * cc_ref — the vendor protocol's 32-bit pointer, ported to arm64
 + *
@@ -3261,6 +3312,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* cpu_comm_hw.c — hardware abstraction */
 +int  cpu_comm_hw_init(void);
++bool cpu_comm_mips_running(void);
 +void cpu_comm_hw_cleanup(void);
 +int  comm_ReadRegWord(u32 reg_addr);
 +void comm_WriteRegWord(u32 reg_addr, u32 value);
@@ -3422,7 +3474,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c	2026-03-31 23:46:55.062791843 +0200
-@@ -0,0 +1,951 @@
+@@ -0,0 +1,969 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_hw.c — Hardware abstraction for CPU_COMM
@@ -3456,6 +3508,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * From IDA: known_regs @ 0x16350 in cpu_comm_dev.ko
 + */
 +static const u32 known_regs[] = {
++	0x0306101c,	/* MIPS status — bit 0 set when out of reset */
 +	0x03061024,	/* MIPS ShareReg14 — SharedMemAddr */
 +	0x03061028,	/* MIPS ShareReg13 — SharedMemSize */
 +	0x03003000,	/* Msgbox channel register */
@@ -4280,6 +4333,23 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			    readl(msgbox_ctrl_base + H713_MSGBOX_TX_FIFO));
 +}
 +
++/*
++ * cpu_comm_mips_running — is the display coprocessor out of reset?
++ *
++ * Bit 0 of the MIPS status register. Read live rather than inferred: on a
++ * normal boot U-Boot parks the coprocessor and this reads 0, while a boot
++ * that used `h713_disp init 0x34` leaves it running and this reads 1.
++ * Note that the MIPS *flag* in shared memory is NOT a substitute -- U-Boot
++ * sets that to 0x5 either way.
++ */
++bool cpu_comm_mips_running(void)
++{
++	if (!mips_ctrl_base)
++		return false;
++
++	return readl(mips_ctrl_base + MIPS_REG_STATUS) & BIT(0);
++}
++
 +/* ── Register mapping init/cleanup ─────────────────────────── */
 +
 +int cpu_comm_hw_init(void)
@@ -4377,7 +4447,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c	2026-03-31 23:50:39.812216590 +0200
-@@ -0,0 +1,2317 @@
+@@ -0,0 +1,2355 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_mem.c — Shared memory initialization and management
@@ -4421,6 +4491,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +u32 s_CallSessionId;
 +
 +/*
++ * Set by cpu_comm_init() before anything touches shared memory: true when
++ * the region was already live and we are adopting it rather than
++ * reinitialising it. See the decision in cpu_comm_init().
++ */
++bool cpu_comm_shmem_adopted;
++
++/*
 + * MIPS APP_READY assumption.
 + *
 + * MIPS writes its flags through KSEG0 (L1 write-back cache) with no
@@ -4454,10 +4531,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *   Bit 2: app-ready (full framework initialized)
 + *   Bit 3: notice-requested
 + */
-+#define CPU_FLAG_OFFSET(cpu)	(0x4CDC + 4 * (cpu))
++/* CPU_FLAG_OFFSET / CPU_FLAG_APP_READY now live in cpu_comm.h */
 +#define CPU_FLAG_READY		BIT(0)
 +#define CPU_FLAG_NOT_READY	BIT(1)
-+#define CPU_FLAG_APP_READY	BIT(2)
++
 +#define CPU_FLAG_RESET		BIT(3)
 +#define CPU_FLAG_NOTICE_REQ	BIT(3)	/* same bit as RESET */
 +
@@ -6542,6 +6619,36 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			return hwret;
 +		}
 +
++		/*
++		 * Adoption path. Skipping the memset in cpu_comm_init() is
++		 * not on its own enough: everything below re-creates the
++		 * shared structures too -- call entries, both share_seq
++		 * pairs, the pools, the routine table and the SMM heap --
++		 * so a running firmware would lose its queues here instead
++		 * of at the wipe.
++		 *
++		 * The split is the same one cc_ref() already makes explicit.
++		 * InitCommSeqMem() builds s_CommSockt, which is ARM-private
++		 * and must be rebuilt on every load; InitCommShareSeqMem()
++		 * and everything else here writes memory the MIPS also
++		 * reads, and is skipped when adopting.
++		 */
++		if (cpu_comm_shmem_adopted) {
++			tryspinlockhwReg(0);
++
++			InitCommSeqMem(CPU_ID_ARM);
++			InitCommSeqMem(CPU_ID_MIPS);
++
++			pr_info("cpu_comm: adopted shared memory: magic1=0x%x magic2=0x%x ARM=0x%x MIPS=0x%x\n",
++				shmem[SHMEM_OFF_MAGIC1 / 4],
++				shmem[SHMEM_OFF_MAGIC2 / 4],
++				*(u32 *)(ShMemAddrBase + CPU_FLAG_OFFSET(CPU_ID_ARM)),
++				*(u32 *)(ShMemAddrBase + CPU_FLAG_OFFSET(CPU_ID_MIPS)));
++
++			spinUnlockhwReg(0);
++			goto wait_notices;
++		}
++
 +		/* Acquire HW lock 0 for init exclusion */
 +		shmem[SHMEM_OFF_MAGIC1 / 4] = CPU_COMM_MAGIC;
 +		tryspinlockhwReg(0);
@@ -6688,6 +6795,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		}
 +
 +		/* Wait for all CPUs to clear their notice requests */
++wait_notices:
 +	while (isCPUNoticeReqed(0) || isCPUNoticeReqed(1))
 +		msleep(10);
 +
