@@ -184,13 +184,37 @@ static int fill_video_info(int fd)
 	v[0x60 / 4] = 0;
 	/* +0x64/+0x68 are patched to reserved physical pointers by decd.ko. */
 	v[0x6c / 4] = 0;
-	v[0x70 / 4] = 0x7800;
+	/*
+	 * Source crop and display frame, each a {x, width, y, height} struct in
+	 * 1/16-pixel fixed point.
+	 *
+	 * The layout and the units are not guesses: the same four-word encoding
+	 * was recovered from the MIPS firmware on 2026-08-30, where
+	 * THal_Vp_Wce_GetActiveWindow returns {0, 0x5000, 0, 0x2d00} and 0x5000/16
+	 * = 1280, 0x2d00/16 = 720 -- exactly this panel. See
+	 * docs/reference/cpu-comm-call-table.md.
+	 *
+	 * These were 0x7800/0x4380 (1920x1080) while W/H are 1280x720, so the
+	 * block labelled "identity" was not one. 0x7800/0x4380 is also the
+	 * firmware's own linked-in default window, which is the likely source of
+	 * the copy. Derive from W/H instead so the comment and the code agree and
+	 * a resolution change cannot desynchronise them again.
+	 *
+	 * UNTESTED ON HARDWARE. Unlike the firmware globals -- which are inert,
+	 * having no path to any register -- this struct is handed to the firmware
+	 * on every submit, so it is live input and worth correcting on its own
+	 * terms. But no stock VideoInfo capture exists to confirm the vendor also
+	 * sends source-sized values here rather than always sending 1080p and
+	 * letting the pipeline scale. If this regresses, that is the reason, and
+	 * reverting is these four lines.
+	 */
+	v[0x70 / 4] = W << 4;    /* crop        x = 0, width  */
 	v[0x74 / 4] = 0;
-	v[0x78 / 4] = 0x4380;
+	v[0x78 / 4] = H << 4;    /*             y = 0, height */
 	v[0x7c / 4] = 0;         /* identity setDisplayFrame() */
-	v[0x80 / 4] = 0x7800;
+	v[0x80 / 4] = W << 4;
 	v[0x84 / 4] = 0;
-	v[0x88 / 4] = 0x4380;
+	v[0x88 / 4] = H << 4;
 	v[0x8c / 4] = 2;         /* retained VideoInfo constructor default */
 	__sync_synchronize();
 	msync(map, INFO_SIZE, MS_SYNC);

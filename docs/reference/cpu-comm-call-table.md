@@ -217,6 +217,33 @@ speculative: **`DisableBlackScreen` (`b66041d8`), `DisableVideoFreeze`
 (`3ab1d1dc`), `DisableScreenCover` (`143ffc87`)**, each a bare call, no
 arguments. If one of them is latched, clearing it is the black.
 
+### There is a SECOND 1920x1080, and it is NOT eliminated
+
+Do not let the section above contaminate this one. Two different things carry
+`0x7800`/`0x4380`, and only one of them is dead:
+
+| where | status |
+| --- | --- |
+| firmware globals `0x8b22f1b0` / `0x8b22f1a0` (`Wce_GetWindow`) | **inert** -- no path to any register, `SetWindow`'s worker is a stub |
+| `tools/video/decd-client.c` VideoInfo `+0x70` and `+0x80` | **live input, handed to the firmware on every frame submit** |
+
+The client declared `W 1280` / `H 720`, set the source dimensions and output
+window from them, and then hardcoded `0x7800`/`0x4380` into the crop and display
+frame -- under a comment reading `identity setDisplayFrame()`, which it was not.
+`0x7800`/`0x4380` is also the firmware's own linked-in default window, which is
+the likely origin of the copy.
+
+That the two blocks share the encoding is not an assumption. The
+`{x, width, y, height}` 1/16-pixel layout was recovered from the firmware today
+and validated against the panel, and `0x5000`/`0x2d00` -- what `W << 4` and
+`H << 4` produce -- is exactly what `Wce_GetActiveWindow` returns.
+
+Changed to derive from `W`/`H`. **Untested on hardware**, and there is no stock
+VideoInfo capture to confirm the vendor sends source-sized values here rather
+than always sending 1080p and letting the pipeline scale. Capturing stock's
+VideoInfo would settle it; until then this is an internal-consistency fix with a
+plausible mechanism, not a demonstrated one.
+
 A near-miss worth recording as method. The first cross-reference scan for writes
 to `0x8b253570` reported **zero stores**, which would have supported a confident
 and wrong "nothing ever registers it". It missed `sw $s1, 0x3570($s0)` at
