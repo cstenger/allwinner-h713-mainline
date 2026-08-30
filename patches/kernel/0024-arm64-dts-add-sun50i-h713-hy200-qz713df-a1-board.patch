@@ -1927,7 +1927,7 @@
 +};
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,50 @@
 +/dts-v1/;
 +
 +#include "sun50i-h713.dtsi"
@@ -1966,11 +1966,13 @@
 + */
 +/*
 + * CPU_COMM enabled 2026-08-30 to reach the display firmware's RPC
-+ * surface from Linux. Its transport now matches what U-Boot has
-+ * round-tripped on hardware (doorbell 0x03003874, bare message type,
-+ * TX_IRQ_EN pulse); the shared-memory pointer model above it is still
-+ * the vendor 32-bit one and is unverified on arm64. Built as a module
-+ * so it is loaded deliberately, like DECD.
++ * surface from Linux -- the runtime source/composition/resume calls
++ * that only exist over this transport. Both known ABI defects are
++ * fixed: the msgbox transport matches what U-Boot has round-tripped
++ * on hardware (doorbell 0x03003874, bare message type, TX_IRQ_EN
++ * pulse), and the vendor 32-bit shared-pointer model is ported to
++ * arm64. Neither is verified on hardware yet. Built as a module so
++ * it is loaded deliberately, like DECD.
 + */
 +&cpu_comm { status = "okay"; };
 +&motor_ctr { status = "disabled"; };

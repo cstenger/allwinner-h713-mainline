@@ -1,7 +1,7 @@
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c	2026-03-21 23:20:22.767566122 +0100
-@@ -0,0 +1,861 @@
+@@ -0,0 +1,866 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_channel.c — Channel pool, session, and wait-queue management
@@ -32,12 +32,12 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	pool[0] = 0;			/* count */
 +	pool[1] = 0;
 +	pool[2] = 1;			/* sem */
-+	pool[3] = (u32)&pool[3];	/* active list head (self-ref) */
-+	pool[4] = (u32)&pool[3];	/* active list tail */
++	pool[3] = cc_ref(&pool[3]);	/* active list head (self-ref) */
++	pool[4] = cc_ref(&pool[3]);	/* active list tail */
 +	pool[5] = 0;			/* free count */
 +	pool[6] = 1;			/* free sem */
-+	pool[7] = (u32)&pool[7];	/* free list head */
-+	pool[8] = (u32)&pool[7];	/* free list tail */
++	pool[7] = cc_ref(&pool[7]);	/* free list head */
++	pool[8] = cc_ref(&pool[7]);	/* free list tail */
 +
 +	/* Initialize channel slots — 32 slots × 11 DWORDs */
 +	for (i = 0; i < CHANNEL_SLOT_COUNT; i++) {
@@ -53,7 +53,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * channel_id = component_id | (cpu << 4)
 + * Returns 0 if found (result points to channel), negative on error.
 + */
-+int Comm_QueryChannel(void *pool_ptr, u32 channel_id, u32 *result)
++int Comm_QueryChannel(void *pool_ptr, u32 channel_id, unsigned long *result)
 +{
 +	u32 *pool = pool_ptr;
 +	int i;
@@ -66,7 +66,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	for (i = 0; i < CHANNEL_SLOT_COUNT; i++) {
 +		u32 *slot = &pool[9 + i * CHANNEL_SLOT_DWORDS];
 +		if (slot[0] == channel_id) {
-+			*result = (u32)slot;
++			*result = (unsigned long)slot;
 +			return 0;
 +		}
 +	}
@@ -141,12 +141,12 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * @cmd_fifo:    pointer to the staging FIFO (CallCmd FIFO at share_seq + 32)
 + * @call_entry:  virtual address of the call entry (comm_msg) to enqueue
 + */
-+void Comm_Add2NewCallFifo(void *pool_ptr, u32 *cmd_fifo, u32 call_entry)
++void Comm_Add2NewCallFifo(void *pool_ptr, u32 *cmd_fifo, unsigned long call_entry)
 +{
 +	u32 *wr_slot;
 +	u16 comp_id;
 +	u32 channel_id;
-+	u32 channel_ptr = 0;
++	unsigned long channel_ptr = 0;
 +
 +	/* Write call entry pointer to cmd FIFO */
 +	wr_slot = (u32 *)fifo_getItemWr(cmd_fifo);
@@ -154,7 +154,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		pr_err("cpu_comm: Comm_Add2NewCallFifo: cmd_fifo full!\n");
 +		BUG();
 +	}
-+	*wr_slot = call_entry;
++	*wr_slot = cc_ref((void *)call_entry);
 +	if (!fifo_requestItemWr(cmd_fifo)) {
 +		pr_err("cpu_comm: Comm_Add2NewCallFifo: requestItemWr failed!\n");
 +		BUG();
@@ -206,9 +206,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * Returns 0 on success (result set), 0 with result=0 if FIFO empty,
 + * negative on error.
 + */
-+int Comm_GetCallbyChannel(void *pool_ptr, u32 channel_id, u32 *result)
++int Comm_GetCallbyChannel(void *pool_ptr, u32 channel_id, unsigned long *result)
 +{
-+	u32 channel_ptr = 0;
++	unsigned long channel_ptr = 0;
 +	u32 *cmd_fifo;
 +	u32 *item;
 +
@@ -231,7 +231,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (!item)
 +		return 0;	/* FIFO empty */
 +
-+	*result = *item;
++	*result = cc_deref(*item);
 +	fifo_ItemRdNext(cmd_fifo);
 +	return 0;
 +}
@@ -261,8 +261,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	item = (u32 *)fifo_getItemRd(f);
 +	if (item) {
-+		/* Item contains the virtual address of the wait object */
-+		*result = (u32 *)*item;
++		/* The slot holds a cc_ref to the wait object */
++		*result = (u32 *)cc_deref(*item);
 +		fifo_ItemRdNext(f);
 +		return 0;
 +	}
@@ -290,7 +290,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * Inserts at tail (before sentinel head).
 + */
-+int AddtoWaitComm(void *list_base, u32 wait_entry)
++int AddtoWaitComm(void *list_base, unsigned long wait_entry)
 +{
 +	u8 *lb = list_base;
 +	unsigned long new_node;
@@ -301,8 +301,17 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	cpu_comm_sem_down((void *)(lb + 64));
 +
-+	/* tail pointer = previous last entry's node (or sentinel head if empty) */
-+	prev = *(u32 **)(lb + 60);
++	/*
++	 * tail pointer = previous last entry's node (or sentinel head if
++	 * empty). The field is a cc_ref, so it has to be decoded — reading
++	 * it as `*(u32 **)` took eight bytes out of a four-byte slot and
++	 * used the result as an address.
++	 */
++	prev = (u32 *)cc_deref(*(u32 *)(lb + 60));
++	if (WARN_ON(!prev)) {
++		cpu_comm_sem_up((void *)(lb + 64));
++		return -EINVAL;
++	}
 +
 +	/* The new node is 24 bytes into the wait entry */
 +	new_node = wait_entry + 24;
@@ -313,10 +322,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	 *   new_node->prev = old_tail
 +	 *   sentinel->prev (lb+60) = new_node
 +	 */
-+	*(u32 *)(lb + 60) = new_node;
-+	*(u32 *)(wait_entry + 24) = (u32)(lb + 56);	/* next → sentinel */
-+	*(u32 *)(wait_entry + 28) = (u32)prev;		/* prev → old tail */
-+	*prev = new_node;				/* old_tail->next = new */
++	*(u32 *)(lb + 60) = cc_ref((void *)new_node);
++	*(u32 *)(wait_entry + 24) = cc_ref(lb + 56);	/* next → sentinel */
++	*(u32 *)(wait_entry + 28) = cc_ref(prev);	/* prev → old tail */
++	*prev = cc_ref((void *)new_node);		/* old_tail->next = new */
 +
 +	/* Update peak count */
 +	{
@@ -347,7 +356,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +int GetWaitbySessionId(void *list_base, u32 session_id, u8 *result)
 +{
 +	u8 *lb = list_base;
-+	u32 sentinel = (u32)(lb + 56);
++	unsigned long sentinel = (unsigned long)(lb + 56);
 +	unsigned long cur_node;
 +	unsigned long entry_base;
 +
@@ -356,19 +365,22 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	cpu_comm_sem_down((void *)(lb + 64));
 +
-+	cur_node = __ptr64(*(u32 *)(lb + 56));	/* head.next */
++	cur_node = cc_deref(*(u32 *)(lb + 56));	/* head.next */
 +
-+	while (cur_node != sentinel) {
++	while (cur_node && cur_node != sentinel) {
 +		/* Wait entry base is 24 bytes before the node */
 +		entry_base = cur_node - 24;
 +
 +		if (*(u32 *)entry_base == session_id) {
 +			/* Found — unlink: prev->next = next, next->prev = prev */
-+			unsigned long node_next = __ptr64(*(u32 *)(cur_node));
-+			unsigned long node_prev = __ptr64(*(u32 *)(cur_node + 4));
++			unsigned long node_next = cc_deref(*(u32 *)(cur_node));
++			unsigned long node_prev = cc_deref(*(u32 *)(cur_node + 4));
 +
-+			*(u32 *)node_prev = node_next;
-+			*(u32 *)(node_next + 4) = node_prev;
++			if (WARN_ON(!node_next || !node_prev))
++				break;
++
++			*(u32 *)node_prev = cc_ref((void *)node_next);
++			*(u32 *)(node_next + 4) = cc_ref((void *)node_prev);
 +
 +			/* Decrement count */
 +			--*(u32 *)(lb + 52);
@@ -379,7 +391,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			return 0;
 +		}
 +
-+		cur_node = __ptr64(*(u32 *)cur_node);	/* follow ->next */
++		cur_node = cc_deref(*(u32 *)cur_node);	/* follow ->next */
 +	}
 +
 +	cpu_comm_sem_up((void *)(lb + 64));
@@ -401,7 +413,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +int FindWaitBySessionId(void *list_base, u32 session_id, u32 **result)
 +{
 +	u8 *lb = list_base;
-+	u32 sentinel = (u32)(lb + 56);
++	unsigned long sentinel = (unsigned long)(lb + 56);
 +	unsigned long cur_node;
 +	unsigned long entry_base;
 +
@@ -410,9 +422,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	cpu_comm_sem_down((void *)(lb + 64));
 +
-+	cur_node = __ptr64(*(u32 *)(lb + 56));	/* head.next */
++	cur_node = cc_deref(*(u32 *)(lb + 56));	/* head.next */
 +
-+	while (cur_node != sentinel) {
++	while (cur_node && cur_node != sentinel) {
 +		entry_base = cur_node - 24;
 +
 +		if (*(u32 *)entry_base == session_id) {
@@ -421,7 +433,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			return 0;
 +		}
 +
-+		cur_node = __ptr64(*(u32 *)cur_node);
++		cur_node = cc_deref(*(u32 *)cur_node);
 +	}
 +
 +	cpu_comm_sem_up((void *)(lb + 64));
@@ -441,7 +453,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * The semaphore protecting writes is at sock[30] (byte offset 120 = 30*4).
 + * The FIFO items are virtual addresses of wait entries.
 + */
-+void ReleaseWaitComm(u32 cpu_id, u32 wait_entry)
++void ReleaseWaitComm(u32 cpu_id, unsigned long wait_entry)
 +{
 +	u32 *fifo;
 +	u32 *sem;
@@ -462,7 +474,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		BUG();
 +	}
 +
-+	*wr_slot = wait_entry;
++	*wr_slot = cc_ref((void *)wait_entry);
 +	fifo_requestItemWr(fifo);
 +
 +	cpu_comm_sem_up((void *)sem);
@@ -478,19 +490,19 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + */
 +int HasInList(void *list, void *item)
 +{
-+	u32 sentinel;
-+	u32 cur;
++	unsigned long sentinel;
++	unsigned long cur;
 +
 +	if (!list || !item)
 +		return 0;
 +
-+	sentinel = (u32)list;
-+	cur = __ptr64(*(u32 *)list);	/* head.next */
++	sentinel = (unsigned long)list;
++	cur = cc_deref(*(u32 *)list);	/* head.next */
 +
-+	while (cur != sentinel) {
-+		if (cur == (u32)item)
++	while (cur && cur != sentinel) {
++		if (cur == (unsigned long)item)
 +			return 1;
-+		cur = __ptr64(*(u32 *)cur);	/* follow ->next */
++		cur = cc_deref(*(u32 *)cur);	/* follow ->next */
 +	}
 +
 +	return 0;
@@ -515,32 +527,31 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *   entry_phy = *slot_vir
 + *   entry_vir = entry_phy + ShMemAddrBase - ShMemAddr  (or 0 if entry_phy == 0)
 + */
-+int Comm_GetFreeCall(void *share_seq)
++unsigned long Comm_GetFreeCall(void *share_seq)
 +{
 +	u32 *fifo;
-+	u32 slot_phy;
-+	u32 *slot_vir;
-+	u32 entry_phy;
-+	u32 entry_vir;
++	u32 *slot;
++	unsigned long entry_vir;
 +
 +	if (WARN_ON(!share_seq || !ShMemAddrBase || !ShMemAddr))
 +		return 0;
 +
 +	fifo = (u32 *)((u8 *)share_seq + 120);
 +
-+	slot_phy = fifo_getItemRd(fifo);
-+	if (!slot_phy)
++	/*
++	 * fifo_getItemRd() already returns a kernel VA; the slot address
++	 * used to be re-translated here as if it were physical, which
++	 * happened to cancel out only because the old decode left the low
++	 * 32 bits intact.
++	 */
++	slot = (u32 *)fifo_getItemRd(fifo);
++	if (!slot)
 +		return 0;
 +
-+	/* Convert physical slot address to virtual */
-+	slot_vir = (u32 *)(slot_phy + ShMemAddrBase - ShMemAddr);
-+
-+	/* Read the physical address of the call entry from the slot */
-+	entry_phy = *slot_vir;
-+	entry_vir = entry_phy ? entry_phy + ShMemAddrBase - ShMemAddr : 0;
-+
++	/* The slot holds a ref to the call entry, physical for this FIFO */
++	entry_vir = cc_deref(*slot);
 +	if (!entry_vir) {
-+		pr_err("cpu_comm: Comm_GetFreeCall: null entry_phy in slot!\n");
++		pr_err("cpu_comm: Comm_GetFreeCall: null entry ref in slot!\n");
 +		BUG();
 +	}
 +
@@ -555,7 +566,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	*(u16 *)(entry_vir + 10) = 0;
 +
 +	fifo_ItemRdNext(fifo);
-+	return (int)entry_vir;
++	return entry_vir;
 +}
 +
 +/*
@@ -575,10 +586,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +{
 +	u8 *seq = (u8 *)share_seq;
 +	u32 *fifo;
-+	u32 wr_slot_phy;
-+	u32 *wr_slot_vir;
-+	u32 entry_vir;
-+	u32 entry_phy;
++	u32 *wr_slot;
 +	u8 remote_cpu;
 +	u32 *sem;
 +
@@ -605,26 +613,16 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	cpu_comm_sem_down((void *)sem);
 +
-+	wr_slot_phy = fifo_getItemWr(fifo);
-+	if (!wr_slot_phy) {
++	wr_slot = (u32 *)fifo_getItemWr(fifo);
++	if (!wr_slot) {
 +		pr_err("cpu_comm: Comm_ReleaseFreeCall: FIFO full!\n");
-+		BUG();
-+	}
-+
-+	/* Convert physical write slot to virtual for writing */
-+	wr_slot_vir = (u32 *)(wr_slot_phy + ShMemAddrBase - ShMemAddr);
-+	if (!wr_slot_vir) {
-+		pr_err("cpu_comm: Comm_ReleaseFreeCall: null wr_slot_vir!\n");
 +		BUG();
 +	}
 +
 +	/* Clear flags on the call entry before returning to pool */
 +	*(u16 *)((u8 *)call + 10) = 0;
 +
-+	/* Convert call entry virtual → physical, write to FIFO slot */
-+	entry_vir = (u32)call;
-+	entry_phy = entry_vir ? entry_vir - ShMemAddrBase + ShMemAddr : 0;
-+	*wr_slot_vir = entry_phy;
++	*wr_slot = cc_ref(call);
 +
 +	if (!fifo_requestItemWr(fifo)) {
 +		pr_err("cpu_comm: Comm_ReleaseFreeCall: requestItemWr failed!\n");
@@ -668,7 +666,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		BUG();
 +	}
 +
-+	*wr_slot = (u32)data;
++	*wr_slot = cc_ref(data);
 +
 +	/* Set "return queued" flag at entry + 10 (u16 flags2) */
 +	*(u16 *)((u8 *)data + 10) |= 0x10;
@@ -705,7 +703,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +{
 +	u32 *sock;
 +	u32 *fifo_hdr;
-+	u32 sentinel;
++	unsigned long sentinel;
 +	unsigned long cur_node;
 +	unsigned long next_node;
 +	u32 *sem;
@@ -725,14 +723,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	/* Semaphore at MsgFIFO f[16] = sock[267+16] = sock[283] */
 +	sem = &sock[283];
 +
-+	sentinel = (u32)&fifo_hdr[14];	/* sentinel head address */
++	sentinel = (unsigned long)&fifo_hdr[14];	/* sentinel head address */
 +
 +	cpu_comm_sem_down((void *)sem);
 +
-+	cur_node = fifo_hdr[14];	/* head.next */
++	cur_node = cc_deref(fifo_hdr[14]);	/* head.next */
 +
-+	while (cur_node != sentinel) {
-+		next_node = __ptr64(*(u32 *)cur_node);
++	while (cur_node && cur_node != sentinel) {
++		next_node = cc_deref(*(u32 *)cur_node);
 +
 +		/*
 +		 * Return entry (comm_msg) node is at entry + 84 bytes.
@@ -745,11 +743,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +			/* list_del: unlink node from list */
 +			{
-+				unsigned long node_next = __ptr64(*(u32 *)(cur_node));
-+				unsigned long node_prev = __ptr64(*(u32 *)(cur_node + 4));
++				unsigned long node_next = cc_deref(*(u32 *)(cur_node));
++				unsigned long node_prev = cc_deref(*(u32 *)(cur_node + 4));
 +
-+				*(u32 *)node_prev = node_next;
-+				*(u32 *)(node_next + 4) = node_prev;
++				if (WARN_ON(!node_next || !node_prev))
++					break;
++
++				*(u32 *)node_prev = cc_ref((void *)node_next);
++				*(u32 *)(node_next + 4) = cc_ref((void *)node_prev);
 +			}
 +
 +			/* Decrement count, BUG if it goes negative */
@@ -800,8 +801,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	u32 *fifo;
 +	u32 *sock;
 +	u32 *sem;
-+	u32 item_addr;
-+	u32 entry_vir;
++	unsigned long item_addr;
++	unsigned long entry_vir;
 +
 +	if (cpu > 1) {
 +		pr_err("cpu_comm: returnPipeLine: invalid cpu %u\n", cpu);
@@ -822,7 +823,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	while (item_addr) {
 +		/* Read the entry pointer from the FIFO slot */
-+		entry_vir = __ptr64(*(u32 *)item_addr);
++		entry_vir = cc_deref(*(u32 *)item_addr);
++		if (WARN_ON(!entry_vir))
++			break;
 +
 +		/* Validate slot index */
 +		if (*(u16 *)(entry_vir + 4) > 19) {
@@ -840,13 +843,15 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		 */
 +		{
 +			unsigned long new_node = entry_vir + 84;
-+			u32 *prev = (u32 *)sock[282];	/* current tail */
-+			u32 head_sentinel = (u32)&sock[281];
++			u32 *prev = (u32 *)cc_deref(sock[282]);	/* current tail */
 +
-+			*(u32 *)(new_node)     = head_sentinel;	/* next → sentinel */
-+			*(u32 *)(new_node + 4) = (u32)prev;	/* prev → old tail */
-+			*prev                  = new_node;	/* old_tail->next */
-+			sock[282]              = new_node;	/* sentinel->prev */
++			if (WARN_ON(!prev))
++				break;
++
++			*(u32 *)(new_node)     = cc_ref(&sock[281]); /* next → sentinel */
++			*(u32 *)(new_node + 4) = cc_ref(prev);	     /* prev → old tail */
++			*prev                  = cc_ref((void *)new_node); /* old_tail->next */
++			sock[282]              = cc_ref((void *)new_node); /* sentinel->prev */
 +		}
 +
 +		/* Increment count, update peak */
@@ -866,7 +871,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c	2026-03-31 23:55:00.797296910 +0200
-@@ -0,0 +1,1552 @@
+@@ -0,0 +1,1573 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_dev.c — Kernel interface for CPU_COMM
@@ -1117,7 +1122,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	case IOCTL_SHOW:
 +		/* Debug dump — pr_info all state */
-+		pr_info("cpu_comm: ShMem=0x%x Size=0x%x Base=0x%x Vir=0x%x\n",
++		pr_info("cpu_comm: ShMem=0x%x Size=0x%x Base=0x%lx Vir=0x%lx\n",
 +			ShMemAddr, ShMemSize, ShMemAddrBase, ShMemAddrVir);
 +		pr_info("cpu_comm: ARM ready=%d MIPS ready=%d\n",
 +			isCPUReady(CPU_ID_ARM), isCPUReady(CPU_ID_MIPS));
@@ -1824,8 +1829,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +{
 +	seq_printf(m, "ShMemAddr: 0x%08x\n", ShMemAddr);
 +	seq_printf(m, "ShMemSize: 0x%08x\n", ShMemSize);
-+	seq_printf(m, "ShMemAddrVir: 0x%08x\n", ShMemAddrVir);
-+	seq_printf(m, "ShMemAddrBase: 0x%08x\n", ShMemAddrBase);
++	seq_printf(m, "ShMemAddrVir: 0x%08lx\n", ShMemAddrVir);
++	seq_printf(m, "ShMemAddrBase: 0x%08lx\n", ShMemAddrBase);
 +	seq_printf(m, "ARM Ready: %d\n", isCPUReady(CPU_ID_ARM));
 +	seq_printf(m, "MIPS Ready: %d\n", isCPUReady(CPU_ID_MIPS));
 +	seq_printf(m, "ARM App Ready: %d\n", isCPUAppReady(CPU_ID_ARM));
@@ -1978,12 +1983,28 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		}
 +	}
 +
++	/*
++	 * Register the driver-private regions before anything stores a
++	 * pointer into a u32 slot. Order fixes the arena indices, and
++	 * those indices are embedded in every local cc_ref, so both
++	 * registrations must happen here and in this order.
++	 */
++	cc_arena_reset();
++	ret = cc_arena_register(s_CommSockt,
++				2 * COMM_SOCKET_SIZE);
++	if (ret < 0)
++		goto err_device;
++
 +	/* Allocate per-device state */
 +	pcpu_comm_dev = kzalloc(CPU_COMM_DEV_SIZE, GFP_KERNEL);
 +	if (!pcpu_comm_dev) {
 +		ret = -ENOMEM;
 +		goto err_device;
 +	}
++
++	ret = cc_arena_register(pcpu_comm_dev, CPU_COMM_DEV_SIZE);
++	if (ret < 0)
++		goto err_device;
 +
 +	/* Initialize pcpu_comm_dev fields (from IDA @ 0x2234).
 +	 * kzalloc zeros everything, but semaphore counts and self-ref
@@ -1993,12 +2014,12 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		u32 *d = (u32 *)pcpu_comm_dev;
 +
 +		/* Self-ref list at offset 24/28 (call list head/tail) */
-+		d[6] = (u32)&d[6];
-+		d[7] = (u32)&d[6];
++		d[6] = cc_ref(&d[6]);
++		d[7] = cc_ref(&d[6]);
 +
 +		/* Self-ref list at offset 40/44 (return list head/tail) */
-+		d[10] = (u32)&d[10];
-+		d[11] = (u32)&d[10];
++		d[10] = cc_ref(&d[10]);
++		d[11] = cc_ref(&d[10]);
 +
 +		/* Semaphore counts — just u32 counters used by cpu_comm_sem_*()
 +		 * helpers (BUG-19 fix: no struct semaphore, just atomic u32).
@@ -2008,8 +2029,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		d[507] = 1;	/* sem at offset 2028 */
 +
 +		/* Self-ref list at offset 2032/2036 */
-+		d[508] = (u32)&d[508];
-+		d[509] = (u32)&d[508];
++		d[508] = cc_ref(&d[508]);
++		d[509] = cc_ref(&d[508]);
 +
 +		/* Marker */
 +		d[510] = (u32)-1;	/* offset 2040 = -1 */
@@ -2289,6 +2310,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		pcpu_comm_dev = NULL;
 +	}
 +
++	/* Both arenas are gone or about to be reused — forget them, so a
++	 * stale ref decodes to 0 rather than into freed memory.
++	 */
++	cc_arena_reset();
++
 +	if (cpucommclass) {
 +		/* Destroy both devices before destroying the class */
 +		if (cpu_comm_fd_major > 0)
@@ -2422,14 +2448,21 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_fifo.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_fifo.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_fifo.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_fifo.c	2026-03-31 16:47:59.621338781 +0200
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,264 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_fifo.c — Ring-buffer FIFO for shared-memory IPC
 + *
 + * Single-producer single-consumer ring buffer.
-+ * Used for all message passing between ARM and MIPS.
-+ * Resides in shared memory — both CPUs access the same FIFO.
++ *
++ * The same code serves two kinds of FIFO, which is worth stating
++ * because it was previously the source of a real bug. The share_seq
++ * FIFOs live in shared memory and the MIPS reads them, so their base
++ * and slots hold physical addresses. The FreeWait and command FIFOs
++ * live in s_CommSockt, which is ARM-private. `base_addr` is a cc_ref
++ * in both cases and cc_deref() tells them apart, so these accessors
++ * always return a kernel virtual address regardless of which kind
++ * they were handed. Callers must not re-translate the result.
 + *
 + * The FIFO wastes one slot for full detection:
 + *   empty: rd_idx == wr_idx
@@ -2469,15 +2502,15 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	f[13] = 0;			/* count */
 +
 +	/* Primary linked list (self-referencing init) */
-+	f[14] = (u32)&f[14];		/* head = &head */
-+	f[15] = (u32)&f[14];		/* tail = &head */
++	f[14] = cc_ref(&f[14]);		/* head = &head */
++	f[15] = cc_ref(&f[14]);		/* tail = &head */
 +
 +	if (mode >= 0) {
 +		f[16] = 1;		/* sem count = 1 (protects list ops) */
 +		f[17] = mode;		/* owner */
 +		/* Secondary wait list */
-+		f[18] = (u32)&f[18];	/* wait_head = &wait_head */
-+		f[19] = (u32)&f[18];	/* wait_tail = &wait_head */
++		f[18] = cc_ref(&f[18]);	/* wait_head = &wait_head */
++		f[19] = cc_ref(&f[18]);	/* wait_tail = &wait_head */
 +	}
 +}
 +
@@ -2510,7 +2543,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	/* Return address of current write slot */
-+	return __ptr64(f[6]) + f[5] * wr;
++	return cc_deref(f[6]) + f[5] * wr;
 +}
 +
 +/*
@@ -2551,7 +2584,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	/* Return address of new write slot */
-+	return __ptr64(f[6]) + f[5] * next_wr;
++	return cc_deref(f[6]) + f[5] * next_wr;
 +}
 +
 +/*
@@ -2577,7 +2610,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (rd == wr)
 +		return 0;
 +
-+	return __ptr64(f[6]) + f[5] * rd;
++	return cc_deref(f[6]) + f[5] * rd;
 +}
 +
 +/*
@@ -2618,7 +2651,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (wr == next_rd)
 +		return 0;
 +
-+	return __ptr64(f[6]) + f[5] * next_rd;
++	return cc_deref(f[6]) + f[5] * next_rd;
 +}
 +
 +/*
@@ -2683,7 +2716,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm.h b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h	2026-03-31 23:39:35.064018354 +0200
-@@ -0,0 +1,645 @@
+@@ -0,0 +1,699 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * HY310 CPU_COMM — ARM ↔ MIPS Inter-Processor Communication
@@ -2700,8 +2733,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +#ifndef _CPU_COMM_H_
 +#define _CPU_COMM_H_
-+
-+static inline unsigned long __ptr64(u32 p) { return p ? (unsigned long)p | 0xffff800000000000UL : 0; }
 +
 +#include <linux/types.h>
 +#include <linux/list.h>
@@ -3156,7 +3187,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +/* MIPS app-ready assumption flag (cache coherency workaround) */
 +extern int mips_app_ready_assumed;
 +
-+/* CommSocket array */
++/* CommSocket array — registered as a cc_ref arena, see cc_ref() */
 +extern u32 s_CommSockt[];	/* [2 * COMM_SOCKET_SIZE/4] */
 +
 +/* Call session ID counter */
@@ -3167,6 +3198,62 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* Suspend flag */
 +extern int cpu_comm_suspend_flag;
++
++/* ══════════════════════════════════════════════════════════════
++ * cc_ref — the vendor protocol's 32-bit pointer, ported to arm64
++ *
++ * Every list link, FIFO base and queue slot in this driver is a u32.
++ * That is not a style choice: the shared-memory structures are read by
++ * the MIPS, whose view of them is 32-bit, so their width is fixed by
++ * the protocol and cannot be widened. What can be fixed is what the 32
++ * bits mean.
++ *
++ * The original port stored `(u32)&x` — a kernel VA truncated to 32
++ * bits — and recovered it with `p | 0xffff800000000000`. On a 32-bit
++ * vendor kernel that round-trip was lossless. On arm64 it is not: a
++ * vmalloc or kmalloc address has significant bits above 32, so the
++ * truncation destroys them and the OR invents a different address.
++ * Every list traversal in the driver would have followed a wild
++ * pointer the first time it ran.
++ *
++ * A cc_ref names a location in one of two regions:
++ *
++ *   bit 31 clear — SHARED. The value is the ARM-physical address of a
++ *       location inside the cpu_comm reserved region. This is what the
++ *       MIPS must see, and it is what U-Boot has exchanged with the
++ *       firmware: share_seq FIFO bases and queue slots hold physical
++ *       addresses of call entries. The region sits at 0x4E300000 with
++ *       DRAM based at 0x40000000, so bit 31 is always clear here —
++ *       cc_ref() range-checks that rather than assuming it.
++ *
++ *   bit 31 set — LOCAL. Bits 30:28 select a driver-private arena and
++ *       bits 27:0 are a byte offset into it. These are ARM-side
++ *       bookkeeping structures (s_CommSockt, pcpu_comm_dev) that the
++ *       vendor also addressed with 32-bit words; nothing outside this
++ *       driver dereferences them.
++ *
++ * The one place the two regions meet is the wait pointer: a local wait
++ * object is published into a shared call slot at +0x18/+0x1C. That is
++ * safe, and not by luck — the firmware stores the wait pointer without
++ * dereferencing it (its signal primitive at 0x8b15c27c null-checks and
++ * returns an error), which is also why U-Boot deliberately publishes
++ * zero there. A tagged local ref is opaque to the MIPS by design.
++ * ══════════════════════════════════════════════════════════════ */
++
++#define CC_REF_LOCAL		BIT(31)
++#define CC_REF_ARENA_SHIFT	28
++#define CC_REF_ARENA_MAX	8
++#define CC_REF_OFF_MASK		((1u << CC_REF_ARENA_SHIFT) - 1)
++
++/* Registers a driver-private arena; returns its index or negative. */
++int  cc_arena_register(void *base, size_t size);
++void cc_arena_reset(void);
++
++/* Encode a kernel pointer as the protocol's 32-bit reference. */
++u32  cc_ref(const void *ptr);
++
++/* Decode a 32-bit reference back to a kernel virtual address. */
++unsigned long cc_deref(u32 ref);
 +
 +/* ══════════════════════════════════════════════════════════════
 + * Function declarations — grouped by source file
@@ -3226,7 +3313,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* cpu_comm_proto.c — communication protocol */
 +void init_intrsem(int dummy);
-+int  SendCommLow(u8 *share_seq, u32 slot, u8 msg_type, u32 param, u32 sem_ptr);
++int  SendCommLow(u8 *share_seq, u32 slot, u8 msg_type, u32 param, u32 sem_ref);
 +int  SendComm2CPUEx(unsigned long msg, u32 target_cpu, int from_user);
 +int  SendComm2CPU(unsigned long msg, int from_user);
 +void SendAckLow(void *data, u32 a2, u8 a3, u32 a4, u32 a5);
@@ -3245,18 +3332,18 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void ChannelPoolInit(void *pool);
 +int  Comm_AddNewChannel(void *pool, u16 comp_id, u32 cpu);
 +int  Comm_RemoveChannel(void *pool, u16 comp_id, u32 cpu);
-+int  Comm_QueryChannel(void *pool, u32 channel_id, u32 *result);
-+void Comm_Add2NewCallFifo(void *pool, u32 *cmd_fifo, u32 call_entry);
-+int  Comm_GetCallbyChannel(void *pool, u32 channel_id, u32 *result);
++int  Comm_QueryChannel(void *pool, u32 channel_id, unsigned long *result);
++void Comm_Add2NewCallFifo(void *pool, u32 *cmd_fifo, unsigned long call_entry);
++int  Comm_GetCallbyChannel(void *pool, u32 channel_id, unsigned long *result);
 +
 +/* cpu_comm_channel.c — wait/session management */
-+int  AddtoWaitComm(void *list, u32 wait_entry);
++int  AddtoWaitComm(void *list, unsigned long wait_entry);
 +int  GetFreeWaitComm(void *list, u32 **result);
 +int  GetWaitbySessionId(void *list, u32 session_id, u8 *result);
 +int  FindWaitBySessionId(void *list, u32 session_id, u32 **result);
-+void ReleaseWaitComm(u32 cpu_id, u32 wait_entry);
++void ReleaseWaitComm(u32 cpu_id, unsigned long wait_entry);
 +int  HasInList(void *list, void *item);
-+int  Comm_GetFreeCall(void *share_seq);
++unsigned long Comm_GetFreeCall(void *share_seq);
 +void Comm_ReleaseFreeCall(void *share_seq, void *call);
 +int  AddReturn2Fifo(u32 *fifo, void *data);
 +void returnPipeLine(void *data);
@@ -3275,7 +3362,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +int  CPUComm_UnInstallRoutine(void *data);
 +int  Comm_Name2ID(const char *name);
 +int  FindRoutine(u32 comp_search, void *msg_buf);
-+int  FindRoutineEx(u32 comp_search, void *msg_buf, u32 *result);
++int  FindRoutineEx(u32 comp_search, void *msg_buf, unsigned long *result);
 +int  AddInRoutine(void *data);
 +int  RemoveRoutine(void *data);
 +void RemovePidRoutines(pid_t pid);
@@ -4288,7 +4375,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c	2026-03-31 23:50:39.812216590 +0200
-@@ -0,0 +1,2221 @@
+@@ -0,0 +1,2320 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_mem.c — Shared memory initialization and management
@@ -4784,6 +4871,113 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return Phy2Mid(phy);
 +}
 +
++/* ── cc_ref — the protocol's 32-bit pointer (see cpu_comm.h) ── */
++
++static struct {
++	unsigned long base;
++	size_t size;
++} cc_arenas[CC_REF_ARENA_MAX];
++
++static int cc_arena_count;
++
++int cc_arena_register(void *base, size_t size)
++{
++	int i;
++
++	if (WARN_ON(!base || !size))
++		return -EINVAL;
++
++	/*
++	 * The offset has to fit in the bits the tag leaves behind. Both
++	 * arenas are tens of kilobytes, so this is a guard against a
++	 * future caller rather than a live constraint.
++	 */
++	if (WARN_ON(size > CC_REF_OFF_MASK + 1))
++		return -EINVAL;
++
++	if (WARN_ON(cc_arena_count >= CC_REF_ARENA_MAX))
++		return -ENOSPC;
++
++	i = cc_arena_count++;
++	cc_arenas[i].base = (unsigned long)base;
++	cc_arenas[i].size = size;
++
++	pr_debug("cpu_comm: arena %d = %p..%p (%zu bytes)\n",
++		 i, base, (u8 *)base + size, size);
++	return i;
++}
++
++void cc_arena_reset(void)
++{
++	memset(cc_arenas, 0, sizeof(cc_arenas));
++	cc_arena_count = 0;
++}
++
++u32 cc_ref(const void *ptr)
++{
++	unsigned long v = (unsigned long)ptr;
++	int i;
++
++	if (!ptr)
++		return 0;
++
++	/* Shared memory: the MIPS-visible physical address. */
++	if (ShMemAddrBase && ShMemSize &&
++	    v >= ShMemAddrBase && v < ShMemAddrBase + ShMemSize) {
++		u32 phy = Vir2Mid(0, v);
++
++		/*
++		 * The tag depends on shared physical addresses staying
++		 * below 2 GiB. That holds for the reserved region at
++		 * 0x4E300000, but check rather than trust it: a ref
++		 * that collides with the tag would be decoded as an
++		 * arena offset and silently corrupt a list.
++		 */
++		if (WARN_ON(phy & CC_REF_LOCAL))
++			return 0;
++		return phy;
++	}
++
++	/* Driver-private memory: tagged arena index + byte offset. */
++	for (i = 0; i < cc_arena_count; i++) {
++		if (v >= cc_arenas[i].base &&
++		    v < cc_arenas[i].base + cc_arenas[i].size)
++			return CC_REF_LOCAL |
++			       ((u32)i << CC_REF_ARENA_SHIFT) |
++			       (u32)(v - cc_arenas[i].base);
++	}
++
++	/*
++	 * Not in any region we can name in 32 bits. Truncating would be
++	 * the old bug; refuse instead, so the failure is a warning at
++	 * the site that produced it rather than a wild pointer later.
++	 */
++	WARN_ONCE(1, "cpu_comm: cc_ref(%p) outside shared memory and every arena\n",
++		  ptr);
++	return 0;
++}
++
++unsigned long cc_deref(u32 ref)
++{
++	unsigned int idx;
++	u32 off;
++
++	if (!ref)
++		return 0;
++
++	if (!(ref & CC_REF_LOCAL))
++		return Mid2Vir(0, ref);
++
++	idx = (ref & ~CC_REF_LOCAL) >> CC_REF_ARENA_SHIFT;
++	off = ref & CC_REF_OFF_MASK;
++
++	if (WARN_ON(idx >= (unsigned int)cc_arena_count) ||
++	    WARN_ON(off >= cc_arenas[idx].size))
++		return 0;
++
++	return cc_arenas[idx].base + off;
++}
++
 +/* ── Sequence helpers ──────────────────────────────────────── */
 +
 +unsigned long getSeq(u32 cpu_id)
@@ -4921,14 +5115,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	sock[3] = 1;		/* sem_count */
 +
 +	/* Self-referencing linked list 0 at sock[4] */
-+	sock[4] = (u32)&sock[4];
-+	sock[5] = (u32)&sock[4];
++	sock[4] = cc_ref(&sock[4]);
++	sock[5] = cc_ref(&sock[4]);
 +	sock[6] = 0;
 +	sock[7] = 0;
 +
 +	/* Self-referencing linked list 1 at sock[8] */
-+	sock[8] = (u32)&sock[8];
-+	sock[9] = (u32)&sock[8];
++	sock[8] = cc_ref(&sock[8]);
++	sock[9] = cc_ref(&sock[8]);
 +
 +	/* ── SendCmdWaitList MsgFIFO at &sock[10] (= byte offset 40) ── */
 +	InitMsgFIFO(&sock[10], interSeq2Name(sock), " SendCmdWaitList", 1);
@@ -4938,8 +5132,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	sock[31] = 1;		/* sem = 1 */
 +
 +	/* Self-referencing list at sock[32] */
-+	sock[32] = (u32)&sock[32];
-+	sock[33] = (u32)&sock[32];
++	sock[32] = cc_ref(&sock[32]);
++	sock[33] = cc_ref(&sock[32]);
 +
 +	/* ── FreeWait FIFO at sock[34] ──
 +	 *
@@ -4950,7 +5144,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	 *   [37] sem/track= 1  (set to 0 after pre-filling)
 +	 *   [38] capacity = 21
 +	 *   [39] item_size= 4
-+	 *   [40] base_addr= (u32)&sock[52]  (FreeWait ring buffer)
++	 *   [40] base_addr= cc_ref(&sock[52])  (FreeWait ring buffer)
 +	 *   [41] reserved = 0
 +	 *
 +	 * Name at sock[42] (= byte offset 168): "FreeWait", 32 bytes
@@ -4963,7 +5157,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	sock[37] = 1;		/* track_stats/sem = 1 during init */
 +	sock[38] = 21;		/* capacity */
 +	sock[39] = 4;		/* item_size */
-+	sock[40] = (u32)&sock[52];	/* base_addr = ring buffer start */
++	sock[40] = cc_ref(&sock[52]);	/* base_addr = ring buffer start */
 +	sock[41] = 0;
 +
 +	strncpy((char *)&sock[42], "FreeWait", 32);
@@ -5004,10 +5198,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		/* v11, v11+1 = self-ref */
 +		*(v11 - 4) = 0;
 +		*(v11 - 3) = 0;
-+		*(v11 - 2) = (u32)(v11 - 2);	/* self-ref */
-+		*(v11 - 1) = (u32)(v11 - 2);	/* self-ref */
-+		*v11       = (u32)v11;		/* self-ref */
-+		*(v11 + 1) = (u32)v11;		/* self-ref */
++		*(v11 - 2) = cc_ref(v11 - 2);	/* self-ref */
++		*(v11 - 1) = cc_ref(v11 - 2);	/* self-ref */
++		*v11       = cc_ref(v11);		/* self-ref */
++		*(v11 + 1) = cc_ref(v11);		/* self-ref */
 +
 +		/* Write "wait object pointer" into the FreeWait FIFO.
 +		 * The wait object starts 6 DWORDs before v11 = entry[1].
@@ -5018,7 +5212,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			       i);
 +			BUG();
 +		}
-+		*item_wr = (u32)(v11 - 6);	/* = &entry[1] */
++		*item_wr = cc_ref(v11 - 6);	/* = &entry[1] */
 +		fifo_requestItemWr(&sock[34]);
 +	}
 +
@@ -5030,8 +5224,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	sock[235] = 1;		/* sem = 1 */
 +
 +	/* Self-referencing list at sock[236] (= byte offset 944) */
-+	sock[236] = (u32)&sock[236];
-+	sock[237] = (u32)&sock[236];
++	sock[236] = cc_ref(&sock[236]);
++	sock[237] = cc_ref(&sock[236]);
 +
 +	/* ── CallCmd ring buffer at sock[238] (= byte offset 952) ──
 +	 * Capacity = 21 slots × 4 bytes; mmioset to 0.
@@ -5053,15 +5247,15 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	sock[260] = 1;		/* sem = 1 */
 +
 +	/* Self-referencing pair at sock[261] */
-+	sock[261] = (u32)&sock[261];
-+	sock[262] = (u32)&sock[261];
++	sock[261] = cc_ref(&sock[261]);
++	sock[262] = cc_ref(&sock[261]);
 +
 +	sock[263] = 0;
 +	sock[264] = 0;
 +
 +	/* Self-referencing pair at sock[265] */
-+	sock[265] = (u32)&sock[265];
-+	sock[266] = (u32)&sock[265];
++	sock[265] = cc_ref(&sock[265]);
++	sock[266] = cc_ref(&sock[265]);
 +
 +	/* ── ReturnList MsgFIFO at &sock[267] ── */
 +	InitMsgFIFO(&sock[267], interSeq2Name(sock), " ReturnList", 1);
@@ -5070,8 +5264,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	sock[288] = 1;		/* sem = 1 */
 +
 +	/* Self-referencing pair at sock[289] */
-+	sock[289] = (u32)&sock[289];
-+	sock[290] = (u32)&sock[289];
++	sock[289] = cc_ref(&sock[289]);
++	sock[290] = cc_ref(&sock[289]);
 +
 +	/* ── Share sequence R CallCmd/ReturnCmd FIFO setup ──
 +	 *
@@ -5101,7 +5295,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		fifo[3] = 1;		/* sem/track = 1 */
 +		fifo[4] = 21;		/* capacity */
 +		fifo[5] = 4;		/* item_size */
-+		fifo[6] = (u32)&sock[238];	/* base_addr = VIRTUAL */
++		fifo[6] = cc_ref(&sock[238]);	/* base_addr = VIRTUAL */
 +		fifo[7] = 0;
 +
 +		strncpy((char *)share_seq_r + 64, "CallCmd", 32);
@@ -5126,7 +5320,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			fifo1[3] = 1;
 +			fifo1[4] = 21;
 +			fifo1[5] = 4;
-+			fifo1[6] = (u32)&sock[291];	/* VIRTUAL */
++			fifo1[6] = cc_ref(&sock[291]);	/* VIRTUAL */
 +			fifo1[7] = 0;
 +
 +			strncpy((char *)share_seq_r1 + 64, "ReturnCmd", 32);
@@ -5174,7 +5368,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		u8 *s = (u8 *)seq;
 +		u32 *fifo;
 +		unsigned long buf_vir;	/* virtual address of FIFO buffer */
-+		u32 buf_phy;	/* physical address of FIFO buffer */
 +		unsigned long entry_base;	/* virtual address of first call entry */
 +		int j;
 +
@@ -5194,15 +5387,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +		/* Zero the FIFO buffer area at offset 0xC0 */
 +		buf_vir = seq + 192;
-+		if (buf_vir) {
-+			buf_phy = buf_vir - ShMemAddrBase + ShMemAddr;
-+			if (buf_phy) {
-+				unsigned long tmp_vir = buf_phy + ShMemAddrBase - ShMemAddr;
-+				if (tmp_vir)
-+					memset_io((void *)tmp_vir, 0,
-+						  21 * 4); /* 21 slots × 4 bytes */
-+			}
-+		}
++		memset_io((void *)buf_vir, 0, 21 * 4);	/* 21 slots × 4 bytes */
 +
 +		/* Set up embedded FIFO struct at offset 120 (0x78) */
 +		fifo = (u32 *)(seq + 120);
@@ -5211,11 +5396,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		fifo[2] = 0;		/* peak_count */
 +		fifo[3] = 1;		/* sem / track_stats — cleared to 0 after init */
 +		fifo[4] = 21;		/* capacity (1 wasted → 20 usable) */
-+		fifo[5] = 4;		/* item_size (4 bytes per slot = physical pointer) */
++		fifo[5] = 4;		/* item_size (4 bytes per slot = one cc_ref) */
 +
-+		/* base_addr = physical address of buffer at offset 0xC0 */
-+		buf_phy = (buf_vir) ? buf_vir - ShMemAddrBase + ShMemAddr : 0;
-+		fifo[6] = buf_phy;
++		/*
++		 * base_addr for a shared FIFO. cc_ref() resolves this to the
++		 * physical address because the buffer is inside the shared
++		 * mapping, which is what the MIPS has to see.
++		 */
++		fifo[6] = cc_ref((void *)buf_vir);
 +
 +		fifo[7] = 0;		/* reserved */
 +
@@ -5226,26 +5414,24 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		/* Clear field_b8 */
 +		*(u32 *)(seq + 184) = 0;
 +
-+		/*
-+		 * Verify that FIFO has a valid write slot before filling.
-+		 * fifo_getItemWr returns the physical address of the first slot.
-+		 */
++		/* Verify that FIFO has a valid write slot before filling. */
 +		if (!fifo_getItemWr(fifo)) {
 +			pr_err("cpu_comm: InitCommShareSeqMem: FIFO not ready!\n");
 +			BUG();
 +		}
 +
 +		/*
-+		 * Pre-fill the FIFO with physical pointers to 20 call entries.
-+		 * Each call entry is 104 bytes starting at share_seq + 360 (0x168).
++		 * Pre-fill the FIFO with references to 20 call entries. Each
++		 * call entry is 104 bytes starting at share_seq + 360 (0x168)
++		 * -- the layout the firmware asserts on at 0x8b1201b8, which
++		 * checks the slot address is exactly share_seq + 0x168 +
++		 * 104*index.
 +		 */
 +		entry_base = seq + 360;
 +
 +		for (j = 0; j < 20; j++) {
 +			unsigned long entry_vir = entry_base + j * COMM_MSG_SIZE;
-+			u32 entry_phy;
-+			u32 wr_slot_phy;
-+			u32 *wr_slot_vir;
++			u32 *wr_slot;
 +
 +			/* Set slot index (u16 at call_entry + 4) */
 +			*(u16 *)(entry_vir + 4) = (u16)j;
@@ -5254,16 +5440,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			*(u32 *)(entry_vir + 12) = SESSION_ID_INVALID;
 +
 +			/* Get current write slot from FIFO */
-+			wr_slot_phy = fifo_getItemWr(fifo);
-+			if (!wr_slot_phy) {
++			wr_slot = (u32 *)fifo_getItemWr(fifo);
++			if (!wr_slot) {
 +				pr_err("cpu_comm: InitCommShareSeqMem: FIFO full at entry %d!\n", j);
 +				BUG();
 +			}
 +
-+			/* Convert write slot to virtual, write entry's physical addr */
-+			wr_slot_vir = (u32 *)(wr_slot_phy + ShMemAddrBase - ShMemAddr);
-+			entry_phy = entry_vir ? entry_vir - ShMemAddrBase + ShMemAddr : 0;
-+			*wr_slot_vir = entry_phy;
++			*wr_slot = cc_ref((void *)entry_vir);
 +
 +			/* Commit the write */
 +			fifo_requestItemWr(fifo);
@@ -5626,12 +5809,12 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		if ((unsigned long)free_head_vir <= heap_data_base_vir ||
 +		    (unsigned long)free_head_vir >= heap_data_base_vir + heap[46]) {
 +			/* Out of bounds */
-+			WARN(1, "cpu_comm: SMM free list head out of bounds (class=%u ptr=0x%x)\n",
++			WARN(1, "cpu_comm: SMM free list head out of bounds (class=%u ptr=0x%lx)\n",
 +			     i, (unsigned long)free_head_vir);
 +			return 0;
 +		}
 +		if ((unsigned long)free_head_vir & 3) {
-+			WARN(1, "cpu_comm: SMM free list head misaligned (class=%u ptr=0x%x)\n",
++			WARN(1, "cpu_comm: SMM free list head misaligned (class=%u ptr=0x%lx)\n",
 +			     i, (unsigned long)free_head_vir);
 +			return 0;
 +		}
@@ -5719,7 +5902,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			for (j = 1; j < sub_count; ++j) {
 +				unsigned long block_vir = page_vir + (j << i);
 +				u32 *block = (u32 *)block_vir;
-+				int list_head_phys;
++				u32 list_head_phys;
 +
 +				/* next = current list head */
 +				block[0] = free_list_slot[17];
@@ -5729,8 +5912,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +				 * (the free list head pointer itself, so old head
 +				 * can update the list head via prev->next)
 +				 */
-+				list_head_phys = (int)&free_list_slot[17] +
-+					ShMemAddr - ShMemAddrBase;
++				list_head_phys = cc_ref(&free_list_slot[17]);
 +
 +				block[1] = list_head_phys;
 +
@@ -5956,7 +6138,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	comm_SpinUnLock(1, 0);
 +
-+	pr_info("cpu_comm: SMM heap initialized: base=0x%x size=%u pages=%u\n",
++	pr_info("cpu_comm: SMM heap initialized: base=0x%lx size=%u pages=%u\n",
 +		base, size, page_count);
 +	return 0;
 +}
@@ -6186,7 +6368,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		if (vaddr <= heap_data_base_vir ||
 +		    vaddr >= heap_data_base_vir + heap[46] ||
 +		    (vaddr & 3)) {
-+			WARN(1, "cpu_comm: SMM_Free: bad vaddr 0x%x\n", vaddr);
++			WARN(1, "cpu_comm: SMM_Free: bad vaddr 0x%lx\n", vaddr);
 +			goto out_unlock;
 +		}
 +
@@ -6278,9 +6460,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			u32 old_head_phy = free_list_slot[17];	/* physical */
 +			u32 list_head_phys;
 +
-+			/* prev = physical address of &free_list_slot[17] */
-+			list_head_phys = (u32)&free_list_slot[17] +
-+				ShMemAddr - ShMemAddrBase;
++			/*
++			 * prev = physical address of &free_list_slot[17].
++			 * This truncated the VA to u32 *before* subtracting
++			 * the mapping offset, so on arm64 the high bits were
++			 * gone by the time the arithmetic ran.
++			 */
++			list_head_phys = cc_ref(&free_list_slot[17]);
 +
 +			blk[0] = old_head_phy;
 +			blk[1] = list_head_phys;
@@ -6513,7 +6699,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c	2026-03-31 23:40:01.424183640 +0200
-@@ -0,0 +1,902 @@
+@@ -0,0 +1,907 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_proto.c — Communication protocol layer
@@ -6609,9 +6795,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * @slot:   FIFO slot index
 + * @type:   message type (cmd_type field)
 + * @param:  parameter value
-+ * @sem:    semaphore pointer for completion notification
++ * @sem_ref: cc_ref of the completion semaphore. This lands in shared
++ *          memory at seq+24, but the firmware only stores it -- its
++ *          signal primitive at 0x8b15c27c null-checks and returns an
++ *          error rather than dereferencing, which is why U-Boot can
++ *          publish zero here. So a tagged local ref is safe.
 + */
-+int SendCommLow(u8 *seq, u32 slot, u8 type, u32 param, u32 sem_ptr)
++int SendCommLow(u8 *seq, u32 slot, u8 type, u32 param, u32 sem_ref)
 +{
 +	u8 src, dst, dir;
 +	u32 cur_cpu;
@@ -6633,7 +6823,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	/* Fill message metadata */
 +	seq[16] = slot;		/* sequence number */
 +	*(u32 *)(seq + 20) = param;
-+	*(u64 *)(seq + 24) = (u64)sem_ptr;
++	*(u64 *)(seq + 24) = (u64)sem_ref;
 +	*(u32 *)(seq + 4) += 1;	/* increment counter */
 +	seq[8] = type;
 +
@@ -6681,7 +6871,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +int SendComm2CPUEx(unsigned long msg_ptr, u32 target_cpu, int from_user)
 +{
 +	u8     *share_seq_w;	/* write-side share sequence */
-+	u32     seq_base;	/* comm_socket base for dst_cpu */
++	unsigned long seq_base;	/* comm_socket base for dst_cpu */
 +	u8     *sem_ptr;	/* pointer to the acquire semaphore */
 +	u8     *call_slot;	/* FIFO slot for this message */
 +	u16     slot_idx;	/* slot index saved before copy */
@@ -6705,7 +6895,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	/* ── Step 1: basic validation ── */
 +	if (!msg_ptr || target_cpu > 1) {
-+		pr_err("cpu_comm: SendComm2CPUEx: invalid args msg=%08x cpu=%u\n",
++		pr_err("cpu_comm: SendComm2CPUEx: invalid args msg=%08lx cpu=%u\n",
 +		       msg_ptr, target_cpu);
 +		BUG();
 +	}
@@ -6799,14 +6989,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	/* ── Step 8: get or reuse cached free call slot ── */
 +	cache_idx = 2 * dst_cpu + target_cpu + 8;
 +	cache_acquired = true;
-+	call_slot = (u8 *)comm_intrsem[cache_idx];
++	call_slot = (u8 *)cc_deref(comm_intrsem[cache_idx]);
 +	if (!call_slot) {
 +		do {
 +			call_slot = (u8 *)Comm_GetFreeCall(share_seq_w);
 +			if (!call_slot)
 +				schedule();
 +		} while (!call_slot);
-+		comm_intrsem[cache_idx] = (u32)call_slot;
++		comm_intrsem[cache_idx] = cc_ref(call_slot);
 +	}
 +
 +	/* ── Step 9: save slot_index before copy overwrites it ── */
@@ -6878,7 +7068,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			*(u64 *)(call_slot + 32) = 0ULL;
 +		} else {
 +			/* Normal call or return-ack: allocate a wait object */
-+			u32 wait_fifo_base = getSeq(dst_cpu) + 136;
++			unsigned long wait_fifo_base = getSeq(dst_cpu) + 136;
 +
 +			do {
 +				ret = GetFreeWaitComm((void *)wait_fifo_base, &wait_ptr);
@@ -6891,14 +7081,15 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			*wait_ptr       = session_id;
 +			*(wait_ptr + 1) = (u32)current->pid;
 +
-+			AddtoWaitComm((void *)(getSeq(dst_cpu) + 40), (u32)wait_ptr);
++			AddtoWaitComm((void *)(getSeq(dst_cpu) + 40),
++				      (unsigned long)wait_ptr);
 +
-+			*(u64 *)(call_slot + 32) = (u64)(u32)wait_ptr;
++			*(u64 *)(call_slot + 32) = (u64)cc_ref(wait_ptr);
 +
 +			/* Return-ack path: also fill offsets 60/64 */
 +			if (flags & MSG_FLAG_RETURN_ACK) {
 +				*(u32 *)(call_slot + 60) = session_id;
-+				*(u32 *)(call_slot + 64) = (u32)wait_ptr;
++				*(u32 *)(call_slot + 64) = cc_ref(wait_ptr);
 +			}
 +		}
 +	} else {
@@ -6923,7 +7114,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	/* ── Step 18: dispatch via SendCommLow ── */
 +	SendCommLow(share_seq_w, (u32)slot_idx, msg_type, session_id,
-+		    (u32)(sem_ptr + 16));
++		    cc_ref(sem_ptr + 16));
 +
 +	/* ── Step 19: wait for ACK (500 jiffies) ── */
 +	ret = cpu_comm_sem_down_timeout((void *)(sem_ptr + 16),
@@ -6941,7 +7132,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +			GetWaitbySessionId((void *)(getSeq(dst_cpu) + 40),
 +					   *wait_ptr, tmp_buf);
-+			ReleaseWaitComm(dst_cpu, (u32)wait_ptr);
++			ReleaseWaitComm(dst_cpu, (unsigned long)wait_ptr);
 +		}
 +	}
 +
@@ -7140,7 +7331,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void command_action(u32 remote_cpu, u32 direction)
 +{
 +	unsigned long share_seq_r;	/* read sequence (messages FROM remote) */
-+	u32 share_seq_w;	/* write sequence (for sending ACK TO remote) */
++	unsigned long share_seq_w;	/* write sequence (for sending ACK TO remote) */
 +	u32 seq_idx;		/* current sequence index */
 +	unsigned long entry_base;		/* virtual address of the call entry */
 +	u16 component_id;
@@ -7232,11 +7423,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		session_id = *(u32 *)(entry_base + 12);
 +		if (*(u16 *)(entry_base + 6) & MSG_FLAG_RETURN_ACK) {
 +			/* Has return-ack flag — find wait by session ID */
-+			u32 seq_base = getSeq(remote_cpu);
-+			u32 wait_obj = 0;
++			unsigned long seq_base = getSeq(remote_cpu);
++			u32 *wait_obj = NULL;
 +
 +			FindWaitBySessionId((void *)(seq_base + 40),
-+					    session_id, (u32 **)&wait_obj);
++					    session_id, &wait_obj);
 +			if (!wait_obj) {
 +				pr_err("cpu_comm: command_action: wait not found for session 0x%x\n",
 +				       session_id);
@@ -7244,17 +7435,17 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			}
 +
 +			/* Verify session match */
-+			if (*(u32 *)(entry_base + 12) != *(u32 *)wait_obj) {
++			if (*(u32 *)(entry_base + 12) != *wait_obj) {
 +				pr_err("cpu_comm: command_action: session mismatch\n");
 +				BUG();
 +			}
 +
 +			dmb(ish);
 +			*(u16 *)(entry_base + 10) |= 0x40;
-+			cpu_comm_sem_up((void *)(wait_obj + 8));
++			cpu_comm_sem_up((void *)(wait_obj + 2));
 +		} else {
 +			/* No return-ack — use embedded wait pointer */
-+			u64 wait_ptr = *(u64 *)(entry_base + 32);
++			unsigned long wait_ptr = cc_deref((u32)*(u64 *)(entry_base + 32));
 +
 +			if (!wait_ptr) {
 +				pr_err("cpu_comm: command_action: no wait pointer\n");
@@ -7262,14 +7453,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			}
 +
 +			/* Verify session match */
-+			if (*(u32 *)(entry_base + 12) != *(u32 *)(u32)wait_ptr) {
++			if (*(u32 *)(entry_base + 12) != *(u32 *)wait_ptr) {
 +				pr_err("cpu_comm: command_action: session mismatch (embedded)\n");
 +				BUG();
 +			}
 +
 +			dmb(ish);
 +			*(u16 *)(entry_base + 10) |= 0x40;
-+			cpu_comm_sem_up((void *)((u32)wait_ptr + 8));
++			cpu_comm_sem_up((void *)(wait_ptr + 8));
 +		}
 +	}
 +
@@ -7542,7 +7733,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	int cur_idx;
 +	int prev_idx;
 +	u8 find_buf[96];
-+	u8 find_name[4];
++	unsigned long find_name;
 +	u8 *entry;
 +
 +	if (WARN_ON(!ShMemAddrBase || !data))
@@ -7562,7 +7753,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	/* Check for duplicate */
-+	if (!FindRoutineEx(comp_id, find_buf, (u32 *)find_name))
++	if (!FindRoutineEx(comp_id, find_buf, &find_name))
 +		return 0;	/* already registered */
 +
 +	comm_SpinLock(2);
@@ -7758,7 +7949,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * Returns 0 on success, 1 if not found.
 + */
-+int FindRoutineEx(u32 comp_search, void *msg_buf, u32 *result)
++int FindRoutineEx(u32 comp_search, void *msg_buf, unsigned long *result)
 +{
 +	int cur_idx;
 +	u8 *entry;
@@ -7797,7 +7988,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			mmiocpy((u8 *)msg_buf + 12, entry + 12, 64);
 +
 +			if (result)
-+				*result = (u32)(entry + 12);
++				*result = (unsigned long)(entry + 12);
 +
 +			if (*(u16 *)(entry + RT_CPU_OFF) > 1) {
 +				pr_warn("cpu_comm: FindRoutineEx: cpu %u > 1\n",
@@ -7938,8 +8129,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	int param_count;
 +	int i;
 +	u16 dst_cpu;
-+	u32 seq_base;
-+	u32 wait_obj = 0;
++	unsigned long seq_base;
++	u32 *wait_obj = NULL;
 +	u32 session_ptr;
 +	u16 *return_entry = NULL;
 +
@@ -7993,7 +8184,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	/* Find our wait object */
 +	FindWaitBySessionId((void *)(seq_base + 40),
-+			    session_ptr, (u32 **)&wait_obj);
++			    session_ptr, &wait_obj);
 +	if (!wait_obj) {
 +		pr_err("cpu_comm: CPUComm_CallEx: wait obj not found (session=0x%x)\n",
 +		       session_ptr);
@@ -8001,7 +8192,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	/* Wait for MIPS to respond (blocks until up() is called) */
-+	ret = cpu_comm_sem_down_interruptible((void *)(wait_obj + 8));
++	ret = cpu_comm_sem_down_interruptible((void *)(wait_obj + 2));
 +	if (ret) {
 +		pr_err("cpu_comm: CPUComm_CallEx: interrupted waiting (session=0x%x)\n",
 +		       session_ptr);
@@ -8043,7 +8234,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	/* Clean up wait object */
 +	{
-+		u32 wait_cleanup = 0;
++		unsigned long wait_cleanup = 0;
 +
 +		GetWaitbySessionId((void *)(seq_base + 40),
 +				   session_ptr, (u8 *)&wait_cleanup);
@@ -8159,7 +8350,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	u32 comp_id;
 +	u32 channel_id;
 +	u32 thread_id;
-+	u32 existing_channel = 0;
++	unsigned long existing_channel = 0;
 +	int ret;
 +
 +	if (!data)

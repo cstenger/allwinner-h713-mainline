@@ -40,11 +40,14 @@ the 32-bit port also builds on arm64. Six were adapted from their original
   are deliberately disabled here; they need a separate, hardware-tested
   projector configuration. **`cpu-comm` was enabled 2026-08-30** (`=m`, plus
   `&cpu_comm { status = "okay" }` in the board DTS) so the display firmware's
-  RPC surface is reachable from Linux — settling the suppression-routine lead
-  needs calls made while video is composited, which U-Boot cannot do. Its
-  msgbox transport now matches what U-Boot has round-tripped on hardware; the
-  vendor 32-bit shared-pointer ABI above it is **still unported**, so treat a
-  loaded module as an experiment, not a working IPC channel. See
+  RPC surface is reachable from Linux — the runtime source/composition/resume
+  calls that exist only over this transport. (It is *not* needed for the
+  suppression routines; those were cleared at the U-Boot prompt and carried
+  across the handoff on 2026-08-30, and the panel did not change.) Its
+  msgbox transport now matches what U-Boot has round-tripped on hardware, and
+  the vendor 32-bit shared-pointer ABI above it is ported to arm64 (see the
+  `cc_ref` block in `cpu_comm.h`). Neither is verified on hardware, so treat a
+  loaded module as an experiment rather than a working IPC channel. See
   [../../docs/handoff-2026-08-30.md](../../docs/handoff-2026-08-30.md).
   Copied into
   `arch/arm64/configs/` by the build. It also **disables the Crypto Engine**
