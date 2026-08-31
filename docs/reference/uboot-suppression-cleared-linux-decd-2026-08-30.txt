@@ -1,0 +1,100 @@
+H713 U-Boot suppression-clear -> Linux DECD test, 2026-08-30
+================================================================
+
+Question
+--------
+Does firmware black-screen or video-freeze state explain why a correctly
+configured, interrupting DECD source remains invisible under Linux?
+
+Cold-boot setup
+---------------
+Persistent preboot was temporarily changed from:
+
+  h713_disp auto 0x34 logo
+
+to:
+
+  h713_disp init 0x34
+
+The board was cold power-cycled and autoboot was interrupted over UART. U-Boot
+reported CPU_COMM ARM=00000005, MIPS=00000005. h713_disp commdev reported this
+live channel-table row:
+
+  key=b8f275c0  chan=0000  pid=8b8f275c
+
+Calls
+-----
+All calls used chan=0 pid=8b8f275c.
+
+  2f02f7dd  no-op control           reply 1 ms, nret=0
+  b66041d8  DisableBlackScreen      reply 0 ms, nret=0
+  3ab1d1dc  DisableVideoFreeze      reply 0 ms, nret=0
+
+Each message was drained, CALL_ACKed, returned, RETURN_ACKed and recycled. The
+known-wedging EnableScreenCover call 0152f134 was not issued.
+
+Linux handoff
+-------------
+Loaded and booted:
+
+  ext4load mmc 1:1a 0x50000000 /root/h713-kernel-decd-test.fit
+  bootm 0x50000000
+
+Verified after boot:
+
+  0x0306101c                         0x00000001 (MIPS alive)
+  display@5600000/status             disabled
+  dec@5600000/status                 okay
+  /dev/decd                          present
+  /dev/scanout-dmabuf                present
+
+Bounded frame submission
+------------------------
+Command:
+
+  timeout 7s /root/decd-client show /root/decd-test-frame.nv12 5000
+
+Output:
+
+  prepared image dma-buf at 0x6c500000 and VideoInfo dma-buf at 0x6c8f0000
+  PM_HINT on ok
+  FRAME_SUBMIT format=6 desc=112 repeat@+0x10=1 fence_fd=7
+  holding 5000 ms; leaving DECD enabled to avoid shared display reset
+  rc=0
+
+State before and after:
+
+  register       before       after
+  0x05600010     0x03000010   0x03000413
+  0x05600100     0x00010000   0x00010000
+  0x05600140     0x03001901   0x03001901
+
+Additional active-state evidence:
+
+  DECD IRQ 331                         1440 events (~60/s)
+  0x05600020 source dimensions         0x02CF04FF (1280x720 minus one)
+  0x05600030 picture size              0x02D00500 (1280x720)
+  0x05600040 stride                    0x00000500
+  0x0560004c second size               0x02D00500
+  0x05600060 DECD enable               0x00000001
+  0x05600070 Y                         0x6C500000
+  0x05600084 C                         0x6C5E1000
+
+Visual result
+-------------
+The projected panel remained white for the complete five-second submission,
+operator-confirmed. No lock occurred and the client returned zero.
+
+Conclusion
+----------
+DisableBlackScreen plus DisableVideoFreeze, applied successfully before the
+Linux handoff, is insufficient. Those suppression states are not the missing
+composition step. A Linux CPU_COMM port is still useful for source,
+composition, and display-CPU resume operations, but these two calls should not
+be its first functional target.
+
+Cleanup
+-------
+U-Boot `env default preboot; saveenv` restored the compiled normal preboot,
+verified as ending in `h713_disp auto 0x34 logo`. The production FIT was then
+booted successfully.
