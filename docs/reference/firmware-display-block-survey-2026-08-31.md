@@ -360,3 +360,67 @@ this project already established: in the fmt-4 photographs the player's UI was
 tiled *inside* source 0's corruption, so **on stock, source 0 is the scanout
 path**. On ours, OSD channel `0x05600140` is the scanout path and source 0 feeds
 nothing. That difference — which AFBD channel reaches the panel — is the gate.
+
+## The AFBD global is eliminated, properly this time
+
+`0x05600000` low bits were swept on 2026-08-25 with no effect, under the theory
+that bit 5 gates channel 1 and bit 4 channel 0. That sweep predated two things
+now known to be mandatory: writes to this block are inert without a commit latch
+pulse, and the MIPS must be alive for the firmware to own the source.
+
+Re-run with both satisfied, and with a control the original lacked. `mem-fill`
+painted the scanout buffer red **continuously for the whole run**, so a panel
+showing red cannot be a frozen image:
+
+| step | write | latch | panel |
+| --- | --- | --- | --- |
+| baseline | `0x80000020` | — | red (provably live) |
+| bit 4 added | `0x80000030` | consumed | no change |
+| **bit 5 cleared** | `0x80000000` | consumed | **no change, still red** |
+| restore | `0x80000020` | consumed | red |
+
+`0x05600004` **is** a real commit latch — written 1, reads back 0, consumed on
+every write. So these were committed, verified by readback, and observed against
+a provably-live panel. Clearing bit 5 does not disturb the channel that is
+actively scanning out. **`0x05600000` does not gate channel output.** The old
+null was right; it now has the control that makes it mean something.
+
+## There is no destination buffer anywhere
+
+Searching every captured block for address-shaped values (DRAM base `0x40000000`,
+page-aligned) returns only **inputs**: AFBD's Y (`0x6C500000`), C
+(`0x6C5E1000`), VideoInfo (`0x4D941000`), and the OSD's own source
+(`0x6C100000`). Nothing in `0x05000000`, `0x05040000`, `0x050c0000`,
+`0x05140000` or `0x05180000` takes a write destination when video arrives.
+
+Composition here is therefore a **streaming path**, not render-to-buffer-then-
+scan. With the AFBD writeback engine already eliminated as disabled on stock,
+the gate cannot be a buffer pointer — it must be a mux between two live streams.
+
+## The routing conclusion rests on two registers
+
+`0x05140000` is the block named for exactly that job, and its low region is
+twenty non-zero registers whose values look like a crossbar:
+
+```
++0x000  0x0007FFFF     +0x010  0x0C000C80     +0x024  0x00030C0C
++0x004  0x80000000     +0x014  0x0000C040     +0x028  0x0000000C
++0x008  0x0C2030C0     +0x018  0x0C000C00     +0x02c  0x021C03C0
++0x00c  0x000C0C00     +0x01c  0x000000C0     +0x034  0xB0000040
+```
+
+Repeated `0x0C` and `0xC0` nibbles packed into words is what a source-selector
+matrix looks like. All twenty are static across a video submit — consistent with
+configure-once, and equally consistent with nothing on our side ever setting
+them for video.
+
+**And they have never been compared with stock.** The ROUTE window in both
+sweeps is `0x05140050..0x0514006c` — eight words, of which five are zero. So the
+finding that "ROUTE is byte-identical, therefore routing is already correct on
+our side" rests on exactly **two non-zero registers** (`+0x054 = 0x40000080`,
+`+0x058 = 0x00000002`) out of 470 non-zero words in the block, and the window
+starts `0x50` bytes above the crossbar region entirely.
+
+That is the sharpest remaining target: capture `0x05140000..0x0514004c` on stock
+during playback. It is twenty registers, in the block named "route", of a
+streaming path whose gate must be a mux, and no one has ever looked at them.
