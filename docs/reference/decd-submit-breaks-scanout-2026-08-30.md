@@ -1,5 +1,46 @@
 # A DECD submit breaks the display path for the rest of the boot
 
+> ## ⚠ RETRACTED, same day. A submit does NOT break the display path.
+>
+> Re-tested on a fresh boot of the same kernel and configuration, with the
+> panel confirmed live immediately before each step by a `mem-fill` marker:
+>
+> | step | panel |
+> | --- | --- |
+> | DECD kernel booted, marker painted | red band over white |
+> | submit, `DECD_FMT=0`, geometry restored after | **unchanged** |
+> | submit, `DECD_FMT=0`, nothing restored after | **unchanged** |
+> | submit, `DECD_FMT=11` (AFBD fmt 4), nothing restored | **unchanged** |
+>
+> Three submits, both formats, no restore needed, and the panel kept showing
+> the marker throughout. The claim below does not reproduce.
+>
+> **The black in the original session was real** -- the panel was black with
+> the OSD enabled, its buffer holding white, latches consuming and the raster
+> running. What is wrong is the *cause* attributed to it.
+>
+> The flaw in the original bisection: its four rows came from **two different
+> boots**. The "U-Boot prompt" and "kernel booted, nothing run" rows were
+> collected on a later, healthy boot; the "one frame submit -> black" row came
+> from the earlier one, where the panel was **never confirmed working after
+> Linux came up and before the first submit**. So the submit was never actually
+> shown to be the transition. Lining up rows from different boots as if they
+> were one sequence is the error, and it is an easy one to make when each row
+> costs a reboot.
+>
+> The 852x480 geometry rewrite is still real and still unexplained -- it
+> happens on every submit, `0x05600030` and `0x0560004c` taking 852 in the low
+> half. But it evidently does not break composition, because the panel keeps
+> showing the marker with that geometry live and unrestored.
+>
+> What would identify the real cause: on a boot that goes black, establish the
+> panel is working immediately *after* Linux boots and *before* anything else,
+> using the marker. Everything below was written without that control.
+>
+> Kept rather than deleted because the measurements in it are sound and the
+> reasoning error is worth being able to find again.
+
+
 Found while checking what the panel showed during the format test. It is the
 more consequential result of that session, because it changes how a large body
 of earlier "still black" observations should be read.
