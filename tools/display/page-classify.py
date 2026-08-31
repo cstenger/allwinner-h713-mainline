@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify an MMIO page from page-sample.sh captures, and diff two stacks.
+"""Classify MMIO windows from page-sample.sh captures, and diff two stacks.
 
 Runs on the host, not the board, so the board script needs nothing but sh and a
 reader binary.
@@ -148,7 +148,7 @@ def report_one(label, classified):
             print(f"     {addr:08x}  0x{v1:08X} -> 0x{v2:08X}")
     else:
         print("\n   no state-driven registers -- the state change moved "
-              "nothing on this page")
+              "nothing in any captured window")
 
     free = [a for a, (k, _, _) in classified.items() if k == FREE_RUNNING]
     if free:
@@ -188,7 +188,7 @@ def report_diff(class_a, label_a, class_b, label_b):
     else:
         print("   no trustworthy register differs between the two stacks.")
         print("   If one stack shows video and the other does not, the")
-        print("   difference is not on this page.")
+        print("   difference is not in any window captured here.")
 
     # Never silently dropped: a register free-running on one stack and frozen
     # on the other is a finding in its own right, and reading liveness out of a

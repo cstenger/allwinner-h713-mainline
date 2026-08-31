@@ -81,6 +81,14 @@ display firmware from Linux:
 Protocol, hazards and the read-only calls worth making first are in
 [../docs/cpu-comm-client-plan.md](../docs/cpu-comm-client-plan.md).
 
+`mips/` — static analysis of the display firmware. `disasm.py` disassembles a
+window and exists to centralise one fact that has already gone wrong once (the
+base is `0x8b100000`); `--self-test` fails loudly on a wrong base rather than
+describing unrelated code confidently. `block-survey.py` counts `lui` sites into
+the display aperture to answer which blocks the firmware addresses at all — it
+is how the mixer was closed structurally, and how three firmware-driven blocks
+that appear nowhere in `docs/` were found. Both take the raw `display.bin`.
+
 `flash-standalone.sh` — flash the kernel FIT to the `boot_a` partition (via
 fastboot) and print the U-Boot `bootcmd` for power-on → Debian. See
 [../docs/standalone-boot.md](../docs/standalone-boot.md).

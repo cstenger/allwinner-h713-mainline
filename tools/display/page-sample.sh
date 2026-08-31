@@ -31,21 +31,45 @@
 # showing video -- that mistake has cost this project a result before, when a
 # clip that never rendered was indistinguishable from a frozen one.
 #
-# Usage:
-#   page-sample.sh READER OUTDIR [ADDR [COUNT]]
+# WHICH WINDOWS, AND WHY THESE
 #
-# ADDR and COUNT are hex, no 0x prefix, matching the readers. They default to
-# the firmware-owned composition page, whole: 05000000 400 (1024 words, 4 KiB).
+# The default set is the blocks the MIPS firmware actually addresses, from
+# tools/mips/block-survey.py, plus one control:
+#
+#   05000000  45 firmware sites -- the composition page, most-addressed block
+#             in the image, and the one carrying the content-following taps
+#   050c0000  22 sites -- never characterised, never captured on either stack
+#   05040000   7 sites -- likewise
+#   05180000   1 site  -- likewise; weak, but a page costs nothing to read
+#   05600000  AFBD, 128 words: POSITIVE CONTROL, not a subject
+#
+# The control is the point of including AFBD. Its Y/C ring is proven to move
+# per frame on stock, so it must come back state-driven or free-running. If it
+# does not, the capture did not observe the state it claims to and a null
+# everywhere else means nothing. Without it, "no differences found" is
+# ambiguous between a real negative and a broken run -- and this investigation
+# has already spent weeks on nulls that turned out to be unfalsifiable.
+#
+# Not included: the mixer, GE2D, TVTOP, TCON and PLL all have zero firmware
+# references, and the eleven-window sweep already compared them.
+#
+# Usage:
+#   page-sample.sh READER OUTDIR [ADDR:COUNT ...]
+#
+# ADDR and COUNT are hex, no 0x prefix, matching the readers. Each sample file
+# holds every window concatenated, so one state setup captures all of them --
+# which matters, because setting up the MIPS-plus-DECD state is the part that
+# risks a hard lock, and doing it once per window would multiply that risk.
 
 set -e
 
 READER=$1
 OUTDIR=$2
-ADDR=${3:-05000000}
-COUNT=${4:-400}
+shift 2 || true
+WINDOWS=${*:-"05000000:400 050c0000:400 05040000:400 05180000:400 05600000:80"}
 
 if [ -z "$READER" ] || [ -z "$OUTDIR" ]; then
-	echo "usage: page-sample.sh READER OUTDIR [ADDR [COUNT]]" >&2
+	echo "usage: page-sample.sh READER OUTDIR [ADDR:COUNT ...]" >&2
 	exit 2
 fi
 
@@ -59,23 +83,32 @@ fi
 
 mkdir -p "$OUTDIR"
 
-# Prove the reader works and the page is mappable BEFORE asking the operator to
-# arrange anything. On stock this fails if /dev/hidtvreg is missing; on ours if
-# /dev/mem is gated. Either way, find out now and not four minutes in.
-if ! "$READER" "$ADDR" 4 > "$OUTDIR/.probe" 2>&1; then
-	echo "REFUSING: $READER could not read $ADDR:" >&2
-	cat "$OUTDIR/.probe" >&2
-	exit 1
-fi
-if [ "$(wc -l < "$OUTDIR/.probe")" -lt 4 ]; then
-	echo "REFUSING: probe read returned fewer than 4 lines:" >&2
-	cat "$OUTDIR/.probe" >&2
-	exit 1
-fi
+# Prove the reader works and EVERY window is mappable BEFORE asking the operator
+# to arrange anything. On stock this fails if /dev/hidtvreg is missing; on ours
+# if /dev/mem is gated. Either way, find out now and not four minutes in, with
+# the board in a state that took a reboot to reach.
+echo "=== probing windows ==="
+for w in $WINDOWS; do
+	a=${w%:*}
+	if ! "$READER" "$a" 4 > "$OUTDIR/.probe" 2>&1; then
+		echo "REFUSING: $READER could not read $a:" >&2
+		cat "$OUTDIR/.probe" >&2
+		exit 1
+	fi
+	if [ "$(wc -l < "$OUTDIR/.probe")" -lt 4 ]; then
+		echo "REFUSING: probe of $a returned fewer than 4 lines:" >&2
+		cat "$OUTDIR/.probe" >&2
+		exit 1
+	fi
+	echo "  $a ok"
+done
 rm -f "$OUTDIR/.probe"
 
 sample() {
-	"$READER" "$ADDR" "$COUNT" > "$OUTDIR/$1"
+	: > "$OUTDIR/$1"
+	for w in $WINDOWS; do
+		"$READER" "${w%:*}" "${w#*:}" >> "$OUTDIR/$1"
+	done
 	echo "  $1  $(wc -l < "$OUTDIR/$1") lines"
 }
 
