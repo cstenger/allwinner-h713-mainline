@@ -1,7 +1,7 @@
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c	2026-03-21 23:20:22.767566122 +0100
-@@ -0,0 +1,866 @@
+@@ -0,0 +1,889 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_channel.c — Channel pool, session, and wait-queue management
@@ -462,11 +462,29 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (WARN_ON(cpu_id > 1))
 +		return;
 +
-+	/* FreeWait FIFO at sock[34], sem at sock[30] */
++	/*
++	 * FreeWait FIFO at sock[34]; the guard semaphore's COUNT is sock[31],
++	 * not sock[30].
++	 *
++	 * InitCommSeqMem writes sock[30] = 0 and sock[31] = 1, the same
++	 * (status, sem_count) pairing the init map labels explicitly at
++	 * sock[2]/sock[3]. This is a mutex — down, touch the FIFO, up — so
++	 * its count has to start at 1. Taking sock[30] meant waiting on a
++	 * counter nothing ever raises: measured on hardware, the first call
++	 * slept in ReleaseWaitComm forever, and the only sem_up on it is the
++	 * one below, which that sleep prevents ever reaching.
++	 */
 +	fifo = &s_CommSockt[1248 * cpu_id + 34];
-+	sem  = &s_CommSockt[1248 * cpu_id + 30];
++	sem  = &s_CommSockt[1248 * cpu_id + 31];
 +
-+	cpu_comm_sem_down((void *)sem);
++	/*
++	 * Bounded, so a wrong offset can never again wedge a process
++	 * unkillably. There is no contention during bring-up, so a timeout
++	 * here means the index is wrong, not that the lock is busy.
++	 */
++	if (cpu_comm_sem_down_timeout((void *)sem, msecs_to_jiffies(1000)))
++		pr_warn("cpu_comm: ReleaseWaitComm: sem timeout (cpu=%u, count=%u) — proceeding\n",
++			cpu_id, *sem);
 +
 +	wr_slot = (u32 *)fifo_getItemWr(fifo);
 +	if (!wr_slot) {
@@ -609,9 +627,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	fifo = (u32 *)(seq + 120);
-+	sem = &s_CommSockt[1248 * remote_cpu + 234]; /* byte 936 from sock */
++	/* sem_count is the second word of the pair: sock[234]=0, sock[235]=1
++	 * — same correction as ReleaseWaitComm above.
++	 */
++	sem = &s_CommSockt[1248 * remote_cpu + 235];
 +
-+	cpu_comm_sem_down((void *)sem);
++	if (cpu_comm_sem_down_timeout((void *)sem, msecs_to_jiffies(1000)))
++		pr_warn("cpu_comm: Comm_ReleaseFreeCall: sem timeout (cpu=%u, count=%u) — proceeding\n",
++			remote_cpu, *sem);
 +
 +	wr_slot = (u32 *)fifo_getItemWr(fifo);
 +	if (!wr_slot) {
@@ -871,7 +894,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c	2026-03-31 23:55:00.797296910 +0200
-@@ -0,0 +1,1612 @@
+@@ -0,0 +1,1713 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_dev.c — Kernel interface for CPU_COMM
@@ -1033,8 +1056,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			return -EFAULT;
 +		ret = CPUComm_Call(call_buf, &call_buf[64],
 +				   (void *)&call_buf[120]);
++		/*
++		 * Propagate the real error. This returned -EFAULT for every
++		 * failure, which reported a firmware that never sent a RETURN
++		 * as "Bad address" and sent debugging after a copy_to_user
++		 * fault that had not happened.
++		 */
 +		if (ret)
-+			return -EFAULT;
++			return ret;
 +		if (copy_to_user((void __user *)arg, call_buf, 168))
 +			return -EFAULT;
 +		break;
@@ -1849,6 +1878,75 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return single_open(file, cpu_comm_proc_show, NULL);
 +}
 +
++/*
++ * Every routine the firmware and this driver have registered, by name.
++ *
++ * The table is the authoritative list of what can be CALLed: comp_id at
++ * +8 is exactly the value a CALL puts at msg+0x28, and the 32-byte name
++ * at +12 is what Comm_Name2ID matches on. Worth having as a file rather
++ * than a one-off dump — it is the map from "a routine that does
++ * something" to the number needed to invoke it, and it is populated by
++ * the running firmware, so it changes with what the MIPS has brought up.
++ */
++static int cpu_comm_routines_show(struct seq_file *m, void *v)
++{
++	unsigned int listed = 0;
++	int i;
++
++	if (!ShMemAddrBase) {
++		seq_puts(m, "shared memory not mapped\n");
++		return 0;
++	}
++
++	seq_printf(m, "version %u, count %u\n",
++		   *(u32 *)(ShMemAddrBase + RT_VERSION_OFF),
++		   *(u32 *)(ShMemAddrBase + RT_COUNT_OFF));
++	seq_puts(m, "index  comp_id     cpu  next  name\n");
++
++	for (i = 0; i <= RT_MAX_INDEX; i++) {
++		u8 *e = (u8 *)(ShMemAddrBase + RT_TABLE_OFF +
++			       RT_ENTRY_SIZE * i);
++		u32 comp_id = *(u32 *)(e + RT_COMP_ID_OFF);
++		char name[33];
++
++		if (!comp_id)
++			continue;
++
++		/*
++		 * Byte-wise, not memcpy: the shared region is mapped
++		 * uncached, and memcpy's wide unaligned loads take an
++		 * alignment fault (FSC 0x21) on Device memory. The aligned
++		 * u32/u16 reads above are fine, which is why this is the
++		 * only access here that needs care. The name is a fixed
++		 * 32-byte field and need not be terminated.
++		 */
++		memcpy_fromio(name, (const volatile void __iomem *)(e + RT_NAME_OFF), 32);
++		name[32] = '\0';
++
++		seq_printf(m, "%5d  0x%08x  %3u  %5d  %s\n",
++			   i, comp_id, *(u16 *)(e + RT_CPU_OFF),
++			   *(int *)(e + RT_NEXT_OFF),
++			   name[0] ? name : "(unnamed)");
++		listed++;
++	}
++
++	seq_printf(m, "\n%u entr%s listed of %d slots\n",
++		   listed, listed == 1 ? "y" : "ies", RT_MAX_INDEX + 1);
++	return 0;
++}
++
++static int cpu_comm_routines_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, cpu_comm_routines_show, NULL);
++}
++
++static const struct proc_ops cpu_comm_routines_ops = {
++	.proc_open	= cpu_comm_routines_open,
++	.proc_read	= seq_read,
++	.proc_lseek	= seq_lseek,
++	.proc_release	= single_release,
++};
++
 +static const struct proc_ops cpu_comm_proc_ops = {
 +	.proc_open	= cpu_comm_proc_open,
 +	.proc_read	= seq_read,
@@ -1859,13 +1957,16 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void cpu_comm_proc_init(void)
 +{
 +	proc_dir = proc_mkdir("cpu_comm", NULL);
-+	if (proc_dir)
++	if (proc_dir) {
 +		proc_create("status", 0444, proc_dir, &cpu_comm_proc_ops);
++		proc_create("routines", 0444, proc_dir, &cpu_comm_routines_ops);
++	}
 +}
 +
 +void cpu_comm_proc_term(void)
 +{
 +	if (proc_dir) {
++		remove_proc_entry("routines", proc_dir);
 +		remove_proc_entry("status", proc_dir);
 +		remove_proc_entry("cpu_comm", NULL);
 +		proc_dir = NULL;
@@ -2029,6 +2130,12 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	 * registrations must happen here and in this order.
 +	 */
 +	cc_arena_reset();
++	s_CommSockt = kzalloc(2 * COMM_SOCKET_SIZE, GFP_KERNEL);
++	if (!s_CommSockt) {
++		ret = -ENOMEM;
++		goto err_device;
++	}
++
 +	ret = cc_arena_register(s_CommSockt,
 +				2 * COMM_SOCKET_SIZE);
 +	if (ret < 0)
@@ -2222,6 +2329,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		}
 +	}
 +
++	/*
++	 * Pick the firmware channel to address CALLs to. Deliberately not
++	 * fatal: probing with the MIPS parked is a normal bring-up state,
++	 * and everything below the RPC layer still works.
++	 */
++	cc_discover_channel();
++
 +	/* Dump MIPS elog Mode 2 buffer */
 +	{
 +		void __iomem *elog_ctl, *elog_buf;
@@ -2289,6 +2403,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	return 0;
 +
 +err_device:
++	kfree(pcpu_comm_dev);
++	pcpu_comm_dev = NULL;
++	kfree(s_CommSockt);
++	s_CommSockt = NULL;
++	cc_arena_reset();
 +	if (cpucommclass) {
 +		if (cpu_comm_fd_major > 0)
 +			device_destroy(cpucommclass, MKDEV(cpu_comm_fd_major, 0));
@@ -2347,6 +2466,11 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (pcpu_comm_dev) {
 +		kfree(pcpu_comm_dev);
 +		pcpu_comm_dev = NULL;
++	}
++
++	if (s_CommSockt) {
++		kfree(s_CommSockt);
++		s_CommSockt = NULL;
 +	}
 +
 +	/* Both arenas are gone or about to be reused — forget them, so a
@@ -2755,7 +2879,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm.h b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h	2026-03-31 23:39:35.064018354 +0200
-@@ -0,0 +1,715 @@
+@@ -0,0 +1,749 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * HY310 CPU_COMM — ARM ↔ MIPS Inter-Processor Communication
@@ -2923,6 +3047,25 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +/* pcpu_comm_dev allocation */
 +#define CPU_COMM_DEV_SIZE	119648	/* 0x1D360 bytes */
++
++/*
++ * Routine table — the shared hash table both CPUs register handlers in.
++ * comp_id at +8 is the value a CALL carries at msg+0x28; the 32-byte name
++ * at +12 is what Comm_Name2ID matches. Offsets are from ShMemAddrBase.
++ */
++#define RT_VERSION_OFF		30144	/* u32 version counter */
++#define RT_COUNT_OFF		30148	/* entry count (checked <= 1223) */
++#define RT_TABLE_OFF		30152	/* start of 96-byte entries */
++
++#define RT_ENTRY_SIZE		96
++#define RT_COMP_ID_OFF		8	/* u32 at entry + 8 */
++#define RT_CPU_OFF		2	/* u16 at entry + 2 */
++#define RT_NAME_OFF		12	/* 32-byte name at entry + 12 */
++#define RT_NEXT_OFF		92	/* i32 at entry + 92 (chain link) */
++
++#define RT_PRIMARY_SLOTS	1024
++#define RT_OVERFLOW_START	1024
++#define RT_MAX_INDEX		1223
 +
 +/* ══════════════════════════════════════════════════════════════
 + * Shared Memory Layout Offsets (from ShMemAddrBase)
@@ -3231,7 +3374,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +extern int mips_app_ready_assumed;
 +
 +/* CommSocket array — registered as a cc_ref arena, see cc_ref() */
-+extern u32 s_CommSockt[];	/* [2 * COMM_SOCKET_SIZE/4] */
++extern u32 *s_CommSockt;	/* [2 * COMM_SOCKET_SIZE/4], kzalloc'd */
 +
 +/* Call session ID counter */
 +extern u32 s_CallSessionId;
@@ -3267,28 +3410,35 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * Every list traversal in the driver would have followed a wild
 + * pointer the first time it ran.
 + *
-+ * A cc_ref names a location in one of two regions:
++ * A cc_ref is a MIPS-visible 32-bit bus/MID address. Shared-memory
++ * pointers already have that representation. The two driver-private
++ * arenas are contiguous low-memory objects, so cc_arena_register()
++ * records both their kernel VA and physical base; cc_ref() translates
++ * VA to physical and cc_deref() performs the inverse translation.
 + *
-+ *   bit 31 clear — SHARED. The value is the ARM-physical address of a
-+ *       location inside the cpu_comm reserved region. This is what the
-+ *       MIPS must see, and it is what U-Boot has exchanged with the
-+ *       firmware: share_seq FIFO bases and queue slots hold physical
-+ *       addresses of call entries. The region sits at 0x4E300000 with
-+ *       DRAM based at 0x40000000, so bit 31 is always clear here —
-+ *       cc_ref() range-checks that rather than assuming it.
++ * Publishing real MID addresses rather than an ARM-only 0x8... tag is
++ * the conservative choice: it is correct whether or not the firmware
++ * ever dereferences a private ref, whereas a tag is only correct under
++ * the assumption that it never does. Note the driver's own evidence
++ * still says it does not — cpu_comm_fifo.c describes the FreeWait and
++ * command FIFOs as ARM-private, and the firmware's signal primitive at
++ * 0x8b15c27c stores the wait pointer without dereferencing it (it
++ * null-checks and returns an error), which is why U-Boot can publish
++ * zero there. So "the MIPS writes through these" is NOT established;
++ * do not cite it as settled.
 + *
-+ *   bit 31 set — LOCAL. Bits 30:28 select a driver-private arena and
-+ *       bits 27:0 are a byte offset into it. These are ARM-side
-+ *       bookkeeping structures (s_CommSockt, pcpu_comm_dev) that the
-+ *       vendor also addressed with 32-bit words; nothing outside this
-+ *       driver dereferences them.
++ * What is established, on hardware: an arena must be linear-map memory.
++ * virt_to_phys() is only meaningful there, and only there are the pages
++ * contiguous, which `mid + offset` requires. As module .bss,
++ * s_CommSockt measured virt_to_phys() = 0x4124f000 against a true
++ * physical address of 0x449ba000, with the following page 27 MiB away
++ * — a plausible-looking address belonging to unrelated memory, which
++ * the MIPS would have corrupted had it in fact written through.
++ * cc_arena_register() now rejects vmalloc and module addresses.
 + *
-+ * The one place the two regions meet is the wait pointer: a local wait
-+ * object is published into a shared call slot at +0x18/+0x1C. That is
-+ * safe, and not by luck — the firmware stores the wait pointer without
-+ * dereferencing it (its signal primitive at 0x8b15c27c null-checks and
-+ * returns an error), which is also why U-Boot deliberately publishes
-+ * zero there. A tagged local ref is opaque to the MIPS by design.
++ * The legacy tag definitions remain solely so cc_deref() can diagnose or
++ * decode a stale private reference during bring-up; cc_ref() no longer
++ * emits tagged references.
 + * ══════════════════════════════════════════════════════════════ */
 +
 +#define CC_REF_LOCAL		BIT(31)
@@ -3313,6 +3463,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +/* cpu_comm_hw.c — hardware abstraction */
 +int  cpu_comm_hw_init(void);
 +bool cpu_comm_mips_running(void);
++
++/*
++ * Read the firmware's channel table and pick a live row to address CALLs
++ * to. Negative on failure, which is not fatal: the driver still loads,
++ * but CALLs are ACKed by the firmware and never dispatched.
++ */
++int  cc_discover_channel(void);
 +void cpu_comm_hw_cleanup(void);
 +int  comm_ReadRegWord(u32 reg_addr);
 +void comm_WriteRegWord(u32 reg_addr, u32 value);
@@ -3467,6 +3624,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +/* H713 direct msgbox IRQ handler (replaces mailbox framework) */
 +int  cpu_comm_msgbox_request_irq(int irq, void *callback);
 +void cpu_comm_msgbox_free_irq(void);
++void cpu_comm_msgbox_kick(void);
 +void cpu_comm_msgbox_probe_start(void);	/* legacy stub */
 +void cpu_comm_msgbox_probe_stop(void);	/* legacy stub */
 +
@@ -3474,7 +3632,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c	2026-03-31 23:46:55.062791843 +0200
-@@ -0,0 +1,969 @@
+@@ -0,0 +1,1224 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_hw.c — Hardware abstraction for CPU_COMM
@@ -3570,8 +3728,99 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +#define H713_MSGBOX_RX_FROM_MIPS 2
 +
 +static void (*msgbox_rx_callback)(int type, int direction);
-+static struct delayed_work msgbox_poll_work;
++static struct hrtimer msgbox_poll_timer;
++static struct work_struct msgbox_rx_work;
++static unsigned long msgbox_poll_fast_until;	/* jiffies */
 +static bool msgbox_poll_active;
++static int  msgbox_irq = -1;
++static bool msgbox_irq_taken;
++
++/*
++ * Two counters, because "the IRQ works" is a claim worth measuring rather
++ * than assuming. Anything the backstop poll finds is a message the IRQ
++ * failed to deliver; a non-zero rescue count is the signal that the GIC
++ * line is not carrying RX and the poll is still doing the real work.
++ */
++static atomic_t msgbox_rx_by_irq  = ATOMIC_INIT(0);
++static atomic_t msgbox_rx_by_poll = ATOMIC_INIT(0);
++
++/*
++ * Poll pacing.
++ *
++ * This is the primary RX path — see cpu_comm_msgbox_request_irq() for why
++ * the GIC line is opt-in — so its resolution sets the round-trip latency.
++ * schedule_delayed_work() could not deliver it: CONFIG_HZ is 250, so the
++ * old "1 ms" poll was really a 4 ms jiffy (up to 8 with rounding), and a
++ * round trip needs several cycles. That is where the measured 23-30 ms
++ * went, against U-Boot's 1 ms busy-poll — not, as it appeared, the
++ * interrupt being absent.
++ *
++ * So: an hrtimer at MSGBOX_POLL_FAST_US, which the tick cannot round up.
++ * Firing that fast forever would be 4000 wakeups/s on an idle projector,
++ * so it only runs fast for MSGBOX_POLL_FAST_MS after a message goes out —
++ * the only window in which a reply can arrive — and idles at
++ * MSGBOX_POLL_IDLE_MS the rest of the time.
++ */
++#define MSGBOX_POLL_FAST_US	250
++#define MSGBOX_POLL_IDLE_MS	4
++#define MSGBOX_POLL_FAST_MS	200
++
++/*
++ * RX interrupt enable and status.
++ *
++ * The layout is 0x100-byte user blocks with, inside each block:
++ *   +0x20 RX IRQ enable   BIT(2*port)
++ *   +0x24 RX IRQ status   BIT(2*port), write-1-to-clear
++ *   +0x30 TX IRQ enable   BIT(2*port + 1)
++ *   +0x34 TX IRQ status   BIT(2*port + 1), write-1-to-clear
++ *   +0x60 FIFO count      + 4*port
++ *   +0x70 MSG data        + 4*port
++ *
++ * That reproduces every address already proven here: 0x164/0x174 are the
++ * ARM's receive block at 0x100 with port 1, 0x864/0x874 the same fields in
++ * the 0x800 block we transmit through, and TX_IRQ_EN 0x830 with BIT(3) =
++ * TX_IRQ_BIT(1) is exactly the doorbell pulse. Source: the vendor driver's
++ * sx_read_irq_enable/sx_write_irq_disable, via the peer RE tree.
++ *
++ * An earlier guess put the RX enable at 0x130 by mirroring TX across the
++ * 0x700 block gap; writing 0x4 there read back 0. Under this layout that
++ * is explained: 0x130 is the TX enable, whose bits are odd (BIT(2p+1)),
++ * so BIT(2) is simply not implemented. Confirmation that the layout is
++ * right: 0x120 takes 0x4 and reads back 0x4.
++ *
++ * RX status at +0x24 is latched over a level: it clears only when the
++ * port's FIFO has been drained AND the bit is written back. Verified by
++ * draining every stale port (several were stuck full at 8) and then
++ * writing 0xffffffff, which took every block's RX status to 0.
++ *
++ * NONE OF WHICH MAKES THE INTERRUPT USABLE, and that is the state of
++ * play: with every RX status at 0 and only our BIT(2) enabled, SPI 53
++ * still asserts continuously and the kernel masks it at exactly 100000.
++ * So the assertion source is not RX status. The prime suspect is TX
++ * status at +0x34, which reads 0xAA in every block and does NOT clear on
++ * write — it looks level-driven by something permanently true, and if it
++ * reaches the line ungated by +0x30 then this SPI cannot be quietened
++ * from here at all. The DT gives the whole msgbox a single
++ * <GIC_SPI 21 LEVEL_HIGH>, so there is no per-user line to fall back on.
++ *
++ * Next step if this is picked up again: find what gates SPI 53 — either a
++ * top-level mask outside these per-user blocks, or the MIPS-side enable
++ * the firmware itself writes (disassemble around its msgbox send at
++ * 0x8b12199c). Until then the poll is the supported path and rx_irq is a
++ * bench switch, not a feature.
++ */
++#define H713_MSGBOX_RX_IRQ_EN	0x120
++#define H713_MSGBOX_RX_IRQ_STAT	0x124
++#define H713_MSGBOX_TX_IRQ_STAT	0x134
++#define H713_MSGBOX_RX_IRQ_BIT	BIT(2)	/* BIT(2*port), MIPS = port 1 */
++
++static bool msgbox_use_irq;
++module_param_named(rx_irq, msgbox_use_irq, bool, 0444);
++MODULE_PARM_DESC(rx_irq, "request the msgbox RX interrupt (default off: it storms and does not carry RX)");
++
++static unsigned int msgbox_rx_irq_en;
++module_param_named(rx_irq_en, msgbox_rx_irq_en, uint, 0444);
++MODULE_PARM_DESC(rx_irq_en, "value to write to the RX IRQ enable at 0x130 before requesting (0 = leave alone)");
 +
 +static const char *cpu_comm_msgbox_type_name(u32 raw)
 +{
@@ -3597,13 +3846,13 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * value and drops anything above 3, and its sender at 0x8b11eadc maps
 + * a received CALL to 2 (CALL_ACK) and a RETURN to 3 (RETURN_ACK).
 + */
-+static void cpu_comm_msgbox_poll_fn(struct work_struct *work)
++static int cpu_comm_msgbox_drain(void)
 +{
 +	u32 raw;
 +	int count = 0;
 +
-+	if (!msgbox_poll_active || !msgbox_ctrl_base)
-+		return;
++	if (!msgbox_ctrl_base)
++		return 0;
 +
 +	while (readl(msgbox_ctrl_base + H713_MSGBOX_RX_FIFO)) {
 +		raw = readl(msgbox_ctrl_base + H713_MSGBOX_RX_DATA);
@@ -3622,38 +3871,199 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			break;
 +	}
 +
-+	if (msgbox_poll_active)
-+		schedule_delayed_work(&msgbox_poll_work, msecs_to_jiffies(1));
++	return count;
++}
++
++/*
++ * Hard handler: decide only. Reading the FIFO count is the cheapest way to
++ * tell our line from a shared one, and it must not consume anything —
++ * dispatch sleeps (Comm_ReleaseFreeCall takes a semaphore), so the work
++ * belongs in the thread.
++ */
++static irqreturn_t cpu_comm_msgbox_hardirq(int irq, void *dev)
++{
++	u32 stat;
++
++	if (!msgbox_ctrl_base)
++		return IRQ_NONE;
++
++	stat = readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT);
++	if (!(stat & H713_MSGBOX_RX_IRQ_BIT))
++		return IRQ_NONE;
++
++	/*
++	 * Acknowledge before draining. The line is level-triggered, so
++	 * leaving this bit set is what previously re-asserted it forever;
++	 * clearing early costs at most one spurious wake if a message lands
++	 * in the gap, which the drain then picks up anyway.
++	 */
++	writel(H713_MSGBOX_RX_IRQ_BIT,
++	       msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT);
++
++	return IRQ_WAKE_THREAD;
++}
++
++static irqreturn_t cpu_comm_msgbox_thread(int irq, void *dev)
++{
++	int n = cpu_comm_msgbox_drain();
++
++	if (n)
++		atomic_add(n, &msgbox_rx_by_irq);
++
++	return IRQ_HANDLED;
++}
++
++/*
++ * The RX path. Still primary: measured on hardware, the GIC line delivered
++ * 4 messages to this poll's 8, so anything counted here is a message the
++ * interrupt did not deliver.
++ *
++ * Dispatch sleeps, so the hrtimer only spots the message and hands it to
++ * this work item.
++ */
++static void cpu_comm_msgbox_poll_fn(struct work_struct *work)
++{
++	int n;
++
++	if (!msgbox_poll_active || !msgbox_ctrl_base)
++		return;
++
++	n = cpu_comm_msgbox_drain();
++	if (n) {
++		atomic_add(n, &msgbox_rx_by_poll);
++		if (msgbox_irq_taken)
++			pr_warn_ratelimited("cpu_comm: poll took %d message(s) the IRQ did not deliver\n",
++					    n);
++	}
++}
++
++static enum hrtimer_restart cpu_comm_msgbox_tick(struct hrtimer *t)
++{
++	u64 interval_ns;
++
++	if (!msgbox_poll_active || !msgbox_ctrl_base)
++		return HRTIMER_NORESTART;
++
++	/* Cheap MMIO read; the expensive part is queued, never done here. */
++	if (readl(msgbox_ctrl_base + H713_MSGBOX_RX_FIFO))
++		queue_work(system_unbound_wq, &msgbox_rx_work);
++
++	interval_ns = time_before(jiffies, msgbox_poll_fast_until) ?
++		MSGBOX_POLL_FAST_US * NSEC_PER_USEC :
++		(u64)MSGBOX_POLL_IDLE_MS * NSEC_PER_MSEC;
++
++	hrtimer_forward_now(t, ns_to_ktime(interval_ns));
++	return HRTIMER_RESTART;
++}
++
++/*
++ * Called from the send path: a reply can only follow a message we sent, so
++ * that is the only time fast polling buys anything.
++ */
++void cpu_comm_msgbox_kick(void)
++{
++	msgbox_poll_fast_until = jiffies + msecs_to_jiffies(MSGBOX_POLL_FAST_MS);
 +}
 +
 +int cpu_comm_msgbox_request_irq(int irq, void *callback)
 +{
 +	u32 raw;
++	int ret;
 +
 +	msgbox_rx_callback = callback;
 +
-+	/* Drain stale messages before starting the poll */
++	/* Drain stale messages before arming anything. */
 +	while (readl(msgbox_ctrl_base + H713_MSGBOX_RX_FIFO)) {
 +		raw = readl(msgbox_ctrl_base + H713_MSGBOX_RX_DATA);
 +		pr_info("cpu_comm: drained stale msgbox message: 0x%08x (%s)\n",
 +			raw, cpu_comm_msgbox_type_name(raw));
 +	}
 +
-+	INIT_DELAYED_WORK(&msgbox_poll_work, cpu_comm_msgbox_poll_fn);
-+	msgbox_poll_active = true;
-+	schedule_delayed_work(&msgbox_poll_work, msecs_to_jiffies(10));
++	/*
++	 * The RX interrupt is off by default, and that is a measurement, not
++	 * caution. Requesting it on this board produces an immediate spurious
++	 * storm: the line is level-triggered (GICv2 SPI 53) and something
++	 * holds it asserted that draining the RX FIFO does not clear, so the
++	 * kernel's spurious limiter masks it at exactly 100000 within
++	 * milliseconds of request_threaded_irq(). In that window it delivered
++	 * 4 messages against the poll's 8 — it is not carrying RX.
++	 *
++	 * The RX enable that would mirror TX's 0x830 reads 0 and never
++	 * changes, and 0x034/0x134/0x834 sit at a constant 0xAA rather than
++	 * behaving like status. Which register actually arms RX is not known,
++	 * so `rx_irq_en` writes a candidate and `rx_irq` requests the line;
++	 * both stay opt-in until a run shows IRQ delivery with a zero poll
++	 * count.
++	 *
++	 * IRQF_ONESHOT is load-bearing when that experiment is run: it keeps
++	 * the line masked until the thread has drained, which is the only
++	 * reason the storm degrades into a masked IRQ instead of a livelock.
++	 */
++	if (irq > 0 && msgbox_use_irq) {
++		u32 en = msgbox_rx_irq_en ? : H713_MSGBOX_RX_IRQ_BIT;
 +
-+	pr_info("cpu_comm: msgbox RX poll started (1ms interval, IRQ %d reserved)\n", irq);
++		/*
++		 * Order matters: acknowledge every stale bit before enabling,
++		 * or the line comes up already asserted and the spurious
++		 * limiter masks it before the first real message.
++		 */
++		pr_info("cpu_comm: msgbox stale status rx=0x%08x tx=0x%08x — clearing\n",
++			readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT),
++			readl(msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_STAT));
++
++		writel(0xffffffff, msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT);
++		writel(0xffffffff, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_STAT);
++
++		writel(en, msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
++		pr_info("cpu_comm: msgbox RX IRQ enable 0x%03x <- 0x%08x, reads back 0x%08x; status now rx=0x%08x\n",
++			H713_MSGBOX_RX_IRQ_EN, en,
++			readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN),
++			readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT));
++
++		ret = request_threaded_irq(irq, cpu_comm_msgbox_hardirq,
++					   cpu_comm_msgbox_thread,
++					   IRQF_ONESHOT | IRQF_SHARED,
++					   "cpu_comm_msgbox",
++					   &msgbox_rx_callback);
++		if (ret)
++			pr_warn("cpu_comm: msgbox IRQ %d request failed (%d) — poll only\n",
++				irq, ret);
++		else
++			msgbox_irq = irq, msgbox_irq_taken = true;
++	}
++
++	INIT_WORK(&msgbox_rx_work, cpu_comm_msgbox_poll_fn);
++	msgbox_poll_active = true;
++
++	hrtimer_setup(&msgbox_poll_timer, cpu_comm_msgbox_tick,
++		      CLOCK_MONOTONIC, HRTIMER_MODE_REL);
++	hrtimer_start(&msgbox_poll_timer,
++		      ns_to_ktime((u64)MSGBOX_POLL_IDLE_MS * NSEC_PER_MSEC),
++		      HRTIMER_MODE_REL);
++
++	pr_info("cpu_comm: msgbox RX by hrtimer poll (%u us busy / %u ms idle)%s (IRQ %d %s)\n",
++		MSGBOX_POLL_FAST_US, MSGBOX_POLL_IDLE_MS,
++		msgbox_irq_taken ? " + IRQ" : "",
++		irq, msgbox_irq_taken ? "requested" : "available, not requested");
 +	return 0;
 +}
 +
 +void cpu_comm_msgbox_free_irq(void)
 +{
++	if (msgbox_irq_taken) {
++		free_irq(msgbox_irq, &msgbox_rx_callback);
++		msgbox_irq_taken = false;
++		msgbox_irq = -1;
++	}
++
 +	if (msgbox_poll_active) {
 +		msgbox_poll_active = false;
-+		cancel_delayed_work_sync(&msgbox_poll_work);
++		hrtimer_cancel(&msgbox_poll_timer);
++		cancel_work_sync(&msgbox_rx_work);
 +		msgbox_rx_callback = NULL;
-+		pr_info("cpu_comm: msgbox RX poll stopped\n");
++		pr_info("cpu_comm: msgbox RX stopped — %d message(s) by IRQ, %d by backstop poll\n",
++			atomic_read(&msgbox_rx_by_irq),
++			atomic_read(&msgbox_rx_by_poll));
 +	}
 +}
 +
@@ -4328,6 +4738,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	udelay(10);
 +	writel(0, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);
 +
++	/* A reply can only follow a send — poll fast for a while now. */
++	cpu_comm_msgbox_kick();
++
 +	pr_info_ratelimited("cpu_comm: msgbox tx raw=0x%08x (%s), fifo now %u\n",
 +			    raw, cpu_comm_msgbox_type_name(raw),
 +			    readl(msgbox_ctrl_base + H713_MSGBOX_TX_FIFO));
@@ -4447,7 +4860,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c	2026-03-31 23:50:39.812216590 +0200
-@@ -0,0 +1,2355 @@
+@@ -0,0 +1,2374 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_mem.c — Shared memory initialization and management
@@ -4484,8 +4897,17 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +struct cpu_comm_dev *pcpu_comm_dev;
 +
-+/* CommSocket array — 2 sockets × 1248 DWORDs */
-+u32 s_CommSockt[2 * (COMM_SOCKET_SIZE / 4)];
++/*
++ * CommSocket array — 2 sockets × 1248 DWORDs.
++ *
++ * Allocated, not module-global: cc_ref() publishes virt_to_phys() of this
++ * region, and on arm64 a module lives in the vmalloc area, where that
++ * translation is meaningless and the pages are not physically contiguous.
++ * Measured on hardware: as module .bss, virt_to_phys() gave 0x4124f000
++ * while the data was at 0x449ba000, and the next page was 27 MiB away.
++ * kzalloc keeps it in the linear map, contiguous, so base + offset holds.
++ */
++u32 *s_CommSockt;
 +
 +/* Call session ID counter */
 +u32 s_CallSessionId;
@@ -4952,24 +5374,32 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +static struct {
 +	unsigned long base;
 +	size_t size;
++	u32 mid;
 +} cc_arenas[CC_REF_ARENA_MAX];
 +
 +static int cc_arena_count;
 +
 +int cc_arena_register(void *base, size_t size)
 +{
++	phys_addr_t mid;
 +	int i;
 +
 +	if (WARN_ON(!base || !size))
 +		return -EINVAL;
 +
 +	/*
-+	 * The offset has to fit in the bits the tag leaves behind. Both
-+	 * arenas are tens of kilobytes, so this is a guard against a
-+	 * future caller rather than a live constraint.
++	 * An arena is published to the MIPS as `mid + offset`, so it has to
++	 * be linear-map memory: virt_to_phys() is only meaningful there, and
++	 * only there are the pages guaranteed contiguous. A vmalloc or module
++	 * address silently yields a plausible-looking DRAM address that
++	 * belongs to unrelated memory — refuse it loudly instead.
 +	 */
-+	if (WARN_ON(size > CC_REF_OFF_MASK + 1))
++	if (WARN_ON(is_vmalloc_or_module_addr(base)))
 +		return -EINVAL;
++
++	mid = virt_to_phys(base);
++	if (WARN_ON(mid > U32_MAX || size - 1 > U32_MAX - (u32)mid))
++		return -ERANGE;
 +
 +	if (WARN_ON(cc_arena_count >= CC_REF_ARENA_MAX))
 +		return -ENOSPC;
@@ -4977,9 +5407,10 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	i = cc_arena_count++;
 +	cc_arenas[i].base = (unsigned long)base;
 +	cc_arenas[i].size = size;
++	cc_arenas[i].mid = (u32)mid;
 +
-+	pr_debug("cpu_comm: arena %d = %p..%p (%zu bytes)\n",
-+		 i, base, (u8 *)base + size, size);
++	pr_debug("cpu_comm: arena %d = %p..%p, MID 0x%08x (%zu bytes)\n",
++		 i, base, (u8 *)base + size, cc_arenas[i].mid, size);
 +	return i;
 +}
 +
@@ -5002,24 +5433,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	    v >= ShMemAddrBase && v < ShMemAddrBase + ShMemSize) {
 +		u32 phy = Vir2Mid(0, v);
 +
-+		/*
-+		 * The tag depends on shared physical addresses staying
-+		 * below 2 GiB. That holds for the reserved region at
-+		 * 0x4E300000, but check rather than trust it: a ref
-+		 * that collides with the tag would be decoded as an
-+		 * arena offset and silently corrupt a list.
-+		 */
-+		if (WARN_ON(phy & CC_REF_LOCAL))
-+			return 0;
 +		return phy;
 +	}
 +
-+	/* Driver-private memory: tagged arena index + byte offset. */
++	/* Driver-private memory: publish its real bus/MID address. */
 +	for (i = 0; i < cc_arena_count; i++) {
 +		if (v >= cc_arenas[i].base &&
 +		    v < cc_arenas[i].base + cc_arenas[i].size)
-+			return CC_REF_LOCAL |
-+			       ((u32)i << CC_REF_ARENA_SHIFT) |
++			return cc_arenas[i].mid +
 +			       (u32)(v - cc_arenas[i].base);
 +	}
 +
@@ -5037,21 +5458,32 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +{
 +	unsigned int idx;
 +	u32 off;
++	int i;
 +
 +	if (!ref)
 +		return 0;
 +
-+	if (!(ref & CC_REF_LOCAL))
-+		return Mid2Vir(0, ref);
++	/* Translate real physical references to registered private arenas. */
++	for (i = 0; i < cc_arena_count; i++) {
++		if (ref >= cc_arenas[i].mid &&
++		    ref - cc_arenas[i].mid < cc_arenas[i].size)
++			return cc_arenas[i].base +
++			       (ref - cc_arenas[i].mid);
++	}
 +
-+	idx = (ref & ~CC_REF_LOCAL) >> CC_REF_ARENA_SHIFT;
-+	off = ref & CC_REF_OFF_MASK;
++	/* Backward-compatible decode for stale bring-up-only tagged refs. */
++	if (ref & CC_REF_LOCAL) {
++		idx = (ref & ~CC_REF_LOCAL) >> CC_REF_ARENA_SHIFT;
++		off = ref & CC_REF_OFF_MASK;
 +
-+	if (WARN_ON(idx >= (unsigned int)cc_arena_count) ||
-+	    WARN_ON(off >= cc_arenas[idx].size))
-+		return 0;
++		if (WARN_ON(idx >= (unsigned int)cc_arena_count) ||
++		    WARN_ON(off >= cc_arenas[idx].size))
++			return 0;
 +
-+	return cc_arenas[idx].base + off;
++		return cc_arenas[idx].base + off;
++	}
++
++	return Mid2Vir(0, ref);
 +}
 +
 +/* ── Sequence helpers ──────────────────────────────────────── */
@@ -6806,7 +7238,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c	2026-03-31 23:40:01.424183640 +0200
-@@ -0,0 +1,907 @@
+@@ -0,0 +1,1238 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_proto.c — Communication protocol layer
@@ -6824,7 +7256,190 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +#include <linux/sched.h>
 +#include <linux/semaphore.h>
 +#include <linux/delay.h>
++#include <linux/moduleparam.h>
++#include <linux/io.h>
 +#include "cpu_comm.h"
++
++/*
++ * Firmware channel to address CALLs to. Read a live row out of the
++ * channel table (U-Boot: `h713_disp commdev`; from Linux the table is at
++ * *(0x4b22efe4) + 0xa8, 16 rows of 48 bytes, key 0xffffffff = free).
++ * Zero pid keeps the pre-existing behaviour.
++ */
++static unsigned int cc_channel_pid;
++static unsigned int cc_channel_chan;
++module_param_named(channel_pid, cc_channel_pid, uint, 0644);
++MODULE_PARM_DESC(channel_pid, "firmware channel pid for outgoing CALLs (0 = discover at probe)");
++module_param_named(channel_chan, cc_channel_chan, uint, 0644);
++MODULE_PARM_DESC(channel_chan, "firmware channel number for outgoing CALLs");
++
++/*
++ * ══════════════════════════════════════════════════════════════
++ * Channel discovery
++ *
++ * A CALL is dispatched only if (pid << 4) | (chan & 0xf) matches a row
++ * in the firmware's channel table; anything else is ACKed and dropped.
++ * The table is firmware-owned, so read it rather than be told about it.
++ *
++ * Layout, same as U-Boot's `h713_disp commdev`:
++ *   *(0x8b22efe4)          -> pcpu_comm_dev (a KSEG pointer)
++ *   dev + 0xa8             -> 16 rows of 48 bytes
++ *   row +0x00 >> 16        -> chan
++ *   row +0x08              -> pid
++ *   row +0x0c              -> key, 0xffffffff when free
++ *
++ * MIPS KSEG maps to ARM physical by masking to 29 bits and rebasing on
++ * DRAM. Reads go through ioremap: the region sits in a hole in
++ * /proc/iomem, outside System RAM, and the MIPS writes it behind our
++ * cache.
++ * ══════════════════════════════════════════════════════════════
++ */
++
++#define CC_FW_DEV_PTR_MIPS	0x8b22efe4u
++#define CC_FW_SELFTEST_MIPS	0x8b1227b4u	/* getCurCPUID: jr ra; li v0,1 */
++#define CC_FW_SELFTEST_W0	0x03e00008u
++#define CC_FW_SELFTEST_W1	0x24020001u
++#define CC_FW_CHAN_OFF		0xa8u
++#define CC_FW_CHAN_STRIDE	48u
++#define CC_FW_CHAN_SLOTS	16u
++#define CC_CHAN_FREE		0xffffffffu
++
++static phys_addr_t cc_kseg_to_phys(u32 kseg)
++{
++	return (phys_addr_t)(kseg & 0x1fffffff) + 0x40000000;
++}
++
++static bool cc_kseg_valid(u32 v)
++{
++	return v >= 0x80000000u && v < 0xa0000000u;
++}
++
++/* Read one u32 of firmware memory named by its MIPS KSEG address. */
++static int cc_fw_read(u32 kseg, u32 *out)
++{
++	void __iomem *p = ioremap(cc_kseg_to_phys(kseg), sizeof(u32));
++
++	if (!p)
++		return -ENOMEM;
++	*out = readl(p);
++	iounmap(p);
++	return 0;
++}
++
++int cc_discover_channel(void)
++{
++	void __iomem *tbl;
++	u32 w0, w1, dev;
++	unsigned int i;
++	int found = -1;
++
++	if (cc_channel_pid) {
++		pr_info("cpu_comm: channel pinned by parameter: chan=0x%x pid=0x%08x\n",
++			cc_channel_chan, cc_channel_pid);
++		return 0;
++	}
++
++	if (!cpu_comm_mips_running()) {
++		pr_warn("cpu_comm: MIPS parked — no channel table to read; CALLs will not be dispatched\n");
++		return -ENODEV;
++	}
++
++	/*
++	 * Prove the reader before trusting anything it returns. These two
++	 * words are getCurCPUID and are known byte for byte; if they do not
++	 * match, the KSEG mapping is wrong and every row below is noise.
++	 */
++	if (cc_fw_read(CC_FW_SELFTEST_MIPS, &w0) ||
++	    cc_fw_read(CC_FW_SELFTEST_MIPS + 4, &w1))
++		return -EIO;
++	if (w0 != CC_FW_SELFTEST_W0 || w1 != CC_FW_SELFTEST_W1) {
++		pr_err("cpu_comm: firmware reader self-test failed (%08x %08x, expect %08x %08x) — not reading the channel table\n",
++		       w0, w1, CC_FW_SELFTEST_W0, CC_FW_SELFTEST_W1);
++		return -EIO;
++	}
++
++	if (cc_fw_read(CC_FW_DEV_PTR_MIPS, &dev))
++		return -EIO;
++	if (!cc_kseg_valid(dev)) {
++		pr_err("cpu_comm: pcpu_comm_dev 0x%08x is not a KSEG address\n",
++		       dev);
++		return -ENODEV;
++	}
++
++	tbl = ioremap(cc_kseg_to_phys(dev + CC_FW_CHAN_OFF),
++		      CC_FW_CHAN_SLOTS * CC_FW_CHAN_STRIDE);
++	if (!tbl)
++		return -ENOMEM;
++
++	for (i = 0; i < CC_FW_CHAN_SLOTS; i++) {
++		void __iomem *row = tbl + i * CC_FW_CHAN_STRIDE;
++		u32 rw0 = readl(row + 0x00);
++		u32 pid = readl(row + 0x08);
++		u32 key = readl(row + 0x0c);
++		u32 chan = (rw0 >> 16) & 0xffff;
++
++		if (key == CC_CHAN_FREE || !(key || pid || rw0))
++			continue;
++
++		/*
++		 * The key is derived, so it can be checked rather than
++		 * assumed. A row failing this is not one we understand well
++		 * enough to address a call to.
++		 */
++		if (key != ((pid << 4) | (chan & 0xf))) {
++			pr_warn("cpu_comm: channel row %u key 0x%08x != derived 0x%08x — skipping\n",
++				i, key, (pid << 4) | (chan & 0xf));
++			continue;
++		}
++
++		pr_info("cpu_comm: channel row %u live: chan=0x%04x pid=0x%08x key=0x%08x\n",
++			i, chan, pid, key);
++
++		if (found < 0) {
++			found = i;
++			cc_channel_chan = chan;
++			cc_channel_pid = pid;
++		}
++	}
++
++	iounmap(tbl);
++
++	if (found < 0) {
++		pr_warn("cpu_comm: no live channel row — CALLs will be ACKed and dropped\n");
++		return -ENOENT;
++	}
++
++	pr_info("cpu_comm: addressing CALLs to channel row %d (chan=0x%x pid=0x%08x)\n",
++		found, cc_channel_chan, cc_channel_pid);
++	return 0;
++}
++
++static bool cc_force_remote;
++module_param_named(force_remote, cc_force_remote, bool, 0644);
++MODULE_PARM_DESC(force_remote, "stamp CALLs to the MIPS as remote (msg_type 2) like U-Boot");
++
++/*
++ * Publish zero for the wait pointer at share_seq+24, as U-Boot deliberately
++ * does, instead of a live cc_ref. The firmware echoes whatever we put there
++ * into the ACK at read-side +112, so with zero the ACK carries no way back to
++ * our semaphore; cc_pending_ack_sem is the ARM-side record of what is in
++ * flight, which is the same thing U-Boot's polling loop knows implicitly.
++ * One call is in flight at a time here — SendComm2CPUEx holds the sequence
++ * semaphore across the exchange.
++ */
++static bool cc_zero_wait_ptr;
++module_param_named(zero_wait_ptr, cc_zero_wait_ptr, bool, 0644);
++MODULE_PARM_DESC(zero_wait_ptr, "publish 0 for the wait pointer like U-Boot");
++
++static bool cc_dump_slot;
++module_param_named(dump_slot, cc_dump_slot, bool, 0644);
++MODULE_PARM_DESC(dump_slot, "hex-dump each outgoing call slot (diff against U-Boot's wire image)");
++
++static bool cc_uboot_flags;
++module_param_named(uboot_flags, cc_uboot_flags, bool, 0644);
++MODULE_PARM_DESC(uboot_flags, "carry SENT in flags at +0x06, not flags2 at +0x0a");
++
++unsigned long cc_pending_ack_sem;
 +
 +/* ── Interrupt semaphore array ─────────────────────────────── */
 +
@@ -6906,7 +7521,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *          memory at seq+24, but the firmware only stores it -- its
 + *          signal primitive at 0x8b15c27c null-checks and returns an
 + *          error rather than dereferencing, which is why U-Boot can
-+ *          publish zero here. So a tagged local ref is safe.
++ *          publish zero here. A real 32-bit MID reference is safe.
 + */
 +int SendCommLow(u8 *seq, u32 slot, u8 type, u32 param, u32 sem_ref)
 +{
@@ -6930,7 +7545,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	/* Fill message metadata */
 +	seq[16] = slot;		/* sequence number */
 +	*(u32 *)(seq + 20) = param;
-+	*(u64 *)(seq + 24) = (u64)sem_ref;
++	*(u64 *)(seq + 24) = cc_zero_wait_ptr ? 0ULL : (u64)sem_ref;
 +	*(u32 *)(seq + 4) += 1;	/* increment counter */
 +	seq[8] = type;
 +
@@ -7125,6 +7740,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	/* ── Step 12: set msg_type (1=local-call, 2=remote-call) ── */
 +	msg_type = target_cpu ? 2 : 1;
++	/*
++	 * CPUComm_CallEx reaches here with target_cpu 0 ("auto-detect"), so
++	 * every call it makes is stamped local even when FindRoutine resolved
++	 * the destination to the MIPS. U-Boot's working path always writes 2.
++	 * Under test by parameter rather than assumed.
++	 */
++	if (cc_force_remote && dst_cpu)
++		msg_type = 2;
 +	*(u16 *)(call_slot + 10) = msg_type;
 +
 +	/* ── Step 13: verify slot address matches FIFO table ── */
@@ -7164,6 +7787,49 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			*(u32 *)(call_slot + 24) = (u32)(u8)routine_find_buf[2];   /* again */
 +		}
 +
++		/*
++		 * Address the call to a firmware channel.
++		 *
++		 * +0x10 is not "dst cpu expanded": it is the channel pid, and
++		 * with +0x00 it forms the key (pid << 4) | (chan & 0xf) that
++		 * Comm_GetCallbyChannel matches against the firmware's channel
++		 * table. A call whose key matches no row is acknowledged at the
++		 * transport level and then silently never dispatched — measured
++		 * here as a CALL_ACK followed by no RETURN, with 0x00000001 in
++		 * this field giving key 0x10 against a live row of 0xb8f275c0.
++		 *
++		 * U-Boot's working path takes both from a live row. Until the
++		 * driver discovers the table itself these are module
++		 * parameters, so the value under test is visible in the run
++		 * rather than compiled in.
++		 */
++		if (cc_channel_pid) {
++			/*
++			 * chan is a u16 at +0x00. Writing it as a u32 also
++			 * zeroes dst_cpu at +0x02, which sends the CALL to the
++			 * wrong CPU — tried, and the MIPS then stopped ACKing
++			 * a message it had been ACKing before.
++			 */
++			*(u16 *)(call_slot +  0) = (u16)cc_channel_chan;
++			*(u32 *)(call_slot + 16) = cc_channel_pid;
++			/*
++			 * Once the key matches, the firmware goes further into
++			 * the message than it does on a rejected call. U-Boot
++			 * leaves the routing-only fields zero; we fill them with
++			 * an expanded dst cpu and Linux pid. The first
++			 * attempt at a matching key wedged the receive thread
++			 * with a stray cc_ref still at +0x20, so clear
++			 * those routing fields before blaming the key itself.
++			 * Do not clear +0x34: the payload begins at +0x28 and
++			 * +0x34 is the third routine parameter.
++			 */
++			*(u32 *)(call_slot + 24) = 0;
++			*(u32 *)(call_slot + 28) = 0;
++			pr_info("cpu_comm: addressing channel chan=0x%x pid=0x%08x (key 0x%08x)\n",
++				cc_channel_chan, cc_channel_pid,
++				(cc_channel_pid << 4) | (cc_channel_chan & 0xf));
++		}
++
 +		/* Fields set regardless of local/remote */
 +		*(u32 *)(call_slot + 12) = session_id;	/* session_id field */
 +		*(u32 *)(call_slot + 28) = (u32)current->pid;
@@ -7191,7 +7857,17 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			AddtoWaitComm((void *)(getSeq(dst_cpu) + 40),
 +				      (unsigned long)wait_ptr);
 +
-+			*(u64 *)(call_slot + 32) = (u64)cc_ref(wait_ptr);
++			/*
++			 * The wait object is published TWICE: here, inside the
++			 * message at +0x20, and again at share_seq+24. U-Boot
++			 * publishes zero in both places. The ARM keeps its own
++			 * wait_ptr either way — this field only tells the
++			 * firmware where to signal, and the firmware stores it
++			 * rather than dereferencing it (0x8b15c27c null-checks
++			 * and returns an error, which is why zero is safe).
++			 */
++			*(u64 *)(call_slot + 32) = cc_zero_wait_ptr ?
++					0ULL : (u64)cc_ref(wait_ptr);
 +
 +			/* Return-ack path: also fill offsets 60/64 */
 +			if (flags & MSG_FLAG_RETURN_ACK) {
@@ -7208,24 +7884,56 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	/* ── Step 15: second barrier ── */
 +	dmb(ish);
 +
-+	/* ── Step 16: copy-back to userspace if needed ── */
++	/*
++	 * ── Step 16: copy back the generated routing/session fields ──
++	 *
++	 * CPUComm_CallEx passes a kernel stack buffer and reads its session and
++	 * destination after this function returns.  Keep that buffer in sync
++	 * with the shared slot just as the userspace path is kept in sync.
++	 */
 +	if (from_user) {
 +		if (copy_to_user((void __user *)msg_ptr, call_slot, COMM_MSG_SIZE)) {
 +			ret = -EFAULT;
 +			goto out_cleanup_wait;
 +		}
++	} else {
++		memcpy((void *)msg_ptr, call_slot, COMM_MSG_SIZE);
 +	}
 +
 +	/* ── Step 17: mark "sent" in flags2 ── */
-+	*(u16 *)(call_slot + 10) |= MSG_FLAG_SENT;
++	if (cc_uboot_flags) {
++		/*
++		 * U-Boot's working image carries SENT in flags at +0x06 and
++		 * leaves flags2 at +0x0a as the bare marker 2. We do the
++		 * opposite: +0x06 stays 0 and +0x0a becomes msg_type|SENT.
++		 * The two fields look transposed, and +0x06 is the one the
++		 * publish helper feeds to comm_handle_call, which per
++		 * 0x8b11f0a4 ignores the queue unless that bit is set.
++		 */
++		*(u16 *)(call_slot + 6) |= MSG_FLAG_SENT;
++	} else {
++		*(u16 *)(call_slot + 10) |= MSG_FLAG_SENT;
++	}
++
++	/*
++	 * Dump the wire image so it can be diffed against U-Boot's, which is
++	 * the only layout known to draw a RETURN out of this firmware. The
++	 * fields that decide whether the call is even dispatched — chan at
++	 * +0x00 and the channel pid at +0x10 — are not visible any other way.
++	 */
++	if (cc_dump_slot)
++		print_hex_dump(KERN_INFO, "cpu_comm: slot ", DUMP_PREFIX_OFFSET,
++			       16, 1, call_slot, COMM_MSG_SIZE, false);
 +
 +	/* ── Step 18: dispatch via SendCommLow ── */
++	cc_pending_ack_sem = (unsigned long)(sem_ptr + 16);
 +	SendCommLow(share_seq_w, (u32)slot_idx, msg_type, session_id,
 +		    cc_ref(sem_ptr + 16));
 +
 +	/* ── Step 19: wait for ACK (500 jiffies) ── */
 +	ret = cpu_comm_sem_down_timeout((void *)(sem_ptr + 16),
 +			   SEND_TIMEOUT_JIFFIES);
++	cc_pending_ack_sem = 0;
 +	if (ret) {
 +		pr_err("cpu_comm: SendComm2CPUEx: ACK timeout (cpu=%u session=0x%08x)\n",
 +		       dst_cpu, session_id);
@@ -7543,8 +8251,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +			/* Verify session match */
 +			if (*(u32 *)(entry_base + 12) != *wait_obj) {
-+				pr_err("cpu_comm: command_action: session mismatch\n");
-+				BUG();
++				pr_err("cpu_comm: command_action: session mismatch (0x%x vs 0x%x)\n",
++				       *(u32 *)(entry_base + 12), *wait_obj);
++				return;
 +			}
 +
 +			dmb(ish);
@@ -7554,15 +8263,23 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +			/* No return-ack — use embedded wait pointer */
 +			unsigned long wait_ptr = cc_deref((u32)*(u64 *)(entry_base + 32));
 +
++			/*
++			 * A RETURN arriving with no wait pointer is a real
++			 * state to report, not a reason to panic: it is what
++			 * happens whenever the CALL published zero there, and
++			 * it reaches this path straight from an ioctl.
++			 */
 +			if (!wait_ptr) {
-+				pr_err("cpu_comm: command_action: no wait pointer\n");
-+				BUG();
++				pr_err("cpu_comm: command_action: RETURN carries no wait pointer (session=0x%x) — dropping\n",
++				       *(u32 *)(entry_base + 12));
++				return;
 +			}
 +
 +			/* Verify session match */
 +			if (*(u32 *)(entry_base + 12) != *(u32 *)wait_ptr) {
-+				pr_err("cpu_comm: command_action: session mismatch (embedded)\n");
-+				BUG();
++				pr_err("cpu_comm: command_action: session mismatch, embedded (0x%x vs 0x%x)\n",
++				       *(u32 *)(entry_base + 12), *(u32 *)wait_ptr);
++				return;
 +			}
 +
 +			dmb(ish);
@@ -7613,10 +8330,31 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		BUG();
 +	}
 +
-+	/* Signal the semaphore at offset 112 in the share sequence.
-+	 * This wakes up SendCommLow which is waiting for the ACK.
++	/*
++	 * The peer copied our 32-bit wait reference into the ACK header.  On
++	 * arm64 this is a cc_ref, not a truncated native pointer: physical MID
++	 * references must be resolved through cc_deref() before use.
 +	 */
-+	cpu_comm_sem_up((void *)(unsigned long)*(u32 *)(share_seq + 112));
++	{
++		u32 sem_ref = *(u32 *)(share_seq + 112);
++		unsigned long sem_ptr = cc_deref(sem_ref);
++
++		/*
++		 * With zero_wait_ptr the ACK carries no reference back, by
++		 * design — fall back to the call this CPU has in flight.
++		 */
++		if (!sem_ptr && !sem_ref && cc_pending_ack_sem) {
++			sem_ptr = cc_pending_ack_sem;
++			pr_info("cpu_comm: ack_action: zero ref, waking pending ACK sem\n");
++		}
++
++		if (!sem_ptr) {
++			pr_err("cpu_comm: ack_action: invalid semaphore ref 0x%08x "
++			       "(cpu=%u dir=%u)\n", sem_ref, cpu, direction);
++			return;
++		}
++		cpu_comm_sem_up((void *)sem_ptr);
++	}
 +}
 +
 +/* ── comm_WorkAction — Work queue dispatch via actionFuncs table ── */
@@ -7684,6 +8422,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +void cpu_comm_msg_cb(int type, int direction)
 +{
 +	int cpu;
++	unsigned long share_seq;
++	u8 *state;
 +
 +	/* Map direction to CPU ID */
 +	if (direction == 0)
@@ -7694,6 +8434,29 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		cpu = 2;
 +
 +	cpu_comm_trace_ipc("msg_cb", type, direction, cpu);
++
++	/*
++	 * The stock low-level interrupt handlers consume the peer's shared
++	 * publication before queueing comm_Action.  The msgbox poller replaces
++	 * that layer here, so it must perform the same transition.  Without it,
++	 * command_action/ack_action see bit 2 still set and correctly diagnose a
++	 * publication that has not been consumed.
++	 */
++	if (cpu <= 1 && type >= MSG_TYPE_CALL &&
++	    type <= MSG_TYPE_RETURN_ACK) {
++		unsigned int seq_direction = type & 1;
++
++		share_seq = getShareSeqR(cpu, seq_direction);
++		state = share_seq ? (u8 *)(share_seq +
++			(type >= MSG_TYPE_CALL_ACK ? 105 : 8)) : NULL;
++		if (!state || !(*state & MSG_FLAG_SENT)) {
++			pr_warn("cpu_comm: msg type %d from cpu %d has no live "
++				"publication\n", type, cpu);
++			return;
++		}
++		*state &= ~MSG_FLAG_SENT;
++		dmb(ish);
++	}
 +
 +	switch (type) {
 +	case MSG_TYPE_CALL:
@@ -7717,7 +8480,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' '--exclude=*.order' '--exclude=*.symvers' '--exclude=.config*' '--exclude=*.dtb' '--exclude=built-in*' '--exclude=*.a' '--exclude=.tmp*' '--exclude=*.bak*' '--exclude=source' a/drivers/soc/sunxi/cpu_comm/cpu_comm_rpc.c b/drivers/soc/sunxi/cpu_comm/cpu_comm_rpc.c
 --- a/drivers/soc/sunxi/cpu_comm/cpu_comm_rpc.c	1970-01-01 01:00:00.000000000 +0100
 +++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_rpc.c	2026-03-31 16:48:00.665337983 +0200
-@@ -0,0 +1,1078 @@
+@@ -0,0 +1,1092 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * cpu_comm_rpc.c — High-level RPC API
@@ -7771,21 +8534,9 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + * ═══════════════════════════════════════════════════════════════
 + */
 +
-+/* Offsets from ShMemAddrBase */
-+#define RT_VERSION_OFF		30144	/* u32 version counter */
-+#define RT_COUNT_OFF		30148	/* unsigned long entry count (checked <= 1223) */
-+#define RT_TABLE_OFF		30152	/* start of 96-byte entries */
-+
-+/* Entry field offsets */
-+#define RT_ENTRY_SIZE		96
-+#define RT_COMP_ID_OFF		8	/* u32 at entry + 8 */
-+#define RT_CPU_OFF		2	/* u16 at entry + 2 */
-+#define RT_NEXT_OFF		92	/* i32 at entry + 92 (chain link) */
-+
-+/* Table limits */
-+#define RT_PRIMARY_SLOTS	1024
-+#define RT_OVERFLOW_START	1024
-+#define RT_MAX_INDEX		1223
++/* RT_* table geometry lives in cpu_comm.h — /proc/cpu_comm/routines
++ * walks the same table from cpu_comm_dev.c.
++ */
 +
 +/* Get pointer to entry at given index */
 +static inline u8 *rt_entry(int idx)
@@ -8229,6 +8980,14 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 + *
 + * Returns 0 on success, negative on error.
 + */
++/*
++ * How long to wait for a RETURN before giving up. The firmware answers a
++ * no-op control call in about 1 ms from U-Boot, so seconds here is already
++ * enormously generous; the point is that a silent firmware fails the ioctl
++ * instead of parking a process forever.
++ */
++#define CALL_TIMEOUT_MS 5000
++
 +int CPUComm_CallEx(int comp_id, int *params, u32 *result)
 +{
 +	u8 local_msg[COMM_MSG_SIZE];
@@ -8241,16 +9000,21 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	u32 session_ptr;
 +	u16 *return_entry = NULL;
 +
-+	if (!params)
-+		BUG();
-+	if (!result)
-+		BUG();
++	/*
++	 * Everything here is reachable straight from the CALL ioctl with
++	 * caller-supplied data, so it fails rather than panics. These were
++	 * BUG()s inherited from the IDA transcription; a client sending a
++	 * count of 11 would have taken the kernel down, and a client is
++	 * exactly what will start sending varied counts.
++	 */
++	if (!params || !result)
++		return -EINVAL;
 +
 +	param_count = params[0];
-+	if (param_count > 10) {
-+		pr_err("cpu_comm: CPUComm_CallEx: param_count %d > 10\n",
++	if (param_count < 0 || param_count > 10) {
++		pr_err("cpu_comm: CPUComm_CallEx: param_count %d out of range 0..10\n",
 +		       param_count);
-+		BUG();
++		return -EINVAL;
 +	}
 +
 +	/* Build local comm_msg on stack */
@@ -8258,9 +9022,6 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +
 +	/* Store component_id in payload area (offset 40 = 0x28) */
 +	*(u32 *)(local_msg + 40) = (u32)comp_id;
-+
-+	/* Store caller's PID (offset 52 = 0x34) */
-+	*(u32 *)(local_msg + 52) = (u32)current->tgid;
 +
 +	/* Store param count in cmd_type field (offset 8) */
 +	*(u16 *)(local_msg + 8) = (u16)param_count;
@@ -8295,15 +9056,27 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (!wait_obj) {
 +		pr_err("cpu_comm: CPUComm_CallEx: wait obj not found (session=0x%x)\n",
 +		       session_ptr);
-+		BUG();
++		return -ENOENT;
 +	}
 +
-+	/* Wait for MIPS to respond (blocks until up() is called) */
-+	ret = cpu_comm_sem_down_interruptible((void *)(wait_obj + 2));
++	/*
++	 * Wait for the MIPS to respond, bounded.
++	 *
++	 * This was an unbounded interruptible wait followed by BUG() on any
++	 * non-zero return, which made a plain SIGTERM to the calling process
++	 * panic the kernel — reached on hardware the first time the firmware
++	 * ACKed a CALL and then sent no RETURN. A userspace-reachable path
++	 * must not BUG(); it must fail and unwind. Bounding the wait also
++	 * removes the need to interrupt it from outside to get control back,
++	 * which is what produced the signal in the first place.
++	 */
++	ret = cpu_comm_sem_down_timeout((void *)(wait_obj + 2),
++					msecs_to_jiffies(CALL_TIMEOUT_MS));
 +	if (ret) {
-+		pr_err("cpu_comm: CPUComm_CallEx: interrupted waiting (session=0x%x)\n",
-+		       session_ptr);
-+		BUG();
++		pr_err("cpu_comm: CPUComm_CallEx: no RETURN after %u ms (session=0x%x, %s)\n",
++		       CALL_TIMEOUT_MS, session_ptr,
++		       ret == -ETIME ? "timeout" : "interrupted");
++		goto out_release_wait;
 +	}
 +
 +	/* Get the return message from the return FIFO */
@@ -8311,7 +9084,8 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	if (ret) {
 +		pr_err("cpu_comm: CPUComm_CallEx: return not found (session=0x%x)\n",
 +		       session_ptr);
-+		BUG();
++		ret = -EIO;
++		goto out_release_wait;
 +	}
 +
 +	/* Copy results from return entry to caller's result buffer */
@@ -8327,7 +9101,7 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +		if (return_entry[4] != 15 && return_entry[4] <= 10) {
 +			*result = return_entry[4]; /* result count */
 +			for (i = 0; i < (int)return_entry[4]; i++)
-+				result[i + 1] = *(unsigned long *)&return_entry[2 * i + 22];
++				result[i + 1] = *(u32 *)((u8 *)return_entry + 44 + 4 * i);
 +		}
 +
 +		/* Release the call slot back to the share sequence */
@@ -8340,14 +9114,17 @@ diff -ruN '--exclude=*.o' '--exclude=*.ko' '--exclude=*.cmd' '--exclude=*.mod*' 
 +	}
 +
 +	/* Clean up wait object */
++out_release_wait:
 +	{
 +		unsigned long wait_cleanup = 0;
 +
 +		GetWaitbySessionId((void *)(seq_base + 40),
 +				   session_ptr, (u8 *)&wait_cleanup);
-+		if (!wait_cleanup)
-+			BUG();
-+		ReleaseWaitComm(dst_cpu, wait_cleanup);
++		if (wait_cleanup)
++			ReleaseWaitComm(dst_cpu, wait_cleanup);
++		else
++			pr_warn("cpu_comm: CPUComm_CallEx: wait object already gone (session=0x%x)\n",
++				session_ptr);
 +	}
 +
 +	return ret;
