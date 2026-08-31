@@ -147,6 +147,27 @@ static int copy_file_to_fd(const char *path, int fd)
 	return got == NV12_SIZE ? 0 : -1;
 }
 
+/*
+ * The VideoInfo format selector, overridable for sweeping the firmware's
+ * mapping table on hardware. Default 0, which the table maps to AFBD fmt 0 --
+ * the value stock plays at.
+ */
+static uint32_t video_info_format(void)
+{
+	const char *s = getenv("DECD_FMT");
+	unsigned long v;
+
+	if (!s || !*s)
+		return 0;
+	v = strtoul(s, NULL, 0);
+	if (v > 15) {
+		fprintf(stderr, "DECD_FMT=%lu out of range, using 0\n", v);
+		return 0;
+	}
+	printf("VideoInfo format selector overridden to %lu\n", v);
+	return (uint32_t)v;
+}
+
 /* Reproduce the constructor and setters used by VideoTunnel for SDR video. */
 static int fill_video_info(int fd)
 {
@@ -173,7 +194,38 @@ static int fill_video_info(int fd)
 	v[0x34 / 4] = 30000;     /* setFps(30) */
 	v[0x38 / 4] = 30000;
 	v[0x3c / 4] = 0;         /* progressive */
-	v[0x40 / 4] = 11;        /* setPictureInfo: decoder format 6 */
+	/*
+	 * The firmware's format selector. This is the input to the resolver at
+	 * MIPS 0x8b1a31e8, a bounds-checked jump table through 16 entries at
+	 * 0x8b2078a4; the arm it selects stores the byte the firmware then
+	 * writes into 0x05600010[15:8]. Recovered 2026-08-30, see
+	 * docs/reference/firmware-format-mapping-2026-08-30.md.
+	 *
+	 *     input   0 -> fmt 0      8 -> fmt 4     14 -> fmt 7
+	 *             2 -> fmt 1      9 -> fmt 5     15 -> fmt 6
+	 *             4 -> fmt 2     11 -> fmt 4
+	 *             6 -> fmt 3     12 -> fmt 5
+	 *     1,3,5,10,13 take a default arm that logs an error and writes 0.
+	 *     7 stores nothing at all, leaving the firmware's stack byte.
+	 *
+	 * This was 11, which the table maps to fmt 4 -- and fmt 4 is measured
+	 * wrong for NV12: forced onto stock during playback it gave a
+	 * 2x-repeated, half-height, colour-shifted picture, because the fetch
+	 * eats about two source lines per output line. Stock plays at fmt 0,
+	 * and 0 is the only input that reaches fmt 0 without going through the
+	 * error-logging default.
+	 *
+	 * That 11 -> 4 is what the table predicts is also why it is trusted: it
+	 * reproduces the measured 0x05600010 = 0x03000413 exactly.
+	 *
+	 * DECD_FMT overrides it, so the table can be swept on hardware without
+	 * a rebuild. Note the resolver's input is 0x5c($s0) in the firmware's
+	 * frame object; that it is this field rests on the 11 -> 4
+	 * correspondence rather than a traced data path, so if setting 0 does
+	 * not move 0x05600010, this field is not the input and the descriptor's
+	 * own format at +0x08 is the next candidate.
+	 */
+	v[0x40 / 4] = video_info_format();
 	v[0x44 / 4] = 1;         /* stock VideoTunnel colorspace */
 	v[0x48 / 4] = 0;         /* limited range constructor default */
 	v[0x4c / 4] = 0xffff0000;/* retained VideoInfo constructor sentinel */
