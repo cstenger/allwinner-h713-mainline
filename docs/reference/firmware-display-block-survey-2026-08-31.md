@@ -424,3 +424,57 @@ starts `0x50` bytes above the crossbar region entirely.
 That is the sharpest remaining target: capture `0x05140000..0x0514004c` on stock
 during playback. It is twenty registers, in the block named "route", of a
 streaming path whose gate must be a mux, and no one has ever looked at them.
+
+## `0x05140000` is a live output gate — the first one found outside AFBD
+
+Probed on hardware with the panel provably live (`mem-fill` repainting red
+continuously for the whole run), operator watching:
+
+| phase | write | panel |
+| --- | --- | --- |
+| baseline | `0x0007FFFF` | red |
+| nine crossbar regs `+0x008..+0x028` zeroed | `0` each | **flicker, stays red** |
+| restore | — | flicker, stays red |
+| **`+0x000` zeroed alone** | `0x00000000` | **BLACK** |
+| restore | `0x0007FFFF` | red |
+
+**Zeroing `0x05140000` blanks the panel; restoring it brings the image back.**
+Reversible, repeatable, and immediate — **no commit latch is needed for this
+block**, which is what makes the rest of this section interpretable.
+
+That last point converts the crossbar result into a real negative. The nine
+registers at `+0x008..+0x028` carry the `0x0C`/`0xC0` nibble patterns that look
+like a source-selector matrix, and zeroing all nine **took effect** (readback
+confirmed, and this block needs no latch) yet produced only a momentary flicker
+with the image intact. They perturb the pipeline; they do not gate output. The
+crossbar reading in the previous section is **wrong** — the gate is the mask
+beside them, not the matrix.
+
+### It is a series enable, not a stream mux
+
+Bisecting the 19 set bits, each group cleared independently against a live panel:
+
+| bits cleared | panel |
+| --- | --- |
+| 0–5 (`0x0007FFC0`) | black |
+| 6–12 (`0x0007E03F`) | black |
+| 13–18 (`0x00001FFF`) | black |
+
+**All three blank it.** So no single bit selects a stream — each group holds
+something required in series. The hoped-for reading ("one bit gates the OSD,
+clear it and video appears in its place") is dead.
+
+### The register is 32 bits wide
+
+Writing `0xFFFFFFFF` reads back `0xFFFFFFFF`, so it is not a 19-bit field:
+**thirteen writable bits above bit 18 are currently off**, in a register proven
+to control whether anything reaches the panel. Every bit that is *on* is already
+on while video is invisible, so if this register is involved in the missing
+selection, the answer is necessarily in the bits that are off.
+
+### Why this matters beyond the register
+
+This is the first register anywhere outside AFBD's own channel controls shown to
+determine whether an image reaches this panel. It also sits in `0x05140000` —
+whose low region the eleven-window sweep never covered, its ROUTE window
+starting at `+0x050`, above everything described here.
