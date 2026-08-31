@@ -67,9 +67,9 @@ frame-handoff routines are still stubs. It overturns the *conclusion* drawn from
 them, which was that the RPC surface has nothing to offer. It has ten live
 routines nobody has called.
 
-### The argument ABI, cracked (2026-08-30)
+### The argument ABI, corrected on Linux (2026-08-31)
 
-Two read-only calls, MIPS alive under `init 0x34`, live row from `commdev`:
+The original U-Boot experiment used these calls, MIPS alive under `init 0x34`:
 
 ```
 h713_disp commcall fd483f67 chan=0 pid=8b8f275c 0 4d800000 4d810000 4d820000
@@ -81,10 +81,18 @@ GetWindow        4d800000: 00000000 00007800 00000000 00004380
 GetActiveWindow  4d830000: 00000000 00005000 00000000 00002d00
 ```
 
-**The ABI:**
+They recovered the fixed-point encoding, but not the parameter indexing. The
+leading `0` made the adapter's first output pointer null; `0x4d800000` and
+`0x4d830000` actually received each adapter's **second** output. Linux wire
+capture and calls with every output populated corrected the ABI:
 
-- Parameters are `0` then up to three **ARM physical addresses**. The adapter
-  reads them from the block at `+4`, `+8`, `+12`, so `param[0]` is a dummy.
+- `Wce_GetActiveWindow` takes **two ARM physical output addresses**. It returns
+  a 1920x1080 first struct and an active 1280x720 second struct.
+- `Wce_GetWindow` takes **three ARM physical output addresses**. It returns two
+  1920x1080 structs and scalar `2`.
+- There is **no dummy parameter** in the Linux ioctl ABI. The adapter is passed
+  the message at `+0x28`, where the component id lives; its reads at `+4`,
+  `+8`, `+12` are the first three payload values at message `+0x2c`.
 - **Pass the ARM physical address unmodified.** The `0xA0000000` OR inside the
   adapter is its own business; translating to "MIPS physical" by subtracting
   `0x40000000` is wrong and was the error that made the first attempt fail.
@@ -94,7 +102,15 @@ GetActiveWindow  4d830000: 00000000 00005000 00000000 00002d00
   sentinels first creates dirty ARM cache lines and the read comes back stale --
   this build has no `dcache` command to flush them.
 
-**The encoding is self-validating.** `GetActiveWindow` returns `0x5000`/`0x2d00`,
+Correct Linux client forms, using the verified scratch page, are:
+
+```
+cpu-comm-probe Wce_GetWindow 0x4d830000 0x4d830010 0x4d830020
+cpu-comm-probe Wce_GetActiveWindow 0x4d830000 0x4d830010
+```
+
+**The encoding is self-validating.** The second `GetActiveWindow` output is
+`0x5000`/`0x2d00`,
 which divided by 16 is exactly **1280x720** -- the panel. The fixed-point reading
 was not assumed; the panel-sized answer confirmed it, and the same layout then
 reads `GetWindow` as a clean 1920x1080.
@@ -155,9 +171,10 @@ calling `SetWindow`.** It would change what `GetWindow` returns and nothing else
 
 Two corroborations worth keeping, because both were free:
 
-- The adapter disassembly **confirms the measured ABI independently**. Each
-  adapter reads `4($a0)`, `8($a0)`, `0xc($a0)` -- so `param[0]` is genuinely
-  unused -- and maps each with `ext rX, rX, 0, 0x1c` then `or 0xa0000000`, i.e.
+- The adapter disassembly **confirms the physical-address mapping**. The
+  adapters read their arguments at `4($a0)`, `8($a0)`, and where applicable
+  `0xc($a0)`, then map each with `ext rX, rX, 0, 0x1c` and
+  `or 0xa0000000`, i.e.
   low 28 bits into the MIPS uncached window. That is why the **unmodified ARM
   physical address is correct** and subtracting `0x40000000` was wrong. `movz`
   preserves a null, so a null argument stays null rather than becoming
@@ -172,9 +189,8 @@ converter. The 1/16 fixed-point reading rests solely on the 1280x720 match, whic
 is still good evidence, but nothing in the firmware independently labels the
 units.
 
-`Wce_GetWindow` also fills **two** structs and a scalar, not one. Only `p1` was
-read on hardware; from the static image `p2` is also 1920x1080 and the scalar is
-`2`. No re-run needed.
+`Wce_GetWindow` also fills **two** structs and a scalar, not one. Linux now
+confirms both structs as 1920x1080 and the scalar as `2` on hardware.
 
 ### The suppression routines are real -- and they are the surviving lead
 
@@ -290,6 +306,71 @@ with the MIPS alive -- the combination that hard-locks the SoC in seconds --
 and `commcall` only exists in U-Boot. **That is the blocker, and it is why this
 lead is being left here rather than closed.** The cheap experiments are spent;
 what remains needs a way to issue CPU_COMM calls from Linux.
+
+### Blocker closed on hardware 2026-08-31: all three clears called during live DECD
+
+The guarded Linux client closed the missing experiment. The first attempt
+loaded CPU_COMM before submitting the frame and hard-locked inside the submit,
+before any call ran. After a power cycle, the order was reversed: DECD submitted
+one fmt-0 1280x720 NV12 frame successfully, and CPU_COMM was loaded only after
+the submit returned and interrupts were advancing.
+
+All three no-argument clears completed during the four-second live interval:
+
+| call | elapsed | return |
+| --- | ---: | --- |
+| `b66041d8` `DisableBlackScreen` | 86,121 us | `nret=0` |
+| `3ab1d1dc` `DisableVideoFreeze` | 68,827 us | `nret=0` |
+| `143ffc87` `DisableScreenCover` | 29,600 us | `nret=0` |
+
+The DECD interrupt count advanced from 75 to 127 across the calls. Before and
+after values were identical: source control `0x03000013`, source latch `0`, Y/C
+`0x6c500000`/`0x6c5e1000`, video-channel control/latch
+`0x00010000`/`0`, OSD-channel control/latch `0x03001901`/`0`, and mixer enable
+`0x00001402`. Both the DECD client and the call worker returned zero. The known
+hazardous `EnableScreenCover` (`0152f134`) was never invoked.
+
+Mechanically, this closes the three suppression latches as an explanation for
+the missing DECD image: each command reached the firmware while a valid frame
+was actively being serviced, yet none changed the captured display state.
+The operator saw black during the brief live interval and no green frame or
+obvious recovery. Because the three calls were intentionally compressed into
+one short window, the visual report cannot distinguish the calls individually;
+the IRQ and register evidence supplies that separation mechanically.
+
+### Live `SetSource(1)` attempt on 2026-08-31: no call, no result
+
+The next experiment armed a worker to load CPU_COMM 500 ms after a green fmt-0
+DECD submit, then capture `GetSource`, call `SetSource(1)` (`VideoDec`), wait one
+second, and capture the route state again. `FRAME_SUBMIT` returned a valid fence
+and the client printed its five-second hold, but the whole SoC hard-locked before
+the delayed worker printed its first line. CPU_COMM was never loaded and neither
+`GetSource` nor `SetSource` ran. The operator saw the logo remain unchanged.
+
+This is not a negative `SetSource` result. It is evidence that the MIPS+DECD
+lock does not require the Linux CPU_COMM module: it occurred after a successful
+submit return but before that module was inserted. Do not repeat the same
+live-dwell timing loop; the source-selection question needs a method that runs
+inside the frame-processing path or static proof from the firmware.
+
+### `SetSource(1)` closed without repeating the lock-prone Linux timing loop
+
+A clean project-`0x34` U-Boot trace supplied both the missing real transition
+and the equality control:
+
+- firmware startup completed source `0 -> 1` (`VideoDec`), with worker marker
+  `0x5203`, queue result zero;
+- a subsequent `THal_Vp_SetSource(1)` was accepted with `nret=0` and produced no
+  new worker transition or AFBD change.
+
+That is exactly the static equality branch: the requested source already equals
+the private current source, so the worker has nothing to transition. Also,
+`THal_Vp_GetSource` is not evidence against this result; its handler at
+`0x8b14b524` always returns zero rather than reading the private source state.
+
+The firmware therefore already selects VideoDec during startup. Repeating
+`SetSource(1)` in Linux cannot unlock the black DECD path and should not be run
+again merely to replace the earlier no-call attempt.
 
 A near-miss worth recording as method. The first cross-reference scan for writes
 to `0x8b253570` reported **zero stores**, which would have supported a confident
