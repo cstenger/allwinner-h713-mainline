@@ -121,8 +121,11 @@ The next capture should not be the composition page alone. `page-sample.sh`
 now defaults to the firmware-addressed set plus a control:
 
 ```
-05000000:400  050c0000:400  05040000:400  05180000:400  05600000:80
+05000000:400  050c0000:400  05040000:400  05180000:400  05140000:400  05600000:80
 ```
+
+(`05140000` was added after the baseline read below found 470 non-zero words in
+a block the eleven-window sweep had only ever sampled 8 of.)
 
 AFBD is there as a **positive control**, not a subject: its Y/C ring is proven
 to move per frame on stock, so it must come back state-driven or free-running.
