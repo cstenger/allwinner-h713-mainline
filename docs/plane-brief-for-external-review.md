@@ -1359,3 +1359,110 @@ through the single channel that works. The remaining question is therefore
 **"how do we make one channel fetch YUV"**, not "how do we open a second plane"
 — and the two-plane framing that shaped this entire investigation was wrong from
 the start.
+
+---
+
+## 11. Update, 2026-08-30 (later) — what changed, and what we most want a second opinion on
+
+Four things happened after section 0's last status note. One of them retracts a
+claim made earlier the same day; read that first so it does not get propagated.
+
+### A retraction, so it does not spread
+
+It was asserted here and elsewhere that **"a DECD submit breaks the display path
+for the rest of the boot"**. That is **withdrawn**. Re-tested on a fresh boot
+with the panel confirmed live immediately before each step (a known pattern
+written into the scanout buffer and visually confirmed), three submits in two
+different pixel formats left the panel unchanged.
+
+No measurement in the original was wrong. The bisection's four rows came from
+**two different boots**, and the deciding row came from one where the panel was
+never confirmed working after Linux booted and before the first submit.
+
+The corollary is withdrawn too: earlier "still black" null results — hiding the
+OSD, the internal blue generator, the source-enable and mixer sweeps — are **not**
+known to have been measuring a dead path. They stand as originally reported.
+
+One boot's panel genuinely was black with the OSD channel enabled, its buffer
+holding white, both commit latches consuming and the raster running. **Cause
+unidentified.**
+
+### The MIPS sees the peripherals at a different address
+
+Every previous attempt to find display-register accesses in the firmware image
+failed, in every encoding. The reason is an offset, not an absent access path:
+
+    MIPS address = ARM physical + 0xB5000000
+
+    ARM 0x05600000  AFBD           ->  MIPS 0xba600000   (kseg1, uncached)
+    ARM 0x051c0000  LVDS PHY       ->  MIPS 0xba1c0000
+    ARM 0x05140000  display route  ->  MIPS 0xba140000
+
+**If you recognise `+0xB5000000` as a standard MIPS-side aperture on this SoC
+family, that would be useful to know** — we derived it from correspondence and
+it is not documented anywhere we have.
+
+With it, the firmware is visibly reading and writing the video source control
+register at 11 store sites, which converts the earlier *inference* that the
+firmware programs the video source into readable code.
+
+### The pixel-format question is answered and confirmed
+
+The firmware resolves the format from a bounds-checked jump table (16 entries),
+mapping the metadata structure's format selector to the byte it writes into the
+source control register's bits 15:8:
+
+    0 -> fmt 0      8 -> fmt 4     14 -> fmt 7        1,3,5,10,13 -> error arm, writes 0
+    2 -> fmt 1      9 -> fmt 5     15 -> fmt 6        7 -> stores nothing at all
+    4 -> fmt 2     11 -> fmt 4
+    6 -> fmt 3     12 -> fmt 5
+
+Confirmed on hardware, control run first: sending 11 gives `0x03000413`
+(fmt 4, what we had been getting); sending 0 gives `0x03000013` (fmt 0, exactly
+what stock plays at). So the metadata field is genuinely the resolver's input,
+and our client now sends 0.
+
+**This is necessary but not sufficient** — forcing fmt 4 onto a working stock
+system produces a broken but plainly visible picture, not black.
+
+### The thing we would most like an outside view on
+
+Every submit leaves the firmware writing a geometry that we cannot explain:
+
+    register                       after submit      expected
+    source dimensions              0x02CF04FF        1280x720 minus one   <- correct
+    stride                         0x00000500        1280                 <- correct
+    "picture size"    0x05600030   0x01E00354        852 x 480  ??
+    "second size"     0x0560004c   0x00F00354        852 x 240  ??   (fmt 0)
+                                   0x01E00354        852 x 480  ??   (fmt 4)
+
+852x480 on a 1280x720 panel, from a 1280x720 NV12 buffer, while the source
+dimensions and stride beside it are correct. Stock during real playback has
+`0x0560004c = 0x02D00500` (1280x720). The low half is 0x354 = **852** in every
+case; the high half tracks the chroma subsampling, halving from 480 to 240 when
+the format goes from 4 to 0 — which at least suggests the field is a plane
+height and the firmware is computing it consistently from *something*.
+
+Notably this geometry does **not** break composition: the panel keeps showing an
+unrelated marker image while these values are live and unrestored.
+
+**Questions we would value answers to:**
+
+1. On Allwinner display hardware of this generation, what is the usual meaning of
+   a triple like {source dimensions, picture size, second size} on a scanout
+   channel? Is "picture size" an output/scaled size rather than a source size?
+2. Does 852x480 suggest a default or fallback output window — e.g. a
+   letterboxed 480p — that the firmware falls back to when some field of the
+   submitted metadata is missing or unrecognised?
+3. What gates a scanout channel being *serviced* as distinct from configured?
+   That remains this document's central unanswered question (section 8, item 1),
+   and everything since has narrowed rather than answered it.
+
+### Where the effort stands
+
+The vendor's own metadata structure has never been captured during real
+playback. That is now the best-targeted remaining measurement: its physical
+address is readable from a slot register during playback, and the vendor's
+debug character device turns out to map arbitrary physical pages, so reading it
+is two commands once the board is booted into the stock firmware. The obstacle
+is the vendor boot itself, which is slow and has failed before.
