@@ -44,6 +44,18 @@ capture of this project used a different case convention and 90 of 150 lines cam
 back as changed on formatting alone. Do not tidy the formatting. Results in
 [../docs/handoff-2026-08-29.md](../docs/handoff-2026-08-29.md).
 
+`page-sample.sh` and `page-classify.py` are the pair for comparing a window
+between the two stacks. The script runs on either board and takes four samples
+— twice in a resting state, twice in the state under test — and the host
+classifier turns those into static / state-driven / free-running before diffing
+the two stacks against each other. **Four samples, not two, whenever the window
+might contain telemetry.** The firmware-owned composition page at `0x05000000`
+mixes configuration with counters that change between reads a second apart, so a
+one-sample-per-stack diff of it reports noise and configuration
+indistinguishably. Sampling twice in *both* states also catches registers that
+free-run in only one — AFBD's buffer ring is still at idle and cycles during
+playback, and a single idle pair would misfile it as state-driven.
+
 The same directory holds the CPU_COMM side, for calling routines in the MIPS
 display firmware from Linux:
 
