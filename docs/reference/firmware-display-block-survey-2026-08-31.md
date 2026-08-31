@@ -198,3 +198,88 @@ between stock and our stack on 08-29 and used to conclude routing was already
 correct on our side — a conclusion drawn from under two percent of a populated
 page. It is not overturned, but it is far weaker than it reads, and the widened
 capture now covers the whole page.
+
+---
+
+## Run on hardware: MIPS alive, DECD submitting, 2026-08-31
+
+The lock-risking capture was made. It did not lock. Boot was `reboot bootloader`
+→ `h713_disp init 0x34` → `ext4load`/`bootm` of the DECD-exclusive FIT; capture
+by a non-interactive four-sample script syncing to the rootfs at every step.
+Captures: [linux-mips-alive-decd-4sample-2026-08-31.txt](linux-mips-alive-decd-4sample-2026-08-31.txt),
+classification in [linux-mips-alive-decd-classified-2026-08-31.txt](linux-mips-alive-decd-classified-2026-08-31.txt).
+
+**The positive control passed**, which is what makes the rest of this usable.
+AFBD came back state-driven exactly where it must — source control
+`0x03000010 -> 0x03000013`, Y bases `0x05600070-7c` all to `0x6C500000`, C bases
+`0x05600084-90` to `0x6C5E1000`, geometry to `0x02CF04FF`, stride to `0x500` —
+with the frame counters at `0x05600058/5c` classified free-running. DECD IRQ 331
+reached 4716. The capture observed the state it claims to.
+
+### The four-bank prediction is falsified
+
+The previous section called `0x05180000` "the most suggestive structure found so
+far" and committed to a test: if those four banks are compositor inputs, at
+least one must diverge during a submit.
+
+**Zero of its 1024 words changed.** All four banks stayed byte-identical through
+a serviced frame. They are a static default, not layers being fed. The lead is
+closed — cheaply, and by the test that was specified in advance rather than
+after the data was seen.
+
+### The surprise is `0x05040000`
+
+| block | static | state-driven | free-running |
+| --- | ---: | ---: | ---: |
+| `0x05000000` composition | 983 | 39 | 2 |
+| **`0x05040000`** (was uncharacterised) | 898 | **121** | 5 |
+| `0x050c0000` (was uncharacterised) | 1012 | 3 | 9 |
+| `0x05180000` four banks | 1024 | **0** | 0 |
+| `0x05140000` display route | 952 | 60 | 12 |
+| `0x05600000` AFBD (control) | 105 | 19 | 4 |
+
+**A block nobody had ever looked at responds to a DECD submit three times more
+than the composition page does**, across sixteen distinct regions. Its
+two-instance `0x800` symmetry survives the submit: of 61 changed words in the
+first instance, **60 change identically in the second**. Both instances are
+driven together.
+
+`0x050c0000` is nearly inert by contrast — 3 state-driven — despite 22 firmware
+sites and 234 non-zero words. Firmware attention does not predict per-frame
+response, which is the caveat above, now demonstrated rather than asserted.
+
+### The frame descriptor lands in the composition page
+
+```
++0x178  0x6002021C -> 0xE002021C     bit 31 set
++0x1b8  0x60020438 -> 0xE0020438     bit 31 set
++0x278  0x60020168 -> 0xE0020168     bit 31 set
++0x2b8  0x600202D0 -> 0xE00202D0     bit 31 set
++0xac0  0x00000000 -> 0x000E1000  }
++0xac4  0x00000000 -> 0x000E1000  }  0xE1000 = 921600, exactly the
++0xac8  0x00000000 -> 0x000E1000  }  1280x720 NV12 luma plane
++0xacc  0x00000000 -> 0x000E1000  }
++0xa60  0x01400140 -> 0x06040604     content tap
++0xa6c  0x00000000 -> 0x000007A8     content tap
+```
+
+Four registers take the exact luma plane size — the same `0xE1000` that
+separates the Y and C base addresses — so the submitted buffer's geometry is
+propagating into this block, not just into AFBD. Four others have bit 31 set at
+a matching stride. Both first-frame words `0x05000058` and `0x05000104` moved
+again, reproducing the earlier capture independently.
+
+### What this does not say
+
+Every result here is one stack. Nothing above shows what stock does, so none of
+it identifies the gate — it identifies *where to look* and, in the case of
+`0x05180000`, one place to stop looking. The comparison still needs the stock
+capture, which is now a much better-specified request: the same six windows, the
+same four samples, during real playback.
+
+One methodological note worth keeping: the capture script's IRQ helper misparsed
+`/proc/interrupts` (`cut -f3` took CPU1's column, not CPU0's) and reported 0
+interrupts throughout a run that actually served 4716. The registers, not the
+helper, are what established that DECD was live. A convenience readout being
+wrong is cheap; it would not have been cheap if the run had been declared a
+failure on its word.
