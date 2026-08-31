@@ -390,6 +390,36 @@ enable, no frames. That is consistent with the format writer being firmware
 code driven by DECD's VideoInfo, and it means the remaining work is entirely
 on the Linux side.
 
+The remaining "configured versus serviced" question was then closed with an
+in-firmware frame trace. PanelWinNode's update method only calls the AFBD frame
+programmer when dirty-mask bit `0x800` is set. One bounded Linux fmt-0 submit
+arrived with dirty mask `0xffffffff`, entered the programmer, executed its
+source commit and AFBD dirty stores, and reached final marker `0x6103`. The
+source commit subsequently read zero, proving hardware consumed it, while DECD
+continued at approximately 60 IRQ/s with valid Y/C addresses. Black output is
+therefore downstream of a serviced, consumed frame update: fetch, mixer
+selection, or composition. Full evidence:
+[`reference/frame-service-gate-confirmed-2026-08-31.txt`](reference/frame-service-gate-confirmed-2026-08-31.txt).
+
+The first capture of the firmware-owned ARM `0x05000000` composition block
+now closes another ambiguity. Supplying the old `0x5000/0x2d00` VideoInfo
+rectangles changed size fields throughout that block from 1280x720 to
+852x480; immediately submitting the corrected canonical `0x7800/0x4380`
+rectangles reversed every one back to 1280x720. The two-thirds geometry is
+therefore real downstream composition state, but entirely explained by the
+already-corrected coordinate-space input. It is not the remaining black-screen
+gate. Two non-geometry words changed only on the first accepted frame
+(`0x05000058: 0x80040000 -> 0x00040000` and `0x05000104: 0x1b00ff00 ->
+`0x1100ff00`). A subsequent clean boot made the corrected canonical frame the
+first and only submit and reproduced exactly those two changes while every
+geometry and routing word through `+0x87c` remained byte-identical. A direct
+real-time MMIO watcher captured stages `0 -> 0x6101 -> 0x6103`, eliminating
+the earlier shell-watcher scheduling ambiguity. The two words are therefore
+normal first-frame effects, although their hardware meaning remains unknown;
+PanelWinNode's update method contains no direct access to either offset. Full
+diff, watcher source and apparatus hashes:
+[`reference/frame-composition-block-capture-2026-08-31.txt`](reference/frame-composition-block-capture-2026-08-31.txt).
+
 ### DECISIVE: the firmware DOES program the video source (2026-08-28, late)
 
 The experiment this brief has been building toward was finally run: **the MIPS
@@ -1458,11 +1488,119 @@ unrelated marker image while these values are live and unrestored.
    That remains this document's central unanswered question (section 8, item 1),
    and everything since has narrowed rather than answered it.
 
+### The 852x480 geometry is resolved: HWC uses canonical 1080p coordinates
+
+Follow-up disassembly of the shipped `hwcomposer.ares.so` resolves this without
+a stock memory capture.  The library exports its `VideoInfo` methods, so the
+metadata construction is directly readable:
+
+- `VideoInfo::setOutputWindow()` writes the real output window to
+  `+0x18..+0x24`, then unconditionally writes the crop as
+  `{0, 0x7800, 0, 0x4380}` at `+0x6c..+0x78`.
+- `VideoInfo::setDisplayFrame()`, called with the same full-screen rectangle as
+  both arguments, normalises it into the same 1920x1080, 1/16-pixel coordinate
+  space at `+0x7c..+0x88`.
+- `VideoTunnel::commitFrameBuffer()` calls both methods in that order.  The
+  1920x1080 values are therefore deliberate canonical coordinates, not stale
+  source dimensions or an inert firmware default.
+
+Our client originally matched those values.  Commit `6a0a796` changed all four
+width/height words to `1280<<4` / `720<<4` under an explicit **UNTESTED** caveat.
+Every capture showing 852x480 was taken after that change.  Interpreting a
+1280x720 rectangle in the vendor's 1920x1080 coordinate space gives the exact
+two-thirds signature observed: approximately 853x480, with the firmware/AFBD's
+even-bound rounding accounting for 852x480 in the registers.  The
+high-half 480-to-240 change remains the independently-correct chroma
+subsampling calculation.
+
+`tools/video/decd-client.c` now restores the stock canonical 1920x1080 crop and
+display-frame values while retaining the corrected VideoInfo format selector
+0.  This is **confirmed on hardware**.  In one bounded submit, the control state
+had `0x05600030 = 0x02D00500` and `0x0560004c = 0x01680500`; after the submit
+both values were unchanged.  The submit itself was proven live by source
+dimensions changing to `0x02CF04FF`, stride changing to `0x00000500`, source
+control changing to `0x03000013`, DMA addresses being installed and the DECD
+IRQ count advancing from 0 to 30.
+
+Full readback: [`reference/video-coordinate-space-confirmed-2026-08-30.txt`](reference/video-coordinate-space-confirmed-2026-08-30.txt).
+
+The 1280-wide result matches stock.  Stock's captured second-size high half was
+720 rather than 360, so that remaining plane-height difference should not be
+silently folded into the solved coordinate-space issue.  The 852x480 component
+is closed; it did not explain black output.
+
+### What `+0xB5000000` actually contains
+
+The whole constant is not a standard MIPS alias.  It combines two mappings:
+
+```
+ARM-visible physical address + 0x15000000 = MIPS-bus physical address
+MIPS-bus physical address   + 0xA0000000 = KSEG1 uncached virtual address
+```
+
+For example, ARM `0x05600000` becomes MIPS-bus physical `0x1A600000`, then
+KSEG1 virtual `0xBA600000`.  MIPS KSEG1 (`0xA0000000..0xBFFFFFFF`) being an
+unmapped, uncached alias of the low 512 MiB is architectural; the
+`+0x15000000` peripheral-fabric offset is H713/vendor specific.  The firmware's
+byte, halfword and word accessors all implement `addr + 0xB5000000`, followed
+by `OR 0x20000000`, after validating the ARM-form address.  No independent
+public Allwinner document or source was found that names the `+0x15000000`
+aperture, so correspondence plus the accessor code remains the authority for
+that half.
+
+The serviced-channel gate is still not identified.  One useful negative from
+the same pass: stock `ge2d_dev.ko` parses a DT property named
+`panel_dual_port` into `g_OSDData + 0xb0`, but there is no direct read of that
+member elsewhere in the module.  It is not an ARM-side switch that this driver
+later applies.  Also keep the two latches separate: the DECD video source latch
+at `0x05600014` is consumed once the MIPS configures source 0; the still-open
+question concerns why OSD/AFBD bank `0x05600104` is not consumed while
+`0x05600144` is.
+
+One downstream ambiguity is now closed by hardware.  With a red-band/logo OSD
+control visibly live, DECD was proven flowing at approximately 60 IRQ/s with
+fmt 0, correct 1280x720 geometry and valid Y/C addresses.  OSD bank 1 was then
+disabled and its `0x05600144` commit consumed.  Source-0 enable values 1, 2 and
+3 were each committed through `0x05600014` and held for 10 seconds.  The panel
+was solid black throughout, then immediately returned to the red-band/logo when
+OSD bank 1 was restored.  No IOMMU or DECD fault was logged.  Thus the missing
+video is not OSD occlusion, an unset source enable, or an uncommitted shadow
+write.  Latch consumption proves the update request is serviced; it does not
+prove the source is fetched or selected into the mixer output, which is now the
+narrower gate question.
+
+Full result: [`reference/osd-hidden-source-enable-2026-08-30.txt`](reference/osd-hidden-source-enable-2026-08-30.txt).
+
+### Submitted video content is fetched, but not selected into the output
+
+A red-green-red content-dependence control now narrows the remaining gate.
+Three accepted submissions used identical metadata and DMA addresses while
+changing only a solid NV12 buffer. The panel showed the boot logo continuously,
+but composition-page word `0x05000a60` followed the input in exact A-B-A order:
+
+    red    0x0a3c0a3c
+    green  0x06080608
+    red    0x0a3c0a3c
+
+The green and final-red values were each stable over five one-second samples,
+and every submit reached trace stage `0x6103` with a valid fence. The word's
+semantics and tap position are unknown, so it must not yet be labelled a CRC or
+final-output monitor. Because only the frame-buffer bytes changed, however,
+this is strong evidence that hardware samples the submitted video content.
+
+The broad "configured but never fetched" hypothesis is therefore closed. The
+missing gate is now later blend participation, routing after this
+content-monitor tap, or final output selection.
+
+Full result: [`reference/video-content-fetch-confirmed-2026-08-31.txt`](reference/video-content-fetch-confirmed-2026-08-31.txt).
+
 ### Where the effort stands
 
 The vendor's own metadata structure has never been captured during real
-playback. That is now the best-targeted remaining measurement: its physical
-address is readable from a slot register during playback, and the vendor's
-debug character device turns out to map arbitrary physical pages, so reading it
-is two commands once the board is booted into the stock firmware. The obstacle
-is the vendor boot itself, which is slow and has failed before.
+playback.  The geometry no longer depends on that capture, because the shipped
+HWC builder answers it directly.  A capture remains useful for checking every
+other reconstructed field at once: its physical address is readable from a
+slot register during playback, and the vendor's debug character device maps
+arbitrary physical pages, so reading it is two commands once the board is
+booted into the stock firmware.  The obstacle is the vendor boot itself, which
+is slow and has failed before.

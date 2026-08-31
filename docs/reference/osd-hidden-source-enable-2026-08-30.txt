@@ -1,0 +1,72 @@
+H713 hidden-OSD, latch-committed source-enable test
+==================================================
+
+Host date: 2026-08-30 America/Los_Angeles
+Board clock: 2026-04-13 (RTC intentionally stale)
+Kernel: 6.18.38 DECD-exclusive test FIT
+MIPS status: 0x0306101c = 0x00000001
+Client: /root/decd-client.coord1080
+Client SHA-256: 256143c876bd6fa2f1564946436564c7a32c5c13b79abe26f78bf1fdff363651
+Format: VideoInfo selector 0 -> hardware fmt 0
+Harness: /root/decd-enable-test.latched.sh
+
+Visual control
+--------------
+
+The OSD source at 0x6c100000 was painted with a red band over the top third.
+The operator confirmed the red band above the vendor logo before the test.
+
+Live-frame gate
+---------------
+
+DECD IRQs: 8189 -> 8309 over 2 seconds, approximately 60/s
+Y address: 0x6c500000
+C address: 0x6c5e1000
+Source dimensions: 0x02cf04ff (1280x720 minus one)
+Picture size: 0x02d00500 (1280x720)
+Second size: 0x01680500 (1280x360)
+Source control after submit: 0x03000013
+
+OSD hide
+--------
+
+0x05600140: 0x03001901 -> 0x03001900
+0x05600144 after commit: 0x00000000 (consumed)
+Visual result: red-band/logo disappeared; panel became solid black.
+
+Source-enable sweep with OSD hidden
+-----------------------------------
+
+enable 1: 0x05600010 = 0x03000011; 0x05600014 consumed; solid black 10 s
+enable 2: 0x05600010 = 0x03000012; 0x05600014 consumed; solid black 10 s
+enable 3: 0x05600010 = 0x03000013; 0x05600014 consumed; solid black 10 s
+
+The operator watched the complete repeat and reported no change during any of
+the three phases.
+
+Restore and fault check
+-----------------------
+
+Source control restored to 0x03000010; 0x05600014 consumed.
+OSD control restored to 0x03001901; 0x05600144 consumed.
+Visual result: vendor logo and red band returned.
+Mixer enable remained 0x00001402.
+No IOMMU fault or DECD error appeared in dmesg.
+
+Verdict
+-------
+
+The video is not merely hidden behind OSD bank 1. Source enable values 1, 2 and
+3 are writable and their update latch is serviced, yet none reaches visible
+composition with OSD removed. This also repairs a weakness in the 2026-08-26
+enable sweep, which changed the shadow register without pulsing 0x05600014.
+
+Commit-latch consumption proves the hardware accepts the source update; it does
+not prove that the source is fetched or selected into mixer output. The next
+question is the downstream source-service/mixer-selection gate.
+
+Board logs:
+  /root/osd-hidden-latched-20260413.log
+  sha256 2b55eb159d5b13399549f4fad5a486f8e8ffd73bece83b2e2714e45c6e9ef080
+  /root/osd-hidden-latched-repeat-20260413.log
+  sha256 7b833005d6dcaad8c5a7587ade719cbb0b421df26bd906e6d2edb5485c30f5a9

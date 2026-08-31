@@ -113,6 +113,29 @@ minus one and the stride is `0x500` = 1280. Stock's playback capture has
 `0x0560004c = 0x02D00500`. So our source dimensions are right and some
 downstream size is not.
 
+## RESOLVED later 2026-08-30: the client supplied the wrong coordinate space
+
+The 852x480 values are not an AFBD convention or fallback mode.  Shipped
+`hwcomposer.ares.so` exports enough symbols to disassemble the exact builder:
+`VideoInfo::setOutputWindow()` and `VideoInfo::setDisplayFrame()` deliberately
+store crop/display rectangles in a canonical 1920x1080, 1/16-pixel space even
+for this 1280x720 panel.  `VideoTunnel::commitFrameBuffer()` calls both.
+
+Commit `6a0a796` had changed the client's canonical `0x7800`/`0x4380` words to
+`0x5000`/`0x2d00`.  The resulting 1280/1920 and 720/1080 ratios are the observed
+two-thirds 852x480 after the firmware's integer/even-boundary rounding.  The
+client now restores the stock canonical values.
+
+**Confirmed on hardware later 2026-08-30.**  A bounded fmt-0 submit left
+`0x05600030 = 0x02D00500` and `0x0560004c = 0x01680500`, exactly as predicted.
+This was not a dead submit: source control became `0x03000013`, source
+dimensions became `0x02CF04FF`, stride became `0x00000500`, both DMA addresses
+were installed, and the DECD IRQ count advanced 0 to 30.  That closes the
+852-wide coordinate-space error.  Stock's captured second-size high half was
+720 rather than 360 and remains a separate difference.
+
+Full readback: [video-coordinate-space-confirmed-2026-08-30.txt](video-coordinate-space-confirmed-2026-08-30.txt).
+
 Also settled: the first attempt at this test hard-locked the SoC during the
 submit, which raised the possibility that fmt 0 itself caused it. It did not --
 fmt 0 ran cleanly here. That lock was the known flakiness of this state.
@@ -129,3 +152,47 @@ fmt 0 ran cleanly here. That lock was the known flakiness of this state.
 Entry 7 storing nothing is worth remembering: a client that sends 7 gets
 whatever byte was last on that stack slot, which would look like an
 intermittent, history-dependent format bug.
+
+## Frame-service gate confirmed on hardware, 2026-08-31
+
+The frame programmer described above is no longer only a static inference. An
+authenticated firmware trace hooked three boundaries: PanelWinNode's
+dirty-mask bit-`0x800` call into `0x8b1a4538`, the source-0 commit store at
+MIPS `0xba600014`, and the AFBD dirty store at `0xba60006c`.
+
+One bounded Linux fmt-0 submission advanced the persistent marker from zero to
+`0x6103`, with dirty mask `0xffffffff`, PanelWinNode mode `2`, source control
+`0x03000010`, and immediate commit/dirty readbacks both equal to `1`. After the
+client returned, `0x05600014` read `0`, proving the source commit was consumed;
+DECD remained enabled with valid Y/C addresses and active interrupts.
+
+This closes the distinction between a channel being merely configured and its
+frame update being serviced: the Linux submission reaches the firmware worker,
+passes the node's dirty-bit gate, runs the real programmer, and produces a
+hardware-consumed source commit. The remaining black-output problem is after
+that boundary (fetch, mixer selection, or composition), not a missing firmware
+service event. Full console evidence and interpretation are in
+[frame-service-gate-confirmed-2026-08-31.txt](frame-service-gate-confirmed-2026-08-31.txt).
+
+## Composition-block propagation confirmed, 2026-08-31
+
+A stage-`0x6103` watcher captured the previously omitted ARM `0x05000000`
+composition page at the accepted-frame boundary. The old source-coordinate
+client (`0x5000/0x2d00`) changed size fields throughout that page from
+1280x720 to 852x480. The corrected, hash-verified canonical-coordinate client
+(`0x7800/0x4380`) reversed every geometry field back to 1280x720, alongside
+AFBD `0x05600030 = 0x02d00500` and `0x0560004c = 0x01680500`.
+
+That confirms the coordinate-space explanation downstream of AFBD as well as
+inside it. The full register table, hashes, and two non-geometry first-frame
+changes are in
+[frame-composition-block-capture-2026-08-31.txt](frame-composition-block-capture-2026-08-31.txt).
+
+A later clean control made the corrected canonical frame the first submit of a
+fresh traced boot. A direct SCHED_FIFO MMIO watcher captured stages `0`,
+`0x6101`, and `0x6103`. All composition geometry and routing words through
+`0x0500087c` stayed byte-identical at their correct 1280x720 values. Only
+`0x05000058` (`0x80040000 -> 0x00040000`) and `0x05000104`
+(`0x1b00ff00 -> 0x1100ff00`) changed. They are therefore normal first-frame
+effects, not residue from the earlier wrong-coordinate frame, but their
+hardware semantics remain to be identified.

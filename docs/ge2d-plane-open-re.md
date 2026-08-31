@@ -1340,6 +1340,26 @@ readback 0x03000011 / 0x03000012 / 0x03000013   (all took)
 logo throughout.** Every register outside `0x05600010` was unchanged across all
 four dumps, `ch1_ready` stayed consumed, and `mixer_en` stayed `0x00001402`.
 
+### Re-run 2026-08-30: OSD hidden and every write committed
+
+The earlier sweep changed the source control shadow but did not pulse
+`0x05600014`, and it left the OSD visible.  Both gaps are now closed.  The
+updated harness commits every source change through `0x05600014`, commits the
+OSD hide/restore through `0x05600144`, and verifies each latch returns to zero.
+
+Run with the MIPS alive and the corrected canonical-coordinate client, DECD was
+flowing at approximately 60 IRQ/s with fmt 0, 1280x720 geometry and valid Y/C
+addresses.  The red-band/logo control was visible; hiding OSD bank 1 produced
+solid black.  Source-0 enable 1, 2 and 3 each took, each latch was consumed, and
+the panel stayed black for all three 10-second phases.  Restoring OSD bank 1
+immediately restored the red-band/logo.  No IOMMU or DECD fault was logged.
+
+This rules out OSD occlusion, unset enable bits and an uncommitted shadow write.
+It does not prove a source fetch: commit-latch consumption only proves the
+hardware accepted the update.  The remaining failure is downstream selection
+or source service between the accepted source configuration and mixer output.
+See `reference/osd-hidden-source-enable-2026-08-30.txt`.
+
 Unlike the 2026-08-25 mixer test, this null means something: frames were
 demonstrably flowing at the vsync rate with valid Y/C in the queue registers
 before the enable was touched, and the enable demonstrably took. So:
