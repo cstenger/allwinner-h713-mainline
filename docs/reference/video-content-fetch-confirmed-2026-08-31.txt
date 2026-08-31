@@ -86,3 +86,77 @@ unchanged logo proves that the content-observable video path is still not
 selected into the displayed output. The remaining gate is therefore narrower:
 blend participation, routing after the content-monitor tap, or final output
 selection.
+
+
+Captures archived, and a second content-following word, 2026-08-31 (later)
+--------------------------------------------------------------------------
+
+The four stage-watch logs cited above were pulled off the board and are now in
+the repository beside this file, byte-identical (each was re-hashed after the
+copy and matches the SHA-256 recorded above):
+
+    clean-canonical-first-stage-watch-2026-08-31.txt
+    content-red-stage-watch-2026-08-31.txt
+    content-green-stage-watch-2026-08-31.txt
+    content-red2-stage-watch-2026-08-31.txt
+
+Each holds three 1073-line records -- stage 0, 0x6101, 0x6103 -- of 47 trace
+words plus the whole 4-KiB composition page. They are deliberately unmodified;
+adding a provenance header would invalidate the hashes this document cites.
+(A fifth file on the board, frame-stage-watch.txt, is a byte-identical copy of
+the red2 capture under the tool's default output name, and was not archived.)
+
+READ THE SETTLED VALUE, NOT THE IN-FRAME VALUE
+-----------------------------------------------
+
+Re-analysing these captures reproduces the A-B-A above, but only if the right
+sample is used, and the wrong one is the more obvious choice.
+
+The value in a capture's own stage-0x6103 record is taken *during* the frame.
+The settled value for that submit appears in the *next* capture's stage-0
+record. For 0x05000a60:
+
+    submit          settled from previous    in-frame
+    red                    0x01400140       0x0F3C0F3C
+    green                  0x0A3C0A3C       0x06080608
+    red2                   0x06080608       0x0A3C0A3C
+
+Reading down the "settled" column from the green row gives the reported
+sequence: red 0x0A3C0A3C, green 0x06080608, red2 0x0A3C0A3C. Diffing the three
+stage-0x6103 records against each other instead makes the two red frames look
+different and the whole result look like noise. That is a re-analysis error, not
+a defect in the original measurement, which used the stage-0 snapshot and five
+delayed samples precisely because of this.
+
+The first submit is the exception and both content-following words show it
+identically: red's in-frame value does not equal its settled value, while
+green's does. Consistent with the non-atomic 21-KiB snapshot already noted, and
+with the first submit following an unrelated prior state.
+
+A SECOND WORD FOLLOWS CONTENT
+------------------------------
+
+Comparing settled values across the whole page, not just the word that was
+noticed at the bench, two words show the full A-B-A and no others do:
+
+    register      red         green       red2
+    0x05000a60    0x0A3C0A3C  0x06080608  0x0A3C0A3C
+    0x05000a6c    0x00000114  0x00000124  0x00000114
+
+0x05000a6c was not previously reported. It sits in the same +0x9d8..+0xae0
+cluster this page's first capture flagged as unexplained telemetry, and it
+carries the same caveat: content dependence is proven, semantics are not.
+
+One structural hint, recorded without a claim attached: on the first red frame
+0x05000a6c's in-frame value is 0x00000A3C, which is exactly the 16-bit half that
+0x05000a60 duplicates in its settled value. The two are plausibly stages of one
+computation. That is a hypothesis for the stock capture to test, not a finding.
+
+Two further words, 0x05000a04 and 0x05000a08, change with content but never
+return to their red value, so they are free-running rather than content-driven --
+consistent with the composition-page capture's note that both move between
+samples a second apart.
+
+So the missing gate is unchanged in position but the tap is wider than one
+register: at least two words downstream of DECD's address programming sample the
+submitted video, and neither reaches the panel.
