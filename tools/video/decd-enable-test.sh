@@ -28,11 +28,11 @@
 #
 # WHAT IT WRITES
 #
-# Only 0x05600010, only bits 1:0, read-modify-write, restored on every exit
-# path including Ctrl-C. That register is NOT the one the panel is scanning
-# from (that is 0x05600140), which is what makes this materially safer than the
-# mixer probe. --hide-osd additionally clears 0x05600140 bit 0 and is opt-in:
-# it blanks the panel until restored.
+# Only 0x05600010 bits 1:0 are changed for source 0, read-modify-write, and
+# restored on every exit path including Ctrl-C. Each change is committed through
+# 0x05600014 and its consumption is checked. --hide-osd additionally clears
+# 0x05600140 bit 0, commits through 0x05600144, and restores both afterward; it
+# blanks the OSD plane until restored.
 #
 # Usage:
 #   decd-enable-test.sh FRAME.nv12 [--dwell SEC] [--hide-osd]
@@ -59,11 +59,14 @@ done
 DEVMEM="busybox devmem"
 
 SRC0_CTRL=0x05600010
+SRC0_READY=0x05600014
 CH1_CTRL=0x05600140
+CH1_READY=0x05600144
 
 # addr:label, dumped as a set so every observation is comparable
 REGS="0x05600000:afbd_global \
 0x05600010:src0_ctrl \
+0x05600014:src0_ready \
 0x05600020:src0_wh \
 0x05600024:src0_blk \
 0x05600030:src0_picsize \
@@ -84,6 +87,14 @@ REGS="0x05600000:afbd_global \
 rd() { $DEVMEM "$1"; }
 wr() { $DEVMEM "$1" 32 "$2"; }
 
+latch() {
+	name=$1; ready=$2
+	wr "$ready" 1
+	sleep 0.05
+	v=$(rd "$ready")
+	echo "  $name latch $ready -> $v $([ "$v" = 0x00000000 ] && echo '(consumed)' || echo '(NOT consumed)')"
+}
+
 dump() {
 	echo "--- registers: $1 ---"
 	for e in $REGS; do
@@ -95,6 +106,12 @@ dump() {
 # --- preconditions -----------------------------------------------------------
 
 echo "=== preconditions ==="
+MIPS=$(rd 0x0306101c)
+[ "$MIPS" = 0x00000001 ] || {
+	echo "REFUSING: MIPS status is $MIPS, expected 0x00000001." >&2
+	exit 1
+}
+echo "  MIPS alive: $MIPS"
 # NOT a /dev/dri check: panfrost registers a DRM node too, so card0 exists on
 # the 0068 boot as well. The thing that actually matters is which driver owns
 # 0x05600000 and SPI 110, and the device tree answers that directly.
@@ -137,7 +154,11 @@ restore() {
 	echo "=== restore ==="
 	[ -n "$CLIENT_PID" ] && kill "$CLIENT_PID" 2>/dev/null
 	wr $SRC0_CTRL "$ORIG_SRC0"
-	[ "$HIDE_OSD" = 1 ] && wr $CH1_CTRL "$ORIG_CH1"
+	latch src0 $SRC0_READY
+	if [ "$HIDE_OSD" = 1 ]; then
+		wr $CH1_CTRL "$ORIG_CH1"
+		latch ch1 $CH1_READY
+	fi
 	echo "  src0_ctrl restored to $(rd $SRC0_CTRL) (was $ORIG_SRC0)"
 	echo "  ch1_ctrl  now         $(rd $CH1_CTRL) (was $ORIG_CH1)"
 	dump "after restore"
@@ -154,7 +175,7 @@ echo
 echo "=== submitting frames ==="
 # repeat=1 makes the hardware re-fetch this frame every vsync for the dwell,
 # so the register state below is a steady state, not a one-shot.
-"$CLIENT" show "$FRAME" $(( (DWELL * 5 + 30) * 1000 )) &
+stdbuf -oL -eL "$CLIENT" show "$FRAME" $(( (DWELL * 5 + 30) * 1000 )) &
 CLIENT_PID=$!
 sleep 3
 
@@ -211,6 +232,7 @@ if [ "$HIDE_OSD" = 1 ]; then
 	echo "=== hiding the OSD channel (--hide-osd) ==="
 	NEW_CH1=$(printf '0x%08x' $(( ORIG_CH1 & ~1 )))
 	wr $CH1_CTRL "$NEW_CH1"
+	latch ch1 $CH1_READY
 	echo "  ch1_ctrl $ORIG_CH1 -> $(rd $CH1_CTRL); panel should go black now"
 	sleep 3
 fi
@@ -226,6 +248,7 @@ for V in 1 2 3; do
 	echo
 	echo "--- enable = $V   ($SRC0_CTRL <- $NEW) ---"
 	wr $SRC0_CTRL "$NEW"
+	latch src0 $SRC0_READY
 	RB=$(rd $SRC0_CTRL)
 	echo "  readback $RB $([ "$RB" = "$NEW" ] && echo '(took)' || echo '(DID NOT TAKE)')"
 	sleep "$DWELL"

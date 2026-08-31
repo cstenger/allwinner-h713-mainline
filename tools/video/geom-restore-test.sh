@@ -1,4 +1,10 @@
 #!/bin/sh
+# HISTORICAL DIAGNOSTIC. The 852x480 rewrite was traced to the client's use of
+# source-pixel dimensions in a canonical 1920x1080 VideoInfo coordinate space.
+# The corrected client was confirmed on hardware on 2026-08-30 and leaves the
+# geometry at 1280x720 / 1280x360 for fmt 0. This script remains useful only for
+# reproducing or comparing the older client and its post-submit black state.
+#
 # Does the firmware's geometry rewrite on submit break composition?
 # RUNS ON THE BOARD, DECD-exclusive kernel, MIPS alive.
 #
