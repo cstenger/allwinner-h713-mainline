@@ -130,3 +130,68 @@ If it does not, the capture did not observe the state it claims to, and a null
 everywhere else means nothing.
 
 [mips-firmware-address-map]: ../plane-brief-for-external-review.md
+
+## All three uncharacterised blocks are real, and one is strongly suggestive
+
+Read on the live board the same day, our Linux, idle console, MIPS parked, no
+DECD. One sample in one state, so this is a baseline and a structural
+reconnaissance — it cannot separate telemetry from configuration. Full capture:
+[linux-firmware-blocks-baseline-2026-08-31.txt](linux-firmware-blocks-baseline-2026-08-31.txt).
+
+```
+block         non-zero/1024   geometry markers found
+0x05000000        220         1280, 720, 1360, 760, and both total-1 forms
+0x05040000        152         1280 x10, 720 x12
+0x050c0000        234         1280, 720, 1360, 760
+0x05180000         56         1280 x12, 720 x12
+0x05140000        470         1280 x8, 720 x9, 1360, 760
+```
+
+**Every one carries this panel's geometry**, so all of them are in the display
+path. None is empty, dead, or a decode artefact.
+
+### `0x05180000` is four identical full-screen layers
+
+The most suggestive structure found so far, and it is exact rather than
+approximate: **four byte-identical banks at a `0x100` stride, 14 non-zero words
+each, zero offsets differing between them, and nothing at all past `+0x400`.**
+So the block is precisely four instances and is fully accounted for.
+
+```
+        bank 0      bank 1      bank 2      bank 3
++0x02c  0x00350500  0x00350500  0x00350500  0x00350500
++0x030  0x000102D0  0x000102D0  0x000102D0  0x000102D0
++0x034  0x050002D0  0x050002D0  0x050002D0  0x050002D0
++0x040  0xC0000500  0xC0000500  0xC0000500  0xC0000500
++0x050  0x001B02D0  0x001B02D0  0x001B02D0  0x001B02D0
+```
+
+`0x0500` is 1280 and `0x02D0` is 720 throughout: four slots, each configured
+full-screen.
+
+**What this does and does not mean.** Four identical banks at idle is equally
+consistent with "four layers, all sitting at their configured default" and
+"four layers, all active and full-screen". This capture cannot tell those apart,
+and it would be exactly the kind of shape-based over-reading this investigation
+has had to retract before.
+
+But it makes a sharp, falsifiable prediction for the stock capture: **if these
+are compositor input layers, at least one bank should diverge from the others
+during playback.** A bank that changes when video starts is the video layer. If
+all four stay identical through playback, they are a static default and this
+lead is closed cheaply. Either outcome is worth the capture, which is the
+property a good next experiment needs.
+
+### `0x05040000` is two identical instances
+
+72 non-zero words per instance at a `0x800` stride, zero differing. Same
+caveat and the same prediction.
+
+### The display route was only ever 1.7% captured
+
+`0x05140000` holds **470** non-zero words. The eleven-window sweep's ROUTE
+window covered 8, at `0x05140050`. That block was reported byte-identical
+between stock and our stack on 08-29 and used to conclude routing was already
+correct on our side — a conclusion drawn from under two percent of a populated
+page. It is not overturned, but it is far weaker than it reads, and the widened
+capture now covers the whole page.

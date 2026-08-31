@@ -38,9 +38,13 @@
 #
 #   05000000  45 firmware sites -- the composition page, most-addressed block
 #             in the image, and the one carrying the content-following taps
-#   050c0000  22 sites -- never characterised, never captured on either stack
-#   05040000   7 sites -- likewise
-#   05180000   1 site  -- likewise; weak, but a page costs nothing to read
+#   050c0000  22 sites -- never characterised; 234 non-zero words on our side
+#   05040000   7 sites -- never characterised; two identical banks at 0x800
+#   05180000   1 site  -- never characterised, and the most suggestive: FOUR
+#             byte-identical banks at 0x100 stride, 14 words each, every one
+#             carrying full-screen 1280x720, and nothing past +0x400
+#   05140000  display route -- 470 non-zero words, of which the eleven-window
+#             sweep only ever compared 8
 #   05600000  AFBD, 128 words: POSITIVE CONTROL, not a subject
 #
 # The control is the point of including AFBD. Its Y/C ring is proven to move
@@ -66,7 +70,7 @@ set -e
 READER=$1
 OUTDIR=$2
 shift 2 || true
-WINDOWS=${*:-"05000000:400 050c0000:400 05040000:400 05180000:400 05600000:80"}
+WINDOWS=${*:-"05000000:400 050c0000:400 05040000:400 05180000:400 05140000:400 05600000:80"}
 
 if [ -z "$READER" ] || [ -z "$OUTDIR" ]; then
 	echo "usage: page-sample.sh READER OUTDIR [ADDR:COUNT ...]" >&2
