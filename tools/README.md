@@ -19,7 +19,14 @@ because the two software stacks reach MMIO differently:
   `mmio-read.c` takes an address and word count, so a new window needs no
   rebuild. Both use `mmap`, never `read()`: on arm64 the `/dev/mem` read path is
   gated by `valid_phys_addr_range()` and MMIO is not memory, so `read()` returns
-  `-EFAULT` on a perfectly healthy board.
+  `-EFAULT` on a perfectly healthy board. `mmio-rw.c` adds writing and dumping
+  to the same interface, for poking one register during bring-up.
+  `frame-stage-watch.c` is the crash-resistant special case for MIPS/DECD work:
+  it busy-polls the shared frame-stage marker, synchronously persists the full
+  composition page at each transition, and exits at stage `0x6103`. It is
+  freestanding and syscall-only, and is meant to be run `SCHED_FIFO` on a pinned
+  CPU, because a shell watcher is not reliably scheduled after a risky submit —
+  the first unprotected attempt hard-locked and left a zero-length file.
 - **Stock Android**, through the vendor's `/dev/hidtvreg`, which is world
   accessible so no root is needed. Build these as 32-bit ARM — stock userspace is
   `armv7l`. `hidtvreg-dump.c` captures the fixed AFBD/mixer/TVTOP window used for
@@ -36,6 +43,31 @@ format** so captures from the two stacks diff line-for-line; the first stock
 capture of this project used a different case convention and 90 of 150 lines came
 back as changed on formatting alone. Do not tidy the formatting. Results in
 [../docs/handoff-2026-08-29.md](../docs/handoff-2026-08-29.md).
+
+The same directory holds the CPU_COMM side, for calling routines in the MIPS
+display firmware from Linux:
+
+- `cpu-comm-probe.c` — guarded client for `/dev/cpu_comm`. Resolves routine
+  names from `/proc/cpu_comm/routines` rather than taking hex, refuses an
+  ambiguous prefix instead of picking one, requires `--id` for a raw id, and
+  **blacklists `0x0152f134` (`THal_Vp_EnableScreenCover`) by resolved id** —
+  that call wedges CPU_COMM and needs a physical power cycle, so the refusal
+  belongs in the binary and not in anyone's memory. It also zeros the result
+  area before every call, because the kernel only writes it for a returned count
+  of `<= 10` and any other count leaves a client reading its own stack.
+- `cpu-comm-enable.c` — one-shot test shim (`Kbuild`) that flips the DT `status`
+  on `/soc/cpu-comm@3003000`, so the driver can be loaded on a board whose
+  running DTB still says `disabled`, with no reflash. Re-running it returns
+  `-ENODEV` because the node stays `OF_POPULATED`; to iterate on the driver,
+  `rmmod hy310_cpu_comm` and re-insmod it alone.
+- `cc-addr-check.c` — bench module for the `cc_ref()` physical-reference
+  conversion. It reproduces both driver-private allocations and prints
+  `virt_to_phys()` beside a page-table walk, because a module lives in the
+  vmalloc region on arm64 and `virt_to_phys()` there takes its
+  `__kimg_to_phys()` branch and returns an address that is not the data's.
+
+Protocol, hazards and the read-only calls worth making first are in
+[../docs/cpu-comm-client-plan.md](../docs/cpu-comm-client-plan.md).
 
 `flash-standalone.sh` — flash the kernel FIT to the `boot_a` partition (via
 fastboot) and print the U-Boot `bootcmd` for power-on → Debian. See
