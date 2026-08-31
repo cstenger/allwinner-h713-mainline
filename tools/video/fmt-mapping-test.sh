@@ -31,7 +31,7 @@
 set -u
 
 FMT=${1:-0}
-DWELL=${2:-5000}
+DWELL=${2:-500}
 FRAME=${FRAME:-/root/decd-test-frame.nv12}
 CLIENT=${CLIENT:-/root/decd-client}
 LOG=/root/fmt-test-$(date +%Y%m%d-%H%M%S)-fmt$FMT.log
@@ -63,8 +63,13 @@ say ""
 say "--- submitting one frame with DECD_FMT=$FMT ---"
 # Not piped into tee: the client's exit status is wanted, and a pipeline would
 # report tee's instead.
-DECD_FMT=$FMT timeout $(( DWELL / 1000 + 3 ))s "$CLIENT" show "$FRAME" "$DWELL" \
-    >"$LOG.client" 2>&1
+#
+# stdbuf -oL matters more than it looks. The first run of this test locked the
+# SoC inside the submit, and the client's output -- redirected to a file, so
+# fully buffered -- was still sitting in stdio's buffer and never reached the
+# disk. Line buffering means a lock costs at most the last partial line.
+DECD_FMT=$FMT timeout $(( DWELL / 1000 + 3 ))s \
+    stdbuf -oL -eL "$CLIENT" show "$FRAME" "$DWELL" >"$LOG.client" 2>&1
 RC=$?
 cat "$LOG.client" >>"$LOG"; cat "$LOG.client"; rm -f "$LOG.client"; sync
 say "client rc=$RC"

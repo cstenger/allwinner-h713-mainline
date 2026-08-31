@@ -1,0 +1,103 @@
+=== firmware format-table test, DECD_FMT=11, dwell 500ms ===
+date: Mon Apr 13 19:39:50 UTC 2026  kernel: 6.18.38
+
+--- preconditions ---
+  0x0306101c   0x00000001
+  (0x0306101c must be 1: the MIPS has to be alive for the firmware to
+   program anything. If it is 0 this boot used 'auto', not 'init 0x34',
+   and the run is void.)
+  dec status:     okay
+  /dev/decd:      present
+  /dev/scanout:   present
+  frame:          /root/decd-test-frame.nv12 ok
+
+--- before submit ---
+  0x05600010   0x03000010
+  0x05600020   0x043F077F
+  0x05600030   0x02D00500
+  0x05600040   0x00000780
+  0x0560004c   0x01680500
+  0x05600070   0x00000000
+  0x05600084   0x00000000
+  0x05600098   0x00000000
+  decd irqs:    0
+
+--- submitting one frame with DECD_FMT=11 ---
+VideoInfo format selector overridden to 11
+prepared image dma-buf at 0x6c500000 and VideoInfo dma-buf at 0x6c8f0000
+PM_HINT on ok
+FRAME_SUBMIT format=6 desc=112 repeat@+0x10=1 fence_fd=7
+holding 500 ms; leaving DECD enabled to avoid shared display reset
+client rc=0
+
+--- after submit ---
+  0x05600010   0x03000413
+  0x05600020   0x02CF04FF
+  0x05600030   0x01E00354
+  0x05600040   0x00000500
+  0x0560004c   0x01E00354
+  0x05600070   0x6C500000
+  0x05600084   0x6C5E1000
+  0x05600098   0x4D941000
+  decd irqs:    40
+
+=== VERDICT ===
+0x05600010 = 0x03000413   (enable=3, fmt nibble=4)
+input 11, table predicts fmt 4
+  -> MATCH. The mapping is confirmed end to end, and VideoInfo +0x40
+     is the resolver's input.
+
+log: /root/fmt-test-20260413-193950-fmt11.log
+
+################################
+
+=== firmware format-table test, DECD_FMT=0, dwell 500ms ===
+date: Mon Apr 13 19:40:07 UTC 2026  kernel: 6.18.38
+
+--- preconditions ---
+  0x0306101c   0x00000001
+  (0x0306101c must be 1: the MIPS has to be alive for the firmware to
+   program anything. If it is 0 this boot used 'auto', not 'init 0x34',
+   and the run is void.)
+  dec status:     okay
+  /dev/decd:      present
+  /dev/scanout:   present
+  frame:          /root/decd-test-frame.nv12 ok
+
+--- before submit ---
+  0x05600010   0x03000413
+  0x05600020   0x02CF04FF
+  0x05600030   0x01E00354
+  0x05600040   0x00000500
+  0x0560004c   0x01E00354
+  0x05600070   0x6C500000
+  0x05600084   0x6C5E1000
+  0x05600098   0x4D941000
+  decd irqs:    999
+
+--- submitting one frame with DECD_FMT=0 ---
+VideoInfo format selector overridden to 0
+prepared image dma-buf at 0x6c500000 and VideoInfo dma-buf at 0x6c8f0000
+PM_HINT on ok
+FRAME_SUBMIT format=6 desc=112 repeat@+0x10=1 fence_fd=7
+holding 500 ms; leaving DECD enabled to avoid shared display reset
+client rc=0
+
+--- after submit ---
+  0x05600010   0x03000013
+  0x05600020   0x02CF04FF
+  0x05600030   0x01E00354
+  0x05600040   0x00000500
+  0x0560004c   0x00F00354
+  0x05600070   0x6C500000
+  0x05600084   0x6C5E1000
+  0x05600098   0x4D942000
+  decd irqs:    1042
+
+=== VERDICT ===
+0x05600010 = 0x03000013   (enable=3, fmt nibble=0)
+input 0, table predicts fmt 0
+  -> MATCH. The mapping is confirmed end to end, and VideoInfo +0x40
+     is the resolver's input.
+
+log: /root/fmt-test-20260413-194007-fmt0.log
