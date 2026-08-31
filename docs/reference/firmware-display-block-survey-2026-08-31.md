@@ -283,3 +283,80 @@ interrupts throughout a run that actually served 4716. The registers, not the
 helper, are what established that DECD was live. A convenience readout being
 wrong is cheap; it would not have been cheap if the run had been declared a
 failure on its word.
+
+## What each responding block actually is, 2026-08-31 (later)
+
+Scanout liveness was established first, on this boot, with `mem-fill` painting a
+red→green→blue sequence into `0x6C100000`. The operator saw the green→blue
+transition. A transition is stronger than a static fill: the panel is not merely
+showing a correct image, it is actively re-fetching. **Every null below is
+therefore a real negative**, which is the condition several earlier sessions
+lacked.
+
+Also established: **DECD free-runs at 60/s after the client exits** — 89055 to
+89175 interrupts across two seconds with no client alive. `repeat=1` re-fetches
+every vsync, so the submitting state persists and does not need a process held
+open.
+
+### `0x05000000` is a scaler, holding both coordinate spaces at once
+
+The four registers that take bit 31 when a frame lands decode as luma/chroma
+height pairs for two different resolutions:
+
+```
++0x1b8  0xE0020438   1080      +0x2b8  0xE00202D0   720
++0x178  0xE002021C    540      +0x278  0xE0020168   360
+```
+
+Two instances at `0x100` stride, each a luma/chroma pair at `0x40` stride. That
+is exactly the split our VideoInfo declares — canonical 1920x1080 crop and
+display frame over a real 1280x720 buffer.
+
+Their neighbours `+0x174`/`+0x1b4`/`+0x274`/`+0x2b4` sit at `0x00400040`, and in
+the 852x480 capture those same words read `0x002b002b`. 43/64 = 0.67 = 852/1280
+exactly, so **these are scale ratios in 1/64 units with `0x40` as unity** — which
+also retroactively explains the 852x480 signature as a scaler input rather than
+an unexplained convention.
+
+### `0x05040000` is picture-quality measurement — a tap, not a path
+
+The block that responds most to a submit is measuring the video, not routing it:
+
+- `+0x280..+0x2c0` — twelve bins of arbitrary magnitude
+- `+0x380..+0x3c0` — sixteen more accumulators, all zero before the submit
+- `+0x348`/`+0x34c` — `0x9A9A0010 -> 0xFFFF0010` and `0x009E9A9A -> 0x00FFFFFF`,
+  per-channel maxima saturating
+- `+0x534`/`+0x538` — `0x02D00000 -> 0x02CF0000` and `0x05000000 -> 0x04FF0000`,
+  720→719 and 1280→1279
+
+Histograms, minima/maxima and size-minus-one. That matches the firmware's
+`THal_Vp_*` picture-quality surface, and it makes this block the same category
+as `0x05000a60`: it observes the video. Much of `0x05140000`'s response
+(`+0x600..+0x6d4`, zero→arbitrary) has the same character.
+
+### `0x05200000` is not the gate
+
+The one block with a compositor-sounding name resolves to seven configuration
+words plus two large uniform fills:
+
+```
++0x004  0x40210000
++0x00c  0x05000031   +0x020  0x05000031    1280 wide, x-offset 49
++0x010  0x02D00016   +0x024  0x02D00016     720 high, y-offset 22
++0x100..+0x7fc   448 x 0x00BBA15B
++0x800..+0xffc   512 x 0x00EB2002
+```
+
+Two identical window descriptors, then two tables filled with a **constant
+rather than a ramp** — i.e. allocated but never meaningfully programmed, which
+is consistent with its two firmware sites. Not the output selector.
+
+### Where that leaves it
+
+Video is fetched, scaled, measured and content-sampled. Every block reachable
+from here is either static, a measurement tap, or unprogrammed. The unaccounted
+step remains output selection, and the sharpest statement of it is a stock fact
+this project already established: in the fmt-4 photographs the player's UI was
+tiled *inside* source 0's corruption, so **on stock, source 0 is the scanout
+path**. On ours, OSD channel `0x05600140` is the scanout path and source 0 feeds
+nothing. That difference — which AFBD channel reaches the panel — is the gate.
