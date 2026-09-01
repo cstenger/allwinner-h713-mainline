@@ -478,3 +478,53 @@ This is the first register anywhere outside AFBD's own channel controls shown to
 determine whether an image reaches this panel. It also sits in `0x05140000` —
 whose low region the eleven-window sweep never covered, its ROUTE window
 starting at `+0x050`, above everything described here.
+
+### The high bits are inert — the gate is closed as a selection lead
+
+Re-run cleanly after a first attempt whose observation was ambiguous (a console
+timeout separated the "watch now" from the run, so "didn't notice anything" could
+not be distinguished from "wasn't watching"). That ambiguity was deliberately
+not recorded as a result.
+
+The controlled run, detached with a 20-second lead-in so the operator's timing
+did not depend on a console round-trip:
+
+```
+20:38:22  A: 0x000FFFFF   (+bit 19)      readback confirmed   DECD 209451
+20:38:39  B: 0x00FFFFFF   (+bits 19-23)  readback confirmed   DECD 210486
+20:38:57  C: 0xFFFFFFFF   (all 32)       readback confirmed   DECD 211522
+20:39:14  restored 0x0007FFFF
+```
+
+Panel repainted red continuously throughout, so it was provably live; every
+write took by readback; DECD advanced ~1035 interrupts between phases, ~61/s, so
+video was being submitted in every window. **Operator observation: red the whole
+time, no flashes.**
+
+So the thirteen writable bits above bit 18 are inert. Combined with the bisection
+— every group of set bits blanks the panel when cleared — `0x05140000` is a
+**series output enable and nothing more**. It gates whether the display works; it
+does not choose what the display shows. Closed as a video-selection lead.
+
+## Method note: three shape hypotheses, three falsifications
+
+Worth recording because the pattern is more useful than any one result. This
+session generated three structural hypotheses by reading register shapes, and
+hardware refuted all three within hours:
+
+| hypothesis | from | outcome |
+| --- | --- | --- |
+| `0x05180000`'s four identical banks are compositor input layers | four byte-identical banks at `0x100` stride, all full-screen | 0 of 1024 words moved during a submit |
+| `0x05140008..28` is a source-selector crossbar | repeated `0x0C`/`0xC0` nibbles packed into words | writes took, no latch needed, flicker only |
+| a high bit of the gate register enables the video stream | it is the one causal register with unset bits left | all thirteen inert |
+
+What did advance the problem came from measurement rather than inspection: the
+firmware `lui` survey that eliminated the mixer structurally, the four-sample
+capture with a working positive control, and the gate discovery itself — which
+came from a destructive test against a live panel, not from reading values and
+reasoning about them.
+
+The lesson is not "stop hypothesising" but that on this hardware, **register
+shape is close to worthless as evidence and cheap destructive tests against a
+provably-live panel are close to decisive.** Budget accordingly: prefer an
+experiment that can fail visibly over another pass of reading dumps.
