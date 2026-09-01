@@ -133,5 +133,38 @@ The guarded target-side reproduction is
 It requires `ARMED=yes`, verifies the DECD-exclusive DT ownership and live MIPS,
 snapshots every register it changes, and restores on all shell exit paths.
 
+## Thirty-frame-per-second two-buffer stream
+
+The bounded cadence test was then raised to 30 submissions per second using a
+new `decd-client stream` mode.  It exports two non-overlapping carveout dma-bufs
+at `0x6c500000` and `0x6c700000`, loads the solid red and green NV12 frames once,
+and alternates their image FDs on an absolute monotonic schedule.  The visible
+buffer changes every 15 submissions, or every 0.5 seconds at 30 fps.
+
+Two non-visual preflights completed 90/90 submissions each.  A 100 ms address
+trace then observed `0x05600070` alternating repeatedly between `0x6c500000`
+and `0x6c700000`.  During that cadence, source control and the four inherited
+geometry words remained unchanged; only the queued Y/C addresses moved.  This
+proved the visible route needs to be applied once per stream rather than raced
+against every frame.
+
+The five-second visible run then produced:
+
+```
+STREAM_COMPLETE submitted=150 expected=150
+DECD IRQ 331: 107455 -> 107767
+```
+
+All active-route values read back exactly, the source commit was consumed, and
+the operator saw red and green switch every half-second.  Restoration returned
+the logo and read back the inherited control, geometry, gain, and selector.
+
+This proves 30-fps Linux DECD submission, dma-buf alternation, returned-fence
+creation, firmware queueing, and visible panel updates for a bounded five-second
+run.  It does **not** yet claim decoded-video integration, a long-duration soak,
+or presentation synchronized to the actual decoded PTS.  The built target
+binary SHA-256 was
+`b858daa4480c813fdb33c8c29c23365b494c94a12d24d185e701297ee4153aa1`.
+
 The temporary saved U-Boot `bootdelay=10` used to intercept cold boots also
 still needs to be returned to `-1` during a planned U-Boot stop.

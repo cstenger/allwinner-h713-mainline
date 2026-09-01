@@ -14,6 +14,7 @@
  * driver and blanks the panel until reboot. `show` deliberately leaves DECD on.
  */
 #define _GNU_SOURCE
+#include <errno.h>
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -88,6 +89,7 @@ _Static_assert(offsetof(struct dec_frame_submit_desc, legacy_direct) == 0x68,
 #define VIDEO_COORD_H 1080u
 #define NV12_SIZE ((size_t)W * H * 3 / 2)
 #define IMAGE_PHYS 0x6c500000ULL
+#define IMAGE_PHYS_ALT 0x6c700000ULL
 #define INFO_PHYS  0x6c8f0000ULL
 #define INFO_SIZE  0x8000u
 #define DEC_FORMAT_NV12_CANDIDATE 6u
@@ -282,7 +284,7 @@ static int pm_hint(int fd, int on)
 	return 0;
 }
 
-static int submit_frame(int dec_fd, int image_fd, int info_fd)
+static int submit_frame(int dec_fd, int image_fd, int info_fd, int verbose)
 {
 	struct dec_frame_submit_desc d;
 	struct dec_ioctl_header h;
@@ -307,9 +309,10 @@ static int submit_frame(int dec_fd, int image_fd, int info_fd)
 		perror("DECD_IOC_FRAME_SUBMIT");
 		return -1;
 	}
-	printf("FRAME_SUBMIT format=%u desc=%zu repeat@+0x10=%u fence_fd=%d%s\n",
-	       d.format, sizeof(d), h.repeat, fence_fd,
-	       fence_fd < 0 ? " (not enqueued)" : "");
+	if (verbose)
+		printf("FRAME_SUBMIT format=%u desc=%zu repeat@+0x10=%u fence_fd=%d%s\n",
+		       d.format, sizeof(d), h.repeat, fence_fd,
+		       fence_fd < 0 ? " (not enqueued)" : "");
 	if (fence_fd >= 0)
 		close(fence_fd);
 	return fence_fd >= 0 ? 0 : -1;
@@ -358,7 +361,7 @@ static int show_frame(int dec_fd, const char *path, unsigned dwell_ms)
 		goto out;
 	printf("prepared image dma-buf at %#llx and VideoInfo dma-buf at %#llx\n",
 	       (unsigned long long)IMAGE_PHYS, (unsigned long long)INFO_PHYS);
-	if (pm_hint(dec_fd, 1) || submit_frame(dec_fd, image_fd, info_fd))
+	if (pm_hint(dec_fd, 1) || submit_frame(dec_fd, image_fd, info_fd, 1))
 		goto out;
 	printf("holding %u ms; leaving DECD enabled to avoid shared display reset\n",
 	       dwell_ms);
@@ -369,6 +372,97 @@ out:
 		close(info_fd);
 	if (image_fd >= 0)
 		close(image_fd);
+	if (ctl >= 0)
+		close(ctl);
+	return ret;
+}
+
+static void timespec_add_ns(struct timespec *ts, uint64_t ns)
+{
+	ts->tv_nsec += (long)(ns % 1000000000ULL);
+	ts->tv_sec += (time_t)(ns / 1000000000ULL);
+	if (ts->tv_nsec >= 1000000000L) {
+		ts->tv_nsec -= 1000000000L;
+		ts->tv_sec++;
+	}
+}
+
+/*
+ * Bounded cadence diagnostic.  Two fixed, non-overlapping carveout buffers are
+ * populated once and submitted alternately on an absolute monotonic schedule.
+ * Holding each buffer for roughly half a second makes the colour transition
+ * visible while every vsync-period submission still exercises the ioctl,
+ * dma-buf import, firmware queue, and returned fence path.
+ *
+ * This deliberately does not touch the downstream display route.  The guarded
+ * decd-visible-sequence.sh owns that state and its restoration.
+ */
+static int stream_frames(int dec_fd, const char *path_a, const char *path_b,
+			 unsigned seconds, unsigned fps)
+{
+	const uint64_t frame_ns = fps ? 1000000000ULL / fps : 0;
+	unsigned total, hold, i, submitted = 0;
+	int ctl = -1, image_fd[2] = { -1, -1 }, info_fd = -1, ret = -1;
+	struct timespec next;
+
+	if (!seconds || seconds > 60 || !fps || fps > 60) {
+		fprintf(stderr, "stream bounds: seconds 1..60, fps 1..60\n");
+		return -1;
+	}
+	total = seconds * fps;
+	hold = fps / 2;
+	if (!hold)
+		hold = 1;
+
+	ctl = open("/dev/scanout-dmabuf", O_RDWR);
+	if (ctl < 0) {
+		perror("open /dev/scanout-dmabuf");
+		goto out;
+	}
+	image_fd[0] = export_buffer(ctl, IMAGE_PHYS, page_align(NV12_SIZE));
+	image_fd[1] = export_buffer(ctl, IMAGE_PHYS_ALT, page_align(NV12_SIZE));
+	info_fd = export_buffer(ctl, INFO_PHYS, INFO_SIZE);
+	if (image_fd[0] < 0 || image_fd[1] < 0 || info_fd < 0)
+		goto out;
+	if (copy_file_to_fd(path_a, image_fd[0]) ||
+	    copy_file_to_fd(path_b, image_fd[1]) || fill_video_info(info_fd))
+		goto out;
+
+	printf("prepared alternating image dma-bufs at %#llx and %#llx; "
+	       "VideoInfo at %#llx\n",
+	       (unsigned long long)IMAGE_PHYS,
+	       (unsigned long long)IMAGE_PHYS_ALT,
+	       (unsigned long long)INFO_PHYS);
+	if (pm_hint(dec_fd, 1))
+		goto out;
+	clock_gettime(CLOCK_MONOTONIC, &next);
+	printf("streaming %u submissions at %u fps for %u seconds; "
+	       "visible buffer changes every %u frames\n",
+	       total, fps, seconds, hold);
+
+	for (i = 0; i < total; i++) {
+		unsigned which = (i / hold) & 1;
+
+		if (submit_frame(dec_fd, image_fd[which], info_fd, 0))
+			goto out;
+		submitted++;
+		timespec_add_ns(&next, frame_ns);
+		while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
+				       &next, NULL) == EINTR)
+			;
+	}
+	printf("STREAM_COMPLETE submitted=%u expected=%u\n", submitted, total);
+	ret = 0;
+out:
+	if (ret)
+		fprintf(stderr, "STREAM_INCOMPLETE submitted=%u expected=%u\n",
+			submitted, total);
+	if (info_fd >= 0)
+		close(info_fd);
+	if (image_fd[1] >= 0)
+		close(image_fd[1]);
+	if (image_fd[0] >= 0)
+		close(image_fd[0]);
 	if (ctl >= 0)
 		close(ctl);
 	return ret;
@@ -398,10 +492,11 @@ static void usage(const char *argv0)
 {
 	fprintf(stderr,
 		"usage: %s show FRAME.nv12 [dwell-ms]\n"
+		"       %s stream FRAME-A.nv12 FRAME-B.nv12 [seconds] [fps]\n"
 		"       %s blue [dwell-ms]\n"
 		"       %s pm on|off   # off resets the shared display block\n"
 		"       %s vsync [count]\n"
-		"       %s stop\n", argv0, argv0, argv0, argv0, argv0);
+		"       %s stop\n", argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
 int main(int argc, char **argv)
@@ -420,6 +515,11 @@ int main(int argc, char **argv)
 	if (!strcmp(argv[1], "show") && argc >= 3) {
 		unsigned dwell = argc >= 4 ? strtoul(argv[3], NULL, 0) : 10000;
 		ret = show_frame(fd, argv[2], dwell);
+	} else if (!strcmp(argv[1], "stream") && argc >= 4) {
+		unsigned seconds = argc >= 5 ? strtoul(argv[4], NULL, 0) : 5;
+		unsigned fps = argc >= 6 ? strtoul(argv[5], NULL, 0) : 30;
+
+		ret = stream_frames(fd, argv[2], argv[3], seconds, fps);
 	} else if (!strcmp(argv[1], "blue")) {
 		unsigned dwell = argc >= 3 ? strtoul(argv[2], NULL, 0) : 10000;
 		ret = show_blue(fd, dwell);

@@ -21,6 +21,12 @@
 #     /root/decd-red.nv12 /root/decd-green.nv12 \
 #     /root/decd-red.nv12 /root/decd-green.nv12
 #
+# Production-cadence diagnostic, using decd-client's two-buffer stream mode:
+#
+#   ARMED=yes CLIENT=/root/decd-client.stream \
+#     decd-visible-sequence.sh --stream \
+#     /root/decd-red.nv12 /root/decd-green.nv12 5 30
+#
 # DWELL_MS controls how long each submitted frame remains before the next one;
 # default 800.  Do not invoke DECD PM-off or unload sunxi_decd afterwards: both
 # can reset or clock-gate display hardware shared with the adopted logo path.
@@ -39,7 +45,24 @@ fail()
 }
 
 [ "${ARMED:-}" = yes ] || fail "set ARMED=yes after the observer is watching"
-[ "$#" -gt 0 ] || fail "usage: decd-visible-sequence.sh FRAME.nv12 [...]"
+[ "$#" -gt 0 ] || fail "usage: decd-visible-sequence.sh FRAME.nv12 [...] | --stream A B SEC FPS"
+
+MODE=sequence
+STREAM_A=""
+STREAM_B=""
+STREAM_SECONDS=""
+STREAM_FPS=""
+if [ "$1" = --stream ]; then
+	[ "$#" -eq 5 ] || fail "--stream requires: FRAME-A FRAME-B SECONDS FPS"
+	MODE=stream
+	STREAM_A=$2
+	STREAM_B=$3
+	STREAM_SECONDS=$4
+	STREAM_FPS=$5
+	shift 5
+	set -- "$STREAM_A" "$STREAM_B"
+fi
+
 [ -x "$CLIENT" ] || fail "client is not executable: $CLIENT"
 [ -c /dev/decd ] || fail "/dev/decd is absent"
 [ -c /dev/scanout-dmabuf ] || fail "/dev/scanout-dmabuf is absent"
@@ -138,20 +161,33 @@ apply_visible_route()
 }
 
 IRQ_BEFORE=$(irq_count)
-echo "WATCH THE PANEL: $# frame(s), ${DWELL_MS} ms each, then logo restore"
-
-for frame in "$@"; do
-	echo "submitting $frame"
-	env DECD_FMT=0 timeout "${TIMEOUT_S}s" "$CLIENT" show "$frame" "$DWELL_MS" &
+if [ "$MODE" = stream ]; then
+	echo "WATCH THE PANEL: ${STREAM_SECONDS}s at ${STREAM_FPS} fps, then logo restore"
+	"$CLIENT" stream "$STREAM_A" "$STREAM_B" \
+		"$STREAM_SECONDS" "$STREAM_FPS" &
 	CLIENT_PID=$!
-	# FRAME_SUBMIT returns before the firmware worker has settled.  The measured
-	# 150 ms delay keeps our route write after the submit without wasting most of
-	# the observation dwell.
-	sleep 0.15
+	# The 30-fps preflight proved the firmware changes only the queued Y/C
+	# addresses during streaming.  Geometry and source enable stay unchanged, so
+	# one route application after the first submit is sufficient.
+	sleep 0.2
 	apply_visible_route
 	wait "$CLIENT_PID"
 	CLIENT_PID=""
-done
+else
+	echo "WATCH THE PANEL: $# frame(s), ${DWELL_MS} ms each, then logo restore"
+	for frame in "$@"; do
+		echo "submitting $frame"
+		env DECD_FMT=0 timeout "${TIMEOUT_S}s" "$CLIENT" show "$frame" "$DWELL_MS" &
+		CLIENT_PID=$!
+		# FRAME_SUBMIT returns before the firmware worker has settled.  The
+		# measured 150 ms delay keeps our route write after the submit without
+		# wasting most of the observation dwell.
+		sleep 0.15
+		apply_visible_route
+		wait "$CLIENT_PID"
+		CLIENT_PID=""
+	done
+fi
 
 IRQ_AFTER=$(irq_count)
 echo "DECD IRQ: $IRQ_BEFORE -> $IRQ_AFTER"
