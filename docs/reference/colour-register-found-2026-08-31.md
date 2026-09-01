@@ -113,3 +113,17 @@ panel, would arrive with zero chroma.
 So the two observations are consistent, and the register is a real defect for
 the video path specifically. It is also a reminder that "our display shows
 colour" was never evidence about the video path.
+
+## Linux transfer result: necessary-looking, not sufficient
+
+On a clean Linux DECD boot, `0x144C0000` was written and read back before a
+bounded fmt-0 1280x720 submit. The boot logo was visibly present before the
+run. The client returned successfully, DECD advanced 302 interrupts during the
+five-second hold, and `0x05140508` still read `0x144C0000` afterwards.
+
+The operator saw no submitted image, flash, corruption, or blackout; the boot
+logo remained. Because that logo is black-and-white XRGB8888, its appearance
+cannot test chroma gain and is not used as that observable. The result says only
+that the calibrated gain is a real defect but **not sufficient to act as the
+missing output gate**. Full controlled record:
+[colour-gain-linux-decd-negative-2026-08-31.md](colour-gain-linux-decd-negative-2026-08-31.md).
