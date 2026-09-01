@@ -166,5 +166,7 @@ or presentation synchronized to the actual decoded PTS.  The built target
 binary SHA-256 was
 `b858daa4480c813fdb33c8c29c23365b494c94a12d24d185e701297ee4153aa1`.
 
-The temporary saved U-Boot `bootdelay=10` used to intercept cold boots also
-still needs to be returned to `-1` during a planned U-Boot stop.
+Cleanup completed after the tests.  At a cold U-Boot stop, `bootdelay` read 10;
+it was changed to `-1`, `saveenv` reported `Writing to MMC(1)... OK`, and a
+second `printenv` read `bootdelay=-1`.  `boot` then verified both FIT hashes and
+started the normal Linux kernel.
