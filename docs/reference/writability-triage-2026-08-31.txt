@@ -1,0 +1,130 @@
+# Writability triage of the cross-stack diff, 2026-08-31
+#
+# Probed on stock: write 0xDEADBEEF, read back, restore. A register that
+# will not take a write cannot be a cause of anything -- its differing
+# value is status output, a symptom of the two stacks being in different
+# states. Only writable registers are candidate causes.
+#
+# Of the 150 differing registers: 29 writable, 121 read-only.
+# The 39 in 0x050c0000 were separately confirmed read-only (4/4 sampled)
+# and are not re-listed here.
+#
+# Already resolved among the writable set:
+#   05000108..05000134  the 3x16 tone ramps -- our value forced onto
+#                       stock during verified playback changed nothing
+#   05140508            THE COLOUR GAIN, bits 23:16, stock 0x4C ours 0x00
+#   05600178            OSD source address, expected to differ
+#
+# Untested writable candidates are therefore everything else below.
+#
+05000108 WRITABLE
+0500010c WRITABLE
+05000110 WRITABLE
+05000114 WRITABLE
+05000118 WRITABLE
+0500011c WRITABLE
+05000120 WRITABLE
+05000124 WRITABLE
+05000128 WRITABLE
+0500012c WRITABLE
+05000130 WRITABLE
+05000134 WRITABLE
+05000604 WRITABLE
+05000610 WRITABLE
+05000650 readonly
+05000654 readonly
+05000658 readonly
+0500065c readonly
+05000900 WRITABLE
+05000914 WRITABLE
+05000920 WRITABLE
+05000924 WRITABLE
+05000930 WRITABLE
+05000934 WRITABLE
+0500093c WRITABLE
+05000964 readonly
+05000974 WRITABLE
+05000a18 readonly
+05000a1c readonly
+05000a20 readonly
+05000a2c readonly
+05000a34 readonly
+05000a60 readonly
+05000a6c readonly
+05000abc readonly
+05000c38 readonly
+05140508 WRITABLE
+05140540 WRITABLE
+05140544 WRITABLE
+05140548 WRITABLE
+051405b0 WRITABLE
+05140600 readonly
+05140614 readonly
+05140700 readonly
+05140704 readonly
+05140718 readonly
+0514071c readonly
+05140720 readonly
+05140724 readonly
+05140728 readonly
+05140730 readonly
+05140734 readonly
+05140738 readonly
+0514073c readonly
+05140740 readonly
+05140744 readonly
+05140748 readonly
+0514074c readonly
+05140754 readonly
+05140758 readonly
+0514075c readonly
+05140760 readonly
+05140764 readonly
+05140768 readonly
+0514076c readonly
+05140770 readonly
+05140774 readonly
+05140778 readonly
+0514077c readonly
+05140780 readonly
+05140784 readonly
+05140788 readonly
+0514078c readonly
+05140790 readonly
+05140794 readonly
+05140798 readonly
+0514079c readonly
+051407a0 readonly
+051407a4 readonly
+051407a8 readonly
+051407ac readonly
+051407b0 readonly
+051407b4 readonly
+051407b8 readonly
+051407bc readonly
+051407c0 readonly
+051407c4 readonly
+051407c8 readonly
+051407cc readonly
+051407d0 readonly
+051407d4 readonly
+05140c4c WRITABLE
+05140e0c readonly
+05140e34 readonly
+05140e38 readonly
+05140e58 readonly
+05140e5c readonly
+05140e60 readonly
+05140e64 readonly
+05140e68 readonly
+05140e6c readonly
+05600060 readonly
+05600100 readonly
+05600108 readonly
+0560010c readonly
+0560012c readonly
+05600140 readonly
+05600168 readonly
+0560016c readonly
+05600178 WRITABLE
+05600184 readonly
