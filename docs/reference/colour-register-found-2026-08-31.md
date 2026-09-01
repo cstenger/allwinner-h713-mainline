@@ -78,3 +78,38 @@ video path as solved.
    determines whether we hardcode `0x4C` or a bit.
 3. Apply the writability triage to the remaining differences before spending
    further observations on them.
+
+## Characterised: it is a linear chroma gain, not an enable
+
+Four values forced onto stock, 10 s each with the calibrated value restored
+between them:
+
+| bits 23:16 | appearance |
+| --- | --- |
+| `0x00` (our value) | greyscale |
+| `0x01` | greyscale |
+| `0x26` (half of stock) | dimmed / washed out |
+| **`0x4C` (stock)** | **normal** |
+| `0xFF` | oversaturated |
+
+Monotonic across the whole range, so the field is a **saturation/chroma gain
+coefficient** and `0x4C` is its calibrated value. Copy `0x4C` exactly; setting
+any non-zero bit is not equivalent.
+
+### Why this does not contradict the red/green/blue liveness test
+
+Our stack shows colour: the `mem-fill` probe painted the panel red, then green,
+then blue, all clearly distinguishable, on the same boot this register read
+`0x14000000` with the gain field at zero. That looks like a contradiction and is
+not one.
+
+The OSD path scans out **XRGB8888** from `0x6C100000` and has no chroma to
+scale. The gain acts on the **YUV** path, which is why forcing it to zero on
+stock — where the compositor feeds everything through that path — greys the menu
+as well as the video. On our side the RGB OSD bypasses it entirely, so our logo
+and our fill colours are unaffected while our video, if it ever reached the
+panel, would arrive with zero chroma.
+
+So the two observations are consistent, and the register is a real defect for
+the video path specifically. It is also a reminder that "our display shows
+colour" was never evidence about the video path.
