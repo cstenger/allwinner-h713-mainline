@@ -1,0 +1,606 @@
+== STOCK: 5248 registers
+   static          5028
+   state-driven       8
+   free-running     212
+
+   state-driven registers (8):
+     05000a60  0x0E140E14 -> 0x02040204
+     05000a6c  0x00000D14 -> 0x00000BE8
+     050403c0  0x000033A7 -> 0x000035A0
+     05040bc0  0x000033A7 -> 0x000035A0
+     050c0940  0x974CE190 -> 0xB985E254
+     05140588  0xA25FD5A4 -> 0x785291E3
+     051405b0  0xFFFE1F0B -> 0xFFFE2F17
+     05140e0c  0x00000174 -> 0x00000398
+
+   free-running (212): 05000630 05000634 05000638 0500063c 05000640 05000644 05000648 05000940 05000944 05000948 0500094c 05000950 05000954 05000958 050009d8 05000a04 05000a08 05000a48 05000a58 05040014 05040140 05040150 05040154 05040158 0504015c 05040180 050401a0 050401a4 050401a8 050401ac 050401b0 050401b4 050401b8 050401bc 050401c0 050401d0 050401d4 050401d8 050401dc 05040280 05040284 0504028c 05040290 05040298 0504029c 050402a4 050402a8 050402b0 050402b4 050402bc 050402c0 05040354 05040380 05040384 05040388 0504038c 05040390 05040394 05040398 0504039c 050403a0 050403a4 050403a8 050403ac 050403b0 050403b4 050403b8 05040560 05040564 05040814 05040940 05040950 05040954 05040958 0504095c 05040980 050409a0 050409a4 050409a8 050409ac 050409b0 050409b4 050409b8 050409bc 050409c0 050409d0 050409d4 050409d8 050409dc 05040a80 05040a84 05040a8c 05040a90 05040a98 05040a9c 05040aa4 05040aa8 05040ab0 05040ab4 05040abc 05040ac0 05040b54 05040b80 05040b84 05040b88 05040b8c 05040b90 05040b94 05040b98 05040b9c 05040ba0 05040ba4 05040ba8 05040bac 05040bb0 05040bb4 05040bb8 05040d60 05040d64 050c0880 050c0888 050c0898 050c08a0 050c08a4 050c08a8 050c08b0 050c0944 050c0960 050c0964 050c0968 050c096c 050c0c94 05140034 05140168 0514057c 05140580 05140584 0514058c 051405a0 051405a4 051405a8 051405ac 051405b8 05140608 05140610 05140618 0514061c 05140620 05140624 05140628 0514062c 05140630 05140638 0514063c 05140640 05140644 05140648 0514064c 05140650 05140654 05140658 0514065c 05140660 05140664 05140668 0514066c 0514067c 05140680 05140684 05140688 0514068c 05140690 05140694 051406a0 051406a4 051406a8 051406ac 051406b0 051406b4 051406b8 051406bc 051406c0 051406c4 051406c8 051406cc 051406d0 051406d4 05140e08 05140e2c 05140e30 05140e3c 05140e40 05140e54 05140e78 05140e7c 05600058 0560005c 0560006c 05600070 05600074 05600078 0560007c 05600084 05600088 0560008c 05600090 05600098 0560009c 056000a0 056000a4 056000b8 056000bc
+
+== OURS: 5248 registers
+   static          4974
+   state-driven     242
+   free-running      32
+
+   state-driven registers (242):
+     05000058  0x80040000 -> 0x00040000
+     05000104  0x1B00FF00 -> 0x1100FF00
+     05000178  0x6002021C -> 0xE002021C
+     050001b8  0x60020438 -> 0xE0020438
+     05000278  0x60020168 -> 0xE0020168
+     050002b8  0x600202D0 -> 0xE00202D0
+     05000630  0x00000000 -> 0x00F96900
+     05000634  0x00000000 -> 0x1700840D
+     05000638  0x00000000 -> 0xFB1200D6
+     0500063c  0x00000000 -> 0x00971F00
+     05000640  0x00000000 -> 0x18009810
+     05000644  0x00000000 -> 0x580E0076
+     05000648  0x00000000 -> 0x5D024000
+     05000940  0x00000000 -> 0x00260500
+     05000944  0x00000000 -> 0x04007C02
+     05000948  0x00000000 -> 0xE80000E6
+     0500094c  0x00000000 -> 0x002C0200
+     05000950  0x00000000 -> 0x01005002
+     05000954  0x00000000 -> 0xA8010086
+     05000958  0x00000000 -> 0x0D000000
+     050009d8  0x00000000 -> 0x00005476
+     05000a40  0x00000000 -> 0x00000001
+     05000a44  0x00000000 -> 0x00000001
+     05000a48  0x010EC00C -> 0x0239A025
+     05000a58  0x021CC00C -> 0x03875021
+     05000a60  0x01400140 -> 0x06040604
+     05000a6c  0x00000000 -> 0x000007A8
+     05000a70  0x00000001 -> 0x00000010
+     05000a84  0x00000001 -> 0x00000010
+     05000a98  0x00000240 -> 0x00000009
+     05000ac0  0x00000000 -> 0x000E1000
+     05000ac4  0x00000000 -> 0x000E1000
+     05000ac8  0x00000000 -> 0x000E1000
+     05000acc  0x00000000 -> 0x000E1000
+     05000ad0  0x00000000 -> 0x00070800
+     05000ad4  0x00000000 -> 0x00038400
+     05000ad8  0x00000000 -> 0x00070800
+     05000adc  0x00000000 -> 0x00038400
+     05000ae0  0x00000005 -> 0x0000000F
+     05040014  0x00666000 -> 0x006E6000
+     05040150  0x00000000 -> 0x000049FB
+     05040154  0x00000000 -> 0x0000830B
+     05040158  0x00000000 -> 0x0000242D
+     0504015c  0x000E0A60 -> 0x000D192D
+     05040180  0x00000000 -> 0x01F801F8
+     050401a0  0x000E1000 -> 0x0000836F
+     050401a4  0x00000000 -> 0x0001CC3A
+     050401a8  0x00000000 -> 0x0002AB6E
+     050401ac  0x00000000 -> 0x0001E08B
+     050401b0  0x00000000 -> 0x0002EEC6
+     050401b4  0x00000000 -> 0x0001F90D
+     050401b8  0x00000000 -> 0x0002294A
+     050401bc  0x00000000 -> 0x00002341
+     050401d0  0x00000000 -> 0x000049FB
+     050401d4  0x00000000 -> 0x0000830B
+     050401d8  0x00000000 -> 0x0000242D
+     050401dc  0x000E0A60 -> 0x000D192D
+     05040280  0xC0000000 -> 0x00011717
+     05040284  0x00000000 -> 0x0000DA3E
+     0504028c  0x00000000 -> 0x0000C429
+     05040290  0x00000000 -> 0x0000B10D
+     05040298  0x00000000 -> 0x00002139
+     0504029c  0x00000000 -> 0x000036EE
+     050402a4  0x00000000 -> 0x00010C79
+     050402a8  0x00000000 -> 0x0000BF64
+     050402b0  0x00000000 -> 0x0000D009
+     050402b4  0x00000000 -> 0x00009067
+     050402bc  0x00000000 -> 0x00001F69
+     050402c0  0x00000000 -> 0x00002BD2
+     05040300  0x3B3E0008 -> 0x3ABE0008
+     05040304  0x3E383537 -> 0x3F363436
+     05040308  0x01161208 -> 0x0416130B
+     0504030c  0x36010402 -> 0x30360005
+     05040310  0x180D3930 -> 0x18110133
+     05040314  0x003F0000 -> 0x070A0400
+     05040318  0x002B0008 -> 0x0A342A38
+     0504031c  0x0000001C -> 0x3B373E16
+     05040320  0x340C3C01 -> 0x2D390E0B
+     05040324  0xE6111E34 -> 0xE6141805
+     05040348  0x9A9A0010 -> 0xFFFF0010
+     0504034c  0x009E9A9A -> 0x00FFFFFF
+     05040354  0x0400030D -> 0x045D0312
+     05040380  0x00000000 -> 0x010DC826
+     05040384  0x00000000 -> 0x00C14482
+     05040388  0x00000000 -> 0x00AA7953
+     0504038c  0x00000000 -> 0x008E56AB
+     05040390  0x00000000 -> 0x069A1DEC
+     05040394  0x00000000 -> 0x00027E33
+     05040398  0x00000000 -> 0x007278EE
+     0504039c  0x00000000 -> 0x00269887
+     050403a0  0x00000000 -> 0x00100000
+     050403a4  0x00000000 -> 0x001C0026
+     050403a8  0x00000000 -> 0x002A002E
+     050403ac  0x00000000 -> 0x00680067
+     050403b0  0x00000000 -> 0x01040081
+     050403b4  0x00000000 -> 0x0345008D
+     050403b8  0x00000000 -> 0x0232021B
+     050403c0  0x00000000 -> 0x000035A0
+     05040534  0x02D00000 -> 0x02CF0000
+     05040538  0x05000000 -> 0x04FF0000
+     05040814  0x00666000 -> 0x006E6000
+     05040950  0x00000000 -> 0x000049FB
+     05040954  0x00000000 -> 0x0000830B
+     05040958  0x00000000 -> 0x0000242D
+     0504095c  0x000E0A60 -> 0x000D192D
+     05040980  0x00000000 -> 0x01F801F8
+     050409a0  0x000E1000 -> 0x0000836F
+     050409a4  0x00000000 -> 0x0001CC3A
+     050409a8  0x00000000 -> 0x0002AB6E
+     050409ac  0x00000000 -> 0x0001E08B
+     050409b0  0x00000000 -> 0x0002EEC6
+     050409b4  0x00000000 -> 0x0001F90D
+     050409b8  0x00000000 -> 0x0002294A
+     050409bc  0x00000000 -> 0x00002341
+     050409d0  0x00000000 -> 0x000049FB
+     050409d4  0x00000000 -> 0x0000830B
+     050409d8  0x00000000 -> 0x0000242D
+     050409dc  0x000E0A60 -> 0x000D192D
+     05040a84  0x00000000 -> 0x0000DA3E
+     05040a8c  0x00000000 -> 0x0000C429
+     05040a90  0x00000000 -> 0x0000B10D
+     05040a98  0x00000000 -> 0x00002139
+     05040a9c  0x00000000 -> 0x000036EE
+     05040aa4  0x00000000 -> 0x00010C79
+     05040aa8  0x00000000 -> 0x0000BF64
+     05040ab0  0x00000000 -> 0x0000D009
+     05040ab4  0x00000000 -> 0x00009067
+     05040abc  0x00000000 -> 0x00001F69
+     05040ac0  0x00000000 -> 0x00002BD2
+     05040b00  0x3B3E0008 -> 0x3ABE0008
+     05040b04  0x3E383537 -> 0x3F363436
+     05040b08  0x01161208 -> 0x0416130B
+     05040b0c  0x36010402 -> 0x30360005
+     05040b10  0x180D3930 -> 0x18110133
+     05040b14  0x003F0000 -> 0x070A0400
+     05040b18  0x002B0008 -> 0x0A342A38
+     05040b1c  0x0000001C -> 0x3B373E16
+     05040b20  0x340C3C01 -> 0x2D390E0B
+     05040b24  0xE6111E34 -> 0xE6141805
+     05040b48  0x9A9A0010 -> 0xFFFF0010
+     05040b4c  0x009E9A9A -> 0x00FFFFFF
+     05040b54  0x0400030D -> 0x045D0312
+     05040b80  0x00000000 -> 0x010DC826
+     05040b84  0x00000000 -> 0x00C14482
+     05040b88  0x00000000 -> 0x00AA7953
+     05040b8c  0x00000000 -> 0x008E56AB
+     05040b90  0x00000000 -> 0x069A1DEC
+     05040b94  0x00000000 -> 0x00027E33
+     05040b98  0x00000000 -> 0x007278EE
+     05040b9c  0x00000000 -> 0x00269887
+     05040ba0  0x00000000 -> 0x00100000
+     05040ba4  0x00000000 -> 0x001C0026
+     05040ba8  0x00000000 -> 0x002A002E
+     05040bac  0x00000000 -> 0x00680067
+     05040bb0  0x00000000 -> 0x01040081
+     05040bb4  0x00000000 -> 0x0345008D
+     05040bb8  0x00000000 -> 0x0232021B
+     05040bc0  0x00000000 -> 0x000035A0
+     05040d34  0x02D00000 -> 0x02CF0000
+     05040d38  0x05000000 -> 0x04FF0000
+     050c028c  0x000246C8 -> 0x005246C8
+     050c083c  0x00000F04 -> 0x00000F00
+     050c0940  0x80414000 -> 0xBC05A244
+     05140120  0x080C0800 -> 0x00000000
+     05140210  0xFB7C157F -> 0x00001000
+     05140214  0xFEF5FF05 -> 0x00000000
+     05140218  0xFFD51136 -> 0x00001000
+     0514021c  0xFFB0000B -> 0x00000000
+     05140220  0x00001045 -> 0x00001000
+     05140504  0x00060008 -> 0x00080008
+     05140508  0x04000000 -> 0x14000000
+     051405ac  0xA0E0360D -> 0xACE3773D
+     051405b0  0xFFFE0F03 -> 0xFFFE2F1B
+     051405b8  0x02000003 -> 0x02110003
+     05140600  0x0911039F -> 0x0911058F
+     05140604  0x0910039F -> 0x0910058F
+     05140608  0x00E600D8 -> 0x01F801D9
+     05140610  0x000000D8 -> 0x000001D9
+     05140618  0x00000000 -> 0x0021001A
+     0514061c  0x00000000 -> 0x04020021
+     05140620  0x00000000 -> 0x000F0492
+     05140624  0x00000000 -> 0x000D0008
+     05140628  0x1C200000 -> 0x00080007
+     0514062c  0x00000000 -> 0x04700019
+     05140630  0x00000000 -> 0x00030000
+     05140638  0x00000000 -> 0x00010F92
+     0514063c  0x00000000 -> 0x0000DE43
+     05140640  0x00000000 -> 0x0010319B
+     05140644  0x00000000 -> 0x00014765
+     05140648  0x00000000 -> 0x000073F1
+     0514064c  0x00000000 -> 0x0009AAF0
+     05140650  0x00000000 -> 0x00008865
+     05140654  0x00000000 -> 0x00004166
+     05140658  0x00546000 -> 0x0000429D
+     0514065c  0x00000000 -> 0x00003674
+     05140660  0x00000000 -> 0x00077668
+     05140664  0x00000000 -> 0x0000C6A2
+     05140668  0x00000000 -> 0x00003683
+     0514066c  0x00000000 -> 0x00000073
+     05140680  0x00000000 -> 0x0000048F
+     05140684  0x00000000 -> 0x00040005
+     05140688  0x00000000 -> 0x00040005
+     0514068c  0x00000000 -> 0x04710035
+     05140690  0x00000000 -> 0x001304BC
+     05140694  0x00000000 -> 0x002A0026
+     051406a8  0x00000000 -> 0x00000045
+     051406ac  0x00000000 -> 0x00144532
+     051406b0  0x00000000 -> 0x000027BE
+     051406b4  0x00000000 -> 0x0000215F
+     051406b8  0x00000000 -> 0x000020B3
+     051406bc  0x00000000 -> 0x0000270A
+     051406c0  0x00000000 -> 0x00181908
+     051406c4  0x00000000 -> 0x0001D738
+     051406c8  0x00000000 -> 0x00007B70
+     051406cc  0x00000000 -> 0x000CAE75
+     051406d0  0x00000000 -> 0x0001674B
+     051406d4  0x00000000 -> 0x00012697
+     05140e08  0x00500000 -> 0x016801EC
+     05140e0c  0x00000004 -> 0x000003C0
+     05140e3c  0x00000142 -> 0x03BC035A
+     05140e44  0x00000000 -> 0x05000500
+     05140e4c  0xFFFF0000 -> 0x000102CF
+     05140e50  0x00000000 -> 0x02CF0000
+     05600010  0x03000010 -> 0x03000013
+     05600020  0x043F077F -> 0x02CF04FF
+     05600024  0x00420077 -> 0x002C004F
+     05600040  0x00000780 -> 0x00000500
+     05600044  0x00000780 -> 0x00000500
+     05600070  0x00000000 -> 0x6C500000
+     05600074  0x00000000 -> 0x6C500000
+     05600078  0x00000000 -> 0x6C500000
+     0560007c  0x00000000 -> 0x6C500000
+     05600084  0x00000000 -> 0x6C5E1000
+     05600088  0x00000000 -> 0x6C5E1000
+     0560008c  0x00000000 -> 0x6C5E1000
+     05600090  0x00000000 -> 0x6C5E1000
+     05600098  0x00000000 -> 0x4D941000
+     0560009c  0x00000000 -> 0x4D941000
+     056000a0  0x00000000 -> 0x4D941000
+     056000a4  0x00000000 -> 0x4D941000
+     056000c0  0x00000001 -> 0x00000000
+     056000c4  0x00000000 -> 0x00000001
+
+   free-running (32): 05000a04 05000a08 05040560 05040564 05040a80 05040d60 05040d64 050c0880 050c0898 050c08a8 050c08b0 050c0944 050c0960 050c0964 050c0968 050c096c 05140168 0514057c 05140580 05140584 05140588 0514058c 051405a0 051405a4 051405a8 05140e2c 05140e30 05140e54 05600058 0560005c 056000b8 056000bc
+
+== cross-stack diff, state 2 (STOCK vs OURS)
+   5248 common, 213 excluded as free-running on at least one stack, 150 differing
+
+   address    STOCK OURS
+   05000108   0x594C3F3F (static      ) 0xFFFFFFFF (static)
+   0500010c   0x8C7F7266 (static      ) 0xFFFFFFFF (static)
+   05000110   0xBFB2A599 (static      ) 0xFFFFFFFF (static)
+   05000114   0xF2E5D8CC (static      ) 0xFFFFFFFF (static)
+   05000118   0x847A7066 (static      ) 0xFFFFFFFF (static)
+   0500011c   0xADA3998E (static      ) 0xFFFFFFFF (static)
+   05000120   0xD6CCC1B7 (static      ) 0xFFFFFFFF (static)
+   05000124   0xFFF4EAE0 (static      ) 0xFFFFFFFF (static)
+   05000128   0x7A70665B (static      ) 0xFFFFFFFF (static)
+   0500012c   0xA3998E84 (static      ) 0xFFFFFFFF (static)
+   05000130   0xCCC1B7AD (static      ) 0xFFFFFFFF (static)
+   05000134   0xF4EAE0D6 (static      ) 0xFFFFFFFF (static)
+   05000604   0x007B0A08 (static      ) 0x007B0A18 (static)
+   05000610   0x0304200D (static      ) 0x0304100C (static)
+   05000650   0x00000000 (static      ) 0x00800000 (static)
+   05000654   0x01400000 (static      ) 0x00800002 (static)
+   05000658   0x03080280 (static      ) 0x02080380 (static)
+   0500065c   0x00200016 (static      ) 0x0000000C (static)
+   05000900   0x00800D47 (static      ) 0x00800D44 (static)
+   05000914   0x0004000E (static      ) 0x00044004 (static)
+   05000920   0x70248077 (static      ) 0x50241488 (static)
+   05000924   0x00000007 (static      ) 0x00000002 (static)
+   05000930   0x50074022 (static      ) 0x400F4022 (static)
+   05000934   0x84081008 (static      ) 0x84081010 (static)
+   0500093c   0x84804692 (static      ) 0x84804691 (static)
+   05000964   0x00000804 (static      ) 0x00000106 (static)
+   05000974   0xC000D021 (static      ) 0xFF00D021 (static)
+   05000a18   0x00084010 (static      ) 0x00084000 (static)
+   05000a1c   0x00084010 (static      ) 0x00084000 (static)
+   05000a20   0x00001550 (static      ) 0x00001540 (static)
+   05000a2c   0x00000021 (static      ) 0x00000002 (static)
+   05000a34   0x00000021 (static      ) 0x00000002 (static)
+   05000a60   0x02040204 (state-driven) 0x06040604 (state-driven)
+   05000a6c   0x00000BE8 (state-driven) 0x000007A8 (state-driven)
+   05000abc   0x11A65000 (static      ) 0x00414000 (static)
+   05000c38   0x404002F8 (static      ) 0x500002F8 (static)
+   050c0814   0x00000101 (static      ) 0x00000000 (static)
+   050c081c   0x01130200 (static      ) 0x01030200 (static)
+   050c0824   0x00000500 (static      ) 0x00000008 (static)
+   050c082c   0x00000000 (static      ) 0x00000800 (static)
+   050c0894   0x00000001 (static      ) 0x00000000 (static)
+   050c08ac   0x00000001 (static      ) 0x00000000 (static)
+   050c08c0   0x00000004 (static      ) 0x00008040 (static)
+   050c08c4   0x00000042 (static      ) 0x00000008 (static)
+   050c08c8   0x00002054 (static      ) 0x00000881 (static)
+   050c08d0   0x00005002 (static      ) 0x00001004 (static)
+   050c08d4   0x00000200 (static      ) 0x00100000 (static)
+   050c08d8   0x00000004 (static      ) 0x1400A100 (static)
+   050c08dc   0x00000001 (static      ) 0x00000000 (static)
+   050c08e0   0x80010002 (static      ) 0x00000005 (static)
+   050c08e4   0x00202000 (static      ) 0x04000002 (static)
+   050c08e8   0x0020800A (static      ) 0x00000180 (static)
+   050c08ec   0x00000080 (static      ) 0x00400000 (static)
+   050c08f0   0x001000C0 (static      ) 0x002000A3 (static)
+   050c08f4   0x00000000 (static      ) 0x00000100 (static)
+   050c08f8   0x00000001 (static      ) 0x00000000 (static)
+   050c0900   0x10A42502 (static      ) 0x61040000 (static)
+   050c0904   0x00020000 (static      ) 0x00000388 (static)
+   050c0908   0x00000700 (static      ) 0x00000000 (static)
+   050c090c   0x00000060 (static      ) 0x00000000 (static)
+   050c0910   0x00000000 (static      ) 0x00005048 (static)
+   050c0914   0x00000001 (static      ) 0x00000000 (static)
+   050c0918   0x0000C000 (static      ) 0x00000000 (static)
+   050c091c   0x00005242 (static      ) 0x00000000 (static)
+   050c0924   0x00012400 (static      ) 0x00000000 (static)
+   050c0928   0x00002088 (static      ) 0x00000000 (static)
+   050c092c   0x00000001 (static      ) 0x00000000 (static)
+   050c0930   0x4000C000 (static      ) 0x00000000 (static)
+   050c0940   0xB985E254 (state-driven) 0xBC05A244 (state-driven)
+   050c09c4   0x08220850 (static      ) 0x01101A90 (static)
+   050c09c8   0x026400A0 (static      ) 0x00540230 (static)
+   050c09d0   0x00020000 (static      ) 0x08000001 (static)
+   050c09d8   0x05000004 (static      ) 0x04040002 (static)
+   050c09e0   0x88000000 (static      ) 0x90800000 (static)
+   050c09e4   0x00800800 (static      ) 0x02000800 (static)
+   05140508   0x144C0000 (static      ) 0x14000000 (state-driven)
+   05140540   0xD4146088 (static      ) 0xD41C6088 (static)
+   05140544   0x00000001 (static      ) 0x00000003 (static)
+   05140548   0x00002020 (static      ) 0x00002820 (static)
+   051405b0   0xFFFE2F17 (state-driven) 0xFFFE2F1B (state-driven)
+   05140600   0x0910058F (static      ) 0x0911058F (state-driven)
+   05140614   0x00FC0001 (static      ) 0x00FC0000 (static)
+   05140700   0x00000EFF (static      ) 0x035F035F (static)
+   05140704   0x00000FFF (static      ) 0x03980398 (static)
+   05140718   0x00002000 (static      ) 0x00002800 (static)
+   0514071c   0x00000000 (static      ) 0x44000010 (static)
+   05140720   0x0A002400 (static      ) 0x08080000 (static)
+   05140724   0x00000000 (static      ) 0x21100020 (static)
+   05140728   0x00000280 (static      ) 0x0800C001 (static)
+   05140730   0x0A001830 (static      ) 0xC0C03800 (static)
+   05140734   0x80448000 (static      ) 0x00401200 (static)
+   05140738   0x40000000 (static      ) 0x00000001 (static)
+   0514073c   0x00181000 (static      ) 0x00000000 (static)
+   05140740   0x20125000 (static      ) 0x40574100 (static)
+   05140744   0x00010110 (static      ) 0x20004100 (static)
+   05140748   0x12200000 (static      ) 0x12000300 (static)
+   0514074c   0x82040402 (static      ) 0x00040102 (static)
+   05140754   0x02080234 (static      ) 0x00823038 (static)
+   05140758   0x22410000 (static      ) 0x00088000 (static)
+   0514075c   0x24010084 (static      ) 0x00000404 (static)
+   05140760   0x00002000 (static      ) 0x14000000 (static)
+   05140764   0x00913000 (static      ) 0x02003000 (static)
+   05140768   0x01020100 (static      ) 0x80800100 (static)
+   0514076c   0x4B041000 (static      ) 0x09801040 (static)
+   05140770   0x00100001 (static      ) 0x00000001 (static)
+   05140774   0x00000000 (static      ) 0x4040401C (static)
+   05140778   0x00000001 (static      ) 0x00400004 (static)
+   0514077c   0x00500400 (static      ) 0x20000400 (static)
+   05140780   0x02000000 (static      ) 0x00000200 (static)
+   05140784   0x04400000 (static      ) 0x00000000 (static)
+   05140788   0x80000000 (static      ) 0x00000000 (static)
+   0514078c   0x00802002 (static      ) 0x04000001 (static)
+   05140790   0x04000002 (static      ) 0x00001002 (static)
+   05140794   0x02000001 (static      ) 0x00800000 (static)
+   05140798   0x00000000 (static      ) 0x00000002 (static)
+   0514079c   0x80040014 (static      ) 0x48040000 (static)
+   051407a0   0x00000400 (static      ) 0x04000400 (static)
+   051407a4   0x00000000 (static      ) 0x00040000 (static)
+   051407a8   0x00020004 (static      ) 0x00000042 (static)
+   051407ac   0x04A000A0 (static      ) 0x00E00022 (static)
+   051407b0   0x10001484 (static      ) 0x00001080 (static)
+   051407b4   0x00040020 (static      ) 0x00000000 (static)
+   051407b8   0x00200000 (static      ) 0x00100000 (static)
+   051407bc   0x82000000 (static      ) 0x0A000000 (static)
+   051407c0   0x20000088 (static      ) 0x20000042 (static)
+   051407c4   0x88000001 (static      ) 0x00000000 (static)
+   051407c8   0x00C000A0 (static      ) 0x40800000 (static)
+   051407cc   0x11010000 (static      ) 0x09200001 (static)
+   051407d0   0x048040A0 (static      ) 0x20000000 (static)
+   051407d4   0x20800000 (static      ) 0x22800000 (static)
+   05140c4c   0x78800888 (static      ) 0x78000800 (static)
+   05140e0c   0x00000398 (state-driven) 0x000003C0 (state-driven)
+   05140e34   0x01000000 (static      ) 0x00000000 (static)
+   05140e38   0x0000036E (static      ) 0x00000000 (static)
+   05140e58   0x00004000 (static      ) 0x00000000 (static)
+   05140e5c   0x00000020 (static      ) 0x00000010 (static)
+   05140e60   0x00001002 (static      ) 0x00101000 (static)
+   05140e64   0x40000000 (static      ) 0x40000004 (static)
+   05140e68   0x00000002 (static      ) 0x00000001 (static)
+   05140e6c   0x2030000D (static      ) 0x21B8000D (static)
+   05600060   0x00000011 (static      ) 0x00000001 (static)
+   05600100   0x83001901 (static      ) 0x00010000 (static)
+   05600108   0x008000FF (static      ) 0x00000000 (static)
+   0560010c   0x00FF0080 (static      ) 0x00000000 (static)
+   0560012c   0x00000021 (static      ) 0x00000000 (static)
+   05600140   0x83001900 (static      ) 0x03001901 (static)
+   05600168   0x00000000 (static      ) 0x00000002 (static)
+   0560016c   0x00000010 (static      ) 0x00000021 (static)
+   05600178   0x781F6000 (static      ) 0x6C100000 (static)
+   05600184   0x0000003C (static      ) 0x0000003A (static)
+
+   free-running on one stack only (182) -- worth a look, not noise:
+     05000630  STOCK: free-running OURS: state-driven
+     05000634  STOCK: free-running OURS: state-driven
+     05000638  STOCK: free-running OURS: state-driven
+     0500063c  STOCK: free-running OURS: state-driven
+     05000640  STOCK: free-running OURS: state-driven
+     05000644  STOCK: free-running OURS: state-driven
+     05000648  STOCK: free-running OURS: state-driven
+     05000940  STOCK: free-running OURS: state-driven
+     05000944  STOCK: free-running OURS: state-driven
+     05000948  STOCK: free-running OURS: state-driven
+     0500094c  STOCK: free-running OURS: state-driven
+     05000950  STOCK: free-running OURS: state-driven
+     05000954  STOCK: free-running OURS: state-driven
+     05000958  STOCK: free-running OURS: state-driven
+     050009d8  STOCK: free-running OURS: state-driven
+     05000a48  STOCK: free-running OURS: state-driven
+     05000a58  STOCK: free-running OURS: state-driven
+     05040014  STOCK: free-running OURS: state-driven
+     05040140  STOCK: free-running OURS: static
+     05040150  STOCK: free-running OURS: state-driven
+     05040154  STOCK: free-running OURS: state-driven
+     05040158  STOCK: free-running OURS: state-driven
+     0504015c  STOCK: free-running OURS: state-driven
+     05040180  STOCK: free-running OURS: state-driven
+     050401a0  STOCK: free-running OURS: state-driven
+     050401a4  STOCK: free-running OURS: state-driven
+     050401a8  STOCK: free-running OURS: state-driven
+     050401ac  STOCK: free-running OURS: state-driven
+     050401b0  STOCK: free-running OURS: state-driven
+     050401b4  STOCK: free-running OURS: state-driven
+     050401b8  STOCK: free-running OURS: state-driven
+     050401bc  STOCK: free-running OURS: state-driven
+     050401c0  STOCK: free-running OURS: static
+     050401d0  STOCK: free-running OURS: state-driven
+     050401d4  STOCK: free-running OURS: state-driven
+     050401d8  STOCK: free-running OURS: state-driven
+     050401dc  STOCK: free-running OURS: state-driven
+     05040280  STOCK: free-running OURS: state-driven
+     05040284  STOCK: free-running OURS: state-driven
+     0504028c  STOCK: free-running OURS: state-driven
+     05040290  STOCK: free-running OURS: state-driven
+     05040298  STOCK: free-running OURS: state-driven
+     0504029c  STOCK: free-running OURS: state-driven
+     050402a4  STOCK: free-running OURS: state-driven
+     050402a8  STOCK: free-running OURS: state-driven
+     050402b0  STOCK: free-running OURS: state-driven
+     050402b4  STOCK: free-running OURS: state-driven
+     050402bc  STOCK: free-running OURS: state-driven
+     050402c0  STOCK: free-running OURS: state-driven
+     05040354  STOCK: free-running OURS: state-driven
+     05040380  STOCK: free-running OURS: state-driven
+     05040384  STOCK: free-running OURS: state-driven
+     05040388  STOCK: free-running OURS: state-driven
+     0504038c  STOCK: free-running OURS: state-driven
+     05040390  STOCK: free-running OURS: state-driven
+     05040394  STOCK: free-running OURS: state-driven
+     05040398  STOCK: free-running OURS: state-driven
+     0504039c  STOCK: free-running OURS: state-driven
+     050403a0  STOCK: free-running OURS: state-driven
+     050403a4  STOCK: free-running OURS: state-driven
+     050403a8  STOCK: free-running OURS: state-driven
+     050403ac  STOCK: free-running OURS: state-driven
+     050403b0  STOCK: free-running OURS: state-driven
+     050403b4  STOCK: free-running OURS: state-driven
+     050403b8  STOCK: free-running OURS: state-driven
+     05040814  STOCK: free-running OURS: state-driven
+     05040940  STOCK: free-running OURS: static
+     05040950  STOCK: free-running OURS: state-driven
+     05040954  STOCK: free-running OURS: state-driven
+     05040958  STOCK: free-running OURS: state-driven
+     0504095c  STOCK: free-running OURS: state-driven
+     05040980  STOCK: free-running OURS: state-driven
+     050409a0  STOCK: free-running OURS: state-driven
+     050409a4  STOCK: free-running OURS: state-driven
+     050409a8  STOCK: free-running OURS: state-driven
+     050409ac  STOCK: free-running OURS: state-driven
+     050409b0  STOCK: free-running OURS: state-driven
+     050409b4  STOCK: free-running OURS: state-driven
+     050409b8  STOCK: free-running OURS: state-driven
+     050409bc  STOCK: free-running OURS: state-driven
+     050409c0  STOCK: free-running OURS: static
+     050409d0  STOCK: free-running OURS: state-driven
+     050409d4  STOCK: free-running OURS: state-driven
+     050409d8  STOCK: free-running OURS: state-driven
+     050409dc  STOCK: free-running OURS: state-driven
+     05040a84  STOCK: free-running OURS: state-driven
+     05040a8c  STOCK: free-running OURS: state-driven
+     05040a90  STOCK: free-running OURS: state-driven
+     05040a98  STOCK: free-running OURS: state-driven
+     05040a9c  STOCK: free-running OURS: state-driven
+     05040aa4  STOCK: free-running OURS: state-driven
+     05040aa8  STOCK: free-running OURS: state-driven
+     05040ab0  STOCK: free-running OURS: state-driven
+     05040ab4  STOCK: free-running OURS: state-driven
+     05040abc  STOCK: free-running OURS: state-driven
+     05040ac0  STOCK: free-running OURS: state-driven
+     05040b54  STOCK: free-running OURS: state-driven
+     05040b80  STOCK: free-running OURS: state-driven
+     05040b84  STOCK: free-running OURS: state-driven
+     05040b88  STOCK: free-running OURS: state-driven
+     05040b8c  STOCK: free-running OURS: state-driven
+     05040b90  STOCK: free-running OURS: state-driven
+     05040b94  STOCK: free-running OURS: state-driven
+     05040b98  STOCK: free-running OURS: state-driven
+     05040b9c  STOCK: free-running OURS: state-driven
+     05040ba0  STOCK: free-running OURS: state-driven
+     05040ba4  STOCK: free-running OURS: state-driven
+     05040ba8  STOCK: free-running OURS: state-driven
+     05040bac  STOCK: free-running OURS: state-driven
+     05040bb0  STOCK: free-running OURS: state-driven
+     05040bb4  STOCK: free-running OURS: state-driven
+     05040bb8  STOCK: free-running OURS: state-driven
+     050c0888  STOCK: free-running OURS: static
+     050c08a0  STOCK: free-running OURS: static
+     050c08a4  STOCK: free-running OURS: static
+     050c0c94  STOCK: free-running OURS: static
+     05140034  STOCK: free-running OURS: static
+     05140588  STOCK: state-driven OURS: free-running
+     051405ac  STOCK: free-running OURS: state-driven
+     051405b8  STOCK: free-running OURS: state-driven
+     05140608  STOCK: free-running OURS: state-driven
+     05140610  STOCK: free-running OURS: state-driven
+     05140618  STOCK: free-running OURS: state-driven
+     0514061c  STOCK: free-running OURS: state-driven
+     05140620  STOCK: free-running OURS: state-driven
+     05140624  STOCK: free-running OURS: state-driven
+     05140628  STOCK: free-running OURS: state-driven
+     0514062c  STOCK: free-running OURS: state-driven
+     05140630  STOCK: free-running OURS: state-driven
+     05140638  STOCK: free-running OURS: state-driven
+     0514063c  STOCK: free-running OURS: state-driven
+     05140640  STOCK: free-running OURS: state-driven
+     05140644  STOCK: free-running OURS: state-driven
+     05140648  STOCK: free-running OURS: state-driven
+     0514064c  STOCK: free-running OURS: state-driven
+     05140650  STOCK: free-running OURS: state-driven
+     05140654  STOCK: free-running OURS: state-driven
+     05140658  STOCK: free-running OURS: state-driven
+     0514065c  STOCK: free-running OURS: state-driven
+     05140660  STOCK: free-running OURS: state-driven
+     05140664  STOCK: free-running OURS: state-driven
+     05140668  STOCK: free-running OURS: state-driven
+     0514066c  STOCK: free-running OURS: state-driven
+     0514067c  STOCK: free-running OURS: static
+     05140680  STOCK: free-running OURS: state-driven
+     05140684  STOCK: free-running OURS: state-driven
+     05140688  STOCK: free-running OURS: state-driven
+     0514068c  STOCK: free-running OURS: state-driven
+     05140690  STOCK: free-running OURS: state-driven
+     05140694  STOCK: free-running OURS: state-driven
+     051406a0  STOCK: free-running OURS: static
+     051406a4  STOCK: free-running OURS: static
+     051406a8  STOCK: free-running OURS: state-driven
+     051406ac  STOCK: free-running OURS: state-driven
+     051406b0  STOCK: free-running OURS: state-driven
+     051406b4  STOCK: free-running OURS: state-driven
+     051406b8  STOCK: free-running OURS: state-driven
+     051406bc  STOCK: free-running OURS: state-driven
+     051406c0  STOCK: free-running OURS: state-driven
+     051406c4  STOCK: free-running OURS: state-driven
+     051406c8  STOCK: free-running OURS: state-driven
+     051406cc  STOCK: free-running OURS: state-driven
+     051406d0  STOCK: free-running OURS: state-driven
+     051406d4  STOCK: free-running OURS: state-driven
+     05140e08  STOCK: free-running OURS: state-driven
+     05140e3c  STOCK: free-running OURS: state-driven
+     05140e40  STOCK: free-running OURS: static
+     05140e78  STOCK: free-running OURS: static
+     05140e7c  STOCK: free-running OURS: static
+     0560006c  STOCK: free-running OURS: static
+     05600070  STOCK: free-running OURS: state-driven
+     05600074  STOCK: free-running OURS: state-driven
+     05600078  STOCK: free-running OURS: state-driven
+     0560007c  STOCK: free-running OURS: state-driven
+     05600084  STOCK: free-running OURS: state-driven
+     05600088  STOCK: free-running OURS: state-driven
+     0560008c  STOCK: free-running OURS: state-driven
+     05600090  STOCK: free-running OURS: state-driven
+     05600098  STOCK: free-running OURS: state-driven
+     0560009c  STOCK: free-running OURS: state-driven
+     056000a0  STOCK: free-running OURS: state-driven
+     056000a4  STOCK: free-running OURS: state-driven
