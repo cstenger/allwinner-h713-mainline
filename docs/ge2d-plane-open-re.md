@@ -7,6 +7,18 @@ init to use a video plane?**
 Answer: **separable, on the evidence below.** That contradicts the standing
 note that a plane cannot be added to a running pipeline.
 
+> ### Update after legal-value and direct stock tests, 2026-08-31
+>
+> The `0xdeadbeef` triage incorrectly labelled several masked AFBD controls
+> read-only; legal values do write.  But stock's opposite-looking control words
+> do not mean it services channel 0.  A no-op READY commit on stock stayed 1 on
+> channel 0 across eight polls, while channel 1's READY cleared immediately.
+> Stock also leaves OSD0 closed, OSD1 open, and the channel-0 LVDS pair zero.
+> Both stacks therefore service channel 1.  The single-port interpretation is
+> still an inference rather than a proved register map, but the mechanical
+> unserviced-channel result survives.  See
+> [`reference/afbd-legal-channel-control-tests-2026-08-31.md`](reference/afbd-legal-channel-control-tests-2026-08-31.md).
+
 ## The binary
 
 `ge2d_dev.ko`, board B's stock display driver. **ARM 32-bit, unstripped, 926
@@ -1433,3 +1445,20 @@ than argued:
 
 `dec_decoder_display_init` is also verbatim what patch 0013 says it is: a tail
 call to `dec_reg_mux_select(regs, 2)`.
+# 2026-08-31: Linux DECD scanout is confirmed
+
+The downstream video path is no longer hypothetical.  A bounded Linux test
+displayed the synthetic 1280x720 NV12 frame correctly on the projector, in full
+colour, and restored the boot logo afterwards.  The minimum route is source 0
+enabled and committed (`0x05600010 = 0x03000013`, `0x05600014 = 1 -> 0`) plus
+the plane-1 selector `0x051c006c = 0x39000000`.  Correct output additionally
+requires source size `0x02cf04ff`, block size `0x002c004f`, Y/C strides
+`0x500`, and chroma gain `0x05140508 = 0x144c0000`.
+
+The stock OSD1 control is not required: it remained at the Linux value
+`0x03001901` during the successful scanout.  Earlier repeated greyscale output
+was the same valid frame routed with inherited 1920x1088 / stride-1920 source
+geometry and zero chroma gain, not an unknown decode corruption.
+
+Full evidence:
+[`reference/linux-decd-scanout-confirmed-2026-08-31.md`](reference/linux-decd-scanout-confirmed-2026-08-31.md).

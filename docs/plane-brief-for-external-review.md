@@ -7,6 +7,15 @@ who knows Allwinner display hardware and might spot something we have missed.
 
 ## 0. Important correction after stock-HWC reverse engineering (2026-08-26)
 
+> **Further update, 2026-08-31:** legal-value probes show that the AFBD controls
+> rejected `0xdeadbeef` but are writable.  Stock's opposite-looking control
+> words nevertheless do not reverse the serviced bank: a no-op READY commit on
+> stock remained stuck on channel 0 and cleared immediately on channel 1.
+> Stock likewise has OSD0 closed, OSD1 open, and only the channel-1 LVDS pair
+> populated.  The single-port physical mapping remains an inference, but the
+> direct result that channel 0 is unserviced holds on both stacks.  Full record:
+> [`reference/afbd-legal-channel-control-tests-2026-08-31.md`](reference/afbd-legal-channel-control-tests-2026-08-31.md).
+
 The original brief's central framing -- that hardware YUV requires opening a
 second copy of the working OSD/AFBD channel -- is no longer tenable. Two new
 pieces of evidence separate the OSD path we tested from the vendor video path.
@@ -1604,3 +1613,19 @@ slot register during playback, and the vendor's debug character device maps
 arbitrary physical pages, so reading it is two commands once the board is
 booted into the stock firmware.  The obstacle is the vendor boot itself, which
 is slow and has failed before.
+# Resolution: Linux DECD video reached the projector
+
+The black-screen question this brief tracks is resolved.  On 2026-08-31 a
+bounded Linux test displayed the 1280x720 NV12 test frame correctly, with full
+colour and correct geometry, then restored the boot logo.  The required state
+is source size `0x02cf04ff`, block size `0x002c004f`, Y/C stride `0x500`, source
+control `0x03000013` plus consumed commit, chroma gain `0x144c0000`, and
+plane-1 selector `0x051c006c = 0x39000000`.  OSD1 remained at the Linux control
+value, so the stock OSD1 control is not required.
+
+The preceding minimal route test produced a repeated greyscale version of the
+same frame.  A live readback proved that source geometry was still the inherited
+1920x1088 / stride-1920 fallback; correcting it removed the distortion and the
+known chroma gain restored colour.  Exact evidence and restoration values are
+in
+[`reference/linux-decd-scanout-confirmed-2026-08-31.md`](reference/linux-decd-scanout-confirmed-2026-08-31.md).

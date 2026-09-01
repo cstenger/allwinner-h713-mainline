@@ -1,11 +1,17 @@
 # Writability triage of the cross-stack diff, 2026-08-31
 #
-# Probed on stock: write 0xDEADBEEF, read back, restore. A register that
-# will not take a write cannot be a cause of anything -- its differing
-# value is status output, a symptom of the two stacks being in different
-# states. Only writable registers are candidate causes.
+# Probed on stock: write 0xDEADBEEF, read back, restore.
 #
-# Of the 150 differing registers: 29 writable, 121 read-only.
+# IMPORTANT CORRECTION, 2026-08-31: this classifies only whether a register
+# accepts that arbitrary bit pattern. It is NOT a general writability test for
+# masked/encoded controls. Legal-value probes on our Linux stack subsequently
+# proved 05600100, 05600108, 0560010c, 0560012c, and 05600140 writable even
+# though DEADBEEF did not stick. See afbd-legal-channel-control-tests-2026-08-31.md.
+# Treat "readonly" below as "DEADBEEF rejected or masked" unless an independent
+# legal-value or status-semantics test confirms true read-only behaviour.
+#
+# Of the 150 differing registers: 29 accepted DEADBEEF, 121 rejected or masked
+# it. The original writable/readonly labels are retained as raw test output.
 # The 39 in 0x050c0000 were separately confirmed read-only (4/4 sampled)
 # and are not re-listed here.
 #
