@@ -1,0 +1,131 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 2 Sep 2026 02:10:00 -0700
+Subject: [PATCH] EXPERIMENT: misc: h713: probe the HDMI-RX wrapper windows
+
+0088 established that the HDMI-RX EDID port is dead -- DMA_CONFIG11 will not
+take a write -- while HPD control in the same window is live, the global enable
+sticks, and the block was never in reset. The remaining hypothesis is the H713
+wrapper the peer RE port writes BEFORE any Synopsys register: a controller
+block at 0x06800800 carrying port-select and a PHY reset bit, and a
+byte-multiplexed per-port state block at 0x06840000. A per-port EDID RAM with
+no port selected would read exactly as observed: uniformly zero, ignoring
+writes.
+
+Neither window is described by any DT node, so neither has a verified power
+state, and an access to an unpowered block on this SoC hard-locks the board --
+no abort, no watchdog, power cycle to recover. That has already happened once
+this session.
+
+So this probes them READ ONLY, from inside the driver with the TV domains held
+up, one window at a time, with a log line naming each window immediately before
+its first access. Three reasons that shape is worth a boot on its own:
+
+  - A read settles the actual question. "Is this window alive?" does not need a
+    write, and the write sequence is worthless if the read hangs.
+  - A hang stays attributable. The last line printed names the window that did
+    it, instead of leaving a silent board and a guess.
+  - A write first would make a hang ambiguous between "unpowered" and "we
+    reset something into a bad state".
+
+RESULT: both windows are alive with the TV domains up. Nothing hung.
+
+  rx-ctrl+0x0800..0x081c   all zero
+  rx-wrap+0x0000 = 0xc0c0c0c0   +0x04 = 0xcececece   +0x08 = 0x01010101
+  rx-wrap+0x001c = 0x18181818   +0x20 = 0x09090909
+
+Every byte repeated four times across each word, which is what the peer's
+"byte-multiplexed per-port state" looks like from a 32-bit read: four ports
+side by side in one word. Exploring further from userspace -- possible now
+because this driver holds the domains up -- the controller window has real
+content exactly where the peer says it does:
+
+  0x068008f4 = 0x80808080
+  0x068008f8 = 0x08080808
+  0x068008fc = 0x33333333    the documented PHY-reset control
+  0x068008f0 = 0x00000000    port-select, and it is ZERO
+
+So no port is selected, which is precisely the predicted cause of a per-port
+EDID RAM reading uniformly zero and refusing writes.
+
+Setting it did not work, and that is the next thread rather than a refutation:
+a 32-bit write of 0x01010101 or 0x00000100 to 0x068008f0 reads back
+0x00000000, while neighbouring registers in the same window plainly hold
+values. The peer's driver touches this entire block with writeb() and never
+writel(), so the live hypothesis is that these are byte-wide registers that
+ignore word writes -- which mmio-rw, being 32-bit only, cannot test. That needs
+a byte-access path before the question can be answered either way.
+
+OUT OF SERIES. Applies after 0088.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/misc/h713-tvcap-probe.c b/drivers/misc/h713-tvcap-probe.c
+--- a/drivers/misc/h713-tvcap-probe.c
++++ b/drivers/misc/h713-tvcap-probe.c
+@@ -112,6 +112,57 @@
+ 	dev_info(tv->dev, "wrote %zu EDID bytes, released HPD\n", len);
+ }
+ 
++/*
++ * H713 HDMI-RX wrapper windows, per the peer RE port: a controller block
++ * carrying port-select and a PHY reset bit, and a byte-multiplexed per-port
++ * state block. Neither is described by any DT node, so neither has a verified
++ * power state -- and an access to an unpowered block on this SoC hard-locks the
++ * board with no abort and no watchdog.
++ *
++ * READ ONLY, and one window at a time with a log line before each first touch.
++ * The question this answers is "is this window alive with the TV domains up?",
++ * which a read settles; a write sequence would be worthless if the read hangs,
++ * and would make a hang ambiguous between "unpowered" and "we broke it".
++ * If the board stops here, the last line printed names the window that did it.
++ */
++#define H713_RX_CTRL_BASE		0x06800000
++#define H713_RX_CTRL_SIZE		0x1000
++#define H713_RX_CTRL_PORTSEL		0x08F1	/* byte */
++#define H713_RX_WRAP_BASE		0x06840000
++#define H713_RX_WRAP_SIZE		0x1000
++
++static void h713_probe_window(struct h713_tvcap *tv, const char *what,
++			      phys_addr_t base, size_t size, u32 off, int words)
++{
++	void __iomem *p;
++	int i;
++
++	p = devm_ioremap(tv->dev, base, size);
++	if (!p) {
++		dev_err(tv->dev, "%s: ioremap of 0x%08llx failed\n",
++			what, (unsigned long long)base);
++		return;
++	}
++
++	dev_info(tv->dev, "%s: about to READ 0x%08llx -- if this is the last line, that window is dead\n",
++		 what, (unsigned long long)(base + off));
++
++	for (i = 0; i < words; i++)
++		dev_info(tv->dev, "  %s+0x%04x = 0x%08x\n",
++			 what, off + i * 4, readl(p + off + i * 4));
++
++	dev_info(tv->dev, "%s: readable\n", what);
++}
++
++static void h713_probe_wrapper(struct h713_tvcap *tv)
++{
++	/* Port-select lives at +0x8F1, so read the 0x800 neighbourhood. */
++	h713_probe_window(tv, "rx-ctrl", H713_RX_CTRL_BASE, H713_RX_CTRL_SIZE,
++			  0x800, 8);
++	h713_probe_window(tv, "rx-wrap", H713_RX_WRAP_BASE, H713_RX_WRAP_SIZE,
++			  0x000, 8);
++}
++
+ static int h713_tvcap_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+@@ -178,6 +229,8 @@
+ 		 readl(tv->thdmirx + THDMIRX_SCDC_CONFIG),
+ 		 readl(tv->thdmirx + THDMIRX_DMA_CONFIG11));
+ 
++	h713_probe_wrapper(tv);
++
+ 	platform_set_drvdata(pdev, tv);
+ 	return 0;
+ 
