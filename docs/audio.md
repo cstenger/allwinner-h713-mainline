@@ -162,6 +162,53 @@ Do not just hunt for the mixer at another offset without checking that: the
 vendor map has no obvious candidate, which suggests the stage is absent rather
 than moved.
 
+## SOUND — 2026-09-01
+
+Patch 0084 adds an H713 variant to `sun4i-codec` that drops the mixer stage and
+the ramp controller, routing the DACs straight at the line-out mux. Card 0
+becomes `h713-audio-codec`, and the falsifiable prediction held: **`DAC Playback
+Switch` disappeared from the control list**, having no register left to live in.
+
+A 440 Hz tone is **audible**. The register confirms the whole chain:
+
+```text
+0x02030310 = 0x0015E87F   DAC_LEN + DAC_REN + LINEOUTL/R_EN
+                          + differential select + volume 31/31
+0x02030310 = 0x0015000F   idle, for comparison
+gpio-2 (allwinner,pa) out hi   amp asserts on playback
+```
+
+**Operating notes worth keeping:**
+
+- **`Speaker Switch 0` releases the amp immediately.** Turning off `Line Out
+  Playback Switch` and waiting does not — `use_pmdown_time` holds it up. Use the
+  pin switch to power the amp down.
+- The controls needed for sound are `Speaker Switch 1`, `Line Out Playback
+  Switch 1 1`, and a non-zero `Line Out Playback Volume`. All default to
+  off/zero, so a fresh boot is silent by design.
+
+## Open: it is quiet, and the route is not the reason
+
+Loudness barely changed between `Line Out Playback Volume` 15/31 and 31/31, and
+an A/B of Stereo against Mono Differential — switched mid-tone, two passes —
+produced no audible difference. The operator's reading is that this board has a
+**single speaker**, so differential drive gains nothing if it is wired
+single-ended, and that is more convincing than any register explanation.
+
+`DAC Playback Volume` is already at maximum: its control is declared with
+`invert = 1`, so 63 means zero attenuation.
+
+**The lead worth following is the headphone path.** The stock codec node carries
+`speaker_vol = 0x1a` as a control distinct from `headphone_vol = 0x00`, with
+`spk_used = 1`, and the vendor register map has an **HP register at 0x324** that
+this variant does not touch at all. On projectors of this class the speaker is
+often driven from the headphone amplifier rather than LINEOUT, which would fit a
+tone that is present but weak. Check that before assuming the external amp's
+gain is simply low.
+
+Second candidate, cheaper to rule out: someone looking at the board to see what
+the speaker is actually wired to.
+
 ## Not yet established
 
 - **Nothing has been heard yet.** The amp asserts, but with the DAC path open
