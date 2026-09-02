@@ -254,3 +254,55 @@ Port `controller_enable()` against `rx_base = 0x05000000` and then retry the
 EDID write. That is the first attempt that will have been made with the right
 register file, and it is the only untried thing left that the peer's working
 stack actually does.
+
+## The rx window has a WRITABLE EDID interface
+
+Retrying against `rx_base = 0x05000000` rather than thdmirx immediately behaves
+differently. The peer's header carries a second, simpler register set that is
+`rx`-relative, not thdmirx-relative:
+
+```text
+HDMI_RX_SYS_CTRL     0x000      HDMI_RX_HPD_STATUS   0x040
+HDMI_RX_EDID_CTRL    0x050      HDMI_RX_EDID_DATA    0x054
+HDMI_RX_DDC_CTRL     0x060      HDMI_RX_DDC_STATUS   0x064
+```
+
+All three of the interesting ones **take writes and read them back**, which no
+register in the thdmirx DMA bank ever did:
+
+```text
+0x05000050 EDID_CTRL  <- 0x000000D0   reads back 0x000000D0
+0x05000054 EDID_DATA  <- 0x000000AA   reads back 0x000000AA
+0x05000060 DDC_CTRL   <- 0x00000001   reads back 0x00000001
+```
+
+The first page of the window is populated (`0x05000000` reads `0xFFFFFFFF`,
+and 11 of 12 blocks in the first 0x300 hold data), so this is a live register
+file, not a floating one.
+
+**What this does and does not establish.** It establishes that a writable,
+EDID-named interface exists in the window the peer's controller init actually
+targets — which is more than the thdmirx path ever offered here. It does NOT
+establish that this is the working EDID path: a register accepting a write
+proves it is backed, not that it is wired to an EDID RAM. The peer's own driver
+references these names only once each beyond their `#define`, so they may be
+partly aspirational in that tree too.
+
+Also note `0x05000000` reads `0xFFFFFFFF`, which is worth a moment's suspicion
+before building on it — that is the classic floating-bus pattern, though the
+surrounding structured data argues against it here.
+
+### Next
+
+1. Drive the `EDID_CTRL` / `EDID_DATA` pair as a streaming port the way
+   `DMA_CONFIG10/11` was meant to work: set a write-enable in `EDID_CTRL`,
+   stream 128 bytes through `EDID_DATA`, clear it. Then read `HPD_STATUS` and
+   assert HPD via `SCDC_CONFIG`, and check the source.
+2. Verify from the **host** side, never by readback. The peer records that
+   their EDID RAM reads back zero on runs where a laptop read the data
+   correctly, so a readback check here can only manufacture a false negative.
+3. Only then port the full `controller_enable()` `SNPS_*` sequence
+   (`GLOBAL_TIMER_REF_BASE 0x0028`, `CMU_CONFIG0 0x0060`,
+   `DESCRAND_EN_CONTROL 0x0210`, `CED_CONFIG 0x0760`,
+   `DEFRAMER_CONFIG0 0x0270`, `MAINUNIT_0_INT_MASK_N 0x5014`), which is only
+   needed for the TMDS path, not for DDC and EDID.
