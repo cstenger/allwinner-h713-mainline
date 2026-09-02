@@ -222,28 +222,183 @@ Written mid-tone, the change was immediate and obvious.
 Both null results above were **correct data pointing at a wrong assumption**,
 not failures. They are only confusing if you assume the output is LINEOUT.
 
-### Patch 0085 — built, UNTESTED on hardware
+### Patch 0085 — VERIFIED on hardware 2026-09-02
 
-Adds an `HP Amp` DAPM supply widget applying the vendor's configuration word on
-power-up and clearing it on power-down, with `LINEOUT` depending on it. The
-register write is proven; the DAPM plumbing of it is not. Check on the next boot:
+0085 adds an `HP Amp` DAPM supply widget toggling `HP_AMP_EN`, with `LINEOUT`
+depending on it. All three open checks are now answered, on a board running the
+exact kernel built from the series (`/proc/version` timestamp matched the build,
+and the series digest matched the cached tree).
 
-1. **Volume controls now do something.** That is the real regression test for
-   this whole thread -- if they are still inaudible, the widget is not powering
-   the amp and nothing else matters.
-2. **The amp enables at the right time, not permanently.** A headphone amplifier
-   left powered into an idle DAC is how you get hiss. `gpio-2` and `0x324` bit
-   15 should both follow playback.
-3. Whether `HP_AMP_EN` alone suffices. The whole vendor word is applied because
-   those bits were set together in the run that produced sound; trimming it is
-   untested and should be measured, not assumed.
+**1. The amp follows playback.** Idle `0x324 = 0x80800C44` and `gpio-2 out lo`;
+during a tone `0x324 = 0x80808C44` (bit 15 set) and `gpio-2 out hi`; afterwards
+both return low.
+
+Read this one carefully, because the first sample said the opposite. Sampling
+3 s after the stream stopped showed the amp still up, which looks exactly like
+"the widget never powers down". It is not: the component sets `use_pmdown_time`,
+and ASoC's default `pmdown_time` is 5000 ms. **Sample later than the power-down
+delay, not just "after the event".** A second read well past it showed a clean
+idle. Writes to `0x324` made directly by hand are also cleared by the widget's
+`POST_PMD` path, so DAPM wins over manual pokes.
+
+**2. Volume controls work, and the volume law is roughly as specified.**
+Measured with a microphone recording, per-segment level by complex demodulation
+at the tone's own measured frequency:
+
+```text
+DAC Playback Volume   63      0.00 dB   (reference)
+                      59     -3.50 dB   (4 steps, 4.64 dB predicted)
+                      55     -7.81 dB
+                      51    -12.27 dB
+```
+
+Steps of 3.50, 4.31 and 4.46 dB against a specified 4.64 dB: the law converges
+to spec as level drops and compresses about 1 dB at the very top, which is what
+a small speaker driven hard does. An earlier run measured 18.4 dB against a
+predicted 18.56 dB between raw 16 and 32 -- consistent, and taken lower down the
+range where there is no compression.
+
+**3. `HP_AMP_EN` alone is right, but not for the recorded reason.** A synchronised
+A/B at fixed DAC volume measured the full vendor word `0x8F8C` at **-0.10 dB**
+against bit 15 alone, with the run's own repeatability (an identical segment
+repeated 30 s later) at **0.25 dB**. So the extra undocumented bits deliver **no
+measurable gain**. Keeping bit 15 alone is still correct -- fewer undocumented
+bits touched -- but the claim that the vendor bits "only raised gain" is wrong
+and has been corrected in the patch header.
+
+The same recording settled `Line Out Playback Volume`: 31 against 0 measured
+**+0.21 dB**, inside the drift. It genuinely does nothing on this speaker, which
+is consistent with the speaker being on the HP amp rather than on LINEOUT.
+
+### 0086 — a control-list rewrite, built and correctly abandoned
+
+A build exists (`h713-kernel-audio-0086.fit`) giving H713 its own control list,
+identical to H616's except that `DAC Playback Volume` is declared with
+`invert = 0` instead of `1`. It was dropped without a record; the final build
+went back to the previous source. Dropping it was right, and the reason is
+measurable in one step:
+
+```text
+control 63  ->  DAC_DPC (0x02030000) DVOL field = 0x00
+control  0  ->  DAC_DPC              DVOL field = 0x3F
+```
+
+DVOL is an *attenuation* field and the TLV declares 64 steps of 1.16 dB from
+-73.08 dB, so the inherited `invert = 1` is correct: ALSA 63 is 0 dB. With
+`invert = 0` the control would put maximum attenuation at maximum volume. No
+listening required -- two register reads rank it.
+
+## The audio clock is wrong: everything plays 4.8 % slow
+
+Found 2026-09-02 while measuring the volume sweep, from a detail that had
+nothing to do with volume: **the 440 Hz test tone came back at 418.97 Hz**,
+stable to 0.01 Hz across every segment. That is -84.8 cents, nearly a semitone
+flat, and it means all audio plays about 4.8 % slow.
+
+The chain, all measured:
+
+```text
+hw_params                      rate: 44100 (44100/1)
+audio-codec-dac  (playing)     43,000,000 Hz
+audio-codec-dac  (48 kHz!)     43,000,000 Hz   <- unchanged
+pll-audio-base                172,000,000 Hz
+0x02001078                     0x280B5501  -> N=86, M=12, 24 MHz*86/12 = 172 MHz
+```
+
+**The module clock does not respond to the requested sample rate at all.**
+`sun4i_codec_hw_params` calls `clk_set_rate(clk_module, ...)` -- 22 579 200 for
+the 44.1 kHz family, 24 576 000 for the 48 kHz family -- and both leave the
+clock at 43 MHz. The call returns 0, so nothing reports an error.
+
+The cause is one missing flag in the CCU:
+
+```c
+/* drivers/clk/sunxi-ng/ccu-sun50i-h713.c */
+static SUNXI_CCU_GATE(audio_codec_dac_clk, "audio-codec-dac", "pll-audio-2x",
+                      0xa60, BIT(31), 0);
+                                       ^ no CLK_SET_RATE_PARENT
+```
+
+It is a bare gate. With no `CLK_SET_RATE_PARENT`, `clk_set_rate` cannot
+propagate to `pll-audio-2x` (which *does* carry the flag) or to the PLL, so it
+rounds to the current rate and returns success. `pll-audio-base` therefore keeps
+whatever value it booted with -- 172 MHz, which is not an audio rate and is
+almost certainly a leftover.
+
+### The divisor, and why the CCU table already knows the answer
+
+Two nominal rates, one stuck clock, gives two independent points and pins the
+divisor exactly:
+
+```text
+nominal 44100  ->  418.97 Hz measured   (440 * 41992/44100 = 418.97)
+nominal 48000  ->  384.93 Hz measured   (440 * 41992/48000 = 384.93)
+```
+
+Both fit `actual_rate = audio-codec-dac / 1024 = 43e6/1024 = 41 992 Hz` to
+0.01 Hz. So this codec divides its module clock by **1024**, and needs
+
+```text
+44100 * 1024 = 45 158 400        48000 * 1024 = 49 152 000
+```
+
+`audio-codec-dac` is `pll-audio-2x`, which is `pll-audio-base / 4`. The required
+PLL rates are therefore 180 633 600 and 196 608 000 -- **and both are already in
+`pll_audio_sdm_table`**, as its two largest entries. The CCU port is right about
+the divisor chain; nothing can currently reach those entries.
+
+### Proven on hardware, without a rebuild
+
+Poking the PLL by hand to the table's own 180 633 600 entry (N=22, M=3, SDM on,
+pattern `0xC001288D` -- `0x02001078 = 0x29021501`, `0x02001178 = 0xC001288D`)
+and restoring `0x280B5501` afterwards:
+
+```text
+44.1 kHz, PLL as found     418.97 Hz    -84.8 cents
+48   kHz, PLL as found     384.93 Hz   -231.5 cents
+44.1 kHz, PLL poked        440.00 Hz      0.0 cents
+```
+
+**Exactly on pitch.** The diagnosis is complete and the fix is confirmed before
+any driver change was written.
+
+### What the fix has to do
+
+Two things, not one -- adding the flag alone would make it *worse*:
+
+1. `audio_codec_dac_clk` (and `audio_codec_adc_clk`) need `CLK_SET_RATE_PARENT`.
+2. The H713 codec variant must request **rate x 1024**, not the shared
+   `sun4i_codec_get_mod_freq`'s rate x 512. With the flag added but the request
+   left at 22 579 200, the PLL would be driven to 90 316 800 (also in the table),
+   `audio-codec-dac` would land on 22 579 200, and playback would run at
+   22 050 Hz -- half speed.
 
 ## Not yet established
 
-- **Nothing has been heard yet.** The amp asserts, but with the DAC path open
-  the mixer switch is unsettable, so no audio has reached it.
 - **Nobody has looked at the board.** The codec being enabled in the stock DTB
-  is strong evidence but not proof that the amp and speakers are fitted.
+  and a speaker that audibly works make this academic for playback, but the
+  physical amp and speaker fit is still inferred rather than seen.
+- Capture is untouched: only `pcmC0D0p` exists and `dmas` is tx only. ADC,
+  HDMI-in audio and the `daudio` I2S blocks have had no work.
 - Whether the second reg range at `0x02031000` is required.
 - What `pll_tvfe` is doing on an audio codec.
 - Whether PL2 has any shared duty, as PB5 does.
+- Whether the ~1 dB of compression at the top of the volume range is the
+  speaker, the amp, or a codec stage. It does not matter for correctness.
+
+## Method notes from this round
+
+- **A tone is a measurement instrument, not just a stimulus.** The clock bug was
+  invisible to every register check and fell out of the *pitch* of a recording
+  taken to measure loudness. Record the frequency even when you only care about
+  the level.
+- **Two operating points beat one.** Testing 48 kHz as well as 44.1 kHz turned
+  "the clock looks wrong" into an exact divisor, because one stuck clock across
+  two nominal rates over-determines the arithmetic.
+- **Check the power-down delay before concluding a widget is stuck on.**
+- **A silent `clk_set_rate` return of 0 is not evidence it worked.** For a clock
+  with no rate ops and no `CLK_SET_RATE_PARENT`, the framework rounds to the
+  current rate and reports success.
+- **Pick measurement steps against the noise floor you will actually have.** The
+  first sweep used 18.5 dB steps into a room with 18 dB of headroom, so two of
+  six segments were unmeasurable. The second used 4 dB steps and all six landed.

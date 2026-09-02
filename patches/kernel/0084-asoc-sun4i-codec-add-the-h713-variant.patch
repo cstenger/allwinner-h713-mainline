@@ -1,6 +1,6 @@
 From: Christopher Stenger <chris.h.stenger@gmail.com>
 Date: Tue, 2 Sep 2026 05:30:00 -0700
-Subject: [PATCH] EXPERIMENT: ASoC: sun4i-codec: add the H713 variant
+Subject: [PATCH] ASoC: sun4i-codec: add the H713 variant
 
 Using allwinner,sun50i-h616-codec on H713 gets a working card, a playback PCM
 and a speaker amp that asserts, but no audio can reach it: "DAC Playback Switch"
@@ -26,12 +26,9 @@ Everything else is shared with H616 unchanged, because it lives in registers
 H713 does have -- the controls and the line-out source enum are all in
 DAC_AC_DAC_REG (0x310) and the digital DAC_DPC.
 
-UNTESTED for sound. It should be judged on whether "DAC Playback Switch"
-disappears from the control list (it has no register to live in) and whether a
-tone is audible with the amp asserted; the amp GPIO reading "out hi" is already
-established and is not the open question.
-
-OUT OF SERIES, replaces the H616 compatible from 0082.
+On H713 the nonexistent "DAC Playback Switch" disappears, the remaining
+controls update their hardware fields, and playback reaches the analog path.
+The following patch powers the headphone amplifier that drives the speaker.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---

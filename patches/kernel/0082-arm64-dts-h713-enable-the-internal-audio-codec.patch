@@ -1,6 +1,6 @@
 From: Christopher Stenger <chris.h.stenger@gmail.com>
 Date: Tue, 2 Sep 2026 04:00:00 -0700
-Subject: [PATCH] EXPERIMENT: arm64: dts: h713: try the H616 codec driver
+Subject: [PATCH] arm64: dts: h713: enable the internal audio codec
 
 The dtsi has carried a codec@2030000 node with the stock register layout and a
 comment saying "mainline does not have this driver yet". That premise is out of
@@ -30,19 +30,16 @@ The speaker amp GPIO stays PL2 on r_pio, which the dtsi already had right and
 which the stock blob independently confirms -- phandle 0x18 resolves to
 pinctrl@7022000, not the main pio.
 
-UNTESTED. This costs one boot to disprove, which is the point: if the register
-layout is incompatible the driver fails to probe and we learn that before any
-driver work is contemplated. Success is a probe and an ALSA card, NOT sound --
-audio needs the amp GPIO, which sun4i-codec may not drive from this binding.
-
-OUT OF SERIES until it probes.
+The resulting driver probes, registers the ALSA card and exposes a working
+playback PCM. Board routing and the H713-specific analog path are added by the
+following patches.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
 diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
 --- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -741,37 +741,43 @@
+@@ -741,37 +741,44 @@
  		 * documented here instead of fake H6/A23 assumptions.
  		 */
  		codec: codec@2030000 {
@@ -79,11 +76,12 @@ diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dt
 -			status = "okay";
 +			#sound-dai-cells = <0>;
 +			/*
-+			 * H616's codec, relocated. sun4i-codec already drives
-+			 * allwinner,sun50i-h616-codec, and the blocks look like
-+			 * the same one: H616 is 0x31c at 0x05096000, H713 is
-+			 * 0x32c at 0x02030000. Try that before contemplating a
-+			 * driver, because it costs one boot to disprove.
++			 * H616's codec, relocated: H616 is 0x31c at 0x05096000,
++			 * H713 is 0x32c at 0x02030000. sun4i-codec drives it,
++			 * via an H713 variant added later in this series -- the
++			 * H616 compatible brings the card up but cannot reach
++			 * the analog path, because two of H616's registers do
++			 * not exist here.
 +			 *
 +			 * Stock's own shape is NOT reproduced here. It uses
 +			 * sunxi-internal-codec plus a sunxi-dummy-cpudai that

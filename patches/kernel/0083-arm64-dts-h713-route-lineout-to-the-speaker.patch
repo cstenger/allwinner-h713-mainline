@@ -1,6 +1,6 @@
 From: Christopher Stenger <chris.h.stenger@gmail.com>
 Date: Tue, 2 Sep 2026 04:40:00 -0700
-Subject: [PATCH] EXPERIMENT: arm64: dts: h713: route LINEOUT to the speaker
+Subject: [PATCH] arm64: dts: h713: route LINEOUT to the speaker
 
 With 0082 the H616 codec driver binds and registers an ALSA card, and mpv opens
 the PCM and writes audio -- but nothing is heard, and /sys/kernel/debug/gpio
@@ -19,11 +19,9 @@ only warns rather than fails when allwinner,audio-routing is missing -- the
 property is board-specific by design. The warning at probe was not cosmetic,
 which is worth stating because it was initially read that way.
 
-UNTESTED. Success is an audible tone and gpio-2 reading "out hi" during
-playback; the GPIO is the objective half of that and should be checked even if
-something is heard.
-
-OUT OF SERIES, applies after 0082.
+With this route, gpio-2 reads "out hi" during playback and returns low after
+the stream closes. The H713 headphone-amplifier stage required for normal
+speaker gain is enabled by the following codec patch.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
