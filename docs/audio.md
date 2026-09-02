@@ -198,16 +198,38 @@ single-ended, and that is more convincing than any register explanation.
 `DAC Playback Volume` is already at maximum: its control is declared with
 `invert = 1`, so 63 means zero attenuation.
 
-**The lead worth following is the headphone path.** The stock codec node carries
-`speaker_vol = 0x1a` as a control distinct from `headphone_vol = 0x00`, with
-`spk_used = 1`, and the vendor register map has an **HP register at 0x324** that
-this variant does not touch at all. On projectors of this class the speaker is
-often driven from the headphone amplifier rather than LINEOUT, which would fit a
-tone that is present but weak. Check that before assuming the external amp's
-gain is simply low.
+**Corrected: the codec is NOT the limit, and the headphone-path lead was wrong.**
+`speaker_vol` does not live at 0x324. The vendor driver writes all three volumes
+into registers we already drive:
 
-Second candidate, cheaper to rule out: someone looking at the board to see what
-the speaker is actually wired to.
+```text
+speaker_vol    -> SUNXI_DAC_REG (0x310) bits [4:0]   == mainline's
+                  SUN50I_H616_LINEOUT_VOL, i.e. "Line Out Playback Volume"
+headphone_vol  -> SUNXI_DAC_REG (0x310) bits [30:28]
+digital_vol    -> SUNXI_DAC_DPC                      == "DAC Playback Volume"
+```
+
+So "Line Out Playback Volume" *is* the vendor's speaker volume. Comparing what
+each stack actually programs:
+
+| | stock | ours |
+| --- | --- | --- |
+| digital | 0x00 | ALSA 63, invert=1 -> reg 0, same |
+| speaker | 0x1a (26) | 31, louder than stock |
+| headphone | 0x00 | 0 (read back in 0x0015E87F) |
+
+We drive the codec harder than the vendor does. The vendor driver also has no
+GPIO or regulator beyond gpio-spk, so there is no second amp enable being
+missed.
+
+**Therefore the quietness is downstream of the SoC** -- the external amplifier
+or the speaker itself. Register work will not fix it. The cheap next checks, in
+order:
+
+1. **Was stock Android loud on this board?** If it was not, there is nothing to
+   fix and this is simply how the unit sounds. Nobody has compared.
+2. Someone looking at the board: what the speaker is wired to, whether the amp
+   has a gain-select pin, and whether its supply rail is up.
 
 ## Not yet established
 
