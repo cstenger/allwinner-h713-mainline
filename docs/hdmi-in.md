@@ -168,14 +168,10 @@ session".
 1. **Find the EDID RAM.** `SCDC_CONFIG` already gives HPD, so EDID is the only
    missing half of the milestone. The THDMIRX window is now scanned and ruled
    out, so the candidates left are, in rough order of cheapness:
-   - the **ARISC**. Stock handles HPD in ARISC firmware (the peer RE'd its
-     handler at `0x121e4`), and the HPD pin register at `0x07091014` is in that
-     domain. If HPD is ARISC-owned, EDID plausibly is too — served in software
-     over DDC rather than from a hardware RAM. Reading the ARISC firmware is
-     free and does not risk the board.
+   - **the `rx` controller window at `0x05000000`** — see "the window we never
+     mapped" below. This is the live lead.
+   - ~~the **ARISC**~~ — closed, see below.
    - ~~the **wrapper** at `0x0684xxxx`~~ — scanned, see below.
-   - an **external EEPROM** on the DDC lines, which would make this a board
-     question rather than a SoC one.
 2. **Do not assert HPD until EDID works.** Advertising a display with no EDID
    behind it is a worse state than being absent.
 3. The source must be **connected before power-on** — the peer reports the
@@ -189,3 +185,72 @@ MIPS would remove that plane and force a bespoke client, which is exactly what
 the peer had to write — and their picture is broken (4x1 grayscale) precisely
 because they do not control the scanout side. Treat the MIPS as a frame
 producer writing into a buffer we scan out.
+
+## CLOSED: the ARISC does not store EDID
+
+Read the peer's `docs/re/arisc-firmware.md` and `docs/re/edid-protocol.md`
+rather than the firmware image, which was the cheaper move and settled it.
+
+There is a full documented ARM↔ARISC protocol — msgbox/rpmsg, BOP frames, a
+132-byte `_tagMcuCommParam`, and nine EDID sub-commands (`RequestEDID 0x0315`,
+`UpdateEDID 0x0111` in 4x64-byte chunks, `PullHotPlug 0x0211`, ...). It looks
+exactly like the answer and is not:
+
+> The ARISC EDID handlers (dispatcher at `0x12490`) all return `status=-3`
+> ("imt error") — **hollow by design.** Stock sends EDID sub-commands to ARISC,
+> ARISC says no, and the EDID is written via the direct Synopsys path.
+
+So stock's own EDID route is the DMA path, not the coprocessor. **Do not spend
+a session on the ARISC for EDID.** The protocol is still worth knowing for HPD
+(`PullHotPlug`) and for the receive side (EDID-Ready and EDID-Package
+notifications arrive on channel `0xf8`).
+
+Also from there, confirming the HPD register independently: `0x07091014`, three
+bits, `0x00` = all ports low, `0x07` = all high, and **ARISC writes it without
+raising a GIC IRQ**, which is why hotplug detection never fires.
+
+## The window we never mapped: `rx` at 0x05000000
+
+The peer's DT node maps **three** regions, and every experiment above used only
+the third:
+
+```text
+"rx"      0x05000000 + 0x10000   HDMI-RX controller
+"phy"     0x05040000 + 0x01000   H713 custom PHY
+"thdmirx" 0x050c0000 + 0x10000   DDC / EDID-RAM / HDCP
+```
+
+This matters because their `controller_enable()` writes the `SNPS_*` registers
+— `GLOBAL_TIMER_REF_BASE`, `CMU_CONFIG0`, `DESCRAND_EN_CONTROL`, `CED_CONFIG`,
+`DEFRAMER_CONFIG0` — through `rx_base`, **not** through thdmirx. Only the
+`THDMIRX_*` names are thdmirx-relative. So the enable sequence approximated
+above was writing to the wrong register file, and "SWENABLE sticks and changes
+nothing" is exactly what that produces.
+
+`0x05000000` is alive with the TV domains up — scanned, 16 populated blocks,
+no hang:
+
+```text
+0x05000300  01 01 01 01 ff 3c c1 c1      0x05000400  ef c3 04 ee c5 04 ed c7
+0x05000600  02 28 02 02 18 0a 7b 40      0x05000a00  bd bf 62 01 5e 2d 62 01
+0x05001000  ff ff ff ff 01 ff 01 03      0x05001500  10 f4 4b 10 f4 4b 80 63
+```
+
+Two more details from their node worth copying rather than rediscovering:
+
+- **clocks**: `"bus"` and `"mod"` are BOTH `CLK_BUS_DISP`. Their comment says
+  stock vmlinux RE shows H713 has only `bus-disp`, `bus-tvcap` and
+  `bus-hdmi-audio` as real TV gates, and supplying `CLK_BUS_DISP` twice
+  satisfies the driver's refcount without driving phantom HDMI-TX gates.
+- **no `resets` property at all**, deliberately: bus-disp is shared with
+  h713-drm / tvtop / decd, and the internal soft-reset is driven via MMIO
+  through `GLOBAL_SWRESET_REQUEST` instead.
+- **power-domains**: only `pd_tvcap` (index 2). We attach TVFE as well, which
+  is harmless but apparently unnecessary.
+
+### Next
+
+Port `controller_enable()` against `rx_base = 0x05000000` and then retry the
+EDID write. That is the first attempt that will have been made with the right
+register file, and it is the only untried thing left that the peer's working
+stack actually does.
