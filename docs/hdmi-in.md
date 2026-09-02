@@ -349,3 +349,48 @@ peer notes ARISC writes it without raising a GIC IRQ.
    instrument, and every EDID question above becomes answerable in one boot
    instead of by inference.
 3. Do not trust `EDID_DATA` readback either way.
+
+## What powers 0x07091000: `bus-r-cpucfg`, and it is gated off
+
+Answered by reading, not probing — that block has cost a power cycle already.
+
+Neither device tree describes `0x07091000`. Stock declares two nodes at
+`0x07090000`, `rtc@7090000` and `rtc_ccu@7090000` (compatible
+`allwinner,sun50iw12-rtc-ccu`), both `0x3ff` long, so **stock's Linux does not
+describe the block either** — consistent with it being ARISC-private, driven by
+firmware rather than by any kernel.
+
+The R-domain CCU does expose a gate for the block that owns that region:
+
+```text
+r-apb0        en=3     bus-r-ppu     en=1     bus-r-ir-rx  en=1
+r-ahb         en=1     bus-r-pwm     en=1
+bus-r-cpucfg  en=0     bus-r-twd     en=0     bus-r-timer  en=0
+```
+
+**`bus-r-cpucfg` is off.** R_CPUCFG is the ARISC/CPUS configuration block —
+the one that holds the coprocessor in reset — and the R-bus fabric around it
+(`r-ahb`, `r-apb0`) is up, so the fabric is not the problem, the leaf gate is.
+
+This is exactly the shape of the TVFE/TVCAP problem: a powered fabric, a gated
+leaf, and a bus hang instead of an abort on access. The fix that worked there
+should work here — a device that claims the clock and enables it, rather than
+enabling a large vendor driver that drags in interrupts and GPIOs.
+
+**One caveat worth carrying.** `bus-r-rtc` is also `en=0` while the RTC works
+perfectly, so a gated bus clock does not universally imply an inaccessible
+block — the RTC sits in an always-on domain. That weakens the inference from
+"gate off" to "hang" without breaking it: `bus-r-cpucfg` remains the only
+plausible lever found, but treat it as the leading hypothesis rather than a
+proven cause until a boot with it enabled either reads `0x07091014` or hangs.
+
+### Next
+
+1. Add `CLK_BUS_R_CPUCFG` to a minimal probe device the way patch 0087 did for
+   TVFE/TVCAP — no interrupt, no GPIOs — and have it read `0x07091014` from
+   inside the driver with a flushed log line immediately before the access, so
+   a hang names itself.
+2. If it reads: write `0x07` to assert HPD on all three ports, and the host
+   becomes a real instrument for every open EDID question.
+3. If it still hangs: the block needs the ARISC out of reset, not merely
+   clocked, and the next lever is R_CPUCFG's own reset control.
