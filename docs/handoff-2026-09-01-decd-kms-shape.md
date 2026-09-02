@@ -317,7 +317,35 @@ The report deliberately prints the distribution and a per-period histogram, not
 a mean: a 16.7 ms mean is equally consistent with every frame on its own vsync
 and with half early, half doubled. Only `1x=298 2x=0` distinguishes them.
 
-**Still open on measurement:** a PTS-paced run. This one was unpaced and played
+### PTS-PACED RUN — correct speed, zero late frames
+
+`PACED=1` sets `sync=true` on the appsink so the loop runs at the clip's own
+rate:
+
+```text
+FLIPS 299 in 9.95s = 30.06 fps
+FLIP_TIMING  n=298  mean=33.33ms  sd=1.67ms  min=16.75  max=33.68
+FLIP_PERIODS 1x=3  2x=295  3x+=0  mode=2x  late=0 (0.00%)
+```
+
+Operator: played at normal speed, prompt returned. **30.06 fps against a
+29.97 fps clip with nothing late.** The 33.33 ms mean is exactly two refresh
+periods, and 295 of 298 frames held exactly that; `3x+=0` means no frame ever
+missed its slot. The wider sd versus the unpaced run is the 3 single-period
+samples at 16.75 ms — frames presented one refresh *early*, most likely the
+pipeline clock settling, not drops.
+
+Note `decd-play` reported **27.1 fps** on this same clip, i.e. missing
+deadlines. The DRM plane holds 30.06 with nothing late, so the KMS path needs no
+pacing work. That gap was harness overhead, not DECD.
+
+**The drop metric had to change with this run.** It now measures deviation from
+the *modal* period rather than from one: 29.97 fps content on a 59.97 Hz panel
+correctly holds each frame for two refreshes, so counting those as drops would
+have condemned a perfect run. Anyone extending this should keep that in mind
+before trusting a "dropped frames" number.
+
+**Remaining on measurement:** This one was unpaced and played
 ~2x fast; whether pacing to timestamps holds 29.97 fps without dropping is
 untested, and that is the actual playback case. Also unexamined:
 `tools/display/tear-measure.py` and `edge-measure.py` from earlier display work.

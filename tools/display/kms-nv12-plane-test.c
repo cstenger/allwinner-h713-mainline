@@ -198,7 +198,7 @@ static void flip_handler(int fd, unsigned int seq, unsigned int tv_sec,
  */
 static void report_deltas(const double *d, unsigned n)
 {
-	unsigned i, drops = 0, h1 = 0, h2 = 0, h3 = 0;
+	unsigned i, drops = 0, h1 = 0, h2 = 0, h3 = 0, mode;
 	double lo = 1e9, hi = 0, sum = 0, var = 0, mean;
 
 	if (!n) {
@@ -219,8 +219,19 @@ static void report_deltas(const double *d, unsigned n)
 			h2++;
 		else
 			h3++;
-		if (periods >= 2)
-			drops += periods - 1;
+	}
+	/*
+	 * Drops are deviations from the MODAL period, not from one. Unpaced
+	 * content flips every vsync so the mode is 1; 29.97 fps content on a
+	 * 59.97 Hz panel correctly holds each frame for two refreshes, so its
+	 * mode is 2 and counting those as drops would condemn a perfect run.
+	 */
+	mode = (h1 >= h2 && h1 >= h3) ? 1 : (h2 >= h3 ? 2 : 3);
+	for (i = 0; i < n; i++) {
+		unsigned periods = (unsigned)(d[i] / FLIP_PERIOD_US + 0.5);
+
+		if (periods > mode)
+			drops += periods - mode;
 	}
 	mean = sum / n;
 	for (i = 0; i < n; i++)
@@ -229,8 +240,8 @@ static void report_deltas(const double *d, unsigned n)
 	printf("FLIP_TIMING n=%u mean=%.2fms sd=%.2fms min=%.2f max=%.2f\n",
 	       n, mean / 1000.0, sqrt(var / n) / 1000.0, lo / 1000.0,
 	       hi / 1000.0);
-	printf("FLIP_PERIODS 1x=%u 2x=%u 3x+=%u dropped=%u (%.2f%%)\n",
-	       h1, h2, h3, drops, 100.0 * drops / n);
+	printf("FLIP_PERIODS 1x=%u 2x=%u 3x+=%u mode=%ux late=%u (%.2f%%)\n",
+	       h1, h2, h3, mode, drops, 100.0 * drops / n);
 }
 
 /*
@@ -284,7 +295,9 @@ static int cedrus_decode_frame(const char *path)
 	snprintf(desc, sizeof(desc),
 		 "filesrc location=\"%s\" ! h264parse ! v4l2slh264dec ! "
 		 "video/x-raw,format=NV12 ! "
-		 "appsink name=out max-buffers=3 drop=false sync=false", path);
+		 "appsink name=out max-buffers=3 drop=false sync=%s", path,
+		 (getenv("PACED") && strcmp(getenv("PACED"), "0")) ? "true"
+								  : "false");
 	held_pipeline = gst_parse_launch(desc, NULL);
 	if (!held_pipeline) {
 		fprintf(stderr, "cedrus pipeline will not build\n");
