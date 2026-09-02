@@ -384,6 +384,17 @@ nominal 48000          196,608,000        49,152,000
 
 Both land on the SDM table entries, and `45 158 400 / 1024 = 44 100` exactly.
 
+Re-measured at the speaker on that build, which is the check that actually
+closes this -- the clock tree agreeing is not the same as the sound being right:
+
+```text
+                       before fix        after fix
+nominal 44.1 kHz    418.97 Hz  -84.8c    440.01 Hz  +0.1c
+nominal 48   kHz    384.93 Hz -231.5c    440.00 Hz   0.0c
+```
+
+Audio playback on H713 is now correct in pitch, level and routing.
+
 ## Not yet established
 
 - **Nobody has looked at the board.** The codec being enabled in the stock DTB

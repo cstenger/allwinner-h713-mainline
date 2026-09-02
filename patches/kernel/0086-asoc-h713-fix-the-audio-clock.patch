@@ -48,10 +48,15 @@ and restoring 0x280B5501 afterwards:
   48   kHz, PLL as found     384.93 Hz   -231.5 cents
   44.1 kHz, PLL poked        440.00 Hz      0.0 cents
 
-Exactly on pitch. What that run proves is the diagnosis and the target rate.
-The driver plumbing that reaches them -- the flag and the multiplier -- has NOT
-been booted, so check on the next boot that audio-codec-dac reads 45,158,400 at
-44.1 kHz and 49,152,000 at 48 kHz, and that a 440 Hz tone measures 440 Hz.
+Exactly on pitch. That run proved the diagnosis and the target rate; this patch
+is what reaches them from the driver, and booting it confirms both halves:
+
+  nominal 44100    pll-audio-base 180,633,600    audio-codec-dac 45,158,400
+  nominal 48000    pll-audio-base 196,608,000    audio-codec-dac 49,152,000
+
+45,158,400 / 1024 is 44,100 exactly. Re-measured at the speaker, the 440 Hz
+tone now reads 440.01 Hz at nominal 44.1 kHz and 440.00 Hz at nominal 48 kHz,
+against 418.97 and 384.93 before -- 0.1 cents and 0.0 cents from correct.
 
 The ADC gate gets the same flag. Capture is unimplemented, so this is untested
 there, but leaving the two halves of one block inconsistent would be a trap for
