@@ -187,49 +187,56 @@ gpio-2 (allwinner,pa) out hi   amp asserts on playback
   Switch 1 1`, and a non-zero `Line Out Playback Volume`. All default to
   off/zero, so a fresh boot is silent by design.
 
-## Open: it is quiet, and the route is not the reason
+## LOUD — the speaker is on the headphone amplifier
 
-Loudness barely changed between `Line Out Playback Volume` 15/31 and 31/31, and
-an A/B of Stereo against Mono Differential — switched mid-tone, two passes —
-produced no audible difference. The operator's reading is that this board has a
-**single speaker**, so differential drive gains nothing if it is wired
-single-ended, and that is more convincing than any register explanation.
+The quietness was not the external amp and not the codec's gain. **The speaker
+is driven from the HEADPHONE amplifier, and HP_AMP_EN was never set.**
 
-`DAC Playback Volume` is already at maximum: its control is declared with
-`invert = 1`, so 63 means zero attenuation.
+What made that visible was a deliberately large A/B rather than more reading.
+Line Out Playback Volume 6/31 against 31/31 is indistinguishable by ear; DAC
+Playback Volume 20 against 63 likewise; stereo against mono differential,
+switched mid-tone over two passes, likewise. The registers were provably
+changing throughout -- `0x310` reads `0x0015E80F` at line-out volume 15 and
+`0x0015E87F` at 31.
 
-**Corrected: the codec is NOT the limit, and the headphone-path lead was wrong.**
-`speaker_vol` does not live at 0x324. The vendor driver writes all three volumes
-into registers we already drive:
+**Controls that verifiably move the right register bits while having no audible
+effect mean the speaker is not on that output.** That is the whole inference.
 
 ```text
-speaker_vol    -> SUNXI_DAC_REG (0x310) bits [4:0]   == mainline's
-                  SUN50I_H616_LINEOUT_VOL, i.e. "Line Out Playback Volume"
-headphone_vol  -> SUNXI_DAC_REG (0x310) bits [30:28]
-digital_vol    -> SUNXI_DAC_DPC                      == "DAC Playback Volume"
+0x324 = 0x80800C44   HP_EN_L and HP_EN_R set, bit 15 HP_AMP_EN CLEAR
+0x324 = 0x80808F8C   vendor's word: HP_AMP_EN + bits 3, 7, 8, 9  -> LOUD
 ```
 
-So "Line Out Playback Volume" *is* the vendor's speaker volume. Comparing what
-each stack actually programs:
+Written mid-tone, the change was immediate and obvious.
 
-| | stock | ours |
-| --- | --- | --- |
-| digital | 0x00 | ALSA 63, invert=1 -> reg 0, same |
-| speaker | 0x1a (26) | 31, louder than stock |
-| headphone | 0x00 | 0 (read back in 0x0015E87F) |
+### Two earlier conclusions this corrects
 
-We drive the codec harder than the vendor does. The vendor driver also has no
-GPIO or regulator beyond gpio-spk, so there is no second amp enable being
-missed.
+- **"The codec is not the limit, the quietness is downstream -- the amplifier or
+  the speaker."** Wrong. It was the codec, in a stage nobody was driving.
+- **The headphone-path lead, which was then retracted.** The retraction was
+  wrong in an interesting way: `speaker_vol` really does live at `0x310[4:0]`,
+  so the reasoning that killed the lead was sound -- but the *speaker* is on the
+  HP amp regardless, so the original hunch was right for a reason I had not
+  found yet. Correct reasoning, wrong conclusion.
 
-**Therefore the quietness is downstream of the SoC** -- the external amplifier
-or the speaker itself. Register work will not fix it. The cheap next checks, in
-order:
+Both null results above were **correct data pointing at a wrong assumption**,
+not failures. They are only confusing if you assume the output is LINEOUT.
 
-1. **Was stock Android loud on this board?** If it was not, there is nothing to
-   fix and this is simply how the unit sounds. Nobody has compared.
-2. Someone looking at the board: what the speaker is wired to, whether the amp
-   has a gain-select pin, and whether its supply rail is up.
+### Patch 0085 — built, UNTESTED on hardware
+
+Adds an `HP Amp` DAPM supply widget applying the vendor's configuration word on
+power-up and clearing it on power-down, with `LINEOUT` depending on it. The
+register write is proven; the DAPM plumbing of it is not. Check on the next boot:
+
+1. **Volume controls now do something.** That is the real regression test for
+   this whole thread -- if they are still inaudible, the widget is not powering
+   the amp and nothing else matters.
+2. **The amp enables at the right time, not permanently.** A headphone amplifier
+   left powered into an idle DAC is how you get hiss. `gpio-2` and `0x324` bit
+   15 should both follow playback.
+3. Whether `HP_AMP_EN` alone suffices. The whole vendor word is applied because
+   those bits were set together in the run that produced sound; trimming it is
+   untested and should be measured, not assumed.
 
 ## Not yet established
 

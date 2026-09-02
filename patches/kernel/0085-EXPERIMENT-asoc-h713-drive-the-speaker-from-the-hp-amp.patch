@@ -1,0 +1,106 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Tue, 2 Sep 2026 06:20:00 -0700
+Subject: [PATCH] EXPERIMENT: ASoC: h713: drive the speaker from the HP amp
+
+With 0084 a tone is audible but weak, and -- decisively -- completely
+indifferent to volume. Line Out Playback Volume 6/31 against 31/31 is
+indistinguishable by ear, DAC Playback Volume 20 against 63 likewise, and an A/B
+of stereo against mono differential switched mid-tone produced no difference
+either. The registers were provably changing: 0x310 read 0x0015E80F at line-out
+volume 15 and 0x0015E87F at 31.
+
+Controls that verifiably move the right register bits while having no audible
+effect mean the speaker is not on that output. It is on the HEADPHONE
+amplifier, and HP_AMP_EN was never set:
+
+  0x324 = 0x80800C44   HP_EN_L and HP_EN_R set, bit 15 HP_AMP_EN CLEAR
+
+Writing the vendor's configuration word mid-tone made it loud immediately:
+
+  0x324 = 0x80808F8C   HP_AMP_EN plus bits 3, 7, 8 and 9
+
+So add an "HP Amp" supply widget that applies that word on power-up and clears
+it on power-down, and make LINEOUT depend on it. The whole vendor word is
+applied rather than bit 15 alone: the bits were enabled together in the run that
+produced sound, and whether HP_AMP_EN suffices by itself has NOT been tested.
+
+This also retires two earlier null results, which were correct data pointing at
+a wrong assumption rather than failures: line-out volume was inaudible because
+the speaker is not on line-out, and the route made no difference for the same
+reason.
+
+UNTESTED as a driver change -- the register write is proven, the DAPM plumbing
+of it is not. Watch for the amp being enabled at the right time rather than
+permanently: leaving a headphone amplifier powered into an idle DAC is how you
+get hiss.
+
+OUT OF SERIES, applies after 0084.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/sound/soc/sunxi/sun4i-codec.c b/sound/soc/sunxi/sun4i-codec.c
+--- a/sound/soc/sunxi/sun4i-codec.c
++++ b/sound/soc/sunxi/sun4i-codec.c
+@@ -241,6 +241,15 @@
+ #define SUN50I_DAC_DAP_CTL			(0xf0)
+ 
+ #define SUN50I_H616_DAC_AC_DAC_REG		(0x310)
++/*
++ * H713 drives its speaker from the HEADPHONE amplifier, not LINEOUT. Measured:
++ * with HP_AMP_EN clear a tone is audible but weak and completely indifferent to
++ * line-out volume -- 6/31 and 31/31 are indistinguishable, as are stereo and
++ * mono differential. Writing the vendor's configuration word here makes it loud.
++ */
++#define SUN50I_H713_HP_REG			(0x324)
++#define SUN50I_H713_HP_CFG_MASK			(0x8fcc)
++#define SUN50I_H713_HP_CFG_VAL			(0x8f8c)
+ #define SUN50I_H616_DAC_LEN			(15)
+ #define SUN50I_H616_DAC_REN			(14)
+ #define SUN50I_H616_LINEOUTL_EN			(13)
+@@ -1269,6 +1278,7 @@
+ 	{ "Line Out Source Playback Route", "Mono Differential", "Left Mixer" },
+ 	{ "Line Out Source Playback Route", "Mono Differential", "Right Mixer" },
+ 	{ "LINEOUT", NULL, "Line Out Source Playback Route" },
++	{ "LINEOUT", NULL, "HP Amp" },
+ 
+ 	/* ADC Routes */
+ 	{ "Left ADC", NULL, "ADC Enable" },
+@@ -1981,6 +1991,25 @@
+  * and the mux itself are shared with H616 unchanged: they live in DAC_AC_DAC_REG
+  * (0x310) and the digital DAC_DPC, both of which exist here.
+  */
++/*
++ * Apply the vendor's whole HP configuration word, not just HP_AMP_EN. Bit 15 is
++ * the amplifier enable, but bits 3 and 7-9 are set alongside it by the vendor
++ * driver and were enabled together in the run that produced sound -- whether
++ * bit 15 alone suffices has NOT been tested, so do not trim this without
++ * measuring.
++ */
++static int sun50i_h713_codec_hp_amp_event(struct snd_soc_dapm_widget *w,
++					  struct snd_kcontrol *k, int event)
++{
++	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
++
++	snd_soc_component_update_bits(component, SUN50I_H713_HP_REG,
++				      SUN50I_H713_HP_CFG_MASK,
++				      SND_SOC_DAPM_EVENT_ON(event) ?
++					      SUN50I_H713_HP_CFG_VAL : 0);
++	return 0;
++}
++
+ static const struct snd_soc_dapm_widget sun50i_h713_codec_codec_widgets[] = {
+ 	/* Digital parts of the DACs */
+ 	SND_SOC_DAPM_SUPPLY("DAC Enable", SUN4I_CODEC_DAC_DPC,
+@@ -2000,6 +2029,12 @@
+ 	/* Line Out path, without H616's ramp controller at 0x31c */
+ 	SND_SOC_DAPM_MUX("Line Out Source Playback Route",
+ 			 SND_SOC_NOPM, 0, 0, sun50i_h616_codec_lineout_src),
++
++	/* The speaker hangs off the headphone amplifier on this SoC. */
++	SND_SOC_DAPM_SUPPLY("HP Amp", SND_SOC_NOPM, 0, 0,
++			    sun50i_h713_codec_hp_amp_event,
++			    SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
++
+ 	SND_SOC_DAPM_OUTPUT("LINEOUT"),
+ };
+ 
