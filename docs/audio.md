@@ -362,16 +362,27 @@ and restoring `0x280B5501` afterwards:
 **Exactly on pitch.** The diagnosis is complete and the fix is confirmed before
 any driver change was written.
 
-### What the fix has to do
+### The fix — patch 0086, booted and confirmed
 
-Two things, not one -- adding the flag alone would make it *worse*:
+Two things, not one, and the order matters: adding the flag alone would make it
+*worse*, driving the PLL to 90 316 800 and playback to 22 050 Hz -- half speed
+instead of 4.8 % slow.
 
-1. `audio_codec_dac_clk` (and `audio_codec_adc_clk`) need `CLK_SET_RATE_PARENT`.
-2. The H713 codec variant must request **rate x 1024**, not the shared
-   `sun4i_codec_get_mod_freq`'s rate x 512. With the flag added but the request
-   left at 22 579 200, the PLL would be driven to 90 316 800 (also in the table),
-   `audio-codec-dac` would land on 22 579 200, and playback would run at
-   22 050 Hz -- half speed.
+1. `audio_codec_dac_clk` (and `audio_codec_adc_clk`) get `CLK_SET_RATE_PARENT`.
+2. The H713 quirk carries `mod_freq_mult = 2`, so the shared
+   `sun4i_codec_get_mod_freq` table's 512x rate becomes the 1024x this codec
+   needs.
+
+Booted 2026-09-02. The clock now tracks the requested rate exactly:
+
+```text
+                    pll-audio-base   audio-codec-dac
+idle                   172,000,000        43,000,000
+nominal 44100          180,633,600        45,158,400
+nominal 48000          196,608,000        49,152,000
+```
+
+Both land on the SDM table entries, and `45 158 400 / 1024 = 44 100` exactly.
 
 ## Not yet established
 
