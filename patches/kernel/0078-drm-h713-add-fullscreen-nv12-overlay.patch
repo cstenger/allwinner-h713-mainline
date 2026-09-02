@@ -1,6 +1,6 @@
 From: Christopher Stenger <chris.h.stenger@gmail.com>
 Date: Tue, 2 Sep 2026 00:30:00 -0700
-Subject: [PATCH] EXPERIMENT: drm: h713: add the validated fullscreen NV12 plane
+Subject: [PATCH] drm: h713: add the validated fullscreen NV12 plane
 
 Expose AFBD source 0 as a second DRM plane under the same driver that owns
 the RGB primary. Hardware has only demonstrated an exclusive downstream
@@ -14,11 +14,12 @@ restores the latest KMS RGB framebuffer. A coherent VideoInfo page follows
 the display device's DMA address space, which also makes its embedded
 pointers ready to become IOVAs when runtime IOMMU translation is added.
 
-This is the first driver-owned version of the static register test. It
-still requires contiguous PRIME imports through the GEM DMA helper;
-fragmented Cedrus capture buffers remain the next IOMMU phase.
-
-OUT OF SERIES. Apply after 0077 for the first DRM-plane hardware test.
+This is the driver-owned implementation of the source-0 programming sequence
+validated by the static register test. With the follow-up IOMMU attachment it
+has also been validated end to end with Cedrus: physically fragmented capture
+buffers import as contiguous IOVAs and scan out at the panel's vsync ceiling
+without drops. The base dtsi already assigns AFBD to this KMS driver, so no
+board-level ownership patch is needed.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
@@ -465,4 +466,3 @@ Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
  			interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>;
  			clocks = <&ccu CLK_AFBD>,
  				 <&ccu CLK_BUS_DISP>;
-

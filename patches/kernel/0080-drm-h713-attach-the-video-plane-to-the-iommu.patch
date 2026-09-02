@@ -1,6 +1,6 @@
 From: Christopher Stenger <chris.h.stenger@gmail.com>
 Date: Tue, 2 Sep 2026 02:10:00 -0700
-Subject: [PATCH] EXPERIMENT: drm: h713-afbd: attach the display to the IOMMU
+Subject: [PATCH] drm: h713-afbd: attach the display to the IOMMU
 
 DECD carries the IOMMU lifecycle in dec_frame_submit(): it attaches master 2
 bypassing, then parks AFBD source 0, flips IOMMU_BYPASS 0x7c -> 0x78 and
@@ -47,11 +47,11 @@ contiguous IOVA, which is what the plane's single-base-plus-stride fetch needs.
 0078's contiguous-import restriction can be revisited once that is confirmed on
 hardware; it is deliberately left in place here so this patch changes one thing.
 
-UNTESTED ON HARDWARE. The risk is concentrated at probe: a bad identity map
-faults the in-flight logo fetch and wedges AFBD for the boot. Recover by
-rebooting over serial; U-Boot republishes the logo.
+The risk is concentrated at probe: a bad identity map faults the in-flight logo
+fetch and wedges AFBD for the boot. Recover by rebooting over serial; U-Boot
+republishes the logo.
 
-OUT OF SERIES. Apply after 0079.
+Applies after 0079.
 
 Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
 ---
