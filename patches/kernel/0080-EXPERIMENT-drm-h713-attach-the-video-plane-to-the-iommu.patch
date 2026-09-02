@@ -1,0 +1,140 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Tue, 2 Sep 2026 02:10:00 -0700
+Subject: [PATCH] EXPERIMENT: drm: h713-afbd: attach the display to the IOMMU
+
+DECD carries the IOMMU lifecycle in dec_frame_submit(): it attaches master 2
+bypassing, then parks AFBD source 0, flips IOMMU_BYPASS 0x7c -> 0x78 and
+unparks. Porting that shape to the KMS driver would be wrong, and the reason is
+worth stating because it is not obvious by analogy.
+
+DECD allocates no scanout buffers -- it only imports them -- so attaching it
+while bypassing is harmless. This driver allocates its own framebuffers. The
+moment the device joins an IOMMU paging domain, drm_gem_dma allocations return
+IOVAs, and under bypass the hardware would scan an IOVA as a physical address:
+garbage from boot, before any video frame exists. There is no bypassing phase
+that works here, so there is no runtime flip to port. Translate from probe.
+
+That is also simpler than DECD's arrangement. 0078 already programs the whole
+video plane with source 0 disabled and enables it last, so there is no in-flight
+scan to park across a transition, and the "never enable source 0 without a frame
+address" rule is satisfied by construction.
+
+Three pieces:
+
+  - sun50i-iommu gains .get_resv_regions = iommu_dma_get_resv_regions, and
+    binds the instance in domain_alloc_paging(). Reserved direct mappings are
+    created before attach_device(), and both sun50i_table_flush() and the
+    page-table allocator dereference sun50i_domain->iommu, so without the bind
+    an IOMMU_RESV_DIRECT region NULL-derefs inside iommu_device_register().
+    Both are lifted from the out-of-series 0075, which is not applied in the
+    KMS configuration.
+
+  - The adopted U-Boot logo at 0x6c100000 is identity-mapped, so the fetch that
+    is already in flight at probe stays valid once master 2 translates. The
+    phandle points at the device, not the IOMMU.
+
+  - of_reserved_mem_device_init_by_name(..., "framebuffer") replaces the index-0
+    lookup. of_iommu_get_resv_regions() only finds iommu-addresses on nodes the
+    device lists in memory-region, but this driver consumed index 0 as its
+    framebuffer pool -- listing the carveout there would have pointed dumb-buffer
+    allocation at a no-map region. Naming the pool separates the two uses; with
+    no "framebuffer" entry the lookup returns -ENODEV and the system CMA pool is
+    used exactly as before.
+
+The intended payoff beyond correctness: PRIME imports now resolve through the
+IOMMU, so a physically fragmented Cedrus capture buffer coalesces into one
+contiguous IOVA, which is what the plane's single-base-plus-stride fetch needs.
+0078's contiguous-import restriction can be revisited once that is confirmed on
+hardware; it is deliberately left in place here so this patch changes one thing.
+
+UNTESTED ON HARDWARE. The risk is concentrated at probe: a bad identity map
+faults the in-flight logo fetch and wedges AFBD for the boot. Recover by
+rebooting over serial; U-Boot republishes the logo.
+
+OUT OF SERIES. Apply after 0079.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/iommu/sun50i-iommu.c b/drivers/iommu/sun50i-iommu.c
+--- a/drivers/iommu/sun50i-iommu.c
++++ b/drivers/iommu/sun50i-iommu.c
+@@ -27,6 +27,7 @@
+ #include <linux/spinlock.h>
+ #include <linux/types.h>
+ 
++#include "dma-iommu.h"
+ #include "iommu-pages.h"
+ 
+ #define IOMMU_RESET_REG			0x010
+@@ -730,6 +731,15 @@
+ 	if (!sun50i_domain)
+ 		return NULL;
+ 
++	/*
++	 * Reserved direct mappings are created before attach_device(), and both
++	 * sun50i_table_flush() and the page-table allocator dereference
++	 * sun50i_domain->iommu, which attach_domain() would normally set. Bind
++	 * the one H713 instance here or an IOMMU_RESV_DIRECT region NULL-derefs
++	 * inside iommu_device_register(). attach_domain() assigns the same value.
++	 */
++	sun50i_domain->iommu = sun50i_iommu_from_dev(dev);
++
+ 	sun50i_domain->dt =
+ 		iommu_alloc_pages_sz(GFP_KERNEL | GFP_DMA32, DT_SIZE);
+ 	if (!sun50i_domain->dt)
+@@ -913,6 +923,7 @@
+ static const struct iommu_ops sun50i_iommu_ops = {
+ 	.identity_domain = &sun50i_iommu_identity_domain,
+ 	.device_group	= generic_single_device_group,
++	.get_resv_regions = iommu_dma_get_resv_regions,
+ 	.domain_alloc_paging = sun50i_iommu_domain_alloc_paging,
+ 	.of_xlate	= sun50i_iommu_of_xlate,
+ 	.probe_device	= sun50i_iommu_probe_device,
+diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -614,7 +614,14 @@
+ 	 * Point memory-region at a carveout to override that, e.g. to keep
+ 	 * scanout inside a known-good region; the ceiling comes with it.
+ 	 */
+-	ret = of_reserved_mem_device_init(dev);
++	/*
++	 * By NAME, not index 0. The device must also list the adopted-scanout
++	 * carveout in memory-region so of_iommu_get_resv_regions() can find its
++	 * iommu-addresses and identity-map it; taking index 0 as the pool would
++	 * then point framebuffer allocation at a no-map region.
++	 */
++	ret = of_reserved_mem_device_init_by_name(dev, dev->of_node,
++						  "framebuffer");
+ 	if (ret && ret != -ENODEV)
+ 		return dev_err_probe(dev, ret, "bad scanout memory-region\n");
+ 	dev_info(dev, "framebuffers from %s\n",
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -114,6 +114,7 @@
+ 		framebuf_reserved: uboot-scanout@6c100000 {
+ 			reg = <0x6c100000 0x800000>;
+ 			no-map;
++			iommu-addresses = <&display 0x6c100000 0x800000>;
+ 		};
+ 	};
+ 
+@@ -1701,6 +1702,17 @@
+ 			clocks = <&ccu CLK_AFBD>,
+ 				 <&ccu CLK_BUS_DISP>;
+ 			clock-names = "clk_afbd", "clk_bus_disp";
++			/*
++			 * Master 2, translating from probe. Attaching at all
++			 * turns this driver's framebuffer allocations into
++			 * IOVAs, so the hardware must translate from the start
++			 * or it would scan an IOVA as a physical address. The
++			 * adopted logo it is already fetching is kept valid by
++			 * the identity map below.
++			 */
++			iommus = <&iommu 2 1>;
++			memory-region = <&framebuf_reserved>;
++			memory-region-names = "adopted-scanout";
+ 			status = "okay";
+ 		};
+ 
