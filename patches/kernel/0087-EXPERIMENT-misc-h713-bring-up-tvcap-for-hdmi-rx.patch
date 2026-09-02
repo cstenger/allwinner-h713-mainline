@@ -1,0 +1,244 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 2 Sep 2026 01:10:00 -0700
+Subject: [PATCH] EXPERIMENT: misc: h713: bring up TVFE/TVCAP and probe HDMI-RX
+
+Every HDMI-RX register window on this SoC is unreachable from Linux today, and
+touching one takes the whole board down. Reading 0x07091000 -- a plain read --
+returned no output, then serial went silent and the network dropped; only a
+power cycle recovered it. There is no abort and no watchdog.
+
+The reason is visible without touching anything, in two places we already drive:
+
+  /sys/kernel/debug/pm_genpd/pm_genpd_summary     TVCAP off-0, TVFE off-0
+  /sys/kernel/debug/clk/clk_summary               bus-tvcap        en=0
+                                                  tvfe-1296m       en=0
+                                                  bus-cap-300m     en=0
+                                                  vincap-dma       en=0
+                                                  hdmi-audio       en=0
+                                                  bus-hdmi-audio   en=0
+
+Both TV power domains are off and every TV clock is gated, so an access to any
+block behind them hangs the bus. Note this contradicts the comment on the ppu
+node in the dtsi, which says all five domains were "verified on hardware ...
+status=0x00010000 (ON)". Whatever that read caught, genpd disagrees at runtime,
+and genpd is what governs the access that hangs.
+
+The obvious lever is the vendor tvtop driver, and it is the wrong one here. Its
+node claims GIC_SPI 110 -- the same interrupt our KMS display driver owns for
+AFBD, which is exactly the "exactly one may own the block" conflict already
+recorded for KMS and DECD -- and it carries panel properties including
+panel_bl_en = <&pio 1 5 ...>, which is PB5, the backlight *and fan* enable that
+must never be driven low. Enabling it wholesale to read one register would risk
+the display and the cooling to answer a question neither is involved in.
+
+So take the narrow lever instead: a device that attaches the TVFE and TVCAP
+power domains and enables the TV clocks, with no interrupt and no GPIOs, then
+reads the first words of the Synopsys THDMIRX window at 0x050c0000 and prints
+them. That window is where the peer RE port puts DDC, the EDID RAM and HDCP,
+which is the half of HDMI-RX that HPD and EDID actually need.
+
+This answers one question: does bringing the domains up make the HDMI-RX block
+readable?
+
+RESULT: yes. Booted 2026-09-02, and the window reads:
+
+  thdmirx+0x00 = 0x70f80029    +0x04 = 0x00000000
+  thdmirx+0x08 = 0x00000000    +0x0c = 0xfe000115
+  thdmirx+0x10 = 0x03ff00ff    +0x14 = 0x030000ff
+  thdmirx+0x18 = 0x80000501    +0x1c = 0x00000000
+
+Structured and non-uniform, which is silicon answering rather than a floating
+bus reading all-zero or all-one. genpd reports TVCAP and TVFE "on" afterwards,
+and nothing else regressed: LVDS still connected, the audio card still present,
+no new errors. So the domains were the whole story, the hard-lock was a
+powered-off block and nothing more exotic, and the HDMI-RX register map can now
+be explored from Linux like any other.
+
+Deliberately NOT done here: no HPD assertion, no EDID write, no PHY touching.
+The HPD pin the peer documents lives at 0x07091014, outside the RTC's declared
+0x400 range and in a block no DT node describes, and that is the read that
+already cost a power cycle. It is not touched until something explains it.
+
+Recovery if this hangs at probe: power cycle, then boot the FIT that
+install-kernel-fit.sh backed up.
+
+OUT OF SERIES.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/misc/h713-tvcap-probe.c b/drivers/misc/h713-tvcap-probe.c
+new file mode 100644
+--- /dev/null
++++ b/drivers/misc/h713-tvcap-probe.c
+@@ -0,0 +1,125 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * H713 TVFE/TVCAP bring-up probe.
++ *
++ * Minimal, deliberately: attach the two TV power domains, enable the TV
++ * clocks, read a few words of the HDMI-RX window, print them, and stop. No
++ * interrupt is claimed and no GPIO is touched, because the vendor tvtop node
++ * claims GIC_SPI 110 (owned by the KMS display driver) and carries PB5, the
++ * backlight and fan enable.
++ *
++ * Existing to answer one question: whether the HDMI-RX register windows become
++ * readable once TVFE and TVCAP are powered. Until they are, a read of that
++ * space hangs the bus with no abort and no watchdog.
++ */
++#include <linux/clk.h>
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/pm_domain.h>
++#include <linux/pm_runtime.h>
++
++struct h713_tvcap {
++	struct device	*dev;
++	struct device	*pd_tvfe;
++	struct device	*pd_tvcap;
++	struct clk_bulk_data *clks;
++	int		num_clks;
++	void __iomem	*thdmirx;
++};
++
++static int h713_tvcap_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct h713_tvcap *tv;
++	int ret, i;
++
++	tv = devm_kzalloc(dev, sizeof(*tv), GFP_KERNEL);
++	if (!tv)
++		return -ENOMEM;
++	tv->dev = dev;
++
++	/*
++	 * Two domains, so they cannot attach implicitly -- the implicit path
++	 * handles exactly one. Attach both by name and let the PM core keep
++	 * them on for the lifetime of this device.
++	 */
++	tv->pd_tvfe = dev_pm_domain_attach_by_name(dev, "tvfe");
++	if (IS_ERR(tv->pd_tvfe))
++		return dev_err_probe(dev, PTR_ERR(tv->pd_tvfe),
++				     "failed to attach the TVFE domain\n");
++
++	tv->pd_tvcap = dev_pm_domain_attach_by_name(dev, "tvcap");
++	if (IS_ERR(tv->pd_tvcap)) {
++		ret = dev_err_probe(dev, PTR_ERR(tv->pd_tvcap),
++				    "failed to attach the TVCAP domain\n");
++		goto err_detach_tvfe;
++	}
++
++	ret = pm_runtime_get_sync(tv->pd_tvfe);
++	if (ret < 0)
++		goto err_detach_tvcap;
++	ret = pm_runtime_get_sync(tv->pd_tvcap);
++	if (ret < 0)
++		goto err_put_tvfe;
++
++	ret = devm_clk_bulk_get_all(dev, &tv->clks);
++	if (ret < 0)
++		goto err_put_tvcap;
++	tv->num_clks = ret;
++
++	ret = clk_bulk_prepare_enable(tv->num_clks, tv->clks);
++	if (ret)
++		goto err_put_tvcap;
++
++	dev_info(dev, "TVFE+TVCAP powered, %d clocks enabled\n", tv->num_clks);
++
++	/*
++	 * The moment of truth. If the domains were the whole story this
++	 * returns data; if it hangs, the board stops here and the next boot
++	 * knows the domains are not sufficient.
++	 */
++	tv->thdmirx = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(tv->thdmirx)) {
++		ret = PTR_ERR(tv->thdmirx);
++		goto err_disable_clks;
++	}
++
++	dev_info(dev, "reading THDMIRX -- if this is the last line, it hung\n");
++	for (i = 0; i < 8; i++)
++		dev_info(dev, "  thdmirx+0x%02x = 0x%08x\n",
++			 i * 4, readl(tv->thdmirx + i * 4));
++
++	dev_info(dev, "THDMIRX window is readable\n");
++	platform_set_drvdata(pdev, tv);
++	return 0;
++
++err_disable_clks:
++	clk_bulk_disable_unprepare(tv->num_clks, tv->clks);
++err_put_tvcap:
++	pm_runtime_put(tv->pd_tvcap);
++err_put_tvfe:
++	pm_runtime_put(tv->pd_tvfe);
++err_detach_tvcap:
++	dev_pm_domain_detach(tv->pd_tvcap, true);
++err_detach_tvfe:
++	dev_pm_domain_detach(tv->pd_tvfe, true);
++	return ret;
++}
++
++static const struct of_device_id h713_tvcap_of_match[] = {
++	{ .compatible = "allwinner,h713-tvcap-probe" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, h713_tvcap_of_match);
++
++static struct platform_driver h713_tvcap_driver = {
++	.probe	= h713_tvcap_probe,
++	.driver	= {
++		.name		= "h713-tvcap-probe",
++		.of_match_table	= h713_tvcap_of_match,
++		.suppress_bind_attrs = true,
++	},
++};
++builtin_platform_driver(h713_tvcap_driver);
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -3,6 +3,7 @@
+ # Makefile for misc devices that really don't fit anywhere else.
+ #
+ 
++obj-y				+= h713-tvcap-probe.o
+ obj-$(CONFIG_SUNXI_SCANOUT_DMABUF)	+= sunxi-scanout-dmabuf.o
+ obj-$(CONFIG_IBM_ASM)		+= ibmasm/
+ obj-$(CONFIG_IBMVMC)		+= ibmvmc.o
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1570,6 +1570,31 @@
+ 		};
+ 
+ 		/*
++		 * HDMI-RX reachability probe. Powers TVFE and TVCAP and enables
++		 * the TV clocks so the Synopsys THDMIRX window can be read at
++		 * all -- with both domains off, which is how the board boots,
++		 * any access to that space hangs the bus with no abort.
++		 *
++		 * Deliberately claims no interrupt: tvtop's GIC_SPI 110 belongs
++		 * to the KMS display driver. Deliberately carries no panel
++		 * properties: tvtop's panel_bl_en is PB5, the backlight and fan
++		 * enable, which must never be driven low.
++		 */
++		hdmirx_probe: hdmirx-probe@50c0000 {
++			compatible = "allwinner,h713-tvcap-probe";
++			reg = <0x050c0000 0x1000>;
++			clocks = <&ccu CLK_BUS_TVCAP>,
++				 <&ccu CLK_BUS_CAP_300M>,
++				 <&ccu CLK_VINCAP_DMA>,
++				 <&ccu CLK_TVFE_1296M>;
++			clock-names = "bus_tvcap", "cap_300m", "vincap_dma",
++				      "tvfe_1296m";
++			power-domains = <&ppu 1>, <&ppu 2>;
++			power-domain-names = "tvfe", "tvcap";
++			status = "okay";
++		};
++
++		/*
+ 		 * TV System Top Controller
+ 		 * Manages display clocks, resets, and HDMI routing
+ 		 * Stock registers: 0x05700000, 0x06e00000, 0x06700000
