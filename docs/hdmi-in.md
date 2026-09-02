@@ -101,12 +101,56 @@ backed at this address in this configuration.
 So either the EDID RAM lives somewhere else on this silicon, or it needs a
 clock/enable not yet identified. **Do not re-run the five checks above.**
 
+### The window is only ~0x0d00 bytes backed, and 0x4424 is outside it
+
+Settled by scanning rather than guessing (`tools/display/mmio-scan.c`, byte
+reads, 256-byte blocks over the whole 64 KiB):
+
+```text
+0x050c0000   50/256 nonzero   29 f8 70 15 01 fe ff ff
+0x050c0200  115/256           0c 09 03 03 84 25 ad e5
+0x050c0300   47/256           10 ff ff 03 59 48 12 2a
+0x050c0400   62/256           01 0f ff 05 01 04 80 4c
+0x050c0500   44/256           01 0f ff 05 01 04 80 4c
+0x050c0600   46/256           01 0f ff 01 01 04 80 4c
+0x050c0700   35/256           5a d3 04 f3 d4 04 f3 d4
+0x050c0800   42/256           22 33 01 02 03 01 88 08
+0x050c0900   60/256           04 61 08 02 48 50 40 41
+0x050c0c00   98/256           0f 9a ff 88 0f 45 ff b0
+
+10 of 256 blocks contain data
+```
+
+**Everything from 0x050c0d00 upward is zero**, so `DMA_CONFIG10/11` at
+`+0x4424/+0x4428` are simply outside the register file on this silicon. That is
+the whole explanation for the dead EDID port, and it also means no amount of
+enabling was ever going to help.
+
+`0x0400`, `0x0500` and `0x0600` look alike and are 256 bytes apart, which on a
+receiver with three HPD ports invites reading them as three per-port EDID RAMs.
+They are not: a full dump of `0x050c0400` has no `00 FF FF FF FF FF FF 00`
+header and is sparse register content with a repeating `00 C1 D1 04`. Three
+per-port *register* banks, not EDID.
+
+So the peer's EDID path is an **indirect write port** whose control registers
+do not exist here. EDID is not served over a DT-described I2C bus either —
+neither the dtsi nor the stock DTB mentions `ddc` or `edid` anywhere.
+
 ## Next
 
-1. **Find the EDID RAM.** The DDC/EDID path is the milestone; `SCDC_CONFIG`
-   already gives HPD, so EDID is the only missing half. Worth scanning the
-   THDMIRX window byte-wise for backed regions rather than trusting the peer's
-   offset, since that offset is the one thing here that has not held up.
+1. **Find the EDID RAM.** `SCDC_CONFIG` already gives HPD, so EDID is the only
+   missing half of the milestone. The THDMIRX window is now scanned and ruled
+   out, so the candidates left are, in rough order of cheapness:
+   - the **ARISC**. Stock handles HPD in ARISC firmware (the peer RE'd its
+     handler at `0x121e4`), and the HPD pin register at `0x07091014` is in that
+     domain. If HPD is ARISC-owned, EDID plausibly is too — served in software
+     over DDC rather than from a hardware RAM. Reading the ARISC firmware is
+     free and does not risk the board.
+   - the **wrapper** at `0x0684xxxx`, which is alive and only sampled at its
+     first 64 bytes. Scan it byte-wise the same way; 256 bytes of EDID would be
+     obvious.
+   - an **external EEPROM** on the DDC lines, which would make this a board
+     question rather than a SoC one.
 2. **Do not assert HPD until EDID works.** Advertising a display with no EDID
    behind it is a worse state than being absent.
 3. The source must be **connected before power-on** — the peer reports the
