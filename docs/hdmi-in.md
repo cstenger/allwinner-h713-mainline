@@ -394,3 +394,42 @@ proven cause until a boot with it enabled either reads `0x07091014` or hangs.
    becomes a real instrument for every open EDID question.
 3. If it still hangs: the block needs the ARISC out of reset, not merely
    clocked, and the next lever is R_CPUCFG's own reset control.
+
+### REFUTED: `bus-r-cpucfg` is not the gate
+
+Tested (patch 0090): claimed `CLK_BUS_R_CPUCFG` in the probe device — the log
+confirms **5 clocks enabled**, up from 4 — then read `0x07091014` from inside
+the driver. The board hard-locked at exactly that access:
+
+```text
+TVFE+TVCAP powered, 5 clocks enabled
+rx-ctrl: readable
+rx-wrap: readable
+hpd: about to READ 0x07091014 with bus-r-cpucfg held -- if this is the
+     last line, the clock was not the cause
+        <silence; serial dead, network gone, power cycle>
+```
+
+It was the last line. So the clock is **not** the cause, and the caveat carried
+into this test — that `bus-r-rtc` is also gated while the RTC works — was the
+right one to keep.
+
+Cost: one power cycle, and the attributable logging is what made it worth
+paying. We know precisely which access did it and that the gate made no
+difference, instead of a silent board and a guess.
+
+**Remaining candidates for `0x07091000`, none yet tested:**
+
+- the ARISC being held in **reset** rather than merely unclocked —
+  `RST_BUS_R_CPUCFG` exists in the R_CCU (D1's highest R_CCU register, `0x22C`,
+  per the comment on our `r_ccu` node) and was never deasserted;
+- the block only decoding for the ARISC core itself, not for the ARM, in which
+  case no amount of ARM-side clocking will ever reach it and HPD must be driven
+  by running ARISC firmware;
+- some other CPUS-domain enable not exposed as a Linux clock at all.
+
+The second is the one to weigh seriously before spending more power cycles.
+Stock drives this register from ARISC firmware, the peer notes ARISC writes it
+without raising a GIC IRQ, and no device tree — ours or stock's — describes the
+block. Every piece of evidence so far is consistent with it simply not being
+ARM-addressable on this SoC.
