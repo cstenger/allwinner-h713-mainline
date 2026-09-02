@@ -306,3 +306,46 @@ surrounding structured data argues against it here.
    `DESCRAND_EN_CONTROL 0x0210`, `CED_CONFIG 0x0760`,
    `DEFRAMER_CONFIG0 0x0270`, `MAINUNIT_0_INT_MASK_N 0x5014`), which is only
    needed for the TMDS path, not for DDC and EDID.
+
+## NEGATIVE: EDID streamed, host still sees nothing — and HPD is why
+
+Streamed the 128-byte EDID through the rx-side port: `SCDC_CONFIG.HPDLOW` set,
+`EDID_CTRL = 0xD0` (write-enable | slave 0x50), 128 bytes through `EDID_DATA`,
+`EDID_CTRL = 0x50`, `HPDLOW` cleared. Every write landed:
+
+```text
+0x05000054 EDID_DATA reads 0x000000C9   the EDID checksum, i.e. the last byte
+0x05000064 DDC_STATUS                   0x00080000, unchanged throughout
+```
+
+Host GPU afterwards: `card1-HDMI-A-1` still `disconnected`, EDID size 0.
+
+**The important part is why, and it corrects an error in the reasoning above.**
+`SCDC_CONFIG.HPDLOW` only *forces HPD low*; clearing it merely stops forcing.
+HPD is an output from sink to source, and releasing a force-low is not the same
+as driving the pin high. So the source was never going to see this board
+whether or not the EDID landed. Every "EDID does not work" result in this
+document was measured through an instrument that could not have shown success.
+
+`EDID_DATA` reading back the last byte written is also weak evidence: a
+write-through port into a RAM and a plain holding register both do that. It
+does not show the bytes reached an EDID RAM.
+
+### So the milestone is blocked on HPD, not on EDID
+
+The only known HPD drive is `0x07091014` — three bits, `0x00` low, `0x07` all
+high — which is in the block that hard-locks this board, and which stock drives
+from **ARISC firmware**. That is consistent with everything seen: the register
+is undescribed by any DT node, our kernel never brings that domain up, and the
+peer notes ARISC writes it without raising a GIC IRQ.
+
+**Next, in order:**
+
+1. **Get HPD asserted.** This is the whole milestone now. Find what powers the
+   `0x07091000` block — it is the CPUS/ARISC side, so look at R_CCU gates and
+   whether the ARISC needs to be out of reset, rather than probing the register
+   again. It has already cost one power cycle.
+2. Only then re-test EDID. With HPD asserted the host becomes a real
+   instrument, and every EDID question above becomes answerable in one boot
+   instead of by inference.
+3. Do not trust `EDID_DATA` readback either way.
