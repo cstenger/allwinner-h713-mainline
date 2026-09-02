@@ -1,0 +1,257 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 2 Sep 2026 01:40:00 -0700
+Subject: [PATCH] EXPERIMENT: misc: h713: preload the HDMI-RX EDID and release HPD
+
+With 0087 the THDMIRX window is reachable, so the next question is whether a
+source will see this board as a display at all. It currently does not: the host
+GPU on the other end of the cable reports its HDMI connector "disconnected",
+because nothing asserts HPD and there is no EDID to read.
+
+Load one and let go of HPD.
+
+The EDID is generated, not copied. Borrowing a monitor's EDID off the host
+would have been quicker and would have made the projector announce someone
+else's model string and physical size, which is a lie that survives into every
+later capture experiment. This one advertises 1920x1080p60 (148.5 MHz, the
+CEA VIC 16 timing) as the preferred mode, with a 160x90 cm image and the
+product name "H713 HDMI-RX". edid-decode parses it with no warnings and no
+conformity failures.
+
+The write path is the Synopsys EDID RAM port, per the peer RE port: set
+WRITE_EN with slave address 0x50 in DMA_CONFIG11, stream bytes through the
+auto-incrementing DMA_CONFIG10, then drop both enables so source-side DDC reads
+reach the RAM. HPD is held low across the reload through SCDC_CONFIG.HPDLOW and
+released afterwards, with a sustained low rather than a flicker -- the peer
+measured that a brief pulse does not invalidate a source's "no display" state.
+
+Two deliberate omissions, both so a negative result stays interpretable:
+
+  - No readback check. The peer records that this RAM reads back as zero even
+    on runs where a source read the data correctly, so a readback assertion
+    here would manufacture a false failure. The honest verification is what the
+    source sees over DDC, which is measured from the host.
+
+  - No vendor controller-enable sequence. It writes the wrapper at 0x06840000,
+    whose power state has never been checked, and an access to an unpowered
+    block on this SoC hangs the bus with no abort. Leaving it out turns this
+    into a real experiment: if the source reads the EDID anyway, DDC does not
+    need the controller init, and if it does not, that is the next thing to add
+    -- against a known window rather than a guess.
+
+Note that HPD is driven here through SCDC_CONFIG inside THDMIRX, NOT through
+0x07091014. That register is the peer's HPD-pin control, it is in a block no DT
+node describes, and reading it is what hard-locked the board earlier. If
+SCDC_CONFIG is sufficient, it never needs to be touched.
+
+The DT window grows to 0x10000 because the EDID RAM port lives at +0x4424,
+outside the 0x1000 that 0087 mapped.
+
+RESULT: the EDID write does nothing, and the reason is worth the boot.
+
+DMA_CONFIG11 will not take a write. The driver sets WRITE_EN with slave 0x50
+and then clears only the enables, so the slave address should stay parked at
+0x50; it reads 0x00000000 before and after. Confirmed directly from userspace,
+which is possible now because this driver holds the TV domains up:
+
+  SCDC_CONFIG    0x050c0300  <- 0xFFFF1002  reads back 0xFFFF1002   writable
+  DMA_CONFIG11   0x050c4428  <- 0x000000D0  reads back 0x00000000   dead
+  GLOBAL_SWENABLE 0x050c0024              0x00000000               not enabled
+
+So HPD control is live and the EDID port is not. Three things were then ruled
+out, each cheaply:
+
+  - Global enable. Writing the peer's full SWENABLE value 0x3B01 sticks
+    (reads back 0x00003B01) and DMA_CONFIG11 still does not.
+  - Reset. RST_BUS_TVCAP is CCU 0xd88 BIT(16), and 0xd88 already reads
+    0x00010001 -- the block was never held in reset.
+  - The bank being merely quiet. 0x050c0000..0x3c is full of structured values
+    (0x70F80029, 0xFE000115, 0x03FF00FF, ...) while 0x050c4400..0x443c is
+    uniformly zero. Two banks in one window, one answering and one not.
+
+The live hypothesis is the H713 wrapper the peer documents at 0x06800800
+(port-select, PHY reset) and 0x06840000 (per-port state), which their
+controller_enable writes FIRST, before any Synopsys register. If the EDID RAM
+is per-port and no port is selected, a dead bank reading zero is exactly what
+that looks like.
+
+That window is NOT probed here on purpose. No DT node describes it, its power
+state is unverified, and an access to an unpowered block on this SoC hard-locks
+the board -- which has already cost one power cycle this session. It gets a
+domain check first, not a speculative read.
+
+OUT OF SERIES. Applies after 0087.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/misc/h713-tvcap-probe.c b/drivers/misc/h713-tvcap-probe.c
+--- a/drivers/misc/h713-tvcap-probe.c
++++ b/drivers/misc/h713-tvcap-probe.c
+@@ -1,18 +1,22 @@
+ // SPDX-License-Identifier: GPL-2.0
+ /*
+- * H713 TVFE/TVCAP bring-up probe.
++ * H713 TVFE/TVCAP bring-up probe, and an HDMI-RX EDID preload.
+  *
+  * Minimal, deliberately: attach the two TV power domains, enable the TV
+- * clocks, read a few words of the HDMI-RX window, print them, and stop. No
++ * clocks, then load an EDID into the HDMI-RX EDID RAM and release HPD. No
+  * interrupt is claimed and no GPIO is touched, because the vendor tvtop node
+  * claims GIC_SPI 110 (owned by the KMS display driver) and carries PB5, the
+  * backlight and fan enable.
+  *
+- * Existing to answer one question: whether the HDMI-RX register windows become
+- * readable once TVFE and TVCAP are powered. Until they are, a read of that
+- * space hangs the bus with no abort and no watchdog.
++ * What is deliberately NOT done here is the vendor controller-enable sequence.
++ * It writes the wrapper at 0x06840000, whose power state has never been
++ * checked, and an access to an unpowered block on this SoC hangs the bus with
++ * no abort and no watchdog. Skipping it makes this a real experiment: if the
++ * source reads the EDID anyway, the controller init is not needed for DDC, and
++ * if it does not, that is the next thing to add.
+  */
+ #include <linux/clk.h>
++#include <linux/delay.h>
+ #include <linux/io.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+@@ -20,6 +24,42 @@
+ #include <linux/pm_domain.h>
+ #include <linux/pm_runtime.h>
+ 
++/* Synopsys DW-HDMI-RX offsets within the THDMIRX window at 0x050c0000. */
++#define THDMIRX_SCDC_CONFIG		0x0300
++#define  THDMIRX_HPDLOW			BIT(1)
++#define THDMIRX_DMA_CONFIG10		0x4424	/* EDID RAM write port */
++#define THDMIRX_DMA_CONFIG11		0x4428	/* EDID RAM access control */
++#define  THDMIRX_EDID_READ_EN		BIT(8)
++#define  THDMIRX_EDID_WRITE_EN		BIT(7)
++#define  THDMIRX_EDID_SLAVE_ADDR_MASK	GENMASK(6, 0)
++
++#define H713_EDID_DDC_ADDR		0x50
++
++/*
++ * A generated EDID 1.4 advertising 1920x1080p60 (148.5 MHz, VIC 16) as the
++ * preferred timing. Generated rather than copied off a monitor: a borrowed
++ * EDID would make the projector announce someone else's model string and
++ * physical size. Verified with edid-decode -- no warnings, checksum 0xC9.
++ */
++static const u8 h713_hdmi_rx_edid[128] = {
++	0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
++	0x23, 0x30, 0x13, 0x07, 0x01, 0x00, 0x00, 0x00,
++	0x01, 0x24, 0x01, 0x04, 0xa2, 0xa0, 0x5a, 0x78,
++	0x02, 0xee, 0x91, 0xa3, 0x54, 0x4c, 0x99, 0x26,
++	0x0f, 0x50, 0x54, 0x20, 0x00, 0x00, 0x01, 0x01,
++	0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
++	0x01, 0x01, 0x01, 0x01, 0x02, 0x3a, 0x80, 0x18,
++	0x71, 0x38, 0x2d, 0x40, 0x58, 0x2c, 0x45, 0x00,
++	0x40, 0x84, 0x63, 0x00, 0x00, 0x1e, 0x00, 0x00,
++	0x00, 0xfd, 0x00, 0x17, 0x3d, 0x0f, 0x46, 0x11,
++	0x00, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
++	0x00, 0x00, 0x00, 0xfc, 0x00, 0x48, 0x37, 0x31,
++	0x33, 0x20, 0x48, 0x44, 0x4d, 0x49, 0x2d, 0x52,
++	0x58, 0x0a, 0x00, 0x00, 0x00, 0x10, 0x00, 0x20,
++	0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
++	0x20, 0x20, 0x20, 0x20, 0x00, 0xc9,
++};
++
+ struct h713_tvcap {
+ 	struct device	*dev;
+ 	struct device	*pd_tvfe;
+@@ -29,6 +69,49 @@
+ 	void __iomem	*thdmirx;
+ };
+ 
++static void h713_rx_update(struct h713_tvcap *tv, u32 off, u32 mask, u32 val)
++{
++	u32 reg = readl(tv->thdmirx + off);
++
++	reg = (reg & ~mask) | (val & mask);
++	writel(reg, tv->thdmirx + off);
++}
++
++/*
++ * Load the EDID RAM. Readback is not attempted: the peer RE port records that
++ * this RAM reads back as zero even on runs where a source read the data
++ * correctly, so a readback check here would manufacture a false failure. The
++ * only honest verification is what the source sees over DDC.
++ */
++static void h713_rx_write_edid(struct h713_tvcap *tv, const u8 *edid, size_t len)
++{
++	size_t i;
++
++	/* Hold HPD low across the reload so the source re-reads afterwards. */
++	h713_rx_update(tv, THDMIRX_SCDC_CONFIG, THDMIRX_HPDLOW, THDMIRX_HPDLOW);
++
++	h713_rx_update(tv, THDMIRX_DMA_CONFIG11,
++		       THDMIRX_EDID_READ_EN | THDMIRX_EDID_WRITE_EN |
++			       THDMIRX_EDID_SLAVE_ADDR_MASK,
++		       THDMIRX_EDID_WRITE_EN | H713_EDID_DDC_ADDR);
++
++	for (i = 0; i < len; i++)
++		writel(edid[i], tv->thdmirx + THDMIRX_DMA_CONFIG10);
++
++	/* Drop both enables so source-side DDC reads reach the RAM. */
++	h713_rx_update(tv, THDMIRX_DMA_CONFIG11,
++		       THDMIRX_EDID_READ_EN | THDMIRX_EDID_WRITE_EN, 0);
++
++	/*
++	 * A sustained low is what invalidates the source's "nothing there"
++	 * state; a brief flicker does not. The peer measured this.
++	 */
++	msleep(500);
++	h713_rx_update(tv, THDMIRX_SCDC_CONFIG, THDMIRX_HPDLOW, 0);
++
++	dev_info(tv->dev, "wrote %zu EDID bytes, released HPD\n", len);
++}
++
+ static int h713_tvcap_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+@@ -75,23 +158,26 @@
+ 
+ 	dev_info(dev, "TVFE+TVCAP powered, %d clocks enabled\n", tv->num_clks);
+ 
+-	/*
+-	 * The moment of truth. If the domains were the whole story this
+-	 * returns data; if it hangs, the board stops here and the next boot
+-	 * knows the domains are not sufficient.
+-	 */
+ 	tv->thdmirx = devm_platform_ioremap_resource(pdev, 0);
+ 	if (IS_ERR(tv->thdmirx)) {
+ 		ret = PTR_ERR(tv->thdmirx);
+ 		goto err_disable_clks;
+ 	}
+ 
+-	dev_info(dev, "reading THDMIRX -- if this is the last line, it hung\n");
+-	for (i = 0; i < 8; i++)
++	for (i = 0; i < 4; i++)
+ 		dev_info(dev, "  thdmirx+0x%02x = 0x%08x\n",
+ 			 i * 4, readl(tv->thdmirx + i * 4));
+ 
+-	dev_info(dev, "THDMIRX window is readable\n");
++	dev_info(dev, "scdc_config = 0x%08x, dma_config11 = 0x%08x\n",
++		 readl(tv->thdmirx + THDMIRX_SCDC_CONFIG),
++		 readl(tv->thdmirx + THDMIRX_DMA_CONFIG11));
++
++	h713_rx_write_edid(tv, h713_hdmi_rx_edid, sizeof(h713_hdmi_rx_edid));
++
++	dev_info(dev, "scdc_config = 0x%08x, dma_config11 = 0x%08x (after)\n",
++		 readl(tv->thdmirx + THDMIRX_SCDC_CONFIG),
++		 readl(tv->thdmirx + THDMIRX_DMA_CONFIG11));
++
+ 	platform_set_drvdata(pdev, tv);
+ 	return 0;
+ 
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1582,7 +1582,8 @@
+ 		 */
+ 		hdmirx_probe: hdmirx-probe@50c0000 {
+ 			compatible = "allwinner,h713-tvcap-probe";
+-			reg = <0x050c0000 0x1000>;
++			/* 0x10000: the EDID RAM port is at +0x4424, past 0x1000. */
++			reg = <0x050c0000 0x10000>;
+ 			clocks = <&ccu CLK_BUS_TVCAP>,
+ 				 <&ccu CLK_BUS_CAP_300M>,
+ 				 <&ccu CLK_VINCAP_DMA>,
