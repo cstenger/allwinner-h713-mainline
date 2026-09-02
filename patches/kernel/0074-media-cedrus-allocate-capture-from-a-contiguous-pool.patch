@@ -1,0 +1,80 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] media: cedrus: allocate capture from a contiguous pool
+
+DROPPED FROM THE SERIES 2026-09-01, OUT OF SERIES, DO NOT REAPPLY BY DEFAULT.
+
+The premise below -- that DECD must fetch physical addresses -- was only true
+because master 2 was left bypassing. Patches 0075 + 0076 flip master 2 to IOMMU
+translation at the first frame, and a physically fragmented Cedrus CAPTURE
+buffer then displays correctly: 300 moving frames at 27.12 fps from a buffer
+with 56 physical breaks and a 32 KiB longest run, zero faults.
+
+So this costs a permanent 64 MiB DRAM reservation to solve a problem that no
+longer exists. It remains hardware-proven on a bypass kernel and is kept only as
+a fallback control for that configuration; on a 0075+0076 kernel it is dead
+weight.
+
+One measurement trap it leaves behind: with this pool in place the `PHYS` line
+printed by decd-play reports `contiguous=yes breaks=0` from *zero* resolved
+pages (`absent=338`), because reserved no-map memory has no struct page for
+pagemap to report. Contiguity numbers from a 0074 build prove nothing. See
+docs/reference/iommu-runtime-flip-ordering-2026-09-01.md.
+
+DECD has no scatter-gather and, in the adopted-display configuration, fetches
+physical addresses without IOMMU translation.  Cedrus CAPTURE buffers exported
+from its usual IOMMU-backed allocation can have scattered physical backing even
+though they are contiguous in the VE's IOVA space.  Passing one of those buffers
+to DECD makes it read beyond the first physical run.
+
+Give the H713 VE a dedicated 64 MiB reusable CMA pool and force physical
+contiguity for Cedrus CAPTURE allocations.  Keep OUTPUT allocations unchanged:
+only decoded surfaces are exported to the physical-address-only consumer, and
+forcing compressed input buffers contiguous would waste the finite pool.
+
+The pool alone is insufficient while the VE is behind an IOMMU, because the DMA
+allocator may otherwise satisfy a contiguous IOVA with scattered pages.
+DMA_ATTR_FORCE_CONTIGUOUS makes the allocation come from one physical run.  The
+DECD import guard added separately remains the runtime acceptance check that the
+export maps as one complete DMA segment.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -65,6 +65,13 @@
+ 			no-map;
+ 		};
+ 
++		cedrus_cma: video-codec-pool {
++			compatible = "shared-dma-pool";
++			reusable;
++			size = <0x04000000>;
++			alignment = <0x00200000>;
++		};
++
+ 		/*
+ 		 * MIPS co-processor firmware and working memory
+ 		 * Layout from factory Android analysis:
+@@ -1286,5 +1293,6 @@
+ 			 */
+ 			iommus = <&iommu 0 1>, <&iommu 1 1>;
++			memory-region = <&cedrus_cma>;
+ 			status = "okay";
+ 		};
+ 
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_video.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_video.c
+@@ -12,6 +12,7 @@
+  * Marek Szyprowski, <m.szyprowski@samsung.com>
+  */
+ 
++#include <linux/dma-mapping.h>
+ #include <linux/pm_runtime.h>
+ 
+ #include <media/videobuf2-dma-contig.h>
+@@ -720,6 +721,7 @@ int cedrus_queue_init(void *priv, struct vb2_queue *src_vq,
+ 	dst_vq->buf_struct_size = sizeof(struct cedrus_buffer);
+ 	dst_vq->ops = &cedrus_qops;
+ 	dst_vq->mem_ops = &vb2_dma_contig_memops;
++	dst_vq->dma_attrs = DMA_ATTR_FORCE_CONTIGUOUS;
+ 	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
+ 	dst_vq->lock = &ctx->dev->dev_mutex;
+ 	dst_vq->dev = ctx->dev->dev;
