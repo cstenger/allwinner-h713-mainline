@@ -136,6 +136,33 @@ So the peer's EDID path is an **indirect write port** whose control registers
 do not exist here. EDID is not served over a DT-described I2C bus either —
 neither the dtsi nor the stock DTB mentions `ddc` or `edid` anywhere.
 
+### The wrapper aliases every 0x800, and holds no EDID
+
+`0x06840000` scanned at 0x40 stride: `0x06840000`–`0x068407ff` repeats
+byte-identically at `0x06840800`–`0x06840fff`. A **0x800 period**, which is the
+per-port aliasing the peer describes, and it means the useful register file is
+2 KiB, not the 0x50000 their `ioremap` reserves.
+
+Searching all three confirmed-alive regions for the EDID header signature
+`00 ff ff ff ff ff ff 00`:
+
+```text
+THDMIRX  (0x050c0000, 0x0d00)   no EDID magic
+rx-ctrl  (0x06800000, 0x1000)   no EDID magic
+rx-wrap  (0x06840000, 0x1000)   no EDID magic
+```
+
+**Read this precisely.** It proves no EDID is *currently resident* in any window
+we can reach. It does **not** prove there is no EDID RAM: on stock, firmware
+writes the EDID at runtime, so an empty RAM on a boot where nothing writes one
+is exactly what an empty RAM would look like. The scan narrows where a
+*populated* EDID could be hiding; it does not close the question of where one
+should be written.
+
+What it does do is remove the last cheap place to look on the ARM side, which
+promotes the ARISC hypothesis from "one of three" to "the one worth the next
+session".
+
 ## Next
 
 1. **Find the EDID RAM.** `SCDC_CONFIG` already gives HPD, so EDID is the only
@@ -146,9 +173,7 @@ neither the dtsi nor the stock DTB mentions `ddc` or `edid` anywhere.
      domain. If HPD is ARISC-owned, EDID plausibly is too — served in software
      over DDC rather than from a hardware RAM. Reading the ARISC firmware is
      free and does not risk the board.
-   - the **wrapper** at `0x0684xxxx`, which is alive and only sampled at its
-     first 64 bytes. Scan it byte-wise the same way; 256 bytes of EDID would be
-     obvious.
+   - ~~the **wrapper** at `0x0684xxxx`~~ — scanned, see below.
    - an **external EEPROM** on the DDC lines, which would make this a board
      question rather than a SoC one.
 2. **Do not assert HPD until EDID works.** Advertising a display with no EDID
