@@ -130,8 +130,10 @@ or long-duration playback claim.
 
 The guarded target-side reproduction is
 [`../../tools/video/decd-visible-sequence.sh`](../../tools/video/decd-visible-sequence.sh).
-It requires `ARMED=yes`, verifies the DECD-exclusive DT ownership and live MIPS,
-snapshots every register it changes, and restores on all shell exit paths.
+It requires `ARMED=yes`, verifies exclusive DECD ownership, snapshots every
+register it changes, and restores on all shell exit paths. Static frame modes
+require live MIPS. Its later decoded `--play` mode can explicitly require the
+safer parked-MIPS state with a second opt-in.
 
 ## Thirty-frame-per-second two-buffer stream
 
@@ -170,3 +172,26 @@ Cleanup completed after the tests.  At a cold U-Boot stop, `bootdelay` read 10;
 it was changed to `-1`, `saveenv` reported `Writing to MMC(1)... OK`, and a
 second `printenv` read `bootdelay=-1`.  `boot` then verified both FIT hashes and
 started the normal Linux kernel.
+
+## Follow-up: real decoder dma-bufs are visible but not retired correctly
+
+The next session connected `v4l2slh264dec` directly to this route.  A strict
+target-side player passed Cedrus's single linear NV12 dma-buf FD unchanged to
+DECD and completed 300 nonvisual frames at 29.95 fps.  Real Y/C addresses
+cycled through DECD with the expected `0xE1000` plane separation.
+
+Two-second visible runs then showed recognizable decoded content, proving real
+Cedrus output reaches the physical route, but most output was horizontal bands
+mixed from different frames.  Fixed sample holds did not solve it: eight
+samples starved Cedrus's capture pool, while five preserved full-rate decode
+but remained visibly corrupt.  Correct decoded playback therefore remains
+open and must not be inferred from the static and two-buffer positives above.
+
+The returned release fence is the next dependency.  The reconstructed kernel
+signals and directly frees its `dma_fence` even while a returned `sync_file`
+may own a reference.  Fix that ownership, then retain each GStreamer sample
+until its fence signals.  Also keep the display MIPS parked: one real Cedrus
+preflight with MIPS alive hard-locked the SoC and required a power cycle.
+
+Complete evidence, recording hashes, code hashes and the exact next procedure:
+[`cedrus-decd-first-visible-playback-2026-08-31.md`](cedrus-decd-first-visible-playback-2026-08-31.md).

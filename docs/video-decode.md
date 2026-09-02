@@ -5,13 +5,191 @@ companion to [claude-display-handoff.md](claude-display-handoff.md), which is
 what this work builds on.
 
 Goal for this phase: **decoded video visible on the projector panel.**
+**Reached 2026-09-01.**
+
+---
+
+## 2026-09-01 (later): moving decoded video on the panel, through the IOMMU
+
+**300 frames of decoded H.264 rendered on the projector at 27.13 fps, zero
+IOMMU faults, logo restored.** Operator-confirmed. This closes the corruption
+investigation that began 2026-08-26.
+
+The decisive measurement is the fragmentation of the buffer that played:
+`pages=338 contiguous=NO breaks=56 longest-run=8(32KiB) absent=0`. That is
+*more* scattered than the 31-break / 64 KiB buffer that produced green
+corruption on a bypass kernel. Under translation it played perfectly, which
+confirms root cause and fix end to end: DECD scans linearly from one base, and
+translation is what makes a scattered buffer scannable.
+
+**The whole difficulty was ordering, not addressing.** The master-2
+`IOMMU_BYPASS 0x7c -> 0x78` transition must happen while the DECD **video source
+is disabled** — only the inherited logo route live. The source rests at base
+`0x00000000` with inherited 1920x1088 geometry, so enabling it starts a raster
+scan through the first ~2 MB of physical memory: harmless under bypass, and
+L1-invalid the instant translation arrives. Four visible runs faulted at
+`0x29000`, `0x26000`, `0x81000` and `0x16000` — all inside that window, none
+near the identity-mapped logo (`0x6c100000`) or the frame IOVA (`0xfe000000`).
+
+Bench procedure: spend the flip with a **nonvisible** run first, then run the
+visible test as a second session. Patch 0075 guards the flip with
+`dec->iommu_runtime_enabled`, which persists until module unload or reboot.
+
+Consequences for what is written below:
+
+- **Patch 0074's contiguous pool is not required, and was dropped from the
+  series on 2026-09-01.** Fragmented CAPTURE displays correctly through a single
+  IOVA, so its 64 MiB permanent DRAM reservation bought nothing. The patch is
+  kept out of series as a fallback control for a bypass kernel; the section
+  below describing it is the record of that work.
+- **The banding was never a surface-reuse race.** None appeared in moving
+  playback. Patch 0071 stands as a correct independent fix.
+- **"One master-2 fault wedges AFBD for the boot" is the wrong rule.** The fault
+  does wedge it, but it is avoidable — design for zero faults, not one per boot.
+- Any `contiguous=yes` reported by a 0074 build is **vacuous**: `absent=338`
+  means pagemap resolved no pages at all, because reserved `no-map` memory has
+  no `struct page`. Segmented builds report `absent=0` and are real.
+
+**Patch 0076 makes that a driver behaviour and is hardware-validated.** It parks
+source 0 across the transition and re-enables it after `dec_reg_enable()`, gated
+on the Y ring holding a real address. Run as the *first* DECD session of a boot
+with no operator procedure, both a frozen still and a 300-frame moving clip
+rendered correctly with zero faults and restored the logo.
+
+`decd-visible-sequence.sh` was fixed alongside: it enabled the video source at a
+fixed `sleep 0.2`, long before any frame existed, so a `--freeze-at` run showed
+up to two seconds of the source scanning low memory. It now waits for the ring to
+arm. With that in place the moving run needed no park at all — the source was
+already disabled at flip time — so the wrapper ordering is the mechanism and 0076
+is the safety net. Keep both.
+
+Full account, all six runs and the register evidence:
+[reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md).
+Operational handoff: [handoff-2026-09-01-iommu-runtime.md](handoff-2026-09-01-iommu-runtime.md).
+
+---
+
+## 2026-09-01: contiguous Cedrus CAPTURE hardware-proven
+
+The route gap is closed and real decoder integration has begun.  A strict
+target-side player now sends Cedrus-owned 1280x720 linear NV12 dma-buf FDs
+directly through the reconstructed 112-byte DECD ABI, with no CPU pixel copy
+and no Mali render.  A 300-frame nonvisual run completed at 29.95 fps and real
+Y/C addresses cycled through DECD.  Two-second visible runs showed recognizable
+moving decoded content and restored the logo.
+
+Direct submission of segmented Cedrus buffers is not correct. Operator
+recordings show horizontal bands that initially looked mixed from multiple
+decoded pictures. Immediate sample return and deep retention were both tried,
+but the fence and frozen-frame results below disprove reuse/timing; DECD is
+instead scanning linearly beyond the buffer's first physical segment. Do not
+use a live display MIPS for this test: one 30-frame real Cedrus preflight
+hard-locked the SoC and required a power cycle. The Linux DECD IRQ owns the
+address ring with MIPS parked.
+
+**Fixed, and the fence works on hardware.** Patch 0071 fixes the
+reconstructed release-fence lifetime — `frame_item_release()` signalled its
+`dma_fence` and then `kfree()`d it while the returned `sync_file` still held a
+reference — so the fence is finally usable as the retirement signal it already
+was in timing terms.  `decd-play` now holds each sample until its fence signals,
+with a bounded queue that fails loudly rather than reusing a surface DECD is
+still scanning.  The eight-sample starvation also has a mechanism now: DECD
+retires a frame only when a *later* frame displaces it, so a deep hold is a
+circular wait, not simple exhaustion.
+
+Measured: **299 of 300 surfaces retired on a signalled fence, zero stalls**, and
+a cap sweep (2/4/6/8) shows `peak-held` saturating at **4** regardless — the hold
+self-regulates to DECD's four-slot ring depth, so `cap=8` no longer starves the
+capture pool at all. **But the picture did not improve** (`test_60`), so
+premature surface reuse is eliminated as the cause. `DECD_FREEZE=1` then
+resubmitted **one** complete, quiescent decoder buffer 89 times at a fixed
+address: the image is **steady and corrupt**, which eliminates timing altogether
+— not retirement, not producer readiness, not frame mixing, not a fetch race,
+since DECD reads the same wrong thing deterministically. The fault is in what
+DECD reads from a Cedrus buffer. Next steps are byte-level and cost no operator
+time. That dump is done: the buffer read through the **same FD given to DECD**
+is **bit-exact** against a host software decode (SHA-256
+`3b3d249c…` both sides), so the NV12_32L32 tiling hypothesis is **refuted** and
+the content and layout are correct. Content, layout and timing are now all
+eliminated. The pagemap walk then found the cause: the decoder's buffer is
+**338 pages with 31 breaks, longest contiguous run 64 KiB**, while
+`dec_dma_map()` keeps only `sg_dma_address(sgt->sgl)` and the hardware scans
+linearly from that single base. DECD starts correctly — `0x05600070` is exactly
+the buffer's first page — then reads 51 of 720 luma lines and unrelated memory
+for the rest, with chroma at `y + 0xE1000` landing outside the buffer entirely
+(hence green). Carveout frames always worked because they are one segment.
+Patch 0072 refuses a segmented import instead of corrupting silently, and 0073
+declares the constraint (`dma_set_max_seg_size`) so the mapping is deterministic
+rather than dependent on memory fragmentation.
+
+**The bypass carveout control now passes with known-visible decoded content.**
+The first attempt copied decoded frame 0 and appeared black, but host decode
+showed that frame is itself black (`YAVG=16.0002`, `U=V=128`; NV12 SHA-256
+`3b3d249c…`). `DECD_FREEZE_AT=60` was added so the diagnostic can discard
+frames without submitting them and hold an exact later frame. The board's frame
+60 dump is byte-for-byte the visibly nonblack host reference (SHA-256
+`70bddcf8…`). On the bypass kernel, copying those bytes to physical
+`0x6c500000` and resubmitting them 300 times produced an operator-confirmed
+recognizable, apparently correct video still; the logo state returned after
+restore. Therefore decoded content and all DECD route/layout programming are
+good. **Physical-buffer provenance is the remaining direct-path fault.**
+
+Patch 0074 implements the shortest path: a 64 MiB reusable
+`shared-dma-pool` on the VE plus `DMA_ATTR_FORCE_CONTIGUOUS` on Cedrus's
+CAPTURE queue only. The force attribute is necessary: with VE masters 0/1
+behind the IOMMU, a pool alone can still be remapped from scattered physical
+pages. The normal series and the out-of-series 0068 test configuration both
+build cleanly.
+
+The patch also passes its nonvisual hardware acceptance on a RAM-only boot.
+Linux reserved the dedicated pool at `0x7c000000`, attached Cedrus to it, and
+patch 0072 accepted a direct dma-buf import that it refused on the segmented
+build. Frozen decoded frame 60 completed 90 submissions and its dump still
+matched the host reference exactly (`70bddcf8…`). A separate 150-frame moving
+run completed at 24.76 fps with 149 fence retirements, peak hold 4 and zero
+stalls. The log contained no 0072 refusal, warning, or IOMMU fault; master 2
+remained bypassed and the logo selector remained `0x29000000`. Userspace could
+not read any pagemap PFNs on this image, so its `contiguous=yes` report is not
+evidence; successful passage through 0072's full-length one-segment kernel
+check is.
+
+**Those final checks pass.** Direct frame 60 held for 300 submissions and the
+operator reported, “It looked good”; the logo returned after the test. A
+300-frame moving run then completed at 27.09 fps with 299 fence retirements,
+peak hold 4 and zero stalls. The operator saw the short clip, noticed no issues,
+and confirmed the logo returned. Three further consecutive 300-frame sessions
+all completed at 27.09–27.12 fps with 299 fence retirements, peak hold 4 and
+zero stalls. No new kernel message appeared, master 2 remained bypassed, and
+the selector remained `0x29000000`. Patch 0074's bypass direct path is therefore
+hardware-proven for a known-visible still, moving playback, repeated allocation
+and teardown, fence retirement, and display-state restoration.
+
+**The early-attachment 0069/0070 IOMMU route is closed; the runtime transition
+it pointed at is not — and it works.** Attaching translated from probe
+reliably coalesces the import but renders black with this adopted-display
+configuration and no faults. The vendor DTB only describes the initial state:
+master 2 starts in bypass (`<&mmu_aw 2 0>`), while reverse engineering shows HWC
+calling `sunxi_enable_device_iommu(2, 1)` at the playback boundary. Patch 0075
+models exactly that runtime transition, and **it is hardware-proven** — see the
+2026-09-01 section at the top of this file. The one thing it needs that was not
+obvious: the flip must land while the video source is still disabled.
+Full account in [handoff-2026-08-31.md](handoff-2026-08-31.md) and
+[reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md).
+
+Complete measurements, artifact and recording hashes, current board state and
+next steps:
+[reference/cedrus-decd-first-visible-playback-2026-08-31.md](reference/cedrus-decd-first-visible-playback-2026-08-31.md).
 
 ---
 
 ## 2026-08-29: the premise is confirmed, and the stock diff is exhausted
 
-Newest state; the sections below are the record of how it was reached. Full
-account in [handoff-2026-08-29.md](handoff-2026-08-29.md).
+Superseded by the 08-31 section above, which found the missing state and put a
+frame on the panel. Kept because its eliminations still stand and are worth not
+re-testing — but read its closing "the black is source 0's output not reaching
+composition" as the working hypothesis of the time, not a conclusion: the actual
+cause was inherited source geometry, a zero chroma gain and the plane-1
+selector. Full account in [handoff-2026-08-29.md](handoff-2026-08-29.md).
 
 **The no-GPU premise is measured, not inferred.** With stock Android playing
 video and the player's transport controls auto-hidden, Mali runtime PM reads

@@ -4,7 +4,7 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-08-29._
+_Last updated: 2026-09-01._
 
 ## Summary
 
@@ -32,19 +32,132 @@ through 1920x1080. The whole failure was one device-tree property — `iommus` o
 the `ve` node pointed at an IOMMU that does not exist at that address, so the DMA
 layer handed the VE untranslated IOVAs; it corrupted the kernel's printk
 ringbuffer and panicked before emitting a frame. Removing it fixed both symptoms
-at once. **Next: getting decoded frames onto the panel.** See
+at once. Patch 0074 provided physically contiguous Cedrus CAPTURE buffers and
+passed its still, moving and repeated-session hardware acceptance, but it was
+**dropped from the series on 2026-09-01**: with master 2 translating, fragmented
+capture buffers display correctly, so its 64 MiB permanent DRAM reservation buys
+nothing. It is kept out of series as a fallback control for a bypass kernel. See
 [video-decode.md](video-decode.md).
 
-**The no-GPU video premise is confirmed on hardware (2026-08-29), and the search
-for why our path is black has narrowed sharply.** Video already reaches the panel
-through the GPU (below); the open goal is doing it the vendor's way, with the
-display hardware performing YUV→RGB and the GPU idle. That the vendor stack
-*does* this had been inferred from `hwcomposer` reverse-engineering. It is now
-measured: with stock Android playing video and the player's transport controls
-auto-hidden, the Mali runtime-PM counters read **`active +0 ms, suspended
-+15115 ms` across 15 seconds** — the GPU is fully asleep while video plays. The
-same measurement with the controls *visible* reads 100% active, which is the
-player's UI and nearly produced the opposite conclusion from a single sample.
+**Moving decoded video renders on the panel, the vendor's way, with the GPU
+idle (2026-09-01).** 300 frames of decoded H.264 at **27.13 fps, zero IOMMU
+faults**, logo restored, operator-confirmed. This closes the corruption
+investigation that ran from 2026-08-26. The buffer that played was
+`pages=338 contiguous=NO breaks=56 longest-run=8(32KiB)` — *more* scattered than
+the 31-break / 64 KiB buffer that produced green corruption on a bypass kernel —
+which confirms root cause and fix end to end: DECD scans linearly from one base,
+and IOMMU translation is what makes a scattered buffer scannable.
+
+The whole difficulty turned out to be **ordering, not addressing**. The master-2
+`IOMMU_BYPASS 0x7c -> 0x78` transition must happen while the DECD **video source
+is disabled** — only the inherited logo route live. The source rests at base
+`0x00000000` with inherited 1920×1088 geometry, so enabling it starts a raster
+scan through the first ~2 MB of physical memory: harmless under bypass,
+L1-invalid the instant translation arrives. Four visible runs faulted at
+`0x29000`, `0x26000`, `0x81000` and `0x16000`, all inside that window. Two
+consequences worth carrying: **the banding was never a surface-reuse race** (none
+appeared in moving playback), and **"one master-2 fault wedges AFBD for the boot"
+is the wrong rule** — the fault is avoidable, so design for zero rather than
+budgeting one per boot.
+
+**Patch 0076 makes that a driver behaviour, and it is hardware-validated.** It
+parks source 0 across the transition and re-enables it after `dec_reg_enable()`,
+gated on the Y ring holding a real address. Run as the *first* DECD session of a
+boot with no operator procedure: a frozen still and a 300-frame moving clip both
+rendered correctly with zero faults and restored the logo. The diagnostic wrapper
+was fixed alongside — it used to enable the video source at a fixed 200 ms, long
+before any frame existed, showing up to two seconds of garbage; it now waits for
+the ring. With that in place the moving run needed no park at all, so the wrapper
+ordering is the mechanism and 0076 is the safety net.
+[iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md),
+[handoff-2026-09-01-iommu-runtime.md](handoff-2026-09-01-iommu-runtime.md).
+
+**The no-GPU video path reaches the panel (2026-08-31) — the black screen is
+solved.** Video already reaches the panel through the GPU (below); the open goal
+was doing it the vendor's way, with the display hardware performing YUV→RGB and
+the GPU idle. A bounded DECD-exclusive Linux test displayed a 1280×720 NV12 test
+card in full colour and correct geometry, then restored the boot logo. The state
+the black runs were missing is small: **four source-geometry words** — the source
+block still held an inherited 1920×1088 / stride-1920 fallback, which is what
+produced the earlier horizontally repeated image — **source enable plus its
+commit**, the YUV **chroma gain `0x05140508 = 0x144C0000`** (bits 23:16 are a
+linear gain; `0x00` is greyscale, which is why the earlier result had no colour),
+and the **plane-1 downstream selector `0x051C006C = 0x39000000`**. A 30-fps
+two-buffer follow-up completed 150/150 submissions while visibly alternating red
+and green, so the route is per-stream state, not a per-frame register dance.
+[linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md).
+
+**A known-visible hardware-decoded frame is correct through that route when its
+bytes are copied into one contiguous physical buffer (2026-09-01).** A strict
+target-side player passes Cedrus-owned NV12 dma-buf FDs straight
+into the 112-byte DECD descriptor — no CPU copy, no Mali render — and sustained
+300 nonvisual frames at 29.95 fps. Two-second visible runs showed recognizable
+moving decoded content under horizontal bands. The bands initially looked like
+mixed decoder surfaces, but the returned release fence disproved that cause.
+Its reconstructed kernel lifetime was unsafe; patch 0071 corrects it and
+`decd-play` now retires by signalled fence. **Measured on hardware: 299 of 300
+surfaces retired on a signalled fence, zero stalls — and the picture is
+unchanged** (`test_60`), so premature surface reuse is *eliminated*. The UAF was
+real and the fix stands. **A frozen-buffer test then eliminated timing
+altogether**: one complete, quiescent decoder buffer resubmitted 89 times at a
+fixed address gives a *steady* corrupt image — all green (zero chroma), data-like
+banding over the top half, flat below. **Dumping that buffer from the CPU then
+proved its contents bit-exact** — SHA-256 identical to a host software decode —
+so the tiling hypothesis is refuted and content and layout are excluded too.
+**Root cause found:** Cedrus's buffer is **not physically contiguous** — 338
+pages, 31 breaks, longest run 64 KiB — while `dec_dma_map()` keeps only
+`sg_dma_address(sgt->sgl)` and the hardware scans linearly from that one base.
+DECD starts at the right address (`0x05600070 = 0x46F7A000`, the buffer's first
+page) but only the first 64 KiB — 51 of 720 luma lines — is really there; chroma
+at `y + 0xE1000` is 924 KiB past the start and never in the buffer, which is why
+the frame is overwhelmingly green. Carveout frames always worked because they
+map as a single segment. Patch 0072 turns the silent corruption into a refusal,
+and 0073 declares the constraint (`dma_set_max_seg_size`) so the mapping is
+deterministic instead of depending on how fragmented memory happens to be.
+The first bypass carveout copy appeared black only because this clip's decoded
+frame 0 is black (Y≈16, U=V=128). `DECD_FREEZE_AT=60` then selected a close-up
+face whose target dump is byte-for-byte the host software reference
+(`70bddcf8…`). Copied to physical `0x6c500000` and held for 300 submissions, it
+was operator-confirmed as recognizable and apparently correct; the logo state
+was restored afterwards. **That resolves the cause as physical-buffer
+provenance.** Patch 0074 implements physically contiguous Cedrus CAPTURE
+buffers: a 64 MiB reusable `shared-dma-pool` on the VE **plus**
+`DMA_ATTR_FORCE_CONTIGUOUS` on the CAPTURE queue, with 0072 checking that the
+export is one complete segment. The normal series and the out-of-series 0068
+test configuration both build cleanly. A RAM-only hardware boot reserved the
+pool at `0x7c000000`, attached Cedrus to it, and accepted direct imports that
+0072 rejected on the segmented build. Known-visible frame 60 remained
+byte-exact (`70bddcf8…`) through a 90-submit frozen run; a separate 150-frame
+moving run retired 149 surfaces by fence with peak depth 4 and zero stalls.
+There were no 0072 refusals, kernel warnings, or IOMMU faults, and the logo
+selector stayed unchanged. **The bypass direct path is now hardware-proven.**
+Direct frame 60 held for 300 submissions and looked good to the operator; a
+300-frame moving clip had no noticed issues. Both runs restored the logo. The
+moving run completed at 27.09 fps with 299 fence retirements, peak depth 4 and
+zero stalls. Three more consecutive 300-frame sessions passed with the same
+fence statistics, no new kernel log entries, and selector `0x29000000` still
+selected.
+
+**The exact early-attachment IOMMU route implemented by 0069/0070 remains a
+tested negative — and the runtime transition it pointed at is now proven.**
+Attaching translated from probe coalesces the import but produced black with the
+adopted-display route and no faults. The vendor DTB starts master 2 in bypass
+(`<&mmu_aw 2 0>`), while HWC was reverse-engineered calling
+`sunxi_enable_device_iommu(2, 1)` at the playback boundary. Patch 0075 reproduces
+exactly that runtime transition and **works on hardware**, given the flip
+ordering described above. Do **not**
+run real Cedrus traffic with the display MIPS alive — that combination hard-locked
+the SoC and needed a power cycle, even though static carveout frames with MIPS
+alive ran for over an hour.
+[cedrus-decd-first-visible-playback-2026-08-31.md](reference/cedrus-decd-first-visible-playback-2026-08-31.md).
+
+The premise behind the goal was confirmed on hardware first (2026-08-29). That
+the vendor stack plays video with the GPU asleep had been inferred from
+`hwcomposer` reverse-engineering; it is now measured: with stock Android playing
+and the player's transport controls auto-hidden, the Mali runtime-PM counters
+read **`active +0 ms, suspended +15115 ms` across 15 seconds**. The same
+measurement with the controls *visible* reads 100% active, which is the player's
+UI and nearly produced the opposite conclusion from a single sample.
 
 Two things follow. **Scope: only AFBD is driven per frame** — a sweep of eleven
 register windows at idle and during playback found the sole video-driven
@@ -56,14 +169,21 @@ and composites** video and UI into one buffer that AFBD scans out — there is n
 hardware subtitle blending to find, which closes a product question that had been
 open.
 
-**Every difference between our black state and stock has now been forced onto
-working stock hardware, and none of them causes the black:** bit 31 on the AFBD
-channel controls does nothing; the format field does matter (fmt 4 gives a tiled,
-colour-shifted picture where stock's fmt 0 is correct for NV12) but yields visible
-garbage rather than blackness; IOMMU bypass gives coloured static; and the mixer
-turns out not to be in the video path at all. Since *every* way of breaking
-source 0 on stock still puts something on the panel, our black is **source 0's
-output not reaching composition**, not a misconfigured source. Full account in
+**How it was found, and what stays eliminated.** The cross-stack campaign that
+preceded the fix is still valid as a set of negatives, and none of it should be
+re-tried: bit 31 on the AFBD channel controls does nothing; fmt 4 versus stock's
+fmt 0 is real but yields visible garbage, not blackness; IOMMU bypass gives
+coloured static; the mixer is not in the video path at all (the firmware contains
+no `lui` immediate that can even form its base address); the suppression latches
+return cleanly and change nothing; and every writable cross-stack difference in
+the six captured windows except the chroma gain replayed onto stock with no
+visual effect. What actually produced the answer was **writability triage** —
+write `0xDEADBEEF`, read back, restore, because a register that will not take a
+write cannot be a cause — which cut 150 differences to 29 writable ones at the
+cost of zero operator observations, and then bisection down to the chroma gain
+and a one-register stock test that proved `0x051C006C` causal by removing a
+*playing* picture. Full account in
+[handoff-2026-08-31.md](handoff-2026-08-31.md),
 [handoff-2026-08-29.md](handoff-2026-08-29.md) and
 [plane-brief-for-external-review.md](plane-brief-for-external-review.md).
 
@@ -113,7 +233,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | Crypto Engine + RNG | ⚠️ **disabled — mainline `sun8i-ce` can't drive the H713 CE** (bench-proven). Enabling it registers every algorithm, then each fails its known-answer self-test. Wiring the stock's 2nd interrupt fixes task completion, but the CE then rejects mainline's descriptors — ciphers `address invalid`, AES/SHA `algorithm not supported` — a different descriptor **format** (vendor two-bank block), not an IRQ/clock/addressing gap. No CE TRNG. The A53's ARMv8 AES/SHA (software ~2 GB/s) is faster anyway. Re-enabling needs descriptor-level RE of the vendor `sunxi-ce` (no source). |
 | Reboot → fastboot / U-Boot | ✅ **done, both modes HW-validated (2026-07-23).** Two `nvmem-reboot-mode` modes over RTC GP7: `reboot fastboot` (magic `0xfa57b007`) → U-Boot `preboot` → fastboot, and `reboot bootloader` (magic `0xb007c0de`) → `preboot` sets `bootdelay -1` → U-Boot `=>` prompt — both confirmed console-free on the bench. `RTC_DRV_SUN6I` owns the region and exposes GP7 as an nvmem cell (`nvmem-cells` → `reboot-mode-magic@1c`); the old overlapping `syscon-reboot-mode` is gone. |
 | KMS / `/dev/dri/card0` | ✅ **DONE 2026-08-16, HW-verified — `mpv --vo=drm` plays 720p to the panel, 0 dropped frames; 1320 page flips at 59.71 fps, 0 timeouts.** `sun50i-h713-afbd` (patches 0037/0038) is a simple-KMS driver over the AFBD scanout engine: one CRTC, one plane, page flip via the same `0x05600178` + `READY` sequence that measured 0.00% tearing in gles-play, vblank off SPI 110 (bits confirmed by 2254 IRQs and zero stalled flips). Probe reads geometry back from the hardware (`adopting 1280x720, stride 5120`). Framebuffers come from **system CMA** — a reserved dma-pool allocates in power-of-two page orders, so a 16 MiB pool yielded exactly 4 buffers and mpv ran out of them. **`card0` since 2026-08-24** — the driver became `=y` so the boot log would reach the panel, so it now probes before panfrost's module and takes minor 0; it was `card1` while it was a module, which is what older docs record. Resolve it at runtime via `/sys/class/drm/card*/device/driver` rather than hardcoding either. It **adopts** the display U-Boot brought up and never touches timing, the LVDS PHY or `rst_bus_disp`, so it does not remove the U-Boot dependency. Took the AFBD window and IRQ from DECD, now `disabled`. **The whole Linux boot now renders on the projector** (2026-08-24): fbcon takes over at 1.25 s instead of 6.49 s, `getty@tty1` no longer wipes it (`TTYVTDisallocate=no`), the WiFi driver no longer floods it (aic8800 patches 0007/0009), and dummycon is matched to the panel at 160x45 so the handover keeps ~45 lines instead of ~13. Operator-confirmed on the glass: the systemd `[ OK ]` lines scroll past during boot, and the login prompt stays put afterwards. `kmssink` needs `driver-name=sun50i-h713-afbd`; its auto-detect never worked here. [kms-display.md](kms-display.md), [handoff-2026-08-24-display.md](handoff-2026-08-24-display.md) |
-| Video on the panel | ✅ **DONE 2026-08-15 — zero-copy playback at 59.71 fps.** Decoded H.264 reaches the panel through the GPU with the CPU never touching a pixel: VE decodes into a CMA buffer, GStreamer hands over its dma-buf FD, the Mali-G31 samples it as an NV12 EGLImage and renders into the scanout carveout (exported by `sunxi-scanout-dmabuf`, patch 0036), and AFBD scans that out. Sustained 2700 frames, 0 timeouts, operator-confirmed moving picture, **no tearing** (0.00% vs a 16.94% positive control). Vsync-limited at 58.93 fps. **Direct DECD YUV is now independently confirmed, 2026-08-31:** a clean DECD-exclusive Linux test displayed the exact 1280x720 NV12 test card in full colour and correct geometry. A two-buffer follow-up completed 150/150 submissions at 30 fps while visibly alternating red/green, then restored the logo. This is a hardware-confirmed diagnostic path, not yet the production player; it requires four source-geometry corrections, source enable/commit, chroma gain, and the plane-1 selector. This new result does not reinstate the older 2026-08-09 claim, which was correctly retracted because that different register recipe did not reproduce. The CPU-conversion path also works and is capped at 28.30 fps by the ~44 MB/s uncached read of the decoder's buffer. [linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md), [video-decode.md](video-decode.md) |
+| Video on the panel | ✅ **DONE 2026-08-15 — zero-copy GPU playback at 59.71 fps.** Decoded H.264 reaches the panel through the Mali-G31 and scanout carveout with no CPU pixel copy; 2700 frames, no tearing. **Direct DECD YUV is independently confirmed.** A 1280×720 NV12 test card displayed in full colour and correct geometry, and two-buffer red/green alternation completed 150/150 submissions at 30 fps. Real Cedrus dma-bufs decode correctly but their physical backing is segmented; DECD consumes only the first segment and produces the recorded bands/green corruption. Fence retirement is fixed and hardware-proven (299/300 signalled, zero stalls), but was not the visual cause. On 2026-09-01, decoded frame 60 was byte-identical to the visible host reference and, after copying to one physical carveout run, was operator-confirmed as recognizable and apparently correct for 300 submissions. **The direct-path cause is now proven as buffer provenance; next is a 64 MiB VE capture pool plus `DMA_ATTR_FORCE_CONTIGUOUS`, guarded by patch 0072.** Vendor-style runtime IOMMU enable remains an open parallel path; only the early 0069/0070 implementation is negative. Real Cedrus+DECD with display MIPS alive hard-locks the SoC, so use the parked-MIPS DECD-exclusive state. [cedrus-decd-first-visible-playback-2026-08-31.md](reference/cedrus-decd-first-visible-playback-2026-08-31.md), [linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md), [video-decode.md](video-decode.md) |
 | Video decode (Cedrus / VE) | ✅ **PRODUCTION-HARDENED 2026-08-24.** Stock ffmpeg decodes H.264 (5/5) and 8-bit HEVC (6/6 — scaling lists and lossless included) on the VE through `libva-v4l2-request` + our 5 patches. Beyond bit-exactness: **2 h soak, 5238/5238 iterations, 195,332 frames**, no drift and no leak; **16/16 malformed streams** survived with the engine usable after each; **3 concurrent clients 18/18**. Two driver defects found and fixed getting there — patch 0040's device-wide reset deadlocked concurrent contexts in `v4l2_m2m_cancel_job()` (dropped from `series`), and `cedrus_irq()` orphaned jobs by disarming the watchdog before claiming the interrupt (patch 0059, landed). The old rule "a timeout wedges the VE, reboot between runs" is **refuted** — ten consecutive timeouts, then bit-exact for both the shim and GStreamer. **Main10 plays too** (patch 0006, `ve+10`, 57 dB PSNR, byte-identical to the GStreamer oracle) — the old "10-bit does not decode" claim was wrong; the engine writes an 8-bit plane plus a 2-bit plane and the 8-bit part is correct. Remaining gaps: *full* 10-bit output, which needs a V4L2 fourcc for that 8+2 layout (the engine's second output cannot emit P010 — measured, four arms, zero bytes), and tiles (no encoder here emits them). See [decode-production-readiness.md](decode-production-readiness.md) and [handoff-2026-08-24.md](handoff-2026-08-24.md). Historical detail below. ✅ **H.264 hardware decode, bit-exact** (2026-08-09). Mainline `cedrus`, unmodified, via GStreamer `v4l2slh264dec`. All five ladder vectors match their host software references byte-for-byte: 320x240 Constrained Baseline, 1280x720 Baseline/Main/High, 1920x1080 High. Force `video/x-raw,format=NV12` — unforced it negotiates `NV12_32L32` (32x32 tiled), which is correct output but will not match a linear reference. **The `iommus` property must stay off the `ve` node** until the real IOMMU (stock DTB: `0x2010000`, `allwinner,sunxi-iommu`, `#iommu-cells = <2>`) is verified live; ours pointed at the H6 address `0x030f0000`, which reads all zeros. Re-verified bit-exact on the current kernel 2026-08-15. On the panel via the GPU path — see the row above. |
 | WiFi (AIC8800D80 / SDIO) | ✅ **DONE 2026-08-21.** Four-bit UHS-SDR104 at a register-verified 50 MHz — stock parity. 8 MiB and 128 MiB both directions, SHA-256 exact, **zero** cmd53/CRC/FIFO/hardware-lock/timeout messages, on a production kernel from a cold boot, autobooting unattended from eMMC. Three defects were fixed to get here: the v5p3x IDMA descriptor encoding for an exact 4096-byte segment (0046, the bulk-RX failure); a 4x clock-accounting error — the driver doubled the module clock *and* the CCU carried a fictional /2 post-divider, so `max-frequency` meant a quarter of the real rate (0048); and an AP emitting plain 802.11g, which capped transfers at 1.33/2.37 MB/s against a 24.4 MB/s bus. With HT: **5.1–7.7 MB/s** (2.4 GHz HT40, the shipped default for client compatibility) or **13.2/14.4 MB/s** (5 GHz VHT80, `HOTSPOT_BAND=5`). Running both bands at once works but is *slower* than either alone — 1x1 radio, time-sliced. STA mode retested and equally good (8.9/9.6 MB/s). |
 | WiFi regulatory | ✅ **DONE 2026-08-21.** The wiphy is self-managed, so cfg80211's `regulatory.db` never applied to it — the driver installed its own domain from a compiled-in `"00"`, i.e. `DFS-UNSET`, 2380–2520 and 5140–5980 MHz at 20 dBm with no DFS or passive-scan constraint. The driver's own table is fine (185 countries, 98 distinct rule sets); only the selector was stuck. `aic8800-0006` exposes it; the rootfs sets `WIFI_REGDOMAIN` (default `US`) and the radio now reports `country US: DFS-FCC`. ⚠️ The driver still prints `CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES` afterwards — that line is on the *success* branch, so judge with `iw reg get`, not the log. |

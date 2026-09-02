@@ -61,6 +61,51 @@ A `drm_simple_display_pipe`: one CRTC, one primary plane, one fixed-mode LVDS
 connector. It owns exactly two things — **which buffer is scanned out, and when
 the swap happens.**
 
+## 2026-09-01: fullscreen NV12 handoff confirmed under KMS ownership
+
+Out-of-series patch 0077 booted the KMS driver with DECD disabled, leaving
+source 0 untouched for a controlled coexistence test. KMS had demonstrably
+taken over first: the operator confirmed the Linux login prompt on the panel.
+A first script then pointed source 0 at the byte-verified NV12 frame-60
+carveout, programmed the known geometry/stride/gain state, committed it, and
+changed the downstream selector from `0x29000000` to `0x39000000` for ten
+seconds.
+
+The login prompt was replaced, proving KMS did not suppress source 0 and the
+selector did route away from the RGB channel. But the result was a **garbage
+frame**, not the unmistakable face in the source buffer. Restoring the nine
+registers brought the login prompt back correctly; post-test state was exact
+and there were no kernel warnings or IOMMU faults.
+
+An explicit second control committed the KMS RGB channel off before selecting
+source 0 and produced the same garbage. That ruled out concurrent RGB fetch,
+but comparison against the captured DECD state exposed the real defect in both
+tests: only ring slot 0 had been populated. DECD's apparently static submit
+repeats Y, C, and VideoInfo across all four slots and sets the dirty latch.
+
+The corrected test reproduced that complete ring while RGB was committed off.
+The dirty latch was consumed, **the operator saw the decoded face rendered
+correctly**, and disabling source 0 restored the Linux login prompt. Every ring
+and control register returned to its saved value with no fault.
+
+The implementation shape is therefore confirmed, with an important hardware
+constraint: expose source 0 as an opaque fullscreen NV12 DRM overlay, but treat
+it as an exclusive mux in the driver. Enabling it retains the primary RGB
+framebuffer in DRM state while stopping the RGB hardware fetch; disabling it
+restores RGB. The first version should accept only linear 1280x720 NV12 with no
+scaling, crop, rotation, or alpha. The exact test and result are in
+[handoff-2026-09-01-decd-kms-shape.md](handoff-2026-09-01-decd-kms-shape.md).
+
+Out-of-series patch 0078 is the first implementation of that shape. It keeps
+the proven RGB simple pipe and adds a manually initialized atomic overlay plane
+for linear fullscreen 1280x720 NV12 only. The driver owns the exclusive mux
+transition, repeats each framebuffer across the complete four-slot source ring,
+and allocates the VideoInfo page from the display device's DMA address space.
+It builds cleanly and is staged for its first visible test; it has not yet been
+booted. This version intentionally retains GEM DMA's contiguous-import rule.
+Runtime IOMMU attachment and fragmented Cedrus PRIME imports are the next phase,
+not hidden inside the initial plane proof.
+
 ## What it deliberately does not do
 
 The panel is brought up *before Linux*. U-Boot's `h713_disp` loads the MIPS
@@ -134,12 +179,24 @@ enable bit would have produced flips that never complete.
 
 ## What this cost DECD, and why
 
-`dec@5600000` is now `status = "disabled"`. This answers the video-decode loose
-end "decide what DECD is for": DECD probes and works but has no job — its
-registers are not in the scanout fetch path — while holding the two resources a
-display driver needs, the AFBD window and SPI 110. Two drivers cannot own one
-window and one interrupt. It is still built (`CONFIG_SUNXI_DECD=m`) and the node
-is one word from coming back.
+`dec@5600000` is now `status = "disabled"`, because two drivers cannot own one
+register window and one interrupt: KMS needs the AFBD window and SPI 110, and so
+does DECD. It is still built (`CONFIG_SUNXI_DECD=m`) and the node is one word
+from coming back.
+
+> **Correction, 2026-08-31.** This section used to say DECD "has no job — its
+> registers are not in the scanout fetch path." That is **wrong**, and it was
+> wrong when written: DECD is the vendor's no-GPU video path, and a Linux DECD
+> submit has since put a 1280x720 NV12 frame on the panel in full colour, then
+> carried real Cedrus dma-bufs at 30 fps. It restated the retracted 2026-08-09
+> "direct YUV scanout does not reproduce" result as a fact about the hardware,
+> when what those experiments actually showed was that *our* register recipe was
+> wrong. The resource conflict above is the real and
+> only reason DECD is disabled here, and it is now a genuine architectural
+> choice rather than a free one: today the two paths are mutually exclusive at
+> the DT level, and DECD experiments run from a separate DECD-exclusive FIT.
+> See
+> [reference/linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md).
 
 ## Memory — and the mistake that mpv exposed
 

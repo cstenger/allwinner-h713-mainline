@@ -3,6 +3,28 @@
 Self-contained. Assumes no access to our repo. Written to be handed to someone
 who knows Allwinner display hardware and might spot something we have missed.
 
+> **RESOLVED 2026-08-31 — read this before spending time on the brief.** The
+> black screen this document was written to get a second opinion on is fixed. A
+> bounded Linux DECD test displayed a 1280x720 NV12 frame in full colour and
+> correct geometry, and real Cedrus-decoded dma-bufs now reach the panel through
+> the same route with no CPU copy and no GPU. The missing state was four
+> source-geometry words (the source block held an inherited 1920x1088 /
+> stride-1920 fallback), source enable plus its commit, a YUV chroma gain at
+> `0x05140508`, and the plane-1 downstream selector `0x051C006C`. The full
+> account is in the **"Resolution"** section at the end of this file; everything
+> between here and there is the record of the search, kept because its negatives
+> are still worth not re-testing.
+>
+> **FULLY CLOSED 2026-09-01.** Decoded-playback correctness is now solved too:
+> 300 frames of moving decoded H.264 render at 27.13 fps with zero IOMMU faults.
+> It was never buffer retirement — DECD scans linearly from a single base, so a
+> physically scattered Cedrus capture buffer is unreadable, and the fix is IOMMU
+> translation on master 2 (patch 0075), flipped **while the DECD video source is
+> still disabled**. A buffer with 56 physical breaks and a 32 KiB longest run
+> played perfectly. There is nothing left in this brief that needs a second
+> opinion. See
+> [`reference/iommu-runtime-flip-ordering-2026-09-01.md`](reference/iommu-runtime-flip-ordering-2026-09-01.md).
+
 ---
 
 ## 0. Important correction after stock-HWC reverse engineering (2026-08-26)
@@ -1213,6 +1235,15 @@ AFBD fetch engine for the whole boot -- seen on the 0069 boot and again here
 panel stuck white, unrecoverable by register writes). Budget one fault per boot
 and design experiments so the fault comes last.
 
+> **Corrected 2026-09-01.** The observation holds — a master-2 fault does wedge
+> AFBD — but "budget one fault per boot" is the wrong response. The faults were
+> avoidable: they came from flipping master 2 to translation while the DECD
+> video source was enabled, and that source rests at base `0x00000000` with
+> inherited 1920x1088 geometry, so it scans low memory the instant it is turned
+> on. Flip while the source is disabled and there are **zero** faults. Design for
+> none. See
+> [`reference/iommu-runtime-flip-ordering-2026-09-01.md`](reference/iommu-runtime-flip-ordering-2026-09-01.md).
+
 3. ~~**Resolve the project-0x34 scheduler failure before another live MIPS
    handoff.**~~ **CLOSED 2026-08-28 -- there was no scheduler failure.** Under
    `0x34` the firmware is healthy for 60 s (tick identical to `0x33`, zero
@@ -1629,3 +1660,33 @@ same frame.  A live readback proved that source geometry was still the inherited
 known chroma gain restored colour.  Exact evidence and restoration values are
 in
 [`reference/linux-decd-scanout-confirmed-2026-08-31.md`](reference/linux-decd-scanout-confirmed-2026-08-31.md).
+
+## Follow-up: the route carries real decoder output, and what is still open
+
+The route is not limited to static test frames.  A 30-fps two-buffer run
+completed 150/150 submissions while visibly alternating red and green, which
+also established that the state above is applied **once per stream** rather than
+raced against every frame.  A strict target-side player then connected
+`v4l2slh264dec` directly to it, passing Cedrus's own NV12 dma-buf FD unchanged
+into the 112-byte descriptor — no CPU pixel copy and no Mali render — and
+sustained 300 nonvisual frames at 29.95 fps with real Y/C address pairs cycling
+through DECD at exactly the `0xE1000` luma-plane separation.
+
+**Decoded playback is nevertheless not yet correct.**  Visible runs show
+recognizable moving content, correct panel coverage and active colour, but most
+frames are horizontal bands mixed from different decoder surfaces: capture
+buffers are recycled to Cedrus while DECD is still scanning them.  The
+authoritative retirement signal — the release fence returned by
+`FRAME_SUBMIT` — is currently unusable because the reconstructed kernel's
+`frame_item_release()` signals its `dma_fence` and then `kfree()`s the object
+directly, even though the returned `sync_file` still owns a reference.  Fixing
+that ownership (drop the item's reference with `dma_fence_put()` and let the
+fence's `.release` callback free it) is the prerequisite for fence-driven sample
+retirement.
+
+One hazard is worth carrying to any reader reproducing this: **real Cedrus
+traffic with the display MIPS alive hard-locks the SoC**, with no watchdog
+recovery.  Playback runs with the MIPS parked, where the Linux DECD interrupt
+handler owns the four-slot address ring.  Static carveout frames with the MIPS
+alive are unaffected and have run for over an hour.  Full record:
+[`reference/cedrus-decd-first-visible-playback-2026-08-31.md`](reference/cedrus-decd-first-visible-playback-2026-08-31.md).

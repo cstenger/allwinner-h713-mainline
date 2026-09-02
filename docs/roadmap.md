@@ -177,18 +177,77 @@ attached, the display path can be brought up here, not only on the projector
    scanout fetch path — and the "28 fps cross-process handoff ceiling" was
    really the ~44 MB/s uncached read of the decoder's output buffer.
 
-   **The no-GPU variant of this is a separate, still-open goal**, and as of
-   2026-08-29 its premise is confirmed rather than inferred: with stock Android
-   playing video and the player UI hidden, the Mali runtime-PM counters read
-   `active +0 ms, suspended +15115 ms` over 15 s, so the vendor really does put
-   video on the panel with the GPU asleep. Scope is also now bounded — only
-   AFBD's Y/C buffer bases are driven per frame; TVTOP, mixer, DE/OSD, PLL,
-   LVDS PHY and GE2D are configured once and never touched during playback.
-   What remains unexplained is why our DECD path is black: every difference
-   between our state and stock has been forced onto working stock hardware and
-   none of them reproduces it, which places the fault in source 0's output not
-   reaching composition rather than in source 0 itself. See
-   [handoff-2026-08-29.md](handoff-2026-08-29.md).
+   **The no-GPU variant reaches the panel as of 2026-08-31, and is now an
+   implementation task rather than an investigation.** Its premise was confirmed
+   on hardware first (2026-08-29): with stock Android playing video and the
+   player UI hidden, the Mali runtime-PM counters read `active +0 ms, suspended
+   +15115 ms` over 15 s, so the vendor really does put video on the panel with
+   the GPU asleep. Scope is bounded — only AFBD's Y/C buffer bases are driven per
+   frame; TVTOP, mixer, DE/OSD, PLL, LVDS PHY and GE2D are configured once and
+   never touched during playback.
+
+   The black screen is solved. A bounded DECD-exclusive Linux test displayed a
+   1280x720 NV12 test card in full colour and correct geometry; the missing state
+   was four source-geometry words (the source block held an inherited
+   1920x1088 / stride-1920 fallback), source enable plus commit, the YUV chroma
+   gain `0x05140508 = 0x144C0000`, and the plane-1 selector
+   `0x051C006C = 0x39000000`. A 30-fps two-buffer run then completed 150/150
+   visible submissions, so the route is per-stream state, not a per-frame
+   register sequence.
+
+   **The remaining direct-path fault is now proven to be physical-buffer
+   provenance (2026-09-01).** Cedrus capture dma-bufs are physically segmented,
+   but DECD keeps only the first segment base and scans linearly beyond it,
+   producing the recorded bands and green output. The reconstructed release
+   fence did have a real lifetime bug; patch 0071 fixes it and hardware retires
+   299/300 surfaces by signalled fence with zero stalls, but the picture is
+   unchanged, so reuse is not the cause. Patch 0072 now refuses segmented
+   imports and 0073 declares the single-mapping constraint.
+
+   The end-to-end control passes: decoded frame 60 is byte-identical to the
+   visible host reference and, copied into one physical carveout run, was
+   operator-confirmed as recognizable and apparently correct for 300
+   submissions. (The earlier black carveout run selected frame 0, whose content
+   is actually black.)
+
+   **DONE 2026-09-01: moving decoded video renders on the panel through the
+   IOMMU** — 300 frames at 27.13 fps, zero faults, logo restored, with a buffer
+   at `breaks=56 longest-run=32KiB`, more scattered than the one that produced
+   green corruption on bypass. The vendor-style runtime IOMMU enable (patch 0075)
+   is the answer, and the missing precondition was **ordering**: the master-2
+   `0x7c -> 0x78` flip must happen while the DECD video source is still disabled,
+   because that source rests at base `0x00000000` with inherited 1920x1088
+   geometry and starts scanning low memory the moment it is enabled. Only
+   0069/0070's early-attachment implementation is negative. Patch 0074's
+   contiguous pool is a valid control but **not required**.
+
+   **Patch 0076 is hardware-validated**, so the flip ordering is now a driver
+   behaviour rather than an operator procedure: it parks source 0 across the
+   transition and re-enables it after `dec_reg_enable()`, gated on the Y ring.
+   A frozen still and a 300-frame moving clip both rendered correctly as the
+   *first* DECD session of a boot, zero faults, logo restored.
+
+   Next on this thread, in rough order:
+
+   1. **Decide the series shape.** 0075 + 0076 are out of series and pair with
+      the out-of-series 0068, which disables KMS to give DECD exclusive
+      ownership — so promoting them is not a simple append; DECD and the AFBD
+      KMS driver cannot both own the block. That question is bigger than the
+      IOMMU work and has not been designed yet.
+   2. **Re-check the cross-session release-fence stall**, which did not
+      reproduce today but is not disproven.
+
+   Done 2026-09-01: **patch 0074 dropped from the series.** Its 64 MiB permanent
+   DRAM reservation existed to keep Cedrus CAPTURE physically contiguous for a
+   bypassing DECD; with master 2 translating that is unnecessary. The patch is
+   kept out of series as a fallback control for a bypass kernel.
+
+   See
+   [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md),
+   [handoff-2026-09-01-iommu-runtime.md](handoff-2026-09-01-iommu-runtime.md),
+   [reference/cedrus-decd-first-visible-playback-2026-08-31.md](reference/cedrus-decd-first-visible-playback-2026-08-31.md),
+   [reference/linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md)
+   and [handoff-2026-08-31.md](handoff-2026-08-31.md).
 
    **Read the HANDOFF section at the top of
    [video-decode.md](video-decode.md)**, which also carries the loose ends to

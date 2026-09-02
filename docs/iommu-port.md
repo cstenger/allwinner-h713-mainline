@@ -7,6 +7,11 @@ SoC contains harmlessly (cedrus keeps writing after its buffers are freed —
 records what has been verified about the block, so the port starts from measured
 facts rather than from the H6 driver's assumptions.
 
+> **Read first if you are enabling translation on master 2 (`dec`/`ge2d`):**
+> the `IOMMU_BYPASS 0x7c -> 0x78` flip must happen while the DECD **video source
+> is disabled**. See [the master-2 flip ordering rule](#the-master-2-flip-ordering-rule)
+> below. Getting this wrong faults immediately and wedges AFBD for the boot.
+
 ## Verified against board B's own eMMC, 2026-08-17
 
 Everything below is read out of `local/h713-lab/captures/board-b/`, the
@@ -63,6 +68,11 @@ are both `<&mmu_aw 2 0>` — **bypass**. The vendor translates the video engine
 and leaves the display untranslated. That does not weaken the case for the port
 (the VE is the engine that corrupts memory here), but the display must not be
 switched into translation just because it appears in the master list.
+
+**Refined 2026-09-01:** the DT cell describes the *initial* state, not the whole
+story. Stock's HWC flips master 2 to translation at the playback boundary, and
+so must we — a scattered decoder buffer is unscannable otherwise. Do it at the
+right moment; see [the master-2 flip ordering rule](#the-master-2-flip-ordering-rule).
 
 ## The block is register-compatible with mainline's H6 driver
 
@@ -218,6 +228,62 @@ with `#iommu-cells = <0x02>` and the VE's `iommus = <phandle 0 1>`.
 
 **Tested on hardware — see above.**
 
+## The master-2 flip ordering rule
+
+Verified on hardware 2026-09-01 over six bench runs. Full account:
+[reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md).
+
+Master 2 carries both `dec@5600000` (our AFBD display) and `ge2d@5240000`. The
+vendor ships it bypassing and HWC flips it at the playback boundary via
+`sunxi_enable_device_iommu(2, 1)`. Patch 0075 reproduces that transition and it
+works — with one precondition that is easy to miss and fails hard:
+
+> **Do the `IOMMU_BYPASS 0x7c -> 0x78` transition while the DECD video source is
+> disabled**, i.e. with only the inherited logo route live. After the flip is
+> spent, enabling the video route and running playback is clean.
+
+**Why.** On a fresh boot, before any submit, the video source block reads:
+
+```text
+0x05600010  0x03000010   source DISABLED (the visible route sets 0x03000013)
+0x05600020  0x043F077F   inherited 1920x1088 fallback geometry
+0x05600040  0x00000780   stride 1920
+0x05600070  0x00000000   source base = ZERO
+```
+
+Enabling that source starts a raster scan **from physical address 0** across
+roughly the first 2 MB. Under bypass those reads are harmless — which is exactly
+why the DECD route always worked on a bypass boot. Under translation they are
+L1-invalid. Four runs that flipped with the video route live faulted at
+`0x29000`, `0x26000`, `0x81000` and `0x16000`: page-aligned, different each time
+(a scan caught at whatever offset it had reached), and never near the
+identity-mapped logo carveout (`0x6c100000`), the DECD metadata (`0x4d941000`)
+or the frame IOVA (`0xfe000000`). Runs that flipped with only the logo live
+produced **zero** faults.
+
+**Identity mappings are necessary and they work.** `iommu-addresses =
+<&dec 0x6c100000 0x800000>` on the reserved-memory node (the phandle must point
+at the *device*, not the IOMMU) plus `.get_resv_regions =
+iommu_dma_get_resv_regions` keeps the in-flight logo fetch valid across the
+transition. No fault has ever landed at `0x6c1xxxxx`.
+
+**Reading a fault:**
+
+```text
+0x02010130  INT_ERR_ADDR_L1     the faulting VA
+0x02010180  L1PG_INT      = 0x4 master 2 (bit index = master id)
+0x02010118  INT_ERR_ADDR(2)= 0   per-master register stays zero
+0x02010184  L2PG_INT      = 0x0  no L2 fault
+```
+
+`L1PG_INT` set means **L1-invalid** — no page-directory entry at all for that
+megabyte, which is what "nothing in low memory is mapped" looks like.
+
+**Correction to an earlier rule.** "One master-2 page fault wedges the AFBD
+fetch engine for the whole boot, so budget one fault per boot and make it last"
+is the wrong lesson. The fault does wedge AFBD — but it is *avoidable*. Design
+the transition so there are zero faults.
+
 ## Still open
 
 1. **`DM_AUT_CTRL` layout for seven masters.** H6's driver computes
@@ -228,8 +294,10 @@ with `#iommu-cells = <0x02>` and the VE's `iommus = <phandle 0 1>`.
    never writes `TLB_ENABLE`, so those survive; anything that starts writing
    them must read-modify-write rather than assume zero.
 3. **Whether translating the VE alone is coherent** when the display shares CMA
-   with it. The vendor's answer is yes — it translates the VE and bypasses the
-   display — but the vendor is not running our KMS driver.
+   with it. The vendor's answer is yes at rest — it translates the VE and
+   bypasses the display — but it flips the display to translation at playback,
+   and so do we. Partly answered by the 2026-09-01 result above: master 2
+   translating alongside masters 0/1 ran 300 frames with zero faults.
 
 ## Why this is worth doing
 
