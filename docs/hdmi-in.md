@@ -475,3 +475,52 @@ conclusion is that the register answers to the ARISC core and not to the ARM.
 not a small one: msgbox/rpmsg transport, then `PullHotPlug 0x0211` from the
 documented sub-command set. Do not spend further boots looking for an ARM-side
 enable — there isn't one.
+
+## HDMI-in audio is a separate path, and possibly the better first target
+
+Not to be confused with the analog ADC, which is dead: **this board has no
+microphone and no analog audio input** (confirmed by the owner). HDMI audio
+does not touch that path at all — it arrives digitally.
+
+Where it goes, from our own dtsi and the stock DTB:
+
+```text
+audio_bridge@203042c   "vs,trid-audio-bridge"   IRQ 113 audbrg, 115 audif (ABP DTV)
+i2s2@2034000           clocks include CLK_HDMI_AUDIO, named "pll_tvfe"
+spdif/owa@2036000      clocks include CLK_HDMI_AUDIO + CLK_OWA0_RX ("rx")
+```
+
+`CLK_HDMI_AUDIO` and `CLK_BUS_HDMI_AUDIO` are tvtop clocks, so this path is
+behind the same TVFE/TVCAP gate that patch 0087 already opens. All three nodes
+are currently **disabled** in the board DTS, and `vs,trid-audio-bridge` has no
+mainline driver.
+
+The stock Android audio HAL does **not** describe this path. Searching the
+board-b image finds only Android's generic enum table
+(`AUDIO_DEVICE_IN_HDMI`, `AUDIO_DEVICE_OUT_HDMI_ARC`, ...) and the framework's
+CEC classes — boilerplate present on every Android device, the same trap as the
+mic entries. That absence is expected rather than informative: on this product
+HDMI input belongs to the **TV stack** (`tvserver` / `libvideo.so` /
+`libhalhdmi.so` and the MIPS), not to the audio HAL, so the audio HAL was never
+going to mention it.
+
+### Why it may be easier than HDMI video
+
+Both are gated on HPD and TMDS lock — a receiver cannot extract audio sample
+packets from a stream it has not locked to, so nothing here bypasses the HPD
+blocker.
+
+But past that point the two diverge, and audio looks like the shorter path:
+
+- **It probably does not need the MIPS.** The MIPS owns TMDS *pixel* decode and
+  the scanout. Audio extraction plausibly runs HDMI-RX -> audio bridge (or
+  i2s2/owa) -> DMA, with no MIPS involvement and no scanout question.
+- **The ALSA side already works.** Playback is finished and correct, so a
+  capture stream from the bridge lands on a card that is already proven, rather
+  than needing the codec brought up first.
+- **No panel involvement**, so none of the AFBD/KMS ownership constraints that
+  shape the video path apply.
+
+So once HPD is solved, **try HDMI audio before HDMI video.** It is the cheaper
+proof that the receiver is locking to a real stream, and a working capture
+stream is itself a strong signal for the video work that follows.

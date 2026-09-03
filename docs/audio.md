@@ -461,10 +461,12 @@ The `<microphone_characteristics>` block is present but carries
 template, not a described part.
 
 So **stock never captures audio on this product**, and the mic entries are
-boilerplate carried from the reference design. That does not strictly prove no
-microphone is fitted, but combined with a projector form factor and the vendor
-driver writing a fixed `0x55` to the ADC mixer without ever naming an input, it
-is strong evidence that the analog capture path leads nowhere.
+boilerplate carried from the reference design.
+
+**CONFIRMED by the board owner 2026-09-02: there is no microphone and no analog
+audio input on this hardware.** The RE inference above was right, and this
+settles it as fact rather than deduction — the analog capture path is dead,
+permanently, and no amount of driver work will change that.
 
 ### Consequence for patch 0091
 
