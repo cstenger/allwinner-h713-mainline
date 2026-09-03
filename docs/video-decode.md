@@ -2613,11 +2613,59 @@ The second is now the leading candidate, and it is a different problem from
 everything investigated so far — not the render node, not buffer lifetime, not
 the driver's decode path.
 
+### It IS dispatched — and exits through an unmarked INVALID_* return
+
+Moving the entry log to the first line corrects the previous section as well:
+
+```text
+H713-ENTRY sync:   surface=67108865 state=4 request_fd=-1   -> SUCCESS (Ready)
+H713-ENTRY endpic: CALLED ctx=33554432
+H713-ENTRY endpic: CALLED ctx=33554432
+H713-ENTRY sync:   surface=67108864 state=1 request_fd=-1   -> FAILS
+H713-ENTRY endpic: CALLED ctx=33554432
+
+ENTRY endpic: CALLED   3     matching the 3 decode failures
+H713-ENDPIC            0     no OPERATION_FAILED path fires
+```
+
+So "never dispatched" was wrong too. `RequestEndPicture` **is** called, three
+times, once per failure. It exits before its main body — it never reaches
+`gettimeofday`, which is why the earlier entry log was silent, and never reaches
+the internal `RequestSyncSurface` at the end, which is why only two syncs appear
+instead of five.
+
+By order of the exits, and with `P1` (`video_format NULL`) instrumented and
+silent, the only remaining ways out before the body are the three **unmarked**
+returns:
+
+```c
+return VA_STATUS_ERROR_INVALID_CONTEXT;   /* context_object == NULL */
+return VA_STATUS_ERROR_INVALID_CONFIG;    /* config_object  == NULL */
+return VA_STATUS_ERROR_INVALID_SURFACE;   /* surface_object == NULL */
+```
+
+**One thing does not add up and is left open honestly.** Those return codes are
+5, 4 and 6, while ffmpeg reports `issue: 1`, which is
+`VA_STATUS_ERROR_OPERATION_FAILED`. Either ffmpeg's message is not reporting the
+driver's return directly, or something between the driver and ffmpeg
+substitutes the code. That discrepancy should be resolved rather than assumed
+away — it is the kind of gap that has already invalidated two conclusions in
+this investigation.
+
+Note the context id is stable at `33554432` across all three calls, so the
+context handle itself is not obviously being lost between calls.
+
 ### Suggested next steps, cheapest first
 
-1. Move the entry log to the **first line** of `RequestEndPicture`, before every
-   early return, and re-run. That distinguishes "never dispatched" from "exited
-   early" in one boot and costs one rebuild.
+1. Mark the three `INVALID_*` returns in `RequestEndPicture`. One rebuild names
+   which object lookup fails — context, config or surface — and that is the
+   actual fault.
+2. Then resolve the code mismatch: log the value `RequestEndPicture` actually
+   returns, and compare it against what ffmpeg prints. If they differ, the
+   problem is between libva and ffmpeg, not in the driver.
+3. Note the failing surface reaches sync in `VASurfaceRendering`, so
+   `BeginPicture` ran and set that state. Whatever lookup fails in EndPicture
+   succeeded in Begin, which is a useful asymmetry to exploit.
 2. If it is never dispatched, instrument `RequestBeginPicture` and
    `RequestRenderPicture` too — the surface reaching sync in `Rendering` state
    means Begin ran, so the break is between Begin and End.
