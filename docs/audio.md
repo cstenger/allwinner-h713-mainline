@@ -424,3 +424,59 @@ Audio playback on H713 is now correct in pitch, level and routing.
 - **Pick measurement steps against the noise floor you will actually have.** The
   first sweep used 18.5 dB steps into a room with 18 dB of headroom, so two of
   six segments were unmeasurable. The second used 4 dB steps and all six landed.
+
+## Capture: stock does not use it, and probably nothing is wired
+
+Asked of the board-b stock eMMC capture
+(`local/h713-lab/captures/board-b/bench_emmc_full.img`, 7.8 GB) rather than
+guessed at, because the same physical question wasted a session on the playback
+side when the speaker turned out to be on a different amplifier.
+
+The vendor's Android audio config declares input devices:
+
+```xml
+<device_path_map device="IN_AMIC"   path="media-main-mic"/>
+<device_path_map device="IN_DMIC"   path="media-digital-mic"/>
+<device_path_map device="IN_HPMIC"  path="media-headset-mic"/>
+```
+
+Those look like a wired microphone until you check whether the paths they name
+actually exist. Counting occurrences across the whole image, with playback paths
+as the control:
+
+```text
+media-speaker      5     playback -- referenced AND defined
+phone-ring-voice   2     playback -- referenced AND defined
+media-main-mic     1     capture  -- referenced only
+media-digital-mic  1     capture  -- referenced only
+```
+
+**Every capture path is referenced once and defined nowhere.** The control
+matters: without it, "appears once" would have meant nothing, since the
+definitions could have lived in a compressed file the grep cannot see. Playback
+paths prove definitions are visible in this image, so the absence is real.
+
+The `<microphone_characteristics>` block is present but carries
+`valid_mask="0"` and `num_frequency_responses="0"` — an unpopulated Allwinner
+template, not a described part.
+
+So **stock never captures audio on this product**, and the mic entries are
+boilerplate carried from the reference design. That does not strictly prove no
+microphone is fitted, but combined with a projector form factor and the vendor
+driver writing a fixed `0x55` to the ADC mixer without ever naming an input, it
+is strong evidence that the analog capture path leads nowhere.
+
+### Consequence for patch 0091
+
+0091 (out of series) adds the ADC path and is *nearly* working — every widget
+is live, and only the PCM lacks a capture substream, which is a solvable ASoC
+plumbing bug. But finishing it would most likely yield a capture device that
+records silence, so it is **not worth further boots on its own merit**.
+
+Note this does NOT block HDMI-in audio, and finishing it would not help there
+either: HDMI audio arrives digitally through the audio bridge and the
+`hdmi_audio` clocks, not through the analog ADC. That work is gated on HDMI
+input, not on this.
+
+Keep 0091 as a record. Revisit only if a microphone is confirmed physically, or
+if something else turns out to need the ADC.
