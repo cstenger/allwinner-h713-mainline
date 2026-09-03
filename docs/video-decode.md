@@ -2391,10 +2391,55 @@ the board still up on the OLD kernel and query that. Always confirm
 `/proc/version` matches the FIT's build time before believing a post-install
 measurement.
 
+### The render node is NOT the discriminator — decode works on both
+
+Compared the two VA devices directly with ffmpeg, taking mpv out of the picture:
+
+```text
+LIBVA_DRIVER_NAME=v4l2_request ffmpeg -hwaccel vaapi \
+  -hwaccel_device /dev/dri/renderD128 -i clip.h264 -f null -    exit 0
+  -hwaccel_device /dev/dri/renderD129 -i clip.h264 -f null -    exit 0
+```
+
+**Both decode cleanly.** So the earlier hypothesis — that the copy path works
+because it uses panfrost's node while interop fails on ours — is **refuted**.
+Decode does not care which DRM fd the VA device was built on.
+
+What does fail is the interop plumbing:
+
+```text
+-vf hwmap=derive_device=drm,format=drm_prime
+  Failed to created derived device context: -38   (ENOSYS)
+```
+
+ffmpeg cannot derive a DRM device from this VA-API device, which is precisely
+the capability zero-copy needs. Note the driver *does* export the symbol —
+`ExportSurfaceHandle`, `AcquireBufferHandle`, `DeriveImage` are all present in
+`v4l2_request_drv_video.so` — so this is not a missing entry point.
+
+### Where the zero-copy blocker actually is
+
+Bounded, after eliminating the alternatives:
+
+- **not the render node** — decode works on both, proven above;
+- **not the VA driver's decode** — ffmpeg decodes on both nodes, and mpv's
+  `vaapi-copy` decodes through the same driver at 75.7 fps;
+- **not a missing export entry point** — the symbols are there.
+
+It is the **VA-API ↔ DRM interop layer**: ffmpeg's device derivation returns
+ENOSYS, and mpv's interop decode fails at `vaEndPicture` while the identical
+driver decodes fine when nothing asks for exportable surfaces. The live
+hypothesis is that mpv's interop path requests surface attributes the driver
+allocates differently, and Cedrus then rejects the submission.
+
+The full `libva-v4l2-request` source is built **on the board**, not in this
+tree, which is where that thread continues.
+
 ### Suggested next steps, cheapest first
 
-1. Chase the `vaEndPicture` failure — compare surface allocation between the
-   `renderD128` (works, copy) and `renderD129` (fails, interop) VA devices. `vo=gpu` +
+1. Read `EndPicture` in the on-board `libva-v4l2-request` source and find which
+   failure path returns `VA_STATUS_ERROR_OPERATION_FAILED`; that names the
+   condition directly instead of inferring it. `vo=gpu` +
    `vaapi-copy` creates a VA display fine with the same driver and env, so the
    fault is narrow and the `GL_EXT_EGL_image_storage` interop is present.
 2. A Wayland compositor plus mpv's `dmabuf-wayland` vo (already compiled in) is
