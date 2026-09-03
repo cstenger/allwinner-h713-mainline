@@ -2655,11 +2655,63 @@ this investigation.
 Note the context id is stable at `33554432` across all three calls, so the
 context handle itself is not obviously being lost between calls.
 
+### RETRACTION: the instrumentation broke the driver
+
+Marking the three `INVALID_*` returns produced a run where **nothing at all
+fired** — not `P1`, not the `INVALID_*` markers, not the mid-function entry log
+— while EndPicture was entered three times. Reading the patched source explains
+why, and invalidates everything measured since the first instrumented build:
+
+```c
+	if (video_format == NULL)
+		fprintf(stderr, "H713-ENDPIC: P1 video_format NULL\n");
+		return VA_STATUS_ERROR_OPERATION_FAILED;   /* now UNCONDITIONAL */
+```
+
+The original is a **braceless `if`**. Inserting a line before the return left
+the `if` guarding only the `fprintf` and made the return unconditional, so
+`RequestEndPicture` failed immediately on every call — returning exactly
+`VA_STATUS_ERROR_OPERATION_FAILED`, which is precisely the symptom under
+investigation.
+
+**Everything measured after the first instrumented driver was installed is
+void:**
+
+- "the failure is in `RequestSyncSurface`, by elimination" — void;
+- "EndPicture never runs" — void;
+- "EndPicture exits via an unmarked `INVALID_*` return" — void.
+
+Each was reasoned correctly from observations that were themselves artefacts.
+The one genuine clue in the whole sequence — that the marked paths stayed silent
+— had a much simpler explanation than any of the theories built on it.
+
+Also note the "discrepancy" flagged earlier, that the `INVALID_*` codes are
+4/5/6 while ffmpeg reported 1, was the tell. It was recorded as unresolved
+rather than explained away, and it was pointing straight at this.
+
+**What survives**: the pre-instrumentation observation stands, because it was
+taken against the pristine driver — `--hwdec=vaapi` fails with
+`Failed to end picture decode issue: 1` while `--hwdec=vaapi-copy` works. That
+is still the real bug, and it is still uninvestigated.
+
+The driver has been restored from `picture.c.orig-preprintf` and
+`surface.c.orig-preprintf`, rebuilt and reinstalled; `vaapi-copy` verified
+working again with zero decode failures.
+
+### The lesson, which is the durable part
+
+**Never insert a statement before a `return` without checking for braces.** A
+text-level edit that is syntactically valid can silently change control flow. If
+instrumenting, either add the braces or log from inside an existing block — and
+after patching, *read the patched source* rather than trusting that the edit did
+what was intended. The project already had a rule for this ("verify edits, not
+strings"); this is the same failure in a new form, and it cost four rounds.
+
 ### Suggested next steps, cheapest first
 
-1. Mark the three `INVALID_*` returns in `RequestEndPicture`. One rebuild names
-   which object lookup fails — context, config or surface — and that is the
-   actual fault.
+1. Re-instrument `RequestEndPicture` **correctly** — convert the braceless `if`s
+   to braced blocks in the same edit — and re-run against a driver that is known
+   good. Nothing about the original failure is known yet.
 2. Then resolve the code mismatch: log the value `RequestEndPicture` actually
    returns, and compare it against what ffmpeg prints. If they differ, the
    problem is between libva and ffmpeg, not in the driver.
