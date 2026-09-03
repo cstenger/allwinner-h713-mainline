@@ -2223,3 +2223,90 @@ U-Boot currently owns the AFBD registers, and DECD would want them.
 - The bench board is a **WiFi AP at 192.168.4.1** with sshd running. Joining it
   from the host would give a fast file path, at the cost of the host's own
   network. `ums` from U-Boot is the transfer route used instead.
+
+## mpv plays hardware-decoded video TODAY, with no source changes (2026-09-03)
+
+The handoff recorded this as blocked: *"mpv cannot use the video plane. This
+build has no drmprime hwdec, only vaapi, and mpv's VA-API route goes through
+vo=gpu, which wants a render node the display-only driver has none of."*
+
+**Both halves of that are wrong.** Measured on the board:
+
+```sh
+LIBVA_DRIVER_NAME=v4l2_request \
+  mpv --vo=drm --hwdec=vaapi-copy clip.h264
+```
+
+```text
+libva: Trying to open .../v4l2_request_drv_video.so
+libva: va_openDriver() returns 0
+Initialized VAAPI: version 1.22
+Using hardware decoding (vaapi-copy).
+VO: [drm] 1280x720 nv12
+Exiting... (End of file)
+```
+
+Hardware decode on the VE plus display, no rebuild of ffmpeg, mpv or anything
+else. The only missing piece was `LIBVA_DRIVER_NAME=v4l2_request`, because
+libva otherwise derives the driver name from the DRM device and looks for a
+`sun50i-h713-afbd_drv_video.so` that does not exist.
+
+### And `vo=gpu` works too — the render-node claim was false
+
+```text
+GL_VERSION  = '3.1 Mesa 25.0.7-2+deb13u1'
+GL_RENDERER = 'Mali-G31 (Panfrost)'
+VO: [gpu] 1280x720 yuv420p
+```
+
+Mesa pairs the two devices by itself — `card0` is `sun50i-h713-afbd`
+(display-only, no `DRIVER_RENDER`, correctly) and `card1`/`renderD128` is
+`panfrost`. GBM allocates on the display device, Panfrost renders, EGL comes up.
+This is the ordinary split render/display arrangement every ARM SBC uses, and it
+needed no configuration at all.
+
+So the driver was never missing anything: it already advertises
+`DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC` with `DRM_GEM_DMA_DRIVER_OPS`
+(PRIME import/export plus dumb buffers), which is exactly what GBM and a
+compositor need.
+
+### What is still not working
+
+`--hwdec=vaapi` (zero-copy) with `vo=gpu` fails at *"Could not create a VA
+display"* — before `vaInitialize`, since no `libva info:` lines appear at all.
+Note `vo=drm` creates the VA display fine with the same driver and env, so this
+is mpv's `vo=gpu` VA-display path specifically, not the VA driver.
+
+The gap between the two paths:
+
+| | works | copy |
+| --- | --- | --- |
+| `vo=drm` + `vaapi-copy` | **yes** | frame copied back to CPU, software scaled |
+| `vo=gpu` + `vaapi` | no | would be zero-copy via EGL dmabuf interop |
+| `vo=gpu` + `vaapi-copy` | untested | GPU-composited, still a readback |
+
+`GL_EXT_EGL_image_storage` interop is present, so the zero-copy path is
+plausible once the display is created.
+
+### Upstream note: v4l2request is NOT in FFmpeg
+
+Checked FFmpeg master's `configure`: no `--enable-v4l2-request`, no
+`v4l2request` hwaccel entries, nothing. The `*_v4l2m2m` decoders that *are*
+present are the **stateful** M2M wrappers and cannot drive Cedrus, which is a
+**stateless** Request-API decoder. So "build ffmpeg with v4l2request" means
+applying an out-of-tree patchset — which is now unnecessary anyway.
+
+### Remaining rough edge
+
+`vo=drm` prints `Failed to commit atomic request: Error number 22` (EINVAL) on
+exit, after playing to EOF. Teardown only, but it is our driver returning
+EINVAL to an atomic commit and worth understanding.
+
+### Suggested next steps, cheapest first
+
+1. Try `--hwdec=vaapi-copy` with `--vo=gpu` — if that works, playback is
+   GPU-composited and only the final readback remains.
+2. Chase the `vo=gpu` VA-display failure; the interop extension is present.
+3. A Wayland compositor plus mpv's `dmabuf-wayland` vo (already compiled in) is
+   the other zero-copy route needing no media-stack changes.
+4. Investigate the EINVAL on atomic teardown.
