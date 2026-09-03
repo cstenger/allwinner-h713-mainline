@@ -2516,10 +2516,66 @@ The instrumented driver is installed; the original is at
 the pristine source at `/root/va-driver-build/src/picture.c.orig-preprintf`. The
 markers only print on failure, so `vaapi-copy` is unaffected.
 
+### ROOT CAUSE: the surface reaches sync with no media-request fd
+
+Instrumented all seven failure exits of `RequestSyncSurface` (`surface.c`) the
+same way. Exactly one fires:
+
+```text
+H713-SYNC: unknown failed rc=65535 errno=0
+```
+
+`rc` is uninitialised garbage and `errno` is 0, so this is a **state check, not
+a syscall failure**. It is this one:
+
+```c
+request_fd = surface_object->request_fd;
+if (request_fd < 0) {
+        status = VA_STATUS_ERROR_OPERATION_FAILED;
+        goto error;
+}
+```
+
+**The surface arrives at sync with no media-request fd.** Note the branch just
+above returns `VA_STATUS_SUCCESS` for any surface not in `VASurfaceRendering`,
+so this surface *is* marked Rendering while carrying `request_fd < 0` — an
+inconsistent state rather than a resource or timing problem.
+
+That is a real narrowing, and it moves the diagnosis off the buffer-lifetime
+theory. Nothing here is starved, busy or timing out: `media_request_wait_completion`
+and both `v4l2_dequeue_buffer` calls never even run. The earlier reasoning
+about EGL holding capture buffers was plausible and is **not** what is
+happening.
+
+`RequestEndPicture` allocates the fd and stores it on the surface, so the
+question is what clears or bypasses it on the interop path. Two candidates,
+neither yet tested:
+
+- **a double sync.** `picture.c:236` calls `RequestSyncSurface` internally, and
+  mpv's interop also syncs explicitly before exporting the surface for EGL. If
+  the first sync releases the fd without moving the surface out of
+  `VASurfaceRendering`, the second finds `-1`.
+- **a surface that never went through EndPicture** — e.g. one taken from the
+  pool and synced before being rendered.
+
+The asymmetry to explain: 3 decode failures but only 1 sync marker, so the other
+two failures leave by some path that is still unaccounted for.
+
+### State of the board
+
+Instrumented driver installed. Pristine copies kept alongside:
+`picture.c.orig-preprintf`, `surface.c.orig-preprintf`, and
+`v4l2_request_drv_video.so.orig-preprintf`. Markers print only on failure, so
+`vaapi-copy` playback is unaffected.
+
 ### Suggested next steps, cheapest first
 
-1. Read `RequestSyncSurface` and instrument *its* exits the same way — it will
-   name whether the dequeue times out, returns EBUSY, or fails otherwise.
+1. Log `surface_id` and `request_fd` on **entry** to both `RequestEndPicture`
+   and `RequestSyncSurface`. That shows directly whether the failing sync is a
+   second call on an already-synced surface or a first call on an unrendered
+   one — and explains the 3-failures-1-marker mismatch.
+2. Only then decide whether the fix belongs in the driver (keep the fd, or
+   return SUCCESS for an already-synced surface) or in how mpv drives it.
 2. If it is buffer starvation, count the capture buffers the pool is given and
    whether mpv/EGL ever release them. This is the same class of problem as the
    DECD release fence, which this project has already solved once.
