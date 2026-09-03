@@ -2878,12 +2878,56 @@ again; under copy it is dequeued immediately.
 
 That is now the leading explanation and it has not been tested.
 
+### CONFIRMED: the capture buffer is queued twice and never dequeued
+
+Logging every `VIDIOC_QBUF` and `VIDIOC_DQBUF` on the capture queue settles it,
+with the working path as the control:
+
+```text
+CONTROL (vaapi-copy, works)        ZERO-COPY (vaapi, fails)
+QBUF  index=0                      QBUF  index=2   rc=0
+DQBUF index=0                      QBUF  index=3   rc=0
+QBUF  index=1                      QBUF  index=2   rc=-1 errno=22
+DQBUF index=1
+QBUF  index=2                      60 QBUF / 60 DQBUF  vs  3 QBUF / 0 DQBUF
+DQBUF index=2   ... strict 1:1
+```
+
+**The copy path queues and dequeues each buffer exactly once, 1:1. The interop
+path never dequeues at all**, and the third queue reuses index 2 while it is
+still queued — which V4L2 rejects with **EINVAL**.
+
+So the original buffer-lifetime hypothesis was right, and the reasoning that
+dismissed it was wrong. It was dismissed because the errno was EINVAL rather
+than EBUSY; **V4L2 returns EINVAL for queueing an already-queued buffer**, so
+the errno never contradicted the theory. Assuming a specific errno for a
+condition, without checking what the interface actually returns, cost several
+rounds.
+
+This also explains the 1-marker/3-failure asymmetry that has been open
+throughout: only one re-queue collides before decoding stops.
+
+### Why it happens
+
+Under `vaapi-copy` the decoded frame is copied out immediately, so the buffer is
+dequeued and returns to the pool. Under interop the frame is exported as a
+dma-buf for EGL and **nothing ever completes the round trip** — no dequeue
+happens, buffers are never recycled, and the driver eventually re-queues an
+index that is still outstanding.
+
+That is the same class of bug as the DECD release fence this project already
+solved once: a consumer holds a buffer and the producer is never told it is
+free.
+
 ### Suggested next steps, cheapest first
 
-1. Log every queue and dequeue of capture buffers with their index — the
-   sequence shows directly whether index 2 is queued twice without an
-   intervening dequeue. That tests the reopened hypothesis and needs no new
-   theory.
+1. Find who is responsible for the dequeue on the interop path — the driver's
+   sync/export code, or mpv releasing the exported surface. The absence of *any*
+   DQBUF suggests the dequeue is never even attempted, not that it fails.
+2. Compare the surface release path: `vaapi-copy` presumably syncs and
+   dequeues, while interop's exported surfaces may never reach that code.
+3. Whether the eventual fix belongs in `libva-v4l2-request` or in how mpv
+   releases surfaces is open, but the missing operation is now specific.
 2. Confirm what the Cedrus/V4L2 core returns for a double `QBUF`, rather than
    assuming EINVAL means "invalid argument" in the narrow sense.
 3. Re-explain the 1-marker/3-failure gap, which no longer has an account.
