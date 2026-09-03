@@ -2302,11 +2302,50 @@ applying an out-of-tree patchset — which is now unnecessary anyway.
 exit, after playing to EOF. Teardown only, but it is our driver returning
 EINVAL to an atomic commit and worth understanding.
 
+### `vaapi-copy` + `vo=gpu` also works, and the numbers are the real story
+
+Both outputs work with hardware decode. Measured with `--untimed --no-audio`,
+300 frames (`--loop-file=4`) so mpv's ~1.9 s startup is amortised — the first
+attempt used 60-frame clips and was almost entirely startup, reporting 8 fps for
+a path that actually does 40:
+
+```text
+720p                              1080p high
+  vaapi-copy vo=null   137.3 fps    vaapi-copy vo=null    90.6 fps
+  software   vo=null   206.9 fps    software   vo=null   174.5 fps
+  vaapi-copy vo=drm     96.7 fps    vaapi-copy vo=drm     57.5 fps
+                                    vaapi-copy vo=gpu     40.7 fps
+```
+
+**Software decode beats hardware-decode-plus-copy at both resolutions.** The VE
+decodes fine; the readback of the decoded frame out of its buffer costs more
+than four A53s spend decoding H.264 in the first place. That is the whole
+result, and it reframes what `vaapi-copy` is for: it is not a throughput win, it
+is a **CPU-offload** win, and the copy erases most of even that.
+
+Displayed playback is comfortably realtime either way — 57.5 fps at 1080p
+through `vo=drm`, 40.7 through `vo=gpu` — so this is a usable player today. But
+hardware decode only *pays* once the copy is gone.
+
+Two caveats on the numbers: the clips are 60 frames looped, so they sit in cache
+and likely flatter software decode; and `--untimed` measures throughput, not
+sustained realtime playback with audio and a UI competing for CPU.
+
+### So zero-copy is the point, not an optimisation
+
+This is what the DECD/KMS NV12 plane already demonstrated at **59.71 fps
+unpaced with the GPU idle** — no readback, no CPU in the frame path. Getting
+mpv onto that path is worth real effort, because it is the only configuration
+where the VE is actually earning its keep.
+
 ### Suggested next steps, cheapest first
 
-1. Try `--hwdec=vaapi-copy` with `--vo=gpu` — if that works, playback is
-   GPU-composited and only the final readback remains.
-2. Chase the `vo=gpu` VA-display failure; the interop extension is present.
-3. A Wayland compositor plus mpv's `dmabuf-wayland` vo (already compiled in) is
+1. Chase the `vo=gpu` + `--hwdec=vaapi` VA-display failure. `vo=gpu` +
+   `vaapi-copy` creates a VA display fine with the same driver and env, so the
+   fault is narrow and the `GL_EXT_EGL_image_storage` interop is present.
+2. A Wayland compositor plus mpv's `dmabuf-wayland` vo (already compiled in) is
    the other zero-copy route needing no media-stack changes.
-4. Investigate the EINVAL on atomic teardown.
+3. Investigate the EINVAL our driver returns on `vo=drm` atomic teardown.
+   `vo=gpu` does not provoke it.
+4. Re-measure with longer, non-looping content before drawing conclusions about
+   sustained playback.
