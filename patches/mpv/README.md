@@ -76,3 +76,30 @@ The pre-existing `vo=drm` teardown warning remains: restoring the saved atomic
 state returns `EINVAL` after playback, despite the panel and plane state being
 restored correctly. It is tracked separately and is not introduced by this
 series.
+
+## Board state, and the reproducibility gap — 2026-09-03
+
+The patched binary lives on the board as **`/root/mpv-h713-test`**. It is not
+installed: `/usr/bin/mpv` is stock Debian v0.40.0 with no direct path, and no
+mpv build tree remains on the board. Re-verified independently on the clean
+VA driver:
+
+```text
+Using hardware decoding (vaapi).
+VO: [drm] 1280x720 vaapi[nv12]
+[vo/drm] Using direct DRM PRIME video-plane scanout
+decode failures: 0        panfrost mentions in the log: 0
+```
+
+**This series has the problem `build-va-driver.sh` was written to solve.** That
+script exists because the VA driver was "built by hand ... nothing in the rootfs
+build produces it, so a fresh flash silently loses hardware decode and the way
+back lives in somebody's shell history". The patched mpv is now in exactly that
+position: one unversioned binary in `/root`, reproducible only by following the
+instructions above by hand.
+
+Worth closing the same way — a `tools/video/build-mpv.sh` alongside the VA
+driver script, applying this series to the pinned v0.40.0 tag, building for the
+board, verifying the direct path is present in the result, and installing it
+deliberately rather than leaving a test binary. Until then, treat
+`/root/mpv-h713-test` as the only artifact and do not assume a reflash keeps it.
