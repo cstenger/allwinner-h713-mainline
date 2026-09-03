@@ -130,3 +130,63 @@ arm64 `-dev` packages — temporary route, or copied `.deb` files — and it run
 
 Until then `/root/mpv-h713-test` remains the only artifact, and a reflash loses
 it.
+
+## Cross-build attempt — blocked on mmdebstrap keyring plumbing (2026-09-03)
+
+Building on the board is **not possible**: its rootfs is 2.7 G at ~97 % full,
+and an mpv build tree needs several hundred MB. Freeing 126 M of stale FITs was
+not close to enough. Do not retry that route without resizing the filesystem.
+
+The host route is the right one and is *nearly* working. Everything needed is
+present on the host:
+
+```text
+unprivileged userns   OK        qemu-aarch64 binfmt   registered, flags PF
+mmdebstrap            present   debootstrap           present
+disk                  1.2 T free
+```
+
+`flags: PF` matters — the **F** flag preloads qemu into the kernel, so an arm64
+chroot works without copying a qemu binary into it.
+
+**The blocker is that apt inside mmdebstrap rejects the Debian archive as
+unsigned**, and `--keyring` does not fix it. Four forms were tried, all failing
+identically with `The repository '...trixie InRelease' is not signed`:
+
+1. the project's cached `debian-archive-keyring.gpg` — stale, created 2021;
+2. a `gpg --dearmor` of the package's `.asc` files — verified to contain 6 keys
+   including trixie;
+3. `--setup-hook` `copy-in` into `/etc/apt/trusted.gpg.d/` — needs a
+   `mkdir -p "$1"/etc/apt/trusted.gpg.d` setup-hook first, since the directory
+   does not exist when setup hooks run. With that added the hook succeeds and
+   the signature check still fails;
+4. the canonical shipped binary keyrings from
+   `usr/share/keyrings/*trixie*.gpg`, passed as a directory.
+
+The keys are not the problem — `gpg --no-default-keyring --keyring <file>
+--list-keys` reads them fine. `--keyring` simply is not reaching the apt
+invocation that verifies `InRelease`. **Read mmdebstrap's documentation or
+source for how it threads the keyring through, rather than trying more key
+formats — that avenue is exhausted.**
+
+Working invocation apart from the keyring, for whoever resumes:
+
+```sh
+mmdebstrap --mode=unshare --architecture=arm64 --variant=apt \
+  --skip=check/qemu \
+  --include=build-essential,meson,ninja-build,pkg-config,ca-certificates,\
+libavcodec-dev,libavfilter-dev,libavformat-dev,libavutil-dev,\
+libswresample-dev,libswscale-dev,libplacebo-dev,libass-dev,libasound2-dev,\
+libva-dev,libdrm-dev \
+  trixie /path/to/arm64-root.tar
+```
+
+`--skip=check/qemu` is required (no `arch-test` on an Arch host). Output must be
+a **tarball, not a directory** — writing a directory tree into `$HOME` fails
+with "Permission denied" under `--mode=unshare`.
+
+mpv's genuinely required dependencies, taken from its `meson.build` rather than
+guessed: libavcodec, libavfilter, libavformat, libavutil, libswresample,
+libswscale, libplacebo, libass — plus alsa, libva and libdrm for this
+configuration. An earlier guess omitted libavfilter, libplacebo and libass and
+cost three round trips.
