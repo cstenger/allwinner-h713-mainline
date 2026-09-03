@@ -2338,9 +2338,63 @@ unpaced with the GPU idle** — no readback, no CPU in the frame path. Getting
 mpv onto that path is worth real effort, because it is the only configuration
 where the VE is actually earning its keep.
 
+### The VA-display failure: root-caused, fixed, and still not enough
+
+The cause was **this device having no render node**. mpv's DRM/EGL context calls
+`drmGetRenderDeviceNameFromFd()` on the *display* device to find a render node
+for VA interop, and ours has none:
+
+```text
+/dev/dri/by-path/platform-5600000.display-card -> card0      (only card0 + controlD64)
+/dev/dri/by-path/platform-1800000.gpu-render   -> renderD128 (panfrost)
+```
+
+The node mpv wants belongs to panfrost, and mpv gives no way to point it there —
+`--vaapi-device` is honoured for the copy path and **ignored for interop**
+(tested).
+
+Patch 0092 (out of series) adds `DRIVER_RENDER`, giving `renderD129`. Results:
+
+- **VA display now creates** on the interop path: `va_openDriver() returns 0`,
+  `Initialized VAAPI: version 1.22`. So the diagnosis was right.
+- **Mesa's pairing survived** — `GL_RENDERER='Mali-G31 (Panfrost)'` still, so
+  the flagged risk of breaking kmsro did not materialise.
+- **No regression**: `vaapi-copy` still decodes in hardware, 75.7 fps at 720p
+  through `vo=gpu`.
+- **But zero-copy still does not decode.** It now fails one layer deeper:
+
+```text
+h264: Failed to end picture decode issue: 1 (operation failed)
+h264: hardware accelerator failed to decode picture
+Attempting next decoding method after failure of h264-vaapi.
+```
+
+`vaEndPicture` — the actual decode submission — fails, repeatedly, and ffmpeg
+falls back to software. So the render node was **necessary but not sufficient**.
+
+Worth weighing before keeping 0092: `DRIVER_RENDER` on a display-only device
+advertises a capability the hardware lacks, purely to satisfy a userspace
+assumption. It bought a real step forward and broke nothing, but it does not
+complete the job, so it earns its place only if the `vaEndPicture` failure turns
+out to be solvable.
+
+Next question for that: the copy path builds its VA device on `renderD128`
+(panfrost) while interop now builds it on `renderD129` (this driver). If
+`libva-v4l2-request` uses the DRM fd for surface allocation, those are not
+equivalent, and that difference is the first thing to check.
+
+### Method note
+
+The first check after installing 0092 reported "no render node" and was wrong.
+`install-kernel-fit.sh --reboot` returns immediately, so a ping-poll can find
+the board still up on the OLD kernel and query that. Always confirm
+`/proc/version` matches the FIT's build time before believing a post-install
+measurement.
+
 ### Suggested next steps, cheapest first
 
-1. Chase the `vo=gpu` + `--hwdec=vaapi` VA-display failure. `vo=gpu` +
+1. Chase the `vaEndPicture` failure — compare surface allocation between the
+   `renderD128` (works, copy) and `renderD129` (fails, interop) VA devices. `vo=gpu` +
    `vaapi-copy` creates a VA display fine with the same driver and env, so the
    fault is narrow and the `GL_EXT_EGL_image_storage` interop is present.
 2. A Wayland compositor plus mpv's `dmabuf-wayland` vo (already compiled in) is
