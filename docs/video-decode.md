@@ -2707,11 +2707,50 @@ after patching, *read the patched source* rather than trusting that the edit did
 what was intended. The project already had a rule for this ("verify edits, not
 strings"); this is the same failure in a new form, and it cost four rounds.
 
+### Correctly instrumented: queueing the CAPTURE buffer fails with EINVAL
+
+Re-instrumented converting each braceless `if` into a braced block in the same
+edit, and **read the patched source before building** this time. Seven exits
+instrumented, each with a distinct label, plus a control run:
+
+```text
+control (vaapi-copy):  hw decode 1, failures 0, markers 0   <- driver healthy
+zero-copy (vaapi):     H713-ENDPIC: E6 queue CAPTURE failed
+                       rc=-1 errno=22 (Invalid argument)
+```
+
+So the failure is at **`v4l2_queue_buffer(video_fd, -1, capture_type, ...)`** —
+queueing the capture buffer — which was the original hypothesis before the
+broken instrumentation buried it.
+
+**But the errno refutes the reasoning behind that hypothesis.** The story was
+that EGL holds the exported dma-buf so the buffer cannot be re-queued; that
+would give **EBUSY**. It gives **EINVAL**. Nothing is held or busy — the driver
+is passing an argument V4L2 rejects.
+
+EINVAL from `VIDIOC_QBUF` usually means the buffer index is out of range, the
+buffer type is wrong, or **the memory type does not match how the queue was set
+up** — e.g. queueing `V4L2_MEMORY_MMAP` against a queue configured for
+`V4L2_MEMORY_DMABUF`, or the reverse. That last one is exactly the kind of
+mismatch zero-copy interop would introduce and the copy path would not, which
+makes it the strongest candidate.
+
+The control run matters as much as the result: `vaapi-copy` produces **zero
+markers and zero failures** on the same instrumented driver, so the
+instrumentation is not itself changing behaviour this time.
+
+One asymmetry still unexplained: one marker against three decode failures. The
+other two may fail after the first leaves the queue in a different state, or
+may fail elsewhere entirely. Do not assume all three share a cause.
+
 ### Suggested next steps, cheapest first
 
-1. Re-instrument `RequestEndPicture` **correctly** — convert the braceless `if`s
-   to braced blocks in the same edit — and re-run against a driver that is known
-   good. Nothing about the original failure is known yet.
+1. Log the buffer index, `buf.type` and `buf.memory` at the failing
+   `v4l2_queue_buffer` call, and compare against the values used on the working
+   `vaapi-copy` path. A memory-type mismatch would show immediately.
+2. Check how the capture queue is configured (`VIDIOC_REQBUFS` memory type)
+   versus what the surfaces are exported as under interop.
+3. Explain the 1-marker/3-failure gap before treating the cause as settled.
 2. Then resolve the code mismatch: log the value `RequestEndPicture` actually
    returns, and compare it against what ffmpeg prints. If they differ, the
    problem is between libva and ffmpeg, not in the driver.
