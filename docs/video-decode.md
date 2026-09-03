@@ -2788,11 +2788,61 @@ hitting it.
 **Still unexplained, and worth not papering over:** one E6 marker against three
 decode failures. If every frame took this path there should be three.
 
+### ROOT CAUSE: the third surface is half-allocated
+
+The buffers come from **`v4l2_create_buffers` (`VIDIOC_CREATE_BUFS`)**, not
+REQBUFS — which is why the earlier REQBUFS instrumentation only ever saw
+teardown. Instrumenting the real allocator and the `destination_index`
+assignment shows the two paths diverging on the third surface:
+
+```text
+CONTROL (vaapi-copy, works)          ZERO-COPY (vaapi, fails)
+CREATEBUFS type=1 -> index_base=0    CREATEBUFS type=1 -> index_base=0
+CREATEBUFS type=2 -> index_base=0    CREATEBUFS type=2 -> index_base=0
+ASSIGN destination_index=0           ASSIGN destination_index=0
+CREATEBUFS type=1 -> index_base=1    CREATEBUFS type=1 -> index_base=1
+CREATEBUFS type=2 -> index_base=1    CREATEBUFS type=2 -> index_base=1
+ASSIGN destination_index=1           ASSIGN destination_index=1
+(stops -- 2 surfaces)                CREATEBUFS type=1 -> index_base=2
+                                     (no type=2, no ASSIGN)
+```
+
+Every `CREATE_BUFS` succeeds (`rc=0 granted=1`). The difference is that
+zero-copy requests a **third** surface, and its setup **aborts after the capture
+buffer is created and before the output buffer is created** — so
+`destination_index` is never assigned for it.
+
+That produces exactly the observed failure: a half-built surface whose capture
+buffer exists at index 2 while the surface itself was never completed, queued
+later by `EndPicture` and rejected with **EINVAL**.
+
+It also explains the 1-marker/3-failure asymmetry that had been outstanding:
+only the third surface is broken, so only one queue attempt hits E6 while
+ffmpeg retries and reports three.
+
+**Where the abort happens** is now the narrow question. Between the two
+`v4l2_create_buffers` calls, `surface.c` does a `v4l2_query_buffer` on the
+output queue and an `mmap`, either of which returns
+`VA_STATUS_ERROR_ALLOCATION_FAILED`:
+
+```c
+rc = v4l2_query_buffer(driver_data->video_fd, output_type, ...);
+if (rc < 0) return VA_STATUS_ERROR_ALLOCATION_FAILED;
+source_data = mmap(...);
+if (source_data == MAP_FAILED) return VA_STATUS_ERROR_ALLOCATION_FAILED;
+```
+
+Neither is instrumented yet, and the type=2 `CREATE_BUFS` for surface 3 never
+even logs its "asked" line, so the abort is at or before that call.
+
 ### Suggested next steps, cheapest first
 
-1. Find where `destination_index` is set (`surface.c:301`) and log it at
-   assignment alongside the buffer count actually allocated. That closes the gap
-   between "index 2" and "how many buffers exist".
+1. Instrument the surface-creation path between the two `v4l2_create_buffers`
+   calls — the `query_buffer` and `mmap` failure returns — and re-run. One of
+   them fires and names the resource that runs out on the third surface.
+2. Ask why interop wants three surfaces where copy wants two. If the third is
+   simply one more than the driver can build, the fix may be a pool-size limit
+   rather than a bug in the failing call.
 2. Trace the real allocation path, since `v4l2_request_buffers` is only being
    called with count=0 — the buffers are created somewhere else, and that
    somewhere is what differs between interop and copy.
