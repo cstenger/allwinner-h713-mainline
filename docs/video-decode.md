@@ -2835,11 +2835,58 @@ if (source_data == MAP_FAILED) return VA_STATUS_ERROR_ALLOCATION_FAILED;
 Neither is instrumented yet, and the type=2 `CREATE_BUFS` for surface 3 never
 even logs its "asked" line, so the abort is at or before that call.
 
+### RETRACTION: the third surface is NOT half-allocated
+
+The section above is wrong, and the cause was **my own truncated output** — the
+trace was read through `head -12`, which cut it mid-sequence. The full log:
+
+```text
+CREATEBUFS type=1 -> index_base=2
+CREATEBUFS type=2 -> index_base=2      <- the "missing" output buffer
+ASSIGN destination_index=2             <- the "missing" assignment
+CREATEBUFS type=1 -> index_base=3
+CREATEBUFS type=2 -> index_base=3
+ASSIGN destination_index=3
+E6 queue CAPTURE failed ... index=2
+```
+
+**All four surfaces are fully built**, capture and output and assignment, and
+every `CREATE_BUFS` returns `rc=0 granted=1`. The queue failure happens *after*
+allocation completes, on a buffer that genuinely exists and is genuinely
+assigned.
+
+So "half-allocated surface" is void, and with it the tidy explanation it gave
+for the 1-marker/3-failure asymmetry. That asymmetry is **open again**.
+
+### What is actually established
+
+- Buffers are created with `VIDIOC_CREATE_BUFS`, one capture and one output per
+  surface, indices 0..3. Zero-copy builds four surfaces; copy builds two.
+- The failing call queues **capture index 2**, which exists, with EINVAL.
+- `buffer.memory` is hardcoded `V4L2_MEMORY_MMAP` on both paths, so that is not
+  the difference.
+
+### The candidate this reopens
+
+`VIDIOC_QBUF` on a buffer that is **already queued** is rejected, and several
+V4L2 drivers report that as EINVAL rather than EBUSY. That is the original
+buffer-lifetime hypothesis, which was dismissed earlier *on the grounds that
+EINVAL is not EBUSY* — reasoning that was never verified against what this
+driver actually returns. Under interop the decoded frame is exported and held
+by EGL, so the buffer would still be queued when EndPicture tries to queue it
+again; under copy it is dequeued immediately.
+
+That is now the leading explanation and it has not been tested.
+
 ### Suggested next steps, cheapest first
 
-1. Instrument the surface-creation path between the two `v4l2_create_buffers`
-   calls — the `query_buffer` and `mmap` failure returns — and re-run. One of
-   them fires and names the resource that runs out on the third surface.
+1. Log every queue and dequeue of capture buffers with their index — the
+   sequence shows directly whether index 2 is queued twice without an
+   intervening dequeue. That tests the reopened hypothesis and needs no new
+   theory.
+2. Confirm what the Cedrus/V4L2 core returns for a double `QBUF`, rather than
+   assuming EINVAL means "invalid argument" in the narrow sense.
+3. Re-explain the 1-marker/3-failure gap, which no longer has an account.
 2. Ask why interop wants three surfaces where copy wants two. If the third is
    simply one more than the driver can build, the fix may be a pool-size limit
    rather than a bug in the failing call.
