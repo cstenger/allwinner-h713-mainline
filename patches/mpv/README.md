@@ -98,8 +98,35 @@ back lives in somebody's shell history". The patched mpv is now in exactly that
 position: one unversioned binary in `/root`, reproducible only by following the
 instructions above by hand.
 
-Worth closing the same way — a `tools/video/build-mpv.sh` alongside the VA
-driver script, applying this series to the pinned v0.40.0 tag, building for the
-board, verifying the direct path is present in the result, and installing it
-deliberately rather than leaving a test binary. Until then, treat
-`/root/mpv-h713-test` as the only artifact and do not assume a reflash keeps it.
+### `tools/video/build-mpv.sh`
+
+Written to close this. It mirrors `build-va-driver.sh`: applies this series to
+the pinned tag on the host, ships the tree, **builds on the board** so mpv links
+against the board's own FFmpeg/libva/libdrm/ALSA, verifies the direct-path
+marker is present in the resulting binary, installs, stamps
+`/etc/h713-video-stack`, and with `--test` proves the path on hardware.
+
+Two deliberate choices:
+
+- **Installs to `/usr/local/bin/mpv`, not `/usr/bin/mpv`.** Debian owns the
+  latter, so overwriting it means the next `apt upgrade` silently reverts the
+  video path. `/usr/local/bin` precedes `/usr/bin` in the board's PATH, so the
+  patched build wins while the distro package stays intact.
+- **Verifies the marker string in the built binary.** A series that failed to
+  apply would otherwise install a stock mpv and look like success until someone
+  read the logs.
+
+**It cannot run yet.** The board has no default route, and building mpv needs
+dev packages it does not have:
+
+```text
+pkgconfig:libavcodec  libavformat  libavutil  libswscale  alsa
+```
+
+(`meson`, `ninja`, `cc`, `pkg-config`, `libva` and `libdrm` are all present —
+which is why the VA driver builds there fine.) The script checks this first and
+stops with the exact list rather than failing deep inside meson. Supply the
+arm64 `-dev` packages — temporary route, or copied `.deb` files — and it runs.
+
+Until then `/root/mpv-h713-test` remains the only artifact, and a reflash loses
+it.
