@@ -2919,11 +2919,70 @@ That is the same class of bug as the DECD release fence this project already
 solved once: a consumer holds a buffer and the producer is never told it is
 free.
 
+### Who should dequeue: `RequestSyncSurface` — and it early-exits instead
+
+`RequestSyncSurface` owns the dequeue. It **is** being called on the interop
+path; it simply never reaches the dequeue:
+
+```text
+CONTROL (vaapi-copy):  120 SyncSurface calls -> 60 DQBUF
+ZERO-COPY (vaapi):       4 SyncSurface calls ->  0 DQBUF
+```
+
+The sequence shows the shape of it:
+
+```text
+SYNC surface=67108865        <- sync before any queue
+QBUF index=2 rc=0
+SYNC surface=67108864
+QBUF index=3 rc=0
+SYNC surface=67108865
+SYNC surface=67108864
+QBUF index=2 rc=-1 errno=22
+```
+
+The function opens with a state guard:
+
+```c
+if (surface_object->status != VASurfaceRendering) {
+        status = VA_STATUS_SUCCESS;
+        goto complete;          /* returns SUCCESS without dequeuing */
+}
+```
+
+Every interop sync takes that branch, because the surfaces are not in
+`VASurfaceRendering`. The guard is reasonable in itself — syncing a surface that
+was never rendered should be a no-op — so the fault is upstream of it: **nothing
+is putting these surfaces into `Rendering` state.**
+
+That is consistent with the whole chain. `EndPicture` is what would normally
+drive a surface through rendering, and on this path its capture queue fails, so
+the surface never advances; the next sync sees a non-Rendering surface, returns
+SUCCESS, no dequeue happens, the buffer stays queued, and the following queue of
+the same index is rejected. Cause and symptom sit in a loop, which is why each
+individual step looked like the culprit in turn.
+
+### The open question, stated precisely
+
+Which is first: does the surface fail to enter `Rendering` because the queue
+failed, or does the queue fail because the surface was never in `Rendering`?
+The very first `QBUF index=2` **succeeds** (`rc=0`), so at least one queue
+happens before any failure — meaning the state problem is not merely downstream
+of a failed queue.
+
+Worth noting the timing too: the first sync happens *before* any queue at all,
+which suggests mpv syncs a surface it is about to reuse. In the copy path that
+sync finds a rendered surface and dequeues it; here it finds nothing to do.
+
 ### Suggested next steps, cheapest first
 
-1. Find who is responsible for the dequeue on the interop path — the driver's
-   sync/export code, or mpv releasing the exported surface. The absence of *any*
-   DQBUF suggests the dequeue is never even attempted, not that it fails.
+1. Log `surface_object->status` at every transition — where it is set to
+   `Rendering`, `Displaying` and `Ready` — and correlate with the sync calls.
+   That resolves the ordering question directly.
+2. Check whether `vaExportSurfaceHandle` (the interop-only call) moves the
+   surface out of `Rendering` without dequeuing. It is the one operation the
+   copy path never performs, which makes it the prime suspect for breaking the
+   state machine.
 2. Compare the surface release path: `vaapi-copy` presumably syncs and
    dequeues, while interop's exported surfaces may never reach that code.
 3. Whether the eventual fix belongs in `libva-v4l2-request` or in how mpv
