@@ -2435,11 +2435,49 @@ allocates differently, and Cedrus then rejects the submission.
 The full `libva-v4l2-request` source is built **on the board**, not in this
 tree, which is where that thread continues.
 
+### EndPicture has four failure paths, and one fits
+
+Source is on the board at `/root/libva-v4l2-request/src/picture.c`
+(`RequestEndPicture`, line 252). It returns `VA_STATUS_ERROR_OPERATION_FAILED`
+from exactly four places:
+
+```c
+1. video_format == NULL                             format lookup failed
+2. media_request_alloc(media_fd) < 0                no request fd
+3. v4l2_queue_buffer(video_fd, -1, capture_type,…)  queueing the CAPTURE buffer
+4. v4l2_queue_buffer(video_fd, request_fd, output_type,…)  the OUTPUT buffer
+```
+
+**Path 3 is the one that fits the evidence**, and the reasoning is the useful
+part:
+
+- Paths 1 and 2 are set up per context, not per frame, and would fail
+  identically under `vaapi-copy` — which decodes fine at 75.7 fps through this
+  same driver. They do not discriminate.
+- Path 3 queues the **capture** buffer, the one holding decoded output. Under
+  zero-copy that buffer is exported as a dma-buf and **held by EGL/GL for
+  display**, so it cannot be re-queued while still referenced — `EBUSY`, and
+  the pool runs dry. Under `vaapi-copy` the frame is copied out immediately and
+  the buffer returns to the pool at once.
+
+That is exactly the difference between the two paths, and it explains why the
+failure repeats every frame rather than failing once at init.
+
+It also rhymes with a problem this project already solved once: the DECD work
+hit the same shape — surfaces returned to Cedrus while still being scanned out —
+and the fix was a release fence. See the display notes.
+
+**This is a ranked hypothesis, not a proven cause.** The decisive test is one
+`printf` per path in `RequestEndPicture` and a rebuild on the board, which names
+the branch directly instead of reasoning about it.
+
 ### Suggested next steps, cheapest first
 
-1. Read `EndPicture` in the on-board `libva-v4l2-request` source and find which
-   failure path returns `VA_STATUS_ERROR_OPERATION_FAILED`; that names the
-   condition directly instead of inferring it. `vo=gpu` +
+1. Instrument the four `EndPicture` failure paths on the board and run
+   `--hwdec=vaapi` once; the branch that fires names the cause outright.
+2. If it is path 3, the question becomes buffer lifetime: how many capture
+   buffers the pool has, and whether mpv/EGL release them. That is the same
+   class of problem as the DECD release fence. `vo=gpu` +
    `vaapi-copy` creates a VA display fine with the same driver and env, so the
    fault is narrow and the `GL_EXT_EGL_image_storage` interop is present.
 2. A Wayland compositor plus mpv's `dmabuf-wayland` vo (already compiled in) is
