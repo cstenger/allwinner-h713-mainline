@@ -2471,10 +2471,58 @@ and the fix was a release fence. See the display notes.
 `printf` per path in `RequestEndPicture` and a rebuild on the board, which names
 the branch directly instead of reasoning about it.
 
+### Instrumented: it is `RequestSyncSurface`, by elimination
+
+Marked every `OPERATION_FAILED`-capable exit of `RequestEndPicture` in the
+on-board driver, rebuilt and ran `--hwdec=vaapi`. **None of them fired**, while
+the decode failed three times. Complete exit coverage of the function:
+
+```text
+P1 video_format NULL          marked   did not fire
+P2 media_request_alloc        marked   did not fire
+P5 codec_set_controls rc      marked   did not fire
+P3 queue CAPTURE buffer       marked   did not fire
+P4 queue OUTPUT buffer        marked   did not fire
+INVALID_CONTEXT/CONFIG/SURFACE  --     wrong code; ffmpeg reported 1
+return status;  <- RequestSyncSurface  UNMARKED, the only path left
+return VA_STATUS_SUCCESS
+```
+
+So the `OPERATION_FAILED` propagates out of **`RequestSyncSurface`**, which is
+where the driver *waits for the decode and dequeues the capture buffer*.
+
+That refines the earlier hypothesis rather than overturning it. The guess was
+path 3, queueing the capture buffer; the reality is one step later, at
+dequeue/sync. The underlying story is the same and now better located: under
+zero-copy the capture buffer is exported as a dma-buf and held by EGL, so the
+driver cannot complete the round trip on it. Under `vaapi-copy` the frame is
+copied out immediately and the buffer comes straight back.
+
+**Two method notes, both of which nearly produced a wrong answer:**
+
+- The first instrumentation went into `/root/libva-v4l2-request`, which is
+  **not** the tree that builds the installed driver — that is
+  `/root/va-driver-build`. `ninja` reporting "no work to do" and the marker
+  being absent from the binary is what caught it. Check which tree produces the
+  installed artifact before editing.
+- Marking only the literal `return VA_STATUS_ERROR_OPERATION_FAILED` statements
+  missed two exits that propagate a status from a callee. Enumerate *every*
+  return in the function, not just the ones matching the error you are chasing.
+
+### State of the board
+
+The instrumented driver is installed; the original is at
+`/usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so.orig-preprintf`, and
+the pristine source at `/root/va-driver-build/src/picture.c.orig-preprintf`. The
+markers only print on failure, so `vaapi-copy` is unaffected.
+
 ### Suggested next steps, cheapest first
 
-1. Instrument the four `EndPicture` failure paths on the board and run
-   `--hwdec=vaapi` once; the branch that fires names the cause outright.
+1. Read `RequestSyncSurface` and instrument *its* exits the same way — it will
+   name whether the dequeue times out, returns EBUSY, or fails otherwise.
+2. If it is buffer starvation, count the capture buffers the pool is given and
+   whether mpv/EGL ever release them. This is the same class of problem as the
+   DECD release fence, which this project has already solved once.
 2. If it is path 3, the question becomes buffer lifetime: how many capture
    buffers the pool has, and whether mpv/EGL release them. That is the same
    class of problem as the DECD release fence. `vo=gpu` +
