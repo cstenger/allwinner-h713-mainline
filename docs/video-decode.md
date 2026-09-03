@@ -3067,12 +3067,63 @@ surfaces owns one index (64→0, 65→1, 66→2); under interop two surfaces cyc
 over indices 2 and 3, because four surfaces were created and mpv uses the last
 two. That is a consequence of the pool size, not obviously a fault.
 
+### Ordering confirmed — and it REFUTES the image.c hypothesis
+
+No sequence numbers were needed: stderr is unbuffered, so log order already is
+the sequence. The earlier greps had simply filtered the `image.c` lines out.
+Read unfiltered:
+
+```text
+CREATEBUFS ... index_base=2
+STATE: surface.c:282 -> Ready(create)
+ASSIGN destination_index=2
+STATE: image.c:208 -> Ready          <- fires at CREATION
+STATE: Rendering surface=67108864    <- Rendering set AFTER it
+QCAP: about to queue surface=67108864 index=2
+QBUF type=1 index=2 rc=0
+QBUF type=2 index=2 rc=0
+SYNC: CALLED surface=67108864        <- sync arrives AFTER the queue
+```
+
+`image.c:208` fires during surface **creation**, before `Rendering` is ever set.
+It cannot be resetting state between the queue and the sync, so step 3 of the
+chain is **refuted**. The 3x-vs-1x count difference was real but irrelevant —
+it reflects interop creating more surfaces, not a state reset.
+
+### What that leaves, and it reopens an earlier observation
+
+The sync arrives at a surface that **is** in `VASurfaceRendering` — it passes
+the state guard — and still never issues a dequeue. So it exits between the
+guard and `v4l2_dequeue_buffer`. Those exits are:
+
+```c
+request_fd = surface_object->request_fd;
+if (request_fd < 0)              -> OPERATION_FAILED      <- suspect
+media_request_queue(request_fd)  -> OPERATION_FAILED
+media_request_wait_completion()  -> OPERATION_FAILED
+media_request_reinit()           -> OPERATION_FAILED
+then: v4l2_dequeue_buffer(OUTPUT), v4l2_dequeue_buffer(CAPTURE)
+```
+
+The first of those — `request_fd < 0` — is **exactly what an earlier run
+reported** (`H713-SYNC: unknown failed rc=65535 errno=0`). That observation was
+discarded wholesale as contaminated, because it came from the run with the
+broken braceless-`if` driver. Discarding it was right at the time, but the
+condition it named may be genuine: it now fits as the only exit consistent with
+everything measured since.
+
+**It has not been re-measured on a correct driver**, and it should be before it
+is believed. The sync-exit markers were removed when `surface.c` was restored.
+
 ### Suggested next steps, cheapest first
 
-1. **Confirm step 3's ordering** — log a timestamp or sequence number on the
-   `image.c:208` transition and on the queue and sync, and check that the reset
-   really lands between them. This is the last unverified link and the whole
-   chain rests on it.
+1. Re-instrument `RequestSyncSurface`'s exits on the **current, correct** driver
+   — those blocks are already braced, so the earlier hazard does not apply — and
+   confirm whether it really leaves at `request_fd < 0`.
+2. If so, ask why `EndPicture` allocated a request fd (it must have, since the
+   queue with `request_fd` succeeded) yet sync sees `-1`. That points at the fd
+   being consumed or reset between the two.
+3. Compare the same trace on the copy path, where sync reaches the dequeue.
 2. Find the caller of `image.c:208` on the interop path. If it is
    `vaDeriveImage`/`vaGetImage` being invoked where the copy path would not, the
    question becomes why mpv calls it during zero-copy.
