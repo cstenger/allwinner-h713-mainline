@@ -127,9 +127,33 @@ that writes the HPD register. Whoever ported this platform concluded otherwise,
 and that belief is now baked into our boot chain. It should be corrected
 regardless of whether the ARISC route is pursued.
 
-So this check still needs doing, by a method that works: read the SCP magic
-`0xb4400012` at the load address directly, or add the SCPI detection back
-temporarily.
+### Redone by a valid method — NO ARISC FIRMWARE IS LOADED
+
+Read SRAM A2 directly (`0x00104000`, size `0x20000` for H713 per our own
+`sunxi_mmap.h`) and searched all 32768 words for the OR1K magic `0xb4400012`,
+in both byte orders since the blob is stored word-reversed:
+
+```text
+magic b4400012 / 120040b4    NOT PRESENT anywhere in SRAM A2
+non-zero                      31188 of 32768 words -- the SRAM is full
+0x00104000 = 0xEA000016       an ARM branch, not OR1K
+0x00104004 = 0x4E4F4765       "eGON"
+0x00104008 = 0x3054422E       ".BT0"
+```
+
+**SRAM A2 holds `eGON.BT0` — our own boot0/SPL — and no SCP firmware.** The
+ARISC is not running, which is what the invalid check guessed but could not
+show. Note the read itself was the risk here, since SRAM A2 sits in the same
+CPUS neighbourhood that hard-locked the board twice; it returned cleanly and the
+board stayed up.
+
+**One uncertainty, kept honest:** `SUNXI_SRAM_A2_SIZE = 0x20000` (128 KB) comes
+from our own TF-A port and may have been inherited from H616 rather than
+verified on H713. The vendor blob is 172 KB and does not fit in 128 KB, so
+either that constant is wrong or the vendor loads the firmware somewhere else
+entirely. Either way this bears directly on item 2 — **whoever takes that on
+should start by establishing the real size and location of SRAM A2**, because
+the "load address" question may partly be a "which memory" question.
 
 ## 2. Msgbox transport — MUCH cheaper than scoped
 
