@@ -2743,11 +2743,60 @@ One asymmetry still unexplained: one marker against three decode failures. The
 other two may fail after the first leaves the queue in a different state, or
 may fail elsewhere entirely. Do not assume all three share a cause.
 
+### The failing QBUF, with arguments
+
+```text
+H713-ENDPIC: E6 queue CAPTURE failed rc=-1 errno=22 (Invalid argument)
+             type=1  index=2  count=1  surface=67108864
+```
+
+`v4l2_queue_buffer` hardcodes `buffer.memory = V4L2_MEMORY_MMAP` and sets
+`buffer.index = index`, `buffer.length = buffers_count`. So a memory-type
+mismatch is **ruled out** — the copy path uses the same hardcoded value and
+works. `type=1` is `V4L2_BUF_TYPE_VIDEO_CAPTURE` (non-mplane) and `count=1`,
+both identical in principle between the paths since the same function computes
+them.
+
+That leaves **`index=2`**.
+
+### The ordering is the clue
+
+Instrumenting `VIDIOC_REQBUFS` shows the failing queue happens **before the
+buffers exist**:
+
+```text
+zero-copy:  E6 queue CAPTURE failed ... index=2      <- FIRST
+            H713-REQBUFS: type=2 asked=0 granted=0
+            H713-REQBUFS: type=1 asked=0 granted=0
+
+control:    H713-REQBUFS: type=2 asked=0 granted=0
+            H713-REQBUFS: type=1 asked=0 granted=0
+            (no E6, no failures)
+```
+
+Note both runs only ever log `asked=0`, which is REQBUFS' *free* operation, so
+these are teardown. **No allocating REQBUFS is logged at all in either run** —
+the capture buffers are not allocated through `v4l2_request_buffers` on this
+path, and where `destination_index = 2` comes from is therefore still unknown.
+
+The working reading of the evidence: under interop the surface carries a
+`destination_index` that does not correspond to an allocated buffer at the
+moment EndPicture queues it, and `VIDIOC_QBUF` rejects the index with EINVAL.
+That is consistent with EINVAL rather than EBUSY, and with the copy path never
+hitting it.
+
+**Still unexplained, and worth not papering over:** one E6 marker against three
+decode failures. If every frame took this path there should be three.
+
 ### Suggested next steps, cheapest first
 
-1. Log the buffer index, `buf.type` and `buf.memory` at the failing
-   `v4l2_queue_buffer` call, and compare against the values used on the working
-   `vaapi-copy` path. A memory-type mismatch would show immediately.
+1. Find where `destination_index` is set (`surface.c:301`) and log it at
+   assignment alongside the buffer count actually allocated. That closes the gap
+   between "index 2" and "how many buffers exist".
+2. Trace the real allocation path, since `v4l2_request_buffers` is only being
+   called with count=0 — the buffers are created somewhere else, and that
+   somewhere is what differs between interop and copy.
+3. Explain the 1-marker/3-failure discrepancy before treating this as solved.
 2. Check how the capture queue is configured (`VIDIOC_REQBUFS` memory type)
    versus what the surfaces are exported as under interop.
 3. Explain the 1-marker/3-failure gap before treating the cause as settled.
