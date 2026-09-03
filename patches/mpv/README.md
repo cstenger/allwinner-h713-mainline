@@ -187,8 +187,34 @@ authority. And **apt does not work inside the emulated chroot** (`Sub-process
 http returned an error code (112)`), so add packages to the `mmdebstrap
 --include` list and rebuild rather than trying to `apt-get install` in place.
 
+### -dev is a build-time need only
+
+`libdisplay-info-dev` belongs in the **container**, not on the board. meson
+resolves `dependency('libdisplay-info')` through pkg-config, and the `.pc` file
+and headers ship only in `-dev`. The board needs just the runtime
+`libdisplay-info.so.2`, which it already has:
+
+```text
+ldd /usr/local/bin/mpv | grep display-info
+  libdisplay-info.so.2 => /lib/aarch64-linux-gnu/libdisplay-info.so.2
+missing libs: 0
+```
+
+Do not install `-dev` packages on the board. It has a 2.7 GB rootfs and no
+internet, and they buy nothing at runtime.
+
+**That it linked cleanly was luck, and the rewrite must not rely on it.** The
+runtime library happened to be present because something else in the image pulls
+it in. Had it been absent, mpv would have failed to start with a missing-library
+error while the build script still reported success — it only greps the binary
+for the direct-path marker, which says nothing about whether the target can load
+it.
+
 **`tools/video/build-mpv.sh` still builds on the board and therefore cannot
-work** — see the space finding below. It should be rewritten around this recipe.
+work** — see the space finding below. When rewriting it around this recipe, add
+a runtime-link gate: after installing, run `ldd` on the board and fail if
+anything reports `not found`. Building off-target trades the on-board ABI
+guarantee for speed, and that check is what buys the guarantee back.
 
 ## Superseded: cross-build attempt — blocked on mmdebstrap keyring plumbing
 
