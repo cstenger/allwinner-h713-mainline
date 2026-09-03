@@ -131,7 +131,66 @@ arm64 `-dev` packages — temporary route, or copied `.deb` files — and it run
 Until then `/root/mpv-h713-test` remains the only artifact, and a reflash loses
 it.
 
-## Cross-build attempt — blocked on mmdebstrap keyring plumbing (2026-09-03)
+## SOLVED — cross-build recipe that works (2026-09-03)
+
+The blocker below was one missing host package. `debian-archive-keyring` was
+present only as a cached `.pkg.tar.zst` in `build/cache`, never installed, so
+`/usr/share/keyrings/debian-archive-keyring.gpg` did not exist and apt rejected
+every repository as unsigned. No amount of `--keyring` juggling helps; install
+it and the flag becomes unnecessary:
+
+```sh
+sudo pacman -U build/cache/debian-archive-keyring/debian-archive-keyring-*.pkg.tar.zst
+```
+
+`arch-test` is not packaged for Arch, so `--skip=check/qemu` stays.
+
+### The recipe, verified end to end
+
+```sh
+# 1. arm64 Debian 13 rootfs with mpv's build deps (~1.1 GB, a few minutes)
+mmdebstrap --mode=unshare --architecture=arm64 --variant=apt --skip=check/qemu \
+  --include=build-essential,meson,ninja-build,pkg-config,ca-certificates,\
+libavcodec-dev,libavfilter-dev,libavformat-dev,libavutil-dev,libswresample-dev,\
+libswscale-dev,libplacebo-dev,libass-dev,libasound2-dev,libva-dev,libdrm-dev,\
+libdisplay-info-dev \
+  trixie /tmp/arm64-root.tar
+
+# 2. extract under a user namespace so ownership maps
+unshare -r tar -xf /tmp/arm64-root.tar -C /tmp/arm64root
+
+# 3. patched source in, build inside; binfmt's F flag runs aarch64 with no
+#    qemu binary copied into the chroot
+cp -a local/upstream/mpv-src /tmp/arm64root/build-mpv
+unshare -r --mount --pid --fork chroot /tmp/arm64root /bin/bash -c \
+  'mount -t proc proc /proc; cd /build-mpv &&
+   meson setup build --buildtype=release -Dauto_features=disabled \
+     -Dalsa=enabled -Ddrm=enabled -Dgl=disabled -Dlibmpv=false \
+     -Dvaapi=enabled -Dvaapi-drm=enabled &&
+   ninja -C build mpv'
+```
+
+230 compile steps, producing a 2.2 MB aarch64 binary containing the direct-path
+marker. Installed to `/usr/local/bin/mpv` on the board and verified:
+
+```text
+which mpv -> /usr/local/bin/mpv
+Using hardware decoding (vaapi).
+VO: [drm] 1280x720 vaapi[nv12]
+[vo/drm] Using direct DRM PRIME video-plane scanout
+decode failures: 0     panfrost mentions: 0
+```
+
+Two things to know. `libdisplay-info-dev` is required by `-Ddrm=enabled`
+alongside `libdrm` and is easy to miss — mpv's `meson.build:934` is the
+authority. And **apt does not work inside the emulated chroot** (`Sub-process
+http returned an error code (112)`), so add packages to the `mmdebstrap
+--include` list and rebuild rather than trying to `apt-get install` in place.
+
+**`tools/video/build-mpv.sh` still builds on the board and therefore cannot
+work** — see the space finding below. It should be rewritten around this recipe.
+
+## Superseded: cross-build attempt — blocked on mmdebstrap keyring plumbing
 
 Building on the board is **not possible**: its rootfs is 2.7 G at ~97 % full,
 and an mpv build tree needs several hundred MB. Freeing 126 M of stale FITs was
