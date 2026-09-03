@@ -433,3 +433,45 @@ Stock drives this register from ARISC firmware, the peer notes ARISC writes it
 without raising a GIC IRQ, and no device tree — ours or stock's — describes the
 block. Every piece of evidence so far is consistent with it simply not being
 ARM-addressable on this SoC.
+
+### CLOSED: the ARM side is not gating 0x07091000
+
+The follow-up experiment the handoff recommended — deassert `RST_BUS_R_CPUCFG`
+and re-read — was **not needed**, because a safe read falsified its premise.
+
+`bus-r-cpucfg` and `RST_BUS_R_CPUCFG` share one R_CCU register, gate `BIT(0)`
+and reset `BIT(16)` at `0x0701022c`. It reads:
+
+```text
+0x0701022c = 0x00010001      gate already SET, reset already DEASSERTED
+```
+
+Both have been enabled in hardware the entire time. There was never an ungated
+clock or an asserted reset standing between the ARM and that block, so patch
+0090's "hold the clock" changed nothing because the clock was already on, and
+deasserting the reset would change nothing either. Reading `0x07091014` again
+would only cost another power cycle to learn the same thing.
+
+**The trap that produced the wrong hypothesis:** `clk_summary` reports
+`bus-r-cpucfg en=0` while the hardware gate bit is set. That column is the
+clock framework's **refcount**, not the silicon — no Linux driver claims the
+clock, so the framework says 0 while U-Boot left the gate on. Reading `en=0`
+as "gated off in hardware" is what sent this down a boot-and-hang path.
+**Check the CCU register, not just clk_summary.**
+
+Note this does NOT retract the TVFE/TVCAP result: there `pm_genpd_summary`
+showed the power domains genuinely off, and enabling them genuinely made the
+windows readable. Power domains and clock gates are different things, and only
+the clock-gate reading was misleading.
+
+### So: `0x07091000` is not ARM-addressable
+
+Every ARM-side explanation is now eliminated — power domain, clock gate, reset.
+Combined with the standing evidence (stock drives it from ARISC firmware, ARISC
+writes it without raising a GIC IRQ, no device tree describes the block), the
+conclusion is that the register answers to the ARISC core and not to the ARM.
+
+**HPD therefore requires running ARISC firmware.** That is the route, and it is
+not a small one: msgbox/rpmsg transport, then `PullHotPlug 0x0211` from the
+documented sub-command set. Do not spend further boots looking for an ARM-side
+enable — there isn't one.
