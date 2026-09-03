@@ -2568,12 +2568,60 @@ Instrumented driver installed. Pristine copies kept alongside:
 `v4l2_request_drv_video.so.orig-preprintf`. Markers print only on failure, so
 `vaapi-copy` playback is unaffected.
 
+### CORRECTION: EndPicture never runs, and the sync failure is a symptom
+
+Entry logging settles it and **overturns the conclusion above**:
+
+```text
+H713-ENTRY sync:   surface=67108865 state=4 request_fd=-1
+H713-ENTRY sync:   surface=67108864 state=1 request_fd=-1
+H713-SYNC: unknown failed
+
+ENTRY endpic     0      <- RequestEndPicture's body NEVER runs
+ENTRY sync       2
+decode failures  3
+```
+
+`RequestEndPicture` never reaches its body across all three failures. The
+earlier "by elimination it must be `RequestSyncSurface`" reasoning silently
+assumed EndPicture was running; it is not, so the elimination was invalid even
+though every individual observation in it was correct.
+
+The sync failure is a **consequence, not the cause**. Surface `67108864` sits in
+state 1 (`VASurfaceRendering`) with `request_fd = -1` because EndPicture never
+got far enough to allocate one. Surface `67108865` is state 4
+(`VASurfaceReady`) and returns SUCCESS through the early branch, which is why
+only one of the two syncs fails.
+
+**The instrumentation flaw that hid this**: the entry log was placed before
+`gettimeofday`, which is *after* the `INVALID_CONTEXT` / `INVALID_CONFIG` /
+`INVALID_SURFACE` early returns. An exit through any of those is invisible to
+it. Marking only the paths that return the error you are chasing, and logging
+"entry" somewhere other than the first line, both hide exits.
+
+### Where it actually stands
+
+`vaEndPicture` returns `VA_STATUS_ERROR_OPERATION_FAILED` (ffmpeg reports code
+1) while the driver's implementation never reaches its body. Only two things can
+produce that:
+
+- an exit through one of the three unmarked `INVALID_*` returns — but those
+  return codes 4, 5 and 6, not 1, so they do not match what ffmpeg reported;
+- **the failure happens inside libva, before dispatch to the driver at all.**
+
+The second is now the leading candidate, and it is a different problem from
+everything investigated so far — not the render node, not buffer lifetime, not
+the driver's decode path.
+
 ### Suggested next steps, cheapest first
 
-1. Log `surface_id` and `request_fd` on **entry** to both `RequestEndPicture`
-   and `RequestSyncSurface`. That shows directly whether the failing sync is a
-   second call on an already-synced surface or a first call on an unrendered
-   one — and explains the 3-failures-1-marker mismatch.
+1. Move the entry log to the **first line** of `RequestEndPicture`, before every
+   early return, and re-run. That distinguishes "never dispatched" from "exited
+   early" in one boot and costs one rebuild.
+2. If it is never dispatched, instrument `RequestBeginPicture` and
+   `RequestRenderPicture` too — the surface reaching sync in `Rendering` state
+   means Begin ran, so the break is between Begin and End.
+3. Only then look at libva's dispatch layer.
 2. Only then decide whether the fix belongs in the driver (keep the fd, or
    return SUCCESS for an already-synced surface) or in how mpv drives it.
 2. If it is buffer starvation, count the capture buffers the pool is given and
