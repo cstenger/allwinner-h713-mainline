@@ -1,0 +1,183 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 2 Sep 2026 22:40:00 -0700
+Subject: [PATCH] EXPERIMENT: ASoC: h713: add the codec capture path
+
+Playback on this codec is finished and correct; capture does not exist. The
+card exposes only pcmC0D0p, because the DT declares a tx DMA and nothing else
+and the H713 component has no ADC widgets to power.
+
+Worth stating why this is not a small change: mainline's H616 support, which
+the H713 variant is built on, has **no capture path at all** -- zero ADC
+widgets, zero ADC routes, and a DT node with only a tx DMA. There is no
+upstream reference for this codec generation, so the register map comes from
+the vendor driver, corroborated against the stock DTB wherever it can be:
+
+  SUNXI_ADC_FIFOC   0x030     ADC FIFO control
+  SUNXI_ADC_RXDATA  0x040     DMA source; stock's dummy_cpudai independently
+                              carries adc_txdata = <0x2030040>
+  SUNXI_ADCL/R_REG  0x300/4   per-channel analog control, enable at bit 19,
+                              global enable at bit 31
+  dmas                        stock: <&dma 7>, <&dma 7> / "tx", "rx" -- capture
+                              shares the playback channel
+
+The 0xFF mixer field at the bottom of ADCL/ADCR is left alone at its reset
+value of 0x55, which is also the value the vendor driver writes. No source
+identified which input that selects, so guessing at it would only add an
+unfalsifiable variable to the first measurement.
+
+The DAI already declares a "Codec Capture" stream, so nothing is needed there.
+
+WHAT THIS DOES NOT ESTABLISH, and the reason the input widget is named "Mic"
+provisionally: nobody has established that an analog input is populated on this
+board. The evidence is suggestive but not conclusive -- stock sets
+capture_cma = <0x100> and lists a codec_adc clock, and the SoC has a MICBIAS
+register at 0x318 reading 0x40003030 -- but a SoC having a mic bias generator
+says nothing about what is soldered to it. The same trap ate several hours on
+the playback side, where every control moved the right register bits and
+nothing was audible because the speaker was on a different amplifier.
+
+So this is judged on one thing only: whether pcmC0D0c appears and a recording
+contains something other than a flat line. If it captures silence, the next
+question is the analog input, not the digital path.
+
+RESULT SO FAR: the component is correct, the PCM is not. After booting this,
+the card still reports
+
+  00-00: CDC PCM Codec-0 : CDC PCM Codec-0 : playback 1
+
+with no capture substream, while ASoC debugfs shows every new widget alive:
+
+  ADC Enable  Codec Capture  Left ADC  Right ADC  Mic  ...
+
+Verified in the built artifact rather than assumed, and each of these was
+checked individually, so none of them is the remaining cause:
+
+  - dai_link->playback_only is false in the H713 card (the H616 inheritance
+    that first suppressed it);
+  - quirks->playback_only is unset, so probe configures capture_dma_data;
+  - reg_adc_fifoc and reg_adc_rxdata are set in the quirks;
+  - sun4i_codec_dai declares a "Codec Capture" stream, and dummy_cpu_dai
+    declares a capture stream too, so both ends of the link support it;
+  - sun4i_codec_dai_probe passes capture_dma_data to
+    snd_soc_dai_init_dma_data;
+  - the live DT carries dma-names "tx" "rx" with two dma cells;
+  - the codec probes with no error and no DMA complaint in dmesg.
+
+So the remaining suspect is the generic dmaengine PCM platform: whether it
+actually obtained an "rx" channel. Mainline sunxi codecs that do capture use
+the same pattern this DT now has -- one channel listed twice, e.g. A100's
+dmas = <&dma 43>, <&dma 43> with dma-names "rx", "tx" -- with the names in the
+opposite order to ours, which should not matter to a by-name lookup but has not
+been tested.
+
+Nothing here has been judged by ear or by recording yet, and the physical
+question below is still completely open.
+
+OUT OF SERIES until it captures.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/sound/soc/sunxi/sun4i-codec.c b/sound/soc/sunxi/sun4i-codec.c
+--- a/sound/soc/sunxi/sun4i-codec.c
++++ b/sound/soc/sunxi/sun4i-codec.c
+@@ -248,6 +248,23 @@
+  * fields in this undocumented register.
+  */
+ #define SUN50I_H713_HP_REG			(0x324)
++/*
++ * The ADC side of the H713 codec. Mainline's H616 support -- which this variant
++ * is built on -- has no capture path at all: no ADC widgets, no ADC routes, and
++ * a DT node with only a tx DMA. So these come from the vendor register map
++ * rather than from an upstream reference.
++ *
++ * Independently corroborated by the stock DTB, which is the authority here:
++ * its dummy_cpudai node carries adc_txdata = <0x2030040>, matching RXDATA
++ * below, and dmas = <&dma 7>, <&dma 7> with dma-names "tx", "rx" -- capture
++ * shares the playback DMA channel.
++ */
++#define SUN50I_H713_ADC_FIFOC			(0x030)
++#define SUN50I_H713_ADC_RXDATA			(0x040)
++#define SUN50I_H713_ADCL_REG			(0x300)
++#define SUN50I_H713_ADCR_REG			(0x304)
++#define SUN50I_H713_ADCX_EN			(19)
++#define SUN50I_H713_ADCX_GLOBAL_EN		(31)
+ #define SUN50I_H713_HP_AMP_EN			(15)
+ #define SUN50I_H713_HP_AMP_EN_MASK		BIT(SUN50I_H713_HP_AMP_EN)
+ #define SUN50I_H616_DAC_LEN			(15)
+@@ -2044,6 +2061,20 @@
+ 			    sun50i_h713_codec_hp_amp_event,
+ 			    SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+ 
++	/*
++	 * Capture. Each channel has its own analog control register with an
++	 * enable at bit 19 and a global enable at bit 31; the 0xFF mixer field
++	 * below them is left at the vendor's reset value of 0x55, because no
++	 * source has yet identified which input it selects.
++	 */
++	SND_SOC_DAPM_ADC("Left ADC", "Codec Capture",
++			 SUN50I_H713_ADCL_REG, SUN50I_H713_ADCX_EN, 0),
++	SND_SOC_DAPM_ADC("Right ADC", "Codec Capture",
++			 SUN50I_H713_ADCR_REG, SUN50I_H713_ADCX_EN, 0),
++	SND_SOC_DAPM_SUPPLY("ADC Enable", SUN50I_H713_ADCL_REG,
++			    SUN50I_H713_ADCX_GLOBAL_EN, 0, NULL, 0),
++	SND_SOC_DAPM_INPUT("Mic"),
++
+ 	SND_SOC_DAPM_OUTPUT("LINEOUT"),
+ };
+ 
+@@ -2339,6 +2370,12 @@
+ 	{ "Line Out Source Playback Route", "Mono Differential", "Right DAC" },
+ 	{ "LINEOUT", NULL, "Line Out Source Playback Route" },
+ 	{ "LINEOUT", NULL, "HP Amp" },
++
++	/* Capture routes */
++	{ "Left ADC", NULL, "ADC Enable" },
++	{ "Right ADC", NULL, "ADC Enable" },
++	{ "Left ADC", NULL, "Mic" },
++	{ "Right ADC", NULL, "Mic" },
+ };
+ 
+ static struct snd_soc_card *sun50i_h713_codec_create_card(struct device *dev)
+@@ -2354,7 +2391,13 @@
+ 	if (!card->dai_link)
+ 		return ERR_PTR(-ENOMEM);
+ 
+-	card->dai_link->playback_only = true;
++	/*
++	 * H616 sets playback_only here because it has no capture path. This
++	 * variant does, so the link must allow both -- otherwise ASoC drops
++	 * the capture substream and the card exposes pcmC0D0p alone, no
++	 * matter what the DT and the widgets say.
++	 */
++	card->dai_link->playback_only = false;
+ 	card->dai_link->capture_only = false;
+ 
+ 	card->dev		= dev;
+@@ -2392,6 +2435,8 @@
+ 	.create_card	= sun50i_h713_codec_create_card,
+ 	.reg_dac_fifoc	= REG_FIELD(SUN50I_H616_CODEC_DAC_FIFOC, 0, 31),
+ 	.reg_dac_txdata	= SUN8I_H3_CODEC_DAC_TXDATA,
++	.reg_adc_fifoc	= REG_FIELD(SUN50I_H713_ADC_FIFOC, 0, 31),
++	.reg_adc_rxdata	= SUN50I_H713_ADC_RXDATA,
+ 	.has_reset	= true,
+ 	.dma_max_burst	= SUN4I_DMA_MAX_BURST,
+ 	.mod_freq_mult	= 2,
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -774,8 +774,13 @@
+ 				 <&ccu CLK_AUDIO_CODEC_DAC>;
+ 			clock-names = "apb", "codec";
+ 			resets = <&ccu RST_BUS_AUDIO_CODEC>;
+-			dmas = <&dma 7>;
+-			dma-names = "tx";
++			/*
++			 * Capture shares the playback DMA channel. Taken from
++			 * the stock DTB's dummy_cpudai, which has
++			 * dmas = <&dma 7>, <&dma 7> and dma-names "tx", "rx".
++			 */
++			dmas = <&dma 7>, <&dma 7>;
++			dma-names = "tx", "rx";
+ 			/* PL2 on r_pio, NOT PB2 on the main pio. Active high. */
+ 			allwinner,pa-gpios = <&r_pio 0 2 GPIO_ACTIVE_HIGH>;
+ 			/*
