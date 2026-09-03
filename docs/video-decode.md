@@ -3025,11 +3025,60 @@ Whether that is mpv driving the API in a way this driver does not expect, or the
 driver failing to track surfaces the way mpv assumes, is **not yet established**
 and should not be guessed at.
 
+### With surface ids: the sync IS correct, and something resets the state
+
+Tagging the `Rendering` transition and the capture queue with surface ids
+**corrects the previous section** — the syncs are not targeting the wrong
+surface. That reading came from ordering alone, without ids, and was wrong:
+
+```text
+CONTROL (works)                        ZERO-COPY (fails)
+Rendering surface=64 -> queue idx=0    Rendering surface=64 -> queue idx=2  OK
+SYNC 64 -> DQBUF idx=0        OK       SYNC 64  -> no dequeue
+Rendering surface=65 -> queue idx=1    Rendering surface=65 -> queue idx=3  OK
+SYNC 65 -> DQBUF idx=1        OK       SYNC 65  -> no dequeue
+Rendering surface=66 -> queue idx=2    Rendering surface=64 -> queue idx=2  EINVAL
+```
+
+Each sync follows the queue of **that same surface** on both paths. The copy
+path dequeues; the interop path does not.
+
+Since `RequestSyncSurface` only dequeues when the surface is in
+`VASurfaceRendering`, and `BeginPicture` sets exactly that before the queue,
+**something moves the surface out of `Rendering` between the queue and the
+sync.** The candidate is the transition already observed firing once per surface
+on this path and once in total on the copy path:
+
+```text
+image.c:208   surface_object->status = VASurfaceReady;
+```
+
+Full chain, with only the last link unconfirmed:
+
+1. `BeginPicture` sets `Rendering` — **observed**
+2. `EndPicture` queues the capture buffer, `rc=0` — **observed**
+3. something resets the surface to `Ready` via `image.c:208` — **fires on this
+   path 3x vs 1x on copy, but not yet ordered against steps 2 and 4**
+4. sync sees non-`Rendering`, returns SUCCESS without dequeuing — **observed**
+5. buffer stays queued; next reuse of that index gives EINVAL — **observed**
+
+Note the surface-to-index mapping also differs: under copy each of three
+surfaces owns one index (64→0, 65→1, 66→2); under interop two surfaces cycle
+over indices 2 and 3, because four surfaces were created and mpv uses the last
+two. That is a consequence of the pool size, not obviously a fault.
+
 ### Suggested next steps, cheapest first
 
-1. Log the surface id alongside every `Rendering` transition and every `QBUF`,
-   so rendered-surface and synced-surface can be matched frame by frame rather
-   than inferred from ordering.
+1. **Confirm step 3's ordering** — log a timestamp or sequence number on the
+   `image.c:208` transition and on the queue and sync, and check that the reset
+   really lands between them. This is the last unverified link and the whole
+   chain rests on it.
+2. Find the caller of `image.c:208` on the interop path. If it is
+   `vaDeriveImage`/`vaGetImage` being invoked where the copy path would not, the
+   question becomes why mpv calls it during zero-copy.
+3. Only then decide ownership: a driver that resets state on an image operation
+   against an in-flight surface may simply be wrong, regardless of what mpv
+   does.
 2. Find what calls into `image.c:208` under interop — if `vaDeriveImage` or
    similar is being used to reset state, that is a concrete difference between
    the paths.
