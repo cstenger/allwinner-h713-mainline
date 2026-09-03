@@ -96,3 +96,82 @@ plane work is finished and unblocked at the userspace level — an ffmpeg/mpv
 with the `v4l2request` hwaccel would make decoded video playable through the
 existing NV12 KMS plane, with no kernel work at all. That is a far better
 effort-to-result ratio than starting here.
+
+---
+
+# The three cheap checks — done 2026-09-02
+
+## 1. Is the ARISC running? — UNANSWERED, and the check was invalid
+
+A boot capture shows TF-A's banner and no "Suspend is available via SCPI" line,
+which looks like "no SCP firmware detected". It proves nothing, because our own
+platform file disables the code that would print it:
+
+```make
+# plat/allwinner/sun50i_h713/platform.mk
+# Without a management processor there is no SCPI support.
+SUNXI_PSCI_USE_SCPI   := 0
+SUNXI_PSCI_USE_NATIVE := 1
+ifeq (${SUNXI_PSCI_USE_SCPI}, 1)
+    $(error "H713 does not support SCPI PSCI ops")
+```
+
+The detection is compiled out, so the message could never have appeared. Same
+class of error as reading `clk_summary`'s refcount as a hardware gate: **check
+that the instrument can show a positive before treating its silence as one.**
+
+Worth flagging separately: that comment — "Without a management processor" —
+is **wrong, or at least badly worded**. The H713 does have a management
+processor; the peer disassembled its 172 KB firmware and located the routine
+that writes the HPD register. Whoever ported this platform concluded otherwise,
+and that belief is now baked into our boot chain. It should be corrected
+regardless of whether the ARISC route is pursued.
+
+So this check still needs doing, by a method that works: read the SCP magic
+`0xb4400012` at the load address directly, or add the SCPI detection back
+temporarily.
+
+## 2. Msgbox transport — MUCH cheaper than scoped
+
+The ARISC listens on **User1 sub-block 0, port 3**, FIFO_STAT at `0x0300346c`.
+Our `cpu_comm` driver already drives that exact hardware for the MIPS, and its
+own documented layout predicts that address precisely:
+
+```text
+cpu_comm_hw.c:   +0x60 FIFO count + 4*port ,  +0x70 MSG data + 4*port
+                 +0x20/24 RX IRQ en/status ,  +0x30/34 TX IRQ en/status
+                 MIPS is port 1
+sub-block base 0x03003400 + (0x60 + 4*3) = 0x0300346c   <- exactly the ARISC
+```
+
+Same block, same register layout, same driver — only a different sub-block base
+and port number. **Item 4 drops from "write a msgbox driver" to "add a port to a
+working, hardware-validated one".** Revise it from *medium* to *low*.
+
+## 3. Re-read the HPD conclusion — it stands, and now has a mechanism
+
+The conclusion was that `0x07091014` is unreachable from the ARM with power,
+clock and reset all confirmed enabled. Nothing found here contradicts it, and
+check 1 supplies the missing *why*: the peer's driver reaches that register from
+ARM on a stack whose boot chain loads and starts the ARISC, while ours never
+does. A block that answers only when its owning coprocessor is running fits
+every observation — the hard-locks, the absence from both device trees, and
+stock driving it from firmware.
+
+That is a hypothesis rather than a proof, but it is the first one that explains
+the peer's success and our hang with the same mechanism.
+
+# Revised scope
+
+| # | Piece | Was | Now |
+| --- | --- | --- | --- |
+| 1 | Extract the blob | low | low |
+| 2 | Load address + reset release | **high** | **high — still the deciding unknown** |
+| 3 | Load from SPL/U-Boot | medium | medium |
+| 4 | Msgbox transport | medium | **low** — extend `cpu_comm` |
+| 5 | BOP frame layer | low-med | low-med |
+| 6 | `PullHotPlug 0x0211` | trivial | trivial |
+
+Item 2 still dominates. But the transport half is now nearly free, and there is
+a concrete cheap experiment outstanding: **read the SCP magic at the load
+address to settle whether anything is running**, which check 1 failed to do.
