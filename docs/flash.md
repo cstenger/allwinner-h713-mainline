@@ -784,3 +784,29 @@ All extracted from `board-b-mmcblk0-20260705T075628Z.img`, all in the ignored
   is a *different board's* firmware build; prefer the captures.
 - Take a fresh capture before the next destructive operation anyway. The
   existing ones predate every write this project has made.
+
+## Recovering from a kernel that hangs at probe (2026-09-02)
+
+A bad kernel on the boot FAT is not a serial-transfer problem. U-Boot can read
+the rootfs, and `install-kernel-fit.sh` leaves every previous kernel there:
+
+```text
+=> ext4ls   mmc 1:1a /root/fits
+=> ext4load mmc 1:1a 0x50000000 /root/fits/replaced-<stamp>.fit
+7752948 bytes read in 497 ms (14.9 MiB/s)
+=> bootm 0x50000000
+```
+
+**14.9 MiB/s**, no host-side transfer at all — far better than UMS and not
+comparable to YMODEM over the UART. Boot the backup, then reinstall a good
+kernel from Linux over WiFi in the normal way.
+
+Two gotchas, both of which cost time:
+
+- **U-Boot parses partition numbers as HEX.** The rootfs that `part list mmc 1`
+  displays as partition **26** is `mmc 1:1a`. Using `1:26` fails with
+  "Invalid partition 38" — which is `0x26`.
+- **`bootdelay` was `-1`**, U-Boot for *never autoboot*, which is why the board
+  parked at `=>` after every reboot and needed a manual `boot`. It is now `5`
+  and saved. If a session ever finds the board waiting again, check this first
+  rather than assuming a boot failure.
