@@ -2974,11 +2974,68 @@ Worth noting the timing too: the first sync happens *before* any queue at all,
 which suggests mpv syncs a surface it is about to reuse. In the copy path that
 sync finds a rendered surface and dequeues it; here it finds nothing to do.
 
+### State transitions correlated: the cycle never completes, and syncs target the wrong surface
+
+All four `surface_object->status` assignments instrumented and correlated with
+the sync calls:
+
+```text
+CONTROL (vaapi-copy, works)          ZERO-COPY (vaapi, fails)
+60 Rendering                          3 Rendering
+60 Displaying                         0 Displaying
+ 1 Ready(image)                       3 Ready(image)
+
+create -> Ready                       create -> Ready
+Rendering        (BeginPicture)       image.c -> Ready      <- per surface
+SYNC (same surface)                   create -> Ready
+DQBUF index=N                         image.c -> Ready
+Displaying                            SYNC surface=...65    <- no-op, not Rendering
+                                      Rendering
+                                      QBUF index=2 rc=0
+                                      SYNC surface=...64    <- a DIFFERENT surface
+```
+
+Two things fall out.
+
+**The cycle never completes.** `Displaying` is set only after a successful
+dequeue (`surface.c:434`), so 0 Displaying is the exact mirror of 0 DQBUF. The
+copy path's 60/60 balance is what a healthy cycle looks like.
+
+**The syncs target a different surface than the one just rendered.** In the copy
+path, `Rendering` is immediately followed by a sync of *that same* surface, then
+its dequeue. Under interop, surface X is marked `Rendering` and queued, while the
+sync that follows names surface Y — so the in-flight buffer is never the one
+being synced, and nothing ever dequeues it.
+
+**Also unexpected:** `image.c:208 -> Ready` fires **once per surface creation**
+under interop (3 times) but only **once in total** in the copy path. The image
+path is being entered on the zero-copy path, and it resets each freshly created
+surface to `Ready`. That is the opposite of the assumption made earlier that the
+image path belongs to the copy path — worth checking rather than believing,
+given how many assumptions in this investigation have turned out backwards.
+
+### Where this points
+
+The driver's state machine is consistent on its own terms: sync no-ops on a
+non-`Rendering` surface, so no dequeue, so no `Displaying`, so the buffer stays
+queued and the next queue of that index is rejected. The mismatch is between
+*which surface mpv syncs* and *which surface is in flight*.
+
+Whether that is mpv driving the API in a way this driver does not expect, or the
+driver failing to track surfaces the way mpv assumes, is **not yet established**
+and should not be guessed at.
+
 ### Suggested next steps, cheapest first
 
-1. Log `surface_object->status` at every transition — where it is set to
-   `Rendering`, `Displaying` and `Ready` — and correlate with the sync calls.
-   That resolves the ordering question directly.
+1. Log the surface id alongside every `Rendering` transition and every `QBUF`,
+   so rendered-surface and synced-surface can be matched frame by frame rather
+   than inferred from ordering.
+2. Find what calls into `image.c:208` under interop — if `vaDeriveImage` or
+   similar is being used to reset state, that is a concrete difference between
+   the paths.
+3. Compare against another `libva-v4l2-request` consumer if one is available;
+   if zero-copy works elsewhere, the driver is fine and mpv's usage is the
+   variable.
 2. Check whether `vaExportSurfaceHandle` (the interop-only call) moves the
    surface out of `Rendering` without dequeuing. It is the one operation the
    copy path never performs, which makes it the prime suspect for breaking the
