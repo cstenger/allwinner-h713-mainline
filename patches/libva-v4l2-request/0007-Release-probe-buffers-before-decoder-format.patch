@@ -1,0 +1,187 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] Release probe buffers before setting the decoder format
+
+mpv's VA-API interop setup creates and exports two 128x128 surfaces, destroys
+them, and only then creates the 1280x720 decoder surfaces. CREATE_BUFS-backed
+V4L2 buffers outlive the VA surface objects, while the process-wide output
+format latch also survives. The real surfaces therefore remain backed by the
+128x128 queue allocation. Cedrus reads beyond it, the IOMMU reports a VE read
+fault, and the media request times out.
+
+Track the complete programmed output format instead of using a process-wide
+boolean. When the last surface is destroyed before any context exists, release
+both V4L2 queues so the subsequent S_FMT is legal. Reset the same state during
+normal context teardown.
+
+libavutil also creates a 16x16 hardware-upload probe surface after the decoder
+context is streaming. A V4L2 mem2mem queue cannot change format at that point,
+so allocate that auxiliary VA surface from the active queue geometry while
+retaining its requested logical dimensions.
+
+On H713 this changes zero-copy mpv from three request timeouts and software
+fallback to 300/300 completed capture requests, with `VO: [gpu] 1280x720
+vaapi[nv12]`, no hwdownload, and visibly paced playback.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/src/context.c b/src/context.c
+index 803778d..5f59db3 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -211,5 +211,10 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
++	driver_data->configured_pixelformat = 0;
++	driver_data->configured_width = 0;
++	driver_data->configured_height = 0;
++	driver_data->video_format = NULL;
++
+ 	return VA_STATUS_SUCCESS;
+ }
+diff --git a/src/request.h b/src/request.h
+index 4f82813..a3de42c 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -70,6 +70,16 @@ struct request_data {
+ 	 * depth BEFORE capture buffers exist -- see surface.c.
+ 	 */
+ 	unsigned int coded_bit_depth;
++
++	/*
++	 * Format currently programmed on the OUTPUT queue. This is separate
++	 * from coded_pixelformat, which is the format requested by the current
++	 * config. A client may create throwaway interop-probe surfaces before
++	 * it creates the real decoder surfaces.
++	 */
++	unsigned int configured_pixelformat;
++	unsigned int configured_width;
++	unsigned int configured_height;
+ };
+ 
+ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context);
+diff --git a/src/surface.c b/src/surface.c
+index b4cba1e..b26edf7 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -46,9 +46,6 @@
+ #include "v4l2.h"
+ #include "video.h"
+ 
+-bool SET_FORMAT_OF_OUTPUT_ONCE = false;
+-
+-
+ /*
+  * Declare the bit depth to the driver before any capture buffer exists.
+  *
+@@ -109,33 +106,44 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	unsigned int i, j;
+ 	VASurfaceID id;
+ 	bool found;
++	bool context_active;
++	int context_iterator;
+ 	int rc;
+ 
+-	//////////// HACK: this portion of the code should get cleaned up.
+-
+-	// v4l2_set_format needs to be called BEFORE we create any buffers
+-	//
+-	// we originally did this for the output stream in context.c, but 
+-	// RequestCreateSurfaces2 gets called multiple times before RequestCreateContext 
+-	// to allocate & map buffers. this doesn't seem to work in recent kernel versions.
+-	// 
+-	// we declare SET_FORMAT_OF_OUTPUT_ONCE to ensure v4l2_set_format only gets called once
+-	// (in the first RequestCreateSurfaces2 call BEFORE any buffers are created later on)
++	/*
++	 * The coded format must be set before buffers exist. Do not latch this
++	 * once per process: clients may create small throwaway interop-probe
++	 * surfaces before asking for decoder-sized surfaces. Compare the full
++	 * format instead. RequestDestroySurfaces releases both queues when the
++	 * last pre-context surface goes away, making S_FMT legal for the next
++	 * geometry.
++	 *
++	 * libavutil also probes hardware-upload formats with a small helper
++	 * surface after the decoder context is streaming. A V4L2 mem2mem queue
++	 * has one active format, so such auxiliary VA surfaces must use the
++	 * current queue geometry. Their VA objects still retain the requested
++	 * logical dimensions.
++	 */
+ 	unsigned int pixelformat = driver_data->coded_pixelformat;
+ 	unsigned int output_type = v4l2_type_video_output(false);
+ 
+-	if (!SET_FORMAT_OF_OUTPUT_ONCE) {
+-		rc = v4l2_set_format(driver_data->video_fd, output_type, pixelformat,
+-				width, height);
+-		if (rc < 0) {
++	context_active = object_heap_first(&driver_data->context_heap,
++					   &context_iterator) != NULL;
++	if (!context_active &&
++	    (driver_data->configured_pixelformat != pixelformat ||
++	     driver_data->configured_width != width ||
++	     driver_data->configured_height != height)) {
++		rc = v4l2_set_format(driver_data->video_fd, output_type,
++				     pixelformat, width, height);
++		if (rc < 0)
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
+-		}
+ 
+-		SET_FORMAT_OF_OUTPUT_ONCE = true;
++		driver_data->configured_pixelformat = pixelformat;
++		driver_data->configured_width = width;
++		driver_data->configured_height = height;
++		driver_data->video_format = NULL;
+ 	}
+ 
+-	/////////// ENDHACK
+-
+ 	/*
+ 	 * YUV420_10 is accepted and then served with 8-bit surfaces. cedrus
+ 	 * decodes 10-bit into Allwinner's 8-bit plane plus a separate 2-bit
+@@ -331,6 +339,10 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ {
+ 	struct request_data *driver_data = context->pDriverData;
+ 	struct object_surface *surface_object;
++	struct video_format *video_format;
++	unsigned int output_type, capture_type;
++	int iterator;
++	int output_rc, capture_rc;
+ 	unsigned int i, j;
+ 
+ 	for (i = 0; i < surfaces_count; i++) {
+@@ -356,6 +368,35 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 		object_heap_free(&driver_data->surface_heap,
+ 				 (struct object_base *)surface_object);
+ 	}
+ 
++	/*
++	 * CREATE_BUFS allocations outlive the VA surface object unless the
++	 * queues are explicitly released. That can leave an interop probe's
++	 * small buffers in place and make the real decoder S_FMT impossible.
++	 * Release both queues once no surface or context refers to them.
++	 * Exported dma-bufs retain their own references to the storage.
++	 */
++	surface_object = (struct object_surface *)
++		object_heap_first(&driver_data->surface_heap, &iterator);
++	if (surface_object != NULL ||
++	    object_heap_first(&driver_data->context_heap, &iterator) != NULL)
++		return VA_STATUS_SUCCESS;
++
++	video_format = driver_data->video_format;
++	if (video_format == NULL)
++		return VA_STATUS_SUCCESS;
++
++	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
++	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
++	output_rc = v4l2_request_buffers(driver_data->video_fd, output_type, 0);
++	capture_rc = v4l2_request_buffers(driver_data->video_fd, capture_type, 0);
++	if (output_rc < 0 || capture_rc < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	driver_data->configured_pixelformat = 0;
++	driver_data->configured_width = 0;
++	driver_data->configured_height = 0;
++	driver_data->video_format = NULL;
++
+ 	return VA_STATUS_SUCCESS;
+ }
+ 

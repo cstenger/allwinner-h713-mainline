@@ -27,8 +27,12 @@ Getting the tree:
 git clone https://github.com/bootlin/libva-v4l2-request
 git -C libva-v4l2-request fetch origin refs/pull/38/head:pr38
 git -C libva-v4l2-request checkout pr38
-git -C libva-v4l2-request am ../patches/libva-v4l2-request/*.patch
+tools/video/build-va-driver.sh --install --test
 ```
+
+The build script applies exactly the filenames listed in `series`; the
+directory also contains explicitly out-of-series investigation patches that a
+wildcard must not apply.
 
 Build it **on the board**, not on the host. The driver's entry-point symbol is
 `__vaDriverInit_<major>_<minor>` derived from the *libva pkg-config version* at
@@ -45,6 +49,7 @@ board's libva 1.22 loader will not call.
 | 0004 | Port HEVC: PR #44's `h265.c` on this base, plus the four sites it needs | HEVC on the stabilized uAPI. Neither upstream PR decodes here alone: #38 has the format ordering cedrus requires, #44 has the modern port |
 | 0005 | `h265`: pass the scaling matrix | `V4L2_CID_STATELESS_HEVC_SCALING_MATRIX` was never set by *either* upstream tree, so any stream with `scaling_list_enabled_flag = 1` decoded against flat matrices — see below |
 | 0006 | Advertise HEVC Main10, and declare the bit depth before capture buffers exist | Main10 was refused outright; now it decodes on the engine (`ve+10`, 57 dB PSNR, byte-identical to GStreamer). Output is 8-bit — see [`docs/hevc-10bit-findings.md`](../../docs/hevc-10bit-findings.md) |
+| 0007 | Release throwaway interop buffers and track the programmed queue format | mpv probes with 128x128 surfaces before creating 1280x720 decoder surfaces; leaked V4L2 allocations made Cedrus read beyond a 24 KiB buffer and fault. Also accommodates libavutil's 16x16 helper surface while the decoder queue is streaming |
 
 Patch 0002 does two things that look separate and are not:
 
@@ -108,6 +113,21 @@ raster scan order". ffmpeg's parser already undoes the scan
 `h05` is the evidence — its lists are non-flat at every size, so a wrong
 permutation could not have come out bit-exact.
 
+Patch 0007 fixes a lifetime mismatch between VA surfaces and their V4L2
+backing allocations. `vaDestroySurfaces` freed the VA objects and mappings but
+left every `CREATE_BUFS` allocation alive, while a process-global boolean kept
+the first coded format forever. mpv's 128x128 VA/EGL interoperability probe
+therefore poisoned the later 1280x720 decoder allocation. The first decode
+request queued correctly, then the VE crossed the end of the undersized buffer,
+raised a master-0 IOMMU read fault, and timed out.
+
+The fix releases both queues when the last pre-context surface disappears and
+tracks the actual programmed pixel format and geometry. Once a context is
+streaming, small auxiliary VA surfaces use its active backing geometry because
+a V4L2 mem2mem queue cannot be reformatted in flight. That last case is needed
+for libavutil's 16x16 upload probe; otherwise decode works but mpv falls back to
+a CPU hwdownload during filter negotiation.
+
 ## Status — validated on hardware 2026-08-16
 
 `vainfo` loads the driver (`__vaDriverInit_1_22`) and advertises the five H.264
@@ -154,7 +174,26 @@ oracle scoring the same 5/5 on the same run:
 Reproduce with [`tools/video/hevc-decode-test.sh`](../../tools/video/hevc-decode-test.sh).
 The H.264 ladder is unregressed at 5/5 in the same session.
 
-**Still not covered:** 10-bit (Main10) is blocked in the kernel — mainline
-cedrus exposes no 10-bit capture format — and the two inert PPS flag bits noted
-in patch 0004 are still wrong. Tiles, `transquant_bypass` and long-term
-references have no vector yet.
+Main10 reaches the engine, but the exported surface is its 8-bit component
+because mainline cedrus exposes no capture fourcc for Allwinner's separate
+8-bit-plus-2-bit layout. The two inert PPS flag bits noted in patch 0004 are
+still wrong. Tiles, `transquant_bypass` and long-term references have no vector
+yet.
+
+## Zero-copy mpv — validated on hardware 2026-09-03
+
+With patch 0007's functional change installed, stock mpv used VA decode and
+passed the decoded dma-bufs directly to the Panfrost GPU:
+
+```text
+Using hardware decoding (vaapi).
+VO: [gpu] 1280x720 vaapi[nv12]
+```
+
+A 20-second paced loop displayed moving video and completed 300 capture
+QBUF/DQBUF cycles with no decode failure or hwdownload. An independent
+300-frame untimed run produced the same 300/300 balance and no new IOMMU fault
+or Cedrus timeout. See
+[`docs/handoff-2026-09-03-video-decode.md`](../../docs/handoff-2026-09-03-video-decode.md)
+for the trace that distinguishes the root cause from the discarded surface
+state and request-fd hypotheses.

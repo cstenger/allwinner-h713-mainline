@@ -9,6 +9,65 @@ Goal for this phase: **decoded video visible on the projector panel.**
 
 ---
 
+## 2026-09-03: stock mpv VA-API zero-copy works
+
+The `--hwdec=vaapi --vo=gpu --gpu-context=drm` path is fixed. Stock mpv now
+decodes with Cedrus, exports the capture surfaces as dma-bufs, imports them into
+Panfrost, and presents moving video without a CPU readback:
+
+```text
+Using hardware decoding (vaapi).
+VO: [gpu] 1280x720 vaapi[nv12]
+```
+
+The root cause was not the request fd, surface state, sync target, or EGL
+holding a decoded buffer. mpv first created and exported two **128x128** VA
+surfaces to probe interop, destroyed their VA objects, and then requested the
+real **1280x720** decoder surfaces. The VA driver retained two pieces of stale
+V4L2 state:
+
+- `SET_FORMAT_OF_OUTPUT_ONCE` kept the OUTPUT queue at 128x128 for the life of
+  the process;
+- `RequestDestroySurfaces` unmapped userspace but never issued `REQBUFS(0)`, so
+  the probe's `CREATE_BUFS` allocations survived their VA objects.
+
+The later decoder surfaces consequently had only 24,576 bytes of 128x128
+backing. The first 1280x720 request queued successfully, then Cedrus read past
+that allocation. `sun50i-iommu` reported a master-0 read fault, the Cedrus job
+timed out, and only then did later buffer reuse produce the misleading
+double-QBUF/EINVAL symptom. Narrow sync tracing also directly refuted the old
+handoff suspect: `request_fd=18` was valid and `media_request_queue()` had
+succeeded; the completion wait timed out because the hardware faulted.
+
+Patch
+[`0007-Release-probe-buffers-before-decoder-format.patch`](../patches/libva-v4l2-request/0007-Release-probe-buffers-before-decoder-format.patch)
+tracks the programmed pixel format and geometry, releases both queues when the
+last pre-context surface goes away, and resets that state at context teardown.
+It also handles a second client behavior: after decode starts, libavutil asks
+for a 16x16 upload-probe surface. The active V4L2 mem2mem queue cannot change
+format, so the auxiliary VA object keeps its logical 16x16 dimensions while
+its buffer uses the active 1280x720 queue geometry. Without that case all
+decode requests finish, but mpv performs a CPU hwdownload during filter
+negotiation.
+
+Validation with the instrumented functional build:
+
+```text
+five-frame focus: decoded surfaces exported at 1,382,400 bytes
+300-frame stress: capture QBUF=300, capture DQBUF=300, failures=0, hwdownloads=0
+20-second paced:  capture QBUF=300, capture DQBUF=300, failures=0, hwdownloads=0
+kernel delta:     no new IOMMU fault, no new Cedrus timeout
+visual result:    moving video, operator-confirmed
+```
+
+The clean patch applies independently to the six-patch pinned base and builds
+without warnings. Its clean native board build/install remains the packaging
+step; the hardware proof above used an equivalent instrumented build. The long
+chronological investigation near the end of this file intentionally preserves
+discarded hypotheses—this section is the current conclusion.
+
+---
+
 ## 2026-09-01 (later): moving decoded video on the panel, through the IOMMU
 
 **300 frames of decoded H.264 rendered on the projector at 27.13 fps, zero

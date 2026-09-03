@@ -2,7 +2,7 @@
 # Build and install the VA-API driver on the board, reproducibly. RUNS ON THE HOST.
 #
 # WHY THIS EXISTS. Hardware video decode on this board depends on a .so that
-# was, until now, built by hand: clone a pull request, apply five patches,
+# was, until now, built by hand: clone a pull request, apply the patch series,
 # meson, ninja, copy it into /usr/lib/.../dri/. Nothing in the rootfs build
 # produces it, so **a fresh flash silently loses hardware decode** and the way
 # back lives in somebody's shell history. That is the last thing standing

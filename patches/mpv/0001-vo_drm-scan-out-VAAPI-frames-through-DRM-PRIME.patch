@@ -1,0 +1,355 @@
+From b272b8ee7388d38f45ec5e8858a4deb18575f254 Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Thu, 3 Sep 2026 13:45:55 -0700
+Subject: [PATCH] vo_drm: scan out VAAPI frames through DRM PRIME
+
+---
+ video/out/vo_drm.c | 234 ++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 230 insertions(+), 4 deletions(-)
+
+diff --git a/video/out/vo_drm.c b/video/out/vo_drm.c
+index 7a069b8..519b119 100644
+--- a/video/out/vo_drm.c
++++ b/video/out/vo_drm.c
+@@ -19,18 +19,24 @@
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <stdbool.h>
++#include <stdlib.h>
+ #include <sys/mman.h>
+ #include <poll.h>
+ #include <unistd.h>
+ 
+ #include <drm_fourcc.h>
++#include <libavutil/hwcontext.h>
++#include <libavutil/pixfmt.h>
+ 
++#include "config.h"
+ #include "common/msg.h"
+ #include "drm_atomic.h"
+ #include "drm_common.h"
++#include "drm_prime.h"
+ #include "osdep/timer.h"
+ #include "sub/osd.h"
+ #include "video/fmt-conversion.h"
++#include "video/hwdec.h"
+ #include "video/mp_image.h"
+ #include "video/out/present_sync.h"
+ #include "video/sws_utils.h"
+@@ -49,6 +55,9 @@
+ 
+ struct drm_frame {
+     struct framebuffer *fb;
++    struct drm_prime_framebuffer prime_fb;
++    struct mp_image *prime_image;
++    bool prime;
+ };
+ 
+ struct priv {
+@@ -65,12 +74,85 @@ struct priv {
+     struct mp_rect dst;
+     struct mp_osd_res osd;
+     struct mp_sws_context *sws;
++    struct mp_image_params target_params;
++    bool prime_mode;
++
++#if HAVE_VAAPI
++    struct mp_hwdec_ctx vaapi_ctx;
++#endif
++    struct drm_prime_handle_refs handle_refs;
+ 
+     struct framebuffer **bufs;
+     int front_buf;
+     int buf_count;
+ };
+ 
++static void destroy_drm_frame(struct vo *vo, struct drm_frame *frame)
++{
++    struct priv *p = vo->priv;
++
++    if (frame->prime) {
++        drm_prime_destroy_framebuffer(vo->log, vo->drm->fd, &frame->prime_fb,
++                                      &p->handle_refs);
++        talloc_free(frame->prime_image);
++    }
++    talloc_free(frame);
++}
++
++static void disable_video_plane(struct vo *vo)
++{
++    struct vo_drm_state *drm = vo->drm;
++    struct drm_object *plane = drm->atomic_context->drmprime_video_plane;
++    if (!plane)
++        return;
++
++    if (drm->waiting_for_flip)
++        vo_drm_wait_on_flip(drm);
++
++    drmModeAtomicReqPtr request = drmModeAtomicAlloc();
++    if (!request)
++        return;
++
++    drm_object_set_property(request, plane, "FB_ID", 0);
++    drm_object_set_property(request, plane, "CRTC_ID", 0);
++    if (drmModeAtomicCommit(drm->fd, request, 0, NULL))
++        MP_WARN(vo, "Failed to disable DRM PRIME video plane: %s\n",
++                mp_strerror(errno));
++    drmModeAtomicFree(request);
++}
++
++static struct mp_image *map_to_drmprime(struct vo *vo, struct mp_image *src)
++{
++    if (src->imgfmt == IMGFMT_DRMPRIME)
++        return mp_image_new_ref(src);
++    if (src->imgfmt != IMGFMT_VAAPI)
++        return NULL;
++
++    AVFrame *src_frame = mp_image_to_av_frame(src);
++    AVFrame *dst_frame = av_frame_alloc();
++    struct mp_image *dst = NULL;
++    if (!src_frame || !dst_frame)
++        goto done;
++
++    dst_frame->format = AV_PIX_FMT_DRM_PRIME;
++    int ret = av_hwframe_map(dst_frame, src_frame,
++                             AV_HWFRAME_MAP_READ | AV_HWFRAME_MAP_DIRECT);
++    if (ret < 0) {
++        MP_ERR(vo, "Failed to export VAAPI frame as DRM PRIME: %s\n",
++               av_err2str(ret));
++        goto done;
++    }
++
++    dst = mp_image_from_av_frame(dst_frame);
++    if (dst)
++        mp_image_copy_attributes(dst, src);
++
++done:
++    av_frame_free(&src_frame);
++    av_frame_free(&dst_frame);
++    return dst;
++}
++
+ static void destroy_framebuffer(int fd, struct framebuffer *fb)
+ {
+     if (!fb)
+@@ -191,6 +273,32 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
+     vo->dheight = drm->fb->height;
+     vo_get_src_dst_rects(vo, &p->src, &p->dst, &p->osd);
+ 
++    bool was_prime = p->prime_mode;
++    p->prime_mode = params->imgfmt == IMGFMT_DRMPRIME ||
++                    params->imgfmt == IMGFMT_VAAPI;
++    if (p->prime_mode) {
++        if (params->rotate || p->src.x0 || p->src.y0 ||
++            mp_rect_w(p->src) != params->w ||
++            mp_rect_h(p->src) != params->h ||
++            p->dst.x0 || p->dst.y0 ||
++            mp_rect_w(p->dst) != drm->mode.mode.hdisplay ||
++            mp_rect_h(p->dst) != drm->mode.mode.vdisplay) {
++            MP_ERR(vo, "DRM PRIME plane requires uncropped, unrotated fullscreen video\n");
++            return -1;
++        }
++
++        p->target_params = *params;
++        mp_mutex_lock(&vo->params_mutex);
++        vo->target_params = &p->target_params;
++        mp_mutex_unlock(&vo->params_mutex);
++        vo->want_redraw = true;
++        MP_INFO(vo, "Using direct DRM PRIME video-plane scanout\n");
++        return 0;
++    }
++
++    if (was_prime)
++        disable_video_plane(vo);
++
+     struct mp_imgfmt_desc fmt = mp_imgfmt_get_desc(p->imgfmt);
+     p->dst.x0 = MP_ALIGN_DOWN(p->dst.x0, fmt.align_x);
+     p->dst.y0 = MP_ALIGN_DOWN(p->dst.y0, fmt.align_y);
+@@ -278,16 +386,40 @@ static void enqueue_frame(struct vo *vo, struct framebuffer *fb)
+ {
+     struct priv *p = vo->priv;
+ 
+-    struct drm_frame *new_frame = talloc(p, struct drm_frame);
++    struct drm_frame *new_frame = talloc_zero(p, struct drm_frame);
+     new_frame->fb = fb;
+     MP_TARRAY_APPEND(p, p->fb_queue, p->fb_queue_len, new_frame);
+ }
+ 
++static bool enqueue_prime_frame(struct vo *vo, struct mp_image *image)
++{
++    struct priv *p = vo->priv;
++    struct vo_drm_state *drm = vo->drm;
++    struct mp_image *mapped = map_to_drmprime(vo, image);
++    if (!mapped)
++        return false;
++
++    AVDRMFrameDescriptor *desc = (AVDRMFrameDescriptor *)mapped->planes[0];
++    struct drm_frame *frame = talloc_zero(p, struct drm_frame);
++    frame->prime = true;
++    frame->prime_image = mapped;
++    if (!desc || drm_prime_create_framebuffer(vo->log, drm->fd, desc,
++                                               mapped->w, mapped->h,
++                                               &frame->prime_fb,
++                                               &p->handle_refs)) {
++        destroy_drm_frame(vo, frame);
++        return false;
++    }
++
++    MP_TARRAY_APPEND(p, p->fb_queue, p->fb_queue_len, frame);
++    return true;
++}
++
+ static void dequeue_frame(struct vo *vo)
+ {
+     struct priv *p = vo->priv;
+ 
+-    talloc_free(p->fb_queue[0]);
++    destroy_drm_frame(vo, p->fb_queue[0]);
+     MP_TARRAY_REMOVE_AT(p->fb_queue, p->fb_queue_len, 0);
+ }
+ 
+@@ -308,6 +440,12 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+     if (!drm->active)
+         goto done;
+ 
++    if (p->prime_mode) {
++        if (!enqueue_prime_frame(vo, frame->current))
++            return VO_FALSE;
++        goto done;
++    }
++
+     // we redraw the entire image when OSD needs to be redrawn
+     struct framebuffer *fb =  p->bufs[p->front_buf];
+     const bool repeat = frame->repeat && !frame->redraw;
+@@ -325,6 +463,38 @@ done:
+ static void queue_flip(struct vo *vo, struct drm_frame *frame)
+ {
+     struct vo_drm_state *drm = vo->drm;
++    struct priv *p = vo->priv;
++
++    if (frame->prime) {
++        struct drm_object *plane = drm->atomic_context->drmprime_video_plane;
++        drmModeAtomicReqPtr request = drmModeAtomicAlloc();
++        if (!plane || !request) {
++            MP_ERR(vo, "DRM PRIME video plane is unavailable\n");
++            drmModeAtomicFree(request);
++            return;
++        }
++
++        drm_object_set_property(request, plane, "FB_ID", frame->prime_fb.fb_id);
++        drm_object_set_property(request, plane, "CRTC_ID", drm->crtc_id);
++        drm_object_set_property(request, plane, "SRC_X", p->src.x0 << 16);
++        drm_object_set_property(request, plane, "SRC_Y", p->src.y0 << 16);
++        drm_object_set_property(request, plane, "SRC_W", mp_rect_w(p->src) << 16);
++        drm_object_set_property(request, plane, "SRC_H", mp_rect_h(p->src) << 16);
++        drm_object_set_property(request, plane, "CRTC_X", p->dst.x0);
++        drm_object_set_property(request, plane, "CRTC_Y", p->dst.y0);
++        drm_object_set_property(request, plane, "CRTC_W", mp_rect_w(p->dst));
++        drm_object_set_property(request, plane, "CRTC_H", mp_rect_h(p->dst));
++        drm_object_set_property(request, plane, "ZPOS", 0);
++
++        int flags = DRM_MODE_ATOMIC_NONBLOCK | DRM_MODE_PAGE_FLIP_EVENT;
++        int ret = drmModeAtomicCommit(drm->fd, request, flags, drm);
++        if (ret)
++            MP_WARN(vo, "Failed to queue DRM PRIME plane flip: %s\n",
++                    mp_strerror(errno));
++        drm->waiting_for_flip = !ret;
++        drmModeAtomicFree(request);
++        return;
++    }
+ 
+     drm->fb = frame->fb;
+ 
+@@ -370,12 +540,27 @@ static void uninit(struct vo *vo)
+ {
+     struct priv *p = vo->priv;
+ 
+-    vo_drm_uninit(vo);
++    if (vo->drm) {
++        if (vo->drm->waiting_for_flip)
++            vo_drm_wait_on_flip(vo->drm);
++        disable_video_plane(vo);
++    }
+ 
+     while (p->fb_queue_len > 0) {
+         swapchain_step(vo);
+     }
+ 
++#if HAVE_VAAPI
++    if (vo->hwdec_devs) {
++        hwdec_devices_remove(vo->hwdec_devs, &p->vaapi_ctx);
++        av_buffer_unref(&p->vaapi_ctx.av_device_ref);
++        hwdec_devices_destroy(vo->hwdec_devs);
++        vo->hwdec_devs = NULL;
++    }
++#endif
++
++    vo_drm_uninit(vo);
++
+     talloc_free(p->last_input);
+     talloc_free(p->cur_frame);
+     talloc_free(p->cur_frame_cropped);
+@@ -413,6 +598,38 @@ static int preinit(struct vo *vo)
+     p->sws = mp_sws_alloc(vo);
+     p->sws->log = vo->log;
+     mp_sws_enable_cmdline_opts(p->sws, vo->global);
++
++    drm_prime_init_handle_ref_count(p, &p->handle_refs);
++
++#if HAVE_VAAPI
++    if (drm->atomic_context->drmprime_video_plane) {
++        char *render_path = drmGetRenderDeviceNameFromFd(drm->fd);
++        const char *device_path = render_path ? render_path : drm->card_path;
++        int ret = av_hwdevice_ctx_create(&p->vaapi_ctx.av_device_ref,
++                                         AV_HWDEVICE_TYPE_VAAPI,
++                                         device_path, NULL, 0);
++        if (ret < 0 && render_path) {
++            MP_VERBOSE(vo, "VAAPI render node failed, trying primary node\n");
++            ret = av_hwdevice_ctx_create(&p->vaapi_ctx.av_device_ref,
++                                         AV_HWDEVICE_TYPE_VAAPI,
++                                         drm->card_path, NULL, 0);
++        }
++        free(render_path);
++
++        if (ret >= 0) {
++            p->vaapi_ctx = (struct mp_hwdec_ctx) {
++                .driver_name = "vaapi-drm",
++                .av_device_ref = p->vaapi_ctx.av_device_ref,
++                .hw_imgfmt = IMGFMT_VAAPI,
++            };
++            vo->hwdec_devs = hwdec_devices_create();
++            hwdec_devices_add(vo->hwdec_devs, &p->vaapi_ctx);
++        } else {
++            MP_WARN(vo, "Could not create VAAPI device for direct scanout: %s\n",
++                    av_err2str(ret));
++        }
++    }
++#endif
+     return 0;
+ 
+ err:
+@@ -423,6 +640,15 @@ err:
+ static int query_format(struct vo *vo, int format)
+ {
+     struct priv *p = vo->priv;
++
++    if (vo->drm->atomic_context->drmprime_video_plane) {
++        if (format == IMGFMT_DRMPRIME)
++            return 1;
++#if HAVE_VAAPI
++        if (format == IMGFMT_VAAPI && p->vaapi_ctx.av_device_ref)
++            return 1;
++#endif
++    }
+     return mp_sws_supports_formats(p->sws, p->imgfmt, format) ? 1 : 0;
+ }
+ 
+@@ -443,7 +669,7 @@ static int control(struct vo *vo, uint32_t request, void *arg)
+ 
+ const struct vo_driver video_out_drm = {
+     .name = "drm",
+-    .description = "Direct Rendering Manager (software scaling)",
++    .description = "Direct Rendering Manager (software or DRM PRIME plane)",
+     .preinit = preinit,
+     .query_format = query_format,
+     .reconfig = reconfig,
