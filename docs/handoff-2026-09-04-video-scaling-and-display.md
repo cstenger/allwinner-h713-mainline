@@ -2,7 +2,7 @@
 
 > **CORRECTION, 2026-09-04 (later). Read [§6](#6-correction-what-a-cold-boot-settled) before
 > anything else in this document.** The scaling result in Part I was never seen on the
-> panel and its mechanism is contradicted by the register evidence; patch 0087 has been
+> panel and its mechanism is contradicted by the register evidence; patch 0093 (renamed from 0087) has been
 > dropped from `series` and the `status.md`/`roadmap.md` rewrites reverted. All three
 > root-cause hypotheses in Part II are refuted: the panel came back on a cold power cycle.
 
@@ -41,8 +41,8 @@ The H713 hardware pipeline contains the dedicated **TVDISP streaming scaler** at
 - **Scaling Range**: Configured `drm_atomic_helper_check_plane_state` to allow scaling factors between `0.5x` (`1:2` upscale, `0x08000`) and `2.0x` (`2:1` downscale, `0x20000`). 1080p downscaled to 720p is a `1.5x` downscale (`0x18000`), well within the hardware limits.
 
 ### Artifacts Created
-- `patches/kernel/0087-drm-h713-afbd-enable-hardware-plane-scaling.patch`: Driver patch implementing dynamic geometry and scaling check.
-- `patches/kernel/series`: Appended patch 0087.
+- `patches/kernel/0093-EXPERIMENT-drm-h713-afbd-enable-hardware-plane-scaling.patch` (originally 0087): Driver patch implementing dynamic geometry and scaling check.
+- `patches/kernel/series`: Appended patch 0087 (since renamed to 0093 and removed from the series).
 - `patches/mpv/0003-vo_drm-refuse-to-scale-and-stop-retrying-a-doomed-flip.patch`: Updated to remove the client-side geometry rejection while preserving `PRIME_FLIP_FAIL_LIMIT 60`.
 
 ### Benchmark Results on Target
@@ -202,10 +202,10 @@ data registers, not read-modify-write, so they clear every other output in those
   and GPU load and `check-video-stack.sh` all describe *path selection*, not display —
   and §3 of this same document reports the operator seeing black during that window.
   `check-video-stack.sh` compares `sunxi-cedrus.ko`, the VA driver and the mpv binary
-  against the tree; `CONFIG_DRM_SUN50I_H713_AFBD=y`, so it does not cover patch 0087 at
+  against the tree; `CONFIG_DRM_SUN50I_H713_AFBD=y`, so it does not cover the scaling patch at
   all.
 - **DECD has no destination geometry and no ratio register** — established by the full
-  1 KiB dump on 09-03. Patch 0087 programs only *source* geometry (`0x20`, `0x24`,
+  1 KiB dump on 09-03. Patch 0093 programs only *source* geometry (`0x20`, `0x24`,
   `0x40`, `0x44`) plus the VideoInfo page. Telling the fetcher the source is 1920x1080
   does not make the output 1280x720.
 - **The claim that `0x05000000` was inert only because `atomic_check` rejected 1080p is a
@@ -233,7 +233,7 @@ repeat**, and it is what the block powers up holding. Patch 0078 works precisely
 its `atomic_update` overwrites the four driver-owned words back to 720p, bringing them
 into agreement with the three it does not own.
 
-Patch 0087 re-creates the broken split in the other direction: four words say 1080p, three
+Patch 0093 re-creates the broken split in the other direction: four words say 1080p, three
 still say 720p. The driver has no defines for `0x030`, `0x048` or `0x04c` and never
 touches them. Any future attempt at 1080p must move all seven (and `0x04c`'s chroma
 height is `src_h/2`, not `src_h`) — but that is a prerequisite for the geometry being
@@ -241,13 +241,15 @@ height is `src_h/2`, not `src_h`) — but that is a prerequisite for the geometr
 
 ### State of the tree after review
 
-- `patches/kernel/0087-...` — **dropped from `series`**, file kept on disk, unverified.
-  It also collides with the existing `0087-EXPERIMENT-misc-h713-bring-up-tvcap-for-hdmi-rx.patch`
-  and must be renumbered before it is ever listed.
+- `patches/kernel/0093-EXPERIMENT-drm-h713-afbd-enable-hardware-plane-scaling.patch`
+  — **dropped from `series`**, file kept on disk, unverified. Originally numbered
+  0087, which collided with `0087-EXPERIMENT-misc-h713-bring-up-tvcap-for-hdmi-rx.patch`;
+  renamed to the next free number with the `EXPERIMENT` marker the other
+  out-of-series patches use.
 - `docs/status.md`, `docs/roadmap.md` — **reverted.** The 09-03 text stands: our display
   path has no scaler, and the routes to 1080p are the GPU path's artifacts or a GE2D
   V4L2 M2M driver.
 - `patches/mpv/0003-...` — still carries the removal of the client-side scaling guard,
-  and lost its commit message (the 890,454-failure measurement). With 0087 out of the
+  and lost its commit message (the 890,454-failure measurement). With 0093 out of the
   kernel, a 1080p file now costs 60 rejected commits, each reprogramming the plane,
   before the `PRIME_FLIP_FAIL_LIMIT` backstop gives up. Bounded, but not zero.

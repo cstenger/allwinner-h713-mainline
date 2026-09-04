@@ -215,7 +215,7 @@ Only after step 3. This is where the hard lock lives; see below.
 | CPU_COMM frame submit | **dead** — the routines are stubs. |
 | Poking the scaler's ratio registers directly | **no effect**, MIPS parked or alive, operator watching both times. |
 | Committing an ARM-programmed AFBD frame with the core alive | **ignored** — this is what proves the MIPS owns presentation. |
-| Patch 0087 (dynamic AFBD geometry) | never seen on the panel; programs 4 of the 7 source-geometry words. Kept on disk, out of `series`. |
+| Patch 0093 (dynamic AFBD geometry) | never seen on the panel; programs 4 of the 7 source-geometry words. Kept on disk, out of `series`. |
 | DECD as a scaler | **dead** — one coordinate space, no ratio register in the whole 1 KiB window. |
 
 ## What is not proven
