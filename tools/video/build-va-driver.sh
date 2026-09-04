@@ -118,11 +118,17 @@ echo "==> stamping the install"
 series_id=$(cat "$PATCHES/series" | while read -r p; do
 	[ -n "$p" ] && sha256sum "$PATCHES/$p"
 done | sha256sum | cut -c1-16)
-$SSH "cat > /etc/h713-video-stack <<EOF
-# Written by tools/video/build-va-driver.sh -- do not edit by hand.
+# Append after stripping our own keys, NOT '>' over the whole file: build-mpv.sh
+# stamps the same file with mpv_* keys, and truncating here silently erased them.
+$SSH "touch /etc/h713-video-stack
+	grep -q '^# Written by' /etc/h713-video-stack ||
+		sed -i '1i # Written by tools/video/build-*.sh -- do not edit by hand.' \
+			/etc/h713-video-stack
+	sed -i '/^va_driver_/d' /etc/h713-video-stack
+	cat >> /etc/h713-video-stack <<EOF
 va_driver_series=$series_id
 va_driver_installed=$stamp
-va_driver_patches=$(wc -l < "$PATCHES/series")
+va_driver_patches=$(grep -c . "$PATCHES/series")
 EOF"
 echo "    series id $series_id"
 

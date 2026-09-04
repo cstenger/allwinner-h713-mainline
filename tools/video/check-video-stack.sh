@@ -8,12 +8,13 @@
 # reasoning was built on a binary that was not the source. Nothing anywhere
 # could have said so.
 #
-# cedrus and the VA driver are the two pieces that do NOT arrive by flashing a
-# kernel FIT: the module lives in the rootfs, and the .so is built on the board.
-# Both can silently fall behind the tree. This compares what is installed with
-# what the series files currently describe, and says which.
+# cedrus, the VA driver and mpv are the three pieces that do NOT arrive by
+# flashing a kernel FIT: the module lives in the rootfs, the .so is built on the
+# board, and mpv is cross-built in a container. All three can silently fall
+# behind the tree. This compares what is installed with what the series files
+# currently describe, and says which.
 #
-# Exit status is 0 only when both match, so it can gate a test run.
+# Exit status is 0 only when all three match, so it can gate a test run.
 #
 #   usage: tools/video/check-video-stack.sh
 #          BOARD=192.168.4.1 tools/video/check-video-stack.sh
@@ -89,6 +90,44 @@ else
 	echo "    board       $board_id (installed $board_when)"
 	echo "    DRIFT — the installed driver was built from a different series."
 	echo "    fix: tools/video/build-va-driver.sh --install --test"
+	drift=1
+fi
+
+echo
+echo "=== mpv (direct DRM PRIME scanout) ==="
+
+# Third component that does not arrive by flashing, and the newest: it is built
+# off-target in a container, so it can drift exactly like the other two.
+mpv_now=$(while read -r p; do
+	[ -n "$p" ] && sha256sum "$ROOT/patches/mpv/$p"
+done < "$ROOT/patches/mpv/series" | sha256sum | cut -c1-16)
+
+mpv_board=$($SSH 'sed -n "s/^mpv_series=//p" /etc/h713-video-stack 2>/dev/null')
+mpv_when=$($SSH 'sed -n "s/^mpv_installed=//p" /etc/h713-video-stack 2>/dev/null')
+mpv_path=$($SSH 'command -v mpv 2>/dev/null')
+
+echo "    series now  $mpv_now ($(grep -c . "$ROOT/patches/mpv/series") patches)"
+if [ -z "$mpv_board" ]; then
+	echo "    board       <unstamped>"
+	echo "    DRIFT — no patched mpv is recorded as installed. A stock mpv still"
+	echo "    plays, using software decode, so this does not look like a failure:"
+	echo "    fix: tools/video/build-mpv.sh --install --test"
+	drift=1
+elif [ "$mpv_board" = "$mpv_now" ]; then
+	echo "    board       $mpv_board (installed $mpv_when)"
+	echo "    MATCH"
+else
+	echo "    board       $mpv_board (installed $mpv_when)"
+	echo "    DRIFT — the installed mpv was built from a different series."
+	echo "    fix: tools/video/build-mpv.sh --install --test"
+	drift=1
+fi
+
+# A stock /usr/bin/mpv taking precedence would revert the video path while every
+# stamp above still read MATCH, so check which binary actually wins the PATH.
+if [ -n "$mpv_path" ] && [ "$mpv_path" != "/usr/local/bin/mpv" ]; then
+	echo "    PATH resolves mpv to $mpv_path, not /usr/local/bin/mpv"
+	echo "    DRIFT — the patched build is installed but not the one that runs."
 	drift=1
 fi
 

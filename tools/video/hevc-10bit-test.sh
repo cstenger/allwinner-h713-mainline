@@ -68,7 +68,26 @@ gst_ve=$(( $(ve_irq) - v0 ))
 # Strip the 2-bit plane the engine appends, which the driver includes in
 # sizeimage and GStreamer faithfully writes out.
 sw_frame=$(( 640 * 480 * 3 / 2 ))
-hw_frame=$(( $(stat -c%s "$OUT/gst.raw") / ($(stat -c%s "$OUT/sw") / sw_frame) ))
+# Both sizes have to be established BEFORE the arithmetic. This division used to
+# be written inline, so an empty or missing gst.raw made the assignment fail
+# silently under `set -u` (there is no `set -e` here) and the script died on the
+# next line with "hw_frame: unbound variable" -- a shell error reported as a
+# driver failure, which is exactly what a gate must never do.
+gst_bytes=$(stat -c%s "$OUT/gst.raw" 2>/dev/null || echo 0)
+sw_bytes=$(stat -c%s "$OUT/sw" 2>/dev/null || echo 0)
+if [ "$sw_bytes" -lt "$sw_frame" ]; then
+	echo "     FAIL: software reference is $sw_bytes bytes, under one frame."
+	echo "           ffmpeg could not decode the vector; nothing here is about the VE."
+	exit 1
+fi
+sw_frames=$(( sw_bytes / sw_frame ))
+if [ "$gst_bytes" -eq 0 ]; then
+	echo "     FAIL: v4l2slh265dec produced no output (ve+$gst_ve)."
+	echo "           The oracle did not run, so the bit-exact comparison below"
+	echo "           cannot be made. Treat this as the failure, not as a skip."
+	exit 1
+fi
+hw_frame=$(( gst_bytes / sw_frames ))
 python3 - "$OUT/gst.raw" "$OUT/gst" "$hw_frame" "$sw_frame" <<'PY'
 import sys
 src, dst, hw, sw = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])

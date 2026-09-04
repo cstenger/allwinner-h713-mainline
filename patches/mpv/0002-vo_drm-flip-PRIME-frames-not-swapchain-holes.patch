@@ -1,0 +1,47 @@
+From 3b0fc53727a991cdc6530d54e75f3e12dc3f7794 Mon Sep 17 00:00:00 2001
+From: build <build@localhost>
+Date: Thu, 3 Sep 2026 17:03:45 -0700
+Subject: vo_drm: flip PRIME frames instead of dropping them as swapchain holes
+
+flip_page() validated the next queued frame with `!frame->fb`, but a PRIME
+frame stores its framebuffer in prime_fb.fb_id and leaves ->fb NULL. Every
+decoded frame therefore matched the "Hole in swapchain?" branch and was
+dequeued without ever reaching queue_flip(), so the video plane was never given
+an FB_ID.
+
+The failure is silent in exactly the way that matters: mpv logs "Using direct
+DRM PRIME video-plane scanout", the atomic commits that do happen all succeed,
+audio plays normally, and the panel shows only the black primary plane. On an
+H713 the DRM state made it plain -- plane[38] video-0 with crtc=(null) fb=0
+while 755 "Hole in swapchain?" errors scrolled past.
+
+Test the field that the frame's own type says holds the framebuffer.
+---
+ video/out/vo_drm.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/video/out/vo_drm.c b/video/out/vo_drm.c
+index 519b119d89..e86ebb3cd1 100644
+--- a/video/out/vo_drm.c
++++ b/video/out/vo_drm.c
+@@ -520,12 +520,18 @@ static void flip_page(struct vo *vo)
+         }
+         if (p->fb_queue_len <= 1)
+             break;
+-        if (!p->fb_queue[1] || !p->fb_queue[1]->fb) {
++        // A PRIME frame carries prime_fb.fb_id and leaves ->fb NULL, so the
++        // plain ->fb test rejects every one of them: the frame is dropped here
++        // and queue_flip() never runs, leaving the video plane with no
++        // framebuffer at all. Audio plays, mpv reports the direct path, and the
++        // panel stays black.
++        struct drm_frame *next = p->fb_queue[1];
++        if (!next || (next->prime ? !next->prime_fb.fb_id : !next->fb)) {
+             MP_ERR(vo, "Hole in swapchain?\n");
+             swapchain_step(vo);
+             continue;
+         }
+-        queue_flip(vo, p->fb_queue[1]);
++        queue_flip(vo, next);
+     }
+     drm->redraw = false;
+ }

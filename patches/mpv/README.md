@@ -75,7 +75,15 @@ the RGB console was restored.
 The pre-existing `vo=drm` teardown warning remains: restoring the saved atomic
 state returns `EINVAL` after playback, despite the panel and plane state being
 restored correctly. It is tracked separately and is not introduced by this
-series.
+series. (Measured later: zero atomic-commit failures occur *during* playback,
+so this really is teardown-only.)
+
+**Do not trust the paragraph above about the plane.** It reports the plane as
+detached at exit, which reads as though it had been attached during playback.
+With `0001` alone it never was: `crtc=(null)`, `fb=0`, for the entire run. The
+counts in this section describe decode and export, which were genuinely working
+— they say nothing about what reached the panel. See "The panel was black the
+whole time" at the end of this file.
 
 ## Board state, and the reproducibility gap — 2026-09-03
 
@@ -91,6 +99,10 @@ VO: [drm] 1280x720 vaapi[nv12]
 decode failures: 0        panfrost mentions in the log: 0
 ```
 
+**That evidence was not sufficient and the conclusion drawn from it was wrong.**
+Every line above is printed identically by a build that displays nothing at all
+— see "The panel was black the whole time" below.
+
 **This series has the problem `build-va-driver.sh` was written to solve.** That
 script exists because the VA driver was "built by hand ... nothing in the rootfs
 build produces it, so a fresh flash silently loses hardware decode and the way
@@ -100,13 +112,19 @@ instructions above by hand.
 
 ### `tools/video/build-mpv.sh`
 
-Written to close this. It mirrors `build-va-driver.sh`: applies this series to
-the pinned tag on the host, ships the tree, **builds on the board** so mpv links
-against the board's own FFmpeg/libva/libdrm/ALSA, verifies the direct-path
-marker is present in the resulting binary, installs, stamps
-`/etc/h713-video-stack`, and with `--test` proves the path on hardware.
+Written to close this. It applies this series to the pinned tag on the host,
+builds in an **emulated arm64 container** (the recipe below), verifies the
+direct-path marker in the resulting binary, installs, checks the runtime links
+*on the board*, stamps `/etc/h713-video-stack`, and with `--test` proves the
+path on hardware.
 
-Two deliberate choices:
+```sh
+tools/video/build-mpv.sh                       # build + verify only
+BOARD=192.168.4.1 tools/video/build-mpv.sh --install --test
+tools/video/build-mpv.sh --rebuild-rootfs      # after changing DEPS
+```
+
+Deliberate choices, each bought with a debugging round:
 
 - **Installs to `/usr/local/bin/mpv`, not `/usr/bin/mpv`.** Debian owns the
   latter, so overwriting it means the next `apt upgrade` silently reverts the
@@ -115,21 +133,16 @@ Two deliberate choices:
 - **Verifies the marker string in the built binary.** A series that failed to
   apply would otherwise install a stock mpv and look like success until someone
   read the logs.
+- **Runs `ldd` on the board after installing and fails on any `not found`.**
+  This is what replaces `build-va-driver.sh`'s on-board build — see
+  "-dev is a build-time need only" below for why it is not optional.
+- **Names the missing host prerequisite exactly**, especially
+  `debian-archive-keyring`, which cost four failed attempts when absent.
+- **Caches the 1.1 GB rootfs** in `local/upstream/mpv-arm64/` (gitignored) and
+  reuses it; only `--rebuild-rootfs` pays for it again.
 
-**It cannot run yet.** The board has no default route, and building mpv needs
-dev packages it does not have:
-
-```text
-pkgconfig:libavcodec  libavformat  libavutil  libswscale  alsa
-```
-
-(`meson`, `ninja`, `cc`, `pkg-config`, `libva` and `libdrm` are all present —
-which is why the VA driver builds there fine.) The script checks this first and
-stops with the exact list rather than failing deep inside meson. Supply the
-arm64 `-dev` packages — temporary route, or copied `.deb` files — and it runs.
-
-Until then `/root/mpv-h713-test` remains the only artifact, and a reflash loses
-it.
+It does **not** build on the board, unlike `build-va-driver.sh`. That is not a
+convenience choice: see the space finding below.
 
 ## SOLVED — cross-build recipe that works (2026-09-03)
 
@@ -181,6 +194,9 @@ VO: [drm] 1280x720 vaapi[nv12]
 decode failures: 0     panfrost mentions: 0
 ```
 
+(The cross-build itself is what this proves. The playback claim it appears to
+support was false — again, see "The panel was black the whole time".)
+
 Two things to know. `libdisplay-info-dev` is required by `-Ddrm=enabled`
 alongside `libdrm` and is easy to miss — mpv's `meson.build:934` is the
 authority. And **apt does not work inside the emulated chroot** (`Sub-process
@@ -210,11 +226,11 @@ error while the build script still reported success — it only greps the binary
 for the direct-path marker, which says nothing about whether the target can load
 it.
 
-**`tools/video/build-mpv.sh` still builds on the board and therefore cannot
-work** — see the space finding below. When rewriting it around this recipe, add
-a runtime-link gate: after installing, run `ldd` on the board and fail if
-anything reports `not found`. Building off-target trades the on-board ABI
-guarantee for speed, and that check is what buys the guarantee back.
+**`tools/video/build-mpv.sh` is now built around this recipe** and carries the
+runtime-link gate that follows from the paragraph above: after installing it
+runs `ldd` on the board and fails if anything reports `not found`. Building
+off-target trades the on-board ABI guarantee for speed, and that check is what
+buys the guarantee back.
 
 ## Superseded: cross-build attempt — blocked on mmdebstrap keyring plumbing
 
@@ -275,3 +291,70 @@ guessed: libavcodec, libavfilter, libavformat, libavutil, libswresample,
 libswscale, libplacebo, libass — plus alsa, libva and libdrm for this
 configuration. An earlier guess omitted libavfilter, libplacebo and libass and
 cost three round trips.
+
+## The panel was black the whole time — found and fixed 2026-09-03
+
+`vo=drm` with `--hwdec=vaapi` had **never put a picture on the panel**. It was
+found the first time anyone played a clip with audio and looked at the screen:
+the sound was correct and the panel was black. Everything that had been used as
+evidence up to that point — including the two log blocks above and this
+script's own `--test` gate — reported success throughout.
+
+### Root cause
+
+[`0002-vo_drm-flip-PRIME-frames-not-swapchain-holes.patch`](0002-vo_drm-flip-PRIME-frames-not-swapchain-holes.patch).
+`flip_page()` validated the next queued frame with `!frame->fb`:
+
+```c
+if (!p->fb_queue[1] || !p->fb_queue[1]->fb) {
+    MP_ERR(vo, "Hole in swapchain?\n");
+```
+
+A PRIME frame stores its framebuffer in `prime_fb.fb_id` and leaves `->fb` NULL
+— `enqueue_prime_frame()` never sets it. So every decoded frame matched the
+"hole" branch, was dequeued, and `queue_flip()` never ran. The video plane was
+never given an `FB_ID`; what reached the panel was the black primary plane.
+
+Decode, export and the atomic commits were all fine. The frames were discarded
+at the very last step.
+
+### Why every check missed it
+
+The kernel's own state said so plainly, and nothing was reading it:
+
+```text
+plane[38]: video-0        <- pre-fix          plane[38]: video-0    <- fixed
+	crtc=(null)                                      crtc=crtc-0
+	fb=0                                             fb=47 -> 48
+```
+
+mpv prints `Using direct DRM PRIME video-plane scanout` when it **selects** the
+path, not when a frame reaches the screen. A gate that greps for it passes a
+permanently black panel forever. Confirmed by running the current gate against
+the pre-fix binary: it fails with the exact diagnosis, where the log-only gate
+passed.
+
+### What the gate checks now
+
+`tools/video/build-mpv.sh --test` reads `/sys/kernel/debug/dri/*/state` while
+playback is running, and requires:
+
+- the drmprime plane is attached to a CRTC;
+- it holds a framebuffer;
+- **that framebuffer changes between two samples** — a frozen fb id is a still
+  picture, and no mpv log line tells it apart from working video;
+- zero `Hole in swapchain?`, the signature of frames dropped before the flip;
+- no new IOMMU faults or Cedrus timeouts in `dmesg` during the run.
+
+`--test` on its own now gates what is installed on the board and skips the
+build. A 20-minute emulated rebuild to check a gate is enough friction that the
+gate stops being run.
+
+### The lesson, which this project keeps relearning
+
+Every instrument in play reported the component it owned, correctly, and the
+composite was still broken. mpv answered "did I choose the path", the marker
+grep answered "did the patch compile in", the VA gates answered "did decode
+produce right bytes". **Nobody asked the display whether anything was on it.**
+Ask what a passing suite is blind to — and when the deliverable is a picture,
+one look at the panel outranks every log in the stack.
