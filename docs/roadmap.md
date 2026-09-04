@@ -228,11 +228,14 @@ attached, the display path can be brought up here, not only on the projector
 
    Two routes remain for anything above 720p:
 
-   - **Drive the inline scaler from Linux with the MIPS parked** — now the live
-     lead. Known address, decoded encoding, readable from Linux with the MIPS
-     parked, and we know which registers stock writes. Untested: whether it sits
-     upstream or downstream of the DECD fetch on our route, and whether it
-     responds at all with the MIPS parked.
+   - **~~Drive the inline scaler from Linux with the MIPS parked~~ — CLOSED
+     2026-09-04.** Tested twice with the operator watching: the ratio registers
+     take writes but changing them does nothing, MIPS parked or alive, because
+     the MIPS owns presentation through its own window state. The live route is
+     now to become stock's ARM side and drive the window layer —
+     **[mips-window-layer-plan.md](mips-window-layer-plan.md)** has the plan,
+     the descriptor offsets recovered from the firmware, the hazards, and the
+     closed routes.
    - **Fix the GPU path's artifacts** — `vo=gpu` on the stock mpv runs 1080p at
      ~0.83x realtime with sync intact but 481 dropped frames and visible
      artifacts. Cheapest route to a usable 1080p today, and note there is no 2D
