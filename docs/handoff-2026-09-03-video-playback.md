@@ -324,3 +324,52 @@ no operator time, no visible test. The wedge that cost a power cycle came from
 running a hardware path *before* asking what it would do when refused. **The
 cheap measurement first; the destructive experiment never without a bound on
 it.**
+
+### DECD cannot scale either — settled 2026-09-03 by register dump
+
+The full 1 KiB DECD window was dumped during a live 720p playback. It has **two
+source instances**, and each carries exactly one coordinate space:
+
+```text
+video source                       second source (RGB/UI, stride 5120 = 1280x4)
+0x20 0x02CF04FF  719,1279          0x150 0x02CF04FF  719,1279
+0x24 0x002C004F  44,79 (16-px)     0x154 0x002C004F
+0x30 0x02D00500  720,1280          0x160 0x02D00500  720,1280
+0x40 0x00000500  Y stride 1280     0x170 0x00001400  stride 5120
+0x44 0x00000500  C stride 1280     0x174 0x02D01400  720, stride 5120
+0x48 0x02D00500  luma 1280x720
+0x4c 0x01680500  chroma 1280x360
+0x70..0x7c       Y ring x4         0x84..0x90  C ring x4 (Y + 0xE1000)
+```
+
+**No destination geometry and no ratio register anywhere in the window.** A
+scaler needs two coordinate spaces — the block at `0x05000000` has exactly that
+(1080/540 and 720/360, ratios at `0x40` unity) and DECD has one. Combined with
+that scaler being inert on our path, the conclusion is:
+
+> **Our display path has no scaling capability at all. 1280x720 is the only
+> geometry DECD will fetch and present.**
+
+Both results were obtained from register reads around ordinary playback — no
+visible tests, no operator time, no risk to the hardware.
+
+### Where scaling could actually come from
+
+| route | status | cost |
+| --- | --- | --- |
+| DECD | **ruled out** — one geometry, no ratio | — |
+| scaler at `0x05000000` | **ruled out** — not in our path, inert | — |
+| GPU (`vo=gpu`, Panfrost) | works today, **artifacts + 481 drops** at 1080p | cheap to investigate; costs the no-GPU property, and needs stock mpv (ours is `-Dgl=disabled`) |
+| **GE2D at `0x5240000`** | untouched; the real candidate | **no mainline driver exists** — `drivers/media/platform/sunxi/` has csi, di and rotate only |
+
+GE2D is the strongest lead. It is a genuine 2D engine with scaling, it already
+sits on **IOMMU master 2 alongside DECD** (`docs/iommu-port.md`), nothing in our
+tree drives it, and the RE material is unusually good: `ge2d_dev.ko` from board
+B is **ARM 32-bit, unstripped, 926 symbols, relocations intact**, already
+extracted (see `docs/ge2d-plane-open-re.md` for the recipe). The shape of the
+work is a V4L2 M2M driver: decode 1080p on the VE → GE2D scales to 720p → DECD
+presents. No MIPS involvement.
+
+Suggested order: characterise the GPU path's artifacts first (cheap, and it is
+the only thing that puts 1080p on the panel today), then decide whether GE2D is
+worth a driver.
