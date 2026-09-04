@@ -151,11 +151,20 @@ law — but testing it costs a power cycle per attempt.
    alone may never be latched. What the disassembly of the configuring routine
    now shows is more useful than another guess:
 
-   - **The scaler's registers are filled from a PanelWinNode window descriptor,
-     gated by dirty bits** — `+0x01b4`/`+0x0174` take `lw` of `s0+0x90`/`+0x94`
+   - **The scaler's registers are filled from a window descriptor, gated by
+     dirty bits** — `+0x01b4`/`+0x0174` take `lw` of `s0+0x90`/`+0x94`
      and `s0+0x9c`/`+0xa0`, `+0x00f0` takes `s0+0xa8`/`+0xac`. The firmware does
      no ratio arithmetic here; it copies precomputed fields. The scaler is part
      of the **window/composition layer**, not a standalone block.
+
+     > **Corrected 2026-09-04.** The descriptor is an **`NRWinNode`**, not a
+     > PanelWinNode, and the routine is `0x8b1a48cc` — `NRWinNode` vtable slot 4.
+     > `0x8b1a4810` is an out-of-line cold block of a *different*, AFBD-only
+     > function that starts at `0x8b1a4538`; the "364-instruction routine that
+     > programs both blocks" read across a function boundary. Also **there is a
+     > second scaler**, `PanelWinNode`'s panel down-scaler at
+     > `0x051c0124`–`0x051c0138`, inside the LVDS window our driver already maps.
+     > [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md)
    - **Field layout, from the `ins` masks:** `+0x0174` and `+0x01b4` are
      `{[27:16] 12-bit, [15:0] 16-bit}` — *not* two 16-bit halves as assumed.
      `+0x00f0` is two 8-bit fields at `[7:0]` and `[15:8]`. `+0x0178`/`+0x01b8`

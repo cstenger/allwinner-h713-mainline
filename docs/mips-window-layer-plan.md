@@ -5,6 +5,29 @@ says otherwise; the two things that are *not* proven are called out in
 [What is not proven](#what-is-not-proven), and you should read that section
 before spending a week on this.
 
+> ## ⚠ REVISED 2026-09-04, later — step 1 ran, and it moved the target
+>
+> Step 1 was done as desk work and is written up in
+> [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md).
+> Three things changed:
+>
+> 1. **`display.bin` has RTTI**, so the whole window layer reads out by name:
+>    five `*WinNode` classes, a `TWindowManager`, a `TWCETop`, and which
+>    hardware block each node owns. It is not the black box this plan assumed.
+> 2. **The scaler at `0x05000000` belongs to `NRWinNode`, not `PanelWinNode`**,
+>    and the routine "at `0x8b1a4810`" is two functions read as one — see
+>    [the descriptor section](#what-the-firmware-tells-us-about-the-descriptor).
+> 3. **There is a second scaler, and it is in a window our driver already
+>    maps.** `PanelWinNode::WriteDownScalerRatio` drives a panel down-scaler at
+>    `0x051c0124`–`0x051c0138`, whose decode is confirmed register-for-register
+>    against a stock capture. That makes the "does this hardware scale" question
+>    answerable for one DT line and one write, instead of for a window-layer
+>    port. **The step order below is rewritten around it.**
+>
+> The old step 1 — RE `svp_ioctl` → `tgd_put_plane_info` — is withdrawn. That
+> path was disassembled end to end on 2026-08-26 and is the RGB OSD flip; it
+> never signals the MIPS. See [Closed routes](#closed-routes-do-not-re-run-these).
+
 ## The goal, and why this route
 
 Put 1080p on the 1280x720 panel using the SoC's own scaler, with no GPU.
@@ -34,6 +57,15 @@ the two arrangements cannot be mixed:
 descriptors the MIPS reads, and signal it. There is no shortcut; the cheap ones
 are all tested and closed (see [Closed routes](#closed-routes-do-not-re-run-these)).
 
+> **Amended 2026-09-04.** That table is about **one** scaler, `0x05000000`, and
+> it is `NRWinNode`'s — the source stage, which our path genuinely bypasses.
+> There is a **second** one: `PanelWinNode` drives a panel down-scaler at
+> `0x051c0124`–`0x051c0138`, in the LVDS window row 3 of that table says we map.
+> Whether it is live with the MIPS parked is unmeasured — but unlike
+> `0x05000000`, this block is *demonstrably* in our path, because our own plane
+> selector at `0x051c006c` sits in it. Steps A and B below test it, and they are
+> much cheaper than becoming stock's ARM side.
+
 ## What is already established, and where it lives
 
 Read these before touching anything. Most of a session was spent re-deriving
@@ -43,7 +75,9 @@ facts that were already written down.
 | --- | --- |
 | Stock scales with the inline scaler at `0x05000000`, MIPS-driven — 45 `lui` sites, more than any other display block, writing the ratio and coordinate registers | [status.md](status.md) |
 | The scaler is **inline, not a fetcher** — all 45 accesses are `lw`/`sw` read-modify-write to the same offset, no address is ever stored | [status.md](status.md) |
-| The scaler's fields are **copied from a PanelWinNode window descriptor**, gated by dirty bits, by the routine at `0x8b1a4810` | [status.md](status.md) |
+| The scaler's fields are **copied from a window descriptor**, gated by dirty bits — the node is `NRWinNode`, not PanelWinNode, and the routine is `0x8b1a48cc` | [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md) (corrects [status.md](status.md)) |
+| The WCE class map: five `*WinNode` classes, which block each owns, the `TWindowManager` vtable, the `win` debug command | [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md) |
+| **A second scaler — the panel down-scaler at `0x051c0124`–`0x051c0138`**, decode confirmed against a stock capture | [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md) |
 | The MIPS owns presentation; releasing the core blanks an ARM-published image with **every** register identical | [status.md](status.md) |
 | CPU_COMM frame routines are **stubs** (`SetImageBufferAddr` `0x8b10ada8`, `GetImageBufferAddr` `0x8b10adb0` = `jr ra; nop`) | [reference/cpu-comm-call-table.md](reference/cpu-comm-call-table.md) |
 | `ge2d@5240000` is the **display controller, not a 2D engine** — killed 2026-08-25, revived and re-killed twice since | [handoff-2026-08-24-display.md](handoff-2026-08-24-display.md) "Hardware colour conversion", [kms-display.md](kms-display.md) |
@@ -61,8 +95,23 @@ offset is `VA - 0x8b100000`.
 
 ## What the firmware tells us about the descriptor
 
-From disassembling `0x8b1a4810` (the routine that programs both AFBD and the
-scaler). `s0` is the window object, `s1` the dirty mask.
+> **Corrected 2026-09-04.** There is no single routine that programs both
+> blocks. `0x8b1a4810` sits in the *out-of-line cold blocks* of a function that
+> starts at `0x8b1a4538` and has already returned by then; reading forward from
+> it crosses into a second function. `0x8b1a4810` is also **dead** — no branch
+> or jump anywhere in the image targets it. The two functions are:
+>
+> - **`0x8b1a4538`** — AFBD only (`0xba60` × 8), ending on the commit pair
+>   `0x05600014` bit 0 and `0x0560006c` bit 0 that our driver already writes.
+> - **`0x8b1a48cc`** — the scaler only (`0xba00` × 15), which then *calls* the
+>   AFBD one. It has no `jal` caller: it is **`NRWinNode` vtable slot 4**.
+>
+> The register list below is unaffected and was independently re-derived. Only
+> the owning class changes, and it matters: the descriptor to populate is an
+> `NRWinNode` (`m_in_win`, `m_out_win`, `m_crop_win`, `m_read_fetch_win`), not a
+> PanelWinNode.
+
+From disassembling `0x8b1a48cc`. `s0` is the window object, `s1` the dirty mask.
 
 ```
 s0+0x4c, s0+0x50   branch selectors (0x50 == 0 takes the hardcoded fallback)
@@ -93,31 +142,90 @@ them.
 
 ## The plan
 
-### Step 1 — RE the ARM-side entry point (static, no board)
+**Do steps A and B before anything else.** They test the plan's load-bearing
+unproven assumption — that this hardware scales at all — for one DT line and one
+register write, on our existing path with the MIPS parked. If they come back
+negative the whole window-layer port loses its payoff, and it is much better to
+learn that in an afternoon than after it.
 
-`ge2d_dev.ko`, board B, ARM 32-bit, **unstripped, 1111 symbols, relocations
-intact**. SHA-256 `a79017e5d3bc9563135e463404d3bb38bf6f263d5b31fbe122768f2dca11583f`,
-stashed at `local/h713-lab/extracted/ge2d_dev.ko` (gitignored; extraction recipe
-in [ge2d-plane-open-re.md](ge2d-plane-open-re.md)). Disassemble with
-`llvm-objdump -d --triple=armv7-none-linux-gnueabi`.
+### Step A — read the panel down-scaler (no writes, no risk)
 
-The runtime path is **`svp_ioctl` -> `tgd_put_plane_info`** (not
-`tgd_init_planesetting`, which is probe-time only — that correction is already
-in the doc and was itself a method error worth reading). Recover:
+`PanelWinNode::WriteDownScalerRatio` programs a down-scaler in the **LVDS
+window our KMS driver already maps**:
 
-1. the ioctl number and the payload struct `tgd_put_plane_info` takes;
-2. how that payload becomes the window object the firmware reads at `s0`
-   (offsets above) — most likely a shared-memory descriptor, since CPU_COMM
-   cannot carry frames;
-3. **the signalling mechanism** — how ARM tells the MIPS a window changed, i.e.
-   what sets the dirty mask that arrives in `s1`. This is the crux. Without it
-   the descriptor is inert and you will reproduce 09-04's null.
+```
+0x051c0124  bits [26:25] = 3            enable
+0x051c0128  bits [15:0]  = width
+0x051c012c  bits [15:0]  = height
+0x051c0130  = (width << 16) | height
+0x051c0138  bits [21:0]  = ratio, 16.16 fixed point
+```
 
-Cross-check against the firmware side: `tgd_vblender_irq`, `tgd_flip_plane`,
-`lvds_reset_fifo` are all in the same binary, and `0x8b1a4810`'s callers on the
-MIPS side bound what the protocol can be.
+Stock Android at idle holds these enabled at unity — `0x06000000`, `0x500`,
+`0x2D0`, `0x050002D0`, `0x08010000` — which matches the disassembly on all five.
+**Nobody has ever read them on our board**: `patches/kernel/0078` maps
+`<0x051c0000 0x100>`, 0x24 bytes short, and no `h713_disp dump` block reaches
+them either.
 
-### Step 2 — the minimal liveness experiment (one power cycle)
+So: read `0x051c0120`–`0x051c0140` with the MIPS parked and 720p scanning out.
+Is the block enabled? At what ratio? That is a `devmem` loop and it discriminates
+"U-Boot leaves this configured" from "this is stock-only state".
+
+### Step B — write a non-unity ratio, with an operator watching
+
+Widen the DT `lvds` window from `0x100` to `0x200` — one line, no new node —
+then set `0x051c0138[21:0]` away from `0x010000` while 720p is confirmed
+scanning out (four distinct fbs cycling), and restore.
+
+**This is the cheapest available test of "does this hardware scale."** Unlike
+`0x05000000`, this block is demonstrably in our path with the MIPS parked: our
+driver's plane selector at `0x051c006c` lives in it and its effect was
+established causally
+([reference/lvds-006c-stock-causal-2026-08-31.md](reference/lvds-006c-stock-causal-2026-08-31.md)).
+
+Bound the risk the way the earlier ratio test did: one register, held for a
+fixed dwell, restored and verified. If `0x0124`'s enable reads clear in step A,
+set it as part of the same test rather than as a separate run — but change one
+thing at a time across runs, not within one.
+
+### Step C — the `win` debug command, for free geometry and a second lever
+
+The firmware ships a top-level `win` shell command
+([reference](reference/mips-wce-window-layer-2026-09-04.md)):
+
+```
+win wi          get all win size info    -> DumpAllNodeWinInfo
+win wm          get win mgr info         -> DbgDumpWindowConfig
+win os <0..100> set overscan             -> TWindowManager::SetOverScanRatio
+win rn <0..2>   set refresh node
+```
+
+`win wi` prints the live geometry of every window node — the descriptor content
+this plan proposes to reconstruct by disassembly — and `win os` is a second,
+independent scaling lever needing no descriptor work.
+
+Reaching it needs no wire and no firmware patch:
+[mips-display-recovery.md](mips-display-recovery.md) established that
+`shell_thread_monitor` is registered on an **uncached** SysView ring at
+`0x4bd01000`, ARM-reachable, and confirmed that on hardware in 2026-08-07 — the
+ring has simply never been driven. Writing that pump is static work. Check
+first whether the `0x2000` flag on the `win` table entry gates it behind a
+privilege level; that is not yet verified.
+
+### Step D — RE the ARM-side entry point (static, no board)
+
+Only if A–C say the payoff is real. **Do not start from `ge2d_dev.ko`** — its
+`svp_ioctl` → `tgd_put_plane_info` was disassembled end to end on 2026-08-26 and
+is the RGB OSD flip, RGB-only, writing AFBD channel registers directly and never
+signalling the MIPS.
+
+What is still unrecovered is the **signalling mechanism**: what sets the dirty
+mask that arrives in `s1` at `NRWinNode` slot 4. CPU_COMM `Wce_SetWindow` is not
+it (its worker is a stub at `0x8b1099c8`; re-verified 2026-09-04). Start from the
+MIPS side instead — who calls `TWCETop::SetWindow` and `TWindowManager::UpdateWce`,
+and what `WinMgrCallback0`/`WinMgrCallback1` are wired to.
+
+### Step E — the minimal liveness experiment (one power cycle)
 
 Do **not** start with video. Get *any* image on the panel with the core running.
 
@@ -139,15 +247,15 @@ Populate a descriptor, signal it, and see whether anything appears.
 
 Success here is a picture — any picture — with `0x0306101c == 1`.
 
-### Step 3 — only then, geometry and scaling
+### Step F — only then, geometry and scaling through the descriptor
 
 With a frame presenting, set a non-unity ratio in `+0x0174`/`+0x0274` through the
 descriptor (not by poking the register — poking it directly was tested and did
 nothing). That is the first real evidence the block scales.
 
-### Step 4 — video
+### Step G — video
 
-Only after step 3. This is where the hard lock lives; see below.
+Only after step F. This is where the hard lock lives; see below.
 
 ## Hurdles, in the order you will hit them
 
@@ -156,7 +264,7 @@ Only after step 3. This is where the hard lock lives; see below.
   ([reference/cedrus-decd-first-visible-playback-2026-08-31.md](reference/cedrus-decd-first-visible-playback-2026-08-31.md))
   Stock runs decode and MIPS display together fine, so this is *plausibly* our
   dual-ownership contention rather than a hardware law — but it is untested, and
-  it is why step 4 comes last.
+  it is why step G comes last.
 - **`h713_disp init` renders nothing.** A black panel after it is expected, not a
   fault. On 09-04 this was misdiagnosed as the warm-reboot panel-power no-op and
   cost a power cycle. Check whether anything actually published an image before
@@ -217,18 +325,22 @@ Only after step 3. This is where the hard lock lives; see below.
 | Committing an ARM-programmed AFBD frame with the core alive | **ignored** — this is what proves the MIPS owns presentation. |
 | Patch 0093 (dynamic AFBD geometry) | never seen on the panel; programs 4 of the 7 source-geometry words. Kept on disk, out of `series`. |
 | DECD as a scaler | **dead** — one coordinate space, no ratio register in the whole 1 KiB window. |
+| `svp_ioctl` → `tgd_put_plane_info` as the window-layer entry | **dead** — disassembled end to end 2026-08-26. RGB-only OSD flip, writes AFBD channel registers directly, never signals the MIPS. This was step 1 of the first draft of this plan. |
+| CPU_COMM `Wce_SetWindow` | **dead** — real prologue, but its worker `0x8b1099c8` is `jr ra; addiu v0,zero,1`. It writes three globals that only `Wce_GetWindow` reads back. Re-verified 2026-09-04. |
 
 ## What is not proven
 
-1. **That this hardware scales at all.** It is an inference from the firmware
-   writing ratio-shaped registers with 1080/540 and 720/360 coordinate pairs.
-   Strong, but no frame has ever been seen to change size. If the descriptor
-   path works and the ratio still does nothing, the payoff evaporates — so get
-   to step 3 as early as the work allows.
+1. **That this hardware scales at all.** Still the load-bearing unknown: no frame
+   has ever been seen to change size. The evidence got stronger on 2026-09-04 —
+   `TWCETop::IsEnablePanelDownScaler` gates on the panel being **shorter than
+   1080** and stock ships the panel down-scaler *enabled at unity* — but that is
+   still firmware reading, not a picture. **Steps A and B exist to settle it for
+   one DT line and one register write; do them first.** If the ratio does
+   nothing there, the payoff for the whole window-layer port evaporates.
 2. **That live MIPS plus Cedrus traffic can coexist.** Stock does it; we locked
    the SoC trying. Whether that is contention or a hardware law is untested.
 
-If step 2 cannot be made to work in a reasonable session, the honest fallback is
+If step E cannot be made to work in a reasonable session, the honest fallback is
 characterising the GPU path's artifacts — nobody has yet spent a session on
 *why* `vo=gpu` drops 481 frames, and it is the only thing that puts 1080p on the
 panel today.
