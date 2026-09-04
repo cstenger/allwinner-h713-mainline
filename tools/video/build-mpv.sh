@@ -281,6 +281,11 @@ EOF
 				sed -n "s/.*fb=//p" | head -1)
 		fi
 		holes=$(grep -c "Hole in swapchain?" /tmp/mpv-direct-test.log || true)
+		# A rejected commit reprograms the plane on every retry, so an unbounded
+		# retry loop is not wasted cycles -- 890,454 of them wedged the display
+		# hardware until a power cycle. Any nonzero count is a defect.
+		flipfails=$(grep -c "Failed to queue DRM PRIME" /tmp/mpv-direct-test.log || true)
+		gaveup=$(grep -c "giving up on the direct path" /tmp/mpv-direct-test.log || true)
 		fails=$(grep -c "hardware accelerator failed" /tmp/mpv-direct-test.log || true)
 		kerr=$(dmesg | tail -n +$((dmesg_mark + 1)) |
 			grep -cE "Page fault|timed out|iommu" || true)
@@ -292,6 +297,7 @@ EOF
 		echo "    plane crtc:      ${pcrtc:-<unread>}"
 		echo "    plane fb:        ${pfb1:-<unread>} then ${pfb2:-<unread>}"
 		echo "    swapchain holes: $holes"
+		echo "    failed flips:    $flipfails"
 		echo "    decode failures: $fails"
 		echo "    new kernel faults/timeouts: $kerr"
 
@@ -311,6 +317,10 @@ EOF
 			{ echo "    the video plane framebuffer never changed -- frames are not flipping"; ok=0; }
 		[ "$holes" = 0 ] ||
 			{ echo "    frames are being dropped before the flip"; ok=0; }
+		[ "$flipfails" = 0 ] ||
+			{ echo "    the kernel is rejecting plane commits -- each retry reprograms the hardware"; ok=0; }
+		[ "$gaveup" = 0 ] ||
+			{ echo "    the direct path was abandoned after repeated flip failures"; ok=0; }
 		[ "$fails" = 0 ] || ok=0
 		[ "$kerr" = 0 ] ||
 			{ echo "    the kernel logged faults or timeouts during playback"; ok=0; }

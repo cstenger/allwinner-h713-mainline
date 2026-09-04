@@ -243,3 +243,72 @@ Two smaller ones, both of which cost real time today:
 - **Verify a gate can fail before trusting that it passed.** The plane-state
   gate is only credible because it was run against the broken binary and
   produced the exact diagnosis.
+
+---
+
+## Addendum — the resolution question, answered 2026-09-03 (later)
+
+### Hardware playback works at 1280x720 only
+
+| content | path | result |
+| --- | --- | --- |
+| 1280x720 | `--vo=drm --hwdec=vaapi` | **works**, operator-confirmed |
+| 1920x1080 | `--vo=drm --hwdec=vaapi` | refused; plays audio only |
+| 1920x1080 | `--vo=drm --hwdec=vaapi-copy` | ~0.2x realtime, audio 41 s ahead — unusable |
+| 1920x1080 | stock mpv `--vo=gpu` (Panfrost) | ~0.83x realtime, sync fine, **481 dropped frames, visible artifacts** |
+
+The GPU path is the only one that puts 1080p on the panel at all, and it does so
+badly. It also needs the **stock** `/usr/bin/mpv`: our build is `-Dgl=disabled`
+on purpose, so `gpu-context=drm` is not compiled into it.
+
+### The scaler at 0x05000000 is NOT in our path
+
+`docs/reference/firmware-display-block-survey-2026-08-31.md` identifies
+`0x05000000` as a scaler and decodes its encoding — ratios in 1/64 units with
+`0x40` as unity, luma/chroma height pairs for two coordinate spaces. Read live
+on 2026-09-03 it holds exactly that:
+
+```text
++0x174 0x00400040   +0x178 0x6002021C (540)   +0x1b8 0x60020438 (1080)
++0x274 0x00400040   +0x278 0x60020168 (360)   +0x2b8 0x600202D0 (720)
+```
+
+**But it stayed completely inert through a real playback on our path.** The RE
+saw bit 31 set when a stock frame lands; across before/during/after samples of a
+working DECD playback it never moved. Our driver maps `route` (0x5140000),
+`lvds` (0x51C0000) and DECD (0x5600000) — that scaler belongs to the MIPS
+pipeline. **Programming it is not the route to a scaling KMS plane.**
+
+The open lead is DECD itself: its source geometry is programmable (the four
+source-geometry words that fixed the horizontal repeat carried an inherited
+1920x1088 fallback), so it distinguishes source from output. Whether it *scales*
+between them or merely crops is **unknown and untested**. Establish that before
+writing any driver code.
+
+### An unbounded retry loop wedged the display — patch 0003
+
+Feeding 1080p to the direct path produced **890,454** failed atomic commits
+(`ERANGE`) with the clock frozen at `00:00:00` and audio playing. The geometry
+guard checked "uncropped" and "fullscreen" but never that the two were **the
+same size**, so any non-native resolution passed it and asked a plane that
+cannot scale to scale.
+
+Every retry reprograms the plane. That is not wasted cycles: it faulted the
+video source on **IOMMU master 2** (`0xf8e12000`, adjacent to the RGB
+framebuffer's `0xf8c00000`) and left the video plane showing black for the
+720p clip that had worked minutes earlier. A power cycle cleared it.
+
+[`0003-vo_drm-refuse-to-scale-and-stop-retrying-a-doomed-flip.patch`](../patches/mpv/0003-vo_drm-refuse-to-scale-and-stop-retrying-a-doomed-flip.patch)
+rejects the scaling request up front, and independently abandons the direct path
+after 60 consecutive failed flips. Verified: 890,454 failures → **0**, no
+faults, plane never attached, 720p unregressed.
+
+The `--test` gate now fails on any failed flip, which it previously ignored.
+
+### Method note
+
+The scaler was ruled out for free — three register reads around a playback,
+no operator time, no visible test. The wedge that cost a power cycle came from
+running a hardware path *before* asking what it would do when refused. **The
+cheap measurement first; the destructive experiment never without a bound on
+it.**
