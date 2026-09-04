@@ -14,13 +14,17 @@ a reflash, and discovering that `vo=drm` had never actually displayed anything.
 
 | | |
 | --- | --- |
-| repo | `fddcb6c` on `h713-display-video-path`, **pushed**, in sync with origin |
+| repo | `5d86a0d` on `h713-display-video-path` |
 | working tree | clean except the pre-existing `external/u-boot` submodule modification — leave it |
-| board | up at `root@192.168.4.1` over its own WiFi AP, ~8.5 h uptime |
+| board | up at `root@192.168.4.1`, freshly power-cycled, zero IOMMU faults |
 | kernel | `6.18.38 #1 SMP Thu Sep 3`, includes out-of-series patch 0092 |
 | VA driver | series `f4b13b628e610aa2`, 7 patches, installed 14:03 |
-| mpv | series `b8ba2246d667e4c6`, **2 patches**, installed 17:05, at `/usr/local/bin/mpv` |
-| board disk | **91 MB free of 2.7 GB (97 % full)** — this constrains everything |
+| mpv | series `61bd7e49ecfd14a0`, **3 patches**, installed 17:55, at `/usr/local/bin/mpv` |
+| board disk | **~85 MB free of 2.7 GB (97 % full)** — this constrains everything |
+
+**Read the addendum at the end of this file before touching resolution or
+scaling.** Hardware playback works at 1280x720 only, and the obvious scaler
+block is not in our path.
 
 Verify all of it in one command:
 
@@ -40,11 +44,12 @@ video; the VA driver and mpv sections both read MATCH.
 /root/av-test.sh                  plays it once through the direct path
 /root/av-loop.sh                  same, looping (for sampling plane state)
 /root/leota-720p.h264             video-only, what the --test gate uses
-/usr/local/bin/mpv.*.bak    2 x   PRE-FIX binaries, both display nothing
+/root/leota-1080p.mp4     6.0 MB  1080p source — the scaling test vector
+/usr/local/bin/mpv.*.bak    3 x   older builds; the two oldest display nothing
 ```
 
-The two `.bak` files are ~4.5 MB on a disk with 91 MB free. Delete them once
-you trust the current build; they are only useful as negative controls.
+The `.bak` files are ~6.6 MB on a disk with ~85 MB free. Delete them once you
+trust the current build; they are only useful as negative controls.
 
 ---
 
@@ -148,8 +153,15 @@ The pre-fix binary is still on the board if you want to re-run that control.
 
 ## 3. What to do next
 
-In rough order of value.
+In rough order of value. **Revised by the addendum below** — item 0 was not
+known when this list was written.
 
+0. **Settle whether DECD can scale.** Hardware playback works at 1280x720 and
+   nothing else, which is the single biggest limit on the board as a video
+   player. The scaler at `0x05000000` is ruled out (see the addendum). The open
+   question is DECD's own source geometry, and it is answerable from the
+   register survey and the firmware format resolver **before** spending any
+   operator time on visible tests.
 1. **Soak playback.** Everything so far is minutes-long runs. The decode path
    has a 2 h / 195 k-frame soak behind it; the *display* path has nothing
    comparable since the fix. Loop `/root/leota-av-720p.mp4` for an hour with
