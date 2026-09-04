@@ -4,6 +4,14 @@ Written at the end of a session that finished audio, opened and then blocked
 HDMI input, and got mpv playing hardware-decoded video. The zero-copy
 investigation that was live in the first draft is now **resolved** in §4.
 
+> **Superseded in part by
+> [handoff-2026-09-03-video-playback.md](handoff-2026-09-03-video-playback.md).**
+> This document remains accurate about **decode**. Its statements about `vo=drm`
+> displaying video are **wrong** — that path was black until a bug found later
+> the same day, and §6's "unexplained, harmless so far" teardown `EINVAL` was
+> the only symptom anyone had noticed of a plane that was never programmed.
+> Start with the playback handoff for current state.
+
 Read alongside: [video-decode.md](video-decode.md) (the live investigation),
 [audio.md](audio.md), [hdmi-in.md](hdmi-in.md),
 [arisc-route-scope.md](arisc-route-scope.md).
