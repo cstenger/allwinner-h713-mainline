@@ -209,28 +209,53 @@ attached, the display path can be brought up here, not only on the projector
    patched `mpv --vo=drm --hwdec=vaapi` (`patches/mpv/`, built by
    `tools/video/build-mpv.sh`). Operator-confirmed.
 
-   **The remaining limit is resolution, and it is a hardware-capability
-   question, not a driver bug.** Our display path has no scaler: the block at
-   `0x05000000` is a real scaler but stayed inert across a live playback, and
-   DECD's entire 1 KiB window carries one coordinate space per source with no
-   destination geometry and no ratio register. Neither is worth re-testing.
+   **The remaining limit is resolution, and it is structural: we own the
+   fetcher, not the pipeline.** Our KMS driver maps three windows — `afbd`,
+   `route`, `lvds`. It does not map the scaler, the vblender, the mixer or the
+   TCON; those are set up once at U-Boot/MIPS bring-up as a fixed 1280×720
+   single window. So the middle stage of the pipeline is absent from our path:
+   no scaling (DECD is a fetcher with one coordinate space and no ratio
+   register), and **no compositing either** — the two DECD sources are a switch,
+   not a blender, so an OSD over video is the same class of problem.
 
-   Two routes remain for anything above 720p, and item 4 (the GPU) is no longer
-   purely downstream of the display work — it is now the *only* thing that puts
-   1080p on the panel at all:
+   **Stock scales with the inline scaler at `0x05000000`, driven by the MIPS
+   (settled 2026-09-04, static analysis only).** A `lui`-immediate scan of
+   `display.bin` gives that block **45 sites — more than any other display
+   block** — writing exactly the ratio and two-coordinate-space registers we
+   sampled live (`+0x174`/`+0x178`/`+0x1b8`, `+0x274`/`+0x278`/`+0x2b8`). The
+   earlier "inert" reading was taken during a *720p* playback, where an inert
+   scaler is expected either way; it never discriminated.
 
+   Two routes remain for anything above 720p:
+
+   - **Drive the inline scaler from Linux with the MIPS parked** — now the live
+     lead. Known address, decoded encoding, readable from Linux with the MIPS
+     parked, and we know which registers stock writes. Untested: whether it sits
+     upstream or downstream of the DECD fetch on our route, and whether it
+     responds at all with the MIPS parked.
    - **Fix the GPU path's artifacts** — `vo=gpu` on the stock mpv runs 1080p at
      ~0.83x realtime with sync intact but 481 dropped frames and visible
-     artifacts. Cheapest route to a usable 1080p today.
-   - **GE2D at `0x5240000`** — the architecturally right answer (VE decodes,
-     GE2D scales, DECD presents, no MIPS). It already shares IOMMU master 2 with
-     DECD and the vendor `ge2d_dev.ko` is unstripped with 926 symbols, but
-     **there is no mainline GE2D driver**, so it is V4L2 M2M work. Note this
-     contradicts the assumption in the paragraph above that GE2D is "configured
-     once and never touched during playback" — that describes stock's *display*
-     use of it, not its use as a scaler.
+     artifacts. Cheapest route to a usable 1080p today, and note there is no 2D
+     engine to fall back on: after the GPU the only other stage-1 scaler is the
+     CPU.
 
-   Detail: [handoff-2026-09-03-video-playback.md](handoff-2026-09-03-video-playback.md).
+   **~~GE2D at `0x5240000`~~ — DEAD, and dead for the second time.**
+   `ge2d@5240000` is the projector's display controller, not a 2D engine:
+   `compatible = "trix,ge2d"`, reg windows OSD/LVDS/AFBD, vendor sources
+   `sunxi_ge2d_panel.c`/`_backlight.c`/`_dlpc3435.c`/`_osd.c`. `ge2d_dev.ko` has
+   1111 symbols and **zero** matching scale/resize/blit/rotate, and the MIPS
+   firmware never references the block at all. This was established 2026-08-25
+   and marked "do not spend a session on this", then re-introduced here on
+   09-03 and re-confirmed dead on 09-04. Do not propose it a third time.
+
+   **CPU_COMM cannot carry frames to the MIPS either** (asked 2026-09-04):
+   `THal_Vp_SetImageBufferAddr` and `GetImageBufferAddr` are verified stubs,
+   stock's frame handoff is the DECD ring rather than the RPC surface, the
+   scaler is inline so there is no result to return, and live MIPS + real Cedrus
+   traffic is a reproducible whole-SoC hard lock with no watchdog.
+
+   Detail: [handoff-2026-09-03-video-playback.md](handoff-2026-09-03-video-playback.md)
+   and [handoff-2026-09-04-video-scaling-and-display.md](handoff-2026-09-04-video-scaling-and-display.md) §6.
 
    The end-to-end control passes: decoded frame 60 is byte-identical to the
    visible host reference and, copied into one physical carveout run, was

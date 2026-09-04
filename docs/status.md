@@ -4,34 +4,283 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-09-03._
+_Last updated: 2026-09-04._
 
-## Video playback — where it stands, 2026-09-03
+## Video playback — where it stands, 2026-09-04
 
 **A file plays on the panel with picture and sound, hardware-decoded, no GPU.**
 `mpv --vo=drm --hwdec=vaapi` on the patched mpv, operator-confirmed on 720p
 H.264 + AAC. The build is reproducible (`tools/video/build-mpv.sh`, an emulated
 arm64 container) and drift-checked (`tools/video/check-video-stack.sh`).
 
-**It works at 1280×720 and no other resolution, and that is now the headline
-limit.** Two candidate scaling blocks were tested and both are ruled out:
+**It works at 1280×720 and no other resolution, and that is still the headline
+limit.** What changed on 09-04 is that we now know *how stock does it*.
 
-| block | verdict | evidence |
-| --- | --- | --- |
-| scaler at `0x05000000` | **not in our path** | holds ratios and two coordinate spaces, but stayed inert across before/during/after samples of a live playback — bit 31 never set |
-| DECD `0x05600000` | **cannot scale** | both source instances carry one coordinate space; no destination geometry and no ratio register in the whole 1 KiB window |
+### Why our path cannot scale: we own the fetcher, not the pipeline
 
-What remains for 1080p, in the order worth trying:
+The silicon has a full display pipeline — fetch, then a manipulation chain
+(scale, blend, compose), then serialize. Our KMS driver maps **three** windows:
+`afbd` (`0x5600000`), `route` (`0x5140000`), `lvds` (`0x51c0000`). It does not
+map the scaler, the vblender (`0x5200000`), the mixer (`0x525c000`) or the TCON
+(`0x5880000`). Those are configured once during U-Boot/MIPS bring-up into a
+fixed 1280×720 single-window setup and never touched again.
 
-1. **Fix the GPU path's artifacts.** `vo=gpu` on the *stock* mpv is the only
+So on our path the middle stage is absent: stage 1 hands straight to stage 3.
+Two consequences, both load-bearing:
+
+- **No scaling.** DECD is a fetcher — one coordinate space, geometry and stride,
+  no ratio register anywhere in its 1 KiB window.
+- **No compositing.** The two DECD sources are a **switch, not a blender**: the
+  driver quiesces RGB before enabling video and flips the selector at
+  `0x051c006c` between `0x29000000` and `0x39000000`. Subtitles or an OSD over
+  video are therefore the same class of problem as scaling.
+
+### How stock scales: the inline scaler, MIPS-driven (settled 2026-09-04)
+
+Static analysis of `display.bin`, no board time. A `lui`-immediate scan
+(little-endian; `0xba60`/AFBD as positive control) over the MIPS address space
+(**MIPS = ARM + `0xB5000000`**):
+
+| block | MIPS `lui` | sites | verdict |
+| --- | --- | --- | --- |
+| scaler `0x05000000` | `0xba00` | **45** | most-referenced display block in the firmware |
+| LVDS `0x051c0000` | `0xba1c` | 35 | |
+| AFBD `0x05600000` | `0xba60` | 29 | positive control |
+| route `0x05140000` | `0xba14` | 16 | |
+| **GE2D `0x05240000`** | `0xba24` | **0** | never referenced |
+
+At the 45 scaler sites the firmware **writes** exactly the registers sampled
+live on 09-03 — `+0x174` (ratio `0x00400040`), `+0x178` (540), `+0x1b8` (1080),
+and the second coordinate space at `+0x274`/`+0x278` (360)/`+0x2b8` (720).
+**Stock scales inline, in the scanout path, with the MIPS driving it.**
+
+The absence of GE2D is not a method artifact: no block address appears as an
+aligned data constant anywhere in the binary — including the scaler's and
+AFBD's — so this firmware forms every MMIO address from a `lui` immediate.
+
+Bonus confirmation from the same scan: at the AFBD sites stock writes `+0x30`,
+`+0x48` and `+0x4c`, the three source-geometry words our driver never touches.
+See [handoff-2026-09-04-video-scaling-and-display.md](handoff-2026-09-04-video-scaling-and-display.md) §6.
+
+### GE2D is dead, permanently — do not revive it
+
+`ge2d@5240000` **is the projector's display controller, not a 2D engine.**
+`compatible = "trix,ge2d"`; its reg windows are OSD/LVDS/AFBD; its vendor
+sources are `sunxi_ge2d_panel.c`, `_backlight.c`, `_dlpc3435.c` (a TI DLP
+controller), `_osd.c`. `ge2d_dev.ko` has **1111 symbols and zero** matching
+scale/resize/ratio/zoom/stretch/blit/rotate — what it has is `ge2d_fb_init`,
+`ge2d_create_osd_frame`, `tgd_vblender_irq`, `wait_for_disp_vsync`. There is no
+Allwinner G2D on this SoC either.
+
+This was established **2026-08-25** and marked "DEAD — do not spend a session on
+this" in [handoff-2026-08-24-display.md](handoff-2026-08-24-display.md) under
+"Hardware colour conversion", with a matching retraction in
+[kms-display.md](kms-display.md). It was then re-introduced as "the
+architecturally right answer" in the 09-03 revision of this file and re-confirmed
+dead on 09-04. **The name carried the wrong expectation over — Amlogic's GE2D is
+a blitter, this one is a display engine.** If a future revision proposes a GE2D
+driver, that is a regression, not a plan.
+
+### CPU_COMM cannot carry frames — the data path is the DECD ring
+
+Asked and answered 2026-09-04, before any implementation. Handing the scaling to
+the MIPS over CPU_COMM does not work, for three independent reasons:
+
+1. **There is no frame-submit routine.** `THal_Vp_SetImageBufferAddr`
+   (`0x8b10ada8`) and `GetImageBufferAddr` (`0x8b10adb0`) are verified **stubs**
+   (`03e00008 00000000` = `jr ra; nop`). `Wce_SetWindow` has a real prologue but
+   bottoms out in a stub at `0x8b1099c8`. See
+   [reference/cpu-comm-call-table.md](reference/cpu-comm-call-table.md).
+2. **CPU_COMM is a control channel, not a data path.** Stock's frame handoff to
+   the MIPS is the **DECD four-slot Y/C ring** — the same registers our Linux
+   driver now owns. There is nothing to "send".
+3. **The scaler is inline, so there is no result to get back.** It scales during
+   scanout; the output is pixels on the panel, not a buffer.
+
+And the configuration it would require is the one that hard-locks the board:
+live display MIPS + real Cedrus/DECD traffic is a **reproducible whole-SoC lock
+with no watchdog recovery** — physical power cycle
+([reference/cedrus-decd-first-visible-playback-2026-08-31.md](reference/cedrus-decd-first-visible-playback-2026-08-31.md)).
+Note the open caveat: stock runs decode and MIPS display together successfully,
+so that lock is plausibly *our* dual-ownership contention rather than a hardware
+law — but testing it costs a power cycle per attempt.
+
+### What remains for 1080p, in the order worth trying
+
+1. **Drive the inline scaler from Linux, MIPS parked.** Still the live lead, and
+   [tools/display/scaler-probe.sh](../tools/display/scaler-probe.sh) has now
+   measured both halves of it (2026-09-04, MIPS parked, no operator time):
+
+   - **The block is live and fully programmable from Linux.** All six ratio and
+     coordinate registers (`+0x174`/`+0x178`/`+0x1b8`, `+0x274`/`+0x278`/`+0x2b8`)
+     accept `0xDEADBEEF` verbatim — unmasked, full 32-bit — and restore cleanly,
+     with zero IOMMU faults. It is neither held in reset nor register-gated.
+     **Caveat, not yet separated:** this proves the *bus/register* interface is
+     clocked. It does not prove the pixel-processing core is.
+   - **Nothing in it moves under our traffic** — zero of 55 registers changed
+     across a confirmed-scanning-out 720p DECD playback, and zero move at idle.
+     **This does NOT mean it is off our path, and the probe's own first reading
+     of it as such was wrong.** Phase 1 established the block has no
+     free-running state *anywhere* — no counters, no status bits — and both
+     ratio registers read `0x00400040`, **unity**. An inline pass-through
+     configured to do nothing produces exactly this null whether or not pixels
+     flow through it. The measurement does not discriminate.
+
+   **The scaler is INLINE, and coupled to the AFBD fetch — settled by
+   disassembly, no board time.** The 45 call sites fall in 23 functions, and
+   `0x8b1a4810..0x8b1a4dbc` (364 instructions) programs **both** blocks: it opens
+   by read-modify-writing `0x0010(AFBD)` — the video source control — calls three
+   AFBD-only helpers, then programs the scaler's space A
+   (`0x1b8`/`0x178`/`0x1b4`/`0x174`), space B (`0x2b4`/`0x2b8`/`0x274`/`0x278`),
+   the `0x08xx` group, and finishes on `0x0040`. One routine, one pipeline.
+
+   **It is not a fetcher.** Every one of the 45 accesses is `lw` then `sw` to the
+   same offset — pure read-modify-write bit-field configuration. No fresh 32-bit
+   value is ever stored and no address-like value appears anywhere in the window,
+   so the "parallel fetch-and-scale path" reading of its IOMMU master-3 port is
+   **refuted**.
+
+   **The visible ratio test ran 2026-09-04 and is NEGATIVE.** With 720p playing
+   and confirmed scanning out (4 distinct fbs cycling), `0x00800080` (2:1) was
+   held for 8 s in each ratio register — `+0x274` (space B) then `+0x174`
+   (space A) — and restored and verified each time. **Operator watched
+   throughout: no change to the picture on either.** Zero IOMMU faults.
+
+   **What the null does and does not mean.** It is not "the block cannot scale",
+   and it is only weakly "the block is off our path", because a ratio written
+   alone may never be latched. What the disassembly of the configuring routine
+   now shows is more useful than another guess:
+
+   - **The scaler's registers are filled from a PanelWinNode window descriptor,
+     gated by dirty bits** — `+0x01b4`/`+0x0174` take `lw` of `s0+0x90`/`+0x94`
+     and `s0+0x9c`/`+0xa0`, `+0x00f0` takes `s0+0xa8`/`+0xac`. The firmware does
+     no ratio arithmetic here; it copies precomputed fields. The scaler is part
+     of the **window/composition layer**, not a standalone block.
+   - **Field layout, from the `ins` masks:** `+0x0174` and `+0x01b4` are
+     `{[27:16] 12-bit, [15:0] 16-bit}` — *not* two 16-bit halves as assumed.
+     `+0x00f0` is two 8-bit fields at `[7:0]` and `[15:8]`. `+0x0178`/`+0x01b8`
+     are 16-bit at `[15:0]`.
+   - **Space A's 1080/540 are hardcoded constants, not live geometry.** The
+     branch at `0x8b1a4988` writes literal `1080` into `+0x01b8` and `540` into
+     `+0x0178` as a fallback. Our live readings (`0x60020438`, `0x6002021C`) are
+     exactly that default — the same class of inherited bring-up fallback as
+     AFBD's 1920x1088, and not evidence of an active 1080p pipeline.
+   - **`+0x0840`/`+0x0844` carry destination-shaped geometry** computed as
+     `field-1`, `field+1` and round-to-even: live `0x05000030` = 1280 wide,
+     `0x02D10015` = 721. There is a second identical pair at
+     `+0x0858`/`+0x085c`.
+   - Enable-shaped bits: `+0x0138` bit 27 and `+0x0040` bit 25 (currently set).
+     Per the U-Boot RE the actual frame commit is on the **AFBD** side
+     (`0x05600014` latch + `0x0560006c` dirty) — which our driver already writes
+     every atomic update, so "never committed" is a weaker explanation than it
+     first appears.
+
+   **Leading hypothesis, explicitly not yet a finding:** the scaler sits in the
+   MIPS's window/composition layer, and that layer is inert with the MIPS parked.
+   Our driver injects at AFBD and takes the output at the LVDS selector
+   (`0x051c006c`), bypassing the window pipeline the scaler belongs to. That
+   would explain every observation at once — writable registers, no response to
+   traffic, no effect from a ratio change — without requiring the block to be
+   broken or unrouted in silicon.
+
+   If that is right, using this scaler from Linux means reimplementing enough of
+   the window layer to own composition, which is a much larger port than "map one
+   more register window". **Weigh that against route 2 before spending on it.**
+
+   **Testing that hypothesis needs "image on the panel AND MIPS alive", and that
+   state is NOT CONSTRUCTIBLE with the current U-Boot command surface
+   (established 2026-09-04, `tools/display/mips-alive-scaler-test.py`):**
+
+   | command | image on glass | MIPS after |
+   | --- | --- | --- |
+   | preboot `auto <id> logo` | yes | **quiesced** |
+   | `h713_disp init <id>` | **no — it renders nothing** | alive (`0x0306101c=1`) |
+   | `h713_disp panel-test <id> vendor-logo` | yes, 15 s only | **quiesced** |
+
+   Every ARM-side render path parks the MIPS first, which is the same
+   ARM/MIPS exclusivity seen elsewhere on this display — and the RPC surface
+   cannot substitute, because the frame-submit routines are stubs. `quiesce`
+   being listed as an opt-in *mode* of `panel-test` does not mean the other
+   modes leave the core running; measured, it reads `0x00000000`.
+
+   **Correction worth carrying:** a black panel after `h713_disp init` is
+   **expected** — that command brings the display up "ready for diagnostics" and
+   draws nothing. It was misread here as the documented warm-reboot panel
+   power-on no-op, and cost a power cycle. Check whether anything published an
+   image before blaming the panel rail.
+
+   **RESOLVED 2026-09-04 without reflashing, and the answer is architectural.**
+   `h713_mips_release_reset()` is only seven register writes, and after the
+   preboot has run, the firmware is already resident at `0x4b100000` with its
+   shared memory published — so the core can be **un-quiesced from the U-Boot
+   prompt with `mw.l`**, underneath a logo the preboot already put on the glass
+   (`tools/display/mips-alive-scaler-test.py --release-mips`):
+
+   ```
+   0x02001600 = 0x80000002   clock        0x0200160c = 0x00030001   stage 3
+   0x0200160c = 0x00000000   assert       0x03061030 = 0x4b100000   boot address
+   0x0200160c = 0x00010000   stage 1      0x0200160c = 0x00070001   RELEASED
+   0x0200160c = 0x00030000   stage 2
+   ```
+
+   `0x0306101c` went `0` → `1`, the core came up — **and the logo vanished. The
+   panel went black while the TCON scan counter kept advancing**
+   (`005502e6` → `02840115`), so the display was not broken: it was actively
+   scanning *black*.
+
+   > **The ARM framebuffer route and the live MIPS window layer are mutually
+   > exclusive.** When the window layer comes up it takes ownership of the
+   > display, and what U-Boot published stops being what is scanned. The layer
+   > then shows nothing, because no frame has ever been submitted to it.
+
+   That explains the entire run of nulls: with the MIPS parked the scaler is a
+   dead register file in a path that bypasses it, and with the MIPS live there is
+   no ARM-published image left to scale.
+
+   **And feeding the live core through the AFBD registers does not work either
+   — tested, not assumed.** With the core running and the panel lit but blank, a
+   fresh OSD commit was issued using stock's own two-step (`0x05600140` bit 0,
+   then 1 to `0x05600144`, which reads back 0 because it is a self-clearing
+   latch — success, not failure), aimed at a framebuffer verified intact
+   (`0x6c100000` still held the grey logo pixels). **No change on the panel.**
+
+   The blanking is invisible to every measurement available. `h713_disp dump`
+   walks 22 blocks — tvtop, lvds-lane, TCON, disp-pll, three lvds-phy windows,
+   **mixer**, display-route, **vblender**, osd-ch0, de-top, de-layers, de2-ch0/1,
+   de, four afbd windows, pll-video2, disp-modclk — and a before/after diff
+   across the release differed *only* in the TCON scan counter. The scaler's 28
+   registers were identical. The AFBD *video* block (`0x05600010`–`0x0560003c`,
+   which no dump covers) had the source disabled and an empty ring. The LVDS
+   selector stayed `0x29000000` (RGB/OSD — the mux was not stolen). PB5, PF6 and
+   PH16 were all correct.
+
+   > **The MIPS owns presentation through its own window state, not through the
+   > AFBD registers. Our path works only because the MIPS is parked.**
+
+   | | owner of presentation | scaler | status |
+   | --- | --- | --- | --- |
+   | MIPS parked | ARM, via AFBD registers | bypassed, inert | ours: 720p, no scaling |
+   | MIPS alive | MIPS, via window descriptors | in its path | stock's: scaling available |
+
+   The two cannot be mixed, and that is now measured rather than inferred.
+
+   **What it would now cost.** Using the scaler means driving the window layer
+   the way stock's ARM side does — window/plane descriptors plus the MIPS
+   handshake, i.e. the ARM half of stock's display HAL (`svp_ioctl` /
+   `tgd_put_plane_info`, PanelWinNode format). CPU_COMM cannot substitute; its
+   frame routines are stubs. That is a substantial RE and driver effort, not a
+   register mapping — but it is a *known* effort now, with an identified entry
+   point, rather than an open question.
+
+   Also built and available, unused: `h713_disp logo-live <id>` in
+   `h713_mips.c` — the `auto <id> logo` sequence without the quiesce. The `mw.l`
+   replay reached the same state without reflashing, so it was never needed; it
+   is kept because it renders *and* leaves the core running in one command.
+2. **Fix the GPU path's artifacts.** `vo=gpu` on the *stock* mpv is the only
    thing that puts 1080p on the panel today — ~0.83× realtime, sync intact, but
-   481 dropped frames and visible artifacts. Cheap to investigate, and it costs
-   the no-GPU property only while it is in use.
-2. **GE2D at `0x5240000`.** The right architecture: VE decodes → GE2D scales →
-   DECD presents, no MIPS. It already shares **IOMMU master 2** with DECD, and
-   the vendor `ge2d_dev.ko` is ARM 32-bit, unstripped, 926 symbols. But there is
-   **no mainline GE2D driver** (`drivers/media/platform/sunxi/` has csi,
-   mipi-csi2, di and rotate only), so this is V4L2 M2M driver work.
+   481 dropped frames and visible artifacts. Costs the no-GPU property only
+   while in use. Note there is no 2D engine to fall back on: after the GPU, the
+   only other stage-1 scaler is the CPU.
 
 Full account, including the hazard that a rejected plane commit retried
 unbounded will wedge the display:
