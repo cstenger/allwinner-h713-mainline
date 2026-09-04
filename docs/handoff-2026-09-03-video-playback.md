@@ -156,12 +156,12 @@ The pre-fix binary is still on the board if you want to re-run that control.
 In rough order of value. **Revised by the addendum below** — item 0 was not
 known when this list was written.
 
-0. **Settle whether DECD can scale.** Hardware playback works at 1280x720 and
-   nothing else, which is the single biggest limit on the board as a video
-   player. The scaler at `0x05000000` is ruled out (see the addendum). The open
-   question is DECD's own source geometry, and it is answerable from the
-   register survey and the firmware format resolver **before** spending any
-   operator time on visible tests.
+0. **Scaling — ANSWERED, negatively.** Hardware playback works at 1280x720 and
+   nothing else, and that is the single biggest limit on the board as a video
+   player. Both candidate blocks are now ruled out: the scaler at `0x05000000`
+   is not in our path, and DECD carries no destination geometry. See the
+   addendum. What remains is **GE2D** (a driver to write) or **fixing the GPU
+   path's artifacts** (cheap, works today). Do not re-derive the two negatives.
 1. **Soak playback.** Everything so far is minutes-long runs. The decode path
    has a 2 h / 195 k-frame soak behind it; the *display* path has nothing
    comparable since the fix. Loop `/root/leota-av-720p.mp4` for an hour with
