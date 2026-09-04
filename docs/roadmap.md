@@ -204,6 +204,34 @@ attached, the display path can be brought up here, not only on the projector
    unchanged, so reuse is not the cause. Patch 0072 now refuses segmented
    imports and 0073 declares the single-mapping constraint.
 
+   **PLAYBACK IS DONE AT 720p (2026-09-03), and blocked above it.** A file plays
+   on the panel with picture and sound, hardware-decoded, GPU idle, through a
+   patched `mpv --vo=drm --hwdec=vaapi` (`patches/mpv/`, built by
+   `tools/video/build-mpv.sh`). Operator-confirmed.
+
+   **The remaining limit is resolution, and it is a hardware-capability
+   question, not a driver bug.** Our display path has no scaler: the block at
+   `0x05000000` is a real scaler but stayed inert across a live playback, and
+   DECD's entire 1 KiB window carries one coordinate space per source with no
+   destination geometry and no ratio register. Neither is worth re-testing.
+
+   Two routes remain for anything above 720p, and item 4 (the GPU) is no longer
+   purely downstream of the display work — it is now the *only* thing that puts
+   1080p on the panel at all:
+
+   - **Fix the GPU path's artifacts** — `vo=gpu` on the stock mpv runs 1080p at
+     ~0.83x realtime with sync intact but 481 dropped frames and visible
+     artifacts. Cheapest route to a usable 1080p today.
+   - **GE2D at `0x5240000`** — the architecturally right answer (VE decodes,
+     GE2D scales, DECD presents, no MIPS). It already shares IOMMU master 2 with
+     DECD and the vendor `ge2d_dev.ko` is unstripped with 926 symbols, but
+     **there is no mainline GE2D driver**, so it is V4L2 M2M work. Note this
+     contradicts the assumption in the paragraph above that GE2D is "configured
+     once and never touched during playback" — that describes stock's *display*
+     use of it, not its use as a scaler.
+
+   Detail: [handoff-2026-09-03-video-playback.md](handoff-2026-09-03-video-playback.md).
+
    The end-to-end control passes: decoded frame 60 is byte-identical to the
    visible host reference and, copied into one physical carveout run, was
    operator-confirmed as recognizable and apparently correct for 300

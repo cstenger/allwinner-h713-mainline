@@ -1462,3 +1462,36 @@ geometry and zero chroma gain, not an unknown decode corruption.
 
 Full evidence:
 [`reference/linux-decd-scanout-confirmed-2026-08-31.md`](reference/linux-decd-scanout-confirmed-2026-08-31.md).
+
+---
+
+## GE2D is now the scaling candidate — 2026-09-03
+
+This document analysed `ge2d_dev.ko` as **stock's display driver**. GE2D has
+since become interesting for a different reason: it is the only remaining route
+to playing video at any resolution other than 1280x720.
+
+Established 2026-09-03 (see
+[handoff-2026-09-03-video-playback.md](handoff-2026-09-03-video-playback.md)):
+our display path has **no scaler**. The block at `0x05000000` is a real scaler
+with ratio registers and two coordinate spaces, but it is not in our path — it
+stayed inert across before/during/after samples of a live playback. DECD's whole
+1 KiB window carries one coordinate space per source, with no destination
+geometry and no ratio register. Hardware playback is therefore 720p-only.
+
+The proposed pipeline is **VE decodes → GE2D scales → DECD presents**, with no
+MIPS involvement. Two things already favour it:
+
+- GE2D sits on **IOMMU master 2 alongside `dec@5600000`** (`docs/iommu-port.md`),
+  so the master-2 flip ordering already worked out for DECD covers it.
+- The binary analysed here is **ARM 32-bit, unstripped, 926 symbols, with
+  relocations intact** — unusually good material for deriving a register
+  sequence.
+
+The cost is that **no mainline GE2D driver exists**:
+`drivers/media/platform/sunxi/` contains csi, mipi-csi2, di and rotate only.
+This is a V4L2 M2M driver to write, not a config option to enable.
+
+Whoever picks this up should start from the scaling entry points in this
+binary rather than its display-init paths, which are what the analysis below
+was aimed at.

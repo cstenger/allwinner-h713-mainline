@@ -4,7 +4,38 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-09-01._
+_Last updated: 2026-09-03._
+
+## Video playback — where it stands, 2026-09-03
+
+**A file plays on the panel with picture and sound, hardware-decoded, no GPU.**
+`mpv --vo=drm --hwdec=vaapi` on the patched mpv, operator-confirmed on 720p
+H.264 + AAC. The build is reproducible (`tools/video/build-mpv.sh`, an emulated
+arm64 container) and drift-checked (`tools/video/check-video-stack.sh`).
+
+**It works at 1280×720 and no other resolution, and that is now the headline
+limit.** Two candidate scaling blocks were tested and both are ruled out:
+
+| block | verdict | evidence |
+| --- | --- | --- |
+| scaler at `0x05000000` | **not in our path** | holds ratios and two coordinate spaces, but stayed inert across before/during/after samples of a live playback — bit 31 never set |
+| DECD `0x05600000` | **cannot scale** | both source instances carry one coordinate space; no destination geometry and no ratio register in the whole 1 KiB window |
+
+What remains for 1080p, in the order worth trying:
+
+1. **Fix the GPU path's artifacts.** `vo=gpu` on the *stock* mpv is the only
+   thing that puts 1080p on the panel today — ~0.83× realtime, sync intact, but
+   481 dropped frames and visible artifacts. Cheap to investigate, and it costs
+   the no-GPU property only while it is in use.
+2. **GE2D at `0x5240000`.** The right architecture: VE decodes → GE2D scales →
+   DECD presents, no MIPS. It already shares **IOMMU master 2** with DECD, and
+   the vendor `ge2d_dev.ko` is ARM 32-bit, unstripped, 926 symbols. But there is
+   **no mainline GE2D driver** (`drivers/media/platform/sunxi/` has csi,
+   mipi-csi2, di and rotate only), so this is V4L2 M2M driver work.
+
+Full account, including the hazard that a rejected plane commit retried
+unbounded will wedge the display:
+[handoff-2026-09-03-video-playback.md](handoff-2026-09-03-video-playback.md).
 
 ## Summary
 
