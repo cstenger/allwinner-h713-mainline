@@ -255,9 +255,14 @@ Usage string: `Usage: win[option] command`. Separately, the shell has
 > | release from U-Boot, then boot Linux | never registered | lock in early kernel boot |
 >
 > **The generalisation: a live MIPS window layer and a booting/running Linux
-> cannot coexist on this board by any ordering we can construct.** The one
-> configuration that works is the one stock never uses and we always have —
-> core parked, ARM owning the display.
+> cannot coexist *in our stack*, by any ordering we can construct.**
+>
+> > **Do not read that as a hardware law — it is not.** Stock Android is Linux
+> > booting under an already-released MIPS, and it works. So coexistence is
+> > demonstrably possible on this silicon and the lock is a defect in **our**
+> > kernel or DT, not a property of the SoC. Every "cannot" on this page is
+> > scoped to our stack. The useful question is therefore *what does the vendor
+> > kernel do differently in early boot*, not *whether it can be done*.
 >
 > #### The IOMMU lead is REFUTED — it never gets that far
 >
