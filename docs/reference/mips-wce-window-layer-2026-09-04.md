@@ -234,6 +234,47 @@ stock-only state, and the visible test is a genuine one-register change.
 
 It does **not** show the block acts on our raster. At unity it cannot.
 
+### The visible ratio test — NEGATIVE, 2026-09-04
+
+Run with the operator watching, on the same boot. A 720p clip was playing and
+**confirmed scanning out** — video plane 38 cycling four distinct framebuffer
+ids, not merely mpv claiming its direct path.
+
+```
+0x051c0138: 0x08010000 -> 0x08018000    ratio 1.0 -> 1.5, readback confirmed
+held 10 s
+restored to 0x08010000, verified
+```
+
+**Operator: the video played normally.** No size change, no framing change, no
+corruption, no flicker.
+
+**What this closes.** Writing the ratio field alone, on the video path, does not
+scale our raster. The register accepts the value and the picture is unaffected.
+
+**What it does not close, stated precisely so it is not over-read later.** This
+is one variant, not the space:
+
+- It was run on the **video** path only (selector `0x051c006c = 0x39000000`).
+  Our driver switches that selector between the RGB/OSD source and the DECD
+  video source. If the down-scaler stage sits on the RGB side of that mux, or
+  upstream of where we inject, it would be untouched by our video raster and
+  produce exactly this null. **Untested on the RGB path.**
+- The geometry registers were left describing 1280x720 → 1280x720. In the
+  firmware, `WriteDownScalerRatio` writes the ratio and the width/height as one
+  set. They come from the *same* window struct and the ratio is an independent
+  field rather than derived from the geometry, so ratio-alone ought to have been
+  meaningful — but it is not what the firmware ever emits.
+
+Against that second point, one thing found while checking it **strengthens the
+negative**: `PanelWinNode`'s slot 4 writes ~25 LVDS registers (`0x051c0000`,
+`0x0004`, `0x0020`, `0x003c`, `0x0040`, `0x0050`, `0x00a0`–`0x00c4`, `0x0200`,
+`0x0204`) and every one is a plain read-modify-write. **There is no commit latch
+anywhere in this path**, so "the write was never latched" is not available as an
+explanation the way it was for the AFBD-side experiments.
+
+`0x051c0200`/`0x051c0204` are outside every window we have ever read.
+
 ### Two things follow, and they are worth separating
 
 **Measured:** these registers exist, stock enables them, and the field layout is

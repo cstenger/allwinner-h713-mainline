@@ -173,6 +173,23 @@ Is the block enabled? At what ratio? That is a `devmem` loop and it discriminate
 
 ### Step B — write a non-unity ratio, with an operator watching
 
+> **RAN 2026-09-04. Step A positive, step B NEGATIVE.**
+>
+> Step A: all eight registers read **byte-identical to stock**, with the MIPS
+> parked — U-Boot leaves the down-scaler *enabled at unity* on our pipeline. So
+> the block is provisioned on our path, not stock-only state, and no DT change
+> was needed to read it (`busybox devmem` reaches it regardless).
+>
+> Step B: ratio `1.0 -> 1.5` at `0x051c0138`, held 10 s under a 720p playback
+> confirmed scanning out (plane 38, four distinct fbs). **Operator: the video
+> played normally.** Restored and verified.
+>
+> One variant, not the space — it was the **video** path only, and the
+> RGB/OSD path is untested. Also worth knowing before another attempt:
+> `PanelWinNode`'s slot 4 is ~25 LVDS read-modify-writes with **no commit
+> latch anywhere**, so "never latched" is not available as an excuse here.
+> Full record: [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md).
+
 Widen the DT `lvds` window from `0x100` to `0x200` — one line, no new node —
 then set `0x051c0138[21:0]` away from `0x010000` while 720p is confirmed
 scanning out (four distinct fbs cycling), and restore.
