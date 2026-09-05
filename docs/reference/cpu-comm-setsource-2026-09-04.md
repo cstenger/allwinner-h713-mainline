@@ -48,8 +48,40 @@ timestamp 1107456+: spinlock acquire/release on `AE300018`, `cpu0 - is APPready`
 `Session3(RETURN): ParaCount:1`, `WAIT ACK completion`. A 74 ms round trip, not a
 local no-op.
 
-But there is **no app or WCE reaction** — no second `AppTopSetSource`, no
-`UpdateWce`, no window recalculation, and `GetSource` still returns 0.
+> ### CORRECTION — `SetSource` DID work. This section's conclusion was wrong.
+>
+> The claim of "no app or WCE reaction" came from a grep that filtered out the
+> `hal` and `app` tags and from `GetSource` returning 0. The firmware log
+> actually shows the call landing and the window manager being notified:
+>
+> ```
+> D/hal     [1104371] (thal_display_source.cpp 31) THal_Vp_SetSource() ENTER
+> D/hal     [1104371] (thal_display_source.cpp 32) hal_source_id: 1
+> I/app     [1104371] (app_top_projector.cpp 974) AppTopSetSource
+> D/win_mgr [1104371] (window_manager.cpp 111)    SetSignalInfo
+> I/mem_agn [1104372] (memory_agent.cpp 71)       update_onoff
+> D/hal     [1104372] (thal_display_source.cpp 37) THal_Vp_SetSource() LEAVE
+> ```
+>
+> **The source switch reached `AppTopSetSource` and the window manager ran
+> `SetSignalInfo`.** So the CPU_COMM path into the window layer works, and this
+> is the first time we have driven it.
+>
+> What does *not* follow is any window recomputation: **no `UpdateWce`, no
+> `CalcWindow`, no `PanelWinNode::WriteReg`.** The WCE was told the signal
+> changed and did not act, which is what you would expect when the selected
+> source is not actually producing a signal. AFBD source 0 reads
+> `0x05600010 = 0x03000010` — bits [1:0] clear, i.e. **the video source is
+> still disabled** — and the LVDS selector is `0x29000000`, the RGB/OSD side.
+>
+> `GetSource` returning 0 is a separate puzzle and not evidence the switch
+> failed: `SetSource` logged `hal_source_id: 1` on the way in. Most likely
+> `GetSource`'s single argument is not an output pointer and `ret0` is a status
+> rather than the source id.
+
+`DisableBlackScreen(0)` was also delivered — `CALL_OK` in 79.8 ms, and
+`thal_display_misc.cpp:57 THal_Vp_DisableBlackScreen() ENTER` in the log — with
+no register change and no WCE activity following it.
 
 ## Why, most likely: `Vp_Init` has not been called
 
