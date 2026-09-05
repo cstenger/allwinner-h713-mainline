@@ -81,7 +81,9 @@ local no-op.
 
 `DisableBlackScreen(0)` was also delivered — `CALL_OK` in 79.8 ms, and
 `thal_display_misc.cpp:57 THal_Vp_DisableBlackScreen() ENTER` in the log — with
-no register change and no WCE activity following it.
+no register change and no WCE activity following it. **Operator confirms the
+panel is still black afterwards**, so a latched black-screen flag is eliminated
+as the explanation.
 
 ## Why, most likely: `Vp_Init` has not been called
 
