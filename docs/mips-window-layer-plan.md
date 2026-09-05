@@ -184,10 +184,19 @@ Is the block enabled? At what ratio? That is a `devmem` loop and it discriminate
 > confirmed scanning out (plane 38, four distinct fbs). **Operator: the video
 > played normally.** Restored and verified.
 >
-> One variant, not the space — it was the **video** path only, and the
-> RGB/OSD path is untested. Also worth knowing before another attempt:
-> `PanelWinNode`'s slot 4 is ~25 LVDS read-modify-writes with **no commit
-> latch anywhere**, so "never latched" is not available as an excuse here.
+> **Then the RGB path, also negative — so this register is closed.** Selector
+> confirmed at `0x29000000`, TCON scan counter confirmed advancing, console
+> filled with 40 lines of text, ratio **pulsed** four times (8 s scaled / 3 s
+> unity) so the change could not be mistimed. **Operator: no change at all.**
+>
+> Two independent paths, a different liveness gate on each, readback-confirmed
+> writes, and no escape hatch: `PanelWinNode`'s slot 4 is ~25 LVDS
+> read-modify-writes with **no commit latch anywhere**, so "never latched"
+> cannot be offered. **Do not re-run `0x051c0138`.**
+>
+> Same shape as `0x05000000`, and the same explanation: both stages belong to
+> the MIPS window layer's pipeline, and our arrangement bypasses the middle of
+> it. Two scalers, two nulls, one cause.
 > Full record: [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md).
 
 Widen the DT `lvds` window from `0x100` to `0x200` — one line, no new node —
@@ -344,16 +353,25 @@ Only after step F. This is where the hard lock lives; see below.
 | DECD as a scaler | **dead** — one coordinate space, no ratio register in the whole 1 KiB window. |
 | `svp_ioctl` → `tgd_put_plane_info` as the window-layer entry | **dead** — disassembled end to end 2026-08-26. RGB-only OSD flip, writes AFBD channel registers directly, never signals the MIPS. This was step 1 of the first draft of this plan. |
 | CPU_COMM `Wce_SetWindow` | **dead** — real prologue, but its worker `0x8b1099c8` is `jr ra; addiu v0,zero,1`. It writes three globals that only `Wce_GetWindow` reads back. Re-verified 2026-09-04. |
+| The panel down-scaler ratio at `0x051c0138` | **dead** — negative on the video path *and* the RGB path, 2026-09-04, operator watching both times, pulsed on the second. The block is enabled at unity and byte-identical to stock, and does not act on our raster from either side of the mux. No commit latch exists in this path, so "never latched" is not an available explanation. |
 
 ## What is not proven
 
-1. **That this hardware scales at all.** Still the load-bearing unknown: no frame
-   has ever been seen to change size. The evidence got stronger on 2026-09-04 —
+1. **That this hardware scales at all.** Still the load-bearing unknown, and now
+   with two negatives behind it: no frame has ever been seen to change size, on
+   either scaler, on any path. The firmware evidence is strong —
    `TWCETop::IsEnablePanelDownScaler` gates on the panel being **shorter than
-   1080** and stock ships the panel down-scaler *enabled at unity* — but that is
-   still firmware reading, not a picture. **Steps A and B exist to settle it for
-   one DT line and one register write; do them first.** If the ratio does
-   nothing there, the payoff for the whole window-layer port evaporates.
+   1080**, and stock ships the panel down-scaler enabled at unity, which our own
+   bring-up reproduces byte-for-byte — but it is still firmware reading, not a
+   picture.
+
+   **The cheap tests are now spent.** `0x05000000` and `0x051c0138` both accept
+   writes and both do nothing to our raster, which is what the "we own the
+   fetcher, not the pipeline" model predicts. Nothing short of driving the
+   window layer will distinguish "the pipeline stage is bypassed" from "this
+   silicon does not scale" — so anyone starting the port should know they are
+   spending it on an assumption two experiments have failed to confirm and none
+   has confirmed.
 2. **That live MIPS plus Cedrus traffic can coexist.** Stock does it; we locked
    the SoC trying. Whether that is contention or a hardware law is untested.
 

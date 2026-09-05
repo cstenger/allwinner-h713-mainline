@@ -61,11 +61,21 @@ HOLD=${HOLD:-8}
 # thread is about. Overridable so a sweep does not need an edit.
 RATIO=${RATIO:-0x00018000}
 DO_VISIBLE=0
+DO_RGB=0
 rc=0
 
 for arg in "$@"; do
 	case "$arg" in
 	--visible) DO_VISIBLE=1 ;;
+	# --rgb runs the same single-register test on the RGB/OSD raster instead of
+	# the DECD video raster. It is not a permutation of --visible, it is the
+	# other side of the mux our driver flips at 0x051c006c: if the down-scaler
+	# stage sits on the RGB side, or upstream of where we inject video, then
+	# --visible's null is about path position rather than about the block.
+	# No playback, so no atomic commits -- admissible only because
+	# PanelWinNode's slot 4 is ~25 plain read-modify-writes with no commit
+	# latch anywhere, so nothing here needs a flip to take effect.
+	--rgb) DO_VISIBLE=1; DO_RGB=1 ;;
 	*) echo "unknown argument: $arg" >&2; exit 2 ;;
 	esac
 done
@@ -140,6 +150,43 @@ if [ "$DO_VISIBLE" -eq 0 ]; then
 fi
 
 # --------------------------------------------- phase 3: the visible ratio
+if [ "$DO_RGB" -eq 1 ]; then
+rule
+say "PHASE 3 (RGB) -- the other side of the 0x051c006c mux."
+stop_playback() { :; }
+
+sel=$($SSH 'busybox devmem 0x051c006c 32' 2>/dev/null)
+say "  selector 0x051c006c: ${sel:-<unreadable>}   (0x29000000 = RGB/OSD)"
+case "$sel" in
+*0x29000000) ;;
+*) say "  REFUSING: the selector is not on the RGB source, so this would not be"
+   say "  the RGB-path test it claims to be."; exit 1 ;;
+esac
+
+# The console issues no page flips, so prove the raster is live a different
+# way: the TCON scan counter must be advancing. A frozen counter would mean
+# nothing is being clocked out and a null below would say nothing.
+s1=$($SSH 'busybox devmem 0x05880000 32' 2>/dev/null); sleep 1
+s2=$($SSH 'busybox devmem 0x05880000 32' 2>/dev/null)
+say "  TCON scan counter 0x05880000: $s1 -> $s2"
+if [ "$s1" = "$s2" ] || [ -z "$s1" ]; then
+	say "  REFUSING: the TCON scan counter is not advancing."
+	exit 1
+fi
+say "  raster live."
+
+# Fill the console with text. A login prompt is a few characters at the top
+# left, where a geometry change is easy to miss; a full screen of text makes
+# any rescale unmistakable. Cleared afterwards.
+$SSH "for i in \$(seq 1 40); do
+        printf 'PANEL DOWNSCALER TEST %02d ################################\n' \$i
+      done > /dev/tty1" >/dev/null 2>&1
+say "  console filled with a text pattern."
+say ""
+say "  Writing ratio $RATIO to 0x051c0138[21:0] for ${HOLD}s. WATCH THE PANEL."
+say "  A change in text size or framing is the result; no change is also a"
+say "  result and closes this block on a second, independent path."
+else
 rule
 say "PHASE 3 -- VISIBLE, with live playback underneath."
 say "  A static login prompt issues no atomic commits, and this block may only"
@@ -195,6 +242,7 @@ say ""
 say "  Writing ratio $RATIO to 0x051c0138[21:0] for ${HOLD}s. WATCH THE PANEL."
 say "  A change in picture size or framing is the result; no change is also a"
 say "  result and means this block is not acting on our raster."
+fi
 
 orig=$($SSH 'busybox devmem 0x051c0138 32' 2>/dev/null)
 if [ -z "$orig" ]; then
@@ -203,18 +251,33 @@ if [ -z "$orig" ]; then
 	exit 1
 fi
 new=$(( ( orig & ~0x3fffff ) | ( RATIO & 0x3fffff ) ))
-say "  0x051c0138: $orig -> $(printf '0x%08x' $new)"
+say "  0x051c0138: $orig <-> $(printf '0x%08x' $new)"
 
-$SSH "busybox devmem 0x051c0138 32 $(printf '0x%08x' $new)" >/dev/null 2>&1
-got=$($SSH 'busybox devmem 0x051c0138 32' 2>/dev/null)
-say "  readback: ${got:-<unreadable>}"
-if [ "$(( ${got:-0} ))" -ne "$new" ]; then
-	say "  WRITE DID NOT STICK -- the field is gated with the MIPS parked."
-	say "  That is itself the answer; restoring anyway."
-	rc=1
-fi
-
-sleep "$HOLD"
+# PULSE, don't step. The operator cannot see this script's output as it runs,
+# so a single timed change has to be caught blind -- and the first RGB run was
+# missed exactly that way. Alternating makes the test self-announcing: anything
+# that responds to this field becomes a repeating, unmistakable pulse, and a
+# steady picture across the whole window is a clean null. Every cycle is
+# restored, and the final restore is verified as before.
+CYCLES=${CYCLES:-4}
+say "  pulsing $CYCLES times: ${HOLD}s non-unity, 3s unity. Total $(( CYCLES * (HOLD + 3) ))s."
+for cycle in $(seq 1 "$CYCLES"); do
+	$SSH "busybox devmem 0x051c0138 32 $(printf '0x%08x' $new)" >/dev/null 2>&1
+	got=$($SSH 'busybox devmem 0x051c0138 32' 2>/dev/null)
+	if [ "$cycle" -eq 1 ]; then
+		say "  readback: ${got:-<unreadable>}"
+		if [ "$(( ${got:-0} ))" -ne "$new" ]; then
+			say "  WRITE DID NOT STICK -- the field is gated with the MIPS parked."
+			say "  That is itself the answer; restoring anyway."
+			rc=1
+		fi
+	fi
+	say "  cycle $cycle/$CYCLES: non-unity"
+	sleep "$HOLD"
+	$SSH "busybox devmem 0x051c0138 32 $orig" >/dev/null 2>&1
+	say "  cycle $cycle/$CYCLES: unity"
+	sleep 3
+done
 
 $SSH "busybox devmem 0x051c0138 32 $orig" >/dev/null 2>&1
 restored=$($SSH 'busybox devmem 0x051c0138 32' 2>/dev/null)

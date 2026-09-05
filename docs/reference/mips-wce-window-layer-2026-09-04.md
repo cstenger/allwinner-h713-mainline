@@ -259,7 +259,7 @@ is one variant, not the space:
   Our driver switches that selector between the RGB/OSD source and the DECD
   video source. If the down-scaler stage sits on the RGB side of that mux, or
   upstream of where we inject, it would be untouched by our video raster and
-  produce exactly this null. **Untested on the RGB path.**
+  produce exactly this null. **Now tested — see below.**
 - The geometry registers were left describing 1280x720 → 1280x720. In the
   firmware, `WriteDownScalerRatio` writes the ratio and the width/height as one
   set. They come from the *same* window struct and the ratio is an independent
@@ -275,14 +275,48 @@ explanation the way it was for the AFBD-side experiments.
 
 `0x051c0200`/`0x051c0204` are outside every window we have ever read.
 
+### The RGB path — ALSO NEGATIVE. This route is closed.
+
+The other side of the `0x051c006c` mux, run the same day so nothing else moved.
+Gated differently, because the console issues no page flips: selector confirmed
+at `0x29000000` (RGB/OSD) and the **TCON scan counter at `0x05880000` confirmed
+advancing**, which proves the raster is being clocked out without needing a
+flip. The console was filled with 40 lines of text first, so a rescale could not
+be subtle.
+
+The ratio was **pulsed**, not stepped — four cycles of 8 s at 1.5 and 3 s at
+unity, 44 s total. The operator cannot see the script's output as it runs, and
+the first RGB attempt was missed for exactly that reason; anything responding to
+this field would have become a repeating, unmistakable pulse.
+
+**Operator: no change at all — only the text the test itself printed. No size
+change, no visual issues.** Restored and verified.
+
+> **The panel down-scaler at `0x051c0124`–`0x051c0138` does not act on our
+> raster, on either side of the mux. Do not re-run this register.**
+
+The closure is stronger than a single null, and worth stating why:
+**two independent paths**, a different liveness gate on each (cycling
+framebuffer ids for video, an advancing scan counter for RGB), a repeating
+pulse rather than one timed step, readback-confirmed writes, and — the part
+that removes the usual escape hatch — **no commit latch exists anywhere in
+`PanelWinNode`'s slot 4**, so "it was never latched" cannot be offered. That
+excuse rescued several earlier AFBD experiments; it is not available here.
+
+**What survives.** The block is real, provisioned by our own bring-up, and
+byte-identical to stock. What it is *not* is reachable from where we inject.
+That is the same shape of result as `0x05000000` and has the same explanation:
+both stages belong to the MIPS window layer's pipeline, and our arrangement —
+MIPS parked, injecting at AFBD, taking output at the LVDS selector — bypasses
+the middle of that pipeline. Two scalers, two nulls, one cause.
+
 ### Two things follow, and they are worth separating
 
-**Measured:** these registers exist, stock enables them, and the field layout is
-now known from both sides.
+**Measured:** these registers exist, stock enables them, our own bring-up leaves
+them identical to stock, and the field layout is now known from both sides.
 
-**Inference:** that writing a non-unity value into `0x051c0138[21:0]` scales the
-picture. Nothing has been seen to change size — that is still the plan's
-unproven item 1. What is new is that the test is now cheap.
+**Refuted:** that writing a non-unity value into `0x051c0138[21:0]` scales our
+picture. Tested on both paths, negative on both.
 
 ### Why this is cheaper than the `0x05000000` route
 
