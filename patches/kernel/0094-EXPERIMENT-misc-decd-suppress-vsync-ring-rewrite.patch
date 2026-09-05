@@ -4,11 +4,17 @@ EXPERIMENT, out of series.  With the MIPS window layer alive a real frame
 submit hard-locks the SoC while decd-client blue does not.  This gates the
 vsync handler's four-slot ring rewrite so the fault can be localised.
 
-Result 2026-09-04: with suppress_vsync_sync=1 the submit completes and the
-board survives -- but the ring registers stay zero, so no frame is delivered.
-It localises the lock to dec_frame_queue_sync's register writes and rules out
-the ioctl, the dma-buf import, the IOMMU mapping and PM.  It is NOT a safe
-submit path.
+Results 2026-09-04, both with the MIPS window layer alive:
+
+  suppress_vsync_sync=1  submit returns 0, board survives, but the ring
+                         registers stay zero -- no frame delivered.
+  ring_writes_max=1      submit returns 0, board survives, ring_writes_done=1,
+                         and Y/C/VideoInfo are POPULATED.  A frame reached the
+                         hardware and nothing locked.
+  (unlimited, default)   hard lock, every time.
+
+So the fault is the 60 Hz REPETITION, not touching the ring.  One write with a
+live core is safe; rewriting all four slots every vsync is what kills the SoC.
 
 --- a/drivers/misc/sunxi_decd/decd_frame.c
 +++ b/drivers/misc/sunxi_decd/decd_frame.c
@@ -26,6 +32,17 @@ submit path.
 +MODULE_PARM_DESC(suppress_vsync_sync,
 +		 "do not rewrite the ring from the vsync handler (MIPS-alive test)");
 +
++/* Budget of ring rewrites, -1 unlimited.  1 lets exactly one frame reach the
++ * ring and then never touches it again. */
++static int ring_writes_max = -1;
++module_param(ring_writes_max, int, 0644);
++MODULE_PARM_DESC(ring_writes_max,
++		 "max vsync ring rewrites, -1 unlimited (MIPS-alive test)");
++
++static int ring_writes_done;
++module_param(ring_writes_done, int, 0444);
++MODULE_PARM_DESC(ring_writes_done, "ring rewrites actually performed");
++
  static void dec_vsync_process(struct dec_frame_manager *fmgr)
  {
  	struct dec_frame_queue *q = fmgr->queue;
@@ -41,3 +58,10 @@ submit path.
 +		return;
 +	}
  	if (q->dirty) {
++		if (ring_writes_max >= 0 && ring_writes_done >= ring_writes_max) {
++			q->dirty = 0;
++			spin_unlock_irqrestore(&q->lock, flags);
++			fmgr->irq_count++;
++			return;
++		}
++		ring_writes_done++;

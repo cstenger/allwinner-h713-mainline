@@ -58,6 +58,49 @@ distinguish between:
    expect;
 3. **writing those registers at all** while the window layer owns the source.
 
+## SEPARATED — it is the repetition. One ring write is safe and delivers.
+
+Same boot, `ring_writes_max=1` (exactly one rewrite permitted, then never
+again), core alive:
+
+```
+FRAME_SUBMIT format=6 desc=112 repeat@+0x10=1 fence_fd=7
+EXIT=0        core 0x00000001        ring_writes_done = 1
+
+0x05600070  0xFFC00000     Y            <- populated
+0x05600084  0xFFCE1000     C            <- populated
+0x05600098  0x4D941000     VideoInfo    <- populated
+```
+
+**A frame reached the hardware with a live MIPS and nothing locked.** Zero
+oops, IOMMU `INT_STA` clean. Contrast the default (unlimited) case, which locks
+every time.
+
+So of the three candidates above it is **(1), the 60 Hz repetition**. Touching
+the ring with a live core is fine; rewriting all four slots every vsync is not.
+
+**The architectural consequence.** Driving the ring from Linux's vsync handler
+is wrong whenever the MIPS is alive — the firmware owns presentation, and on
+stock it is the firmware that advances the ring. Our driver was written for the
+MIPS-parked world, where Linux legitimately owns the display, and that
+assumption does not survive here. A live-core mode should enqueue and let the
+firmware repeat.
+
+## But the window layer still does not react
+
+With the frame genuinely in the ring, the elog *still* shows only timestamp `[0]`
+records — bring-up. No `UpdateWce`, no `SetSignalInfo` beyond the initial one,
+and `PanelWinNode.cpp:328` still reads `bypass`.
+
+So delivering a frame is necessary and not sufficient: the window layer has to
+be told, and writing the ring is not what tells it. That is the same gap the
+blue test found, now reached from the other side and with the lock out of the
+way.
+
+## The superseded next-step note
+
+The following was written before the budget test and is kept for the record:
+
 ## The next experiment separates them
 
 Allow exactly **one** ring write and never repeat: submit, write the slots once,
