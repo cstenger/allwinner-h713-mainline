@@ -245,11 +245,24 @@ Only if A–C say the payoff is real. **Do not start from `ge2d_dev.ko`** — it
 is the RGB OSD flip, RGB-only, writing AFBD channel registers directly and never
 signalling the MIPS.
 
-What is still unrecovered is the **signalling mechanism**: what sets the dirty
-mask that arrives in `s1` at `NRWinNode` slot 4. CPU_COMM `Wce_SetWindow` is not
-it (its worker is a stub at `0x8b1099c8`; re-verified 2026-09-04). Start from the
-MIPS side instead — who calls `TWCETop::SetWindow` and `TWindowManager::UpdateWce`,
-and what `WinMgrCallback0`/`WinMgrCallback1` are wired to.
+> **ANSWERED 2026-09-04, and it closes this step.** There is no signalling
+> mechanism. The five nodes live at fixed offsets in `TWCETop`
+> (`+0x68` Cap, `+0x6c` NR, `+0x70` DETN, `+0x74` Proc, `+0x78` Panel) and are
+> applied by a plain virtual call, `node->vtable[+0x10](node, mask)`, with the
+> **mask as a `lui` immediate in the delay slot** — a compile-time literal at
+> ~70 internal call sites. There is no dirty word in memory for the ARM to set.
+>
+> The CPU_COMM `Wce` surface does not reach it either, and the two
+> scaling-shaped entries are the emptiest: `Wce_EnablePixel2PixelMode` and
+> `Wce_DisablePixel2PixelMode` are 37 instructions each that **call only the
+> logger**. "Pixel to pixel" is exactly what a 1:1/no-scaling toggle would be
+> called, and it does nothing — do not spend a session on the name.
+>
+> **So "populate the descriptor and signal it" describes something that does not
+> exist.** Driving the window layer from the ARM means *executing MIPS code* —
+> the debug shell or patched firmware — and both now need a bootloader flash.
+> Full derivation:
+> [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md).
 
 ### Step E — the minimal liveness experiment (one power cycle)
 
@@ -353,6 +366,10 @@ Only after step F. This is where the hard lock lives; see below.
 | DECD as a scaler | **dead** — one coordinate space, no ratio register in the whole 1 KiB window. |
 | `svp_ioctl` → `tgd_put_plane_info` as the window-layer entry | **dead** — disassembled end to end 2026-08-26. RGB-only OSD flip, writes AFBD channel registers directly, never signals the MIPS. This was step 1 of the first draft of this plan. |
 | CPU_COMM `Wce_SetWindow` | **dead** — real prologue, but its worker `0x8b1099c8` is `jr ra; addiu v0,zero,1`. It writes three globals that only `Wce_GetWindow` reads back. Re-verified 2026-09-04. |
+| CPU_COMM `Wce_Enable/DisablePixel2PixelMode` | **dead** — 37 instructions each, and the only thing either calls is the logger. The name is exactly what a 1:1/no-scaling toggle would be called; it does nothing. |
+| A descriptor-plus-doorbell handshake with the MIPS | **does not exist** — window apply is `node->vtable[+0x10](node, mask)` with the mask a `lui` immediate at ~70 internal call sites. Nothing external can set it. |
+| Driving the MIPS debug shell from Linux | **blocked** — releasing the core from a booted Linux hard-locks the SoC, twice, and it is not display contention (unbinding the KMS driver first changed nothing). |
+| Driving the MIPS debug shell from U-Boot | **blocked** — `md`/`mw` do no cache maintenance and all DRAM is mapped cacheable with no `dcache off`; the ARM cache is not coherent with the MIPS. |
 | The panel down-scaler ratio at `0x051c0138` | **dead** — negative on the video path *and* the RGB path, 2026-09-04, operator watching both times, pulsed on the second. The block is enabled at unity and byte-identical to stock, and does not act on our raster from either side of the mux. No commit latch exists in this path, so "never latched" is not an available explanation. |
 
 ## What is not proven

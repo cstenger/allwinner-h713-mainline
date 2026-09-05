@@ -421,6 +421,90 @@ it either (`lvds-phy` `0x051c0000`+0x20, `lvds-phy-mid` `0x051c0020`+0xa0,
 `lvds-phy2` `0x051c00b0`+0x40), which is why we have a stock reading of these
 registers and never one of our own.
 
+## The signalling mechanism — answered, and it closes the route
+
+This is the question the plan's step D was written to answer: *what sets the
+dirty mask that arrives in `s1` at `NRWinNode` slot 4, i.e. how does the ARM
+tell the MIPS a window changed?* Static work, no board time.
+
+**The answer is that nothing does. There is no ARM-side signal, because there is
+no handshake — applying a window is an ordinary internal function call.**
+
+### The apply dispatch
+
+The five nodes are allocated in `TWCETop`'s constructor and stored at fixed
+offsets, in pipeline order:
+
+| offset | node | ctor | alloc |
+| --- | --- | --- | --- |
+| `+0x68` | `CapWinNode` | `0x8b1a04e0` | |
+| `+0x6c` | `NRWinNode` | `0x8b1a31b8` | `0x194` |
+| `+0x70` | `DETNWinNode` | `0x8b1a0e60` | `0x140` |
+| `+0x74` | `ProcWinNode` | `0x8b1a5f68` | `0xc0` |
+| `+0x78` | `PanelWinNode` | `0x8b1a50e4` | `0xa8` |
+
+and applied by walking that table with a plain virtual call:
+
+```
+lw   $a0, 0x74($s0)        ; the node
+lw   $v0, ($a0)            ; its vptr
+lw   $v0, 0x10($v0)        ; slot 4 -- Apply
+jalr $v0
+lui  $a1, 0x40             ; <- the dirty mask, in the delay slot
+```
+
+Roughly seventy such sites cluster in `0x8b1a8000`–`0x8b1a9900`, repeatedly in
+`Cap -> NR -> DETN -> Proc -> Panel` order.
+
+### The mask is a compile-time literal
+
+Harvested from every dispatch site, by node:
+
+| node | masks passed |
+| --- | --- |
+| `Cap` | `0x1`, `0xffffffff` |
+| `NR` | `0x4`, `0x20`, `0x40`, `0x44`, `0x80`, `0x100`, `0x1002`, `0x6a40`, `0x6e40`, `0x6ec0`, `0x7e46`, `0x10000`, `0x80004`, `0x80404`, `0x87e06`, `0xffffffff` |
+| `DETN` | `0x20`, `0x1002`, `0x80000`, `0x260000` |
+| `Proc` | `0x7e02`, `0x7e46`, `0x260000` |
+| `Panel` | `0x400000` |
+
+Every one is a `lui`/`ori` immediate. **There is no dirty word in memory** that
+the ARM could set, and `0x4` — the bit that gates the whole scaler geometry
+block — is simply what one particular internal caller passes.
+
+`0xffffffff` is the full-refresh call, which is the interesting one: it would
+re-apply every field a node currently holds. Reaching it still means executing
+MIPS code.
+
+### And the CPU_COMM `Wce` surface is decorative
+
+The obvious hope was that one of the six `THal_Vp_Wce_*` entries reaches this
+machinery. Checked, and the two scaling-shaped ones are the emptiest of all:
+
+| CPU_COMM entry | implementation | what it does |
+| --- | --- | --- |
+| `Wce_EnablePixel2PixelMode` | `0x8b14cfd0` | 37 instructions, **calls only the logger**, twice |
+| `Wce_DisablePixel2PixelMode` | `0x8b14d064` | 37 instructions, **calls only the logger**, twice |
+| `Wce_SetWindow` | `0x8b14cd18` | writes three globals; worker `0x8b1099c8` is a stub |
+| `Wce_SetMirrorMode` | `0x8b14cc64` | the one real mutator — a live `jalr` at `0x8b1099ac` via `0x8b109944`. Mirror, not scale. |
+| `Wce_GetWindow` | `0x8b14cef0` | reads back those globals |
+| `Wce_GetActiveWindow` | `0x8b14cf64` | genuine live query, mgr slot 9 |
+
+**"Pixel to pixel" is exactly the name a 1:1/no-scaling toggle would have**, and
+it is a pair of trace calls. Worth recording precisely so the next reader does
+not spend a session on the name.
+
+### What this means for the plan
+
+Step D's premise — *populate the descriptor the MIPS reads, then signal it* —
+describes a mechanism that does not exist. Window application is an internal
+MIPS function call with a compile-time argument, so **driving the window layer
+from the ARM requires executing MIPS code**: the debug shell, or patched
+firmware. There is no third option, and no descriptor-plus-doorbell to build.
+
+Combined with the shell being unreachable from both Linux and U-Boot, the whole
+window-layer route now rests on a bootloader flash or a firmware patch.
+
 ## When stock turns the panel down-scaler on
 
 `TWCETop::IsEnablePanelDownScaler` (`0x8b1a7df4`):
