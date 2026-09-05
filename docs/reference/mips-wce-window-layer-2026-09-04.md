@@ -210,6 +210,61 @@ Usage string: `Usage: win[option] command`. Separately, the shell has
 > translation went away. "Unbound" is not "quiesced", and any future attempt
 > should stop the engine explicitly rather than assuming the driver teardown did.
 >
+> #### Release from U-Boot, then boot Linux — ALSO LOCKS, in early kernel boot
+>
+> The remaining no-flash idea: release the core at the U-Boot prompt (the
+> placement that has always been safe), then boot Linux with the KMS driver
+> prevented from ever registering, and pump from Linux where the mapping is
+> uncached. No rebuild needed — `module_platform_driver()` gives the initcall
+> symbol `h713_afbd_platform_driver_init`, so
+> `initcall_blacklist=h713_afbd_platform_driver_init` in `bootargs` is enough.
+> (`bootargs` is unset in the environment and comes from the FIT's DTB, but
+> setting the env var overrides it: U-Boot's `fdt_chosen()` writes `bootargs`
+> into the DTB whenever the variable exists.)
+>
+> **The release itself is confirmed clean at the U-Boot prompt** — a genuine
+> positive worth keeping:
+>
+> ```
+> md.l 0x0306101c 1   ->  0306101c: 00000000
+> ... the seven writes ...
+> md.l 0x0306101c 1   ->  0306101c: 00000001
+> =>                      (prompt returns, further commands work)
+> ```
+>
+> **Then Linux was booted and the SoC locked almost immediately.** With
+> `earlycon` on the command line, serial produced:
+>
+> ```
+> Starting kernel ...
+> [    0.000000] Machine model: HY200 QZ713DF_A1 (Allwinner H713)
+> ```
+>
+> and then nothing — no systemd, no login, no oops, no panic, and complete
+> silence across a 45 s listen. That is inside `setup_arch`, long before any
+> display code, and the KMS driver was blacklisted so it is definitively not
+> ours.
+>
+> **So the failure is not about ownership of the display registers, and not
+> about which side issues the release.** Three attempts, three orderings:
+>
+> | ordering | KMS driver | result |
+> | --- | --- | --- |
+> | release from Linux | bound | lock at the RELEASED write |
+> | release from Linux | unbound | lock at the RELEASED write |
+> | release from U-Boot, then boot Linux | never registered | lock in early kernel boot |
+>
+> **The generalisation: a live MIPS window layer and a booting/running Linux
+> cannot coexist on this board by any ordering we can construct.** The one
+> configuration that works is the one stock never uses and we always have —
+> core parked, ARM owning the display.
+>
+> A plausible mechanism, untested and offered only as a lead: `sun50i-iommu`
+> probes early and resets the IOMMU, while the live window layer is fetching
+> through masters 2/3. Pulling translation out from under an active fetch would
+> hang the bus exactly this early. If anyone retries this, booting with the
+> IOMMU disabled is the variable to change — but see the cost note below first.
+>
 > #### Where that leaves the shell: no cheap route
 >
 > Both ways in are now blocked, for unrelated reasons:
