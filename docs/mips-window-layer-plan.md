@@ -5,6 +5,19 @@ says otherwise; the two things that are *not* proven are called out in
 [What is not proven](#what-is-not-proven), and you should read that section
 before spending a week on this.
 
+> ## ⚠ SUPERSEDED 2026-09-05 — read the handoff first
+>
+> [handoff-2026-09-04-mips-window-layer.md](handoff-2026-09-04-mips-window-layer.md)
+> is the current state. In short: **the window layer is now reachable.** Linux
+> boots with the MIPS alive (`h713_disp init 0x34`, which does not quiesce), the
+> firmware's debug shell answers, its elog is readable, and `Vp_Init` and
+> `SetSource` have been driven over CPU_COMM.
+>
+> Several of this plan's steps are closed by that work: the panel down-scaler is
+> dead on both paths, AFBD poking cannot reach the panel with a live core, and
+> the descriptor-plus-doorbell handshake this plan was built around **does not
+> exist**. The single open question is what constitutes a *signal* for source 1.
+
 > ## ⚠ REVISED 2026-09-04, later — step 1 ran, and it moved the target
 >
 > Step 1 was done as desk work and is written up in
