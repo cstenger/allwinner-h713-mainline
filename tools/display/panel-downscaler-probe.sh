@@ -53,7 +53,9 @@
 set -uo pipefail
 
 BOARD=${BOARD:-192.168.4.1}
-SSH="ssh -o ConnectTimeout=8 root@$BOARD"
+# 8 s was not enough for the first connection over a cold WiFi link -- the
+# preflight reported "is the board up?" on a board that was up.
+SSH="ssh -o ConnectTimeout=20 root@$BOARD"
 HOLD=${HOLD:-8}
 # 0x018000 = 1.5 in 16.16 -- the 1080->720 ratio, i.e. the case this whole
 # thread is about. Overridable so a sweep does not need an edit.
@@ -139,13 +141,65 @@ fi
 
 # --------------------------------------------- phase 3: the visible ratio
 rule
-say "PHASE 3 -- VISIBLE. Writing ratio $RATIO to 0x051c0138[21:0] for ${HOLD}s."
-say "  Watch the panel. A change in picture size is the result; no change is"
-say "  also a result and means this block is not acting on our raster."
+say "PHASE 3 -- VISIBLE, with live playback underneath."
+say "  A static login prompt issues no atomic commits, and this block may only"
+say "  latch on one. So the ratio is changed while a 720p clip is confirmed"
+say "  SCANNING OUT -- gated on the video plane cycling >= 2 distinct fb ids,"
+say "  because mpv logging its direct path proves selection, not display."
+
+play=$($SSH "
+	for c in /root/leota-av-720p.mp4 /root/video-test/disp-720p.h265 \
+	         /root/video-test/v02-1280x720-baseline.h264 \
+	         /root/video-test/*.h264 /root/leota-720p.h264; do
+		[ -f \"\$c\" ] && clip=\$c && break
+	done
+	[ -n \"\${clip:-}\" ] || { echo NOCLIP; exit 1; }
+	echo \"clip \$clip\"
+	cat > /tmp/pds-play.sh <<'PLAY'
+export LIBVA_DRIVER_NAME=v4l2_request
+exec mpv --no-config --no-audio --vo=drm --hwdec=vaapi --loop-file=inf \
+    --msg-level=all=v CLIP
+PLAY
+	sed -i \"s|CLIP|\$clip|\" /tmp/pds-play.sh
+	setsid bash /tmp/pds-play.sh </dev/null >/tmp/pds-play.log 2>&1 &
+	sleep 10
+	st=\$(ls /sys/kernel/debug/dri/*/state 2>/dev/null | head -1)
+	pl=\$(sed -n 's/.*Using [a-z]* plane \([0-9]*\) as drmprime plane.*/\1/p' /tmp/pds-play.log | head -1)
+	fbs=
+	for i in 1 2 3 4 5 6; do
+		fbs=\"\$fbs \$(grep -A2 \"^plane\[\${pl:-none}\]:\" \"\$st\" 2>/dev/null | sed -n 's/.*fb=//p' | head -1)\"
+		sleep 0.3
+	done
+	echo \"plane \${pl:-none} fbs\$fbs distinct \$(echo \$fbs | tr ' ' '\n' | sort -u | grep -c .)\"
+" 2>&1)
+say "$play" | sed 's/^/  /'
+
+stop_playback() {
+	# SIGTERM, not SIGKILL, so mpv releases DRM master and the console comes
+	# back. A previous session left mpv holding it for three minutes.
+	$SSH "pkill -TERM -f pds-play; pkill -TERM -x mpv; sleep 3; pkill -x mpv" >/dev/null 2>&1
+}
+
+if echo "$play" | grep -q NOCLIP; then
+	say "  no 720p clip on the board -- cannot gate the test. Aborting."
+	exit 1
+fi
+if ! echo "$play" | awk '/^plane /{for(i=1;i<=NF;i++) if($i=="distinct" && $(i+1)+0>=2) ok=1} END{exit !ok}'; then
+	say "  the video plane cycled fewer than two framebuffers -- nothing new is"
+	say "  being scanned out, so a null ratio result would say nothing. Aborting."
+	stop_playback
+	exit 1
+fi
+say "  scanout confirmed."
+say ""
+say "  Writing ratio $RATIO to 0x051c0138[21:0] for ${HOLD}s. WATCH THE PANEL."
+say "  A change in picture size or framing is the result; no change is also a"
+say "  result and means this block is not acting on our raster."
 
 orig=$($SSH 'busybox devmem 0x051c0138 32' 2>/dev/null)
 if [ -z "$orig" ]; then
 	say "  could not read 0x051c0138 -- aborting without writing."
+	stop_playback
 	exit 1
 fi
 new=$(( ( orig & ~0x3fffff ) | ( RATIO & 0x3fffff ) ))
@@ -169,9 +223,12 @@ if [ "$restored" != "$orig" ]; then
 	say "  RESTORE FAILED. 0x051c0138 is not back at $orig. Do not power-cycle"
 	say "  before recording this; a failed restore on live display hardware is"
 	say "  a more important result than the ratio test."
+	stop_playback
 	exit 2
 fi
 
+stop_playback
+say "  playback stopped; console should be back."
 rule
 say "Done. Record what the operator saw, including 'no change'."
 exit $rc

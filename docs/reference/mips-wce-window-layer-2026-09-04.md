@@ -210,6 +210,30 @@ sampled this block on stock Android at idle, before any of this was understood:
 Five registers, five matches, from a capture taken for an unrelated reason.
 Stock runs this block **enabled at unity** on an idle 1280x720 panel.
 
+### Read on our board, 2026-09-04: identical to stock, register for register
+
+`tools/display/panel-downscaler-probe.sh`, phases 1 and 2. Production kernel
+6.18.38, MIPS parked (`0x0306101c = 0`), panel on the login prompt, no writes.
+
+```
+051c0120 0x42000000      051c0130 0x050002D0
+051c0124 0x06000000      051c0134 0x00000000
+051c0128 0x00000500      051c0138 0x08010000
+051c012c 0x000002D0      051c013c 0x00000020
+```
+
+**All eight match the stock Android capture exactly**, including `0x0120` and
+`0x013c`, which were not part of the predicted set. Nothing moved across a 3 s
+resample, so this is configuration state, not a running counter.
+
+So the U-Boot/MIPS bring-up leaves the panel down-scaler **enabled
+(`0x0124[26:25] = 3`) at unity (`0x0138[21:0] = 0x010000`)**, on our pipeline,
+with the MIPS parked. That is the best of the three outcomes this probe was
+written to distinguish: the block is provisioned on our path rather than being
+stock-only state, and the visible test is a genuine one-register change.
+
+It does **not** show the block acts on our raster. At unity it cannot.
+
 ### Two things follow, and they are worth separating
 
 **Measured:** these registers exist, stock enables them, and the field layout is
