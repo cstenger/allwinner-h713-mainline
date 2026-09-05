@@ -47,7 +47,40 @@ D/hal  THal_Vp_RegisterSignalChangeCallback() ENTER / LEAVE
 Real work: app-level init, and it **registers the signal-change callback
 itself** — we did not call that separately.
 
-## The blue-screen subsystem is a new and promising lead
+## The blue-screen lead — CHECKED AND CLOSED
+
+**It is not the cause.** The firmware's own log settles it for free:
+
+```
+obtain: 3   enable: 0   disable: 0
+```
+
+Three `ObtainBlueScreenHandle` records — all from our `Vp_Init` call at
+timestamp 2485067 — and **not one `enable blue screen`** anywhere in the boot.
+`blue_screen.cpp` logs every enable and disable with a dedicated line
+(`"%s, enable blue screen, Handle: 0x%x[level: 0x%x, id: 0x%x], Name: %s, Tag: %s"`),
+so their absence is conclusive rather than an argument from silence.
+
+**Obtaining a handle is not enabling an overlay.** And note the timing: those
+three obtains happened *after* every earlier test, so during the AFBD enable and
+the selector flip no blue-screen handle existed at all. The black panel was
+never a mute overlay.
+
+The API is worth keeping for later even so, since it is fully named:
+
+| function | note |
+| --- | --- |
+| `ObtainBlueScreenHandle` / `ReleaseBlueScreen` | handle lifecycle |
+| `EnableBlueScreen` / `DisableBlueScreen` | logs level, id, name, tag |
+| `SetBlueScreenFlag` / `ClearBlueScreenFlag` / `CheckBlueScreenFlag` | |
+| `DumpBlueScreenStatus` | what the `bs` shell command reaches |
+| `EnableAutoBlueScreen` / `DisableAutoBlueScreen` / `CleanAutoBlueScreen` | the no-signal automation |
+| `SetHWBlueScreenColor{OfProcOut,Panel,PanelAfterGammma}` | |
+
+with three levels matching the handles: `kBlueScreenLevel_ProcBlender` (0),
+`kBlueScreenLevel_Panel` (1), `kBlueScreenLevel_PanelAfterGamma` (2).
+
+## The original reasoning, kept for the record
 
 `Vp_Init` obtains **three blue-screen handles at levels 0, 1 and 2**
 (`./blue_screen.cpp:96`). This is the classic TV-firmware "no-signal / mute"
