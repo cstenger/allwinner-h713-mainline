@@ -148,6 +148,38 @@ Usage string: `Usage: win[option] command`. Separately, the shell has
 `win_on` / `win_off` — "enable/disable window manager" — at `0x8b110948` /
 `0x8b110960`.
 
+> ### ⚠ HAZARD, learned the hard way 2026-09-04: do NOT release the MIPS from Linux
+>
+> The ARM-side pump ([`tools/mips/mips-shell.py`](../../tools/mips/mips-shell.py))
+> works and is validated in both directions, but **executing a command needs the
+> core running, and releasing it from a booted Linux hard-locks the whole SoC.**
+>
+> The seven-write release sequence was replayed from Linux with `/dev/mem`
+> (`0x02001600`, five writes to `0x0200160c`, the boot address at `0x03061030`).
+> All seven writes went through and printed. The very next statement — a 2 s
+> sleep and a read of `0x0306101c` — never returned. **Network dead, and serial
+> dead too: no echo, no output, nothing.** Physical power cycle required.
+>
+> **This is a new failure mode, and it widens a hazard the project thought it
+> understood.** The documented whole-SoC lock was *live MIPS + real Cedrus/DECD
+> traffic*, with "static frames with MIPS alive are fine". There was no video
+> here — no Cedrus, no DECD, an idle console. What was different from every
+> earlier release is **where it was done from**: every previous release was from
+> the U-Boot prompt, where nothing else owns the display. Here the KMS driver
+> was bound, holding `0x05600000`/`0x05140000`/`0x051c0000` and the AFBD IRQ,
+> when the window layer came up and took presentation.
+>
+> So the rule is not "MIPS + video locks the SoC". It is closer to **two owners
+> of the display hardware locks the SoC**, and Cedrus traffic was one instance
+> rather than the cause.
+>
+> **If the shell is worth having, get to it the way the plan's step E already
+> says:** cold boot, interrupt autoboot, release the core from the *U-Boot
+> prompt* before Linux binds anything. The pump reads `/dev/mem`, so it would
+> need porting to `md.l`/`mw.l` over serial, or the release must happen before
+> Linux starts and the pump run afterwards — which is untested and may hit the
+> same wall the moment our KMS driver probes.
+
 **Why this matters.** `win wi` prints the live geometry of every window node —
 exactly the descriptor content the plan proposes to reconstruct by
 disassembly — and `win os` is a **live scaling knob** that needs no descriptor
