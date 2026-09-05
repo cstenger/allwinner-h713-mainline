@@ -173,12 +173,61 @@ Usage string: `Usage: win[option] command`. Separately, the shell has
 > of the display hardware locks the SoC**, and Cedrus traffic was one instance
 > rather than the cause.
 >
-> **If the shell is worth having, get to it the way the plan's step E already
-> says:** cold boot, interrupt autoboot, release the core from the *U-Boot
-> prompt* before Linux binds anything. The pump reads `/dev/mem`, so it would
-> need porting to `md.l`/`mw.l` over serial, or the release must happen before
-> Linux starts and the pump run afterwards — which is untested and may hit the
-> same wall the moment our KMS driver probes.
+> #### The two-owner explanation was WRONG — tested and refuted
+>
+> The obvious fix was to remove the second owner: unbind `sun50i-h713-afbd`
+> from `5600000.display`, then release. Tried it, with a serial capture running
+> so a lock would still leave forensics
+> ([`mips-release-lock-2026-09-04.txt`](mips-release-lock-2026-09-04.txt)).
+>
+> **The unbind was clean** — driver detached, `/dev/dri/card0` gone, IRQ 249
+> freed, no oops, board fully responsive afterwards. **And it locked anyway, at
+> the same instruction:**
+>
+> ```
+> mips-shell: releasing the MIPS core -- if this is the last line, the SoC locked
+> mips-shell:   0x02001600 <- 0x80000002  clock
+> ...
+> mips-shell:   0x03061030 <- 0x4b100000  boot address
+> mips-shell:   0x0200160c <- 0x00070001  RELEASED     <- dies here, both times
+> ```
+>
+> The narration is the payoff: `release_core()`'s "survived the release" line
+> never appears, so **the lock is on the RELEASED write itself**, not on
+> anything that follows it. Two runs, two different display-ownership states,
+> identical failure. Whatever kills the SoC is in bringing the core out of
+> reset while Linux is running — not in contention over the display registers.
+>
+> **One new clue, unexplained.** The unbind produced an IOMMU fault:
+>
+> ```
+> Console: switching to colour dummy device 160x45
+> sun50i-iommu 2010000.iommu: Page fault for 0x00000000ffc85000 (master 2, dir rd)
+> ```
+>
+> Master 2 is `dec@5600000`. So detaching the driver does **not** stop the
+> fetch engine — the hardware kept scanning and faulted the moment its
+> translation went away. "Unbound" is not "quiesced", and any future attempt
+> should stop the engine explicitly rather than assuming the driver teardown did.
+>
+> #### Where that leaves the shell: no cheap route
+>
+> Both ways in are now blocked, for unrelated reasons:
+>
+> - **From Linux** — releasing the core locks the SoC, twice, independent of
+>   display ownership.
+> - **From U-Boot** — `md`/`mw` cannot reach the MIPS coherently (see the
+>   docstring of [`tools/mips/mips-shell.py`](../../tools/mips/mips-shell.py)):
+>   all DRAM is mapped MT_NORMAL cacheable, D-cache is on, `CONFIG_CMD_CACHE`
+>   is unset, and U-Boot's own `h713_mips.c` calls `flush_cache()` /
+>   `invalidate_dcache_range()` precisely because the ARM cache is not coherent
+>   with the MIPS.
+>
+> The pump itself is finished and validated in both directions; it is the
+> *core-alive* precondition that has no cheap path. Making U-Boot work means a
+> bootloader flash (FEL boot is documented non-working here) to add cache
+> maintenance or an in-U-Boot pump command. **Do not spend more power cycles
+> re-attempting the Linux release.**
 
 **Why this matters.** `win wi` prints the live geometry of every window node —
 exactly the descriptor content the plan proposes to reconstruct by
