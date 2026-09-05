@@ -259,11 +259,42 @@ Usage string: `Usage: win[option] command`. Separately, the shell has
 > configuration that works is the one stock never uses and we always have —
 > core parked, ARM owning the display.
 >
-> A plausible mechanism, untested and offered only as a lead: `sun50i-iommu`
-> probes early and resets the IOMMU, while the live window layer is fetching
-> through masters 2/3. Pulling translation out from under an active fetch would
-> hang the bus exactly this early. If anyone retries this, booting with the
-> IOMMU disabled is the variable to change — but see the cost note below first.
+> #### The IOMMU lead is REFUTED — it never gets that far
+>
+> Tested 2026-09-04: released at the U-Boot prompt as before, then booted with
+> `iommu.passthrough=1` **and** both drivers kept off the hardware entirely,
+> `initcall_blacklist=h713_afbd_platform_driver_init,sun50i_iommu_driver_init`.
+> Locked again.
+>
+> The last line on the console was:
+>
+> ```
+> [    0.000000] psci: probing for conduit method from DT.
+> ```
+>
+> **That is the refutation, and it does not depend on where exactly the hang
+> is.** PSCI probing happens in early init, long before any platform driver is
+> probed — so `sun50i_iommu_probe` had not run, and could not have run, at the
+> moment the SoC died. The IOMMU cannot be the cause, and blacklisting it
+> changed nothing because it was never reached.
+>
+> **A correction, because it nearly became a false finding.** This run looked
+> like it "got much further" than the previous one, which stopped at
+> `Machine model:`. It did not: the earlier attempt's console output was piped
+> through a `grep` filter, and none of `reserved mem`, `cma`, `Zone ranges` or
+> `psci` match any pattern in it. **The two boots may well have died at the same
+> place.** Nothing here shows the failure point moved, and the tempting reading
+> that the IOMMU knobs helped is unsupported. Capture boot output unfiltered.
+>
+> So the cause is in *very early* kernel init, before device drivers exist —
+> which also rules out every driver-level explanation, not just the IOMMU one.
+> What remains is unattractive to test: something the kernel does to memory,
+> caches or the interconnect during `setup_arch`/`psci` init, or simply that the
+> MIPS wedges the bus on its own a fixed time after release and the kernel is an
+> innocent bystander. **Note that the release is followed by 20-30 s of operator
+> typing before `bootcmd` runs, so the "time since release" confound has never
+> been controlled** — a scripted release-then-immediate-boot would separate
+> those two explanations, and is the only cheap experiment left here.
 >
 > #### Where that leaves the shell: no cheap route
 >
