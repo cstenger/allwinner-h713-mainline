@@ -50,10 +50,35 @@ ADDRESS WINDOW.  MIPS kseg0/kseg1 map to system addresses through the measured
 LINE TERMINATOR.  The shell's key table binds both `0x0d` and `0x0a` to the
 "enter" handler at `0x8b18337c`, so either works; we send `\\r`.
 
-THE MIPS MUST BE ALIVE.  Nothing is consumed while the core is parked -- a
-staged command simply sits in the ring until it runs.  That is a feature for
-testing (stage first, release second), but it means a silent `--cmd` with the
-core parked is not a failure of this tool.  `--status` reports the core state.
+THE MIPS MUST BE ALIVE, AND GETTING THERE IS THE HARD PART.  Nothing is
+consumed while the core is parked -- a staged command simply sits in the ring.
+So `--cmd` returning nothing with the core parked is not a failure of this tool.
+
+Releasing the core from a booted Linux **hard-locked the whole SoC** on
+2026-09-04: network and serial both dead, physical power cycle.  There was no
+video running, so the documented "MIPS + Cedrus traffic" rule did not cover it.
+The difference from every earlier, successful release at the U-Boot prompt is
+that our KMS driver was bound and owning the display when the window layer came
+up.  Hence `--unbind`, and `--release` refusing to run without it.
+
+WHY NOT DO THIS FROM U-BOOT INSTEAD, which is the obvious answer and does not
+work: U-Boot maps all DRAM from 0x40000000 as MT_NORMAL cacheable
+(`sunxi_mem_map` in arch/arm/mach-sunxi/board.c), D-cache is on
+(`CONFIG_SYS_DCACHE_OFF` unset) and `CONFIG_CMD_CACHE` is **not** set, so there
+is no `dcache off`.  `md`/`mw` do no cache maintenance, so a command written
+with `mw.l` would sit in the ARM's D-cache where the MIPS -- which reads this
+memory uncached through kseg1, outside the ARM's coherency domain -- cannot see
+it, and polling the up-ring offsets with `md.l` would be answered from a stale
+cache line.  U-Boot's own code proves the incoherency: `h713_mips.c` calls
+`flush_cache()` after loading the firmware and `invalidate_dcache_range()`
+before reading anything the MIPS wrote.  The 2026-08-07 probe that read this
+block from the U-Boot prompt only ever did a *cold first read*, which is the one
+case that works regardless.  Making the U-Boot route work means adding cache
+maintenance to U-Boot and flashing the bootloader, since FEL boot is documented
+as non-working on this SoC.
+
+Linux has no such problem: /dev/mem maps the carveout as Device memory, which is
+uncached -- proven the hard way by the SIGBUS documented on `Mem` below.
 
 PRIVILEGE CAVEAT, unresolved.  In the shell's command table `win` carries flag
 word `0x2000`, the same as `regw`, while `regr`/`cmds`/`keys` carry `0x2100`.
@@ -242,6 +267,80 @@ class Terminal:
 
 MIPS_RESET_STATUS = 0x0306101C
 
+# h713_mips_release_reset() from arch/arm/mach-sunxi/h713_mips.c, in order.
+# The firmware is already resident and its shared memory published by the
+# preboot, so re-releasing a quiesced core needs nothing else.
+RELEASE_SEQUENCE = [
+    (0x02001600, 0x80000002, "clock"),
+    (0x0200160C, 0x00000000, "reset asserted"),
+    (0x0200160C, 0x00010000, "stage 1"),
+    (0x0200160C, 0x00030000, "stage 2"),
+    (0x0200160C, 0x00030001, "stage 3"),
+    (0x03061030, 0x4B100000, "boot address"),
+    (0x0200160C, 0x00070001, "RELEASED"),
+]
+
+DRM_DRIVER = "/sys/bus/platform/drivers/sun50i-h713-afbd"
+DRM_DEVICE = "5600000.display"
+
+
+def kmsg(text):
+    """Log to the kernel ring, which reaches the serial console immediately.
+
+    When the SoC locked on 2026-09-04 the ssh session died mid-script and took
+    the progress output with it, so we could not tell which write did it. This
+    goes out the UART as it happens and survives the lock.
+    """
+    try:
+        with open("/dev/kmsg", "w") as handle:
+            handle.write(f"mips-shell: {text}\n")
+    except Exception:
+        pass
+
+
+def display_driver_bound():
+    return os.path.exists(os.path.join(DRM_DRIVER, DRM_DEVICE))
+
+
+def unbind_display():
+    """Take our KMS driver off the display hardware.
+
+    THE REASON THIS EXISTS.  Releasing the MIPS from a booted Linux hard-locked
+    the whole SoC on 2026-09-04 -- network and serial both dead, physical power
+    cycle.  There was no video running, so the previously documented
+    "MIPS + Cedrus traffic" rule did not cover it.  What was different from
+    every earlier (successful) release at the U-Boot prompt is that our KMS
+    driver was bound, holding the AFBD/route/LVDS windows and the AFBD IRQ,
+    when the window layer came up and took presentation.
+
+    So: remove the second owner first.  This is the hypothesis under test, not
+    an established fix -- if the SoC locks again with the driver unbound, then
+    two-owner contention was the wrong explanation.
+    """
+    if not display_driver_bound():
+        return "already unbound"
+    kmsg("unbinding the KMS driver before releasing the MIPS")
+    with open(os.path.join(DRM_DRIVER, "unbind"), "w") as handle:
+        handle.write(DRM_DEVICE)
+    time.sleep(1.0)
+    if display_driver_bound():
+        sys.exit("unbind did not take -- refusing to release the core")
+    return "unbound"
+
+
+def release_core(mem):
+    """Replay the release sequence, narrating to the UART as we go."""
+    kmsg("releasing the MIPS core -- if this is the last line, the SoC locked")
+    for addr, value, what in RELEASE_SEQUENCE:
+        kmsg(f"  {addr:#010x} <- {value:#010x}  {what}")
+        print(f"  {addr:#010x} <- {value:#010x}  {what}", flush=True)
+        mem.put32(addr, value)
+        time.sleep(0.15)
+    time.sleep(2.0)
+    status = mem.u32(MIPS_RESET_STATUS)
+    kmsg(f"core released, status={status:#x} -- survived the release")
+    return status
+
 
 def mips_alive(mem):
     """1 = the core is running.
@@ -262,10 +361,30 @@ def main():
     parser.add_argument("--cmd", help="send a command line, then read the reply")
     parser.add_argument("--wait", type=float, default=1.5, help="seconds to wait for output")
     parser.add_argument("--raw", action="store_true", help="hex-dump output instead of decoding")
+    parser.add_argument("--unbind", action="store_true",
+                        help="take the KMS driver off 5600000.display first")
+    parser.add_argument("--release", action="store_true",
+                        help="release the MIPS core (refuses while the KMS driver is bound)")
     args = parser.parse_args()
 
     term = Terminal()
     alive = mips_alive(term.mem)
+
+    if args.unbind:
+        print(f"[KMS driver: {unbind_display()}]", flush=True)
+
+    if args.release:
+        if alive:
+            print("[the core is already running -- not releasing it again]", flush=True)
+        elif display_driver_bound():
+            sys.exit("REFUSING: sun50i-h713-afbd is still bound to 5600000.display.\n"
+                     "Releasing the core with a second owner of the display hard-locked\n"
+                     "the SoC on 2026-09-04. Pass --unbind, or unbind it yourself.")
+        else:
+            status = release_core(term.mem)
+            alive = status == 1
+            print(f"[core status {status:#010x}"
+                  f"{'' if alive else '  !! NOT ALIVE'}]", flush=True)
 
     if args.status or not (args.drain or args.cmd):
         print(f"control block  {term.block:#010x}  acID {term.acid!r}")
