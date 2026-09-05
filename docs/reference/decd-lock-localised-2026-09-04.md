@@ -97,6 +97,11 @@ be told, and writing the ring is not what tells it. That is the same gap the
 blue test found, now reached from the other side and with the lock out of the
 way.
 
+**Operator confirmed the panel is BLACK** with the frame in the ring, the core
+alive and DECD enabled. So this is not a logging gap — the window layer really
+is not compositing our frame, and the elog silence and the standing `bypass`
+are telling the truth.
+
 ## The superseded next-step note
 
 The following was written before the budget test and is kept for the record:
