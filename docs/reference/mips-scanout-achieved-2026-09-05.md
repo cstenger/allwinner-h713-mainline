@@ -209,3 +209,52 @@ diagonal goes vertical.
 Candidates worth including: `0x500` (1280, 1x source), `0x6A8` (1704 = 2x the
 852 display width), `0x780` (1920), `0x800` (2048), `0xA00` (2560, current), and
 `0xC00` (3072).
+
+## Coherent source block removes the shear — test_73
+
+With the IOMMU translating **and** the whole source block set coherently to
+1280x720:
+
+```
+0x05600020 = 0x02CF04FF   0x05600030 = 0x02D00500   0x05600040/44 = 0x00000500
+0x05600024 = 0x002C004F   0x05600048 = 0x02D00500   0x0560004c   = 0x01680500
+0x05600010 = 0x03000613   format 6
+```
+
+`local/lcd-photos/test_73/` shows the 852x480 window as a **flat uniform field —
+no stripes, no weave, no noise band.** The diagonal shear is gone.
+
+Four distinct faults have now been peeled off in order:
+
+| fault | fix | evidence |
+| --- | --- | --- |
+| reading the wrong memory | IOMMU master 2 translating | test_71: garbage -> clean structure |
+| pixel format | `0x05600011` = 6 | test_69: pattern changed character |
+| line pitch | strides | test_70: stripes vanished |
+| incoherent geometry | all seven words at 1280x720 | test_73: shear gone |
+
+**Note the earlier stride sweep is void.** It was run with `0x30` still at
+852x480 while `0x20`/`0x24` said 1280x720, so no stride could have been right;
+that is why positions looked similar and "stuck". The firmware was *not*
+rewriting the registers — verified by holding `0xC00` and reading it back
+unchanged over six seconds.
+
+## What remains: the field is uniform but too bright
+
+The frame's luma is almost entirely `0x51` (~32%), min 12 max 222, so a correct
+render is a mid-grey field slightly darker than the blank panel around it. The
+window is instead uniformly *brighter* than its surround.
+
+So the geometry is right and the values are not. Candidates, untested:
+
+- we are reading valid memory that is not our frame (the IOVA maps somewhere
+  else, or only partially);
+- a gain/range conversion in the pipeline (limited vs full range);
+- the plane is being read but the content is not what the file holds.
+
+**The decisive next test is content substitution, not another register.**
+`/root/decd-green.nv12` and `/root/decd-red.nv12` are distinct known frames.
+Submit each and see whether the window changes accordingly. If it tracks the
+file, we are reading our buffer and the remaining fault is value mapping. If it
+stays uniform white regardless, we are not reading our data at all and the
+address still is not right.
