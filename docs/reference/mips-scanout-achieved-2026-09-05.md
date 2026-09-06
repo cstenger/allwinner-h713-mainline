@@ -170,3 +170,42 @@ was even valid. The address was visible in a register the whole time, and the
 project's own notes already record IOVA-as-physical as a known failure mode with
 this exact signature. **Check that the source address is in DRAM before
 interpreting anything about pixel layout.**
+
+## The IOMMU flip fixed the address — one clean fault left
+
+Ran with the documented ordering (selector to RGB, source 0 off, `0x02010030`
+`0x7c -> 0x78`, source on, route):
+
+```
+bypass      0x7C -> 0x78
+IOMMU INT_STA  0x00000000    zero faults across all three windows
+core           0x00000001
+```
+
+**Zero faults with master 2 translating proves the IOVAs are genuinely mapped** —
+an unmapped one would have faulted immediately.
+
+`local/lcd-photos/test_71/` then shows something categorically different from
+every previous attempt: **clean, bold diagonal stripes in green and magenta,
+sharp-edged, with no noise band and no fine weave.**
+
+That is the signature of a **pure stride mismatch** — each line offset from the
+previous by a constant, and nothing else wrong. The structure is real data, not
+aliased garbage: sharp edges and only two colours mean the fetch is walking a
+real plane at the wrong line pitch.
+
+So the fault has gone from "reading the wrong memory" to "reading the right
+memory with the wrong line length", which is a one-parameter problem.
+
+### Next: sweep the stride, do not derive it
+
+The arithmetic is under-determined — the display window (852 wide), the source
+(1280), the scaler ratio (43/64) and the 2x-vs-1x question all feed the pitch,
+and the previous three attempts to reason it out were each wrong. A sweep costs
+one operator window and settles it empirically: step `0x05600040`/`0x44` through
+candidate values, hold each a few seconds, and look for the frame where the
+diagonal goes vertical.
+
+Candidates worth including: `0x500` (1280, 1x source), `0x6A8` (1704 = 2x the
+852 display width), `0x780` (1920), `0x800` (2048), `0xA00` (2560, current), and
+`0xC00` (3072).
