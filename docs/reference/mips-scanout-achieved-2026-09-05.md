@@ -350,3 +350,54 @@ output addresses `0x056001D0`/`D4`) and is disabled on stock during playback,
 so it is free to use. Capturing one fetched frame to memory and diffing it
 against the source file would give the exact per-line offset in bytes, which no
 photograph can.
+
+## The AFBD writeback: enable sequence recovered, but it is not the pixel path
+
+Derived from `__afbd_wb_en` in `ge2d_dev.ko` (`0x10e40`) rather than guessed.
+The routine reads `0x056001C0`, then for the video channel:
+
+```
+r3 |= 0x100          bit 8
+r3 |= 0x001          bit 0
+r2  = r3 | 0x20      bit 5
+io_accessor_write_reg(2, 0x056001C0, r2, 0xffffffff)
+io_accessor_write_reg(2, 0x05600014, enable, 0xffffffff)   <- commit latch
+```
+
+so the enable value is **`0x121`**, committed through `0x05600014`. The other
+channels use `0x05600144` (bit 7) and `0x05600104`. A bare `1` is refused —
+which is what the first attempt wrote, and why it read back 0.
+
+**On hardware this works**: `0x056001C0` then reads `0x120` (bit 0 self-clears,
+so it is a trigger) and the output buffer receives data.
+
+**But the data is not pixels.** With `0x056001D0` pointed at a scratch buffer,
+the capture reads:
+
+```
+81 00  c9 01  d9 01  c9 01  24 01  a5 01  a5 01  b1 01  e9 01  91 01  00 00 ...
+```
+
+As 16-bit little-endian: `129, 457, 473, 457, 292, 421, 421, 433, 489, 401`,
+then zeros — ten values in a narrow range, sparse across 8 KiB. That is
+measurement or histogram output, not a frame. Bits 5/8 evidently arm a
+statistics writeback; the frame path is a different channel or mode.
+
+Worth keeping regardless: the enable sequence is now known and reproducible, and
+`0x056001D0`/`D4` accept physical addresses under IOMMU bypass.
+
+## Physical addressing works and removes the IOMMU as a variable
+
+`decd-client` stages the frame at a **known physical address** and the bytes
+there are byte-exact against the file:
+
+```
+prepared image dma-buf at 0x6c500000
+phys 0x6c500000 first 32 == decd-test-frame.nv12 first 32   -> True
+```
+
+So the registers can be programmed with physical `Y = 0x6c500000`,
+`C = 0x6c5E1000` under bypass (`0x02010030 = 0x7C`), with no IOMMU involvement
+at all. That is a simpler configuration than the translating route and has not
+yet been tested visually — it is the obvious next visual run, and it also tests
+whether the IOVA mapping was contributing to the shear.
