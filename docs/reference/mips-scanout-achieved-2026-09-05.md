@@ -113,3 +113,60 @@ test.
   aspect ratio, overscan, or a default with `b_par_valid: 0` and `afd: 0` in the
   signal info. It is a window-geometry question, not a scaling one.
 - The selector flip is manual and does not persist.
+
+## ROOT CAUSE — the fetch was never reading our buffer
+
+Found 2026-09-05 after three visual tests. **All of them were reshaping
+garbage.**
+
+```
+0x02010030 = 0x0000007C     bit 2 set -> IOMMU master 2 BYPASSING
+0x05600070 = 0xFFE00000     Y
+0x05600084 = 0xFFEE1000     C
+```
+
+DRAM is `0x40000000`-`0x7fffffff`. `0xFFE00000` is an **IOVA**, and with master 2
+bypassing the fetch engine takes it as a physical address. So it has been
+reading whatever that aliases to, not our frame.
+
+That retires the interpretation of the whole test sequence:
+
+| test | reading at the time | actual meaning |
+| --- | --- | --- |
+| fine comb, green (test_68) | split geometry | garbage, shaped by our stride |
+| coarse stripes + flat (test_69) | format selector wrong | garbage, reshaped by format 6 |
+| stripes gone, diagonal weave (test_70) | 2x stride was right | garbage, reshaped again |
+
+The stride and format changes *did* alter the fetch's interpretation — which is
+why the pattern kept changing — but of the wrong memory.
+
+**What a correct render should look like**, from the frame itself: luma almost
+entirely `0x51` with min 12 / max 222, i.e. a mostly-uniform mid-dark image with
+some structure; chroma `dc a6 d9 a2 ...`, a definite colour cast. Nothing like a
+green weave.
+
+### The fix, and its ordering constraint
+
+Either make master 2 translate so the IOVAs resolve, or give the hardware
+physical addresses (the `h713-kernel-decd-contiguous.fit` variant).
+
+The flip is one register but has a **documented hazard**: patch 0076 established
+that `0x02010030` may only go `0x7c -> 0x78` while the **DECD video source is
+disabled**, because the source sits at base 0 with inherited geometry and scans
+low memory the instant it is enabled. The safe order is therefore:
+
+```
+selector -> RGB
+source 0 disable (0x05600010 bits 1:0 = 0) + commit
+0x02010030 = 0x78
+source 0 enable + commit
+selector -> video
+```
+
+### Method note
+
+Three operator observations were spent before checking whether the fetch address
+was even valid. The address was visible in a register the whole time, and the
+project's own notes already record IOVA-as-physical as a known failure mode with
+this exact signature. **Check that the source address is in DRAM before
+interpreting anything about pixel layout.**
