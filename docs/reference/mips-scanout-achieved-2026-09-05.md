@@ -258,3 +258,47 @@ Submit each and see whether the window changes accordingly. If it tracks the
 file, we are reading our buffer and the remaining fault is value mapping. If it
 stays uniform white regardless, we are not reading our data at all and the
 address still is not right.
+
+## CONFIRMED: our frames render through the MIPS window layer — test_74
+
+Content substitution, three known-different frames, coherent 1280x720 block,
+IOMMU translating:
+
+| position | frame | result |
+| --- | --- | --- |
+| 1 | `decd-green.nv12` | **solid clean green**, correctly placed in the 852x480 window |
+| 2 | `decd-red.nv12` | **solid purple** |
+| 3 | `decd-test-frame.nv12` | diagonal stripes |
+
+**The window tracks the submitted file.** That settles the open question: we are
+reading our own buffer, the MIPS window layer composites it, and it reaches the
+glass. A flat frame renders cleanly, uniformly and in the right place.
+
+Note the mechanism that makes this work without extra ring writes: the client
+reuses the same dma-buf and the IOVA is stable at `0xFFE00000`, so writing new
+content into that buffer changes the display without a fresh ring write. The
+exhausted `ring_writes_max` budget therefore did **not** invalidate positions 2
+and 3, contrary to what was assumed when the run finished.
+
+### Two faults remain, and they are now cleanly separated
+
+**Colour mapping.** Green renders green; red renders purple. A flat frame proves
+luma and placement are right, so this is a chroma issue alone — most likely U/V
+order (NV12 vs NV21) or the colour matrix, not the fetch.
+
+**The shear is not gone, only invisible on flat frames.** This corrects the
+test_73 reading. A uniform field is unchanged by a stride shear, so green and
+red *cannot* show it; only the structured test frame can. test_73 concluded "the
+coherent block removes the shear" from a frame whose luma is almost entirely
+`0x51` — that conclusion was unsupported, and position 3 here shows the stripes
+still present.
+
+Most likely cause, untested: a fresh submit makes the WCE recompute and rewrite
+`0x30`/`0x48`/`0x4c` back to 852x480 after our coherent values are applied. The
+check is cheap — submit, then read those three registers before routing.
+
+### Method note
+
+**A flat test frame cannot validate geometry.** Two conclusions in this file
+were drawn from uniform output. Any future geometry test must use a frame with
+structure; `decd-test-frame.nv12` qualifies, the green and red ones do not.
