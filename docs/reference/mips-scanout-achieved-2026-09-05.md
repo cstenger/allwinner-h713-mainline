@@ -3,12 +3,23 @@
 2026-09-05. **Operator-confirmed: a frame appeared on the glass**, routed by the
 MIPS window layer. First time in this project.
 
-## What was on screen
+## What was on screen — CORRECTED after seeing the photographs
 
-> "I saw a frame, it was greyscale and didn't fill the screen."
+**The output is corrupt.** `local/lcd-photos/test_68/` shows green/yellow
+horizontal bands with fine vertical comb striping, and a band of noise-like
+speckle across the top ~20%, occupying roughly the top-left two-thirds of the
+projected frame with the remainder blank.
 
-Both symptoms have exact, already-known causes, and neither is a fetch or
-routing defect:
+This section originally read the operator's "greyscale and didn't fill the
+screen" as two fully explained symptoms. That was wrong and oversold the
+result: the photographs show comb-striping and a noise band that neither
+explanation accounts for.
+
+**What is genuinely established is the routing, not the picture.** Pixels reach
+the glass through the MIPS window layer, which nothing before this session
+achieved. The image itself is garbage.
+
+The two partial explanations below still stand as far as they go:
 
 **Greyscale** — `0x05140508` read `0x14000000`. Bits 23:16 are the chroma gain
 and were `0x00`, which is the documented greyscale signature from the
@@ -47,6 +58,48 @@ with the firmware having programmed, on its own:
 - **The LVDS selector is ours to flip after all.** Earlier the same write was
   inert; the difference is that nothing was composited behind it then. It was
   never the selector that was wrong.
+
+## The split-geometry theory — tested, NEGATIVE
+
+The AFBD source block was left internally contradictory:
+
+```
+0x05600020  0x02CF04FF   1279 x 719     <- our driver: 1280x720
+0x05600024  0x002C004F   blocks for 1280x720
+0x05600040  0x00000500   Y stride 1280
+0x05600044  0x00000500   C stride 1280
+
+0x05600030  0x01E00354   852 x 480      <- firmware
+0x05600048  0x01E00354   luma 852x480   <- firmware
+0x0560004c  0x00F00354   chroma 852x240 <- firmware
+```
+
+That is the seven-word coherence problem from 2026-09-04, mirrored: the firmware
+moved its three words while our four stayed. A fetch whose line length and line
+advance disagree produces exactly comb-shear, and chroma at the wrong offset
+produces green.
+
+**Tested by forcing all seven to 1280x720** (`0x30`/`0x48` = `0x02D00500`,
+`0x4c` = `0x01680500`, chroma gain `0x144C0000`, commit latch pulsed) and
+re-routing. **Operator: the same corruption.** So split geometry was not the
+cause, or not the only one.
+
+*Process note: this run was started without prompting the operator to watch,
+against the standing rule that operator-timed tests get their own turn. Part of
+it went unobserved.*
+
+## The strongest untested candidate: the format selector
+
+`0x05600010` reads `0x03000013`. Bits 15:8 are the **pixel-format selector** and
+they are **`0x00`**. `dec_reg_video_channel_attr_config` — the vendor's only
+writer of that field, dead code in stock and uncalled in our port — writes **6**
+for 8-bit NV12 (`mode == 1`), and the vocabulary the firmware emits is
+`{1, 6, 7}`.
+
+A fetch interpreting NV12 under format 0 would give wrong luma stride *and*
+wrong chroma placement, which is the shape of what the photographs show. Setting
+bits 15:8 to 6 (`0x03000613`) and pulsing the commit latch is a one-register
+test.
 
 ## What is still open
 
