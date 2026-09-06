@@ -302,3 +302,51 @@ check is cheap — submit, then read those three registers before routing.
 **A flat test frame cannot validate geometry.** Two conclusions in this file
 were drawn from uniform output. Any future geometry test must use a frame with
 structure; `decd-test-frame.nv12` qualifies, the green and red ones do not.
+
+## Colour is a symptom of the shear, not a separate fault — test_75
+
+Chroma-gain sweep on flat red, plus 852x480 structured bars at the firmware's
+own native geometry.
+
+**The gain bytes are gain, not U/V selection.** `0x144C0000` gives saturated
+purple; `0x4C140000` (bytes swapped) gives pale pink. So bits 23:16 are the
+dominant chroma gain, as previously recorded, and **no value of that register
+turns purple into red.** Stop sweeping it.
+
+**The unifying observation:**
+
+| frame | U | V | result |
+| --- | --- | --- | --- |
+| green | 54 | 34 | **renders correctly** |
+| red | 90 | **240** | renders purple |
+
+Green's U and V are nearly equal, so it is *insensitive* to U/V misalignment.
+Red's differ by 150, so it is maximally sensitive. That is precisely the
+signature of the chroma plane being sampled misaligned — which is what an
+incorrect chroma stride produces.
+
+**So the colour error and the shear are the same fault.** Fixing plane geometry
+should fix both, and chasing colour separately is chasing a symptom.
+
+### The 852x480 native-geometry test
+
+Feeding the firmware its own numbers (`0x30`/`0x48` `0x01E00354`, `0x4c`
+`0x00F00354`, strides `0x354`) with a matching 852x480 source **reduced the
+shear substantially** — roughly three wide bands where 1280x720 gave seven — but
+did not remove it, and produced a hard horizontal split with a solid field
+below.
+
+So source/window mismatch was *part* of it, not all of it. Something in the
+plane geometry is still wrong, and it affects luma and chroma together.
+
+### Where this should go next, and it is not another sweep
+
+Six visual runs have now been spent on geometry hypotheses, and the hit rate has
+been poor. The remaining fault is a plane-layout arithmetic problem, and the
+project has a cheaper tool for exactly this: **read back what the fetch actually
+produced instead of photographing it.** The AFBD writeback engine is documented
+in [ge2d-plane-open-re.md](../ge2d-plane-open-re.md) (enable `0x056001C0`,
+output addresses `0x056001D0`/`D4`) and is disabled on stock during playback,
+so it is free to use. Capturing one fetched frame to memory and diffing it
+against the source file would give the exact per-line offset in bytes, which no
+photograph can.
