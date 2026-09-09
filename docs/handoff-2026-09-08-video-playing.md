@@ -347,6 +347,43 @@ VideoInfo format selector, the rebuilt client binaries, and these three patches
 committed but not visually verified.** Rebuild and re-confirm before relying on
 it; it has no effect on rendering by analysis, so this is low risk but unproven.
 
+## Degradation is measurable without the panel — use the fence-stall rate
+
+The drift below also shows up in telemetry, which means it can be tracked
+without spending operator looks.
+
+`decd-play` stalls when a release fence does not signal within 2000 ms
+(*"frame N's release fence has not signalled in 2000 ms with 4 held (cap 4)"*),
+and a stalled run simply omits `PLAY_COMPLETE`. So **completion rate is a proxy
+for board health**:
+
+| board state | result |
+| --- | --- |
+| fresh boot, refcount ~6 | completes, **29.94 fps** |
+| ~28 min uptime, refcount 23 | **6 stalls in 12 runs**, ~27 fps |
+
+Measured 2026-09-09 while trying to attribute an intermittent freeze to the
+VideoInfo format selector:
+
+```
+selector 6:  X . . X . .    2 stalls / 6
+selector 0:  X X X . X .    4 stalls / 6      (. = completed, X = fence stall)
+```
+
+**Selector 6 stalls less than selector 0** — opposite to the hypothesis and well
+inside noise at six samples each. The selector is **not** the cause; the stall is
+intermittent and tracks accumulated board state, exactly like the rendering
+failure.
+
+**Use this before and after any change**: run the harness six times and count
+completions. It costs no operator attention and it distinguishes "my change
+broke it" from "the board has drifted" — the distinction that cost several hours
+of wrong attributions.
+
+Note also that a rebuilt `decd-play` runs at ~27 fps where the historical binary
+(`ab5f6814`) reached 29.94 fps. Whether that is build flags or source drift is
+not established.
+
 ## Board-state drift — cold boot before debugging a rendering regression
 
 **2026-09-09.** Byte-identical software — module `81bad18a` (patch 0095) and
