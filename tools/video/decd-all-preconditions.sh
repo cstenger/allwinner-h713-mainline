@@ -304,6 +304,20 @@ for r in $COMP; do
 done
 
 if [ "$MODE" = live ]; then
+	# Wait for the driver to (re)populate the ring before checking it.
+	# patch 0096 blanks all four slots when the last client closes, which is
+	# correct, but it races with the next run: the ring reads zero for a moment
+	# at startup and the checks below then report a spurious "Y slot non-zero"
+	# failure.  Observed 1 run in 5-6.  The old decd-visible-sequence.sh had a
+	# wait_ring() helper for the same reason.
+	_w=0
+	while [ $_w -lt 40 ]; do
+		[ "$(rd 0x05600070)" != 0x00000000 ] && break
+		_w=$((_w + 1))
+		sleep 0.1
+	done
+	[ $_w -gt 0 ] && say "ring armed after ${_w}00 ms"
+
 	# The driver owns the ring: require every slot non-zero and every Y/C pair
 	# separated by exactly the luma-plane size.  A zero slot means the driver
 	# wrote a blank frame; a wrong delta means the pair is not a real frame.
