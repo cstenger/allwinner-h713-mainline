@@ -325,6 +325,28 @@ vsync even when the frame has not changed (`ring_writes_done` advances ~61/s
 against 30 fps content). Redundant work, but the publish is idempotent and
 atomic, so it costs bus traffic rather than correctness.
 
+## 0071/0072/0073 — confirmed visually on both paths
+
+**2026-09-09, from a cold-boot baseline, one change at a time.**
+
+| step | module | result |
+| --- | --- | --- |
+| baseline | `81bad18a` (0094+0095) | static frame **correct** (operator-confirmed) |
+| + 0071/0072/0073 | `67d9d788` | static frame **correct** |
+| + 0071/0072/0073 | `67d9d788` | live playback **correct**, 300 frames @ 29.94 fps, logo restored |
+
+So the three patches are good on both the static and playback paths, and every
+attribution made during the preceding confused stretch — patch 0096, the
+VideoInfo format selector, the rebuilt client binaries, and these three patches
+— was **wrong**. The cause was board-state drift alone (next section).
+
+**Caveat on the format selector.** `2ed6218` re-lands VideoInfo selector 6 in
+`tools/video/decd-{play,client}.c`, but the visual confirmations above used the
+**restored original binaries** (`decd-client.coord1080` = `256143c8`,
+`decd-play` = `ab5f6814`), which request selector 0. **Selector 6 is therefore
+committed but not visually verified.** Rebuild and re-confirm before relying on
+it; it has no effect on rendering by analysis, so this is low risk but unproven.
+
 ## Board-state drift — cold boot before debugging a rendering regression
 
 **2026-09-09.** Byte-identical software — module `81bad18a` (patch 0095) and
