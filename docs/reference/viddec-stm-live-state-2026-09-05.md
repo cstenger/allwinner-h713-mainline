@@ -1,5 +1,11 @@
 # The signal state machine, confirmed live — enabled, ready, never polled
 
+> Correction, 2026-09-08: the state-machine callback is registered under event 8
+> through a secondary-vtable thunk. GetFrameInfo writes a caller-supplied buffer,
+> so zero persistent buffers do not prove it never executed. ARM reads also
+> require a MIPS cache-visibility qualification. See
+> [the new dispatch trace](dispatch-trace-2026-09-08.md).
+
 2026-09-05, read-only, core alive. Confirms
 [viddec-signal-chain](viddec-signal-chain-2026-09-05.md) against live memory
 rather than against absence of log records.

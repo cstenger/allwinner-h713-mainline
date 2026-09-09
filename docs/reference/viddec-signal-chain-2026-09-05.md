@@ -1,5 +1,10 @@
 # The full signal chain for source 1, and where it stops
 
+> Correction, 2026-09-08: event 8 has a registered secondary-vtable callback into
+> the state machine. GetFrameInfo copies into its caller's destination, which is
+> self+0xb0 only when CheckSignal supplies that address. See
+> [the new dispatch trace](dispatch-trace-2026-09-08.md).
+
 Static RE, no board writes. Completes
 [what-is-signal-for-source1](what-is-signal-for-source1-2026-09-05.md) and
 [viddec-device-vtable](viddec-device-vtable-2026-09-05.md).

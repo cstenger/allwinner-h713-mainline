@@ -1,5 +1,7 @@
 # Handoff — 2026-09-06: the fetcher was never the problem
 
+> Follow-up: [September 8 Claude handoff](handoff-2026-09-08-mips-callback-trace.md) records later experiments, corrected interpretations, recovery state, and next steps.
+
 One session, four operator looks, three of them wasted. It ends with the
 corruption's cause identified by a free register read, a ready-to-run fix on
 the board, and a clear recommendation not to run that fix but the better one
