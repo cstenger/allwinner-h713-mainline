@@ -233,7 +233,24 @@ Userspace sees *"Not enough memory to allocate source buffers"* while `MemFree`,
 `CmaFree` and `buddyinfo` are all healthy — **not** memory pressure. Neither
 `STOP_VIDEO_STREAM` nor `rmmod` reclaimed them; only a reboot did.
 
-**Now:** `patches/kernel/0096` drains on the last close. Six client runs and
+**Now:** `patches/kernel/0096` drains on the last close.
+
+**Soak result, 30 consecutive client runs:**
+
+```
+run   0   5   10   15   20   25   30
+ref   9  10   10   10   10   10   10
+```
+
+It plateaus and stops. The number it settles at depends on the starting point
+(observed 6 and 10 in different sessions), not on the number of runs. Before the
+patch it was +2 per run without bound, reaching the 89 that broke Cedrus.
+
+Two claims made and corrected while measuring this, both from too few samples:
+"flat across five more runs" (six runs, it happened to sit still) and then "not
+bounded, +4 over twelve" (one noisy sample against the ceiling). Neither was
+earned; the 30-run trend is.
+ Six client runs and
 three live playback runs with **zero** refcount growth, no oops, display paths
 unaffected.
 

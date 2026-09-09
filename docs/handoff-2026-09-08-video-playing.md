@@ -358,6 +358,23 @@ and deliberately leaves `q->slots[0..3]` alone.
   pass, the ring advances for a full 10 s window, and sustained playback was
   operator-confirmed over a 25 s hold.
 
+**Soak result, 30 consecutive client runs:**
+
+```
+run   0   5   10   15   20   25   30
+ref   9  10   10   10   10   10   10
+```
+
+It plateaus and stops. The number it settles at depends on the starting point
+(observed 6 and 10 in different sessions), not on the number of runs. Before the
+patch it was +2 per run without bound, reaching the 89 that broke Cedrus.
+
+Two claims made and corrected while measuring this, both from too few samples:
+"flat across five more runs" (six runs, it happened to sit still) and then "not
+bounded, +4 over twelve" (one noisy sample against the ceiling). Neither was
+earned; the 30-run trend is.
+
+
 **It bounds, it does not eliminate.** Two references stay held — the displayed
 frame — and are released when the next client's frame displaces it. Steady state
 is 2 instead of 2 per run. Retiring the displayed frame safely is unsolved.
