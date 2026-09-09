@@ -1,0 +1,227 @@
+misc: decd: release held frames when the last client closes
+
+dec_release_file() was a no-op, and that was a dma_buf reference leak.  A frame
+is released only when a LATER frame displaces it, so whatever a client submitted
+last stayed pinned after it exited or was killed.
+
+Measured before: +2 references per decd-client run even on clean exit (the image
+and VideoInfo buffers of the pinned frame), 89 accumulated in one session.
+Leaked references pin identity IOVAs, after which Cedrus cannot allocate:
+
+  sun50i-iommu: iova 0x6c800000 already mapped to 0x6c800000 cannot remap ...
+  cedrus 1c0e000.video-codec: dma alloc of size 1384448 failed
+
+Userspace sees GStreamer report "Not enough memory to allocate source buffers"
+while MemFree, CmaFree and buddyinfo are all healthy -- it is not memory
+pressure, and chasing it as such wastes time.  STOP_VIDEO_STREAM does not
+reclaim them and neither does rmmod, so only a reboot recovered.
+
+Measured after: six decd-client runs and three live playback runs with ZERO
+refcount growth, no oops, display paths unaffected.
+
+THE REFCOUNT MODEL, which two earlier attempts got wrong:
+
+  - dec_frame_queue_resume() assigns ONE frame to ALL FOUR slots and nets a
+    single reference (refcount_inc, then video_frame_put on the progressive
+    path).  The slots ALIAS.  Putting each slot separately is a use-after-free
+    on the second put -- that segfaulted decd-client.
+  - q->interlace_hold is overwritten with (void *)1 as an ARMED FLAG, not a
+    pointer, so it must never be passed to video_frame_put().
+  - The repeat path increments the frame's refcount once per vsync and pushes
+    one release_fifo entry each time, all aliasing the same object.  The fifo
+    depth is therefore the number of outstanding references and is NOT bounded
+    by the four ring slots -- one run showed eleven.  An earlier version
+    collected into a fixed 8-entry array and silently stopped at the cap, which
+    is why the leak survived that "fix".
+  - q->last_released holds a reference of its own.
+  - last_frame is a global holding the most recently retired frame, released
+    only when the next frame is popped.
+
+So the drain releases, in order: the ready_list, the aliased ring slots (once),
+last_released, the whole release_fifo, and last_frame.
+
+Only the LAST close drains -- concurrent clients share one device, and tearing
+the ring down under a still-running client would blank its output.
+
+The source is disabled and the ring blanked BEFORE anything is freed, because
+the fetcher may still be scanning those buffers.
+
+--- a/drivers/misc/sunxi_decd/decd_frame.c
++++ b/drivers/misc/sunxi_decd/decd_frame.c
+@@ -1597,6 +1597,129 @@
+  * Then if state!=0: wait_event_timeout(2500).
+  * If timeout remaining > 0 (= didn't time out): free.
+  */
++/*
++ * dec_frame_manager_drain -- release every frame reference the driver still
++ * holds, so an exiting client does not pin its dma_bufs forever.
++ *
++ * THE LEAK.  A frame is released only when a LATER frame displaces it, so
++ * whatever was submitted last stays pinned.  dec_release_file() was a no-op, so
++ * a client exiting or being killed reclaimed nothing.  Measured: +2 dma_buf
++ * references per decd-client run even on clean exit (image + VideoInfo), 89
++ * accumulated in one session.  Leaked references pin identity IOVAs, and Cedrus
++ * then fails to allocate ("iova ... already mapped", "dma alloc ... failed").
++ * They survive rmmod, so only a reboot recovered.
++ *
++ * THE REFCOUNT MODEL, which a previous attempt got wrong twice:
++ *
++ *   - dec_frame_queue_resume() assigns ONE frame to ALL FOUR slots and nets a
++ *     single reference (refcount_inc, then video_frame_put on the progressive
++ *     path).  The slots ALIAS.  Putting each slot separately is a use-after-free
++ *     on the second put -- that is what segfaulted decd-client.
++ *   - q->interlace_hold is overwritten with (void *)1 as an ARMED FLAG, not a
++ *     pointer.  It must never be passed to video_frame_put().
++ *   - last_frame is a global holding the most recently retired frame, released
++ *     only when the next frame is popped.  It is a real holder and must be
++ *     dropped here.
++ *   - release_fifo holds frames awaiting the deferred release work.
++ *
++ * ORDER.  The fetcher may still be scanning these buffers, so the source is
++ * disabled and the ring blanked BEFORE anything is freed.
++ */
++void dec_frame_manager_drain(struct dec_device *dec)
++{
++	struct dec_frame_manager *fmgr;
++	struct dec_frame_queue *q;
++	struct dec_video_frame *vf, *tmp;
++	unsigned long flags;
++	int slot_n = 0, fifo_n = 0, ready_n = 0, misc_n = 0, i;
++	LIST_HEAD(detached);
++
++	if (!dec || !dec->fmgr || !dec->fmgr->queue)
++		return;
++	fmgr = dec->fmgr;
++	q = fmgr->queue;
++
++	/* 1. stop the hardware looking at anything we are about to free */
++	if (dec->regs) {
++		u32 blank[4] = { 0 };
++
++		dec_reg_enable(dec->regs, false);
++		for (i = 0; i < 4; i++)
++			dec_reg_set_address(dec->regs, blank, 0, 0, i);
++		dec_reg_set_dirty(dec->regs, true);
++	}
++
++	/* 2. frames queued but never displayed */
++	spin_lock_irqsave(&fmgr->ready_lock, flags);
++	list_splice_init(&fmgr->ready_list, &detached);
++	fmgr->ready_count = 0;
++	spin_unlock_irqrestore(&fmgr->ready_lock, flags);
++	list_for_each_entry_safe(vf, tmp, &detached, node) {
++		list_del_init(&vf->node);
++		ready_n++;
++		video_frame_put(vf);
++	}
++
++	/* 3. the ring.  All four slots ALIAS one frame holding one reference, so
++	 * put exactly once.  interlace_hold is the (void *)1 armed flag here and
++	 * must never be put.
++	 */
++	spin_lock_irqsave(&q->lock, flags);
++	vf = q->slots[0];
++	for (i = 0; i < 4; i++)
++		q->slots[i] = NULL;
++	q->interlace_hold = NULL;
++	q->dirty = 0;
++	fmgr->state = 0;
++	spin_unlock_irqrestore(&q->lock, flags);
++	if (vf) {
++		slot_n = 1;
++		video_frame_put(vf);
++	}
++
++	/* 4. last_released holds a reference of its own */
++	spin_lock_irqsave(&q->lock, flags);
++	vf = q->last_released;
++	q->last_released = NULL;
++	spin_unlock_irqrestore(&q->lock, flags);
++	if (vf) {
++		misc_n++;
++		video_frame_put(vf);
++	}
++
++	/*
++	 * 5. Drain release_fifo COMPLETELY.  The repeat path increments the
++	 * frame's refcount once per vsync and pushes one fifo entry each time,
++	 * all aliasing the same object, so the fifo depth is the number of
++	 * outstanding references -- it is not bounded by the four ring slots.
++	 * A previous version collected into a fixed 8-entry array and silently
++	 * stopped at the cap, which is why the leak survived the "fix".
++	 */
++	for (;;) {
++		vf = NULL;
++		spin_lock_irqsave(&q->lock, flags);
++		i = kfifo_out(&q->release_fifo, &vf, 1);
++		spin_unlock_irqrestore(&q->lock, flags);
++		if (i != 1 || !vf)
++			break;
++		fifo_n++;
++		video_frame_put(vf);
++	}
++
++	/* 6. the global most-recent-frame holder */
++	if (last_frame) {
++		vf = last_frame;
++		last_frame = NULL;
++		misc_n++;
++		video_frame_put(vf);
++	}
++
++	if (ready_n || slot_n || fifo_n || misc_n)
++		dev_dbg(dec->dev,
++			"DECD drain: ready=%d slot=%d fifo=%d misc=%d\n",
++			ready_n, slot_n, fifo_n, misc_n);
++}
++
+ int dec_frame_manager_stop(struct dec_frame_manager *fmgr)
+ {
+ 	long remaining;
+--- a/drivers/misc/sunxi_decd/decd_types.h
++++ b/drivers/misc/sunxi_decd/decd_types.h
+@@ -245,6 +245,8 @@
+ };
+ 
+ struct dec_device {
++	/* opens of /dev/decd; the last close drains the ring */
++	atomic_t open_count;
+ 	struct device *dev;
+ 	struct platform_device *pdev;
+ 	struct cdev cdev;
+@@ -293,6 +295,7 @@
+ struct dec_frame_manager *dec_frame_manager_init(void);
+ int dec_frame_manager_exit(struct dec_frame_manager *fmgr);
+ int dec_frame_manager_stop(struct dec_frame_manager *fmgr);
++void dec_frame_manager_drain(struct dec_device *dec);
+ int dec_frame_manager_register_sync_cb(struct dec_frame_manager *fmgr,
+ 				       struct dec_device *dec,
+ 				       void (*sync_cb)(struct dec_device *dec,
+--- a/drivers/misc/sunxi_decd/decd_core.c
++++ b/drivers/misc/sunxi_decd/decd_core.c
+@@ -37,11 +37,25 @@
+ static int dec_open(struct inode *inode, struct file *file)
+ {
+ 	file->private_data = g_dec;
++	if (g_dec)
++		atomic_inc(&g_dec->open_count);
+ 	return 0;
+ }
+ 
++/*
++ * Drain on the LAST close.  This was a no-op, and that was the dma_buf leak:
++ * a frame is released only when a later one displaces it, so whatever the
++ * client submitted last stayed pinned after it exited or was killed.
++ *
++ * Only the last close drains -- concurrent clients share one device, and
++ * tearing the ring down under a still-running client would blank its output.
++ */
+ static int dec_release_file(struct inode *inode, struct file *file)
+ {
++	struct dec_device *dec = file->private_data;
++
++	if (dec && atomic_dec_and_test(&dec->open_count))
++		dec_frame_manager_drain(dec);
+ 	return 0;
+ }
+ 
