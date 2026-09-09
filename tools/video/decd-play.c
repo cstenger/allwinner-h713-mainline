@@ -466,17 +466,44 @@ static int export_info_buffer(int ctl_fd)
 	return req.fd;
 }
 
+/*
+ * The VideoInfo format selector at +0x40, the firmware resolver's input.
+ *
+ * Default 6, which the resolver maps to AFBD hardware format 3 = linear 8-bit
+ * NV12 -- the format we actually submit.
+ *
+ * CORRECTED 2026-09-08.  This defaulted to 0 on the reasoning that "stock plays
+ * at fmt 0".  Stock does, but stock composites video into an RGB surface and
+ * hardware format 0 is RGB888: right for stock, wrong for us.  A matching
+ * register is evidence only when both sides are doing the same thing.
+ *
+ * Mapping from the resolver's 16-entry jump table at MIPS 0x8b2078a4
+ * (handlers 0x8b1a321c..0x8b1a32f4), decoded 2026-09-08:
+ *
+ *   selector 0 -> fmt 0 (RGB888)      selector 8,11 -> fmt 4
+ *   selector 2 -> fmt 1               selector 9,12 -> fmt 5
+ *   selector 4 -> fmt 2               selector 15   -> fmt 6
+ *   selector 6 -> fmt 3 (NV12)        selector 14   -> fmt 7
+ *   selectors 1,3,5,10,13 -> error path
+ *
+ * NOTE ON EFFECT: the DECD driver does not program the format byte from this
+ * field -- patch 0095 derives it from the descriptor's own format via
+ * fmt_attr_tbl -- so correcting this does not change current rendering.  It
+ * matters when the firmware resolves the descriptor itself, and an honest value
+ * costs nothing.  DECD_FMT still overrides, for sweeping the table.
+ */
 static uint32_t video_info_format(void)
 {
 	const char *s = getenv("DECD_FMT");
 	unsigned long value;
 
 	if (!s || !*s)
-		return 0;
+		return DEC_FORMAT_NV12_CANDIDATE;
 	value = strtoul(s, NULL, 0);
 	if (value > 15) {
-		fprintf(stderr, "DECD_FMT=%lu out of range\n", value);
-		return 0;
+		fprintf(stderr, "DECD_FMT=%lu out of range, using %u\n",
+			value, DEC_FORMAT_NV12_CANDIDATE);
+		return DEC_FORMAT_NV12_CANDIDATE;
 	}
 	return (uint32_t)value;
 }
