@@ -97,3 +97,48 @@ fetch address — and **refuses to hold for a visual test unless every one
 passes**. A refusal costs no operator attention. Three of the four operator
 looks before it existed were spent on runs that were void for reasons a register
 read would have shown.
+
+## Addendum — the two latches, and four wasted green frames
+
+`0x05600014` and `0x0560006c` are **both** required, and they do different jobs:
+
+| latch | commits |
+| --- | --- |
+| `0x05600014` | the **source configuration** — the seven geometry words and the source enable |
+| `0x0560006c` | the **plane addresses** of the two-plane YUV path |
+
+The working run writes both, in this order: geometry/ring/gain, then
+`ctrl = 0x03000013` and `0x05600014 = 1`, then the selector, then the format
+byte to 3, the plane addresses, and `0x0560006c = 1`.
+
+Having just discovered that `0x0560006c` was the missing publish, the first
+Cedrus scripts were built around it and **dropped `0x05600014` entirely**. The
+seven geometry words and the source enable were written, read back correct, and
+never committed. The fetcher therefore had no valid picture configuration,
+fetched nothing, and zeroes render as solid green.
+
+That is all four green frames on the Cedrus path, one cause, and it was
+self-inflicted by over-correcting a real finding into "0x05600014 is the wrong
+latch" when the truth is "it is the wrong latch *for plane addresses*".
+
+### This voids an earlier conclusion
+
+`decd-static-via-iova.sh` was presented as a clean one-variable isolation of
+translation vs bypass, and it returned solid green. It had the same missing
+commit, so it did not test translation at all. **Translation is not proven
+guilty; that result is void** and must be re-run with both latches before any
+conclusion about IOVA support is drawn.
+
+### Also worth keeping
+
+- **The 60 Hz hard-lock did not reproduce.** Two full playback runs with real
+  Cedrus traffic, a live MIPS and ~1000 ring writes left `0x0306101c = 1`
+  throughout. That hazard has shaped experiment design since 2026-09-04.
+- **Cedrus output matches our static layout exactly**: 1280x720 NV12, one
+  dma-buf, stride 1280, chroma offset 921600.
+- **The player must outlive the hold.** `decd-play` exiting drops its PM hint
+  and the display block gates off; `DECD_FREEZE=1` with a large frame count
+  keeps it alive without decoding anything new.
+- **`decd-play` requests VideoInfo format selector 0**, which the firmware
+  resolver maps to hardware format 0 = RGB888. It only works because the driver
+  never programs the format byte and our manual `3` persists.
