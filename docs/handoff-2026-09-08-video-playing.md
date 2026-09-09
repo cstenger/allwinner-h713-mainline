@@ -372,6 +372,56 @@ the sync path would walk freed memory.
 Released here: `ready_list`, `release_fifo`, `last_released`, `last_frame`.
 Untouched: `slots[0..3]`, and `interlace_hold` (the `(void *)1` armed flag).
 
+## What the vendor binary says about retiring the displayed frame
+
+**Read from `local/h713-lab/extracted/decd.ko` (ARM 32-bit vendor module),
+2026-09-09.** This is the direction for eliminating the last two references;
+it has NOT been implemented or tested.
+
+**Stock never retires on close either.** `dec_release` (0x0eb0) is an atomic
+decrement and `return 0` — a module refcount, nothing else. The peer port's
+reconstruction (`local/allwinner-h713-linux/drivers/decd/decd_core.c`) has the
+same stub. So stock relies on the compositor submitting continuously, and
+patch 0096's bounded approach **matches stock behaviour** rather than working
+around it.
+
+**`dec_disable` (0x1f74) gives the safe teardown order**, and the missing piece
+is the second line:
+
+```
+dec_frame_manager_stop(fmgr)
+disable_irq(irq)                 <-- quiesce the vsync handler FIRST
+dec_frame_manager_exit(fmgr)
+dec->fmgr = NULL
+dec_reg_int_to_display(regs)
+dec_reg_enable(regs, 0)
+```
+
+**`dec_frame_manager_exit` (0x60cc) quiesces every async path** before touching
+frame state:
+
+```
+tasklet_kill(&fmgr->refresh_tasklet)
+flush_work(&fmgr->release_work)
+__kfifo_free(recycle_fifo) / __kfifo_free(release_fifo) / kfree(queue)
+dec_frame_manager_free(fmgr)
+kfree(fmgr)
+```
+
+**Why this explains the failed drain.** That version nulled the ring slots while
+the vsync handler was still running, so `dec_frame_queue_sync()` immediately
+wrote a blank address for every NULL slot — the solid colours on the panel. The
+vendor never does that: IRQ, tasklet and deferred work are all stopped first.
+
+**Proposed next step, untested:** `disable_irq` → drain the slots → clear
+`q->dirty` → `enable_irq`. The next submit's `dec_frame_queue_resume()` refills
+all four slots, so there is no window in which the handler observes a NULL slot.
+This touches interrupt state and deserves a fresh session.
+
+Note in passing: the vendor's `exit` calls `__kfifo_free` **without releasing the
+fifo contents**, so stock leaks those references too — it simply does not matter
+at module-unload time.
+
 ## The freeze was the harness, not the hardware
 
 **2026-09-09.** Every "video plays for a few seconds, then freezes" report was

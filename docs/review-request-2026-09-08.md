@@ -255,6 +255,18 @@ unaffected.
 The tell that broke it open: `DECD drain: slots=1 fifo=7 misc=1` while
 `frame_item_release` never fired — eight puts, zero retirements.
 
+### Direction for eliminating the remaining two references
+
+From the vendor binary (`decd.ko`, ARM 32-bit): stock's `dec_release` is a bare
+refcount decrement, so **stock never retires on close either** — the bounded fix
+matches stock behaviour. But `dec_disable` shows the **vendor teardown order**:
+`dec_frame_manager_stop` → **`disable_irq`** → `dec_frame_manager_exit` (which
+does `tasklet_kill` + `flush_work` first) → `reg_enable(0)`.
+
+That explains the failed attempt: it nulled the ring slots while the vsync
+handler was live, so blanks were written immediately. Untested proposal:
+`disable_irq` → drain slots → clear `dirty` → `enable_irq`.
+
 ## 7. What we would like reviewed
 
 Most of the original list is now closed. The one that matters:
