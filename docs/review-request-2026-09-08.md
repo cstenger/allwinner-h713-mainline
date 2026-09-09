@@ -3,6 +3,14 @@
 Self-contained brief for an outside reviewer. No repo access assumed. Everything
 below is measured on hardware unless labelled as inference.
 
+**Short version.** Decoded video now plays correctly on the panel with no GPU
+and the display co-processor alive. Two problems that were open when this brief
+was first written are now closed: a dma_buf reference leak (fixed, section 6)
+and an SoC hard-lock (stopped reproducing after three missing patches were
+applied, section 4/5). **The one thing we genuinely want outside eyes on is
+whether the hard-lock fix is a real mechanism or a coincidence** — see
+section 7, question 1.
+
 ---
 
 ## 1. The system
@@ -98,7 +106,7 @@ selector; `0x29000000` is the OSD/logo path).
 
 ---
 
-## 4. OPEN PROBLEM 1 — the build tree is missing three patches
+## 4. RESOLVED (mechanism unproven) — the build tree was missing three patches
 
 > **UPDATE — acted on, and it looks like the answer.** The three patches were
 > applied to the build tree and the module rebuilt. Results below in this
@@ -169,7 +177,7 @@ the questions below.
 
 ---
 
-## 5. OPEN PROBLEM 2 — unexplained SoC hard-lock on live playback
+## 5. THE ONE REAL QUESTION — SoC hard-lock: fixed in practice, unexplained in principle
 
 **Symptom:** the whole SoC wedges. No SSH, no serial, no console. Only a power
 cycle recovers.
@@ -205,85 +213,81 @@ strength of four clean runs; **that claim has been retracted**.
 
 ---
 
-## 6. OPEN PROBLEM 3 — dma_buf reference leak
+## 6. FIXED — dma_buf reference leak
 
-**Mechanism (measured):** a submitted frame holds `dma_buf` references for its
-image and VideoInfo buffers, and is released only when a **later frame displaces
-it**. Whatever was submitted last is never displaced, so it stays pinned.
-`dec_release_file()` is a no-op, so a client exiting or being killed reclaims
-nothing. `dec_frame_manager_free()` drains `fmgr->ready_list` and the interlace
-pair but **never the queue's four ring slots**, which is exactly where displayed
-frames sit.
+Included because the refcount model below may be relevant to section 5, and
+because two attempts failed before it worked.
 
-**Measured rate:** +2 references per `decd-client show` *even on clean exit*;
-+1 per `decd-play` run; 89 accumulated in one session.
-
-**Consequences:** leaked exports pin identity IOVAs. Cedrus then fails to
-allocate:
+**Was:** `dec_release_file()` was a no-op, and a frame is released only when a
+**later frame displaces it**, so whatever a client submitted last stayed pinned
+after it exited or was killed. Measured **+2 references per `decd-client` run
+even on clean exit**, 89 accumulated in one session. Leaked references pin
+identity IOVAs; Cedrus then fails to allocate:
 
 ```
 sun50i-iommu: iova 0x6c800000 already mapped to 0x6c800000 cannot remap to ...
 cedrus 1c0e000.video-codec: dma alloc of size 1384448 failed
 ```
 
-Userspace sees GStreamer report *"Not enough memory to allocate source
-buffers"* while `MemFree`, `CmaFree` and `buddyinfo` are all healthy — it is
-**not** memory pressure. `STOP_VIDEO_STREAM` does not reclaim, and neither does
-`rmmod sunxi_decd`: the references are orphaned. **Only a reboot recovers.**
+Userspace sees *"Not enough memory to allocate source buffers"* while `MemFree`,
+`CmaFree` and `buddyinfo` are all healthy — **not** memory pressure. Neither
+`STOP_VIDEO_STREAM` nor `rmmod` reclaimed them; only a reboot did.
 
-**A fix was attempted and reverted.** Draining `slots[4]` plus the interlace and
-shutdown holds from `dec_release_file()` on last close, with the source disabled
-and the ring blanked first. It failed twice:
+**Now:** `patches/kernel/0096` drains on the last close. Six client runs and
+three live playback runs with **zero** refcount growth, no oops, display paths
+unaffected.
 
-1. **It did not fix the leak.** The drain logged "released 4 held frame(s)" and
-   the refcount still climbed +2 per run (7 → 9 → 11 → 13). So
-   `video_frame_put()` on a slot does not drop the underlying `dma_buf`
-   references. `video_frame_put()` is:
+**The refcount model, which two attempts got wrong:**
 
-   ```c
-   if (!refcount_dec_and_test(&vf->refcount)) return;
-   if (vf->release) vf->release(vf->payload);   /* frame_item_release */
-   kfree(vf);
-   ```
+- `dec_frame_queue_resume()` assigns **one frame to all four slots** and nets a
+  single reference (`refcount_inc`, then `video_frame_put` on the progressive
+  path). The slots **alias**. Putting each slot separately is a use-after-free
+  on the second put — that segfaulted the client.
+- `q->interlace_hold` is overwritten with the literal `(void *)1` as an **armed
+  flag**, not a pointer, so it must never be put.
+- The repeat path increments the refcount **once per vsync** and pushes one
+  `release_fifo` entry each time, all aliasing the same object. **Fifo depth is
+  the outstanding reference count and is not bounded by the four slots** —
+  eleven observed. An attempt that collected into a fixed 8-entry array silently
+  capped at 7, so the leak survived a "fix" that logged success.
+- `q->last_released` and the global `last_frame` are each separate holders.
 
-   and `frame_item_release()` itself refcounts (`refcount_dec_and_test(&item->refcount)`)
-   before unmapping. So some other holder keeps the item alive.
-
-2. **It crashed userspace** — `decd-client` segfaulted, consistent with the
-   missing 0071 fence fix being hit by the newly-added retirement path.
-
----
+The tell that broke it open: `DECD drain: slots=1 fifo=7 misc=1` while
+`frame_item_release` never fired — eight puts, zero retirements.
 
 ## 7. What we would like reviewed
 
-1. **Is a dangling `dma_fence` a credible mechanism for a whole-SoC wedge?**
-   Rebuilding with 0071/0072/0073 stopped the lock reproducing (nine clean runs,
-   three at <100 s uptime, against 2-for-2 failure before). But a use-after-free
-   normally produces an oops, not a silent lock of the entire chip with no
-   serial output. If the mechanism is not credible, the fix may be correlation
-   and we are still exposed. Which of the three patches would you expect to
-   matter, and why? 0072/0073 constrain DMA imports, which feels closer to a
-   bus-level hang than the fence does.
+Most of the original list is now closed. The one that matters:
 
-2. **The dma_buf refcount model.** Who else holds a reference to a
-   `dec_frame_item` such that draining the ring slots and calling
-   `video_frame_put()` does not release the underlying buffers? Candidates we
-   have not chased: the `release_fifo` kfifo, `recycle_fifo`, the deferred
-   `release_work` workqueue, and `last_released`.
+**1. Is a dangling `dma_fence` a credible mechanism for a silent whole-SoC
+wedge?** Rebuilding with 0071/0072/0073 stopped the lock reproducing — nine
+clean live runs, three inside the first 100 s of uptime, against 2-for-2 failure
+in that same window immediately before. But a use-after-free normally produces
+an oops, not a silent lock of the entire chip with **no serial output at all**.
 
-3. **Is "drain on last close" even the right shape?** Alternative: make the ring
-   hold a weak reference, or retire the oldest frame when the queue is full
-   rather than only on displacement.
+   - Which of the three would you expect to matter, and why? `0072`/`0073`
+     constrain DMA imports (refuse non-contiguous, declare a single-mapping
+     constraint), which intuitively feels closer to a bus-level hang than the
+     fence does.
+   - Is there a plausible path from "freed `dma_fence` still referenced by a
+     `sync_file`" to a hardware hang rather than a kernel oops?
+   - This is absence-of-failure evidence. What would make it evidence of a
+     *mechanism*?
 
-4. **A whole-SoC lock with no serial output** — what classes of fault do that on
-   an ARM64 SoC, and what instrumentation would survive it? We currently narrate
-   to `/dev/kmsg` (which reaches the UART live) but the lock leaves nothing.
+**2. Instrumentation that survives a total wedge.** We narrate to `/dev/kmsg`,
+which reaches the UART live, and the lock leaves nothing. What is worth trying —
+a hardware watchdog with a scratch register, SoC-level bus error/timeout
+registers polled from a second core, JTAG?
 
-5. **Sanity check on the vsync-latch conclusion** (section 2). We infer
-   "latches on the frame boundary" from a uniform 0–16.7 ms retirement under
-   randomised phase. Is there a better test?
+**3. Sanity check on the vsync-latch conclusion** (section 2). We infer "latches
+on the frame boundary" from a uniform 0–16.7 ms retirement under randomised
+write phase, never under 50 µs. Is there a better test? Note a trap we hit: a
+*fixed* inter-sample delay phase-locks the sampler to the panel and collapses
+the distribution to a constant that looks exactly like a fixed hardware latency.
 
----
+**4. Anything in section 2 that looks wrong.** The two-latch split
+(`0x05600014` = source config, `0x0560006c` = plane addresses, both vsync-
+latched) is reverse-engineered from behaviour, not documentation.
 
 ## 8. Method notes that may help interpret the record
 
@@ -305,6 +309,10 @@ and the ring blanked first. It failed twice:
 
 ## 9. Current board state
 
-Freshly rebooted and clean: MIPS core alive (`0x0306101c = 1`), IOMMU master 2
-bypassed (`0x02010030 = 0x7C`), scanout refcount 0, known-good modules loaded,
-static-mode preconditions all passing, logo path restored.
+MIPS core alive (`0x0306101c = 1`), DECD module built with
+**0071/0072/0073 + 0094 + 0095 + 0096** loaded, `auto_route=1`,
+`ring_writes_max=1`, static and live preconditions passing, no refcount growth,
+logo path restored, zero oops.
+
+Note: build trees under `build/` vary. Many predate 0071/0072/0073 — check
+before trusting a DECD result.
