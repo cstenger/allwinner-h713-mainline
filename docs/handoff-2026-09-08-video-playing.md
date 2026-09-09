@@ -127,9 +127,13 @@ that returned a negative delta.
   (format 0) was cited as proof format 0 was correct, but stock composites video
   into an RGB surface. A matching register is evidence only when both sides are
   doing the same thing.
-- **The 60 Hz hard-lock did not reproduce.** Four playback runs, real Cedrus
-  traffic, live MIPS, several thousand ring writes, core alive throughout. That
-  hazard has shaped experiment design since 2026-09-04.
+- ~~**The 60 Hz hard-lock did not reproduce.**~~ **RETRACTED — it does.** Four
+  live runs were clean on a board with ~6 h uptime, then **two locks in two
+  attempts on a fresh boot**, both requiring a power cycle. The second lock
+  happened with `DECD_FMT=0`, i.e. the old value forced, so it is not the
+  selector. What distinguishes the clean runs from the locking ones is **not
+  known**. Treat live Cedrus playback with the MIPS alive as able to lock the
+  SoC, and do not design experiments on the assumption that it is safe.
 
 ## Board state
 
@@ -164,10 +168,26 @@ One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO
 
 - ~~No vsync-correct flipping~~ — **measured 2026-09-08, and it is already
   correct.** See "Flipping is already vsync-correct" below.
+- **The tooling leaks `sunxi_scanout_dmabuf` exports.** One session accumulated
+  **89** references; killed players never release their carveout exports. Once
+  leaked they pin identity IOVAs and Cedrus allocation starts failing:
+  `sun50i-iommu: iova 0x6c800000 already mapped to 0x6c800000 cannot remap` and
+  `cedrus: dma alloc of size 1384448 failed`. The module cannot be unloaded to
+  clear them (refcount != 0), so **only a reboot recovers**. Symptom to
+  recognise: GStreamer reports *"Not enough memory to allocate source buffers"*
+  while `MemFree` and `CmaFree` are both healthy and `buddyinfo` shows plenty of
+  order-10 blocks — it is not memory pressure.
 - **`decd-play` requests VideoInfo selector 0**, which the firmware resolver maps
   to hardware format 0 = RGB888. It only works because the driver never programs
   the format byte from that selector. Selector 6 resolves to format 3 and is the
-  honest value.
+  honest value — but **changing it was tried and reverted** (`fd9ec35`,
+  reverted by `6284b2c`). It is verifiably correct and has **zero** effect on
+  rendering, so it carries no benefit; it was backed out to stop carrying a
+  pointless change while an unexplained hard-lock is in play. If it is
+  revisited, note the failed hypothesis: selector 6 is the firmware resolver's
+  input, so it *might* make the firmware act on the descriptor and conflict with
+  the driver's route. That is plausible and wrong — the lock reproduces with
+  selector 0.
 - **`0x05600024 = 0x002C004F`** (crop origin) is still an undecoded constant.
 - **Gain and selector still applied by shell**, by design. If the decoder should
   own them, that is a design decision about display ownership.
