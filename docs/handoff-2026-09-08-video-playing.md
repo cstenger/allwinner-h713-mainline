@@ -220,6 +220,61 @@ DRIVER_ROUTE=1 MODE=live DWELL=30 sh /root/decd-all-preconditions.sh
 
 One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO.
 
+## Scaling: attempted, negative, with a clear next step
+
+**2026-09-09.** The session's original goal was 1080p scaled onto the 720p
+panel with no GPU. It was attempted end to end and did **not** work. What was
+established:
+
+**The 1080p input path works.** `tools/video/decd-client.c` now takes
+`DECD_W`/`DECD_H` at runtime, and staging a 1920x1080 NV12 frame makes patch
+0095 program the fetcher automatically from the descriptor:
+
+```
+DECD route: 1920x1080 stride 1920 hw-format 3
+0x05600020 = 0x0437077F   0x05600030 = 0x04380780
+0x05600040 = 0x00000780   0x0560004c = 0x021C0780
+```
+
+That part is solid, and it is what 0095 was for.
+
+**The firmware does NOT reprogram composition for a 1080p source.** It only does
+that when it SERVICES a frame, and our ring writer is capped at
+`ring_writes_max=1`, so composition stays at 1280x720 unity and has to be set by
+hand.
+
+**Two configurations tried, both wrong:**
+
+| composition | AFBD | panel |
+| --- | --- | --- |
+| 1280x720 unity (mismatched) | 1920x1080 | picture **doubled** horizontally |
+| 1920x1080, ratio `0x00600060` | 1920x1080 | **fully black** |
+
+Black persisted with `0x05000278`/`0x050002b8` both set to guessed values *and*
+left at their existing 720p values, so those two are **not** the cause.
+
+**The likely reason, and the reframe: the scaler may be upscale-only.** Every
+ratio ever observed on this hardware is a step at or below unity:
+
+```
+source 1280 -> output 1280 : 0x40 = 1.00  unity
+source  852 -> output 1280 : 0x2B = 0.67  UPscale (source smaller than panel)
+```
+
+`0x60` = 1.50 is a **downscale**, a direction never observed. If the composition
+scaler cannot step faster than 1.0, 1080p->720p is not available by this route
+at all and the goal needs a different mechanism.
+
+**Next step, and it needs no board time:** trace how the firmware programs the
+scaler in `display.bin`. It demonstrably does — it set `0x002B002B` itself — so
+the encoding, the valid range and the companion words are all in there. That
+replaces inference from two captured states, which is what every failed attempt
+above rested on. Note the MIPS address map: **MIPS = ARM physical + 0xB5000000**,
+so composition at `0x05000000` is `0xBA000000` in firmware address space.
+
+`tools/video/decd-scale-test.sh` reproduces both configurations
+(`PHASE=crop|scale`, `SET_278=1` to include the guessed words).
+
 ## Open work
 
 - ~~No vsync-correct flipping~~ — **measured 2026-09-08, and it is already

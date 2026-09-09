@@ -83,11 +83,44 @@ _Static_assert(offsetof(struct dec_frame_submit_desc, info_fd) == 0x4c,
 _Static_assert(offsetof(struct dec_frame_submit_desc, legacy_direct) == 0x68,
 	       "legacy flag ABI");
 
-#define W 1280u
-#define H 720u
+/*
+ * Frame geometry.  Overridable at runtime so the same client can stage a
+ * 1920x1080 source for the hardware-scaling test (1080p into the 1280x720
+ * panel) without a rebuild:
+ *
+ *     DECD_W=1920 DECD_H=1080 decd-client show frame-1080p.nv12
+ *
+ * The scanout carveout runs from IMAGE_PHYS to INFO_PHYS (0x6c500000 ..
+ * 0x6c8f0000 = 4128768 bytes), so 1920x1080 NV12 at 3110400 bytes fits.
+ */
+static unsigned frame_w = 1280u;
+static unsigned frame_h = 720u;
+
+#define W frame_w
+#define H frame_h
 #define VIDEO_COORD_W 1920u
 #define VIDEO_COORD_H 1080u
 #define NV12_SIZE ((size_t)W * H * 3 / 2)
+
+static void geometry_from_env(void)
+{
+	const char *w = getenv("DECD_W"), *h = getenv("DECD_H");
+
+	if (w && *w)
+		frame_w = (unsigned)strtoul(w, NULL, 0);
+	if (h && *h)
+		frame_h = (unsigned)strtoul(h, NULL, 0);
+	if (!frame_w || !frame_h) {
+		fprintf(stderr, "bad DECD_W/DECD_H, using 1280x720\n");
+		frame_w = 1280u; frame_h = 720u;
+	}
+	if ((size_t)frame_w * frame_h * 3 / 2 > 0x3F0000u) {
+		fprintf(stderr, "%ux%u NV12 exceeds the carveout, using 1280x720\n",
+			frame_w, frame_h);
+		frame_w = 1280u; frame_h = 720u;
+	}
+}
+
 #define IMAGE_PHYS 0x6c500000ULL
 #define IMAGE_PHYS_ALT 0x6c700000ULL
 #define INFO_PHYS  0x6c8f0000ULL
@@ -382,6 +415,7 @@ static int show_frame(int dec_fd, const char *path, unsigned dwell_ms)
 		goto out;
 	if (copy_file_to_fd(path, image_fd) || fill_video_info(info_fd))
 		goto out;
+	printf("staging %ux%u NV12 (%zu bytes)\n", W, H, NV12_SIZE);
 	printf("prepared image dma-buf at %#llx and VideoInfo dma-buf at %#llx\n",
 	       (unsigned long long)IMAGE_PHYS, (unsigned long long)INFO_PHYS);
 	if (pm_hint(dec_fd, 1) || submit_frame(dec_fd, image_fd, info_fd, 1))
@@ -524,6 +558,7 @@ static void usage(const char *argv0)
 
 int main(int argc, char **argv)
 {
+	geometry_from_env();
 	int fd, ret = 0;
 
 	if (argc < 2) {
