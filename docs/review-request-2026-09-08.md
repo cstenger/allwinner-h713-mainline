@@ -147,14 +147,25 @@ rebuilding and loading:
   patches address fence lifetime and DMA constraints, not the frame-retirement
   refcount.
 
-**Caveat, and it matters.** Both original locks happened on a *fresh boot*
-(uptime ~57 s). The six clean runs were on a board up ~30 minutes. The exact
-failing condition has **not** been reproduced with the fix in place, so this is
-strongly supported rather than proven. A reboot followed immediately by a live
-run is the discriminating test and has not been done.
+**The discriminating test has now been run.** Both original locks were on a
+*fresh boot* (uptime ~57 s), so the warm-board runs above did not reproduce the
+failing condition. After a reboot, with the patched module, live playback was
+started at **uptime 47 s** and repeated twice more:
 
-Earlier the same day, four clean runs led to a confident "does not reproduce"
-claim that was then falsified. That is why this one is deliberately hedged.
+```
+uptime 47 s   300 frames, 29.94 fps, core alive
+uptime 88 s   preconditions pass, core alive
+uptime 95 s   preconditions pass, core alive
+```
+
+Nine clean live runs in total, three of them inside the first 100 seconds of
+uptime, against **two locks in two attempts** immediately before the fix, in the
+same window. The failing condition has been reproduced and it no longer fails.
+
+Remaining honest caveat: this is still absence-of-failure evidence, and the
+mechanism is not proven. A dangling `dma_fence` producing a silent whole-SoC
+wedge (no oops, no serial) is not an obvious failure mode, and that is one of
+the questions below.
 
 ---
 
@@ -165,9 +176,15 @@ cycle recovers.
 
 **When:** live Cedrus playback with the MIPS alive.
 
-**The confusing part:** four consecutive clean live runs earlier in the day on a
-board with ~6 hours uptime, then **two locks in two attempts** after a fresh
-boot. What distinguishes them is not known.
+**Very likely resolved by section 4** — the missing `0071` fence fix. After
+rebuilding with it, nine clean live runs including three inside the first 100
+seconds of uptime, which is the window both locks occurred in. Retained here
+because the *mechanism* is unproven; see the questions below.
+
+**The confusing part at the time:** four consecutive clean live runs on a board
+with ~6 hours uptime, then **two locks in two attempts** after a fresh boot.
+That is now explicable if the trigger is fence-retirement traffic rather than
+uptime, but it was not understood then.
 
 Ruled out:
 - **Not the VideoInfo format selector.** The second lock happened with the old
@@ -239,11 +256,14 @@ and the ring blanked first. It failed twice:
 
 ## 7. What we would like reviewed
 
-1. **Is the missing 0071/0072/0073 the likely root of the hard-lock?** Is a
-   dangling `dma_fence` at ~30 retirements/second a plausible mechanism for a
-   *whole-SoC* wedge (no serial, no console), or does that smell more like a bus
-   or IOMMU fault? We can rebuild from a tree with all three; we want to know if
-   that is the right first move.
+1. **Is a dangling `dma_fence` a credible mechanism for a whole-SoC wedge?**
+   Rebuilding with 0071/0072/0073 stopped the lock reproducing (nine clean runs,
+   three at <100 s uptime, against 2-for-2 failure before). But a use-after-free
+   normally produces an oops, not a silent lock of the entire chip with no
+   serial output. If the mechanism is not credible, the fix may be correlation
+   and we are still exposed. Which of the three patches would you expect to
+   matter, and why? 0072/0073 constrain DMA imports, which feels closer to a
+   bus-level hang than the fence does.
 
 2. **The dma_buf refcount model.** Who else holds a reference to a
    `dec_frame_item` such that draining the ring slots and calling
