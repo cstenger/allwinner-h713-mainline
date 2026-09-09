@@ -1,0 +1,10 @@
+ARM base 0x4e340000, MIPS KSEG1 base 0xae340000
+0x80 event-8 dispatcher entries
+0x84 detector callback entries
+0x88 CheckSignal entries
+0x8c CheckSignal returns (all three exits)
+0x90 last CheckSignal return value
+0x94 SetSource RPC adapter entries
+0x98 SetSource HAL entries
+0x9c last SetSource HAL input
+Counters are modulo 2^32, non-atomic; sample deltas, do not reset live.

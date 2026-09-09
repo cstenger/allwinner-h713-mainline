@@ -1,0 +1,127 @@
+reboot
+[?2004l [?2004hroot@h713-arm64:~#   [?2004l[?2004h[?2004l
+[  461.719195] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[!p]104[?7h[6n[32766;32766H[6n[  461.745035] get_txpwr_max:txpwr_max:18 
+[  461.750889] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[  461.757675] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[  461.765359] change_if: 3 to 2, 8, 2
+[  461.765391] get_txpwr_max:txpwr_max:18 
+[  463.716845] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[  463.964294] watchdog: watchdog0: watchdog did not stop!
+[  464.019716] systemd-shutdown[1]: Using hardware watchdog 'sunxi-wdt', version 0, device /dev/watchdog0
+[  464.030227] systemd-shutdown[1]: Watchdog running with a hardware timeout of 16s.
+[  464.072485] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  465.609737] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[  465.633327] systemd-journald[109]: Received SIGTERM from PID 1 (systemd-shutdow).
+[  465.663883] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[  465.688196] systemd-shutdown[1]: Unmounting file systems.
+[  465.697864] (sd-umount)[547]: Unmounting '/run/credentials/systemd-journald.service'.
+[  465.711177] (sd-remount)[548]: Remounting '/' read-only with options ''.
+[  465.740433] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[  465.760347] systemd-shutdown[1]: All filesystems unmounted.
+[  465.767718] systemd-shutdown[1]: Deactivating swaps.
+[  465.774430] systemd-shutdown[1]: All swaps deactivated.
+[  465.781310] systemd-shutdown[1]: Detaching loop devices.
+[  465.792099] systemd-shutdown[1]: All loop devices detached.
+[  465.799338] systemd-shutdown[1]: Stopping MD devices.
+[  465.806455] systemd-shutdown[1]: All MD devices stopped.
+[  465.813037] systemd-shutdown[1]: Detaching DM devices.
+[  465.819650] systemd-shutdown[1]: All DM devices detached.
+[  465.826290] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[  465.837185] watchdog: watchdog0: watchdog did not stop!
+[  465.845231] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  465.853193] systemd-shutdown[1]: Rebooting.
+[  465.873322] reboot: Restarting system
+
+U-Boot SPL 2026.07-rc5-g7b178056c329-dirty (Aug 25 2026 - 20:13:26 -0700)
+DRAM: 1024 MiB
+Trying to boot from MMC2
+NOTICE:  BL31: v2.15.0(release):47ee829f7
+NOTICE:  BL31: Built : 03:25:48, Jul 27 2026
+NOTICE:  BL31: Detected Allwinner H713 SoC (1860)
+NOTICE:  BL31: Found U-Boot DTB at 0x4a0d1900, model: HY200 QZ713DF_A1 (Allwinner H713)
+
+
+U-Boot 2026.07-rc5-g8fe568cdfc46-dirty (Aug 31 2026 - 12:00:13 -0700) Allwinner Technology
+
+CPU:   Allwinner H713 (SUN50I)
+Model: HY200 QZ713DF_A1 (Allwinner H713)
+DRAM:  1 GiB
+Core:  37 devices, 19 uclasses, devicetree: separate
+WDT:   Not starting watchdog@2051000
+MMC:   mmc@4022000: 1
+Loading Environment from MMC... Reading from MMC(1)... OK
+In:    serial
+Out:   serial
+Err:   serial
+Net:   No ethernet found.
+starting USB...
+No USB controllers found
+       scanning usb for storage devices... 0 Storage Device(s) found
+H713 disp: loading vendor artifacts from mmc 1:2
+H713 MIPS: workspace cleared (cfg@0x4be01000, tse@0x4be41000 kept)
+  mips/display.bin             -> 0x4b100000  1255696 bytes
+  mips/display_cfg.xml         -> 0x4be01000  4743 bytes
+  mips/database.TSE            -> 0x4be41000  282464 bytes
+  mips/pq_custom.TSE           -> 0x4be85f60  15016 bytes
+  mips/projecttable.TSE        -> 0x4be89a08  1384 bytes
+  mips/ProjectID_0x0034.TSE    -> 0x4be89f70  17304 bytes
+H713 disp: config/TSE windows published for MIPS
+  mips/LogoRegData.bin         -> 0x4e000000  15652 bytes
+H713 disp: project 0x34 -> prologue 3, timing 6, de 6
+  +0x1674  058c0014  00002a00 -> 00002300  shift 8 mask 0xff
+  +0x1694  058c0014  01000000 -> 00000000  shift 24 mask 0x1
+  +0x1714  058c0014  0000001e -> 0000231e  shift 8 mask 0xff
+  +0x1754  058c0014  00002a00 -> 00002300  shift 8 mask 0xff
+  +0x17b4  05800000  01e0a40c -> 01e0a404  shift 3 mask 0x3
+  +0x18c4  058c0024  00000000 -> 2f000000  shift 24 mask 0x3f
+  +0x18c4  058c0024  2f000000 -> 2f000007  shift 0 mask 0x7
+  +0x370c  0525c000  02e4059f -> 02f8059f  shift 16 mask 0xffff
+  +0x370c  0525c000  02f8059f -> 02f80550  shift 0 mask 0xffff
+  +0x371c  0525c004  00000404 -> 00001404  shift 8 mask 0xff
+  +0x371c  0525c004  00001404 -> 00001402  shift 0 mask 0xff
+  +0x377c  0525c01c  05000014 -> 0500003c  shift 0 mask 0xffff
+  +0x378c  0525c020  02d00010 -> 02d00016  shift 0 mask 0xffff
+  +0x37cc  0525c030  02d00010 -> 02d00016  shift 0 mask 0xffff
+  +0x37dc  0525c034  05000014 -> 0500003c  shift 0 mask 0xffff
+  +0x380c  0524c004  00100010 -> 05000010  shift 16 mask 0xffff
+  +0x380c  0524c004  05000010 -> 05000016  shift 0 mask 0xffff
+  +0x383c  0524c010  02e4059f -> 02f8059f  shift 16 mask 0xffff
+  +0x383c  0524c010  02f8059f -> 02f80550  shift 0 mask 0xffff
+  +0x384c  0524c014  00000000 -> 00000200  shift 8 mask 0xff
+  +0x38fc  05280088  00000011 -> 00000016  shift 0 mask 0xffff
+  +0x390c  0528008c  0000007b -> 00000000  shift 0 mask 0xffff
+H713 panel: config applied, 22 record field(s) patched, 12 guarded by record mask
+H713 logo: applied 32 record(s), 0 pulse(s), 13 delay(s), 0 resync step(s)
+H713 logo: applied 32 record(s), 1 pulse(s), 7 delay(s), 0 resync step(s)
+H713 disp: FIFO status 0x00000002; reset applied
+H713 logo: applied 56 record(s), 0 pulse(s), 0 delay(s), 0 resync step(s)
+H713 panel: stock power pre-delay 550 ms
+H713 panel: stock GPIO phase complete: PF6 cfg=1 latch=1, PH16 cfg=1 latch=1, PF_DAT=00000040 PH_DAT=00010000
+H713 panel: post-stock GPIO mux: PF6 cfg=1 latch=1, PH16 cfg=1 latch=1
+H713 probe [ARM records applied   ] 051c0014=18000000 051c0028=00000030 05140054=40000000
+H713 MIPS: display.bin SHA-256 4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce
+H713 MIPS: firmware identity accepted
+H713 MIPS: HDCP key-load wait defeated
+H713 MIPS: readiness probe shared memory prepared (12 spinlocks, 1224 call entries, 8 share_seq, 5 lists, 256 records)
+H713 MIPS: released, status=0x00000001 witness=0x00000000
+H713 MIPS: firmware execution proven (witness overwritten)
+H713 probe [MIPS ready            ] 051c0014=18000005 051c0028=1f300030 05140054=40000000
+H713 disp: LVDS PHY tail applied: 00000000 00000000 08000800 08000000
+H713 disp: sequence complete, LVDS FIFO status=0x00000000
+H713 MIPS: readiness status=0x00000001 witness=0x00000000
+H713 MIPS: CPU_COMM magic=deadbeef/deadbeef ARM=00000005 MIPS=00000005
+H713 MIPS: firmware readiness proven by MIPS READY
+H713 MIPS: application readiness proven
+H713 panel: MIPS core quiesced, display clocks retained; reset=00000000 status=00000000 scan=013603b8->029a011c->03fc027d
+H713 panel: 720p timing latched: 00000004 02f80550 02d00500 00140028 80000014 80010003
+H713 panel: re-asserting DE block 6 after MIPS readiness
+H713 logo: applied 56 record(s), 0 pulse(s), 0 delay(s), 0 resync step(s)
+  bootlogo.bmp                 -> 0x6d000000  2764854 bytes
+H713 panel: bootlogo.bmp SHA-256 e812cd928c67b89608c7424ac80066c19633e76b150378abf4de9d62698eb22c
+H713 panel: bootlogo.bmp published at 0x6c100000 (24-bit BMP -> 0xffRRGGBB)
+H713 panel: frame commit irq=00000002->00000000->00000002 wait=1000us AFBD-ctrl=03001901 ready=00000000 OSD=00fc0202 scan=03ba023c
+H713 disp: boot logo published and committed
+[2KHit any key to stop autoboot: 5[2KHit any key to stop autoboot: 0
+=>                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+=> 
