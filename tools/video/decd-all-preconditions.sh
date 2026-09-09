@@ -1,40 +1,66 @@
 #!/bin/sh
-# decd-all-preconditions.sh -- one run with EVERY known prerequisite correct at
-# the same time, verified by readback before the operator is asked to look.
+# decd-all-preconditions.sh -- one verified path to the panel, three sources.
 #
-# WHY THIS EXISTS.  The 2026-08-31 recipe put full-colour 1280x720 NV12 on the
-# panel.  Every run since has had at least one piece wrong, and each cost an
-# operator look to discover:
+# Verifies every precondition by readback and REFUSES to hold for a visual test
+# unless all of them pass.  A refusal costs no operator attention; a photograph
+# of a misconfigured run costs a look and teaches nothing.
 #
-#   2026-09-06 physaddr   selector on OSD (0x29000000); video never routed
-#   2026-09-06 stride A/B ring slots 1-3 stale; composition dragged to 852x480
-#   2026-09-06 ring-fill  composition still 852x480 from the earlier run
-#   2026-09-08 Codex      selector on OSD, AFBD at 1920x1088 with IOVAs
+#   MODE=static    a file staged into the scanout carveout by decd-client
+#                  (bypass + physical addresses)          -- PROVEN, test_80
+#   MODE=carveout  Cedrus decodes, frame 0 copied into the same carveout
+#                  (bypass + physical addresses)          -- provenance test
+#   MODE=live      Cedrus decodes, driver owns the ring, one Y/C pair per frame
+#                  (IOMMU translation + IOVAs)            -- real playback
 #
-# None of them was a fair test.  This script therefore CHECKS instead of hoping,
-# prints a PASS/FAIL table, and REFUSES to hold for a visual test if anything
-# fails.  A refusal is a successful run: it costs no operator attention.
+# WHY THIS EXISTS.  Every ad-hoc script written against this hardware has
+# diverged from the verified sequence in some small way, and only a photograph
+# caught it.  The tally so far: a stale selector, three dead ring slots, five
+# unset geometry words, a snapshot taken while the block was clock-gated, a
+# player that exited before the hold, and -- four times -- a missing commit
+# latch.  All were visible in a register read taken beforehand.
 #
-# Composition at 0x05000000 is deliberately NOT written.  Measured 2026-09-08:
-# on a normal boot all seventeen registers are already at the 1280x720 values.
-# They only go to 852x480 if the SOURCE-COORDINATE client (/root/decd-client)
-# runs, so this script uses decd-client.coord1080 and then verifies.
+# ==========================================================================
+# THE TWO LATCHES.  Both are required and they do different jobs:
 #
-# ORDERING HAZARD: set IOMMU bypass BEFORE writing physical addresses.  A
-# physical address presented to a translating IOMMU is an unmapped IOVA and
-# faults master 2, which has blacked the panel until a power cycle.  The
-# reverse order merely reads garbage for a moment.
+#   0x05600014   commits the SOURCE CONFIG    (seven geometry words + enable)
+#   0x0560006c   publishes the PLANE ADDRESSES (two-plane YUV path)
 #
-# PRECONDITION, not checked here: MIPS must be alive (h713_disp init 0x34) and
-# the DECD budget module loaded.  The script verifies both and aborts if not.
+# Discovering that 0x0560006c was the missing publish led to scripts built
+# around it that dropped 0x05600014 entirely, so geometry and enable were
+# written, read back correct, and never committed.  The fetcher then had no
+# valid picture configuration, fetched nothing, and zeroes render as SOLID
+# GREEN (Y=U=V=0 through BT.601 clamps R and B to 0 and gives G ~= 135).
+#
+# Solid green means "fetching nothing", not "wrong colour".  Treat it as a
+# configuration failure and look for an uncommitted or unpublished register.
+# ==========================================================================
+#
+# ORDER BELOW IS THE test_80 ORDER AND IS LOAD-BEARING.  Config is committed in
+# format 0, the selector is routed, and only then does the format byte become 3
+# and the plane addresses publish.
+#
+# Format byte: 0 = RGB888, 3 = NV12 (patch 0065, AFBD_FMT_NV12).  Stock playback
+# runs format 0 because stock composites video into an RGB surface -- it is not
+# evidence for our path.  The driver never programs this byte (it only traces
+# it), so a manual 3 persists across frames.
+#
+# IOMMU ordering: set bypass/translation only while the source is DISABLED.  The
+# source rests at base 0 with 1920x1088 geometry and scans low memory the
+# instant it is enabled -- garbage under bypass, an AFBD-wedging L1-invalid
+# fault under translation.
 
 set -u
 
+MODE=${MODE:-static}
+FRAME=${FRAME:-/root/decd-test-frame.nv12}
+STREAM=${STREAM:-/root/leota-720p.h264}
+CLIENT=${CLIENT:-/root/decd-client.coord1080}
+PLAYER=${PLAYER:-/root/decd-play}
+DWELL=${DWELL:-30}
+RING_MAX=${RING_MAX:-2000}
 Y_PHYS=0x6c500000
 C_PHYS=0x6c5E1000
-FRAME=${FRAME:-/root/decd-test-frame.nv12}
-CLIENT=${CLIENT:-/root/decd-client.coord1080}
-DWELL=${DWELL:-30}
+CHROMA_OFF=0xE1000              # 1280*720; a real Y/C pair differs by this
 
 Y_SLOTS="0x05600070 0x05600074 0x05600078 0x0560007c"
 C_SLOTS="0x05600084 0x05600088 0x0560008c 0x05600090"
@@ -44,11 +70,12 @@ COMPV="0x63004040 0x63004040 0x00400040 0x00400040 0x02d00500 0x00400040 0x60020
 
 rd() { busybox devmem "$1" 32; }
 wr() { busybox devmem "$1" 32 "$2"; }
+rb() { busybox devmem "$1" 8; }
 say() { echo "$*"; echo "precond: $*" > /dev/kmsg 2>/dev/null; }
 lc() { echo "$1" | tr 'A-F' 'a-f'; }
 
 FAIL=0
-check() { # name actual expected
+check() {
 	if [ "$(lc "$2")" = "$(lc "$3")" ]; then
 		printf '  PASS  %-28s %s\n' "$1" "$2"
 	else
@@ -56,9 +83,22 @@ check() { # name actual expected
 		FAIL=$((FAIL + 1))
 	fi
 }
+check_ne() {   # name value rejected
+	if [ "$(lc "$2")" != "$(lc "$3")" ]; then
+		printf '  PASS  %-28s %s\n' "$1" "$2"
+	else
+		printf '  FAIL  %-28s %s   must not be %s\n' "$1" "$2" "$3"
+		FAIL=$((FAIL + 1))
+	fi
+}
 
 # ---------------------------------------------------------------- preflight
-say "=== preflight ==="
+case "$MODE" in
+static|carveout|live) ;;
+*) echo "ABORT: MODE must be static, carveout or live" >&2; exit 1 ;;
+esac
+
+say "=== preflight (MODE=$MODE) ==="
 CORE=$(rd 0x0306101c)
 if [ "$CORE" != 0x00000001 ]; then
 	echo "ABORT: MIPS core is $CORE, expected 0x00000001." >&2
@@ -66,61 +106,103 @@ if [ "$CORE" != 0x00000001 ]; then
 	echo "  FIT.  Do NOT re-release a quiesced core with direct MMIO." >&2
 	exit 1
 fi
-if ! lsmod | grep -q decd; then
-	echo "ABORT: no DECD module loaded.  Expected sunxi-decd-budget.ko." >&2
-	exit 1
-fi
+lsmod | grep -q decd || { echo "ABORT: no DECD module loaded." >&2; exit 1; }
+case "$MODE" in
+static)   [ -r "$FRAME" ]  || { echo "ABORT: no frame $FRAME" >&2; exit 1; } ;;
+*)        [ -r "$STREAM" ] || { echo "ABORT: no stream $STREAM" >&2; exit 1; }
+          [ -x "$PLAYER" ] || { echo "ABORT: no player $PLAYER" >&2; exit 1; } ;;
+esac
 say "core alive, DECD present"
 
 key() { echo "SAVE_$(echo "$1" | tr -d 'x')"; }
 
-# The snapshot MUST be taken after the client's PM_HINT has ungated the display
-# block.  Taken before, every register reads 0x00000000 (gating, not state), and
-# "restoring" those zeroes leaves the panel black instead of on the logo -- which
-# looks exactly like a failed test.  snapshot() is therefore called after
-# staging, and the selector is additionally floored to the known logo value.
+# The snapshot MUST be taken after the source's PM hint has ungated the block.
+# Taken before, every register reads 0x00000000 -- gating, not state -- and
+# restoring those zeroes blanks the panel, which looks exactly like a failure.
 snapshot() {
-	for r in $AFBD 0x051c006c 0x05140508; do eval "$(key $r)=$(rd $r)"; done
+	for r in $AFBD 0x051c006c 0x05140508 0x02010030; do eval "$(key $r)=$(rd $r)"; done
 	[ "$(rd 0x051c006c)" = 0x00000000 ] && SAVE_0051c006c=0x29000000
 	SNAPPED=1
-	say "snapshot: selector=$SAVE_0051c006c gain=$SAVE_005140508"
+	say "snapshot: selector=$SAVE_0051c006c bypass=$SAVE_002010030"
 }
 
 restore() {
-	# The trap is armed before snapshot() runs, so an abort in between would
-	# otherwise expand unset SAVE_ vars under set -u.  Nothing was written yet
-	# in that window, so there is nothing to undo -- just park the logo route.
 	if [ "${SNAPPED:-0}" != 1 ]; then
-		say "--- aborted before snapshot; restoring logo selector only ---"
+		say "--- aborted before snapshot; parking the logo selector only ---"
 		wr 0x051c006c 0x29000000 2>/dev/null || true
 		[ -z "${PID:-}" ] || kill "$PID" 2>/dev/null || true
 		return
 	fi
 	say "--- restoring inherited logo path ---"
-	for r in 0x051c006c $AFBD 0x05140508; do
-		eval "v=\${$(key $r):-}"
-		[ -n "$v" ] || continue
-		wr "$r" "$v" 2>/dev/null || true
-	done
-	# Put the logo's OSD channel back before anything else, or the panel stays
-	# blank after the run and looks like a failure.
-	[ -z "${SAVE_OSD2:-}" ] || wr 0x05600140 "$SAVE_OSD2" 2>/dev/null || true
+	wr 0x051c006c "$SAVE_0051c006c" 2>/dev/null || true
+	# Disable the source before moving the IOMMU back (ordering rule).
+	wr 0x05600010 "$(printf '0x%08X' $(( SAVE_005600010 & 0xFFFFFFFC )))" 2>/dev/null || true
 	wr 0x05600014 1 2>/dev/null || true
+	wr 0x02010030 "$SAVE_002010030" 2>/dev/null || true
+	for r in $AFBD 0x05140508; do
+		eval "v=\${$(key $r):-}"
+		[ -n "$v" ] && wr "$r" "$v" 2>/dev/null || true
+	done
+	wr 0x05600014 1 2>/dev/null || true
+	wr 0x0560006c 1 2>/dev/null || true
+	[ -z "${SAVE_RINGMAX:-}" ] || echo "$SAVE_RINGMAX" > /sys/module/sunxi_decd/parameters/ring_writes_max 2>/dev/null || true
 	[ -z "${PID:-}" ] || kill "$PID" 2>/dev/null || true
-	say "restored: selector=$(rd 0x051c006c) osd2=$(rd 0x05600140)"
+	say "restored: selector=$(rd 0x051c006c) bypass=$(rd 0x02010030)"
 }
 trap restore EXIT INT TERM
 
-# ---------------------------------------------------------------- configure
-say "staging $FRAME via $CLIENT"
-"$CLIENT" show "$FRAME" $(( (DWELL + 30) * 1000 )) >/dev/null 2>&1 &
+SAVE_RINGMAX=$(cat /sys/module/sunxi_decd/parameters/ring_writes_max 2>/dev/null || echo "")
+
+# ---------------------------------------------------------------- source
+case "$MODE" in
+static)
+	say "staging $FRAME via $CLIENT"
+	"$CLIENT" show "$FRAME" $(( (DWELL + 30) * 1000 )) >/dev/null 2>&1 &
+	;;
+carveout)
+	# DECD_FREEZE keeps the process (and its PM hint) alive for the whole hold
+	# without decoding anything new; DECD_CARVEOUT copies decoded frame 0 to
+	# Y_PHYS.  A player that exits mid-hold gates the display block off.
+	say "decoding $STREAM, frame 0 -> carveout $Y_PHYS"
+	DECD_FREEZE=1 DECD_CARVEOUT=1 "$PLAYER" "$STREAM" $(( (DWELL + 30) * 30 )) \
+		>/tmp/precond-player.log 2>&1 &
+	;;
+live)
+	say "live playback from $STREAM, driver owns the ring"
+	# ring_writes_done is cumulative and read-only (0444), so a fixed cap is
+	# already spent by earlier runs and the driver silently stops writing.
+	# Budget RELATIVE to the current count.
+	RW_DONE=$(cat /sys/module/sunxi_decd/parameters/ring_writes_done)
+	echo $(( RW_DONE + RING_MAX )) > /sys/module/sunxi_decd/parameters/ring_writes_max
+	say "ring budget: done=$RW_DONE max=$(cat /sys/module/sunxi_decd/parameters/ring_writes_max)"
+	"$PLAYER" "$STREAM" $(( (DWELL + 10) * 30 )) >/tmp/precond-player.log 2>&1 &
+	;;
+esac
 PID=$!
 sleep 4
-snapshot                               # after PM_HINT, so values are real
+kill -0 "$PID" 2>/dev/null || { echo "ABORT: source process died:" >&2; tail -5 /tmp/precond-player.log 2>/dev/null >&2; exit 1; }
+snapshot
 
-wr 0x02010030 0x7C                     # bypass BEFORE addresses
-for r in $Y_SLOTS; do wr "$r" $Y_PHYS; done
-for r in $C_SLOTS; do wr "$r" $C_PHYS; done
+# ---------------------------------------------------------------- configure
+# IOMMU first, while the source is still disabled.
+wr 0x05600010 "$(printf '0x%08X' $(( SAVE_005600010 & 0xFFFFFFFC )))"
+wr 0x05600014 1
+sleep 0.1
+# Full 8-digit form: devmem reads back 0x0000007C, so a 0x7C literal fails the
+# string compare.  The first run of this harness flagged exactly that.
+case "$MODE" in
+live) BYP=0x00000078 ;;   # Cedrus buffers are dma-mapped: the ring carries IOVAs
+*)    BYP=0x0000007C ;;   # carveout/static: real physical addresses
+esac
+wr 0x02010030 $BYP
+
+# Plane addresses: fixed physical for the carveout modes; in live mode the
+# driver writes a fresh Y/C pair per frame and must not be overwritten.
+if [ "$MODE" != live ]; then
+	for r in $Y_SLOTS; do wr "$r" $Y_PHYS; done
+	for r in $C_SLOTS; do wr "$r" $C_PHYS; done
+fi
+
 wr 0x05600020 0x02CF04FF
 wr 0x05600024 0x002C004F
 wr 0x05600030 0x02D00500
@@ -130,41 +212,29 @@ wr 0x05600040 0x00000500
 wr 0x05600044 0x00000500
 wr 0x05140508 0x144C0000
 wr 0x05600010 0x03000013
-wr 0x05600014 1
+wr 0x05600014 1                        # COMMIT the source config
+sleep 0.1
+wr 0x051c006c 0x39000000               # route to video
 
-# OSD_OFF=1 disables the OSD channel still showing the boot logo.
-#
-# Measured 2026-09-08 by diffing the FULL AFBD block (0x00-0x1FC) against the
-# stock-playback capture.  The upper half had never been compared, because an
-# earlier grep of '^056000' silently dropped every address from 0x05600100 up:
-#
-#   0x05600140  stock=0x83001900  live=0x03001901   ch2 ctrl, enable in bit 0
-#   0x05600178  stock=0x781F6000  live=0x6C100000   ch2 buffer = the BOOT LOGO
-#
-# U-Boot prints "bootlogo.bmp published at 0x6c100000", so a second layer has
-# been live under every test in this series, while stock playback has that exact
-# channel disabled.  The structured banding may therefore be the LOGO composited
-# under video geometry rather than our frame misread.  Clearing bit 0 separates
-# the two: if the mess goes, it was the logo layer; if it stays, it is our path.
-if [ "${OSD_OFF:-0}" = 1 ]; then
-	SAVE_OSD2=$(rd 0x05600140)
-	wr 0x05600140 "$(printf '0x%08X' $(( SAVE_OSD2 & ~1 )))"
-	wr 0x05600014 1
-	sleep 0.1
-	say "OSD ch2 (logo) disabled: $SAVE_OSD2 -> $(rd 0x05600140)"
+busybox devmem 0x05600011 8 3          # format -> NV12
+wr 0x05600040 0x00000500
+wr 0x05600044 0x00000500
+if [ "$MODE" != live ]; then
+	wr 0x05600070 $Y_PHYS
+	wr 0x05600084 $C_PHYS
 fi
-sleep 0.2
-wr 0x051c006c 0x39000000
+wr 0x0560006c 1                        # PUBLISH the plane addresses
 sleep 0.3
 
 # ---------------------------------------------------------------- verify
 echo
-say "=== precondition check ==="
+say "=== precondition check (MODE=$MODE) ==="
 check "MIPS core alive"        "$(rd 0x0306101c)" 0x00000001
-check "IOMMU m2 bypass"        "$(rd 0x02010030)" 0x0000007C
+check "IOMMU master 2"         "$(rd 0x02010030)" $BYP
 check "selector = VIDEO"       "$(rd 0x051c006c)" 0x39000000
 check "chroma gain"            "$(rd 0x05140508)" 0x144C0000
-check "src ctrl/enable/fmt"    "$(rd 0x05600010)" 0x03000013
+check "src ctrl (fmt 3 + en)"  "$(rd 0x05600010)" 0x03000313
+check "format byte = NV12"     "$(rb 0x05600011)" 0x03
 check "crop 1280x720"          "$(rd 0x05600020)" 0x02CF04FF
 check "crop origin"            "$(rd 0x05600024)" 0x002C004F
 check "picture 1280x720"       "$(rd 0x05600030)" 0x02D00500
@@ -172,19 +242,52 @@ check "picture 1280x720 (48)"  "$(rd 0x05600048)" 0x02D00500
 check "chroma 1280x360"        "$(rd 0x0560004c)" 0x01680500
 check "luma stride 1280"       "$(rd 0x05600040)" 0x00000500
 check "chroma stride 1280"     "$(rd 0x05600044)" 0x00000500
-for r in $Y_SLOTS; do check "Y slot $r" "$(rd $r)" $Y_PHYS; done
-for r in $C_SLOTS; do check "C slot $r" "$(rd $r)" $C_PHYS; done
 
 i=1
 for r in $COMP; do
-	v=$(echo $COMPV | cut -d' ' -f$i)
-	check "comp $r" "$(rd $r)" "$v"
+	check "comp $r" "$(rd $r)" "$(echo $COMPV | cut -d' ' -f$i)"
 	i=$((i + 1))
 done
 
-# The frame must actually be in the memory we point the fetcher at.
-W0=$(rd $Y_PHYS)
-check "frame bytes at Y_PHYS" "$W0" 0x4B4B494A
+if [ "$MODE" = live ]; then
+	# The driver owns the ring: require every slot non-zero and every Y/C pair
+	# separated by exactly the luma-plane size.  A zero slot means the driver
+	# wrote a blank frame; a wrong delta means the pair is not a real frame.
+	n=1
+	for r in $Y_SLOTS; do
+		y=$(rd $r); c=$(rd $(echo $C_SLOTS | cut -d' ' -f$n))
+		check_ne "Y slot $n non-zero" "$y" 0x00000000
+		# Must NOT still be the carveout address: that would mean the driver
+		# never wrote the ring and we are checking stale values from a previous
+		# run -- a false pass this harness hit on its first live dry-run.
+		check_ne "Y slot $n driver-written" "$y" "$Y_PHYS"
+		d=$(printf '0x%X' $(( c - y )))
+		check "Y/C delta slot $n" "$d" "$CHROMA_OFF"
+		n=$((n + 1))
+	done
+	B=$(cat /sys/module/sunxi_decd/parameters/ring_writes_done)
+	sleep 1
+	A=$(cat /sys/module/sunxi_decd/parameters/ring_writes_done)
+	if [ "$A" -gt "$B" ]; then
+		printf '  PASS  %-28s %s -> %s\n' "ring advancing" "$B" "$A"
+	else
+		printf '  FAIL  %-28s stuck at %s\n' "ring advancing" "$A"
+		FAIL=$((FAIL + 1))
+	fi
+else
+	for r in $Y_SLOTS; do check "Y slot $r" "$(rd $r)" $Y_PHYS; done
+	for r in $C_SLOTS; do check "C slot $r" "$(rd $r)" $C_PHYS; done
+	# The bytes must actually be at the address the fetcher is pointed at.
+	check_ne "frame bytes at Y_PHYS" "$(rd $Y_PHYS)" 0x00000000
+	check_ne "chroma bytes at C_PHYS" "$(rd $C_PHYS)" 0x00000000
+fi
+
+if kill -0 "$PID" 2>/dev/null; then
+	printf '  PASS  %-28s pid %s\n' "source process alive" "$PID"
+else
+	printf '  FAIL  %-28s exited early (PM hint dropped)\n' "source process alive"
+	FAIL=$((FAIL + 1))
+fi
 
 echo
 if [ "$FAIL" -ne 0 ]; then
@@ -193,66 +296,11 @@ if [ "$FAIL" -ne 0 ]; then
 	exit 2
 fi
 
-# FMT_SWEEP=1 walks the format byte in 0x05600010[15:8] through all eight values
-# the firmware can produce.  Derived 2026-09-08 by decoding the resolver jump
-# table at MIPS 0x8b2078a4 (handlers at 0x8b1a321c..0x8b1a32f4):
-#
-#   VideoInfo code 0 -> fmt 0   (stock playback, and every run of ours)
-#   codes 2,4,6      -> fmt 1,2,3
-#   codes 8/11       -> fmt 4   (the only other value ever tried)
-#   codes 9/12       -> fmt 5
-#   code 15          -> fmt 6
-#   code 14          -> fmt 7
-#   codes 1,3,5,10,13-> error path
-#
-# Two of eight tested in three sessions.  This enumerates the rest in one
-# operator window instead of one look per guess.
-if [ "${FMT_SWEEP:-0}" = 1 ]; then
-	say "=== FORMAT SWEEP: 8 phases x ${PHASE_S:-8}s, LOOK NOW ==="
-	say "    watch for ANY phase that resolves into a real picture"
-	f=0
-	while [ $f -lt 8 ]; do
-		wr 0x05600010 "$(printf '0x0300%02X13' $f)"
-		wr 0x05600014 1
-		say ">>> PHASE $((f + 1))/8  fmt=$f  ctrl=$(rd 0x05600010)"
-		sleep "${PHASE_S:-8}"
-		f=$((f + 1))
-	done
-	say "=== sweep done ==="
-	exit 0
-fi
-
-# NV12_SEQ=1 replays the EXACT sequence from our own working KMS driver,
-# patches/kernel/0065-drm-h713-afbd-scan-out-nv12-directly.patch, which put
-# linear NV12 on this panel.  Two differences from everything we have run:
-#
-#   1. format byte 0x05600011 = 3 (NV12).  Row 0 is RGB888 -- so every run in
-#      this series asked the engine to read NV12 as 4-byte-per-pixel RGB, which
-#      is exactly the half-height/flat-bottom signature in test_79.
-#   2. the config is published through AFBD_DIRTY at 0x0560006c, NOT the
-#      0x05600014 latch every script here has used.  The patch's own comment
-#      records this as the reason two earlier attempts failed: they set the
-#      format byte, kept publishing the packed path, and the fetch stayed at
-#      4 bytes/pixel.
-#
-# Driver order, preserved exactly: format, stride0, stride1, addr0, addr1, dirty.
-if [ "${NV12_SEQ:-0}" = 1 ]; then
-	say "--- replaying the 0065 NV12 driver sequence ---"
-	busybox devmem 0x05600011 8 3          # AFBD_FORMAT  = NV12 (byte write)
-	wr 0x05600040 0x00000500               # AFBD_PLANE_STRIDE0
-	wr 0x05600044 0x00000500               # AFBD_PLANE_STRIDE1
-	wr 0x05600070 $Y_PHYS                  # AFBD_PLANE_ADDR0
-	wr 0x05600084 $C_PHYS                  # AFBD_PLANE_ADDR1
-	wr 0x0560006c 1                        # AFBD_DIRTY -- the publish
-	sleep 0.2
-	say "ctrl=$(rd 0x05600010) fmt_byte=$(busybox devmem 0x05600011 8)"
-	say "dirty=$(rd 0x0560006c) stride0=$(rd 0x05600040) addr0=$(rd 0x05600070)"
-fi
-
 say "=== ALL PRECONDITIONS PASS -- HOLDING ${DWELL}s, LOOK NOW ==="
 i=0
 while [ $i -lt $DWELL ]; do
 	sleep 5; i=$((i + 5))
-	say "  t=${i}s selector=$(rd 0x051c006c) Y0=$(rd 0x05600070) comp174=$(rd 0x05000174)"
+	say "  t=${i}s Y0=$(rd 0x05600070) sel=$(rd 0x051c006c) core=$(rd 0x0306101c)"
 done
 say "=== done ==="
+[ "$MODE" = static ] || { say "--- player ---"; tail -4 /tmp/precond-player.log; }
