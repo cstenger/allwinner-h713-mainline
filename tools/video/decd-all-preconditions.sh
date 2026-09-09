@@ -226,11 +226,10 @@ if [ "$MODE" != live ]; then
 fi
 
 # DRIVER_ROUTE=1 writes NOTHING to the AFBD block: patch 0095 makes the driver
-# program it instead.  KNOWN BROKEN -- the panel shows the frame doubled side by
-# side in the top half with shifted colour (test_81), a 2-bytes-per-pixel fetch,
-# even though the resulting register state is byte-identical to a working run.
-# Leave DRIVER_ROUTE unset for correct output.  Original note follows.
-# (patch 0095 makes the driver
+# program it instead -- hardware-verified 2026-09-08.  The trap it had to solve:
+# the config commit at 0x05600014 RETIRES ON VSYNC, so back-to-back kernel writes
+# never latch while shell recipes always did (they slept 100 ms).  The failure is
+# invisible to a register dump.  (patch 0095 makes the driver
 # program the geometry, enable, format byte and config commit from the submitted
 # descriptor.  Only the display-side gain and selector are set here, because
 # those live in the display engine, are not mapped by the driver, and are shared
