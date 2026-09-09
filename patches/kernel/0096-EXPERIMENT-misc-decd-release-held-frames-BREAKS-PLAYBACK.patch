@@ -1,50 +1,46 @@
+EXPERIMENT, out of series, BREAKS PLAYBACK -- do not apply as-is.
+
 misc: decd: release held frames when the last client closes
 
-dec_release_file() was a no-op, and that was a dma_buf reference leak.  A frame
-is released only when a LATER frame displaces it, so whatever a client submitted
-last stayed pinned after it exited or was killed.
+Fixes the dma_buf leak correctly (+2 references per decd-client run, 89 in one
+session, dropped to ZERO growth over six client and three live runs) but
+REGRESSES LIVE PLAYBACK, so it is out of series until the ordering is right.
 
-Measured before: +2 references per decd-client run even on clean exit (the image
-and VideoInfo buffers of the pinned frame), 89 accumulated in one session.
-Leaked references pin identity IOVAs, after which Cedrus cannot allocate:
+THE REGRESSION.  The drain sets q->slots[i] = NULL, and dec_frame_queue_sync()
+writes a BLANK (zero) address for every NULL slot on each vsync.  So once the
+drain fires the ring alternates between zeros and newly-submitted frames.
+Observed on the panel as solid colours cycling black / pink-purple / black,
+with 0x05600070 reading 0x00000000 for the whole hold while preconditions had
+passed moments earlier.
 
-  sun50i-iommu: iova 0x6c800000 already mapped to 0x6c800000 cannot remap ...
-  cedrus 1c0e000.video-codec: dma alloc of size 1384448 failed
+The drain fires while a player is still active, so "last close" -- an
+open_count that reaches zero in dec_release_file() -- is NOT a sufficient guard
+when runs overlap.  Why open_count reaches zero mid-run was not diagnosed.
 
-Userspace sees GStreamer report "Not enough memory to allocate source buffers"
-while MemFree, CmaFree and buddyinfo are all healthy -- it is not memory
-pressure, and chasing it as such wastes time.  STOP_VIDEO_STREAM does not
-reclaim them and neither does rmmod, so only a reboot recovered.
-
-Measured after: six decd-client runs and three live playback runs with ZERO
-refcount growth, no oops, display paths unaffected.
-
-THE REFCOUNT MODEL, which two earlier attempts got wrong:
+WHAT IS STILL CORRECT HERE, and worth keeping for the next attempt: the
+refcount model, which two earlier attempts got wrong.
 
   - dec_frame_queue_resume() assigns ONE frame to ALL FOUR slots and nets a
-    single reference (refcount_inc, then video_frame_put on the progressive
-    path).  The slots ALIAS.  Putting each slot separately is a use-after-free
-    on the second put -- that segfaulted decd-client.
-  - q->interlace_hold is overwritten with (void *)1 as an ARMED FLAG, not a
-    pointer, so it must never be passed to video_frame_put().
-  - The repeat path increments the frame's refcount once per vsync and pushes
-    one release_fifo entry each time, all aliasing the same object.  The fifo
-    depth is therefore the number of outstanding references and is NOT bounded
-    by the four ring slots -- one run showed eleven.  An earlier version
-    collected into a fixed 8-entry array and silently stopped at the cap, which
-    is why the leak survived that "fix".
-  - q->last_released holds a reference of its own.
-  - last_frame is a global holding the most recently retired frame, released
-    only when the next frame is popped.
+    single reference.  The slots ALIAS: put ONCE.  Putting each slot separately
+    is a use-after-free on the second put and segfaults the client.
+  - q->interlace_hold is the literal (void *)1 ARMED FLAG, not a pointer, and
+    must never be passed to video_frame_put().
+  - The repeat path increments the refcount once per vsync and pushes one
+    release_fifo entry each time, all aliasing the same object.  Fifo depth IS
+    the outstanding reference count and is NOT bounded by the four ring slots --
+    eleven observed.  A fixed 8-entry array silently caps and the leak survives
+    a "fix" that logs success.
+  - q->last_released and the global last_frame are separate holders.
 
-So the drain releases, in order: the ready_list, the aliased ring slots (once),
-last_released, the whole release_fifo, and last_frame.
+NEXT ATTEMPT should either (a) find why open_count hits zero while a player is
+running and gate on active streaming instead, or (b) drain without nulling the
+slots, so dec_frame_queue_sync() never sees a NULL slot to blank -- e.g. drop
+the references but leave the pointers, or blank only when the source is already
+disabled and stays disabled.
 
-Only the LAST close drains -- concurrent clients share one device, and tearing
-the ring down under a still-running client would blank its output.
-
-The source is disabled and the ring blanked BEFORE anything is freed, because
-the fetcher may still be scanning those buffers.
+The leak itself is real and unfixed: GStreamer reports "Not enough memory to
+allocate source buffers" while MemFree/CmaFree/buddyinfo are healthy; only a
+reboot clears it.
 
 --- a/drivers/misc/sunxi_decd/decd_frame.c
 +++ b/drivers/misc/sunxi_decd/decd_frame.c
