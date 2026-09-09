@@ -142,3 +142,49 @@ conclusion about IOVA support is drawn.
 - **`decd-play` requests VideoInfo format selector 0**, which the firmware
   resolver maps to hardware format 0 = RGB888. It only works because the driver
   never programs the format byte and our manual `3` persists.
+
+## Addendum 2 — real Cedrus video, MIPS alive, IOMMU translating
+
+Both Cedrus paths now render correctly through the precondition harness.
+
+| mode | source | addressing | result |
+| --- | --- | --- | --- |
+| `static` | file via `decd-client.coord1080` | bypass + physical | correct (test_80) |
+| `carveout` | Cedrus frame 0 copied to `0x6c500000` | bypass + physical | **correct** |
+| `live` | Cedrus, driver-owned ring | **translation + IOVAs** | **video plays** |
+
+`live` is the full chain: Cedrus decode -> zero-copy dma-buf -> IOMMU
+translation -> DECD fetch -> MIPS window layer -> panel, at 29.96 fps with
+`0x0306101c = 1` throughout. Driver-written IOVAs, a fresh Y/C pair per frame,
+`ring_writes_done` advancing ~61/s.
+
+### This disproves the translation claim
+
+An earlier run of `decd-static-via-iova.sh` returned solid green and was
+reported as "translation is the fault". That script carried the missing
+`0x05600014` commit, so it never tested translation; the claim was withdrawn
+when the latch bug was found, and `MODE=live` now positively disproves it.
+**IOMMU translation for master 2 works.** The fetcher only ever needed its
+source configuration committed.
+
+Also retired: `f410ebf`'s inference that zero IOMMU faults proves the IOVAs are
+mapped. The reasoning remains invalid — zero faults is equally consistent with
+silent zeroes — but the conclusion it supported happens to be true.
+
+### The 60 Hz hard-lock does not reproduce
+
+Four playback runs, real Cedrus traffic, live MIPS, several thousand ring
+writes, `0x0306101c = 1` throughout. The hazard that shaped experiment design
+since 2026-09-04 -- and the `ring_writes_max=1` workaround built around it --
+does not bite on this kernel. `ring_writes_done` is cumulative and read-only, so
+budget relative to its current value or the driver silently stops writing.
+
+### Known gaps
+
+- No vsync-correct flipping; tearing is expected and unmeasured.
+- `decd-play` requests VideoInfo format selector 0, which the firmware resolver
+  maps to hardware format 0 = RGB888. It works only because the driver never
+  programs the format byte and our manual 3 persists. Selector 6 resolves to
+  format 3 and would be the honest value.
+- The format byte and the whole route are still applied by shell after the
+  player starts; none of it lives in the driver yet.
