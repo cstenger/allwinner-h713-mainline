@@ -213,7 +213,7 @@ strength of four clean runs; **that claim has been retracted**.
 
 ---
 
-## 6. STILL OPEN — dma_buf reference leak (a fix exists but regresses playback)
+## 6. BOUNDED (not eliminated) — dma_buf reference leak
 
 Included because the refcount model below may be relevant to section 5, and
 because two attempts failed before it worked.

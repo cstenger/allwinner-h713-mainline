@@ -224,8 +224,9 @@ One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO
 
 - ~~No vsync-correct flipping~~ — **measured 2026-09-08, and it is already
   correct.** See "Flipping is already vsync-correct" below.
-- **The DECD driver leaks `sunxi_scanout_dmabuf` exports — STILL OPEN.** A fix
-  (`0096`) works but **breaks live playback** and is out of series; see below. `dec_release_file()` was a no-op, so whatever a
+- **The DECD driver leaked `sunxi_scanout_dmabuf` exports — now BOUNDED**
+  (`patches/kernel/0096`, in series). Was +2 per run forever; now 2 total,
+  released when the next client displaces the frame. See below. `dec_release_file()` was a no-op, so whatever a
   client submitted last stayed pinned after it exited (a frame is released only
   when a *later* frame displaces it). Measured +2 references per `decd-client`
   run even on clean exit, 89 in one session; leaked references pin identity
@@ -346,6 +347,30 @@ VideoInfo format selector, the rebuilt client binaries, and these three patches
 `decd-play` = `ab5f6814`), which request selector 0. **Selector 6 is therefore
 committed but not visually verified.** Rebuild and re-confirm before relying on
 it; it has no effect on rendering by analysis, so this is low risk but unproven.
+
+## Bounding the leak without touching the ring
+
+`patches/kernel/0096` drops the **surplus** frame references on the last close
+and deliberately leaves `q->slots[0..3]` alone.
+
+- Before: **+2 dma_buf references per `decd-client` run**, even on clean exit.
+- After: +2 on the first run, then **flat** across five more. Six live runs
+  pass, the ring advances for a full 10 s window, and sustained playback was
+  operator-confirmed over a 25 s hold.
+
+**It bounds, it does not eliminate.** Two references stay held — the displayed
+frame — and are released when the next client's frame displaces it. Steady state
+is 2 instead of 2 per run. Retiring the displayed frame safely is unsolved.
+
+**Why the ring is untouched.** The first version released the slots and NULLed
+them. It fixed the leak completely and broke playback:
+`dec_frame_queue_sync()` writes a blank address for every NULL slot each vsync,
+so the ring alternated between zeros and new frames — solid colours cycling on
+the panel. Dropping the slot reference while leaving the pointer is worse still:
+the sync path would walk freed memory.
+
+Released here: `ready_list`, `release_fifo`, `last_released`, `last_frame`.
+Untouched: `slots[0..3]`, and `interlace_hold` (the `(void *)1` armed flag).
 
 ## The freeze was the harness, not the hardware
 
