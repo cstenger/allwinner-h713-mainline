@@ -224,8 +224,8 @@ One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO
 
 - ~~No vsync-correct flipping~~ — **measured 2026-09-08, and it is already
   correct.** See "Flipping is already vsync-correct" below.
-- ~~**The DECD driver leaks `sunxi_scanout_dmabuf` exports.**~~ **FIXED —
-  `patches/kernel/0096`.** `dec_release_file()` was a no-op, so whatever a
+- **The DECD driver leaks `sunxi_scanout_dmabuf` exports — STILL OPEN.** A fix
+  (`0096`) works but **breaks live playback** and is out of series; see below. `dec_release_file()` was a no-op, so whatever a
   client submitted last stayed pinned after it exited (a frame is released only
   when a *later* frame displaces it). Measured +2 references per `decd-client`
   run even on clean exit, 89 in one session; leaked references pin identity
@@ -246,6 +246,20 @@ One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO
   source buffers"* while `MemFree`, `CmaFree` and `buddyinfo` are all healthy.
   It is not memory pressure. Pre-existing leaked references are orphaned and
   still need a reboot to clear.
+
+**Attempted fix regresses playback.** `patches/kernel/0096` drains held frames
+on the last close and does fix the leak (zero refcount growth over six client
+and three live runs). But the drain sets `q->slots[i] = NULL`, and
+`dec_frame_queue_sync()` writes a **blank (zero) address for every NULL slot**
+on each vsync — so the ring alternates between zeros and new frames. On the
+panel: solid colours cycling black / pink-purple / black, with `0x05600070`
+reading zero for the whole hold while preconditions had passed moments earlier.
+"Last close" is not a sufficient guard: the drain fires while a player is still
+running, and why `open_count` reaches zero mid-run was not diagnosed.
+
+Next attempt should either find why `open_count` hits zero while a player runs
+and gate on active streaming instead, or **drain without nulling the slots**, so
+`dec_frame_queue_sync()` never sees a NULL slot to blank.
 - **`decd-play` requests VideoInfo selector 0**, which the firmware resolver maps
   to hardware format 0 = RGB888. It only works because the driver never programs
   the format byte from that selector. Selector 6 resolves to format 3 and is the
