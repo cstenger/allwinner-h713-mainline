@@ -120,7 +120,8 @@ key() { echo "SAVE_$(echo "$1" | tr -d 'x')"; }
 # Taken before, every register reads 0x00000000 -- gating, not state -- and
 # restoring those zeroes blanks the panel, which looks exactly like a failure.
 snapshot() {
-	for r in $AFBD 0x051c006c 0x05140508 0x02010030; do eval "$(key $r)=$(rd $r)"; done
+	for r in $AFBD 0x051c006c 0x05140508; do eval "$(key $r)=$(rd $r)"; done
+	SAVE_002010030=$INHERITED_BYP
 	[ "$(rd 0x051c006c)" = 0x00000000 ] && SAVE_0051c006c=0x29000000
 	SNAPPED=1
 	say "snapshot: selector=$SAVE_0051c006c bypass=$SAVE_002010030"
@@ -152,6 +153,11 @@ restore() {
 trap restore EXIT INT TERM
 
 SAVE_RINGMAX=$(cat /sys/module/sunxi_decd/parameters/ring_writes_max 2>/dev/null || echo "")
+# The inherited IOMMU state must be captured BEFORE the DRIVER_ROUTE early flip.
+# snapshot() runs after it, so it would record the flipped value and "restore" the
+# board to whichever mode ran last -- state drift that makes a later result
+# confusing for no benefit.
+INHERITED_BYP=$(rd 0x02010030)
 
 # ---------------------------------------------------------------- source
 # DRIVER_ROUTE: the disable + IOMMU flip must happen BEFORE the source starts.
