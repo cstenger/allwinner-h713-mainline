@@ -162,7 +162,8 @@ One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO
 
 ## Open work
 
-- **No vsync-correct flipping.** Tearing is expected and unmeasured.
+- ~~No vsync-correct flipping~~ — **measured 2026-09-08, and it is already
+  correct.** See "Flipping is already vsync-correct" below.
 - **`decd-play` requests VideoInfo selector 0**, which the firmware resolver maps
   to hardware format 0 = RGB888. It only works because the driver never programs
   the format byte from that selector. Selector 6 resolves to format 3 and is the
@@ -172,6 +173,51 @@ One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO
   own them, that is a design decision about display ownership.
 - Audio is not wired into this path; `mpv` playback remains the separate
   VA-API/DRM route.
+
+## Flipping is already vsync-correct
+
+The earlier "no vsync-correct flipping, tearing expected" line was an inherited
+assumption, never a measurement. Both halves have now been measured and both
+are correct, so there is nothing to fix.
+
+**Atomicity** — `tools/display/latch-timing.c`. The plane-address publish at
+`0x0560006c` retires with a **uniform 0..16.7 ms** distribution under randomised
+write phase (n=60: min 775 us, median 10.3 ms, max 16.6 ms, flat histogram
+across eighths of a frame, **0/60 under 50 us**). That is the signature of a
+register latching on the frame boundary, so a ring rewrite cannot split a frame.
+The config commit at `0x05600014` behaves the same way, which is consistent with
+the vsync-retirement finding above.
+
+> **Sampler trap, recorded because it nearly produced a wrong answer.** A fixed
+> 3 ms inter-sample delay plus the ~13.7 ms wait sums to one frame period, which
+> phase-locks the sampler to the panel: every write lands at the same point in
+> the frame and the spread collapses to a constant 13.69 ms. That reads exactly
+> like a fixed hardware latency. Randomising the delay is what exposes the true
+> uniform spread.
+
+**Cadence** — `tools/display/flip-cadence.c`, which timestamps every change of
+the live Y address at `0x05600070`. During real playback:
+
+```
+flips=120, active span 3.97 s  =>  29.98 fps displayed   (source 29.97)
+mean dwell 33.4 ms (2.00 vsyncs), worst 50.2 ms
+  1 vsync :   2      2 vsyncs : 116      3 vsyncs : 1
+```
+
+116 of 119 frames held for exactly 2 vsyncs — correct 2:2 for 29.97 fps content
+on a 60 Hz panel — and the displayed rate matches the source to 0.03%. The
+single 1+3 pair is one late frame in four seconds.
+
+> Report the rate over the **active span**, not the sample window. The clip is
+> short; if playback ends mid-window, dividing by the window reports a fraction
+> of the real rate next to a correct per-frame dwell, which looks like a
+> contradiction and is purely an artefact. The first run of this tool printed
+> "8.50 fps" beside a correct 33.3 ms dwell for exactly that reason.
+
+Minor and not a defect: the vsync handler rewrites all four ring slots every
+vsync even when the frame has not changed (`ring_writes_done` advances ~61/s
+against 30 fps content). Redundant work, but the publish is idempotent and
+atomic, so it costs bus traffic rather than correctness.
 
 ## Method notes
 
