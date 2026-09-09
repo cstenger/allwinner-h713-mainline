@@ -100,8 +100,9 @@ selector; `0x29000000` is the OSD/logo path).
 
 ## 4. OPEN PROBLEM 1 — the build tree is missing three patches
 
-**Found while writing this document, not yet acted on. It may bear on both of
-the problems below.**
+> **UPDATE — acted on, and it looks like the answer.** The three patches were
+> applied to the build tree and the module rebuilt. Results below in this
+> section. The hard-lock did not reproduce in six consecutive live runs.
 
 The build tree that produced the running DECD module branches from a point that
 predates three patches which *are* in the patch series:
@@ -127,8 +128,33 @@ retirement frees a fence userspace may still hold**. 0071 replaces the `kfree`
 with `dma_fence_put()`.
 
 Live playback retires ~30 frames/second. Static single-frame tests retire
-almost nothing. That asymmetry matches the observed failure pattern below, but
-**this is a hypothesis, not a measurement** — it has not been tested.
+almost nothing. That asymmetry matches the observed failure pattern below.
+
+### Result of applying 0071/0072/0073
+
+All three applied cleanly to the tree, keeping 0094 and 0095. Measured after
+rebuilding and loading:
+
+- **The hard-lock did not reproduce**: six consecutive live playback runs, core
+  alive after every one, one of them operator-confirmed as playing correctly.
+  Immediately before the fix, on a fresh boot, it was **two locks in two
+  attempts**.
+- **Fence retirement now works.** Standalone `decd-play` previously reported
+  *"frame 0's release fence has not signalled in 2000 ms with 4 held"*; it now
+  completes (`PLAY_COMPLETE frames=60, 29.83 fps`).
+- **The client segfault is gone** — three consecutive `decd-client` runs exit 0.
+- **The dma_buf leak is unchanged** at +2 per client run, as expected: these
+  patches address fence lifetime and DMA constraints, not the frame-retirement
+  refcount.
+
+**Caveat, and it matters.** Both original locks happened on a *fresh boot*
+(uptime ~57 s). The six clean runs were on a board up ~30 minutes. The exact
+failing condition has **not** been reproduced with the fix in place, so this is
+strongly supported rather than proven. A reboot followed immediately by a live
+run is the discriminating test and has not been done.
+
+Earlier the same day, four clean runs led to a confident "does not reproduce"
+claim that was then falsified. That is why this one is deliberately hedged.
 
 ---
 
