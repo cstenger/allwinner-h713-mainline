@@ -147,7 +147,9 @@ restore() {
 	wr 0x05600014 1 2>/dev/null || true
 	wr 0x0560006c 1 2>/dev/null || true
 	[ -z "${SAVE_RINGMAX:-}" ] || echo "$SAVE_RINGMAX" > /sys/module/sunxi_decd/parameters/ring_writes_max 2>/dev/null || true
+	touch /tmp/precond-stop 2>/dev/null || true
 	[ -z "${PID:-}" ] || kill "$PID" 2>/dev/null || true
+	pkill -f "$(basename "$PLAYER") $STREAM" 2>/dev/null || true
 	say "restored: selector=$(rd 0x051c006c) bypass=$(rd 0x02010030)"
 }
 trap restore EXIT INT TERM
@@ -192,14 +194,26 @@ carveout)
 		>/tmp/precond-player.log 2>&1 &
 	;;
 live)
-	say "live playback from $STREAM, driver owns the ring"
+	# LOOP the clip.  decd-play stops at END OF STREAM, not at max-frames, and
+	# the fixture is only ~10 s (300 frames at 30 fps).  With a longer hold the
+	# player exits partway, the harness sees "source process alive" fail,
+	# restores, and puts ring_writes_max back to 1 -- which freezes the ring.
+	# On the panel that is "video plays for a few seconds, then freezes", and it
+	# is entirely self-inflicted: the picture was correct until the clip ended.
+	# Re-running the player for the whole hold keeps PM and the ring alive.
+	say "live playback from $STREAM (looped), driver owns the ring"
 	# ring_writes_done is cumulative and read-only (0444), so a fixed cap is
 	# already spent by earlier runs and the driver silently stops writing.
 	# Budget RELATIVE to the current count.
 	RW_DONE=$(cat /sys/module/sunxi_decd/parameters/ring_writes_done)
 	echo $(( RW_DONE + RING_MAX )) > /sys/module/sunxi_decd/parameters/ring_writes_max
 	say "ring budget: done=$RW_DONE max=$(cat /sys/module/sunxi_decd/parameters/ring_writes_max)"
-	"$PLAYER" "$STREAM" $(( (DWELL + 10) * 30 )) >/tmp/precond-player.log 2>&1 &
+	rm -f /tmp/precond-stop
+	( while [ ! -f /tmp/precond-stop ]; do
+		"$PLAYER" "$STREAM" $(( (DWELL + 10) * 30 )) >>/tmp/precond-player.log 2>&1
+		[ -f /tmp/precond-stop ] && break
+		sleep 0.2
+	  done ) &
 	;;
 esac
 PID=$!

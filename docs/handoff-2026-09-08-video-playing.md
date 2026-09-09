@@ -347,6 +347,50 @@ VideoInfo format selector, the rebuilt client binaries, and these three patches
 committed but not visually verified.** Rebuild and re-confirm before relying on
 it; it has no effect on rendering by analysis, so this is low risk but unproven.
 
+## The freeze was the harness, not the hardware
+
+**2026-09-09.** Every "video plays for a few seconds, then freezes" report was
+self-inflicted, including runs previously recorded as clean.
+
+`decd-play` stops at **end of stream**, not at its `max-frames` argument, and the
+fixture `leota-720p.h264` is only ~300 frames (~10 s). With a 25-30 s hold the
+player therefore exits partway through; the harness's "source process alive"
+check then fails, it restores, and `restore()` puts `ring_writes_max` back to 1
+— which **freezes the ring writer**. The picture was correct until the clip
+ended, then stopped updating.
+
+Measured before the fix, with `flip-cadence`:
+
+```
+flips=160, active span 5.31 s => 29.95 fps    (12 s sample window)
+```
+
+Flips for 5.3 s, then nothing. And the budget counters caught it directly:
+
+```
+t=6s:   max=13584  done=11932     budget active, ring advancing
+t=12s:  max=1      done=11964     max RESET to 1, ring frozen
+```
+
+Only 380 of a 2000-write budget was used, so nothing was exhausted — the knob
+was simply put back.
+
+**Fix:** live mode now loops the clip for the duration of the hold, so the player
+outlives it. After: 448 of 456 dwells at exactly 2 vsyncs over 18 s, zero
+harness failures, budget not reset, and **operator-confirmed sustained playback
+for a full 25 s hold**. The only artefacts are brief hitches at the loop seam
+every ~10 s (two 8-vsync gaps and one 1.4 s outlier).
+
+**Corrects the record.** Earlier live runs recorded as "played correctly" were
+only ever valid for the first ~10 s; nobody had seen sustained playback until
+now. `PLAY_COMPLETE` in the player log is **not** evidence the display kept
+updating — it only means the player finished submitting.
+
+**Free health signal, which was in the logs all along:** the harness prints
+`Y0=` every 5 s. If it is **constant across samples the ring is frozen**; if it
+changes, frames are advancing. A frozen `Y0` accompanied every freeze tonight and
+was read past as normal.
+
 ## Degradation is measurable without the panel — use the fence-stall rate
 
 The drift below also shows up in telemetry, which means it can be tracked
