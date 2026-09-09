@@ -1,5 +1,9 @@
 # Handoff — 2026-09-06: the fetcher was never the problem
 
+> **Outcome:** video now plays on the panel — see
+> [handoff-2026-09-08-video-playing.md](handoff-2026-09-08-video-playing.md),
+> which also withdraws the composition-block and translation causal claims.
+
 > Follow-up: [September 8 Claude handoff](handoff-2026-09-08-mips-callback-trace.md) records later experiments, corrected interpretations, recovery state, and next steps.
 
 One session, four operator looks, three of them wasted. It ends with the

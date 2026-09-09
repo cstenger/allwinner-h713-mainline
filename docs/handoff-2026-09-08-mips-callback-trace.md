@@ -1,5 +1,9 @@
 # Handoff to Claude: MIPS callback trace, 2026-09-08
 
+> **Outcome:** video now plays on the panel — see
+> [handoff-2026-09-08-video-playing.md](handoff-2026-09-08-video-playing.md),
+> which also withdraws the composition-block and translation causal claims.
+
 ## Start here
 
 We continued from `handoff-2026-09-06-composition-block.md`, testing whether
