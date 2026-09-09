@@ -325,6 +325,36 @@ vsync even when the frame has not changed (`ring_writes_done` advances ~61/s
 against 30 fps content). Redundant work, but the publish is idempotent and
 atomic, so it costs bus traffic rather than correctness.
 
+## Board-state drift — cold boot before debugging a rendering regression
+
+**2026-09-09.** Byte-identical software — module `81bad18a` (patch 0095) and
+client `256143c8` — rendered correctly, then produced **solid black/pink** after
+roughly an hour of uptime and a dozen module load/unload cycles (including one
+broken build), with 28 leaked scanout references outstanding.
+
+Everything verifiable still checked out: all seven geometry words, format byte 3,
+all eight ring slots, all seventeen composition registers, frame bytes present at
+`Y_PHYS`, bypass, selector. Vsync healthy at 61 IRQ/s. The config commit retired
+with no warning. The harness passed every precondition.
+
+**A cold boot restored it immediately**, with the same binaries and module,
+first submit on the fresh boot.
+
+Consequences:
+
+- **Rendering can fail while every measurable precondition is correct.** The
+  harness cannot catch this; only the panel can.
+- **Cold boot before debugging a rendering regression** on a board that has been
+  up a long time with many module cycles. Re-establish the baseline visually,
+  then change one thing at a time with a look after each.
+- What actually drifts is **unknown**. Candidates: leaked scanout references
+  pinning IOVAs, MIPS firmware state, accumulated display-block state.
+
+Cost of learning this the hard way: several hours attributing the failure in
+turn to patch 0096, then the VideoInfo format selector, then rebuilt client
+binaries, then 0071-0073 — every attribution wrong and reverted, because the
+baseline had silently moved underneath all of them.
+
 ## Method notes
 
 **When a register dump says two runs are identical and they visibly are not,
