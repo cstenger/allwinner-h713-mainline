@@ -154,6 +154,24 @@ trap restore EXIT INT TERM
 SAVE_RINGMAX=$(cat /sys/module/sunxi_decd/parameters/ring_writes_max 2>/dev/null || echo "")
 
 # ---------------------------------------------------------------- source
+# DRIVER_ROUTE: the disable + IOMMU flip must happen BEFORE the source starts.
+# The driver routes at submit time, so doing them afterwards clobbers the enable
+# and forces a second 0x05600014 commit -- and committing while the format byte
+# already reads 3 latches a 2-bytes-per-pixel interpretation.  That renders each
+# display row from two source rows: the frame appears TWICE side by side and
+# runs out at half height (test_81).  Commit in format 0 or not at all.
+if [ "${DRIVER_ROUTE:-0}" = 1 ]; then
+	case "$MODE" in
+	live) EARLY_BYP=0x78 ;;
+	*)    EARLY_BYP=0x7C ;;
+	esac
+	wr 0x05600010 "$(printf '0x%08X' $(( $(rd 0x05600010) & 0xFFFFFFFC )))"
+	wr 0x05600014 1
+	sleep 0.1
+	wr 0x02010030 $EARLY_BYP
+	say "DRIVER_ROUTE: source disabled, IOMMU -> $(rd 0x02010030), before submit"
+fi
+
 case "$MODE" in
 static)
 	say "staging $FRAME via $CLIENT"
@@ -184,10 +202,14 @@ kill -0 "$PID" 2>/dev/null || { echo "ABORT: source process died:" >&2; tail -5 
 snapshot
 
 # ---------------------------------------------------------------- configure
-# IOMMU first, while the source is still disabled.
+# IOMMU first, while the source is still disabled.  Skipped under DRIVER_ROUTE:
+# it was already done before the submit, and redoing it here would undo the
+# driver's route.
+if [ "${DRIVER_ROUTE:-0}" != 1 ]; then
 wr 0x05600010 "$(printf '0x%08X' $(( SAVE_005600010 & 0xFFFFFFFC )))"
 wr 0x05600014 1
 sleep 0.1
+fi
 # Full 8-digit form: devmem reads back 0x0000007C, so a 0x7C literal fails the
 # string compare.  The first run of this harness flagged exactly that.
 case "$MODE" in
@@ -203,6 +225,26 @@ if [ "$MODE" != live ]; then
 	for r in $C_SLOTS; do wr "$r" $C_PHYS; done
 fi
 
+# DRIVER_ROUTE=1 writes NOTHING to the AFBD block: patch 0095 makes the driver
+# program it instead.  KNOWN BROKEN -- the panel shows the frame doubled side by
+# side in the top half with shifted colour (test_81), a 2-bytes-per-pixel fetch,
+# even though the resulting register state is byte-identical to a working run.
+# Leave DRIVER_ROUTE unset for correct output.  Original note follows.
+# (patch 0095 makes the driver
+# program the geometry, enable, format byte and config commit from the submitted
+# descriptor.  Only the display-side gain and selector are set here, because
+# those live in the display engine, are not mapped by the driver, and are shared
+# with the MIPS logo path.  The checks below are unchanged, so this proves the
+# driver's own programming is sufficient rather than assuming it.
+if [ "${DRIVER_ROUTE:-0}" = 1 ]; then
+	say "DRIVER_ROUTE=1: AFBD block left entirely to the driver"
+	# No enable and no commit here: the driver's route already set both, and a
+	# second commit after the format byte is 3 latches 2 bytes/pixel.  Only the
+	# display-engine registers are ours.
+	wr 0x05140508 0x144C0000
+	sleep 0.1
+	wr 0x051c006c 0x39000000
+else
 wr 0x05600020 0x02CF04FF
 wr 0x05600024 0x002C004F
 wr 0x05600030 0x02D00500
@@ -223,7 +265,14 @@ if [ "$MODE" != live ]; then
 	wr 0x05600070 $Y_PHYS
 	wr 0x05600084 $C_PHYS
 fi
-wr 0x0560006c 1                        # PUBLISH the plane addresses
+fi
+# The plane-address PUBLISH runs in BOTH modes.  0x0560006c publishes plane
+# addresses; 0x05600014 commits the source config.  Under DRIVER_ROUTE the
+# driver owns the commit, but this harness still writes the four ring slots in
+# static/carveout mode, so it must publish them -- leaving this inside the else
+# branch meant the slots were written and never published, and the addresses in
+# force stayed whatever the driver last published.
+wr 0x0560006c 1
 sleep 0.3
 
 # ---------------------------------------------------------------- verify
@@ -253,6 +302,21 @@ if [ "$MODE" = live ]; then
 	# The driver owns the ring: require every slot non-zero and every Y/C pair
 	# separated by exactly the luma-plane size.  A zero slot means the driver
 	# wrote a blank frame; a wrong delta means the pair is not a real frame.
+	# The driver rewrites the ring ~60x/s, and each rd() is a separate devmem
+	# process, so a Y/C pair can straddle an update and yield a nonsense (even
+	# negative) delta.  Re-read until the pair is coherent -- C, Y, C with both
+	# C reads equal -- rather than weakening the check.
+	pair_delta() {   # y_reg c_reg -> prints delta, or "racy"
+		_t=0
+		while [ $_t -lt 8 ]; do
+			_c1=$(rd "$2"); _y=$(rd "$1"); _c2=$(rd "$2")
+			if [ "$_c1" = "$_c2" ]; then
+				printf '0x%X\n' $(( _c1 - _y )); return 0
+			fi
+			_t=$((_t + 1))
+		done
+		echo racy
+	}
 	n=1
 	for r in $Y_SLOTS; do
 		y=$(rd $r); c=$(rd $(echo $C_SLOTS | cut -d' ' -f$n))
@@ -261,7 +325,7 @@ if [ "$MODE" = live ]; then
 		# never wrote the ring and we are checking stale values from a previous
 		# run -- a false pass this harness hit on its first live dry-run.
 		check_ne "Y slot $n driver-written" "$y" "$Y_PHYS"
-		d=$(printf '0x%X' $(( c - y )))
+		d=$(pair_delta "$r" "$(echo $C_SLOTS | cut -d' ' -f$n)")
 		check "Y/C delta slot $n" "$d" "$CHROMA_OFF"
 		n=$((n + 1))
 	done
