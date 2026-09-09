@@ -168,15 +168,46 @@ One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO
 
 - ~~No vsync-correct flipping~~ — **measured 2026-09-08, and it is already
   correct.** See "Flipping is already vsync-correct" below.
-- **The tooling leaks `sunxi_scanout_dmabuf` exports.** One session accumulated
-  **89** references; killed players never release their carveout exports. Once
-  leaked they pin identity IOVAs and Cedrus allocation starts failing:
+- **The DECD driver leaks `sunxi_scanout_dmabuf` exports.** One session
+  accumulated **89** references. Once leaked they pin identity IOVAs and Cedrus
+  allocation starts failing:
   `sun50i-iommu: iova 0x6c800000 already mapped to 0x6c800000 cannot remap` and
   `cedrus: dma alloc of size 1384448 failed`. The module cannot be unloaded to
   clear them (refcount != 0), so **only a reboot recovers**. Symptom to
   recognise: GStreamer reports *"Not enough memory to allocate source buffers"*
   while `MemFree` and `CmaFree` are both healthy and `buddyinfo` shows plenty of
   order-10 blocks — it is not memory pressure.
+
+  **Mechanism, established 2026-09-08.** A submitted frame holds a `dma_buf`
+  reference for its image and VideoInfo buffers, and is released only when a
+  **later frame displaces it**. Whatever was submitted last is never displaced,
+  so it stays pinned. `dec_release_file()` is a **no-op**, so a client exiting
+  or being killed reclaims nothing, and `dec_frame_manager_free()` does not
+  help: it drains `fmgr->ready_list` and the interlace pair but never the
+  queue's four ring slots, which is exactly where displayed frames sit.
+  Measured: **+2 references per `decd-client show` even on clean exit**, +1 per
+  `decd-play` run. `STOP_VIDEO_STREAM` does not reclaim them, and neither does
+  `rmmod sunxi_decd` — the references are orphaned, so **only a reboot
+  recovers**.
+
+  **A fix was attempted and reverted.** Draining `slots[4]` plus the interlace
+  and shutdown holds from `dec_release_file()` on last close, with the source
+  disabled and the ring blanked first, was implemented and tested. It failed in
+  two ways and neither is superficial:
+
+  1. **It did not fix the leak.** The drain reported "released 4 held frame(s)"
+     and the refcount still climbed +2 per run (7 → 9 → 11 → 13). So
+     `video_frame_put()` on a slot does not drop the underlying `dma_buf`
+     references — something else in the frame/item refcount model holds them,
+     and that model needs to be understood before drain points are added.
+  2. **It crashed userspace.** `frame_item_release()` signals *and* `kfree`s the
+     fence; calling it while the client still holds the `sync_file` fd
+     reintroduces exactly the use-after-free that patch 0071 exists to fix.
+     `decd-client` segfaulted.
+
+  So a correct fix must first answer: who holds the `dma_buf` reference after
+  `video_frame_put()`, and what is the fence's lifetime relative to the frame's.
+  Do not add a drain until both are known.
 - **`decd-play` requests VideoInfo selector 0**, which the firmware resolver maps
   to hardware format 0 = RGB888. It only works because the driver never programs
   the format byte from that selector. Selector 6 resolves to format 3 and is the
