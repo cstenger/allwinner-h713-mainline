@@ -13,7 +13,15 @@ MIPS window layer → panel. 29.96 fps, `0x0306101c = 1` throughout.
 Photographs: `local/lcd-photos/test_80` (static frame), `test_81` (the doubling
 regression, since fixed). Commits `bdd1506`, `6fda761`, `8225282`, `5479f4e`.
 
-**No power cycles.** The board ran the whole session on one boot.
+**Session ran 2026-09-08 into 2026-09-09.** Three power cycles, all in the last
+stretch and all from the hard-lock described below.
+
+> **Read this first if you are rebuilding the DECD module.** The build tree that
+> produced the working module was missing three patches that are *in the series*
+> — `0071` (release fence lifetime), `0072` (refuse non-contiguous dma_buf
+> import), `0073` (single-mapping DMA constraint). Rebuilding with them applied
+> stopped the SoC hard-lock reproducing. See "The hard-lock, and the three
+> missing patches".
 
 ## The three faults
 
@@ -127,20 +135,68 @@ that returned a negative delta.
   (format 0) was cited as proof format 0 was correct, but stock composites video
   into an RGB surface. A matching register is evidence only when both sides are
   doing the same thing.
-- ~~**The 60 Hz hard-lock did not reproduce.**~~ **RETRACTED — it does.** Four
-  live runs were clean on a board with ~6 h uptime, then **two locks in two
-  attempts on a fresh boot**, both requiring a power cycle. The second lock
-  happened with `DECD_FMT=0`, i.e. the old value forced, so it is not the
-  selector. What distinguishes the clean runs from the locking ones is **not
-  known**. Treat live Cedrus playback with the MIPS alive as able to lock the
-  SoC, and do not design experiments on the assumption that it is safe.
+- **The 60 Hz hard-lock claim was made, retracted, and then explained.** First
+  declared non-reproducing on four clean runs; then it locked twice in two
+  attempts on a fresh boot; then rebuilding with the three missing patches
+  stopped it reproducing, including under the exact fresh-boot condition. The
+  intermediate claim was premature — four samples on one boot were never
+  evidence about a hazard that had shaped experiment design since 2026-09-04.
+  See the dedicated section below.
+
+## The hard-lock, and the three missing patches
+
+**Symptom:** the whole SoC wedges during live Cedrus playback with the MIPS
+alive. No SSH, no serial, no console; only a power cycle recovers.
+
+**Cause, very likely:** the build tree that produces the DECD module branches
+from a point that predates three patches which are in the series:
+
+| patch | state in the tree we were building from |
+| --- | --- |
+| `0071-misc-decd-fix-release-fence-lifetime` | **was ABSENT** |
+| `0072-misc-decd-refuse-a-non-contiguous-dma-buf-import` | **was ABSENT** |
+| `0073-misc-decd-declare-the-single-mapping-dma-constraint` | **was ABSENT** |
+| `0094` (`ring_writes_max`), `0095` (driver route) | present |
+
+`0071` exists because `frame_item_release()` did `kfree(item->fence)` while
+`FRAME_SUBMIT` had handed userspace a `sync_file` holding a reference to that
+same `dma_fence`. So **every frame retirement freed a fence userspace might
+still hold**. Live playback retires ~30 frames/second; static single-frame tests
+retire almost none — which matches "static stable, live locks" exactly.
+
+**Evidence after applying all three and rebuilding:**
+
+```
+uptime 47 s   300 frames, 29.94 fps, core alive     <- the locks were at ~57 s
+uptime 88 s   preconditions pass, core alive
+uptime 95 s   preconditions pass, core alive
++ six further clean live runs on a warm board
+```
+
+Nine clean live runs, three inside the first 100 s of uptime, against **two
+locks in two attempts in that same window** immediately before. Two independent
+improvements came with it: standalone `decd-play` previously reported *"release
+fence has not signalled in 2000 ms with 4 held"* and now completes, and the
+`decd-client` segfault disappeared.
+
+**What is NOT established: the mechanism.** A dangling `dma_fence` producing a
+*silent* whole-SoC wedge — no oops, no serial output — is not an obvious failure
+mode; a use-after-free normally leaves a trace. `0072`/`0073` constrain DMA
+imports and feel closer to a bus-level hang. Which of the three actually matters
+is unknown, and this is absence-of-failure evidence. Do not treat it as closed.
+
+**Practical consequence:** build the module from a tree with 0071/0072/0073
+applied. They apply cleanly on top of the 0094/0095 tree. The module currently
+on the board is `/root/sunxi-decd-fenced.ko`.
 
 ## Board state
 
 Core alive (`0x0306101c = 1`), test FIT
 `h713-kernel-decd-iommu-0076v3.fit` with
 `initcall_blacklist=h713_afbd_platform_driver_init`,
-`/root/sunxi-decd-route.ko` loaded (`auto_route=1`, `ring_writes_max=1`),
+**`/root/sunxi-decd-fenced.ko`** loaded (`auto_route=1`, `ring_writes_max=1`) —
+this is the build WITH 0071/0072/0073; `sunxi-decd-route.ko` is the older build
+without them and should not be used,
 `hy310-cpu-comm-next.ko` loaded, logo path restored, IOMMU state preserved
 across harness runs. `display_cfg.xml` on the FAT still has elog enabled —
 **leave it**.
@@ -157,7 +213,7 @@ python3 tools/serial/boot_kernel.py --load /root/fits/h713-kernel-decd-iommu-007
 Then on the board:
 
 ```sh
-rmmod sunxi_decd; insmod /root/sunxi-decd-route.ko ring_writes_max=1
+rmmod sunxi_decd; insmod /root/sunxi-decd-fenced.ko ring_writes_max=1
 insmod /root/hy310-cpu-comm-next.ko
 DRIVER_ROUTE=1 MODE=live DWELL=30 sh /root/decd-all-preconditions.sh
 ```
@@ -217,8 +273,11 @@ One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO
   pointless change while an unexplained hard-lock is in play. If it is
   revisited, note the failed hypothesis: selector 6 is the firmware resolver's
   input, so it *might* make the firmware act on the descriptor and conflict with
-  the driver's route. That is plausible and wrong — the lock reproduces with
-  selector 0.
+  the driver's route. That is plausible and wrong — the lock reproduced with
+  selector 0, and was in any case the missing fence patch. The change itself was
+  never shown to be harmful; it was dropped because it has no benefit and was
+  muddying an unexplained failure. It could reasonably be re-landed now that the
+  lock is understood.
 - **`0x05600024 = 0x002C004F`** (crop origin) is still an undecoded constant.
 - **Gain and selector still applied by shell**, by design. If the decoder should
   own them, that is a design decision about display ownership.
