@@ -37,6 +37,14 @@ limit.** What changed on 09-04 is that we now know *how stock does it*.
 >   Both 09-04 runs wrote `0x051c0138` alone and left the stage switched off.
 >   `0x051c0120`–`0x051c0138` is now the live scaling lead — unity is
 >   `0x00010000`, 16.16, confirmed on stock and on our board.
+> - **The ratio producer is traced.** `CalcScalingRatio_2` (`0x8b19fb50`):
+>   `ratio = (out_vSize << 16) / in_vSize`, clamped to unity when `out >= in`.
+>   **`dst/src`, always ≤ `0x10000`, downscale-only** — the 09-04 test's
+>   `0x18000` is a value this firmware can never emit. 1080→720 is **`0xAAAA`**.
+>   Not pre-computed, so the CPU_COMM lead for it is closed.
+> - **The panel down-scaler is VERTICAL ONLY** — one ratio, no output width, no
+>   horizontal ratio anywhere in the block. It can do `1080 → 720`; it cannot do
+>   `1920 → 1280`. Treat it as an aspect-fitting squeezer, not a resizer.
 
 ### Why our path cannot scale: we own the fetcher, not the pipeline
 

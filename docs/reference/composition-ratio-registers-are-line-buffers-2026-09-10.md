@@ -196,23 +196,123 @@ Re-running it correctly means writing what the firmware writes, in its order:
 There is no commit latch in `PanelWinNode`'s slot 4, so these take effect as
 written.
 
-## Still open: the ratio's direction and its producer
+## The ratio's producer — traced, and it is not pre-computed
 
-The value lives in `PanelWinNode+8`. **No writer of that field has been found**
-— it is not written anywhere in `0x8b1a4e00..0x8b1a5cc0`, and the `<<16`-then-
-divide that would compute a 16.16 ratio does not appear in the WCE region at
-all. Consistent with it arriving pre-computed, so the CPU_COMM lead from
-2026-09-09 survives — it just points at `PanelWinNode+8`, not at composition.
+> **This supersedes the first version of this section**, which guessed the
+> direction from the field width and guessed wrong. Do not reason from the
+> 22-bit field; the code settles it the other way.
 
-Direction is **inferred, not proven**: the field is 22 bits with unity at bit 16,
-leaving 6 integer bits above unity and only fractional room below. That fits
-`ratio = src/dst` (downscale up to ~64x) far better than `dst/src`. For
-1920→1280 that is `0x18000`; the `dst/src` reading would be `0xAAAB`. Try
-`0x18000` first.
+`PanelWinNode+8` is written by `PanelWinNode::CalcWindow` (`0x8b1a52d4`), which
+passes `&this[8]` as an out-pointer:
 
-`TWCETop::IsEnablePanelDownScaler` (`0x8b1a7dxx`) gates the whole thing on the
-configured output resolution and a `< 0x438` (1080) test, which is the shape you
-would expect for "compose at 1080, squeeze to the panel".
+```
+0x8b1a53a8  addiu $a2, $s0, 8          ; &this[8]
+0x8b1a53ac  jal   0x8b19fb50           ; CalcScalingRatio_2
+```
+
+`CalcScalingRatio_2` (`0x8b19fb50`, `./windows_manager_util.c`, tag
+`wce_mgr_util`) logs its own arguments — `"in_vSize:%d, out_vSize:%d"` — and is
+sixteen instructions of arithmetic:
+
+```
+CalcScalingRatio_2(in_vSize, out_vSize, u32 *ratio)
+    if (in_vSize == 0 || out_vSize == 0)   *ratio = 0x10000;  return
+    r = 0x10000
+    if (out_vSize < in_vSize)                        /* 0x8b19fbc4 slt */
+        r = (out_vSize << 16) / in_vSize             /* 0x8b19fbd0 sll 16, divu */
+    *ratio = r
+    log("scaler_ratio_v: 0x%x", r)
+```
+
+**`ratio = (out_vSize << 16) / in_vSize`, clamped to unity when
+`out >= in`.** So it is `dst/src`, always **≤ `0x10000`**, and the stage can
+shrink but never enlarge — which is what "down-scaler" means and what
+`IsEnablePanelDownScaler` implies.
+
+**It is not pre-computed and does not arrive over CPU_COMM.** The 2026-09-09
+CPU_COMM lead is closed: the MIPS computes this itself, from geometry it already
+has.
+
+### For 1080 → 720 the value is `0xAAAA`
+
+```
+(720 << 16) / 1080 = 47185920 / 1080 = 43690.67 -> 43690 = 0xAAAA
+```
+
+The 2026-09-04 test wrote `0x18000`. That is **above unity** — a value this
+firmware can never emit, in the direction the hardware does not go. Two
+independent defects in that one test: an out-of-range value, and the stage left
+bypassed.
+
+### It is VERTICAL ONLY — and that is the constraint that matters
+
+There is one ratio register, one ratio computation, and it is the vertical one.
+`CalcScalingRatio_1` (`0x8b19fc60`) is the sibling that computes **both** axes —
+`"in_hsize:%d, in_vsize:%d, out_hsize:%d, out_vsize:%d"` — and it is called from
+exactly one place, `CapWinNode` (`0x8b1a069c`), for `m_scale_ratio_h` /
+`m_scale_ratio_v`. `PanelWinNode` never calls it.
+
+The register set says the same thing. Reading both branches in full
+(`0x8b1a58c0`..`0x8b1a5a34`), with `win_a = &node[0x14]` (the **output** window,
+from `CalcWindow`'s `param+0x08..0x14`) and `win_b = &node[0x34]` (the **input**
+window, from `param->0x20`):
+
+| | ratio == unity (logs `"bypass"`) | ratio != unity (active) |
+| --- | --- | --- |
+| `0x051c0124[26:25]` | **3** | **0** |
+| `0x051c0120[26:24]` | — | 2 |
+| `0x051c0128[15:0]` | `out_w` | `in_w - 6` |
+| `0x051c012c[15:0]` | `out_h` | `out_h` |
+| `0x051c0130` | `{out_w, out_h}` | `{in_w, in_h}` |
+| `0x051c0134` | — | `{in_w + in_x + 2, 0}` |
+| `0x051c0138[21:0]` | ratio | ratio |
+
+The active path is given the **input geometry, the output height, and a vertical
+ratio**. There is no output width and no horizontal ratio anywhere in the block.
+
+`PanelWinNode`'s `m_21_9_scaler_win` member and `IsEnablePanelDownScaler`'s gate
+(`0x8b1a7df4`: two platform ids `0x1001000b`/`0x10010013`, an output height
+`< 0x438`, and one of four signal ids `0x00020016`/`0x0002006a`/`0x0002006d`/
+`0x00020070`) fit that shape: this is an **aspect-fitting vertical squeezer**,
+not a general resizer.
+
+> **So this block cannot do 1920x1080 → 1280x720 on its own.** It can do the
+> `1080 → 720` vertical half. The horizontal `1920 → 1280` has no hardware here.
+
+### The run that is worth spending
+
+Not a 1080p test — those depend on plumbing this block cannot finish. A
+**liveness** test, on the raster we already scan out, with a firmware-derived
+value:
+
+```
+in = 1280x720 (what we scan out), out_h = 480
+ratio = (480 << 16) / 720 = 0xAAAA          # same 2/3 as 1080->720
+
+0x051c0124  [26:25] = 0          <- LEAVE BYPASS.  the step both 09-04 runs missed
+0x051c0120  [26:24] = 2
+0x051c0128  [15:0]  = 1280 - 6 = 1274
+0x051c012c  [15:0]  = 480
+0x051c0130           = 0x050002D0            {1280, 720}
+0x051c0134           = 0x05020000            {1280 + 0 + 2, 0}
+0x051c0138  [21:0]  = 0xAAAA
+```
+
+Read-modify-write each field, as the firmware does; there is no commit latch in
+this path. Expected result: the picture squeezes vertically to two-thirds
+height. Unmistakable, reversible, and it does not depend on anything 1080p.
+
+- **It squeezes** → the block is on our raster, the 09-04 negative was an
+  artefact of writing the ratio alone, and we have a real vertical scaler.
+- **It does not** → the negative stands for a sound reason and this route is
+  genuinely closed. Either way one run settles it.
+
+### Scope of the search, stated honestly
+
+`PanelWinNode+8` has exactly one writer *found*: the search covered every
+`sw …, 8(reg)` and every `addiu rt, rs, 8` in `0x8b1a4e00..0x8b1ad000`, and
+`CalcWindow` is the node's normal compute-then-`WriteReg` step. A writer reached
+through a pointer computed some other way would not have been caught.
 
 ## Corrections this lands
 
