@@ -1,5 +1,19 @@
 # The firmware enabled the video source and ENGAGED THE SCALER
 
+> **HEADLINE REFUTED 2026-09-10 —
+> [composition-ratio-registers-are-line-buffers-2026-09-10.md](composition-ratio-registers-are-line-buffers-2026-09-10.md).**
+> `0x05000174` is not a ratio register: it is `{[27:16] C LineBufLevel,
+> [15:0] C Rowbyte}`. Rowbyte is **linear in the picture width**, so any two
+> widths give a value ratio equal to the width ratio whether or not anything
+> scales — which is all "43/64 ≈ 852/1280" ever showed. The `wce_panel` line in
+> this document's own capture is the counter-evidence: borders of exactly
+> `1280-852 = 428` and `720-480 = 240`. The firmware **letterboxed** the 852x480
+> picture at native size.
+>
+> **What still stands, and is still the real result:** the firmware read our
+> VideoInfo descriptor, advanced its state machine, and ran the full window
+> pipeline off our frame for the first time.
+
 2026-09-05, live core. The plan's central unproven assumption — *does this
 hardware scale* — is answered **yes**, by the firmware's own programming.
 

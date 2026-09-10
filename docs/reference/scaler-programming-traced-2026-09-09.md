@@ -1,5 +1,15 @@
 # The composition scaler, traced in display.bin
 
+> **REFUTED 2026-09-10 — read
+> [composition-ratio-registers-are-line-buffers-2026-09-10.md](composition-ratio-registers-are-line-buffers-2026-09-10.md)
+> before anything below.** These are not scaler registers. `0x0f0`, `0x174`,
+> `0x1b4`, `0x210`, `0x274`, `0x2b4` carry **Rowbyte and LineBufLevel** and
+> `0x178`/`0x1b8`/`0x278`/`0x2b8` carry **LineNumber**, for the Y and C planes —
+> named in the producing function's own log line. There is no ratio here and no
+> value to find. The register decode and the update ordering below are accurate
+> as *sequences*; only their meaning is wrong. The routine is
+> **`NRWinNode::WriteReg`**, not `PanelWinNode::update`.
+
 Static RE, no board time. Answers the question the failed 1080p scaling attempt
 left open, and retires one hypothesis outright.
 

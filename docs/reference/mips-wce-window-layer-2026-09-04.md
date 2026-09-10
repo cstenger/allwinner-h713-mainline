@@ -348,6 +348,22 @@ WriteDownScalerRatio(self, win_a, win_b, ratio)
     else                                  -> BYPASS path
 ```
 
+> **CORRECTED 2026-09-10 — the branch is the other way round, and this
+> invalidates the negative recorded further down this file. See
+> [composition-ratio-registers-are-line-buffers-2026-09-10.md](composition-ratio-registers-are-line-buffers-2026-09-10.md).**
+>
+> `0x8b1a58e0  beq $v1, $v0, 0x8b1a5998` takes the branch when
+> `self[8] == 0x10000`, and that branch is the one logging `"bypass"`. So:
+>
+> - **ratio == unity** → `"bypass"`, and `0x051c0124[26:25] = 3`.
+> - **ratio != unity** → **clears** `0x051c0124[26:25]`, sets
+>   `0x051c0120[26:24] = 2`, reprograms `0x0128`/`0x012c`/`0x0130`/`0x0134`,
+>   *then* writes `0x0138[21:0]`.
+>
+> `0x051c0124[26:25] = 3` is therefore the **bypassed** state, not the enabled
+> one, and the stock capture below (`0x06000000`) is stock **bypassed at unity**
+> — which is what the log string says it should be.
+
 The enable path (`0x8b1a59cc`..`0x8b1a5a20`):
 
 ```
@@ -373,7 +389,7 @@ sampled this block on stock Android at idle, before any of this was understood:
 
 | register | stock value | what the disassembly predicts |
 | --- | --- | --- |
-| `0x051c0124` | `0x06000000` | bits [26:25] = `0b11` — **enabled**, exactly the `ins …,3,0x19,2` |
+| `0x051c0124` | `0x06000000` | bits [26:25] = `0b11` — ~~**enabled**~~ **BYPASSED** (corrected 2026-09-10), exactly the `ins …,3,0x19,2` |
 | `0x051c0128` | `0x00000500` | `w` = 1280 |
 | `0x051c012c` | `0x000002D0` | `h` = 720 |
 | `0x051c0130` | `0x050002D0` | `(w << 16) | h` |
@@ -406,7 +422,14 @@ stock-only state, and the visible test is a genuine one-register change.
 
 It does **not** show the block acts on our raster. At unity it cannot.
 
-### The visible ratio test — NEGATIVE, 2026-09-04
+### The visible ratio test — NEGATIVE, 2026-09-04 — **NOT SOUND, see 2026-09-10**
+
+> **This negative does not hold.** The test wrote `0x051c0138` **alone**, leaving
+> `0x051c0124[26:25] = 3` — which the corrected branch decode above shows is the
+> **bypassed** state. It exercised a stage that was switched off, on both sides
+> of the mux. Everything below is an accurate record of what was run; its
+> conclusion is withdrawn. The re-run writes the full seven-register set the
+> firmware writes, in the firmware's order.
 
 Run with the operator watching, on the same boot. A 720p clip was playing and
 **confirmed scanning out** — video plane 38 cycling four distinct framebuffer
@@ -464,8 +487,11 @@ this field would have become a repeating, unmistakable pulse.
 **Operator: no change at all — only the text the test itself printed. No size
 change, no visual issues.** Restored and verified.
 
-> **The panel down-scaler at `0x051c0124`–`0x051c0138` does not act on our
-> raster, on either side of the mux. Do not re-run this register.**
+> ~~**The panel down-scaler at `0x051c0124`–`0x051c0138` does not act on our
+> raster, on either side of the mux. Do not re-run this register.**~~
+>
+> **WITHDRAWN 2026-09-10.** Both runs left the stage bypassed
+> (`0x051c0124[26:25] = 3`). Re-run it — with the whole set this time.
 
 The closure is stronger than a single null, and worth stating why:
 **two independent paths**, a different liveness gate on each (cycling

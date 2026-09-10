@@ -16,6 +16,28 @@ arm64 container) and drift-checked (`tools/video/check-video-stack.sh`).
 **It works at 1280×720 and no other resolution, and that is still the headline
 limit.** What changed on 09-04 is that we now know *how stock does it*.
 
+> **2026-09-10, statically, no board time — the scaling investigation has been
+> chasing the wrong registers since 09-05.**
+> [reference/composition-ratio-registers-are-line-buffers-2026-09-10.md](reference/composition-ratio-registers-are-line-buffers-2026-09-10.md)
+>
+> - `0x05000174`, `0x050001b4`, `0x050000f0` (and the channel-B `0x274`,
+>   `0x2b4`, `0x210`) are **not scaler ratios**. They are the AFBD fetch
+>   line-buffer descriptor — **Rowbyte, LineBufLevel, LineNumber** for Y and C —
+>   named in the producing function's own log line
+>   (`FrameBuffer::GetPsuPfuWin`, `0x8b1a2668`). Nothing else in the image writes
+>   them. **There is no ratio value to find, and `PHASE=scale` is dead.**
+> - The "`0x2B`/`0x40` = `852/1280`" evidence is an artefact: Rowbyte is linear
+>   in the picture width, so any two widths reproduce the width ratio whether or
+>   not anything scales.
+> - What the 09-05 firmware run actually did with an 852x480 picture on a
+>   1280x720 panel was **letterbox it** — borders of exactly `1280-852` and
+>   `720-480`, in that same capture.
+> - **The panel down-scaler negative below is WITHDRAWN.** The branch decode in
+>   `WriteDownScalerRatio` was inverted: `0x051c0124[26:25] = 3` is **bypass**.
+>   Both 09-04 runs wrote `0x051c0138` alone and left the stage switched off.
+>   `0x051c0120`–`0x051c0138` is now the live scaling lead — unity is
+>   `0x00010000`, 16.16, confirmed on stock and on our board.
+
 ### Why our path cannot scale: we own the fetcher, not the pipeline
 
 The silicon has a full display pipeline — fetch, then a manipulation chain

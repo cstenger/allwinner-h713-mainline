@@ -1,6 +1,34 @@
 #!/bin/sh
 # decd-scale-test.sh -- the original goal: hardware scaling, no GPU.
 #
+# ############################################################################
+# PHASE=scale IS DEAD.  DO NOT RUN IT.  Refuted 2026-09-10, statically:
+#   docs/reference/composition-ratio-registers-are-line-buffers-2026-09-10.md
+#
+# 0x05000174 / 0x050001b4 / 0x050000f0 are NOT scaler ratio registers.  They
+# are the AFBD fetch line-buffer descriptor -- Rowbyte, LineBufLevel and
+# LineNumber for the Y and C planes -- named in the producing function's own
+# log line (FrameBuffer::GetPsuPfuWin, 0x8b1a2668).  There is no ratio in this
+# block and nothing here scales.
+#
+# The "ratio = (source/output)*64" encoding below is an artefact: Rowbyte is
+# LINEAR IN THE PICTURE WIDTH, so any two widths give a value ratio equal to
+# the width ratio whether or not anything scales.  That is the whole of the
+# "43/64 ~ 852/1280" evidence.
+#
+# Writing 0x00600060 here sets the fetch row length and line-buffer level to 96
+# while the source geometry says otherwise.  THAT is the wedge -- a starved or
+# overrun fetch, which only a reboot clears.  Two runs, two wedges.  The
+# missing 0x05000040 bit-25 apply would not have helped; the values are wrong
+# in kind.
+#
+# PHASE=crop is still a valid crop demonstration and is left runnable.
+#
+# The live scaling lead is now the panel down-scaler, 0x051c0120..0x051c0138 --
+# and note that its 2026-09-04 negative was WITHDRAWN: both runs wrote the
+# ratio alone and left 0x051c0124[26:25] = 3, which is the BYPASSED state.
+# ############################################################################
+#
 # Puts a 1920x1080 NV12 frame on a 1280x720 panel by programming the
 # firmware-owned composition block's scaler, and compares it against the
 # unscaled (cropped) case.
@@ -47,7 +75,15 @@ set -u
 
 FRAME=${FRAME:-/root/frame-1080p.nv12}
 CLIENT=${CLIENT:-/root/decd-client.coord1080}
-PHASE=${PHASE:-scale}
+PHASE=${PHASE:-crop}
+
+if [ "$PHASE" = scale ] && [ "${I_KNOW_SCALE_IS_REFUTED:-}" != yes ]; then
+	echo "decd-scale-test.sh: PHASE=scale is refuted and costs a reboot." >&2
+	echo "  0x05000174/0x1b4/0x0f0 are line-buffer geometry, not ratios." >&2
+	echo "  See docs/reference/composition-ratio-registers-are-line-buffers-2026-09-10.md" >&2
+	echo "  Override with I_KNOW_SCALE_IS_REFUTED=yes only to reproduce the wedge." >&2
+	exit 2
+fi
 DWELL=${DWELL:-30}
 SRC_W=1920
 SRC_H=1080
