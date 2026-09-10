@@ -65,6 +65,68 @@ It also vindicates two values previously flagged as guesses: `0x278 =
 0x6002021C` (low half 540) and `0x2b8 = 0x60020438` (low half 1080) were
 **correct** — they are channel B's copy of the same pair.
 
+## The full update sequence
+
+`PanelWinNode::update` (`0x8b1a48cc`..`0x8b1a4dc0`, 317 instructions) touches
+**26 composition registers**, each guarded by a dirty-mask bit, in this order:
+
+```
+ 1  0x050001b8   9  0x050002b8  17  0x05000858  25  0x05000840  <- COMMIT counter
+ 2  0x05000178  10  0x05000274  18  0x0500085c  26  0x05000040  <- FINAL, bit 25
+ 3  0x050001b8  11  0x05000278  19  0x05000860
+ 4  0x05000178  12  0x05000224  20  0x05000854
+ 5  0x050001b4  13  0x05000210  21  0x05000860
+ 6  0x05000174  14  0x05000804  22  0x05000138
+ 7  0x050000f0  15  0x05000808  23  0x0500082c
+ 8  0x050002b4  16  0x0500080c  24  0x05000844
+```
+
+### The final step, which no test of ours ever performed
+
+After the counter, the function ends by toggling **bit 25 of `0x05000040`**,
+selected by the dirty mask:
+
+```
+0x8b1a4d38  ext  $v0, $s1, 0x10, 1     ; dirty bit 16?
+0x8b1a4d3c  beql $v0, $zero, ...
+0x8b1a4d4c  ins  $v1, $zero, 0x19, 1   ;   -> CLEAR bit 25
+0x8b1a4d50  sw   $v1, 0x40($v0)
+0x8b1a4d58  beqz $s1, ...               ; dirty bit 15?
+0x8b1a4d6c  ins  $v1, $a0, 0x19, 1     ;   -> SET bit 25
+0x8b1a4d70  sw   $v1, 0x40($v0)
+```
+
+So the real apply is **counter bump, then `0x05000040` bit 25**. Every scaling
+attempt stopped at the counter.
+
+### Registers our tests never wrote at all
+
+`0x05000808`, `0x05000854`, `0x05000860`, `0x05000138`, `0x0500082c`, and
+`0x05000040`. `0x05000138` is notable: it is the node's own counter field
+mirrored into a register.
+
+### What is still unknown
+
+**The ratio value itself.** There is no obvious division computing it: the only
+two shift-by-6-then-divide sites in the image are timing math (`x960/÷n` and
+`x100000/÷n`, with a divide-by-3 reciprocal nearby). Consistent with the
+2026-08-31 finding that composition follows the client's VideoInfo coordinates,
+the value most likely arrives **pre-computed** rather than being derived on the
+MIPS. Tracing the CPU_COMM message that carries it is the next lead.
+
+## HAZARD: the scale test wedges the display
+
+Two runs, two wedges. Neither the script's restore, nor manually rewriting
+composition, AFBD, gain, heights and the commit counter, recovered the panel —
+**only a reboot does**. Assume any run that programs composition for a non-native
+source will cost a reboot and a full bring-up.
+
+That is consistent with the sequence above: the tests never performed the final
+`0x05000040` step, so composition is left half-applied in a state the firmware
+itself never produces.
+
+Do not run `decd-scale-test.sh` casually.
+
 ## Node-object field map
 
 `PanelWinNode::update` loads its values from the node at `$s0`:
