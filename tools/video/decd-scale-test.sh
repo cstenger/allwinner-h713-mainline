@@ -64,7 +64,7 @@ say() { echo "$*"; echo "scale: $*" > /dev/kmsg 2>/dev/null; }
 [ "$(rd 0x0306101c)" = 0x00000001 ] || { echo "ABORT: MIPS not alive" >&2; exit 1; }
 [ -r "$FRAME" ] || { echo "ABORT: no $FRAME" >&2; exit 1; }
 
-COMP="0x050000f0 0x05000210 0x05000174 0x050001b4 0x05000224 0x05000274 0x05000278 0x050002b4 0x050002b8 0x05000444 0x05000544 0x05000804 0x0500080c 0x05000840 0x05000844 0x05000858 0x0500085c"
+COMP="0x050000f0 0x05000210 0x05000174 0x05000178 0x050001b4 0x050001b8 0x05000224 0x05000274 0x05000278 0x050002b4 0x050002b8 0x05000444 0x05000544 0x05000804 0x0500080c 0x05000840 0x05000844 0x05000858 0x0500085c"
 ROUTE="0x051c006c 0x05140508"
 
 key() { echo "SAVE_$(echo "$1" | tr -d 'x')"; }
@@ -123,19 +123,44 @@ if [ "$PHASE" = scale ]; then
 	wr 0x05000844 0x07800030          # (1920 << 16) | 0x30
 	wr 0x05000858 0x04380015          # (1080 << 16) | 0x15
 	wr 0x0500085c 0x07800030
-	# 0x278 / 0x2b8: leave them ALONE unless SET_278=1.
+	# 0x178 / 0x1b8 -- THE PAIR THAT WAS MISSING.
+	#
+	# Traced in display.bin: PanelWinNode::update (0x8b1a48cc) writes 0x174 and
+	# 0x178 as a PAIR, and 0x1b4/0x1b8 likewise, with an explicit hardcoded
+	# 1080-source path:
+	#
+	#   0x8b1a4990  addiu $t0, $zero, 0x438   ; 1080 -> 0x1b8 low 16
+	#   0x8b1a49a0  addiu $t0, $zero, 0x21c   ;  540 -> 0x178 low 16
+	#
+	# So 0x178/0x1b8 carry the source heights (chroma and luma), and the
+	# firmware demonstrably supports a 1080 source -- which also retires the
+	# "the scaler is upscale-only" guess.
+	#
+	# The earlier attempt wrote 0x174/0x1b4 but left 0x178/0x1b8 at their 720p
+	# values (360/720) while everything else said 1080.  That mismatch is the
+	# most likely cause of the black panel.
+	#
+	# Read-modify-write the low 16 bits only, exactly as the firmware's
+	# `ins rt, rs, 0, 0x10` does; the high halves are not ours to invent.
+	ins_low16() {
+		_v=$(rd "$1")
+		wr "$1" "$(printf '0x%08X' $(( (_v & 0xFFFF0000) | ($2 & 0xFFFF) )))"
+	}
+	ins_low16 0x05000178 $(( SRC_H / 2 ))   # chroma height, 540
+	ins_low16 0x050001b8 $SRC_H             # luma height,  1080
+	ins_low16 0x05000278 $(( SRC_H / 2 ))
+	ins_low16 0x050002b8 $SRC_H
+	say "heights: 0x178=$(rd 0x05000178) 0x1b8=$(rd 0x050001b8) 0x278=$(rd 0x05000278) 0x2b8=$(rd 0x050002b8)"
+
+	# legacy override, kept only to reproduce the earlier failure
+	if false; then
 	#
 	# Their low halves track source height (h/2 and h) but their high halves
 	# differ between the two captured states (0x6002 vs 0xe002) in a way two
 	# data points cannot explain.  Writing guessed values here produced a fully
 	# BLACK panel, consistent with an output window pushed off-screen.  Leaving
 	# them untouched isolates them from the ratio.
-	if [ "${SET_278:-0}" = 1 ]; then
-		wr 0x05000278 0x6002021C
-		wr 0x050002b8 0x60020438
-		say "0x278/0x2b8 SET to guessed values"
-	else
-		say "0x278/0x2b8 left at $(rd 0x05000278) / $(rd 0x050002b8)"
+		:
 	fi
 	say "composition set for a ${SRC_W}x${SRC_H} source, ratio 0x00600060 (1.5x)"
 else
