@@ -302,6 +302,19 @@ Read-modify-write each field, as the firmware does; there is no commit latch in
 this path. Expected result: the picture squeezes vertically to two-thirds
 height. Unmistakable, reversible, and it does not depend on anything 1080p.
 
+**Scripted as [`tools/display/panel-downscaler-engage.sh`](../../tools/display/panel-downscaler-engage.sh).**
+It reads the raster geometry from the TCON rather than assuming it, computes the
+ratio with the firmware's own formula, prints the plan and writes nothing
+without `--engage`, gates on a live raster (video plane cycling fb ids, or the
+TCON scan counter on `--rgb`), pulses so a blind operator cannot miss it, and
+saves and verifies the restore of every register. `panel-downscaler-probe.sh`'s
+`--visible`/`--rgb` are now refused — that is the test whose result was invalid.
+
+Two of the seven writes come out as no-ops on a 1280x720 raster (`0x0120`
+already has `[26:24] = 2`, `0x0130` already holds `{1280, 720}`). That is the
+board's inherited state agreeing with the decode, and the script marks those
+rows so the agreement is visible rather than silent.
+
 - **It squeezes** → the block is on our raster, the 09-04 negative was an
   artefact of writing the ratio alone, and we have a real vertical scaler.
 - **It does not** → the negative stands for a sound reason and this route is

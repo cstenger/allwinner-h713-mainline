@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 # Is the PANEL down-scaler at 0x051c0124 live on our path? RUNS ON THE HOST.
 #
+# ############################################################################
+# SUPERSEDED 2026-09-10 by panel-downscaler-engage.sh.  ITS PHASE 3 IS INVALID
+# AND ITS NEGATIVE IS WITHDRAWN.  Two defects, both in the decode below:
+#
+#   1. 0x051c0124[26:25] = 3 is the BYPASSED state, not "enable".  The branch in
+#      WriteDownScalerRatio was read backwards: ratio == unity takes the branch
+#      that logs "bypass" and writes 3.  Phase 3 wrote the ratio alone and left
+#      the stage switched off, on both sides of the mux.
+#   2. RATIO=0x018000 is ABOVE unity.  The ratio is dst/src -- traced to
+#      CalcScalingRatio_2 (0x8b19fb50): (out_vSize << 16) / in_vSize, clamped to
+#      unity when out >= in.  It is always <= 0x10000.  0x018000 is a value the
+#      firmware can never emit.
+#
+#   docs/reference/composition-ratio-registers-are-line-buffers-2026-09-10.md
+#
+# Phases 1 and 2 are read-only and still fine.  DO NOT run --visible or --rgb;
+# use panel-downscaler-engage.sh, which writes the firmware's full seven-
+# register active path including leaving bypass.
+# ############################################################################
+#
 # WHY THIS IS NOT scaler-probe.sh AGAIN. That script probes 0x05000000, which
 # static analysis has since pinned as NRWinNode's scaler -- the SOURCE stage of
 # the MIPS window layer, in a part of the pipeline we do not own. Every write to
@@ -66,6 +86,14 @@ rc=0
 
 for arg in "$@"; do
 	case "$arg" in
+	--visible|--rgb)
+		if [ "${I_KNOW_THE_DECODE_WAS_WRONG:-}" != yes ]; then
+			echo "panel-downscaler-probe.sh: $arg is superseded and its result was invalid." >&2
+			echo "  0x051c0124[26:25]=3 is BYPASS; this test left the stage off." >&2
+			echo "  Use tools/display/panel-downscaler-engage.sh instead." >&2
+			exit 2
+		fi
+		;;&
 	--visible) DO_VISIBLE=1 ;;
 	# --rgb runs the same single-register test on the RGB/OSD raster instead of
 	# the DECD video raster. It is not a permutation of --visible, it is the
