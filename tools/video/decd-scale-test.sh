@@ -83,8 +83,32 @@ restore() {
 			[ -n "$v" ] && wr "$r" "$v" 2>/dev/null || true
 		done
 	} || wr 0x051c006c 0x29000000 2>/dev/null || true
+	# Put the AFBD side back BEFORE composition.  A failed run used to leave the
+	# video source enabled at 1920x1080 on a 720p panel, which wedged the display
+	# so hard that even the logo would not come back and the next run then
+	# snapshotted the wedged state as its baseline.  An experiment must leave the
+	# board able to show what it started with.
+	wr 0x05600010 "$(printf '0x%08X' $(( $(rd 0x05600010) & 0xFFFFFFFC )))" 2>/dev/null || true
+	wr 0x05600014 1 2>/dev/null || true
+	wr 0x05600020 0x02CF04FF 2>/dev/null || true
+	wr 0x05600030 0x02D00500 2>/dev/null || true
+	wr 0x05600048 0x02D00500 2>/dev/null || true
+	wr 0x0560004c 0x01680500 2>/dev/null || true
+	wr 0x05600040 0x00000500 2>/dev/null || true
+	wr 0x05600044 0x00000500 2>/dev/null || true
+	wr 0x05600014 1 2>/dev/null || true
+
+	# The restore must COMMIT too.  Writing the registers back is not enough:
+	# composition latches on the 0x05000840[31:16] sequence counter, so without
+	# a bump the block keeps whatever it last latched and the logo does not come
+	# back.  That is exactly what happened on 2026-09-09 -- the panel stayed
+	# black after a run and the NEXT run then snapshotted the drifted values as
+	# "inherited" and faithfully restored the wrong ones.
+	_v=$(rd 0x05000840)
+	_seq=$(( (((_v >> 16) & 0xFFFF) + 1) & 0xFFFF ))
+	wr 0x05000840 "$(printf '0x%08X' $(( (_seq << 16) | (_v & 0xFFFF) )))" 2>/dev/null || true
 	[ -z "${PID:-}" ] || kill "$PID" 2>/dev/null || true
-	say "restored: selector=$(rd 0x051c006c) ratio=$(rd 0x05000174)"
+	say "restored: selector=$(rd 0x051c006c) ratio=$(rd 0x05000174) 0x840=$(rd 0x05000840)"
 }
 trap restore EXIT INT TERM
 
@@ -119,7 +143,6 @@ if [ "$PHASE" = scale ]; then
 	for r in 0x05000224 0x05000444 0x05000544; do wr "$r" 0x04380780; done
 	wr 0x05000804 0x002C0780          # (0x2c << 16) | 1920
 	wr 0x0500080c 0x00140438          # (0x14 << 16) | 1080
-	wr 0x05000840 0x04390015          # ((1080+1) << 16) | 0x15
 	wr 0x05000844 0x07800030          # (1920 << 16) | 0x30
 	wr 0x05000858 0x04380015          # (1080 << 16) | 0x15
 	wr 0x0500085c 0x07800030
@@ -165,6 +188,29 @@ if [ "$PHASE" = scale ]; then
 	say "composition set for a ${SRC_W}x${SRC_H} source, ratio 0x00600060 (1.5x)"
 else
 	say "composition left at 1280x720 unity -- expect a top-left crop"
+fi
+
+# COMMIT.  0x05000840[31:16] is a SEQUENCE COUNTER, not a geometry word.
+# PanelWinNode::update ends with:
+#
+#   lw    $v0, 0x138($s0)       ; the node's counter
+#   lw    $a0, 0x840($v1)
+#   addiu $v0, $v0, 1           ; INCREMENT
+#   ins   $a0, $v0, 0x10, 0x10  ; into bits [31:16]
+#   sw    $a0, 0x840($v1)
+#
+# so composition latches when that counter changes.  Nothing here ever bumped
+# it, which is why the block kept using its latched 720p state and the panel
+# stayed black however correct the other words were.
+#
+# This also corrects a misread: the captured 720p value 0x02d10015 has 0x2d1 =
+# 721 in the high half, which looked like height+1 and is in fact just the
+# counter's value at the moment of capture.
+if [ "$PHASE" = scale ]; then
+	_v=$(rd 0x05000840)
+	_seq=$(( (((_v >> 16) & 0xFFFF) + 1) & 0xFFFF ))
+	wr 0x05000840 "$(printf '0x%08X' $(( (_seq << 16) | (_v & 0xFFFF) )))"
+	say "composition commit: 0x840 $_v -> $(rd 0x05000840)"
 fi
 
 wr 0x05140508 0x144C0000
