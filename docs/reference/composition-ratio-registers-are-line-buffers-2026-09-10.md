@@ -320,6 +320,103 @@ rows so the agreement is visible rather than silent.
 - **It does not** → the negative stands for a sound reason and this route is
   genuinely closed. Either way one run settles it.
 
+## THE RUN — 2026-09-10, RGB path: NEGATIVE
+
+Run with the operator watching, `--engage --rgb`, on kernel 6.18.38 with the
+MIPS parked. This is the corrected test: the stage **on**, the firmware's own
+value, all seven registers.
+
+```
+0x051c0124[26:25] = 3  ->  0        LEFT BYPASS
+0x051c0120[26:24] = 2               (already)
+0x051c0128 = 0x0500 -> 0x04fa       in_w - 6
+0x051c012c = 0x02D0 -> 0x01e0       out_h = 480
+0x051c0130 = 0x050002D0             (already)
+0x051c0134 = 0 -> 0x05020000        {1282, 0}
+0x051c0138 = 0x08010000 -> 0x0800aaaa   ratio 0xAAAA
+```
+
+- **All seven readbacks matched.** The field is **not gated** with the MIPS
+  parked — that is a real positive and it removes one of the three
+  pre-declared explanations.
+- Selector confirmed on RGB/OSD (`0x051c006c = 0x29000000`), TCON scan counter
+  advancing, and **the 40-line text pattern was confirmed on the glass by the
+  operator** — so there was a full screen of geometry to judge against, not a
+  login prompt in one corner.
+- Pulsed four times, 8 s engaged / 3 s bypassed, 44 s total.
+- **Operator: no change. The panel stayed on the terminal output throughout.**
+- All eight registers restored and verified.
+
+### Why this negative is much stronger than 2026-09-04's
+
+Every escape hatch that rescued the earlier nulls is closed:
+
+| | 09-04 | 09-10 |
+| --- | --- | --- |
+| stage enabled | **no** — `[26:25]` left at 3 | **yes** — verified 0 |
+| ratio value | `0x18000`, above unity, unemittable | `0xAAAA`, the firmware's own |
+| registers written | 1 | 7, in the firmware's order |
+| writes stuck | untested beyond one field | all seven readbacks matched |
+| pattern to judge against | text fill | text fill, **operator-confirmed** |
+| "never latched" | unavailable — no commit latch in this path | same |
+
+And the shape of the null matters. `0x0128` and `0x0134` were changed **while
+the stage was enabled**. If this block were anywhere in the RGB raster path,
+altering a width field and a window field under an active enable should have
+disturbed *something* — a shift, a tear, garbage. Total silence across seven
+registers including the enable does not read as "configured to do nothing".
+
+### First, the objection that this is the same experiment again
+
+Raised during the run, and it is the right objection: 09-04 wrote **1 register
+of 7** and concluded "closed"; this wrote **7 of a ~32-register routine** and
+was about to conclude the same. `WriteDownScalerRatio` is never called in
+isolation — `PanelWinNode::WriteReg` writes ~25 other LVDS registers around it,
+including four enable-shaped fields.
+
+That is a read, not a run, and it was checked afterwards. **The other registers
+are already at the values the routine would write:**
+
+| | firmware writes | board reads | |
+| --- | --- | --- | --- |
+| `0x051c0020[21:20]` | 3 | 3 | ✓ |
+| `0x051c0050[5:3]` | 7 | 7 | ✓ |
+| `0x051c00b4[31]` | 0 | 0 | ✓ |
+| `0x051c00b8[5:3]` | 7 | 7 | ✓ |
+| `0x051c003c[31:16]` | `in_w` | 1280 | ✓ |
+| `0x051c0040[31:16]` | `in_h` | 720 | ✓ |
+| `0x051c00a4[31:16]` | `in_w` | 1280 | ✓ |
+| `0x051c00a8[31:16]` | `in_h` | 720 | ✓ |
+
+So there is no unset upstream enable that the seven writes failed to reach, and
+the U-Boot/MIPS bring-up leaves this block in a state consistent with the
+firmware's own panel node. **That is what makes this null worth anything.**
+
+Caveat on that check: it covers the fields whose values are statically
+derivable. Several of the ~25 writes take node fields not yet resolved
+(`+0x6c`, `+0x70`, `+0x84`, `+0x88`), and those were compared by shape only.
+
+### Verdict: a strong negative on the RGB path — but NOT "route closed"
+
+Two residuals, named rather than waved past:
+
+1. **The video side of the `0x051c006c` mux has never been tested with the
+   stage on.** `--engage` without `--rgb` is exactly that, and it is one run.
+2. **We cannot yet place this stage relative to where we inject.** Our driver
+   enters at AFBD and takes output at the `0x051c006c` selector. If the
+   down-scaler sits upstream of that selector, it would be untouched by our
+   raster and produce precisely this null — the same explanation that already
+   covers `0x05000000`. Register address order does not imply pipeline order,
+   and nothing here has established that order.
+
+**Neither residual is worth a run right now, and the reason is the vertical-only
+finding rather than the null.** Even a positive on the video side buys a
+vertical squeeze: `1080 → 720` vertical with no horizontal scaler leaves a
+1920-wide picture horizontally cropped on a 1280-wide panel. The ceiling on this
+entire route is an aspect-fit — which is what the firmware uses it for
+(`m_21_9_scaler_win`). Spend a run here only if a vertical-only squeeze becomes
+useful on its own terms, or if residual 2 gets resolved first, statically.
+
 ### Scope of the search, stated honestly
 
 `PanelWinNode+8` has exactly one writer *found*: the search covered every

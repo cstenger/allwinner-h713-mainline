@@ -45,6 +45,16 @@ limit.** What changed on 09-04 is that we now know *how stock does it*.
 > - **The panel down-scaler is VERTICAL ONLY** — one ratio, no output width, no
 >   horizontal ratio anywhere in the block. It can do `1080 → 720`; it cannot do
 >   `1920 → 1280`. Treat it as an aspect-fitting squeezer, not a resizer.
+> - **The corrected test ran 2026-09-10 on the RGB path: NEGATIVE.** Stage
+>   enabled (`0x051c0124[26:25] = 0`, verified), the firmware's own ratio
+>   `0xAAAA`, all seven registers, all seven readbacks matched, text pattern
+>   operator-confirmed on the glass, pulsed 4×8 s. **No change.** The field is
+>   **not gated** with the MIPS parked — that part is a positive.
+>   `tools/display/panel-downscaler-engage.sh`.
+> - Not "route closed": the **video** side of the `0x051c006c` mux is still
+>   untested with the stage on, and we cannot yet place this stage relative to
+>   where we inject. But the ceiling on the whole route is a vertical aspect-fit,
+>   so neither residual earns a run on its own.
 
 ### Why our path cannot scale: we own the fetcher, not the pipeline
 
