@@ -1,0 +1,156 @@
+# A two-axis scaler at 0x05180000 — found, decoded, and confirmed against hardware
+
+Static RE plus two register reads. **No board time beyond a `devmem` loop, no
+reboot.**
+
+This is the first block in this project with **separate horizontal and vertical
+ratio registers**. Composition (`0x05000000`) has no scaler at all; the panel
+down-scaler (`0x051c0120`) is vertical-only. This one is neither.
+
+## The registers
+
+Written by one function, `0x8b1a66d0`, called from `ProcWinNode::WriteReg`
+(`0x8b1a6bac`). `$a0` is the `ProcWinNode`, `$v0` is `0xba180000` = ARM
+`0x05180000`.
+
+```
+0x8b1a6730  lw  $a1, 0xc($a0)       ; ratio_h   <- ProcWinNode::CalcScaleRatio
+0x8b1a6734  lw  $t0, 0x10($a0)      ; ratio_v
+0x8b1a6758  ins $v1, $a1, 0, 0x16   ; 0x05180008[21:0] = ratio_h
+0x8b1a6764  ins $v1, $t0, 0, 0x16   ; 0x0518003c[21:0] = ratio_v
+```
+
+Both 22-bit, both 16.16 fixed point with unity `0x10000` — the same encoding
+`CalcScalingRatio_2` and the panel down-scaler use.
+
+| register | field | meaning |
+| --- | --- | --- |
+| `0x05180000` | `[31:16]` | constant `0x0F00` |
+| | `[15:0]` | **H phase** = `(unity + ratio_h) >> 2` |
+| `0x05180004` | `[15:0]` | constant `0x0F00` |
+| `0x05180008` | `[21:0]` | **H ratio** |
+| | `[30:28]` | H integer phase (`node+0x14`) |
+| | `[26:24]` | V integer phase (`node+0x18`) |
+| `0x05180014` | `[27]` | **1 = both axes at unity → no scaling** |
+| `0x05180020` | `[31:24]` | format/mode byte, from `(node->0xbc)->0xc` |
+| `0x0518002c` | `[15:0]` / `[31:16]` | size / `node->0x30 + 4` |
+| `0x05180030` | `[15:0]`, `[19:18]=0` | size |
+| `0x05180034` | `{[31:16], [15:0]}` | size pair |
+| `0x05180038` | `[15:0]` | **V phase** = `(unity + ratio_v) >> 1` |
+| `0x0518003c` | `[21:0]` | **V ratio** |
+| `0x05180040` | `[31] = 1`, `[15:0]` | enable-ish + size |
+| `0x05180044` | `[15:0]` | offset |
+| `0x05180050` | `[15:0]` / `[31:16]` | size pair |
+
+## It matches hardware, field for field, before any experiment
+
+Two independent captures: `linux-mips-alive-decd-4sample-2026-08-31.txt`
+(MIPS alive, taken for an unrelated reason and never read), and our own
+**cold-booted board today with the MIPS parked**. Both read identically, on all
+four instances:
+
+```
+05180000 0x0F008000     0x0F00 const ✓   phase 0x8000
+05180004 0x00100F00     0x0F00 const ✓
+05180008 0x43010000     ratio_h = 0x010000 = UNITY ✓   int phases 4 and 3
+05180014 0x08000000     bit 27 = 1  -> "no scaling" ✓
+05180020 0x02000000
+0518002c 0x00350500     1280,  53
+05180030 0x000102D0      720
+05180034 0x050002D0     1280, 720
+05180038 0x00100000     V phase 0x0000
+0518003c 0x00010000     ratio_v = 0x010000 = UNITY ✓
+05180040 0xC0000500     bit 31 = 1 ✓   1280
+05180044 0x00000031      49
+05180050 0x001B02D0      720,  27
+0518005c 0x00010438     1080  (not written by this function)
+```
+
+The phase check is the one that removes all doubt. The code computes the H phase
+as `(unity + ratio_h) >> 2`; at unity that is `(0x10000 + 0x10000) >> 2 =
+0x8000`, and the register reads **exactly `0x8000`**. That is a derived value
+with no other plausible source.
+
+Geometry is our panel's: 1280 and 720 throughout. And `49` at `0x05180044` is the
+same `49` that appears as the video window's x origin in the 09-05 WCE log
+(`m_video_win_2: [49, 22, 852, 480]`).
+
+**Four instances at `0x100` stride**, all populated and identical — matching the
+firmware's stage-name table, which lists `proc-vs_upscaler` and
+`proc-vde_upscaler` alongside `proc-vs_dmuxin` / `proc-vs_out`.
+
+## Direction semantics
+
+`ProcWinNode::CalcScaleRatio` (`0x8b1a5f98`) produces
+`ratio = unity × min(in,out) / max(in,out)` — **always ≤ unity** — plus a
+direction byte per axis. `ProcWinNode::ReCalcInOutWin` (`0x8b1a6190`) consumes
+the byte to pick which window is derived from which:
+
+```
+flag != 0 (upscale)    in_size  = ceil(out_size * ratio / unity)     in <= out
+flag == 0 (downscale)  in_size  = ceil(out_size * unity / ratio)     in >= out
+```
+
+The direction never reaches the hardware as a bit. It is implied by the
+**geometry**: the block is told an input size and an output size, and the ratio
+is `unity × min/max` either way. For `1920 → 1280` that is
+`1280 × 65536 / 1920 = 0xAAAA`, with the input registers carrying 1920 and the
+output registers 1280.
+
+## Why the block survey missed this for months
+
+`tools/mips/block-survey.py` counts **`lui` sites**, and `0x8b1a66d0` reaches
+the whole block through **one** `lui` and 48 displacements. So the survey
+reported:
+
+```
+0xba18  0x05180000      1   ** not characterised **
+```
+
+One site, bottom of the table, easy to skip. Counting *accesses* instead of
+`lui`s gives 13 distinct registers, all written. The same undercount hid real
+size in two other blocks: `0x050c0000` reported 22 sites but has **83**
+registers, and `0x05140000` reported 16 but has **72**.
+
+> **A scan that ranks by proxy will bury the thing you are looking for.**
+> `block-survey.py` was built to make a "none" answer trustworthy, and it is
+> sound for that. It was then read as a ranking of importance, which it is not.
+
+## What is NOT established
+
+**Whether this block is on our path.** That is the question that already
+consumed `0x05000000` and `0x051c0120`, and nothing here answers it:
+
+- The 08-31 capture spans DECD idle vs DECD submitting a 1280x720 frame, and
+  **zero registers differ**. That is *not* evidence either way — a 1280x720
+  frame on a 1280x720 panel needs no scaling, so an unchanged unity scaler is
+  what both hypotheses predict. It does not discriminate.
+- Our driver does not map `0x05180000`. It is reachable with `devmem` today,
+  so testing needs no kernel change.
+
+## The write set, if we test it — and the trap to avoid
+
+`0x05180014[27]` is currently **1**, computed by the firmware as "ratio_h ==
+unity **and** ratio_h == ratio_v". It is written by the driver, so it is an
+input, not a status: **a bypass**.
+
+Writing a ratio while bit 27 stays set would repeat, for the third time, the
+exact error this project has now made twice — `0x051c0138` alone with
+`0x0124[26:25]` left at bypass, and `0x05000174` alone. The minimum coherent set
+is:
+
+```
+0x05180014  [27]    = 0             LEAVE BYPASS
+0x05180008  [21:0]  = ratio_h
+0x05180000  [15:0]  = (unity + ratio_h) >> 2      H phase
+0x0518003c  [21:0]  = ratio_v
+0x05180038  [15:0]  = (unity + ratio_v) >> 1      V phase
+            plus the input/output size registers, which carry the direction
+```
+
+Open before a test can be specified exactly: which of `0x2c`/`0x30`/`0x34`/
+`0x40`/`0x44`/`0x50` is the input size and which the output. That is a
+`ProcWinNode` field-map question — `node->0x1c/0x20/0x2c/0x30/0x34/0x38/0x40/
+0x48/0x50/0x58` — and it is static work, not board time.
+
+Also unknown: which of the four instances, if any, carries our raster.

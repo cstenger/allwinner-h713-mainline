@@ -1,6 +1,26 @@
 #!/usr/bin/env python3
 """Survey which display blocks the H713 MIPS firmware actually addresses.
 
+WARNING, 2026-09-10: THE SITE COUNT IS NOT A RANKING OF IMPORTANCE.
+
+This counts `lui` sites. A block reached through ONE `lui` and many
+displacements scores 1, however heavily it is used. That is exactly what
+happened to 0x05180000: it reported
+
+    0xba18  0x05180000      1   ** not characterised **
+
+and sat at the bottom of the table for months. It is a two-axis scaler with
+separate H and V ratio registers -- the thing three sessions were looking for.
+Counting ACCESSES instead gives 13 registers, all written. Two other blocks were
+undercounted the same way: 0x050c0000 (22 sites, 83 registers) and 0x05140000
+(16 sites, 72 registers).
+
+The zero-detection this tool was built for is still sound -- a block with no
+`lui` is genuinely unreachable. Use it for that. For "how much does the firmware
+use this block", track lui-loaded bases across subsequent displacements instead;
+see docs/reference/two-axis-scaler-found-2026-09-10.md.
+
+
     block-survey.py FIRMWARE
     block-survey.py FIRMWARE --sites 0xba00     # list every site for one block
 

@@ -55,6 +55,28 @@ limit.** What changed on 09-04 is that we now know *how stock does it*.
 >   untested with the stage on, and we cannot yet place this stage relative to
 >   where we inject. But the ceiling on the whole route is a vertical aspect-fit,
 >   so neither residual earns a run on its own.
+>
+> **NEW LEAD, and the best one yet — a TWO-AXIS scaler at `0x05180000`.**
+> [reference/two-axis-scaler-found-2026-09-10.md](reference/two-axis-scaler-found-2026-09-10.md)
+>
+> - Separate **H ratio** `0x05180008[21:0]` and **V ratio** `0x0518003c[21:0]`,
+>   16.16, unity `0x10000`, written by `ProcWinNode::WriteReg` via `0x8b1a66d0`.
+>   Four instances at `0x100` stride — the firmware's stage table names
+>   `proc-vs_upscaler` and `proc-vde_upscaler`.
+> - **Confirmed against hardware before any experiment**: the 08-31 MIPS-alive
+>   capture and our cold-booted board today read identically, and every derived
+>   field matches — including the H phase reading exactly `0x8000`, which the
+>   code computes as `(unity + ratio) >> 2`.
+> - Reachable with `devmem`; our driver does not map it, so no kernel change.
+> - **`0x05180014[27]` is a bypass and is currently set.** Writing a ratio
+>   without clearing it would repeat the error made twice already.
+> - Open: whether it is on our path, which instance carries our raster, and
+>   which size registers are input vs output. The last is static work.
+>
+> **`block-survey.py` counts `lui` sites, not accesses**, so this block scored
+> "1, not characterised" and sat at the bottom of the table for months. Use
+> `tools/mips/block-map.py` for size; the survey is still sound for proving a
+> block is *unreachable*.
 
 ### Why our path cannot scale: we own the fetcher, not the pipeline
 
