@@ -64,10 +64,44 @@ scaler, and `CalcScalingRatio_1` computes both axes for it.
 - Reading an ungated block in this neighbourhood is the documented way to wedge
   this SoC — a plain read of `0x07091000` requires a power cycle.
 
-And it would not help even if powered: it scales data arriving from the **capture
-front end**, not data fetched from DRAM. Our video is Cedrus → DRAM →
-AFBD/DECD fetch → display, which never passes through capture. Fetch-side
-scaling is what 1080p playback needs.
+### Is it worth powering TVFE/TVCAP to get at it? No — and not because of the risk
+
+The hazard is real but it is not the reason. The reason is that this is the
+wrong *kind* of engine, and four static checks agree:
+
+1. **It requests exactly ONE PSU/PFU descriptor.** Calls to
+   `FrameBuffer::GetPsuPfuWin` per node: `CapWinNode` **1**, `DETNWinNode` 5,
+   `NRWinNode` 4. DETN and NR have both a fetch and a store side and so hold
+   several line-buffer descriptors; capture holds one. One direction.
+2. **Zero address-capable stores into `0x06940000`.** A whole-image scan for
+   32-bit (rather than `lhu`-of-geometry) stores into that block finds **none**.
+   The firmware never programs a DRAM base address into the capture block at
+   all — consistent with a streaming pixel path whose DMA lives elsewhere
+   (`vincap-dma`), not a memory-to-memory engine.
+3. **Capture configuration is keyed on a live input.**
+   `"Can't find capture config for channel: 0x%08x, signal: 0x%08x, frame rate:
+   0%08x"` — no signal, no config.
+4. **`"no signal, disable all memory agent without capture."`** Capture is the
+   *producer* that feeds the memory agents, not a consumer of them.
+
+Our video is already in DRAM: Cedrus → DRAM → AFBD/DECD fetch → display. The
+capture scaler sits upstream of a write *into* DRAM. **There is no way to feed it
+from DRAM**, so powering the domain would not put it in our path.
+
+There is also `b_enable_capture_down_scaler_partial` in the image — a
+down-scaler, named as such, which is genuinely the function 1080p playback
+needs. It is on the wrong side of memory, and that is decisive.
+
+**Stated honestly:** this shows the *vendor firmware* never uses the block as a
+memory-to-memory engine. It does not prove the silicon lacks such a mode. But an
+undocumented M2M path that the firmware never exercises could only be found by
+powering the domain and probing blind, in a neighbourhood where a bare read of
+an ungated block costs a power cycle — high cost, speculative payoff, and no
+evidence pointing at it.
+
+TVFE/TVCAP remains worth pursuing for **HDMI input as a feature** — that is a
+separate goal, already tracked, and already blocked on HPD at `0x07091014`. It
+is not a scaling route.
 
 ## Where this leaves the no-GPU downscale search
 
