@@ -78,7 +78,44 @@ limit.** What changed on 09-04 is that we now know *how stock does it*.
 > `tools/mips/block-map.py` for size; the survey is still sound for proving a
 > block is *unreachable*.
 >
-> **CORRECTION, same day: the test below is RGB-path evidence only, and the
+> ## POSITIVE, 2026-09-11 — the scaler IS on our video raster
+> [reference/proc-scaler-video-2026-09-11/RESULT.md](reference/proc-scaler-video-2026-09-11/RESULT.md)
+>
+> **The first positive control on a scaler in this project.** The sweep was
+> filmed and measured frame by frame. Engaging `0x05180000` grossly and
+> repeatably changes the picture on the DECD video path; disengaging restores it.
+>
+> Whole-frame mean luminance at 5 fps separates the states cleanly (engaged = a
+> flat light field ≈ 69, normal ≈ 30). Three sustained windows of 16.8 s, 17.0 s
+> and 11.6 s, alternating with normal video, matching the script's blink
+> structure to **within 0.3 s** under an independently measured ssh latency of
+> 0.62 s per write.
+>
+> - **instance 0 — LIVE** (1 blink, 16.8 s)
+> - **instance 1 — LIVE** (2 blinks, 17.0 s and 11.6 s)
+> - **instance 2 — not on our raster** (3.0 s transient during the write
+>   sequence, then normal for 69 s through two more blinks)
+> - instance 3 — never ran
+>
+> **The effect is not a clean 2× downscale.** Engaged, the panel shows a flat
+> light-grey field with the picture crushed into a narrow sliver hard against the
+> right edge, full height. The block is in the path, but
+> `in 1280x720 / out 640x360 / ratio 0x8000` is not a configuration the rest of
+> the pipeline agrees with.
+>
+> **This refutes "we inject downstream of the whole WCE chain"** for this block,
+> and it positively explains the 09-10 null: those stills were taken after mpv
+> fell back to software decode into the primary XR24 plane, which reaches the
+> panel by the RGB/OSD route. **That route does not traverse `0x05180000`; the
+> DECD video raster does.**
+>
+> Next: sweep `ratio_h` alone with geometry at 1280x720 and `ratio_v` at unity;
+> and vary `0x0518002c[31:16]` and `0x05180044` (the 53 and 49 offsets), which
+> the right-edge displacement points at. Use instance 0 or 1.
+>
+> ---
+>
+> **CORRECTION, 2026-09-10: the test below is RGB-path evidence only, and the
 > "three blocks, one explanation" conclusion drawn from it is WITHDRAWN.**
 > The 77 s clip looped mid-run; VAAPI failed to re-initialise
 > (`Failed to create decode context: 1`) and mpv fell back to **software decode
