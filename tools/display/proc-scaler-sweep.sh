@@ -253,6 +253,7 @@ exec mpv --no-config --no-audio --vo=drm --hwdec=vaapi --loop-file=inf \
 PLAY
 		sed -i \"s|CLIP|\$clip|\" /tmp/pss-play.sh
 		setsid bash /tmp/pss-play.sh </dev/null >/tmp/pss-play.log 2>&1 &
+		echo \$! > /tmp/pss-play.pid
 		sleep 10
 		st=\$(ls /sys/kernel/debug/dri/*/state 2>/dev/null | head -1)
 		pl=\$(sed -n 's/.*Using [a-z]* plane \([0-9]*\) as drmprime plane.*/\1/p' /tmp/pss-play.log | head -1)
@@ -264,8 +265,13 @@ PLAY
 		echo \"plane \${pl:-none} fbs\$fbs distinct \$(echo \$fbs | tr ' ' '\n' | sort -u | grep -c .)\"
 	" 2>&1)
 	say "$play" | sed 's/^/  /'
+	# NOT pkill -f pss-play: the remote command string itself contains
+	# "pss-play", so pkill matches the shell running it and kills the ssh
+	# session. That returned 255 and left mpv running, twice. Same family as
+	# the pgrep-matches-itself trap. Kill the recorded pid, then -x by name.
 	stop_playback() {
-		$SSH "pkill -TERM -f pss-play; pkill -TERM -x mpv; sleep 3; pkill -x mpv" >/dev/null 2>&1
+		$SSH 'p=$(cat /tmp/pss-play.pid 2>/dev/null); [ -n "$p" ] && kill -TERM "$p" 2>/dev/null
+		      pkill -TERM -x mpv; sleep 3; pkill -x mpv; pkill -9 -x mpv' >/dev/null 2>&1
 	}
 	if echo "$play" | grep -q NOCLIP; then
 		say "  no 720p clip on the board -- cannot gate the test. Aborting."; exit 1
@@ -305,8 +311,23 @@ PLAY
 	planned=$(awk -v on="$PULSE_ON" -v off="$PULSE_OFF" -v gap="$GAP" -v sw="$SWEEPS" \
 		-v inst="$INSTANCES" 'BEGIN{n=split(inst,a," ");t=0;
 		for(i=1;i<=n;i++) t+=(a[i]+1)*(on+off)+gap; printf "%.0f", t*sw}')
-	say "  clip duration ${dur:-unknown}s, planned run ${planned}s"
-	if [ -n "$dur" ] && awk -v d="$dur" -v p="$planned" 'BEGIN{exit !(d < p+15)}'; then
+	# CONTENT SECONDS ARE NOT WALL SECONDS. With --no-audio and direct PRIME
+	# scanout mpv free-runs: on 2026-09-11 it played 77 s of content in about
+	# 30 s of wall time (~2.5x), looped, and VAAPI died there -- while a guard
+	# comparing 77 against 46 happily passed. Measure the observed rate and
+	# convert to wall time before deciding.
+	rate=$($SSH '
+		a=$(grep -oE "^V: [0-9]+:[0-9]+:[0-9]+" /tmp/pss-play.log | tail -1 | tr -d "V: ")
+		sleep 4
+		b=$(grep -oE "^V: [0-9]+:[0-9]+:[0-9]+" /tmp/pss-play.log | tail -1 | tr -d "V: ")
+		s() { echo "$1" | awk -F: "{print \$1*3600+\$2*60+\$3}"; }
+		awk -v x="$(s "$a")" -v y="$(s "$b")" "BEGIN{ r=(y-x)/4; if(r<=0) r=1; printf \"%.2f\", r }"
+	' 2>/dev/null)
+	rate=${rate:-1.00}
+	wall=$(awk -v d="${dur:-0}" -v r="$rate" 'BEGIN{ printf "%.0f", (r>0)? d/r : d }')
+	say "  clip ${dur:-unknown}s of content, playing at ${rate}x -> ~${wall}s of wall time"
+	say "  planned run ${planned}s"
+	if [ -n "$dur" ] && awk -v d="$wall" -v p="$planned" 'BEGIN{exit !(d < p+15)}'; then
 		say "  REFUSING: the clip is shorter than the run. It will loop, and a"
 		say "  loop restart is where VAAPI dropped to software decode last time,"
 		say "  silently moving the test onto the RGB raster. Use a longer clip"
