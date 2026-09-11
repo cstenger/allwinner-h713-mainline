@@ -273,6 +273,30 @@ def to_nv12(png_path, w, h):
     return img.tobytes() + bytes([128]) * (w * h // 2)
 
 
+def marker_nv12(w, h, luma):
+    """A flat cue frame at a GIVEN luma, coloured blue by chroma alone.
+
+    Shown for a couple of seconds before each measurement so the operator knows
+    a new value has landed and a photograph is due -- watching the panel, not
+    the terminal, which is what went wrong when a printed schedule drifted out
+    of step with the run.
+
+    The luma is matched to the card's mean ON PURPOSE. A bright blue flash would
+    make the camera re-expose, and the frame that matters comes immediately
+    after it; auto-exposure recovering from the cue is indistinguishable from
+    the scaler changing the picture. Matching the mean luma keeps the exposure
+    metering still and puts the whole cue in chroma.
+
+    It also degrades safely: if the chroma path is wrong the frame reads as flat
+    grey rather than blue, which is still unmistakable against a card covered in
+    rulers and circles.
+    """
+    y = bytes([luma]) * (w * h)
+    # BT.601-ish blue at the given luma: U high, V low.
+    uv = bytes([230, 110]) * (w * h // 4)
+    return y + uv
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("outdir")
@@ -293,6 +317,16 @@ def main():
         assert len(raw) == w * h * 3 // 2
         print(f"  {stem}.svg / .png / .nv12   "
               f"nv12 {len(raw)} bytes (= {w}x{h}x1.5)")
+
+        # cue frame, luma-matched to this card so it cannot move the exposure
+        from PIL import Image as _I
+        import numpy as _np
+        mean = int(round(_np.asarray(
+            _I.open(stem + ".png").convert("L"), dtype=_np.float64).mean()))
+        mk = os.path.join(a.outdir, f"scaler-cue-{w}x{h}.nv12")
+        with open(mk, "wb") as f:
+            f.write(marker_nv12(w, h, mean))
+        print(f"  {mk}   flat blue at Y={mean} (the card's mean luma)")
 
 
 if __name__ == "__main__":
