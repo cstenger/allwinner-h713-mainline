@@ -21,8 +21,19 @@
 #   scaler-card-step.sh show                    read back the whole block
 #   scaler-card-step.sh restore                 ratio unity, bypass set
 #   scaler-card-step.sh off                     stop the card, release DECD
+#   scaler-card-step.sh seq [RATIOS...]         timed windows, one photo each
 #
-# Nothing is timed. Take the photo between `set` calls.
+# `set` is untimed -- take the photo whenever. `seq` holds each ratio for HOLD
+# seconds (default 12) so the operator can shoot on a rhythm without touching
+# anything or watching this terminal.
+#
+# WHY THE TIMING BARELY MATTERS HERE, unlike every earlier run: each photograph
+# is SELF-MEASURING. The card's circles give the scale factor directly from the
+# ellipse axis ratio, so a photo does not need to be matched to a step by
+# timestamp -- measure each one, then check the set of measured factors against
+# the set of commanded ones. A shot that lands in a transition shows an
+# unexpected factor and is simply discarded. The alignment reconstruction that
+# was needed on 09-10 and 09-11 does not apply.
 #
 # GEOMETRY IS NEVER TOUCHED by this script -- not 0x2c/0x30/0x34/0x40, not
 # ratio_v (0x3c), not the V phase (0x38). Only the bypass, ratio_h and the H
@@ -123,6 +134,71 @@ restore)
 off)
 	$SSH '/root/decd-client stop >/dev/null 2>&1; p=$(cat /tmp/card.pid 2>/dev/null); [ -n "$p" ] && kill -TERM "$p" 2>/dev/null; true' >/dev/null 2>&1
 	say "card stopped. video source 0x05600010: $(rd 0x05600010)"
+	;;
+seq)
+	shift
+	HOLD=${HOLD:-12}
+	RATIOS=${*:-"0x10000 0x14000 0x18000 0x20000 0x8000"}
+	set -- $RATIOS
+	n=$#
+	say "SCHEDULE -- $n windows of ${HOLD}s, about $(( n * HOLD + 8 ))s total"
+	say ""
+	i=0; t=8
+	for r in $RATIOS; do
+		i=$(( i + 1 ))
+		f=$(awk -v r=$(( r )) -v u="$UNITY" 'BEGIN{printf "%.3f", u/r}')
+		printf '  photo %d   t+%3ds..%3ds   ratio %-9s  %sx  %s\n' \
+			"$i" "$t" "$(( t + HOLD ))" "$(printf '0x%x' $(( r )))" "$f" \
+			"$(awk -v r=$(( r )) -v u="$UNITY" 'BEGIN{print (r<u)?"magnify":(r>u)?"COMPRESS":"baseline"}')"
+		t=$(( t + HOLD ))
+	done
+	say ""
+	say "  Shoot once in the MIDDLE of each window -- roughly every ${HOLD}s."
+	say "  A shot that lands in a transition will read an unexpected factor and"
+	say "  gets discarded; it does not spoil the run."
+	say ""
+	# card first; the baseline photo doubles as proof it was actually displayed,
+	# so no separate confirmation step is needed
+	sz=$($SSH "stat -c %s $CARD 2>/dev/null")
+	[ -n "$sz" ] || { say "card not on the board: $CARD"; exit 1; }
+	$SSH "setsid /root/decd-client show $CARD $DWELL_MS >/tmp/card.log 2>&1 &
+	      echo \$! > /tmp/card.pid" >/dev/null 2>&1
+	sleep 4
+	say "card up: source 0x05600010 = $(rd 0x05600010)   $($SSH 'tail -1 /tmp/card.log 2>/dev/null')"
+	o08=$(rd $A08); o00=$(rd $A00); o14=$(rd $A14)
+	say "saved: 0x14 $o14  0x08 $o08  0x00 $o00"
+	say ""
+	say "STARTING. First window opens in 4s."
+	sleep 4
+	T0=$(date +%s)
+	i=0
+	for r in $RATIOS; do
+		i=$(( i + 1 )); rv=$(( r )); ph=$(( ( UNITY + rv ) >> 2 ))
+		w08=$(ins $(( o08 )) "$rv" 0 22)
+		w00=$(ins $(( o00 )) "$ph" 0 16)
+		if [ "$rv" -eq "$UNITY" ]; then
+			w14=$(ins $(( o14 )) 1 27 1)      # baseline: bypass SET, true cold state
+		else
+			w14=$(ins $(( o14 )) 0 27 1)
+		fi
+		$SSH "busybox devmem $A14 32 $(hex $w14); busybox devmem $A08 32 $(hex $w08); busybox devmem $A00 32 $(hex $w00)" >/dev/null 2>&1
+		g=$(rd $A08)
+		printf '  [t+%3ds] photo %d  ratio %-9s  readback %s  %s\n' \
+			"$(( $(date +%s) - T0 ))" "$i" "$(printf '0x%x' $rv)" "$g" \
+			"$([ "$(( g & 0x3fffff ))" -eq "$rv" ] && echo ok || echo MISMATCH)"
+		sleep "$HOLD"
+	done
+	# restore
+	$SSH "busybox devmem $A00 32 $o00; busybox devmem $A08 32 $o08; busybox devmem $A14 32 $o14" >/dev/null 2>&1
+	say ""
+	say "restored: 0x14 $(rd $A14)  0x08 $(rd $A08)  0x00 $(rd $A00)"
+	if [ "$(rd $A14)" = "$o14" ] && [ "$(rd $A08)" = "$o08" ] && [ "$(rd $A00)" = "$o00" ]; then
+		say "  matches the pre-run values."
+	else
+		say "  RESTORE MISMATCH -- record this before power-cycling."
+		exit 2
+	fi
+	say "card left up; run 'off' to release DECD."
 	;;
 *) usage ;;
 esac
