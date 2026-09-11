@@ -77,6 +77,33 @@ limit.** What changed on 09-04 is that we now know *how stock does it*.
 > "1, not characterised" and sat at the bottom of the table for months. Use
 > `tools/mips/block-map.py` for size; the survey is still sound for proving a
 > block is *unreachable*.
+>
+> **TESTED 2026-09-10 — NEGATIVE.**
+> [reference/proc-scaler-2026-09-10/RESULT.md](reference/proc-scaler-2026-09-10/RESULT.md)
+> All four instances engaged at ratio `0x8000` (exactly one half, both axes),
+> bypass cleared, photographed engaged and restored with nothing else changed.
+> The face spans the same fraction of the lit rectangle in both — it would have
+> been half the linear size. Frames were live (the pose differs between shots).
+> Writes stick and restore is exact, so the block is not gated.
+>
+> ### The real finding: three blocks, three nulls, one explanation
+>
+> | block | what it is | result |
+> | --- | --- | --- |
+> | `0x05000000` | NR/composition — **no scaler at all** | n/a |
+> | `0x051c0120` | panel down-scaler, **vertical only** | negative, stage on |
+> | `0x05180000` | proc scaler, **two-axis** | negative, bypass cleared |
+>
+> Each was tested with its own bypass handled correctly, each already sat in the
+> state its own firmware node produces, and each is inert on our raster.
+> **We inject downstream of all of them** — in at AFBD, out at the `0x051c006c`
+> selector, bypassing the whole NR → DETN → Proc → Panel chain that every scaler
+> lives in. Raised for `0x05000000` on 09-04; now confirmed twice more.
+>
+> **Stop testing blocks one at a time.** The next question is static: what does
+> `0x051c006c` select between, and do its sources enter downstream of the proc
+> stage? If yes, the whole WCE scaler family closes at once and the only route
+> is driving the window pipeline.
 
 ### Why our path cannot scale: we own the fetcher, not the pipeline
 
