@@ -148,9 +148,53 @@ is:
             plus the input/output size registers, which carry the direction
 ```
 
-Open before a test can be specified exactly: which of `0x2c`/`0x30`/`0x34`/
-`0x40`/`0x44`/`0x50` is the input size and which the output. That is a
-`ProcWinNode` field-map question — `node->0x1c/0x20/0x2c/0x30/0x34/0x38/0x40/
-0x48/0x50/0x58` — and it is static work, not board time.
+### Input vs output — settled
 
-Also unknown: which of the four instances, if any, carries our raster.
+`ProcWinNode::DbgDump` (`0x8b1a5d00`) prints each member with its offsets, the
+same trick that cracked `GetPsuPfuWin`:
+
+```
+m_in_win     +0x3c x, +0x40 w, +0x44 y, +0x48 h
+m_out_win    +0x4c x, +0x50 w, +0x54 y, +0x58 h
+m_meter_win  +0x5c .. +0x68
+```
+
+Feeding that through `0x8b1a66d0`:
+
+| register | source | meaning |
+| --- | --- | --- |
+| `0x05180034` | `{in_win.w, in_win.h}` | **INPUT size** |
+| `0x0518002c[15:0]` | `out_win.w` | **OUTPUT width** |
+| `0x05180030[15:0]` | `out_win.h` | **OUTPUT height** |
+| `0x05180040[15:0]` | `out_win.w` | output width again |
+| `0x05180044[15:0]` | `node->0x2c` | 49 in the capture |
+| `0x0518002c[31:16]` | `node->0x30 + 4` | 53 in the capture |
+
+The capture reads `0x05180034 = 0x050002D0` (in 1280x720) and
+`0x0518002c[15:0] = 0x500`, `0x05180030[15:0] = 0x2D0` (out 1280x720) — in and
+out equal, ratios at unity, bypass bit set. Entirely self-consistent.
+
+### The test this makes possible
+
+A liveness test needs no 1080p plumbing — shrink the raster we already scan out,
+with an exact power-of-two ratio so the arithmetic cannot be argued with:
+
+```
+in  = 1280x720   (unchanged)   0x05180034 = 0x050002D0
+out =  640x360                 0x0518002c[15:0] = 0x280
+                               0x05180030[15:0] = 0x168
+                               0x05180040[15:0] = 0x280
+ratio_h = ratio_v = 0x8000     exactly 1/2
+  0x05180008[21:0] = 0x8000
+  0x0518003c[21:0] = 0x8000
+  0x05180000[15:0] = (0x10000 + 0x8000) >> 2 = 0x6000     H phase
+  0x05180038[15:0] = (0x10000 + 0x8000) >> 1 = 0xC000     V phase
+  0x05180014[27]   = 0                                    LEAVE BYPASS
+```
+
+Expect the image to shrink to a quarter of its area. Four instances exist and we
+do not know which carries our raster, so the test should sweep them one at a
+time rather than write all four at once.
+
+**Not run.** Needs an operator watching, and it writes an enable on live display
+hardware.
