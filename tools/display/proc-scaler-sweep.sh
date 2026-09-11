@@ -266,7 +266,50 @@ PLAY
 		stop_playback; exit 1
 	fi
 	say "  scanout confirmed."
+
+	# 2026-09-10: THE GATE ABOVE IS NOT ENOUGH ON ITS OWN, and a whole run was
+	# mis-read because of it. It proves the video plane was cycling ONCE, at
+	# t~10s. In that run the 77 s clip hit EOF, --loop-file=inf restarted it,
+	# VAAPI failed to re-initialise ("Failed to create decode context: 1") and
+	# mpv silently fell back to SOFTWARE decode into the primary XR24 plane.
+	# Everything after that was the RGB/OSD raster wearing a video costume, and
+	# the photographs taken at the end were read as video-path evidence.
+	#
+	# So: refuse a clip shorter than the planned run, and re-check the raster
+	# between instances rather than trusting a single sample.
+	dur=$($SSH "ffprobe -v error -show_entries format=duration -of csv=p=0 \
+	      \$(sed -n 's|^exec mpv.* \(/[^ ]*\)$|\1|p' /tmp/pss-play.sh)" 2>/dev/null)
+	planned=$(awk -v on="$PULSE_ON" -v off="$PULSE_OFF" -v gap="$GAP" -v sw="$SWEEPS" \
+		-v inst="$INSTANCES" 'BEGIN{n=split(inst,a," ");t=0;
+		for(i=1;i<=n;i++) t+=(a[i]+1)*(on+off)+gap; printf "%.0f", t*sw}')
+	say "  clip duration ${dur:-unknown}s, planned run ${planned}s"
+	if [ -n "$dur" ] && awk -v d="$dur" -v p="$planned" 'BEGIN{exit !(d < p+15)}'; then
+		say "  REFUSING: the clip is shorter than the run. It will loop, and a"
+		say "  loop restart is where VAAPI dropped to software decode last time,"
+		say "  silently moving the test onto the RGB raster. Use a longer clip"
+		say "  (CLIP=/path) or fewer sweeps."
+		stop_playback
+		exit 1
+	fi
 fi
+
+# Returns 0 while the DECD video plane is still scanning out. On --rgb the
+# TCON scan counter stands in for it.
+raster_ok() {
+	if [ "$DO_RGB" -eq 1 ]; then
+		local a b
+		a=$($SSH 'busybox devmem 0x05880000 32' 2>/dev/null); sleep 0.5
+		b=$($SSH 'busybox devmem 0x05880000 32' 2>/dev/null)
+		[ -n "$a" ] && [ "$a" != "$b" ]
+	else
+		$SSH '
+			st=$(ls /sys/kernel/debug/dri/*/state 2>/dev/null | head -1)
+			sw=$(grep -c "Using software decoding" /tmp/pss-play.log 2>/dev/null)
+			fb=$(grep -A2 "^plane\[38\]:" "$st" 2>/dev/null | sed -n "s/.*fb=//p" | head -1)
+			[ "${sw:-0}" -eq 0 ] && [ -n "$fb" ] && [ "$fb" != "0" ]
+		' >/dev/null 2>&1
+	fi
+}
 
 # ----------------------------------------------------------------- the sweep
 engage()  { local n=$1; for o in 14 08 3c 00 38 34 2c 30 40; do wr "$(addr "$n" "$o")" "$(hex ${NEW[$n.$o]})"; done; }
@@ -302,6 +345,18 @@ for sweep in $(seq 1 "$SWEEPS"); do
 	say ""
 	say "  === sweep $sweep/$SWEEPS ==="
 	for n in $INSTANCES; do
+		# Re-verify BEFORE each instance. A run that changes decode path
+		# halfway produces evidence about a raster nobody chose to test.
+		if ! raster_ok; then
+			say ""
+			say "    RASTER LOST before instance $n -- the video plane stopped"
+			say "    scanning out, or mpv fell back to software decoding."
+			say "    ABORTING rather than collecting evidence about the wrong"
+			say "    raster. Everything already shown was on the good raster;"
+			say "    anything after this point would not have been."
+			rc=1
+			break 2
+		fi
 		banner "$n"
 		say "    instance $n: $(( n + 1 )) blink(s)"
 		for p in $(seq 1 $(( n + 1 ))); do

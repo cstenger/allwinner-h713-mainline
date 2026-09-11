@@ -1,4 +1,44 @@
-# The two-axis scaler at 0x05180000 — NEGATIVE on our raster
+# The two-axis scaler at 0x05180000 — negative on the RGB raster only
+
+> ## CORRECTION, written the same day, before this was acted on
+>
+> **The photographs are RGB/OSD-path evidence, not video-path evidence, and the
+> original headline below ("NEGATIVE on our raster") overstated them.**
+>
+> mpv's own log settles it. The clip is 77 s. At EOF it looped, and on the loop
+> restart VAAPI failed:
+>
+> ```
+> [lavf] EOF reached.
+> [ffmpeg/video] h264: Failed to create decode context: 1 (operation failed).
+> [ffmpeg/video] h264: Failed setup for format vaapi: hwaccel initialisation returned error.
+> [vd] Using software decoding.
+> ```
+>
+> From that point mpv software-decoded into the **primary XR24 plane (34)**, and
+> the panel showed it through the RGB/OSD route — which is why the selector read
+> `0x29000000` and `plane[38] video-0` was detached at photo time. Both
+> photographs were taken minutes later, well past the 77 s mark.
+>
+> So what the two photographs compare is the scaler engaged vs bypassed **on the
+> software/RGB raster**. That is the gate this script's own header calls the
+> *weaker* one for this block, because `0x05180000` sits on the proc/video stage
+> (`proc-vs_*`, `proc-vde_*`).
+>
+> **The video path is unresolved.** The sweep's first pass (roughly t=11–57 s)
+> did run with hardware decode on the DECD video plane, and the operator was
+> watching — but no record was kept of that window, which is what prompted the
+> decision to film.
+>
+> **The test gate is what failed.** It checked the video plane was cycling once,
+> at t≈10 s, and never rechecked. A run that changes decode path halfway is
+> exactly what it was supposed to exclude. Fixed in
+> `tools/display/proc-scaler-sweep.sh`: the raster is now re-verified between
+> instances and the run aborts if PRIME scanout is lost, and the script refuses a
+> clip shorter than the planned run.
+>
+> The "three blocks, one explanation" section further down is **withdrawn** on
+> the same grounds — see the note there.
 
 2026-09-10, operator watching, photographed before and after. Cold-booted board,
 MIPS parked, kernel 6.18.38.
@@ -57,7 +97,29 @@ frozen buffer being rescanned.
   `0x108 = 0x02D00000`, `0x114[31] = 0` — exactly what `ProcWinNode::WriteReg`
   writes. So this was not a case of a half-configured stage.
 
-## The pattern across three blocks, which is now the real finding
+## The pattern across three blocks — WITHDRAWN
+
+> Written before the log was read, and it does not survive. The claim was that
+> three blocks had been tested and found inert on our raster, so we must be
+> injecting downstream of all of them. Checking what each test actually
+> exercised:
+>
+> | block | claimed | actually |
+> | --- | --- | --- |
+> | `0x05000000` | no scaler | **stands** — static, nothing to do with injection |
+> | `0x051c0120` | negative, stage on | **RGB raster only**; video side never run with the stage on |
+> | `0x05180000` | negative, bypass cleared | **RGB raster only**, per the correction above |
+>
+> So the "three independent confirmations" are one static fact and two
+> RGB-path nulls, on blocks that both sit on the **video** stage. That is not
+> three legs; it is one leg and two tests aimed at the wrong raster.
+>
+> The downstream-injection hypothesis may still be right — it was raised on
+> 2026-09-04 for good reasons — but this does not confirm it, and "stop testing
+> blocks one at a time" was the wrong call to draw from it. What follows is kept
+> as the record of the reasoning.
+
+## The original text of that section
 
 | block | what it is | result on our raster |
 | --- | --- | --- |

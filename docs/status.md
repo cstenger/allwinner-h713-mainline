@@ -78,7 +78,27 @@ limit.** What changed on 09-04 is that we now know *how stock does it*.
 > `tools/mips/block-map.py` for size; the survey is still sound for proving a
 > block is *unreachable*.
 >
-> **TESTED 2026-09-10 — NEGATIVE.**
+> **CORRECTION, same day: the test below is RGB-path evidence only, and the
+> "three blocks, one explanation" conclusion drawn from it is WITHDRAWN.**
+> The 77 s clip looped mid-run; VAAPI failed to re-initialise
+> (`Failed to create decode context: 1`) and mpv fell back to **software decode
+> into the primary XR24 plane**. Both photographs were taken after that, so they
+> compare scaler-engaged vs bypassed on the **RGB/OSD raster** — the gate this
+> block's own test calls the weaker one, because `0x05180000` sits on the
+> proc/video stage. **The video path is unresolved.** The sweep's first pass did
+> run on hardware decode with the operator watching, but nothing was recorded.
+> The gate checked the raster once at t≈10 s and never rechecked; it now
+> re-verifies between instances and refuses a clip shorter than the run.
+>
+> Also corrected: **`block-map.py` had a false-positive bug** — it did not
+> invalidate a base register when something else defined it, so
+> `move $s0, $a0` followed by `sw $t3, 0x6c($s0)` was reported as a write to
+> `0x051c006c` that does not exist. Fixed. The `0x05180000` finding is unchanged
+> (13 registers, verified by direct disassembly and live register match), but
+> the inflated counts quoted for `0x050c0000` (83) and `0x05140000` (72) were
+> wrong; corrected figures are 51 and 18.
+>
+> **TESTED 2026-09-10 — negative on the RGB raster.**
 > [reference/proc-scaler-2026-09-10/RESULT.md](reference/proc-scaler-2026-09-10/RESULT.md)
 > All four instances engaged at ratio `0x8000` (exactly one half, both axes),
 > bypass cleared, photographed engaged and restored with nothing else changed.
@@ -86,24 +106,31 @@ limit.** What changed on 09-04 is that we now know *how stock does it*.
 > been half the linear size. Frames were live (the pose differs between shots).
 > Writes stick and restore is exact, so the block is not gated.
 >
-> ### The real finding: three blocks, three nulls, one explanation
+> ### ~~The real finding: three blocks, three nulls~~ — WITHDRAWN
 >
-> | block | what it is | result |
+> | block | claimed | what the test actually exercised |
 > | --- | --- | --- |
-> | `0x05000000` | NR/composition — **no scaler at all** | n/a |
-> | `0x051c0120` | panel down-scaler, **vertical only** | negative, stage on |
-> | `0x05180000` | proc scaler, **two-axis** | negative, bypass cleared |
+> | `0x05000000` | no scaler | **stands** — static, unrelated to injection |
+> | `0x051c0120` | negative, stage on | **RGB raster only** |
+> | `0x05180000` | negative, bypass cleared | **RGB raster only** |
 >
-> Each was tested with its own bypass handled correctly, each already sat in the
-> state its own firmware node produces, and each is inert on our raster.
-> **We inject downstream of all of them** — in at AFBD, out at the `0x051c006c`
-> selector, bypassing the whole NR → DETN → Proc → Panel chain that every scaler
-> lives in. Raised for `0x05000000` on 09-04; now confirmed twice more.
+> One static fact and two RGB-path nulls, on blocks that both sit on the
+> **video** stage. Not three legs. The downstream-injection hypothesis may still
+> be right — it was raised on 09-04 for good reasons — but this does not confirm
+> it, and "stop testing blocks one at a time" was the wrong call to draw.
 >
-> **Stop testing blocks one at a time.** The next question is static: what does
-> `0x051c006c` select between, and do its sources enter downstream of the proc
-> stage? If yes, the whole WCE scaler family closes at once and the only route
-> is driving the window pipeline.
+> ### What the `0x051c006c` trace did establish
+>
+> **The display firmware never writes `0x051c006c`.** A corrected whole-image
+> scan finds 57 registers written in the LVDS block and the selector is not one
+> of them; nothing in `0x051c0060`–`0x051c0078` is touched. So the mux we use to
+> route video to the panel is not part of the MIPS window pipeline's own
+> configuration — on stock it must be set by the ARM-side Android driver, which
+> matches `lvds-006c-stock-causal-2026-08-31.md`: forcing it to our value blacked
+> out stock video for exactly the hold window.
+>
+> Still open: what its sources are and where they tap. That is the question, and
+> it is still static.
 
 ### Why our path cannot scale: we own the fetcher, not the pipeline
 
