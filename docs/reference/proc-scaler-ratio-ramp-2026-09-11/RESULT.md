@@ -62,6 +62,49 @@ The slivers at 0.500× and 0.375× are consistent with this rather than against
 it: magnifying 2–2.7× into a dark passage of the Leota clip leaves a mostly
 flat field. The monotonic quantity is the *zoom*, not the visible content.
 
+## REFINEMENT — it is magnification AND clipping, not either/or
+
+Added after the operator asked whether the slivers might be the face *clipped*
+rather than magnified. Re-examined at full resolution instead of on 520 px
+thumbnails, and the answer is **both**, which is a better model than the one
+above.
+
+**Clipping is real, and it is hard-edged.** In
+[zoom-step3-0.500x.jpg](zoom-step3-0.500x.jpg) the visible blob's right boundary
+is a perfectly straight vertical cut with flat grey on both sides; its left
+boundary is an organic jaw curve. In
+[zoom-step5-0.250x.jpg](zoom-step5-0.250x.jpg) the content sits inside a clean
+**rectangular window** roughly 295x320 px with straight edges on all four sides.
+Those are not content boundaries or soft falloff — the output is being confined
+to a rectangle.
+
+**Magnification is also real, and quantitative.** Measured against the baseline
+crop, both at the same scale:
+
+| step | ratio_h | predicted 1/ratio | measured | from |
+| --- | --- | --- | --- | --- |
+| 2 | 0.625× | 1.60× | **1.45×** | face width 340 vs 235 px |
+| 5 | 0.250× | 4.00× | **4.17×** | eye slit 250 vs 60 px |
+
+Vertical extent is essentially unchanged throughout, as expected with `ratio_v`
+left at unity — face height 340 → 315 px at step 2, within the drift of a moving
+subject.
+
+So `0x05180000` magnifies horizontally by `1/ratio_h`, and the result is then
+**clipped to a hard rectangular window** that shrinks and shifts right as the
+magnification grows. At step 2 the whole (enlarged) face still fits; by step 5
+only a small fragment of a 4×-enlarged face survives the clip.
+
+**The slivers were never evidence against magnification** — they are a clipped
+view of a magnified image. And the 09-11 "collapse to a sliver at the right edge"
+was the same thing: ratio `0x8000` is 2× magnification, not a failed downscale.
+
+**What the clip window most likely is:** the geometry registers this run
+deliberately left untouched — `0x2c` (out_w), `0x30` (out_h), `0x34` (in size),
+`0x40`. The firmware never sets a ratio without deriving matching geometry
+(`ReCalcInOutWin`), so a self-consistent pair is probably what produces a clean
+picture. That is the experiment after the next one.
+
 ## Which makes the firmware's own name for these stages the tell
 
 The stage table lists them as **`proc-vs_upscaler`** and
@@ -96,6 +139,12 @@ ratio_h = 0x20000  (2.0x)
   block* (it was derived from `CalcScalingRatio_2`, which belongs to the panel
   down-scaler — a different block with a different consumer).
 - **Clamped or inert** → upscale-only, and this route closes for 1080p→720p.
+
+The refinement above makes this prediction sharper and easier to read: if the
+scale factor is `1/ratio_h`, then `ratio_h = 0x18000` (1.5) should give **0.67×**
+— a horizontally squashed face, narrower than baseline, with **no clipping at
+all**, because a compressed image cannot overflow the clip window. A clean
+unclipped narrow face is the unambiguous positive to look for.
 
 Geometry stays untouched again, so the comparison is clean against this run.
 
