@@ -58,6 +58,15 @@
 #          tools/display/proc-scaler-sweep.sh --engage        # video raster
 #          tools/display/proc-scaler-sweep.sh --engage --rgb  # console raster
 #          BOARD=192.168.4.1 OUT_DIV=2 SWEEPS=2 ... --engage
+#          CLIP=/root/foo.mp4 SWEEPS=1 ... --engage
+#
+# CLIP LENGTH IS A CORRECTNESS CONSTRAINT, not a preference. The run must finish
+# before the clip ends: at EOF --loop-file=inf restarts the decoder, and that
+# restart is where VAAPI failed on 2026-09-10 ("Failed to create decode context:
+# 1"), dropping mpv to software decode into the primary plane and silently
+# moving the test onto the RGB raster. On this board the longest 720p clip is
+# leota-av-720p.mp4 at 77 s, so SWEEPS=1 (about 58 s including the gate) fits
+# and SWEEPS=2 (about 104 s) does not.
 set -uo pipefail
 
 BOARD=${BOARD:-192.168.4.1}
@@ -230,7 +239,7 @@ else
 	say "  Gated on the video plane cycling >= 2 distinct fb ids."
 	banner() { :; }
 	play=$($SSH "
-		for c in /root/leota-av-720p.mp4 /root/video-test/disp-720p.h265 \
+		for c in ${CLIP:-} /root/leota-av-720p.mp4 /root/video-test/disp-720p.h265 \
 		         /root/video-test/v02-1280x720-baseline.h264 \
 		         /root/video-test/*.h264 /root/leota-720p.h264; do
 			[ -f \"\$c\" ] && clip=\$c && break
@@ -277,8 +286,22 @@ PLAY
 	#
 	# So: refuse a clip shorter than the planned run, and re-check the raster
 	# between instances rather than trusting a single sample.
-	dur=$($SSH "ffprobe -v error -show_entries format=duration -of csv=p=0 \
-	      \$(sed -n 's|^exec mpv.* \(/[^ ]*\)$|\1|p' /tmp/pss-play.sh)" 2>/dev/null)
+	# Take the path from the gate's own "clip <path>" line, not by re-parsing
+	# pss-play.sh: the exec there is split over a line continuation, so an
+	# anchored sed silently matches nothing and the guard skips itself.
+	clip=$(printf '%s\n' "$play" | sed -n 's/^ *clip //p' | head -1)
+	dur=$($SSH "ffprobe -v error -show_entries format=duration -of csv=p=0 '$clip'" 2>/dev/null)
+	# Raw elementary streams carry no container duration. Fall back to counting
+	# packets -- leota-720p.h264 is 5 s and would otherwise pass unchecked.
+	if [ -z "$dur" ]; then
+		dur=$($SSH "
+			n=\$(ffprobe -v error -select_streams v:0 -count_packets \
+			     -show_entries stream=nb_read_packets -of csv=p=0 '$clip' 2>/dev/null)
+			r=\$(ffprobe -v error -select_streams v:0 \
+			     -show_entries stream=r_frame_rate -of csv=p=0 '$clip' 2>/dev/null)
+			awk -v n=\"\$n\" -v r=\"\$r\" 'BEGIN{split(r,a,\"/\"); if(a[2]==\"\")a[2]=1;
+			     if(a[1]>0 && n>0) printf \"%.1f\", n*a[2]/a[1]}'" 2>/dev/null)
+	fi
 	planned=$(awk -v on="$PULSE_ON" -v off="$PULSE_OFF" -v gap="$GAP" -v sw="$SWEEPS" \
 		-v inst="$INSTANCES" 'BEGIN{n=split(inst,a," ");t=0;
 		for(i=1;i<=n;i++) t+=(a[i]+1)*(on+off)+gap; printf "%.0f", t*sw}')
