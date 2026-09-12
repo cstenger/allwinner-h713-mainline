@@ -71,13 +71,19 @@ rd(){ $SSH "busybox devmem $(printf '0x%08x' $1) 32" 2>/dev/null; }
 wr(){ $SSH "busybox devmem $(printf '0x%08x' $1) 32 $(printf '0x%08x' $2)" >/dev/null 2>&1; }
 
 # Write, then read back, and refuse to continue silently if it did not stick.
+#
+# COMPARE CASE-INSENSITIVELY. busybox devmem prints uppercase hex, printf here
+# emits lowercase, so a straight string compare reports "DID NOT STICK" for any
+# value containing a..f -- a false negative that looks exactly like a register
+# refusing the write. It fired on the very first run of this script.
 wrv(){
-	local a=$1 v=$2 got
+	local a=$1 v=$2 got want
 	wr "$a" "$v"
-	got=$(rd "$a")
-	printf '    %#010x <- %#010x   reads %s%s\n' "$a" "$v" "$got" \
-	       "$( [ "$got" = "$(printf '0x%08x' $v)" ] || echo '   *** DID NOT STICK')"
-	[ "$got" = "$(printf '0x%08x' $v)" ]
+	got=$(rd "$a" | tr 'A-F' 'a-f')
+	want=$(printf '0x%08x' $v)
+	printf '    %#010x <- %s   reads %s%s\n' "$a" "$want" "$got" \
+	       "$( [ "$got" = "$want" ] || echo '   *** DID NOT STICK')"
+	[ "$got" = "$want" ]
 }
 
 check_gates(){
@@ -157,8 +163,8 @@ set)
 	# reads 0x0F008000). Writing the bare value would clobber them.
 	o=$(rd $(( BASE + 0x08 ))); wrv $(( BASE + 0x08 )) $(( (o & ~0x3fffff) | rh )) || exit 1
 	o=$(rd $(( BASE + 0x3c ))); wrv $(( BASE + 0x3c )) $(( (o & ~0x3fffff) | rv )) || exit 1
-	o=$(rd $(( BASE + 0x00 ))); wrv $(( BASE + 0x00 )) $(( (o & ~0xffff)   | ph )) || exit 1
-	o=$(rd $(( BASE + 0x38 ))); wrv $(( BASE + 0x38 )) $(( (o & ~0xffff)   | pv )) || exit 1
+	o=$(rd $(( BASE + 0x00 ))); wrv $(( BASE + 0x00 )) $(( (o & ~0xffff) | (ph & 0xffff) )) || exit 1
+	o=$(rd $(( BASE + 0x38 ))); wrv $(( BASE + 0x38 )) $(( (o & ~0xffff) | (pv & 0xffff) )) || exit 1
 	b=$(rd $(( BASE + 0x14 )))
 	wrv $(( BASE + 0x14 )) $(( b & ~(1 << 27) )) || exit 1
 
@@ -179,10 +185,14 @@ show)
 
 restore)
 	say "== restore: unity ratios, bypass set =="
-	o=$(rd $(( BASE + 0x08 ))); wrv $(( BASE + 0x08 )) $(( (o & ~0x3fffff) | UNITY ))
-	o=$(rd $(( BASE + 0x3c ))); wrv $(( BASE + 0x3c )) $(( (o & ~0x3fffff) | UNITY ))
-	o=$(rd $(( BASE + 0x00 ))); wrv $(( BASE + 0x00 )) $(( (o & ~0xffff) | ((UNITY+UNITY)>>2) ))
-	o=$(rd $(( BASE + 0x38 ))); wrv $(( BASE + 0x38 )) $(( (o & ~0xffff) | ((UNITY+UNITY)>>1) ))
+	# The phase fields are 16 bits and the unity V phase OVERFLOWS the naive
+	# formula: (unity+unity)>>1 = 0x10000, which truncates to 0 -- and 0 is
+	# exactly what the firmware leaves there. Mask, or restore writes 0x00110000
+	# where 0x00100000 belongs.
+	o=$(rd $(( BASE + 0x08 ))); wrv $(( BASE + 0x08 )) $(( (o & ~0x3fffff) | (UNITY & 0x3fffff) ))
+	o=$(rd $(( BASE + 0x3c ))); wrv $(( BASE + 0x3c )) $(( (o & ~0x3fffff) | (UNITY & 0x3fffff) ))
+	o=$(rd $(( BASE + 0x00 ))); wrv $(( BASE + 0x00 )) $(( (o & ~0xffff) | (((UNITY+UNITY)>>2) & 0xffff) ))
+	o=$(rd $(( BASE + 0x38 ))); wrv $(( BASE + 0x38 )) $(( (o & ~0xffff) | (((UNITY+UNITY)>>1) & 0xffff) ))
 	o=$(rd $(( BASE + 0x2c ))); wrv $(( BASE + 0x2c )) $(( (o & ~0xffff) | OUT_W ))
 	o=$(rd $(( BASE + 0x30 ))); wrv $(( BASE + 0x30 )) $(( (o & ~0xffff) | OUT_H ))
 	wrv $(( BASE + 0x34 )) $(( (OUT_W << 16) | OUT_H ))
