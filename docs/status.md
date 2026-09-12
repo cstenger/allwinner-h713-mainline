@@ -12,9 +12,13 @@ _Last updated: 2026-09-12._
 >
 > Full handoff: **[handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md)**
 >
-> **1080p on the 720p panel is possible by exactly one no-GPU route, both of its
-> hardware halves are confirmed on the board, and the driver work is now written
-> but has never run on the board** (patches 0098 + 0099, compile-tested only).
+> **1080p on the 720p panel is possible by exactly one no-GPU route, both
+> hardware halves are confirmed, and the driver is now WRITTEN AND RUNNING ON
+> THE BOARD** (patches 0098 + 0099). A genuine 960x544 framebuffer renders on
+> the panel — the last validation gap, now mostly closed. Two defects remain: a
+> source narrower than the panel **shears** at a 1280-pixel row length, and
+> vertical magnification does nothing. See
+> **[handoff-2026-09-12-driver-on-hardware.md](handoff-2026-09-12-driver-on-hardware.md)**.
 >
 > ```
 > 1920x1080 --[ VE power-of-two, decode-time ]--> 960x544

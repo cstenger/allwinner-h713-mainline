@@ -200,13 +200,17 @@ errand.
 
 ## 3. What still needs doing
 
-> **BOTH ARE NOW WRITTEN — 2026-09-12, later the same day.**
-> `patches/kernel/0098` (KMS) and `0099` (cedrus), both in `series`. The whole
-> series applies to a pristine tree and builds clean.
+> **BOTH ARE NOW WRITTEN AND RUN ON HARDWARE — 2026-09-12, later the same day.**
+> `patches/kernel/0098` (KMS) and `0099` (cedrus), both in `series`.
 >
-> **Nothing below has run on the board.** Compile-tested only. Everything in
-> §3.1–§3.3 is still the specification the code was written against, and §3.3
-> is still open: a genuine 960x544 framebuffer has never been scanned out.
+> **§3.3 IS MOSTLY CLOSED: a genuine 960x544 framebuffer now renders on the
+> panel.** It is not correct yet — a source narrower than the panel shears at a
+> 1280-pixel row length, and vertical magnification does nothing. The full
+> account, including what is proven, what is eliminated, and where to start
+> next, is in
+> **[handoff-2026-09-12-driver-on-hardware.md](handoff-2026-09-12-driver-on-hardware.md)**.
+> Read that instead of acting on §3.1–§3.3 below, which are the specification
+> the code was written against rather than a description of it.
 >
 > What the patches do differently from the sketch below:
 >

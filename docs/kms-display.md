@@ -102,8 +102,10 @@ scaling, crop, rotation, or alpha. The exact test and result are in
 > means dropping `DRM_PLANE_NO_SCALING`, advertising a scaling range, and
 > programming the upscaler from `atomic_update` — specified in §3.2 of
 > [handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md).
-> Note the gap named there: a genuine 960x544 framebuffer has never been scanned
-> out, so that change is also the first real test of it.
+> **Done and tested on hardware 2026-09-12** (patch 0098): a genuine 960x544
+> framebuffer now renders on the panel. Two defects remain — a narrower source
+> shears at a 1280-pixel row length, and vertical magnification does nothing.
+> See [handoff-2026-09-12-driver-on-hardware.md](handoff-2026-09-12-driver-on-hardware.md).
 
 Out-of-series patch 0078 is the first implementation of that shape. It keeps
 the proven RGB simple pipe and adds a manually initialized atomic overlay plane

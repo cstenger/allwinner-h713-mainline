@@ -238,10 +238,13 @@ attached, the display path can be brought up here, not only on the projector
              --[ proc upscaler 0x05180000, 1.333x ]--> 1280x720
    ```
 
-   Both halves are hardware-confirmed with exact register values, and **both
-   driver pieces are now written — patches 0098 (KMS) and 0099 (cedrus) — but
-   have never run on the board.** Compile-tested only; the whole series applies
-   clean. 0099 makes the 960x544 secondary output the V4L2 capture buffer,
+   Both halves are hardware-confirmed, and **both driver pieces are now written
+   AND RUNNING ON THE BOARD** — patches 0098 (KMS) and 0099 (cedrus). A genuine
+   960x544 framebuffer renders on the panel, which closes most of the last
+   validation gap. **Two defects remain:** a source narrower than the panel
+   *shears* at a 1280-pixel row length, and vertical magnification does nothing.
+   Full account, including nine registers eliminated and the live lead, in
+   [handoff-2026-09-12-driver-on-hardware.md](handoff-2026-09-12-driver-on-hardware.md). 0099 makes the 960x544 secondary output the V4L2 capture buffer,
    selected through `V4L2_SEL_TGT_COMPOSE`, with every DPB reference pointer
    routed through one helper onto per-buffer internal full-size frames (the
    risky half — a mistake there yields plausible corruption, not an error).
@@ -250,9 +253,12 @@ attached, the display path can be brought up here, not only on the projector
    The route costs **~8.5 dB** against a true 1.5x downscale and carries 56% of
    the panel's luma samples. It is the only no-GPU option, and it is not good.
 
-   **Next is an operator run**, and it closes §3.3 of the handoff: no genuine
-   960x544 framebuffer has ever been scanned out. Bisect any decode corruption
-   against the reference MD5s in `tools/video/va-decode-test.sh` first.
+   **Next is desk work, not board time:** the firmware feeds source registers
+   `0x020` and `0x030` from two *different* geometry structures (picture window
+   vs output window) and patch 0098 sets both to the source size. Type those
+   structures from the callers of the routine at `0x8b1a3ea0` and the shear
+   should follow. Do not resume by poking registers — nine are already
+   eliminated.
 
    Closed on the way there, none of them worth re-testing:
 
