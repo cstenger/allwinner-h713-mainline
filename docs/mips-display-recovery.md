@@ -7770,7 +7770,7 @@ addresses re-derived for `4380f1b3...`.
   experiments.
 - Treat `display.bin` and vendor image extracts as local-only research inputs.
   Record their hashes, but do not embed workstation-specific paths in defconfig.
-- Every patch-series edit must pass a fresh `build/build.sh kernel`; cached or
+- Every patch-series edit must pass a fresh `tools/build/build.sh kernel`; cached or
   previously published artifacts are not proof of the current tree.
 - A driver must return an error when its hardware does not become ready. Probe
   success and log messages must not conceal a failed reset/clock/firmware step.
@@ -7790,7 +7790,7 @@ Actions:
 
 Acceptance:
 
-- `build/build.sh kernel` applies every patch from a clean extraction.
+- `tools/build/build.sh kernel` applies every patch from a clean extraction.
 - `Image`, both board DTBs, modules, and the bench FIT are published.
 - The bench DTB has no enabled MIPS/display device and contains only the
   no-map firmware DRAM reservation.

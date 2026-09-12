@@ -200,6 +200,30 @@ errand.
 
 ## 3. What still needs doing
 
+> **BOTH ARE NOW WRITTEN — 2026-09-12, later the same day.**
+> `patches/kernel/0098` (KMS) and `0099` (cedrus), both in `series`. The whole
+> series applies to a pristine tree and builds clean.
+>
+> **Nothing below has run on the board.** Compile-tested only. Everything in
+> §3.1–§3.3 is still the specification the code was written against, and §3.3
+> is still open: a genuine 960x544 framebuffer has never been scanned out.
+>
+> What the patches do differently from the sketch below:
+>
+> - **3.1 took the safer shape.** All frame addresses — the current picture and
+>   every DPB reference, across all four codecs — now route through a single
+>   `cedrus_frame_addr()`, so there is exactly one place that can be wrong.
+>   Each capture buffer carries its own full-size reconstruction frame rather
+>   than a shared pool, because the DPB indexes by capture buffer.
+> - **The interface is `V4L2_SEL_TGT_COMPOSE`** on the capture queue, offered
+>   for H.264 only (the SDROT registers live in the H.264 engine block). A
+>   request is rounded down to a reachable power-of-two size and read back.
+> - **3.2 needed a DT change too** — the proc block was not mapped at all. The
+>   afbd node gains a fourth reg range, `proc` at `0x05180000`.
+>
+> The bisect harness §3.1 asks for is still the right first move: failure in
+> the DPB plumbing produces plausible corruption, not a clean error.
+
 Two pieces of driver work. Neither is small, and the first carries real risk.
 
 ### 3.1 cedrus: make the 960x544 secondary output the V4L2 capture buffer

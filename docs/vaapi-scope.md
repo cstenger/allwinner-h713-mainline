@@ -92,7 +92,7 @@ culprit. In play: `sun50i_h713_afbd`, `sunxi_cedrus`, `sunxi_scanout_dmabuf`,
 Make the crash legible rather than guessing at it. The debug kernel exists:
 
 ```
-KERNEL_CONFIG=kasan build/build.sh kernel     # -> build/out/h713-kernel-kasan.fit
+KERNEL_CONFIG=kasan tools/build/build.sh kernel     # -> build/out/h713-kernel-kasan.fit
 ```
 
 `patches/kernel/board/kasan.config` turns on generic KASAN (outline, plus

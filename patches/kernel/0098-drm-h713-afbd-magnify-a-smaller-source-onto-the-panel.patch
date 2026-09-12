@@ -1,0 +1,418 @@
+drm/h713-afbd: magnify a smaller source onto the panel
+
+Stage 2 of the only no-GPU route to 1080p on this 1280x720 panel.  The VE
+downscales at decode time to 960x544 (it can only halve or quarter each axis),
+and this patch takes that raster back up to the panel with the proc upscaler at
+0x05180000.  Hardware-confirmed on the panel 2026-09-12; see
+docs/handoff-2026-09-12-ve-scaledown.md.
+
+Before this, the plane declared DRM_PLANE_NO_SCALING and rejected any
+framebuffer that was not exactly 1280x720, so the decoder had nowhere to put a
+smaller frame.
+
+WHAT MADE THIS WORK IS PROC_IN_WIN AT 0x34, THE INPUT WINDOW.
+
+Every earlier attempt at this block set a ratio and left the geometry alone.
+0x34 reads 0x050002D0 -- {1280,720} -- on the live raster, so the block was
+being told its input was panel-sized while the ratio said magnify, and it
+confined the output to a hard-edged rectangle with flat grey around it.  That
+looked like a broken scaler for two sessions.  Setting it to the real input
+size makes the magnified picture fill the panel cleanly.
+
+The other two things this block will punish:
+
+  - Its registers carry live upper bits that belong to something else.
+    PROC_RATIO_H reads 0x43010000 and PROC_PHASE_H reads 0x0F008000 on a
+    running panel, so every field is read-modify-written.  A bare store
+    clobbers state we have never decoded.
+
+  - The V phase at unity is 0, not 0x10000: (unity + unity) >> 1 overflows the
+    16-bit field.  The masks make that fall out correctly rather than by luck.
+
+The block only ever magnifies -- ProcWinNode::CalcScaleRatio in the MIPS
+firmware cannot express an above-unity ratio, the field clamps, and a measured
+sweep of 0.8x/0.667x/0.5x was pixel-for-pixel identical to bypass -- so the
+plane advertises 1:1 as its minimum scale and refuses anything that would need
+shrinking.
+
+Source geometry is now derived from the framebuffer rather than assumed: the
+size, the 16x16 block count, both strides and the VideoInfo descriptor all
+follow fb->width/height.  An inherited 1920x1088 in those registers is exactly
+what once had the fetcher scanning past the end of a smaller buffer.
+
+The registers the driver touches are saved at probe and written back verbatim
+when video stops, so the 1280x720 RGB console that owns the panel afterwards
+gets the block in the state the MIPS firmware left it.
+
+Not yet exercised: a real 960x544 framebuffer has never been scanned out.  The
+upscaler was validated by magnifying a 960x544 window of a 1280x720 buffer,
+because the test tool hardcodes the panel size.  The configuration is
+identical, but that gap closes with this patch, not before it.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1717,8 +1717,9 @@
+ 			compatible = "allwinner,sun50i-h713-afbd";
+ 			reg = <0x05600000 0x400>,
+ 			      <0x05140000 0x1000>,
+-			      <0x051c0000 0x100>;
+-			reg-names = "afbd", "route", "lvds";
++			      <0x051c0000 0x100>,
++			      <0x05180000 0x200>;
++			reg-names = "afbd", "route", "lvds", "proc";
+ 			interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>;
+ 			clocks = <&ccu CLK_AFBD>,
+ 				 <&ccu CLK_BUS_DISP>;
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -102,6 +102,47 @@
+ #define H713_VIDEO_GAIN		0x144c0000
+ #define H713_VIDEO_SELECTOR	0x39000000
+ 
++/*
++ * Proc upscaler, instance 0 of four at 0x100 stride. Two independent axes.
++ * The block MAGNIFIES by 1/ratio and cannot shrink: ProcWinNode::CalcScaleRatio
++ * in the MIPS firmware only ever yields <= unity, the field clamps at unity,
++ * and a sweep of above-unity ratios was pixel-for-pixel identical to bypass.
++ * The firmware's own name for the stages is proc-vs_upscaler.
++ *
++ * Every one of these registers carries live upper bits that belong to
++ * something else (PROC_RATIO_H reads 0x43010000, PROC_PHASE_H reads
++ * 0x0F008000), so each field is read-modify-written. A bare store clobbers
++ * state we do not own and have never decoded.
++ */
++#define PROC_INSTANCE_STRIDE	0x100
++#define PROC_PHASE_H		0x00	/* [15:0] */
++#define PROC_RATIO_H		0x08	/* [21:0], 16.16, unity 0x10000 */
++#define PROC_BYPASS		0x14	/* bit 27: 1 = pass through */
++#define PROC_OUT_W		0x2c	/* [15:0] */
++#define PROC_OUT_H		0x30	/* [15:0] */
++#define PROC_IN_WIN		0x34	/* (w << 16) | h */
++#define PROC_PHASE_V		0x38	/* [15:0] */
++#define PROC_RATIO_V		0x3c	/* [21:0] */
++
++/*
++ * 4x is the largest magnification with a measurement behind it: a ratio of
++ * 0x4000 produced 4.17x against 4.00x commanded. The field itself would go
++ * further; nothing has looked at what the line buffers do there.
++ */
++#define H713_VIDEO_MAX_SCALE	(4 << 16)
++
++#define PROC_BYPASS_BIT		BIT(27)
++#define PROC_RATIO_MASK		GENMASK(21, 0)
++#define PROC_PHASE_MASK		GENMASK(15, 0)
++#define PROC_FIELD16_MASK	GENMASK(15, 0)
++#define PROC_UNITY		0x10000u
++
++/* Registers saved at probe so the block can be handed back untouched. */
++static const u16 h713_proc_saved_regs[] = {
++	PROC_PHASE_H, PROC_RATIO_H, PROC_BYPASS, PROC_OUT_W,
++	PROC_OUT_H, PROC_IN_WIN, PROC_PHASE_V, PROC_RATIO_V,
++};
++
+ /* The four queue slots are 4 bytes apart in each address ring. */
+ #define H713_VIDEO_SLOTS	4
+ 
+@@ -113,6 +154,7 @@
+ 	void __iomem *regs;
+ 	void __iomem *route_regs;
+ 	void __iomem *lvds_regs;
++	void __iomem *proc_regs;
+ 	struct clk *clk_afbd;
+ 	struct clk *clk_bus;
+ 	struct drm_display_mode mode;
+@@ -124,6 +166,10 @@
+ 	u32 gain_idle;
+ 	u32 selector_rgb;
+ 	bool video_active;
++	u32 proc_saved[ARRAY_SIZE(h713_proc_saved_regs)];
++	bool proc_engaged;
++	unsigned int video_info_w;
++	unsigned int video_info_h;
+ };
+ 
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+@@ -131,24 +177,32 @@
+ 	return container_of(drm, struct h713_afbd, drm);
+ }
+ 
+-static void h713_afbd_init_video_info(struct h713_afbd *h)
++/*
++ * The descriptor describes the SOURCE raster, which is not the panel raster
++ * once the proc upscaler is in the path: DECD fetches w x h and the upscaler
++ * magnifies that to 1280x720 downstream. The 1/16-pixel crop rectangle below
++ * stays at the vendor's canonical 1920x1080 coordinate space, which HWC
++ * normalises into regardless of the real picture size.
++ */
++static void h713_afbd_init_video_info(struct h713_afbd *h,
++				      unsigned int w, unsigned int h_px)
+ {
+ 	u32 *v = h->video_info;
+ 	u32 info = lower_32_bits(h->video_info_dma);
+ 
+ 	memset(v, 0, PAGE_SIZE);
+ 
+-	/* Vendor VideoInfo constructor plus linear 1280x720 SDR setters. */
++	/* Vendor VideoInfo constructor plus the linear NV12 SDR setters. */
+ 	v[0x00 / 4] = 0x61770000;
+ 	v[0x04 / 4] = 2;
+-	v[0x08 / 4] = H713_VIDEO_WIDTH;
+-	v[0x0c / 4] = H713_VIDEO_HEIGHT;
+-	v[0x10 / 4] = H713_VIDEO_WIDTH;
+-	v[0x14 / 4] = H713_VIDEO_HEIGHT;
++	v[0x08 / 4] = w;
++	v[0x0c / 4] = h_px;
++	v[0x10 / 4] = w;
++	v[0x14 / 4] = h_px;
+ 	v[0x18 / 4] = 0;
+-	v[0x1c / 4] = H713_VIDEO_HEIGHT;
++	v[0x1c / 4] = h_px;
+ 	v[0x20 / 4] = 0;
+-	v[0x24 / 4] = H713_VIDEO_WIDTH;
++	v[0x24 / 4] = w;
+ 	v[0x34 / 4] = 30000;
+ 	v[0x38 / 4] = 30000;
+ 	v[0x40 / 4] = 0;
+@@ -157,7 +211,7 @@
+ 	v[0x4c / 4] = 0xffff0000;
+ 	v[0x50 / 4] = 1;
+ 	v[0x54 / 4] = 0xffff0000;
+-	v[0x58 / 4] = H713_VIDEO_WIDTH;
++	v[0x58 / 4] = w;
+ 	v[0x5c / 4] = 0;
+ 	v[0x60 / 4] = 0;
+ 	v[0x64 / 4] = info + 144;
+@@ -172,6 +226,9 @@
+ 	v[0x88 / 4] = 1080 << 4;
+ 	v[0x8c / 4] = 2;
+ 
++	h->video_info_w = w;
++	h->video_info_h = h_px;
++
+ 	dma_wmb();
+ }
+ 
+@@ -220,6 +277,76 @@
+ 	writel(1, h->regs + AFBD_READY);
+ }
+ 
++static void h713_proc_rmw(struct h713_afbd *h, u32 off, u32 mask, u32 val)
++{
++	u32 reg = readl(h->proc_regs + off);
++
++	writel((reg & ~mask) | (val & mask), h->proc_regs + off);
++}
++
++static void h713_proc_save(struct h713_afbd *h)
++{
++	unsigned int i;
++
++	for (i = 0; i < ARRAY_SIZE(h713_proc_saved_regs); i++)
++		h->proc_saved[i] = readl(h->proc_regs +
++					 h713_proc_saved_regs[i]);
++}
++
++static void h713_proc_restore(struct h713_afbd *h)
++{
++	unsigned int i;
++
++	if (!h->proc_engaged)
++		return;
++
++	for (i = 0; i < ARRAY_SIZE(h713_proc_saved_regs); i++)
++		writel(h->proc_saved[i],
++		       h->proc_regs + h713_proc_saved_regs[i]);
++	h->proc_engaged = false;
++}
++
++/*
++ * Magnify in_w x in_h up to out_w x out_h.
++ *
++ * The ratio is a source step in 16.16: unity walks the source one pixel per
++ * output pixel, and anything below unity magnifies by 1/ratio. Phase is the
++ * initial sample position, and the two axes shift it differently -- H by two
++ * bits, V by one -- which is the firmware's own arithmetic, not a guess.
++ *
++ * PROC_IN_WIN is the register this whole route turned on. Left at the panel
++ * size while the ratio says magnify, the block confines its output to a
++ * hard-edged rectangle with flat grey around it, which is what every earlier
++ * magnification attempt saw and misread as a broken scaler.
++ */
++static void h713_proc_configure(struct h713_afbd *h,
++				unsigned int in_w, unsigned int in_h,
++				unsigned int out_w, unsigned int out_h)
++{
++	u32 ratio_h = ((u32)in_w << 16) / out_w;
++	u32 ratio_v = ((u32)in_h << 16) / out_h;
++
++	h713_proc_rmw(h, PROC_IN_WIN, ~0u, (in_w << 16) | in_h);
++	h713_proc_rmw(h, PROC_OUT_W, PROC_FIELD16_MASK, out_w);
++	h713_proc_rmw(h, PROC_OUT_H, PROC_FIELD16_MASK, out_h);
++	h713_proc_rmw(h, PROC_RATIO_H, PROC_RATIO_MASK, ratio_h);
++	h713_proc_rmw(h, PROC_RATIO_V, PROC_RATIO_MASK, ratio_v);
++	h713_proc_rmw(h, PROC_PHASE_H, PROC_PHASE_MASK,
++		      (PROC_UNITY + ratio_h) >> 2);
++	h713_proc_rmw(h, PROC_PHASE_V, PROC_PHASE_MASK,
++		      (PROC_UNITY + ratio_v) >> 1);
++
++	/* Engage last, once the geometry it will act on is already in place. */
++	h713_proc_rmw(h, PROC_BYPASS, PROC_BYPASS_BIT, 0);
++	h->proc_engaged = true;
++
++	drm_dbg_kms(&h->drm,
++		    "proc: %ux%u -> %ux%u, ratio %#x/%#x, phase %#x/%#x\n",
++		    in_w, in_h, out_w, out_h, ratio_h, ratio_v,
++		    (u32)(((PROC_UNITY + ratio_h) >> 2) & PROC_PHASE_MASK),
++		    (u32)(((PROC_UNITY + ratio_v) >> 1) & PROC_PHASE_MASK));
++}
++
+ static void h713_afbd_video_stop(struct h713_afbd *h)
+ {
+ 	unsigned int i;
+@@ -243,6 +370,13 @@
+ 	writel(0, h->regs + AFBD_VIDEO_DIRTY);
+ 	writel(h->gain_idle, h->route_regs + 0x508);
+ 
++	/*
++	 * Hand the scaler back exactly as it was found. The RGB console that
++	 * is about to own the panel again is 1280x720 native, and the values
++	 * saved at probe are the ones the MIPS firmware left for it.
++	 */
++	h713_proc_restore(h);
++
+ 	/* Restore and commit RGB before selecting it downstream. */
+ 	writel(h->rgb_ctrl_active, h->regs + AFBD_CTRL);
+ 	writel(1, h->regs + AFBD_READY);
+@@ -268,9 +402,14 @@
+ 	if (IS_ERR(crtc_state))
+ 		return PTR_ERR(crtc_state);
+ 
++	/*
++	 * Upscale only. The proc block at 0x05180000 magnifies and physically
++	 * cannot shrink, so a source larger than the panel has nowhere to go:
++	 * that downscale has to happen in the VE at decode time instead.
++	 */
+ 	ret = drm_atomic_helper_check_plane_state(new_state, crtc_state,
+ 						  DRM_PLANE_NO_SCALING,
+-						  DRM_PLANE_NO_SCALING,
++						  H713_VIDEO_MAX_SCALE,
+ 						  false, false);
+ 	if (ret)
+ 		return ret;
+@@ -278,18 +417,23 @@
+ 	fb = new_state->fb;
+ 	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
+ 	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
+-	    fb->width != H713_VIDEO_WIDTH ||
+-	    fb->height != H713_VIDEO_HEIGHT ||
+-	    fb->pitches[0] != H713_VIDEO_STRIDE ||
+-	    fb->pitches[1] != H713_VIDEO_STRIDE ||
++	    fb->pitches[0] != fb->width ||
++	    fb->pitches[1] != fb->width ||
+ 	    new_state->src_x || new_state->src_y ||
+-	    new_state->src_w != H713_VIDEO_WIDTH << 16 ||
+-	    new_state->src_h != H713_VIDEO_HEIGHT << 16 ||
++	    new_state->src_w != fb->width << 16 ||
++	    new_state->src_h != fb->height << 16 ||
+ 	    new_state->crtc_x || new_state->crtc_y ||
+ 	    new_state->crtc_w != H713_VIDEO_WIDTH ||
+ 	    new_state->crtc_h != H713_VIDEO_HEIGHT)
+ 		return -EINVAL;
+ 
++	/*
++	 * AFBD_VIDEO_BLOCK_M1 counts 16x16 blocks, so a source that is not a
++	 * whole number of them has no representation in the fetcher.
++	 */
++	if (fb->width % 16 || fb->height % 16 || !fb->width || !fb->height)
++		return -EINVAL;
++
+ 	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
+ 	c = drm_fb_dma_get_gem_addr(fb, new_state, 1);
+ 	if (!y || !c || upper_32_bits(y) || upper_32_bits(c))
+@@ -303,12 +447,17 @@
+ {
+ 	struct drm_plane_state *new_state;
+ 	struct h713_afbd *h = to_h713(plane->dev);
++	struct drm_framebuffer *fb;
++	unsigned int src_w, src_h;
+ 	dma_addr_t y, c;
+ 	unsigned int i;
+ 
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+-	y = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 0);
+-	c = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 1);
++	fb = new_state->fb;
++	src_w = fb->width;
++	src_h = fb->height;
++	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
++	c = drm_fb_dma_get_gem_addr(fb, new_state, 1);
+ 
+ 	/* The hardware mux is exclusive: quiesce RGB before source 0. */
+ 	if (!h->video_active) {
+@@ -318,10 +467,19 @@
+ 		h713_afbd_wait_ready(h, AFBD_READY, "RGB disable");
+ 	}
+ 
+-	writel(H713_VIDEO_SIZE_M1, h->regs + AFBD_VIDEO_SIZE_M1);
+-	writel(H713_VIDEO_BLOCK_M1, h->regs + AFBD_VIDEO_BLOCK_M1);
+-	writel(H713_VIDEO_STRIDE, h->regs + AFBD_VIDEO_Y_STRIDE);
+-	writel(H713_VIDEO_STRIDE, h->regs + AFBD_VIDEO_C_STRIDE);
++	/*
++	 * Source geometry follows the framebuffer, not the panel. A stale
++	 * 1920x1088 inherited here is what made the fetcher scan past the end
++	 * of a smaller buffer, so it is derived rather than assumed.
++	 */
++	if (src_w != h->video_info_w || src_h != h->video_info_h)
++		h713_afbd_init_video_info(h, src_w, src_h);
++
++	writel(((src_h - 1) << 16) | (src_w - 1), h->regs + AFBD_VIDEO_SIZE_M1);
++	writel(((src_h / 16 - 1) << 16) | (src_w / 16 - 1),
++	       h->regs + AFBD_VIDEO_BLOCK_M1);
++	writel(fb->pitches[0], h->regs + AFBD_VIDEO_Y_STRIDE);
++	writel(fb->pitches[1], h->regs + AFBD_VIDEO_C_STRIDE);
+ 	writel(1, h->regs + AFBD_VIDEO_GATE);
+ 	writel(0, h->regs + AFBD_VIDEO_FIELD);
+ 	writel(0x00000122, h->regs + AFBD_VIDEO_RING_MUX);
+@@ -342,6 +500,18 @@
+ 	writel(1, h->regs + AFBD_VIDEO_DIRTY);
+ 
+ 	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
++
++	/*
++	 * Scale before the source goes live, so the first frame the panel sees
++	 * is already the right size. A source smaller than the panel with the
++	 * upscaler still bypassed would show a corner of the picture.
++	 */
++	if (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT)
++		h713_proc_configure(h, src_w, src_h,
++				    H713_VIDEO_WIDTH, H713_VIDEO_HEIGHT);
++	else
++		h713_proc_restore(h);
++
+ 	writel(H713_VIDEO_CTRL_ACTIVE, h->regs + AFBD_VIDEO_CTRL);
+ 	writel(1, h->regs + AFBD_VIDEO_READY);
+ 	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
+@@ -578,6 +748,9 @@
+ 	h->lvds_regs = devm_platform_ioremap_resource_byname(pdev, "lvds");
+ 	if (IS_ERR(h->lvds_regs))
+ 		return PTR_ERR(h->lvds_regs);
++	h->proc_regs = devm_platform_ioremap_resource_byname(pdev, "proc");
++	if (IS_ERR(h->proc_regs))
++		return PTR_ERR(h->proc_regs);
+ 
+ 	irq = platform_get_irq(pdev, 0);
+ 	if (irq < 0)
+@@ -644,11 +817,12 @@
+ 	if (upper_32_bits(h->video_info_dma))
+ 		return dev_err_probe(dev, -ERANGE,
+ 				     "VideoInfo DMA address is above 4 GiB\n");
+-	h713_afbd_init_video_info(h);
++	h713_afbd_init_video_info(h, H713_VIDEO_WIDTH, H713_VIDEO_HEIGHT);
+ 
+ 	h->rgb_ctrl_active = readl(h->regs + AFBD_CTRL);
+ 	h->video_ctrl_idle = readl(h->regs + AFBD_VIDEO_CTRL);
+ 	h->gain_idle = readl(h->route_regs + 0x508);
++	h713_proc_save(h);
+ 	h->selector_rgb = readl(h->lvds_regs + 0x06c);
+ 	if (h->mode.hdisplay != H713_VIDEO_WIDTH ||
+ 	    h->mode.vdisplay != H713_VIDEO_HEIGHT ||

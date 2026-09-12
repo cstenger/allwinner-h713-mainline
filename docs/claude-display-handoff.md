@@ -140,7 +140,7 @@ why its output was always perfect.
 
 Artifact hashes move on every rebuild -- U-Boot embeds a build timestamp -- so
 the commit is the source identity, not the hash. Rebuild with
-`./build/build.sh uboot`.
+`./tools/build/build.sh uboot`.
 
 **The banner names the last commit, not the code.** A build made with
 uncommitted edits reports `g<previous-commit>-dirty`, so a log can truthfully

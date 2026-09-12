@@ -12,7 +12,7 @@ just priority. See [status.md](status.md) for what already works.
 - **The kernel is a patch series, and that's its home by design.**
   `patches/kernel/` applied to a pinned mainline tarball is deliberate (the tree
   is too big to fork, and this keeps our delta reviewable + rebasable). Driver
-  work = edit the series + `build/build.sh kernel`. No "kernel fork" is needed;
+  work = edit the series + `tools/build/build.sh kernel`. No "kernel fork" is needed;
   what *is* worth adding is a hackable persistent tree for iteration (Phase 1).
 - **UART is the recovery anchor.** It is now the reliable U-Boot default, while
   ACM is an explicit faster mode. Networking/SSH still removes the throughput
@@ -238,14 +238,21 @@ attached, the display path can be brought up here, not only on the projector
              --[ proc upscaler 0x05180000, 1.333x ]--> 1280x720
    ```
 
-   Both halves are hardware-confirmed with exact register values; **neither is
-   built.** What remains is two pieces of driver work, specified in §3 of that
-   handoff: cedrus must make the 960x544 secondary output the V4L2 capture
-   buffer (the risky half — the DPB reference pointers must stay aimed at
-   internal full-size primaries), and `sun50i-h713-afbd.c` must stop declaring
-   `DRM_PLANE_NO_SCALING` and rejecting anything that is not exactly 1280x720.
+   Both halves are hardware-confirmed with exact register values, and **both
+   driver pieces are now written — patches 0098 (KMS) and 0099 (cedrus) — but
+   have never run on the board.** Compile-tested only; the whole series applies
+   clean. 0099 makes the 960x544 secondary output the V4L2 capture buffer,
+   selected through `V4L2_SEL_TGT_COMPOSE`, with every DPB reference pointer
+   routed through one helper onto per-buffer internal full-size frames (the
+   risky half — a mistake there yields plausible corruption, not an error).
+   0098 drops `DRM_PLANE_NO_SCALING`, accepts the smaller source, and programs
+   the proc upscaler, which also needed a DT reg range.
    The route costs **~8.5 dB** against a true 1.5x downscale and carries 56% of
    the panel's luma samples. It is the only no-GPU option, and it is not good.
+
+   **Next is an operator run**, and it closes §3.3 of the handoff: no genuine
+   960x544 framebuffer has ever been scanned out. Bisect any decode corruption
+   against the reference MD5s in `tools/video/va-decode-test.sh` first.
 
    Closed on the way there, none of them worth re-testing:
 

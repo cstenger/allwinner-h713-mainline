@@ -12,8 +12,9 @@ _Last updated: 2026-09-12._
 >
 > Full handoff: **[handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md)**
 >
-> **1080p on the 720p panel is possible by exactly one no-GPU route, and both of
-> its hardware halves are now confirmed on the board. It is not built.**
+> **1080p on the 720p panel is possible by exactly one no-GPU route, both of its
+> hardware halves are confirmed on the board, and the driver work is now written
+> but has never run on the board** (patches 0098 + 0099, compile-tested only).
 >
 > ```
 > 1920x1080 --[ VE power-of-two, decode-time ]--> 960x544
