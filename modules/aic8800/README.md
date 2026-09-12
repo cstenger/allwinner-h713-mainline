@@ -7,7 +7,7 @@ boards: **WiFi over SDIO** (`mmc1@0x04021000`) and **Bluetooth over UART HCI**
 ## Where the source comes from
 
 **Not here.** The source is the `external/aic8800` submodule, patched by
-`build/build.sh aic8800` the same way the kernel is:
+`tools/build/build.sh aic8800` the same way the kernel is:
 
     external/aic8800 @ AIC8800_COMMIT (submodule, HEAD asserted at build time)
       -> apply the repo's own debian/patches/series   (vendor kernel-compat)
@@ -71,8 +71,8 @@ Two things about firmware are easy to get wrong and both stop `wlan0` appearing:
 
 ## Build
 
-`build/build.sh aic8800` builds all three against the pinned kernel and stages
-the `.ko` to `build/out/modules/`. `build/build.sh all` includes it after the
+`tools/build/build.sh aic8800` builds all three against the pinned kernel and stages
+the `.ko` to `build/out/modules/`. `tools/build/build.sh all` includes it after the
 kernel stage. `tools/rootfs/build.sh` installs the modules (into
 `/lib/modules/$KREL/updates/aic8800/`, with a vermagic check) and the pinned
 firmware, and adds `/etc/modules-load.d/aic8800.conf` for boot autoload.

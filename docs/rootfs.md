@@ -40,7 +40,7 @@ inside it. Host sudo/root access is not used.
 The kernel must have been built first:
 
 ```
-build/build.sh kernel
+tools/build/build.sh kernel
 ```
 
 ## Build

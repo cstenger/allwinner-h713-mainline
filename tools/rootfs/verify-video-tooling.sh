@@ -20,7 +20,9 @@
 set -euo pipefail
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-ROOTFS=${1:-$PROJECT_ROOT/build/out/rootfs.tar}
+# shellcheck source=../../config/paths.sh
+source "$PROJECT_ROOT/config/paths.sh"
+ROOTFS=${1:-$H713_BUILD_DIR/out/rootfs.tar}
 ORIGINAL_ARGS=("$@")
 
 [ -e "$ROOTFS" ] || { echo "error: no such rootfs: $ROOTFS" >&2; exit 1; }

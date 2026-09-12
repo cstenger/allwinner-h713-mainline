@@ -21,6 +21,8 @@
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=../../config/paths.sh
+source "$ROOT/config/paths.sh"
 BOARD=${BOARD:-192.168.4.1}
 SSH="ssh -o ConnectTimeout=8 root@$BOARD"
 drift=0
@@ -38,14 +40,14 @@ echo "=== kernel module (sunxi-cedrus) ==="
 # the sysrq fragment, and a different fragment set is a different tree.
 KERNEL_CONFIG=${KERNEL_CONFIG:-sysrq}
 export KERNEL_CONFIG
-tree=$(cd "$ROOT" && build/build.sh kernel-tree 2>/dev/null)
+tree=$(cd "$ROOT" && tools/build/build.sh kernel-tree 2>/dev/null)
 echo "    config: KERNEL_CONFIG=$KERNEL_CONFIG"
 ko=$(find "$tree" -name sunxi-cedrus.ko -print -quit 2>/dev/null)
 
 if [ -z "${ko:-}" ]; then
 	echo "    no module built for this configuration -- expected it under"
 	echo "    ${tree:-<build.sh could not name a tree>}"
-	echo "    fix: KERNEL_CONFIG=$KERNEL_CONFIG build/build.sh kernel"
+	echo "    fix: KERNEL_CONFIG=$KERNEL_CONFIG tools/build/build.sh kernel"
 	drift=1
 else
 	host_md5=$(md5sum "$ko" | cut -d' ' -f1)

@@ -1,8 +1,9 @@
-# Build artifacts and large binaries — never committed
-build/out/
-build/cache/
-build/uboot-*/
-build/aic8800-*/
+# Build artifacts and large binaries — never committed.
+#
+# build/ is generated output only; the scripts that produce it live in
+# tools/build/, so the whole directory is ignored rather than enumerated
+# subdirectory by subdirectory. Keep it pruned — see config/paths.sh.
+/build/
 *.bin
 *.fit
 *.img

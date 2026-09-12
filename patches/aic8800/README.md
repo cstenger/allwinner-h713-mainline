@@ -100,7 +100,7 @@ never blind.
   `#if LINUX_VERSION_CODE`; ours hardcoded the new signatures and so only built
   on new kernels.
 - **`KDIR ?= /opt/captcha/kernel/linux-6.16.7`** and its `PWD`/`KVER` siblings —
-  a hardcoded path from someone else's build machine. `build/build.sh` passes
+  a hardcoded path from someone else's build machine. `tools/build/build.sh` passes
   `KDIR` itself.
 - **~1450 lines of vendor development** we were simply two years behind on
   (D80N/D80X2/DC chip support, refactoring, log-string fixes). Taking vendor's

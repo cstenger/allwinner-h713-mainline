@@ -301,7 +301,7 @@ host-side U-Boot upload.
 2. Build the restore SPL:
 
    ```
-   build/uboot-build.sh "$PWD/build/uboot-felmmc" hy200_h713_felmmc_defconfig spl/sunxi-spl.bin
+   tools/build/uboot-build.sh "$PWD/build/uboot-felmmc" hy200_h713_felmmc_defconfig spl/sunxi-spl.bin
    cp build/uboot-felmmc/spl/sunxi-spl.bin build/out/h713-restore-spl.bin
    ```
 

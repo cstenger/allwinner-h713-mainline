@@ -9,16 +9,20 @@
 # (clang / ld.lld) — see config/toolchain.md.
 #
 # Usage:
-#   build/build.sh [all|bl31|uboot|kernel|aic8800|images]   # default: all
+#   tools/build/build.sh [all|bl31|uboot|kernel|aic8800|images]   # default: all
 #
 # Env:
 #   BOARD=ddr3|lpddr3   board profile (default ddr3): ddr3=HY200 QZ713DF_A1 bench, lpddr3=HY200 QZ713_V2 projector
 #   JOBS=N              parallelism (default: nproc)
+#   H713_BUILD_DIR=DIR  where artifacts go (default: build/; see config/paths.sh)
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-# shellcheck source=../config/versions.env
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=../../config/versions.env
 source "$ROOT/config/versions.env"
+# shellcheck source=../../config/paths.sh
+source "$ROOT/config/paths.sh"
+BUILD=$H713_BUILD_DIR
 
 BOARD=${BOARD:-ddr3}
 JOBS=${JOBS:-$(nproc)}
@@ -28,8 +32,8 @@ JOBS=${JOBS:-$(nproc)}
 # source tree instead of quietly reusing the production one's objects, and its
 # outputs are suffixed so it cannot overwrite the FIT the board boots from.
 KERNEL_CONFIG=${KERNEL_CONFIG:-}
-OUT="$ROOT/build/out"
-CACHE="$ROOT/build/cache"
+OUT="$BUILD/out"
+CACHE="$BUILD/cache"
 UBOOT="$ROOT/external/u-boot"
 ATF="$ROOT/external/arm-trusted-firmware"
 mkdir -p "$OUT" "$CACHE"
@@ -103,7 +107,7 @@ uboot_make() {
 build_uboot() {
   have
   [ -f "$OUT/bl31.bin" ] || build_bl31
-  local O="$ROOT/build/uboot-$BOARD"
+  local O="$BUILD/uboot-$BOARD"
   log "U-Boot  ($UBOOT_DEFCONFIG, board=$BOARD)"
   uboot_make "$O" "$UBOOT_DEFCONFIG"
   uboot_make "$O" -j"$JOBS"
@@ -115,7 +119,7 @@ build_uboot() {
 prepare_kernel() {
   local digest tree
   digest=$(kernel_inputs_digest)
-  tree="$ROOT/build/linux-$KERNEL_VERSION-$digest"
+  tree="$BUILD/linux-$KERNEL_VERSION-$digest"
   local tarball="$CACHE/linux-$KERNEL_VERSION.tar.xz"
   if [ -f "$tree/.h713-inputs-$digest" ]; then echo "$tree"; return; fi
   if [ -e "$tree" ]; then
@@ -141,7 +145,7 @@ prepare_kernel() {
   fi
 
   local tmp
-  tmp=$(mktemp -d "$ROOT/build/.linux-$KERNEL_VERSION.XXXXXX")
+  tmp=$(mktemp -d "$BUILD/.linux-$KERNEL_VERSION.XXXXXX")
   log "extract + patch linux-$KERNEL_VERSION" >&2
   tar -C "$tmp" --strip-components=1 -xf "$tarball"
   local n=0 p
@@ -163,12 +167,12 @@ prepare_kernel() {
 # locate a mkimage: prefer one the U-Boot stage already built, else build tools-only
 find_mkimage() {
   local m
-  for m in "$ROOT"/build/uboot-*/tools/mkimage; do [ -x "$m" ] && { echo "$m"; return; }; done
-  m="$ROOT/build/uboot-tools/tools/mkimage"
+  for m in "$BUILD"/uboot-*/tools/mkimage; do [ -x "$m" ] && { echo "$m"; return; }; done
+  m="$BUILD/uboot-tools/tools/mkimage"
   if [ ! -x "$m" ]; then
     log "building mkimage (u-boot tools-only)" >&2
-    make -C "$UBOOT" O="$ROOT/build/uboot-tools" HOSTCC=clang tools-only_defconfig >/dev/null 2>&1
-    make -C "$UBOOT" O="$ROOT/build/uboot-tools" HOSTCC=clang -j"$JOBS" tools-only >/dev/null 2>&1
+    make -C "$UBOOT" O="$BUILD/uboot-tools" HOSTCC=clang tools-only_defconfig >/dev/null 2>&1
+    make -C "$UBOOT" O="$BUILD/uboot-tools" HOSTCC=clang -j"$JOBS" tools-only >/dev/null 2>&1
   fi
   [ -x "$m" ] && echo "$m"
 }
@@ -265,7 +269,7 @@ verify_aic8800_checkout() {
 prepare_aic8800() {
   local digest tree src
   digest=$(aic8800_inputs_digest)
-  tree="$ROOT/build/aic8800-${AIC8800_COMMIT:0:12}-$digest"
+  tree="$BUILD/aic8800-${AIC8800_COMMIT:0:12}-$digest"
   src="$ROOT/external/aic8800"
   if [ -f "$tree/.h713-inputs-$digest" ]; then echo "$tree"; return; fi
   if [ -e "$tree" ]; then
@@ -275,7 +279,7 @@ prepare_aic8800() {
 
   verify_aic8800_checkout "$src" || return 1
 
-  local tmp; tmp=$(mktemp -d "$ROOT/build/.aic8800.XXXXXX")
+  local tmp; tmp=$(mktemp -d "$BUILD/.aic8800.XXXXXX")
   log "copy + patch aic8800 (vendor series, then ours)" >&2
   # Only src/ and debian/ are used, matching what the tarball extraction took.
   cp -a "$src/src" "$src/debian" "$tmp/"
@@ -303,7 +307,7 @@ prepare_aic8800() {
   # context matching -- which is what makes the next upstream bump survivable.
   local sub="$tmp/$AIC8800_SUBTREE"
   [ -d "$sub" ] || { rm -rf "$tmp"; echo "error: subtree missing: $AIC8800_SUBTREE" >&2; return 1; }
-  local stage; stage=$(mktemp -d "$ROOT/build/.aic8800-sdio.XXXXXX")
+  local stage; stage=$(mktemp -d "$BUILD/.aic8800-sdio.XXXXXX")
   cp -a "$sub/." "$stage/"
   rm -rf "$tmp"
   git -C "$stage" init -q
@@ -335,7 +339,7 @@ prepare_aic8800() {
 build_aic8800() {
   local tree; tree=$(prepare_kernel)
   [ -f "$tree/Module.symvers" ] || {
-    echo "error: kernel not built (no Module.symvers in $tree) — run build/build.sh kernel first" >&2
+    echo "error: kernel not built (no Module.symvers in $tree) — run tools/build/build.sh kernel first" >&2
     return 1
   }
   local moddir; moddir=$(prepare_aic8800)
@@ -414,7 +418,7 @@ build_images() {
   done
   for image in "${files[@]}"; do
     [ -f "$OUT/$image" ] || {
-      echo "error: missing $OUT/$image; run build/build.sh all first" >&2
+      echo "error: missing $OUT/$image; run tools/build/build.sh all first" >&2
       return 1
     }
   done
@@ -440,6 +444,6 @@ case "${1:-all}" in
   # says?" must identify the tree the same way the build does, and the only
   # way to guarantee that is to ask the build. Honours KERNEL_CONFIG.
   kernel-tree)
-    printf '%s/linux-%s-%s\n' "$ROOT/build" "$KERNEL_VERSION" "$(kernel_inputs_digest)" ;;
+    printf '%s/linux-%s-%s\n' "$BUILD" "$KERNEL_VERSION" "$(kernel_inputs_digest)" ;;
   *) echo "usage: $0 [all|bl31|uboot|kernel|aic8800|images|kernel-tree]" >&2; exit 2 ;;
 esac

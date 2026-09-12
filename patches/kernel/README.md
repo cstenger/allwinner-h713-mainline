@@ -2,7 +2,7 @@
 
 The H713 has no mainline kernel support yet, so the kernel is carried as a
 **patch series applied to a pinned mainline tarball** (see
-`config/versions.env` → `KERNEL_VERSION`), rather than a fork. `build/build.sh
+`config/versions.env` → `KERNEL_VERSION`), rather than a fork. `tools/build/build.sh
 kernel` fetches `linux-$KERNEL_VERSION`, applies these in `series` order with
 `patch -p1`, then builds with `board/hy200_qz713df_a1_defconfig`.
 
@@ -148,13 +148,13 @@ descriptor-level RE of the vendor `allwinner,sunxi-ce` driver (source
 unavailable) for no benefit — the A53's ARMv8 AES/SHA already outrun it. See the
 roadmap and `docs/status.md`.
 
-With these patches in place `build/build.sh kernel` emits both DTBs and a bench-only
+With these patches in place `tools/build/build.sh kernel` emits both DTBs and a bench-only
 bootable FIT (`build/out/h713-kernel.fit`: gzip Image + bench DTB, load/entry
 `0x48000000`).
 
 ## Debug kernels (`board/*.config`)
 
-`KERNEL_CONFIG=name[,name…] build/build.sh kernel` merges
+`KERNEL_CONFIG=name[,name…] tools/build/build.sh kernel` merges
 `board/<name>.config` over the board defconfig. This is for **diagnostics
 only** — the shipping kernel is the defconfig alone.
 

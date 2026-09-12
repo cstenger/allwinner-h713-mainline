@@ -35,6 +35,8 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=../../config/paths.sh
+source "$ROOT/config/paths.sh"
 BOARD=${BOARD:-192.168.4.1}
 SSH="ssh -o ConnectTimeout=8 root@$BOARD"
 SRC=${SRC:-$ROOT/local/upstream/mpv-src}
@@ -93,7 +95,7 @@ fi
 # Debian repository as unsigned, and no --keyring value fixes it.
 [ -e /usr/share/keyrings/debian-archive-keyring.gpg ] || {
 	echo "    missing: /usr/share/keyrings/debian-archive-keyring.gpg"
-	echo "      sudo pacman -U $ROOT/build/cache/debian-archive-keyring/debian-archive-keyring-*.pkg.tar.zst"
+	echo "      sudo pacman -U $H713_BUILD_DIR/cache/debian-archive-keyring/debian-archive-keyring-*.pkg.tar.zst"
 	echo "      (or your distro's debian-archive-keyring package)"
 	fatal=1; }
 unshare -r true 2>/dev/null || { echo "    missing: unprivileged user namespaces"; fatal=1; }

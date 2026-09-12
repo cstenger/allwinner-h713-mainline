@@ -44,12 +44,18 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000 in DRAM)
 - `patches/kernel/` — kernel patch series (well0nez H713 drivers + our arm64
   additions), applied to a pinned mainline tag. See
   [patches/kernel/README.md](patches/kernel/README.md).
-- `tools/` — hardware test/flash tooling (`serial/` console + FIT loaders,
-  `rootfs/` Debian build helpers).
+- `tools/` — hardware test/flash tooling (`build/` reproducible build
+  orchestrator, `serial/` console + FIT loaders, `rootfs/` Debian build
+  helpers).
 - `docs/` — project documentation (build, flash, status, gotchas). Docs live
   here, **not** in the submodules.
-- `build/` — reproducible build orchestrator (`build.sh`).
-- `config/` — pinned version + toolchain manifest (`versions.env`, `toolchain.md`).
+- `config/` — pinned version + toolchain manifest (`versions.env`,
+  `toolchain.md`, `paths.sh`).
+- `build/` — generated artifacts only, git-ignored (the scripts that produce it
+  live in `tools/build/`). **Prune it**: kernel trees are content-addressed and
+  never reused once the series changes, so they pile up at ~2 GiB each until
+  `git status` crawls — see [config/paths.sh](config/paths.sh) and "Build cache
+  cleanup" in [docs/build.md](docs/build.md).
 - `local/` — ignored local-only captures, historical research/build trees, and
   proprietary recovery material. It is part of the workspace, never Git.
 
@@ -58,8 +64,8 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000 in DRAM)
 ```
 git clone --recurse-submodules <this repo>       # or: git submodule update --init
 # host tools (Arch/CachyOS): see config/toolchain.md
-build/build.sh all              # BL31 -> U-Boot -> kernel -> images, into build/out/
-build/build.sh uboot            # or a single stage; BOARD=ddr3 (default) | lpddr3
+tools/build/build.sh all              # BL31 -> U-Boot -> kernel -> images, into build/out/
+tools/build/build.sh uboot            # or a single stage; BOARD=ddr3 (default) | lpddr3
 tools/rootfs/build.sh --ssh-key ~/.ssh/id_ed25519.pub  # signed Debian + modules
 ```
 

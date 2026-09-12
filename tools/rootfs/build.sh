@@ -4,10 +4,12 @@
 set -euo pipefail
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=../../config/paths.sh
+source "$PROJECT_ROOT/config/paths.sh"
 # shellcheck source=../../config/versions.env
 source "$PROJECT_ROOT/config/versions.env"
 
-OUTPUT_DIR="$PROJECT_ROOT/build/out"
+OUTPUT_DIR="$H713_BUILD_DIR/out"
 IMAGE_SIZE=$ROOTFS_IMAGE_SIZE
 SSH_KEY=
 KERNEL_TREE=
@@ -195,7 +197,7 @@ prepare_archive_keyring() {
     return
   fi
 
-  local cache="$PROJECT_ROOT/build/cache/debian-archive-keyring"
+  local cache="$H713_BUILD_DIR/cache/debian-archive-keyring"
   local url package signature extracted partial
   mkdir -p "$cache"
   url=$(pacman -Sp --print-format '%l' debian-archive-keyring)
@@ -238,7 +240,7 @@ if [ -z "$KERNEL_TREE" ]; then
   )
   if ((${#kernel_candidates[@]} != 1)); then
     echo "error: expected one built linux-$KERNEL_VERSION content-addressed tree; found ${#kernel_candidates[@]}" >&2
-    echo "run build/build.sh kernel or pass --kernel-tree DIR" >&2
+    echo "run tools/build/build.sh kernel or pass --kernel-tree DIR" >&2
     exit 1
   fi
   KERNEL_TREE=${kernel_candidates[0]}
@@ -256,17 +258,17 @@ KERNEL_RELEASE=$(make -s -C "$KERNEL_TREE" ARCH=arm64 LLVM=1 kernelrelease)
 module_build_count=$(find "$KERNEL_TREE" -type f -name '*.ko' | wc -l)
 ((module_build_count > 0)) || { echo "error: no built kernel modules found" >&2; exit 1; }
 
-# AIC8800 WiFi/BT: out-of-tree modules (staged by build/build.sh aic8800) plus
+# AIC8800 WiFi/BT: out-of-tree modules (staged by tools/build/build.sh aic8800) plus
 # the pinned firmware blob. Verify both on the host before entering the mount
 # namespace, so failures are reported early and clearly.
-AIC_KO_DIR="$PROJECT_ROOT/build/out/modules"
+AIC_KO_DIR="$H713_BUILD_DIR/out/modules"
 AIC_MODULES=(aic8800_bsp aic8800_fdrv aic8800_btlpm)
 for m in "${AIC_MODULES[@]}"; do
   ko="$AIC_KO_DIR/$m.ko"
-  [ -f "$ko" ] || { echo "error: missing $ko — run build/build.sh aic8800 first" >&2; exit 1; }
+  [ -f "$ko" ] || { echo "error: missing $ko — run tools/build/build.sh aic8800 first" >&2; exit 1; }
   vm=$(modinfo -F vermagic "$ko" 2>/dev/null | awk '{print $1}')
   [ "$vm" = "$KERNEL_RELEASE" ] || {
-    echo "error: $m.ko vermagic '$vm' != kernel '$KERNEL_RELEASE' — rerun build/build.sh aic8800" >&2
+    echo "error: $m.ko vermagic '$vm' != kernel '$KERNEL_RELEASE' — rerun tools/build/build.sh aic8800" >&2
     exit 1
   }
 done
@@ -297,7 +299,7 @@ if [ -n "${HOTSPOT_CONF:-}" ] && [ -f "$PROJECT_ROOT/$HOTSPOT_CONF" ]; then
 fi
 
 mkdir -p "$PROJECT_ROOT/build" "$OUTPUT_DIR"
-WORK_DIR=$(mktemp -d "$PROJECT_ROOT/build/.rootfs.XXXXXX")
+WORK_DIR=$(mktemp -d "$H713_BUILD_DIR/.rootfs.XXXXXX")
 
 ROOTFS_TAR="$WORK_DIR/rootfs.tar"
 FINAL_ROOTFS_TAR="$WORK_DIR/rootfs-final.tar"
