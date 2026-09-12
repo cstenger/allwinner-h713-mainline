@@ -4,8 +4,10 @@
 [ARBITRARY-RATIO.md](ARBITRARY-RATIO.md), which named the blocker as "the
 physical base of VE register block 7". **That blocker is resolved.**
 
-Still not achieved: an actual 1280x720 frame out of the decoder. The remaining
-gap is the enable plus a coefficient upload, both described at the end.
+Still not achieved: an actual 1280x720 frame out of the decoder. The enable and
+the coefficient upload were both attempted next and came back negative — see
+[COEF-UPLOAD.md](COEF-UPLOAD.md), and read the "What is still missing" section
+below against the corrections at the end of this file.
 
 ## Block 7 = VE + 0xf00
 
@@ -132,18 +134,26 @@ pipeline is a plausible explanation for the bit-11 timeout, and testing that
 means lifting the refusal for the offset/data pair specifically, under a
 deliberate opt-in.
 
-## Next step
+## Next step — DONE, and negative
 
-Add an explicit, opt-in coefficient-upload path to the harness: write `0x2e0`
-with the SRAM target, stream the 128-byte bucket-4 set through `0x2e4`, then set
-block 7's sizes and ratios and try the enable again. That is a contained change
-and it is the experiment that decides whether 1920x1080 -> 1280x720 is available
-at the decoder.
+See [COEF-UPLOAD.md](COEF-UPLOAD.md). Two corrections to this document came out
+of it:
 
-If it works, the picture is a true single-pass 1.5x polyphase downscale — better
-than the fallback in [RESULT.md](RESULT.md) (power-of-two to 960x544, then the
-proc upscaler at `0x05180000` magnifying 1.333x), which goes through a halving
-and a magnification.
+- The coefficient port is **group 7's own, `0xff8`/`0xffc`** — not the AVC port
+  at `0x2e0`/`0x2e4` as guessed below.
+- `VE_H264_CTRL` bit 11 disrupts H.264 control rather than enabling anything;
+  group 7's own `0xf20` bit 11 is harmless and equally inert.
+
+With geometry, both ratio forms, a working buffer and the bucket-4 coefficients
+all programmed and readback-verified, the arbitrary-ratio unit still produces no
+output. Group 7 latches every write but nothing observable happens, so the
+leading explanation is that the H713 does not implement the datapath behind the
+register block.
+
+So the remaining no-GPU option is still the fallback in [RESULT.md](RESULT.md):
+power-of-two to 960x544, then the proc upscaler at `0x05180000` magnifying
+1.333x. Lossier than a single-pass 1.5x would have been, but both halves are
+measured.
 
 ## Method note
 

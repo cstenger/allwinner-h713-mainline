@@ -41,17 +41,49 @@ failed silently first:
     clearing those two bits selects the tiled default, which yields a striped
     dump from a scaler that is working correctly. Hence sd_fmt.
 
-The arbitrary-ratio path was also probed and is NOT reachable from our side.
-H264ConfigNewScaler genuinely computes a non-power-of-two ratio -- vdiv.f32 then
-a 12-bit fixed-point conversion -- and writes top-level 0xcc/0xe8/0xec plus
-engine 0x220/0x244/0x248. Its size and ratio registers, however, are at
-getRegBase(7) + 0x10/0x14/0x18/0xe4/0xf8/0xfc, and register block 7 is not in
-the VE's 4 KiB MMIO window: the whole range 0x300..0xfff reads zero during an
-active decode, and /proc/iomem has no other VE-adjacent region. Top-level 0xcc is
-reachable and is the secondary LINE STRIDE, confirmed by writing 1280 and seeing
-a 960-wide image at a 1280 pitch with untouched poison in the trailing 320
-columns. VE_H264_CTRL bit 11, the one explicit set-bit in the vendor sequence,
-times out the decode rather than enabling anything.
+The arbitrary-ratio path was probed too, and it is real but inert on this part.
+H264ConfigNewScaler genuinely computes a non-power-of-two ratio (vdiv.f32 then a
+12-bit fixed-point conversion) and reaches its registers via
+VeGetGroupRegAddr(_, 7), which resolves to VE + 0xf00 -- inside our 4 KiB window
+all along. This patch names that group:
+
+    VE_G7_OUT_SIZE      0xf10   (dst_w << 16) | dst_h, two 14-bit fields
+    VE_G7_RATIO         0xf14   src/dst per axis, 12 fractional bits, minus 1
+    VE_G7_IN_SIZE       0xf18   dst/src per axis, likewise
+    VE_G7_WORK_BUF      0xfe4   working buffer address >> 8
+    VE_G7_SRAM_OFFSET   0xff8   coefficient SRAM address in [11:2]
+    VE_G7_SRAM_DATA     0xffc   32 words per axis, auto-incrementing
+
+The group offsets are 0x000/0x100/0x200/0x300/0x400/0x500/0xe00/0xf00, and
+groups 1, 2 and 5 match VE_ENGINE_DEC_MPEG/H264/H265 -- which is what confirms
+the table was decoded correctly rather than assumed.
+
+ScaleCopyCoef buckets the ratio into 14 classes from 1.125x to 5x and copies 32
+phases of 4 int8 taps per axis, every phase summing to 128. 1920 -> 1280 is 1.5x
+and lands in bucket 4, so the ratio we need is supported. sd_coef uploads a blob
+written to /sys/kernel/debug/cedrus_sd_coef through group 7's own SRAM port (NOT
+the AVC port at 0x2e0/0x2e4), and sd_scratch_kb allocates a working buffer for
+VE_G7_WORK_BUF -- a vertical polyphase filter needs somewhere to keep lines, and
+leaving that register at zero would aim its DMA at physical address 0.
+
+With geometry, both ratio forms, the working buffer and the bucket-4
+coefficients all programmed and readback-verified, the unit still produces no
+output under every enable tried: SDROT off, 0xf20 bit 11, 0xf20 = 0xf00,
+0xf00 = 1, and the output addresses relocated to 0xf44/0xf48. Group 7 latches
+every write and nothing observable happens, so the leading explanation is that
+the H713 does not implement the datapath behind the register block --
+libawh265.so carries "this hardware not support fixratio scale", libVE.so gates
+on ic_version, and VE_VERSION reads zero on our part. A register file latching
+values is not proof the logic behind it exists.
+
+VE_H264_CTRL bit 11 -- the one explicit set-bit in the vendor sequence -- does
+not enable anything; it breaks the decode (frame processing timed out, one frame
+instead of 25). Group 7's own 0xf20 bit 11 is harmless and equally inert.
+
+Top-level 0xcc is reachable and is the secondary LINE STRIDE, {chroma << 16,
+luma}, the same packing as VE_PRIMARY_FB_LINE_STRIDE at 0xc8 which it follows.
+Confirmed by writing stride 1280 against a 960-wide image and finding the
+trailing 320 columns still holding untouched 0xa5 poison.
 
 So this is a harness, not an implementation. Every unknown is a module parameter,
 and it is inert unless sd_w and sd_h are both set -- with the defaults not a
@@ -63,6 +95,9 @@ single register write changes:
     sunxi_cedrus.sd_stage=1             program after the codec setup
     sunxi_cedrus.sd_shift=0             address shift
     sunxi_cedrus.sd_poke="0xcc=1280"    arbitrary off=val register writes
+    sunxi_cedrus.sd_coef=1              upload the group 7 coefficient blob
+    sunxi_cedrus.sd_sram_off=0x340      coefficient SRAM target address
+    sunxi_cedrus.sd_scratch_kb=256      working buffer for VE_G7_WORK_BUF
 
 Two debugfs nodes expose the results. /sys/kernel/debug/cedrus_sd_buf is the
 secondary output buffer, re-poisoned with 0xa5 whenever sd_ctrl changes so each
@@ -74,9 +109,10 @@ taken at the decode trigger -- reading the VE from userspace instead is
 unreliable, because a runtime-suspended VE reads zero everywhere and that is
 indistinguishable from a block that is not there.
 
-The SRAM access ports (0x1e0/0x1e4, 0x2e0/0x2e4, 0x5e0/0x5e4) are excluded from
-both the snapshot and the poke list: they walk an internal pointer, so touching
-them would corrupt the decode rather than observe it.
+The SRAM access ports (0x1e0/0x1e4, 0x2e0/0x2e4, 0x5e0/0x5e4 and group 7's
+0xff8/0xffc) are excluded from both the snapshot and the poke list: they walk an
+internal pointer, so touching them would corrupt the decode rather than observe
+it. Only the deliberate sd_coef path writes group 7's pair.
 
 Driven by tools/video/ve-scaledown-sweep.sh and
 tools/video/ve-newscaler-probe.sh.
@@ -163,7 +199,7 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
  #include <linux/dma-mapping.h>
  #include <linux/interrupt.h>
  #include <linux/clk.h>
-@@ -31,6 +35,417 @@
+@@ -31,6 +35,551 @@
  #include "cedrus_hw.h"
  #include "cedrus_regs.h"
  
@@ -207,6 +243,40 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
 +MODULE_PARM_DESC(sd_poke,
 +		 "EXPERIMENT: comma-separated off=val register writes, e.g. \"0xcc=1280\"");
 +
++/*
++ * The arbitrary-ratio unit needs a polyphase coefficient set uploaded through
++ * register group 7's own SRAM port, and a working buffer. Both are opt-in:
++ *
++ *   sd_coef=1          upload the blob written to /sys/kernel/debug/cedrus_sd_coef
++ *   sd_sram_off=0x340  SRAM target address (what the vendor uses)
++ *   sd_scratch_kb=N    allocate N KiB and point VE_G7_WORK_BUF at it
++ *
++ * The blob is 2 x 128 bytes, horizontal axis then vertical, exactly as the
++ * vendor streams it: two ScaleCopyCoef results back to back with no re-seek
++ * between them, so the data port auto-increments across both.
++ */
++static unsigned int sd_coef;
++static unsigned int sd_sram_off = VE_G7_SRAM_COEF_ADDR;
++static unsigned int sd_scratch_kb;
++module_param(sd_coef, uint, 0644);
++MODULE_PARM_DESC(sd_coef,
++		 "EXPERIMENT: 1 = upload the coefficient blob to group 7's SRAM");
++module_param(sd_sram_off, uint, 0644);
++MODULE_PARM_DESC(sd_sram_off,
++		 "EXPERIMENT: coefficient SRAM target address (default 0x340)");
++module_param(sd_scratch_kb, uint, 0644);
++MODULE_PARM_DESC(sd_scratch_kb,
++		 "EXPERIMENT: KiB of scratch to allocate for VE_G7_WORK_BUF (0 = none)");
++
++#define CEDRUS_SD_COEF_LEN	(2 * 4 * VE_G7_SRAM_COEF_WORDS)   /* 256 */
++static u8 cedrus_sd_coef_blob[CEDRUS_SD_COEF_LEN];
++static size_t cedrus_sd_coef_len;
++static struct dentry *cedrus_sd_coef_debugfs;
++
++static void *cedrus_sd_scratch;
++static dma_addr_t cedrus_sd_scratch_dma;
++static size_t cedrus_sd_scratch_size;
++
 +static struct dentry *cedrus_sd_debugfs;
 +static struct cedrus_ctx *cedrus_sd_ctx;
 +static unsigned int sd_ctrl_last;
@@ -242,7 +312,9 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
 +{
 +	return off == 0x1e0 || off == 0x1e4 ||	/* MPEG */
 +	       off == 0x2e0 || off == 0x2e4 ||	/* AVC  */
-+	       off == 0x5e0 || off == 0x5e4;	/* HEVC */
++	       off == 0x5e0 || off == 0x5e4 ||	/* HEVC */
++	       off == VE_G7_SRAM_OFFSET ||	/* group 7 coefficients */
++	       off == VE_G7_SRAM_DATA;
 +}
 +
 +static u32 cedrus_sd_regs[CEDRUS_SD_REG_LEN / 4];
@@ -345,6 +417,97 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
 +	}
 +}
 +
++static ssize_t cedrus_sd_coef_write(struct file *file, const char __user *buf,
++				    size_t count, loff_t *ppos)
++{
++	if (count > CEDRUS_SD_COEF_LEN)
++		return -EINVAL;
++	if (copy_from_user(cedrus_sd_coef_blob, buf, count))
++		return -EFAULT;
++
++	cedrus_sd_coef_len = count;
++
++	return count;
++}
++
++static const struct file_operations cedrus_sd_coef_fops = {
++	.owner	= THIS_MODULE,
++	.write	= cedrus_sd_coef_write,
++	.llseek	= default_llseek,
++};
++
++/*
++ * Stream the coefficients into group 7's SRAM, exactly as the vendor does:
++ * seek once, then write 32 words per axis and let the data port auto-increment
++ * across the pair.
++ */
++static void cedrus_sd_upload_coef(struct cedrus_dev *dev, bool log)
++{
++	const __le32 *w = (const __le32 *)cedrus_sd_coef_blob;
++	unsigned int i, words;
++	u32 reg;
++
++	if (!sd_coef)
++		return;
++
++	if (cedrus_sd_coef_len < CEDRUS_SD_COEF_LEN) {
++		dev_warn(dev->dev,
++			 "sd: coef blob is %zu bytes, need %u -- write it to /sys/kernel/debug/cedrus_sd_coef\n",
++			 cedrus_sd_coef_len, CEDRUS_SD_COEF_LEN);
++		return;
++	}
++
++	if (sd_scratch_kb && !cedrus_sd_scratch) {
++		cedrus_sd_scratch_size = (size_t)sd_scratch_kb * 1024;
++		cedrus_sd_scratch = dma_alloc_coherent(dev->dev,
++						       cedrus_sd_scratch_size,
++						       &cedrus_sd_scratch_dma,
++						       GFP_KERNEL);
++		if (!cedrus_sd_scratch) {
++			dev_warn(dev->dev, "sd: no scratch (%zu bytes)\n",
++				 cedrus_sd_scratch_size);
++			cedrus_sd_scratch_size = 0;
++		}
++	}
++
++	/*
++	 * A vertical polyphase filter needs somewhere to keep lines. Leaving
++	 * this register at zero would aim that DMA at physical address 0.
++	 */
++	if (cedrus_sd_scratch) {
++		reg = cedrus_read(dev, VE_G7_WORK_BUF);
++		reg &= ~GENMASK(31, 2);
++		reg |= VE_G7_WORK_BUF_ADDR(cedrus_sd_scratch_dma);
++		cedrus_write(dev, VE_G7_WORK_BUF, reg);
++	}
++
++	reg = cedrus_read(dev, VE_G7_SRAM_OFFSET);
++	reg &= ~GENMASK(11, 2);
++	reg |= VE_G7_SRAM_OFFSET_ADDR(sd_sram_off);
++	cedrus_write(dev, VE_G7_SRAM_OFFSET, reg);
++
++	words = 2 * VE_G7_SRAM_COEF_WORDS;
++	for (i = 0; i < words; i++)
++		cedrus_write(dev, VE_G7_SRAM_DATA, le32_to_cpu(w[i]));
++
++	if (log)
++		dev_info(dev->dev,
++			 "sd: uploaded %u coef words to SRAM %#x, work buf %pad\n",
++			 words, sd_sram_off,
++			 cedrus_sd_scratch ? &cedrus_sd_scratch_dma : NULL);
++}
++
++static void cedrus_sd_scratch_free(struct cedrus_dev *dev)
++{
++	if (!cedrus_sd_scratch)
++		return;
++
++	dma_free_coherent(dev->dev, cedrus_sd_scratch_size, cedrus_sd_scratch,
++			  cedrus_sd_scratch_dma);
++	cedrus_sd_scratch = NULL;
++	cedrus_sd_scratch_size = 0;
++}
++
 +static void cedrus_sd_snapshot(struct cedrus_dev *dev)
 +{
 +	unsigned int i;
@@ -398,6 +561,9 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
 +	cedrus_sd_regs_debugfs = debugfs_create_file("cedrus_sd_regs", 0400, NULL,
 +						     NULL,
 +						     &cedrus_sd_regs_fops);
++	cedrus_sd_coef_debugfs = debugfs_create_file("cedrus_sd_coef", 0200, NULL,
++						     NULL,
++						     &cedrus_sd_coef_fops);
 +}
 +
 +void cedrus_sd_debugfs_exit(void)
@@ -407,6 +573,9 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
 +	debugfs_remove(cedrus_sd_regs_debugfs);
 +	cedrus_sd_regs_debugfs = NULL;
 +	cedrus_sd_regs_valid = false;
++	debugfs_remove(cedrus_sd_coef_debugfs);
++	cedrus_sd_coef_debugfs = NULL;
++	cedrus_sd_coef_len = 0;
 +
 +	mutex_lock(&cedrus_sd_lock);
 +	vfree(cedrus_sd_shadow);
@@ -537,6 +706,7 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
 +
 +	cedrus_write(dev, VE_H264_SDROT_CTRL, sd_ctrl);
 +
++	cedrus_sd_upload_coef(dev, log);
 +	cedrus_sd_apply_poke(dev, log);
 +
 +	if (log) {
@@ -581,7 +751,7 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
  int cedrus_engine_enable(struct cedrus_ctx *ctx)
  {
  	u32 reg = 0;
-@@ -397,6 +812,8 @@
+@@ -397,6 +946,8 @@
  			goto err_pm;
  	}
  
@@ -590,11 +760,12 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/s
  	return 0;
  
  err_pm:
-@@ -411,6 +828,8 @@
+@@ -411,6 +962,9 @@
  
  void cedrus_hw_remove(struct cedrus_dev *dev)
  {
 +	cedrus_sd_debugfs_exit();
++	cedrus_sd_scratch_free(dev);
 +
  	pm_runtime_disable(dev->dev);
  	if (!pm_runtime_status_suspended(dev->dev))
@@ -618,7 +789,49 @@ diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.h b/drivers/s
 diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_regs.h b/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
 --- a/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
-@@ -607,6 +607,17 @@
+@@ -88,6 +88,41 @@
+ 
+ #define VE_VERSION				0xf0
+ 
++/*
++ * Register group 7: the arbitrary-ratio ("new") scale-down unit.
++ *
++ * The vendor reaches its registers through VeGetGroupRegAddr(_, 7), which is a
++ * table lookup in libVE.so yielding a byte offset added to the VE base. The
++ * eight groups resolve to 0x000, 0x100, 0x200, 0x300, 0x400, 0x500, 0xe00 and
++ * 0xf00; groups 1, 2 and 5 match VE_ENGINE_DEC_MPEG/H264/H265 above, which is
++ * what confirms the table was read correctly.
++ *
++ * Unlike VE_H264_SDROT_CTRL, which is power-of-two per axis, this unit takes a
++ * ratio with 12 fractional bits plus a polyphase coefficient set, so it can
++ * express 1920 -> 1280. The coefficients are 32 phases of 4 int8 taps per axis,
++ * each phase summing to 128, streamed through this group's OWN SRAM port -- not
++ * the AVC one at 0x2e0/0x2e4.
++ */
++#define VE_GROUP7				0xf00
++
++#define VE_G7_OUT_SIZE				(VE_GROUP7 + 0x10)
++#define VE_G7_RATIO				(VE_GROUP7 + 0x14)
++#define VE_G7_IN_SIZE				(VE_GROUP7 + 0x18)
++/* Two 14-bit fields in the size registers, and two 16-bit ratios. */
++#define VE_G7_SIZE_A(v)				SHIFT_AND_MASK_BITS(v, 29, 16)
++#define VE_G7_SIZE_B(v)				SHIFT_AND_MASK_BITS(v, 13, 0)
++
++/* A working buffer address, stored shifted right by 8. */
++#define VE_G7_WORK_BUF				(VE_GROUP7 + 0xe4)
++#define VE_G7_WORK_BUF_ADDR(a)			SHIFT_AND_MASK_BITS((a) >> 8, 31, 2)
++
++/* Coefficient SRAM: address in [11:2] of the offset reg, then 32 words/axis. */
++#define VE_G7_SRAM_OFFSET			(VE_GROUP7 + 0xf8)
++#define VE_G7_SRAM_OFFSET_ADDR(a)		SHIFT_AND_MASK_BITS(a, 11, 2)
++#define VE_G7_SRAM_DATA				(VE_GROUP7 + 0xfc)
++#define VE_G7_SRAM_COEF_ADDR			0x340
++#define VE_G7_SRAM_COEF_WORDS			32
++
+ #define VE_VERSION_SHIFT			16
+ 
+ #define VE_DEC_MPEG_MP12HDR			(VE_ENGINE_DEC_MPEG + 0x00)
+@@ -607,6 +642,17 @@
  #define VE_H264_VLD_LEN			0x238
  #define VE_H264_VLD_END			0x23c
  #define VE_H264_SDROT_CTRL		0x240

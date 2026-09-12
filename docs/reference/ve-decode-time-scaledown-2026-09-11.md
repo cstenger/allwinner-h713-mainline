@@ -33,7 +33,7 @@ The interface, across three layers:
 | --- | --- |
 | OMX | `libOmxVdec.so` exports **`anSetScaleDownParam`** |
 | decoder wrapper | `libvdecoder.so` exports **`ConfigExtraScaleInfo`** and logs `dec: codec[0x%x], scaledown[%d,%d,%d], rotate[%d,%d], …` plus `scale mode = %d`, `scale ratio = %dx%d`, **`scale wxh = %dx%d`** |
-| codec plugin | `libawh264.so` exports `H264DecoderSetExtraScaleInfo`, `H264JudgeScaleMode`, `H264ComputeScaleRatio`, `H264ConfigNewScaler`, and **`H264ConfigureScaleRotateRegister`** |
+| codec plugin | `libawh264.so` exports `H264DecoderSetExtraScaleInfo`, `H264ComputeScaleRatio`, `H264ConfigNewScaler`, `ScaleCopyCoef` and **`H264ConfigureScaleRotateRegister`** |
 
 `scale wxh = %dx%d` is the important one: the target is an **explicit width and
 height**, not a power-of-two ratio. And `ScaleCopyCoef` / `H265ScaleCopyCoef`
@@ -154,8 +154,16 @@ A coefficient table plus six extra size/phase registers is a polyphase
 resampler, which matches `scale wxh = %dx%d` being an explicit target rather
 than a ratio. **This is the path that could do 1920x1080 → 1280x720 directly.**
 
-`H264JudgeScaleMode` picks between them, and `new scale not support rotation`
-says the two are mutually exclusive with rotate.
+`new scale not support rotation` says the two are mutually exclusive with
+rotate.
+
+> **CORRECTION (2026-09-11):** an earlier revision of this document claimed a
+> `H264JudgeScaleMode` "picks between them". **That symbol does not exist** --
+> `readelf --dyn-syms` on `libawh264.so` has no such entry. It was invented.
+> The selection is not made in `libawh264.so` at all: both scaler functions are
+> exported plugin entry points, `H264DecoderSetExtraScaleInfo` only stores its
+> arguments into the context, and nothing in this library branches between the
+> two paths. Whatever chooses lives further up, in `libvdecoder.so`.
 
 ### Consequence if only fixratio turns out to be available
 
