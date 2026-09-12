@@ -87,3 +87,42 @@ demonstrably reaches the hardware -- before the geometry fix, `vi_follow=0` and
   bases MUST be page aligned -- an unaligned base fails the whole dump with
   `EINVAL` and produces an empty file that reads as "no suspects found".
 - Prompt the operator BEFORE the observation window, never after.
+
+## What the firmware's own source-configuration routine says
+
+Static RE, no board time. `tools/mips/block-map.py` gives the registers; the
+code is at **`0x8b1a3ea0`–`0x8b1a4408`** (MIPS address = ARM + `0xB5000000`).
+
+**Field layouts, from the `ins` masks:**
+
+    0x05600020  [12:0]  align16(width) - 1        [28:16] align16(height) - 1
+    0x05600030  [12:0]  width, forced EVEN        [28:16] height
+    0x05600048  [15:0]  luma width, align 4       [28:16] height (13 bits)
+    0x0560004c  [15:0]  chroma width, align 4     [28:16] height
+    0x05600040  [15:0]  luma stride, align 16     (upper half PRESERVED)
+    0x05600044  [15:0]  chroma stride, align 16
+
+Every one is a read-modify-write of a single field with `ins`. **Our driver
+writes whole words.** For the sizes tested the discarded upper bits are zero, so
+this is not the current fault -- but it is a latent one.
+
+**THE STRUCTURAL FINDING: `0x020` AND `0x030` COME FROM DIFFERENT STRUCTURES.**
+
+    lw  $a3, 4($a2)     -> width  feeding 0x020        (struct A)
+    lw  $a2, 0xc($a2)   -> height feeding 0x020
+    lw  $t0, 0xc($a1)   -> height feeding 0x030        (struct B)
+    lw  $a1, 4($a1)     -> width  feeding 0x030
+
+`$a1` and `$a2` are two distinct geometry descriptors -- the same picture-window
+versus output-window split the `ProcWinNode` class exposes (`m_out_win`,
+`m_video_win`, `m_picture_win`). Patch 0098 sets BOTH to the source size. That
+is what first got a picture onto the glass, so it is closer than the inherited
+panel values were, but conflating the two is the most likely reason the row
+length is still 1280.
+
+**Next session starts here:** identify which of `$a1`/`$a2` is the buffer and
+which is the window, by finding the callers of this routine and typing the two
+structures. Then decide what each of `0x020`/`0x030` should hold for a source
+smaller than the panel. That is desk work; no board time and no operator.
+
+Do NOT resume by poking registers. Nine were eliminated that way already.
