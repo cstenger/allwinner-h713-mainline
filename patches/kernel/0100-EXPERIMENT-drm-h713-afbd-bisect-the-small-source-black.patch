@@ -1,0 +1,101 @@
+EXPERIMENT: drm/h713-afbd: bisect why a smaller source renders black
+
+A 960x544 source renders BLACK on the panel while 1280x720 renders correctly,
+and the difference is not the upscaler: bypassing it mid-run, with the plane
+still live, changes nothing.  The fetcher registers are provably right in both
+cases -- SIZE_M1 0x021F03BF, BLOCK_M1 0x0021003B, strides 0x3C0, and a chroma
+offset of exactly 960*544 -- and the composition block is byte-identical
+between the working and failing runs.
+
+So the fault is in getting a smaller source to render at all, and the only
+other thing that differs is the VideoInfo descriptor, which 0098 rewrites to
+the source geometry while leaving its canonical 1920x1080 crop rectangle
+alone.
+
+These knobs exist because iterating on a built-in driver costs a POWER CYCLE
+per hypothesis, not a reboot: a warm reboot leaves this display unable to show
+anything at all, which cost most of a session to notice.  They are writable at
+runtime so one cold boot can test several combinations.
+
+  vi_follow=0   leave the descriptor at its probe geometry
+  vi_crop=1     express the crop rectangle in the source's own scale
+  proc_en=0     never engage the proc upscaler
+
+Drop this patch once the cause is known.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -190,6 +190,24 @@
+ 	unsigned int video_info_h;
+ };
+ 
++/*
++ * EXPERIMENT knobs.  A source smaller than the panel renders BLACK even with
++ * the upscaler bypassed, while 1280x720 renders correctly, and the fetcher
++ * registers are provably right in both cases.  These exist to bisect that from
++ * userspace, because every rebuild of a built-in driver costs a power cycle --
++ * a warm reboot leaves the display unable to show anything at all.
++ *
++ *   vi_follow=0   leave the VideoInfo descriptor at its probe geometry
++ *   vi_crop=1     scale the canonical 1/16-pixel crop rect with the source
++ *   proc_en=0     never engage the proc upscaler
++ */
++static int vi_follow = 1;
++module_param(vi_follow, int, 0644);
++static int vi_crop;
++module_param(vi_crop, int, 0644);
++static int proc_en = 1;
++module_param(proc_en, int, 0644);
++
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+ {
+ 	return container_of(drm, struct h713_afbd, drm);
+@@ -235,13 +253,23 @@
+ 	v[0x64 / 4] = info + 144;
+ 	v[0x68 / 4] = info + 172;
+ 	v[0x6c / 4] = 0;
+-	v[0x70 / 4] = 1920 << 4;
+-	v[0x74 / 4] = 0;
+-	v[0x78 / 4] = 1080 << 4;
+-	v[0x7c / 4] = 0;
+-	v[0x80 / 4] = 1920 << 4;
+-	v[0x84 / 4] = 0;
+-	v[0x88 / 4] = 1080 << 4;
++	if (vi_crop) {
++		v[0x70 / 4] = w << 4;
++		v[0x74 / 4] = 0;
++		v[0x78 / 4] = h_px << 4;
++		v[0x7c / 4] = 0;
++		v[0x80 / 4] = w << 4;
++		v[0x84 / 4] = 0;
++		v[0x88 / 4] = h_px << 4;
++	} else {
++		v[0x70 / 4] = 1920 << 4;
++		v[0x74 / 4] = 0;
++		v[0x78 / 4] = 1080 << 4;
++		v[0x7c / 4] = 0;
++		v[0x80 / 4] = 1920 << 4;
++		v[0x84 / 4] = 0;
++		v[0x88 / 4] = 1080 << 4;
++	}
+ 	v[0x8c / 4] = 2;
+ 
+ 	h->video_info_w = w;
+@@ -490,7 +518,7 @@
+ 	 * 1920x1088 inherited here is what made the fetcher scan past the end
+ 	 * of a smaller buffer, so it is derived rather than assumed.
+ 	 */
+-	if (src_w != h->video_info_w || src_h != h->video_info_h)
++	if (vi_follow && (src_w != h->video_info_w || src_h != h->video_info_h))
+ 		h713_afbd_init_video_info(h, src_w, src_h);
+ 
+ 	writel(((src_h - 1) << 16) | (src_w - 1), h->regs + AFBD_VIDEO_SIZE_M1);
+@@ -527,7 +555,7 @@
+ 	 * is already the right size. A source smaller than the panel with the
+ 	 * upscaler still bypassed would show a corner of the picture.
+ 	 */
+-	if (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT)
++	if (proc_en && (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT))
+ 		h713_proc_configure(h, src_w, src_h,
+ 				    H713_VIDEO_WIDTH, H713_VIDEO_HEIGHT);
+ 	else

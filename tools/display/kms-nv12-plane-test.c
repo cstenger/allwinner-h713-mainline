@@ -37,9 +37,23 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
-#define WIDTH 1280u
-#define HEIGHT 720u
-#define Y_SIZE (WIDTH * HEIGHT)
+/*
+ * The PANEL is always 1280x720; that is the destination rectangle and it does
+ * not move. The SOURCE is a runtime size, because the point of this test is
+ * now a framebuffer SMALLER than the panel: the VE's decode-time scale-down
+ * produces 960x544, and the proc upscaler at 0x05180000 magnifies it back.
+ * Before this it was hardcoded to the panel size, so a genuine 960x544 buffer
+ * had never been scanned out.
+ */
+#define PANEL_W 1280u
+#define PANEL_H 720u
+
+static unsigned int src_w = PANEL_W;
+static unsigned int src_h = PANEL_H;
+
+#define WIDTH src_w
+#define HEIGHT src_h
+#define Y_SIZE (src_w * src_h)
 #define FRAME_SIZE (Y_SIZE + Y_SIZE / 2)
 #define FRAME_PHYS 0x6c500000ULL
 #define SCANOUT_IOC_GET_FD _IOWR('S', 1, struct scanout_req)
@@ -414,7 +428,7 @@ int main(int argc, char **argv)
 	struct scanout_req scanout = { 0 };
 	struct drm_gem_close gem_close = { 0 };
 	struct sigaction sa = { 0 };
-	size_t map_len = (FRAME_SIZE + 4095u) & ~4095u;
+	size_t map_len;
 	char card[64];
 	unsigned int dwell = 10;
 	int scanout_ctl = -1, dmabuf_fd = -1, drm_fd = -1;
@@ -424,7 +438,7 @@ int main(int argc, char **argv)
 	if (argc < 2 || argc > 3 || !getenv("ARMED") ||
 	    strcmp(getenv("ARMED"), "yes")) {
 		fprintf(stderr,
-			"usage: ARMED=yes %s FRAME.nv12 [dwell-seconds]\n",
+			"usage: [SRC=WxH] ARMED=yes %s FRAME.nv12 [dwell-seconds]\n",
 			argv[0]);
 		return 2;
 	}
@@ -438,6 +452,34 @@ int main(int argc, char **argv)
 		}
 		dwell = (unsigned int)value;
 	}
+
+	/*
+	 * SRC=WxH selects a source smaller than the panel, which the display
+	 * pipeline then magnifies. Both axes must be multiples of 16 -- the
+	 * fetcher counts 16x16 blocks and the driver rejects anything else --
+	 * and neither may exceed the panel, because the proc block upscales
+	 * only and physically cannot shrink.
+	 */
+	if (getenv("SRC")) {
+		unsigned int w, h;
+
+		if (sscanf(getenv("SRC"), "%ux%u", &w, &h) != 2 ||
+		    !w || !h || w % 16 || h % 16 ||
+		    w > PANEL_W || h > PANEL_H) {
+			fprintf(stderr,
+				"invalid SRC=%s (want WxH, multiples of 16, "
+				"no larger than %ux%u)\n",
+				getenv("SRC"), PANEL_W, PANEL_H);
+			return 2;
+		}
+		src_w = w;
+		src_h = h;
+	}
+
+	map_len = (FRAME_SIZE + 4095u) & ~4095u;
+	printf("source %ux%u -> panel %ux%u%s\n", src_w, src_h, PANEL_W, PANEL_H,
+	       (src_w == PANEL_W && src_h == PANEL_H) ? " (1:1, no scaling)"
+						      : " (UPSCALED)");
 
 	drm_fd = open_kms(card, sizeof(card));
 	if (drm_fd < 0) {
@@ -544,8 +586,8 @@ int main(int argc, char **argv)
 	    add_prop(atomic, plane_id, p_fb, fb_id, "FB_ID") ||
 	    add_prop(atomic, plane_id, p_cx, 0, "CRTC_X") ||
 	    add_prop(atomic, plane_id, p_cy, 0, "CRTC_Y") ||
-	    add_prop(atomic, plane_id, p_cw, WIDTH, "CRTC_W") ||
-	    add_prop(atomic, plane_id, p_ch, HEIGHT, "CRTC_H") ||
+	    add_prop(atomic, plane_id, p_cw, PANEL_W, "CRTC_W") ||
+	    add_prop(atomic, plane_id, p_ch, PANEL_H, "CRTC_H") ||
 	    add_prop(atomic, plane_id, p_sx, 0, "SRC_X") ||
 	    add_prop(atomic, plane_id, p_sy, 0, "SRC_Y") ||
 	    add_prop(atomic, plane_id, p_sw, (uint64_t)WIDTH << 16, "SRC_W") ||

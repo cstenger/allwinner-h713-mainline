@@ -65,7 +65,25 @@ identical, but that gap closes with this patch, not before it.
  				 <&ccu CLK_BUS_DISP>;
 --- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
 +++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
-@@ -102,6 +102,47 @@
+@@ -68,6 +68,17 @@
+ #define AFBD_VIDEO_BLOCK_M1	0x024
+ #define AFBD_VIDEO_Y_STRIDE	0x040
+ #define AFBD_VIDEO_C_STRIDE	0x044
++/*
++ * Three more geometry words, and the reason a smaller source rendered as
++ * garbage and then black: the driver inherited a 1280x720 configuration in
++ * which these were ALREADY correct, so it never had to write them. At any
++ * other size they stay at the panel's values while SIZE_M1, BLOCK_M1 and the
++ * strides describe the real picture, and the fetcher is handed two different
++ * answers for how big the frame is.
++ */
++#define AFBD_VIDEO_SIZE		0x030	/* (height << 16) | width */
++#define AFBD_VIDEO_Y_SIZE	0x048	/* luma plane, same packing */
++#define AFBD_VIDEO_C_SIZE	0x04c	/* chroma plane: height / 2 */
+ #define AFBD_VIDEO_GATE		0x060
+ #define AFBD_VIDEO_FIELD	0x064
+ #define AFBD_VIDEO_RING_MUX	0x068
+@@ -102,6 +113,54 @@
  #define H713_VIDEO_GAIN		0x144c0000
  #define H713_VIDEO_SELECTOR	0x39000000
  
@@ -92,11 +110,18 @@ identical, but that gap closes with this patch, not before it.
 +#define PROC_RATIO_V		0x3c	/* [21:0] */
 +
 +/*
++ * DRM expresses plane scale as SOURCE over DESTINATION in 16.16, so a
++ * magnifying plane wants values BELOW DRM_PLANE_NO_SCALING, not above:
++ * 960 -> 1280 is (960 << 16) / 1280 = 0xC000. The bound that forbids
++ * shrinking is therefore the MAXIMUM, and the magnification limit is the
++ * MINIMUM. Getting this backwards rejects every source except one exactly
++ * the size of the panel, with -ERANGE from the helper rather than from here.
++ *
 + * 4x is the largest magnification with a measurement behind it: a ratio of
 + * 0x4000 produced 4.17x against 4.00x commanded. The field itself would go
 + * further; nothing has looked at what the line buffers do there.
 + */
-+#define H713_VIDEO_MAX_SCALE	(4 << 16)
++#define H713_VIDEO_MIN_SCALE	(DRM_PLANE_NO_SCALING / 4)
 +
 +#define PROC_BYPASS_BIT		BIT(27)
 +#define PROC_RATIO_MASK		GENMASK(21, 0)
@@ -113,7 +138,7 @@ identical, but that gap closes with this patch, not before it.
  /* The four queue slots are 4 bytes apart in each address ring. */
  #define H713_VIDEO_SLOTS	4
  
-@@ -113,6 +154,7 @@
+@@ -113,6 +172,7 @@
  	void __iomem *regs;
  	void __iomem *route_regs;
  	void __iomem *lvds_regs;
@@ -121,7 +146,7 @@ identical, but that gap closes with this patch, not before it.
  	struct clk *clk_afbd;
  	struct clk *clk_bus;
  	struct drm_display_mode mode;
-@@ -124,6 +166,10 @@
+@@ -124,6 +184,10 @@
  	u32 gain_idle;
  	u32 selector_rgb;
  	bool video_active;
@@ -132,7 +157,7 @@ identical, but that gap closes with this patch, not before it.
  };
  
  static inline struct h713_afbd *to_h713(struct drm_device *drm)
-@@ -131,24 +177,32 @@
+@@ -131,24 +195,32 @@
  	return container_of(drm, struct h713_afbd, drm);
  }
  
@@ -173,7 +198,7 @@ identical, but that gap closes with this patch, not before it.
  	v[0x34 / 4] = 30000;
  	v[0x38 / 4] = 30000;
  	v[0x40 / 4] = 0;
-@@ -157,7 +211,7 @@
+@@ -157,7 +229,7 @@
  	v[0x4c / 4] = 0xffff0000;
  	v[0x50 / 4] = 1;
  	v[0x54 / 4] = 0xffff0000;
@@ -182,7 +207,7 @@ identical, but that gap closes with this patch, not before it.
  	v[0x5c / 4] = 0;
  	v[0x60 / 4] = 0;
  	v[0x64 / 4] = info + 144;
-@@ -172,6 +226,9 @@
+@@ -172,6 +244,9 @@
  	v[0x88 / 4] = 1080 << 4;
  	v[0x8c / 4] = 2;
  
@@ -192,7 +217,7 @@ identical, but that gap closes with this patch, not before it.
  	dma_wmb();
  }
  
-@@ -220,6 +277,76 @@
+@@ -220,6 +295,76 @@
  	writel(1, h->regs + AFBD_READY);
  }
  
@@ -269,7 +294,7 @@ identical, but that gap closes with this patch, not before it.
  static void h713_afbd_video_stop(struct h713_afbd *h)
  {
  	unsigned int i;
-@@ -243,6 +370,13 @@
+@@ -243,6 +388,13 @@
  	writel(0, h->regs + AFBD_VIDEO_DIRTY);
  	writel(h->gain_idle, h->route_regs + 0x508);
  
@@ -283,7 +308,7 @@ identical, but that gap closes with this patch, not before it.
  	/* Restore and commit RGB before selecting it downstream. */
  	writel(h->rgb_ctrl_active, h->regs + AFBD_CTRL);
  	writel(1, h->regs + AFBD_READY);
-@@ -268,9 +402,14 @@
+@@ -268,8 +420,13 @@
  	if (IS_ERR(crtc_state))
  		return PTR_ERR(crtc_state);
  
@@ -293,13 +318,12 @@ identical, but that gap closes with this patch, not before it.
 +	 * that downscale has to happen in the VE at decode time instead.
 +	 */
  	ret = drm_atomic_helper_check_plane_state(new_state, crtc_state,
- 						  DRM_PLANE_NO_SCALING,
 -						  DRM_PLANE_NO_SCALING,
-+						  H713_VIDEO_MAX_SCALE,
++						  H713_VIDEO_MIN_SCALE,
+ 						  DRM_PLANE_NO_SCALING,
  						  false, false);
  	if (ret)
- 		return ret;
-@@ -278,18 +417,23 @@
+@@ -278,18 +435,23 @@
  	fb = new_state->fb;
  	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
  	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
@@ -329,7 +353,7 @@ identical, but that gap closes with this patch, not before it.
  	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
  	c = drm_fb_dma_get_gem_addr(fb, new_state, 1);
  	if (!y || !c || upper_32_bits(y) || upper_32_bits(c))
-@@ -303,12 +447,17 @@
+@@ -303,12 +465,17 @@
  {
  	struct drm_plane_state *new_state;
  	struct h713_afbd *h = to_h713(plane->dev);
@@ -349,7 +373,7 @@ identical, but that gap closes with this patch, not before it.
  
  	/* The hardware mux is exclusive: quiesce RGB before source 0. */
  	if (!h->video_active) {
-@@ -318,10 +467,19 @@
+@@ -318,10 +485,22 @@
  		h713_afbd_wait_ready(h, AFBD_READY, "RGB disable");
  	}
  
@@ -370,10 +394,13 @@ identical, but that gap closes with this patch, not before it.
 +	       h->regs + AFBD_VIDEO_BLOCK_M1);
 +	writel(fb->pitches[0], h->regs + AFBD_VIDEO_Y_STRIDE);
 +	writel(fb->pitches[1], h->regs + AFBD_VIDEO_C_STRIDE);
++	writel((src_h << 16) | src_w, h->regs + AFBD_VIDEO_SIZE);
++	writel((src_h << 16) | src_w, h->regs + AFBD_VIDEO_Y_SIZE);
++	writel(((src_h / 2) << 16) | src_w, h->regs + AFBD_VIDEO_C_SIZE);
  	writel(1, h->regs + AFBD_VIDEO_GATE);
  	writel(0, h->regs + AFBD_VIDEO_FIELD);
  	writel(0x00000122, h->regs + AFBD_VIDEO_RING_MUX);
-@@ -342,6 +500,18 @@
+@@ -342,6 +521,18 @@
  	writel(1, h->regs + AFBD_VIDEO_DIRTY);
  
  	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
@@ -392,7 +419,7 @@ identical, but that gap closes with this patch, not before it.
  	writel(H713_VIDEO_CTRL_ACTIVE, h->regs + AFBD_VIDEO_CTRL);
  	writel(1, h->regs + AFBD_VIDEO_READY);
  	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
-@@ -578,6 +748,9 @@
+@@ -578,6 +769,9 @@
  	h->lvds_regs = devm_platform_ioremap_resource_byname(pdev, "lvds");
  	if (IS_ERR(h->lvds_regs))
  		return PTR_ERR(h->lvds_regs);
@@ -402,7 +429,7 @@ identical, but that gap closes with this patch, not before it.
  
  	irq = platform_get_irq(pdev, 0);
  	if (irq < 0)
-@@ -644,11 +817,12 @@
+@@ -644,11 +838,12 @@
  	if (upper_32_bits(h->video_info_dma))
  		return dev_err_probe(dev, -ERANGE,
  				     "VideoInfo DMA address is above 4 GiB\n");
@@ -416,3 +443,24 @@ identical, but that gap closes with this patch, not before it.
  	h->selector_rgb = readl(h->lvds_regs + 0x06c);
  	if (h->mode.hdisplay != H713_VIDEO_WIDTH ||
  	    h->mode.vdisplay != H713_VIDEO_HEIGHT ||
+@@ -690,9 +885,18 @@
+ 	 * would have to scale. 4096 is the same ceiling h713_afbd_read_mode()
+ 	 * already applies when it sanity-checks the adopted geometry.
+ 	 */
+-	drm->mode_config.min_width = h->mode.hdisplay;
++	/*
++	 * These bounds gate drm_internal_framebuffer_create(), which runs
++	 * BEFORE any plane's atomic_check.  They must therefore be permissive
++	 * enough for the smallest thing any plane accepts -- the video plane
++	 * now takes a source below the panel size and magnifies it -- and the
++	 * real per-plane policy is enforced in atomic_check where it belongs.
++	 * Pinning the minimum to the panel size made a 960x544 framebuffer
++	 * fail at AddFB2 with EINVAL, before the driver saw it at all.
++	 */
++	drm->mode_config.min_width = 16;
+ 	drm->mode_config.max_width = 4096;
+-	drm->mode_config.min_height = h->mode.vdisplay;
++	drm->mode_config.min_height = 16;
+ 	drm->mode_config.max_height = 4096;
+ 	drm->mode_config.funcs = &h713_afbd_mode_config_funcs;
+ 
