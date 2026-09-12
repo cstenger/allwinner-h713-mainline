@@ -1,0 +1,8 @@
+baseline-0x500             ctrl=0x500    poke=none                   frames=30   extent 0..4439039
+cc-matches-960x544         ctrl=0x500    poke=0xcc=0x022003c0        frames=30   extent 0..4473727
+cc-asks-1280x720           ctrl=0x500    poke=0xcc=0x02d00500        frames=30   extent 0..4569119
+cc-swapped-1280x720        ctrl=0x500    poke=0xcc=0x050002d0        frames=30   extent 0..4872639
+cc-only-no-sdrot           ctrl=0x0      poke=0xcc=0x02d00500        frames=30   nothing written
+cc-1280x720-ctrl-h-only    ctrl=0x100    poke=0xcc=0x02d00500        frames=30   extent 0..4960799
+ctrl220-bit9-set           ctrl=0x500    poke=0x220=0x207            frames=30   extent 0..4439039
+ctrl220-bit9-clear         ctrl=0x500    poke=0x220=0x7              frames=30   extent 0..4439039

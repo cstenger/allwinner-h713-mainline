@@ -91,12 +91,19 @@ That is two confirmed-working directions in series, no GPU. It is lossier than a
 true 1280x720 decode — the picture goes through a halving and then a 4:3
 magnification — but both halves are measured rather than hoped for.
 
-The alternative, and the better picture if it works, is the **arbitrary-ratio
-path**: `H264ConfigNewScaler` writes a 256-byte coefficient table plus
-`VE+0x20`, `0xcc`, `0xe4`, `0xe8`, `0xec`, `0xf8`, `0xfc`. A polyphase resampler
-with an explicit `scale wxh = %dx%d` target could do 1920x1080 -> 1280x720
-directly. Nothing in this run touched it. **That is the next experiment**, and
-it is headless like this one.
+The alternative is the **arbitrary-ratio path**, `H264ConfigNewScaler`. That was
+probed next and came back negative with a specific blocker — see
+[ARBITRARY-RATIO.md](ARBITRARY-RATIO.md). Summary: the mode is real and genuinely
+not power-of-two (a `vdiv.f32` and a 12-fractional-bit conversion), but its size
+and ratio registers are at `getRegBase(7) + 0x10/0x14/0x18`, and **register block
+7 is not in the VE's 4 KiB MMIO window** — everything above `0x300` reads zero
+during an active decode. Finding its physical base means following `getRegBase`
+out through `libVE.so`'s PLT into another vendor library.
+
+That document also records a correction that invalidates part of the static work
+this one rests on: `libawh264.so` has a **0x1000 skew** between virtual address
+and file offset, so every disassembly done by symbol address was reading the
+wrong function.
 
 ## Three silent failures, each of which looked like "no such hardware"
 
