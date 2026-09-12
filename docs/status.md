@@ -4,9 +4,53 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-09-04._
+_Last updated: 2026-09-12._
 
-## Video playback — where it stands, 2026-09-04
+## Video playback — where it stands (scaling answered 2026-09-12)
+
+> ## SCALING: ANSWERED 2026-09-12 — read this before the narrative below
+>
+> Full handoff: **[handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md)**
+>
+> **1080p on the 720p panel is possible by exactly one no-GPU route, and both of
+> its hardware halves are now confirmed on the board. It is not built.**
+>
+> ```
+> 1920x1080 --[ VE power-of-two, decode-time ]--> 960x544
+>           --[ proc upscaler 0x05180000, 1.333x ]--> 1280x720
+> ```
+>
+> - **Stage 1** is `VE_H264_SDROT_CTRL` at **`0x240`** (the H.264 *engine* block,
+>   not the top-level VE), with luma/chroma addresses at `0x244`/`0x248`. Two
+>   2-bit fields: `[9:8]` horizontal, `[11:10]` vertical, each 1:1 / 1/2 / 1/4.
+>   **Power-of-two per axis, so there is no 1280x720 from the decoder.**
+> - **Stage 2** needed one register nobody had ever set: **`0x34`, the input
+>   window**. Every earlier magnification run left it at {1280,720} and got a
+>   clipped picture; set it to the real input size and the magnified image fills
+>   the panel. Operator-confirmed.
+> - **Cost: ~8.5 dB** against the arbitrary-ratio path, carrying **56%** of the
+>   panel's luma samples. Measured, not estimated.
+>
+> **The VE's arbitrary-ratio scaler is CLOSED — the datapath is not implemented
+> on this part.** Its register block is real (`getRegBase(7)` = **VE + `0xf00`**),
+> every write latches and holds, the genuine polyphase coefficients are extracted
+> and committed, the selection is pure software with **no hardware enable bit** —
+> and nothing ever comes out. `VE_VERSION` reads `0`. Do not re-probe it; the only
+> remaining falsifier is booting the vendor stack and watching what it emits.
+>
+> **The display pipeline has no downscaler at all** — census complete, exactly
+> three ratio-carrying blocks, all ruled out. See
+> [reference/scaler-census-2026-09-11.md](reference/scaler-census-2026-09-11.md).
+>
+> **What is left is entirely software**, and both pieces are specified in the
+> handoff: cedrus must make the 960x544 secondary output the V4L2 capture buffer
+> (the risky part — DPB reference pointers), and `sun50i-h713-afbd.c` declares
+> `DRM_PLANE_NO_SCALING` and rejects anything that is not exactly 1280x720.
+>
+> Everything from "2026-09-10, statically" down to the end of this section is
+> **historical** — the reasoning that led here, including several corrections.
+> It is kept because the corrections are instructive, not because it is current.
+
 
 **A file plays on the panel with picture and sound, hardware-decoded, no GPU.**
 `mpv --vo=drm --hwdec=vaapi` on the patched mpv, operator-confirmed on 720p
