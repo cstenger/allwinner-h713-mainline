@@ -185,3 +185,59 @@ Caveat: it is conceivable the vendor player instead scales in SurfaceFlinger via
 the GPU. Against that, `anSetScaleDownParam` and `ConfigExtraScaleInfo` exist
 precisely to drive the decoder path, and the VE registers are there to be
 driven.
+
+---
+
+## Probed on OUR board: the scale/rotate register file is REAL and reachable
+
+No vendor boot, no operator, no display involved — just a headless decode plus
+`devmem`. `ffmpeg -hwaccel vaapi -i leota-1080p.mp4 -f null -` decodes 1080p at
+~1.05x on our stack, and the VE runtime-PM state goes `suspended` → `active`.
+
+**Read the VE only while a decode is actually in flight.** When the device is
+runtime-suspended the whole 4 KiB window reads `0x00000000`, which looks exactly
+like "the block is not there" — the first attempt raced the start of the decode
+and read all zeros for that reason.
+
+During an active 1080p decode, `0x01c0e000`–`0x01c0efff`:
+
+```
++0x000 = 0x00130001     VE_MODE
++0x004 = 0x00000300
++0x01c = 0x00010000
++0x030 = 0x00000200
++0x040 = 0x0000000F     <-- sd_rotate_ctrl_reg40, NON-ZERO
++0x080 = 0x00001C55     +0x084 = 0x000FFFFF     +0x088 = 0x00008000
++0x0a0 = 0x000B2600     +0x0a4 = 0x00007720
++0x0c4 = 0x0007F800
++0x0c8 = 0x03C00780     <-- {0x03C0, 0x0780} = {960, 1920}
++0x0e0 = 0x00033110     +0x0e4 = 0x00012011
+```
+
+Two things follow:
+
+1. **`+0x0c8` = `{960, 1920}`** for a 1920-wide frame — luma width and chroma
+   width (1920/2). That confirms the window really is the VE's register file and
+   that we are reading it coherently, not sampling noise.
+2. **`sd_rotate_ctrl_reg40` reads `0x0000000F`** — the register exists and
+   decodes on this silicon. Mainline cedrus has no knowledge of scale-down, so
+   whatever is in there is a reset default or incidental; the point is that the
+   address is live rather than reading back as zero or bus-error.
+
+`+0x0e4` also appears in `H264ConfigNewScaler`'s write set, and it is populated.
+
+### What this does and does not prove
+
+It establishes the **register file is present and addressable on the H713**. It
+does **not** yet show the scaler produces a scaled output — that needs a second
+buffer allocated and the registers programmed per frame, which is a cedrus patch
+rather than a `devmem` poke, because cedrus rewrites its register set on every
+job and would immediately overwrite anything we wrote by hand.
+
+### The next step is driver work, not probing
+
+Patch cedrus to, on each H.264 job: allocate a second output buffer, write
+`VE+0x44`/`0x48` with its luma/chroma addresses, set the mode in `VE+0x40`, and
+see whether scaled pixels land in it. That is the experiment that settles it, and
+it needs no display, no MIPS, no operator — the output can be dumped to a file
+and inspected off-board.
