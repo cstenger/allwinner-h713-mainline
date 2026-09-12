@@ -1,5 +1,30 @@
 # 0x05180000 is an UPSCALER — it cannot downscale. Route closed.
 
+> ## UPDATE 2026-09-12 — the measurement stands; two conclusions do not
+>
+> **Still true, and load-bearing:** this block magnifies by `1/ratio`, the field
+> clamps at unity, and it cannot produce 1920→1280.
+>
+> **But it is no longer a dead end.** It is now **stage 2 of the live route** —
+> it takes the VE's 960x544 decode-time output up to 1280x720, operator-confirmed
+> on the panel. See
+> [../ve-scaledown-2026-09-11/UPSCALE-GEOMETRY-CONFIRMED.md](../ve-scaledown-2026-09-11/UPSCALE-GEOMETRY-CONFIRMED.md)
+> and [the handoff](../../handoff-2026-09-12-ve-scaledown.md).
+>
+> **The "geometry untouched throughout" discipline that makes this run clean is
+> also what hid `0x34`.** `0x34` is the **input window**, and leaving it at
+> {1280,720} while commanding magnification is what clipped every earlier
+> magnified picture into a hard-edged rectangle. Set it to the real input size
+> and the picture fills the panel.
+>
+> **The two open items at the bottom are closed, and so is the closing
+> sentence.** The whole-image census settled the search:
+> [../scaler-census-2026-09-11.md](../scaler-census-2026-09-11.md) — exactly
+> three ratio-carrying blocks exist, `0x050c0000` is noise reduction with no
+> scaler, and the panel down-scaler is vertical-only. So the no-GPU *downscale*
+> options are indeed exhausted — **and the GPU is still not what is left.** The
+> downscale happens in the VE instead, at decode time.
+
 2026-09-11, cold boot, static test card on the DECD video plane, five stills
 (`local/lcd-photos/test_85/`). Gates verified before any ratio was written;
 all five readbacks confirmed; restore verified against pre-run values.

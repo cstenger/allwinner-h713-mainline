@@ -1,5 +1,22 @@
 # ratio_h isolated — it MAGNIFIES. The block is an upscaler.
 
+> ## CONFIRMED AND EXPLAINED 2026-09-12 — the clip window was `0x34`
+>
+> The hypothesis at the end of the clipping refinement below was right. The
+> **input window at `0x34`** is the whole of it: left at `0x050002D0` = {1280,720}
+> while the ratio commands magnification, the block confines its output to a
+> hard-edged rectangle with flat grey outside. Set it to the true input size and
+> the magnified picture fills the panel cleanly — operator-confirmed:
+> [../ve-scaledown-2026-09-11/UPSCALE-GEOMETRY-CONFIRMED.md](../ve-scaledown-2026-09-11/UPSCALE-GEOMETRY-CONFIRMED.md).
+>
+> This block is now **stage 2 of the surviving 1080p route** (960x544 → 1280x720
+> at 1.333x): [the handoff](../../handoff-2026-09-12-ve-scaledown.md).
+>
+> Also worth carrying forward: `0x05180000`'s registers hold **live upper bits**
+> (`0x08` reads `0x43010000`, `0x00` reads `0x0F008000`), so every field write
+> must be read-modify-write, and the V phase at unity is **0**, not `0x10000` —
+> `(unity+unity)>>1` overflows the 16-bit field.
+
 2026-09-11, cold boot, filmed (`local/lcd-photos/test_83/IMG_0823.MOV`, 35.5 s).
 `proc-scaler-ratio-ramp.sh --engage`, instance 0, geometry untouched throughout,
 `ratio_v` left at unity. Only `0x14[27]`, `0x08[21:0]` and `0x00[15:0]` written.

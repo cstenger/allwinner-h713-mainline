@@ -5,6 +5,27 @@ says otherwise; the two things that are *not* proven are called out in
 [What is not proven](#what-is-not-proven), and you should read that section
 before spending a week on this.
 
+> ## ⚠ THE GOAL IS ANSWERED ELSEWHERE — 2026-09-12
+>
+> This plan's goal ("1080p on the panel using the SoC's own scaler, no GPU") now
+> has an answer, and it does not go through the window layer:
+> **[handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md)** —
+> downscale in the **VE at decode time** to 960x544, then magnify 1.333x in the
+> proc upscaler at `0x05180000`. Both halves hardware-confirmed.
+>
+> Two of this document's premises are withdrawn outright:
+>
+> - **There is no "inline scaler at `0x05000000`".** That block has no scaler at
+>   all; the registers cited throughout are line-buffer geometry (Rowbyte,
+>   LineBufLevel, LineNumber) —
+>   [reference/composition-ratio-registers-are-line-buffers-2026-09-10.md](reference/composition-ratio-registers-are-line-buffers-2026-09-10.md).
+> - **"Our display path has no scaler" is no longer true.** The proc block at
+>   `0x05180000` is on our video raster and we drive it directly. It only
+>   magnifies, which is why the downscale had to move into the VE.
+>
+> Read this document for the window-layer descriptor work and the closed routes,
+> not for the scaling strategy.
+
 > ## ⚠ SUPERSEDED 2026-09-05 — read the handoff first
 >
 > [handoff-2026-09-04-mips-window-layer.md](handoff-2026-09-04-mips-window-layer.md)

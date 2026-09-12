@@ -1,5 +1,22 @@
 # The VE downscales at decode time — that is how the vendor plays 1080p
 
+> ## OUTCOME ON HARDWARE — 2026-09-11 / 09-12
+>
+> The premise held. What the board then said about the two paths:
+>
+> - **Power-of-two scale-down WORKS** — but at `0x240`/`0x244`/`0x248` in the
+>   **H.264 engine block**, not the top-level VE offsets this document derives.
+>   [ve-scaledown-2026-09-11/RESULT.md](ve-scaledown-2026-09-11/RESULT.md).
+> - **The arbitrary-ratio scaler is CLOSED** — real in the vendor code, register
+>   block at VE + `0xf00`, every write latches, coefficients extracted and
+>   uploaded, selection is pure software with no enable bit, and nothing comes
+>   out. `VE_VERSION` reads `0`.
+>   [ve-scaledown-2026-09-11/SELECTION-FOUND.md](ve-scaledown-2026-09-11/SELECTION-FOUND.md).
+>
+> Full state: [the 2026-09-12 handoff](../handoff-2026-09-12-ve-scaledown.md).
+> This document also carries an inline correction — see the `H264JudgeScaleMode`
+> note below.
+
 Static RE of the vendor Android stack, no board time. This answers the question
 the whole scaler search was really asking, and it answers it in a different
 layer than we were looking.

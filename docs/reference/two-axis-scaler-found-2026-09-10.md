@@ -1,5 +1,23 @@
 # A two-axis scaler at 0x05180000 — found, decoded, and confirmed against hardware
 
+> ## WHAT HAPPENED NEXT (2026-09-11 / 09-12)
+>
+> The field map below is correct and every register it names checked out on
+> hardware. Two things it left open are now settled:
+>
+> - **It is an UPSCALER.** `ratio_h` clamps at unity; below unity it magnifies by
+>   `1/ratio`, above unity it does nothing. The proposed 1/2 liveness test would
+>   not have shrunk anything. Measured:
+>   [proc-scaler-upscale-only-2026-09-11/RESULT.md](proc-scaler-upscale-only-2026-09-11/RESULT.md).
+> - **`0x34` is the input window, and it matters more than anything else here.**
+>   Leaving it at the raster's {1280,720} while commanding magnification clips
+>   the output into a hard-edged rectangle. Setting it to the true input size is
+>   what made the block usable:
+>   [ve-scaledown-2026-09-11/UPSCALE-GEOMETRY-CONFIRMED.md](ve-scaledown-2026-09-11/UPSCALE-GEOMETRY-CONFIRMED.md).
+>
+> It is now **stage 2 of the surviving 1080p-on-720p route** — see
+> [the 2026-09-12 handoff](../handoff-2026-09-12-ve-scaledown.md).
+
 Static RE plus two register reads. **No board time beyond a `devmem` loop, no
 reboot.**
 

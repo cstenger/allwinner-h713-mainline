@@ -98,7 +98,7 @@ busybox devmem 0x05880038 32 0x00800080      # 128x128 cell size
 busybox devmem 0x0588003c 32 0x3F000000      # Red chroma word
 busybox devmem 0x05880040 32 0x000000FF      # Blue chroma word
 ```
-- During early U-Boot bringup ([mips-display-recovery.md](file:///home/chris/Projects/h713/docs/mips-display-recovery.md#L2680-L2690)), this exact pattern generator configuration produced **three bright vertical colour bands** directly on the glass.
+- During early U-Boot bringup ([mips-display-recovery.md](mips-display-recovery.md#L2680-L2690)), this exact pattern generator configuration produced **three bright vertical colour bands** directly on the glass.
 - When applied on the live board, the registers took the values cleanly.
 - **Result:** The user confirmed that the screen remained **completely blank**.
 - **Restoration:** We restored TCON back to normal mode (`0x0588001c = 0x00000004`, `0x0588000c = 0x00E40202`).
@@ -110,7 +110,7 @@ busybox devmem 0x05880040 32 0x000000FF      # Blue chroma word
 Because the TCON test pattern generator produces output directly into the LVDS serializer and the registers match the known-good bringup state bit-for-bit, the failure of any image or light to reach the glass is constrained to three distinct possibilities:
 
 ### Hypothesis 1: The 36V Light Engine Rail is Missing (Power Supply)
-- **Reference**: [docs/backlight-investigation.md](file:///home/chris/Projects/h713/docs/backlight-investigation.md#L129-L132) and lines 232–234.
+- **Reference**: [docs/backlight-investigation.md](backlight-investigation.md#L129-L132) and lines 232–234.
 - **Mechanism**: The HY200 projector uses a **dual-output AC/DC brick**: **12V** feeds the mainboard, logic, and cooling fan. A separate **36V** rail enters the board and feeds the high-voltage boost converter (which steps up 36V $\rightarrow$ 52.6V for the high-power projector LED lamp).
 - **Symptom**: If the board is powered from a single-rail 12V bench supply (or barrel jack without the 36V connector), the SoC boots normally, the fan spins, `PB5` goes high, and software believes the backlight is on — but the LED lamp has **zero power**, projecting pitch black.
 - **Check**: Measure voltage at the 2-pin connector silkscreened `LED` (should read ~52.6V when on, 36V input).
@@ -120,7 +120,7 @@ Because the TCON test pattern generator produces output directly into the LVDS s
 - **Check**: Verify physical connection of the 0.5mm FPC LVDS ribbon cable from the mainboard to the optical block, and ensure the projector lens cap or manual shutter is open.
 
 ### Hypothesis 3: Panel Controller State / Cold Power-Cycle Sequence
-- **Reference**: [docs/mips-display-recovery.md](file:///home/chris/Projects/h713/docs/mips-display-recovery.md#L1540-L1550).
+- **Reference**: [docs/mips-display-recovery.md](mips-display-recovery.md#L1540-L1550).
 - **Mechanism**: The panel driver IC requires a specific power-on sequence: `PF6` high, then `PH16` pulsed low for 2 ms, then high, with at least 550 ms pre-delay.
   > *"The bring-up powers the panel by driving PF6 high and pulsing PH16; with the panel still powered from the previous run, that 'power on' was a no-op and the panel never re-ran its own init. Dropping the rail properly is what makes a second bring-up behave like a first."*
 - **Check**: In Linux, `PF6` and `PH16` are held statically high without dynamic power cycling in the DRM driver. If the panel latched up during a warm boot or U-Boot transition, it will remain opaque black until the rails are dropped and re-sequenced.

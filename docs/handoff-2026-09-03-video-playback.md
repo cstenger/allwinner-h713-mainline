@@ -273,6 +273,12 @@ The GPU path is the only one that puts 1080p on the panel at all, and it does so
 badly. It also needs the **stock** `/usr/bin/mpv`: our build is `-Dgl=disabled`
 on purpose, so `gpu-context=drm` is not compiled into it.
 
+> **No longer true as of 2026-09-12** (the measurements above still are). A
+> no-GPU 1080p route is hardware-confirmed end to end: downscale in the **VE at
+> decode time** to 960x544, then magnify 1.333x in the proc upscaler at
+> `0x05180000`. It is not built — two pieces of driver work remain. See
+> [handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md).
+
 ### The scaler at 0x05000000 is NOT in our path
 
 `docs/reference/firmware-display-block-survey-2026-08-31.md` identifies

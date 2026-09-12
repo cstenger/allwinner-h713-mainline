@@ -120,3 +120,19 @@ answer by itself: the panel down-scaler is vertical-only, so at best it delivers
 **If that comes back negative, the no-GPU options are exhausted** and the GPU
 path is what remains — which is the first time in this project that statement
 can be made from an enumeration rather than from a run of individual nulls.
+
+> ## UPDATE 2026-09-12 — the enumeration was right, the conclusion was wrong
+>
+> The census stands: **no display block can downscale our path.** But the
+> conclusion drawn from it — that the GPU is therefore what remains — assumed
+> the downscale had to happen in the display pipeline. It does not.
+>
+> **The VE can downscale at decode time**, by powers of two per axis, at
+> `VE_H264_SDROT_CTRL` (H.264 engine block, `0x240`). 1920x1080 → 960x544 →
+> 1.333x in the proc upscaler → 1280x720, both halves hardware-confirmed:
+> [../handoff-2026-09-12-ve-scaledown.md](../handoff-2026-09-12-ve-scaledown.md).
+>
+> So the remaining experiment named above — the panel down-scaler's video-side
+> test — is no longer on the critical path, and neither is the GPU. The lesson
+> is worth keeping: an exhaustive census of *one* pipeline stage is exhaustive
+> only of that stage.

@@ -4,6 +4,11 @@ Companion to [the MIPS callback trace handoff](handoff-2026-09-08-mips-callback-
 (a separate session, same day) and successor to
 [the composition-block handoff](handoff-2026-09-06-composition-block.md).
 
+> **Later: [the 2026-09-12 VE scale-down handoff](handoff-2026-09-12-ve-scaledown.md)**
+> answers the resolution question this one leaves at 720p — 1080p reaches the
+> panel with no GPU by decoding to 960x544 in the VE and magnifying 1.333x in the
+> proc upscaler. Both halves hardware-confirmed, neither built.
+
 **Real Cedrus-decoded video renders correctly on the panel with the MIPS core
 alive, and the source route now lives in the driver.**
 

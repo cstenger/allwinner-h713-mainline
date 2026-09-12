@@ -1,5 +1,24 @@
 # VE scale-down probe — the fixratio register triple is NOT wired on H713
 
+> ## ⚠ REFUTED THE SAME DAY — THE PROBE WAS AT THE WRONG BASE
+>
+> **The scale-down works.** This sweep programmed the **top-level** VE at
+> `0x40`/`0x44`/`0x48`. The registers are in the **H.264 engine block** at
+> **`0x240`/`0x244`/`0x248`**. Move the writes there and the hardware produces
+> real scaled frames: [../ve-scaledown-2026-09-11/RESULT.md](../ve-scaledown-2026-09-11/RESULT.md)
+> and [the handoff](../../handoff-2026-09-12-ve-scaledown.md).
+>
+> **Why sixteen clean nulls were not evidence.** The control register at the
+> top-level base is real and writable, so it read back correctly — but the
+> *address* registers there read back **zero**, and a scaler with nowhere to
+> write produces nothing. The harness now aborts if the luma address reads zero,
+> and the rule generalises: **a null is only evidence once the stimulus is shown
+> to have reached the hardware.**
+>
+> The document's own closing caution — do not declare the VE scale-down dead on
+> one register set — was correct, and is the reason the right base was found.
+> Everything below is kept for that.
+
 2026-09-11. Kernel patch `0097-EXPERIMENT-media-cedrus-probe-the-ve-scale-down-secondary-output`
 built, deployed as a module, and swept. Headless throughout — no display, no
 MIPS, no operator.

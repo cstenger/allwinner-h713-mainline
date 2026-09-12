@@ -96,6 +96,15 @@ restores RGB. The first version should accept only linear 1280x720 NV12 with no
 scaling, crop, rotation, or alpha. The exact test and result are in
 [handoff-2026-09-01-decd-kms-shape.md](handoff-2026-09-01-decd-kms-shape.md).
 
+> **The 1280x720-only rule is scheduled to change.** `1080p` on this panel now
+> has a hardware-confirmed no-GPU route that requires the plane to accept a
+> **960x544** source and magnify it in the proc upscaler at `0x05180000`. That
+> means dropping `DRM_PLANE_NO_SCALING`, advertising a scaling range, and
+> programming the upscaler from `atomic_update` — specified in §3.2 of
+> [handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md).
+> Note the gap named there: a genuine 960x544 framebuffer has never been scanned
+> out, so that change is also the first real test of it.
+
 Out-of-series patch 0078 is the first implementation of that shape. It keeps
 the proven RGB simple pipe and adds a manually initialized atomic overlay plane
 for linear fullscreen 1280x720 NV12 only. The driver owns the exclusive mux

@@ -204,43 +204,72 @@ attached, the display path can be brought up here, not only on the projector
    unchanged, so reuse is not the cause. Patch 0072 now refuses segmented
    imports and 0073 declares the single-mapping constraint.
 
-   **PLAYBACK IS DONE AT 720p (2026-09-03), and blocked above it.** A file plays
-   on the panel with picture and sound, hardware-decoded, GPU idle, through a
-   patched `mpv --vo=drm --hwdec=vaapi` (`patches/mpv/`, built by
-   `tools/video/build-mpv.sh`). Operator-confirmed.
+   **PLAYBACK IS DONE AT 720p (2026-09-03); above it is answered but unbuilt
+   (2026-09-12, below).** A file plays on the panel with picture and sound,
+   hardware-decoded, GPU idle, through a patched `mpv --vo=drm --hwdec=vaapi`
+   (`patches/mpv/`, built by `tools/video/build-mpv.sh`). Operator-confirmed.
 
    **The remaining limit is resolution, and it is structural: we own the
    fetcher, not the pipeline.** Our KMS driver maps three windows — `afbd`,
    `route`, `lvds`. It does not map the scaler, the vblender, the mixer or the
    TCON; those are set up once at U-Boot/MIPS bring-up as a fixed 1280×720
-   single window. So the middle stage of the pipeline is absent from our path:
-   no scaling (DECD is a fetcher with one coordinate space and no ratio
-   register), and **no compositing either** — the two DECD sources are a switch,
-   not a blender, so an OSD over video is the same class of problem.
+   single window. So the middle stage of the pipeline is largely absent from our
+   path: DECD itself is a fetcher with one coordinate space and no ratio
+   register, and there is **no compositing** — the two DECD sources are a switch,
+   not a blender, so an OSD over video is the same class of problem. The one
+   exception, found 2026-09-10 and confirmed on the panel 2026-09-12, is the
+   proc **upscaler** at `0x05180000`: it sits on our video raster, we can drive
+   it directly, and it magnifies. It cannot shrink.
 
-   **Stock scales with the inline scaler at `0x05000000`, driven by the MIPS
-   (settled 2026-09-04, static analysis only).** A `lui`-immediate scan of
-   `display.bin` gives that block **45 sites — more than any other display
-   block** — writing exactly the ratio and two-coordinate-space registers we
-   sampled live (`+0x174`/`+0x178`/`+0x1b8`, `+0x274`/`+0x278`/`+0x2b8`). The
-   earlier "inert" reading was taken during a *720p* playback, where an inert
-   scaler is expected either way; it never discriminated.
+   **~~Stock scales with the inline scaler at `0x05000000`~~ — WITHDRAWN
+   2026-09-10.** That block has no scaler at all. The registers the `lui` scan
+   found (`+0x0f0`/`+0x174`/`+0x1b4`/`+0x210`/`+0x274`/`+0x2b4` and the
+   `+0x178`/`+0x1b8`/`+0x278`/`+0x2b8` group) are **line-buffer geometry** —
+   Rowbyte, LineBufLevel and LineNumber for the Y and C planes, named in the
+   producing function's own log line. Rowbyte is linear in picture width, which
+   is the whole of what the apparent "ratio" ever showed. See
+   [reference/composition-ratio-registers-are-line-buffers-2026-09-10.md](reference/composition-ratio-registers-are-line-buffers-2026-09-10.md).
 
-   Two routes remain for anything above 720p:
+   **Above 720p is ANSWERED 2026-09-12, and the answer needs no GPU:**
+   **[handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md)**.
+
+   ```
+   1920x1080 --[ VE power-of-two, decode-time ]--> 960x544
+             --[ proc upscaler 0x05180000, 1.333x ]--> 1280x720
+   ```
+
+   Both halves are hardware-confirmed with exact register values; **neither is
+   built.** What remains is two pieces of driver work, specified in §3 of that
+   handoff: cedrus must make the 960x544 secondary output the V4L2 capture
+   buffer (the risky half — the DPB reference pointers must stay aimed at
+   internal full-size primaries), and `sun50i-h713-afbd.c` must stop declaring
+   `DRM_PLANE_NO_SCALING` and rejecting anything that is not exactly 1280x720.
+   The route costs **~8.5 dB** against a true 1.5x downscale and carries 56% of
+   the panel's luma samples. It is the only no-GPU option, and it is not good.
+
+   Closed on the way there, none of them worth re-testing:
 
    - **~~Drive the inline scaler from Linux with the MIPS parked~~ — CLOSED
-     2026-09-04.** Tested twice with the operator watching: the ratio registers
-     take writes but changing them does nothing, MIPS parked or alive, because
-     the MIPS owns presentation through its own window state. The live route is
-     now to become stock's ARM side and drive the window layer —
-     **[mips-window-layer-plan.md](mips-window-layer-plan.md)** has the plan,
-     the descriptor offsets recovered from the firmware, the hazards, and the
-     closed routes.
-   - **Fix the GPU path's artifacts** — `vo=gpu` on the stock mpv runs 1080p at
-     ~0.83x realtime with sync intact but 481 dropped frames and visible
-     artifacts. Cheapest route to a usable 1080p today, and note there is no 2D
-     engine to fall back on: after the GPU the only other stage-1 scaler is the
-     CPU.
+     2026-09-04**, and doubly so since 09-10: the registers took writes and did
+     nothing because they are not ratios. The window-layer plan in
+     **[mips-window-layer-plan.md](mips-window-layer-plan.md)** still holds for
+     *presentation* state, which the MIPS does own.
+   - **~~The VE's arbitrary-ratio scaler~~ — CLOSED 2026-09-12.** Real in the
+     vendor code (14 ratio buckets, 1.5x squarely supported), register block
+     located at **VE + `0xf00`**, every write latches and holds, the genuine
+     polyphase coefficients extracted and uploaded, and the selection is **pure
+     software with no hardware enable bit** — and nothing ever comes out.
+     `VE_VERSION` reads `0`. The one remaining falsifier is booting the vendor
+     stack and watching what it emits; that is a separate errand.
+   - **~~A downscaler anywhere in the display pipeline~~ — CLOSED 2026-09-11**
+     by a whole-image census of `display.bin`: exactly **three** ratio-carrying
+     blocks exist, and all three are ruled out
+     ([reference/scaler-census-2026-09-11.md](reference/scaler-census-2026-09-11.md)).
+     `0x050c0000` is noise reduction / motion estimation, not a scaler.
+   - **The GPU path** — `vo=gpu` on the stock mpv runs 1080p at ~0.83x realtime
+     with sync intact but 481 dropped frames and visible artifacts. It is the
+     fallback of last resort now that a no-GPU route exists, not the cheap
+     option; do not propose it ahead of finishing the composite route.
 
    **~~GE2D at `0x5240000`~~ — DEAD, and dead for the second time.**
    `ge2d@5240000` is the projector's display controller, not a 2D engine:
