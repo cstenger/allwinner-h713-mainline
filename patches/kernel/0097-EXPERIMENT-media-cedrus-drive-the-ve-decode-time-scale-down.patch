@@ -1,0 +1,467 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] EXPERIMENT: media: cedrus: drive the VE decode-time scale-down
+
+The H713 display pipeline has no downscaler. An exhaustive census of the MIPS
+display firmware found exactly three ratio-carrying blocks -- the proc scaler at
+0x05180000 (upscale only, measured), the panel down-scaler at 0x051c0138
+(vertical only) and a capture-side scaler at 0x06940000 (input path, cannot be
+fed from DRAM). None can do 1920x1080 -> 1280x720.
+
+Static RE of the vendor Android stack says why: the vendor never downscales on
+the display side. It downscales AT THE DECODER. libOmxVdec.so exports
+anSetScaleDownParam, libvdecoder.so exports ConfigExtraScaleInfo and logs
+"scale wxh = %dx%d", and libawh264.so carries H264ConfigureScaleRotateRegister,
+which writes reg40/reg44/reg48.
+
+Those numbers are offsets within the H.264 ENGINE block, not the top-level VE
+register file: mainline already names the first of them VE_H264_SDROT_CTRL
+(0x240 = VE_ENGINE_DEC_H264 + 0x40) and leaves 0x244/0x248 as an unnamed gap,
+and the H.265 engine carries the same trio as VE_DEC_H265_SDRT_{CTRL,LUMA_ADDR,
+CHROMA_ADDR}. This patch names the two H.264 address registers and drives all
+three.
+
+Confirmed on the board. The unit is real, and the control word decodes as two
+independent 2-bit fields:
+
+    VE_H264_SDROT_CTRL[9:8]    horizontal   0 = 1:1, 1 = 1/2, 2 = 1/4
+    VE_H264_SDROT_CTRL[11:10]  vertical     0 = 1:1, 1 = 1/2, 2 = 1/4
+    3 in either field produces a partial, malformed write.
+
+Twelve control words were swept against a 1920x1088 source and every output
+size matched that model exactly, including two nulls and two invalid-field
+partials; 960x544, 1920x544 and 960x1088 were rendered and visually confirmed
+correctly proportioned. So the scale-down is power-of-two per axis -- which
+matches H264ComputeScaleRatio returning 0/1/2 for none/half/quarter -- and it
+cannot produce 1280x720. The arbitrary-ratio path (H264ConfigNewScaler, a
+256-byte coefficient table plus VE+0x20/0xcc/0xe4..0xfc) is untouched here.
+
+Three things had to be right before any of this produced a picture, and each
+one failed silently first:
+
+  - The registers must be programmed AFTER the codec's own setup. That is where
+    cedrus_engine_enable() writes VE_MODE; programming a disabled engine leaves
+    the address registers reading back zero. Hence sd_stage.
+  - The addresses go in raw, unshifted, unlike several other engine registers.
+    Hence sd_shift, and the readback that settles it.
+  - The secondary output format defaults to TILED_32_NV12. Selecting linear
+    NV12 needs the EXT table (VE_CHROMA_BUF_LEN[31:30] = 1) and then
+    VE_PRIMARY_OUT_FMT[3:0] = 4. Clearing those two bits selects the tiled
+    default, which yields a striped dump from a scaler that is working
+    correctly. Hence sd_fmt.
+
+This is a harness, not an implementation: every unknown is a module parameter
+so the encoding can be swept from userspace without a rebuild, and the output
+buffer is exposed at /sys/kernel/debug/cedrus_sd_buf. It is re-poisoned with
+0xa5 whenever sd_ctrl changes, so each candidate is judged against a clean
+buffer and "wrote nothing" stays distinguishable from "wrote black". A shadow
+copy is taken when the decoding context is released, so the result outlives the
+player that produced it.
+
+    sunxi_cedrus.sd_w=1920 sd_h=2176    target size; 0 (default) disables
+                                        everything and the driver is unchanged
+    sunxi_cedrus.sd_ctrl=0x500          raw value for VE_H264_SDROT_CTRL
+    sunxi_cedrus.sd_fmt=1               select linear NV12 rather than tiled
+    sunxi_cedrus.sd_stage=1             program after the codec setup
+    sunxi_cedrus.sd_shift=0             address shift
+
+Default off: with sd_w=0 not a single register write changes.
+
+Driven by tools/video/ve-scaledown-sweep.sh.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+
+diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus.c b/drivers/staging/media/sunxi/cedrus/cedrus.c
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.c
+@@ -410,6 +410,9 @@
+ 	v4l2_ctrl_handler_free(&ctx->hdl);
+ 	kfree(ctx->ctrls);
+ 
++	/* EXPERIMENT: release the scale-down secondary output buffer. */
++	cedrus_sd_free(ctx);
++
+ 	v4l2_fh_exit(&ctx->fh);
+ 
+ 	kfree(ctx);
+diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+@@ -93,11 +93,20 @@
+ 	v4l2_m2m_buf_copy_metadata(run.src, run.dst, true);
+ 
+ 	cedrus_dst_format_set(dev, &ctx->dst_fmt);
++	/* EXPERIMENT: point the scale-down unit at our own buffer. */
++	cedrus_sd_setup(ctx, 0);
+ 
+ 	error = ctx->current_codec->setup(ctx, &run);
+ 	if (error)
+ 		v4l2_err(&ctx->dev->v4l2_dev,
+ 			 "Failed to setup decoding job: %d\n", error);
++	else
++		/*
++		 * The codec's setup runs cedrus_engine_enable(), so this is the
++		 * first point at which the engine is actually on -- which is
++		 * where the vendor programs scale/rotate.
++		 */
++		cedrus_sd_setup(ctx, 1);
+ 
+ 	/* Complete request(s) controls if needed. */
+ 
+@@ -110,6 +119,9 @@
+ 		schedule_delayed_work(&dev->watchdog_work,
+ 				      msecs_to_jiffies(2000));
+ 
++		/* EXPERIMENT: did the scale-down values survive to the trigger? */
++		cedrus_sd_verify(ctx);
++
+ 		ctx->current_codec->trigger(ctx);
+ 	} else {
+ 		v4l2_m2m_buf_done_and_job_finish(ctx->dev->m2m_dev,
+diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus.h b/drivers/staging/media/sunxi/cedrus/cedrus.h
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.h
+@@ -121,6 +121,14 @@
+ 	struct cedrus_dec_ops		*current_codec;
+ 	unsigned int			bit_depth;
+ 
++	/*
++	 * EXPERIMENT: secondary (scale-down) output buffer. Allocated lazily
++	 * when sd_w/sd_h are set, freed with the context.
++	 */
++	void				*sd_buf;
++	dma_addr_t			sd_buf_dma;
++	size_t				sd_buf_size;
++
+ 	struct v4l2_ctrl_handler	hdl;
+ 	struct v4l2_ctrl		**ctrls;
+ 
+diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -16,6 +16,8 @@
+ #include <linux/platform_device.h>
+ #include <linux/of.h>
+ #include <linux/of_reserved_mem.h>
++#include <linux/debugfs.h>
++#include <linux/vmalloc.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/interrupt.h>
+ #include <linux/clk.h>
+@@ -31,6 +33,261 @@
+ #include "cedrus_hw.h"
+ #include "cedrus_regs.h"
+ 
++/*
++ * EXPERIMENT: the VE scale-down secondary output.
++ *
++ * Inert unless sd_w and sd_h are both non-zero: with the defaults not one
++ * register write changes, so a kernel carrying this behaves exactly as before.
++ */
++static unsigned int sd_w;
++static unsigned int sd_h;
++static unsigned int sd_ctrl;
++static unsigned int sd_fmt;
++static unsigned int sd_stage = 1;
++static unsigned int sd_shift;
++module_param(sd_w, uint, 0644);
++MODULE_PARM_DESC(sd_w, "EXPERIMENT: scale-down target width (0 = disabled)");
++module_param(sd_h, uint, 0644);
++MODULE_PARM_DESC(sd_h, "EXPERIMENT: scale-down target height (0 = disabled)");
++module_param(sd_ctrl, uint, 0644);
++MODULE_PARM_DESC(sd_ctrl,
++		 "EXPERIMENT: raw value for VE_H264_SDROT_CTRL (encoding unknown)");
++module_param(sd_fmt, uint, 0644);
++MODULE_PARM_DESC(sd_fmt, "EXPERIMENT: also set the secondary output format bits");
++module_param(sd_stage, uint, 0644);
++MODULE_PARM_DESC(sd_stage,
++		 "EXPERIMENT: program at 0 = before the codec setup, 1 = after it (default; engine enabled)");
++module_param(sd_shift, uint, 0644);
++MODULE_PARM_DESC(sd_shift,
++		 "EXPERIMENT: right-shift applied to the output addresses (0 = raw, 8 = >>8)");
++
++static struct dentry *cedrus_sd_debugfs;
++static struct cedrus_ctx *cedrus_sd_ctx;
++static unsigned int sd_ctrl_last;
++static bool sd_ctrl_armed;
++static bool sd_log_once;
++static DEFINE_MUTEX(cedrus_sd_lock);
++
++/*
++ * A shadow copy of the last secondary output, taken when the decoding context
++ * goes away. Without it the result is only readable while a decode is in
++ * flight, because the DMA buffer belongs to the context: closing the decoder
++ * would destroy the very thing the experiment is trying to look at.
++ */
++static void *cedrus_sd_shadow;
++static size_t cedrus_sd_shadow_size;
++
++static ssize_t cedrus_sd_read(struct file *file, char __user *buf,
++			      size_t count, loff_t *ppos)
++{
++	struct cedrus_ctx *ctx;
++	ssize_t ret = 0;
++
++	mutex_lock(&cedrus_sd_lock);
++
++	ctx = cedrus_sd_ctx;
++	if (ctx && ctx->sd_buf)
++		ret = simple_read_from_buffer(buf, count, ppos, ctx->sd_buf,
++					      ctx->sd_buf_size);
++	else if (cedrus_sd_shadow)
++		ret = simple_read_from_buffer(buf, count, ppos,
++					      cedrus_sd_shadow,
++					      cedrus_sd_shadow_size);
++
++	mutex_unlock(&cedrus_sd_lock);
++
++	return ret;
++}
++
++static const struct file_operations cedrus_sd_fops = {
++	.owner	= THIS_MODULE,
++	.read	= cedrus_sd_read,
++	.llseek	= default_llseek,
++};
++
++/*
++ * The node is owned by the driver, not by a decoding context: a debugfs file
++ * whose fops live in this module must not outlive the module, and one created
++ * per context would vanish the moment a player exits.
++ */
++void cedrus_sd_debugfs_init(void)
++{
++	cedrus_sd_debugfs = debugfs_create_file("cedrus_sd_buf", 0400, NULL,
++						NULL, &cedrus_sd_fops);
++}
++
++void cedrus_sd_debugfs_exit(void)
++{
++	debugfs_remove(cedrus_sd_debugfs);
++	cedrus_sd_debugfs = NULL;
++
++	mutex_lock(&cedrus_sd_lock);
++	vfree(cedrus_sd_shadow);
++	cedrus_sd_shadow = NULL;
++	cedrus_sd_shadow_size = 0;
++	mutex_unlock(&cedrus_sd_lock);
++}
++
++void cedrus_sd_free(struct cedrus_ctx *ctx)
++{
++	if (!ctx->sd_buf)
++		return;
++
++	mutex_lock(&cedrus_sd_lock);
++
++	if (cedrus_sd_ctx == ctx) {
++		if (cedrus_sd_shadow_size != ctx->sd_buf_size) {
++			vfree(cedrus_sd_shadow);
++			cedrus_sd_shadow = vmalloc(ctx->sd_buf_size);
++			cedrus_sd_shadow_size = cedrus_sd_shadow ?
++						ctx->sd_buf_size : 0;
++		}
++		if (cedrus_sd_shadow)
++			memcpy(cedrus_sd_shadow, ctx->sd_buf,
++			       cedrus_sd_shadow_size);
++
++		cedrus_sd_ctx = NULL;
++	}
++
++	mutex_unlock(&cedrus_sd_lock);
++
++	dma_free_coherent(ctx->dev->dev, ctx->sd_buf_size, ctx->sd_buf,
++			  ctx->sd_buf_dma);
++	ctx->sd_buf = NULL;
++	ctx->sd_buf_size = 0;
++}
++
++void cedrus_sd_setup(struct cedrus_ctx *ctx, unsigned int stage)
++{
++	struct cedrus_dev *dev = ctx->dev;
++	unsigned int w = ALIGN(sd_w, 16);
++	unsigned int h = ALIGN(sd_h, 16);
++	size_t luma, size;
++	bool log = false;
++	u32 reg;
++
++	if (!sd_w || !sd_h)
++		return;
++
++	/*
++	 * Which side of the codec's own setup to program from. The vendor
++	 * configures scale/rotate as part of the decode configuration, i.e.
++	 * after cedrus_engine_enable() has written VE_MODE; programming a
++	 * disabled engine would be a null result that means nothing. Kept as a
++	 * parameter so both orderings can be compared without a rebuild.
++	 */
++	if (stage != sd_stage)
++		return;
++
++	luma = (size_t)w * h;
++	size = luma * 3 / 2;
++
++	if (ctx->sd_buf && ctx->sd_buf_size != size)
++		cedrus_sd_free(ctx);
++
++	if (!ctx->sd_buf) {
++		ctx->sd_buf = dma_alloc_coherent(dev->dev, size,
++						 &ctx->sd_buf_dma, GFP_KERNEL);
++		if (!ctx->sd_buf) {
++			dev_warn(dev->dev, "sd: cannot allocate %zu bytes\n",
++				 size);
++			return;
++		}
++		ctx->sd_buf_size = size;
++		mutex_lock(&cedrus_sd_lock);
++		cedrus_sd_ctx = ctx;
++		mutex_unlock(&cedrus_sd_lock);
++		sd_ctrl_armed = false;
++	}
++
++	/*
++	 * Re-poison whenever the swept value changes, so each candidate is
++	 * judged against a clean buffer rather than against whatever the
++	 * previous candidate left behind. A scaler that never runs leaves the
++	 * pattern intact, which separates "wrote nothing" from "wrote black" --
++	 * a flat fill is ambiguous on this hardware. Logging here rather than
++	 * at allocation means one line per swept value, not one per decode.
++	 */
++	if (!sd_ctrl_armed || sd_ctrl != sd_ctrl_last) {
++		memset(ctx->sd_buf, 0xa5, ctx->sd_buf_size);
++		sd_ctrl_last = sd_ctrl;
++		sd_ctrl_armed = true;
++		log = true;
++		sd_log_once = true;
++		dev_info(dev->dev,
++			 "sd: %ux%u buffer %zu bytes at %pad, ctrl %#x, stage %u\n",
++			 w, h, size, &ctx->sd_buf_dma, sd_ctrl, sd_stage);
++	}
++
++	/*
++	 * H.264 frame addresses go into the engine raw (see cedrus_buf_addr),
++	 * but several other engine registers take them >> 8. Rather than guess,
++	 * write under sd_shift and read back: a register that stores 0xff000000
++	 * as 0x00ff0000 has told us its own convention.
++	 */
++	cedrus_write(dev, VE_H264_SDROT_LUMA_ADDR,
++		     (u32)(ctx->sd_buf_dma >> sd_shift));
++	cedrus_write(dev, VE_H264_SDROT_CHROMA_ADDR,
++		     (u32)((ctx->sd_buf_dma + luma) >> sd_shift));
++
++	if (sd_fmt) {
++		/*
++		 * The secondary output format is a two-level selector: the top
++		 * two bits of VE_CHROMA_BUF_LEN pick the table, and only the
++		 * EXT table carries linear NV12, in VE_PRIMARY_OUT_FMT[3:0].
++		 * Clearing those two bits selects TILED_32_NV12 (the reset
++		 * default), which is what produced a striped dump on the first
++		 * hit -- the scaler was running correctly and being read wrong.
++		 */
++		reg = cedrus_read(dev, VE_CHROMA_BUF_LEN);
++		reg = (reg & ~(0x3u << 30)) | VE_SECONDARY_OUT_FMT_EXT;
++		cedrus_write(dev, VE_CHROMA_BUF_LEN, reg);
++
++		reg = cedrus_read(dev, VE_PRIMARY_OUT_FMT);
++		reg = (reg & ~0xfu) | VE_SECONDARY_OUT_FMT_EXT_NV12;
++		cedrus_write(dev, VE_PRIMARY_OUT_FMT, reg);
++	}
++
++	cedrus_write(dev, VE_H264_SDROT_CTRL, sd_ctrl);
++
++	if (log) {
++		/*
++		 * Read the registers back. A null result from a write that never
++		 * landed is indistinguishable from a null result from a scaler
++		 * that does not exist -- and only one of those is a finding.
++		 */
++		dev_info(dev->dev,
++			 "sd: wrote  ctrl=%#010x luma=%#010x chroma=%#010x  VE_MODE=%#010x\n",
++			 cedrus_read(dev, VE_H264_SDROT_CTRL),
++			 cedrus_read(dev, VE_H264_SDROT_LUMA_ADDR),
++			 cedrus_read(dev, VE_H264_SDROT_CHROMA_ADDR),
++			 cedrus_read(dev, VE_MODE));
++	}
++}
++
++/*
++ * Read the scale-down registers back at the point the decode is actually
++ * triggered, which is what says whether the values survived the codec's own
++ * setup -- cedrus_engine_enable() rewrites VE_MODE, and the engine is disabled
++ * between frames.
++ */
++void cedrus_sd_verify(struct cedrus_ctx *ctx)
++{
++	struct cedrus_dev *dev = ctx->dev;
++
++	if (!sd_w || !sd_h || !ctx->sd_buf || !sd_log_once)
++		return;
++
++	sd_log_once = false;
++
++	dev_info(dev->dev,
++		 "sd: attrig ctrl=%#010x luma=%#010x chroma=%#010x  VE_MODE=%#010x\n",
++		 cedrus_read(dev, VE_H264_SDROT_CTRL),
++		 cedrus_read(dev, VE_H264_SDROT_LUMA_ADDR),
++		 cedrus_read(dev, VE_H264_SDROT_CHROMA_ADDR),
++		 cedrus_read(dev, VE_MODE));
++}
++
+ int cedrus_engine_enable(struct cedrus_ctx *ctx)
+ {
+ 	u32 reg = 0;
+@@ -397,6 +654,8 @@
+ 			goto err_pm;
+ 	}
+ 
++	cedrus_sd_debugfs_init();
++
+ 	return 0;
+ 
+ err_pm:
+@@ -411,6 +670,8 @@
+ 
+ void cedrus_hw_remove(struct cedrus_dev *dev)
+ {
++	cedrus_sd_debugfs_exit();
++
+ 	pm_runtime_disable(dev->dev);
+ 	if (!pm_runtime_status_suspended(dev->dev))
+ 		cedrus_hw_suspend(dev->dev);
+diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_hw.h b/drivers/staging/media/sunxi/cedrus/cedrus_hw.h
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.h
+@@ -25,6 +25,12 @@
+ int cedrus_hw_suspend(struct device *device);
+ int cedrus_hw_resume(struct device *device);
+ 
++void cedrus_sd_setup(struct cedrus_ctx *ctx, unsigned int stage);
++void cedrus_sd_verify(struct cedrus_ctx *ctx);
++void cedrus_sd_free(struct cedrus_ctx *ctx);
++void cedrus_sd_debugfs_init(void);
++void cedrus_sd_debugfs_exit(void);
++
+ int cedrus_hw_probe(struct cedrus_dev *dev);
+ void cedrus_hw_remove(struct cedrus_dev *dev);
+ 
+diff -u --recursive a/drivers/staging/media/sunxi/cedrus/cedrus_regs.h b/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
+@@ -607,6 +607,17 @@
+ #define VE_H264_VLD_LEN			0x238
+ #define VE_H264_VLD_END			0x23c
+ #define VE_H264_SDROT_CTRL		0x240
++/*
++ * The two registers following VE_H264_SDROT_CTRL are the scale-down output
++ * addresses. Mainline leaves the gap unnamed, but three sources agree on what
++ * lives there: the vendor libawh264.so exports sd_rotate_ctrl_reg40,
++ * sd_rotate_buf_addr_reg44 and sd_rotate_chroma_buf_addr_reg48, whose numbers
++ * are offsets within this engine block (0x200), matching SDROT_CTRL at 0x240;
++ * and the H.265 engine carries the same trio as VE_DEC_H265_SDRT_{CTRL,
++ * LUMA_ADDR,CHROMA_ADDR} at its own +0x50/0x54/0x58.
++ */
++#define VE_H264_SDROT_LUMA_ADDR		0x244
++#define VE_H264_SDROT_CHROMA_ADDR	0x248
+ #define VE_H264_OUTPUT_FRAME_IDX	0x24c
+ #define VE_H264_EXTRA_BUFFER1		0x250
+ #define VE_H264_EXTRA_BUFFER2		0x254
