@@ -103,3 +103,85 @@ exactly that set of capabilities and no more. We were searching the wrong layer.
 This also retires the vendor-boot question for scaling: we now know *where* the
 vendor scales, so booting vendor to observe it is confirmation rather than
 discovery. Worth doing only if step 1 or 2 stalls.
+
+---
+
+## Disassembly: there are TWO scalers, and only one does arbitrary ratios
+
+`libawh264.so` is ARM32/Thumb, stripped but with exports intact. Disassembled
+with capstone (`objdump` here has no ARM support); the VE register base is
+`[r5,#0x18]` / `[r6,#0x18]` in these functions.
+
+### `H264ConfigureScaleRotateRegister` (`+0xde79`) — the FIXRATIO path
+
+Writes exactly three registers, confirming the symbol names:
+
+```
+0xdece  str r0, [r3, #0x40]     VE+0x40   control
+0xdf06  str r0, [r2, #0x44]     VE+0x44   scaled luma out
+0xdf3c  str r0, [r1, #0x48]     VE+0x48   scaled chroma out
+```
+
+`VE+0x40` is composed with `bfi`: **bits [2:0] = scale mode** (from ctx+0x54),
+plus 4-bit fields around [11:8] derived from ctx+0x44/+0x48.
+
+### `H264ComputeScaleRatio` (`+0x9d41`) — fixratio is POWER-OF-TWO ONLY
+
+```
+udiv r0, r2, r1      ; integer src/dst
+cmp  r0, #3
+movlo r0, #1         ; quotient < 3  -> 1
+subs r0, #3 ...
+mov  r0, #2          ; quotient >= 3 -> 2
+```
+
+Returns **0 if src <= dst** (no downscale), else a small enum: **1 = half,
+2 = quarter**. So the fixratio scaler cannot do 1920→1280; it would give
+1920x1080 → 960x540, *below* panel height.
+
+### `H264ConfigNewScaler` (`+0xdb71`) — the arbitrary-ratio path
+
+Much richer. Memsets a **256-byte** stack buffer (the coefficient table, cf.
+`ScaleCopyCoef`) and writes:
+
+```
+VE+0x20   control (bit 9 cleared via `bic r1, r1, #0x200`)
+VE+0x44   scaled luma out          VE+0x48   scaled chroma out
+VE+0xcc   VE+0xe4   VE+0xe8   VE+0xec   VE+0xf8   VE+0xfc
+```
+
+A coefficient table plus six extra size/phase registers is a polyphase
+resampler, which matches `scale wxh = %dx%d` being an explicit target rather
+than a ratio. **This is the path that could do 1920x1080 → 1280x720 directly.**
+
+`H264JudgeScaleMode` picks between them, and `new scale not support rotation`
+says the two are mutually exclusive with rotate.
+
+### Consequence if only fixratio turns out to be available
+
+`1080p → 960x540` (ratio 1) then **upscale 960x540 → 1280x720** on the proc
+scaler at `0x05180000`, which we proved magnifies by `1/ratio` and is live on our
+raster. `ratio_h = 0xC000` is 1.333x, exactly the factor needed. Lossier than a
+true 1280x720 decode, but it composes two confirmed-working directions and needs
+no GPU.
+
+## This is the normal playback path, not an exotic one
+
+A video played from a USB stick on the stock firmware goes: Android media
+framework → `libOmxVdec` (**`anSetScaleDownParam`**) → `libvdecoder`
+(**`ConfigExtraScaleInfo`**) → `libawh264`/`libawh265` → VE. Same path, same
+registers.
+
+That matters for how much to trust it:
+
+- The product is sold to play 1080p content on a 720p panel. If VE scale-down
+  did not work on this SoC, **every 1080p file would be cropped or letterboxed**
+  — an obvious defect. So the capability is very likely real and well exercised.
+- It gives a **zero-risk empirical check**: play a 1080p file from USB on stock
+  firmware and see whether it fills the screen at full width. That confirms
+  decode-time downscale with no register work and no disassembly.
+
+Caveat: it is conceivable the vendor player instead scales in SurfaceFlinger via
+the GPU. Against that, `anSetScaleDownParam` and `ConfigExtraScaleInfo` exist
+precisely to drive the decoder path, and the VE registers are there to be
+driven.
