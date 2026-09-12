@@ -115,13 +115,14 @@ Supporting that:
 - `VE_VERSION` (`0x0f0`) reads **`0x00000000`** on our part, where mainline
   expects a version field at bit 16.
 
-Not proven, though. The alternative is simply that the enable is somewhere I
-have not looked, and there is a concrete place left to look: **the selection is
-not made in `libawh264.so` at all.** Both scaler functions are exported plugin
-entry points, `H264DecoderSetExtraScaleInfo` merely stores its arguments into
-the context, and no branch in that library chooses between the two paths.
-Whatever decides — and whatever else it programs — lives in `libvdecoder.so`,
-around `ConfigExtraScaleInfo`. That is the next static step.
+Not proven here. **Resolved in [SELECTION-FOUND.md](SELECTION-FOUND.md):** the
+selection *is* in `libawh264.so` after all — I had missed the call sites because
+a linear disassembly desynchronises and because exported functions are called
+through the PLT. `ctx+0x40 == 2` picks `H264ConfigNewScaler`, anything else
+picks fixratio, and there is **no hardware enable bit** in the sequence. Since
+the two paths differ only in which registers the software programs, reproducing
+`ConfigNewScaler`'s writes is the entire configuration — which closes the route
+and makes "the datapath is not implemented" the conclusion rather than a guess.
 
 ### A correction to the earlier documents
 

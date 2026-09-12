@@ -18,6 +18,21 @@ Getting this wrong is expensive because it fails quietly:
 
 Use this instead of subtracting a constant.
 
+TWO MORE TRAPS in the same family, both of which produced a confident "no call
+sites" for functions that obviously had callers:
+
+  - DO NOT find call sites by disassembling .text linearly and matching branch
+    targets. Thumb is variable-length and .text carries inline literal pools, so
+    a linear sweep goes out of phase almost immediately. Decoding the BL/BLX
+    encoding at every 2-byte slot instead turned "0 call sites" into 681.
+  - Exported functions are called through the PLT even from inside their own
+    library. Call sites branch to a PLT stub, not to the symbol's address, so
+    matching on st_value finds nothing. Resolve stub -> GOT slot -> .rel.plt
+    symbol. That is what finally exposed the scaler selection in libawh264.so.
+
+A scanner that reports zero callers for a function that must have some is
+broken, not informative.
+
     from elf_addr import ElfAddr
     e = ElfAddr('libVE.so')
     e.u32(0x4d44)              # read a word at a virtual address
