@@ -88,7 +88,7 @@ One trap it set: building `drivers/staging/media/sunxi/cedrus/` stops at `.o`
 and does not relink the `.ko`, so the module on disk stays stale and its md5
 looks unchanged. Use `make modules`.
 
-## 5. The next fix, and it is small
+## 5. DONE 2026-09-15: the request-validate fix (patch 0114)
 
 `cedrus_request_validate()` rejects only a request with no buffer or with more
 than one. It never checks that the current codec's controls are present, so it
@@ -132,8 +132,9 @@ Also: our pinned `libva-v4l2-request` PR #38 has been open since 2021; PR #44
 
 ## 7. Suggested order for the next session
 
-1. **`cedrus_request_validate()` required-controls check.** Small, upstreamable,
-   closes both remaining compliance failures. Module-only verification.
+1. ~~`cedrus_request_validate()` required-controls check.~~ **Done, patch
+   `0114`, 48/49.** Worth sending upstream: cedrus and rkvdec both have this
+   gap and neither is currently tested for it.
 2. **De-`EXPERIMENT` `0097` and `0100`.** Both are in the shipping series and
    `0100` is worse than dead weight: `proc_en` (writable `0644`) gates whether
    the scaler engages at all, *after* `atomic_check` accepted the scaled
