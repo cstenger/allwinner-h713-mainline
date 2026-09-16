@@ -42,7 +42,7 @@ inert rather than rejected; `v4l2_ctrl_grab()` on the capture queue replaces the
 `EBUSY` that `s_ctrl` used to invent. The four-quadrant rotation matrix still
 passes at 0/90/180/270 after the rework, so the behaviour did not change.
 
-## Open: Requests and blocking wait
+## NOT regressions: Requests and blocking wait are newly EXPOSED
 
 ```
 fail: v4l2-test-buffers.cpp(2753): ret != ENOENT (got 0)      test Requests
@@ -50,28 +50,66 @@ fail: v4l2-test-buffers.cpp(3085): q.reqbufs(node, 2)         test blocking wait
 fail: v4l2-test-buffers.cpp(3139): testBlockingDQBuf(node, q)
 ```
 
-Introduced by `0110` and **not** fixed by the rework. What is established:
+Settled by reading `v4l-utils` at tag `v4l-utils-1.30.1`, the exact version of
+the binary on the board. **`0110` does not break these. It makes them testable
+for the first time.**
 
-- They are not caused by the `s_ctrl` error paths: removing those fixed only the
-  range check.
-- They are not caused by `v4l2_ctrl_grab()`: building without the grab scores the
-  same 46/49. The grab only moves where `Requests` fails — 2753 without it, 2651
-  (`doioctl(node, VIDIOC_S_EXT_CTRLS, &ctrls)`) with it.
-- The ENOENT check requires a stateless decoder to reject a request that is
-  missing its mandatory contents. `cedrus_request_validate()` returns `-ENOENT`
-  when the request carries no buffer, and nothing in `0110` touches it, so the
-  mechanism is **not yet identified**.
+`testRequests` opens by hunting for a control it can drive
+(`v4l2-test-buffers.cpp:2360`):
 
-The one structural difference `0110` introduces is that `V4L2_CID_ROTATE` is the
-only **plain integer** control in a handler whose other controls are all
-payload-carrying stateless codec controls, and
-`v4l2_ctrl_request_clone()` copies every control into every request with no
-filtering by flags. That is the lead, not a conclusion.
+```c
+    if (qctrl.type != V4L2_CTRL_TYPE_INTEGER &&
+        qctrl.type != V4L2_CTRL_TYPE_BOOLEAN)
+            continue;
+    ...
+    if (qctrl.minimum != qctrl.maximum) { valid_qctrl = qctrl; ctrl.id = qctrl.id; break; }
+```
 
-Next step, in order: instrument `cedrus_request_validate()` to log what the
-request actually contains on the failing call, and read the 1.30.1 sources for
-`v4l2-test-buffers.cpp` around those lines — the linuxtv git web view is behind
-a bot wall, so use a mirror or `apt-get source v4l-utils`.
+and gives up entirely if it finds none:
+
+```c
+    if (ctrl.id == 0) {
+            info("could not test the Request API, no suitable control found\n");
+            return (node->buf_caps & V4L2_BUF_CAP_SUPPORTS_REQUESTS) ? 0 : ENOTTY;
+    }
+```
+
+Every control cedrus had before `0110` is a compound, U32 or menu type — the
+`V4L2_CID_STATELESS_*` family plus `V4L2_CID_MPEG_VIDEO_H264_PROFILE`. **Not one
+is INTEGER or BOOLEAN.** So on stock cedrus this test has always returned "OK"
+after testing nothing, and line 2651 is not even reachable. `0110` adds
+`V4L2_CID_ROTATE`, an INTEGER with min 0 != max 270, and the suite runs.
+
+What it then finds is a real cedrus gap. `cedrus_request_validate()` only
+rejects a request with no buffer or more than one; it never checks that the
+current codec's controls are present, so a request carrying a buffer and an
+unrelated control queues successfully. Compliance expects a stateless decoder to
+answer `ENOENT` there:
+
+```c
+    // Stateless decoders might require that certain
+    // controls are present in the request. In that
+    // case they return ENOENT and we just stop testing
+    // since we don't know what those controls are.
+    fail_on_test_val(ret != ENOENT, ret);
+```
+
+The `blocking wait` failure is a knock-on. `fail_on_test_val` **returns** from
+`testRequests` on failure, so the `test_streaming = false; break;` two lines
+below never runs and neither does the cleanup after the loop: buffers stay
+allocated and request fds stay open. The independent `testBlockingDQBuf` then
+fails on its own `q.reqbufs(node, 2)` at 3085. Had cedrus answered `ENOENT`, the
+test would have broken out cleanly and cleaned up.
+
+So the fix is one change, in cedrus rather than in `0110`: make
+`cedrus_request_validate()` require the current codec's controls in the request
+and return `-ENOENT` when they are missing, as other stateless decoders do.
+That is an upstream-worthy fix on its own merits — decoding a slice with no SPS,
+PPS or slice params is meaningless, and today the driver accepts it.
+
+**The baseline's 48/49 was inflated.** It skipped the entire Request API suite.
+This is the same trap as the `vo=drm` black-panel bug: a passing suite that
+could not fail. Ask what it is blind to.
 
 ## What this run does NOT cover
 

@@ -43,12 +43,19 @@ Measured on H713, v4l2-compliance -d /dev/video0:
     with this patch as it now stands                  46/49
 
 The four-quadrant rotation matrix still passes at 0/90/180/270 after the
-rework.  Two failures remain that this patch introduces and that the rework
-does not fix -- "test Requests" and "test blocking wait" -- see the series
-notes; they are NOT caused by the s_ctrl error paths removed here, because
-they survive with the grab removed as well.  The remaining
-VIDIOC_G/S/TRY_EXT_CTRLS failure is pre-existing and present with the whole
-series reverted.
+rework.  Two failures remain, "test Requests" and "test blocking wait", and they are
+NOT caused by this patch.  testRequests only runs if it can find an INTEGER or
+BOOLEAN control to drive (v4l2-test-buffers.cpp:2360); every control cedrus had
+before this patch is a compound, U32 or menu type, so the suite has always
+returned OK after testing nothing.  V4L2_CID_ROTATE is the first INTEGER
+control cedrus has ever exposed, so the suite now runs -- and finds that
+cedrus_request_validate() never checks that the current codec's controls are
+present, queueing a request compliance expects a stateless decoder to refuse
+with ENOENT.  The blocking-wait failure follows from that one: fail_on_test_val
+returns before testRequests can clean up, leaving buffers allocated.  Fixing it
+belongs in cedrus_request_validate(), not here.  The remaining
+VIDIOC_G/S/TRY_EXT_CTRLS failure is likewise pre-existing and present with the
+whole series reverted.  See docs/reference/v4l2-compliance-2026-09-15.md.
 
 ---
 --- a/drivers/staging/media/sunxi/cedrus/cedrus.h
