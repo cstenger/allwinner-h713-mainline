@@ -1,0 +1,139 @@
+diff --git a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codech264dec.c b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codech264dec.c
+index 5dcfc0e..2d2852f 100644
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codech264dec.c
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codech264dec.c
+@@ -98,6 +98,8 @@ struct _GstV4l2CodecH264Dec
+   GstVideoInfoDmaDrm vinfo_drm;
+   gint display_width;
+   gint display_height;
++  gint output_width;
++  gint output_height;
+   gint coded_width;
+   gint coded_height;
+   guint bitdepth;
+@@ -409,13 +411,31 @@ gst_v4l2_codec_h264_dec_negotiate (GstVideoDecoder * decoder)
+   }
+   gst_caps_unref (caps);
+ 
++  self->output_width = self->display_width;
++  self->output_height = self->display_height;
++  {
++    guint compose_width, compose_height;
++
++    if (gst_v4l2_decoder_get_compose (self->decoder, &compose_width,
++            &compose_height) &&
++        compose_width <= GST_VIDEO_INFO_WIDTH (&self->vinfo_drm.vinfo) &&
++        compose_height <= GST_VIDEO_INFO_HEIGHT (&self->vinfo_drm.vinfo)) {
++      self->output_width = compose_width;
++      self->output_height = compose_height;
++      GST_INFO_OBJECT (self, "Using %dx%d compose rectangle in %dx%d capture canvas",
++          self->output_width, self->output_height,
++          GST_VIDEO_INFO_WIDTH (&self->vinfo_drm.vinfo),
++          GST_VIDEO_INFO_HEIGHT (&self->vinfo_drm.vinfo));
++    }
++  }
++
+ done:
+   if (self->output_state)
+     gst_video_codec_state_unref (self->output_state);
+ 
+   self->output_state =
+       gst_v4l2_decoder_set_output_state (GST_VIDEO_DECODER (self),
+-      &self->vinfo_drm, self->display_width, self->display_height,
++      &self->vinfo_drm, self->output_width, self->output_height,
+       h264dec->input_state);
+ 
+   if (self->interlaced)
+@@ -974,8 +994,8 @@ gst_v4l2_codec_h264_dec_new_sequence (GstH264Decoder * decoder,
+     gint i;
+ 
+     gst_video_info_set_format (&ref_vinfo,
+-        GST_VIDEO_INFO_FORMAT (&self->vinfo_drm.vinfo), self->display_width,
+-        self->display_height);
++        GST_VIDEO_INFO_FORMAT (&self->vinfo_drm.vinfo), self->output_width,
++        self->output_height);
+ 
+     for (i = 0; i < GST_VIDEO_INFO_N_PLANES (&self->vinfo_drm.vinfo); i++) {
+       if (self->vinfo_drm.vinfo.stride[i] != ref_vinfo.stride[i] ||
+@@ -1067,8 +1087,8 @@ gst_v4l2_codec_h264_dec_copy_output_buffer (GstV4l2CodecH264Dec * self,
+   GstBuffer *buffer;
+ 
+   gst_video_info_set_format (&dest_vinfo,
+-      GST_VIDEO_INFO_FORMAT (&self->vinfo_drm.vinfo), self->display_width,
+-      self->display_height);
++      GST_VIDEO_INFO_FORMAT (&self->vinfo_drm.vinfo), self->output_width,
++      self->output_height);
+ 
+   buffer = gst_video_decoder_allocate_output_buffer (GST_VIDEO_DECODER (self));
+   if (!buffer)
+@@ -1085,8 +1105,8 @@ gst_v4l2_codec_h264_dec_copy_output_buffer (GstV4l2CodecH264Dec * self,
+ 
+   /* gst_video_frame_copy can crop this, but does not know, so let make it
+    * think it's all right */
+-  GST_VIDEO_INFO_WIDTH (&src_frame.info) = self->display_width;
+-  GST_VIDEO_INFO_HEIGHT (&src_frame.info) = self->display_height;
++  GST_VIDEO_INFO_WIDTH (&src_frame.info) = self->output_width;
++  GST_VIDEO_INFO_HEIGHT (&src_frame.info) = self->output_height;
+ 
+   if (!gst_video_frame_copy (&dest_frame, &src_frame)) {
+     gst_video_frame_unmap (&src_frame);
+diff --git a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.c b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.c
+index d465a06..2dcca09 100644
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.c
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.c
+@@ -748,6 +748,40 @@ gst_v4l2_decoder_select_src_format (GstV4l2Decoder * self, GstCaps * caps,
+   return TRUE;
+ }
+ 
++gboolean
++gst_v4l2_decoder_get_compose (GstV4l2Decoder * self, guint * width,
++    guint * height)
++{
++  struct v4l2_selection selection = {
++    .type = self->src_buf_type,
++    .target = V4L2_SEL_TGT_COMPOSE,
++  };
++
++  g_return_val_if_fail (self->opened, FALSE);
++  g_return_val_if_fail (width != NULL, FALSE);
++  g_return_val_if_fail (height != NULL, FALSE);
++
++  if (ioctl (self->video_fd, VIDIOC_G_SELECTION, &selection) < 0) {
++    GST_DEBUG_OBJECT (self, "VIDIOC_G_SELECTION(COMPOSE) failed: %s",
++        g_strerror (errno));
++    return FALSE;
++  }
++
++  if (selection.r.left != 0 || selection.r.top != 0 ||
++      selection.r.width <= 0 || selection.r.height <= 0) {
++    GST_WARNING_OBJECT (self,
++        "Ignoring unsupported compose rectangle %dx%d%+d%+d",
++        selection.r.width, selection.r.height,
++        selection.r.left, selection.r.top);
++    return FALSE;
++  }
++
++  *width = selection.r.width;
++  *height = selection.r.height;
++  GST_DEBUG_OBJECT (self, "Compose rectangle is %ux%u", *width, *height);
++  return TRUE;
++}
++
+ GstVideoCodecState *
+ gst_v4l2_decoder_set_output_state (GstVideoDecoder * decoder,
+     GstVideoInfoDmaDrm * vinfo_drm, guint width,
+diff --git a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.h b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.h
+index ec410fe..02b9cb1 100644
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.h
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.h
+@@ -76,6 +76,10 @@ gboolean          gst_v4l2_decoder_select_src_format (GstV4l2Decoder * self,
+                                                       GstCaps * caps,
+                                                       GstVideoInfoDmaDrm * vinfo_drm);
+ 
++gboolean          gst_v4l2_decoder_get_compose (GstV4l2Decoder * self,
++                                                guint * width,
++                                                guint * height);
++
+ GstVideoCodecState * gst_v4l2_decoder_set_output_state (GstVideoDecoder * decoder,
+                                                         GstVideoInfoDmaDrm * drm_info,
+                                                         guint width,

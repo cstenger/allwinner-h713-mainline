@@ -1,0 +1,223 @@
+v4l2codecs: request H.264 hardware transforms
+
+Expose target output dimensions and clockwise rotation on the stateless H.264
+decoder.  Apply V4L2_CID_ROTATE before COMPOSE so the requested dimensions are
+in final orientation, and size the capture canvas to the requested target while
+the driver reports the reachable active rectangle through G_SELECTION.
+
+The H713 Cedrus implementation rounds each scale axis to 1, 1/2 or 1/4.  Thus
+output-width=1280 output-height=720 requests a 1280x720 capture canvas and gets
+a 960x544 active picture from 1920x1080 H.264.  The existing compose query then
+advertises that active picture while preserving the larger allocation stride
+and plane offsets.
+
+Also honor the property ID offset that gst_v4l2_decoder_install_properties()
+already accepts.  This leaves existing codecs unchanged and permits the H.264
+class to install its own properties before the common device properties.
+
+---
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codech264dec.c
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2codech264dec.c
+@@ -60,7 +60,10 @@
+ enum
+ {
+   PROP_0,
+-  PROP_LAST = PROP_0
++  PROP_OUTPUT_WIDTH,
++  PROP_OUTPUT_HEIGHT,
++  PROP_ROTATION,
++  PROP_LAST
+ };
+ 
+ static GstStaticPadTemplate sink_template =
+@@ -100,6 +103,9 @@
+   gint display_height;
+   gint output_width;
+   gint output_height;
++  guint requested_width;
++  guint requested_height;
++  guint rotation;
+   gint coded_width;
+   gint coded_height;
+   guint bitdepth;
+@@ -380,6 +386,15 @@
+     return FALSE;
+   }
+ 
++  if (!gst_v4l2_decoder_set_transform (self->decoder,
++          self->requested_width, self->requested_height, self->rotation)) {
++    GST_ELEMENT_ERROR (decoder, RESOURCE, SETTINGS,
++        ("Driver could not configure the requested transform."),
++        ("output=%ux%u rotation=%u: %s", self->requested_width,
++            self->requested_height, self->rotation, g_strerror (errno)));
++    return FALSE;
++  }
++
+   /* If the peer has ANY caps only advertise system memory caps */
+   peer_caps = gst_pad_peer_query_caps (decoder->srcpad, NULL);
+   static_filter =
+@@ -1530,6 +1545,15 @@
+   GObject *dec = G_OBJECT (self->decoder);
+ 
+   switch (prop_id) {
++    case PROP_OUTPUT_WIDTH:
++      self->requested_width = g_value_get_uint (value);
++      break;
++    case PROP_OUTPUT_HEIGHT:
++      self->requested_height = g_value_get_uint (value);
++      break;
++    case PROP_ROTATION:
++      self->rotation = g_value_get_uint (value);
++      break;
+     default:
+       gst_v4l2_decoder_set_property (dec, prop_id - PROP_LAST, value, pspec);
+       break;
+@@ -1544,6 +1568,15 @@
+   GObject *dec = G_OBJECT (self->decoder);
+ 
+   switch (prop_id) {
++    case PROP_OUTPUT_WIDTH:
++      g_value_set_uint (value, self->requested_width);
++      break;
++    case PROP_OUTPUT_HEIGHT:
++      g_value_set_uint (value, self->requested_height);
++      break;
++    case PROP_ROTATION:
++      g_value_set_uint (value, self->rotation);
++      break;
+     default:
+       gst_v4l2_decoder_get_property (dec, prop_id - PROP_LAST, value, pspec);
+       break;
+@@ -1585,6 +1618,22 @@
+   gobject_class->get_property = gst_v4l2_codec_h264_dec_get_property;
+   gobject_class->dispose = gst_v4l2_codec_h264_dec_dispose;
+ 
++  g_object_class_install_property (gobject_class, PROP_OUTPUT_WIDTH,
++      g_param_spec_uint ("output-width", "Output width",
++          "Target canvas and maximum active output width (0 disables scale-down)",
++          0, G_MAXINT, 0,
++          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
++  g_object_class_install_property (gobject_class, PROP_OUTPUT_HEIGHT,
++      g_param_spec_uint ("output-height", "Output height",
++          "Target canvas and maximum active output height (0 disables scale-down)",
++          0, G_MAXINT, 0,
++          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
++  g_object_class_install_property (gobject_class, PROP_ROTATION,
++      g_param_spec_uint ("rotation", "Rotation",
++          "Clockwise hardware rotation in degrees (0, 90, 180 or 270)",
++          0, 270, 0,
++          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
++
+   gst_element_class_set_static_metadata (element_class,
+       "V4L2 Stateless H.264 Video Decoder",
+       "Codec/Decoder/Video/Hardware",
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.c
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.c
+@@ -782,6 +782,76 @@
+   return TRUE;
+ }
+ 
++gboolean
++gst_v4l2_decoder_set_transform (GstV4l2Decoder * self, guint width,
++    guint height, guint rotation)
++{
++  struct v4l2_format format = {
++    .type = self->src_buf_type,
++  };
++  struct v4l2_control control = {
++    .id = V4L2_CID_ROTATE,
++    .value = rotation,
++  };
++  struct v4l2_selection selection = {
++    .type = self->src_buf_type,
++    .target = V4L2_SEL_TGT_COMPOSE,
++    .r.width = width,
++    .r.height = height,
++  };
++
++  g_return_val_if_fail (self->opened, FALSE);
++
++  if (rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270) {
++    errno = EINVAL;
++    return FALSE;
++  }
++  if (rotation && ioctl (self->video_fd, VIDIOC_S_CTRL, &control) < 0) {
++    GST_ERROR_OBJECT (self, "VIDIOC_S_CTRL(ROTATE=%u) failed: %s",
++        rotation, g_strerror (errno));
++    return FALSE;
++  }
++
++  if (!width && !height)
++    return TRUE;
++  if (!width || !height) {
++    errno = EINVAL;
++    return FALSE;
++  }
++  if (ioctl (self->video_fd, VIDIOC_S_SELECTION, &selection) < 0) {
++    GST_ERROR_OBJECT (self, "VIDIOC_S_SELECTION(COMPOSE=%ux%u) failed: %s",
++        width, height, g_strerror (errno));
++    return FALSE;
++  }
++
++  if (ioctl (self->video_fd, VIDIOC_G_FMT, &format) < 0) {
++    GST_ERROR_OBJECT (self, "VIDIOC_G_FMT after COMPOSE failed: %s",
++        g_strerror (errno));
++    return FALSE;
++  }
++  if (V4L2_TYPE_IS_MULTIPLANAR (self->src_buf_type)) {
++    format.fmt.pix_mp.width = width;
++    format.fmt.pix_mp.height = height;
++    format.fmt.pix_mp.plane_fmt[0].bytesperline = 0;
++    format.fmt.pix_mp.plane_fmt[0].sizeimage = 0;
++  } else {
++    format.fmt.pix.width = width;
++    format.fmt.pix.height = height;
++    format.fmt.pix.bytesperline = 0;
++    format.fmt.pix.sizeimage = 0;
++  }
++  if (ioctl (self->video_fd, VIDIOC_S_FMT, &format) < 0) {
++    GST_ERROR_OBJECT (self, "VIDIOC_S_FMT transform canvas=%ux%u failed: %s",
++        width, height, g_strerror (errno));
++    return FALSE;
++  }
++
++  GST_INFO_OBJECT (self,
++      "Requested transform canvas=%ux%u rotation=%u, active=%dx%d",
++      width, height, rotation, selection.r.width, selection.r.height);
++  return TRUE;
++}
++
+ GstVideoCodecState *
+ gst_v4l2_decoder_set_output_state (GstVideoDecoder * decoder,
+     GstVideoInfoDmaDrm * vinfo_drm, guint width,
+@@ -1147,12 +1217,14 @@
+     video_device_path = device->video_device_path;
+   }
+ 
+-  g_object_class_install_property (gobject_class, PROP_MEDIA_DEVICE,
++  g_object_class_install_property (gobject_class,
++      prop_offset + PROP_MEDIA_DEVICE,
+       g_param_spec_string ("media-device", "Media Device Path",
+           "Path to the media device node", media_device_path,
+           G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+ 
+-  g_object_class_install_property (gobject_class, PROP_VIDEO_DEVICE,
++  g_object_class_install_property (gobject_class,
++      prop_offset + PROP_VIDEO_DEVICE,
+       g_param_spec_string ("video-device", "Video Device Path",
+           "Path to the video device node", video_device_path,
+           G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.h
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2decoder.h
+@@ -80,6 +80,11 @@
+                                                 guint * width,
+                                                 guint * height);
+ 
++gboolean          gst_v4l2_decoder_set_transform (GstV4l2Decoder * self,
++                                                  guint width,
++                                                  guint height,
++                                                  guint rotation);
++
+ GstVideoCodecState * gst_v4l2_decoder_set_output_state (GstVideoDecoder * decoder,
+                                                         GstVideoInfoDmaDrm * drm_info,
+                                                         guint width,
