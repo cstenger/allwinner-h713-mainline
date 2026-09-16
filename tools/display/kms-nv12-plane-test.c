@@ -6,9 +6,10 @@
  * the first test: GEM DMA accepts that single contiguous PRIME mapping, while
  * fragmented Cedrus buffers remain blocked until the display IOMMU phase.
  *
- * Build on the target:
- *   cc -O2 -Wall -Wextra -Werror -o kms-nv12-plane-test \
- *      kms-nv12-plane-test.c $(pkg-config --cflags --libs libdrm)
+ * Build on the target, under /mnt/media-data because / is full:
+ *   cc -O2 -Wall -Wextra -o kms-nv12-plane-test kms-nv12-plane-test.c \
+ *      $(pkg-config --cflags --libs libdrm gstreamer-1.0 gstreamer-app-1.0 \
+ *        gstreamer-allocators-1.0 gstreamer-video-1.0) -lm
  *
  * Run only with an observer watching:
  *   ARMED=yes kms-nv12-plane-test frame.nv12 [dwell-seconds]
@@ -32,6 +33,8 @@
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
 #include <gst/allocators/gstdmabuf.h>
+#include <gst/allocators/gstfdmemory.h>
+#include <gst/video/video.h>
 
 #include <drm_fourcc.h>
 #include <xf86drm.h>
@@ -50,11 +53,14 @@
 
 static unsigned int src_w = PANEL_W;
 static unsigned int src_h = PANEL_H;
+static unsigned int src_pitch = PANEL_W;
 
-#define WIDTH src_w
-#define HEIGHT src_h
+#define WIDTH PANEL_W
+#define HEIGHT PANEL_H
 #define Y_SIZE (src_w * src_h)
 #define FRAME_SIZE (Y_SIZE + Y_SIZE / 2)
+#define SCANOUT_Y_SIZE (src_pitch * PANEL_H)
+#define SCANOUT_SIZE (SCANOUT_Y_SIZE + SCANOUT_Y_SIZE / 2)
 #define FRAME_PHYS 0x6c500000ULL
 #define SCANOUT_IOC_GET_FD _IOWR('S', 1, struct scanout_req)
 
@@ -151,6 +157,7 @@ struct kms_dma_buf_sync {
 	uint64_t flags;
 };
 #define KMS_DMA_BUF_SYNC_WRITE (1ULL << 1)
+#define KMS_DMA_BUF_SYNC_READ  (1ULL << 0)
 #define KMS_DMA_BUF_SYNC_START (0ULL << 2)
 #define KMS_DMA_BUF_SYNC_END   (1ULL << 2)
 #define KMS_DMA_BUF_IOCTL_SYNC _IOW('b', 0, struct kms_dma_buf_sync)
@@ -180,6 +187,20 @@ static GstSample *held_sample;		/* on screen now */
 static GstSample *prev_sample;		/* previous; freed one flip later */
 static GstElement *held_pipeline;
 static GstElement *held_sink;
+
+/*
+ * DMA_DRM output requires VideoMeta because its plane strides and offsets are
+ * per-buffer data.  Without this allocation proposal v4l2slh264dec falls back
+ * to a coded-size SystemMemory copy, hiding the capture DMA-BUF that KMS needs.
+ */
+static gboolean on_propose_allocation(GstElement *sink, GstQuery *query,
+				      gpointer user_data)
+{
+	(void)sink;
+	(void)user_data;
+	gst_query_add_allocation_meta(query, GST_VIDEO_META_API_TYPE, NULL);
+	return TRUE;
+}
 
 /*
  * Page-flip event bookkeeping.
@@ -279,8 +300,15 @@ static int cedrus_next_frame(void)
 	if (gst_buffer_n_memory(buf) != 1)
 		goto drop;
 	mem = gst_buffer_peek_memory(buf, 0);
-	if (!gst_is_dmabuf_memory(mem))
+	if (!gst_is_dmabuf_memory(mem)) {
+		fprintf(stderr,
+			"decoder memory type=%s fd-memory=%d fd=%d offset=%zu size=%zu\n",
+			mem->allocator ? mem->allocator->mem_type : "(none)",
+			gst_is_fd_memory(mem),
+			gst_is_fd_memory(mem) ? gst_fd_memory_get_fd(mem) : -1,
+			mem->offset, mem->size);
 		goto drop;
+	}
 
 	if (prev_sample)
 		gst_sample_unref(prev_sample);
@@ -296,7 +324,9 @@ drop:
 static int cedrus_decode_frame(const char *path)
 {
 	unsigned want = 60, seen = 0;
-	char desc[512];
+	char *desc, *quoted_path;
+	const char *demux = "";
+	GError *error = NULL;
 	GstElement *sink;
 	const char *env;
 	int fd = -1;
@@ -306,19 +336,39 @@ static int cedrus_decode_frame(const char *path)
 		want = (unsigned)strtoul(env, NULL, 0);
 
 	gst_init(NULL, NULL);
-	snprintf(desc, sizeof(desc),
-		 "filesrc location=\"%s\" ! h264parse ! v4l2slh264dec ! "
-		 "video/x-raw,format=NV12 ! "
-		 "appsink name=out max-buffers=3 drop=false sync=%s", path,
+	if (g_str_has_suffix(path, ".mp4") || g_str_has_suffix(path, ".MP4") ||
+	    g_str_has_suffix(path, ".mov") || g_str_has_suffix(path, ".MOV"))
+		demux = "qtdemux ! ";
+	else if (g_str_has_suffix(path, ".mkv") ||
+		 g_str_has_suffix(path, ".MKV"))
+		demux = "matroskademux ! ";
+	quoted_path = g_shell_quote(path);
+	desc = g_strdup_printf(
+		 "filesrc location=%s ! %sh264parse ! v4l2slh264dec ! "
+		 "video/x-raw(memory:DMABuf),format=DMA_DRM,drm-format=NV12 ! "
+		 "appsink name=out max-buffers=3 drop=false sync=%s",
+		 quoted_path, demux,
 		 (getenv("PACED") && strcmp(getenv("PACED"), "0")) ? "true"
 								  : "false");
-	held_pipeline = gst_parse_launch(desc, NULL);
+	g_free(quoted_path);
+	held_pipeline = gst_parse_launch(desc, &error);
+	g_free(desc);
 	if (!held_pipeline) {
-		fprintf(stderr, "cedrus pipeline will not build\n");
+		fprintf(stderr, "cedrus pipeline will not build: %s\n",
+			error ? error->message : "unknown parse error");
+		g_clear_error(&error);
 		return -1;
+	}
+	if (error) {
+		fprintf(stderr, "cedrus pipeline parse warning: %s\n",
+			error->message);
+		g_clear_error(&error);
 	}
 	sink = gst_bin_get_by_name(GST_BIN(held_pipeline), "out");
 	held_sink = sink;
+	gst_app_sink_set_emit_signals(GST_APP_SINK(sink), TRUE);
+	g_signal_connect(sink, "propose-allocation",
+			 G_CALLBACK(on_propose_allocation), NULL);
 	if (gst_element_set_state(held_pipeline, GST_STATE_PLAYING) ==
 	    GST_STATE_CHANGE_FAILURE) {
 		fprintf(stderr, "cedrus pipeline will not play\n");
@@ -347,11 +397,49 @@ static int cedrus_decode_frame(const char *path)
 		}
 		mem = gst_buffer_peek_memory(buf, 0);
 		if (!gst_is_dmabuf_memory(mem)) {
-			fprintf(stderr, "decoder did not give a dma-buf\n");
+			GstCaps *caps = gst_sample_get_caps(s);
+
+			fprintf(stderr,
+				"decoder memory type=%s fd-memory=%d fd=%d offset=%zu size=%zu caps=%s\n",
+				mem->allocator ? mem->allocator->mem_type : "(none)",
+				gst_is_fd_memory(mem),
+				gst_is_fd_memory(mem) ? gst_fd_memory_get_fd(mem) : -1,
+				mem->offset, mem->size,
+				caps ? gst_structure_get_name(gst_caps_get_structure(caps, 0)) : "(none)");
 			gst_sample_unref(s);
 			return -1;
 		}
 		fd = gst_dmabuf_memory_get_fd(mem);
+		if (getenv("CEDRUS_APP_DUMP")) {
+			GstMapInfo map = GST_MAP_INFO_INIT;
+			FILE *dump;
+			int failed;
+
+			if (!gst_memory_map(mem, &map, GST_MAP_READ)) {
+				fprintf(stderr, "cannot map decoded DMA-BUF for dump\n");
+				gst_sample_unref(s);
+				return -1;
+			}
+			dump = fopen(getenv("CEDRUS_APP_DUMP"), "wb");
+			if (!dump) {
+				fprintf(stderr, "cannot create decoded DMA-BUF dump\n");
+				gst_memory_unmap(mem, &map);
+				gst_sample_unref(s);
+				return -1;
+			}
+			failed = fwrite(map.data, 1, map.size, dump) != map.size;
+			if (fclose(dump))
+				failed = 1;
+			if (failed) {
+				fprintf(stderr, "cannot save decoded DMA-BUF\n");
+				gst_memory_unmap(mem, &map);
+				gst_sample_unref(s);
+				return -1;
+			}
+			gst_memory_unmap(mem, &map);
+			printf("saved decoded DMA-BUF (%zu bytes) to %s\n",
+			       map.size, getenv("CEDRUS_APP_DUMP"));
+		}
 		held_sample = s;	/* keep the surface out of the pool */
 		printf("cedrus frame %u: dma-buf fd=%d\n", want, fd);
 		return fd;
@@ -362,19 +450,23 @@ static int stage_frame(const char *path, int dmabuf_fd, size_t map_len)
 {
 	struct stat st;
 	uint8_t *map;
-	size_t done = 0;
-	int frame_fd;
+	unsigned int plane, row;
+	int frame_fd = -1;
+	int synthetic_black = getenv("SYNTH_BLACK") &&
+		strcmp(getenv("SYNTH_BLACK"), "0");
 
-	frame_fd = open(path, O_RDONLY | O_CLOEXEC);
-	if (frame_fd < 0) {
-		perror(path);
-		return -1;
-	}
-	if (fstat(frame_fd, &st) || st.st_size != FRAME_SIZE) {
-		fprintf(stderr, "%s must be exactly %u bytes\n", path,
-			FRAME_SIZE);
-		close(frame_fd);
-		return -1;
+	if (!synthetic_black) {
+		frame_fd = open(path, O_RDONLY | O_CLOEXEC);
+		if (frame_fd < 0) {
+			perror(path);
+			return -1;
+		}
+		if (fstat(frame_fd, &st) || st.st_size != FRAME_SIZE) {
+			fprintf(stderr, "%s must be exactly %u bytes\n", path,
+				FRAME_SIZE);
+			close(frame_fd);
+			return -1;
+		}
 	}
 
 	map = mmap(NULL, map_len, PROT_READ | PROT_WRITE, MAP_SHARED,
@@ -391,18 +483,31 @@ static int stage_frame(const char *path, int dmabuf_fd, size_t map_len)
 		close(frame_fd);
 		return -1;
 	}
-	while (done < FRAME_SIZE) {
-		ssize_t n = read(frame_fd, map + done, FRAME_SIZE - done);
+	/* Black-fill the unused native raster in limited-range NV12. */
+	memset(map, 16, SCANOUT_Y_SIZE);
+	memset(map + SCANOUT_Y_SIZE, 128, SCANOUT_Y_SIZE / 2);
+	for (plane = 0; !synthetic_black && plane < 2; plane++) {
+		unsigned int rows = plane ? src_h / 2 : src_h;
+		uint8_t *dst = map + (plane ? SCANOUT_Y_SIZE : 0);
 
-		if (n < 0 && errno == EINTR)
-			continue;
-		if (n <= 0) {
-			perror("read frame");
-			munmap(map, map_len);
-			close(frame_fd);
-			return -1;
+		for (row = 0; row < rows; row++) {
+			size_t done = 0;
+
+			while (done < src_w) {
+				ssize_t n = read(frame_fd, dst + row * src_pitch + done,
+						 src_w - done);
+
+				if (n < 0 && errno == EINTR)
+					continue;
+				if (n <= 0) {
+					perror("read frame");
+					munmap(map, map_len);
+					close(frame_fd);
+					return -1;
+				}
+				done += (size_t)n;
+			}
 		}
-		done += (size_t)n;
 	}
 	if (dmabuf_sync(dmabuf_fd,
 			KMS_DMA_BUF_SYNC_END | KMS_DMA_BUF_SYNC_WRITE,
@@ -412,8 +517,49 @@ static int stage_frame(const char *path, int dmabuf_fd, size_t map_len)
 		return -1;
 	}
 	munmap(map, map_len);
-	close(frame_fd);
+	if (frame_fd >= 0)
+		close(frame_fd);
+	if (synthetic_black)
+		printf("staged synthetic limited-range NV12 black\n");
 	return 0;
+}
+
+static int copy_dmabuf(int src_fd, int dst_fd, size_t size)
+{
+	uint8_t *src, *dst;
+	int rc = -1;
+
+	src = mmap(NULL, size, PROT_READ, MAP_SHARED, src_fd, 0);
+	if (src == MAP_FAILED) {
+		perror("mmap decoded dma-buf");
+		return -1;
+	}
+	dst = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, dst_fd, 0);
+	if (dst == MAP_FAILED) {
+		perror("mmap contiguous dma-buf");
+		munmap(src, size);
+		return -1;
+	}
+	if (dmabuf_sync(src_fd,
+			KMS_DMA_BUF_SYNC_START | KMS_DMA_BUF_SYNC_READ,
+			"decoded dma-buf sync start") ||
+	    dmabuf_sync(dst_fd,
+			KMS_DMA_BUF_SYNC_START | KMS_DMA_BUF_SYNC_WRITE,
+			"contiguous dma-buf sync start"))
+		goto out;
+	memcpy(dst, src, size);
+	if (dmabuf_sync(dst_fd,
+			KMS_DMA_BUF_SYNC_END | KMS_DMA_BUF_SYNC_WRITE,
+			"contiguous dma-buf sync end") ||
+	    dmabuf_sync(src_fd,
+			KMS_DMA_BUF_SYNC_END | KMS_DMA_BUF_SYNC_READ,
+			"decoded dma-buf sync end"))
+		goto out;
+	rc = 0;
+out:
+	munmap(dst, size);
+	munmap(src, size);
+	return rc;
 }
 
 int main(int argc, char **argv)
@@ -476,8 +622,9 @@ int main(int argc, char **argv)
 		src_h = h;
 	}
 
-	map_len = (FRAME_SIZE + 4095u) & ~4095u;
-	printf("source %ux%u -> panel %ux%u%s\n", src_w, src_h, PANEL_W, PANEL_H,
+	map_len = (SCANOUT_SIZE + 4095u) & ~4095u;
+	printf("source window %ux%u in %ux%u framebuffer, pitch %u -> panel %ux%u%s\n",
+	       src_w, src_h, WIDTH, HEIGHT, src_pitch, PANEL_W, PANEL_H,
 	       (src_w == PANEL_W && src_h == PANEL_H) ? " (1:1, no scaling)"
 						      : " (UPSCALED)");
 
@@ -547,6 +694,29 @@ int main(int argc, char **argv)
 		dmabuf_fd = cedrus_decode_frame(argv[1]);
 		if (dmabuf_fd < 0)
 			goto out;
+		if (getenv("DECODE_ONLY") && strcmp(getenv("DECODE_ONLY"), "0")) {
+			printf("DECODE_ONLY: capture DMA-BUF acquired; no display commit\n");
+			rc = 0;
+			goto out;
+		}
+		if (getenv("COPY_TO_SCANOUT") &&
+		    strcmp(getenv("COPY_TO_SCANOUT"), "0")) {
+			scanout_ctl = open("/dev/scanout-dmabuf",
+					   O_RDWR | O_CLOEXEC);
+			if (scanout_ctl < 0) {
+				perror("/dev/scanout-dmabuf");
+				goto out;
+			}
+			scanout.size = map_len;
+			if (ioctl(scanout_ctl, SCANOUT_IOC_GET_FD, &scanout) < 0) {
+				perror("SCANOUT_IOC_GET_FD");
+				goto out;
+			}
+			if (copy_dmabuf(dmabuf_fd, scanout.fd, SCANOUT_SIZE))
+				goto out;
+			dmabuf_fd = scanout.fd;
+			printf("copied decoded frame into contiguous scanout buffer\n");
+		}
 	} else {
 		scanout_ctl = open("/dev/scanout-dmabuf", O_RDWR | O_CLOEXEC);
 		if (scanout_ctl < 0) {
@@ -571,9 +741,9 @@ int main(int argc, char **argv)
 
 	handles[0] = gem_handle;
 	handles[1] = gem_handle;
-	pitches[0] = WIDTH;
-	pitches[1] = WIDTH;
-	offsets[1] = Y_SIZE;
+	pitches[0] = src_pitch;
+	pitches[1] = src_pitch;
+	offsets[1] = SCANOUT_Y_SIZE;
 	if (drmModeAddFB2(drm_fd, WIDTH, HEIGHT, DRM_FORMAT_NV12, handles,
 			  pitches, offsets, &fb_id, 0)) {
 		perror("drmModeAddFB2 NV12");
@@ -590,8 +760,8 @@ int main(int argc, char **argv)
 	    add_prop(atomic, plane_id, p_ch, PANEL_H, "CRTC_H") ||
 	    add_prop(atomic, plane_id, p_sx, 0, "SRC_X") ||
 	    add_prop(atomic, plane_id, p_sy, 0, "SRC_Y") ||
-	    add_prop(atomic, plane_id, p_sw, (uint64_t)WIDTH << 16, "SRC_W") ||
-	    add_prop(atomic, plane_id, p_sh, (uint64_t)HEIGHT << 16, "SRC_H"))
+	    add_prop(atomic, plane_id, p_sw, (uint64_t)src_w << 16, "SRC_W") ||
+	    add_prop(atomic, plane_id, p_sh, (uint64_t)src_h << 16, "SRC_H"))
 		goto out;
 
 	printf("WATCH THE PANEL: %s plane %u on CRTC %u for %us\n",

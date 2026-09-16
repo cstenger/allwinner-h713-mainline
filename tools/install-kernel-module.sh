@@ -25,7 +25,7 @@ set -euo pipefail
 SRC=${1:?usage: install-kernel-module.sh <tree-or-ko-path> [module-name]}
 NAME=${2:-sunxi-cedrus}
 BOARD=${BOARD:-192.168.4.1}
-SSH="ssh -o ConnectTimeout=5 root@$BOARD"
+SSH=(ssh -F /dev/null -o ConnectTimeout=5 "root@$BOARD")
 STAMP=$(date +%Y%m%d-%H%M%S)
 
 if [ -d "$SRC" ]; then
@@ -43,17 +43,20 @@ echo "==> $KO ($(stat -c%s "$KO") bytes, md5 $sum) -> $BOARD as $MOD"
 # vermagic must match the RUNNING kernel, not the one that happens to be on the
 # FAT. Checking here turns a silent "module verification failed" at modprobe
 # time into a refusal with both strings side by side.
-want=$($SSH 'uname -r')
+want=$("${SSH[@]}" 'uname -r')
 have=$(modinfo -F vermagic "$KO" 2>/dev/null | awk '{print $1}')
 [ "$have" = "$want" ] || {
 	echo "error: module is for $have, board runs $want" >&2
 	exit 1
 }
 
-scp -o ConnectTimeout=5 "$KO" "root@$BOARD:/tmp/$NAME.ko.new" >/dev/null
+scp -F /dev/null -o ConnectTimeout=5 "$KO" \
+	"root@$BOARD:/mnt/media-data/$NAME.ko.new" >/dev/null
 
-$SSH "set -e
-	got=\$(md5sum /tmp/$NAME.ko.new | cut -d' ' -f1)
+"${SSH[@]}" "set -e
+	staged=/mnt/media-data/$NAME.ko.new
+	backup_dir=/mnt/media-data/h713-module-backups
+	got=\$(md5sum \"\$staged\" | cut -d' ' -f1)
 	[ \"\$got\" = '$sum' ] || { echo 'error: upload corrupted'; exit 1; }
 
 	dst=\$(modinfo -n $MOD 2>/dev/null || true)
@@ -62,10 +65,12 @@ $SSH "set -e
 		exit 1
 	fi
 
-	cp \"\$dst\" /root/\$(basename \$dst).$STAMP.bak
-	echo \"    backed up \$dst -> /root/\$(basename \$dst).$STAMP.bak\"
-	cp /tmp/$NAME.ko.new \"\$dst\"
-	rm -f /tmp/$NAME.ko.new
+	mkdir -p \"\$backup_dir\"
+	backup=\"\$backup_dir/\$(basename \$dst).$STAMP.bak\"
+	cp \"\$dst\" \"\$backup\"
+	echo \"    backed up \$dst -> \$backup\"
+	cat \"\$staged\" > \"\$dst\"
+	rm -f \"\$staged\"
 	depmod -a
 
 	if lsmod | grep -q '^$MOD '; then
