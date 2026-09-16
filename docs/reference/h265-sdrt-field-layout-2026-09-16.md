@@ -209,3 +209,112 @@ versus raw is cheap and has not been run.
 
 `tools/video/hevc-rotation-check.sh` is the rig; it needs only a module swap,
 no bench time.
+
+---
+
+# The vendor SOURCE, found 2026-09-16 — and what it says
+
+`gh search code regHEVC_ExtraCtrl` turned up **`Allwinner-Homlet/H6-CedarC`**,
+which is the CedarC vdecoder in readable C, including
+`vdecoder/videoengine/h265/h265_register.{c,h}`. H6 is the closest relative to
+H713. This supersedes guessing from the blob — clone it before doing anything
+further:
+
+```bash
+git clone --depth 1 https://github.com/Allwinner-Homlet/H6-CedarC.git
+```
+
+## Bits 12 and 13, answered
+
+```c
+typedef struct HEVC_EXTRA_CTRL {
+    volatile unsigned rotate_angle      : 3;  // bit 0~2
+    volatile unsigned r0                : 5;  // bit 3~7
+    volatile unsigned scale_precision   : 4;  // bit 8~11
+    volatile unsigned field_scale_mod   : 1;  // bit 12  0: both field; 1: only one field
+    volatile unsigned bottom_field_sel  : 1;  // bit 13  0: top; 1: bottom
+    volatile unsigned r1                : 18; // bit 14~31
+} regHEVC_EXTRA_CTRL;
+```
+
+**Interlaced field-scaling controls.** Correctly left clear for progressive,
+which is why the blob only ever clears them. The struct also confirms the
+disassembly exactly: rotate `[2:0]`, the two shifts packed into `[11:8]` (named
+`scale_precision` as one 4-bit field).
+
+CTRL bit 9's vendor name is `write_sc_rt_pic`, set from `secOutputEnabled`.
+
+## THE VENDOR DOES NOT SUPPORT H.265 ROTATION
+
+```c
+pCi->secOutputEnabled = pHevcDec->pConfig->bScaleDownEn ? 1 : 0;
+/* Rotation doesn't support */
+...
+    pCi->bRotationEnable = /*pHevcDec->pConfig->bRotationEn*/0;
+    pCi->nRotationDegree = /*pHevcDec->pConfig->nRotateDegree*/0;
+```
+
+Their own comment, with the rotation values commented out and hardcoded to
+zero. The `rotate_angle` field exists in the register and the hardware may well
+honour it, but **the vendor never exercises it on H.265**, so there is no
+reference behaviour to match and no reason to assume it was validated in
+silicon. Treat H.265 ROTATION as unproven hardware; H.265 SCALE-DOWN is what
+the vendor actually ships.
+
+## Why our attempt probably hangs
+
+Our port copied the H.264 format handling. The vendor's H.265 path does
+something different:
+
+```c
+pCi->secPixelFormatReg = pCi->priPixelFormatReg;      /* SAME as primary */
+...
+nTemp = pCi->secPixelFormatReg << 30 | pCi->secFrmBufChromaSize;
+HevcDecWu32(RegTopAddr + VECORE_OUT_CHROMA_LEN_REG, nTemp, ...);
+nTemp = (pCi->priPixelFormatReg << 4) | (pCi->secPixelFormatReg);
+HevcDecWu32(RegTopAddr + VECORE_PRIMARY_OUT_FORMAT_REG, nTemp, ...);
+```
+
+We instead wrote `VE_CHROMA_BUF_LEN[31:30] = VE_SECONDARY_OUT_FMT_EXT` and
+`VE_PRIMARY_OUT_FMT[3:0] = VE_SECONDARY_OUT_FMT_EXT_NV12`, which is the H.264
+recipe. **That is the most likely cause and the first thing to try.**
+
+Two more writes we omitted:
+
+```c
+/* MODESEL bit 21, gated on the SECONDARY stride once the second output is on */
+if ((secOutputEnabled == 0 && nWidth >= 2048) ||
+    (secOutputEnabled == 1 && secFrmBufLumaStride >= 2048))
+        MODESEL |=  0x00200000;
+else    MODESEL &= ~0x00200000;
+
+/* low 8 bits of BOTH chroma addresses, since reg54/58 hold only addr >> 8 */
+regHEVC_8BIT_Addr_reg80.sd_low8_chroma_addr  = SecChromaPhyAddr & 0xff;
+regHEVC_8BIT_Addr_reg80.pri_low8_chroma_addr = ChromaPhyAddr    & 0xff;
+```
+
+mainline already names that last one —
+`VE_DEC_H265_LOW_ADDR_SECONDARY_CHROMA` at `[23:16]`, a dead define — and
+cedrus **never writes `VE_DEC_H265_LOW_ADDR` at all**. It gets away with it
+today because every buffer it allocates is DMA-coherent and 256-byte aligned,
+so the low byte is genuinely zero. That makes it unlikely to be our hang, but
+it is a latent bug the moment any address is not 256-aligned.
+
+## The exact write order to copy
+
+```
+reg30 CTRL              (whole word, zeroed first; write_sc_rt_pic = secOutputEnabled)
+VECORE_OUT_CHROMA_LEN   = secPixelFormatReg << 30 | secFrmBufChromaSize
+VECORE_MODESEL          bit 21 per the stride rule above
+VECORE_PRIMARY_OUT_FMT  = priPixelFormatReg << 4 | secPixelFormatReg
+VECORE_PRI_CHROMA_BUF_LEN
+VECORE_PRI_FRMBUF_STRIDE
+VECORE_SEC_FRMBUF_STRIDE
+reg50 SDRT_CTRL         (whole word, zeroed first)
+reg54 SDRT_YBUF         = SecLumaPhyAddr   >> 8
+reg58 SDRT_CBUF         = SecChromaPhyAddr >> 8
+reg80 8BIT_ADDR         (whole word, zeroed first; both low-8 chroma bytes)
+```
+
+Note every register is **zeroed and rebuilt**, never read-modify-written. Our
+port used RMW on CTRL and the format registers.
