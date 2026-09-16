@@ -14,7 +14,8 @@ bits with read-modify-write operations.
 ---
 --- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
 +++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
-@@ -163,5 +163,19 @@
+@@ -161,6 +161,20 @@
+ #define PROC_FIELD16_MASK	GENMASK(15, 0)
  #define PROC_UNITY		0x10000u
  
 +/* Source-window state in the display route that feeds proc instance 0. */
@@ -34,7 +35,7 @@ bits with read-modify-write operations.
  /* Registers saved at probe so the block can be handed back untouched. */
  static const u16 h713_proc_saved_regs[] = {
  	PROC_PHASE_H, PROC_RATIO_H, PROC_BYPASS, PROC_OUT_W,
-@@ -194,6 +208,7 @@
+@@ -192,6 +206,7 @@
  	u32 selector_rgb;
  	bool video_active;
  	u32 proc_saved[ARRAY_SIZE(h713_proc_saved_regs)];
@@ -42,7 +43,7 @@ bits with read-modify-write operations.
  	bool proc_engaged;
  	unsigned int video_info_w;
  	unsigned int video_info_h;
-@@ -349,6 +364,9 @@
+@@ -319,6 +334,9 @@
  	for (i = 0; i < ARRAY_SIZE(h713_proc_saved_regs); i++)
  		h->proc_saved[i] = readl(h->proc_regs +
  					 h713_proc_saved_regs[i]);
@@ -52,7 +53,7 @@ bits with read-modify-write operations.
  }
  
  static void h713_proc_restore(struct h713_afbd *h)
-@@ -361,9 +379,43 @@
+@@ -331,9 +349,43 @@
  	for (i = 0; i < ARRAY_SIZE(h713_proc_saved_regs); i++)
  		writel(h->proc_saved[i],
  		       h->proc_regs + h713_proc_saved_regs[i]);
@@ -96,13 +97,12 @@ bits with read-modify-write operations.
  /*
   * Magnify in_w x in_h up to out_w x out_h.
   *
-@@ -605,11 +657,14 @@
+@@ -587,11 +639,13 @@
  	 * is already the right size. A source smaller than the panel with the
  	 * upscaler still bypassed would show a corner of the picture.
  	 */
--	if (proc_en && (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT))
-+	if (proc_en &&
-+	    (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT)) {
+-	if (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT)
++	if (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT) {
 +		h713_route_window_configure(h, src_w, src_h);
  		h713_proc_configure(h, src_w, src_h,
  				    H713_VIDEO_WIDTH, H713_VIDEO_HEIGHT);

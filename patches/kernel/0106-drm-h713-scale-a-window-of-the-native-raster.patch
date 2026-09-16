@@ -14,7 +14,7 @@ while retaining its smaller visible rectangle.
 
 --- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
 +++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
-@@ -481,11 +481,11 @@ static int h713_afbd_video_atomic_check(struct drm_plane *plane,
+@@ -468,11 +468,11 @@
  	fb = new_state->fb;
  	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
  	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
@@ -28,7 +28,7 @@ while retaining its smaller visible rectangle.
  	    new_state->crtc_x || new_state->crtc_y ||
  	    new_state->crtc_w != H713_VIDEO_WIDTH ||
  	    new_state->crtc_h != H713_VIDEO_HEIGHT)
-@@ -498,7 +498,10 @@ static int h713_afbd_video_atomic_check(struct drm_plane *plane,
+@@ -485,7 +485,10 @@
  	 * its visible window is narrower; require that padded layout explicitly
  	 * so a tight smaller framebuffer cannot shear and run past its mapping.
  	 */
@@ -40,7 +40,7 @@ while retaining its smaller visible rectangle.
  		return -EINVAL;
  
  	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
-@@ -521,8 +524,8 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+@@ -508,8 +511,8 @@
  
  	new_state = drm_atomic_get_new_plane_state(state, plane);
  	fb = new_state->fb;
@@ -51,7 +51,7 @@ while retaining its smaller visible rectangle.
  	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
  	c = drm_fb_dma_get_gem_addr(fb, new_state, 1);
  
-@@ -535,23 +538,27 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+@@ -522,23 +525,27 @@
  	}
  
  	/*
@@ -63,11 +63,11 @@ while retaining its smaller visible rectangle.
 +	 * magnifies that window; changing the AFBD raster itself makes this
 +	 * hardware wrap each line as repeated/sheared pictures.
  	 */
--	if (vi_follow && (src_w != h->video_info_w ||
--			  src_h != h->video_info_h ||
-+	if (vi_follow && (fb->width != h->video_info_w ||
-+			  fb->height != h->video_info_h ||
- 			  fb->pitches[0] != h->video_info_pitch))
+-	if (src_w != h->video_info_w ||
+-	    src_h != h->video_info_h ||
++	if (fb->width != h->video_info_w ||
++	    fb->height != h->video_info_h ||
+ 	    fb->pitches[0] != h->video_info_pitch)
 -		h713_afbd_init_video_info(h, src_w, src_h, fb->pitches[0]);
 +		h713_afbd_init_video_info(h, fb->width, fb->height,
 +				     fb->pitches[0]);
