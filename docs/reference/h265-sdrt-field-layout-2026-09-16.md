@@ -120,6 +120,9 @@ looking register and get nothing back.
 
 ## Implementing this
 
+**This section was written before the attempt below, which hangs the VE. Read
+the second half of this document before acting on it.**
+
 The driver work is not large — `cedrus_sd_program()` already does the H.264
 equivalent, and the H.265 path would mirror it with the `>> 8` addressing and
 the `+0x50/0x54/0x58` offsets. The gating in `cedrus_video.c` is currently
