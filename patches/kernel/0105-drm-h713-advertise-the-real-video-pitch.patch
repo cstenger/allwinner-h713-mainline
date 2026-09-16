@@ -1,0 +1,71 @@
+drm: h713-afbd: advertise the real video pitch
+
+The VideoInfo descriptor has a stride field separate from its visible width.
+Populate it from the framebuffer pitch.  This matters when a smaller decoded
+picture is held in the panel-width layout accepted by the display fetch path:
+the AFBD registers and memory then use 1280-byte rows, and advertising the
+960-pixel visible width as the stride gives the firmware contradictory layout
+information.
+
+Track the descriptor pitch as part of its cache key so changing only the
+framebuffer layout still rebuilds the descriptor.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -190,6 +190,7 @@ struct h713_afbd {
+ 	bool proc_engaged;
+ 	unsigned int video_info_w;
+ 	unsigned int video_info_h;
++	unsigned int video_info_pitch;
+ };
+ 
+ /*
+@@ -222,7 +223,8 @@ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+  * normalises into regardless of the real picture size.
+  */
+ static void h713_afbd_init_video_info(struct h713_afbd *h,
+-				      unsigned int w, unsigned int h_px)
++				      unsigned int w, unsigned int h_px,
++				      unsigned int pitch)
+ {
+ 	u32 *v = h->video_info;
+ 	u32 info = lower_32_bits(h->video_info_dma);
+@@ -248,7 +250,7 @@ static void h713_afbd_init_video_info(struct h713_afbd *h,
+ 	v[0x4c / 4] = 0xffff0000;
+ 	v[0x50 / 4] = 1;
+ 	v[0x54 / 4] = 0xffff0000;
+-	v[0x58 / 4] = w;
++	v[0x58 / 4] = pitch;
+ 	v[0x5c / 4] = 0;
+ 	v[0x60 / 4] = 0;
+ 	v[0x64 / 4] = info + 144;
+@@ -276,6 +278,7 @@ static void h713_afbd_init_video_info(struct h713_afbd *h,
+ 
+ 	h->video_info_w = w;
+ 	h->video_info_h = h_px;
++	h->video_info_pitch = pitch;
+ 
+ 	dma_wmb();
+ }
+@@ -537,8 +540,10 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 	 * 1920x1088 inherited here is what made the fetcher scan past the end
+ 	 * of a smaller buffer, so it is derived rather than assumed.
+ 	 */
+-	if (vi_follow && (src_w != h->video_info_w || src_h != h->video_info_h))
+-		h713_afbd_init_video_info(h, src_w, src_h);
++	if (vi_follow && (src_w != h->video_info_w ||
++			  src_h != h->video_info_h ||
++			  fb->pitches[0] != h->video_info_pitch))
++		h713_afbd_init_video_info(h, src_w, src_h, fb->pitches[0]);
+ 
+ 	writel(((src_h - 1) << 16) | (src_w - 1), h->regs + AFBD_VIDEO_SIZE_M1);
+ 	writel(((src_h / 16 - 1) << 16) | (src_w / 16 - 1),
+@@ -884,7 +889,8 @@ static int h713_afbd_probe(struct platform_device *pdev)
+ 		return dev_err_probe(dev, -ERANGE,
+ 				     "VideoInfo DMA address is above 4 GiB\n");
+-	h713_afbd_init_video_info(h, H713_VIDEO_WIDTH, H713_VIDEO_HEIGHT);
++	h713_afbd_init_video_info(h, H713_VIDEO_WIDTH, H713_VIDEO_HEIGHT,
++				   H713_VIDEO_STRIDE);
+ 
+ 	h->rgb_ctrl_active = readl(h->regs + AFBD_CTRL);
+ 	h->video_ctrl_idle = readl(h->regs + AFBD_VIDEO_CTRL);

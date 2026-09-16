@@ -1,0 +1,114 @@
+drm: h713-afbd: complete the proc state for a smaller source
+
+The firmware programs two proc registers that the initial scaler support
+missed.  The duplicate output-width register also carries the vertical engine
+enable, while FRAME_LINES holds the vertical line-enable window: its high half
+is the start line and its low half is the length.
+
+ProcWinNode::CalcWindow computes that length as max(in_h, out_h) -- the number
+of line times the vertical stage is busy, which is out_h while magnifying and
+in_h while shrinking.  The comparison is explicit in the disassembly at
+0x8b1a6470 (base 0x8b1008e0):
+
+    8b1a6440  lw    $t0, 0x24($sp)     ; out_win.h   -> node+0x58
+    8b1a6444  lw    $a0, 0x2c($sp)     ; in_win.h    -> node+0x48
+    8b1a6470  slt   $a1, $a0, $t0      ; a1 = (in_h < out_h)
+    8b1a6474  move  $t6, $t0
+    8b1a6478  movz  $t6, $a0, $a1      ; if !(in_h < out_h) t6 = in_h
+    8b1a647c  sw    $t6, 0x1c($s0)     ; node+0x1c = max(in_h, out_h)
+
+and WriteReg at 0x8b1a6710 puts node+0x1c into FRAME_LINES[15:0].  The
++0x48/+0x58 offsets are ProcWinNode::DbgDump's own member map.
+
+This block cannot shrink, so atomic_check rejects every downscale and in_h is
+never above out_h here; the general form is kept because it is the rule the
+firmware actually implements, not because the second branch is reachable.
+Since it is unreachable it is also untestable -- a forced downscale would be
+an invalid operation on this block whatever FRAME_LINES held, with no correct
+output to compare against -- so WARN_ON_ONCE asserts the invariant that makes
+it dead instead.  That assertion covers the ratios and integer phases too,
+which assume magnification in exactly the same way.
+
+The MIPS fetch path advances by the 1280-pixel panel pitch even for a narrower
+visible window.  Require that padded layout explicitly; a tightly packed small
+frame shears from line to line and eventually reads beyond its mapping.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -134,6 +134,8 @@
+ #define PROC_IN_WIN		0x34	/* (w << 16) | h */
+ #define PROC_PHASE_V		0x38	/* [15:0] */
+ #define PROC_RATIO_V		0x3c	/* [21:0] */
++#define PROC_OUT_W_DUP		0x40	/* bit 31 enable, [15:0] width */
++#define PROC_FRAME_LINES	0x50	/* V line enable: [31:16] start, [15:0] len */
+ 
+ /*
+  * DRM expresses plane scale as SOURCE over DESTINATION in 16.16, so a
+@@ -159,6 +161,7 @@
+ static const u16 h713_proc_saved_regs[] = {
+ 	PROC_PHASE_H, PROC_RATIO_H, PROC_BYPASS, PROC_OUT_W,
+ 	PROC_OUT_H, PROC_IN_WIN, PROC_PHASE_V, PROC_RATIO_V,
++	PROC_OUT_W_DUP, PROC_FRAME_LINES,
+ };
+ 
+ /* The four queue slots are 4 bytes apart in each address ring. */
+@@ -372,9 +375,36 @@
+ 	u32 ratio_h = ((u32)in_w << 16) / out_w;
+ 	u32 ratio_v = ((u32)in_h << 16) / out_h;
+ 
++	/*
++	 * Everything below assumes magnification: the ratios come out at or
++	 * below unity, the integer phases are the firmware's upscale pair, and
++	 * max(in_h, out_h) selects out_h. atomic_check enforces that -- it
++	 * forbids downscale and pins crtc_h to the panel height that is also
++	 * this call's out_h -- and the block cannot shrink in any case, so the
++	 * far side of each of those is unreachable, and untestable with it.
++	 * Assert the invariant rather than leave it implicit.
++	 */
++	WARN_ON_ONCE(in_h > out_h);
++
+ 	h713_proc_rmw(h, PROC_IN_WIN, ~0u, (in_w << 16) | in_h);
+ 	h713_proc_rmw(h, PROC_OUT_W, PROC_FIELD16_MASK, out_w);
+ 	h713_proc_rmw(h, PROC_OUT_H, PROC_FIELD16_MASK, out_h);
++	/*
++	 * ProcWinNode::WriteReg writes output width twice and arms the second
++	 * copy with bit 31. FRAME_LINES holds the vertical line-enable window:
++	 * the high half is its start line and the low half its length, which
++	 * CalcWindow computes as max(in_h, out_h) -- how long the vertical
++	 * stage runs, out_h magnifying and in_h shrinking. Since this block
++	 * only magnifies, that is always out_h in practice.
++	 *
++	 * Preserve the upper start-line field: it is accumulated latency from
++	 * the firmware-owned upstream pipeline, which this driver does not
++	 * reconfigure.
++	 */
++	h713_proc_rmw(h, PROC_OUT_W_DUP, BIT(31) | PROC_FIELD16_MASK,
++		      BIT(31) | out_w);
++	h713_proc_rmw(h, PROC_FRAME_LINES, PROC_FIELD16_MASK,
++		      max(in_h, out_h));
+ 	h713_proc_rmw(h, PROC_RATIO_H, PROC_RATIO_MASK, ratio_h);
+ 	h713_proc_rmw(h, PROC_RATIO_V, PROC_RATIO_MASK, ratio_v);
+ 	h713_proc_rmw(h, PROC_PHASE_H, PROC_PHASE_MASK,
+@@ -463,8 +493,8 @@
+ 	fb = new_state->fb;
+ 	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
+ 	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
+-	    fb->pitches[0] != fb->width ||
+-	    fb->pitches[1] != fb->width ||
++	    fb->pitches[0] != H713_VIDEO_STRIDE ||
++	    fb->pitches[1] != H713_VIDEO_STRIDE ||
+ 	    new_state->src_x || new_state->src_y ||
+ 	    new_state->src_w != fb->width << 16 ||
+ 	    new_state->src_h != fb->height << 16 ||
+@@ -475,7 +505,10 @@
+ 
+ 	/*
+ 	 * AFBD_VIDEO_BLOCK_M1 counts 16x16 blocks, so a source that is not a
+-	 * whole number of them has no representation in the fetcher.
++	 * whole number of them has no representation in the fetcher. The MIPS
++	 * source path also advances by the panel pitch between lines even when
++	 * its visible window is narrower; require that padded layout explicitly
++	 * so a tight smaller framebuffer cannot shear and run past its mapping.
+ 	 */
+ 	if (fb->width % 16 || fb->height % 16 || !fb->width || !fb->height)
+ 		return -EINVAL;

@@ -1,0 +1,115 @@
+From: H713 display bring-up <noreply@example.com>
+Subject: [PATCH] drm: h713: program proc input route windows
+
+The vendor ProcWinNode::WriteReg path programs the display-route source and
+picture windows before configuring the proc scaler. Linux changed the proc
+input window but left these upstream windows at the native panel dimensions.
+That mismatch only affects vertical scaling and leaves a short invalid segment
+in the output line.
+
+Mirror the firmware ordering and fields when scaling, then restore the route
+and proc state together when the video plane is disabled. Preserve all unknown
+bits with read-modify-write operations.
+
+---
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -163,5 +163,19 @@
+ #define PROC_UNITY		0x10000u
+ 
++/* Source-window state in the display route that feeds proc instance 0. */
++#define ROUTE_IN_X_W		0x104	/* [31:16] width, [15:0] x */
++#define ROUTE_IN_Y_H		0x108	/* [31:16] height, [15:0] y */
++#define ROUTE_IN_CTL		0x114	/* bit 31 disabled while configuring */
++#define ROUTE_IN_H_CTL		0x11c	/* [31:16] height, bit 15 valid */
++#define ROUTE_PICTURE_X_W	0x124	/* [31:16] width, [15:0] x */
++#define ROUTE_PICTURE_Y_H	0x128	/* [31:16] height, [15:0] y */
++#define ROUTE_PICTURE_CTL	0x134	/* bit 31 disabled while configuring */
++
++static const u16 h713_route_window_saved_regs[] = {
++	ROUTE_IN_X_W, ROUTE_IN_Y_H, ROUTE_IN_CTL, ROUTE_IN_H_CTL,
++	ROUTE_PICTURE_X_W, ROUTE_PICTURE_Y_H, ROUTE_PICTURE_CTL,
++};
++
+ /* Registers saved at probe so the block can be handed back untouched. */
+ static const u16 h713_proc_saved_regs[] = {
+ 	PROC_PHASE_H, PROC_RATIO_H, PROC_BYPASS, PROC_OUT_W,
+@@ -194,6 +208,7 @@
+ 	u32 selector_rgb;
+ 	bool video_active;
+ 	u32 proc_saved[ARRAY_SIZE(h713_proc_saved_regs)];
++	u32 route_window_saved[ARRAY_SIZE(h713_route_window_saved_regs)];
+ 	bool proc_engaged;
+ 	unsigned int video_info_w;
+ 	unsigned int video_info_h;
+@@ -349,6 +364,9 @@
+ 	for (i = 0; i < ARRAY_SIZE(h713_proc_saved_regs); i++)
+ 		h->proc_saved[i] = readl(h->proc_regs +
+ 					 h713_proc_saved_regs[i]);
++	for (i = 0; i < ARRAY_SIZE(h713_route_window_saved_regs); i++)
++		h->route_window_saved[i] =
++			readl(h->route_regs + h713_route_window_saved_regs[i]);
+ }
+ 
+ static void h713_proc_restore(struct h713_afbd *h)
+@@ -361,9 +379,43 @@
+ 	for (i = 0; i < ARRAY_SIZE(h713_proc_saved_regs); i++)
+ 		writel(h->proc_saved[i],
+ 		       h->proc_regs + h713_proc_saved_regs[i]);
++	for (i = 0; i < ARRAY_SIZE(h713_route_window_saved_regs); i++)
++		writel(h->route_window_saved[i],
++		       h->route_regs + h713_route_window_saved_regs[i]);
+ 	h->proc_engaged = false;
+ }
+ 
++static void h713_route_window_rmw(struct h713_afbd *h, u32 off,
++				  u32 mask, u32 val)
++{
++	u32 reg = readl(h->route_regs + off);
++
++	writel((reg & ~mask) | (val & mask), h->route_regs + off);
++}
++
++static void h713_route_window_configure(struct h713_afbd *h,
++					unsigned int in_w,
++					unsigned int in_h)
++{
++	/*
++	 * Mirror ProcWinNode::WriteReg: disable both input descriptors before
++	 * changing their windows, then publish the active source rectangle.
++	 * There is no separate commit in the firmware path; proc is configured
++	 * immediately after these writes and the source is enabled last.
++	 */
++	h713_route_window_rmw(h, ROUTE_IN_CTL, BIT(31), 0);
++	h713_route_window_rmw(h, ROUTE_IN_X_W, GENMASK(31, 16), in_w << 16);
++	h713_route_window_rmw(h, ROUTE_IN_Y_H, GENMASK(31, 16), in_h << 16);
++	h713_route_window_rmw(h, ROUTE_PICTURE_CTL, BIT(31), 0);
++	h713_route_window_rmw(h, ROUTE_PICTURE_X_W, GENMASK(31, 16),
++			      in_w << 16);
++	h713_route_window_rmw(h, ROUTE_PICTURE_Y_H, GENMASK(31, 16),
++			      in_h << 16);
++	h713_route_window_rmw(h, ROUTE_IN_H_CTL,
++			      GENMASK(31, 16) | BIT(15),
++			      (in_h << 16) | BIT(15));
++}
++
+ /*
+  * Magnify in_w x in_h up to out_w x out_h.
+  *
+@@ -605,11 +657,14 @@
+ 	 * is already the right size. A source smaller than the panel with the
+ 	 * upscaler still bypassed would show a corner of the picture.
+ 	 */
+-	if (proc_en && (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT))
++	if (proc_en &&
++	    (src_w != H713_VIDEO_WIDTH || src_h != H713_VIDEO_HEIGHT)) {
++		h713_route_window_configure(h, src_w, src_h);
+ 		h713_proc_configure(h, src_w, src_h,
+ 				    H713_VIDEO_WIDTH, H713_VIDEO_HEIGHT);
+-	else
++	} else {
+ 		h713_proc_restore(h);
++	}
+ 
+ 	writel(H713_VIDEO_CTRL_ACTIVE, h->regs + AFBD_VIDEO_CTRL);
+ 	writel(1, h->regs + AFBD_VIDEO_READY);

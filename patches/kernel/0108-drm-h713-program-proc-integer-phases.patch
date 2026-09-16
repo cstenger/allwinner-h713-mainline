@@ -1,0 +1,45 @@
+drm: h713-afbd: program proc integer phases when scaling
+
+ProcWinNode::CalcWindow initializes the horizontal and vertical integer phase
+fields to 3 and 2 for an upscale.  Unity is the exceptional case: its
+fractional phases cross their thresholds, so the firmware advances the fields
+to 4 and 3 and wraps the vertical fraction to zero.
+
+The boot firmware leaves those unity values in 0x05180008.  Updating only the
+fractional phases and ratios therefore selects the wrong filter taps while the
+scaler is active.  Program all three fields together, following the firmware's
+exact upscale path.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -154,5 +154,9 @@
+ #define PROC_BYPASS_BIT	BIT(27)
+ #define PROC_RATIO_MASK		GENMASK(21, 0)
++#define PROC_H_INT_PHASE_MASK	GENMASK(30, 28)
++#define PROC_V_INT_PHASE_MASK	GENMASK(26, 24)
++#define PROC_H_INT_PHASE(v)	FIELD_PREP(PROC_H_INT_PHASE_MASK, (v))
++#define PROC_V_INT_PHASE(v)	FIELD_PREP(PROC_V_INT_PHASE_MASK, (v))
+ #define PROC_PHASE_MASK		GENMASK(15, 0)
+ #define PROC_FIELD16_MASK	GENMASK(15, 0)
+ #define PROC_UNITY		0x10000u
+@@ -393,8 +397,19 @@ static void h713_proc_configure(struct h713_afbd *h,
+ 	h713_proc_rmw(h, PROC_OUT_W_DUP, BIT(31) | PROC_FIELD16_MASK,
+ 		      BIT(31) | out_w);
+ 	h713_proc_rmw(h, PROC_FRAME_LINES, PROC_FIELD16_MASK,
+ 		      max(in_h, out_h));
+-	h713_proc_rmw(h, PROC_RATIO_H, PROC_RATIO_MASK, ratio_h);
++	/*
++	 * ProcWinNode::CalcWindow starts the integer phases at H=3/V=2.
++	 * Unity is the exceptional case that advances each to H=4/V=3 while
++	 * wrapping the vertical fractional phase to zero.  The boot firmware
++	 * leaves those unity values behind, so retaining the upper fields while
++	 * changing only the fractions selects the wrong filter taps.
++	 */
++	h713_proc_rmw(h, PROC_RATIO_H,
++		      PROC_RATIO_MASK | PROC_H_INT_PHASE_MASK |
++		      PROC_V_INT_PHASE_MASK,
++		      ratio_h | PROC_H_INT_PHASE(3) |
++		      PROC_V_INT_PHASE(2));
+ 	h713_proc_rmw(h, PROC_RATIO_V, PROC_RATIO_MASK, ratio_v);
+ 	h713_proc_rmw(h, PROC_PHASE_H, PROC_PHASE_MASK,
+ 		      (PROC_UNITY + ratio_h) >> 2);
