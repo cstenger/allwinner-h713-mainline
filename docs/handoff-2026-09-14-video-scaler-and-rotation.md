@@ -376,3 +376,56 @@ now clean on hardware across the full axis-isolation matrix, and the decode
 half was already proven. What is unproven is the userspace glue and the
 long-running behaviour of the two together.
 
+## 9. Validation sweep, 2026-09-15 -- and the one square still empty
+
+Run after the §6 corrections, on the cold-booted board.
+
+**Headless, objective.** Rotation against a 128x64 four-quadrant card, sampling
+each output quadrant centre, all four angles PASS with the values in
+`docs/reference/ve-rotation-2026-09-13.md`. Scaled decode of real 1080p into a
+1280x720 canvas at pitch 1280 gives exactly 1382400 bytes with all padding
+zero, and the 180-degree version is a **perfect point reflection** of the
+unrotated one (8160/8160 sample points agree).
+
+**On the panel**, using genuine VE output captured to file -- real decoded
+1080p, really downscaled by the VE, really rotated by the VE:
+
+| case | source window | result |
+| --- | --- | --- |
+| scaled | 960x544 | clean, correct proportions, full panel |
+| rotated 180 | 960x544 | clean, inverted as expected |
+| rotated 90 | 1088x480 | clean; distorted by construction, see below |
+| native, sustained | 1280x720 | **1195 flips in 20.01 s = 59.71 fps** |
+
+Flip timing was mean 16.75 ms, sd 0.02 ms, max 16.86 ms against a 59.97 Hz
+panel: no drops, no jitter. Playback looks **2x fast** because the flip loop is
+unpaced by design (`sync=false` unless `PACED=1`) and the clip is 29.97 fps.
+That is the measurement, not a defect.
+
+The 90-degree case is distorted on purpose. Reaching a displayable rotated
+raster needs the final orientation to fit 1280x720 while the proc block only
+magnifies, so the VE runs 480 wide by 1088 tall before rotating -- width
+shifted by four, height by one -- and the display then stretches 1088x480 to
+the panel. It proves the rotated raster reaches the glass; it is not an
+aspect-correct result.
+
+**The empty square is sustained motion THROUGH the scaler.** It is not one more
+command. `MOVING` flips between decoder buffers so it requires `CEDRUS=1`, and
+`CEDRUS=1` cannot be given a compose rectangle: the `cedrus-compose-probe.so`
+shim fires on the decoder's first `S_FMT`, which under GStreamer is a 320x240
+capability probe issued before the stream size is known, so compose is computed
+against 320x240, the canvas collapses and negotiation fails. That ordering is
+exactly what `patches/gstreamer/0001` fixes. Scaled motion is therefore gated
+on deploying the GStreamer patches, the same item as §8 -- do not expect to
+close it with the probe.
+
+Two harness facts worth knowing before designing any test with this tool:
+
+- `CEDRUS=1` is **freeze-frame**, not playback. It discards `DECD_FREEZE_AT`
+  (default 60) frames, holds one buffer and deliberately leaks the sample so
+  the plane can scan it. A run that prints one `cedrus frame` line is working.
+- A frame file must be **tightly packed at the source size**, `src_w * src_h *
+  3 / 2`. The harness black-fills the 1280x720 canvas itself and copies rows in
+  at panel pitch. Feeding it a full-canvas capture fails the size check and
+  displays nothing.
+
