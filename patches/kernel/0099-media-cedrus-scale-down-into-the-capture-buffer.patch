@@ -54,6 +54,38 @@ working perfectly.  The driver warns once if the luma address reads back zero.
 
 Compile-tested only.  Nothing here has run on the board yet.
 
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+@@ -92,13 +92,28 @@
+ 
+ 	v4l2_m2m_buf_copy_metadata(run.src, run.dst, true);
+ 
+-	cedrus_dst_format_set(dev, &ctx->dst_fmt);
++	/*
++	 * The primary output describes the RECONSTRUCTION, which is the coded
++	 * size.  With the scaler off that is dst_fmt; with it on, dst_fmt is
++	 * the smaller picture userspace sees and would size the primary's
++	 * stride and chroma offset wrongly.
++	 */
++	cedrus_dst_format_set(dev, cedrus_scaling(ctx) ? &ctx->recon_fmt
++						       : &ctx->dst_fmt);
+ 
+ 	error = ctx->current_codec->setup(ctx, &run);
+ 	if (error)
+ 		v4l2_err(&ctx->dev->v4l2_dev,
+ 			 "Failed to setup decoding job: %d\n", error);
+ 
++	/*
++	 * Same reason, same place: the engine is on from here, and the
++	 * secondary output has to be pointed at the capture buffer before the
++	 * trigger.
++	 */
++	if (!error)
++		cedrus_sd_program(ctx, &run.dst->vb2_buf);
++
+ 	/* Complete request(s) controls if needed. */
+ 
+ 	if (src_req)
 --- a/drivers/staging/media/sunxi/cedrus/cedrus.h
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus.h
 @@ -96,6 +96,16 @@
@@ -88,7 +120,7 @@ Compile-tested only.  Nothing here has run on the board yet.
  	struct cedrus_dec_ops		*current_codec;
  	unsigned int			bit_depth;
  
-@@ -245,11 +263,56 @@
+@@ -237,11 +255,56 @@
  	       pix_fmt->height * plane : 0);
  }
  
@@ -146,7 +178,7 @@ Compile-tested only.  Nothing here has run on the board yet.
  }
  
  static inline void cedrus_write_ref_buf_addr(struct cedrus_ctx *ctx,
-@@ -265,18 +328,6 @@
+@@ -257,18 +320,6 @@
  	cedrus_write(dev, chroma_reg, cedrus_dst_buf_addr(ctx, buf, 1));
  }
  
@@ -165,60 +197,22 @@ Compile-tested only.  Nothing here has run on the board yet.
  static inline bool
  cedrus_is_capable(struct cedrus_ctx *ctx, unsigned int capabilities)
  {
---- a/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
-+++ b/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
-@@ -63,6 +63,15 @@
- #define VE_PRIMARY_FB_LINE_STRIDE_CHROMA(s)	SHIFT_AND_MASK_BITS(s, 31, 16)
- #define VE_PRIMARY_FB_LINE_STRIDE_LUMA(s)	SHIFT_AND_MASK_BITS(s, 15, 0)
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_h264.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_h264.c
+@@ -77,8 +77,8 @@
+ 	pic->bottom_field_order_cnt = cpu_to_le32(bottom_field_order_cnt);
+ 	pic->frame_info = cpu_to_le32(buf->codec.h264.pic_type << 8);
  
-+/*
-+ * Secondary (scale-down) output line stride, {chroma << 16, luma}: the same
-+ * packing as VE_PRIMARY_FB_LINE_STRIDE at 0xc8, which it follows.
-+ */
-+#define VE_SECONDARY_FB_LINE_STRIDE		0xcc
-+
-+#define VE_SECONDARY_FB_LINE_STRIDE_CHROMA(s)	SHIFT_AND_MASK_BITS(s, 31, 16)
-+#define VE_SECONDARY_FB_LINE_STRIDE_LUMA(s)	SHIFT_AND_MASK_BITS(s, 15, 0)
-+
- #define VE_CHROMA_BUF_LEN			0xe8
- 
- #define VE_SECONDARY_OUT_FMT_TILED_32_NV12	(0x00 << 30)
-@@ -642,6 +651,17 @@
- #define VE_H264_VLD_LEN			0x238
- #define VE_H264_VLD_END			0x23c
- #define VE_H264_SDROT_CTRL		0x240
-+
-+/*
-+ * Two independent 2-bit fields, one per axis: 0 = 1:1, 1 = 1/2, 2 = 1/4.
-+ * A field of 3 is not a valid eighth -- it produces a partial write.  There
-+ * is no arbitrary ratio here, so 1920x1080 cannot become 1280x720 in one
-+ * step; the closest reachable raster is 960x544, which the display side then
-+ * magnifies back to the panel.
-+ */
-+#define VE_H264_SDROT_CTRL_H_SHIFT(s)	SHIFT_AND_MASK_BITS(s, 9, 8)
-+#define VE_H264_SDROT_CTRL_V_SHIFT(s)	SHIFT_AND_MASK_BITS(s, 11, 10)
-+#define VE_H264_SDROT_MAX_SHIFT		2
- /*
-  * The two registers following VE_H264_SDROT_CTRL are the scale-down output
-  * addresses. Mainline leaves the gap unnamed, but three sources agree on what
+-	pic->luma_ptr = cpu_to_le32(cedrus_buf_addr(vbuf, &ctx->dst_fmt, 0));
+-	pic->chroma_ptr = cpu_to_le32(cedrus_buf_addr(vbuf, &ctx->dst_fmt, 1));
++	pic->luma_ptr = cpu_to_le32(cedrus_frame_addr(ctx, vbuf, 0));
++	pic->chroma_ptr = cpu_to_le32(cedrus_frame_addr(ctx, vbuf, 1));
+ 	pic->mv_col_top_ptr = cpu_to_le32(cedrus_h264_mv_col_buf_addr(buf, 0));
+ 	pic->mv_col_bot_ptr = cpu_to_le32(cedrus_h264_mv_col_buf_addr(buf, 1));
+ }
 --- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
-@@ -458,6 +458,14 @@
- 		return;
- 
- 	/*
-+	 * The production route owns these registers once a compose rectangle
-+	 * has selected a scale factor.  This harness stays out of the way
-+	 * rather than programming them a second time with different values.
-+	 */
-+	if (cedrus_scaling(ctx))
-+		return;
-+
-+	/*
- 	 * Which side of the codec's own setup to program from. The vendor
- 	 * configures scale/rotate as part of the decode configuration, i.e.
- 	 * after cedrus_engine_enable() has written VE_MODE; programming a
-@@ -677,6 +685,64 @@
+@@ -128,6 +128,64 @@
  	}
  }
  
@@ -293,39 +287,52 @@ Compile-tested only.  Nothing here has run on the board yet.
  void cedrus_dst_format_set(struct cedrus_dev *dev,
  			   struct v4l2_pix_format *fmt);
  
---- a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
-+++ b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
-@@ -92,7 +92,14 @@
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_regs.h
+@@ -63,6 +63,15 @@
+ #define VE_PRIMARY_FB_LINE_STRIDE_CHROMA(s)	SHIFT_AND_MASK_BITS(s, 31, 16)
+ #define VE_PRIMARY_FB_LINE_STRIDE_LUMA(s)	SHIFT_AND_MASK_BITS(s, 15, 0)
  
- 	v4l2_m2m_buf_copy_metadata(run.src, run.dst, true);
- 
--	cedrus_dst_format_set(dev, &ctx->dst_fmt);
-+	/*
-+	 * The primary output describes the RECONSTRUCTION, which is the coded
-+	 * size.  With the scaler off that is dst_fmt; with it on, dst_fmt is
-+	 * the smaller picture userspace sees and would size the primary's
-+	 * stride and chroma offset wrongly.
-+	 */
-+	cedrus_dst_format_set(dev, cedrus_scaling(ctx) ? &ctx->recon_fmt
-+						       : &ctx->dst_fmt);
- 	/* EXPERIMENT: point the scale-down unit at our own buffer. */
- 	cedrus_sd_setup(ctx, 0);
- 
-@@ -108,6 +115,14 @@
- 		 */
- 		cedrus_sd_setup(ctx, 1);
- 
-+	/*
-+	 * Same reason, same place: the engine is on from here, and the
-+	 * secondary output has to be pointed at the capture buffer before the
-+	 * trigger.
-+	 */
-+	if (!error)
-+		cedrus_sd_program(ctx, &run.dst->vb2_buf);
++/*
++ * Secondary (scale-down) output line stride, {chroma << 16, luma}: the same
++ * packing as VE_PRIMARY_FB_LINE_STRIDE at 0xc8, which it follows.
++ */
++#define VE_SECONDARY_FB_LINE_STRIDE		0xcc
 +
- 	/* Complete request(s) controls if needed. */
++#define VE_SECONDARY_FB_LINE_STRIDE_CHROMA(s)	SHIFT_AND_MASK_BITS(s, 31, 16)
++#define VE_SECONDARY_FB_LINE_STRIDE_LUMA(s)	SHIFT_AND_MASK_BITS(s, 15, 0)
++
+ #define VE_CHROMA_BUF_LEN			0xe8
  
- 	if (src_req)
+ #define VE_SECONDARY_OUT_FMT_TILED_32_NV12	(0x00 << 30)
+@@ -607,6 +616,27 @@
+ #define VE_H264_VLD_LEN			0x238
+ #define VE_H264_VLD_END			0x23c
+ #define VE_H264_SDROT_CTRL		0x240
++/*
++ * Two independent 2-bit fields, one per axis: 0 = 1:1, 1 = 1/2, 2 = 1/4.
++ * A field of 3 is not a valid eighth -- it produces a partial write.  There
++ * is no arbitrary ratio here, so 1920x1080 cannot become 1280x720 in one
++ * step; the closest reachable raster is 960x544, which the display side then
++ * magnifies back to the panel.
++ */
++#define VE_H264_SDROT_CTRL_H_SHIFT(s)	SHIFT_AND_MASK_BITS(s, 9, 8)
++#define VE_H264_SDROT_CTRL_V_SHIFT(s)	SHIFT_AND_MASK_BITS(s, 11, 10)
++#define VE_H264_SDROT_MAX_SHIFT		2
++/*
++ * The two registers following VE_H264_SDROT_CTRL are the scale-down output
++ * addresses. Mainline leaves the gap unnamed, but three sources agree on what
++ * lives there: the vendor libawh264.so exports sd_rotate_ctrl_reg40,
++ * sd_rotate_buf_addr_reg44 and sd_rotate_chroma_buf_addr_reg48, whose numbers
++ * are offsets within this engine block (0x200), matching SDROT_CTRL at 0x240;
++ * and the H.265 engine carries the same trio as VE_DEC_H265_SDRT_{CTRL,
++ * LUMA_ADDR,CHROMA_ADDR} at its own +0x50/0x54/0x58.
++ */
++#define VE_H264_SDROT_LUMA_ADDR		0x244
++#define VE_H264_SDROT_CHROMA_ADDR	0x248
+ #define VE_H264_OUTPUT_FRAME_IDX	0x24c
+ #define VE_H264_EXTRA_BUFFER1		0x250
+ #define VE_H264_EXTRA_BUFFER2		0x254
 --- a/drivers/staging/media/sunxi/cedrus/cedrus_video.c
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus_video.c
 @@ -25,6 +25,7 @@
@@ -550,16 +557,3 @@ Compile-tested only.  Nothing here has run on the board yet.
  void cedrus_reset_out_format(struct cedrus_ctx *ctx);
  
  #endif
---- a/drivers/staging/media/sunxi/cedrus/cedrus_h264.c
-+++ b/drivers/staging/media/sunxi/cedrus/cedrus_h264.c
-@@ -77,8 +77,8 @@
- 	pic->bottom_field_order_cnt = cpu_to_le32(bottom_field_order_cnt);
- 	pic->frame_info = cpu_to_le32(buf->codec.h264.pic_type << 8);
- 
--	pic->luma_ptr = cpu_to_le32(cedrus_buf_addr(vbuf, &ctx->dst_fmt, 0));
--	pic->chroma_ptr = cpu_to_le32(cedrus_buf_addr(vbuf, &ctx->dst_fmt, 1));
-+	pic->luma_ptr = cpu_to_le32(cedrus_frame_addr(ctx, vbuf, 0));
-+	pic->chroma_ptr = cpu_to_le32(cedrus_frame_addr(ctx, vbuf, 1));
- 	pic->mv_col_top_ptr = cpu_to_le32(cedrus_h264_mv_col_buf_addr(buf, 0));
- 	pic->mv_col_bot_ptr = cpu_to_le32(cedrus_h264_mv_col_buf_addr(buf, 1));
- }
