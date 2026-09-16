@@ -30,11 +30,14 @@ path under MPEG-2, HEVC or VP8.  Selecting another codec with a rotation set
 is likewise no longer an error -- it simply stops applying, and comes back
 if H.264 is selected again.
 
-Changing rotation mid-stream is prevented by v4l2_ctrl_grab() on the capture
-queue rather than by an EBUSY invented inside s_ctrl: a grabbed control
-reports V4L2_CTRL_FLAG_GRABBED and the core returns EBUSY itself, which
-userspace and v4l2-compliance both understand.  The reallocation a rotation
-change forces is already advertised by V4L2_CTRL_FLAG_MODIFY_LAYOUT.
+The reallocation a rotation change forces is advertised by
+V4L2_CTRL_FLAG_MODIFY_LAYOUT, and cedrus_buf_prepare() rejects a now-undersized
+buffer with -EINVAL, so nothing is corrupted if a client ignores it.  Do NOT
+reach for v4l2_ctrl_grab() to police this: a grabbed control cannot be set into
+a REQUEST either, which is legitimate and which v4l2-compliance exercises --
+doing so moved the "test Requests" failure to VIDIOC_S_EXT_CTRLS instead of
+fixing it.  recon_fmt derives from the CODED size, so rotation never resizes
+the reconstruction buffers.
 
 Measured on H713, v4l2-compliance -d /dev/video0:
 
@@ -60,16 +63,15 @@ whole series reverted.  See docs/reference/v4l2-compliance-2026-09-15.md.
 ---
 --- a/drivers/staging/media/sunxi/cedrus/cedrus.h
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus.h
-@@ -136,6 +136,8 @@
+@@ -136,6 +136,7 @@
  	struct v4l2_pix_format		recon_fmt;
  	u8				sd_h_shift;
  	u8				sd_v_shift;
 +	u16				rotation;
-+	struct v4l2_ctrl		*ctrl_rotate;
  	struct cedrus_dec_ops		*current_codec;
  	unsigned int			bit_depth;
  
-@@ -281,6 +283,35 @@
+@@ -281,6 +282,35 @@
  }
  
  /*
@@ -105,7 +107,7 @@ whole series reverted.  See docs/reference/v4l2-compliance-2026-09-15.md.
   * Where the decoder writes and predicts from.  EVERY frame address goes
   * through here -- the current picture and every DPB reference alike -- because
   * they must agree.  While the VE is scaling, the capture buffer holds the
-@@ -297,7 +328,7 @@
+@@ -297,7 +327,7 @@
  	if (!buf)
  		return 0;
  
@@ -116,7 +118,7 @@ whole series reverted.  See docs/reference/v4l2-compliance-2026-09-15.md.
  			return 0;
 --- a/drivers/staging/media/sunxi/cedrus/cedrus.c
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus.c
-@@ -82,13 +82,52 @@
+@@ -82,13 +82,56 @@
  	return 0;
  }
  
@@ -136,8 +138,12 @@ whole series reverted.  See docs/reference/v4l2-compliance-2026-09-15.md.
 +	 * unreachable and v4l2-compliance reported "invalid maximum range
 +	 * check". Rotation is instead made inert for non-H.264 by
 +	 * cedrus_rotation(), and the reallocation this forces on userspace is
-+	 * already advertised by V4L2_CTRL_FLAG_MODIFY_LAYOUT. Changing it
-+	 * mid-stream is prevented by v4l2_ctrl_grab() rather than by an error.
++	 * already advertised by V4L2_CTRL_FLAG_MODIFY_LAYOUT: a client that
++	 * changes rotation must reallocate, and cedrus_buf_prepare() rejects a
++	 * now-undersized buffer with -EINVAL. Do NOT reach for
++	 * v4l2_ctrl_grab() here -- a grabbed control cannot be set into a
++	 * REQUEST either, which is a legitimate thing for userspace to do and
++	 * which v4l2-compliance exercises.
 +	 */
 +	ctx->rotation = ctrl->val;
 +	cedrus_reset_cap_format(ctx);
@@ -169,16 +175,6 @@ whole series reverted.  See docs/reference/v4l2-compliance-2026-09-15.md.
  			.id	= V4L2_CID_STATELESS_MPEG2_SEQUENCE,
  		},
  		.capabilities	= CEDRUS_CAPABILITY_MPEG2_DEC,
-@@ -307,6 +346,9 @@
- 			return hdl->error;
- 		}
- 
-+		if (cedrus_controls[i].cfg.id == V4L2_CID_ROTATE)
-+			ctx->ctrl_rotate = ctrl;
-+
- 		ctx->ctrls[j++] = ctrl;
- 	}
- 
 --- a/drivers/staging/media/sunxi/cedrus/cedrus_video.c
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus_video.c
 @@ -284,6 +284,7 @@
@@ -274,32 +270,6 @@ whole series reverted.  See docs/reference/v4l2-compliance-2026-09-15.md.
  		return 0;
  
  	cbuf->recon_size = ctx->recon_fmt.sizeimage;
-@@ -841,6 +860,16 @@
- 	struct cedrus_dev *dev = ctx->dev;
- 	int ret = 0;
- 
-+	/*
-+	 * Rotation changes the capture layout, so it must not move while the
-+	 * capture queue is streaming. Let the control framework enforce that
-+	 * -- a grabbed control reports V4L2_CTRL_FLAG_GRABBED and the core
-+	 * returns EBUSY itself, which userspace and v4l2-compliance both
-+	 * understand, unlike an EBUSY invented inside s_ctrl.
-+	 */
-+	if (!V4L2_TYPE_IS_OUTPUT(vq->type) && ctx->ctrl_rotate)
-+		v4l2_ctrl_grab(ctx->ctrl_rotate, true);
-+
- 	if (V4L2_TYPE_IS_OUTPUT(vq->type)) {
- 		ret = pm_runtime_resume_and_get(dev->dev);
- 		if (ret < 0)
-@@ -873,6 +902,8 @@
- 			ctx->current_codec->stop(ctx);
- 
- 		pm_runtime_put(dev->dev);
-+	} else if (ctx->ctrl_rotate) {
-+		v4l2_ctrl_grab(ctx->ctrl_rotate, false);
- 	}
- 
- 	cedrus_queue_cleanup(vq, VB2_BUF_STATE_ERROR);
 --- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
 @@ -462,7 +462,7 @@
