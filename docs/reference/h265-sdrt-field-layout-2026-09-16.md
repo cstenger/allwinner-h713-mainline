@@ -277,7 +277,14 @@ HevcDecWu32(RegTopAddr + VECORE_PRIMARY_OUT_FORMAT_REG, nTemp, ...);
 
 We instead wrote `VE_CHROMA_BUF_LEN[31:30] = VE_SECONDARY_OUT_FMT_EXT` and
 `VE_PRIMARY_OUT_FMT[3:0] = VE_SECONDARY_OUT_FMT_EXT_NV12`, which is the H.264
-recipe. **That is the most likely cause and the first thing to try.**
+recipe.
+
+**TRIED 2026-09-16, and it is NOT the cause.** `priPixelFormatReg` is 4 for
+NV12, so `4 << 30` overflows a u32 and the vendor's table selector is 00 where
+H.264 needs 01. Reproducing that exactly -- selector 00, the secondary chroma
+size in `[27:0]`, `VE_PRIMARY_OUT_FMT` left at `0x44` -- and additionally
+writing `VE_DEC_H265_LOW_ADDR_SECONDARY_CHROMA` still times out at every scale
+factor. Reverted.
 
 Two more writes we omitted:
 
@@ -318,3 +325,43 @@ reg80 8BIT_ADDR         (whole word, zeroed first; both low-8 chroma bytes)
 
 Note every register is **zeroed and rebuilt**, never read-modify-written. Our
 port used RMW on CTRL and the format registers.
+
+
+---
+
+# Elimination list as of 2026-09-16
+
+Everything below was tested on hardware and did **not** fix the timeout. Each
+line is a hypothesis that can be skipped.
+
+| tried | result |
+| --- | --- |
+| rotate field vs scale field | neither: both hang alone |
+| the DPB/reconstruction indirection | already correct; `cedrus_dst_buf_addr()` forwards to `cedrus_frame_addr()` |
+| enable bit clobbered by `h265_setup` | no: the bare `CTRL` write precedes `sd_program` |
+| enable bit clobbered by the trigger | no: `cedrus_h265_trigger()` only writes `TRIGGER` |
+| `VE_CHROMA_BUF_LEN_SDRT` chroma size unset | set it, no change |
+| H.264's EXT format recipe being wrong for H.265 | reproduced the vendor's selector-00 exactly, no change |
+| `VE_DEC_H265_LOW_ADDR` secondary chroma low byte | wrote it, no change (our buffers are 256-aligned anyway) |
+
+## Still untried, in the order worth trying
+
+1. **Whole-word rebuild instead of read-modify-write.** The vendor zeroes every
+   register and reconstructs it: `*pdwTemp = 0` then assign fields. Our port
+   RMWs `CTRL`, `VE_CHROMA_BUF_LEN` and `VE_PRIMARY_OUT_FMT`. If any bit left
+   over from `cedrus_h265_setup()` is incompatible with the second output, an
+   RMW preserves it and a rebuild clears it. **This is now the top candidate.**
+2. **`VECORE_MODESEL_REG` bit `0x00200000`.** The vendor sets or clears it on
+   every configure, gated on the SECONDARY luma stride once the second output
+   is on. We never touch it, so whatever the primary path left is what the
+   secondary sees.
+3. **The write ORDER.** The vendor writes `CTRL` FIRST, before any of the
+   top-level format and stride registers, then the SDRT trio last. We write
+   the top-level registers first and `CTRL` late.
+4. **Geometry semantics.** We pass `ctx->dst_fmt` -- the capture CANVAS -- as
+   the secondary stride and chroma size. The vendor's `secFrmBuf*` are the
+   secondary buffer's own dimensions. For H.264 the canvas happens to work;
+   nothing says it must for H.265.
+
+The rig is `tools/video/hevc-rotation-check.sh` plus a `quad128x64.h265` card;
+verification is a module swap with no bench time, roughly four minutes a cycle.
