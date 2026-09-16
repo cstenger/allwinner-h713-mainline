@@ -324,10 +324,10 @@ drop:
 static int cedrus_decode_frame(const char *path)
 {
 	unsigned want = 60, seen = 0;
-	char *desc, *quoted_path;
 	const char *demux = "";
 	GError *error = NULL;
-	GstElement *sink;
+	GstElement *sink, *src;
+	char *desc;
 	const char *env;
 	int fd = -1;
 
@@ -342,15 +342,22 @@ static int cedrus_decode_frame(const char *path)
 	else if (g_str_has_suffix(path, ".mkv") ||
 		 g_str_has_suffix(path, ".MKV"))
 		demux = "matroskademux ! ";
-	quoted_path = g_shell_quote(path);
+	/*
+	 * The path is set on the element afterwards rather than interpolated
+	 * into the description. g_shell_quote() was used here and is wrong:
+	 * it is SHELL quoting, so it wraps the path in single quotes, which
+	 * gst_parse_launch does not treat as special -- they became literal
+	 * characters in the filename and every CEDRUS=1 run died in filesrc
+	 * with "No such file". There is no public gst_parse quoting helper,
+	 * so do not build a quoted value at all.
+	 */
 	desc = g_strdup_printf(
-		 "filesrc location=%s ! %sh264parse ! v4l2slh264dec ! "
+		 "filesrc name=src ! %sh264parse ! v4l2slh264dec ! "
 		 "video/x-raw(memory:DMABuf),format=DMA_DRM,drm-format=NV12 ! "
 		 "appsink name=out max-buffers=3 drop=false sync=%s",
-		 quoted_path, demux,
+		 demux,
 		 (getenv("PACED") && strcmp(getenv("PACED"), "0")) ? "true"
 								  : "false");
-	g_free(quoted_path);
 	held_pipeline = gst_parse_launch(desc, &error);
 	g_free(desc);
 	if (!held_pipeline) {
@@ -364,6 +371,14 @@ static int cedrus_decode_frame(const char *path)
 			error->message);
 		g_clear_error(&error);
 	}
+	src = gst_bin_get_by_name(GST_BIN(held_pipeline), "src");
+	if (!src) {
+		fprintf(stderr, "cedrus pipeline has no filesrc\n");
+		return -1;
+	}
+	g_object_set(src, "location", path, NULL);
+	gst_object_unref(src);
+
 	sink = gst_bin_get_by_name(GST_BIN(held_pipeline), "out");
 	held_sink = sink;
 	gst_app_sink_set_emit_signals(GST_APP_SINK(sink), TRUE);
