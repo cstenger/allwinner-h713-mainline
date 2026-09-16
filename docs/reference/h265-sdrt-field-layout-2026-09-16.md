@@ -129,3 +129,80 @@ Verification needs **no bench time**: the four-quadrant card and
 `tools/video/cedrus-compose-probe.c` check rotation headlessly by sampling
 output quadrant centres, and `docs/reference/ve-rotation-2026-09-13.md` records
 the expected values. Point them at an HEVC clip instead of an H.264 one.
+
+---
+
+# Implementation attempt, 2026-09-16: it hangs the VE
+
+The layout above is believed correct; a driver written from it **does not
+work**. Recorded so the next attempt starts here rather than repeating it.
+
+## What was built
+
+`cedrus_sd_program()` gained an H.265 branch mirroring the H.264 one: shared
+top-level format/stride first, then engine-local addresses `>> 8`,
+`CTRL |= BIT(9)`, and `SDRT_CTRL` with the rotate and shift fields.
+`cedrus_can_transform()` replaced the five hard-coded `V4L2_PIX_FMT_H264_SLICE`
+gates, and the `ROTATE` control lost its H.264 capability gate.
+
+It compiles clean and **leaves H.264 completely unaffected** — rotation still
+4/4, compliance still 48/49.
+
+## What happens
+
+```
+  no transform (control)       dump=12288  timeouts=0
+  SCALE only (1/2 both axes)   dump=0      timeouts=1
+  ROTATE only (180)            dump=0      timeouts=1
+  scale + rotate               dump=0      timeouts=1
+```
+
+```
+cedrus 1c0e000.video-codec: frame processing timed out!
+v4l2-request: Timeout when waiting for media request
+```
+
+**Any** use of the H.265 secondary output hangs the engine. Note the control
+line proves nothing about the new code: with no scale and no rotation
+`cedrus_transforming()` is false, so `cedrus_sd_program()` returns early.
+
+## What that rules out
+
+- **Not rotate-specific and not scale-specific.** Either alone hangs, so it is
+  not the `[2:0]` rotate field or the `[11:8]` shift packing.
+- **Not the DPB indirection.** `cedrus_dst_buf_addr()` forwards to
+  `cedrus_frame_addr()`, so H.265 reference frames already go to the private
+  reconstruction buffer exactly as H.264's do.
+- **Not the enable being clobbered.** `cedrus_h265_setup()` ends with a bare
+  `cedrus_write(VE_DEC_H265_CTRL, IRQ_MASK)`, but `cedrus_sd_program()` runs
+  after it, so bit 9 survives.
+- **Not the secondary chroma buffer length.** `VE_CHROMA_BUF_LEN[27:0]`
+  (`VE_CHROMA_BUF_LEN_SDRT`) is never programmed by cedrus for either codec;
+  setting it the way `cedrus_dst_format_set()` computes the primary's changed
+  nothing.
+
+## Where to look next
+
+The vendor writes four top-level registers in this path from values in its own
+context, and only two were replicated:
+
+```
+0001535c  str w6, [x5, #0xe8]   ; VE_CHROMA_BUF_LEN      = [ctx+0xd0] | ([ctx+0x9c] << 30)
+0001536c  str w6, [x5, #0xec]   ; VE_PRIMARY_OUT_FMT     = [ctx+0x9c] | ([ctx+0x94] << 4)
+00015374  str w6, [x5, #0xc4]   ; VE_PRIMARY_CHROMA_BUF_LEN = [ctx+0xb0]
+00015380  str w6, [x5, #0xc8]   ; VE_PRIMARY_FB_LINE_STRIDE = [ctx+0xa4] | ([ctx+0xa8] << 16)
+0001538c  str w6, [x5, #0xcc]   ; VE_SECONDARY_FB_LINE_STRIDE = [ctx+0xc4] | ([ctx+0xc8] << 16)
+```
+
+Mapping `ctx+0x94/0x9c/0xa4/0xa8/0xb0/0xc4/0xc8/0xd0` to their meanings is the
+obvious next step — they are written by whatever configures the output, and
+`H265DecoderSetExtraScaleInfo` (`ctx+0x3008..0x3014`, enable `ctx+0x3018[0]`)
+is a different structure, so the two need relating.
+
+Also untested: whether the `>> 8` addressing is right in *our* context. It is
+unambiguous in the disassembly, but if the vendor's stored address is already
+encoded differently the extra shift would be wrong. A targeted A/B of shifted
+versus raw is cheap and has not been run.
+
+`tools/video/hevc-rotation-check.sh` is the rig; it needs only a module swap,
+no bench time.

@@ -141,7 +141,10 @@ int ioctl(int fd, unsigned long req, ...)
     if (req == VIDIOC_S_FMT && arg) {
         struct v4l2_format *fmt = arg;
         if (fmt->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
-            decoder = fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_H264_SLICE ? fd : -1;
+            /* Both engines carry a scale/rotate secondary output. */
+            decoder = (fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_H264_SLICE ||
+                       fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_HEVC_SLICE)
+                      ? fd : -1;
             dumped = 0;
             completed = 0;
             if (decoder >= 0 && configure_capture(fd) < 0)
