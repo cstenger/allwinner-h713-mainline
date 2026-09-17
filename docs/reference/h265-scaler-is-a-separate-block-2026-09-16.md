@@ -481,3 +481,42 @@ silently never installed -- one "impossible" measurement was simply a stale
 module. **Verify the board's module md5 against the one just built**, every
 time; the results above were all re-measured that way. 232M came back from
 `journalctl --vacuum-size=40M`.
+
+## Arbitrary ratios work, and that retires the composite route's reason to exist
+
+`cedrus_compose_shift()` quantises every compose request to a power of two,
+because that is all the H.264 SDROT shifter can express. The VE+0xf00 scaler
+has no such limit, and forcing a non-power-of-two output through it works:
+
+| case | PSNR | ratio | coef sets | phases exercised |
+| --- | --- | --- | --- | --- |
+| 1280x720 -> 960x540 | **44.06 dB** | 1.333 | 2 | 11 of 32 |
+| 1280x720 -> 854x480 | **43.11 dB** | 1.499/1.500 | 3 and 4 | **32 of 32** |
+
+No timeouts, no faults. The 1.5x case is the important one: it drives the whole
+32-phase bank across two different coefficient sets -- machinery that had never
+executed before, since at a power-of-two ratio only phase 0 is live -- and the
+bucket-averaged sets, which until now were validated only against the software
+model, hold up at 43 dB on silicon.
+
+**Why this matters beyond the API.** The display path currently has the VE
+produce 960x544 and the display proc upscale it to 1280x720, because 1920->1280
+is 1.5x and the quantiser cannot express it. That second stage is patches 0098,
+0103, 0106, 0108 and 0111, and the grey-streak / phase-window / route-window
+class of bugs that cost most of this project's bench time. If the VE performs
+1.5x directly, the display-side scaler leaves the video path entirely.
+
+Caveats before acting on it:
+
+- **The quantiser must stay for H.264.** Its SDROT really is power-of-two only,
+  so this becomes a per-codec fork in `cedrus_compose_shift()`, not a
+  replacement.
+- Only two arbitrary ratios have been measured. Minimum and maximum ratio, and
+  any output alignment requirement, are still inferred from field widths rather
+  than probed.
+- The exact-ratio phase-0 solutions do not help here -- non-power-of-two ratios
+  use all 32 phases, so they get the bucket-averaged sets. 43-44 dB is good but
+  it is below the 45-55 dB the power-of-two cases now reach.
+- The API shape is still open: hantro uses `S_FMT` + `ENUM_FRAMESIZES` rather
+  than `COMPOSE`, and `enum_framesizes` is unimplemented here. Worth settling
+  before the selection logic is rewritten, not after.
