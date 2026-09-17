@@ -1,5 +1,12 @@
 # H713 HDMI input bring-up
 
+Latest work, 2026-09-17: TVFE/TVCAP are held on by a removable module, and
+the known THDMIRX window is readable. Source detection and EDID are still
+unresolved. See [the isolated workstream](hdmi-capture-workstream.md),
+[power-hold module](../modules/hdmi-bringup/README.md), and
+[recovered stock SCP loader](hdmi-scp-loader-re.md). The historical notes below
+include superseded hypotheses; read their later corrections as well.
+
 Started 2026-09-02. The projector's HDMI connector is an **input**
 (DW-HDMI-RX); there is no HDMI-TX on this SoC. Goal for this round was the
 first milestone only: get a source to see this board as a display, which needs

@@ -87,3 +87,16 @@ are recorded in [hdmi-scp-loader-re.md](hdmi-scp-loader-re.md).
 The stock loader's split SRAM/DRAM copies and core-reset register have now been
 identified. Startup parameters, caller behavior, memory reservation, and
 firmware compatibility remain to be checked before a loader experiment.
+
+## TVFE/TVCAP bring-up, 2026-09-17
+
+The owner requested domain bring-up. A removable out-of-tree module now powers
+both domains through existing kernel APIs, without flashing or rebooting.
+Load/unload/reload were validated: domains switched on/off/on, and temporary
+devices were removed on unload. The first eight known THDMIRX register reads
+completed with the same values as experiment 0087.
+
+The module is currently loaded, holding TVFE/TVCAP and four clock references.
+Source-side HDMI remains disconnected with no EDID; HPD/DDC are the next
+milestone. Details, build commands, rollback, and exact validation limits are
+in [the module README](../modules/hdmi-bringup/README.md).
