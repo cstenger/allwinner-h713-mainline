@@ -100,3 +100,12 @@ The module is currently loaded, holding TVFE/TVCAP and four clock references.
 Source-side HDMI remains disconnected with no EDID; HPD/DDC are the next
 milestone. Details, build commands, rollback, and exact validation limits are
 in [the module README](../modules/hdmi-bringup/README.md).
+
+## Follow-up access failure
+
+Although THDMIRX remained readable, the wrapper byte read at `0x068008f1`
+returned a bus error and the following `0x068008fc` access likely hard-locked
+the target. Recovery requires a physical power cycle. The prior module-loaded
+state is no longer a usable live baseline. See
+[the failure record](hdmi-wrapper-access-failure.md) for exact observations,
+the clock-definition discrepancy, and the restricted next experiment.

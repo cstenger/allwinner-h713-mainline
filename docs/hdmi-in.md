@@ -1,5 +1,9 @@
 # H713 HDMI input bring-up
 
+Follow-up, 2026-09-17: wrapper access returned a bus error and likely
+hard-locked the board even with TVFE/TVCAP on. Those domains alone do not
+establish wrapper reachability. See [the failure record](hdmi-wrapper-access-failure.md).
+
 Latest work, 2026-09-17: TVFE/TVCAP are held on by a removable module, and
 the known THDMIRX window is readable. Source detection and EDID are still
 unresolved. See [the isolated workstream](hdmi-capture-workstream.md),
