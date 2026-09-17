@@ -1,4 +1,4 @@
-From cf4aad9c65a7df76d311f1c4868c634019f4998d Mon Sep 17 00:00:00 2001
+From 866ed04e5792de29dd8adb74c12b51c2afbde527 Mon Sep 17 00:00:00 2001
 From: Christopher Stenger <chris.h.stenger@gmail.com>
 Date: Thu, 17 Sep 2026 03:12:52 -0700
 Subject: [PATCH] vo_drm: scan out hardware-scaled VAAPI surfaces
@@ -15,63 +15,52 @@ The VO says what it scans out. vo_drm is the only component that knows the mode,
 so it publishes it on the hwdec context; a VO that composites has no business
 asking a decoder to shrink anything, and leaves the field at zero.
 
-The decoder turns that into a ratio, because neither side can compute it alone.
-The scanout size lives in the VO and the visible picture lives in the stream,
-and they only meet in init_generic_hwaccel(), just before the surfaces are
-allocated. A ratio rather than a target size matters here: VA-API surfaces are
-allocated at the CODED size, so a 1080p H.264 stream is a 1920x1088 buffer, and
-a "fit into 1280x720" rule would spend eight rows of the height budget on coded
-padding and letterbox a picture that should have filled the screen. Scaling by
-3/2 instead puts the visible 1080 rows onto exactly 720 and leaves the padding
-as five spare rows past the bottom of the panel. libva-v4l2-request has no
-VA-API entry point for this, so its driver reads the environment; setting it
-before av_hwframe_ctx_init() is what makes it apply. A pool allocated under a
-different ratio is dropped, because nothing in the existing comparison would
-notice -- the ratio changes what the hardware writes, not the dimensions
-libavcodec asked for.
+The decoder turns that into a request, because neither side can do it alone: the
+VO does not know the stream and the decoder does not know where its frames are
+going, and they meet only in init_generic_hwaccel(), just before the surfaces
+are allocated. What it asks for is a SIZE. A ratio would be the more natural
+expression of what the hardware does, but it cannot land on the answer: VA-API
+surfaces are allocated at the CODED size, so a 1080p H.264 stream is a 1920x1088
+buffer, and 1088 rows and the visible 1080 do not reach 720 by the same factor.
+The hardware scales each axis independently, so an exact size is expressible
+where a ratio is not. libva-v4l2-request has no VA-API entry point for this, so
+its driver reads the environment; setting it before av_hwframe_ctx_init() is
+what makes it apply. A pool allocated under a different request is dropped,
+because nothing in the existing comparison would notice -- the request changes
+what the hardware writes, not the dimensions libavcodec asked for.
 
 The VO reads the geometry back from VA-API rather than from the frame.
 av_hwframe_map() cannot answer this: it copies the objects and layers out of the
 VA descriptor but carries the AVFrame's own dimensions forward, so a scaled
-surface arrives as 1280x726 of memory described as 1920x1080, and
+surface arrives as 1280x720 of memory described as 1920x1080, and
 drmModeAddFB2() would be told about storage that does not exist.
 vaExportSurfaceHandle() reports the truth, so call it directly and keep a
 reference to the surface itself; the GEM handles hold the storage, so the
 exported fds close as soon as the framebuffer exists.
 
-The plane then shows prime_src_w x prime_src_h from the buffer's top-left
-corner, which crops the coded padding instead of displaying it. The geometry
-check is not relaxed, only re-pointed: it still demands that what the plane
-shows is exactly the destination rectangle, because that is the property whose
-absence cost 890,454 rejected commits. It is now compared against what the
-decoder really produced. A buffer smaller than the configured rectangle
-abandons the direct path the same way a permanently rejected flip does, rather
-than reporting the failure once per frame.
+The geometry check is not relaxed, only re-pointed: it still demands that what
+the plane shows is exactly the destination rectangle, because that is the
+property whose absence cost 890,454 rejected commits. It is now compared against
+what the decoder was asked to produce. A buffer smaller than the configured
+rectangle abandons the direct path the same way a permanently rejected flip
+does, rather than reporting the failure once per frame.
 
-Nothing changes without a decoder that scales: the ratio is then 0, the
+Nothing changes without a decoder that scales: the request is then 0, the
 rectangle is the stream's own size, and the same file that was refused before is
 refused with the same message.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ---
- video/decode/vd_lavc.c |  86 ++++++++++++++++
+ video/decode/vd_lavc.c |  67 ++++++++++++
  video/hwdec.h          |  12 +++
- video/out/vo_drm.c     | 227 +++++++++++++++++++++++++++++++++--------
- 3 files changed, 284 insertions(+), 41 deletions(-)
+ video/out/vo_drm.c     | 234 +++++++++++++++++++++++++++++++++--------
+ 3 files changed, 272 insertions(+), 41 deletions(-)
 
 diff --git a/video/decode/vd_lavc.c b/video/decode/vd_lavc.c
-index 3045af9917..8587253294 100644
+index 3045af9917..03d1d4ba72 100644
 --- a/video/decode/vd_lavc.c
 +++ b/video/decode/vd_lavc.c
-@@ -27,6 +27,7 @@
- #include <libavutil/hwcontext.h>
- #include <libavutil/opt.h>
- #include <libavutil/intreadwrite.h>
-+#include <libavutil/mathematics.h>
- #include <libavutil/pixdesc.h>
- 
- #include "mpv_talloc.h"
-@@ -906,6 +907,85 @@ static void uninit_avctx(struct mp_filter *vd)
+@@ -906,6 +906,67 @@ static void uninit_avctx(struct mp_filter *vd)
      ctx->use_hwdec = false;
  }
  
@@ -79,18 +68,23 @@ index 3045af9917..8587253294 100644
 +// is going to scan out, so it can produce that size instead of a full picture
 +// the display then has to shrink again.
 +//
-+// The ratio is computed from the VISIBLE dimensions, which is why it cannot be
-+// worked out on either side alone: the VO knows the scanout size but not the
-+// stream, and the decoder's own surfaces are allocated at the CODED size, so a
-+// 1080p H.264 stream is a 1920x1088 buffer here. Asking for a ratio rather than
-+// a size leaves the coded padding to be scaled along with everything else and
-+// cropped at scanout, instead of eating into the visible picture's share of the
-+// screen.
++// The decision needs both halves and they only meet here: the VO knows the
++// scanout size but not the stream, and the decoder knows the stream but not
++// where its frames are going.
++//
++// What is asked for is a size, not a ratio, because a size is what the consumer
++// is constrained by -- the H713 video plane accepts one framebuffer geometry and
++// no other. A ratio could not land on it in any case: the surfaces are allocated
++// at the CODED size, so a 1080p stream is a 1920x1088 buffer, and its 1088 rows
++// and its visible 1080 do not reach 720 by the same factor. The hardware scales
++// each axis independently, so the exact size is expressible and the ratio is
++// not. The cost is that the coded padding is scaled along with the picture
++// rather than cropped away, which is what an input crop in the VE would fix.
 +//
 +// v4l2-request has no VA-API entry point for this, so its driver reads the
 +// environment. Set it before the frame pool is allocated -- the surfaces are
 +// created by av_hwframe_ctx_init() below, and that is when the driver looks.
-+// Returns whether the requested ratio changed, which invalidates any frame pool
++// Returns whether the request changed, which invalidates any frame pool
 +// allocated under the old one.
 +static bool request_scanout_scale(struct mp_filter *vd)
 +{
@@ -105,59 +99,36 @@ index 3045af9917..8587253294 100644
 +    if (!hw)
 +        return false;
 +
-+    int old_num = hw->scale_num, old_den = hw->scale_den;
-+    hw->scale_num = hw->scale_den = 0;
++    int old_w = hw->scaled_w, old_h = hw->scaled_h;
++    hw->scaled_w = hw->scaled_h = 0;
 +    unsetenv("V4L2_REQUEST_SCALE");
 +
 +    int vis_w = ctx->avctx->width, vis_h = ctx->avctx->height;
 +    if (hw->scanout_w <= 0 || hw->scanout_h <= 0 || vis_w <= 0 || vis_h <= 0)
-+        return old_den != 0;
++        return old_w != 0;
 +
-+    // Whichever axis has to shrink the most decides the ratio, so that the
-+    // whole visible picture fits the scanout area; the other axis is then
-+    // letterboxed exactly as software scaling would have letterboxed it.
-+    int num, den;
-+    if ((int64_t)vis_w * hw->scanout_h >= (int64_t)vis_h * hw->scanout_w) {
-+        num = vis_w;
-+        den = hw->scanout_w;
-+    } else {
-+        num = vis_h;
-+        den = hw->scanout_h;
-+    }
++    // Only shrink. Asking for a larger picture than the stream has is not this
++    // hardware's job, and the driver would clamp it back anyway.
++    if (vis_w <= hw->scanout_w && vis_h <= hw->scanout_h)
++        return old_w != 0;
 +
-+    if (num <= den)
-+        return old_den != 0;
++    char size[32];
++    snprintf(size, sizeof(size), "%dx%d", hw->scanout_w, hw->scanout_h);
++    if (setenv("V4L2_REQUEST_SCALE", size, 1) < 0)
++        return old_w != 0;
 +
-+    // The hardware is only validated to 4x, and beyond that the driver would
-+    // refuse anyway. Stop at the limit and let the geometry check downstream
-+    // report the configuration it cannot display.
-+    if (num > den * 4) {
-+        num = 4;
-+        den = 1;
-+    }
++    hw->scaled_w = hw->scanout_w;
++    hw->scaled_h = hw->scanout_h;
++    MP_VERBOSE(ctx, "Asking the decoder to produce %s from %dx%d.\n", size,
++               vis_w, vis_h);
 +
-+    int g = (int)av_gcd(num, den);
-+    num /= g;
-+    den /= g;
-+
-+    char ratio[32];
-+    snprintf(ratio, sizeof(ratio), "%d/%d", num, den);
-+    if (setenv("V4L2_REQUEST_SCALE", ratio, 1) < 0)
-+        return old_den != 0;
-+
-+    hw->scale_num = num;
-+    hw->scale_den = den;
-+    MP_VERBOSE(ctx, "Asking the decoder to downscale %dx%d by %s for %dx%d "
-+                    "scanout.\n", vis_w, vis_h, ratio, hw->scanout_w,
-+               hw->scanout_h);
-+
-+    return num != old_num || den != old_den;
++    return hw->scaled_w != old_w || hw->scaled_h != old_h;
 +}
 +
  static int init_generic_hwaccel(struct mp_filter *vd, enum AVPixelFormat hw_fmt)
  {
      struct lavc_ctx *ctx = vd->priv;
-@@ -942,6 +1022,12 @@ static int init_generic_hwaccel(struct mp_filter *vd, enum AVPixelFormat hw_fmt)
+@@ -942,6 +1003,12 @@ static int init_generic_hwaccel(struct mp_filter *vd, enum AVPixelFormat hw_fmt)
      if (fns && fns->refine_hwframes)
          fns->refine_hwframes(new_frames_ctx);
  
@@ -171,7 +142,7 @@ index 3045af9917..8587253294 100644
      if (ctx->cached_hw_frames_ctx) {
          AVHWFramesContext *old_fctx = (void *)ctx->cached_hw_frames_ctx->data;
 diff --git a/video/hwdec.h b/video/hwdec.h
-index c83d20783d..803af4e33a 100644
+index c83d20783d..13d04b4e00 100644
 --- a/video/hwdec.h
 +++ b/video/hwdec.h
 @@ -45,6 +45,18 @@ struct mp_hwdec_ctx {
@@ -185,16 +156,16 @@ index c83d20783d..803af4e33a 100644
 +    // rather than a full-size picture the display has to shrink again.
 +    int scanout_w, scanout_h;
 +
-+    // The downscale the decoder actually asked for, as scale_num/scale_den, or
-+    // 0 for none. Written back by the decoder: a scaled buffer no longer has
-+    // the frame's dimensions, and this is how the VO works out where the
-+    // visible picture ended up inside it.
-+    int scale_num, scale_den;
++    // The output size the decoder actually asked its hardware for, or 0 if it
++    // asked for nothing. Written back by the decoder: a scaled buffer no longer
++    // has the frame's dimensions, and this is how the VO knows what it is
++    // really going to be handed.
++    int scaled_w, scaled_h;
  };
  
  // Used to communicate hardware decoder device handles from VO to video decoder.
 diff --git a/video/out/vo_drm.c b/video/out/vo_drm.c
-index e4d20f7e23..b886a93cd6 100644
+index e4d20f7e23..36bf267b0c 100644
 --- a/video/out/vo_drm.c
 +++ b/video/out/vo_drm.c
 @@ -38,6 +38,11 @@
@@ -272,11 +243,8 @@ index e4d20f7e23..b886a93cd6 100644
 +    if (status != VA_STATUS_SUCCESS) {
 +        MP_ERR(vo, "Failed to sync VAAPI surface: %s\n", vaErrorStr(status));
 +        return false;
-     }
- 
--    dst = mp_image_from_av_frame(dst_frame);
--    if (dst)
--        mp_image_copy_attributes(dst, src);
++    }
++
 +    status = vaExportSurfaceHandle(vactx->display, id,
 +                                   VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
 +                                   VA_EXPORT_SURFACE_READ_ONLY |
@@ -284,12 +252,11 @@ index e4d20f7e23..b886a93cd6 100644
 +    if (status != VA_STATUS_SUCCESS) {
 +        MP_ERR(vo, "Failed to export VAAPI surface: %s\n", vaErrorStr(status));
 +        return false;
-+    }
+     }
  
--done:
--    av_frame_free(&src_frame);
--    av_frame_free(&dst_frame);
--    return dst;
+-    dst = mp_image_from_av_frame(dst_frame);
+-    if (dst)
+-        mp_image_copy_attributes(dst, src);
 +    if (va.num_layers < 1 || va.num_objects < 1 ||
 +        va.num_objects > AV_DRM_MAX_PLANES ||
 +        va.layers[0].num_planes > AV_DRM_MAX_PLANES)
@@ -300,7 +267,11 @@ index e4d20f7e23..b886a93cd6 100644
 +            close(va.objects[i].fd);
 +        return false;
 +    }
-+
+ 
+-done:
+-    av_frame_free(&src_frame);
+-    av_frame_free(&dst_frame);
+-    return dst;
 +    *desc = (AVDRMFrameDescriptor){
 +        .nb_objects = va.num_objects,
 +        .nb_layers = 1,
@@ -338,30 +309,26 @@ index e4d20f7e23..b886a93cd6 100644
  }
  
  static void destroy_framebuffer(int fd, struct framebuffer *fb)
-@@ -293,6 +359,22 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
+@@ -293,6 +359,18 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
              MP_ERR(vo, "DRM PRIME plane requires uncropped, unrotated fullscreen video\n");
              return -1;
          }
-+        // Where the visible picture ends up inside the decoded buffer. When the
-+        // decoder was asked to downscale it is no longer the frame's own size:
-+        // the hardware scales the CODED picture, padding and all, so the buffer
-+        // is a little taller than the visible image and the remainder is
-+        // cropped here instead of being shown.
++        // What the plane will show from the decoded buffer. When the decoder
++        // was asked to downscale, that is the size it was asked for and no
++        // longer the frame's own.
 +        p->prime_src_w = mp_rect_w(p->src);
 +        p->prime_src_h = mp_rect_h(p->src);
 +#if HAVE_VAAPI
-+        int scale_num = p->vaapi_ctx.scale_num;
-+        int scale_den = p->vaapi_ctx.scale_den;
-+        if (scale_den > 0 && scale_num > scale_den) {
-+            p->prime_src_w = (p->prime_src_w * scale_den / scale_num) & ~1;
-+            p->prime_src_h = (p->prime_src_h * scale_den / scale_num) & ~1;
++        if (p->vaapi_ctx.scaled_w > 0 && p->vaapi_ctx.scaled_h > 0) {
++            p->prime_src_w = p->vaapi_ctx.scaled_w;
++            p->prime_src_h = p->vaapi_ctx.scaled_h;
 +        }
 +#endif
 +
          // The tests above establish "uncropped" and "fullscreen" but NOT that
          // the two are the same size, so any video whose resolution differs from
          // the mode passed them and asked the plane to scale. A plane that
-@@ -300,11 +382,15 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
+@@ -300,11 +378,15 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
          // failed flip is not fatal the player then retries forever without
          // advancing -- observed at 890,454 failures on one 1080p file, which
          // wedged the display hardware.
@@ -380,7 +347,7 @@ index e4d20f7e23..b886a93cd6 100644
                     mp_rect_w(p->dst), mp_rect_h(p->dst));
              return -1;
          }
-@@ -419,24 +505,76 @@ static bool enqueue_prime_frame(struct vo *vo, struct mp_image *image)
+@@ -419,24 +501,87 @@ static bool enqueue_prime_frame(struct vo *vo, struct mp_image *image)
  {
      struct priv *p = vo->priv;
      struct vo_drm_state *drm = vo->drm;
@@ -428,15 +395,26 @@ index e4d20f7e23..b886a93cd6 100644
 -        return false;
 +    frame->prime_image = held;
 +
-+    // The plane shows prime_src_w x prime_src_h from the buffer's top-left
-+    // corner and cannot scale, so a buffer smaller than that would be a
-+    // framebuffer read past its own end. reconfig() worked the rectangle out
-+    // from the downscale the decoder was asked for; this is where the size the
-+    // hardware really produced is finally known, so check it here.
-+    if (!desc || fb_w < p->prime_src_w || fb_h < p->prime_src_h) {
-+        MP_ERR(vo, "Decoded buffer is %dx%d, too small for the %dx%d the video "
-+                   "plane was configured to show; giving up on the direct "
-+                   "path.\n", fb_w, fb_h, p->prime_src_w, p->prime_src_h);
++    // This is where the size the hardware really produced is finally known, so
++    // it is the only place the request can be checked against the result.
++    //
++    // Test for a buffer that is too BIG as well as too small. A decoder that
++    // silently ignored the downscale hands back a full-size buffer, which
++    // passes any "is it large enough" test and is then rejected much later by
++    // the kernel, as an EINVAL on every flip and a black screen -- with nothing
++    // anywhere naming the decoder as the cause. Say it here instead.
++    bool scaled = false;
++#if HAVE_VAAPI
++    scaled = p->vaapi_ctx.scaled_w > 0;
++#endif
++    if (!desc || fb_w < p->prime_src_w || fb_h < p->prime_src_h ||
++        (scaled && (fb_w != p->prime_src_w || fb_h != p->prime_src_h)))
++    {
++        MP_ERR(vo, "Decoded buffer is %dx%d, but the video plane is configured "
++                   "to show %dx%d%s; giving up on the direct path.\n",
++               fb_w, fb_h, p->prime_src_w, p->prime_src_h,
++               scaled ? " and the decoder was asked to produce exactly that"
++                      : "");
 +        // Never satisfiable by a later frame, and repeating it once per frame
 +        // is the retry storm PRIME_FLIP_FAIL_LIMIT exists to prevent.
 +        p->prime_broken = true;
@@ -467,7 +445,7 @@ index e4d20f7e23..b886a93cd6 100644
  }
  
  static void dequeue_frame(struct vo *vo)
-@@ -500,10 +638,12 @@ static void queue_flip(struct vo *vo, struct drm_frame *frame)
+@@ -500,10 +645,12 @@ static void queue_flip(struct vo *vo, struct drm_frame *frame)
  
          drm_object_set_property(request, plane, "FB_ID", frame->prime_fb.fb_id);
          drm_object_set_property(request, plane, "CRTC_ID", drm->crtc_id);
@@ -484,7 +462,7 @@ index e4d20f7e23..b886a93cd6 100644
          drm_object_set_property(request, plane, "CRTC_X", p->dst.x0);
          drm_object_set_property(request, plane, "CRTC_Y", p->dst.y0);
          drm_object_set_property(request, plane, "CRTC_W", mp_rect_w(p->dst));
-@@ -671,6 +811,11 @@ static int preinit(struct vo *vo)
+@@ -671,6 +818,11 @@ static int preinit(struct vo *vo)
                  .driver_name = "vaapi-drm",
                  .av_device_ref = p->vaapi_ctx.av_device_ref,
                  .hw_imgfmt = IMGFMT_VAAPI,
