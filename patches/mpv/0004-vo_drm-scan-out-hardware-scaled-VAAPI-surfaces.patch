@@ -1,6 +1,6 @@
-From 866ed04e5792de29dd8adb74c12b51c2afbde527 Mon Sep 17 00:00:00 2001
-From: Christopher Stenger <chris.h.stenger@gmail.com>
-Date: Thu, 17 Sep 2026 03:12:52 -0700
+From e382cf2a9ea3ce10860335acdbaf2d66cb014cd5 Mon Sep 17 00:00:00 2001
+From: build <build@localhost>
+Date: Thu, 17 Sep 2026 13:37:47 -0700
 Subject: [PATCH] vo_drm: scan out hardware-scaled VAAPI surfaces
 
 The H713's video engine can downscale while it decodes, so a 1080p file can
@@ -29,6 +29,13 @@ what makes it apply. A pool allocated under a different request is dropped,
 because nothing in the existing comparison would notice -- the request changes
 what the hardware writes, not the dimensions libavcodec asked for.
 
+It also publishes the VISIBLE size, which is the other thing only the decoder
+knows. The eight rows between 1080 and 1088 are encoder padding, and a scaler
+fed the whole coded raster spends part of the height budget on them: the picture
+comes out 0.74% short and, because encoders pad by replicating the last row, the
+bottom edge of the frame is smeared to nearly twice its thickness. Told the
+visible rectangle, the driver can point the hardware at the picture instead.
+
 The VO reads the geometry back from VA-API rather than from the frame.
 av_hwframe_map() cannot answer this: it copies the objects and layers out of the
 VA descriptor but carries the AVFrame's own dimensions forward, so a scaled
@@ -51,16 +58,16 @@ refused with the same message.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ---
- video/decode/vd_lavc.c |  67 ++++++++++++
+ video/decode/vd_lavc.c |  80 ++++++++++++++
  video/hwdec.h          |  12 +++
  video/out/vo_drm.c     | 234 +++++++++++++++++++++++++++++++++--------
- 3 files changed, 272 insertions(+), 41 deletions(-)
+ 3 files changed, 285 insertions(+), 41 deletions(-)
 
 diff --git a/video/decode/vd_lavc.c b/video/decode/vd_lavc.c
-index 3045af9917..03d1d4ba72 100644
+index 3045af9917..5ab166c3d3 100644
 --- a/video/decode/vd_lavc.c
 +++ b/video/decode/vd_lavc.c
-@@ -906,6 +906,67 @@ static void uninit_avctx(struct mp_filter *vd)
+@@ -906,6 +906,80 @@ static void uninit_avctx(struct mp_filter *vd)
      ctx->use_hwdec = false;
  }
  
@@ -102,6 +109,7 @@ index 3045af9917..03d1d4ba72 100644
 +    int old_w = hw->scaled_w, old_h = hw->scaled_h;
 +    hw->scaled_w = hw->scaled_h = 0;
 +    unsetenv("V4L2_REQUEST_SCALE");
++    unsetenv("V4L2_REQUEST_CROP");
 +
 +    int vis_w = ctx->avctx->width, vis_h = ctx->avctx->height;
 +    if (hw->scanout_w <= 0 || hw->scanout_h <= 0 || vis_w <= 0 || vis_h <= 0)
@@ -112,15 +120,27 @@ index 3045af9917..03d1d4ba72 100644
 +    if (vis_w <= hw->scanout_w && vis_h <= hw->scanout_h)
 +        return old_w != 0;
 +
++    // The decoder's surfaces are allocated at the CODED size, which for H.264
++    // 1080p is 1920x1088 -- eight rows of encoder padding that are not picture.
++    // Only we know the difference, having parsed the stream, so say so: the
++    // hardware can then scale from the visible rectangle and land on an exact
++    // ratio, instead of spending part of the height budget on padding and
++    // smearing the bottom edge of the frame.
++    char visible[32];
++    snprintf(visible, sizeof(visible), "%dx%d", vis_w, vis_h);
++    setenv("V4L2_REQUEST_CROP", visible, 1);
++
 +    char size[32];
 +    snprintf(size, sizeof(size), "%dx%d", hw->scanout_w, hw->scanout_h);
-+    if (setenv("V4L2_REQUEST_SCALE", size, 1) < 0)
++    if (setenv("V4L2_REQUEST_SCALE", size, 1) < 0) {
++        unsetenv("V4L2_REQUEST_CROP");
 +        return old_w != 0;
++    }
 +
 +    hw->scaled_w = hw->scanout_w;
 +    hw->scaled_h = hw->scanout_h;
-+    MP_VERBOSE(ctx, "Asking the decoder to produce %s from %dx%d.\n", size,
-+               vis_w, vis_h);
++    MP_VERBOSE(ctx, "Asking the decoder to produce %s from %s visible.\n",
++               size, visible);
 +
 +    return hw->scaled_w != old_w || hw->scaled_h != old_h;
 +}
@@ -128,7 +148,7 @@ index 3045af9917..03d1d4ba72 100644
  static int init_generic_hwaccel(struct mp_filter *vd, enum AVPixelFormat hw_fmt)
  {
      struct lavc_ctx *ctx = vd->priv;
-@@ -942,6 +1003,12 @@ static int init_generic_hwaccel(struct mp_filter *vd, enum AVPixelFormat hw_fmt)
+@@ -942,6 +1016,12 @@ static int init_generic_hwaccel(struct mp_filter *vd, enum AVPixelFormat hw_fmt)
      if (fns && fns->refine_hwframes)
          fns->refine_hwframes(new_frames_ctx);
  

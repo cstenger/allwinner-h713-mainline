@@ -1,0 +1,203 @@
+From 8cf18ec8ce40016b583b7e0b33de168540f2e260 Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Thu, 17 Sep 2026 13:41:22 -0700
+Subject: [PATCH] Tell the driver which part of the coded frame is picture
+
+The decoder's hardware scaler was being fed the coded raster, padding included.
+H.264 stores 1080p as 1088 rows, so producing a 720-row picture spent eight rows
+of the height budget on encoder padding: the image came out 0.74% short and,
+because encoders pad by replicating the last row, the bottom edge was smeared to
+nearly twice its thickness -- 11 panel rows against a nominal 6, measured both in
+the decoder's output and on the panel.
+
+V4L2_SEL_TGT_CROP on CAPTURE is the rectangle within the coded resolution to be
+output, which is exactly the missing information, so set it before negotiating
+the capture size -- the crop bounds what the scaler reads, so the output is
+clamped against it.
+
+V4L2_REQUEST_CROP carries the visible size because this driver cannot derive it.
+VA-API allocates surfaces at the CODED size, and neither v4l2_ctrl_h264_sps nor
+v4l2_ctrl_hevc_sps carries the cropping fields, so only the client that parsed
+the stream knows where the picture ends. It is read at capture negotiation
+alongside V4L2_REQUEST_SCALE, for the same reason: the answer depends on the
+stream, which is not known when vaInitialize() runs.
+
+Best effort by design. A kernel without V4L2_SEL_TGT_CROP refuses the call and
+still scales correctly, just from the coded raster as every earlier version did.
+Losing the crop is a slightly worse picture, not a broken one, and is not worth
+failing decode over.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/request.c | 33 +++++++++++++++++++++++++++++++++
+ src/request.h |  9 +++++++++
+ src/surface.c | 25 +++++++++++++++++++++++++
+ src/v4l2.c    | 34 ++++++++++++++++++++++++++++++++++
+ src/v4l2.h    |  2 ++
+ 5 files changed, 103 insertions(+)
+
+diff --git a/src/request.c b/src/request.c
+index 28fa410..a9d57a8 100644
+--- a/src/request.c
++++ b/src/request.c
+@@ -112,6 +112,39 @@ void request_parse_scale(struct request_data *driver_data)
+ 	request_log("Asking for a %ux%u decoder output\n", width, height);
+ }
+ 
++/*
++ * V4L2_REQUEST_CROP is the VISIBLE size of the stream, "WxH".
++ *
++ * The driver cannot work this out for itself. VA-API allocates surfaces at the
++ * CODED size, so a 1080p H.264 stream arrives here as 1920x1088, and the eight
++ * rows of difference are encoder padding rather than picture. Neither stateless
++ * SPS control carries the cropping fields, so only the client -- which parsed
++ * the stream -- knows. Told it, the driver can point the hardware scaler at the
++ * picture instead of at the padding, and land on an exact ratio.
++ */
++void request_parse_crop(struct request_data *driver_data)
++{
++	const char *value = getenv("V4L2_REQUEST_CROP");
++	unsigned int width, height;
++	char extra;
++
++	driver_data->crop_width = 0;
++	driver_data->crop_height = 0;
++
++	if (value == NULL || *value == '\0')
++		return;
++
++	if (sscanf(value, "%ux%u%c", &width, &height, &extra) != 2 ||
++	    width == 0 || height == 0) {
++		request_log("Ignoring V4L2_REQUEST_CROP=\"%s\": expected a visible size, as WxH\n",
++			    value);
++		return;
++	}
++
++	driver_data->crop_width = width;
++	driver_data->crop_height = height;
++}
++
+ /* Set default visibility for the init function only. */
+ VAStatus __attribute__((visibility("default")))
+ VA_DRIVER_INIT_FUNC(VADriverContextP context);
+diff --git a/src/request.h b/src/request.h
+index e80fb07..d6dc4aa 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -89,10 +89,19 @@ struct request_data {
+ 	 */
+ 	unsigned int scale_width;
+ 	unsigned int scale_height;
++
++	/*
++	 * The stream's VISIBLE size, from V4L2_REQUEST_CROP, or zero. Separate
++	 * from the coded size the surfaces are allocated at, and not derivable
++	 * from it -- see request_parse_crop().
++	 */
++	unsigned int crop_width;
++	unsigned int crop_height;
+ };
+ 
+ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context);
+ VAStatus RequestTerminate(VADriverContextP context);
+ void request_parse_scale(struct request_data *driver_data);
++void request_parse_crop(struct request_data *driver_data);
+ 
+ #endif
+diff --git a/src/surface.c b/src/surface.c
+index 32ab25b..53d88e7 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -183,6 +183,31 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		 * opened the display.
+ 		 */
+ 		request_parse_scale(driver_data);
++		request_parse_crop(driver_data);
++
++		/*
++		 * Tell the driver which part of the coded frame is picture,
++		 * before the capture size is negotiated: the crop bounds what
++		 * the scaler reads, so the output size is clamped against it.
++		 *
++		 * Best effort. A kernel without V4L2_SEL_TGT_CROP refuses this
++		 * and still scales correctly, just from the coded raster
++		 * including its padding -- which is what every version before
++		 * this one did. Losing the crop is a slightly worse picture,
++		 * not a broken one, and not worth failing decode over.
++		 */
++		if (driver_data->crop_width != 0) {
++			unsigned int crop_width = driver_data->crop_width;
++			unsigned int crop_height = driver_data->crop_height;
++
++			rc = v4l2_set_crop(driver_data->video_fd, capture_type,
++					   &crop_width, &crop_height);
++			if (rc < 0)
++				request_log("No crop support: keeping the full coded frame\n");
++			else
++				request_log("Cropped the coded frame to %ux%u\n",
++					    crop_width, crop_height);
++		}
+ 
+ 		/*
+ 		 * Ask for a smaller CAPTURE picture when a downscale ratio was
+diff --git a/src/v4l2.c b/src/v4l2.c
+index 3addb33..f5a1868 100644
+--- a/src/v4l2.c
++++ b/src/v4l2.c
+@@ -172,6 +172,40 @@ int v4l2_set_format(int video_fd, unsigned int type, unsigned int pixelformat,
+ 	return 0;
+ }
+ 
++/*
++ * Narrow what the decoder's scaler reads out of the coded frame.
++ *
++ * V4L2_SEL_TGT_CROP on CAPTURE is "the rectangle within the coded resolution to
++ * be output", so this is where a client says which part of the coded frame is
++ * real picture. It matters because coded is not visible: H.264 stores 1080p as
++ * 1088 rows, and scaling all 1088 into a 720-row display spends eight rows of
++ * the budget on encoder padding.
++ *
++ * Reports back the rectangle the driver settled on, which may be smaller than
++ * the one asked for.
++ */
++int v4l2_set_crop(int video_fd, unsigned int type, unsigned int *width,
++		  unsigned int *height)
++{
++	struct v4l2_selection selection;
++	int rc;
++
++	memset(&selection, 0, sizeof(selection));
++	selection.type = type;
++	selection.target = V4L2_SEL_TGT_CROP;
++	selection.r.width = *width;
++	selection.r.height = *height;
++
++	rc = ioctl(video_fd, VIDIOC_S_SELECTION, &selection);
++	if (rc < 0)
++		return -1;
++
++	*width = selection.r.width;
++	*height = selection.r.height;
++
++	return 0;
++}
++
+ int v4l2_get_format(int video_fd, unsigned int type, unsigned int *width,
+ 		    unsigned int *height, unsigned int *bytesperline,
+ 		    unsigned int *sizes, unsigned int *planes_count)
+diff --git a/src/v4l2.h b/src/v4l2.h
+index 24c12a0..ecefaa1 100644
+--- a/src/v4l2.h
++++ b/src/v4l2.h
+@@ -36,6 +36,8 @@ bool v4l2_find_format(int video_fd, unsigned int type,
+ 		      unsigned int pixelformat);
+ int v4l2_set_format(int video_fd, unsigned int type, unsigned int pixelformat,
+ 		    unsigned int width, unsigned int height);
++int v4l2_set_crop(int video_fd, unsigned int type, unsigned int *width,
++		  unsigned int *height);
+ int v4l2_get_format(int video_fd, unsigned int type, unsigned int *width,
+ 		    unsigned int *height, unsigned int *bytesperline,
+ 		    unsigned int *sizes, unsigned int *planes_count);
+-- 
+2.55.0
+
