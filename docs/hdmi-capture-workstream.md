@@ -105,7 +105,19 @@ in [the module README](../modules/hdmi-bringup/README.md).
 
 Although THDMIRX remained readable, the wrapper byte read at `0x068008f1`
 returned a bus error and the following `0x068008fc` access likely hard-locked
-the target. Recovery requires a physical power cycle. The prior module-loaded
-state is no longer a usable live baseline. See
+the target. The owner recovered it with a physical power cycle. The failed state is
+not used as a live baseline. See
 [the failure record](hdmi-wrapper-access-failure.md) for exact observations,
 the clock-definition discrepancy, and the restricted next experiment.
+
+## Recovery and clock correction
+
+The owner power-cycled the target. Vendor symbolized CCU descriptors resolved
+bus-hdmi-audio to bit 31 and bus-cap-300m to bit 30 at register 0xd80.
+Patch 0123 corrects both definitions. A private build and one-time FIT boot
+passed, followed by power-module load/unload/reload and eight known THDMIRX
+reads. See [the validation record](hdmi-tvcap-clock-validation.md).
+
+The current target is on the transient #2 kernel with TVFE/TVCAP held active.
+Normal boot storage and Claude's checkout are unchanged. The wrapper fault
+remains unresolved, and HPD/DDC are still the next source-facing milestone.

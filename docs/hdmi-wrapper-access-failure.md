@@ -77,3 +77,12 @@ monitor disassembly shows both probe entry points write the caller's w0 to
 for readiness. The monitor's on-disk 128-byte startup parameter area includes
 a build identifier followed by zeros, so it must not be blindly treated as a
 fully initialized runtime configuration.
+
+## Recovery and resolved clock discrepancy
+
+The owner physically power-cycled the target. SSH and serial recovered.
+Vendor clock descriptors now prove the correct high-bit mappings, and patch
+0123 passed a transient hardware boot test. See
+[the clock validation](hdmi-tvcap-clock-validation.md). The recovered
+unpatched boot already had the high bits set, so this correction alone does
+not establish the wrapper fault cause. The unsafe reads were not repeated.

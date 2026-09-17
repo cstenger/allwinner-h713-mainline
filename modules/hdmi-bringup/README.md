@@ -82,3 +82,8 @@ Final target state: module loaded from `/tmp`, TVFE/TVCAP held on. Nothing
 was installed in the module tree or configured to load after a reboot.
 Serial was released after each command batch. Claude's checkout and its build
 files were not modified.
+
+The subsequent power cycle and patched-kernel tests are recorded in
+[the CCU validation](../../docs/hdmi-tvcap-clock-validation.md). Patch 0123
+corrects the hardware gate interpretation; the module also passed removal/
+reload on the transient #2 kernel. Wrapper access remains unvalidated.
