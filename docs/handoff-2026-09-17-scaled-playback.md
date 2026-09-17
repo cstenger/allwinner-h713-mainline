@@ -104,12 +104,15 @@ the driver logs `Coded 1920x1088, asked the driver for 1280x720, allocated
 zero failed commits, and A-V stays at 0.000. The operator confirms the picture
 and the sound.
 
-**Still open:** whether the coded-padding band at the bottom is visible to the
-eye. Both watched runs had forgiving bottom edges and the photograph that would
-settle it was not taken. The headless measurement in
-[the input-crop result](reference/ve-input-crop-2026-09-17.md) shows a test
-card's bottom border coming out roughly twice as thick as it should, so the
-expectation is that it IS visible on the right content.
+**The coded-padding band is confirmed on the panel.** Photographs of the test
+card, rectified via the card's own border and measured, put the bottom border at
+10.95 and 10.70 panel pixels on the hardware path against 6.08 for a
+software-decoded frame through the same projector — matching the headless
+prediction of 11 rows and 6 rows. See
+[the panel photographs](reference/panel-photos-2026-09-17/README.md). The card's
+circles, which look ~10% elongated in the raw frames, measure 0.987-0.989 after
+rectification on BOTH decode paths, so that is the projection geometry and not
+the scaler.
 
 ## What it cost to find two bugs
 
@@ -186,11 +189,8 @@ that scans out through the descriptor.
    how userspace declares the visible rectangle, and it collides with this
    driver's existing use of `S_SELECTION(CAPTURE, COMPOSE)`. Read
    [the result](reference/ve-input-crop-2026-09-17.md) before designing it.
-2. **Photograph the bottom edge** on content with a bright bottom, to record
-   what the compromise actually looks like before it is removed. The two photos
-   taken on 2026-09-17 do not serve: the second one is a SOFTWARE-decoded frame,
-   from after the seek bug dropped hardware decoding, so it says nothing about
-   the VE scaler. Re-shoot now that 0009 is in.
+2. ~~Photograph the bottom edge~~ — done, see
+   [the panel photographs](reference/panel-photos-2026-09-17/README.md).
 3. **HEVC and Main10 to the panel.** They share the datapath but have not been
    through the display half.
 4. **Then** reconsider the display-side scaling patches, per the previous
