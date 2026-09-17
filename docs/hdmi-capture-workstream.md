@@ -133,3 +133,13 @@ write, full firmware load, or source detection success is claimed.
 Controlled ARM restart and the same temporary FIT recovered the SCP execution
 test. The latest module passed with exception reporting enabled; TVFE/TVCAP
 are held active again. The normal boot image remains untouched.
+
+## EDID clock/reset and HPD-read milestone
+
+Patch 0124 adds the missing EDID resources to an H713-specific R_CCU variant.
+A one-time #3 kernel boot passed. The removable consumer held the clock at
+24 MHz and released reset; the SCP-side HPD read then passed twice and
+returned 7. Consumer unload restored the original zero register values.
+See [the EDID clock validation](hdmi-edid-clock-validation.md). Current target
+holds TVFE/TVCAP and EDID resources; SCP is stopped. Source detection/EDID
+and captured frames remain unproven.

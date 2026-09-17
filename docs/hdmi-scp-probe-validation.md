@@ -85,3 +85,12 @@ TVFE/TVCAP holds were restored, and both tested R_CCU EDID registers read zero:
 and reset absent from our D1-derived provider. Their verification is the next
 clock investigation; a register read must not be retried just because the SCP
 is now able to execute. Host HDMI remains disconnected with zero-byte EDID.
+
+## HPD access resolved with the missing EDID resources
+
+Patch 0124 and a removable consumer enabled R_CCU EDID reset/clock. The
+same approved SCP-side HPD read then completed twice, returning 7, with
+no exception and restoration verified. Unload restored both resources
+to zero. See [the EDID clock validation](hdmi-edid-clock-validation.md).
+The earlier timeout describes the resources-off state and is superseded
+for this specifically validated read. ARM HPD access was not retried.

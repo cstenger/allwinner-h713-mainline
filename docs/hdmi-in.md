@@ -1,3 +1,9 @@
+Latest result, 2026-09-17: the missing R_CCU EDID clock/reset are now modeled
+and hardware-tested. With them enabled, the SCP-side HPD read completes and
+returns 7; unloading restores the original clock/reset state. See
+[the EDID validation](hdmi-edid-clock-validation.md). No HPD/EDID writes or
+ARM HPD reads have been made, and the source-detection milestone is pending.
+
 Update, 2026-09-17: the TVCAP bus gates are corrected and hardware-tested.
 A bounded SRAM A2 program also proved SCP execution, but its HPD read timed
 out; SCP execution alone does not establish access to that block. Controlled
