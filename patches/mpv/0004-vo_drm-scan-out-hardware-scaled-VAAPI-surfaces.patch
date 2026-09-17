@@ -1,0 +1,501 @@
+From cf4aad9c65a7df76d311f1c4868c634019f4998d Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Thu, 17 Sep 2026 03:12:52 -0700
+Subject: [PATCH] vo_drm: scan out hardware-scaled VAAPI surfaces
+
+The H713's video engine can downscale while it decodes, so a 1080p file can
+arrive at the 1280x720 panel already the size of the panel. Until now mpv could
+not use that, and refused the file instead: the video plane cannot scale, the
+decoder produced a full-size picture, and reconfig() correctly called the
+combination undisplayable.
+
+Three things had to meet for this to work.
+
+The VO says what it scans out. vo_drm is the only component that knows the mode,
+so it publishes it on the hwdec context; a VO that composites has no business
+asking a decoder to shrink anything, and leaves the field at zero.
+
+The decoder turns that into a ratio, because neither side can compute it alone.
+The scanout size lives in the VO and the visible picture lives in the stream,
+and they only meet in init_generic_hwaccel(), just before the surfaces are
+allocated. A ratio rather than a target size matters here: VA-API surfaces are
+allocated at the CODED size, so a 1080p H.264 stream is a 1920x1088 buffer, and
+a "fit into 1280x720" rule would spend eight rows of the height budget on coded
+padding and letterbox a picture that should have filled the screen. Scaling by
+3/2 instead puts the visible 1080 rows onto exactly 720 and leaves the padding
+as five spare rows past the bottom of the panel. libva-v4l2-request has no
+VA-API entry point for this, so its driver reads the environment; setting it
+before av_hwframe_ctx_init() is what makes it apply. A pool allocated under a
+different ratio is dropped, because nothing in the existing comparison would
+notice -- the ratio changes what the hardware writes, not the dimensions
+libavcodec asked for.
+
+The VO reads the geometry back from VA-API rather than from the frame.
+av_hwframe_map() cannot answer this: it copies the objects and layers out of the
+VA descriptor but carries the AVFrame's own dimensions forward, so a scaled
+surface arrives as 1280x726 of memory described as 1920x1080, and
+drmModeAddFB2() would be told about storage that does not exist.
+vaExportSurfaceHandle() reports the truth, so call it directly and keep a
+reference to the surface itself; the GEM handles hold the storage, so the
+exported fds close as soon as the framebuffer exists.
+
+The plane then shows prime_src_w x prime_src_h from the buffer's top-left
+corner, which crops the coded padding instead of displaying it. The geometry
+check is not relaxed, only re-pointed: it still demands that what the plane
+shows is exactly the destination rectangle, because that is the property whose
+absence cost 890,454 rejected commits. It is now compared against what the
+decoder really produced. A buffer smaller than the configured rectangle
+abandons the direct path the same way a permanently rejected flip does, rather
+than reporting the failure once per frame.
+
+Nothing changes without a decoder that scales: the ratio is then 0, the
+rectangle is the stream's own size, and the same file that was refused before is
+refused with the same message.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ video/decode/vd_lavc.c |  86 ++++++++++++++++
+ video/hwdec.h          |  12 +++
+ video/out/vo_drm.c     | 227 +++++++++++++++++++++++++++++++++--------
+ 3 files changed, 284 insertions(+), 41 deletions(-)
+
+diff --git a/video/decode/vd_lavc.c b/video/decode/vd_lavc.c
+index 3045af9917..8587253294 100644
+--- a/video/decode/vd_lavc.c
++++ b/video/decode/vd_lavc.c
+@@ -27,6 +27,7 @@
+ #include <libavutil/hwcontext.h>
+ #include <libavutil/opt.h>
+ #include <libavutil/intreadwrite.h>
++#include <libavutil/mathematics.h>
+ #include <libavutil/pixdesc.h>
+ 
+ #include "mpv_talloc.h"
+@@ -906,6 +907,85 @@ static void uninit_avctx(struct mp_filter *vd)
+     ctx->use_hwdec = false;
+ }
+ 
++// Tell a hardware decoder that can downscale while it decodes what size the VO
++// is going to scan out, so it can produce that size instead of a full picture
++// the display then has to shrink again.
++//
++// The ratio is computed from the VISIBLE dimensions, which is why it cannot be
++// worked out on either side alone: the VO knows the scanout size but not the
++// stream, and the decoder's own surfaces are allocated at the CODED size, so a
++// 1080p H.264 stream is a 1920x1088 buffer here. Asking for a ratio rather than
++// a size leaves the coded padding to be scaled along with everything else and
++// cropped at scanout, instead of eating into the visible picture's share of the
++// screen.
++//
++// v4l2-request has no VA-API entry point for this, so its driver reads the
++// environment. Set it before the frame pool is allocated -- the surfaces are
++// created by av_hwframe_ctx_init() below, and that is when the driver looks.
++// Returns whether the requested ratio changed, which invalidates any frame pool
++// allocated under the old one.
++static bool request_scanout_scale(struct mp_filter *vd)
++{
++    struct lavc_ctx *ctx = vd->priv;
++
++    if (!ctx->hwdec_devs || ctx->hwdec.pix_fmt != AV_PIX_FMT_VAAPI)
++        return false;
++
++    struct mp_hwdec_ctx *hw =
++        hwdec_devices_get_by_imgfmt_and_type(ctx->hwdec_devs, IMGFMT_VAAPI,
++                                             ctx->hwdec.lavc_device);
++    if (!hw)
++        return false;
++
++    int old_num = hw->scale_num, old_den = hw->scale_den;
++    hw->scale_num = hw->scale_den = 0;
++    unsetenv("V4L2_REQUEST_SCALE");
++
++    int vis_w = ctx->avctx->width, vis_h = ctx->avctx->height;
++    if (hw->scanout_w <= 0 || hw->scanout_h <= 0 || vis_w <= 0 || vis_h <= 0)
++        return old_den != 0;
++
++    // Whichever axis has to shrink the most decides the ratio, so that the
++    // whole visible picture fits the scanout area; the other axis is then
++    // letterboxed exactly as software scaling would have letterboxed it.
++    int num, den;
++    if ((int64_t)vis_w * hw->scanout_h >= (int64_t)vis_h * hw->scanout_w) {
++        num = vis_w;
++        den = hw->scanout_w;
++    } else {
++        num = vis_h;
++        den = hw->scanout_h;
++    }
++
++    if (num <= den)
++        return old_den != 0;
++
++    // The hardware is only validated to 4x, and beyond that the driver would
++    // refuse anyway. Stop at the limit and let the geometry check downstream
++    // report the configuration it cannot display.
++    if (num > den * 4) {
++        num = 4;
++        den = 1;
++    }
++
++    int g = (int)av_gcd(num, den);
++    num /= g;
++    den /= g;
++
++    char ratio[32];
++    snprintf(ratio, sizeof(ratio), "%d/%d", num, den);
++    if (setenv("V4L2_REQUEST_SCALE", ratio, 1) < 0)
++        return old_den != 0;
++
++    hw->scale_num = num;
++    hw->scale_den = den;
++    MP_VERBOSE(ctx, "Asking the decoder to downscale %dx%d by %s for %dx%d "
++                    "scanout.\n", vis_w, vis_h, ratio, hw->scanout_w,
++               hw->scanout_h);
++
++    return num != old_num || den != old_den;
++}
++
+ static int init_generic_hwaccel(struct mp_filter *vd, enum AVPixelFormat hw_fmt)
+ {
+     struct lavc_ctx *ctx = vd->priv;
+@@ -942,6 +1022,12 @@ static int init_generic_hwaccel(struct mp_filter *vd, enum AVPixelFormat hw_fmt)
+     if (fns && fns->refine_hwframes)
+         fns->refine_hwframes(new_frames_ctx);
+ 
++    // A pool allocated under a different downscale holds surfaces of the wrong
++    // size, and nothing in the comparison below would notice: the ratio changes
++    // what the hardware writes, not the dimensions libavcodec asked for.
++    if (request_scanout_scale(vd))
++        av_buffer_unref(&ctx->cached_hw_frames_ctx);
++
+     // We might be able to reuse a previously allocated frame pool.
+     if (ctx->cached_hw_frames_ctx) {
+         AVHWFramesContext *old_fctx = (void *)ctx->cached_hw_frames_ctx->data;
+diff --git a/video/hwdec.h b/video/hwdec.h
+index c83d20783d..803af4e33a 100644
+--- a/video/hwdec.h
++++ b/video/hwdec.h
+@@ -45,6 +45,18 @@ struct mp_hwdec_ctx {
+     // The libavutil hwconfig to be used when querying constraints for the
+     // conversion filter. Can be NULL if no special config is required.
+     void *conversion_config;
++
++    // Size this VO scans out hardware frames at directly, or 0 if it does not
++    // scan them out at all. A decoder whose hardware can downscale while it
++    // decodes uses this to produce the displayed size in the first place,
++    // rather than a full-size picture the display has to shrink again.
++    int scanout_w, scanout_h;
++
++    // The downscale the decoder actually asked for, as scale_num/scale_den, or
++    // 0 for none. Written back by the decoder: a scaled buffer no longer has
++    // the frame's dimensions, and this is how the VO works out where the
++    // visible picture ended up inside it.
++    int scale_num, scale_den;
+ };
+ 
+ // Used to communicate hardware decoder device handles from VO to video decoder.
+diff --git a/video/out/vo_drm.c b/video/out/vo_drm.c
+index e4d20f7e23..b886a93cd6 100644
+--- a/video/out/vo_drm.c
++++ b/video/out/vo_drm.c
+@@ -38,6 +38,11 @@
+ #include "video/fmt-conversion.h"
+ #include "video/hwdec.h"
+ #include "video/mp_image.h"
++#if HAVE_VAAPI
++#include <va/va_drmcommon.h>
++#include <libavutil/hwcontext_vaapi.h>
++#include "video/vaapi.h"
++#endif
+ #include "video/out/present_sync.h"
+ #include "video/sws_utils.h"
+ #include "vo.h"
+@@ -83,6 +88,9 @@ struct priv {
+     bool prime_mode;
+     int prime_flip_fails;
+     bool prime_broken;
++    // The rectangle of the decoded buffer the plane shows, at its top-left
++    // corner. Smaller than the stream when the decoder downscaled for us.
++    int prime_src_w, prime_src_h;
+ 
+ #if HAVE_VAAPI
+     struct mp_hwdec_ctx vaapi_ctx;
+@@ -128,36 +136,94 @@ static void disable_video_plane(struct vo *vo)
+     drmModeAtomicFree(request);
+ }
+ 
+-static struct mp_image *map_to_drmprime(struct vo *vo, struct mp_image *src)
++#if HAVE_VAAPI
++// Export a VA surface's dma-bufs together with the geometry they actually have.
++//
++// av_hwframe_map() cannot answer the second half. It copies the objects and
++// layers out of the VA descriptor but carries the AVFrame's own width and
++// height forward, and a decoder that scaled while it decoded produces a buffer
++// smaller than the frame claims -- 1280x726 of memory described as 1920x1080.
++// A framebuffer built from that pair describes storage that does not exist.
++// vaExportSurfaceHandle is the only place the truth appears, so ask it directly.
++//
++// On success the caller owns the object fds and must close them once the
++// framebuffer holds its own reference to the storage.
++static bool export_vaapi_surface(struct vo *vo, struct mp_image *src,
++                                 AVDRMFrameDescriptor *desc,
++                                 int *width, int *height)
+ {
+-    if (src->imgfmt == IMGFMT_DRMPRIME)
+-        return mp_image_new_ref(src);
+-    if (src->imgfmt != IMGFMT_VAAPI)
+-        return NULL;
++    struct priv *p = vo->priv;
++    AVHWDeviceContext *dev = (void *)p->vaapi_ctx.av_device_ref->data;
++    AVVAAPIDeviceContext *vactx = dev->hwctx;
++    VASurfaceID id = va_surface_id(src);
++    VADRMPRIMESurfaceDescriptor va = {0};
+ 
+-    AVFrame *src_frame = mp_image_to_av_frame(src);
+-    AVFrame *dst_frame = av_frame_alloc();
+-    struct mp_image *dst = NULL;
+-    if (!src_frame || !dst_frame)
+-        goto done;
++    if (id == VA_INVALID_ID) {
++        MP_ERR(vo, "VAAPI frame carries no surface\n");
++        return false;
++    }
+ 
+-    dst_frame->format = AV_PIX_FMT_DRM_PRIME;
+-    int ret = av_hwframe_map(dst_frame, src_frame,
+-                             AV_HWFRAME_MAP_READ | AV_HWFRAME_MAP_DIRECT);
+-    if (ret < 0) {
+-        MP_ERR(vo, "Failed to export VAAPI frame as DRM PRIME: %s\n",
+-               av_err2str(ret));
+-        goto done;
++    // Exporting does not wait for the decoder to finish writing the surface.
++    VAStatus status = vaSyncSurface(vactx->display, id);
++    if (status != VA_STATUS_SUCCESS) {
++        MP_ERR(vo, "Failed to sync VAAPI surface: %s\n", vaErrorStr(status));
++        return false;
+     }
+ 
+-    dst = mp_image_from_av_frame(dst_frame);
+-    if (dst)
+-        mp_image_copy_attributes(dst, src);
++    status = vaExportSurfaceHandle(vactx->display, id,
++                                   VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2,
++                                   VA_EXPORT_SURFACE_READ_ONLY |
++                                   VA_EXPORT_SURFACE_COMPOSED_LAYERS, &va);
++    if (status != VA_STATUS_SUCCESS) {
++        MP_ERR(vo, "Failed to export VAAPI surface: %s\n", vaErrorStr(status));
++        return false;
++    }
+ 
+-done:
+-    av_frame_free(&src_frame);
+-    av_frame_free(&dst_frame);
+-    return dst;
++    if (va.num_layers < 1 || va.num_objects < 1 ||
++        va.num_objects > AV_DRM_MAX_PLANES ||
++        va.layers[0].num_planes > AV_DRM_MAX_PLANES)
++    {
++        MP_ERR(vo, "VAAPI surface exported %u objects in %u layers, which this "
++                   "path cannot describe\n", va.num_objects, va.num_layers);
++        for (uint32_t i = 0; i < va.num_objects; i++)
++            close(va.objects[i].fd);
++        return false;
++    }
++
++    *desc = (AVDRMFrameDescriptor){
++        .nb_objects = va.num_objects,
++        .nb_layers = 1,
++    };
++
++    for (uint32_t i = 0; i < va.num_objects; i++) {
++        desc->objects[i] = (AVDRMObjectDescriptor){
++            .fd = va.objects[i].fd,
++            .size = va.objects[i].size,
++            .format_modifier = va.objects[i].drm_format_modifier,
++        };
++    }
++
++    desc->layers[0].format = va.layers[0].drm_format;
++    desc->layers[0].nb_planes = va.layers[0].num_planes;
++    for (uint32_t i = 0; i < va.layers[0].num_planes; i++) {
++        desc->layers[0].planes[i] = (AVDRMPlaneDescriptor){
++            .object_index = va.layers[0].object_index[i],
++            .offset = va.layers[0].offset[i],
++            .pitch = va.layers[0].pitch[i],
++        };
++    }
++
++    *width = va.width;
++    *height = va.height;
++    return true;
++}
++#endif
++
++static struct mp_image *map_to_drmprime(struct vo *vo, struct mp_image *src)
++{
++    if (src->imgfmt == IMGFMT_DRMPRIME)
++        return mp_image_new_ref(src);
++    return NULL;
+ }
+ 
+ static void destroy_framebuffer(int fd, struct framebuffer *fb)
+@@ -293,6 +359,22 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
+             MP_ERR(vo, "DRM PRIME plane requires uncropped, unrotated fullscreen video\n");
+             return -1;
+         }
++        // Where the visible picture ends up inside the decoded buffer. When the
++        // decoder was asked to downscale it is no longer the frame's own size:
++        // the hardware scales the CODED picture, padding and all, so the buffer
++        // is a little taller than the visible image and the remainder is
++        // cropped here instead of being shown.
++        p->prime_src_w = mp_rect_w(p->src);
++        p->prime_src_h = mp_rect_h(p->src);
++#if HAVE_VAAPI
++        int scale_num = p->vaapi_ctx.scale_num;
++        int scale_den = p->vaapi_ctx.scale_den;
++        if (scale_den > 0 && scale_num > scale_den) {
++            p->prime_src_w = (p->prime_src_w * scale_den / scale_num) & ~1;
++            p->prime_src_h = (p->prime_src_h * scale_den / scale_num) & ~1;
++        }
++#endif
++
+         // The tests above establish "uncropped" and "fullscreen" but NOT that
+         // the two are the same size, so any video whose resolution differs from
+         // the mode passed them and asked the plane to scale. A plane that
+@@ -300,11 +382,15 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
+         // failed flip is not fatal the player then retries forever without
+         // advancing -- observed at 890,454 failures on one 1080p file, which
+         // wedged the display hardware.
+-        if (mp_rect_w(p->src) != mp_rect_w(p->dst) ||
+-            mp_rect_h(p->src) != mp_rect_h(p->dst)) {
++        //
++        // What has changed is where the two can now agree: a decoder that
++        // scaled has already produced the displayed size, so compare against
++        // that rather than against the stream's dimensions.
++        if (p->prime_src_w != mp_rect_w(p->dst) ||
++            p->prime_src_h != mp_rect_h(p->dst)) {
+             MP_ERR(vo, "DRM PRIME plane cannot scale %dx%d video to a %dx%d "
+                        "mode. Use --hwdec=vaapi-copy or --hwdec=no.\n",
+-                   mp_rect_w(p->src), mp_rect_h(p->src),
++                   p->prime_src_w, p->prime_src_h,
+                    mp_rect_w(p->dst), mp_rect_h(p->dst));
+             return -1;
+         }
+@@ -419,24 +505,76 @@ static bool enqueue_prime_frame(struct vo *vo, struct mp_image *image)
+ {
+     struct priv *p = vo->priv;
+     struct vo_drm_state *drm = vo->drm;
+-    struct mp_image *mapped = map_to_drmprime(vo, image);
+-    if (!mapped)
++    AVDRMFrameDescriptor exported;
++    AVDRMFrameDescriptor *desc = NULL;
++    struct mp_image *held = NULL;
++    bool owns_fds = false;
++    int fb_w = 0, fb_h = 0;
++
++    if (p->prime_broken)
+         return false;
+ 
+-    AVDRMFrameDescriptor *desc = (AVDRMFrameDescriptor *)mapped->planes[0];
++#if HAVE_VAAPI
++    if (image->imgfmt == IMGFMT_VAAPI) {
++        if (!export_vaapi_surface(vo, image, &exported, &fb_w, &fb_h))
++            return false;
++        // Hold the SURFACE, not a mapping of it: the decoder must not reuse it
++        // while the plane is scanning it out.
++        held = mp_image_new_ref(image);
++        desc = &exported;
++        owns_fds = true;
++    }
++#endif
++
++    if (!desc) {
++        held = map_to_drmprime(vo, image);
++        if (!held)
++            return false;
++        desc = (AVDRMFrameDescriptor *)held->planes[0];
++        fb_w = held->w;
++        fb_h = held->h;
++    }
++
+     struct drm_frame *frame = talloc_zero(p, struct drm_frame);
+     frame->prime = true;
+-    frame->prime_image = mapped;
+-    if (!desc || drm_prime_create_framebuffer(vo->log, drm->fd, desc,
+-                                               mapped->w, mapped->h,
+-                                               &frame->prime_fb,
+-                                               &p->handle_refs)) {
+-        destroy_drm_frame(vo, frame);
+-        return false;
++    frame->prime_image = held;
++
++    // The plane shows prime_src_w x prime_src_h from the buffer's top-left
++    // corner and cannot scale, so a buffer smaller than that would be a
++    // framebuffer read past its own end. reconfig() worked the rectangle out
++    // from the downscale the decoder was asked for; this is where the size the
++    // hardware really produced is finally known, so check it here.
++    if (!desc || fb_w < p->prime_src_w || fb_h < p->prime_src_h) {
++        MP_ERR(vo, "Decoded buffer is %dx%d, too small for the %dx%d the video "
++                   "plane was configured to show; giving up on the direct "
++                   "path.\n", fb_w, fb_h, p->prime_src_w, p->prime_src_h);
++        // Never satisfiable by a later frame, and repeating it once per frame
++        // is the retry storm PRIME_FLIP_FAIL_LIMIT exists to prevent.
++        p->prime_broken = true;
++        disable_video_plane(vo);
++        goto fail;
++    }
++
++    if (drm_prime_create_framebuffer(vo->log, drm->fd, desc, fb_w, fb_h,
++                                     &frame->prime_fb, &p->handle_refs))
++        goto fail;
++
++    // The GEM handles hold their own references to the storage now.
++    if (owns_fds) {
++        for (int i = 0; i < desc->nb_objects; i++)
++            close(desc->objects[i].fd);
+     }
+ 
+     MP_TARRAY_APPEND(p, p->fb_queue, p->fb_queue_len, frame);
+     return true;
++
++fail:
++    if (owns_fds && desc) {
++        for (int i = 0; i < desc->nb_objects; i++)
++            close(desc->objects[i].fd);
++    }
++    destroy_drm_frame(vo, frame);
++    return false;
+ }
+ 
+ static void dequeue_frame(struct vo *vo)
+@@ -500,10 +638,12 @@ static void queue_flip(struct vo *vo, struct drm_frame *frame)
+ 
+         drm_object_set_property(request, plane, "FB_ID", frame->prime_fb.fb_id);
+         drm_object_set_property(request, plane, "CRTC_ID", drm->crtc_id);
+-        drm_object_set_property(request, plane, "SRC_X", p->src.x0 << 16);
+-        drm_object_set_property(request, plane, "SRC_Y", p->src.y0 << 16);
+-        drm_object_set_property(request, plane, "SRC_W", mp_rect_w(p->src) << 16);
+-        drm_object_set_property(request, plane, "SRC_H", mp_rect_h(p->src) << 16);
++        // In BUFFER coordinates, which are the stream's only when nothing
++        // scaled on the way here.
++        drm_object_set_property(request, plane, "SRC_X", 0);
++        drm_object_set_property(request, plane, "SRC_Y", 0);
++        drm_object_set_property(request, plane, "SRC_W", p->prime_src_w << 16);
++        drm_object_set_property(request, plane, "SRC_H", p->prime_src_h << 16);
+         drm_object_set_property(request, plane, "CRTC_X", p->dst.x0);
+         drm_object_set_property(request, plane, "CRTC_Y", p->dst.y0);
+         drm_object_set_property(request, plane, "CRTC_W", mp_rect_w(p->dst));
+@@ -671,6 +811,11 @@ static int preinit(struct vo *vo)
+                 .driver_name = "vaapi-drm",
+                 .av_device_ref = p->vaapi_ctx.av_device_ref,
+                 .hw_imgfmt = IMGFMT_VAAPI,
++                // Frames reach the panel through the video plane untouched, so
++                // a decoder that can downscale should aim straight at the mode
++                // rather than produce a picture nothing is able to shrink.
++                .scanout_w = drm->mode.mode.hdisplay,
++                .scanout_h = drm->mode.mode.vdisplay,
+             };
+             vo->hwdec_devs = hwdec_devices_create();
+             hwdec_devices_add(vo->hwdec_devs, &p->vaapi_ctx);
+-- 
+2.55.0
+
