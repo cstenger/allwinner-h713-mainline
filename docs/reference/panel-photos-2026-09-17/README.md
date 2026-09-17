@@ -35,6 +35,8 @@ threshold would score as extra width.
 | IMG_0886 — **software decode** | 4.45 | **6.08** | 5.63 | 8.05 | 1.37 | 0.987 |
 | IMG_0888 — hardware, VE-scaled | 4.98 | **10.70** | 5.76 | 9.28 | 2.15 | 0.987 |
 | IMG_0889 — hardware, **input crop** | 4.91 | **5.92** | 5.91 | 8.51 | 1.21 | 0.992 |
+| IMG_0890 — **HEVC Main** 1080p | 4.86 | **5.67** | 5.20 | 7.23 | 1.17 | 0.992 |
+| IMG_0891 — **HEVC Main10** 1080p | 4.46 | **5.56** | 4.92 | 7.26 | 1.25 | 0.991 |
 
 The headless dump predicted the bottom border at **11 rows** when the scaler is
 fed the coded raster and **6 rows** when fed the visible one. The photographs
@@ -61,6 +63,23 @@ crop predicts: both axes now scale by exactly 1.5, so the 0.74% anisotropy
 should disappear. The shift is about one standard deviation of the ellipse fit,
 so it is consistent with the prediction rather than independent proof of it. The
 border is the measurement that carries weight.
+
+## HEVC and Main10
+
+Same card, same display path. Both land with the rest: 5.67 and 5.56 against
+H.264's cropped 5.92, the native reference's 5.35, and the uncropped 10.70. The
+circles read 0.992 and 0.991, matching cropped H.264 rather than the 0.987 of
+the uncropped frame. Three codecs, three photographs, three camera positions.
+
+HEVC needs no crop to get there. 1080 is CTU-aligned, so an HEVC 1080p stream is
+coded 1920x1080 with no padding at all, and the driver reports the crop as the
+no-op it is. The padding problem is specific to H.264 — it just happens that
+H.264 is the common case.
+
+Main10 decodes 10-bit internally but the VA driver hands over the 8-bit plane,
+so its secondary output is ordinary NV12 and it behaves identically. mpv
+confirms the profile was really exercised: `Codec profile: Main 10 (0x2)`,
+decoded in hardware, 16 loops with no software fallback.
 
 ## The control was an accident
 
