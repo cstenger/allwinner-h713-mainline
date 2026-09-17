@@ -47,19 +47,43 @@ source rasterised natively at 720p.
 
 | scaler input height | border starts at row | bright rows | PSNR vs native 720p card |
 | --- | --- | --- | --- |
-| 1088 (coded) — current behaviour | ~709 | 11 | 20.93 dB |
-| 1084 | ~711 | 9 | 22.14 dB |
-| **1080 (visible)** | **714** | **6** | **27.10 dB** |
+| 1088 (coded) — old behaviour | ~709 | 11 | 15.63 dB |
+| 1084 | ~711 | 9 | (not recomputed, see below) |
+| **1080 (visible)** | **714** | **6** | **18.69 dB** |
 | native 720p card | 714 | 6 | — |
 
-The 1080 row matches the reference exactly: border six rows thick, starting at
-714. The 1088 row shows the predicted doubled border. 1084 lands between the
+The 1080 row matches the reference exactly: border six rows thick, ending at
+719. The 1088 row shows the predicted doubled border. 1084 lands between the
 two, which is what makes this a linear input-size control rather than a flag.
 
 **The absolute PSNR is not the finding.** The two cards are independently
 rasterised, so fine detail — the frequency blocks especially — can never match.
-The 6.2 dB *difference* and the exact border alignment are what carry the
+The 3.1 dB *difference* and the exact border alignment are what carry the
 result.
+
+### Correction: the first PSNR figures were wrong
+
+This table originally read 20.93 / 22.14 / 27.10 dB, and claimed a 6.2 dB
+improvement. Those numbers came from a throwaway script that took the difference
+of two images as `np.int16` and then squared it. A squared 8-bit difference
+reaches 65025 and int16 stops at 32767, so the large errors wrapped negative,
+deflated the mean squared error, and inflated every PSNR.
+
+It surfaced because the same file was measured twice by different code: a
+capture with md5 `a1b57792782154dadf21a4eb1da64a77` scored 27.10 dB one day and
+18.69 dB the next. Identical bytes cannot have two PSNRs, so one of the two
+measurements had to be wrong.
+
+The measurement now lives in
+[`tools/video/measure-nv12-border.py`](../../tools/video/measure-nv12-border.py)
+and uses int32, so it cannot recur silently. The 1084 case is not recomputed
+because it needed a module built with an experiment parameter that was
+deliberately removed; its border reading of 9 rows is unaffected, since the
+border code never used PSNR.
+
+**Nothing else moves.** The border readings, the byte-identical MD5 comparisons,
+and the panel photographs are all independent of this arithmetic, and they are
+what the conclusion rests on.
 
 ## The control that makes it believable
 
