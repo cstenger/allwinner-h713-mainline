@@ -68,12 +68,31 @@ have returned ~70 dB either way — passing while blind.
 prediction, top-field-first. That is what DVDs and most broadcast MPEG-2 use.
 
 **FIELD pictures** — `picture_structure` 1 or 2, where each coded picture is a
-single field and two of them combine into one frame — are **not tested**.
-ffmpeg's `mpeg2video` encoder cannot produce them, so a vector has to come from
-elsewhere. Nothing in `cedrus_mpeg2.c` combines two coded fields into one
-capture buffer; it forwards `picture_structure` to the hardware and decodes one
-OUTPUT buffer into one CAPTURE buffer. Whether that is sufficient is an open
-question, not a claim in either direction.
+single field and two of them combine into one frame — are **not tested, and
+cannot be tested with anything on this host**.
+
+ffmpeg's `mpeg2video` encoder only ever emits frame pictures; the parse above
+confirms it. mjpegtools' `mpeg2enc` does have a per-field mode, `-I 2`, and it
+**segfaults**:
+
+```
+Program received signal SIGSEGV
+#0  MacroBlock::FieldME() () from /usr/lib/libmpeg2encpp-2.2.so.0
+#1  MacroBlock::MotionEstimateAndModeSelect()
+#2  Despatcher::Despatch(Picture&, ...)
+```
+
+Field motion estimation, inside mjpegtools 2.2.1. Every option combination tried
+crashes identically — `-f 0/3/8`, `-N 0`, `-R 0`, `-M 1`, `-g 1 -G 1` — while
+`-I 1` (interlaced *frame* pictures) encodes fine on the same input. It is a bug
+in the one code path we need.
+
+So a field-picture vector has to come from a conformance suite or a real
+broadcast capture. Until one exists, this is untested and should not be claimed
+either way. It is also the likeliest place for a fault: nothing in
+`cedrus_mpeg2.c` combines two coded fields into one capture buffer — it forwards
+`picture_structure` to the hardware and decodes one OUTPUT buffer into one
+CAPTURE buffer.
 
 ## Method, which was much cheaper than expected
 
