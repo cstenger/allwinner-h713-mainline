@@ -13,9 +13,26 @@ sync, zero failed atomic commits, no LD_PRELOAD probe in the path.
 one quality compromise in what shipped here, and what remains for it is an
 interface question rather than a hardware one.
 
+**Seeks work now too.** Looping the card on the projector exposed a
+pre-existing bug that dropped hardware decoding permanently on the first seek;
+`patches/libva-v4l2-request/0009` fixes it. It is unrelated to scaling — a 720p
+file, which requests none, failed identically.
+
 ## What was added
 
-Two patches, one per component.
+Three patches.
+
+`patches/libva-v4l2-request/0009` keeps the V4L2 queues alive while surfaces
+still refer to them. `RequestDestroyContext` released both queues and cleared
+`video_format` unconditionally, but a client may keep its surface pool across a
+decoder re-initialisation and FFmpeg's does: mpv reuses the frame pool whenever
+format and size are unchanged, which is exactly a loop or a seek, so the context
+is destroyed and recreated while the surfaces live on. `RequestCreateContext`
+then found `video_format` NULL and refused, surfacing as
+`Failed to create decode context: 1 (operation failed)` and a permanent fall
+back to software. `RequestDestroySurfaces` already had the right guard; this
+path did not. After: seven loops of a scaled 1080p file, one decoder init
+holding `vaapi[nv12]`, zero context failures, zero fallbacks, zero failed flips.
 
 `patches/libva-v4l2-request/0008` teaches the VA driver to ask. It reads
 `V4L2_REQUEST_SCALE` at every capture negotiation, S_FMTs the CAPTURE queue to
@@ -69,6 +86,8 @@ Headless, on the board, against the installed stack.
 | Image download **with** scaling | fails cleanly at `vaCreateImage`, falls back; no overread |
 | Image download **without** scaling | unchanged, MD5 `262698d49d712a49baf06da454b43697` |
 | `hevc-decode-test.sh` / `va-decode-test.sh` / `hevc-10bit-test.sh` | 12 pass, 5 pass, PASS |
+| 7 loops of a scaled 1080p file | one decoder init, `vaapi[nv12]` throughout, 0 fallbacks, 0 failed flips |
+| 2 loops of a 720p file (no scale requested) | same, and the case that proved 0009 is not about scaling |
 
 The byte-identical comparison is the load-bearing one. Geometry logs prove
 negotiation, not pixels; asking for the same output size two different ways and
@@ -113,9 +132,11 @@ decoder. It now tests both directions when a scale was requested.
 
 ```text
 kernel_module_md5=772c6a46b668baafb98dcf00ddb15429
-va_driver_series=c23917b6e099a4e6   va_driver_patches=8
+va_driver_patches=9
 mpv_series=a451a720095a1595         mpv_patches=4
 ```
+
+Read the live series ids out of `/etc/h713-video-stack`; they change per install.
 
 Outgoing artefacts are kept beside each install, stamped with the time.
 
@@ -166,7 +187,10 @@ that scans out through the descriptor.
    driver's existing use of `S_SELECTION(CAPTURE, COMPOSE)`. Read
    [the result](reference/ve-input-crop-2026-09-17.md) before designing it.
 2. **Photograph the bottom edge** on content with a bright bottom, to record
-   what the compromise actually looks like before it is removed.
+   what the compromise actually looks like before it is removed. The two photos
+   taken on 2026-09-17 do not serve: the second one is a SOFTWARE-decoded frame,
+   from after the seek bug dropped hardware decoding, so it says nothing about
+   the VE scaler. Re-shoot now that 0009 is in.
 3. **HEVC and Main10 to the panel.** They share the datapath but have not been
    through the display half.
 4. **Then** reconsider the display-side scaling patches, per the previous
