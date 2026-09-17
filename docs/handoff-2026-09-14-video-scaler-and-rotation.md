@@ -1,3 +1,10 @@
+> **SUPERSEDED for the H.265 half, 2026-09-16.** H.265 scale-down does not
+> use the power-of-two SDROT path this document assumes; it is a separate
+> polyphase scaler at VE + 0xf00, now landed as patches 0118/0119.
+> See `docs/handoff-2026-09-16-h265-scaler.md` and
+> `docs/reference/h265-scaler-is-a-separate-block-2026-09-16.md`.
+> The H.264 and display-proc material here is still current.
+
 # Handoff — 2026-09-14: video scaler artifact, rotation, and userspace
 
 Successor to
