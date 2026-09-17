@@ -113,10 +113,8 @@ exactly 128** — unity gain in Q7. Set 0 phase 0 is `(0, 127, 1, 0)`, effective
 a passthrough; set 14 phase 0 is `(35, 58, 35, 0)`. All 480 phases across all
 15 sets check out, which independently confirms the base address and layout.
 
-Extracted to `local/h713-lab/ve-extract/derived/h265-scaler-coef.h`
-(**gitignored on purpose — this is proprietary data lifted from an Allwinner
-binary; do not commit or ship it**). Regenerating it from the blob is a few
-lines of pyelftools, so there is no need to vendor it.
+**We no longer use the vendor's table — see "Our own coefficients" below.**
+The extracted copy was only ever a scoring baseline and has been deleted.
 
 **Consequence: H713 CAN downscale H.265, at arbitrary ratios — better than the
 power-of-two-only H.264 SDROT — but only through this block.**
@@ -405,3 +403,43 @@ and a hanging H.265 scale.
 - Do not name a scratch disassembler `dis.py`; it shadows the stdlib `dis`
   module that `inspect` imports, and pyelftools fails with a confusing
   circular-import error.
+
+## Our own coefficients — the licensing blocker is gone
+
+`tools/video/gen-scaler-coef.py` generates an equivalent table from standard
+kernels, so nothing proprietary needs to ship. Ours is measurably **better**
+than the vendor's on hardware:
+
+| case | ours | vendor |
+| --- | --- | --- |
+| 1280x720 -> 640x360 | **42.42 dB** | 41.87 |
+| 1280x720 -> 640x180 | **36.88 dB** | 36.55 |
+| Main10 640x480 -> 320x240 | **40.04 dB** | 39.34 |
+
+It loses only below ratio 1.25, where the vendor's near-delta is sharper and
+where a downscaler barely matters. Only 2 of 480 words coincide with theirs —
+what two independent cubic designs look like, not a copy.
+
+### How it was designed, and the two things that mattered
+
+**A bit-accurate software model came first.** Fitting the arithmetic against
+known-good hardware output gave **67.8 dB**, which is sub-LSB, so coefficients
+could be designed and scored offline instead of guessed on the board. The model:
+step is the true ratio (the register holds step-1), taps at `[ip-1..ip+2]`,
+phase `(pos>>7)&31`, separable with a **full-precision intermediate**, final
+`>>14` truncated, edges clamped.
+
+**The design target has to be the metric you report.** A first attempt scored
+against Lanczos-3 with full anti-aliasing and lost 1.3 dB on hardware: that
+reference blurs harder than ffmpeg's bicubic, so the optimiser chose kernels
+that were too wide. Scoring against ffmpeg's actual output, in full 2D, at each
+bucket's real operating ratios, fixed it.
+
+**At exactly 2x only phase 0 is used.** `step = 0x2000`, so `(pos>>7)&31` is 0
+for every output pixel. A bucket optimised only at its midpoint gets its most
+common case wrong, which is why each set is scored at its lower bound too.
+
+Quantisation is largest-remainder with a **stable** tie-break; without that,
+regeneration differed by +/-1 in 9 of 480 words across numpy versions. The
+difference was immeasurable on hardware, but a generator that cannot reproduce
+its own output is not a provenance record.
