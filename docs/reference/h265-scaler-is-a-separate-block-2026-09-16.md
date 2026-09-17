@@ -443,3 +443,41 @@ Quantisation is largest-remainder with a **stable** tie-break; without that,
 regeneration differed by +/-1 in 9 of 480 words across numpy versions. The
 difference was immeasurable on hardware, but a generator that cannot reproduce
 its own output is not a provenance record.
+
+## The coefficient banks: FIRST is horizontal, SECOND is vertical
+
+The 64-word upload is two 32-word banks, and the mapping is the opposite of
+what the blob's `CopyCoef(v_ratio, buf)` / `CopyCoef(h_ratio, buf + 0x80)`
+ordering suggests -- the same inversion already found in the geometry
+registers, and settled the same way, on hardware.
+
+Load a near-delta into the first bank and a heavy blur into the second, then
+measure gradient energy per axis against the reference:
+
+| upload order | horizontal | vertical |
+| --- | --- | --- |
+| delta, blur | **1.04x** (sharp/aliased) | 0.89x (blurred) |
+| blur, delta | 0.91x (blurred) | **1.06x** (sharp/aliased) |
+
+A clean mirror image: **the first bank drives horizontal, the second vertical.**
+
+**A symmetric ratio cannot see this.** Both banks then hold the same set, so
+2x/2x and 4x/4x are identical either way; only a mixed ratio exposes it. With
+the wrong order, 1280x720 -> 640x180 applies the 4x kernel across and the 2x
+kernel down and scores 35.08 dB. Corrected it scores **47.85 dB**.
+
+That is also why an earlier order test looked like it proved the opposite:
+run with bucket-averaged coefficients the two banks were nearly the same
+filter, so swapping them moved the result by 0.2 dB and read as "order does not
+matter". The test only becomes discriminating once the two banks differ
+sharply. A null result from a test that cannot resolve the difference is not
+evidence.
+
+### Two process notes from this round
+
+`install-kernel-module.sh` prints "loaded" even when the `scp` that precedes it
+has failed, and the board's rootfs had filled to 100%, so several builds were
+silently never installed -- one "impossible" measurement was simply a stale
+module. **Verify the board's module md5 against the one just built**, every
+time; the results above were all re-measured that way. 232M came back from
+`journalctl --vacuum-size=40M`.
