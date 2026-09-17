@@ -12,6 +12,7 @@
  * CEDRUS_STRIDE optionally requests a larger aligned capture pitch.
  * CEDRUS_CAPTURE_SIZE selects output dimensions through CAPTURE S_FMT instead
  * of COMPOSE. Use it alone to test the standard sizing interface.
+ * CEDRUS_CROP=WxH narrows what the scaler reads, via S_SELECTION(CROP).
  * CEDRUS_ROTATE retains the legacy control probe for negative testing.
  * The current driver rejects it because rotation is no longer exposed.
  */
@@ -33,6 +34,40 @@ static int (*real_ioctl)(int, unsigned long, ...);
 static int decoder = -1, dumped;
 static unsigned int completed;
 static struct v4l2_pix_format capture;
+
+/*
+ * CEDRUS_CROP=WxH narrows what the scaler READS out of the coded frame, via
+ * S_SELECTION(CAPTURE, V4L2_SEL_TGT_CROP). Use it to exclude coded padding:
+ * H.264 stores 1080p as 1088 rows, so CEDRUS_CROP=1920x1080 stops the eight
+ * rows of encoder padding being scaled into the picture.
+ *
+ * Applied immediately after the OUTPUT format is set, because the crop is
+ * bounded by the coded size and re-derives the compose rectangle -- so it has
+ * to land before the capture size is negotiated.
+ */
+static int configure_crop(int fd)
+{
+    const char *value = getenv("CEDRUS_CROP");
+    struct v4l2_selection sel = {
+        .type = V4L2_BUF_TYPE_VIDEO_CAPTURE,
+        .target = V4L2_SEL_TGT_CROP,
+    };
+    unsigned int w, h;
+    char extra;
+
+    if (!value)
+        return 0;
+    if (sscanf(value, "%ux%u%c", &w, &h, &extra) != 2 || !w || !h) {
+        errno = EINVAL;
+        return -1;
+    }
+    sel.r.width = w;
+    sel.r.height = h;
+    if (real_ioctl(fd, VIDIOC_S_SELECTION, &sel) < 0)
+        return -1;
+    fprintf(stderr, "compose-probe: crop -> %ux%u\n", sel.r.width, sel.r.height);
+    return 0;
+}
 
 static int configure_capture(int fd)
 {
@@ -167,7 +202,7 @@ int ioctl(int fd, unsigned long req, ...)
     }
     rc = real_ioctl(fd, req, arg);
     if (rc < 0 || (!getenv("CEDRUS_COMPOSE") && !getenv("CEDRUS_CAPTURE_SIZE") &&
-                   !getenv("CEDRUS_DUMP_ONLY")))
+                   !getenv("CEDRUS_CROP") && !getenv("CEDRUS_DUMP_ONLY")))
         return rc;
     if (req == VIDIOC_S_FMT && arg) {
         struct v4l2_format *fmt = arg;
@@ -178,7 +213,8 @@ int ioctl(int fd, unsigned long req, ...)
                       ? fd : -1;
             dumped = 0;
             completed = 0;
-            if (decoder >= 0 && configure_capture(fd) < 0)
+            if (decoder >= 0 && (configure_crop(fd) < 0 ||
+                                 configure_capture(fd) < 0))
                 return -1;
         }
         if (fd == decoder && fmt->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
