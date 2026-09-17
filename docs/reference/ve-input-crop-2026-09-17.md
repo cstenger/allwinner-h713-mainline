@@ -1,0 +1,119 @@
+# The VE scaler honours a smaller input height — 2026-09-17
+
+**Result: positive and decisive.** `TOP1_IN_SIZE` (VE + `0xf0c`) bounds what the
+polyphase scaler actually reads. Pointing it at a stream's **visible** height
+instead of its coded raster makes 1920x1080 → 1280x720 an exact 1.5 on both
+axes, and reproduces a natively-rasterised 720p reference bottom-edge for
+bottom-edge.
+
+This answers ["Establish whether the hardware scaler can honor input
+crop"](../handoff-2026-09-17-shared-scaler.md) — item 2 of that handoff — which
+explicitly warned against assuming it. It does.
+
+## Why it matters
+
+H.264 stores 1080p as 1088 coded rows. The scaler was programmed from
+`ctx->src_fmt`, so it consumed all 1088 and squeezed them into the 720 output
+rows. Two consequences, both visible:
+
+- the visible 1080 rows land on 714.7 of the 720, so everything is 0.74% short;
+- the 8 rows of coded padding are scaled *into* the picture as ~5 rows at the
+  bottom. Because encoders pad by replicating the last row, that reads as the
+  bottom border of a frame becoming nearly twice as thick.
+
+The display cannot crop it away afterwards: `h713_afbd_video_atomic_check`
+accepts one framebuffer geometry and no other (1280x720, pitch 1280), so there
+is no taller buffer to take a window out of. Fixing it at the scaler is the only
+place it can be fixed.
+
+## Method
+
+A module parameter overriding the scaler's input height, nothing else touched:
+
+```c
+if (scaler_in_h)
+        src_h = scaler_in_h;
+```
+
+Then decode the 1080p [scaler test card](scaler-testcard.md) to 1280x720 and
+measure where its bottom border lands. The card is the right instrument here
+precisely because it has a border on all four edges: the last bright row **is**
+the bottom of the visible picture, so the measurement needs no interpretation.
+
+Reference is `local/testcards/scaler-testcard-1280x720.nv12`, the same vector
+source rasterised natively at 720p.
+
+## Numbers
+
+| scaler input height | border starts at row | bright rows | PSNR vs native 720p card |
+| --- | --- | --- | --- |
+| 1088 (coded) — current behaviour | ~709 | 11 | 20.93 dB |
+| 1084 | ~711 | 9 | 22.14 dB |
+| **1080 (visible)** | **714** | **6** | **27.10 dB** |
+| native 720p card | 714 | 6 | — |
+
+The 1080 row matches the reference exactly: border six rows thick, starting at
+714. The 1088 row shows the predicted doubled border. 1084 lands between the
+two, which is what makes this a linear input-size control rather than a flag.
+
+**The absolute PSNR is not the finding.** The two cards are independently
+rasterised, so fine detail — the frequency blocks especially — can never match.
+The 6.2 dB *difference* and the exact border alignment are what carry the
+result.
+
+## The control that makes it believable
+
+`scaler_in_h=0` and `scaler_in_h=1088` produce **byte-identical** output
+(md5 `3fb46599f06f6fc27aaa0b3ca420ac92`). 1088 is the coded height, so the
+override is a no-op there — which proves the parameter does not change the
+picture merely by being set. 1080 (`a1b57792782154da…`) and 1084
+(`fbc827e89cae28af…`) each differ from it and from each other.
+
+Without that control the experiment could not distinguish "the register works"
+from "writing this parameter perturbs something".
+
+## What is NOT established
+
+- **Horizontal.** `scaler_in_w` was implemented but not exercised: our case has
+  coded width equal to visible width, so there was nothing to measure. The
+  register's high half is the width field and is presumably symmetric, but that
+  is an inference, not a measurement.
+- **An input OFFSET.** Not needed here and not looked for. Visible rectangles in
+  H.264 and HEVC start at (0,0) in every stream this project handles; a stream
+  cropping from the top or left would need a register nobody has found.
+- **HEVC and Main10.** Measured on H.264 only. They share the datapath, so the
+  expectation is that they behave identically, but they were not tested.
+- **Any effect on the reconstruction path.** The scaler feeds the secondary
+  output only, and reconstruction stays full size, so there should be none. Not
+  independently verified.
+
+## Getting the visible height into the kernel
+
+This is the whole remaining problem, and it is an interface question rather than
+a hardware one.
+
+The visible size is not in the stateless controls. `v4l2_ctrl_h264_sps` carries
+no `frame_crop_*` fields at all, and `v4l2_ctrl_hevc_sps` carries
+`pic_width_in_luma_samples` / `pic_height_in_luma_samples`, which are the coded
+size. Userspace cannot simply set a smaller OUTPUT format either: reconstruction
+needs all 1088 rows for the DPB.
+
+The V4L2 decoder interface says the visible rectangle belongs on
+`S_SELECTION(CAPTURE, V4L2_SEL_TGT_COMPOSE)`. **This driver already uses COMPOSE
+for something else** — the scaled output rectangle inside the capture canvas,
+introduced in patch 0107 and tested extensively by `cedrus-scaler-api-test.c`.
+Since patch 0120 moved output sizing onto CAPTURE `S_FMT`, it is worth checking
+whether COMPOSE is still load-bearing for that or has become vestigial; if it
+has, giving it back its spec meaning is both the correct interface and a
+simplification. That is a real API decision, not a mechanical change, and it
+should be made deliberately rather than as a side effect of this result.
+
+## Reproducing
+
+The experiment module is not in the series and was loaded from `/tmp` so that a
+reboot restores production. After it, the build tree was returned to the series
+state and **verified by artifact identity** — the rebuilt module is md5
+`772c6a46b668baafb98dcf00ddb15429`, byte-identical to the installed one, with no
+leftover parameters. That check matters: the tree is named by a hash of the
+series, so `build.sh` reuses it, and an edit left behind would have leaked
+silently into the next build.
