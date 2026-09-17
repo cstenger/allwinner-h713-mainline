@@ -1,5 +1,9 @@
 # The H.265 scale-down path is a separate scaler block at VE + 0xf00
 
+**Update 2026-09-17:** [The shared-scaler handoff](../handoff-2026-09-17-shared-scaler.md) supersedes
+the H.264 routing, power-of-two quantization, and rotation recommendations
+below. Patch 0120 uses this polyphase block for both codecs and removes rotation.
+
 **Source: H713's OWN vendor blob**, not H6-CedarC —
 `local/h713-lab/ve-extract/libs/libawh265.so` (ARM32 Thumb, Android 30,
 `.symtab` stripped but **every function is exported via `.dynsym`**).

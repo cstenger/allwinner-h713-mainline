@@ -81,7 +81,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
  #define CEDRUS_H265_MV_COL_BUF_UNIT_CTB_SIZE	160
  
  struct cedrus_h265_sram_frame_info {
-@@ -862,6 +870,21 @@
+@@ -862,5 +870,20 @@
  		return -ENOMEM;
  	}
  
@@ -100,7 +100,6 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 +		return -ENOMEM;
 +	}
 +
- 
  	return 0;
  }
 @@ -901,6 +924,10 @@

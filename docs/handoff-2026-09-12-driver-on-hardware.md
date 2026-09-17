@@ -1,3 +1,8 @@
+> **Current decoder state: 2026-09-17.** Both codecs now share arbitrary-ratio
+> scaling, rotation is disabled, and compliance is 49/49. Playback integration
+> still precedes retiring display-side scaling. Start with
+> [the current handoff](handoff-2026-09-17-shared-scaler.md).
+
 # Handoff — 2026-09-12: the scaling driver, on hardware
 
 Successor to [the VE scale-down handoff](handoff-2026-09-12-ve-scaledown.md),

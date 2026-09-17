@@ -1,3 +1,8 @@
+> **Decoder-scaler conclusions superseded 2026-09-17.** The VE+0xf00
+> arbitrary-ratio scaler works for H.264 and HEVC; the missing H.264 routing
+> was recovered and hardware validated. Start with
+> [the current handoff](handoff-2026-09-17-shared-scaler.md).
+
 # Handoff — 2026-09-12: the VE scale-down, and where 1080p-on-720p now stands
 
 Successor to [the scaling and display handoff](handoff-2026-09-04-video-scaling-and-display.md)

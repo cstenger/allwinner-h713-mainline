@@ -5,12 +5,15 @@
  *   ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i clip.mp4 -frames:v 60 -f null -
  * Do not hwdownload or display these VA surfaces: VA still describes coded size.
  * Injects COMPOSE before capture allocation and dumps one completed buffer.
+ * CEDRUS_DUMP_ONLY captures the unchanged coded output without sizing ioctls.
  * CEDRUS_DUMP_AT selects its one-based completion number (default 1).
  * CEDRUS_CANVAS optionally requests a larger capture allocation (for example
  * 1280x720) while COMPOSE remains the smaller active picture.
  * CEDRUS_STRIDE optionally requests a larger aligned capture pitch.
- * CEDRUS_ROTATE optionally sets clockwise rotation (0, 90, 180 or 270) before
- * COMPOSE.  The requested compose dimensions are in the final orientation.
+ * CEDRUS_CAPTURE_SIZE selects output dimensions through CAPTURE S_FMT instead
+ * of COMPOSE. Use it alone to test the standard sizing interface.
+ * CEDRUS_ROTATE retains the legacy control probe for negative testing.
+ * The current driver rejects it because rotation is no longer exposed.
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -34,6 +37,8 @@ static struct v4l2_pix_format capture;
 static int configure_capture(int fd)
 {
     unsigned int w, h;
+    const char *size = getenv("CEDRUS_CAPTURE_SIZE");
+    int use_format = size != NULL;
     char extra;
     struct v4l2_selection sel = {
         .type = V4L2_BUF_TYPE_VIDEO_CAPTURE,
@@ -42,6 +47,14 @@ static int configure_capture(int fd)
     struct v4l2_format fmt = {
         .type = V4L2_BUF_TYPE_VIDEO_CAPTURE,
     };
+
+    if (!size && !getenv("CEDRUS_COMPOSE")) {
+        if (real_ioctl(fd, VIDIOC_G_FMT, &fmt) < 0)
+            return -1;
+        sel.r.width = fmt.fmt.pix.width;
+        sel.r.height = fmt.fmt.pix.height;
+        goto record;
+    }
 
     if (getenv("CEDRUS_ROTATE")) {
         char *end = NULL;
@@ -59,16 +72,27 @@ static int configure_capture(int fd)
             return -1;
     }
 
-    if (sscanf(getenv("CEDRUS_COMPOSE"), "%ux%u%c", &w, &h, &extra) != 2 ||
+    if (!size) size = getenv("CEDRUS_COMPOSE");
+    if (sscanf(size, "%ux%u%c", &w, &h, &extra) != 2 ||
         !w || !h) {
         errno = EINVAL;
         return -1;
     }
     sel.r.width = w;
     sel.r.height = h;
-    if (real_ioctl(fd, VIDIOC_S_SELECTION, &sel) < 0 ||
-        real_ioctl(fd, VIDIOC_G_FMT, &fmt) < 0)
+    if (real_ioctl(fd, VIDIOC_G_FMT, &fmt) < 0)
         return -1;
+    if (use_format) {
+        if (getenv("CEDRUS_CANVAS")) {
+            errno = EINVAL;
+            return -1;
+        }
+        fmt.fmt.pix.width = w;
+        fmt.fmt.pix.height = h;
+        fmt.fmt.pix.bytesperline = 0;
+        fmt.fmt.pix.sizeimage = 0;
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_NV12;
+    }
     if (getenv("CEDRUS_CANVAS")) {
         unsigned int canvas_w, canvas_h;
 
@@ -95,16 +119,22 @@ static int configure_capture(int fd)
         fmt.fmt.pix.bytesperline = stride;
         fmt.fmt.pix.sizeimage = 0;
     }
-    if ((getenv("CEDRUS_CANVAS") || getenv("CEDRUS_STRIDE")) &&
+    if ((use_format || getenv("CEDRUS_CANVAS") || getenv("CEDRUS_STRIDE")) &&
         real_ioctl(fd, VIDIOC_S_FMT, &fmt) < 0)
         return -1;
+    if (!use_format && real_ioctl(fd, VIDIOC_S_SELECTION, &sel) < 0)
+        return -1;
+    if (real_ioctl(fd, VIDIOC_G_FMT, &fmt) < 0 ||
+        real_ioctl(fd, VIDIOC_G_SELECTION, &sel) < 0)
+        return -1;
+record:
     capture = fmt.fmt.pix;
-    fprintf(stderr, "compose-probe: %ux%u stride=%u bytes=%u format=%c%c%c%c\n",
+    fprintf(stderr, "compose-probe: %ux%u stride=%u bytes=%u format=%c%c%c%c active=%dx%d\n",
             capture.width, capture.height, capture.bytesperline,
             capture.sizeimage, capture.pixelformat & 255,
             (capture.pixelformat >> 8) & 255,
             (capture.pixelformat >> 16) & 255,
-            capture.pixelformat >> 24);
+            capture.pixelformat >> 24, sel.r.width, sel.r.height);
     if (capture.pixelformat != V4L2_PIX_FMT_NV12) {
         errno = EINVAL;
         return -1;
@@ -136,12 +166,13 @@ int ioctl(int fd, unsigned long req, ...)
                 fmt->fmt.pix.pixelformat >> 24);
     }
     rc = real_ioctl(fd, req, arg);
-    if (rc < 0 || !getenv("CEDRUS_COMPOSE"))
+    if (rc < 0 || (!getenv("CEDRUS_COMPOSE") && !getenv("CEDRUS_CAPTURE_SIZE") &&
+                   !getenv("CEDRUS_DUMP_ONLY")))
         return rc;
     if (req == VIDIOC_S_FMT && arg) {
         struct v4l2_format *fmt = arg;
         if (fmt->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
-            /* Both engines carry a scale/rotate secondary output. */
+            /* Both engines can feed the polyphase scaler. */
             decoder = (fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_H264_SLICE ||
                        fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_HEVC_SLICE)
                       ? fd : -1;

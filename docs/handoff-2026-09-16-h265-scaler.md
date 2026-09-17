@@ -1,5 +1,9 @@
 # Handoff — H.265 hardware scale-down, 2026-09-16
 
+**Update 2026-09-17:** [The shared-scaler handoff](handoff-2026-09-17-shared-scaler.md) supersedes
+the H.264 routing, power-of-two quantization, and rotation recommendations
+below. Patch 0120 uses this polyphase block for both codecs and removes rotation.
+
 Branch `h713-display-video-path`, series head `179a6b5`, pushed and in sync.
 Working tree clean. 85 patches in `patches/kernel/series`.
 

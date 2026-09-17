@@ -1,5 +1,14 @@
 # H713 video decode (VE / Cedrus → panel)
 
+**Scaler update 2026-09-17:** H.264 and HEVC now share the H713 polyphase
+scaler, with arbitrary even NV12 output sizes and no rotation control. See
+[the current scaler handoff](handoff-2026-09-17-shared-scaler.md) for negotiation,
+hardware results, and the remaining playback/crop integration.
+[The control follow-up](reference/cedrus-controls-2026-09-17/README.md) fixes
+the last compliance failure: **49/49, zero warnings** with patch 0121.
+The [4:2:2 assessment](reference/chroma-422-assessment-2026-09-17.md) finds
+no working vendor H.264/HEVC 4:2:2 path; silicon support remains unproven.
+
 Started 2026-08-07, immediately after display bring-up completed. Operational
 companion to [claude-display-handoff.md](claude-display-handoff.md), which is
 what this work builds on.

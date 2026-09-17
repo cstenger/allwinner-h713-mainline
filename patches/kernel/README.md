@@ -171,3 +171,16 @@ one that was requested — `merge_config` warns about a request it cannot honour
 but `olddefconfig` can drop a symbol afterwards for an unmet dependency and say
 nothing, and a KASAN kernel that silently did not enable KASAN is worse than no
 kernel, because every clean run after it reads as evidence.
+
+## H713 decoder scaling (0120)
+
+H.264 and HEVC use the shared VE+0xf00 polyphase scaler, with arbitrary even
+NV12 dimensions from 1× to 4× downscale per axis through CAPTURE S_FMT or
+COMPOSE. Rotation is no longer exposed. Patch 0116a repairs prerequisites
+missing from the previous series; 0118 has a corrected blank context line.
+See [the shared-scaler handoff](../../docs/handoff-2026-09-17-shared-scaler.md)
+for the H.264 route, HEVC alignment requirement, and board validation.
+
+**0121** supplies a supported HEVC SPS default and moves bit-depth/format
+changes from TRY to the control commit callback. Cedrus compliance is now
+**49/49, zero warnings**. See [the control validation record](../../docs/reference/cedrus-controls-2026-09-17/README.md).

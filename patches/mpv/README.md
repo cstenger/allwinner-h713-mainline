@@ -1,3 +1,9 @@
+> **Scaler integration next (2026-09-17):** the decoder now supports arbitrary
+> even NV12 sizes, but player geometry/crop propagation and visible panel tests
+> remain. Rotation is disabled. Do not treat the measurement preload adapter
+> as playback support or retire display scaling yet. See
+> [the current handoff](../../docs/handoff-2026-09-17-shared-scaler.md).
+
 # mpv patches
 
 Downstream changes for bare-console playback through the H713 DRM video plane.

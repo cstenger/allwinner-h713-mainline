@@ -6,6 +6,14 @@ just priority. See [status.md](status.md) for what already works.
 
 ## Guiding constraints
 
+**Video priorities updated 2026-09-17:** the shared H.264/HEVC arbitrary-ratio
+scaler and compliance repair are complete (88 patches, 49/49, 53 pixel captures).
+Next integrate scaled surfaces into playback, resolve coded padding/crop, then
+validate the panel and remove redundant display scaling. Rotation remains out;
+4:2:2 remains unsupported and is not required for compliance. The older phase
+descriptions below are historical where they conflict with
+[the current handoff](handoff-2026-09-17-shared-scaler.md).
+
 - **Bench (`HY200_QZ713DF_A1`, DDR3) is the safe dev board.** The projector
   (`HY200_QZ713_V2`, LPDDR3) lives inside a projector and is untested — bring it
   up carefully, FEL-first, brick-avoidance paramount.

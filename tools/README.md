@@ -1,5 +1,20 @@
 # Hardware tools
 
+Current headless decoder regression tools under `video/`:
+
+- `cedrus-compose-probe.c`: LD_PRELOAD adapter for CAPTURE/COMPOSE geometry,
+  pitch, and raw dumps, including true unscaled controls. Measurement only;
+  do not display its VA surfaces with their original coded metadata.
+- `cedrus-scaler-api-test.c`: format/selection state, busy guards, Main10 sizing,
+  pitch, and rotation-control absence.
+- `cedrus-control-test.c`: valid SPS defaults, pure TRY, committed Main10 sizing,
+  and rejection of depth increases with allocated buffers.
+- `cedrus-scaler-check.py`: 53-capture hardware pixel matrix using raw software
+  references, concurrent codecs, later P-frames, and temporary DMA guards.
+
+Build/run commands, current module identity, and results are in
+[the current handoff](../docs/handoff-2026-09-17-shared-scaler.md).
+
 `serial/` — talk to the board over the console and load images:
 - `acm.py CMD [--port <tty>]` — run one U-Boot command, print reply.
 - `load_fit.py FILE [--port <tty>]` — single-fd `loady` + YMODEM (big FITs).

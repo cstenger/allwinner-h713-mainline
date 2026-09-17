@@ -1,3 +1,8 @@
+> **Superseded 2026-09-17 for both decoder scalers and rotation.** H.264 and
+> HEVC now share arbitrary-ratio polyphase scaling; rotation is disabled by
+> user decision. The statement below that H.264 material remains current is
+> historical. Start with [the current handoff](handoff-2026-09-17-shared-scaler.md).
+
 > **SUPERSEDED for the H.265 half, 2026-09-16.** H.265 scale-down does not
 > use the power-of-two SDROT path this document assumes; it is a separate
 > polyphase scaler at VE + 0xf00, now landed as patches 0118/0119.

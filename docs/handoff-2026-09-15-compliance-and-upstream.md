@@ -1,3 +1,9 @@
+> **Compliance and decoder-scaler conclusions superseded 2026-09-17.**
+> Patch 0121 fixes the SPS default and TRY side effects; compliance is 49/49.
+> Both codecs use the shared polyphase scaler with rotation disabled. Older
+> mount assumptions must be verified: /mnt/media-data was on rootfs this session.
+> Start with [the current handoff](handoff-2026-09-17-shared-scaler.md).
+
 # Handoff — 2026-09-15: the streak is fixed, compliance run, upstream surveyed
 
 Successor to [handoff-2026-09-14-video-scaler-and-rotation.md](handoff-2026-09-14-video-scaler-and-rotation.md),

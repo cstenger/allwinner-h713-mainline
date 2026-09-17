@@ -1,3 +1,9 @@
+> **Scaler integration next (2026-09-17):** Cedrus now supports arbitrary even
+> NV12 CAPTURE dimensions for H.264/HEVC, with full-size private reconstruction.
+> This VA shim does not yet negotiate and propagate those scaled surfaces for
+> playback. Preserve coded SPS/DPB geometry and early Main10 declaration. See
+> [the current handoff](../../docs/handoff-2026-09-17-shared-scaler.md).
+
 # libva-v4l2-request patches
 
 The VA-API driver that lets **stock** mpv and ffmpeg decode on the H713's VE.

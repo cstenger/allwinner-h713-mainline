@@ -13,6 +13,12 @@ fully open boot chain (U-Boot SPL → TF-A BL31 → U-Boot → Linux) with a
 
 ## Hardware
 
+**Video update (2026-09-17):** H.264 and HEVC share the hardware polyphase
+scaler with arbitrary even NV12 sizes (1×–4× per axis); rotation is disabled.
+Cedrus compliance is **49/49, zero warnings**, with 53 passing pixel captures.
+Playback integration and coded-padding/crop handling are next. Start with
+[the current handoff](docs/handoff-2026-09-17-shared-scaler.md).
+
 Two physically different H713 boards exist — **know which one you have**:
 
 | Board | Silkscreen | DRAM | Notes |

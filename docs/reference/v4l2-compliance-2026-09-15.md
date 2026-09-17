@@ -1,5 +1,8 @@
 # v4l2-compliance on cedrus — 2026-09-15
 
+**Update 2026-09-17:** [Patch 0121 fixes the remaining TRY_EXT_CTRLS failure](cedrus-controls-2026-09-17/README.md).
+Compliance is now **49/49, zero warnings**. The comparisons below are historical.
+
 First compliance run on this driver. `v4l2-compliance 1.30.1`, `-d /dev/video0`,
 no streaming flags. cedrus is a module, so every arm below was swapped in with
 `tools/install-kernel-module.sh` with **no reboot** — that is what made a clean

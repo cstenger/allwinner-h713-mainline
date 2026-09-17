@@ -4,9 +4,30 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-09-12._
+_Last updated: 2026-09-17._
 
-## Video playback — where it stands (scaling answered 2026-09-12)
+## Current video decoder state — 2026-09-17
+
+H.264 and HEVC now use the VE+0xf00 polyphase scaler, with arbitrary even NV12
+CAPTURE dimensions from 1×–4× downscale per axis via S_FMT or COMPOSE. Rotation
+is disabled by user decision. A clean 88-patch build and the final installed
+module pass **49/49 compliance, zero warnings**, the focused control/API tests,
+and a 53-capture pixel matrix without DMA overruns or kernel faults. Full-size
+reconstruction remains private; Main10 outputs 8-bit NV12.
+
+Next: negotiate and propagate scaled surfaces through the VA/FFmpeg/mpv/KMS
+playback path, resolve coded padding/crop, and validate panel output before
+retiring display-side scaling. This session's validation was headless; it does
+not establish a completed arbitrary-ratio player/display pipeline.
+See [the current handoff](handoff-2026-09-17-shared-scaler.md) and
+[the 4:2:2 assessment](reference/chroma-422-assessment-2026-09-17.md).
+
+## Historical video investigation — 2026-09-12
+
+**Superseded:** the arbitrary-ratio scaler impossibility claim, power-of-two
+decoder limit, and instructions not to re-probe below were wrong. The missing
+H.264 routing was recovered from H713's vendor decoder and validated in 0120.
+The following narrative preserves the investigation rather than current policy.
 
 > ## SCALING: ANSWERED 2026-09-12 — read this before the narrative below
 >
