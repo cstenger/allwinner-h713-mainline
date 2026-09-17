@@ -98,15 +98,21 @@ no `frame_crop_*` fields at all, and `v4l2_ctrl_hevc_sps` carries
 size. Userspace cannot simply set a smaller OUTPUT format either: reconstruction
 needs all 1088 rows for the DPB.
 
-The V4L2 decoder interface says the visible rectangle belongs on
-`S_SELECTION(CAPTURE, V4L2_SEL_TGT_COMPOSE)`. **This driver already uses COMPOSE
-for something else** — the scaled output rectangle inside the capture canvas,
-introduced in patch 0107 and tested extensively by `cedrus-scaler-api-test.c`.
-Since patch 0120 moved output sizing onto CAPTURE `S_FMT`, it is worth checking
-whether COMPOSE is still load-bearing for that or has become vestigial; if it
-has, giving it back its spec meaning is both the correct interface and a
-simplification. That is a real API decision, not a mechanical change, and it
-should be made deliberately rather than as a side effect of this result.
+The target for it is `V4L2_SEL_TGT_CROP` on the CAPTURE queue, which
+`dev-decoder.rst` defines as "the rectangle **within the coded resolution** to be
+output to CAPTURE", writable on hardware with compose/scaling capabilities. That
+is exactly `TOP1_IN_SIZE`. cedrus does not implement it: `cedrus_g_selection`
+returns `-EINVAL` for every CROP target and `cedrus_s_selection` accepts COMPOSE
+alone.
+
+**COMPOSE is not in the way.** An earlier draft of this document claimed the
+spec wanted COMPOSE for the visible rectangle and that this driver had taken it
+for something else. That was a misreading. The spec defines COMPOSE as "the
+rectangle inside a CAPTURE buffer into which the cropped frame is written",
+which is precisely what patch 0107 uses it for. CROP and COMPOSE are the input
+and output rectangles of the same scaling operation, and the driver is simply
+missing the input one. Adding it is therefore additive: no API break, and
+`cedrus-scaler-api-test.c` keeps testing COMPOSE as it stands.
 
 ## Reproducing
 

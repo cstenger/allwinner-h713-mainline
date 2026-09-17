@@ -8,10 +8,11 @@ module MD5 `772c6a46b668baafb98dcf00ddb15429`.
 picture. Confirmed on the projector by the operator — correct picture, audio in
 sync, zero failed atomic commits, no LD_PRELOAD probe in the path.
 
-**And item 2 is answered:** the VE scaler *does* honour an input crop. See
-[the input-crop result](reference/ve-input-crop-2026-09-17.md). That removes the
-one quality compromise in what shipped here, and what remains for it is an
-interface question rather than a hardware one.
+**Item 2 is not just answered but landed.** The VE scaler honours an input crop
+([the result](reference/ve-input-crop-2026-09-17.md)), it is exposed as
+`V4L2_SEL_TGT_CROP` on CAPTURE (kernel patch 0122), and mpv and the VA driver
+drive it automatically (mpv 0004, libva 0010). The coded-padding compromise is
+gone; nothing has to be set by hand.
 
 **Seeks work now too.** Looping the card on the projector exposed a
 pre-existing bug that dropped hardware decoding permanently on the first seek;
@@ -20,7 +21,23 @@ file, which requests none, failed identically.
 
 ## What was added
 
-Three patches.
+Five patches, plus kernel 0122.
+
+`patches/kernel/0122` adds `V4L2_SEL_TGT_CROP` on CAPTURE — "the rectangle
+within the coded resolution to be output" — and points `TOP1_IN_SIZE` at it.
+COMPOSE already meant what the spec says it means and is untouched; only the
+input rectangle was missing, so the change is additive. It also fixes two
+conformance bugs in the COMPOSE family (`COMPOSE_BOUNDS` is the capture buffer,
+not the coded size; `COMPOSE_DEFAULT` equals CROP) and makes the targets
+readable without scaling hardware, where the interface says read-only rather
+than absent.
+
+`patches/libva-v4l2-request/0010` carries the stream's visible size in
+`V4L2_REQUEST_CROP` and issues the selection before negotiating the capture
+size. Best effort: a kernel without the target refuses, and decoding continues
+from the coded raster as before.
+
+Three more patches.
 
 `patches/libva-v4l2-request/0009` keeps the V4L2 queues alive while surfaces
 still refer to them. `RequestDestroyContext` released both queues and cleared
@@ -88,6 +105,9 @@ Headless, on the board, against the installed stack.
 | `hevc-decode-test.sh` / `va-decode-test.sh` / `hevc-10bit-test.sh` | 12 pass, 5 pass, PASS |
 | 7 loops of a scaled 1080p file | one decoder init, `vaapi[nv12]` throughout, 0 fallbacks, 0 failed flips |
 | 2 loops of a 720p file (no scale requested) | same, and the case that proved 0009 is not about scaling |
+| CROP via the VA driver vs. via the probe vs. via a register override | **all three byte-identical**, MD5 `a1b57792782154dadf21a4eb1da64a77` |
+| no crop | `3fb46599f06f6fc27aaa0b3ca420ac92` |
+| v4l2-compliance after 0122 | 49/49, 0 warnings; Cropping and Composing now **OK**, previously "Not Supported" |
 
 The byte-identical comparison is the load-bearing one. Geometry logs prove
 negotiation, not pixels; asking for the same output size two different ways and
@@ -185,10 +205,10 @@ that scans out through the descriptor.
 
 ## Next work
 
-1. **Land the input crop.** The hardware half is proven; the open question is
-   how userspace declares the visible rectangle, and it collides with this
-   driver's existing use of `S_SELECTION(CAPTURE, COMPOSE)`. Read
-   [the result](reference/ve-input-crop-2026-09-17.md) before designing it.
+1. ~~Land the input crop~~ — done, kernel 0122 + libva 0010 + mpv 0004.
+   **Re-photograph the bottom edge**: the measurement that established the
+   artifact should now show a six-row border instead of eleven, and that has not
+   been confirmed on the panel.
 2. ~~Photograph the bottom edge~~ — done, see
    [the panel photographs](reference/panel-photos-2026-09-17/README.md).
 3. **HEVC and Main10 to the panel.** They share the datapath but have not been
