@@ -81,8 +81,8 @@ In the raw photographs the card's circles look roughly 10% taller than wide,
 which the decode path cannot produce: it scales 0.6667 horizontally and 0.6618
 vertically, so circles should be 0.74% *wider* than tall.
 
-After rectification, width/height is 0.987–0.989 **in all three photographs,
-including the software one**. It is common-mode, so it is not our scaling — the
+After rectification, width/height is 0.987–0.989 in all three photographs taken
+**before** the crop landed — **including the software one**. It is common-mode, so it is not our scaling — the
 software path does a correct 1080→720 and shows the same 1.3%. The apparent
 elongation was projection geometry and the homography removed it. The residual
 is projector optics, panel pixel aspect, or rectification error, and it is
