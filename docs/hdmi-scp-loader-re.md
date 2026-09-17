@@ -115,3 +115,11 @@ and implementing a loader.
 Once startup is demonstrated in an isolated test boot, validate the actual
 HPD command path, then measure source-side detection and EDID using the
 connected GPU. TMDS lock and captured frame buffers follow that milestone.
+
+## Later experimental refinement
+
+The first 0x4000 bytes behave as sparse vector stubs in the tested ARM view,
+not ordinary writable instruction RAM. A tiny program in A2 passed, then a
+SCP-side HPD read timed out. See [the bounded probe results](hdmi-scp-probe-validation.md).
+The stock split-copy sequence remains valid disassembly; the earlier A1/A2
+size arithmetic does not establish ordinary RAM semantics for every byte.

@@ -121,3 +121,15 @@ reads. See [the validation record](hdmi-tvcap-clock-validation.md).
 The current target is on the transient #2 kernel with TVFE/TVCAP held active.
 Normal boot storage and Claude's checkout are unchanged. The wrapper fault
 remains unresolved, and HPD/DDC are still the next source-facing milestone.
+
+## Bounded SCP test
+
+A backed-up SRAM A2 program produced the expected marker and returned to
+reset with restoration verified. A separately approved SCP-side HPD read
+did not complete; subsequent marker tests failed despite ARM remaining
+responsive. See [the probe record](hdmi-scp-probe-validation.md). No HPD
+write, full firmware load, or source detection success is claimed.
+
+Controlled ARM restart and the same temporary FIT recovered the SCP execution
+test. The latest module passed with exception reporting enabled; TVFE/TVCAP
+are held active again. The normal boot image remains untouched.

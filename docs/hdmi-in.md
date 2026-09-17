@@ -1,3 +1,9 @@
+Update, 2026-09-17: the TVCAP bus gates are corrected and hardware-tested.
+A bounded SRAM A2 program also proved SCP execution, but its HPD read timed
+out; SCP execution alone does not establish access to that block. Controlled
+restart recovered the SRAM-only test. See [the clock validation](hdmi-tvcap-clock-validation.md)
+and [SCP probe results](hdmi-scp-probe-validation.md).
+
 # H713 HDMI input bring-up
 
 Follow-up, 2026-09-17: wrapper access returned a bus error and likely
