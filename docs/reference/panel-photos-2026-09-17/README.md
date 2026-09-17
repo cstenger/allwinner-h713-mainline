@@ -6,7 +6,9 @@ rectified and measured by
 
 **Result:** the coded-padding artifact predicted by
 [the headless input-crop measurement](../ve-input-crop-2026-09-17.md) is real,
-visible, and the same size on the panel as it is in the decoder's own output.
+visible, and the same size on the panel as it is in the decoder's own output —
+and once the input crop landed, **it is gone**. The bottom border went from
+10.70 panel pixels to 5.92, against 5.35 for a natively rasterised 720p card.
 
 ## Why a photograph can be measured at all
 
@@ -32,11 +34,33 @@ threshold would score as extra width.
 | IMG_0884 — hardware, VE-scaled | 4.63 | **10.95** | 5.63 | 7.13 | 2.37 | 0.989 |
 | IMG_0886 — **software decode** | 4.45 | **6.08** | 5.63 | 8.05 | 1.37 | 0.987 |
 | IMG_0888 — hardware, VE-scaled | 4.98 | **10.70** | 5.76 | 9.28 | 2.15 | 0.987 |
+| IMG_0889 — hardware, **input crop** | 4.91 | **5.92** | 5.91 | 8.51 | 1.21 | 0.992 |
 
 The headless dump predicted the bottom border at **11 rows** when the scaler is
 fed the coded raster and **6 rows** when fed the visible one. The photographs
 give 10.95 and 10.70 for the hardware path and 6.08 for software — through the
 whole optical chain, from two camera positions, on different days.
+
+## After the crop
+
+IMG_0889 is the same card, same player, same projector, with kernel patch 0122
+and libva 0010 in place so the scaler reads the visible 1920x1080 instead of the
+coded 1920x1088. The bottom border measures **5.92** — below the 6.08 of the
+software-decoded frame and close to the 5.35 of the native reference. The
+prediction from the headless dump was "six rows instead of eleven"; the panel
+says 5.92 against 10.70.
+
+The residual bottom/top ratio of 1.21, where the native reference manages 0.98,
+is the optics rather than the picture: focus falls off toward the bottom and the
+right of this projection, which the right-edge column shows in every photograph
+(8.51 here against 5.91 on the left). The software frame, which scales
+correctly, reads 1.37 through the same lens.
+
+The circles moved from 0.987 to 0.992, toward round, which is the direction the
+crop predicts: both axes now scale by exactly 1.5, so the 0.74% anisotropy
+should disappear. The shift is about one standard deviation of the ellipse fit,
+so it is consistent with the prediction rather than independent proof of it. The
+border is the measurement that carries weight.
 
 ## The control was an accident
 
