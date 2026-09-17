@@ -1,0 +1,77 @@
+From c68de4692af966fc66371bf814d9b0f962d0cc30 Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Thu, 17 Sep 2026 05:03:06 -0700
+Subject: [PATCH] Keep the queues alive while surfaces still refer to them
+
+Every seek dropped hardware decoding permanently. On the first
+re-initialisation the client would report
+
+  h264: Failed to create decode context: 1 (operation failed)
+  Failed setup for format vaapi: hwaccel initialisation returned error
+  Using software decoding
+
+and never recover, which on a looping file shows up as a flicker partway
+through and a picture that quietly changes character.
+
+RequestDestroyContext released both queues and cleared video_format
+unconditionally. Destroying a context is not on its own a statement that the
+surfaces are finished with, and a client is entitled to keep its surface pool
+across a decoder re-initialisation. FFmpeg's does: mpv caches the frame pool and
+reuses it whenever format, sw_format, size and pool depth are unchanged -- which
+is exactly the case on a loop or a seek -- so the CONTEXT is destroyed and
+recreated while the SURFACES live on. RequestCreateContext opens by reading
+video_format, found it NULL, and refused.
+
+Apply the guard RequestDestroySurfaces already has: release the queues only once
+neither a surface nor a context refers to them.
+
+Reproduced and fixed independently of the scaler work. A 720p file, which asks
+for no scaling at all, fails identically, so this is not a consequence of
+decode-time downscaling.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/context.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/src/context.c b/src/context.c
+index 5f59db3..b8aa332 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -170,6 +170,7 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	struct video_format *video_format;
+ 	unsigned int output_type, capture_type;
+ 	VAStatus status;
++	int iterator;
+ 	int rc;
+ 
+ 	video_format = driver_data->video_format;
+@@ -203,6 +204,25 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	object_heap_free(&driver_data->context_heap,
+ 			 (struct object_base *)context_object);
+ 
++	/*
++	 * Release the queues only once nothing refers to them any more, exactly
++	 * as RequestDestroySurfaces does. Destroying a context is not on its own
++	 * a statement that the surfaces are finished with.
++	 *
++	 * Unconditionally freeing the buffers here and clearing video_format
++	 * broke every seek. A client is entitled to keep its surface pool across
++	 * a decoder re-initialisation, and FFmpeg's does: mpv caches the frame
++	 * pool and reuses it whenever the format and size are unchanged, so a
++	 * loop or a seek destroys and recreates the CONTEXT while the SURFACES
++	 * live on. RequestCreateContext then found video_format NULL and
++	 * refused, which surfaces to the user as
++	 * "Failed to create decode context: 1 (operation failed)", a permanent
++	 * drop to software decoding, and a visible flicker mid-playback.
++	 */
++	if (object_heap_first(&driver_data->surface_heap, &iterator) != NULL ||
++	    object_heap_first(&driver_data->context_heap, &iterator) != NULL)
++		return VA_STATUS_SUCCESS;
++
+ 	rc = v4l2_request_buffers(driver_data->video_fd, output_type, 0);
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+-- 
+2.55.0
+
