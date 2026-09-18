@@ -1,0 +1,145 @@
+BEFORE
+domain                          status          children        performance
+    /device                         runtime status                  managed by
+------------------------------------------------------------------------------
+AV1                             off-0                           0
+VE                              off-0                           0
+    1c0e000.video-codec             suspended                   0           SW
+TVCAP                           off-0                           0
+TVFE                            off-0                           0
+GPU                             off-0                           0
+    1800000.gpu                     suspended                   0           SW
+070010a0 0x00000002
+070010a4 0x00020000
+07001120 0x00000002
+07001124 0x00020000
+[stale output, discarded before the command: 8 bytes]
+[2J[1H
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
+ZERO_RESOURCES
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
+TVFE_ONLY
+domain                          status          children        performance
+    /device                         runtime status                  managed by
+------------------------------------------------------------------------------
+AV1                             off-0                           0
+VE                              off-0                           0
+    1c0e000.video-codec             suspended                   0           SW
+TVCAP                           off-0                           0
+TVFE                            on                              0
+    h713-hdmi-tvfe                  active                      0           SW
+GPU                             off-0                           0
+    1800000.gpu                     suspended                   0           SW
+070010a0 0x00000001
+070010a4 0x00010000
+07001120 0x00000002
+07001124 0x00020000
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
+control block  0x4bd01000  acID b'RV\x00\x00\x00\x00 TERMINAL\x00'
+MIPS core      ALIVE (0x0306101c)
+  up[0]   buf=0x4bd01300 size=0x41c00 wr=2759 rd=2759 flags=0x0
+  up[1]   buf=0x4bd43000 size=0x7d000 wr=0 rd=0 flags=0x0
+  up[2]   buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+  down[0] buf=0x4bd01200 size=0x100 wr=15 rd=15 flags=0x0
+  down[1] buf=0x4bd42f00 size=0x100 wr=0 rd=0 flags=0x0
+  down[2] buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+[    6.358963] bluetooth_set_power: end_block=0
+[    7.726705] bluetooth_set_power: start_block=0
+[    7.731276] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    7.738123] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    7.745595] bluetooth_set_power: end_block=0
+[    7.766912] Bluetooth: HCI UART driver ver 2.3
+[    7.772378] Bluetooth: HCI UART protocol H4 registered
+[    7.922327] get_txpwr_max:txpwr_max:18 
+[    7.926530] get_txpwr_max:txpwr_max:18 
+[    7.931125] get_txpwr_max:txpwr_max:18 
+[    7.935278] change_if: 2 to 3, 8, 2
+[    7.935306] get_txpwr_max:txpwr_max:18 
+[    7.943859] get_txpwr_max:txpwr_max:18 
+[    8.458244] get_txpwr_max:txpwr_max:18 
+[    8.463566] chan.flags 0 
+[    8.795823] aicwf_sdio mmc1:6721:1 wlan0: AP started: ch=0, bcmc_idx=32 channel=2437 bw=2
+[    9.029991] Bluetooth: MGMT ver 1.23
+[   10.902558] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[   10.934791] Bluetooth: MGMT ver 1.23
+[   26.282269] h713-hdmi-power: 0 domains and 0 receiver clocks held on; no receiver MMIO
+[   28.573286] h713-hdmi-power: released power and clock references
+[   28.599954] h713-hdmi-power: domain 1 power event 2
+[   28.604938] h713-hdmi-power: domain 1 power event 3
+[   28.609847] h713-hdmi-power: domain 1 resumed
+[   28.614267] h713-hdmi-power: 1 domains and 0 receiver clocks held on; no receiver MMIO

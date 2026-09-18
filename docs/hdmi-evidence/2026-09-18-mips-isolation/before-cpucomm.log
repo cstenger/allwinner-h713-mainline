@@ -1,0 +1,54 @@
+Linux h713-arm64 6.18.38 #4 SMP Fri Sep 18 00:16:45 PDT 2026 aarch64 GNU/Linux
+console=ttyS0,115200 earlycon loglevel=8 panic=10 clk_ignore_unused pd_ignore_unused root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 cma=128M initcall_blacklist=h713_afbd_platform_driver_init
+Module                  Size  Used by
+hci_uart               28672  1
+panfrost               77824  0
+sunxi_scanout_dmabuf    12288  0
+sunxi_cedrus           69632  0
+aic8800_btlpm          12288  0
+aic8800_fdrv          516096  0
+aic8800_bsp            90112  2 aic8800_btlpm,aic8800_fdrv
+control block  0x4bd01000  acID b'RV\x00\x00\x00\x00 TERMINAL\x00'
+MIPS core      ALIVE (0x0306101c)
+  up[0]   buf=0x4bd01300 size=0x41c00 wr=8 rd=0 flags=0x0
+  up[1]   buf=0x4bd43000 size=0x7d000 wr=0 rd=0 flags=0x0
+  up[2]   buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+  down[0] buf=0x4bd01200 size=0x100 wr=0 rd=0 flags=0x0
+  down[1] buf=0x4bd42f00 size=0x100 wr=0 rd=0 flags=0x0
+  down[2] buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+[stale output, discarded before the command: 8 bytes]
+[2J[1H
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
+control block  0x4bd01000  acID b'RV\x00\x00\x00\x00 TERMINAL\x00'
+MIPS core      ALIVE (0x0306101c)
+  up[0]   buf=0x4bd01300 size=0x41c00 wr=925 rd=925 flags=0x0
+  up[1]   buf=0x4bd43000 size=0x7d000 wr=0 rd=0 flags=0x0
+  up[2]   buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+  down[0] buf=0x4bd01200 size=0x100 wr=5 rd=5 flags=0x0
+  down[1] buf=0x4bd42f00 size=0x100 wr=0 rd=0 flags=0x0
+  down[2] buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0

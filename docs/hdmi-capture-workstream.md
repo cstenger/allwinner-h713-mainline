@@ -171,3 +171,17 @@ Current target: temporary #4, MIPS/SCP stopped, DDC pins unclaimed/input,
 HPD/DDC restored, only TVFE/TVCAP and EDID holds loaded. Normal boot image
 and persistent U-Boot settings remain unchanged. Receiver lock and frames
 are still unproven; establish functional receiver control before selecting HDMI.
+
+## MIPS resource isolation, 2026-09-18
+
+On #4 with AFBD blacklisted, MIPS shell responds before/after CPU_COMM adoption,
+and a read-only RPC completes in ~75ms. TVFE-only attachment preserves both.
+Adding TVCAP stops shell consumption, even with no receiver clocks enabled;
+enabling clocks first also fails. See [the resource isolation](hdmi-mips-resource-isolation.md).
+The earlier IPC timeout followed a full receiver power hold, so it did not
+locate the failure at Linux boot or CPU_COMM. No source selection was sent.
+
+Current restored state: #4 with live MIPS, TVFE-only hold and CPU_COMM loaded,
+TVCAP off, SCP stopped, EDID/DDC modules absent. Full shell/RPC restoration
+passed. No persistent boot/firmware changes; Claude's checkout remains clean.
+Next: obtain a firmware execution/exception witness around TVCAP power-on.

@@ -45,3 +45,13 @@ fabric access. The peer firmware function-name/address list is not universally
 reliable: its claimed HDMIRX_SetPortMap entry 8b130c54 disassembles inside an
 existing routine in this exact file. Resolve RPC names through the live table
 and validate handlers against the matching image before calling them.
+
+## Follow-up isolation
+
+The #4 diagnostic boot reproduces a working 917-byte shell reply before and
+after CPU_COMM adoption, plus a read-only RPC round trip. TVFE alone also
+works. Adding TVCAP stops shell consumption even with receiver clock enables
+skipped; enabling clocks first does not fix it. See
+[the resource isolation](hdmi-mips-resource-isolation.md). The earlier test
+loaded the full power hold before checking IPC, so its timeout did not locate
+the failure at Linux boot or CPU_COMM initialization.

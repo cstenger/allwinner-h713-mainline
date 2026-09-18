@@ -87,3 +87,18 @@ The subsequent power cycle and patched-kernel tests are recorded in
 [the CCU validation](../../docs/hdmi-tvcap-clock-validation.md). Patch 0123
 corrects the hardware gate interpretation; the module also passed removal/
 reload on the transient #2 kernel. Wrapper access remains unvalidated.
+
+## Live MIPS isolation
+
+With MIPS initialized by U-Boot and AFBD blacklisted, the full hold stopped
+shell/IPC replies on 2026-09-18. Use `clock_count=0` to attach/resume just the
+two domains, then increase `/sys/module/h713_hdmi_power/parameters/clock_count`
+one at a time (1 through 4). The order is bus-tvcap, bus-cap-300m, vincap-dma,
+tvfe-1296m. Check the benign MIPS shell after each step. The parameter rejects
+decreases and values above four; default behavior still enables all four.
+`domain_count=0` holds no domains; `domain_count=1` holds only TVFE. Both
+require `clock_count=0`. Power notifications use the kernel enum: 0=PRE_OFF,
+1=OFF, 2=PRE_ON, 3=ON. `clocks_first=1` enables the selected CCU clocks before
+attaching/resuming the domains; this is a diagnostic order, not a validated
+fix. Partial holds do not authorize receiver MMIO. Do not unload the hold under a
+live MIPS; reboot through the proven U-Boot path to restart a diagnostic.
