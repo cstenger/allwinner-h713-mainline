@@ -33,7 +33,9 @@ Build against the private tree matching the test Image:
 
 ```sh
 mkdir -p build/scp-probe
-cp modules/scp-probe/Makefile modules/scp-probe/h713-scp-probe.c build/scp-probe/
+python tools/hdmi/make-edid-trial-code.py modules/scp-probe/edid-trial-code.h
+cp modules/scp-probe/Makefile modules/scp-probe/h713-scp-probe.c \
+   modules/scp-probe/edid-trial-code.h build/scp-probe/
 make -C "$PWD/build/kernel-runtime" M="$PWD/build/scp-probe" ARCH=arm64 LLVM=1 modules
 scp -F /dev/null build/scp-probe/h713-scp-probe.ko root@192.168.4.1:/tmp/h713-scp-probe.ko
 ```
@@ -57,3 +59,32 @@ dmesg | tail
 A zero value in the logged HPD field is valid only when completed=1; on
 timeout it is merely the variable's initial value. See
 [the hardware record](../../docs/hdmi-scp-probe-validation.md).
+
+## Fixed EDID modes
+
+These are bench diagnostics, not a production SCP driver. Before any HPD/DDC
+read, hold TVFE/TVCAP and enable the tested r-edid clock/reset consumer on the
+private #3 kernel. Access without EDID resources previously stalled the SCP bus.
+
+`edid_snapshot=1` reads eleven fixed registers and the HPD value.
+`edid_backup=1` copies all three EDID windows and configuration to SRAM without
+peripheral writes. `edid_trial=1` performs the saved/restored ten-second trial.
+Only the last mode writes HPD/DDC/EDID. `stock_io=1` optionally reproduces four
+stock control/timing writes and restores them; it is rejected outside trial mode
+and is unnecessary for the validated repeat detection test.
+
+Trial SRAM layout (SCP addresses): code 4000, payload 4680–477f, backups
+4780–4a7f, eight saved controls 4a80–4a9f, exception stubs 4c00–4d9f,
+status/control 4f00–4f7f. The generator rejects overlaps. The complete A2 page
+and changed vector words are saved and verified after restoration. Payload
+staging uses explicit 64-bit writes/readbacks; SCP additionally checks the
+known first two EDID words before peripheral writes. Full EDID programming and
+restoration are compared word by word. The hardware EDID windows read zero
+after DDC enable, so verify success at the source.
+
+The helper `tools/hdmi/run-detection-trial.py` expects the modules and
+`tools/hdmi/check-power.sh` staged in target /tmp, and both power/EDID holds
+active. It records source state/EDID, the eight validated receiver words, and
+cleanup in a unique local /tmp directory. It returns DDC pins to input state,
+which differs from the initial disabled mux. Run only with exclusive bench
+ownership. See [results](../../docs/hdmi-source-detection-validation.md).

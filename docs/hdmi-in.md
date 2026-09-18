@@ -1,3 +1,10 @@
+Update, 2026-09-18: source detection now passes. The attached GPU read the
+exact valid 128-byte test EDID and enabled 640x480 output during a reversible
+SCP EDID/HPD trial. Cleanup restored the original peripheral state and SRAM.
+See [source detection validation](hdmi-source-detection-validation.md).
+Receiver lock and captured frames are still pending. Earlier guesses about
+HPD polarity and active EDID-window readback are superseded by these results.
+
 Latest result, 2026-09-17: the missing R_CCU EDID clock/reset are now modeled
 and hardware-tested. With them enabled, the SCP-side HPD read completes and
 returns 7; unloading restores the original clock/reset state. See

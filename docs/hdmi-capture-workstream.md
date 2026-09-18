@@ -21,9 +21,10 @@ so they can later be moved to main or integrated with the video branch.
 Read `hdmi-in.md` together with `arisc-route-scope.md`: both contain earlier
 recommendations superseded by later results in those same files.
 
-- The source-side detection milestone has not passed: disconnected connector,
-  zero-length EDID. Streaming bytes into an EDID-named register did not prove
-  that DDC serves an EDID.
+- Source detection passed on 2026-09-18: the GPU read the exact valid 128-byte
+  test EDID and enabled 640x480 output during a reversible trial. See
+  [the validation record](hdmi-source-detection-validation.md). Receiver lock
+  and captured frames remain unproven.
 - TVFE/TVCAP power must be established before receiver MMIO. Experiment 0087
   demonstrated access to receiver windows without claiming AFBD or GPIOs.
 - ARM reads of `0x07091014` hard-locked the board. The clock/reset hypotheses
@@ -143,3 +144,13 @@ returned 7. Consumer unload restored the original zero register values.
 See [the EDID clock validation](hdmi-edid-clock-validation.md). Current target
 holds TVFE/TVCAP and EDID resources; SCP is stopped. Source detection/EDID
 and captured frames remain unproven.
+
+## Source detection milestone, 2026-09-18
+
+Cold recovery, restaging, and the one-time #3 boot passed. A reversible SCP
+EDID/HPD trial produced connected status, an exact valid EDID, and enabled
+640x480 source output. Restoration returned the connector to disconnected.
+Both trials after the payload guard passed; the second needed no optional
+stock HPD control writes. See [the evidence](hdmi-source-detection-validation.md).
+Next milestone: identify the actual receiver/PHY initialization and read
+verified lock/timing status. The wrapper ARM access fault remains unresolved.
