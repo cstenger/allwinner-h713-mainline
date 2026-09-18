@@ -7,6 +7,7 @@ SSH=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','S
 CONNECTOR=Path('/sys/class/drm/card1-HDMI-A-1')
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--stock-io',action='store_true',help='Use four saved/restored stock timing/control settings')
+parser.add_argument('--seconds',type=int,choices=range(1,31),default=10,help='Bounded HPD hold in seconds (1–30)')
 args=parser.parse_args()
 OUT=Path('/tmp')/('h713-hdmi-trial-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'))
 OUT.mkdir();print(f'Logs: {OUT}',flush=True)
@@ -17,11 +18,11 @@ def sample():
 if sample()['status']!='disconnected':raise SystemExit('Expected disconnected test connector; leaving hardware unchanged.')
 check=ssh('test -d /sys/module/h713_hdmi_power && test -d /sys/module/h713_edid_clock && test -L /sys/bus/platform/devices/h713-edid-clock-hold/driver')
 if check.returncode:raise SystemExit('Required power/EDID holds are missing.')
-command=f'set -e; if test -d /sys/module/h713_scp_probe; then rmmod h713_scp_probe; fi; insmod /tmp/h713-ddc-pins.ko run=1; insmod /tmp/h713-scp-probe.ko run=1 edid_trial=1 stock_io={int(args.stock_io)}; dmesg | tail -7; cat /sys/module/h713_scp_probe/parameters/peripheral_restored /sys/module/h713_scp_probe/parameters/restored /sys/module/h713_scp_probe/parameters/edid_mismatch'
+command=f'set -e; if test -d /sys/module/h713_scp_probe; then rmmod h713_scp_probe; fi; insmod /tmp/h713-ddc-pins.ko run=1; insmod /tmp/h713-scp-probe.ko run=1 edid_trial=1 stock_io={int(args.stock_io)} hold_ms={args.seconds*1000}; dmesg | tail -7; cat /sys/module/h713_scp_probe/parameters/peripheral_restored /sys/module/h713_scp_probe/parameters/restored /sys/module/h713_scp_probe/parameters/edid_mismatch'
 p=subprocess.Popen(SSH+[command],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
 records=[];last=None;receiver=None;start=time.monotonic();ended=None;result=1
 try:
- while time.monotonic()-start<22:
+ while time.monotonic()-start<args.seconds+12:
   s=sample();digest=hashlib.sha256(s['edid']).hexdigest() if s['edid'] else None
   r={'seconds':round(time.monotonic()-start,3),'status':s['status'],'edid_bytes':len(s['edid']),'edid_sha256':digest,'modes':s['modes'],'enabled':s['enabled']}
   key=(r['status'],digest,tuple(r['modes']),r['enabled'])

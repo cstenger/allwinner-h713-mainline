@@ -69,7 +69,8 @@ private #3 kernel. Access without EDID resources previously stalled the SCP bus.
 `edid_snapshot=1` reads eleven fixed registers and the HPD value.
 `edid_backup=1` copies all three EDID windows and configuration to SRAM without
 peripheral writes. `edid_trial=1` performs the saved/restored ten-second trial.
-Only the last mode writes HPD/DDC/EDID. `stock_io=1` optionally reproduces four
+Only the last mode writes HPD/DDC/EDID. `hold_ms` defaults to 10000 and is
+restricted to 1000–30000; the helper accepts `--seconds 1..30`. `stock_io=1` optionally reproduces four
 stock control/timing writes and restores them; it is rejected outside trial mode
 and is unnecessary for the validated repeat detection test.
 

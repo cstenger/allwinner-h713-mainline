@@ -70,3 +70,14 @@ Evidence: [source states](hdmi-evidence/2026-09-18-detection/source.json),
 [cleanup](hdmi-evidence/2026-09-18-detection/cleanup.log),
 [receiver](hdmi-evidence/2026-09-18-detection/receiver.log),
 [source EDID](hdmi-evidence/2026-09-18-detection/source.edid).
+
+## Clean reboot repeat
+
+After the live-MIPS IPC diagnostic failed, the target was gracefully rebooted
+through the normal stopped-MIPS path and the same #3 FIT. A fixed snapshot
+confirmed HPD=7 and all four optional controls zero. The trial again detected
+the exact EDID and enabled output without stock control writes, held for 15
+seconds, and restored all saved state with mismatch=0. This verifies the
+adjustable bound and repeat operation after reboot. This was an ARM restart,
+rather than a physical cold power cycle. Evidence is under
+[reboot-repeat](hdmi-evidence/2026-09-18-detection/reboot-repeat/source.json).

@@ -1,0 +1,15 @@
+    mips                             0       0        0        8000000     0          0     50000      Y      deviceless                      no_connection_id         
+          bus-disp                   0       0        0        100000000   0          0     50000      Y            deviceless                      no_connection_id         
+          bus-tvcap                  1       1        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+          bus-cap-300m               1       1        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+          tcd3                       0       0        0        100000000   0          0     50000      Y            deviceless                      no_connection_id         
+          tvfe-1296m                 1       1        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+          bus-msgbox                 1       1        0        100000000   0          0     50000      Y            3003000.cpu-comm                no_connection_id         
+          bus-mips                   0       0        0        100000000   0          0     50000      Y            deviceless                      no_connection_id         
+[   48.309463] cpu_comm: HW mapped \xe2\x80\x94 MIPS ctrl @ 0000000077bb0786, msgbox @ 000000005d02a143 (version 0x00020000, tx fifo 0, rx fifo 0)
+[   48.321561] cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor running
+[   48.331136] cpu_comm: adopting the live shared region -- not reinitialising it
+[   48.408806] cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+02001600 0x80000002
+02001d80 0xC0000000
+02001d88 0x00010001

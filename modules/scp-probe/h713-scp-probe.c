@@ -25,9 +25,12 @@ MODULE_PARM_DESC(run, "Explicitly run the bounded SCP test");
 static bool hpd_read;
 module_param(hpd_read, bool, 0400);
 MODULE_PARM_DESC(hpd_read, "Also perform the fixed SCP-side HPD register read");
+static uint hold_ms = 10000;
+module_param(hold_ms, uint, 0400);
+MODULE_PARM_DESC(hold_ms, "Trial HPD hold duration, 1000 to 30000 ms");
 static bool edid_trial;
 module_param(edid_trial, bool, 0400);
-MODULE_PARM_DESC(edid_trial, "Ten-second EDID/HPD trial with saved peripheral restoration");
+MODULE_PARM_DESC(edid_trial, "Bounded EDID/HPD trial with saved peripheral restoration");
 static bool stock_io;
 module_param(stock_io, bool, 0400);
 MODULE_PARM_DESC(stock_io, "Trial-only saved/restored stock HPD timing/control setup");
@@ -175,6 +178,8 @@ static int __init h713_scp_probe_init(void)
 
 	if (edid_snapshot || trial_program)
 		hpd_read = true;
+	if (edid_trial && (hold_ms < 1000 || hold_ms > 30000))
+		return -EINVAL;
 	if (stock_io && !edid_trial)
 		return -EINVAL;
 	if (!run)
@@ -300,8 +305,8 @@ static int __init h713_scp_probe_init(void)
 					active_io[i] = readl(sram + MARKER_OFFSET + 68 + 4 * i);
 				pr_info("h713-scp-probe: active IO 1020=%08x 1030=%08x 1034=%08x 1038=%08x\n",
 					active_io[0], active_io[1], active_io[2], active_io[3]);
-				pr_info("h713-scp-probe: EDID trial ready; holding HPD asserted for ten seconds\n");
-				msleep(10000);
+				pr_info("h713-scp-probe: EDID trial ready; holding HPD asserted for %u ms\n", hold_ms);
+				msleep(hold_ms);
 			}
 			writel(1, sram + MARKER_OFFSET + 16);
 			readl(sram + MARKER_OFFSET + 16);
