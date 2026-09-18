@@ -1,0 +1,421 @@
+From 7ebe129c39eca644a37cbf4122e53beb7337297c Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Thu, 17 Sep 2026 23:18:29 -0700
+Subject: [PATCH] Port the MPEG-2 backend to the stabilized uAPI and advertise
+ it
+
+mpeg2.c still spoke the pre-stabilization interface -- one
+V4L2_CID_MPEG_VIDEO_MPEG2_SLICE_PARAMS control carrying a nested sequence and
+picture, plus a separate quantization control -- so RequestCreateConfig refused
+both MPEG-2 profiles and nothing could reach the decoder through VA-API. The
+hardware itself was never the obstacle: cedrus decodes MPEG-2 on this SoC, as
+GStreamer's v4l2slmpeg2dec shows.
+
+The stabilized interface splits that into V4L2_CID_STATELESS_MPEG2_SEQUENCE,
+_PICTURE and _QUANTISATION. The picture booleans become one flags word,
+bit_size, data_bit_offset and quantiser_scale_code are gone -- cedrus takes the
+bitstream extent from the buffer payload -- and the reference timestamps move
+into the picture control.
+
+The quantisation matrices need state the old code did not keep. VA-API sends
+VAIQMatrixBufferMPEG2 with a load_* flag per matrix and leaves the unloaded ones
+undefined, while the V4L2 control is all-or-nothing, so the driver has to carry
+the matrices in force, start them at the defaults ISO/IEC 13818-2 mandates, and
+overwrite only what the client loaded. That also matches MPEG-2 semantics, where
+a matrix persists until a quant matrix extension replaces it. They are sent on
+every picture because the control is per-request and cedrus reads them for each
+decode. Both APIs order the coefficients in zigzag scan, so they copy straight
+across.
+
+V4L2_MPEG2_SEQ_FLAG_PROGRESSIVE is left clear: VA-API's picture parameters carry
+progressive_FRAME but say nothing about the sequence, so it cannot be derived
+here. cedrus does not read it.
+
+Profiles are advertised only where the kernel really offers MPEG-2 slice format,
+keeping the rule the enumeration already followed -- advertising what
+vaCreateConfig would refuse puts the failure on the caller.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/config.c  |  22 +++--
+ src/context.c |   5 +-
+ src/context.h |   9 +++
+ src/mpeg2.c   | 216 +++++++++++++++++++++++++++++++-------------------
+ src/mpeg2.h   |   1 +
+ 5 files changed, 165 insertions(+), 88 deletions(-)
+
+diff --git a/src/config.c b/src/config.c
+index 51c5e3f..fb95b41 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -34,7 +34,6 @@
+ 
+ #include <linux/videodev2.h>
+ 
+-#include <mpeg2-ctrls.h>
+ 
+ #include "utils.h"
+ #include "v4l2.h"
+@@ -69,6 +68,9 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 		break;
+ 	case VAProfileMPEG2Simple:
+ 	case VAProfileMPEG2Main:
++		driver_data->coded_pixelformat = V4L2_PIX_FMT_MPEG2_SLICE;
++		driver_data->coded_bit_depth = 8;
++		break;
+ 	default:
+ 		return VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
+ 	}
+@@ -135,13 +137,19 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 
+ 	/*
+ 	 * Only the profiles RequestCreateConfig actually accepts are
+-	 * advertised. It refuses MPEG-2 and HEVC, so listing them here made
+-	 * vainfo report profiles that fail at vaCreateConfig -- and a decoder
+-	 * that advertises what it cannot do is worse than one that advertises
+-	 * nothing, because the failure lands on the caller. The MPEG-2 and
+-	 * HEVC backends are still in the tree, on the pre-stabilization uAPI;
+-	 * see docs/vaapi-scope.md for what porting them costs.
++	 * advertised: a decoder that advertises what it cannot do is worse than
++	 * one that advertises nothing, because the failure lands on the caller.
++	 * All three backends are now on the stabilized uAPI, so all three are
++	 * listed -- gated, as ever, on the kernel really offering the format.
+ 	 */
++	found = v4l2_find_format(driver_data->video_fd,
++				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
++				 V4L2_PIX_FMT_MPEG2_SLICE);
++	if (found && index < (V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES - 2)) {
++		profiles[index++] = VAProfileMPEG2Simple;
++		profiles[index++] = VAProfileMPEG2Main;
++	}
++
+ 	found = v4l2_find_format(driver_data->video_fd,
+ 				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+ 				 V4L2_PIX_FMT_H264_SLICE);
+diff --git a/src/context.c b/src/context.c
+index b8aa332..79e1757 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -39,8 +39,8 @@
+ 
+ #include <linux/videodev2.h>
+ 
+-#include <mpeg2-ctrls.h>
+ 
++#include "mpeg2.h"
+ #include "utils.h"
+ #include "v4l2.h"
+ 
+@@ -105,6 +105,9 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 	 */
+ 	context_object->h264_start_code = false;
+ 
++	/* MPEG-2 matrices persist across pictures; start them at the spec defaults. */
++	mpeg2_init_quantisation(context_object);
++
+ 
+ 	/*
+ 	 * The surface_ids array has been allocated by the caller and
+diff --git a/src/context.h b/src/context.h
+index 8f4f70f..f3d9bea 100644
+--- a/src/context.h
++++ b/src/context.h
+@@ -29,6 +29,8 @@
+ 
+ #include <va/va_backend.h>
+ 
++#include <linux/videodev2.h>
++
+ #include "object_heap.h"
+ #include "h264.h"
+ 
+@@ -51,6 +53,13 @@ struct object_context {
+ 	/* H264 only */
+ 	struct h264_dpb dpb;
+ 	bool h264_start_code;
++
++	/*
++	 * MPEG-2 only. The quantisation matrices in force, carried across
++	 * pictures because VA-API loads them individually while V4L2's control
++	 * is all-or-nothing -- see mpeg2_init_quantisation().
++	 */
++	struct v4l2_ctrl_mpeg2_quantisation mpeg2_quantisation;
+ };
+ 
+ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+diff --git a/src/mpeg2.c b/src/mpeg2.c
+index 9297fc5..f0af919 100644
+--- a/src/mpeg2.c
++++ b/src/mpeg2.c
+@@ -35,120 +35,176 @@
+ #include <sys/mman.h>
+ 
+ #include <linux/videodev2.h>
+-#include <mpeg2-ctrls.h>
+ 
+ #include "v4l2.h"
+ 
++/*
++ * The default intra matrix of ISO/IEC 13818-2 table 6-14, in zigzag scanning
++ * order -- the same order VA-API and V4L2 both use, so the matrices copy
++ * straight across.
++ *
++ * It is needed because the two APIs disagree about what "no matrix" means. A
++ * VA-API client sends VAIQMatrixBufferMPEG2 with a load_* flag per matrix and
++ * leaves the unloaded ones undefined; V4L2's control is all-or-nothing. So the
++ * driver has to carry the current matrices itself, start them at the defaults
++ * the specification mandates, and overwrite only what the client actually
++ * loaded. That also matches MPEG-2 semantics, where a matrix persists until a
++ * later quant matrix extension replaces it.
++ */
++static const unsigned char mpeg2_default_intra_quantiser_matrix[64] = {
++	 8, 16, 16, 19, 16, 19, 22, 22,
++	22, 22, 22, 22, 26, 24, 26, 27,
++	27, 27, 26, 26, 26, 26, 27, 27,
++	27, 29, 29, 29, 34, 34, 34, 29,
++	29, 29, 27, 27, 29, 29, 32, 32,
++	34, 34, 37, 38, 37, 35, 35, 34,
++	35, 38, 38, 40, 40, 40, 48, 48,
++	46, 46, 56, 56, 58, 69, 69, 83,
++};
++
++void mpeg2_init_quantisation(struct object_context *context_object)
++{
++	struct v4l2_ctrl_mpeg2_quantisation *q = &context_object->mpeg2_quantisation;
++
++	memset(q, 0, sizeof(*q));
++	memcpy(q->intra_quantiser_matrix, mpeg2_default_intra_quantiser_matrix,
++	       sizeof(q->intra_quantiser_matrix));
++	/* The default non-intra coefficients are all 16, per the spec. */
++	memset(q->non_intra_quantiser_matrix, 16,
++	       sizeof(q->non_intra_quantiser_matrix));
++	/*
++	 * The chroma matrices matter only for 4:2:2 and 4:4:4, and this driver
++	 * decodes 4:2:0 alone, so they stay zero and cedrus never reads them.
++	 */
++}
++
+ int mpeg2_set_controls(struct request_data *driver_data,
+ 		       struct object_context *context_object,
+ 		       struct object_surface *surface_object)
+ {
+ 	VAPictureParameterBufferMPEG2 *picture =
+ 		&surface_object->params.mpeg2.picture;
+-	VASliceParameterBufferMPEG2 *slice =
+-		&surface_object->params.mpeg2.slice;
+ 	VAIQMatrixBufferMPEG2 *iqmatrix =
+ 		&surface_object->params.mpeg2.iqmatrix;
+ 	bool iqmatrix_set = surface_object->params.mpeg2.iqmatrix_set;
+-	struct v4l2_ctrl_mpeg2_slice_params slice_params;
+-	struct v4l2_ctrl_mpeg2_quantization quantization;
++	struct v4l2_ctrl_mpeg2_sequence sequence;
++	struct v4l2_ctrl_mpeg2_picture pic;
+ 	struct object_surface *forward_reference_surface;
+ 	struct object_surface *backward_reference_surface;
+-	uint64_t timestamp;
+ 	unsigned int i;
+ 	int rc;
+ 
+-	memset(&slice_params, 0, sizeof(slice_params));
+-
+-	slice_params.bit_size = surface_object->slices_size * 8;
+-	slice_params.data_bit_offset = 0;
+-
+-	slice_params.sequence.horizontal_size = picture->horizontal_size;
+-	slice_params.sequence.vertical_size = picture->vertical_size;
+-	slice_params.sequence.vbv_buffer_size = SOURCE_SIZE_MAX;
+-
+-	slice_params.sequence.profile_and_level_indication = 0;
+-	slice_params.sequence.progressive_sequence = 0;
+-	slice_params.sequence.chroma_format = 1; // 4:2:0
+-
+-	slice_params.picture.picture_coding_type = picture->picture_coding_type;
+-	slice_params.picture.f_code[0][0] = (picture->f_code >> 12) & 0x0f;
+-	slice_params.picture.f_code[0][1] = (picture->f_code >> 8) & 0x0f;
+-	slice_params.picture.f_code[1][0] = (picture->f_code >> 4) & 0x0f;
+-	slice_params.picture.f_code[1][1] = (picture->f_code >> 0) & 0x0f;
+-
+-	slice_params.picture.intra_dc_precision =
++	memset(&sequence, 0, sizeof(sequence));
++
++	sequence.horizontal_size = picture->horizontal_size;
++	sequence.vertical_size = picture->vertical_size;
++	sequence.vbv_buffer_size = SOURCE_SIZE_MAX;
++	sequence.profile_and_level_indication = 0;
++	sequence.chroma_format = 1; /* 4:2:0 */
++	/*
++	 * VA-API's picture parameters carry progressive_FRAME but nothing about
++	 * the SEQUENCE, so V4L2_MPEG2_SEQ_FLAG_PROGRESSIVE cannot be derived
++	 * here and is left clear. cedrus does not read it; a driver that did
++	 * would need the client to pass it some other way.
++	 */
++
++	memset(&pic, 0, sizeof(pic));
++
++	pic.picture_coding_type = picture->picture_coding_type;
++	pic.f_code[0][0] = (picture->f_code >> 12) & 0x0f;
++	pic.f_code[0][1] = (picture->f_code >> 8) & 0x0f;
++	pic.f_code[1][0] = (picture->f_code >> 4) & 0x0f;
++	pic.f_code[1][1] = (picture->f_code >> 0) & 0x0f;
++
++	pic.intra_dc_precision =
+ 		picture->picture_coding_extension.bits.intra_dc_precision;
+-	slice_params.picture.picture_structure =
++	pic.picture_structure =
+ 		picture->picture_coding_extension.bits.picture_structure;
+-	slice_params.picture.top_field_first =
+-		picture->picture_coding_extension.bits.top_field_first;
+-	slice_params.picture.frame_pred_frame_dct =
+-		picture->picture_coding_extension.bits.frame_pred_frame_dct;
+-	slice_params.picture.concealment_motion_vectors =
+-		picture->picture_coding_extension.bits
+-			.concealment_motion_vectors;
+-	slice_params.picture.q_scale_type =
+-		picture->picture_coding_extension.bits.q_scale_type;
+-	slice_params.picture.intra_vlc_format =
+-		picture->picture_coding_extension.bits.intra_vlc_format;
+-	slice_params.picture.alternate_scan =
+-		picture->picture_coding_extension.bits.alternate_scan;
+-	slice_params.picture.repeat_first_field =
+-		picture->picture_coding_extension.bits.repeat_first_field;
+-	slice_params.picture.progressive_frame =
+-		picture->picture_coding_extension.bits.progressive_frame;
+-
+-	slice_params.quantiser_scale_code = slice->quantiser_scale_code;
+ 
++	/* The booleans of the old interface are one flags word here. */
++	if (picture->picture_coding_extension.bits.top_field_first)
++		pic.flags |= V4L2_MPEG2_PIC_FLAG_TOP_FIELD_FIRST;
++	if (picture->picture_coding_extension.bits.frame_pred_frame_dct)
++		pic.flags |= V4L2_MPEG2_PIC_FLAG_FRAME_PRED_DCT;
++	if (picture->picture_coding_extension.bits.concealment_motion_vectors)
++		pic.flags |= V4L2_MPEG2_PIC_FLAG_CONCEALMENT_MV;
++	if (picture->picture_coding_extension.bits.q_scale_type)
++		pic.flags |= V4L2_MPEG2_PIC_FLAG_Q_SCALE_TYPE;
++	if (picture->picture_coding_extension.bits.intra_vlc_format)
++		pic.flags |= V4L2_MPEG2_PIC_FLAG_INTRA_VLC;
++	if (picture->picture_coding_extension.bits.alternate_scan)
++		pic.flags |= V4L2_MPEG2_PIC_FLAG_ALT_SCAN;
++	if (picture->picture_coding_extension.bits.repeat_first_field)
++		pic.flags |= V4L2_MPEG2_PIC_FLAG_REPEAT_FIRST;
++	if (picture->picture_coding_extension.bits.progressive_frame)
++		pic.flags |= V4L2_MPEG2_PIC_FLAG_PROGRESSIVE;
++
++	/*
++	 * A reference the client did not give us points back at this surface.
++	 * cedrus matches references by capture-buffer timestamp, so an I
++	 * picture naming itself is inert rather than wrong.
++	 */
+ 	forward_reference_surface =
+ 		SURFACE(driver_data, picture->forward_reference_picture);
+ 	if (forward_reference_surface == NULL)
+ 		forward_reference_surface = surface_object;
+-
+-	timestamp = v4l2_timeval_to_ns(&forward_reference_surface->timestamp);
+-	slice_params.forward_ref_ts = timestamp;
++	pic.forward_ref_ts =
++		v4l2_timeval_to_ns(&forward_reference_surface->timestamp);
+ 
+ 	backward_reference_surface =
+ 		SURFACE(driver_data, picture->backward_reference_picture);
+ 	if (backward_reference_surface == NULL)
+ 		backward_reference_surface = surface_object;
++	pic.backward_ref_ts =
++		v4l2_timeval_to_ns(&backward_reference_surface->timestamp);
++
++	/*
++	 * Send the quantisation matrices on every picture rather than only when
++	 * the client loads one. cedrus reads them for each decode, and the
++	 * control is per-request, so a picture that inherited its matrices from
++	 * an earlier one would otherwise be decoded against whatever the
++	 * request happened to carry.
++	 */
++	if (iqmatrix_set) {
++		struct v4l2_ctrl_mpeg2_quantisation *q =
++			&context_object->mpeg2_quantisation;
++
++		if (iqmatrix->load_intra_quantiser_matrix)
++			for (i = 0; i < 64; i++)
++				q->intra_quantiser_matrix[i] =
++					iqmatrix->intra_quantiser_matrix[i];
++		if (iqmatrix->load_non_intra_quantiser_matrix)
++			for (i = 0; i < 64; i++)
++				q->non_intra_quantiser_matrix[i] =
++					iqmatrix->non_intra_quantiser_matrix[i];
++		if (iqmatrix->load_chroma_intra_quantiser_matrix)
++			for (i = 0; i < 64; i++)
++				q->chroma_intra_quantiser_matrix[i] =
++					iqmatrix->chroma_intra_quantiser_matrix[i];
++		if (iqmatrix->load_chroma_non_intra_quantiser_matrix)
++			for (i = 0; i < 64; i++)
++				q->chroma_non_intra_quantiser_matrix[i] =
++					iqmatrix->chroma_non_intra_quantiser_matrix[i];
++	}
+ 
+-	timestamp = v4l2_timeval_to_ns(&backward_reference_surface->timestamp);
+-	slice_params.backward_ref_ts = timestamp;
++	rc = v4l2_set_control(driver_data->video_fd, surface_object->request_fd,
++			      V4L2_CID_STATELESS_MPEG2_SEQUENCE,
++			      &sequence, sizeof(sequence));
++	if (rc < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+ 	rc = v4l2_set_control(driver_data->video_fd, surface_object->request_fd,
+-			      V4L2_CID_MPEG_VIDEO_MPEG2_SLICE_PARAMS,
+-			      &slice_params, sizeof(slice_params));
++			      V4L2_CID_STATELESS_MPEG2_PICTURE,
++			      &pic, sizeof(pic));
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+-	if (iqmatrix_set) {
+-		quantization.load_intra_quantiser_matrix =
+-			iqmatrix->load_intra_quantiser_matrix;
+-		quantization.load_non_intra_quantiser_matrix =
+-			iqmatrix->load_non_intra_quantiser_matrix;
+-		quantization.load_chroma_intra_quantiser_matrix =
+-			iqmatrix->load_chroma_intra_quantiser_matrix;
+-		quantization.load_chroma_non_intra_quantiser_matrix =
+-			iqmatrix->load_chroma_non_intra_quantiser_matrix;
+-
+-		for (i = 0; i < 64; i++) {
+-			quantization.intra_quantiser_matrix[i] =
+-				iqmatrix->intra_quantiser_matrix[i];
+-			quantization.non_intra_quantiser_matrix[i] =
+-				iqmatrix->non_intra_quantiser_matrix[i];
+-			quantization.chroma_intra_quantiser_matrix[i] =
+-				iqmatrix->chroma_intra_quantiser_matrix[i];
+-			quantization.chroma_non_intra_quantiser_matrix[i] =
+-				iqmatrix->chroma_non_intra_quantiser_matrix[i];
+-		}
+-
+-		rc = v4l2_set_control(driver_data->video_fd,
+-				      surface_object->request_fd,
+-				      V4L2_CID_MPEG_VIDEO_MPEG2_QUANTIZATION,
+-				      &quantization, sizeof(quantization));
+-	}
++	rc = v4l2_set_control(driver_data->video_fd, surface_object->request_fd,
++			      V4L2_CID_STATELESS_MPEG2_QUANTISATION,
++			      &context_object->mpeg2_quantisation,
++			      sizeof(context_object->mpeg2_quantisation));
++	if (rc < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+-	return 0;
++	return VA_STATUS_SUCCESS;
+ }
+diff --git a/src/mpeg2.h b/src/mpeg2.h
+index 63e63f8..824af3b 100644
+--- a/src/mpeg2.h
++++ b/src/mpeg2.h
+@@ -30,6 +30,7 @@ struct object_context;
+ struct object_surface;
+ struct request_data;
+ 
++void mpeg2_init_quantisation(struct object_context *context_object);
+ int mpeg2_set_controls(struct request_data *driver_data,
+ 		       struct object_context *context,
+ 		       struct object_surface *surface_object);
+-- 
+2.55.0
+
