@@ -98,6 +98,41 @@ with no prediction history, and *not* where ffmpeg reported the stream's damage.
 of them: the engine was told 36 rows where the field carried 18, and ran past
 the end of its data.
 
+### The truncated last frame, and why it stays
+
+The sample's final picture is incomplete — the file ends with no
+`sequence_end_code`, and with bottom-field-first that last picture is the top
+field of frame 30. Which is exactly what the engine reports:
+
+| | error register | correct macroblocks |
+| --- | --- | --- |
+| 61 pictures | `0x00000000` | `0x32a` = 810 = 45x18, a full field |
+| last picture | `0x00000001` | `0x1ef` = **495 = 11x45** |
+
+It stopped at field macroblock row 11 of 18 — the same place the pixel
+comparison independently puts the corruption. The data is not there and cannot
+be reconstructed; ffmpeg fills the gap from the reference frame, we leave the
+buffer, and MPEG-2 defines no required behaviour for truncated input. Matching
+ffmpeg would be copying a concealment policy, not fixing a defect.
+
+**The error propagates correctly, verified at all three levels:**
+
+1. the engine sets its error bit and reports 495 of 810 macroblocks;
+2. the driver decides `VB2_BUF_STATE_ERROR` **exactly once**, on the field that
+   releases the capture buffer (`src_hold=0`), so `v4l2_m2m_buf_done()` carries
+   the state through rather than dropping it on a held buffer;
+3. `strace` on the client shows **31 CAPTURE dequeues, exactly one flagged**,
+   and it is the 31st:
+
+```
+VIDIOC_DQBUF {type=V4L2_BUF_TYPE_VIDEO_CAPTURE, index=0, ...
+              flags=V4L2_BUF_FLAG_MAPPED|V4L2_BUF_FLAG_ERROR|...}
+```
+
+GStreamer then passes the partial frame downstream anyway. That is a userspace
+policy choice — the flag is there for a client that wants to act on it — and
+not a driver defect.
+
 That one is worth remembering as a method note. The first fix produced output
 that looked like success — right frame count, right interrupt count, correct
 field parity — and was still wrong in a way only a pixel comparison caught.
