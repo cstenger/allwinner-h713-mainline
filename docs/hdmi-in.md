@@ -1,3 +1,9 @@
+Update, 2026-09-18: patch 0125 now describes the real receiver dividers/muxes
+and correct MIPS clock parent order. Temporary #4 boot and source detection
+both passed; see [functional clock validation](hdmi-functional-clock-validation.md).
+A live-MIPS #3 boot did not consume diagnostic commands or acknowledge a
+read-only RPC; see [IPC results](hdmi-mips-ipc-validation.md).
+
 Update, 2026-09-18: source detection now passes. The attached GPU read the
 exact valid 128-byte test EDID and enabled 640x480 output during a reversible
 SCP EDID/HPD trial. Cleanup restored the original peripheral state and SRAM.

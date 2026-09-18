@@ -154,3 +154,20 @@ Both trials after the payload guard passed; the second needed no optional
 stock HPD control writes. See [the evidence](hdmi-source-detection-validation.md).
 Next milestone: identify the actual receiver/PHY initialization and read
 verified lock/timing status. The wrapper ARM access fault remains unresolved.
+
+## Receiver clocks and IPC follow-up
+
+A full U-Boot live-MIPS init and handshaken #3 boot succeeded, but the shell
+ring was not consumed and read-only GetSource RPC timed out. No Vp_Init or
+HDMI source-selection call was sent; ARM stayed responsive and was restarted.
+See [IPC results](hdmi-mips-ipc-validation.md).
+
+Vendor descriptors exposed missing receiver dividers/muxes and the wrong
+MIPS parent order. Patch 0125 corrects five functional clock descriptions.
+A one-time #4 boot and another exact source-EDID detection trial passed,
+without shared PLL/rate writes. See [clock validation](hdmi-functional-clock-validation.md).
+
+Current target: temporary #4, MIPS/SCP stopped, DDC pins unclaimed/input,
+HPD/DDC restored, only TVFE/TVCAP and EDID holds loaded. Normal boot image
+and persistent U-Boot settings remain unchanged. Receiver lock and frames
+are still unproven; establish functional receiver control before selecting HDMI.

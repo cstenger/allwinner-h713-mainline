@@ -1,0 +1,45 @@
+[  117.919307] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  117.930733] h713-scp-probe: DDC b00=00a0a0a0 b04=07000000 b08=00606060 EDID c00=efe14c88 d00=abc81434 e00=5d0488a0
+[  117.941156] h713-scp-probe: IO 1018=0000000b 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+07000400 0x00000000
+0306101c 0x00000000
+domain                          status          children        performance
+    /device                         runtime status                  managed by
+------------------------------------------------------------------------------
+AV1                             off-0                           0
+VE                              off-0                           0
+    1c0e000.video-codec             suspended                   0           SW
+TVCAP                           on                              0
+    h713-hdmi-tvcap                 active                      0           SW
+TVFE                            on                              0
+    h713-hdmi-tvfe                  active                      0           SW
+GPU                             off-0                           0
+    1800000.gpu                     suspended                   0           SW
+/sys/module/h713_edid_clock:
+coresize
+drivers
+holders
+initsize
+initstate
+notes
+refcnt
+sections
+taint
+uevent
+
+/sys/module/h713_hdmi_power:
+coresize
+holders
+initsize
+initstate
+notes
+refcnt
+sections
+taint
+uevent
+pin 362 (PL10): UNCLAIMED
+pin 363 (PL11): UNCLAIMED
+pin 364 (PL12): UNCLAIMED
+pin 365 (PL13): UNCLAIMED
+pin 366 (PL14): UNCLAIMED
+pin 367 (PL15): UNCLAIMED
