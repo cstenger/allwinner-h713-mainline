@@ -244,10 +244,8 @@ codec the kernel advertises, whatever the VA driver supports.
   reports `Scaling: Not Supported`. Reordering the array to make one test
   reachable would change the default for every SoC, and now has no correctness
   argument behind it. Leave it, or make the test reachable another way.
-- **VA-API exposure is a separate, optional question.** Porting `mpeg2.c` to the
-  stabilised uAPI is now known to be worth something rather than speculative,
-  but GStreamer already reaches both codecs, and neither is likely to matter on
-  this device.
+- **VA-API exposure — DONE for MPEG-2** (libva patch 0011, hardware-validated
+  2026-09-22). See "MPEG-2 through VA-API" below. VP8 remains GStreamer-only.
 
 ## Limits
 
@@ -262,3 +260,100 @@ codec the kernel advertises, whatever the VA driver supports.
 - Neither codec was tried through the scaler: `cedrus_can_scale()` admits only
   H.264 and HEVC, so a scaled or cropped MPEG-2 capture is not reachable and was
   not attempted.
+
+---
+
+# MPEG-2 through VA-API (2026-09-22)
+
+`src/mpeg2.c` spoke the pre-stabilisation interface — one
+`V4L2_CID_MPEG_VIDEO_MPEG2_SLICE_PARAMS` control carrying a nested sequence and
+picture — so `RequestCreateConfig` refused both profiles and nothing could reach
+the decoder through VA-API. Libva patch **0011** ports it to
+`V4L2_CID_STATELESS_MPEG2_{SEQUENCE,PICTURE,QUANTISATION}`.
+
+## What the split forced
+
+- **The picture booleans become one `flags` word**, and `bit_size`,
+  `data_bit_offset` and `quantiser_scale_code` are gone — cedrus takes the
+  bitstream extent from the buffer payload.
+- **The quantisation matrices need driver-side state.** VA-API sends a `load_*`
+  flag *per matrix* and leaves unloaded ones undefined; the V4L2 control is
+  all-or-nothing. The driver now carries the matrices in force on the context,
+  starts them at the ISO/IEC 13818-2 defaults, and overwrites only what the
+  client loaded. That also matches MPEG-2 semantics, where a matrix persists
+  until a quant matrix extension replaces it. Both APIs use zigzag order, so
+  they copy straight across.
+- **`SEQ_FLAG_PROGRESSIVE` is left clear.** VA-API carries `progressive_frame`
+  but says nothing about the *sequence*, so it cannot be derived. cedrus does
+  not read it.
+
+## The bug that made the port look like a no-op
+
+The first build changed nothing visible: `vainfo` listed the same seven
+profiles as before. `RequestQueryConfigProfiles` had learned the two MPEG-2
+profiles, but `RequestQueryConfigEntrypoints` still knew only H.264 and HEVC
+and fell through to `*entrypoints_count = 0`.
+
+**A profile with an empty entrypoint list is indistinguishable from an
+unadvertised one** — `vainfo` drops it from its output and `vaCreateConfig` has
+nothing to match. Adding a profile to one of those two functions and not the
+other produces a driver that looks completely unported.
+
+## Results
+
+The oracle is `gst-launch-1.0 ... ! v4l2slmpeg2dec`, which drives the same
+hardware through the kernel and needs none of this driver. Two hardware paths
+should agree **bit-exactly**; hardware and software should *not*, because
+MPEG-2 specifies IDCT accuracy rather than exact reconstruction.
+
+| stream | kind | VA-API vs GStreamer | VE irq |
+| --- | --- | --- | --- |
+| `testcard-mpeg2.m2v` | progressive 1280x720 | **bit-exact** | +75 |
+| `testcard-mpeg2i.m2v` | interlaced, frame pictures | **bit-exact** | +75 |
+| `mm-short.mpg` | 720x576 real-world | **bit-exact** | +73 |
+| `field.m2v` | field pictures | 30/31 frames bit-exact | +62 |
+| `TITLE01-ANGLE1.VOB` | DVD extract, 720x576 | 197/198 frames bit-exact | +198 |
+
+Software decode of the same streams gives a different md5 and moves the VE
+interrupt counter by **zero**, so the matching hashes are the hardware's work
+and not a silent fallback.
+
+H.264 (5/5) and HEVC (12/12) remain bit-exact after the rebuild.
+
+## The two incomplete frames are the streams', not ours
+
+Neither file carries a `sequence_end_code`.
+
+- **`field.m2v` frame 30** — divergence starts at luma row 352 and touches
+  **only even rows** (112 even, 0 odd): the top field, at field macroblock row
+  11 — exactly where the engine reported stopping, at 495 of 810 macroblocks.
+- **`TITLE01-ANGLE1.VOB` frame 196** — starts at macroblock row 4, where ffmpeg
+  reports `ac-tex damaged at 28 5` and calls the frame corrupt. The file's last
+  picture start is 683 bytes from EOF.
+
+The data is absent and MPEG-2 defines no behaviour for truncated input. The
+undecoded region keeps whatever the client's buffer pool held, and the two
+clients have different pools — both sit ~25 dB from software, i.e. equally
+unlike ffmpeg's concealment. ffmpeg fills the gap from the reference frame;
+matching it would be copying a concealment policy, not fixing a defect.
+
+**To tell this apart from a real bug:** check that the divergence begins at the
+macroblock row the engine reported stopping at. If it starts anywhere else, it
+is not truncation.
+
+## Robustness
+
+Both truncation vectors (`field-shortfirst.m2v`,
+`field-firstfield-damaged.m2v`) decode to a clean exit without wedging the VE,
+and the good clip still produces its reference md5 afterwards.
+
+## Not established
+
+**The VA path surfaces no decoder-level error to the client.** On the VOB,
+software decode reports `corrupt decoded frame`; the VA path reports only the
+demuxer's `Packet corrupt`. The capture buffer's `V4L2_BUF_FLAG_ERROR` — which
+kernel patch 0124 is careful to preserve across held buffers — is not reaching
+the caller. This gap is not specific to MPEG-2 and was not investigated.
+
+Also still untested for MPEG-2: the scaler (`cedrus_can_scale()` admits only
+H.264 and HEVC), a malformed-stream suite, soak, and concurrency.
