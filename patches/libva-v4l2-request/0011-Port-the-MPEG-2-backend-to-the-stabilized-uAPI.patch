@@ -35,17 +35,16 @@ Profiles are advertised only where the kernel really offers MPEG-2 slice format,
 keeping the rule the enumeration already followed -- advertising what
 vaCreateConfig would refuse puts the failure on the caller.
 
+Both the profile enumeration and RequestQueryConfigEntrypoints have to learn
+the profiles. Advertising a profile whose entrypoint list comes back empty is
+the same as not advertising it at all -- vainfo drops it from its output and
+vaCreateConfig has nothing to match -- so a profile added to only one of the
+two is invisible in exactly the way an unported codec is.
+
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ---
- src/config.c  |  22 +++--
- src/context.c |   5 +-
- src/context.h |   9 +++
- src/mpeg2.c   | 216 +++++++++++++++++++++++++++++++-------------------
- src/mpeg2.h   |   1 +
- 5 files changed, 165 insertions(+), 88 deletions(-)
-
 diff --git a/src/config.c b/src/config.c
-index 51c5e3f..fb95b41 100644
+index 51c5e3f..7d7703a 100644
 --- a/src/config.c
 +++ b/src/config.c
 @@ -34,7 +34,6 @@
@@ -92,6 +91,15 @@ index 51c5e3f..fb95b41 100644
  	found = v4l2_find_format(driver_data->video_fd,
  				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
  				 V4L2_PIX_FMT_H264_SLICE);
+@@ -172,6 +180,8 @@ VAStatus RequestQueryConfigEntrypoints(VADriverContextP context,
+ 				       int *entrypoints_count)
+ {
+ 	switch (profile) {
++	case VAProfileMPEG2Simple:
++	case VAProfileMPEG2Main:
+ 	case VAProfileH264Main:
+ 	case VAProfileH264High:
+ 	case VAProfileH264ConstrainedBaseline:
 diff --git a/src/context.c b/src/context.c
 index b8aa332..79e1757 100644
 --- a/src/context.c
@@ -416,6 +424,3 @@ index 63e63f8..824af3b 100644
  int mpeg2_set_controls(struct request_data *driver_data,
  		       struct object_context *context,
  		       struct object_surface *surface_object);
--- 
-2.55.0
-
