@@ -26,14 +26,32 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 # ran, because ffmpeg reported ENOSPC and the truncated file still had an md5.
 OUT=${OUT:-/var/tmp/va-out}
 DRIVER=${LIBVA_DRIVER_NAME:-v4l2_request}
+REF=${REF:-$DIR/reference-md5.txt}
 mkdir -p "$OUT"
 
 export LIBVA_DRIVER_NAME=$DRIVER
 
 hr() { printf '\n=== %s ===\n' "$1"; }
 
-want_md5() { grep "^$1 WHOLE" "$DIR/reference-md5.txt" 2>/dev/null | awk '{print $NF}'; }
-want_frames() { grep "^$1 WHOLE" "$DIR/reference-md5.txt" 2>/dev/null | awk '{print $3}'; }
+# WITHOUT THE REFERENCES THIS SCRIPT CANNOT FAIL, so it refuses to run at all.
+# It used to grep a missing file, get nothing back, and fall through to the
+# "no reference on file; size only" branch for every vector -- reporting a
+# clean run in which not one pixel had been checked. A fresh flash is exactly
+# the case that hits this: the file ships in tools/video/ and has to be copied
+# next to the script. Deploy it, or point REF at it.
+if [ ! -s "$REF" ]; then
+  echo "FATAL: no reference hashes at $REF" >&2
+  echo "" >&2
+  echo "  This gate scores decoded output against per-frame and whole-file md5s." >&2
+  echo "  Without them nothing here can fail, so refusing to report a result." >&2
+  echo "" >&2
+  echo "  Fix: copy tools/video/reference-md5.txt from the repo to $DIR/," >&2
+  echo "  or run with REF=/path/to/reference-md5.txt" >&2
+  exit 2
+fi
+
+want_md5() { grep "^$1 WHOLE" "$REF" | awk '{print $NF}'; }
+want_frames() { grep "^$1 WHOLE" "$REF" | awk '{print $3}'; }
 
 # hwdownload needs the frame to stay on the "GPU" until the filter graph pulls
 # it, hence -hwaccel_output_format vaapi. Asking ffmpeg for nv12 output format
@@ -57,9 +75,12 @@ score() {   # vector, file, label
   want=$(want_md5 "$v")
   frames=$(want_frames "$v")
   printf '     %-8s %s bytes, md5 %s\n' "$label" "$(stat -c%s "$dst")" "$md5"
+  # A present-but-incomplete reference file is the same blind spot as a missing
+  # one, one vector at a time -- so an unscored vector is a failure, not a note.
   if [ -z "$want" ]; then
-    echo "     no reference on file; size only"
-    return 0
+    echo "     UNVERIFIABLE ($label) — no '$v WHOLE' line in $REF"
+    echo "     decoded something, but nothing checked it. Counting as a failure."
+    return 1
   fi
   if [ "$md5" = "$want" ]; then
     echo "     PASS ($label) — bit-exact against the host reference ($frames frames)"
