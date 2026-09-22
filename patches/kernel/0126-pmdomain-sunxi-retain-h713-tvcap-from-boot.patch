@@ -1,0 +1,61 @@
+From: H713 HDMI capture workstream
+Subject: [PATCH] pmdomain: sunxi: optionally retain H713 TVCAP from boot
+
+The display MIPS stops making progress while TVCAP is power-cycled off and
+back on, then resumes as soon as TVCAP is powered off again. Allow a board to
+mark TVCAP always-on so Linux can preserve the firmware-established power
+state while receiver initialization is investigated.
+
+This is opt-in and does not change existing boards.
+
+--- a/drivers/pmdomain/sunxi/sun50i-h713-ppu.c
++++ b/drivers/pmdomain/sunxi/sun50i-h713-ppu.c
+@@ -92,6 +92,7 @@
+ #define H713_PPU_TIMEOUT_US	10000
+ 
+ #define H713_PPU_NUM_DOMAINS	5
++#define H713_PPU_TVCAP_DOMAIN	2
+ 
+ /* DT domain index -> hardware domain_id (-1 = always-on, no hardware) */
+ static const int h713_ppu_hw_ids[H713_PPU_NUM_DOMAINS] = { 0, 1, 2, 3, 4 };
+@@ -179,6 +180,7 @@
+ 	struct reset_control *rst;
+ 	struct clk *clk;
+ 	void __iomem *base;
++	bool keep_tvcap_on;
+ 	int ret, i;
+ 
+ 	/*
+@@ -231,9 +233,13 @@
+ 		goto err_clk;
+ 	}
+ 
++	keep_tvcap_on = of_property_read_bool(dev->of_node,
++					    "allwinner,keep-tvcap-on");
++
+ 	for (i = 0; i < H713_PPU_NUM_DOMAINS; i++) {
+ 		struct h713_ppu_pd *pd = &pds[i];
+-		bool always_on = (h713_ppu_hw_ids[i] < 0);
++		bool always_on = h713_ppu_hw_ids[i] < 0 ||
++			(keep_tvcap_on && i == H713_PPU_TVCAP_DOMAIN);
+ 
+ 		pd->base    = base;
+ 		pd->hw_id   = h713_ppu_hw_ids[i];
+@@ -242,6 +248,8 @@
+ 		pd->genpd.power_off = h713_ppu_power_off;
+ 
+ 		if (always_on) {
++			if (pd->hw_id >= 0)
++				h713_ppu_init_domain(pd);
+ 			pd->genpd.flags = GENPD_FLAG_ALWAYS_ON;
+ 			ret = pm_genpd_init(&pd->genpd, NULL, false);
+ 		} else {
+@@ -266,6 +274,8 @@
+ 
+ 	dev_info(dev, "H713 PPU: %d power domains registered\n",
+ 		 H713_PPU_NUM_DOMAINS);
++	if (keep_tvcap_on)
++		dev_info(dev, "TVCAP domain retained from boot\n");
+ 	return 0;
+ 
+ err_remove_domains:

@@ -1,0 +1,78 @@
+CPU_COMM_CALL_BEGIN component=9ce74c48 name=THal_Vp_HDMI_SetPortMap_1_000 params=2 arg0=00000001 arg1=00000000
+CPU_COMM_CALL_OK component=9ce74c48 elapsed_us=74876 nret=0
+MATCH 0x9ce74c48 THal_Vp_HDMI_SetPortMap_1_000
+MATCH 0x9ce74c48 THal_Vp_HDMI_SetPortMap_1_000
+CPU_COMM_CALL_BEGIN component=9ce74c48 name=THal_Vp_HDMI_SetPortMap_1_000 params=2 arg0=00000002 arg1=00000001
+CPU_COMM_CALL_OK component=9ce74c48 elapsed_us=58104 nret=0
+CPU_COMM_CALL_BEGIN component=9ce74c48 name=THal_Vp_HDMI_SetPortMap_1_000 params=2 arg0=00000003 arg1=00000002
+CPU_COMM_CALL_OK component=9ce74c48 elapsed_us=24417 nret=0
+MATCH 0x9ce74c48 THal_Vp_HDMI_SetPortMap_1_000
+CPU_COMM_CALL_BEGIN component=6eb4c96a name=THal_Vp_HDMI_SetHPDTimeInterval_ params=1 arg0=000000c8
+MATCH 0x6eb4c96a THal_Vp_HDMI_SetHPDTimeInterval_
+CPU_COMM_CALL_OK component=6eb4c96a elapsed_us=24450 nret=0
+D/cpucomm    [     72] (./trid_util_cpucomm.c 364       ) THal_Vp_HDMI_SetPortMap_1_000(), pRoutine:8B10AC38, chan:0
+D/cpucomm    [     72] (./trid_util_cpucomm.c 374       ) THal_Vp_HDMI_SetPortMap_1_000(), ChanId:0, TargetCPU:1, pid:-1953552548, FuncID:9ce74c48, funcRoutine:8B15AD94
+D/cpucomm    [     72] (./trid_cpucomm_dev.c 178        ) THal_Vp_HDMI_SetPortMap_1_000(), ChanId:0, TargetCPU:1, pid:-1953552548, FuncID:9ce74c48, funcRoutine:8B1FC6F0
+D/cpucomm    [     73] (./trid_util_cpucomm.c 364       ) THal_Vp_HDMI_SetHPDTimeInterval_1_000(), pRoutine:8B10AC98, chan:0
+D/cpucomm    [     73] (./trid_util_cpucomm.c 374       ) THal_Vp_HDMI_SetHPDTimeInterval_1_000(), ChanId:0, TargetCPU:1, pid:-1953552548, FuncID:6eb4c96a, funcRoutine:8B15AD94
+D/cpucomm    [     73] (./trid_cpucomm_dev.c 178        ) THal_Vp_HDMI_SetHPDTimeInterval_1_000(), ChanId:0, TargetCPU:1, pid:-1953552548, FuncID:6eb4c96a, funcRoutine:8B1FC6F0
+D/hal        [ 742210] (./thal_display_hdmi.cpp 176     ) THal_Vp_HDMI_SetPortMap() ENTER
+I/hdmi_driver [ 742211] (TV303_Drv/THDMIRx_TV303_Driver.cpp 326) HdmiRx_SendHPDCMD port1 cmd=176 tick=742211
+D/hal        [ 742211] (./thal_display_hdmi.cpp 207     ) THal_Vp_HDMI_SetPortMap() LEAVE
+D/hal        [ 742396] (./thal_display_hdmi.cpp 176     ) THal_Vp_HDMI_SetPortMap() ENTER
+D/hal        [ 742396] (./thal_display_hdmi.cpp 207     ) THal_Vp_HDMI_SetPortMap() LEAVE
+D/hal        [ 742566] (./thal_display_hdmi.cpp 176     ) THal_Vp_HDMI_SetPortMap() ENTER
+I/hdmirx     [ 742566] (./THDMIRx.cpp 605               ) Change Port(1) Map, from 1 to 2
+D/hal        [ 742566] (./thal_display_hdmi.cpp 207     ) THal_Vp_HDMI_SetPortMap() LEAVE
+{"verified_patch_words": 34, "mailbox": "4e341000"}
+{"seconds": 0.0, "tick": 741396, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.1, "tick": 741496, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.201, "tick": 741597, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.302, "tick": 741698, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.403, "tick": 741799, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.503, "tick": 741899, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.604, "tick": 742000, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.704, "tick": 742100, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.805, "tick": 742201, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.905, "tick": 742301, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.006, "tick": 742402, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.106, "tick": 742502, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.209, "tick": 742605, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.31, "tick": 742705, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.411, "tick": 742807, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.512, "tick": 742908, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.612, "tick": 743008, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.713, "tick": 743109, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.813, "tick": 743209, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.914, "tick": 743310, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.014, "tick": 743410, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.115, "tick": 743511, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.215, "tick": 743611, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.316, "tick": 743712, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.416, "tick": 743812, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.517, "tick": 743913, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.617, "tick": 744013, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.717, "tick": 744114, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.818, "tick": 744214, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.918, "tick": 744314, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.019, "tick": 744415, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.119, "tick": 744515, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.22, "tick": 744616, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.321, "tick": 744717, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.422, "tick": 744818, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.522, "tick": 744918, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.623, "tick": 745019, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.723, "tick": 745119, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.824, "tick": 745220, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.924, "tick": 745320, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.025, "tick": 745421, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.125, "tick": 745521, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.226, "tick": 745622, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.326, "tick": 745722, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.427, "tick": 745823, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.527, "tick": 745924, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.628, "tick": 746024, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.729, "tick": 746125, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.829, "tick": 746225, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.93, "tick": 746326, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.0, "tick": 746397, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}

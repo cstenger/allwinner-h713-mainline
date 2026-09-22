@@ -1,0 +1,120 @@
++ uname -a
+Linux h713-arm64 6.18.38 #5 SMP Tue Sep 22 14:02:09 PDT 2026 aarch64 GNU/Linux
++ grep -E 'H713 PPU|TVCAP domain|AFBD|initcall_blacklist'
++ dmesg
++ tail -n 30
+[    0.000000] Kernel command line: console=ttyS0,115200 earlycon loglevel=8 panic=10 clk_ignore_unused pd_ignore_unused root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 cma=128M initcall_blacklist=h713_afbd_platform_driver_init
+[    0.659716] sun50i-h713-ppu 7001014.power-controller: H713 PPU: 5 power domains registered
+[    0.668428] sun50i-h713-ppu 7001014.power-controller: TVCAP domain retained from boot
++ cat /sys/kernel/debug/pm_genpd/pm_genpd_summary
++ grep -E 'domain|TVFE|TVCAP'
+domain                          status          children        performance
+TVCAP                           on                              0
+TVFE                            off-0                           0
++ python3 /root/read-witness.py --watch 10
+{"verified_patch_words": 34, "mailbox": "4e341000"}
+{"seconds": 0.0, "tick": 169910, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.101, "tick": 170011, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.202, "tick": 170112, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.303, "tick": 170213, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.404, "tick": 170314, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.505, "tick": 170415, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.605, "tick": 170515, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.706, "tick": 170616, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.807, "tick": 170717, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.908, "tick": 170818, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.008, "tick": 170919, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.109, "tick": 171020, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.21, "tick": 171120, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.311, "tick": 171221, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.412, "tick": 171322, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.513, "tick": 171423, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.614, "tick": 171524, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.715, "tick": 171625, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.816, "tick": 171726, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.917, "tick": 171827, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.018, "tick": 171928, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.118, "tick": 172028, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.219, "tick": 172129, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.319, "tick": 172229, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.42, "tick": 172330, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.52, "tick": 172431, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.621, "tick": 172531, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.722, "tick": 172632, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.823, "tick": 172733, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.923, "tick": 172833, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.024, "tick": 172934, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.124, "tick": 173035, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.226, "tick": 173136, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.326, "tick": 173237, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.427, "tick": 173337, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.528, "tick": 173438, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.628, "tick": 173538, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.729, "tick": 173639, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.829, "tick": 173740, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.93, "tick": 173840, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.031, "tick": 173941, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.131, "tick": 174041, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.232, "tick": 174142, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.332, "tick": 174243, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.433, "tick": 174343, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.534, "tick": 174444, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.634, "tick": 174544, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.735, "tick": 174645, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.835, "tick": 174745, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.936, "tick": 174846, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.037, "tick": 174947, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.137, "tick": 175047, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.238, "tick": 175148, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.338, "tick": 175249, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.439, "tick": 175349, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.54, "tick": 175450, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.64, "tick": 175550, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.741, "tick": 175651, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.841, "tick": 175752, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 5.942, "tick": 175852, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.043, "tick": 175953, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.144, "tick": 176054, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.244, "tick": 176154, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.345, "tick": 176255, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.445, "tick": 176355, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.546, "tick": 176456, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.646, "tick": 176557, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.747, "tick": 176657, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.848, "tick": 176758, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 6.948, "tick": 176858, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.049, "tick": 176959, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.149, "tick": 177060, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.25, "tick": 177160, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.351, "tick": 177261, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.451, "tick": 177361, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.552, "tick": 177462, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.652, "tick": 177562, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.753, "tick": 177663, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.853, "tick": 177763, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 7.954, "tick": 177864, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.054, "tick": 177965, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.155, "tick": 178065, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.255, "tick": 178166, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.356, "tick": 178266, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.457, "tick": 178367, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.557, "tick": 178467, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.658, "tick": 178568, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.758, "tick": 178669, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.859, "tick": 178769, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 8.959, "tick": 178870, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.06, "tick": 178970, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.161, "tick": 179071, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.261, "tick": 179171, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.362, "tick": 179272, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.462, "tick": 179373, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.563, "tick": 179473, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.663, "tick": 179574, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.764, "tick": 179674, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.864, "tick": 179775, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 9.965, "tick": 179875, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 10.001, "tick": 179911, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
++ /root/mmio-rw 0x07001120
+usage: mmio-rw r|w|d <hex-addr> [hex-value|count]
++ /root/mmio-rw 0x07001124
+usage: mmio-rw r|w|d <hex-addr> [hex-value|count]

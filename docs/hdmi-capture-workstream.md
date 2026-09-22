@@ -185,3 +185,16 @@ Current restored state: #4 with live MIPS, TVFE-only hold and CPU_COMM loaded,
 TVCAP off, SCP stopped, EDID/DDC modules absent. Full shell/RPC restoration
 passed. No persistent boot/firmware changes; Claude's checkout remains clean.
 Next: obtain a firmware execution/exception witness around TVCAP power-on.
+
+## TVCAP retention and live source boundary, 2026-09-22
+
+A guarded timer/exception witness showed that TVCAP off-to-on freezes ThreadX
+without an exception and that TVCAP power-off resumes it. Private #5 retained
+TVCAP continuously from U-Boot. The MIPS timer, shell, and CPU_COMM stayed
+healthy with TVCAP active and after adding TVFE plus four receiver clocks.
+
+Source detection again produced the exact EDID and enabled 640x480. `Vp_Init`,
+three stock HDMI port maps, and the HPD interval completed under the witness.
+A live `SetSource(3)` did not return and was followed by loss of SSH, ping, and
+serial. See [the retained-TVCAP record](hdmi-mips-early-tvcap.md). Do not repeat
+live SetSource using only the minimal init sequence.

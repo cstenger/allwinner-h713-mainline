@@ -1,0 +1,37 @@
+domain                          status          children        performance
+TVCAP                           on                              0
+TVFE                            on                              0
+          tvfe-1296m                 1       1        0        1296000000  0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+          tcd3                       0       0        0        27000000    0          0     50000      Y            deviceless                      no_connection_id         
+       vincap-dma                    1       1        0        150000000   0          0     50000      Y         deviceless                      of_clk_get_from_provider 
+          bus-tvcap                  1       1        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+          bus-cap-300m               1       1        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0
+MATCH 0x24efc7c9 THal_Vp_GetSource_1_000
+CPU_COMM_CALL_OK component=24efc7c9 elapsed_us=74961 nret=1 ret0=00000000
