@@ -20,9 +20,28 @@ set -u
 DIR=$(cd "$(dirname "$0")" && pwd)
 OUT=${OUT:-/tmp/m1-out}
 DEV=${DEV:-/dev/video0}
+REF=${REF:-$DIR/reference-md5.txt}
 mkdir -p "$OUT"
 
 hr() { printf '\n=== %s ===\n' "$1"; }
+
+# WITHOUT THE REFERENCES THIS SCRIPT CANNOT FAIL, so it refuses to run at all.
+# It used to grep a missing file, get nothing back, and land in the "no
+# reference on file; size only" branch -- which increments neither pass nor
+# fail -- for every vector. The ladder then reported "M1: 0 pass, 0 fail" and
+# exited 0, having compared not one pixel. A fresh flash is exactly the case
+# that hits this: the file ships in tools/video/ and has to be copied next to
+# the script. Deploy it, or point REF at it.
+if [ ! -s "$REF" ]; then
+  echo "FATAL: no reference hashes at $REF" >&2
+  echo "" >&2
+  echo "  This gate scores decoded output against per-frame and whole-file md5s." >&2
+  echo "  Without them nothing here can fail, so refusing to report a result." >&2
+  echo "" >&2
+  echo "  Fix: copy tools/video/reference-md5.txt from the repo to $DIR/," >&2
+  echo "  or run with REF=/path/to/reference-md5.txt" >&2
+  exit 2
+fi
 
 hr "device"
 if [ ! -e "$DEV" ]; then
@@ -68,8 +87,8 @@ for v in $vectors; do
 
   if [ -s "$dst" ]; then
     md5=$(md5sum "$dst" | cut -d' ' -f1)
-    want=$(grep "^$v WHOLE" "$DIR/reference-md5.txt" 2>/dev/null | awk '{print $NF}')
-    nframes=$(grep "^$v WHOLE" "$DIR/reference-md5.txt" 2>/dev/null | awk '{print $3}')
+    want=$(grep "^$v WHOLE" "$REF" | awk '{print $NF}')
+    nframes=$(grep "^$v WHOLE" "$REF" | awk '{print $3}')
     printf '     output %s bytes, md5 %s\n' "$(stat -c%s "$dst")" "$md5"
     if [ -n "$want" ] && [ "$md5" = "$want" ]; then
       echo "     PASS -- bit-exact against the host reference ($nframes frames)"
@@ -81,7 +100,12 @@ for v in $vectors; do
       echo "     file to the host and compare with ffmpeg PSNR before judging."
       fail=$((fail+1))
     else
-      echo "     no reference on file; size only"
+      # A present-but-incomplete reference file is the same blind spot as a
+      # missing one, one vector at a time -- so an unscored vector counts as a
+      # failure rather than vanishing from both tallies.
+      echo "     UNVERIFIABLE -- no '$v WHOLE' line in $REF"
+      echo "     Decoded something, but nothing checked it. Counting as a failure."
+      fail=$((fail+1))
     fi
   else
     echo "     FAIL -- no output produced"
@@ -93,3 +117,15 @@ hr "kernel messages from this run"
 dmesg | grep -iE "cedrus|video-codec" | tail -20 | sed 's/^/  /'
 
 printf '\nM1: %d pass, %d fail\n' "$pass" "$fail"
+
+# The script used to end on that printf, exiting 0 whatever the tally said --
+# so a MISMATCH on every vector still reported success to anything that checked
+# $?, and the UNVERIFIABLE count added above would have been decoration. A
+# run that scored nothing at all is also a failure: "0 pass, 0 fail" is what a
+# missing vector set looks like, and it is not a green run.
+if [ $((pass + fail)) -eq 0 ]; then
+  echo "M1: scored nothing -- no vector produced a comparable result."
+  echo "    Check the streams are deployed next to the script."
+  exit 1
+fi
+[ "$fail" -eq 0 ]

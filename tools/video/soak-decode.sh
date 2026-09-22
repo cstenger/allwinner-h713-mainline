@@ -57,8 +57,22 @@ HEARTBEAT=${HEARTBEAT:-120}
 CLIENTS=${CLIENTS:-1}
 CLIENT_TIMEOUT=${CLIENT_TIMEOUT:-120}
 
-HEVC_REF="$DIR/hevc-reference-md5.txt"
-H264_REF="$DIR/reference-md5.txt"
+HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
+H264_REF=${H264_REF:-$DIR/reference-md5.txt}
+
+# The per-vector check further down already refuses to soak without a baseline,
+# so this one is about DIAGNOSIS, not safety: with the file absent that check
+# fires as "no reference md5 for h01-640x480-main" on top of a grep error about
+# a path, which reads like a bad vector list rather than an undeployed file.
+# Name the real cause before an 8-hour soak is abandoned for the wrong reason.
+for f in "$HEVC_REF" "$H264_REF"; do
+	[ -s "$f" ] && continue
+	echo "FATAL: no reference hashes at $f" >&2
+	echo "" >&2
+	echo "  Fix: copy tools/video/reference-md5.txt and" >&2
+	echo "  tools/video/hevc-reference-md5.txt from the repo to $DIR/." >&2
+	exit 2
+done
 
 HEVC_VECTORS="h01-640x480-main h02-1280x720-main h03-640x480-nowpp
 	      h04-640x480-scaling h05-640x480-scaling-custom"

@@ -36,7 +36,29 @@ CASE_TIMEOUT=${CASE_TIMEOUT:-30}
 GOOD_HEVC=h01-640x480-main
 GOOD_H264=v03-1280x720-main
 
+HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
+H264_REF=${H264_REF:-$DIR/reference-md5.txt}
+
 [ -d "$BAD" ] || { echo "FATAL: no bad-stream directory at $BAD"; exit 1; }
+
+# This one does not fail silently -- it fails LOUDLY AND WRONGLY, which is
+# worse. recovery_ok() compares the good vector's md5 against an empty string,
+# never matches, and the baseline check declares "FATAL -- the good vector does
+# not decode. Reboot and re-run." on a perfectly healthy engine. The documented
+# response to that message is a power cycle, so a missing file costs a reboot
+# and an investigation into a wedge that never happened.
+for f in "$HEVC_REF" "$H264_REF"; do
+	[ -s "$f" ] && continue
+	echo "FATAL: no reference hashes at $f" >&2
+	echo "" >&2
+	echo "  recovery_ok() scores the good vector against these md5s. Without" >&2
+	echo "  them every recovery check reads as WEDGED and the baseline aborts" >&2
+	echo "  asking for a reboot -- on an engine that is fine." >&2
+	echo "" >&2
+	echo "  Fix: copy tools/video/reference-md5.txt and" >&2
+	echo "  tools/video/hevc-reference-md5.txt from the repo to $DIR/." >&2
+	exit 2
+done
 
 ve_irq() {
 	awk '/video-codec/ { for (i = 2; i <= 5; i++) s += $i } END { print s + 0 }' \
@@ -44,8 +66,17 @@ ve_irq() {
 }
 kmsg_count() { dmesg | grep -ciE "$1" || true; }
 
-want_hevc_md5() { grep " $GOOD_HEVC\$" "$DIR/hevc-reference-md5.txt" | cut -d' ' -f1; }
-want_h264_md5() { grep "^$GOOD_H264 WHOLE" "$DIR/reference-md5.txt" | awk '{print $NF}'; }
+want_hevc_md5() { grep " $GOOD_HEVC\$" "$HEVC_REF" | cut -d' ' -f1; }
+want_h264_md5() { grep "^$GOOD_H264 WHOLE" "$H264_REF" | awk '{print $NF}'; }
+
+# Same reasoning as the file check: an empty want here reads as WEDGED.
+for m in "$(want_hevc_md5)" "$(want_h264_md5)"; do
+	[ -n "$m" ] || {
+		echo "FATAL: reference files present but missing an entry for" >&2
+		echo "  $GOOD_HEVC or $GOOD_H264 -- recovery would read as WEDGED." >&2
+		exit 2
+	}
+done
 
 # DECODE_RC is set as a side effect on purpose. ${PIPESTATUS[0]} read after a
 # FUNCTION CALL reports the function's own status -- bash resets PIPESTATUS for

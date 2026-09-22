@@ -27,8 +27,28 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 ROUNDS=${1:-5}
 CLIENTS=${2:-3}
 OUT=${OUT:-/var/tmp/conc}
+HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
+H264_REF=${H264_REF:-$DIR/reference-md5.txt}
 
 mkdir -p "$OUT"
+
+# Without the references every round scores MISMATCH -- the comparison below is
+# against an empty string -- so the run "fails", but for the wrong reason and
+# with no hint that the cause is a missing file rather than a cross-client
+# corruption. That is a whole session spent chasing the harness. Worse, the two
+# sides are equal when BOTH are empty, so a round in which no client wrote an
+# md5 at all would score as a pass. Fail up front instead.
+for f in "$HEVC_REF" "$H264_REF"; do
+	[ -s "$f" ] && continue
+	echo "FATAL: no reference hashes at $f" >&2
+	echo "" >&2
+	echo "  This test scores each client's output against a known md5; without" >&2
+	echo "  the references it cannot tell a clean run from a corrupted one." >&2
+	echo "" >&2
+	echo "  Fix: copy tools/video/reference-md5.txt and" >&2
+	echo "  tools/video/hevc-reference-md5.txt from the repo to $DIR/." >&2
+	exit 2
+done
 
 # One HEVC and two H.264, so a mix-up crosses a codec boundary as well as a
 # stream boundary -- the coarsest possible thing to get wrong.
@@ -43,10 +63,20 @@ kmsg_count() { dmesg | grep -ciE "$1" || true; }
 
 want_md5() {
 	case $1 in
-	h0*) grep " $1\$" "$DIR/hevc-reference-md5.txt" | cut -d' ' -f1 ;;
-	*)   grep "^$1 WHOLE" "$DIR/reference-md5.txt" | awk '{print $NF}' ;;
+	h0*) grep " $1\$" "$HEVC_REF" | cut -d' ' -f1 ;;
+	*)   grep "^$1 WHOLE" "$H264_REF" | awk '{print $NF}' ;;
 	esac
 }
+
+# A present-but-incomplete reference file is the same blind spot one vector at
+# a time, and the pool is fixed, so check the whole pool before doing any work.
+for entry in "${POOL[@]}"; do
+	v=${entry%%:*}
+	[ -n "$(want_md5 "$v")" ] || {
+		echo "FATAL: no reference md5 for $v -- refusing to score it blind" >&2
+		exit 2
+	}
+done
 
 # `timeout` is not belt-and-braces here. Three concurrent clients can leave a
 # decoder stuck in D state inside v4l2_m2m_cancel_job(), where it ignores
