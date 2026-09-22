@@ -31,7 +31,49 @@ mkdir -p "$OUT"
 
 export LIBVA_DRIVER_NAME=$DRIVER
 
+# The kernel clock as this run starts, so the dmesg section at the bottom can
+# show THIS RUN's messages instead of whatever happens to be in the ring.
+KMSG_T0=$(cut -d' ' -f1 /proc/uptime 2>/dev/null || echo 0)
+
 hr() { printf '\n=== %s ===\n' "$1"; }
+
+# `dmesg | tail -20` under a heading that says "from this run" attributes
+# whatever is in the ring buffer to the run that just finished. On 2026-09-22 a
+# clean ladder printed six "frame processing timed out!" lines that predated it
+# by 26 minutes, which reads as a decode that timed out and passed anyway --
+# and a stale watchdog line is exactly what gets a board power-cycled here.
+# Filter on the kernel timestamp instead.
+#
+# Returns 1 if dmesg is unreadable and 2 if its lines carry no timestamps to
+# filter on -- both of which otherwise produce an empty section that looks
+# exactly like "the run was clean".
+kmsg_this_run() {   # extended-regex pattern
+  local buf
+  buf=$(dmesg 2>/dev/null) || return 1
+  printf '%s\n' "$buf" | grep -q '^\[[ ]*[0-9][0-9]*\.' || return 2
+  printf '%s\n' "$buf" | awk -v t0="$KMSG_T0" '
+    match($0, /^\[[ ]*[0-9]+\.[0-9]+\]/) {
+      if (substr($0, RSTART + 1, RLENGTH - 2) + 0 >= t0) print
+    }' | grep -iE "$1" | tail -20
+}
+
+# Print that section, saying which of "nothing happened" and "could not look"
+# it is rather than letting both render as blank.
+report_kmsg() {   # extended-regex pattern
+  local out rc
+  out=$(kmsg_this_run "$1"); rc=$?
+  case $rc in
+  1) echo "  (dmesg unreadable -- run as root to see kernel messages)" ;;
+  2) echo "  (dmesg carries no timestamps -- cannot scope to this run;"
+     echo "   showing the last 20 matching lines UNSCOPED, which may predate it)"
+     dmesg 2>/dev/null | grep -iE "$1" | tail -20 | sed 's/^/  /' ;;
+  *) if [ -z "$out" ]; then
+       echo "  (none since this run started, at kernel t=${KMSG_T0}s)"
+     else
+       printf '%s\n' "$out" | sed 's/^/  /'
+     fi ;;
+  esac
+}
 
 # WITHOUT THE REFERENCES THIS SCRIPT CANNOT FAIL, so it refuses to run at all.
 # It used to grep a missing file, get nothing back, and fall through to the
@@ -125,7 +167,7 @@ for v in $vectors; do
 done
 
 hr "kernel messages from this run"
-dmesg | grep -iE "cedrus|video-codec|request" | tail -20 | sed 's/^/  /'
+report_kmsg "cedrus|video-codec|request"
 
 printf '\nVA1: %d pass, %d fail\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
