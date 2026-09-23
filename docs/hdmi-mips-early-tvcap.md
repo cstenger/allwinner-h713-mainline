@@ -255,6 +255,8 @@ before U-Boot's temporary logo at `0x4e000000`, and before CPU_COMM at
 `no-map`; U-Boot clears the page before installing trace stores and places
 canaries at `+0x80` and `+0xffc`. The Linux reader verifies both canaries and
 22 patch words before reading, and reports canary changes during a watch.
+Its `--source-only` mode samples just the source markers and guards, avoiding
+CPU_COMM stage chatter during the next bounded control.
 This removes the known heap and boot-code-gap placements, though exclusive
 MIPS runtime ownership still needs a hardware check.
 

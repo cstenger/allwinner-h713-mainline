@@ -70,6 +70,8 @@ def main():
                         help="poll interval in seconds (0.002..1; default 0.01)")
     parser.add_argument("--kmsg", action="store_true",
                         help="also publish changes to the kernel log/serial console")
+    parser.add_argument("--source-only", action="store_true",
+                        help="sample only source markers and page guards to reduce poll overhead")
     args = parser.parse_args()
     if not 0 <= args.watch <= 60:
         parser.error("--watch must be between 0 and 60 seconds")
@@ -97,6 +99,18 @@ def main():
 
     def sample():
         guards = (mem.u32(MAILBOX + 0x80), mem.u32(MAILBOX + 0xffc))
+        if args.source_only:
+            callback, event, new, old, source_queue, worker, vp_init = (
+                mem.u32(MAILBOX + off) for off in
+                (0x20, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38))
+            return {
+                "guards": f"{guards[0]:08x}/{guards[1]:08x}",
+                "callback": f"{callback:04x}:{SOURCE_STAGES.get(callback, 'other')}",
+                "worker": f"{worker:04x}:{SOURCE_STAGES.get(worker, 'other')}",
+                "event": event, "new": new, "old": old,
+                "source_queue": f"{source_queue:08x}",
+                "vp_init": f"{vp_init:04x}",
+            }
         values = [mem.u32(MAILBOX + off) for off in
                   (0x00, 0x08, 0x0c, 0x10, 0x20, 0x24, 0x28, 0x2c,
                    0x30, 0x34, 0x38, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54)]
