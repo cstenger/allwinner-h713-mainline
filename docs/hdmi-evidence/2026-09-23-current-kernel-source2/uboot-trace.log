@@ -1,0 +1,56 @@
+h713_disp mips-comm-trace 0x34
+H713 disp: loading vendor artifacts from mmc 1:2
+H713 MIPS: workspace cleared (cfg@0x4be01000, tse@0x4be41000 kept)
+  mips/display.bin             -> 0x4b100000  1255696 bytes
+  mips/display_cfg.xml         -> 0x4be01000  4743 bytes
+  mips/database.TSE            -> 0x4be41000  282464 bytes
+  mips/pq_custom.TSE           -> 0x4be85f60  15016 bytes
+  mips/projecttable.TSE        -> 0x4be89a08  1384 bytes
+  mips/ProjectID_0x0034.TSE    -> 0x4be89f70  17304 bytes
+H713 disp: config/TSE windows published for MIPS
+  mips/LogoRegData.bin         -> 0x4e000000  15652 bytes
+H713 disp: project 0x34 -> prologue 3, timing 6, de 6
+  +0x1674  058c0014  00002a00 -> 00002300  shift 8 mask 0xff
+  +0x1694  058c0014  01000000 -> 00000000  shift 24 mask 0x1
+  +0x1714  058c0014  0000001e -> 0000231e  shift 8 mask 0xff
+  +0x1754  058c0014  00002a00 -> 00002300  shift 8 mask 0xff
+  +0x17b4  05800000  01e0a40c -> 01e0a404  shift 3 mask 0x3
+  +0x18c4  058c0024  00000000 -> 2f000000  shift 24 mask 0x3f
+  +0x18c4  058c0024  2f000000 -> 2f000007  shift 0 mask 0x7
+  +0x370c  0525c000  02e4059f -> 02f8059f  shift 16 mask 0xffff
+  +0x370c  0525c000  02f8059f -> 02f80550  shift 0 mask 0xffff
+  +0x371c  0525c004  00000404 -> 00001404  shift 8 mask 0xff
+  +0x371c  0525c004  00001404 -> 00001402  shift 0 mask 0xff
+  +0x377c  0525c01c  05000014 -> 0500003c  shift 0 mask 0xffff
+  +0x378c  0525c020  02d00010 -> 02d00016  shift 0 mask 0xffff
+  +0x37cc  0525c030  02d00010 -> 02d00016  shift 0 mask 0xffff
+  +0x37dc  0525c034  05000014 -> 0500003c  shift 0 mask 0xffff
+  +0x380c  0524c004  00100010 -> 05000010  shift 16 mask 0xffff
+  +0x380c  0524c004  05000010 -> 05000016  shift 0 mask 0xffff
+  +0x383c  0524c010  02e4059f -> 02f8059f  shift 16 mask 0xffff
+  +0x383c  0524c010  02f8059f -> 02f80550  shift 0 mask 0xffff
+  +0x384c  0524c014  00000000 -> 00000200  shift 8 mask 0xff
+  +0x38fc  05280088  00000011 -> 00000016  shift 0 mask 0xffff
+  +0x390c  0528008c  0000007b -> 00000000  shift 0 mask 0xffff
+H713 panel: config applied, 22 record field(s) patched, 12 guarded by record mask
+H713 logo: applied 32 record(s), 0 pulse(s), 13 delay(s), 0 resync step(s)
+H713 logo: applied 32 record(s), 1 pulse(s), 7 delay(s), 0 resync step(s)
+H713 disp: FIFO status 0x00000002; reset applied
+H713 logo: applied 56 record(s), 0 pulse(s), 0 delay(s), 0 resync step(s)
+H713 probe [ARM records applied   ] 051c0014=18000000 051c0028=00000030 05140054=40000000
+H713 MIPS: display.bin SHA-256 4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce
+H713 MIPS: firmware identity accepted
+H713 MIPS: HDCP key-load wait defeated
+H713 MIPS: readiness probe shared memory prepared (12 spinlocks, 1224 call entries, 8 share_seq, 5 lists, 256 records)
+H713 MIPS: CPU_COMM RETURN progress trace installed
+H713 MIPS: released, status=0x00000001 witness=0x00000000
+H713 MIPS: firmware execution proven (witness overwritten)
+H713 probe [MIPS ready            ] 051c0014=18000005 051c0028=1f300030 05140054=40000000
+H713 disp: LVDS PHY tail applied: 00000000 00000000 08000800 08000000
+H713 disp: sequence complete, LVDS FIFO status=0x00000000
+H713 MIPS: readiness status=0x00000001 witness=0x00000000
+H713 MIPS: CPU_COMM magic=deadbeef/deadbeef ARM=00000005 MIPS=00000005
+H713 MIPS: firmware readiness proven by MIPS READY
+H713 MIPS: application readiness proven
+H713 disp: MIPS test complete; power-cycle before another MIPS run
+=> 

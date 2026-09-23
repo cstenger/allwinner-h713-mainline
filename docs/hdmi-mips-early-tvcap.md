@@ -153,3 +153,68 @@ the projector recovers, before reusing the diagnostic modules or interpreting
 another trial.
 
 Control evidence: [`hdmi-evidence/2026-09-23-no-signal-setsource`](hdmi-evidence/2026-09-23-no-signal-setsource/).
+
+After the next physical power cycle, SSH identified the default kernel as
+`Linux 6.18.38 #1 SMP Tue Sep 22 22:33:01 PDT 2026` with normal boot arguments.
+The DT reports `cstenger,hy200-qz713df-a1` and has no
+`allwinner,keep-tvcap-on` property. This confirms the recovered target is
+running a different image from private #5. The HDMI branch now includes the
+current mainline MPEG-2 changes; its HDMI patches are renumbered 0125–0129
+after mainline 0123–0124. Diagnostic patch 0130 opts the QZ713DF_A1 DT into
+TVCAP retention for the next private FIT. All six patches applied to the latest
+mainline kernel source with zero fuzz. No new source-selection call has been
+issued on recovered #1.
+
+## Current-code source-2 control and trace overlap
+
+An updated private FIT built from current mainline plus HDMI patches 0125–0130
+booted successfully on the QZ713DF_A1 target. It retained TVCAP, kept the
+MIPS shell responsive, completed read-only `GetSource`, and passed the full
+callback-aware initialization with source selection disabled. With the GPU
+still disconnected, `SetSource(2)` reached callback marker `0x5101` and did
+not return. Serial reported a PID 1 segmentation fault and a CPU_COMM
+no-RETURN message; SSH and UART then stopped responding. After a physical
+power cycle, the installed September 22 #1 kernel booted normally. This
+control rules out a fault confined to the source-3 selection.
+
+An audit of the trace placement found a confound: the persistent marker area
+at shared `+0x40000` is inside CPU_COMM's SMM heap, whose header begins at
+`+0x2ccf0` and whose allocatable data begins around `+0x32000`. Its writes may
+corrupt IPC allocations. Actual overlap with a live allocation has not been
+measured, so the traced PID 1 failures do not prove that the source callback
+or queue is the corruptor. Earlier untraced source-3 stalls remain. Do not
+repeat a traced source switch until the mailbox is moved to a verified
+non-IPC location.
+
+Current-code evidence: [`hdmi-evidence/2026-09-23-current-kernel-source2`](hdmi-evidence/2026-09-23-current-kernel-source2/).
+
+## Isolated safe-mailbox trace build
+
+The HDMI branch now pins a separate U-Boot worktree that moves only
+`mips-comm-trace`'s mailbox to physical `0x4b100e00` (MIPS uncached alias
+`0xab100e00`). In the exact board-B `display.bin` (SHA256
+`4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce`),
+the trace code caves end at firmware `+0xac4`, this `+0xe00..+0xe54` range is
+all zero, and exception vectors begin at `+0x1000`. U-Boot checks that the
+mailbox and every original patch site are pristine before installation, then
+relocates the trace's 58 base loads and 69 stores. The Linux-side reader
+checks 22 relocated instructions and the mailbox magic before sampling.
+These checks are specific to the exact firmware hash guarded by U-Boot.
+
+The isolated U-Boot build completed. Its combined image is
+`build/uboot-ddr3/u-boot-sunxi-with-spl.bin` (952,937 bytes, SHA256
+`f4cdfc95f356c2f83df5325f3577c6e610c283dcc5610e2d0b683eb6922ba3a3`).
+The U-Boot-proper portion after the first 32 KiB is 920,169 bytes, SHA256
+`8e9ee6f19b6a906c0143d1c55c1be1474ea3b0a5c7353b6f6104cd781c7266ce`.
+The current projector U-Boot proper and SPL were backed up read-only to
+`build/uboot-proper-before-safe-trace.bin` and
+`build/spl-before-safe-trace.bin` (4 MiB and 32 KiB respectively). The device
+is still running its original boot chain and default September 22 kernel;
+this new U-Boot has not been flashed or run.
+
+The next hardware step, after approval, is to install and verify only U-Boot
+proper at its established LBA `0x49ac00`, leaving the SPL, environment, and
+installed kernel untouched. A cold boot can then install the relocated trace
+with `h713_disp mips-comm-trace 0x34`; the guarded reader must pass before a
+bounded source-selection control. If any guard fails, stop before switching
+sources.
