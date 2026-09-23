@@ -30,6 +30,7 @@ OUT=${OUT:-/var/tmp/conc}
 HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
 H264_REF=${H264_REF:-$DIR/reference-md5.txt}
 MPEG2_REF=${MPEG2_REF:-$DIR/mpeg2-reference-md5.txt}
+VP8_REF=${VP8_REF:-$DIR/vp8-reference-md5.txt}
 
 mkdir -p "$OUT"
 
@@ -39,7 +40,7 @@ mkdir -p "$OUT"
 # corruption. That is a whole session spent chasing the harness. Worse, the two
 # sides are equal when BOTH are empty, so a round in which no client wrote an
 # md5 at all would score as a pass. Fail up front instead.
-for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
+for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF" "$VP8_REF"; do
 	[ -s "$f" ] && continue
 	echo "FATAL: no reference hashes at $f" >&2
 	echo "" >&2
@@ -48,7 +49,8 @@ for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
 	echo "" >&2
 	echo "  Fix: copy tools/video/reference-md5.txt," >&2
 	echo "  tools/video/hevc-reference-md5.txt and" >&2
-	echo "  tools/video/mpeg2-reference-md5.txt from the repo to $DIR/." >&2
+	echo "  tools/video/mpeg2-reference-md5.txt and" >&2
+	echo "  tools/video/vp8-reference-md5.txt from the repo to $DIR/." >&2
 	exit 2
 done
 
@@ -60,7 +62,8 @@ done
 # each other's state, that is where it should show.
 POOL=("h01-640x480-main:h265" "v03-1280x720-main:h264" "v01-320x240-baseline:h264"
       "h03-640x480-nowpp:h265" "v02-1280x720-baseline:h264"
-      "m01-352x288-progressive:m2v" "m06-720x576-field-clean:m2v")
+      "m01-352x288-progressive:m2v" "m06-720x576-field-clean:m2v"
+      "p01-352x288-profile0:ivf" "p03-640x480-profile1:ivf")
 
 ve_irq() {
 	awk '/video-codec/ { for (i = 2; i <= 5; i++) s += $i } END { print s + 0 }' \
@@ -75,6 +78,7 @@ want_md5() {
 	# MPEG-2 specifies IDCT accuracy rather than exact reconstruction. Same line
 	# format as H.264. See mpeg2-decode-test.sh.
 	m0*) grep "^$1 WHOLE" "$MPEG2_REF" | awk '{print $NF}' ;;
+	p0*) grep "^$1 WHOLE" "$VP8_REF" | awk '{print $NF}' ;;
 	*)   grep "^$1 WHOLE" "$H264_REF" | awk '{print $NF}' ;;
 	esac
 }
@@ -93,13 +97,30 @@ done
 # decoder stuck in D state inside v4l2_m2m_cancel_job(), where it ignores
 # SIGKILL, and `wait` on such a child never returns -- the first run of this
 # harness hung for eleven minutes and had to be ended by rebooting the board.
+# VP8 goes through GStreamer, not VA-API: no VP8 patch exists in the
+# libva-v4l2-request series and vainfo lists no VP8 profile, so -hwaccel vaapi
+# would quietly decode it in software -- which reproduces the reference md5 by
+# definition and would score as a clean concurrent client that never touched the
+# engine. Mixing a gst client with ffmpeg clients is also a better concurrency
+# test than either alone: two different userspace stacks holding the same m2m
+# device at once is closer to what a real system does.
 decode() {
-	LIBVA_DRIVER_NAME=v4l2_request timeout "${CLIENT_TIMEOUT:-90}" \
-		ffmpeg -hide_banner -v error -y \
-		-hwaccel vaapi -hwaccel_output_format vaapi \
-		-i "$DIR/$1.$2" -vf 'hwdownload,format=nv12' \
-		-f rawvideo -pix_fmt nv12 pipe:1 2>"$OUT/$1.err" \
-		| md5sum | cut -d' ' -f1 > "$OUT/$1.md5"
+	case $2 in
+	ivf)
+		timeout "${CLIENT_TIMEOUT:-90}" gst-launch-1.0 -q \
+			filesrc location="$DIR/$1.$2" ! ivfparse ! v4l2slvp8dec \
+			! video/x-raw,format=NV12 ! filesink location=/dev/stdout \
+			2>"$OUT/$1.err" | md5sum | cut -d' ' -f1 > "$OUT/$1.md5"
+		;;
+	*)
+		LIBVA_DRIVER_NAME=v4l2_request timeout "${CLIENT_TIMEOUT:-90}" \
+			ffmpeg -hide_banner -v error -y \
+			-hwaccel vaapi -hwaccel_output_format vaapi \
+			-i "$DIR/$1.$2" -vf 'hwdownload,format=nv12' \
+			-f rawvideo -pix_fmt nv12 pipe:1 2>"$OUT/$1.err" \
+			| md5sum | cut -d' ' -f1 > "$OUT/$1.md5"
+		;;
+	esac
 }
 
 wd0=$(kmsg_count "frame processing timed out")

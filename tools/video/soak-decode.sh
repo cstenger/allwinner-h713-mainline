@@ -60,19 +60,21 @@ CLIENT_TIMEOUT=${CLIENT_TIMEOUT:-120}
 HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
 H264_REF=${H264_REF:-$DIR/reference-md5.txt}
 MPEG2_REF=${MPEG2_REF:-$DIR/mpeg2-reference-md5.txt}
+VP8_REF=${VP8_REF:-$DIR/vp8-reference-md5.txt}
 
 # The per-vector check further down already refuses to soak without a baseline,
 # so this one is about DIAGNOSIS, not safety: with the file absent that check
 # fires as "no reference md5 for h01-640x480-main" on top of a grep error about
 # a path, which reads like a bad vector list rather than an undeployed file.
 # Name the real cause before an 8-hour soak is abandoned for the wrong reason.
-for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
+for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF" "$VP8_REF"; do
 	[ -s "$f" ] && continue
 	echo "FATAL: no reference hashes at $f" >&2
 	echo "" >&2
 	echo "  Fix: copy tools/video/reference-md5.txt," >&2
 	echo "  tools/video/hevc-reference-md5.txt and" >&2
-	echo "  tools/video/mpeg2-reference-md5.txt from the repo to $DIR/." >&2
+	echo "  tools/video/mpeg2-reference-md5.txt and" >&2
+	echo "  tools/video/vp8-reference-md5.txt from the repo to $DIR/." >&2
 	exit 2
 done
 
@@ -87,7 +89,12 @@ H264_VECTORS="v01-320x240-baseline v02-1280x720-baseline v03-1280x720-main
 # without exercising anything m02 does not.
 MPEG2_VECTORS="m01-352x288-progressive m02-720x576-progressive
 	       m04-720x576-interlaced m06-720x576-field-clean"
-VECTORS=${VECTORS:-"$HEVC_VECTORS $H264_VECTORS $MPEG2_VECTORS"}
+# VP8. All four profiles, because the profile selects the reconstruction and
+# loop filters in silicon and a soak that only exercises profile 0 leaves three
+# filter combinations unslept-on. p02 (720p) is the size rung.
+VP8_VECTORS="p01-352x288-profile0 p02-1280x720-profile0 p03-640x480-profile1
+	     p04-640x480-profile2 p05-640x480-profile3 p06-640x480-partitions"
+VECTORS=${VECTORS:-"$HEVC_VECTORS $H264_VECTORS $MPEG2_VECTORS $VP8_VECTORS"}
 
 # Sum the per-CPU columns of the video-codec interrupt line. A rise of exactly
 # one per frame is positive proof the VE did the work; a FLAT counter across an
@@ -128,6 +135,9 @@ want_md5() {
 	# MPEG-2 specifies IDCT accuracy, not exact reconstruction, so no software
 	# reference can be bit-exact. See mpeg2-decode-test.sh.
 	m0*) grep "^$1 WHOLE" "$MPEG2_REF" | awk '{print $NF}' ;;
+	# VP8 scores against a SOFTWARE reference, like H.264 and HEVC: the codec
+	# defines exact reconstruction. Only MPEG-2 needs a hardware baseline.
+	p0*) grep "^$1 WHOLE" "$VP8_REF" | awk '{print $NF}' ;;
 	*)   grep "^$1 WHOLE" "$H264_REF" | awk '{print $NF}' ;;
 	esac
 }
@@ -136,6 +146,7 @@ stream_of() {
 	case $1 in
 	h0*) echo "$DIR/$1.h265" ;;
 	m0*) echo "$DIR/$1.m2v" ;;
+	p0*) echo "$DIR/$1.ivf" ;;
 	*)   echo "$DIR/$1.h264" ;;
 	esac
 }
@@ -145,11 +156,27 @@ stream_of() {
 # falls back to software when hwaccel init fails, and software decode
 # reproduces the reference md5 by definition, so the run would report PASS
 # having never touched the VE.
+# VP8 CANNOT GO THROUGH THE VA-API PATH and that is not an oversight: there is
+# no VP8 patch in the libva-v4l2-request series and vainfo lists no VP8 profile.
+# Feeding a .ivf to -hwaccel vaapi silently decodes it in SOFTWARE, which
+# reproduces the reference md5 by definition -- a soak that "passed" for hours
+# without touching the engine. The VE interrupt accounting below would have
+# caught it, but only after the fact. Route VP8 through GStreamer's v4l2codecs
+# elements instead, which talk straight to the kernel.
 decode_md5() {
-	LIBVA_DRIVER_NAME=v4l2_request ffmpeg -hide_banner -v error -y \
-		-hwaccel vaapi -hwaccel_output_format vaapi \
-		-i "$1" -vf 'hwdownload,format=nv12' \
-		-f rawvideo -pix_fmt nv12 pipe:1 2>"$ERR" | md5sum | cut -d' ' -f1
+	case $(basename "$1") in
+	p0*)
+		gst-launch-1.0 -q filesrc location="$1" ! ivfparse ! v4l2slvp8dec \
+			! video/x-raw,format=NV12 ! filesink location=/dev/stdout \
+			2>"$ERR" | md5sum | cut -d' ' -f1
+		;;
+	*)
+		LIBVA_DRIVER_NAME=v4l2_request ffmpeg -hide_banner -v error -y \
+			-hwaccel vaapi -hwaccel_output_format vaapi \
+			-i "$1" -vf 'hwdownload,format=nv12' \
+			-f rawvideo -pix_fmt nv12 pipe:1 2>"$ERR" | md5sum | cut -d' ' -f1
+		;;
+	esac
 }
 
 ERR=$(mktemp)
@@ -167,12 +194,22 @@ declare -A ve_expect     # vector -> frames the engine reports for it solo
 # and `wait` on such a child never returns.
 decode_one() {
 	local v=$1 out=$2
-	LIBVA_DRIVER_NAME=v4l2_request timeout "$CLIENT_TIMEOUT" \
-		ffmpeg -hide_banner -v error -y \
-		-hwaccel vaapi -hwaccel_output_format vaapi \
-		-i "$(stream_of "$v")" -vf 'hwdownload,format=nv12' \
-		-f rawvideo -pix_fmt nv12 pipe:1 2>/dev/null |
-		md5sum | cut -d' ' -f1 > "$out"
+	case $v in
+	p0*)
+		timeout "$CLIENT_TIMEOUT" gst-launch-1.0 -q \
+			filesrc location="$(stream_of "$v")" ! ivfparse ! v4l2slvp8dec \
+			! video/x-raw,format=NV12 ! filesink location=/dev/stdout \
+			2>/dev/null | md5sum | cut -d' ' -f1 > "$out"
+		;;
+	*)
+		LIBVA_DRIVER_NAME=v4l2_request timeout "$CLIENT_TIMEOUT" \
+			ffmpeg -hide_banner -v error -y \
+			-hwaccel vaapi -hwaccel_output_format vaapi \
+			-i "$(stream_of "$v")" -vf 'hwdownload,format=nv12' \
+			-f rawvideo -pix_fmt nv12 pipe:1 2>/dev/null |
+			md5sum | cut -d' ' -f1 > "$out"
+		;;
+	esac
 }
 
 calibrate() {
