@@ -1,0 +1,174 @@
+[hdmird] cpu_comm opened, cpu_id=0 slave_ready=0
+[hdmird] shared mem mapped at 0xffffa7ec0000 (5242880 bytes)
+[hdmird] cannot open /lib/firmware/hdcp_v22.bin: No such file or directory
+[hdmird] registered callback MipsHalCallback_OnNewSPDPacket (id=0xf0b55406)
+[hdmird] registered callback MipsHalCallback_SignalChange (id=0x3e7fbc46)
+[hdmird] registered callback MipsHalCallback_OnNewGCPacket (id=0x1727f0d0)
+[hdmird] registered callback MipsHalCallback_HdmiHotPlugByPortHandler (id=0x38d780e2)
+[hdmird] registered callback MipsHalCallback_OnNewAVIPacket (id=0xa3bf5110)
+[hdmird] registered callback MipsHalCallback_HdmiSignalValidCallback (id=0x819cd918)
+[hdmird] registered callback MipsHalCallback_OnNewACRPacket (id=0x12601a68)
+[hdmird] registered callback MipsHalCallback_DisplayLatencyChange (id=0xad9f0a86)
+[hdmird] registered callback MipsHalCallback_OnNewAudioInfoPacket (id=0xff9b970b)
+[hdmird] registered callback MipsHalCallback_OnNewVSIPacket (id=0xf87faf28)
+[hdmird] === stock init sequence ===
+[hdmird] THal_Vp_Init(0x0, 0x0, 0x4e700000) OK in 74ms result=0x1
+[hdmird] THal_Vp_RegisterSignalChangeCallback(0xb) OK in 58ms result=0x0
+[hdmird] THal_Vp_SetHDMIHotPlugByPortCallback(0x1) OK in 24ms result=0x0
+[hdmird] Thal_Vp_SetBacklightLevel(0x64) OK in 24ms result=0x1
+[hdmird] THal_Vp_SetBacklightWorkMode(0x0) OK in 24ms result=0x1
+[hdmird] THal_Vp_SetTNR(0x2) OK in 27ms result=0x0
+[hdmird] THal_Vp_SetSNR(0x1) OK in 27ms result=0x0
+[hdmird] THal_Vp_SetDCI(0x2) OK in 9ms result=0x0
+[hdmird] THal_Vp_SetBlackExtension(0x1) OK in 27ms result=0x0
+[hdmird] THal_Vp_SetPictureMode(0x1) OK in 9ms result=0x0
+[hdmird] THal_Vp_SetVideoRange(0x0) OK in 9ms result=0x0
+[hdmird] wce_set_window src=(0,1920,0,1080) dst=(0,1920,0,1080) aspect=2
+[hdmird] THal_Vp_Wce_SetWindow(0x4e337000, 0x4e337020, 0x4e337040) OK in 9ms result=0x1
+[hdmird] THal_Vp_CvbsSetPedestalMode(0x1) OK in 9ms result=0x0
+[hdmird] THal_Vp_HDMI_SetPortMap(0x1, 0x0) OK in 9ms result=0x0
+[hdmird] THal_Vp_HDMI_SetPortMap(0x2, 0x1) OK in 10ms result=0x0
+[hdmird] THal_Vp_HDMI_SetPortMap(0x3, 0x2) OK in 9ms result=0x0
+[hdmird] wce_set_window src=(0,1920,0,1080) dst=(0,1920,0,1080) aspect=2
+[hdmird] THal_Vp_Wce_SetWindow(0x4e337000, 0x4e337020, 0x4e337040) OK in 9ms result=0x1
+[hdmird] THal_Vp_DisableBlackScreen() OK in 9ms result=0x0
+[hdmird] THal_Vp_TurnOnARCAudioPath(0x1) OK in 9ms result=0x0
+[hdmird] THal_Vp_SwitchARCTXPath(0x0) OK in 9ms result=0x0
+[hdmird] WARNING: skipping SetHDCP22Key (no key)
+[hdmird] THal_Vp_HDMI_SetHPDTimeInterval(0xc8) OK in 9ms result=0x0
+[hdmird] === init sequence complete ===
+[hdmird] receiver started (cpu_comm callback dispatch)
+[hdmird] init+source done, exiting (--no-socket)
+DAEMON_RC=0
+{"verified_patch_words": 34, "mailbox": "4e341000"}
+{"seconds": 0.0, "tick": 278470, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.101, "tick": 278571, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.202, "tick": 278672, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.303, "tick": 278773, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.404, "tick": 278874, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.504, "tick": 278975, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.605, "tick": 279075, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.705, "tick": 279176, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.806, "tick": 279276, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.907, "tick": 279377, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.007, "tick": 279477, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.108, "tick": 279578, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.208, "tick": 279679, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.309, "tick": 279779, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.41, "tick": 279880, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.51, "tick": 279980, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.611, "tick": 280081, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.712, "tick": 280182, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.812, "tick": 280283, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.913, "tick": 280383, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.014, "tick": 280484, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.114, "tick": 280585, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.215, "tick": 280685, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.317, "tick": 280787, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.418, "tick": 280888, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.519, "tick": 280989, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.619, "tick": 281090, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.72, "tick": 281190, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.821, "tick": 281291, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.922, "tick": 281393, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.001, "tick": 281471, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+[    7.831623] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    7.839095] bluetooth_set_power: end_block=0
+[    7.864698] Bluetooth: HCI UART driver ver 2.3
+[    7.869218] Bluetooth: HCI UART protocol H4 registered
+[    7.988230] get_txpwr_max:txpwr_max:18
+[    7.992433] get_txpwr_max:txpwr_max:18
+[    7.997148] get_txpwr_max:txpwr_max:18
+[    8.001289] change_if: 2 to 3, 8, 2
+[    8.001319] get_txpwr_max:txpwr_max:18
+[    8.009818] get_txpwr_max:txpwr_max:18
+[    8.524904] get_txpwr_max:txpwr_max:18
+[    8.530349] chan.flags 0
+[    8.862451] aicwf_sdio mmc1:6721:1 wlan0: AP started: ch=0, bcmc_idx=32 channel=2437 bw=2
+[    9.165452] Bluetooth: MGMT ver 1.23
+[   10.993700] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[   11.021646] Bluetooth: MGMT ver 1.23
+[  164.470509] h713-hdmi-power: domain 1 power event 2
+[  164.475469] h713-hdmi-power: domain 1 power event 3
+[  164.480406] h713-hdmi-power: domain 1 resumed
+[  164.484839] h713-hdmi-power: domain 2 resumed
+[  164.489218] h713-hdmi-power: 2 domains and 4 receiver clocks held on; no receiver MMIO
+[  164.511910] h713-edid-clock-hold h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[  164.539789] hy310-cpu-comm 3003000.cpu-comm: shared memory: 0x4e300000 size 0x500000
+[  164.547688] cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff8000819c5000 size=0x500000
+[  164.556591] cpu_comm: HW mapped \xe2\x80\x94 MIPS ctrl @ 000000006b834ecb, msgbox @ 0000000057d3fa8b (version 0x00020000, tx fifo 0, rx fifo 0)
+[  164.568682] cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor running
+[  164.578254] cpu_comm: adopting the live shared region -- not reinitialising it
+[  164.585475] cpu_comm: wrote ShMemAddr=0x4e300000 to MIPS share regs
+[  164.592123] cpu_comm: /dev/cpu_comm_fd registered (major=242)
+[  164.598111] cpu_comm: MIPS elog BEFORE: mode=0 en2=0 wp2=0
+[  164.603628] cpu_comm: MIPS elog staying on Mode 1 (ring buffer) (2MB buffer)
+[  164.610709] cpu_comm: InitCommSeqMem(0): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[  164.618286] cpu_comm: InitCommSeqMem(1): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[  164.625854] cpu_comm: adopted shared memory: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[  164.634722] cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+[  164.642145] cpu_comm: msgbox RX by hrtimer poll (250 us busy / 4 ms idle) (IRQ 331 available, not requested)
+[  164.651982] cpu_comm: CPU ARM app ready
+[  164.655820] cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[  164.663647] cpu_comm: MIPS app-ready assumed (MIPS READY seen)
+[  165.196584] cpu_comm: POST-WAIT: ARM=0x5 MIPS=0x5
+[  165.201423] cpu_comm: auto-registered 18/18 MIPS VP routes
+[  165.206963] cpu_comm: channel row 0 live: chan=0x0000 pid=0x8b8f275c key=0xb8f275c0
+[  165.214632] cpu_comm: addressing CALLs to channel row 0 (chan=0x0 pid=0x8b8f275c)
+[  165.222152] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[  165.227033] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[  165.232647] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[  165.238920] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[  187.176459] cpu_comm: MIPS callback channel pid=487 id=0x1e71
+[  187.233950] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.241513] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  187.242189] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  187.253063] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  187.261549] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  187.270367] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  187.278582] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  187.283843] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  187.292141] cpu_comm: IPC[handle_return] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  187.300618] cpu_comm: IPC[dispatch] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  187.308681] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  187.358918] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.366471] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  187.367312] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  187.378006] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  187.386461] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  187.395257] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  187.403448] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  187.408685] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  187.416983] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  187.467160] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.474705] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  187.475425] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  187.486270] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  187.491556] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  187.541758] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.549305] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  187.550076] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  187.560833] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  187.566095] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  187.616266] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.623817] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  187.625138] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  187.635353] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  187.640629] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  187.690810] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.768400] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.846138] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.905619] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  187.983398] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.042885] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.102149] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.161385] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.220628] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.233891] cpu_comm: userspace_deliver comp=0x38d780e2 ctx_count=1
+[  188.280134] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.340777] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.400365] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.460125] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.519377] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.578881] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  188.638308] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)

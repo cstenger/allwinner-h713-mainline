@@ -1,0 +1,381 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] soc: sunxi: deliver CPU_COMM callbacks to userspace
+
+MIPS HDMI state changes arrive as CPU_COMM CALLs to routines registered by
+userspace.  Register the missing incoming channel, expose per-fd read/poll
+queues, and copy incoming CALL messages into those queues before normal
+kernel dispatch.  Initialize the channel metadata that the dispatch path
+validates so a callback cannot stall the MIPS caller.
+
+This is needed by hy310-hdmird to receive SignalChange and hot-plug events.
+
+---
+--- a/drivers/soc/sunxi/cpu_comm/Makefile
++++ b/drivers/soc/sunxi/cpu_comm/Makefile
+@@ -1,3 +1,3 @@
+ obj-$(CONFIG_HY310_CPU_COMM) += hy310-cpu-comm.o
+-hy310-cpu-comm-objs := cpu_comm_dev.o cpu_comm_mem.o cpu_comm_hw.o cpu_comm_proto.o cpu_comm_fifo.o cpu_comm_channel.o cpu_comm_rpc.o
++hy310-cpu-comm-objs := cpu_comm_dev.o cpu_comm_mem.o cpu_comm_hw.o cpu_comm_proto.o cpu_comm_fifo.o cpu_comm_channel.o cpu_comm_rpc.o cpu_comm_user.o
+ ccflags-y := -DCONFIG_ARM_CPU_COMM
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
+@@ -701,6 +701,16 @@
+ void comm_CallWorkAction(struct work_struct *work);
+ void comm_WorkAction(struct work_struct *work);
+ 
++/* cpu_comm_user.c — per-fd delivery of MIPS-to-ARM callbacks */
++struct poll_table_struct;
++int cpu_comm_user_open(struct inode *inode, struct file *file);
++void cpu_comm_user_release(struct file *file);
++ssize_t cpu_comm_user_read(struct file *file, char __user *buf,
++			   size_t count, loff_t *ppos);
++unsigned int cpu_comm_user_poll(struct file *file,
++				struct poll_table_struct *wait);
++void cpu_comm_userspace_deliver(const void *msg);
++
+ /* cpu_comm_dev.c — kernel interface */
+ int  cpu_comm_init(int mode);
+ void cpu_comm_cleanup(void);
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
+@@ -51,12 +51,13 @@
+ int cpu_comm_open(struct inode *inode, struct file *file)
+ {
+ 	pr_debug("cpu_comm: open by pid %d\n", current->pid);
+-	return 0;
++	return cpu_comm_user_open(inode, file);
+ }
+ 
+ static int cpu_comm_release(struct inode *inode, struct file *file)
+ {
+ 	pr_debug("cpu_comm: close by pid %d\n", current->pid);
++	cpu_comm_user_release(file);
+ 	/* Clean up routines for this PID */
+ 	RemovePidRoutines(current->pid);
+ 	return 0;
+@@ -222,15 +223,51 @@
+ 		break;
+ 	}
+ 
+-	case IOCTL_INSTALL_RT:
++	case IOCTL_INSTALL_RT: {
++		unsigned long existing = 0;
++		u32 channel_id;
++
+ 		if (copy_from_user(buf, (void __user *)arg, 96))
+ 			return -EFAULT;
+ 		ret = AddInRoutine(buf);
+ 		if (ret)
+ 			return -EFAULT;
++
++		/* Stock creates the dispatch channel together with a routine. */
++		channel_id = (buf[0] & 0xf) | (buf[1] << 4);
++		Comm_QueryChannel((u8 *)pcpu_comm_dev + 0x30,
++				  channel_id, &existing);
++		if (!existing) {
++			ret = Comm_AddNewChannel((u8 *)pcpu_comm_dev + 0x30,
++					 (u16)buf[0], buf[1]);
++			if (ret)
++				return ret;
++			buf[22] = channel_id;
++		}
++
++		/* An ARM callback is addressed by the MIPS sender id plus
++		 * the userspace pid.  Add that channel as well so the firmware's
++		 * MIPS-to-ARM CALL is accepted and acknowledged. */
++		if (((buf[0] >> 16) & 0xffff) == CPU_ID_ARM) {
++			u32 mips_channel = CPU_ID_MIPS | (buf[1] << 4);
++
++			existing = 0;
++			Comm_QueryChannel((u8 *)pcpu_comm_dev + 0x30,
++					  mips_channel, &existing);
++			if (!existing) {
++				ret = Comm_AddNewChannel((u8 *)pcpu_comm_dev + 0x30,
++						 CPU_ID_MIPS, buf[1]);
++				if (ret)
++					return ret;
++				pr_info("cpu_comm: MIPS callback channel pid=%u id=0x%x\n",
++					buf[1], mips_channel);
++			}
++		}
++
+ 		if (copy_to_user((void __user *)arg, buf, 96))
+ 			return -EFAULT;
+ 		break;
++	}
+ 
+ 	case IOCTL_UNINSTALL_RT:
+ 		if (copy_from_user(buf, (void __user *)arg, 96))
+@@ -279,6 +316,8 @@
+ 	.release	= cpu_comm_release,
+ 	.unlocked_ioctl	= cpu_comm_ioctl,
+ 	.mmap		= cpu_comm_mmap,
++	.read		= cpu_comm_user_read,
++	.poll		= cpu_comm_user_poll,
+ };
+ 
+ /* ══════════════════════════════════════════════════════════════
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
+@@ -964,6 +964,11 @@
+ 		 *   >4: enqueue via Comm_Add2Call2WQ (high priority / workqueue)
+ 		 */
+ 		u16 entry_cmd = *(u16 *)(entry_base);
++
++		/* Copy callbacks to every open userspace receiver before the
++		 * stock channel dispatch path takes ownership of the slot. */
++		cpu_comm_userspace_deliver((const void *)entry_base);
++
+ 		if (entry_cmd <= 4)
+ 			Comm_Add2NewCallFifo(
+ 				(void *)((u8 *)pcpu_comm_dev + 48),
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c
+@@ -88,7 +88,10 @@
+ 		u32 *slot = &pool[9 + i * CHANNEL_SLOT_DWORDS];
+ 		if (slot[0] == 0) {
+ 			slot[0] = channel_id;
+-			slot[1] = 0; /* session count */
++			slot[1] = 0;          /* session count */
++			slot[2] = cpu;        /* destination pid/cpu */
++			slot[3] = channel_id; /* validation copy */
++			slot[4] = 0;          /* custom semaphore count */
+ 			pool[0]++;   /* increment active count */
+ 			pr_debug("cpu_comm: channel added: comp=%u cpu=%u id=0x%x\n",
+ 				 comp_id, cpu, channel_id);
+--- /dev/null
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_user.c
+@@ -0,0 +1,233 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * cpu_comm_user.c — Userspace delivery of MIPS→ARM CALL messages
++ *
++ * Adds a /dev/cpu_comm read()/poll() interface so that userspace
++ * processes (e.g. hy310-hdmird) can observe incoming MIPS callbacks
++ * (MipsHalCallback_SignalChange, HotPlug, etc.) that were previously
++ * dropped because IOCTL_INSTALL_RT only registers a name+pid without
++ * a kernel callback function pointer.
++ *
++ * Architecture:
++ *   1. Each open() of /dev/cpu_comm allocates a per-fd context with
++ *      its own ring buffer of incoming messages and a wait_queue.
++ *   2. command_action() (cpu_comm_proto.c) calls
++ *      cpu_comm_userspace_deliver() before the kernel dispatch
++ *      and pushes a copy of the 104-byte message to every open fd's
++ *      queue, then wakes any blocked readers.
++ *   3. read() returns one full COMM_MSG_SIZE (104B) message per call.
++ *      poll() reports POLLIN when the queue is non-empty.
++ *   4. Backpressure: the queue is bounded (32 entries); oldest is
++ *      dropped on overflow with a rate-limited warning.
++ *
++ * The kernel still synchronously ACKs MIPS (SendComm2CPUEx) so that
++ * MIPS does not stall waiting for a response. This delivery channel
++ * is observation-only — userspace does not write a response back here.
++ *
++ * 2026-05-06 CC-night: built to unblock LVDS-source-switch flow that
++ * needs SignalChange(state=3) to trigger the post-signal call sequence
++ * (sessions 35-45 in stock_rpc_HDMI_SWITCHED.txt).
++ */
++
++#include <linux/module.h>
++#include <linux/fs.h>
++#include <linux/poll.h>
++#include <linux/slab.h>
++#include <linux/spinlock.h>
++#include <linux/wait.h>
++#include <linux/sched.h>
++#include <linux/uaccess.h>
++#include <linux/list.h>
++#include "cpu_comm.h"
++
++#define USER_QUEUE_MAX	32
++
++struct cpu_comm_msg_node {
++	struct list_head link;
++	u8 msg[COMM_MSG_SIZE];
++};
++
++struct cpu_comm_user_ctx {
++	struct list_head global_link;	/* link in cpu_comm_user_ctxs */
++	struct list_head queue;		/* of struct cpu_comm_msg_node */
++	int		 queue_count;
++	spinlock_t	 lock;
++	wait_queue_head_t waitq;
++	pid_t		 owner_pid;
++	u64		 dropped;	/* overflow counter */
++};
++
++static LIST_HEAD(cpu_comm_user_ctxs);
++static DEFINE_SPINLOCK(cpu_comm_user_ctxs_lock);
++
++/* ── Public API ─────────────────────────────────────────── */
++
++/*
++ * cpu_comm_userspace_deliver — push a copy of a 104-byte CALL message
++ * to every open fd's queue. Called from the msgbox polling path and must
++ * remain non-blocking.
++ *
++ * @msg: pointer to the 104-byte message (caller's local copy is fine)
++ */
++void cpu_comm_userspace_deliver(const void *msg)
++{
++	struct cpu_comm_user_ctx *ctx;
++	unsigned long flags;
++	int ctx_count = 0;
++	u32 comp_id;
++
++	if (!msg)
++		return;
++
++	comp_id = *(const u32 *)((const u8 *)msg + 40);
++
++	spin_lock_irqsave(&cpu_comm_user_ctxs_lock, flags);
++	list_for_each_entry(ctx, &cpu_comm_user_ctxs, global_link)
++		ctx_count++;
++	pr_info_ratelimited("cpu_comm: userspace callback comp=0x%08x receivers=%d\n",
++			    comp_id, ctx_count);
++	list_for_each_entry(ctx, &cpu_comm_user_ctxs, global_link) {
++		struct cpu_comm_msg_node *node;
++		unsigned long ctx_flags;
++
++		node = kmalloc(sizeof(*node), GFP_ATOMIC);
++		if (!node) {
++			ctx->dropped++;
++			continue;
++		}
++		memcpy(node->msg, msg, COMM_MSG_SIZE);
++
++		spin_lock_irqsave(&ctx->lock, ctx_flags);
++		if (ctx->queue_count >= USER_QUEUE_MAX) {
++			/* Drop oldest entry to make room */
++			struct cpu_comm_msg_node *old = list_first_entry(
++				&ctx->queue, struct cpu_comm_msg_node, link);
++			list_del(&old->link);
++			ctx->queue_count--;
++			ctx->dropped++;
++			kfree(old);
++		}
++		list_add_tail(&node->link, &ctx->queue);
++		ctx->queue_count++;
++		spin_unlock_irqrestore(&ctx->lock, ctx_flags);
++
++		wake_up_interruptible(&ctx->waitq);
++	}
++	spin_unlock_irqrestore(&cpu_comm_user_ctxs_lock, flags);
++}
++EXPORT_SYMBOL(cpu_comm_userspace_deliver);
++
++/* ── file_operations hooks ─────────────────────────────── */
++
++int cpu_comm_user_open(struct inode *inode, struct file *file)
++{
++	struct cpu_comm_user_ctx *ctx;
++	unsigned long flags;
++
++	(void)inode;
++
++	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
++	if (!ctx)
++		return -ENOMEM;
++
++	INIT_LIST_HEAD(&ctx->queue);
++	INIT_LIST_HEAD(&ctx->global_link);
++	spin_lock_init(&ctx->lock);
++	init_waitqueue_head(&ctx->waitq);
++	ctx->owner_pid = current->pid;
++
++	spin_lock_irqsave(&cpu_comm_user_ctxs_lock, flags);
++	list_add_tail(&ctx->global_link, &cpu_comm_user_ctxs);
++	spin_unlock_irqrestore(&cpu_comm_user_ctxs_lock, flags);
++
++	file->private_data = ctx;
++	return 0;
++}
++
++void cpu_comm_user_release(struct file *file)
++{
++	struct cpu_comm_user_ctx *ctx = file->private_data;
++	struct cpu_comm_msg_node *node, *tmp;
++	unsigned long flags;
++
++	if (!ctx)
++		return;
++
++	spin_lock_irqsave(&cpu_comm_user_ctxs_lock, flags);
++	list_del(&ctx->global_link);
++	spin_unlock_irqrestore(&cpu_comm_user_ctxs_lock, flags);
++
++	spin_lock_irqsave(&ctx->lock, flags);
++	list_for_each_entry_safe(node, tmp, &ctx->queue, link) {
++		list_del(&node->link);
++		kfree(node);
++	}
++	ctx->queue_count = 0;
++	spin_unlock_irqrestore(&ctx->lock, flags);
++
++	kfree(ctx);
++	file->private_data = NULL;
++}
++
++ssize_t cpu_comm_user_read(struct file *file, char __user *buf,
++			   size_t count, loff_t *ppos)
++{
++	struct cpu_comm_user_ctx *ctx = file->private_data;
++	struct cpu_comm_msg_node *node;
++	unsigned long flags;
++	int rc;
++
++	(void)ppos;
++
++	if (!ctx)
++		return -EBADF;
++	if (count < COMM_MSG_SIZE)
++		return -EINVAL;
++
++	for (;;) {
++		spin_lock_irqsave(&ctx->lock, flags);
++		if (!list_empty(&ctx->queue)) {
++			node = list_first_entry(&ctx->queue,
++						struct cpu_comm_msg_node, link);
++			list_del(&node->link);
++			ctx->queue_count--;
++			spin_unlock_irqrestore(&ctx->lock, flags);
++			break;
++		}
++		spin_unlock_irqrestore(&ctx->lock, flags);
++
++		if (file->f_flags & O_NONBLOCK)
++			return -EAGAIN;
++
++		rc = wait_event_interruptible(ctx->waitq,
++					      !list_empty(&ctx->queue));
++		if (rc)
++			return rc;
++	}
++
++	if (copy_to_user(buf, node->msg, COMM_MSG_SIZE)) {
++		kfree(node);
++		return -EFAULT;
++	}
++	kfree(node);
++	return COMM_MSG_SIZE;
++}
++
++unsigned int cpu_comm_user_poll(struct file *file, poll_table *wait)
++{
++	struct cpu_comm_user_ctx *ctx = file->private_data;
++	unsigned int mask = 0;
++	unsigned long flags;
++
++	if (!ctx)
++		return POLLERR;
++
++	poll_wait(file, &ctx->waitq, wait);
++
++	spin_lock_irqsave(&ctx->lock, flags);
++	if (!list_empty(&ctx->queue))
++		mask |= POLLIN | POLLRDNORM;
++	spin_unlock_irqrestore(&ctx->lock, flags);
++
++	return mask;
++}

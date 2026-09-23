@@ -198,3 +198,36 @@ three stock HDMI port maps, and the HPD interval completed under the witness.
 A live `SetSource(3)` did not return and was followed by loss of SSH, ping, and
 serial. See [the retained-TVCAP record](hdmi-mips-early-tvcap.md). Do not repeat
 live SetSource using only the minimal init sequence.
+
+## Callback delivery and full SetSource boundary, 2026-09-22
+
+Patch 0127 supplies CPU_COMM callback `read`/`poll` queues and the missing
+MIPS-to-ARM dispatch channel. The full stock-equivalent pre-source daemon
+sequence completed under the witness, and the kernel delivered a hot-plug
+callback into the daemon's queue. A live callback-aware `SetSource(3)` still
+blocked before returning or emitting `SignalChange`, then the board lost SSH,
+ping, and serial. The independently bounded SCP EDID trial restored cleanly.
+See [the updated retained-TVCAP record](hdmi-mips-early-tvcap.md).
+
+The next isolated test is the successful peer driver's Synopsys controller
+sequence, now packaged in `tools/hdmi/h713-thdmirx-init.c`. It touches only
+`0x050c0000`; wrapper and CPUS HPD access stay with MIPS/SCP. The board needs a
+physical power cycle before that module can be tested.
+
+## THDMIRX controller gate, 2026-09-22
+
+After the power cycle, the opt-in controller module applied the peer sequence
+and changed `GLOBAL_SWENABLE` from zero to `0x00203901`. Its timer, CMU, PHY,
+deframer, and CED settings latched. The MIPS witness and shell remained healthy,
+and the complete callback-capable initialization passed without source
+selection. This establishes the THDMIRX sequence as stable under the retained
+TVCAP setup.
+
+The first follow-up source trial was mistimed: host-side orchestration started
+the daemon near the end of the 30-second HPD assertion, and the SCP helper
+restored HPD before the daemon reached `SetSource(3)`. The later call again did
+not return and the board stopped, but that result does not test a sustained
+live input. `tools/hdmi/run-detection-trial.py --run-hdmird --seconds 30` now
+starts the daemon automatically as soon as the GPU output becomes enabled.
+Use that synchronized path after the next cold boot. See
+[the controller evidence](hdmi-evidence/2026-09-22-thdmirx-init/README.md).

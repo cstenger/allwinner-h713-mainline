@@ -59,3 +59,50 @@ should reproduce the full stock HDMI initialization with callback registration
 or isolate the remaining prerequisite offline first.
 
 Evidence: [`hdmi-evidence/2026-09-22-early-tvcap`](hdmi-evidence/2026-09-22-early-tvcap/).
+
+## Callback-capable full initialization follow-up
+
+Patch 0127 adds the missing CPU_COMM userspace callback path: per-open-file
+104-byte queues with `read`/`poll`, MIPS-to-ARM channel registration, and the
+channel metadata required by the normal dispatcher. The updated module built
+against kernel #5 and loaded without reinitializing shared memory.
+
+With source selection disabled, `hy310-hdmird` registered all ten callback
+routines and completed the full pre-source stock sequence. Every RPC returned,
+including `Vp_Init`, callback registration, picture defaults, both WCE window
+calls, CVBS pedestal, all three port maps, black-screen disable, ARC setup, and
+HPD timing. The driver logged delivery of a hot-plug callback (`comp_id
+0x38d780e2`) to the daemon's open file. The witness then advanced for another
+three seconds with no exception.
+
+A live 30-second EDID/HPD trial again made the GPU connected and enabled with
+the exact 128-byte EDID. The callback-aware daemon repeated the full init and
+started its receiver thread. `SetSource(3)` then began but did not return; no
+`SignalChange` callback arrived. SSH, ping, and serial all stopped responding.
+The SCP trial independently completed with peripheral and SRAM restoration
+verified and zero EDID mismatches. Callback delivery is therefore necessary,
+but it is not the prerequisite blocking `SetSource`.
+
+The strongest remaining difference from the peer system is controller setup.
+The working peer driver programs the Synopsys block at `0x050c0000` before the
+same daemon sequence: timer base, CMU margins, descrambler, CED, deframer,
+PHY width, interrupt mask, and `GLOBAL_SWENABLE`. Our earlier experiment read
+`GLOBAL_SWENABLE=0`, and the SCP EDID path does not program this block. The
+opt-in `tools/hdmi/h713-thdmirx-init.c` module now reproduces only that sequence.
+It does not access the unsafe `0x068...` wrapper or `0x07091014` HPD register.
+It compiled as SHA256
+`b1e5c4c62c192dca89ed381b35416ba1a9bf744f053e901a81f24bd86da3e9dc`
+and passed its first hardware stability test after a cold boot. It changed
+`GLOBAL_SWENABLE` from `0x00000000` to `0x00203901`; the timer, CMU, PHY,
+deframer, and CED values latched, while the five-second witness and MIPS shell
+remained healthy. The full no-source daemon initialization also passed.
+
+The subsequent live attempt did not provide a valid SetSource comparison:
+host-side orchestration consumed almost all of the 30-second HPD interval, and
+the SCP helper restored HPD before the daemon reached `SetSource(3)`. The call
+then stopped the board as before. The synchronized trial harness now starts the
+daemon automatically when the source connector becomes enabled, so the next
+cold-boot attempt will issue SetSource near the beginning of the HPD window.
+
+Evidence: [`hdmi-evidence/2026-09-22-callback-setsource`](hdmi-evidence/2026-09-22-callback-setsource/).
+Controller evidence: [`hdmi-evidence/2026-09-22-thdmirx-init`](hdmi-evidence/2026-09-22-thdmirx-init/).

@@ -1,0 +1,23 @@
+Before trial:
+status disconnected
+enabled disabled
+
+During 30-second SCP EDID/HPD assertion:
+status connected
+enabled enabled
+modes 640x480, 640x480
+edid_bytes 128
+edid_sha256 0812e13a13f9d6f84aca26f136c1a55f5bcb03fb8f24a93c107f3c5f96f89290
+
+SCP trial completion:
+EDID_TRIAL_DONE
+peripheral_restored=Y
+sram_restored=Y
+edid_mismatch=0
+
+After SetSource timeout:
+ping: 0/2 replies
+ssh: connection timed out
+serial: 0 bytes after newline and 2-second read
+source status: disconnected
+source enabled: disabled
