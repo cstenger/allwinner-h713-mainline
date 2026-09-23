@@ -13,23 +13,23 @@ import time
 
 
 PATCHED_WORDS = (
-    (0x4b1008e0, 0x3c18ab10),
-    (0x4b1008e8, 0xaf190e20),
+    (0x4b1008e0, 0x3c18ad98),
+    (0x4b1008e8, 0xaf190020),
     (0x4b1008f4, 0x8cb90004),
     (0x4b1008fc, 0x0ac57118),
     (0x4b107580, 0x0ec40238),
-    (0x4b100920, 0x3c18ab10),
-    (0x4b10092c, 0xaf190e20),
+    (0x4b100920, 0x3c18ad98),
+    (0x4b10092c, 0xaf190020),
     (0x4b107588, 0x0ac40248),
     (0x4b10758c, 0x00000000),
-    (0x4b100960, 0x3c18ab10),
-    (0x4b100968, 0xaf190e34),
+    (0x4b100960, 0x3c18ad98),
+    (0x4b100968, 0xaf190034),
     (0x4b10097c, 0x0ac42557),
     (0x4b10098c, 0x0ac424e8),
     (0x4b109554, 0x0ac40258),
     (0x4b109558, 0x8fbe00d0),
-    (0x4b1009a0, 0x3c18ab10),
-    (0x4b1009a8, 0xaf190e34),
+    (0x4b1009a0, 0x3c18ad98),
+    (0x4b1009a8, 0xaf190034),
     (0x4b1095a0, 0x0ac40268),
     (0x4b123f4c, 0x0ec40128),
     (0x4b123f54, 0x0ac400b1),
@@ -37,8 +37,9 @@ PATCHED_WORDS = (
     (0x4b12052c, 0x0ec40190),
 )
 
-MAILBOX = 0x4b100e00
+MAILBOX = 0x4d980000
 MAGIC = 0x434f4d4d
+CANARY = 0x43414e31
 
 COMM_STAGES = {
     0: "none", 0xb004: "handler-enter", 0xc001: "handler-return",
@@ -88,16 +89,21 @@ def main():
                              f"{actual:#010x} != {expected:#010x}")
     if mem.u32(MAILBOX + 4) != MAGIC:
         raise SystemExit("comm-trace magic absent; refusing to interpret mailbox")
+    if (mem.u32(MAILBOX + 0x80) != CANARY or
+            mem.u32(MAILBOX + 0xffc) != CANARY):
+        raise SystemExit("comm-trace page guard absent; refusing to interpret mailbox")
 
     kmsg = open("/dev/kmsg", "w", buffering=1) if args.kmsg else None
 
     def sample():
+        guards = (mem.u32(MAILBOX + 0x80), mem.u32(MAILBOX + 0xffc))
         values = [mem.u32(MAILBOX + off) for off in
                   (0x00, 0x08, 0x0c, 0x10, 0x20, 0x24, 0x28, 0x2c,
                    0x30, 0x34, 0x38, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54)]
         (comm, queue, call, ack, callback, event, new, old, source_queue,
          worker, vp_init, frame, dirty, mode, control, commit, dirty_latch) = values
         return {
+            "guards": f"{guards[0]:08x}/{guards[1]:08x}",
             "comm": f"{comm:04x}:{COMM_STAGES.get(comm, 'other')}",
             "call": f"{call:04x}:{CALL_STAGES.get(call, 'other')}",
             "ack": f"{ack:04x}:{ACK_STAGES.get(ack, 'other')}",

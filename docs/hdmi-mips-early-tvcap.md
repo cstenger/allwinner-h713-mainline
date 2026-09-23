@@ -201,11 +201,9 @@ relocates the trace's 58 base loads and 69 stores. The Linux-side reader
 checks 22 relocated instructions and the mailbox magic before sampling.
 These checks are specific to the exact firmware hash guarded by U-Boot.
 
-The isolated U-Boot build completed. Its combined image is
-`build/uboot-ddr3/u-boot-sunxi-with-spl.bin` (952,937 bytes, SHA256
-`f4cdfc95f356c2f83df5325f3577c6e610c283dcc5610e2d0b683eb6922ba3a3`).
-The U-Boot-proper portion after the first 32 KiB is 920,169 bytes, SHA256
-`8e9ee6f19b6a906c0143d1c55c1be1474ea3b0a5c7353b6f6104cd781c7266ce`.
+The tested U-Boot-proper image is retained as
+`build/out/u-boot-proper-safe-trace.bin` (920,169 bytes, SHA256
+`8e9ee6f19b6a906c0143d1c55c1be1474ea3b0a5c7353b6f6104cd781c7266ce`).
 The original projector U-Boot proper and SPL were backed up read-only to
 `build/uboot-proper-before-safe-trace.bin` and
 `build/spl-before-safe-trace.bin` (4 MiB and 32 KiB respectively). The device
@@ -246,3 +244,28 @@ unsampled interval also leaves open whether the source worker ran after the
 last readable trace state.
 
 Evidence: [`hdmi-evidence/2026-09-23-safe-mailbox-source2`](hdmi-evidence/2026-09-23-safe-mailbox-source2/).
+
+## Dedicated trace-page candidate (offline)
+
+The next U-Boot candidate retargets the same 391 guarded patch sites to a
+dedicated page at ARM physical `0x4d980000` / MIPS uncached `0xad980000`.
+That page is after the declared MIPS framebuffer and 128 KiB decoder buffer,
+before U-Boot's temporary logo at `0x4e000000`, and before CPU_COMM at
+`0x4e300000`. Diagnostic kernel patch 0131 reserves exactly 4 KiB there with
+`no-map`; U-Boot clears the page before installing trace stores and places
+canaries at `+0x80` and `+0xffc`. The Linux reader verifies both canaries and
+22 patch words before reading, and reports canary changes during a watch.
+This removes the known heap and boot-code-gap placements, though exclusive
+MIPS runtime ownership still needs a hardware check.
+
+Both images built offline: U-Boot proper at
+`build/out/u-boot-proper-dedicated-trace.bin` (SHA256
+`55ff1829d193889881e33bcc1b2d1ec919d9adc6d34ca7384de8ace0d05f1c4d`)
+and current-code FIT at `build/out/h713-hdmi-trace-page-0131.fit` (SHA256
+`558e256534f63a1d5a53a89b9383034220c8c2691253f7ffecb798855a4a0cee`).
+The FIT contains the QZ713DF_A1 DTB with `reg = <0x4d980000 0x1000>` and
+`no-map`; its kernel-matched CPU_COMM, power, EDID-clock, and receiver modules
+were rebuilt under `build/hdmi-diagnostic-0131/`. None of these new candidate
+artifacts has been installed or run on the projector. Its cold boot after the
+previous stall returned to the normal September 22 kernel, and the flashed
+earlier U-Boot proper and original SPL both retain their verified hashes.

@@ -1,0 +1,24 @@
+From: H713 HDMI capture workstream
+Subject: [PATCH] arm64: dts: h713: reserve a dedicated MIPS trace page on the bench
+
+The source-2 trace changed a mailbox word in the apparently unused MIPS boot
+code gap. Keep the next diagnostic mailbox in a separate 4 KiB page between
+the documented decoder buffer and the temporary U-Boot logo. Reserve it
+from Linux while the retained MIPS is running. This is an opt-in board-local
+diagnostic reservation, not a production ABI.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -9,4 +9,12 @@
+ 	chosen {
+ 		bootargs = "console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M";
+ 	};
++
++	reserved-memory {
++		/* After decoder@4d941000; below U-Boot's 0x4e000000 logo. */
++		hdmi_trace_reserved: hdmi-trace@4d980000 {
++			reg = <0x4d980000 0x1000>;
++			no-map;
++		};
++	};
+ };
