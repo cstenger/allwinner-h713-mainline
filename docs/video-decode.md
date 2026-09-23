@@ -1,5 +1,38 @@
 # H713 video decode (VE / Cedrus → panel)
 
+> **This is a 3,300-line working journal, not a reference manual.** It is cited
+> as the authority for video decode, and for *how things were found* it is —
+> but if you arrived wanting "how does decode work today", read
+> [`status.md`](status.md) and
+> [`decode-production-readiness.md`](decode-production-readiness.md) first and
+> come here for the evidence behind them.
+>
+> **Entries are dated, and mostly newest-first — but not strictly.** The long
+> VA-API zero-copy investigation sits at the *end* despite being September work,
+> after the August milestones. Trust the date in a heading, never its position.
+>
+> **Wrong conclusions are kept on purpose.** Sections titled `RETRACTED`,
+> `CORRECTION`, `conclusion WRONG, kept as the trail` and
+> `original negative (kept as trail)` are deliberate: this file records how
+> several confident claims died, and that is the part worth re-reading. Do not
+> quote an entry without checking whether a later one overturns it —
+> §"Three claims in this file were wrong and are retracted" collects the worst.
+>
+> **Layout**, by heading rather than line number so it survives edits:
+>
+> | from | to | what |
+> | --- | --- | --- |
+> | top | `# HANDOFF — state as of 2026-08-15` | Sept/Aug journal, newest first |
+> | that handoff | `## Milestones` | an embedded session snapshot, then August hardware results |
+> | `## Milestones` | `## Tooling changes` | M1–M4, with 27 subsections — the bulk of the file |
+> | `## mpv plays hardware-decoded video TODAY` | end | the September VA-API zero-copy hunt, out of chronological position |
+>
+> Current answers for the things most often looked up here: **10-bit** →
+> [`hevc-10bit-findings.md`](hevc-10bit-findings.md); **scaler** → the handoff
+> linked immediately below; **hardening** →
+> [`decode-production-readiness.md`](decode-production-readiness.md); **anything
+> else** → [`README.md`](README.md).
+
 **Scaler update 2026-09-17:** H.264 and HEVC now share the H713 polyphase
 scaler, with arbitrary even NV12 output sizes and no rotation control. See
 [the current scaler handoff](handoff-2026-09-17-shared-scaler.md) for negotiation,
@@ -407,6 +440,13 @@ comparisons, but expect the video architecture to be shared.
 ---
 
 # HANDOFF — state as of 2026-08-15
+
+> **A SNAPSHOT FROM 2026-08-15, EMBEDDED MID-FILE. Its "DONE" is scoped to what
+> was true that day and has been overtaken several times since.** It describes
+> H.264 reaching the panel *through the GPU*; the no-GPU DECD path that
+> supersedes it landed 2026-09-01, and HEVC, MPEG-2, VP8, 10-bit, the VE scaler
+> and the chroma-pitch fix all came after. Read it as a milestone marker, not as
+> the state of the project. Current state: [`status.md`](status.md).
 
 **Video decode is DONE.** Decoded H.264 reaches the panel through the GPU with
 the CPU never touching a pixel, at the vsync ceiling, without tearing.
