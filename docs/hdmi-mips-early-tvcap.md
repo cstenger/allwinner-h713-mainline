@@ -6,7 +6,7 @@ U-Boot through Linux kept the MIPS scheduler, shell, and CPU_COMM alive.
 
 ## Diagnostic image
 
-Patch 0126 adds opt-in `allwinner,keep-tvcap-on` support to the H713 PPU
+Patch 0128 (0126 in private #5) adds opt-in `allwinner,keep-tvcap-on` support to the H713 PPU
 driver. The private board DT enabled it. `GENPD_FLAG_ALWAYS_ON` prevents
 generic power-domain sync from turning off U-Boot's TVCAP state.
 
@@ -62,7 +62,7 @@ Evidence: [`hdmi-evidence/2026-09-22-early-tvcap`](hdmi-evidence/2026-09-22-earl
 
 ## Callback-capable full initialization follow-up
 
-Patch 0127 adds the missing CPU_COMM userspace callback path: per-open-file
+Patch 0129 (0127 in private #5) adds the missing CPU_COMM userspace callback path: per-open-file
 104-byte queues with `read`/`poll`, MIPS-to-ARM channel registration, and the
 channel metadata required by the normal dispatcher. The updated module built
 against kernel #5 and loaded without reinitializing shared memory.

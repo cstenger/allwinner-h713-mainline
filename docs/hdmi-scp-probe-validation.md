@@ -88,7 +88,7 @@ is now able to execute. Host HDMI remains disconnected with zero-byte EDID.
 
 ## HPD access resolved with the missing EDID resources
 
-Patch 0124 and a removable consumer enabled R_CCU EDID reset/clock. The
+Patch 0126 and a removable consumer enabled R_CCU EDID reset/clock. The
 same approved SCP-side HPD read then completed twice, returning 7, with
 no exception and restoration verified. Unload restored both resources
 to zero. See [the EDID clock validation](hdmi-edid-clock-validation.md).

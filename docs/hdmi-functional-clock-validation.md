@@ -1,6 +1,6 @@
 # Receiver and MIPS functional clock descriptions
 
-2026-09-18. Patch 0125 corrects five CCU clocks against the full-symbol vendor
+2026-09-18. Patch 0127 corrects five CCU clocks against the full-symbol vendor
 kernel SHA256 3e0d2d3420e066277021fe78d8398eff3937afdaf00c3625354becfbc398bc04.
 Public IDs are unchanged. Existing rate flags are retained, without adding
 CLK_SET_RATE_PARENT. No assigned rates/parents, live PLL reprogramming, or
@@ -29,7 +29,7 @@ osc24M input. P division is exponential, matching the existing CCU MP helper.
 ## Build and target test
 
 Kernel Image/dtbs built successfully with Clang/LLD 22.1.8. Patch dry-run on
-an independent pre-0125 source passed with --fuzz=0; git diff --check passed.
+an independent pre-0127 source passed with --fuzz=0; git diff --check passed.
 One-time FIT: /root/fits/h713-hdmi-functional-clocks.fit, SHA256
 f807d7276c2c4d2f78c45d8627e64afde0bf8d1774879604bb20646d99dbc181.
 Target kernel: 6.18.38 #4 SMP Fri Sep 18 00:16:45 PDT 2026.

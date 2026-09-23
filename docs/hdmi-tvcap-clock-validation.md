@@ -4,7 +4,7 @@
 
 ## Evidence and change
 
-Patch 0123 changes CCU register 0xd80 bus-hdmi-audio from bit 0 to bit 31,
+Patch 0125 changes CCU register 0xd80 bus-hdmi-audio from bit 0 to bit 31,
 and bus-cap-300m from bit 1 to bit 30. The vendor ARM32 kernel has full
 symbols: bus_hdmi_audio_clk at 0xc14618e0 contains mask 0x80000000;
 bus_cap_300M_clk at 0xc1461894 contains 0x40000000. Both descriptors

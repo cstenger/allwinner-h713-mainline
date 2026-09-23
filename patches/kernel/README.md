@@ -181,6 +181,16 @@ missing from the previous series; 0118 has a corrected blank context line.
 See [the shared-scaler handoff](../../docs/handoff-2026-09-17-shared-scaler.md)
 for the H.264 route, HEVC alignment requirement, and board validation.
 
+`cedrus_can_scale()` admits H.264 and HEVC only, and **MPEG-2 is left out on
+purpose**. Not because the hardware cannot — `libawmpeg2.so` exports
+`Mpeg2ComputeScaleRatio` and `Mpeg2SetRotateScaleBuf`, so the vendor does scale
+it — but because that is the fixratio path. `Mpeg2ComputeScaleRatio` is
+byte-identical to `H264ComputeScaleRatio` (all 40 bytes), which returns
+half or quarter and nothing else, so it cannot produce the 1.5× this 1280x720
+panel needs; and the polyphase route has no MPEG-2 vendor precedent to port.
+Reasoning and reopen conditions in
+[the inherited-codecs record](../../docs/reference/inherited-codecs-2026-09-17.md).
+
 **0121** supplies a supported HEVC SPS default and moves bit-depth/format
 changes from TRY to the control commit callback. Cedrus compliance is now
 **49/49, zero warnings**. See [the control validation record](../../docs/reference/cedrus-controls-2026-09-17/README.md).

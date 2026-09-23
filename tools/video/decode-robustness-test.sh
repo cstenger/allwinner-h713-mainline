@@ -35,8 +35,35 @@ CASE_TIMEOUT=${CASE_TIMEOUT:-30}
 
 GOOD_HEVC=h01-640x480-main
 GOOD_H264=v03-1280x720-main
+# m01 rather than a field-coded vector: this is the recovery canary, run after
+# every malformed case, so it wants to be the fastest clean decode available.
+GOOD_MPEG2=m01-352x288-progressive
+
+HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
+H264_REF=${H264_REF:-$DIR/reference-md5.txt}
+MPEG2_REF=${MPEG2_REF:-$DIR/mpeg2-reference-md5.txt}
 
 [ -d "$BAD" ] || { echo "FATAL: no bad-stream directory at $BAD"; exit 1; }
+
+# This one does not fail silently -- it fails LOUDLY AND WRONGLY, which is
+# worse. recovery_ok() compares the good vector's md5 against an empty string,
+# never matches, and the baseline check declares "FATAL -- the good vector does
+# not decode. Reboot and re-run." on a perfectly healthy engine. The documented
+# response to that message is a power cycle, so a missing file costs a reboot
+# and an investigation into a wedge that never happened.
+for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
+	[ -s "$f" ] && continue
+	echo "FATAL: no reference hashes at $f" >&2
+	echo "" >&2
+	echo "  recovery_ok() scores the good vector against these md5s. Without" >&2
+	echo "  them every recovery check reads as WEDGED and the baseline aborts" >&2
+	echo "  asking for a reboot -- on an engine that is fine." >&2
+	echo "" >&2
+	echo "  Fix: copy tools/video/reference-md5.txt," >&2
+	echo "  tools/video/hevc-reference-md5.txt and" >&2
+	echo "  tools/video/mpeg2-reference-md5.txt from the repo to $DIR/." >&2
+	exit 2
+done
 
 ve_irq() {
 	awk '/video-codec/ { for (i = 2; i <= 5; i++) s += $i } END { print s + 0 }' \
@@ -44,8 +71,19 @@ ve_irq() {
 }
 kmsg_count() { dmesg | grep -ciE "$1" || true; }
 
-want_hevc_md5() { grep " $GOOD_HEVC\$" "$DIR/hevc-reference-md5.txt" | cut -d' ' -f1; }
-want_h264_md5() { grep "^$GOOD_H264 WHOLE" "$DIR/reference-md5.txt" | awk '{print $NF}'; }
+want_hevc_md5() { grep " $GOOD_HEVC\$" "$HEVC_REF" | cut -d' ' -f1; }
+want_h264_md5() { grep "^$GOOD_H264 WHOLE" "$H264_REF" | awk '{print $NF}'; }
+want_mpeg2_md5() { grep "^$GOOD_MPEG2 WHOLE" "$MPEG2_REF" | awk '{print $NF}'; }
+
+# Same reasoning as the file check: an empty want here reads as WEDGED.
+for m in "$(want_hevc_md5)" "$(want_h264_md5)" "$(want_mpeg2_md5)"; do
+	[ -n "$m" ] || {
+		echo "FATAL: reference files present but missing an entry for" >&2
+		echo "  $GOOD_HEVC, $GOOD_H264 or $GOOD_MPEG2 -- recovery would read" >&2
+		echo "  as WEDGED." >&2
+		exit 2
+	}
+done
 
 # DECODE_RC is set as a side effect on purpose. ${PIPESTATUS[0]} read after a
 # FUNCTION CALL reports the function's own status -- bash resets PIPESTATUS for
@@ -67,6 +105,7 @@ recovery_ok() {
 	local got want
 	case $1 in
 	h) got=$(decode_to_md5 "$DIR/$GOOD_HEVC.h265"); want=$(want_hevc_md5) ;;
+	m) got=$(decode_to_md5 "$DIR/$GOOD_MPEG2.m2v"); want=$(want_mpeg2_md5) ;;
 	*) got=$(decode_to_md5 "$DIR/$GOOD_H264.h264"); want=$(want_h264_md5) ;;
 	esac
 	[ "$got" = "$want" ]
@@ -76,7 +115,7 @@ ERR=$(mktemp)
 trap 'rm -f "$ERR"' EXIT
 
 echo "=== recovery baseline (if this fails, the VE is already wedged) ==="
-for c in h v; do
+for c in h v m; do
 	if recovery_ok $c; then
 		echo "     $c: good vector decodes bit-exact — starting from a healthy engine"
 	else
@@ -90,10 +129,10 @@ echo
 echo "=== malformed input ==="
 printf '%-34s %-10s %-8s %-6s %s\n' CASE OUTCOME ve RECOVER NOTE
 
-for f in "$BAD"/*.h265 "$BAD"/*.h264; do
+for f in "$BAD"/*.h265 "$BAD"/*.h264 "$BAD"/*.m2v; do
 	[ -r "$f" ] || continue
 	name=$(basename "$f")
-	case $name in *-h-*) codec=h ;; *) codec=v ;; esac
+	case $name in *-h-*) codec=h ;; *-m-*) codec=m ;; *) codec=v ;; esac
 
 	# Two different timeouts exist and they mean different things: the
 	# watchdog's "frame processing timed out!" is the one that resets the

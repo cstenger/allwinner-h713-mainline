@@ -115,7 +115,7 @@ the clock-definition discrepancy, and the restricted next experiment.
 
 The owner power-cycled the target. Vendor symbolized CCU descriptors resolved
 bus-hdmi-audio to bit 31 and bus-cap-300m to bit 30 at register 0xd80.
-Patch 0123 corrects both definitions. A private build and one-time FIT boot
+Patch 0125 corrects both definitions. A private build and one-time FIT boot
 passed, followed by power-module load/unload/reload and eight known THDMIRX
 reads. See [the validation record](hdmi-tvcap-clock-validation.md).
 
@@ -137,7 +137,7 @@ are held active again. The normal boot image remains untouched.
 
 ## EDID clock/reset and HPD-read milestone
 
-Patch 0124 adds the missing EDID resources to an H713-specific R_CCU variant.
+Patch 0126 adds the missing EDID resources to an H713-specific R_CCU variant.
 A one-time #3 kernel boot passed. The removable consumer held the clock at
 24 MHz and released reset; the SCP-side HPD read then passed twice and
 returned 7. Consumer unload restored the original zero register values.
@@ -163,7 +163,7 @@ HDMI source-selection call was sent; ARM stayed responsive and was restarted.
 See [IPC results](hdmi-mips-ipc-validation.md).
 
 Vendor descriptors exposed missing receiver dividers/muxes and the wrong
-MIPS parent order. Patch 0125 corrects five functional clock descriptions.
+MIPS parent order. Patch 0127 corrects five functional clock descriptions.
 A one-time #4 boot and another exact source-EDID detection trial passed,
 without shared PLL/rate writes. See [clock validation](hdmi-functional-clock-validation.md).
 
@@ -201,7 +201,7 @@ live SetSource using only the minimal init sequence.
 
 ## Callback delivery and full SetSource boundary, 2026-09-22
 
-Patch 0127 supplies CPU_COMM callback `read`/`poll` queues and the missing
+Patch 0129 supplies CPU_COMM callback `read`/`poll` queues and the missing
 MIPS-to-ARM dispatch channel. The full stock-equivalent pre-source daemon
 sequence completed under the witness, and the kernel delivered a hot-plug
 callback into the daemon's queue. A live callback-aware `SetSource(3)` still

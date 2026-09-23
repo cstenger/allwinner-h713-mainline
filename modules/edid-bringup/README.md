@@ -1,13 +1,13 @@
 # Removable EDID clock/reset hold
 
 This test module consumes the H713-specific R_CCU EDID clock and reset from
-patch 0124. It enables the clock through the clock framework and releases the
+patch 0126. It enables the clock through the clock framework and releases the
 reset through the reset framework. It does not access EDID/HPD/wrapper MMIO,
 configure pinmux, change clock rates, or program an EDID.
 
 On unload it restores an initially asserted reset and releases its clock
 reference. The device tree consumer is test-only: append clock-hold.dtsi to
-the private board DTS for a one-time FIT; it is not part of patch 0124 or the
+the private board DTS for a one-time FIT; it is not part of patch 0126 or the
 normal boot image. No module is installed or configured to autoload.
 
 Build against the matching private test kernel:

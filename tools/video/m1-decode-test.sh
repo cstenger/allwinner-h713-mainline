@@ -20,9 +20,69 @@ set -u
 DIR=$(cd "$(dirname "$0")" && pwd)
 OUT=${OUT:-/tmp/m1-out}
 DEV=${DEV:-/dev/video0}
+REF=${REF:-$DIR/reference-md5.txt}
 mkdir -p "$OUT"
 
+# The kernel clock as this run starts, so the dmesg section at the bottom can
+# show THIS RUN's messages instead of whatever happens to be in the ring.
+KMSG_T0=$(cut -d' ' -f1 /proc/uptime 2>/dev/null || echo 0)
+
 hr() { printf '\n=== %s ===\n' "$1"; }
+
+# `dmesg | tail -20` under a heading that says "from this run" attributes
+# whatever is in the ring buffer to the run that just finished. On 2026-09-22 a
+# clean 5/5 ladder printed six "frame processing timed out!" lines that predated
+# it by 26 minutes, which reads as a decode that timed out and passed anyway.
+# Filter on the kernel timestamp instead.
+#
+# Returns 1 if dmesg is unreadable and 2 if its lines carry no timestamps to
+# filter on -- both of which otherwise produce an empty section that looks
+# exactly like "the run was clean".
+kmsg_this_run() {   # extended-regex pattern
+  local buf
+  buf=$(dmesg 2>/dev/null) || return 1
+  printf '%s\n' "$buf" | grep -q '^\[[ ]*[0-9][0-9]*\.' || return 2
+  printf '%s\n' "$buf" | awk -v t0="$KMSG_T0" '
+    match($0, /^\[[ ]*[0-9]+\.[0-9]+\]/) {
+      if (substr($0, RSTART + 1, RLENGTH - 2) + 0 >= t0) print
+    }' | grep -iE "$1" | tail -20
+}
+
+# Print that section, saying which of "nothing happened" and "could not look"
+# it is rather than letting both render as blank.
+report_kmsg() {   # extended-regex pattern
+  local out rc
+  out=$(kmsg_this_run "$1"); rc=$?
+  case $rc in
+  1) echo "  (dmesg unreadable -- run as root to see kernel messages)" ;;
+  2) echo "  (dmesg carries no timestamps -- cannot scope to this run;"
+     echo "   showing the last 20 matching lines UNSCOPED, which may predate it)"
+     dmesg 2>/dev/null | grep -iE "$1" | tail -20 | sed 's/^/  /' ;;
+  *) if [ -z "$out" ]; then
+       echo "  (none since this run started, at kernel t=${KMSG_T0}s)"
+     else
+       printf '%s\n' "$out" | sed 's/^/  /'
+     fi ;;
+  esac
+}
+
+# WITHOUT THE REFERENCES THIS SCRIPT CANNOT FAIL, so it refuses to run at all.
+# It used to grep a missing file, get nothing back, and land in the "no
+# reference on file; size only" branch -- which increments neither pass nor
+# fail -- for every vector. The ladder then reported "M1: 0 pass, 0 fail" and
+# exited 0, having compared not one pixel. A fresh flash is exactly the case
+# that hits this: the file ships in tools/video/ and has to be copied next to
+# the script. Deploy it, or point REF at it.
+if [ ! -s "$REF" ]; then
+  echo "FATAL: no reference hashes at $REF" >&2
+  echo "" >&2
+  echo "  This gate scores decoded output against per-frame and whole-file md5s." >&2
+  echo "  Without them nothing here can fail, so refusing to report a result." >&2
+  echo "" >&2
+  echo "  Fix: copy tools/video/reference-md5.txt from the repo to $DIR/," >&2
+  echo "  or run with REF=/path/to/reference-md5.txt" >&2
+  exit 2
+fi
 
 hr "device"
 if [ ! -e "$DEV" ]; then
@@ -68,8 +128,8 @@ for v in $vectors; do
 
   if [ -s "$dst" ]; then
     md5=$(md5sum "$dst" | cut -d' ' -f1)
-    want=$(grep "^$v WHOLE" "$DIR/reference-md5.txt" 2>/dev/null | awk '{print $NF}')
-    nframes=$(grep "^$v WHOLE" "$DIR/reference-md5.txt" 2>/dev/null | awk '{print $3}')
+    want=$(grep "^$v WHOLE" "$REF" | awk '{print $NF}')
+    nframes=$(grep "^$v WHOLE" "$REF" | awk '{print $3}')
     printf '     output %s bytes, md5 %s\n' "$(stat -c%s "$dst")" "$md5"
     if [ -n "$want" ] && [ "$md5" = "$want" ]; then
       echo "     PASS -- bit-exact against the host reference ($nframes frames)"
@@ -81,7 +141,12 @@ for v in $vectors; do
       echo "     file to the host and compare with ffmpeg PSNR before judging."
       fail=$((fail+1))
     else
-      echo "     no reference on file; size only"
+      # A present-but-incomplete reference file is the same blind spot as a
+      # missing one, one vector at a time -- so an unscored vector counts as a
+      # failure rather than vanishing from both tallies.
+      echo "     UNVERIFIABLE -- no '$v WHOLE' line in $REF"
+      echo "     Decoded something, but nothing checked it. Counting as a failure."
+      fail=$((fail+1))
     fi
   else
     echo "     FAIL -- no output produced"
@@ -90,6 +155,18 @@ for v in $vectors; do
 done
 
 hr "kernel messages from this run"
-dmesg | grep -iE "cedrus|video-codec" | tail -20 | sed 's/^/  /'
+report_kmsg "cedrus|video-codec"
 
 printf '\nM1: %d pass, %d fail\n' "$pass" "$fail"
+
+# The script used to end on that printf, exiting 0 whatever the tally said --
+# so a MISMATCH on every vector still reported success to anything that checked
+# $?, and the UNVERIFIABLE count added above would have been decoration. A
+# run that scored nothing at all is also a failure: "0 pass, 0 fail" is what a
+# missing vector set looks like, and it is not a green run.
+if [ $((pass + fail)) -eq 0 ]; then
+  echo "M1: scored nothing -- no vector produced a comparable result."
+  echo "    Check the streams are deployed next to the script."
+  exit 1
+fi
+[ "$fail" -eq 0 ]

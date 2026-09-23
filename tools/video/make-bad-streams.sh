@@ -31,15 +31,22 @@ OUT_DIR=${2:-$SRC_DIR/bad}
 
 mkdir -p "$OUT_DIR"
 
-python3 - "$SRC_DIR" "$OUT_DIR" <<'PY'
+python3 - "$SRC_DIR" "$OUT_DIR" "$PROJECT_ROOT/tools/video/vectors" <<'PY'
 import os, random, sys
 
-src_dir, out_dir = sys.argv[1], sys.argv[2]
+src_dir, out_dir, vec_dir = sys.argv[1], sys.argv[2], sys.argv[3]
 SEED = 713
 
-# (vector, extension) -- one HEVC and one H.264 source, so a failure can be
-# attributed to a codec path rather than to the corruption itself.
-SOURCES = [("h01-640x480-main", "h265"), ("v03-1280x720-main", "h264")]
+# (vector, extension) -- one source per codec, so a failure can be attributed to
+# a codec path rather than to the corruption itself. MPEG-2 uses the same
+# start-code structure as Annex-B, so the corruptions below apply unchanged; for
+# it, "NAL unit" reads as "start-code-delimited element" (sequence header, GOP
+# header, picture, slice).
+SOURCES = [
+    ("h01-640x480-main", "h265"),
+    ("v03-1280x720-main", "h264"),
+    ("m01-352x288-progressive", "m2v"),
+]
 
 
 def nal_units(data):
@@ -69,7 +76,9 @@ for vec, ext in SOURCES:
 
     data = bytearray(open(path, "rb").read())
     nals = nal_units(bytes(data))
-    tag = "h" if ext == "h265" else "v"
+    # The tag drives the codec dispatch in decode-robustness-test.sh, which
+    # matches on *-h-*, *-m-* and falls through to H.264.
+    tag = {"h265": "h", "m2v": "m"}.get(ext, "v")
     print(f"==> {vec} ({len(data)} bytes, {len(nals)} NAL units)")
 
     rng = random.Random(SEED)
@@ -128,6 +137,28 @@ for vec, ext in SOURCES:
         keep = max(6, len(unit) // 2)
         b08 += unit[:keep]
     write(f"b08-{tag}-every-nal-halved.{ext}", bytes(b08))
+
+# b09/b10 -- real damage, not synthetic. These two field-coded MPEG-2 streams
+# came off the board rather than out of this script, and neither is a simple
+# truncation of the good stream: one has 3,860 bytes removed mid-stream, the
+# other 395 bytes altered in place. Whatever produced them understood the
+# picture layout, and that tool is not in this repo, so they are committed under
+# tools/video/vectors/ and copied in here.
+#
+# They are worth keeping distinct from b01-b08 because they are FIELD-coded, and
+# field pictures are the case kernel patch 0123 exists for. A malformed-stream
+# suite made only of corrupted frame-picture streams cannot reach that path.
+REAL_DAMAGE = [
+    ("m05-720x576-field-shortfirst.m2v", "b09-m-field-shortfirst.m2v"),
+    ("m05-720x576-field-damaged.m2v", "b10-m-field-damaged.m2v"),
+]
+print("==> committed real-damage vectors")
+for srcname, dstname in REAL_DAMAGE:
+    p = os.path.join(vec_dir, srcname)
+    if not os.path.exists(p):
+        print(f"!!  {p} missing, skipped -- field-coded damage is UNCOVERED")
+        continue
+    write(dstname, open(p, "rb").read())
 PY
 
 echo

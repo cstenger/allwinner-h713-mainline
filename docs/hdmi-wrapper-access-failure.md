@@ -82,7 +82,7 @@ fully initialized runtime configuration.
 
 The owner physically power-cycled the target. SSH and serial recovered.
 Vendor clock descriptors now prove the correct high-bit mappings, and patch
-0123 passed a transient hardware boot test. See
+0125 passed a transient hardware boot test. See
 [the clock validation](hdmi-tvcap-clock-validation.md). The recovered
 unpatched boot already had the high bits set, so this correction alone does
 not establish the wrapper fault cause. The unsafe reads were not repeated.

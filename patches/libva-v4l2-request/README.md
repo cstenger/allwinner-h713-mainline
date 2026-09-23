@@ -203,3 +203,48 @@ or Cedrus timeout. See
 [`docs/handoff-2026-09-03-video-decode.md`](../../docs/handoff-2026-09-03-video-decode.md)
 for the trace that distinguishes the root cause from the discarded surface
 state and request-fd hypotheses.
+
+## Decode errors reach the client — validated on hardware 2026-09-22
+
+Patch 0012. The kernel flags a badly decoded picture with `V4L2_BUF_FLAG_ERROR`
+on its CAPTURE buffer, and cedrus carries that flag across the jobs sharing a
+held buffer specifically so it survives to the dequeue. This shim read the
+dequeue's return value and nothing else, so the flag died here and a
+half-decoded frame reached the client marked good.
+
+**Which VA-API channel** is the whole question, and `nm` answers it. ffmpeg's
+`libavcodec` and `libavutil` import `vaSyncSurface` and **neither
+`vaQuerySurfaceStatus` nor `vaQuerySurfaceError`** — so recording the failure in
+`VASurfaceStatus` (which has no value meaning "damaged" anyway) would have been
+a fix no client could see, the same shape of mistake as advertising a VA profile
+without its entrypoints. `VA_STATUS_ERROR_DECODING_ERROR` is what va.h specifies
+and what ffmpeg reads.
+
+It arrives via `vaEndPicture`, not `vaSyncSurface`: decode here is synchronous,
+so `RequestEndPicture` returns what `RequestSyncSurface` returns and
+`ff_vaapi_decode_issue()` checks exactly that. The map-time `vaSyncSurface` that
+`libavutil` calls keeps returning success on purpose — failing there would break
+`av_hwframe_transfer_data()` for a picture libavcodec had already accepted.
+
+| stream | software decoder | VA-API before | VA-API after |
+|---|---|---|---|
+| `field-shortfirst.m2v` (truncated) | `ac-tex damaged` ×2 | silent | 2 errors |
+| `field-firstfield-damaged.m2v` (truncated) | `ac-tex damaged` | silent | 2 errors |
+| `field.m2v` | `ac-tex damaged` ×1 | silent | 1 error |
+| `testcard-mpeg2.m2v`, `testcard-mpeg2i.m2v` | clean | clean | clean |
+
+The counts track the damage rather than merely being non-zero — one file reports
+one error and another reports two — and they match `strace`, which shows 2 of 62
+CAPTURE dequeues flagged on `field-shortfirst.m2v`.
+
+ffmpeg logs `Failed to end picture decode issue: 23 (internal decoding error)`
+and `hardware accelerator failed to decode picture`, then **carries on**: exit
+status 0, the rest of the stream decodes. The damaged pictures are dropped
+rather than emitted, so hardware output is two frames shorter than software's,
+which emits them flagged `AV_FRAME_FLAG_CORRUPT`. There is no third option —
+ffmpeg's hwaccel path has no way to accept a frame and mark it corrupt.
+
+No regressions: H.264 5/5 and HEVC 6/6 still bit-exact, Main10 57.07 dB and
+byte-identical to the GStreamer oracle, robustness 16/16 with the engine
+recovering from every malformed input, and a clean MPEG-2, H.264, HEVC or Main10
+stream reports zero errors.

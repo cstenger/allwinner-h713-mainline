@@ -1,4 +1,4 @@
-Update, 2026-09-18: patch 0125 now describes the real receiver dividers/muxes
+Update, 2026-09-18: patch 0127 now describes the real receiver dividers/muxes
 and correct MIPS clock parent order. Temporary #4 boot and source detection
 both passed; see [functional clock validation](hdmi-functional-clock-validation.md).
 A live-MIPS #3 boot did not consume diagnostic commands or acknowledge a

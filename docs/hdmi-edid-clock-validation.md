@@ -1,6 +1,6 @@
 # Missing R_CCU EDID clock and reset
 
-2026-09-17. Patch 0124 describes an H713-specific R_CCU variant with inherited
+2026-09-17. Patch 0126 describes an H713-specific R_CCU variant with inherited
 clock/reset IDs, plus CLK_R_EDID=11 and RST_R_EDID=7. The D1 tables remain
 unchanged. This provider patch does not enable the peripheral automatically.
 
