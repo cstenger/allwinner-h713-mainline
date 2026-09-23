@@ -170,7 +170,11 @@ hw_frame=$(( gst_bytes / sw_frames ))
 #
 # Recognise both exactly and refuse anything else. Guessing between them is how
 # a sheared frame gets reported as a confident dB number.
-CANVAS_W=$(( (W + 15) / 16 * 16 ))
+# Pitch is 32-aligned, height 16-aligned. The 32 is not cosmetic: a pitch that
+# is 16- but not 32-aligned makes the engine read reference chroma at a wider
+# stride than it wrote, corrupting every inter frame.
+# See docs/reference/hevc-unaligned-chroma-2026-09-23.md.
+CANVAS_W=$(( (W + 31) / 32 * 32 ))
 CANVAS_H=$(( (H + 15) / 16 * 16 ))
 PITCH2=$(( ((CANVAS_W + 3) / 4 + 31) / 32 * 32 ))
 PASSTHRU=$(( CANVAS_W * CANVAS_H * 3 / 2 + PITCH2 * CANVAS_H * 3 / 2 ))

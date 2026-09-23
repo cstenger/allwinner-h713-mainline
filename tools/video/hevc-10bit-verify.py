@@ -118,9 +118,14 @@ for spec in args.vectors:
         print(f'{clip}: missing, skipped')
         continue
 
-    # Capture canvas is 16-aligned; the coded picture is 8-aligned. The 2-bit
-    # chroma rows follow coded_h luma rows, NOT canvas_h -- see the docstring.
-    canvas_w, canvas_h = (w + 15) // 16 * 16, (h + 15) // 16 * 16
+    # Capture canvas: the pitch is 32-aligned, the height 16-aligned, and the
+    # coded picture is 8-aligned. The width alignment is 32 rather than 16
+    # because the hardware rounds the chroma stride field up to 16 in chroma
+    # units -- a 16-aligned pitch that is not also 32-aligned makes the engine
+    # read reference chroma at a wider stride than it wrote, which corrupted
+    # every inter frame. See docs/reference/hevc-unaligned-chroma-2026-09-23.md.
+    # The 2-bit chroma rows follow coded_h luma rows, NOT canvas_h -- docstring.
+    canvas_w, canvas_h = (w + 31) // 32 * 32, (h + 15) // 16 * 16
     coded_h = (h + 7) // 8 * 8
     pitch_2 = ((canvas_w + 3) // 4 + 31) // 32 * 32
 

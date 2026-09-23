@@ -1,31 +1,37 @@
-# HEVC inter-frame chroma is wrong when WIDTH is not a multiple of 16 — 2026-09-23
+# HEVC inter chroma is wrong when the PITCH is not a multiple of 32 — FIXED 2026-09-23
 
-Found by the rewritten 10-bit gate on its first run with a non-16-aligned
-vector. **It is not a 10-bit defect**, and it is not in userspace. Luma is
-unaffected, which is why nothing has ever caught it.
+Found by the rewritten 10-bit gate on its first run with an unaligned vector.
+**It is not a 10-bit defect**, and it is not in userspace. Luma is unaffected,
+which is why nothing caught it for so long.
+
+**Fixed by patch 0125** (`media: cedrus: align the capture pitch to 32`).
+Everything below is the investigation and the evidence.
 
 **The rule, from an axis-isolation matrix (all 8-bit Main, all on hardware):**
 
-| vector | width %16 | height %16 | result |
-| --- | --- | --- | --- |
-| 1920x1080 | 0 | **8** | **bit-exact, inf** |
-| 640x482 | 0 | **2** | **bit-exact, inf** |
-| 642x480 | **2** | 0 | u 14.08 / v 11.25 |
-| 648x480 | **8** | 0 | u 14.65 / v 12.04 |
-| 642x482 | **2** | **2** | u 15.02 / v 12.15 |
+| vector | width %16 | width %32 | height %16 | result |
+| --- | --- | --- | --- | --- |
+| 1920x1080 | 0 | 0 | **8** | **bit-exact, inf** |
+| 640x482 | 0 | 0 | **2** | **bit-exact, inf** |
+| 642x480 | **2** | **2** | 0 | u 14.08 / v 11.25 |
+| 648x480 | **8** | **8** | 0 | u 14.65 / v 12.04 |
+| **656x480** | **0** | **16** | 0 | u 14.04 / v 11.47 |
+| 642x482 | **2** | **2** | **2** | u 15.02 / v 12.15 |
 
-**Width alone decides it. Height misalignment is harmless.** 1920x1080 is
-clean even though its canvas height (1088) differs from its coded height
-(1080) — so the vertical canvas/coded mismatch is handled correctly, and an
-earlier draft of this document that blamed it was wrong.
+**Width alone decides it, and the threshold is 32, not 16.** Height
+misalignment is harmless: 1920x1080 is clean even though its canvas height
+(1088) differs from its coded height (1080).
 
-648 is the sharp case: it needs no coded padding at all (coded_w = 648 = the
-picture width) and still breaks, because the 16-aligned canvas is 656. So the
-trigger is **canvas_w != coded_w**, not "the picture needs padding".
+**656x480 is the vector that settles it**, and it was run specifically because
+the first two broken widths could not distinguish the hypotheses. 656 *is* a
+multiple of 16 and still breaks, so the trigger is the 32 boundary. Two earlier
+revisions of this file got this wrong — first blaming canvas_h vs coded_h
+(falsified by 1920x1080), then "not a multiple of 16" (falsified by 656).
 
-Practically, most standard widths are safe — 640, 1280, 1920, 2560, 3840 are
-all multiples of 16. The exposed ones are widths like **854** (854x480) and
-**1366** (1366x768), which are common in real content.
+Practically: 640, 1280, 1920, 2560 and 3840 are all multiples of 32 and were
+never affected. The exposed widths are the likes of **854** (854x480), **1366**
+(1366x768) and **656** — and anything reaching the decoder with a pitch chosen
+by a client rather than by the picture.
 
 ## The measurement
 
@@ -81,34 +87,80 @@ Two independent blindnesses, either of which alone would have hidden it:
 
 Fixed in the gate: arms 1 and 2 now threshold the **worst** of y/u/v.
 
-## Where to start looking
+## Root cause
 
-The axis matrix rules out the vertical explanation and points at chroma
-**horizontal** addressing for reference frames.
+One field, and a disagreement between the write and the read path over it.
+`cedrus_dst_format_set()` programs:
 
-Everything observed is consistent with the chroma reference read using one
-width where the buffer uses the other — coded_w (648) against a canvas stride
-of 656, or the reverse. A horizontal stride error displaces each row
-progressively, which is why the damage is large and spread across rows rather
-than a clean block offset. Luma is unaffected because it is addressed with the
-correct stride; intra is unaffected because it reads no reference at all.
+```c
+reg = VE_PRIMARY_FB_LINE_STRIDE_LUMA(stride) |
+      VE_PRIMARY_FB_LINE_STRIDE_CHROMA(stride / 2);
+```
 
-Note this is a *different* bug from the coded_h-vs-canvas_h trap in the 2-bit
-side plane ([hevc-10bit-findings.md](../hevc-10bit-findings.md)) — that one is
-vertical, this one is horizontal, and 1920x1080 proves the vertical case is
+The engine rounds that chroma field up to 16 **in its own units**, so the
+chroma stride it uses is `ALIGN(stride, 32)`. At a 32-aligned pitch the
+rounding is a no-op and the two agree. At a pitch that is 16- but not
+32-aligned the engine writes chroma at the pitch and reads reference chroma one
+16-byte step per line wider.
+
+That accounts for every observation at once:
+
+- **Intra is correct** — it reads no reference at all.
+- **Every inter frame is wrong** — it reads displaced chroma.
+- **Luma is never wrong** — it has its own field, with no rounding.
+- **Width decides, height does not** — this is a stride, a per-line quantity.
+
+The damage is large because a stride error displaces each row progressively
+rather than by a constant offset.
+
+This is a *different* bug from the coded_h-vs-canvas_h trap in the 2-bit side
+plane ([hevc-10bit-findings.md](../hevc-10bit-findings.md)) — that one is
+vertical, this one horizontal, and 1920x1080 proves the vertical case is
 handled correctly here.
 
-**An earlier revision of this file blamed canvas_h vs coded_h.** That was
-written before the axis matrix existed, from the single 642x482 data point where
-both axes were misaligned at once. 1920x1080 and 640x482 falsify it.
+## The fix
 
-## Not yet done
+Align the capture pitch to 32, so the engine's rounding is a no-op at every
+width. Patch 0125, one line plus the comment explaining why it cannot go back
+to 16.
 
-- **The bug itself is unfixed.** This is a characterisation, not a fix.
-- **Arm 3 cannot see it.** `hevc-10bit-verify.py` dumps `CEDRUS_DUMP_AT=1` —
-  the first completed capture, which is an I-frame — so it reports h09 as
-  bit-exact on all planes and is blind to every inter frame. Pointing it at a
-  later capture would make it fail, correctly.
-- **No unaligned vector is in the H1 gate.** Adding the 8-bit one above would
-  turn that gate red until the defect is fixed, which is a call to make
-  deliberately rather than as a side effect.
+The alternative — widening what `DEC_PIC_SIZE` advertises so the engine's own
+derivation lands on 32 — was rejected: it changes what the engine *parses*, not
+just where it puts the result.
+
+A tempting shortcut that does **not** work: raising `bytesperline` from
+userspace via `S_FMT`. The probe's `CEDRUS_STRIDE=672` produced a capture of
+exactly 472320 bytes, the 656-pitch size, i.e. it never took effect — and the
+corrupt luma that came back was my own de-pad misreading a 656-pitch buffer at
+672, not a hardware result. Check the dump size before believing that test.
+
+**After the fix, on hardware:**
+
+| | before | after |
+| --- | --- | --- |
+| 642x480, 648x480, 656x480, 642x482 (8-bit) | chroma 12–15 dB | **bit-exact** |
+| h09-642x482 Main10 | u 15.02 / v 12.15 | **u 53.26 / v 53.27** |
+| 640x482, 1920x1080 | bit-exact | **unchanged** |
+| h07 / h08 Main10 | 54.30 / 52.80 | **unchanged** |
+| HEVC gate | 12 pass | **12 pass, 0 fail** |
+| MPEG-2 gate | 6 pass | **6 pass, md5s identical** |
+
+For 32-aligned widths the patch changes nothing — `ALIGN(w, 16)` and
+`ALIGN(w, 32)` are the same number — so the regression surface is exactly the
+widths that were already broken.
+
+## Still open
+
+- **Arm 3 only ever inspects an I-frame.** `hevc-10bit-verify.py` dumps
+  `CEDRUS_DUMP_AT=1`, the first completed capture, so it reported h09 as
+  bit-exact on all planes throughout — it could not have caught this bug and
+  would not catch a regression of it. Pointing it at a later capture is the
+  obvious hardening and is not done.
+- **No unaligned vector is in the H1 gate.** The vectors that found this
+  (642/648/656 wide) live only in this investigation. Until one is in a gate,
+  nothing stops the alignment being "simplified" back to 16 — the in-code
+  comment is currently the only guard.
+- **Other codecs are untested at unaligned widths.** MPEG-2's md5s are
+  unchanged, but that only shows no regression at 720 wide; H.264 and VP8 were
+  never run at a non-32-aligned width, before or after. The shared sizing path
+  means they plausibly had the same defect.
