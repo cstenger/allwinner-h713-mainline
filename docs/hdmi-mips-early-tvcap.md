@@ -114,3 +114,42 @@ mailbox changes without writing firmware or receiver registers.
 Evidence: [`hdmi-evidence/2026-09-22-callback-setsource`](hdmi-evidence/2026-09-22-callback-setsource/).
 Controller evidence: [`hdmi-evidence/2026-09-22-thdmirx-init`](hdmi-evidence/2026-09-22-thdmirx-init/).
 Synchronized evidence: [`hdmi-evidence/2026-09-22-synchronized-setsource`](hdmi-evidence/2026-09-22-synchronized-setsource/).
+
+## Source-worker trace result
+
+The guarded `mips-comm-trace` follow-up localized the failure further. The host
+detected the exact EDID and enabled 640x480, all pre-source RPCs returned, and
+the hot-plug callback reached userspace. On `SetSource(3)`, the MIPS source
+callback recorded `0x5101` with `new=3`. The last captured snapshot still had
+that stage; no sample showed `0x5102` or source-worker stage `0x5201`.
+
+About 221 ms after the `0x5101` trace sample, PID 1 exited with status `0x8b`
+(SIGSEGV with core-dump bit) and Linux panicked because init died. The trace
+makes the MIPS source callback's queue-send path the next place to investigate.
+It does not prove that the queue send or worker never advanced after the last
+sample, because ARM sampling stopped at the panic.
+
+Trace evidence: [`hdmi-evidence/2026-09-22-mips-comm-trace`](hdmi-evidence/2026-09-22-mips-comm-trace/).
+
+## No-signal source control and kernel identity
+
+The next trial deliberately kept the GPU connector disconnected. It did not
+assert HPD or supply an EDID. With the same private 6.18.38 #5 FIT, retained
+TVCAP, callback-capable CPU_COMM, and safe receiver initialization, all
+pre-source RPCs returned. `SetSource(3)` again reached callback marker `0x5101`
+with `new=3`; about 216 ms after that sample, PID 1 exited with `0x8b` and
+Linux panicked. The unsampled interval before the panic still prevents a
+conclusion about the queue-send return or worker progress. The result does
+show that a live HDMI signal was not necessary to reproduce this failure.
+
+This trial explicitly booted `/root/fits/h713-mips-early-tvcap.fit` (SHA256
+`0beecad60219f9216075ff85e0e435a5312dc1e37a11ccc056d6907792f73208`).
+The project's `build/out/h713-kernel.fit` was rebuilt later, at 2026-09-22
+22:41, and the current `h713-display-video-path` patch series ends at 0124,
+without the private HDMI 0126 TVCAP retention or 0127 CPU_COMM callback
+patches. Therefore these findings apply to private #5, not to whatever image
+is currently installed in `boot_a`. The running kernel must be checked after
+the projector recovers, before reusing the diagnostic modules or interpreting
+another trial.
+
+Control evidence: [`hdmi-evidence/2026-09-23-no-signal-setsource`](hdmi-evidence/2026-09-23-no-signal-setsource/).

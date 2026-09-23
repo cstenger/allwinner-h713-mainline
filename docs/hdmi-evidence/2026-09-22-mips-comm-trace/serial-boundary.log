@@ -1,0 +1,13 @@
+[  449.120735] h713-scp-probe: EDID trial ready; holding HPD asserted for 30000 ms
+[  451.658043] cpu_comm: MIPS callback channel pid=743 id=0x2e71
+[  453.015621] cpu_comm: userspace callback comp=0x38d780e2 receivers=1
+[  454.513245] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  454.532218] h713-mips-trace: {"comm":"b004:handler-enter","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5101:callback-event","worker":"5203:transition-complete","event":0,"new":3,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"0000","dirty":"00000000","mode":"ffffffff","control":"00000000","commit":"ffffffff","dirty_latch":"ffffffff","seconds":17.963}
+[  454.753236] Kernel panic - not syncing: Attempted to kill init! exitcode=0x0000008b
+[  454.760914] CPU: 1 UID: 0 PID: 1 Comm: systemd Tainted: G         C O        6.18.38 #5 NONE
+[  454.817624]  exit_to_user_mode_loop+0x78/0x134
+[  454.822062]  el0_undef+0x7c/0x80
+[  454.825291]  el0t_64_sync_handler+0x9c/0x12c
+[  454.829558]  el0t_64_sync+0x198/0x19c
+[  454.833221] SMP: stopping secondary CPUs
+[  454.849415] Rebooting in 10 seconds..
