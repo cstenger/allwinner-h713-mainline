@@ -247,6 +247,46 @@ else
   echo "    Field-coded MPEG-2 (kernel patch 0123) is UNCOVERED without it."
 fi
 
+# m06 -- m05 with its damaged tail removed, and the reason it has to exist is
+# that m05 cannot be scored by the VA-API-based suites.
+#
+# m05's last frame is damaged and carries no sequence_end_code. libva patch 0012
+# reports that as a decode error and ffmpeg DROPS the frame, so the VA path emits
+# 30 frames where GStreamer emits 31. Both are right and their first 30 frames
+# are bit-identical (verified on hardware), but the whole-file md5s differ, so
+# one vector cannot have one baseline across both paths.
+#
+# Rather than carry two baselines for one stream, cut m05 at the last clean
+# frame boundary and terminate it properly. m06 decodes to the same 30 frames on
+# both paths, which is what soak/concurrency/robustness need, while m05 stays in
+# the M2 gate as the damaged-tail case. Byte surgery on a committed binary, so
+# it is deterministic.
+if [ -f m05-720x576-field.m2v ]; then
+  python3 - <<'PY'
+d = open('m05-720x576-field.m2v', 'rb').read()
+codes, i = [], 0
+while True:
+    i = d.find(b'\x00\x00\x01', i)
+    if i < 0 or i + 4 > len(d): break
+    codes.append((i, d[i+3]))
+    i += 3
+pics = [off for off, sc in codes if sc == 0x00]
+# 62 field pictures = 31 frames; keep 60 = 30 frames, dropping the damaged one.
+idx = codes.index((pics[60], 0x00))
+# Do not leave a dangling GOP/sequence/extension header at EOF.
+while idx > 0 and codes[idx-1][1] in {0xB8, 0xB3, 0xB5, 0xB2}:
+    idx -= 1
+out = bytearray(d[:codes[idx][0]])
+out += b'\x00\x00\x01\xb7'          # sequence_end_code -- m05 lacks one
+open('m06-720x576-field-clean.m2v', 'wb').write(bytes(out))
+print(f"==> m06-720x576-field-clean  (derived from m05: 30 of 31 frames, cleanly ended)")
+print(f"    stream {len(out)} bytes")
+PY
+  ffmpeg -hide_banner -loglevel error -y \
+    -i m06-720x576-field-clean.m2v -pix_fmt nv12 -f rawvideo m06-720x576-field-clean.nv12
+  printf '    sw yardstick %s bytes\n' "$(stat -c%s m06-720x576-field-clean.nv12)"
+fi
+
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host
 # software decode of the same stream.

@@ -59,18 +59,20 @@ CLIENT_TIMEOUT=${CLIENT_TIMEOUT:-120}
 
 HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
 H264_REF=${H264_REF:-$DIR/reference-md5.txt}
+MPEG2_REF=${MPEG2_REF:-$DIR/mpeg2-reference-md5.txt}
 
 # The per-vector check further down already refuses to soak without a baseline,
 # so this one is about DIAGNOSIS, not safety: with the file absent that check
 # fires as "no reference md5 for h01-640x480-main" on top of a grep error about
 # a path, which reads like a bad vector list rather than an undeployed file.
 # Name the real cause before an 8-hour soak is abandoned for the wrong reason.
-for f in "$HEVC_REF" "$H264_REF"; do
+for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
 	[ -s "$f" ] && continue
 	echo "FATAL: no reference hashes at $f" >&2
 	echo "" >&2
-	echo "  Fix: copy tools/video/reference-md5.txt and" >&2
-	echo "  tools/video/hevc-reference-md5.txt from the repo to $DIR/." >&2
+	echo "  Fix: copy tools/video/reference-md5.txt," >&2
+	echo "  tools/video/hevc-reference-md5.txt and" >&2
+	echo "  tools/video/mpeg2-reference-md5.txt from the repo to $DIR/." >&2
 	exit 2
 done
 
@@ -78,7 +80,14 @@ HEVC_VECTORS="h01-640x480-main h02-1280x720-main h03-640x480-nowpp
 	      h04-640x480-scaling h05-640x480-scaling-custom"
 H264_VECTORS="v01-320x240-baseline v02-1280x720-baseline v03-1280x720-main
 	      v04-1280x720-high v05-1920x1080-high"
-VECTORS=${VECTORS:-"$HEVC_VECTORS $H264_VECTORS"}
+# MPEG-2. m06 rather than m05 because this suite decodes through VA-API, which
+# drops m05's damaged final frame and so emits 30 frames where the GStreamer
+# baseline has 31; m06 is the same stream cut clean and agrees on both paths.
+# m03 is left out deliberately -- at 69 MB a frame set it adds hours to a soak
+# without exercising anything m02 does not.
+MPEG2_VECTORS="m01-352x288-progressive m02-720x576-progressive
+	       m04-720x576-interlaced m06-720x576-field-clean"
+VECTORS=${VECTORS:-"$HEVC_VECTORS $H264_VECTORS $MPEG2_VECTORS"}
 
 # Sum the per-CPU columns of the video-codec interrupt line. A rise of exactly
 # one per frame is positive proof the VE did the work; a FLAT counter across an
@@ -114,6 +123,11 @@ dmesg_count() { dmesg | grep -ciE "$1" || true; }
 want_md5() {
 	case $1 in
 	h0*) grep " $1\$" "$HEVC_REF" | cut -d' ' -f1 ;;
+	# MPEG-2 uses the same "<vector> WHOLE <n> frames <md5>" shape as H.264, but
+	# its baseline is the HARDWARE's own output rather than a software decode:
+	# MPEG-2 specifies IDCT accuracy, not exact reconstruction, so no software
+	# reference can be bit-exact. See mpeg2-decode-test.sh.
+	m0*) grep "^$1 WHOLE" "$MPEG2_REF" | awk '{print $NF}' ;;
 	*)   grep "^$1 WHOLE" "$H264_REF" | awk '{print $NF}' ;;
 	esac
 }
@@ -121,6 +135,7 @@ want_md5() {
 stream_of() {
 	case $1 in
 	h0*) echo "$DIR/$1.h265" ;;
+	m0*) echo "$DIR/$1.m2v" ;;
 	*)   echo "$DIR/$1.h264" ;;
 	esac
 }

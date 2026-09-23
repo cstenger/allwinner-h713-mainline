@@ -56,11 +56,18 @@ PSNR_MIN=${PSNR_MIN:-}
 # to roughly 39 dB and would fail a floor that every good frame passes. Excluding
 # it keeps the SAME strict floor on the 30 frames that are real evidence, which
 # is more discriminating than lowering the floor for the whole vector.
+#
+# m06 is m05 with the damaged frame cut off and a sequence_end_code added. It
+# exists because the VA-API path drops m05's damaged frame (libva 0012 reports
+# the decode error and ffmpeg discards the picture) and so emits 30 frames where
+# GStreamer emits 31 -- same pixels, different whole-file md5. m06 decodes
+# identically on both paths, which is what the VA-based suites need.
 VECTORS_ALL="m01-352x288-progressive:352:288:25:55:0
 m02-720x576-progressive:720:576:50:55:0
 m03-1280x720-progressive:1280:720:50:55:0
 m04-720x576-interlaced:720:576:50:55:0
-m05-720x576-field:720:576:31:55:30"
+m05-720x576-field:720:576:31:55:30
+m06-720x576-field-clean:720:576:30:55:0"
 
 CAPTURE=0
 [ "${1:-}" = "--capture-reference" ] && { CAPTURE=1; shift; }
@@ -206,7 +213,7 @@ WARN
 fi
 
 hr "vectors"
-vectors=${*:-"m01-352x288-progressive m02-720x576-progressive m03-1280x720-progressive m04-720x576-interlaced m05-720x576-field"}
+vectors=${*:-"m01-352x288-progressive m02-720x576-progressive m03-1280x720-progressive m04-720x576-interlaced m05-720x576-field m06-720x576-field-clean"}
 echo "  $vectors"
 
 pass=0; fail=0

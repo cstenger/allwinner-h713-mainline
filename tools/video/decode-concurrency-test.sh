@@ -29,6 +29,7 @@ CLIENTS=${2:-3}
 OUT=${OUT:-/var/tmp/conc}
 HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
 H264_REF=${H264_REF:-$DIR/reference-md5.txt}
+MPEG2_REF=${MPEG2_REF:-$DIR/mpeg2-reference-md5.txt}
 
 mkdir -p "$OUT"
 
@@ -38,22 +39,28 @@ mkdir -p "$OUT"
 # corruption. That is a whole session spent chasing the harness. Worse, the two
 # sides are equal when BOTH are empty, so a round in which no client wrote an
 # md5 at all would score as a pass. Fail up front instead.
-for f in "$HEVC_REF" "$H264_REF"; do
+for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
 	[ -s "$f" ] && continue
 	echo "FATAL: no reference hashes at $f" >&2
 	echo "" >&2
 	echo "  This test scores each client's output against a known md5; without" >&2
 	echo "  the references it cannot tell a clean run from a corrupted one." >&2
 	echo "" >&2
-	echo "  Fix: copy tools/video/reference-md5.txt and" >&2
-	echo "  tools/video/hevc-reference-md5.txt from the repo to $DIR/." >&2
+	echo "  Fix: copy tools/video/reference-md5.txt," >&2
+	echo "  tools/video/hevc-reference-md5.txt and" >&2
+	echo "  tools/video/mpeg2-reference-md5.txt from the repo to $DIR/." >&2
 	exit 2
 done
 
-# One HEVC and two H.264, so a mix-up crosses a codec boundary as well as a
-# stream boundary -- the coarsest possible thing to get wrong.
+# A mix of codecs, so a mix-up crosses a codec boundary as well as a stream
+# boundary -- the coarsest possible thing to get wrong. MPEG-2 earns its place
+# here specifically because it is the odd one out: different control set,
+# different uAPI path, and m06 is field-coded, which is the only vector that
+# makes the engine run two jobs per frame. If concurrent clients can corrupt
+# each other's state, that is where it should show.
 POOL=("h01-640x480-main:h265" "v03-1280x720-main:h264" "v01-320x240-baseline:h264"
-      "h03-640x480-nowpp:h265" "v02-1280x720-baseline:h264")
+      "h03-640x480-nowpp:h265" "v02-1280x720-baseline:h264"
+      "m01-352x288-progressive:m2v" "m06-720x576-field-clean:m2v")
 
 ve_irq() {
 	awk '/video-codec/ { for (i = 2; i <= 5; i++) s += $i } END { print s + 0 }' \
@@ -64,6 +71,10 @@ kmsg_count() { dmesg | grep -ciE "$1" || true; }
 want_md5() {
 	case $1 in
 	h0*) grep " $1\$" "$HEVC_REF" | cut -d' ' -f1 ;;
+	# MPEG-2's baseline is the hardware's own output, not a software decode --
+	# MPEG-2 specifies IDCT accuracy rather than exact reconstruction. Same line
+	# format as H.264. See mpeg2-decode-test.sh.
+	m0*) grep "^$1 WHOLE" "$MPEG2_REF" | awk '{print $NF}' ;;
 	*)   grep "^$1 WHOLE" "$H264_REF" | awk '{print $NF}' ;;
 	esac
 }
