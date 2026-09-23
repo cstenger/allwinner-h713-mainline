@@ -1,0 +1,40 @@
+setenv fdt_high 0x4f000000
+=> setenv initrd_high 0x4f000000
+=> setenv bootargs 'console=ttyS0,115200 earlycon loglevel=8 panic=10 clk_ignore_unused pd_ignore_unused root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 cma=128M initcall_blacklist=h713_afbd_platform_driver_init'
+=> ext4load mmc 1:1a 0x50000000 /root/fits/h713-hdmi-trace-page-0131.fit
+7752820 bytes read in 504 ms (14.7 MiB/s)
+=> iminfo 0x50000000
+
+## Checking Image at 50000000 ...
+   FIT image found
+   FIT description: H713 arm64 kernel (6.18.38) + DTB
+    Image 0 (kernel)
+     Description:  Linux 6.18.38
+     Type:         Kernel Image
+     Compression:  gzip compressed
+     Data Start:   0x500000d0
+     Data Size:    7719328 Bytes = 7.4 MiB
+     Architecture: AArch64
+     OS:           Linux
+     Load Address: 0x48000000
+     Entry Point:  0x48000000
+     Hash algo:    sha256
+     Hash value:   dfa8738069147d15f5bc531ec4c0a904880c828e7db11071454f7b46c79e46d6
+    Image 1 (fdt-1)
+     Description:  sun50i-h713-hy200-qz713df-a1
+     Type:         Flat Device Tree
+     Compression:  uncompressed
+     Data Start:   0x5075cb78
+     Data Size:    32496 Bytes = 31.7 KiB
+     Architecture: AArch64
+     Hash algo:    sha256
+     Hash value:   32805344895596f4d6bc302e7ca64e286a5b9c53f3bd507892d6391d6966b109
+    Default Configuration: 'conf-1'
+    Configuration 0 (conf-1)
+     Description:  H713 HY200
+     Kernel:       kernel
+     FDT:          fdt-1
+## Checking hash(es) for FIT Image at 50000000 ...
+   Hash(es) for Image 0 (kernel): sha256+
+   Hash(es) for Image 1 (fdt-1): sha256+
+=>

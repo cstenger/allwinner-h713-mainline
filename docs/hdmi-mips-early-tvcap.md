@@ -245,7 +245,7 @@ last readable trace state.
 
 Evidence: [`hdmi-evidence/2026-09-23-safe-mailbox-source2`](hdmi-evidence/2026-09-23-safe-mailbox-source2/).
 
-## Dedicated trace-page candidate (offline)
+## Dedicated trace-page source-2 control
 
 The next U-Boot candidate retargets the same 391 guarded patch sites to a
 dedicated page at ARM physical `0x4d980000` / MIPS uncached `0xad980000`.
@@ -258,7 +258,7 @@ canaries at `+0x80` and `+0xffc`. The Linux reader verifies both canaries and
 Its `--source-only` mode samples just the source markers and guards, avoiding
 CPU_COMM stage chatter during the next bounded control.
 This removes the known heap and boot-code-gap placements, though exclusive
-MIPS runtime ownership still needs a hardware check.
+MIPS runtime ownership is not proven by static ranges alone.
 
 Both images built offline: U-Boot proper at
 `build/out/u-boot-proper-dedicated-trace.bin` (SHA256
@@ -267,7 +267,37 @@ and current-code FIT at `build/out/h713-hdmi-trace-page-0131.fit` (SHA256
 `558e256534f63a1d5a53a89b9383034220c8c2691253f7ffecb798855a4a0cee`).
 The FIT contains the QZ713DF_A1 DTB with `reg = <0x4d980000 0x1000>` and
 `no-map`; its kernel-matched CPU_COMM, power, EDID-clock, and receiver modules
-were rebuilt under `build/hdmi-diagnostic-0131/`. None of these new candidate
-artifacts has been installed or run on the projector. Its cold boot after the
-previous stall returned to the normal September 22 kernel, and the flashed
-earlier U-Boot proper and original SPL both retain their verified hashes.
+were rebuilt under `build/hdmi-diagnostic-0131/`.
+
+With owner authorization, only the 1,798 U-Boot-proper sectors at LBA
+`0x49ac00` were updated. Read-back matched padded-image SHA256
+`935a1b33c59f501cab498232d24108c548d941256958366792d29a9a30f0d526`;
+the original SPL hash was unchanged. U-Boot installed the guarded trace at
+`0x4d980000`, and the one-time FIT boot confirmed Linux's 4 KiB `no-map`
+reservation and TVCAP retention. The Linux reader verified 22 relocated
+instructions, mailbox magic, and both page canaries. Four matching modules
+loaded, a no-source daemon run succeeded, and a guarded baseline watch was
+stable with callback `0x5102` and worker `0x5203` from U-Boot's earlier
+source-1 transition.
+
+With the host GPU HDMI connector still `disconnected` and HPD/EDID untouched,
+one bounded `SetSource(2)` again failed to return. At the last readable sample
+(target uptime 147.450306), callback `0x5101`, event 0, and new source 2 had
+been published; canaries were both `0x43414e31`, and VP-init remained
+`0x7105`. Worker `0x5203`, previous source 0, and queue result 0 were stale
+from source 1. The reader did not sample callback `0x5102` or a new worker
+stage for source 2 before SSH closed. UART reported CPU_COMM no RETURN at
+uptime 147.888833, then went silent; there was no PID 1 SIGSEGV, Oops, or
+panic in the capture. Subsequent SSH had no route to host. A physical power
+cycle restored SSH and the normal installed September 22 kernel; read-only
+verification showed the dedicated-trace U-Boot-proper sectors retained their
+expected hash. The source switch was not repeated.
+
+The dedicated-page control keeps the earlier mailbox-corruption signatures
+out of the last observed state, so the source-2 path itself remains the main
+suspect. The unsampled interval still prevents claiming the callback or worker
+never progressed further, and MIPS runtime page ownership has not been proved
+for all states. More hardware source tests should wait for a recovery and a
+new, less disruptive way to observe that interval.
+
+Evidence: [`hdmi-evidence/2026-09-23-dedicated-trace-source2`](hdmi-evidence/2026-09-23-dedicated-trace-source2/).
