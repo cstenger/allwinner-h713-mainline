@@ -18,6 +18,12 @@
 #   m02  720x576   MPEG-2 Main            + B-frames            DVD/PAL shape
 #   m03  1280x720  MPEG-2 Main            progressive HD        HD progressive
 #   m04  720x576   MPEG-2 Main            interlaced sequence   interlaced coding
+#   p01  352x288   VP8 profile 0          bicubic + normal LF   VP8 minimum
+#   p02  1280x720  VP8 profile 0          bicubic + normal LF   panel-native
+#   p03  640x480   VP8 profile 1          bilinear + simple LF  filter pair 2
+#   p04  640x480   VP8 profile 2          bilinear, normal LF   filter pair 3
+#   p05  640x480   VP8 profile 3          full-pel + simple LF  filter pair 4
+#   p06  640x480   VP8 profile 0          multiple token parts  partitioned bool
 #
 # Streams are Annex-B elementary (.h264/.h265) because the target has no
 # container demuxer in the decode path -- keep the test about the decoder.
@@ -100,6 +106,36 @@ gen_hevc() {
 
   printf '    stream %s bytes, reference %s bytes (%s frames of %d)\n' \
     "$(stat -c%s "$name.h265")" "$(stat -c%s "$name.nv12")" \
+    "$(( $(stat -c%s "$name.nv12") / (w * h * 3 / 2) ))" "$frames"
+}
+
+# VP8. Unlike MPEG-2, VP8 defines exact integer reconstruction, so the .nv12
+# written here is a true correctness ORACLE and the target must match it
+# bit-for-bit -- the same relationship H.264 and HEVC have with their
+# references, and the reason vp8-decode-test.sh needs no PSNR arm and no
+# hardware-pinned baseline.
+#
+# IVF, NOT WEBM, and that is load-bearing. The WebM muxer is not reproducible:
+# two identical invocations produced different files (8062a200... vs
+# 818e3131...), which would silently break a generated-vector gate. The
+# nondeterminism is the container, not the codec -- IVF output is byte-identical
+# across runs. -threads 1 for the same reason.
+gen_vp8() {
+  local name=$1 w=$2 h=$3 frames=$4
+  shift 4
+
+  echo "==> $name  (${w}x${h}, $frames frames, VP8)"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "testsrc2=size=${w}x${h}:rate=25" -frames:v "$frames" \
+    -pix_fmt yuv420p -c:v libvpx -b:v 2M -threads 1 \
+    -deadline good -cpu-used 0 "$@" \
+    -f ivf "$name.ivf"
+
+  ffmpeg -hide_banner -loglevel error -y \
+    -i "$name.ivf" -pix_fmt nv12 -f rawvideo "$name.nv12"
+
+  printf '    stream %s bytes, reference %s bytes (%s frames of %d)\n' \
+    "$(stat -c%s "$name.ivf")" "$(stat -c%s "$name.nv12")" \
     "$(( $(stat -c%s "$name.nv12") / (w * h * 3 / 2) ))" "$frames"
 }
 
@@ -322,6 +358,89 @@ PY
     -i m06-720x576-field-clean.m2v -pix_fmt nv12 -f rawvideo m06-720x576-field-clean.nv12
   printf '    sw yardstick %s bytes\n' "$(stat -c%s m06-720x576-field-clean.nv12)"
 fi
+
+# p01 -- the VP8 minimum. Profile 0 is bicubic reconstruction with the normal
+# loop filter, which is what almost every VP8 file in the world uses.
+gen_vp8 p01-352x288-profile0 352 288 25
+
+# p02 -- panel-native, same coding tools. Separates "VP8 is broken" from "VP8 is
+# broken at this size", the job v02 does for H.264.
+gen_vp8 p02-1280x720-profile0 1280 720 25
+
+# p03/p04/p05 -- the other three VP8 profiles, and they are not cosmetic. The
+# profile field selects the RECONSTRUCTION FILTER and the LOOP FILTER, both of
+# which are in silicon:
+#
+#   0  bicubic   + normal loop filter   (p01/p02)
+#   1  bilinear  + simple loop filter
+#   2  bilinear  + normal loop filter
+#   3  full-pel  + simple loop filter
+#
+# A decoder can be perfect on profile 0 and wrong on the others, so testing only
+# the common case would be a gate that cannot see three of the four filter
+# combinations the hardware implements. Verified distinct: profiles 1 and 2
+# produce the same file SIZE but different bitstreams, so size is not evidence
+# of coverage here.
+gen_vp8 p03-640x480-profile1 640 480 25 -profile:v 1
+gen_vp8 p04-640x480-profile2 640 480 25 -profile:v 2
+gen_vp8 p05-640x480-profile3 640 480 25 -profile:v 3
+
+# p06 -- multiple token partitions. VP8 can split coefficient data into
+# independently-decodable bool-decoder partitions, which is a different
+# bitstream-parsing path through the engine than the single-partition default.
+#
+# NOT auto-alt-ref, which was the obvious other candidate and is a TRAP here:
+# ffmpeg's -auto-alt-ref is 2-pass only, and in single pass it produces a stream
+# byte-identical to the default. That rung would have tested nothing while
+# looking like altref coverage.
+gen_vp8 p06-640x480-partitions 640 480 25 -error-resilient partitions
+
+# The VP8 reference md5s, written straight to the committed location.
+#
+# This is the loop the H.264 gate never closed: its reference-md5.txt was made
+# by a manual step that was never committed, so when the file went missing there
+# was no way to regenerate it and the gate silently stopped checking anything.
+# Here the generator owns the file, so `git status` shows any drift immediately
+# and a fresh clone can rebuild it.
+#
+# Software decodes are the oracle because VP8 defines exact reconstruction --
+# see the note on gen_vp8. This is NOT the MPEG-2 arrangement, where the
+# baseline has to come off the hardware.
+VP8_REF="$PROJECT_ROOT/tools/video/vp8-reference-md5.txt"
+echo "==> vp8-reference-md5.txt"
+{
+  echo "# VP8 decode references for H713 cedrus."
+  echo "#"
+  echo "# Host SOFTWARE decodes, and that is correct for VP8: the codec defines"
+  echo "# exact integer reconstruction, so hardware must match bit-for-bit."
+  echo "# (Contrast mpeg2-reference-md5.txt, which must be captured from the"
+  echo "# hardware because MPEG-2 specifies only IDCT accuracy.)"
+  echo "#"
+  echo "# Regenerate with tools/video/make-test-streams.sh -- it writes this file."
+  echo "#"
+} > "$VP8_REF"
+for spec in p01-352x288-profile0:352:288 p02-1280x720-profile0:1280:720 \
+            p03-640x480-profile1:640:480 p04-640x480-profile2:640:480 \
+            p05-640x480-profile3:640:480 p06-640x480-partitions:640:480; do
+  v=${spec%%:*}; rest=${spec#*:}; vw=${rest%%:*}; vh=${rest#*:}
+  [ -f "$v.nv12" ] || continue
+  python3 - "$v.nv12" "$v" "$(( vw * vh * 3 / 2 ))" >> "$VP8_REF" <<'PY'
+import hashlib, sys
+path, name, fsize = sys.argv[1], sys.argv[2], int(sys.argv[3])
+n = 0
+whole = hashlib.md5()
+with open(path, 'rb') as fh:
+    while True:
+        d = fh.read(fsize)
+        if len(d) < fsize: break
+        print(f"{name} frame{n:04d} {hashlib.md5(d).hexdigest()}")
+        whole.update(d)
+        n += 1
+print(f"{name} WHOLE {n} frames {whole.hexdigest()}")
+PY
+done
+printf '    %s vectors, %s lines\n' \
+  "$(grep -c WHOLE "$VP8_REF")" "$(wc -l < "$VP8_REF")"
 
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host
