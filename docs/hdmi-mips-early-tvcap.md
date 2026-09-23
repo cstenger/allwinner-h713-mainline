@@ -206,15 +206,43 @@ The isolated U-Boot build completed. Its combined image is
 `f4cdfc95f356c2f83df5325f3577c6e610c283dcc5610e2d0b683eb6922ba3a3`).
 The U-Boot-proper portion after the first 32 KiB is 920,169 bytes, SHA256
 `8e9ee6f19b6a906c0143d1c55c1be1474ea3b0a5c7353b6f6104cd781c7266ce`.
-The current projector U-Boot proper and SPL were backed up read-only to
+The original projector U-Boot proper and SPL were backed up read-only to
 `build/uboot-proper-before-safe-trace.bin` and
 `build/spl-before-safe-trace.bin` (4 MiB and 32 KiB respectively). The device
-is still running its original boot chain and default September 22 kernel;
-this new U-Boot has not been flashed or run.
+was initially still running its original boot chain and default September 22
+kernel when the image was prepared.
 
-The next hardware step, after approval, is to install and verify only U-Boot
-proper at its established LBA `0x49ac00`, leaving the SPL, environment, and
-installed kernel untouched. A cold boot can then install the relocated trace
-with `h713_disp mips-comm-trace 0x34`; the guarded reader must pass before a
-bounded source-selection control. If any guard fails, stop before switching
-sources.
+## Safe-mailbox source-2 control
+
+With owner approval, 1,798 sectors of U-Boot proper were written at its
+established LBA `0x49ac00`; full read-back matched SHA256
+`b437d05ef0c638929b4d158fa2c6730789112ddd401141621a15d426d7007ed5`.
+The SPL's SHA256 remained
+`cb9da87448a57aa1cafbc7ebf66200b5183304cef1eafe23d0818b99696a49ec`.
+U-Boot booted, authenticated the exact board-B firmware, verified every patch
+site, and installed the relocated mailbox at `0x4b100e00`. The one-time
+current-code FIT again retained TVCAP, and the Linux reader verified all 22
+relocated patch words plus mailbox magic. U-Boot's earlier source-1 transition
+was visible as callback `0x5102`, worker `0x5203`; no-source daemon
+initialization and all four kernel-matched diagnostic modules completed.
+
+One no-signal `SetSource(2)` still did not return. The final two sampled trace
+states show callback `0x5101`, event 0, new source 2; no new `0x5102` or worker
+stage was sampled. The existing worker `0x5203`, old source 0, and queue result
+0 are from an earlier source-1 event and **cannot** be credited to this
+source-2 call. About 97 ms after the first source-2 sample, the `vp_init`
+mailbox word unexpectedly changed from `0x7105` to `0x8baa0000`. None of the
+five VP-init marker stores can write that value. This may be a runtime writer
+or corruption in the apparently zero-filled firmware gap; its ownership is
+not established by the static image check. The trace is outside the known
+CPU_COMM heap, but is not yet proven free of all runtime uses.
+
+The serial capture contained a CPU_COMM no-RETURN message, then went silent.
+The earlier PID 1 SIGSEGV did not recur in this capture, but SSH timed out and
+serial SysRq help produced no output. The owner was asked to power-cycle the
+projector. No further source switch should run until the `+0xe38` mutation is
+explained or the mailbox is placed in a runtime-proven reserved range. The
+unsampled interval also leaves open whether the source worker ran after the
+last readable trace state.
+
+Evidence: [`hdmi-evidence/2026-09-23-safe-mailbox-source2`](hdmi-evidence/2026-09-23-safe-mailbox-source2/).

@@ -1,0 +1,83 @@
+[  176.861407] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":0.0}
+[  191.065390] cpu_comm: MIPS callback channel pid=577 id=0x2411
+[  191.123639] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  191.131201] sunxi_cpu_comm_send_intr_to_mips: 32 callbacks suppressed
+[  191.131214] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  191.132486] cpu_comm_msgbox_drain: 32 callbacks suppressed
+[  191.132499] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  191.138625] h713-mips-trace: {"comm":"b001:other","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.277}
+[  191.143801] cpu_comm_trace_ipc: 116 callbacks suppressed
+[  191.143811] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  191.143821] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  191.155011] h713-mips-trace: {"comm":"c009:return-ack-wait","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.294}
+[  191.190257] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  191.190271] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  191.262593] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  191.270860] cpu_comm: IPC[handle_return] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  191.279299] cpu_comm: IPC[dispatch] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  191.287323] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  191.287690] sunxi-mmc 4021000.mmc: v5p3x delay: rate=50000000 timing=6 width=4 DRV=00030000 NTSR=81710110
+[  191.294520] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.433}
+[  191.340118] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  191.347644] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  191.351900] h713-mips-trace: {"comm":"c009:return-ack-wait","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.491}
+[  191.353765] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  191.395586] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  191.404030] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  191.412814] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  191.420994] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  191.426222] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  191.434507] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  191.437776] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.576}
+[  191.484803] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  191.492334] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  191.494543] h713-mips-trace: {"comm":"c009:return-ack-wait","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.633}
+[  191.498467] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  191.540289] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  191.545546] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  191.546404] h713-mips-trace: {"comm":"d004:other","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.685}
+[  191.593410] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.732}
+[  191.595701] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  191.637464] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  191.640804] h713-mips-trace: {"comm":"c009:return-ack-wait","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.78}
+[  191.643582] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  191.685320] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  191.690569] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  191.696113] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.835}
+[  191.740734] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  191.748258] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 1
+[  191.754404] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  191.759831] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  191.760400] h713-mips-trace: {"comm":"c009:return-ack-wait","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.899}
+[  191.765097] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 1
+[  191.807204] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.946}
+[  191.815251] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  191.855721] h713-mips-trace: {"comm":"b004:handler-enter","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":14.994}
+[  191.897697] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.036}
+[  191.921654] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  191.945214] h713-mips-trace: {"comm":"b004:handler-enter","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.084}
+[  191.987325] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.126}
+[  192.011386] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.084094] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.094920] h713-mips-trace: {"comm":"b004:handler-enter","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.233}
+[  192.137510] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.276}
+[  192.161412] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.233407] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.249252] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":7,"new":0,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.386}
+[  192.293134] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.353690] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.365769] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.503}
+[  192.412921] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.472446] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.532476] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.591965] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.651220] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.710681] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.771334] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  192.782195] h713-mips-trace: {"comm":"c008:other","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.919}
+[  192.823992] h713-mips-trace: {"comm":"c013:return-send-done","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":15.962}
+[  192.830704] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  193.921230] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  193.932837] h713-mips-trace: {"comm":"b004:handler-enter","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5101:callback-event","worker":"5203:transition-complete","event":0,"new":2,"old":0,"source_queue":"00000000","vp_init":"7105","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":17.071}
+[  194.029531] h713-mips-trace: {"comm":"b004:handler-enter","call":"e011:call-dispatch-done","ack":"f003:return-ack-done","queue":"00000000","callback":"5101:callback-event","worker":"5203:transition-complete","event":0,"new":2,"old":0,"source_queue":"00000000","vp_init":"8baa0000","frame":"6103","dirty":"ffffffff","mode":"00000002","control":"03000010","commit":"00000001","dirty_latch":"00000001","seconds":17.168}
+[  194.371901] cpu_comm: CPUComm_CallEx: no RETURN after 5000 ms (session=0x2b, interrupted)
