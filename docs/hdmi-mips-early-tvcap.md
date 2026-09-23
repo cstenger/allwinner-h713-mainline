@@ -301,3 +301,29 @@ for all states. More hardware source tests should wait for a recovery and a
 new, less disruptive way to observe that interval.
 
 Evidence: [`hdmi-evidence/2026-09-23-dedicated-trace-source2`](hdmi-evidence/2026-09-23-dedicated-trace-source2/).
+
+## Preselecting source 2 before Linux
+
+The cold-booted dedicated-trace U-Boot completed a direct, single
+`THal_Vp_SetSource(2)` call through its live MIPS channel in about 1 ms.
+Trace stages were callback `0x5102`, worker `0x5203`, event 0, new 2,
+old 0, and queue result zero. Booting the same private 0131 FIT afterward
+preserved that trace with intact canaries and left Linux, SSH, and the MIPS
+shell responsive. All four diagnostic modules loaded, and the complete
+no-source daemon initialization returned successfully. No Linux `SetSource`
+call was made. Later non-source events overwrote the event/new trace words,
+so the source object's private current-source value after `THal_Vp_Init`
+has not yet been directly read.
+
+A ten-second SCP HPD/EDID trial stopped at its prerequisite check, before
+changing HPD. The 0131 FIT omitted the `h713-edid-clock-hold` device-tree
+consumer, so loading its module did not bind it to a device or acquire the
+EDID clock/reset. Diagnostic patch 0132 adds that node. A corrected FIT
+was built with the identical kernel and a DTB containing both the EDID
+consumer and trace-page reservation. Its SHA256 is
+`7c3e8258b0b3436880f50c01d82f545c0ab40fd59d9d667eb4a3043dc0c12f1e`;
+the staged target copy matched. It has not yet booted. The next signal
+window must follow a cold power cycle because U-Boot's MIPS test warns
+against a second firmware run on the same power cycle.
+
+Evidence: [`hdmi-evidence/2026-09-23-uboot-source2-handoff`](hdmi-evidence/2026-09-23-uboot-source2-handoff/).
