@@ -1,0 +1,44 @@
+Linux h713-arm64 6.18.38 #5 SMP Tue Sep 22 14:02:09 PDT 2026 aarch64 GNU/Linux
+domain                          status          children        performance
+    /device                         runtime status                  managed by
+------------------------------------------------------------------------------
+AV1                             off-0                           0
+VE                              off-0                           0
+    1c0e000.video-codec             suspended                   0           SW
+TVCAP                           on                              0
+    h713-hdmi-tvcap                 active                      0           SW
+TVFE                            on                              0
+    h713-hdmi-tvfe                  active                      0           SW
+GPU                             off-0                           0
+    1800000.gpu                     suspended                   0           SW
+          hdmi-audio                 0       0        0        1152000000  0          0     50000      Y            deviceless                      no_connection_id         
+          tvfe-1296m                 1       1        0        1296000000  0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+          tcd3                       0       0        0        27000000    0          0     50000      Y            deviceless                      no_connection_id         
+       vincap-dma                    1       1        0        150000000   0          0     50000      Y         deviceless                      of_clk_get_from_provider 
+          bus-tvcap                  1       1        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+          bus-cap-300m               1       1        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider 
+          bus-hdmi-audio             0       0        0        100000000   0          0     50000      Y            deviceless                      no_connection_id         
+THDMIRX_READ_BEGIN 50c0000
+050c0000 0x70F80029
+THDMIRX_READ_END 50c0000
+THDMIRX_READ_BEGIN 50c0004
+050c0004 0x00000000
+THDMIRX_READ_END 50c0004
+THDMIRX_READ_BEGIN 50c0008
+050c0008 0x00000000
+THDMIRX_READ_END 50c0008
+THDMIRX_READ_BEGIN 50c000c
+050c000c 0xFE000115
+THDMIRX_READ_END 50c000c
+THDMIRX_READ_BEGIN 50c0010
+050c0010 0x03FF00FF
+THDMIRX_READ_END 50c0010
+THDMIRX_READ_BEGIN 50c0014
+050c0014 0x030000FF
+THDMIRX_READ_END 50c0014
+THDMIRX_READ_BEGIN 50c0018
+050c0018 0x80000501
+THDMIRX_READ_END 50c0018
+THDMIRX_READ_BEGIN 50c001c
+050c001c 0x00000000
+THDMIRX_READ_END 50c001c

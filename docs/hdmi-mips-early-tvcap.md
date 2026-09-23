@@ -97,12 +97,20 @@ and passed its first hardware stability test after a cold boot. It changed
 deframer, and CED values latched, while the five-second witness and MIPS shell
 remained healthy. The full no-source daemon initialization also passed.
 
-The subsequent live attempt did not provide a valid SetSource comparison:
-host-side orchestration consumed almost all of the 30-second HPD interval, and
-the SCP helper restored HPD before the daemon reached `SetSource(3)`. The call
-then stopped the board as before. The synchronized trial harness now starts the
-daemon automatically when the source connector becomes enabled, so the next
-cold-boot attempt will issue SetSource near the beginning of the HPD window.
+The synchronized follow-up removed that timing ambiguity. The SCP asserted HPD
+at target uptime `132.111731`, and the daemon's MIPS callback channel was live
+2.606 seconds later with roughly 27 seconds left in the signal window. The GPU
+was connected, EDID-complete, and enabled at 640x480. Every pre-source RPC
+returned; `SetSource(3)` began and the live hot-plug callback reached userspace.
+The source RPC still did not return. Five seconds later CPU_COMM reported no
+RETURN for session `0x16`, and SSH, ping, and serial stopped responding.
+
+This places the next experiment in the existing firmware source-worker trace,
+not another uninstrumented source switch. `h713_disp mips-comm-trace 0x34`
+already marks source callback queueing and worker stages `0x5201` through
+`0x5203`; `tools/mips/read-comm-trace.py` verifies those trampolines and streams
+mailbox changes without writing firmware or receiver registers.
 
 Evidence: [`hdmi-evidence/2026-09-22-callback-setsource`](hdmi-evidence/2026-09-22-callback-setsource/).
 Controller evidence: [`hdmi-evidence/2026-09-22-thdmirx-init`](hdmi-evidence/2026-09-22-thdmirx-init/).
+Synchronized evidence: [`hdmi-evidence/2026-09-22-synchronized-setsource`](hdmi-evidence/2026-09-22-synchronized-setsource/).

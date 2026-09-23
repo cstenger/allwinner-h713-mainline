@@ -223,11 +223,16 @@ and the complete callback-capable initialization passed without source
 selection. This establishes the THDMIRX sequence as stable under the retained
 TVCAP setup.
 
-The first follow-up source trial was mistimed: host-side orchestration started
-the daemon near the end of the 30-second HPD assertion, and the SCP helper
-restored HPD before the daemon reached `SetSource(3)`. The later call again did
-not return and the board stopped, but that result does not test a sustained
-live input. `tools/hdmi/run-detection-trial.py --run-hdmird --seconds 30` now
-starts the daemon automatically as soon as the GPU output becomes enabled.
-Use that synchronized path after the next cold boot. See
-[the controller evidence](hdmi-evidence/2026-09-22-thdmirx-init/README.md).
+The first follow-up source trial was mistimed, so the harness was changed to
+start the daemon as soon as the GPU output became enabled. The synchronized
+trial then started the daemon 2.606 seconds after HPD assertion, with roughly
+27 seconds left. The exact EDID was present, the GPU was enabled at 640x480,
+all pre-source calls returned, and the hot-plug callback reached userspace.
+`SetSource(3)` still produced no RETURN; CPU_COMM timed out session `0x16`,
+then SSH, ping, and serial all stopped.
+
+The next run uses the U-Boot firmware source-worker trace already present in
+the flashed diagnostic build. Its markers distinguish callback queueing,
+worker dequeue, unchanged-source handling, and completion of the general
+source transition. `tools/mips/read-comm-trace.py` performs guarded, read-only
+sampling of that mailbox. See [the synchronized evidence](hdmi-evidence/2026-09-22-synchronized-setsource/README.md).
