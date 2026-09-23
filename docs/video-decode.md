@@ -522,11 +522,15 @@ Forcing NV12 is required for the same reason as H.264: unforced it negotiates
 the 32x32 tiled `ST12`, which is correct output that can never match a linear
 reference. Vectors come from `tools/video/make-test-streams.sh`.
 
-**10-bit does not work**, and the blocker is in the kernel, not this SoC:
-mainline cedrus exposes no 10-bit capture format at all, so `Main10` reaches EOS
-having decoded zero frames even though the capability bit and the hardware
-registers are both present. Full analysis, and what it would take for stock mpv
-to use the VE at all, in [vaapi-scope.md](vaapi-scope.md).
+**10-bit works, and it is bit-exact** — the claim that it "does not work" was
+wrong twice over. The engine decodes Main10 and writes Allwinner's 8-bit plane
+plus a packed 2-bit plane; read both back and every sample matches a software
+10-bit decode exactly (2026-09-23, three vectors, all three planes). cedrus
+negotiates an 8-bit fourcc and sizes the buffer for both planes, so a client
+today gets a correct 8-bit rendition of a 10-bit stream. What is missing is a
+V4L2 fourcc describing the 8+2 layout, not the ability to decode. See
+[hevc-10bit-findings.md](hevc-10bit-findings.md); what it would take for stock
+mpv to use the VE at all is in [vaapi-scope.md](vaapi-scope.md).
 
 ## NEXT PHASE — audio
 

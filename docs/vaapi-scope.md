@@ -1768,6 +1768,11 @@ here, and there is no way for the shim to detect it.
 > correct 8-bit rendition. What is missing is a fourcc describing the 8+2
 > layout, not the ability to decode. The text below is kept for its register
 > detail and should not be quoted for its conclusion.
+>
+> **Re-measured 2026-09-23: read the 2-bit plane back and it is BIT-EXACT.**
+> The 57 dB was the 8-bit plane alone. All three planes match a software 10-bit
+> decode sample for sample. The P010 second-output shortcut is now a measured
+> dead end rather than an unknown, with a positive control.
 
 ## 10-bit does not work, and the blocker is in the kernel
 

@@ -7,6 +7,10 @@
  * Injects COMPOSE before capture allocation and dumps one completed buffer.
  * CEDRUS_DUMP_ONLY captures the unchanged coded output without sizing ioctls.
  * CEDRUS_DUMP_AT selects its one-based completion number (default 1).
+ * CEDRUS_DUMP_FULL writes the whole allocated buffer instead of sizeimage as it
+ * stood at the app's G_FMT. Main10 needs this: bit_depth is only known once the
+ * SPS control arrives, so a G_FMT taken earlier reports the 8-bit size and the
+ * 2-bit side plane past it is never written out.
  * CEDRUS_CANVAS optionally requests a larger capture allocation (for example
  * 1280x720) while COMPOSE remains the smaller active picture.
  * CEDRUS_STRIDE optionally requests a larger aligned capture pitch.
@@ -253,16 +257,17 @@ int ioctl(int fd, unsigned long req, ...)
             map = mmap(NULL, buf.length, PROT_READ, MAP_SHARED, fd, buf.m.offset);
             if (map == MAP_FAILED)
                 return -1;
+            size_t want = getenv("CEDRUS_DUMP_FULL") ? buf.length : capture.sizeimage;
             out = fopen(getenv("CEDRUS_DUMP"), "wb");
             int failed = !out;
             if (out) {
-                failed = fwrite(map, 1, capture.sizeimage, out) != capture.sizeimage;
+                failed = fwrite(map, 1, want, out) != want;
                 if (fclose(out)) failed = 1;
             }
             munmap(map, buf.length);
             if (failed) { errno = EIO; return -1; }
-            fprintf(stderr, "compose-probe: saved capture %u (%u bytes)\n",
-                    completed, capture.sizeimage);
+            fprintf(stderr, "compose-probe: saved capture %u (%zu bytes, allocated %u)\n",
+                    completed, want, buf.length);
             dumped = 1;
         }
     }

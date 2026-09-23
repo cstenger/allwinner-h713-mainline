@@ -191,17 +191,35 @@ gen_hevc h05-640x480-scaling-custom 640 480 25 main \
 # does WPP and slices only) and no tiling HEVC encoder is installed.
 gen_hevc h06-640x480-lossless 640 480 25 main "lossless=1"
 
-# h07 -- Main10. It decodes: the engine writes an 8-bit plane plus a separate
-# 2-bit plane, and the 8-bit plane is a correct rendition (57 dB PSNR against
-# this software reference). It is NOT scored by md5 for that reason -- the VE
-# truncates where swscale dithers -- so it lives in hevc-10bit-test.sh rather
-# than the H1 gate. 10 frames is plenty; this is a format question, not an
-# endurance one.
-ffmpeg -hide_banner -loglevel error -y \
-  -f lavfi -i "testsrc2=size=640x480:rate=25" -frames:v 10 \
-  -pix_fmt yuv420p10le -c:v libx265 -profile:v main10 \
-  -x265-params "log-level=error:keyint=5" -f hevc h07-640x480-main10.h265
-echo "==> h07-640x480-main10  (640x480, 10 frames, main10) $(stat -c%s h07-640x480-main10.h265) bytes"
+# h07 -- Main10. It decodes, and with the 2-bit side plane read back it is
+# bit-exact 10 bit (hevc-10bit-verify.py). The 8-bit plane alone -- which is all
+# a client can currently ask for -- is a correct 8-bit rendition, 57 dB against
+# this software reference. It is NOT scored by md5 for that reason, so it lives
+# in hevc-10bit-test.sh rather than the H1 gate. 10 frames is plenty; this is a
+# format question, not an endurance one.
+gen_hevc10() {
+  local name=$1 w=$2 h=$3
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "testsrc2=size=${w}x${h}:rate=25" -frames:v 10 \
+    -pix_fmt yuv420p10le -c:v libx265 -profile:v main10 \
+    -x265-params "log-level=error:keyint=5" -f hevc "$name.h265"
+  echo "==> $name  (${w}x${h}, 10 frames, main10) $(stat -c%s "$name.h265") bytes"
+}
+
+gen_hevc10 h07-640x480-main10 640 480
+
+# h08 -- Main10 at a second resolution, so a layout result cannot come from one
+# geometry. 720 is not a multiple of 32 and 480 is, which already differ.
+gen_hevc10 h08-1280x720-main10 1280 720
+
+# h09 -- THE ONE THAT CAN FAIL. 482 is 8 mod 16, so the coded height (488, a
+# multiple of 8) and the capture canvas height (496, a multiple of 16) differ.
+# The 2-bit chroma rows begin after coded_h luma rows, and reading them at the
+# canvas height gives bit-exact luma with chroma 81.6% correct at maxerr 3 --
+# 62.5 dB, which passes any PSNR threshold loose enough to be safe. h07 and h08
+# cannot see that bug. Keep this vector: without it the 10-bit gate is decorative.
+# 642 also makes DIV_ROUND_UP(width, 4) differ from width / 4.
+gen_hevc10 h09-642x482-main10 642 482
 
 # m01 -- the MPEG-2 minimum. I+P only, so a failure here is fundamental rather
 # than a reordering or interlacing bug.
