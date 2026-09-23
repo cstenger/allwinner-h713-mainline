@@ -863,7 +863,7 @@ Cedrus/VE3). They are different silicon and only one of them is a codec.
 | block | node | what it is | state |
 | --- | --- | --- | --- |
 | **VE / Cedrus** | `video-codec@1c0e000` | the decoder — H.264/H.265/MPEG-2/VP8, V4L2 stateless M2M | binds, `/dev/video0` (2026-08-07) |
-| **AV1** | `av1-decoder@1c0d000` | separate AV1 block | node exists, compatible `allwinner,sunxi-google-ve`, **no driver in our tree binds it** — inert |
+| **AV1 + VP9** | `av1-decoder@1c0d000` | separate block, **Hantro G2 family** — does VP9 as well as AV1, despite the node name | node exists, compatible `allwinner,sunxi-google-ve`, **no driver in our tree binds it** — inert. Evidence and port plan: [vp9-av1-hantro-g2](reference/vp9-av1-hantro-g2-2026-09-23.md) |
 | **DECD** | `dec@5600000` | **not a codec** — the AFBD frame-submission path that scans decoded frames out to the panel | patch 0013 present, `CONFIG_SUNXI_DECD` off, node `disabled` |
 
 DECD owns the `0x05600xxx` AFBD window — the same registers
