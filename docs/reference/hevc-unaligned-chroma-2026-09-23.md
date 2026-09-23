@@ -1,11 +1,30 @@
-# HEVC inter chroma is wrong when the PITCH is not a multiple of 32 — FIXED 2026-09-23
+# Inter chroma is wrong when the PITCH is not a multiple of 32 — FIXED 2026-09-23
 
 Found by the rewritten 10-bit gate on its first run with an unaligned vector.
-**It is not a 10-bit defect**, and it is not in userspace. Luma is unaffected,
-which is why nothing caught it for so long.
+**It is not a 10-bit defect, not an HEVC defect, and not in userspace.** Luma
+is unaffected, which is why nothing caught it for so long.
 
 **Fixed by patch 0125** (`media: cedrus: align the capture pitch to 32`).
 Everything below is the investigation and the evidence.
+
+## It affected every codec, not just HEVC
+
+The sizing path is shared, so the defect was too. Measured at 656x480 by
+swapping the pre-fix module back in, worst chroma MSE against a software decode
+over ten frames:
+
+| codec @ 656x480 | pre-fix chroma | bad frames | pre-fix luma | post-fix |
+| --- | --- | --- | --- | --- |
+| H.264 | 7772.6 | 8/10 | 0.000 | **bit-exact** |
+| VP8 | 8868.6 | 8/10 | 0.000 | **bit-exact** |
+| HEVC | 5828.2 | 8/10 | 0.000 | **bit-exact** |
+
+8 of 10 is every frame except the two keyframes (`-g 5`). Luma is exactly
+0.000 in all three, before and after — the signature is identical across
+codecs, which is what a shared-path defect looks like.
+
+This was originally filed as an HEVC bug because HEVC is where the gate that
+found it happens to look. The title above has been corrected accordingly.
 
 **The rule, from an axis-isolation matrix (all 8-bit Main, all on hardware):**
 
@@ -149,18 +168,36 @@ For 32-aligned widths the patch changes nothing — `ALIGN(w, 16)` and
 `ALIGN(w, 32)` are the same number — so the regression surface is exactly the
 widths that were already broken.
 
+## Regression cover, and proof it can fail
+
+Both gates were run against the pre-fix module to confirm they actually catch
+this. A guard that has never failed is not a guard.
+
+**`h10-656x480-unaligned`, in the H1 HEVC gate.** 656 is a multiple of 16 and
+deliberately not of 32, so it pins the exact distinction that can regress.
+
+| | pre-fix | post-fix |
+| --- | --- | --- |
+| h10 software arm | PASS — harness sound | PASS |
+| h10 gst / va arms | **MISMATCH, both** | bit-exact |
+| H1 total | 12 pass, **2 fail** | **14 pass, 0 fail** |
+
+The software arm passing while both hardware arms fail is the shape you want:
+it says the harness is right and the hardware is wrong.
+
+**`hevc-10bit-verify.py` now checks an inter frame.** It dumped capture 1 and
+nothing else — always an I-frame — so it reported h09 bit-exact on every plane
+straight through this defect. It now checks captures 1 and 3, matching each
+against whichever reference frame it actually equals, because completion order
+is not display order once B-frames exist (h08's capture 3 is reference frame 2).
+Against the pre-fix module it fails on h09, naming the pitch shortfall rather
+than dying in an IndexError as the first version of that check did.
+
 ## Still open
 
-- **Arm 3 only ever inspects an I-frame.** `hevc-10bit-verify.py` dumps
-  `CEDRUS_DUMP_AT=1`, the first completed capture, so it reported h09 as
-  bit-exact on all planes throughout — it could not have caught this bug and
-  would not catch a regression of it. Pointing it at a later capture is the
-  obvious hardening and is not done.
-- **No unaligned vector is in the H1 gate.** The vectors that found this
-  (642/648/656 wide) live only in this investigation. Until one is in a gate,
-  nothing stops the alignment being "simplified" back to 16 — the in-code
-  comment is currently the only guard.
-- **Other codecs are untested at unaligned widths.** MPEG-2's md5s are
-  unchanged, but that only shows no regression at 720 wide; H.264 and VP8 were
-  never run at a non-32-aligned width, before or after. The shared sizing path
-  means they plausibly had the same defect.
+- **No H.264 or VP8 vector guards the alignment.** Deliberate: the defect is in
+  the shared sizing path, so `h10` catches any regression of it, and a second
+  and third vector would cost gate time to re-prove the same line. Revisit if
+  the sizing ever diverges per codec.
+- **MPEG-2 was never tested at an unaligned width.** Its md5s are unchanged at
+  720 wide, which shows no regression but not immunity.

@@ -191,6 +191,24 @@ gen_hevc h05-640x480-scaling-custom 640 480 25 main \
 # does WPP and slices only) and no tiling HEVC encoder is installed.
 gen_hevc h06-640x480-lossless 640 480 25 main "lossless=1"
 
+# h10 -- THE PITCH-ALIGNMENT GUARD, and the only vector here that is not a
+# multiple of 32 wide. 656 is deliberately a multiple of 16 but NOT of 32,
+# because that is exactly the distinction that can regress.
+#
+# The engine rounds VE_PRIMARY_FB_LINE_STRIDE_CHROMA -- which cedrus programs as
+# bytesperline / 2 -- up to 16 in its own units, so the chroma stride it uses is
+# ALIGN(bytesperline, 32). At a pitch that is 16- but not 32-aligned it writes
+# chroma at the pitch and reads reference chroma a step wider: intra frames stay
+# correct, every inter frame corrupts in chroma, and LUMA IS NEVER WRONG. A gate
+# scoring luma, or only the first frame, cannot see it -- which is how it
+# survived until 2026-09-23 with every vector in this file 640, 1280 or 1920
+# wide. Patch 0125 and docs/reference/hevc-unaligned-chroma-2026-09-23.md.
+#
+# Keep this vector. Without it nothing stops the 32 in cedrus_video.c going
+# back to 16, and the failure it guards against is invisible to every other
+# check in the tree.
+gen_hevc h10-656x480-unaligned 656 480 25 main
+
 # h07 -- Main10. It decodes, and with the 2-bit side plane read back it is
 # bit-exact 10 bit (hevc-10bit-verify.py). The 8-bit plane alone -- which is all
 # a client can currently ask for -- is a correct 8-bit rendition, 57 dB against

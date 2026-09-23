@@ -64,7 +64,8 @@ mkdir -p "$OUT"
 [ -r "$REF" ] || { echo "FATAL: no reference md5 file at $REF"; exit 1; }
 
 VECTORS=${*:-"h01-640x480-main h02-1280x720-main h03-640x480-nowpp \
-	h04-640x480-scaling h05-640x480-scaling-custom h06-640x480-lossless"}
+	h04-640x480-scaling h05-640x480-scaling-custom h06-640x480-lossless \
+	h10-656x480-unaligned"}
 
 # Sum the per-CPU columns of the video-codec interrupt line. A rise of exactly
 # one per frame is positive proof the VE did the work -- stronger than "we

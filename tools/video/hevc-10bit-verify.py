@@ -11,6 +11,17 @@ A PSNR threshold would be the wrong gate. The 8-bit plane alone already scores
 59 dB against a 10-bit reference, so any threshold loose enough to be safe would
 pass a run in which the 2-bit plane was never read.
 
+CHECK AN INTER FRAME, NOT JUST THE FIRST CAPTURE. Until 2026-09-23 this dumped
+capture 1 and nothing else -- always an I-frame. It therefore reported h09 as
+bit-exact on every plane straight through the chroma-stride defect that
+corrupted every inter-predicted frame in the same clip (patch 0125), and it
+would not catch a regression of it either. The default now checks capture 1 and
+capture 3; with keyint=5 the third completed capture cannot be an I-frame.
+
+Completion order is not display order once B-frames exist, so a capture is not
+compared against "reference frame N". It is matched against every reference
+frame and must equal one of them exactly.
+
 PICK A HEIGHT THAT IS 8 MOD 16. The 2-bit chroma rows start after coded_h luma
 rows -- the SPS height, a multiple of 8 -- not after the capture canvas height,
 which is a multiple of 16. Those agree at 480 and 720 and disagree at 482, and
@@ -18,13 +29,14 @@ reading chroma at the canvas height gives bit-exact luma with 81.6% of chroma
 correct and maxerr 3, which reads as rounding rather than a layout error. The
 default vector list includes 642x482 for exactly this reason.
 
-    usage: ./hevc-10bit-verify.py [--probe FULL_DUMP.so] [W]x[H]:CLIP ...
+    usage: ./hevc-10bit-verify.py [--probe FULL_DUMP.so] [--at 1,3] [W]x[H]:CLIP ...
 """
 import argparse
 import math
 import os
 import subprocess
 import sys
+from array import array
 from pathlib import Path
 
 VECTORS = '/root/video-test'
@@ -40,29 +52,37 @@ parser.add_argument('vectors', nargs='*', default=DEFAULT,
                     help='WxH:path entries; default is the three-vector set')
 parser.add_argument('--probe', type=Path, default=Path('/root/probe-full.so'),
                     help='LD_PRELOAD dumper built with CEDRUS_DUMP_FULL support')
-parser.add_argument('--frames', type=int, default=5)
+parser.add_argument('--at', default='1,3',
+                    help='capture numbers to check; 1 is an I-frame, 3 is not')
+parser.add_argument('--frames', type=int, default=6)
 args = parser.parse_args()
 
 if not args.probe.is_file():
     parser.error(f'{args.probe} not found; build cedrus-compose-probe.c with '
                  'CEDRUS_DUMP_FULL and pass it with --probe')
 
+AT = [int(v) for v in args.at.split(',') if v.strip()]
+if not AT:
+    parser.error('--at needs at least one capture number')
+if max(AT) > args.frames:
+    parser.error(f'--at {max(AT)} needs --frames {max(AT)} or more')
+
 DUMP = Path('/var/tmp/hevc10-capture.bin')
 REF = Path('/var/tmp/hevc10-reference.yuv')
 
 
-def decode(clip):
+def decode(clip, at):
     """Decode on the VE and dump the whole allocated capture buffer."""
     env = {k: v for k, v in os.environ.items() if not k.startswith('CEDRUS_')}
     env.update(LIBVA_DRIVER_NAME='v4l2_request',
                LIBVA_DRIVERS_PATH='/usr/lib/aarch64-linux-gnu/dri',
                LD_PRELOAD=str(args.probe), CEDRUS_DUMP=str(DUMP),
-               CEDRUS_DUMP_AT='1', CEDRUS_DUMP_ONLY='1', CEDRUS_DUMP_FULL='1')
+               CEDRUS_DUMP_AT=str(at), CEDRUS_DUMP_ONLY='1', CEDRUS_DUMP_FULL='1')
     DUMP.unlink(missing_ok=True)
     p = subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error',
                         '-hwaccel', 'vaapi', '-hwaccel_output_format', 'vaapi',
                         '-i', clip, '-frames:v', str(args.frames), '-f', 'null', '-'],
-                       env=env, capture_output=True, text=True, timeout=120)
+                       env=env, capture_output=True, text=True, timeout=180)
     if p.returncode or not DUMP.exists():
         raise RuntimeError(f'{clip}: hardware decode failed: {p.stderr[-600:]}')
     if 've+' not in p.stderr and 'compose-probe: saved' not in p.stderr:
@@ -71,19 +91,22 @@ def decode(clip):
 
 
 def reference(clip, w, h):
+    """Decode the reference once; return its bytes and the per-frame size."""
     subprocess.run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-i', clip,
-                    '-frames:v', '1', '-pix_fmt', 'yuv420p10le', '-f', 'rawvideo',
-                    str(REF)], check=True)
+                    '-frames:v', str(args.frames), '-pix_fmt', 'yuv420p10le',
+                    '-f', 'rawvideo', str(REF)], check=True)
     r = REF.read_bytes()
-    want = w * h * 3  # three planes of 16-bit samples, 4:2:0
-    if len(r) < want:
-        raise RuntimeError(f'{clip}: reference is {len(r)} bytes, expected {want}')
+    frame = w * h * 3  # three planes of 16-bit samples, 4:2:0
+    if len(r) < frame:
+        raise RuntimeError(f'{clip}: reference is {len(r)} bytes, under one frame')
+    return r, frame
 
-    def plane(off, n):
-        return [r[off + 2 * i] | (r[off + 2 * i + 1] << 8) for i in range(n)]
 
-    return (plane(0, w * h), plane(w * h * 2, w * h // 4),
-            plane(w * h * 2 + w * h // 2, w * h // 4))
+def ref_plane_ints(r, base, w, h, which):
+    """Reference plane as ints: which is 0=Y, 1=U, 2=V."""
+    off = base + (0, w * h * 2, w * h * 2 + w * h // 2)[which]
+    n = w * h if which == 0 else w * h // 4
+    return [r[off + 2 * i] | (r[off + 2 * i + 1] << 8) for i in range(n)]
 
 
 def unpack(eight, two, pitch_8, pitch_2, row0, rows, cols):
@@ -128,27 +151,76 @@ for spec in args.vectors:
     canvas_w, canvas_h = (w + 31) // 32 * 32, (h + 15) // 16 * 16
     coded_h = (h + 7) // 8 * 8
     pitch_2 = ((canvas_w + 3) // 4 + 31) // 32 * 32
-
-    data = decode(clip)
     nv12 = canvas_w * canvas_h * 3 // 2
-    if len(data) <= nv12:
-        raise RuntimeError(f'{clip}: buffer is {len(data)} bytes with no 2-bit '
-                           f'plane past {nv12}; is the stream really Main10?')
-    luma8, chroma8, two = data[:canvas_w * canvas_h], data[canvas_w * canvas_h:nv12], data[nv12:]
 
-    print('%s  %dx%d canvas %dx%d coded_h %d  buffer %d (nv12 %d + 2bit %d, pitch %d)'
-          % (Path(clip).name, w, h, canvas_w, canvas_h, coded_h,
-             len(data), nv12, len(data) - nv12, pitch_2))
+    ref, ref_frame = reference(clip, w, h)
+    nref = len(ref) // ref_frame
+    print('%s  %dx%d canvas %dx%d coded_h %d  pitch2 %d  %d reference frames'
+          % (Path(clip).name, w, h, canvas_w, canvas_h, coded_h, pitch_2, nref))
 
-    ref_y, ref_u, ref_v = reference(clip, w, h)
-    hw_y = unpack(luma8, two, canvas_w, pitch_2, 0, h, w)
-    hw_c = unpack(chroma8, two, canvas_w, pitch_2, coded_h, h // 2, w)
+    # What the layout above predicts the buffer must be. Checking this before
+    # unpacking turns a pitch disagreement into a verdict instead of an
+    # IndexError four frames later: running against a driver that still aligns
+    # the pitch to 16 used to die inside unpack() with a bare index error.
+    want = nv12 + pitch_2 * canvas_h * 3 // 2
 
-    ok = score('Y', hw_y, ref_y)
-    ok &= score('U', hw_c[0::2], ref_u)
-    ok &= score('V', hw_c[1::2], ref_v)
-    failures += not ok
+    for at in AT:
+        data = decode(clip, at)
+        if len(data) <= nv12:
+            raise RuntimeError(f'{clip}: buffer is {len(data)} bytes with no 2-bit '
+                               f'plane past {nv12}; is the stream really Main10?')
+        if len(data) < want:
+            print('  capture %d: buffer is %d bytes, under the %d this layout '
+                  'needs' % (at, len(data), want))
+            print('    canvas %dx%d pitch2 %d. A driver aligning the capture '
+                  'pitch to 16' % (canvas_w, canvas_h, pitch_2))
+            print('    rather than 32 gives exactly this shortfall -- see '
+                  'patch 0125.')
+            failures += 1
+            continue
+        luma8 = data[:canvas_w * canvas_h]
+        chroma8 = data[canvas_w * canvas_h:nv12]
+        two = data[nv12:]
 
-print('\n%s' % ('all vectors bit-exact' if not failures
-                else f'{failures} vector(s) NOT bit-exact'))
+        hw_y = unpack(luma8, two, canvas_w, pitch_2, 0, h, w)
+        hw_c = unpack(chroma8, two, canvas_w, pitch_2, coded_h, h // 2, w)
+        hw_u, hw_v = hw_c[0::2], hw_c[1::2]
+
+        # Completion order is not display order. Find the reference frame this
+        # capture actually is, by exact bytes; memcmp, so scanning is cheap.
+        y_bytes = array('H', hw_y).tobytes()
+        match = None
+        for n in range(nref):
+            off = n * ref_frame
+            if ref[off:off + w * h * 2] == y_bytes:
+                match = n
+                break
+
+        if match is not None:
+            ok = score('Y', hw_y, ref_plane_ints(ref, match * ref_frame, w, h, 0))
+            ok &= score('U', hw_u, ref_plane_ints(ref, match * ref_frame, w, h, 1))
+            ok &= score('V', hw_v, ref_plane_ints(ref, match * ref_frame, w, h, 2))
+            print('  capture %d == reference frame %d  %s'
+                  % (at, match, 'OK' if ok else 'FAIL'))
+            failures += not ok
+            continue
+
+        # No exact luma match. Report against the closest frame so the failure
+        # says something; a capture that matches nothing is itself the finding.
+        best, best_mse = 0, None
+        for n in range(nref):
+            r_y = ref_plane_ints(ref, n * ref_frame, w, h, 0)
+            mse = sum((a - b) ** 2 for a, b in zip(hw_y, r_y)) / len(hw_y)
+            if best_mse is None or mse < best_mse:
+                best, best_mse = n, mse
+        print('  capture %d matches NO reference frame exactly; closest is %d'
+              % (at, best))
+        base = best * ref_frame
+        score('Y', hw_y, ref_plane_ints(ref, base, w, h, 0))
+        score('U', hw_u, ref_plane_ints(ref, base, w, h, 1))
+        score('V', hw_v, ref_plane_ints(ref, base, w, h, 2))
+        failures += 1
+
+print('\n%s' % ('all captures bit-exact' if not failures
+                else f'{failures} capture(s) NOT bit-exact'))
 sys.exit(1 if failures else 0)
