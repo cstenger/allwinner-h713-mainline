@@ -7,6 +7,15 @@ VE instead of the CPU, without patching mpv, ffmpeg or GStreamer?**
 The short version: the chain is real, the H.264 half is nearly free, the HEVC
 half is a rewrite, and 10-bit is blocked in the kernel rather than in userspace.
 
+> **CORRECTED 2026-09-23 — the 10-bit clause above is wrong and is left only so
+> this paragraph still matches what was written on 2026-08-16.** 10-bit is not
+> blocked anywhere: the engine decodes Main10 to bit-exact 10 bit today and
+> Main10 files play. What is missing is a V4L2 *fourcc* describing the 8+2
+> layout, so a client can only read the 8-bit plane. **For this project that gap
+> is deliberately not being closed** — the panel is 8-bit RGB, so the extra bits
+> would be discarded at the end of the pipeline regardless.
+> See [hevc-10bit-findings.md](hevc-10bit-findings.md).
+
 ---
 
 # RESULT — H.264 decodes on the VE through stock ffmpeg, 2026-08-16
@@ -1774,7 +1783,12 @@ here, and there is no way for the shim to detect it.
 > decode sample for sample. The P010 second-output shortcut is now a measured
 > dead end rather than an unknown, with a positive control.
 
-## 10-bit does not work, and the blocker is in the kernel
+## HISTORICAL (2026-08-16), FALSIFIED — "10-bit does not work, and the blocker is in the kernel"
+
+*Every claim under this heading was disproved on 2026-08-24 and 2026-09-23. It
+is kept for the register detail in its middle paragraphs, which is still
+accurate. Do not quote its conclusion; the heading is preserved verbatim so a
+search for the old claim lands here rather than on a stale copy elsewhere.*
 
 `Main10` prerolls, reaches EOS in 40 ms having produced **zero frames**, and
 forcing `P010_10LE` fails with `not-negotiated`.
@@ -1797,6 +1811,11 @@ in a staging driver — plausibly upstreamable, and independent of anything in
 this document. Note also that the panel is 8-bit RGB after GPU conversion, so
 10-bit buys source compatibility rather than visible quality.
 
+*(The paragraph above stands, and its last sentence is the reason the fourcc was
+ultimately declined for this product. What is wrong is the premise that a cedrus
+patch is needed to decode: the decode already works and is bit-exact. Only the
+output format is missing.)*
+
 ---
 
 ## Scope, then
@@ -1807,7 +1826,7 @@ this document. Note also that the panel is 8-bit RGB after GPU conversion, so
 | First decode, validated against the M1 ladder's references | a few hours | moderate — compiling is not decoding; PR #38 is unmerged WIP ("POC" in its own commit) developed against H3/A64-era VEs |
 | mpv display path (`--hwdec=vaapi --vo=gpu --gpu-context=drm`) | unknown | **highest** — EGL-on-GBM against our KMS driver, never tried here, and the driver only scans out physically contiguous memory |
 | HEVC in the shim | days | moderate — mechanical bulk plus the RPS restructure, with GStreamer as a reference |
-| 10-bit HEVC | separate kernel work | unknown — no 10-bit format plumbed in mainline cedrus |
+| 10-bit HEVC | **done — decodes bit-exact, no work outstanding** | none. Full 10-bit *output* needs a uAPI fourcc and is [deliberately not being pursued](hevc-10bit-findings.md): the panel is 8-bit |
 
 Recommended order: **decode-to-file first, display second.** Validate the shim
 against the existing bit-exact references with no display involved, so a failure

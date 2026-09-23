@@ -8,6 +8,34 @@ is lost, nothing is truncated, and no kernel change is needed to produce the
 data. What is missing is a *V4L2 pixel format that describes the layout*, so a
 client has no supported way to ask for the bits that are already in the buffer.
 
+> **PROJECT DECISION, 2026-09-23: 10-bit OUTPUT is not being pursued, and the
+> 8-bit result is the shipping behaviour.** Main10 content plays, correctly, at
+> 8-bit output. Closing the remaining gap is an academic exercise for this
+> product — see §4 for the cost and for the reason it would change nothing on
+> the glass. Do not re-open it as a bug: it is a known, deliberate position.
+
+## Why 10-bit plays but never reaches the panel
+
+The short version, because this gets re-discovered roughly every other session:
+
+| # | stage | bits |
+| --- | --- | --- |
+| 1 | Main10 stream | 10 |
+| 2 | VE decode — 8-bit plane **+ 2-bit side plane** | **10, bit-exact** |
+| 3 | V4L2 capture format negotiated | **8** — no fourcc describes 8+2 |
+| 4 | What the client reads | 8 — the high bits, a correct 8-bit rendition |
+| 5 | Display path (DECD/AFBD) | 8 — takes 8-bit NV12 |
+| 6 | The panel itself | **8-bit RGB** |
+
+**Steps 3 and 6 are each independently sufficient to make the output 8-bit.**
+That is the whole argument. A fourcc fixes step 3 and step 6 still caps the
+result, so the two extra bits would be discarded at the end of the pipeline
+having been carried the whole way. Nothing visible changes.
+
+The decode is not lossy and the picture is not wrong. Step 2 really does produce
+all ten bits, which is why §1 measures 100% exact — the loss is a *negotiation*
+at step 3, not a defect anywhere.
+
 ---
 
 ## 1. 10-bit decodes, and it is bit-exact
@@ -150,13 +178,53 @@ Not a hardware question any more. Two things, in order:
    Inventing one downstream therefore means arguing a case upstream has not
    been asked, against a maintainer who already made the opposite call for this
    exact driver.
-2. **A consumer.** ffmpeg, GStreamer and mpv would all need the new format.
-   Against that: this projector's panel is 8-bit, the display path takes 8-bit
-   NV12, and Main10 files already play correctly on the panel through the 8-bit
-   plane (confirmed on the glass 2026-09-17, commit 5451b9c).
+2. **A consumer.** No `AVPixelFormat`, no GStreamer video format and no VA
+   fourcc describes 8+2 either, so ffmpeg and GStreamer each need the same
+   addition, each with its own review. That chain — not the kernel patch — is
+   the actual project.
 
-So the honest position is that **10-bit support is complete at the hardware and
-driver level and blocked on uAPI**, and the remaining benefit on *this* device
-is precision for something that would consume it, not visible picture quality.
-Anyone adding the fourcc should read §2 first: the coded-height trap is the
+### What it would cost, and what it would buy
+
+**Kernel: about a day.** Everything needed is already in the tree.
+`cedrus_formats[]` is a plain table, `ctx->bit_depth` is already parsed from the
+SPS, and `extra_cap_size()` already appends the 2-bit plane to `sizeimage`. It
+is one gated table entry, format-selection preferring it at 10 bits, and a uAPI
+doc page.
+
+**uAPI: the real cost, and it is permanent.** Today the 2-bit plane is opaque
+padding inside `sizeimage`. A fourcc makes its layout ABI forever — including
+the two rules in §2 that are genuinely unpleasant to freeze:
+
+- the pitch must be `ALIGN(width, 32)`, which we only learned on 2026-09-23 via
+  patch 0125;
+- the 2-bit chroma rows begin after `ALIGN(height, 8)` luma rows, **not**
+  `ALIGN(height, 16)`.
+
+The second is the one to weigh. Its commonest misreading yields bit-exact luma
+with 81.6% of chroma correct at maxerr 3 — 62.5 dB, which reads as rounding
+rather than a layout error. **A format whose most likely implementation mistake
+looks like success is a bad format to standardise**, and we have that number
+from measurement, not speculation.
+
+Precedent cuts both ways: cedrus already carries `V4L2_PIX_FMT_NV12_32L32`, an
+Allwinner-specific tiled fourcc that did land, so vendor layouts are acceptable
+in principle. But per §4.1, upstream deliberately declined to expose *this* one.
+
+**Benefit on this device: none.** See the table at the top — the panel is 8-bit
+RGB, so a fourcc fixes step 3 while step 6 still caps the result.
+
+### When to revisit
+
+Only if the target stops being this panel:
+
+- **transcoding or frame capture/archival**, where the output is a file rather
+  than the glass;
+- **upstreaming the driver** properly, where the format is the point.
+
+Those change the design as well as the priority. For transcode specifically the
+cheaper route is to assemble P010 in the libva shim, which already owns the
+buffer — one pass per frame, plausibly too slow for realtime 1080p on an A53 but
+fine for offline work. **Measure that before touching uAPI.**
+
+Anyone who does pick this up should read §2 first: the coded-height trap is the
 part that will silently produce nearly-right chroma.

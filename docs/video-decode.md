@@ -528,9 +528,16 @@ plus a packed 2-bit plane; read both back and every sample matches a software
 10-bit decode exactly (2026-09-23, three vectors, all three planes). cedrus
 negotiates an 8-bit fourcc and sizes the buffer for both planes, so a client
 today gets a correct 8-bit rendition of a 10-bit stream. What is missing is a
-V4L2 fourcc describing the 8+2 layout, not the ability to decode. See
-[hevc-10bit-findings.md](hevc-10bit-findings.md); what it would take for stock
-mpv to use the VE at all is in [vaapi-scope.md](vaapi-scope.md).
+V4L2 fourcc describing the 8+2 layout, not the ability to decode.
+
+**That gap is deliberately left open (2026-09-23).** This panel is 8-bit RGB, so
+a fourcc would fix the negotiation and the two extra bits would still be
+discarded at the end of the pipeline — nothing on the glass would change. It is
+an academic item, not a defect; revisit only if the target becomes transcode,
+frame capture or upstreaming. See
+[hevc-10bit-findings.md](hevc-10bit-findings.md), which carries the full chain
+and the cost; what it would take for stock mpv to use the VE at all is in
+[vaapi-scope.md](vaapi-scope.md).
 
 ## NEXT PHASE — audio
 

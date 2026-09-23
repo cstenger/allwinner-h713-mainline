@@ -35,7 +35,7 @@ is the answer and the rest is the evidence.*
 | concurrency | 3 clients, hours, zero failures |
 | deployment | reproducible build, verified entry point, stamped provenance, drift check |
 | known-failing | mid-stream resolution change — ffmpeg-side, see `hevc-resolution-change.md` |
-| not supported | full 10-bit output (needs a uAPI fourcc), tiles (no encoder emits them) |
+| not supported | full 10-bit **output** — decode is bit-exact, but no uAPI fourcc describes the 8+2 layout and the panel is 8-bit, so this is [deliberately deferred](hevc-10bit-findings.md); tiles (no encoder emits them) |
 
 ### The gates, and what each one is for
 
@@ -459,11 +459,20 @@ path never propagating the change —
 [`hevc-resolution-change.md`](hevc-resolution-change.md). Kept as a regression
 test. Iterate on `r01`; `r02` has twice cost a physical power cycle.
 
-**Out of scope, unchanged:** full 10-bit *output* needs a V4L2 fourcc for
-Allwinner's 8+2 layout, which does not exist and is where the upstream series
-stalled — Main10 files play at 8-bit today
-([`hevc-10bit-findings.md`](hevc-10bit-findings.md)). Tiles have no vector
-because no encoder here emits them.
+**Out of scope, and now a settled decision rather than an open gap:** full
+10-bit *output* needs a V4L2 fourcc for Allwinner's 8+2 layout, which does not
+exist. **It is deliberately not being pursued for this product**, because the
+panel is 8-bit RGB — a fourcc would carry two extra bits the whole length of the
+pipeline for them to be discarded at the end. Main10 files decode bit-exact and
+play correctly at 8-bit output today; revisit only if the target becomes
+transcode, frame capture or upstreaming
+([`hevc-10bit-findings.md`](hevc-10bit-findings.md)).
+
+Two corrections worth carrying, because the old phrasing here was wrong: the
+decode is **not** lossy and needs no kernel work, and the upstream series did
+**not** stall on this — it landed having deliberately chosen to treat the 2-bit
+plane as scratch space. Tiles have no vector because no encoder here emits
+them.
 
 **The one manual deployment step:** `tools/video/build-va-driver.sh --install`
 after a fresh flash. Folding it into the image build needs a cross-build
