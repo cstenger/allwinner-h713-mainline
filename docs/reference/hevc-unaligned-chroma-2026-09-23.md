@@ -193,6 +193,25 @@ is not display order once B-frames exist (h08's capture 3 is reference frame 2).
 Against the pre-fix module it fails on h09, naming the pitch shortfall rather
 than dying in an IndexError as the first version of that check did.
 
+## Suite coverage
+
+`h10` is now in the soak and concurrency pools as well as the H1 gate, so the
+pitch alignment is exercised under sustained load and under contention rather
+than only in a single-shot decode.
+
+Two wiring bugs were found by running those suites rather than by reading them,
+and both would have produced silent non-coverage:
+
+- **`h10` was excluded by a prefix pattern.** The reference and stream dispatch
+  in the soak and concurrency suites matched `h0*`, which predates a two-digit
+  vector id. `h10` fell through to the H.264 arm; the concurrency run refused to
+  start rather than scoring it blind, which is the harness working. `stream_of`
+  had the same assumption and would have handed it a `.h264` path.
+- **The concurrency pool grew past what its default reached.** Clients pick
+  `POOL[(r + i) % len]`, so 5 rounds x 3 clients reaches indices 1..7 — all of a
+  7-entry pool, by arithmetic accident. Adding two entries left `h01` and `h10`
+  never selected, with nothing to report it. The default is now the pool size.
+
 ## Still open
 
 - **No H.264 or VP8 vector guards the alignment.** Deliberate: the defect is in

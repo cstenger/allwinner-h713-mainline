@@ -1,0 +1,32 @@
+# Main10 HARDWARE decode baseline for H713 cedrus.
+#
+# These are the HARDWARE's own md5s, not a software reference, and the
+# distinction is not a shortcut -- it is forced. What a client gets from a
+# Main10 decode today is the 8-bit plane, which is the high 8 bits of each
+# sample, a truncation. swscale rounds and dithers instead. Two correct answers
+# that differ in the last bit, so no software decode can ever be bit-exact
+# against this and a software-derived md5 would fail every run. Same reasoning
+# as mpeg2-reference-md5.txt.
+#
+# THIS FILE THEREFORE PROVES NOTHING ABOUT CORRECTNESS. It pins what the engine
+# produced on a day it was known good, so a soak or a concurrency run can catch
+# DRIFT -- output changing under sustained load, memory pressure or contention.
+# Correctness is a separate question answered by hevc-10bit-verify.py, which
+# reconstructs the full 10-bit sample from both planes and demands exactness.
+# Do not cite an md5 match here as evidence that 10-bit decodes correctly.
+#
+# Captured 2026-09-23 on the HY200 bench board, kernel 6.18.38, cedrus module
+# 864b948401ca58bc3ce17f156bd07754 -- which includes patch 0125. A baseline
+# taken before that patch pins h09's corrupt inter chroma as "correct", so if
+# these are ever regenerated, confirm hevc-10bit-verify.py passes FIRST.
+#
+# Verified deterministic: each decoded twice, identical both times.
+#
+# Produced by the same command soak-decode.sh scores with:
+#   LIBVA_DRIVER_NAME=v4l2_request ffmpeg -hwaccel vaapi \
+#     -hwaccel_output_format vaapi -i <clip> -vf hwdownload,format=nv12 \
+#     -f rawvideo -pix_fmt nv12 pipe:1 | md5sum
+#
+a9ddccddc50810c15afa2745a9b2468c  h07-640x480-main10
+0f88ab19a7db90b1f045c6bbf2169f20  h08-1280x720-main10
+ceaace9418a9386b45f1af46fe4a4323  h09-642x482-main10

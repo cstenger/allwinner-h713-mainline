@@ -37,15 +37,29 @@ import os, random, sys
 src_dir, out_dir, vec_dir = sys.argv[1], sys.argv[2], sys.argv[3]
 SEED = 713
 
-# (vector, extension) -- one source per codec, so a failure can be attributed to
-# a codec path rather than to the corruption itself. MPEG-2 uses the same
-# start-code structure as Annex-B, so the corruptions below apply unchanged; for
-# it, "NAL unit" reads as "start-code-delimited element" (sequence header, GOP
-# header, picture, slice).
+# One source per codec path, so a failure can be attributed to a codec rather
+# than to the corruption itself. MPEG-2 uses the same start-code structure as
+# Annex-B, so the corruptions below apply unchanged; for it, "NAL unit" reads as
+# "start-code-delimited element" (sequence header, GOP header, picture, slice).
+#
+# (vector, extension, TAG). The tag is explicit rather than derived from the
+# extension, and that is not tidiness -- it is a bug that already happened.
+# While it was `{"h265": "h", ...}[ext]`, adding a second .h265 source gave both
+# the tag "h" and the second one SILENTLY OVERWROTE the first: every
+# b0N-h-*.h265 became Main10 while its name, and the suite dispatching on that
+# name, still said 8-bit HEVC. Coverage would have moved rather than grown, and
+# nothing would have reported it. Keep these unique.
 SOURCES = [
-    ("h01-640x480-main", "h265"),
-    ("v03-1280x720-main", "h264"),
-    ("m01-352x288-progressive", "m2v"),
+    ("h01-640x480-main", "h265", "h"),
+    ("v03-1280x720-main", "h264", "v"),
+    ("m01-352x288-progressive", "m2v", "m"),
+    # Main10 earns its own source rather than riding on h01. The 10-bit path
+    # allocates and programs a second plane -- cedrus_h265_2bit_size(), the
+    # extra capture space and the 10BIT_CONFIGURE registers -- none of which
+    # the 8-bit cases touch. Error handling there is exactly the code a
+    # truncated or corrupted payload reaches, and it was completely uncovered:
+    # every malformed stream in this suite was 8-bit.
+    ("h07-640x480-main10", "h265", "t"),
 ]
 
 
@@ -68,7 +82,12 @@ def write(name, blob):
     print(f"    {name:34s} {len(blob):9d} bytes")
 
 
-for vec, ext in SOURCES:
+seen_tags = set()
+for vec, ext, tag in SOURCES:
+    if tag in seen_tags:
+        raise SystemExit(f"duplicate tag {tag!r} for {vec}: outputs would "
+                         f"overwrite another source's, silently")
+    seen_tags.add(tag)
     path = os.path.join(src_dir, f"{vec}.{ext}")
     if not os.path.exists(path):
         print(f"!!  {path} missing, skipped")
@@ -77,8 +96,7 @@ for vec, ext in SOURCES:
     data = bytearray(open(path, "rb").read())
     nals = nal_units(bytes(data))
     # The tag drives the codec dispatch in decode-robustness-test.sh, which
-    # matches on *-h-*, *-m-* and falls through to H.264.
-    tag = {"h265": "h", "m2v": "m"}.get(ext, "v")
+    # matches on *-h-*, *-t-*, *-m-* and falls through to H.264.
     print(f"==> {vec} ({len(data)} bytes, {len(nals)} NAL units)")
 
     rng = random.Random(SEED)

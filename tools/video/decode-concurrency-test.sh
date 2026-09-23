@@ -24,12 +24,18 @@
 set -u
 
 DIR=$(cd "$(dirname "$0")" && pwd)
-ROUNDS=${1:-5}
+# 0 means "enough rounds to reach every pool entry", resolved once POOL is known.
+# The old default of 5 covered the pool only by arithmetic accident: clients pick
+# POOL[(r + i) % len], so 5 rounds x 3 clients reaches indices 1..7, which
+# happened to be all of a 7-entry pool. Growing the pool to 9 left h01 and h10
+# never selected -- coverage that was added and then silently did not run.
+ROUNDS=${1:-0}
 CLIENTS=${2:-3}
 OUT=${OUT:-/var/tmp/conc}
 HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
 H264_REF=${H264_REF:-$DIR/reference-md5.txt}
 MPEG2_REF=${MPEG2_REF:-$DIR/mpeg2-reference-md5.txt}
+HEVC10_REF=${HEVC10_REF:-$DIR/hevc10-reference-md5.txt}
 
 mkdir -p "$OUT"
 
@@ -39,7 +45,7 @@ mkdir -p "$OUT"
 # corruption. That is a whole session spent chasing the harness. Worse, the two
 # sides are equal when BOTH are empty, so a round in which no client wrote an
 # md5 at all would score as a pass. Fail up front instead.
-for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
+for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF" "$HEVC10_REF"; do
 	[ -s "$f" ] && continue
 	echo "FATAL: no reference hashes at $f" >&2
 	echo "" >&2
@@ -48,7 +54,8 @@ for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
 	echo "" >&2
 	echo "  Fix: copy tools/video/reference-md5.txt," >&2
 	echo "  tools/video/hevc-reference-md5.txt and" >&2
-	echo "  tools/video/mpeg2-reference-md5.txt from the repo to $DIR/." >&2
+	echo "  tools/video/mpeg2-reference-md5.txt and" >&2
+	echo "  tools/video/hevc10-reference-md5.txt from the repo to $DIR/." >&2
 	exit 2
 done
 
@@ -60,7 +67,8 @@ done
 # each other's state, that is where it should show.
 POOL=("h01-640x480-main:h265" "v03-1280x720-main:h264" "v01-320x240-baseline:h264"
       "h03-640x480-nowpp:h265" "v02-1280x720-baseline:h264"
-      "m01-352x288-progressive:m2v" "m06-720x576-field-clean:m2v")
+      "m01-352x288-progressive:m2v" "m06-720x576-field-clean:m2v"
+      "h07-640x480-main10:h265" "h10-656x480-unaligned:h265")
 
 ve_irq() {
 	awk '/video-codec/ { for (i = 2; i <= 5; i++) s += $i } END { print s + 0 }' \
@@ -70,7 +78,14 @@ kmsg_count() { dmesg | grep -ciE "$1" || true; }
 
 want_md5() {
 	case $1 in
-	h0*) grep " $1\$" "$HEVC_REF" | cut -d' ' -f1 ;;
+	# Ahead of the h0* arm: h07/h08/h09 are Main10, scored against the
+	# hardware's own baseline in a separate file, because the 8-bit plane a
+	# client receives truncates where swscale rounds. Falling through to
+	# $HEVC_REF would find nothing and abort the run.
+	h07*|h08*|h09*) grep " $1\$" "$HEVC10_REF" | cut -d' ' -f1 ;;
+	# h* not h0*: h10 is a two-digit id and h0* silently dropped it to the
+	# H.264 arm, where the lookup found nothing and the run refused to start.
+	h*)  grep " $1\$" "$HEVC_REF" | cut -d' ' -f1 ;;
 	# MPEG-2's baseline is the hardware's own output, not a software decode --
 	# MPEG-2 specifies IDCT accuracy rather than exact reconstruction. Same line
 	# format as H.264. See mpeg2-decode-test.sh.
@@ -81,6 +96,10 @@ want_md5() {
 
 # A present-but-incomplete reference file is the same blind spot one vector at
 # a time, and the pool is fixed, so check the whole pool before doing any work.
+if [ "$ROUNDS" -eq 0 ]; then
+	ROUNDS=${#POOL[@]}
+fi
+
 for entry in "${POOL[@]}"; do
 	v=${entry%%:*}
 	[ -n "$(want_md5 "$v")" ] || {

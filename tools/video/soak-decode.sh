@@ -60,24 +60,37 @@ CLIENT_TIMEOUT=${CLIENT_TIMEOUT:-120}
 HEVC_REF=${HEVC_REF:-$DIR/hevc-reference-md5.txt}
 H264_REF=${H264_REF:-$DIR/reference-md5.txt}
 MPEG2_REF=${MPEG2_REF:-$DIR/mpeg2-reference-md5.txt}
+HEVC10_REF=${HEVC10_REF:-$DIR/hevc10-reference-md5.txt}
 
 # The per-vector check further down already refuses to soak without a baseline,
 # so this one is about DIAGNOSIS, not safety: with the file absent that check
 # fires as "no reference md5 for h01-640x480-main" on top of a grep error about
 # a path, which reads like a bad vector list rather than an undeployed file.
 # Name the real cause before an 8-hour soak is abandoned for the wrong reason.
-for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF"; do
+for f in "$HEVC_REF" "$H264_REF" "$MPEG2_REF" "$HEVC10_REF"; do
 	[ -s "$f" ] && continue
 	echo "FATAL: no reference hashes at $f" >&2
 	echo "" >&2
 	echo "  Fix: copy tools/video/reference-md5.txt," >&2
 	echo "  tools/video/hevc-reference-md5.txt and" >&2
-	echo "  tools/video/mpeg2-reference-md5.txt from the repo to $DIR/." >&2
+	echo "  tools/video/mpeg2-reference-md5.txt and" >&2
+	echo "  tools/video/hevc10-reference-md5.txt from the repo to $DIR/." >&2
 	exit 2
 done
 
 HEVC_VECTORS="h01-640x480-main h02-1280x720-main h03-640x480-nowpp
-	      h04-640x480-scaling h05-640x480-scaling-custom"
+	      h04-640x480-scaling h05-640x480-scaling-custom
+	      h10-656x480-unaligned"
+# Main10. Scored against hevc10-reference-md5.txt, the HARDWARE's own output,
+# because the 8-bit plane a client receives truncates where swscale rounds and
+# no software md5 can match it. That makes these DRIFT detectors, not
+# correctness checks -- correctness is hevc-10bit-verify.py's job.
+#
+# h09 is 642 wide, which is not a multiple of 32, so it carries the pitch
+# alignment of patch 0125 into the soak. h08 is left out: at 1280x720 it is the
+# slowest of the three and exercises nothing h07 does not, and a soak pays for
+# every vector on every iteration.
+HEVC10_VECTORS="h07-640x480-main10 h09-642x482-main10"
 H264_VECTORS="v01-320x240-baseline v02-1280x720-baseline v03-1280x720-main
 	      v04-1280x720-high v05-1920x1080-high"
 # MPEG-2. m06 rather than m05 because this suite decodes through VA-API, which
@@ -87,7 +100,7 @@ H264_VECTORS="v01-320x240-baseline v02-1280x720-baseline v03-1280x720-main
 # without exercising anything m02 does not.
 MPEG2_VECTORS="m01-352x288-progressive m02-720x576-progressive
 	       m04-720x576-interlaced m06-720x576-field-clean"
-VECTORS=${VECTORS:-"$HEVC_VECTORS $H264_VECTORS $MPEG2_VECTORS"}
+VECTORS=${VECTORS:-"$HEVC_VECTORS $HEVC10_VECTORS $H264_VECTORS $MPEG2_VECTORS"}
 
 # Sum the per-CPU columns of the video-codec interrupt line. A rise of exactly
 # one per frame is positive proof the VE did the work; a FLAT counter across an
@@ -122,7 +135,13 @@ dmesg_count() { dmesg | grep -ciE "$1" || true; }
 # lines plus one `<vector> WHOLE <frames> <md5>` summary.
 want_md5() {
 	case $1 in
-	h0*) grep " $1\$" "$HEVC_REF" | cut -d' ' -f1 ;;
+	# Before the h0* arm: h07/h08/h09 are Main10 and their baseline is the
+	# hardware's own, in a different file. Falling through to $HEVC_REF would
+	# find nothing and abort the soak with "no reference md5".
+	h07*|h08*|h09*) grep " $1\$" "$HEVC10_REF" | cut -d' ' -f1 ;;
+	# h* not h0*: h10 is a two-digit id and h0* silently dropped it to the
+	# H.264 arm, where the lookup found nothing and the run refused to start.
+	h*)  grep " $1\$" "$HEVC_REF" | cut -d' ' -f1 ;;
 	# MPEG-2 uses the same "<vector> WHOLE <n> frames <md5>" shape as H.264, but
 	# its baseline is the HARDWARE's own output rather than a software decode:
 	# MPEG-2 specifies IDCT accuracy, not exact reconstruction, so no software
@@ -134,8 +153,8 @@ want_md5() {
 
 stream_of() {
 	case $1 in
-	h0*) echo "$DIR/$1.h265" ;;
-	m0*) echo "$DIR/$1.m2v" ;;
+	h*) echo "$DIR/$1.h265" ;;
+	m*) echo "$DIR/$1.m2v" ;;
 	*)   echo "$DIR/$1.h264" ;;
 	esac
 }
