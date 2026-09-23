@@ -14,12 +14,29 @@
 #   v05  1920x1080 High                   real-world clip       integration test
 #   h01  640x480   HEVC Main              8-bit                 HEVC minimum
 #   h02  1280x720  HEVC Main              8-bit                 HEVC panel-native
+#   m01  352x288   MPEG-2 Main            I+P, no B             MPEG-2 minimum
+#   m02  720x576   MPEG-2 Main            + B-frames            DVD/PAL shape
+#   m03  1280x720  MPEG-2 Main            progressive HD        HD progressive
+#   m04  720x576   MPEG-2 Main            interlaced sequence   interlaced coding
 #
 # Streams are Annex-B elementary (.h264/.h265) because the target has no
 # container demuxer in the decode path -- keep the test about the decoder.
+# MPEG-2 is elementary (.m2v) for the same reason.
 #
 # References are NV12, which is what cedrus emits, so a target-side capture can
 # be compared byte-for-byte rather than eyeballed.
+#
+# MPEG-2 IS THE EXCEPTION TO THAT LAST SENTENCE, and it matters. H.264, HEVC and
+# VP8 all define exact integer reconstruction, so a host software decode is a
+# correctness oracle and the target must match it bit-for-bit. MPEG-2 specifies
+# an IDCT *accuracy requirement* instead, so a conformant hardware IDCT is
+# allowed to differ from any particular software one -- about 72 dB PSNR here.
+# The .nv12 written for an MPEG-2 vector is therefore a PSNR yardstick, NOT
+# something to md5 against the target. The MPEG-2 regression baseline is the
+# hardware's own pinned output in tools/video/mpeg2-reference-md5.txt; see
+# mpeg2-decode-test.sh, which scores md5 against that and PSNR against this.
+#
+# One MPEG-2 vector cannot be generated at all: see the m05 note at the bottom.
 set -euo pipefail
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -83,6 +100,29 @@ gen_hevc() {
 
   printf '    stream %s bytes, reference %s bytes (%s frames of %d)\n' \
     "$(stat -c%s "$name.h265")" "$(stat -c%s "$name.nv12")" \
+    "$(( $(stat -c%s "$name.nv12") / (w * h * 3 / 2) ))" "$frames"
+}
+
+# MPEG-2. Same deterministic source, same elementary-stream shape. -b:v and -g
+# are pinned because the defaults have moved between ffmpeg releases and this
+# has to regenerate byte-identically years from now.
+#
+# The .nv12 here is a PSNR yardstick, not an md5 reference -- see the header.
+gen_mpeg2() {
+  local name=$1 w=$2 h=$3 frames=$4
+  shift 4
+
+  echo "==> $name  (${w}x${h}, $frames frames, MPEG-2)"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "testsrc2=size=${w}x${h}:rate=25" -frames:v "$frames" \
+    -pix_fmt yuv420p -c:v mpeg2video -b:v 5M -g 12 "$@" \
+    -f mpeg2video "$name.m2v"
+
+  ffmpeg -hide_banner -loglevel error -y \
+    -i "$name.m2v" -pix_fmt nv12 -f rawvideo "$name.nv12"
+
+  printf '    stream %s bytes, sw yardstick %s bytes (%s frames of %d)\n' \
+    "$(stat -c%s "$name.m2v")" "$(stat -c%s "$name.nv12")" \
     "$(( $(stat -c%s "$name.nv12") / (w * h * 3 / 2) ))" "$frames"
 }
 
@@ -162,6 +202,50 @@ ffmpeg -hide_banner -loglevel error -y \
   -pix_fmt yuv420p10le -c:v libx265 -profile:v main10 \
   -x265-params "log-level=error:keyint=5" -f hevc h07-640x480-main10.h265
 echo "==> h07-640x480-main10  (640x480, 10 frames, main10) $(stat -c%s h07-640x480-main10.h265) bytes"
+
+# m01 -- the MPEG-2 minimum. I+P only, so a failure here is fundamental rather
+# than a reordering or interlacing bug.
+gen_mpeg2 m01-352x288-progressive 352 288 25 -bf 0
+
+# m02 -- adds B-frames at DVD/PAL resolution, which is the shape almost all real
+# MPEG-2 arrives in. Replaces the uncommitted real-world clip the earlier
+# MPEG-2 work scored against.
+gen_mpeg2 m02-720x576-progressive 720 576 50 -bf 2
+
+# m03 -- progressive HD. Separates "MPEG-2 is broken" from "MPEG-2 is broken at
+# this size", the same job v02 does for H.264.
+gen_mpeg2 m03-1280x720-progressive 1280 720 50 -bf 2
+
+# m04 -- interlaced SEQUENCE (progressive_sequence = 0) still coded as frame
+# pictures, with interlaced ME and DCT. This is the coding mode, not the picture
+# structure; m05 below is the one that changes picture_structure.
+gen_mpeg2 m04-720x576-interlaced 720 576 50 -bf 2 -vf interlace -flags +ilme+ildct
+
+# m05 -- FIELD PICTURES, and it is a committed binary rather than a generated
+# one, deliberately.
+#
+# ffmpeg's mpeg2video encoder cannot emit them. Tested directly: +ilme+ildct,
+# -vf interlace, -field_order tt, -alternate_scan and tinterlace=4, alone and in
+# combination, all produce picture_structure = FRAME. The flags change
+# progressive_sequence and the DCT, never the picture structure. (-top is
+# rejected outright by ffmpeg 9: "not an encoding option".)
+#
+# That matters because field-coded MPEG-2 is exactly what kernel patch 0123
+# exists for -- half-height PICCODEDSIZE and the held capture buffer -- so a
+# ladder without it cannot fail when that patch regresses. The vector therefore
+# ships as a file: tools/video/vectors/m05-720x576-field.m2v, 31 frames coded as
+# 62 pictures (31 TOP + 31 BOTTOM), progressive_sequence = 0.
+if [ -f "$PROJECT_ROOT/tools/video/vectors/m05-720x576-field.m2v" ]; then
+  cp "$PROJECT_ROOT/tools/video/vectors/m05-720x576-field.m2v" m05-720x576-field.m2v
+  ffmpeg -hide_banner -loglevel error -y \
+    -i m05-720x576-field.m2v -pix_fmt nv12 -f rawvideo m05-720x576-field.nv12
+  printf '==> m05-720x576-field  (committed binary, cannot be generated)\n'
+  printf '    stream %s bytes, sw yardstick %s bytes\n' \
+    "$(stat -c%s m05-720x576-field.m2v)" "$(stat -c%s m05-720x576-field.nv12)"
+else
+  echo "==> m05 MISSING: tools/video/vectors/m05-720x576-field.m2v not in the repo"
+  echo "    Field-coded MPEG-2 (kernel patch 0123) is UNCOVERED without it."
+fi
 
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host
