@@ -347,13 +347,60 @@ Both truncation vectors (`field-shortfirst.m2v`,
 `field-firstfield-damaged.m2v`) decode to a clean exit without wedging the VE,
 and the good clip still produces its reference md5 afterwards.
 
-## Not established
+## Not established — all closed, 2026-09-23
 
-**The VA path surfaces no decoder-level error to the client.** On the VOB,
-software decode reports `corrupt decoded frame`; the VA path reports only the
-demuxer's `Packet corrupt`. The capture buffer's `V4L2_BUF_FLAG_ERROR` — which
-kernel patch 0124 is careful to preserve across held buffers — is not reaching
-the caller. This gap is not specific to MPEG-2 and was not investigated.
+**The VA path surfaces no decoder-level error to the client.** CLOSED by libva
+patch 0012 (`c193a4b`). The shim was discarding `V4L2_BUF_FLAG_ERROR` in
+`v4l2_dequeue_buffer()`; it now returns `VA_STATUS_ERROR_DECODING_ERROR`
+through `vaEndPicture`, which is what ffmpeg actually reads. Error counts track
+the damage rather than merely being non-zero.
 
-Also still untested for MPEG-2: the scaler (`cedrus_can_scale()` admits only
-H.264 and HEVC), a malformed-stream suite, soak, and concurrency.
+**Malformed-stream suite, soak, concurrency.** CLOSED (`f9fc0f3`). All three
+now cover MPEG-2: `make-bad-streams.sh` gained an MPEG-2 source (b01–b08) plus
+b09/b10, which are the two committed real-damage field-coded streams; soak runs
+four MPEG-2 vectors; the concurrency pool carries m01 and field-coded m06.
+Hardware: R1 26/26, C1 15/15, soak 234 iterations with zero software fallbacks.
+
+## The scaler: MPEG-2 will not be wired to it, and the reason is not the obvious one
+
+`cedrus_can_scale()` admits only `H264_SLICE` and `HEVC_SLICE`, which looks like
+an arbitrary omission. It is not, but the first explanation reached for — "MPEG-2
+is SD content, it needs upscaling, and the VE only downscales" — is **wrong**,
+and worth recording as wrong because it is the plausible-sounding answer.
+HD MPEG-2 exists (1080i broadcast), and downscaling it to this 1280x720 panel is
+exactly the case the H.264/HEVC scaler was built for.
+
+**The vendor does scale MPEG-2 in hardware.** `libawmpeg2.so` exports
+`Mpeg2ComputeScaleRatio` and `Mpeg2SetRotateScaleBuf`. So the capability is real
+and the omission is not "the hardware cannot".
+
+**But it is the fixratio path, and fixratio cannot express what this panel
+needs.** `Mpeg2ComputeScaleRatio` (40 bytes at `0x4509`) disassembles
+**instruction-for-instruction identically** to `H264ComputeScaleRatio` (40 bytes
+at `0x9d41`) — same opcodes, same immediates, same `cmp #3` / `movcc #1` /
+`mov #2` structure. That function is already documented in
+`ve-decode-time-scaledown-2026-09-11.md`: it returns 0 = none, 1 = half,
+2 = quarter. Power-of-two only.
+
+1920→1280 is 1.5x. Half gives 960x540, *below* panel height. This is precisely
+the limitation that made H.264 and HEVC need the VE+0xf00 polyphase scaler
+(patches 0118/0120) instead of the shifter — and MPEG-2 hits it identically.
+
+**And there is no MPEG-2 precedent for the polyphase route.** The arbitrary-ratio
+path needs a per-engine enable (H.264 uses `H264_CTRL` bit 11 plus
+`VE_CHROMA_BUF_LEN` bit 29). `libawmpeg2.so` has no `ConfigNewScaler` and no
+`ScaleCopyCoef` analogue — its only other scaler-adjacent symbol is
+`dmcoeffrm_reg24`, which is the dequant-matrix register, not filter coefficients.
+Routing MPEG-2 into VE+0xf00 would therefore be speculative RE with no vendor
+implementation to check against, for a codec whose HD form is increasingly rare.
+
+**Conclusion: not implemented, deliberately.** Not because MPEG-2 cannot be
+scaled, but because the path that exists yields only 1/2 and 1/4 — neither of
+which is the ratio this panel wants — and the path that yields the right ratio
+has no reference to port.
+
+**If it is ever wanted anyway**, the fixratio port is modest and well-bounded:
+`Mpeg2SetRotateScaleBuf` is 508 bytes, the same SDROT family as H.264's
+`H264ConfigureScaleRotateRegister` (432 bytes) which is already understood, and
+the ratio computation needs no work at all since it is byte-identical to one
+already ported. That buys 1080i → 960x540 or 480x270, and nothing else.
