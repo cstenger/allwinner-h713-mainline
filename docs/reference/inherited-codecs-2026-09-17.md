@@ -318,6 +318,20 @@ Software decode of the same streams gives a different md5 and moves the VE
 interrupt counter by **zero**, so the matching hashes are the hardware's work
 and not a silent fallback.
 
+**Where these streams are** (established 2026-09-23, after an earlier claim that
+two of them were lost — see the correction in `tools/video/vectors/README.md`):
+`mm-short.mpg` and `TITLE01-ANGLE1.VOB` are in `local/video-samples/`, with the
+`samples.ffmpeg.org/MPEG2/` manifest `md5sum.MPEG2` beside them. The VOB matches
+that manifest and can be re-fetched upstream; `mm-short.mpg` does not and is a
+local truncation to exactly 2,048,000 bytes. `testcard-mpeg2.m2v`,
+`testcard-mpeg2i.m2v` and `field.m2v` came off the board's `/root/`; `field.m2v`
+is now committed as `tools/video/vectors/m05-720x576-field.m2v`.
+
+None of them is committed except m05, `local/` is gitignored, and nothing
+regenerates any of them — so this table is reproducible only on a host that
+still has those files. The committed MPEG-2 ladder (`mpeg2-decode-test.sh`,
+m01–m06) exists to be the part that does not depend on that.
+
 H.264 (5/5) and HEVC (12/12) remain bit-exact after the rebuild.
 
 ## The two incomplete frames are the streams', not ours
