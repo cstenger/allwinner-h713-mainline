@@ -1,5 +1,16 @@
 # Hardware tools
 
+`check-repo.sh` — **host-side consistency gate, no board required.** Verifies
+that `docs/register-index.md` still matches its source
+(`docs/re/registers.yaml`, which it also validates) and that every relative link
+under `docs/` resolves. Exit 0 only when both pass, so it can gate a commit:
+
+    ln -s ../../tools/check-repo.sh .git/hooks/pre-commit
+
+Not installed automatically — hooks are local state. Its board-side counterpart
+is `video/check-video-stack.sh`, which answers the different question of whether
+the board is running what the tree describes.
+
 Current headless decoder regression tools under `video/`:
 
 - `cedrus-compose-probe.c`: LD_PRELOAD adapter for CAPTURE/COMPOSE geometry,
