@@ -146,6 +146,46 @@ measurement. The reader is staged at
 trial can sample it before, during, and after GPU output using
 `--probe-port-cache` once MIPS is running from a cold U-Boot start.
 
+After another physical power cycle, serial autostop reached U-Boot. One
+`h713_disp mips-comm-trace 0x34` startup and one source-3 CPU_COMM call
+completed; the guarded trace reported one source-3 callback, worker dequeue,
+and completed transition. `run bootcmd` loaded the unchanged merged 6.18.38
+kernel. Linux saw the MIPS core alive, and the read-only worker-trace reader
+reconfirmed intact canaries and source 3. TVFE and retained TVCAP were held,
+receiver clocks increased one at a time to four, and MIPS shell plus
+CPU_COMM responded after every step. The EDID clock/reset hold was enabled.
+
+The first 15-second SCP window again missed GPU detection. A repeat connected
+the GPU, delivered the known EDID, and enabled 640x480. In that live window,
+the guarded MIPS DRAM reader saw HDMI port 1 move from state 3 before video to
+state 5 during video and back to state 3 after disconnect. Ports 2 and 3
+remained in state 1. A third, 12-second window reproduced GPU output and
+state 5, and revealed firmware-cached active timing of **640 horizontal by
+480 vertical** on port 1. Both dimensions were zero before and after the
+window. The exact firmware routine `0x8b140190` fills this timing structure
+from MIPS-owned HDMI wrapper byte reads; the values are not copied from the
+host DRM mode. This establishes that the receiver firmware detected the live
+input timing. It does not establish an ARM-accessible frame or V4L2 capture
+node. Only Cedrus `/dev/video0` exists.
+
+The first timing reader labeled the two active-dimension offsets in reverse.
+The original `port-cache.json` is preserved; the third trial includes
+[`port-cache-corrected.json`](h713-hdmi-trial-20260924T225853Z/port-cache-corrected.json)
+with the corrected H/V labels, and the staged reader has been fixed. The
+read-only port-status RPC stayed `0x2` and the cached TMDS frequency count
+stayed zero in all three windows, so neither is a reliable timing indicator
+here. Each SCP run reported `peripheral_restored=1`, `restored=1`, and
+`edid_mismatch=0`; DDC pins were released. MIPS, CPU_COMM, SSH, TVCAP, and
+the merged kernel remained responsive. Evidence is in the three
+`h713-hdmi-trial-20260924T225*Z` directories, the read-only
+[`port-cache-trial-health.txt`](port-cache-trial-health.txt), and the
+[`port-cache-uboot-autostop.raw.gz`](port-cache-uboot-autostop.raw.gz) capture.
+After the trials, the temporary EDID clock/reset hold was unloaded; port 1
+moved to state 2, the status RPC returned zero, MIPS and SSH remained
+responsive, and Cedrus `/dev/video0` was present. The diagnostic TVFE/TVCAP
+power hold and CPU_COMM adoption module remain loaded for further work, with
+no receiver capture node registered.
+
 The older [`hdmi-in.md`](../../hdmi-in.md) HDMI map is contradicted by the
 board-B firmware census and [`registers.yaml`](../../re/registers.yaml):
 `0x05000000` is display composition, `0x05040000` is a picture-quality tap,

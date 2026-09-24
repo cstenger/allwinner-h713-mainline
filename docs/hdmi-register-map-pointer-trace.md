@@ -178,9 +178,26 @@ receiver `0x8b83107c`, and port objects `0x8b831468`, `0x8b8346b8`, and
 the MIPS core was parked, so this only validates the pointer chain and an
 idle baseline.
 The routine itself is unsuitable for a diagnostic call: on the changed-count
-branch it writes a control field at link base `+0xce`. No live object address
-or receiver-lock meaning has yet been established, so the current board has
-not been probed through this path.
+branch it writes a control field at link base `+0xce`. The reader observes
+only the cached DRAM fields; it does not call this routine or read the wrapper
+from ARM.
+
+On a cold source-3 run with the merged kernel and four receiver clocks held,
+the guarded reader measured port 1 state `3` while the GPU was disconnected,
+state `5` while the GPU drove 640x480, then state `3` after HPD restoration.
+The firmware state-machine branch at `0x8b1391a4` reaches state 5 only after
+the per-port status predicate (`0x8b13eff0`) and two additional wrapper
+predicates (`0x8b13f038` and `0x8b13f078`) pass. Those predicates inspect
+bits at link base `+0x01` (`0x06840001`, bits 5 and 6) and `+0x1ab`
+(`0x068401ab`, bit 2); their physical lock meaning is not yet established.
+The firmware timing reader `0x8b140190` uses the same
+MIPS-owned byte accessor and populated its port-1 timing context with 640
+horizontal and 480 vertical active pixels during a second live GPU window.
+The dimensions returned to zero after disconnect. The cached TMDS count
+remained zero, so it cannot be used to infer frequency here. The source
+trace, receiver state, and timing samples are in the three
+`h713-hdmi-trial-20260924T225*Z` evidence directories. No ARM frame buffer
+or capture V4L2 node has yet been shown.
 
 ## Dispatcher-target probe
 

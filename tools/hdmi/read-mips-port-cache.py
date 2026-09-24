@@ -52,6 +52,12 @@ class ReadOnlyMem:
         aligned = mips_addr & ~3
         return (self.mips_word(aligned) >> ((mips_addr & 3) * 8)) & 0xFF
 
+    def mips_halfword(self, mips_addr):
+        if mips_addr & 1:
+            raise ValueError(f"unaligned 16-bit field: {mips_addr:#010x}")
+        aligned = mips_addr & ~3
+        return (self.mips_word(aligned) >> ((mips_addr & 2) * 8)) & 0xFFFF
+
 
 def snapshot(mem):
     manager = mem.word(ROOT_PHYS)
@@ -84,6 +90,10 @@ def snapshot(mem):
             'state': mem.mips_word(port + 0xC0),
             'freq_event_pending': mem.mips_byte(port + 0x68),
             'cached_count': mem.mips_word(port + 0x6C),
+            'timing_update_tick': mem.mips_word(port + 0x74),
+            'hactive': mem.mips_halfword(port + 0x4E),
+            'vactive': mem.mips_halfword(port + 0x48),
+            'pixel_repeat': mem.mips_halfword(port + 0x64),
             'link_base': f'{link_base:#010x}',
         })
     return result

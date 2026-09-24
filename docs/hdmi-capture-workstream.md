@@ -1,5 +1,19 @@
 # HDMI capture workstream
 
+**Receiver timing milestone (2026-09-24):** With HDMI1 selected by the MIPS
+source worker, the merged default kernel, and a live GPU output, a guarded
+read-only MIPS DRAM probe observed port 1 advance to state 5 and record
+640x480 active timing. Both dimensions cleared after disconnect. The
+firmware populates these fields from its own HDMI wrapper byte reads. HPD,
+EDID, and firmware timing detection are now demonstrated; an ARM-accessible
+captured frame and a capture V4L2 node are still outstanding. See the
+[`2026-09-24 signal evidence`](hdmi-evidence/2026-09-24-hdmi1-signal/README.md).
+The next hardware milestone is to identify the producer that writes HDMI
+pixels into ARM-visible memory, its DMA registers and buffer ownership, then
+read one bounded frame before registering a capture device. The local Linux
+source includes a Synopsys HDMI-RX V4L2 driver for RK3588, but its board
+binding, PHY, clock, and DMA programming cannot be assumed to match H713.
+
 **Register-map correction (2026-09-24):** The historical sections below call
 `0x050c0000` “THDMIRX” and interpret writes there as receiver enable. The
 board-B MIPS firmware identifies that window as display DETN noise reduction;

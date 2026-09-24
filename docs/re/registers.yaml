@@ -63,6 +63,27 @@ registers:
     confidence: static-analysis
     source: hdmi-register-map-pointer-trace.md
 
+  - addr: "0x06840001"
+    block: hdmi-rx-wrapper
+    name: MIPS HDMI port-state predicates
+    notes: >-
+      Board-B firmware reads bits 5 and 6 through its byte accessor before
+      advancing a port from state 3 toward state 5. Port 1 reached state 5
+      only during a live GPU signal window. The physical bit meanings are not
+      proven. Do not read directly from ARM.
+    confidence: static-analysis
+    source: hdmi-register-map-pointer-trace.md
+
+  - addr: "0x068401ab"
+    block: hdmi-rx-wrapper
+    name: MIPS HDMI second state predicate
+    notes: >-
+      Board-B firmware ANDs bit 2 here with bit 5 at 0x06840001 for a
+      port-state transition. Its physical meaning is not proven. Do not read
+      directly from ARM.
+    confidence: static-analysis
+    source: hdmi-register-map-pointer-trace.md
+
   - addr: "0x0684037a"
     block: hdmi-rx-wrapper
     name: MIPS HDMI per-port status bits
