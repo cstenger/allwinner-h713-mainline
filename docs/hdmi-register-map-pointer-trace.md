@@ -166,3 +166,35 @@ preserve the test (uncompressed SHA256
 The next bounded trace should count callback and source-worker entries for
 source 3, then identify the actual receiver registers through the firmware's
 MIPS-owned byte accessor before attempting a live lock read.
+
+## Prepared source-3 worker probe (not installed)
+
+The guarded U-Boot follow-up in submodule commit `320a17f71d4` keeps the
+dispatcher trace and adds counters at trace `+0x6c` for callback event-zero
+queue attempts with source 3, `+0x70` for source-3 worker dequeues, and
+`+0x7c` for completion of the general source-3 transition path. It also
+records the worker's previous and new sources at `+0x74/+0x78`. These
+filtered slots persist when a later event-1 notification overwrites the
+original last-event fields. The callback and worker trampolines replay the
+stock instructions and return to the original control flow.
+
+All 446 patch addresses are unique, their pristine words match the exact
+board-B firmware, and the relocation audit found the required 61 trace bases
+and 80 stores. Capstone decoded every new trampoline instruction and branch
+target. Offline Unicorn execution confirmed that startup source 1 and an
+unrelated event-1 notification do not increment the counters, while a
+source-3 callback, dequeue, and completed transition each increment their
+respective counter once. The normal board configuration built a valid FIT at
+`build/uboot-source3-worker-trace/u-boot-sunxi-with-spl.fit.fit` (920,169
+bytes, 1,798 sectors). Raw SHA256 is
+`2ecbfa43cdb9ffc83fcd91ac7347e6136bfcf99a1b2edb5e2b1c0c0cf30bffa1`;
+the zero-padded SHA256 is
+`47ebcfa6dbfd646b2eab83fc1e5206086a2a1226cb5d840512051cbbf6e9e95d`.
+
+The currently installed U-Boot-proper sectors were saved read-only as
+`/root/uboot-backup/pre-source3-worker-trace-20260924.bin` (920,576 bytes,
+SHA256 `5a7d86438f6bd2098b69886761d9b1e3f2073f0fe158e0745f2e1b804f4120ee`).
+The candidate is staged on the projector at
+`/root/u-boot-proper-source3-worker-padded.fit` and its hash matches the
+local padded image. **It has not been flashed or run.** The projector still
+boots the merged kernel and remains reachable.
