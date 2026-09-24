@@ -1,5 +1,21 @@
 # "WiFi cannot carry a file" -- reproduced, characterised, and A/B'd
 
+> **This is a 2,250-line chronological lab journal and raw evidence log, not a current manual.**
+>
+> It records the 2026-08-17 → 2026-08-19 characterisation of the "cannot carry a file"
+> SDIO stall. It is kept for the primary debugging trail, failed hypotheses (including
+> the antenna confounder), register logs, and exact failure reproduction.
+>
+> **The failure is SOLVED; do not quote the stalls below as current state.**
+> The SDIO transfer failure was fully resolved on 2026-08-21:
+> - Patch 0046 fixed the v5p3x IDMA descriptor max segment encoding (4096 bytes).
+> - Patch 0048 corrected the ~4x SDIO clock calculation.
+>
+> **The current authority is [`handoff-wifi-sdio-2026-08-17.md`](handoff-wifi-sdio-2026-08-17.md)**,
+> which summarizes the solution, hardware validation, and current branch state.
+
+---
+
 > ## READ THIS FIRST: every measurement below was taken with NO ANTENNA ATTACHED
 >
 > Established after the fact (2026-08-17). The WiFi chip's antenna was not

@@ -1,5 +1,14 @@
 # H713 audio bring-up
 
+> **Bring-up journal & subsystem reference (2026-09-01 → 2026-09-02).**
+>
+> The opening below reflects state before bench testing ("nothing has made a sound").
+> **Audio playback works today:** internal codec speaker routing via the headphone amp
+> was validated on 2026-09-01 (§ "SOUND"), and the 4.8% clock pitch bug was fixed by
+> patch 0086 on 2026-09-02 (§ "The audio clock is wrong"). See [`README.md`](README.md) §2.
+
+---
+
 Started 2026-09-01. Read out of the **stock DTB**
 (`local/stock-boot/sunxi.fex`, decompiled) and the mainline tree — no hardware
 has been touched yet, and nothing has made a sound.

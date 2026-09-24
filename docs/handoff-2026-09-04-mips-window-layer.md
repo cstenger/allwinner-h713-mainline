@@ -1,5 +1,7 @@
 # Handoff — 2026-09-04/05: the MIPS window layer becomes reachable
 
+> **Superseded by [`handoff-2026-09-06-composition-block.md`](handoff-2026-09-06-composition-block.md) and [`handoff-2026-09-08-video-playing.md`](handoff-2026-09-08-video-playing.md).**
+
 One long session against [mips-window-layer-plan.md](mips-window-layer-plan.md).
 It started with the window layer unreachable and every scaling route closed. It
 ends with Linux booting under a live MIPS, the firmware's debug shell answering,

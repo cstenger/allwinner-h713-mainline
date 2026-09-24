@@ -36,6 +36,11 @@ unresolved. See [the isolated workstream](hdmi-capture-workstream.md),
 [recovered stock SCP loader](hdmi-scp-loader-re.md). The historical notes below
 include superseded hypotheses; read their later corrections as well.
 
+This is a historical bring-up journal. The projector's HDMI port is an input,
+and the September 2 HPD blocker documented below has since been resolved by
+the bounded SCP EDID/HPD trial. A plain ARM read of `0x07091000` can hard-lock
+the SoC; receiver windows require TVFE/TVCAP power and clocks before access.
+
 Started 2026-09-02. The projector's HDMI connector is an **input**
 (DW-HDMI-RX); there is no HDMI-TX on this SoC. Goal for this round was the
 first milestone only: get a source to see this board as a display, which needs

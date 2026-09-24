@@ -1,3 +1,41 @@
+# MIPS display recovery — working journal (2026-07-21 → 2026-08-28)
+
+> **Read this first. It is 7,900 lines and it is not a reference manual.**
+>
+> This is a **dated lab journal, newest entry first**, covering the MIPS display
+> coprocessor bring-up. Every `#` heading is one session's finding, with the date
+> in the title. It has not been appended to since **2026-08-28**; the project
+> moved to per-session `handoff-*.md` files after that, so **nothing here
+> reflects work done later than that date.**
+>
+> **Do not read it top-to-bottom, and do not quote an entry as current.** Several
+> entries were falsified by later ones — that is deliberate, the corrections are
+> the instructive part, and the superseded ones say so in their own titles.
+>
+> **For what is true now, go to:**
+>
+> | question | authority |
+> | --- | --- |
+> | Does the display work? | [`status.md`](status.md) |
+> | How does the KMS driver work? | [`kms-display.md`](kms-display.md) |
+> | The display bring-up story, condensed | [`claude-display-handoff.md`](claude-display-handoff.md) |
+> | Backlight | [`backlight-investigation.md`](backlight-investigation.md) — **the authority**; the PB4/PWM2 entries below are the dead end it replaced |
+> | Anything else | [`README.md`](README.md) |
+>
+> **Layout, because it is two documents concatenated:**
+>
+> - **here → `# MIPS display recovery plan`** — the August journal, newest first.
+> - **`# MIPS display recovery plan` → `## Milestone 0`** — despite that heading,
+>   this is mostly the *July journal*, not a plan.
+> - **`## Milestone 0` → end** (~160 lines) — the original milestone plan, and
+>   the only genuinely obsolete part. See the banner there before using it.
+>
+> Its value is the primary reverse engineering: disassembly, register tables, and
+> hypotheses with their disconfirming evidence attached. That is expensive to
+> recreate and is why none of it has been deleted.
+
+---
+
 # The firmware's UART shell: it starts, and it is on UART4 (2026-08-07)
 
 Static analysis of `display.bin`, no bench time. Both questions the item asked
@@ -4329,7 +4367,13 @@ RTT note above for why the firmware's own log is not currently reachable.
   compiled in but never executed by the firmware. That is *why* it is a
   reliable specification of what the ARM must build.
 
-# MIPS display recovery plan
+# MIPS display recovery plan — and, below it, the July journal
+
+> **The heading is misleading and is kept only because links point at it.**
+> What follows is ~3,400 lines of **July 2026 journal entries** — CPU_COMM
+> recovery, the board-B handoffs, the firmware startup trace — in the same
+> newest-first order as the August half above. The actual plan is the last ~160
+> lines, from `## Milestone 0` onward, and it is obsolete; see the banner there.
 
 This plan recovers the H713 bench kernel first, then brings up the display
 coprocessor one dependency at a time. It deliberately separates "the kernel
@@ -7774,6 +7818,27 @@ addresses re-derived for `4380f1b3...`.
   previously published artifacts are not proof of the current tree.
 - A driver must return an error when its hardware does not become ready. Probe
   success and log messages must not conceal a failed reset/clock/firmware step.
+
+---
+
+> # ⚠ EVERYTHING BELOW IS THE ORIGINAL JULY PLAN, AND IT IS OBSOLETE
+>
+> Kept as a record of how the work was scoped before any of it was done. **It is
+> not a to-do list, and two of its milestones propose work that has since been
+> settled the other way.** Read it as history or not at all.
+>
+> | milestone | what happened |
+> | --- | --- |
+> | 0 — preserve evidence, buildable series | done |
+> | 1 — verify recovery kernel on the bench | done |
+> | 2 / 2b — U-Boot loader, Linux ownership | done; the display survives into Linux |
+> | 3 — CPU_COMM address model | done, **and its premise is dead**: CPU_COMM is a control channel and cannot carry frames — the frame-submit routines are verified stubs ([`reference/cpu-comm-call-table.md`](reference/cpu-comm-call-table.md)) |
+> | 4 — TVTOP and DECD | done; DECD drives the panel, and the data path is its Y/C ring |
+> | 5 — **GE2D and visible panel path** | **abandoned. GE2D is the projector's display controller, not a 2D engine** — zero scale/blit symbols. Do not start a GE2D driver; it has been re-proposed and re-killed twice ([`kms-display.md`](kms-display.md)) |
+>
+> The safety rules immediately above this banner are the part that aged well and
+> are still worth reading — particularly "a driver must return an error when its
+> hardware does not become ready."
 
 ## Milestone 0 — preserve evidence and restore a buildable series
 

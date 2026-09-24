@@ -1,5 +1,8 @@
 # H713 handoff — 2026-09-01, late session
 
+> **Superseded by [`handoff-2026-09-04-mips-window-layer.md`](handoff-2026-09-04-mips-window-layer.md).**
+> For the current DRM driver and panel architecture, see [`kms-display.md`](kms-display.md).
+
 Two things happened. The runtime-IOMMU work **finished**: moving decoded video
 renders on the panel with zero faults and no operator procedure. Then the
 display architecture was settled. The first KMS/source-0 tests rendered

@@ -1,5 +1,7 @@
 # H713 runtime-IOMMU handoff — 2026-09-01 (RESOLVED)
 
+> **Superseded by [`handoff-2026-09-01-decd-kms-shape.md`](handoff-2026-09-01-decd-kms-shape.md).**
+
 **Moving decoded video renders on the panel through segmented IOVAs at 27 fps
 with zero IOMMU faults.** The full result, with all six runs and the register
 evidence, is in

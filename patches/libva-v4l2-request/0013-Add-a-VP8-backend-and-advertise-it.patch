@@ -1,0 +1,669 @@
+Add a VP8 backend and advertise it
+
+VP8 decodes bit-exactly on this hardware -- six vectors covering all four
+profiles, i.e. every reconstruction and loop-filter pair the engine implements
+-- but only through GStreamer's v4l2slvp8dec, straight to the kernel.  Nothing
+could reach it through VA-API, because this driver had no VP8 backend and
+neither does upstream: master carries h264.c, h265.c and mpeg2.c and nothing
+else, on one branch, and none of its pull requests add one.  So this is new
+code rather than a port, written against the V4L2 uAPI and the VP8 spec.
+
+Three things in the mapping are not obvious, and all three are places where the
+naive reading is wrong.
+
+THE UNCOMPRESSED DATA CHUNK HAS TO BE PUT BACK.  ffmpeg strips it before
+handing over the slice data:
+
+	unsigned int header_size = 3 + 7 * s->keyframe;
+	const uint8_t *data = buffer + header_size;
+
+while cedrus expects to find it -- it starts the engine at header_size * 8
+(VE_H264_VLD_OFFSET) and locates the partition size table at
+first_part_size + header_size (VE_VP8_PART_SIZE_OFFSET).  Without it every
+offset past the frame tag is wrong.  The shim therefore synthesises the chunk
+ahead of the slice data.  Only its LENGTH is load-bearing, since the engine is
+pointed past the bytes, but it is filled in correctly anyway: it costs nothing,
+it keeps a dumped OUTPUT buffer a parseable VP8 frame, and it avoids silently
+depending on the engine continuing to skip it.
+
+This is safe to do when the slice data arrives because ffmpeg renders every
+parameter buffer before any slice buffer, and the slice parameters before the
+slice data, so the frame type and first partition size are both known by then.
+
+FIRST_PART_SIZE IS RECOVERED BY INVERSION, NOT MEASUREMENT.  VA-API does not
+send it.  ffmpeg sends what is LEFT of the control partition after it parsed
+the header itself:
+
+	sp.partition_size[0] = s->header_partition_size -
+			       ((sp.macroblock_offset + 7) / 8);
+
+so adding that term back gives the true size exactly.  Deriving it from
+slice_data_size and the token partition sizes -- the obvious alternative --
+is wrong the moment a frame has more than one token partition.
+
+SEGMENT VALUES ARE ABSOLUTE, QUANTISER DELTAS ARE NOT.  VA-API reports the
+per-segment quantiser and loop-filter values already adjusted, so
+V4L2_VP8_SEGMENT_FLAG_DELTA_VALUE_MODE is left CLEAR and they pass through
+unchanged; cedrus reads that as VE_VP8_PPS_MB_SEGMENT_ABS_DELTA, which is the
+same meaning.  The per-plane quantiser deltas are the opposite case: V4L2 wants
+deltas, VA-API sends six absolute indices per segment, so they are recovered by
+subtraction against segment 0.  That stays exact even where ffmpeg's clamp to
+[0,127] bit, because it emits clip(base + delta) and the engine recomputes
+clip(base + delta') with delta' = clip(base + delta) - base, which is the same
+number; delta' fits the signed field.
+
+One inversion worth naming: VA-API's key_frame field means the OPPOSITE of its
+name -- "0 means a key frame", and ffmpeg fills it as !s->keyframe -- while
+V4L2_VP8_FRAME_FLAG_KEY_FRAME is set when the frame is one.
+
+VA-API also sends the coefficient probabilities in a buffer of their own,
+which no other codec here uses, so VAProbabilityBufferType is handled for the
+first time -- in RequestCreateBuffer as well as when storing it.  Accepting it
+in only one of those places fails at the client with "the requested
+VABufferType is not supported" long before any of the mapping above runs.
+
+The profile is added to BOTH RequestQueryConfigProfiles and
+RequestQueryConfigEntrypoints, gated as ever on the kernel really offering
+V4L2_PIX_FMT_VP8_FRAME.  A profile listed in only one of the two is invisible
+in exactly the way an unported codec is -- vainfo drops it and vaCreateConfig
+has nothing to match -- which is the trap patch 0011 documented.
+
+
+Adding a tenth profile also ran into a latent bug: RequestQueryConfigProfiles
+bounded itself with V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES (10) rather than
+V4L2_REQUEST_MAX_PROFILES (11), which is the constant the driver actually
+reports to libva as max_profiles.  With nine profiles already listed the guard
+was false and VP8 was dropped on the floor -- advertised nowhere, with no
+error, which is a third way to be invisible on top of the two above.  The four
+guards now use the profile constant.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 6448884..09fe288 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -52,6 +52,8 @@ v4l2_request_drv_video_la_SOURCES = request.c \
+ 	v4l2.h \
+ 	mpeg2.c \
+ 	mpeg2.h \
++	vp8.c \
++	vp8.h \
+ 	h264.c \
+ 	h264.h \
+ 	h265.c \
+diff --git a/src/buffer.c b/src/buffer.c
+index d9a1152..200b961 100644
+--- a/src/buffer.c
++++ b/src/buffer.c
+@@ -61,6 +61,8 @@ VAStatus RequestCreateBuffer(VADriverContextP context, VAContextID context_id,
+ 	case VASliceParameterBufferType:
+ 	case VASliceDataBufferType:
+ 	case VAImageBufferType:
++	/* VP8 sends its coefficient probabilities in a buffer of their own. */
++	case VAProbabilityBufferType:
+ 		break;
+ 
+ 	default:
+diff --git a/src/config.c b/src/config.c
+index 7d7703a..b4f848e 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -71,6 +71,10 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 		driver_data->coded_pixelformat = V4L2_PIX_FMT_MPEG2_SLICE;
+ 		driver_data->coded_bit_depth = 8;
+ 		break;
++	case VAProfileVP8Version0_3:
++		driver_data->coded_pixelformat = V4L2_PIX_FMT_VP8_FRAME;
++		driver_data->coded_bit_depth = 8;
++		break;
+ 	default:
+ 		return VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
+ 	}
+@@ -145,7 +149,7 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 	found = v4l2_find_format(driver_data->video_fd,
+ 				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+ 				 V4L2_PIX_FMT_MPEG2_SLICE);
+-	if (found && index < (V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES - 2)) {
++	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 2)) {
+ 		profiles[index++] = VAProfileMPEG2Simple;
+ 		profiles[index++] = VAProfileMPEG2Main;
+ 	}
+@@ -153,7 +157,7 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 	found = v4l2_find_format(driver_data->video_fd,
+ 				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+ 				 V4L2_PIX_FMT_H264_SLICE);
+-	if (found && index < (V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES - 5)) {
++	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 5)) {
+ 		profiles[index++] = VAProfileH264Main;
+ 		profiles[index++] = VAProfileH264High;
+ 		profiles[index++] = VAProfileH264ConstrainedBaseline;
+@@ -164,11 +168,17 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 	found = v4l2_find_format(driver_data->video_fd,
+ 				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+ 				 V4L2_PIX_FMT_HEVC_SLICE);
+-	if (found && index < (V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES - 2)) {
++	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 2)) {
+ 		profiles[index++] = VAProfileHEVCMain;
+ 		profiles[index++] = VAProfileHEVCMain10;
+ 	}
+ 
++	found = v4l2_find_format(driver_data->video_fd,
++				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
++				 V4L2_PIX_FMT_VP8_FRAME);
++	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 1))
++		profiles[index++] = VAProfileVP8Version0_3;
++
+ 	*profiles_count = index;
+ 
+ 	return VA_STATUS_SUCCESS;
+@@ -189,6 +199,7 @@ VAStatus RequestQueryConfigEntrypoints(VADriverContextP context,
+ 	case VAProfileH264StereoHigh:
+ 	case VAProfileHEVCMain:
+ 	case VAProfileHEVCMain10:
++	case VAProfileVP8Version0_3:
+ 		entrypoints[0] = VAEntrypointVLD;
+ 		*entrypoints_count = 1;
+ 		break;
+diff --git a/src/meson.build b/src/meson.build
+index d73abb1..257629d 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -43,6 +43,7 @@ sources = [
+ 	'media.c',
+ 	'v4l2.c',
+ 	'mpeg2.c',
++	'vp8.c',
+ 	'h264.c',
+ 	'h265.c'
+ ]
+@@ -63,6 +64,7 @@ headers = [
+ 	'media.h',
+ 	'v4l2.h',
+ 	'mpeg2.h',
++	'vp8.h',
+ 	'h264.h',
+ 	'h265.h'
+ ]
+diff --git a/src/picture.c b/src/picture.c
+index 5c218e0..e6be2b5 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -34,6 +34,7 @@
+ #include "h264.h"
+ #include "h265.h"
+ #include "mpeg2.h"
++#include "vp8.h"
+ 
+ #include <assert.h>
+ #include <string.h>
+@@ -72,6 +73,24 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			       start_code, sizeof(start_code));
+ 			surface_object->slices_size += sizeof(start_code);
+ 		}
++		/*
++		 * ffmpeg strips VP8's uncompressed data chunk before sending
++		 * the slice data, and cedrus expects to find it: it starts the
++		 * engine past it and locates the partition size table relative
++		 * to it.  Put it back.  Both the picture and the slice
++		 * parameters are already stored by now -- ffmpeg renders every
++		 * parameter buffer before the slice buffers, and the slice
++		 * parameters before the slice data -- so the frame type and
++		 * partition size needed to build it are known here.
++		 */
++		if (profile == VAProfileVP8Version0_3) {
++			unsigned int prefix = vp8_prefix_size(surface_object);
++
++			vp8_fill_prefix(surface_object,
++					surface_object->source_data +
++					surface_object->slices_size);
++			surface_object->slices_size += prefix;
++		}
+ 		memcpy(surface_object->source_data +
+ 			       surface_object->slices_size,
+ 		       buffer_object->data,
+@@ -107,6 +126,12 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			       sizeof(surface_object->params.h265.picture));
+ 			break;
+ 
++		case VAProfileVP8Version0_3:
++			memcpy(&surface_object->params.vp8.picture,
++			       buffer_object->data,
++			       sizeof(surface_object->params.vp8.picture));
++			break;
++
+ 		default:
+ 			break;
+ 		}
+@@ -131,6 +156,12 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			       sizeof(surface_object->params.h265.slice));
+ 			break;
+ 
++		case VAProfileVP8Version0_3:
++			memcpy(&surface_object->params.vp8.slice,
++			       buffer_object->data,
++			       sizeof(surface_object->params.vp8.slice));
++			break;
++
+ 		default:
+ 			break;
+ 		}
+@@ -164,11 +195,28 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			surface_object->params.h265.iqmatrix_set = true;
+ 			break;
+ 
++		case VAProfileVP8Version0_3:
++			memcpy(&surface_object->params.vp8.iqmatrix,
++			       buffer_object->data,
++			       sizeof(surface_object->params.vp8.iqmatrix));
++			break;
++
+ 		default:
+ 			break;
+ 		}
+ 		break;
+ 
++	/*
++	 * VP8 is the only codec here that sends its coefficient probabilities
++	 * in a buffer of their own rather than inside the picture parameters.
++	 */
++	case VAProbabilityBufferType:
++		if (profile == VAProfileVP8Version0_3)
++			memcpy(&surface_object->params.vp8.probabilities,
++			       buffer_object->data,
++			       sizeof(surface_object->params.vp8.probabilities));
++		break;
++
+ 	default:
+ 		break;
+ 	}
+@@ -202,6 +250,12 @@ static VAStatus codec_set_controls(struct request_data *driver_data,
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
+ 		break;
+ 
++	case VAProfileVP8Version0_3:
++		rc = vp8_set_controls(driver_data, context, surface_object);
++		if (rc < 0)
++			return VA_STATUS_ERROR_OPERATION_FAILED;
++		break;
++
+ 	case VAProfileHEVCMain:
+ 	case VAProfileHEVCMain10:
+ 		rc = h265_set_controls(driver_data, context, surface_object);
+diff --git a/src/surface.h b/src/surface.h
+index 0359863..31dc10f 100644
+--- a/src/surface.h
++++ b/src/surface.h
+@@ -103,6 +103,12 @@ struct object_surface {
+ 			VAIQMatrixBufferHEVC iqmatrix;
+ 			bool iqmatrix_set;
+ 		} h265;
++		struct {
++			VAPictureParameterBufferVP8 picture;
++			VASliceParameterBufferVP8 slice;
++			VAIQMatrixBufferVP8 iqmatrix;
++			VAProbabilityDataBufferVP8 probabilities;
++		} vp8;
+ 	} params;
+ 
+ 	int request_fd;
+diff --git a/src/vp8.c b/src/vp8.c
+new file mode 100644
+index 0000000..84e8365
+--- /dev/null
++++ b/src/vp8.c
+@@ -0,0 +1,299 @@
++/*
++ * Copyright (C) 2026 Christopher Stenger
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++ * DEALINGS IN THE SOFTWARE.
++ */
++
++#include "vp8.h"
++#include "context.h"
++#include "request.h"
++#include "surface.h"
++
++#include <assert.h>
++#include <string.h>
++
++#include <linux/videodev2.h>
++
++#include "v4l2.h"
++
++/*
++ * VA-API's key_frame is INVERTED with respect to the name: the header says
++ * "0 means a key frame", and ffmpeg fills it as !s->keyframe.  V4L2's flag is
++ * set when the frame IS a key frame, so the two are not a straight copy.
++ */
++static bool vp8_is_key_frame(const VAPictureParameterBufferVP8 *picture)
++{
++	return picture->pic_fields.bits.key_frame == 0;
++}
++
++/*
++ * The size of the first (control) partition, which V4L2 wants and VA-API does
++ * not send directly.  ffmpeg computes what it does send as
++ *
++ *	partition_size[0] = header_partition_size - ((macroblock_offset + 7) / 8)
++ *
++ * -- the bytes of the control partition still unread once it has parsed the
++ * frame header itself -- so inverting that recovers the whole partition
++ * exactly.  Deriving it from slice_data_size instead is wrong as soon as there
++ * is more than one token partition.
++ */
++static unsigned int vp8_first_part_size(const VASliceParameterBufferVP8 *slice)
++{
++	return slice->partition_size[0] + ((slice->macroblock_offset + 7) / 8);
++}
++
++/*
++ * ffmpeg hands over the slice data with the uncompressed data chunk already
++ * stripped:
++ *
++ *	header_size = 3 + 7 * s->keyframe;
++ *	data = buffer + header_size;
++ *
++ * cedrus wants it back.  It starts the bitstream engine at header_size * 8
++ * (VE_H264_VLD_OFFSET) and looks for the partition size table at
++ * first_part_size + header_size (VE_VP8_PART_SIZE_OFFSET), so the chunk has to
++ * occupy its normal place or every offset after it is wrong.
++ */
++unsigned int vp8_prefix_size(struct object_surface *surface_object)
++{
++	return vp8_is_key_frame(&surface_object->params.vp8.picture) ? 10 : 3;
++}
++
++/*
++ * The engine never reads these bytes -- it is pointed past them -- so only the
++ * LENGTH is load-bearing.  They are written correctly anyway: it costs nothing,
++ * it makes a dumped OUTPUT buffer a valid VP8 frame that other tools can parse,
++ * and it does not quietly depend on the engine continuing to skip them.
++ */
++void vp8_fill_prefix(struct object_surface *surface_object, void *dest)
++{
++	const VAPictureParameterBufferVP8 *picture =
++		&surface_object->params.vp8.picture;
++	const VASliceParameterBufferVP8 *slice =
++		&surface_object->params.vp8.slice;
++	bool key_frame = vp8_is_key_frame(picture);
++	unsigned int first_part_size = vp8_first_part_size(slice);
++	uint8_t *out = dest;
++	uint32_t tag;
++	uint16_t v;
++
++	/* Frame tag: type, version, show_frame, then the partition size. */
++	tag = (key_frame ? 0 : 1) |
++	      (picture->pic_fields.bits.version << 1) |
++	      (1 << 4) |
++	      (first_part_size << 5);
++
++	out[0] = tag & 0xff;
++	out[1] = (tag >> 8) & 0xff;
++	out[2] = (tag >> 16) & 0xff;
++
++	if (!key_frame)
++		return;
++
++	/* Key frames carry the start code and the dimensions. */
++	out[3] = 0x9d;
++	out[4] = 0x01;
++	out[5] = 0x2a;
++
++	v = picture->frame_width & 0x3fff;
++	out[6] = v & 0xff;
++	out[7] = v >> 8;
++
++	v = picture->frame_height & 0x3fff;
++	out[8] = v & 0xff;
++	out[9] = v >> 8;
++}
++
++int vp8_set_controls(struct request_data *driver_data,
++		     struct object_context *context_object,
++		     struct object_surface *surface_object)
++{
++	VAPictureParameterBufferVP8 *picture =
++		&surface_object->params.vp8.picture;
++	VASliceParameterBufferVP8 *slice = &surface_object->params.vp8.slice;
++	VAIQMatrixBufferVP8 *iqmatrix = &surface_object->params.vp8.iqmatrix;
++	VAProbabilityDataBufferVP8 *probs =
++		&surface_object->params.vp8.probabilities;
++	struct object_surface *last_surface;
++	struct object_surface *golden_surface;
++	struct object_surface *alt_surface;
++	struct v4l2_ctrl_vp8_frame frame;
++	unsigned int base_qi;
++	unsigned int i;
++	int rc;
++
++	memset(&frame, 0, sizeof(frame));
++
++	/*
++	 * Segmentation.  VA-API reports the per-segment quantiser and loop
++	 * filter values ALREADY ADJUSTED -- absolute, not deltas -- so
++	 * V4L2_VP8_SEGMENT_FLAG_DELTA_VALUE_MODE is deliberately left clear and
++	 * the values go across as they are.  cedrus reads that as
++	 * VE_VP8_PPS_MB_SEGMENT_ABS_DELTA, which is exactly this meaning.
++	 * Reconstructing deltas would need the base the encoder used and would
++	 * be lossy where the spec's clamp bit.
++	 */
++	for (i = 0; i < 4; i++) {
++		frame.segment.quant_update[i] =
++			(__s8)iqmatrix->quantization_index[i][0];
++		frame.segment.lf_update[i] = (__s8)picture->loop_filter_level[i];
++	}
++
++	memcpy(frame.segment.segment_probs, picture->mb_segment_tree_probs,
++	       sizeof(frame.segment.segment_probs));
++
++	if (picture->pic_fields.bits.segmentation_enabled)
++		frame.segment.flags |= V4L2_VP8_SEGMENT_FLAG_ENABLED;
++	if (picture->pic_fields.bits.update_mb_segmentation_map)
++		frame.segment.flags |= V4L2_VP8_SEGMENT_FLAG_UPDATE_MAP;
++	if (picture->pic_fields.bits.update_segment_feature_data)
++		frame.segment.flags |= V4L2_VP8_SEGMENT_FLAG_UPDATE_FEATURE_DATA;
++
++	/* Loop filter. */
++	memcpy(frame.lf.ref_frm_delta, picture->loop_filter_deltas_ref_frame,
++	       sizeof(frame.lf.ref_frm_delta));
++	memcpy(frame.lf.mb_mode_delta, picture->loop_filter_deltas_mode,
++	       sizeof(frame.lf.mb_mode_delta));
++
++	frame.lf.sharpness_level = picture->pic_fields.bits.sharpness_level;
++	/*
++	 * The frame-level filter strength.  VA-API only sends the four
++	 * post-adjustment segment levels, and with segmentation off ffmpeg
++	 * fills all four with the frame level, so segment 0 is that level.
++	 * With segmentation on, the per-segment values above are what the
++	 * engine uses.  loop_filter_disable is already folded in: ffmpeg sets
++	 * it precisely when the level is 0.
++	 */
++	frame.lf.level = picture->loop_filter_level[0];
++
++	if (picture->pic_fields.bits.loop_filter_adj_enable)
++		frame.lf.flags |= V4L2_VP8_LF_ADJ_ENABLE;
++	if (picture->pic_fields.bits.mode_ref_lf_delta_update)
++		frame.lf.flags |= V4L2_VP8_LF_DELTA_UPDATE;
++	if (picture->pic_fields.bits.filter_type)
++		frame.lf.flags |= V4L2_VP8_LF_FILTER_TYPE_SIMPLE;
++
++	/*
++	 * Quantisation.  VA-API sends six absolute indices per segment, where
++	 * V4L2 wants one base index plus five per-plane deltas, so the deltas
++	 * are recovered by subtraction against segment 0.
++	 *
++	 * This stays exact even where ffmpeg's clamp to [0,127] bit.  It emits
++	 * index[n] = clip(base + delta), so the recovered delta' is
++	 * clip(base + delta) - base, and the engine then computes
++	 * clip(base + delta') == clip(base + delta) -- the same value.  delta'
++	 * lies in [-127, 127] and fits the signed field.
++	 */
++	base_qi = iqmatrix->quantization_index[0][0];
++
++	frame.quant.y_ac_qi = base_qi;
++	frame.quant.y_dc_delta =
++		(__s8)((int)iqmatrix->quantization_index[0][1] - (int)base_qi);
++	frame.quant.y2_dc_delta =
++		(__s8)((int)iqmatrix->quantization_index[0][2] - (int)base_qi);
++	frame.quant.y2_ac_delta =
++		(__s8)((int)iqmatrix->quantization_index[0][3] - (int)base_qi);
++	frame.quant.uv_dc_delta =
++		(__s8)((int)iqmatrix->quantization_index[0][4] - (int)base_qi);
++	frame.quant.uv_ac_delta =
++		(__s8)((int)iqmatrix->quantization_index[0][5] - (int)base_qi);
++
++	/*
++	 * Entropy.  The coefficient probabilities arrive in their own buffer
++	 * and the two layouts agree dimension for dimension ([4][8][3][11]);
++	 * the mode and motion-vector probabilities ride in the picture
++	 * parameters.
++	 */
++	memcpy(frame.entropy.coeff_probs, probs->dct_coeff_probs,
++	       sizeof(frame.entropy.coeff_probs));
++	memcpy(frame.entropy.y_mode_probs, picture->y_mode_probs,
++	       sizeof(frame.entropy.y_mode_probs));
++	memcpy(frame.entropy.uv_mode_probs, picture->uv_mode_probs,
++	       sizeof(frame.entropy.uv_mode_probs));
++	memcpy(frame.entropy.mv_probs, picture->mv_probs,
++	       sizeof(frame.entropy.mv_probs));
++
++	/* Boolean decoder state at the end of the frame header. */
++	frame.coder_state.range = picture->bool_coder_ctx.range;
++	frame.coder_state.value = picture->bool_coder_ctx.value;
++	frame.coder_state.bit_count = picture->bool_coder_ctx.count;
++
++	frame.width = picture->frame_width;
++	frame.height = picture->frame_height;
++	/*
++	 * VA-API carries no scaling factors -- they live in the key frame's
++	 * uncompressed chunk, which it does not forward -- so these stay 0.
++	 * cedrus does not read them.
++	 */
++	frame.horizontal_scale = 0;
++	frame.vertical_scale = 0;
++
++	frame.version = picture->pic_fields.bits.version;
++
++	frame.prob_skip_false = picture->prob_skip_false;
++	frame.prob_intra = picture->prob_intra;
++	frame.prob_last = picture->prob_last;
++	frame.prob_gf = picture->prob_gf;
++
++	/*
++	 * VA-API counts the control partition, V4L2 counts only the token
++	 * partitions, and their sizes follow in the same order.
++	 */
++	frame.num_dct_parts = slice->num_of_partitions - 1;
++	for (i = 0; i < frame.num_dct_parts && i < 8; i++)
++		frame.dct_part_sizes[i] = slice->partition_size[i + 1];
++
++	frame.first_part_size = vp8_first_part_size(slice);
++	frame.first_part_header_bits = slice->macroblock_offset;
++
++	last_surface = SURFACE(driver_data, picture->last_ref_frame);
++	golden_surface = SURFACE(driver_data, picture->golden_ref_frame);
++	alt_surface = SURFACE(driver_data, picture->alt_ref_frame);
++
++	if (last_surface != NULL)
++		frame.last_frame_ts =
++			v4l2_timeval_to_ns(&last_surface->timestamp);
++	if (golden_surface != NULL)
++		frame.golden_frame_ts =
++			v4l2_timeval_to_ns(&golden_surface->timestamp);
++	if (alt_surface != NULL)
++		frame.alt_frame_ts = v4l2_timeval_to_ns(&alt_surface->timestamp);
++
++	if (vp8_is_key_frame(picture))
++		frame.flags |= V4L2_VP8_FRAME_FLAG_KEY_FRAME;
++	/*
++	 * Anything handed to a decoder here is being decoded for output, and
++	 * VA-API has no show_frame field to say otherwise.
++	 */
++	frame.flags |= V4L2_VP8_FRAME_FLAG_SHOW_FRAME;
++	if (picture->pic_fields.bits.mb_no_coeff_skip)
++		frame.flags |= V4L2_VP8_FRAME_FLAG_MB_NO_SKIP_COEFF;
++	if (picture->pic_fields.bits.sign_bias_golden)
++		frame.flags |= V4L2_VP8_FRAME_FLAG_SIGN_BIAS_GOLDEN;
++	if (picture->pic_fields.bits.sign_bias_alternate)
++		frame.flags |= V4L2_VP8_FRAME_FLAG_SIGN_BIAS_ALT;
++
++	rc = v4l2_set_control(driver_data->video_fd, surface_object->request_fd,
++			      V4L2_CID_STATELESS_VP8_FRAME,
++			      &frame, sizeof(frame));
++	if (rc < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	return VA_STATUS_SUCCESS;
++}
+diff --git a/src/vp8.h b/src/vp8.h
+new file mode 100644
+index 0000000..2ee52dc
+--- /dev/null
++++ b/src/vp8.h
+@@ -0,0 +1,46 @@
++/*
++ * Copyright (C) 2026 Christopher Stenger
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++ * DEALINGS IN THE SOFTWARE.
++ */
++
++#ifndef _VP8_H_
++#define _VP8_H_
++
++#include <stdbool.h>
++
++struct object_context;
++struct object_surface;
++struct request_data;
++
++/*
++ * Size of the VP8 uncompressed data chunk, which precedes the first
++ * partition: the 3-byte frame tag, plus 7 more on a key frame for the start
++ * code and dimensions.  ffmpeg strips it before handing over the slice data
++ * and cedrus expects it to be present, so the shim puts it back --
++ * see vp8_prefix_size() and the comment in vp8.c.
++ */
++unsigned int vp8_prefix_size(struct object_surface *surface_object);
++void vp8_fill_prefix(struct object_surface *surface_object, void *dest);
++
++int vp8_set_controls(struct request_data *driver_data,
++		     struct object_context *context,
++		     struct object_surface *surface_object);
++
++#endif
+-- 
+2.55.0
+

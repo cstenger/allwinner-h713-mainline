@@ -4,23 +4,79 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-09-17._
+_Last updated: 2026-09-23._
 
-## Current video decoder state — 2026-09-17
+## Current video decoder state — 2026-09-23
 
 H.264 and HEVC now use the VE+0xf00 polyphase scaler, with arbitrary even NV12
 CAPTURE dimensions from 1×–4× downscale per axis via S_FMT or COMPOSE. Rotation
 is disabled by user decision. A clean 88-patch build and the final installed
 module pass **49/49 compliance, zero warnings**, the focused control/API tests,
 and a 53-capture pixel matrix without DMA overruns or kernel faults. Full-size
-reconstruction remains private; Main10 outputs 8-bit NV12.
+reconstruction remains private. Main10 delivers 8-bit NV12 to a client, but the
+buffer also carries the 2-bit side plane and the two together are **bit-exact
+10 bit** (verified 2026-09-23, three vectors, all planes); the gap is a V4L2
+fourcc, not the hardware. See [the 10-bit findings](hevc-10bit-findings.md).
 
-Next: negotiate and propagate scaled surfaces through the VA/FFmpeg/mpv/KMS
-playback path, resolve coded padding/crop, and validate panel output before
-retiring display-side scaling. This session's validation was headless; it does
-not establish a completed arbitrary-ratio player/display pipeline.
-See [the current handoff](handoff-2026-09-17-shared-scaler.md) and
+**Four codecs decode bit-exactly on the VE**, each with its own gate:
+H.264 (`va-decode-test.sh`, 5/5), HEVC incl. Main10 (`hevc-decode-test.sh`,
+14/14), MPEG-2 (`mpeg2-decode-test.sh`, 6/6) and VP8 (`vp8-decode-test.sh`,
+6/6 — all four VP8 profiles, i.e. every reconstruction/loop-filter pair the
+engine implements). **All four are reachable through VA-API** as of
+libva-v4l2-request patch 0013 (2026-09-24), which added the VP8 backend — new
+code, since upstream has never had one. Stock `ffmpeg -hwaccel vaapi` decodes
+all six VP8 vectors bit-exactly on the VE. VP8 also still reaches the hardware
+through GStreamer's `v4l2slvp8dec`, straight to the kernel, which is what
+`vp8-decode-test.sh` drives; the VA-API arm is not yet wired into that gate.
+
+Scaled surfaces reach the panel: the VA driver and mpv negotiate, carry and
+display a hardware-scaled picture with the coded padding cropped, and seeks no
+longer drop hardware decoding. HEVC and Main10 are confirmed on the panel too.
+See [the scaled-playback handoff](handoff-2026-09-17-scaled-playback.md),
+[the shared-scaler handoff](handoff-2026-09-17-shared-scaler.md) and
 [the 4:2:2 assessment](reference/chroma-422-assessment-2026-09-17.md).
+
+**Display-side scaling is retired (2026-09-23).** With the VE landing on
+1280x720 exactly, the proc upscaler at `0x05180000` had no producer left, so
+patches 0098/0103/0105/0106/0108/0111 left `series` (85 entries now) and the
+video plane accepts one source rectangle again — the full panel. What that
+gives up is upscaling *without* a GPU, which nothing in the stack could reach
+anyway; the reopen condition and the evidence are in
+[the retirement handoff](handoff-2026-09-23-retire-display-scaling.md).
+
+**Hardware-validated the same day.** Cold-booted on the new FIT: 1080p H.264,
+HEVC, Main10 and a 720p file all scanned out operator-confirmed, with the
+`video-0` plane holding crtc-0 and a *changing* NV12 1280x720 framebuffer —
+the VE landing on the panel size exactly, no display-side stage. The headless
+gates were the control and were unaffected: 5/5 H.264, 14/14 HEVC, 6/6 MPEG-2,
+zero IOMMU faults, zero failed atomic commits. **Re-confirmed on the 88-patch
+build** after 0126/0127 changed the shared IOMMU group's reserved regions —
+all four cases again, with HEVC and Main10 separated by a black clip so the
+operator could actually tell them apart.
+
+**A 2-hour soak then found, and patches 0126/0127 fixed, an IOVA collision that
+had made every long decode run fail after ~35 minutes.** Cedrus's IOVA
+allocator was walking into the 8 MiB `uboot-scanout@6c100000` region that the
+display identity-maps into the IOMMU group the two devices *share*, after which
+allocation failed permanently. It was never memory: MemAvailable flat, CmaFree
+constant, buddyinfo healthy. The reservation existed but reached only the
+display, because `of_iommu_get_resv_regions()` is per-device and
+`iommu_dma_init_domain()` applies regions for only the **first** device to
+initialise the domain — which is the VE. 0126 declares the range for the VE
+too; 0127 makes cedrus look its pool up by name so a reg-less reservation entry
+does not break its probe.
+
+**Re-run clean: 5934/5934 iterations, 210472 frames on the VE, 0 failures,
+0 software fallbacks, 0 IOVA collisions, CmaFree delta 0.** Evidence, including
+both soak logs:
+[the IOVA collision result](reference/soak-iova-collision-2026-09-23/RESULT.md).
+Whether the hazard predated the retirement is still **not established** — the
+test would be the same soak on the backed-up previous kernel.
+
+Next: split the upstreamable pieces (the generic SPS/TRY fix, the H713 scaler
+routing, the `vo_drm` PRIME scanout feature, and downstream negotiation policy
+are four separate submissions), and a V4L2 fourcc for the 8+2 layout so a
+client can reach the 10-bit samples that are already exact.
 
 ## Historical video investigation — 2026-09-12
 
@@ -746,7 +802,7 @@ BROM → U-Boot SPL (DRAM init) → TF-A BL31 (EL3, @0x40000000)
 | Reboot → fastboot / U-Boot | ✅ **done, both modes HW-validated (2026-07-23).** Two `nvmem-reboot-mode` modes over RTC GP7: `reboot fastboot` (magic `0xfa57b007`) → U-Boot `preboot` → fastboot, and `reboot bootloader` (magic `0xb007c0de`) → `preboot` sets `bootdelay -1` → U-Boot `=>` prompt — both confirmed console-free on the bench. `RTC_DRV_SUN6I` owns the region and exposes GP7 as an nvmem cell (`nvmem-cells` → `reboot-mode-magic@1c`); the old overlapping `syscon-reboot-mode` is gone. |
 | KMS / `/dev/dri/card0` | ✅ **DONE 2026-08-16, HW-verified — `mpv --vo=drm` plays 720p to the panel, 0 dropped frames; 1320 page flips at 59.71 fps, 0 timeouts.** `sun50i-h713-afbd` (patches 0037/0038) is a simple-KMS driver over the AFBD scanout engine: one CRTC, one plane, page flip via the same `0x05600178` + `READY` sequence that measured 0.00% tearing in gles-play, vblank off SPI 110 (bits confirmed by 2254 IRQs and zero stalled flips). Probe reads geometry back from the hardware (`adopting 1280x720, stride 5120`). Framebuffers come from **system CMA** — a reserved dma-pool allocates in power-of-two page orders, so a 16 MiB pool yielded exactly 4 buffers and mpv ran out of them. **`card0` since 2026-08-24** — the driver became `=y` so the boot log would reach the panel, so it now probes before panfrost's module and takes minor 0; it was `card1` while it was a module, which is what older docs record. Resolve it at runtime via `/sys/class/drm/card*/device/driver` rather than hardcoding either. It **adopts** the display U-Boot brought up and never touches timing, the LVDS PHY or `rst_bus_disp`, so it does not remove the U-Boot dependency. Took the AFBD window and IRQ from DECD, now `disabled`. **The whole Linux boot now renders on the projector** (2026-08-24): fbcon takes over at 1.25 s instead of 6.49 s, `getty@tty1` no longer wipes it (`TTYVTDisallocate=no`), the WiFi driver no longer floods it (aic8800 patches 0007/0009), and dummycon is matched to the panel at 160x45 so the handover keeps ~45 lines instead of ~13. Operator-confirmed on the glass: the systemd `[ OK ]` lines scroll past during boot, and the login prompt stays put afterwards. `kmssink` needs `driver-name=sun50i-h713-afbd`; its auto-detect never worked here. [kms-display.md](kms-display.md), [handoff-2026-08-24-display.md](handoff-2026-08-24-display.md) |
 | Video on the panel | ✅ **NO-GPU PATH DONE 2026-09-08 — real Cedrus video renders correctly on the panel with the display MIPS ALIVE.** Cedrus decode → zero-copy dma-buf → IOMMU translation → DECD fetch → MIPS window layer → panel, 29.96 fps, core alive throughout. Three faults, all found by reading our own record rather than photographing: the format byte `0x05600011` must be **3 (NV12)**, not 0 (= RGB888, which stock uses only because it composites video into an RGB surface); `0x0560006c` publishes the **plane addresses**; and `0x05600014` commits the **source config** — *and it retires on vsync*. Shell recipes worked by accident of their 100 ms sleep; back-to-back kernel writes never latch, the hardware silently ignores the configuration, and **every register still reads back correct** — the frame renders doubled at half height. Proving that needed the afbd, `top` (`0x05700000`, never compared before) and composition regions all dumped and found byte-identical between a working and a broken run. The route now lives in the driver (patch 0095, `auto_route=1`); only the display-side gain and selector stay in shell, by design. **Two earlier causal claims are withdrawn**: composition was not the cause (it owns the footprint only), and IOMMU translation is not the fault — it works. **The hard-lock is very likely a missing patch, not a hardware hazard.** The DECD build tree predated 0071 (release fence lifetime), 0072 and 0073, so `frame_item_release()` was doing a bare `kfree()` on a `dma_fence` userspace still held — on every retirement, i.e. ~30/s during playback and almost never during static tests. Rebuilding with all three: **nine clean live runs, three inside the first 100 s of uptime**, against two locks in two attempts in that same window immediately before. Fence retirement now completes instead of timing out, and the client segfault is gone. **Mechanism unproven** — a dangling fence causing a *silent* whole-SoC wedge with no oops or serial is not an obvious failure mode — so this is absence-of-failure evidence, not a closed case. Build the module from a tree with 0071/0072/0073 applied. **Flipping measured 2026-09-08 and already correct**: the plane-address publish retires uniformly over 0-16.7 ms (never microseconds), so it latches on the frame boundary and cannot tear; cadence is 116/119 frames at exactly 2 vsyncs with displayed rate 29.98 vs source 29.97 fps. Gaps: `decd-play` still requests selector 0, `0x05600024` undecoded. [handoff-2026-09-08-video-playing.md](handoff-2026-09-08-video-playing.md), [nv12-scanout-solved-2026-09-08.md](reference/nv12-scanout-solved-2026-09-08.md). Historical GPU path (2026-08-15, 59.71 fps, zero-copy through Mali-G31) remains valid and is unchanged. |
-| Video decode (Cedrus / VE) | ✅ **PRODUCTION-HARDENED 2026-08-24.** Stock ffmpeg decodes H.264 (5/5) and 8-bit HEVC (6/6 — scaling lists and lossless included) on the VE through `libva-v4l2-request` + our 5 patches. Beyond bit-exactness: **2 h soak, 5238/5238 iterations, 195,332 frames**, no drift and no leak; **16/16 malformed streams** survived with the engine usable after each; **3 concurrent clients 18/18**. Two driver defects found and fixed getting there — patch 0040's device-wide reset deadlocked concurrent contexts in `v4l2_m2m_cancel_job()` (dropped from `series`), and `cedrus_irq()` orphaned jobs by disarming the watchdog before claiming the interrupt (patch 0059, landed). The old rule "a timeout wedges the VE, reboot between runs" is **refuted** — ten consecutive timeouts, then bit-exact for both the shim and GStreamer. **Main10 plays too** (patch 0006, `ve+10`, 57 dB PSNR, byte-identical to the GStreamer oracle) — the old "10-bit does not decode" claim was wrong; the engine writes an 8-bit plane plus a 2-bit plane and the 8-bit part is correct. Remaining gaps: *full* 10-bit output, which needs a V4L2 fourcc for that 8+2 layout (the engine's second output cannot emit P010 — measured, four arms, zero bytes), and tiles (no encoder here emits them). See [decode-production-readiness.md](decode-production-readiness.md) and [handoff-2026-08-24.md](handoff-2026-08-24.md). Historical detail below. ✅ **H.264 hardware decode, bit-exact** (2026-08-09). Mainline `cedrus`, unmodified, via GStreamer `v4l2slh264dec`. All five ladder vectors match their host software references byte-for-byte: 320x240 Constrained Baseline, 1280x720 Baseline/Main/High, 1920x1080 High. Force `video/x-raw,format=NV12` — unforced it negotiates `NV12_32L32` (32x32 tiled), which is correct output but will not match a linear reference. **The `iommus` property must stay off the `ve` node** until the real IOMMU (stock DTB: `0x2010000`, `allwinner,sunxi-iommu`, `#iommu-cells = <2>`) is verified live; ours pointed at the H6 address `0x030f0000`, which reads all zeros. Re-verified bit-exact on the current kernel 2026-08-15. On the panel via the GPU path — see the row above. |
+| Video decode (Cedrus / VE) | ✅ **PRODUCTION-HARDENED 2026-08-24.** Stock ffmpeg decodes H.264 (5/5) and 8-bit HEVC (6/6 — scaling lists and lossless included) on the VE through `libva-v4l2-request` + our 5 patches. Beyond bit-exactness: **2 h soak, 5238/5238 iterations, 195,332 frames**, no drift and no leak; **16/16 malformed streams** survived with the engine usable after each; **3 concurrent clients 18/18**. Two driver defects found and fixed getting there — patch 0040's device-wide reset deadlocked concurrent contexts in `v4l2_m2m_cancel_job()` (dropped from `series`), and `cedrus_irq()` orphaned jobs by disarming the watchdog before claiming the interrupt (patch 0059, landed). The old rule "a timeout wedges the VE, reboot between runs" is **refuted** — ten consecutive timeouts, then bit-exact for both the shim and GStreamer. **Main10 plays too** (patch 0006, `ve+10`, 57 dB PSNR, byte-identical to the GStreamer oracle) — the old "10-bit does not decode" claim was wrong; the engine writes an 8-bit plane plus a 2-bit plane and the 8-bit part is correct. **Re-measured 2026-09-23: that 8+2 pair is BIT-EXACT 10 bit** — 100% of samples on all three planes against software 10-bit decodes, three vectors including a 642x482 one that catches the coded-height trap. **Full 10-bit OUTPUT is deliberately not pursued (decided 2026-09-23) and 8-bit output is the shipping behaviour — this is a decision, not an open bug.** Reaching those bits needs a V4L2 fourcc for the 8+2 layout, and *two* independent things cap the result: no fourcc describes the layout, and the panel is 8-bit RGB. Either alone is sufficient, so a fourcc would carry the extra bits the whole pipeline to be discarded at the end — nothing on the glass changes. Revisit only if the target becomes transcode, frame capture or upstreaming. (The second output also cannot emit P010 — retested with the output armed and writing, all four `SECOND_OUT_FMT` arms byte-identical, against a positive control where every secondary-format value does change the picture.) Tiles remain unsupported (no encoder here emits them). See [decode-production-readiness.md](decode-production-readiness.md) and [handoff-2026-08-24.md](handoff-2026-08-24.md). Historical detail below. ✅ **H.264 hardware decode, bit-exact** (2026-08-09). Mainline `cedrus`, unmodified, via GStreamer `v4l2slh264dec`. All five ladder vectors match their host software references byte-for-byte: 320x240 Constrained Baseline, 1280x720 Baseline/Main/High, 1920x1080 High. Force `video/x-raw,format=NV12` — unforced it negotiates `NV12_32L32` (32x32 tiled), which is correct output but will not match a linear reference. **The `iommus` property must stay off the `ve` node** until the real IOMMU (stock DTB: `0x2010000`, `allwinner,sunxi-iommu`, `#iommu-cells = <2>`) is verified live; ours pointed at the H6 address `0x030f0000`, which reads all zeros. Re-verified bit-exact on the current kernel 2026-08-15. On the panel via the GPU path — see the row above. |
 | WiFi (AIC8800D80 / SDIO) | ✅ **DONE 2026-08-21.** Four-bit UHS-SDR104 at a register-verified 50 MHz — stock parity. 8 MiB and 128 MiB both directions, SHA-256 exact, **zero** cmd53/CRC/FIFO/hardware-lock/timeout messages, on a production kernel from a cold boot, autobooting unattended from eMMC. Three defects were fixed to get here: the v5p3x IDMA descriptor encoding for an exact 4096-byte segment (0046, the bulk-RX failure); a 4x clock-accounting error — the driver doubled the module clock *and* the CCU carried a fictional /2 post-divider, so `max-frequency` meant a quarter of the real rate (0048); and an AP emitting plain 802.11g, which capped transfers at 1.33/2.37 MB/s against a 24.4 MB/s bus. With HT: **5.1–7.7 MB/s** (2.4 GHz HT40, the shipped default for client compatibility) or **13.2/14.4 MB/s** (5 GHz VHT80, `HOTSPOT_BAND=5`). Running both bands at once works but is *slower* than either alone — 1x1 radio, time-sliced. STA mode retested and equally good (8.9/9.6 MB/s). |
 | WiFi regulatory | ✅ **DONE 2026-08-21.** The wiphy is self-managed, so cfg80211's `regulatory.db` never applied to it — the driver installed its own domain from a compiled-in `"00"`, i.e. `DFS-UNSET`, 2380–2520 and 5140–5980 MHz at 20 dBm with no DFS or passive-scan constraint. The driver's own table is fine (185 countries, 98 distinct rule sets); only the selector was stuck. `aic8800-0006` exposes it; the rootfs sets `WIFI_REGDOMAIN` (default `US`) and the radio now reports `country US: DFS-FCC`. ⚠️ The driver still prints `CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES` afterwards — that line is on the *success* branch, so judge with `iw reg get`, not the log. |
 | WiFi crash recovery | ✅ **DONE 2026-08-21.** There is still no safe in-place recovery (unbind/reload Oopses the mmc core), so the recovery *is* the reboot — the job was making it reliable. `h713-wifi-recover` reboots on `DHDISDOWN` (policy in `/etc/default/h713-wifi-recovery`), `h713-bt-attach` gets a 10 s stop timeout so a dead chip cannot stall shutdown, and `RebootWatchdogSec=16s` arms the sunxi watchdog across the transition. Board returns in ~30 s. ⚠️ Verified with a synthetic trigger only — the real firmware crash would not reproduce under 4 minutes of the documented starvation recipe. |

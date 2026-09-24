@@ -1,5 +1,23 @@
 # Plane-open RE — Stage 1, 2026-08-25
 
+> **This is 1,500 lines of reverse-engineering and static analysis, not a driver manual.**
+>
+> **What this file is:** In-depth static analysis of `ge2d_dev.ko` (the vendor display
+> driver binary) conducted on 2026-08-25 (with an update on 2026-08-31). It investigates
+> whether video plane setup can be performed at runtime independently of cold display init.
+>
+> **What this file is NOT:** It is **not** about the GE2D block as a blitter or 2D engine
+> (that GE2D is a display controller and not a 2D engine is closed in [`README.md`](README.md) §3).
+>
+> **Current authority:** For how the DRM KMS plane driver and display pipeline operate today,
+> see [`kms-display.md`](kms-display.md) and [`status.md`](status.md).
+>
+> **Reading notes:** Findings are recorded in chronological stages with inline corrections
+> (e.g. § Finding 1's relocation correction and the 2026-08-31 AFBD control update).
+> Read section-level caveats before relying on individual function traces.
+
+---
+
 Static analysis of the stock display driver to answer one question: **is
 plane-open separable from cold bring-up, or must we own the whole display
 init to use a video plane?**

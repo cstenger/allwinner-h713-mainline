@@ -241,6 +241,15 @@ attached, the display path can be brought up here, not only on the projector
    **Above 720p is ANSWERED 2026-09-12, and the answer needs no GPU:**
    **[handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md)**.
 
+   > **SUPERSEDED 2026-09-17, and the display half RETIRED 2026-09-23.** The
+   > composite route below was the answer while the VE could only halve or
+   > quarter. Patch 0120 gave both codecs the VE+0xf00 polyphase scaler, so the
+   > decoder reaches 1280x720 in one step with no display-side stage, and the
+   > shear and vertical-magnification defects named below are moot. The proc
+   > patches (0098/0103/0105/0106/0108/0111) are **out of `series`** — see
+   > [the retirement handoff](handoff-2026-09-23-retire-display-scaling.md).
+   > The narrative is kept for the investigation, not as current policy.
+
    ```
    1920x1080 --[ VE power-of-two, decode-time ]--> 960x544
              --[ proc upscaler 0x05180000, 1.333x ]--> 1280x720

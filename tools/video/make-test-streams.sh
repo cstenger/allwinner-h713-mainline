@@ -18,6 +18,12 @@
 #   m02  720x576   MPEG-2 Main            + B-frames            DVD/PAL shape
 #   m03  1280x720  MPEG-2 Main            progressive HD        HD progressive
 #   m04  720x576   MPEG-2 Main            interlaced sequence   interlaced coding
+#   p01  352x288   VP8 profile 0          bicubic + normal LF   VP8 minimum
+#   p02  1280x720  VP8 profile 0          bicubic + normal LF   panel-native
+#   p03  640x480   VP8 profile 1          bilinear + simple LF  filter pair 2
+#   p04  640x480   VP8 profile 2          bilinear, normal LF   filter pair 3
+#   p05  640x480   VP8 profile 3          full-pel + simple LF  filter pair 4
+#   p06  640x480   VP8 profile 0          multiple token parts  partitioned bool
 #
 # Streams are Annex-B elementary (.h264/.h265) because the target has no
 # container demuxer in the decode path -- keep the test about the decoder.
@@ -100,6 +106,36 @@ gen_hevc() {
 
   printf '    stream %s bytes, reference %s bytes (%s frames of %d)\n' \
     "$(stat -c%s "$name.h265")" "$(stat -c%s "$name.nv12")" \
+    "$(( $(stat -c%s "$name.nv12") / (w * h * 3 / 2) ))" "$frames"
+}
+
+# VP8. Unlike MPEG-2, VP8 defines exact integer reconstruction, so the .nv12
+# written here is a true correctness ORACLE and the target must match it
+# bit-for-bit -- the same relationship H.264 and HEVC have with their
+# references, and the reason vp8-decode-test.sh needs no PSNR arm and no
+# hardware-pinned baseline.
+#
+# IVF, NOT WEBM, and that is load-bearing. The WebM muxer is not reproducible:
+# two identical invocations produced different files (8062a200... vs
+# 818e3131...), which would silently break a generated-vector gate. The
+# nondeterminism is the container, not the codec -- IVF output is byte-identical
+# across runs. -threads 1 for the same reason.
+gen_vp8() {
+  local name=$1 w=$2 h=$3 frames=$4
+  shift 4
+
+  echo "==> $name  (${w}x${h}, $frames frames, VP8)"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "testsrc2=size=${w}x${h}:rate=25" -frames:v "$frames" \
+    -pix_fmt yuv420p -c:v libvpx -b:v 2M -threads 1 \
+    -deadline good -cpu-used 0 "$@" \
+    -f ivf "$name.ivf"
+
+  ffmpeg -hide_banner -loglevel error -y \
+    -i "$name.ivf" -pix_fmt nv12 -f rawvideo "$name.nv12"
+
+  printf '    stream %s bytes, reference %s bytes (%s frames of %d)\n' \
+    "$(stat -c%s "$name.ivf")" "$(stat -c%s "$name.nv12")" \
     "$(( $(stat -c%s "$name.nv12") / (w * h * 3 / 2) ))" "$frames"
 }
 
@@ -191,17 +227,53 @@ gen_hevc h05-640x480-scaling-custom 640 480 25 main \
 # does WPP and slices only) and no tiling HEVC encoder is installed.
 gen_hevc h06-640x480-lossless 640 480 25 main "lossless=1"
 
-# h07 -- Main10. It decodes: the engine writes an 8-bit plane plus a separate
-# 2-bit plane, and the 8-bit plane is a correct rendition (57 dB PSNR against
-# this software reference). It is NOT scored by md5 for that reason -- the VE
-# truncates where swscale dithers -- so it lives in hevc-10bit-test.sh rather
-# than the H1 gate. 10 frames is plenty; this is a format question, not an
-# endurance one.
-ffmpeg -hide_banner -loglevel error -y \
-  -f lavfi -i "testsrc2=size=640x480:rate=25" -frames:v 10 \
-  -pix_fmt yuv420p10le -c:v libx265 -profile:v main10 \
-  -x265-params "log-level=error:keyint=5" -f hevc h07-640x480-main10.h265
-echo "==> h07-640x480-main10  (640x480, 10 frames, main10) $(stat -c%s h07-640x480-main10.h265) bytes"
+# h10 -- THE PITCH-ALIGNMENT GUARD, and the only vector here that is not a
+# multiple of 32 wide. 656 is deliberately a multiple of 16 but NOT of 32,
+# because that is exactly the distinction that can regress.
+#
+# The engine rounds VE_PRIMARY_FB_LINE_STRIDE_CHROMA -- which cedrus programs as
+# bytesperline / 2 -- up to 16 in its own units, so the chroma stride it uses is
+# ALIGN(bytesperline, 32). At a pitch that is 16- but not 32-aligned it writes
+# chroma at the pitch and reads reference chroma a step wider: intra frames stay
+# correct, every inter frame corrupts in chroma, and LUMA IS NEVER WRONG. A gate
+# scoring luma, or only the first frame, cannot see it -- which is how it
+# survived until 2026-09-23 with every vector in this file 640, 1280 or 1920
+# wide. Patch 0125 and docs/reference/hevc-unaligned-chroma-2026-09-23.md.
+#
+# Keep this vector. Without it nothing stops the 32 in cedrus_video.c going
+# back to 16, and the failure it guards against is invisible to every other
+# check in the tree.
+gen_hevc h10-656x480-unaligned 656 480 25 main
+
+# h07 -- Main10. It decodes, and with the 2-bit side plane read back it is
+# bit-exact 10 bit (hevc-10bit-verify.py). The 8-bit plane alone -- which is all
+# a client can currently ask for -- is a correct 8-bit rendition, 57 dB against
+# this software reference. It is NOT scored by md5 for that reason, so it lives
+# in hevc-10bit-test.sh rather than the H1 gate. 10 frames is plenty; this is a
+# format question, not an endurance one.
+gen_hevc10() {
+  local name=$1 w=$2 h=$3
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "testsrc2=size=${w}x${h}:rate=25" -frames:v 10 \
+    -pix_fmt yuv420p10le -c:v libx265 -profile:v main10 \
+    -x265-params "log-level=error:keyint=5" -f hevc "$name.h265"
+  echo "==> $name  (${w}x${h}, 10 frames, main10) $(stat -c%s "$name.h265") bytes"
+}
+
+gen_hevc10 h07-640x480-main10 640 480
+
+# h08 -- Main10 at a second resolution, so a layout result cannot come from one
+# geometry. 720 is not a multiple of 32 and 480 is, which already differ.
+gen_hevc10 h08-1280x720-main10 1280 720
+
+# h09 -- THE ONE THAT CAN FAIL. 482 is 8 mod 16, so the coded height (488, a
+# multiple of 8) and the capture canvas height (496, a multiple of 16) differ.
+# The 2-bit chroma rows begin after coded_h luma rows, and reading them at the
+# canvas height gives bit-exact luma with chroma 81.6% correct at maxerr 3 --
+# 62.5 dB, which passes any PSNR threshold loose enough to be safe. h07 and h08
+# cannot see that bug. Keep this vector: without it the 10-bit gate is decorative.
+# 642 also makes DIV_ROUND_UP(width, 4) differ from width / 4.
+gen_hevc10 h09-642x482-main10 642 482
 
 # m01 -- the MPEG-2 minimum. I+P only, so a failure here is fundamental rather
 # than a reordering or interlacing bug.
@@ -286,6 +358,89 @@ PY
     -i m06-720x576-field-clean.m2v -pix_fmt nv12 -f rawvideo m06-720x576-field-clean.nv12
   printf '    sw yardstick %s bytes\n' "$(stat -c%s m06-720x576-field-clean.nv12)"
 fi
+
+# p01 -- the VP8 minimum. Profile 0 is bicubic reconstruction with the normal
+# loop filter, which is what almost every VP8 file in the world uses.
+gen_vp8 p01-352x288-profile0 352 288 25
+
+# p02 -- panel-native, same coding tools. Separates "VP8 is broken" from "VP8 is
+# broken at this size", the job v02 does for H.264.
+gen_vp8 p02-1280x720-profile0 1280 720 25
+
+# p03/p04/p05 -- the other three VP8 profiles, and they are not cosmetic. The
+# profile field selects the RECONSTRUCTION FILTER and the LOOP FILTER, both of
+# which are in silicon:
+#
+#   0  bicubic   + normal loop filter   (p01/p02)
+#   1  bilinear  + simple loop filter
+#   2  bilinear  + normal loop filter
+#   3  full-pel  + simple loop filter
+#
+# A decoder can be perfect on profile 0 and wrong on the others, so testing only
+# the common case would be a gate that cannot see three of the four filter
+# combinations the hardware implements. Verified distinct: profiles 1 and 2
+# produce the same file SIZE but different bitstreams, so size is not evidence
+# of coverage here.
+gen_vp8 p03-640x480-profile1 640 480 25 -profile:v 1
+gen_vp8 p04-640x480-profile2 640 480 25 -profile:v 2
+gen_vp8 p05-640x480-profile3 640 480 25 -profile:v 3
+
+# p06 -- multiple token partitions. VP8 can split coefficient data into
+# independently-decodable bool-decoder partitions, which is a different
+# bitstream-parsing path through the engine than the single-partition default.
+#
+# NOT auto-alt-ref, which was the obvious other candidate and is a TRAP here:
+# ffmpeg's -auto-alt-ref is 2-pass only, and in single pass it produces a stream
+# byte-identical to the default. That rung would have tested nothing while
+# looking like altref coverage.
+gen_vp8 p06-640x480-partitions 640 480 25 -error-resilient partitions
+
+# The VP8 reference md5s, written straight to the committed location.
+#
+# This is the loop the H.264 gate never closed: its reference-md5.txt was made
+# by a manual step that was never committed, so when the file went missing there
+# was no way to regenerate it and the gate silently stopped checking anything.
+# Here the generator owns the file, so `git status` shows any drift immediately
+# and a fresh clone can rebuild it.
+#
+# Software decodes are the oracle because VP8 defines exact reconstruction --
+# see the note on gen_vp8. This is NOT the MPEG-2 arrangement, where the
+# baseline has to come off the hardware.
+VP8_REF="$PROJECT_ROOT/tools/video/vp8-reference-md5.txt"
+echo "==> vp8-reference-md5.txt"
+{
+  echo "# VP8 decode references for H713 cedrus."
+  echo "#"
+  echo "# Host SOFTWARE decodes, and that is correct for VP8: the codec defines"
+  echo "# exact integer reconstruction, so hardware must match bit-for-bit."
+  echo "# (Contrast mpeg2-reference-md5.txt, which must be captured from the"
+  echo "# hardware because MPEG-2 specifies only IDCT accuracy.)"
+  echo "#"
+  echo "# Regenerate with tools/video/make-test-streams.sh -- it writes this file."
+  echo "#"
+} > "$VP8_REF"
+for spec in p01-352x288-profile0:352:288 p02-1280x720-profile0:1280:720 \
+            p03-640x480-profile1:640:480 p04-640x480-profile2:640:480 \
+            p05-640x480-profile3:640:480 p06-640x480-partitions:640:480; do
+  v=${spec%%:*}; rest=${spec#*:}; vw=${rest%%:*}; vh=${rest#*:}
+  [ -f "$v.nv12" ] || continue
+  python3 - "$v.nv12" "$v" "$(( vw * vh * 3 / 2 ))" >> "$VP8_REF" <<'PY'
+import hashlib, sys
+path, name, fsize = sys.argv[1], sys.argv[2], int(sys.argv[3])
+n = 0
+whole = hashlib.md5()
+with open(path, 'rb') as fh:
+    while True:
+        d = fh.read(fsize)
+        if len(d) < fsize: break
+        print(f"{name} frame{n:04d} {hashlib.md5(d).hexdigest()}")
+        whole.update(d)
+        n += 1
+print(f"{name} WHOLE {n} frames {whole.hexdigest()}")
+PY
+done
+printf '    %s vectors, %s lines\n' \
+  "$(grep -c WHOLE "$VP8_REF")" "$(wc -l < "$VP8_REF")"
 
 # v05 -- the real clip, first 60 frames, as the integration test. Not synthetic,
 # so no exact reference; scored by eye on the panel and by PSNR against a host

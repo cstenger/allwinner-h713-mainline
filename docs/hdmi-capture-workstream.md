@@ -236,3 +236,11 @@ the flashed diagnostic build. Its markers distinguish callback queueing,
 worker dequeue, unchanged-source handling, and completion of the general
 source transition. `tools/mips/read-comm-trace.py` performs guarded, read-only
 sampling of that mailbox. See [the synchronized evidence](hdmi-evidence/2026-09-22-synchronized-setsource/README.md).
+
+## Merged newer-kernel baseline, 2026-09-24
+
+The isolated HDMI branch now includes the newer video-decode branch through
+`ad3ffac`. The merged FIT and rebuilt HDMI modules passed a one-time normal
+boot with Cedrus, AFBD, TVCAP retention, SSH, and HDMI power/EDID module
+load-unload checks. Future HDMI trials can use that single kernel codebase;
+see [the merged-kernel validation](hdmi-evidence/2026-09-24-merged-kernel/README.md).
