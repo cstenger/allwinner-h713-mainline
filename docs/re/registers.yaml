@@ -90,6 +90,100 @@ registers:
     confidence: confirmed-on-hardware
     source: iommu-port.md
 
+  - addr: "0x05600020"
+    block: afbd
+    name: source 0 active geometry (size minus 1)
+    notes: "Bits [31:16] height minus 1, bits [15:0] width minus 1 (e.g. 0x02CF04FF for 1280x720)."
+    confidence: confirmed-on-hardware
+    source: reference/iommu-runtime-flip-ordering-2026-09-01.md
+
+  - addr: "0x05600030"
+    block: afbd
+    name: source 0 native raster dimensions
+    notes: "Bits [31:16] height, bits [15:0] width (0x02D00500 = 720x1280)."
+    confidence: confirmed-on-hardware
+    source: reference/iommu-runtime-flip-ordering-2026-09-01.md
+
+  - addr: "0x05600040"
+    block: afbd
+    name: source 0 luma (Y) plane stride
+    notes: "Bits [15:0] hold the luma byte stride aligned to 16. Upper half is preserved."
+    confidence: confirmed-on-hardware
+    source: reference/small-source-shear-2026-09-12/RESULT.md
+
+  - addr: "0x05600044"
+    block: afbd
+    name: source 0 chroma (C) plane stride
+    notes: "Chroma byte stride for source 0."
+    confidence: confirmed-on-hardware
+    source: reference/small-source-shear-2026-09-12/RESULT.md
+
+  - addr: "0x0560004c"
+    block: afbd
+    name: source 0 chroma dimensions
+    notes: "Bits [28:16] height, bits [15:0] width (0x01680500 = 360x1280 for 720p NV12)."
+    confidence: confirmed-on-hardware
+    source: reference/small-source-shear-2026-09-12/RESULT.md
+
+  - addr: "0x05600060"
+    block: afbd
+    name: DECD enable and display interrupt control
+    notes: "Base of workaround window (AFBD + 0x60). Bit 0 is DECD engine enable; bit 4 is int_to_display."
+    confidence: confirmed-on-hardware
+    source: reference/decd-register-map.md
+
+  - addr: "0x05600084"
+    block: afbd
+    name: DECD C (chroma) ring base address
+    notes: "Chroma buffer base address for DECD scanout, paired with Y ring base at 0x05600070."
+    confidence: confirmed-on-hardware
+    source: reference/decd-register-map.md
+
+  - addr: "0x05600098"
+    block: afbd
+    name: VideoInfo descriptor physical pointer (slot 0)
+    notes: "Physical address of the 144-byte VideoInfo descriptor passed by ARM to MIPS firmware."
+    confidence: confirmed-on-hardware
+    source: reference/decd-videoinfo-handover-2026-09-04.md
+
+  - addr: "0x05600100"
+    block: afbd
+    name: AFBD channel 0 control
+    notes: "AFBD channel 0 descriptor control. Unserviced on stock; channel 1 (0x05600140) is the active scanout channel."
+    confidence: confirmed-on-hardware
+    source: reference/afbd-legal-channel-control-tests-2026-08-31.md
+
+  - addr: "0x05600104"
+    block: afbd
+    name: AFBD channel 0 READY commit latch
+    notes: "Channel 0 commit latch. Stays 1 when written on stock because channel 0 is unserviced."
+    confidence: confirmed-on-hardware
+    source: reference/afbd-legal-channel-control-tests-2026-08-31.md
+
+  - addr: "0x05600140"
+    block: afbd
+    name: AFBD channel 1 control (OSD / KMS primary plane)
+    values:
+      "0x03001901": "channel 1 enabled, format 0x19"
+      "0x83001900": "channel 1 disabled"
+    notes: "Bit 0 is channel enable, bits 15:8 format, bit 31 compression flag. Controls scanout for OSD/KMS."
+    confidence: confirmed-on-hardware
+    source: reference/afbd-legal-channel-control-tests-2026-08-31.md
+
+  - addr: "0x05600144"
+    block: afbd
+    name: AFBD channel 1 READY commit latch
+    notes: "Written to latch channel 1 (OSD/KMS) updates; clears immediately upon consumption by hardware."
+    confidence: confirmed-on-hardware
+    source: reference/afbd-legal-channel-control-tests-2026-08-31.md
+
+  - addr: "0x05700000"
+    block: afbd
+    name: TVTOP base (top-enable)
+    notes: "TVTOP register window; owns dec_reg_top_enable and video top clocks."
+    confidence: confirmed-on-hardware
+    source: reference/decd-register-map.md
+
   # ---- display route / LVDS ----------------------------------------------
   - addr: "0x05140000"
     block: route
@@ -105,6 +199,13 @@ registers:
       "0x144c0000": "the working value"
     confidence: confirmed-on-hardware
     source: reference/linux-decd-scanout-confirmed-2026-08-31.md
+
+  - addr: "0x051c0000"
+    block: lvds
+    name: LVDS PHY / PanelWinNode block base
+    notes: "Mapped by ARM and MIPS firmware (MIPS 0xba1c0000). Controls LVDS PHY and plane-to-panel routing."
+    confidence: confirmed-on-hardware
+    source: reference/mips-wce-window-layer-2026-09-04.md
 
   - addr: "0x051c006c"
     block: lvds
@@ -127,6 +228,20 @@ registers:
       0 is enabled; that decode was published inverted once.
     confidence: confirmed-on-hardware
     source: reference/composition-ratio-registers-are-line-buffers-2026-09-10.md
+
+  - addr: "0x051c0138"
+    block: lvds
+    name: panel down-scaler vertical ratio
+    notes: "Bits [21:0] hold the vertical scale ratio in 16.16 fixed point (unity 0x00010000). Downscaler is vertical-only."
+    confidence: confirmed-on-hardware
+    source: reference/composition-ratio-registers-are-line-buffers-2026-09-10.md
+
+  - addr: "0x05880000"
+    block: lvds
+    name: TCON scan counter
+    notes: "Cycles continuously at 60 Hz while the raster runs; confirms display hardware is actively clocking lines."
+    confidence: confirmed-on-hardware
+    source: handoff-2026-09-04-video-scaling-and-display.md
 
   # ---- composition / scalers ---------------------------------------------
   - addr: "0x05000000"
@@ -166,6 +281,13 @@ registers:
       GE2D driver; this has been proposed and killed twice.
     confidence: confirmed-on-hardware
     source: kms-display.md
+
+  - addr: "0x0525c000"
+    block: ge2d
+    name: Display mixer timing base (PanelVTotal/PanelHTotal)
+    notes: "Holds panel timing totals (0x02F80550 = 760 VTotal x 1360 HTotal). Firmware has zero references; not in the live video path."
+    confidence: confirmed-on-hardware
+    source: reference/firmware-display-block-survey-2026-08-31.md
 
   # ---- MIPS coprocessor ---------------------------------------------------
   - addr: "0x0306101c"
@@ -217,6 +339,13 @@ registers:
       panicked the kernel. The VE needs BOTH master ports (0 and 1).
     confidence: confirmed-on-hardware
     source: iommu-port.md
+
+  - addr: "0x02010030"
+    block: iommu
+    name: IOMMU master bypass register
+    notes: "Per-master bypass control: bit N set = master N bypassed. Bit 2 controls master 2 (DECD). 0x7C = bypass, 0x78 = translating."
+    confidence: confirmed-on-hardware
+    source: reference/iommu-runtime-flip-ordering-2026-09-01.md
 
   - addr: "0x01c0e000"
     block: ve

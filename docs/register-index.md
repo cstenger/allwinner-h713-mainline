@@ -39,8 +39,21 @@ every one was found the hard way.
 | `0x05600000` | AFBD block base (video fetch / DECD) | — | hardware | [reference/decd-register-map.md](reference/decd-register-map.md) |
 | `0x05600010` | video source control (includes the source enable)<br>Never enable the source with no frame behind it. It rests at base 0 with inherited 1920x1088 geometry and will scan low memory the instant it is enabled -- garbage under IOMMU bypass, an AFBD-wedging fault under translation. | — | hardware | [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md) |
 | `0x05600014` | source config commit latch<br>Retires on vsync. Poll for longer than 16.7 ms or it silently never latches. This is one of TWO latches needed; see 0x0560006c. | — | hardware | [reference/linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md) |
+| `0x05600020` | source 0 active geometry (size minus 1)<br>Bits [31:16] height minus 1, bits [15:0] width minus 1 (e.g. 0x02CF04FF for 1280x720). | — | hardware | [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md) |
+| `0x05600030` | source 0 native raster dimensions<br>Bits [31:16] height, bits [15:0] width (0x02D00500 = 720x1280). | — | hardware | [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md) |
+| `0x05600040` | source 0 luma (Y) plane stride<br>Bits [15:0] hold the luma byte stride aligned to 16. Upper half is preserved. | — | hardware | [reference/small-source-shear-2026-09-12/RESULT.md](reference/small-source-shear-2026-09-12/RESULT.md) |
+| `0x05600044` | source 0 chroma (C) plane stride<br>Chroma byte stride for source 0. | — | hardware | [reference/small-source-shear-2026-09-12/RESULT.md](reference/small-source-shear-2026-09-12/RESULT.md) |
+| `0x0560004c` | source 0 chroma dimensions<br>Bits [28:16] height, bits [15:0] width (0x01680500 = 360x1280 for 720p NV12). | — | hardware | [reference/small-source-shear-2026-09-12/RESULT.md](reference/small-source-shear-2026-09-12/RESULT.md) |
+| `0x05600060` | DECD enable and display interrupt control<br>Base of workaround window (AFBD + 0x60). Bit 0 is DECD engine enable; bit 4 is int_to_display. | — | hardware | [reference/decd-register-map.md](reference/decd-register-map.md) |
 | `0x0560006c` | plane address publish latch<br>The second of the two latches. 0x05600014 commits config; this publishes addresses. | — | hardware | [reference/linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md) |
 | `0x05600070` | DECD Y ring base address<br>Hardware scans linearly from this one base, so the buffer must be contiguous or IOMMU-translated. | — | hardware | [iommu-port.md](iommu-port.md) |
+| `0x05600084` | DECD C (chroma) ring base address<br>Chroma buffer base address for DECD scanout, paired with Y ring base at 0x05600070. | — | hardware | [reference/decd-register-map.md](reference/decd-register-map.md) |
+| `0x05600098` | VideoInfo descriptor physical pointer (slot 0)<br>Physical address of the 144-byte VideoInfo descriptor passed by ARM to MIPS firmware. | — | hardware | [reference/decd-videoinfo-handover-2026-09-04.md](reference/decd-videoinfo-handover-2026-09-04.md) |
+| `0x05600100` | AFBD channel 0 control<br>AFBD channel 0 descriptor control. Unserviced on stock; channel 1 (0x05600140) is the active scanout channel. | — | hardware | [reference/afbd-legal-channel-control-tests-2026-08-31.md](reference/afbd-legal-channel-control-tests-2026-08-31.md) |
+| `0x05600104` | AFBD channel 0 READY commit latch<br>Channel 0 commit latch. Stays 1 when written on stock because channel 0 is unserviced. | — | hardware | [reference/afbd-legal-channel-control-tests-2026-08-31.md](reference/afbd-legal-channel-control-tests-2026-08-31.md) |
+| `0x05600140` | AFBD channel 1 control (OSD / KMS primary plane)<br>Bit 0 is channel enable, bits 15:8 format, bit 31 compression flag. Controls scanout for OSD/KMS. | `0x03001901` = channel 1 enabled, format 0x19<br>`0x83001900` = channel 1 disabled | hardware | [reference/afbd-legal-channel-control-tests-2026-08-31.md](reference/afbd-legal-channel-control-tests-2026-08-31.md) |
+| `0x05600144` | AFBD channel 1 READY commit latch<br>Written to latch channel 1 (OSD/KMS) updates; clears immediately upon consumption by hardware. | — | hardware | [reference/afbd-legal-channel-control-tests-2026-08-31.md](reference/afbd-legal-channel-control-tests-2026-08-31.md) |
+| `0x05700000` | TVTOP base (top-enable)<br>TVTOP register window; owns dec_reg_top_enable and video top clocks. | — | hardware | [reference/decd-register-map.md](reference/decd-register-map.md) |
 
 ### `route`
 
@@ -53,8 +66,11 @@ every one was found the hard way.
 
 | address | what it is | known values | confidence | evidence |
 | --- | --- | --- | --- | --- |
+| `0x051c0000` | LVDS PHY / PanelWinNode block base<br>Mapped by ARM and MIPS firmware (MIPS 0xba1c0000). Controls LVDS PHY and plane-to-panel routing. | — | hardware | [reference/mips-wce-window-layer-2026-09-04.md](reference/mips-wce-window-layer-2026-09-04.md) |
 | `0x051c006c` | plane-1 downstream selector<br>The two DECD sources are a SWITCH, not a blender. The display firmware never writes this register; on stock it is set by the ARM-side driver. | `0x29000000` = RGB / OSD path<br>`0x39000000` = video path (DECD) | hardware | [reference/lvds-006c-stock-causal-2026-08-31.md](reference/lvds-006c-stock-causal-2026-08-31.md) |
 | `0x051c0120` | panel down-scaler, first register of the group (through 0x051c0138)<br>VERTICAL ONLY -- one ratio, no output width. Can do 1080->720; cannot do 1920->1280. Unity is 0x00010000 (16.16). 0x051c0124[26:25] = 3 is BYPASS, 0 is enabled; that decode was published inverted once. | — | hardware | [reference/composition-ratio-registers-are-line-buffers-2026-09-10.md](reference/composition-ratio-registers-are-line-buffers-2026-09-10.md) |
+| `0x051c0138` | panel down-scaler vertical ratio<br>Bits [21:0] hold the vertical scale ratio in 16.16 fixed point (unity 0x00010000). Downscaler is vertical-only. | — | hardware | [reference/composition-ratio-registers-are-line-buffers-2026-09-10.md](reference/composition-ratio-registers-are-line-buffers-2026-09-10.md) |
+| `0x05880000` | TCON scan counter<br>Cycles continuously at 60 Hz while the raster runs; confirms display hardware is actively clocking lines. | — | hardware | [handoff-2026-09-04-video-scaling-and-display.md](handoff-2026-09-04-video-scaling-and-display.md) |
 
 ### `composition`
 
@@ -79,6 +95,7 @@ every one was found the hard way.
 | address | what it is | known values | confidence | evidence |
 | --- | --- | --- | --- | --- |
 | `0x05240000` | "GE2D" -- the projector's DISPLAY CONTROLLER, not a 2D engine<br>compatible = "trix,ge2d". Zero scale/blit/rotate symbols in ge2d_dev.ko. The name carried the wrong expectation over from Amlogic. Do not start a GE2D driver; this has been proposed and killed twice. | — | hardware | [kms-display.md](kms-display.md) |
+| `0x0525c000` | Display mixer timing base (PanelVTotal/PanelHTotal)<br>Holds panel timing totals (0x02F80550 = 760 VTotal x 1360 HTotal). Firmware has zero references; not in the live video path. | — | hardware | [reference/firmware-display-block-survey-2026-08-31.md](reference/firmware-display-block-survey-2026-08-31.md) |
 
 ### `mips`
 
@@ -100,6 +117,7 @@ every one was found the hard way.
 | address | what it is | known values | confidence | evidence |
 | --- | --- | --- | --- | --- |
 | `0x02010000` | IOMMU base<br>Real and driven by mainline. NOT H6's 0x030f0000, which reads all zeros -- an `iommus` property pointing there fed the VE untranslated IOVAs and panicked the kernel. The VE needs BOTH master ports (0 and 1). | — | hardware | [iommu-port.md](iommu-port.md) |
+| `0x02010030` | IOMMU master bypass register<br>Per-master bypass control: bit N set = master N bypassed. Bit 2 controls master 2 (DECD). 0x7C = bypass, 0x78 = translating. | — | hardware | [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md) |
 
 ### `ve`
 
@@ -109,49 +127,32 @@ every one was found the hard way.
 
 ## Addresses mentioned in 3+ documents but not yet catalogued
 
-141 of them. Grepped at generation time, so this list is always
+123 of them. Grepped at generation time, so this list is always
 current. An address here is one the docs discuss repeatedly without any
 single place saying what it *is* — that is the backlog for this file.
 
 | address | docs mentioning it |
 | --- | --- |
 | `0x00000000` | 39 |
-| `0x05600140` | 21 |
 | `0x00000001` | 19 |
 | `0x00010000` | 18 |
-| `0x05600040` | 18 |
 | `0x03000013` | 17 |
-| `0x05600020` | 16 |
 | `0x03000010` | 15 |
-| `0x05600084` | 15 |
-| `0x05600100` | 14 |
 | `0x05600178` | 14 |
-| `0x02010030` | 13 |
 | `0x02d00500` | 13 |
 | `0x03001901` | 12 |
-| `0x05600030` | 12 |
 | `0x02cf04ff` | 11 |
 | `0x050002d0` | 11 |
-| `0x0560004c` | 11 |
 | `0x00000500` | 10 |
 | `0x043f077f` | 10 |
-| `0x051c0000` | 10 |
-| `0x051c0138` | 10 |
-| `0x05600098` | 10 |
-| `0x05600144` | 10 |
 | `0x01680500` | 9 |
-| `0x0525c000` | 9 |
 | `0x05600011` | 9 |
 | `0x05600024` | 9 |
-| `0x05600044` | 9 |
-| `0x05700000` | 9 |
 | `0x07090000` | 9 |
 | `0x00000780` | 8 |
-| `0x05600104` | 8 |
 | `0x00000002` | 7 |
 | `0x002c004f` | 7 |
 | `0x05000174` | 7 |
-| `0x05880000` | 7 |
 | `0x0000007c` | 6 |
 | `0x002b002b` | 6 |
 | `0x02000000` | 6 |
@@ -161,7 +162,6 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x051c0060` | 6 |
 | `0x0525c004` | 6 |
 | `0x05600048` | 6 |
-| `0x05600060` | 6 |
 | `0x00040000` | 5 |
 | `0x00070001` | 5 |
 | `0x00100000` | 5 |
@@ -175,4 +175,22 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x05600170` | 5 |
 | `0x000000ff` | 4 |
 | `0x00001402` | 4 |
+| `0x00010001` | 4 |
+| `0x000102d0` | 4 |
+| `0x00030000` | 4 |
+| `0x00030001` | 4 |
+| `0x00200000` | 4 |
+| `0x00350500` | 4 |
+| `0x00420077` | 4 |
+| `0x008000ff` | 4 |
+| `0x00ff0080` | 4 |
+| `0x01e00354` | 4 |
+| `0x02d00016` | 4 |
+| `0x030f0000` | 4 |
+| `0x05000058` | 4 |
+| `0x05000104` | 4 |
+| `0x05040000` | 4 |
+| `0x051c0124` | 4 |
+| `0x05200000` | 4 |
+| `0x05248000` | 4 |
 
