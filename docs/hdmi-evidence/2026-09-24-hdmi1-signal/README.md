@@ -23,9 +23,12 @@ The exact instruction windows are in `mips-setsource-disassembly.txt`.
 The validated 0132 diagnostic FIT booted without changing the installed
 kernel. Its trace-page guards read `43414e31/43414e31`; the source adapter
 still reported requested source 3. TVFE/TVCAP power holds and the 24 MHz EDID
-clock were active. The opt-in THDMIRX initializer latched its controller
-sequence, including `GLOBAL_SWENABLE=0x00203901`. The Linux CPU_COMM module
-and daemon `SetSource` path were not loaded or called.
+clock were active. The experimental initializer wrote its sequence at
+`0x050c0000`, including an observed `+0x24=0x00203901`. Subsequent comparison
+with the board-B MIPS firmware identifies this address as the DETN display
+noise-reduction block, so that write cannot be interpreted as enabling HDMI
+RX. The initializer has since been disabled. The Linux CPU_COMM module and
+daemon `SetSource` path were not loaded or called.
 
 Three 15-second SCP HPD/EDID windows used the default IO profile. In the
 first, SCP reported HPD high but the host connector stayed disconnected. In
@@ -36,11 +39,11 @@ source disconnected after the SCP window ended. All three SCP trials reported
 `peripheral_restored=1`, `restored=1`, `edid_mismatch=0`, and their DDC pins
 were released. The first missed detection is not yet explained.
 
-Eight read-only THDMIRX registers sampled repeatedly across the third, live
-video window were constant. In particular, `+0x7c=0`, `+0x84=0x01000100`,
-`+0x580=0xff0f0100`, and `+0x808=0x33` before, during, and after host output.
-These raw observations do not establish the meaning of the receiver's status
-bits, but provide no evidence of TMDS lock or active pixels. No HDMI capture
+Eight read-only words in the DETN window sampled repeatedly across the third,
+live video window were constant. In particular, `+0x7c=0`,
+`+0x84=0x01000100`, `+0x580=0xff0f0100`, and `+0x808=0x33` before, during,
+and after host output. They say nothing about receiver lock or active pixels.
+No HDMI capture
 V4L2 node or DMA frame has been demonstrated; `/dev/video0` is Cedrus decode.
 
 The projector was rebooted normally into the owner's installed Linux
@@ -53,12 +56,14 @@ repeating EDID-only trials cannot establish capture.
 A guarded trace of the `0x8b253578` branch would distinguish an absent VP
 callback from one that runs but fails to transition.
 
-The older [`hdmi-in.md`](../../hdmi-in.md) hardware map distinguishes an RX
-controller at `0x05000000`, a PHY at `0x05040000`, and THDMIRX at
-`0x050c0000`. The present opt-in initializer and status sampler cover only
-`0x050c0000`. Before changing registers, reconcile that map against the
-board-B vendor firmware and peer driver's actual accessors. A constant
-THDMIRX snapshot alone cannot rule out activity in the other two blocks.
+The older [`hdmi-in.md`](../../hdmi-in.md) HDMI map is contradicted by the
+board-B firmware census and [`registers.yaml`](../../re/registers.yaml):
+`0x05000000` is display composition, `0x05040000` is a picture-quality tap,
+and `0x050c0000` is DETN. The receiver's actual register window remains
+unproven. The `0x0680xxxx` wrapper addresses are also hazardous on ARM:
+`0x068008f1` returned a bus error and the following `0x068008fc` access
+likely locked the board. Validate an address against the exact firmware and
+its bus owner before another MMIO probe.
 
 The timestamped trial directories contain host DRM samples, EDID bytes,
 receiver power/status checks, SCP logs, and cleanup state. `hdmi1-rx-live`

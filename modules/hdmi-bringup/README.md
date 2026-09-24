@@ -70,7 +70,9 @@ Transferred module SHA256:
   are not proof of every hardware gate. No clock rate was changed.
 - Unload succeeded; both domains returned to `off-0`, and both temporary
   root devices disappeared. Reload succeeded and restored active holds.
-- The eight known THDMIRX reads at `0x050c0000`–`0x050c001c` completed and
+- The eight reads at `0x050c0000`–`0x050c001c` completed. This window was
+  subsequently identified as DETN display noise reduction, so these reads
+  do not establish HDMI-RX access. They
   matched experiment 0087, including `0x70f80029`, `0xfe000115`, and
   `0x03ff00ff`. No receiver writes were made.
 - SSH remained available; LVDS remained `connected`, and the H713 codec

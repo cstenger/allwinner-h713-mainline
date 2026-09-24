@@ -1,5 +1,12 @@
 # MIPS continuity with TVCAP retained from boot
 
+**Register-map correction (2026-09-24):** The `0x050c0000` “THDMIRX”
+interpretation in this historical record has been superseded: board-B firmware
+identifies that window as display DETN noise reduction. Its write/readback
+results do not demonstrate HDMI receiver setup or lock. The experimental
+initializer is now disabled; see
+`hdmi-evidence/2026-09-24-hdmi1-signal/README.md`.
+
 On 2026-09-22, private kernel #5 tested whether the MIPS failure at TVCAP
 power-on came from the transition or the active domain. Retaining TVCAP from
 U-Boot through Linux kept the MIPS scheduler, shell, and CPU_COMM alive.

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Opt-in H713 Synopsys HDMI-RX controller initializer.
+ * Retired H713 Synopsys HDMI-RX controller initializer experiment.
  *
- * This reproduces the controller-side sequence from the independently
- * working sun50i-h713 HDMI-RX driver.  It deliberately touches only the
- * power/clock-gated THDMIRX window at 0x050c0000.  The H713 wrapper and
- * CPUS-domain HPD register remain owned by MIPS/SCP.
+ * This was intended to reproduce the controller-side sequence from the peer
+ * sun50i-h713 HDMI-RX driver at 0x050c0000. That address was subsequently
+ * identified in the board-B MIPS firmware as
+ * DETN (display noise reduction), not HDMI RX. Keep this code for comparison,
+ * but refuse to apply its writes until the real receiver window is proven.
  */
 #include <linux/bitfield.h>
 #include <linux/delay.h>
@@ -55,7 +56,7 @@
 
 static bool apply;
 module_param(apply, bool, 0400);
-MODULE_PARM_DESC(apply, "Apply the known HDMI-RX controller enable sequence");
+MODULE_PARM_DESC(apply, "Retired experiment; writes are disabled");
 
 static void __iomem *base;
 static bool region_owned;
@@ -100,6 +101,9 @@ static int __init h713_thdmirx_init(void)
 
         if (!apply)
                 return -EINVAL;
+        pr_err("h713-thdmirx-init: 0x050c0000 is DETN, not HDMI RX; refusing writes\n");
+        return -EOPNOTSUPP;
+
         if (!request_mem_region(THDMIRX_BASE, THDMIRX_SIZE,
                                 "h713-thdmirx-init"))
                 return -EBUSY;
@@ -179,4 +183,4 @@ static void __exit h713_thdmirx_exit(void)
 module_init(h713_thdmirx_init);
 module_exit(h713_thdmirx_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Opt-in H713 Synopsys HDMI-RX controller initializer");
+MODULE_DESCRIPTION("Retired H713 HDMI-RX register-map experiment (writes disabled)");

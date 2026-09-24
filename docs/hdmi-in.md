@@ -1,3 +1,14 @@
+# Register-map correction (2026-09-24)
+
+Historical material below labels `0x050c0000` as THDMIRX and proposes HDMI
+register writes there. The board-B MIPS firmware identifies this window as
+DETN display noise reduction (see `reference/scaler-census-2026-09-11.md` and
+`re/registers.yaml`). It also identifies `0x05000000` as display composition
+and `0x05040000` as a picture-quality tap. Do not use the old HDMI controller
+map or the experimental `h713-thdmirx-init` writes; the actual HDMI RX map is
+not established. ARM accesses to `0x068008f1`/`0x068008fc` have already caused
+a bus error or probable board lockup.
+
 Update, 2026-09-18: patch 0127 now describes the real receiver dividers/muxes
 and correct MIPS clock parent order. Temporary #4 boot and source detection
 both passed; see [functional clock validation](hdmi-functional-clock-validation.md).
