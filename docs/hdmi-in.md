@@ -1,5 +1,21 @@
 # H713 HDMI input bring-up
 
+> **This is a bring-up investigation journal, dormant since 2026-09-02.**
+>
+> **What this file is:** An exploratory log establishing the hardware topology and
+> register gates for the DW-HDMI-RX receiver. The projector's HDMI port is an **input only**;
+> there is no HDMI-TX.
+>
+> **Current status:** **Blocked on HPD.** Milestone 1 (getting a source to detect the board
+> via HPD and EDID) was not achieved. See [`README.md`](README.md) §2 and §3.
+>
+> **⚠ Hardware hazards:**
+> - A plain read of `0x07091000` (CPUS/ARISC window) **hard-locks the SoC** (requires physical power cycle).
+> - HDMI-RX register windows require the TVFE and TVCAP power domains powered via genpd/clocks first
+>   (patch 0087); unpowered reads hang the bus.
+
+---
+
 Started 2026-09-02. The projector's HDMI connector is an **input**
 (DW-HDMI-RX); there is no HDMI-TX on this SoC. Goal for this round was the
 first milestone only: get a source to see this board as a display, which needs
