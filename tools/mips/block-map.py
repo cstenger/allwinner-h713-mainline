@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Map every MMIO access in the image by tracking lui-loaded bases across offsets.
+"""Find direct MMIO access candidates by tracking lui-loaded bases and offsets.
 
 block-survey.py counts lui SITES, which undercounts a block reached through one
 lui and many displacements -- that is how 0x05180000 read as "1 site" and sat
@@ -23,6 +23,12 @@ an already-tracked base). Calls clobber the o32 caller-saved set.
 
     block-map.py FIRMWARE                 # per-block register counts
     block-map.py FIRMWARE 0x05180000      # every access in one block
+    block-map.py FIRMWARE 0x06940000 --sites  # include instruction addresses
+
+This is a linear instruction scan, not a control-flow analysis.  A branch can
+make a tracked base differ from the preceding instruction stream, so every
+reported site must be confirmed in disassembly before documenting a register.
+It also cannot see physical addresses passed to an MMIO accessor as an argument.
 """
 import struct, sys
 
@@ -59,7 +65,7 @@ def defined_register(w):
     return None
 
 
-def scan(image):
+def scan(image, sites=None):
     n = len(image) // 4
     words = struct.unpack("<%dI" % n, image[: n * 4])
     base = {}
@@ -75,11 +81,18 @@ def scan(image):
         # so `lw $v0, 0x20($v0)` is still attributed to the old base.
         if op in LOADS | STORES and rs in base:
             full = base[rs] + simm
-            if 0xBA000000 <= full < 0xBB000000:
+            # The display blocks are at 0x05xxxxxx (MIPS 0xBAxxxxxx),
+            # while the HDMI/TV capture blocks are at 0x06xxxxxx
+            # (MIPS 0xBBxxxxxx).  Include both peripheral windows.
+            if 0xBA000000 <= full < 0xBC000000:
                 arm = full - APERTURE
                 hits.setdefault(arm & 0xFFFF0000, {}).setdefault(arm, set()).add(
                     "w" if op in STORES else "r"
                 )
+                if sites is not None:
+                    sites.setdefault(arm & 0xFFFF0000, []).append(
+                        (va, arm, "w" if op in STORES else "r")
+                    )
 
         if op == 3 or (op == 0 and (w & 0x3F) == 0x09):      # jal / jalr
             for r in CLOBBERED_BY_CALL:
@@ -103,7 +116,9 @@ def main():
         "/home/chris/Projects/h713/local/mips-display/board-b-mips/display.bin"
     )
     want = int(sys.argv[2], 16) if len(sys.argv) > 2 else None
-    hits = scan(open(path, "rb").read())
+    show_sites = "--sites" in sys.argv[3:]
+    sites = {} if show_sites else None
+    hits = scan(open(path, "rb").read(), sites)
     for blk in sorted(hits):
         regs = hits[blk]
         written = sum(1 for a in regs if "w" in regs[a])
@@ -112,6 +127,10 @@ def main():
         print(f"\n--- {want:#010x} ---")
         for a in sorted(hits.get(want, {})):
             print(f"   {a:#010x}  {'/'.join(sorted(hits[want][a]))}")
+        if show_sites:
+            print("\n--- instruction sites ---")
+            for va, arm, direction in sites.get(want, []):
+                print(f"   {va:#010x}  {direction}  {arm:#010x}")
 
 
 if __name__ == "__main__":

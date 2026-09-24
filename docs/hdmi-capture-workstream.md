@@ -13,6 +13,9 @@ pixels into ARM-visible memory, its DMA registers and buffer ownership, then
 read one bounded frame before registering a capture device. The local Linux
 source includes a Synopsys HDMI-RX V4L2 driver for RK3588, but its board
 binding, PHY, clock, and DMA programming cannot be assumed to match H713.
+An [offline capture-memory lead](hdmi-capture-memory-path.md) distinguishes
+the firmware's `0x0694xxxx` capture-window controls from the still-unidentified
+pixel-buffer destination and notes the `0x068cxxxx` memory-agent control path.
 
 **Register-map correction (2026-09-24):** The historical sections below call
 `0x050c0000` “THDMIRX” and interpret writes there as receiver enable. The
