@@ -18,7 +18,7 @@ running kernel, `insmod ... apply=1` returned “Operation not supported”, the
 module remained unloaded, and the kernel logged `refusing writes`. The board
 remained reachable. `check-power.sh` labels those historical safe reads DETN.
 
-For source selection, the existing U-Boot trace shows that the SetSource
+For source selection, the earlier U-Boot trace showed that the SetSource
 adapter received request 3 and returned while the source callback/worker
 markers stayed at startup source 1. The firmware's dispatcher loads its
 callback object from cached MIPS address `0x8b253578` and returns success
@@ -81,10 +81,9 @@ the [compressed raw byte stream](hdmi-evidence/2026-09-24-hdmi1-signal/pointer-t
 is retained for exact replay (uncompressed SHA256
 `dfdcf3c51751c3a5873239aa310570a0c71d6222d930755dcbc7684504e5e7e6`).
 
-The next discriminating trace should record the dispatcher’s vtable target
-and count source callback/worker invocations rather than relying on their
-last stage values. The receiver core and PHY map still need verification
-before a live TMDS-lock test.
+The follow-up dispatcher trace below records the vtable target and source
+argument. Source callback/worker invocations and the receiver core and PHY
+map still need verification before a live TMDS-lock test.
 
 ## Firmware-owned HDMI wrapper addresses
 
@@ -136,5 +135,34 @@ saved as `/root/uboot-backup/pre-dispatch-trace-20260924.bin` (920,576 bytes;
 SHA256 `ce3192fe2f10ad882b69f413038d4c632b9cc3f25450095288034e04e8129920`).
 Only the established 1,798 sectors at LBA `0x49ac00` were replaced. Flash
 read-back matched the new padded SHA256 above. SPL, environment, and the
-installed merged default kernel were untouched. The serial console is armed
-for one cold-boot trace after the physical power cycle.
+installed merged default kernel were untouched.
+
+After a physical power cycle, U-Boot identified itself as
+`2026.07-rc5-ga1358432003c` and authenticated the same board-B MIPS firmware.
+One `h713_disp mips-comm-trace 0x34` installed the guarded trace. Before the
+call, `commtrace` showed the startup virtual callback target `0x8b107574`
+with source argument `1`; adapter request and callback-object slots were
+still at their sentinels. One
+`h713_disp commcall eaf13de5 chan=0 pid=8b8f275c 3` received `CALL_ACK`
+and `RETURN` in about 1 ms and recycled the CPU_COMM rings. The immediate
+and delayed trace snapshots showed adapter stage `5302`, request `3`,
+non-null callback object `0x8b8c8378`, the same virtual target
+`0x8b107574`, and dispatcher source argument **`3`**. CPU_COMM stages were
+`c013`/`e011`/`f003`. This demonstrates that the source-3 request reached
+the virtual callback call site; the successful RPC return indicates that the
+call path returned. The source callback/worker stage markers stayed at
+`5102`/`5203`, so they still do not establish that the source-3 worker ran or
+that HDMI input became active.
+
+`run bootcmd` returned the device to its default merged Linux 6.18.38 kernel.
+SSH and Cedrus `/dev/video0` returned. The read-only Linux reader verified
+both trace-page canaries and every patched instruction, then independently
+read `dispatch_target=8b107574`, `dispatch_source=00000003`, request `3`,
+and object `8b8c8378`. No receiver MMIO was accessed, and no capture frame
+or TMDS lock was demonstrated. The [readable UART excerpt](hdmi-evidence/2026-09-24-hdmi1-signal/dispatch-trace-uart.log)
+and [compressed exact bytes](hdmi-evidence/2026-09-24-hdmi1-signal/dispatch-trace-uart.raw.gz)
+preserve the test (uncompressed SHA256
+`53f9aa4db0055dab93acfadb21549bfd6853ec1ae2840b744be9e4f351467d99`).
+The next bounded trace should count callback and source-worker entries for
+source 3, then identify the actual receiver registers through the firmware's
+MIPS-owned byte accessor before attempting a live lock read.

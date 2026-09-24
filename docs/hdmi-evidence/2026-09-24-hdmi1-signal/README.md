@@ -61,6 +61,16 @@ guards passed, but the stage markers did not prove a source-3 worker event.
 The exact bounded result and corrected register map are in
 [`hdmi-register-map-pointer-trace.md`](../../hdmi-register-map-pointer-trace.md).
 
+A second guarded U-Boot trace after a physical power cycle captured the
+dispatcher call target `0x8b107574` with startup source argument 1 before the
+RPC and source argument 3 afterward. The source-3 RPC returned and the merged
+kernel booted normally; its read-only trace reader verified the patch words,
+canaries, and source-3 target. This proves the request reached the virtual
+callback call site, but the existing worker markers still do not prove an
+HDMI source transition or receiver lock. The exact serial evidence is in
+[`dispatch-trace-uart.log`](dispatch-trace-uart.log) and
+[`dispatch-trace-uart.raw.gz`](dispatch-trace-uart.raw.gz).
+
 The older [`hdmi-in.md`](../../hdmi-in.md) HDMI map is contradicted by the
 board-B firmware census and [`registers.yaml`](../../re/registers.yaml):
 `0x05000000` is display composition, `0x05040000` is a picture-quality tap,
