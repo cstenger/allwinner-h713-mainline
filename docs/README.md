@@ -59,6 +59,7 @@ argued with, not just obeyed.
 | Downscale in the display pipeline? | **No downscaler exists.** Census complete: exactly three ratio-carrying blocks, all ruled out. | [`reference/scaler-census-2026-09-11.md`](reference/scaler-census-2026-09-11.md) |
 | Drive the CE crypto engine? | **No.** Descriptor format differs from mainline's; zero payoff (A53 SW crypto is faster). | ⚠ **not written up in `docs/`** — this conclusion exists only in project memory |
 | Send frames to the MIPS over CPU_COMM? | **No.** The frame-submit routines are verified stubs. | [`reference/cpu-comm-call-table.md`](reference/cpu-comm-call-table.md) |
+| Decode VP9 in hardware? | **No — the silicon is not on this part.** H6 has 8 VP9 clocks in its CCU; the H713 has zero and an AV1 block instead. Mainline's `sun50i-h6-vpu-g2` driver binds clocks that do not exist here. | [`reference/vp9-av1-codec-scouting-2026-09-24.md`](reference/vp9-av1-codec-scouting-2026-09-24.md) |
 
 **Hardware hazards, same category:** a plain *read* of `0x07091000` wedges the
 SoC (power cycle only); never hold PB5 low for long (shared with fan power);
@@ -113,7 +114,7 @@ newest in the area you care about.
 
 ## 6. `reference/` — single-experiment records
 
-58 files, each a dated write-up of one experiment: what was run, what came out,
+59 files plus 15 directories, each a dated write-up of one experiment: what was run, what came out,
 what it does and does not prove. They are primary evidence, not narrative, and
 most are superseded by the subsystem doc in §2. Grouped by arc:
 
@@ -126,6 +127,9 @@ most are superseded by the subsystem doc in §2. Grouped by arc:
   `event8-*`, `dispatch-trace-*`, `firmware-*`, `cpu-comm-*`).
 - **Codec / uAPI** (`hevc-unaligned-chroma-*`, `inherited-codecs-*`,
   `h265-*`, `chroma-422-*`, `v4l2-compliance-*`, `upstream-survey-*`).
+- **Codec scouting** (`vp9-av1-codec-scouting-*`) — which codecs this part
+  actually has silicon for. VP9 closed (absent); AV1 identified as Google IP
+  (`allwinner,sunxi-google-ve`) with no driver in any tree.
 
 ---
 
