@@ -1,0 +1,228 @@
+# H713 register facts — THE SOURCE OF TRUTH for addresses.
+#
+# Why this file exists: `0x051c006c` is mentioned in 22 markdown files. Its
+# meaning was in prose in some of them, absent in the rest, and stated twice in
+# contradictory ways. Narrative belongs in the journals; FACTS belong here, once.
+#
+# docs/register-index.md is GENERATED from this file. Edit here, then run:
+#     tools/docs/gen-register-index.py
+#
+# Fields:
+#   addr        canonical physical address, lowercase hex, as a string
+#   block       short block name, groups the generated tables
+#   name        what the register IS, not what one experiment did with it
+#   values      optional map of known values -> meaning
+#   hazard      optional. Non-null means touching it can cost hardware or a
+#               power cycle. These are promoted to the top of the index.
+#   confidence  confirmed-on-hardware | static-analysis | inferred
+#   source      a docs/-relative path that justifies the entry. Checked to exist.
+#
+# Only add an entry you can point at evidence for. An unsourced address here is
+# worse than one in prose, because this file looks authoritative.
+
+registers:
+
+  # ---- hazards -----------------------------------------------------------
+  - addr: "0x07091000"
+    block: cpus-arisc
+    name: CPUS/ARISC register window
+    hazard: >-
+      A plain READ of this address hard-locks the entire SoC. Recovery is a
+      physical power cycle; there is no watchdog escape. Note the RTC at
+      0x07090000 is a DIFFERENT window and is safe.
+    confidence: confirmed-on-hardware
+    source: hdmi-in.md
+
+  - addr: "0x07091014"
+    block: cpus-arisc
+    name: HDMI-RX hot-plug detect
+    hazard: >-
+      Inside the window above. HDMI input bring-up is blocked here and the
+      address is probably not ARM-addressable at all.
+    confidence: confirmed-on-hardware
+    source: hdmi-in.md
+
+  - addr: "0x06940000"
+    block: capture
+    name: capture domain (unpowered)
+    hazard: "Never read. The domain is unpowered; access is not survivable."
+    confidence: confirmed-on-hardware
+    source: reference/scaler-census-2026-09-11.md
+
+  # ---- AFBD / DECD video fetch -------------------------------------------
+  - addr: "0x05600000"
+    block: afbd
+    name: AFBD block base (video fetch / DECD)
+    confidence: confirmed-on-hardware
+    source: reference/decd-register-map.md
+
+  - addr: "0x05600010"
+    block: afbd
+    name: video source control (includes the source enable)
+    notes: >-
+      Never enable the source with no frame behind it. It rests at base 0 with
+      inherited 1920x1088 geometry and will scan low memory the instant it is
+      enabled -- garbage under IOMMU bypass, an AFBD-wedging fault under
+      translation.
+    confidence: confirmed-on-hardware
+    source: reference/iommu-runtime-flip-ordering-2026-09-01.md
+
+  - addr: "0x05600014"
+    block: afbd
+    name: source config commit latch
+    notes: >-
+      Retires on vsync. Poll for longer than 16.7 ms or it silently never
+      latches. This is one of TWO latches needed; see 0x0560006c.
+    confidence: confirmed-on-hardware
+    source: reference/linux-decd-scanout-confirmed-2026-08-31.md
+
+  - addr: "0x0560006c"
+    block: afbd
+    name: plane address publish latch
+    notes: "The second of the two latches. 0x05600014 commits config; this publishes addresses."
+    confidence: confirmed-on-hardware
+    source: reference/linux-decd-scanout-confirmed-2026-08-31.md
+
+  - addr: "0x05600070"
+    block: afbd
+    name: DECD Y ring base address
+    notes: "Hardware scans linearly from this one base, so the buffer must be contiguous or IOMMU-translated."
+    confidence: confirmed-on-hardware
+    source: iommu-port.md
+
+  # ---- display route / LVDS ----------------------------------------------
+  - addr: "0x05140000"
+    block: route
+    name: display route block base
+    confidence: confirmed-on-hardware
+    source: kms-display.md
+
+  - addr: "0x05140508"
+    block: route
+    name: YUV chroma gain
+    notes: "Bits 23:16 are a linear gain. 0x00 yields greyscale -- this is why early DECD runs had no colour."
+    values:
+      "0x144c0000": "the working value"
+    confidence: confirmed-on-hardware
+    source: reference/linux-decd-scanout-confirmed-2026-08-31.md
+
+  - addr: "0x051c006c"
+    block: lvds
+    name: plane-1 downstream selector
+    values:
+      "0x29000000": "RGB / OSD path"
+      "0x39000000": "video path (DECD)"
+    notes: >-
+      The two DECD sources are a SWITCH, not a blender. The display firmware
+      never writes this register; on stock it is set by the ARM-side driver.
+    confidence: confirmed-on-hardware
+    source: reference/lvds-006c-stock-causal-2026-08-31.md
+
+  - addr: "0x051c0120"
+    block: lvds
+    name: panel down-scaler, first register of the group (through 0x051c0138)
+    notes: >-
+      VERTICAL ONLY -- one ratio, no output width. Can do 1080->720; cannot do
+      1920->1280. Unity is 0x00010000 (16.16). 0x051c0124[26:25] = 3 is BYPASS,
+      0 is enabled; that decode was published inverted once.
+    confidence: confirmed-on-hardware
+    source: reference/composition-ratio-registers-are-line-buffers-2026-09-10.md
+
+  # ---- composition / scalers ---------------------------------------------
+  - addr: "0x05000000"
+    block: composition
+    name: composition block base
+    notes: >-
+      Owns the picture and drives the panel, but has NO scaler. Its
+      "ratio"-looking registers are line-buffer descriptors (Rowbyte,
+      LineBufLevel, LineNumber) and PHASE=scale is dead.
+    confidence: confirmed-on-hardware
+    source: reference/composition-ratio-registers-are-line-buffers-2026-09-10.md
+
+  - addr: "0x05180000"
+    block: proc-scaler
+    name: two-axis proc scaler, instance 0 (four instances, 0x100 stride)
+    notes: >-
+      An UPSCALER -- it cannot do 1920->1280. H ratio at +0x08[21:0], V ratio at
+      +0x3c[21:0], 16.16, unity 0x10000. 0x05180014[27] is a BYPASS and defaults
+      set. Registers carry live upper bits: always read-modify-write.
+      Instances 0 and 1 are on our raster; instance 2 is not.
+    confidence: confirmed-on-hardware
+    source: reference/two-axis-scaler-found-2026-09-10.md
+
+  - addr: "0x050c0000"
+    block: detn
+    name: DETN noise reduction
+    notes: "Contains no scaler, despite a ratio-shaped signature. Census-confirmed."
+    confidence: confirmed-on-hardware
+    source: reference/scaler-census-2026-09-11.md
+
+  - addr: "0x05240000"
+    block: ge2d
+    name: "\"GE2D\" -- the projector's DISPLAY CONTROLLER, not a 2D engine"
+    notes: >-
+      compatible = "trix,ge2d". Zero scale/blit/rotate symbols in ge2d_dev.ko.
+      The name carried the wrong expectation over from Amlogic. Do not start a
+      GE2D driver; this has been proposed and killed twice.
+    confidence: confirmed-on-hardware
+    source: kms-display.md
+
+  # ---- MIPS coprocessor ---------------------------------------------------
+  - addr: "0x0306101c"
+    block: mips
+    name: MIPS running flag
+    values:
+      "0x00000000": "core parked / quiesced"
+      "0x00000001": "core released and running"
+    confidence: confirmed-on-hardware
+    source: mips-display-recovery.md
+
+  - addr: "0x03061030"
+    block: mips
+    name: MIPS boot address
+    values:
+      "0x4b100000": "where display.bin is resident after the preboot has run"
+    confidence: confirmed-on-hardware
+    source: mips-display-recovery.md
+
+  - addr: "0x02001600"
+    block: mips
+    name: MIPS clock gate
+    values:
+      "0x80000002": "the value the release sequence writes"
+    confidence: confirmed-on-hardware
+    source: mips-display-recovery.md
+
+  - addr: "0x0200160c"
+    block: mips
+    name: MIPS reset staging register
+    notes: "Release sequence writes 0x00000000, 0x00010000, 0x00030000, 0x00030001, then 0x00070001."
+    confidence: confirmed-on-hardware
+    source: mips-display-recovery.md
+
+  # ---- SoC infrastructure -------------------------------------------------
+  - addr: "0x02001000"
+    block: ccu
+    name: CCU base
+    notes: "H713 is 0x02001000, NOT H616's 0x03001000. This has caused real confusion."
+    confidence: confirmed-on-hardware
+    source: kms-display.md
+
+  - addr: "0x02010000"
+    block: iommu
+    name: IOMMU base
+    notes: >-
+      Real and driven by mainline. NOT H6's 0x030f0000, which reads all zeros --
+      an `iommus` property pointing there fed the VE untranslated IOVAs and
+      panicked the kernel. The VE needs BOTH master ports (0 and 1).
+    confidence: confirmed-on-hardware
+    source: iommu-port.md
+
+  - addr: "0x01c0e000"
+    block: ve
+    name: Video Engine (cedrus)
+    notes: >-
+      The VE's own polyphase scaler block is at VE + 0xf00 (getRegBase(7)), not
+      a separate physical base.
+    confidence: confirmed-on-hardware
+    source: video-decode.md

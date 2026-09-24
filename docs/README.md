@@ -64,6 +64,21 @@ argued with, not just obeyed.
 SoC (power cycle only); never hold PB5 low for long (shared with fan power);
 warm reboots kill the display — power-cycle between display tests.
 
+## 3a. Looking up an address
+
+[`register-index.md`](register-index.md) — **start here for any `0x…`**, before
+grepping. Hazards first (two of them cost a power cycle or a board), then every
+catalogued register with its meaning, known values, confidence, and the document
+that justifies it.
+
+It is **generated** from [`re/registers.yaml`](re/registers.yaml), which is the
+source of truth for addresses. Narrative stays in the journals; facts live there
+once. Add a register by editing the YAML and running
+`tools/docs/gen-register-index.py`; `--check` fails if the markdown has drifted.
+
+Its last section lists addresses the docs discuss in three or more files that
+nothing has yet defined — that is the backlog, and it is recomputed every run.
+
 ## 4. Corrections — claims that were wrong
 
 This project has a habit of recording falsified claims rather than deleting
