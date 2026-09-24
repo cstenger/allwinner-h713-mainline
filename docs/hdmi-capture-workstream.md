@@ -5,8 +5,9 @@
 board-B MIPS firmware identifies that window as display DETN noise reduction;
 `0x05000000` is display composition and `0x05040000` is a picture-quality
 tap. Consequently the old `0x050c0000` readbacks do not report HDMI-RX
-status, and the experimental initializer is disabled. Receiver location and
-safe bus access remain to be established. See
+status, and the experimental initializer is disabled. The firmware uses
+byte-wide MIPS helpers at `0x06800800`/`0x06840000`; safe ARM bus access and
+the receiver core/PHY map remain to be established. See
 [`2026-09-24-hdmi1-signal`](hdmi-evidence/2026-09-24-hdmi1-signal/README.md)
 and the [correction and next trace](hdmi-register-map-pointer-trace.md).
 

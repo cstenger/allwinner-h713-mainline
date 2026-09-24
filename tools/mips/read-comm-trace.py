@@ -35,6 +35,12 @@ PATCHED_WORDS = (
     (0x4b123f54, 0x0ac400b1),
     (0x4b1204b4, 0x0ec400f0),
     (0x4b12052c, 0x0ec40190),
+    (0x4b1091d8, 0x0ac40430),
+    (0x4b1010c0, 0x3c18ad98),
+    (0x4b1010c4, 0xaf020064),
+    (0x4b1010c8, 0xaf100068),
+    (0x4b1010cc, 0x0040f809),
+    (0x4b1010d4, 0x0ac42478),
 )
 
 ADAPTER_PATCHED_WORDS = (
@@ -127,6 +133,8 @@ def main():
             "adapter": f"{mem.u32(MAILBOX + 0x58):04x}",
             "requested": mem.u32(MAILBOX + 0x5c),
             "callback_object": f"{mem.u32(MAILBOX + 0x60):08x}",
+            "dispatch_target": f"{mem.u32(MAILBOX + 0x64):08x}",
+            "dispatch_source": f"{mem.u32(MAILBOX + 0x68):08x}",
         } if adapter_enabled else {})
         if args.source_only:
             callback, event, new, old, source_queue, worker, vp_init = (

@@ -13,6 +13,7 @@ every one was found the hard way.
 
 | address | what | consequence |
 | --- | --- | --- |
+| `0x06800800` | MIPS HDMI receiver wrapper byte window | Board-B MIPS firmware accesses this physical window through byte-wide helpers. An ARM byte read at +0x8f1 returned a bus error, and the following access at +0x8fc likely locked the board. Do not probe it directly from ARM without establishing bus ownership. |
 | `0x06940000` | capture domain (unpowered) | Never read. The domain is unpowered; access is not survivable. |
 | `0x07091000` | CPUS/ARISC register window | A plain READ of this address hard-locks the entire SoC. Recovery is a physical power cycle; there is no watchdog escape. Note the RTC at 0x07090000 is a DIFFERENT window and is safe. |
 | `0x07091014` | HDMI-RX hot-plug detect | Inside the window above. HDMI input bring-up is blocked here and the address is probably not ARM-addressable at all. |
@@ -125,9 +126,16 @@ every one was found the hard way.
 | --- | --- | --- | --- | --- |
 | `0x01c0e000` | Video Engine (cedrus)<br>The VE's own polyphase scaler block is at VE + 0xf00 (getRegBase(7)), not a separate physical base. | — | hardware | [video-decode.md](video-decode.md) |
 
+### `hdmi-rx-wrapper`
+
+| address | what it is | known values | confidence | evidence |
+| --- | --- | --- | --- | --- |
+| `0x06800800` | MIPS HDMI receiver wrapper byte window | — | static | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
+| `0x06840000` | MIPS HDMI per-port state window<br>Four-entry table in board-B display.bin at 0x8b1f7b98 contains this physical base for all ports; the MIPS byte accessor adds its aperture. ARM access safety is not established. | — | static | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
+
 ## Addresses mentioned in 3+ documents but not yet catalogued
 
-125 of them. Grepped at generation time, so this list is always
+127 of them. Grepped at generation time, so this list is always
 current. An address here is one the docs discuss repeatedly without any
 single place saying what it *is* — that is the backlog for this file.
 
@@ -153,6 +161,7 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x00000002` | 7 |
 | `0x002c004f` | 7 |
 | `0x05000174` | 7 |
+| `0x05040000` | 7 |
 | `0x0000007c` | 6 |
 | `0x00100000` | 6 |
 | `0x002b002b` | 6 |
@@ -171,7 +180,6 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x02f80550` | 5 |
 | `0x03000413` | 5 |
 | `0x04000000` | 5 |
-| `0x05040000` | 5 |
 | `0x05140054` | 5 |
 | `0x0524c000` | 5 |
 | `0x0560009c` | 5 |

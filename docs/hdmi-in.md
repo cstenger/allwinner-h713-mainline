@@ -5,9 +5,12 @@ register writes there. The board-B MIPS firmware identifies this window as
 DETN display noise reduction (see `reference/scaler-census-2026-09-11.md` and
 `re/registers.yaml`). It also identifies `0x05000000` as display composition
 and `0x05040000` as a picture-quality tap. Do not use the old HDMI controller
-map or the experimental `h713-thdmirx-init` writes; the actual HDMI RX map is
-not established. ARM accesses to `0x068008f1`/`0x068008fc` have already caused
-a bus error or probable board lockup.
+map or the experimental `h713-thdmirx-init` writes. The exact board-B MIPS
+firmware does use byte-wide helpers for physical `0x06800800` and
+`0x06840000`; see `hdmi-register-map-pointer-trace.md`. Their ARM bus
+accessibility is unproven: ARM accesses to `0x068008f1`/`0x068008fc` have
+already caused a bus error or probable board lockup. The Synopsys core and PHY
+register map remains unproven.
 
 Update, 2026-09-18: patch 0127 now describes the real receiver dividers/muxes
 and correct MIPS clock parent order. Temporary #4 boot and source detection

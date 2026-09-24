@@ -53,8 +53,13 @@ boot log had no Oops or call trace. The diagnostic kernel and modules were
 temporary. The next investigation should validate the MIPS source-worker's
 actual port selection and receiver/PHY programming while the GPU transmits;
 repeating EDID-only trials cannot establish capture.
-A guarded trace of the `0x8b253578` branch would distinguish an absent VP
-callback from one that runs but fails to transition.
+This motivated a guarded trace of the `0x8b253578` callback-object pointer.
+
+Follow-up on the merged default kernel: the guarded trace captured a non-null
+object `0x8b8c8378` at SetSource adapter entry. CALL_ACK, RETURN, and trace
+guards passed, but the stage markers did not prove a source-3 worker event.
+The exact bounded result and corrected register map are in
+[`hdmi-register-map-pointer-trace.md`](../../hdmi-register-map-pointer-trace.md).
 
 The older [`hdmi-in.md`](../../hdmi-in.md) HDMI map is contradicted by the
 board-B firmware census and [`registers.yaml`](../../re/registers.yaml):

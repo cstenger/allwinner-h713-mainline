@@ -1,0 +1,51 @@
+Board-B display.bin SHA256 4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce
+MIPS32 little-endian, firmware virtual base 0x8b100000.
+
+0x8b13ce70  lui    v0,0x8b1f
+0x8b13ce74  addiu  v0,v0,0x7b98
+0x8b13ce78  sll    a0,a0,2
+0x8b13ce7c  addu   a0,a0,v0
+0x8b13ce80  jr     ra
+0x8b13ce84  lw     v0,0(a0)
+0x8b1f7b98  06840000 06840000 06840000 06840000
+
+0x8b13cea0  lui    v0,0x0684
+0x8b13cea4  jr     ra
+0x8b13cea8  addiu  v0,v0,0x1000       # returns physical 0x06841000
+0x8b13ceac  lui    v0,0x0680
+0x8b13ceb0  jr     ra
+0x8b13ceb4  addiu  v0,v0,0x0800       # returns physical 0x06800800
+0x8b13cebc  sw     s0,0x10(sp)
+0x8b13cec0  lui    s0,0x0680
+0x8b13cec4  addiu  a0,s0,0x1017      # physical 0x06801017
+0x8b13cecc  jal    0x8b180394       # byte write helper
+0x8b13ced0  addiu  a1,zero,3
+0x8b13ced4  addiu  a0,s0,0x101a      # physical 0x0680101a
+0x8b13cedc  jal    0x8b180394
+0x8b13cee0  lui    s0,0x0684
+0x8b13cee4  addiu  a0,s0,0x1001      # physical 0x06841001
+0x8b13ceec  jal    0x8b1803dc       # masked byte write helper
+
+0x8b180340  addiu  sp,sp,-0x18       # byte read helper
+0x8b18034c  jal    0x8b1801cc       # physical-address guard
+0x8b180358  lui    a0,0xb500
+0x8b18035c  addu   a0,s0,a0
+0x8b180360  lui    s0,0x2000
+0x8b180364  or     a0,a0,s0
+0x8b180368  lbu    v0,0(a0)
+0x8b180394  addiu  sp,sp,-0x20       # byte write helper
+0x8b1803a8  jal    0x8b1801cc
+0x8b1803b4  lui    a0,0xb500
+0x8b1803b8  addu   a0,s0,a0
+0x8b1803bc  lui    s0,0x2000
+0x8b1803c0  or     a0,a0,s0
+0x8b1803c4  sb     s1,0(a0)
+0x8b1803dc  addiu  sp,sp,-0x20       # masked byte write helper
+0x8b1803f8  jal    0x8b1801cc
+0x8b18040c  addu   a0,s0,a0         # a0 starts as 0xb5000000
+0x8b180410  or     a0,a0,v0         # v0=0x20000000
+0x8b180414  lbu    v1,0(a0)
+0x8b18042c  sb     s1,0(a0)
+
+The helpers take physical addresses, construct a MIPS MMIO alias, and access
+one byte at a time. These instructions do not establish ARM access safety.

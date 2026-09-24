@@ -42,6 +42,27 @@ registers:
     confidence: confirmed-on-hardware
     source: hdmi-in.md
 
+  - addr: "0x06800800"
+    block: hdmi-rx-wrapper
+    name: MIPS HDMI receiver wrapper byte window
+    hazard: >-
+      Board-B MIPS firmware accesses this physical window through byte-wide
+      helpers. An ARM byte read at +0x8f1 returned a bus error, and the
+      following access at +0x8fc likely locked the board. Do not probe it
+      directly from ARM without establishing bus ownership.
+    confidence: static-analysis
+    source: hdmi-register-map-pointer-trace.md
+
+  - addr: "0x06840000"
+    block: hdmi-rx-wrapper
+    name: MIPS HDMI per-port state window
+    notes: >-
+      Four-entry table in board-B display.bin at 0x8b1f7b98 contains this
+      physical base for all ports; the MIPS byte accessor adds its aperture.
+      ARM access safety is not established.
+    confidence: static-analysis
+    source: hdmi-register-map-pointer-trace.md
+
   - addr: "0x06940000"
     block: capture
     name: capture domain (unpowered)
