@@ -78,8 +78,19 @@ registers:
 
   - addr: "0x0560006c"
     block: afbd
-    name: plane address publish latch
-    notes: "The second of the two latches. 0x05600014 commits config; this publishes addresses."
+    name: AFBD_DIRTY -- plane address publish latch (consume-on-write)
+    values:
+      "0x00000001": "publish: latches the Y/C addresses written at 0x05600070 and 0x05600084"
+    notes: >-
+      The second of the two latches: 0x05600014 commits the source config on the
+      packed path, this publishes addresses on the two-plane path. Self-clears on
+      read-back, which is what confirms it is consume-on-write rather than a
+      level bit -- reading 0 back is success, not a failed write. It is a SHARED
+      control word, so the vendor driver touches it from three routines:
+      dec_reg_set_dirty (the dirty bit itself), dec_reg_set_address (writes the
+      addresses, then marks dirty) and dec_reg_bypass_config (other bits in the
+      same word). Seeing it listed under "bypass" in a vendor routine table is
+      not a contradiction of the dirty role.
     confidence: confirmed-on-hardware
     source: reference/nv12-scanout-solved-2026-09-08.md
 
