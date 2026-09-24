@@ -38,7 +38,10 @@ HEVC, Main10 and a 720p file all scanned out operator-confirmed, with the
 `video-0` plane holding crtc-0 and a *changing* NV12 1280x720 framebuffer —
 the VE landing on the panel size exactly, no display-side stage. The headless
 gates were the control and were unaffected: 5/5 H.264, 14/14 HEVC, 6/6 MPEG-2,
-zero IOMMU faults, zero failed atomic commits.
+zero IOMMU faults, zero failed atomic commits. **Re-confirmed on the 88-patch
+build** after 0126/0127 changed the shared IOMMU group's reserved regions —
+all four cases again, with HEVC and Main10 separated by a black clip so the
+operator could actually tell them apart.
 
 **A 2-hour soak then found, and patches 0126/0127 fixed, an IOVA collision that
 had made every long decode run fail after ~35 minutes.** Cedrus's IOVA

@@ -123,3 +123,38 @@ Zero IOMMU faults and zero failed commits across the whole session. The only
 > the primary plane while still printing a cheerful `VO: [drm]` line. Set that
 > variable before any manual mpv run, and gate on the plane state rather than
 > on mpv's own output.
+
+## Re-validated on the 88-patch build — 2026-09-23, later the same night
+
+The validation above ran on the **86-patch** build. Patches 0126 and 0127 then
+changed the reserved regions of the IOMMU group that cedrus and the display
+*share*, and the video path imports cedrus dma-bufs into the display through
+exactly that IOMMU. The 2-hour soak could not cover it — it runs no display, by
+design — so the panel was re-tested on the build we actually intend to ship.
+
+All four cases operator-confirmed again, with the plane holding crtc-0 and a
+changing NV12 1280x720 framebuffer each time:
+
+| case | mpv VO line | result |
+| --- | --- | --- |
+| 1080p H.264 | `1920x1080 vaapi[nv12]` | correct, `A-V: 0.000` |
+| HEVC | `1920x1080 vaapi[nv12]` | correct |
+| HEVC Main10 | `1920x1080 vaapi[nv12]` | correct |
+| 720p, no scaling | `1280x720 vaapi[nv12]` | correct |
+
+**Zero IOVA collisions and zero failed atomic commits** across every run, which
+is the specific thing 0126 could have broken.
+
+> **The first pass of this test could not have failed the way it was meant to.**
+> HEVC and Main10 were run back to back, and both clips are the *same*
+> resolution test card, 6 seconds each. On the glass they read as one
+> continuous segment — so if Main10 had rendered nothing, the operator would
+> still have seen an unbroken test card and called it fine. The operator caught
+> this ("seems like I may have missed a test"), not the harness.
+>
+> Re-run as an explicit A/B: HEVC looped for 10 s, a black clip for 3 s, then
+> Main10 for 10 s. Both legs separately confirmed, each with its own hardware
+> decode and its own cycling framebuffers.
+>
+> The general rule: **when an operator is the instrument, consecutive cases must
+> be visually distinguishable.** Two tests that look identical are one test.
