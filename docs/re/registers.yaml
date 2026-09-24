@@ -81,7 +81,7 @@ registers:
     name: plane address publish latch
     notes: "The second of the two latches. 0x05600014 commits config; this publishes addresses."
     confidence: confirmed-on-hardware
-    source: reference/linux-decd-scanout-confirmed-2026-08-31.md
+    source: reference/nv12-scanout-solved-2026-09-08.md
 
   - addr: "0x05600070"
     block: afbd
@@ -102,7 +102,7 @@ registers:
     name: source 0 native raster dimensions
     notes: "Bits [31:16] height, bits [15:0] width (0x02D00500 = 720x1280)."
     confidence: confirmed-on-hardware
-    source: reference/iommu-runtime-flip-ordering-2026-09-01.md
+    source: handoff-2026-08-30.md
 
   - addr: "0x05600040"
     block: afbd
@@ -189,7 +189,7 @@ registers:
     block: route
     name: display route block base
     confidence: confirmed-on-hardware
-    source: kms-display.md
+    source: board-bringup-sequence.md
 
   - addr: "0x05140508"
     block: route
@@ -328,7 +328,7 @@ registers:
     name: CCU base
     notes: "H713 is 0x02001000, NOT H616's 0x03001000. This has caused real confusion."
     confidence: confirmed-on-hardware
-    source: kms-display.md
+    source: wifi-failure-2026-08-17.md
 
   - addr: "0x02010000"
     block: iommu
@@ -345,7 +345,7 @@ registers:
     name: IOMMU master bypass register
     notes: "Per-master bypass control: bit N set = master N bypassed. Bit 2 controls master 2 (DECD). 0x7C = bypass, 0x78 = translating."
     confidence: confirmed-on-hardware
-    source: reference/iommu-runtime-flip-ordering-2026-09-01.md
+    source: handoff-2026-08-29.md
 
   - addr: "0x01c0e000"
     block: ve

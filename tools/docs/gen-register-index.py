@@ -36,6 +36,20 @@ BLOCK_ORDER = ["cpus-arisc", "capture", "afbd", "route", "lvds", "composition",
                "proc-scaler", "detn", "ge2d", "mips", "ccu", "iommu", "ve"]
 
 
+def mentions_addr(path, addr):
+    """Does this document actually discuss this address?
+
+    Compared with 0x and leading zeros stripped from BOTH sides, because the
+    docs spell the same register several ways -- `0x02010000`, `0x2010000`, and
+    `ge2d@5240000` in a DT node name all refer to one address. Requiring the
+    canonical zero-padded spelling rejected four correctly-sourced entries, so
+    a strict match would have trained people to work around this check rather
+    than fix citations.
+    """
+    norm = addr.lower().replace("0x", "").lstrip("0")
+    return norm in path.read_text(errors="replace").lower().replace("0x", "")
+
+
 def load():
     data = yaml.safe_load(SRC.read_text())
     regs = data["registers"]
@@ -52,6 +66,11 @@ def load():
             errors.append(f"{a}: no source")
         elif not (DOCS / src).is_file():
             errors.append(f"{a}: source {src} does not exist")
+        elif not mentions_addr(DOCS / src, a):
+            # Existing-but-unrelated was the real failure mode: 5 of the first
+            # 41 entries cited a plausible file that never mentions the
+            # register, and "the file exists" happily passed all of them.
+            errors.append(f"{a}: source {src} never mentions {a}")
         if "hazard" in r and len(str(r["hazard"]).strip()) < 30:
             errors.append(f"{a}: hazard text must state the consequence")
     if errors:

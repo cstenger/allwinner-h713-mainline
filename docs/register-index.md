@@ -40,12 +40,12 @@ every one was found the hard way.
 | `0x05600010` | video source control (includes the source enable)<br>Never enable the source with no frame behind it. It rests at base 0 with inherited 1920x1088 geometry and will scan low memory the instant it is enabled -- garbage under IOMMU bypass, an AFBD-wedging fault under translation. | — | hardware | [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md) |
 | `0x05600014` | source config commit latch<br>Retires on vsync. Poll for longer than 16.7 ms or it silently never latches. This is one of TWO latches needed; see 0x0560006c. | — | hardware | [reference/linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md) |
 | `0x05600020` | source 0 active geometry (size minus 1)<br>Bits [31:16] height minus 1, bits [15:0] width minus 1 (e.g. 0x02CF04FF for 1280x720). | — | hardware | [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md) |
-| `0x05600030` | source 0 native raster dimensions<br>Bits [31:16] height, bits [15:0] width (0x02D00500 = 720x1280). | — | hardware | [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md) |
+| `0x05600030` | source 0 native raster dimensions<br>Bits [31:16] height, bits [15:0] width (0x02D00500 = 720x1280). | — | hardware | [handoff-2026-08-30.md](handoff-2026-08-30.md) |
 | `0x05600040` | source 0 luma (Y) plane stride<br>Bits [15:0] hold the luma byte stride aligned to 16. Upper half is preserved. | — | hardware | [reference/small-source-shear-2026-09-12/RESULT.md](reference/small-source-shear-2026-09-12/RESULT.md) |
 | `0x05600044` | source 0 chroma (C) plane stride<br>Chroma byte stride for source 0. | — | hardware | [reference/small-source-shear-2026-09-12/RESULT.md](reference/small-source-shear-2026-09-12/RESULT.md) |
 | `0x0560004c` | source 0 chroma dimensions<br>Bits [28:16] height, bits [15:0] width (0x01680500 = 360x1280 for 720p NV12). | — | hardware | [reference/small-source-shear-2026-09-12/RESULT.md](reference/small-source-shear-2026-09-12/RESULT.md) |
 | `0x05600060` | DECD enable and display interrupt control<br>Base of workaround window (AFBD + 0x60). Bit 0 is DECD engine enable; bit 4 is int_to_display. | — | hardware | [reference/decd-register-map.md](reference/decd-register-map.md) |
-| `0x0560006c` | plane address publish latch<br>The second of the two latches. 0x05600014 commits config; this publishes addresses. | — | hardware | [reference/linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md) |
+| `0x0560006c` | plane address publish latch<br>The second of the two latches. 0x05600014 commits config; this publishes addresses. | — | hardware | [reference/nv12-scanout-solved-2026-09-08.md](reference/nv12-scanout-solved-2026-09-08.md) |
 | `0x05600070` | DECD Y ring base address<br>Hardware scans linearly from this one base, so the buffer must be contiguous or IOMMU-translated. | — | hardware | [iommu-port.md](iommu-port.md) |
 | `0x05600084` | DECD C (chroma) ring base address<br>Chroma buffer base address for DECD scanout, paired with Y ring base at 0x05600070. | — | hardware | [reference/decd-register-map.md](reference/decd-register-map.md) |
 | `0x05600098` | VideoInfo descriptor physical pointer (slot 0)<br>Physical address of the 144-byte VideoInfo descriptor passed by ARM to MIPS firmware. | — | hardware | [reference/decd-videoinfo-handover-2026-09-04.md](reference/decd-videoinfo-handover-2026-09-04.md) |
@@ -59,7 +59,7 @@ every one was found the hard way.
 
 | address | what it is | known values | confidence | evidence |
 | --- | --- | --- | --- | --- |
-| `0x05140000` | display route block base | — | hardware | [kms-display.md](kms-display.md) |
+| `0x05140000` | display route block base | — | hardware | [board-bringup-sequence.md](board-bringup-sequence.md) |
 | `0x05140508` | YUV chroma gain<br>Bits 23:16 are a linear gain. 0x00 yields greyscale -- this is why early DECD runs had no colour. | `0x144c0000` = the working value | hardware | [reference/linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md) |
 
 ### `lvds`
@@ -110,14 +110,14 @@ every one was found the hard way.
 
 | address | what it is | known values | confidence | evidence |
 | --- | --- | --- | --- | --- |
-| `0x02001000` | CCU base<br>H713 is 0x02001000, NOT H616's 0x03001000. This has caused real confusion. | — | hardware | [kms-display.md](kms-display.md) |
+| `0x02001000` | CCU base<br>H713 is 0x02001000, NOT H616's 0x03001000. This has caused real confusion. | — | hardware | [wifi-failure-2026-08-17.md](wifi-failure-2026-08-17.md) |
 
 ### `iommu`
 
 | address | what it is | known values | confidence | evidence |
 | --- | --- | --- | --- | --- |
 | `0x02010000` | IOMMU base<br>Real and driven by mainline. NOT H6's 0x030f0000, which reads all zeros -- an `iommus` property pointing there fed the VE untranslated IOVAs and panicked the kernel. The VE needs BOTH master ports (0 and 1). | — | hardware | [iommu-port.md](iommu-port.md) |
-| `0x02010030` | IOMMU master bypass register<br>Per-master bypass control: bit N set = master N bypassed. Bit 2 controls master 2 (DECD). 0x7C = bypass, 0x78 = translating. | — | hardware | [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md) |
+| `0x02010030` | IOMMU master bypass register<br>Per-master bypass control: bit N set = master N bypassed. Bit 2 controls master 2 (DECD). 0x7C = bypass, 0x78 = translating. | — | hardware | [handoff-2026-08-29.md](handoff-2026-08-29.md) |
 
 ### `ve`
 
