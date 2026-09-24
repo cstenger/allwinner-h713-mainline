@@ -15,17 +15,22 @@
 #      fallback reproduces the reference by definition and would otherwise
 #      score a clean pass while never touching the engine.
 #
-# This gate drives GStreamer's v4l2codecs elements, which talk straight to the
-# kernel, and that is still the right arm to lead with: it is the shortest path
-# to the hardware and it fails in one place if the kernel side breaks.
+# TWO ARMS, because there are two ways to reach this hardware and they can fail
+# independently:
 #
-# VP8 IS NOW ALSO REACHABLE THROUGH VA-API, as of libva-v4l2-request patch 0013
-# (2026-09-24) -- the statement that used to stand here, that no such path
-# existed, is obsolete. All six vectors decode bit-exactly through
-# `ffmpeg -hwaccel vaapi` with the VE interrupt delta to prove the engine ran.
-# That arm is NOT yet wired into this script, so a VA-API-only regression would
-# pass here; adding it is the same three-arm shape hevc-decode-test.sh uses
-# (software control, GStreamer oracle, VA-API subject).
+#   gst  GStreamer's v4l2codecs elements, straight to the kernel. The shortest
+#        path, so it is the one that says whether the KERNEL side works.
+#   va   libva-v4l2-request through stock ffmpeg, added by patch 0013
+#        (2026-09-24). This is the path a normal application takes, and it can
+#        break while the kernel is perfectly fine -- a mapping bug in the shim
+#        looks like nothing at all from the GStreamer arm.
+#
+# Running only the first is what this gate did until the VA arm existed, and it
+# would have scored a clean sweep against a shim that decoded garbage.
+#
+# The VA arm SKIPS, loudly and counted, when the shim advertises no VP8 profile.
+# A skipped arm is reported in the summary rather than silently omitted, because
+# "6 pass" means something different depending on how many arms produced it.
 #
 #   usage: ./vp8-decode-test.sh [vector-name ...]
 
@@ -155,8 +160,8 @@ gst-inspect-1.0 ivfparse >/dev/null 2>&1 \
   && echo "  ivfparse:     present" \
   || { echo "  FATAL: ivfparse missing (gst-plugins-bad) -- cannot parse these vectors"; exit 1; }
 
-hr "decode runs"
-pass=0; fail=0
+hr "decode runs -- gst v4l2slvp8dec (the kernel path)"
+pass=0; fail=0; skip=0
 vectors=${*:-"p01-352x288-profile0 p02-1280x720-profile0 p03-640x480-profile1 p04-640x480-profile2 p05-640x480-profile3 p06-640x480-partitions"}
 
 for v in $vectors; do
@@ -211,10 +216,69 @@ for v in $vectors; do
   rm -f "$dst"
 done
 
+hr "libva-v4l2-request through stock ffmpeg (the application path)"
+
+# -hwaccel_output_format vaapi is LOAD-BEARING. Without it ffmpeg silently
+# falls back to software when hwaccel init fails, and on VP8 a software decode
+# reproduces the reference md5 BY DEFINITION -- so the run would report PASS
+# having never touched the VE. The interrupt delta is what catches it.
+if LIBVA_DRIVER_NAME=v4l2_request vainfo 2>/dev/null | grep -qi 'VP8'; then
+  for v in $vectors; do
+    spec=$(printf '%s\n' "$VECTORS_ALL" | grep "^$v:")
+    [ -n "$spec" ] || continue
+    w=$(echo "$spec" | cut -d: -f2); h=$(echo "$spec" | cut -d: -f3)
+    nf=$(echo "$spec" | cut -d: -f4)
+
+    src="$DIR/$v.ivf"
+    [ -f "$src" ] || continue
+
+    dst="$OUT/$v.va"; err="$OUT/$v.err"
+    rm -f "$dst" "$err"
+
+    a=$(ve_irq)
+    LIBVA_DRIVER_NAME=v4l2_request timeout 300 ffmpeg -hide_banner -v error -y \
+      -hwaccel vaapi -hwaccel_output_format vaapi \
+      -i "$src" -vf 'hwdownload,format=nv12' \
+      -f rawvideo -pix_fmt nv12 "$dst" 2>"$err"
+    ve=$(( $(ve_irq) - a ))
+
+    md5=$(md5sum "$dst" 2>/dev/null | cut -d' ' -f1)
+    want=$(want_md5 "$v")
+
+    if [ ! -s "$dst" ]; then
+      printf '     %-24s FAIL (va) no output\n' "$v"
+      head -1 "$err" 2>/dev/null | sed 's/^/          /'
+      fail=$((fail+1))
+    elif [ "$ve" -eq 0 ]; then
+      # Bit-exact with a flat VE counter is a software decode wearing a
+      # hardware result's clothes. Never a pass.
+      printf '     %-24s FAIL (va) SOFTWARE FALLBACK -- ve+0, nothing reached the engine\n' "$v"
+      head -1 "$err" 2>/dev/null | sed 's/^/          /'
+      fail=$((fail+1))
+    elif [ -z "$want" ]; then
+      printf '     %-24s UNVERIFIABLE (va) no WHOLE line in reference\n' "$v"
+      fail=$((fail+1))
+    elif [ "$md5" = "$want" ]; then
+      printf '     %-24s PASS (va) bit-exact, ve+%s\n' "$v" "$ve"
+      pass=$((pass+1))
+    else
+      printf '     %-24s MISMATCH (va) ve+%s\n' "$v" "$ve"
+      echo "          first differing frame: $(first_bad_frame "$dst" "$v" "$(( w * h * 3 / 2 ))")"
+      fail=$((fail+1))
+    fi
+    rm -f "$dst" "$err"
+  done
+else
+  echo "     SKIPPED -- the shim advertises no VP8 profile."
+  echo "     Expected only if libva-v4l2-request patch 0013 is not installed;"
+  echo "     check with: LIBVA_DRIVER_NAME=v4l2_request vainfo | grep VP8"
+  skip=$((skip+1))
+fi
+
 hr "kernel messages from this run"
 report_kmsg "cedrus|video-codec"
 
-printf '\nP1: %d pass, %d fail\n' "$pass" "$fail"
+printf '\nP1: %d pass, %d fail, %d arm(s) skipped\n' "$pass" "$fail" "$skip"
 if [ $((pass + fail)) -eq 0 ]; then
   echo "P1: scored nothing -- no vector produced a comparable result."
   echo "    Check the .ivf streams are deployed next to the script."
