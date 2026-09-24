@@ -71,6 +71,17 @@ HDMI source transition or receiver lock. The exact serial evidence is in
 [`dispatch-trace-uart.log`](dispatch-trace-uart.log) and
 [`dispatch-trace-uart.raw.gz`](dispatch-trace-uart.raw.gz).
 
+The next one-shot trace resolved the worker gap. Source-3-specific callback,
+worker dequeue, and transition-completion counters each changed from 0 to 1
+after one CPU_COMM call. The worker recorded old source 0 and new source 3;
+the old value is left as observed because the startup source-1 marker does
+not explain it. Linux booted normally afterward, and its read-only reader
+verified the same trace with intact canaries. The UART evidence is in
+[`source3-worker-uart.log`](source3-worker-uart.log) and
+[`source3-worker-uart.raw.gz`](source3-worker-uart.raw.gz). This establishes
+MIPS-side source selection, while receiver lock and captured frames remain
+unproven.
+
 The older [`hdmi-in.md`](../../hdmi-in.md) HDMI map is contradicted by the
 board-B firmware census and [`registers.yaml`](../../re/registers.yaml):
 `0x05000000` is display composition, `0x05040000` is a picture-quality tap,

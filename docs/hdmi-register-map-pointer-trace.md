@@ -167,11 +167,11 @@ or TMDS lock was demonstrated. The [readable UART excerpt](hdmi-evidence/2026-09
 and [compressed exact bytes](hdmi-evidence/2026-09-24-hdmi1-signal/dispatch-trace-uart.raw.gz)
 preserve the test (uncompressed SHA256
 `53f9aa4db0055dab93acfadb21549bfd6853ec1ae2840b744be9e4f351467d99`).
-The next bounded trace should count callback and source-worker entries for
-source 3, then identify the actual receiver registers through the firmware's
-MIPS-owned byte accessor before attempting a live lock read.
+The follow-up below counts callback and source-worker entries for source 3.
+The next milestone is a bounded, MIPS-side receiver-state read through the
+firmware's byte accessor before interpreting lock or captured pixels.
 
-## Prepared source-3 worker probe (not installed)
+## Source-3 worker probe
 
 The guarded U-Boot follow-up in submodule commit `320a17f71d4` keeps the
 dispatcher trace and adds counters at trace `+0x6c` for callback event-zero
@@ -198,7 +198,35 @@ the zero-padded SHA256 is
 The currently installed U-Boot-proper sectors were saved read-only as
 `/root/uboot-backup/pre-source3-worker-trace-20260924.bin` (920,576 bytes,
 SHA256 `5a7d86438f6bd2098b69886761d9b1e3f2073f0fe158e0745f2e1b804f4120ee`).
-The candidate is staged on the projector at
-`/root/u-boot-proper-source3-worker-padded.fit` and its hash matches the
-local padded image. **It has not been flashed or run.** The projector still
-boots the merged kernel and remains reachable.
+The candidate was staged on the projector at
+`/root/u-boot-proper-source3-worker-padded.fit` and its hash matched the
+local padded image. With the owner's specific approval, the 1,798 sectors
+at the established U-Boot-proper LBA `0x49ac00` were replaced; flash
+read-back matched the padded SHA256 above. SPL, environment, and the merged
+default kernel were untouched.
+
+After a physical power cycle, U-Boot identified itself as
+`2026.07-rc5-ga1358432003c-dirty` (the FIT was built before the submodule
+commit) and authenticated the same board-B firmware. One
+`h713_disp mips-comm-trace 0x34` run installed the trace. The pre-call
+snapshot had all three source-3 counters at zero, old/new sentinels
+`ffffffff`, and startup dispatcher source 1. One source-3 CPU_COMM call
+received `CALL_ACK` and `RETURN` in about 1 ms and recycled the rings. The
+immediate and delayed snapshots both showed **callback event-zero count 1,
+worker event-zero count 1, and transition-completion count 1**, with worker
+old `0` and new `3`. The dispatcher target was `0x8b107574`, source argument
+`3`, and callback object `0x8b8c8378`. Thus the MIPS firmware both queued
+and processed the source-3 event and reached the end of its general source
+transition path. The old-source value `0` is preserved as observed; it does
+not match a simple interpretation of the startup source-1 marker and needs
+separate explanation.
+
+`run bootcmd` returned the projector to the merged Linux 6.18.38 default.
+SSH and Cedrus `/dev/video0` returned. The Linux reader verified every
+selected patch word and both trace-page canaries, then independently read
+the same three counters and old/new values. No receiver MMIO was accessed,
+and neither TMDS lock nor a capture frame is established. The
+[readable UART excerpt](hdmi-evidence/2026-09-24-hdmi1-signal/source3-worker-uart.log)
+and [compressed exact bytes](hdmi-evidence/2026-09-24-hdmi1-signal/source3-worker-uart.raw.gz)
+preserve the test (uncompressed SHA256
+`f4fc0424fa525263178c39d3c0dd94a92fcf64726e005d234c5bfb143153f0f3`).
