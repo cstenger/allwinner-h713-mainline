@@ -112,7 +112,7 @@ PHY details, and receiver lock registers remain unidentified.
 The exact instruction excerpt is in
 [`hdmi-wrapper-disassembly.txt`](hdmi-evidence/2026-09-24-hdmi1-signal/hdmi-wrapper-disassembly.txt).
 
-## Prepared dispatcher-target probe (not installed)
+## Dispatcher-target probe
 
 The next guarded U-Boot trace is built offline in
 `build/uboot-dispatch-trace/u-boot-sunxi-with-spl.fit.fit` from submodule
@@ -131,7 +131,10 @@ recognized by `mkimage -l`. Image SHA256 is
 `f90a1cede4b29b37860294e2a4edfad9ad1f3f7bb05e9bf7735b8afad74b2a0f`;
 sector-padded SHA256 is
 `5a7d86438f6bd2098b69886761d9b1e3f2073f0fe158e0745f2e1b804f4120ee`.
-This image has not been written to the projector. A subsequent bounded test
-would again back up and read-back-verify only the established U-Boot-proper
-range, then make one traced MIPS launch and one source-3 call after a physical
-power cycle. The current merged kernel remains the default throughout.
+With the owner's authorization to continue, the prior U-Boot-proper range was
+saved as `/root/uboot-backup/pre-dispatch-trace-20260924.bin` (920,576 bytes;
+SHA256 `ce3192fe2f10ad882b69f413038d4c632b9cc3f25450095288034e04e8129920`).
+Only the established 1,798 sectors at LBA `0x49ac00` were replaced. Flash
+read-back matched the new padded SHA256 above. SPL, environment, and the
+installed merged default kernel were untouched. The serial console is armed
+for one cold-boot trace after the physical power cycle.
