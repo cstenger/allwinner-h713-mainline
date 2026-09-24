@@ -22,10 +22,12 @@ fourcc, not the hardware. See [the 10-bit findings](hevc-10bit-findings.md).
 H.264 (`va-decode-test.sh`, 5/5), HEVC incl. Main10 (`hevc-decode-test.sh`,
 14/14), MPEG-2 (`mpeg2-decode-test.sh`, 6/6) and VP8 (`vp8-decode-test.sh`,
 6/6 — all four VP8 profiles, i.e. every reconstruction/loop-filter pair the
-engine implements). **Three of the four are reachable through VA-API; VP8 is
-not.** The shim has no VP8 backend and neither does upstream
-libva-v4l2-request — VP8 reaches the hardware only via GStreamer's
-`v4l2slvp8dec`, straight to the kernel.
+engine implements). **All four are reachable through VA-API** as of
+libva-v4l2-request patch 0013 (2026-09-24), which added the VP8 backend — new
+code, since upstream has never had one. Stock `ffmpeg -hwaccel vaapi` decodes
+all six VP8 vectors bit-exactly on the VE. VP8 also still reaches the hardware
+through GStreamer's `v4l2slvp8dec`, straight to the kernel, which is what
+`vp8-decode-test.sh` drives; the VA-API arm is not yet wired into that gate.
 
 Scaled surfaces reach the panel: the VA driver and mpv negotiate, carry and
 display a hardware-scaled picture with the coded padding cropped, and seeks no

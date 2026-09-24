@@ -15,10 +15,17 @@
 #      fallback reproduces the reference by definition and would otherwise
 #      score a clean pass while never touching the engine.
 #
-# VP8 IS NOT REACHABLE THROUGH VA-API on this board: no VP8 patch exists in the
-# libva-v4l2-request series and vainfo lists no VP8 profile. This gate therefore
-# drives GStreamer's v4l2codecs elements, which talk straight to the kernel. Do
-# not "fix" it to use ffmpeg -hwaccel vaapi; that path does not exist yet.
+# This gate drives GStreamer's v4l2codecs elements, which talk straight to the
+# kernel, and that is still the right arm to lead with: it is the shortest path
+# to the hardware and it fails in one place if the kernel side breaks.
+#
+# VP8 IS NOW ALSO REACHABLE THROUGH VA-API, as of libva-v4l2-request patch 0013
+# (2026-09-24) -- the statement that used to stand here, that no such path
+# existed, is obsolete. All six vectors decode bit-exactly through
+# `ffmpeg -hwaccel vaapi` with the VE interrupt delta to prove the engine ran.
+# That arm is NOT yet wired into this script, so a VA-API-only regression would
+# pass here; adding it is the same three-arm shape hevc-decode-test.sh uses
+# (software control, GStreamer oracle, VA-API subject).
 #
 #   usage: ./vp8-decode-test.sh [vector-name ...]
 
