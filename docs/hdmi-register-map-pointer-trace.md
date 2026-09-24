@@ -153,6 +153,21 @@ presence or video lock. Both windows reported intact
 SCP/DDC restoration, and CPU_COMM and the MIPS shell remained responsive.
 The exact source-side transitions and RPC results are in the two
 `h713-hdmi-trial-20260924T1935*Z` evidence directories.
+The subsequent retained-TVCAP run with all four receiver clocks held also
+returned `0x2` before, throughout, and after a 640x480 GPU output window;
+MIPS continued servicing calls. That strengthens the conclusion that this
+query is not a receiver video-lock indication.
+
+The exact board-B firmware (SHA256 `4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce`)
+also contains a TMDS frequency-detection routine at `0x8b140644`, listed in
+the HDMI operation table at `0x8b22f100`. It reads four byte registers at
+link base `+0xca..+0xcd`, assembles a count, and caches it at port context
+`+0x60`. This is a possible read-only *cached* activity indicator once the
+live port-context pointer is established. The routine itself is unsuitable
+for a diagnostic call: after a changed count, it writes a control field at
+link base `+0xce`. No live port-context address or receiver-lock meaning has
+yet been established, so the current board has not been probed through this
+path.
 
 ## Dispatcher-target probe
 

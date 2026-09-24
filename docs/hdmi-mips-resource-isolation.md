@@ -5,6 +5,16 @@ Communication stops when the removable HDMI hold resumes TVCAP. This narrows
 and corrects the earlier undifferentiated IPC timeout; it does not establish
 receiver lock, captured frames, or the exact firmware failure mechanism.
 
+**Current-kernel comparison (2026-09-24):** The merged default 6.18.38 kernel
+logs that it retained TVCAP on from U-Boot. After a cold U-Boot MIPS/source-3
+run, acquiring both domains with zero receiver clocks kept the MIPS shell and
+CPU_COMM responsive. Enabling each of the four clocks in turn also kept them
+responsive. This does not contradict the earlier power-on stall: the current
+run acquired a domain that was already on, while the earlier run resumed a
+powered-off TVCAP. A live 640x480 GPU signal then left MIPS responsive, but
+receiver lock and capture are still unproved. See
+[`2026-09-24-hdmi1-signal`](hdmi-evidence/2026-09-24-hdmi1-signal/README.md).
+
 ## Reproduced working route
 
 Graceful ARM reboot, interrupt autoboot, then `h713_disp init 0x34` performs the

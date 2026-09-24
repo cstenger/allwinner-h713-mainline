@@ -104,6 +104,38 @@ session; neither TVCAP nor receiver clocks were explicitly held by the
 diagnostic module, and no HDMI frame was captured. The EDID-clock module was
 unloaded after the control, returning the clock/reset to its previous state.
 
+After another physical power cycle, the same U-Boot-proper FIT authenticated
+the board-B firmware and a single source-3 RPC again reached `CALL_ACK` and
+`RETURN`. The guarded reader reported one source-3 callback, worker dequeue,
+and completed transition with intact canaries. The unchanged merged default
+kernel then logged `TVCAP domain retained from boot`. CPU_COMM adoption and
+the MIPS shell worked at baseline. Acquiring TVFE plus the already-on TVCAP
+domain with **zero** diagnostic receiver clocks preserved both interfaces.
+Increasing the clock references from zero to four, one at a time, also
+preserved shell replies and read-only status RPCs at every step. This current
+kernel does not reproduce the older MIPS stall at TVCAP acquisition; the
+older test powered TVCAP on, while this kernel retained it from boot.
+
+With all four receiver clocks held and the EDID clock/reset enabled, a
+15-second SCP window connected the GPU at 2.13 seconds and enabled 640x480
+at 2.42 seconds. The expected EDID hash matched; the MIPS port-status RPC
+returned `0x2` before, throughout, and after active video. SCP restoration
+passed with no mismatch, and the source-3 trace, MIPS shell, CPU_COMM, SSH,
+and Cedrus `/dev/video0` stayed healthy afterward. No receiver lock bit or
+captured frame was demonstrated. The optional historical DETN snapshot
+helper was absent at `/tmp/h713-check-power.sh`; its failed invocation is
+preserved in `receiver.log` and did not affect the signal window or cleanup.
+The trial tool now requests that unrelated DETN snapshot only with
+`--read-detn`. Evidence is in
+[`h713-hdmi-trial-20260924T194648Z`](h713-hdmi-trial-20260924T194648Z/)
+and [`tvcap-full-power-uart.raw.gz`](tvcap-full-power-uart.raw.gz)
+(raw serial SHA256 `b65f2bfb16ff52e1e192c321420163a6b71884384ee09117635ca96074039397`).
+
+The owner subsequently power-cycled the board. It is back on the same merged
+default kernel, with Cedrus loaded, TVCAP retained on, TVFE off, and the
+temporary CPU_COMM and HDMI hold modules absent. This boot has not run the
+one-shot MIPS source-3 command.
+
 The older [`hdmi-in.md`](../../hdmi-in.md) HDMI map is contradicted by the
 board-B firmware census and [`registers.yaml`](../../re/registers.yaml):
 `0x05000000` is display composition, `0x05040000` is a picture-quality tap,
