@@ -40,6 +40,25 @@ the VE landing on the panel size exactly, no display-side stage. The headless
 gates were the control and were unaffected: 5/5 H.264, 14/14 HEVC, 6/6 MPEG-2,
 zero IOMMU faults, zero failed atomic commits.
 
+**A 2-hour soak then found, and patches 0126/0127 fixed, an IOVA collision that
+had made every long decode run fail after ~35 minutes.** Cedrus's IOVA
+allocator was walking into the 8 MiB `uboot-scanout@6c100000` region that the
+display identity-maps into the IOMMU group the two devices *share*, after which
+allocation failed permanently. It was never memory: MemAvailable flat, CmaFree
+constant, buddyinfo healthy. The reservation existed but reached only the
+display, because `of_iommu_get_resv_regions()` is per-device and
+`iommu_dma_init_domain()` applies regions for only the **first** device to
+initialise the domain — which is the VE. 0126 declares the range for the VE
+too; 0127 makes cedrus look its pool up by name so a reg-less reservation entry
+does not break its probe.
+
+**Re-run clean: 5934/5934 iterations, 210472 frames on the VE, 0 failures,
+0 software fallbacks, 0 IOVA collisions, CmaFree delta 0.** Evidence, including
+both soak logs:
+[the IOVA collision result](reference/soak-iova-collision-2026-09-23/RESULT.md).
+Whether the hazard predated the retirement is still **not established** — the
+test would be the same soak on the backed-up previous kernel.
+
 Next: split the upstreamable pieces (the generic SPS/TRY fix, the H713 scaler
 routing, the `vo_drm` PRIME scanout feature, and downstream negotiation policy
 are four separate submissions), and a V4L2 fourcc for the 8+2 layout so a
