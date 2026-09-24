@@ -1,5 +1,7 @@
 # H713 handoff — audio finished, HDMI input opened
 
+> **Superseded by [`audio.md`](audio.md) and [`hdmi-in.md`](hdmi-in.md) (subsystem authorities) and [`handoff-2026-09-03-video-decode.md`](handoff-2026-09-03-video-decode.md).**
+
 Session of 2026-09-02. Two threads: **audio playback, which is done**, and
 **HDMI input, which is not** but went from unmapped to a well-characterised
 subsystem with one clearly identified blocker.

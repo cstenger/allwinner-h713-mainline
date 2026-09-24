@@ -1,5 +1,7 @@
 # H713 handoff — 2026-09-03 (playback and packaging)
 
+> **Superseded by [`handoff-2026-09-04-video-scaling-and-display.md`](handoff-2026-09-04-video-scaling-and-display.md) and [`handoff-2026-09-08-video-playing.md`](handoff-2026-09-08-video-playing.md).**
+
 Second handoff of the day. The first,
 [handoff-2026-09-03-video-decode.md](handoff-2026-09-03-video-decode.md),
 covers the zero-copy VA-API investigation and is still accurate about **decode**.

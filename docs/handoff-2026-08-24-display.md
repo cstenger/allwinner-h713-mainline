@@ -1,5 +1,7 @@
 # Handoff — display, 2026-08-24
 
+> **Superseded by [`handoff-2026-08-25.md`](handoff-2026-08-25.md).**
+
 Companion to [`handoff-2026-08-24.md`](handoff-2026-08-24.md) (video decode).
 Branch `h713-dvfs-1416-corruption`, pushed through `fd13987`. Nothing is left
 only on the board except one saved U-Boot environment variable, noted below.
