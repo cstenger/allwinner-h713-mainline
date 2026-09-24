@@ -30,8 +30,11 @@ LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 SKIP_SCHEMES = ("http://", "https://", "mailto:", "ftp://")
 
 
+CODE_SPAN = re.compile(r"`+[^`]*`+")
+
+
 def links_in(text):
-    """Yield link targets outside fenced and indented code blocks."""
+    """Yield link targets outside fenced blocks, indented blocks and code spans."""
     fenced = False
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -44,7 +47,11 @@ def links_in(text):
         # are indented well past that.
         if line.startswith("    ") or line.startswith("\t"):
             continue
-        for m in LINK.finditer(line):
+        # INLINE code spans too, not just blocks. Prose that quotes code inline
+        # hits the same impostor: `handler[+0x14](word)` in a sentence parses as
+        # a link to a file named "word". Found by this checker failing on the
+        # very document that warns about the problem.
+        for m in LINK.finditer(CODE_SPAN.sub("", line)):
             yield m.group(1)
 
 
