@@ -1,0 +1,20 @@
+h713_disp commstate
+H713 comm: share_seq transports (as built: rd=0 wr=20 cap=21)
+  cpu=0 dir=0 idx=0 FreeCall    @+0x00098  rd=0   wr=20  peak=20  cap=21  base=4e300158
+      staging +0x20 CallCmd     rd=0   wr=0   cap=21  isz=4   base=7ffe4a8c
+  cpu=0 dir=0 idx=1 FreeReturn  @+0x00a20  rd=0   wr=20  peak=20  cap=21  base=4e300ae0
+      staging +0x20 ReturnCmd   rd=0   wr=0   cap=21  isz=4   base=7ffe4ae0
+  cpu=0 dir=1 idx=0 FreeCall    @+0x013a8  rd=0   wr=20  peak=20  cap=21  base=4e301468
+      staging +0x20 CallCmd     rd=0   wr=0   cap=21  isz=4   base=7ffe4b34
+  cpu=0 dir=1 idx=1 FreeReturn  @+0x01d30  rd=1   wr=20  peak=20  cap=21  base=4e301df0  <== MOVED
+      staging +0x20 ReturnCmd   rd=0   wr=1   cap=21  isz=4   base=7ffe4b88
+  cpu=1 dir=0 idx=0 FreeCall    @+0x026b8  rd=1   wr=0   peak=20  cap=21  base=4e302778  <== MOVED
+      staging +0x20 CallCmd     rd=1   wr=1   cap=21  isz=4   base=8b253e24
+  cpu=1 dir=0 idx=1 FreeReturn  @+0x03040  rd=0   wr=20  peak=20  cap=21  base=4e303100
+      staging +0x20 ReturnCmd   rd=0   wr=0   cap=21  isz=4   base=8b253ed4
+  cpu=1 dir=1 idx=0 FreeCall    @+0x039c8  rd=0   wr=20  peak=20  cap=21  base=4e303a88
+      staging +0x20 CallCmd     rd=0   wr=0   cap=21  isz=4   base=8b2542b4
+  cpu=1 dir=1 idx=1 FreeReturn  @+0x04350  rd=0   wr=20  peak=20  cap=21  base=4e304410
+      staging +0x20 ReturnCmd   rd=0   wr=0   cap=21  isz=4   base=8b254364
+H713 comm: 2 of 8 transport(s) show movement
+=>

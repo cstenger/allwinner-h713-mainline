@@ -351,9 +351,30 @@ capture node or frame is available. Linux `SetSource` was not retried because
 earlier attempts hard-locked the board.
 
 The HY310 HDMI port mapping calls HDMI1 **source 3**. Source 2 was a bounded
-MIPS transition control, not selection of the attached HDMI input. After a
-future cold boot, a traced U-Boot source-3 call followed by Linux handoff is
-the relevant next test. The present boot has already run MIPS initialization;
-restarting that firmware a second time without a power cycle is avoided.
+MIPS transition control, not selection of the attached HDMI input. The next
+test therefore required a physical power cycle before one traced U-Boot
+source-3 call; the then-current boot had already run MIPS initialization.
+
+## Guarded U-Boot HDMI1 source-3 control
+
+After the next physical power cycle, the installed trace U-Boot authenticated
+the exact board-B MIPS firmware and found the live CPU_COMM channel. With the
+host GPU still disconnected, one direct source-3 call received `CALL_ACK` and
+`RETURN` within 1 ms. U-Boot published `RETURN_ACK`, but the MIPS sender did
+not complete the return handshake within 1 second. U-Boot preserved an
+unreconciled `ReturnCmd`/`FreeReturn` state and stayed responsive. The source
+trace contained only the earlier firmware startup transition `0 -> 1`; it did
+not show a source-3 worker completion. No second CPU_COMM call was made.
+
+The validated 0132 FIT booted afterward without loading CPU_COMM. TVCAP
+remained on; Linux and the independent MIPS shell were responsive; the
+dedicated trace canaries and patch words were intact. The trace's event/new
+fields were later overwritten by event 1 and a pointer, not by a source-3
+transition. The result narrows the issue to source selection or its return
+handshake, even before HPD and GPU video are asserted. It does not establish
+that source 3 became active. A new MIPS-side observation of the sender wakeup
+and private current source is needed before repeating this call.
+
+Evidence: [`hdmi-evidence/2026-09-23-uboot-source3`](hdmi-evidence/2026-09-23-uboot-source3/).
 
 Evidence: [`hdmi-evidence/2026-09-23-edid-live-source2`](hdmi-evidence/2026-09-23-edid-live-source2/).
