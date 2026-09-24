@@ -404,3 +404,26 @@ The board was normally rebooted into the owner's installed September 23
 video-decode kernel, which exposes Cedrus `/dev/video0`. The diagnostic kernel
 and modules were not installed. Evidence:
 [`hdmi-evidence/2026-09-24-cache-coherent-source3`](hdmi-evidence/2026-09-24-cache-coherent-source3/).
+
+## HDMI1 signal after a completed source-3 RPC
+
+Following another physical power cycle, a single U-Boot source-3 RPC again
+completed with its RETURN rings reconciled. The guarded trace recorded the
+source adapter returning with requested source 3, although its source-worker
+markers did not prove a new port transition. The temporary 0132 kernel held
+TVFE/TVCAP and EDID clocks and applied the isolated receiver controller init.
+
+Disassembly of the exact board-B image shows that `SetSource` calls a
+dispatcher which skips its source event when the VP callback object at
+`0x8b253578` is null, yet returns success. The pointer's live value was not
+sampled; the unchanged worker markers fit this early-boot path. The RPC
+therefore cannot establish actual HDMI1 selection.
+
+In two of three 15-second SCP HPD windows, the connected GPU read the same
+128-byte EDID and enabled 640x480 video. The first window did not produce a
+host hot-plug event. The SCP restored its peripheral state in all three.
+Repeated read-only THDMIRX samples through an enabled-video window did not
+change, so receiver lock and capture remain unproven. The board was returned
+to the installed September 23 video-decode kernel with Cedrus available.
+
+Evidence: [`hdmi-evidence/2026-09-24-hdmi1-signal`](hdmi-evidence/2026-09-24-hdmi1-signal/).
