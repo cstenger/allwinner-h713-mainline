@@ -26,6 +26,14 @@ MIPS32 little-endian, firmware virtual base 0x8b100000.
 0x8b13cee4  addiu  a0,s0,0x1001      # physical 0x06841001
 0x8b13ceec  jal    0x8b1803dc       # masked byte write helper
 
+0x8b13eff0  addiu  sp,sp,-0x18       # per-port status query
+0x8b13f004  lw     a0,0(v0)         # four-entry 0x06840000 table
+0x8b13f010  addiu  a0,a0,0x037a     # physical 0x0684037a
+0x8b13f014  jal    0x8b180340       # MIPS byte read helper
+0x8b13f01c  andi   v0,v0,0x000f     # low four bits
+0x8b13f020  srav   v0,v0,s0         # shift by port argument
+0x8b13f02c  andi   v0,v0,0x0001     # return selected bit
+
 0x8b180340  addiu  sp,sp,-0x18       # byte read helper
 0x8b18034c  jal    0x8b1801cc       # physical-address guard
 0x8b180358  lui    a0,0xb500

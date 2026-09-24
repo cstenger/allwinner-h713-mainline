@@ -132,6 +132,7 @@ every one was found the hard way.
 | --- | --- | --- | --- | --- |
 | `0x06800800` | MIPS HDMI receiver wrapper byte window | — | static | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
 | `0x06840000` | MIPS HDMI per-port state window<br>Four-entry table in board-B display.bin at 0x8b1f7b98 contains this physical base for all ports; the MIPS byte accessor adds its aperture. ARM access safety is not established. | — | static | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
+| `0x0684037a` | MIPS HDMI per-port status bits<br>Board-B display.bin routine 0x8b13eff0 reads this byte through the MIPS-only accessor, masks its low nibble, and extracts one bit indexed by the port argument. The bit's physical meaning is not yet established. Do not read this address directly from ARM. | — | static | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
 
 ## Addresses mentioned in 3+ documents but not yet catalogued
 

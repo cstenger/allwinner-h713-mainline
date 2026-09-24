@@ -63,6 +63,17 @@ registers:
     confidence: static-analysis
     source: hdmi-register-map-pointer-trace.md
 
+  - addr: "0x0684037a"
+    block: hdmi-rx-wrapper
+    name: MIPS HDMI per-port status bits
+    notes: >-
+      Board-B display.bin routine 0x8b13eff0 reads this byte through the
+      MIPS-only accessor, masks its low nibble, and extracts one bit indexed
+      by the port argument. The bit's physical meaning is not yet established.
+      Do not read this address directly from ARM.
+    confidence: static-analysis
+    source: hdmi-register-map-pointer-trace.md
+
   - addr: "0x06940000"
     block: capture
     name: capture domain (unpowered)

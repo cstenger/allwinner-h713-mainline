@@ -101,6 +101,10 @@ HDMI wrapper addresses independently of the peer driver's labels:
   the vendor MIPS path uses byte accesses to these physical windows, not
   32-bit ARM MMIO. The address guard beginning at `0x8b1801cc` includes
   the `0x06800000` region.
+- `0x8b13eff0` reads a byte at physical `0x0684037a` through that MIPS
+  accessor, masks its low nibble, and returns one bit indexed by the port
+  argument. The bit's physical meaning is not yet proven; the accessor is a
+  bounded candidate for a later MIPS-side receiver-state snapshot.
 
 This proves that the MIPS firmware has accessors for the wrapper and port
 state. It does not prove safe access from ARM: the earlier ARM byte read of
