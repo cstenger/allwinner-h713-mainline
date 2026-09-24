@@ -160,14 +160,27 @@ query is not a receiver video-lock indication.
 
 The exact board-B firmware (SHA256 `4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce`)
 also contains a TMDS frequency-detection routine at `0x8b140644`, listed in
-the HDMI operation table at `0x8b22f100`. It reads four byte registers at
-link base `+0xca..+0xcd`, assembles a count, and caches it at port context
-`+0x60`. This is a possible read-only *cached* activity indicator once the
-live port-context pointer is established. The routine itself is unsuitable
-for a diagnostic call: after a changed count, it writes a control field at
-link base `+0xce`. No live port-context address or receiver-lock meaning has
-yet been established, so the current board has not been probed through this
-path.
+the HDMI operation table at `0x8b22f100`. Its caller at `0x8b1388d4` passes
+the link base from a port object at `+0x520` and a context at port object
+`+0x0c`. The routine reads four byte registers at link base `+0xca..+0xcd`,
+assembles a count, compares it with context `+0x60` (port object `+0x6c`),
+and updates that cache on one branch. The `THDMIRx` constructor at
+`0x8b131c48` creates three port objects and stores their pointers at
+`THDMIRx +0xec`, `+0xf0`, and `+0xf4`. The device-manager singleton pointer is
+at MIPS `0x8bac1a70`; its constructor stores the real `THDMIRx` pointer at
+manager `+0x18` and a separate `THDMIDummy` at `+0x1c`. A guarded DRAM-only
+reader at [`read-mips-port-cache.py`](../tools/hdmi/read-mips-port-cache.py)
+follows this chain, verifies the manager and receiver vtable addresses, and
+reports all three cached counts without accessing receiver registers.
+On the next default-kernel boot, this reader found manager `0x8b827fd4`,
+receiver `0x8b83107c`, and port objects `0x8b831468`, `0x8b8346b8`, and
+`0x8b837908`. Each reported link base `0x06840000` and cached count zero;
+the MIPS core was parked, so this only validates the pointer chain and an
+idle baseline.
+The routine itself is unsuitable for a diagnostic call: on the changed-count
+branch it writes a control field at link base `+0xce`. No live object address
+or receiver-lock meaning has yet been established, so the current board has
+not been probed through this path.
 
 ## Dispatcher-target probe
 

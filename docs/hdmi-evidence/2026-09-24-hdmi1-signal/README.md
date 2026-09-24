@@ -136,6 +136,16 @@ default kernel, with Cedrus loaded, TVCAP retained on, TVFE off, and the
 temporary CPU_COMM and HDMI hold modules absent. This boot has not run the
 one-shot MIPS source-3 command.
 
+A subsequent DRAM-only inspection on this boot followed the guarded device
+manager and receiver pointers to all three HDMI port objects. Their vtables
+matched the exact firmware, each link base was `0x06840000`, and each cached
+TMDS count was zero with the GPU disconnected. The MIPS core was parked at
+`0x0306101c`, so these values are a structural baseline, not a live receiver
+measurement. The reader is staged at
+`/root/hdmi-safe-trace/read-mips-port-cache.py`; the next bounded signal
+trial can sample it before, during, and after GPU output using
+`--probe-port-cache` once MIPS is running from a cold U-Boot start.
+
 The older [`hdmi-in.md`](../../hdmi-in.md) HDMI map is contradicted by the
 board-B firmware census and [`registers.yaml`](../../re/registers.yaml):
 `0x05000000` is display composition, `0x05040000` is a picture-quality tap,
