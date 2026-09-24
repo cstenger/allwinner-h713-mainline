@@ -322,8 +322,38 @@ EDID clock/reset. Diagnostic patch 0132 adds that node. A corrected FIT
 was built with the identical kernel and a DTB containing both the EDID
 consumer and trace-page reservation. Its SHA256 is
 `7c3e8258b0b3436880f50c01d82f545c0ab40fd59d9d667eb4a3043dc0c12f1e`;
-the staged target copy matched. It has not yet booted. The next signal
+the staged target copy matched. At that point it had not yet booted. The next signal
 window must follow a cold power cycle because U-Boot's MIPS test warns
 against a second firmware run on the same power cycle.
 
 Evidence: [`hdmi-evidence/2026-09-23-uboot-source2-handoff`](hdmi-evidence/2026-09-23-uboot-source2-handoff/).
+
+## Corrected EDID clock and live GPU signal
+
+After a physical power cycle, U-Boot again completed the direct source-2
+call. The corrected 0132 FIT booted with the same kernel and the new EDID
+consumer bound at 24 MHz, reset released. TVFE/TVCAP and the receiver clocks
+remained held. A default-profile SCP HPD/EDID window made the host GPU read
+the exact 128-byte EDID and enable 640×480 output in about 1.7 seconds. This
+was repeated with the callback-aware daemon running without Linux source
+selection. Both signal windows restored SCP and DDC state, left Linux healthy,
+and preserved the guarded MIPS trace. A preceding `--stock-io` window did not
+make the GPU connect, despite SCP reporting HPD high.
+
+Read-only THDMIRX status snapshots stayed identical before, during, and after
+a 20-second video window. `THal_Vp_GetSource_1_000` returned one word, `0`,
+after full Linux-side initialization and twice while the GPU was transmitting.
+The exact board-B handler unconditionally returns zero, however, so these
+queries only show CPU_COMM remained responsive. They do not establish whether
+U-Boot's preselected source 2 survived VP initialization. The receiver has
+not been shown to lock, and `/dev/video0` is only the Cedrus decoder; no HDMI
+capture node or frame is available. Linux `SetSource` was not retried because
+earlier attempts hard-locked the board.
+
+The HY310 HDMI port mapping calls HDMI1 **source 3**. Source 2 was a bounded
+MIPS transition control, not selection of the attached HDMI input. After a
+future cold boot, a traced U-Boot source-3 call followed by Linux handoff is
+the relevant next test. The present boot has already run MIPS initialization;
+restarting that firmware a second time without a power cycle is avoided.
+
+Evidence: [`hdmi-evidence/2026-09-23-edid-live-source2`](hdmi-evidence/2026-09-23-edid-live-source2/).

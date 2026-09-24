@@ -1,0 +1,23 @@
+Read-only MIPS RPC after full Linux-side VP initialization:
+MATCH 0x24efc7c9 THal_Vp_GetSource_1_000
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0
+CPU_COMM_CALL_OK component=24efc7c9 elapsed_us=91728 nret=1 ret0=00000000
+
+Read-only MIPS RPC while host HDMI GPU output was enabled in the 12-second trial:
+MATCH 0x24efc7c9 THal_Vp_GetSource_1_000
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0
+CPU_COMM_CALL_OK component=24efc7c9 elapsed_us=74538 nret=1 ret0=00000000
+
+Second read-only RPC while host GPU output was enabled, about 4 seconds later:
+MATCH 0x24efc7c9 THal_Vp_GetSource_1_000
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0
+CPU_COMM_CALL_OK component=24efc7c9 elapsed_us=58432 nret=1 ret0=00000000
+
+The 12-second SCP/host trial exited 0; its source and cleanup logs are in
+live-getsource-trial/.
+
+Interpretation: the exact board-B firmware's handler at 0x8b14b524 returns
+zero unconditionally. Disassembly at 0x8b14b5b0 is `move $v0, $zero`, followed
+by `jr $ra`. These RPC results confirm CPU_COMM responsiveness only. They do
+not report the private current-source field; see
+docs/reference/cpu-comm-call-table.md, "SetSource(1) closed".
