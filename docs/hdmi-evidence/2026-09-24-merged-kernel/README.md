@@ -28,9 +28,21 @@ The rebuilt HDMI power and EDID clock modules loaded together, held both
 domains active and the EDID clock at 24 MHz, and unloaded cleanly.
 
 `tools/check-repo.sh` passed after refreshing the generated register index.
-The board currently runs this merged image from the one-time boot. Its boot
-FAT still contains the preceding default FIT (SHA256
-`af3493288c4f0543be588e5fee7be968fd91150204c4e6c20246c1b3e1a06c2d`),
-confirmed by a read-only mount. A normal reboot would return to that image
-until the backed-up and read-back-verified default update is authorized and
-performed.
+The owner then explicitly authorized making this merged image the default.
+The first install attempt stopped before touching the boot FIT because the
+128 MiB media-data staging partition was full. Retrying the same installer
+with its supported `STAGE_DIR=/root/h713-kernel-fits` setting used the root
+filesystem, which had enough space for both staging and backup. The installer
+saved the previous default FIT at
+`/root/h713-kernel-fits/replaced-20260924-020237.fit` and verified the new
+FAT copy by read-back before rebooting.
+
+The normal boot after installation again ran Linux 6.18.38 #1 built September
+24 01:45:24 PDT. SSH returned, Cedrus was loaded and named `/dev/video0`,
+TVCAP was on, and the checked log had no Oops, call trace, or panic. A
+read-only mount confirmed the default boot FIT SHA256 is now
+`dee568ab30d33566b228e94f126c686afa9eafc83f6eb355a8dfca392777af80`.
+The backup matches the former default SHA256
+`af3493288c4f0543be588e5fee7be968fd91150204c4e6c20246c1b3e1a06c2d`.
+Subsequent normal boots now use the merged newer-kernel HDMI codebase; the
+previous FIT remains available for recovery.

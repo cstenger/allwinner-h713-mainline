@@ -244,3 +244,6 @@ The isolated HDMI branch now includes the newer video-decode branch through
 boot with Cedrus, AFBD, TVCAP retention, SSH, and HDMI power/EDID module
 load-unload checks. Future HDMI trials can use that single kernel codebase;
 see [the merged-kernel validation](hdmi-evidence/2026-09-24-merged-kernel/README.md).
+The owner approved installing that validated FIT as the default, and the
+normal boot plus on-disk checksum check passed. The prior FIT is backed up
+on the board's root filesystem.
