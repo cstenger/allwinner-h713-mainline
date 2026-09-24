@@ -18,6 +18,15 @@ buffer also carries the 2-bit side plane and the two together are **bit-exact
 10 bit** (verified 2026-09-23, three vectors, all planes); the gap is a V4L2
 fourcc, not the hardware. See [the 10-bit findings](hevc-10bit-findings.md).
 
+**Four codecs decode bit-exactly on the VE**, each with its own gate:
+H.264 (`va-decode-test.sh`, 5/5), HEVC incl. Main10 (`hevc-decode-test.sh`,
+14/14), MPEG-2 (`mpeg2-decode-test.sh`, 6/6) and VP8 (`vp8-decode-test.sh`,
+6/6 — all four VP8 profiles, i.e. every reconstruction/loop-filter pair the
+engine implements). **Three of the four are reachable through VA-API; VP8 is
+not.** The shim has no VP8 backend and neither does upstream
+libva-v4l2-request — VP8 reaches the hardware only via GStreamer's
+`v4l2slvp8dec`, straight to the kernel.
+
 Scaled surfaces reach the panel: the VA driver and mpv negotiate, carry and
 display a hardware-scaled picture with the coded padding cropped, and seeks no
 longer drop hardware decoding. HEVC and Main10 are confirmed on the panel too.
