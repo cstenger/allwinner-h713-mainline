@@ -132,7 +132,7 @@ every one was found the hard way.
 | --- | --- | --- | --- | --- |
 | `0x06800800` | MIPS HDMI receiver wrapper byte window | — | static | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
 | `0x06840000` | MIPS HDMI per-port state window<br>Four-entry table in board-B display.bin at 0x8b1f7b98 contains this physical base for all ports; the MIPS byte accessor adds its aperture. ARM access safety is not established. | — | static | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
-| `0x0684037a` | MIPS HDMI per-port status bits<br>Board-B display.bin routine 0x8b13eff0 reads this byte through the MIPS-only accessor, masks its low nibble, and extracts one bit indexed by the port argument. The bit's physical meaning is not yet established. Do not read this address directly from ARM. | — | static | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
+| `0x0684037a` | MIPS HDMI per-port status bits<br>Board-B display.bin routine 0x8b13eff0 reads this byte through the MIPS-only accessor, masks its low nibble, and extracts one bit indexed by the port argument. The read-only HDMI_GetPortStatus RPC returns the same nibble. It returned 0x2 both with the GPU disconnected and while transmitting 640x480. With TVFE held, toggling the EDID-clock/reset hold made bit 1 follow 0, 1, 0. It is not a video-lock indication; the physical bit meanings remain unproved. Do not read this address directly from ARM. | — | hardware | [hdmi-register-map-pointer-trace.md](hdmi-register-map-pointer-trace.md) |
 
 ## Addresses mentioned in 3+ documents but not yet catalogued
 

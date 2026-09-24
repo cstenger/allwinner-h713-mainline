@@ -82,6 +82,28 @@ verified the same trace with intact canaries. The UART evidence is in
 MIPS-side source selection, while receiver lock and captured frames remain
 unproven.
 
+On the updated merged 6.18.38 default kernel, CPU_COMM adopted the already
+running MIPS firmware and its read-only `HDMI_GetPortStatus` RPC completed.
+The query reads the firmware-owned per-port nibble at physical `0x0684037a`;
+it accepts no pointer or input argument. It returned `0` before receiver
+holds, then `0x2` with only TVFE and the EDID clock held, while the GPU was
+still disconnected. One 15-second SCP HPD/EDID window missed detection. An
+identical repeat connected the GPU at 2.18 seconds, delivered the known
+128-byte EDID, and enabled 640x480 at 2.46 seconds. Five read-only MIPS
+queries during the enabled interval all returned `0x2`; it remained `0x2`
+after HPD restoration and disconnect. With TVFE still on, unloading the
+EDID-clock module changed the result to `0`; reloading changed it to `0x2`;
+unloading again restored `0`. The module changes clock enable and reset
+deassertion together, so the bit tracks that combined hold. It does not prove
+cable presence or video lock. Both windows reported `peripheral_restored=1`, `restored=1`, and
+`edid_mismatch=0`; DDC pins were released. The target stayed responsive on
+SSH, CPU_COMM, and the MIPS shell with the merged kernel and Cedrus decoder.
+Evidence is in the two `h713-hdmi-trial-20260924T1935*Z` directories. The
+TVFE-only hold and CPU_COMM module remain loaded for this
+session; neither TVCAP nor receiver clocks were explicitly held by the
+diagnostic module, and no HDMI frame was captured. The EDID-clock module was
+unloaded after the control, returning the clock/reset to its previous state.
+
 The older [`hdmi-in.md`](../../hdmi-in.md) HDMI map is contradicted by the
 board-B firmware census and [`registers.yaml`](../../re/registers.yaml):
 `0x05000000` is display composition, `0x05040000` is a picture-quality tap,

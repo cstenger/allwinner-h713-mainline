@@ -115,6 +115,45 @@ PHY details, and receiver lock registers remain unidentified.
 The exact instruction excerpt is in
 [`hdmi-wrapper-disassembly.txt`](hdmi-evidence/2026-09-24-hdmi1-signal/hdmi-wrapper-disassembly.txt).
 
+### Firmware-owned port-status query
+
+The registered `THal_Vp_HDMI_GetPortStatus` CPU_COMM routine
+(`0xcbf83247`) has a safer query path than raw ARM MMIO. Its adapter at
+`0x8b10ad20` passes a one-byte stack output to `0x8b1492d8`, then returns
+`nret=1` with the zero-extended byte in `ret[0]`; the RPC itself takes **no
+input parameters or caller-supplied pointer**. The HAL resolves HDMI device
+3 and calls its vtable slot `+0x118`. The board-B `THDMIRx` implementation
+(`0x8b130d08` -> `0x8b134b28`) calls the function pointer at `0x8b22f058`
+and stores its byte result. That pointer is `0x8b13fe7c` both in the exact
+firmware image and in live MIPS DRAM after Linux boot. Its entire body reads
+physical `0x0684037a` with the firmware's MIPS-only `lbu` accessor, masks
+the low four bits, and returns. This establishes that the named query exposes
+the same per-port bitfield identified above, without any caller-provided
+address or register write. The low-bit meanings and the receiver's video-lock
+state still require live evidence; a nonzero nibble alone will not prove
+captured pixels.
+
+On the merged default 6.18.38 kernel, the previously validated CPU_COMM
+module adopted the live MIPS shared region without restarting the core. One
+`THal_Vp_HDMI_GetPortStatus_1_000` call returned `nret=1, ret[0]=0` with the
+GPU connector disconnected, before the TVFE and EDID-clock holds. After
+enabling the TVFE-only hold and 24 MHz EDID clock, the same query returned
+`0x2` while the GPU still reported disconnected. A bounded SCP HPD/EDID
+window initially missed GPU detection; an identical repeat made the GPU read
+the expected 128-byte EDID and enable 640x480 video. Five status queries
+while the connector was connected and enabled all returned `0x2`, as did
+queries before and after the window. Thus bit 1 can be present without active
+video and cannot be treated as a lock indicator. Releasing the EDID-clock
+module while leaving TVFE powered made the result fall to `0`; reloading the
+module made it `0x2` again, and a second release returned it to `0`. The
+module enables the 24 MHz clock and deasserts its reset together, so this
+control identifies dependence on that combined EDID-clock/reset hold, not
+which of its two actions causes the bit. It does not establish cable/5 V
+presence or video lock. Both windows reported intact
+SCP/DDC restoration, and CPU_COMM and the MIPS shell remained responsive.
+The exact source-side transitions and RPC results are in the two
+`h713-hdmi-trial-20260924T1935*Z` evidence directories.
+
 ## Dispatcher-target probe
 
 The next guarded U-Boot trace is built offline in
