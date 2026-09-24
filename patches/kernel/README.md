@@ -194,3 +194,29 @@ Reasoning and reopen conditions in
 **0121** supplies a supported HEVC SPS default and moves bit-depth/format
 changes from TRY to the control commit callback. Cedrus compliance is now
 **49/49, zero warnings**. See [the control validation record](../../docs/reference/cedrus-controls-2026-09-17/README.md).
+
+## Retired: display-side scaling (2026-09-23)
+
+Six patches left `series` — **0098, 0103, 0105, 0106, 0108, 0111** — and the
+series is 85 entries. They gave the video plane the proc upscaler at
+`0x05180000`, so a decoded picture smaller than the panel could be magnified
+onto it. That was stage 2 of the composite route (VE power-of-two down to
+960x544, proc back up to 1280x720) and **0120 superseded it**: the VE's
+polyphase scaler produces arbitrary even sizes, so the decoder lands on
+1280x720 exactly and there is nothing left for the display to scale.
+
+The retirement is not merely tidying. Nothing in the shipping stack could still
+reach that path — mpv's `vo_drm` refuses any source size that differs from the
+mode, `vd_lavc` only ever asks the decoder to shrink, and 0106 required a
+panel-sized framebuffer, which a sub-panel decode does not produce. The plane
+is back to one framebuffer geometry and one source rectangle.
+
+What it costs is the *latent* ability to upscale with no GPU — 480p on this
+720p panel — because the VE scales down only. That is the reopen condition;
+the six are a chain and come back together. Each carries a header saying so,
+and the full argument is in
+[the retirement handoff](../../docs/handoff-2026-09-23-retire-display-scaling.md).
+
+The afbd DT node drops back to three `reg` ranges, and the driver is built in
+(`CONFIG_DRM_SUN50I_H713_AFBD=y`), so deploying this needs a FIT flash and a
+cold boot — a module swap cannot carry it.

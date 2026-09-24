@@ -1,5 +1,37 @@
 drm: h713-afbd: advertise the real video pitch
 
+*** OUT OF patches/kernel/series SINCE 2026-09-23: SUPERSEDED BY THE VE SCALER.
+***
+*** This patch is one of six that let the display magnify a decoded picture
+*** smaller than the panel (VE power-of-two scale-down to 960x544, then the
+*** proc block at 0x05180000 back up to 1280x720). Patch 0120 replaced that
+*** route: the VE's polyphase scaler produces arbitrary even sizes from 1x to
+*** 4x per axis, so the decoder lands on exactly 1280x720 and the display has
+*** nothing left to scale. The retired six are 0098, 0103, 0105, 0106, 0108
+*** and 0111; they are a chain and only come back together.
+***
+*** Nothing in the shipping stack could still reach this path. mpv's vo_drm
+*** refuses any configuration whose displayed source size differs from the
+*** mode (patches/mpv/0003), and vd_lavc only ever asks the decoder to SHRINK
+*** (patches/mpv/0004), so a sub-panel picture never reaches the plane at all.
+***
+*** REOPEN CONDITION: content SMALLER than the panel, magnified with no GPU --
+*** 480p on this 720p panel. The VE cannot upscale, so that is the one job
+*** this hardware block could still do. It would also need a producer that
+*** writes the small picture into a panel-sized canvas (cedrus patch 0107
+*** already separates COMPOSE from the capture canvas, so the kernel half
+*** exists). Restore all six to `series` together; they were hardware-clean
+*** when they were dropped, not broken.
+***
+*** See docs/handoff-2026-09-23-retire-display-scaling.md.
+***
+*** THIS ONE is not itself a scaler patch -- it puts the framebuffer pitch
+*** rather than the visible width in the VideoInfo descriptor. It is retired
+*** with the rest because pitch and visible width can only differ when the
+*** picture is smaller than the panel, and because its context depends on
+*** 0098.
+***
+
 The VideoInfo descriptor has a stride field separate from its visible width.
 Populate it from the framebuffer pitch.  This matters when a smaller decoded
 picture is held in the panel-width layout accepted by the display fetch path:

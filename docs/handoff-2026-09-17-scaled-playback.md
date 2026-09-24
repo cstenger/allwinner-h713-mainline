@@ -201,7 +201,9 @@ that scans out through the descriptor.
   geometry back out of the export descriptor. `hwdec=vaapi-copy` and
   `hwdownload` cannot, and now fail rather than read past the buffer.
 - Display-side scaling patches 0098/0103/0106/0108/0111 are still in the kernel
-  series and were not touched.
+  series and were not touched. **No longer true as of 2026-09-23:** those five
+  and 0105 were retired from `series` — see
+  [the retirement handoff](handoff-2026-09-23-retire-display-scaling.md).
 
 ## Next work
 

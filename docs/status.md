@@ -4,9 +4,9 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-09-17._
+_Last updated: 2026-09-23._
 
-## Current video decoder state — 2026-09-17
+## Current video decoder state — 2026-09-23
 
 H.264 and HEVC now use the VE+0xf00 polyphase scaler, with arbitrary even NV12
 CAPTURE dimensions from 1×–4× downscale per axis via S_FMT or COMPOSE. Rotation
@@ -18,12 +18,32 @@ buffer also carries the 2-bit side plane and the two together are **bit-exact
 10 bit** (verified 2026-09-23, three vectors, all planes); the gap is a V4L2
 fourcc, not the hardware. See [the 10-bit findings](hevc-10bit-findings.md).
 
-Next: negotiate and propagate scaled surfaces through the VA/FFmpeg/mpv/KMS
-playback path, resolve coded padding/crop, and validate panel output before
-retiring display-side scaling. This session's validation was headless; it does
-not establish a completed arbitrary-ratio player/display pipeline.
-See [the current handoff](handoff-2026-09-17-shared-scaler.md) and
+Scaled surfaces reach the panel: the VA driver and mpv negotiate, carry and
+display a hardware-scaled picture with the coded padding cropped, and seeks no
+longer drop hardware decoding. HEVC and Main10 are confirmed on the panel too.
+See [the scaled-playback handoff](handoff-2026-09-17-scaled-playback.md),
+[the shared-scaler handoff](handoff-2026-09-17-shared-scaler.md) and
 [the 4:2:2 assessment](reference/chroma-422-assessment-2026-09-17.md).
+
+**Display-side scaling is retired (2026-09-23).** With the VE landing on
+1280x720 exactly, the proc upscaler at `0x05180000` had no producer left, so
+patches 0098/0103/0105/0106/0108/0111 left `series` (85 entries now) and the
+video plane accepts one source rectangle again — the full panel. What that
+gives up is upscaling *without* a GPU, which nothing in the stack could reach
+anyway; the reopen condition and the evidence are in
+[the retirement handoff](handoff-2026-09-23-retire-display-scaling.md).
+
+**Hardware-validated the same day.** Cold-booted on the new FIT: 1080p H.264,
+HEVC, Main10 and a 720p file all scanned out operator-confirmed, with the
+`video-0` plane holding crtc-0 and a *changing* NV12 1280x720 framebuffer —
+the VE landing on the panel size exactly, no display-side stage. The headless
+gates were the control and were unaffected: 5/5 H.264, 14/14 HEVC, 6/6 MPEG-2,
+zero IOMMU faults, zero failed atomic commits.
+
+Next: split the upstreamable pieces (the generic SPS/TRY fix, the H713 scaler
+routing, the `vo_drm` PRIME scanout feature, and downstream negotiation policy
+are four separate submissions), and a V4L2 fourcc for the 8+2 layout so a
+client can reach the 10-bit samples that are already exact.
 
 ## Historical video investigation — 2026-09-12
 

@@ -42,11 +42,15 @@
 
 /*
  * The PANEL is always 1280x720; that is the destination rectangle and it does
- * not move. The SOURCE is a runtime size, because the point of this test is
- * now a framebuffer SMALLER than the panel: the VE's decode-time scale-down
- * produces 960x544, and the proc upscaler at 0x05180000 magnifies it back.
- * Before this it was hardcoded to the panel size, so a genuine 960x544 buffer
- * had never been scanned out.
+ * not move. The SOURCE was a runtime size while the display could magnify a
+ * smaller framebuffer -- the VE's decode-time scale-down produced 960x544 and
+ * the proc upscaler at 0x05180000 took it back up.
+ *
+ * THAT ROUTE IS RETIRED (2026-09-23). The VE's polyphase scaler decodes
+ * straight to 1280x720, so the kernel's video plane accepts one framebuffer
+ * geometry and one source rectangle again -- the full panel. SRC= is kept only
+ * to refuse with an explanation; see the retired kernel patches 0098, 0103,
+ * 0105, 0106, 0108, 0111 and docs/handoff-2026-09-23-retire-display-scaling.md.
  */
 #define PANEL_W 1280u
 #define PANEL_H 720u
@@ -615,26 +619,21 @@ int main(int argc, char **argv)
 	}
 
 	/*
-	 * SRC=WxH selects a source smaller than the panel, which the display
-	 * pipeline then magnifies. Both axes must be multiples of 16 -- the
-	 * fetcher counts 16x16 blocks and the driver rejects anything else --
-	 * and neither may exceed the panel, because the proc block upscales
-	 * only and physically cannot shrink.
+	 * SRC=WxH used to select a source smaller than the panel for the
+	 * display to magnify. The kernel no longer has that path, so refuse
+	 * here rather than let the atomic commit fail with a bare EINVAL that
+	 * names nothing.
 	 */
 	if (getenv("SRC")) {
-		unsigned int w, h;
-
-		if (sscanf(getenv("SRC"), "%ux%u", &w, &h) != 2 ||
-		    !w || !h || w % 16 || h % 16 ||
-		    w > PANEL_W || h > PANEL_H) {
-			fprintf(stderr,
-				"invalid SRC=%s (want WxH, multiples of 16, "
-				"no larger than %ux%u)\n",
-				getenv("SRC"), PANEL_W, PANEL_H);
-			return 2;
-		}
-		src_w = w;
-		src_h = h;
+		fprintf(stderr,
+			"SRC=%s: display-side scaling was retired 2026-09-23. "
+			"The video plane takes one source rectangle, the full "
+			"%ux%u panel; the VE scaler produces that size at "
+			"decode time. To magnify a smaller framebuffer again, "
+			"restore kernel patches 0098/0103/0105/0106/0108/0111 "
+			"to patches/kernel/series.\n",
+			getenv("SRC"), PANEL_W, PANEL_H);
+		return 2;
 	}
 
 	map_len = (SCANOUT_SIZE + 4095u) & ~4095u;
