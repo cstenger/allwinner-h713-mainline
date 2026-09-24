@@ -1,0 +1,27 @@
+h713_disp commcall eaf13de5 chan=0 pid=8b8f275c 3
+H713 comm: FreeCall @+0x026b8  rd=0 wr=20 cap=21 isz=4 base=4e302778
+H713 comm: slot 0 @0x4e302820 (index 0, expect 0x4e302820)
+H713 comm: published index 0, comp_id 0xeaf13de5, 1 param(s), chan=0x0 pid=0x8b8f275c (key 0xb8f275c0, channel slot 0)
+H713 comm: msgbox BGR 00010001, version 00020000 (expect 00020000), fifo count 0
+H713 comm: doorbell 0x00000000 rung + IRQ pulsed; fifo count now 0
+H713 comm: MIPS drained the FIFO after 0 ms
+H713 comm: firmware accepted the message after 0 ms (state bit 2 cleared)
+H713 comm: <- msgbox 0x00000002 (CALL_ACK) after 0 ms
+H713 comm: CALL_ACK metadata index=20 session=00000001 state=04
+H713 comm: CALL_ACK publication consumed
+H713 comm: <- msgbox 0x00000001 (RETURN) after 0 ms
+H713 comm: reply after 1 ms, slot 0
+  session=00000001 comp_id=eaf13de5 nret=0
+H713 comm: ReturnCmd queued slot 0 (rd=0 wr=0 -> 1)
+H713 comm: RETURN_ACK metadata session=00000001 wait=00000000:8b253e7c
+H713 comm: RETURN_ACK publication consumed by interrupt handler after 1 ms
+H713 comm: MIPS sender did not complete RETURN after 1000 ms
+H713 comm trace: stage=0x0000 (no instrumented stage reached)
+H713 comm trace: CALL=0x0000 (no instrumented stage reached), HISR queue send=ffffffff
+H713 comm trace: RETURN_ACK=0x0000 (no instrumented stage reached)
+H713 VP-init trace: stage=0x0000 (not entered)
+H713 source trace: callback=0x5102 (source callback queue send returned), worker=0x5203 (source worker completed transition), event=0 new=1 old=0 queue=00000000 (success)
+H713 source adapter: stage=0x0000 requested=4294967295
+H713 frame trace: stage=0x6103 (source commit and AFBD dirty writes completed), dirty=ffffffff mode=00000002 ctrl=03000010 commit=00000001 dirty-latch=00000001
+H713 comm: preserving the unreconciled ReturnCmd and FreeReturn state
+=>

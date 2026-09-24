@@ -1,0 +1,33 @@
+h713_disp commdev
+H713 comm: reader self-test @0x8b1227b4 -> 03e00008 24020001 (expect 03e00008 24020001) OK
+H713 comm: pcpu_comm_dev = 0x8b254410 (via 0x8b22efe4)
+H713 comm: channel table at 0x8b2544b8 (ARM 0x4b2544b8), 16 slots x 48 bytes
+  [ 0] key=b8f275c0  chan=0000 pid=8b8f275c  +00=00000000 +04=00000000 sem=8b9146ac  <== LIVE
+       sem@8b9146ac: 8b9146ac 8b9146ac 8b9146ac 8b9146ac 00000000 8b9146c4
+                  ffffffff 8b9146c4 8b9146c4 00000001 8b9146d8 ffffffff
+  [ 1] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [ 2] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [ 3] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [ 4] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [ 5] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [ 6] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [ 7] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [ 8] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [ 9] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [10] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [11] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [12] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [13] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [14] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+  [15] key=ffffffff  chan=0000 pid=00000000  +00=00000000 +04=00000000 sem=00000000
+H713 comm: 1 of 16 channel slot(s) live (0xffffffff = free)
+H713 comm: retry a CALL with 'commcall <id> chan=<chan> pid=<pid>' using a LIVE row above; all values hex
+=> h713_disp commtrace
+H713 comm trace: stage=0x0000 (no instrumented stage reached)
+H713 comm trace: CALL=0x0000 (no instrumented stage reached), HISR queue send=ffffffff
+H713 comm trace: RETURN_ACK=0x0000 (no instrumented stage reached)
+H713 VP-init trace: stage=0x0000 (not entered)
+H713 source trace: callback=0x5102 (source callback queue send returned), worker=0x5203 (source worker completed transition), event=0 new=1 old=0 queue=00000000 (success)
+H713 source adapter: stage=0x0000 requested=4294967295
+H713 frame trace: stage=0x6103 (source commit and AFBD dirty writes completed), dirty=ffffffff mode=00000002 ctrl=03000010 commit=00000001 dirty-latch=00000001
+=>

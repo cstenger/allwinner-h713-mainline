@@ -37,6 +37,16 @@ PATCHED_WORDS = (
     (0x4b12052c, 0x0ec40190),
 )
 
+ADAPTER_PATCHED_WORDS = (
+    (0x4b10a228, 0x0ec40400),
+    (0x4b101000, 0x3c18ad98),
+    (0x4b101008, 0xaf190058),
+    (0x4b10100c, 0xaf04005c),
+    (0x4b10a230, 0x0ac40408),
+    (0x4b101020, 0x3c1aad98),
+    (0x4b101028, 0xaf5b0058),
+)
+
 MAILBOX = 0x4d980000
 MAGIC = 0x434f4d4d
 CANARY = 0x43414e31
@@ -89,6 +99,16 @@ def main():
         if actual != expected:
             raise SystemExit(f"comm-trace patch mismatch at {address:#x}: "
                              f"{actual:#010x} != {expected:#010x}")
+    adapter_site = mem.u32(0x4b10a228)
+    adapter_enabled = adapter_site == ADAPTER_PATCHED_WORDS[0][1]
+    if adapter_enabled:
+        for address, expected in ADAPTER_PATCHED_WORDS:
+            actual = mem.u32(address)
+            if actual != expected:
+                raise SystemExit(f"adapter patch mismatch at {address:#x}: "
+                                 f"{actual:#010x} != {expected:#010x}")
+    elif adapter_site != 0x0ec52d12:
+        raise SystemExit(f"unrecognized adapter call patch {adapter_site:#010x}")
     if mem.u32(MAILBOX + 4) != MAGIC:
         raise SystemExit("comm-trace magic absent; refusing to interpret mailbox")
     if (mem.u32(MAILBOX + 0x80) != CANARY or
@@ -99,12 +119,17 @@ def main():
 
     def sample():
         guards = (mem.u32(MAILBOX + 0x80), mem.u32(MAILBOX + 0xffc))
+        adapter = ({
+            "adapter": f"{mem.u32(MAILBOX + 0x58):04x}",
+            "requested": mem.u32(MAILBOX + 0x5c),
+        } if adapter_enabled else {})
         if args.source_only:
             callback, event, new, old, source_queue, worker, vp_init = (
                 mem.u32(MAILBOX + off) for off in
                 (0x20, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38))
             return {
                 "guards": f"{guards[0]:08x}/{guards[1]:08x}",
+                **adapter,
                 "callback": f"{callback:04x}:{SOURCE_STAGES.get(callback, 'other')}",
                 "worker": f"{worker:04x}:{SOURCE_STAGES.get(worker, 'other')}",
                 "event": event, "new": new, "old": old,
@@ -118,6 +143,7 @@ def main():
          worker, vp_init, frame, dirty, mode, control, commit, dirty_latch) = values
         return {
             "guards": f"{guards[0]:08x}/{guards[1]:08x}",
+            **adapter,
             "comm": f"{comm:04x}:{COMM_STAGES.get(comm, 'other')}",
             "call": f"{call:04x}:{CALL_STAGES.get(call, 'other')}",
             "ack": f"{ack:04x}:{ACK_STAGES.get(ack, 'other')}",

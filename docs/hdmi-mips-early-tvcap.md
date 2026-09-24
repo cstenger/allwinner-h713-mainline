@@ -378,3 +378,29 @@ and private current source is needed before repeating this call.
 Evidence: [`hdmi-evidence/2026-09-23-uboot-source3`](hdmi-evidence/2026-09-23-uboot-source3/).
 
 Evidence: [`hdmi-evidence/2026-09-23-edid-live-source2`](hdmi-evidence/2026-09-23-edid-live-source2/).
+
+## Source-3 RETURN timeout was an ARM cache-visibility error
+
+A guarded SetSource-adapter trace was added to the U-Boot MIPS test. In the
+first source-3 run, U-Boot's immediate trace snapshots again showed zeros and
+its 1-second wait left the return rings unreconciled. Linux later verified the
+patch words and canaries and read adapter `0x5302` with requested source 3,
+CPU_COMM sender `0xc013`, CALL `0xe011`, and RETURN_ACK `0xf003`. A pre-call
+U-Boot trace read had cached the page; the MIPS writes it through an uncached
+alias. U-Boot was polling its stale cached zero, so that timeout is not reliable
+evidence of a stalled MIPS sender.
+
+U-Boot now invalidates the trace lines before snapshots and each completion
+poll. On a later cold-booted board, deliberately taking the same pre-call trace
+snapshot followed by one source-3 call produced a completed RETURN in the first
+poll. U-Boot consumed and recycled the return slot. Its immediate trace showed
+the same `0xc013`/`0xe011`/`0xf003` stages and adapter `0x5302`, requested
+source 3. This proves the RPC reached and returned from the SetSource adapter.
+The source callback and worker markers still reflected startup source 1, while
+event/new fields had been overwritten by a different event, so source 3 was
+not proven active. HDMI receiver lock and capture frames remain unobserved.
+
+The board was normally rebooted into the owner's installed September 23
+video-decode kernel, which exposes Cedrus `/dev/video0`. The diagnostic kernel
+and modules were not installed. Evidence:
+[`hdmi-evidence/2026-09-24-cache-coherent-source3`](hdmi-evidence/2026-09-24-cache-coherent-source3/).

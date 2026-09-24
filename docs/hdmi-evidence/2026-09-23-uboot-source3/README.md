@@ -39,5 +39,10 @@ was observed. The next experiment should instrument the MIPS sender's
 RETURN_ACK/wakeup path and private source state before another source-3 call.
 The installed kernel, SPL, and persistent U-Boot environment were unchanged.
 
+Later evidence changed the interpretation of the 1-second timeout: U-Boot had
+read a cached trace-page zero. A cache-coherent repeat observed the sender
+complete and verified that the SetSource adapter received source 3. See
+[`2026-09-24-cache-coherent-source3`](../2026-09-24-cache-coherent-source3/).
+
 The adjacent files are whitespace-normalized copies of the UART and SSH
 captures in ignored `build/`.
