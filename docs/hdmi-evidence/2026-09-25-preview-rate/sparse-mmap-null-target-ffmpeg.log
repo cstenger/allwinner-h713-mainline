@@ -1,0 +1,37 @@
+Input #0, video4linux2,v4l2, from '/dev/video1':
+  Duration: N/A, start: 3260.308030, bitrate: 294912 kb/s
+  Stream #0:0: Video: rawvideo, nv16, 640x480, 294912 kb/s, 60 fps, 60 tbr, 1000k tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> rawvideo (native))
+Output #0, rawvideo, to 'pipe:':
+  Metadata:
+    encoder         : Lavf61.7.103
+  Stream #0:0: Video: rawvideo (BGR[0] / 0x524742), bgr0(pc, gbr/unknown/unknown, progressive), 1280x720, q=2-31, 1327104 kb/s, 60 fps, 60 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 rawvideo
+frame=    4 fps=0.0 q=-0.0 size=   10800KiB time=00:00:00.06 bitrate=1327097.4kbits/s speed=0.131x
+frame=   10 fps=9.9 q=-0.0 size=   32400KiB time=00:00:00.21 bitrate=1225017.2kbits/s speed=0.215x
+[rawvideo @ 0xaaaab0ecfdc0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13 >= 13
+frame=   16 fps= 11 q=-0.0 size=   54000KiB time=00:00:00.31 bitrate=1396950.1kbits/s speed=0.21x
+frame=   22 fps= 11 q=-0.0 size=   75600KiB time=00:00:00.46 bitrate=1327103.1kbits/s speed=0.232x
+[rawvideo @ 0xaaaab0ecfdc0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 31 >= 31
+frame=   28 fps= 11 q=-0.0 size=   97200KiB time=00:00:00.58 bitrate=1365022.0kbits/s speed=0.232x
+[rawvideo @ 0xaaaab0ecfdc0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 37 >= 37
+frame=   35 fps= 12 q=-0.0 size=  122400KiB time=00:00:00.75 bitrate=1336934.4kbits/s speed=0.249x
+frame=   41 fps= 12 q=-0.0 size=  144000KiB time=00:00:00.91 bitrate=1286888.3kbits/s speed=0.261x
+frame=   47 fps= 12 q=-0.0 size=  165600KiB time=00:00:01.33 bitrate=1017446.7kbits/s speed=0.332x
+frame=   53 fps= 12 q=-0.0 size=  187200KiB time=00:00:01.83 bitrate=836477.8kbits/s speed=0.406x
+frame=   59 fps= 12 q=-0.0 size=  208800KiB time=00:00:02.31 bitrate=738340.7kbits/s speed=0.462x
+frame=   65 fps= 12 q=-0.0 size=  230400KiB time=00:00:02.80 bitrate=674084.6kbits/s speed=0.508x
+frame=   71 fps= 12 q=-0.0 size=  252000KiB time=00:00:03.31 bitrate=622427.3kbits/s speed=0.551x
+frame=   77 fps= 12 q=-0.0 size=  273600KiB time=00:00:03.76 bitrate=595043.6kbits/s speed=0.578x
+frame=   83 fps= 12 q=-0.0 size=  295200KiB time=00:00:04.26 bitrate=566784.0kbits/s speed=0.608x
+frame=   89 fps= 12 q=-0.0 size=  316800KiB time=00:00:04.78 bitrate=542555.9kbits/s speed=0.636x
+frame=   96 fps= 12 q=-0.0 size=  342000KiB time=00:00:05.35 bitrate=523675.5kbits/s speed=0.667x
+frame=  102 fps= 12 q=-0.0 size=  363600KiB time=00:00:05.86 bitrate=507717.8kbits/s speed=0.689x
+frame=  108 fps= 12 q=-0.0 size=  385200KiB time=00:00:06.38 bitrate=494343.4kbits/s speed=0.708x
+frame=  114 fps= 12 q=-0.0 size=  406800KiB time=00:00:06.86 bitrate=485316.3kbits/s speed=0.721x
+[out#0/rawvideo @ 0xaaaab0ecfcf0] video:432000KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000000%
+frame=  120 fps= 12 q=-0.0 Lsize=  432000KiB time=00:00:07.31 bitrate=483682.5kbits/s speed=0.74x
+[video4linux2,v4l2 @ 0xaaaab0ecdda0] Some buffers are still owned by the caller on close.
+ioctl(VIDIOC_QBUF): Bad file descriptor

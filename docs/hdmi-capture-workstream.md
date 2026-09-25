@@ -4,8 +4,14 @@
 showed the moving HDMI test pattern on the projector panel. The V4L2 bridge
 captured 640×480 NV16, and userspace converted it to a centered 960×720 image
 on the 1280×720 primary DRM plane. Two runs restored the console scanout and
-HDMI HPD state. Full frame verification and software conversion currently
-deliver about 10–11 frames/s; motion quality, latency, and reliable ring
+HDMI HPD state. A subsequent [throughput comparison](hdmi-evidence/2026-09-25-preview-rate/README.md)
+implicated scaling directly from mapped DMA-contiguous V4L2 buffers in the
+original 10–11 frames/s preview. Reading complete frames into ordinary userspace
+memory before conversion raised panel-feed throughput to about 16 frames/s
+with full verification, or about 31 frames/s with experimental sparse checks
+feeding a 20 frames/s player. A 120-frame moving-pattern capture through
+buffered `read()` had no band-ID or stripe-position mismatches. Optical quality
+of the faster panel run, latency, and reliable ring
 handoff remain open. The projector writes 640×480 NV16 HDMI
 input into a three-pair Y/UV ring in ARM-readable reserved DRAM. The plane
 bases and full-frame geometry are [verified against the source

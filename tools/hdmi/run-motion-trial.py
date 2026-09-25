@@ -33,6 +33,7 @@ def run(argv, timeout=30):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--mode", choices=("sparse", "full"), default="sparse")
+    ap.add_argument("--input-api", choices=("mmap", "read"), default="mmap")
     ap.add_argument("--frames", type=int, default=120)
     args = ap.parse_args()
     if not 1 <= args.frames <= 120:
@@ -60,7 +61,7 @@ def main():
     time.sleep(2)
     (output / "irq-idle-b.log").write_text(run(SSH + ["cat /proc/interrupts"]))
 
-    remote_file = f"/tmp/{output.name}-{args.mode}.nv16"
+    remote_file = f"/tmp/{output.name}-{args.mode}-{args.input_api}.nv16"
     player = None
     trial = None
     try:
@@ -97,18 +98,25 @@ def main():
                     raise RuntimeError("mpv exited before capture; inspect mpv.log")
                 (output / "irq-video-a.log").write_text(
                     run(SSH + ["cat /proc/interrupts"]))
-                command = ("timeout -s KILL 12s ffmpeg -nostdin -y "
-                           "-hide_banner -loglevel info -f v4l2 "
-                           "-input_format nv16 -video_size 640x480 "
-                           "-i /dev/video1 -fps_mode passthrough "
-                           f"-frames:v {args.frames} -pix_fmt nv16 "
-                           f"-f rawvideo {remote_file}")
+                if args.input_api == "read":
+                    command = ("timeout -s KILL 12s dd if=/dev/video1 "
+                               f"of={remote_file} bs=614400 count={args.frames} "
+                               "iflag=fullblock status=none")
+                else:
+                    command = ("timeout -s KILL 12s ffmpeg -nostdin -y "
+                               "-hide_banner -loglevel info -f v4l2 "
+                               "-input_format nv16 -video_size 640x480 "
+                               "-i /dev/video1 -fps_mode passthrough "
+                               f"-frames:v {args.frames} -pix_fmt nv16 "
+                               f"-f rawvideo {remote_file}")
                 capture = subprocess.run(SSH + [command], text=True,
                                          capture_output=True, timeout=20)
-                (output / "ffmpeg.log").write_text(
+                capture_log = ("read.log" if args.input_api == "read"
+                               else "ffmpeg.log")
+                (output / capture_log).write_text(
                     capture.stdout + capture.stderr)
                 if capture.returncode:
-                    raise RuntimeError("FFmpeg capture failed; inspect ffmpeg.log")
+                    raise RuntimeError(f"capture failed; inspect {capture_log}")
                 (output / "irq-video-b.log").write_text(
                     run(SSH + ["cat /proc/interrupts"]))
                 print("Captured motion stream", flush=True)

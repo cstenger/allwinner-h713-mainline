@@ -6,6 +6,7 @@ No display-driver or capture-register changes are made. The existing EDID/HPD
 trial restores its temporary source connection after 30 seconds.
 """
 
+import argparse
 import json
 import re
 import subprocess
@@ -55,6 +56,16 @@ def primary_fb(state):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--display-fps", type=int, choices=(10, 20), default=10,
+                        help="pace DRM playback at 10 or 20 frames/s (default: 10)")
+    parser.add_argument("--sparse-verify", action="store_true",
+                        help="experimental sparse ring checks for this trial; restore full mode afterward")
+    parser.add_argument("--sink", choices=("drm", "null"), default="drm",
+                        help="show the panel or discard converted frames to profile the pipe")
+    parser.add_argument("--input-api", choices=("mmap", "read"), default="mmap",
+                        help="FFmpeg V4L2 mmap or buffered V4L2 read into the conversion pipe")
+    args = parser.parse_args()
     output = Path("/tmp") / ("h713-panel-preview-" +
                             datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     output.mkdir()
@@ -86,22 +97,39 @@ def main():
     trial = None
     preview = None
     preview_result = None
+    sparse_switched = False
     stamp = output.name
     ffmpeg_log = f"/tmp/{stamp}-ffmpeg.log"
+    dd_log = f"/tmp/{stamp}-dd.log"
     mpv_log = f"/tmp/{stamp}-mpv.log"
-    command = (
-        "timeout -s INT 21s bash -o pipefail -c '"
-        "ffmpeg -nostdin -hide_banner -loglevel info "
-        "-f v4l2 -input_format nv16 -video_size 640x480 -i /dev/video1 "
-        "-fps_mode passthrough -frames:v 120 "
-        "-vf scale=960:720:flags=fast_bilinear,pad=1280:720:160:0:black,format=bgr0 "
-        f"-pix_fmt bgr0 -f rawvideo - 2>{ffmpeg_log} | "
+    sink = (
         f"/usr/local/bin/mpv --no-config --no-audio --no-terminal --log-file={mpv_log} "
         "--vo=drm --drm-device=/dev/dri/card0 "
         "--demuxer=rawvideo --demuxer-rawvideo-w=1280 "
-        "--demuxer-rawvideo-h=720 --demuxer-rawvideo-fps=10 "
-        "--demuxer-rawvideo-mp-format=bgr0 -'")
+        f"--demuxer-rawvideo-h=720 --demuxer-rawvideo-fps={args.display_fps} "
+        "--demuxer-rawvideo-mp-format=bgr0 -"
+        if args.sink == "drm" else "cat >/dev/null")
+    if args.input_api == "mmap":
+        source = "-f v4l2 -input_format nv16 -video_size 640x480 -i /dev/video1 "
+        reader = ""
+    else:
+        source = ("-f rawvideo -pixel_format nv16 -video_size 640x480 "
+                  "-framerate 60 -i - ")
+        reader = ("dd if=/dev/video1 bs=614400 count=120 iflag=fullblock "
+                  f"status=none 2>{dd_log} | ")
+    command = (
+        "timeout -s INT 21s bash -o pipefail -c '"
+        f"{reader}ffmpeg -nostdin -hide_banner -loglevel info {source}"
+        "-fps_mode passthrough -frames:v 120 "
+        "-vf scale=960:720:flags=fast_bilinear,pad=1280:720:160:0:black,format=bgr0 "
+        f"-pix_fmt bgr0 -f rawvideo - 2>{ffmpeg_log} | {sink}'")
     try:
+        if args.sparse_verify:
+            remote("test -f /tmp/h713-hdmi-v4l2.ko")
+            sparse_switched = True
+            remote("rmmod h713_hdmi_v4l2 && "
+                   "insmod /tmp/h713-hdmi-v4l2.ko verify_full=0 && "
+                   "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/verify_full)\" = N")
         with (output / "trial.log").open("w") as trial_log:
             trial = subprocess.Popen(
                 [sys.executable, str(HERE / "run-detection-trial.py"),
@@ -130,8 +158,8 @@ def main():
                 preview = subprocess.Popen(SSH + [command],
                                            stdout=subprocess.PIPE,
                                            stderr=subprocess.PIPE, text=True)
-                time.sleep(2)
-                if preview.poll() is not None:
+                time.sleep(2 if args.sink == "drm" else .2)
+                if args.sink == "drm" and preview.poll() is not None:
                     raise RuntimeError("panel preview exited early")
                 kms_during = remote("cat /sys/kernel/debug/dri/0/state")
                 (output / "kms-during.log").write_text(kms_during)
@@ -145,10 +173,15 @@ def main():
             trial.wait(timeout=50)
             if trial.returncode:
                 raise RuntimeError("EDID/HPD trial failed")
-        (output / "target-ffmpeg.log").write_text(
-            remote(f"cat {ffmpeg_log}"))
-        (output / "target-mpv.log").write_text(
-            remote(f"cat {mpv_log}"))
+        ffmpeg_text = remote(f"cat {ffmpeg_log}")
+        (output / "target-ffmpeg.log").write_text(ffmpeg_text)
+        if not re.search(r"frame=\s*120\b", ffmpeg_text):
+            raise RuntimeError("conversion did not produce all 120 frames")
+        if args.input_api == "read":
+            (output / "target-dd.log").write_text(remote(f"cat {dd_log}"))
+        if args.sink == "drm":
+            (output / "target-mpv.log").write_text(
+                remote(f"cat {mpv_log}"))
         kms_after = remote("cat /sys/kernel/debug/dri/0/state")
         (output / "kms-after.log").write_text(kms_after)
         scanout_after = remote("/root/mmio-rw r 5600178")
@@ -160,9 +193,13 @@ def main():
             raise RuntimeError("EDID/HPD restoration was not verified")
         fb_before, fb_during, fb_after = map(
             primary_fb, (kms_before, kms_during, kms_after))
-        if fb_during == fb_before or fb_after != fb_before:
+        if fb_after != fb_before or (args.sink == "drm" and fb_during == fb_before):
             raise RuntimeError("KMS primary framebuffer did not switch and restore")
         summary = {"preview_exit": preview_result,
+                   "display_fps": args.display_fps,
+                   "sparse_verify": args.sparse_verify,
+                   "sink": args.sink,
+                   "input_api": args.input_api,
                    "source_restored": True,
                    "primary_fb_before": fb_before,
                    "primary_fb_during": fb_during,
@@ -172,7 +209,8 @@ def main():
                    "scanout_after": scanout_after.strip(),
                    "kms_state_during": str(output / "kms-during.log"),
                    "ffmpeg_log": str(output / "target-ffmpeg.log"),
-                   "mpv_log": str(output / "target-mpv.log")}
+                   "mpv_log": str(output / "target-mpv.log")
+                   if args.sink == "drm" else None}
         (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         print(json.dumps(summary), flush=True)
     finally:
@@ -181,6 +219,21 @@ def main():
             stop(preview)
         if trial is not None and trial.poll() is None:
             trial.wait(timeout=50)
+        if sparse_switched:
+            restore = subprocess.run(
+                SSH + ["if test -d /sys/module/h713_hdmi_v4l2; "
+                       "then rmmod h713_hdmi_v4l2; fi; "
+                       "insmod /tmp/h713-hdmi-v4l2.ko verify_full=1 && "
+                       "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/verify_full)\" = Y"],
+                text=True, capture_output=True, timeout=20)
+            (output / "restore.log").write_text(
+                restore.stdout + restore.stderr +
+                f"exit={restore.returncode}\n")
+            if restore.returncode:
+                print("Full verification restore failed; inspect restore.log",
+                      file=sys.stderr)
+                if sys.exc_info()[0] is None:
+                    raise RuntimeError("full verification was not restored")
 
 
 if __name__ == "__main__":
