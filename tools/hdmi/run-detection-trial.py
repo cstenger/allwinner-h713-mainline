@@ -9,7 +9,7 @@ receiver clocks. --probe-port-status samples the
 firmware's read-only HDMI status RPC before, during, and after the window.
 --probe-port-cache samples the guarded MIPS DRAM-only TMDS count cache.
 """
-import argparse,hashlib,json,subprocess,time
+import argparse,hashlib,json,subprocess,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
 SSH=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','ServerAliveInterval=2','-o','ServerAliveCountMax=1','root@192.168.4.1']
@@ -21,6 +21,10 @@ parser.add_argument('--run-hdmird',action='store_true',help='Run the fixed SetSo
 parser.add_argument('--tvfe-only',action='store_true',help='Require TVFE and EDID clock only; no explicit TVCAP/receiver-clock hold')
 parser.add_argument('--probe-port-status',action='store_true',help='Sample the read-only MIPS HDMI port-status RPC during the signal window')
 parser.add_argument('--probe-port-cache',action='store_true',help='Sample the guarded MIPS HDMI port cache in DRAM during the signal window')
+parser.add_argument('--probe-framebuf',action='store_true',help='Hash reserved framebuf pages before/during/after video (read-only)')
+parser.add_argument('--dump-candidate',action='store_true',help='Save two read-only 320 KiB candidate memory samples during video')
+parser.add_argument('--probe-ring',action='store_true',help='Sample CRC changes across six candidate luma slots during video')
+parser.add_argument('--dump-nv16',action='store_true',help='Save one read-only Y/UV candidate pair and color PNG during video')
 parser.add_argument('--read-detn',action='store_true',help='Also run the optional DETN register snapshot when the GPU connects')
 args=parser.parse_args()
 if args.tvfe_only and args.read_detn:
@@ -41,6 +45,14 @@ if args.probe_port_status:
  check_cmd+=' && test -d /sys/module/hy310_cpu_comm && test -x /root/cpu-comm-probe'
 if args.probe_port_cache:
  check_cmd+=' && test -f /root/hdmi-safe-trace/read-mips-port-cache.py'
+if args.probe_framebuf:
+ check_cmd+=' && test -f /root/hdmi-safe-trace/read-framebuf-pages.py'
+if args.dump_candidate:
+ check_cmd+=' && test -f /root/hdmi-safe-trace/read-candidate-frame.py'
+if args.probe_ring:
+ check_cmd+=' && test -f /root/hdmi-safe-trace/read-framebuf-ring.py'
+if args.dump_nv16:
+ check_cmd+=' && test -f /root/hdmi-safe-trace/read-nv16-pair.py'
 if args.read_detn:
  check_cmd+=' && test -f /tmp/h713-check-power.sh'
 if args.run_hdmird:
@@ -51,6 +63,11 @@ command=f'set -e; if test -d /sys/module/h713_scp_probe; then rmmod h713_scp_pro
 records=[];last=None;receiver=None;daemon=None;start=time.monotonic();ended=None;result=1
 port_status=[];last_port_sample=-10
 port_cache=[];last_cache_sample=-10
+framebuf=[];last_frame_sample=-10
+candidate_times=[]
+ring_done=False
+nv16_done=False
+nv16_failed=False
 def probe_port_status(phase):
  r=ssh('timeout 5s /root/cpu-comm-probe THal_Vp_HDMI_GetPortStatus_1_000')
  item={'seconds':round(time.monotonic()-start,3),'phase':phase,'returncode':r.returncode,'output':r.stdout+r.stderr}
@@ -61,10 +78,60 @@ def probe_port_cache(phase):
  item={'seconds':round(time.monotonic()-start,3),'phase':phase,'returncode':r.returncode,'output':r.stdout+r.stderr}
  port_cache.append(item);print(json.dumps({'port_cache':item}),flush=True)
  return r.returncode==0
+def probe_framebuf(phase):
+ r=ssh('python3 /root/hdmi-safe-trace/read-framebuf-pages.py')
+ if r.returncode:
+  print(json.dumps({'framebuf_error':r.stderr,'phase':phase}),flush=True)
+  return False
+ try: snapshot=json.loads(r.stdout)
+ except ValueError:
+  print(json.dumps({'framebuf_error':'invalid JSON','phase':phase}),flush=True)
+  return False
+ (OUT/f'framebuf-{phase}.json').write_text(json.dumps(snapshot,separators=(',',':'))+'\n')
+ baseline=framebuf[0]['crc32'] if framebuf else snapshot['crc32']
+ changed=[i for i,(a,b) in enumerate(zip(baseline,snapshot['crc32'])) if a!=b]
+ item={'phase':phase,'seconds':round(time.monotonic()-start,3),'changed_pages':len(changed),'first_changed_pages':changed[:32]}
+ framebuf.append(snapshot)
+ print(json.dumps({'framebuf':item}),flush=True)
+ return True
+def dump_candidate():
+ r=subprocess.run(SSH+['python3 /root/hdmi-safe-trace/read-candidate-frame.py'],capture_output=True,timeout=15)
+ if r.returncode or len(r.stdout)!=0x50000:
+  print(json.dumps({'candidate_error':r.stderr.decode(errors='replace'),'bytes':len(r.stdout)}),flush=True)
+  return False
+ name=f'candidate-{len(candidate_times)+1}.bin'
+ (OUT/name).write_bytes(r.stdout)
+ png=OUT/name.replace('.bin','.png')
+ subprocess.run([sys.executable,str(Path(__file__).with_name('luma-to-png.py')),str(OUT/name),str(png)],check=True,capture_output=True)
+ candidate_times.append(round(time.monotonic()-start,3))
+ print(json.dumps({'candidate':name,'png':png.name,'seconds':candidate_times[-1],'bytes':len(r.stdout)}),flush=True)
+ return True
+def probe_ring():
+ r=ssh('python3 /root/hdmi-safe-trace/read-framebuf-ring.py')
+ if r.returncode:
+  print(json.dumps({'ring_error':r.stderr}),flush=True)
+  return False
+ data=json.loads(r.stdout)
+ (OUT/'ring.json').write_text(json.dumps(data,indent=2)+'\n')
+ changes=[sum(a['crc32'][i]!=b['crc32'][i] for a,b in zip(data['samples'],data['samples'][1:])) for i in range(6)]
+ print(json.dumps({'ring_samples':len(data['samples']),'slot_changes':changes}),flush=True)
+ return True
+def dump_nv16():
+ r=subprocess.run(SSH+['python3 /root/hdmi-safe-trace/read-nv16-pair.py --pair 0'],capture_output=True,timeout=15)
+ if r.returncode or len(r.stdout)!=2*640*480:
+  print(json.dumps({'nv16_error':r.stderr.decode(errors='replace'),'bytes':len(r.stdout)}),flush=True)
+  return False
+ raw=OUT/'candidate-nv16.bin';png=OUT/'candidate-nv16.png'
+ raw.write_bytes(r.stdout)
+ subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png)],check=True,capture_output=True)
+ print(json.dumps({'nv16':raw.name,'png':png.name,'seconds':round(time.monotonic()-start,3),'bytes':len(r.stdout)}),flush=True)
+ return True
 if args.probe_port_status and not probe_port_status('before'):
  raise SystemExit('Port-status RPC failed before the signal window; leaving HPD unchanged.')
 if args.probe_port_cache and not probe_port_cache('before'):
  raise SystemExit('MIPS port-cache probe failed before the signal window; leaving HPD unchanged.')
+if args.probe_framebuf and not probe_framebuf('before'):
+ raise SystemExit('Framebuf probe failed before the signal window; leaving HPD unchanged.')
 p=subprocess.Popen(SSH+[command],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
 try:
  while time.monotonic()-start<args.seconds+12:
@@ -80,6 +147,14 @@ try:
    probe_port_status('video-enabled');last_port_sample=time.monotonic()
   if args.probe_port_cache and s['status']=='connected' and s['enabled']=='enabled' and time.monotonic()-last_cache_sample>=2:
    probe_port_cache('video-enabled');last_cache_sample=time.monotonic()
+  if args.probe_framebuf and s['status']=='connected' and s['enabled']=='enabled' and time.monotonic()-last_frame_sample>=4:
+   probe_framebuf('video-'+str(len(framebuf)));last_frame_sample=time.monotonic()
+  if args.dump_candidate and s['status']=='connected' and s['enabled']=='enabled' and len(candidate_times)<2 and (not candidate_times or time.monotonic()-start-candidate_times[-1]>=4):
+   dump_candidate()
+  if args.probe_ring and not ring_done and s['status']=='connected' and s['enabled']=='enabled':
+   probe_ring();ring_done=True
+  if args.dump_nv16 and not nv16_done and s['status']=='connected' and s['enabled']=='enabled':
+   nv16_failed=not dump_nv16();nv16_done=True
   if args.run_hdmird and s['enabled']=='enabled' and daemon is None:
    daemon=subprocess.Popen(SSH+['timeout 18s /root/hy310-hdmird-callback --src 3 --no-socket --post-signal-timeout 6000'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   if p.poll() is not None:
@@ -110,5 +185,8 @@ finally:
  if args.probe_port_cache:
   probe_port_cache('after')
   (OUT/'port-cache.json').write_text(json.dumps(port_cache,indent=2)+'\n')
+ if args.probe_framebuf:
+  probe_framebuf('after')
  if cleanup.returncode:result=cleanup.returncode
+ if nv16_failed:result=1
 raise SystemExit(result)

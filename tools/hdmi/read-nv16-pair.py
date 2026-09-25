@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Stream one read-only 640x480 Y + interleaved UV frame candidate.
+
+The page-hash and image trials show three Y regions followed by three matching
+UV regions. This reads pair 0/3 by default; --pair 1 or 2 selects 1/4 or 2/5.
+The 614400-byte result is a candidate NV16 frame, not a synchronized capture.
+"""
+
+import argparse
+import mmap
+import os
+import sys
+
+CARVEOUT = 0x4BF41000
+SIZE = 26 * 1024 * 1024
+FIRST = 0x4C3F0000
+STEP = 0x1FF000
+PLANE = 640 * 480
+
+ap = argparse.ArgumentParser(description=__doc__)
+ap.add_argument("--pair", type=int, choices=range(3), default=0)
+args = ap.parse_args()
+
+fd = os.open("/dev/mem", os.O_RDONLY | os.O_SYNC)
+try:
+    with mmap.mmap(fd, SIZE, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ,
+                   offset=CARVEOUT) as mem:
+        y = FIRST + STEP * args.pair - CARVEOUT
+        uv = FIRST + STEP * (args.pair + 3) - CARVEOUT
+        sys.stdout.buffer.write(mem[y:y + PLANE])
+        sys.stdout.buffer.write(mem[uv:uv + PLANE])
+finally:
+    os.close(fd)
