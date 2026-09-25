@@ -29,6 +29,8 @@ and exactly 61,440,000 bytes. The [FFmpeg logs](full-100-ffmpeg.log) and
 All 100 sparse luma frames had at least 0.9998 correlation with a full-mode
 wallpaper frame outside the top menu bar. This static scene cannot establish
 that sparse mode never tears during rapid motion.
+The later [moving-pattern trial](../2026-09-25-motion-irq/README.md) checked
+120 sparse frames for agreement at three heights and found no mixed IDs.
 
 ```sh
 python3 tools/hdmi/capture-v4l2.py --frames 100 --seconds 20 --sparse-verify

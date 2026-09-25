@@ -1,0 +1,35 @@
+{
+  "firmware": "/home/chris/Projects/h713/local/mips-display/board-b-mips/display.bin",
+  "sha256": "4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce",
+  "handler_va": "0x8b186388",
+  "mips_status_register": "0xbb940100 bits 8..15",
+  "mips_mask_ack_register": "0xbb940008 bits 8..15 / low byte",
+  "arm_physical_candidates": [
+    "0x06940100",
+    "0x06940008"
+  ],
+  "entries": [
+    {
+      "name": "cap-vde",
+      "table_va": "0x8b2023f4",
+      "event_id": 2,
+      "status_bit": 0,
+      "field_28_unidentified": 1
+    },
+    {
+      "name": "cap-vs",
+      "table_va": "0x8b202420",
+      "event_id": 3,
+      "status_bit": 1,
+      "field_28_unidentified": 0
+    },
+    {
+      "name": "cap-mode_change",
+      "table_va": "0x8b20244c",
+      "event_id": 4,
+      "status_bit": 2,
+      "field_28_unidentified": 0
+    }
+  ],
+  "scope": "static candidate only; no live MMIO performed"
+}

@@ -9,8 +9,13 @@ now exposes `/dev/video1` and streams verified frames through FFmpeg or
 `v4l2-ctl`. `python3 tools/hdmi/capture-v4l2.py` automates one bounded
 HDMI1 window and saves the stream. Full-plane comparison is the default;
 the opt-in [sparse-verified mode](hdmi-evidence/2026-09-25-v4l2-rate/README.md)
-reached about 60 frames/s in one 100-frame trial. Hardware frame-completion
-signaling and independent validation under moving source content remain open.
+reached about 60 frames/s in one 100-frame trial. A
+[moving-pattern test](hdmi-evidence/2026-09-25-motion-irq/README.md) then
+checked 120 sparse frames and 60 full-comparison frames without a mixed ID
+at three heights or a misplaced motion stripe. Firmware-side `cap-vde` and
+`cap-vs` interrupt descriptors are identified statically, but their timing
+has not been correlated with ring ownership. Hardware frame-completion
+signaling remains open.
 
 **Earlier receiver timing milestone (2026-09-24):** With HDMI1 selected by the MIPS
 source worker, the merged default kernel, and a live GPU output, a guarded
