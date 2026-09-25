@@ -121,10 +121,11 @@ def dump_nv16():
  if r.returncode or len(r.stdout)!=2*640*480:
   print(json.dumps({'nv16_error':r.stderr.decode(errors='replace'),'bytes':len(r.stdout)}),flush=True)
   return False
- raw=OUT/'candidate-nv16.bin';png=OUT/'candidate-nv16.png'
+ raw=OUT/'candidate-nv16.bin';png=OUT/'candidate-nv16.png';aligned=OUT/'candidate-nv16-aligned.png'
  raw.write_bytes(r.stdout)
  subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png)],check=True,capture_output=True)
- print(json.dumps({'nv16':raw.name,'png':png.name,'seconds':round(time.monotonic()-start,3),'bytes':len(r.stdout)}),flush=True)
+ subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(aligned),'--rotate-left','384','--valid-rows','473'],check=True,capture_output=True)
+ print(json.dumps({'nv16':raw.name,'png':png.name,'aligned_png':aligned.name,'seconds':round(time.monotonic()-start,3),'bytes':len(r.stdout)}),flush=True)
  return True
 if args.probe_port_status and not probe_port_status('before'):
  raise SystemExit('Port-status RPC failed before the signal window; leaving HPD unchanged.')

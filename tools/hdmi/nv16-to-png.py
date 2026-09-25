@@ -28,29 +28,34 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("input", type=Path)
     ap.add_argument("output", type=Path)
+    ap.add_argument("--rotate-left", type=int, choices=range(WIDTH), default=0,
+                    help="rotate each row left by this many pixels (default: 0)")
+    ap.add_argument("--valid-rows", type=int, choices=range(1, HEIGHT + 1),
+                    default=HEIGHT, help="rows to write; never invent missing rows")
     args = ap.parse_args()
     raw = args.input.read_bytes()
     if len(raw) != 2 * PLANE:
         ap.error(f"expected {2 * PLANE} bytes, got {len(raw)}")
     y, uv = memoryview(raw)[:PLANE], memoryview(raw)[PLANE:]
     scanlines = bytearray()
-    for row in range(HEIGHT):
+    for row in range(args.valid_rows):
         scanlines.append(0)  # PNG filter: none
         start = row * WIDTH
-        for x in range(0, WIDTH, 2):
-            i = start + x
-            d, e = uv[i] - 128, uv[i + 1] - 128
-            for pixel in (i, i + 1):
-                c = max(0, y[pixel] - 16)
-                scanlines.extend((clip((298*c + 409*e + 128) >> 8),
-                                  clip((298*c - 100*d - 208*e + 128) >> 8),
-                                  clip((298*c + 516*d + 128) >> 8)))
+        for x in range(WIDTH):
+            src_x = (x + args.rotate_left) % WIDTH
+            i = start + src_x
+            uv_i = start + (src_x & ~1)
+            d, e = uv[uv_i] - 128, uv[uv_i + 1] - 128
+            c = max(0, y[i] - 16)
+            scanlines.extend((clip((298*c + 409*e + 128) >> 8),
+                              clip((298*c - 100*d - 208*e + 128) >> 8),
+                              clip((298*c + 516*d + 128) >> 8)))
     png = (b"\x89PNG\r\n\x1a\n"
-           + chunk(b"IHDR", struct.pack(">IIBBBBB", WIDTH, HEIGHT, 8, 2, 0, 0, 0))
+           + chunk(b"IHDR", struct.pack(">IIBBBBB", WIDTH, args.valid_rows, 8, 2, 0, 0, 0))
            + chunk(b"IDAT", zlib.compress(scanlines, 6))
            + chunk(b"IEND", b""))
     args.output.write_bytes(png)
-    print(f"{args.output}: {WIDTH}x{HEIGHT} RGB PNG ({len(png)} bytes)")
+    print(f"{args.output}: {WIDTH}x{args.valid_rows} RGB PNG ({len(png)} bytes)")
 
 
 if __name__ == "__main__":

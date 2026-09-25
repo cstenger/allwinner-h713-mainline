@@ -17,13 +17,16 @@ converter `tools/hdmi/nv16-to-png.py` produced
 [`candidate-nv16.png`](candidate-nv16.png). The color image visibly matches
 the computer's desktop, establishing that the projector's HDMI input reaches
 ARM-readable DRAM in a usable color format. The converter does not modify the
-capture data.
+capture data. The user subsequently spotted a horizontal wrap in this direct
+conversion; a simultaneous source-side screenshot and the exact 384-pixel
+row correction are documented in the [alignment follow-up](../2026-09-25-row-alignment/README.md).
 
 From the isolated HDMI worktree, `python3 tools/hdmi/capture-once.py` now
 performs the guarded source-3 preparation and saves a color PNG in one command.
 It makes at most two clean 12-second GPU-detection attempts and prints the
 output path. The one-attempt mode was exercised successfully on the live board
-after this capture, producing a second 640x480 color PNG. Preparation is
+after this capture. It now prints the aligned 640x473 PNG while retaining the
+raw buffer and direct 640x480 conversion. Preparation is
 idempotent when MIPS is already live with the guarded source-3 trace.
 
 The six-region CRC timeline in [`ring/ring.json`](ring/ring.json) sampled each
