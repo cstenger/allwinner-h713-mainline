@@ -2,6 +2,22 @@
   "firmware": "/home/chris/Projects/h713/local/mips-display/board-b-mips/display.bin",
   "sha256": "4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce",
   "handler_va": "0x8b186388",
+  "irq_descriptor": {
+    "name": "VIncap",
+    "table_index": 33,
+    "table_va": "0x8b231d58",
+    "irq_number": 20,
+    "handler_table_va": "0x8b2322bc",
+    "handler_slots": [
+      "0x8b1850c4",
+      "0x8b18574c",
+      "0x8b185dd4",
+      "0x8b186388",
+      "0x8b1867ec"
+    ]
+  },
+  "dispatcher_va": "0x8b184970",
+  "event_forwarder_va": "0x8b158188",
   "mips_status_register": "0xbb940100 bits 8..15",
   "mips_mask_ack_register": "0xbb940008 bits 8..15 / low byte",
   "arm_physical_candidates": [

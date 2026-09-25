@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decode static capture interrupt descriptors in board-B display.bin.
+"""Decode the VIncap IRQ path and capture events in board-B display.bin.
 
 This inspects firmware bytes only. It does not read the live TVCAP register
 window, whose ARM-side access has previously locked the board.
@@ -16,6 +16,10 @@ EXPECTED_SHA256 = "4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da3
 TABLE = 0x8B2023F4
 STRIDE = 0x2C
 HANDLER = 0x8B186388
+IRQ_DESCRIPTORS = 0x8B2317AC
+IRQ_STRIDE = 0x2C
+VINCAP_IRQ_INDEX = 33
+VINCAP_HANDLER_TABLE = 0x8B2322BC
 
 
 def word(image, address):
@@ -36,6 +40,15 @@ def inspect(path):
         0x8B18639C: 0x7C633A00,  # extract bits 8..15 from 0x008
         0x8B1863A0: 0x01234824,  # mask status with enabled bits
         0x8B1863C4: 0xAC460008,  # write 0x008 in acknowledge sequence
+        0x8B184990: 0x00431021,  # dispatcher indexes IRQ descriptor table
+        0x8B184998: 0x8C560028,  # descriptor's handler-table pointer
+        0x8B1849C0: 0x8EC2000C,  # handler-table slot 3 decodes events
+        0x8B1849C8: 0x0040F809,  # call decoder
+        0x8B1849EC: 0x8EC30008,  # handler-table slot 2 processes events
+        0x8B1849F0: 0x0060F809,  # call event processor
+        0x8B184A4C: 0x0EC56062,  # forward decoded event
+        0x8B1867FC: 0xAC820000,  # capture event table at output offset 0
+        0x8B186824: 0xAC820010,  # third event descriptor
     }
     for address, value in expected.items():
         if word(image, address) != value:
@@ -53,8 +66,35 @@ def inspect(path):
     if [entry["name"] for entry in entries] != [
             "cap-vde", "cap-vs", "cap-mode_change"]:
         raise ValueError("capture descriptor table layout changed")
+    descriptor_va = IRQ_DESCRIPTORS + VINCAP_IRQ_INDEX * IRQ_STRIDE
+    descriptor_off = descriptor_va - BASE
+    descriptor_name = image[descriptor_off:descriptor_off + 20].split(
+        b"\0", 1)[0].decode("ascii")
+    if descriptor_name != "VIncap":
+        raise ValueError(f"unexpected IRQ descriptor: {descriptor_name}")
+    if word(image, descriptor_va + 0x20) != 0x14:
+        raise ValueError("unexpected VIncap IRQ number")
+    if word(image, descriptor_va + 0x28) != VINCAP_HANDLER_TABLE:
+        raise ValueError("unexpected VIncap handler table")
+    handlers = [word(image, VINCAP_HANDLER_TABLE + i * 4)
+                for i in range(5)]
+    if handlers[3] != HANDLER or handlers[4] != 0x8B1867EC:
+        raise ValueError("unexpected VIncap decoder or event-table builder")
+    vin_cap_1_va = IRQ_DESCRIPTORS + 26 * IRQ_STRIDE
+    if image[vin_cap_1_va - BASE:vin_cap_1_va - BASE + 8] != b"VIncap_1":
+        raise ValueError("unexpected VIncap_1 descriptor")
+    if word(image, vin_cap_1_va + 0x28) != 0:
+        raise ValueError("VIncap_1 unexpectedly has a handler table")
     return {"firmware": str(path), "sha256": digest,
             "handler_va": f"{HANDLER:#010x}",
+            "irq_descriptor": {"name": descriptor_name,
+                               "table_index": VINCAP_IRQ_INDEX,
+                               "table_va": f"{descriptor_va:#010x}",
+                               "irq_number": 0x14,
+                               "handler_table_va": f"{VINCAP_HANDLER_TABLE:#010x}",
+                               "handler_slots": [f"{va:#010x}" for va in handlers]},
+            "dispatcher_va": "0x8b184970",
+            "event_forwarder_va": "0x8b158188",
             "mips_status_register": "0xbb940100 bits 8..15",
             "mips_mask_ack_register": "0xbb940008 bits 8..15 / low byte",
             "arm_physical_candidates": ["0x06940100", "0x06940008"],

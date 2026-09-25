@@ -53,11 +53,20 @@ The capture handler at MIPS VA `0x8b186388` reads `0xbb940100` and
 `0xbb940008`, extracts bits 8–15, masks the status, then writes the low byte
 of `0xbb940008` in an acknowledge sequence. These map to candidate ARM
 physical addresses `0x06940100` and `0x06940008`; see the
-[disassembly](cap-irq-handler-disasm.log). The firmware's dispatch table
-points to this handler at `0x8b2322c8`. **No live reads or writes of those
-capture registers were made.** Earlier ARM accesses to the capture domain
-have locked the board, and the static labels alone do not establish whether
-`cap-vde` or `cap-vs` means a particular ring pair is complete.
+[disassembly](cap-irq-handler-disasm.log). A follow-up static trace identifies
+the outer `VIncap` IRQ descriptor at `0x8b231d58` (MIPS IRQ `0x14`). Its
+handler-table pointer is `0x8b2322bc`; slot 3 is the capture decoder above,
+and slot 4 builds the three named event descriptors. The generic dispatcher
+at `0x8b184970` calls that decoder, processes the returned event IDs, and
+forwards them through `0x8b158188`. This proves the candidate bits are in the
+firmware's interrupt path, rather than unrelated capture register fields.
+
+The path carries an event ID but no ring-pair index or finished Y/UV buffer
+address. The separate `VIncap_1` descriptor has no handler-table pointer in
+this image. Its runtime role remains unknown. **No live reads or writes of
+the capture registers were made.** Earlier ARM accesses to the capture
+domain have locked the board, and the static labels alone do not establish
+whether `cap-vde` or `cap-vs` means a particular ring pair is complete.
 
 The next hardware-backed step is to correlate these MIPS events with the
 observed 0→1→2 ring turnover using an isolated, read-only firmware-side

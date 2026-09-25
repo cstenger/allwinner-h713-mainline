@@ -13,9 +13,10 @@ reached about 60 frames/s in one 100-frame trial. A
 [moving-pattern test](hdmi-evidence/2026-09-25-motion-irq/README.md) then
 checked 120 sparse frames and 60 full-comparison frames without a mixed ID
 at three heights or a misplaced motion stripe. Firmware-side `cap-vde` and
-`cap-vs` interrupt descriptors are identified statically, but their timing
-has not been correlated with ring ownership. Hardware frame-completion
-signaling remains open.
+`cap-vs` events are now traced through the `VIncap` MIPS IRQ decoder and
+generic event dispatcher, but that path exposes no completed ring-pair index.
+Their timing has not been correlated with ring ownership. Hardware
+frame-completion signaling remains open.
 
 **Earlier receiver timing milestone (2026-09-24):** With HDMI1 selected by the MIPS
 source worker, the merged default kernel, and a live GPU output, a guarded
