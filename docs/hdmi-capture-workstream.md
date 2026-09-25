@@ -1,6 +1,12 @@
 # HDMI capture workstream
 
-**Current milestone (2026-09-25):** The projector writes 640×480 NV16 HDMI
+**Current milestone (2026-09-25):** A [bounded live preview](hdmi-evidence/2026-09-25-panel-preview/README.md)
+showed the moving HDMI test pattern on the projector panel. The V4L2 bridge
+captured 640×480 NV16, and userspace converted it to a centered 960×720 image
+on the 1280×720 primary DRM plane. Two runs restored the console scanout and
+HDMI HPD state. Full frame verification and software conversion currently
+deliver about 10–11 frames/s; motion quality, latency, and reliable ring
+handoff remain open. The projector writes 640×480 NV16 HDMI
 input into a three-pair Y/UV ring in ARM-readable reserved DRAM. The plane
 bases and full-frame geometry are [verified against the source
 screenshot](hdmi-evidence/2026-09-25-corrected-frame/README.md). The

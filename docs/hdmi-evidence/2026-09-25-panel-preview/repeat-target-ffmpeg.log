@@ -1,0 +1,37 @@
+Input #0, video4linux2,v4l2, from '/dev/video1':
+  Duration: N/A, start: 591.520595, bitrate: 294912 kb/s
+  Stream #0:0: Video: rawvideo, nv16, 640x480, 294912 kb/s, 60 fps, 60 tbr, 1000k tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> rawvideo (native))
+Output #0, rawvideo, to 'pipe:':
+  Metadata:
+    encoder         : Lavf61.7.103
+  Stream #0:0: Video: rawvideo (BGR[0] / 0x524742), bgr0(pc, gbr/unknown/unknown, progressive), 1280x720, q=2-31, 1327104 kb/s, 60 fps, 60 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 rawvideo
+frame=    4 fps=0.0 q=-0.0 size=   10800KiB time=00:00:00.18 bitrate=482584.2kbits/s speed=0.364x
+frame=    9 fps=8.9 q=-0.0 size=   28800KiB time=00:00:00.48 bitrate=488130.5kbits/s speed=0.479x
+frame=   13 fps=8.6 q=-0.0 size=   43200KiB time=00:00:00.75 bitrate=471859.2kbits/s speed=0.497x
+frame=   18 fps=8.9 q=-0.0 size=   61200KiB time=00:00:01.03 bitrate=485178.0kbits/s speed=0.514x
+frame=   23 fps=9.2 q=-0.0 size=   79200KiB time=00:00:01.36 bitrate=474736.3kbits/s speed=0.544x
+frame=   28 fps=9.3 q=-0.0 size=   97200KiB time=00:00:01.75 bitrate=455007.1kbits/s speed=0.58x
+frame=   34 fps=9.7 q=-0.0 size=  118800KiB time=00:00:02.06 bitrate=470907.8kbits/s speed=0.588x
+frame=   39 fps=9.7 q=-0.0 size=  136800KiB time=00:00:02.36 bitrate=473520.6kbits/s speed=0.589x
+frame=   45 fps= 10 q=-0.0 size=  158400KiB time=00:00:02.81 bitrate=460690.9kbits/s speed=0.624x
+frame=   50 fps= 10 q=-0.0 size=  176400KiB time=00:00:03.11 bitrate=463658.4kbits/s speed=0.621x
+frame=   55 fps= 10 q=-0.0 size=  194400KiB time=00:00:03.53 bitrate=450714.6kbits/s speed=0.64x
+frame=   61 fps= 10 q=-0.0 size=  216000KiB time=00:00:03.86 bitrate=457622.0kbits/s speed=0.643x
+frame=   66 fps= 10 q=-0.0 size=  234000KiB time=00:00:04.16 bitrate=460062.7kbits/s speed=0.638x
+frame=   71 fps= 10 q=-0.0 size=  252000KiB time=00:00:04.55 bitrate=453710.8kbits/s speed=0.647x
+frame=   77 fps= 10 q=-0.0 size=  273600KiB time=00:00:04.96 bitrate=451274.7kbits/s speed=0.66x
+frame=   82 fps= 10 q=-0.0 size=  291600KiB time=00:00:05.25 bitrate=455007.1kbits/s speed=0.654x
+frame=   88 fps= 10 q=-0.0 size=  313200KiB time=00:00:05.68 bitrate=451448.9kbits/s speed=0.666x
+frame=   93 fps= 10 q=-0.0 size=  331200KiB time=00:00:06.06 bitrate=447229.2kbits/s speed=0.672x
+frame=   99 fps= 10 q=-0.0 size=  352800KiB time=00:00:06.55 bitrate=441242.4kbits/s speed=0.687x
+frame=  104 fps= 10 q=-0.0 size=  370800KiB time=00:00:07.03 bitrate=431885.4kbits/s speed=0.701x
+frame=  110 fps= 10 q=-0.0 size=  392400KiB time=00:00:07.55 bitrate=425767.0kbits/s speed=0.717x
+frame=  115 fps= 10 q=-0.0 size=  410400KiB time=00:00:08.00 bitrate=420249.6kbits/s speed=0.725x
+[out#0/rawvideo @ 0xaaaaab6efcf0] video:432000KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000000%
+frame=  120 fps= 11 q=-0.0 Lsize=  432000KiB time=00:00:08.48 bitrate=417164.3kbits/s speed=0.747x
+[video4linux2,v4l2 @ 0xaaaaab6edda0] Some buffers are still owned by the caller on close.
+ioctl(VIDIOC_QBUF): Bad file descriptor
