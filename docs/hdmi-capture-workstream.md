@@ -1,5 +1,8 @@
 # HDMI capture workstream
 
+The ordered path from the current prototype to a native 1280×720@60,
+low-latency monitor is in the [HDMI production roadmap](hdmi-production-roadmap.md).
+
 **Current milestone (2026-09-25):** A [bounded live preview](hdmi-evidence/2026-09-25-panel-preview/README.md)
 showed the moving HDMI test pattern on the projector panel. The V4L2 bridge
 captured 640×480 NV16, and userspace converted it to a centered 960×720 image
