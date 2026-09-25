@@ -27,12 +27,17 @@ parser.add_argument('--probe-ring',action='store_true',help='Sample CRC changes 
 parser.add_argument('--dump-nv16',action='store_true',help='Save one read-only Y/UV candidate pair and color PNG during video')
 parser.add_argument('--dump-coherent',action='store_true',help='Save double-checked completed NV16 frames and color PNGs during video')
 parser.add_argument('--coherent-count',type=int,choices=range(1,9),default=1,help='Verified frames to save with --dump-coherent (default: 1)')
+parser.add_argument('--v4l2-frames',type=int,default=0,help='Capture this many NV16 frames from /dev/video1 with FFmpeg (1–120)')
 parser.add_argument('--read-detn',action='store_true',help='Also run the optional DETN register snapshot when the GPU connects')
 args=parser.parse_args()
 if args.tvfe_only and args.read_detn:
  parser.error('--read-detn requires the full receiver power hold')
 if args.coherent_count>1 and not args.dump_coherent:
  parser.error('--coherent-count requires --dump-coherent')
+if args.v4l2_frames and args.seconds<10:
+ parser.error('--v4l2-frames requires a signal window of at least 10 seconds')
+if not 0<=args.v4l2_frames<=120:
+ parser.error('--v4l2-frames must be between 0 and 120')
 OUT=Path('/tmp')/('h713-hdmi-trial-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'))
 OUT.mkdir();print(f'Logs: {OUT}',flush=True)
 def ssh(command):return subprocess.run(SSH+[command],text=True,capture_output=True,timeout=15)
@@ -59,6 +64,8 @@ if args.dump_nv16:
  check_cmd+=' && test -f /root/hdmi-safe-trace/read-nv16-pair.py'
 if args.dump_coherent:
  check_cmd+=' && test -f /root/hdmi-safe-trace/read-coherent-frame.py'
+if args.v4l2_frames:
+ check_cmd+=' && test -d /sys/module/h713_hdmi_v4l2 && test "$(cat /sys/class/video4linux/video1/name)" = "H713 HDMI1 ring capture" && command -v ffmpeg >/dev/null'
 if args.read_detn:
  check_cmd+=' && test -f /tmp/h713-check-power.sh'
 if args.run_hdmird:
@@ -76,6 +83,8 @@ nv16_done=False
 nv16_failed=False
 coherent_done=False
 coherent_failed=False
+v4l2_proc=None
+v4l2_remote=f'/tmp/{OUT.name}-v4l2.nv16'
 def probe_port_status(phase):
  r=ssh('timeout 5s /root/cpu-comm-probe THal_Vp_HDMI_GetPortStatus_1_000')
  item={'seconds':round(time.monotonic()-start,3),'phase':phase,'returncode':r.returncode,'output':r.stdout+r.stderr}
@@ -185,6 +194,12 @@ try:
    nv16_failed=not dump_nv16();nv16_done=True
   if args.dump_coherent and not coherent_done and s['status']=='connected' and s['enabled']=='enabled':
    coherent_failed=not dump_coherent();coherent_done=True
+  if args.v4l2_frames and s['status']=='connected' and s['enabled']=='enabled' and v4l2_proc is None:
+   v4l2_cmd=(f'timeout -s KILL {args.seconds}s ffmpeg -nostdin -y -hide_banner -loglevel info '
+             f'-f v4l2 -input_format nv16 -video_size 640x480 -i /dev/video1 '
+             f'-fps_mode passthrough -frames:v {args.v4l2_frames} -pix_fmt nv16 '
+             f'-f rawvideo {v4l2_remote}')
+   v4l2_proc=subprocess.Popen(SSH+[v4l2_cmd],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   if args.run_hdmird and s['enabled']=='enabled' and daemon is None:
    daemon=subprocess.Popen(SSH+['timeout 18s /root/hy310-hdmird-callback --src 3 --no-socket --post-signal-timeout 6000'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   if p.poll() is not None:
@@ -208,6 +223,36 @@ finally:
   if receiver.returncode:result=receiver.returncode
  cleanup=ssh('if test -d /sys/module/h713_scp_probe; then rmmod h713_scp_probe; fi; if test -d /sys/module/h713_ddc_pins; then rmmod h713_ddc_pins; fi; /root/mmio-rw r 7000400; /root/mmio-rw r 7022004')
  (OUT/'cleanup.log').write_text(cleanup.stdout+cleanup.stderr);print(cleanup.stdout+cleanup.stderr,flush=True)
+ if args.v4l2_frames:
+  if v4l2_proc is None:
+   print(json.dumps({'v4l2_error':'GPU never enabled output'}),flush=True)
+   result=1
+  else:
+   try:
+    a,b=v4l2_proc.communicate(timeout=5)
+   except subprocess.TimeoutExpired:
+    v4l2_proc.kill();a,b=v4l2_proc.communicate()
+   (OUT/'v4l2-ffmpeg.log').write_text(a+b)
+   if v4l2_proc.returncode:
+    print(json.dumps({'v4l2_error':f'FFmpeg exited {v4l2_proc.returncode}','log_tail':(a+b)[-800:]}),flush=True)
+    result=1
+   else:
+    local=OUT/'v4l2.nv16'
+    copied=subprocess.run(['scp','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5',f'root@192.168.4.1:{v4l2_remote}',str(local)],capture_output=True,timeout=45)
+    if copied.returncode or local.stat().st_size!=args.v4l2_frames*2*640*480:
+     print(json.dumps({'v4l2_error':copied.stderr.decode(errors='replace'),'bytes':local.stat().st_size if local.exists() else 0}),flush=True)
+     result=1
+    else:
+     for index in (0,args.v4l2_frames-1):
+      with local.open('rb') as stream:
+       stream.seek(index*2*640*480)
+       frame=stream.read(2*640*480)
+      raw=OUT/f'v4l2-frame-{index+1:03d}.bin';png=OUT/f'v4l2-frame-{index+1:03d}.png'
+      raw.write_bytes(frame)
+      subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png)],check=True,capture_output=True)
+     summary=subprocess.run([sys.executable,str(Path(__file__).with_name('summarize-v4l2-stream.py')),str(local)],text=True,capture_output=True,check=True)
+     (OUT/'v4l2-summary.json').write_text(summary.stdout)
+     print(json.dumps({'v4l2_stream':str(local),'frames':args.v4l2_frames,'first_png':'v4l2-frame-001.png','last_png':f'v4l2-frame-{args.v4l2_frames:03d}.png'}),flush=True)
  (OUT/'source.json').write_text(json.dumps(records,indent=2)+'\n')
  if args.probe_port_status:
   probe_port_status('after')
