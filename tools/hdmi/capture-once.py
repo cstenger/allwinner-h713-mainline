@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a cold-booted board and save one HDMI color snapshot.
+"""Prepare a cold-booted board and save one verified HDMI color snapshot.
 
 This combines the guarded source-3 setup with a bounded SCP/EDID signal
 window. It retries one clean GPU-detection miss by default, never a failed
@@ -33,11 +33,11 @@ def main():
     print(run("prepare-source3.py", timeout=150).strip(), flush=True)
     for attempt in range(1, args.attempts + 1):
         out = run("run-detection-trial.py", "--seconds", str(args.seconds),
-                  "--dump-nv16", timeout=args.seconds + 45)
+                  "--dump-coherent", timeout=args.seconds + 45)
         match = re.search(r"^Logs: (.+)$", out, re.MULTILINE)
         if not match:
             raise RuntimeError("trial returned without an output directory")
-        png = Path(match.group(1)) / "candidate-nv16.png"
+        png = Path(match.group(1)) / "coherent-nv16.png"
         if png.is_file():
             print(f"HDMI color snapshot: {png}", flush=True)
             return

@@ -1,5 +1,15 @@
 # HDMI capture workstream
 
+**Current milestone (2026-09-25):** The projector writes 640×480 NV16 HDMI
+input into a three-pair Y/UV ring in ARM-readable reserved DRAM. The plane
+bases and full-frame geometry are [verified against the source
+screenshot](hdmi-evidence/2026-09-25-corrected-frame/README.md). A read-only
+3 ms probe measured the pair order 0 → 1 → 2, and a double-copy reader now
+returns [software-validated completed frames](hdmi-evidence/2026-09-25-coherent-ring/README.md).
+`python3 tools/hdmi/capture-once.py` uses that reader by default. Hardware
+frame-completion signaling, a V4L2 capture node, and continuous streaming
+remain open.
+
 **Receiver timing milestone (2026-09-24):** With HDMI1 selected by the MIPS
 source worker, the merged default kernel, and a live GPU output, a guarded
 read-only MIPS DRAM probe observed port 1 advance to state 5 and record

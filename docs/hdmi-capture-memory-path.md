@@ -1,5 +1,10 @@
 # HDMI receiver to memory: static lead after live timing detection
 
+**Later result (2026-09-25):** Read-only DRAM sampling found complete 640×480
+NV16 frames in a [three-pair ring](hdmi-evidence/2026-09-25-coherent-ring/README.md).
+The static investigation below remains a record of the earlier search for the
+producer's register controls and hardware completion signal.
+
 The 2026-09-24 signal trial proved that the board-B MIPS receiver records a
 live 640x480 HDMI1 timing. It has not located an ARM-visible pixel buffer.
 This note records the next static lead without making any hardware accesses.

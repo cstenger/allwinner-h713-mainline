@@ -25,10 +25,14 @@ parser.add_argument('--probe-framebuf',action='store_true',help='Hash reserved f
 parser.add_argument('--dump-candidate',action='store_true',help='Save two read-only 320 KiB candidate memory samples during video')
 parser.add_argument('--probe-ring',action='store_true',help='Sample CRC changes across six candidate luma slots during video')
 parser.add_argument('--dump-nv16',action='store_true',help='Save one read-only Y/UV candidate pair and color PNG during video')
+parser.add_argument('--dump-coherent',action='store_true',help='Save double-checked completed NV16 frames and color PNGs during video')
+parser.add_argument('--coherent-count',type=int,choices=range(1,9),default=1,help='Verified frames to save with --dump-coherent (default: 1)')
 parser.add_argument('--read-detn',action='store_true',help='Also run the optional DETN register snapshot when the GPU connects')
 args=parser.parse_args()
 if args.tvfe_only and args.read_detn:
  parser.error('--read-detn requires the full receiver power hold')
+if args.coherent_count>1 and not args.dump_coherent:
+ parser.error('--coherent-count requires --dump-coherent')
 OUT=Path('/tmp')/('h713-hdmi-trial-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'))
 OUT.mkdir();print(f'Logs: {OUT}',flush=True)
 def ssh(command):return subprocess.run(SSH+[command],text=True,capture_output=True,timeout=15)
@@ -53,6 +57,8 @@ if args.probe_ring:
  check_cmd+=' && test -f /root/hdmi-safe-trace/read-framebuf-ring.py'
 if args.dump_nv16:
  check_cmd+=' && test -f /root/hdmi-safe-trace/read-nv16-pair.py'
+if args.dump_coherent:
+ check_cmd+=' && test -f /root/hdmi-safe-trace/read-coherent-frame.py'
 if args.read_detn:
  check_cmd+=' && test -f /tmp/h713-check-power.sh'
 if args.run_hdmird:
@@ -68,6 +74,8 @@ candidate_times=[]
 ring_done=False
 nv16_done=False
 nv16_failed=False
+coherent_done=False
+coherent_failed=False
 def probe_port_status(phase):
  r=ssh('timeout 5s /root/cpu-comm-probe THal_Vp_HDMI_GetPortStatus_1_000')
  item={'seconds':round(time.monotonic()-start,3),'phase':phase,'returncode':r.returncode,'output':r.stdout+r.stderr}
@@ -126,6 +134,26 @@ def dump_nv16():
  subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png)],check=True,capture_output=True)
  print(json.dumps({'nv16':raw.name,'png':png.name,'seconds':round(time.monotonic()-start,3),'bytes':len(r.stdout)}),flush=True)
  return True
+def dump_coherent():
+ r=subprocess.run(SSH+[f'python3 /root/hdmi-safe-trace/read-coherent-frame.py --timeout 8 --count {args.coherent_count}'],capture_output=True,timeout=12)
+ if r.returncode or len(r.stdout)!=args.coherent_count*2*640*480:
+  print(json.dumps({'coherent_error':r.stderr.decode(errors='replace'),'bytes':len(r.stdout)}),flush=True)
+  return False
+ try: metadata=[json.loads(line) for line in r.stderr.splitlines()]
+ except ValueError:
+  print(json.dumps({'coherent_error':'invalid frame metadata'}),flush=True)
+  return False
+ if len(metadata)!=args.coherent_count:
+  print(json.dumps({'coherent_error':'frame metadata count mismatch'}),flush=True)
+  return False
+ (OUT/'coherent.json').write_text(json.dumps(metadata,indent=2)+'\n')
+ for i,item in enumerate(metadata):
+  stem='coherent-nv16' if args.coherent_count==1 else f'coherent-{i+1:02d}-nv16'
+  raw=OUT/(stem+'.bin');png=OUT/(stem+'.png')
+  raw.write_bytes(r.stdout[i*2*640*480:(i+1)*2*640*480])
+  subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png)],check=True,capture_output=True)
+  print(json.dumps({'coherent':raw.name,'png':png.name,'metadata':item,'seconds':round(time.monotonic()-start,3)}),flush=True)
+ return True
 if args.probe_port_status and not probe_port_status('before'):
  raise SystemExit('Port-status RPC failed before the signal window; leaving HPD unchanged.')
 if args.probe_port_cache and not probe_port_cache('before'):
@@ -155,6 +183,8 @@ try:
    probe_ring();ring_done=True
   if args.dump_nv16 and not nv16_done and s['status']=='connected' and s['enabled']=='enabled':
    nv16_failed=not dump_nv16();nv16_done=True
+  if args.dump_coherent and not coherent_done and s['status']=='connected' and s['enabled']=='enabled':
+   coherent_failed=not dump_coherent();coherent_done=True
   if args.run_hdmird and s['enabled']=='enabled' and daemon is None:
    daemon=subprocess.Popen(SSH+['timeout 18s /root/hy310-hdmird-callback --src 3 --no-socket --post-signal-timeout 6000'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   if p.poll() is not None:
@@ -189,4 +219,5 @@ finally:
   probe_framebuf('after')
  if cleanup.returncode:result=cleanup.returncode
  if nv16_failed:result=1
+ if coherent_failed:result=1
 raise SystemExit(result)
