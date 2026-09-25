@@ -322,6 +322,38 @@ static int h713_enum_framesizes(struct file *file, void *priv,
 	return 0;
 }
 
+static int h713_enum_frameintervals(struct file *file, void *priv,
+				    struct v4l2_frmivalenum *f)
+{
+	if (f->index || f->pixel_format != V4L2_PIX_FMT_NV16 ||
+	    f->width != H713_WIDTH || f->height != H713_HEIGHT)
+		return -EINVAL;
+	f->type = V4L2_FRMIVAL_TYPE_DISCRETE;
+	f->discrete.numerator = 1;
+	f->discrete.denominator = 60;
+	return 0;
+}
+
+static int h713_g_parm(struct file *file, void *priv,
+		       struct v4l2_streamparm *parm)
+{
+	if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+	memset(&parm->parm.capture, 0, sizeof(parm->parm.capture));
+	parm->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
+	parm->parm.capture.timeperframe.numerator = 1;
+	parm->parm.capture.timeperframe.denominator = 60;
+	parm->parm.capture.readbuffers = 2;
+	return 0;
+}
+
+static int h713_s_parm(struct file *file, void *priv,
+		       struct v4l2_streamparm *parm)
+{
+	/* The firmware source interval is fixed; report it back to callers. */
+	return h713_g_parm(file, priv, parm);
+}
+
 static int h713_enum_input(struct file *file, void *priv,
 			   struct v4l2_input *input)
 {
@@ -370,7 +402,10 @@ static const struct v4l2_ioctl_ops h713_ioctl_ops = {
 	.vidioc_querycap = h713_querycap,
 	.vidioc_enum_fmt_vid_cap = h713_enum_fmt,
 	.vidioc_enum_framesizes = h713_enum_framesizes,
+	.vidioc_enum_frameintervals = h713_enum_frameintervals,
 	.vidioc_enum_input = h713_enum_input,
+	.vidioc_g_parm = h713_g_parm,
+	.vidioc_s_parm = h713_s_parm,
 	.vidioc_g_input = h713_g_input,
 	.vidioc_s_input = h713_s_input,
 	.vidioc_g_fmt_vid_cap = h713_g_fmt,

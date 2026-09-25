@@ -47,3 +47,15 @@ passed after adding the mode switch. Its [target](full-regression-target.log)
 and [cleanup](full-regression-cleanup.log) logs record HPD/DDC restoration.
 The board was left with `verify_full=Y`, TVCAP active, and the temporary SCP
 trial module removed.
+
+The V4L2 node now reports the measured nominal 60 Hz source interval via
+`VIDIOC_G_PARM` and `VIDIOC_ENUM_FRAMEINTERVALS`. `VIDIOC_S_PARM` returns
+the fixed actual interval when a caller requests another rate; a
+[30 fps request](fixed-interval-set.log) returned 60 fps. The
+[device report](../2026-09-25-v4l2-capture/v4l2-ctl.txt) shows 60/1 fps,
+and a [subsequent FFmpeg run](timing-ffmpeg.log) reports 60 fps and 60 tbr
+instead of guessing from startup timestamps. Its
+[30-frame output](timing-summary.json) remained complete and distinct, and
+the [cleanup log](timing-cleanup.log) records the restored pins. The actual
+rate in full verification was about 22 fps in that run; the advertised
+interval describes the input signal, not a promise to deliver every frame.

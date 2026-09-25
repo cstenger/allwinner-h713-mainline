@@ -2,7 +2,9 @@
 
 The removable `h713-hdmi-v4l2` module exposes the firmware's HDMI1 frame
 ring as `/dev/video1`. It advertises one input and one capture format:
-640×480, NV16 (Y/UV 4:2:2), 614,400 bytes per frame. See
+640×480, NV16 (Y/UV 4:2:2), 614,400 bytes per frame. It reports the
+observed 60 Hz input interval; delivery can be slower when frames fail
+software verification. See
 [`v4l2-ctl.txt`](v4l2-ctl.txt). This is a software bridge over the reserved
 DRAM frame ring, not a receiver register driver or a hardware completion IRQ.
 
