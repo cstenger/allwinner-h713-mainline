@@ -3,14 +3,16 @@
 **Current milestone (2026-09-25):** The projector writes 640×480 NV16 HDMI
 input into a three-pair Y/UV ring in ARM-readable reserved DRAM. The plane
 bases and full-frame geometry are [verified against the source
-screenshot](hdmi-evidence/2026-09-25-corrected-frame/README.md). A read-only
-3 ms probe measured the pair order 0 → 1 → 2, and a double-copy reader now
-returns [software-validated completed frames](hdmi-evidence/2026-09-25-coherent-ring/README.md).
-`python3 tools/hdmi/capture-once.py` uses that reader by default. Hardware
-frame-completion signaling, a V4L2 capture node, and continuous streaming
-remain open.
+screenshot](hdmi-evidence/2026-09-25-corrected-frame/README.md). The
+[removable V4L2 bridge](hdmi-evidence/2026-09-25-v4l2-capture/README.md)
+now exposes `/dev/video1` and streams verified frames through FFmpeg or
+`v4l2-ctl`. `python3 tools/hdmi/capture-v4l2.py` automates one bounded
+HDMI1 window and saves the stream. Full-plane comparison is the default;
+the opt-in [sparse-verified mode](hdmi-evidence/2026-09-25-v4l2-rate/README.md)
+reached about 60 frames/s in one 100-frame trial. Hardware frame-completion
+signaling and independent validation under moving source content remain open.
 
-**Receiver timing milestone (2026-09-24):** With HDMI1 selected by the MIPS
+**Earlier receiver timing milestone (2026-09-24):** With HDMI1 selected by the MIPS
 source worker, the merged default kernel, and a live GPU output, a guarded
 read-only MIPS DRAM probe observed port 1 advance to state 5 and record
 640x480 active timing. Both dimensions cleared after disconnect. The

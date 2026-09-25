@@ -42,6 +42,8 @@ def main():
                     help="frames to save, 1–120 (default: 30)")
     ap.add_argument("--seconds", type=int, default=20,
                     help="bounded HDMI signal window, 10–30 s (default: 20)")
+    ap.add_argument("--sparse-verify", action="store_true",
+                    help="experimental faster copy with sparse stability checks only")
     args = ap.parse_args()
     if not 1 <= args.frames <= 120 or not 10 <= args.seconds <= 30:
         ap.error("frames must be 1–120 and seconds must be 10–30")
@@ -55,14 +57,16 @@ def main():
           flush=True)
 
     digest = hashlib.sha256(MODULE.read_bytes()).hexdigest()
+    verify_full = int(not args.sparse_verify)
     run(SCP + [str(MODULE), "root@192.168.4.1:/tmp/h713-hdmi-v4l2.ko"], 30)
     remote("set -e; "
            f"test \"$(sha256sum /tmp/h713-hdmi-v4l2.ko | cut -d' ' -f1)\" = {digest}; "
            "if test -d /sys/module/h713_hdmi_v4l2; then rmmod h713_hdmi_v4l2; fi; "
-           "insmod /tmp/h713-hdmi-v4l2.ko; "
+           f"insmod /tmp/h713-hdmi-v4l2.ko verify_full={verify_full}; "
            "test \"$(cat /sys/class/video4linux/video1/name)\" = "
            "\"H713 HDMI1 ring capture\"")
-    print("V4L2 HDMI capture ready at /dev/video1", flush=True)
+    print("V4L2 HDMI capture ready at /dev/video1 "
+          f"(verification: {'sparse' if args.sparse_verify else 'full'})", flush=True)
 
     for attempt in range(2):
         p = subprocess.run([sys.executable, str(HERE / "run-detection-trial.py"),

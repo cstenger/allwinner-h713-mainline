@@ -54,6 +54,10 @@ struct h713_capture {
 };
 
 static struct h713_capture *h713_cap;
+static bool verify_full = true;
+module_param(verify_full, bool, 0444);
+MODULE_PARM_DESC(verify_full,
+	"Compare full source planes after each copy (default true); false uses sparse stability probes only");
 
 static u8 *h713_plane(struct h713_capture *cap, unsigned int index)
 {
@@ -114,8 +118,13 @@ static int h713_capture_thread(void *arg)
 	u32 before_y, before_uv;
 	u8 *dst;
 	unsigned long last_activity = jiffies;
+	u64 hash_ns = 0, copy_ns = 0, tick;
+	unsigned int polls = 0, pair_events = 0, no_buffer = 0;
+	unsigned int copies = 0, unstable = 0, delivered = 0;
 
+	tick = ktime_get_ns();
 	h713_hash_ring(cap, previous);
+	hash_ns += ktime_get_ns() - tick;
 	while (!kthread_should_stop()) {
 		if (!buf) {
 			buf = h713_take_buffer(cap);
@@ -123,7 +132,10 @@ static int h713_capture_thread(void *arg)
 				last_activity = jiffies;
 		}
 		msleep(2);
+		tick = ktime_get_ns();
 		h713_hash_ring(cap, observed);
+		hash_ns += ktime_get_ns() - tick;
+		polls++;
 		if (memcmp(previous, observed, sizeof(previous)))
 			last_activity = jiffies;
 		changed = 0;
@@ -136,6 +148,11 @@ static int h713_capture_thread(void *arg)
 			}
 		}
 		memcpy(previous, observed, sizeof(previous));
+		if (changed == 1) {
+			pair_events++;
+			if (!buf)
+				no_buffer++;
+		}
 		if (buf && time_after(jiffies, last_activity +
 					msecs_to_jiffies(H713_NO_FRAME_MS))) {
 			vb2_queue_error(&cap->queue);
@@ -160,18 +177,25 @@ static int h713_capture_thread(void *arg)
 			continue;
 		}
 
+		copies++;
+		tick = ktime_get_ns();
 		before_y = h713_hash_plane(cap, pair);
 		before_uv = h713_hash_plane(cap, pair + 3);
 		memcpy(dst, h713_plane(cap, pair), H713_PLANE_SIZE);
 		memcpy(dst + H713_PLANE_SIZE, h713_plane(cap, pair + 3),
 		       H713_PLANE_SIZE);
-		/* The second read must equal the first and leave probes unchanged. */
-		if (memcmp(dst, h713_plane(cap, pair), H713_PLANE_SIZE) ||
-		    memcmp(dst + H713_PLANE_SIZE, h713_plane(cap, pair + 3),
-			   H713_PLANE_SIZE) ||
-		    before_y != h713_hash_plane(cap, pair) ||
-		    before_uv != h713_hash_plane(cap, pair + 3))
+		/* Full verification re-reads both planes; sparse mode checks probes. */
+		if (before_y != h713_hash_plane(cap, pair) ||
+		    before_uv != h713_hash_plane(cap, pair + 3) ||
+		    (verify_full &&
+		     (memcmp(dst, h713_plane(cap, pair), H713_PLANE_SIZE) ||
+		      memcmp(dst + H713_PLANE_SIZE, h713_plane(cap, pair + 3),
+			     H713_PLANE_SIZE)))) {
+			copy_ns += ktime_get_ns() - tick;
+			unstable++;
 			continue;
+		}
+		copy_ns += ktime_get_ns() - tick;
 
 		vb2_set_plane_payload(&buf->vb.vb2_buf, 0, H713_FRAME_SIZE);
 		buf->vb.vb2_buf.timestamp = ktime_get_ns();
@@ -180,9 +204,14 @@ static int h713_capture_thread(void *arg)
 		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_DONE);
 		buf = NULL;
 		last_pair = pair;
+		delivered++;
 	}
 	if (buf)
 		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
+	pr_info("h713-hdmi-v4l2: stream polls=%u pair_events=%u no_buffer=%u copies=%u unstable=%u delivered=%u hash_us=%llu copy_us=%llu\n",
+		polls, pair_events, no_buffer, copies, unstable, delivered,
+		(unsigned long long)div_u64(hash_ns, 1000),
+		(unsigned long long)div_u64(copy_ns, 1000));
 	return 0;
 }
 
