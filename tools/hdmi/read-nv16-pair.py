@@ -2,7 +2,9 @@
 """Stream one read-only 640x480 Y + interleaved UV frame candidate.
 
 The page-hash and image trials show three Y regions followed by three matching
-UV regions. This reads pair 0/3 by default; --pair 1 or 2 selects 1/4 or 2/5.
+UV regions. Each plane starts one page before its first changing page; the
+initial page can be constant when the top of the desktop does not change.
+This reads pair 0/3 by default; --pair 1 or 2 selects 1/4 or 2/5.
 The 614400-byte result is a candidate NV16 frame, not a synchronized capture.
 """
 
@@ -13,7 +15,7 @@ import sys
 
 CARVEOUT = 0x4BF41000
 SIZE = 26 * 1024 * 1024
-FIRST = 0x4C3F0000
+FIRST = 0x4C3EF000
 STEP = 0x1FF000
 PLANE = 640 * 480
 

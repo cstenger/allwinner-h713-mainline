@@ -1,5 +1,10 @@
 # Source-side confirmation of the horizontal wrap
 
+**Resolved:** The apparent wrap and missing bottom page came from reading each
+plane 4 KiB after its actual base, not from the capture producer. See the
+[corrected full-frame capture](../2026-09-25-corrected-frame/README.md). The
+analysis below describes the original misaligned sample.
+
 The user identified a roughly 60% horizontal displacement in the first
 color capture. During one additional bounded 15-second HDMI window, COSMIC's
 noninteractive screenshot captured the GPU's 640x480 HDMI output at the same
@@ -28,9 +33,9 @@ sample is unchanged. Both planes still have an unwritten final 4 KiB page,
 so the crop hides the green strip **without recovering those pixels**.
 `tools/hdmi/nv16-to-png.py` now accepts `--rotate-left 384 --valid-rows 473`,
 and new `--dump-nv16` trials and `capture-once.py` produce the aligned PNG
-alongside the direct conversion. The firmware or capture DMA configuration
-still needs investigation to eliminate the row wrap and recover the final
-page in hardware.
+alongside the direct conversion. The subsequent base-address correction
+recovered the complete frame without changing firmware or capture DMA
+configuration.
 
 The trial returned the GPU to disconnected state, and SCP reported restored
 peripheral state and zero EDID mismatch. The board remained responsive.

@@ -37,7 +37,7 @@ def main():
         match = re.search(r"^Logs: (.+)$", out, re.MULTILINE)
         if not match:
             raise RuntimeError("trial returned without an output directory")
-        png = Path(match.group(1)) / "candidate-nv16-aligned.png"
+        png = Path(match.group(1)) / "candidate-nv16.png"
         if png.is_file():
             print(f"HDMI color snapshot: {png}", flush=True)
             return

@@ -1,5 +1,11 @@
 # First color HDMI input capture
 
+**Resolved:** The apparent last-page shortfall and row wrap were caused by
+starting the diagnostic read 4 KiB after the true plane base. The
+[corrected full-frame capture](../2026-09-25-corrected-frame/README.md)
+documents the 640×480 result. The observations below refer to the original
+misaligned read.
+
 The six dynamic regions found in the [page-hash trial](../2026-09-25-framebuf-luma/README.md)
 are organized as three near-identical 640x480 luma planes followed by three
 near-identical 640x480 interleaved chroma planes. The first three regions have

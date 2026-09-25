@@ -10,7 +10,7 @@ import os
 import sys
 import argparse
 
-BASE = 0x4C3F0000
+BASE = 0x4C3EF000
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--full-slot", action="store_true", help="read the entire selected 2 MiB slot")
 parser.add_argument("--slot", type=int, choices=range(6), default=0,

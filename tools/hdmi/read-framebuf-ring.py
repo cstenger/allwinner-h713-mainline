@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read-only 2.5-second CRC timeline of six candidate HDMI luma slots.
 
-The six physical bases come from the page-hash trial. This samples only their
+The six physical bases were refined by image comparison. This samples only their
 640x480 luma-sized prefixes and never writes DRAM or touches receiver MMIO.
 """
 
@@ -13,7 +13,7 @@ import zlib
 
 CARVEOUT = 0x4BF41000
 SIZE = 26 * 1024 * 1024
-BASE = 0x4C3F0000
+BASE = 0x4C3EF000
 STEP = 0x1FF000
 LUMA = 640 * 480
 COUNT = 6
