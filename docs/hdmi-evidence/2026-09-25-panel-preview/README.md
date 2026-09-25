@@ -22,6 +22,21 @@ framebuffer and AFBD scanout; its [source trial](repeat-trial.log) and
 [capture log](repeat-target-ffmpeg.log) are preserved. The repeatable entry point is
 [`run-panel-preview.py`](../../../tools/hdmi/run-panel-preview.py).
 
+The operator's 22-second optical recording (`local/lcd-photos/test_89/IMG_0903.mov`
+in the main checkout) shows the console through roughly 5 seconds, moving
+HDMI content from roughly 6 to 18.5 seconds, and the same console again from
+roughly 19 seconds onward. The [sampled contact sheet](optical-phases.jpg)
+shows those three states. During the preview, the moving vertical stripe and
+white frame-marker blocks span the expected rows; the COSMIC menu bar is from
+the HDMI source. The 4:3 picture is centered with black side bars and no
+visible green edge or large horizontal wrap. Some phone frames show grey
+blocks or doubled stripe edges while the pattern changes. These could be
+optical exposure across display updates, so the recording alone cannot
+distinguish them from occasional video tearing. It also lacks the source
+monitor needed for a latency measurement. Clearer sampled frames have
+matching marker blocks across the visible bands, but this is not a frame-by-
+frame integrity guarantee.
+
 Earlier controls narrowed the initial blank-panel result. The first live
 preview submitted 120 frames and switched the KMS framebuffer, but the
 operator saw a blank panel. Synthetic BGR0 and NV16-to-BGR0 color bars did
