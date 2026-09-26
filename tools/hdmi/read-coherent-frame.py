@@ -21,24 +21,22 @@ CARVEOUT = 0x4BF41000
 SIZE = 26 * 1024 * 1024
 BASE = 0x4C3EF000
 STEP = 0x1FF000
-PLANE = 640 * 480
-PAGES = (0x10000, 0x20000, 0x30000, 0x40000)
 PAGE_SIZE = 4096
 
 
-def plane_hash(mem, index):
+def plane_hash(mem, index, pages):
     base = BASE + STEP * index - CARVEOUT
     crc = 0
-    for page in PAGES:
+    for page in pages:
         offset = base + page
         crc = zlib.crc32(mem[offset:offset + PAGE_SIZE], crc)
     return crc
 
 
-def read_pair(mem, pair):
+def read_pair(mem, pair, plane):
     y = BASE + STEP * pair - CARVEOUT
     uv = BASE + STEP * (pair + 3) - CARVEOUT
-    return mem[y:y + PLANE] + mem[uv:uv + PLANE]
+    return mem[y:y + plane] + mem[uv:uv + plane]
 
 
 def main():
@@ -49,22 +47,32 @@ def main():
                     help="minimum interval between ring probes (default: 2)")
     ap.add_argument("--count", type=int, choices=range(1, 9), default=1,
                     help="number of successive verified frames (default: 1)")
+    ap.add_argument("--copies", type=int, choices=(1, 2), default=2,
+                    help="copies compared per candidate (default: 2)")
+    ap.add_argument("--width", type=int, choices=(640, 1280), default=640)
+    ap.add_argument("--height", type=int, choices=(480, 720), default=480)
     args = ap.parse_args()
     if not 0 < args.timeout <= 15 or not 0 < args.interval_ms <= 20:
         ap.error("timeout must be 0..15 s and interval must be 0..20 ms")
+    if (args.width, args.height) not in ((640, 480), (1280, 720)):
+        ap.error("supported formats are 640x480 and 1280x720")
+    plane = args.width * args.height
+    if plane > STEP:
+        ap.error("plane size exceeds the observed ring allocation step")
+    pages = tuple(range(0x10000, plane, 0x20000))
 
     fd = os.open("/dev/mem", os.O_RDONLY | os.O_SYNC)
     try:
         with mmap.mmap(fd, SIZE, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ,
                        offset=CARVEOUT) as mem:
             start = time.monotonic()
-            previous = [plane_hash(mem, i) for i in range(6)]
+            previous = [plane_hash(mem, i, pages) for i in range(6)]
             attempts = 0
             completed = 0
             last_pair = None
             while time.monotonic() - start < args.timeout and completed < args.count:
                 time.sleep(args.interval_ms / 1000)
-                current = [plane_hash(mem, i) for i in range(6)]
+                current = [plane_hash(mem, i, pages) for i in range(6)]
                 changed = [i for i in range(3)
                            if current[i] != previous[i]
                            and current[i + 3] != previous[i + 3]]
@@ -76,12 +84,14 @@ def main():
                 if pair == last_pair:
                     continue
                 attempts += 1
-                before = (plane_hash(mem, pair), plane_hash(mem, pair + 3))
+                before = (plane_hash(mem, pair, pages),
+                          plane_hash(mem, pair + 3, pages))
                 copy_start = time.monotonic()
-                first = read_pair(mem, pair)
-                second = read_pair(mem, pair)
+                first = read_pair(mem, pair, plane)
+                second = read_pair(mem, pair, plane) if args.copies == 2 else first
                 copy_ms = (time.monotonic() - copy_start) * 1000
-                after = (plane_hash(mem, pair), plane_hash(mem, pair + 3))
+                after = (plane_hash(mem, pair, pages),
+                         plane_hash(mem, pair + 3, pages))
                 if first != second or before != after:
                     continue
                 completed += 1
@@ -93,6 +103,9 @@ def main():
                     "attempts": attempts,
                     "elapsed_ms": round((time.monotonic() - start) * 1000, 3),
                     "copy_ms": round(copy_ms, 3),
+                    "copies": args.copies,
+                    "width": args.width,
+                    "height": args.height,
                     "bytes": len(first),
                     "crc32": f"{zlib.crc32(first):08x}",
                 }) + "\n")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check repeated frame IDs and moving stripe in a 640x480 NV16 stream."""
+"""Check repeated frame IDs and moving stripe in an NV16 stream."""
 
 import argparse
 import json
@@ -7,40 +7,37 @@ from pathlib import Path
 
 import numpy as np
 
-WIDTH = 640
-HEIGHT = 480
-FRAME = 2 * WIDTH * HEIGHT
-# COSMIC draws its top panel over the source video, obscuring the first band.
-BANDS = (168, 312, 456)
-STRIPE_ROWS = (96, 240, 384)
-
-
-def analyze(path):
-    if path.stat().st_size % FRAME:
+def analyze(path, width, height):
+    frame_size = 2 * width * height
+    bands = tuple(height * n // 10 + 24 for n in (3, 6, 9))
+    stripe_rows = tuple(height * n // 10 - 48 for n in (3, 6, 9))
+    cell = width // 10
+    if path.stat().st_size % frame_size:
         raise ValueError("stream ends in a partial NV16 frame")
-    stream = np.memmap(path, dtype=np.uint8, mode="r").reshape(-1, 2, HEIGHT, WIDTH)
+    stream = np.memmap(path, dtype=np.uint8, mode="r").reshape(-1, 2, height, width)
     records = []
     for index, frame in enumerate(stream):
         y = frame[0]
         band_ids = []
         sync = []
-        for row in BANDS:
+        for row in bands:
             sync.append(bool(y[row - 4:row + 4, 16:32].mean() > 128))
             value = 0
             for bit in range(8):
-                left = 64 + bit * 64
-                if y[row - 4:row + 4, left + 20:left + 36].mean() > 128:
+                left = cell + bit * cell
+                if y[row - 4:row + 4, left + cell // 3:left + 2 * cell // 3].mean() > 128:
                     value |= 1 << bit
             band_ids.append(value)
         stripe_positions = []
-        for row in STRIPE_ROWS:
+        for row in stripe_rows:
             bright = np.flatnonzero(y[row] > 128)
             stripe_positions.append(int(bright[0]) if len(bright) else None)
         present = all(sync)
         coherent = present and len(set(band_ids)) == 1
-        expected = band_ids[0] * 7 % WIDTH if coherent else None
+        expected = band_ids[0] * 7 % width if coherent else None
+        tolerance = 4 if (width, height) == (1280, 720) else 2
         stripe_ok = coherent and all(
-            position is not None and abs(position - expected) <= 2
+            position is not None and abs(position - expected) <= tolerance
             for position in stripe_positions)
         records.append({"frame": index, "pattern_present": present,
                         "band_ids": band_ids, "bands_agree": coherent,
@@ -72,8 +69,12 @@ def analyze(path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("stream", type=Path)
+    ap.add_argument("--width", type=int, choices=(640, 1280), default=640)
+    ap.add_argument("--height", type=int, choices=(480, 720), default=480)
     args = ap.parse_args()
-    print(json.dumps(analyze(args.stream), indent=2))
+    if (args.width, args.height) not in ((640, 480), (1280, 720)):
+        ap.error("supported formats are 640x480 and 1280x720")
+    print(json.dumps(analyze(args.stream, args.width, args.height), indent=2))
 
 
 if __name__ == "__main__":

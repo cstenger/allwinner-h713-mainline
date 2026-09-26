@@ -21,12 +21,14 @@ parser.add_argument('--run-hdmird',action='store_true',help='Run the fixed SetSo
 parser.add_argument('--tvfe-only',action='store_true',help='Require TVFE and EDID clock only; no explicit TVCAP/receiver-clock hold')
 parser.add_argument('--probe-port-status',action='store_true',help='Sample the read-only MIPS HDMI port-status RPC during the signal window')
 parser.add_argument('--probe-port-cache',action='store_true',help='Sample the guarded MIPS HDMI port cache in DRAM during the signal window')
+parser.add_argument('--probe-afbd-pair',action='store_true',help='Sample the safe AFBD current Y/UV pointer pair during the signal window')
 parser.add_argument('--probe-framebuf',action='store_true',help='Hash reserved framebuf pages before/during/after video (read-only)')
 parser.add_argument('--dump-candidate',action='store_true',help='Save two read-only 320 KiB candidate memory samples during video')
 parser.add_argument('--probe-ring',action='store_true',help='Sample CRC changes across six candidate luma slots during video')
 parser.add_argument('--dump-nv16',action='store_true',help='Save one read-only Y/UV candidate pair and color PNG during video')
 parser.add_argument('--dump-coherent',action='store_true',help='Save double-checked completed NV16 frames and color PNGs during video')
 parser.add_argument('--coherent-count',type=int,choices=range(1,9),default=1,help='Verified frames to save with --dump-coherent (default: 1)')
+parser.add_argument('--frame-size',choices=('640x480','1280x720'),default='640x480',help='NV16 dimensions for read-only DRAM dumps (default: 640x480)')
 parser.add_argument('--v4l2-frames',type=int,default=0,help='Capture this many NV16 frames from /dev/video1 with FFmpeg (1–120)')
 parser.add_argument('--read-detn',action='store_true',help='Also run the optional DETN register snapshot when the GPU connects')
 args=parser.parse_args()
@@ -34,6 +36,9 @@ if args.tvfe_only and args.read_detn:
  parser.error('--read-detn requires the full receiver power hold')
 if args.coherent_count>1 and not args.dump_coherent:
  parser.error('--coherent-count requires --dump-coherent')
+WIDTH,HEIGHT=map(int,args.frame_size.split('x'));PLANE=WIDTH*HEIGHT
+if args.v4l2_frames and args.frame_size!='640x480':
+ parser.error('--v4l2-frames remains limited to the 640x480 V4L2 driver')
 if args.v4l2_frames and args.seconds<10:
  parser.error('--v4l2-frames requires a signal window of at least 10 seconds')
 if not 0<=args.v4l2_frames<=120:
@@ -54,6 +59,8 @@ if args.probe_port_status:
  check_cmd+=' && test -d /sys/module/hy310_cpu_comm && test -x /root/cpu-comm-probe'
 if args.probe_port_cache:
  check_cmd+=' && test -f /root/hdmi-safe-trace/read-mips-port-cache.py'
+if args.probe_afbd_pair:
+ check_cmd+=' && test -x /root/mmio-rw'
 if args.probe_framebuf:
  check_cmd+=' && test -f /root/hdmi-safe-trace/read-framebuf-pages.py'
 if args.dump_candidate:
@@ -76,6 +83,7 @@ command=f'set -e; if test -d /sys/module/h713_scp_probe; then rmmod h713_scp_pro
 records=[];last=None;receiver=None;daemon=None;start=time.monotonic();ended=None;result=1
 port_status=[];last_port_sample=-10
 port_cache=[];last_cache_sample=-10
+afbd_pairs=[];last_afbd_sample=-10
 framebuf=[];last_frame_sample=-10
 candidate_times=[]
 ring_done=False
@@ -95,6 +103,15 @@ def probe_port_cache(phase):
  item={'seconds':round(time.monotonic()-start,3),'phase':phase,'returncode':r.returncode,'output':r.stdout+r.stderr}
  port_cache.append(item);print(json.dumps({'port_cache':item}),flush=True)
  return r.returncode==0
+def probe_afbd_pair(phase):
+ r=ssh("/root/mmio-rw r 5600320; /root/mmio-rw r 5600324")
+ words=[]
+ for line in r.stdout.splitlines():
+  try:words.append(int(line.rsplit(None,1)[-1],0))
+  except (ValueError,IndexError):pass
+ item={'seconds':round(time.monotonic()-start,3),'phase':phase,'returncode':r.returncode,'words':words,'output':r.stdout+r.stderr}
+ afbd_pairs.append(item);print(json.dumps({'afbd_pair':item}),flush=True)
+ return r.returncode==0 and len(words)==2
 def probe_framebuf(phase):
  r=ssh('python3 /root/hdmi-safe-trace/read-framebuf-pages.py')
  if r.returncode:
@@ -134,18 +151,25 @@ def probe_ring():
  print(json.dumps({'ring_samples':len(data['samples']),'slot_changes':changes}),flush=True)
  return True
 def dump_nv16():
- r=subprocess.run(SSH+['python3 /root/hdmi-safe-trace/read-nv16-pair.py --pair 0'],capture_output=True,timeout=15)
- if r.returncode or len(r.stdout)!=2*640*480:
+ command=f'python3 /root/hdmi-safe-trace/read-nv16-pair.py --pair 0'
+ if args.frame_size!='640x480':
+  command+=f' --width {WIDTH} --height {HEIGHT}'
+ r=subprocess.run(SSH+[command],capture_output=True,timeout=15)
+ if r.returncode or len(r.stdout)!=2*PLANE:
   print(json.dumps({'nv16_error':r.stderr.decode(errors='replace'),'bytes':len(r.stdout)}),flush=True)
   return False
  raw=OUT/'candidate-nv16.bin';png=OUT/'candidate-nv16.png'
  raw.write_bytes(r.stdout)
- subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png)],check=True,capture_output=True)
+ subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png),'--width',str(WIDTH),'--height',str(HEIGHT)],check=True,capture_output=True)
  print(json.dumps({'nv16':raw.name,'png':png.name,'seconds':round(time.monotonic()-start,3),'bytes':len(r.stdout)}),flush=True)
  return True
 def dump_coherent():
- r=subprocess.run(SSH+[f'python3 /root/hdmi-safe-trace/read-coherent-frame.py --timeout 8 --count {args.coherent_count}'],capture_output=True,timeout=12)
- if r.returncode or len(r.stdout)!=args.coherent_count*2*640*480:
+ copies=1 if args.frame_size=='1280x720' else 2
+ command=(f'python3 /root/hdmi-safe-trace/read-coherent-frame.py --timeout 12 '
+          f'--count {args.coherent_count} --copies {copies} '
+          f'--width {WIDTH} --height {HEIGHT}')
+ r=subprocess.run(SSH+[command],capture_output=True,timeout=16)
+ if r.returncode or len(r.stdout)!=args.coherent_count*2*PLANE:
   print(json.dumps({'coherent_error':r.stderr.decode(errors='replace'),'bytes':len(r.stdout)}),flush=True)
   return False
  try: metadata=[json.loads(line) for line in r.stderr.splitlines()]
@@ -159,14 +183,16 @@ def dump_coherent():
  for i,item in enumerate(metadata):
   stem='coherent-nv16' if args.coherent_count==1 else f'coherent-{i+1:02d}-nv16'
   raw=OUT/(stem+'.bin');png=OUT/(stem+'.png')
-  raw.write_bytes(r.stdout[i*2*640*480:(i+1)*2*640*480])
-  subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png)],check=True,capture_output=True)
+  raw.write_bytes(r.stdout[i*2*PLANE:(i+1)*2*PLANE])
+  subprocess.run([sys.executable,str(Path(__file__).with_name('nv16-to-png.py')),str(raw),str(png),'--width',str(WIDTH),'--height',str(HEIGHT)],check=True,capture_output=True)
   print(json.dumps({'coherent':raw.name,'png':png.name,'metadata':item,'seconds':round(time.monotonic()-start,3)}),flush=True)
  return True
 if args.probe_port_status and not probe_port_status('before'):
  raise SystemExit('Port-status RPC failed before the signal window; leaving HPD unchanged.')
 if args.probe_port_cache and not probe_port_cache('before'):
  raise SystemExit('MIPS port-cache probe failed before the signal window; leaving HPD unchanged.')
+if args.probe_afbd_pair and not probe_afbd_pair('before'):
+ raise SystemExit('AFBD pointer probe failed before the signal window; leaving HPD unchanged.')
 if args.probe_framebuf and not probe_framebuf('before'):
  raise SystemExit('Framebuf probe failed before the signal window; leaving HPD unchanged.')
 p=subprocess.Popen(SSH+[command],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
@@ -184,6 +210,8 @@ try:
    probe_port_status('video-enabled');last_port_sample=time.monotonic()
   if args.probe_port_cache and s['status']=='connected' and s['enabled']=='enabled' and time.monotonic()-last_cache_sample>=2:
    probe_port_cache('video-enabled');last_cache_sample=time.monotonic()
+  if args.probe_afbd_pair and s['status']=='connected' and s['enabled']=='enabled' and time.monotonic()-last_afbd_sample>=1:
+   probe_afbd_pair('video-enabled');last_afbd_sample=time.monotonic()
   if args.probe_framebuf and s['status']=='connected' and s['enabled']=='enabled' and time.monotonic()-last_frame_sample>=4:
    probe_framebuf('video-'+str(len(framebuf)));last_frame_sample=time.monotonic()
   if args.dump_candidate and s['status']=='connected' and s['enabled']=='enabled' and len(candidate_times)<2 and (not candidate_times or time.monotonic()-start-candidate_times[-1]>=4):
@@ -260,6 +288,9 @@ finally:
  if args.probe_port_cache:
   probe_port_cache('after')
   (OUT/'port-cache.json').write_text(json.dumps(port_cache,indent=2)+'\n')
+ if args.probe_afbd_pair:
+  probe_afbd_pair('after')
+  (OUT/'afbd-pairs.json').write_text(json.dumps(afbd_pairs,indent=2)+'\n')
  if args.probe_framebuf:
   probe_framebuf('after')
  if cleanup.returncode:result=cleanup.returncode

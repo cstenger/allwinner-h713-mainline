@@ -183,6 +183,18 @@ This is an intermediate gate, not the final resolution.
 
 ### 4. Bring up native 1280×720 at 60 Hz end to end
 
+**Progress, 2026-09-26:** The source read the exact checksummed 1280×720 trial
+EDID and enabled its native 60 Hz mode. Guarded MIPS cache samples remained
+locked at 1280×720, state 5, with no pixel repeat. AFBD retained the same
+three-pair address ring. A 720p NV16 plane fits each `0x1ff000` slot with
+`0x11e000` bytes spare, and all six planes remain inside the known carveout.
+A read-only sampler recovered three complete 1,843,200-byte marker frames;
+top/middle/bottom IDs agreed, both horizontal edge markers were present, all
+720 rows decoded, and there were zero band or stripe mismatches. This closes
+the receiver/ring-layout portion of steps 1–2, but not V4L2 capture, sustained
+60 fps, panel presentation, or latency. See
+[native 720p capture evidence](hdmi-evidence/2026-09-26-native-720-capture/README.md).
+
 1. Produce and checksum a 1280×720@60 EDID with the timings, color formats,
    and range the receiver can actually support. Verify the GPU reads that
    exact EDID and enables the native mode; inspect source-side output state.
