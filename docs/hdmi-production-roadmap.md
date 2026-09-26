@@ -85,6 +85,17 @@ one-shot HPD window.
    delivery and unique IDs over more than one 120-frame burst, CPU use,
    buffer occupancy, memory bandwidth if observable, and end-to-end latency.
 
+**Progress, 2026-09-26:** The AFBD-bootstrap driver completed both requested
+buffered-read panel runs at 20 fps. Full and sparse verification each submitted
+120 frames, switched the DRM primary framebuffer, restored the original
+framebuffer and hardware scanout, disconnected cleanly, and started again on
+the next bounded window. Full verification rejected 12 changing diagnostic
+copies; sparse verification had zero unstable copies but conservatively
+rejected seven phase events and relearned offset 2 before resuming. This is a
+successful automated screen-route recovery test, not yet a zero-drop or
+operator-confirmed optical-quality pass. See
+[panel recovery evidence](hdmi-evidence/2026-09-26-panel-recovery/README.md).
+
 **Pass:** the faster route visibly shows the correct moving image, returns to
 console, and the measured rates agree with the saved kernel/user logs.
 
