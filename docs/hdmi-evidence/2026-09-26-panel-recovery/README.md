@@ -41,6 +41,21 @@ not replace an operator's optical assessment of tearing, color, or short
 freezes. The nonzero rejection counts also mean this is recovery evidence, not
 a zero-drop or latency pass.
 
+## Optical clip
+
+The operator recorded the first, full-verification pass as
+`local/lcd-photos/test_90/IMG_0906.mov` in the main checkout. The 7.885-second
+4K HEVC clip has SHA-256
+`160bb2d591c86868ff4674879aedf043a0c2131d6babab5d3f8e3a8439fecd69`.
+It shows the console, the transition to video, and several seconds of the
+moving test pattern. The retained [contact sheet](optical-motion-contact.jpg)
+samples the motion portion at 3 fps. The picture is centered with the expected
+geometry; the samples show no persistent green edge, large horizontal wrap,
+or gross corruption. A 30 fps phone recording of a 20 fps display cannot by
+itself distinguish a torn display update from rolling-shutter exposure. The
+clip ends while the pattern is still visible, so console restoration is proved
+by the KMS/scanout logs rather than this recording.
+
 Only the established temporary trace U-Boot proper was used. After the tests,
 the original U-Boot readback was restored to
 `47ebcfa6dbfd646b2eab83fc1e5206086a2a1226cb5d840512051cbbf6e9e95d`
