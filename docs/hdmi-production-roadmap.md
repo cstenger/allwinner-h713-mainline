@@ -103,7 +103,11 @@ frames. A subsequent disconnect/reconnect and 120-frame motion regression had
 zero band/stripe errors, zero skipped IDs, and zero driver rejections. Testing
 also disproved a fixed zero counter phase: the bridge must learn and retain a
 boot-specific modulo-three offset. It now invalidates that phase after lost
-completion events or a mode change. Longer reconnect and endurance runs remain.
+completion events or a mode change. A follow-on three-cycle AFBD-only test kept
+one module instance loaded across full disconnect timeouts; every reconnect
+relearned phase 2, and all 90 motion frames were sequential and marker-clean
+with zero driver overwrites, unstable copies, or rejections. Longer endurance,
+signal blank, and mode-change runs remain.
 See [static restart evidence](hdmi-evidence/2026-09-26-static-restart/README.md).
 Static MMIO analysis found no capture-domain producer index, but the AFBD
 current-pair window at `0x05600320/324` supplies a robust bootstrap when treated

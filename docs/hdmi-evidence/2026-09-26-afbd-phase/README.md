@@ -49,6 +49,22 @@ The default configuration, with AFBD bootstrap and hash fallback both enabled,
 then captured another 120-frame moving pattern. It had zero band or stripe
 mismatches, 116 sequential steps, two duplicates, and one skipped step.
 
+## Three disconnect/reconnect cycles
+
+`run-reconnect-trial.py` kept one sparse-verification module instance loaded
+with `phase_from_hash=0` across three bounded EDID/HPD cycles. After each
+disconnect it waited four seconds, longer than the three-second no-frame
+timeout, so the next connection had to establish a fresh AFBD phase. The three
+offset-2 votes were 1/1/10, 0/0/12, and 0/1/11.
+
+Each cycle captured 30 deterministic motion frames. All 90 frames had valid
+band and stripe markers, all 87 transitions were sequential, and there were no
+duplicates or skips. Each driver stream produced and copied 31 completion
+events, delivered 31 buffers, and reported zero overwrites, unstable copies,
+or rejections. The source connector returned to disconnected and disabled
+after every cycle. This passes a short repeated reconnect test; it is not a
+long-duration endurance result.
+
 ## Final restoration
 
 Only the established 1,798 U-Boot-proper sectors were modified for the test.
@@ -63,4 +79,4 @@ is `428870353d83dd2380b0b96616bf5e6bada218458236651ac8a8483737717a66`.
 The SCP probe is absent and the source connector is disconnected and disabled.
 
 Raw 73 MiB NV16 captures remain outside Git. The retained JSON files contain
-the frame-integrity analyses and the static restart file hashes.
+the frame-integrity analyses, static restart hashes, and reconnect summaries.
