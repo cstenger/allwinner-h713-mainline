@@ -1,0 +1,57 @@
+plane[34]: plane-0
+	crtc=crtc-0
+	fb=42
+		allocated by = vo
+		refcount=2
+		format=XR24 little-endian (0x34325258)
+		modifier=0x0
+		size=1280x720
+		layers:
+			size[0]=1280x720
+			pitch[0]=5120
+			offset[0]=0
+			obj[0]:
+				name=0
+				refcount=3
+				start=00100384
+				size=3686400
+				imported=no
+				dma_addr=0x00000000ff800000
+				vaddr=00000000720ab565
+	crtc-pos=1280x720+0+0
+	src-pos=1280.000000x720.000000+0.000000+0.000000
+	rotation=1
+	normalized-zpos=0
+	color-encoding=ITU-R BT.601 YCbCr
+	color-range=YCbCr limited range
+	color_mgmt_changed=0
+plane[38]: video-0
+	crtc=(null)
+	fb=0
+	crtc-pos=0x0+0+0
+	src-pos=0.000000x0.000000+0.000000+0.000000
+	rotation=1
+	normalized-zpos=0
+	color-encoding=ITU-R BT.601 YCbCr
+	color-range=YCbCr limited range
+	color_mgmt_changed=0
+crtc[36]: crtc-0
+	enable=1
+	active=1
+	self_refresh_active=0
+	planes_changed=1
+	mode_changed=0
+	active_changed=0
+	connectors_changed=0
+	color_mgmt_changed=0
+	plane_mask=1
+	connector_mask=1
+	encoder_mask=1
+	mode: "1280x720": 60 74648 1280 1344 1472 1664 720 723 728 748 0x8 0x6
+connector[33]: LVDS-1
+	crtc=crtc-0
+	self_refresh_aware=0
+	interlace_allowed=0
+	ycbcr_420_allowed=0
+	max_requested_bpc=0
+	colorspace=Default

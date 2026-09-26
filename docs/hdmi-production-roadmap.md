@@ -118,7 +118,12 @@ completion events or a mode change. A follow-on three-cycle AFBD-only test kept
 one module instance loaded across full disconnect timeouts; every reconnect
 relearned phase 2, and all 90 motion frames were sequential and marker-clean
 with zero driver overwrites, unstable copies, or rejections. Longer endurance,
-signal blank, and mode-change runs remain.
+and mode-change runs remain. A recorded panel test also disabled the source GPU
+output while capture and presentation were active: V4L2 failed closed with
+`EIO`, the panel returned to console, the same source mode was re-enabled,
+AFBD relearned phase 2, and a fresh 120-frame panel preview completed before a
+final console restore. See
+[signal-recovery evidence](hdmi-evidence/2026-09-26-panel-signal-recovery/README.md).
 See [static restart evidence](hdmi-evidence/2026-09-26-static-restart/README.md).
 Static MMIO analysis found no capture-domain producer index, but the AFBD
 current-pair window at `0x05600320/324` supplies a robust bootstrap when treated
