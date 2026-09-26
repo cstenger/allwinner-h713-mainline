@@ -38,6 +38,8 @@
 #define H713_MIPS_VERIFY_SIZE 0x87000
 #define H713_AFBD_PAIR 0x05600320ULL
 #define H713_AFBD_PAIR_SIZE 0x8
+#define H713_AFBD_VOTE_WINDOW 12
+#define H713_AFBD_VOTE_MIN 10
 
 static const unsigned int h713_probe_pages[] = {
 	0x10000, 0x20000, 0x30000, 0x40000,
@@ -70,6 +72,10 @@ static bool verify_full = true;
 module_param(verify_full, bool, 0444);
 MODULE_PARM_DESC(verify_full,
 	"Compare full source planes after each copy (default true); false uses sparse stability probes only");
+static bool phase_from_hash = true;
+module_param(phase_from_hash, bool, 0444);
+MODULE_PARM_DESC(phase_from_hash,
+	"Allow ring-content phase learning (default true); false validates AFBD bootstrap alone");
 static unsigned long frames_produced;
 static unsigned long frames_delivered;
 static unsigned long frames_overwritten;
@@ -106,9 +112,9 @@ static u8 *h713_plane(struct h713_capture *cap, unsigned int index)
 
 /*
  * AFBD +0x320/+0x324 has held an exact Y/UV pair from this ring in every
- * retained register dump. Its update timing is not established, so this is
- * telemetry only: collect a counter-to-pair histogram without selecting a
- * capture buffer from it. Re-reading Y brackets C against a torn pair.
+ * retained register dump. Its latch can cross the VDE sampling read, so no
+ * individual sample selects a buffer. Re-reading Y brackets C against a torn
+ * pair; the phase thread accepts only a strongly dominant multi-event phase.
  */
 static int h713_afbd_pair_index(struct h713_capture *cap)
 {
@@ -182,6 +188,8 @@ static int h713_phase_thread(void *arg)
 	u32 last_vde, vde, last_mode, mode;
 	unsigned int i, changed, active, delta;
 	int afbd_pair, afbd_offset;
+	unsigned int afbd_votes[3] = { 0 };
+	unsigned int afbd_vote_total = 0;
 	unsigned long last_activity = jiffies;
 	bool baseline = false;
 
@@ -197,6 +205,8 @@ static int h713_phase_thread(void *arg)
 		mode = h713_trace_word(cap, 0x90);
 		if (mode != last_mode) {
 			WRITE_ONCE(cap->pair_offset, -1);
+			memset(afbd_votes, 0, sizeof(afbd_votes));
+			afbd_vote_total = 0;
 			baseline = false;
 			continue;
 		}
@@ -206,6 +216,8 @@ static int h713_phase_thread(void *arg)
 			    time_after(jiffies, last_activity +
 				       msecs_to_jiffies(H713_NO_FRAME_MS))) {
 				WRITE_ONCE(cap->pair_offset, -1);
+				memset(afbd_votes, 0, sizeof(afbd_votes));
+				afbd_vote_total = 0;
 				baseline = false;
 			}
 			continue;
@@ -218,6 +230,8 @@ static int h713_phase_thread(void *arg)
 			afbd_pair = h713_afbd_pair_index(cap);
 			if (afbd_pair < 0) {
 				afbd_invalid++;
+				memset(afbd_votes, 0, sizeof(afbd_votes));
+				afbd_vote_total = 0;
 			} else {
 				afbd_offset = (afbd_pair + 3 - vde % 3) % 3;
 				if (afbd_offset == 0)
@@ -226,9 +240,32 @@ static int h713_phase_thread(void *arg)
 					afbd_phase1++;
 				else
 					afbd_phase2++;
+				if (READ_ONCE(cap->pair_offset) < 0) {
+					afbd_votes[afbd_offset]++;
+					afbd_vote_total++;
+				}
 			}
+		} else if (delta != 1) {
+			memset(afbd_votes, 0, sizeof(afbd_votes));
+			afbd_vote_total = 0;
+		}
+		if (READ_ONCE(cap->pair_offset) < 0 &&
+		    afbd_vote_total == H713_AFBD_VOTE_WINDOW) {
+			for (i = 0; i < 3; i++) {
+				if (afbd_votes[i] >= H713_AFBD_VOTE_MIN) {
+					WRITE_ONCE(cap->pair_offset, i);
+					pr_info("h713-hdmi-v4l2: learned completion phase offset=%u from AFBD votes %u/%u/%u\n",
+						i, afbd_votes[0], afbd_votes[1],
+						afbd_votes[2]);
+					break;
+				}
+			}
+			memset(afbd_votes, 0, sizeof(afbd_votes));
+			afbd_vote_total = 0;
 		}
 		if (READ_ONCE(cap->pair_offset) >= 0)
+			continue;
+		if (!phase_from_hash)
 			continue;
 		h713_hash_ring(cap, observed);
 		changed = 0;

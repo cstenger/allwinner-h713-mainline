@@ -75,13 +75,27 @@ consistent with downstream/current-address state. That distinction matters:
 the pair may be a safe completed consumer buffer, a lagged display buffer, or
 a stale value. Static evidence alone does not establish which.
 
-The V4L2 bridge now contains telemetry-only sampling for this hypothesis. On
-each single `cap-vde` increment it brackets the UV read with two Y reads,
-accepts only one of the three exact ring pairs, and increments one of three
-`(pair - cap_vde) mod 3` counters exposed as module parameters
-`afbd_phase0`, `afbd_phase1`, and `afbd_phase2`. It also exposes sample,
-invalid, and last-address values. **These reads do not select a capture
-buffer.** A bounded hardware run must first show one dominant phase bin across
-static and moving input, with valid pair rotation and no integrity regression.
-An even histogram means the register is fixed/stale; a split phase means its
-update is asynchronous and it is not a safe permanent completion ABI.
+Bounded telemetry established that relationship. A static-source run observed
+zero invalid pairs and phase histograms 12/3/404 (sparse verification) and
+2/2/157 (full verification). A moving run observed 1,843 samples, zero invalid
+pairs, and bins 23/8/1,812: phase 2 held 98.3% of samples while all 120 captured
+frames passed the band and stripe checks. The minority bins show that the AFBD
+latch can cross the `cap-vde` sampling read, so an individual sample is not a
+safe buffer-selection ABI.
+
+The bridge therefore uses a conservative vote only while the completion phase
+is unknown. On each single `cap-vde` increment it brackets the UV read with two
+Y reads, accepts only one of the three exact ring pairs, and accumulates
+`(pair - cap_vde) mod 3`. At least 10 of 12 consecutive valid samples must
+agree. An invalid pair, event gap, mode change, or completion timeout resets
+the vote window. A fixed/stale pair produces the rotating 4/4/4 case and cannot
+pass this threshold. Ring-content learning remains as a startup fallback and
+as the later moving-content consistency check.
+
+The decisive cold-load trial allowed a static source to settle before loading
+the module and disabled ring-content learning. Sparse and full-verification
+loads each learned offset 2 from unanimous 0/0/12 votes. Five sparse and three
+full stream reopen cycles then completed with zero unstable copies or rejected
+frames. A default-mode 120-frame motion regression had zero band or stripe
+mismatches. See
+[AFBD phase evidence](hdmi-evidence/2026-09-26-afbd-phase/README.md).

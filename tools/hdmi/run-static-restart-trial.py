@@ -7,6 +7,7 @@ both sparse and full verification modes, and requires every reopen to deliver
 complete frames without rejection.  It restores full verification on exit.
 """
 
+import argparse
 import hashlib
 import json
 import re
@@ -43,12 +44,13 @@ def remote(command, timeout=30):
     return run(SSH + [command], timeout)
 
 
-def load_module(digest, full):
+def load_module(digest, full, phase_from_hash=True):
     remote("set -e; "
            "if test -d /sys/module/h713_hdmi_v4l2; then "
            "rmmod h713_hdmi_v4l2; fi; "
            f"test \"$(sha256sum /tmp/h713-hdmi-v4l2.ko | cut -d' ' -f1)\" = {digest}; "
-           f"insmod /tmp/h713-hdmi-v4l2.ko verify_full={int(full)}; "
+           f"insmod /tmp/h713-hdmi-v4l2.ko verify_full={int(full)} "
+           f"phase_from_hash={int(phase_from_hash)}; "
            "test \"$(cat /sys/class/video4linux/video1/name)\" = "
            "\"H713 HDMI1 ring capture\"")
 
@@ -103,6 +105,11 @@ def capture_restarts(output, mode, count):
 
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--afbd-only-cold-load", action="store_true",
+                    help="load after the static source settles and disable "
+                         "ring-content phase learning")
+    args = ap.parse_args()
     output = Path("/tmp") / ("h713-static-restart-" +
                              datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     output.mkdir()
@@ -118,7 +125,8 @@ def main():
          "-frames:v", "1", str(STATIC_IMAGE)])
     digest = hashlib.sha256(MODULE.read_bytes()).hexdigest()
     run(SCP + [str(MODULE), "root@192.168.4.1:/tmp/h713-hdmi-v4l2.ko"])
-    load_module(digest, full=False)
+    if not args.afbd_only_cold_load:
+        load_module(digest, full=False)
 
     trial = player = None
     try:
@@ -148,17 +156,23 @@ def main():
                 if player.poll() is not None:
                     raise RuntimeError("static-image player exited early")
                 dmesg_start = int(remote("dmesg | wc -l").strip())
+                if args.afbd_only_cold_load:
+                    load_module(digest, full=False, phase_from_hash=False)
                 sparse = capture_restarts(output, "sparse", 5)
                 sparse_afbd = read_afbd_telemetry()
-                load_module(digest, full=True)
+                load_module(digest, full=True,
+                            phase_from_hash=not args.afbd_only_cold_load)
                 full = capture_restarts(output, "full", 3)
                 full_afbd = read_afbd_telemetry()
                 dmesg = remote(
                     f"dmesg | tail -n +{dmesg_start + 1} | "
-                    "grep 'h713-hdmi-v4l2: stream'", timeout=20)
+                    "grep -E 'h713-hdmi-v4l2: (stream|learned completion phase)'",
+                    timeout=20)
                 (output / "driver-streams.log").write_text(dmesg)
                 summaries = []
                 for line in dmesg.splitlines():
+                    if "stream polls=" not in line:
+                        continue
                     delivered = re.search(r" delivered=(\d+) ", line)
                     if (delivered and int(delivered.group(1)) >= 8 and
                             " unstable=0 " in line and " rejected=0 " in line):
@@ -167,6 +181,7 @@ def main():
                     raise RuntimeError(
                         f"expected eight clean stream summaries, got {len(summaries)}")
                 result = {"module_sha256": digest, "static_source": True,
+                          "afbd_only_cold_load": args.afbd_only_cold_load,
                           "sparse": sparse, "full": full,
                           "sparse_afbd": sparse_afbd,
                           "full_afbd": full_afbd,
@@ -197,7 +212,7 @@ def main():
         if trial is not None and trial.poll() is None:
             trial.wait(timeout=45)
         try:
-            load_module(digest, full=True)
+            load_module(digest, full=True, phase_from_hash=True)
         except (RuntimeError, subprocess.TimeoutExpired) as error:
             print(f"warning: full-verification restore failed: {error}",
                   file=sys.stderr)

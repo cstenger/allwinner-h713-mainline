@@ -60,7 +60,7 @@ The untouched SPL remained
 `cb9da87448a57aa1cafbc7ebf66200b5183304cef1eafe23d0818b99696a49ec`.
 The board was rebooted, the established source-3 sequence restored the display
 MIPS to ALIVE with trace canaries and transition-complete state verified, and
-the prior V4L2 module
-`e7e80d1511e8999f01d75211b3722592d4644d2b0228b4bac9cdfef88dc25a39`
-was reloaded with full verification. The SCP probe was absent and the source
-GPU connector was disconnected and disabled.
+the pre-completion V4L2 module rebuilt from commit `9cfef0e`, SHA-256
+`428870353d83dd2380b0b96616bf5e6bada218458236651ac8a8483737717a66`,
+was loaded with full verification. The SCP probe was absent and the source GPU
+connector was disconnected and disabled.

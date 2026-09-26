@@ -43,8 +43,8 @@ without changing Claude's checkout or silently replacing the board's kernel.
   offset between `cap_vde` and the completed pair. A follow-on static-image
   trial showed that the offset's absolute value is boot-specific, so the bridge
   now learns it once during source startup and retains it across stream reopen
-  instead of assuming offset zero. Cold module load after an already-static
-  source still needs a firmware producer index or equivalent permanent ABI.
+  instead of assuming offset zero. A guarded AFBD current-pair vote now also
+  resolves cold module load after an already-static source.
   The board was returned to its original bootloader and the prior
   full-verification module after the bounded tests.
 
@@ -103,15 +103,19 @@ frames. A subsequent disconnect/reconnect and 120-frame motion regression had
 zero band/stripe errors, zero skipped IDs, and zero driver rejections. Testing
 also disproved a fixed zero counter phase: the bridge must learn and retain a
 boot-specific modulo-three offset. It now invalidates that phase after lost
-completion events or a mode change. Cold module load after an already settled,
-byte-identical source remains unresolved, as do longer reconnect and endurance
-runs. See [static restart evidence](hdmi-evidence/2026-09-26-static-restart/README.md).
-Static MMIO analysis found no capture-domain producer index, but historical
-AFBD dumps expose one exact ring Y/UV pair at `0x05600320/324`. The bridge now
-collects read-only phase telemetry from that pair without using it for buffer
-selection. The next bounded run must establish whether it rotates with one
-stable `cap-vde` phase or is fixed/asynchronous before it can become a cold
-static-start oracle. See [capture memory path](hdmi-capture-memory-path.md).
+completion events or a mode change. Longer reconnect and endurance runs remain.
+See [static restart evidence](hdmi-evidence/2026-09-26-static-restart/README.md).
+Static MMIO analysis found no capture-domain producer index, but the AFBD
+current-pair window at `0x05600320/324` supplies a robust bootstrap when treated
+as a multi-event vote rather than a single authoritative read. Static and
+moving telemetry strongly favored one phase while exposing occasional latch
+races. With ring-content learning disabled, cold module loads after a settled
+static source independently learned offset 2 from unanimous 0/0/12 votes and
+passed eight stream opens with zero unstable or rejected frames. The default
+configuration then passed another 120-frame moving-pattern regression with
+zero band or stripe mismatches. See
+[AFBD phase evidence](hdmi-evidence/2026-09-26-afbd-phase/README.md) and
+[capture memory path](hdmi-capture-memory-path.md).
 
 1. Correlate the firmware `cap-vde`/`cap-vs` events and the capture ring's
    0→1→2 updates in an isolated read-only MIPS trace. Establish which event
