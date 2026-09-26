@@ -1,0 +1,33 @@
+{
+  "pass": true,
+  "samples": 2668,
+  "duration_seconds": 8.002560504,
+  "counter_delta": {
+    "irq": 960,
+    "vde": 480,
+    "vs": 480,
+    "mode_change": 0
+  },
+  "vde_minus_vs_observations": {
+    "0": 20504,
+    "1": 840
+  },
+  "ordered_event_steps": {
+    "vde+0,vs+1": 229,
+    "vde+1,vs+0": 227,
+    "vde+1,vs+1": 1
+  },
+  "definite_ring_changes": 1870,
+  "ambiguous_boundary_changes": 188,
+  "write_epochs": 481,
+  "epoch_pair_sets": {
+    "(2,)": 161,
+    "(0,)": 160,
+    "(1,)": 160
+  },
+  "contiguous_epoch_transitions": 480,
+  "pair_sequence_errors": [],
+  "vde_before_vs_stable_windows": 111,
+  "ring_changes_between_vde_and_vs": 0,
+  "conclusion": "cap-vde is the earliest observed safe pair-completion boundary; cap-vs follows before the next pair write"
+}

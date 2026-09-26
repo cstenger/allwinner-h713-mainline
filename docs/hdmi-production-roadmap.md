@@ -11,8 +11,9 @@ without changing Claude's checkout or silently replacing the board's kernel.
 
 - The source GPU detects a temporary 640×480 EDID, and the firmware HDMI1
   path writes 640×480 NV16 into a three-pair Y/UV ring. A removable V4L2
-  bridge exposes `/dev/video1`. Its predecessor-pair handoff is inferred from
-  ring changes, not a proved completion signal.
+  bridge exposes `/dev/video1`. The currently restored board module still
+  infers predecessor-pair handoff from ring changes; the tested replacement
+  below is event-gated but is not yet installed as the default.
 - A bounded live preview shows the moving source pattern on the 1280×720
   panel. The optical recording shows console → moving image → console, black
   side bars for the 4:3 input, and no large horizontal wrap or green edge.
@@ -28,6 +29,18 @@ without changing Claude's checkout or silently replacing the board's kernel.
   DRM presentation. V4L2 `read()` followed by rawvideo loses V4L2 timestamps
   and sequence numbers. The board is presently left with full verification
   enabled, HPD released, and the normal console scanout restored.
+- A guarded MIPS trace now proves the capture ordering over an 8.003-second
+  motion run: 480 `cap-vde` and 480 `cap-vs` events, 481 single-pair write
+  epochs, and 480 error-free `0→1→2` transitions. `cap-vde` always leads
+  `cap-vs`, with no ring writes observed between them, so VDE is the earliest
+  demonstrated completed-pair boundary. See
+  [production-gate evidence](hdmi-evidence/2026-09-25-production-gates/README.md).
+- An event-gated V4L2 prototype delivered 121/121 sparse-verified frames with
+  zero overwrites, rejections, unstable copies, skipped motion IDs, band
+  errors, or stripe errors. The full-plane diagnostic oracle remained clean
+  but delivered 121 of 162 produced frames because its double-read costs about
+  20.4 ms. The board was returned to its original bootloader and the prior
+  full-verification module after the bounded tests.
 
 ## Required finish line
 
@@ -71,6 +84,13 @@ console, and the measured rates agree with the saved kernel/user logs.
 
 ### 2. Prove completed-frame ownership and harden capture
 
+**Progress, 2026-09-25:** Step 1 is proved for the present 640×480 signal.
+The event-gated prototype also passes one full-oracle and one sparse 120-frame
+motion run, with explicit produced/delivered/overwritten/rejected accounting.
+Before declaring the whole gate passed, retain the completion ABI without a
+debug-only trace dependency and complete static-image startup, stream
+stop/restart, repeated disconnect/reconnect, signal-loss, and endurance tests.
+
 1. Correlate the firmware `cap-vde`/`cap-vs` events and the capture ring's
    0→1→2 updates in an isolated read-only MIPS trace. Establish which event
    means a full Y and UV pair is safe to consume, or find the actual DMA
@@ -90,6 +110,11 @@ console, and the measured rates agree with the saved kernel/user logs.
 zero mixed/tearing IDs in the defined tests and clean stream stop/restart.
 
 ### 3. Reach 60 frames/s at the existing 640×480 signal
+
+**Progress, 2026-09-25:** Event-gated sparse capture itself reached 121/121
+produced/delivered frames with intact moving IDs. This does not pass gate 3:
+60 Hz DRM presentation, preserved V4L2 timing through the consumer, optical
+evidence, and bounded end-to-end latency are still outstanding.
 
 1. Remove avoidable uncached-buffer rereads. The present bridge uses
    `vb2_dma_contig_memops` even though its output is CPU-produced; evaluate a

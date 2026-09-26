@@ -77,6 +77,33 @@ ADAPTER_PATCHED_WORDS = (
     (0x4b101048, 0xaf5b0058),
 )
 
+CAPTURE_PATCHED_WORDS = (
+    (0x4B100BA0, 0x27BDFFF8),
+    (0x4B100BA4, 0xAFB80000),
+    (0x4B100BA8, 0xAFB90004),
+    (0x4B100BAC, 0x3C18AD98),
+    (0x4B100BB0, 0x31390001),
+    (0x4B100BB4, 0x13200003),
+    (0x4B100BB8, 0x8F190088),
+    (0x4B100BC0, 0xAF190088),
+    (0x4B100BC4, 0x31390002),
+    (0x4B100BC8, 0x13200003),
+    (0x4B100BCC, 0x8F19008C),
+    (0x4B100BD4, 0xAF19008C),
+    (0x4B100BD8, 0x31390004),
+    (0x4B100BDC, 0x13200003),
+    (0x4B100BE0, 0x8F190090),
+    (0x4B100BE8, 0xAF190090),
+    (0x4B100BEC, 0x8F190084),
+    (0x4B100BF4, 0xAF190084),
+    (0x4B100BF8, 0x8FB80000),
+    (0x4B100BFC, 0x8FB90004),
+    (0x4B100C00, 0x27BD0008),
+    (0x4B100C04, 0x8C470008),
+    (0x4B100C08, 0x0AC618EB),
+    (0x4B1863A4, 0x0AC402E8),
+)
+
 MAILBOX = 0x4d980000
 MAGIC = 0x434f4d4d
 CANARY = 0x43414e31
@@ -139,6 +166,16 @@ def main():
                                  f"{actual:#010x} != {expected:#010x}")
     elif adapter_site != 0x0ec52d12:
         raise SystemExit(f"unrecognized adapter call patch {adapter_site:#010x}")
+    capture_site = mem.u32(0x4B1863A4)
+    capture_enabled = capture_site == CAPTURE_PATCHED_WORDS[-1][1]
+    if capture_enabled:
+        for address, expected in CAPTURE_PATCHED_WORDS:
+            actual = mem.u32(address)
+            if actual != expected:
+                raise SystemExit(f"capture patch mismatch at {address:#x}: "
+                                 f"{actual:#010x} != {expected:#010x}")
+    elif capture_site != 0x8C470008:
+        raise SystemExit(f"unrecognized VIncap hook {capture_site:#010x}")
     if mem.u32(MAILBOX + 4) != MAGIC:
         raise SystemExit("comm-trace magic absent; refusing to interpret mailbox")
     if (mem.u32(MAILBOX + 0x80) != CANARY or
@@ -161,13 +198,19 @@ def main():
             "source3_worker_new": f"{mem.u32(MAILBOX + 0x78):08x}",
             "source3_transition_complete": mem.u32(MAILBOX + 0x7c),
         } if adapter_enabled else {})
+        capture = ({
+            "cap_irq": mem.u32(MAILBOX + 0x84),
+            "cap_vde": mem.u32(MAILBOX + 0x88),
+            "cap_vs": mem.u32(MAILBOX + 0x8c),
+            "cap_mode_change": mem.u32(MAILBOX + 0x90),
+        } if capture_enabled else {})
         if args.source_only:
             callback, event, new, old, source_queue, worker, vp_init = (
                 mem.u32(MAILBOX + off) for off in
                 (0x20, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38))
             return {
                 "guards": f"{guards[0]:08x}/{guards[1]:08x}",
-                **adapter,
+                **adapter, **capture,
                 "callback": f"{callback:04x}:{SOURCE_STAGES.get(callback, 'other')}",
                 "worker": f"{worker:04x}:{SOURCE_STAGES.get(worker, 'other')}",
                 "event": event, "new": new, "old": old,
@@ -181,7 +224,7 @@ def main():
          worker, vp_init, frame, dirty, mode, control, commit, dirty_latch) = values
         return {
             "guards": f"{guards[0]:08x}/{guards[1]:08x}",
-            **adapter,
+            **adapter, **capture,
             "comm": f"{comm:04x}:{COMM_STAGES.get(comm, 'other')}",
             "call": f"{call:04x}:{CALL_STAGES.get(call, 'other')}",
             "ack": f"{ack:04x}:{ACK_STAGES.get(ack, 'other')}",

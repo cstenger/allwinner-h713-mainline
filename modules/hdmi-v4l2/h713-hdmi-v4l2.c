@@ -30,6 +30,12 @@
 #define H713_FRAME_SIZE (2 * H713_PLANE_SIZE)
 #define H713_PAGE_SIZE 4096
 #define H713_NO_FRAME_MS 3000
+#define H713_TRACE 0x4d980000ULL
+#define H713_TRACE_SIZE 0x1000
+#define H713_TRACE_MAGIC 0x434f4d4d
+#define H713_TRACE_CANARY 0x43414e31
+#define H713_MIPS_IMAGE 0x4b100000ULL
+#define H713_MIPS_VERIFY_SIZE 0x87000
 
 static const unsigned int h713_probe_pages[] = {
 	0x10000, 0x20000, 0x30000, 0x40000,
@@ -50,6 +56,7 @@ struct h713_capture {
 	struct list_head buffers;
 	struct task_struct *worker;
 	u8 *ring;
+	u8 *trace;
 	u32 sequence;
 };
 
@@ -58,6 +65,19 @@ static bool verify_full = true;
 module_param(verify_full, bool, 0444);
 MODULE_PARM_DESC(verify_full,
 	"Compare full source planes after each copy (default true); false uses sparse stability probes only");
+static unsigned long frames_produced;
+static unsigned long frames_delivered;
+static unsigned long frames_overwritten;
+static unsigned long frames_rejected;
+module_param(frames_produced, ulong, 0444);
+module_param(frames_delivered, ulong, 0444);
+module_param(frames_overwritten, ulong, 0444);
+module_param(frames_rejected, ulong, 0444);
+
+static u32 h713_trace_word(struct h713_capture *cap, unsigned int offset)
+{
+	return le32_to_cpu(READ_ONCE(*(__le32 *)(cap->trace + offset)));
+}
 
 static u8 *h713_plane(struct h713_capture *cap, unsigned int index)
 {
@@ -113,31 +133,69 @@ static int h713_capture_thread(void *arg)
 	struct h713_capture *cap = arg;
 	struct h713_buffer *buf = NULL;
 	u32 previous[6], observed[6];
-	int last_pair = -1;
-	unsigned int i, changed, active, pair;
+	int completed_pair = -1;
+	unsigned int i, changed, active, pair, delta;
 	u32 before_y, before_uv;
+	u32 last_vde, vde, last_mode, mode, frame_sequence;
 	u8 *dst;
 	unsigned long last_activity = jiffies;
-	u64 hash_ns = 0, copy_ns = 0, tick;
-	unsigned int polls = 0, pair_events = 0, no_buffer = 0;
+	u64 hash_ns = 0, copy_ns = 0, tick, completion_ns;
+	unsigned int polls = 0, completion_events = 0, no_buffer = 0;
 	unsigned int copies = 0, unstable = 0, delivered = 0;
 
 	tick = ktime_get_ns();
 	h713_hash_ring(cap, previous);
 	hash_ns += ktime_get_ns() - tick;
+	last_vde = h713_trace_word(cap, 0x88);
+	last_mode = h713_trace_word(cap, 0x90);
 	while (!kthread_should_stop()) {
 		if (!buf) {
 			buf = h713_take_buffer(cap);
-			if (buf)
-				last_activity = jiffies;
 		}
-		msleep(2);
+		usleep_range(500, 1000);
+		polls++;
+		mode = h713_trace_word(cap, 0x90);
+		if (mode != last_mode) {
+			frames_rejected++;
+			pr_warn("h713-hdmi-v4l2: capture mode changed (%u -> %u)\n",
+				last_mode, mode);
+			if (buf) {
+				vb2_buffer_done(&buf->vb.vb2_buf,
+						VB2_BUF_STATE_ERROR);
+				buf = NULL;
+			}
+			vb2_queue_error(&cap->queue);
+			h713_return_buffers(cap, VB2_BUF_STATE_ERROR);
+			break;
+		}
+		vde = h713_trace_word(cap, 0x88);
+		if (vde == last_vde) {
+			if (time_after(jiffies, last_activity +
+				       msecs_to_jiffies(H713_NO_FRAME_MS))) {
+				if (buf) {
+					vb2_buffer_done(&buf->vb.vb2_buf,
+							VB2_BUF_STATE_ERROR);
+					buf = NULL;
+				}
+				vb2_queue_error(&cap->queue);
+				h713_return_buffers(cap, VB2_BUF_STATE_ERROR);
+				break;
+			}
+			continue;
+		}
+		delta = vde - last_vde;
+		completion_ns = ktime_get_ns();
+		last_vde = vde;
+		last_activity = jiffies;
+		completion_events++;
+		frames_produced += delta;
+		cap->sequence += delta;
+		frame_sequence = cap->sequence - 1;
+		if (delta > 1)
+			frames_overwritten += delta - 1;
 		tick = ktime_get_ns();
 		h713_hash_ring(cap, observed);
 		hash_ns += ktime_get_ns() - tick;
-		polls++;
-		if (memcmp(previous, observed, sizeof(previous)))
-			last_activity = jiffies;
 		changed = 0;
 		active = 0;
 		for (i = 0; i < 3; i++) {
@@ -148,28 +206,27 @@ static int h713_capture_thread(void *arg)
 			}
 		}
 		memcpy(previous, observed, sizeof(previous));
-		if (changed == 1) {
-			pair_events++;
-			if (!buf)
-				no_buffer++;
+		if (completed_pair < 0) {
+			if (delta != 1 || changed != 1) {
+				frames_rejected++;
+				continue;
+			}
+			completed_pair = active;
+		} else {
+			completed_pair = (completed_pair + delta) % 3;
+			if (delta == 1 && changed == 1 &&
+			    active != completed_pair) {
+				frames_rejected++;
+				completed_pair = -1;
+				continue;
+			}
 		}
-		if (buf && time_after(jiffies, last_activity +
-					msecs_to_jiffies(H713_NO_FRAME_MS))) {
-			vb2_queue_error(&cap->queue);
-			vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
-			buf = NULL;
-			h713_return_buffers(cap, VB2_BUF_STATE_ERROR);
-			while (!kthread_should_stop())
-				msleep(20);
-			break;
+		pair = completed_pair;
+		if (!buf) {
+			no_buffer++;
+			frames_overwritten++;
+			continue;
 		}
-		if (!buf || changed != 1)
-			continue;
-
-		/* Once the next pair changes, its predecessor is complete. */
-		pair = (active + 2) % 3;
-		if (pair == last_pair)
-			continue;
 		dst = vb2_plane_vaddr(&buf->vb.vb2_buf, 0);
 		if (!dst) {
 			vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
@@ -193,23 +250,25 @@ static int h713_capture_thread(void *arg)
 			     H713_PLANE_SIZE)))) {
 			copy_ns += ktime_get_ns() - tick;
 			unstable++;
+			frames_rejected++;
 			continue;
 		}
 		copy_ns += ktime_get_ns() - tick;
 
 		vb2_set_plane_payload(&buf->vb.vb2_buf, 0, H713_FRAME_SIZE);
-		buf->vb.vb2_buf.timestamp = ktime_get_ns();
-		buf->vb.sequence = cap->sequence++;
+		buf->vb.vb2_buf.timestamp = completion_ns;
+		buf->vb.sequence = frame_sequence;
 		buf->vb.field = V4L2_FIELD_NONE;
 		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_DONE);
 		buf = NULL;
-		last_pair = pair;
 		delivered++;
+		frames_delivered++;
 	}
 	if (buf)
 		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
-	pr_info("h713-hdmi-v4l2: stream polls=%u pair_events=%u no_buffer=%u copies=%u unstable=%u delivered=%u hash_us=%llu copy_us=%llu\n",
-		polls, pair_events, no_buffer, copies, unstable, delivered,
+	pr_info("h713-hdmi-v4l2: stream polls=%u completion_events=%u no_buffer=%u copies=%u unstable=%u delivered=%u produced=%lu overwritten=%lu rejected=%lu hash_us=%llu copy_us=%llu\n",
+		polls, completion_events, no_buffer, copies, unstable, delivered,
+		frames_produced, frames_overwritten, frames_rejected,
 		(unsigned long long)div_u64(hash_ns, 1000),
 		(unsigned long long)div_u64(copy_ns, 1000));
 	return 0;
@@ -251,6 +310,10 @@ static int h713_start_streaming(struct vb2_queue *q, unsigned int count)
 	int ret;
 
 	cap->sequence = 0;
+	frames_produced = 0;
+	frames_delivered = 0;
+	frames_overwritten = 0;
+	frames_rejected = 0;
 	cap->worker = kthread_run(h713_capture_thread, cap, "h713-hdmi-v4l2");
 	if (!IS_ERR(cap->worker))
 		return 0;
@@ -433,6 +496,7 @@ static int __init h713_init(void)
 {
 	struct h713_capture *cap;
 	struct vb2_queue *q;
+	u8 *firmware;
 	int ret;
 
 	if (!of_machine_is_compatible("cstenger,hy200-qz713df-a1"))
@@ -455,12 +519,44 @@ static int __init h713_init(void)
 		ret = -ENOMEM;
 		goto unregister_pdev;
 	}
+	cap->trace = memremap(H713_TRACE, H713_TRACE_SIZE, MEMREMAP_WC);
+	if (!cap->trace) {
+		ret = -ENOMEM;
+		goto unmap_ring;
+	}
+	if (h713_trace_word(cap, 4) != H713_TRACE_MAGIC ||
+	    h713_trace_word(cap, 0x80) != H713_TRACE_CANARY ||
+	    h713_trace_word(cap, 0xffc) != H713_TRACE_CANARY) {
+		pr_err("h713-hdmi-v4l2: guarded completion mailbox absent\n");
+		ret = -ENODEV;
+		goto unmap_trace;
+	}
+	firmware = memremap(H713_MIPS_IMAGE, H713_MIPS_VERIFY_SIZE,
+			    MEMREMAP_WC);
+	if (!firmware) {
+		ret = -ENOMEM;
+		goto unmap_trace;
+	}
+	if (le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0ba0))) !=
+			0x27bdfff8 ||
+	    le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0bac))) !=
+			0x3c18ad98 ||
+	    le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0c08))) !=
+			0x0ac618eb ||
+	    le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x863a4))) !=
+			0x0ac402e8) {
+		pr_err("h713-hdmi-v4l2: guarded VIncap completion hook absent\n");
+		memunmap(firmware);
+		ret = -ENODEV;
+		goto unmap_trace;
+	}
+	memunmap(firmware);
 	/* This diagnostic platform device has no bound struct device_driver. */
 	strscpy(cap->v4l2_dev.name, "h713-hdmi-ring",
 		sizeof(cap->v4l2_dev.name));
 	ret = v4l2_device_register(&cap->pdev->dev, &cap->v4l2_dev);
 	if (ret)
-		goto unmap_ring;
+		goto unmap_trace;
 
 	mutex_init(&cap->lock);
 	spin_lock_init(&cap->qlock);
@@ -504,6 +600,8 @@ release_queue:
 	vb2_queue_release(q);
 unregister_v4l2:
 	v4l2_device_unregister(&cap->v4l2_dev);
+unmap_trace:
+	memunmap(cap->trace);
 unmap_ring:
 	memunmap(cap->ring);
 unregister_pdev:
@@ -520,6 +618,7 @@ static void __exit h713_exit(void)
 	video_unregister_device(&cap->vdev);
 	vb2_queue_release(&cap->queue);
 	v4l2_device_unregister(&cap->v4l2_dev);
+	memunmap(cap->trace);
 	memunmap(cap->ring);
 	platform_device_unregister(cap->pdev);
 	kfree(cap);
