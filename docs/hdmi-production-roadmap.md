@@ -106,6 +106,12 @@ boot-specific modulo-three offset. It now invalidates that phase after lost
 completion events or a mode change. Cold module load after an already settled,
 byte-identical source remains unresolved, as do longer reconnect and endurance
 runs. See [static restart evidence](hdmi-evidence/2026-09-26-static-restart/README.md).
+Static MMIO analysis found no capture-domain producer index, but historical
+AFBD dumps expose one exact ring Y/UV pair at `0x05600320/324`. The bridge now
+collects read-only phase telemetry from that pair without using it for buffer
+selection. The next bounded run must establish whether it rotates with one
+stable `cap-vde` phase or is fixed/asynchronous before it can become a cold
+static-start oracle. See [capture memory path](hdmi-capture-memory-path.md).
 
 1. Correlate the firmware `cap-vde`/`cap-vs` events and the capture ring's
    0→1→2 updates in an isolated read-only MIPS trace. Establish which event

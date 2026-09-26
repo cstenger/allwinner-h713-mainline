@@ -53,6 +53,21 @@ def load_module(digest, full):
            "\"H713 HDMI1 ring capture\"")
 
 
+def read_afbd_telemetry():
+    names = ["afbd_samples", "afbd_invalid", "afbd_phase0", "afbd_phase1",
+             "afbd_phase2", "afbd_y", "afbd_uv"]
+    command = " && ".join(
+        f"printf '{name}='; cat /sys/module/h713_hdmi_v4l2/parameters/{name}"
+        for name in names)
+    values = {}
+    for line in remote(command).splitlines():
+        name, value = line.split("=", 1)
+        values[name] = int(value, 0)
+    if set(values) != set(names):
+        raise RuntimeError(f"incomplete AFBD telemetry: {values}")
+    return values
+
+
 def capture_restarts(output, mode, count):
     prefix = f"/tmp/{output.name}-{mode}"
     command = [
@@ -134,8 +149,10 @@ def main():
                     raise RuntimeError("static-image player exited early")
                 dmesg_start = int(remote("dmesg | wc -l").strip())
                 sparse = capture_restarts(output, "sparse", 5)
+                sparse_afbd = read_afbd_telemetry()
                 load_module(digest, full=True)
                 full = capture_restarts(output, "full", 3)
+                full_afbd = read_afbd_telemetry()
                 dmesg = remote(
                     f"dmesg | tail -n +{dmesg_start + 1} | "
                     "grep 'h713-hdmi-v4l2: stream'", timeout=20)
@@ -151,12 +168,16 @@ def main():
                         f"expected eight clean stream summaries, got {len(summaries)}")
                 result = {"module_sha256": digest, "static_source": True,
                           "sparse": sparse, "full": full,
+                          "sparse_afbd": sparse_afbd,
+                          "full_afbd": full_afbd,
                           "clean_stream_summaries": len(summaries)}
                 (output / "analysis.json").write_text(
                     json.dumps(result, indent=2) + "\n")
                 print(json.dumps({"sparse_restarts": len(sparse),
                                   "full_restarts": len(full),
                                   "clean_stream_summaries": len(summaries),
+                                  "sparse_afbd": sparse_afbd,
+                                  "full_afbd": full_afbd,
                                   "unique_frames_per_stream":
                                   [r["unique_frame_hashes"]
                                    for r in sparse + full]}), flush=True)

@@ -46,3 +46,42 @@ Next, trace the capture producer's DMA or memory-agent descriptor setup from
 the MIPS call graph, including any physical addresses passed to masked-write
 helpers. Identify an actual destination address, stride, format, and frame
 completion signal before reading a buffer or registering V4L2 capture.
+
+## Static producer-index follow-up, 2026-09-26
+
+Constant propagation across calls to the firmware's physical-write helpers
+(`0x8b1805f0` and `0x8b180638`) resolves 274 call sites. The additional
+capture-domain results are routing/control fields at `0x06940858` and
+`0x0694085c`; the `0x068cxxxx` results are memory-agent gate, reset, and delay
+controls. None carries a ring address or producer index. This also confirms
+that the earlier linear-scan candidate `0x06941068` is the real
+`0x06940868` access reached with a different base. The direct and helper-call
+MMIO census therefore has not found a capture-engine producer register.
+
+There is, however, a stronger read-only cross-block lead. Retained AFBD dumps
+show `0x05600320/0x05600324` holding an exact Y/UV pair from the capture ring:
+
+```text
+Y:  0x4c3ef000  0x4c5ee000  0x4c7ed000
+UV: 0x4c9ec000  0x4cbeb000  0x4cdea000
+```
+
+The two rows have the same `0x1ff000` step. Historical dumps observed pair 1
+and pair 2, and the selected pair moved when the firmware's allocation order
+changed. The window is AFBD/display-fetch state, not capture-engine MMIO:
+stock `decd.ko` supplies four source-0 address slots at AFBD `+0x70..+0x90`,
+while `+0x320/+0x324` is populated without a direct firmware store and is
+consistent with downstream/current-address state. That distinction matters:
+the pair may be a safe completed consumer buffer, a lagged display buffer, or
+a stale value. Static evidence alone does not establish which.
+
+The V4L2 bridge now contains telemetry-only sampling for this hypothesis. On
+each single `cap-vde` increment it brackets the UV read with two Y reads,
+accepts only one of the three exact ring pairs, and increments one of three
+`(pair - cap_vde) mod 3` counters exposed as module parameters
+`afbd_phase0`, `afbd_phase1`, and `afbd_phase2`. It also exposes sample,
+invalid, and last-address values. **These reads do not select a capture
+buffer.** A bounded hardware run must first show one dominant phase bin across
+static and moving input, with valid pair rotation and no integrity regression.
+An even histogram means the register is fixed/stale; a split phase means its
+update is asynchronous and it is not a safe permanent completion ABI.

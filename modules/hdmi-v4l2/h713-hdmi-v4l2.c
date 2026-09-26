@@ -36,6 +36,8 @@
 #define H713_TRACE_CANARY 0x43414e31
 #define H713_MIPS_IMAGE 0x4b100000ULL
 #define H713_MIPS_VERIFY_SIZE 0x87000
+#define H713_AFBD_PAIR 0x05600320ULL
+#define H713_AFBD_PAIR_SIZE 0x8
 
 static const unsigned int h713_probe_pages[] = {
 	0x10000, 0x20000, 0x30000, 0x40000,
@@ -58,6 +60,7 @@ struct h713_capture {
 	struct task_struct *phase_worker;
 	u8 *ring;
 	u8 *trace;
+	void __iomem *afbd_pair;
 	u32 sequence;
 	int pair_offset;
 };
@@ -75,6 +78,20 @@ module_param(frames_produced, ulong, 0444);
 module_param(frames_delivered, ulong, 0444);
 module_param(frames_overwritten, ulong, 0444);
 module_param(frames_rejected, ulong, 0444);
+static unsigned long afbd_samples;
+static unsigned long afbd_invalid;
+static unsigned long afbd_phase0;
+static unsigned long afbd_phase1;
+static unsigned long afbd_phase2;
+static unsigned long afbd_y;
+static unsigned long afbd_uv;
+module_param(afbd_samples, ulong, 0444);
+module_param(afbd_invalid, ulong, 0444);
+module_param(afbd_phase0, ulong, 0444);
+module_param(afbd_phase1, ulong, 0444);
+module_param(afbd_phase2, ulong, 0444);
+module_param(afbd_y, ulong, 0444);
+module_param(afbd_uv, ulong, 0444);
 
 static u32 h713_trace_word(struct h713_capture *cap, unsigned int offset)
 {
@@ -85,6 +102,34 @@ static u8 *h713_plane(struct h713_capture *cap, unsigned int index)
 {
 	return cap->ring + H713_FIRST_PLANE - H713_CARVEOUT +
 	       H713_PLANE_STEP * index;
+}
+
+/*
+ * AFBD +0x320/+0x324 has held an exact Y/UV pair from this ring in every
+ * retained register dump. Its update timing is not established, so this is
+ * telemetry only: collect a counter-to-pair histogram without selecting a
+ * capture buffer from it. Re-reading Y brackets C against a torn pair.
+ */
+static int h713_afbd_pair_index(struct h713_capture *cap)
+{
+	u32 y, y_again, uv;
+	unsigned int i;
+
+	if (!cap->afbd_pair)
+		return -1;
+	y = readl(cap->afbd_pair);
+	uv = readl(cap->afbd_pair + 4);
+	y_again = readl(cap->afbd_pair);
+	afbd_y = y_again;
+	afbd_uv = uv;
+	if (y != y_again)
+		return -1;
+	for (i = 0; i < 3; i++) {
+		if (y == H713_FIRST_PLANE + H713_PLANE_STEP * i &&
+		    uv == H713_FIRST_PLANE + H713_PLANE_STEP * (i + 3))
+			return i;
+	}
+	return -1;
 }
 
 static u32 h713_hash_plane(struct h713_capture *cap, unsigned int index)
@@ -136,6 +181,7 @@ static int h713_phase_thread(void *arg)
 	u32 previous[6], observed[6];
 	u32 last_vde, vde, last_mode, mode;
 	unsigned int i, changed, active, delta;
+	int afbd_pair, afbd_offset;
 	unsigned long last_activity = jiffies;
 	bool baseline = false;
 
@@ -167,6 +213,21 @@ static int h713_phase_thread(void *arg)
 		delta = vde - last_vde;
 		last_vde = vde;
 		last_activity = jiffies;
+		if (delta == 1 && cap->afbd_pair) {
+			afbd_samples++;
+			afbd_pair = h713_afbd_pair_index(cap);
+			if (afbd_pair < 0) {
+				afbd_invalid++;
+			} else {
+				afbd_offset = (afbd_pair + 3 - vde % 3) % 3;
+				if (afbd_offset == 0)
+					afbd_phase0++;
+				else if (afbd_offset == 1)
+					afbd_phase1++;
+				else
+					afbd_phase2++;
+			}
+		}
 		if (READ_ONCE(cap->pair_offset) >= 0)
 			continue;
 		h713_hash_ring(cap, observed);
@@ -652,6 +713,9 @@ static int __init h713_init(void)
 	ret = video_register_device(&cap->vdev, VFL_TYPE_VIDEO, -1);
 	if (ret)
 		goto release_queue;
+	cap->afbd_pair = ioremap(H713_AFBD_PAIR, H713_AFBD_PAIR_SIZE);
+	if (!cap->afbd_pair)
+		pr_warn("h713-hdmi-v4l2: AFBD pair telemetry unavailable\n");
 	cap->phase_worker = kthread_run(h713_phase_thread, cap,
 					"h713-hdmi-phase");
 	if (IS_ERR(cap->phase_worker)) {
@@ -665,6 +729,8 @@ static int __init h713_init(void)
 	return 0;
 
 unregister_video:
+	if (cap->afbd_pair)
+		iounmap(cap->afbd_pair);
 	video_unregister_device(&cap->vdev);
 release_queue:
 	vb2_queue_release(q);
@@ -687,6 +753,11 @@ static void __exit h713_exit(void)
 
 	if (cap->phase_worker)
 		kthread_stop(cap->phase_worker);
+	pr_info("h713-hdmi-v4l2: AFBD telemetry samples=%lu invalid=%lu phase=%lu/%lu/%lu last=%08lx/%08lx\n",
+		afbd_samples, afbd_invalid, afbd_phase0, afbd_phase1,
+		afbd_phase2, afbd_y, afbd_uv);
+	if (cap->afbd_pair)
+		iounmap(cap->afbd_pair);
 	video_unregister_device(&cap->vdev);
 	vb2_queue_release(&cap->queue);
 	v4l2_device_unregister(&cap->v4l2_dev);
