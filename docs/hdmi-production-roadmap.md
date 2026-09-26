@@ -265,3 +265,9 @@ outside Git, with checksums and a small representative frame or optical
 contact sheet in the evidence directory. A successful script exit or nominal
 60 Hz mode alone does not establish a good image, delivered 60 fps, or low
 latency.
+
+Before any test that will put content on the projector for optical evidence,
+prepare the software and hardware first, then stop and explicitly ask the
+operator to ready the camera. Start the bounded visible run only after the
+operator confirms recording is ready. State whether the recording must include
+the console-before, video, interruption/recovery, and console-after phases.
