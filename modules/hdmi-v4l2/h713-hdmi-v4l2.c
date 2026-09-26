@@ -24,10 +24,6 @@
 #define H713_CARVEOUT_SIZE (26 * 1024 * 1024)
 #define H713_FIRST_PLANE 0x4c3ef000ULL
 #define H713_PLANE_STEP 0x1ff000
-#define H713_WIDTH 640
-#define H713_HEIGHT 480
-#define H713_PLANE_SIZE (H713_WIDTH * H713_HEIGHT)
-#define H713_FRAME_SIZE (2 * H713_PLANE_SIZE)
 #define H713_PAGE_SIZE 4096
 #define H713_NO_FRAME_MS 3000
 #define H713_TRACE 0x4d980000ULL
@@ -40,10 +36,6 @@
 #define H713_AFBD_PAIR_SIZE 0x8
 #define H713_AFBD_VOTE_WINDOW 12
 #define H713_AFBD_VOTE_MIN 10
-
-static const unsigned int h713_probe_pages[] = {
-	0x10000, 0x20000, 0x30000, 0x40000,
-};
 
 struct h713_buffer {
 	struct vb2_v4l2_buffer vb;
@@ -65,6 +57,10 @@ struct h713_capture {
 	void __iomem *afbd_pair;
 	u32 sequence;
 	int pair_offset;
+	unsigned int width;
+	unsigned int height;
+	unsigned int plane_size;
+	unsigned int frame_size;
 };
 
 static struct h713_capture *h713_cap;
@@ -76,6 +72,12 @@ static bool phase_from_hash = true;
 module_param(phase_from_hash, bool, 0444);
 MODULE_PARM_DESC(phase_from_hash,
 	"Allow ring-content phase learning (default true); false validates AFBD bootstrap alone");
+static unsigned int width = 640;
+module_param(width, uint, 0444);
+MODULE_PARM_DESC(width, "Captured width: 640 or 1280 (default 640)");
+static unsigned int height = 480;
+module_param(height, uint, 0444);
+MODULE_PARM_DESC(height, "Captured height: 480 or 720 (default 480)");
 static unsigned long frames_produced;
 static unsigned long frames_delivered;
 static unsigned long frames_overwritten;
@@ -142,10 +144,10 @@ static u32 h713_hash_plane(struct h713_capture *cap, unsigned int index)
 {
 	u8 *plane = h713_plane(cap, index);
 	u32 crc = 0;
-	unsigned int i;
+	unsigned int offset;
 
-	for (i = 0; i < ARRAY_SIZE(h713_probe_pages); i++)
-		crc = crc32_le(crc, plane + h713_probe_pages[i],
+	for (offset = 0x10000; offset < cap->plane_size; offset += 0x20000)
+		crc = crc32_le(crc, plane + offset,
 			       H713_PAGE_SIZE);
 	return crc;
 }
@@ -396,16 +398,16 @@ static int h713_capture_thread(void *arg)
 		tick = ktime_get_ns();
 		before_y = h713_hash_plane(cap, pair);
 		before_uv = h713_hash_plane(cap, pair + 3);
-		memcpy(dst, h713_plane(cap, pair), H713_PLANE_SIZE);
-		memcpy(dst + H713_PLANE_SIZE, h713_plane(cap, pair + 3),
-		       H713_PLANE_SIZE);
+		memcpy(dst, h713_plane(cap, pair), cap->plane_size);
+		memcpy(dst + cap->plane_size, h713_plane(cap, pair + 3),
+		       cap->plane_size);
 		/* Full verification re-reads both planes; sparse mode checks probes. */
 		if (before_y != h713_hash_plane(cap, pair) ||
 		    before_uv != h713_hash_plane(cap, pair + 3) ||
 		    (verify_full &&
-		     (memcmp(dst, h713_plane(cap, pair), H713_PLANE_SIZE) ||
-		      memcmp(dst + H713_PLANE_SIZE, h713_plane(cap, pair + 3),
-			     H713_PLANE_SIZE)))) {
+		     (memcmp(dst, h713_plane(cap, pair), cap->plane_size) ||
+		      memcmp(dst + cap->plane_size, h713_plane(cap, pair + 3),
+			     cap->plane_size)))) {
 			copy_ns += ktime_get_ns() - tick;
 			unstable++;
 			frames_rejected++;
@@ -413,7 +415,7 @@ static int h713_capture_thread(void *arg)
 		}
 		copy_ns += ktime_get_ns() - tick;
 
-		vb2_set_plane_payload(&buf->vb.vb2_buf, 0, H713_FRAME_SIZE);
+		vb2_set_plane_payload(&buf->vb.vb2_buf, 0, cap->frame_size);
 		buf->vb.vb2_buf.timestamp = completion_ns;
 		buf->vb.sequence = frame_sequence;
 		buf->vb.field = V4L2_FIELD_NONE;
@@ -436,16 +438,20 @@ static int h713_queue_setup(struct vb2_queue *q, unsigned int *nbuffers,
 			    unsigned int *nplanes, unsigned int sizes[],
 			    struct device *alloc_devs[])
 {
+	struct h713_capture *cap = vb2_get_drv_priv(q);
+
 	if (*nplanes)
-		return sizes[0] < H713_FRAME_SIZE ? -EINVAL : 0;
+		return sizes[0] < cap->frame_size ? -EINVAL : 0;
 	*nplanes = 1;
-	sizes[0] = H713_FRAME_SIZE;
+	sizes[0] = cap->frame_size;
 	return 0;
 }
 
 static int h713_buf_prepare(struct vb2_buffer *vb)
 {
-	if (vb2_plane_size(vb, 0) < H713_FRAME_SIZE)
+	struct h713_capture *cap = vb2_get_drv_priv(vb->vb2_queue);
+
+	if (vb2_plane_size(vb, 0) < cap->frame_size)
 		return -EINVAL;
 	return 0;
 }
@@ -500,17 +506,20 @@ static const struct vb2_ops h713_queue_ops = {
 	.stop_streaming = h713_stop_streaming,
 };
 
-static void h713_fixed_format(struct v4l2_format *f)
+static void h713_fixed_format(struct h713_capture *cap, struct v4l2_format *f)
 {
 	memset(&f->fmt.pix, 0, sizeof(f->fmt.pix));
-	f->fmt.pix.width = H713_WIDTH;
-	f->fmt.pix.height = H713_HEIGHT;
+	f->fmt.pix.width = cap->width;
+	f->fmt.pix.height = cap->height;
 	f->fmt.pix.pixelformat = V4L2_PIX_FMT_NV16;
 	f->fmt.pix.field = V4L2_FIELD_NONE;
-	f->fmt.pix.bytesperline = H713_WIDTH;
-	f->fmt.pix.sizeimage = H713_FRAME_SIZE;
-	f->fmt.pix.colorspace = V4L2_COLORSPACE_SMPTE170M;
+	f->fmt.pix.bytesperline = cap->width;
+	f->fmt.pix.sizeimage = cap->frame_size;
+	f->fmt.pix.colorspace = cap->height == 720 ? V4L2_COLORSPACE_REC709 :
+		V4L2_COLORSPACE_SMPTE170M;
+	f->fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
 	f->fmt.pix.quantization = V4L2_QUANTIZATION_LIM_RANGE;
+	f->fmt.pix.xfer_func = V4L2_XFER_FUNC_DEFAULT;
 }
 
 static int h713_querycap(struct file *file, void *priv,
@@ -535,19 +544,23 @@ static int h713_enum_fmt(struct file *file, void *priv,
 static int h713_enum_framesizes(struct file *file, void *priv,
 				struct v4l2_frmsizeenum *f)
 {
+	struct h713_capture *cap = video_drvdata(file);
+
 	if (f->index || f->pixel_format != V4L2_PIX_FMT_NV16)
 		return -EINVAL;
 	f->type = V4L2_FRMSIZE_TYPE_DISCRETE;
-	f->discrete.width = H713_WIDTH;
-	f->discrete.height = H713_HEIGHT;
+	f->discrete.width = cap->width;
+	f->discrete.height = cap->height;
 	return 0;
 }
 
 static int h713_enum_frameintervals(struct file *file, void *priv,
 				    struct v4l2_frmivalenum *f)
 {
+	struct h713_capture *cap = video_drvdata(file);
+
 	if (f->index || f->pixel_format != V4L2_PIX_FMT_NV16 ||
-	    f->width != H713_WIDTH || f->height != H713_HEIGHT)
+	    f->width != cap->width || f->height != cap->height)
 		return -EINVAL;
 	f->type = V4L2_FRMIVAL_TYPE_DISCRETE;
 	f->discrete.numerator = 1;
@@ -599,13 +612,17 @@ static int h713_s_input(struct file *file, void *priv, unsigned int index)
 
 static int h713_g_fmt(struct file *file, void *priv, struct v4l2_format *f)
 {
-	h713_fixed_format(f);
+	struct h713_capture *cap = video_drvdata(file);
+
+	h713_fixed_format(cap, f);
 	return 0;
 }
 
 static int h713_try_fmt(struct file *file, void *priv, struct v4l2_format *f)
 {
-	h713_fixed_format(f);
+	struct h713_capture *cap = video_drvdata(file);
+
+	h713_fixed_format(cap, f);
 	return 0;
 }
 
@@ -615,7 +632,7 @@ static int h713_s_fmt(struct file *file, void *priv, struct v4l2_format *f)
 
 	if (vb2_is_busy(&cap->queue))
 		return -EBUSY;
-	h713_fixed_format(f);
+	h713_fixed_format(cap, f);
 	return 0;
 }
 
@@ -655,10 +672,16 @@ static int __init h713_init(void)
 	struct h713_capture *cap;
 	struct vb2_queue *q;
 	u8 *firmware;
+	u32 hook0, hook1, hook2, hook3;
 	int ret;
 
 	if (!of_machine_is_compatible("cstenger,hy200-qz713df-a1"))
 		return -ENODEV;
+	if (!((width == 640 && height == 480) ||
+	      (width == 1280 && height == 720))) {
+		pr_err("h713-hdmi-v4l2: supported sizes are 640x480 and 1280x720\n");
+		return -EINVAL;
+	}
 
 	cap = kzalloc(sizeof(*cap), GFP_KERNEL);
 	if (!cap)
@@ -668,6 +691,14 @@ static int __init h713_init(void)
 	if (IS_ERR(cap->pdev)) {
 		ret = PTR_ERR(cap->pdev);
 		goto free_cap;
+	}
+	cap->width = width;
+	cap->height = height;
+	cap->plane_size = width * height;
+	cap->frame_size = 2 * cap->plane_size;
+	if (cap->plane_size > H713_PLANE_STEP) {
+		ret = -EINVAL;
+		goto unregister_pdev;
 	}
 	ret = dma_coerce_mask_and_coherent(&cap->pdev->dev, DMA_BIT_MASK(32));
 	if (ret)
@@ -695,15 +726,14 @@ static int __init h713_init(void)
 		ret = -ENOMEM;
 		goto unmap_trace;
 	}
-	if (le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0ba0))) !=
-			0x27bdfff8 ||
-	    le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0bac))) !=
-			0x3c18ad98 ||
-	    le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0c08))) !=
-			0x0ac618eb ||
-	    le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x863a4))) !=
-			0x0ac402e8) {
-		pr_err("h713-hdmi-v4l2: guarded VIncap completion hook absent\n");
+	hook0 = le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0ba0)));
+	hook1 = le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0bac)));
+	hook2 = le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x0c08)));
+	hook3 = le32_to_cpu(READ_ONCE(*(__le32 *)(firmware + 0x863a4)));
+	if (hook0 != 0x27bdfff8 || hook1 != 0x3c18ad98 ||
+	    hook2 != 0x0ac618eb || hook3 != 0x0ac402e8) {
+		pr_err("h713-hdmi-v4l2: guarded VIncap completion hook absent: %08x/%08x/%08x/%08x\n",
+		       hook0, hook1, hook2, hook3);
 		memunmap(firmware);
 		ret = -ENODEV;
 		goto unmap_trace;
@@ -761,8 +791,8 @@ static int __init h713_init(void)
 		goto unregister_video;
 	}
 	h713_cap = cap;
-	pr_info("h713-hdmi-v4l2: read-only 640x480 NV16 ring at /dev/video%d\n",
-		cap->vdev.num);
+	pr_info("h713-hdmi-v4l2: read-only %ux%u NV16 ring at /dev/video%d\n",
+		cap->width, cap->height, cap->vdev.num);
 	return 0;
 
 unregister_video:

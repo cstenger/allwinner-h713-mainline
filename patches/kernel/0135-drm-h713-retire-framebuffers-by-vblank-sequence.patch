@@ -1,0 +1,175 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 26 Sep 2026 14:25:00 -0700
+Subject: [PATCH] drm: h713-afbd: retire framebuffers by vblank sequence
+
+The 100 ms delayed-work retention in the previous change is safe on the
+60 Hz projector, but elapsed wall time is not the event that advances the
+display engine.  A stalled or delayed scanout must not make an old mapping
+eligible for release merely because a timer expired.
+
+Use drm_vblank_work to retain each replaced framebuffer through six completed
+scanouts after AFBD_STATUS_DONE.  Six vblanks preserves the hardware-verified
+100 ms bound at the adopted 60 Hz mode while tying retirement to actual
+display progress.  The helper holds a vblank reference and executes the final
+framebuffer put outside IRQ context, so page flips remain non-blocking.
+
+Flush pending retirements before disabling vblank delivery.  If allocation or
+vblank scheduling fails during an exceptional modeset/teardown path, retain
+the proven synchronous 100 ms delay as the conservative fallback.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/gpu/drm/tiny/sun50i-h713-afbd.c | 58 +++++++++++++++----------
+ 1 file changed, 34 insertions(+), 24 deletions(-)
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -44,7 +44,6 @@
+ #include <linux/of_reserved_mem.h>
+ #include <linux/platform_device.h>
+ #include <linux/slab.h>
+-#include <linux/workqueue.h>
+ 
+ #include <drm/clients/drm_client_setup.h>
+ #include <drm/drm_atomic.h>
+@@ -63,6 +62,7 @@
+ #include <drm/drm_probe_helper.h>
+ #include <drm/drm_simple_kms_helper.h>
+ #include <drm/drm_vblank.h>
++#include <drm/drm_vblank_work.h>
+ 
+ /* AFBD source 0 (linear NV12 video). */
+ #define AFBD_VIDEO_CTRL		0x010
+@@ -108,11 +108,12 @@
+ /* The four queue slots are 4 bytes apart in each address ring. */
+ #define H713_VIDEO_SLOTS	4
+ 
+-/* Stock-style register recipes leave at least this much retirement slack. */
+-#define H713_AFBD_RETIRE_DELAY_MS	100
++/* Six 60 Hz scans preserve the hardware-verified 100 ms safety bound. */
++#define H713_AFBD_RETIRE_VBLANKS	6
++#define H713_AFBD_RETIRE_FALLBACK_MS	100
+ 
+ struct h713_afbd_retire {
+-	struct delayed_work work;
++	struct drm_vblank_work work;
+ 	struct drm_framebuffer *fb;
+ };
+ 
+@@ -135,7 +136,6 @@
+ 	u32 gain_idle;
+ 	u32 selector_rgb;
+ 	bool video_active;
+-	struct workqueue_struct *retire_wq;
+ };
+ 
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+@@ -143,23 +143,16 @@
+ 	return container_of(drm, struct h713_afbd, drm);
+ }
+ 
+-static void h713_afbd_retire_work(struct work_struct *work)
++static void h713_afbd_retire_work(struct kthread_work *work)
+ {
+ 	struct h713_afbd_retire *retire =
+-		container_of(to_delayed_work(work),
++		container_of(to_drm_vblank_work(work),
+ 			     struct h713_afbd_retire, work);
+ 
+ 	drm_framebuffer_put(retire->fb);
+ 	kfree(retire);
+ }
+ 
+-static void h713_afbd_destroy_retire_wq(void *data)
+-{
+-	struct h713_afbd *h = data;
+-
+-	destroy_workqueue(h->retire_wq);
+-}
+-
+ static void h713_afbd_init_video_info(struct h713_afbd *h)
+ {
+ 	u32 *v = h->video_info;
+@@ -440,10 +433,12 @@
+ static void h713_afbd_pipe_disable(struct drm_simple_display_pipe *pipe)
+ {
+ 	/*
+-	 * Stop delivering vblanks, but leave the panel and its last frame
+-	 * alone: this driver cannot bring the display back up, so blanking it
+-	 * would strand the board with a dark projector until the next reboot.
++	 * Complete mapping retirements before drm_crtc_vblank_off() cancels
++	 * pending vblank work.  Leave the panel and its last frame alone: this
++	 * driver cannot bring the display back up, so blanking it would strand
++	 * the board with a dark projector until the next reboot.
+ 	 */
++	drm_vblank_work_flush_all(&pipe->crtc);
+ 	drm_crtc_vblank_off(&pipe->crtc);
+ }
+ 
+@@ -491,6 +486,8 @@
+ {
+ 	struct h713_afbd *h = to_h713(pipe->crtc.dev);
+ 	struct h713_afbd_retire *retire;
++	u64 target;
++	int ret;
+ 
+ 	/*
+ 	 * cleanup_fb is also used to unwind a failed prepare.  Only a state
+@@ -503,23 +500,34 @@
+ 
+ 	/*
+ 	 * DONE acknowledges the source latch, not complete retirement of every
+-	 * old-source read.  Do not block atomic cleanup or guess a vblank count:
+-	 * keep a framebuffer reference asynchronously so its DMA mapping cannot
+-	 * disappear during the hardware's measured post-latch read window.
++	 * old-source read.  Keep a framebuffer reference until six real display
++	 * scans have completed so its DMA mapping cannot disappear during the
++	 * hardware's measured post-latch read window.
+ 	 */
+ 	retire = kmalloc(sizeof(*retire), GFP_KERNEL);
+ 	if (!retire) {
+ 		drm_warn(&h->drm,
+ 			 "retire allocation failed; delaying cleanup synchronously\n");
+-		msleep(H713_AFBD_RETIRE_DELAY_MS);
++		msleep(H713_AFBD_RETIRE_FALLBACK_MS);
+ 		return;
+ 	}
+ 
+ 	drm_framebuffer_get(old_state->fb);
+ 	retire->fb = old_state->fb;
+-	INIT_DELAYED_WORK(&retire->work, h713_afbd_retire_work);
+-	queue_delayed_work(h->retire_wq, &retire->work,
+-			   msecs_to_jiffies(H713_AFBD_RETIRE_DELAY_MS));
++	drm_vblank_work_init(&retire->work, &pipe->crtc,
++			     h713_afbd_retire_work);
++	target = drm_crtc_accurate_vblank_count(&pipe->crtc) +
++		 H713_AFBD_RETIRE_VBLANKS;
++	ret = drm_vblank_work_schedule(&retire->work, target, true);
++	if (ret > 0)
++		return;
++
++	drm_warn(&h->drm,
++		 "could not schedule vblank retirement (%d); delaying synchronously\n",
++		 ret);
++	msleep(H713_AFBD_RETIRE_FALLBACK_MS);
++	drm_framebuffer_put(retire->fb);
++	kfree(retire);
+ }
+ 
+ static int h713_afbd_enable_vblank(struct drm_simple_display_pipe *pipe)
+@@ -656,13 +664,6 @@
+ 	if (IS_ERR(h))
+ 		return PTR_ERR(h);
+ 	drm = &h->drm;
+-	h->retire_wq = alloc_ordered_workqueue("h713-afbd-retire",
+-					       WQ_MEM_RECLAIM);
+-	if (!h->retire_wq)
+-		return -ENOMEM;
+-	ret = devm_add_action_or_reset(dev, h713_afbd_destroy_retire_wq, h);
+-	if (ret)
+-		return ret;
+ 
+ 	h->regs = devm_platform_ioremap_resource_byname(pdev, "afbd");
+ 	if (IS_ERR(h->regs))
+-- 
+2.51.0

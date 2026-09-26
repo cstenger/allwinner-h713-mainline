@@ -1,0 +1,306 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 26 Sep 2026 14:58:00 -0700
+Subject: [PATCH] drm: h713-afbd: retire framebuffers from physical vsync
+
+drm_vblank_work cannot be scheduled from this driver's cleanup_fb path while
+DRM marks the adopted CRTC as in modeset.  All three attempts in the static
+marker test returned zero and fell back to elapsed-time retirement.  The old
+mapping was released at 100 ms and display master 2 made a stale read at about
+120 ms, faulting inside that mapping.
+
+Count the AFBD physical-vsync IRQ directly and keep retired framebuffer
+references on a driver-local queue for eight completed scans.  At the measured
+60 Hz panel cadence that is about 134 ms, beyond the observed stale-read
+window, and it advances only when the display itself advances.  The IRQ queues
+process-context work for the final framebuffer put; it never releases GEM or
+DMA resources in interrupt context.
+
+Keep the physical IRQ enabled independently of DRM event delivery so modesets
+cannot stall retirement.  Drain the queue on driver removal and shutdown,
+with a bounded exceptional fallback for a stopped display.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/gpu/drm/tiny/sun50i-h713-afbd.c | 112 ++++++++++++++++++------
+ 1 file changed, 84 insertions(+), 28 deletions(-)
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -38,12 +38,15 @@
+ #include <linux/dma-mapping.h>
+ #include <linux/interrupt.h>
+ #include <linux/iopoll.h>
++#include <linux/list.h>
+ #include <linux/mm.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+ #include <linux/of_reserved_mem.h>
+ #include <linux/platform_device.h>
+ #include <linux/slab.h>
++#include <linux/wait.h>
++#include <linux/workqueue.h>
+ 
+ #include <drm/clients/drm_client_setup.h>
+ #include <drm/drm_atomic.h>
+@@ -62,7 +65,6 @@
+ #include <drm/drm_probe_helper.h>
+ #include <drm/drm_simple_kms_helper.h>
+ #include <drm/drm_vblank.h>
+-#include <drm/drm_vblank_work.h>
+ 
+ /* AFBD source 0 (linear NV12 video). */
+ #define AFBD_VIDEO_CTRL		0x010
+@@ -108,13 +110,15 @@
+ /* The four queue slots are 4 bytes apart in each address ring. */
+ #define H713_VIDEO_SLOTS	4
+ 
+-/* Six 60 Hz scans preserve the hardware-verified 100 ms safety bound. */
+-#define H713_AFBD_RETIRE_VBLANKS	6
+-#define H713_AFBD_RETIRE_FALLBACK_MS	100
++/* Eight completed scans exceed the observed 120 ms stale-read window. */
++#define H713_AFBD_RETIRE_VBLANKS	8
++#define H713_AFBD_RETIRE_DRAIN_MS	500
++#define H713_AFBD_RETIRE_FALLBACK_MS	150
+ 
+ struct h713_afbd_retire {
+-	struct drm_vblank_work work;
++	struct list_head node;
+ 	struct drm_framebuffer *fb;
++	u64 target_vblank;
+ };
+ 
+ struct h713_afbd {
+@@ -136,6 +140,11 @@
+ 	u32 gain_idle;
+ 	u32 selector_rgb;
+ 	bool video_active;
++	spinlock_t retire_lock;
++	struct list_head retire_list;
++	struct work_struct retire_work;
++	wait_queue_head_t retire_wait;
++	u64 retire_vblank_count;
+ };
+ 
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+@@ -143,14 +152,57 @@
+ 	return container_of(drm, struct h713_afbd, drm);
+ }
+ 
+-static void h713_afbd_retire_work(struct kthread_work *work)
++static bool h713_afbd_retires_empty(struct h713_afbd *h)
+ {
+-	struct h713_afbd_retire *retire =
+-		container_of(to_drm_vblank_work(work),
+-			     struct h713_afbd_retire, work);
++	unsigned long flags;
++	bool empty;
+ 
+-	drm_framebuffer_put(retire->fb);
+-	kfree(retire);
++	spin_lock_irqsave(&h->retire_lock, flags);
++	empty = list_empty(&h->retire_list);
++	spin_unlock_irqrestore(&h->retire_lock, flags);
++	return empty;
++}
++
++static void h713_afbd_retire_work(struct work_struct *work)
++{
++	struct h713_afbd *h = container_of(work, struct h713_afbd,
++					   retire_work);
++	struct h713_afbd_retire *retire;
++	unsigned long flags;
++
++	for (;;) {
++		spin_lock_irqsave(&h->retire_lock, flags);
++		retire = list_first_entry_or_null(&h->retire_list,
++						  struct h713_afbd_retire, node);
++		if (!retire || retire->target_vblank > h->retire_vblank_count) {
++			spin_unlock_irqrestore(&h->retire_lock, flags);
++			break;
++		}
++		list_del(&retire->node);
++		spin_unlock_irqrestore(&h->retire_lock, flags);
++
++		drm_framebuffer_put(retire->fb);
++		kfree(retire);
++	}
++	wake_up_all(&h->retire_wait);
++}
++
++static void h713_afbd_drain_retires(struct h713_afbd *h)
++{
++	unsigned long flags;
++	long ret;
++
++	ret = wait_event_timeout(h->retire_wait,
++				 h713_afbd_retires_empty(h),
++				 msecs_to_jiffies(H713_AFBD_RETIRE_DRAIN_MS));
++	if (!ret) {
++		drm_warn(&h->drm, "timed out draining retired framebuffers\n");
++		spin_lock_irqsave(&h->retire_lock, flags);
++		h->retire_vblank_count = U64_MAX;
++		spin_unlock_irqrestore(&h->retire_lock, flags);
++		queue_work(system_wq, &h->retire_work);
++	}
++	flush_work(&h->retire_work);
+ }
+ 
+ static void h713_afbd_init_video_info(struct h713_afbd *h)
+@@ -433,12 +485,11 @@
+ static void h713_afbd_pipe_disable(struct drm_simple_display_pipe *pipe)
+ {
+ 	/*
+-	 * Complete mapping retirements before drm_crtc_vblank_off() cancels
+-	 * pending vblank work.  Leave the panel and its last frame alone: this
+-	 * driver cannot bring the display back up, so blanking it would strand
+-	 * the board with a dark projector until the next reboot.
++	 * Leave the panel and its last frame alone: this driver cannot bring the
++	 * display back up, so blanking it would strand the board with a dark
++	 * projector until the next reboot.  The physical IRQ remains enabled for
++	 * the driver's independent retirement counter.
+ 	 */
+-	drm_vblank_work_flush_all(&pipe->crtc);
+ 	drm_crtc_vblank_off(&pipe->crtc);
+ }
+ 
+@@ -486,8 +537,7 @@
+ {
+ 	struct h713_afbd *h = to_h713(pipe->crtc.dev);
+ 	struct h713_afbd_retire *retire;
+-	u64 target;
+-	int ret;
++	unsigned long flags;
+ 
+ 	/*
+ 	 * cleanup_fb is also used to unwind a failed prepare.  Only a state
+@@ -500,34 +550,24 @@
+ 
+ 	/*
+ 	 * DONE acknowledges the source latch, not complete retirement of every
+-	 * old-source read.  Keep a framebuffer reference until six real display
+-	 * scans have completed so its DMA mapping cannot disappear during the
+-	 * hardware's measured post-latch read window.
++	 * old-source read.  Keep a framebuffer reference until eight physical
++	 * AFBD vsync IRQs have completed so its DMA mapping cannot disappear
++	 * during the observed post-latch read window.
+ 	 */
+ 	retire = kmalloc(sizeof(*retire), GFP_KERNEL);
+ 	if (!retire) {
+-		drm_warn(&h->drm,
+-			 "retire allocation failed; delaying cleanup synchronously\n");
++		drm_warn(&h->drm, "retire allocation failed; delaying cleanup\n");
+ 		msleep(H713_AFBD_RETIRE_FALLBACK_MS);
+ 		return;
+ 	}
+ 
+ 	drm_framebuffer_get(old_state->fb);
+ 	retire->fb = old_state->fb;
+-	drm_vblank_work_init(&retire->work, &pipe->crtc,
+-			     h713_afbd_retire_work);
+-	target = drm_crtc_accurate_vblank_count(&pipe->crtc) +
+-		 H713_AFBD_RETIRE_VBLANKS;
+-	ret = drm_vblank_work_schedule(&retire->work, target, true);
+-	if (ret > 0)
+-		return;
+-
+-	drm_warn(&h->drm,
+-		 "could not schedule vblank retirement (%d); delaying synchronously\n",
+-		 ret);
+-	msleep(H713_AFBD_RETIRE_FALLBACK_MS);
+-	drm_framebuffer_put(retire->fb);
+-	kfree(retire);
++	spin_lock_irqsave(&h->retire_lock, flags);
++	retire->target_vblank = h->retire_vblank_count +
++				H713_AFBD_RETIRE_VBLANKS;
++	list_add_tail(&retire->node, &h->retire_list);
++	spin_unlock_irqrestore(&h->retire_lock, flags);
+ }
+ 
+ static int h713_afbd_enable_vblank(struct drm_simple_display_pipe *pipe)
+@@ -541,10 +581,7 @@
+ 
+ static void h713_afbd_disable_vblank(struct drm_simple_display_pipe *pipe)
+ {
+-	struct h713_afbd *h = to_h713(pipe->crtc.dev);
+-	u8 v = readb(h->regs + AFBD_IRQ_ENABLE);
+-
+-	writeb(v & ~AFBD_IRQ_VSYNC, h->regs + AFBD_IRQ_ENABLE);
++	/* Keep the physical IRQ running for framebuffer retirement. */
+ }
+ 
+ static const struct drm_simple_display_pipe_funcs h713_afbd_pipe_funcs = {
+@@ -561,6 +598,9 @@
+ {
+ 	struct h713_afbd *h = data;
+ 	u8 status = readb(h->regs + AFBD_IRQ_STATUS);
++	struct h713_afbd_retire *retire;
++	unsigned long flags;
++	bool due = false;
+ 
+ 	if (!(status & AFBD_IRQ_VSYNC))
+ 		return IRQ_NONE;
+@@ -568,6 +608,16 @@
+ 	/* Write-1-to-clear, exactly as the vendor's dec_irq_query() acks it. */
+ 	writeb(status | AFBD_IRQ_VSYNC, h->regs + AFBD_IRQ_STATUS);
+ 
++	spin_lock_irqsave(&h->retire_lock, flags);
++	h->retire_vblank_count++;
++	retire = list_first_entry_or_null(&h->retire_list,
++					  struct h713_afbd_retire, node);
++	if (retire && retire->target_vblank <= h->retire_vblank_count)
++		due = true;
++	spin_unlock_irqrestore(&h->retire_lock, flags);
++	if (due)
++		queue_work(system_wq, &h->retire_work);
++
+ 	drm_crtc_handle_vblank(&h->pipe.crtc);
+ 	return IRQ_HANDLED;
+ }
+@@ -664,6 +714,10 @@
+ 	if (IS_ERR(h))
+ 		return PTR_ERR(h);
+ 	drm = &h->drm;
++	spin_lock_init(&h->retire_lock);
++	INIT_LIST_HEAD(&h->retire_list);
++	INIT_WORK(&h->retire_work, h713_afbd_retire_work);
++	init_waitqueue_head(&h->retire_wait);
+ 
+ 	h->regs = devm_platform_ioremap_resource_byname(pdev, "afbd");
+ 	if (IS_ERR(h->regs))
+@@ -822,12 +876,13 @@
+ 
+ 	drm_mode_config_reset(drm);
+ 
+-	/* Vsync is masked until a client asks for vblanks. */
+-	writeb(readb(h->regs + AFBD_IRQ_ENABLE) & ~AFBD_IRQ_VSYNC,
+-	       h->regs + AFBD_IRQ_ENABLE);
+ 	ret = devm_request_irq(dev, irq, h713_afbd_irq, 0, "h713-afbd", h);
+ 	if (ret)
+ 		return ret;
++	/* Retirement follows the physical scan even when DRM masks events. */
++	writeb(AFBD_IRQ_VSYNC, h->regs + AFBD_IRQ_STATUS);
++	writeb(readb(h->regs + AFBD_IRQ_ENABLE) | AFBD_IRQ_VSYNC,
++	       h->regs + AFBD_IRQ_ENABLE);
+ 
+ 	platform_set_drvdata(pdev, h);
+ 
+@@ -846,6 +901,9 @@
+ 	drm_dev_unplug(&h->drm);
+ 	h713_afbd_video_stop(h);
+ 	drm_atomic_helper_shutdown(&h->drm);
++	h713_afbd_drain_retires(h);
++	writeb(readb(h->regs + AFBD_IRQ_ENABLE) & ~AFBD_IRQ_VSYNC,
++	       h->regs + AFBD_IRQ_ENABLE);
+ }
+ 
+ static void h713_afbd_shutdown(struct platform_device *pdev)
+@@ -854,6 +912,7 @@
+ 
+ 	h713_afbd_video_stop(h);
+ 	drm_atomic_helper_shutdown(&h->drm);
++	h713_afbd_drain_retires(h);
+ }
+ 
+ static const struct of_device_id h713_afbd_of_match[] = {
+-- 
+2.51.0
