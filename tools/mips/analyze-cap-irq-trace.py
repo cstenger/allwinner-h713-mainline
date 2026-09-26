@@ -3,6 +3,7 @@
 
 import argparse
 import collections
+import gzip
 import json
 from pathlib import Path
 
@@ -11,7 +12,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path)
     args = parser.parse_args()
-    records = [json.loads(line) for line in args.trace.read_text().splitlines()]
+    opener = gzip.open if args.trace.suffix == ".gz" else open
+    with opener(args.trace, "rt") as trace:
+        records = [json.loads(line) for line in trace]
     samples = [record for record in records if record.get("type") == "sample"]
     if not samples or "pair_windows" not in samples[0]:
         raise SystemExit("trace has no pair-bracketed samples")
@@ -64,6 +67,8 @@ def main():
                     if len(pairs) == 1)
     contiguous = 0
     sequence_errors = []
+    phase_offsets = collections.Counter((pair - epoch) % 3
+                                        for epoch, pair in epochs)
     for previous, current in zip(epochs, epochs[1:]):
         if current[0] != previous[0] + 1:
             continue
@@ -77,7 +82,8 @@ def main():
               set(lead_states).issubset({0, 1}) and
               vde_lead_windows > 0 and vde_lead_changes == 0 and
               all(len(pair_set) == 1 for pair_set in pair_sets) and
-              contiguous == delta["vde"] and not sequence_errors)
+              contiguous == delta["vde"] and not sequence_errors and
+              len(phase_offsets) == 1)
     result = {
         "pass": passed,
         "samples": len(samples),
@@ -92,6 +98,9 @@ def main():
         "epoch_pair_sets": {str(key): value for key, value in pair_sets.items()},
         "contiguous_epoch_transitions": contiguous,
         "pair_sequence_errors": sequence_errors,
+        "counter_phase_rule":
+            "completed_pair = (cap_vde + boot_phase_offset) % 3",
+        "observed_boot_phase_offsets": dict(sorted(phase_offsets.items())),
         "vde_before_vs_stable_windows": vde_lead_windows,
         "ring_changes_between_vde_and_vs": vde_lead_changes,
         "conclusion": ("cap-vde is the earliest observed safe pair-completion "

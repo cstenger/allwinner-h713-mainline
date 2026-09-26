@@ -39,7 +39,13 @@ without changing Claude's checkout or silently replacing the board's kernel.
   zero overwrites, rejections, unstable copies, skipped motion IDs, band
   errors, or stripe errors. The full-plane diagnostic oracle remained clean
   but delivered 121 of 162 produced frames because its double-read costs about
-  20.4 ms. The board was returned to its original bootloader and the prior
+  20.4 ms. All 481 attributable write epochs shared one stable modulo-three
+  offset between `cap_vde` and the completed pair. A follow-on static-image
+  trial showed that the offset's absolute value is boot-specific, so the bridge
+  now learns it once during source startup and retains it across stream reopen
+  instead of assuming offset zero. Cold module load after an already-static
+  source still needs a firmware producer index or equivalent permanent ABI.
+  The board was returned to its original bootloader and the prior
   full-verification module after the bounded tests.
 
 ## Required finish line
@@ -90,6 +96,16 @@ motion run, with explicit produced/delivered/overwritten/rejected accounting.
 Before declaring the whole gate passed, retain the completion ABI without a
 debug-only trace dependency and complete static-image startup, stream
 stop/restart, repeated disconnect/reconnect, signal-loss, and endurance tests.
+
+**Progress, 2026-09-26:** A visually static source passed five sparse and three
+full-verification stream close/reopen cycles with zero unstable or rejected
+frames. A subsequent disconnect/reconnect and 120-frame motion regression had
+zero band/stripe errors, zero skipped IDs, and zero driver rejections. Testing
+also disproved a fixed zero counter phase: the bridge must learn and retain a
+boot-specific modulo-three offset. It now invalidates that phase after lost
+completion events or a mode change. Cold module load after an already settled,
+byte-identical source remains unresolved, as do longer reconnect and endurance
+runs. See [static restart evidence](hdmi-evidence/2026-09-26-static-restart/README.md).
 
 1. Correlate the firmware `cap-vde`/`cap-vs` events and the capture ring's
    0→1→2 updates in an isolated read-only MIPS trace. Establish which event

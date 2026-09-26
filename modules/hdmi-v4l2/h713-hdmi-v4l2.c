@@ -55,9 +55,11 @@ struct h713_capture {
 	spinlock_t qlock;
 	struct list_head buffers;
 	struct task_struct *worker;
+	struct task_struct *phase_worker;
 	u8 *ring;
 	u8 *trace;
 	u32 sequence;
+	int pair_offset;
 };
 
 static struct h713_capture *h713_cap;
@@ -128,13 +130,74 @@ static void h713_return_buffers(struct h713_capture *cap,
 		vb2_buffer_done(&buf->vb.vb2_buf, state);
 }
 
+static int h713_phase_thread(void *arg)
+{
+	struct h713_capture *cap = arg;
+	u32 previous[6], observed[6];
+	u32 last_vde, vde, last_mode, mode;
+	unsigned int i, changed, active, delta;
+	unsigned long last_activity = jiffies;
+	bool baseline = false;
+
+	while (!kthread_should_stop()) {
+		if (!baseline) {
+			h713_hash_ring(cap, previous);
+			last_vde = h713_trace_word(cap, 0x88);
+			last_mode = h713_trace_word(cap, 0x90);
+			last_activity = jiffies;
+			baseline = true;
+		}
+		usleep_range(500, 1000);
+		mode = h713_trace_word(cap, 0x90);
+		if (mode != last_mode) {
+			WRITE_ONCE(cap->pair_offset, -1);
+			baseline = false;
+			continue;
+		}
+		vde = h713_trace_word(cap, 0x88);
+		if (vde == last_vde) {
+			if (READ_ONCE(cap->pair_offset) >= 0 &&
+			    time_after(jiffies, last_activity +
+				       msecs_to_jiffies(H713_NO_FRAME_MS))) {
+				WRITE_ONCE(cap->pair_offset, -1);
+				baseline = false;
+			}
+			continue;
+		}
+		delta = vde - last_vde;
+		last_vde = vde;
+		last_activity = jiffies;
+		if (READ_ONCE(cap->pair_offset) >= 0)
+			continue;
+		h713_hash_ring(cap, observed);
+		changed = 0;
+		active = 0;
+		for (i = 0; i < 3; i++) {
+			if (observed[i] != previous[i] &&
+			    observed[i + 3] != previous[i + 3]) {
+				changed++;
+				active = i;
+			}
+		}
+		memcpy(previous, observed, sizeof(previous));
+		if (delta == 1 && changed == 1) {
+			int offset = (active + 3 - vde % 3) % 3;
+
+			WRITE_ONCE(cap->pair_offset, offset);
+			pr_info("h713-hdmi-v4l2: learned completion phase offset=%d at VDE=%u pair=%u\n",
+				offset, vde, active);
+		}
+	}
+	return 0;
+}
+
 static int h713_capture_thread(void *arg)
 {
 	struct h713_capture *cap = arg;
 	struct h713_buffer *buf = NULL;
 	u32 previous[6], observed[6];
-	int completed_pair = -1;
 	unsigned int i, changed, active, pair, delta;
+	int pair_offset;
 	u32 before_y, before_uv;
 	u32 last_vde, vde, last_mode, mode, frame_sequence;
 	u8 *dst;
@@ -157,6 +220,7 @@ static int h713_capture_thread(void *arg)
 		mode = h713_trace_word(cap, 0x90);
 		if (mode != last_mode) {
 			frames_rejected++;
+			WRITE_ONCE(cap->pair_offset, -1);
 			pr_warn("h713-hdmi-v4l2: capture mode changed (%u -> %u)\n",
 				last_mode, mode);
 			if (buf) {
@@ -172,6 +236,7 @@ static int h713_capture_thread(void *arg)
 		if (vde == last_vde) {
 			if (time_after(jiffies, last_activity +
 				       msecs_to_jiffies(H713_NO_FRAME_MS))) {
+				WRITE_ONCE(cap->pair_offset, -1);
 				if (buf) {
 					vb2_buffer_done(&buf->vb.vb2_buf,
 							VB2_BUF_STATE_ERROR);
@@ -206,22 +271,17 @@ static int h713_capture_thread(void *arg)
 			}
 		}
 		memcpy(previous, observed, sizeof(previous));
-		if (completed_pair < 0) {
-			if (delta != 1 || changed != 1) {
-				frames_rejected++;
-				continue;
-			}
-			completed_pair = active;
-		} else {
-			completed_pair = (completed_pair + delta) % 3;
-			if (delta == 1 && changed == 1 &&
-			    active != completed_pair) {
-				frames_rejected++;
-				completed_pair = -1;
-				continue;
-			}
+		pair_offset = READ_ONCE(cap->pair_offset);
+		if (pair_offset < 0) {
+			frames_rejected++;
+			continue;
 		}
-		pair = completed_pair;
+		pair = (vde + pair_offset) % 3;
+		if (delta == 1 && changed == 1 && active != pair) {
+			frames_rejected++;
+			WRITE_ONCE(cap->pair_offset, -1);
+			continue;
+		}
 		if (!buf) {
 			no_buffer++;
 			frames_overwritten++;
@@ -561,6 +621,7 @@ static int __init h713_init(void)
 	mutex_init(&cap->lock);
 	spin_lock_init(&cap->qlock);
 	INIT_LIST_HEAD(&cap->buffers);
+	cap->pair_offset = -1;
 	q = &cap->queue;
 	q->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	q->io_modes = VB2_MMAP | VB2_READ;
@@ -591,11 +652,20 @@ static int __init h713_init(void)
 	ret = video_register_device(&cap->vdev, VFL_TYPE_VIDEO, -1);
 	if (ret)
 		goto release_queue;
+	cap->phase_worker = kthread_run(h713_phase_thread, cap,
+					"h713-hdmi-phase");
+	if (IS_ERR(cap->phase_worker)) {
+		ret = PTR_ERR(cap->phase_worker);
+		cap->phase_worker = NULL;
+		goto unregister_video;
+	}
 	h713_cap = cap;
 	pr_info("h713-hdmi-v4l2: read-only 640x480 NV16 ring at /dev/video%d\n",
 		cap->vdev.num);
 	return 0;
 
+unregister_video:
+	video_unregister_device(&cap->vdev);
 release_queue:
 	vb2_queue_release(q);
 unregister_v4l2:
@@ -615,6 +685,8 @@ static void __exit h713_exit(void)
 {
 	struct h713_capture *cap = h713_cap;
 
+	if (cap->phase_worker)
+		kthread_stop(cap->phase_worker);
 	video_unregister_device(&cap->vdev);
 	vb2_queue_release(&cap->queue);
 	v4l2_device_unregister(&cap->v4l2_dev);

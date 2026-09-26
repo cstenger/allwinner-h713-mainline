@@ -27,6 +27,10 @@
   },
   "contiguous_epoch_transitions": 480,
   "pair_sequence_errors": [],
+  "counter_phase_rule": "completed_pair = (cap_vde + boot_phase_offset) % 3",
+  "observed_boot_phase_offsets": {
+    "0": 481
+  },
   "vde_before_vs_stable_windows": 111,
   "ring_changes_between_vde_and_vs": 0,
   "conclusion": "cap-vde is the earliest observed safe pair-completion boundary; cap-vs follows before the next pair write"

@@ -42,6 +42,8 @@ second trial bracketed each Y/UV pair separately. Its analyzer result is
 - zero mode-change events;
 - 481 observed write epochs, each changing exactly one Y/UV pair;
 - 480/480 contiguous pair transitions followed `0→1→2`, with no errors;
+- all 481 epochs shared one stable counter-to-pair phase offset (zero in this
+  particular boot; later testing showed the absolute offset is boot-specific);
 - `cap-vde` always preceded `cap-vs`;
 - 111 stable hash windows fit between VDE and VS, with zero ring changes.
 
@@ -56,10 +58,12 @@ beside the analysis. Their SHA-256 values are:
 
 ## Event-gated V4L2 prototype
 
-The bridge was changed to consume only on the proved VDE counter, bootstrap
-the rotating producer pair from ring changes, retain source-sequence gaps, and
-expose produced/delivered/overwritten/rejected counters. It refuses to bind
-unless the guarded mailbox and exact VIncap hook words are present.
+The tested bridge consumed only on the proved VDE counter, bootstrapped the
+rotating producer pair from ring changes, retained source-sequence gaps, and
+exposed produced/delivered/overwritten/rejected counters. Follow-on work keeps
+the learned per-boot phase across stream reopen so a static stream does not
+need to rediscover it. The bridge refuses to bind unless the guarded mailbox
+and exact VIncap hook words are present.
 
 The full-plane oracle run (`gate2/event-full`) captured 120/120 valid moving
 frames with zero band or stripe mismatches and zero rejected or unstable
@@ -75,5 +79,10 @@ from the source presentation. Copy plus sparse verification averaged about
 
 These results validate the completion mechanism and show 60 Hz capture at the
 existing signal in sparse mode. They do not yet establish a 60 Hz panel path,
-native 1280×720 input, optical latency, static-image startup, or long-duration
-disconnect/restart endurance.
+native 1280×720 input, optical latency, hardware-validated static-image
+startup, or long-duration disconnect/restart endurance.
+
+Follow-on testing found that this run's zero counter-to-pair offset is not
+universal across boots. The bridge now learns a boot-specific phase and has
+passed bounded static-source reopen and moving reconnect tests; see
+[the September 26 evidence](../2026-09-26-static-restart/README.md).
