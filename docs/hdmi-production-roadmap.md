@@ -195,6 +195,17 @@ the receiver/ring-layout portion of steps 1–2, but not V4L2 capture, sustained
 60 fps, panel presentation, or latency. See
 [native 720p capture evidence](hdmi-evidence/2026-09-26-native-720-capture/README.md).
 
+**Progress, 2026-09-26 (panel route):** The event-gated V4L2 bridge completed
+a camera-gated native 1280×720 capture-to-panel run.  It presented 240 frames
+from a deterministic motion marker and a 720p video, switched and restored the
+DRM primary framebuffer, disconnected the source, returned to the Linux
+console, and introduced no IOMMU fault.  The operator saw both sources and the
+correct console return.  This passes native-raster functional presentation,
+but not rate: 957 frames were produced while only 240 were delivered, with
+477 full copies, 237 unstable copies, and roughly 26.2 ms spent per copy.  The
+FFmpeg stage sustained only about 16 fps.  See
+[native 720p panel evidence](hdmi-evidence/2026-09-26-native-720-panel/README.md).
+
 1. Produce and checksum a 1280×720@60 EDID with the timings, color formats,
    and range the receiver can actually support. Verify the GPU reads that
    exact EDID and enables the native mode; inspect source-side output state.
