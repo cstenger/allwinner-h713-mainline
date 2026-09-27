@@ -99,7 +99,8 @@ Session-end summaries. **Each is superseded by the ones after it**; they are
 kept for the reasoning, not the conclusions. If you only read one, read the
 newest in the area you care about.
 
-- **Video / scaler:** `2026-09-23-retire-display-scaling`, `2026-09-17-scaled-playback`,
+- **Video / scaler:** `2026-09-27-hdmi-lessons-for-video-decode`,
+  `2026-09-23-retire-display-scaling`, `2026-09-17-scaled-playback`,
   `2026-09-17-shared-scaler`, `2026-09-16-h265-scaler`,
   `2026-09-15-compliance-and-upstream`, `2026-09-14-video-scaler-and-rotation`,
   `2026-09-12-driver-on-hardware`, `2026-09-12-ve-scaledown`,
