@@ -32,10 +32,19 @@ polling/cleanup. A failed insertion leaves no loaded module.
 Build against the private tree matching the test Image:
 
 ```sh
+python3 tools/hdmi/build-scp-probe.py --mode 1280x720
+```
+
+The helper selects the kernel build used by the current capture module when
+available, regenerates the chosen EDID payload in an isolated build directory,
+builds the probe, and validates its vermagic. The lower-level equivalent is:
+
+```sh
 mkdir -p build/scp-probe
-python tools/hdmi/make-edid-trial-code.py modules/scp-probe/edid-trial-code.h
+python tools/hdmi/make-edid-trial-code.py --mode 640x480 \
+  build/scp-probe/edid-trial-code.h
 cp modules/scp-probe/Makefile modules/scp-probe/h713-scp-probe.c \
-   modules/scp-probe/edid-trial-code.h build/scp-probe/
+   build/scp-probe/
 make -C "$PWD/build/kernel-runtime" M="$PWD/build/scp-probe" ARCH=arm64 LLVM=1 modules
 scp -F /dev/null build/scp-probe/h713-scp-probe.ko root@192.168.4.1:/tmp/h713-scp-probe.ko
 ```

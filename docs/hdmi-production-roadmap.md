@@ -232,6 +232,20 @@ work, but not distinct physical-flip counting, end-to-end latency, endurance,
 or normal monitor integration. See
 [60 fps evidence](hdmi-evidence/2026-09-27-native-720-60fps/README.md).
 
+**Progress, 2026-09-27 (presentation accounting and mode guard):** A dedicated
+GStreamer runner counted 360 source buffers, 360 sink buffers, and 360 rendered
+buffers in 6.084748 seconds (59.16 fps), with zero sink drops, PTS mismatches,
+or unmatched buffers. Optical review also caught an important false pass: a
+temporarily substituted 640x480 EDID probe produced a repeated top-third image
+and green lower field while nominal 1280x720 caps and sink counters still
+passed. The native harness now builds the 720p probe reproducibly and refuses
+to open the overlay unless the source EDID hash and live MIPS 1280x720 lock both
+match. The corrected recording showed full-frame motion and Leota followed by
+the restored console. This adds userspace presentation accounting and guards
+the source raster, but still does not count distinct physical page flips or
+measure source-to-photon latency. See
+[presentation-count evidence](hdmi-evidence/2026-09-27-native-720-presentation-count/README.md).
+
 1. Produce and checksum a 1280×720@60 EDID with the timings, color formats,
    and range the receiver can actually support. Verify the GPU reads that
    exact EDID and enables the native mode; inspect source-side output state.
