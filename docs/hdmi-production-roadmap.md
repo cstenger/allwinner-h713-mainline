@@ -162,12 +162,20 @@ produced/delivered frames with intact moving IDs. This does not pass gate 3:
 60 Hz DRM presentation, preserved V4L2 timing through the consumer, optical
 evidence, and bounded end-to-end latency are still outstanding.
 
-1. Remove avoidable uncached-buffer rereads. The present bridge uses
-   `vb2_dma_contig_memops` even though its output is CPU-produced; evaluate a
-   cached V4L2 buffer allocator in the merged kernel or an equivalent
-   timestamp-preserving copy. `CONFIG_VIDEOBUF2_VMALLOC` is not enabled in
-   the current build, so this is a coordinated kernel change, not a module
-   pointer swap. Compare it with the validated buffered `read()` baseline.
+**Progress, 2026-09-27:** The throughput work advanced directly on the native
+1280×720 mode. A cacheable firmware-ring mapping with explicit arm64
+invalidate-to-PoC reduced the sparse-verified full-raster copy from about
+22.3 ms to 2.3-2.6 ms. Cached vb2 vmalloc output buffers then sustained a
+240-frame NV16-to-NV12 conversion at 59.84 fps with zero driver overwrites,
+rejections, or unstable frames. These changes remove the known CPU memory-path
+bottleneck, but they do not by themselves measure end-to-end latency.
+
+1. Remove avoidable uncached-buffer rereads. The bridge now provides opt-in
+   cached source and vb2 vmalloc output paths while retaining the prior
+   diagnostic defaults. Keep `CONFIG_VIDEOBUF2_VMALLOC` explicit in the board
+   kernel and preserve the invalidate-before-read rule for the non-coherent
+   firmware ring. Continue comparing against the validated buffered `read()`
+   baseline when this path changes.
 2. Profile capture, format conversion, and DRM presentation separately and
    together. Avoid a 1280×720 BGR0 userspace pipe in the final path if an
    existing native YUV plane or GPU shader can present the completed buffer
@@ -205,6 +213,24 @@ but not rate: 957 frames were produced while only 240 were delivered, with
 477 full copies, 237 unstable copies, and roughly 26.2 ms spent per copy.  The
 FFmpeg stage sustained only about 16 fps.  See
 [native 720p panel evidence](hdmi-evidence/2026-09-26-native-720-panel/README.md).
+
+**Progress, 2026-09-27 (sustained native route):** The refined V4L2 path and
+DRM NV12 plane consumed 360 requested frames in 6.0845 seconds (59.17 fps).
+An A/B run identified and removed a redundant userspace vblank wait:
+`kmssink`'s default produced 29.58 fps, while `skip-vsync=true` produced
+59.17 fps because the atomic H713 driver already completes commits at physical
+vblank. The final run had zero rejected or unstable capture frames and exact
+driver accounting. Counters were sampled after EOS, and its three no-buffer
+overwrites fit within the bounded stream-off tail; the harness records them
+and limits the entire tail to eight source events. DRM activated the NV12
+overlay while preserving fbcon,
+then disabled it and returned visibly to the console. The operator saw the
+motion pattern and Madame Leota sequence play correctly. A separate retained
+120-frame raw capture had zero band/stripe mismatches and zero skipped IDs.
+This closes the native prototype's sustained-rate and functional-presentation
+work, but not distinct physical-flip counting, end-to-end latency, endurance,
+or normal monitor integration. See
+[60 fps evidence](hdmi-evidence/2026-09-27-native-720-60fps/README.md).
 
 1. Produce and checksum a 1280×720@60 EDID with the timings, color formats,
    and range the receiver can actually support. Verify the GPU reads that
@@ -299,3 +325,10 @@ prepare the software and hardware first, then stop and explicitly ask the
 operator to ready the camera. Start the bounded visible run only after the
 operator confirms recording is ready. State whether the recording must include
 the console-before, video, interruption/recovery, and console-after phases.
+
+For a cold source-3 recovery, do not let `prepare-source3.py` warm-reboot a
+parked MIPS core. Arm `reboot-to-uboot.py` with `--wait-for-power-cycle` before
+the physical power-on, complete the guarded source-3 transition at the caught
+U-Boot prompt, and use `prepare-source3.py --postboot-only` only after Linux
+returns with the live trace. The helper now refuses the unsafe parked-state
+warm-reboot path.

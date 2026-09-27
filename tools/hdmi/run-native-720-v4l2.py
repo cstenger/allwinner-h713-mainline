@@ -36,8 +36,16 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--probe-module", type=Path,
                     default=Path("/tmp/h713-scp-probe-720/h713-scp-probe.ko"))
-    ap.add_argument("--frames", type=int, choices=range(1, 121), default=30)
+    ap.add_argument("--frames", type=int, choices=range(1, 601), default=30)
     ap.add_argument("--sparse-verify", action="store_true")
+    ap.add_argument("--cached-source", action="store_true",
+                    help="Use the cacheable firmware-ring mapping with explicit invalidation")
+    ap.add_argument("--cached-output", action="store_true",
+                    help="Use cached vmalloc V4L2 output buffers")
+    ap.add_argument("--convert-format", choices=("nv12", "bgr0"),
+                    help="Convert to this format and discard output instead of saving raw frames")
+    ap.add_argument("--gst-nv12", action="store_true",
+                    help="Convert NV16 to NV12 with GStreamer and discard it")
     args = ap.parse_args()
     for path in (args.probe_module, MODULE, FALLBACK):
         if not path.is_file():
@@ -57,6 +65,8 @@ def main():
     run(SCP + [str(MODULE), "root@192.168.4.1:/tmp/h713-hdmi-v4l2-720.ko"])
     run(SCP + [str(FALLBACK), "root@192.168.4.1:/tmp/h713-hdmi-v4l2.ko"])
     verify = 0 if args.sparse_verify else 1
+    source_cached = 1 if args.cached_source else 0
+    use_vmalloc = 1 if args.cached_output else 0
     trial = None
     player = None
     remote_raw = f"/tmp/{output.name}.nv16"
@@ -66,7 +76,9 @@ def main():
             "rmmod h713_hdmi_v4l2; fi; "
             f"test \"$(sha256sum /tmp/h713-hdmi-v4l2-720.ko | cut -d' ' -f1)\" = {module_sha}; "
             "insmod /tmp/h713-hdmi-v4l2-720.ko width=1280 height=720 "
-            f"verify_full={verify}; v4l2-ctl -d /dev/video1 --all; "
+            f"verify_full={verify} source_cached={source_cached} "
+            f"use_vmalloc={use_vmalloc}; "
+            "v4l2-ctl -d /dev/video1 --all; "
             "v4l2-ctl -d /dev/video1 --list-formats-ext"])
         (output / "v4l2-capability.txt").write_text(setup)
         with (output / "trial.log").open("w") as log:
@@ -95,10 +107,23 @@ def main():
                 time.sleep(2)
                 if player.poll() is not None:
                     raise RuntimeError("mpv exited before V4L2 capture")
-                command = ("timeout -s KILL 20s ffmpeg -nostdin -y -hide_banner "
-                           "-loglevel info -f v4l2 -input_format nv16 "
-                           "-video_size 1280x720 -i /dev/video1 -fps_mode passthrough "
-                           f"-frames:v {args.frames} -pix_fmt nv16 -f rawvideo {remote_raw}")
+                if args.gst_nv12:
+                    command = (
+                        "timeout -s KILL 20s gst-launch-1.0 -e "
+                        f"v4l2src device=/dev/video1 num-buffers={args.frames} "
+                        "io-mode=mmap ! video/x-raw,format=NV16,width=1280,"
+                        "height=720 ! videoconvert n-threads=4 ! "
+                        "video/x-raw,format=NV12 ! fakesink sync=false")
+                elif args.convert_format:
+                    sink = (f"-vf format={args.convert_format} "
+                            f"-pix_fmt {args.convert_format} -f null -")
+                else:
+                    sink = f"-pix_fmt nv16 -f rawvideo {remote_raw}"
+                if not args.gst_nv12:
+                    command = ("timeout -s KILL 20s ffmpeg -nostdin -y -hide_banner "
+                               "-loglevel info -f v4l2 -input_format nv16 "
+                               "-video_size 1280x720 -i /dev/video1 -fps_mode passthrough "
+                               f"-frames:v {args.frames} {sink}")
                 capture = subprocess.run(SSH + [command], text=True,
                                          capture_output=True, timeout=25)
                 (output / "ffmpeg.log").write_text(capture.stdout + capture.stderr)
@@ -111,8 +136,22 @@ def main():
             if trial.returncode:
                 raise RuntimeError("720p detection trial failed; inspect trial.log")
 
+        telemetry = run(SSH + [
+            "dmesg | grep 'h713-hdmi-v4l2' | tail -8; "
+            "grep -H . /sys/module/h713_hdmi_v4l2/parameters/{frames_produced,"
+            "frames_delivered,frames_overwritten,frames_rejected,width,height,"
+            "verify_full,source_cached,use_vmalloc}"])
+        (output / "driver-telemetry.txt").write_text(telemetry)
+        if args.gst_nv12:
+            print(json.dumps({"frames": args.frames,
+                              "gstreamer_format": "nv12"}), flush=True)
+            return output
+        if args.convert_format:
+            print(json.dumps({"frames": args.frames,
+                              "convert_format": args.convert_format}), flush=True)
+            return output
         raw = output / "capture.nv16"
-        run(SCP + [f"root@192.168.4.1:{remote_raw}", str(raw)], timeout=60)
+        run(SCP + [f"root@192.168.4.1:{remote_raw}", str(raw)], timeout=150)
         if raw.stat().st_size != args.frames * FRAME:
             raise RuntimeError(f"capture size is {raw.stat().st_size}, expected "
                                f"{args.frames * FRAME}")
@@ -120,11 +159,6 @@ def main():
                         str(raw), "--width", "1280", "--height", "720"], timeout=30)
         (output / "analysis.json").write_text(analysis)
         result = json.loads(analysis)
-        telemetry = run(SSH + [
-            "dmesg | grep 'h713-hdmi-v4l2' | tail -8; "
-            "grep -H . /sys/module/h713_hdmi_v4l2/parameters/{frames_produced,"
-            "frames_delivered,frames_overwritten,frames_rejected,width,height,verify_full}"])
-        (output / "driver-telemetry.txt").write_text(telemetry)
         print(json.dumps({key: result[key] for key in
                           ("frames", "patterned_frames", "band_mismatches",
                            "stripe_mismatches", "sequential_steps",

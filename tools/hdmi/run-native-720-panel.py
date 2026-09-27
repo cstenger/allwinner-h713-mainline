@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Show a camera-gated native 720p marker and video on the projector panel."""
+"""Show camera-gated native 720p capture through the projector NV12 plane."""
 
 import argparse
 import hashlib
@@ -26,6 +26,9 @@ SSH = ["ssh", "-F", "/dev/null", "-o", "BatchMode=yes", "-o",
 SCP = ["scp", "-F", "/dev/null", "-o", "BatchMode=yes", "-o",
        "ConnectTimeout=5"]
 KERNEL_RELEASE = "6.18.38"
+PANEL_FRAMES = 360
+PANEL_FPS = 60
+TAIL_FRAME_BUDGET = 8
 
 
 def run(argv, timeout=30, check=True):
@@ -57,12 +60,65 @@ def connector_state():
 
 
 def primary_fb(state):
-    match = re.search(r"(?ms)^plane\[\d+\]: plane-0\n(.*?)(?=^plane\[|^crtc\[|\Z)",
-                      state)
+    return plane_state(state, "plane-0")[1]
+
+
+def plane_state(state, name):
+    match = re.search(rf"(?ms)^plane\[\d+\]: {re.escape(name)}\n"
+                      r"(.*?)(?=^plane\[|^crtc\[|\Z)", state)
+    crtc = re.search(r"(?m)^\s*crtc=(.+)$", match.group(1)) if match else None
     fb = re.search(r"(?m)^\s*fb=(\d+)$", match.group(1)) if match else None
-    if not fb:
-        raise RuntimeError("KMS primary-plane framebuffer was not reported")
-    return int(fb.group(1))
+    if not crtc or not fb:
+        raise RuntimeError(f"KMS {name} state was not reported")
+    return crtc.group(1), int(fb.group(1))
+
+
+def wait_overlay_released(primary, timeout=5):
+    deadline = time.monotonic() + timeout
+    last = ""
+    while time.monotonic() < deadline:
+        last = remote("cat /sys/kernel/debug/dri/0/state").stdout
+        if (plane_state(last, "plane-0") == ("crtc-0", primary) and
+                plane_state(last, "video-0") == ("(null)", 0)):
+            return last
+        time.sleep(0.1)
+    raise RuntimeError("NV12 overlay did not retire and restore the console plane")
+
+
+def capture_telemetry(text):
+    values = {}
+    for name in ("frames_produced", "frames_delivered",
+                 "frames_overwritten", "frames_rejected"):
+        match = re.search(rf"/{name}:(\d+)$", text, re.MULTILINE)
+        if not match:
+            raise RuntimeError(f"capture telemetry omitted {name}")
+        values[name] = int(match.group(1))
+
+    stream_lines = re.findall(r"(?m)^.*h713-hdmi-v4l2: stream .*$", text)
+    unstable = (re.search(r"\bunstable=(\d+)\b", stream_lines[-1])
+                if stream_lines else None)
+    if not unstable:
+        raise RuntimeError("capture telemetry omitted the final unstable count")
+    values["unstable"] = int(unstable.group(1))
+    return values
+
+
+def validate_capture_telemetry(values):
+    produced = values["frames_produced"]
+    delivered = values["frames_delivered"]
+    overwritten = values["frames_overwritten"]
+    rejected = values["frames_rejected"]
+    if values["unstable"] or rejected:
+        raise RuntimeError("capture rejected or observed an unstable frame")
+    if delivered < PANEL_FRAMES:
+        raise RuntimeError("capture delivered fewer than the requested frames")
+    if produced != delivered + overwritten + rejected:
+        raise RuntimeError("capture frame accounting does not close")
+    events_beyond_pipeline = produced - PANEL_FRAMES
+    if events_beyond_pipeline < 0 or events_beyond_pipeline > TAIL_FRAME_BUDGET:
+        raise RuntimeError("capture shutdown tail exceeded its frame budget")
+    values["events_beyond_pipeline"] = events_beyond_pipeline
+    return values
 
 
 def restore_console():
@@ -106,11 +162,15 @@ def main():
         remote("set -e; if test -d /sys/module/h713_hdmi_v4l2; then "
                "rmmod h713_hdmi_v4l2; fi; "
                f"test \"$(sha256sum /tmp/h713-hdmi-v4l2-720.ko | cut -d' ' -f1)\" = {module_sha}; "
-               "insmod /tmp/h713-hdmi-v4l2-720.ko width=1280 height=720 verify_full=0; "
+               "insmod /tmp/h713-hdmi-v4l2-720.ko width=1280 height=720 "
+               "verify_full=0 source_cached=1 use_vmalloc=1; "
                "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/width)\" = 1280; "
                "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/height)\" = 720; "
-               "test -f /sys/kernel/debug/dri/0/state; test -x /usr/local/bin/mpv; "
-               "command -v ffmpeg >/dev/null")
+               "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/source_cached)\" = Y; "
+               "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/use_vmalloc)\" = Y; "
+               "test -f /sys/kernel/debug/dri/0/state; "
+               "command -v gst-launch-1.0 >/dev/null; "
+               "gst-inspect-1.0 kmssink >/dev/null")
     except (RuntimeError, subprocess.TimeoutExpired):
         remote("if test -d /sys/module/h713_hdmi_v4l2; then "
                "rmmod h713_hdmi_v4l2; fi; "
@@ -119,22 +179,16 @@ def main():
 
     kms_before = remote("cat /sys/kernel/debug/dri/0/state").stdout
     fb_before = primary_fb(kms_before)
+    if plane_state(kms_before, "video-0") != ("(null)", 0):
+        raise RuntimeError("KMS NV12 overlay was already active before the test")
     (output / "kms-before.log").write_text(kms_before)
-    stamp = output.name
-    ffmpeg_log = f"/tmp/{stamp}-ffmpeg.log"
-    mpv_log = f"/tmp/{stamp}-mpv.log"
-    dd_log = f"/tmp/{stamp}-dd.log"
     target = (
-        "timeout -s INT 25s bash -o pipefail -c '"
-        f"dd if=/dev/video1 bs=1843200 count=240 iflag=fullblock status=none 2>{dd_log} | "
-        "ffmpeg -nostdin -hide_banner -loglevel info -f rawvideo "
-        "-pixel_format nv16 -video_size 1280x720 -framerate 60 -i - "
-        "-fps_mode passthrough -frames:v 240 -vf format=bgr0 -pix_fmt bgr0 "
-        f"-f rawvideo - 2>{ffmpeg_log} | /usr/local/bin/mpv --no-config "
-        f"--no-audio --no-terminal --log-file={mpv_log} --vo=drm "
-        "--drm-device=/dev/dri/card0 --demuxer=rawvideo "
-        "--demuxer-rawvideo-w=1280 --demuxer-rawvideo-h=720 "
-        "--demuxer-rawvideo-fps=20 --demuxer-rawvideo-mp-format=bgr0 -'")
+        "timeout -s INT 15s gst-launch-1.0 -e "
+        f"v4l2src device=/dev/video1 num-buffers={PANEL_FRAMES} io-mode=mmap "
+        "! video/x-raw,format=NV16,width=1280,height=720,framerate=60/1 "
+        "! videoconvert n-threads=4 "
+        "! video/x-raw,format=NV12 "
+        "! kmssink driver-name=sun50i-h713-afbd sync=false skip-vsync=true")
 
     trial = source = preview = None
     try:
@@ -170,7 +224,10 @@ def main():
                     raise RuntimeError("native panel preview exited early")
                 kms_during = remote("cat /sys/kernel/debug/dri/0/state").stdout
                 (output / "kms-during.log").write_text(kms_during)
-                out, err = preview.communicate(timeout=25)
+                video_crtc, video_fb = plane_state(kms_during, "video-0")
+                if video_crtc != "crtc-0" or not video_fb:
+                    raise RuntimeError("KMS NV12 overlay did not become active")
+                out, err = preview.communicate(timeout=20)
                 (output / "preview-ssh.log").write_text(out + err)
                 if preview.returncode:
                     raise RuntimeError(f"native panel preview exited {preview.returncode}")
@@ -181,29 +238,44 @@ def main():
             if trial.returncode:
                 raise RuntimeError("720p signal trial failed")
 
-        ffmpeg_text = remote(f"cat {ffmpeg_log}").stdout
-        (output / "target-ffmpeg.log").write_text(ffmpeg_text)
-        (output / "target-mpv.log").write_text(remote(f"cat {mpv_log}").stdout)
-        (output / "target-dd.log").write_text(remote(f"cat {dd_log}", check=False).stdout)
-        if not re.search(r"frame=\s*240\b", ffmpeg_text):
-            raise RuntimeError("native conversion did not produce all 240 frames")
-        kms_after = remote("cat /sys/kernel/debug/dri/0/state").stdout
+        gst_text = (output / "preview-ssh.log").read_text()
+        elapsed = re.search(r"Execution ended after (\d+):(\d+):(\d+)\.(\d+)",
+                            gst_text)
+        if "Got EOS" not in gst_text or not elapsed:
+            raise RuntimeError("GStreamer did not report a bounded EOS completion")
+        elapsed_s = (int(elapsed.group(1)) * 3600 + int(elapsed.group(2)) * 60 +
+                     int(elapsed.group(3)) + float("0." + elapsed.group(4)))
+        measured_fps = PANEL_FRAMES / elapsed_s
+        if measured_fps < 55:
+            raise RuntimeError(f"NV12 panel path ran at only {measured_fps:.2f} fps")
+        kms_after = wait_overlay_released(fb_before)
         fb_during = primary_fb(kms_during)
         fb_after = primary_fb(kms_after)
         (output / "kms-after.log").write_text(kms_after)
-        if fb_during == fb_before or fb_after != fb_before:
-            raise RuntimeError("KMS primary framebuffer did not switch and restore")
+        if fb_during != fb_before or fb_after != fb_before:
+            raise RuntimeError("KMS primary framebuffer changed during overlay playback")
         telemetry = remote(
             "dmesg | grep 'h713-hdmi-v4l2' | tail -8; "
             "grep -H . /sys/module/h713_hdmi_v4l2/parameters/{frames_produced,"
             "frames_delivered,frames_overwritten,frames_rejected}").stdout
         (output / "driver-telemetry.txt").write_text(telemetry)
+        counters = validate_capture_telemetry(capture_telemetry(telemetry))
         result = {"camera_ready": args.camera_ready,
                   "operator_observation_only": args.operator_ready,
-                  "frames": 240, "display_fps": 20,
+                  "pipeline_frames": PANEL_FRAMES,
+                  "nominal_display_fps": PANEL_FPS,
+                  "measured_fps": round(measured_fps, 2),
+                  "driver_produced": counters["frames_produced"],
+                  "driver_delivered": counters["frames_delivered"],
+                  "driver_overwritten_total": counters["frames_overwritten"],
+                  "driver_rejected": counters["frames_rejected"],
+                  "driver_unstable": counters["unstable"],
+                  "driver_events_beyond_pipeline":
+                  counters["events_beyond_pipeline"],
                   "primary_fb_before": fb_before,
                   "primary_fb_during": fb_during,
                   "primary_fb_after": fb_after,
+                  "video_fb_during": video_fb,
                   "source_restored": connector_state() ==
                   ("disconnected", "disabled")}
         (output / "summary.json").write_text(json.dumps(result, indent=2) + "\n")
@@ -212,6 +284,11 @@ def main():
         stop(source)
         if preview is not None and preview.poll() is None:
             stop(preview)
+            remote("pkill -INT -x gst-launch-1.0 || true", check=False)
+        try:
+            wait_overlay_released(fb_before)
+        except (RuntimeError, subprocess.TimeoutExpired):
+            print("WARNING: NV12 overlay release was not confirmed", file=sys.stderr)
         console = restore_console()
         if console.returncode:
             print("WARNING: framebuffer console unblank failed", file=sys.stderr)

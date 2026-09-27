@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
-"""Reach the known-good HDMI1 diagnostic state from a fresh Linux boot.
+"""Finish the known-good HDMI1 diagnostic state after a guarded cold boot.
 
-Run only after a physical cold power-on. If MIPS is already live, this script
-verifies the source-3 trace and finishes module setup without launching it
-again. It never flashes storage or changes the installed kernel.
+Run only after U-Boot has completed the guarded source-3 transition and booted
+Linux. The script verifies that live trace and finishes module setup without
+launching MIPS again. It never flashes storage or changes the installed kernel.
 """
 
 import argparse
-import re
 import subprocess
 import sys
-import time
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
 SSH = ["ssh", "-F", "/dev/null", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
        "root@192.168.4.1"]
-SERIAL = ROOT / "tools/serial"
 
 
 def run(argv, timeout=60):
@@ -28,11 +23,6 @@ def run(argv, timeout=60):
 
 def remote(command, timeout=20):
     return run(SSH + [command], timeout)
-
-
-def serial(*commands, wait=0.8, timeout=30):
-    return run([sys.executable, str(SERIAL / "console.py"), "--port", "/dev/ttyUSB0",
-                "--wait", str(wait), *commands], timeout)
 
 
 def require_trace():
@@ -48,33 +38,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--postboot-only", action="store_true",
                     help="Only verify live MIPS and prepare Linux modules")
-    args = ap.parse_args()
+    ap.parse_args()
     state = remote("python3 -u /root/mips-shell.py --status")
     if "MIPS core      ALIVE" in state:
         require_trace()
-    elif "MIPS core      parked" in state and not args.postboot_only:
-        print("MIPS parked; warm-rebooting to the validated U-Boot trace", flush=True)
-        out = run([sys.executable, str(SERIAL / "reboot-to-uboot.py"),
-                   "/dev/ttyUSB0", "23"], timeout=35)
-        if not re.search(r"=>\s*$", out):
-            raise RuntimeError("U-Boot prompt not reached; no MIPS command sent")
-        out = serial("h713_disp mips-comm-trace 0x34",
-                     "h713_disp commcall eaf13de5 chan=0 pid=8b8f275c 3",
-                     "h713_disp commtrace", timeout=30)
-        if not all(token in out for token in ("firmware identity accepted",
-                                              "CALL_ACK", "RETURN_ACK",
-                                              "source 3: callback-event0=1 worker-event0=1 transition-complete=1")):
-            raise RuntimeError(f"Source-3 trace failed; leaving board at U-Boot: {out[-1800:]}")
-        print("U-Boot source-3 transition complete; booting default kernel", flush=True)
-        serial("run bootcmd", wait=8, timeout=40)
-        for _ in range(20):
-            try:
-                require_trace()
-                break
-            except (RuntimeError, subprocess.TimeoutExpired):
-                time.sleep(2)
-        else:
-            raise RuntimeError("Linux did not return with a valid source-3 trace")
+    elif "MIPS core      parked" in state:
+        raise RuntimeError(
+            "MIPS is parked; refusing the warm reboot that can leave the panel "
+            "black. Arm tools/serial/reboot-to-uboot.py with "
+            "--wait-for-power-cycle before a physical cold boot, complete the "
+            "guarded source-3 transition at U-Boot, run bootcmd, then rerun "
+            "this script with --postboot-only")
     else:
         raise RuntimeError("MIPS state is not a verified parked/live state; leaving board unchanged")
 

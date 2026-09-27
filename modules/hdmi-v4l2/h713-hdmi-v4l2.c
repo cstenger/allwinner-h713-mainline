@@ -14,11 +14,14 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
+#include <asm/cacheflush.h>
+
 #include <media/v4l2-device.h>
 #include <media/v4l2-fh.h>
 #include <media/v4l2-ioctl.h>
 #include <media/videobuf2-dma-contig.h>
 #include <media/videobuf2-v4l2.h>
+#include <media/videobuf2-vmalloc.h>
 
 #define H713_CARVEOUT 0x4bf41000ULL
 #define H713_CARVEOUT_SIZE (26 * 1024 * 1024)
@@ -72,6 +75,14 @@ static bool phase_from_hash = true;
 module_param(phase_from_hash, bool, 0444);
 MODULE_PARM_DESC(phase_from_hash,
 	"Allow ring-content phase learning (default true); false validates AFBD bootstrap alone");
+static bool source_cached;
+module_param(source_cached, bool, 0444);
+MODULE_PARM_DESC(source_cached,
+	"Map the firmware frame ring cacheable with explicit invalidation (default false)");
+static bool use_vmalloc;
+module_param(use_vmalloc, bool, 0444);
+MODULE_PARM_DESC(use_vmalloc,
+	"Use cached vmalloc capture buffers (default false); false uses DMA-contiguous buffers");
 static unsigned int width = 640;
 module_param(width, uint, 0444);
 MODULE_PARM_DESC(width, "Captured width: 640 or 1280 (default 640)");
@@ -112,6 +123,17 @@ static u8 *h713_plane(struct h713_capture *cap, unsigned int index)
 	       H713_PLANE_STEP * index;
 }
 
+static void h713_invalidate_plane(struct h713_capture *cap,
+				  unsigned int index)
+{
+	unsigned long start;
+
+	if (!source_cached)
+		return;
+	start = (unsigned long)h713_plane(cap, index);
+	dcache_inval_poc(start, start + cap->plane_size);
+}
+
 /*
  * AFBD +0x320/+0x324 has held an exact Y/UV pair from this ring in every
  * retained register dump. Its latch can cross the VDE sampling read, so no
@@ -146,6 +168,7 @@ static u32 h713_hash_plane(struct h713_capture *cap, unsigned int index)
 	u32 crc = 0;
 	unsigned int offset;
 
+	h713_invalidate_plane(cap, index);
 	for (offset = 0x10000; offset < cap->plane_size; offset += 0x20000)
 		crc = crc32_le(crc, plane + offset,
 			       H713_PAGE_SIZE);
@@ -703,7 +726,8 @@ static int __init h713_init(void)
 	ret = dma_coerce_mask_and_coherent(&cap->pdev->dev, DMA_BIT_MASK(32));
 	if (ret)
 		goto unregister_pdev;
-	cap->ring = memremap(H713_CARVEOUT, H713_CARVEOUT_SIZE, MEMREMAP_WC);
+	cap->ring = memremap(H713_CARVEOUT, H713_CARVEOUT_SIZE,
+			     source_cached ? MEMREMAP_WB : MEMREMAP_WC);
 	if (!cap->ring) {
 		ret = -ENOMEM;
 		goto unregister_pdev;
@@ -756,7 +780,8 @@ static int __init h713_init(void)
 	q->drv_priv = cap;
 	q->buf_struct_size = sizeof(struct h713_buffer);
 	q->ops = &h713_queue_ops;
-	q->mem_ops = &vb2_dma_contig_memops;
+	q->mem_ops = use_vmalloc ? &vb2_vmalloc_memops :
+		&vb2_dma_contig_memops;
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	q->min_reqbufs_allocation = 2;
 	q->lock = &cap->lock;
@@ -764,7 +789,8 @@ static int __init h713_init(void)
 	ret = vb2_queue_init(q);
 	if (ret)
 		goto unregister_v4l2;
-
+	pr_info("h713-hdmi-v4l2: using %s capture buffers\n",
+		use_vmalloc ? "cached vmalloc" : "DMA-contiguous");
 	strscpy(cap->vdev.name, "H713 HDMI1 ring capture",
 		sizeof(cap->vdev.name));
 	cap->vdev.v4l2_dev = &cap->v4l2_dev;
@@ -791,8 +817,9 @@ static int __init h713_init(void)
 		goto unregister_video;
 	}
 	h713_cap = cap;
-	pr_info("h713-hdmi-v4l2: read-only %ux%u NV16 ring at /dev/video%d\n",
-		cap->width, cap->height, cap->vdev.num);
+	pr_info("h713-hdmi-v4l2: read-only %ux%u NV16 %s ring at /dev/video%d\n",
+		cap->width, cap->height, source_cached ? "cacheable" :
+		"write-combining", cap->vdev.num);
 	return 0;
 
 unregister_video:
