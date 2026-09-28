@@ -13,6 +13,11 @@ Do not cherry-pick that commit wholesale into a decoder-only branch: it also
 contains HDMI-specific cache maintenance, V4L2 diagnostics, and source-3
 recovery tooling.
 
+A later physical-presentation gate adds patch 0140 and evidence under
+[`hdmi-evidence/2026-09-27-physical-presentation-irq/`](hdmi-evidence/2026-09-27-physical-presentation-irq/README.md).
+That patch is optional diagnostic accounting rather than a lifetime fix, but
+its acceptance model applies directly to decoded NV12 buffers.
+
 ## What transfers directly
 
 ### 1. Physical-vsync framebuffer retirement
@@ -95,6 +100,29 @@ explicitly dropped, rejected, and bounded teardown work. Do not turn a small
 post-EOS tail into a claim of zero drops, and do not treat it as an active-play
 failure without timing evidence.
 
+### 5. Physical-vsync presentation accounting
+
+Patch 0140 closes a limitation in DRM page-flip and sink counters. It records a
+video-plane framebuffer only after AFBD clears its READY handshake, then marks
+that accepted identity presented at the next AFBD physical-vsync interrupt.
+The accounting is asynchronous; waiting for an additional IRQ in atomic update
+halved the HDMI path to 29.66 fps and must not be repeated.
+
+For a bounded run, require:
+
+- `video_submitted == video_presented` and `video_pending == 0` after teardown;
+- zero `video_coalesced` and `video_aborted`;
+- the expected changed-framebuffer presentation count after subtracting any
+  explicitly characterized KMS bootstrap repeat; and
+- a physical-vblank interval histogram consistent with the content cadence.
+
+The HDMI GStreamer path performs one initial repeat: 361 physical presentations
+contain one bootstrap repeat and 360 changed-framebuffer presentations for 360
+rendered buffers. Do not copy that constant blindly to mpv or a decoder client;
+measure the destination client's own enable sequence. An interval longer than
+one vblank can be a source-supply gap rather than a lost accepted buffer. The
+pending/coalesced/aborted invariants distinguish those cases.
+
 ## What must stay HDMI-specific
 
 Do **not** copy these mechanisms into Cedrus:
@@ -143,6 +171,9 @@ change the Cedrus buffer path.
 
 4. Build the full FIT. The AFBD driver is built in, so a module copy cannot
    validate this change.
+5. Optionally port patch 0140 after the lifetime fixes when physical
+   presentation evidence is needed. Keep it asynchronous and verify that its
+   presence does not alter the baseline presentation rate.
 
 ### Gate 2 — preserve decoder correctness before touching the panel
 
@@ -182,9 +213,14 @@ Never reuse confirmation from a previous test.
 
 1. Use [`tools/display/kms-nv12-plane-test.c`](../tools/display/kms-nv12-plane-test.c)
    with its Cedrus and moving-frame modes to collect DRM page-flip event
-   timestamps, not merely ioctl return times.
-2. Report flip count, elapsed time, interval distribution, and one/two/three
-   refresh-period histogram. A 60 fps average alone can conceal doubled gaps.
+   timestamps, not merely ioctl return times. If patch 0140 is present, also
+   collect `h713_scanout_stats`; its AFBD interrupt is the stronger physical
+   scan-boundary signal.
+2. Report submitted, physically presented, pending, coalesced, aborted, changed
+   framebuffer, elapsed time, submit-to-vsync latency, and one/two/three
+   refresh-period histogram. A 60 fps average alone can conceal doubled gaps,
+   while a longer interval alone does not prove loss if no accepted update was
+   pending.
 3. Separately run the decoded GStreamer path with and without
    `skip-vsync=true`. Require the expected near-30 versus near-60 A/B before
    changing its default invocation.
@@ -192,8 +228,9 @@ Never reuse confirmation from a previous test.
    drops, no failed atomic commit, and normal console restoration.
 
 This gate also changes the visible panel and requires its own fresh camera
-checkpoint. The camera is an optical cross-check; DRM page-flip events are the
-authoritative cadence measurement.
+checkpoint. The camera is an optical cross-check; when available, the AFBD
+physical-vsync accounting is authoritative for scan-boundary presentation,
+with DRM page-flip events retained as the userspace scheduling view.
 
 ### Gate 5 — cleanup, failure, and shared ownership
 
@@ -235,7 +272,7 @@ Only after Gates 0-5 pass:
 | --- | --- |
 | decode correctness | existing bit-exact gates unchanged |
 | DRM ownership | changing 1280x720 NV12 framebuffer IDs on `video-0` |
-| cadence | page-flip histogram matches content cadence; no unexplained doubled gaps |
+| cadence | physical-vsync and page-flip histograms match content cadence; every accepted update is accounted for |
 | cleanup | overlay disabled and fbcon visibly restored every time |
 | memory safety | zero IOMMU faults and no early framebuffer release |
 | failure recovery | killed client does not poison the next playback |

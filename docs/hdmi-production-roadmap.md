@@ -246,6 +246,21 @@ the source raster, but still does not count distinct physical page flips or
 measure source-to-photon latency. See
 [presentation-count evidence](hdmi-evidence/2026-09-27-native-720-presentation-count/README.md).
 
+**Progress, 2026-09-27 (physical presentation IRQ):** Patch 0140 now records
+each NV12 update after the AFBD READY acceptance handshake and confirms it at
+the following AFBD physical-vsync interrupt. Two operator-observed native runs
+each delivered and rendered 360 pipeline buffers. Each recorded 361 accepted
+and 361 physically confirmed updates: one named KMS bootstrap repeat plus 360
+changed-framebuffer presentations, with zero pending, coalesced, or aborted
+updates at teardown. Run A placed every presentation on consecutive vblanks at
+59.14 fps. Run B ran at 58.82 fps with one isolated two-vblank source-supply
+interval; every accepted framebuffer still reached scanout before replacement.
+Both runs showed the correct full-frame motion and Leota sequence and returned
+to the console without a display error. This closes the prototype's distinct
+physical-presentation gate. Source-to-photon latency, endurance, and normal
+monitor integration remain. See
+[physical-presentation evidence](hdmi-evidence/2026-09-27-physical-presentation-irq/README.md).
+
 1. Produce and checksum a 1280×720@60 EDID with the timings, color formats,
    and range the receiver can actually support. Verify the GPU reads that
    exact EDID and enables the native mode; inspect source-side output state.

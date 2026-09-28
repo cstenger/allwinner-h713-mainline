@@ -138,7 +138,7 @@ every one was found the hard way.
 
 ## Addresses mentioned in 3+ documents but not yet catalogued
 
-127 of them. Grepped at generation time, so this list is always
+129 of them. Grepped at generation time, so this list is always
 current. An address here is one the docs discuss repeatedly without any
 single place saying what it *is* — that is the backlog for this file.
 
@@ -149,9 +149,9 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x00010000` | 19 |
 | `0x03000013` | 17 |
 | `0x03000010` | 15 |
+| `0x03001901` | 14 |
 | `0x05600178` | 14 |
 | `0x02d00500` | 13 |
-| `0x03001901` | 12 |
 | `0x02cf04ff` | 11 |
 | `0x050002d0` | 11 |
 | `0x00000500` | 10 |
@@ -187,6 +187,7 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x0524c000` | 5 |
 | `0x0560009c` | 5 |
 | `0x05600170` | 5 |
+| `0x05600320` | 5 |
 | `0x00000007` | 4 |
 | `0x000000ff` | 4 |
 | `0x00001402` | 4 |
@@ -203,5 +204,4 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x030f0000` | 4 |
 | `0x05000040` | 4 |
 | `0x05000058` | 4 |
-| `0x05000104` | 4 |
 
