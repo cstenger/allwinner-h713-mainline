@@ -1,0 +1,323 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 27 Sep 2026 15:42:00 -0700
+Subject: [PATCH] drm: h713-afbd: report physical video presentations
+
+Userspace sink statistics report accepted atomic updates.  That does not
+show AFBD consumed every update on a physical scan.  The driver already
+receives the physical-vsync interrupt and serializes the video READY latch
+against it.  Account the handoff at that exact boundary.
+
+Record each video-plane submission only after the existing READY handshake
+has cleared, proving that AFBD accepted the update.  The next physical-
+vsync interrupt retires that accepted identity as presented.  This observes
+the two hardware boundaries without adding another wait to the atomic-
+update path.  A second accepted submission before the IRQ is reported as
+coalesced rather than silently counted twice.
+
+Expose the current run through h713_scanout_stats in DRM debugfs.  Besides
+the submitted/presented equality, report the physical-vblank interval
+between presentations, consecutive framebuffer-address reuse, and
+commit-to-vsync latency.  These are diagnostics, not a source-to-photon
+measurement: the interrupt proves the scanout latch, while optical evidence
+remains the proof that the selected output reached the panel.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/gpu/drm/tiny/sun50i-h713-afbd.c | 197 +++++++++++++++++++++++++
+ 1 file changed, 197 insertions(+)
+
+diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -38,6 +38,7 @@
+ #include <linux/dma-mapping.h>
+ #include <linux/interrupt.h>
+ #include <linux/iopoll.h>
++#include <linux/ktime.h>
+ #include <linux/list.h>
+ #include <linux/mm.h>
+ #include <linux/module.h>
+@@ -50,6 +51,7 @@
+ #include <drm/clients/drm_client_setup.h>
+ #include <drm/drm_atomic.h>
+ #include <drm/drm_atomic_helper.h>
++#include <drm/drm_debugfs.h>
+ #include <drm/drm_drv.h>
+ #include <drm/drm_fb_dma_helper.h>
+ #include <drm/drm_fbdev_dma.h>
+@@ -140,6 +142,28 @@ struct h713_afbd {
+ 	wait_queue_head_t retire_wait;
+ 	u64 retire_vblank_count;
+ 	bool rgb_quiesced;
++	u64 video_run;
++	u64 video_submitted;
++	u64 video_presented;
++	u64 video_coalesced;
++	u64 video_aborted;
++	u64 video_repeated_fb;
++	u64 video_interval_min;
++	u64 video_interval_max;
++	u64 video_interval_gt_one;
++	u64 video_latency_total_ns;
++	u64 video_latency_min_ns;
++	u64 video_latency_max_ns;
++	u64 video_last_present_vblank;
++	u64 video_pending_submit_ns;
++	u32 video_pending_fb_id;
++	u32 video_last_submitted_fb_id;
++	u32 video_last_presented_fb_id;
++	dma_addr_t video_pending_y;
++	dma_addr_t video_pending_c;
++	dma_addr_t video_last_presented_y;
++	dma_addr_t video_last_presented_c;
++	bool video_pending;
+ };
+ 
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+@@ -315,6 +339,18 @@ static void h713_afbd_set_source(struct h713_afbd *h, dma_addr_t addr,
+ 	writel(1, h->regs + AFBD_READY);
+ }
+ 
++static void h713_afbd_abort_video_pending(struct h713_afbd *h)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&h->retire_lock, flags);
++	if (h->video_pending) {
++		h->video_pending = false;
++		h->video_aborted++;
++	}
++	spin_unlock_irqrestore(&h->retire_lock, flags);
++}
++
+ static void h713_afbd_video_stop(struct h713_afbd *h)
+ {
+ 	unsigned int i;
+@@ -326,6 +362,7 @@ static void h713_afbd_video_stop(struct h713_afbd *h)
+ 	writel(h->video_ctrl_idle, h->regs + AFBD_VIDEO_CTRL);
+ 	writel(1, h->regs + AFBD_VIDEO_READY);
+ 	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video disable");
++	h713_afbd_abort_video_pending(h);
+ 
+ 	for (i = 0; i < H713_VIDEO_SLOTS; i++) {
+ 		writel(0, h->regs + AFBD_VIDEO_Y0 + i * 4);
+@@ -399,6 +436,10 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 	struct h713_afbd *h = to_h713(plane->dev);
+ 	dma_addr_t y, c;
+ 	unsigned int i;
++	unsigned long flags;
++	u64 submit_ns;
++	bool starting;
++	int ready_ret;
+ 
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+ 	y = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 0);
+@@ -438,7 +476,54 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 
+ 	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
+ 	writel(H713_VIDEO_CTRL_ACTIVE, h->regs + AFBD_VIDEO_CTRL);
++
++	submit_ns = ktime_get_mono_fast_ns();
++	starting = !h->video_active;
+ 	writel(1, h->regs + AFBD_VIDEO_READY);
+-	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
++	ready_ret = h713_afbd_wait_ready(h, AFBD_VIDEO_READY,
++					 "video enable");
++
++	/*
++	 * READY clearing is AFBD's acceptance boundary. Publish the accepted
++	 * identity only now; the following physical-vsync IRQ confirms that a
++	 * scan boundary occurred after the hardware consumed it. This remains
++	 * asynchronous, so instrumentation cannot halve the page-flip rate.
++	 */
++	spin_lock_irqsave(&h->retire_lock, flags);
++	if (starting) {
++		h->video_run++;
++		h->video_submitted = 0;
++		h->video_presented = 0;
++		h->video_coalesced = 0;
++		h->video_aborted = 0;
++		h->video_repeated_fb = 0;
++		h->video_interval_min = 0;
++		h->video_interval_max = 0;
++		h->video_interval_gt_one = 0;
++		h->video_latency_total_ns = 0;
++		h->video_latency_min_ns = 0;
++		h->video_latency_max_ns = 0;
++		h->video_last_present_vblank = 0;
++		h->video_last_presented_fb_id = 0;
++		h->video_last_presented_y = 0;
++		h->video_last_presented_c = 0;
++	}
++	if (ready_ret) {
++		h->video_aborted++;
++		spin_unlock_irqrestore(&h->retire_lock, flags);
++		goto activate;
++	}
++	if (h->video_pending)
++		h->video_coalesced++;
++	h->video_submitted++;
++	h->video_pending_fb_id = new_state->fb->base.id;
++	h->video_last_submitted_fb_id = new_state->fb->base.id;
++	h->video_pending_y = y;
++	h->video_pending_c = c;
++	h->video_pending_submit_ns = submit_ns;
++	h->video_pending = true;
++	spin_unlock_irqrestore(&h->retire_lock, flags);
++
++activate:
+ 	writel(H713_VIDEO_SELECTOR, h->lvds_regs + 0x06c);
+ 	h->video_active = true;
+@@ -641,12 +716,50 @@ static const struct drm_simple_display_pipe_funcs h713_afbd_pipe_funcs = {
+ 	.disable_vblank	= h713_afbd_disable_vblank,
+ };
+ 
++static void h713_afbd_record_video_present(struct h713_afbd *h, u64 now_ns)
++{
++	u64 interval;
++	u64 latency;
++
++	if (!h->video_pending)
++		return;
++
++	latency = now_ns - h->video_pending_submit_ns;
++	if (!h->video_latency_min_ns || latency < h->video_latency_min_ns)
++		h->video_latency_min_ns = latency;
++	if (latency > h->video_latency_max_ns)
++		h->video_latency_max_ns = latency;
++	h->video_latency_total_ns += latency;
++
++	if (h->video_presented) {
++		interval = h->retire_vblank_count -
++			   h->video_last_present_vblank;
++		if (!h->video_interval_min || interval < h->video_interval_min)
++			h->video_interval_min = interval;
++		if (interval > h->video_interval_max)
++			h->video_interval_max = interval;
++		if (interval > 1)
++			h->video_interval_gt_one++;
++		if (h->video_pending_y == h->video_last_presented_y &&
++		    h->video_pending_c == h->video_last_presented_c)
++			h->video_repeated_fb++;
++	}
++
++	h->video_presented++;
++	h->video_last_present_vblank = h->retire_vblank_count;
++	h->video_last_presented_fb_id = h->video_pending_fb_id;
++	h->video_last_presented_y = h->video_pending_y;
++	h->video_last_presented_c = h->video_pending_c;
++	h->video_pending = false;
++}
++
+ static irqreturn_t h713_afbd_irq(int irq, void *data)
+ {
+ 	struct h713_afbd *h = data;
+ 	u8 status = readb(h->regs + AFBD_IRQ_STATUS);
+ 	struct h713_afbd_retire *retire;
+ 	unsigned long flags;
++	u64 now_ns;
+ 	bool due = false;
+ 
+ 	if (!(status & AFBD_IRQ_VSYNC))
+@@ -654,8 +772,10 @@ static irqreturn_t h713_afbd_irq(int irq, void *data)
+ 	/* Write-1-to-clear, exactly as the vendor's dec_irq_query() acks it. */
+ 	writeb(status | AFBD_IRQ_VSYNC, h->regs + AFBD_IRQ_STATUS);
+ 
++	now_ns = ktime_get_mono_fast_ns();
+ 	spin_lock_irqsave(&h->retire_lock, flags);
+ 	h->retire_vblank_count++;
++	h713_afbd_record_video_present(h, now_ns);
+ 	retire = list_first_entry_or_null(&h->retire_list,
+ 					  struct h713_afbd_retire, node);
+ 	if (retire && retire->target_vblank <= h->retire_vblank_count)
+@@ -669,6 +789,78 @@ static irqreturn_t h713_afbd_irq(int irq, void *data)
+ 	return IRQ_HANDLED;
+ }
+ 
++static int h713_afbd_scanout_stats(struct seq_file *m, void *data)
++{
++	struct drm_debugfs_entry *entry = m->private;
++	struct h713_afbd *h = to_h713(entry->dev);
++	struct {
++		u64 physical_vsyncs;
++		u64 run;
++		u64 submitted;
++		u64 presented;
++		u64 coalesced;
++		u64 aborted;
++		u64 repeated_fb;
++		u64 interval_min;
++		u64 interval_max;
++		u64 interval_gt_one;
++		u64 latency_min_ns;
++		u64 latency_mean_ns;
++		u64 latency_max_ns;
++		u32 last_submitted_fb_id;
++		u32 last_presented_fb_id;
++		dma_addr_t last_presented_y;
++		dma_addr_t last_presented_c;
++		bool active;
++		bool pending;
++	} s;
++	unsigned long flags;
++
++	spin_lock_irqsave(&h->retire_lock, flags);
++	s.physical_vsyncs = h->retire_vblank_count;
++	s.run = h->video_run;
++	s.active = READ_ONCE(h->video_active);
++	s.pending = h->video_pending;
++	s.submitted = h->video_submitted;
++	s.presented = h->video_presented;
++	s.coalesced = h->video_coalesced;
++	s.aborted = h->video_aborted;
++	s.repeated_fb = h->video_repeated_fb;
++	s.interval_min = h->video_interval_min;
++	s.interval_max = h->video_interval_max;
++	s.interval_gt_one = h->video_interval_gt_one;
++	s.latency_min_ns = h->video_latency_min_ns;
++	s.latency_mean_ns = h->video_presented ?
++		h->video_latency_total_ns / h->video_presented : 0;
++	s.latency_max_ns = h->video_latency_max_ns;
++	s.last_submitted_fb_id = h->video_last_submitted_fb_id;
++	s.last_presented_fb_id = h->video_last_presented_fb_id;
++	s.last_presented_y = h->video_last_presented_y;
++	s.last_presented_c = h->video_last_presented_c;
++	spin_unlock_irqrestore(&h->retire_lock, flags);
++
++	seq_printf(m, "physical_vsyncs %llu\n", s.physical_vsyncs);
++	seq_printf(m, "video_run %llu\n", s.run);
++	seq_printf(m, "video_active %u\n", s.active);
++	seq_printf(m, "video_pending %u\n", s.pending);
++	seq_printf(m, "video_submitted %llu\n", s.submitted);
++	seq_printf(m, "video_presented %llu\n", s.presented);
++	seq_printf(m, "video_coalesced %llu\n", s.coalesced);
++	seq_printf(m, "video_aborted %llu\n", s.aborted);
++	seq_printf(m, "video_repeated_fb %llu\n", s.repeated_fb);
++	seq_printf(m, "video_interval_min_vblanks %llu\n", s.interval_min);
++	seq_printf(m, "video_interval_max_vblanks %llu\n", s.interval_max);
++	seq_printf(m, "video_interval_gt_one %llu\n", s.interval_gt_one);
++	seq_printf(m, "video_submit_to_vsync_min_ns %llu\n", s.latency_min_ns);
++	seq_printf(m, "video_submit_to_vsync_mean_ns %llu\n", s.latency_mean_ns);
++	seq_printf(m, "video_submit_to_vsync_max_ns %llu\n", s.latency_max_ns);
++	seq_printf(m, "last_submitted_fb_id %u\n", s.last_submitted_fb_id);
++	seq_printf(m, "last_presented_fb_id %u\n", s.last_presented_fb_id);
++	seq_printf(m, "last_presented_y %pad\n", &s.last_presented_y);
++	seq_printf(m, "last_presented_c %pad\n", &s.last_presented_c);
++	return 0;
++}
++
+ static int h713_afbd_get_modes(struct drm_connector *connector)
+ {
+ 	struct h713_afbd *h = to_h713(connector->dev);
+@@ -924,6 +1076,9 @@ static int h713_afbd_probe(struct platform_device *pdev)
+ 
+ 	drm_mode_config_reset(drm);
+ 
++	drm_debugfs_add_file(drm, "h713_scanout_stats",
++			     h713_afbd_scanout_stats, NULL);
++
+ 	ret = devm_request_irq(dev, irq, h713_afbd_irq, 0, "h713-afbd", h);
+ 	if (ret)
+ 		return ret;
+-- 
+2.51.0

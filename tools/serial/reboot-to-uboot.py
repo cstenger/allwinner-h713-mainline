@@ -8,6 +8,10 @@ reset rather than trying to time a single keypress.
 Pass ``--wait-for-power-cycle`` as the third argument to omit the initial
 ``reboot`` command and only send interrupt keys.  That is required when the
 hardware must start from a cold power cycle rather than a warm reset.
+
+Pass ``--aggressive`` when a short autoboot window has ignored bare spaces.
+It alternates Space and Ctrl-C; either interrupts ordinary U-Boot autoboot,
+while both are harmless if Linux has already reached its shell prompt.
 """
 import os
 import sys
@@ -17,6 +21,7 @@ import time
 PORT = sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyUSB0"
 SPAM_SECONDS = float(sys.argv[2]) if len(sys.argv) > 2 else 45.0
 WAIT_FOR_POWER_CYCLE = "--wait-for-power-cycle" in sys.argv[3:]
+AGGRESSIVE = "--aggressive" in sys.argv[3:]
 
 
 def open_port(path):
@@ -48,6 +53,7 @@ if not WAIT_FOR_POWER_CYCLE:
 
 end = time.time() + SPAM_SECONDS
 last_key = 0.0
+key_index = 0
 while time.time() < end:
     try:
         chunk = os.read(fd, 4096)
@@ -57,10 +63,22 @@ while time.time() < end:
         out += chunk
         sys.stdout.write(chunk.decode("utf-8", "replace"))
         sys.stdout.flush()
+        # Once autoboot is visibly stopped, continuing aggressive Ctrl-C
+        # traffic only floods the prompt and delays the caller. Normalize CRLF
+        # before matching because U-Boot emits CRCRLF on this serial path.
+        if b"\n=> " in out[-512:].replace(b"\r", b""):
+            sys.stdout.write("\nU-Boot prompt detected; interrupt keys stopped.\n")
+            sys.stdout.flush()
+            break
     # A bare space is the safest "any key": it interrupts autoboot, and at a
-    # prompt it is just whitespace on an empty line.
-    if time.time() - last_key > 0.05:
-        os.write(fd, b" ")
+    # prompt it is just whitespace on an empty line. Some short boot windows
+    # have missed it; aggressive mode alternates Ctrl-C, which is also harmless
+    # at an idle shell prompt, and sends at twice the normal cadence.
+    interval = 0.025 if AGGRESSIVE else 0.05
+    if time.time() - last_key > interval:
+        keys = (b" ", b"\x03") if AGGRESSIVE else (b" ",)
+        os.write(fd, keys[key_index % len(keys)])
+        key_index += 1
         last_key = time.time()
     time.sleep(0.01)
 

@@ -1,0 +1,52 @@
+{
+  "source_edid_sha256": "1bf44b2172fb4e512d8a575c58f2abbcfd96d2f2902bea5b8a7a323248fb9013",
+  "kernel_fit_sha256": "55d2b50bfaa117dc50e60a40f43e7d83d158a293b7d57a5d1c3ac779d3e95579",
+  "kernel_fit_bytes": 7758208,
+  "operator_observation": "Both runs showed full-frame motion and Leota in order and returned to the Linux console.",
+  "runs": [
+    {
+      "id": "20260928T024031Z",
+      "pipeline_frames": 360,
+      "pipeline_rendered": 360,
+      "pipeline_dropped": 0,
+      "elapsed_seconds": 6.087106,
+      "measured_fps": 59.14,
+      "physical_submitted": 361,
+      "physical_presented": 361,
+      "physical_repeated_fb": 1,
+      "physical_changed_fb_presentations": 360,
+      "physical_coalesced": 0,
+      "physical_aborted": 0,
+      "physical_pending": 0,
+      "interval_min_vblanks": 1,
+      "interval_max_vblanks": 1,
+      "interval_gt_one": 0
+    },
+    {
+      "id": "20260928T024443Z",
+      "pipeline_frames": 360,
+      "pipeline_rendered": 360,
+      "pipeline_dropped": 0,
+      "elapsed_seconds": 6.120413,
+      "measured_fps": 58.82,
+      "physical_submitted": 361,
+      "physical_presented": 361,
+      "physical_repeated_fb": 1,
+      "physical_changed_fb_presentations": 360,
+      "physical_coalesced": 0,
+      "physical_aborted": 0,
+      "physical_pending": 0,
+      "interval_min_vblanks": 1,
+      "interval_max_vblanks": 2,
+      "interval_gt_one": 1
+    }
+  ],
+  "acceptance": {
+    "kms_bootstrap_presentations": 1,
+    "single_vblank_gap_budget": 3,
+    "maximum_interval_vblanks": 2,
+    "all_accepted_updates_physically_presented": true,
+    "console_restored": true,
+    "display_errors": 0
+  }
+}
