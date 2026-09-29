@@ -176,9 +176,21 @@ Per frame, with `sb = ceil(w/64) * ceil(h/64)`:
 | reconstruction (`rec_lum`) | `sb * 0x2400`, 4 KiB aligned -- compressed luma+chroma |
 | compression header (`rec_ch` = `rec_lum_comp`) | `ceil(sb_cols/8) * ALIGN(h,64)/2 * 0x40`, 4 KiB aligned |
 | temporal MVs (`temporal_write`, later `temporal*_read`) | `sb * 0x400` |
-| raster output (`out_secondary_*`) | NV12, `w*h*3/2` |
+| raster output (`out_secondary_*`) | NV12; the vendor allocates `ALIGN(w,64) * ALIGN(h,64) * 3/2` and puts Cb at `ALIGN(w,64) * ALIGN(h,64)` |
 
-(1280x720: 2211840 / 73728 / 245760 -- the captured allocation sizes.)
+(1280x720: 2211840 / 73728 / 245760 -- the captured allocation sizes.) All
+three formulas hold exactly at 352x288, 640x360, 1000x600, 1920x1080 and
+3840x2160 (vendor emulation, 2026-09-29). Everything else is a **fixed** size,
+the same at every resolution up to 4K: scratch 0x50c000 (`ref0_sindex` at +0,
+`out_scaled_lu` at +0x66000), `rec_sindex` 0x66000, `out_secondary_colbuf`
+0x44000, `filter_ctrl_info_colbuf` 0x4400 (`filter_lr_params_colbuf` at
++0x1100), `film_grain_colbuf` 0x8800, `filter_cdef_dir_colbuf` 0x1100, tile
+info 0x500, global model 0xe0, probabilities 0x2fe0 each way, film grain
+0x3300, pdec 0x1000.
+
+The raster output's stride is not in any register (`lu/cb/cr_stride` stay
+0); what the core uses for a width that is not a multiple of 64 is still to
+be measured on the hardware.
 
 ## Driver plan
 
@@ -199,9 +211,9 @@ An H713 variant in mainline's hantro/verisilicon driver:
 - Validation without risking the SoC: a dry-run mode that builds each frame's
   register image and compares it, field by field, with the vendor's capture
   of the same stream (`vendor-decode.py`), before the core is ever started.
-- To port: the compressor-mode state (`fc_*`), and `pdec_config` -- a DRAM
-  register block the vendor writes from frame 1 (`WritePdecRegsToDram`; its
-  field names are in the vendor's `operator<<(PdecSwRegs)` printer).
+- Done (2026-09-29): the generator, `tools/re/av1/driver/sunxi_h713_av1_gen.c`,
+  matches the vendor on every field and every CPU-written buffer -- see
+  "The generator and its gate" below.
 
 ## pdec_config is the reference-frame decompressor
 
@@ -217,3 +229,71 @@ exact). Everything in it is DERIVED, by small readable functions:
 reference's compressor modes, `frameComp`), `MapPdecBaseSwRegs` /
 `SetupPdecBaseRegs` (each reference's data and header addresses), then
 `WritePdecRegsToDram`.
+
+How the vendor fills it (`AsicRefDecompressionSetup`), all reproduced by
+`set_pdec()` in the generator:
+
+- One "input" per AV1 reference, in0 = LAST .. in6 = ALTREF, from the same
+  buffers as the main image's `ref{i}_*` (with intra block copy, in0 is the
+  current frame). Intra frames get no pdec at all (`pdec_config_base` = 0).
+- Fixed routing: `pdec_e` = 1, `cb_header_dram_id` = 6, `cb_strm_dram_id` = 2,
+  `cb_plane_mode` = 1, `cb_header_dram_sel` = 1; `dedicated_pdec_e` =
+  !`mode_dec`, `flush_all` = `mode_dec`, `bit_depth` = `bitdepth`,
+  `chroma_skip` = (`coding_mode` == 2). Constant bits outside any printed
+  member: bits 0-9 = 0x3aa (the header/cache/bit-depth config) and
+  `sw_cb_size` = {0, 4, 4} (bits 3785 and 3788).
+- Dimensions from the main image's `ref{i}_width/height`: luma `(w+7) & ~7` x
+  `(h+7) & ~7`; chroma `((w+7) >> 1) & ~3` x luma height / 2.
+- Stream bases: luma at the reference's `rec` buffer, Cb after
+  `ceil(w/64) * ceil(h/4) * 384` bytes, Cr after a further
+  `ceil(cw/32) * ceil(ch/4) * 192` (the worst-case compressed size of a 64x4
+  luma / 32x4 chroma block, `GetMaxCBSizeBytes`). All three header bases are
+  the reference's header buffer. (The vendor fills the plane-1/2 header bases
+  *before* this frame's plane 0, so its copies lag one frame -- 0 on frame 1 --
+  and evidently go unused.)
+- Entropy modes: the `frameComp` the reference was compressed with; luma
+  modes for plane 0, chroma modes for planes 1 and 2.
+
+## Reference compression modes (`fc_*`)
+
+The core compresses every reconstruction with one of eight entropy modes per
+block class and counts its choices (`fc_luma/chroma_cur_entropyN_count`,
+written back into the register image). After each frame the vendor
+(`FcUpdateModes`) ranks the eight modes of each plane by count, most used
+first (ties keep index order), and the next frame codes with that ranking
+(`fc_cur_luma/chroma_entropy0..7`). The ranking starts, once per stream, from
+the .rodata table luma {2,3,4,1,0,5,6,7}, chroma {1,2,0,3,4,5,6,7}; each frame
+keeps the ranking it was written with for the decompressor (pdec above). With
+zero counts (emulation) the ranking becomes the identity after frame 0,
+exactly as captured.
+
+## The generator and its gate
+
+`tools/re/av1/driver/sunxi_h713_av1_gen.c` builds each frame's register image
+and CPU-written buffers from the V4L2 stateless AV1 controls, as a pure
+function the kernel driver and the host rig (`tools/re/av1/rig/`) share.
+`rig/gate.sh WORKDIR [stock.ivf]` encodes clips with libaom (5 sizes from
+352x288 to 4K, 2x2 tiles, film grain, 10-bit), runs the vendor library on
+each in emulation, runs the rig, and compares (`compare.py`, which exits
+non-zero on any difference or on a missing frame). 2026-09-29: 37/37 frames
+across 9 clips, every field and buffer identical.
+
+What the wider clip set taught (the stock clip exercised none of it):
+
+- Tiles: the stream starts at the first tile's `tile_size_bytes` size field,
+  not its payload, when there are several tiles; the tile table's
+  {start, end} pairs at +0x100 are column-major (`tile_transpose`), counted
+  from that start. `log2_tile_cols` = ceil(log2(tile_cols)).
+- Loop filter: all eight AV1 reference deltas exist (`filt_ref0..7_delta`,
+  two register groups) plus `filt_mode0/1_delta`; written when
+  `delta_enabled`.
+- Film grain: the VPU981 buffer, except the 32x32 Cb and Cr grain blocks are
+  planar (Cb then Cr), not interleaved.
+- `secondary_output_e` = show_frame || showable_frame -- no raster for a
+  frame that can never be displayed. `secondary_output_hbd` = 10-bit.
+- `force_integer_mv` is 0 on intra frames (the spec's implied 1 is not
+  written).
+- The vendor leaves some fields stale while their feature is off
+  (`base_lf_level_2/3` while filtering is disabled, `skip_ref0/1` without skip
+  mode, `delta_q_res_log` without delta-q, the grain parameters without
+  `apply_grain`); `compare.py` ignores exactly those, keyed on the switch.

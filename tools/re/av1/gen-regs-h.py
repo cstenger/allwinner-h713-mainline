@@ -26,6 +26,17 @@ for l in open(os.path.join(here, 'swregisters-bits.txt')):
     f = l.split()
     name, w, lo = f[0][3:].upper(), int(f[1]), int(f[3])
     out.append(f'#define H713_AV1_{name}\tH713_AV1_FIELD({lo}, {w})')
+out += ['', '/*',
+        ' * Reference decompressor configuration (PdecSwRegs, serialised to 496',
+        ' * bytes in DRAM at pdec_config_base), from pdecswregs-bits.txt.',
+        ' */',
+        '#define H713_PDEC_SIZE\t496']
+for l in open(os.path.join(here, 'pdecswregs-bits.txt')):
+    f = l.split()
+    if f[3] == 'NONE':
+        continue
+    name, w, lo = f[0][3:].upper(), int(f[1]), int(f[3])
+    out.append(f'#define H713_PDEC_{name}\tH713_AV1_FIELD({lo}, {w})')
 out += ['', '#endif', '']
 open(sys.argv[1], 'w').write('\n'.join(out))
 print(len(out), 'lines')
