@@ -1,5 +1,13 @@
 # VP9 and AV1 on the H713: one closed, one identified
 
+> **CORRECTION 2026-09-29: the VP9 verdict below is WRONG.** The H713 decodes
+> VP9 in hardware on the VE (H.265 engine, VE+0x500), driven by the vendor's
+> `libawvp9HwAL.so` -- this scouting looked only at `libawvp9Hw.so`, the
+> Hantro build that really is dead here. Patch 0143 now decodes VP9
+> bit-exact; see `vp9-ve-register-interface.md`. The CCU lacking the H6 VP9
+> clocks proves only that the *Hantro* block is gone. The AV1 half stands
+> (core ID read on hardware: 0x0003b16d; mbus_av1 is bit 3, not 4).
+
 **2026-09-24.** Static scouting, no board time beyond read-only sysfs. Asked
 whether VP8's success — where the hardware, the kernel driver and the V4L2 uAPI
 all existed and only the VA shim was missing — could be repeated for VP9, and
