@@ -202,3 +202,18 @@ An H713 variant in mainline's hantro/verisilicon driver:
 - To port: the compressor-mode state (`fc_*`), and `pdec_config` -- a DRAM
   register block the vendor writes from frame 1 (`WritePdecRegsToDram`; its
   field names are in the vendor's `operator<<(PdecSwRegs)` printer).
+
+## pdec_config is the reference-frame decompressor
+
+`PdecSwRegs` (`ac_int<3880>`, serialised to 496 bytes; 8-byte
+`PdecSwRegsInit` header) configures decompression of the compressed
+reference frames -- which is why frame 0 has none. Fields: 328, names/widths
+from the vendor's `operator<<(PdecSwRegs)` (`tools/re/av1/pdecswregs-fields.txt`),
+bit positions from emulating `PdecSwRegs::ToByteArray`
+(`tools/re/av1/serial-bitmap.py` -> `pdecswregs-bits.txt`, all 327 members
+exact). Everything in it is DERIVED, by small readable functions:
+`MapPdecDimSwRegs` (per-reference dims from the main image's ref sizes),
+`MapPdecGenSwRegs` (a few main-image bits), `MapPdecEntropySwRegs` (the
+reference's compressor modes, `frameComp`), `MapPdecBaseSwRegs` /
+`SetupPdecBaseRegs` (each reference's data and header addresses), then
+`WritePdecRegsToDram`.
