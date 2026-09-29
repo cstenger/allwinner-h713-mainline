@@ -156,11 +156,49 @@ Findings from the first replay:
   the vendor's CDF/compression state come from the hardware's outputs, which
   the emulation does not have.
 
-## Plan
+## Hardware lessons from the replays
 
-A new variant in mainline's hantro/verisilicon driver, reusing the VPU981 AV1
-decode logic (V4L2 stateless AV1 uAPI, CDF handling, film grain) with an H713
-register-field table generated from the map above, and the vendor's
-per-frame setup as the reference where the two cores differ (buffers,
-`pdec_config`, output format). Open: reference/output frame format
-(compressed? `*_sindex`) versus raster NV12 through the secondary output.
+- **ref_compress_e = 0 hangs the core** -- no interrupt at all, not even its
+  own timeout; the start bit stays set. Compression is part of the working
+  configuration, not an option: follow stock and port the vendor's
+  compressor-mode logic (`FcUpdateModes`, `FcSetModesCurrent/Ref*`).
+- **Never write registers into a busy core** (start bit still set): that
+  wedged the SoC. After a timeout the block must be reset first; the 0141
+  replay now refuses while busy and resets on timeout.
+- PLL_VE and every clock register: read the live value, change one field.
+
+## Buffer sizes (vendor `Vp9AsicAllocatePictures`, compression on)
+
+Per frame, with `sb = ceil(w/64) * ceil(h/64)`:
+
+| buffer (register) | size |
+| --- | --- |
+| reconstruction (`rec_lum`) | `sb * 0x2400`, 4 KiB aligned -- compressed luma+chroma |
+| compression header (`rec_ch` = `rec_lum_comp`) | `ceil(sb_cols/8) * ALIGN(h,64)/2 * 0x40`, 4 KiB aligned |
+| temporal MVs (`temporal_write`, later `temporal*_read`) | `sb * 0x400` |
+| raster output (`out_secondary_*`) | NV12, `w*h*3/2` |
+
+(1280x720: 2211840 / 73728 / 245760 -- the captured allocation sizes.)
+
+## Driver plan
+
+An H713 variant in mainline's hantro/verisilicon driver:
+
+- `V4L2_PIX_FMT_AV1_FRAME` in; NV12 out as a **post-processed** format, so
+  hantro keeps the native (compressed) reference frames in its auxiliary
+  buffers -- the same split as VPU981's post-processor, and as stock.
+- Registers: VPU981's AV1 decode logic (`rockchip_vpu981_hw_av1_dec.c`) ported
+  onto a shadow copy of the packed H713 image (generated field table,
+  `tools/re/av1/gen-regs-h.py`), written out whole; start bit last.
+- Reused as is: `rockchip_av1_entropymode.c` (identical CDF layout),
+  `rockchip_av1_filmgrain.c` (to be checked against `Av1AsicSetFGS`).
+- Clocks: the node claims `bus_av1`, `mbus_av1` and `reset_av1` only. The VE
+  module clock, `bus_ve` and `reset_ve` belong to cedrus; a runtime-PM device
+  link (AV1 consumer, VE supplier) keeps them up while AV1 runs, and cedrus's
+  H713 module rate drops to 432 MHz so one rate serves both cores.
+- Validation without risking the SoC: a dry-run mode that builds each frame's
+  register image and compares it, field by field, with the vendor's capture
+  of the same stream (`vendor-decode.py`), before the core is ever started.
+- To port: the compressor-mode state (`fc_*`), and `pdec_config` -- a DRAM
+  register block the vendor writes from frame 1 (`WritePdecRegsToDram`; its
+  field names are in the vendor's `operator<<(PdecSwRegs)` printer).
