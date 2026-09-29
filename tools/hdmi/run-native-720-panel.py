@@ -31,7 +31,9 @@ SCP = ["scp", "-F", "/dev/null", "-o", "BatchMode=yes", "-o",
        "ConnectTimeout=5"]
 KERNEL_RELEASE = "6.18.38"
 EDID_SHA256 = "1bf44b2172fb4e512d8a575c58f2abbcfd96d2f2902bea5b8a7a323248fb9013"
-PANEL_FRAMES = 360
+DEFAULT_PANEL_FRAMES = 360
+# Patch 0141 retains 512 presentations, including one KMS bootstrap repeat.
+MAX_PANEL_FRAMES = 511
 PANEL_FPS = 60
 # kmssink enables the overlay with its first framebuffer, then submits that same
 # framebuffer once more as playback starts.  Count that KMS bootstrap explicitly
@@ -40,7 +42,6 @@ KMS_BOOTSTRAP_PRESENTATIONS = 1
 # The source and userspace conversion are not phase-locked to panel vblank.
 # Permit at most one percent isolated, single-vblank supply gaps while still
 # requiring that every accepted framebuffer reaches a later physical vblank.
-SINGLE_VBLANK_GAP_BUDGET = max(1, PANEL_FRAMES // 100)
 TAIL_FRAME_BUDGET = 8
 SCANOUT_STATS = "/sys/kernel/debug/dri/0/h713_scanout_stats"
 SCANOUT_TRACE = "/sys/kernel/debug/dri/0/h713_scanout_trace"
@@ -132,10 +133,10 @@ def scanout_stats():
     return text, values
 
 
-def validate_scanout_stats(before, after):
+def validate_scanout_stats(before, after, frames):
     if after["video_run"] != before["video_run"] + 1:
         raise RuntimeError("physical scanout run counter did not advance once")
-    expected_presentations = PANEL_FRAMES + KMS_BOOTSTRAP_PRESENTATIONS
+    expected_presentations = frames + KMS_BOOTSTRAP_PRESENTATIONS
     for name in ("video_submitted", "video_presented"):
         if after[name] != expected_presentations:
             raise RuntimeError(f"physical scanout {name} was {after[name]}, "
@@ -148,7 +149,7 @@ def validate_scanout_stats(before, after):
         raise RuntimeError("physical scanout did not contain exactly the "
                            "expected KMS bootstrap repeat")
     if (after["video_presented"] - after["video_repeated_fb"] !=
-            PANEL_FRAMES):
+            frames):
         raise RuntimeError("physical scanout did not present one changed "
                            "framebuffer per pipeline frame")
     if after["video_interval_min_vblanks"] != 1:
@@ -157,10 +158,11 @@ def validate_scanout_stats(before, after):
     if after["video_interval_max_vblanks"] > 2:
         raise RuntimeError("physical scanout contained a multi-vblank source "
                            "supply gap")
-    if after["video_interval_gt_one"] > SINGLE_VBLANK_GAP_BUDGET:
+    gap_budget = max(1, frames // 100)
+    if after["video_interval_gt_one"] > gap_budget:
         raise RuntimeError("physical scanout exceeded its isolated "
                            "single-vblank supply-gap budget")
-    if after["physical_vsyncs"] - before["physical_vsyncs"] < PANEL_FRAMES:
+    if after["physical_vsyncs"] - before["physical_vsyncs"] < frames:
         raise RuntimeError("physical-vsync counter advanced fewer times than "
                            "the presented frame count")
     if (not after["last_submitted_fb_id"] or
@@ -216,18 +218,18 @@ def capture_telemetry(text):
     return values
 
 
-def validate_capture_telemetry(values):
+def validate_capture_telemetry(values, frames):
     produced = values["frames_produced"]
     delivered = values["frames_delivered"]
     overwritten = values["frames_overwritten"]
     rejected = values["frames_rejected"]
     if values["unstable"] or rejected:
         raise RuntimeError("capture rejected or observed an unstable frame")
-    if delivered < PANEL_FRAMES:
+    if delivered < frames:
         raise RuntimeError("capture delivered fewer than the requested frames")
     if produced != delivered + overwritten + rejected:
         raise RuntimeError("capture frame accounting does not close")
-    events_beyond_pipeline = produced - PANEL_FRAMES
+    events_beyond_pipeline = produced - frames
     if events_beyond_pipeline < 0 or events_beyond_pipeline > TAIL_FRAME_BUDGET:
         raise RuntimeError("capture shutdown tail exceeded its frame budget")
     values["events_beyond_pipeline"] = events_beyond_pipeline
@@ -239,6 +241,18 @@ def restore_console():
                   "test \"$(cat /sys/class/graphics/fb0/blank)\" = 0", check=False)
 
 
+def output_configuration():
+    return run(["cosmic-randr", "list", "--kdl"]).stdout
+
+
+def restore_output_configuration(configuration):
+    result = subprocess.run(["cosmic-randr", "kdl"], input=configuration,
+                            text=True, capture_output=True, timeout=10)
+    if result.returncode:
+        print("WARNING: source display layout restore failed: " +
+              (result.stdout + result.stderr)[-1200:], file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ready = ap.add_mutually_exclusive_group()
@@ -247,10 +261,24 @@ def main():
     ready.add_argument("--operator-ready", action="store_true",
                        help="confirm the operator is watching; no optical evidence retained")
     ap.add_argument("--video", type=Path, default=DEFAULT_VIDEO)
+    ap.add_argument("--frames", type=int, default=DEFAULT_PANEL_FRAMES)
+    ap.add_argument("--pattern-only", action="store_true",
+                    help="loop the lossless frame-ID pattern instead of playing the video")
+    ap.add_argument("--mirror-from", metavar="OUTPUT",
+                    help="temporarily make HDMI-A-1 mirror this source output")
+    ap.add_argument("--source-screen", default="HDMI-A-1",
+                    help="output on which mpv opens (default: HDMI-A-1)")
     args = ap.parse_args()
     if not (args.camera_ready or args.operator_ready):
         ap.error("stop and obtain operator confirmation before the visible run")
-    for path in (MODULE, GST_RUNNER, LATENCY_ANALYZER, PROBE, args.video):
+    if not 1 <= args.frames <= MAX_PANEL_FRAMES:
+        ap.error(f"--frames must be 1..{MAX_PANEL_FRAMES}")
+    if args.mirror_from:
+        args.source_screen = args.mirror_from
+    required = [MODULE, GST_RUNNER, LATENCY_ANALYZER, PROBE]
+    if not args.pattern_only:
+        required.append(args.video)
+    for path in required:
         if not path.is_file():
             ap.error(f"required file not found: {path}")
     if connector_state() != ("disconnected", "disabled"):
@@ -272,6 +300,9 @@ def main():
     (output / "module-sha256.txt").write_text(module_sha + "\n")
     (output / "runner-sha256.txt").write_text(runner_sha + "\n")
     (output / "probe-sha256.txt").write_text(probe_sha + "\n")
+    display_before = output_configuration() if args.mirror_from else None
+    if display_before is not None:
+        (output / "display-before.kdl").write_text(display_before)
     run(SCP + [str(PROBE), "root@192.168.4.1:/tmp/h713-scp-probe.ko"])
     run(SCP + [str(MODULE), "root@192.168.4.1:/tmp/h713-hdmi-v4l2-720.ko"])
     run(SCP + [str(FALLBACK), "root@192.168.4.1:/tmp/h713-hdmi-v4l2.ko"])
@@ -316,7 +347,7 @@ def main():
     (output / "scanout-before.log").write_text(scanout_before_text)
     target = (f"H713_GST_TIMING_TRACE={PIPELINE_TRACE} "
               "timeout -s INT 15s /tmp/h713-gst-native-720-panel "
-              f"{PANEL_FRAMES}")
+              f"{args.frames}")
 
     # This is intentionally the first projector-visible action.  Leave enough
     # time for the camera to record the known-good console before video starts.
@@ -344,13 +375,27 @@ def main():
 
             edid_sha, receiver = require_native_source()
 
+            if args.mirror_from:
+                run(["cosmic-randr", "mirror", "HDMI-A-1",
+                     args.mirror_from])
+                display_mirrored = output_configuration()
+                if f'mirroring "{args.mirror_from}"' not in display_mirrored:
+                    raise RuntimeError("source output did not enter the requested "
+                                       "mirror configuration")
+                (output / "display-mirrored.kdl").write_text(display_mirrored)
+
             with (output / "source-mpv.log").open("w") as source_log:
-                source = subprocess.Popen(
-                    ["mpv", "--no-config", "--no-audio", "--vo=gpu",
-                     "--gpu-context=wayland", "--fullscreen",
-                     "--fs-screen-name=HDMI-A-1", "--osc=no", "--osd-level=0",
-                     "--no-input-default-bindings", str(PATTERN), str(args.video)],
-                    stdout=source_log, stderr=subprocess.STDOUT)
+                source_args = [
+                    "mpv", "--no-config", "--no-audio", "--vo=gpu",
+                    "--gpu-context=wayland", "--fullscreen",
+                    f"--fs-screen-name={args.source_screen}", "--osc=no",
+                    "--osd-level=0", "--no-input-default-bindings"]
+                if args.pattern_only:
+                    source_args += ["--loop-file=inf", str(PATTERN)]
+                else:
+                    source_args += [str(PATTERN), str(args.video)]
+                source = subprocess.Popen(source_args, stdout=source_log,
+                                          stderr=subprocess.STDOUT)
                 time.sleep(1)
                 if source.poll() is not None:
                     raise RuntimeError("source playlist exited early")
@@ -388,14 +433,14 @@ def main():
             json.dumps(pipeline, indent=2) + "\n")
         for name in ("requested_frames", "source_buffers", "sink_buffers",
                      "rendered"):
-            if pipeline.get(name) != PANEL_FRAMES:
+            if pipeline.get(name) != args.frames:
                 raise RuntimeError(f"pipeline counter {name} did not reach "
-                                   f"{PANEL_FRAMES}")
+                                   f"{args.frames}")
         for name in ("dropped", "pts_mismatches", "unmatched_buffers"):
             if pipeline.get(name) != 0:
                 raise RuntimeError(f"pipeline counter {name} was nonzero")
         elapsed_s = pipeline["elapsed_seconds"]
-        measured_fps = PANEL_FRAMES / elapsed_s
+        measured_fps = args.frames / elapsed_s
         kms_after = wait_overlay_released(fb_before)
         scanout_after_text, scanout_after = scanout_stats()
         scanout_trace_text = remote(f"cat {SCANOUT_TRACE}").stdout
@@ -410,10 +455,11 @@ def main():
             "grep -H . /sys/module/h713_hdmi_v4l2/parameters/{frames_produced,"
             "frames_delivered,frames_overwritten,frames_rejected}").stdout
         (output / "driver-telemetry.txt").write_text(telemetry)
-        counters = validate_capture_telemetry(capture_telemetry(telemetry))
+        counters = validate_capture_telemetry(capture_telemetry(telemetry),
+                                              args.frames)
         if measured_fps < 55:
             raise RuntimeError(f"NV12 panel path ran at only {measured_fps:.2f} fps")
-        validate_scanout_stats(scanout_before, scanout_after)
+        validate_scanout_stats(scanout_before, scanout_after, args.frames)
         if fb_during != fb_before or fb_after != fb_before:
             raise RuntimeError("KMS primary framebuffer changed during overlay playback")
         if errors_after != errors_before:
@@ -426,7 +472,10 @@ def main():
         latency = json.loads(latency_text)
         result = {"camera_ready": args.camera_ready,
                   "operator_observation_only": args.operator_ready,
-                  "pipeline_frames": PANEL_FRAMES,
+                  "pipeline_frames": args.frames,
+                  "pattern_only": args.pattern_only,
+                  "source_screen": args.source_screen,
+                  "mirror_from": args.mirror_from,
                   "pipeline_rendered": pipeline["rendered"],
                   "pipeline_dropped": pipeline["dropped"],
                   "source_edid_sha256": edid_sha,
@@ -456,7 +505,7 @@ def main():
                   scanout_after["video_interval_max_vblanks"],
                   "physical_interval_gt_one":
                   scanout_after["video_interval_gt_one"],
-                  "single_vblank_gap_budget": SINGLE_VBLANK_GAP_BUDGET,
+                  "single_vblank_gap_budget": max(1, args.frames // 100),
                   "physical_submit_to_vsync_mean_us": round(
                       scanout_after["video_submit_to_vsync_mean_ns"] / 1000,
                       2),
@@ -495,6 +544,8 @@ def main():
             print("WARNING: framebuffer console unblank failed", file=sys.stderr)
         if trial is not None and trial.poll() is None:
             trial.wait(timeout=45)
+        if display_before is not None:
+            restore_output_configuration(display_before)
         restore = remote(
             "set -e; if test -d /sys/module/h713_hdmi_v4l2; then "
             "rmmod h713_hdmi_v4l2; fi; "

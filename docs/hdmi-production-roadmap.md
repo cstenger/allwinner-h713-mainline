@@ -283,6 +283,20 @@ with correct colors and frame IDs at a sustained 60 Hz.
 
 ### 5. Minimize and validate end-to-end latency
 
+**Progress, 2026-09-28 (optical cross-check):** A 480-frame pattern run filmed
+the complete DP-2 source display and projector in one slow-motion view. The
+projector rendered every requested frame at 59.28 fps, presented one changed
+framebuffer per pipeline frame, had no vblank gap or queue growth, and restored
+both displays. Perspective-corrected decoding of 417 optical samples measured
+a three-source-frame (50.00 ms) median source-screen-to-projector differential;
+p95, p99, and maximum were five frames (83.33 ms). All four repeated bands had
+a three-frame median, and perturbed-corner/threshold sensitivity checks
+preserved the result. The reference display, projector response, and rolling
+camera limit sub-frame interpretation, so this is an optical differential, not
+an electrical HDMI-edge timestamp. The interactive desktop case and an agreed
+absolute acceptance limit remain before this gate closes. See
+[optical latency evidence](hdmi-evidence/2026-09-28-native-720-optical-latency/README.md).
+
 **Progress, 2026-09-27 (capture-completion to physical scanout):** Patch 0141
 retains a bounded per-frame AFBD physical-presentation trace, and the native
 GStreamer runner now records the V4L2 sequence, capture-completion timestamp,
@@ -294,9 +308,9 @@ median, 41.92 ms p95, 42.65 ms p99, and 53.81 ms maximum. The final 60-frame
 median was 8.90 ms lower than the first, so this bounded run showed no queue
 growth. Motion and Leota were full-frame and correct, and the console returned.
 This is a software pipeline boundary, not source-to-photon: source pixel-change
-time and panel response are not included. The optical cross-check, interactive
-desktop case, and an agreed absolute acceptance limit therefore remain before
-this gate closes. See
+time and panel response are not included. The later optical result above now
+cross-checks the complete path; the interactive desktop case and an agreed
+absolute acceptance limit remain before this gate closes. See
 [latency evidence](hdmi-evidence/2026-09-27-native-720-latency/README.md).
 
 1. Time-stamp source frame changes, receiver/capture completion, V4L2 dequeue,
