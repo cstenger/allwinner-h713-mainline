@@ -18,6 +18,20 @@
 #   * the board is left running the OLD kernel unless --reboot is given, so a
 #     bad FIT is a reboot away from being replaced rather than already booted.
 #
+# WHAT PERSISTS, and why only that (2026-09-29, after both filesystems filled):
+#
+#   * the UPLOAD is staged in /tmp, a tmpfs.  Once it is md5-verified on the FAT
+#     it is redundant -- the FAT has it and the host has the build -- so it is
+#     deleted, and a failed transfer can no longer leave a truncated file behind
+#     on persistent storage (two 0-byte ones had accumulated);
+#   * the BACKUP of the outgoing kernel stays on media-data, NOT in /tmp: the
+#     reboot is exactly when a bad kernel is discovered, tmpfs does not survive
+#     it, and U-Boot can fatload from media-data for recovery.  It is also
+#     sometimes the only copy -- a kernel built in another worktree;
+#   * backups ROTATE: the oldest are pruned BEFORE the new one is written, so a
+#     full partition cannot block the backup, keeping KEEP (default 2).  Only
+#     files named replaced-*.fit / staged-*.fit in STAGE_DIR are ever removed.
+#
 # The way back is always: install the backup it just made.
 #
 #   usage: tools/install-kernel-fit.sh build/out/h713-kernel-sysrq.fit [--reboot]
@@ -34,6 +48,8 @@ MEDIA_FSTYPE=${MEDIA_FSTYPE:-vfat}
 MEDIA_MOUNT=${MEDIA_MOUNT:-/mnt/media-data}
 STAGE_DIR=${STAGE_DIR:-$MEDIA_MOUNT/h713-kernel-fits}
 STAMP=$(date +%Y%m%d-%H%M%S)
+KEEP=${KEEP:-2}
+UPLOAD=/tmp/h713-staged-$STAMP.fit
 
 [ -r "$FIT" ] || { echo "error: no such FIT: $FIT" >&2; exit 1; }
 
@@ -51,13 +67,22 @@ echo "==> $FIT ($size bytes, md5 $sum) -> $BOARD:$TARGET_NAME"
 		mount -t '$MEDIA_FSTYPE' '$MEDIA_DEVICE' '$MEDIA_MOUNT'
 	fi
 	mkdir -p '$STAGE_DIR'"
-echo "==> uploading to $STAGE_DIR/staged-$STAMP.fit"
-scp -F /dev/null -o ConnectTimeout=5 "$FIT" \
-	"root@$BOARD:$STAGE_DIR/staged-$STAMP.fit" >/dev/null
+echo "==> uploading to $UPLOAD (tmpfs)"
+scp -F /dev/null -o ConnectTimeout=5 "$FIT" "root@$BOARD:$UPLOAD" >/dev/null
 
 "${SSH[@]}" "set -e
-	got=\$(md5sum '$STAGE_DIR/staged-$STAMP.fit' | cut -d' ' -f1)
-	[ \"\$got\" = '$sum' ] || { echo 'error: upload corrupted'; exit 1; }
+	got=\$(md5sum '$UPLOAD' | cut -d' ' -f1)
+	[ \"\$got\" = '$sum' ] || { rm -f '$UPLOAD'; echo 'error: upload corrupted'; exit 1; }
+
+	# Prune before backing up, so a full media-data cannot block the backup.
+	# Legacy staged-*.fit are redundant uploads; keep the newest KEEP-1
+	# replaced-*.fit so the one about to be written makes KEEP.
+	find '$STAGE_DIR' -maxdepth 1 -name 'staged-*.fit' -print -delete |
+		sed 's/^/    pruned legacy upload /'
+	find '$STAGE_DIR' -maxdepth 1 -name 'replaced-*.fit' | sort |
+		head -n -$((KEEP - 1)) | while read -r old; do
+			rm -f \"\$old\"; echo \"    pruned old backup \$old\"
+		done
 
 	mkdir -p /mnt/boot
 	mountpoint -q /mnt/boot || mount -t vfat /dev/mmcblk0p2 /mnt/boot
@@ -69,7 +94,7 @@ scp -F /dev/null -o ConnectTimeout=5 "$FIT" \
 		echo '    note: no existing $TARGET_NAME on the FAT'
 	fi
 
-	cp '$STAGE_DIR/staged-$STAMP.fit' /mnt/boot/$TARGET_NAME
+	cp '$UPLOAD' /mnt/boot/$TARGET_NAME
 	sync
 	umount /mnt/boot
 
@@ -77,7 +102,8 @@ scp -F /dev/null -o ConnectTimeout=5 "$FIT" \
 	got=\$(md5sum /mnt/boot/$TARGET_NAME | cut -d' ' -f1)
 	umount /mnt/boot
 	[ \"\$got\" = '$sum' ] || { echo \"error: FAT copy is \$got, expected $sum\"; exit 1; }
-	echo '    installed and verified on the FAT'"
+	rm -f '$UPLOAD'
+	echo '    installed and verified on the FAT; upload removed from /tmp'"
 
 if [ "$REBOOT" = "--reboot" ]; then
 	echo "==> rebooting"
