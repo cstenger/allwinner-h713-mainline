@@ -1,0 +1,145 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 27 Sep 2026 21:05:00 -0700
+Subject: [PATCH] drm: h713-afbd: retain physical presentation trace
+
+Aggregate scanout counters prove that accepted updates reached physical
+vblank, but cannot be joined to individual V4L2 capture timestamps. Retain
+one bounded run of presentation identities and timing.
+
+Store the framebuffer ID, plane DMA addresses, READY-accepted submit time,
+physical-vsync time, and physical-vblank sequence for the most recent 512
+presentations. Snapshot the ring under the existing retirement lock and
+format it outside the lock through a second debugfs file. The fixed ring
+does no allocation or formatting in the IRQ path. It covers the 360-frame
+latency gate, including its characterized KMS bootstrap presentation.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/gpu/drm/tiny/sun50i-h713-afbd.c | 61 ++++++++++++++++++++++++++
+ 1 file changed, 61 insertions(+)
+
+diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -116,6 +116,7 @@
+ #define H713_AFBD_RETIRE_VBLANKS	8
+ #define H713_AFBD_RETIRE_DRAIN_MS	500
+ #define H713_AFBD_RETIRE_FALLBACK_MS	150
++#define H713_VIDEO_TRACE_ENTRIES	512
+ 
+ struct h713_afbd_retire {
+ 	struct list_head node;
+@@ -123,6 +124,15 @@
+ 	u64 target_vblank;
+ };
+ 
++struct h713_afbd_video_trace {
++	u64 submit_ns;
++	u64 present_ns;
++	u64 vblank;
++	dma_addr_t y;
++	dma_addr_t c;
++	u32 fb_id;
++};
++
+ struct h713_afbd {
+ 	struct drm_device drm;
+ 	struct drm_simple_display_pipe pipe;
+@@ -169,6 +179,9 @@
+ 	dma_addr_t video_pending_c;
+ 	dma_addr_t video_last_presented_y;
+ 	dma_addr_t video_last_presented_c;
++	struct h713_afbd_video_trace video_trace[H713_VIDEO_TRACE_ENTRIES];
++	u32 video_trace_head;
++	u32 video_trace_count;
+ 	bool video_pending;
+ };
+ 
+@@ -510,6 +523,8 @@
+ 		h->video_last_presented_fb_id = 0;
+ 		h->video_last_presented_y = 0;
+ 		h->video_last_presented_c = 0;
++		h->video_trace_head = 0;
++		h->video_trace_count = 0;
+ 	}
+ 	if (ready_ret) {
+ 		h->video_aborted++;
+@@ -730,6 +745,7 @@
+ 
+ static void h713_afbd_record_video_present(struct h713_afbd *h, u64 now_ns)
+ {
++	struct h713_afbd_video_trace *trace;
+ 	u64 interval;
+ 	u64 latency;
+ 
+@@ -757,6 +773,18 @@
+ 			h->video_repeated_fb++;
+ 	}
+ 
++	trace = &h->video_trace[h->video_trace_head];
++	trace->submit_ns = h->video_pending_submit_ns;
++	trace->present_ns = now_ns;
++	trace->vblank = h->retire_vblank_count;
++	trace->y = h->video_pending_y;
++	trace->c = h->video_pending_c;
++	trace->fb_id = h->video_pending_fb_id;
++	h->video_trace_head = (h->video_trace_head + 1) %
++			      H713_VIDEO_TRACE_ENTRIES;
++	if (h->video_trace_count < H713_VIDEO_TRACE_ENTRIES)
++		h->video_trace_count++;
++
+ 	h->video_presented++;
+ 	h->video_last_present_vblank = h->retire_vblank_count;
+ 	h->video_last_presented_fb_id = h->video_pending_fb_id;
+@@ -869,6 +897,40 @@
+ 	return 0;
+ }
+ 
++static int h713_afbd_scanout_trace(struct seq_file *m, void *data)
++{
++	struct drm_debugfs_entry *entry = m->private;
++	struct h713_afbd *h = to_h713(entry->dev);
++	struct h713_afbd_video_trace *trace;
++	unsigned long flags;
++	u32 count;
++	u32 first;
++	u32 i;
++
++	trace = kcalloc(H713_VIDEO_TRACE_ENTRIES, sizeof(*trace), GFP_KERNEL);
++	if (!trace)
++		return -ENOMEM;
++
++	spin_lock_irqsave(&h->retire_lock, flags);
++	count = h->video_trace_count;
++	first = (h->video_trace_head + H713_VIDEO_TRACE_ENTRIES - count) %
++		H713_VIDEO_TRACE_ENTRIES;
++	for (i = 0; i < count; i++)
++		trace[i] = h->video_trace[(first + i) %
++					  H713_VIDEO_TRACE_ENTRIES];
++	spin_unlock_irqrestore(&h->retire_lock, flags);
++
++	seq_puts(m, "index fb_id y c submit_ns present_ns latency_ns vblank\n");
++	for (i = 0; i < count; i++)
++		seq_printf(m, "%u %u %pad %pad %llu %llu %llu %llu\n", i,
++			   trace[i].fb_id, &trace[i].y, &trace[i].c,
++			   trace[i].submit_ns, trace[i].present_ns,
++			   trace[i].present_ns - trace[i].submit_ns,
++			   trace[i].vblank);
++	kfree(trace);
++	return 0;
++}
++
+ static int h713_afbd_get_modes(struct drm_connector *connector)
+ {
+ 	struct h713_afbd *h = to_h713(connector->dev);
+@@ -1125,6 +1187,8 @@
+ 
+ 	drm_debugfs_add_file(drm, "h713_scanout_stats",
+ 			     h713_afbd_scanout_stats, NULL);
++	drm_debugfs_add_file(drm, "h713_scanout_trace",
++			     h713_afbd_scanout_trace, NULL);
+ 
+ 	ret = devm_request_irq(dev, irq, h713_afbd_irq, 0, "h713-afbd", h);
+ 	if (ret)
+-- 
+2.51.0
