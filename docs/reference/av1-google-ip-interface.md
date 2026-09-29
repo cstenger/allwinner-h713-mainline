@@ -1,8 +1,10 @@
 # AV1 on the H713: the Google decoder IP
 
-**Status: reverse-engineering in progress (started 2026-09-29).** The block is
-alive under our kernel (patches 0140-0142) and its register map is fully
-recovered; no decode yet.
+**Status (2026-09-29): the block DECODES under our kernel.** The first frame of
+the stock test clip, programmed exactly as the vendor library programs it,
+came out bit-exact (luma and chroma identical to libdav1d) in 1.6 ms. No
+driver yet -- this was a replay of the vendor's own register image and
+buffers.
 
 ## What the block is
 
@@ -119,6 +121,40 @@ global model, per-frame Y/UV/MV tables at +0x180/+0x318/+0x4b0 + idx*0xc.
 REALISTIC container: from a zeroed one the function computes garbage indices
 and faults. Next step: build the container by running the vendor's own
 `Vp9AsicInit` and header parser on a real stream in the emulator.
+
+## Running the vendor decoder, and replaying it on the hardware
+
+`tools/re/av1/vendor-decode.py` runs the whole vendor plugin in the emulator
+on an IVF stream: CreateAv1Decoder, init, set-sbm, decode loop, with the
+CedarC services faked in Python (memory adapter with identity physical
+addresses, VE ops whose getRegBase returns a window preloaded with the ID
+words, a frame-buffer manager, a stream ring). It intercepts
+`VP9DecEControl::Start` -- the hand-off to the thread that would flush the
+registers -- and writes, per frame, the register image and every allocation a
+`*_base` field points into, with a relocation manifest. The vendor's packed
+struct is **image[0:0x488]** (the two dropped words are at the end, not the
+IDs). Its images match stock's live registers field for field, apart from
+per-frame content.
+
+`tools/re/av1/mkreplay.py` packs a frame; the probe module's debugfs replay
+(patch 0141) allocates the buffers at real IOVAs (IOMMU master 5,
+translating), relocates, writes all registers with start held back, starts,
+and waits for SPI 107.
+
+Findings from the first replay:
+
+- **PLL_VE must be <= 432 MHz for this core.** At 600 MHz (cedrus's rate)
+  it stalls: status bit 2 (timeout) after `timeout_limit` = 0x1000000 cycles,
+  28 ms. At stock's 432 MHz the same frame finishes in 1.6 ms, status 0x52
+  (mode_dec | frame_ready | irq) -- stock's exact post-decode value. The VE
+  module clock is shared with cedrus, so the driver has to clamp it.
+- **Secondary output format 1 is NV12**: Y at `out_secondary_lu_base`,
+  interleaved UV at `out_secondary_cb_base`; `out_secondary_cr_base` is
+  unused.
+- Frame 0 (key frame) uses no pdec_config; the vendor adds it from frame 1.
+- Replaying later frames standalone is not meaningful: their references and
+  the vendor's CDF/compression state come from the hardware's outputs, which
+  the emulation does not have.
 
 ## Plan
 

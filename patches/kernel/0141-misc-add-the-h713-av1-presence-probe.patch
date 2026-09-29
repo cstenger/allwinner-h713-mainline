@@ -26,6 +26,15 @@ cold boot.  Unloading it asserts the reset and drops the power domain again.
 The reset is claimed exclusively, which is correct here: reset_av1 has no other
 consumer.  The node deliberately does not ask for reset_ve, which is cedrus's.
 
+
+Later extended with a debugfs replay interface (/sys/kernel/debug/h713-av1/):
+it runs one frame the vendor library programmed -- register image plus the
+DMA buffers its *_base fields point into, relocated to real IOVAs -- as
+captured by tools/re/av1/vendor-decode.py from the library running under
+emulation. On 2026-09-29 the first frame of the stock test clip decoded
+BIT-EXACT through it (luma and NV12 chroma identical to libdav1d), in 1.6 ms,
+once PLL_VE was brought down from cedrus's 600 MHz to stock's 432 MHz: at
+600 MHz the core stalls into its own cycle timeout.
 --- a/drivers/misc/Kconfig
 +++ b/drivers/misc/Kconfig
 @@ -15,6 +15,20 @@
@@ -61,7 +70,7 @@ consumer.  The node deliberately does not ask for reset_ve, which is cedrus's.
  obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
 --- /dev/null
 +++ b/drivers/misc/sunxi-h713-av1-probe.c
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,520 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * H713 AV1 decoder presence probe.
@@ -85,16 +94,45 @@ consumer.  The node deliberately does not ask for reset_ve, which is cedrus's.
 + *      (204 registers, "BigSeaRegisters") by comparing a core ID against
 + *      0xb16c.
 + *
-+ * Load it, read the dmesg report, unload it. Nothing is written to the block.
++ * Load it, read the dmesg report, unload it. Loading writes nothing.
++ *
++ * REPLAY (debugfs, /sys/kernel/debug/h713-av1/). To prove the block decodes
++ * under this kernel before any driver logic exists, it can run one frame the
++ * vendor library programmed: tools/re/av1/vendor-decode.py captures, from the
++ * library running under emulation, the register image and every DMA buffer
++ * its *_base fields point into; tools/re/av1/mkreplay.py packs one frame.
++ *
++ *   cat pkg > package        (accumulates; a new "H7AV" header restarts it)
++ *   echo 1 > run             allocate, relocate, write regs, start, wait IRQ
++ *   cat status               result, IRQ status, time
++ *   cat regs | allocN        registers read back / any buffer, after the run
++ *
++ * CLOCK: the core stalls into its own timeout (status bit 2 after
++ * timeout_limit cycles) with PLL_VE at 600 MHz, where cedrus leaves it; at
++ * stock's 432 MHz the same frame decodes, bit-exact, in 1.6 ms. Set PLL_VE's
++ * N field to 0x11 before a replay (read-modify-write, never a whole word).
++ *
++ * Package: "H7AV", u32 nallocs, u32 nrelocs, u8 image[1168]; per alloc
++ * u32 size, u32 len, data[len] padded to 4; per reloc u16 bit, u16 width,
++ * u32 alloc, u32 offset. A reloc writes (iova of alloc + offset) into the
++ * image field at bit/width.
 + */
 +
 +#include <linux/clk.h>
++#include <linux/completion.h>
++#include <linux/debugfs.h>
++#include <linux/dma-mapping.h>
++#include <linux/interrupt.h>
++#include <linux/ktime.h>
++#include <linux/slab.h>
++#include <linux/vmalloc.h>
 +#include <linux/io.h>
 +#include <linux/module.h>
 +#include <linux/of.h>
 +#include <linux/platform_device.h>
 +#include <linux/pm_runtime.h>
 +#include <linux/reset.h>
++#include <linux/unaligned.h>
 +
 +#define H713_AV1_WINDOW		0x1000
 +#define H713_AV1_ID_MARKER	0xb16c
@@ -106,12 +144,42 @@ consumer.  The node deliberately does not ask for reset_ve, which is cedrus's.
 + */
 +#define H713_AV1_STOCK_ID	0x0003b16d
 +
++#define H713_AV1_REGS_SIZE	1168
++#define H713_AV1_NWORDS		(H713_AV1_REGS_SIZE / 4)
++#define H713_AV1_CTRL		0x008	/* bit 0 start, 2..6 IRQ causes */
++#define H713_AV1_CTRL_START	BIT(0)
++#define H713_AV1_CTRL_IRQ_BITS	GENMASK(6, 2)
++#define H713_AV1_PKG_MAX	(64 << 20)
++#define H713_AV1_MAX_ALLOCS	64
++
++struct h713_av1_alloc {
++	void *cpu;
++	dma_addr_t dma;
++	size_t size;
++	struct debugfs_blob_wrapper blob;
++};
++
 +struct h713_av1_probe {
 +	struct device *dev;
 +	void __iomem *regs;
 +	struct clk *bus_clk;
 +	struct clk *mbus_clk;
 +	struct reset_control *rst;
++	int irq;
++
++	struct mutex lock;
++	struct completion done;
++	u32 irq_status;
++	unsigned int irq_count;
++
++	struct dentry *dbg;
++	u8 *pkg;
++	size_t pkg_len;
++	struct h713_av1_alloc allocs[H713_AV1_MAX_ALLOCS];
++	unsigned int nallocs;
++	u32 regs_after[H713_AV1_NWORDS];
++	struct debugfs_blob_wrapper regs_blob;
++	char status[256];
 +};
 +
 +/*
@@ -169,6 +237,225 @@ consumer.  The node deliberately does not ask for reset_ve, which is cedrus's.
 +		dev_warn(dev,
 +			 "every register in the head read 0x00000000: treat this as NO RESPONSE, not as an idle block\n");
 +}
++
++static irqreturn_t h713_av1_irq(int irq, void *data)
++{
++	struct h713_av1_probe *av1 = data;
++	u32 ctrl = readl_relaxed(av1->regs + H713_AV1_CTRL);
++
++	if (!(ctrl & H713_AV1_CTRL_IRQ_BITS))
++		return IRQ_NONE;
++
++	av1->irq_status = ctrl;
++	/* clear the causes and the start bit; the frame is over */
++	writel_relaxed(ctrl & ~(H713_AV1_CTRL_IRQ_BITS | H713_AV1_CTRL_START),
++		       av1->regs + H713_AV1_CTRL);
++	if (++av1->irq_count > 4)
++		disable_irq_nosync(irq);	/* a stuck line must not storm */
++	complete(&av1->done);
++	return IRQ_HANDLED;
++}
++
++static void h713_av1_free_allocs(struct h713_av1_probe *av1)
++{
++	unsigned int i;
++
++	debugfs_lookup_and_remove("regs", av1->dbg);
++	for (i = 0; i < av1->nallocs; i++) {
++		char name[16];
++
++		snprintf(name, sizeof(name), "alloc%u", i);
++		debugfs_lookup_and_remove(name, av1->dbg);
++		dma_free_coherent(av1->dev, av1->allocs[i].size,
++				  av1->allocs[i].cpu, av1->allocs[i].dma);
++	}
++	av1->nallocs = 0;
++}
++
++static void h713_av1_set_field(u32 *img, unsigned int lo, unsigned int width,
++			       u32 val)
++{
++	unsigned int i;
++
++	for (i = 0; i < width; i++) {
++		unsigned int b = lo + i;
++
++		if (val & BIT(i))
++			img[b / 32] |= BIT(b % 32);
++		else
++			img[b / 32] &= ~BIT(b % 32);
++	}
++}
++
++static int h713_av1_replay(struct h713_av1_probe *av1)
++{
++	struct device *dev = av1->dev;
++	const u8 *p = av1->pkg, *end = av1->pkg + av1->pkg_len;
++	u32 img[H713_AV1_NWORDS], nallocs, nrelocs, i;
++	unsigned long left;
++	ktime_t t0;
++
++	if (av1->pkg_len < 12 + H713_AV1_REGS_SIZE || memcmp(p, "H7AV", 4))
++		return -EINVAL;
++	nallocs = get_unaligned_le32(p + 4);
++	nrelocs = get_unaligned_le32(p + 8);
++	if (nallocs > H713_AV1_MAX_ALLOCS)
++		return -E2BIG;
++	memcpy(img, p + 12, H713_AV1_REGS_SIZE);
++	p += 12 + H713_AV1_REGS_SIZE;
++
++	h713_av1_free_allocs(av1);
++	for (i = 0; i < nallocs; i++) {
++		struct h713_av1_alloc *a = &av1->allocs[i];
++		u32 size, len;
++
++		if (p + 8 > end)
++			goto bad;
++		size = get_unaligned_le32(p);
++		len = get_unaligned_le32(p + 4);
++		p += 8;
++		if (len > size || p + ALIGN(len, 4) > end)
++			goto bad;
++		a->cpu = dma_alloc_coherent(dev, size, &a->dma, GFP_KERNEL);
++		if (!a->cpu) {
++			dev_err(dev, "replay: cannot allocate %u bytes\n", size);
++			return -ENOMEM;
++		}
++		a->size = size;
++		av1->nallocs = i + 1;
++		memcpy(a->cpu, p, len);
++		memset(a->cpu + len, 0, size - len);
++		p += ALIGN(len, 4);
++	}
++	for (i = 0; i < nrelocs; i++) {
++		u32 bit, width, idx, off;
++
++		if (p + 12 > end)
++			goto bad;
++		bit = get_unaligned_le16(p);
++		width = get_unaligned_le16(p + 2);
++		idx = get_unaligned_le32(p + 4);
++		off = get_unaligned_le32(p + 8);
++		p += 12;
++		if (idx >= nallocs || width > 32 || bit + width > H713_AV1_REGS_SIZE * 8)
++			goto bad;
++		h713_av1_set_field(img, bit, width,
++				   lower_32_bits(av1->allocs[idx].dma) + off);
++	}
++
++	/*
++	 * Words 0 and 1 are read-only IDs. Everything else goes in with the
++	 * start bit held back, then start alone -- AsicFlushRegs, then
++	 * AsicEnableHw.
++	 */
++	reinit_completion(&av1->done);
++	av1->irq_status = 0;
++	av1->irq_count = 0;
++	enable_irq(av1->irq);
++	for (i = H713_AV1_NWORDS - 1; i >= 2; i--)
++		writel_relaxed(i == 2 ? img[i] & ~H713_AV1_CTRL_START : img[i],
++			       av1->regs + 4 * i);
++	wmb();
++	t0 = ktime_get();
++	writel(img[2] | H713_AV1_CTRL_START, av1->regs + H713_AV1_CTRL);
++
++	left = wait_for_completion_timeout(&av1->done, msecs_to_jiffies(2000));
++	disable_irq(av1->irq);
++	for (i = 0; i < H713_AV1_NWORDS; i++)
++		av1->regs_after[i] = readl_relaxed(av1->regs + 4 * i);
++	if (!left)	/* stop it: clear the start bit */
++		writel(readl(av1->regs + H713_AV1_CTRL) & ~H713_AV1_CTRL_START,
++		       av1->regs + H713_AV1_CTRL);
++
++	snprintf(av1->status, sizeof(av1->status),
++		 "%s irq_status=0x%08x irqs=%u time_us=%lld ctrl_now=0x%08x allocs=%u relocs=%u\n",
++		 left ? "DONE" : "TIMEOUT", av1->irq_status, av1->irq_count,
++		 ktime_us_delta(ktime_get(), t0), av1->regs_after[2], nallocs, nrelocs);
++	dev_info(dev, "replay: %s", av1->status);
++
++	av1->regs_blob.data = av1->regs_after;
++	av1->regs_blob.size = sizeof(av1->regs_after);
++	debugfs_create_blob("regs", 0400, av1->dbg, &av1->regs_blob);
++	for (i = 0; i < nallocs; i++) {
++		char name[16];
++
++		snprintf(name, sizeof(name), "alloc%u", i);
++		av1->allocs[i].blob.data = av1->allocs[i].cpu;
++		av1->allocs[i].blob.size = av1->allocs[i].size;
++		debugfs_create_blob(name, 0400, av1->dbg, &av1->allocs[i].blob);
++	}
++	return 0;
++bad:
++	dev_err(dev, "replay: malformed package\n");
++	h713_av1_free_allocs(av1);
++	return -EINVAL;
++}
++
++static ssize_t h713_av1_pkg_write(struct file *f, const char __user *buf,
++				  size_t len, loff_t *pos)
++{
++	struct h713_av1_probe *av1 = file_inode(f)->i_private;
++	ssize_t ret = len;
++
++	mutex_lock(&av1->lock);
++	if (!av1->pkg)
++		av1->pkg = vmalloc(H713_AV1_PKG_MAX);
++	if (!av1->pkg) {
++		ret = -ENOMEM;
++		goto out;
++	}
++	if (*pos == 0)
++		av1->pkg_len = 0;
++	if (av1->pkg_len + len > H713_AV1_PKG_MAX) {
++		ret = -EFBIG;
++		goto out;
++	}
++	if (copy_from_user(av1->pkg + av1->pkg_len, buf, len)) {
++		ret = -EFAULT;
++		goto out;
++	}
++	av1->pkg_len += len;
++	*pos += len;
++out:
++	mutex_unlock(&av1->lock);
++	return ret;
++}
++
++static const struct file_operations h713_av1_pkg_fops = {
++	.owner = THIS_MODULE,
++	.write = h713_av1_pkg_write,
++};
++
++static ssize_t h713_av1_run_write(struct file *f, const char __user *buf,
++				  size_t len, loff_t *pos)
++{
++	struct h713_av1_probe *av1 = file_inode(f)->i_private;
++	int ret;
++
++	mutex_lock(&av1->lock);
++	ret = h713_av1_replay(av1);
++	mutex_unlock(&av1->lock);
++	return ret ?: len;
++}
++
++static const struct file_operations h713_av1_run_fops = {
++	.owner = THIS_MODULE,
++	.write = h713_av1_run_write,
++};
++
++static ssize_t h713_av1_status_read(struct file *f, char __user *buf,
++				    size_t len, loff_t *pos)
++{
++	struct h713_av1_probe *av1 = file_inode(f)->i_private;
++
++	return simple_read_from_buffer(buf, len, pos, av1->status,
++				       strlen(av1->status));
++}
++
++static const struct file_operations h713_av1_status_fops = {
++	.owner = THIS_MODULE,
++	.read = h713_av1_status_read,
++};
 +
 +static int h713_av1_probe_dev(struct platform_device *pdev)
 +{
@@ -232,7 +519,32 @@ consumer.  The node deliberately does not ask for reset_ve, which is cedrus's.
 +	dev_info(dev, "powered, clocked and out of reset; reading only\n");
 +	h713_av1_report(av1);
 +
++	mutex_init(&av1->lock);
++	init_completion(&av1->done);
++	strscpy(av1->status, "idle\n", sizeof(av1->status));
++	av1->irq = platform_get_irq(pdev, 0);
++	if (av1->irq < 0) {
++		ret = av1->irq;
++		goto err_rst;
++	}
++	/* requested disabled: only a replay run turns it on */
++	ret = devm_request_irq(dev, av1->irq, h713_av1_irq, IRQF_NO_AUTOEN,
++			       dev_name(dev), av1);
++	if (ret)
++		goto err_rst;
++	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++	if (ret)
++		goto err_rst;
++
++	av1->dbg = debugfs_create_dir("h713-av1", NULL);
++	debugfs_create_file("package", 0200, av1->dbg, av1, &h713_av1_pkg_fops);
++	debugfs_create_file("run", 0200, av1->dbg, av1, &h713_av1_run_fops);
++	debugfs_create_file("status", 0400, av1->dbg, av1, &h713_av1_status_fops);
++
 +	return 0;
++
++err_rst:
++	reset_control_assert(av1->rst);
 +
 +err_mbus:
 +	clk_disable_unprepare(av1->mbus_clk);
@@ -248,6 +560,12 @@ consumer.  The node deliberately does not ask for reset_ve, which is cedrus's.
 +{
 +	struct h713_av1_probe *av1 = platform_get_drvdata(pdev);
 +
++	/* entries first: free_allocs looks them up inside the directory */
++	mutex_lock(&av1->lock);
++	h713_av1_free_allocs(av1);
++	mutex_unlock(&av1->lock);
++	debugfs_remove_recursive(av1->dbg);
++	vfree(av1->pkg);
 +	reset_control_assert(av1->rst);
 +	clk_disable_unprepare(av1->mbus_clk);
 +	clk_disable_unprepare(av1->bus_clk);

@@ -25,7 +25,7 @@ from unicorn.arm_const import *
 BASE = 0x10000000      # library load bias
 STUBS = 0x20000000     # one 4-byte slot per import
 HEAP = 0x30000000      # bump allocator for malloc and for callers
-HEAP_SZ = 0x04000000
+HEAP_SZ = 0x04000000     # default; Lib(heap=...) overrides
 STACK = 0x60000000
 STACK_SZ = 0x00100000
 RET = 0x7ff00000       # return trampoline; hitting it ends a call
@@ -93,8 +93,9 @@ def debugdata_symbols(elf):
 
 
 class Lib:
-    def __init__(self, path, log=None):
+    def __init__(self, path, log=None, heap=HEAP_SZ):
         self.path = path
+        self.heap_sz = heap
         raw = open(path, 'rb').read()
         import io
         self.elf = elf = ELFFile(io.BytesIO(raw))
@@ -129,7 +130,7 @@ class Lib:
             self.exports.setdefault(n, a | 1 if self._is_thumb(a) else a)
 
         uc.mem_map(STUBS, 0x10000, UC_PROT_ALL)
-        uc.mem_map(HEAP, HEAP_SZ, UC_PROT_ALL)
+        uc.mem_map(HEAP, heap, UC_PROT_ALL)
         uc.mem_map(STACK, STACK_SZ, UC_PROT_ALL)
         uc.mem_map(RET, PAGE, UC_PROT_ALL)
         self.brk = HEAP
@@ -195,7 +196,7 @@ class Lib:
     def alloc(self, n, align=16):
         self.brk = (self.brk + align - 1) & ~(align - 1)
         a = self.brk; self.brk += n
-        assert self.brk < HEAP + HEAP_SZ
+        assert self.brk < HEAP + self.heap_sz, 'emulator heap exhausted'
         self.uc.mem_write(a, b'\0' * n)
         return a
 
@@ -239,6 +240,26 @@ class Lib:
         self.uc.mem_write(a, b'\x70\x47\x00\xbf')
         self.extern[name] = fn
         return a | 1
+
+    def intercept(self, addr, fn):
+        """Replace the library function at addr (vaddr or symbol) with
+        fn(lib, [r0..r3]) -> r0. The original code never runs."""
+        if isinstance(addr, str):
+            addr = self.exports[addr]
+        a = (BASE + addr if addr < BASE else addr) & ~1
+        uc = self.uc
+        def hook(uc_, address, size, _):
+            r = [uc.reg_read(x) for x in (UC_ARM_REG_R0, UC_ARM_REG_R1,
+                                         UC_ARM_REG_R2, UC_ARM_REG_R3)]
+            ret = fn(self, r)
+            uc.reg_write(UC_ARM_REG_R0, (ret or 0) & 0xffffffff)
+            lr = uc.reg_read(UC_ARM_REG_LR)
+            uc.reg_write(UC_ARM_REG_PC, lr)
+        uc.hook_add(UC_HOOK_CODE, hook, begin=a, end=a)
+
+    def stack_arg(self, i):
+        """The i-th stacked argument (after r0-r3) at a function's entry."""
+        return self.rd(self.uc.reg_read(UC_ARM_REG_SP) + 4 * i)
 
     def add_mmio(self, name, size=0x1000, ptr_symbol=None):
         """Create a register window. If ptr_symbol names a library global, store
