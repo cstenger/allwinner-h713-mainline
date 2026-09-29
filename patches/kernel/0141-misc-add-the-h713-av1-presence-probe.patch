@@ -1,0 +1,275 @@
+misc: add the H713 AV1 presence probe
+
+A read-only module that powers the AV1 domain, ungates its bus and mbus
+clocks, deasserts its reset, and reports the head of its register file plus a
+scan for the core ID marker.  It decodes nothing and writes nothing to the
+block.
+
+It exists to settle two questions before a real driver is worth starting:
+
+  Is the block on this die?  Clock gates and a power domain prove the SoC
+  design includes it; they do not prove this package does, and no register has
+  ever been read from it.  An all-zero window is reported explicitly as NO
+  RESPONSE rather than left to be misread as an idle block -- that distinction
+  is the whole point of the module.
+
+  Which register-file variant is it?  The vendor's AsicRegisterMapWidth picks
+  1168 bytes (292 registers, SwRegisters) or 816 bytes (204 registers,
+  BigSeaRegisters) by comparing a core ID against 0xb16c.  The scan matches on
+  the low 16 bits, as the vendor does, and prints the whole word, because the
+  upper half is plausibly a revision or synthesis configuration.
+
+Built as a module on purpose.  The DT node needs a flash, but the driver does
+not, so iterating on what to read costs an insmod rather than a reflash and a
+cold boot.  Unloading it asserts the reset and drops the power domain again.
+
+The reset is claimed exclusively, which is correct here: reset_av1 has no other
+consumer.  The node deliberately does not ask for reset_ve, which is cedrus's.
+
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -15,6 +15,20 @@
+ 	  The carveout is a no-map reservation with no struct page, so the
+ 	  exporter uses dma_map_resource() instead of page-backed sg.
+ 
++config SUNXI_H713_AV1_PROBE
++	tristate "H713 AV1 decoder presence probe"
++	depends on ARCH_SUNXI || COMPILE_TEST
++	help
++	  Reads the core ID of the H713's AV1 decoder and reports it. The block
++	  is Google IP -- the stock DTB calls it "allwinner,sunxi-google-ve" --
++	  and no driver for it exists in any tree.
++
++	  This decodes nothing and writes nothing to the block. It exists to
++	  settle whether the hardware is present on this die, and which of its
++	  two register-file variants it is, before a real driver is attempted.
++
++	  Say M here if you are investigating AV1 support; otherwise say N.
++
+ menu "Misc devices"
+ 
+ config SENSORS_LIS3LV02D
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -4,6 +4,7 @@
+ #
+ 
+ obj-$(CONFIG_SUNXI_SCANOUT_DMABUF)	+= sunxi-scanout-dmabuf.o
++obj-$(CONFIG_SUNXI_H713_AV1_PROBE)	+= sunxi-h713-av1-probe.o
+ obj-$(CONFIG_IBM_ASM)		+= ibmasm/
+ obj-$(CONFIG_IBMVMC)		+= ibmvmc.o
+ obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
+--- /dev/null
++++ b/drivers/misc/sunxi-h713-av1-probe.c
+@@ -0,0 +1,211 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * H713 AV1 decoder presence probe.
++ *
++ * The H713 carries an AV1 decoder that is Google IP, not Allwinner's own and
++ * not the VeriSilicon core mainline knows: the stock DTB names it
++ * "allwinner,sunxi-google-ve" at 0x01c0d000, and the vendor decoder library is
++ * built around taffel::ctypes::SwRegisters and BigSeaRegisters. No driver for
++ * it exists in any tree. See
++ * docs/reference/vp9-av1-codec-scouting-2026-09-24.md.
++ *
++ * This module does not decode anything. It answers the two questions that
++ * have to be settled before writing a real driver is worth starting:
++ *
++ *   1. Is the block alive on this die? Clock gates and a power domain in the
++ *      CCU prove the SoC design includes it; they do not prove this package
++ *      does, and nothing has ever read a register from it.
++ *
++ *   2. Which register-file variant is it? The vendor's AsicRegisterMapWidth
++ *      selects 1168 bytes (292 registers, "SwRegisters") or 816 bytes
++ *      (204 registers, "BigSeaRegisters") by comparing a core ID against
++ *      0xb16c.
++ *
++ * Load it, read the dmesg report, unload it. Nothing is written to the block.
++ */
++
++#include <linux/clk.h>
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/pm_runtime.h>
++#include <linux/reset.h>
++
++#define H713_AV1_WINDOW		0x1000
++#define H713_AV1_ID_MARKER	0xb16c
++/*
++ * Register 0 as stock read it on 2026-09-29, during a hardware AV1 decode
++ * (local/h713-lab/stock-capture-20260929/out/av1b-play-1/av1.txt).  Its low
++ * half is 0xb16d, not the vendor's special-cased 0xb16c, so by the vendor's
++ * own AsicRegisterMapWidth logic this die is the 1168-byte SwRegisters variant.
++ */
++#define H713_AV1_STOCK_ID	0x0003b16d
++
++struct h713_av1_probe {
++	struct device *dev;
++	void __iomem *regs;
++	struct clk *bus_clk;
++	struct clk *mbus_clk;
++	struct reset_control *rst;
++};
++
++/*
++ * Report the head of the register file and hunt for the marker anywhere in
++ * the window. The vendor code compares only the low 16 bits, so match on that
++ * and print the whole word: the upper half is likely a revision or a
++ * synthesis configuration and is worth seeing.
++ */
++static void h713_av1_report(struct h713_av1_probe *av1)
++{
++	struct device *dev = av1->dev;
++	bool found = false;
++	unsigned int i;
++	u32 nonzero = 0;
++
++	u32 id = readl_relaxed(av1->regs);
++
++	dev_info(dev, "core ID (+0x000) = 0x%08x: %s; %s variant\n", id,
++		 id == H713_AV1_STOCK_ID ? "MATCHES stock (0x0003b16d)" :
++					   "differs from stock (0x0003b16d)",
++		 (id & 0xffff) == H713_AV1_ID_MARKER ?
++			 "BigSeaRegisters 816-byte" : "SwRegisters 1168-byte");
++
++	dev_info(dev, "register head (offset: value):\n");
++	for (i = 0; i < 0x40; i += 4) {
++		u32 v = readl_relaxed(av1->regs + i);
++
++		if (v)
++			nonzero++;
++		dev_info(dev, "  +0x%02x = 0x%08x\n", i, v);
++	}
++
++	for (i = 0; i < H713_AV1_WINDOW; i += 4) {
++		u32 v = readl_relaxed(av1->regs + i);
++
++		if ((v & 0xffff) == H713_AV1_ID_MARKER) {
++			dev_info(dev,
++				 "ID MARKER 0x%04x found at +0x%03x (full word 0x%08x) -- BigSeaRegisters variant, 816-byte map\n",
++				 H713_AV1_ID_MARKER, i, v);
++			found = true;
++		}
++	}
++
++	if (!found)
++		dev_info(dev,
++			 "ID marker 0x%04x not present in the %u-byte window; if the head reads plausibly this is the SwRegisters variant (1168-byte map)\n",
++			 H713_AV1_ID_MARKER, H713_AV1_WINDOW);
++
++	/*
++	 * An all-zero window is the signature of a block that is not
++	 * responding -- unpowered, unclocked, or held in reset -- and must not
++	 * be read as "alive but idle".
++	 */
++	if (!nonzero)
++		dev_warn(dev,
++			 "every register in the head read 0x00000000: treat this as NO RESPONSE, not as an idle block\n");
++}
++
++static int h713_av1_probe_dev(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct h713_av1_probe *av1;
++	int ret;
++
++	av1 = devm_kzalloc(dev, sizeof(*av1), GFP_KERNEL);
++	if (!av1)
++		return -ENOMEM;
++
++	av1->dev = dev;
++	platform_set_drvdata(pdev, av1);
++
++	av1->regs = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(av1->regs))
++		return dev_err_probe(dev, PTR_ERR(av1->regs), "cannot map registers\n");
++
++	av1->bus_clk = devm_clk_get(dev, "bus");
++	if (IS_ERR(av1->bus_clk))
++		return dev_err_probe(dev, PTR_ERR(av1->bus_clk), "no bus clock\n");
++
++	av1->mbus_clk = devm_clk_get(dev, "mbus");
++	if (IS_ERR(av1->mbus_clk))
++		return dev_err_probe(dev, PTR_ERR(av1->mbus_clk), "no mbus clock\n");
++
++	/*
++	 * Exclusive on purpose. reset_av1 has no other consumer; reset_ve does
++	 * -- cedrus -- which is why this node does not ask for it.
++	 */
++	av1->rst = devm_reset_control_get_exclusive(dev, NULL);
++	if (IS_ERR(av1->rst))
++		return dev_err_probe(dev, PTR_ERR(av1->rst), "no reset\n");
++
++	/* Powers the AV1 genpd domain (PPU index 4). */
++	pm_runtime_enable(dev);
++	ret = pm_runtime_resume_and_get(dev);
++	if (ret) {
++		pm_runtime_disable(dev);
++		return dev_err_probe(dev, ret, "cannot power the AV1 domain\n");
++	}
++
++	ret = clk_prepare_enable(av1->bus_clk);
++	if (ret) {
++		dev_err(dev, "cannot enable bus clock: %d\n", ret);
++		goto err_pm;
++	}
++
++	ret = clk_prepare_enable(av1->mbus_clk);
++	if (ret) {
++		dev_err(dev, "cannot enable mbus clock: %d\n", ret);
++		goto err_bus;
++	}
++
++	ret = reset_control_deassert(av1->rst);
++	if (ret) {
++		dev_err(dev, "cannot deassert reset: %d\n", ret);
++		goto err_mbus;
++	}
++
++	dev_info(dev, "powered, clocked and out of reset; reading only\n");
++	h713_av1_report(av1);
++
++	return 0;
++
++err_mbus:
++	clk_disable_unprepare(av1->mbus_clk);
++err_bus:
++	clk_disable_unprepare(av1->bus_clk);
++err_pm:
++	pm_runtime_put(dev);
++	pm_runtime_disable(dev);
++	return ret;
++}
++
++static void h713_av1_remove_dev(struct platform_device *pdev)
++{
++	struct h713_av1_probe *av1 = platform_get_drvdata(pdev);
++
++	reset_control_assert(av1->rst);
++	clk_disable_unprepare(av1->mbus_clk);
++	clk_disable_unprepare(av1->bus_clk);
++	pm_runtime_put(av1->dev);
++	pm_runtime_disable(av1->dev);
++}
++
++static const struct of_device_id h713_av1_of_match[] = {
++	{ .compatible = "allwinner,sun50i-h713-av1-probe" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, h713_av1_of_match);
++
++static struct platform_driver h713_av1_driver = {
++	.probe = h713_av1_probe_dev,
++	.remove = h713_av1_remove_dev,
++	.driver = {
++		.name = "h713-av1-probe",
++		.of_match_table = h713_av1_of_match,
++	},
++};
++module_platform_driver(h713_av1_driver);
++
++MODULE_DESCRIPTION("H713 AV1 (Google IP) presence probe");
++MODULE_LICENSE("GPL");

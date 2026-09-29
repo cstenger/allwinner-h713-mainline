@@ -1,0 +1,84 @@
+arm64: dts: h713: add the AV1 decoder node
+
+The H713 carries an AV1 decoder nobody has ever read a register from.  It is
+Google IP rather than Allwinner's own or the VeriSilicon core mainline knows:
+the stock DTB names it "allwinner,sunxi-google-ve" at 0x01c0d000, and the
+vendor library libawav1.so is built around taffel::ctypes::SwRegisters and
+BigSeaRegisters, which are Google AV1 codenames.  Mainline's only AV1 backend
+is Rockchip's VPU981, whose register file reaches index 394 where this block's
+holds 292 -- not the same core.  Full evidence in
+docs/reference/vp9-av1-codec-scouting-2026-09-24.md.
+
+That the SoC design includes the block is already established from our own
+side: the CCU carries bus_av1, mbus_av1 and RST_BUS_AV1, and the PPU driver
+enumerates an AV1 power domain that the board reports, off only because nothing
+claims it.  None of that proves this package has the silicon, because no
+register has ever been read.  This node exists so a probe driver can do that.
+
+The node is DELIBERATELY NARROWER THAN STOCK.  The vendor also lists "bus_ve"
+and "reset_ve", and both belong to cedrus.  A clock is refcounted and can be
+shared; a reset cannot, and deasserting reset_ve from here could reset the
+video engine underneath a running decode.  bus_av1 and mbus_av1 are this
+block's own and reset_av1 has no other consumer, so only those are claimed.  If
+the ID reads as garbage, the next thing to try is adding bus_ve as a shared
+clock -- not reset_ve.
+
+The "av1" module clock the stock node lists is absent from our CCU and is not
+required here: it drives the decode core, while register access needs only the
+bus clock.  Adding it means identifying its gate register, which cannot be done
+read-only because a gated sunxi CCU register reads zero.
+
+The compatible is ours rather than the vendor's, so this cannot collide with a
+future real driver.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1350,6 +1350,48 @@
+ 			status = "okay";
+ 		};
+ 
++		/*
++		 * The AV1 decoder -- Google IP, not Allwinner's and not
++		 * VeriSilicon's. The stock DTB calls it
++		 * compatible = "allwinner,sunxi-google-ve" at this address, and
++		 * libawav1.so is built around taffel::ctypes::SwRegisters and
++		 * BigSeaRegisters, which are Google AV1 codenames. There is no
++		 * driver for it in any tree; mainline's only AV1 backend is
++		 * Rockchip's VPU981, whose register file reaches 394 where this
++		 * block's holds 292. See
++		 * docs/reference/vp9-av1-codec-scouting-2026-09-24.md.
++		 *
++		 * This node exists so a probe driver can read the core ID and
++		 * settle two questions at once: whether the block is alive on
++		 * this die, and which of its two register-file variants this is
++		 * (AsicRegisterMapWidth picks 1168 or 816 bytes by comparing an
++		 * ID against 0xb16c).
++		 *
++		 * DELIBERATELY NARROWER THAN STOCK. The vendor node also lists
++		 * "bus_ve" and "reset_ve", and both are cedrus's. A reset is not
++		 * safely shared: deasserting reset_ve here could reset the video
++		 * engine underneath a running decode. bus_av1 and mbus_av1 are
++		 * this block's own, and reset_av1 has no other consumer, so the
++		 * probe takes only those. If the ID reads as garbage, adding
++		 * bus_ve as a SHARED CLOCK (refcounted, unlike a reset) is the
++		 * next thing to try -- not reset_ve.
++		 *
++		 * The "av1" module clock the stock node lists is absent from our
++		 * CCU and is deliberately not required here: it drives the
++		 * decode core, while register access needs only the bus clock.
++		 */
++		av1: av1@1c0d000 {
++			compatible = "allwinner,sun50i-h713-av1-probe";
++			reg = <0x01c0d000 0x1000>;
++			interrupts = <GIC_SPI 107 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&ccu CLK_BUS_AV1>, <&ccu CLK_MBUS_AV1>;
++			clock-names = "bus", "mbus";
++			resets = <&ccu RST_BUS_AV1>;
++			iommus = <&iommu 5 1>;
++			power-domains = <&ppu 4>;
++			status = "okay";
++		};
++
+ 		/* === GPU (Mali-G31 Bifrost, Panfrost driver) === */
+ 		gpu: gpu@1800000 {
+ 			compatible = "allwinner,sun50i-h616-mali",
