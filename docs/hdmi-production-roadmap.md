@@ -283,6 +283,22 @@ with correct colors and frame IDs at a sustained 60 Hz.
 
 ### 5. Minimize and validate end-to-end latency
 
+**Progress, 2026-09-27 (capture-completion to physical scanout):** Patch 0141
+retains a bounded per-frame AFBD physical-presentation trace, and the native
+GStreamer runner now records the V4L2 sequence, capture-completion timestamp,
+conversion boundaries, display submission, and physical-vsync time on one
+validated monotonic clock. A 360-frame operator-observed run rendered every
+frame, joined all 360 changed-framebuffer presentations one-to-one, and had no
+physical-vblank gap. Capture completion to physical-vsync measured 33.82 ms
+median, 41.92 ms p95, 42.65 ms p99, and 53.81 ms maximum. The final 60-frame
+median was 8.90 ms lower than the first, so this bounded run showed no queue
+growth. Motion and Leota were full-frame and correct, and the console returned.
+This is a software pipeline boundary, not source-to-photon: source pixel-change
+time and panel response are not included. The optical cross-check, interactive
+desktop case, and an agreed absolute acceptance limit therefore remain before
+this gate closes. See
+[latency evidence](hdmi-evidence/2026-09-27-native-720-latency/README.md).
+
 1. Time-stamp source frame changes, receiver/capture completion, V4L2 dequeue,
    display submit, and vblank/page flip. Film both source and projected panel
    in one high-frame-rate view for an optical cross-check. Report a frame and

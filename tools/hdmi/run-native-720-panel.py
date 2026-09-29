@@ -15,6 +15,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 MODULE = ROOT / "modules/hdmi-v4l2/h713-hdmi-v4l2.ko"
 GST_RUNNER = HERE / "gst-native-720-panel.c"
+LATENCY_ANALYZER = HERE / "analyze-native-720-latency.py"
 PROBE = ROOT / "build/scp-probe-1280-720/h713-scp-probe.ko"
 # The tested module defaults to the conservative 640x480/full-verification
 # configuration.  Native 720p is selected only by the explicit insmod options
@@ -42,6 +43,8 @@ KMS_BOOTSTRAP_PRESENTATIONS = 1
 SINGLE_VBLANK_GAP_BUDGET = max(1, PANEL_FRAMES // 100)
 TAIL_FRAME_BUDGET = 8
 SCANOUT_STATS = "/sys/kernel/debug/dri/0/h713_scanout_stats"
+SCANOUT_TRACE = "/sys/kernel/debug/dri/0/h713_scanout_trace"
+PIPELINE_TRACE = "/tmp/h713-gst-native-720-timing.csv"
 
 
 def run(argv, timeout=30, check=True):
@@ -247,7 +250,7 @@ def main():
     args = ap.parse_args()
     if not (args.camera_ready or args.operator_ready):
         ap.error("stop and obtain operator confirmation before the visible run")
-    for path in (MODULE, GST_RUNNER, PROBE, args.video):
+    for path in (MODULE, GST_RUNNER, LATENCY_ANALYZER, PROBE, args.video):
         if not path.is_file():
             ap.error(f"required file not found: {path}")
     if connector_state() != ("disconnected", "disabled"):
@@ -289,6 +292,7 @@ def main():
                "test \"$1\" = \"$(uname -r)\"; "
                "test -f /sys/kernel/debug/dri/0/state; "
                f"test -r {SCANOUT_STATS}; "
+               f"test -r {SCANOUT_TRACE}; "
                "command -v gst-launch-1.0 >/dev/null; "
                "gst-inspect-1.0 kmssink >/dev/null; "
                f"test \"$(sha256sum /tmp/h713-gst-native-720-panel.c | cut -d' ' -f1)\" = {runner_sha}; "
@@ -310,7 +314,8 @@ def main():
         raise RuntimeError("KMS NV12 overlay was already active before the test")
     (output / "kms-before.log").write_text(kms_before)
     (output / "scanout-before.log").write_text(scanout_before_text)
-    target = ("timeout -s INT 15s /tmp/h713-gst-native-720-panel "
+    target = (f"H713_GST_TIMING_TRACE={PIPELINE_TRACE} "
+              "timeout -s INT 15s /tmp/h713-gst-native-720-panel "
               f"{PANEL_FRAMES}")
 
     # This is intentionally the first projector-visible action.  Leave enough
@@ -363,6 +368,9 @@ def main():
                 (output / "preview-ssh.log").write_text(out + err)
                 if preview.returncode:
                     raise RuntimeError(f"native panel preview exited {preview.returncode}")
+                pipeline_trace_text = remote(f"cat {PIPELINE_TRACE}").stdout
+                (output / "pipeline-timestamps.csv").write_text(
+                    pipeline_trace_text)
                 preview = None
                 stop(source)
                 source = None
@@ -390,11 +398,13 @@ def main():
         measured_fps = PANEL_FRAMES / elapsed_s
         kms_after = wait_overlay_released(fb_before)
         scanout_after_text, scanout_after = scanout_stats()
+        scanout_trace_text = remote(f"cat {SCANOUT_TRACE}").stdout
         errors_after = display_error_count()
         fb_during = primary_fb(kms_during)
         fb_after = primary_fb(kms_after)
         (output / "kms-after.log").write_text(kms_after)
         (output / "scanout-after.log").write_text(scanout_after_text)
+        (output / "scanout-trace.log").write_text(scanout_trace_text)
         telemetry = remote(
             "dmesg | grep 'h713-hdmi-v4l2' | tail -8; "
             "grep -H . /sys/module/h713_hdmi_v4l2/parameters/{frames_produced,"
@@ -408,6 +418,12 @@ def main():
             raise RuntimeError("KMS primary framebuffer changed during overlay playback")
         if errors_after != errors_before:
             raise RuntimeError("panel run introduced an IOMMU or DRM cleanup error")
+        latency_text = run([
+            sys.executable, str(LATENCY_ANALYZER),
+            str(output / "pipeline-timestamps.csv"),
+            str(output / "scanout-trace.log"), "--output",
+            str(output / "latency-summary.json")]).stdout
+        latency = json.loads(latency_text)
         result = {"camera_ready": args.camera_ready,
                   "operator_observation_only": args.operator_ready,
                   "pipeline_frames": PANEL_FRAMES,
@@ -460,6 +476,7 @@ def main():
                   "primary_fb_during": fb_during,
                   "primary_fb_after": fb_after,
                   "video_fb_during": video_fb,
+                  "latency": latency,
                   "source_restored": connector_state() ==
                   ("disconnected", "disabled")}
         (output / "summary.json").write_text(json.dumps(result, indent=2) + "\n")

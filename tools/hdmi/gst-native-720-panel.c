@@ -26,7 +26,9 @@ struct timing_stats {
 	guint64 pts_mismatches;
 	guint64 unmatched_buffers;
 	gint64 source_arrival_us[MAX_FRAMES];
+	gint64 sink_arrival_us[MAX_FRAMES];
 	GstClockTime source_pts[MAX_FRAMES];
+	guint64 source_offset[MAX_FRAMES];
 	guint64 conversion_total_us;
 	guint64 conversion_max_us;
 };
@@ -48,6 +50,7 @@ static GstPadProbeReturn source_probe(GstPad *pad, GstPadProbeInfo *info,
 	if (index < MAX_FRAMES) {
 		stats->source_arrival_us[index] = g_get_monotonic_time();
 		stats->source_pts[index] = GST_BUFFER_PTS(buffer);
+		stats->source_offset[index] = GST_BUFFER_OFFSET(buffer);
 	}
 	g_mutex_unlock(&stats->lock);
 	return GST_PAD_PROBE_OK;
@@ -74,6 +77,7 @@ static GstPadProbeReturn sink_probe(GstPad *pad, GstPadProbeInfo *info,
 	} else {
 		guint64 elapsed_us = now_us - stats->source_arrival_us[index];
 
+		stats->sink_arrival_us[index] = now_us;
 		if (stats->source_pts[index] != GST_BUFFER_PTS(buffer))
 			stats->pts_mismatches++;
 		stats->conversion_total_us += elapsed_us;
@@ -82,6 +86,47 @@ static GstPadProbeReturn sink_probe(GstPad *pad, GstPadProbeInfo *info,
 	}
 	g_mutex_unlock(&stats->lock);
 	return GST_PAD_PROBE_OK;
+}
+
+static int write_timing_trace(const char *path, struct timing_stats *stats,
+			      GstClockTime base_time, gint64 clock_offset_ns)
+{
+	FILE *file;
+	guint64 count, i;
+
+	if (!path)
+		return 0;
+	file = fopen(path, "w");
+	if (!file) {
+		perror(path);
+		return -1;
+	}
+	count = stats->sink_buffers < MAX_FRAMES ? stats->sink_buffers :
+		MAX_FRAMES;
+	fprintf(file, "# pipeline_base_time_ns=%" PRIu64 "\n", base_time);
+	fprintf(file, "# gst_clock_minus_monotonic_ns=%" PRId64 "\n",
+		clock_offset_ns);
+	fprintf(file, "index,v4l2_sequence,pts_ns,capture_completion_ns,"
+		"source_arrival_ns,sink_arrival_ns,conversion_ns\n");
+	for (i = 0; i < count; i++) {
+		GstClockTime completion = GST_CLOCK_TIME_NONE;
+
+		if (GST_CLOCK_TIME_IS_VALID(stats->source_pts[i]) &&
+		    GST_CLOCK_TIME_IS_VALID(base_time))
+			completion = base_time + stats->source_pts[i];
+		fprintf(file, "%" PRIu64 ",%" PRIu64 ",%" PRIu64
+			",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64
+			"\n", i, stats->source_offset[i], stats->source_pts[i],
+			completion, (guint64)stats->source_arrival_us[i] * 1000,
+			(guint64)stats->sink_arrival_us[i] * 1000,
+			(guint64)(stats->sink_arrival_us[i] -
+				  stats->source_arrival_us[i]) * 1000);
+	}
+	if (fclose(file)) {
+		perror(path);
+		return -1;
+	}
+	return 0;
 }
 
 static guint64 structure_counter(const GstStructure *stats, const char *name)
@@ -104,11 +149,15 @@ int main(int argc, char **argv)
 	GstBus *bus = NULL;
 	GstMessage *message = NULL;
 	GstStructure *sink_stats = NULL;
+	GstClock *clock = NULL;
 	GError *error = NULL;
 	gchar *description = NULL;
+	const char *trace_path;
 	guint frames = DEFAULT_FRAMES;
 	guint64 rendered, dropped;
 	gint64 start_us, end_us;
+	gint64 clock_offset_ns = 0;
+	GstClockTime base_time = GST_CLOCK_TIME_NONE;
 	double conversion_mean_us = 0.0;
 	gboolean selftest;
 	int rc = EXIT_FAILURE;
@@ -130,6 +179,7 @@ int main(int argc, char **argv)
 
 	gst_init(&argc, &argv);
 	g_mutex_init(&timing.lock);
+	trace_path = g_getenv("H713_GST_TIMING_TRACE");
 	selftest = g_getenv("H713_GST_SELFTEST") != NULL;
 	if (selftest)
 		description = g_strdup_printf(
@@ -197,6 +247,14 @@ int main(int argc, char **argv)
 		g_clear_error(&error);
 		goto out;
 	}
+	base_time = gst_element_get_base_time(pipeline);
+	clock = gst_element_get_clock(pipeline);
+	if (!clock || !GST_CLOCK_TIME_IS_VALID(base_time)) {
+		fprintf(stderr, "pipeline omitted its system clock or base time\n");
+		goto out;
+	}
+	clock_offset_ns = (gint64)gst_clock_get_time(clock) -
+		(g_get_monotonic_time() * 1000);
 
 	g_object_get(sink, "stats", &sink_stats, NULL);
 	rendered = structure_counter(sink_stats, "rendered");
@@ -204,6 +262,8 @@ int main(int argc, char **argv)
 	if (timing.sink_buffers)
 		conversion_mean_us = (double)timing.conversion_total_us /
 				     timing.sink_buffers;
+	if (write_timing_trace(trace_path, &timing, base_time, clock_offset_ns))
+		goto out;
 
 	printf("{\"selftest\":%s,\"requested_frames\":%u,"
 	       "\"source_buffers\":%" PRIu64
@@ -211,12 +271,13 @@ int main(int argc, char **argv)
 	       ",\"dropped\":%" PRIu64 ",\"pts_mismatches\":%" PRIu64
 	       ",\"unmatched_buffers\":%" PRIu64
 	       ",\"conversion_mean_us\":%.2f,\"conversion_max_us\":%" PRIu64
-	       ",\"elapsed_seconds\":%.9f}\n",
+	       ",\"elapsed_seconds\":%.9f,\"pipeline_base_time_ns\":%" PRIu64
+	       ",\"gst_clock_minus_monotonic_ns\":%" PRId64 "}\n",
 	       selftest ? "true" : "false", frames, timing.source_buffers,
 	       timing.sink_buffers, rendered,
 	       dropped, timing.pts_mismatches, timing.unmatched_buffers,
 	       conversion_mean_us, timing.conversion_max_us,
-	       (end_us - start_us) / 1000000.0);
+	       (end_us - start_us) / 1000000.0, base_time, clock_offset_ns);
 	if (timing.source_buffers != frames || timing.sink_buffers != frames ||
 	    rendered != frames || dropped || timing.pts_mismatches ||
 	    timing.unmatched_buffers)
@@ -232,6 +293,8 @@ out:
 		gst_message_unref(message);
 	if (bus)
 		gst_object_unref(bus);
+	if (clock)
+		gst_object_unref(clock);
 	if (source_pad)
 		gst_object_unref(source_pad);
 	if (sink_pad)

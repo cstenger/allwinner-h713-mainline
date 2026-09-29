@@ -18,6 +18,15 @@ A later physical-presentation gate adds patch 0163 and evidence under
 That patch is optional diagnostic accounting rather than a lifetime fix, but
 its acceptance model applies directly to decoded NV12 buffers.
 
+Patch 0141 extends that diagnostic accounting with a fixed 512-entry trace of
+framebuffer identity, accepted-submit time, physical-vsync time, and vblank
+sequence. The HDMI path joins it to per-buffer capture timestamps in
+[`analyze-native-720-latency.py`](../tools/hdmi/analyze-native-720-latency.py).
+That join measured 33.82 ms median and 42.65 ms p99 from capture completion to
+physical scanout for 360 native frames, with no queue growth. Decoder work can
+reuse the trace, but must choose and document its own upstream timestamp
+boundary; these numbers do not include source pixel-change or panel response.
+
 ## What transfers directly
 
 ### 1. Physical-vsync framebuffer retirement
