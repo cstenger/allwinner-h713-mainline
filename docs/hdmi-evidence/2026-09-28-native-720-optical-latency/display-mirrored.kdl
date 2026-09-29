@@ -1,0 +1,71 @@
+output "HDMI-A-1" enabled=#true {
+  description make="Hitachi Computer Products Inc" model="H713 720p   "
+  physical 160 120
+  position 3840 0
+  scale 1.00
+  mirroring "DP-2"
+  transform "normal"
+  adaptive_sync_support #false
+  adaptive_sync #false
+  serial_number "H713-0000001"
+  modes {
+    mode 1280 720 60000 preferred=#true
+    mode 640 480 59940
+  }
+}
+output "DP-2" enabled=#true {
+  description make="Acer Technologies" model="Acer T232HL"
+  physical 510 290
+  position 1920 0
+  scale 1.00
+  transform "normal"
+  adaptive_sync_support #false
+  adaptive_sync #false
+  xwayland_primary #false
+  serial_number "LWYAA0014300"
+  modes {
+    mode 1920 1080 60000 current=#true preferred=#true
+    mode 1920 1080 59939
+    mode 1920 1080 50000
+    mode 1680 1050 59954
+    mode 1440 900 59887
+    mode 1280 1024 60020
+    mode 1280 800 59810
+    mode 1280 720 60000
+    mode 1280 720 59943
+    mode 1280 720 50000
+    mode 1152 864 75000
+    mode 1024 768 70069
+    mode 1024 768 60004
+    mode 800 600 60317
+    mode 800 600 56250
+    mode 720 576 50000
+    mode 720 480 59940
+    mode 640 480 59940
+    mode 640 480 59929
+  }
+}
+output "DP-1" enabled=#true {
+  description make="LG Electronics" model="27GN950"
+  physical 600 340
+  position 0 0
+  scale 2.00
+  transform "normal"
+  adaptive_sync_support #true
+  adaptive_sync "automatic"
+  xwayland_primary #true
+  serial_number "0x01010101"
+  modes {
+    mode 3840 2160 119999 current=#true preferred=#true
+    mode 3840 2160 94981
+    mode 3840 2160 59997
+    mode 1920 1080 60000
+    mode 1920 1080 59939
+    mode 1280 720 59943
+    mode 1024 768 60004
+    mode 800 600 60317
+    mode 720 480 59940
+    mode 640 480 59940
+    mode 640 480 59929
+  }
+}
