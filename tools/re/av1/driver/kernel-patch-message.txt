@@ -1,0 +1,64 @@
+media: verisilicon: add the H713 AV1 decoder
+
+The Allwinner H713 carries a Google AV1 decoder core (core ID 0x0003b16d,
+AV1 baseline): a sibling of the VPU981 with the same CDF layout and much
+of the same register vocabulary, but its registers are one packed
+1168-byte bit vector -- 119 fields straddle 32-bit words -- written out
+whole, its references are always stored compressed (with a DRAM-resident
+reference-decompressor configuration), and the display picture comes out
+of its secondary output as plain NV12.
+
+sunxi_h713_av1_gen.c builds the register image and every CPU-written
+buffer from the V4L2 stateless AV1 controls. It is a pure function, derived
+from the VPU981 code, and it is checked against the vendor library running
+under emulation on the same streams -- every named field, every bit no name
+covers, every buffer the vendor points the core at, and the CPU-written
+buffers byte for byte: @GATE@
+(tools/re/av1/rig/gate.sh in the H713 tree). The register field table is
+generated from the vendor's own register model; two bits its printer never
+names are added by hand: allow_warped_motion at bit 9275 of the image, and
+bit 3879 of the decompressor configuration, set when a frame is its own
+reference (intra block copy).
+
+sunxi_h713_av1_hw.c is the hantro glue: the fixed working buffers, a
+compressed reconstruction/header/MV set per reference slot (allocated on
+first use, grown on demand), the flush-and-start, the interrupt, and the
+video engine's clocks and reset, which the core needs but which belong to
+cedrus -- a runtime-PM device link to the VE keeps them up while this
+device is active, and probe refuses a VE clock above 432 MHz.
+
+Three rules the hardware enforces, each found by a stalled or wedged SoC:
+
+  - The reset must be released with the core's bus and MBUS clocks running.
+    hantro_probe releases it with them only prepared, and a core brought out
+    of reset that way stalls on its first memory transfer -- permanently,
+    until a power cycle. The variant enables the clocks, reset held, before
+    hantro releases it, and keeps them on.
+  - The interrupt line reads pending at boot and the handler reads the
+    core's registers, so the variant requests the line disabled and arms it
+    only for a frame in flight.
+  - Image words 0 and 1 (ID and configuration) are never written, the rest
+    go in top-down with the start bit held back, and nothing is written
+    while the start bit is set.
+
+The core is reset when the first stream powers it, after a frame that ends
+in an error interrupt, and on a watchdog timeout -- never at the start of a
+second stream, which could be in the middle of the first one's frame.
+
+@TESTED@
+
+The controls are checked for what the V4L2 core leaves unchecked and this
+code would trip over -- tile layouts larger than the tile buffer (128 tiles),
+tile data outside the bitstream buffer, references out of range, a frame that
+does not fit the capture buffer -- and such a frame fails alone.
+
+Saved CDFs belong to decoded frames, not reference slots: a frame finds its
+primary reference's CDFs by timestamp, like everything else about it, so the
+driver needs no refresh_frame_flags (which VA-API does not carry) and stays
+right when show_existing_frame of a key frame refills every slot.
+Likewise the order hints saved with each reference for motion-field
+projection are those of the references the driver decoded, not the ones
+userspace reports: a client whose parser and DPB have come apart would
+otherwise have the core project through frames that are not there.
+
+Capture is NV12 only (8-bit); 10-bit sequences are refused.

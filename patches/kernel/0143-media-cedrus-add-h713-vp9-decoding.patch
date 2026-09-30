@@ -225,7 +225,7 @@ diff --color -Naur pa/drivers/staging/media/sunxi/cedrus/cedrus_video.c pb/drive
 diff --color -Naur pa/drivers/staging/media/sunxi/cedrus/cedrus_vp9.c pb/drivers/staging/media/sunxi/cedrus/cedrus_vp9.c
 --- /dev/null
 +++ b/drivers/staging/media/sunxi/cedrus/cedrus_vp9.c
-@@ -0,0 +1,966 @@
+@@ -0,0 +1,976 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Cedrus VPU driver: VP9 decoding (Allwinner H713)
@@ -887,6 +887,16 @@ diff --color -Naur pa/drivers/staging/media/sunxi/cedrus/cedrus_vp9.c pb/drivers
 +
 +	/* The previous frame is off the engine: adapt and save its context. */
 +	cedrus_vp9_finish(ctx);
++
++	/*
++	 * An inter frame of a different size from the frame before it predicts
++	 * from scaled references, which this engine is not programmed for:
++	 * run anyway, it reads past its reference buffers (IOMMU faults, then
++	 * the watchdog). Refuse the frame; the next key frame recovers.
++	 */
++	if (!intra && (!vp9->last_valid || width != vp9->last.width ||
++		       height != vp9->last.height))
++		return -EINVAL;
 +
 +	cap_q = v4l2_m2m_get_vq(ctx->fh.m2m_ctx, V4L2_BUF_TYPE_VIDEO_CAPTURE);
 +

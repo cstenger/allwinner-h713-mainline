@@ -4,14 +4,20 @@
 # buffer by buffer (compare.py). Exit 0 only if every frame of every clip
 # matches.
 #
-#   gate.sh WORKDIR [STOCK.ivf]
+#   gate.sh WORKDIR [STOCK.ivf [FEATDIR]]
+#
+# FEATDIR is the feature matrix from tools/video/make-av1-streams.sh (one
+# coding tool per clip: tile grids and groups, film grain, odd sizes,
+# superres, reference scaling, intrabc, lossless, ...). Only each clip's first
+# 8 frames are compared: the vendor library in emulation drops a reference
+# once more than eight pictures are live, and its images are wrong from there.
 #
 # Clips are encoded with ffmpeg/libaom into WORKDIR; STOCK.ivf (the stock
 # firmware's av1a clip, 10 frames) is added when given. Vendor captures take
 # a few minutes per clip the first time.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
-W=${1:?usage: gate.sh WORKDIR [STOCK.ivf]}; STOCK=${2:-}
+W=${1:?usage: gate.sh WORKDIR [STOCK.ivf [FEATDIR]]}; STOCK=${2:-}; FEAT=${3:-}
 R=$here/obj/rig; C=$here/../compare.py; V=$here/../vendor-decode.py
 [ -x "$R" ] || "$here/build.sh" || exit 1
 mkdir -p "$W"; cd "$W" || exit 1
@@ -51,5 +57,12 @@ run fg 4
 run ten 3
 run norefmvs 5
 run errres 5
+if [ -n "$FEAT" ]; then
+	for c in "$FEAT"/*.ivf; do
+		n=$(basename "$c" .ivf); cp -n "$c" "feat-$n.ivf"
+		fr=$(grep -vc '^#' "$c.framemd5"); [ "$fr" -gt 8 ] && fr=8
+		run "feat-$n" "$fr"
+	done
+fi
 echo "gate: $total frame(s), $([ $fail = 0 ] && echo PASS || echo FAIL)"
 exit $fail

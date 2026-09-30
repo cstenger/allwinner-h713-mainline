@@ -12,7 +12,7 @@ reference's rec/header base from the main image, planes 1/2 at the same
 offsets as the vendor's). The vendor's plane 1/2 header bases lag a frame
 (it fills them before plane 0), so those are not compared.
 """
-import json, os, sys
+import json, os, struct, sys
 
 here = os.path.dirname(os.path.abspath(__file__))
 F = {}
@@ -29,12 +29,24 @@ DONT_CARE = {
     'base_lf_level_2': ('filtering_dis', 0), 'base_lf_level_3': ('filtering_dis', 0),
     'skip_ref0': ('skip_mode_flag', 1), 'skip_ref1': ('skip_mode_flag', 1),
     'delta_q_res_log': ('delta_q_present', 1),
+    'delta_lf_res_log': ('delta_lf_present', 1),
 }
+# Loop-filter deltas of a frame that does not filter (lossless, intrabc): the
+# header does not code them, and the vendor keeps whatever it had.
+DONT_CARE.update({f'filt_ref{i}_delta': ('filtering_dis', 0) for i in range(8)})
+DONT_CARE.update({f'filt_mode{i}_delta': ('filtering_dis', 0) for i in range(2)})
 DONT_CARE.update({k: ('apply_grain', 1) for k in (
     'cb_luma_mult', 'cb_mult', 'cb_offset', 'chroma_scaling_from_luma',
     'clip_to_restricted_range', 'cr_luma_mult', 'cr_mult', 'cr_offset',
     'num_cb_points_b', 'num_cr_points_b', 'num_y_points_b', 'overlap_flag',
     'random_seed', 'scaling_shift')})
+# A motion-field projection that is switched off: the vendor leaves the
+# previous frame's offsets and MV base in place, the rig clears them.
+MF_REFS = ('last', 'last2', 'last3', 'golden', 'bwdref', 'altref2', 'altref')
+for _k in range(3):
+    DONT_CARE.update({f'mf{_k + 1}_{_r}_offset': (f'use_temporal{_k}_mvs', 1) for _r in MF_REFS})
+DONT_CARE.update({'temporal1_read_base': ('use_temporal1_mvs', 1),
+                  'temporal2_read_base': ('use_temporal2_mvs', 1)})
 
 
 _cov = 0
@@ -68,7 +80,12 @@ def pdec_diffs(vregs, rregs, vb, rb):
     cr = int.from_bytes(rb[:496], 'little') & ~allbits
     if cv != cr:
         out.append(('(constant bits)', cv, cr))
-    for i in range(7):
+    # intra block copy: the frame is its own (only) reference, through in0;
+    # the vendor leaves in1..6 as the previous frame had them
+    nin = 1 if vregs['allow_intrabc'] else 7
+    if nin == 1:
+        out = [d for d in out if d[0].startswith(('in0_', '(')) or not d[0].startswith('in')]
+    for i in range(nin):
         for regs, pd, who in ((vregs, v, 'vendor'), (rregs, r, 'rig')):
             if pd[f'in{i}_plane0_strm_base'] != regs[f'ref{i}_lum_base']:
                 out.append((f'in{i}_plane0_strm_base != ref{i}_lum_base ({who})',
@@ -118,7 +135,7 @@ def main():
         m = json.load(open(os.path.join(vdir, f'frame{fr:03d}.json')))
         for rel in m['relocs']:
             k = rel['field'][3:]
-            if k in F and not r[k]:
+            if k in F and not r[k] and cares(k, v):
                 diffs.append((f'{k} (vendor sets it, rig leaves 0)', 1, 0))
         # the bits no named field covers: the vendor's printer omits some
         # fields (bit 9275, allow_warped_motion, was one), so a names-only
@@ -128,9 +145,21 @@ def main():
         for b in GAPS:
             if (vi >> b & 1) != (ri >> b & 1):
                 diffs.append((f'unnamed bit {b}', vi >> b & 1, ri >> b & 1))
+        # Several tile groups: the vendor's buffer keeps each later group's
+        # OBU header, a V4L2 decoder's (GStreamer's) holds the payloads back to
+        # back. The tile table then differs only by those header bytes: same
+        # tile sizes, later tiles shifted. tile_shift is what that accounts for.
+        vt, rt = vendor_buffer(vdir, fr, 'tile_base'), open(os.path.join(rdir, f'frame{fr:03d}.tile.bin'), 'rb').read()
+        tile_shift, tiles_equiv = 0, False
+        if vt is not None and vt[:0x500] != rt[:0x500] and vt[:0x100] == rt[:0x100]:
+            ve = [struct.unpack_from('<II', vt, 0x100 + 8 * i) for i in range(128)]
+            re_ = [struct.unpack_from('<II', rt, 0x100 + 8 * i) for i in range(128)]
+            if all(a[1] - a[0] == b[1] - b[0] and a[0] >= b[0] for a, b in zip(ve, re_)):
+                tiles_equiv = True
+                tile_shift = max(a[1] for a in ve) - max(b[1] for b in re_)
         dv = v['stream_len'] - v['strm_start_pos']
         dr = r['stream_len'] - r['strm_start_pos']
-        if dv != dr:
+        if dv != dr + tile_shift:
             diffs.append(('stream_len - strm_start_pos', dv, dr))
         bufs = []
         for field, name, size in (('prob_tab_base', 'prob.bin', 0x2fe0),
@@ -143,6 +172,9 @@ def main():
                 continue
             vb, rb = vb[:size], rb[:size]
             nd = sum(1 for a, b in zip(vb, rb) if a != b)
+            if name == 'tile.bin' and tiles_equiv:
+                bufs.append(f'{name}:OK (+{tile_shift} B of OBU headers)')
+                continue
             first = next((i for i, (a, b) in enumerate(zip(vb, rb)) if a != b), None)
             bufs.append(f'{name}:{"OK" if not nd else f"{nd} B differ (first @{first:#x})"}')
             total += bool(nd)

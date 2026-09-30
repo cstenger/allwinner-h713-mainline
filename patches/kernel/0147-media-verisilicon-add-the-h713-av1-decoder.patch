@@ -13,10 +13,12 @@ buffer from the V4L2 stateless AV1 controls. It is a pure function, derived
 from the VPU981 code, and it is checked against the vendor library running
 under emulation on the same streams -- every named field, every bit no name
 covers, every buffer the vendor points the core at, and the CPU-written
-buffers byte for byte: 47 of 47 frames identical over eleven clips
+buffers byte for byte: 312 of 312 frames identical over 48 clips
 (tools/re/av1/rig/gate.sh in the H713 tree). The register field table is
-generated from the vendor's own register model; one bit its printer never
-names, allow_warped_motion at bit 9275, is added by hand.
+generated from the vendor's own register model; two bits its printer never
+names are added by hand: allow_warped_motion at bit 9275 of the image, and
+bit 3879 of the decompressor configuration, set when a frame is its own
+reference (intra block copy).
 
 sunxi_h713_av1_hw.c is the hantro glue: the fixed working buffers, a
 compressed reconstruction/header/MV set per reference slot (allocated on
@@ -34,44 +36,47 @@ Three rules the hardware enforces, each found by a stalled or wedged SoC:
     hantro releases it, and keeps them on.
   - The interrupt line reads pending at boot and the handler reads the
     core's registers, so the variant requests the line disabled and arms it
-    only for a frame in flight (hantro_dev gains a variant_priv pointer).
+    only for a frame in flight.
   - Image words 0 and 1 (ID and configuration) are never written, the rest
     go in top-down with the start bit held back, and nothing is written
     while the start bit is set.
 
-Two hantro changes besides: a context pointer for the variant's state, and
-film grain no longer forces post-processing on a variant that has none (the
-H713 core applies grain itself). The VPU981's entropy and film-grain helpers
-are shared through a hidden VIDEO_HANTRO_AV1 symbol.
+The core is reset when the first stream powers it, after a frame that ends
+in an error interrupt, and on a watchdog timeout -- never at the start of a
+second stream, which could be in the middle of the first one's frame.
 
-Tested on the HY200 with GStreamer's v4l2slav1dec against libdav1d, every
-frame by MD5: 16 streams from 352x288 to 1920x1080 -- including an unaligned
-1000x600, 2x2 tiles, film grain, warped motion, error-resilient, all-intra
-and no-CDF-update streams -- all bit-exact, one AV1 interrupt per frame.
+Tested on the HY200 against libdav1d, every frame by MD5 (GStreamer's
+v4l2slav1dec through tools/video/av1-gate.sh, and ffmpeg's VA-API hwaccel
+through libva-v4l2-request): 16 basic streams, then a 37-clip coding-tool
+matrix -- tile grids to 8x4 at 3840x2160, uneven tiles, four tile groups per
+frame, seven film-grain vectors (update_grain=0 included), superres (fixed
+and random), reference scaling, intra block copy and palette, monochrome,
+lossless, segmentation, delta-q/delta-lf, S-frames, still pictures, odd and
+tiny sizes -- and 4K; soaks of 900, 600, 2318 and 1199 frames from libaom and
+SVT-AV1; eight resolution changes in one stream; 40 flushing seeks; and AV1
+decoding alongside cedrus and alongside other AV1 streams starting and
+stopping. All bit-exact, with no driver complaint.
 
-Capture is NV12 only (8-bit); 10-bit output is not wired up yet.
+The controls are checked for what the V4L2 core leaves unchecked and this
+code would trip over -- tile layouts larger than the tile buffer (128 tiles),
+tile data outside the bitstream buffer, references out of range, a frame that
+does not fit the capture buffer -- and such a frame fails alone.
+
+Saved CDFs belong to decoded frames, not reference slots: a frame finds its
+primary reference's CDFs by timestamp, like everything else about it, so the
+driver needs no refresh_frame_flags (which VA-API does not carry) and stays
+right when show_existing_frame of a key frame refills every slot.
+Likewise the order hints saved with each reference for motion-field
+projection are those of the references the driver decoded, not the ones
+userspace reports: a client whose parser and DPB have come apart would
+otherwise have the core project through frames that are not there.
+
+Capture is NV12 only (8-bit); 10-bit sequences are refused.
 
 diff --color -Naur pa/drivers/media/platform/verisilicon/hantro_drv.c pb/drivers/media/platform/verisilicon/hantro_drv.c
 --- a/drivers/media/platform/verisilicon/hantro_drv.c
 +++ b/drivers/media/platform/verisilicon/hantro_drv.c
-@@ -367,8 +367,14 @@
- 		int bit_depth = ctrl->p_new.p_av1_sequence->bit_depth;
- 		bool need_postproc = HANTRO_AUTO_POSTPROC;
- 
--		if (ctrl->p_new.p_av1_sequence->flags
--		    & V4L2_AV1_SEQUENCE_FLAG_FILM_GRAIN_PARAMS_PRESENT)
-+		/*
-+		 * The VPU981 applies film grain only in its post-processor. A
-+		 * variant without one (the H713's core grains its own output)
-+		 * must not be forced onto post-processed formats it lacks.
-+		 */
-+		if ((ctrl->p_new.p_av1_sequence->flags
-+		     & V4L2_AV1_SEQUENCE_FLAG_FILM_GRAIN_PARAMS_PRESENT) &&
-+		    ctx->dev->variant->num_postproc_fmts)
- 			need_postproc = HANTRO_FORCE_POSTPROC;
- 
- 		if (ctx->bit_depth == bit_depth &&
-@@ -733,6 +739,7 @@
+@@ -739,6 +739,7 @@
  #endif
  #ifdef CONFIG_VIDEO_HANTRO_SUNXI
  	{ .compatible = "allwinner,sun50i-h6-vpu-g2", .data = &sunxi_vpu_variant, },
@@ -82,24 +87,18 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/hantro_drv.c pb/drivers
 diff --color -Naur pa/drivers/media/platform/verisilicon/hantro.h pb/drivers/media/platform/verisilicon/hantro.h
 --- a/drivers/media/platform/verisilicon/hantro.h
 +++ b/drivers/media/platform/verisilicon/hantro.h
-@@ -210,6 +210,7 @@
- 	struct mutex vpu_mutex;	/* video_device lock */
- 	spinlock_t irqlock;
- 	const struct hantro_variant *variant;
-+	void *variant_priv;
- 	struct delayed_work watchdog_work;
- };
- 
-@@ -244,6 +245,8 @@
+@@ -245,7 +245,10 @@
+  * @hevc_dec:		HEVC-decoding context.
   * @vp9_dec:		VP9-decoding context.
   * @av1_dec:		AV1-decoding context.
++ * @h713_av1_dec:	H713 AV1-decoding context.
   */
 +struct sunxi_h713_av1_dec_ctx;
 +
  struct hantro_ctx {
  	struct hantro_dev *dev;
  	struct v4l2_fh fh;
-@@ -274,6 +277,7 @@
+@@ -276,6 +279,7 @@
  		struct hantro_hevc_dec_hw_ctx hevc_dec;
  		struct hantro_vp9_dec_hw_ctx vp9_dec;
  		struct hantro_av1_dec_hw_ctx av1_dec;
@@ -121,22 +120,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/hantro_hw.h pb/drivers/
 diff --color -Naur pa/drivers/media/platform/verisilicon/Kconfig pb/drivers/media/platform/verisilicon/Kconfig
 --- a/drivers/media/platform/verisilicon/Kconfig
 +++ b/drivers/media/platform/verisilicon/Kconfig
-@@ -45,10 +45,14 @@
- 	help
- 	  Enable support for Microchip SAMA5D4 SoCs.
- 
-+config VIDEO_HANTRO_AV1
-+	bool
-+
- config VIDEO_HANTRO_ROCKCHIP
- 	bool "Hantro VPU Rockchip support"
- 	depends on VIDEO_HANTRO
- 	depends on ARCH_ROCKCHIP || COMPILE_TEST
-+	select VIDEO_HANTRO_AV1
- 	default y
- 	help
- 	  Enable support for RK3288, RK3328, and RK3399 SoCs.
-@@ -57,9 +61,11 @@
+@@ -61,9 +61,11 @@
  	bool "Hantro VPU Allwinner support"
  	depends on VIDEO_HANTRO
  	depends on ARCH_SUNXI || COMPILE_TEST
@@ -152,18 +136,9 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/Kconfig pb/drivers/medi
 diff --color -Naur pa/drivers/media/platform/verisilicon/Makefile pb/drivers/media/platform/verisilicon/Makefile
 --- a/drivers/media/platform/verisilicon/Makefile
 +++ b/drivers/media/platform/verisilicon/Makefile
-@@ -33,12 +33,16 @@
- 		rockchip_vpu2_hw_mpeg2_dec.o \
- 		rockchip_vpu2_hw_vp8_dec.o \
- 		rockchip_vpu981_hw_av1_dec.o \
--		rockchip_av1_filmgrain.o \
--		rockchip_av1_entropymode.o \
- 		rockchip_vpu_hw.o
+@@ -40,7 +40,9 @@
+ 		rockchip_av1_entropymode.o
  
-+hantro-vpu-$(CONFIG_VIDEO_HANTRO_AV1) += \
-+		rockchip_av1_filmgrain.o \
-+		rockchip_av1_entropymode.o
-+
  hantro-vpu-$(CONFIG_VIDEO_HANTRO_SUNXI) += \
 -		sunxi_vpu_hw.o
 +		sunxi_vpu_hw.o \
@@ -244,7 +219,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_compat.h
 diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c
-@@ -0,0 +1,1361 @@
+@@ -0,0 +1,1463 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * H713 AV1 decoder: register-image generation. See sunxi_h713_av1_gen.h.
@@ -375,15 +350,34 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +
 +		if (r->used)
 +			continue;
-+		r->width = f->frame_width_minus_1 + 1;
++		/*
++		 * Superres upscales before the frame is stored, so as a reference
++		 * it is upscaled_width wide; the motion-field test wants the
++		 * coded size.
++		 */
++		r->coded_width = f->frame_width_minus_1 + 1;
++		r->width = max_t(int, f->upscaled_width, r->coded_width);
 +		r->height = f->frame_height_minus_1 + 1;
-+		r->mi_cols = DIV_ROUND_UP(r->width, 8);
++		r->mi_cols = DIV_ROUND_UP(r->coded_width, 8);
 +		r->mi_rows = DIV_ROUND_UP(r->height, 8);
 +		r->timestamp = timestamp;
 +		r->frame_type = f->frame_type;
 +		r->order_hint = f->order_hint;
-+		for (j = 0; j < V4L2_AV1_TOTAL_REFS_PER_FRAME; j++)
-+			r->order_hints[j] = f->order_hints[j];
++		/*
++		 * The order hints of this frame's references, kept for motion
++		 * field projection when it is a reference itself. Taken from
++		 * the references this driver decoded, not from userspace: a
++		 * client whose parser state and DPB have come apart (ffmpeg
++		 * after a packet it abandoned half-way) sends hints for frames
++		 * that are not the ones in the slots, and projection from
++		 * those does not describe the frames the core will read.
++		 */
++		for (j = 0; j < V4L2_AV1_TOTAL_REFS_PER_FRAME; j++) {
++			int idx = j ? get_frame_index(h, j - 1) : AV1_INVALID_IDX;
++
++			r->order_hints[j] = idx >= 0 && idx != i ?
++					    h->refs[idx].order_hint : f->order_hints[j];
++		}
 +		r->used = true;
 +		h->cur = i;
 +		return i;
@@ -466,6 +460,17 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	*delta = AV1_DIV_ROUND_UP_POW2_SIGNED(*delta, WARP_PARAM_REDUCE_BITS) * (1 << WARP_PARAM_REDUCE_BITS);
 +}
 +
++static bool ref_is_scaled(struct h713_av1 *h, int ref)
++{
++	int idx;
++
++	if (IS_INTRA(h->frame->frame_type))
++		return false;
++	idx = get_frame_index(h, ref);
++	return idx >= 0 && (h->refs[idx].width != h->frame->frame_width_minus_1 + 1 ||
++			    h->refs[idx].height != h->frame->frame_height_minus_1 + 1);
++}
++
 +/*
 + * 7 models x (6 x s32 params + 4 x s16 shear). The vendor writes the params
 + * in natural order; the VPU981 swaps [2] and [3].
@@ -485,7 +490,10 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +			put_unaligned_le32(p[i], dst);
 +			dst += 4;
 +		}
-+		if (gm->type[V4L2_AV1_REF_LAST_FRAME + ref] <= V4L2_AV1_WARP_MODEL_AFFINE)
++		if (ref_is_scaled(h, ref))
++			/* no warp from a scaled reference: the vendor's marker */
++			alpha = beta = gamma = delta = S16_MIN;
++		else if (gm->type[V4L2_AV1_REF_LAST_FRAME + ref] <= V4L2_AV1_WARP_MODEL_AFFINE)
 +			get_shear_params(p, &alpha, &beta, &gamma, &delta);
 +		put_unaligned_le16(alpha, dst);
 +		put_unaligned_le16(beta, dst + 2);
@@ -632,9 +640,9 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +
 +	h713_av1_set(h->regs, ref_height[ref], height);
 +	h713_av1_set(h->regs, ref_width[ref], width);
-+	/* the VPU981 names these crosswise; kept as it writes them */
-+	h713_av1_set(h->regs, ref_vscale[ref], scale_w);
-+	h713_av1_set(h->regs, ref_hscale[ref], scale_h);
++	/* the VPU981 writes these crosswise; here hor is the width ratio */
++	h713_av1_set(h->regs, ref_hscale[ref], scale_w);
++	h713_av1_set(h->regs, ref_vscale[ref], scale_h);
 +	/* compressed reference: luma data, then one header for both chroma */
 +	h713_av1_set(h->regs, ref_lum[ref], lower_32_bits(fb->rec));
 +	h713_av1_set(h->regs, ref_cb[ref], lower_32_bits(fb->hdr));
@@ -653,6 +661,32 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	{ SEGF(0) }, { SEGF(1) }, { SEGF(2) }, { SEGF(3) },
 +	{ SEGF(4) }, { SEGF(5) }, { SEGF(6) }, { SEGF(7) },
 +};
++
++/*
++ * The vendor raises the core's error-resilient bit not only when the frame
++ * header does, but whenever what the previous frame left behind cannot
++ * apply: the stored size differs from the last decoded frame's (which also
++ * covers a stream's first frame), or the coded size differs from the
++ * primary reference's.
++ */
++static bool error_resilient(struct h713_av1 *h)
++{
++	const struct v4l2_ctrl_av1_frame *f = h->frame;
++	const struct h713_av1_ref *cur = &h->refs[h->cur];
++
++	if (f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE)
++		return true;
++	if (cur->width != h->prev_width || cur->height != h->prev_height)
++		return true;
++	if (!IS_INTRA(f->frame_type) && f->primary_ref_frame < V4L2_AV1_REFS_PER_FRAME) {
++		int idx = get_frame_index(h, f->primary_ref_frame);
++
++		if (idx >= 0 && (h->refs[idx].coded_width != cur->coded_width ||
++				 h->refs[idx].height != cur->height))
++			return true;
++	}
++	return false;
++}
 +
 +static void set_segmentation(struct h713_av1 *h)
 +{
@@ -677,7 +711,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	W(h, SEGMENT_TEMP_UPD_E, !!(seg->flags & V4L2_AV1_SEGMENTATION_FLAG_TEMPORAL_UPDATE));
 +	W(h, SEGMENT_UPD_E, !!(seg->flags & V4L2_AV1_SEGMENTATION_FLAG_UPDATE_MAP));
 +	W(h, SEGMENT_E, !!(seg->flags & V4L2_AV1_SEGMENTATION_FLAG_ENABLED));
-+	W(h, ERROR_RESILIENT, !!(f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE));
++	W(h, ERROR_RESILIENT, error_resilient(h));
 +	if (IS_INTRA(f->frame_type) || (f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE))
 +		W(h, USE_TEMPORAL3_MVS, 0);
 +
@@ -772,69 +806,60 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +
 +/* ---- probabilities ------------------------------------------------------ */
 +
-+static void get_cdfs(struct h713_av1_cdf *c, u32 ref_idx)
-+{
-+	c->cdfs = &c->last[ref_idx];
-+	c->cdfs_ndvc = &c->last_ndvc[ref_idx];
-+}
-+
-+static void store_cdfs(struct h713_av1_cdf *c, u32 refresh)
-+{
-+	int i;
-+
-+	for (i = 0; i < H713_AV1_NUM_REF_FRAMES; i++)
-+		if ((refresh & (1 << i)) && &c->last[i] != c->cdfs) {
-+			c->last[i] = *c->cdfs;
-+			c->last_ndvc[i] = *c->cdfs_ndvc;
-+		}
-+}
-+
++/*
++ * This frame starts from its primary reference's saved CDFs, or from the
++ * defaults (whose coefficient part depends on base_q_idx); what it starts
++ * from is also what it saves, until the core's adapted CDFs replace them.
++ */
 +static void set_prob(struct h713_av1 *h)
 +{
 +	const struct v4l2_ctrl_av1_frame *f = h->frame;
 +	struct h713_av1_cdf *c = h->cdf;
++	struct av1cdfs *src = &c->default_cdfs;
++	struct mvcdfs *src_ndvc = &c->default_cdfs_ndvc;
++	int idx = AV1_INVALID_IDX;
 +
-+	if ((f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE) ||
-+	    IS_INTRA(f->frame_type) || f->primary_ref_frame == AV1_PRIMARY_REF_NONE) {
-+		c->cdfs = &c->default_cdfs;
-+		c->cdfs_ndvc = &c->default_cdfs_ndvc;
-+		rockchip_av1_default_coeff_probs(f->quantization.base_q_idx, c->cdfs);
++	if (!(f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE) &&
++	    !IS_INTRA(f->frame_type) && f->primary_ref_frame != AV1_PRIMARY_REF_NONE)
++		idx = get_frame_index(h, f->primary_ref_frame);
++	if (idx >= 0) {
++		src = &c->frame[idx];
++		src_ndvc = &c->frame_ndvc[idx];
 +	} else {
-+		get_cdfs(c, f->ref_frame_idx[f->primary_ref_frame]);
++		rockchip_av1_default_coeff_probs(f->quantization.base_q_idx, src);
 +	}
-+	store_cdfs(c, f->refresh_frame_flags);
++	c->frame[h->cur] = *src;
++	c->frame_ndvc[h->cur] = *src_ndvc;
 +
-+	memcpy(h->b.prob.cpu, c->cdfs, sizeof(struct av1cdfs));
++	memcpy(h->b.prob.cpu, &c->frame[h->cur], sizeof(struct av1cdfs));
 +	if (IS_INTRA(f->frame_type))
 +		memcpy((u8 *)h->b.prob.cpu + offsetof(struct av1cdfs, mv_cdf),
-+		       c->cdfs_ndvc, sizeof(struct mvcdfs));
++		       &c->frame_ndvc[h->cur], sizeof(struct mvcdfs));
 +
 +	WADDR(h, PROB_TAB_OUT_BASE, h->b.prob_out.dma);
 +	WADDR(h, PROB_TAB_BASE, h->b.prob.dma);
 +}
 +
++/*
++ * The core's adapted CDFs become this frame's. On an intra frame the MV
++ * part of the table carried the intra-block-copy (ndvc) CDFs, so that is
++ * where they go, and the frame keeps the MV CDFs it started with.
++ */
 +static void update_prob(struct h713_av1 *h)
 +{
 +	const struct v4l2_ctrl_av1_frame *f = h->frame;
 +	struct h713_av1_cdf *c = h->cdf;
 +	struct av1cdfs *out = h->b.prob_out.cpu;
-+	int i;
++	struct av1cdfs *cur = &c->frame[h->cur];
++	struct mvcdfs mv = cur->mv_cdf;
 +
 +	if (f->flags & V4L2_AV1_FRAME_FLAG_DISABLE_FRAME_END_UPDATE_CDF)
 +		return;
-+	for (i = 0; i < H713_AV1_NUM_REF_FRAMES; i++)
-+		if (f->refresh_frame_flags & (1 << i)) {
-+			struct mvcdfs mv = c->cdfs->mv_cdf;
-+
-+			get_cdfs(c, i);
-+			*c->cdfs = *out;
-+			if (IS_INTRA(f->frame_type)) {
-+				c->cdfs->mv_cdf = mv;
-+				*c->cdfs_ndvc = out->mv_cdf;
-+			}
-+			store_cdfs(c, f->refresh_frame_flags);
-+			break;
-+		}
++	*cur = *out;
++	if (IS_INTRA(f->frame_type)) {
++		cur->mv_cdf = mv;
++		c->frame_ndvc[h->cur] = out->mv_cdf;
++	}
 +}
 +
 +/*
@@ -984,9 +1009,8 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	u16 ls = 0, cs = 0;
 +	int i;
 +
-+	W(h, ENABLE_CDEF, !(cdef->bits == 0 && cdef->damping_minus_3 == 0 &&
-+			    cdef->y_pri_strength[0] == 0 && cdef->y_sec_strength[0] == 0 &&
-+			    cdef->uv_pri_strength[0] == 0 && cdef->uv_sec_strength[0] == 0));
++	/* the sequence's switch, whatever this frame's strengths (the VPU981 tests those) */
++	W(h, ENABLE_CDEF, !!(h->seq->flags & V4L2_AV1_SEQUENCE_FLAG_ENABLE_CDEF));
 +	W(h, CDEF_BITS, cdef->bits);
 +	W(h, CDEF_DAMPING, cdef->damping_minus_3);
 +	for (i = 0; i < (1 << cdef->bits); i++) {
@@ -1068,14 +1092,17 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	int w = h->frame->frame_width_minus_1 + 1;
 +	int ht = h->frame->frame_height_minus_1 + 1;
 +
-+	/* pixels, not 8x8 blocks as on the VPU981 (vendor: 0x500 x 0x2d0) */
-+	W(h, PIC_WIDTH, w);
-+	W(h, PIC_HEIGHT, ht);
++	/*
++	 * Pixels, not 8x8 blocks as on the VPU981 (vendor: 0x500 x 0x2d0), but
++	 * rounded up to whole 8x8 blocks, with the padding that adds alongside.
++	 */
++	W(h, PIC_WIDTH, ALIGN(w, 8));
++	W(h, PIC_HEIGHT, ALIGN(ht, 8));
 +	W(h, PIC_WIDTH_PAD, ALIGN(w, 8) - w);
 +	W(h, PIC_HEIGHT_PAD, ALIGN(ht, 8) - ht);
-+	W(h, SLICE_HEIGHT, ht);
-+	W(h, PP_PIC_WIDTH, w);
-+	W(h, PP_PIC_HEIGHT, ht);
++	W(h, SLICE_HEIGHT, ALIGN(ht, 8));
++	W(h, PP_PIC_WIDTH, ALIGN(w, 8));
++	W(h, PP_PIC_HEIGHT, ALIGN(ht, 8));
 +	set_superres(h);
 +}
 +
@@ -1176,6 +1203,8 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +
 +	/* the vendor points the first MV read at LAST's MVs even when unused */
 +	idx = get_frame_index(h, LST_BUF_IDX);
++	if (f->flags & V4L2_AV1_FRAME_FLAG_ALLOW_INTRABC)
++		idx = h->cur;	/* intra block copy: the frame is its own reference */
 +	if (idx >= 0)
 +		WADDR(h, TEMPORAL_READ_BASE, h->refs[idx].bufs.mv);
 +	for (k = 0; k < 3; k++) {
@@ -1248,6 +1277,9 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	p[0] |= 0x3aa;
 +	p[3785 / 32] |= BIT(3785 % 32);
 +	p[3788 / 32] |= BIT(3788 % 32);
++	/* one more unnamed bit, set only when the frame is its own reference */
++	if (h->frame->flags & V4L2_AV1_FRAME_FLAG_ALLOW_INTRABC)
++		p[3879 / 32] |= BIT(3879 % 32);
 +
 +	/* MapPdecGenSwRegs: fixed routing, plus three bits of the main image */
 +	h713_av1_set(p, H713_PDEC_PDEC_E, 1);
@@ -1558,9 +1590,8 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	struct h713_av1_cdf *c = h->cdf;
 +
 +	memset(h->refs, 0, sizeof(h->refs));
-+	c->cdfs = &c->default_cdfs;
-+	c->cdfs_ndvc = &c->default_cdfs_ndvc;
-+	rockchip_av1_set_default_cdfs(c->cdfs, c->cdfs_ndvc);
++	h->prev_width = h->prev_height = 0;
++	rockchip_av1_set_default_cdfs(&c->default_cdfs, &c->default_cdfs_ndvc);
 +	memcpy(h->fc_modes, fc_default_modes, sizeof(h->fc_modes));
 +	return 0;
 +}
@@ -1574,8 +1605,51 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	*mv = (size_t)sb_cols * sb_rows * 0x400;
 +}
 +
++/*
++ * What the V4L2 core does not check in the controls and this code or the
++ * core would trip over: indices it uses unchecked, a tile layout larger than
++ * the tile buffer, tile data outside the bitstream buffer, and coding the
++ * core does not do (it is 4:2:0/4:0:0, 8 or 10 bit).
++ */
++static int check_frame(struct h713_av1 *h)
++{
++	const struct v4l2_ctrl_av1_frame *f = h->frame;
++	const struct v4l2_av1_tile_info *ti = &f->tile_info;
++	u32 ntiles = (u32)ti->tile_cols * ti->tile_rows;
++	u32 base, i;
++
++	if (h->seq->seq_profile != 0 || (h->seq->bit_depth != 8 && h->seq->bit_depth != 10) ||
++	    h->seq->order_hint_bits > 8)
++		return -EINVAL;
++	if (f->primary_ref_frame > AV1_PRIMARY_REF_NONE)
++		return -EINVAL;
++	if (f->primary_ref_frame < AV1_PRIMARY_REF_NONE && !IS_INTRA(f->frame_type) &&
++	    (f->ref_frame_idx[f->primary_ref_frame] < 0 ||
++	     f->ref_frame_idx[f->primary_ref_frame] >= H713_AV1_NUM_REF_FRAMES))
++		return -EINVAL;
++	if (!ti->tile_cols || !ti->tile_rows || ti->tile_cols > V4L2_AV1_MAX_TILE_COLS ||
++	    ti->tile_rows > V4L2_AV1_MAX_TILE_ROWS || ntiles > H713_AV1_MAX_TILES ||
++	    ti->context_update_tile_id >= ntiles)
++		return -EINVAL;
++	if (!h->tge || h->num_tge < ntiles)
++		return -EINVAL;
++	if (ntiles > 1 && (ti->tile_size_bytes < 1 || ti->tile_size_bytes > 4 ||
++			   h->tge[0].tile_offset < ti->tile_size_bytes))
++		return -EINVAL;
++	base = tile_data_start(h);
++	for (i = 0; i < ntiles; i++)
++		if (h->tge[i].tile_offset < base || h->tge[i].tile_offset > h->src_len ||
++		    h->tge[i].tile_size > h->src_len - h->tge[i].tile_offset)
++			return -EINVAL;
++	return 0;
++}
++
 +int h713_av1_gen_slot(struct h713_av1 *h, u64 timestamp)
 +{
++	int ret = check_frame(h);
++
++	if (ret)
++		return ret;
 +	clean_refs(h);
 +	return frame_ref(h, timestamp) < 0 ? -ENOSPC : h->cur;
 +}
@@ -1588,6 +1662,8 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	set_parameters(h);
 +	set_global_model(h);
 +	set_tile_info(h);
++	/* before the references: an intrabc frame decompresses itself */
++	set_fc_modes(h);
 +	set_reference_frames(h);
 +	set_segmentation(h);
 +	set_loopfilter(h);
@@ -1597,7 +1673,8 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	set_fgs(h);
 +	set_prob(h);
 +	set_buffers(h);
-+	set_fc_modes(h);
++	h->prev_width = h->refs[h->cur].width;
++	h->prev_height = h->refs[h->cur].height;
 +	return 0;
 +}
 +
@@ -1609,7 +1686,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h
-@@ -0,0 +1,158 @@
+@@ -0,0 +1,168 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * H713 AV1 decoder: register-image generation.
@@ -1639,6 +1716,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb
 +
 +/* Fixed-size buffers, sizes as the vendor allocates them. */
 +#define H713_AV1_TILE_INFO_SIZE		0x500
++#define H713_AV1_MAX_TILES		128	/* what the tile buffer holds */
 +#define H713_AV1_GLOBAL_MODEL_SIZE	0xe0
 +#define H713_AV1_PROB_SIZE		0x2fe0
 +#define H713_AV1_FILM_GRAIN_SIZE	0x3300
@@ -1671,7 +1749,9 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb
 +struct h713_av1_ref {
 +	bool used;
 +	u64 timestamp;
-+	int width, height, mi_cols, mi_rows;
++	int width, height;	/* as stored: the upscaled (superres) width */
++	int coded_width;	/* frame_width: before superres */
++	int mi_cols, mi_rows;
 +	int frame_type;
 +	u32 order_hint;
 +	u32 order_hints[V4L2_AV1_TOTAL_REFS_PER_FRAME];
@@ -1687,14 +1767,20 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb
 +	struct h713_av1_dma vert_filt;
 +};
 +
-+/* CDF storage lives here, not in hantro_ctx, so the host rig can use it. */
++/*
++ * CDF storage lives here, not in hantro_ctx, so the host rig can use it.
++ * The saved CDFs belong to a decoded FRAME (one per refs[] entry), not to a
++ * reference slot: a later frame finds its primary reference's CDFs the way
++ * it finds everything else about that reference, by timestamp. That needs no
++ * refresh_frame_flags -- which VA-API does not pass on -- and it stays right
++ * when show_existing_frame of a key frame refills every slot, which reaches
++ * the driver only as the slots' new timestamps.
++ */
 +struct h713_av1_cdf {
-+	struct av1cdfs *cdfs;
-+	struct mvcdfs *cdfs_ndvc;
 +	struct av1cdfs default_cdfs;
 +	struct mvcdfs default_cdfs_ndvc;
-+	struct av1cdfs last[H713_AV1_NUM_REF_FRAMES];
-+	struct mvcdfs last_ndvc[H713_AV1_NUM_REF_FRAMES];
++	struct av1cdfs frame[H713_AV1_MAX_FRAMES];
++	struct mvcdfs frame_ndvc[H713_AV1_MAX_FRAMES];
 +};
 +
 +struct h713_av1 {
@@ -1716,6 +1802,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb
 +	int cur;			/* index into refs[] */
 +	u32 ref_frame_sign_bias[V4L2_AV1_TOTAL_REFS_PER_FRAME];
 +	u8 fc_modes[16];		/* compressor modes: luma 0..7, chroma 8..15 */
++	int prev_width, prev_height;	/* the last decoded frame's stored size */
 +
 +	/* output */
 +	u32 regs[H713_AV1_NWORDS];
@@ -1771,7 +1858,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb
 diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c
-@@ -0,0 +1,521 @@
+@@ -0,0 +1,565 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Allwinner H713 AV1 decoder.
@@ -1814,6 +1901,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +#include <linux/dma-mapping.h>
 +#include <linux/interrupt.h>
 +#include <linux/module.h>
++#include <linux/mutex.h>
 +#include <linux/of.h>
 +#include <linux/of_platform.h>
 +#include <linux/platform_device.h>
@@ -1850,6 +1938,8 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +struct sunxi_h713_av1_hw {
 +	int irq;
 +	unsigned long armed;	/* bit 0: the line is enabled */
++	struct mutex lock;	/* streams */
++	unsigned int streams;	/* contexts holding the core powered */
 +};
 +
 +static void h713_av1_irq_arm(struct hantro_dev *vpu)
@@ -1936,8 +2026,13 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	if (!a)
 +		return;
 +	if (a->powered) {
++		struct sunxi_h713_av1_hw *hw = vpu->variant_priv;
++
++		mutex_lock(&hw->lock);
++		hw->streams--;
 +		clk_bulk_disable(vpu->variant->num_clocks, vpu->clocks);
 +		pm_runtime_put_autosuspend(vpu->dev);
++		mutex_unlock(&hw->lock);
 +	}
 +	for (i = 0; i < H713_AV1_MAX_FRAMES; i++)
 +		for (j = 0; j < SLOT_NBUFS; j++)
@@ -1952,6 +2047,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +static int sunxi_h713_av1_dec_init(struct hantro_ctx *ctx)
 +{
 +	struct hantro_dev *vpu = ctx->dev;
++	struct sunxi_h713_av1_hw *hw = vpu->variant_priv;
 +	struct sunxi_h713_av1_dec_ctx *a;
 +	int i, ret;
 +
@@ -1977,18 +2073,28 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	if (ret)
 +		goto err;
 +
-+	/* power and clocks for the whole stream, and a clean core to start */
++	/*
++	 * Power and clocks for the whole stream. The first stream to power
++	 * the core also resets it; a later one must not, because the core may
++	 * be in the middle of another context's frame.
++	 */
++	mutex_lock(&hw->lock);
 +	ret = pm_runtime_resume_and_get(vpu->dev);
 +	if (ret < 0)
-+		goto err;
++		goto err_unlock;
 +	ret = clk_bulk_enable(vpu->variant->num_clocks, vpu->clocks);
 +	if (ret) {
 +		pm_runtime_put_autosuspend(vpu->dev);
-+		goto err;
++		goto err_unlock;
 +	}
 +	a->powered = true;
-+	h713_av1_block_reset(vpu);
++	if (!hw->streams++)
++		h713_av1_block_reset(vpu);
++	mutex_unlock(&hw->lock);
 +	return 0;
++
++err_unlock:
++	mutex_unlock(&hw->lock);
 +
 +err:
 +	sunxi_h713_av1_dec_exit(ctx);
@@ -2029,6 +2135,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	struct h713_av1 *h = &a->gen;
 +	struct vb2_v4l2_buffer *src, *dst;
 +	struct v4l2_ctrl *tge;
++	u32 width, height;
 +	int slot, ret, i;
 +
 +	hantro_start_prepare_run(ctx);
@@ -2057,13 +2164,27 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	h->dst_chroma = h->dst_luma +
 +			ctx->dst_fmt.plane_fmt[0].bytesperline * ctx->dst_fmt.height;
 +
++	/*
++	 * The picture is stored and shown after superres, so at the upscaled
++	 * width. The core lays the raster out at a stride of the width rounded
++	 * up to 64 -- there is no stride it is told -- so a frame has to fit
++	 * the capture buffer that way, whatever size the format was set to.
++	 */
++	width = max_t(u32, h->frame->upscaled_width, h->frame->frame_width_minus_1 + 1);
++	height = h->frame->frame_height_minus_1 + 1;
++	if (width > FMT_4K_WIDTH || height > FMT_4K_HEIGHT ||
++	    ALIGN(width, 64) > ctx->dst_fmt.plane_fmt[0].bytesperline ||
++	    ALIGN(height, 8) > ctx->dst_fmt.height) {
++		ret = -EINVAL;
++		goto out;
++	}
++
 +	slot = h713_av1_gen_slot(h, src->vb2_buf.timestamp);
 +	if (slot < 0) {
 +		ret = slot;
 +		goto out;
 +	}
-+	ret = h713_av1_slot_bufs(ctx, slot, h->frame->frame_width_minus_1 + 1,
-+				 h->frame->frame_height_minus_1 + 1);
++	ret = h713_av1_slot_bufs(ctx, slot, width, height);
 +	if (ret)
 +		goto out;
 +	ret = h713_av1_gen_frame(h);
@@ -2085,9 +2206,15 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +		   slot, h->frame->frame_width_minus_1 + 1, h->frame->frame_height_minus_1 + 1,
 +		   h->frame->frame_type, !!(h->frame->flags & V4L2_AV1_FRAME_FLAG_SHOW_FRAME),
 +		   &h->src_dma, h->src_len, &h->dst_luma);
-+	if (h713_av1_trace)
++	if (h713_av1_trace) {
 +		print_hex_dump(KERN_INFO, "h713av1 img ", DUMP_PREFIX_OFFSET, 32, 4,
 +			       h->regs, sizeof(h->regs), false);
++		/*
++		 * Let the dump leave the machine before the core starts: when
++		 * a frame hangs the SoC, this image is the evidence. Debug only.
++		 */
++		mdelay(50);
++	}
 +
 +	/* After an error interrupt the core can still be busy: reset it first. */
 +	if (readl_relaxed(vpu->dec_base + H713_AV1_CTRL) & H713_AV1_CTRL_START) {
@@ -2148,8 +2275,11 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +
 +	state = (ctrl & H713_AV1_IRQ_FRAME_READY) && !(ctrl & H713_AV1_IRQ_ERRORS) ?
 +		VB2_BUF_STATE_DONE : VB2_BUF_STATE_ERROR;
-+	if (state == VB2_BUF_STATE_ERROR)
++	if (state == VB2_BUF_STATE_ERROR) {
 +		dev_warn_ratelimited(vpu->dev, "decode failed, status 0x%08x\n", ctrl);
++		/* whatever state the failed frame left the core in, start clean */
++		h713_av1_block_reset(vpu);
++	}
 +
 +	hantro_irq_done(vpu, state);
 +	return IRQ_HANDLED;
@@ -2175,6 +2305,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	hw = devm_kzalloc(vpu->dev, sizeof(*hw), GFP_KERNEL);
 +	if (!hw)
 +		return -ENOMEM;
++	mutex_init(&hw->lock);
 +	vpu->variant_priv = hw;
 +
 +	/* requested disabled: armed per frame only (see the top of this file) */

@@ -27,6 +27,7 @@
 
 /* Fixed-size buffers, sizes as the vendor allocates them. */
 #define H713_AV1_TILE_INFO_SIZE		0x500
+#define H713_AV1_MAX_TILES		128	/* what the tile buffer holds */
 #define H713_AV1_GLOBAL_MODEL_SIZE	0xe0
 #define H713_AV1_PROB_SIZE		0x2fe0
 #define H713_AV1_FILM_GRAIN_SIZE	0x3300
@@ -59,7 +60,9 @@ struct h713_av1_frame_bufs {
 struct h713_av1_ref {
 	bool used;
 	u64 timestamp;
-	int width, height, mi_cols, mi_rows;
+	int width, height;	/* as stored: the upscaled (superres) width */
+	int coded_width;	/* frame_width: before superres */
+	int mi_cols, mi_rows;
 	int frame_type;
 	u32 order_hint;
 	u32 order_hints[V4L2_AV1_TOTAL_REFS_PER_FRAME];
@@ -75,14 +78,20 @@ struct h713_av1_bufs {
 	struct h713_av1_dma vert_filt;
 };
 
-/* CDF storage lives here, not in hantro_ctx, so the host rig can use it. */
+/*
+ * CDF storage lives here, not in hantro_ctx, so the host rig can use it.
+ * The saved CDFs belong to a decoded FRAME (one per refs[] entry), not to a
+ * reference slot: a later frame finds its primary reference's CDFs the way
+ * it finds everything else about that reference, by timestamp. That needs no
+ * refresh_frame_flags -- which VA-API does not pass on -- and it stays right
+ * when show_existing_frame of a key frame refills every slot, which reaches
+ * the driver only as the slots' new timestamps.
+ */
 struct h713_av1_cdf {
-	struct av1cdfs *cdfs;
-	struct mvcdfs *cdfs_ndvc;
 	struct av1cdfs default_cdfs;
 	struct mvcdfs default_cdfs_ndvc;
-	struct av1cdfs last[H713_AV1_NUM_REF_FRAMES];
-	struct mvcdfs last_ndvc[H713_AV1_NUM_REF_FRAMES];
+	struct av1cdfs frame[H713_AV1_MAX_FRAMES];
+	struct mvcdfs frame_ndvc[H713_AV1_MAX_FRAMES];
 };
 
 struct h713_av1 {
@@ -104,6 +113,7 @@ struct h713_av1 {
 	int cur;			/* index into refs[] */
 	u32 ref_frame_sign_bias[V4L2_AV1_TOTAL_REFS_PER_FRAME];
 	u8 fc_modes[16];		/* compressor modes: luma 0..7, chroma 8..15 */
+	int prev_width, prev_height;	/* the last decoded frame's stored size */
 
 	/* output */
 	u32 regs[H713_AV1_NWORDS];

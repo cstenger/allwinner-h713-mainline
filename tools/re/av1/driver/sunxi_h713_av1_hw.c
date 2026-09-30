@@ -40,6 +40,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
@@ -76,6 +77,8 @@ MODULE_PARM_DESC(h713_av1_trace, "H713 AV1: log each frame, its register image a
 struct sunxi_h713_av1_hw {
 	int irq;
 	unsigned long armed;	/* bit 0: the line is enabled */
+	struct mutex lock;	/* streams */
+	unsigned int streams;	/* contexts holding the core powered */
 };
 
 static void h713_av1_irq_arm(struct hantro_dev *vpu)
@@ -162,8 +165,13 @@ static void sunxi_h713_av1_dec_exit(struct hantro_ctx *ctx)
 	if (!a)
 		return;
 	if (a->powered) {
+		struct sunxi_h713_av1_hw *hw = vpu->variant_priv;
+
+		mutex_lock(&hw->lock);
+		hw->streams--;
 		clk_bulk_disable(vpu->variant->num_clocks, vpu->clocks);
 		pm_runtime_put_autosuspend(vpu->dev);
+		mutex_unlock(&hw->lock);
 	}
 	for (i = 0; i < H713_AV1_MAX_FRAMES; i++)
 		for (j = 0; j < SLOT_NBUFS; j++)
@@ -178,6 +186,7 @@ static void sunxi_h713_av1_dec_exit(struct hantro_ctx *ctx)
 static int sunxi_h713_av1_dec_init(struct hantro_ctx *ctx)
 {
 	struct hantro_dev *vpu = ctx->dev;
+	struct sunxi_h713_av1_hw *hw = vpu->variant_priv;
 	struct sunxi_h713_av1_dec_ctx *a;
 	int i, ret;
 
@@ -203,18 +212,28 @@ static int sunxi_h713_av1_dec_init(struct hantro_ctx *ctx)
 	if (ret)
 		goto err;
 
-	/* power and clocks for the whole stream, and a clean core to start */
+	/*
+	 * Power and clocks for the whole stream. The first stream to power
+	 * the core also resets it; a later one must not, because the core may
+	 * be in the middle of another context's frame.
+	 */
+	mutex_lock(&hw->lock);
 	ret = pm_runtime_resume_and_get(vpu->dev);
 	if (ret < 0)
-		goto err;
+		goto err_unlock;
 	ret = clk_bulk_enable(vpu->variant->num_clocks, vpu->clocks);
 	if (ret) {
 		pm_runtime_put_autosuspend(vpu->dev);
-		goto err;
+		goto err_unlock;
 	}
 	a->powered = true;
-	h713_av1_block_reset(vpu);
+	if (!hw->streams++)
+		h713_av1_block_reset(vpu);
+	mutex_unlock(&hw->lock);
 	return 0;
+
+err_unlock:
+	mutex_unlock(&hw->lock);
 
 err:
 	sunxi_h713_av1_dec_exit(ctx);
@@ -255,6 +274,7 @@ static int sunxi_h713_av1_dec_run(struct hantro_ctx *ctx)
 	struct h713_av1 *h = &a->gen;
 	struct vb2_v4l2_buffer *src, *dst;
 	struct v4l2_ctrl *tge;
+	u32 width, height;
 	int slot, ret, i;
 
 	hantro_start_prepare_run(ctx);
@@ -283,13 +303,27 @@ static int sunxi_h713_av1_dec_run(struct hantro_ctx *ctx)
 	h->dst_chroma = h->dst_luma +
 			ctx->dst_fmt.plane_fmt[0].bytesperline * ctx->dst_fmt.height;
 
+	/*
+	 * The picture is stored and shown after superres, so at the upscaled
+	 * width. The core lays the raster out at a stride of the width rounded
+	 * up to 64 -- there is no stride it is told -- so a frame has to fit
+	 * the capture buffer that way, whatever size the format was set to.
+	 */
+	width = max_t(u32, h->frame->upscaled_width, h->frame->frame_width_minus_1 + 1);
+	height = h->frame->frame_height_minus_1 + 1;
+	if (width > FMT_4K_WIDTH || height > FMT_4K_HEIGHT ||
+	    ALIGN(width, 64) > ctx->dst_fmt.plane_fmt[0].bytesperline ||
+	    ALIGN(height, 8) > ctx->dst_fmt.height) {
+		ret = -EINVAL;
+		goto out;
+	}
+
 	slot = h713_av1_gen_slot(h, src->vb2_buf.timestamp);
 	if (slot < 0) {
 		ret = slot;
 		goto out;
 	}
-	ret = h713_av1_slot_bufs(ctx, slot, h->frame->frame_width_minus_1 + 1,
-				 h->frame->frame_height_minus_1 + 1);
+	ret = h713_av1_slot_bufs(ctx, slot, width, height);
 	if (ret)
 		goto out;
 	ret = h713_av1_gen_frame(h);
@@ -311,9 +345,15 @@ out:
 		   slot, h->frame->frame_width_minus_1 + 1, h->frame->frame_height_minus_1 + 1,
 		   h->frame->frame_type, !!(h->frame->flags & V4L2_AV1_FRAME_FLAG_SHOW_FRAME),
 		   &h->src_dma, h->src_len, &h->dst_luma);
-	if (h713_av1_trace)
+	if (h713_av1_trace) {
 		print_hex_dump(KERN_INFO, "h713av1 img ", DUMP_PREFIX_OFFSET, 32, 4,
 			       h->regs, sizeof(h->regs), false);
+		/*
+		 * Let the dump leave the machine before the core starts: when
+		 * a frame hangs the SoC, this image is the evidence. Debug only.
+		 */
+		mdelay(50);
+	}
 
 	/* After an error interrupt the core can still be busy: reset it first. */
 	if (readl_relaxed(vpu->dec_base + H713_AV1_CTRL) & H713_AV1_CTRL_START) {
@@ -374,8 +414,11 @@ static irqreturn_t sunxi_h713_av1_irq(int irq, void *dev_id)
 
 	state = (ctrl & H713_AV1_IRQ_FRAME_READY) && !(ctrl & H713_AV1_IRQ_ERRORS) ?
 		VB2_BUF_STATE_DONE : VB2_BUF_STATE_ERROR;
-	if (state == VB2_BUF_STATE_ERROR)
+	if (state == VB2_BUF_STATE_ERROR) {
 		dev_warn_ratelimited(vpu->dev, "decode failed, status 0x%08x\n", ctrl);
+		/* whatever state the failed frame left the core in, start clean */
+		h713_av1_block_reset(vpu);
+	}
 
 	hantro_irq_done(vpu, state);
 	return IRQ_HANDLED;
@@ -401,6 +444,7 @@ static int sunxi_h713_av1_hw_init(struct hantro_dev *vpu)
 	hw = devm_kzalloc(vpu->dev, sizeof(*hw), GFP_KERNEL);
 	if (!hw)
 		return -ENOMEM;
+	mutex_init(&hw->lock);
 	vpu->variant_priv = hw;
 
 	/* requested disabled: armed per frame only (see the top of this file) */

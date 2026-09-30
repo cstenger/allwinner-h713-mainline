@@ -1,0 +1,11 @@
+Tested on the HY200 against libdav1d, every frame by MD5 (GStreamer's
+v4l2slav1dec through tools/video/av1-gate.sh, and ffmpeg's VA-API hwaccel
+through libva-v4l2-request): 16 basic streams, then a 37-clip coding-tool
+matrix -- tile grids to 8x4 at 3840x2160, uneven tiles, four tile groups per
+frame, seven film-grain vectors (update_grain=0 included), superres (fixed
+and random), reference scaling, intra block copy and palette, monochrome,
+lossless, segmentation, delta-q/delta-lf, S-frames, still pictures, odd and
+tiny sizes -- and 4K; soaks of 900, 600, 2318 and 1199 frames from libaom and
+SVT-AV1; eight resolution changes in one stream; 40 flushing seeks; and AV1
+decoding alongside cedrus and alongside other AV1 streams starting and
+stopping. All bit-exact, with no driver complaint.

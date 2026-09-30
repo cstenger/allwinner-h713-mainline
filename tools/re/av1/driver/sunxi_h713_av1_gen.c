@@ -128,15 +128,34 @@ static int frame_ref(struct h713_av1 *h, u64 timestamp)
 
 		if (r->used)
 			continue;
-		r->width = f->frame_width_minus_1 + 1;
+		/*
+		 * Superres upscales before the frame is stored, so as a reference
+		 * it is upscaled_width wide; the motion-field test wants the
+		 * coded size.
+		 */
+		r->coded_width = f->frame_width_minus_1 + 1;
+		r->width = max_t(int, f->upscaled_width, r->coded_width);
 		r->height = f->frame_height_minus_1 + 1;
-		r->mi_cols = DIV_ROUND_UP(r->width, 8);
+		r->mi_cols = DIV_ROUND_UP(r->coded_width, 8);
 		r->mi_rows = DIV_ROUND_UP(r->height, 8);
 		r->timestamp = timestamp;
 		r->frame_type = f->frame_type;
 		r->order_hint = f->order_hint;
-		for (j = 0; j < V4L2_AV1_TOTAL_REFS_PER_FRAME; j++)
-			r->order_hints[j] = f->order_hints[j];
+		/*
+		 * The order hints of this frame's references, kept for motion
+		 * field projection when it is a reference itself. Taken from
+		 * the references this driver decoded, not from userspace: a
+		 * client whose parser state and DPB have come apart (ffmpeg
+		 * after a packet it abandoned half-way) sends hints for frames
+		 * that are not the ones in the slots, and projection from
+		 * those does not describe the frames the core will read.
+		 */
+		for (j = 0; j < V4L2_AV1_TOTAL_REFS_PER_FRAME; j++) {
+			int idx = j ? get_frame_index(h, j - 1) : AV1_INVALID_IDX;
+
+			r->order_hints[j] = idx >= 0 && idx != i ?
+					    h->refs[idx].order_hint : f->order_hints[j];
+		}
 		r->used = true;
 		h->cur = i;
 		return i;
@@ -219,6 +238,17 @@ static void get_shear_params(const s32 *mat, s64 *alpha, s64 *beta, s64 *gamma,
 	*delta = AV1_DIV_ROUND_UP_POW2_SIGNED(*delta, WARP_PARAM_REDUCE_BITS) * (1 << WARP_PARAM_REDUCE_BITS);
 }
 
+static bool ref_is_scaled(struct h713_av1 *h, int ref)
+{
+	int idx;
+
+	if (IS_INTRA(h->frame->frame_type))
+		return false;
+	idx = get_frame_index(h, ref);
+	return idx >= 0 && (h->refs[idx].width != h->frame->frame_width_minus_1 + 1 ||
+			    h->refs[idx].height != h->frame->frame_height_minus_1 + 1);
+}
+
 /*
  * 7 models x (6 x s32 params + 4 x s16 shear). The vendor writes the params
  * in natural order; the VPU981 swaps [2] and [3].
@@ -238,7 +268,10 @@ static void set_global_model(struct h713_av1 *h)
 			put_unaligned_le32(p[i], dst);
 			dst += 4;
 		}
-		if (gm->type[V4L2_AV1_REF_LAST_FRAME + ref] <= V4L2_AV1_WARP_MODEL_AFFINE)
+		if (ref_is_scaled(h, ref))
+			/* no warp from a scaled reference: the vendor's marker */
+			alpha = beta = gamma = delta = S16_MIN;
+		else if (gm->type[V4L2_AV1_REF_LAST_FRAME + ref] <= V4L2_AV1_WARP_MODEL_AFFINE)
 			get_shear_params(p, &alpha, &beta, &gamma, &delta);
 		put_unaligned_le16(alpha, dst);
 		put_unaligned_le16(beta, dst + 2);
@@ -385,9 +418,9 @@ static bool set_ref(struct h713_av1 *h, int ref, int idx, int width, int height)
 
 	h713_av1_set(h->regs, ref_height[ref], height);
 	h713_av1_set(h->regs, ref_width[ref], width);
-	/* the VPU981 names these crosswise; kept as it writes them */
-	h713_av1_set(h->regs, ref_vscale[ref], scale_w);
-	h713_av1_set(h->regs, ref_hscale[ref], scale_h);
+	/* the VPU981 writes these crosswise; here hor is the width ratio */
+	h713_av1_set(h->regs, ref_hscale[ref], scale_w);
+	h713_av1_set(h->regs, ref_vscale[ref], scale_h);
 	/* compressed reference: luma data, then one header for both chroma */
 	h713_av1_set(h->regs, ref_lum[ref], lower_32_bits(fb->rec));
 	h713_av1_set(h->regs, ref_cb[ref], lower_32_bits(fb->hdr));
@@ -406,6 +439,32 @@ static const struct h713_av1_field seg_fields[8][8] = {
 	{ SEGF(0) }, { SEGF(1) }, { SEGF(2) }, { SEGF(3) },
 	{ SEGF(4) }, { SEGF(5) }, { SEGF(6) }, { SEGF(7) },
 };
+
+/*
+ * The vendor raises the core's error-resilient bit not only when the frame
+ * header does, but whenever what the previous frame left behind cannot
+ * apply: the stored size differs from the last decoded frame's (which also
+ * covers a stream's first frame), or the coded size differs from the
+ * primary reference's.
+ */
+static bool error_resilient(struct h713_av1 *h)
+{
+	const struct v4l2_ctrl_av1_frame *f = h->frame;
+	const struct h713_av1_ref *cur = &h->refs[h->cur];
+
+	if (f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE)
+		return true;
+	if (cur->width != h->prev_width || cur->height != h->prev_height)
+		return true;
+	if (!IS_INTRA(f->frame_type) && f->primary_ref_frame < V4L2_AV1_REFS_PER_FRAME) {
+		int idx = get_frame_index(h, f->primary_ref_frame);
+
+		if (idx >= 0 && (h->refs[idx].coded_width != cur->coded_width ||
+				 h->refs[idx].height != cur->height))
+			return true;
+	}
+	return false;
+}
 
 static void set_segmentation(struct h713_av1 *h)
 {
@@ -430,7 +489,7 @@ static void set_segmentation(struct h713_av1 *h)
 	W(h, SEGMENT_TEMP_UPD_E, !!(seg->flags & V4L2_AV1_SEGMENTATION_FLAG_TEMPORAL_UPDATE));
 	W(h, SEGMENT_UPD_E, !!(seg->flags & V4L2_AV1_SEGMENTATION_FLAG_UPDATE_MAP));
 	W(h, SEGMENT_E, !!(seg->flags & V4L2_AV1_SEGMENTATION_FLAG_ENABLED));
-	W(h, ERROR_RESILIENT, !!(f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE));
+	W(h, ERROR_RESILIENT, error_resilient(h));
 	if (IS_INTRA(f->frame_type) || (f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE))
 		W(h, USE_TEMPORAL3_MVS, 0);
 
@@ -525,69 +584,60 @@ static void set_loopfilter(struct h713_av1 *h)
 
 /* ---- probabilities ------------------------------------------------------ */
 
-static void get_cdfs(struct h713_av1_cdf *c, u32 ref_idx)
-{
-	c->cdfs = &c->last[ref_idx];
-	c->cdfs_ndvc = &c->last_ndvc[ref_idx];
-}
-
-static void store_cdfs(struct h713_av1_cdf *c, u32 refresh)
-{
-	int i;
-
-	for (i = 0; i < H713_AV1_NUM_REF_FRAMES; i++)
-		if ((refresh & (1 << i)) && &c->last[i] != c->cdfs) {
-			c->last[i] = *c->cdfs;
-			c->last_ndvc[i] = *c->cdfs_ndvc;
-		}
-}
-
+/*
+ * This frame starts from its primary reference's saved CDFs, or from the
+ * defaults (whose coefficient part depends on base_q_idx); what it starts
+ * from is also what it saves, until the core's adapted CDFs replace them.
+ */
 static void set_prob(struct h713_av1 *h)
 {
 	const struct v4l2_ctrl_av1_frame *f = h->frame;
 	struct h713_av1_cdf *c = h->cdf;
+	struct av1cdfs *src = &c->default_cdfs;
+	struct mvcdfs *src_ndvc = &c->default_cdfs_ndvc;
+	int idx = AV1_INVALID_IDX;
 
-	if ((f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE) ||
-	    IS_INTRA(f->frame_type) || f->primary_ref_frame == AV1_PRIMARY_REF_NONE) {
-		c->cdfs = &c->default_cdfs;
-		c->cdfs_ndvc = &c->default_cdfs_ndvc;
-		rockchip_av1_default_coeff_probs(f->quantization.base_q_idx, c->cdfs);
+	if (!(f->flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE) &&
+	    !IS_INTRA(f->frame_type) && f->primary_ref_frame != AV1_PRIMARY_REF_NONE)
+		idx = get_frame_index(h, f->primary_ref_frame);
+	if (idx >= 0) {
+		src = &c->frame[idx];
+		src_ndvc = &c->frame_ndvc[idx];
 	} else {
-		get_cdfs(c, f->ref_frame_idx[f->primary_ref_frame]);
+		rockchip_av1_default_coeff_probs(f->quantization.base_q_idx, src);
 	}
-	store_cdfs(c, f->refresh_frame_flags);
+	c->frame[h->cur] = *src;
+	c->frame_ndvc[h->cur] = *src_ndvc;
 
-	memcpy(h->b.prob.cpu, c->cdfs, sizeof(struct av1cdfs));
+	memcpy(h->b.prob.cpu, &c->frame[h->cur], sizeof(struct av1cdfs));
 	if (IS_INTRA(f->frame_type))
 		memcpy((u8 *)h->b.prob.cpu + offsetof(struct av1cdfs, mv_cdf),
-		       c->cdfs_ndvc, sizeof(struct mvcdfs));
+		       &c->frame_ndvc[h->cur], sizeof(struct mvcdfs));
 
 	WADDR(h, PROB_TAB_OUT_BASE, h->b.prob_out.dma);
 	WADDR(h, PROB_TAB_BASE, h->b.prob.dma);
 }
 
+/*
+ * The core's adapted CDFs become this frame's. On an intra frame the MV
+ * part of the table carried the intra-block-copy (ndvc) CDFs, so that is
+ * where they go, and the frame keeps the MV CDFs it started with.
+ */
 static void update_prob(struct h713_av1 *h)
 {
 	const struct v4l2_ctrl_av1_frame *f = h->frame;
 	struct h713_av1_cdf *c = h->cdf;
 	struct av1cdfs *out = h->b.prob_out.cpu;
-	int i;
+	struct av1cdfs *cur = &c->frame[h->cur];
+	struct mvcdfs mv = cur->mv_cdf;
 
 	if (f->flags & V4L2_AV1_FRAME_FLAG_DISABLE_FRAME_END_UPDATE_CDF)
 		return;
-	for (i = 0; i < H713_AV1_NUM_REF_FRAMES; i++)
-		if (f->refresh_frame_flags & (1 << i)) {
-			struct mvcdfs mv = c->cdfs->mv_cdf;
-
-			get_cdfs(c, i);
-			*c->cdfs = *out;
-			if (IS_INTRA(f->frame_type)) {
-				c->cdfs->mv_cdf = mv;
-				*c->cdfs_ndvc = out->mv_cdf;
-			}
-			store_cdfs(c, f->refresh_frame_flags);
-			break;
-		}
+	*cur = *out;
+	if (IS_INTRA(f->frame_type)) {
+		cur->mv_cdf = mv;
+		c->frame_ndvc[h->cur] = out->mv_cdf;
+	}
 }
 
 /*
@@ -737,9 +787,8 @@ static void set_cdef(struct h713_av1 *h)
 	u16 ls = 0, cs = 0;
 	int i;
 
-	W(h, ENABLE_CDEF, !(cdef->bits == 0 && cdef->damping_minus_3 == 0 &&
-			    cdef->y_pri_strength[0] == 0 && cdef->y_sec_strength[0] == 0 &&
-			    cdef->uv_pri_strength[0] == 0 && cdef->uv_sec_strength[0] == 0));
+	/* the sequence's switch, whatever this frame's strengths (the VPU981 tests those) */
+	W(h, ENABLE_CDEF, !!(h->seq->flags & V4L2_AV1_SEQUENCE_FLAG_ENABLE_CDEF));
 	W(h, CDEF_BITS, cdef->bits);
 	W(h, CDEF_DAMPING, cdef->damping_minus_3);
 	for (i = 0; i < (1 << cdef->bits); i++) {
@@ -821,14 +870,17 @@ static void set_picture_dimensions(struct h713_av1 *h)
 	int w = h->frame->frame_width_minus_1 + 1;
 	int ht = h->frame->frame_height_minus_1 + 1;
 
-	/* pixels, not 8x8 blocks as on the VPU981 (vendor: 0x500 x 0x2d0) */
-	W(h, PIC_WIDTH, w);
-	W(h, PIC_HEIGHT, ht);
+	/*
+	 * Pixels, not 8x8 blocks as on the VPU981 (vendor: 0x500 x 0x2d0), but
+	 * rounded up to whole 8x8 blocks, with the padding that adds alongside.
+	 */
+	W(h, PIC_WIDTH, ALIGN(w, 8));
+	W(h, PIC_HEIGHT, ALIGN(ht, 8));
 	W(h, PIC_WIDTH_PAD, ALIGN(w, 8) - w);
 	W(h, PIC_HEIGHT_PAD, ALIGN(ht, 8) - ht);
-	W(h, SLICE_HEIGHT, ht);
-	W(h, PP_PIC_WIDTH, w);
-	W(h, PP_PIC_HEIGHT, ht);
+	W(h, SLICE_HEIGHT, ALIGN(ht, 8));
+	W(h, PP_PIC_WIDTH, ALIGN(w, 8));
+	W(h, PP_PIC_HEIGHT, ALIGN(ht, 8));
 	set_superres(h);
 }
 
@@ -929,6 +981,8 @@ static void set_other_frames(struct h713_av1 *h)
 
 	/* the vendor points the first MV read at LAST's MVs even when unused */
 	idx = get_frame_index(h, LST_BUF_IDX);
+	if (f->flags & V4L2_AV1_FRAME_FLAG_ALLOW_INTRABC)
+		idx = h->cur;	/* intra block copy: the frame is its own reference */
 	if (idx >= 0)
 		WADDR(h, TEMPORAL_READ_BASE, h->refs[idx].bufs.mv);
 	for (k = 0; k < 3; k++) {
@@ -1001,6 +1055,9 @@ static void set_pdec(struct h713_av1 *h, const int *idx)
 	p[0] |= 0x3aa;
 	p[3785 / 32] |= BIT(3785 % 32);
 	p[3788 / 32] |= BIT(3788 % 32);
+	/* one more unnamed bit, set only when the frame is its own reference */
+	if (h->frame->flags & V4L2_AV1_FRAME_FLAG_ALLOW_INTRABC)
+		p[3879 / 32] |= BIT(3879 % 32);
 
 	/* MapPdecGenSwRegs: fixed routing, plus three bits of the main image */
 	h713_av1_set(p, H713_PDEC_PDEC_E, 1);
@@ -1311,9 +1368,8 @@ int h713_av1_gen_init(struct h713_av1 *h)
 	struct h713_av1_cdf *c = h->cdf;
 
 	memset(h->refs, 0, sizeof(h->refs));
-	c->cdfs = &c->default_cdfs;
-	c->cdfs_ndvc = &c->default_cdfs_ndvc;
-	rockchip_av1_set_default_cdfs(c->cdfs, c->cdfs_ndvc);
+	h->prev_width = h->prev_height = 0;
+	rockchip_av1_set_default_cdfs(&c->default_cdfs, &c->default_cdfs_ndvc);
 	memcpy(h->fc_modes, fc_default_modes, sizeof(h->fc_modes));
 	return 0;
 }
@@ -1327,8 +1383,51 @@ void h713_av1_frame_bufs_size(int width, int height, size_t *rec, size_t *hdr, s
 	*mv = (size_t)sb_cols * sb_rows * 0x400;
 }
 
+/*
+ * What the V4L2 core does not check in the controls and this code or the
+ * core would trip over: indices it uses unchecked, a tile layout larger than
+ * the tile buffer, tile data outside the bitstream buffer, and coding the
+ * core does not do (it is 4:2:0/4:0:0, 8 or 10 bit).
+ */
+static int check_frame(struct h713_av1 *h)
+{
+	const struct v4l2_ctrl_av1_frame *f = h->frame;
+	const struct v4l2_av1_tile_info *ti = &f->tile_info;
+	u32 ntiles = (u32)ti->tile_cols * ti->tile_rows;
+	u32 base, i;
+
+	if (h->seq->seq_profile != 0 || (h->seq->bit_depth != 8 && h->seq->bit_depth != 10) ||
+	    h->seq->order_hint_bits > 8)
+		return -EINVAL;
+	if (f->primary_ref_frame > AV1_PRIMARY_REF_NONE)
+		return -EINVAL;
+	if (f->primary_ref_frame < AV1_PRIMARY_REF_NONE && !IS_INTRA(f->frame_type) &&
+	    (f->ref_frame_idx[f->primary_ref_frame] < 0 ||
+	     f->ref_frame_idx[f->primary_ref_frame] >= H713_AV1_NUM_REF_FRAMES))
+		return -EINVAL;
+	if (!ti->tile_cols || !ti->tile_rows || ti->tile_cols > V4L2_AV1_MAX_TILE_COLS ||
+	    ti->tile_rows > V4L2_AV1_MAX_TILE_ROWS || ntiles > H713_AV1_MAX_TILES ||
+	    ti->context_update_tile_id >= ntiles)
+		return -EINVAL;
+	if (!h->tge || h->num_tge < ntiles)
+		return -EINVAL;
+	if (ntiles > 1 && (ti->tile_size_bytes < 1 || ti->tile_size_bytes > 4 ||
+			   h->tge[0].tile_offset < ti->tile_size_bytes))
+		return -EINVAL;
+	base = tile_data_start(h);
+	for (i = 0; i < ntiles; i++)
+		if (h->tge[i].tile_offset < base || h->tge[i].tile_offset > h->src_len ||
+		    h->tge[i].tile_size > h->src_len - h->tge[i].tile_offset)
+			return -EINVAL;
+	return 0;
+}
+
 int h713_av1_gen_slot(struct h713_av1 *h, u64 timestamp)
 {
+	int ret = check_frame(h);
+
+	if (ret)
+		return ret;
 	clean_refs(h);
 	return frame_ref(h, timestamp) < 0 ? -ENOSPC : h->cur;
 }
@@ -1341,6 +1440,8 @@ int h713_av1_gen_frame(struct h713_av1 *h)
 	set_parameters(h);
 	set_global_model(h);
 	set_tile_info(h);
+	/* before the references: an intrabc frame decompresses itself */
+	set_fc_modes(h);
 	set_reference_frames(h);
 	set_segmentation(h);
 	set_loopfilter(h);
@@ -1350,7 +1451,8 @@ int h713_av1_gen_frame(struct h713_av1 *h)
 	set_fgs(h);
 	set_prob(h);
 	set_buffers(h);
-	set_fc_modes(h);
+	h->prev_width = h->refs[h->cur].width;
+	h->prev_height = h->refs[h->cur].height;
 	return 0;
 }
 
