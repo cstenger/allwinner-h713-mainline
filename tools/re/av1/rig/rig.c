@@ -271,7 +271,7 @@ static void dump(const char *what, const void *p, size_t n)
 static void decode_frame(const GstAV1FrameHeaderOBU *fh)
 {
 	u64 ts = 1000 * (frame_no + 1);
-	int i;
+	int i, slot;
 
 	fill_frame(fh);
 	H.seq = &v4l2_sequence;
@@ -286,13 +286,18 @@ static void decode_frame(const GstAV1FrameHeaderOBU *fh)
 	H.dst_luma = 0x30000000 + 0x1000000ull * (frame_no % 8);
 	H.dst_chroma = H.dst_luma + (u64)(v4l2_frame.frame_width_minus_1 + 1) *
 			(v4l2_frame.frame_height_minus_1 + 1);
-	/* this frame's private buffers: recognisable per-frame addresses */
-	H.cur_bufs.rec = 0x50000000 + 0x1000000ull * (frame_no % 16);
-	H.cur_bufs.hdr = H.cur_bufs.rec + 0x800000;
-	H.cur_bufs.mv = H.cur_bufs.rec + 0xc00000;
 	H.bit_depth = v4l2_sequence.bit_depth;
 
-	if (h713_av1_gen_frame(&H, ts))
+	slot = h713_av1_gen_slot(&H, ts);
+	if (slot < 0) {
+		fprintf(stderr, "frame %d: no free slot\n", frame_no);
+		return;
+	}
+	/* the slot's private buffers: recognisable per-slot addresses */
+	H.refs[slot].bufs.rec = 0x50000000 + 0x1000000ull * slot;
+	H.refs[slot].bufs.hdr = H.refs[slot].bufs.rec + 0x800000;
+	H.refs[slot].bufs.mv = H.refs[slot].bufs.rec + 0xc00000;
+	if (h713_av1_gen_frame(&H))
 		fprintf(stderr, "frame %d: gen failed\n", frame_no);
 
 	dump("regs", H.regs, sizeof(H.regs));
@@ -371,7 +376,7 @@ int main(int argc, char **argv)
 	dma(&H.b.fg_colbuf, H713_AV1_FG_COLBUF_SIZE);
 	dma(&H.b.cdef_colbuf, H713_AV1_CDEF_COLBUF_SIZE);
 	dma(&H.b.rec_sindex, H713_AV1_REC_SINDEX_SIZE);
-	dma(&H.b.sec_colbuf, 0x44000);
+	dma(&H.b.sec_colbuf, H713_AV1_SEC_COLBUF_SIZE);
 	h713_av1_gen_init(&H);
 
 	parser = gst_av1_parser_new();

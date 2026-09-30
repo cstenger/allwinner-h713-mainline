@@ -122,6 +122,8 @@ CONFIG_VIDEO_SUN4I_CSI=y
 CONFIG_VIDEO_SUN6I_CSI=y
 CONFIG_VIDEO_SUN8I_DEINTERLACE=y
 CONFIG_VIDEO_SUN8I_ROTATE=y
+# H713 AV1 decoder (Google IP): hantro variant, patch 0145
+CONFIG_VIDEO_HANTRO=m
 CONFIG_DRM=y
 # fbdev emulation gives the AFBD KMS driver a /dev/fb0 and a console on the
 # projector, which is the cheapest possible check that scanout is live.

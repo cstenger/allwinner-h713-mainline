@@ -126,7 +126,6 @@ static int frame_ref(struct h713_av1 *h, u64 timestamp)
 		r->timestamp = timestamp;
 		r->frame_type = f->frame_type;
 		r->order_hint = f->order_hint;
-		r->bufs = h->cur_bufs;
 		for (j = 0; j < V4L2_AV1_TOTAL_REFS_PER_FRAME; j++)
 			r->order_hints[j] = f->order_hints[j];
 		r->used = true;
@@ -1158,10 +1157,10 @@ static void set_buffers(struct h713_av1 *h)
 	W(h, STREAM_LEN, h->src_len - off + ((h->src_dma + off) & 0x1f));
 
 	/* this frame: compressed reconstruction, its header, its MVs */
-	WADDR(h, REC_LUM_BASE, h->cur_bufs.rec);
-	WADDR(h, REC_CH_BASE, h->cur_bufs.hdr);
-	WADDR(h, REC_LUM_COMP_BASE, h->cur_bufs.hdr);
-	WADDR(h, TEMPORAL_WRITE_BASE, h->cur_bufs.mv);
+	WADDR(h, REC_LUM_BASE, h->refs[h->cur].bufs.rec);
+	WADDR(h, REC_CH_BASE, h->refs[h->cur].bufs.hdr);
+	WADDR(h, REC_LUM_COMP_BASE, h->refs[h->cur].bufs.hdr);
+	WADDR(h, TEMPORAL_WRITE_BASE, h->refs[h->cur].bufs.mv);
 
 	/* display: NV12 through the secondary output */
 	WADDR(h, OUT_SECONDARY_LU_BASE, h->dst_luma);
@@ -1293,13 +1292,24 @@ int h713_av1_gen_init(struct h713_av1 *h)
 	return 0;
 }
 
-int h713_av1_gen_frame(struct h713_av1 *h, u64 timestamp)
+void h713_av1_frame_bufs_size(int width, int height, size_t *rec, size_t *hdr, size_t *mv)
+{
+	int sb_cols = DIV_ROUND_UP(width, 64), sb_rows = DIV_ROUND_UP(height, 64);
+
+	*rec = (size_t)sb_cols * sb_rows * 0x2400;
+	*hdr = (size_t)DIV_ROUND_UP(sb_cols, 8) * (ALIGN(height, 64) / 2) * 0x40;
+	*mv = (size_t)sb_cols * sb_rows * 0x400;
+}
+
+int h713_av1_gen_slot(struct h713_av1 *h, u64 timestamp)
+{
+	clean_refs(h);
+	return frame_ref(h, timestamp) < 0 ? -ENOSPC : h->cur;
+}
+
+int h713_av1_gen_frame(struct h713_av1 *h)
 {
 	memset(h->regs, 0, sizeof(h->regs));
-
-	clean_refs(h);
-	if (frame_ref(h, timestamp) < 0)
-		return -ENOSPC;
 
 	set_fixed(h);
 	set_parameters(h);

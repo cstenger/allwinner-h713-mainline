@@ -38,6 +38,7 @@
 #define H713_AV1_FG_COLBUF_SIZE		0x8800
 #define H713_AV1_CDEF_COLBUF_SIZE	0x1100
 #define H713_AV1_REC_SINDEX_SIZE	0x66000
+#define H713_AV1_SEC_COLBUF_SIZE	0x44000		/* out_secondary_colbuf, every size */
 
 struct h713_av1_dma {
 	void *cpu;
@@ -59,7 +60,7 @@ struct h713_av1_ref {
 	int frame_type;
 	u32 order_hint;
 	u32 order_hints[V4L2_AV1_TOTAL_REFS_PER_FRAME];
-	struct h713_av1_frame_bufs bufs;
+	struct h713_av1_frame_bufs bufs;	/* the caller's, kept across reuse */
 	u8 fc_luma[8];		/* reference-compressor entropy modes */
 	u8 fc_chroma[8];
 };
@@ -90,7 +91,6 @@ struct h713_av1 {
 	u64 src_dma;		/* bitstream buffer */
 	u32 src_len, src_size;
 	u64 dst_luma, dst_chroma;	/* NV12 capture (secondary output) */
-	struct h713_av1_frame_bufs cur_bufs;	/* this frame's private buffers */
 	int bit_depth;
 
 	/* persistent */
@@ -105,8 +105,16 @@ struct h713_av1 {
 	u32 regs[H713_AV1_NWORDS];
 };
 
-/* Build this frame's image and CPU-side buffers. 0 or -errno. */
-int h713_av1_gen_frame(struct h713_av1 *h, u64 timestamp);
+/*
+ * Per frame, with the controls set: h713_av1_gen_slot() retires references
+ * no longer in use and picks this frame's slot in refs[] (or -ENOSPC); the
+ * caller makes sure refs[slot].bufs holds buffers of at least
+ * h713_av1_frame_bufs_size() for this frame; h713_av1_gen_frame() then
+ * builds the image and CPU-side buffers.
+ */
+int h713_av1_gen_slot(struct h713_av1 *h, u64 timestamp);
+void h713_av1_frame_bufs_size(int width, int height, size_t *rec, size_t *hdr, size_t *mv);
+int h713_av1_gen_frame(struct h713_av1 *h);
 /*
  * After the hardware finished: pick up CDFs and re-rank the compressor
  * modes. The caller first refreshes h->regs from the hardware (at least the

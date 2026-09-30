@@ -1,0 +1,31 @@
+arm64: dts: h713: bind the AV1 decoder to hantro
+
+Move the AV1 node from the presence probe's compatible to the decoder's,
+and name the video engine whose module clock, bus clock and reset the
+core runs from, so the driver can link to it.
+
+diff --color -Naur pa/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi pb/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1381,12 +1381,20 @@
+ 		 * decode core, while register access needs only the bus clock.
+ 		 */
+ 		av1: av1@1c0d000 {
+-			compatible = "allwinner,sun50i-h713-av1-probe";
++			/*
++			 * Decoded by hantro's H713 variant. The core also runs
++			 * from the VE's module clock and needs the VE's bus
++			 * clock and reset released; those stay cedrus's, and
++			 * the driver keeps them up through a runtime-PM link
++			 * to the VE named here.
++			 */
++			compatible = "allwinner,sun50i-h713-av1";
+ 			reg = <0x01c0d000 0x1000>;
+ 			interrupts = <GIC_SPI 107 IRQ_TYPE_LEVEL_HIGH>;
+ 			clocks = <&ccu CLK_BUS_AV1>, <&ccu CLK_MBUS_AV1>;
+ 			clock-names = "bus", "mbus";
+ 			resets = <&ccu RST_BUS_AV1>;
++			allwinner,video-engine = <&ve>;
+ 			iommus = <&iommu 5 1>;
+ 			power-domains = <&ppu 4>;
+ 			status = "okay";

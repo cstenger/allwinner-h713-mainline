@@ -35,6 +35,15 @@ emulation. On 2026-09-29 the first frame of the stock test clip decoded
 BIT-EXACT through it (luma and NV12 chroma identical to libdav1d), in 1.6 ms,
 once PLL_VE was brought down from cedrus's 600 MHz to stock's 432 MHz: at
 600 MHz the core stalls into its own cycle timeout.
+
+The replay refuses to start while the core's start bit is set, and a replay
+that times out pulses the block reset: clearing the start bit does not stop
+a hung core, and writing registers into a running one wedged the SoC.
+
+The decoder node now belongs to hantro's H713 AV1 variant (0145/0146). This
+module matches that compatible too but has no MODULE_DEVICE_TABLE, so it
+never autoloads; for bring-up, unbind hantro-vpu and bind it by hand.
+
 --- a/drivers/misc/Kconfig
 +++ b/drivers/misc/Kconfig
 @@ -15,6 +15,20 @@
@@ -70,7 +79,7 @@ once PLL_VE was brought down from cedrus's 600 MHz to stock's 432 MHz: at
  obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
 --- /dev/null
 +++ b/drivers/misc/sunxi-h713-av1-probe.c
-@@ -0,0 +1,535 @@
+@@ -0,0 +1,541 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * H713 AV1 decoder presence probe.
@@ -588,11 +597,17 @@ once PLL_VE was brought down from cedrus's 600 MHz to stock's 432 MHz: at
 +	pm_runtime_disable(av1->dev);
 +}
 +
++/*
++ * The node now belongs to hantro's H713 AV1 variant. This module still
++ * matches it, for bring-up, but carries no MODULE_DEVICE_TABLE so it never
++ * autoloads: to use the replay, unbind hantro-vpu from the device and bind
++ * this driver by hand.
++ */
 +static const struct of_device_id h713_av1_of_match[] = {
 +	{ .compatible = "allwinner,sun50i-h713-av1-probe" },
++	{ .compatible = "allwinner,sun50i-h713-av1" },
 +	{ }
 +};
-+MODULE_DEVICE_TABLE(of, h713_av1_of_match);
 +
 +static struct platform_driver h713_av1_driver = {
 +	.probe = h713_av1_probe_dev,
