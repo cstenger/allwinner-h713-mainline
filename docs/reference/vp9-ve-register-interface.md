@@ -244,3 +244,16 @@ v4l2 mapping: `coeff[..] = &coef[..][0]`, `eob[..][0] = &eob_branch[..]`,
 - VE_CTRL for mode 7: stock value `0xC0130007`
 - secondary output (0x50-0x58) and 10-bit (0x84/0x8c): not needed for a first
   8-bit profile-0 decode
+
+## Reference scaling and VA-API (2026-09-30)
+
+- **Scaled references are not supported.** The driver keeps no per-reference
+  size, and nothing programs scaled prediction. An inter frame whose size
+  differs from the previous frame's (VP9's inter-frame resize, vector
+  `v13-resize`) made the engine read past its reference buffers: IOMMU
+  faults, then the watchdog. `cedrus_vp9_setup()` now refuses such frames
+  (-EINVAL); the stream recovers at the next key frame.
+- **VA-API** reaches VP9 through libva-v4l2-request 0015, which parses the
+  uncompressed and compressed headers itself: VA-API's VP9 parameters carry no
+  loop-filter deltas and nothing of the compressed header. Bit-exact on 12 of 13
+  vectors; the 13th is the resize above.

@@ -347,3 +347,69 @@ Diagnostics that paid off: the stalled core's post-mortem counters
 stuck interrupt line shows in the GIC's ISPENDR without touching the block;
 and a picture that does not change when the CDF source changes means the
 table is not what is wrong.
+
+## Hardening and coverage (2026-09-30, second session)
+
+**Coverage.** `tools/video/make-av1-streams.sh` builds a 37-clip matrix, one
+coding tool per clip (tile grids to 8x4 at 4K, uneven tiles, 2 and 4 tile
+groups per frame, seven film-grain vectors, odd and tiny sizes, superres fixed
+and random, reference scaling, intrabc+palette, monochrome, lossless,
+segmentation, delta-q/lf, S-frames, still pictures). `rig/gate.sh WORKDIR
+STOCK FEATDIR` now runs it against the vendor library: 312 frames, 48 clips.
+All of it is bit-exact on the hardware.
+
+**The vendor emulation is an oracle for the first 8 decoded frames only.** Once
+more than eight pictures are live it drops one (a reference slot reads as
+missing from then on), so longer comparisons diverge on the vendor side. The
+gate compares at most 8 frames per clip; the hardware gates run the whole clip.
+
+**Generator bugs the matrix found** (each confirmed against the vendor and then
+bit-exact on hardware):
+
+- `pic_width/height`, `pp_pic_*`, `slice_height` are rounded **up to 8**, with
+  the pads beside them (354x290 programs 360x296 + pad 6).
+- `enable_cdef` is the **sequence** flag, not "any strength non-zero".
+- `refN_hor_scale` is the **width** ratio (the VPU981 names them crosswise; the
+  old code copied that and swapped them).
+- References are stored **after superres**: ref width = the upscaled width,
+  the scale is upscaled/coded, and the reference buffers are sized for it.
+- A scaled reference gets the "no warp" shear marker, all four = -32768, in
+  the global-model buffer.
+- `error_resilient` is also raised when the stored size differs from the
+  previous frame's, or the coded size from the primary reference's (covers
+  each stream's first frame).
+- Intra block copy: the decompressor gets the current frame as in0 with the
+  current compressor modes, `temporal_read_base` = its own MVs, and one more
+  unnamed pdec bit, **3879**.
+- Several tile groups need nothing special: the vendor's buffer keeps later
+  groups' OBU headers, ours does not, and the tile table differs only by them.
+
+**CDFs are saved per decoded frame**, not per reference slot, and found by
+timestamp like every other reference property. No `refresh_frame_flags` needed
+(VA-API does not carry it), and `show_existing_frame` of a key frame -- which
+reaches the driver only as new slot timestamps -- stays right. Likewise the
+saved per-reference order hints come from the driver's own references.
+
+**Controls are validated** for what the V4L2 core does not check: more than
+128 tiles (the tile buffer's limit), tile data outside the bitstream, a
+primary reference out of range, profile/bit depth, and a frame that does not
+fit the capture buffer at the core's stride (`ALIGN(w, 64)`; there is no
+stride register the vendor uses). A failed frame is followed by a block reset;
+only the first stream to power the core resets it at start.
+
+**A distance of 32 is normal.** The vendor programs order-hint distances of
+exactly 32 (`mf*_offset`, `cur_*_offset`) on the clean stock stream. Clamping
+them to ±31 broke the vendor match, so they are passed raw.
+
+**The SoC hang from damaged input (resolved client-side).** Through GStreamer
+every damaged stream is survivable: garbage references make the core run into
+its own timeout, the driver resets it, the next frame runs. Through ffmpeg
+VA-API one damaged key frame hung the SoC (no interrupt, no ARP). ffmpeg
+abandons the rest of a temporal unit once a frame in it fails, having parsed
+all of it, so every header it sends afterwards is read against reference state
+that does not match what was decoded. Feeding GStreamer exactly the frames
+ffmpeg submitted did **not** hang, so the difference was in the headers, not the
+references. The VA driver now refuses AV1 frames after an error until the next
+key frame. Which register combination hangs the core is still unknown: with
+`h713_av1_trace=1` the driver now pauses 50 ms after dumping each image, so the
+next such image reaches a host over `dmesg -w` before the core starts.
