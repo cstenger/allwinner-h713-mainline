@@ -1,0 +1,1179 @@
+Add an AV1 backend and advertise it
+
+The H713's AV1 core decodes bit-exactly through GStreamer's v4l2slav1dec; this
+makes it reachable from mpv and ffmpeg.  It needs 0014, since the core is a
+second decoder device, and it is the first backend on a multi-planar device:
+hantro speaks the MPLANE API where cedrus does not, so a device now records
+which it speaks, and surface creation picks the OUTPUT type and the capture
+format entry to match (NV12 gains a multi-planar entry: one buffer holding both
+planes, as hantro allocates it).
+
+VA-API's AV1 picture parameters carry nearly the whole frame header and ffmpeg
+sends only tile data, so this is a translation rather than a parser.  The gaps
+are what a decoder with its own DPB needs no one to tell it:
+
+  - each reference's order hint, which a surface now remembers from its own
+    decode;
+  - skip_mode_frame[], derived from those as skip_mode_params() does;
+  - tile_size_bytes, recovered from the gap a size field leaves between two
+    tiles of one tile group (4 when no tile has one);
+  - refresh_frame_flags, sent as 0: the kernel driver finds every reference,
+    its CDFs included, by the timestamp of the surface in the slot;
+  - the downscaled width under superres, derived from the coded (upscaled)
+    width VA-API carries, as superres_params() does.
+
+Two layout details.  Tile groups arrive as one parameter buffer and one data
+buffer each, parameters first, so a tile's offset is the group's place in the
+bitstream buffer plus its offset within the group.  And four zero bytes go in
+front of the first group: with several tiles the kernel points the core at
+tile 0's size field, which does not exist when tile 0 is alone in its group.
+
+Film grain: ffmpeg decodes a grained frame into one surface (the one later
+frames reference) and shows another, current_display_picture.  The kernel
+keeps its references privately and writes only the grained picture, so the
+CAPTURE buffer queued is the display surface's, and the sync dequeues that.
+
+Profile 0, 8-bit only: 10-bit sequences are refused by the kernel.
+
+The surface size limit was a flat 2048x2048 for every profile, which kept 4K
+AV1 in software.  AV1 now takes the size range its device reports through
+VIDIOC_ENUM_FRAMESIZES (4096x2304 on the H713, where 4K decodes bit-exactly).
+Every other profile keeps 2048: cedrus claims 4096x2304 for all its formats,
+and none of them has been run that large.
+
+The DRM PRIME export described the whole allocation as the picture.  With
+cedrus that never mattered -- it rounds heights to 16, and 720 is a multiple --
+but hantro rounds to 64, so a 720p AV1 surface exported as 1280x768: mpv's
+vo=drm built a 768-line framebuffer, the H713 video plane (which takes exactly
+the 1280x720 picture) refused every flip with EINVAL, and the panel showed
+nothing while decode ran at full rate.  The descriptor now gives the size the
+client asked for, capped by the allocation; pitches and offsets still describe
+the memory, and a scaled surface, smaller than asked, is described as before.
+
+After a frame fails, AV1 frames are refused until the next key frame.  They
+could only decode to garbage, since they predict from the failure; and ffmpeg
+abandons the rest of a temporal unit once one frame in it fails, having
+already parsed all of it, so its reference state -- order hints, and every
+header field parsed conditionally on them -- no longer matches what was
+decoded.  One of the headers it then produced hung the H713 SoC outright on a
+damaged test stream; the same stream through GStreamer, which sends every
+frame, only makes the core time out.
+
+diff --git a/src/av1.c b/src/av1.c
+new file mode 100644
+index 0000000..963ca4b
+--- /dev/null
++++ b/src/av1.c
+@@ -0,0 +1,498 @@
++/*
++ * Copyright (C) 2026 Christopher Stenger
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++ * DEALINGS IN THE SOFTWARE.
++ */
++
++
++#include "av1.h"
++#include "context.h"
++#include "request.h"
++#include "surface.h"
++#include "utils.h"
++
++#include <string.h>
++
++#include <linux/videodev2.h>
++
++#include "v4l2.h"
++
++/*
++ * AV1 through VA-API to a V4L2 stateless decoder.
++ *
++ * Unlike VP9, VA-API's AV1 picture parameters carry nearly the whole frame
++ * header, and ffmpeg sends only the tile data, so there is nothing to parse:
++ * this is a translation. The gaps are the things a hardware decoder with its
++ * own DPB does not need told and a V4L2 one does:
++ *
++ *  - the order hint of every reference, which the V4L2 driver uses for motion
++ *    field projection and skip mode. Each surface remembers the order hint it
++ *    was decoded with, and VA-API names the surface in every slot;
++ *  - skip_mode_frame[], derived here from those order hints exactly as the
++ *    specification's skip_mode_params() does;
++ *  - tile_size_bytes, which VA-API does not pass, recovered from the gap a
++ *    tile's size field leaves between two tiles of one tile group;
++ *  - refresh_frame_flags, which VA-API does not pass either. The kernel
++ *    driver this was written for keeps no state per slot -- it finds every
++ *    reference, CDFs included, by the timestamp of the surface in the slot --
++ *    so it is sent as 0.
++ */
++
++#define AV1_PRIMARY_REF_NONE	7
++
++static uint64_t av1_surface_ts(struct request_data *driver_data, VASurfaceID id)
++{
++	struct object_surface *surface = SURFACE(driver_data, id);
++
++	return surface ? v4l2_timeval_to_ns(&surface->timestamp) : 0;
++}
++
++static int av1_relative_dist(unsigned int bits, int a, int b)
++{
++	int diff, m;
++
++	if (!bits)
++		return 0;
++	diff = a - b;
++	m = 1 << (bits - 1);
++	return (diff & (m - 1)) - (diff & m);
++}
++
++/* 5.9.22 skip_mode_params() */
++static void av1_skip_mode(const struct v4l2_ctrl_av1_frame *frame,
++			  unsigned int bits, uint8_t skip[2])
++{
++	int fwd = -1, bwd = -1, fwd2 = -1, fwd_hint = 0, bwd_hint = 0, fwd2_hint = 0;
++	int i, hint;
++
++	skip[0] = skip[1] = 0;
++	for (i = 0; i < V4L2_AV1_REFS_PER_FRAME; i++) {
++		hint = frame->order_hints[V4L2_AV1_REF_LAST_FRAME + i];
++		if (av1_relative_dist(bits, hint, frame->order_hint) < 0) {
++			if (fwd < 0 || av1_relative_dist(bits, hint, fwd_hint) > 0) {
++				fwd = i;
++				fwd_hint = hint;
++			}
++		} else if (av1_relative_dist(bits, hint, frame->order_hint) > 0) {
++			if (bwd < 0 || av1_relative_dist(bits, hint, bwd_hint) < 0) {
++				bwd = i;
++				bwd_hint = hint;
++			}
++		}
++	}
++	if (fwd < 0)
++		return;
++	if (bwd >= 0) {
++		skip[0] = V4L2_AV1_REF_LAST_FRAME + (fwd < bwd ? fwd : bwd);
++		skip[1] = V4L2_AV1_REF_LAST_FRAME + (fwd < bwd ? bwd : fwd);
++		return;
++	}
++	for (i = 0; i < V4L2_AV1_REFS_PER_FRAME; i++) {
++		hint = frame->order_hints[V4L2_AV1_REF_LAST_FRAME + i];
++		if (av1_relative_dist(bits, hint, fwd_hint) < 0 &&
++		    (fwd2 < 0 || av1_relative_dist(bits, hint, fwd2_hint) > 0)) {
++			fwd2 = i;
++			fwd2_hint = hint;
++		}
++	}
++	if (fwd2 < 0)
++		return;
++	skip[0] = V4L2_AV1_REF_LAST_FRAME + (fwd < fwd2 ? fwd : fwd2);
++	skip[1] = V4L2_AV1_REF_LAST_FRAME + (fwd < fwd2 ? fwd2 : fwd);
++}
++
++/*
++ * The tiles of one slice-parameter buffer (one tile group), placed after the
++ * data already stored: ffmpeg renders a tile group's parameters before its
++ * data, so slices_size is where that data is about to go.
++ */
++void av1_store_tiles(struct object_surface *surface_object,
++		     const VASliceParameterBufferAV1 *slices, unsigned int count)
++{
++	struct av1_params *p = &surface_object->params.av1;
++	unsigned int base = surface_object->slices_size + AV1_DATA_PAD;
++	unsigned int i;
++
++	/* the pad goes in with the first data; see av1_data_prefix() */
++	if (surface_object->slices_count)
++		base -= AV1_DATA_PAD;
++
++	for (i = 0; i < count && p->tiles_count < AV1_MAX_TILES; i++) {
++		struct v4l2_ctrl_av1_tile_group_entry *t = &p->tiles[p->tiles_count++];
++
++		t->tile_offset = base + slices[i].slice_data_offset;
++		t->tile_size = slices[i].slice_data_size;
++		t->tile_row = slices[i].tile_row;
++		t->tile_col = slices[i].tile_column;
++	}
++	if (i < count)
++		p->tiles_overflow = true;
++}
++
++/*
++ * Room in front of the first tile group. With several tiles the kernel
++ * driver points the core at tile 0's size field, tile_size_bytes before the
++ * tile; when tile 0 is alone in its group it has no size field, and that
++ * address would fall before the buffer.
++ */
++unsigned int av1_data_prefix(struct object_surface *surface_object)
++{
++	return surface_object->slices_count ? 0 : AV1_DATA_PAD;
++}
++
++static unsigned int av1_tile_size_bytes(const struct av1_params *p)
++{
++	unsigned int i;
++
++	for (i = 0; i + 1 < p->tiles_count; i++) {
++		unsigned int end = p->tiles[i].tile_offset + p->tiles[i].tile_size;
++		unsigned int gap = p->tiles[i + 1].tile_offset - end;
++
++		if (p->tiles[i + 1].tile_offset > end && gap <= 4)
++			return gap;
++	}
++	return 4;
++}
++
++int av1_set_controls(struct request_data *driver_data,
++		     struct object_context *context_object,
++		     struct object_surface *surface_object)
++{
++	struct av1_params *p = &surface_object->params.av1;
++	const VADecPictureParameterBufferAV1 *pic = &p->picture;
++	const VAFilmGrainStructAV1 *fg = &pic->film_grain_info;
++	struct v4l2_ctrl_av1_sequence seq;
++	struct v4l2_ctrl_av1_frame frame;
++	struct v4l2_ctrl_av1_film_grain grain;
++	struct v4l2_ext_control controls[4];
++	struct object_surface *ref;
++	unsigned int bits, i, j, n = 0;
++	int rc;
++
++	/*
++	 * After a failed frame, nothing until the next key frame. Everything
++	 * in between predicts from the failure, so it could only be garbage --
++	 * and worse: ffmpeg abandons the rest of a temporal unit once one frame
++	 * in it fails, but has already parsed the whole unit, so its idea of
++	 * the reference state (order hints, and with them skip mode and every
++	 * header field parsed conditionally on it) no longer matches the frames
++	 * that were decoded. Headers read that way are nonsense to the core, and
++	 * on the H713 one of them hung the SoC outright. Refuse instead; ffmpeg
++	 * treats it as another decode error.
++	 */
++	if (pic->pic_info_fields.bits.frame_type == 0)
++		context_object->av1_broken = false;
++	else if (context_object->av1_broken) {
++		request_log("AV1: skipping a frame until the next key frame\n");
++		return -1;
++	}
++
++	if (p->tiles_overflow || !p->tiles_count) {
++		request_log("AV1: %s tiles\n", p->tiles_count ? "too many" : "no");
++		return -1;
++	}
++
++	/* ---- the sequence ---- */
++	memset(&seq, 0, sizeof(seq));
++	seq.seq_profile = pic->profile;
++	seq.bit_depth = pic->bit_depth_idx == 0 ? 8 : pic->bit_depth_idx == 1 ? 10 : 12;
++	bits = pic->seq_info_fields.fields.enable_order_hint ?
++	       pic->order_hint_bits_minus_1 + 1 : 0;
++	seq.order_hint_bits = bits;
++	seq.max_frame_width_minus_1 = context_object->picture_width - 1;
++	seq.max_frame_height_minus_1 = context_object->picture_height - 1;
++#define SEQ(field, flag) \
++	if (pic->seq_info_fields.fields.field) seq.flags |= V4L2_AV1_SEQUENCE_FLAG_##flag
++	SEQ(still_picture, STILL_PICTURE);
++	SEQ(use_128x128_superblock, USE_128X128_SUPERBLOCK);
++	SEQ(enable_filter_intra, ENABLE_FILTER_INTRA);
++	SEQ(enable_intra_edge_filter, ENABLE_INTRA_EDGE_FILTER);
++	SEQ(enable_interintra_compound, ENABLE_INTERINTRA_COMPOUND);
++	SEQ(enable_masked_compound, ENABLE_MASKED_COMPOUND);
++	SEQ(enable_dual_filter, ENABLE_DUAL_FILTER);
++	SEQ(enable_order_hint, ENABLE_ORDER_HINT);
++	SEQ(enable_jnt_comp, ENABLE_JNT_COMP);
++	SEQ(enable_cdef, ENABLE_CDEF);
++	SEQ(mono_chrome, MONO_CHROME);
++	SEQ(color_range, COLOR_RANGE);
++	SEQ(subsampling_x, SUBSAMPLING_X);
++	SEQ(subsampling_y, SUBSAMPLING_Y);
++	SEQ(film_grain_params_present, FILM_GRAIN_PARAMS_PRESENT);
++#undef SEQ
++	/* not in VA-API; a frame can only use a tool its sequence enables */
++	seq.flags |= V4L2_AV1_SEQUENCE_FLAG_ENABLE_WARPED_MOTION |
++		     V4L2_AV1_SEQUENCE_FLAG_ENABLE_SUPERRES |
++		     V4L2_AV1_SEQUENCE_FLAG_ENABLE_RESTORATION |
++		     V4L2_AV1_SEQUENCE_FLAG_ENABLE_REF_FRAME_MVS;
++
++	/* ---- the frame ---- */
++	memset(&frame, 0, sizeof(frame));
++
++	frame.tile_info.tile_cols = pic->tile_cols;
++	frame.tile_info.tile_rows = pic->tile_rows;
++	frame.tile_info.context_update_tile_id = pic->context_update_tile_id;
++	if (pic->pic_info_fields.bits.uniform_tile_spacing_flag)
++		frame.tile_info.flags |= V4L2_AV1_TILE_INFO_FLAG_UNIFORM_TILE_SPACING;
++	for (i = 0; i < pic->tile_cols && i < 63; i++) {
++		frame.tile_info.width_in_sbs_minus_1[i] = pic->width_in_sbs_minus_1[i];
++		frame.tile_info.mi_col_starts[i + 1] = frame.tile_info.mi_col_starts[i] +
++			((pic->width_in_sbs_minus_1[i] + 1) <<
++			 (pic->seq_info_fields.fields.use_128x128_superblock ? 5 : 4));
++	}
++	for (i = 0; i < pic->tile_rows && i < 63; i++) {
++		frame.tile_info.height_in_sbs_minus_1[i] = pic->height_in_sbs_minus_1[i];
++		frame.tile_info.mi_row_starts[i + 1] = frame.tile_info.mi_row_starts[i] +
++			((pic->height_in_sbs_minus_1[i] + 1) <<
++			 (pic->seq_info_fields.fields.use_128x128_superblock ? 5 : 4));
++	}
++	frame.tile_info.tile_size_bytes = av1_tile_size_bytes(p);
++
++	frame.quantization.base_q_idx = pic->base_qindex;
++	frame.quantization.delta_q_y_dc = pic->y_dc_delta_q;
++	frame.quantization.delta_q_u_dc = pic->u_dc_delta_q;
++	frame.quantization.delta_q_u_ac = pic->u_ac_delta_q;
++	frame.quantization.delta_q_v_dc = pic->v_dc_delta_q;
++	frame.quantization.delta_q_v_ac = pic->v_ac_delta_q;
++	frame.quantization.qm_y = pic->qmatrix_fields.bits.qm_y;
++	frame.quantization.qm_u = pic->qmatrix_fields.bits.qm_u;
++	frame.quantization.qm_v = pic->qmatrix_fields.bits.qm_v;
++	frame.quantization.delta_q_res = pic->mode_control_fields.bits.log2_delta_q_res;
++	if (pic->u_dc_delta_q != pic->v_dc_delta_q || pic->u_ac_delta_q != pic->v_ac_delta_q)
++		frame.quantization.flags |= V4L2_AV1_QUANTIZATION_FLAG_DIFF_UV_DELTA;
++	if (pic->qmatrix_fields.bits.using_qmatrix)
++		frame.quantization.flags |= V4L2_AV1_QUANTIZATION_FLAG_USING_QMATRIX;
++	if (pic->mode_control_fields.bits.delta_q_present_flag)
++		frame.quantization.flags |= V4L2_AV1_QUANTIZATION_FLAG_DELTA_Q_PRESENT;
++
++	frame.superres_denom = pic->superres_scale_denominator;
++
++	if (pic->seg_info.segment_info_fields.bits.enabled)
++		frame.segmentation.flags |= V4L2_AV1_SEGMENTATION_FLAG_ENABLED;
++	if (pic->seg_info.segment_info_fields.bits.update_map)
++		frame.segmentation.flags |= V4L2_AV1_SEGMENTATION_FLAG_UPDATE_MAP;
++	if (pic->seg_info.segment_info_fields.bits.temporal_update)
++		frame.segmentation.flags |= V4L2_AV1_SEGMENTATION_FLAG_TEMPORAL_UPDATE;
++	if (pic->seg_info.segment_info_fields.bits.update_data)
++		frame.segmentation.flags |= V4L2_AV1_SEGMENTATION_FLAG_UPDATE_DATA;
++	for (i = 0; i < 8; i++) {
++		frame.segmentation.feature_enabled[i] = pic->seg_info.feature_mask[i];
++		for (j = 0; j < 8; j++) {
++			frame.segmentation.feature_data[i][j] = pic->seg_info.feature_data[i][j];
++			if (pic->seg_info.feature_mask[i] & (1 << j)) {
++				frame.segmentation.last_active_seg_id = i;
++				if (j >= V4L2_AV1_SEG_LVL_REF_FRAME)
++					frame.segmentation.flags |=
++						V4L2_AV1_SEGMENTATION_FLAG_SEG_ID_PRE_SKIP;
++			}
++		}
++	}
++
++	frame.loop_filter.level[0] = pic->filter_level[0];
++	frame.loop_filter.level[1] = pic->filter_level[1];
++	frame.loop_filter.level[2] = pic->filter_level_u;
++	frame.loop_filter.level[3] = pic->filter_level_v;
++	frame.loop_filter.sharpness = pic->loop_filter_info_fields.bits.sharpness_level;
++	memcpy(frame.loop_filter.ref_deltas, pic->ref_deltas, sizeof(frame.loop_filter.ref_deltas));
++	memcpy(frame.loop_filter.mode_deltas, pic->mode_deltas, sizeof(frame.loop_filter.mode_deltas));
++	frame.loop_filter.delta_lf_res = pic->mode_control_fields.bits.log2_delta_lf_res;
++	if (pic->loop_filter_info_fields.bits.mode_ref_delta_enabled)
++		frame.loop_filter.flags |= V4L2_AV1_LOOP_FILTER_FLAG_DELTA_ENABLED;
++	if (pic->loop_filter_info_fields.bits.mode_ref_delta_update)
++		frame.loop_filter.flags |= V4L2_AV1_LOOP_FILTER_FLAG_DELTA_UPDATE;
++	if (pic->mode_control_fields.bits.delta_lf_present_flag)
++		frame.loop_filter.flags |= V4L2_AV1_LOOP_FILTER_FLAG_DELTA_LF_PRESENT;
++	if (pic->mode_control_fields.bits.delta_lf_multi)
++		frame.loop_filter.flags |= V4L2_AV1_LOOP_FILTER_FLAG_DELTA_LF_MULTI;
++
++	/* VA-API packs each strength as primary << 2 | the CODED secondary */
++	frame.cdef.damping_minus_3 = pic->cdef_damping_minus_3;
++	frame.cdef.bits = pic->cdef_bits;
++	for (i = 0; i < 8; i++) {
++		frame.cdef.y_pri_strength[i] = pic->cdef_y_strengths[i] >> 2;
++		frame.cdef.y_sec_strength[i] = pic->cdef_y_strengths[i] & 3;
++		frame.cdef.uv_pri_strength[i] = pic->cdef_uv_strengths[i] >> 2;
++		frame.cdef.uv_sec_strength[i] = pic->cdef_uv_strengths[i] & 3;
++		if (frame.cdef.y_sec_strength[i] == 3)
++			frame.cdef.y_sec_strength[i] = 4;
++		if (frame.cdef.uv_sec_strength[i] == 3)
++			frame.cdef.uv_sec_strength[i] = 4;
++	}
++
++	frame.loop_restoration.frame_restoration_type[0] =
++		pic->loop_restoration_fields.bits.yframe_restoration_type;
++	frame.loop_restoration.frame_restoration_type[1] =
++		pic->loop_restoration_fields.bits.cbframe_restoration_type;
++	frame.loop_restoration.frame_restoration_type[2] =
++		pic->loop_restoration_fields.bits.crframe_restoration_type;
++	frame.loop_restoration.lr_unit_shift = pic->loop_restoration_fields.bits.lr_unit_shift;
++	frame.loop_restoration.lr_uv_shift = pic->loop_restoration_fields.bits.lr_uv_shift;
++	for (i = 0; i < 3; i++)
++		if (frame.loop_restoration.frame_restoration_type[i]) {
++			frame.loop_restoration.flags |= V4L2_AV1_LOOP_RESTORATION_FLAG_USES_LR;
++			if (i)
++				frame.loop_restoration.flags |=
++					V4L2_AV1_LOOP_RESTORATION_FLAG_USES_CHROMA_LR;
++		}
++
++	for (i = 0; i < 7; i++) {
++		const VAWarpedMotionParamsAV1 *wm = &pic->wm[i];
++
++		frame.global_motion.type[V4L2_AV1_REF_LAST_FRAME + i] = wm->wmtype;
++		for (j = 0; j < 6; j++)
++			frame.global_motion.params[V4L2_AV1_REF_LAST_FRAME + i][j] = wm->wmmat[j];
++		if (wm->wmtype != VAAV1TransformationIdentity)
++			frame.global_motion.flags[V4L2_AV1_REF_LAST_FRAME + i] |=
++				V4L2_AV1_GLOBAL_MOTION_FLAG_IS_GLOBAL;
++		if (wm->wmtype == VAAV1TransformationRotzoom)
++			frame.global_motion.flags[V4L2_AV1_REF_LAST_FRAME + i] |=
++				V4L2_AV1_GLOBAL_MOTION_FLAG_IS_ROT_ZOOM;
++		if (wm->wmtype == VAAV1TransformationTranslation)
++			frame.global_motion.flags[V4L2_AV1_REF_LAST_FRAME + i] |=
++				V4L2_AV1_GLOBAL_MOTION_FLAG_IS_TRANSLATION;
++		if (wm->invalid)
++			frame.global_motion.invalid |=
++				V4L2_AV1_GLOBAL_MOTION_IS_INVALID(V4L2_AV1_REF_LAST_FRAME + i);
++	}
++
++#define FLAG(field, flag) \
++	if (pic->pic_info_fields.bits.field) frame.flags |= V4L2_AV1_FRAME_FLAG_##flag
++	FLAG(show_frame, SHOW_FRAME);
++	FLAG(showable_frame, SHOWABLE_FRAME);
++	FLAG(error_resilient_mode, ERROR_RESILIENT_MODE);
++	FLAG(disable_cdf_update, DISABLE_CDF_UPDATE);
++	FLAG(allow_screen_content_tools, ALLOW_SCREEN_CONTENT_TOOLS);
++	FLAG(force_integer_mv, FORCE_INTEGER_MV);
++	FLAG(allow_intrabc, ALLOW_INTRABC);
++	FLAG(use_superres, USE_SUPERRES);
++	FLAG(allow_high_precision_mv, ALLOW_HIGH_PRECISION_MV);
++	FLAG(is_motion_mode_switchable, IS_MOTION_MODE_SWITCHABLE);
++	FLAG(use_ref_frame_mvs, USE_REF_FRAME_MVS);
++	FLAG(disable_frame_end_update_cdf, DISABLE_FRAME_END_UPDATE_CDF);
++	FLAG(allow_warped_motion, ALLOW_WARPED_MOTION);
++#undef FLAG
++	if (pic->mode_control_fields.bits.reference_select)
++		frame.flags |= V4L2_AV1_FRAME_FLAG_REFERENCE_SELECT;
++	if (pic->mode_control_fields.bits.reduced_tx_set_used)
++		frame.flags |= V4L2_AV1_FRAME_FLAG_REDUCED_TX_SET;
++	if (pic->mode_control_fields.bits.skip_mode_present)
++		frame.flags |= V4L2_AV1_FRAME_FLAG_SKIP_MODE_PRESENT |
++			       V4L2_AV1_FRAME_FLAG_SKIP_MODE_ALLOWED;
++
++	frame.frame_type = pic->pic_info_fields.bits.frame_type;
++	frame.order_hint = pic->order_hint;
++	frame.primary_ref_frame = pic->primary_ref_frame;
++	frame.interpolation_filter = pic->interp_filter;
++	frame.tx_mode = pic->mode_control_fields.bits.tx_mode;
++
++	/*
++	 * VA-API's frame width is the coded one, which with superres is the
++	 * UPSCALED width; the frame is decoded at the downscaled width the
++	 * specification derives from it (7.21 / superres_params()).
++	 */
++	frame.upscaled_width = pic->frame_width_minus1 + 1;
++	frame.frame_width_minus_1 = pic->frame_width_minus1;
++	if (pic->pic_info_fields.bits.use_superres && pic->superres_scale_denominator) {
++		unsigned int denom = pic->superres_scale_denominator;
++		unsigned int w = (frame.upscaled_width * 8 + denom / 2) / denom;
++
++		frame.frame_width_minus_1 = (w < 16 ? 16 : w) - 1;
++	}
++	frame.frame_height_minus_1 = pic->frame_height_minus1;
++	frame.render_width_minus_1 = frame.upscaled_width - 1;
++	frame.render_height_minus_1 = pic->frame_height_minus1;
++
++	for (i = 0; i < 8; i++)
++		frame.reference_frame_ts[i] = av1_surface_ts(driver_data, pic->ref_frame_map[i]);
++	for (i = 0; i < 7; i++) {
++		frame.ref_frame_idx[i] = pic->ref_frame_idx[i];
++		ref = SURFACE(driver_data, pic->ref_frame_map[pic->ref_frame_idx[i] & 7]);
++		if (ref != NULL && ref->av1_decoded)
++			frame.order_hints[V4L2_AV1_REF_LAST_FRAME + i] = ref->av1_order_hint;
++	}
++	if (frame.frame_type != V4L2_AV1_KEY_FRAME &&
++	    frame.frame_type != V4L2_AV1_INTRA_ONLY_FRAME &&
++	    pic->mode_control_fields.bits.skip_mode_present)
++		av1_skip_mode(&frame, bits, frame.skip_mode_frame);
++
++	/* what a later frame referencing this surface will need */
++	surface_object->av1_order_hint = pic->order_hint;
++	surface_object->av1_decoded = true;
++
++	/* ---- film grain ---- */
++	memset(&grain, 0, sizeof(grain));
++	if (fg->film_grain_info_fields.bits.apply_grain) {
++		grain.flags = V4L2_AV1_FILM_GRAIN_FLAG_APPLY_GRAIN |
++			      V4L2_AV1_FILM_GRAIN_FLAG_UPDATE_GRAIN;
++		if (fg->film_grain_info_fields.bits.chroma_scaling_from_luma)
++			grain.flags |= V4L2_AV1_FILM_GRAIN_FLAG_CHROMA_SCALING_FROM_LUMA;
++		if (fg->film_grain_info_fields.bits.overlap_flag)
++			grain.flags |= V4L2_AV1_FILM_GRAIN_FLAG_OVERLAP;
++		if (fg->film_grain_info_fields.bits.clip_to_restricted_range)
++			grain.flags |= V4L2_AV1_FILM_GRAIN_FLAG_CLIP_TO_RESTRICTED_RANGE;
++		grain.grain_seed = fg->grain_seed;
++		grain.num_y_points = fg->num_y_points;
++		memcpy(grain.point_y_value, fg->point_y_value, sizeof(fg->point_y_value));
++		memcpy(grain.point_y_scaling, fg->point_y_scaling, sizeof(fg->point_y_scaling));
++		grain.num_cb_points = fg->num_cb_points;
++		memcpy(grain.point_cb_value, fg->point_cb_value, sizeof(fg->point_cb_value));
++		memcpy(grain.point_cb_scaling, fg->point_cb_scaling, sizeof(fg->point_cb_scaling));
++		grain.num_cr_points = fg->num_cr_points;
++		memcpy(grain.point_cr_value, fg->point_cr_value, sizeof(fg->point_cr_value));
++		memcpy(grain.point_cr_scaling, fg->point_cr_scaling, sizeof(fg->point_cr_scaling));
++		grain.grain_scaling_minus_8 = fg->film_grain_info_fields.bits.grain_scaling_minus_8;
++		grain.ar_coeff_lag = fg->film_grain_info_fields.bits.ar_coeff_lag;
++		for (i = 0; i < 24; i++)
++			grain.ar_coeffs_y_plus_128[i] = fg->ar_coeffs_y[i] + 128;
++		for (i = 0; i < 25; i++) {
++			grain.ar_coeffs_cb_plus_128[i] = fg->ar_coeffs_cb[i] + 128;
++			grain.ar_coeffs_cr_plus_128[i] = fg->ar_coeffs_cr[i] + 128;
++		}
++		grain.ar_coeff_shift_minus_6 = fg->film_grain_info_fields.bits.ar_coeff_shift_minus_6;
++		grain.grain_scale_shift = fg->film_grain_info_fields.bits.grain_scale_shift;
++		grain.cb_mult = fg->cb_mult;
++		grain.cb_luma_mult = fg->cb_luma_mult;
++		grain.cb_offset = fg->cb_offset;
++		grain.cr_mult = fg->cr_mult;
++		grain.cr_luma_mult = fg->cr_luma_mult;
++		grain.cr_offset = fg->cr_offset;
++	}
++
++	memset(controls, 0, sizeof(controls));
++	controls[n].id = V4L2_CID_STATELESS_AV1_SEQUENCE;
++	controls[n].ptr = &seq;
++	controls[n++].size = sizeof(seq);
++	controls[n].id = V4L2_CID_STATELESS_AV1_FRAME;
++	controls[n].ptr = &frame;
++	controls[n++].size = sizeof(frame);
++	controls[n].id = V4L2_CID_STATELESS_AV1_TILE_GROUP_ENTRY;
++	controls[n].ptr = p->tiles;
++	controls[n++].size = p->tiles_count * sizeof(p->tiles[0]);
++	if (seq.flags & V4L2_AV1_SEQUENCE_FLAG_FILM_GRAIN_PARAMS_PRESENT) {
++		controls[n].id = V4L2_CID_STATELESS_AV1_FILM_GRAIN;
++		controls[n].ptr = &grain;
++		controls[n++].size = sizeof(grain);
++	}
++
++	rc = v4l2_set_controls(driver_data->video_fd, surface_object->request_fd,
++			       controls, n);
++	if (rc < 0)
++		return -1;
++
++	return 0;
++}
+diff --git a/src/av1.h b/src/av1.h
+new file mode 100644
+index 0000000..de0fddc
+--- /dev/null
++++ b/src/av1.h
+@@ -0,0 +1,57 @@
++/*
++ * Copyright (C) 2026 Christopher Stenger
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++ * DEALINGS IN THE SOFTWARE.
++ */
++
++
++#ifndef _AV1_H_
++#define _AV1_H_
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#include <va/va.h>
++#include <va/va_dec_av1.h>
++#include <linux/videodev2.h>
++
++struct object_context;
++struct object_surface;
++struct request_data;
++
++/* The most tiles the kernel driver takes in one frame (its tile buffer). */
++#define AV1_MAX_TILES	128
++/* Zero bytes ahead of the tile data; see av1_data_prefix(). */
++#define AV1_DATA_PAD	4
++
++struct av1_params {
++	VADecPictureParameterBufferAV1 picture;
++	struct v4l2_ctrl_av1_tile_group_entry tiles[AV1_MAX_TILES];
++	unsigned int tiles_count;
++	bool tiles_overflow;
++};
++
++void av1_store_tiles(struct object_surface *surface_object,
++		     const VASliceParameterBufferAV1 *slices, unsigned int count);
++unsigned int av1_data_prefix(struct object_surface *surface_object);
++int av1_set_controls(struct request_data *driver_data,
++		     struct object_context *context_object,
++		     struct object_surface *surface_object);
++
++#endif
+diff --git a/src/config.c b/src/config.c
+index 4aee784..dbf98ec 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -80,6 +80,10 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 		driver_data->coded_pixelformat = V4L2_PIX_FMT_VP9_FRAME;
+ 		driver_data->coded_bit_depth = 8;
+ 		break;
++	case VAProfileAV1Profile0:
++		driver_data->coded_pixelformat = V4L2_PIX_FMT_AV1_FRAME;
++		driver_data->coded_bit_depth = 8;
++		break;
+ 	default:
+ 		return VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
+ 	}
+@@ -187,6 +191,10 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 1))
+ 		profiles[index++] = VAProfileVP9Profile0;
+ 
++	found = request_find_device(driver_data, V4L2_PIX_FMT_AV1_FRAME) >= 0;
++	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 1))
++		profiles[index++] = VAProfileAV1Profile0;
++
+ 	*profiles_count = index;
+ 
+ 	return VA_STATUS_SUCCESS;
+@@ -209,6 +217,7 @@ VAStatus RequestQueryConfigEntrypoints(VADriverContextP context,
+ 	case VAProfileHEVCMain10:
+ 	case VAProfileVP8Version0_3:
+ 	case VAProfileVP9Profile0:
++	case VAProfileAV1Profile0:
+ 		entrypoints[0] = VAEntrypointVLD;
+ 		*entrypoints_count = 1;
+ 		break;
+diff --git a/src/context.c b/src/context.c
+index 2dfec3e..94165f7 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -108,6 +108,7 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 	/* MPEG-2 matrices persist across pictures; start them at the spec defaults. */
+ 	mpeg2_init_quantisation(context_object);
+ 	memset(&context_object->vp9, 0, sizeof(context_object->vp9));
++	context_object->av1_broken = false;
+ 
+ 
+ 	/*
+diff --git a/src/context.h b/src/context.h
+index 236a7a8..26a9faf 100644
+--- a/src/context.h
++++ b/src/context.h
+@@ -66,6 +66,12 @@ struct object_context {
+ 
+ 	/* VP9 only: what one frame header leaves in force for the next. */
+ 	struct vp9_state vp9;
++
++	/*
++	 * AV1 only: a frame failed to decode, and no key frame has come since.
++	 * See av1_set_controls().
++	 */
++	bool av1_broken;
+ };
+ 
+ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+diff --git a/src/meson.build b/src/meson.build
+index 494c829..a52fe02 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -45,6 +45,7 @@ sources = [
+ 	'mpeg2.c',
+ 	'vp8.c',
+ 	'vp9.c',
++	'av1.c',
+ 	'h264.c',
+ 	'h265.c'
+ ]
+@@ -67,6 +68,7 @@ headers = [
+ 	'mpeg2.h',
+ 	'vp8.h',
+ 	'vp9.h',
++	'av1.h',
+ 	'h264.h',
+ 	'h265.h'
+ ]
+diff --git a/src/picture.c b/src/picture.c
+index 9e95a79..3d6dc5c 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -36,6 +36,7 @@
+ #include "mpeg2.h"
+ #include "vp8.h"
+ #include "vp9.h"
++#include "av1.h"
+ 
+ #include <assert.h>
+ #include <string.h>
+@@ -84,6 +85,14 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 		 * parameters before the slice data -- so the frame type and
+ 		 * partition size needed to build it are known here.
+ 		 */
++		/* AV1: room ahead of the first tile group, see av1.c */
++		if (profile == VAProfileAV1Profile0) {
++			unsigned int prefix = av1_data_prefix(surface_object);
++
++			memset(surface_object->source_data +
++			       surface_object->slices_size, 0, prefix);
++			surface_object->slices_size += prefix;
++		}
+ 		if (profile == VAProfileVP8Version0_3) {
+ 			unsigned int prefix = vp8_prefix_size(surface_object);
+ 
+@@ -139,6 +148,14 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			       sizeof(surface_object->params.vp9.picture));
+ 			break;
+ 
++		case VAProfileAV1Profile0:
++			memcpy(&surface_object->params.av1.picture,
++			       buffer_object->data,
++			       sizeof(surface_object->params.av1.picture));
++			surface_object->params.av1.tiles_count = 0;
++			surface_object->params.av1.tiles_overflow = false;
++			break;
++
+ 		default:
+ 			break;
+ 		}
+@@ -175,6 +192,12 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			       sizeof(surface_object->params.vp9.slice));
+ 			break;
+ 
++		/* one element per tile, a buffer per tile group */
++		case VAProfileAV1Profile0:
++			av1_store_tiles(surface_object, buffer_object->data,
++					buffer_object->count);
++			break;
++
+ 		default:
+ 			break;
+ 		}
+@@ -275,6 +298,12 @@ static VAStatus codec_set_controls(struct request_data *driver_data,
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
+ 		break;
+ 
++	case VAProfileAV1Profile0:
++		rc = av1_set_controls(driver_data, context, surface_object);
++		if (rc < 0)
++			return VA_STATUS_ERROR_OPERATION_FAILED;
++		break;
++
+ 	case VAProfileHEVCMain:
+ 	case VAProfileHEVCMain10:
+ 		rc = h265_set_controls(driver_data, context, surface_object);
+@@ -359,6 +388,7 @@ VAStatus RequestEndPicture(VADriverContextP context, VAContextID context_id)
+ 	struct object_context *context_object;
+ 	struct object_config *config_object;
+ 	struct object_surface *surface_object;
++	struct object_surface *capture_surface;
+ 	struct video_format *video_format;
+ 	unsigned int output_type, capture_type;
+ 	int request_fd;
+@@ -400,12 +430,41 @@ VAStatus RequestEndPicture(VADriverContextP context, VAContextID context_id)
+ 
+ 	rc = codec_set_controls(driver_data, context_object,
+ 				config_object->profile, surface_object);
+-	if (rc != VA_STATUS_SUCCESS)
++	if (rc != VA_STATUS_SUCCESS) {
++		/*
++		 * Refused before anything was queued: the surface was never
++		 * rendered, so it must not be left waiting for a request that
++		 * will never complete.
++		 */
++		surface_object->status = VASurfaceReady;
++		surface_object->slices_size = 0;
++		context_object->render_surface_id = VA_INVALID_ID;
+ 		return rc;
++	}
++
++	/*
++	 * AV1 with film grain: ffmpeg decodes into one surface, which later
++	 * frames reference, and shows another, current_display_picture. The
++	 * kernel keeps its references privately and writes only the displayed
++	 * (grained) picture, so that is the CAPTURE buffer to queue.
++	 */
++	capture_surface = surface_object;
++	surface_object->capture_surface_id = VA_INVALID_ID;
++	if (config_object->profile == VAProfileAV1Profile0) {
++		VASurfaceID display =
++			surface_object->params.av1.picture.current_display_picture;
++
++		if (display != VA_INVALID_ID &&
++		    display != context_object->render_surface_id &&
++		    SURFACE(driver_data, display) != NULL) {
++			capture_surface = SURFACE(driver_data, display);
++			surface_object->capture_surface_id = display;
++		}
++	}
+ 
+ 	rc = v4l2_queue_buffer(driver_data->video_fd, -1, capture_type, NULL,
+-			       surface_object->destination_index, 0,
+-			       surface_object->destination_buffers_count);
++			       capture_surface->destination_index, 0,
++			       capture_surface->destination_buffers_count);
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+@@ -431,6 +490,10 @@ VAStatus RequestEndPicture(VADriverContextP context, VAContextID context_id)
+ 	    status != VA_STATUS_ERROR_DECODING_ERROR)
+ 		return status;
+ 
++	if (status == VA_STATUS_ERROR_DECODING_ERROR &&
++	    config_object->profile == VAProfileAV1Profile0)
++		context_object->av1_broken = true;
++
+ 	context_object->render_surface_id = VA_INVALID_ID;
+ 
+ 	return status;
+diff --git a/src/request.c b/src/request.c
+index 93d8c78..67cda4d 100644
+--- a/src/request.c
++++ b/src/request.c
+@@ -332,6 +332,8 @@ static void request_probe_devices(struct request_data *driver_data)
+ 
+ 		driver_data->devices[driver_data->devices_count].video_fd = video_fd;
+ 		driver_data->devices[driver_data->devices_count].media_fd = media_fd;
++		driver_data->devices[driver_data->devices_count].mplane =
++			capabilities & V4L2_CAP_VIDEO_M2M_MPLANE;
+ 		driver_data->devices_count++;
+ 	}
+ 
+@@ -466,6 +468,7 @@ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context)
+ 
+ 	driver_data->devices[0].video_fd = video_fd;
+ 	driver_data->devices[0].media_fd = media_fd;
++	driver_data->devices[0].mplane = capabilities & V4L2_CAP_VIDEO_M2M_MPLANE;
+ 	driver_data->devices_count = 1;
+ 	driver_data->device = 0;
+ 	driver_data->config_device = 0;
+diff --git a/src/request.h b/src/request.h
+index 559c0bf..9ddf9e3 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -62,6 +62,8 @@ struct request_device {
+ 	unsigned int configured_pixelformat;
+ 	unsigned int configured_width;
+ 	unsigned int configured_height;
++	/* the device speaks the multi-planar API (hantro does, cedrus not) */
++	bool mplane;
+ };
+ 
+ struct request_data {
+diff --git a/src/surface.c b/src/surface.c
+index 8b9559f..fc28ef5 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -25,6 +25,7 @@
+  */
+ 
+ #include "request.h"
++#include "config.h"
+ #include "surface.h"
+ 
+ #include <assert.h>
+@@ -127,11 +128,14 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	 * logical dimensions.
+ 	 */
+ 	unsigned int pixelformat = driver_data->coded_pixelformat;
+-	unsigned int output_type = v4l2_type_video_output(false);
++	unsigned int output_type;
+ 	struct object_context *context_object;
++	bool mplane;
+ 
+ 	/* Surfaces belong to the decoder the current config chose. */
+ 	request_use_device(driver_data, driver_data->config_device);
++	mplane = driver_data->devices[driver_data->device].mplane;
++	output_type = v4l2_type_video_output(mplane);
+ 
+ 	context_active = false;
+ 	context_object = (struct object_context *)
+@@ -171,16 +175,18 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 
+         if (!driver_data->video_format) {
+ 		found = v4l2_find_format(driver_data->video_fd,
+-					 V4L2_BUF_TYPE_VIDEO_CAPTURE,
++					 v4l2_type_video_capture(mplane),
+ 					 V4L2_PIX_FMT_SUNXI_TILED_NV12);
+ 		if (found)
+-			video_format = video_format_find(V4L2_PIX_FMT_SUNXI_TILED_NV12);
++			video_format = video_format_find_mplane(V4L2_PIX_FMT_SUNXI_TILED_NV12,
++								mplane);
+ 
+ 		found = v4l2_find_format(driver_data->video_fd,
+-					 V4L2_BUF_TYPE_VIDEO_CAPTURE,
++					 v4l2_type_video_capture(mplane),
+ 					 V4L2_PIX_FMT_NV12);
+ 		if (found)
+-			video_format = video_format_find(V4L2_PIX_FMT_NV12);
++			video_format = video_format_find_mplane(V4L2_PIX_FMT_NV12,
++								mplane);
+ 
+ 		if (video_format == NULL)
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
+@@ -398,6 +404,8 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		surface_object->slices_size = 0;
+ 
+ 		surface_object->request_fd = -1;
++		surface_object->capture_surface_id = VA_INVALID_ID;
++		surface_object->av1_decoded = false;
+ 
+ 		surfaces_ids[i] = id;
+ 	}
+@@ -487,6 +495,7 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ {
+ 	struct request_data *driver_data = context->pDriverData;
+ 	struct object_surface *surface_object;
++	struct object_surface *capture_surface;
+ 	VAStatus status;
+ 	struct video_format *video_format;
+ 	unsigned int output_type, capture_type;
+@@ -547,9 +556,15 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 		goto error;
+ 	}
+ 
++	capture_surface = surface_object;
++	if (surface_object->capture_surface_id != VA_INVALID_ID &&
++	    SURFACE(driver_data, surface_object->capture_surface_id) != NULL)
++		capture_surface = SURFACE(driver_data,
++					  surface_object->capture_surface_id);
++
+ 	rc = v4l2_dequeue_buffer(driver_data->video_fd, -1, capture_type,
+-				 surface_object->destination_index,
+-				 surface_object->destination_buffers_count,
++				 capture_surface->destination_index,
++				 capture_surface->destination_buffers_count,
+ 				 &capture_flags);
+ 	if (rc < 0) {
+ 		status = VA_STATUS_ERROR_OPERATION_FAILED;
+@@ -557,6 +572,7 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 	}
+ 
+ 	surface_object->status = VASurfaceDisplaying;
++	capture_surface->status = VASurfaceDisplaying;
+ 
+ 	/*
+ 	 * The decode failed on the picture that was just dequeued: the engine
+@@ -609,9 +625,30 @@ VAStatus RequestQuerySurfaceAttributes(VADriverContextP context,
+ 	VASurfaceAttrib *attributes_list;
+ 	unsigned int attributes_list_size = V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES *
+ 					    sizeof(*attributes);
++	struct object_config *config_object;
++	unsigned int max_width = 2048, max_height = 2048;
++	unsigned int width, height, pixelformat = 0;
+ 	int memory_types;
++	int device;
+ 	unsigned int i = 0;
+ 
++	/*
++	 * The size range is the decoder's own, as far as it has been proven on
++	 * the hardware: the AV1 core decodes 4K bit-exactly, and nothing else
++	 * has been run above 2048 even where its driver claims more (cedrus
++	 * reports 4096x2304 for every format).
++	 */
++	config_object = CONFIG(driver_data, config);
++	if (config_object != NULL && config_object->profile == VAProfileAV1Profile0)
++		pixelformat = V4L2_PIX_FMT_AV1_FRAME;
++	device = pixelformat ? request_find_device(driver_data, pixelformat) : -1;
++	if (device >= 0 &&
++	    v4l2_max_frame_size(driver_data->devices[device].video_fd, pixelformat,
++				&width, &height)) {
++		max_width = width;
++		max_height = height;
++	}
++
+ 	attributes_list = malloc(attributes_list_size);
+ 	memset(attributes_list, 0, attributes_list_size);
+ 
+@@ -630,7 +667,7 @@ VAStatus RequestQuerySurfaceAttributes(VADriverContextP context,
+ 	attributes_list[i].type = VASurfaceAttribMaxWidth;
+ 	attributes_list[i].flags = VA_SURFACE_ATTRIB_GETTABLE;
+ 	attributes_list[i].value.type = VAGenericValueTypeInteger;
+-	attributes_list[i].value.value.i = 2048;
++	attributes_list[i].value.value.i = max_width;
+ 	i++;
+ 
+ 	attributes_list[i].type = VASurfaceAttribMinHeight;
+@@ -642,7 +679,7 @@ VAStatus RequestQuerySurfaceAttributes(VADriverContextP context,
+ 	attributes_list[i].type = VASurfaceAttribMaxHeight;
+ 	attributes_list[i].flags = VA_SURFACE_ATTRIB_GETTABLE;
+ 	attributes_list[i].value.type = VAGenericValueTypeInteger;
+-	attributes_list[i].value.value.i = 2048;
++	attributes_list[i].value.value.i = max_height;
+ 	i++;
+ 
+ 	attributes_list[i].type = VASurfaceAttribMemoryType;
+@@ -774,8 +811,21 @@ VAStatus RequestExportSurfaceHandle(VADriverContextP context,
+ 	 * vaExportSurfaceHandle itself and read it here.
+ 	 */
+ 	surface_descriptor->fourcc = VA_FOURCC_NV12;
+-	surface_descriptor->width = surface_object->destination_width;
+-	surface_descriptor->height = surface_object->destination_height;
++	/*
++	 * But not the padding. A driver may round the allocation up past the
++	 * picture -- hantro rounds heights to 64, so a 720-line picture sits in
++	 * 768 lines -- and a client that creates a framebuffer this size shows
++	 * the padding, or is refused by a plane that takes only the picture.
++	 * So: the size asked for, capped by what was allocated, which still
++	 * leaves a scaled (smaller) buffer described as it really is. Pitches
++	 * and offsets below describe the memory as before.
++	 */
++	surface_descriptor->width = surface_object->width > 0 &&
++		(unsigned int)surface_object->width < surface_object->destination_width ?
++		(unsigned int)surface_object->width : surface_object->destination_width;
++	surface_descriptor->height = surface_object->height > 0 &&
++		(unsigned int)surface_object->height < surface_object->destination_height ?
++		(unsigned int)surface_object->height : surface_object->destination_height;
+ 	surface_descriptor->num_objects = export_fds_count;
+ 
+ 	size = 0;
+diff --git a/src/surface.h b/src/surface.h
+index f9d1af4..7877447 100644
+--- a/src/surface.h
++++ b/src/surface.h
+@@ -34,6 +34,7 @@
+ #include <va/va_backend.h>
+ 
+ #include "object_heap.h"
++#include "av1.h"
+ 
+ #define SURFACE(data, id)                                                      \
+ 	((struct object_surface *)object_heap_lookup(&(data)->surface_heap, id))
+@@ -116,9 +117,21 @@ struct object_surface {
+ 			VADecPictureParameterBufferVP9 picture;
+ 			VASliceParameterBufferVP9 slice;
+ 		} vp9;
++		struct av1_params av1;
+ 	} params;
+ 
+ 	int request_fd;
++
++	/*
++	 * The surface whose CAPTURE buffer receives this decode, when that is
++	 * not this one: AV1 with film grain decodes into a reference surface
++	 * and displays through another (current_display_picture).
++	 */
++	VASurfaceID capture_surface_id;
++
++	/* AV1: what later frames need to know about this one as a reference. */
++	uint32_t av1_order_hint;
++	bool av1_decoded;
+ };
+ 
+ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+diff --git a/src/v4l2.c b/src/v4l2.c
+index 6289afc..f285949 100644
+--- a/src/v4l2.c
++++ b/src/v4l2.c
+@@ -136,6 +136,28 @@ bool v4l2_find_format(int video_fd, unsigned int type, unsigned int pixelformat)
+ 	return false;
+ }
+ 
++/* The largest coded size a device reports for a format; false if it says none. */
++bool v4l2_max_frame_size(int video_fd, unsigned int pixelformat,
++			 unsigned int *width, unsigned int *height)
++{
++	struct v4l2_frmsizeenum size;
++
++	memset(&size, 0, sizeof(size));
++	size.pixel_format = pixelformat;
++	if (ioctl(video_fd, VIDIOC_ENUM_FRAMESIZES, &size) < 0)
++		return false;
++
++	if (size.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
++		*width = size.discrete.width;
++		*height = size.discrete.height;
++	} else {
++		*width = size.stepwise.max_width;
++		*height = size.stepwise.max_height;
++	}
++
++	return true;
++}
++
+ int v4l2_try_format(int video_fd, unsigned int type, unsigned int width,
+ 		    unsigned int height, unsigned int pixelformat)
+ {
+diff --git a/src/v4l2.h b/src/v4l2.h
+index fb555a4..a099f0e 100644
+--- a/src/v4l2.h
++++ b/src/v4l2.h
+@@ -32,6 +32,8 @@
+ unsigned int v4l2_type_video_output(bool mplane);
+ unsigned int v4l2_type_video_capture(bool mplane);
+ int v4l2_query_capabilities(int video_fd, unsigned int *capabilities);
++bool v4l2_max_frame_size(int video_fd, unsigned int pixelformat,
++			 unsigned int *width, unsigned int *height);
+ bool v4l2_find_format(int video_fd, unsigned int type,
+ 		      unsigned int pixelformat);
+ int v4l2_set_format(int video_fd, unsigned int type, unsigned int pixelformat,
+diff --git a/src/video.c b/src/video.c
+index 3ccbb29..f5bb803 100644
+--- a/src/video.c
++++ b/src/video.c
+@@ -45,6 +45,17 @@ static struct video_format formats[] = {
+ 		.planes_count		= 2,
+ 		.bpp			= 16,
+ 	},
++	{
++		/* one buffer, both planes, through the multi-planar API */
++		.description		= "NV12 YUV (multi-planar API)",
++		.v4l2_format		= V4L2_PIX_FMT_NV12,
++		.v4l2_buffers_count	= 1,
++		.v4l2_mplane		= true,
++		.drm_format		= DRM_FORMAT_NV12,
++		.drm_modifier		= DRM_FORMAT_MOD_NONE,
++		.planes_count		= 2,
++		.bpp			= 16,
++	},
+ 	{
+ 		.description		= "Sunxi tiled NV12 YUV",
+ 		.v4l2_format		= V4L2_PIX_FMT_SUNXI_TILED_NV12,
+@@ -60,11 +71,18 @@ static struct video_format formats[] = {
+ static unsigned int formats_count = sizeof(formats) / sizeof(formats[0]);
+ 
+ struct video_format *video_format_find(unsigned int pixelformat)
++{
++	return video_format_find_mplane(pixelformat, false);
++}
++
++struct video_format *video_format_find_mplane(unsigned int pixelformat,
++					      bool mplane)
+ {
+ 	unsigned int i;
+ 
+ 	for (i = 0; i < formats_count; i++)
+-		if (formats[i].v4l2_format == pixelformat)
++		if (formats[i].v4l2_format == pixelformat &&
++		    formats[i].v4l2_mplane == mplane)
+ 			return &formats[i];
+ 
+ 	return NULL;
+diff --git a/src/video.h b/src/video.h
+index 1996fd5..3f32fd6 100644
+--- a/src/video.h
++++ b/src/video.h
+@@ -39,6 +39,8 @@ struct video_format {
+ };
+ 
+ struct video_format *video_format_find(unsigned int pixelformat);
++struct video_format *video_format_find_mplane(unsigned int pixelformat,
++					      bool mplane);
+ bool video_format_is_linear(struct video_format *format);
+ 
+ #endif

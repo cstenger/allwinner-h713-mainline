@@ -248,3 +248,43 @@ No regressions: H.264 5/5 and HEVC 6/6 still bit-exact, Main10 57.07 dB and
 byte-identical to the GStreamer oracle, robustness 16/16 with the engine
 recovering from every malformed input, and a clean MPEG-2, H.264, HEVC or Main10
 stream reports zero errors.
+
+## VP9 and AV1 — validated on hardware 2026-09-30
+
+Patches 0014–0016. The H713 has **two** stateless decoders: cedrus
+(`/dev/video0`, MPEG-2/H.264/HEVC/VP8/VP9) and a separate Google AV1 core behind
+hantro (`/dev/video1` + `/dev/media1`, multi-planar API).
+
+| # | What | Why |
+|---|------|-----|
+| 0014 | Drive more than one decoder device | every stateless decoder is found at init (media device paired through sysfs); a config picks the first device offering its format; per-device queue state is swapped in by `request_use_device()` at each entry point; "release the queues when nothing refers to them" is asked per device |
+| 0015 | VP9 backend | VA-API's VP9 parameters are a digest meant for decoders that parse headers in hardware, so the backend parses the uncompressed header and (through the boolean decoder) the compressed header itself; VA-API's two header sizes are a cross-check of the parse |
+| 0016 | AV1 backend | a translation (VA-API carries nearly the whole header); per-surface order hints, derived skip mode and tile_size_bytes; film grain displays through `current_display_picture`; multi-planar NV12; AV1 advertises its device's real size range (4K); DRM PRIME export gives the picture size, not hantro's padded allocation; after a decode error, frames are refused until the next key frame |
+
+Results (ffmpeg `-hwaccel vaapi` against libvpx/libdav1d, per-frame MD5,
+interrupts ≥ frames — `tools/video/va-gate.sh`):
+
+- **AV1:** 15/15 basic streams, 35/37 of the coding-tool matrix
+  (`tools/video/make-av1-streams.sh`), 4K, soaks of 900/1199/2318 frames, seeks.
+  Monochrome is refused by ffmpeg itself (no hardware path for 4:0:0); the two
+  reference-scaling clips are the resolution-change limitation below.
+- **VP9:** 12/13 vectors plus a 900-frame clip. `v13-resize` changes size on an
+  **inter** frame (scaled references); cedrus cannot, and now refuses those
+  frames (kernel 0143) instead of reading past its buffers.
+- **Panel:** mpv `--vo=drm --hwdec=vaapi` plays both; the video plane takes a new
+  framebuffer every frame, zero failed flips, A-V 0.000. Before the export fix
+  every AV1 flip failed with EINVAL: hantro pads 720 lines to 768 and the H713
+  plane takes exactly 1280x720.
+- **Damaged streams:** 12 damaged AV1 streams survive with the engine healthy
+  after each. Before the error gate one of them **hung the SoC** through
+  VA-API but not through GStreamer: ffmpeg abandons the rest of a temporal unit
+  when one frame fails, but has already parsed all of it, so the headers it
+  sends afterwards are read against reference state that does not match what
+  was decoded. Established by tracing both paths on the same frames
+  (`local/h713-lab/av1-work/wedge/`).
+- No regressions: VA1 5/5, H1 14/14, P1 12/12, M2 6/6.
+
+**Still open:** a mid-stream resolution change still fails at `S_FMT` (EBUSY)
+while old surfaces exist, as for H.264/HEVC (RI1 fails identically on the
+pre-0014 driver). The clean fix is `V4L2_MEMORY_DMABUF` capture buffers from a
+dma-heap, so a queue can be reformatted while displayed frames live on.

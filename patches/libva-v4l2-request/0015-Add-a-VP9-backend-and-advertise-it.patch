@@ -1,0 +1,867 @@
+Add a VP9 backend and advertise it
+
+VP9 decodes bit-exactly on the H713's video engine through GStreamer's
+v4l2slvp9dec, but nothing could reach it through VA-API, so mpv and ffmpeg fell
+back to libvpx on a quad Cortex-A53.
+
+VA-API's VP9 interface was written for decoders that parse the headers in
+hardware.  The picture parameters are a digest: segment quantisers arrive
+already resolved to scale values, the loop-filter deltas are absent, and
+nothing of the compressed header is passed at all.  The slice data, on the
+other hand, is the whole frame with both headers in front.  V4L2's stateless
+VP9 API wants the opposite -- the coded header fields, and the compressed
+header's probability updates as deltas -- so this backend parses both headers
+itself, following sections 6.2 and 6.3 of the VP9 specification: the
+uncompressed header bit by bit, the compressed header through the boolean
+decoder.  The deltas go across as V4L2 defines them: inv_map_table[] of the
+decoded value for diff_update_prob(), the new probability itself for
+update_mv_prob(), 0 for "no update" in both.
+
+Two pieces of header state persist from one frame to the next unless a frame
+changes or resets them -- the loop-filter deltas and the segmentation
+features -- so they live in the context and are reset where the specification
+calls setup_past_independence().
+
+The two header sizes VA-API does carry are used as a cross-check: a parse that
+disagrees with either has gone wrong somewhere before it, and every field read
+after that point is garbage, so the frame is refused rather than decoded.
+
+The reference surfaces, and so the timestamps that name them to the kernel,
+come from VA-API as they should.  Profile 0 only: the kernel decodes 8-bit
+4:2:0 VP9.
+
+diff --git a/src/config.c b/src/config.c
+index 9a937bf..4aee784 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -76,6 +76,10 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 		driver_data->coded_pixelformat = V4L2_PIX_FMT_VP8_FRAME;
+ 		driver_data->coded_bit_depth = 8;
+ 		break;
++	case VAProfileVP9Profile0:
++		driver_data->coded_pixelformat = V4L2_PIX_FMT_VP9_FRAME;
++		driver_data->coded_bit_depth = 8;
++		break;
+ 	default:
+ 		return VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
+ 	}
+@@ -179,6 +183,10 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 1))
+ 		profiles[index++] = VAProfileVP8Version0_3;
+ 
++	found = request_find_device(driver_data, V4L2_PIX_FMT_VP9_FRAME) >= 0;
++	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 1))
++		profiles[index++] = VAProfileVP9Profile0;
++
+ 	*profiles_count = index;
+ 
+ 	return VA_STATUS_SUCCESS;
+@@ -200,6 +208,7 @@ VAStatus RequestQueryConfigEntrypoints(VADriverContextP context,
+ 	case VAProfileHEVCMain:
+ 	case VAProfileHEVCMain10:
+ 	case VAProfileVP8Version0_3:
++	case VAProfileVP9Profile0:
+ 		entrypoints[0] = VAEntrypointVLD;
+ 		*entrypoints_count = 1;
+ 		break;
+diff --git a/src/context.c b/src/context.c
+index 374f7bb..2dfec3e 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -107,6 +107,7 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 
+ 	/* MPEG-2 matrices persist across pictures; start them at the spec defaults. */
+ 	mpeg2_init_quantisation(context_object);
++	memset(&context_object->vp9, 0, sizeof(context_object->vp9));
+ 
+ 
+ 	/*
+diff --git a/src/context.h b/src/context.h
+index 7e6e242..236a7a8 100644
+--- a/src/context.h
++++ b/src/context.h
+@@ -33,6 +33,7 @@
+ 
+ #include "object_heap.h"
+ #include "h264.h"
++#include "vp9.h"
+ 
+ #define CONTEXT(data, id)                                                      \
+ 	((struct object_context *)object_heap_lookup(&(data)->context_heap, id))
+@@ -62,6 +63,9 @@ struct object_context {
+ 	 * is all-or-nothing -- see mpeg2_init_quantisation().
+ 	 */
+ 	struct v4l2_ctrl_mpeg2_quantisation mpeg2_quantisation;
++
++	/* VP9 only: what one frame header leaves in force for the next. */
++	struct vp9_state vp9;
+ };
+ 
+ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+diff --git a/src/meson.build b/src/meson.build
+index 257629d..494c829 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -44,6 +44,7 @@ sources = [
+ 	'v4l2.c',
+ 	'mpeg2.c',
+ 	'vp8.c',
++	'vp9.c',
+ 	'h264.c',
+ 	'h265.c'
+ ]
+@@ -65,6 +66,7 @@ headers = [
+ 	'v4l2.h',
+ 	'mpeg2.h',
+ 	'vp8.h',
++	'vp9.h',
+ 	'h264.h',
+ 	'h265.h'
+ ]
+diff --git a/src/picture.c b/src/picture.c
+index fcafc65..9e95a79 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -35,6 +35,7 @@
+ #include "h265.h"
+ #include "mpeg2.h"
+ #include "vp8.h"
++#include "vp9.h"
+ 
+ #include <assert.h>
+ #include <string.h>
+@@ -132,6 +133,12 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			       sizeof(surface_object->params.vp8.picture));
+ 			break;
+ 
++		case VAProfileVP9Profile0:
++			memcpy(&surface_object->params.vp9.picture,
++			       buffer_object->data,
++			       sizeof(surface_object->params.vp9.picture));
++			break;
++
+ 		default:
+ 			break;
+ 		}
+@@ -162,6 +169,12 @@ static VAStatus codec_store_buffer(struct request_data *driver_data,
+ 			       sizeof(surface_object->params.vp8.slice));
+ 			break;
+ 
++		case VAProfileVP9Profile0:
++			memcpy(&surface_object->params.vp9.slice,
++			       buffer_object->data,
++			       sizeof(surface_object->params.vp9.slice));
++			break;
++
+ 		default:
+ 			break;
+ 		}
+@@ -256,6 +269,12 @@ static VAStatus codec_set_controls(struct request_data *driver_data,
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
+ 		break;
+ 
++	case VAProfileVP9Profile0:
++		rc = vp9_set_controls(driver_data, context, surface_object);
++		if (rc < 0)
++			return VA_STATUS_ERROR_OPERATION_FAILED;
++		break;
++
+ 	case VAProfileHEVCMain:
+ 	case VAProfileHEVCMain10:
+ 		rc = h265_set_controls(driver_data, context, surface_object);
+diff --git a/src/request.h b/src/request.h
+index 71177f2..559c0bf 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -38,7 +38,7 @@
+ 
+ #define V4L2_REQUEST_STR_VENDOR			"v4l2-request"
+ 
+-#define V4L2_REQUEST_MAX_PROFILES		11
++#define V4L2_REQUEST_MAX_PROFILES		16
+ #define V4L2_REQUEST_MAX_DEVICES		4
+ #define V4L2_REQUEST_MAX_ENTRYPOINTS		5
+ #define V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES	10
+diff --git a/src/surface.h b/src/surface.h
+index da7bcba..f9d1af4 100644
+--- a/src/surface.h
++++ b/src/surface.h
+@@ -112,6 +112,10 @@ struct object_surface {
+ 			VAIQMatrixBufferVP8 iqmatrix;
+ 			VAProbabilityDataBufferVP8 probabilities;
+ 		} vp8;
++		struct {
++			VADecPictureParameterBufferVP9 picture;
++			VASliceParameterBufferVP9 slice;
++		} vp9;
+ 	} params;
+ 
+ 	int request_fd;
+diff --git a/src/vp9.c b/src/vp9.c
+new file mode 100644
+index 0000000..524cbae
+--- /dev/null
++++ b/src/vp9.c
+@@ -0,0 +1,607 @@
++/*
++ * Copyright (C) 2026 Christopher Stenger
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++ * DEALINGS IN THE SOFTWARE.
++ */
++
++
++#include "vp9.h"
++#include "context.h"
++#include "request.h"
++#include "surface.h"
++#include "utils.h"
++
++#include <string.h>
++
++#include <linux/videodev2.h>
++
++#include "v4l2.h"
++
++/*
++ * VP9 through VA-API to a V4L2 stateless decoder.
++ *
++ * VA-API was designed for decoders that parse VP9's headers themselves: the
++ * picture parameters carry a digest (segment quantisers already resolved to
++ * scales, no loop-filter deltas, nothing at all from the compressed header)
++ * and the slice data is the whole frame, headers included. V4L2 wants the
++ * header fields as coded plus the compressed header's probability updates.
++ * So this backend parses both headers from the frame -- the uncompressed one
++ * bit by bit, the compressed one through the boolean decoder -- following
++ * sections 6.2 and 6.3 of the VP9 bitstream specification.
++ *
++ * What VA-API does get right is used: the reference surfaces, and so the
++ * timestamps that identify them to the kernel.
++ */
++
++/* ---- the uncompressed header (6.2) ---------------------------------------- */
++
++struct vp9_bits {
++	const uint8_t *data;
++	unsigned int size;	/* bytes */
++	unsigned int pos;	/* bits */
++	bool overrun;
++};
++
++static unsigned int vp9_f(struct vp9_bits *b, unsigned int n)
++{
++	unsigned int v = 0;
++
++	while (n--) {
++		unsigned int bit = 0;
++
++		if (b->pos < 8 * b->size)
++			bit = (b->data[b->pos >> 3] >> (7 - (b->pos & 7))) & 1;
++		else
++			b->overrun = true;
++		b->pos++;
++		v = (v << 1) | bit;
++	}
++
++	return v;
++}
++
++/* su(n): n bits of magnitude, then the sign */
++static int vp9_su(struct vp9_bits *b, unsigned int n)
++{
++	int v = vp9_f(b, n);
++
++	return vp9_f(b, 1) ? -v : v;
++}
++
++static void vp9_setup_past_independence(struct vp9_state *state)
++{
++	static const int8_t ref_deltas[4] = { 1, 0, -1, -1 };
++
++	memcpy(state->lf_ref_deltas, ref_deltas, sizeof(ref_deltas));
++	memset(state->lf_mode_deltas, 0, sizeof(state->lf_mode_deltas));
++	memset(state->seg.feature_data, 0, sizeof(state->seg.feature_data));
++	memset(state->seg.feature_enabled, 0, sizeof(state->seg.feature_enabled));
++	state->seg.flags &= ~V4L2_VP9_SEGMENTATION_FLAG_ABS_OR_DELTA_UPDATE;
++}
++
++static int vp9_parse_uncompressed(struct vp9_state *state, const uint8_t *data,
++				  unsigned int size,
++				  struct v4l2_ctrl_vp9_frame *frame,
++				  bool *lossless)
++{
++	/* the order of the coded filter values, in V4L2's numbering */
++	static const uint8_t literal_to_filter[4] = {
++		V4L2_VP9_INTERP_FILTER_EIGHTTAP_SMOOTH,
++		V4L2_VP9_INTERP_FILTER_EIGHTTAP,
++		V4L2_VP9_INTERP_FILTER_EIGHTTAP_SHARP,
++		V4L2_VP9_INTERP_FILTER_BILINEAR,
++	};
++	static const unsigned int seg_bits[4] = { 8, 6, 2, 0 };
++	static const bool seg_signed[4] = { true, true, false, false };
++	struct vp9_bits b = { .data = data, .size = size };
++	struct v4l2_vp9_segmentation *seg = &state->seg;
++	unsigned int profile, i, j, sb64_cols, min_log2, max_log2;
++	bool key_frame, intra_only = false, show_frame, error_resilient;
++
++	if (vp9_f(&b, 2) != 2)		/* frame_marker */
++		return -1;
++	profile = vp9_f(&b, 1);
++	profile |= vp9_f(&b, 1) << 1;
++	if (profile == 3)
++		vp9_f(&b, 1);		/* reserved_zero */
++	if (vp9_f(&b, 1))		/* show_existing_frame: nothing to decode */
++		return -1;
++
++	key_frame = !vp9_f(&b, 1);
++	show_frame = vp9_f(&b, 1);
++	error_resilient = vp9_f(&b, 1);
++
++	frame->profile = profile;
++	frame->bit_depth = 8;
++	frame->flags = V4L2_VP9_FRAME_FLAG_X_SUBSAMPLING |
++		       V4L2_VP9_FRAME_FLAG_Y_SUBSAMPLING;
++
++	if (key_frame) {
++		vp9_f(&b, 24);		/* frame_sync_code */
++		goto color_config;
++	}
++
++	intra_only = show_frame ? false : vp9_f(&b, 1);
++	frame->reset_frame_context = error_resilient ? 0 : vp9_f(&b, 2);
++	if (intra_only) {
++		vp9_f(&b, 24);
++		if (profile > 0)
++			goto color_config;
++		vp9_f(&b, 8);		/* refresh_frame_flags */
++		goto frame_size;
++	}
++
++	vp9_f(&b, 8);			/* refresh_frame_flags */
++	for (i = 0; i < 3; i++) {
++		vp9_f(&b, 3);		/* ref_frame_idx: VA-API has it */
++		if (vp9_f(&b, 1))
++			frame->ref_frame_sign_bias |= V4L2_VP9_SIGN_BIAS_LAST << i;
++	}
++	for (i = 0; i < 3; i++)
++		if (vp9_f(&b, 1))	/* found_ref */
++			break;
++	if (i == 3)
++		vp9_f(&b, 32);		/* frame_size() */
++	goto render_size;
++
++color_config:
++	if (profile >= 2)
++		frame->bit_depth = vp9_f(&b, 1) ? 12 : 10;
++	if (vp9_f(&b, 3) != 7) {	/* color_space != CS_RGB */
++		if (vp9_f(&b, 1))
++			frame->flags |= V4L2_VP9_FRAME_FLAG_COLOR_RANGE_FULL_SWING;
++		if (profile == 1 || profile == 3) {
++			if (!vp9_f(&b, 1))
++				frame->flags &= ~V4L2_VP9_FRAME_FLAG_X_SUBSAMPLING;
++			if (!vp9_f(&b, 1))
++				frame->flags &= ~V4L2_VP9_FRAME_FLAG_Y_SUBSAMPLING;
++			vp9_f(&b, 1);
++		}
++	} else {
++		frame->flags |= V4L2_VP9_FRAME_FLAG_COLOR_RANGE_FULL_SWING;
++		frame->flags &= ~(V4L2_VP9_FRAME_FLAG_X_SUBSAMPLING |
++				  V4L2_VP9_FRAME_FLAG_Y_SUBSAMPLING);
++		if (profile == 1 || profile == 3)
++			vp9_f(&b, 1);
++	}
++	if (intra_only)
++		vp9_f(&b, 8);		/* refresh_frame_flags */
++frame_size:
++	vp9_f(&b, 32);			/* VA-API carries the size */
++render_size:
++	if (vp9_f(&b, 1)) {
++		frame->render_width_minus_1 = vp9_f(&b, 16);
++		frame->render_height_minus_1 = vp9_f(&b, 16);
++	} else {
++		frame->render_width_minus_1 = frame->frame_width_minus_1;
++		frame->render_height_minus_1 = frame->frame_height_minus_1;
++	}
++
++	if (!key_frame && !intra_only) {
++		if (vp9_f(&b, 1))
++			frame->flags |= V4L2_VP9_FRAME_FLAG_ALLOW_HIGH_PREC_MV;
++		frame->interpolation_filter = vp9_f(&b, 1) ?
++			V4L2_VP9_INTERP_FILTER_SWITCHABLE :
++			literal_to_filter[vp9_f(&b, 2)];
++	}
++
++	if (!error_resilient) {
++		if (vp9_f(&b, 1))
++			frame->flags |= V4L2_VP9_FRAME_FLAG_REFRESH_FRAME_CTX;
++		if (vp9_f(&b, 1))
++			frame->flags |= V4L2_VP9_FRAME_FLAG_PARALLEL_DEC_MODE;
++	} else {
++		frame->flags |= V4L2_VP9_FRAME_FLAG_PARALLEL_DEC_MODE;
++	}
++	frame->frame_context_idx = vp9_f(&b, 2);
++
++	if (key_frame)
++		frame->flags |= V4L2_VP9_FRAME_FLAG_KEY_FRAME;
++	if (show_frame)
++		frame->flags |= V4L2_VP9_FRAME_FLAG_SHOW_FRAME;
++	if (error_resilient)
++		frame->flags |= V4L2_VP9_FRAME_FLAG_ERROR_RESILIENT;
++	if (intra_only)
++		frame->flags |= V4L2_VP9_FRAME_FLAG_INTRA_ONLY;
++	if (key_frame || intra_only || error_resilient)
++		vp9_setup_past_independence(state);
++	/* V4L2 counts the coded 2 ("reset this one") and 3 ("all") from 1 */
++	frame->reset_frame_context = frame->reset_frame_context >= 2 ?
++				     frame->reset_frame_context - 1 : 0;
++
++	/* loop_filter_params(): the deltas persist from frame to frame */
++	frame->lf.level = vp9_f(&b, 6);
++	frame->lf.sharpness = vp9_f(&b, 3);
++	if (vp9_f(&b, 1)) {
++		frame->lf.flags |= V4L2_VP9_LOOP_FILTER_FLAG_DELTA_ENABLED;
++		if (vp9_f(&b, 1)) {
++			frame->lf.flags |= V4L2_VP9_LOOP_FILTER_FLAG_DELTA_UPDATE;
++			for (i = 0; i < 4; i++)
++				if (vp9_f(&b, 1))
++					state->lf_ref_deltas[i] = vp9_su(&b, 6);
++			for (i = 0; i < 2; i++)
++				if (vp9_f(&b, 1))
++					state->lf_mode_deltas[i] = vp9_su(&b, 6);
++		}
++	}
++	memcpy(frame->lf.ref_deltas, state->lf_ref_deltas, sizeof(frame->lf.ref_deltas));
++	memcpy(frame->lf.mode_deltas, state->lf_mode_deltas, sizeof(frame->lf.mode_deltas));
++
++	/* quantization_params() */
++	frame->quant.base_q_idx = vp9_f(&b, 8);
++	frame->quant.delta_q_y_dc = vp9_f(&b, 1) ? vp9_su(&b, 4) : 0;
++	frame->quant.delta_q_uv_dc = vp9_f(&b, 1) ? vp9_su(&b, 4) : 0;
++	frame->quant.delta_q_uv_ac = vp9_f(&b, 1) ? vp9_su(&b, 4) : 0;
++	*lossless = !frame->quant.base_q_idx && !frame->quant.delta_q_y_dc &&
++		    !frame->quant.delta_q_uv_dc && !frame->quant.delta_q_uv_ac;
++
++	/* segmentation_params(): the feature data persists too */
++	seg->flags &= V4L2_VP9_SEGMENTATION_FLAG_ABS_OR_DELTA_UPDATE;
++	if (vp9_f(&b, 1)) {
++		seg->flags |= V4L2_VP9_SEGMENTATION_FLAG_ENABLED;
++		if (vp9_f(&b, 1)) {
++			seg->flags |= V4L2_VP9_SEGMENTATION_FLAG_UPDATE_MAP;
++			for (i = 0; i < 7; i++)
++				seg->tree_probs[i] = vp9_f(&b, 1) ? vp9_f(&b, 8) : 255;
++			if (vp9_f(&b, 1)) {
++				seg->flags |= V4L2_VP9_SEGMENTATION_FLAG_TEMPORAL_UPDATE;
++				for (i = 0; i < 3; i++)
++					seg->pred_probs[i] = vp9_f(&b, 1) ?
++							     vp9_f(&b, 8) : 255;
++			} else {
++				memset(seg->pred_probs, 255, sizeof(seg->pred_probs));
++			}
++		}
++		if (vp9_f(&b, 1)) {
++			seg->flags |= V4L2_VP9_SEGMENTATION_FLAG_UPDATE_DATA;
++			seg->flags &= ~V4L2_VP9_SEGMENTATION_FLAG_ABS_OR_DELTA_UPDATE;
++			if (vp9_f(&b, 1))
++				seg->flags |= V4L2_VP9_SEGMENTATION_FLAG_ABS_OR_DELTA_UPDATE;
++			memset(seg->feature_data, 0, sizeof(seg->feature_data));
++			memset(seg->feature_enabled, 0, sizeof(seg->feature_enabled));
++			for (i = 0; i < 8; i++)
++				for (j = 0; j < 4; j++) {
++					int v = 0;
++
++					if (!vp9_f(&b, 1))
++						continue;
++					seg->feature_enabled[i] |=
++						V4L2_VP9_SEGMENT_FEATURE_ENABLED(j);
++					v = vp9_f(&b, seg_bits[j]);
++					if (seg_signed[j] && vp9_f(&b, 1))
++						v = -v;
++					seg->feature_data[i][j] = v;
++				}
++		}
++	}
++	frame->seg = *seg;
++
++	/* tile_info() */
++	sb64_cols = (frame->frame_width_minus_1 + 64) / 64;
++	for (min_log2 = 0; (64u << min_log2) < sb64_cols; min_log2++)
++		;
++	for (max_log2 = 1; (sb64_cols >> max_log2) >= 4; max_log2++)
++		;
++	max_log2--;
++	frame->tile_cols_log2 = min_log2;
++	while (frame->tile_cols_log2 < max_log2 && vp9_f(&b, 1))
++		frame->tile_cols_log2++;
++	frame->tile_rows_log2 = vp9_f(&b, 1);
++	if (frame->tile_rows_log2)
++		frame->tile_rows_log2 += vp9_f(&b, 1);
++
++	frame->compressed_header_size = vp9_f(&b, 16);
++	/* trailing_bits(): the header ends on a byte boundary */
++	frame->uncompressed_header_size = (b.pos + 7) / 8;
++
++	return b.overrun ? -1 : 0;
++}
++
++/* ---- the compressed header (6.3) ------------------------------------------ */
++
++struct vp9_bool {
++	const uint8_t *data;
++	unsigned int size, pos;	/* bits */
++	unsigned int value, range;
++};
++
++static unsigned int vp9_bool_bit(struct vp9_bool *d)
++{
++	unsigned int bit = 0;
++
++	if (d->pos < d->size)
++		bit = (d->data[d->pos >> 3] >> (7 - (d->pos & 7))) & 1;
++	d->pos++;
++	return bit;
++}
++
++/* 9.2.2 read_bool(p) */
++static unsigned int vp9_read_bool(struct vp9_bool *d, unsigned int p)
++{
++	unsigned int split = 1 + (((d->range - 1) * p) >> 8);
++	unsigned int bit;
++
++	if (d->value < split) {
++		d->range = split;
++		bit = 0;
++	} else {
++		d->range -= split;
++		d->value -= split;
++		bit = 1;
++	}
++	while (d->range < 128) {
++		d->value = (d->value << 1) | vp9_bool_bit(d);
++		d->range <<= 1;
++	}
++	return bit;
++}
++
++static unsigned int vp9_read_literal(struct vp9_bool *d, unsigned int n)
++{
++	unsigned int v = 0;
++
++	while (n--)
++		v = (v << 1) | vp9_read_bool(d, 128);
++	return v;
++}
++
++/* inv_map_table[]: the 20 coarse values first, then every other in order */
++static uint8_t vp9_inv_map(unsigned int v)
++{
++	unsigned int i, n = 20;
++
++	if (v < 20)
++		return 7 + 13 * v;
++	for (i = 1; i < 254; i++) {
++		if (i % 13 == 7)
++			continue;
++		if (n++ == v)
++			return i;
++	}
++	return 253;
++}
++
++static unsigned int vp9_decode_term_subexp(struct vp9_bool *d)
++{
++	unsigned int v;
++
++	if (!vp9_read_literal(d, 1))
++		return vp9_read_literal(d, 4);
++	if (!vp9_read_literal(d, 1))
++		return vp9_read_literal(d, 4) + 16;
++	if (!vp9_read_literal(d, 1))
++		return vp9_read_literal(d, 5) + 32;
++	v = vp9_read_literal(d, 7);
++	if (v < 65)
++		return v + 64;
++	return (v << 1) - 1 + vp9_read_literal(d, 1);
++}
++
++/* diff_update_prob(): V4L2 wants inv_map_table[delta], 0 for "no update" */
++static void vp9_diff_update(struct vp9_bool *d, uint8_t *p)
++{
++	*p = vp9_read_bool(d, 252) ? vp9_inv_map(vp9_decode_term_subexp(d)) : 0;
++}
++
++static void vp9_diff_updates(struct vp9_bool *d, uint8_t *p, unsigned int n)
++{
++	while (n--)
++		vp9_diff_update(d, p++);
++}
++
++/* update_mv_prob(): the new probability itself, 0 for "no update" */
++static void vp9_mv_updates(struct vp9_bool *d, uint8_t *p, unsigned int n)
++{
++	while (n--)
++		*p++ = vp9_read_bool(d, 252) ? (vp9_read_literal(d, 7) << 1) | 1 : 0;
++}
++
++static int vp9_parse_compressed(const uint8_t *data, unsigned int size,
++				struct v4l2_ctrl_vp9_frame *frame, bool lossless,
++				struct v4l2_ctrl_vp9_compressed_hdr *hdr)
++{
++	static const unsigned int biggest_tx[5] = { 0, 1, 2, 3, 3 };
++	struct vp9_bool d = { .data = data, .size = 8 * size };
++	bool intra = frame->flags & (V4L2_VP9_FRAME_FLAG_KEY_FRAME |
++				     V4L2_VP9_FRAME_FLAG_INTRA_ONLY);
++	unsigned int i, j, k, l, tx;
++	uint8_t bias;
++
++	if (size < 1)
++		return -1;
++	d.value = 0;
++	for (i = 0; i < 8; i++)
++		d.value = (d.value << 1) | vp9_bool_bit(&d);
++	d.range = 255;
++	if (vp9_read_bool(&d, 128))	/* marker bit */
++		return -1;
++
++	/* read_tx_mode() */
++	if (lossless) {
++		hdr->tx_mode = V4L2_VP9_TX_MODE_ONLY_4X4;
++	} else {
++		hdr->tx_mode = vp9_read_literal(&d, 2);
++		if (hdr->tx_mode == V4L2_VP9_TX_MODE_ALLOW_32X32)
++			hdr->tx_mode += vp9_read_literal(&d, 1);
++	}
++	if (hdr->tx_mode == V4L2_VP9_TX_MODE_SELECT) {
++		for (i = 0; i < 2; i++)
++			vp9_diff_updates(&d, hdr->tx8[i], 1);
++		for (i = 0; i < 2; i++)
++			vp9_diff_updates(&d, hdr->tx16[i], 2);
++		for (i = 0; i < 2; i++)
++			vp9_diff_updates(&d, hdr->tx32[i], 3);
++	}
++
++	/* read_coef_probs() */
++	for (tx = 0; tx <= biggest_tx[hdr->tx_mode]; tx++) {
++		if (!vp9_read_literal(&d, 1))
++			continue;
++		for (i = 0; i < 2; i++)
++			for (j = 0; j < 2; j++)
++				for (k = 0; k < 6; k++)
++					for (l = 0; l < (k ? 6u : 3u); l++)
++						vp9_diff_updates(&d, hdr->coef[tx][i][j][k][l], 3);
++	}
++
++	vp9_diff_updates(&d, hdr->skip, 3);
++
++	if (!intra) {
++		for (i = 0; i < 7; i++)
++			vp9_diff_updates(&d, hdr->inter_mode[i], 3);
++		if (frame->interpolation_filter == V4L2_VP9_INTERP_FILTER_SWITCHABLE)
++			for (i = 0; i < 4; i++)
++				vp9_diff_updates(&d, hdr->interp_filter[i], 2);
++		vp9_diff_updates(&d, hdr->is_inter, 4);
++
++		/* frame_reference_mode(): compound needs refs on both sides */
++		bias = frame->ref_frame_sign_bias;
++		frame->reference_mode = V4L2_VP9_REFERENCE_MODE_SINGLE_REFERENCE;
++		if (!!(bias & V4L2_VP9_SIGN_BIAS_GOLDEN) != !!(bias & V4L2_VP9_SIGN_BIAS_LAST) ||
++		    !!(bias & V4L2_VP9_SIGN_BIAS_ALT) != !!(bias & V4L2_VP9_SIGN_BIAS_LAST)) {
++			if (vp9_read_literal(&d, 1))
++				frame->reference_mode = vp9_read_literal(&d, 1) ?
++					V4L2_VP9_REFERENCE_MODE_SELECT :
++					V4L2_VP9_REFERENCE_MODE_COMPOUND_REFERENCE;
++		}
++
++		/* frame_reference_mode_probs() */
++		if (frame->reference_mode == V4L2_VP9_REFERENCE_MODE_SELECT)
++			vp9_diff_updates(&d, hdr->comp_mode, 5);
++		if (frame->reference_mode != V4L2_VP9_REFERENCE_MODE_COMPOUND_REFERENCE)
++			for (i = 0; i < 5; i++)
++				vp9_diff_updates(&d, hdr->single_ref[i], 2);
++		if (frame->reference_mode != V4L2_VP9_REFERENCE_MODE_SINGLE_REFERENCE)
++			vp9_diff_updates(&d, hdr->comp_ref, 5);
++
++		for (i = 0; i < 4; i++)
++			vp9_diff_updates(&d, hdr->y_mode[i], 9);
++		for (i = 0; i < 16; i++)
++			vp9_diff_updates(&d, hdr->partition[i], 3);
++
++		/* mv_probs() */
++		vp9_mv_updates(&d, hdr->mv.joint, 3);
++		for (i = 0; i < 2; i++) {
++			vp9_mv_updates(&d, &hdr->mv.sign[i], 1);
++			vp9_mv_updates(&d, hdr->mv.classes[i], 10);
++			vp9_mv_updates(&d, &hdr->mv.class0_bit[i], 1);
++			vp9_mv_updates(&d, hdr->mv.bits[i], 10);
++		}
++		for (i = 0; i < 2; i++) {
++			for (j = 0; j < 2; j++)
++				vp9_mv_updates(&d, hdr->mv.class0_fr[i][j], 3);
++			vp9_mv_updates(&d, hdr->mv.fr[i], 3);
++		}
++		if (frame->flags & V4L2_VP9_FRAME_FLAG_ALLOW_HIGH_PREC_MV)
++			for (i = 0; i < 2; i++) {
++				vp9_mv_updates(&d, &hdr->mv.class0_hp[i], 1);
++				vp9_mv_updates(&d, &hdr->mv.hp[i], 1);
++			}
++	}
++
++	return d.pos > d.size + 16 ? -1 : 0;
++}
++
++/* ---- the controls --------------------------------------------------------- */
++
++static uint64_t vp9_ref_ts(struct request_data *driver_data,
++			   const VADecPictureParameterBufferVP9 *picture,
++			   unsigned int index)
++{
++	struct object_surface *surface;
++
++	surface = SURFACE(driver_data, picture->reference_frames[index & 7]);
++	return surface ? v4l2_timeval_to_ns(&surface->timestamp) : 0;
++}
++
++int vp9_set_controls(struct request_data *driver_data,
++		     struct object_context *context_object,
++		     struct object_surface *surface_object)
++{
++	const VADecPictureParameterBufferVP9 *picture =
++		&surface_object->params.vp9.picture;
++	const uint8_t *data = surface_object->source_data;
++	unsigned int size = surface_object->slices_size;
++	struct v4l2_ctrl_vp9_compressed_hdr hdr;
++	struct v4l2_ctrl_vp9_frame frame;
++	struct v4l2_ext_control controls[2];
++	bool lossless;
++	int rc;
++
++	memset(&frame, 0, sizeof(frame));
++	memset(&hdr, 0, sizeof(hdr));
++	frame.frame_width_minus_1 = picture->frame_width - 1;
++	frame.frame_height_minus_1 = picture->frame_height - 1;
++
++	rc = vp9_parse_uncompressed(&context_object->vp9, data, size, &frame,
++				    &lossless);
++	if (rc < 0 ||
++	    frame.uncompressed_header_size + frame.compressed_header_size > size) {
++		request_log("VP9: cannot parse the frame header\n");
++		return -1;
++	}
++
++	/*
++	 * The two sizes VA-API does carry are a free cross-check of the parse:
++	 * a disagreement means everything read after the first wrong bit is
++	 * wrong too, and a frame decoded from it would be garbage.
++	 */
++	if (frame.uncompressed_header_size != picture->frame_header_length_in_bytes ||
++	    frame.compressed_header_size != picture->first_partition_size) {
++		request_log("VP9: header sizes %u+%u, VA-API says %u+%u\n",
++			    frame.uncompressed_header_size,
++			    frame.compressed_header_size,
++			    picture->frame_header_length_in_bytes,
++			    picture->first_partition_size);
++		return -1;
++	}
++
++	rc = vp9_parse_compressed(data + frame.uncompressed_header_size,
++				  frame.compressed_header_size, &frame,
++				  lossless, &hdr);
++	if (rc < 0) {
++		request_log("VP9: cannot parse the compressed header\n");
++		return -1;
++	}
++
++	if (!(frame.flags & (V4L2_VP9_FRAME_FLAG_KEY_FRAME |
++			     V4L2_VP9_FRAME_FLAG_INTRA_ONLY))) {
++		frame.last_frame_ts = vp9_ref_ts(driver_data, picture,
++						 picture->pic_fields.bits.last_ref_frame);
++		frame.golden_frame_ts = vp9_ref_ts(driver_data, picture,
++						   picture->pic_fields.bits.golden_ref_frame);
++		frame.alt_frame_ts = vp9_ref_ts(driver_data, picture,
++						picture->pic_fields.bits.alt_ref_frame);
++	}
++
++	memset(controls, 0, sizeof(controls));
++	controls[0].id = V4L2_CID_STATELESS_VP9_FRAME;
++	controls[0].ptr = &frame;
++	controls[0].size = sizeof(frame);
++	controls[1].id = V4L2_CID_STATELESS_VP9_COMPRESSED_HDR;
++	controls[1].ptr = &hdr;
++	controls[1].size = sizeof(hdr);
++
++	rc = v4l2_set_controls(driver_data->video_fd, surface_object->request_fd,
++			       controls, 2);
++	if (rc < 0)
++		return -1;
++
++	return 0;
++}
+diff --git a/src/vp9.h b/src/vp9.h
+new file mode 100644
+index 0000000..48a04b8
+--- /dev/null
++++ b/src/vp9.h
+@@ -0,0 +1,49 @@
++/*
++ * Copyright (C) 2026 Christopher Stenger
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++ * DEALINGS IN THE SOFTWARE.
++ */
++
++#ifndef _VP9_H_
++#define _VP9_H_
++
++#include <stdint.h>
++
++#include <linux/videodev2.h>
++
++struct object_context;
++struct object_surface;
++struct request_data;
++
++/*
++ * What a VP9 frame header leaves in force for the next: the loop-filter
++ * deltas and the segmentation features persist until a frame updates them
++ * or resets the past, so the parser carries them per context.
++ */
++struct vp9_state {
++	int8_t lf_ref_deltas[4];
++	int8_t lf_mode_deltas[2];
++	struct v4l2_vp9_segmentation seg;
++};
++
++int vp9_set_controls(struct request_data *driver_data,
++		     struct object_context *context_object,
++		     struct object_surface *surface_object);
++
++#endif

@@ -1,0 +1,789 @@
+Drive more than one decoder device
+
+This driver opened one video node and one media device and kept the state of
+that one queue pair in its globals.  That is the whole of most boards.  It is
+not the whole of the H713: the Allwinner video engine (cedrus -- MPEG-2, H.264,
+HEVC, VP8, VP9) is /dev/video0, and the AV1 decoder is a different core on a
+different node with its own media device.  Nothing here could reach it.
+
+Every stateless decoder on the system is now found at init: the primary one as
+before (LIBVA_V4L2_REQUEST_VIDEO_PATH / _MEDIA_PATH, or video0/media0), then
+any other streaming video node that offers a coded format this driver has a
+backend for and has a media device to allocate requests from.  The media
+device is paired with its video node through sysfs, where the two are siblings
+under one parent -- the node numbers carry no such promise.
+
+A config picks the first device that offers its coded format, so the primary
+keeps everything it can do, and a profile is advertised if any device decodes
+it.
+
+The state of a device's queues -- fds, capture format, the format programmed
+on the OUTPUT queue -- moves into struct request_device, one per device.  The
+existing code is not rewritten to index it: request_use_device() swaps a
+device's state into the fields that code already reads, and each entry point
+calls it once with the device of the object it was handed (config, context or
+surface; every one of them now records its device).  Surfaces are created with
+no config or context in sight, so they go to the device of the most recent
+config, the same way they already learn the coded pixel format.
+
+The two places that release a device's queues "when nothing refers to them any
+more" now ask that question per device.  Asking it globally would either free
+the buffers of a decoder that is still in use or never free those of one that
+is not, as soon as two had been used in one process -- which is exactly what a
+player does when the next file in a playlist is a different codec and the
+frames of the last one are still on screen.
+
+diff --git a/src/buffer.c b/src/buffer.c
+index 200b961..b075645 100644
+--- a/src/buffer.c
++++ b/src/buffer.c
+@@ -205,16 +205,6 @@ VAStatus RequestAcquireBufferHandle(VADriverContextP context,
+ 	int export_fd;
+ 	int rc;
+ 
+-	video_format = driver_data->video_format;
+-	if (video_format == NULL)
+-		return VA_STATUS_ERROR_OPERATION_FAILED;
+-
+-	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+-
+-	if (buffer_info->mem_type != VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME ||
+-	    !video_format_is_linear(driver_data->video_format))
+-		return VA_STATUS_ERROR_UNSUPPORTED_MEMORY_TYPE;
+-
+ 	buffer_object = BUFFER(driver_data, buffer_id);
+ 	if (buffer_object == NULL || buffer_object->type != VAImageBufferType)
+ 		return VA_STATUS_ERROR_INVALID_BUFFER;
+@@ -226,6 +216,18 @@ VAStatus RequestAcquireBufferHandle(VADriverContextP context,
+ 	if (surface_object == NULL)
+ 		return VA_STATUS_ERROR_INVALID_BUFFER;
+ 
++	request_use_device(driver_data, surface_object->device);
++
++	video_format = driver_data->video_format;
++	if (video_format == NULL)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
++
++	if (buffer_info->mem_type != VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME ||
++	    !video_format_is_linear(driver_data->video_format))
++		return VA_STATUS_ERROR_UNSUPPORTED_MEMORY_TYPE;
++
+ 	if (surface_object->destination_buffers_count > 1)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+diff --git a/src/config.c b/src/config.c
+index b4f848e..9a937bf 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -49,6 +49,7 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 	struct object_config *config_object;
+ 	VAConfigID id;
+ 	int i, index;
++	int device;
+ 
+ 	switch (profile) {
+ 	
+@@ -79,6 +80,12 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 		return VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
+ 	}
+ 
++	device = request_find_device(driver_data,
++				     driver_data->coded_pixelformat);
++	if (device < 0)
++		return VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
++	driver_data->config_device = device;
++
+ 	if (attributes_count > V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES)
+ 		attributes_count = V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES;
+ 
+@@ -88,6 +95,7 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 		return VA_STATUS_ERROR_ALLOCATION_FAILED;
+ 
+ 	config_object->profile = profile;
++	config_object->device = device;
+ 	config_object->entrypoint = entrypoint;
+ 	config_object->attributes[0].type = VAConfigAttribRTFormat;
+ 	config_object->attributes[0].value = VA_RT_FORMAT_YUV420;
+@@ -146,17 +154,13 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 	 * All three backends are now on the stabilized uAPI, so all three are
+ 	 * listed -- gated, as ever, on the kernel really offering the format.
+ 	 */
+-	found = v4l2_find_format(driver_data->video_fd,
+-				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+-				 V4L2_PIX_FMT_MPEG2_SLICE);
++	found = request_find_device(driver_data, V4L2_PIX_FMT_MPEG2_SLICE) >= 0;
+ 	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 2)) {
+ 		profiles[index++] = VAProfileMPEG2Simple;
+ 		profiles[index++] = VAProfileMPEG2Main;
+ 	}
+ 
+-	found = v4l2_find_format(driver_data->video_fd,
+-				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+-				 V4L2_PIX_FMT_H264_SLICE);
++	found = request_find_device(driver_data, V4L2_PIX_FMT_H264_SLICE) >= 0;
+ 	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 5)) {
+ 		profiles[index++] = VAProfileH264Main;
+ 		profiles[index++] = VAProfileH264High;
+@@ -165,17 +169,13 @@ VAStatus RequestQueryConfigProfiles(VADriverContextP context,
+ 		profiles[index++] = VAProfileH264StereoHigh;
+ 	}
+ 
+-	found = v4l2_find_format(driver_data->video_fd,
+-				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+-				 V4L2_PIX_FMT_HEVC_SLICE);
++	found = request_find_device(driver_data, V4L2_PIX_FMT_HEVC_SLICE) >= 0;
+ 	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 2)) {
+ 		profiles[index++] = VAProfileHEVCMain;
+ 		profiles[index++] = VAProfileHEVCMain10;
+ 	}
+ 
+-	found = v4l2_find_format(driver_data->video_fd,
+-				 V4L2_BUF_TYPE_VIDEO_OUTPUT,
+-				 V4L2_PIX_FMT_VP8_FRAME);
++	found = request_find_device(driver_data, V4L2_PIX_FMT_VP8_FRAME) >= 0;
+ 	if (found && index < (V4L2_REQUEST_MAX_PROFILES - 1))
+ 		profiles[index++] = VAProfileVP8Version0_3;
+ 
+diff --git a/src/config.h b/src/config.h
+index 1377e49..0575755 100644
+--- a/src/config.h
++++ b/src/config.h
+@@ -44,6 +44,8 @@ struct object_config {
+ 	VAConfigAttrib attributes[V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES];
+ 	int attributes_count;
+ 	unsigned int pixelformat;
++	/* Index of the decoder this profile runs on. */
++	unsigned int device;
+ };
+ 
+ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+diff --git a/src/context.c b/src/context.c
+index 79e1757..374f7bb 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -61,6 +61,12 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 	unsigned int output_type, capture_type;
+ 	int rc;
+ 
++	config_object = CONFIG(driver_data, config_id);
++	if (config_object == NULL)
++		return VA_STATUS_ERROR_INVALID_CONFIG;
++
++	request_use_device(driver_data, config_object->device);
++
+ 	video_format = driver_data->video_format;
+ 	if (video_format == NULL)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+@@ -68,12 +74,6 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+ 	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
+-	config_object = CONFIG(driver_data, config_id);
+-	if (config_object == NULL) {
+-		status = VA_STATUS_ERROR_INVALID_CONFIG;
+-		goto error;
+-	}
+-
+ 	id = object_heap_allocate(&driver_data->context_heap);
+ 	context_object = CONTEXT(driver_data, id);
+ 	if (context_object == NULL) {
+@@ -142,6 +142,7 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 	}
+ 
+ 	context_object->config_id = config_id;
++	context_object->device = driver_data->device;
+ 	context_object->render_surface_id = VA_INVALID_ID;
+ 	context_object->surfaces_ids = ids;
+ 	context_object->surfaces_count = surfaces_count;
+@@ -173,9 +174,16 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	struct video_format *video_format;
+ 	unsigned int output_type, capture_type;
+ 	VAStatus status;
+-	int iterator;
++	unsigned int device;
+ 	int rc;
+ 
++	context_object = CONTEXT(driver_data, context_id);
++	if (context_object == NULL)
++		return VA_STATUS_ERROR_INVALID_CONTEXT;
++
++	device = context_object->device;
++	request_use_device(driver_data, device);
++
+ 	video_format = driver_data->video_format;
+ 	if (video_format == NULL)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+@@ -183,10 +191,6 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+ 	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
+-	context_object = CONTEXT(driver_data, context_id);
+-	if (context_object == NULL)
+-		return VA_STATUS_ERROR_INVALID_CONTEXT;
+-
+ 	rc = v4l2_set_stream(driver_data->video_fd, output_type, false);
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+@@ -222,8 +226,9 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	 * "Failed to create decode context: 1 (operation failed)", a permanent
+ 	 * drop to software decoding, and a visible flicker mid-playback.
+ 	 */
+-	if (object_heap_first(&driver_data->surface_heap, &iterator) != NULL ||
+-	    object_heap_first(&driver_data->context_heap, &iterator) != NULL)
++	request_use_device(driver_data, device);
++	if (request_device_in_use(driver_data, device) ||
++	    driver_data->video_format == NULL)
+ 		return VA_STATUS_SUCCESS;
+ 
+ 	rc = v4l2_request_buffers(driver_data->video_fd, output_type, 0);
+diff --git a/src/context.h b/src/context.h
+index f3d9bea..7e6e242 100644
+--- a/src/context.h
++++ b/src/context.h
+@@ -42,6 +42,8 @@ struct object_context {
+ 	struct object_base base;
+ 
+ 	VAConfigID config_id;
++	/* Index of the decoder this context streams on. */
++	unsigned int device;
+ 	VASurfaceID render_surface_id;
+ 	VASurfaceID *surfaces_ids;
+ 	int surfaces_count;
+diff --git a/src/image.c b/src/image.c
+index b81d399..d2dfa80 100644
+--- a/src/image.c
++++ b/src/image.c
+@@ -208,6 +208,8 @@ VAStatus RequestDeriveImage(VADriverContextP context, VASurfaceID surface_id,
+ 	if (surface_object == NULL)
+ 		return VA_STATUS_ERROR_INVALID_SURFACE;
+ 
++	request_use_device(driver_data, surface_object->device);
++
+ 	if (surface_object->status == VASurfaceRendering) {
+ 		status = RequestSyncSurface(context, surface_id);
+ 		if (status != VA_STATUS_SUCCESS)
+diff --git a/src/picture.c b/src/picture.c
+index e6be2b5..fcafc65 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -346,6 +346,12 @@ VAStatus RequestEndPicture(VADriverContextP context, VAContextID context_id)
+ 	VAStatus status;
+ 	int rc;
+ 
++	context_object = CONTEXT(driver_data, context_id);
++	if (context_object == NULL)
++		return VA_STATUS_ERROR_INVALID_CONTEXT;
++
++	request_use_device(driver_data, context_object->device);
++
+ 	video_format = driver_data->video_format;
+ 	if (video_format == NULL)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+@@ -353,10 +359,6 @@ VAStatus RequestEndPicture(VADriverContextP context, VAContextID context_id)
+ 	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+ 	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
+-	context_object = CONTEXT(driver_data, context_id);
+-	if (context_object == NULL)
+-		return VA_STATUS_ERROR_INVALID_CONTEXT;
+-
+ 	config_object = CONFIG(driver_data, context_object->config_id);
+ 	if (config_object == NULL)
+ 		return VA_STATUS_ERROR_INVALID_CONFIG;
+diff --git a/src/request.c b/src/request.c
+index a9d57a8..93d8c78 100644
+--- a/src/request.c
++++ b/src/request.c
+@@ -35,6 +35,8 @@
+ #include "autoconfig.h"
+ 
+ #include <va/va_backend.h>
++#include <sys/stat.h>
++#include <dirent.h>
+ 
+ #include "request.h"
+ #include "utils.h"
+@@ -145,6 +147,197 @@ void request_parse_crop(struct request_data *driver_data)
+ 	driver_data->crop_height = height;
+ }
+ 
++void request_use_device(struct request_data *driver_data, unsigned int device)
++{
++	struct request_device *from = &driver_data->devices[driver_data->device];
++	struct request_device *to;
++
++	if (device == driver_data->device || device >= driver_data->devices_count)
++		return;
++
++	from->video_format = driver_data->video_format;
++	from->configured_pixelformat = driver_data->configured_pixelformat;
++	from->configured_width = driver_data->configured_width;
++	from->configured_height = driver_data->configured_height;
++
++	to = &driver_data->devices[device];
++	driver_data->video_fd = to->video_fd;
++	driver_data->media_fd = to->media_fd;
++	driver_data->video_format = to->video_format;
++	driver_data->configured_pixelformat = to->configured_pixelformat;
++	driver_data->configured_width = to->configured_width;
++	driver_data->configured_height = to->configured_height;
++	driver_data->device = device;
++}
++
++/*
++ * The device that decodes a coded format: the first that offers it, so the
++ * primary device keeps everything it can do.
++ */
++int request_find_device(struct request_data *driver_data,
++			unsigned int pixelformat)
++{
++	unsigned int i;
++
++	for (i = 0; i < driver_data->devices_count; i++)
++		if (v4l2_find_format(driver_data->devices[i].video_fd,
++				     V4L2_BUF_TYPE_VIDEO_OUTPUT, pixelformat) ||
++		    v4l2_find_format(driver_data->devices[i].video_fd,
++				     V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE,
++				     pixelformat))
++			return i;
++
++	return -1;
++}
++
++/* Whether any surface or context still lives on a device's queues. */
++bool request_device_in_use(struct request_data *driver_data,
++			   unsigned int device)
++{
++	struct object_surface *surface_object;
++	struct object_context *context_object;
++	int iterator;
++
++	surface_object = (struct object_surface *)
++		object_heap_first(&driver_data->surface_heap, &iterator);
++	while (surface_object != NULL) {
++		if (surface_object->device == device)
++			return true;
++		surface_object = (struct object_surface *)
++			object_heap_next(&driver_data->surface_heap, &iterator);
++	}
++
++	context_object = (struct object_context *)
++		object_heap_first(&driver_data->context_heap, &iterator);
++	while (context_object != NULL) {
++		if (context_object->device == device)
++			return true;
++		context_object = (struct object_context *)
++			object_heap_next(&driver_data->context_heap, &iterator);
++	}
++
++	return false;
++}
++
++#define ARRAY_SIZE(a)	(sizeof(a) / sizeof((a)[0]))
++
++static const unsigned int request_coded_formats[] = {
++	V4L2_PIX_FMT_MPEG2_SLICE, V4L2_PIX_FMT_H264_SLICE,
++	V4L2_PIX_FMT_HEVC_SLICE, V4L2_PIX_FMT_VP8_FRAME,
++	V4L2_PIX_FMT_VP9_FRAME, V4L2_PIX_FMT_AV1_FRAME,
++};
++
++/*
++ * Find the media device that belongs to a video node. They are siblings
++ * under the same parent device in sysfs, which is the only place the pairing
++ * is recorded: the node numbers say nothing (video1 need not go with media1).
++ */
++static int request_open_media_for(const char *video_name)
++{
++	char path[PATH_MAX], video_parent[PATH_MAX], media_real[PATH_MAX];
++	struct dirent *entry;
++	int media_fd = -1;
++	char *slash;
++	DIR *dir;
++
++	snprintf(path, sizeof(path), "/sys/class/video4linux/%s/device",
++		 video_name);
++	if (realpath(path, video_parent) == NULL)
++		return -1;
++
++	dir = opendir("/sys/bus/media/devices");
++	if (dir == NULL)
++		return -1;
++
++	while ((entry = readdir(dir)) != NULL) {
++		if (strncmp(entry->d_name, "media", 5) != 0)
++			continue;
++
++		snprintf(path, sizeof(path), "/sys/bus/media/devices/%s",
++			 entry->d_name);
++		if (realpath(path, media_real) == NULL)
++			continue;
++
++		slash = strrchr(media_real, '/');
++		if (slash == NULL)
++			continue;
++		*slash = '\0';
++
++		if (strcmp(media_real, video_parent) != 0)
++			continue;
++
++		snprintf(path, sizeof(path), "/dev/%s", entry->d_name);
++		media_fd = open(path, O_RDWR | O_NONBLOCK);
++		break;
++	}
++
++	closedir(dir);
++
++	return media_fd;
++}
++
++/*
++ * Add every other stateless decoder on the system: a streaming video node
++ * that offers one of the coded formats this driver has a backend for and has
++ * a media device to allocate requests from. Anything else -- a camera, an
++ * encoder, a scaler -- fails one of those tests and is left alone.
++ */
++static void request_probe_devices(struct request_data *driver_data)
++{
++	struct stat primary, other;
++	struct dirent *entry;
++	char path[PATH_MAX];
++	unsigned int capabilities;
++	unsigned int i;
++	int video_fd, media_fd;
++	bool decoder;
++	DIR *dir;
++
++	if (fstat(driver_data->devices[0].video_fd, &primary) < 0)
++		return;
++
++	dir = opendir("/sys/class/video4linux");
++	if (dir == NULL)
++		return;
++
++	while ((entry = readdir(dir)) != NULL &&
++	       driver_data->devices_count < V4L2_REQUEST_MAX_DEVICES) {
++		if (strncmp(entry->d_name, "video", 5) != 0)
++			continue;
++
++		snprintf(path, sizeof(path), "/dev/%s", entry->d_name);
++		video_fd = open(path, O_RDWR | O_NONBLOCK);
++		if (video_fd < 0)
++			continue;
++
++		decoder = false;
++		if (fstat(video_fd, &other) == 0 &&
++		    other.st_rdev != primary.st_rdev &&
++		    v4l2_query_capabilities(video_fd, &capabilities) == 0 &&
++		    (capabilities & V4L2_CAP_STREAMING))
++			for (i = 0; i < ARRAY_SIZE(request_coded_formats); i++)
++				if (v4l2_find_format(video_fd,
++						     V4L2_BUF_TYPE_VIDEO_OUTPUT,
++						     request_coded_formats[i]) ||
++				    v4l2_find_format(video_fd,
++						     V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE,
++						     request_coded_formats[i]))
++					decoder = true;
++
++		media_fd = decoder ? request_open_media_for(entry->d_name) : -1;
++		if (media_fd < 0) {
++			close(video_fd);
++			continue;
++		}
++
++		driver_data->devices[driver_data->devices_count].video_fd = video_fd;
++		driver_data->devices[driver_data->devices_count].media_fd = media_fd;
++		driver_data->devices_count++;
++	}
++
++	closedir(dir);
++}
++
+ /* Set default visibility for the init function only. */
+ VAStatus __attribute__((visibility("default")))
+ VA_DRIVER_INIT_FUNC(VADriverContextP context);
+@@ -271,6 +464,14 @@ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context)
+ 	driver_data->video_fd = video_fd;
+ 	driver_data->media_fd = media_fd;
+ 
++	driver_data->devices[0].video_fd = video_fd;
++	driver_data->devices[0].media_fd = media_fd;
++	driver_data->devices_count = 1;
++	driver_data->device = 0;
++	driver_data->config_device = 0;
++
++	request_probe_devices(driver_data);
++
+ 	status = VA_STATUS_SUCCESS;
+ 	goto complete;
+ 
+@@ -295,11 +496,9 @@ VAStatus RequestTerminate(VADriverContextP context)
+ 	struct object_surface *surface_object;
+ 	struct object_context *context_object;
+ 	struct object_config *config_object;
++	unsigned int i;
+ 	int iterator;
+ 
+-	close(driver_data->video_fd);
+-	close(driver_data->media_fd);
+-
+ 	/* Cleanup leftover buffers. */
+ 
+ 	image_object = (struct object_image *)
+@@ -356,6 +555,12 @@ VAStatus RequestTerminate(VADriverContextP context)
+ 
+ 	object_heap_destroy(&driver_data->config_heap);
+ 
++	/* After the objects: destroying them still talks to the devices. */
++	for (i = 0; i < driver_data->devices_count; i++) {
++		close(driver_data->devices[i].video_fd);
++		close(driver_data->devices[i].media_fd);
++	}
++
+ 	free(context->pDriverData);
+ 	context->pDriverData = NULL;
+ 
+diff --git a/src/request.h b/src/request.h
+index d6dc4aa..71177f2 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -39,23 +39,59 @@
+ #define V4L2_REQUEST_STR_VENDOR			"v4l2-request"
+ 
+ #define V4L2_REQUEST_MAX_PROFILES		11
++#define V4L2_REQUEST_MAX_DEVICES		4
+ #define V4L2_REQUEST_MAX_ENTRYPOINTS		5
+ #define V4L2_REQUEST_MAX_CONFIG_ATTRIBUTES	10
+ #define V4L2_REQUEST_MAX_IMAGE_FORMATS		10
+ #define V4L2_REQUEST_MAX_SUBPIC_FORMATS		4
+ #define V4L2_REQUEST_MAX_DISPLAY_ATTRIBUTES	4
+ 
++/*
++ * One stateless decoder: a video node, the media device its requests are
++ * allocated from, and the state of its two queues.
++ *
++ * A board can have more than one. The H713 has the Allwinner video engine
++ * (cedrus: MPEG-2, H.264, HEVC, VP8, VP9) and, as a separate device with its
++ * own nodes, a Google AV1 core. A V4L2 mem2mem queue pair has one format and
++ * one set of buffers, so each device carries its own copy of that state.
++ */
++struct request_device {
++	int video_fd;
++	int media_fd;
++	struct video_format *video_format;
++	unsigned int configured_pixelformat;
++	unsigned int configured_width;
++	unsigned int configured_height;
++};
++
+ struct request_data {
+ 	struct object_heap config_heap;
+ 	struct object_heap context_heap;
+ 	struct object_heap surface_heap;
+ 	struct object_heap buffer_heap;
+ 	struct object_heap image_heap;
++	/*
++	 * The ACTIVE device's state. Every function below was written for a
++	 * single device and reads these; request_use_device() swaps another
++	 * device's state in, so an entry point says which device its object
++	 * lives on once, at the top, and the rest of it is unchanged.
++	 */
+ 	int video_fd;
+ 	int media_fd;
+ 
+ 	struct video_format *video_format;
+ 
++	/* The parked state of every device; [device] is stale while active. */
++	struct request_device devices[V4L2_REQUEST_MAX_DEVICES];
++	unsigned int devices_count;
++	unsigned int device;
++	/*
++	 * The device of the most recently created config. Surfaces are created
++	 * with no reference to a config or a context, so -- like
++	 * coded_pixelformat below -- this is how they learn where they belong.
++	 */
++	unsigned int config_device;
++
+ 	/*
+ 	 * The coded (OUTPUT queue) pixel format for the stream being
+ 	 * decoded. It lives here because the format must be set before
+@@ -101,6 +137,11 @@ struct request_data {
+ 
+ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context);
+ VAStatus RequestTerminate(VADriverContextP context);
++void request_use_device(struct request_data *driver_data, unsigned int device);
++int request_find_device(struct request_data *driver_data,
++			unsigned int pixelformat);
++bool request_device_in_use(struct request_data *driver_data,
++			   unsigned int device);
+ void request_parse_scale(struct request_data *driver_data);
+ void request_parse_crop(struct request_data *driver_data);
+ 
+diff --git a/src/surface.c b/src/surface.c
+index b26cc4a..8b9559f 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -128,9 +128,21 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	 */
+ 	unsigned int pixelformat = driver_data->coded_pixelformat;
+ 	unsigned int output_type = v4l2_type_video_output(false);
+-
+-	context_active = object_heap_first(&driver_data->context_heap,
+-					   &context_iterator) != NULL;
++	struct object_context *context_object;
++
++	/* Surfaces belong to the decoder the current config chose. */
++	request_use_device(driver_data, driver_data->config_device);
++
++	context_active = false;
++	context_object = (struct object_context *)
++		object_heap_first(&driver_data->context_heap, &context_iterator);
++	while (context_object != NULL) {
++		if (context_object->device == driver_data->device)
++			context_active = true;
++		context_object = (struct object_context *)
++			object_heap_next(&driver_data->context_heap,
++					 &context_iterator);
++	}
+ 	if (!context_active &&
+ 	    (driver_data->configured_pixelformat != pixelformat ||
+ 	     driver_data->configured_width != width ||
+@@ -350,6 +362,7 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		}
+ 
+ 		surface_object->status = VASurfaceReady;
++		surface_object->device = driver_data->device;
+ 		surface_object->decode_error = false;
+ 		surface_object->width = width;
+ 		surface_object->height = height;
+@@ -407,9 +420,10 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 	struct object_surface *surface_object;
+ 	struct video_format *video_format;
+ 	unsigned int output_type, capture_type;
+-	int iterator;
+ 	int output_rc, capture_rc;
+ 	unsigned int i, j;
++	unsigned int device;
++	VAStatus status = VA_STATUS_SUCCESS;
+ 
+ 	for (i = 0; i < surfaces_count; i++) {
+ 		surface_object = SURFACE(driver_data, surfaces_ids[i]);
+@@ -441,29 +455,32 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 	 * Release both queues once no surface or context refers to them.
+ 	 * Exported dma-bufs retain their own references to the storage.
+ 	 */
+-	surface_object = (struct object_surface *)
+-		object_heap_first(&driver_data->surface_heap, &iterator);
+-	if (surface_object != NULL ||
+-	    object_heap_first(&driver_data->context_heap, &iterator) != NULL)
+-		return VA_STATUS_SUCCESS;
++	for (device = 0; device < driver_data->devices_count; device++) {
++		if (request_device_in_use(driver_data, device))
++			continue;
+ 
+-	video_format = driver_data->video_format;
+-	if (video_format == NULL)
+-		return VA_STATUS_SUCCESS;
++		request_use_device(driver_data, device);
+ 
+-	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+-	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+-	output_rc = v4l2_request_buffers(driver_data->video_fd, output_type, 0);
+-	capture_rc = v4l2_request_buffers(driver_data->video_fd, capture_type, 0);
+-	if (output_rc < 0 || capture_rc < 0)
+-		return VA_STATUS_ERROR_OPERATION_FAILED;
++		video_format = driver_data->video_format;
++		if (video_format == NULL)
++			continue;
+ 
+-	driver_data->configured_pixelformat = 0;
+-	driver_data->configured_width = 0;
+-	driver_data->configured_height = 0;
+-	driver_data->video_format = NULL;
++		output_type = v4l2_type_video_output(video_format->v4l2_mplane);
++		capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
++		output_rc = v4l2_request_buffers(driver_data->video_fd,
++						 output_type, 0);
++		capture_rc = v4l2_request_buffers(driver_data->video_fd,
++						  capture_type, 0);
++		if (output_rc < 0 || capture_rc < 0)
++			status = VA_STATUS_ERROR_OPERATION_FAILED;
++
++		driver_data->configured_pixelformat = 0;
++		driver_data->configured_width = 0;
++		driver_data->configured_height = 0;
++		driver_data->video_format = NULL;
++	}
+ 
+-	return VA_STATUS_SUCCESS;
++	return status;
+ }
+ 
+ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+@@ -477,6 +494,14 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 	int request_fd = -1;
+ 	int rc;
+ 
++	surface_object = SURFACE(driver_data, surface_id);
++	if (surface_object == NULL) {
++		status = VA_STATUS_ERROR_INVALID_SURFACE;
++		goto error;
++	}
++
++	request_use_device(driver_data, surface_object->device);
++
+ 	video_format = driver_data->video_format;
+ 	if (video_format == NULL) {
+ 		status = VA_STATUS_ERROR_OPERATION_FAILED;
+@@ -486,12 +511,6 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+ 	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
+-	surface_object = SURFACE(driver_data, surface_id);
+-	if (surface_object == NULL) {
+-		status = VA_STATUS_ERROR_INVALID_SURFACE;
+-		goto error;
+-	}
+-
+ 	if (surface_object->status != VASurfaceRendering) {
+ 		status = VA_STATUS_SUCCESS;
+ 		goto complete;
+@@ -717,10 +736,6 @@ VAStatus RequestExportSurfaceHandle(VADriverContextP context,
+ 	VAStatus status;
+ 	int rc;
+ 
+-	video_format = driver_data->video_format;
+-	if (video_format == NULL)
+-		return VA_STATUS_ERROR_OPERATION_FAILED;
+-
+ 	if (mem_type != VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2)
+ 		return VA_STATUS_ERROR_UNSUPPORTED_MEMORY_TYPE;
+ 
+@@ -728,6 +743,12 @@ VAStatus RequestExportSurfaceHandle(VADriverContextP context,
+ 	if (surface_object == NULL)
+ 		return VA_STATUS_ERROR_INVALID_SURFACE;
+ 
++	request_use_device(driver_data, surface_object->device);
++
++	video_format = driver_data->video_format;
++	if (video_format == NULL)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
+ 	export_fds_count = surface_object->destination_buffers_count;
+ 	export_fds = malloc(export_fds_count * sizeof(*export_fds));
+ 
+diff --git a/src/surface.h b/src/surface.h
+index 31dc10f..da7bcba 100644
+--- a/src/surface.h
++++ b/src/surface.h
+@@ -44,6 +44,9 @@ struct object_surface {
+ 
+ 	VASurfaceStatus status;
+ 
++	/* Index of the decoder whose queues hold this surface's buffers. */
++	unsigned int device;
++
+ 	/*
+ 	 * The hardware reported a decode error for the picture this surface
+ 	 * holds -- V4L2_BUF_FLAG_ERROR on its CAPTURE dequeue. VASurfaceStatus
