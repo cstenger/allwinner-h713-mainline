@@ -39,11 +39,14 @@
 #define H713_AV1_CDEF_COLBUF_SIZE	0x1100
 #define H713_AV1_REC_SINDEX_SIZE	0x66000
 #define H713_AV1_SEC_COLBUF_SIZE	0x44000		/* out_secondary_colbuf, every size */
+/* multi-tile vertical filter: ALIGN_4K(ceil(h/64) * 0xa00); 4K height */
+#define H713_AV1_VERT_FILT_SIZE		0x17000
 
 struct h713_av1_dma {
 	void *cpu;
 	u64 dma;
 	size_t size;
+	bool kmap;	/* allocated with a kernel mapping */
 };
 
 /* One decoded frame's private buffers: compressed reconstruction + MVs. */
@@ -69,6 +72,7 @@ struct h713_av1_bufs {
 	struct h713_av1_dma tile_info, global_model, prob, prob_out;
 	struct h713_av1_dma film_grain, pdec, scratch, filter_ctrl;
 	struct h713_av1_dma fg_colbuf, cdef_colbuf, rec_sindex, sec_colbuf;
+	struct h713_av1_dma vert_filt;
 };
 
 /* CDF storage lives here, not in hantro_ctx, so the host rig can use it. */

@@ -10,11 +10,13 @@ of its secondary output as plain NV12.
 
 sunxi_h713_av1_gen.c builds the register image and every CPU-written
 buffer from the V4L2 stateless AV1 controls. It is a pure function, derived
-from the VPU981 code, and it is checked field by field and buffer by buffer
-against the vendor library running under emulation on the same streams:
-37 of 37 frames identical across 352x288 to 3840x2160, 2x2 tiles, film
-grain and 10-bit (tools/re/av1/rig/gate.sh in the H713 tree). The register
-field table is generated from the vendor's own register model.
+from the VPU981 code, and it is checked against the vendor library running
+under emulation on the same streams -- every named field, every bit no name
+covers, every buffer the vendor points the core at, and the CPU-written
+buffers byte for byte: 47 of 47 frames identical over eleven clips
+(tools/re/av1/rig/gate.sh in the H713 tree). The register field table is
+generated from the vendor's own register model; one bit its printer never
+names, allow_warped_motion at bit 9275, is added by hand.
 
 sunxi_h713_av1_hw.c is the hantro glue: the fixed working buffers, a
 compressed reconstruction/header/MV set per reference slot (allocated on
@@ -23,10 +25,29 @@ video engine's clocks and reset, which the core needs but which belong to
 cedrus -- a runtime-PM device link to the VE keeps them up while this
 device is active, and probe refuses a VE clock above 432 MHz.
 
-Two hantro changes: a context pointer for the variant's state, and film
-grain no longer forces post-processing on a variant that has none (the
-H713 core applies grain itself). The VPU981's entropy and film-grain
-helpers are shared through a hidden VIDEO_HANTRO_AV1 symbol.
+Three rules the hardware enforces, each found by a stalled or wedged SoC:
+
+  - The reset must be released with the core's bus and MBUS clocks running.
+    hantro_probe releases it with them only prepared, and a core brought out
+    of reset that way stalls on its first memory transfer -- permanently,
+    until a power cycle. The variant enables the clocks, reset held, before
+    hantro releases it, and keeps them on.
+  - The interrupt line reads pending at boot and the handler reads the
+    core's registers, so the variant requests the line disabled and arms it
+    only for a frame in flight (hantro_dev gains a variant_priv pointer).
+  - Image words 0 and 1 (ID and configuration) are never written, the rest
+    go in top-down with the start bit held back, and nothing is written
+    while the start bit is set.
+
+Two hantro changes besides: a context pointer for the variant's state, and
+film grain no longer forces post-processing on a variant that has none (the
+H713 core applies grain itself). The VPU981's entropy and film-grain helpers
+are shared through a hidden VIDEO_HANTRO_AV1 symbol.
+
+Tested on the HY200 with GStreamer's v4l2slav1dec against libdav1d, every
+frame by MD5: 16 streams from 352x288 to 1920x1080 -- including an unaligned
+1000x600, 2x2 tiles, film grain, warped motion, error-resilient, all-intra
+and no-CDF-update streams -- all bit-exact, one AV1 interrupt per frame.
 
 Capture is NV12 only (8-bit); 10-bit output is not wired up yet.
 
@@ -61,7 +82,15 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/hantro_drv.c pb/drivers
 diff --color -Naur pa/drivers/media/platform/verisilicon/hantro.h pb/drivers/media/platform/verisilicon/hantro.h
 --- a/drivers/media/platform/verisilicon/hantro.h
 +++ b/drivers/media/platform/verisilicon/hantro.h
-@@ -244,6 +244,8 @@
+@@ -210,6 +210,7 @@
+ 	struct mutex vpu_mutex;	/* video_device lock */
+ 	spinlock_t irqlock;
+ 	const struct hantro_variant *variant;
++	void *variant_priv;
+ 	struct delayed_work watchdog_work;
+ };
+ 
+@@ -244,6 +245,8 @@
   * @vp9_dec:		VP9-decoding context.
   * @av1_dec:		AV1-decoding context.
   */
@@ -70,7 +99,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/hantro.h pb/drivers/med
  struct hantro_ctx {
  	struct hantro_dev *dev;
  	struct v4l2_fh fh;
-@@ -274,6 +276,7 @@
+@@ -274,6 +277,7 @@
  		struct hantro_hevc_dec_hw_ctx hevc_dec;
  		struct hantro_vp9_dec_hw_ctx vp9_dec;
  		struct hantro_av1_dec_hw_ctx av1_dec;
@@ -215,7 +244,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_compat.h
 diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c
-@@ -0,0 +1,1335 @@
+@@ -0,0 +1,1361 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * H713 AV1 decoder: register-image generation. See sunxi_h713_av1_gen.h.
@@ -251,6 +280,15 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +#define RS_SCALE_SUBPEL_BITS		14
 +#define RS_SCALE_SUBPEL_MASK		((1 << RS_SCALE_SUBPEL_BITS) - 1)
 +#define RS_SCALE_EXTRA_BITS		(RS_SCALE_SUBPEL_BITS - RS_SUBPEL_BITS)
++
++/*
++ * allow_warped_motion: the image's last bit (ac_int<9276> bit 9275). The
++ * vendor's register printer never names it, so the generated field table has
++ * no entry; found by comparing the unnamed bits of vendor and rig images on
++ * streams that allow warped motion (2026-09-30). Without it the core parses
++ * such frames without the warp syntax: corrupt pictures, errors, stalls.
++ */
++#define H713_AV1_ALLOW_WARPED_MOTION	H713_AV1_FIELD(9275, 1)
 +
 +#define IS_INTRA(type) ((type) == V4L2_AV1_KEY_FRAME || (type) == V4L2_AV1_INTRA_ONLY_FRAME)
 +
@@ -506,6 +544,14 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +			put_unaligned_le32(start + h->tge[id].tile_size, pos + 4);
 +		}
 +
++	/*
++	 * Multi-tile: the vertical-filter column buffer, one buffer read and
++	 * written (Vp9AsicAllocateFilterBlockMem). Left 0, the core stalls.
++	 */
++	if (ti->tile_cols > 1 || ti->tile_rows > 1) {
++		WADDR(h, VERT_FILT_READ_BASE, h->b.vert_filt.dma);
++		WADDR(h, VERT_FILT_WRITE_BASE, h->b.vert_filt.dma);
++	}
 +	W(h, MULTICORE_EXPECT_CONTEXT_UPDATE, cu_x == 0);
 +	W(h, TILE_ENABLE, ti->tile_cols > 1 || ti->tile_rows > 1);
 +	for (c = 0; (1 << c) < ti->tile_cols; c++)
@@ -845,7 +891,11 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +		W(h, CR_OFFSET, 0); W(h, OVERLAP_FLAG, 0);
 +		W(h, CLIP_TO_RESTRICTED_RANGE, 0); W(h, CHROMA_SCALING_FROM_LUMA, 0);
 +		W(h, RANDOM_SEED, 0);
-+		W(h, FILM_GRAIN_BASE, 0);
++		/* the vendor points it at the buffer whenever the sequence has grain */
++		if (fg)
++			WADDR(h, FILM_GRAIN_BASE, h->b.film_grain.dma);
++		else
++			W(h, FILM_GRAIN_BASE, 0);
 +		return;
 +	}
 +
@@ -1124,6 +1174,10 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +		}
 +	}
 +
++	/* the vendor points the first MV read at LAST's MVs even when unused */
++	idx = get_frame_index(h, LST_BUF_IDX);
++	if (idx >= 0)
++		WADDR(h, TEMPORAL_READ_BASE, h->refs[idx].bufs.mv);
 +	for (k = 0; k < 3; k++) {
 +		h713_av1_set(h->regs, use_tmv[k], 0);
 +		for (rf = 0; rf < 7; rf++)
@@ -1320,6 +1374,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 +	W(h, SECONDARY_OUTPUT_E, !!(f->flags & (V4L2_AV1_FRAME_FLAG_SHOW_FRAME |
 +						V4L2_AV1_FRAME_FLAG_SHOWABLE_FRAME)));
 +	W(h, SWITCHABLE_MOTION_MODE, !!(f->flags & V4L2_AV1_FRAME_FLAG_IS_MOTION_MODE_SWITCHABLE));
++	W(h, ALLOW_WARPED_MOTION, !!(f->flags & V4L2_AV1_FRAME_FLAG_ALLOW_WARPED_MOTION));
 +	W(h, ALLOW_MASKED_COMPOUND, !!(s->flags & V4L2_AV1_SEQUENCE_FLAG_ENABLE_MASKED_COMPOUND));
 +	W(h, ALLOW_INTERINTRA, !!(s->flags & V4L2_AV1_SEQUENCE_FLAG_ENABLE_INTERINTRA_COMPOUND));
 +	W(h, ENABLE_INTRA_EDGE_FILTER, !!(s->flags & V4L2_AV1_SEQUENCE_FLAG_ENABLE_INTRA_EDGE_FILTER));
@@ -1554,7 +1609,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.c pb
 diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,158 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * H713 AV1 decoder: register-image generation.
@@ -1596,11 +1651,14 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb
 +#define H713_AV1_CDEF_COLBUF_SIZE	0x1100
 +#define H713_AV1_REC_SINDEX_SIZE	0x66000
 +#define H713_AV1_SEC_COLBUF_SIZE	0x44000		/* out_secondary_colbuf, every size */
++/* multi-tile vertical filter: ALIGN_4K(ceil(h/64) * 0xa00); 4K height */
++#define H713_AV1_VERT_FILT_SIZE		0x17000
 +
 +struct h713_av1_dma {
 +	void *cpu;
 +	u64 dma;
 +	size_t size;
++	bool kmap;	/* allocated with a kernel mapping */
 +};
 +
 +/* One decoded frame's private buffers: compressed reconstruction + MVs. */
@@ -1626,6 +1684,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb
 +	struct h713_av1_dma tile_info, global_model, prob, prob_out;
 +	struct h713_av1_dma film_grain, pdec, scratch, filter_ctrl;
 +	struct h713_av1_dma fg_colbuf, cdef_colbuf, rec_sindex, sec_colbuf;
++	struct h713_av1_dma vert_filt;
 +};
 +
 +/* CDF storage lives here, not in hantro_ctx, so the host rig can use it. */
@@ -1712,7 +1771,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_gen.h pb
 diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c
-@@ -0,0 +1,410 @@
+@@ -0,0 +1,521 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Allwinner H713 AV1 decoder.
@@ -1736,14 +1795,29 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 + * device link to the VE (named by the allwinner,video-engine phandle) keeps
 + * them up whenever this device is active. Above 432 MHz the core stalls
 + * into its own timeout, so the VE clock must be at or below that.
++ *
++ * Three hardware rules, each learnt from a wedged or stalled SoC:
++ *  - the reset must be released with the core's bus and MBUS clocks running
++ *    (hantro releases it at probe with them only prepared, so they are
++ *    enabled before that and kept on); released unclocked, the core stalls
++ *    on its first memory transfer, and nothing short of a power cycle
++ *    recovers it;
++ *  - the interrupt line reads pending at boot, and the handler reads the
++ *    core's registers, so the line is enabled only while a frame is in
++ *    flight;
++ *  - image words 0 and 1 (ID and configuration) are never written, and no
++ *    register is written while the start bit is still set.
 + */
 +
 +#include <linux/clk.h>
 +#include <linux/delay.h>
 +#include <linux/dma-mapping.h>
++#include <linux/interrupt.h>
++#include <linux/module.h>
 +#include <linux/of.h>
 +#include <linux/of_platform.h>
 +#include <linux/platform_device.h>
++#include <linux/pm_runtime.h>
 +#include <linux/reset.h>
 +#include <linux/vmalloc.h>
 +
@@ -1766,7 +1840,36 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +
 +enum { SLOT_REC, SLOT_HDR, SLOT_MV, SLOT_NBUFS };
 +
++static bool h713_av1_trace;
++module_param(h713_av1_trace, bool, 0644);
++MODULE_PARM_DESC(h713_av1_trace, "H713 AV1: log each frame, its register image and its interrupt");
++
++#define h713_trace(vpu, fmt, ...) \
++	do { if (h713_av1_trace) dev_info((vpu)->dev, fmt, ##__VA_ARGS__); } while (0)
++
++struct sunxi_h713_av1_hw {
++	int irq;
++	unsigned long armed;	/* bit 0: the line is enabled */
++};
++
++static void h713_av1_irq_arm(struct hantro_dev *vpu)
++{
++	struct sunxi_h713_av1_hw *hw = vpu->variant_priv;
++
++	if (!test_and_set_bit(0, &hw->armed))
++		enable_irq(hw->irq);
++}
++
++static void h713_av1_irq_disarm(struct hantro_dev *vpu)
++{
++	struct sunxi_h713_av1_hw *hw = vpu->variant_priv;
++
++	if (test_and_clear_bit(0, &hw->armed))
++		disable_irq_nosync(hw->irq);
++}
++
 +struct sunxi_h713_av1_dec_ctx {
++	bool powered;		/* holding the domain and clocks while streaming */
 +	struct h713_av1 gen;
 +	struct h713_av1_cdf *cdf;
 +	/* each reference slot's compressed reconstruction, header and MVs */
@@ -1777,16 +1880,17 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +			  size_t size, bool cpu)
 +{
 +	d->size = size;
++	d->kmap = cpu;
 +	d->cpu = dma_alloc_attrs(vpu->dev, size, &d->dma, GFP_KERNEL,
 +				 cpu ? 0 : DMA_ATTR_NO_KERNEL_MAPPING);
 +	return d->cpu ? 0 : -ENOMEM;
 +}
 +
-+static void h713_av1_free(struct hantro_dev *vpu, struct h713_av1_dma *d, bool cpu)
++static void h713_av1_free(struct hantro_dev *vpu, struct h713_av1_dma *d)
 +{
 +	if (d->cpu)
 +		dma_free_attrs(vpu->dev, d->size, d->cpu, d->dma,
-+			       cpu ? 0 : DMA_ATTR_NO_KERNEL_MAPPING);
++			       d->kmap ? 0 : DMA_ATTR_NO_KERNEL_MAPPING);
 +	d->cpu = NULL;
 +}
 +
@@ -1808,11 +1912,19 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	{ offsetof(struct h713_av1_bufs, cdef_colbuf), H713_AV1_CDEF_COLBUF_SIZE, false },
 +	{ offsetof(struct h713_av1_bufs, rec_sindex), H713_AV1_REC_SINDEX_SIZE, false },
 +	{ offsetof(struct h713_av1_bufs, sec_colbuf), H713_AV1_SEC_COLBUF_SIZE, false },
++	{ offsetof(struct h713_av1_bufs, vert_filt), H713_AV1_VERT_FILT_SIZE, false },
 +};
 +
 +static struct h713_av1_dma *fixed_buf(struct sunxi_h713_av1_dec_ctx *a, int i)
 +{
 +	return (void *)&a->gen.b + h713_av1_fixed[i].off;
++}
++
++static void h713_av1_block_reset(struct hantro_dev *vpu)
++{
++	reset_control_assert(vpu->resets);
++	udelay(10);
++	reset_control_deassert(vpu->resets);
 +}
 +
 +static void sunxi_h713_av1_dec_exit(struct hantro_ctx *ctx)
@@ -1823,11 +1935,15 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +
 +	if (!a)
 +		return;
++	if (a->powered) {
++		clk_bulk_disable(vpu->variant->num_clocks, vpu->clocks);
++		pm_runtime_put_autosuspend(vpu->dev);
++	}
 +	for (i = 0; i < H713_AV1_MAX_FRAMES; i++)
 +		for (j = 0; j < SLOT_NBUFS; j++)
-+			h713_av1_free(vpu, &a->slot[i][j], false);
++			h713_av1_free(vpu, &a->slot[i][j]);
 +	for (i = 0; i < ARRAY_SIZE(h713_av1_fixed); i++)
-+		h713_av1_free(vpu, fixed_buf(a, i), h713_av1_fixed[i].cpu);
++		h713_av1_free(vpu, fixed_buf(a, i));
 +	vfree(a->cdf);
 +	kfree(a);
 +	ctx->h713_av1_dec = NULL;
@@ -1860,6 +1976,18 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	ret = h713_av1_gen_init(&a->gen);
 +	if (ret)
 +		goto err;
++
++	/* power and clocks for the whole stream, and a clean core to start */
++	ret = pm_runtime_resume_and_get(vpu->dev);
++	if (ret < 0)
++		goto err;
++	ret = clk_bulk_enable(vpu->variant->num_clocks, vpu->clocks);
++	if (ret) {
++		pm_runtime_put_autosuspend(vpu->dev);
++		goto err;
++	}
++	a->powered = true;
++	h713_av1_block_reset(vpu);
 +	return 0;
 +
 +err:
@@ -1883,7 +2011,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	for (j = 0; j < SLOT_NBUFS; j++) {
 +		if (d[j].cpu && d[j].size >= size[j])
 +			continue;
-+		h713_av1_free(ctx->dev, &d[j], false);
++		h713_av1_free(ctx->dev, &d[j]);
 +		ret = h713_av1_alloc(ctx->dev, &d[j], size[j], false);
 +		if (ret)
 +			return ret;
@@ -1892,13 +2020,6 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	a->gen.refs[slot].bufs.hdr = d[SLOT_HDR].dma;
 +	a->gen.refs[slot].bufs.mv = d[SLOT_MV].dma;
 +	return 0;
-+}
-+
-+static void h713_av1_block_reset(struct hantro_dev *vpu)
-+{
-+	reset_control_assert(vpu->resets);
-+	udelay(10);
-+	reset_control_deassert(vpu->resets);
 +}
 +
 +static int sunxi_h713_av1_dec_run(struct hantro_ctx *ctx)
@@ -1960,18 +2081,29 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +		return 0;
 +	}
 +
-+	/*
-+	 * Never write into a running core: that wedged the SoC during bring-up.
-+	 * The previous job has finished or been reset, so this is a last guard.
-+	 */
++	h713_trace(vpu, "frame: slot %d %ux%u type %u show %u, src %pad+%u dst %pad\n",
++		   slot, h->frame->frame_width_minus_1 + 1, h->frame->frame_height_minus_1 + 1,
++		   h->frame->frame_type, !!(h->frame->flags & V4L2_AV1_FRAME_FLAG_SHOW_FRAME),
++		   &h->src_dma, h->src_len, &h->dst_luma);
++	if (h713_av1_trace)
++		print_hex_dump(KERN_INFO, "h713av1 img ", DUMP_PREFIX_OFFSET, 32, 4,
++			       h->regs, sizeof(h->regs), false);
++
++	/* After an error interrupt the core can still be busy: reset it first. */
 +	if (readl_relaxed(vpu->dec_base + H713_AV1_CTRL) & H713_AV1_CTRL_START) {
 +		dev_warn_ratelimited(vpu->dev, "core still busy; resetting it\n");
 +		h713_av1_block_reset(vpu);
 +	}
 +
-+	for (i = 0; i < H713_AV1_NWORDS; i++)
-+		if (i != H713_AV1_CTRL / 4)
-+			writel_relaxed(h->regs[i], vpu->dec_base + 4 * i);
++	/*
++	 * As the vendor's AsicFlushRegs: words 0 and 1 are left alone, the rest
++	 * go in top-down with the start bit held back, then start on its own.
++	 */
++	for (i = H713_AV1_NWORDS - 1; i >= 2; i--)
++		writel_relaxed(i == H713_AV1_CTRL / 4 ? h->regs[i] & ~H713_AV1_CTRL_START :
++			       h->regs[i], vpu->dec_base + 4 * i);
++	wmb();
++	h713_av1_irq_arm(vpu);
 +	writel(h->regs[H713_AV1_CTRL / 4] | H713_AV1_CTRL_START,
 +	       vpu->dec_base + H713_AV1_CTRL);
 +	return 0;
@@ -1991,6 +2123,7 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +/* Timeout: clearing the start bit does not stop the core; the reset does. */
 +static void sunxi_h713_av1_dec_reset(struct hantro_ctx *ctx)
 +{
++	h713_av1_irq_disarm(ctx->dev);
 +	h713_av1_block_reset(ctx->dev);
 +}
 +
@@ -2000,9 +2133,16 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	enum vb2_buffer_state state;
 +	u32 ctrl;
 +
++	/* one interrupt per frame; a line stuck high must not storm */
++	h713_av1_irq_disarm(vpu);
++
 +	ctrl = readl_relaxed(vpu->dec_base + H713_AV1_CTRL);
-+	if (!(ctrl & H713_AV1_IRQ_BITS))
-+		return IRQ_NONE;
++	h713_trace(vpu, "irq: ctrl 0x%08x\n", ctrl);
++	if (!(ctrl & H713_AV1_IRQ_BITS)) {
++		/* no cause: leave the job to the watchdog, which resets */
++		dev_warn_ratelimited(vpu->dev, "interrupt without a cause, 0x%08x\n", ctrl);
++		return IRQ_HANDLED;
++	}
 +	writel_relaxed(ctrl & ~(H713_AV1_IRQ_BITS | H713_AV1_CTRL_START),
 +		       vpu->dec_base + H713_AV1_CTRL);
 +
@@ -2015,14 +2155,49 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	return IRQ_HANDLED;
 +}
 +
++static void h713_av1_clocks_off(void *data)
++{
++	struct hantro_dev *vpu = data;
++
++	clk_bulk_disable_unprepare(vpu->variant->num_clocks, vpu->clocks);
++}
++
 +static int sunxi_h713_av1_hw_init(struct hantro_dev *vpu)
 +{
++	struct sunxi_h713_av1_hw *hw;
 +	struct device_node *np;
 +	struct platform_device *ve;
 +	struct device_link *link;
 +	struct clk *mod;
 +	unsigned long rate;
-+	int ret = 0;
++	int ret;
++
++	hw = devm_kzalloc(vpu->dev, sizeof(*hw), GFP_KERNEL);
++	if (!hw)
++		return -ENOMEM;
++	vpu->variant_priv = hw;
++
++	/* requested disabled: armed per frame only (see the top of this file) */
++	hw->irq = platform_get_irq(vpu->pdev, 0);
++	if (hw->irq < 0)
++		return hw->irq;
++	ret = devm_request_irq(vpu->dev, hw->irq, sunxi_h713_av1_irq, IRQF_NO_AUTOEN,
++			       dev_name(vpu->dev), vpu);
++	if (ret)
++		return ret;
++
++	/*
++	 * hantro_probe releases the reset after this init with the clocks only
++	 * prepared; the core must come out of reset clocked. Enable them now,
++	 * with the reset held, and keep them on for the device's lifetime.
++	 */
++	reset_control_assert(vpu->resets);
++	ret = clk_bulk_prepare_enable(vpu->variant->num_clocks, vpu->clocks);
++	if (ret)
++		return ret;
++	ret = devm_add_action_or_reset(vpu->dev, h713_av1_clocks_off, vpu);
++	if (ret)
++		return ret;
 +
 +	np = of_parse_phandle(vpu->dev->of_node, "allwinner,video-engine", 0);
 +	if (!np) {
@@ -2106,10 +2281,6 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	},
 +};
 +
-+static const struct hantro_irq sunxi_h713_av1_irqs[] = {
-+	{ "av1", sunxi_h713_av1_irq },
-+};
-+
 +static const char * const sunxi_h713_av1_clk_names[] = { "bus", "mbus" };
 +
 +const struct hantro_variant sun50i_h713_av1_variant = {
@@ -2118,11 +2289,11 @@ diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c pb/
 +	.codec = HANTRO_AV1_DECODER,
 +	.codec_ops = sunxi_h713_av1_codec_ops,
 +	.init = sunxi_h713_av1_hw_init,
-+	.irqs = sunxi_h713_av1_irqs,
-+	.num_irqs = ARRAY_SIZE(sunxi_h713_av1_irqs),
++	/* no .irqs: the line is requested above, disabled */
 +	.clk_names = sunxi_h713_av1_clk_names,
 +	.num_clocks = ARRAY_SIZE(sunxi_h713_av1_clk_names),
 +};
+diff --color -Naur pa/drivers/media/platform/verisilicon/sunxi_h713_av1_regs.h pb/drivers/media/platform/verisilicon/sunxi_h713_av1_regs.h
 --- /dev/null
 +++ b/drivers/media/platform/verisilicon/sunxi_h713_av1_regs.h
 @@ -0,0 +1,1130 @@

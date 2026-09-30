@@ -37,6 +37,12 @@ DONT_CARE.update({k: ('apply_grain', 1) for k in (
     'random_seed', 'scaling_shift')})
 
 
+_cov = 0
+for _lo, _w in F.values():
+    _cov |= ((1 << _w) - 1) << _lo
+GAPS = [b for b in range(64, 1168 * 8) if not (_cov >> b) & 1]
+
+
 def cares(k, v):
     return k not in DONT_CARE or v[DONT_CARE[k][0]] == DONT_CARE[k][1]
 
@@ -106,6 +112,22 @@ def main():
                  if not k.endswith(SKIP_SUFFIX) and not any(h in k for h in HW_OUTPUT)
                  and k not in ('strm_start_pos', 'stream_len')
                  and cares(k, v) and v[k] != r[k]]
+        # every buffer the vendor points the core at, the rig must too: an
+        # address left 0 makes the core DMA to IOVA 0 (addresses themselves
+        # differ by placement and are not compared)
+        m = json.load(open(os.path.join(vdir, f'frame{fr:03d}.json')))
+        for rel in m['relocs']:
+            k = rel['field'][3:]
+            if k in F and not r[k]:
+                diffs.append((f'{k} (vendor sets it, rig leaves 0)', 1, 0))
+        # the bits no named field covers: the vendor's printer omits some
+        # fields (bit 9275, allow_warped_motion, was one), so a names-only
+        # compare is blind there. Words 0-1 (the ID words) are not written.
+        vi = int.from_bytes(open(vp, 'rb').read(), 'little')
+        ri = int.from_bytes(open(rp, 'rb').read(), 'little')
+        for b in GAPS:
+            if (vi >> b & 1) != (ri >> b & 1):
+                diffs.append((f'unnamed bit {b}', vi >> b & 1, ri >> b & 1))
         dv = v['stream_len'] - v['strm_start_pos']
         dr = r['stream_len'] - r['strm_start_pos']
         if dv != dr:

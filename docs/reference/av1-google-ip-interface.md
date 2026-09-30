@@ -297,3 +297,53 @@ What the wider clip set taught (the stock clip exercised none of it):
   (`base_lf_level_2/3` while filtering is disabled, `skip_ref0/1` without skip
   mode, `delta_q_res_log` without delta-q, the grain parameters without
   `apply_grain`); `compare.py` ignores exactly those, keyed on the switch.
+
+## The driver on the hardware (2026-09-30)
+
+Patch 0145 (hantro variant) decodes **every tested stream bit-exact**:
+`tools/video/av1-gate.sh` on the board, GStreamer `v4l2slav1dec` against
+libdav1d, per-frame MD5, 16 streams -- the stock 720p clip, 352x288 to
+1920x1080 including an unaligned 1000x600 (so the NV12 stride is right at
+`ALIGN(w, 64)`), 2x2 tiles, film grain, warped motion, error-resilient,
+all-intra, CDF-update-off, delta-q off, CDEF/LR off, reference MVs off --
+one AV1 interrupt per frame.
+
+What it took, in the order the hardware taught it:
+
+- **Release the reset with the clocks running.** hantro_probe deasserts the
+  reset after the variant's init with the bus/MBUS clocks only *prepared*. A
+  core brought out of reset unclocked reads a few hundred units, then stalls
+  into its own cycle timeout -- and stays stuck (the transaction is left in
+  the interconnect) until a power cycle; no reset pulse, domain cycle or
+  replay recovers it. The variant enables the clocks, reset held, in its init
+  and keeps them on. Found by running known-good replay packages *inside*
+  hantro's context (they stalled) and swapping the probe module's bring-up
+  order in piece by piece.
+- **The IRQ line (SPI 107) reads pending at boot** (GICD ISPENDR
+  0x03021210 bit 11). hantro requests IRQs enabled, so its handler ran at
+  modprobe and read the unclocked block: SoC wedge. The variant requests the
+  line `IRQF_NO_AUTOEN` and arms it per frame.
+- **Never write image words 0 and 1** (ID, configuration). Writing all 292
+  words wedged the SoC the instant the core started; write 291..2 top-down,
+  start held back, `wmb()`, then start alone -- exactly AsicFlushRegs.
+- **Bit 9275 = allow_warped_motion.** The vendor's register printer never
+  names it, so the generated field table lacked it and a names-only compare
+  was blind: the rig matched the vendor exactly while every warp-allowing
+  inter frame decoded to garbage, errored, or wedged the SoC. Found with a
+  libaom feature-isolation matrix (the error-resilient clip, whose only
+  relevant difference is warp off, was bit-exact) and then by diffing the
+  *unnamed* bits of vendor and rig images. `compare.py` now checks every bit
+  no field covers.
+- **Multi-tile needs the vertical-filter buffer**: `vert_filt_read_base` =
+  `vert_filt_write_base`, one buffer, `ALIGN_4K(ceil(h/64) * 0xa00)`
+  (`Vp9AsicAllocateFilterBlockMem`). Left 0, the 2x2-tile key frame stalls.
+  Caught by `compare.py`'s check that every base the vendor sets, the rig
+  sets too.
+- `film_grain_base` is set whenever the sequence has film grain, applied or
+  not (the vendor does; harmless).
+
+Diagnostics that paid off: the stalled core's post-mortem counters
+(`enc_hw_dram_read_bw`/`write_bw`, `hw_cycles`) tell how far it got; a
+stuck interrupt line shows in the GIC's ISPENDR without touching the block;
+and a picture that does not change when the CDF source changes means the
+table is not what is wrong.

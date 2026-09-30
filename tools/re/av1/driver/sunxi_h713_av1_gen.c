@@ -34,6 +34,15 @@
 #define RS_SCALE_SUBPEL_MASK		((1 << RS_SCALE_SUBPEL_BITS) - 1)
 #define RS_SCALE_EXTRA_BITS		(RS_SCALE_SUBPEL_BITS - RS_SUBPEL_BITS)
 
+/*
+ * allow_warped_motion: the image's last bit (ac_int<9276> bit 9275). The
+ * vendor's register printer never names it, so the generated field table has
+ * no entry; found by comparing the unnamed bits of vendor and rig images on
+ * streams that allow warped motion (2026-09-30). Without it the core parses
+ * such frames without the warp syntax: corrupt pictures, errors, stalls.
+ */
+#define H713_AV1_ALLOW_WARPED_MOTION	H713_AV1_FIELD(9275, 1)
+
 #define IS_INTRA(type) ((type) == V4L2_AV1_KEY_FRAME || (type) == V4L2_AV1_INTRA_ONLY_FRAME)
 
 #define LST_BUF_IDX	(V4L2_AV1_REF_LAST_FRAME - V4L2_AV1_REF_LAST_FRAME)
@@ -288,6 +297,14 @@ static void set_tile_info(struct h713_av1 *h)
 			put_unaligned_le32(start + h->tge[id].tile_size, pos + 4);
 		}
 
+	/*
+	 * Multi-tile: the vertical-filter column buffer, one buffer read and
+	 * written (Vp9AsicAllocateFilterBlockMem). Left 0, the core stalls.
+	 */
+	if (ti->tile_cols > 1 || ti->tile_rows > 1) {
+		WADDR(h, VERT_FILT_READ_BASE, h->b.vert_filt.dma);
+		WADDR(h, VERT_FILT_WRITE_BASE, h->b.vert_filt.dma);
+	}
 	W(h, MULTICORE_EXPECT_CONTEXT_UPDATE, cu_x == 0);
 	W(h, TILE_ENABLE, ti->tile_cols > 1 || ti->tile_rows > 1);
 	for (c = 0; (1 << c) < ti->tile_cols; c++)
@@ -627,7 +644,11 @@ static void set_fgs(struct h713_av1 *h)
 		W(h, CR_OFFSET, 0); W(h, OVERLAP_FLAG, 0);
 		W(h, CLIP_TO_RESTRICTED_RANGE, 0); W(h, CHROMA_SCALING_FROM_LUMA, 0);
 		W(h, RANDOM_SEED, 0);
-		W(h, FILM_GRAIN_BASE, 0);
+		/* the vendor points it at the buffer whenever the sequence has grain */
+		if (fg)
+			WADDR(h, FILM_GRAIN_BASE, h->b.film_grain.dma);
+		else
+			W(h, FILM_GRAIN_BASE, 0);
 		return;
 	}
 
@@ -906,6 +927,10 @@ static void set_other_frames(struct h713_av1 *h)
 		}
 	}
 
+	/* the vendor points the first MV read at LAST's MVs even when unused */
+	idx = get_frame_index(h, LST_BUF_IDX);
+	if (idx >= 0)
+		WADDR(h, TEMPORAL_READ_BASE, h->refs[idx].bufs.mv);
 	for (k = 0; k < 3; k++) {
 		h713_av1_set(h->regs, use_tmv[k], 0);
 		for (rf = 0; rf < 7; rf++)
@@ -1102,6 +1127,7 @@ static void set_parameters(struct h713_av1 *h)
 	W(h, SECONDARY_OUTPUT_E, !!(f->flags & (V4L2_AV1_FRAME_FLAG_SHOW_FRAME |
 						V4L2_AV1_FRAME_FLAG_SHOWABLE_FRAME)));
 	W(h, SWITCHABLE_MOTION_MODE, !!(f->flags & V4L2_AV1_FRAME_FLAG_IS_MOTION_MODE_SWITCHABLE));
+	W(h, ALLOW_WARPED_MOTION, !!(f->flags & V4L2_AV1_FRAME_FLAG_ALLOW_WARPED_MOTION));
 	W(h, ALLOW_MASKED_COMPOUND, !!(s->flags & V4L2_AV1_SEQUENCE_FLAG_ENABLE_MASKED_COMPOUND));
 	W(h, ALLOW_INTERINTRA, !!(s->flags & V4L2_AV1_SEQUENCE_FLAG_ENABLE_INTERINTRA_COMPOUND));
 	W(h, ENABLE_INTRA_EDGE_FILTER, !!(s->flags & V4L2_AV1_SEQUENCE_FLAG_ENABLE_INTRA_EDGE_FILTER));

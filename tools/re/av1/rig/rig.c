@@ -321,6 +321,20 @@ static void decode_frame(const GstAV1FrameHeaderOBU *fh)
 	       v4l2_frame.quantization.base_q_idx, v4l2_frame.tile_info.tile_cols,
 	       v4l2_frame.tile_info.tile_rows, v4l2_frame.refresh_frame_flags, num_tge,
 	       bitstream_len);
+	printf("           warp %d obmc/switchable %d skipmode %d refsel %d\n",
+	       !!(v4l2_frame.flags & V4L2_AV1_FRAME_FLAG_ALLOW_WARPED_MOTION),
+	       !!(v4l2_frame.flags & V4L2_AV1_FRAME_FLAG_IS_MOTION_MODE_SWITCHABLE),
+	       !!(v4l2_frame.flags & V4L2_AV1_FRAME_FLAG_SKIP_MODE_PRESENT),
+	       !!(v4l2_frame.flags & V4L2_AV1_FRAME_FLAG_REFERENCE_SELECT));
+	printf("           primary_ref %u refmvs %d err_res %d disable_cdf_upd %d disable_end_upd %d ref_idx %u%u%u%u%u%u%u\n",
+	       v4l2_frame.primary_ref_frame,
+	       !!(v4l2_frame.flags & V4L2_AV1_FRAME_FLAG_USE_REF_FRAME_MVS),
+	       !!(v4l2_frame.flags & V4L2_AV1_FRAME_FLAG_ERROR_RESILIENT_MODE),
+	       !!(v4l2_frame.flags & V4L2_AV1_FRAME_FLAG_DISABLE_CDF_UPDATE),
+	       !!(v4l2_frame.flags & V4L2_AV1_FRAME_FLAG_DISABLE_FRAME_END_UPDATE_CDF),
+	       v4l2_frame.ref_frame_idx[0], v4l2_frame.ref_frame_idx[1], v4l2_frame.ref_frame_idx[2],
+	       v4l2_frame.ref_frame_idx[3], v4l2_frame.ref_frame_idx[4], v4l2_frame.ref_frame_idx[5],
+	       v4l2_frame.ref_frame_idx[6]);
 	frame_no++;
 }
 
@@ -377,6 +391,7 @@ int main(int argc, char **argv)
 	dma(&H.b.cdef_colbuf, H713_AV1_CDEF_COLBUF_SIZE);
 	dma(&H.b.rec_sindex, H713_AV1_REC_SINDEX_SIZE);
 	dma(&H.b.sec_colbuf, H713_AV1_SEC_COLBUF_SIZE);
+	dma(&H.b.vert_filt, H713_AV1_VERT_FILT_SIZE);
 	h713_av1_gen_init(&H);
 
 	parser = gst_av1_parser_new();

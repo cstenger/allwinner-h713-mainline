@@ -27,6 +27,9 @@ done
 SIZE=1920x1080 enc tiles-2x2 4 -pix_fmt yuv420p -b:v 4M -tiles 2x2
 SIZE=640x360 enc fg 4 -pix_fmt yuv420p -b:v 1M -aom-params film-grain-test=1
 SIZE=640x360 enc ten 3 -pix_fmt yuv420p10le -b:v 1M
+# configurations the libaom defaults never hit (2026-09-30 isolation matrix)
+SIZE=640x360 enc norefmvs 5 -pix_fmt yuv420p -b:v 1M -aom-params enable-ref-frame-mvs=0
+SIZE=640x360 enc errres 5 -pix_fmt yuv420p -b:v 1M -aom-params error-resilient=1
 fail=0; total=0
 run() { # clip frames
 	local n=$1 fr=$2
@@ -46,5 +49,7 @@ for s in 352x288 640x360 1000x600 1920x1080 3840x2160; do run "sz-$s" 3; done
 run tiles-2x2 5
 run fg 4
 run ten 3
+run norefmvs 5
+run errres 5
 echo "gate: $total frame(s), $([ $fail = 0 ] && echo PASS || echo FAIL)"
 exit $fail

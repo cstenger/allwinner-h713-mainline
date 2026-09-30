@@ -21,14 +21,29 @@
  * device link to the VE (named by the allwinner,video-engine phandle) keeps
  * them up whenever this device is active. Above 432 MHz the core stalls
  * into its own timeout, so the VE clock must be at or below that.
+ *
+ * Three hardware rules, each learnt from a wedged or stalled SoC:
+ *  - the reset must be released with the core's bus and MBUS clocks running
+ *    (hantro releases it at probe with them only prepared, so they are
+ *    enabled before that and kept on); released unclocked, the core stalls
+ *    on its first memory transfer, and nothing short of a power cycle
+ *    recovers it;
+ *  - the interrupt line reads pending at boot, and the handler reads the
+ *    core's registers, so the line is enabled only while a frame is in
+ *    flight;
+ *  - image words 0 and 1 (ID and configuration) are never written, and no
+ *    register is written while the start bit is still set.
  */
 
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
+#include <linux/interrupt.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
 #include <linux/reset.h>
 #include <linux/vmalloc.h>
 
@@ -51,7 +66,36 @@
 
 enum { SLOT_REC, SLOT_HDR, SLOT_MV, SLOT_NBUFS };
 
+static bool h713_av1_trace;
+module_param(h713_av1_trace, bool, 0644);
+MODULE_PARM_DESC(h713_av1_trace, "H713 AV1: log each frame, its register image and its interrupt");
+
+#define h713_trace(vpu, fmt, ...) \
+	do { if (h713_av1_trace) dev_info((vpu)->dev, fmt, ##__VA_ARGS__); } while (0)
+
+struct sunxi_h713_av1_hw {
+	int irq;
+	unsigned long armed;	/* bit 0: the line is enabled */
+};
+
+static void h713_av1_irq_arm(struct hantro_dev *vpu)
+{
+	struct sunxi_h713_av1_hw *hw = vpu->variant_priv;
+
+	if (!test_and_set_bit(0, &hw->armed))
+		enable_irq(hw->irq);
+}
+
+static void h713_av1_irq_disarm(struct hantro_dev *vpu)
+{
+	struct sunxi_h713_av1_hw *hw = vpu->variant_priv;
+
+	if (test_and_clear_bit(0, &hw->armed))
+		disable_irq_nosync(hw->irq);
+}
+
 struct sunxi_h713_av1_dec_ctx {
+	bool powered;		/* holding the domain and clocks while streaming */
 	struct h713_av1 gen;
 	struct h713_av1_cdf *cdf;
 	/* each reference slot's compressed reconstruction, header and MVs */
@@ -62,16 +106,17 @@ static int h713_av1_alloc(struct hantro_dev *vpu, struct h713_av1_dma *d,
 			  size_t size, bool cpu)
 {
 	d->size = size;
+	d->kmap = cpu;
 	d->cpu = dma_alloc_attrs(vpu->dev, size, &d->dma, GFP_KERNEL,
 				 cpu ? 0 : DMA_ATTR_NO_KERNEL_MAPPING);
 	return d->cpu ? 0 : -ENOMEM;
 }
 
-static void h713_av1_free(struct hantro_dev *vpu, struct h713_av1_dma *d, bool cpu)
+static void h713_av1_free(struct hantro_dev *vpu, struct h713_av1_dma *d)
 {
 	if (d->cpu)
 		dma_free_attrs(vpu->dev, d->size, d->cpu, d->dma,
-			       cpu ? 0 : DMA_ATTR_NO_KERNEL_MAPPING);
+			       d->kmap ? 0 : DMA_ATTR_NO_KERNEL_MAPPING);
 	d->cpu = NULL;
 }
 
@@ -93,11 +138,19 @@ static const struct {
 	{ offsetof(struct h713_av1_bufs, cdef_colbuf), H713_AV1_CDEF_COLBUF_SIZE, false },
 	{ offsetof(struct h713_av1_bufs, rec_sindex), H713_AV1_REC_SINDEX_SIZE, false },
 	{ offsetof(struct h713_av1_bufs, sec_colbuf), H713_AV1_SEC_COLBUF_SIZE, false },
+	{ offsetof(struct h713_av1_bufs, vert_filt), H713_AV1_VERT_FILT_SIZE, false },
 };
 
 static struct h713_av1_dma *fixed_buf(struct sunxi_h713_av1_dec_ctx *a, int i)
 {
 	return (void *)&a->gen.b + h713_av1_fixed[i].off;
+}
+
+static void h713_av1_block_reset(struct hantro_dev *vpu)
+{
+	reset_control_assert(vpu->resets);
+	udelay(10);
+	reset_control_deassert(vpu->resets);
 }
 
 static void sunxi_h713_av1_dec_exit(struct hantro_ctx *ctx)
@@ -108,11 +161,15 @@ static void sunxi_h713_av1_dec_exit(struct hantro_ctx *ctx)
 
 	if (!a)
 		return;
+	if (a->powered) {
+		clk_bulk_disable(vpu->variant->num_clocks, vpu->clocks);
+		pm_runtime_put_autosuspend(vpu->dev);
+	}
 	for (i = 0; i < H713_AV1_MAX_FRAMES; i++)
 		for (j = 0; j < SLOT_NBUFS; j++)
-			h713_av1_free(vpu, &a->slot[i][j], false);
+			h713_av1_free(vpu, &a->slot[i][j]);
 	for (i = 0; i < ARRAY_SIZE(h713_av1_fixed); i++)
-		h713_av1_free(vpu, fixed_buf(a, i), h713_av1_fixed[i].cpu);
+		h713_av1_free(vpu, fixed_buf(a, i));
 	vfree(a->cdf);
 	kfree(a);
 	ctx->h713_av1_dec = NULL;
@@ -145,6 +202,18 @@ static int sunxi_h713_av1_dec_init(struct hantro_ctx *ctx)
 	ret = h713_av1_gen_init(&a->gen);
 	if (ret)
 		goto err;
+
+	/* power and clocks for the whole stream, and a clean core to start */
+	ret = pm_runtime_resume_and_get(vpu->dev);
+	if (ret < 0)
+		goto err;
+	ret = clk_bulk_enable(vpu->variant->num_clocks, vpu->clocks);
+	if (ret) {
+		pm_runtime_put_autosuspend(vpu->dev);
+		goto err;
+	}
+	a->powered = true;
+	h713_av1_block_reset(vpu);
 	return 0;
 
 err:
@@ -168,7 +237,7 @@ static int h713_av1_slot_bufs(struct hantro_ctx *ctx, int slot, int w, int h)
 	for (j = 0; j < SLOT_NBUFS; j++) {
 		if (d[j].cpu && d[j].size >= size[j])
 			continue;
-		h713_av1_free(ctx->dev, &d[j], false);
+		h713_av1_free(ctx->dev, &d[j]);
 		ret = h713_av1_alloc(ctx->dev, &d[j], size[j], false);
 		if (ret)
 			return ret;
@@ -177,13 +246,6 @@ static int h713_av1_slot_bufs(struct hantro_ctx *ctx, int slot, int w, int h)
 	a->gen.refs[slot].bufs.hdr = d[SLOT_HDR].dma;
 	a->gen.refs[slot].bufs.mv = d[SLOT_MV].dma;
 	return 0;
-}
-
-static void h713_av1_block_reset(struct hantro_dev *vpu)
-{
-	reset_control_assert(vpu->resets);
-	udelay(10);
-	reset_control_deassert(vpu->resets);
 }
 
 static int sunxi_h713_av1_dec_run(struct hantro_ctx *ctx)
@@ -245,18 +307,29 @@ out:
 		return 0;
 	}
 
-	/*
-	 * Never write into a running core: that wedged the SoC during bring-up.
-	 * The previous job has finished or been reset, so this is a last guard.
-	 */
+	h713_trace(vpu, "frame: slot %d %ux%u type %u show %u, src %pad+%u dst %pad\n",
+		   slot, h->frame->frame_width_minus_1 + 1, h->frame->frame_height_minus_1 + 1,
+		   h->frame->frame_type, !!(h->frame->flags & V4L2_AV1_FRAME_FLAG_SHOW_FRAME),
+		   &h->src_dma, h->src_len, &h->dst_luma);
+	if (h713_av1_trace)
+		print_hex_dump(KERN_INFO, "h713av1 img ", DUMP_PREFIX_OFFSET, 32, 4,
+			       h->regs, sizeof(h->regs), false);
+
+	/* After an error interrupt the core can still be busy: reset it first. */
 	if (readl_relaxed(vpu->dec_base + H713_AV1_CTRL) & H713_AV1_CTRL_START) {
 		dev_warn_ratelimited(vpu->dev, "core still busy; resetting it\n");
 		h713_av1_block_reset(vpu);
 	}
 
-	for (i = 0; i < H713_AV1_NWORDS; i++)
-		if (i != H713_AV1_CTRL / 4)
-			writel_relaxed(h->regs[i], vpu->dec_base + 4 * i);
+	/*
+	 * As the vendor's AsicFlushRegs: words 0 and 1 are left alone, the rest
+	 * go in top-down with the start bit held back, then start on its own.
+	 */
+	for (i = H713_AV1_NWORDS - 1; i >= 2; i--)
+		writel_relaxed(i == H713_AV1_CTRL / 4 ? h->regs[i] & ~H713_AV1_CTRL_START :
+			       h->regs[i], vpu->dec_base + 4 * i);
+	wmb();
+	h713_av1_irq_arm(vpu);
 	writel(h->regs[H713_AV1_CTRL / 4] | H713_AV1_CTRL_START,
 	       vpu->dec_base + H713_AV1_CTRL);
 	return 0;
@@ -276,6 +349,7 @@ static void sunxi_h713_av1_dec_done(struct hantro_ctx *ctx)
 /* Timeout: clearing the start bit does not stop the core; the reset does. */
 static void sunxi_h713_av1_dec_reset(struct hantro_ctx *ctx)
 {
+	h713_av1_irq_disarm(ctx->dev);
 	h713_av1_block_reset(ctx->dev);
 }
 
@@ -285,9 +359,16 @@ static irqreturn_t sunxi_h713_av1_irq(int irq, void *dev_id)
 	enum vb2_buffer_state state;
 	u32 ctrl;
 
+	/* one interrupt per frame; a line stuck high must not storm */
+	h713_av1_irq_disarm(vpu);
+
 	ctrl = readl_relaxed(vpu->dec_base + H713_AV1_CTRL);
-	if (!(ctrl & H713_AV1_IRQ_BITS))
-		return IRQ_NONE;
+	h713_trace(vpu, "irq: ctrl 0x%08x\n", ctrl);
+	if (!(ctrl & H713_AV1_IRQ_BITS)) {
+		/* no cause: leave the job to the watchdog, which resets */
+		dev_warn_ratelimited(vpu->dev, "interrupt without a cause, 0x%08x\n", ctrl);
+		return IRQ_HANDLED;
+	}
 	writel_relaxed(ctrl & ~(H713_AV1_IRQ_BITS | H713_AV1_CTRL_START),
 		       vpu->dec_base + H713_AV1_CTRL);
 
@@ -300,14 +381,49 @@ static irqreturn_t sunxi_h713_av1_irq(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static void h713_av1_clocks_off(void *data)
+{
+	struct hantro_dev *vpu = data;
+
+	clk_bulk_disable_unprepare(vpu->variant->num_clocks, vpu->clocks);
+}
+
 static int sunxi_h713_av1_hw_init(struct hantro_dev *vpu)
 {
+	struct sunxi_h713_av1_hw *hw;
 	struct device_node *np;
 	struct platform_device *ve;
 	struct device_link *link;
 	struct clk *mod;
 	unsigned long rate;
-	int ret = 0;
+	int ret;
+
+	hw = devm_kzalloc(vpu->dev, sizeof(*hw), GFP_KERNEL);
+	if (!hw)
+		return -ENOMEM;
+	vpu->variant_priv = hw;
+
+	/* requested disabled: armed per frame only (see the top of this file) */
+	hw->irq = platform_get_irq(vpu->pdev, 0);
+	if (hw->irq < 0)
+		return hw->irq;
+	ret = devm_request_irq(vpu->dev, hw->irq, sunxi_h713_av1_irq, IRQF_NO_AUTOEN,
+			       dev_name(vpu->dev), vpu);
+	if (ret)
+		return ret;
+
+	/*
+	 * hantro_probe releases the reset after this init with the clocks only
+	 * prepared; the core must come out of reset clocked. Enable them now,
+	 * with the reset held, and keep them on for the device's lifetime.
+	 */
+	reset_control_assert(vpu->resets);
+	ret = clk_bulk_prepare_enable(vpu->variant->num_clocks, vpu->clocks);
+	if (ret)
+		return ret;
+	ret = devm_add_action_or_reset(vpu->dev, h713_av1_clocks_off, vpu);
+	if (ret)
+		return ret;
 
 	np = of_parse_phandle(vpu->dev->of_node, "allwinner,video-engine", 0);
 	if (!np) {
@@ -391,10 +507,6 @@ static const struct hantro_codec_ops sunxi_h713_av1_codec_ops[] = {
 	},
 };
 
-static const struct hantro_irq sunxi_h713_av1_irqs[] = {
-	{ "av1", sunxi_h713_av1_irq },
-};
-
 static const char * const sunxi_h713_av1_clk_names[] = { "bus", "mbus" };
 
 const struct hantro_variant sun50i_h713_av1_variant = {
@@ -403,8 +515,7 @@ const struct hantro_variant sun50i_h713_av1_variant = {
 	.codec = HANTRO_AV1_DECODER,
 	.codec_ops = sunxi_h713_av1_codec_ops,
 	.init = sunxi_h713_av1_hw_init,
-	.irqs = sunxi_h713_av1_irqs,
-	.num_irqs = ARRAY_SIZE(sunxi_h713_av1_irqs),
+	/* no .irqs: the line is requested above, disabled */
 	.clk_names = sunxi_h713_av1_clk_names,
 	.num_clocks = ARRAY_SIZE(sunxi_h713_av1_clk_names),
 };
