@@ -429,17 +429,30 @@ experimental module that accepted 10-bit sequences with NV12 capture (NV12's
   `value & 0xff`, which wraps. `secondary_output_format` is layout only:
   0 = luma only (chroma not written), 1/2/3 = NV12; all store the low byte.
   Bits 117-127 beside it are reserved; nothing else in the group.
-- **The only depth converter is on the unused scaled output**
-  (`scaled_output_e`, `scaled_output_8bpp_mode`, `scale_src/dst_*`,
-  `hor/ver_scale_factor[_ch]`, `scaler_tap_base`). The vendor's per-frame
-  setup (`analysis/decomp/av1-initpicture.c`) never writes its geometry,
-  factors, taps or 8bpp mode, so there is no reference for the tap table or
-  the factor encoding. It would also give AV1 a hardware downscale (1080p to
-  the 720p plane), so it is the one lead worth a dedicated RE effort; each
-  hardware attempt risks a stall.
+- **The "scaled output" is not in this core** (tested on hardware the same
+  day). Its fields (`scaled_output_e`, `scaled_output_8bpp_mode`,
+  `scale_src/dst_*`, `hor/ver_scale_factor[_ch]`, `scaler_tap_base`) belong to
+  the encoder's input-downscaling stage in the register model shared with
+  Google's encoders: they sit among `denoise_*`, `me_*`, `input_format`,
+  `h264_cabac_init_idc` and `rdo_entropy_coding_mode`, and the capability word
+  (+0x004 = 0x22) reports a decoder with no encoder (`sw_encoder_cfg`,
+  `sw_vp9e_cfg`, `sw_h264_cfg` = 0) and has no scaler bit at all. The vendor
+  never programs them (only the two register printers touch them). On the
+  hardware: every field reads back as written -- encoder-only fields too, so
+  the register file is plain storage and read-back proves nothing -- and with
+  `scaled_output_e = 1` over 9 frames (1:1, and 2:1 with factors 0x20000 and
+  0x8000; taps zeroed) the core wrote **nothing** to sentinel-filled output
+  buffers while the normal output stayed bit-exact, no stall, no fault. The
+  enable is ignored. (The vendor still points `out_scaled_lu_base` into its
+  scratch buffer; the gate keeps that, harmlessly.)
 - The vendor itself decodes 10-bit to high-bit-depth output
   (`secondary_output_hbd = 1`, format 1), which needs P010-sized buffers and a
   consumer that takes 16-bit samples.
 
-The experimental switches were not kept: 10-bit sequences are still refused
-(NV12 only), so players fall back to software for them.
+So this core has no path from 10-bit to 8-bit output, and no scaler. The
+remaining leads are outside it: whether the H713 display pipeline (a TV SoC
+with HDR) takes a high-bit-depth YUV format directly, which would let
+`secondary_output_hbd = 1` output go to the plane; and, for 1080p AV1 on the
+720p panel, a display-side downscaler (the panel down-scaler at
+`0x051c0120`-`0x051c0138` is the open lead). The experimental switches were not
+kept: 10-bit sequences are still refused (NV12 only).
