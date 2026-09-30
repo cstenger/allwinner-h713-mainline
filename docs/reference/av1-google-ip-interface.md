@@ -413,3 +413,33 @@ references. The VA driver now refuses AV1 frames after an error until the next
 key frame. Which register combination hangs the core is still unknown: with
 `h713_av1_trace=1` the driver now pauses 50 ms after dumping each image, so the
 next such image reaches a host over `dmesg -w` before the core starts.
+
+## 10-bit streams and 8-bit output (experiment, 2026-09-30)
+
+Question: can the core decode a 10-bit (Main, 4:2:0) stream straight to 8-bit
+NV12 for the 8-bit panel, as cedrus does for HEVC Main10? Tested with an
+experimental module that accepted 10-bit sequences with NV12 capture (NV12's
+`match_depth` cleared) and programmed `secondary_output_hbd = 0`.
+
+- **10-bit decode is bit-exact.** Every output sample of three 640x360 frames
+  equals the libdav1d 10-bit value's **low 8 bits** (100.00% of Y, U and V).
+  Reference buffers need no extra room: the vendor allocates the same
+  `rec`/header/MV sizes for 10-bit as for 8-bit.
+- **The secondary output has no shift or rounding.** With `hbd = 0` it stores
+  `value & 0xff`, which wraps. `secondary_output_format` is layout only:
+  0 = luma only (chroma not written), 1/2/3 = NV12; all store the low byte.
+  Bits 117-127 beside it are reserved; nothing else in the group.
+- **The only depth converter is on the unused scaled output**
+  (`scaled_output_e`, `scaled_output_8bpp_mode`, `scale_src/dst_*`,
+  `hor/ver_scale_factor[_ch]`, `scaler_tap_base`). The vendor's per-frame
+  setup (`analysis/decomp/av1-initpicture.c`) never writes its geometry,
+  factors, taps or 8bpp mode, so there is no reference for the tap table or
+  the factor encoding. It would also give AV1 a hardware downscale (1080p to
+  the 720p plane), so it is the one lead worth a dedicated RE effort; each
+  hardware attempt risks a stall.
+- The vendor itself decodes 10-bit to high-bit-depth output
+  (`secondary_output_hbd = 1`, format 1), which needs P010-sized buffers and a
+  consumer that takes 16-bit samples.
+
+The experimental switches were not kept: 10-bit sequences are still refused
+(NV12 only), so players fall back to software for them.
