@@ -50,6 +50,11 @@ have=$(modinfo -F vermagic "$KO" 2>/dev/null | awk '{print $1}')
 	exit 1
 }
 
+# /mnt/media-data is the vfat media partition, and it is NOT mounted after a
+# cold boot: without this the upload and the backup land on the root
+# filesystem, which is nearly full, under a directory the next mount hides.
+"${SSH[@]}" "mountpoint -q /mnt/media-data ||
+	mount -t vfat /dev/mmcblk0p23 /mnt/media-data"
 scp -F /dev/null -o ConnectTimeout=5 "$KO" \
 	"root@$BOARD:/mnt/media-data/$NAME.ko.new" >/dev/null
 

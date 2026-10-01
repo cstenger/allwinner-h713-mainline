@@ -125,10 +125,11 @@ safe by construction, and the alternative patch 0040's own comment named. It is
 
 ## Where that leaves things
 
-- **`r01`/`r02` and `decode-reinit-test.sh` stay** as a regression test for a
-  known-failing case, with the attribution recorded here.
-- **`WIP-0007` stays out of `series`.** It is more correct than a process-wide
-  latch and fixes nothing observable, which by this project's own standard is
-  not a shipping change.
-- **Iterate on `r01`, never `r02`**, if this is picked up again: one fails
-  safely and the other costs physical access to the board.
+- **`r01`/`r02` and `decode-reinit-test.sh` stay** as regression tests --
+  passing ones since 2026-10-01.
+- **`WIP-0007` was deleted on 2026-10-01**, superseded by libva 0019, which
+  re-sets the format by comparing geometry and also handles the surfaces
+  that are still alive.
+- **`r01` before `r02`** remains the order: `r02` passed cleanly on
+  2026-10-01, but it is the vector that once cost physical access to the
+  board.

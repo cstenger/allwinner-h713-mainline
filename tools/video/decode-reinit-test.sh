@@ -17,21 +17,27 @@
 # engine keeps decoding at the old geometry and the output is wrong -- or the
 # capture buffers are the wrong size and it is worse than wrong.
 #
-# HOW IT IS SCORED, and why there is no stored reference. ffmpeg's rawvideo
-# output must have one frame size, so it scales every later resolution back to
-# the first -- which drags swscale into the comparison, and swscale is NOT
-# stable across ffmpeg versions. A host-generated md5 (ffmpeg 9.0.1) does not
-# reproduce on the board (7.1.5), and the first version of this test duly
-# reported "HARNESS IS WRONG" for both vectors, which was correct.
+# HOW IT IS SCORED. Per frame, both arms computed HERE with the same ffmpeg:
+# framemd5 of the software decode against framemd5 of the VA-API decode, with
+# -noautoscale. Without that flag ffmpeg scales every frame to the FIRST
+# resolution, so the comparison silently runs through swscale (which is not
+# stable across ffmpeg versions) and a fault can only be reported for the
+# stream as a whole. With it, each segment is hashed at its own size and the
+# first bad frame is named. Frame counts must match, and the VE must take at
+# least one interrupt per frame: a decoder that falls back to software after
+# the first segment hashes exactly like a pass for that segment
+# (passing-suites-that-cannot-fail).
 #
-# So both arms are computed HERE, on the board, with the same ffmpeg, and
-# compared to each other. The criterion is unchanged in substance -- hardware
-# output must equal software output -- and it no longer depends on two machines
-# agreeing about a scaler that has nothing to do with the decoder.
+# PASSING since 2026-10-01 (libva-v4l2-request 0018/0019, kernel 0151): the
+# VA driver releases and renegotiates its queues while old surfaces live on.
+# That needs DMABUF capture; with V4L2_REQUEST_CAPTURE_MEMORY=mmap every
+# vector is expected to fail at its first change, which is a useful negative
+# control. AV1 is not here: libavcodec 7.1 never asks for new surfaces on an
+# AV1 size change (docs/hevc-resolution-change.md).
 #
-# ITERATE ON THE HEVC VECTOR. r02 (H.264) can wedge the board outright with a
-# work-in-progress fix installed -- ssh answers, no command completes, and only
-# a power cycle recovers -- while r01 fails safely. Pass vector names to pick:
+# r01 BEFORE r02. r02 (H.264) once wedged the board with a work-in-progress
+# fix installed -- ssh answers, no command completes, only a power cycle
+# recovers -- while r01 fails safely. Pass vector names to pick:
 #
 #   ./decode-reinit-test.sh r01-resolution-change
 #
@@ -50,12 +56,8 @@ ve_irq() {
 }
 pass=0; fail=0
 
-# vector:extension:frames:width:height -- the geometry is the FIRST
-# resolution in the stream, because ffmpeg's rawvideo output must have one
-# frame size and scales every later resolution back to that one. Assuming
-# 640x480 for every vector made r02 (which starts at 1280x720) count 450
-# frames instead of 150 and fail as a harness error.
-SPECS="r01-resolution-change:h265:75:640:480 r02-resolution-change:h264:150:1280:720"
+# vector:extension:frames
+SPECS="r01-resolution-change:h265:75 vp9-rc:ivf:210 r02-resolution-change:h264:150"
 if [ $# -gt 0 ]; then
 	want="$*"; picked=""
 	for spec in $SPECS; do
@@ -64,21 +66,24 @@ if [ $# -gt 0 ]; then
 	SPECS=$picked
 fi
 
+# size and md5 of every frame, one per line, at each frame's own resolution
+framemd5() {
+	grep -v '^#' | awk -F', *' '{ print $5, $6 }'
+}
+
 for spec in $SPECS; do
 	v=$(echo "$spec" | cut -d: -f1); ext=$(echo "$spec" | cut -d: -f2)
 	frames=$(echo "$spec" | cut -d: -f3)
-	fw=$(echo "$spec" | cut -d: -f4); fh=$(echo "$spec" | cut -d: -f5)
-	fsize=$(( fw * fh * 3 / 2 ))
 	[ -r "$DIR/$v.$ext" ] || { echo "  $v: no stream, skipped"; continue; }
 
-	echo "=== $v ($frames frames, first resolution ${fw}x${fh}) ==="
+	echo "=== $v ($frames frames) ==="
 
 	# The software decode, computed here rather than trusted from a file.
-	ffmpeg -hide_banner -v error -y -i "$DIR/$v.$ext" \
-		-pix_fmt nv12 -f rawvideo "$OUT/sw" 2>/dev/null
-	sw_md5=$(md5sum "$OUT/sw" | cut -d' ' -f1)
-	sw_frames=$(( $(stat -c%s "$OUT/sw") / fsize ))
-	echo "     sw  $sw_frames frames, md5 $sw_md5"
+	ffmpeg -hide_banner -v error -i "$DIR/$v.$ext" -noautoscale \
+		-fps_mode passthrough -pix_fmt yuv420p -f framemd5 - 2>/dev/null |
+		framemd5 > "$OUT/sw"
+	sw_frames=$(wc -l < "$OUT/sw")
+	echo "     sw  $sw_frames frames, sizes: $(awk '{print $1}' "$OUT/sw" | uniq | tr '\n' ' ')"
 
 	if [ "$sw_frames" -ne "$frames" ]; then
 		echo "     sw  FAIL — expected $frames frames; the vector or ffmpeg is not what this test assumes"
@@ -87,26 +92,27 @@ for spec in $SPECS; do
 
 	a=$(ve_irq)
 	LIBVA_DRIVER_NAME=v4l2_request timeout 180 \
-		ffmpeg -hide_banner -v error -y \
+		ffmpeg -hide_banner -v error \
 		-hwaccel vaapi -hwaccel_output_format vaapi \
-		-i "$DIR/$v.$ext" -vf 'hwdownload,format=nv12' \
-		-f rawvideo -pix_fmt nv12 "$OUT/va" 2>"$OUT/va.err"
+		-i "$DIR/$v.$ext" -noautoscale -vf 'hwdownload,format=nv12' \
+		-fps_mode passthrough -pix_fmt yuv420p -f framemd5 - \
+		2>"$OUT/va.err" | framemd5 > "$OUT/va"
 	va_ve=$(( $(ve_irq) - a ))
-	va_md5=$(md5sum "$OUT/va" 2>/dev/null | cut -d' ' -f1)
-	va_frames=$(( $(stat -c%s "$OUT/va" 2>/dev/null || echo 0) / fsize ))
+	va_frames=$(wc -l < "$OUT/va")
+	same=$(paste -d' ' "$OUT/sw" "$OUT/va" | awk '$1 == $3 && $2 == $4' | wc -l)
+	first_bad=$(paste -d' ' "$OUT/sw" "$OUT/va" |
+		awk '$1 != $3 || $2 != $4 { print NR - 1; exit }')
 
-	if [ "$va_ve" -eq 0 ]; then
-		echo "     va  FAIL — ve+0, every frame decoded on the CPU"
-		head -2 "$OUT/va.err" | sed 's/^/            /'
-		fail=$((fail + 1))
-	elif [ "$va_md5" = "$sw_md5" ]; then
-		echo "     va  PASS — identical to software across the resolution changes, ve+$va_ve"
+	if [ "$same" -eq "$frames" ] && [ "$va_frames" -eq "$frames" ] &&
+	   [ "$va_ve" -ge "$frames" ]; then
+		echo "     va  PASS — $same/$frames frames identical to software, ve+$va_ve"
 		pass=$((pass + 1))
 	else
-		echo "     va  MISMATCH ve+$va_ve (expected ve+$frames), $va_frames frames vs $sw_frames"
-		head -2 "$OUT/va.err" | sed 's/^/            /'
+		echo "     va  FAIL — $same/$frames identical, $va_frames frames out, ve+$va_ve (want >= $frames)${first_bad:+, first bad frame $first_bad}"
+		grep -v 'Capture memory' "$OUT/va.err" | head -2 | sed 's/^/            /'
 		fail=$((fail + 1))
 	fi
+	grep 'Renegotiating' "$OUT/va.err" | sed 's/^v4l2-request: /     /'
 
 	# The engine must still be usable afterwards -- a reinit that leaves it
 	# wedged would be a worse failure than a wrong picture.

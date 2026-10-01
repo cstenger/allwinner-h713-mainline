@@ -95,3 +95,13 @@ decoder defect.
 a2e1ca4a44f468802120cdf18cc5ed22  m05-720x576-field-shortfirst.m2v
 2a6e05bdcb2748392e8c45c4cd334ea7  m05-720x576-field-damaged.m2v
 ```
+
+## `vp9-rc.ivf` (added 2026-10-01)
+
+VP9 with three mid-stream resolution changes, 210 frames: 640x360 (60) →
+1280x720 (60) → 352x288 (30) → 640x360 (60). It is four board clips
+(`/var/tmp/v07-seg-cyclic.webm`, `v03-720p-4tiles.webm`, `v02-inter-1tile.webm`,
+`v07` again) remuxed to IVF with `ffmpeg -c copy -f ivf` and joined by
+`tools/video/ivf-concat.py`, so each join is a key frame with a new size. The
+source clips have no generator in this tree, hence the committed copy. Scored
+by `decode-reinit-test.sh` against a software decode computed on the board.

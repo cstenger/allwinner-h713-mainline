@@ -48,6 +48,16 @@ another thread then issued its ioctls on the AV1 core's descriptors
 found no format). It now reads each idle device's parked state without
 switching, switches only to release, and restores the active device.
 
+The driver also gains one recursive lock around every entry point that
+touches its state. It never had one, and libva serialises nothing: ffmpeg
+calls in from decode threads, from its filter thread (hwdownload's
+vaCreateImage/vaGetImage) and from whichever thread frees a pool's last
+frame. Renegotiating while old frames are still read back made the window
+real -- one vp9-rc.ivf run in four failed vaCreateImage because the filter
+thread caught the device between releasing its queues and re-setting its
+format. Decoding is synchronous inside vaEndPicture, so a readback now waits
+for an in-flight decode; separate processes do not contend.
+
 MMAP capture keeps the previous behaviour (EBUSY, software fallback), and a
 same-geometry context re-creation -- every seek and loop, 0009's case --
 still keeps both the queues and the surfaces.
@@ -441,10 +451,18 @@ index c4177b0..f3b3b27 100644
  			surface_object->capture_surface_id = display;
  		}
 diff --git a/src/request.c b/src/request.c
-index a2ac56e..06d3137 100644
+index a2ac56e..65af094 100644
 --- a/src/request.c
 +++ b/src/request.c
-@@ -194,7 +194,17 @@ int request_find_device(struct request_data *driver_data,
+@@ -45,6 +45,7 @@
+ #include "video.h"
+ 
+ #include <assert.h>
++#include <pthread.h>
+ #include <errno.h>
+ #include <limits.h>
+ #include <stdio.h>
+@@ -194,7 +195,17 @@ int request_find_device(struct request_data *driver_data,
  	return -1;
  }
  
@@ -463,7 +481,7 @@ index a2ac56e..06d3137 100644
  bool request_device_in_use(struct request_data *driver_data,
  			   unsigned int device)
  {
-@@ -205,7 +215,8 @@ bool request_device_in_use(struct request_data *driver_data,
+@@ -205,7 +216,8 @@ bool request_device_in_use(struct request_data *driver_data,
  	surface_object = (struct object_surface *)
  		object_heap_first(&driver_data->surface_heap, &iterator);
  	while (surface_object != NULL) {
@@ -473,11 +491,206 @@ index a2ac56e..06d3137 100644
  			return true;
  		surface_object = (struct object_surface *)
  			object_heap_next(&driver_data->surface_heap, &iterator);
+@@ -400,6 +412,92 @@ static void request_probe_devices(struct request_data *driver_data)
+ }
+ 
+ /* Set default visibility for the init function only. */
++/*
++ * One lock for the whole driver. Every entry point reads and swaps shared
++ * state -- the active device (request_use_device), its current format, the
++ * object heaps -- and libva serialises nothing: ffmpeg calls in from its
++ * decode threads, its filter thread (vaCreateImage/vaGetImage for
++ * hwdownload) and whichever thread frees the last frame of a pool. Before
++ * surfaces could outlive a renegotiation that was mostly harmless; after it,
++ * a filter thread asking for an image of an old frame while the decode thread
++ * re-sets the format found the device with no format at all (1 run in 4 of
++ * vp9-rc.ivf). Recursive, because entry points call each other.
++ *
++ * Decoding is synchronous inside vaEndPicture, so the lock is held across a
++ * decode: another thread's readback waits for it. Separate processes have
++ * separate driver instances and do not contend.
++ */
++#define REQUEST_LOCKED(name, params, args)				\
++static VAStatus Locked##name params					\
++{									\
++	struct request_data *driver_data = context->pDriverData;	\
++	VAStatus locked_status;					\
++									\
++	pthread_mutex_lock(&driver_data->lock);				\
++	locked_status = Request##name args;				\
++	pthread_mutex_unlock(&driver_data->lock);			\
++	return locked_status;						\
++}
++
++REQUEST_LOCKED(CreateConfig, (VADriverContextP context, VAProfile profile, VAEntrypoint entrypoint, VAConfigAttrib *attributes, int attributes_count, VAConfigID *config_id),
++	       (context, profile, entrypoint, attributes, attributes_count, config_id))
++REQUEST_LOCKED(DestroyConfig, (VADriverContextP context, VAConfigID config_id),
++	       (context, config_id))
++REQUEST_LOCKED(GetConfigAttributes, (VADriverContextP context, VAProfile profile, VAEntrypoint entrypoint, VAConfigAttrib *attributes, int attributes_count),
++	       (context, profile, entrypoint, attributes, attributes_count))
++REQUEST_LOCKED(QueryConfigAttributes, (VADriverContextP context, VAConfigID config_id, VAProfile *profile, VAEntrypoint *entrypoint, VAConfigAttrib *attributes, int *attributes_count),
++	       (context, config_id, profile, entrypoint, attributes, attributes_count))
++REQUEST_LOCKED(QueryConfigProfiles, (VADriverContextP context, VAProfile *profiles, int *profiles_count),
++	       (context, profiles, profiles_count))
++REQUEST_LOCKED(CreateSurfaces, (VADriverContextP context, int width, int height, int format, int surfaces_count, VASurfaceID *surfaces_ids),
++	       (context, width, height, format, surfaces_count, surfaces_ids))
++REQUEST_LOCKED(CreateSurfaces2, (VADriverContextP context, unsigned int format, unsigned int width, unsigned int height, VASurfaceID *surfaces_ids, unsigned int surfaces_count, VASurfaceAttrib *attributes, unsigned int attributes_count),
++	       (context, format, width, height, surfaces_ids, surfaces_count, attributes, attributes_count))
++REQUEST_LOCKED(DestroySurfaces, (VADriverContextP context, VASurfaceID *surfaces_ids, int surfaces_count),
++	       (context, surfaces_ids, surfaces_count))
++REQUEST_LOCKED(ExportSurfaceHandle, (VADriverContextP context, VASurfaceID surface_id, uint32_t mem_type, uint32_t flags, void *descriptor),
++	       (context, surface_id, mem_type, flags, descriptor))
++REQUEST_LOCKED(CreateContext, (VADriverContextP context, VAConfigID config_id, int picture_width, int picture_height, int flags, VASurfaceID *surfaces_ids, int surfaces_count, VAContextID *context_id),
++	       (context, config_id, picture_width, picture_height, flags, surfaces_ids, surfaces_count, context_id))
++REQUEST_LOCKED(DestroyContext, (VADriverContextP context, VAContextID context_id),
++	       (context, context_id))
++REQUEST_LOCKED(CreateBuffer, (VADriverContextP context, VAContextID context_id, VABufferType type, unsigned int size, unsigned int count, void *data, VABufferID *buffer_id),
++	       (context, context_id, type, size, count, data, buffer_id))
++REQUEST_LOCKED(BufferSetNumElements, (VADriverContextP context, VABufferID buffer_id, unsigned int count),
++	       (context, buffer_id, count))
++REQUEST_LOCKED(MapBuffer, (VADriverContextP context, VABufferID buffer_id, void **data_map),
++	       (context, buffer_id, data_map))
++REQUEST_LOCKED(UnmapBuffer, (VADriverContextP context, VABufferID buffer_id),
++	       (context, buffer_id))
++REQUEST_LOCKED(DestroyBuffer, (VADriverContextP context, VABufferID buffer_id),
++	       (context, buffer_id))
++REQUEST_LOCKED(BufferInfo, (VADriverContextP context, VABufferID buffer_id, VABufferType *type, unsigned int *size, unsigned int *count),
++	       (context, buffer_id, type, size, count))
++REQUEST_LOCKED(AcquireBufferHandle, (VADriverContextP context, VABufferID buffer_id, VABufferInfo *buffer_info),
++	       (context, buffer_id, buffer_info))
++REQUEST_LOCKED(ReleaseBufferHandle, (VADriverContextP context, VABufferID buffer_id),
++	       (context, buffer_id))
++REQUEST_LOCKED(BeginPicture, (VADriverContextP context, VAContextID context_id, VASurfaceID surface_id),
++	       (context, context_id, surface_id))
++REQUEST_LOCKED(RenderPicture, (VADriverContextP context, VAContextID context_id, VABufferID *buffers, int buffers_count),
++	       (context, context_id, buffers, buffers_count))
++REQUEST_LOCKED(EndPicture, (VADriverContextP context, VAContextID context_id),
++	       (context, context_id))
++REQUEST_LOCKED(SyncSurface, (VADriverContextP context, VASurfaceID surface_id),
++	       (context, surface_id))
++REQUEST_LOCKED(QuerySurfaceAttributes, (VADriverContextP context, VAConfigID config, VASurfaceAttrib *attributes, unsigned int *attributes_count),
++	       (context, config, attributes, attributes_count))
++REQUEST_LOCKED(QuerySurfaceStatus, (VADriverContextP context, VASurfaceID surface_id, VASurfaceStatus *status),
++	       (context, surface_id, status))
++REQUEST_LOCKED(CreateImage, (VADriverContextP context, VAImageFormat *format, int width, int height, VAImage *image),
++	       (context, format, width, height, image))
++REQUEST_LOCKED(DeriveImage, (VADriverContextP context, VASurfaceID surface_id, VAImage *image),
++	       (context, surface_id, image))
++REQUEST_LOCKED(DestroyImage, (VADriverContextP context, VAImageID image_id),
++	       (context, image_id))
++REQUEST_LOCKED(GetImage, (VADriverContextP context, VASurfaceID surface_id, int x, int y, unsigned int width, unsigned int height, VAImageID image_id),
++	       (context, surface_id, x, y, width, height, image_id))
++
+ VAStatus __attribute__((visibility("default")))
+ VA_DRIVER_INIT_FUNC(VADriverContextP context);
+ 
+@@ -428,39 +526,39 @@ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context)
+ 
+ 	vtable->vaTerminate = RequestTerminate;
+ 	vtable->vaQueryConfigEntrypoints = RequestQueryConfigEntrypoints;
+-	vtable->vaQueryConfigProfiles = RequestQueryConfigProfiles;
++	vtable->vaQueryConfigProfiles = LockedQueryConfigProfiles;
+ 	vtable->vaQueryConfigEntrypoints = RequestQueryConfigEntrypoints;
+-	vtable->vaQueryConfigAttributes = RequestQueryConfigAttributes;
+-	vtable->vaCreateConfig = RequestCreateConfig;
+-	vtable->vaDestroyConfig = RequestDestroyConfig;
+-	vtable->vaGetConfigAttributes = RequestGetConfigAttributes;
+-	vtable->vaCreateSurfaces = RequestCreateSurfaces;
+-	vtable->vaCreateSurfaces2 = RequestCreateSurfaces2;
+-	vtable->vaDestroySurfaces = RequestDestroySurfaces;
+-	vtable->vaExportSurfaceHandle = RequestExportSurfaceHandle;
+-	vtable->vaCreateContext = RequestCreateContext;
+-	vtable->vaDestroyContext = RequestDestroyContext;
+-	vtable->vaCreateBuffer = RequestCreateBuffer;
+-	vtable->vaBufferSetNumElements = RequestBufferSetNumElements;
+-	vtable->vaMapBuffer = RequestMapBuffer;
+-	vtable->vaUnmapBuffer = RequestUnmapBuffer;
+-	vtable->vaDestroyBuffer = RequestDestroyBuffer;
+-	vtable->vaBufferInfo = RequestBufferInfo;
+-	vtable->vaAcquireBufferHandle = RequestAcquireBufferHandle;
+-	vtable->vaReleaseBufferHandle = RequestReleaseBufferHandle;
+-	vtable->vaBeginPicture = RequestBeginPicture;
+-	vtable->vaRenderPicture = RequestRenderPicture;
+-	vtable->vaEndPicture = RequestEndPicture;
+-	vtable->vaSyncSurface = RequestSyncSurface;
+-	vtable->vaQuerySurfaceAttributes = RequestQuerySurfaceAttributes;
+-	vtable->vaQuerySurfaceStatus = RequestQuerySurfaceStatus;
++	vtable->vaQueryConfigAttributes = LockedQueryConfigAttributes;
++	vtable->vaCreateConfig = LockedCreateConfig;
++	vtable->vaDestroyConfig = LockedDestroyConfig;
++	vtable->vaGetConfigAttributes = LockedGetConfigAttributes;
++	vtable->vaCreateSurfaces = LockedCreateSurfaces;
++	vtable->vaCreateSurfaces2 = LockedCreateSurfaces2;
++	vtable->vaDestroySurfaces = LockedDestroySurfaces;
++	vtable->vaExportSurfaceHandle = LockedExportSurfaceHandle;
++	vtable->vaCreateContext = LockedCreateContext;
++	vtable->vaDestroyContext = LockedDestroyContext;
++	vtable->vaCreateBuffer = LockedCreateBuffer;
++	vtable->vaBufferSetNumElements = LockedBufferSetNumElements;
++	vtable->vaMapBuffer = LockedMapBuffer;
++	vtable->vaUnmapBuffer = LockedUnmapBuffer;
++	vtable->vaDestroyBuffer = LockedDestroyBuffer;
++	vtable->vaBufferInfo = LockedBufferInfo;
++	vtable->vaAcquireBufferHandle = LockedAcquireBufferHandle;
++	vtable->vaReleaseBufferHandle = LockedReleaseBufferHandle;
++	vtable->vaBeginPicture = LockedBeginPicture;
++	vtable->vaRenderPicture = LockedRenderPicture;
++	vtable->vaEndPicture = LockedEndPicture;
++	vtable->vaSyncSurface = LockedSyncSurface;
++	vtable->vaQuerySurfaceAttributes = LockedQuerySurfaceAttributes;
++	vtable->vaQuerySurfaceStatus = LockedQuerySurfaceStatus;
+ 	vtable->vaPutSurface = RequestPutSurface;
+ 	vtable->vaQueryImageFormats = RequestQueryImageFormats;
+-	vtable->vaCreateImage = RequestCreateImage;
+-	vtable->vaDeriveImage = RequestDeriveImage;
+-	vtable->vaDestroyImage = RequestDestroyImage;
++	vtable->vaCreateImage = LockedCreateImage;
++	vtable->vaDeriveImage = LockedDeriveImage;
++	vtable->vaDestroyImage = LockedDestroyImage;
+ 	vtable->vaSetImagePalette = RequestSetImagePalette;
+-	vtable->vaGetImage = RequestGetImage;
++	vtable->vaGetImage = LockedGetImage;
+ 	vtable->vaPutImage = RequestPutImage;
+ 	vtable->vaQuerySubpictureFormats = RequestQuerySubpictureFormats;
+ 	vtable->vaCreateSubpicture = RequestCreateSubpicture;
+@@ -479,6 +577,15 @@ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context)
+ 	driver_data = malloc(sizeof(*driver_data));
+ 	memset(driver_data, 0, sizeof(*driver_data));
+ 
++	{
++		pthread_mutexattr_t attr;
++
++		pthread_mutexattr_init(&attr);
++		pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
++		pthread_mutex_init(&driver_data->lock, &attr);
++		pthread_mutexattr_destroy(&attr);
++	}
++
+ 	context->pDriverData = driver_data;
+ 
+ 	object_heap_init(&driver_data->config_heap,
+@@ -629,6 +736,8 @@ VAStatus RequestTerminate(VADriverContextP context)
+ 	if (driver_data->heap_fd >= 0)
+ 		close(driver_data->heap_fd);
+ 
++	pthread_mutex_destroy(&driver_data->lock);
++
+ 	free(context->pDriverData);
+ 	context->pDriverData = NULL;
+ 
 diff --git a/src/request.h b/src/request.h
-index 86790d0..90e3ab6 100644
+index 86790d0..1fd4ce4 100644
 --- a/src/request.h
 +++ b/src/request.h
-@@ -72,6 +72,12 @@ struct request_device {
+@@ -27,6 +27,7 @@
+ #ifndef _V4L2_REQUEST_H_
+ #define _V4L2_REQUEST_H_
+ 
++#include <pthread.h>
+ #include <stdbool.h>
+ 
+ #include "context.h"
+@@ -72,6 +73,12 @@ struct request_device {
  	 * request_data, so this entry is current even for the active device.
  	 */
  	unsigned int capture_memory;
@@ -490,7 +703,17 @@ index 86790d0..90e3ab6 100644
  };
  
  struct request_data {
-@@ -158,6 +164,9 @@ int request_find_device(struct request_data *driver_data,
+@@ -98,6 +105,9 @@ struct request_data {
+ 
+ 	/* /dev/dma_heap/system, or -1: capture memory then stays MMAP. */
+ 	int heap_fd;
++
++	/* Held across every entry point that touches driver state. */
++	pthread_mutex_t lock;
+ 	/*
+ 	 * The device of the most recently created config. Surfaces are created
+ 	 * with no reference to a config or a context, so -- like
+@@ -158,6 +168,9 @@ int request_find_device(struct request_data *driver_data,
  bool request_device_in_use(struct request_data *driver_data,
  			   unsigned int device);
  unsigned int request_capture_memory(struct request_data *driver_data);
