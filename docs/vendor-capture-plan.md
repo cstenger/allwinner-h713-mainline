@@ -33,17 +33,29 @@ drive the hardware, and each blocks a plan.
 
 ## Prep — host side, before touching the board (do all of it first)
 
-1. **Regenerate the FEL restore SPL. It is STALE as of 2026-10-01**: the check
-   below printed `False`, the same condition that broke the 2026-08-26 attempt.
-   Rebuild it per `docs/flash.md` "Recovering a clobbered first stage", then
-   check again until it prints `True`. Also confirm the first stage on the
-   board (LBA `0x10`) is the one in `build/out`, so the restore returns to what
-   is running now.
+1. ~~Regenerate the FEL restore SPL. It is STALE as of 2026-10-01.~~
+   **Corrected 2026-10-01 (prep run): the restore SPL is NOT stale — do not
+   regenerate it.** The check below compares against `build/out`, and the
+   Aug 29 SPL there was never installed. The test that matters is whether the
+   restore returns the board to what runs now, and it does: LBA `0x10` read
+   from the board is byte-identical to the payload embedded in
+   `build/out/h713-restore-spl.bin` (Aug 25 SPL, the one that brought Debian
+   back on 08-31 and 09-29). Regenerating from `build/out` would install a
+   *different*, never-run SPL — the warning in `handoff-2026-08-29.md`.
    ```bash
-   python3 -c "cur=open('build/out/u-boot-sunxi-with-spl-ddr3.bin','rb').read()[:32768]; print(cur in open('build/out/h713-restore-spl.bin','rb').read())"
+   # the right check: board LBA 0x10 vs the restore payload
+   ssh root@192.168.4.1 'dd if=/dev/mmcblk0 bs=512 skip=16 count=64 2>/dev/null' > lba10.bin
+   python3 -c "print(open('lba10.bin','rb').read() in open('build/out/h713-restore-spl.bin','rb').read())"
    ```
 2. **Check `super`'s LP magic** (`gDla` at +4096) and that `misc` is unchanged
    since 09-29, read-only from our Linux.
+   *Done 2026-10-01:* `gDla` present, `boot_a`/`vendor_boot_a` intact, UDISK
+   f2fs. `misc` is no longer all zeros (it was on 08-26): A/B control block
+   at `+0x800`, virtual-A/B message at `+0x8000`, and a **left-over
+   RescueParty request** at `+0x40` (`recovery --prompt_and_wipe_data
+   --reason=RescueParty`) with an empty command field. No 09-29 logcat
+   mentions RescueParty, so it predates or postdates those captures. If
+   stock boots into recovery: **Try again, never Factory data reset**.
 3. **Build the media set** (`tools/stock/make-capture-media.sh`, new). Every file
    **needs an audio track**: `TvdVideo` rejects files without one. Use a
    geometry card (border ruler, circles) so panel photos measure position and
@@ -74,12 +86,18 @@ drive the hardware, and each blocks a plan.
    - `ve <label>` (gated on VE power): VE top, the H.265/VP9 engine `+0x500`,
      the **TOP1 scaler `+0xf00`**, and H.264 SDROT `+0x40..+0x48`.
    - `elog <label>`: the MIPS window-manager log ring in DRAM near
-     `0x4b272000` (`docs/handoff-2026-09-04-mips-window-layer.md`; elog is
-     already enabled in `display_cfg.xml` — leave it). Confirm the ring
-     address and size from a 2026-09-0x capture before the session; if stock
-     uses a different address, find it from the MIPS share registers.
+     `0x4b272000` (`docs/handoff-2026-09-04-mips-window-layer.md`).
      **This log is the single most valuable artifact**: `wce_panel` prints the
      border widths and windows outright.
+     **Corrected 2026-10-01: elog is NOT enabled for the vendor.** The
+     09-04 change lives in *our* FAT (`bootloader_b:/mips/display_cfg.xml`,
+     `mode=2 level=5`); the vendor's U-Boot loads `bootloader_a`'s copy, which
+     still says `mode=1 level=1`. Same `display.bin` on both, so the buffer
+     address carries over (it is static data; `display.bin` maps 1:1 onto
+     DRAM from `0x4b100000`). Enabling it is a two-byte edit to the vendor
+     FAT — an operator decision, see `docs/stock-capture-operator-sheet.md` §1.
+     The firmware's received cfg is readable at `0x4be01000` (`fw` mode), so
+     the capture proves which setting was live.
    - Dry-run every new mode on **our** Linux first, with `mmio-read`, to check
      that addresses and output format match (the two tools emit byte-identical
      formats on purpose).
