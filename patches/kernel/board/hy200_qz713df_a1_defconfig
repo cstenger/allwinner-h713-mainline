@@ -42,6 +42,14 @@ CONFIG_DEVTMPFS_MOUNT=y
 # (pm_runtime_enable with no get; dec_enable only runs on runtime resume).
 CONFIG_SUNXI_DECD=m
 CONFIG_SUNXI_SCANOUT_DMABUF=m
+# DMA-BUF heaps: the VA driver allocates decoder capture memory from
+# /dev/dma_heap/system so each surface owns its pixels and the queues can be
+# renegotiated mid-stream. System, not CMA: the VE, the AV1 core and the
+# display are all IOMMU masters, and cma=128M cannot hold 4K pools. The CMA
+# heap is built for diagnostics only.
+CONFIG_DMABUF_HEAPS=y
+CONFIG_DMABUF_HEAPS_SYSTEM=y
+CONFIG_DMABUF_HEAPS_CMA=y
 CONFIG_BLK_DEV_SD=y
 CONFIG_ATA=y
 CONFIG_AHCI_SUNXI=y

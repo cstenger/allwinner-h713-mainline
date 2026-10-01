@@ -1,0 +1,702 @@
+Renegotiate while old surfaces are still referenced
+
+A client that changes resolution or bit depth creates the new surfaces
+before it lets go of the old ones: their frames are still queued for
+display, or held as references, when the new sequence starts. With the
+queues owned by those surfaces (0009 keeps them alive until the last one
+goes), the S_FMT for the new geometry met EBUSY, surface creation failed,
+and the client fell back to software. Measured 2026-10-01 with ffmpeg 7.1.5:
+VP9 and HEVC both renegotiate this way, and both dropped to software at the
+first change.
+
+With capture memory owned by the surfaces (0018) the queues can be let go
+of instead. When surfaces are created for a different format, size or depth
+while no context is live, and the device's capture memory is DMABUF:
+
+- both queues are stopped and released (REQBUFS 0). The OUTPUT buffers are
+  MMAP and still mapped by their surfaces; vb2 orphans them, and the
+  surfaces unmap them when destroyed;
+- the device's queue generation is bumped, which retires every surface
+  created before;
+- the existing S_FMT path runs, unchanged.
+
+A retired surface keeps its own dma-buf and a record of its own format, so
+it can still be synced, read back and exported. Readback needed two more
+changes, both found by ffmpeg's hwdownload of frames decoded before the
+change:
+
+- vaCreateImage laid every image out with the queue's current pitch and
+  refused one bigger than the queue's picture. After a renegotiation the
+  queue describes the NEW stream, so an image for an old frame either got
+  the wrong pitch (VP9 640x360 -> 1280x720) or was refused outright (HEVC
+  640x480 -> 320x240). It now uses the queue's layout only when that holds
+  the image at the image's own depth, and a plain layout otherwise.
+- The surface -> image copy goes row by row when the two pitches differ.
+  vaDeriveImage lays its image out from the surface itself. The refusal of
+  an image larger than the picture behind it -- the scaled-decode guard --
+  moves from vaCreateImage to the copy, where the surface is known. It is refused as a decode
+target, including as AV1's separate display surface: its queue slot now
+belongs to another configuration. Destroying it touches no queue, and it no
+longer counts as keeping the device in use.
+
+Destroying surfaces now happens in mid-stream, from whichever thread lets go
+of the last old frame -- ffmpeg's HEVC frame threads do -- and
+RequestDestroySurfaces used to switch the active device to every idle
+decoder it checked and leave the last one active. The decode running on
+another thread then issued its ioctls on the AV1 core's descriptors
+(QUERYBUF EINVAL on the wrong fd, a failed surface, and a vaCreateImage that
+found no format). It now reads each idle device's parked state without
+switching, switches only to release, and restores the active device.
+
+MMAP capture keeps the previous behaviour (EBUSY, software fallback), and a
+same-geometry context re-creation -- every seek and loop, 0009's case --
+still keeps both the queues and the surfaces.
+
+Not covered: AV1 through ffmpeg 7.1 never asks. libavcodec's AV1 decoder
+keeps its hwaccel across a new sequence header whenever the hardware pixel
+format is still offered, for size and depth changes alike, so no new
+surfaces are ever requested.
+
+diff --git a/src/buffer.c b/src/buffer.c
+index 7687bc9..130f1ff 100644
+--- a/src/buffer.c
++++ b/src/buffer.c
+@@ -218,14 +218,14 @@ VAStatus RequestAcquireBufferHandle(VADriverContextP context,
+ 
+ 	request_use_device(driver_data, surface_object->device);
+ 
+-	video_format = driver_data->video_format;
++	video_format = surface_object->video_format;
+ 	if (video_format == NULL)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+ 	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
+ 	if (buffer_info->mem_type != VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME ||
+-	    !video_format_is_linear(driver_data->video_format))
++	    !video_format_is_linear(video_format))
+ 		return VA_STATUS_ERROR_UNSUPPORTED_MEMORY_TYPE;
+ 
+ 	if (surface_object->destination_buffers_count > 1)
+diff --git a/src/image.c b/src/image.c
+index 313da88..1a15624 100644
+--- a/src/image.c
++++ b/src/image.c
+@@ -39,6 +39,58 @@
+ #include "utils.h"
+ #include "v4l2.h"
+ 
++/*
++ * An NV12-shaped image (two planes, chroma half the luma) over one luma pitch
++ * and height. The caller says where the layout comes from: the queue's
++ * current format for a client's own image, the surface's for a derived one.
++ */
++static VAStatus image_create(VADriverContextP context, VAImageFormat *format,
++			     int width, int height, unsigned int bytesperline,
++			     unsigned int format_height,
++			     unsigned int planes_count, unsigned int size,
++			     VAImage *image)
++{
++	struct request_data *driver_data = context->pDriverData;
++	struct object_image *image_object;
++	VABufferID buffer_id;
++	VAImageID id;
++	VAStatus status;
++	unsigned int i;
++
++	id = object_heap_allocate(&driver_data->image_heap);
++	image_object = IMAGE(driver_data, id);
++	if (image_object == NULL)
++		return VA_STATUS_ERROR_ALLOCATION_FAILED;
++
++	status = RequestCreateBuffer(context, 0, VAImageBufferType, size, 1,
++				     NULL, &buffer_id);
++	if (status != VA_STATUS_SUCCESS) {
++		object_heap_free(&driver_data->image_heap,
++				 (struct object_base *)image_object);
++		return status;
++	}
++
++	memset(image, 0, sizeof(*image));
++
++	image->format = *format;
++	image->width = width;
++	image->height = height;
++	image->buf = buffer_id;
++	image->image_id = id;
++
++	image->num_planes = planes_count;
++	image->data_size = size;
++
++	for (i = 0; i < image->num_planes; i++) {
++		image->pitches[i] = bytesperline;
++		image->offsets[i] = i > 0 ? bytesperline * format_height : 0;
++	}
++
++	image_object->image = *image;
++
++	return VA_STATUS_SUCCESS;
++}
++
+ VAStatus RequestCreateImage(VADriverContextP context, VAImageFormat *format,
+ 			    int width, int height, VAImage *image)
+ {
+@@ -51,10 +103,6 @@ VAStatus RequestCreateImage(VADriverContextP context, VAImageFormat *format,
+ 	unsigned int size;
+ 	unsigned int capture_type;
+ 	struct video_format *video_format;
+-	struct object_image *image_object;
+-	VABufferID buffer_id;
+-	VAImageID id;
+-	VAStatus status;
+ 	unsigned int i;
+ 	int rc;
+ 
+@@ -75,25 +123,31 @@ VAStatus RequestCreateImage(VADriverContextP context, VAImageFormat *format,
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
++	if (width < 0 || height < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
+ 	/*
+-	 * Refuse an image bigger than the capture buffer behind it, rather than
+-	 * describe one that does not exist. This is reachable as soon as the
+-	 * decoder is asked to scale: the buffers then hold a smaller picture
+-	 * than the coded dimensions the client still believes in, and it would
+-	 * be handed an image claiming 1920x1088 over 1280x726 of memory, with
+-	 * the pitch of the smaller one. Every consumer of that -- hwdownload,
+-	 * vaapi-copy, vaDeriveImage -- reads a frame's worth of bytes out of two
+-	 * thirds of a frame. Failing makes the client fall back to software
+-	 * decoding, which is the honest outcome for a path that cannot express
+-	 * what the hardware produced.
++	 * The queue's own layout whenever it can hold the image, so a copy
++	 * from a surface of the current configuration is one memcpy per plane,
++	 * as it always was. Otherwise -- the queue has been renegotiated to a
++	 * smaller picture, or to the other bit depth, while the client still
++	 * reads frames from before -- a plain layout of exactly this size; the
++	 * copy then goes row by row.
+ 	 *
+-	 * The test is for a SMALLER allocation, not a different one: an unscaled
+-	 * capture buffer is routinely taller than the coded picture wherever the
+-	 * pixel format aligns its height, and that has always worked.
++	 * Whether the SURFACE can fill the image is a separate question, asked
++	 * where the surface is known (copy_surface_to_image).
+ 	 */
+-	if (width < 0 || height < 0 || format_width < (unsigned int)width ||
+-	    format_height < (unsigned int)height)
+-		return VA_STATUS_ERROR_OPERATION_FAILED;
++	if (format_width < (unsigned int)width ||
++	    format_height < (unsigned int)height ||
++	    video_format_is_lsb10(video_format) !=
++	    (format->fourcc == VA_FOURCC_P010)) {
++		unsigned int bytes = format->fourcc == VA_FOURCC_P010 ? 2 : 1;
++		unsigned int pitch = (width * bytes + 15) & ~15U;
++		unsigned int rows = (height + 1) & ~1U;
++
++		return image_create(context, format, width, height, pitch,
++				    rows, 2, pitch * rows * 3 / 2, image);
++	}
+ 
+ 	destination_planes_count = video_format->planes_count;
+ 	size = 0;
+@@ -102,47 +156,9 @@ VAStatus RequestCreateImage(VADriverContextP context, VAImageFormat *format,
+ 	for (i = 0; i < planes_count; i++)
+ 		size += destination_sizes[i];
+ 
+-	/* Here we calculate the sizes assuming NV12. */
+-
+-	destination_sizes[0] = destination_bytesperlines[0] * format_height;
+-
+-	for (i = 1; i < destination_planes_count; i++) {
+-		destination_bytesperlines[i] = destination_bytesperlines[0];
+-		destination_sizes[i] = destination_sizes[0] / 2;
+-	}
+-
+-	id = object_heap_allocate(&driver_data->image_heap);
+-	image_object = IMAGE(driver_data, id);
+-	if (image_object == NULL)
+-		return VA_STATUS_ERROR_ALLOCATION_FAILED;
+-
+-	status = RequestCreateBuffer(context, 0, VAImageBufferType, size, 1,
+-				     NULL, &buffer_id);
+-	if (status != VA_STATUS_SUCCESS) {
+-		object_heap_free(&driver_data->image_heap,
+-				 (struct object_base *)image_object);
+-		return status;
+-	}
+-
+-	memset(image, 0, sizeof(*image));
+-
+-	image->format = *format;
+-	image->width = width;
+-	image->height = height;
+-	image->buf = buffer_id;
+-	image->image_id = id;
+-
+-	image->num_planes = destination_planes_count;
+-	image->data_size = size;
+-
+-	for (i = 0; i < image->num_planes; i++) {
+-		image->pitches[i] = destination_bytesperlines[i];
+-		image->offsets[i] = i > 0 ? destination_sizes[i - 1] : 0;
+-	}
+-
+-	image_object->image = *image;
+-
+-	return VA_STATUS_SUCCESS;
++	return image_create(context, format, width, height,
++			    destination_bytesperlines[0], format_height,
++			    destination_planes_count, size, image);
+ }
+ 
+ VAStatus RequestDestroyImage(VADriverContextP context, VAImageID image_id)
+@@ -166,9 +182,9 @@ VAStatus RequestDestroyImage(VADriverContextP context, VAImageID image_id)
+ }
+ 
+ /* The fourcc a CPU sees a surface as: what its memory holds, MSB-aligned. */
+-static unsigned int surface_image_fourcc(struct request_data *driver_data)
++static unsigned int surface_image_fourcc(struct object_surface *surface_object)
+ {
+-	return video_format_is_lsb10(driver_data->video_format) ?
++	return video_format_is_lsb10(surface_object->video_format) ?
+ 	       VA_FOURCC_P010 : VA_FOURCC_NV12;
+ }
+ 
+@@ -192,7 +208,9 @@ static VAStatus copy_surface_to_image (struct request_data *driver_data,
+ 				       VAImage *image)
+ {
+ 	struct object_buffer *buffer_object;
+-	bool lsb10 = video_format_is_lsb10(driver_data->video_format);
++	struct video_format *video_format = surface_object->video_format;
++	bool lsb10 = video_format_is_lsb10(video_format);
++	VAStatus status = VA_STATUS_SUCCESS;
+ 	unsigned int i;
+ 
+ 	buffer_object = BUFFER(driver_data, image->buf);
+@@ -203,14 +221,33 @@ static VAStatus copy_surface_to_image (struct request_data *driver_data,
+ 	if (lsb10 != (image->format.fourcc == VA_FOURCC_P010))
+ 		return VA_STATUS_ERROR_INVALID_IMAGE_FORMAT;
+ 
++	/*
++	 * Refuse an image bigger than the picture behind it, rather than fill
++	 * it from memory that does not hold one. This is reachable as soon as
++	 * the decoder is asked to scale: the buffers then hold a smaller
++	 * picture than the coded dimensions the client still believes in, and
++	 * every consumer -- hwdownload, vaapi-copy, vaDeriveImage -- would read
++	 * a frame's worth of bytes out of two thirds of a frame. Failing makes
++	 * the client fall back to software decoding, which is the honest
++	 * outcome for a path that cannot express what the hardware produced.
++	 *
++	 * The test is for a SMALLER allocation, not a different one: an
++	 * unscaled capture buffer is routinely taller than the coded picture
++	 * wherever the pixel format aligns its height.
++	 */
++	if (surface_object->destination_width < image->width ||
++	    surface_object->destination_height < image->height)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
+ 	/* The decoder wrote it behind the CPU's cache; vb2 no longer says so. */
+ 	if (surface_object->destination_fd >= 0 &&
+ 	    dmaheap_sync(surface_object->destination_fd, true, false) < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+-	for (i = 0; i < surface_object->destination_planes_count; i++) {
++	for (i = 0; i < surface_object->destination_planes_count &&
++		    status == VA_STATUS_SUCCESS; i++) {
+ #ifdef __arm__
+-		if (!video_format_is_linear(driver_data->video_format))
++		if (!video_format_is_linear(video_format))
+ 			tiled_to_planar(surface_object->destination_data[i],
+ 					buffer_object->data + image->offsets[i],
+ 					image->pitches[i], image->width,
+@@ -218,13 +255,41 @@ static VAStatus copy_surface_to_image (struct request_data *driver_data,
+ 						 image->height / 2);
+ 		else {
+ #endif
+-			memcpy(buffer_object->data + image->offsets[i],
+-			       surface_object->destination_data[i],
+-			       surface_object->destination_sizes[i]);
++			unsigned char *dst = buffer_object->data + image->offsets[i];
++			unsigned char *src = surface_object->destination_data[i];
++			unsigned int src_pitch = surface_object->destination_bytesperlines[i];
++			unsigned int dst_pitch = image->pitches[i];
++			unsigned int rows = i == 0 ? image->height :
++						     (image->height + 1) / 2;
++			unsigned int row_bytes = src_pitch < dst_pitch ?
++						 src_pitch : dst_pitch;
++			unsigned int size;
++			unsigned int row;
++
++			/*
++			 * One copy when the image was laid out for this surface;
++			 * row by row when it was not (the surface is from before
++			 * a renegotiation).
++			 */
++			if (dst_pitch == src_pitch &&
++			    image->offsets[i] + surface_object->destination_sizes[i] <=
++			    image->data_size) {
++				size = surface_object->destination_sizes[i];
++				memcpy(dst, src, size);
++			} else {
++				if (image->offsets[i] + rows * dst_pitch >
++				    image->data_size ||
++				    rows * src_pitch > surface_object->destination_sizes[i]) {
++					status = VA_STATUS_ERROR_INVALID_IMAGE;
++					continue;
++				}
++				for (row = 0; row < rows; row++)
++					memcpy(dst + row * dst_pitch,
++					       src + row * src_pitch, row_bytes);
++				size = rows * dst_pitch;
++			}
+ 			if (lsb10)
+-				lsb10_to_p010(buffer_object->data +
+-					      image->offsets[i],
+-					      surface_object->destination_sizes[i]);
++				lsb10_to_p010(dst, size);
+ #ifdef __arm__
+ 		}
+ #endif
+@@ -233,7 +298,7 @@ static VAStatus copy_surface_to_image (struct request_data *driver_data,
+ 	if (surface_object->destination_fd >= 0)
+ 		dmaheap_sync(surface_object->destination_fd, false, false);
+ 
+-	return VA_STATUS_SUCCESS;
++	return status;
+ }
+ 
+ VAStatus RequestDeriveImage(VADriverContextP context, VASurfaceID surface_id,
+@@ -243,6 +308,7 @@ VAStatus RequestDeriveImage(VADriverContextP context, VASurfaceID surface_id,
+ 	struct object_surface *surface_object;
+ 	struct object_buffer *buffer_object;
+ 	VAImageFormat format;
++	unsigned int size, i;
+ 	VAStatus status;
+ 
+ 	surface_object = SURFACE(driver_data, surface_id);
+@@ -263,10 +329,28 @@ VAStatus RequestDeriveImage(VADriverContextP context, VASurfaceID surface_id,
+ 	 * P010: the copy is shifted into place.
+ 	 */
+ 	memset(&format, 0, sizeof(format));
+-	format.fourcc = surface_image_fourcc(driver_data);
++	format.fourcc = surface_image_fourcc(surface_object);
++
++	/*
++	 * Laid out from the surface, not the queue: they agree until the
++	 * device renegotiates, and a retired surface must still read back.
++	 * Same refusal as RequestCreateImage for a surface the scaler made
++	 * smaller than the client believes.
++	 */
++	if (surface_object->width < 0 || surface_object->height < 0 ||
++	    surface_object->destination_width < (unsigned int)surface_object->width ||
++	    surface_object->destination_height < (unsigned int)surface_object->height)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	for (i = 0, size = 0; i < surface_object->destination_planes_count; i++)
++		size += surface_object->destination_sizes[i];
+ 
+-	status = RequestCreateImage(context, &format, surface_object->width,
+-				    surface_object->height, image);
++	status = image_create(context, &format, surface_object->width,
++			      surface_object->height,
++			      surface_object->destination_bytesperlines[0],
++			      surface_object->destination_height,
++			      surface_object->destination_planes_count, size,
++			      image);
+ 	if (status != VA_STATUS_SUCCESS)
+ 		return status;
+ 
+diff --git a/src/picture.c b/src/picture.c
+index c4177b0..f3b3b27 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -333,6 +333,13 @@ VAStatus RequestBeginPicture(VADriverContextP context, VAContextID context_id,
+ 	if (surface_object == NULL)
+ 		return VA_STATUS_ERROR_INVALID_SURFACE;
+ 
++	/* Its queue slot belongs to another configuration now. */
++	if (request_surface_retired(driver_data, surface_object)) {
++		request_log("Refusing to decode into retired surface %u\n",
++			    surface_id);
++		return VA_STATUS_ERROR_INVALID_SURFACE;
++	}
++
+ 	if (surface_object->status == VASurfaceRendering)
+ 		RequestSyncSurface(context, surface_id);
+ 
+@@ -457,6 +464,14 @@ VAStatus RequestEndPicture(VADriverContextP context, VAContextID context_id)
+ 		if (display != VA_INVALID_ID &&
+ 		    display != context_object->render_surface_id &&
+ 		    SURFACE(driver_data, display) != NULL) {
++			if (request_surface_retired(driver_data,
++						    SURFACE(driver_data, display))) {
++				surface_object->status = VASurfaceReady;
++				surface_object->slices_size = 0;
++				context_object->render_surface_id = VA_INVALID_ID;
++				return VA_STATUS_ERROR_INVALID_SURFACE;
++			}
++
+ 			capture_surface = SURFACE(driver_data, display);
+ 			surface_object->capture_surface_id = display;
+ 		}
+diff --git a/src/request.c b/src/request.c
+index a2ac56e..06d3137 100644
+--- a/src/request.c
++++ b/src/request.c
+@@ -194,7 +194,17 @@ int request_find_device(struct request_data *driver_data,
+ 	return -1;
+ }
+ 
+-/* Whether any surface or context still lives on a device's queues. */
++bool request_surface_retired(struct request_data *driver_data,
++			     struct object_surface *surface_object)
++{
++	return surface_object->generation !=
++	       driver_data->devices[surface_object->device].generation;
++}
++
++/*
++ * Whether any surface or context still lives on a device's queues. A retired
++ * surface does not: its memory is its own and its queue slot is gone.
++ */
+ bool request_device_in_use(struct request_data *driver_data,
+ 			   unsigned int device)
+ {
+@@ -205,7 +215,8 @@ bool request_device_in_use(struct request_data *driver_data,
+ 	surface_object = (struct object_surface *)
+ 		object_heap_first(&driver_data->surface_heap, &iterator);
+ 	while (surface_object != NULL) {
+-		if (surface_object->device == device)
++		if (surface_object->device == device &&
++		    !request_surface_retired(driver_data, surface_object))
+ 			return true;
+ 		surface_object = (struct object_surface *)
+ 			object_heap_next(&driver_data->surface_heap, &iterator);
+diff --git a/src/request.h b/src/request.h
+index 86790d0..90e3ab6 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -72,6 +72,12 @@ struct request_device {
+ 	 * request_data, so this entry is current even for the active device.
+ 	 */
+ 	unsigned int capture_memory;
++	/*
++	 * Bumped each time the queues are released and renegotiated while
++	 * surfaces from the previous configuration are still alive. Like
++	 * capture_memory, never mirrored into request_data.
++	 */
++	unsigned int generation;
+ };
+ 
+ struct request_data {
+@@ -158,6 +164,9 @@ int request_find_device(struct request_data *driver_data,
+ bool request_device_in_use(struct request_data *driver_data,
+ 			   unsigned int device);
+ unsigned int request_capture_memory(struct request_data *driver_data);
++struct object_surface;
++bool request_surface_retired(struct request_data *driver_data,
++			     struct object_surface *surface_object);
+ int request_select_capture_memory(struct request_data *driver_data,
+ 				  struct video_format *video_format);
+ void request_parse_scale(struct request_data *driver_data);
+diff --git a/src/surface.c b/src/surface.c
+index 6bd23e4..cde4bca 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -107,6 +107,60 @@ static void surface_declare_av1_bit_depth(struct request_data *driver_data)
+ 			 V4L2_CID_STATELESS_AV1_SEQUENCE, &seq, sizeof(seq));
+ }
+ 
++/*
++ * Let go of the queues while surfaces still refer to them, so the device can
++ * be renegotiated: a client changing resolution or bit depth creates the new
++ * surfaces before it destroys the old ones, and ffmpeg does exactly that on
++ * a VP9 or HEVC resolution change. Until now that S_FMT met EBUSY and the
++ * client fell back to software.
++ *
++ * Only with DMABUF capture, where each surface's pixels are its own dma-buf
++ * and outlive the queue. The OUTPUT buffers are MMAP and still mapped by
++ * their surfaces; vb2 orphans those on REQBUFS(0) rather than refusing, and
++ * the surfaces unmap them when destroyed. Bumping the generation retires
++ * every surface the device had: they stay readable and exportable, and are
++ * refused as decode targets.
++ */
++static VAStatus surface_retire_queues(struct request_data *driver_data,
++				      unsigned int width, unsigned int height)
++{
++	struct request_device *device = &driver_data->devices[driver_data->device];
++	struct video_format *video_format = driver_data->video_format;
++	unsigned int output_type, capture_type;
++	int rc;
++
++	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
++	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
++
++	v4l2_set_stream(driver_data->video_fd, output_type, false);
++	v4l2_set_stream(driver_data->video_fd, capture_type, false);
++
++	rc = v4l2_request_buffers(driver_data->video_fd, output_type,
++				  V4L2_MEMORY_MMAP, 0);
++	if (rc < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	rc = v4l2_request_buffers(driver_data->video_fd, capture_type,
++				  V4L2_MEMORY_DMABUF, 0);
++	if (rc < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	request_log("Renegotiating %ux%u/%u-bit -> %ux%u/%u-bit; earlier surfaces retired\n",
++		    driver_data->configured_width,
++		    driver_data->configured_height,
++		    driver_data->configured_bit_depth, width, height,
++		    driver_data->coded_bit_depth);
++
++	device->generation++;
++	driver_data->configured_pixelformat = 0;
++	driver_data->configured_width = 0;
++	driver_data->configured_height = 0;
++	driver_data->configured_bit_depth = 0;
++	driver_data->video_format = NULL;
++
++	return VA_STATUS_SUCCESS;
++}
++
+ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 				unsigned int width, unsigned int height,
+ 				VASurfaceID *surfaces_ids,
+@@ -189,6 +243,22 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	     driver_data->configured_width != width ||
+ 	     driver_data->configured_height != height ||
+ 	     driver_data->configured_bit_depth != driver_data->coded_bit_depth)) {
++		/*
++		 * Old surfaces still hold the queues. MMAP capture keeps the
++		 * old behaviour: the S_FMT below is refused.
++		 */
++		if (driver_data->video_format != NULL &&
++		    (format == VA_RT_FORMAT_YUV420 ||
++		     format == VA_RT_FORMAT_YUV420_10) &&
++		    request_capture_memory(driver_data) == V4L2_MEMORY_DMABUF &&
++		    request_device_in_use(driver_data, driver_data->device)) {
++			VAStatus status = surface_retire_queues(driver_data,
++								width, height);
++
++			if (status != VA_STATUS_SUCCESS)
++				return status;
++		}
++
+ 		rc = v4l2_set_format(driver_data->video_fd, output_type,
+ 				     pixelformat, width, height);
+ 		if (rc < 0)
+@@ -460,6 +530,9 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 
+ 		surface_object->status = VASurfaceReady;
+ 		surface_object->device = driver_data->device;
++		surface_object->video_format = video_format;
++		surface_object->generation =
++			driver_data->devices[driver_data->device].generation;
+ 		surface_object->decode_error = false;
+ 		surface_object->width = width;
+ 		surface_object->height = height;
+@@ -521,7 +594,7 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 	unsigned int output_type, capture_type;
+ 	int output_rc, capture_rc;
+ 	unsigned int i, j;
+-	unsigned int device;
++	unsigned int device, active;
+ 	VAStatus status = VA_STATUS_SUCCESS;
+ 
+ 	for (i = 0; i < surfaces_count; i++) {
+@@ -556,17 +629,25 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 	 * small buffers in place and make the real decoder S_FMT impossible.
+ 	 * Release both queues once no surface or context refers to them.
+ 	 * Exported dma-bufs retain their own references to the storage.
++	 *
++	 * Only switch to a device that has something to release, and switch
++	 * back afterwards. Clients destroy surfaces from whichever thread lets
++	 * go of the last frame -- in mid-stream, once old surfaces are retired
++	 * by a renegotiation -- and leaving another device active pointed the
++	 * decode running on a different thread at that device's file
++	 * descriptors.
+ 	 */
++	active = driver_data->device;
+ 	for (device = 0; device < driver_data->devices_count; device++) {
+-		if (request_device_in_use(driver_data, device))
++		video_format = device == driver_data->device ?
++			       driver_data->video_format :
++			       driver_data->devices[device].video_format;
++		if (video_format == NULL ||
++		    request_device_in_use(driver_data, device))
+ 			continue;
+ 
+ 		request_use_device(driver_data, device);
+ 
+-		video_format = driver_data->video_format;
+-		if (video_format == NULL)
+-			continue;
+-
+ 		output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+ 		capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 		output_rc = v4l2_request_buffers(driver_data->video_fd,
+@@ -586,6 +667,8 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 		driver_data->video_format = NULL;
+ 	}
+ 
++	request_use_device(driver_data, active);
++
+ 	return status;
+ }
+ 
+@@ -609,6 +692,16 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 
+ 	request_use_device(driver_data, surface_object->device);
+ 
++	/*
++	 * Decoding is synchronous (RequestEndPicture waits here), so a surface
++	 * is never in flight when its queues are retired: there is nothing to
++	 * wait for, and no queue left to wait on.
++	 */
++	if (request_surface_retired(driver_data, surface_object)) {
++		status = VA_STATUS_SUCCESS;
++		goto complete;
++	}
++
+ 	video_format = driver_data->video_format;
+ 	if (video_format == NULL) {
+ 		status = VA_STATUS_ERROR_OPERATION_FAILED;
+@@ -898,7 +991,8 @@ VAStatus RequestExportSurfaceHandle(VADriverContextP context,
+ 
+ 	request_use_device(driver_data, surface_object->device);
+ 
+-	video_format = driver_data->video_format;
++	/* The surface's own: a retired one need not match the device's. */
++	video_format = surface_object->video_format;
+ 	if (video_format == NULL)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+diff --git a/src/surface.h b/src/surface.h
+index 255c06e..4efddec 100644
+--- a/src/surface.h
++++ b/src/surface.h
+@@ -91,6 +91,21 @@ struct object_surface {
+ 	 */
+ 	int destination_fd;
+ 
++	/*
++	 * The format of the memory above, which is the device's only until
++	 * the device renegotiates: a retired surface keeps describing its own
++	 * pixels.
++	 */
++	struct video_format *video_format;
++
++	/*
++	 * The device's queue generation when this surface was created. Once
++	 * the device moves on (request_surface_retired) the surface is no
++	 * longer in any queue: it can still be read and exported, never
++	 * decoded into.
++	 */
++	unsigned int generation;
++
+ 	unsigned int slices_size;
+ 	unsigned int slices_count;
+ 

@@ -209,6 +209,25 @@ PL10 for 10-bit AV1 sequences. Consumers: libva-v4l2-request 0017 and
 than the 1280x720 picture (hantro's 768-line padding, as GStreamer describes
 it), which kmssink needs for any hantro stream. Hardware-verified 2026-10-01.
 
+## DMA-BUF capture (0151 + defconfig, 2026-10-01)
+
+The VA driver allocates decoder capture memory from `/dev/dma_heap/system`
+(libva-v4l2-request 0018/0019), so the defconfig now builds
+`CONFIG_DMABUF_HEAPS`, `_SYSTEM` and `_CMA` (the CMA heap for diagnostics
+only). The system heap is the right one: the VE, the AV1 core and the display
+are all IOMMU masters, so scattered pages are contiguous in each device's
+address space, and heap buffers were shown on the panel in NV12, P010 and
+P010 + LSB10 before the VA driver used them
+(`ALLOC=heap tools/display/kms-p010-plane-test.c`).
+
+**0151** sets `bidirectional` on cedrus's capture queue. vb2 maps an imported
+dma-buf in the queue's direction, `DMA_FROM_DEVICE` for CAPTURE, and the H713
+IOMMU enforces it: the page is write-only, and the first inter frame faults
+reading its reference (`Page fault ... master 1, dir rd`, then a timeout).
+MMAP buffers never showed it because `dma_alloc` maps read-write. hantro and
+rkvdec already set the flag for the same reason, which is why AV1 passed with
+DMABUF capture while VP9 on cedrus failed at frame 1.
+
 ## Retired: display-side scaling (2026-09-23)
 
 Six patches left `series` — **0098, 0103, 0105, 0106, 0108, 0111** — and the

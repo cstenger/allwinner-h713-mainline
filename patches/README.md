@@ -5,9 +5,9 @@ trees, are applied by different build stages, and must never be mixed.
 
 | Directory | Applies to | Filenames | Count |
 |-----------|-----------|-----------|-------|
-| [`kernel/`](kernel/README.md) | mainline Linux tarball, `config/versions.env` → `KERNEL_VERSION` | `0001-…` … `0NNN-…` | 114 in `series` |
+| [`kernel/`](kernel/README.md) | mainline Linux tarball, `config/versions.env` → `KERNEL_VERSION` | `0001-…` … `0NNN-…` | 115 in `series` |
 | [`aic8800/`](aic8800/README.md) | AIC8800 vendor driver tarball, `radxa-pkg/aic8800` @ pinned commit | `aic8800-0001-…` | 8 |
-| [`libva-v4l2-request/`](libva-v4l2-request/README.md) | Bootlin `libva-v4l2-request`, PR #38 at its pinned base | `0001-…` | 17 |
+| [`libva-v4l2-request/`](libva-v4l2-request/README.md) | Bootlin `libva-v4l2-request`, PR #38 at its pinned base | `0001-…` | 19 |
 | [`mpv/`](mpv/README.md) | official mpv 0.40.0 | `0001-…` | 4 |
 | `gstreamer/` | GStreamer 1.26.2, the v4l2codecs plugin only (`tools/video/build-gst-v4l2codecs.sh`) | `0001-…` | 1 in `series` (0003); 0001/0002 on disk, never deployed |
 

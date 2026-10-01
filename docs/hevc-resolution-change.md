@@ -1,5 +1,42 @@
 # Mid-stream resolution change — NOT our bug, and the earlier write-up was wrong
 
+> **Superseded for HEVC and VP9 on 2026-10-01 (ffmpeg 7.1.5).** Re-measured
+> with per-frame hashes against a calibrated software reference
+> (`-noautoscale`, see below). ffmpeg now **does** ask for the new geometry,
+> and the shim is what refuses it:
+>
+> | stream | what ffmpeg does at the first change | result |
+> | --- | --- | --- |
+> | `r01` (HEVC 640x480 → 320x240 → 640x480) | `get_format` → new surfaces → `S_FMT 320x240` = **EBUSY** | first 25 frames hardware (VE irq +25), then software |
+> | `vp9-rc.ivf` (640x360 → 720p → 352x288 → 640x360) | same, `S_FMT 1280x720` = **EBUSY** | first 60 frames hardware, then software |
+> | `rc.ivf` (AV1, 8 sizes) | **nothing** — no second `S_FMT`, no new surfaces | new-size frames decoded into the old 640x384 queue: hantro `cannot set up the frame: -22`, decode errors, 19 of 37 frames out |
+> | `av1-depth.ivf` (AV1 720p 8 → 10 → 8 bit) | **nothing** | 34 decode errors, 26 of 60 frames out |
+>
+> mpv (`--hwdec=vaapi-copy`; with `--vo=null`, plain `vaapi` cannot create a
+> device at all) behaves identically. The EBUSY is because the old surfaces
+> still hold the queues (patch 0009).
+>
+> **FIXED the same day for VP9 and HEVC** by libva-v4l2-request 0018/0019
+> (capture memory from a DMA-BUF heap, queue generations) and kernel 0151:
+> `vp9-rc.ivf` 210/210 and `r01` 75/75 bit-exact through VA-API, every frame
+> on the VE, mpv on hardware throughout; `r02` (H.264, 1280x720 -> 320x240 ->
+> 1280x720) 150/150, VE +150, and the board stayed healthy.
+>
+> **AV1 is ffmpeg's**: `get_pixel_format()` in `libavcodec/av1dec.c` returns
+> early (keeps the hwaccel) whenever the hwaccel pix_fmt is still in the
+> candidate list, so a new sequence header never reaches `ff_get_format`. In
+> 7.1 that covers size *and* depth changes; master adds a `sw_pix_fmt` check
+> that renegotiates on a depth change only. No driver memory model can fix a
+> renegotiation the client never asks for.
+>
+> **Calibrating the harness:** ffmpeg's rawvideo/framemd5 output auto-scales
+> every frame to the first size unless given `-noautoscale`; with it, a
+> libdav1d decode reproduces `rc.ivf.md5` exactly. Score per frame, not with
+> one stream MD5, so the first bad frame is visible.
+>
+> The 2026-08-24 text below is kept as the record of what the earlier ffmpeg
+> did.
+
 Investigated 2026-08-24 with `tools/video/decode-reinit-test.sh`. This document
 replaces two earlier explanations, both of which were wrong. The corrections
 are kept visible because each one cost real board time.

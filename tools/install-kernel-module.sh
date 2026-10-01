@@ -83,6 +83,15 @@ scp -F /dev/null -o ConnectTimeout=5 "$KO" \
 	fi
 	modprobe $MOD
 	sleep 1
+	# The AV1 core runs from the video engine's clocks and reset, so its
+	# device is cedrus's consumer: removing cedrus unbinds hantro from it,
+	# and nothing re-probes it. VA-API then silently loses AV1.
+	av1=/sys/bus/platform/devices/1c0d000.av1
+	if [ -e \"\$av1\" ] && [ ! -e \"\$av1/driver\" ] &&
+	   [ -d /sys/bus/platform/drivers/hantro-vpu ]; then
+		echo 1c0d000.av1 > /sys/bus/platform/drivers/hantro-vpu/bind
+		echo '    re-bound the AV1 decoder (reloading cedrus unbinds it)'
+	fi
 	# Record what is installed so drift is detectable. A stale module that
 	# still loads is this project's most expensive silent failure.
 	sed -i '/^kernel_module_/d' /etc/h713-video-stack 2>/dev/null || true

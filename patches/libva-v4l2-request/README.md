@@ -284,7 +284,37 @@ interrupts ≥ frames — `tools/video/va-gate.sh`):
   (`local/h713-lab/av1-work/wedge/`).
 - No regressions: VA1 5/5, H1 14/14, P1 12/12, M2 6/6.
 
-**Still open:** a mid-stream resolution change still fails at `S_FMT` (EBUSY)
-while old surfaces exist, as for H.264/HEVC (RI1 fails identically on the
-pre-0014 driver). The clean fix is `V4L2_MEMORY_DMABUF` capture buffers from a
-dma-heap, so a queue can be reformatted while displayed frames live on.
+**Was open:** a mid-stream resolution change failed at `S_FMT` (EBUSY) while
+old surfaces existed. Fixed for VP9 and HEVC by 0018/0019 below; AV1 is
+ffmpeg's.
+
+## DMA-BUF capture and mid-stream renegotiation — validated on hardware 2026-10-01
+
+| # | What | Why |
+|---|------|-----|
+| 0018 | Allocate capture buffers from a DMA-BUF heap | each surface owns its pixels: a `/dev/dma_heap/system` buffer queued as `V4L2_MEMORY_DMABUF` (same fd, same index, every time), exported by `dup()`, read back inside `DMA_BUF_IOCTL_SYNC`. MMAP stays as the fallback; `V4L2_REQUEST_CAPTURE_MEMORY=mmap\|dmabuf` forces either, and the choice is logged (`Capture memory: ...`) |
+| 0019 | Renegotiate while old surfaces are still referenced | with DMABUF capture, new-geometry surfaces release both queues and bump a per-device generation instead of meeting EBUSY; retired surfaces stay readable and exportable, are refused as decode targets, and no longer keep the device in use. Readback lays images out per surface and copies row by row across pitches. `RequestDestroySurfaces` no longer leaves another decoder active (that broke HEVC's frame threads once surfaces were destroyed mid-stream) |
+
+Needs kernel 0151 (cedrus maps capture buffers read-write; without it the
+first inter frame faults on its reference) and the DMA-BUF heaps in the
+defconfig. Measured with ffmpeg 7.1.5 and mpv 0.40.0:
+
+- **Resolution changes through VA-API:** `vp9-rc.ivf` (640x360 → 720p →
+  352x288 → 640x360) **210/210** frames bit-exact against libvpx, VE +210;
+  HEVC `r01` (640x480 → 320x240 → 640x480) **75/75**, VE +75; H.264 `r02`
+  (1280x720 → 320x240 → 1280x720) **150/150**, VE +150. mpv
+  (`--hwdec=vaapi-copy`) stays on hardware through every change. Before:
+  60/210 and 25/75, then software.
+- **AV1 is not fixed, and cannot be from here:** libavcodec's AV1 decoder keeps
+  its hwaccel across a new sequence header whenever the hardware pixel format is
+  still offered, for size and (in 7.1) depth changes, so it never asks for new
+  surfaces. See [`docs/hevc-resolution-change.md`](../../docs/hevc-resolution-change.md).
+- **No regressions, in both memory modes:** VA gate 7/7 (5 AV1, 2 VP9), 10-bit
+  AV1 10/10 and 300/300 frames against libdav1d, H.264 5/5, HEVC H1 14/14,
+  MPEG-2 5/5 against GStreamer, loops stay on hardware for all four codecs,
+  concurrency 15/15. In-process fds, live dma-bufs and RSS flat over a 30 s loop.
+- **Soak, 45 min, DMABUF:** `soak-decode.sh` 1946/1946 iterations bit-exact
+  (68,912 frames on the VE, no fallbacks, no timeouts, CmaFree unchanged), and a
+  parallel 10-bit AV1 VA loop 249 iterations, all identical. No IOVA or IOMMU
+  messages -- the `ve_scanout_iova` failure seen after ~35 min did not recur.
+

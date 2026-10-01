@@ -27,11 +27,19 @@
  * read: bits 15:8 are the fetch format the driver programmed (0 NV12,
  * 6 P010, 7 P010 LSB10).
  *
+ * ALLOC=heap takes the frame from /dev/dma_heap/system instead of a dumb
+ * buffer: filled through its own mmap inside DMA_BUF_IOCTL_SYNC, imported
+ * with drmPrimeFDToHandle, then the same AddFB2 and commit. That is the path
+ * a VA driver allocating its capture memory from the heap gives the display,
+ * minus the decoder. FMT=nv12 puts the same bars and ramp up as 8-bit NV12
+ * (fmt 0), so both plane formats can be checked from either allocator.
+ *
  * Build on the target:
  *   cc -O2 -Wall -o kms-p010-plane-test kms-p010-plane-test.c \
  *      $(pkg-config --cflags --libs libdrm)
  * Run with an observer at the panel:
- *   [FILL=split|msb|lsb] ARMED=yes kms-p010-plane-test [dwell-seconds]
+ *   [ALLOC=dumb|heap] [FMT=p010|nv12] [FILL=split|msb|lsb] ARMED=yes \
+ *      kms-p010-plane-test [dwell-seconds]
  *
  * Result 2026-09-30: fmt 6 is standard (MSB-aligned) P010 and fmt 7 is the
  * same layout LSB-aligned, both full-frame correct. An early run had fmt 7
@@ -48,6 +56,9 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+#include <linux/dma-buf.h>
+#include <linux/dma-heap.h>
 
 #include <drm_fourcc.h>
 #include <xf86drm.h>
@@ -127,6 +138,89 @@ static void fill(uint8_t *base, const char *mode)
 			}
 		}
 	}
+}
+
+/* NV12: the same bars and ramp in 8 bits, over the whole frame. */
+static void fill_nv12(uint8_t *base)
+{
+	uint8_t *chroma = base + W * H;
+	unsigned x, y;
+
+	for (y = 0; y < H; y++)
+		for (x = 0; x < W; x++) {
+			uint16_t Y, cb, cr;
+
+			sample(x, y, H, &Y, &cb, &cr);
+			base[y * W + x] = Y >> 2;
+			if (!(x & 1) && !(y & 1)) {
+				chroma[(y / 2) * W + x] = cb >> 2;
+				chroma[(y / 2) * W + x + 1] = cr >> 2;
+			}
+		}
+}
+
+static int dmabuf_sync(int fd, uint64_t flags)
+{
+	struct dma_buf_sync sync = { .flags = flags };
+
+	if (drmIoctl(fd, DMA_BUF_IOCTL_SYNC, &sync)) {
+		perror("DMA_BUF_IOCTL_SYNC");
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * One frame from the system heap, filled and imported. Returns the GEM
+ * handle; *dmabuf keeps the fd so the caller can say which buffer it was.
+ */
+static int heap_frame(int drm, size_t size, int nv12, const char *mode,
+		      uint32_t *handle, int *dmabuf)
+{
+	struct dma_heap_allocation_data alloc = {
+		.len = size, .fd_flags = O_RDWR | O_CLOEXEC,
+	};
+	int heap = open("/dev/dma_heap/system", O_RDONLY | O_CLOEXEC);
+	uint8_t *p;
+
+	if (heap < 0) {
+		perror("/dev/dma_heap/system");
+		return -1;
+	}
+	if (drmIoctl(heap, DMA_HEAP_IOCTL_ALLOC, &alloc)) {
+		perror("DMA_HEAP_IOCTL_ALLOC");
+		close(heap);
+		return -1;
+	}
+	close(heap);
+	*dmabuf = alloc.fd;
+
+	p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, alloc.fd, 0);
+	if (p == MAP_FAILED) {
+		perror("mmap heap buffer");
+		return -1;
+	}
+	if (dmabuf_sync(alloc.fd, DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE)) {
+		munmap(p, size);
+		return -1;
+	}
+	if (nv12)
+		fill_nv12(p);
+	else
+		fill(p, mode);
+	if (dmabuf_sync(alloc.fd, DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE)) {
+		munmap(p, size);
+		return -1;
+	}
+	munmap(p, size);
+
+	if (drmPrimeFDToHandle(drm, alloc.fd, handle)) {
+		perror("drmPrimeFDToHandle (heap buffer -> display)");
+		return -1;
+	}
+	printf("heap buffer: %zu bytes, dma-buf fd %d, GEM handle %u\n", size,
+	       alloc.fd, *handle);
+	return 0;
 }
 
 static uint32_t find_prop(int fd, uint32_t obj, const char *name)
@@ -240,17 +334,28 @@ int main(int argc, char **argv)
 	drmModeRes *res = NULL;
 	unsigned dwell = argc > 1 ? (unsigned)atoi(argv[1]) : 20;
 	const char *mode = getenv("FILL") ? getenv("FILL") : "split";
+	const char *alloc = getenv("ALLOC") ? getenv("ALLOC") : "dumb";
+	const char *fmt = getenv("FMT") ? getenv("FMT") : "p010";
+	int heap = !strcmp(alloc, "heap");
+	int nv12 = !strcmp(fmt, "nv12");
+	uint32_t pitch = nv12 ? W : PITCH;
+	size_t size = (size_t)pitch * H * 3 / 2;
+	uint32_t handle = 0;
+	int dmabuf = -1;
 	char path[32];
 	uint8_t *p;
 	uint32_t i, f;
 	int fd = -1, rc = 1;
 
 	if (!getenv("ARMED") || strcmp(getenv("ARMED"), "yes") ||
-	    (strcmp(mode, "split") && strcmp(mode, "msb") && strcmp(mode, "lsb"))) {
-		fprintf(stderr, "usage: [FILL=split|msb|lsb] ARMED=yes %s [dwell-seconds]\n",
-			argv[0]);
+	    (strcmp(mode, "split") && strcmp(mode, "msb") && strcmp(mode, "lsb")) ||
+	    (!heap && strcmp(alloc, "dumb")) || (!nv12 && strcmp(fmt, "p010"))) {
+		fprintf(stderr, "usage: [ALLOC=dumb|heap] [FMT=p010|nv12] [FILL=split|msb|lsb] "
+			"ARMED=yes %s [dwell-seconds]\n", argv[0]);
 		return 2;
 	}
+	if (nv12)
+		create.bpp = 8;
 
 	for (i = 0; i < 16 && !crtc; i++) {
 		snprintf(path, sizeof(path), "/dev/dri/card%u", i);
@@ -291,32 +396,47 @@ int main(int argc, char **argv)
 	}
 	print_in_formats(fd, plane);
 
-	if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create)) {
-		perror("CREATE_DUMB");
-		goto out;
+	if (heap) {
+		if (heap_frame(fd, size, nv12, mode, &handle, &dmabuf))
+			goto out;
+	} else {
+		if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create)) {
+			perror("CREATE_DUMB");
+			goto out;
+		}
+		if (create.pitch != pitch) {
+			fprintf(stderr, "dumb pitch %u, need %u\n", create.pitch, pitch);
+			goto out;
+		}
+		map.handle = create.handle;
+		if (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map)) {
+			perror("MAP_DUMB");
+			goto out;
+		}
+		p = mmap(NULL, create.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+			 map.offset);
+		if (p == MAP_FAILED) {
+			perror("mmap dumb");
+			goto out;
+		}
+		if (nv12)
+			fill_nv12(p);
+		else
+			fill(p, mode);
+		munmap(p, create.size);
+		handle = create.handle;
 	}
-	if (create.pitch != PITCH) {
-		fprintf(stderr, "dumb pitch %u, need %u\n", create.pitch, PITCH);
-		goto out;
-	}
-	map.handle = create.handle;
-	if (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map)) {
-		perror("MAP_DUMB");
-		goto out;
-	}
-	p = mmap(NULL, create.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-		 map.offset);
-	if (p == MAP_FAILED) {
-		perror("mmap dumb");
-		goto out;
-	}
-	fill(p, mode);
-	munmap(p, create.size);
 
-	handles[0] = handles[1] = create.handle;
-	pitches[0] = pitches[1] = PITCH;
-	offsets[1] = PITCH * H;
-	if (!strcmp(mode, "lsb")) {
+	handles[0] = handles[1] = handle;
+	pitches[0] = pitches[1] = pitch;
+	offsets[1] = pitch * H;
+	if (nv12) {
+		if (drmModeAddFB2(fd, W, H, DRM_FORMAT_NV12, handles, pitches,
+				  offsets, &fb, 0)) {
+			perror("AddFB2 NV12");
+			goto out;
+		}
+	} else if (!strcmp(mode, "lsb")) {
 		modifiers[0] = modifiers[1] = DRM_FORMAT_MOD_ALLWINNER_LSB10;
 		if (drmModeAddFB2WithModifiers(fd, W, H, DRM_FORMAT_P010, handles,
 					       pitches, offsets, modifiers, &fb,
@@ -330,11 +450,12 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	printf("WATCH THE PANEL: P010 on plane %u for %us, FILL=%s\n", plane,
-	       dwell, mode);
+	printf("WATCH THE PANEL: %s from %s on plane %u for %us%s%s\n",
+	       nv12 ? "NV12" : "P010", alloc, plane, dwell,
+	       nv12 ? "" : ", FILL=", nv12 ? "" : mode);
 	fflush(stdout);
 	if (plane_set(fd, plane, crtc, fb)) {
-		perror("atomic enable P010");
+		perror("atomic enable");
 		goto out;
 	}
 	usleep(200000);
@@ -349,7 +470,7 @@ int main(int argc, char **argv)
 	if (plane_set(fd, plane, 0, 0))
 		fprintf(stderr, "atomic disable failed: %s\n", strerror(errno));
 	else
-		printf("P010 plane disabled; KMS RGB restored\n");
+		printf("video plane disabled; KMS RGB restored\n");
 	rc = 0;
 out:
 	if (fb)
@@ -357,7 +478,11 @@ out:
 	if (create.handle) {
 		destroy.handle = create.handle;
 		drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+	} else if (handle) {
+		drmCloseBufferHandle(fd, handle);
 	}
+	if (dmabuf >= 0)
+		close(dmabuf);
 	drmModeFreePlaneResources(pres);
 	drmModeFreeResources(res);
 	close(fd);
