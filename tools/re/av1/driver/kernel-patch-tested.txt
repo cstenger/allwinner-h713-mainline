@@ -9,3 +9,8 @@ tiny sizes -- and 4K; soaks of 900, 600, 2318 and 1199 frames from libaom and
 SVT-AV1; eight resolution changes in one stream; 40 flushing seeks; and AV1
 decoding alongside cedrus and alongside other AV1 streams starting and
 stopping. All bit-exact, with no driver complaint.
+10-bit (P010_LSB capture, 2026-10-01): a 10-frame 1280x720 libaom clip is
+bit-exact against libdav1d (100.000% of Y, U and V through VA-API, padding
+bits zero) and a 300-frame one matches frame for frame; it plays zero-copy on
+the H713 video plane (P010 + ALLWINNER_LSB10) through mpv and through
+GStreamer's kmssink, panel-checked, with the 8-bit gates unchanged.

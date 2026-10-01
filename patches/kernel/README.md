@@ -195,6 +195,20 @@ Reasoning and reopen conditions in
 changes from TRY to the control commit callback. Cedrus compliance is now
 **49/49, zero warnings**. See [the control validation record](../../docs/reference/cedrus-controls-2026-09-17/README.md).
 
+## 10-bit AV1 to the video plane (0150, 0149, 0147; EXPERIMENT)
+
+**0150** (local, not upstreamed; placed before 0145 in `series`) names the
+H713 AV1 core's 10-bit output, which is P010's layout with the samples in bits
+9:0: `DRM_FORMAT_MOD_ALLWINNER_LSB10` (`fourcc_mod_code(ALLWINNER, 2)`, valid
+with P010/P210) and `V4L2_PIX_FMT_P010_LSB` (`'PL10'`), with the V4L2
+format-info entry, the ENUM_FMT description and a hantro bit depth of 10.
+**0149** makes the AFBD video plane pick its format byte from the framebuffer
+(NV12 0, P010 6, P010 + LSB10 7) and advertise `IN_FORMATS`; **0147** offers
+PL10 for 10-bit AV1 sequences. Consumers: libva-v4l2-request 0017 and
+`patches/gstreamer/0003`. 0149 also lets the plane take a framebuffer larger
+than the 1280x720 picture (hantro's 768-line padding, as GStreamer describes
+it), which kmssink needs for any hantro stream. Hardware-verified 2026-10-01.
+
 ## Retired: display-side scaling (2026-09-23)
 
 Six patches left `series` — **0098, 0103, 0105, 0106, 0108, 0111** — and the

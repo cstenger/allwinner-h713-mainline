@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Put one P010 frame on the H713 video plane (EXPERIMENT, kernel patch 0149)
- * and say which 10-bit layout the display fetched.
+ * Put one P010 frame on the H713 video plane (EXPERIMENT, kernel patches 0149
+ * and 0150) and say which 10-bit layout the display fetched.
  *
  * The firmware's VideoInfo codes name two 10-bit layouts: 14 =
  * p010_low_10bits_component, 15 = p010_high_10bits_component (resolver ->
@@ -20,20 +20,23 @@
  * Correct bars in BOTH halves means the format was ignored; a half-height
  * picture or doubled bars means 8-bit NV12 fetching through a 2x stride.
  *
- * After the commit, AFBD 0x05600010 is read: bits 15:8 are the fetch format
- * the driver programmed (0 NV12, 6 P010).
+ * The framebuffer picks the fetch format, as a real client's would: FILL=lsb
+ * adds it as P010 with DRM_FORMAT_MOD_ALLWINNER_LSB10 (driver -> fmt 7);
+ * FILL=msb and FILL=split add plain P010 (fmt 6). The plane's IN_FORMATS
+ * pairs for P010 are printed first. After the commit, AFBD 0x05600010 is
+ * read: bits 15:8 are the fetch format the driver programmed (0 NV12,
+ * 6 P010, 7 P010 LSB10).
  *
  * Build on the target:
  *   cc -O2 -Wall -o kms-p010-plane-test kms-p010-plane-test.c \
  *      $(pkg-config --cflags --libs libdrm)
  * Run with an observer at the panel:
- *   ARMED=yes kms-p010-plane-test [dwell-seconds]
- * Select the fetch format between runs, no rebuild:
- *   echo 6 > /sys/module/sun50i_h713_afbd/parameters/h713_p010_fmt
+ *   [FILL=split|msb|lsb] ARMED=yes kms-p010-plane-test [dwell-seconds]
  *
- * Result 2026-09-30: fmt 6 shows the top half correct over the full panel
- * (standard P010). fmt 7 reads word bits 9:0 but leaves the bottom 360 lines
- * empty, so it is not simply LSB-aligned P010.
+ * Result 2026-09-30: fmt 6 is standard (MSB-aligned) P010 and fmt 7 is the
+ * same layout LSB-aligned, both full-frame correct. An early run had fmt 7
+ * stop after 360 lines; that was the fetch budget (the high halves of
+ * +0x30/+0x48/+0x4c) still at NV12's values, not the layout.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -54,6 +57,10 @@
 #define H 720u
 #define PITCH (2 * W)
 #define AFBD_PHYS 0x05600000UL
+
+#ifndef DRM_FORMAT_MOD_ALLWINNER_LSB10
+#define DRM_FORMAT_MOD_ALLWINNER_LSB10 fourcc_mod_code(ALLWINNER, 2)
+#endif
 
 /* BT.709 limited-range 75% bars, 8-bit Y, Cb, Cr; scaled to 10 bits below. */
 static const uint8_t bars[8][3] = {
@@ -141,6 +148,36 @@ static uint32_t find_prop(int fd, uint32_t obj, const char *name)
 	return id;
 }
 
+/* The plane's (P010, modifier) pairs, from IN_FORMATS. */
+static void print_in_formats(int fd, uint32_t plane)
+{
+	drmModeObjectProperties *props;
+	drmModeFormatModifierIterator iter = { 0 };
+	drmModePropertyBlobRes *blob = NULL;
+	uint32_t i;
+
+	props = drmModeObjectGetProperties(fd, plane, DRM_MODE_OBJECT_PLANE);
+	for (i = 0; props && i < props->count_props && !blob; i++) {
+		drmModePropertyRes *p = drmModeGetProperty(fd, props->props[i]);
+
+		if (p && !strcmp(p->name, "IN_FORMATS"))
+			blob = drmModeGetPropertyBlob(fd, props->prop_values[i]);
+		drmModeFreeProperty(p);
+	}
+	drmModeFreeObjectProperties(props);
+	if (!blob) {
+		printf("plane %u has no IN_FORMATS (no modifier support)\n", plane);
+		return;
+	}
+	while (drmModeFormatModifierBlobIterNext(blob, &iter))
+		if (iter.fmt == DRM_FORMAT_P010)
+			printf("IN_FORMATS: P010 modifier 0x%016llx%s\n",
+			       (unsigned long long)iter.mod,
+			       iter.mod == DRM_FORMAT_MOD_ALLWINNER_LSB10 ? " (ALLWINNER_LSB10)" :
+			       iter.mod == DRM_FORMAT_MOD_LINEAR ? " (LINEAR)" : "");
+	drmModeFreePropertyBlob(blob);
+}
+
 static int plane_set(int fd, uint32_t plane, uint32_t crtc, uint32_t fb)
 {
 	static const char *const names[] = {
@@ -197,6 +234,7 @@ int main(int argc, char **argv)
 	struct drm_mode_map_dumb map = { 0 };
 	struct drm_mode_destroy_dumb destroy = { 0 };
 	uint32_t handles[4] = { 0 }, pitches[4] = { 0 }, offsets[4] = { 0 };
+	uint64_t modifiers[4] = { 0 };
 	uint32_t crtc = 0, plane = 0, fb = 0;
 	drmModePlaneRes *pres = NULL;
 	drmModeRes *res = NULL;
@@ -251,6 +289,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "no plane advertises P010 -- is patch 0149 in this kernel?\n");
 		goto out;
 	}
+	print_in_formats(fd, plane);
 
 	if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create)) {
 		perror("CREATE_DUMB");
@@ -277,8 +316,16 @@ int main(int argc, char **argv)
 	handles[0] = handles[1] = create.handle;
 	pitches[0] = pitches[1] = PITCH;
 	offsets[1] = PITCH * H;
-	if (drmModeAddFB2(fd, W, H, DRM_FORMAT_P010, handles, pitches, offsets,
-			  &fb, 0)) {
+	if (!strcmp(mode, "lsb")) {
+		modifiers[0] = modifiers[1] = DRM_FORMAT_MOD_ALLWINNER_LSB10;
+		if (drmModeAddFB2WithModifiers(fd, W, H, DRM_FORMAT_P010, handles,
+					       pitches, offsets, modifiers, &fb,
+					       DRM_MODE_FB_MODIFIERS)) {
+			perror("AddFB2 P010 + ALLWINNER_LSB10");
+			goto out;
+		}
+	} else if (drmModeAddFB2(fd, W, H, DRM_FORMAT_P010, handles, pitches,
+				 offsets, &fb, 0)) {
 		perror("AddFB2 P010");
 		goto out;
 	}

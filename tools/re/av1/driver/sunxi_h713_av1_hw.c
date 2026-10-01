@@ -7,7 +7,10 @@
  * VPU981 with the same CDF layout but a different register file -- one
  * packed 1168-byte bit vector, written out whole -- and references that are
  * always stored compressed. The display picture comes out through the
- * core's secondary output as plain NV12.
+ * core's secondary output: NV12 for 8-bit sequences, and for 10-bit ones
+ * P010's layout with each sample in the LOW 10 bits of its 16-bit word
+ * (V4L2_PIX_FMT_P010_LSB; DRM_FORMAT_P010 + DRM_FORMAT_MOD_ALLWINNER_LSB10).
+ * The core has no way to MSB-align it.
  *
  * The register image and every CPU-written buffer are built by
  * sunxi_h713_av1_gen.c, a pure function of the V4L2 controls that a host
@@ -306,13 +309,15 @@ static int sunxi_h713_av1_dec_run(struct hantro_ctx *ctx)
 	/*
 	 * The picture is stored and shown after superres, so at the upscaled
 	 * width. The core lays the raster out at a stride of the width rounded
-	 * up to 64 -- there is no stride it is told -- so a frame has to fit
-	 * the capture buffer that way, whatever size the format was set to.
+	 * up to 64 (in samples: two bytes each at 10 bits) -- there is no
+	 * stride it is told -- so a frame has to fit the capture buffer that
+	 * way, whatever size the format was set to.
 	 */
 	width = max_t(u32, h->frame->upscaled_width, h->frame->frame_width_minus_1 + 1);
 	height = h->frame->frame_height_minus_1 + 1;
 	if (width > FMT_4K_WIDTH || height > FMT_4K_HEIGHT ||
-	    ALIGN(width, 64) > ctx->dst_fmt.plane_fmt[0].bytesperline ||
+	    ALIGN(width, 64) * (h->bit_depth > 8 ? 2 : 1) >
+	    ctx->dst_fmt.plane_fmt[0].bytesperline ||
 	    ALIGN(height, 8) > ctx->dst_fmt.height) {
 		ret = -EINVAL;
 		goto out;
@@ -515,6 +520,24 @@ out_node:
 static const struct hantro_fmt sunxi_h713_av1_dec_fmts[] = {
 	{
 		.fourcc = V4L2_PIX_FMT_NV12,
+		.codec_mode = HANTRO_MODE_NONE,
+		.match_depth = true,
+		.frmsize = {
+			.min_width = 64,
+			.max_width = FMT_4K_WIDTH,
+			.step_width = 64,
+			.min_height = 64,
+			.max_height = FMT_4K_HEIGHT,
+			.step_height = 64,
+		},
+	},
+	{
+		/*
+		 * 10-bit sequences: the core's high-bit-depth display output
+		 * (secondary_output_hbd), P010 laid out with the samples in
+		 * bits 9:0. Bit-exact against libdav1d.
+		 */
+		.fourcc = V4L2_PIX_FMT_P010_LSB,
 		.codec_mode = HANTRO_MODE_NONE,
 		.match_depth = true,
 		.frmsize = {

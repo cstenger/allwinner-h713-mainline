@@ -1,0 +1,74 @@
+v4l2codecs: describe the H713's LSB-aligned P010 (V4L2 PL10)
+
+Local to the H713 tree, not for upstream as-is: the pixel format and the
+modifier come from local kernel patch 0150.
+
+The H713 AV1 core writes 10-bit pictures as P010 with each sample in bits
+9:0 of its 16-bit word. The kernel calls that V4L2_PIX_FMT_P010_LSB on the
+capture queue and DRM_FORMAT_P010 + DRM_FORMAT_MOD_ALLWINNER_LSB10 for
+scanout. No GstVideoFormat describes it, so it is mapped the way NC12 is:
+DMA_DRM only, "P010:0x0900000000000002", which kmssink can offer for any
+plane listing that modifier in IN_FORMATS, and which a software element
+never mistakes for P010_10LE.
+
+The format is one buffer holding both planes, the chroma after the whole
+padded luma plane. The generic dma-drm-info path refuses to extrapolate a
+non-linear modifier, so this gets a special case like SAND128's.
+
+diff --git a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2format.c b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2format.c
+index 9b58e7b..5dd295a 100644
+--- a/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2format.c
++++ b/subprojects/gst-plugins-bad/sys/v4l2codecs/gstv4l2format.c
+@@ -34,6 +34,20 @@ GST_DEBUG_CATEGORY_EXTERN (gstv4l2codecs_debug);
+ #define V4L2_PIX_FMT_NV15    v4l2_fourcc('N', 'V', '1', '5')    /* 15  Y/CbCr 4:2:0 10-bit packed */
+ #endif
+ 
++/*
++ * The Allwinner H713 AV1 core's 10-bit output: P010's layout, but each sample
++ * in bits 9:0 of its 16-bit word. Local to the H713 tree (kernel patch 0150),
++ * not upstream. No GstVideoFormat describes it, so it is offered as DMA_DRM
++ * only, like NC12.
++ */
++#ifndef V4L2_PIX_FMT_P010_LSB
++#define V4L2_PIX_FMT_P010_LSB v4l2_fourcc('P', 'L', '1', '0')   /* 24  Y/CbCr 4:2:0 10-bit, LSB-aligned */
++#endif
++
++#ifndef DRM_FORMAT_MOD_ALLWINNER_LSB10
++#define DRM_FORMAT_MOD_ALLWINNER_LSB10 fourcc_mod_code(ALLWINNER, 2)
++#endif
++
+ typedef struct
+ {
+   guint32 v4l2_pix_fmt;
+@@ -50,6 +64,7 @@ static const GstV4l2FormatDesc gst_v4l2_descriptions[] = {
+   {V4L2_PIX_FMT_MT2110T,          GST_VIDEO_FORMAT_MT2110T,         DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_NV15_4L4,         GST_VIDEO_FORMAT_NV12_10LE40_4L4, DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_NV15,             GST_VIDEO_FORMAT_NV12_10LE40,     DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
++  {V4L2_PIX_FMT_P010_LSB,         GST_VIDEO_FORMAT_UNKNOWN,         DRM_FORMAT_P010,    DRM_FORMAT_MOD_ALLWINNER_LSB10, 2},
+   {V4L2_PIX_FMT_P010,             GST_VIDEO_FORMAT_P010_10LE,       DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_YUYV,             GST_VIDEO_FORMAT_YUY2,            DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_MM21,             GST_VIDEO_FORMAT_NV12_16L32S,     DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+@@ -213,6 +228,23 @@ gst_v4l2_format_to_dma_drm_info (struct v4l2_format *fmt,
+     return TRUE;
+   }
+ 
++  /*
++   * One buffer, both planes, the chroma after the whole (padded) luma plane.
++   * The generic path cannot extrapolate this: the format is DMA_DRM-only and
++   * its modifier is not LINEAR, though the layout is linear.
++   */
++  if (drm_fourcc == DRM_FORMAT_P010
++      && drm_mod == DRM_FORMAT_MOD_ALLWINNER_LSB10) {
++    out_drm_info->vinfo.offset[1] =
++        pix_mp->plane_fmt[0].bytesperline * pix_mp->height;
++    out_drm_info->vinfo.stride[0] = pix_mp->plane_fmt[0].bytesperline;
++    out_drm_info->vinfo.stride[1] = pix_mp->plane_fmt[0].bytesperline;
++    GST_DEBUG ("Allwinner LSB-aligned P010: stride %u, chroma at %"
++        G_GSIZE_FORMAT, pix_mp->plane_fmt[0].bytesperline,
++        out_drm_info->vinfo.offset[1]);
++    return TRUE;
++  }
++
+   /*
+    * When single allocation formats are used for planar formats we need to
+    * extrapolate the per-plane stride. Do this check once to prevent

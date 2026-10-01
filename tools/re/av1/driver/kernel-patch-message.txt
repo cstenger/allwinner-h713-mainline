@@ -6,7 +6,9 @@ of the same register vocabulary, but its registers are one packed
 1168-byte bit vector -- 119 fields straddle 32-bit words -- written out
 whole, its references are always stored compressed (with a DRAM-resident
 reference-decompressor configuration), and the display picture comes out
-of its secondary output as plain NV12.
+of its secondary output: NV12 for 8-bit sequences, and for 10-bit ones
+V4L2_PIX_FMT_P010_LSB (patch 0150), P010 with the samples in bits 9:0 --
+the core cannot MSB-align them.
 
 sunxi_h713_av1_gen.c builds the register image and every CPU-written
 buffer from the V4L2 stateless AV1 controls. It is a pure function, derived
@@ -61,4 +63,5 @@ projection are those of the references the driver decoded, not the ones
 userspace reports: a client whose parser and DPB have come apart would
 otherwise have the core project through frames that are not there.
 
-Capture is NV12 only (8-bit); 10-bit sequences are refused.
+Capture is NV12 for 8-bit sequences and P010_LSB for 10-bit ones, chosen by
+the sequence's bit depth (match_depth).

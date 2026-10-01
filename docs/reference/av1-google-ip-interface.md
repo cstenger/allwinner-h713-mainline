@@ -455,4 +455,19 @@ with HDR) takes a high-bit-depth YUV format directly, which would let
 `secondary_output_hbd = 1` output go to the plane; and, for 1080p AV1 on the
 720p panel, a display-side downscaler (the panel down-scaler at
 `0x051c0120`-`0x051c0138` is the open lead). The experimental switches were not
-kept: 10-bit sequences are still refused (NV12 only).
+kept.
+
+**Update 2026-09-30/10-01: the display takes it.** The H713 video plane
+fetches 16-bit 4:2:0 directly (AFBD format 6 = MSB-aligned P010, 7 =
+LSB-aligned), and with `secondary_output_hbd = 1` the core's output is P010's
+layout with the samples in **bits 9:0** (100.000% Y/U/V vs dav1d; formats 1-3
+identical, no MSB option). No standard format describes that, so it is named
+locally (kernel patch 0150): `DRM_FORMAT_P010` + `DRM_FORMAT_MOD_ALLWINNER_LSB10`
+(`fourcc_mod_code(ALLWINNER, 2)`) for scanout, `V4L2_PIX_FMT_P010_LSB`
+(`'PL10'`) on the capture queue, which the variant offers with `match_depth`
+for 10-bit sequences. The stride check counts two bytes per sample at 10 bits
+(`ALIGN(width, 64) * 2 <= bytesperline`). Consumers: libva 0017 (export
+descriptor P010 + modifier, CPU readback shifted `<<6`), and the GStreamer
+v4l2codecs patch 0003 (DMA_DRM `P010:0x0900000000000002`). Hardware-verified
+2026-10-01: bit-exact against libdav1d, and zero-copy to the panel through
+both mpv and kmssink.

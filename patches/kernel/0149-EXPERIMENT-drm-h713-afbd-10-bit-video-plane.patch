@@ -21,11 +21,20 @@ What the first draft got wrong, all measured:
   The driver now derives all three, and the strides, from the
   framebuffer (pitch, height, bytes per component), for both formats.
 
-h713_p010_fmt (default 6) selects the alignment at runtime.
+The framebuffer selects the format byte: NV12 -> 0, P010 -> 6, and P010
+with DRM_FORMAT_MOD_ALLWINNER_LSB10 (patch 0150) -> 7. The plane advertises
+LINEAR and LSB10, with LSB10 valid for P010 only, which gives it the
+IN_FORMATS property that kmssink and other modifier-aware clients need.
+
+The framebuffer may also be larger than the 1280x720 picture, as long as the
+source window is exactly that: hantro pads heights to 64, and GStreamer's
+v4l2codecs describes the whole buffer (1280x768), so kmssink's framebuffers
+were refused -- 8-bit AV1 through kmssink included. The fetch budget follows
+the source window, not the framebuffer height.
 
 diff --color -Naur a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
---- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-09-30 19:42:59.346368823 -0700
-+++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-09-30 21:02:05.407493530 -0700
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-01 00:07:23.802781302 -0700
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-01 00:35:07.937128778 -0700
 @@ -71,8 +71,11 @@
  #define AFBD_VIDEO_READY	0x014
  #define AFBD_VIDEO_SIZE_M1	0x020
@@ -38,7 +47,7 @@ diff --color -Naur a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/t
  #define AFBD_VIDEO_GATE		0x060
  #define AFBD_VIDEO_FIELD	0x064
  #define AFBD_VIDEO_RING_MUX	0x068
-@@ -107,6 +110,28 @@
+@@ -107,6 +110,38 @@
  #define H713_VIDEO_GAIN		0x144c0000
  #define H713_VIDEO_SELECTOR	0x39000000
  
@@ -56,18 +65,28 @@ diff --color -Naur a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/t
 + * unresolved; both are programmed, the state tested on the panel.
 + *
 + * The firmware's VideoInfo format code (+0x40, 14/15 -> fmt 7/6) is NOT
-+ * consumed on this path; the format must be written here. h713_p010_fmt
-+ * selects 6 or 7.
++ * consumed on this path; the format must be written here. The framebuffer
++ * picks it: DRM_FORMAT_P010 is 6, and P010 with the
++ * DRM_FORMAT_MOD_ALLWINNER_LSB10 modifier is 7.
 + */
 +#define H713_VIDEO_FMT_SHIFT	8
++#define H713_VIDEO_FMT_NV12	0
 +#define H713_VIDEO_FMT_P010	6
-+static int h713_p010_fmt = H713_VIDEO_FMT_P010;
-+module_param(h713_p010_fmt, int, 0644);
++#define H713_VIDEO_FMT_P010_LSB	7
++
++static u32 h713_afbd_video_fmt(const struct drm_framebuffer *fb)
++{
++	if (fb->format->format != DRM_FORMAT_P010)
++		return H713_VIDEO_FMT_NV12;
++	if (fb->modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10)
++		return H713_VIDEO_FMT_P010_LSB;
++	return H713_VIDEO_FMT_P010;
++}
 +
  /* The four queue slots are 4 bytes apart in each address ring. */
  #define H713_VIDEO_SLOTS	4
  
-@@ -353,6 +378,7 @@
+@@ -353,6 +388,7 @@
  	struct drm_crtc_state *crtc_state;
  	struct drm_framebuffer *fb;
  	dma_addr_t y, c;
@@ -75,25 +94,34 @@ diff --color -Naur a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/t
  	int ret;
  
  	new_state = drm_atomic_get_new_plane_state(state, plane);
-@@ -371,12 +397,14 @@
+@@ -371,12 +407,20 @@
  		return ret;
  
  	fb = new_state->fb;
 -	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
+-	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
+-	    fb->width != H713_VIDEO_WIDTH ||
+-	    fb->height != H713_VIDEO_HEIGHT ||
+-	    fb->pitches[0] != H713_VIDEO_STRIDE ||
+-	    fb->pitches[1] != H713_VIDEO_STRIDE ||
 +	p010 = fb->format->format == DRM_FORMAT_P010;
 +	if (!new_state->visible ||
 +	    (fb->format->format != DRM_FORMAT_NV12 && !p010) ||
- 	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
- 	    fb->width != H713_VIDEO_WIDTH ||
- 	    fb->height != H713_VIDEO_HEIGHT ||
--	    fb->pitches[0] != H713_VIDEO_STRIDE ||
--	    fb->pitches[1] != H713_VIDEO_STRIDE ||
++	    (fb->modifier != DRM_FORMAT_MOD_LINEAR &&
++	     !(p010 && fb->modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10)) ||
++	    /*
++	     * The framebuffer may be taller or wider than the picture: hantro
++	     * pads heights to 64 and GStreamer describes the whole buffer
++	     * (1280x768 for 720p). Only the source window below is shown.
++	     */
++	    fb->width < H713_VIDEO_WIDTH ||
++	    fb->height < H713_VIDEO_HEIGHT ||
 +	    fb->pitches[0] != H713_VIDEO_STRIDE * fb->format->cpp[0] ||
 +	    fb->pitches[1] != H713_VIDEO_STRIDE * fb->format->cpp[0] ||
  	    new_state->src_x || new_state->src_y ||
  	    new_state->src_w != H713_VIDEO_WIDTH << 16 ||
  	    new_state->src_h != H713_VIDEO_HEIGHT << 16 ||
-@@ -415,8 +443,26 @@
+@@ -415,8 +459,28 @@
  
  	writel(H713_VIDEO_SIZE_M1, h->regs + AFBD_VIDEO_SIZE_M1);
  	writel(H713_VIDEO_BLOCK_M1, h->regs + AFBD_VIDEO_BLOCK_M1);
@@ -101,14 +129,16 @@ diff --color -Naur a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/t
 -	writel(H713_VIDEO_STRIDE, h->regs + AFBD_VIDEO_C_STRIDE);
 +	{
 +		/*
-+		 * Everything below follows the framebuffer: line length and
-+		 * stride in samples, fetch budget in line-length bytes per
-+		 * plane (NV12: 720/360, P010: 1440/720 -- both measured).
++		 * Everything below follows the framebuffer's format and the
++		 * source window (fixed by atomic_check, and smaller than a
++		 * padded fb): line length and stride in samples, fetch budget
++		 * in line-length bytes per plane (NV12: 720/360, P010:
++		 * 1440/720 -- both measured).
 +		 */
 +		const struct drm_framebuffer *f = new_state->fb;
-+		u32 line = f->width;
-+		u32 y = f->pitches[0] * f->height / line;
-+		u32 c = f->pitches[1] * (f->height / 2) / line;
++		u32 line = H713_VIDEO_WIDTH;
++		u32 y = f->pitches[0] * H713_VIDEO_HEIGHT / line;
++		u32 c = f->pitches[1] * (H713_VIDEO_HEIGHT / 2) / line;
 +
 +		writel(y << 16 | line, h->regs + AFBD_VIDEO_Y_ROWS);
 +		writel(y << 16 | line, h->regs + AFBD_VIDEO_Y_ROWS2);
@@ -122,23 +152,57 @@ diff --color -Naur a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/t
  	writel(1, h->regs + AFBD_VIDEO_GATE);
  	writel(0, h->regs + AFBD_VIDEO_FIELD);
  	writel(0x00000122, h->regs + AFBD_VIDEO_RING_MUX);
-@@ -437,7 +483,10 @@
+@@ -437,7 +501,9 @@
  	writel(1, h->regs + AFBD_VIDEO_DIRTY);
  
  	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
 -	writel(H713_VIDEO_CTRL_ACTIVE, h->regs + AFBD_VIDEO_CTRL);
 +	writel(H713_VIDEO_CTRL_ACTIVE |
-+	       (new_state->fb->format->format == DRM_FORMAT_P010 ?
-+		(h713_p010_fmt & 0xff) << H713_VIDEO_FMT_SHIFT : 0),
++	       h713_afbd_video_fmt(new_state->fb) << H713_VIDEO_FMT_SHIFT,
 +	       h->regs + AFBD_VIDEO_CTRL);
  	writel(1, h->regs + AFBD_VIDEO_READY);
  	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
  	writel(H713_VIDEO_SELECTOR, h->lvds_regs + 0x06c);
-@@ -714,6 +763,7 @@
+@@ -458,7 +524,18 @@
+ 	.atomic_disable = h713_afbd_video_atomic_disable,
+ };
+ 
++/* LSB10 describes P010 only; NV12 and P010 also come linear. */
++static bool h713_afbd_video_format_mod_supported(struct drm_plane *plane,
++						 u32 format, u64 modifier)
++{
++	if (modifier == DRM_FORMAT_MOD_LINEAR)
++		return true;
++	return modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10 &&
++	       format == DRM_FORMAT_P010;
++}
++
+ static const struct drm_plane_funcs h713_afbd_video_funcs = {
++	.format_mod_supported = h713_afbd_video_format_mod_supported,
+ 	.update_plane = drm_atomic_helper_update_plane,
+ 	.disable_plane = drm_atomic_helper_disable_plane,
+ 	.destroy = drm_plane_cleanup,
+@@ -714,6 +791,13 @@
  
  static const u32 h713_afbd_video_formats[] = {
  	DRM_FORMAT_NV12,
 +	DRM_FORMAT_P010,	/* EXPERIMENT */
++};
++
++static const u64 h713_afbd_video_modifiers[] = {
++	DRM_FORMAT_MOD_LINEAR,
++	DRM_FORMAT_MOD_ALLWINNER_LSB10,	/* EXPERIMENT: P010 only */
++	DRM_FORMAT_MOD_INVALID,
  };
  
  /*
+@@ -915,7 +999,8 @@
+ 				       &h713_afbd_video_funcs,
+ 				       h713_afbd_video_formats,
+ 				       ARRAY_SIZE(h713_afbd_video_formats),
+-				       NULL, DRM_PLANE_TYPE_OVERLAY,
++				       h713_afbd_video_modifiers,
++				       DRM_PLANE_TYPE_OVERLAY,
+ 				       "video-0");
+ 	if (ret)
+ 		return ret;
