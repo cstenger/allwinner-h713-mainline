@@ -1,0 +1,144 @@
+EXPERIMENT: drm: h713: put 10-bit (P010) video on the video plane
+
+Not for merging. AFBD_VIDEO_CTRL bits 15:8 select the video source format;
+alongside NV12 (0) the fetcher takes 6 = P010 (10 bits MSB-aligned in 16-bit
+words) and 7 = the same with the 10 bits LSB-aligned, which is what the H713
+AV1 core writes for 10-bit streams (bit-exact against dav1d). Both
+hardware-checked 2026-09-30 with full-frame colour bars and a ramp
+(tools/display/kms-p010-plane-test.c).
+
+What the first draft got wrong, all measured:
+
+- The display firmware's VideoInfo format code (+0x40; 14/15, which its
+  resolver maps to 7/6) is not consumed on this path -- 0x05600010 stays at
+  format 0 -- so the driver writes the format byte itself.
+- The strides and the line lengths (low halves of +0x30/+0x48/+0x4c) count
+  samples, not bytes. A 2560-byte stride skips every other line; doubled line
+  lengths repeat half lines. They keep their NV12 values.
+- The high halves of those registers are a fetch budget counted in
+  line-length bytes. With NV12's counts a P010 frame stops after 360 lines
+  (921600 bytes, one NV12 luma plane); doubling them shows the whole frame.
+  The driver now derives all three, and the strides, from the
+  framebuffer (pitch, height, bytes per component), for both formats.
+
+h713_p010_fmt (default 6) selects the alignment at runtime.
+
+diff --color -Naur a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-09-30 19:42:59.346368823 -0700
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-09-30 21:02:05.407493530 -0700
+@@ -71,8 +71,11 @@
+ #define AFBD_VIDEO_READY	0x014
+ #define AFBD_VIDEO_SIZE_M1	0x020
+ #define AFBD_VIDEO_BLOCK_M1	0x024
++#define AFBD_VIDEO_Y_ROWS	0x030
+ #define AFBD_VIDEO_Y_STRIDE	0x040
+ #define AFBD_VIDEO_C_STRIDE	0x044
++#define AFBD_VIDEO_Y_ROWS2	0x048
++#define AFBD_VIDEO_C_ROWS	0x04c
+ #define AFBD_VIDEO_GATE		0x060
+ #define AFBD_VIDEO_FIELD	0x064
+ #define AFBD_VIDEO_RING_MUX	0x068
+@@ -107,6 +110,28 @@
+ #define H713_VIDEO_GAIN		0x144c0000
+ #define H713_VIDEO_SELECTOR	0x39000000
+ 
++/*
++ * EXPERIMENT: 10-bit video. AFBD_VIDEO_CTRL bits 15:8 select the source
++ * format: 0 = NV12, 6 = P010 (10 bits MSB-aligned in 16-bit words), 7 = the
++ * same with 10 bits LSB-aligned -- the H713 AV1 core's high-bit-depth output.
++ * Hardware-checked 2026-09-30 with full-frame colour bars in both alignments.
++ *
++ * Geometry: the strides (+0x40/+0x44) and the line lengths in the low halves
++ * of +0x30/+0x48/+0x4c count samples, so they keep their NV12 values. The
++ * high halves are a fetch budget in units of line-length BYTES: with NV12's
++ * counts a P010 frame stops after 360 lines (921600 bytes, one NV12 luma
++ * plane), so P010 doubles them. Which of +0x30/+0x48 is the luma budget is
++ * unresolved; both are programmed, the state tested on the panel.
++ *
++ * The firmware's VideoInfo format code (+0x40, 14/15 -> fmt 7/6) is NOT
++ * consumed on this path; the format must be written here. h713_p010_fmt
++ * selects 6 or 7.
++ */
++#define H713_VIDEO_FMT_SHIFT	8
++#define H713_VIDEO_FMT_P010	6
++static int h713_p010_fmt = H713_VIDEO_FMT_P010;
++module_param(h713_p010_fmt, int, 0644);
++
+ /* The four queue slots are 4 bytes apart in each address ring. */
+ #define H713_VIDEO_SLOTS	4
+ 
+@@ -353,6 +378,7 @@
+ 	struct drm_crtc_state *crtc_state;
+ 	struct drm_framebuffer *fb;
+ 	dma_addr_t y, c;
++	bool p010;
+ 	int ret;
+ 
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+@@ -371,12 +397,14 @@
+ 		return ret;
+ 
+ 	fb = new_state->fb;
+-	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
++	p010 = fb->format->format == DRM_FORMAT_P010;
++	if (!new_state->visible ||
++	    (fb->format->format != DRM_FORMAT_NV12 && !p010) ||
+ 	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
+ 	    fb->width != H713_VIDEO_WIDTH ||
+ 	    fb->height != H713_VIDEO_HEIGHT ||
+-	    fb->pitches[0] != H713_VIDEO_STRIDE ||
+-	    fb->pitches[1] != H713_VIDEO_STRIDE ||
++	    fb->pitches[0] != H713_VIDEO_STRIDE * fb->format->cpp[0] ||
++	    fb->pitches[1] != H713_VIDEO_STRIDE * fb->format->cpp[0] ||
+ 	    new_state->src_x || new_state->src_y ||
+ 	    new_state->src_w != H713_VIDEO_WIDTH << 16 ||
+ 	    new_state->src_h != H713_VIDEO_HEIGHT << 16 ||
+@@ -415,8 +443,26 @@
+ 
+ 	writel(H713_VIDEO_SIZE_M1, h->regs + AFBD_VIDEO_SIZE_M1);
+ 	writel(H713_VIDEO_BLOCK_M1, h->regs + AFBD_VIDEO_BLOCK_M1);
+-	writel(H713_VIDEO_STRIDE, h->regs + AFBD_VIDEO_Y_STRIDE);
+-	writel(H713_VIDEO_STRIDE, h->regs + AFBD_VIDEO_C_STRIDE);
++	{
++		/*
++		 * Everything below follows the framebuffer: line length and
++		 * stride in samples, fetch budget in line-length bytes per
++		 * plane (NV12: 720/360, P010: 1440/720 -- both measured).
++		 */
++		const struct drm_framebuffer *f = new_state->fb;
++		u32 line = f->width;
++		u32 y = f->pitches[0] * f->height / line;
++		u32 c = f->pitches[1] * (f->height / 2) / line;
++
++		writel(y << 16 | line, h->regs + AFBD_VIDEO_Y_ROWS);
++		writel(y << 16 | line, h->regs + AFBD_VIDEO_Y_ROWS2);
++		writel(c << 16 | line, h->regs + AFBD_VIDEO_C_ROWS);
++		writel(f->pitches[0] / f->format->cpp[0],
++		       h->regs + AFBD_VIDEO_Y_STRIDE);
++		/* cpp[0]: bytes per component; NV12's cpp[1] counts the UV pair */
++		writel(f->pitches[1] / f->format->cpp[0],
++		       h->regs + AFBD_VIDEO_C_STRIDE);
++	}
+ 	writel(1, h->regs + AFBD_VIDEO_GATE);
+ 	writel(0, h->regs + AFBD_VIDEO_FIELD);
+ 	writel(0x00000122, h->regs + AFBD_VIDEO_RING_MUX);
+@@ -437,7 +483,10 @@
+ 	writel(1, h->regs + AFBD_VIDEO_DIRTY);
+ 
+ 	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
+-	writel(H713_VIDEO_CTRL_ACTIVE, h->regs + AFBD_VIDEO_CTRL);
++	writel(H713_VIDEO_CTRL_ACTIVE |
++	       (new_state->fb->format->format == DRM_FORMAT_P010 ?
++		(h713_p010_fmt & 0xff) << H713_VIDEO_FMT_SHIFT : 0),
++	       h->regs + AFBD_VIDEO_CTRL);
+ 	writel(1, h->regs + AFBD_VIDEO_READY);
+ 	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
+ 	writel(H713_VIDEO_SELECTOR, h->lvds_regs + 0x06c);
+@@ -714,6 +763,7 @@
+ 
+ static const u32 h713_afbd_video_formats[] = {
+ 	DRM_FORMAT_NV12,
++	DRM_FORMAT_P010,	/* EXPERIMENT */
+ };
+ 
+ /*
