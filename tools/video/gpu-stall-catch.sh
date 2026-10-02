@@ -11,13 +11,22 @@ CLIP=$1; MAX=${MAX:-1500}
 GPU=/sys/bus/platform/devices/1800000.gpu
 O=/var/tmp/stall; rm -rf $O; mkdir -p $O
 irq() { awk -v p="$1" '$0 ~ p { s = 0; for (i = 2; i <= 5; i++) s += $i; print s }' /proc/interrupts; }
+# PRE_DIRECT=SECS first plays the direct path (patched mpv, vo=drm, video
+# plane) for that long: the one long-run freeze (2026-10-02) came right after a
+# direct run, so the transition is part of what is being tested.
+if [ -n "${PRE_DIRECT:-}" ]; then
+	LIBVA_DRIVER_NAME=v4l2_request timeout "$PRE_DIRECT" /usr/local/bin/mpv --no-config \
+		--vo=drm --hwdec=vaapi --loop-file=inf --input-terminal=no "$CLIP" \
+		> $O/direct.log 2>&1 < /dev/null
+	echo "pre_direct=$PRE_DIRECT done" >> $O/trace
+fi
 LIBVA_DRIVER_NAME=v4l2_request /usr/bin/mpv --no-config --vo=gpu --gpu-context=drm --hwdec=vaapi \
 	--loop-file=inf --input-terminal=no -v --scale=bilinear --dscale=bilinear --cscale=bilinear \
 	--dither-depth=no --deband=no --correct-downscaling=no --linear-downscaling=no \
 	--sigmoid-upscaling=no --hdr-compute-peak=no "$CLIP" > $O/mpv.log 2>&1 < /dev/null &
 P=$!; T0=$(date +%s); prev=-1; still=0
 [ -n "${PROFILE:-}" ] && echo 1 > $GPU/profiling
-echo "profile=${PROFILE:-0} poke=${POKE:-0}" > $O/config
+echo "profile=${PROFILE:-0} poke=${POKE:-0} pre_direct=${PRE_DIRECT:-0} max=$MAX" > $O/config
 while kill -0 $P 2>/dev/null && [ $(($(date +%s) - T0)) -lt $MAX ]; do
 	sleep 1
 	if [ -n "${POKE:-}" ]; then

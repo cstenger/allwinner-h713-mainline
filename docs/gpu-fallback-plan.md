@@ -168,7 +168,12 @@ What the table says:
 | CPU, all cores | 8%; mostly at 1008 MHz | 8%; mostly at 1008 MHz |
 | Peak temperature (GPU / CPU) | 59 / 59 °C | 62 / 62 °C |
 
-- **The GPU path has an intermittent freeze.** This is its third sighting, after two short cheap-settings runs that played below real time with the GPU nearly idle. It blocks making the GPU path the default.
+- **The freeze was in the audio path, not the GPU path (root-caused 2026-10-02).** The catcher caught it after a direct-path prelude, 9 min in. mpv's last words were "Audio device underrun detected" then "restarting audio after underrun". At the freeze:
+  - every mpv thread was idle in a futex;
+  - the ALSA PCM sat **PREPARED with a full buffer** (`avail 0`), never started;
+  - video, paced by the audio clock, waited forever.
+
+  `tools/video/xrun-hammer.sh` reproduces it on demand: forced underruns, and the 32nd froze. `--ao=null` recovered from 40 of 40. The kernel logs nothing. So the bug sits between mpv's `ao_alsa` underrun recovery and the H713 codec PCM, and it **affects every mpv path, direct included**. It does not block the GPU path. It needs its own investigation (strace the start/prepare sequence; try aplay-level recovery).
 - On cost alone, the GPU path is cheap with these settings: 21% of one shader core at the lowest OPP, the same CPU load, and +3 °C. The direct path's advantage is efficiency, not feasibility.
 - `tools/video/gpu-stall-catch.sh` loops this playback and, when decode interrupts stop, dumps thread stacks, dma-buf fences, the DRM state and dmesg to `/var/tmp/stall/`.
 
@@ -218,7 +223,7 @@ Not yet measured:
 - one operator look at the panel during a GPU-path clip (sanity only; geometry is settled by the grabs).
 
 Also open:
-- Two cheap-settings `vo=gpu` runs (HEVC and AV1 1080p) once played below real time with the GPU 10% busy at 150 MHz. They did not recur in six reruns. The cause is unknown.
+- Two cheap-settings `vo=gpu` runs (HEVC and AV1 1080p) once played below real time with the GPU 10% busy at 150 MHz. They are almost certainly the same audio-underrun stall (see the direct-vs-GPU notes).
 - Lift the 2048 cap only after cedrus is proven bit-exact at 4K (clips 50–52).
 
 **WP3 — VA driver base.**
