@@ -178,16 +178,44 @@ What the table says:
 | --- | --- | --- |
 | `v4l2slh264/h265/vp9/av1dec` | 720p, 1080p, 852x480 | **Zero-copy** (`memory:DMABuf`, `DMA_DRM` NV12), 0 dropped, 29.97 fps, 6–8% CPU, every codec |
 | `vah264dec`, `vaav1dec` | 720p, 1080p, 852x480 | Zero-copy, 0–1 dropped, 5–7% CPU, after libva 0021–0023 and `GST_VA_ALL_DRIVERS=1`. Before: no frame decoded |
-| `vah265dec` | 720p | **Does not decode**: `vaEndPicture` reports a decoding error before the VE runs. Deferred to WP3 |
+| `vah265dec` | 720p, 1080p | Fixed by libva 0024. GStreamer sends the slice's entry-point count, which VA-API cannot back with offsets, and cedrus refused (`-ERANGE`); now 0 is sent, as ffmpeg always did |
 | `vavp9dec` | — | Not registered by GStreamer |
-| 10-bit AV1 | 1080p | Not run on GStreamer yet. mpv's GPU path refuses the P010 import (WP4) |
+| 10-bit AV1 | 1080p | No GL path, as expected (WP4). Mesa 26.1.6 refuses cleanly (`Unsupported pixel format`). **Mesa 25.0.7 segfaults** in `driBindContext` instead |
+
+- **Bit-exactness** (`tools/video/gst-va-check.sh`, 60 frames against ffmpeg software): **60/60** for each of
+  - `vah264dec` at 720p and 852x480,
+  - `vah265dec` at 720p and 1080p,
+  - `vaav1dec` at 720p,
+  - `v4l2slh264dec` and `v4l2slvp9dec`.
+- Download to system memory needed libva 0025. A decoded surface reported `VASurfaceDisplaying`, and GStreamer will not read a surface that is not `Ready`.
 
 - **GStreamer's `v4l2sl*` path is the cleanest result in WP2.** It needs no VA driver, no tuning and no patches, and it is zero-copy for every codec.
 - The `va` path now matches it for H.264 and AV1.
 
+**Mesa 26.1.6 vs 25.0.7.** The backport was unpacked into tmpfs and selected per process (library and driver paths), with no system change; same session, same clips.
+
+| | 25.0.7 | 26.1.6 |
+| --- | --- | --- |
+| 1080p, default settings | 844 dropped | 878 dropped |
+| 852x480, default settings | 143 dropped | 184 dropped |
+| Cheap settings, 5 clips | 0 dropped, ~38% busy at 150 MHz | 0 dropped, ~31% busy at ~200 MHz (slightly more cycles) |
+
+**Decision: stay on trixie's 25.0.7.** 26.1.6 has the same pitch rule (from source) and no performance gain. Its one advantage is failing cleanly instead of crashing on an unimportable 10-bit format.
+
+**Geometry, from the scanout instead of photographs.** `tools/display/scanout-grab.c` reads back the framebuffer the display is scanning out. `tools/video/geometry-grab.sh` compares the picture's bounding box with aspect-fit (display aspect from size, SAR and rotation, centred in 1280x720). All 12 clips matched exactly:
+- 1080p and 640x360 fill the screen;
+- 2560x1080 is letterboxed to 1280x540;
+- 1440x1080 and 720x576 (SAR 16:15) are pillarboxed to 960x720;
+- 1000x600 lands at 1200x720;
+- 852x480 lands at 1278x720;
+- 352x288 lands at 880x720;
+- 90° and 270° rotation give 405x720 portrait, and 180° is full screen.
+
+A visual check of the grabs tells 90° from 270° and 180° from 0°, and matches the display-matrix convention. Stock honours the same tags (with grey bars where ours are black). Photographs are therefore needed only as a final look at the panel itself, not for geometry.
+
 Not yet measured:
 - A/B against Mesa 26.1.6;
-- an operator photo per clip.
+- one operator look at the panel during a GPU-path clip (sanity only; geometry is settled by the grabs).
 
 Also open:
 - Two cheap-settings `vo=gpu` runs (HEVC and AV1 1080p) once played below real time with the GPU 10% busy at 150 MHz. They did not recur in six reruns. The cause is unknown.

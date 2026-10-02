@@ -1,0 +1,43 @@
+Report a decoded surface as Ready
+
+RequestSyncSurface marked a decoded surface VASurfaceDisplaying.
+VA-API reserves Displaying for a surface being shown by an overlay
+(vaPutSurface), which this driver never does. A finished decode is
+VASurfaceReady.
+
+GStreamer's va elements check vaQuerySurfaceStatus before deriving an
+image and refuse anything that is not Ready (vasurfaceimage.c,
+va_get_derive_image: "Surface not ready"). So every download to system
+memory produced a NULL GstMemory:
+
+  GStreamer-CRITICAL: gst_memory_unmap: assertion 'mem != NULL' failed
+
+That broke vah264dec ! filesink, appsink, and the system-memory path into
+glupload ("Failed to upload buffer"). ffmpeg never queries the status,
+which is why nothing noticed. Every busy check here tests for
+VASurfaceRendering, so nothing depended on Displaying.
+
+---
+diff --git a/src/surface.c b/src/surface.c
+index f4893df..d546528 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -789,8 +789,16 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 		goto error;
+ 	}
+ 
+-	surface_object->status = VASurfaceDisplaying;
+-	capture_surface->status = VASurfaceDisplaying;
++	/*
++	 * Decoded and dequeued: Ready. VASurfaceDisplaying means "being shown
++	 * by an overlay" (vaPutSurface), which this driver never does, and
++	 * GStreamer's va elements refuse to read a surface whose status is not
++	 * Ready (va_get_derive_image: "Surface not ready") -- every download to
++	 * system memory failed with a NULL GstMemory. Nothing here tests for
++	 * Displaying; the busy checks all test for Rendering.
++	 */
++	surface_object->status = VASurfaceReady;
++	capture_surface->status = VASurfaceReady;
+ 
+ 	/*
+ 	 * The decode failed on the picture that was just dequeued: the engine

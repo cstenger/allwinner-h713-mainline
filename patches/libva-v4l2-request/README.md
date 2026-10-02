@@ -368,3 +368,17 @@ covered. Deferred to WP3: megi's `libva-v4l2_request` claims GStreamer
 Also not registered: `vavp9dec` and `vavp8dec`. GStreamer registers no VP9
 or VP8 `va` element, although the driver advertises VP9 Profile 0. Not
 investigated; `v4l2slvp9dec` covers VP9.
+
+| # | Patch | What it does |
+|---|---|---|
+| 0024 | Send no HEVC entry point count | VA-API carries the count but not the offsets. cedrus refuses a count with no offsets array (`Failed to setup decoding job: -34`). ffmpeg never set the field, while GStreamer's `vah265dec` copies the slice header's count. The driver now always sends 0 |
+| 0025 | Report a decoded surface as Ready | `RequestSyncSurface` marked surfaces `VASurfaceDisplaying`. GStreamer refuses to derive an image from a surface that is not `Ready`, so every system-memory download produced a NULL GstMemory |
+
+**With 0021–0025, GStreamer `va` decoding is bit-exact.** Measured with
+`tools/video/gst-va-check.sh`, 60 frames against ffmpeg software, all 60/60:
+- `vah264dec` at 720p and 852x480;
+- `vah265dec` at 720p and 1080p;
+- `vaav1dec` at 720p.
+
+The full gate passes in both memory modes (VA gate 8/8). The "known gap"
+above is closed.
