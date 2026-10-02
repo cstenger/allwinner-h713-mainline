@@ -220,7 +220,12 @@ A visual check of the grabs tells 90° from 270° and 180° from 0°, and matche
 
 Not yet measured:
 - A/B against Mesa 26.1.6;
-- one operator look at the panel during a GPU-path clip (sanity only; geometry is settled by the grabs).
+- ~~one operator look at the panel~~ Done 2026-10-02 on the 1080p card, stock `vo=gpu`, cheap settings:
+  - the marker moves smoothly;
+  - the border is visible on all four edges;
+  - greys are neutral and the detail blocks look clean.
+
+  The operator saw the side borders as slightly thinner than top and bottom. The scanout grab of the same frame has a 6 px border on every edge (the card's 9 px x 2/3), so the difference is in the projector (keystone, optics or panel overscan), not the pipeline.
 
 Also open:
 - Two cheap-settings `vo=gpu` runs (HEVC and AV1 1080p) once played below real time with the GPU 10% busy at 150 MHz. They are almost certainly the same audio-underrun stall (see the direct-vs-GPU notes).
