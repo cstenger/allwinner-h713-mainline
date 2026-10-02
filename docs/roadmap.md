@@ -300,6 +300,11 @@ attached, the display path can be brought up here, not only on the projector
      with sync intact but 481 dropped frames and visible artifacts. It is the
      fallback of last resort now that a no-GPU route exists, not the cheap
      option; do not propose it ahead of finishing the composite route.
+     **Superseded 2026-10-02:** the stock capture showed the vendor does all
+     file scaling, letterboxing and rotation on the GPU. The direction is now
+     "hardware first, GPU fallback, stock applications"
+     ([gpu-fallback-plan.md](gpu-fallback-plan.md)). The 0.83x figure predates
+     the 2026-09-03 zero-copy fix and is stale.
 
    **~~GE2D at `0x5240000`~~ — DEAD, and dead for the second time.**
    `ge2d@5240000` is the projector's display controller, not a 2D engine:

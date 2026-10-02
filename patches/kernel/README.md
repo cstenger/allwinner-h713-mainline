@@ -228,6 +228,47 @@ MMAP buffers never showed it because `dma_alloc` maps read-write. hantro and
 rkvdec already set the flag for the same reason, which is why AV1 passed with
 DMABUF capture while VP9 on cedrus failed at frame 1.
 
+## GPU clock and DVFS (0152, 0153 + defconfig, 2026-10-02)
+
+WP1 of [the GPU fallback plan](../../docs/gpu-fallback-plan.md).
+
+**0152** fixes the GPU's clock model. PLL_GPU's bit 0 is an output divide-by-two
+(the H616 models it as `.p`), and it is set at reset. So the GPU ran at
+**432 MHz** while `clk_summary` said 864. The GPU module clock's 2-bit M
+divider at `0x670[1:0]` is now modelled; it was measured real at /1, /2 and /4.
+
+**0153** pins PLL_GPU at 600 MHz, stock's value in every CCU capture, and adds
+the OPPs stock lists for this die: 150/200/300/600 MHz, which are 600 / M.
+Every point is 960 mV, the fixed vdd_sys. A DVFS step changes only M, so the
+PLL never relocks. It also gives `gpu-thermal` trips at 85 C (passive, onto
+the GPU's devfreq cooling device) and 105 C (critical).
+
+The defconfig adds `CONFIG_DEVFREQ_THERMAL`. That changes `panfrost.ko`, so
+deploying needs the module as well as the FIT.
+
+## Stock mpv on the GPU path (0092 in series, 0154, 2026-10-02)
+
+WP2 of [the GPU fallback plan](../../docs/gpu-fallback-plan.md).
+
+**0092 is now in `series`.** Stock mpv's DRM context looks for VA-API's render
+node on the *display* device. Without one it logs "Could not create a VA
+display" and decodes in software, with no error at the default log level. Every
+stock-mpv zero-copy result since 2026-09-03 was measured on a kernel carrying
+0092 out of series. On the 0153 kernel, which lacked it, stock
+`--vo=gpu --hwdec=vaapi` ran with `hwdec=no` and zero VE interrupts.
+
+With 0092 the GL renderer is still Mali-G31 (Panfrost), so Mesa's kmsro pairing
+survives. The nodes renumber: the display gets `renderD128` and Panfrost moves
+to `renderD129`. The patch still advertises a capability the display hardware
+does not have; the alternatives are an mpv patch or a Wayland compositor.
+
+**0154** derives the VP9 reference-pitch field (`LAST_SCALE1 [30:28]`, log2 of
+alignment / 8) from the capture pitch instead of hard-coding the vendor's 16.
+- It is needed by libva-v4l2-request 0020, which asks for 64-aligned pitches so
+  Panfrost can import the frames.
+- It also fixes a bug that predates 0020: stock GStreamer `v4l2slvp9dec` at
+  330 wide was 1/30 frames bit-exact, and is 30/30 with 0154.
+
 ## Retired: display-side scaling (2026-09-23)
 
 Six patches left `series` — **0098, 0103, 0105, 0106, 0108, 0111** — and the

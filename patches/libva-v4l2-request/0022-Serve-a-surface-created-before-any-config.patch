@@ -1,0 +1,54 @@
+Serve a surface created before any config
+
+GStreamer's va plugin decides at registration whether a driver can export
+dma-bufs. It creates a 64x64 NV12 surface with no config and no context,
+exports it, and reads the modifier (gst_va_dmabuf_get_modifier_for_format,
+1.26.2). Surfaces here take their OUTPUT format from the config's codec,
+so with no config there was nothing to set and vaCreateSurfaces failed.
+GStreamer then left memory:DMABuf out of every va decoder's caps:
+
+  vah264dec SRC template: video/x-raw(memory:VAMemory), video/x-raw
+
+So vah264dec ! glimagesink negotiated system memory, a CPU copy per frame,
+where v4l2slh264dec ! glimagesink negotiates DMABuf (DMA_DRM, NV12) and
+is zero-copy.
+
+Serve a surface created before any config from the first decoder that
+takes H.264. The probe only asks what layout an exported NV12 surface
+has, and any of these decoders answers that with the same linear NV12.
+When the real config arrives, its geometry differs and the queues are
+renegotiated as for any new geometry (0007/0019).
+
+---
+diff --git a/src/surface.c b/src/surface.c
+index 85c7af7..57d10c3 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -213,6 +213,27 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	struct object_context *context_object;
+ 	bool mplane;
+ 
++	/*
++	 * A surface before any config. GStreamer's va plugin decides at
++	 * registration whether a driver can export dma-bufs by creating a 64x64
++	 * NV12 surface -- no config, no context -- exporting it and reading the
++	 * modifier (gst_va_dmabuf_get_modifier_for_format). With no codec there
++	 * was no OUTPUT format to set, creation failed, and GStreamer offered
++	 * every downstream element system memory only: a CPU copy per frame.
++	 * Serve such a surface from the first decoder that takes H.264; any
++	 * decoder's linear NV12 layout answers the question honestly, and the
++	 * real config later renegotiates the queues as for any new geometry.
++	 */
++	if (pixelformat == 0) {
++		int device = request_find_device(driver_data,
++						 V4L2_PIX_FMT_H264_SLICE);
++
++		if (device < 0)
++			return VA_STATUS_ERROR_OPERATION_FAILED;
++		pixelformat = V4L2_PIX_FMT_H264_SLICE;
++		driver_data->config_device = device;
++	}
++
+ 	/* Surfaces belong to the decoder the current config chose. */
+ 	request_use_device(driver_data, driver_data->config_device);
+ 	mplane = driver_data->devices[driver_data->device].mplane;

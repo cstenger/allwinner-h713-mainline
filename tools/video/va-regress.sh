@@ -13,7 +13,10 @@
 #   usage: va-regress.sh dmabuf|mmap
 #
 # What each line checks, and against what:
-#   va-gate   AV1 + VP9 per-frame MD5 vs libdav1d/libvpx, interrupts >= frames
+#   va-gate   AV1 + VP9 per-frame MD5 vs libdav1d/libvpx, interrupts >= frames.
+#             v10-odd-350x286 is the one width that is not 64-aligned: the VP9
+#             engine reads references at a pitch it derives from the width
+#             (kernel 0154), and every other vector here hid that, 2026-10-02.
 #   10-bit    AV1 Main 10-bit per-frame vs libdav1d (P010 readback)
 #   h264      whole-stream MD5 vs the host reference (reference-md5.txt)
 #   hevc      the H1 gate (hevc-decode-test.sh)
@@ -44,10 +47,11 @@ say() {
 
 cd "$AV1_DIR" || exit 1
 OUT=$T/gate sh "$VA_GATE" A.ivf B.ivf C.ivf D.ivf E.ivf \
-	"$VP9_DIR/v04-720p-default.webm" "$VP9_DIR/v11-1080p-mandel.webm" > "$T/gate.log" 2>&1
+	"$VP9_DIR/v04-720p-default.webm" "$VP9_DIR/v11-1080p-mandel.webm" \
+	"$VP9_DIR/v10-odd-350x286.webm" > "$T/gate.log" 2>&1
 n=$(grep -c PASS "$T/gate.log")
-[ "$n" = 7 ] && v=PASS || v=FAIL
-say "va-gate: $v $n/7 $(grep FAIL "$T/gate.log" | cut -c1-40)"
+[ "$n" = 8 ] && v=PASS || v=FAIL
+say "va-gate: $v $n/8 $(grep FAIL "$T/gate.log" | cut -c1-40)"
 
 for c in hbd720 hbd720-long; do
 	ffmpeg -v error -c:v libdav1d -i $c.ivf -fps_mode passthrough -pix_fmt p010le -f framemd5 - |

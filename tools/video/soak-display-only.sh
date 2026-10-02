@@ -51,6 +51,11 @@ MINUTES=${MINUTES:-60}
 PERIOD=${PERIOD:-30}
 MPVLOG=${MPVLOG:-/var/tmp/soak-display-only.mpv.log}
 VO=${VO:-gpu}
+# Which mpv. PATH finds /usr/local/bin/mpv first, the patched direct-path build
+# (patches/mpv), which has no DRM GPU context: on vo=gpu it exits with "Option
+# gpu-context: 'drm' isn't supported" and every restart dies the same way. The
+# GPU path is meant to be stock mpv, so name it.
+MPV=${MPV:-/usr/bin/mpv}
 
 # Sum the per-CPU columns of every /proc/interrupts line matching a pattern.
 # The column count comes from the header row rather than from "looks like a
@@ -80,7 +85,7 @@ if [ -z "$CARD" ]; then
 fi
 [ -r "$CLIP" ] || { echo "SOAK FATAL: no clip at $CLIP"; exit 1; }
 
-echo "SOAK start kernel=$(uname -r) card=$CARD clip=$CLIP minutes=$MINUTES vo=$VO"
+echo "SOAK start kernel=$(uname -r) card=$CARD clip=$CLIP minutes=$MINUTES vo=$VO mpv=$MPV"
 echo "SOAK cmdline: $(cat /proc/cmdline)"
 grep -E 'video-codec|panfrost|h713-afbd|decd|iommu' /proc/interrupts | sed 's/^/SOAK irq0 /'
 # Which masters are actually translated. "No fault" is only evidence if the
@@ -110,6 +115,22 @@ PREVAFBD=$AFBD0
 # printed a SIGSEGV even if one happened. Turn it on and say so in the log,
 # because "no fault reported" is only evidence when faults would be reported.
 echo 1 > /proc/sys/debug/exception-trace 2>/dev/null
+
+# The GPU's devfreq node and thermal zone. With an OPP table the GPU idles
+# down, and simple_ondemand may never reach the top point under this load, so
+# a "clean" soak at a ceiling it never ran at would qualify nothing. GPU_MIN_HZ
+# pins the floor (e.g. 600000000) the way the CPU runs were pinned, and
+# gpu_mhz= in every heartbeat is the proof that it held.
+GPUDF=$(ls -d /sys/class/devfreq/*.gpu 2>/dev/null | head -1)
+GPUTZ=
+for z in /sys/class/thermal/thermal_zone*; do
+	[ "$(cat "$z/type" 2>/dev/null)" = gpu-thermal ] && GPUTZ=$z
+done
+if [ -n "${GPU_MIN_HZ:-}" ]; then
+	[ -n "$GPUDF" ] || { echo "SOAK FATAL: GPU_MIN_HZ set but no GPU devfreq node"; exit 1; }
+	echo "$GPU_MIN_HZ" > "$GPUDF/min_freq" || { echo "SOAK FATAL: could not set GPU min_freq"; exit 1; }
+fi
+echo "SOAK gpu-devfreq ${GPUDF:-none} gov=$(cat "$GPUDF/governor" 2>/dev/null) min=$(cat "$GPUDF/min_freq" 2>/dev/null) max=$(cat "$GPUDF/max_freq" 2>/dev/null) avail=$(cat "$GPUDF/available_frequencies" 2>/dev/null)"
 echo "SOAK exception-trace=$(cat /proc/sys/debug/exception-trace 2>/dev/null)"
 
 start_mpv() {
@@ -120,7 +141,7 @@ start_mpv() {
 	else
 		set -- --vo="$VO" --drm-device="$CARD"
 	fi
-	mpv --hwdec=no "$@" \
+	"$MPV" --hwdec=no "$@" \
 	    --loop-file=inf --no-audio --input-terminal=no \
 	    "$CLIP" >> "$MPVLOG" 2>&1 < /dev/null &
 	MPID=$!
@@ -179,12 +200,15 @@ while [ "$(date +%s)" -lt "$END" ]; do
 	# nothing. If khz= moves during a supposedly-pinned run, the run is
 	# void the same way a CMA drop voided the carveout arm.
 	khz=$(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq 2>/dev/null || echo 0)
-	echo "SOAK t=${t}s ve=${ve} ve_delta=$((ve - VE0)) gpu=${gpu} gpu_rate=$(((gpu - PREVGPU) / PERIOD))/s afbd_rate=$(((afbd - PREVAFBD) / PERIOD))/s mmu_delta=$((mmu - MMU0)) pmmu_delta=$((pmmu - PMMU0)) mig_delta=$((mig - MIG0)) khz=${khz} cma=${cma}kB deaths=${DEATHS}"
+	gpu_mhz=$(( $(cat "$GPUDF/cur_freq" 2>/dev/null || echo 0) / 1000000 ))
+	gpu_mc=$(cat "$GPUTZ/temp" 2>/dev/null || echo 0)
+	echo "SOAK t=${t}s ve=${ve} ve_delta=$((ve - VE0)) gpu=${gpu} gpu_rate=$(((gpu - PREVGPU) / PERIOD))/s afbd_rate=$(((afbd - PREVAFBD) / PERIOD))/s mmu_delta=$((mmu - MMU0)) pmmu_delta=$((pmmu - PMMU0)) mig_delta=$((mig - MIG0)) khz=${khz} gpu_mhz=${gpu_mhz} gpu_mc=${gpu_mc} cma=${cma}kB deaths=${DEATHS}"
 	PREVGPU=$gpu
 	PREVAFBD=$afbd
 done
 
 kill "$MPID" 2>/dev/null
+[ -n "${GPU_MIN_HZ:-}" ] && echo 0 > "$GPUDF/min_freq"
 sleep 2
 ve=$(irqsum 'video-codec')
 gpu=$(irqsum 'panfrost')

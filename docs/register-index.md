@@ -138,7 +138,7 @@ every one was found the hard way.
 
 ## Addresses mentioned in 3+ documents but not yet catalogued
 
-127 of them. Grepped at generation time, so this list is always
+131 of them. Grepped at generation time, so this list is always
 current. An address here is one the docs discuss repeatedly without any
 single place saying what it *is* — that is the backlog for this file.
 
@@ -147,11 +147,11 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x00000000` | 42 |
 | `0x00000001` | 19 |
 | `0x00010000` | 19 |
-| `0x03000013` | 17 |
+| `0x03000013` | 18 |
 | `0x03000010` | 15 |
+| `0x03001901` | 14 |
 | `0x05600178` | 14 |
 | `0x02d00500` | 13 |
-| `0x03001901` | 12 |
 | `0x02cf04ff` | 11 |
 | `0x050002d0` | 11 |
 | `0x00000500` | 10 |
@@ -161,13 +161,13 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x05600024` | 9 |
 | `0x07090000` | 9 |
 | `0x00000780` | 8 |
+| `0x05000174` | 8 |
+| `0x05040000` | 8 |
 | `0x00000002` | 7 |
+| `0x002b002b` | 7 |
 | `0x002c004f` | 7 |
-| `0x05000174` | 7 |
-| `0x05040000` | 7 |
 | `0x0000007c` | 6 |
 | `0x00100000` | 6 |
-| `0x002b002b` | 6 |
 | `0x02000000` | 6 |
 | `0x051c0010` | 6 |
 | `0x051c0014` | 6 |
@@ -180,13 +180,16 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x00070001` | 5 |
 | `0x00104000` | 5 |
 | `0x00400040` | 5 |
+| `0x01e00354` | 5 |
 | `0x02f80550` | 5 |
 | `0x03000413` | 5 |
 | `0x04000000` | 5 |
+| `0x05000040` | 5 |
 | `0x05140054` | 5 |
 | `0x0524c000` | 5 |
 | `0x0560009c` | 5 |
 | `0x05600170` | 5 |
+| `0x05600320` | 5 |
 | `0x00000007` | 4 |
 | `0x000000ff` | 4 |
 | `0x00001402` | 4 |
@@ -198,10 +201,7 @@ single place saying what it *is* — that is the backlog for this file.
 | `0x00420077` | 4 |
 | `0x008000ff` | 4 |
 | `0x00ff0080` | 4 |
-| `0x01e00354` | 4 |
+| `0x01c0d000` | 4 |
 | `0x02d00016` | 4 |
 | `0x030f0000` | 4 |
-| `0x05000040` | 4 |
-| `0x05000058` | 4 |
-| `0x05000104` | 4 |
 

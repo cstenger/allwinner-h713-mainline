@@ -1,0 +1,228 @@
+Allow a context before its surfaces
+
+GStreamer's va decoders (vah264dec, vah265dec, vaav1dec, ...) create the
+decode context with no render targets, before any surface exists, and
+allocate surfaces on demand afterwards. VA-API allows this. This driver
+did not, and every GStreamer va pipeline failed before decoding a frame:
+
+  vadecoder: vaCreateContext: operation failed
+  vah264dec: Failed to allocated output buffer, return not-negotiated
+  vah264dec: No valid frames decoded before end of stream
+
+(libva trace: vaCreateConfig, then vaCreateContext with
+num_render_targets = 0, and nothing else.) The context needed the
+capture format, which is set only when surfaces are created, and it
+started both queues at once, which V4L2 refuses while no buffer exists.
+
+A context created before any surface now starts unstreamed and starts
+its queues at its first BeginPicture. By then the surfaces exist, and
+with them the format and the buffers. Surface creation counts only a
+streaming context as fixing the queue geometry, so the first surfaces
+after an early context set the format instead of being treated as
+auxiliary. Destroying a context that never streamed does not STREAMOFF.
+Contexts created after their surfaces, which is what ffmpeg and mpv do,
+behave exactly as before.
+
+GStreamer also needs GST_VA_ALL_DRIVERS=1. It registers va elements only
+for allow-listed drivers, and without the variable there are none for
+v4l2_request. That is an environment setting, not a patch.
+
+---
+diff --git a/src/context.c b/src/context.c
+index fb916f1..c668699 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -58,8 +58,6 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 	VASurfaceID *ids = NULL;
+ 	VAContextID id;
+ 	VAStatus status;
+-	unsigned int output_type, capture_type;
+-	int rc;
+ 
+ 	config_object = CONFIG(driver_data, config_id);
+ 	if (config_object == NULL)
+@@ -67,13 +65,18 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 
+ 	request_use_device(driver_data, config_object->device);
+ 
++	/*
++	 * VA-API allows a context with no render targets, before any surface
++	 * exists; GStreamer's va decoders create theirs that way and allocate
++	 * surfaces on demand afterwards. With no surface there is no format and
++	 * no buffer yet, and STREAMON on an empty queue is refused, so such a
++	 * context starts streaming at its first BeginPicture instead. Render
++	 * targets given here still require the format to be in place.
++	 */
+ 	video_format = driver_data->video_format;
+-	if (video_format == NULL)
++	if (video_format == NULL && surfaces_count > 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+-	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+-	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+-
+ 	id = object_heap_allocate(&driver_data->context_heap);
+ 	context_object = CONTEXT(driver_data, id);
+ 	if (context_object == NULL) {
+@@ -131,20 +134,15 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 		memcpy(ids, surfaces_ids, surfaces_count * sizeof(VASurfaceID));
+ 	}
+ 
+-	rc = v4l2_set_stream(driver_data->video_fd, output_type, true);
+-	if (rc < 0) {
+-		status = VA_STATUS_ERROR_OPERATION_FAILED;
+-		goto error;
+-	}
+-
+-	rc = v4l2_set_stream(driver_data->video_fd, capture_type, true);
+-	if (rc < 0) {
+-		status = VA_STATUS_ERROR_OPERATION_FAILED;
+-		goto error;
+-	}
+-
+ 	context_object->config_id = config_id;
+ 	context_object->device = driver_data->device;
++	context_object->streaming = false;
++	if (video_format != NULL) {
++		status = context_start_streaming(driver_data, context_object);
++		if (status != VA_STATUS_SUCCESS)
++			goto error;
++	}
++
+ 	context_object->render_surface_id = VA_INVALID_ID;
+ 	context_object->surfaces_ids = ids;
+ 	context_object->surfaces_count = surfaces_count;
+@@ -169,6 +167,35 @@ complete:
+ 	return status;
+ }
+ 
++VAStatus context_start_streaming(struct request_data *driver_data,
++				 struct object_context *context_object)
++{
++	struct video_format *video_format;
++	unsigned int output_type, capture_type;
++
++	if (context_object->streaming)
++		return VA_STATUS_SUCCESS;
++
++	request_use_device(driver_data, context_object->device);
++	video_format = driver_data->video_format;
++	if (video_format == NULL)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
++	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
++
++	if (v4l2_set_stream(driver_data->video_fd, output_type, true) < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	if (v4l2_set_stream(driver_data->video_fd, capture_type, true) < 0) {
++		v4l2_set_stream(driver_data->video_fd, output_type, false);
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++	}
++
++	context_object->streaming = true;
++	return VA_STATUS_SUCCESS;
++}
++
+ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ {
+ 	struct request_data *driver_data = context->pDriverData;
+@@ -186,20 +213,23 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	device = context_object->device;
+ 	request_use_device(driver_data, device);
+ 
++	/* A context that never decoded never started its queues. */
+ 	video_format = driver_data->video_format;
+-	if (video_format == NULL)
++	if (video_format == NULL && context_object->streaming)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+-	output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+-	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
++	if (context_object->streaming) {
++		output_type = v4l2_type_video_output(video_format->v4l2_mplane);
++		capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
+-	rc = v4l2_set_stream(driver_data->video_fd, output_type, false);
+-	if (rc < 0)
+-		return VA_STATUS_ERROR_OPERATION_FAILED;
++		rc = v4l2_set_stream(driver_data->video_fd, output_type, false);
++		if (rc < 0)
++			return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+-	rc = v4l2_set_stream(driver_data->video_fd, capture_type, false);
+-	if (rc < 0)
+-		return VA_STATUS_ERROR_OPERATION_FAILED;
++		rc = v4l2_set_stream(driver_data->video_fd, capture_type, false);
++		if (rc < 0)
++			return VA_STATUS_ERROR_OPERATION_FAILED;
++	}
+ 
+ 	/* Buffers liberation */
+ 
+diff --git a/src/context.h b/src/context.h
+index 26a9faf..4fcadad 100644
+--- a/src/context.h
++++ b/src/context.h
+@@ -53,6 +53,14 @@ struct object_context {
+ 	int picture_height;
+ 	int flags;
+ 
++	/*
++	 * Whether this context's queues are streaming. A context created before
++	 * any surface exists (GStreamer's va elements do this, with no render
++	 * targets) cannot start them: the formats are set and the buffers made
++	 * when the surfaces are created. It streams at its first BeginPicture.
++	 */
++	bool streaming;
++
+ 	/* H264 only */
+ 	struct h264_dpb dpb;
+ 	bool h264_start_code;
+@@ -78,6 +86,10 @@ VAStatus RequestCreateContext(VADriverContextP context, VAConfigID config_id,
+ 			      int picture_width, int picture_height, int flags,
+ 			      VASurfaceID *surfaces_ids, int surfaces_count,
+ 			      VAContextID *context_id);
++struct request_data;
++
++VAStatus context_start_streaming(struct request_data *driver_data,
++				 struct object_context *context_object);
+ VAStatus RequestDestroyContext(VADriverContextP context,
+ 			       VAContextID context_id);
+ 
+diff --git a/src/picture.c b/src/picture.c
+index f3b3b27..0b6e9a3 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -340,6 +340,14 @@ VAStatus RequestBeginPicture(VADriverContextP context, VAContextID context_id,
+ 		return VA_STATUS_ERROR_INVALID_SURFACE;
+ 	}
+ 
++	if (!context_object->streaming) {
++		VAStatus status = context_start_streaming(driver_data,
++							  context_object);
++
++		if (status != VA_STATUS_SUCCESS)
++			return status;
++	}
++
+ 	if (surface_object->status == VASurfaceRendering)
+ 		RequestSyncSurface(context, surface_id);
+ 
+diff --git a/src/surface.c b/src/surface.c
+index cde4bca..85c7af7 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -222,7 +222,10 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	context_object = (struct object_context *)
+ 		object_heap_first(&driver_data->context_heap, &context_iterator);
+ 	while (context_object != NULL) {
+-		if (context_object->device == driver_data->device)
++		/* A context that has not started streaming does not fix the
++		 * queue geometry yet; these surfaces are what will. */
++		if (context_object->device == driver_data->device &&
++		    context_object->streaming)
+ 			context_active = true;
+ 		context_object = (struct object_context *)
+ 			object_heap_next(&driver_data->context_heap,

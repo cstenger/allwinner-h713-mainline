@@ -1,5 +1,13 @@
 # Letterboxing on the video plane — plan (2026-10-01)
 
+> **Deferred, 2026-10-02.** The stock capture found that the vendor letterboxes
+> decoded files on the GPU and never uses this hardware path for them
+> ([reference/stock-capture-2026-10-01.md](reference/stock-capture-2026-10-01.md)).
+> Letterboxing now goes through the GPU fallback first
+> ([gpu-fallback-plan.md](gpu-fallback-plan.md)). This plan stays as a later
+> optimisation that takes cases off the GPU. Its "known-good firmware recipe"
+> serves the capture inputs, not file playback.
+
 ## Goal
 
 Show any decoded picture **up to 1280x720** on the panel with the right

@@ -6,6 +6,14 @@ is not risked for bring-up.
 
 _Last updated: 2026-09-23._
 
+> **2026-10-02 — direction change.** The vendor stack does all file scaling,
+> letterboxing, rotation and keystone on the GPU, and uses hardware only for
+> the VE scaler above 1080p and the rear/ceiling mirror
+> ([reference/stock-capture-2026-10-01.md](reference/stock-capture-2026-10-01.md)).
+> The plan is now hardware first, GPU fallback, stock applications on our
+> drivers ([gpu-fallback-plan.md](gpu-fallback-plan.md)). Sections below
+> that call the GPU a last resort predate this.
+
 ## Current video decoder state — 2026-09-23
 
 H.264 and HEVC now use the VE+0xf00 polyphase scaler, with arbitrary even NV12

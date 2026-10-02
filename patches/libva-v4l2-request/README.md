@@ -318,3 +318,53 @@ defconfig. Measured with ffmpeg 7.1.5 and mpv 0.40.0:
   parallel 10-bit AV1 VA loop 249 iterations, all identical. No IOVA or IOMMU
   messages -- the `ve_scanout_iova` failure seen after ~35 min did not recur.
 
+
+## GPU import pitch — validated on hardware 2026-10-02
+
+| # | Patch | What it does |
+|---|---|---|
+| 0020 | Request a 64-byte capture pitch so the GPU can import the frame | NV12/NV21 CAPTURE formats ask for `bytesperline = ALIGN(width, 64)`. Panfrost (Bifrost v7) rejects any linear R8/GR88 plane import whose pitch or offset is not 64-aligned, which is how mpv and GStreamer bring NV12 into GL. That is the same in Mesa 25.0.7 and 26.1.6. cedrus's default `ALIGN(width, 32)` therefore put nothing on screen for 352, 720 or 852 wide streams on stock `mpv --vo=gpu --hwdec=vaapi`; mpv then stalled past `--end` |
+
+**Needs kernel 0154.** The VP9 engine reads references at a pitch it derives
+from the width (field `LAST_SCALE1 [30:28]`), not the programmed stride. With
+0020 and without 0154, every VP9 inter frame at a width that is not 64-aligned
+is wrong. The VA gate caught it in the `vp9-rc` resolution-change vector and
+now carries `v10-odd-350x286` so it cannot recur silently.
+
+Measured per frame against software decode:
+- H.264 852x480 and 352x288: 90/90 each.
+- HEVC h10-656x480: 25/25.
+- VP9, all 13 vectors v01–v13: bit-exact.
+- Full gate in both memory modes: 0 failing lines.
+- Stock mpv `--vo=gpu --hwdec=vaapi`: 852x480, 352x288 and 720x576 import with
+  no `rejecting image` errors.
+
+## GStreamer `va` elements — 2026-10-02
+
+These are the first patches to target GStreamer's `va` decoders rather than
+ffmpeg. Before them, every `va*dec` pipeline failed. GStreamer also needs
+`GST_VA_ALL_DRIVERS=1`: it registers `va` elements only for allow-listed
+drivers. That is an environment variable, not a patch.
+
+| # | Patch | What it does |
+|---|---|---|
+| 0021 | Allow a context before its surfaces | GStreamer creates its context with no render targets, before any surface. The context now starts unstreamed and starts its queues at the first BeginPicture |
+| 0022 | Serve a surface created before any config | GStreamer's dma-buf probe creates and exports a 64x64 NV12 surface with no config. It is now served from the first H.264 decoder instead of failing |
+| 0023 | Honour `VA_EXPORT_SURFACE_SEPARATE_LAYERS` | Export NV12 as R8 + GR88 (P010 as R16 + GR1616), one layer per plane, when asked. GStreamer's probe rejects a single composed layer, and without this `va*dec` offered GL system memory only |
+
+Result, with `va*dec ! glimagesink` on GBM, 30 s per clip:
+- H.264 at 720p, 1080p and 852x480: zero-copy (`memory:DMABuf`, NV12), 0
+  dropped, 5–7% CPU.
+- AV1 at 720p and 1080p: the same, with 0–1 dropped.
+
+**Known gap: `vah265dec` does not decode.** `vaEndPicture` returns
+`DECODING_ERROR` with zero VE interrupts and nothing in the kernel log.
+GStreamer's HEVC submission differs from ffmpeg's somewhere this driver
+does not handle. `v4l2slh265dec` (stock GStreamer, straight to the kernel)
+decodes HEVC zero-copy into GL with 0 drops, so HEVC on GStreamer is
+covered. Deferred to WP3: megi's `libva-v4l2_request` claims GStreamer
+`va` compatibility tested on cedrus.
+
+Also not registered: `vavp9dec` and `vavp8dec`. GStreamer registers no VP9
+or VP8 `va` element, although the driver advertises VP9 Profile 0. Not
+investigated; `v4l2slvp9dec` covers VP9.

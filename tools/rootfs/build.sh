@@ -41,7 +41,14 @@ ORIGINAL_ARGS=("$@")
 #                              this panel is driven through AFBD registers with
 #                              panfrost as a render-only device -- so mpv tests
 #                              decode and file handling, not scanout.
-VIDEO_RUNTIME_PACKAGES=libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-libav,v4l-utils,mpv
+#                              (Superseded: with kernel 0092 stock mpv
+#                              --vo=gpu --gpu-context=drm scans out through
+#                              KMS -- docs/gpu-fallback-plan.md.)
+#   gstreamer1.0-gl            glimagesink / glshader, the GStreamer GPU path
+#                              (va*dec or v4l2sl*dec ! glimagesink). Its own
+#                              library is already pulled in; the plugin is not.
+#                              Added 2026-10-02 (WP2), pulls libgraphene.
+VIDEO_RUNTIME_PACKAGES=libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
 BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
 
 # --profile dev: rebuild tools/video ON the board. This half is genuinely

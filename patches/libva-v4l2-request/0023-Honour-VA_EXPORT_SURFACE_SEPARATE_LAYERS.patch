@@ -1,0 +1,81 @@
+Honour VA_EXPORT_SURFACE_SEPARATE_LAYERS
+
+vaExportSurfaceHandle always described a surface as one composed layer:
+NV12 with two planes. A client asking for VA_EXPORT_SURFACE_SEPARATE_LAYERS
+expects one layer per plane, each in its own single-plane format.
+
+GStreamer's va elements ask for separate layers, and their dma-buf probe
+(_va_create_surface_and_export_to_dmabuf, 1.26.2) discards an export
+whose num_layers differs from the plane count. With 0022 the probe
+surface could finally be created, but the export still failed that
+check, so vah264dec and friends still offered only VAMemory and system
+memory. Downstream GL then took a CPU copy per frame.
+
+With SEPARATE_LAYERS, export NV12 as R8 + GR88 and P010 as R16 +
+GR1616, one plane per layer, at the same offsets and pitches. Without
+the flag (or with COMPOSED_LAYERS) the export is unchanged.
+
+---
+diff --git a/src/surface.c b/src/surface.c
+index 57d10c3..f4893df 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -1085,18 +1085,46 @@ VAStatus RequestExportSurfaceHandle(VADriverContextP context,
+ 						      surface_object->destination_sizes[i];
+ 	}
+ 
+-	surface_descriptor->num_layers = 1;
+-
+-	surface_descriptor->layers[0].drm_format = video_format->drm_format;
+-	surface_descriptor->layers[0].num_planes = planes_count;
+-
+-	for (i = 0; i < planes_count; i++) {
+-		surface_descriptor->layers[0].object_index[i] =
+-			export_fds_count == 1 ? 0 : i;
+-		surface_descriptor->layers[0].offset[i] =
+-			surface_object->destination_offsets[i];
+-		surface_descriptor->layers[0].pitch[i] =
+-			surface_object->destination_bytesperlines[i];
++	/*
++	 * SEPARATE_LAYERS asks for one layer per plane, each its own single-plane
++	 * format: NV12 as R8 + GR88, P010 as R16 + GR1616. GStreamer's va
++	 * elements ask for exactly this, and its dma-buf probe discards an
++	 * export whose layer count is not the plane count -- with a single
++	 * composed layer they offered system memory only. Clients that ask for
++	 * COMPOSED_LAYERS (or neither) get the one composed layer as before.
++	 */
++	if ((flags & VA_EXPORT_SURFACE_SEPARATE_LAYERS) && planes_count == 2) {
++		bool p010 = video_format->drm_format == DRM_FORMAT_P010;
++
++		surface_descriptor->num_layers = 2;
++		surface_descriptor->layers[0].drm_format =
++			p010 ? DRM_FORMAT_R16 : DRM_FORMAT_R8;
++		surface_descriptor->layers[1].drm_format =
++			p010 ? DRM_FORMAT_GR1616 : DRM_FORMAT_GR88;
++
++		for (i = 0; i < 2; i++) {
++			surface_descriptor->layers[i].num_planes = 1;
++			surface_descriptor->layers[i].object_index[0] =
++				export_fds_count == 1 ? 0 : i;
++			surface_descriptor->layers[i].offset[0] =
++				surface_object->destination_offsets[i];
++			surface_descriptor->layers[i].pitch[0] =
++				surface_object->destination_bytesperlines[i];
++		}
++	} else {
++		surface_descriptor->num_layers = 1;
++
++		surface_descriptor->layers[0].drm_format = video_format->drm_format;
++		surface_descriptor->layers[0].num_planes = planes_count;
++
++		for (i = 0; i < planes_count; i++) {
++			surface_descriptor->layers[0].object_index[i] =
++				export_fds_count == 1 ? 0 : i;
++			surface_descriptor->layers[0].offset[i] =
++				surface_object->destination_offsets[i];
++			surface_descriptor->layers[0].pitch[i] =
++				surface_object->destination_bytesperlines[i];
++		}
+ 	}
+ 
+ 	status = VA_STATUS_SUCCESS;
