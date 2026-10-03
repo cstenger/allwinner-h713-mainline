@@ -204,10 +204,14 @@ binary on ALSA froze at #32. No mpv patch is needed on this path.
   software volume (no alsa-utils; the codec mixer is at its kernel defaults),
   so 0.4 would have been a 60% cut.
 
-Still to confirm:
-- PipeWire starting by itself after a cold boot (needs a power cycle);
-- the level by ear against ALSA direct.
+**Confirmed after a cold boot (2026-10-02):**
+- PipeWire and WirePlumber came up by themselves under `media`, with no login;
+- no failed units;
+- the operator heard the same 15 s of the Leota clip, ALSA direct and then
+  PipeWire, at "roughly the same level".
 
-**Both fixes stand.** `patches/mpv/0005` protects our patched mpv if it is
-ever run on ALSA (e.g. `--ao=alsa`). PipeWire removes the race for every
-client.
+**PipeWire is the fix; 0005 is not a reason to keep a patched mpv.** With
+PipeWire running, mpv never runs `ao_alsa`, so it never reaches the code with
+the race. 0005 only matters if someone forces `--ao=alsa`. If the direct path
+(`patches/mpv` 0001–0004) is ever retired, the patched build can go with it;
+that decision rests on the direct path's own merits (WP2).
