@@ -108,5 +108,10 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
   underrun colliding with `--loop-file`'s seek: a separate mpv issue, not a
   failure of 0005 and not the driver. Plain looping is known-good (the
   10-minute looped WP2 runs were clean).
-- [ ] 0005 alone: 4 x 40 underruns, each run kept short of the loop point
+- [~] 0005 alone: 4 x 40 underruns, each run kept short of the loop point.
+  **160/160 recovered, but `rescued-by-0005: 0` in every run.** The fix never
+  fired, so this does NOT show that 0005 fixes anything. Either the deadlock
+  never arose in these 160 attempts, or 0005's condition misses the real
+  stranded state. Control in progress: the same protocol on the pre-0005
+  binary (`/usr/local/bin/mpv.20261002-170447.bak`).
 - [ ] Regression: direct path still plays (va-regress loop lines, a 720p clip)
