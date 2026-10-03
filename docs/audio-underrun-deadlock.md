@@ -112,6 +112,15 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
   **160/160 recovered, but `rescued-by-0005: 0` in every run.** The fix never
   fired, so this does NOT show that 0005 fixes anything. Either the deadlock
   never arose in these 160 attempts, or 0005's condition misses the real
-  stranded state. Control in progress: the same protocol on the pre-0005
-  binary (`/usr/local/bin/mpv.20261002-170447.bak`).
+  stranded state.
+
+  **Control, same protocol, pre-0005 binary
+  (`/usr/local/bin/mpv.20261002-170447.bak`): it froze in 2 of 4 runs** (#28
+  and #8), both PREPARED/avail 0, about one deadlock per ~55 underruns. At
+  that rate a fix-less 160-run passes about 5% of the time, so 0005's 160/160
+  is suggestive, not proof.
+  - The instrument works: the hammer log carries buffer.c's verbose lines
+    (9 "starting AO" in one run), so a rescue would have been counted.
+  - Running 8 x 40 more on 0005: at the old rate about 6 deadlocks are
+    expected, each of which should show as a rescue.
 - [ ] Regression: direct path still plays (va-regress loop lines, a 720p clip)
