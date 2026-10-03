@@ -48,7 +48,11 @@ ORIGINAL_ARGS=("$@")
 #                              (va*dec or v4l2sl*dec ! glimagesink). Its own
 #                              library is already pulled in; the plugin is not.
 #                              Added 2026-10-02 (WP2), pulls libgraphene.
-VIDEO_RUNTIME_PACKAGES=libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
+#   pipewire, wireplumber      the sound server mpv plays through (ao=pipewire).
+#                              Driving ALSA directly can deadlock after an
+#                              underrun (docs/audio-underrun-deadlock.md);
+#                              customize.sh runs it as the user "media".
+VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
 BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
 
 # --profile dev: rebuild tools/video ON the board. This half is genuinely
@@ -414,6 +418,15 @@ env \
     test -x "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     grep -q "noflow" "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-bt-attach.service"
+    # PipeWire runs as the media user, lingering; root shells point at it.
+    grep -q "^media:x:1000:" "$ROOTFS_TREE/etc/passwd"
+    grep -qE "^audio:[^:]*:[^:]*:(.*,)?media(,|\$)" "$ROOTFS_TREE/etc/group"
+    test -f "$ROOTFS_TREE/var/lib/systemd/linger/media"
+    test -f "$ROOTFS_TREE/etc/profile.d/h713-pipewire.sh"
+    grep -qx "PIPEWIRE_RUNTIME_DIR=/run/user/1000" "$ROOTFS_TREE/etc/environment"
+    test -f "$ROOTFS_TREE/etc/wireplumber/wireplumber.conf.d/50-h713-default-volume.conf"
+    test -x "$ROOTFS_TREE/usr/bin/pipewire"
+    test -x "$ROOTFS_TREE/usr/bin/wireplumber"
     # Video runtime: assert the files that are actually dlopened and linked, not
     # just that the packages installed. A package rename or split would
     # otherwise ship an image that fails on the target hours later.

@@ -499,4 +499,50 @@ EOF
   echo "[customize] boot hotspot enabled: SSID=$HOTSPOT_SSID ch=$HOTSPOT_CHANNEL ip=$HOTSPOT_IP"
 fi
 
-echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload"
+# --- Audio: PipeWire as a dedicated user (docs/audio-underrun-deadlock.md) ---
+# mpv driving ALSA directly can deadlock for good after an underrun (a race in
+# its ao_alsa recovery: the PCM is left PREPARED and full, never started).
+# Through PipeWire, mpv uses ao=pipewire, the server owns the device, and that
+# code never runs: stock Debian mpv recovered from 320 of 320 forced underruns,
+# where it froze at #32 on ALSA. Debian's units refuse to run as root
+# (ConditionUser=!root), so PipeWire runs as "media", lingering, so its user
+# manager starts it at boot with no login. Done by editing the account files,
+# not by running useradd, to keep this script free of target binaries.
+MEDIA_UID=1000
+if ! grep -q '^media:' "$R/etc/passwd"; then
+	echo "media:x:$MEDIA_UID:$MEDIA_UID:PipeWire session for playback:/var/lib/media:/usr/sbin/nologin" >> "$R/etc/passwd"
+	echo "media:x:$MEDIA_UID:" >> "$R/etc/group"
+	echo "media:!*:20000:0:99999:7:::" >> "$R/etc/shadow"
+	for g in audio video render; do
+		grep -q "^$g:" "$R/etc/group" || { echo "[customize] ERROR: no group $g" >&2; exit 1; }
+		# append to the member list, without a leading comma when it was empty
+		sed -i -E "s/^($g:[^:]*:[^:]*:)$/\1media/; t; s/^($g:[^:]*:[^:]*:.+)$/\1,media/" "$R/etc/group"
+	done
+fi
+mkdir -p "$R/var/lib/media" "$R/var/lib/systemd/linger"
+chown "$MEDIA_UID:$MEDIA_UID" "$R/var/lib/media"
+chmod 0750 "$R/var/lib/media"
+: > "$R/var/lib/systemd/linger/media"
+# Every session reaches media's server. /etc/environment is read by PAM for any
+# session, including a plain `ssh board cmd`, which never reads profile.d: without
+# it such a client finds no server and mpv silently falls back to ALSA -- the very
+# path this exists to avoid. profile.d covers anything that skips PAM.
+grep -q '^PIPEWIRE_RUNTIME_DIR=' "$R/etc/environment" 2>/dev/null ||
+	echo "PIPEWIRE_RUNTIME_DIR=/run/user/$MEDIA_UID" >> "$R/etc/environment"
+cat > "$R/etc/profile.d/h713-pipewire.sh" <<'PWPROFILE'
+# The playback sound server runs as the "media" user (rootfs customize.sh).
+: "${PIPEWIRE_RUNTIME_DIR:=/run/user/1000}"
+export PIPEWIRE_RUNTIME_DIR
+PWPROFILE
+# WirePlumber starts a new device at 0.4. ALSA playback on this board never had
+# a software volume (no alsa-utils; the codec mixer sits at its kernel
+# defaults), so 0.4 would be a 60% cut. Start at full scale; volume is
+# PipeWire's from here.
+mkdir -p "$R/etc/wireplumber/wireplumber.conf.d"
+cat > "$R/etc/wireplumber/wireplumber.conf.d/50-h713-default-volume.conf" <<'PWVOL'
+wireplumber.settings = {
+  device.routes.default-sink-volume = 1.0
+}
+PWVOL
+
+echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media)"

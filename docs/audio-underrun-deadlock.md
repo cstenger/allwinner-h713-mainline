@@ -145,7 +145,7 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
   decoding stopped. It is not the stranded-start state. Investigate with a
   short clip, so every few underruns cross a loop.
 
-## PipeWire: the no-patch alternative (2026-10-02, in progress)
+## PipeWire: the no-patch alternative (2026-10-02, validated)
 
 The operator preferred a sound server over patching mpv. With one, mpv uses
 `ao=pipewire`, a pull-based stream from a server that owns the device and keeps
@@ -179,3 +179,35 @@ free.
 by `gpu-path-run.sh` and mpv never played. `xrun-hammer.sh` now refuses to
 start (`INVALID`) unless the clip exists and mpv is decoding before the first
 forced underrun.
+
+**Result: stock Debian mpv with PipeWire recovered from 320 of 320 forced
+underruns** (8 x 40, every run past the "mpv is playing" guard). The same
+binary on ALSA froze at #32. No mpv patch is needed on this path.
+
+| | ALSA direct | PipeWire |
+| --- | --- | --- |
+| Whole-board CPU, 720p `vo=gpu` playback | 11–14% | 18% |
+| pipewire + wireplumber | — | 4.5% of one core |
+| Codec PCM | 48 kHz, period 1200, buffer 4800 | 48 kHz, period 1024, buffer 32768 (PipeWire owns it) |
+
+**Settled configuration** (on the board now, and in `tools/rootfs`):
+- packages `pipewire` and `wireplumber`;
+- user `media` (uid 1000) in audio, video and render, with lingering
+  (`/var/lib/systemd/linger/media`);
+- `PIPEWIRE_RUNTIME_DIR=/run/user/1000` in **/etc/environment**.
+  `/etc/profile.d` alone is not enough: a plain `ssh board cmd` never reads it,
+  and mpv then silently falls back to ALSA, the deadlock path. With it, stock
+  mpv with no `--ao` option chooses `[pipewire]` by itself;
+- the WirePlumber default sink volume set to 1.0
+  (`/etc/wireplumber/wireplumber.conf.d/50-h713-default-volume.conf`).
+  WirePlumber starts new devices at 0.4, and ALSA playback here never had a
+  software volume (no alsa-utils; the codec mixer is at its kernel defaults),
+  so 0.4 would have been a 60% cut.
+
+Still to confirm:
+- PipeWire starting by itself after a cold boot (needs a power cycle);
+- the level by ear against ALSA direct.
+
+**Both fixes stand.** `patches/mpv/0005` protects our patched mpv if it is
+ever run on ALSA (e.g. `--ao=alsa`). PipeWire removes the race for every
+client.
