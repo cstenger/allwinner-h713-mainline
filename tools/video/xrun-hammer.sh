@@ -14,6 +14,7 @@
 # MPV/VO pick the player: the default is Debian's mpv on the GPU path;
 # MPV=/usr/local/bin/mpv VO=drm is the patched direct path (patches/mpv).
 CLIP=$1 AO=${2:-alsa} N=${3:-40}
+[ -r "$CLIP" ] || { echo "INVALID: no clip at $CLIP"; exit 2; }
 MPV=${MPV:-/usr/bin/mpv} VO=${VO:-gpu}
 case "$VO" in gpu*) CTX=--gpu-context=drm ;; *) CTX= ;; esac
 irq() { awk '/1c0e000/ { print $2 }' /proc/interrupts; }
@@ -23,6 +24,15 @@ LIBVA_DRIVER_NAME=v4l2_request "$MPV" --no-config --vo=$VO $CTX --hwdec=vaapi \
 	--dither-depth=no --deband=no "$CLIP" > /tmp/xh.log 2>&1 < /dev/null &
 P=$!
 sleep 6
+# Prove the baseline before forcing anything. 2026-10-02: the clip had been
+# deleted from /tmp by another tool, mpv exited at once, and every run reported
+# "FROZE after underrun #1" -- a missing file read as the bug.
+a0=$(irq); sleep 2; b0=$(irq)
+if ! kill -0 $P 2>/dev/null || [ $((b0 - a0)) -lt 10 ]; then
+	echo "INVALID: mpv not playing before the first underrun (alive=$(kill -0 $P 2>/dev/null && echo y || echo n), decode +$((b0 - a0)) in 2 s)"
+	tr '\r' '\n' < /tmp/xh.log | grep -aiE 'fail|error|cannot|unable' | head -3
+	kill $P 2>/dev/null; exit 2
+fi
 i=0
 while [ $i -lt $N ]; do
 	i=$((i + 1))

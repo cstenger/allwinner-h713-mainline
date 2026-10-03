@@ -144,3 +144,38 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
   point). Audio DMA was healthy and mpv kept feeding ALSA, but video
   decoding stopped. It is not the stranded-start state. Investigate with a
   short clip, so every few underruns cross a loop.
+
+## PipeWire: the no-patch alternative (2026-10-02, in progress)
+
+The operator preferred a sound server over patching mpv. With one, mpv uses
+`ao=pipewire`, a pull-based stream from a server that owns the device and keeps
+it running, so mpv's ALSA recovery code (the race) never runs. Debian's mpv
+already has the PipeWire output, and desktop Linux runs this way, which is
+likely why upstream never sees the deadlock.
+
+**Installed on the board** without `apt update`: no package lists, ~200 MB
+free.
+- 15 packages, ~20 MB: pipewire 1.4.2-1, pipewire-bin, wireplumber 0.5.8-2,
+  their libraries, and libffado/roc/lua.
+- They were resolved on the host against trixie, trixie-updates and security,
+  minus the board's installed set. SHA-256 was checked against the index, and
+  they were installed with `dpkg -i` (no `dpkg --audit` complaints).
+- The board's existing libpipewire was already 1.4.2-1, pulled in by mpv.
+
+**Runs as a dedicated user, not root.** Debian's units carry
+`ConditionUser=!root`, which is upstream's intent.
+- User `media` (uid 1000; groups audio, video, render; home `/var/lib/media`;
+  no login shell), with lingering on, so its user manager starts PipeWire and
+  WirePlumber at boot.
+- Clients running as root reach it with
+  `PIPEWIRE_RUNTIME_DIR=/run/user/1000`.
+- WirePlumber exposes the codec as "Built-in Audio Stereo", with its software
+  volume at 0.40 by default; the level is still to be checked against ALSA
+  direct.
+- Undo: `loginctl disable-linger media; userdel -r media`.
+
+**Test void, then fixed.** The first 8 x 40 hammer on PipeWire reported
+"FROZE after underrun #1" every time. In fact `/tmp`'s clip had been deleted
+by `gpu-path-run.sh` and mpv never played. `xrun-hammer.sh` now refuses to
+start (`INVALID`) unless the clip exists and mpv is decoding before the first
+forced underrun.
