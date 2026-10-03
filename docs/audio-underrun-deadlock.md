@@ -87,5 +87,16 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
 - [x] Root cause, from source and the PREPARED/avail-0 capture
 - [x] Baseline: patched mpv (`/usr/local/bin/mpv`, direct `vo=drm`) froze at forced underrun **#2**, same PREPARED/avail-0 state
 - [x] 0005 written (`patches/mpv/0005-audio-start-a-full-device-that-was-never-started.patch`), built with `tools/video/build-mpv.sh`, installed to `/usr/local/bin/mpv` (fix string verified in the binary)
-- [ ] Hammer: 0 freezes over a long run with 0005
+- [~] Hammer with 0005, direct path. The PREPARED/avail-0 deadlock did not
+  recur: the run reached #51, against #2 before. But **#51 froze
+  differently**:
+  - ALSA was **RUNNING** (delay 3984, avail 816), not PREPARED;
+  - decoding had stopped (+0 frames);
+  - threads were in futexes, including libavcodec's `av:h264:df*` workers.
+
+  This is a second failure mode. The open question is whether the PCM's
+  `hw_ptr` still advances (if not, the DMA stopped: a kernel/driver bug) or
+  the stall is elsewhere in mpv. `xrun-hammer.sh` now takes two status
+  snapshots 1 s apart plus the audio DMA IRQ count (`3002000.dma-controller`)
+  to answer it.
 - [ ] Regression: direct path still plays (va-regress loop lines, a 720p clip)

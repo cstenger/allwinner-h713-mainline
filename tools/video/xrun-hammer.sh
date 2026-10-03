@@ -33,9 +33,17 @@ while [ $i -lt $N ]; do
 	if [ $((b - a)) -lt 10 ]; then
 		sleep 3; c=$(irq)
 		echo "FROZE after underrun #$i (stop ${d}s): decode +$((b - a)) then +$((c - b)); alsa $(grep -h -m1 state /proc/asound/card*/pcm0p/sub0/status 2>/dev/null)"
-		cat /proc/asound/card*/pcm0p/sub0/status 2>/dev/null | head -8
+		# Two snapshots: a RUNNING PCM whose hw_ptr does not move is a stopped
+		# DMA (kernel side); one that moves means the stall is in mpv.
+		echo "-- pcm status, then again 1 s later"
+		cat /proc/asound/card*/pcm0p/sub0/status 2>/dev/null
+		sleep 1
+		cat /proc/asound/card*/pcm0p/sub0/status 2>/dev/null | grep -E 'state|hw_ptr|appl_ptr|delay|avail'
+		echo "-- audio DMA IRQs, 1 s apart: $(grep 'dma-controller' /proc/interrupts | awk '{s+=$2} END {print s}')"
+		sleep 1
+		echo "                              $(grep 'dma-controller' /proc/interrupts | awk '{s+=$2} END {print s}')"
 		for t in /proc/$P/task/*; do echo "  $(cat $t/comm) $(cat $t/wchan)"; done | sort | uniq -c
-		tr '\r' '\n' < /tmp/xh.log | grep -av statusline | grep -av '^\s*$' | tail -6
+		tr '\r' '\n' < /tmp/xh.log | grep -av statusline | grep -av '^\s*$' | tail -12
 		kill $P; exit 0
 	fi
 done
