@@ -321,7 +321,11 @@ The scanout grab of the 1080p card through plane-ve is the full card, 1280x720, 
   - A recording of PipeWire's sink monitor, aligned against the decoded source, matched it nowhere (SNR -29 dB).
   - Pinned to interleaved S16 at 48 kHz, it tracks the source at a constant offset with no drift: 32.6 dB median SNR on both plane routes, against mpv's 36.3 dB.
   - The PipeWire clock is still unsafe: 93 frames in 19 s on one clip. The pipeline stays on the system clock.
-  - A/V sync has not been measured; it was judged by ear only. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
+  - **A/V sync is broken, and not by a constant** (operator: "out of sync"). Measured with `tools/video/av-sync-probe.c` on `make-avsync-clip.sh`'s flash + beep clip, timing scan-out and the sink monitor plus ALSA delay on one clock:
+    - stock mpv on the GPU path: −23.6 ms (spread 4 ms);
+    - plane-ve with `pipewiresink`: **+69 ms on one run and −228 ms on an identical one.**
+
+    A `render-delay` sweep (60 ms → +17, 90 ms → −7) is therefore no fix. The suspect is `pipewiresink` (`src/gst/gstpipewiresink.c`): latency reporting, or where its stream starts against an external clock. Next: read that source and fix it, or use stock `pulsesink` over `pipewire-pulse`. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
 
 Built:
 - `tools/video/gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]` plays onto the video plane with audio (PipeWire) when the file has any. It prints rendered, dropped and position, and stops cleanly on Ctrl-C or SIGTERM.
