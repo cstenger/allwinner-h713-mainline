@@ -316,7 +316,12 @@ The scanout grab of the 1080p card through plane-ve is the full card, 1280x720, 
   - the player names `pipewiresink`, which has rank none and is never autoplugged;
   - the pipeline is pinned to the system clock. On `pipewiresink`'s own clock, 67 of ~450 frames were shown.
 
-  Now: 0 dropped, 30.0 fps against position on three routes, with the PCM RUNNING. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
+  Now: 0 dropped, 30.0 fps against position on three routes, with the PCM RUNNING.
+- **Then the audio was static at the wrong pitch** (operator, on `leota-1080p.mp4`; the capture-media clips' audio is digital silence, -91 dB, so they cannot be used for a listening test). `pipewiresink`'s caps are ANY, so it took the AAC decoder's planar F32 as is, and PipeWire read it as interleaved.
+  - A recording of PipeWire's sink monitor, aligned against the decoded source, matched it nowhere (SNR -29 dB).
+  - Pinned to interleaved S16 at 48 kHz, it tracks the source at a constant offset with no drift: 32.6 dB median SNR on both plane routes, against mpv's 36.3 dB.
+  - The PipeWire clock is still unsafe: 93 frames in 19 s on one clip. The pipeline stays on the system clock.
+  - A/V sync has not been measured; it was judged by ear only. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
 
 Built:
 - `tools/video/gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]` plays onto the video plane with audio (PipeWire) when the file has any. It prints rendered, dropped and position, and stops cleanly on Ctrl-C or SIGTERM.

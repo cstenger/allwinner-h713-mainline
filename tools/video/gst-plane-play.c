@@ -181,9 +181,17 @@ static void on_pad_added(GstElement *decodebin, GstPad *pad, gpointer data)
 		 * is pinned to the system clock in main(). */
 		GstElementFactory *pw = gst_element_factory_find("pipewiresink");
 
+		/* pipewiresink's caps are ANY, so it took the AAC decoder's
+		 * planar F32 as is, and PipeWire read it as interleaved:
+		 * static at the wrong pitch, matching the source nowhere
+		 * (operator, then a monitor recording, 2026-10-03). Pinned
+		 * interleaved at the graph rate it tracks the source at a
+		 * constant offset, 32.6 dB median SNR (mpv: 36.3). */
 		description = g_strdup_printf("queue ! audioconvert ! "
 					      "audioresample ! %s",
-					      pw ? "pipewiresink" :
+					      pw ? "audio/x-raw,format=S16LE,"
+					      "layout=interleaved,rate=48000,"
+					      "channels=2 ! pipewiresink" :
 					      "autoaudiosink");
 		if (pw)
 			gst_object_unref(pw);
@@ -265,10 +273,10 @@ int main(int argc, char **argv)
 	}
 
 	p.pipeline = gst_pipeline_new("play");
-	/* Not pipewiresink's clock: with it the 720p clip rendered 67 frames
-	 * in 15 s, the rest late, and the position ran ahead of real time.
-	 * On the system clock, which the audio then follows, 426 of 426
-	 * (2026-10-03). */
+	/* Not pipewiresink's clock: with it a 720p clip rendered 93 frames
+	 * in 19 s, the rest late (it depends on the stream: another was
+	 * fine). On the system clock, which the audio then follows, every
+	 * clip renders in full (2026-10-03). */
 	clock = gst_system_clock_obtain();
 	gst_pipeline_use_clock(GST_PIPELINE(p.pipeline), clock);
 	gst_object_unref(clock);
