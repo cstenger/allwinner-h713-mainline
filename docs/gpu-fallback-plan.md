@@ -331,7 +331,17 @@ The scanout grab of the 1080p card through plane-ve is the full card, 1280x720, 
     - Stock: +768 ms after the sink was idle (the device took ~740 ms to pull, and the backlog queued meanwhile never drained); +80 ms warm, with nothing ever aligning the stream to the clock.
     - Patched: audio waits for the graph's first pull, and each buffer is aligned to the clock (skip or silence beyond 30 ms). **+43 to +54 ms idle, +45 to +47 ms warm**, steady across runs.
   - What remains is mostly probe bias (vblank, scan-out position, the panel). See [patches/pipewire/README.md](../patches/pipewire/README.md).
-  - **Operator, 2026-10-03, `leota-1080p.mp4` through plane-ve with 0001: in sync, clean audio, no stutter.** The residual +45 ms on the probe is therefore not chased, and `latency.internal.ns` stays unset. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
+  - **Operator, 2026-10-03, `leota-1080p.mp4` through plane-ve with 0001: in sync, clean audio, no stutter.** The residual +45 ms on the probe is therefore not chased, and `latency.internal.ns` stays unset.
+  - **Then stock `alsasink` through `pipewire-alsa` beat the patch** (operator's question, 2026-10-03). The packages are `gstreamer1.0-alsa` and `pipewire-alsa`. The default-device override was opted out of (`/etc/alsa/conf.d/99-pipewire-default.conf` removed), and the sink is selected by `GST_PLANE_PLAY_AUDIOSINK="alsasink device=pipewire"`.
+
+    | | patched `pipewiresink` | `alsasink device=pipewire` |
+    | --- | --- | --- |
+    | after idle | +43 to +54 ms | **+8 to +12 ms** |
+    | warm | +45 to +47 ms | **−2 to +0.3 ms** |
+    | after a 1 s forced underrun | +59.6 ms | **+9.9 ms** |
+    | forced underruns survived (`xrun-hammer-plane.sh`) | 30/30 | 30/30 |
+
+    A truly synced player reads about 0 to +17 ms on this probe. GstAudioBaseSink's ring buffer aligns against ALSA's delay, which PipeWire's plugin reports including the device buffer. mpv's ALSA deadlock does not apply: it was mpv's `start_threshold = INT_MAX` start race, and through `pipewire-alsa` the client never touches the hardware PCM. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
 
 Built:
 - `tools/video/gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]` plays onto the video plane with audio (PipeWire) when the file has any. It prints rendered, dropped and position, and stops cleanly on Ctrl-C or SIGTERM.

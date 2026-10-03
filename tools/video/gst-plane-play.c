@@ -180,6 +180,7 @@ static void on_pad_added(GstElement *decodebin, GstPad *pad, gpointer data)
 		 * which plays nowhere audible (2026-10-03). The pipeline clock
 		 * is pinned to the system clock in main(). */
 		GstElementFactory *pw = gst_element_factory_find("pipewiresink");
+		const char *override = getenv("GST_PLANE_PLAY_AUDIOSINK");
 
 		/* pipewiresink's caps are ANY, so it took the AAC decoder's
 		 * planar F32 as is, and PipeWire read it as interleaved:
@@ -193,6 +194,15 @@ static void on_pad_added(GstElement *decodebin, GstPad *pad, gpointer data)
 					      "layout=interleaved,rate=48000,"
 					      "channels=2 ! pipewiresink" :
 					      "autoaudiosink");
+		/* GST_PLANE_PLAY_AUDIOSINK replaces the sink for measurements,
+		 * e.g. "alsasink device=pipewire" (WP4 sink comparison). */
+		if (override && *override) {
+			gchar *d2 = g_strdup_printf("queue ! audioconvert ! "
+						    "audioresample ! %s", override);
+
+			g_free(description);
+			description = d2;
+		}
 		if (pw)
 			gst_object_unref(pw);
 		else
