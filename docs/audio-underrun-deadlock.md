@@ -99,4 +99,14 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
   the stall is elsewhere in mpv. `xrun-hammer.sh` now takes two status
   snapshots 1 s apart plus the audio DMA IRQ count (`3002000.dma-controller`)
   to answer it.
+
+  **Answered (#56 of a rerun): the audio side is healthy.** Over 1 s, `hw_ptr`
+  advanced 48,240 frames (48 kHz), `appl_ptr` advanced as well, and the audio
+  DMA took 12 IRQs. The mpv log at the stall ends at the **loop boundary**
+  (`lavf EOF reached ... audio EOF reached ... XRUN`). Both second-mode
+  freezes landed about 180–200 s in, on a 180 s clip, so this is a forced
+  underrun colliding with `--loop-file`'s seek: a separate mpv issue, not a
+  failure of 0005 and not the driver. Plain looping is known-good (the
+  10-minute looped WP2 runs were clean).
+- [ ] 0005 alone: 4 x 40 underruns, each run kept short of the loop point
 - [ ] Regression: direct path still plays (va-regress loop lines, a 720p clip)
