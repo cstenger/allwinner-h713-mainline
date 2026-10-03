@@ -242,8 +242,16 @@ int main(int argc, char **argv)
 	/*
 	 * Say DMA_DRM out loud: the decoder offers its DMA_DRM-only formats to
 	 * a peer whose caps list them, and ANY does not count.
+	 *
+	 * max-buffers bounds the queue (appsink then blocks the decoder). The
+	 * default is unbounded, and with sync=false a decoder that outruns the
+	 * file writes keeps every frame alive: GStreamer va then allocates a
+	 * new surface per frame until the VA driver's 32 CAPTURE buffers run
+	 * out, and the decodes beyond that fail ("resource allocation
+	 * failed"), which dropped 20 of 60 H.264 frames, 2026-10-03.
 	 */
 	description = g_strdup_printf("%s ! appsink name=sink sync=false "
+				      "max-buffers=2 "
 				      "caps=\"video/x-raw(memory:DMABuf),format=DMA_DRM;"
 				      "video/x-raw\"", argv[1]);
 	pipeline = gst_parse_launch(description, &error);

@@ -1,0 +1,130 @@
+#!/bin/bash
+# Play a video file on the H713 projector by the cheapest route that can show
+# it correctly. RUNS ON THE TARGET.
+#
+# WP4 of docs/gpu-fallback-plan.md. Three routes, all on stock players:
+#
+#   plane-native  exactly 1280x720 (the panel), any of H.264/HEVC/VP9/AV1:
+#                 stock v4l2sl*dec ! kmssink, zero-copy onto the video plane.
+#   plane-ve      H.264/HEVC larger than the panel whose aspect-fit is exactly
+#                 1280x720 (16:9, square pixels): va*dec with the VE
+#                 decode-time scaler, onto the video plane.
+#   gpu           everything else: stock mpv --vo=gpu with the cheap scaling
+#                 settings WP2 measured (1080p real time in every codec).
+#
+# The plane routes leave the GPU idle and cost ~5% whole-board CPU with audio,
+# against ~17% on the GPU path (2026-10-03). They exist only where the plane
+# can show the picture as is: the AFBD video plane takes one framebuffer
+# geometry (1280x720), cannot letterbox (docs/letterbox-plan.md) or rotate
+# 90/270, and has no downscaler of its own; the VE scaler downscales H.264 and
+# HEVC only (VP9 is WP6, AV1 has none). 10-bit goes to the GPU route: the VE
+# scaler cannot output it, and on GL 10-bit AV1 currently decodes in software.
+#
+#   usage: h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS...]
+#
+# Prints one "h713-play:" line with the probe and the decision, then plays.
+# --route=plane fails if the plane cannot show FILE; MPV-ARGS reach mpv only.
+set -euo pipefail
+
+PANEL_W=1280
+PANEL_H=720
+VA_MAX=2048	# the VA driver caps cedrus at 2048 (unproven above)
+CHEAP=(--scale=bilinear --dscale=bilinear --cscale=bilinear --dither-depth=no
+       --deband=no --correct-downscaling=no --linear-downscaling=no
+       --sigmoid-upscaling=no --hdr-compute-peak=no)
+
+dry=0 route=auto
+while [ $# -gt 0 ]; do
+	case $1 in
+	--dry-run) dry=1 ;;
+	--route=*) route=${1#--route=} ;;
+	-h|--help) sed -n '2,/^set -e/p' "$0" | sed 's/^# \{0,1\}//;$d'; exit 0 ;;
+	--) shift; break ;;
+	-*) echo "h713-play: unknown option $1" >&2; exit 2 ;;
+	*) [ -z "${file:-}" ] && file=$1 || { echo "h713-play: one FILE" >&2; exit 2; } ;;
+	esac
+	shift
+done
+case $route in auto|plane|gpu) ;; *) echo "h713-play: bad --route" >&2; exit 2 ;; esac
+[ -n "${file:-}" ] && [ -r "$file" ] || { echo "usage: h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS...]" >&2; exit 2; }
+
+# --- probe -------------------------------------------------------------------
+codec= w=0 h=0 sar= pix= rot=0
+while IFS== read -r k v; do
+	case $k in
+	codec_name) codec=$v ;;
+	width) w=$v ;;
+	height) h=$v ;;
+	sample_aspect_ratio) sar=$v ;;
+	pix_fmt) pix=$v ;;
+	rotation) rot=$v ;;
+	esac
+done < <(ffprobe -v error -select_streams v:0 \
+	-show_entries stream=codec_name,width,height,sample_aspect_ratio,pix_fmt:stream_side_data=rotation \
+	-of default=nw=1 "$file")
+[ -n "$codec" ] && [ "$w" -gt 0 ] && [ "$h" -gt 0 ] || { echo "h713-play: no video stream in $file" >&2; exit 1; }
+
+case $pix in *10*|*12*) depth=10 ;; *) depth=8 ;; esac
+rot=$(( ((${rot%.*} % 360) + 360) % 360 ))
+case $sar in [1-9]*:[1-9]*) sn=${sar%:*} sd=${sar#*:} ;; *) sn=1 sd=1 ;; esac
+
+# Display size (SAR applied, then rotation), aspect-fit into the panel, even.
+dw=$(( w * sn )) dh=$(( h * sd ))
+if [ $rot = 90 ] || [ $rot = 270 ]; then t=$dw; dw=$dh; dh=$t; fi
+if [ $(( dw * PANEL_H )) -ge $(( dh * PANEL_W )) ]; then
+	fw=$PANEL_W fh=$(( (PANEL_W * dh / dw + 1) / 2 * 2 ))
+else
+	fh=$PANEL_H fw=$(( (PANEL_H * dw / dh + 1) / 2 * 2 ))
+fi
+
+# --- route ---------------------------------------------------------------------
+case $codec in
+h264) gst=h264 ;;
+hevc) gst=h265 ;;
+vp9) gst=vp9 ;;
+av1) gst=av1 ;;
+*) gst= ;;
+esac
+
+why=
+if [ -z "$gst" ]; then why="codec $codec has no plane decoder"
+elif [ $depth != 8 ]; then why="10-bit"
+elif [ $rot != 0 ]; then why="rotated $rot"
+elif [ $fw != $PANEL_W ] || [ $fh != $PANEL_H ]; then why="fits as ${fw}x${fh}, the plane shows only ${PANEL_W}x${PANEL_H}"
+elif [ $w = $PANEL_W ] && [ $h = $PANEL_H ]; then plane=native
+elif [ $gst != h264 ] && [ $gst != h265 ]; then why="no VE scaler for $codec"
+elif [ $w -lt $PANEL_W ]; then why="smaller than the panel (the VE scaler only shrinks)"
+elif [ $w -gt $VA_MAX ] || [ $h -gt $VA_MAX ]; then why="larger than the VA driver's ${VA_MAX} cap"
+else plane=ve
+fi
+
+if [ $route = plane ] && [ -n "$why" ]; then
+	echo "h713-play: $file cannot go on the plane: $why" >&2
+	exit 1
+fi
+[ $route = gpu ] && { plane=; why="--route=gpu"; }
+[ -n "$why" ] && plane=
+
+probe="$codec ${w}x${h} sar $sn:$sd rot $rot ${depth}-bit -> fit ${fw}x${fh}"
+player=$(command -v gst-plane-play || echo "$(dirname "$0")/gst-plane-play")
+
+case ${plane:-} in
+native)
+	echo "h713-play: $probe: plane-native (v4l2sl${gst}dec ! kmssink)"
+	cmd=("$player" "$file" "$gst" "v4l2sl${gst}dec")
+	;;
+ve)
+	echo "h713-play: $probe: plane-ve (va${gst}dec, VE scaler ${w}x${h} -> ${PANEL_W}x${PANEL_H}, kmssink)"
+	export LIBVA_DRIVER_NAME=v4l2_request GST_VA_ALL_DRIVERS=1
+	export V4L2_REQUEST_SCALE=${PANEL_W}x${PANEL_H} V4L2_REQUEST_CROP=${w}x${h}
+	cmd=("$player" "$file" "$gst" "va${gst}dec" "${PANEL_W}x${PANEL_H}")
+	;;
+*)
+	echo "h713-play: $probe: gpu ($why; mpv --vo=gpu)"
+	export LIBVA_DRIVER_NAME=v4l2_request
+	cmd=(mpv --vo=gpu --gpu-context=drm --hwdec=vaapi "${CHEAP[@]}" "$@" "$file")
+	;;
+esac
+
+[ $dry = 1 ] && { printf 'h713-play: would run:'; printf ' %q' "${cmd[@]}"; echo; exit 0; }
+exec "${cmd[@]}"

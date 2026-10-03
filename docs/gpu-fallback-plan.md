@@ -297,6 +297,37 @@ Also open:
   - The VA driver already exposes the scaler through `V4L2_REQUEST_SCALE` (libva 0008/0010), and GStreamer's `va*dec` now work (libva 0021–0025). So `vah264dec`/`vah265dec ! kmssink` with the variable set may need no GStreamer patch at all.
   - Limits: the decode-time scaler exists for H.264 and HEVC only. VP9 scaling is unported (WP6), and AV1 has none; those stay on the GPU path.
   - It also needs aspect-fit: a non-16:9 source still has to be letterboxed, which the plane cannot do yet ([letterbox-plan.md](letterbox-plan.md)).
+
+**WP4 findings so far (2026-10-03): the plane routes work, with stock GStreamer and one pad probe.**
+
+| Route | Clips | Rendered vs position | GPU | Whole-board CPU (with audio) |
+| --- | --- | --- | --- | --- |
+| plane-native: `v4l2sl*dec ! kmssink` | 720p H.264, HEVC, VP9, AV1 | 30 fps; a constant ~10 frames at start, 1 drop | 0 IRQs | 4.8–5.6% |
+| plane-ve: `va*dec` + VE scaler `! kmssink` | 1080p H.264, HEVC → 1280x720 | same | 0 IRQs | 5.0–5.3% |
+| gpu: stock mpv `--vo=gpu`, cheap settings | the rest | (WP2) | busy | ~17% |
+
+The scanout grab of the 1080p card through plane-ve is the full card, 1280x720, with all four borders. Three things stood in the way, and each one had been reported as working, or was invisible:
+- **`va*dec` into DMABuf caps showed solid green, at a steady 30 fps.** megi's driver treated GStreamer's export-at-allocation as probing and decoded elsewhere. This applied to native 720p and to `glimagesink` alike, so the WP2 "`va*` zero-copy" result does not hold on megi's driver. WP3 had checked GStreamer only through readback. Fixed by **libva 0007**, which decodes into the client's exported dma-bufs and exports at the scaled size when `V4L2_REQUEST_SCALE` is set. `va-regress.sh` passes with 0 failing lines; GStreamer DMABuf output is bit-exact (H.264 ×5, HEVC ×4); stock mpv is unchanged.
+- **GStreamer believes the SPS, not the surface.** Caps and every buffer's `GstVideoMeta` say 1920x1080, and kmssink sizes the framebuffer from the meta ("bad pitch 1280"). `capssetter` cannot fix the meta, and it breaks DMABuf negotiation upstream. The fix is a pad probe that rewrites both: `tools/video/gst-plane-play.c`, stock elements otherwise.
+- **kmssink dropped about one frame a second** (decoder QoS, 30 in 30 s, even without audio). After its plane commit, which already waits for the flip on this driver, kmssink waits for a vblank of its own. That makes up to a whole 30 fps frame per render. The fix is stock `skip-vsync=true`, which brings the drops to 0. The WP2 `kmssink-matrix` numbers (29.7 fps average) carry this loss.
+
+Built:
+- `tools/video/gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]` plays onto the video plane with audio (PipeWire) when the file has any. It prints rendered, dropped and position, and stops cleanly on Ctrl-C or SIGTERM.
+- `tools/video/h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS]` probes the file, prints one decision line and runs the route. Every capture clip routes as intended: 1080p H.264/HEVC → plane-ve; native 720p ×4 → plane-native; AV1/VP9 1080p, 10-bit, rotated, and anything not 16:9 → gpu.
+
+Limits of the plane routes, all set by the plane taking exactly 1280x720:
+- no letterbox or pillarbox, so only 16:9 content;
+- no upscaling (the VE scaler only shrinks);
+- no 90/270 rotation;
+- VE scaling for H.264 and HEVC only, at most 2048 wide (the VA cap);
+- 10-bit goes to the GPU route.
+
+Still open in WP4:
+- the three items below;
+- an operator look at the panel (plane-ve 1080p);
+- a 10-minute soak of each plane route;
+- installing `h713-play` and `gst-plane-play` from the rootfs build instead of by hand.
+
 - In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10. With megi's driver (WP3) stock mpv currently falls back to software for 10-bit AV1 on `vo=gpu`.
 - The scaler variables are megi patch 0005 now, not libva 0008/0010. Unscaled exports report the padded CAPTURE height (1088), which `kmssink` would show as 8 extra rows.
 - Add `tools/video/shaders/lsb10.glsl` (×64).

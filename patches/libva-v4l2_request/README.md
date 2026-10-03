@@ -33,7 +33,7 @@ with `tools/video/va-regress.sh`:
 | AV1 10-bit (310 frames) | pass | refused | pass, bit-exact |
 | resolution change ×3 | pass | SIGSEGV | pass, bit-exact |
 
-Six patches here against twenty-five there, on a maintained base that tracks
+Seven patches here against twenty-five there, on a maintained base that tracks
 GStreamer `va` and the modern uAPI. The bugs in 0001 and 0003 are megi's own
 and not H713-specific; they are worth reporting to him (this project does not
 push upstream).
@@ -48,6 +48,7 @@ push upstream).
 | 0004 | Count `V4L2_BUF_FLAG_ERROR`; AV1 refuses non-key frames after an error | The SoC hang: one damaged AV1 key frame through VA-API hung the board (bootlin 0016 had the same gate). Conservative, because errors surface a frame or two late |
 | 0005 | `V4L2_REQUEST_SCALE` / `V4L2_REQUEST_CROP`, and a 64-byte NV12 pitch | The VE decode-time scaler (bootlin 0008/0010) and Panfrost's import alignment (bootlin 0020), all in the one CAPTURE `S_FMT` |
 | 0006 | Advertise VP9 Profile 2 only if a 10-bit frame control is accepted | cedrus is Profile 0 only. Needs **kernel 0155**, which makes cedrus refuse the control; without it the probe says yes, as before |
+| 0007 | Decode into the dma-bufs a client exported before the first decode | GStreamer `va`'s dma-buf allocator creates and exports each surface in one step and keeps the fds. megi treated such exports as probing and decoded elsewhere: **every `va*dec` DMABuf consumer (kmssink, glimagesink) showed solid green** at a steady 30 fps. The CAPTURE queue now imports those dma-bufs when the first export fits the decode format (FFmpeg's AV1 probe does not, and keeps MMAP). The export-time layout honours `V4L2_REQUEST_SCALE`, which is what makes WP4's VE-scaled `kmssink` route possible |
 
 ## Where each bootlin patch went
 
@@ -64,6 +65,18 @@ push upstream).
 | 0018, 0019 (DMA-BUF heap capture, renegotiation) | **0003**, without the heap |
 | 0020 (64-byte pitch) | **0005** |
 | 0021–0025 (GStreamer `va`) | native |
+
+## Verification of 0007 (2026-10-03)
+
+- `va-regress.sh`: 0 failing lines. FFmpeg now decodes H.264, HEVC, VP9 and
+  MPEG-2 into imported dma-bufs (its probe export fits) and AV1 into MMAP, so
+  the suite covers both modes bit-exact. A first version chose DMABUF for any
+  pre-decode export and broke all AV1 (0/5 frames); the fit test came from that.
+- GStreamer `va*dec` → DMABuf → `gst-dmabuf-dump`, against FFmpeg software:
+  H.264 ×5 and HEVC ×4 (incl. 1080p, 656x480, 640x482) bit-exact, every frame.
+- Stock mpv `--vo=gpu` (H.264 1080p, VP9 1080p, 852x480): identical drops, GPU
+  load and clocks to 0001–0006.
+- WP4's plane routes on the panel: see the WP4 section of the plan.
 
 ## Verification (2026-10-03)
 
@@ -96,4 +109,16 @@ push upstream).
 - **Decode errors** reach no client except through the AV1 gate (see 0012 above).
 - GStreamer `va*dec`: identical results on both drivers for the clips tried (VP9
   bit-exact). The H.264/HEVC/AV1-10 clips that fail do so on both, so that is
-  open as a harness or clip question, not a driver one.
+  open as a harness or clip question, not a driver one. **Answered for H.264
+  (2026-10-03):** a harness question. `gst-dmabuf-dump`'s appsink queued
+  without bound, GStreamer allocated a surface per queued frame, and decodes
+  past the driver's 32 CAPTURE buffers failed. Bounded, all five H.264
+  vectors are 60/60 bit-exact.
+- **GStreamer `va*dec` into DMABuf caps was showing green, not video** (fixed by
+  0007). The WP3 checks read frames back through system memory, the one path
+  that was right.
+- **32 CAPTURE buffers per context, hard.** A client that holds more decoded
+  frames than that alive at once gets decode failures, not back-pressure.
+- **GStreamer `va` AV1 into DMABuf caps still shows nothing**: its pre-decode
+  export (cedrus-shaped) never fits the AV1 core's padded layout. WP4 sends AV1
+  on the plane through `v4l2slav1dec` instead, and to the GPU through mpv.
