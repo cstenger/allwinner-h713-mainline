@@ -250,7 +250,19 @@ Also open:
 - Lift the 2048 cap only after cedrus is proven bit-exact at 4K (clips 50–52).
 
 **WP2 follow-up: close the direct-vs-GPU CPU gap without a patched player.** The GPU path costs about 8 points more whole-board CPU on native 720p (mpv itself 41% of one core against 17%). Candidates, cheapest first:
-- **Measure what the 8 points are.** PipeWire's own share (the direct leg was on ALSA), mpv's renderer CPU (shader setup, GL calls per frame, OSD), and the dma-buf import per frame. `perf` or mpv's `--profile`/stats on both paths.
+- **Measured (2026-10-02, 720p, 60 s each; `local/h713-lab/wp2-20261002/gap-*.txt`).**
+
+  | Run | Whole-board CPU | mpv (one core) |
+  | --- | --- | --- |
+  | GPU path, PipeWire | 16% | 39% |
+  | GPU path, no audio | 13% | 32% |
+  | Direct path, ALSA | 8% | 17% |
+  | Direct path, no audio | 8% | 15% |
+
+  - About **3 points are audio** (PipeWire against ALSA direct).
+  - About **5 points are video**, nearly all mpv's own GL path: 32% against 15% of one core.
+  - **Stock knobs do not touch it.** `--gpu-dumb-mode=yes`, OSD/scripts/stats off, and both together all left mpv at 32%. The cost is not in shaders or overlays. It is per-frame overhead: the EGL dma-buf import of each decoded surface, Mesa/Panfrost CPU per draw and flush, and the GBM page flip.
+  - **Next step: profile it.** There is no `perf` on the board and tracefs is not reachable. Cross-build `perf` from the kernel tree (`tools/perf`) and record `mpv` on both paths; that says which of the three it is and whether anything stock can avoid it.
 - **Stock mpv knobs:** `--video-sync`, `--opengl-swapinterval`, `--interpolation=no`, `--hwdec-interop`, OSD off, and the cheap scale settings already in place.
 - **Stock direct paths that already exist:** FFmpeg #20847 + mpv #14690 (`v4l2request-overlay`, the stock version of what `patches/mpv` did), and GStreamer `kmssink` without our patches where the plane takes the decoder's buffer as is.
 - **A compositor:** a Wayland compositor that puts the video dma-buf on the overlay plane (e.g. `vo=dmabuf-wayland`), stock end to end.
