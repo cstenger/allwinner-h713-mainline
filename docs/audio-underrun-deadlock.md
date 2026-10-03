@@ -85,7 +85,7 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
 ## State
 
 - [x] Root cause, from source and the PREPARED/avail-0 capture
-- [ ] Baseline: patched mpv (`/usr/local/bin/mpv`, direct `vo=drm`) also freezes under the hammer
-- [ ] 0005 written, built with `tools/video/build-mpv.sh`, installed
+- [x] Baseline: patched mpv (`/usr/local/bin/mpv`, direct `vo=drm`) froze at forced underrun **#2**, same PREPARED/avail-0 state
+- [x] 0005 written (`patches/mpv/0005-audio-start-a-full-device-that-was-never-started.patch`); [ ] built with `tools/video/build-mpv.sh`, installed
 - [ ] Hammer: 0 freezes over a long run with 0005
 - [ ] Regression: direct path still plays (va-regress loop lines, a 720p clip)

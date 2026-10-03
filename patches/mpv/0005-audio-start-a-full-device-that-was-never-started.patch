@@ -1,0 +1,68 @@
+From accd8c3199d06d6364cb6d3572070f7a6565fd8b Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Fri, 2 Oct 2026 17:03:15 -0700
+Subject: [PATCH] audio: start a full device that was never started
+
+mpv can freeze for good after an audio underrun with ao_alsa: video stops,
+every thread idles in a futex, and the PCM sits in PREPARED with avail 0,
+a full buffer that never starts. The log ends at "restarting audio after
+underrun", with no "starting AO".
+
+ao_alsa sets start_threshold to INT_MAX, so the device must be started
+explicitly, and ao_play_data() starts it only right after a successful
+write. The race:
+
+1. ao_play_data() reads the state: RUNNING, with free space.
+2. The underrun lands. audio_write()'s own recover_and_get_state() sees
+   XRUN, calls snd_pcm_prepare(), and writes into the prepared PCM while
+   p->streaming is still set, so no start follows.
+3. The next pass reads PREPARED, takes the eof path, clears streaming and
+   playing, and the core restarts audio.
+4. The restart finds free_samples == 0 and returns before writing, so the
+   start, which only follows a write, never comes.
+
+Anything that delays the ao thread between steps 1 and 2 widens the
+window. On an Allwinner H713 board, forced underrun #32 froze a run
+(SIGSTOP 0.2-2 s each, tools/video/xrun-hammer.sh), while --ao=null
+recovered 40 of 40.
+
+When there is no space, mpv is playing and not paused or streaming, and
+the device is not playing but holds queued data, start it. Nothing else
+reaches that state. The code is unchanged on master as of 2026-10-02.
+---
+ audio/out/buffer.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/audio/out/buffer.c b/audio/out/buffer.c
+index 037d2860f3..b93068d510 100644
+--- a/audio/out/buffer.c
++++ b/audio/out/buffer.c
+@@ -639,8 +639,24 @@ static bool ao_play_data(struct ao *ao)
+ 
+     void **planes = NULL;
+     int space = state.free_samples;
+-    if (!space)
++    if (!space) {
++        // A full device that was never started. The driver's write() may
++        // recover from an underrun on its own (ao_alsa: XRUN -> prepare)
++        // and then queue data into the prepared device while p->streaming
++        // is still set, so no start follows. The underrun is then reported,
++        // streaming is cleared and playback restarted -- but the device is
++        // full, so nothing is written here and the start below, which only
++        // follows a write, never comes: a permanent stall with ALSA in
++        // PREPARED and avail 0. Start it.
++        if (!p->streaming && !state.playing && !p->paused &&
++            state.queued_samples > 0 && !ao->untimed)
++        {
++            MP_VERBOSE(ao, "starting AO (full but never started)\n");
++            ao->driver->start(ao);
++            p->streaming = true;
++        }
+         return false;
++    }
+     mp_assert(space >= 0);
+ 
+     int samples = 0;
+-- 
+2.55.0
+
