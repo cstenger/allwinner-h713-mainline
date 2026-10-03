@@ -1,3 +1,9 @@
+> **RETIRED 2026-10-03 (WP3).** The board now runs megi's
+> `libva-v4l2_request` plus a six-patch series:
+> [`../libva-v4l2_request/`](../libva-v4l2_request/README.md), which also maps
+> each patch below to where it went. This series stays reproducible with
+> `tools/video/build-va-driver-bootlin.sh`.
+
 > **Scaler integration next (2026-09-17):** Cedrus now supports arbitrary even
 > NV12 CAPTURE dimensions for H.264/HEVC, with full-size private reconstruction.
 > This VA shim does not yet negotiate and propagate those scaled surfaces for

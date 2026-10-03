@@ -1,6 +1,12 @@
 #!/bin/sh
 # Every VA-API decode path, in one memory mode, scored. RUNS ON THE TARGET.
 #
+# Since 2026-10-03 the driver is megi's (patches/libva-v4l2_request/), which
+# always uses MMAP capture and keeps frames alive across a resolution change
+# without a DMA-BUF heap: run it as `dmabuf`, the mode whose expectations it
+# meets. The `mmap` negative control below belongs to the retired bootlin
+# driver (build-va-driver-bootlin.sh), where it still applies.
+#
 # WHY IT EXISTS. The VA driver has two ways to provide capture memory
 # (libva-v4l2-request 0018): DMA-BUF heap buffers owned by the surfaces, the
 # default, and the queue's own MMAP buffers, the fallback. A change to either

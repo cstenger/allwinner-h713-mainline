@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Build and install the VA-API driver on the board, reproducibly. RUNS ON THE HOST.
 #
-# The driver is megi's libva-v4l2_request (https://xff.cz/git/libva-v4l2_request/)
-# at a pinned commit, plus patches/libva-v4l2_request/. It replaced bootlin's
-# PR #38 on 2026-10-03; that build is tools/video/build-va-driver-bootlin.sh.
+# RETIRED 2026-10-03 (WP3): the bootlin PR #38 driver this builds was replaced
+# by megi's libva-v4l2_request (tools/video/build-va-driver.sh,
+# patches/libva-v4l2_request/README.md). Kept so the old series stays
+# reproducible if the decision is reopened. Its stamp keys are the same, so
+# installing it overwrites the megi stamp.
 #
 # WHY THIS EXISTS. Hardware video decode on this board depends on a .so that
 # was, until now, built by hand: clone a pull request, apply the patch series,
@@ -32,12 +34,11 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 BOARD=${BOARD:-192.168.4.1}
 SSH="ssh -o ConnectTimeout=8 root@$BOARD"
-# Not local/upstream/va-driver-src: that is the retired bootlin tree, and this
-# script resets its tree hard.
-SRC=${SRC:-$ROOT/local/upstream/va-driver-megi-src}
-PATCHES=$ROOT/patches/libva-v4l2_request
-UPSTREAM=https://xff.cz/git/libva-v4l2_request/
-BASE=cac6ece0e23ac1f944dd3af266680aff0c3184df
+SRC=${SRC:-$ROOT/local/upstream/va-driver-src}
+PATCHES=$ROOT/patches/libva-v4l2-request
+UPSTREAM=https://github.com/bootlin/libva-v4l2-request
+PR=38
+BASE=1c5f2cad21dff3b56d35355082867c24e4f191c6
 DRI=/usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so
 
 install=0; test=0
@@ -51,12 +52,13 @@ done
 
 # --- 1. the source tree, patched, on the host -------------------------------
 if [ ! -d "$SRC/.git" ]; then
-	echo "==> cloning $UPSTREAM"
+	echo "==> cloning $UPSTREAM (PR #$PR)"
 	git clone -q "$UPSTREAM" "$SRC"
+	git -C "$SRC" fetch -q origin "refs/pull/$PR/head:pr$PR"
 fi
 
 echo "==> checking out the pinned base and applying the series"
-git -C "$SRC" checkout -q --detach "$BASE"
+git -C "$SRC" checkout -q "pr$PR"
 git -C "$SRC" reset -q --hard "$BASE"
 git -C "$SRC" clean -qfd
 
@@ -142,7 +144,8 @@ $SSH "LIBVA_DRIVER_NAME=v4l2_request vainfo 2>/dev/null |
 
 if [ "$test" -eq 1 ]; then
 	echo "==> gates"
-	# The whole regression suite against the INSTALLED driver: every codec,
-	# AV1 8/10-bit, seek loops, resolution changes, concurrency (~6 min).
-	$SSH 'sh /root/va-regress.sh dmabuf 2>&1 | tail -22'
+	$SSH 'cd /root/video-test &&
+	      ./hevc-decode-test.sh 2>&1 | tail -2 &&
+	      ./va-decode-test.sh 2>&1 | tail -1 &&
+	      ./hevc-10bit-test.sh 2>&1 | tail -1'
 fi

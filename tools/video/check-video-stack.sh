@@ -69,16 +69,16 @@ else
 fi
 
 echo
-echo "=== VA-API driver (libva-v4l2-request) ==="
+echo "=== VA-API driver (libva-v4l2_request, megi) ==="
 
 series_id=$(while read -r p; do
-	[ -n "$p" ] && sha256sum "$ROOT/patches/libva-v4l2-request/$p"
-done < "$ROOT/patches/libva-v4l2-request/series" | sha256sum | cut -c1-16)
+	[ -n "$p" ] && sha256sum "$ROOT/patches/libva-v4l2_request/$p"
+done < "$ROOT/patches/libva-v4l2_request/series" | sha256sum | cut -c1-16)
 
 board_id=$($SSH 'sed -n "s/^va_driver_series=//p" /etc/h713-video-stack 2>/dev/null')
 board_when=$($SSH 'sed -n "s/^va_driver_installed=//p" /etc/h713-video-stack 2>/dev/null')
 
-echo "    series now  $series_id ($(grep -c . "$ROOT/patches/libva-v4l2-request/series") patches)"
+echo "    series now  $series_id ($(grep -c . "$ROOT/patches/libva-v4l2_request/series") patches)"
 if [ -z "$board_id" ]; then
 	echo "    board       <unstamped>"
 	echo "    DRIFT — the installed driver predates stamping, so it cannot be"

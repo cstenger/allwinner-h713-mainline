@@ -14,6 +14,15 @@ _Last updated: 2026-09-23._
 > drivers ([gpu-fallback-plan.md](gpu-fallback-plan.md)). Sections below
 > that call the GPU a last resort predate this.
 
+> **2026-10-03 — new VA-API driver.** The board runs megi's
+> `libva-v4l2_request` v1.2 plus six patches
+> ([patches/libva-v4l2_request/](../patches/libva-v4l2_request/README.md)),
+> replacing bootlin PR #38 and its 25 patches (WP3). `va-regress.sh` has 0
+> failing lines, the VE scaler output is byte-identical, the stock GPU path is
+> at parity, and 12/12 damaged AV1 streams survive. Kernel 0155 stops cedrus
+> accepting VP9 Profile 2. Mentions of "libva-v4l2-request patch NNNN" below
+> refer to the retired series.
+
 ## Current video decoder state — 2026-09-23
 
 H.264 and HEVC now use the VE+0xf00 polyphase scaler, with arbitrary even NV12

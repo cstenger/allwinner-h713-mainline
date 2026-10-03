@@ -269,6 +269,19 @@ alignment / 8) from the capture pitch instead of hard-coding the vendor's 16.
 - It also fixes a bug that predates 0020: stock GStreamer `v4l2slvp9dec` at
   330 wide was 1/30 frames bit-exact, and is 30/30 with 0154.
 
+## VA driver switch to megi's libva-v4l2_request (0155, 2026-10-03)
+
+WP3 of [the GPU fallback plan](../../docs/gpu-fallback-plan.md); the VA driver
+itself is [`../libva-v4l2_request/`](../libva-v4l2_request/README.md).
+
+**0155** makes cedrus refuse VP9 profiles other than 0 in `try_ctrl`. Before
+it, the VP9 frame control had no `cedrus_ctrl_ops`, so a 10-bit Profile 2 frame
+was accepted and failed only at job setup (`-22`, every frame). megi's driver
+probes exactly that refusal to decide whether to advertise
+`VAProfileVP9Profile2`. Without 0155, ffmpeg picks VA-API for a Profile 2
+stream and decodes nothing instead of falling back to software. cedrus is a
+module, so deploy with `tools/install-kernel-module.sh`.
+
 ## Retired: display-side scaling (2026-09-23)
 
 Six patches left `series` — **0098, 0103, 0105, 0106, 0108, 0111** — and the

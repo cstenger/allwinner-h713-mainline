@@ -284,7 +284,10 @@ Also open:
 - **Stock direct paths that already exist:** FFmpeg #20847 + mpv #14690 (`v4l2request-overlay`, the stock version of what `patches/mpv` did), and GStreamer `kmssink` without our patches where the plane takes the decoder's buffer as is.
 - **A compositor:** a Wayland compositor that puts the video dma-buf on the overlay plane (e.g. `vo=dmabuf-wayland`), stock end to end.
 
-**WP3 — VA driver base.**
+**WP3 — VA driver base. CLOSED 2026-10-03.**
+- **Outcome:** the board runs megi's `libva-v4l2_request` v1.2 plus six patches ([patches/libva-v4l2_request/README.md](../patches/libva-v4l2_request/README.md)), replacing bootlin PR #38 and its 25. As shipped, megi passed everything except AV1 (a thread race: SIGSEGV), 10-bit AV1 (no `PL10`) and resolution changes (frames freed with their context). With the series, `va-regress.sh` has 0 failing lines and the scaler output is byte-identical. The GPU path is at parity, and 12/12 damaged AV1 streams survive.
+- **Kernel 0155:** cedrus refuses VP9 Profile 2 in `try_ctrl`, so the driver stops advertising it.
+- **Carried to WP4:** unscaled exports report the padded height (1088); AV1 10-bit on GL now falls back to software; decode errors reach clients only through the AV1 gate.
 - Diff megi's v1.2 feature by feature against our `patches/libva-v4l2-request` 0001-0019: multi-device, codec backends, DMA-BUF heap capture, renegotiation, scale/crop, export modifiers, GStreamer `va`.
 - Build it off-target, install it side by side, and run `va-regress.sh` plus `vah264dec ! glimagesink`.
 - Decide whether to rebase our remaining delta onto it, and record the decision in the patch README.
@@ -294,7 +297,8 @@ Also open:
   - The VA driver already exposes the scaler through `V4L2_REQUEST_SCALE` (libva 0008/0010), and GStreamer's `va*dec` now work (libva 0021–0025). So `vah264dec`/`vah265dec ! kmssink` with the variable set may need no GStreamer patch at all.
   - Limits: the decode-time scaler exists for H.264 and HEVC only. VP9 scaling is unported (WP6), and AV1 has none; those stay on the GPU path.
   - It also needs aspect-fit: a non-16:9 source still has to be letterboxed, which the plane cannot do yet ([letterbox-plan.md](letterbox-plan.md)).
-- In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10.
+- In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10. With megi's driver (WP3) stock mpv currently falls back to software for 10-bit AV1 on `vo=gpu`.
+- The scaler variables are megi patch 0005 now, not libva 0008/0010. Unscaled exports report the padded CAPTURE height (1088), which `kmssink` would show as 8 extra rows.
 - Add `tools/video/shaders/lsb10.glsl` (×64).
 - Add `tools/video/h713-play FILE`. It probes codec, size, rotation and bit depth, applies the routing table, prints its decision, then runs stock mpv with the VE pre-shrink environment (aspect-fit, even, never upscale) or the 10-bit environment and shader, or the direct mode if WP2 keeps it.
 
