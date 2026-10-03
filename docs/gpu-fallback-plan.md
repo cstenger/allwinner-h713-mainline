@@ -173,7 +173,7 @@ What the table says:
   - the ALSA PCM sat **PREPARED with a full buffer** (`avail 0`), never started;
   - video, paced by the audio clock, waited forever.
 
-  `tools/video/xrun-hammer.sh` reproduces it on demand: forced underruns, and the 32nd froze. `--ao=null` recovered from 40 of 40. The kernel logs nothing. So the bug sits between mpv's `ao_alsa` underrun recovery and the H713 codec PCM, and it **affects every mpv path, direct included**. It does not block the GPU path. It needs its own investigation (strace the start/prepare sequence; try aplay-level recovery).
+  `tools/video/xrun-hammer.sh` reproduces it on demand: forced underruns, and the 32nd froze. `--ao=null` recovered from 40 of 40. The kernel logs nothing. So the bug sits between mpv's `ao_alsa` underrun recovery and the H713 codec PCM, and it **affects every mpv path, direct included**. It does not block the GPU path. **Fixed in our mpv by `patches/mpv/0005`** (480 forced underruns, 0 freezes; [audio-underrun-deadlock.md](audio-underrun-deadlock.md)); Debian's mpv keeps it, which bears on the WP4 launcher's choice of binary.
 - On cost alone, the GPU path is cheap with these settings: 21% of one shader core at the lowest OPP, the same CPU load, and +3 °C. The direct path's advantage is efficiency, not feasibility.
 - `tools/video/gpu-stall-catch.sh` loops this playback and, when decode interrupts stop, dumps thread stacks, dma-buf fences, the DRM state and dmesg to `/var/tmp/stall/`.
 

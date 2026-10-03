@@ -1,8 +1,13 @@
 # Audio underrun deadlock in mpv (2026-10-02)
 
-**Status:** root cause found in mpv's source. Fix: `patches/mpv/0005` (in
-progress; see "State" at the end). This file is the handoff if the session ends
-mid-way.
+**Status: FIXED in our mpv (`patches/mpv/0005`), hardware-validated
+2026-10-02.**
+- 0 freezes in 480 forced underruns, against 4 deadlocks for the pre-0005
+  binary.
+- The new start path was seen rescuing the stranded state.
+
+Debian's `/usr/bin/mpv` (and upstream master) still has the bug. A separate,
+rarer freeze, an underrun at a `--loop-file` seek, remains open (see "State").
 
 ## Symptom
 
@@ -87,7 +92,7 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
 - [x] Root cause, from source and the PREPARED/avail-0 capture
 - [x] Baseline: patched mpv (`/usr/local/bin/mpv`, direct `vo=drm`) froze at forced underrun **#2**, same PREPARED/avail-0 state
 - [x] 0005 written (`patches/mpv/0005-audio-start-a-full-device-that-was-never-started.patch`), built with `tools/video/build-mpv.sh`, installed to `/usr/local/bin/mpv` (fix string verified in the binary)
-- [~] Hammer with 0005, direct path. The PREPARED/avail-0 deadlock did not
+- [x] Hammer with 0005, direct path. The PREPARED/avail-0 deadlock did not
   recur: the run reached #51, against #2 before. But **#51 froze
   differently**:
   - ALSA was **RUNNING** (delay 3984, avail 816), not PREPARED;
@@ -108,7 +113,7 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
   underrun colliding with `--loop-file`'s seek: a separate mpv issue, not a
   failure of 0005 and not the driver. Plain looping is known-good (the
   10-minute looped WP2 runs were clean).
-- [~] 0005 alone: 4 x 40 underruns, each run kept short of the loop point.
+- [x] 0005 alone: 4 x 40 underruns, each run kept short of the loop point.
   **160/160 recovered, but `rescued-by-0005: 0` in every run.** The fix never
   fired, so this does NOT show that 0005 fixes anything. Either the deadlock
   never arose in these 160 attempts, or 0005's condition misses the real
@@ -121,6 +126,21 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
   is suggestive, not proof.
   - The instrument works: the hammer log carries buffer.c's verbose lines
     (9 "starting AO" in one run), so a rescue would have been counted.
-  - Running 8 x 40 more on 0005: at the old rate about 6 deadlocks are
-    expected, each of which should show as a rescue.
-- [ ] Regression: direct path still plays (va-regress loop lines, a 720p clip)
+  - **8 x 40 more on 0005: 320/320 recovered, `rescued-by-0005: 1`.** The
+    new path fired on the real stranded state and playback continued.
+
+  **Total with 0005: 480 forced underruns, 0 freezes, 1 rescue.** At the old
+  binary's measured rate (4 deadlocks in all, one per ~30–55 underruns) a
+  fix-less 480 would pass well under 0.1% of the time.
+
+  One rescue is fewer than that rate predicts. The old rate rests on only 4
+  events, so the deadlock is probably rarer than estimated. The freeze count,
+  not the rescue count, is the measure.
+- [x] Regression: `va-regress.sh dmabuf` 0 failing (its four mpv `--loop-file`
+  lines run `/usr/local/bin/mpv`, i.e. 0005), and the direct path plays 720p
+  for 30 s with 0 drops.
+- [ ] **Open, separate:** a forced underrun at a `--loop-file` seek froze the
+  direct path twice (#51 and #56 of long runs that crossed the 180 s loop
+  point). Audio DMA was healthy and mpv kept feeding ALSA, but video
+  decoding stopped. It is not the stranded-start state. Investigate with a
+  short clip, so every few underruns cross a loop.

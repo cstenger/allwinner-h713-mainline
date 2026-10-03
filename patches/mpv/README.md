@@ -364,3 +364,22 @@ grep answered "did the patch compile in", the VA gates answered "did decode
 produce right bytes". **Nobody asked the display whether anything was on it.**
 Ask what a passing suite is blind to — and when the deliverable is a picture,
 one look at the panel outranks every log in the stack.
+
+## 0005: audio underrun deadlock (2026-10-02)
+
+Not a display patch. mpv starts the ALSA device only right after a write, but
+`ao_alsa` can recover from an underrun inside `write()` and queue data into a
+prepared, unstarted device. Playback then freezes for good with the PCM in
+`PREPARED` and `avail 0`. 0005 starts a device that is full but was never
+started.
+
+Measured with `tools/video/xrun-hammer.sh`, direct path:
+- 480 forced underruns, 0 freezes, against 4 deadlocks for the pre-0005 build;
+- the rescue was observed firing.
+
+Root cause, numbers and the open loop-seek case:
+[../../docs/audio-underrun-deadlock.md](../../docs/audio-underrun-deadlock.md).
+Upstream master has the same code.
+
+This patch is a reason to keep a patched mpv even if the direct path is
+retired: Debian's `/usr/bin/mpv` has the bug.
