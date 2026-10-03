@@ -123,7 +123,11 @@ and notes in [letterbox-plan.md](letterbox-plan.md), [roadmap.md](roadmap.md) an
   - Not run: `gles-play` (not built on this rootfs).
 - Build from a fresh tree.
 
-**WP2 — measure before building.**
+**WP2 — measure before building. CLOSED 2026-10-02.**
+- **Outcome:** stock mpv on the GPU path with audio through PipeWire, and the direct path retired.
+- **Gate:** passes with the cheap settings.
+- **Fixed along the way:** kernel 0092/0152–0154, libva 0020–0025, and the audio deadlock (PipeWire).
+- **Carried forward:** the CPU-gap profiling (needs a `perf` cross-build), and the `kmssink` size limits, which move to WP4.
 - Run stock `/usr/bin/mpv --vo=gpu` and `--vo=gpu-next` (`--gpu-context=drm --hwdec=vaapi`, `LIBVA_DRIVER_NAME=v4l2_request`) over the capture media set (`tools/stock/make-capture-media.sh`): 1080p H.264/AV1/AV1 10-bit/VP9, 4K H.264, 852x480, 352x288, the rot90 set and native 720p.
 - Record dropped frames, A/V sync, GPU IRQ/s, CPU, temperature, the DRM debugfs plane state, and an operator photo per clip (`tools/display/measure-panel-photo.py`).
 - **Direct vs GPU at 720p**, 10 minutes each. This decides whether `patches/mpv` and `patches/gstreamer` survive.
@@ -286,6 +290,10 @@ Also open:
 - Decide whether to rebase our remaining delta onto it, and record the decision in the patch README.
 
 **WP4 — the launcher and 10-bit for GL.**
+- **Operator idea (2026-10-02): put the VE's polyphase scaler in front of stock `kmssink`** so sizes other than 1280x720 reach the video plane with the GPU idle (stock `kmssink` takes only exact 1280x720; see the WP2 follow-up).
+  - The VA driver already exposes the scaler through `V4L2_REQUEST_SCALE` (libva 0008/0010), and GStreamer's `va*dec` now work (libva 0021–0025). So `vah264dec`/`vah265dec ! kmssink` with the variable set may need no GStreamer patch at all.
+  - Limits: the decode-time scaler exists for H.264 and HEVC only. VP9 scaling is unported (WP6), and AV1 has none; those stay on the GPU path.
+  - It also needs aspect-fit: a non-16:9 source still has to be letterboxed, which the plane cannot do yet ([letterbox-plan.md](letterbox-plan.md)).
 - In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10.
 - Add `tools/video/shaders/lsb10.glsl` (×64).
 - Add `tools/video/h713-play FILE`. It probes codec, size, rotation and bit depth, applies the routing table, prints its decision, then runs stock mpv with the VE pre-shrink environment (aspect-fit, even, never upscale) or the 10-bit environment and shader, or the direct mode if WP2 keeps it.
