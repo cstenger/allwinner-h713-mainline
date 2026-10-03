@@ -330,7 +330,8 @@ The scanout grab of the 1080p card through plane-ve is the full card, 1280x720, 
   - **Fixed in `pipewiresink` (patches/pipewire 0001, on the board via `build-gst-pipewire.sh --install`, `dpkg-divert`).**
     - Stock: +768 ms after the sink was idle (the device took ~740 ms to pull, and the backlog queued meanwhile never drained); +80 ms warm, with nothing ever aligning the stream to the clock.
     - Patched: audio waits for the graph's first pull, and each buffer is aligned to the clock (skip or silence beyond 30 ms). **+43 to +54 ms idle, +45 to +47 ms warm**, steady across runs.
-  - What remains is mostly probe bias (vblank, scan-out position, the panel). Judge it by ear before declaring the ALSA node's unreported ring fill (`latency.internal.ns`). See [patches/pipewire/README.md](../patches/pipewire/README.md). **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
+  - What remains is mostly probe bias (vblank, scan-out position, the panel). See [patches/pipewire/README.md](../patches/pipewire/README.md).
+  - **Operator, 2026-10-03, `leota-1080p.mp4` through plane-ve with 0001: in sync, clean audio, no stutter.** The residual +45 ms on the probe is therefore not chased, and `latency.internal.ns` stays unset. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
 
 Built:
 - `tools/video/gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]` plays onto the video plane with audio (PipeWire) when the file has any. It prints rendered, dropped and position, and stops cleanly on Ctrl-C or SIGTERM.
@@ -345,7 +346,7 @@ Limits of the plane routes, all set by the plane taking exactly 1280x720:
 
 Still open in WP4:
 - the three items below;
-- ~~an operator look at the panel (plane-ve 1080p)~~ done 2026-10-03: smooth motion, all four edges, clean detail, neutral greys; audio still to confirm by ear;
+- ~~an operator look at the panel (plane-ve 1080p)~~ done 2026-10-03: smooth motion, all four edges, clean detail, neutral greys; audio in sync and clean (with patches/pipewire 0001);
 - a 10-minute soak of each plane route;
 - installing `h713-play` and `gst-plane-play` from the rootfs build instead of by hand.
 

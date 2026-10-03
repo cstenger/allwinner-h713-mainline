@@ -58,7 +58,8 @@ in frames, which is how `pw_time.queued` is read.
   fill can be declared with the node property `latency.internal.ns`, or at
   runtime with `latencyOffsetNsec`. 0001 then accounts for it automatically,
   through `pw_time.delay`. That is calibration, so it should be judged by ear
-  on the panel before it is configured.
+  on the panel before it is configured. **Judged 2026-10-03: the operator
+  heard the plane-ve route in sync with 0001 alone, so it stays unset.**
 - **An unexplained start stall.** Twice, a run straight after replacing the
   plugin never reached PLAYING (0 frames, position 0). It has not
   reproduced in 8 runs since, idle or warm.
