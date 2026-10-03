@@ -345,6 +345,7 @@ The scanout grab of the 1080p card through plane-ve is the full card, 1280x720, 
   - **DECISION (operator, 2026-10-03): stock `alsasink device=pipewire` is the plane player's default.** `patches/pipewire` is retired, and Debian's plugin was restored on the board (divert removed, `dpkg -V` clean).
     - The rootfs gains `gstreamer1.0-alsa` and `pipewire-alsa`, and keeps the hardware as the default ALSA device (`customize.sh`).
     - Rechecked with defaults through `h713-play`: plane-ve 0.0 ms warm and +6.5 ms idle with a cold registry; plane-native −0.6 ms.
+    - **Operator, 2026-10-03, `leota-1080p.mp4` through plane-ve with the alsasink default: looks and sounds good (in sync, clean, no stutter).**
   - **The "unexplained 0-frame start" was the probe.** `av-sync-probe` opened `/dev/dri/card0` first and became DRM master, so `kmssink` got EACCES on every commit. It happened when a cold registry delayed the player past the probe's start. The probe now drops master, and warns when its audio capture comes up short. It must be started after playback. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
 
 Built:
