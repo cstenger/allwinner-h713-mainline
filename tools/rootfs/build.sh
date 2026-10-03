@@ -52,7 +52,13 @@ ORIGINAL_ARGS=("$@")
 #                              Driving ALSA directly can deadlock after an
 #                              underrun (docs/audio-underrun-deadlock.md);
 #                              customize.sh runs it as the user "media".
-VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
+#   gstreamer1.0-pipewire      pipewiresink, GStreamer's way into that server.
+#                              Without it autoaudiosink finds no working sink
+#                              (no pipewire-pulse, no ALSA plugin) and settles
+#                              on openalsink, which plays nowhere audible: the
+#                              WP4 plane routes were silent with audio=yes.
+#                              Added 2026-10-03 (WP4).
+VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,gstreamer1.0-pipewire,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
 BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
 
 # --profile dev: rebuild tools/video ON the board. This half is genuinely

@@ -311,6 +311,13 @@ The scanout grab of the 1080p card through plane-ve is the full card, 1280x720, 
 - **GStreamer believes the SPS, not the surface.** Caps and every buffer's `GstVideoMeta` say 1920x1080, and kmssink sizes the framebuffer from the meta ("bad pitch 1280"). `capssetter` cannot fix the meta, and it breaks DMABuf negotiation upstream. The fix is a pad probe that rewrites both: `tools/video/gst-plane-play.c`, stock elements otherwise.
 - **kmssink dropped about one frame a second** (decoder QoS, 30 in 30 s, even without audio). After its plane commit, which already waits for the flip on this driver, kmssink waits for a vblank of its own. That makes up to a whole 30 fps frame per render. The fix is stock `skip-vsync=true`, which brings the drops to 0. The WP2 `kmssink-matrix` numbers (29.7 fps average) carry this loss.
 
+- **The plane routes were silent while reporting `audio=yes`** (operator, 2026-10-03). The rootfs had no GStreamer PipeWire plugin and no pulse server, so `autoaudiosink` settled on `openalsink`, which plays nowhere audible. The fix has three parts:
+  - `gstreamer1.0-pipewire` is now in the rootfs (`tools/rootfs/build.sh`), and was installed by hand on the bench board;
+  - the player names `pipewiresink`, which has rank none and is never autoplugged;
+  - the pipeline is pinned to the system clock. On `pipewiresink`'s own clock, 67 of ~450 frames were shown.
+
+  Now: 0 dropped, 30.0 fps against position on three routes, with the PCM RUNNING. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
+
 Built:
 - `tools/video/gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]` plays onto the video plane with audio (PipeWire) when the file has any. It prints rendered, dropped and position, and stops cleanly on Ctrl-C or SIGTERM.
 - `tools/video/h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS]` probes the file, prints one decision line and runs the route. Every capture clip routes as intended: 1080p H.264/HEVC → plane-ve; native 720p ×4 → plane-native; AV1/VP9 1080p, 10-bit, rotated, and anything not 16:9 → gpu.
@@ -324,7 +331,7 @@ Limits of the plane routes, all set by the plane taking exactly 1280x720:
 
 Still open in WP4:
 - the three items below;
-- an operator look at the panel (plane-ve 1080p);
+- ~~an operator look at the panel (plane-ve 1080p)~~ done 2026-10-03: smooth motion, all four edges, clean detail, neutral greys; audio still to confirm by ear;
 - a 10-minute soak of each plane route;
 - installing `h713-play` and `gst-plane-play` from the rootfs build instead of by hand.
 

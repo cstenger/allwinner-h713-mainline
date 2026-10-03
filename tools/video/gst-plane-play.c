@@ -21,8 +21,8 @@
  *            really holds. The caller sets V4L2_REQUEST_SCALE and
  *            V4L2_REQUEST_CROP and passes the same size here.
  *
- * Audio, when the file has any, goes to the default sink (PipeWire on the
- * board) and clocks the pipeline.
+ * Audio, when the file has any, goes to PipeWire through pipewiresink
+ * (gstreamer1.0-pipewire) and clocks the pipeline.
  *
  *   usage: gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]
  *          CODEC   h264 | h265 | vp9 | av1
@@ -175,8 +175,24 @@ static void on_pad_added(GstElement *decodebin, GstPad *pad, gpointer data)
 		p->have_video = attach(p, pad, description);
 		g_free(description);
 	} else if (g_str_has_prefix(name, "audio/") && !p->have_audio) {
-		p->have_audio = attach(p, pad, "queue ! audioconvert ! "
-				       "audioresample ! autoaudiosink");
+		/* Named, not autoplugged: without a pulse server, autoaudiosink
+		 * skips pipewiresink (rank none) and settles on openalsink,
+		 * which plays nowhere audible (2026-10-03). The pipeline clock
+		 * is pinned to the system clock in main(). */
+		GstElementFactory *pw = gst_element_factory_find("pipewiresink");
+
+		description = g_strdup_printf("queue ! audioconvert ! "
+					      "audioresample ! %s",
+					      pw ? "pipewiresink" :
+					      "autoaudiosink");
+		if (pw)
+			gst_object_unref(pw);
+		else
+			fprintf(stderr, "gst-plane-play: no pipewiresink "
+				"(gstreamer1.0-pipewire); audio may go "
+				"nowhere\n");
+		p->have_audio = attach(p, pad, description);
+		g_free(description);
 	}
 
 	gst_caps_unref(caps);
@@ -224,6 +240,7 @@ int main(int argc, char **argv)
 	gint64 position;
 	GstElement *source, *vsink;
 	GstCaps *stop_caps;
+	GstClock *clock;
 	gchar *uri;
 
 	gst_init(&argc, &argv);
@@ -248,6 +265,13 @@ int main(int argc, char **argv)
 	}
 
 	p.pipeline = gst_pipeline_new("play");
+	/* Not pipewiresink's clock: with it the 720p clip rendered 67 frames
+	 * in 15 s, the rest late, and the position ran ahead of real time.
+	 * On the system clock, which the audio then follows, 426 of 426
+	 * (2026-10-03). */
+	clock = gst_system_clock_obtain();
+	gst_pipeline_use_clock(GST_PIPELINE(p.pipeline), clock);
+	gst_object_unref(clock);
 	p.loop = g_main_loop_new(NULL, FALSE);
 
 	/* Stop at the compressed video (our decoder, not decodebin's pick)
