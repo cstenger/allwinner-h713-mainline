@@ -264,6 +264,19 @@ Also open:
   - **Stock knobs do not touch it.** `--gpu-dumb-mode=yes`, OSD/scripts/stats off, and both together all left mpv at 32%. The cost is not in shaders or overlays. It is per-frame overhead: the EGL dma-buf import of each decoded surface, Mesa/Panfrost CPU per draw and flush, and the GBM page flip.
   - **Next step: profile it.** There is no `perf` on the board and tracefs is not reachable. Cross-build `perf` from the kernel tree (`tools/perf`) and record `mpv` on both paths; that says which of the three it is and whether anything stock can avoid it.
 - **Stock mpv knobs:** `--video-sync`, `--opengl-swapinterval`, `--interpolation=no`, `--hwdec-interop`, OSD off, and the cheap scale settings already in place.
+- **Stock `kmssink`: measured 2026-10-02** (`local/h713-lab/wp2-20261002/kmssink-matrix.txt`), with stock GStreamer `v4l2sl*dec ! kmssink driver-name=sun50i-h713-afbd`, no patches.
+  - **Native 1280x720, every codec (H.264, HEVC, VP9, AV1):** zero-copy NV12 onto the video plane, **2–3% whole-board CPU, GPU idle, 0 dropped.** Better than the retired direct path (8%). AV1's padded 1280x768 buffer is accepted.
+  - **Every other size fails.**
+    - 1080p, 2560x1080: `kmssink` resource error at commit.
+    - 852x480, 352x288, 720x576: no caps negotiation at all (the driver offers the plane for 1280x720 only).
+    - `can-scale=false` changes neither.
+  - **720p rotated 90°:** plays unrotated (`kmssink` ignores the orientation tag).
+  - **10-bit AV1:** crashes (stock has no LSB10 P010 path).
+  - **What a size-independent `kmssink` would need, all kernel-side:**
+    - smaller than the panel: the display driver must accept a small framebuffer and either letterbox it ([letterbox-plan.md](letterbox-plan.md)) or upscale it with the `0x05180000` upscaler, whose driver patches were retired on 2026-09-23;
+    - larger than the panel: no display downscaler exists, and the VE's decode-time scaler needs a userspace request that stock GStreamer never makes, so it stays on the GPU path;
+    - 90/270° rotation: GPU only (the hardware mirror covers 180°).
+  - **Usable today:** stock `kmssink` for exact-720p content, the stock GPU path for the rest. The choice belongs in the WP4 launcher.
 - **Stock direct paths that already exist:** FFmpeg #20847 + mpv #14690 (`v4l2request-overlay`, the stock version of what `patches/mpv` did), and GStreamer `kmssink` without our patches where the plane takes the decoder's buffer as is.
 - **A compositor:** a Wayland compositor that puts the video dma-buf on the overlay plane (e.g. `vo=dmabuf-wayland`), stock end to end.
 

@@ -17,6 +17,12 @@
 # hardware decoded (a software fallback would show zero).
 set -u
 CLIP=$1 DEC=$2 DUR=${3:-60}
+# SINK picks the video sink: glimagesink (GPU path, default) or kmssink (plane
+# scanout, no GPU; it needs the display driver named, which it does not know).
+SINK=${SINK:-glimagesink}
+case "$SINK" in
+	kmssink*) [ "$SINK" = kmssink ] && SINK="kmssink driver-name=sun50i-h713-afbd" ;;
+esac
 LOG=/tmp/gst-path.log
 export GST_GL_WINDOW=gbm GST_GL_PLATFORM=egl GST_GL_GBM_DRM_DEVICE=/dev/dri/card0
 export LIBVA_DRIVER_NAME=v4l2_request
@@ -47,7 +53,7 @@ D0=$(irqsum 'video-codec|1c0d000'); G0=$(irqsum 'panfrost-job')
 set -- $(cpustat); CB0=$1 CI0=$2
 T0=$(date +%s)
 gst-launch-1.0 -e -v filesrc location="$CLIP" ! $DEMUX ! $PARSE ! "$DEC" ! \
-	fpsdisplaysink name=fps text-overlay=false video-sink=glimagesink sync=true \
+	fpsdisplaysink name=fps text-overlay=false video-sink="$SINK" sync=true \
 	> "$LOG" 2>&1 &
 PID=$!
 i=0
@@ -68,8 +74,8 @@ case "$CAPS" in
 esac
 ERR=$(grep -aiE 'error|warning|failed|not-negotiated' "$LOG" | sort -u | head -3 | tr '\n' '|')
 
-echo "GST label=$(basename "$CLIP") dec=$DEC secs=$SECS"
+echo "GST label=$(basename "$CLIP") dec=$DEC sink=$SINK secs=$SECS"
 echo "GST caps: $CAPS"
 echo "GST fps: ${LAST:-none}"
 [ -n "$ERR" ] && echo "GST msgs: $ERR"
-echo "GST SUMMARY $(basename "$CLIP") $DEC zerocopy=$ZC dec_irq=$DEC_IRQ gpu_irq_s=$((GIRQ / (SECS > 0 ? SECS : 1))) cpu_all=$(awk -v b=$CB -v i=$CI 'BEGIN { printf "%.0f", 100 * b / (b + i) }')% [${LAST:-no fps report}]"
+echo "GST SUMMARY $(basename "$CLIP") $DEC sink=${SINK%% *} zerocopy=$ZC dec_irq=$DEC_IRQ gpu_irq_s=$((GIRQ / (SECS > 0 ? SECS : 1))) cpu_all=$(awk -v b=$CB -v i=$CI 'BEGIN { printf "%.0f", 100 * b / (b + i) }')% [${LAST:-no fps report}]"

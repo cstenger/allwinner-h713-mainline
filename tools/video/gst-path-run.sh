@@ -14,7 +14,7 @@ echo "# $(date -Is) kernel=$("${SSH[@]}" 'uname -v') dur=$DUR" >> "$OUT"
 for pair in "$@"; do
 	c=${pair%%:*} d=${pair#*:}
 	"${SSH[@]}" "test -s /tmp/$c" || scp -q -F /dev/null "$MEDIA/$c" "root@$BOARD:/tmp/$c"
-	"${SSH[@]}" "sh /root/gst-path-measure.sh /tmp/$c $d $DUR" | tee -a "$OUT"
+	"${SSH[@]}" "SINK='${SINK:-glimagesink}' sh /root/gst-path-measure.sh /tmp/$c $d $DUR" | tee -a "$OUT"
 	sleep 5
 done
 "${SSH[@]}" 'rm -f /tmp/*.mp4 /tmp/*.webm'
