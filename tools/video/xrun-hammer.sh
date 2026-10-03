@@ -11,9 +11,14 @@
 # recovers; the 32nd of a run froze. With --ao=null, 40 of 40 recover. Each
 # underrun is a SIGSTOP of a few hundred ms to 2 s, varied so the resume
 # lands at different points in a period.
+# MPV/VO pick the player: the default is Debian's mpv on the GPU path;
+# MPV=/usr/local/bin/mpv VO=drm is the patched direct path (patches/mpv).
 CLIP=$1 AO=${2:-alsa} N=${3:-40}
+MPV=${MPV:-/usr/bin/mpv} VO=${VO:-gpu}
+case "$VO" in gpu*) CTX=--gpu-context=drm ;; *) CTX= ;; esac
 irq() { awk '/1c0e000/ { print $2 }' /proc/interrupts; }
-LIBVA_DRIVER_NAME=v4l2_request /usr/bin/mpv --no-config --vo=gpu --gpu-context=drm --hwdec=vaapi \
+# shellcheck disable=SC2086
+LIBVA_DRIVER_NAME=v4l2_request "$MPV" --no-config --vo=$VO $CTX --hwdec=vaapi \
 	--ao=$AO --loop-file=inf --input-terminal=no -v --scale=bilinear --dscale=bilinear --cscale=bilinear \
 	--dither-depth=no --deband=no "$CLIP" > /tmp/xh.log 2>&1 < /dev/null &
 P=$!
