@@ -187,12 +187,17 @@ static void on_pad_added(GstElement *decodebin, GstPad *pad, gpointer data)
 		 *  - pipewiresink took planar audio as interleaved (static),
 		 *    then ran +768 ms late after idle and +80 ms warm; patched
 		 *    (patches/pipewire, retired) it still read +43..+60 ms.
+		 * 200 ms buffer / 40 ms periods, not alsasink's 10 ms: every
+		 * period wakes the player's PipeWire thread and kicks the CPU
+		 * frequency governor. Whole board 17.9% -> 7.3% (no audio:
+		 * 2.7%), sync +14..+29 ms (2026-10-03).
 		 * GST_PLANE_PLAY_AUDIOSINK replaces the sink for measurements.
 		 * The pipeline clock is pinned to the system clock in main(). */
 		GstElementFactory *alsa = gst_element_factory_find("alsasink");
 		const char *override = getenv("GST_PLANE_PLAY_AUDIOSINK");
 		const char *sink = override && *override ? override :
-				   alsa ? "alsasink device=pipewire" :
+				   alsa ? "alsasink device=pipewire "
+					  "buffer-time=200000 latency-time=40000" :
 				   "autoaudiosink";
 
 		if (alsa)
