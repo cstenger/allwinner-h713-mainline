@@ -79,13 +79,13 @@ reaches it. It is a downstream mpv patch (`patches/mpv/0005`).
 
 - Debian's `/usr/bin/mpv` keeps the bug. The WP4 launcher should use the
   patched build, or `--ao=null` where there is no audio.
-- Per [[push-only-to-own-forks]], nothing is filed upstream from here. The
+- This project pushes only to its own forks, so nothing is filed upstream from here. The
   analysis above is written so the operator can file it.
 
 ## State
 
 - [x] Root cause, from source and the PREPARED/avail-0 capture
 - [x] Baseline: patched mpv (`/usr/local/bin/mpv`, direct `vo=drm`) froze at forced underrun **#2**, same PREPARED/avail-0 state
-- [x] 0005 written (`patches/mpv/0005-audio-start-a-full-device-that-was-never-started.patch`); [ ] built with `tools/video/build-mpv.sh`, installed
+- [x] 0005 written (`patches/mpv/0005-audio-start-a-full-device-that-was-never-started.patch`), built with `tools/video/build-mpv.sh`, installed to `/usr/local/bin/mpv` (fix string verified in the binary)
 - [ ] Hammer: 0 freezes over a long run with 0005
 - [ ] Regression: direct path still plays (va-regress loop lines, a 720p clip)

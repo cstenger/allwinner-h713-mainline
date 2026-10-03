@@ -39,5 +39,8 @@ while [ $i -lt $N ]; do
 		kill $P; exit 0
 	fi
 done
-echo "ao=$AO: $N forced underruns, playback recovered every time"
+echo "ao=$AO mpv=$MPV vo=$VO: $N forced underruns, playback recovered every time"
+# How often the stranded state actually arose and was rescued (patches/mpv 0005):
+# zero here would mean the run never exercised the fix at all.
+echo "rescued-by-0005: $(tr '\r' '\n' < /tmp/xh.log | grep -c 'full but never started')"
 kill $P; wait $P 2>/dev/null
