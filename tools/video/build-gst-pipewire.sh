@@ -2,6 +2,10 @@
 # Build and install the patched GStreamer PipeWire plugin (pipewiresink) on the
 # board, reproducibly. RUNS ON THE HOST.
 #
+# RETIRED 2026-10-03: the plane player now uses stock alsasink through
+# pipewire-alsa, which measured better (patches/pipewire/README.md). Kept so
+# the patch stays reproducible. --install would replace Debian's plugin again.
+#
 # WHY. Stock pipewiresink kept audio late: +768 ms for the whole stream after
 # the sink had been idle, +80 ms even warm, measured with av-sync-probe
 # (patches/pipewire/README.md). WP4's plane routes play audio through it.

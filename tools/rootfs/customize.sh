@@ -544,5 +544,11 @@ wireplumber.settings = {
   device.routes.default-sink-volume = 1.0
 }
 PWVOL
+# pipewire-alsa is there for alsasink device=pipewire (WP4's plane player).
+# Its 99-pipewire-default.conf would also make PipeWire the default ALSA
+# device for every program; the WP4 measurements were taken without it, so
+# the default stays the hardware (Debian's documented opt-out: delete the
+# /etc link, which dpkg then leaves alone).
+rm -f "$R/etc/alsa/conf.d/99-pipewire-default.conf"
 
 echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media)"

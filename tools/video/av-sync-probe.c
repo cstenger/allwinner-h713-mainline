@@ -24,7 +24,7 @@
  * written in the same graph cycle that fills the ring, and the DAC plays it
  * that much later.
  *
- *   usage: av-sync-probe SECONDS
+ *   usage: av-sync-probe SECONDS     (start it after playback has begun)
  *
  * Build on the board:
  *   gcc -O2 -Wall -o av-sync-probe av-sync-probe.c -lm \
@@ -246,6 +246,11 @@ int main(int argc, char **argv)
 	}
 
 	fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
+	/* The first opener of a DRM device with no master becomes master, and
+	 * a player that opened its sink later was then refused every plane
+	 * commit (kmssink: SetPlane EACCES, 0 frames). Reading framebuffers
+	 * needs only root, not master: let go at once. */
+	drmDropMaster(fd);
 	drmSetClientCap(fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
 	res = fd >= 0 ? drmModeGetPlaneResources(fd) : NULL;
 	if (!res) {
@@ -325,6 +330,13 @@ int main(int argc, char **argv)
 	}
 
 	printf("flashes %d, beeps %d\n", nflash, nbeep);
+	/* Started before any playback, the monitor stream attaches to a
+	 * sleeping sink and can stay empty (0.2 s of silence in 14 s,
+	 * 2026-10-03): a capture that silently heard nothing. */
+	if (pcm_len < (size_t)(seconds * RATE / 2))
+		printf("WARNING: audio capture covered %.1f s of %.0f s; start the "
+		       "probe after playback has begun\n",
+		       (double)pcm_len / RATE, seconds);
 
 	/*
 	 * Pair by the one offset that lines up the whole sequence, not each

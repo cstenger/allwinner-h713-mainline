@@ -52,13 +52,17 @@ ORIGINAL_ARGS=("$@")
 #                              Driving ALSA directly can deadlock after an
 #                              underrun (docs/audio-underrun-deadlock.md);
 #                              customize.sh runs it as the user "media".
-#   gstreamer1.0-pipewire      pipewiresink, GStreamer's way into that server.
-#                              Without it autoaudiosink finds no working sink
-#                              (no pipewire-pulse, no ALSA plugin) and settles
-#                              on openalsink, which plays nowhere audible: the
-#                              WP4 plane routes were silent with audio=yes.
-#                              Added 2026-10-03 (WP4).
-VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,gstreamer1.0-pipewire,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
+#   gstreamer1.0-alsa,         how GStreamer plays into that server: alsasink
+#   pipewire-alsa              device=pipewire (WP4's gst-plane-play). Stock and
+#                              in sync, -2..+12 ms on av-sync-probe; without a
+#                              sink autoaudiosink settled on openalsink, silent.
+#                              customize.sh keeps the hardware as the default
+#                              ALSA device, as tested. Added 2026-10-03 (WP4).
+#   gstreamer1.0-pipewire      pipewiresrc, which av-sync-probe records the
+#                              sink monitor with. Not for playback: pipewiresink
+#                              ran +768 ms late after idle (patches/pipewire,
+#                              retired). Added 2026-10-03 (WP4).
+VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,gstreamer1.0-alsa,pipewire-alsa,gstreamer1.0-pipewire,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
 BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
 
 # --profile dev: rebuild tools/video ON the board. This half is genuinely

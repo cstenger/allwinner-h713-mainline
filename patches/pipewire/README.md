@@ -1,4 +1,18 @@
-# pipewire patches (the GStreamer plugin only)
+# pipewire patches (the GStreamer plugin only) — RETIRED 2026-10-03
+
+> **Retired, not installed.** Stock `alsasink device=pipewire` (packages
+> `gstreamer1.0-alsa` + `pipewire-alsa`) measured better with no patch:
+> −2..+12 ms on av-sync-probe against +43..+60 ms here, and +10 against
+> +60 ms after a forced underrun; both survive 30/30 forced underruns.
+> `tools/video/gst-plane-play.c` uses it. Debian's plugin was restored on the
+> bench board (divert removed, `dpkg -V` clean). The patch stays as the record
+> of two upstream `pipewiresink` defects worth reporting: no start gate, and
+> no alignment to the clock at all.
+>
+> **Correction:** the "unexplained start stall" below was not this plugin.
+> `av-sync-probe` opened the DRM device before the player and became DRM
+> master; `kmssink` was then refused every commit (EACCES). The probe now
+> drops master.
 
 `pipewiresink`, the GStreamer element WP4's plane routes play audio through
 (`tools/video/gst-plane-play.c`). Only `src/gst/` is rebuilt; the PipeWire

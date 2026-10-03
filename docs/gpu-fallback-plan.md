@@ -341,7 +341,11 @@ The scanout grab of the 1080p card through plane-ve is the full card, 1280x720, 
     | after a 1 s forced underrun | +59.6 ms | **+9.9 ms** |
     | forced underruns survived (`xrun-hammer-plane.sh`) | 30/30 | 30/30 |
 
-    A truly synced player reads about 0 to +17 ms on this probe. GstAudioBaseSink's ring buffer aligns against ALSA's delay, which PipeWire's plugin reports including the device buffer. mpv's ALSA deadlock does not apply: it was mpv's `start_threshold = INT_MAX` start race, and through `pipewire-alsa` the client never touches the hardware PCM. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
+    A truly synced player reads about 0 to +17 ms on this probe. GstAudioBaseSink's ring buffer aligns against ALSA's delay, which PipeWire's plugin reports including the device buffer. mpv's ALSA deadlock does not apply: it was mpv's `start_threshold = INT_MAX` start race, and through `pipewire-alsa` the client never touches the hardware PCM.
+  - **DECISION (operator, 2026-10-03): stock `alsasink device=pipewire` is the plane player's default.** `patches/pipewire` is retired, and Debian's plugin was restored on the board (divert removed, `dpkg -V` clean).
+    - The rootfs gains `gstreamer1.0-alsa` and `pipewire-alsa`, and keeps the hardware as the default ALSA device (`customize.sh`).
+    - Rechecked with defaults through `h713-play`: plane-ve 0.0 ms warm and +6.5 ms idle with a cold registry; plane-native −0.6 ms.
+  - **The "unexplained 0-frame start" was the probe.** `av-sync-probe` opened `/dev/dri/card0` first and became DRM master, so `kmssink` got EACCES on every commit. It happened when a cold registry delayed the player past the probe's start. The probe now drops master, and warns when its audio capture comes up short. It must be started after playback. **The CPU column above was measured with the silent sink;** re-measure it with PipeWire playing.
 
 Built:
 - `tools/video/gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]` plays onto the video plane with audio (PipeWire) when the file has any. It prints rendered, dropped and position, and stops cleanly on Ctrl-C or SIGTERM.

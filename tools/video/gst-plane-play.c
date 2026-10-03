@@ -21,8 +21,9 @@
  *            really holds. The caller sets V4L2_REQUEST_SCALE and
  *            V4L2_REQUEST_CROP and passes the same size here.
  *
- * Audio, when the file has any, goes to PipeWire through pipewiresink
- * (gstreamer1.0-pipewire) and clocks the pipeline.
+ * Audio, when the file has any, goes to PipeWire through its ALSA plugin
+ * (alsasink device=pipewire; packages gstreamer1.0-alsa and pipewire-alsa).
+ * The pipeline runs on the system clock and the audio sink follows it.
  *
  *   usage: gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]
  *          CODEC   h264 | h265 | vp9 | av1
@@ -175,40 +176,32 @@ static void on_pad_added(GstElement *decodebin, GstPad *pad, gpointer data)
 		p->have_video = attach(p, pad, description);
 		g_free(description);
 	} else if (g_str_has_prefix(name, "audio/") && !p->have_audio) {
-		/* Named, not autoplugged: without a pulse server, autoaudiosink
-		 * skips pipewiresink (rank none) and settles on openalsink,
-		 * which plays nowhere audible (2026-10-03). The pipeline clock
-		 * is pinned to the system clock in main(). */
-		GstElementFactory *pw = gst_element_factory_find("pipewiresink");
+		/* alsasink through PipeWire's ALSA plugin (pipewire-alsa,
+		 * gstreamer1.0-alsa), named because the board's default ALSA
+		 * device is the hardware. GstAudioBaseSink aligns its ring
+		 * buffer against ALSA's delay, which PipeWire's plugin reports
+		 * including the sound card's own buffer: -2..+12 ms on
+		 * av-sync-probe, where a synced player reads 0..+17. The
+		 * alternatives measured worse (2026-10-03):
+		 *  - autoaudiosink alone settles on openalsink, silent here;
+		 *  - pipewiresink took planar audio as interleaved (static),
+		 *    then ran +768 ms late after idle and +80 ms warm; patched
+		 *    (patches/pipewire, retired) it still read +43..+60 ms.
+		 * GST_PLANE_PLAY_AUDIOSINK replaces the sink for measurements.
+		 * The pipeline clock is pinned to the system clock in main(). */
+		GstElementFactory *alsa = gst_element_factory_find("alsasink");
 		const char *override = getenv("GST_PLANE_PLAY_AUDIOSINK");
+		const char *sink = override && *override ? override :
+				   alsa ? "alsasink device=pipewire" :
+				   "autoaudiosink";
 
-		/* pipewiresink's caps are ANY, so it took the AAC decoder's
-		 * planar F32 as is, and PipeWire read it as interleaved:
-		 * static at the wrong pitch, matching the source nowhere
-		 * (operator, then a monitor recording, 2026-10-03). Pinned
-		 * interleaved at the graph rate it tracks the source at a
-		 * constant offset, 32.6 dB median SNR (mpv: 36.3). */
+		if (alsa)
+			gst_object_unref(alsa);
+		else if (!strcmp(sink, "autoaudiosink"))
+			fprintf(stderr, "gst-plane-play: no alsasink "
+				"(gstreamer1.0-alsa); audio may go nowhere\n");
 		description = g_strdup_printf("queue ! audioconvert ! "
-					      "audioresample ! %s",
-					      pw ? "audio/x-raw,format=S16LE,"
-					      "layout=interleaved,rate=48000,"
-					      "channels=2 ! pipewiresink" :
-					      "autoaudiosink");
-		/* GST_PLANE_PLAY_AUDIOSINK replaces the sink for measurements,
-		 * e.g. "alsasink device=pipewire" (WP4 sink comparison). */
-		if (override && *override) {
-			gchar *d2 = g_strdup_printf("queue ! audioconvert ! "
-						    "audioresample ! %s", override);
-
-			g_free(description);
-			description = d2;
-		}
-		if (pw)
-			gst_object_unref(pw);
-		else
-			fprintf(stderr, "gst-plane-play: no pipewiresink "
-				"(gstreamer1.0-pipewire); audio may go "
-				"nowhere\n");
+					      "audioresample ! %s", sink);
 		p->have_audio = attach(p, pad, description);
 		g_free(description);
 	}
@@ -283,10 +276,9 @@ int main(int argc, char **argv)
 	}
 
 	p.pipeline = gst_pipeline_new("play");
-	/* Not pipewiresink's clock: with it a 720p clip rendered 93 frames
-	 * in 19 s, the rest late (it depends on the stream: another was
-	 * fine). On the system clock, which the audio then follows, every
-	 * clip renders in full (2026-10-03). */
+	/* The system clock, which the audio sink follows. pipewiresink's own
+	 * clock once showed a 720p clip 93 frames in 19 s, the rest late; the
+	 * alsasink numbers were all measured on this clock (2026-10-03). */
 	clock = gst_system_clock_obtain();
 	gst_pipeline_use_clock(GST_PIPELINE(p.pipeline), clock);
 	gst_object_unref(clock);
