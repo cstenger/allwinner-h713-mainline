@@ -177,7 +177,7 @@ What the table says:
 - On cost alone, the GPU path is cheap with these settings: 21% of one shader core at the lowest OPP, the same CPU load, and +3 °C. The direct path's advantage is efficiency, not feasibility.
 - `tools/video/gpu-stall-catch.sh` loops this playback and, when decode interrupts stop, dumps thread stacks, dma-buf fences, the DRM state and dmesg to `/var/tmp/stall/`.
 
-**Direct vs GPU at 720p, rerun on PipeWire (2026-10-02).** 10 minutes each, both paths with audio through PipeWire. The first GPU leg had frozen at 347 s from the ALSA deadlock, so this replaces it.
+**Direct vs GPU at 720p, rerun (2026-10-02).** 10 minutes each. The first GPU leg had frozen at 347 s from the ALSA deadlock, so this replaces it. **Correction:** only the GPU leg was on PipeWire. The patched mpv was built without PipeWire support (only alsa, null and pcm), so the direct leg drove ALSA directly, with 0005. Its video and CPU numbers stand; its audio stack differed.
 
 | | Direct (patched mpv, `vo=drm`) | GPU (stock mpv, `vo=gpu`, cheap settings) |
 | --- | --- | --- |
@@ -188,9 +188,12 @@ What the table says:
 | CPU clock | Mostly 1008 MHz | More time at 1104–1296 MHz |
 | Peak temperature (GPU / CPU) | 58 / 57 °C | 59 / 58 °C |
 
-- The loop-seek freeze (an underrun at a `--loop-file` seek, seen only on ALSA) did not occur on PipeWire: 120 of 120 forced underruns on each path, with a 10 s clip so the underruns kept crossing loops.
+- The loop-seek freeze (an underrun at a `--loop-file` seek, seen only on ALSA) did not occur on PipeWire: 120 of 120 forced underruns on stock `vo=gpu`, with a 10 s clip so the underruns kept crossing loops. **Correction:** the "120/120" for the direct path is void. That run passed `--ao=pipewire` to a build without it, so it most likely played with no audio and nothing to underrun.
 - **Recommendation:** keep the direct path for content that is already exactly 1280x720, and the GPU path for everything else. For native-720p content the direct path does the same job at about half the CPU, with the GPU idle.
-- **Decision (operator): pending.**
+- **DECISION (operator, 2026-10-02): retire the direct path; stock mpv on the GPU path, audio through PipeWire.**
+  - `patches/mpv` and `patches/gstreamer` are retired (banners in their READMEs).
+  - On the bench board the patched binary is renamed to `/usr/local/bin/mpv-direct`, kept for the HDMI-in preview tool only. Plain `mpv` is `/usr/bin/mpv` and picks `[pipewire]` by itself. `tools/video/check-video-stack.sh` now checks for exactly that.
+  - **Follow-up: close the CPU gap by other means** (9% vs 17% on native 720p). See "WP2 follow-up" below.
 
 **GStreamer GPU path (2026-10-02).** Stock GStreamer 1.26.2 with `gstreamer1.0-gl` (now in the rootfs build), `glimagesink` drawing through GBM (`GST_GL_WINDOW=gbm`). Runs were 30 s; `tools/video/gst-path-run.sh`.
 
@@ -245,6 +248,12 @@ Not yet measured:
 Also open:
 - Two cheap-settings `vo=gpu` runs (HEVC and AV1 1080p) once played below real time with the GPU 10% busy at 150 MHz. They are almost certainly the same audio-underrun stall (see the direct-vs-GPU notes).
 - Lift the 2048 cap only after cedrus is proven bit-exact at 4K (clips 50–52).
+
+**WP2 follow-up: close the direct-vs-GPU CPU gap without a patched player.** The GPU path costs about 8 points more whole-board CPU on native 720p (mpv itself 41% of one core against 17%). Candidates, cheapest first:
+- **Measure what the 8 points are.** PipeWire's own share (the direct leg was on ALSA), mpv's renderer CPU (shader setup, GL calls per frame, OSD), and the dma-buf import per frame. `perf` or mpv's `--profile`/stats on both paths.
+- **Stock mpv knobs:** `--video-sync`, `--opengl-swapinterval`, `--interpolation=no`, `--hwdec-interop`, OSD off, and the cheap scale settings already in place.
+- **Stock direct paths that already exist:** FFmpeg #20847 + mpv #14690 (`v4l2request-overlay`, the stock version of what `patches/mpv` did), and GStreamer `kmssink` without our patches where the plane takes the decoder's buffer as is.
+- **A compositor:** a Wayland compositor that puts the video dma-buf on the overlay plane (e.g. `vo=dmabuf-wayland`), stock end to end.
 
 **WP3 — VA driver base.**
 - Diff megi's v1.2 feature by feature against our `patches/libva-v4l2-request` 0001-0019: multi-device, codec backends, DMA-BUF heap capture, renegotiation, scale/crop, export modifiers, GStreamer `va`.

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Build and install the patched mpv for the board, reproducibly. RUNS ON THE HOST.
 #
+# RETIRED 2026-10-02: the direct path this builds was retired in favour of
+# stock mpv on the GPU path (patches/mpv/README.md). Kept so the series stays
+# reproducible if the decision is reopened. Note that it builds without
+# PipeWire (-Dauto_features=disabled), so a reopened build must add
+# -Dpipewire=enabled and libpipewire-0.3-dev.
+#
 # WHY THIS EXISTS. The direct DRM-PRIME video path is a downstream mpv patch
 # (patches/mpv/). Without this script the only artifact is one unversioned
 # binary in /root on the board, reproducible solely by hand-following a README --

@@ -86,7 +86,7 @@ def main():
            "test \"$(cat /sys/class/drm/card0-LVDS-1/status)\" = connected; "
            "test \"$(cat /sys/class/drm/card0-LVDS-1/modes | head -1)\" = 1280x720; "
            "test -f /sys/kernel/debug/dri/0/state; "
-           "test -x /root/mmio-rw; test -x /usr/local/bin/mpv; "
+           "test -x /root/mmio-rw; test -x /usr/local/bin/mpv-direct; "
            "command -v ffmpeg >/dev/null")
     kms_before = remote("cat /sys/kernel/debug/dri/0/state")
     (output / "kms-before.log").write_text(kms_before)
@@ -103,7 +103,7 @@ def main():
     dd_log = f"/tmp/{stamp}-dd.log"
     mpv_log = f"/tmp/{stamp}-mpv.log"
     sink = (
-        f"/usr/local/bin/mpv --no-config --no-audio --no-terminal --log-file={mpv_log} "
+        f"/usr/local/bin/mpv-direct --no-config --no-audio --no-terminal --log-file={mpv_log} "
         "--vo=drm --drm-device=/dev/dri/card0 "
         "--demuxer=rawvideo --demuxer-rawvideo-w=1280 "
         f"--demuxer-rawvideo-h=720 --demuxer-rawvideo-fps={args.display_fps} "

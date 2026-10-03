@@ -1,3 +1,16 @@
+> **RETIRED 2026-10-02 (WP2 decision, [gpu-fallback-plan.md](../../docs/gpu-fallback-plan.md)).**
+> Playback is stock Debian mpv on the GPU path, with audio through PipeWire.
+> The direct DRM-PRIME path cost about half the CPU on native-720p content
+> (9% vs 17% whole-board, both 0 drops). The operator chose the stock stack
+> over carrying an mpv fork for that.
+> - On the bench board the last build is kept as `/usr/local/bin/mpv-direct`
+>   for the HDMI-in preview tooling only; plain `mpv` is `/usr/bin/mpv`.
+> - 0005 (the ALSA underrun deadlock) is moot under PipeWire, where mpv
+>   never runs `ao_alsa`.
+> - Reopen condition: the gap is worth closing and nothing stock closes it.
+>   Upstream FFmpeg #20847 + mpv #14690 (v4l2request overlay) would give a
+>   stock direct path.
+
 > **Scaler integration next (2026-09-17):** the decoder now supports arbitrary
 > even NV12 sizes, but player geometry/crop propagation and visible panel tests
 > remain. Rotation is disabled. Do not treat the measurement preload adapter

@@ -96,42 +96,40 @@ else
 fi
 
 echo
-echo "=== mpv (direct DRM PRIME scanout) ==="
+echo "=== mpv (stock) and audio (PipeWire) ==="
 
-# Third component that does not arrive by flashing, and the newest: it is built
-# off-target in a container, so it can drift exactly like the other two.
-mpv_now=$(while read -r p; do
-	[ -n "$p" ] && sha256sum "$ROOT/patches/mpv/$p"
-done < "$ROOT/patches/mpv/series" | sha256sum | cut -c1-16)
-
-mpv_board=$($SSH 'sed -n "s/^mpv_series=//p" /etc/h713-video-stack 2>/dev/null')
-mpv_when=$($SSH 'sed -n "s/^mpv_installed=//p" /etc/h713-video-stack 2>/dev/null')
+# The direct DRM-PRIME path (patches/mpv, /usr/local/bin/mpv) was RETIRED on
+# 2026-10-02: playback is stock Debian mpv on the GPU path (docs/gpu-fallback-
+# plan.md, WP2 decision), with audio through PipeWire as the user "media"
+# (docs/audio-underrun-deadlock.md). The patched build is kept on the board as
+# /usr/local/bin/mpv-direct for the HDMI-in preview tooling only. Check that
+# what a plain `mpv` runs is the stock binary and that its audio reaches
+# PipeWire: a PATH shadow, or a missing PIPEWIRE_RUNTIME_DIR, silently puts
+# playback back on mpv's ALSA output and its underrun deadlock.
 mpv_path=$($SSH 'command -v mpv 2>/dev/null')
-
-echo "    series now  $mpv_now ($(grep -c . "$ROOT/patches/mpv/series") patches)"
-if [ -z "$mpv_board" ]; then
-	echo "    board       <unstamped>"
-	echo "    DRIFT — no patched mpv is recorded as installed. A stock mpv still"
-	echo "    plays, using software decode, so this does not look like a failure:"
-	echo "    fix: tools/video/build-mpv.sh --install --test"
-	drift=1
-elif [ "$mpv_board" = "$mpv_now" ]; then
-	echo "    board       $mpv_board (installed $mpv_when)"
-	echo "    MATCH"
-else
-	echo "    board       $mpv_board (installed $mpv_when)"
-	echo "    DRIFT — the installed mpv was built from a different series."
-	echo "    fix: tools/video/build-mpv.sh --install --test"
+pw_dir=$($SSH 'echo "$PIPEWIRE_RUNTIME_DIR"')
+pw_state=$($SSH 'systemctl --machine=media@.host --user is-active pipewire wireplumber 2>/dev/null | tr "\n" " "')
+ao=$($SSH 'mpv --no-config --vo=null -v --length=0.3 av://lavfi:sine=duration=0.3 2>&1 | grep -aoE "AO: \[[a-z]+\]" | head -1')
+echo "    mpv         ${mpv_path:-<none>}"
+echo "    PipeWire    dir=${pw_dir:-<unset>} services: ${pw_state:-<none>}"
+echo "    mpv audio   ${ao:-<not determined>}"
+if [ "$mpv_path" != "/usr/bin/mpv" ]; then
+	echo "    DRIFT — plain mpv is not the stock build (a retired direct-path"
+	echo "    binary back on PATH?). fix: rename it, e.g. to /usr/local/bin/mpv-direct"
 	drift=1
 fi
-
-# A stock /usr/bin/mpv taking precedence would revert the video path while every
-# stamp above still read MATCH, so check which binary actually wins the PATH.
-if [ -n "$mpv_path" ] && [ "$mpv_path" != "/usr/local/bin/mpv" ]; then
-	echo "    PATH resolves mpv to $mpv_path, not /usr/local/bin/mpv"
-	echo "    DRIFT — the patched build is installed but not the one that runs."
+if [ "$pw_state" != "active active " ]; then
+	echo "    DRIFT — PipeWire is not running as user media."
+	echo "    fix: loginctl enable-linger media (see tools/rootfs/customize.sh)"
 	drift=1
 fi
+case "$ao" in
+	*pipewire*) ;;
+	"") echo "    DRIFT — mpv opened no audio output for a generated tone."
+	    drift=1 ;;
+	*) echo "    DRIFT — mpv chose $ao, not PipeWire: playback is on mpv's ALSA output."
+	   drift=1 ;;
+esac
 
 echo
 echo "=== what the driver actually offers ==="

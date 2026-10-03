@@ -215,3 +215,8 @@ PipeWire running, mpv never runs `ao_alsa`, so it never reaches the code with
 the race. 0005 only matters if someone forces `--ao=alsa`. If the direct path
 (`patches/mpv` 0001–0004) is ever retired, the patched build can go with it;
 that decision rests on the direct path's own merits (WP2).
+
+**2026-10-02: the direct path was retired.** Playback is stock mpv with
+PipeWire; 0005 is moot. A correction: the patched mpv had been built without
+PipeWire support, so its "120/120 on PipeWire" loop-seek result is void (it
+played without audio). The stock `vo=gpu` 120/120 on PipeWire stands.
