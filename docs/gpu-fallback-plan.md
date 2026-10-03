@@ -177,6 +177,21 @@ What the table says:
 - On cost alone, the GPU path is cheap with these settings: 21% of one shader core at the lowest OPP, the same CPU load, and +3 °C. The direct path's advantage is efficiency, not feasibility.
 - `tools/video/gpu-stall-catch.sh` loops this playback and, when decode interrupts stop, dumps thread stacks, dma-buf fences, the DRM state and dmesg to `/var/tmp/stall/`.
 
+**Direct vs GPU at 720p, rerun on PipeWire (2026-10-02).** 10 minutes each, both paths with audio through PipeWire. The first GPU leg had frozen at 347 s from the ALSA deadlock, so this replaces it.
+
+| | Direct (patched mpv, `vo=drm`) | GPU (stock mpv, `vo=gpu`, cheap settings) |
+| --- | --- | --- |
+| Playback | 20,842 frames at 30 fps, 0 dropped | 18,998 frames at 30 fps, 0 dropped, no freeze |
+| GPU | Idle | 38% busy at 150 MHz |
+| Whole-board CPU | 9% | 17% |
+| mpv's own CPU (one core) | 17% | 41% |
+| CPU clock | Mostly 1008 MHz | More time at 1104–1296 MHz |
+| Peak temperature (GPU / CPU) | 58 / 57 °C | 59 / 58 °C |
+
+- The loop-seek freeze (an underrun at a `--loop-file` seek, seen only on ALSA) did not occur on PipeWire: 120 of 120 forced underruns on each path, with a 10 s clip so the underruns kept crossing loops.
+- **Recommendation:** keep the direct path for content that is already exactly 1280x720, and the GPU path for everything else. For native-720p content the direct path does the same job at about half the CPU, with the GPU idle.
+- **Decision (operator): pending.**
+
 **GStreamer GPU path (2026-10-02).** Stock GStreamer 1.26.2 with `gstreamer1.0-gl` (now in the rootfs build), `glimagesink` drawing through GBM (`GST_GL_WINDOW=gbm`). Runs were 30 s; `tools/video/gst-path-run.sh`.
 
 | Decoder | Clips | Result |
