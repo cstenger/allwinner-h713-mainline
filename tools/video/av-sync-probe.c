@@ -3,9 +3,10 @@
  * when its beep reaches the sound card, on one clock. RUNS ON THE TARGET.
  *
  * Play a clip with a full-screen white flash and a 1 kHz beep at the same
- * timestamp once a second (tools/video/make-avsync-clip.sh), with any player,
- * and run this alongside. It prints each flash, each beep, and the offset
- * beep - flash (positive: audio late), then the median.
+ * instants, irregularly spaced (tools/video/make-avsync-clip.sh), with any
+ * player, and run this alongside. It finds the one offset (within +-3 s)
+ * that lines up the flash and beep sequences, then prints each pair's
+ * offset beep - flash (positive: audio late) and the median.
  *
  * Video. A tight loop reads the plane state (the video plane when it holds
  * NV12, else the topmost plane with a framebuffer: the GPU path's primary),
@@ -324,23 +325,49 @@ int main(int argc, char **argv)
 	}
 
 	printf("flashes %d, beeps %d\n", nflash, nbeep);
-	for (int i = 0; i < nflash; i++) {
-		double best = 1e9;
 
-		for (int j = 0; j < nbeep; j++)
-			if (fabs(beeps[j] - flashes[i]) < fabs(best))
-				best = beeps[j] - flashes[i];
-		if (fabs(best) < 0.5) {
-			offs[noff++] = best;
-			printf("  flash %8.3f s  beep %+7.1f ms\n", flashes[i] - t0,
-			       best * 1000);
+	/*
+	 * Pair by the one offset that lines up the whole sequence, not each
+	 * flash with its nearest beep: the clip's events are irregularly
+	 * spaced, so only the true offset matches them all. Nearest-beep
+	 * pairing on a periodic clip read audio 770 ms late as 230 ms early.
+	 */
+	{
+		int best_n = 0;
+		double best_d = 0;
+
+		for (int ms = -3000; ms <= 3000; ms++) {
+			double d = ms / 1000.0;
+			int n = 0;
+
+			for (int i = 0; i < nflash; i++)
+				for (int j = 0; j < nbeep; j++)
+					if (fabs(beeps[j] - flashes[i] - d) < 0.03) {
+						n++;
+						break;
+					}
+			if (n > best_n) {
+				best_n = n;
+				best_d = d;
+			}
 		}
+
+		for (int i = 0; i < nflash; i++)
+			for (int j = 0; j < nbeep; j++)
+				if (fabs(beeps[j] - flashes[i] - best_d) < 0.03) {
+					offs[noff++] = beeps[j] - flashes[i];
+					printf("  flash %8.3f s  beep %+7.1f ms\n",
+					       flashes[i] - t0,
+					       (beeps[j] - flashes[i]) * 1000);
+					break;
+				}
 	}
 	if (noff) {
 		qsort(offs, noff, sizeof(double), cmp_double);
 		printf("A/V offset (beep - flash, + = audio late): median %+.1f ms, "
-		       "min %+.1f, max %+.1f, n=%d\n", offs[noff / 2] * 1000,
-		       offs[0] * 1000, offs[noff - 1] * 1000, noff);
+		       "min %+.1f, max %+.1f, n=%d of %d flashes\n",
+		       offs[noff / 2] * 1000, offs[0] * 1000,
+		       offs[noff - 1] * 1000, noff, nflash);
 	} else {
 		printf("A/V offset: no flash/beep pairs\n");
 	}
