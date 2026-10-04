@@ -118,8 +118,10 @@ push upstream).
 - **GStreamer `va*dec` into DMABuf caps was showing green, not video** (fixed by
   0007). The WP3 checks read frames back through system memory, the one path
   that was right.
-- **32 CAPTURE buffers per context, hard.** A client that holds more decoded
-  frames than that alive at once gets decode failures, not back-pressure.
+- ~~**32 CAPTURE buffers per context, hard.**~~ That was cedrus taking vb2's
+  default cap; kernel 0157 raises it to 64 (2026-10-04), matching this
+  driver's capture table and the AV1 decoder. A client holding more than 64
+  decoded frames at once still gets decode failures, not back-pressure.
 - **GStreamer `va` AV1 into DMABuf caps still shows nothing**: its pre-decode
   export (cedrus-shaped) never fits the AV1 core's padded layout. WP4 sends AV1
   on the plane through `v4l2slav1dec` instead, and to the GPU through mpv.
