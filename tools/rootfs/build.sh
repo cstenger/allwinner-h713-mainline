@@ -62,7 +62,11 @@ ORIGINAL_ARGS=("$@")
 #                              sink monitor with. Not for playback: pipewiresink
 #                              ran +768 ms late after idle (patches/pipewire,
 #                              retired). Added 2026-10-03 (WP4).
-VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,gstreamer1.0-alsa,pipewire-alsa,gstreamer1.0-pipewire,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
+#   ffmpeg                     ffprobe, which h713-play reads codec, size,
+#                              SAR, rotation and bit depth with. The libraries
+#                              already come with mpv; this adds the CLIs.
+#                              Added 2026-10-03 (WP4).
+VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,gstreamer1.0-alsa,pipewire-alsa,gstreamer1.0-pipewire,ffmpeg,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
 BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
 
 # --profile dev: rebuild tools/video ON the board. This half is genuinely
@@ -96,6 +100,11 @@ BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-s
 #            not developed against, so a backtrace is the expected first
 #            question, not an unlikely one.
 DEV_PACKAGES=build-essential,libgles-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libv4l-dev,libdrm-dev,libva-dev,vainfo,meson,ninja-build,ffmpeg,gdb,python3,strace
+# WP4's plane player (tools/video/gst-plane-play.c) is C and every image
+# carries it, so customize.sh compiles it inside the target. These are
+# bootstrapped for that and purged again afterwards unless --profile dev
+# keeps them (DEV_PACKAGES has them all): the product never compiles.
+PLAYER_BUILD_PACKAGES=gcc,libc6-dev,pkgconf,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev
 # Measured 2026-08-15: base + runtime + dev is 1.45 GiB on disk, so it fits the
 # 2G default with little headroom. Raise the floor rather than have the next
 # added package fail in mke2fs at the end of a ~10 minute bootstrap.
@@ -328,9 +337,9 @@ ROOTFS_TREE="$WORK_DIR/tree"
 ROOTFS_EXT4="$WORK_DIR/rootfs.ext4"
 ROOTFS_SIMG="$WORK_DIR/rootfs.simg"
 
-INCLUDE_PACKAGES=$BASE_PACKAGES
+INCLUDE_PACKAGES=$BASE_PACKAGES,$PLAYER_BUILD_PACKAGES
 if [ -n "$EXTRA_PACKAGES" ]; then
-  INCLUDE_PACKAGES="$BASE_PACKAGES,$EXTRA_PACKAGES"
+  INCLUDE_PACKAGES="$INCLUDE_PACKAGES,$EXTRA_PACKAGES"
   printf '\n==> Extra packages requested: %s\n' "$EXTRA_PACKAGES"
 fi
 
@@ -371,6 +380,9 @@ env \
   DEBIAN_MIRROR="$DEBIAN_MIRROR" \
   DEBIAN_SUITE="$DEBIAN_SUITE" \
   DEV_PROFILE="$DEV_PROFILE" \
+  PLAYER_BUILD_PACKAGES="$PLAYER_BUILD_PACKAGES" \
+  H713_PLAY_SRC="$PROJECT_ROOT/tools/video/h713-play" \
+  PLANE_PLAY_SRC="$PROJECT_ROOT/tools/video/gst-plane-play.c" \
   bash -ceu '
     mkdir -p "$ROOTFS_TREE"
     tar --numeric-owner --xattrs --acls --exclude="./dev/*" -C "$ROOTFS_TREE" -xf "$ROOTFS_TAR"
@@ -450,6 +462,23 @@ env \
     test -x "$ROOTFS_TREE/usr/bin/v4l2-ctl"
     test -x "$ROOTFS_TREE/usr/bin/mpv"
     grep -qx "sunxi_scanout_dmabuf" "$ROOTFS_TREE/etc/modules-load.d/h713-video.conf"
+    # WP4 playback: the launcher, the plane player (an arm64 build of this
+    # tree, not a stale copy), what each runs on, and the tested ALSA default.
+    test -x "$ROOTFS_TREE/usr/local/bin/h713-play"
+    test -x "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
+    file -b "$ROOTFS_TREE/usr/local/bin/gst-plane-play" | grep -q "ARM aarch64"
+    grep -q "latency-time=40000" "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
+    grep -q "skip-vsync=true" "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
+    test -x "$ROOTFS_TREE/usr/bin/ffprobe"
+    test -e "$L/gstreamer-1.0/libgstalsa.so"                     # alsasink
+    test -e "$L/gstreamer-1.0/libgstva.so"                       # va*dec
+    test -e "$L/gstreamer-1.0/libgstkms.so"                      # kmssink
+    test -e "$L/gstreamer-1.0/libgstpipewire.so"                 # the A/V probe
+    test -e "$L/alsa-lib/libasound_module_pcm_pipewire.so"       # device=pipewire
+    test ! -e "$ROOTFS_TREE/etc/alsa/conf.d/99-pipewire-default.conf"
+    if [ "$DEV_PROFILE" != 1 ]; then
+      test ! -e "$ROOTFS_TREE/usr/bin/gcc"                       # purged again
+    fi
     test -n "$(find "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE" -name "sunxi-scanout-dmabuf.ko*" -print -quit)"
     if [ "$DEV_PROFILE" = 1 ]; then
       # The exact headers, link targets and .pc files tools/video resolves.

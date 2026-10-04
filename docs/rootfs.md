@@ -73,11 +73,31 @@ rather than something a bring-up image opts into:
 | `libgles2`, `libegl1` | the runtime dispatch libraries (`libegl1` pulls `libegl-mesa0`) |
 | `v4l-utils` | `v4l2-ctl`, the M1 decode gate |
 | `mpv` | play a file from the device with no host in the loop; ~8 MB on top of the above |
+| `pipewire`, `wireplumber` | the sound server, run as the user `media` |
+| `gstreamer1.0-alsa`, `pipewire-alsa` | `alsasink device=pipewire`, the plane player's audio (in sync; see below) |
+| `gstreamer1.0-pipewire` | `pipewiresrc`, which `tools/video/av-sync-probe.c` records the sink monitor with |
+| `ffmpeg` | `ffprobe`, which `h713-play` routes by; the libraries already come with `mpv` |
 
 That costs about 680 MB installed, nearly all of it `plugins-bad`'s dependency
 tree. One caveat on `mpv`: its video outputs want DRM/KMS, X or Wayland, and
 this panel is driven through AFBD registers with panfrost as a render-only
 device — so mpv exercises decode and file handling, not scanout.
+
+**Every image carries WP4's player** ([gpu-fallback-plan.md](gpu-fallback-plan.md)):
+
+- `/usr/local/bin/h713-play FILE` probes the file and plays it by the
+  cheapest route that shows it correctly:
+  - native 720p straight onto the video plane;
+  - 16:9 H.264/HEVC larger than the panel through the VE scaler onto the plane;
+  - everything else through stock `mpv --vo=gpu`.
+- `/usr/local/bin/gst-plane-play` is the plane player it uses.
+  - It is C, so `customize.sh` compiles it inside the target under qemu, against
+    the image's own GStreamer.
+  - The compiler and headers (`PLAYER_BUILD_PACKAGES` in `build.sh`) are
+    bootstrapped for that and purged again, unless `--profile dev` keeps them.
+  - `build.sh` asserts that the binary is aarch64 and carries today's settings.
+- `pipewire-alsa`'s `99-pipewire-default.conf` is removed, so the default ALSA
+  device stays the hardware, as everything was measured.
 
 Every image also gets `/etc/modules-load.d/h713-video.conf` so
 `sunxi_scanout_dmabuf` loads at boot. That module is a plain misc device with no

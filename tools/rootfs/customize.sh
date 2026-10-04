@@ -1,5 +1,6 @@
 #!/bin/sh
-# Customize an extracted Debian rootfs without executing target binaries.
+# Customize an extracted Debian rootfs. Target binaries run only through
+# chroot (qemu binfmt): update-alternatives, and compiling WP4's plane player.
 # Usage: customize.sh ROOTFS SSH_PUBLIC_KEY_FILE DEBIAN_MIRROR DEBIAN_SUITE
 set -eu
 
@@ -544,6 +545,30 @@ wireplumber.settings = {
   device.routes.default-sink-volume = 1.0
 }
 PWVOL
+# WP4 playback: h713-play (the launcher) and gst-plane-play (the plane
+# player), compiled here inside the target, under qemu, against its own
+# GStreamer. The compiler and headers were bootstrapped for this alone
+# (build.sh PLAYER_BUILD_PACKAGES) and go again unless --profile dev keeps
+# them. The tree has no /dev, which gcc and apt want for /dev/null: bind the
+# host's for the duration (this runs in build.sh's mount namespace).
+if [ -n "${PLANE_PLAY_SRC:-}" ]; then
+  install -d -m 0755 "$R/usr/local/bin"
+  install -m 0755 "$H713_PLAY_SRC" "$R/usr/local/bin/h713-play"
+  install -m 0644 "$PLANE_PLAY_SRC" "$R/tmp/gst-plane-play.c"
+  : > "$R/dev/null"
+  mount --bind /dev/null "$R/dev/null"
+  chroot "$R" sh -ec 'gcc -O2 -Wall -o /usr/local/bin/gst-plane-play \
+    /tmp/gst-plane-play.c $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-video-1.0)'
+  rm -f "$R/tmp/gst-plane-play.c"
+  if [ "${DEV_PROFILE:-0}" != 1 ]; then
+    chroot "$R" env DEBIAN_FRONTEND=noninteractive \
+      apt-get purge -y -q --autoremove $(echo "$PLAYER_BUILD_PACKAGES" | tr , ' ') >/dev/null
+  fi
+  umount "$R/dev/null"
+  rm -f "$R/dev/null"
+  echo "[customize] installed h713-play and gst-plane-play (compiled in the target)"
+fi
+
 # pipewire-alsa is there for alsasink device=pipewire (WP4's plane player).
 # Its 99-pipewire-default.conf would also make PipeWire the default ALSA
 # device for every program; the WP4 measurements were taken without it, so

@@ -379,7 +379,14 @@ Still open in WP4:
   - Whole-board CPU is 7.8–8.8%, against ~17% on the stock GPU path (WP2); the audio path is about 5 points of it.
   - HEVC 720p sits highest at +37–40 ms. Its start-up offset differs per run (alsasink's 40 ms periods quantise it), and it stays well inside what is noticeable for late audio.
 - **CPU re-measured with audio really playing:** 17.9% whole board with alsasink's default 10 ms periods, where the CPU frequency governor thread (`sugov`) alone took 19% of a core. 7.3% with 40 ms periods; 2.7% with no audio.
-- installing `h713-play` and `gst-plane-play` from the rootfs build instead of by hand.
+- ~~installing `h713-play` and `gst-plane-play` from the rootfs build instead of by hand~~ **done 2026-10-03.**
+  - Every image carries both in `/usr/local/bin`. `gst-plane-play` is compiled in the target under qemu, and the compiler and headers are purged again unless `--profile dev` is used.
+  - `ffmpeg` (for `ffprobe`) joins the runtime set; `h713-play` would have failed on a base image without it.
+  - `build.sh` asserts the binary is aarch64, carries today's settings, and that its plugins and the ALSA default are as tested.
+  - Proven by a base build (`--output-dir build/out-wp4-rootfs-test`, kernel tree a1adf086):
+    - 0 build packages left;
+    - every linked library present;
+    - the image's own binary played on the board: 30 fps, 0 dropped, A/V +22 ms.
 
 - In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10. With megi's driver (WP3) stock mpv currently falls back to software for 10-bit AV1 on `vo=gpu`.
 - The scaler variables are megi patch 0005 now, not libva 0008/0010. Unscaled exports report the padded CAPTURE height (1088), which `kmssink` would show as 8 extra rows.
