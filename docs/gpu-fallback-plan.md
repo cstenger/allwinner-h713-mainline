@@ -397,7 +397,11 @@ Still open in WP4:
     - HEVC Main10 passes the probe as well and plays in hardware without the shader (cedrus gives 8-bit NV12, 48.8 dB);
     - `va-regress.sh` reports 0 failing lines with the opt-in unset.
   - `h713-play` sets the opt-in for 10-bit, and the shader and `rgb10_a2` for 10-bit AV1 only. The rootfs ships the shader in `/usr/local/share/h713/`.
-- The scaler variables are megi patch 0005 now, not libva 0008/0010. Unscaled exports report the padded CAPTURE height (1088), which `kmssink` would show as 8 extra rows.
+- The scaler variables are megi patch 0005 now, not libva 0008/0010. ~~Unscaled exports report the padded CAPTURE height (1088), which `kmssink` would show as 8 extra rows~~ **fixed 2026-10-03 by libva 0009.**
+  - Exports report the size the surface was created at, capped by the buffer: HEVC/VP9/AV1 1080p now 1920x1080; H.264 stays 1088 because FFmpeg creates it so; VE-scaled 1280x720.
+  - The chroma offset still follows the padded buffer.
+  - GPU-path frames match software decode bit for bit (HEVC, VP9 and AV1 1080p, each run confirmed to have decoded in hardware). GStreamer DMABuf output is bit-exact, `va-regress.sh` has 0 failing lines, and the plane-ve and 10-bit AV1 routes are rechecked.
+  - **With this, the WP4 list is closed.**
 - ~~Add `tools/video/shaders/lsb10.glsl` (×64)~~ done, as above.
 - Add `tools/video/h713-play FILE`. It probes codec, size, rotation and bit depth, applies the routing table, prints its decision, then runs stock mpv with the VE pre-shrink environment (aspect-fit, even, never upscale) or the 10-bit environment and shader, or the direct mode if WP2 keeps it.
 

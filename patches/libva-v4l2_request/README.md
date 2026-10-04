@@ -33,7 +33,7 @@ with `tools/video/va-regress.sh`:
 | AV1 10-bit (310 frames) | pass | refused | pass, bit-exact |
 | resolution change ×3 | pass | SIGSEGV | pass, bit-exact |
 
-Eight patches here against twenty-five there, on a maintained base that tracks
+Nine patches here against twenty-five there, on a maintained base that tracks
 GStreamer `va` and the modern uAPI. The bugs in 0001 and 0003 are megi's own
 and not H713-specific; they are worth reporting to him (this project does not
 push upstream).
@@ -50,6 +50,7 @@ push upstream).
 | 0006 | Advertise VP9 Profile 2 only if a 10-bit frame control is accepted | cedrus is Profile 0 only. Needs **kernel 0155**, which makes cedrus refuse the control; without it the probe says yes, as before |
 | 0007 | Decode into the dma-bufs a client exported before the first decode | GStreamer `va`'s dma-buf allocator creates and exports each surface in one step and keeps the fds. megi treated such exports as probing and decoded elsewhere: **every `va*dec` DMABuf consumer (kmssink, glimagesink) showed solid green** at a steady 30 fps. The CAPTURE queue now imports those dma-bufs when the first export fits the decode format (FFmpeg's AV1 probe does not, and keeps MMAP). The export-time layout honours `V4L2_REQUEST_SCALE`, which is what makes WP4's VE-scaled `kmssink` route possible |
 | 0008 | `V4L2_REQUEST_LSB10_LINEAR=1` exports the AV1 core's LSB-aligned P010 as linear P010; a bare P010 surface falls back to PL10 backing | GL cannot import the LSB10 modifier, so mpv's interop probe refused P010 and 10-bit AV1 and HEVC never reached `vo=gpu` (it wanted a `scale_vaapi` conversion the driver lacks). With the opt-in, 10-bit AV1 plays in hardware with `tools/video/shaders/lsb10.glsl` (×64): 47.0 / 46.2 dB against software, 0 dropped at 1080p, ~40% GPU with `--fbo-format=rgb10_a2`. HEVC Main10 passes the probe too; cedrus delivers 8-bit NV12 there, so it needs no shader (48.8 dB). Unset, exports are unchanged (KMS keeps LSB10). `tools/video/h713-play` sets it |
+| 0009 | Exports report the surface's own size, capped by the buffer, not the padded buffer size | 1080p HEVC/VP9/AV1 surfaces created as 1920x1080 were described as 1920x1088 (the decoders pad), so a consumer sizing a framebuffer from the descriptor showed 8 padding rows. Planes still follow the buffer, so the chroma offset keeps 1088. H.264 stays 1088 (FFmpeg creates it so); VE-scaled surfaces report 1280x720. GPU-path frames match software decode bit for bit (HEVC, VP9, AV1 1080p); GStreamer DMABuf stays bit-exact |
 
 ## Where each bootlin patch went
 
@@ -100,10 +101,8 @@ push upstream).
 
 ## Known differences and gaps
 
-- **Unscaled exports report the padded CAPTURE height** (1920x1088 for 1080p
-  HEVC, where the bootlin driver said 1080). The pixels are identical. A consumer
-  that builds a KMS framebuffer at the descriptor's height shows 8 padding rows.
-  Matters for WP4's `kmssink` route.
+- ~~**Unscaled exports report the padded CAPTURE height**~~ fixed by 0009: the
+  descriptor reports the created size (1920x1080 for HEVC/VP9/AV1 1080p).
 - **AV1 10-bit on the GL path:** solved by 0008 plus the client's ×64 shader.
   The opt-in is per process; a client that sets it but not the shader shows a
   picture 64 times too dark.
