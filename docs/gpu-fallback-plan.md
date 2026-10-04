@@ -375,6 +375,7 @@ Still open in WP4:
 
   - Every route shows exactly 30.0 fps against stream time, with no drops.
   - Drift is at most 3 ms over the window, so the skip/insert correction never needed to act audibly.
+  - **2-hour soak (2026-10-04)**, 1080p H.264 on plane-ve, 7500 s clip, 122 minutes: position 7308.6 s, 219,258 frames rendered, 0 dropped, every minute at ~1800 VE interrupts and ~2.88 M audio frames (48 kHz), CPU 8.0%, max 62 °C. Sync +15.8 ms early in the run and +33.9 ms late, so **drift +18.1 ms over 2 h** (about 9 ms an hour). It stays below the point where late audio becomes noticeable (~+45 ms), but it is not zero; a 3-hour film would end around +43 ms unless GStreamer's own drift correction steps in first. The first 2-hour attempt was void: muting with `Speaker Switch 0` stalls the PCM DMA (mute with `DAC Playback Volume 0` instead).
   - The sound card stayed RUNNING throughout, with the GPU idle.
   - Whole-board CPU is 7.8–8.8%, against ~17% on the stock GPU path (WP2); the audio path is about 5 points of it.
   - HEVC 720p sits highest at +37–40 ms. Its start-up offset differs per run (alsasink's 40 ms periods quantise it), and it stays well inside what is noticeable for late audio.
