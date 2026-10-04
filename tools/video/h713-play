@@ -18,7 +18,11 @@
 # geometry (1280x720), cannot letterbox (docs/letterbox-plan.md) or rotate
 # 90/270, and has no downscaler of its own; the VE scaler downscales H.264 and
 # HEVC only (VP9 is WP6, AV1 has none). 10-bit goes to the GPU route: the VE
-# scaler cannot output it, and on GL 10-bit AV1 currently decodes in software.
+# scaler cannot output it. There, V4L2_REQUEST_LSB10_LINEAR=1 lets mpv's
+# interop accept P010 at all (libva patch 0008). 10-bit AV1 then arrives as
+# the AV1 core's LSB-aligned samples and needs shaders/lsb10.glsl (x64; 10-bit
+# intermediates keep it at ~40% GPU); 10-bit HEVC arrives as cedrus's 8-bit
+# NV12 and must NOT get the shader.
 #
 #   usage: h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS...]
 #
@@ -120,9 +124,23 @@ ve)
 	cmd=("$player" "$file" "$gst" "va${gst}dec" "${PANEL_W}x${PANEL_H}")
 	;;
 *)
-	echo "h713-play: $probe: gpu ($why; mpv --vo=gpu)"
 	export LIBVA_DRIVER_NAME=v4l2_request
-	cmd=(mpv --vo=gpu --gpu-context=drm --hwdec=vaapi "${CHEAP[@]}" "$@" "$file")
+	extra=()
+	note=
+	if [ $depth = 10 ]; then
+		export V4L2_REQUEST_LSB10_LINEAR=1
+		if [ "$codec" = av1 ]; then
+			shader=
+			for d in "${H713_SHARE:-/usr/local/share/h713}" "$(dirname "$0")/shaders"; do
+				[ -r "$d/lsb10.glsl" ] && { shader=$d/lsb10.glsl; break; }
+			done
+			[ -n "$shader" ] || { echo "h713-play: lsb10.glsl not found" >&2; exit 1; }
+			extra=(--glsl-shaders="$shader" --fbo-format=rgb10_a2)
+			note=", LSB10 x64 shader"
+		fi
+	fi
+	echo "h713-play: $probe: gpu ($why; mpv --vo=gpu$note)"
+	cmd=(mpv --vo=gpu --gpu-context=drm --hwdec=vaapi "${CHEAP[@]}" "${extra[@]}" "$@" "$file")
 	;;
 esac
 

@@ -465,6 +465,7 @@ env \
     # WP4 playback: the launcher, the plane player (an arm64 build of this
     # tree, not a stale copy), what each runs on, and the tested ALSA default.
     test -x "$ROOTFS_TREE/usr/local/bin/h713-play"
+    grep -q "HOOK LUMA" "$ROOTFS_TREE/usr/local/share/h713/lsb10.glsl"   # 10-bit AV1 on GL
     test -x "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
     file -b "$ROOTFS_TREE/usr/local/bin/gst-plane-play" | grep -q "ARM aarch64"
     grep -q "latency-time=40000" "$ROOTFS_TREE/usr/local/bin/gst-plane-play"

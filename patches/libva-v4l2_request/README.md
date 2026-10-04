@@ -33,7 +33,7 @@ with `tools/video/va-regress.sh`:
 | AV1 10-bit (310 frames) | pass | refused | pass, bit-exact |
 | resolution change ×3 | pass | SIGSEGV | pass, bit-exact |
 
-Seven patches here against twenty-five there, on a maintained base that tracks
+Eight patches here against twenty-five there, on a maintained base that tracks
 GStreamer `va` and the modern uAPI. The bugs in 0001 and 0003 are megi's own
 and not H713-specific; they are worth reporting to him (this project does not
 push upstream).
@@ -49,6 +49,7 @@ push upstream).
 | 0005 | `V4L2_REQUEST_SCALE` / `V4L2_REQUEST_CROP`, and a 64-byte NV12 pitch | The VE decode-time scaler (bootlin 0008/0010) and Panfrost's import alignment (bootlin 0020), all in the one CAPTURE `S_FMT` |
 | 0006 | Advertise VP9 Profile 2 only if a 10-bit frame control is accepted | cedrus is Profile 0 only. Needs **kernel 0155**, which makes cedrus refuse the control; without it the probe says yes, as before |
 | 0007 | Decode into the dma-bufs a client exported before the first decode | GStreamer `va`'s dma-buf allocator creates and exports each surface in one step and keeps the fds. megi treated such exports as probing and decoded elsewhere: **every `va*dec` DMABuf consumer (kmssink, glimagesink) showed solid green** at a steady 30 fps. The CAPTURE queue now imports those dma-bufs when the first export fits the decode format (FFmpeg's AV1 probe does not, and keeps MMAP). The export-time layout honours `V4L2_REQUEST_SCALE`, which is what makes WP4's VE-scaled `kmssink` route possible |
+| 0008 | `V4L2_REQUEST_LSB10_LINEAR=1` exports the AV1 core's LSB-aligned P010 as linear P010; a bare P010 surface falls back to PL10 backing | GL cannot import the LSB10 modifier, so mpv's interop probe refused P010 and 10-bit AV1 and HEVC never reached `vo=gpu` (it wanted a `scale_vaapi` conversion the driver lacks). With the opt-in, 10-bit AV1 plays in hardware with `tools/video/shaders/lsb10.glsl` (×64): 47.0 / 46.2 dB against software, 0 dropped at 1080p, ~40% GPU with `--fbo-format=rgb10_a2`. HEVC Main10 passes the probe too; cedrus delivers 8-bit NV12 there, so it needs no shader (48.8 dB). Unset, exports are unchanged (KMS keeps LSB10). `tools/video/h713-play` sets it |
 
 ## Where each bootlin patch went
 
@@ -103,9 +104,9 @@ push upstream).
   HEVC, where the bootlin driver said 1080). The pixels are identical. A consumer
   that builds a KMS framebuffer at the descriptor's height shows 8 padding rows.
   Matters for WP4's `kmssink` route.
-- **AV1 10-bit on the GL path:** stock mpv falls back to software decode with
-  megi's driver. The bootlin driver handed GL the LSB layout as P010, which was
-  not right either. Linear P010 for GL is WP4.
+- **AV1 10-bit on the GL path:** solved by 0008 plus the client's ×64 shader.
+  The opt-in is per process; a client that sets it but not the shader shows a
+  picture 64 times too dark.
 - **Decode errors** reach no client except through the AV1 gate (see 0012 above).
 - GStreamer `va*dec`: identical results on both drivers for the clips tried (VP9
   bit-exact). The H.264/HEVC/AV1-10 clips that fail do so on both, so that is

@@ -554,6 +554,9 @@ PWVOL
 if [ -n "${PLANE_PLAY_SRC:-}" ]; then
   install -d -m 0755 "$R/usr/local/bin"
   install -m 0755 "$H713_PLAY_SRC" "$R/usr/local/bin/h713-play"
+  install -d -m 0755 "$R/usr/local/share/h713"
+  install -m 0644 "$(dirname "$H713_PLAY_SRC")/shaders/lsb10.glsl" \
+    "$R/usr/local/share/h713/lsb10.glsl"
   install -m 0644 "$PLANE_PLAY_SRC" "$R/tmp/gst-plane-play.c"
   : > "$R/dev/null"
   mount --bind /dev/null "$R/dev/null"

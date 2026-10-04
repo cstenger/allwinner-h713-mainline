@@ -388,9 +388,17 @@ Still open in WP4:
     - every linked library present;
     - the image's own binary played on the board: 30 fps, 0 dropped, A/V +22 ms.
 
-- In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10. With megi's driver (WP3) stock mpv currently falls back to software for 10-bit AV1 on `vo=gpu`.
+- ~~In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10~~ **done 2026-10-03 (libva 0008 + `tools/video/shaders/lsb10.glsl`).**
+  - **Root cause:** mpv's interop probe refused P010 (EGL 12297 on the LSB10 modifier), then asked for a `scale_vaapi` conversion the driver lacks, so nothing was shown. The probe surface could not even be exported, since no decoder produces plain P010.
+  - **Fix:** 0008 adds the opt-in `V4L2_REQUEST_LSB10_LINEAR=1` (export PL10 as linear P010) and PL10 backing for bare P010 surfaces. The shader multiplies by 64.
+  - **Results:**
+    - 10-bit AV1 matches software at 47.0 dB (colour 720p) and 46.2 dB (1080p card), and plays at 1080p with 0 dropped;
+    - the GPU sits at ~40% with `--fbo-format=rgb10_a2`: 84% with mpv's default rgba16f intermediates, 29% for the import alone;
+    - HEVC Main10 passes the probe as well and plays in hardware without the shader (cedrus gives 8-bit NV12, 48.8 dB);
+    - `va-regress.sh` reports 0 failing lines with the opt-in unset.
+  - `h713-play` sets the opt-in for 10-bit, and the shader and `rgb10_a2` for 10-bit AV1 only. The rootfs ships the shader in `/usr/local/share/h713/`.
 - The scaler variables are megi patch 0005 now, not libva 0008/0010. Unscaled exports report the padded CAPTURE height (1088), which `kmssink` would show as 8 extra rows.
-- Add `tools/video/shaders/lsb10.glsl` (×64).
+- ~~Add `tools/video/shaders/lsb10.glsl` (×64)~~ done, as above.
 - Add `tools/video/h713-play FILE`. It probes codec, size, rotation and bit depth, applies the routing table, prints its decision, then runs stock mpv with the VE pre-shrink environment (aspect-fit, even, never upscale) or the 10-bit environment and shader, or the direct mode if WP2 keeps it.
 
 **Later.**
