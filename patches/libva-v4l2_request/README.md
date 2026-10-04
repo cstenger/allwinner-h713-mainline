@@ -52,6 +52,7 @@ push upstream).
 | 0008 | `V4L2_REQUEST_LSB10_LINEAR=1` exports the AV1 core's LSB-aligned P010 as linear P010; a bare P010 surface falls back to PL10 backing | GL cannot import the LSB10 modifier, so mpv's interop probe refused P010 and 10-bit AV1 and HEVC never reached `vo=gpu` (it wanted a `scale_vaapi` conversion the driver lacks). With the opt-in, 10-bit AV1 plays in hardware with `tools/video/shaders/lsb10.glsl` (×64): 47.0 / 46.2 dB against software, 0 dropped at 1080p, ~40% GPU with `--fbo-format=rgb10_a2`. HEVC Main10 passes the probe too; cedrus delivers 8-bit NV12 there, so it needs no shader (48.8 dB). Unset, exports are unchanged (KMS keeps LSB10). `tools/video/h713-play` sets it |
 | 0009 | Exports report the surface's own size, capped by the buffer, not the padded buffer size | 1080p HEVC/VP9/AV1 surfaces created as 1920x1080 were described as 1920x1088 (the decoders pad), so a consumer sizing a framebuffer from the descriptor showed 8 padding rows. Planes still follow the buffer, so the chroma offset keeps 1088. H.264 stays 1088 (FFmpeg creates it so); VE-scaled surfaces report 1280x720. GPU-path frames match software decode bit for bit (HEVC, VP9, AV1 1080p); GStreamer DMABuf stays bit-exact |
 | 0010 | A frame the kernel flags as failed (V4L2_BUF_FLAG_ERROR) makes vaSyncSurface() return VA_STATUS_ERROR_DECODING_ERROR; vaQuerySurfaceError() describes it as one whole-picture record | Only AV1 (0004) ever looked at the flag; every other codec passed failed frames on as good. Pixels stay readable and nothing later is refused. Measured 2026-10-03: mpv and GStreamer play damaged streams to the end; the ffmpeg CLI's hwdownload treats the error as fatal and stops at the first flagged frame. decode-robustness-test 34/34, all gates pass |
+| 0011 | A bare NV12 surface exported while an 8-bit decode context of its size exists gets that context's own CAPTURE layout (predicted on a throwaway instance of the same device), not the first-enumerated decoder's | GStreamer va exports before the first decode; the generic export was cedrus-shaped and never fitted the AV1 core's padded buffer, so `vaav1dec` into DMABuf decoded into the driver's own buffers and showed black. Now 57/60 frames bit-exact on a 720p clip (the first two and the last race the decoder; see known issues). Skipped with V4L2_REQUEST_SCALE/CROP. FFmpeg (exports before any context) is unchanged; all gates pass, plane-ve plays |
 
 ## Where each bootlin patch went
 
@@ -122,6 +123,12 @@ push upstream).
   default cap; kernel 0157 raises it to 64 (2026-10-04), matching this
   driver's capture table and the AV1 decoder. A client holding more than 64
   decoded frames at once still gets decode failures, not back-pressure.
-- **GStreamer `va` AV1 into DMABuf caps still shows nothing**: its pre-decode
-  export (cedrus-shaped) never fits the AV1 core's padded layout. WP4 sends AV1
-  on the plane through `v4l2slav1dec` instead, and to the GPU through mpv.
+- ~~**GStreamer `va` AV1 into DMABuf caps still shows nothing**~~ fixed by
+  0011. What remains is a race at the edges: GStreamer syncs a surface only
+  when something maps it through GStreamer, the exported dma-buf carries no
+  fence, and the AV1 backend holds each frame until the next one arrives (its
+  refresh mask needs the next frame). A consumer that reads a dma-buf the
+  moment it arrives can see the first two frames before they are decoded, and
+  the last frame is never submitted at EOS. Measured 57/60 bit-exact (frames 0,
+  1 and 59 not). On a sink that shows frames on its clock, that is one frame
+  time at preroll and at the end. WP4's AV1 plane route uses `v4l2slav1dec`.

@@ -1,0 +1,160 @@
+From 5b7d46212bbbb6e959f8b6268c790b1e36fadc6b Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 4 Oct 2026 16:06:35 -0700
+Subject: [PATCH] Export a bare surface in its pending decode context's layout
+
+GStreamer va creates its decode context, then creates and exports every
+surface before the first decode. The context configures CAPTURE only on
+that first decode, so the export was sized by whichever decoder
+enumerated first: cedrus. The H713 AV1 core pads the height and appends
+its own data to every CAPTURE buffer, so that export never fitted an
+AV1 context. The decode went to the driver's own buffers, and every
+dma-buf the client had exported stayed black: vaav1dec into DMABuf caps
+showed nothing.
+
+When a bare NV12 surface is exported and an 8-bit decode context of
+exactly its size exists, predict that context's CAPTURE layout on a
+throwaway instance of the same device (its OUTPUT format, then the
+NV12 request set_capture_format() makes: picture size, 64-byte pitch)
+and export in that layout. The first decode then imports those
+dma-bufs. Not with the H713 scaler or crop environment variables, whose
+CAPTURE request differs and which the generic path already sizes;
+anything that fails falls back to the generic export.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/surface.c | 111 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 111 insertions(+)
+
+diff --git a/src/surface.c b/src/surface.c
+index 170a490..faaff1e 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -571,6 +571,102 @@ next:
+ 	return VA_STATUS_ERROR_OPERATION_FAILED;
+ }
+ 
++/*
++ * The decode context a bare surface is about to serve, if one is known.
++ * GStreamer va creates its context first, then creates and exports every
++ * surface before the first decode, at the context's picture size; the
++ * context has its OUTPUT format but configures CAPTURE only on that first
++ * decode. The newest 8-bit decode context of exactly the surface's size is
++ * the one. Not a conversion chain: its backing is the converter's.
++ */
++static struct v4l2r_context *pending_decode_context(struct v4l2r_driver *drv,
++						    const struct v4l2r_surface *surface)
++{
++	struct v4l2r_context *ctx, *found = NULL;
++	unsigned int iter = 0;
++
++	pthread_mutex_lock(&drv->mutex);
++	while ((ctx = v4l2r_handles_next(&drv->contexts, &iter, NULL))) {
++		if (ctx->video_fd < 0 || !ctx->codec || ctx->conv ||
++		    ctx->bit_depth > 8 ||
++		    ctx->picture_width != surface->width ||
++		    ctx->picture_height != surface->height)
++			continue;
++		found = ctx;
++	}
++	pthread_mutex_unlock(&drv->mutex);
++
++	return found;
++}
++
++/*
++ * NV12 backing in the layout @ctx's decoder will write, predicted before
++ * the context configures CAPTURE: a throwaway instance of the same device
++ * with the context's OUTPUT format and the NV12 CAPTURE request that
++ * set_capture_format() makes (picture size, 64-byte pitch). The AV1 core
++ * pads the height and appends its own data to every buffer, so the generic
++ * export, sized by whichever decoder enumerates first (cedrus), never fits
++ * an AV1 context: the decode went to the driver's own buffers and the
++ * client's exported dma-bufs stayed black.
++ */
++static VAStatus backing_alloc_predicted(struct v4l2r_context *ctx,
++					struct v4l2r_surface *surface)
++{
++	struct v4l2_format output = ctx->output_format;
++	struct v4l2_format capture = {
++		.type = V4L2_TYPE_IS_MULTIPLANAR(output.type) ?
++			V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE :
++			V4L2_BUF_TYPE_VIDEO_CAPTURE,
++	};
++	uint32_t pitch = (ctx->picture_width + 63) & ~63u;
++	struct v4l2r_surface_backing *backing;
++	char path[64];
++	int fd;
++
++	if (V4L2_TYPE_IS_MULTIPLANAR(capture.type)) {
++		capture.fmt.pix_mp.width = ctx->picture_width;
++		capture.fmt.pix_mp.height = ctx->picture_height;
++		capture.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
++		capture.fmt.pix_mp.num_planes = 1;
++		capture.fmt.pix_mp.plane_fmt[0].bytesperline = pitch;
++	} else {
++		capture.fmt.pix.width = ctx->picture_width;
++		capture.fmt.pix.height = ctx->picture_height;
++		capture.fmt.pix.pixelformat = V4L2_PIX_FMT_NV12;
++		capture.fmt.pix.bytesperline = pitch;
++	}
++
++	snprintf(path, sizeof(path), "/proc/self/fd/%d", ctx->video_fd);
++	fd = open(path, O_RDWR | O_CLOEXEC);
++	if (fd < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	backing = calloc(1, sizeof(*backing));
++	if (!backing) {
++		close(fd);
++		return VA_STATUS_ERROR_ALLOCATION_FAILED;
++	}
++	for (unsigned int i = 0; i < VIDEO_MAX_PLANES; i++)
++		backing->dmabuf_fd[i] = -1;
++
++	if (ioctl(fd, VIDIOC_S_FMT, &output) < 0 ||
++	    ioctl(fd, VIDIOC_S_FMT, &capture) < 0 ||
++	    v4l2r_format_pixelformat(&capture) != V4L2_PIX_FMT_NV12 ||
++	    backing_export_one(fd, &capture, backing) < 0) {
++		close(fd);
++		free(backing);
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++	}
++	close(fd);
++
++	backing->pixelformat = V4L2_PIX_FMT_NV12;
++	backing->width = v4l2r_format_width(&capture);
++	backing->height = v4l2r_format_height(&capture);
++	backing->pitch = v4l2r_format_bytesperline(&capture);
++	surface->backing = backing;
++	return VA_STATUS_SUCCESS;
++}
++
+ /* Backing for a bare (unbound) surface, sized like the surface itself. */
+ static VAStatus backing_alloc_default(struct v4l2r_driver *drv,
+ 				      struct v4l2r_surface *surface)
+@@ -586,6 +682,21 @@ static VAStatus backing_alloc_default(struct v4l2r_driver *drv,
+ 		pixelformat = V4L2_PIX_FMT_P010;
+ 
+ 	uint32_t width = surface->width, height = surface->height;
++	uint32_t unused_w, unused_h;
++
++	/* Exported before the first decode of a known context: take that
++	 * decoder's own layout. Not with the H713 scaler or crop asked for,
++	 * whose CAPTURE request differs and which the generic path below
++	 * already sizes. */
++	if (pixelformat == V4L2_PIX_FMT_NV12 &&
++	    !v4l2r_parse_size_env("V4L2_REQUEST_SCALE", &unused_w, &unused_h) &&
++	    !v4l2r_parse_size_env("V4L2_REQUEST_CROP", &unused_w, &unused_h)) {
++		struct v4l2r_context *ctx = pending_decode_context(drv, surface);
++
++		if (ctx && backing_alloc_predicted(ctx, surface) ==
++		    VA_STATUS_SUCCESS)
++			return VA_STATUS_SUCCESS;
++	}
+ 
+ 	/* H713 decode-time scaler: the surface will hold the scaled picture,
+ 	 * and a client that exports before decoding (GStreamer va) keeps the
+-- 
+2.55.0
+
