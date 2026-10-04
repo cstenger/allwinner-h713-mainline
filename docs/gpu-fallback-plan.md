@@ -362,7 +362,23 @@ Limits of the plane routes, all set by the plane taking exactly 1280x720:
 Still open in WP4:
 - the three items below;
 - ~~an operator look at the panel (plane-ve 1080p)~~ done 2026-10-03: smooth motion, all four edges, clean detail, neutral greys; audio in sync and clean (with patches/pipewire 0001);
-- a 10-minute soak of each plane route;
+- ~~a 10-minute soak of each plane route~~ **done 2026-10-03, all clean** (`tools/video/plane-soak.sh`, clips from `make-avsync-clip.sh . 630 all`, raw output in `local/h713-lab/wp4-20261003/soak-results.txt`). Audio is `alsasink device=pipewire`, 200 ms buffer / 40 ms periods.
+
+  | Clip | Route | Frames / position | Sync early → late (drift) | Board CPU | Player | GPU IRQ | Max temp |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | H.264 1080p | plane-ve | 17564 / 585.5 s, 0 dropped | +15.8 → +16.0 ms (+0.2) | 7.8% | 23.8% | 0 | 56 °C |
+  | HEVC 1080p | plane-ve | 17559 / 585.3 s, 0 dropped | +20.7 → +20.3 ms (−0.4) | 8.7% | 23.7% | 0 | 56 °C |
+  | H.264 720p | plane-native | 17560 / 585.3 s, 0 dropped | +1.0 → −1.4 ms (−2.4) | 7.8% | 21.9% | 0 | 55 °C |
+  | HEVC 720p | plane-native | 17562 / 585.4 s, 0 dropped | +37.3 → +40.4 ms (+3.1) | 8.4% | 23.4% | 0 | 54 °C |
+  | VP9 720p | plane-native | 17578 / 585.9 s, 0 dropped | +3.5 → +1.1 ms (−2.4) | 8.8% | 24.9% | 0 | 54 °C |
+  | AV1 720p | plane-native | 17562 / 585.4 s, 0 dropped | +1.3 → −1.0 ms (−2.3) | 8.5% | 23.7% | 0 | 54 °C |
+
+  - Every route shows exactly 30.0 fps against stream time, with no drops.
+  - Drift is at most 3 ms over the window, so the skip/insert correction never needed to act audibly.
+  - The sound card stayed RUNNING throughout, with the GPU idle.
+  - Whole-board CPU is 7.8–8.8%, against ~17% on the stock GPU path (WP2); the audio path is about 5 points of it.
+  - HEVC 720p sits highest at +37–40 ms. Its start-up offset differs per run (alsasink's 40 ms periods quantise it), and it stays well inside what is noticeable for late audio.
+- **CPU re-measured with audio really playing:** 17.9% whole board with alsasink's default 10 ms periods, where the GPU governor (`sugov`) alone took 19% of a core. 7.3% with 40 ms periods; 2.7% with no audio.
 - installing `h713-play` and `gst-plane-play` from the rootfs build instead of by hand.
 
 - In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10. With megi's driver (WP3) stock mpv currently falls back to software for 10-bit AV1 on `vo=gpu`.
