@@ -378,7 +378,7 @@ Still open in WP4:
   - The sound card stayed RUNNING throughout, with the GPU idle.
   - Whole-board CPU is 7.8–8.8%, against ~17% on the stock GPU path (WP2); the audio path is about 5 points of it.
   - HEVC 720p sits highest at +37–40 ms. Its start-up offset differs per run (alsasink's 40 ms periods quantise it), and it stays well inside what is noticeable for late audio.
-- **CPU re-measured with audio really playing:** 17.9% whole board with alsasink's default 10 ms periods, where the GPU governor (`sugov`) alone took 19% of a core. 7.3% with 40 ms periods; 2.7% with no audio.
+- **CPU re-measured with audio really playing:** 17.9% whole board with alsasink's default 10 ms periods, where the CPU frequency governor thread (`sugov`) alone took 19% of a core. 7.3% with 40 ms periods; 2.7% with no audio.
 - installing `h713-play` and `gst-plane-play` from the rootfs build instead of by hand.
 
 - In the VA driver, export 10-bit AV1 as linear P010 for GL consumers; KMS keeps LSB10. With megi's driver (WP3) stock mpv currently falls back to software for 10-bit AV1 on `vo=gpu`.
