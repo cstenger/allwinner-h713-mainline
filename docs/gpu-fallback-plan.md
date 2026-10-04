@@ -251,7 +251,7 @@ Not yet measured:
 
 Also open:
 - Two cheap-settings `vo=gpu` runs (HEVC and AV1 1080p) once played below real time with the GPU 10% busy at 150 MHz. They are almost certainly the same audio-underrun stall (see the direct-vs-GPU notes).
-- Lift the 2048 cap only after cedrus is proven bit-exact at 4K (clips 50–52).
+- ~~Lift the 2048 cap only after cedrus is proven bit-exact at 4K (clips 50–52).~~ **Done 2026-10-03:** the cap was in the retired bootlin driver (`surface.c:855`); megi takes the kernel's 4096. Clips 50 (VP9), 51 (HEVC) and 52 (H.264), ffmpeg VA-API vs software `framemd5`: 1800/1800 frames each, 0 differences, VE IRQs +1800/+1800/+1861 (VP9's extra are unshown frames), +0 for the software runs.
 
 **WP2 follow-up: close the direct-vs-GPU CPU gap without a patched player.** The GPU path costs about 8 points more whole-board CPU on native 720p (mpv itself 41% of one core against 17%). Candidates, cheapest first:
 - **Measured (2026-10-02, 720p, 60 s each; `local/h713-lab/wp2-20261002/gap-*.txt`).**
@@ -356,7 +356,7 @@ Limits of the plane routes, all set by the plane taking exactly 1280x720:
 - no letterbox or pillarbox, so only 16:9 content;
 - no upscaling (the VE scaler only shrinks);
 - no 90/270 rotation;
-- VE scaling for H.264 and HEVC only, at most 2048 wide (the VA cap);
+- VE scaling for H.264 and HEVC only (the 2048 VA cap is gone with megi and 4K decodes bit-exact, but VE scaling of a 4K source onto the plane is not yet tested);
 - 10-bit goes to the GPU route.
 
 Still open in WP4:
