@@ -1,0 +1,165 @@
+media: verisilicon: h713-av1: move narrow frames to the buffer's pitch
+
+The H713 AV1 core writes its NV12/P010 output at a pitch of its own,
+the frame width rounded up to 64 (samples, two bytes each at 10 bits),
+and ignores the stride fields its register map has: writing the
+capture buffer's bytesperline, 64 or 2048 into LU/CB/CR_STRIDE left the
+output identical. That is right for a stream whose frames fill the
+buffer, and wrong for any frame narrower than it: an AV1 frame-size
+change (frame_size_override, libaom's resize mode) leaves the buffer at
+the sequence's maximum size, and a 1024-wide frame written 1024 bytes
+per row into a buffer read at 1280 comes out sheared from row 1.
+
+Record, at frame setup, the pitch the core will write at when it is
+smaller than the buffer's, and move the rows to the buffer's pitch in
+a new vb2 buf_finish hook, in process context before the buffer
+reaches userspace: luma from the top of the plane, chroma from the
+chroma base the core was given, last row first so that no row is
+overwritten before it is moved. The NV12 output is the core's
+secondary output; its references live in buffers of their own, so the
+move cannot disturb later frames. The variant keeps a kernel mapping
+of its CAPTURE buffers for this (capture_kmap); every other variant and
+codec leaves restride_pitch at 0 and is unchanged.
+
+Measured 2026-10-04 on resize-fixed / resize-random through FFmpeg
+VA-API and GStreamer v4l2slav1dec: frame 0, sheared before, is now
+bit-exact vs libdav1d, as is every key frame and every inter frame
+whose references have its own size. Inter frames that predict from a
+reference of another size (AV1 reference scaling) are still wrong; that
+is separate.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+--- a/drivers/media/platform/verisilicon/hantro.h
++++ b/drivers/media/platform/verisilicon/hantro.h
+@@ -79,6 +79,8 @@
+  * @late_postproc:		postproc must be set up at the end of the job
+  */
+ struct hantro_variant {
++	/* the kernel writes CAPTURE buffers (see hantro_buf_finish) */
++	bool capture_kmap;
+ 	unsigned int enc_offset;
+ 	unsigned int dec_offset;
+ 	const struct hantro_fmt *enc_fmts;
+@@ -352,6 +354,15 @@
+ 	/* Must be the first field in this struct. */
+ 	struct v4l2_m2m_buffer base;
+ 
++	/*
++	 * Set by a variant whose core writes the picture at a pitch of its
++	 * own (the H713 AV1 core: the frame width rounded up to 64) when that
++	 * is not the buffer's: the pitch it wrote at and the rows, moved to
++	 * the buffer's layout in buf_finish. 0 when nothing is to be done.
++	 */
++	u32 restride_pitch;
++	u32 restride_rows;
++
+ 	union {
+ 		struct hantro_vp9_decoded_buffer_info vp9;
+ 		struct hantro_av1_decoded_buffer_info av1;
+--- a/drivers/media/platform/verisilicon/hantro_drv.c
++++ b/drivers/media/platform/verisilicon/hantro_drv.c
+@@ -235,7 +235,8 @@
+ 	 * JPEG encoder to fill in the JPEG headers.
+ 	 */
+ 	if (!ctx->is_encoder) {
+-		dst_vq->dma_attrs |= DMA_ATTR_NO_KERNEL_MAPPING;
++		if (!ctx->dev->variant->capture_kmap)
++			dst_vq->dma_attrs |= DMA_ATTR_NO_KERNEL_MAPPING;
+ 		dst_vq->max_num_buffers = MAX_POSTPROC_BUFFERS;
+ 	}
+ 
+--- a/drivers/media/platform/verisilicon/hantro_v4l2.c
++++ b/drivers/media/platform/verisilicon/hantro_v4l2.c
+@@ -1017,10 +1017,54 @@
+ 	return 0;
+ }
+ 
++/*
++ * Move a picture written at restride_pitch to the CAPTURE format's layout:
++ * luma rows from the top of the plane, chroma rows from the chroma base the
++ * core was given (bytesperline x height). The written pitch is the smaller,
++ * so going from the last row up never overwrites a row not yet moved.
++ */
++static void hantro_buf_finish(struct vb2_buffer *vb)
++{
++	struct hantro_ctx *ctx = vb2_get_drv_priv(vb->vb2_queue);
++	struct hantro_decoded_buffer *buf;
++	u32 pitch, bpl, rows, chroma_rows;
++	u8 *luma, *chroma;
++	int y;
++
++	if (V4L2_TYPE_IS_OUTPUT(vb->vb2_queue->type))
++		return;
++
++	buf = vb2_to_hantro_decoded_buf(vb);
++	pitch = buf->restride_pitch;
++	rows = buf->restride_rows;
++	buf->restride_pitch = 0;
++	if (!pitch || vb->state != VB2_BUF_STATE_DONE)
++		return;
++
++	bpl = ctx->dst_fmt.plane_fmt[0].bytesperline;
++	if (pitch >= bpl || rows > ctx->dst_fmt.height)
++		return;
++
++	luma = vb2_plane_vaddr(vb, 0);
++	if (!luma) {
++		dev_warn_ratelimited(ctx->dev->dev,
++				     "cannot map buffer %u to restride it\n", vb->index);
++		return;
++	}
++	chroma = luma + bpl * ctx->dst_fmt.height;
++	chroma_rows = (rows + 1) / 2;
++
++	for (y = rows - 1; y > 0; y--)
++		memmove(luma + y * bpl, luma + y * pitch, pitch);
++	for (y = chroma_rows - 1; y > 0; y--)
++		memmove(chroma + y * bpl, chroma + y * pitch, pitch);
++}
++
+ const struct vb2_ops hantro_queue_ops = {
+ 	.queue_setup = hantro_queue_setup,
+ 	.buf_prepare = hantro_buf_prepare,
+ 	.buf_queue = hantro_buf_queue,
++	.buf_finish = hantro_buf_finish,
+ 	.buf_out_validate = hantro_buf_out_validate,
+ 	.buf_request_complete = hantro_buf_request_complete,
+ 	.start_streaming = hantro_start_streaming,
+--- a/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c
++++ b/drivers/media/platform/verisilicon/sunxi_h713_av1_hw.c
+@@ -55,6 +55,7 @@
+ #include "hantro_hw.h"
+ #include "sunxi_h713_av1_gen.h"
+ 
++
+ #define H713_AV1_CTRL			0x008	/* image word 2 */
+ #define H713_AV1_CTRL_START		BIT(0)
+ #define H713_AV1_IRQ_TIMEOUT		BIT(2)
+@@ -323,6 +324,17 @@
+ 		goto out;
+ 	}
+ 
++	/* The core writes at its own pitch; buf_finish moves a narrower
++	 * frame (an AV1 frame-size change) to the buffer's. */
++	{
++		struct hantro_decoded_buffer *db = vb2_to_hantro_decoded_buf(&dst->vb2_buf);
++		u32 natural = ALIGN(width, 64) * (h->bit_depth > 8 ? 2 : 1);
++
++		db->restride_pitch = natural < ctx->dst_fmt.plane_fmt[0].bytesperline ?
++				     natural : 0;
++		db->restride_rows = height;
++	}
++
+ 	slot = h713_av1_gen_slot(h, src->vb2_buf.timestamp);
+ 	if (slot < 0) {
+ 		ret = slot;
+@@ -577,6 +589,8 @@
+ static const char * const sunxi_h713_av1_clk_names[] = { "bus", "mbus" };
+ 
+ const struct hantro_variant sun50i_h713_av1_variant = {
++	/* buf_finish moves frames narrower than the buffer to its pitch */
++	.capture_kmap = true,
+ 	.dec_fmts = sunxi_h713_av1_dec_fmts,
+ 	.num_dec_fmts = ARRAY_SIZE(sunxi_h713_av1_dec_fmts),
+ 	.codec = HANTRO_AV1_DECODER,

@@ -134,6 +134,15 @@ push upstream).
 - **FFmpeg VA-API AV1 fails 3 of 56 libdav1d-referenced clips**
   (`/root/tools/va-av1-matrix.sh`, 2026-10-04; tiles fixed by 0013, film
   grain by 0014): `resize-*` decode in hardware with wrong checksums.
+  Kernel 0160 fixed half of it: the AV1 core writes at its own pitch
+  (frame width rounded to 64) and ignores its stride fields, so frames
+  narrower than the buffer were sheared; they are now moved to the buffer's
+  pitch, and key frames plus same-size inter frames are bit-exact. What is
+  left is AV1 reference scaling (an inter frame predicting from a reference
+  of another size), wrong on both paths; the driver programs VPU981-style
+  per-reference scale factors, which the H713 core evidently needs more
+  than. On the direct path GStreamer also emits more frames than the clips
+  hold (12 for 8, 26 for 12), unexplained.
   `mono` is not a driver failure: FFmpeg's AV1 decoder offers no VA format
   for monochrome (a libva trace shows it never creates a config), and with
   `-hwaccel` the CLI picks that hardware-only decoder, so it fails instead of
