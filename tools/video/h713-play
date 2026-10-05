@@ -36,7 +36,7 @@ set -euo pipefail
 
 PANEL_W=1280
 PANEL_H=720
-VA_MAX=2048	# the VA driver caps cedrus at 2048 (unproven above)
+VA_MAX=4096	# cedrus and megi's VA driver: 4K bit-exact (2026-10-03)
 CHEAP=(--scale=bilinear --dscale=bilinear --cscale=bilinear --dither-depth=no
        --deband=no --correct-downscaling=no --linear-downscaling=no
        --sigmoid-upscaling=no --hdr-compute-peak=no)
