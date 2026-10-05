@@ -22,11 +22,12 @@ of its CAPTURE buffers for this (capture_kmap); every other variant and
 codec leaves restride_pitch at 0 and is unchanged.
 
 Measured 2026-10-04 on resize-fixed / resize-random through FFmpeg
-VA-API and GStreamer v4l2slav1dec: frame 0, sheared before, is now
-bit-exact vs libdav1d, as is every key frame and every inter frame
-whose references have its own size. Inter frames that predict from a
-reference of another size (AV1 reference scaling) are still wrong; that
-is separate.
+VA-API: frame 0, sheared before, and every later frame -- eight frame
+sizes, including every frame that predicts from a reference of another
+size -- are now bit-exact against libdav1d at their native sizes. (A
+comparison against host-made md5s of FFmpeg's auto-rescaled frames had
+made the reference-scaled frames look wrong: the host's swscale rounds
+differently from the board's.)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
