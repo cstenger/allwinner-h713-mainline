@@ -133,7 +133,11 @@ push upstream).
   slow decode; not observed.
 - **FFmpeg VA-API AV1 fails 3 of 56 libdav1d-referenced clips**
   (`/root/tools/va-av1-matrix.sh`, 2026-10-04; tiles fixed by 0013, film
-  grain by 0014): `resize-*` decode in hardware with wrong checksums;
-  `mono` is refused. The 37-clip
+  grain by 0014): `resize-*` decode in hardware with wrong checksums.
+  `mono` is not a driver failure: FFmpeg's AV1 decoder offers no VA format
+  for monochrome (a libva trace shows it never creates a config), and with
+  `-hwaccel` the CLI picks that hardware-only decoder, so it fails instead of
+  using libdav1d. mpv falls back to software; GStreamer `vaav1dec` decodes
+  it in hardware, luma bit-exact and chroma 128, DMABuf and system memory. The 37-clip
   bit-exact matrix in the kernel work was the direct `v4l2slav1dec` path, not
   VA-API.
