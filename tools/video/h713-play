@@ -142,6 +142,13 @@ native)
 	cmd=("$player" "$file" "$gst" "v4l2sl${gst}dec")
 	;;
 ve)
+	# The VE scaler writes chroma straight after the SCALED height, while
+	# cedrus declares (and the display reads) it after that height rounded up
+	# to 16: at 534 or 536 lines the colour lands 20/16 lines high and the
+	# tail reads as green (scanout-grab, 2026-10-05). Ask for a height that
+	# is already a multiple of 16 -- the nearest one, at most ~1% of aspect.
+	fh=$(( (fh + 8) / 16 * 16 ))
+	[ $fh -gt $PANEL_H ] && fh=$PANEL_H
 	echo "h713-play: $probe: plane-ve (va${gst}dec, VE scaler ${w}x${h} -> ${fw}x${fh}, kmssink)"
 	export LIBVA_DRIVER_NAME=v4l2_request GST_VA_ALL_DRIVERS=1
 	export V4L2_REQUEST_SCALE=${fw}x${fh} V4L2_REQUEST_CROP=${w}x${h}
