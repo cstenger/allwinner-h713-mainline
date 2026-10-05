@@ -1,0 +1,291 @@
+From 50172501c66f1e003db606542820e7e2093ee56a Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 4 Oct 2026 20:21:03 -0700
+Subject: [PATCH] AV1: show the grained picture in current_display_picture
+
+With film grain, FFmpeg and GStreamer va decode into one surface
+(current_frame, the clean reference) and show another
+(current_display_picture). The backend only ever wrote the decode
+target, so the shown surface stayed empty: every film-grain frame came
+out black through VA-API (8 of 56 clips in the AV1 matrix).
+
+The H713 AV1 core writes the grained picture into the decode target's
+NV12 and keeps its clean reference data apart, so the shown surface
+only needs that picture. Mark it as waiting on the decode target
+(grain_src) and copy the picture over, row by row in each surface's own
+layout, the first time it is read: v4l2r_surface_ready(), which every
+read path goes through, and vaQuerySurfaceStatus() once the source is
+done. If either surface is destroyed or decoded into first, the copy
+is taken or dropped, never left dangling.
+
+A DMABuf consumer never reads through VA-API, so on the H713 decoder
+(which submits at end_picture) the copy is also taken before
+vaEndPicture() returns, after the codec lock is dropped: the flush
+inside v4l2r_surface_ready() takes that lock.
+
+Measured 2026-10-04: all 8 film-grain clips bit-exact vs libdav1d
+through FFmpeg VA-API (matrix 45 -> 53 of 56), and through GStreamer
+vaav1dec into both DMABuf and system memory. All gates pass; the
+non-grain DMABuf clip stays 60/60.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/codec_av1.c    | 39 ++++++++++++++++++-
+ src/context.c      |  9 ++++-
+ src/decode.c       |  1 +
+ src/surface.c      | 95 ++++++++++++++++++++++++++++++++++++++++++++++
+ src/v4l2_request.h | 12 ++++++
+ 5 files changed, 153 insertions(+), 3 deletions(-)
+
+diff --git a/src/codec_av1.c b/src/codec_av1.c
+index 98c988b..7f07658 100644
+--- a/src/codec_av1.c
++++ b/src/codec_av1.c
+@@ -965,10 +965,45 @@ static VAStatus av1_end_picture_gated(struct v4l2r_context *ctx)
+ 		ctx->pic.target->ctx = ctx;
+ 		ctx->pic.target->status = VASurfaceRendering;
+ 		ctx->pic.target->decode_error = false;
++		ctx->pic.target->grain_src = NULL;
+ 	}
+ 
+-	if (codec->immediate)
+-		return av1_submit_pending(ctx, codec->pend_fallback);
++	/* Film grain: FFmpeg decodes into a clean surface (current_frame) and
++	 * shows another (current_display_picture). The grained picture is in
++	 * the decode target; the shown surface takes a copy when read. */
++	if (ctx->pic.target &&
++	    codec->va_pic.current_display_picture != VA_INVALID_SURFACE &&
++	    codec->va_pic.current_display_picture != codec->va_pic.current_frame) {
++		struct v4l2r_surface *display =
++			V4L2R_SURFACE_GET(ctx->drv,
++					  codec->va_pic.current_display_picture);
++
++		if (display && display != ctx->pic.target) {
++			display->grain_src = ctx->pic.target;
++			display->status = VASurfaceRendering;
++		}
++	}
++
++	if (codec->immediate) {
++		struct v4l2r_surface *display = NULL;
++		VAStatus status;
++
++		if (codec->va_pic.current_display_picture != VA_INVALID_SURFACE &&
++		    codec->va_pic.current_display_picture != codec->va_pic.current_frame)
++			display = V4L2R_SURFACE_GET(ctx->drv,
++						    codec->va_pic.current_display_picture);
++
++		status = av1_submit_pending(ctx, codec->pend_fallback);
++		if (status != VA_STATUS_SUCCESS)
++			return status;
++
++		/* A film-grain frame's shown surface is filled before
++		 * vaEndPicture() returns, not on the first read: a DMABuf
++		 * consumer (GStreamer va into DMABuf caps) never reads through
++		 * VA-API, and would show it empty. */
++		if (display && display->grain_src)
++			ctx->ready_after_end = display;
++	}
+ 
+ 	return VA_STATUS_SUCCESS;
+ }
+diff --git a/src/context.c b/src/context.c
+index a658a83..429031b 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -1210,8 +1210,15 @@ VAStatus v4l2r_EndPicture(VADriverContextP va_ctx, VAContextID context_id)
+ 	ctx->pic.output = NULL;
+ 	ctx->pic.target = NULL;
+ 
+-	if (!ctx->vpp)
++	if (!ctx->vpp) {
++		struct v4l2r_surface *settle = ctx->ready_after_end;
++
++		ctx->ready_after_end = NULL;
+ 		pthread_mutex_unlock(&ctx->codec_lock);
+ 
++		if (settle && status == VA_STATUS_SUCCESS)
++			status = v4l2r_surface_ready(settle);
++	}
++
+ 	return status;
+ }
+diff --git a/src/decode.c b/src/decode.c
+index 74638da..e6ea8f7 100644
+--- a/src/decode.c
++++ b/src/decode.c
+@@ -539,6 +539,7 @@ static VAStatus queue_decode(struct v4l2r_context *ctx,
+ 	ctx->queued_request |= 1u << output->index;
+ 	target->status = VASurfaceRendering;
+ 	target->decode_error = false;
++	target->grain_src = NULL;
+ 
+ 	pthread_mutex_unlock(&ctx->mutex);
+ 	return VA_STATUS_SUCCESS;
+diff --git a/src/surface.c b/src/surface.c
+index faaff1e..70e4d84 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -85,6 +85,8 @@ VAStatus v4l2r_CreateSurfaces(VADriverContextP va_ctx, int width, int height,
+ 				     num_surfaces, NULL, 0);
+ }
+ 
++static VAStatus grain_copy(struct v4l2r_surface *dst);
++
+ VAStatus v4l2r_DestroySurfaces(VADriverContextP va_ctx, VASurfaceID *surface_list,
+ 			       int num_surfaces)
+ {
+@@ -97,6 +99,24 @@ VAStatus v4l2r_DestroySurfaces(VADriverContextP va_ctx, VASurfaceID *surface_lis
+ 		if (!surface)
+ 			return VA_STATUS_ERROR_INVALID_SURFACE;
+ 
++		/* A film-grain display surface still waiting for this one's
++		 * picture takes it now, before the picture goes. */
++		for (;;) {
++			struct v4l2r_surface *other, *waiting = NULL;
++			unsigned int iter = 0;
++
++			pthread_mutex_lock(&drv->mutex);
++			while ((other = v4l2r_handles_next(&drv->surfaces, &iter, NULL)))
++				if (other->grain_src == surface) {
++					waiting = other;
++					break;
++				}
++			pthread_mutex_unlock(&drv->mutex);
++			if (!waiting)
++				break;
++			grain_copy(waiting);
++		}
++
+ 		/* Wait for any pending decode (and conversion, which holds a
+ 		 * pointer to the surface); the CAPTURE buffer itself stays
+ 		 * with the context (V4L2 cannot free single buffers) but is
+@@ -192,6 +212,19 @@ VAStatus v4l2r_QuerySurfaceStatus(VADriverContextP va_ctx,
+ 	/* A frame held back for reordering reports rendering until submitted. */
+ 	v4l2r_flush_surface(surface);
+ 
++	/* A film-grain display surface is ready once its source is; take the
++	 * copy then, so a client that only polls sees it complete. */
++	if (surface->grain_src) {
++		VASurfaceStatus src_status;
++
++		if (v4l2r_QuerySurfaceStatus(va_ctx, surface->grain_src->id,
++					     &src_status) == VA_STATUS_SUCCESS &&
++		    src_status == VASurfaceReady)
++			grain_copy(surface);
++		*status = surface->grain_src ? VASurfaceRendering : surface->status;
++		return VA_STATUS_SUCCESS;
++	}
++
+ 	if (surface->ctx && surface->capture_index >= 0 &&
+ 	    surface->status == VASurfaceRendering)
+ 		v4l2r_reap_capture(surface->ctx);
+@@ -283,6 +316,65 @@ VAStatus v4l2r_QuerySurfaceAttributes(VADriverContextP va_ctx, VAConfigID config
+ 	return VA_STATUS_SUCCESS;
+ }
+ 
++/*
++ * Copy the picture of the surface an AV1 film-grain frame was decoded into
++ * (see grain_src) into the surface the client shows. Both views are linear
++ * single-plane layouts of the same format; each keeps its own pitch and
++ * chroma offset (the AV1 core pads the height).
++ */
++static VAStatus grain_copy(struct v4l2r_surface *dst)
++{
++	struct v4l2r_surface *src = dst->grain_src;
++	struct v4l2r_frame_view sv, dv;
++	unsigned int rows, row_size;
++	const uint8_t *s_luma, *s_chroma;
++	uint8_t *d_luma, *d_chroma;
++	VAStatus status;
++
++	dst->grain_src = NULL;
++	if (!src->ctx)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
++	status = v4l2r_surface_ready(src);
++	if (status != VA_STATUS_SUCCESS)
++		return status;
++
++	status = v4l2r_surface_view(src->ctx->drv, src, true, &sv);
++	if (status != VA_STATUS_SUCCESS)
++		return status;
++	status = v4l2r_surface_view(src->ctx->drv, dst, true, &dv);
++	if (status != VA_STATUS_SUCCESS)
++		return status;
++
++	if (sv.pixelformat != dv.pixelformat || sv.nb_planes != 1 ||
++	    dv.nb_planes != 1 || !sv.map[0] || !dv.map[0]) {
++		v4l2r_log("film grain: cannot copy %.4s into %.4s\n",
++			  (const char *)&sv.pixelformat,
++			  (const char *)&dv.pixelformat);
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++	}
++
++	rows = sv.height < dv.height ? sv.height : dv.height;
++	if (dst->height && rows > dst->height)
++		rows = dst->height;
++	row_size = sv.pitch < dv.pitch ? sv.pitch : dv.pitch;
++
++	s_luma = sv.map[0];
++	s_chroma = s_luma + (size_t)sv.pitch * sv.height;
++	d_luma = dv.map[0];
++	d_chroma = d_luma + (size_t)dv.pitch * dv.height;
++
++	for (unsigned int i = 0; i < rows; i++)
++		memcpy(d_luma + (size_t)i * dv.pitch,
++		       s_luma + (size_t)i * sv.pitch, row_size);
++	for (unsigned int i = 0; i < (rows + 1) / 2; i++)
++		memcpy(d_chroma + (size_t)i * dv.pitch,
++		       s_chroma + (size_t)i * sv.pitch, row_size);
++
++	dst->status = VASurfaceReady;
++	return VA_STATUS_SUCCESS;
++}
++
+ /*
+  * Make a surface's pixels available for reading: submit a decode still held
+  * back for reordering, wait for the decode itself, then for any pending
+@@ -294,6 +386,9 @@ VAStatus v4l2r_surface_ready(struct v4l2r_surface *surface)
+ 
+ 	v4l2r_flush_surface(surface);
+ 
++	if (surface->grain_src)
++		return grain_copy(surface);
++
+ 	if (!surface->ctx || surface->capture_index < 0)
+ 		return VA_STATUS_SUCCESS;
+ 
+diff --git a/src/v4l2_request.h b/src/v4l2_request.h
+index cd68ed0..0a4c880 100644
+--- a/src/v4l2_request.h
++++ b/src/v4l2_request.h
+@@ -186,6 +186,13 @@ struct v4l2r_surface {
+ 	 * V4L2_BUF_FLAG_ERROR. Cleared when the surface is submitted again.
+ 	 * Protected by ctx->mutex while set from the dequeue path. */
+ 	bool decode_error;
++	/* AV1 film grain: the client shows this surface, but the frame was
++	 * decoded into grain_src (VA-API's current_display_picture vs
++	 * current_frame). The H713 core writes the grained picture into the
++	 * decode target and keeps its clean reference data apart, so the
++	 * picture is copied over on the first read. NULL when nothing is
++	 * pending. */
++	struct v4l2r_surface *grain_src;
+ 	/* vaQuerySurfaceError's answer: one whole-frame record and the -1
+ 	 * terminator. Owned by the surface, valid until the next query. */
+ 	VASurfaceDecodeMBErrors mb_errors[2];
+@@ -317,6 +324,11 @@ struct v4l2r_context {
+ 	 * first S submitted frames (and their reference reads) to finish. */
+ 	uint64_t submitted;
+ 	uint64_t completed;
++	/* A surface the codec wants filled before vaEndPicture() returns
++	 * (an AV1 film-grain display surface). Settled by the wrapper after
++	 * the codec lock is dropped: v4l2r_surface_ready() flushes, and the
++	 * flush takes that lock. */
++	struct v4l2r_surface *ready_after_end;
+ 	/* CAPTURE buffers the kernel returned with V4L2_BUF_FLAG_ERROR. */
+ 	uint64_t decode_errors;
+ 	pthread_mutex_t mutex;
+-- 
+2.55.0
+

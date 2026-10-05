@@ -55,6 +55,7 @@ push upstream).
 | 0011 | A bare NV12 surface exported while an 8-bit decode context of its size exists gets that context's own CAPTURE layout (predicted on a throwaway instance of the same device), not the first-enumerated decoder's | GStreamer va exports before the first decode; the generic export was cedrus-shaped and never fitted the AV1 core's padded buffer, so `vaav1dec` into DMABuf decoded into the driver's own buffers and showed black. Now 57/60 frames bit-exact on a 720p clip (the first two and the last race the decoder; see known issues). Skipped with V4L2_REQUEST_SCALE/CROP. FFmpeg (exports before any context) is unchanged; all gates pass, plane-ve plays |
 | 0012 | On the H713 AV1 core (recognised by card name) each frame is submitted at end_picture instead of held for the next | The hold-back exists for Rockchip's per-slot CDF store, which needs refresh_frame_flags; the H713 kernel driver keeps CDFs per frame and never reads it. Held frames were read undecoded by DMABuf consumers that do not vaSyncSurface (first two and last frame). Now 60/60 bit-exact, 3 runs of 3; all gates pass; the FFmpeg VA AV1 matrix is unchanged (38/56 with and without) |
 | 0013 | AV1 `tile_size_bytes` is derived from the gap between consecutive tiles (VA-API does not carry it) instead of a fixed 4 | Encoders use 1 or 2; with 4 the H713 kernel rejected every multi-tile frame (`cannot set up the frame: -22`), so FFmpeg VA-API decoded no tiled AV1. All seven tiled clips now bit-exact vs libdav1d (matrix 38 -> 45 of 56); gates pass |
+| 0014 | AV1 film grain: the shown surface (`current_display_picture`) gets a copy of the grained picture from the decode target; on the H713 before vaEndPicture() returns | The backend wrote only the decode target, so every grain frame showed black through VA-API. All 8 grain clips bit-exact vs libdav1d via FFmpeg (matrix 45 -> 53 of 56) and via GStreamer vaav1dec into DMABuf and system memory; gates pass |
 
 ## Where each bootlin patch went
 
@@ -130,9 +131,9 @@ push upstream).
   Nothing still makes a DMABuf consumer wait for a decode (no fence), so a
   consumer reading the instant a frame arrives could in principle race a
   slow decode; not observed.
-- **FFmpeg VA-API AV1 fails 11 of 56 libdav1d-referenced clips**
-  (`/root/tools/va-av1-matrix.sh`, 2026-10-04; tiles fixed by 0013): film
-  grain (`fgrain-*`, `fg`) and `resize-*` decode in hardware with wrong
-  checksums; `mono` is refused. The 37-clip
+- **FFmpeg VA-API AV1 fails 3 of 56 libdav1d-referenced clips**
+  (`/root/tools/va-av1-matrix.sh`, 2026-10-04; tiles fixed by 0013, film
+  grain by 0014): `resize-*` decode in hardware with wrong checksums;
+  `mono` is refused. The 37-clip
   bit-exact matrix in the kernel work was the direct `v4l2slav1dec` path, not
   VA-API.
