@@ -53,6 +53,7 @@ push upstream).
 | 0009 | Exports report the surface's own size, capped by the buffer, not the padded buffer size | 1080p HEVC/VP9/AV1 surfaces created as 1920x1080 were described as 1920x1088 (the decoders pad), so a consumer sizing a framebuffer from the descriptor showed 8 padding rows. Planes still follow the buffer, so the chroma offset keeps 1088. H.264 stays 1088 (FFmpeg creates it so); VE-scaled surfaces report 1280x720. GPU-path frames match software decode bit for bit (HEVC, VP9, AV1 1080p); GStreamer DMABuf stays bit-exact |
 | 0010 | A frame the kernel flags as failed (V4L2_BUF_FLAG_ERROR) makes vaSyncSurface() return VA_STATUS_ERROR_DECODING_ERROR; vaQuerySurfaceError() describes it as one whole-picture record | Only AV1 (0004) ever looked at the flag; every other codec passed failed frames on as good. Pixels stay readable and nothing later is refused. Measured 2026-10-03: mpv and GStreamer play damaged streams to the end; the ffmpeg CLI's hwdownload treats the error as fatal and stops at the first flagged frame. decode-robustness-test 34/34, all gates pass |
 | 0011 | A bare NV12 surface exported while an 8-bit decode context of its size exists gets that context's own CAPTURE layout (predicted on a throwaway instance of the same device), not the first-enumerated decoder's | GStreamer va exports before the first decode; the generic export was cedrus-shaped and never fitted the AV1 core's padded buffer, so `vaav1dec` into DMABuf decoded into the driver's own buffers and showed black. Now 57/60 frames bit-exact on a 720p clip (the first two and the last race the decoder; see known issues). Skipped with V4L2_REQUEST_SCALE/CROP. FFmpeg (exports before any context) is unchanged; all gates pass, plane-ve plays |
+| 0012 | On the H713 AV1 core (recognised by card name) each frame is submitted at end_picture instead of held for the next | The hold-back exists for Rockchip's per-slot CDF store, which needs refresh_frame_flags; the H713 kernel driver keeps CDFs per frame and never reads it. Held frames were read undecoded by DMABuf consumers that do not vaSyncSurface (first two and last frame). Now 60/60 bit-exact, 3 runs of 3; all gates pass; the FFmpeg VA AV1 matrix is unchanged (38/56 with and without) |
 
 ## Where each bootlin patch went
 
@@ -124,11 +125,14 @@ push upstream).
   driver's capture table and the AV1 decoder. A client holding more than 64
   decoded frames at once still gets decode failures, not back-pressure.
 - ~~**GStreamer `va` AV1 into DMABuf caps still shows nothing**~~ fixed by
-  0011. What remains is a race at the edges: GStreamer syncs a surface only
-  when something maps it through GStreamer, the exported dma-buf carries no
-  fence, and the AV1 backend holds each frame until the next one arrives (its
-  refresh mask needs the next frame). A consumer that reads a dma-buf the
-  moment it arrives can see the first two frames before they are decoded, and
-  the last frame is never submitted at EOS. Measured 57/60 bit-exact (frames 0,
-  1 and 59 not). On a sink that shows frames on its clock, that is one frame
-  time at preroll and at the end. WP4's AV1 plane route uses `v4l2slav1dec`.
+  0011 (layout) and 0012 (no hold-back on the H713): 60/60 bit-exact.
+  Nothing still makes a DMABuf consumer wait for a decode (no fence), so a
+  consumer reading the instant a frame arrives could in principle race a
+  slow decode; not observed.
+- **FFmpeg VA-API AV1 fails 18 of 56 libdav1d-referenced clips**
+  (`/root/tools/va-av1-matrix.sh`, 2026-10-04; identical before 0012): every
+  tiled clip (`tiles-*`, `uhd-tiles`) stops at the first frame with a decode
+  error and no AV1 interrupt; film grain (`fgrain-*`, `fg`) and `resize-*`
+  decode in hardware with wrong checksums; `mono` is refused. The 37-clip
+  bit-exact matrix in the kernel work was the direct `v4l2slav1dec` path, not
+  VA-API.
