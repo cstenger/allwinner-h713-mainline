@@ -579,4 +579,17 @@ fi
 # /etc link, which dpkg then leaves alone).
 rm -f "$R/etc/alsa/conf.d/99-pipewire-default.conf"
 
-echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media)"
+# schedutil may retarget the CPU clock only every 10 ms, not every 462 us
+# (the default, from cpuinfo_transition_latency). At the default it changed
+# the clock ~740 times a second during video, each change waiting on the
+# CPU PLL to relock. Measured 2026-10-04 on 30 s of 720p H.264 with audio
+# (busy x average MHz x 4 cores): 651 at 462 us, 382 at 10 ms, the average
+# clock unchanged, 0 dropped frames. 10 ms is a third of a 30 fps frame;
+# 50 ms saved more but is longer than a frame. cpufreq-dt and its vdd-cpu
+# regulator are built in, so the file exists before systemd-tmpfiles runs.
+install -d -m 0755 "$R/etc/tmpfiles.d"
+cat > "$R/etc/tmpfiles.d/h713-cpufreq.conf" <<EOF
+w /sys/devices/system/cpu/cpufreq/schedutil/rate_limit_us - - - - 10000
+EOF
+
+echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media), schedutil rate limit 10 ms"
