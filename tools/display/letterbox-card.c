@@ -15,6 +15,11 @@
  * control and source address, for letterbox-apply.py's osd steps. On exit the
  * plane gets the framebuffer it had back (the console's).
  *
+ * CARD=<variant> (with --primary) draws something else, for the downstream
+ * signature probe (tools/display/panel-signature.sh): upright (default),
+ * x / y / xy (the card mirrored in SOFTWARE), shift (moved 1 px right),
+ * black, white, grey, red, green, blue.
+ *
  * WHY ONE BUFFER. The plane's atomic_check takes only a 1280x720, pitch-1280
  * framebuffer, so a sub-panel card cannot be committed through KMS. Instead
  * one dumb buffer holds every card at its own offset; the framebuffer covers
@@ -200,14 +205,40 @@ static uint32_t xrgb(int c)
 	return out;
 }
 
-static void render_xrgb(uint8_t *bo)
+static int render_xrgb(uint8_t *bo, const char *variant)
 {
-	unsigned x, y;
+	static const struct { const char *name; uint32_t rgb; } solid[] = {
+		{ "black", 0x000000 }, { "white", 0xffffff }, { "grey", 0x808080 },
+		{ "red", 0xff0000 }, { "green", 0x00ff00 }, { "blue", 0x0000ff },
+	};
+	int fx = 0, fy = 0, shift = 0;
+	unsigned x, y, i;
 
+	for (i = 0; i < sizeof(solid) / sizeof(solid[0]); i++)
+		if (!strcmp(variant, solid[i].name)) {
+			for (y = 0; y < PANEL_H; y++)
+				for (x = 0; x < PANEL_W; x++)
+					((uint32_t *)(bo + (size_t)y * OSD_STRIDE))[x] = solid[i].rgb;
+			return 0;
+		}
+	if (!strcmp(variant, "x") || !strcmp(variant, "xy"))
+		fx = 1;
+	if (!strcmp(variant, "y") || !strcmp(variant, "xy"))
+		fy = 1;
+	if (!strcmp(variant, "shift"))
+		shift = 1;
+	if (!fx && !fy && !shift && strcmp(variant, "upright")) {
+		fprintf(stderr, "unknown CARD=%s\n", variant);
+		return -1;
+	}
 	for (y = 0; y < PANEL_H; y++)
-		for (x = 0; x < PANEL_W; x++)
-			((uint32_t *)(bo + (size_t)y * OSD_STRIDE))[x] =
-				xrgb(colour_at(x, y, PANEL_W, PANEL_H));
+		for (x = 0; x < PANEL_W; x++) {
+			unsigned sx = fx ? PANEL_W - 1 - x : x, sy = fy ? PANEL_H - 1 - y : y;
+			int c = shift && x == 0 ? GREY : colour_at(sx - shift, sy, PANEL_W, PANEL_H);
+
+			((uint32_t *)(bo + (size_t)y * OSD_STRIDE))[x] = xrgb(c);
+		}
+	return 0;
 }
 
 static uint32_t find_prop(int fd, uint32_t obj, const char *name)
@@ -354,7 +385,10 @@ static int run_primary(int fd, uint32_t crtc, drmModePlaneRes *pres, unsigned dw
 		perror("mmap dumb");
 		goto out;
 	}
-	render_xrgb(p);
+	if (render_xrgb(p, getenv("CARD") ? getenv("CARD") : "upright")) {
+		munmap(p, create.size);
+		goto out;
+	}
 	munmap(p, create.size);
 	handles[0] = create.handle;
 	pitches[0] = OSD_STRIDE;
