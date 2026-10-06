@@ -73,6 +73,7 @@
 #        out.w < X ? X - out.w + 16 : 16 there, X unknown (node+0x90); live 16.
 #        Same picture as s4 means the field does not matter here.
 #   s5   640x360 ->  960x540 at (160,90)  magnified AND placed on both axes
+#   letterbox-test.sh phase3b       the Phase 3 bisect (p0 p1 p2 p3 q3 q5 q1, below)
 #   letterbox-test.sh show  z|a|b|c|s1..s5 each recipe register now: old / NEW / ???
 #   letterbox-test.sh restore       emergency: put back /tmp/letterbox-saved.json
 #   letterbox-test.sh off           release the plane (console returns)
@@ -111,6 +112,7 @@ GAP_S=${GAP_S:-5}
 TAIL_S=${TAIL_S:-5}
 SEQUENCE="z a b c"
 SEQUENCE_P3="z s1 s2 s3 s4 s4h s5"
+SEQUENCE_P3B="p0 p1 p2 p3 q3 q5 q1"
 FRESH=$OUT/native-card.txt
 
 say(){ printf '%s\n' "$*"; }
@@ -125,6 +127,23 @@ step_params(){
 	s4h) SIZE=352x288; OUTSZ=880x720;  AT=200,0;  PITCH=352; REGION=s352
 	     VARIANT="proc 0x038 16 16 416"; return ;;
 	s5)  SIZE=640x360; OUTSZ=960x540;  AT=160,90; PITCH=640; REGION=s640; return ;;
+	# PHASE 3 BISECT (2026-10-05): the first phase3 run cut every magnified
+	# picture after H PANEL lines (s4 showed source lines 0..~115 = 288/2.5,
+	# then flat white). Something downstream of the fetch still counts source
+	# lines. Each variant changes NR's vertical window fields to the
+	# DESTINATION height; the window that shows the whole card names it.
+	#   p0  s4 as recipe (reproduces the cut)
+	#   p1  s4, comp+858[31:16] = OH        (NR output window end; Phase 1's field)
+	#   p2  s4, p1 + comp+840[31:16] = OH+1 (fetch window h) + comp+80c[15:0] = OH
+	#   p3  s4, comp+840/80c only           (ranks: is p1 alone enough?)
+	#   q3/q5/q1  s3/s5/s1 with p1          (generality: another ratio, both offsets, 2x)
+	p0) step_params s4; return ;;
+	p1) step_params s4; VARIANT="comp 0x858 16 16 720"; return ;;
+	p2) step_params s4; VARIANT="comp 0x858 16 16 720; comp 0x840 16 16 721; comp 0x80c 0 16 @720"; return ;;
+	p3) step_params s4; VARIANT="comp 0x840 16 16 721; comp 0x80c 0 16 @720"; return ;;
+	q3) step_params s3; VARIANT="comp 0x858 16 16 720"; return ;;
+	q5) step_params s5; VARIANT="comp 0x858 16 16 540"; return ;;
+	q1) step_params s1; VARIANT="comp 0x858 16 16 720"; return ;;
 	esac
 	case "${1:-}" in
 	z) SIZE=1280x720; AT=0,0;     PITCH=1280; REGION=native ;;
@@ -157,18 +176,29 @@ recipe_json(){	# step -> $OUT/step-<x>.json, from the fresh baseline
 		> "$OUT/step-$1.recipe.txt" ||
 		{ cat "$OUT/step-$1.recipe.txt"; say "recipe refused"; exit 1; }
 	if [ -n "$VARIANT" ]; then	# one field changed on top of the recipe
-		python3 - "$OUT/step-$1.json" $VARIANT <<-'EOF' || exit 1
+		python3 - "$OUT/step-$1.json" "$VARIANT" <<-'EOF' || exit 1
+		# "blk off lsb width val; ..."  val "@N" = a REL field's value for a
+		# height of N: native value + N - 720 (all rel heights here are
+		# live + h - 720)
 		import json, sys
-		path, blk, off, lsb, width, val = sys.argv[1], sys.argv[2], *map(lambda v: int(v, 0), sys.argv[3:])
+		path, spec = sys.argv[1], sys.argv[2]
 		doc = json.load(open(path))
-		for r in doc["regs"]:
-		    if r["block"] == blk and r["off"] == off:
-		        m = ((1 << width) - 1) << lsb
-		        r["new"] = (r["new"] & ~m) | (val << lsb)
-		        r["notes"] = r["notes"] + [f"VARIANT [{lsb + width - 1}:{lsb}]={val}"]
-		        break
-		else:
-		    sys.exit(f"{blk}+{off:03x} not in the recipe")
+		for change in spec.split(";"):
+		    blk, off, lsb, width, val = change.split()
+		    off, lsb, width = int(off, 0), int(lsb, 0), int(width, 0)
+		    m = ((1 << width) - 1) << lsb
+		    for r in doc["regs"]:
+		        if r["block"] == blk and r["off"] == off:
+		            if val.startswith("@"):
+		                v = ((r["old"] & m) >> lsb) + int(val[1:]) - 720
+		            else:
+		                v = int(val, 0)
+		            r["new"] = (r["new"] & ~m) | (v << lsb)
+		            r["notes"] = r["notes"] + [f"VARIANT [{lsb + width - 1}:{lsb}]={v}"]
+		            print(f"  variant {blk}+{off:03x}[{lsb + width - 1}:{lsb}] = {v}")
+		            break
+		    else:
+		        sys.exit(f"{blk}+{off:03x} not in the recipe")
 		json.dump(doc, open(path, "w"), indent=1)
 		EOF
 	fi
@@ -316,8 +346,12 @@ plan)
 			grep -E 'step |preflight|REFUSED|SEQUENCE|dry run|BISECT'
 		exit 0
 	fi
-	if [ "${2:-}" = all ] || [ "${2:-}" = phase3 ]; then
-		if [ "$2" = phase3 ]; then sequence_json "$SEQUENCE_P3"; else sequence_json; fi
+	if [ "${2:-}" = all ] || [ "${2:-}" = phase3 ] || [ "${2:-}" = phase3b ]; then
+		case $2 in
+		phase3)  sequence_json "$SEQUENCE_P3" ;;
+		phase3b) sequence_json "$SEQUENCE_P3B" ;;
+		*)       sequence_json ;;
+		esac
 		check_gates || { say "REFUSING: gates are not satisfied. Run 'card' first."; exit 1; }
 		$SSH "python3 $R/letterbox-apply.py --sequence $R/sequence.json --dry-run" |
 			grep -E 'step |preflight|REFUSED|SEQUENCE|dry run'
@@ -350,7 +384,7 @@ step)
 	fi
 	;;
 
-all|bisect|phase3)
+all|bisect|phase3|phase3b)
 	mode=$1
 	bring_card || exit 1
 	if [ "$mode" = bisect ]; then
@@ -359,6 +393,9 @@ all|bisect|phase3)
 	elif [ "$mode" = phase3 ]; then
 		say "== phase 3, one go: $SEQUENCE_P3 =="
 		sequence_json "$SEQUENCE_P3"; seqfile=$R/sequence.json; n=7
+	elif [ "$mode" = phase3b ]; then
+		say "== phase 3 bisect, one go: $SEQUENCE_P3B =="
+		sequence_json "$SEQUENCE_P3B"; seqfile=$R/sequence.json; n=7
 	else
 		say "== all steps, one go: $SEQUENCE =="
 		sequence_json; seqfile=$R/sequence.json; n=4

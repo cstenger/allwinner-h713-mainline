@@ -193,3 +193,14 @@ Carry into Phase 2:
   - The earlier "doubled diagonal" was two things. The pattern draws its band bouncing off the edges, so it shows two segments in a software render too. And during the 534/536 fault the band's colour sat 16–20 lines above its luma, a real second diagonal, removed by the height rounding.
 - **PHASE 2 VERIFIED ON HARDWARE.**
 - **Open, separate task:** audio clicks at clip start.
+
+## Phase 3, first panel run (2026-10-05): magnified pictures cut after H panel lines
+
+`letterbox-test.sh phase3` (z s1 s2 s3 s4 s4h s5), log
+`local/h713-lab/letterbox-phase3-20261005/phase3.log`, operator photo of s4
+`.../s4-cut-photo.jpg`.
+- **Board side clean:** every window held 47/47 registers as written at mid-hold and at end of hold; every step restored exactly; no wedge.
+- **Operator:** the native card was always right. Every magnified card showed its **top part correctly scaled and placed**, with a **flat white region below** whose height varied by test. Letterbox placement and bars looked right.
+- **Reading (s4, 352x288 → 880x720):** the cut sits at about source line 115 = 288/2.5. The picture stops after **H panel lines** (the source height counted in output time), so the visible fraction is 1/scale. NR's output window is still in source lines while proc spreads them over OH. Phase 1 found `comp+858[31:16]` (`para[0]`, the NR out-window height **passed in by WCETop**, `0x8b1a3934`) ends that window. The firmware's one scaled log cannot settle it, because its path runs through DETN, which buffers through memory.
+
+**Bisect, `letterbox-test.sh phase3b`:** p0 = s4 as recipe; p1 = `858[31:16]` = OH; p2 = p1 + `840[31:16]` = OH+1 + `80c[15:0]` at OH; p3 = 840/80c only; q3/q5/q1 = s3/s5/s1 with p1. Dry run passes.
