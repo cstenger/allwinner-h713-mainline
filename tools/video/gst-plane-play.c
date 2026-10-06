@@ -23,7 +23,8 @@
  *
  * Audio, when the file has any, goes to PipeWire through its ALSA plugin
  * (alsasink device=pipewire; packages gstreamer1.0-alsa and pipewire-alsa).
- * The pipeline runs on the system clock and the audio sink follows it.
+ * alsasink provides the pipeline clock; the system clock is used only when
+ * GST_PLANE_PLAY_AUDIOSINK overrides the sink (see main()).
  *
  *   usage: gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]
  *          CODEC   h264 | h265 | vp9 | av1
@@ -192,7 +193,7 @@ static void on_pad_added(GstElement *decodebin, GstPad *pad, gpointer data)
 		 * frequency governor. Whole board 17.9% -> 7.3% (no audio:
 		 * 2.7%), sync +14..+29 ms (2026-10-03).
 		 * GST_PLANE_PLAY_AUDIOSINK replaces the sink for measurements.
-		 * The pipeline clock is pinned to the system clock in main(). */
+		 * alsasink is the pipeline clock; see main(). */
 		GstElementFactory *alsa = gst_element_factory_find("alsasink");
 		const char *override = getenv("GST_PLANE_PLAY_AUDIOSINK");
 		const char *sink = override && *override ? override :
@@ -281,12 +282,22 @@ int main(int argc, char **argv)
 	}
 
 	p.pipeline = gst_pipeline_new("play");
-	/* The system clock, which the audio sink follows. pipewiresink's own
-	 * clock once showed a 720p clip 93 frames in 19 s, the rest late; the
-	 * alsasink numbers were all measured on this clock (2026-10-03). */
-	clock = gst_system_clock_obtain();
-	gst_pipeline_use_clock(GST_PIPELINE(p.pipeline), clock);
-	gst_object_unref(clock);
+	/* alsasink provides the clock, as in any stock pipeline. Pinning the
+	 * system clock made it a slaved sink, and a slaved GstAudioBaseSink
+	 * starts its ring buffer after the first preroll buffer, not when the
+	 * ring is full: pipewire-alsa takes the whole 200 ms ring at once,
+	 * mostly cleared segments, and the audio rendered behind them is
+	 * dropped. So every clip opened with ~200 ms of audio missing, and when
+	 * a sliver of it got out first, an audible tone, gap, click (5/5 starts
+	 * pinned, 0/N on the sink's clock; 2026-10-05). The system clock stays
+	 * for an overridden sink: pipewiresink's own clock once showed a 720p
+	 * clip 93 frames in 19 s, the rest late (2026-10-03). Files without
+	 * audio fall back to the system clock by themselves. */
+	if (getenv("GST_PLANE_PLAY_AUDIOSINK")) {
+		clock = gst_system_clock_obtain();
+		gst_pipeline_use_clock(GST_PIPELINE(p.pipeline), clock);
+		gst_object_unref(clock);
+	}
 	p.loop = g_main_loop_new(NULL, FALSE);
 
 	/* Stop at the compressed video (our decoder, not decodebin's pick)
