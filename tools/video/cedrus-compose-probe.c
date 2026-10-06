@@ -223,9 +223,11 @@ int ioctl(int fd, unsigned long req, ...)
     if (req == VIDIOC_S_FMT && arg) {
         struct v4l2_format *fmt = arg;
         if (fmt->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
-            /* Both engines can feed the polyphase scaler. */
+            /* Both engines can feed the polyphase scaler; VP9 runs on
+             * the H.265 one (kernel 0167). */
             int h26x = fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_H264_SLICE ||
-                       fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_HEVC_SLICE;
+                       fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_HEVC_SLICE ||
+                       fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_VP9_FRAME;
 
             /* No counter reset here: one stream per process, and the VA
              * driver's per-surface layout probes repeat this S_FMT

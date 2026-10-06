@@ -113,7 +113,7 @@ anywhere on the panel, magnification through the proc upscaler.
 | H.264/HEVC above 720p, not 16:9: scope films (1920x800), 1.85:1, 4:3 (1440x1080), 2560x1080 | GPU | **plane-ve**: the VE scales to the fit size, the plane centres it | — |
 | Any codec below 720p: 480p/576p DVD (anamorphic SAR included), 360p web | GPU | GPU (native size would be a postage stamp) | **plane-native**: proc magnifies to fit |
 | 720 lines high, not 16:9 (960x720) | GPU | plane-native, centred | — |
-| VP9/AV1 above 720p, 10-bit above 720p, 90/270° rotation, subtitles | GPU | GPU | GPU (VP9 moves when WP6 lands) |
+| VP9/AV1 above 720p, 10-bit above 720p, 90/270° rotation, subtitles | GPU | GPU | GPU (VP9 moved to plane-ve with WP6, kernel 0167, 2026-10-06) |
 
 Phase 2 is the first shippable step. It covers the commonest case, because
 most films are not 16:9.

@@ -311,8 +311,9 @@ attached, the display path can be brought up here, not only on the projector
      the panel with black bars, magnifies sub-panel pictures up to 4x and
      changes size mid-stream with one dark frame. Stock `kmssink` drives it,
      so non-16:9 and sub-720p H.264/HEVC/VP9/AV1 no longer need the GPU.
-     Still on the GPU: 10-bit, rotation, non-square pixels and VP9/AV1
-     above the panel. The hardware mirror (WP5) followed the same day:
+     Still on the GPU: 10-bit, rotation, non-square pixels and AV1
+     above the panel (VP9 above the panel moved to plane-ve with WP6,
+     kernel 0167, 2026-10-06). The hardware mirror (WP5) followed the same day:
      kernel 0166, `h713-mirror front|rear|rear-ceiling|ceiling`, both
      paths, no GPU cost ([mirror-plan.md](mirror-plan.md)).
 

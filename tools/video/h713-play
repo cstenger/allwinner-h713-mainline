@@ -7,9 +7,10 @@
 #   plane-native  a picture already at its fit size (1280x720; with letterbox
 #                 also e.g. 960x720 or 1280x536), any of H.264/HEVC/VP9/AV1:
 #                 stock v4l2sl*dec ! kmssink, zero-copy onto the video plane.
-#   plane-ve      H.264/HEVC larger than its fit: va*dec with the VE
+#   plane-ve      H.264/HEVC/VP9 larger than its fit: va*dec with the VE
 #                 decode-time scaler down to the fit size, onto the video
 #                 plane. Without letterbox only a 1280x720 fit qualifies.
+#                 VP9 needs kernel 0167, detected by asking cedrus.
 #   plane-up      a picture SMALLER than its fit (480p, 576p, 360p), any of
 #                 H.264/HEVC/VP9/AV1: stock v4l2sl*dec ! kmssink; kmssink
 #                 commits its aspect-fit destination and the display's proc
@@ -27,8 +28,8 @@
 # 1280x720. Kernel 0163 adds magnification, detected from the plane's
 # SCALING_FILTER property. The plane cannot rotate 90/270 and has no
 # downscaler;
-# the VE scaler downscales H.264 and
-# HEVC only (VP9 is WP6, AV1 has none). 10-bit goes to the GPU route: the VE
+# the VE scaler downscales H.264,
+# HEVC and VP9 (kernel 0167, WP6); AV1 has none. 10-bit goes to the GPU route: the VE
 # scaler cannot output it. There, V4L2_REQUEST_LSB10_LINEAR=1 lets mpv's
 # interop accept P010 at all (libva patch 0008). 10-bit AV1 then arrives as
 # the AV1 core's LSB-aligned samples and needs shaders/lsb10.glsl (x64; 10-bit
@@ -150,6 +151,41 @@ PY
 )
 letterbox=0
 [ "${min_w:-$PANEL_W}" -lt $PANEL_W ] && letterbox=1
+
+# Whether cedrus scales VP9 (kernel 0167): with VP9 on a fresh context's
+# OUTPUT queue, VIDIOC_ENUM_FRAMESIZES offers NV12 as a STEPWISE range only
+# where the scaler is admitted (0119), and the single coded size otherwise.
+# A fresh m2m context touches no running decode. Prints 1 or 0.
+ve_scales_vp9() {
+	python3 - <<'PY' 2>/dev/null || echo 0
+import fcntl, glob, os, struct
+def fourcc(s): return struct.unpack("<I", s.encode())[0]
+for dev in sorted(glob.glob("/dev/video*")):
+    try:
+        fd = os.open(dev, os.O_RDWR)
+    except OSError:
+        continue
+    try:
+        cap = bytearray(104)
+        fcntl.ioctl(fd, 0x80685600, cap, True)          # VIDIOC_QUERYCAP
+        if cap[:16].split(b"\0")[0] != b"cedrus":
+            continue
+        fmt = bytearray(208)                            # v4l2_format, OUTPUT
+        struct.pack_into("<I", fmt, 0, 2)
+        struct.pack_into("<III", fmt, 8, 1920, 1080, fourcc("VP9F"))
+        fcntl.ioctl(fd, 0xC0D05605, fmt, True)          # VIDIOC_S_FMT
+        fs = bytearray(44)                              # v4l2_frmsizeenum
+        struct.pack_into("<II", fs, 0, 0, fourcc("NV12"))
+        fcntl.ioctl(fd, 0xC02C564A, fs, True)           # VIDIOC_ENUM_FRAMESIZES
+        print(1 if struct.unpack_from("<I", fs, 8)[0] == 3 else 0)
+        raise SystemExit
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+print(0)
+PY
+}
 magnify=0
 [ $letterbox = 1 ] && [ "${scales:-0}" = 1 ] && magnify=1
 
@@ -179,7 +215,8 @@ elif [ $w -le $fw ] && [ $h -le $fh ]; then
 	elif [ $(( w % 2 )) = 1 ] || [ $(( h % 2 )) = 1 ]; then why="odd size ${w}x${h}"
 	else plane=up
 	fi
-elif [ $gst != h264 ] && [ $gst != h265 ]; then why="no VE scaler for $codec"
+elif [ $gst = av1 ]; then why="no VE scaler for $codec"
+elif [ $gst = vp9 ] && [ "$(ve_scales_vp9)" != 1 ]; then why="this kernel's VE does not scale VP9 (kernel 0167)"
 elif [ $w -lt $fw ] || [ $h -lt $fh ]; then why="needs magnifying on one axis and shrinking on the other (${w}x${h} -> ${fw}x${fh})"
 elif [ $w -gt $VA_MAX ] || [ $h -gt $VA_MAX ]; then why="larger than the VA driver's ${VA_MAX} cap"
 else plane=ve

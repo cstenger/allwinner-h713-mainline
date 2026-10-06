@@ -3,7 +3,10 @@
 """Validate active NV12 pixels through the H713 polyphase scaler.
 
 Run on the board with ffmpeg, the v4l2_request VA driver, the repository's
-v01-v05/h01-h07 vectors, and a compiled cedrus-compose-probe.c shared library.
+v01-v05/h01-h07 vectors, the v01-v12 VP9 vectors va-regress.sh uses, and a compiled cedrus-compose-probe.c shared
+library. The large VP9 clips are generated on the board under --root on first
+use (libvpx-vp9, no alt-ref frames, so decode order is display order and a
+late dump is a predicted frame).
 The adapter dumps capture buffers headlessly; it cannot describe scaled VA
 surfaces correctly for playback or hwdownload.
 """
@@ -12,8 +15,13 @@ from pathlib import Path
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--root', type=Path, default=Path('/mnt/media-data/scaler-tests'))
 parser.add_argument('--clips', default='/root/video-test')
+parser.add_argument('--vp9-clips', default='/var/tmp', help='the v01-v12 VP9 .webm vectors')
 parser.add_argument('--probe', type=Path, default=Path('/mnt/media-data/cedrus-compose-probe.so'))
 parser.add_argument('--expected-md5', help='require this installed module digest')
+parser.add_argument('--only', choices=('all', 'vp9'), default='all',
+                    help='vp9: run only the VP9 cases')
+parser.add_argument('--keep-dumps', action='store_true',
+                    help='keep each NV12 dump (the media partition is small)')
 args = parser.parse_args()
 root = args.root
 root.mkdir(parents=True, exist_ok=True)
@@ -63,6 +71,8 @@ def test(clip, w, h, mode='format', frames=30, dump_at=1, pitch=0):
         raise RuntimeError(name + ' no metadata/dump: ' + p.stderr)
     cw, ch, stride, size, aw, ah = map(int, matches[-1])
     a = dump.read_bytes()
+    if not args.keep_dumps:
+        dump.unlink()
     geometry_ok = (aw >= w and ah >= h) if mode == 'unscaled' else (aw, ah) == (w, h)
     if not geometry_ok or len(a) != size or (pitch and stride != pitch):
         raise RuntimeError(name + f' geometry {(cw, ch, stride, size, aw, ah)} bytes {len(a)}')
@@ -81,7 +91,47 @@ def test(clip, w, h, mode='format', frames=30, dump_at=1, pitch=0):
     if min(scores) < 27 or scores[0] < 32:
         raise RuntimeError(name + ' quality failed')
     return y + uv
-try:
+def vp9_clip(name, size, frames, crf):
+    # Regenerated when absent; the reference is a software decode of the same
+    # file, so the encoder version does not matter.
+    path = root / name
+    if not path.exists():
+        subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+                        '-i', f'testsrc2=size={size}:rate=30', '-frames:v', str(frames),
+                        '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', str(crf),
+                        '-deadline', 'realtime', '-cpu-used', '8', '-row-mt', '1',
+                        '-auto-alt-ref', '0', '-lag-in-frames', '0', '-g', str(frames),
+                        '-pix_fmt', 'yuv420p', '-f', 'ivf', '-y', str(path) + '.tmp'],
+                       check=True, timeout=900)
+        os.rename(str(path) + '.tmp', path)
+    return str(path)
+
+def vp9_cases():
+    # VP9 runs on the H.265 engine's secondary output (kernel 0167).
+    clip = args.vp9_clips + '/v04-720p-default.webm'
+    # 640x180 is asymmetric: a symmetric ratio cannot catch swapped H/V fields.
+    # 854x478 widens the pitch (864 -> 896) so the chroma base is 256-aligned.
+    for w, h in ((640, 360), (640, 180), (854, 478)):
+        if test(clip, w, h) != test(clip, w, h, mode='compose'):
+            raise RuntimeError(f'VP9 APIs disagree at {w}x{h}')
+    # The scaler writes even sizes: odd-sized 350x286 halves to 174x142.
+    for name, w, h in (('v02-inter-1tile.webm', 352, 288), ('v03-720p-4tiles.webm', 1280, 720), ('v04-720p-default.webm', 1280, 720), ('v07-seg-cyclic.webm', 640, 360), ('v09-lossless.webm', 352, 288), ('v10-odd-350x286.webm', 350, 286), ('v11-1080p-mandel.webm', 1920, 1080)):
+        test(args.vp9_clips + '/' + name, w // 2 & ~1, h // 2 & ~1)
+        test(args.vp9_clips + '/' + name, w, h, mode='unscaled')
+    # The plane routes' sizes: 1080p and scope to the 1280-wide panel, and 4K.
+    # A late dump is a P-frame: references are the full-size reconstructions.
+    fhd = vp9_clip('vp9-1920x1080-ip.ivf', '1920x1080', 60, 32)
+    test(fhd, 1280, 720)
+    test(fhd, 1280, 720, frames=60, dump_at=45)
+    test(vp9_clip('vp9-1920x800-ip.ivf', '1920x800', 30, 32), 1280, 534, dump_at=20)
+    test(vp9_clip('vp9-3840x2160-ip.ivf', '3840x2160', 10, 36), 1280, 720, frames=10, dump_at=8)
+    # VP9 and H.264 share TOP1's geometry and coefficient banks.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(test, fhd, 1280, 720, frames=60, dump_at=50), pool.submit(test, args.clips + '/v04-1280x720-high.h264', 854, 478, frames=90)]
+        for job in jobs:
+            job.result()
+
+def h264_hevc_cases():
     clip = args.clips + '/v04-1280x720-high.h264'
     for w, h in ((1280, 720), (640, 360), (320, 180), (640, 180), (960, 540), (854, 480), (854, 478)):
         a = test(clip, w, h)
@@ -121,6 +171,11 @@ try:
         '-f', 'hevc', '-y', str(generated),
     ], check=True, timeout=60)
     test(str(generated), 258, 242, frames=90, dump_at=60)
+
+try:
+    if args.only == 'all':
+        h264_hevc_cases()
+    vp9_cases()
     after = subprocess.check_output(['dmesg'], text=True)
     new = '\n'.join((line for line in after.splitlines() if line not in before.splitlines()))
     (root / 'dmesg-new.txt').write_text(new)

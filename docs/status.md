@@ -6,6 +6,13 @@ is not risked for bring-up.
 
 _Last updated: 2026-10-06._
 
+> **2026-10-06 — VP9 VE scaling (WP6) done.** Kernel 0167 lets the VE's
+> polyphase scaler shrink VP9 while it decodes, as it already did H.264 and
+> HEVC. 1080p, scope and 4K VP9 now play on the video plane with the GPU
+> idle (`h713-play` picks plane-ve), 0 dropped frames; unscaled VP9 stays
+> bit-exact ([reference/vp9-scaler-2026-10-06.md](reference/vp9-scaler-2026-10-06.md)).
+> AV1 above the panel is the one codec left on the GPU.
+
 > **2026-10-06 — hardware mirror (WP5) done.** Kernel 0166 mirrors the panel
 > for rear and ceiling projection, as the stock firmware does: `h713-mirror
 > front|rear|rear-ceiling|ceiling [--persist]`, or the DRM `rotation`

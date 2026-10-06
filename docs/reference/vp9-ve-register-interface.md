@@ -48,7 +48,7 @@ Addresses: **`reg = (phys >> 10) << 2`** (i.e. `phys >> 8`, 1 KiB aligned).
 | 0x34 | trigger | write **7**, then **8** |
 | 0x38 | status | bits 0..2 = finish/error/..., write-1-to-clear; bit 19 (`<<0xc` sign test) = bitstream DMA busy |
 | 0x40/44/48/4c | bits base/offset/len/end | as H.265 |
-| 0x50/54/58 | secondary output ctrl / Y / C | |
+| 0x50/54/58 | secondary output ctrl / Y / C | ctrl 0 (TOP1 does the scaling); Y/C are `addr >> 8`, enabled by func_ctrl bit 9. Feeds the VE+0xf00 polyphase scaler exactly as H.265 does (kernel 0167, [vp9-scaler-2026-10-06.md](vp9-scaler-2026-10-06.md)). There is no `+0x80` low-address register for VP9, so the secondary chroma base must be 256-byte aligned |
 | 0x5c | segment_feature | per-segment 2-bit feature-enable pairs `[17:16]..[31:30]` |
 | 0x60 | neighbor info addr | 0x1f4000-byte buffer |
 | 0x64 | "entry point offset" addr | the 0x88000 prob/count/seg buffer: probs `+0` (0xc57 B), **counts `+0x4b00` (0x3398 B)**, segment ids `+0x8000` |

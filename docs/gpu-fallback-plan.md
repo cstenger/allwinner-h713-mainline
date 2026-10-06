@@ -50,9 +50,9 @@ over the 43 capture clips plus the letterbox gate clips on the board
 | Content | Route | Path |
 | --- | --- | --- |
 | Any plane codec (H.264, HEVC, VP9, AV1), 8-bit, exactly at its fit size (1280x720, or e.g. 960x720 / 1280x536 with letterbox) | **plane-native** | stock `v4l2sl*dec ! kmssink`, zero-copy onto the video plane, black bars (kernel 0161) |
-| H.264 / HEVC, 8-bit, larger than its fit (1080p, 4K, scope 1920x800, ultrawide 2560x1080, 4:3 1440x1080) | **plane-ve** | `va*dec` with the VE decode-time scaler to the fit size, then `kmssink`, letterboxed or pillarboxed |
+| H.264 / HEVC / VP9, 8-bit, larger than its fit (1080p, 4K, scope 1920x800, ultrawide 2560x1080, 4:3 1440x1080) | **plane-ve** | `va*dec` with the VE decode-time scaler to the fit size, then `kmssink`, letterboxed or pillarboxed |
 | Any plane codec, 8-bit, square pixels, smaller than its fit and at most 4x (360p, 480p, 540p, 352x288) | **plane-up** | `v4l2sl*dec ! kmssink`; the display's proc block magnifies (kernel 0163) |
-| VP9 / AV1 larger than the panel | **GPU** | no VE scaler for VP9 (WP6) and none exists for AV1 (stock agrees) |
+| AV1 larger than the panel | **GPU** | no VE scaler exists for AV1 (stock agrees). VP9 moved to plane-ve with WP6 (kernel 0167) |
 | 10-bit (HEVC Main10, AV1 10-bit) | **GPU** | the VE scaler cannot output it; stock GStreamer cannot carry P010 into kmssink. AV1 gets the LSB10 shader |
 | Non-square pixels (SAR != 1), smaller than the fit | **GPU** | stock kmssink puts the PAR correction into the source rectangle |
 | HEVC with a conformance crop, smaller than the fit | **GPU** | stock `v4l2slh265dec` copies every frame (uncached, ~53 ms) |
@@ -325,7 +325,7 @@ Also open:
 **WP4 — the launcher and 10-bit for GL.**
 - **Operator idea (2026-10-02): put the VE's polyphase scaler in front of stock `kmssink`** so sizes other than 1280x720 reach the video plane with the GPU idle (stock `kmssink` takes only exact 1280x720; see the WP2 follow-up).
   - The VA driver already exposes the scaler through `V4L2_REQUEST_SCALE` (libva 0008/0010), and GStreamer's `va*dec` now work (libva 0021–0025). So `vah264dec`/`vah265dec ! kmssink` with the variable set may need no GStreamer patch at all.
-  - Limits: the decode-time scaler exists for H.264 and HEVC only. VP9 scaling is unported (WP6), and AV1 has none; those stay on the GPU path.
+  - Limits: the decode-time scaler exists for H.264 and HEVC; VP9 joined with WP6 (kernel 0167). AV1 has none and stays on the GPU path.
   - It also needs aspect-fit: a non-16:9 source still has to be letterboxed, which the plane cannot do yet ([letterbox-plan.md](letterbox-plan.md)).
 
 **WP4 findings so far (2026-10-03): the plane routes work, with stock GStreamer and one pad probe.**
@@ -441,7 +441,7 @@ Still open in WP4:
 
 **Later.**
 - **WP5, the hardware mirror: DONE 2026-10-06.** Kernel 0166 adds the installation mode (`h713-mirror front|rear|rear-ceiling|ceiling [--persist]`, sysfs `mirror_mode`) and `rotation` (REFLECT_X/Y, ROTATE_180) on both DRM planes. It works on both paths with no GPU cost; P010 under V is refused. Plan: [mirror-plan.md](mirror-plan.md); gate: [reference/mirror-phase2-2026-10-06.md](reference/mirror-phase2-2026-10-06.md).
-- **WP6, VP9 VE scaling:** read Jernej's patches, then the stock 4K VE pages, then extend `cedrus_can_scale()`.
+- **WP6, VP9 VE scaling: DONE 2026-10-06.** Kernel 0167 admits VP9 to the TOP1 polyphase scaler through the H.265 engine's secondary output (func_ctrl bit 9, Y/C at `+0x54/+0x58` >> 8, no `+0x80` low-address register, so the chroma base is 256-byte aligned). Stock's 4K VP9 VE page and Jernej's H6 VP9 P010 patch give the same recipe. 55.43 dB at 2x (H.265: 55.45), unscaled VP9 still bit-exact 12/12, and 1080p, scope and 4K VP9 play on plane-ve with 0 drops and 0 GPU IRQs. `h713-play` detects it from cedrus. Record: [reference/vp9-scaler-2026-10-06.md](reference/vp9-scaler-2026-10-06.md).
 - Keystone as a GL warp.
 - The hardware letterbox plan as an optimisation.
 
