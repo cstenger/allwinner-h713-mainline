@@ -17,6 +17,15 @@ recovery remain production gates. The prior
 [optical latency evidence](hdmi-evidence/2026-09-28-native-720-optical-latency/README.md)
 measured the complete source-display-to-projector differential.
 
+**EDID/audio milestone (2026-10-06):** The separate mode-specific test EDIDs
+were replaced by one canonical 256-byte HDMI EDID. It advertises preferred
+1280x720, 640x480 fallback, HDMI identity, and baseline stereo LPCM. The GPU
+read the exact checksummed EDID, enabled 720p, and published an ELD naming
+`H713 HDMI IN` with two-channel 32/44.1/48 kHz 16-bit LPCM. See the
+[canonical EDID evidence](hdmi-evidence/2026-10-06-canonical-edid/README.md).
+Audio packet extraction and PCM capture remain unproven and are the next
+hardware gate.
+
 **Earlier milestone (2026-09-25):** A [bounded live preview](hdmi-evidence/2026-09-25-panel-preview/README.md)
 showed the moving HDMI test pattern on the projector panel. The V4L2 bridge
 captured 640×480 NV16, and userspace converted it to a centered 960×720 image

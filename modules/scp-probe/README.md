@@ -32,16 +32,18 @@ polling/cleanup. A failed insertion leaves no loaded module.
 Build against the private tree matching the test Image:
 
 ```sh
-python3 tools/hdmi/build-scp-probe.py --mode 1280x720
+python3 tools/hdmi/build-scp-probe.py
 ```
 
 The helper selects the kernel build used by the current capture module when
-available, regenerates the chosen EDID payload in an isolated build directory,
-builds the probe, and validates its vermagic. The lower-level equivalent is:
+available, regenerates the canonical 256-byte HDMI-input EDID in an isolated
+build directory, builds the probe, and validates its vermagic. The EDID
+advertises native 1280x720, a 640x480 fallback, HDMI identity, and baseline
+stereo 32/44.1/48 kHz 16-bit LPCM. The lower-level equivalent is:
 
 ```sh
 mkdir -p build/scp-probe
-python tools/hdmi/make-edid-trial-code.py --mode 640x480 \
+python tools/hdmi/make-edid-trial-code.py \
   build/scp-probe/edid-trial-code.h
 cp modules/scp-probe/Makefile modules/scp-probe/h713-scp-probe.c \
    build/scp-probe/

@@ -31,7 +31,7 @@ SSH = ["ssh", "-F", "/dev/null", "-o", "BatchMode=yes", "-o",
 SCP = ["scp", "-F", "/dev/null", "-o", "BatchMode=yes", "-o",
        "ConnectTimeout=5"]
 KERNEL_RELEASE = "6.18.38"
-EDID_SHA256 = "1bf44b2172fb4e512d8a575c58f2abbcfd96d2f2902bea5b8a7a323248fb9013"
+EDID_SHA256 = "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34"
 DEFAULT_PANEL_FRAMES = 360
 # Patch 0164 retains 512 presentations, including one KMS bootstrap repeat.
 MAX_PANEL_FRAMES = 511

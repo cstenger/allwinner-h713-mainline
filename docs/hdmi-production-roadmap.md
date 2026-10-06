@@ -349,6 +349,15 @@ and stays bounded while maintaining 1280×720@60 and frame integrity.
 
 ### 6. Integrate normal monitor behavior
 
+**Progress, 2026-10-06 (canonical EDID and audio advertisement):** One
+conformant 256-byte EDID now replaces the mode-specific lab EDIDs. It declares
+preferred 1280x720, 640x480 fallback, HDMI identity, underscan behavior, and
+baseline stereo LPCM. The GPU read the exact EDID, enabled 720p, and created an
+ELD for `H713 HDMI IN` with the expected two-channel LPCM rates and speaker
+allocation. This proves source-side audio advertisement, not H713 audio packet
+capture. See the
+[canonical EDID evidence](hdmi-evidence/2026-10-06-canonical-edid/README.md).
+
 1. Move EDID/HPD, receiver power, source selection, and capture startup from
    diagnostic scripts into an owned driver/service lifecycle. Assert HPD only
    when the receiver and capture path are ready. Handle cable bounce, source
