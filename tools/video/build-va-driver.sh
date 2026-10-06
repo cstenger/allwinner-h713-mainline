@@ -25,8 +25,12 @@
 #
 #   usage: tools/video/build-va-driver.sh [--install] [--test]
 #          BOARD=192.168.4.1 tools/video/build-va-driver.sh --install --test
+#          tools/video/build-va-driver.sh --tree-tar FILE
 #
 # Without --install it builds and verifies but leaves the running driver alone.
+# --tree-tar only writes the patched tree (no .git) to FILE, with an
+# h713-va-driver.stamp of the series id, and never touches a board: it is how
+# tools/rootfs/build.sh gets the source it compiles inside the image.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -40,14 +44,24 @@ UPSTREAM=https://xff.cz/git/libva-v4l2_request/
 BASE=cac6ece0e23ac1f944dd3af266680aff0c3184df
 DRI=/usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so
 
-install=0; test=0
-for arg in "$@"; do
-	case $arg in
+install=0; test=0; tree_tar=
+while [ $# -gt 0 ]; do
+	case $1 in
 	--install) install=1 ;;
 	--test) test=1 ;;
-	*) echo "unknown argument: $arg" >&2; exit 1 ;;
+	--tree-tar) tree_tar=${2:?--tree-tar needs a FILE}; shift ;;
+	*) echo "unknown argument: $1" >&2; exit 1 ;;
 	esac
+	shift
 done
+
+# The identity of the patch series, stamped into /etc/h713-video-stack by both
+# the board install and the rootfs build.
+series_id() {
+	while read -r p; do
+		[ -n "$p" ] && sha256sum "$PATCHES/$p"
+	done < "$PATCHES/series" | sha256sum | cut -c1-16
+}
 
 # --- 1. the source tree, patched, on the host -------------------------------
 if [ ! -d "$SRC/.git" ]; then
@@ -72,6 +86,15 @@ while read -r patch; do
 		commit -q -m "$patch"
 	echo "    $patch"
 done < "$PATCHES/series"
+
+if [ -n "$tree_tar" ]; then
+	printf 'va_driver_series=%s\nva_driver_patches=%s\nva_driver_base=%s\n' \
+		"$(series_id)" "$(grep -c . "$PATCHES/series")" "$BASE" > "$SRC/h713-va-driver.stamp"
+	tar -C "$SRC" --exclude .git -czf "$tree_tar" .
+	rm -f "$SRC/h713-va-driver.stamp"
+	echo "==> patched tree written to $tree_tar"
+	exit 0
+fi
 
 # --- 2. build it on the board ----------------------------------------------
 echo "==> shipping the tree to $BOARD and building there"
@@ -119,9 +142,7 @@ $SSH "set -e
 # patches which had been in series for weeks, with nothing anywhere able to say
 # so. A stamp turns that from an archaeology problem into one command.
 echo "==> stamping the install"
-series_id=$(cat "$PATCHES/series" | while read -r p; do
-	[ -n "$p" ] && sha256sum "$PATCHES/$p"
-done | sha256sum | cut -c1-16)
+series_id=$(series_id)
 # Append after stripping our own keys, NOT '>' over the whole file: build-mpv.sh
 # stamps the same file with mpv_* keys, and truncating here silently erased them.
 $SSH "touch /etc/h713-video-stack

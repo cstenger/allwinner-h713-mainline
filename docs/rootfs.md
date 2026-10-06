@@ -86,16 +86,35 @@ device — so mpv exercises decode and file handling, not scanout.
 **Every image carries WP4's player** ([gpu-fallback-plan.md](gpu-fallback-plan.md)):
 
 - `/usr/local/bin/h713-play FILE` probes the file and plays it by the
-  cheapest route that shows it correctly:
-  - native 720p straight onto the video plane;
-  - 16:9 H.264/HEVC larger than the panel through the VE scaler onto the plane;
-  - everything else through stock `mpv --vo=gpu`.
+  cheapest route that shows it correctly (the full table is in
+  [gpu-fallback-plan.md](gpu-fallback-plan.md#routing)):
+  - a picture already at its aspect-fit size straight onto the video plane,
+    letterboxed or pillarboxed with black bars (plane-native);
+  - H.264/HEVC larger than its fit through the VE scaler onto the plane
+    (plane-ve);
+  - a square-pixel picture smaller than its fit onto the plane, magnified by
+    the display (plane-up, up to 4x);
+  - everything else (10-bit, rotation, non-square pixels, VP9/AV1 above the
+    panel) through stock `mpv --vo=gpu`.
 - `/usr/local/bin/gst-plane-play` is the plane player it uses.
   - It is C, so `customize.sh` compiles it inside the target under qemu, against
     the image's own GStreamer.
   - The compiler and headers (`PLAYER_BUILD_PACKAGES` in `build.sh`) are
     bootstrapped for that and purged again, unless `--profile dev` keeps them.
   - `build.sh` asserts that the binary is aarch64 and carries today's settings.
+- The VA-API driver, `v4l2_request_drv_video.so` (megi's
+  `libva-v4l2_request` plus `patches/libva-v4l2_request/`). plane-ve's
+  `va*dec` and the GPU route's `--hwdec=vaapi` both need it; before
+  2026-10-06 no image carried it, so a fresh flash played everything in
+  software or not at all.
+  - `build.sh` exports the patched tree (`build-va-driver.sh --tree-tar`)
+    and `customize.sh` builds it inside the target with meson, against the
+    image's own libva, because the entry point `__vaDriverInit_<major>_<minor>`
+    is taken from the libva it is compiled against. It checks that symbol in
+    the target before installing, and purges `meson`, `ninja-build` and the
+    headers again unless `--profile dev` keeps them.
+  - `/etc/h713-video-stack` records the series id; `build.sh` asserts it
+    matches the tree it exported.
 - `pipewire-alsa`'s `99-pipewire-default.conf` is removed, so the default ALSA
   device stays the hardware, as everything was measured.
 

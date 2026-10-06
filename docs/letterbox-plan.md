@@ -65,6 +65,13 @@
 >   31/31, `r01` 75/0 on the plane, kernel quiet, borders restored.
 > - **Open:** the 2-hour plane-ve scope soak (overnight queue). Then Phase 4
 >   is done.
+>
+> **Phase 5 DONE 2026-10-06 (headless):** routing over 50 clips matches the
+> table; `va-regress.sh` 0 failing; the new native gate finds 0 of 1156
+> registers changed from the pre-letterbox capture (NV12 in four codecs,
+> P010 both layouts); the GPU path is unchanged from WP2; every image now
+> ships the VA driver. Docs updated. **The only open item in the whole plan
+> is the 2-hour scope soak.** Details: [Phase 5 results](#phase-5-results-2026-10-06-kernel-with-final-0165-headless).
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
 >
 > **Status 2026-10-04: Phase 0 done.** Desk RE and a read-only baseline:
@@ -406,6 +413,55 @@ any panel time is spent.
   - `va-regress.sh`;
   - the native NV12/P010 scanout gate;
   - the GPU path, which uses the primary plane and must be unaffected.
+
+### Phase 5 results (2026-10-06, kernel with final 0165, headless)
+
+- **Routing.** `h713-play --dry-run` over the 43 stock-capture clips, the
+  Phase 3 gate clips and the scope soak clip, on the board
+  (`local/h713-lab/letterbox-phase5-20261006/routing.txt`). Every decision
+  matches Phases 2–4: 1080p/4K/scope/ultrawide/4:3 H.264 and HEVC →
+  plane-ve; native 720p in all four codecs → plane-native; square-pixel
+  sub-panel in all four codecs → plane-up; 10-bit, rotation, SAR != 1,
+  cropped HEVC, VP9/AV1 above the panel and MPEG-2 → gpu. `h713-play`
+  needed no change; the routing table in
+  [gpu-fallback-plan.md](gpu-fallback-plan.md#routing) now says what it does.
+- **`va-regress.sh dmabuf`: 0 failing lines** (va-gate 8/8, AV1 10-bit,
+  H.264 5/5, HEVC H1 14/14, MPEG-2 5/5, loop ×4, reinit, three concurrent
+  clients).
+- **Native gate, new: `tools/video/native-plane-gate.sh` PASS.** Native
+  1280x720 in H.264, HEVC, VP9 and AV1 (10-second testsrc2 clips,
+  `local/h713-lab/native-gate/`) through plane-native, plus a static P010
+  frame in both layouts (`kms-p010-plane-test`, LSB10 → fmt 7, plain →
+  fmt 6). Each is diffed against the Phase 0 capture taken on kernel 0160,
+  before any letterbox patch existed: **0 of 1156 registers differ** for
+  NV12, and for P010 only the three fetch budgets (exactly doubled) and the
+  format byte. fb ids change, the source is enabled, 0 GPU and 0 IOMMU
+  interrupts, kernel quiet. The gate's first run doubled as its negative
+  control: sampling after a 1-second clip had ended read the idle state and
+  FAILED on `route+508`/`lvds+06c` and a parked plane, so the gate now waits
+  for the plane to carry a frame.
+- **GPU path unaffected.** `gpu-path-run.sh` (cheap settings, 60 s) on VP9
+  1080p, AV1 1080p, H.264 rot90 and 720x576 SAR 16:15: speed 0.94–0.95,
+  0 dropped, GPU busy 38/38/18/30%, primary-plane flips 4/20. These are
+  the WP2 numbers of 2026-10-02/03 to the percent.
+- **Rootfs: the image now ships the VA driver.** It never had: plane-ve's
+  `va*dec` and the GPU route's VA-API decode existed only on the bench board,
+  installed by `build-va-driver.sh`. `build.sh` exports the patched tree
+  (`build-va-driver.sh --tree-tar`) and `customize.sh` builds it inside the
+  target against the image's own libva, checks the `__vaDriverInit_*`
+  symbol there, stamps `/etc/h713-video-stack` and purges the build
+  packages. **Verified with a full base build** (`build.sh --kernel-tree`
+  the booted 0165 tree): the build's own assertions pass; the image holds an
+  aarch64 driver exporting `__vaDriverInit_1_22`, the stamp matches the
+  board's series (`4daa2b3628930def`), and no meson, ninja, gcc or VA
+  headers remain. That `.so`, loaded on the board with `LIBVA_DRIVERS_PATH`,
+  advertises H.264/HEVC/VP9/AV1 and plays 1080p H.264 through plane-ve:
+  CAPTURE NV12 1280x720, 671 rendered, 0 dropped, 674 VE and 0 GPU
+  interrupts.
+- **Docs:** `gpu-fallback-plan.md` (routing table; the "limits of the plane
+  routes" list marked superseded), `status.md`, `roadmap.md`, `rootfs.md`.
+- **Left:** Phase 4's 2-hour plane-ve scope soak (overnight queue). Then the
+  plan is closed; the mirror design waits for WP5.
 
 ## Verification on this path
 

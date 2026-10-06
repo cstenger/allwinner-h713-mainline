@@ -4,7 +4,7 @@ What works on the H713 mainline stack, and what's next. All hardware results are
 on the **HY200 bench board (DDR3)** unless noted — the HY200 QZ713_V2 projector (LPDDR3)
 is not risked for bring-up.
 
-_Last updated: 2026-09-23._
+_Last updated: 2026-10-06._
 
 > **2026-10-02 — direction change.** The vendor stack does all file scaling,
 > letterboxing, rotation and keystone on the GPU, and uses hardware only for
@@ -22,6 +22,18 @@ _Last updated: 2026-09-23._
 > at parity, and 12/12 damaged AV1 streams survive. Kernel 0155 stops cedrus
 > accepting VP9 Profile 2. Mentions of "libva-v4l2-request patch NNNN" below
 > refer to the retired series.
+
+> **2026-10-06 — the video plane letterboxes, pillarboxes and magnifies**
+> ([letterbox-plan.md](letterbox-plan.md), kernel 0161–0165). Stock
+> `kmssink` places any NV12 picture up to the panel with black bars, the
+> display's proc block magnifies sub-panel pictures up to 4x, and a mid-stream
+> size change costs one dark frame (no green flash). Films that are not 16:9,
+> 4:3 and anything below 720p now play on the plane with the GPU idle
+> (`h713-play` plane-native / plane-ve / plane-up), at ~8% board CPU against
+> ~17% on the GPU path. Native 1280x720 NV12 and P010 are register-identical
+> to the pre-letterbox driver (`tools/video/native-plane-gate.sh`), and every
+> image now ships the VA driver. The routing table is in
+> [gpu-fallback-plan.md](gpu-fallback-plan.md#routing).
 
 ## Current video decoder state — 2026-09-23
 
@@ -53,7 +65,10 @@ See [the scaled-playback handoff](handoff-2026-09-17-scaled-playback.md),
 [the shared-scaler handoff](handoff-2026-09-17-shared-scaler.md) and
 [the 4:2:2 assessment](reference/chroma-422-assessment-2026-09-17.md).
 
-**Display-side scaling is retired (2026-09-23).** With the VE landing on
+**Display-side scaling is retired (2026-09-23)** — *reinstated 2026-10-06
+for magnification only: letterbox Phase 3 (kernel 0163) ported the proc
+upscaler onto the letterbox geometry contract, so sub-panel video is
+magnified on the plane again.* With the VE landing on
 1280x720 exactly, the proc upscaler at `0x05180000` had no producer left, so
 patches 0098/0103/0105/0106/0108/0111 left `series` (85 entries now) and the
 video plane accepts one source rectangle again — the full panel. What that

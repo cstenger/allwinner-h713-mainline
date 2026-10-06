@@ -305,6 +305,15 @@ attached, the display path can be brought up here, not only on the projector
      "hardware first, GPU fallback, stock applications"
      ([gpu-fallback-plan.md](gpu-fallback-plan.md)). The 0.83x figure predates
      the 2026-09-03 zero-copy fix and is stale.
+   - **Letterbox on the video plane — DONE 2026-10-06** (Phases 0–5 of
+     [letterbox-plan.md](letterbox-plan.md); the 2-hour scope soak is the
+     one item left, queued overnight). The plane places any picture up to
+     the panel with black bars, magnifies sub-panel pictures up to 4x and
+     changes size mid-stream with one dark frame. Stock `kmssink` drives it,
+     so non-16:9 and sub-720p H.264/HEVC/VP9/AV1 no longer need the GPU.
+     Still on the GPU: 10-bit, rotation, non-square pixels and VP9/AV1
+     above the panel. Next on this line: the hardware mirror (WP5), for
+     which the placement state is already designed.
 
    **~~GE2D at `0x5240000`~~ — DEAD, and dead for the second time.**
    `ge2d@5240000` is the projector's display controller, not a 2D engine:

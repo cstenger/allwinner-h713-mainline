@@ -563,13 +563,32 @@ if [ -n "${PLANE_PLAY_SRC:-}" ]; then
   chroot "$R" sh -ec 'gcc -O2 -Wall -o /usr/local/bin/gst-plane-play \
     /tmp/gst-plane-play.c $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-video-1.0)'
   rm -f "$R/tmp/gst-plane-play.c"
+  # The VA-API driver, from the patched tree build.sh exported
+  # (build-va-driver.sh --tree-tar). It must export __vaDriverInit for THIS
+  # image's libva or the loader silently falls back to software; check that
+  # here, where nm still exists.
+  install -d "$R/tmp/va-driver"
+  tar -xzf "$VA_DRIVER_TAR" -C "$R/tmp/va-driver"
+  chroot "$R" sh -ec 'cd /tmp/va-driver
+    meson setup build >/dev/null && ninja -C build >/dev/null
+    want=$(pkg-config --modversion libva | cut -d. -f1,2 | tr . _)
+    nm -D --defined-only build/src/v4l2_request_drv_video.so | grep -q "__vaDriverInit_$want" ||
+      { echo "VA driver lacks __vaDriverInit_$want" >&2; exit 1; }
+    install -m 0644 build/src/v4l2_request_drv_video.so \
+      "$(pkg-config --variable=driverdir libva)/v4l2_request_drv_video.so"'
+  { echo "# Written by tools/rootfs/customize.sh -- do not edit by hand."
+    cat "$R/tmp/va-driver/h713-va-driver.stamp"
+    echo "va_driver_installed=image"
+  } > "$R/etc/h713-video-stack"
+  rm -rf "$R/tmp/va-driver"
   if [ "${DEV_PROFILE:-0}" != 1 ]; then
     chroot "$R" env DEBIAN_FRONTEND=noninteractive \
-      apt-get purge -y -q --autoremove $(echo "$PLAYER_BUILD_PACKAGES" | tr , ' ') >/dev/null
+      apt-get purge -y -q --autoremove \
+      $(echo "$PLAYER_BUILD_PACKAGES,$VA_BUILD_PACKAGES" | tr , ' ') >/dev/null
   fi
   umount "$R/dev/null"
   rm -f "$R/dev/null"
-  echo "[customize] installed h713-play and gst-plane-play (compiled in the target)"
+  echo "[customize] installed h713-play, gst-plane-play and the VA driver (compiled in the target)"
 fi
 
 # pipewire-alsa is there for alsasink device=pipewire (WP4's plane player).

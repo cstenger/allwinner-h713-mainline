@@ -41,6 +41,34 @@ cannot do:
 
 ## Routing
 
+**As shipped (letterbox Phase 5, 2026-10-06).** `h713-play` applies this
+table; the routes are read from the kernel's DRM capabilities, never from a
+kernel version. All decisions below were checked by dry-running the launcher
+over the 43 capture clips plus the letterbox gate clips on the board
+(`local/h713-lab/letterbox-phase5-20261006/routing.txt`).
+
+| Content | Route | Path |
+| --- | --- | --- |
+| Any plane codec (H.264, HEVC, VP9, AV1), 8-bit, exactly at its fit size (1280x720, or e.g. 960x720 / 1280x536 with letterbox) | **plane-native** | stock `v4l2sl*dec ! kmssink`, zero-copy onto the video plane, black bars (kernel 0161) |
+| H.264 / HEVC, 8-bit, larger than its fit (1080p, 4K, scope 1920x800, ultrawide 2560x1080, 4:3 1440x1080) | **plane-ve** | `va*dec` with the VE decode-time scaler to the fit size, then `kmssink`, letterboxed or pillarboxed |
+| Any plane codec, 8-bit, square pixels, smaller than its fit and at most 4x (360p, 480p, 540p, 352x288) | **plane-up** | `v4l2sl*dec ! kmssink`; the display's proc block magnifies (kernel 0163) |
+| VP9 / AV1 larger than the panel | **GPU** | no VE scaler for VP9 (WP6) and none exists for AV1 (stock agrees) |
+| 10-bit (HEVC Main10, AV1 10-bit) | **GPU** | the VE scaler cannot output it; stock GStreamer cannot carry P010 into kmssink. AV1 gets the LSB10 shader |
+| Non-square pixels (SAR != 1), smaller than the fit | **GPU** | stock kmssink puts the PAR correction into the source rectangle |
+| HEVC with a conformance crop, smaller than the fit | **GPU** | stock `v4l2slh265dec` copies every frame (uncached, ~53 ms) |
+| Needs magnifying on one axis and shrinking on the other | **GPU** | |
+| Rotation (any codec, any angle) | **GPU** | 180° later via the hardware H+V mirror (WP5) |
+| MPEG-2, VP8 | **GPU** | `h713-play` routes no plane decoder for them |
+| Subtitles / OSD over video | **GPU** | |
+| Rear/ceiling projection | **Hardware** mirror, on both paths | WP5; the letterbox placement is mirror-ready (letterbox-plan.md) |
+| Keystone | **GPU**, later | |
+
+The plane routes cost ~8% whole-board CPU with audio and leave the GPU
+idle; the GPU route costs ~17%. A plane route never silently falls back:
+every plane check records GPU IRQs, which must stay at 0.
+
+<details><summary>The table before letterbox (2026-10-02)</summary>
+
 | Content | Path |
 | --- | --- |
 | Any codec, exactly 1280x720 | Direct video plane (patched `vo=drm`) *if* the GPU path costs enough to matter; otherwise stock `vo=gpu` |
@@ -52,6 +80,8 @@ cannot do:
 | Subtitles / OSD over video | **GPU** |
 | Rear/ceiling projection | **Hardware** mirror, on both paths |
 | Keystone | **GPU**, later |
+
+</details>
 
 Where the VE can shrink first, it does, so the GPU (a Mali-G31 **MP1**, one
 shader core) does as little as possible.
@@ -352,7 +382,9 @@ Built:
 - `tools/video/gst-plane-play FILE CODEC DECODER [WxH] [SECONDS]` plays onto the video plane with audio (PipeWire) when the file has any. It prints rendered, dropped and position, and stops cleanly on Ctrl-C or SIGTERM.
 - `tools/video/h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS]` probes the file, prints one decision line and runs the route. Every capture clip routes as intended: 1080p H.264/HEVC → plane-ve; native 720p ×4 → plane-native; AV1/VP9 1080p, 10-bit, rotated, and anything not 16:9 → gpu.
 
-Limits of the plane routes, all set by the plane taking exactly 1280x720:
+Limits of the plane routes, all set by the plane taking exactly 1280x720
+(**superseded 2026-10-06 by letterbox: the plane now letterboxes,
+pillarboxes and magnifies; see [Routing](#routing)**):
 - no letterbox or pillarbox, so only 16:9 content;
 - no upscaling (the VE scaler only shrinks);
 - no 90/270 rotation;

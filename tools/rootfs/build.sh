@@ -105,6 +105,13 @@ DEV_PACKAGES=build-essential,libgles-dev,libgstreamer1.0-dev,libgstreamer-plugin
 # bootstrapped for that and purged again afterwards unless --profile dev
 # keeps them (DEV_PACKAGES has them all): the product never compiles.
 PLAYER_BUILD_PACKAGES=gcc,libc6-dev,pkgconf,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev
+# The VA-API driver (megi's libva-v4l2_request + patches/libva-v4l2_request)
+# is compiled inside the target too, and for a reason beyond convenience: its
+# entry point __vaDriverInit_<major>_<minor> comes from the libva it is built
+# against, and only the image's own libva gives the right one
+# (tools/video/build-va-driver.sh). Without it plane-ve has no va*dec and
+# the GPU route decodes in software. Purged like the player's.
+VA_BUILD_PACKAGES=libva-dev,libdrm-dev,meson,ninja-build
 # Measured 2026-08-15: base + runtime + dev is 1.45 GiB on disk, so it fits the
 # 2G default with little headroom. Raise the floor rather than have the next
 # added package fail in mke2fs at the end of a ~10 minute bootstrap.
@@ -337,11 +344,15 @@ ROOTFS_TREE="$WORK_DIR/tree"
 ROOTFS_EXT4="$WORK_DIR/rootfs.ext4"
 ROOTFS_SIMG="$WORK_DIR/rootfs.simg"
 
-INCLUDE_PACKAGES=$BASE_PACKAGES,$PLAYER_BUILD_PACKAGES
+INCLUDE_PACKAGES=$BASE_PACKAGES,$PLAYER_BUILD_PACKAGES,$VA_BUILD_PACKAGES
 if [ -n "$EXTRA_PACKAGES" ]; then
   INCLUDE_PACKAGES="$INCLUDE_PACKAGES,$EXTRA_PACKAGES"
   printf '\n==> Extra packages requested: %s\n' "$EXTRA_PACKAGES"
 fi
+
+printf '\n==> Patched VA-API driver source\n'
+VA_DRIVER_TAR="$WORK_DIR/va-driver.tar.gz"
+"$PROJECT_ROOT/tools/video/build-va-driver.sh" --tree-tar "$VA_DRIVER_TAR"
 
 printf '\n==> Bootstrap signed Debian %s/%s\n' "$DEBIAN_SUITE" "$DEBIAN_ARCH"
 mmdebstrap \
@@ -381,6 +392,9 @@ env \
   DEBIAN_SUITE="$DEBIAN_SUITE" \
   DEV_PROFILE="$DEV_PROFILE" \
   PLAYER_BUILD_PACKAGES="$PLAYER_BUILD_PACKAGES" \
+  VA_BUILD_PACKAGES="$VA_BUILD_PACKAGES" \
+  VA_DRIVER_TAR="$VA_DRIVER_TAR" \
+  VA_DRIVER_SERIES="$(tar -xzOf "$VA_DRIVER_TAR" ./h713-va-driver.stamp | grep '^va_driver_series=')" \
   H713_PLAY_SRC="$PROJECT_ROOT/tools/video/h713-play" \
   PLANE_PLAY_SRC="$PROJECT_ROOT/tools/video/gst-plane-play.c" \
   bash -ceu '
@@ -471,6 +485,11 @@ env \
     grep -q "latency-time=40000" "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
     grep -q "skip-vsync=true" "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
     test -x "$ROOTFS_TREE/usr/bin/ffprobe"
+    # The VA driver: an arm64 build of the current series, whose entry point
+    # matches the libva of the image (customize.sh checked the symbol in the
+    # target; this checks what landed).
+    file -b "$L/dri/v4l2_request_drv_video.so" | grep -q "ARM aarch64"
+    grep -qx "$VA_DRIVER_SERIES" "$ROOTFS_TREE/etc/h713-video-stack"
     test -e "$L/gstreamer-1.0/libgstalsa.so"                     # alsasink
     test -e "$L/gstreamer-1.0/libgstva.so"                       # va*dec
     test -e "$L/gstreamer-1.0/libgstkms.so"                      # kmssink
