@@ -91,6 +91,11 @@ Inputs: `inst` (mode 0–3: H = modes 1 and 3, V = modes 2 and 3), the plane rot
 
 ## Phase 1: register-poke panel test (one operator session)
 
+> **Tooling built 2026-10-06:**
+> - `letterbox-test.sh mirror` (and `plan mirror`, `card-primary`): one "ready" runs the video steps `z h v hv ch abv`, switches the holder to `letterbox-card --primary`, then runs `pv php pho`.
+> - `letterbox-apply.py` applies the recipe's `"ctl"` bits read-modify-write. It also has a new `"kind": "osd"` step for the primary route, and stamps each window with wall-clock time.
+> - `letterbox-measure.py --mirror --log` reads orientation from the corner-patch colours, treats a frame as control only if it is upright, and matches windows to steps by time. So a step with no visible effect is reported as NO VISIBLE CHANGE instead of shifting every later step.
+
 Extend the letterbox Phase 1 tooling rather than writing new tools:
 - `letterbox-apply.py`: mirror steps, with source 0 stopped, writes inside the NR bracket, read-modify-write on comp `0x040` (bit 25 shares the word) and proc, and timed exact restores.
 - `letterbox-test.sh all`: one "ready", `LEAD_S` = 30 s, steps back to back, the console returning means stop recording.

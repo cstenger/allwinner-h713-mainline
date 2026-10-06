@@ -29,6 +29,15 @@ then hold, then the same in reverse back to the saved values. The restore runs
 in `finally`, ignores further signals, and is best effort: it keeps going past
 a register that will not stick and reports every one.
 
+WP5 MIRROR (docs/mirror-plan.md). A recipe's "ctl" entries are the V-mirror
+bits that share a word with state this script drives: afbd+010[3:2] goes into
+the CTRL value source 0 is switched on with, comp+040[3] is written
+read-modify-write inside the NR hold (its word also carries the hold bit).
+A sequence entry with "kind": "osd" is a primary-route step instead: the card
+is letterbox-card --primary on the OSD channel (selector RGB), and the step
+flips bits in the OSD control (0x05600140, latched by READY 0x05600144)
+and/or the panel's H-mirror bit (0x051c00a0[0]), then restores them.
+
 REFUSES before writing anything unless: the native card is on the plane
 (CTRL active, selector on video, all eight slots on the native card); every
 register the recipe touches reads exactly the recipe's `old` value; the NR
@@ -49,6 +58,9 @@ SLOTS_Y = [AFBD + 0x070 + 4 * i for i in range(4)]
 SLOTS_C = [AFBD + 0x084 + 4 * i for i in range(4)]
 SELECTOR = 0x051c006c
 CTRL_ON, SEL_VIDEO = 0x03000013, 0x39000000
+OSD_CTRL, OSD_READY, OSD_SRC = AFBD + 0x140, AFBD + 0x144, AFBD + 0x178
+OSD_CTRL_ON, SEL_RGB = 0x03001901, 0x29000000
+PANEL_A0 = 0x051c00a0      # [0] = H mirror (PanelWinNode::WriteReg)
 
 COMP = 0x05000000
 NR_860, NR_138, NR_040, NR_82C = COMP + 0x860, COMP + 0x138, COMP + 0x040, COMP + 0x82c
@@ -144,7 +156,29 @@ def load_layout():
             lay[f[0]] = int(f[1], 16)
         elif f[0] == "bo_size":
             lay["bo_size"] = int(f[1])
+        elif f[0] == "mode":
+            lay["mode"] = f[1]
+        elif f[0] in ("osd_ctrl", "osd_src"):
+            lay[f[0]] = int(f[1], 16)
     return lay
+
+
+def field(val, c):
+    return (val >> c["lsb"]) & ((1 << c["width"]) - 1)
+
+
+def ctl_split(rec):
+    """A recipe's V-mirror control bits: (afbd CTRL fields, comp+040 fields)."""
+    ctl = rec.get("ctl", [])
+    return ([c for c in ctl if c["addr"] == CTRL],
+            [c for c in ctl if c["addr"] == NR_040])
+
+
+def with_ctl(word, fields, key):
+    for c in fields:
+        m = ((1 << c["width"]) - 1) << c["lsb"]
+        word = (word & ~m) | (c[key] << c["lsb"])
+    return word
 
 
 def ordered(regs):
@@ -195,7 +229,7 @@ def write_group(mem, regs, key, label):
     return ok
 
 
-def recheck(mem, regs, when):
+def recheck(mem, regs, when, ctl=()):
     """Re-read every recipe register during the window. The write-time
     readback cannot see a register the hardware rewrites a few frames later;
     this can. scanout-grab cannot help here: the plane's framebuffer is the
@@ -204,6 +238,11 @@ def recheck(mem, regs, when):
     for r, now in drift:
         log(f"  RECHECK {when}: {r['block']}+{r['off']:03x} reads {now:08X}, "
             f"wrote {r['new']:08X}")
+    for c in ctl:
+        if field(mem.rd(c["addr"]), c) != c["value"]:
+            log(f"  RECHECK {when}: ctl {c['block']}+{c['off']:03x}"
+                f"[{c['lsb'] + c['width'] - 1}:{c['lsb']}] reads "
+                f"{field(mem.rd(c['addr']), c)}, wrote {c['value']}")
     status = " ".join(f"{a:#x}={mem.rd(a):08X}" for a in (CTRL, SELECTOR, SLOTS_Y[0]))
     log(f"RECHECK {when}: {len(regs) - len(drift)}/{len(regs)} registers as written; {status}")
 
@@ -215,12 +254,17 @@ def restore(mem, saved):
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     mem.failures = []
     log("=== WINDOW CLOSED: restoring ===")
+    if saved.get("kind") == "osd":
+        return restore_osd(mem, saved)
     afbd, comp, route_proc, panel = ordered(saved["regs"])
+    _ctl_afbd, ctl_comp = ctl_split(saved)
     source_off(mem, saved["ctrl"] & ~0x3)
     for a, v in zip(SLOTS_Y + SLOTS_C, saved["slots"]):
         mem.wr(a, v, "slot (native)")
     write_group(mem, afbd, "old", "restore")
     nr_hold(mem)
+    for c in ctl_comp:
+        mem.bits(NR_040, c["lsb"], c["width"], c["old"], "comp+040 V-mirror bit (native)")
     write_group(mem, list(reversed(comp)), "old", "restore")
     nr_release(mem)
     for a, v in saved["bracket"].items():
@@ -234,6 +278,8 @@ def restore(mem, saved):
             if mem.rd(a) != v]
     if mem.rd(CTRL) != saved["ctrl"]:
         bad.append((CTRL, saved["ctrl"], mem.rd(CTRL)))
+    bad += [(NR_040, c["old"], field(mem.rd(NR_040), c)) for c in ctl_comp
+            if field(mem.rd(NR_040), c) != c["old"]]
     for a, want, got in bad:
         log(f"  *** {a:#010x} reads {got:08X}, saved {want:08X}")
     if bad or mem.failures:
@@ -272,6 +318,11 @@ def preflight(mem, rec, lay, region):
         if cur != r["old"]:
             errs.append(f"{r['block']}+{r['off']:03x} reads {cur:08X}, recipe's old is "
                         f"{r['old']:08X} -- the baseline does not match this board state")
+    for c in rec.get("ctl", []):
+        if field(mem.rd(c["addr"]), c) != c["old"]:
+            errs.append(f"ctl {c['block']}+{c['off']:03x} field reads "
+                        f"{field(mem.rd(c['addr']), c)}, native is {c['old']} -- "
+                        "a mirror is already on")
     if not mem.rd(NR_040) >> 25 & 1 or mem.rd(NR_860) >> 17 & 1 or mem.rd(NR_138) >> 27 & 1:
         errs.append("NR bracket is not in its released state")
     base = lay["slot_y"] - lay["regions"]["native"]["y_off"]
@@ -302,7 +353,7 @@ def run_step(mem, lay, rec, region, hold, pre, dry, name=""):
     saved = {"ctrl": mem.rd(CTRL),
              "slots": [mem.rd(x) for x in SLOTS_Y + SLOTS_C],
              "bracket": {str(x): mem.rd(x) for x in (NR_860, NR_138, NR_82C, NR_040)},
-             "regs": rec["regs"]}
+             "regs": rec["regs"], "ctl": rec.get("ctl", [])}
     if not dry:
         with open(SAVED + ".tmp", "w") as f:
             json.dump(saved, f)
@@ -310,6 +361,8 @@ def run_step(mem, lay, rec, region, hold, pre, dry, name=""):
         log(f"saved state in {SAVED}")
 
     afbd, comp, route_proc, panel = ordered(rec["regs"])
+    ctl_afbd, ctl_comp = ctl_split(rec)
+    ctrl_on = with_ctl(saved["ctrl"], ctl_afbd, "value")
     for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(s, on_signal)
     applied = False
@@ -326,11 +379,13 @@ def run_step(mem, lay, rec, region, hold, pre, dry, name=""):
             ok &= mem.wr(x, c_addr, "slot C -> card")
         ok &= write_group(mem, afbd, "new", "apply")
         nr_hold(mem)
+        for c in ctl_comp:
+            ok &= mem.bits(NR_040, c["lsb"], c["width"], c["value"], "comp+040 V-mirror bit")
         ok &= write_group(mem, comp, "new", "apply")
         nr_release(mem)
         ok &= write_group(mem, route_proc, "new", "apply")
         ok &= write_group(mem, panel, "new", "apply")
-        source_on(mem, saved["ctrl"])
+        source_on(mem, ctrl_on)
         if not ok or mem.failures:
             log("*** a write did not stick or a commit did not retire: aborting")
             return 1
@@ -338,18 +393,119 @@ def run_step(mem, lay, rec, region, hold, pre, dry, name=""):
             log("dry run complete; nothing was written")
             return 0
         log(f"=== WINDOW OPEN: step {name} {pic['w']}x{pic['h']} at "
-            f"({pic['dx']},{pic['dy']}) for {hold:g} s ===")
+            f"({pic['dx']},{pic['dy']}) for {hold:g} s === wall {time.time():.3f}")
         end = time.monotonic() + hold
         mid = time.monotonic() + hold / 2
         checked = False
         while time.monotonic() < end - 0.5:
             time.sleep(max(0.0, min(1.0, end - 0.5 - time.monotonic())))
             if not checked and time.monotonic() >= mid:
-                recheck(mem, rec["regs"], "mid-hold")
+                recheck(mem, rec["regs"], "mid-hold", rec.get("ctl", []))
                 checked = True
-        recheck(mem, rec["regs"], "end of hold")
+        recheck(mem, rec["regs"], "end of hold", rec.get("ctl", []))
         while time.monotonic() < end:
             time.sleep(min(1.0, end - time.monotonic()))
+        return 0
+    except Interrupted as e:
+        log(f"interrupted by {e}")
+        return 1
+    finally:
+        if applied and not restore(mem, saved):
+            RESTORE_FAILED = True
+
+
+def preflight_osd(mem, lay):
+    errs = []
+    if lay.get("mode") != "primary":
+        errs.append(f"{LAYOUT} is not a primary-card layout (run letterbox-card --primary)")
+        return errs
+    if mem.rd(SELECTOR) != SEL_RGB:
+        errs.append(f"selector {mem.rd(SELECTOR):08X}, want {SEL_RGB:08X} (RGB route)")
+    if mem.rd(OSD_CTRL) != OSD_CTRL_ON or lay["osd_ctrl"] != OSD_CTRL_ON:
+        errs.append(f"OSD ctrl {mem.rd(OSD_CTRL):08X} (layout {lay['osd_ctrl']:08X}), "
+                    f"want {OSD_CTRL_ON:08X}")
+    src = mem.rd(OSD_SRC)
+    if src != lay["osd_src"]:
+        errs.append(f"OSD source {src:08X} is not the card's {lay['osd_src']:08X}")
+    if mem.rd(PANEL_A0) & 1:
+        errs.append(f"panel {PANEL_A0:#x} bit 0 already set -- a mirror is on")
+    time.sleep(0.1)
+    if mem.rd(OSD_SRC) != src:
+        errs.append("the OSD source moved within 100 ms: something is flipping the "
+                    "primary plane, and the driver rewrites the OSD control on every flip")
+    return errs
+
+
+def osd_commit(mem, ctrl, what):
+    ok = mem.wr(OSD_CTRL, ctrl, what)
+    mem.wr(OSD_READY, 1, "OSD READY", verify=False)
+    return mem.poll_clear(OSD_READY, "OSD commit") and ok
+
+
+def restore_osd(mem, saved):
+    osd_commit(mem, saved["osd_ctrl"], "OSD ctrl (saved)")
+    mem.wr(PANEL_A0, saved["panel"], "panel 0x0a0 (saved)")
+    bad = [(a, v, mem.rd(a)) for a, v in ((OSD_CTRL, saved["osd_ctrl"]),
+                                          (PANEL_A0, saved["panel"])) if mem.rd(a) != v]
+    for a, want, got in bad:
+        log(f"  *** {a:#010x} reads {got:08X}, saved {want:08X}")
+    if bad or mem.failures:
+        log("RESTORE INCOMPLETE -- run: letterbox-apply.py --restore " + SAVED)
+        return False
+    log("RESTORED: every touched register reads its saved value")
+    return True
+
+
+def run_osd_step(mem, lay, rec, hold, pre, dry, name=""):
+    """A primary-route mirror step: OSD control bits and/or the panel bit."""
+    global RESTORE_FAILED
+    mem.failures = []
+    bits, panel_h = rec.get("osd_bits"), rec.get("panel_h", 0)
+    log(f"step {name}: primary route, OSD bits "
+        + (f"[{bits['lsb'] + bits['width'] - 1}:{bits['lsb']}]={bits['value']}" if bits else "none")
+        + f", panel H {panel_h}, hold {hold:g}s" + ("  [DRY RUN]" if dry else ""))
+    errs = preflight_osd(mem, lay)
+    if errs:
+        for e in errs:
+            log("REFUSED: " + e)
+        log("nothing was written")
+        return 1
+    log("preflight OK")
+    saved = {"kind": "osd", "osd_ctrl": mem.rd(OSD_CTRL), "panel": mem.rd(PANEL_A0)}
+    if not dry:
+        with open(SAVED + ".tmp", "w") as f:
+            json.dump(saved, f)
+        os.replace(SAVED + ".tmp", SAVED)
+    ctrl = saved["osd_ctrl"]
+    if bits:
+        m = ((1 << bits["width"]) - 1) << bits["lsb"]
+        ctrl = (ctrl & ~m) | (bits["value"] << bits["lsb"])
+    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(s, on_signal)
+    applied = False
+    try:
+        if pre > 0 and not dry:
+            log(f"window opens in {pre:g} s")
+            time.sleep(pre)
+        applied = not dry
+        ok = True
+        if bits:
+            ok &= osd_commit(mem, ctrl, "OSD ctrl (mirror bits)")
+        if panel_h:
+            ok &= mem.bits(PANEL_A0, 0, 1, 1, "panel H mirror")
+        if not ok or mem.failures:
+            log("*** a write did not stick or a commit did not retire: aborting")
+            return 1
+        if dry:
+            log("dry run complete; nothing was written")
+            return 0
+        log(f"=== WINDOW OPEN: step {name} === wall {time.time():.3f}")
+        end = time.monotonic() + hold
+        while time.monotonic() < end:
+            time.sleep(min(1.0, end - time.monotonic()))
+            if mem.rd(OSD_CTRL) != ctrl or (panel_h and not mem.rd(PANEL_A0) & 1):
+                log(f"  RECHECK: OSD ctrl {mem.rd(OSD_CTRL):08X} (wrote {ctrl:08X}), "
+                    f"panel {mem.rd(PANEL_A0):08X}")
         return 0
     except Interrupted as e:
         log(f"interrupted by {e}")
@@ -400,8 +556,12 @@ def main():
         log(f"sequence {' '.join(s['name'] for s in seq)}: first window in "
             f"{a.pre:g} s, about {total:.0f} s in all")
         for i, st in enumerate(seq):
-            rc = run_step(mem, lay, json.load(open(st["recipe"])), st["region"],
-                          a.hold, a.pre if i == 0 else a.gap, a.dry_run, st["name"])
+            wait = a.pre if i == 0 else a.gap
+            if st.get("kind") == "osd":
+                rc = run_osd_step(mem, lay, st, a.hold, wait, a.dry_run, st["name"])
+            else:
+                rc = run_step(mem, lay, json.load(open(st["recipe"])), st["region"],
+                              a.hold, wait, a.dry_run, st["name"])
             if rc or RESTORE_FAILED:
                 log(f"SEQUENCE ABORTED at step {st['name']}")
                 return rc or 1

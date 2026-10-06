@@ -627,6 +627,7 @@ def main():
             "ctl": [{"block": blk, "off": off, "addr": BASES[blk] + off,
                      "lsb": lsb, "width": width,
                      "value": (regs[(blk, off)][1] >> lsb) & ((1 << width) - 1),
+                     "old": (regs[(blk, off)][0] >> lsb) & ((1 << width) - 1),
                      "notes": prov}
                     for blk, off, lsb, width, _k, _f, prov in CTL_FIELDS],
         }

@@ -6,6 +6,14 @@
  *
  *   cc -O2 -Wall -o letterbox-card letterbox-card.c $(pkg-config --cflags --libs libdrm)
  *   ARMED=yes letterbox-card [dwell-seconds]        # default 3600
+ *   ARMED=yes letterbox-card --primary [dwell]      # RGB card on the PRIMARY plane
+ *
+ * --primary (WP5 Phase 1, docs/mirror-plan.md): the same card, drawn in
+ * XRGB8888 and committed on the primary plane, which AFBD's OSD channel
+ * (0x05600140, selector RGB) scans out -- the console's and the GPU path's
+ * route. No sub-regions. The layout records `mode primary` and the OSD
+ * control and source address, for letterbox-apply.py's osd steps. On exit the
+ * plane gets the framebuffer it had back (the console's).
  *
  * WHY ONE BUFFER. The plane's atomic_check takes only a 1280x720, pitch-1280
  * framebuffer, so a sub-panel card cannot be committed through KMS. Instead
@@ -63,6 +71,7 @@
 #define PANEL_W 1280u
 #define PANEL_H 720u
 #define AFBD_PHYS 0x05600000UL
+#define OSD_STRIDE (PANEL_W * 4)
 #define LAYOUT "/tmp/letterbox-card.layout"
 #define ALIGN(x, a) (((x) + (a) - 1) / (a) * (a))
 #define REGION_ALIGN 0x10000u
@@ -175,6 +184,32 @@ static void render(uint8_t *bo, const struct region *rg)
 		}
 }
 
+/* BT.601 limited-range Y'CbCr -> full-range RGB, for the --primary card. */
+static uint32_t xrgb(int c)
+{
+	double y = 1.164 * (ycc[c][0] - 16), cb = ycc[c][1] - 128.0, cr = ycc[c][2] - 128.0;
+	double v[3] = { y + 1.596 * cr, y - 0.392 * cb - 0.813 * cr, y + 2.017 * cb };
+	uint32_t out = 0;
+	int i;
+
+	for (i = 0; i < 3; i++) {
+		long q = (long)(v[i] + 0.5);
+
+		out = out << 8 | (uint32_t)(q < 0 ? 0 : q > 255 ? 255 : q);
+	}
+	return out;
+}
+
+static void render_xrgb(uint8_t *bo)
+{
+	unsigned x, y;
+
+	for (y = 0; y < PANEL_H; y++)
+		for (x = 0; x < PANEL_W; x++)
+			((uint32_t *)(bo + (size_t)y * OSD_STRIDE))[x] =
+				xrgb(colour_at(x, y, PANEL_W, PANEL_H));
+}
+
 static uint32_t find_prop(int fd, uint32_t obj, const char *name)
 {
 	drmModeObjectProperties *props;
@@ -238,6 +273,140 @@ static int read_slots(uint32_t *y, uint32_t *c, uint32_t *ctrl)
 	return 0;
 }
 
+/* The OSD channel's control word and the source address it is fetching. */
+static int read_osd(uint32_t *ctrl, uint32_t *src)
+{
+	volatile uint32_t *r;
+	int fd = open("/dev/mem", O_RDONLY | O_SYNC);
+
+	if (fd < 0)
+		return -1;
+	r = mmap(NULL, 4096, PROT_READ, MAP_SHARED, fd, AFBD_PHYS);
+	close(fd);
+	if (r == MAP_FAILED)
+		return -1;
+	*ctrl = r[0x140 / 4];
+	*src = r[0x178 / 4];
+	munmap((void *)r, 4096);
+	return 0;
+}
+
+static int plane_type(int fd, uint32_t plane)
+{
+	drmModeObjectProperties *props;
+	uint32_t i;
+	int type = -1;
+
+	props = drmModeObjectGetProperties(fd, plane, DRM_MODE_OBJECT_PLANE);
+	for (i = 0; props && i < props->count_props; i++) {
+		drmModePropertyRes *p = drmModeGetProperty(fd, props->props[i]);
+
+		if (p && !strcmp(p->name, "type"))
+			type = (int)props->prop_values[i];
+		drmModeFreeProperty(p);
+	}
+	drmModeFreeObjectProperties(props);
+	return type;
+}
+
+/*
+ * Hold the RGB card on the primary plane until the dwell ends or a signal
+ * arrives, then put the plane's previous framebuffer back.
+ */
+static int run_primary(int fd, uint32_t crtc, drmModePlaneRes *pres, unsigned dwell)
+{
+	struct drm_mode_create_dumb create = { .width = PANEL_W, .height = PANEL_H, .bpp = 32 };
+	struct drm_mode_map_dumb map = { 0 };
+	struct drm_mode_destroy_dumb destroy = { 0 };
+	uint32_t handles[4] = { 0 }, pitches[4] = { 0 }, offsets[4] = { 0 };
+	uint32_t plane = 0, old_fb = 0, fb = 0, ctrl, src, i;
+	FILE *f;
+	uint8_t *p;
+	int rc = 1;
+
+	for (i = 0; pres && i < pres->count_planes && !plane; i++)
+		if (plane_type(fd, pres->planes[i]) == DRM_PLANE_TYPE_PRIMARY) {
+			drmModePlane *pl = drmModeGetPlane(fd, pres->planes[i]);
+
+			plane = pres->planes[i];
+			old_fb = pl ? pl->fb_id : 0;
+			drmModeFreePlane(pl);
+		}
+	if (!plane) {
+		fprintf(stderr, "no primary plane\n");
+		return 1;
+	}
+	if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create)) {
+		perror("CREATE_DUMB");
+		return 1;
+	}
+	if (create.pitch != OSD_STRIDE) {
+		fprintf(stderr, "dumb pitch %u, need %u\n", create.pitch, OSD_STRIDE);
+		goto out;
+	}
+	map.handle = create.handle;
+	if (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map)) {
+		perror("MAP_DUMB");
+		goto out;
+	}
+	p = mmap(NULL, create.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, map.offset);
+	if (p == MAP_FAILED) {
+		perror("mmap dumb");
+		goto out;
+	}
+	render_xrgb(p);
+	munmap(p, create.size);
+	handles[0] = create.handle;
+	pitches[0] = OSD_STRIDE;
+	if (drmModeAddFB2(fd, PANEL_W, PANEL_H, DRM_FORMAT_XRGB8888, handles,
+			  pitches, offsets, &fb, 0)) {
+		perror("AddFB2 XRGB8888");
+		goto out;
+	}
+	printf("WATCH THE PANEL: 1280x720 RGB control card on PRIMARY plane %u "
+	       "(was fb %u) for %us\n", plane, old_fb, dwell);
+	fflush(stdout);
+	if (plane_set(fd, plane, crtc, fb)) {
+		perror("atomic primary");
+		goto out;
+	}
+	usleep(200000);
+	if (read_osd(&ctrl, &src)) {
+		perror("read OSD channel");
+		goto restore;
+	}
+	printf("OSD ctrl 0x%08x  source 0x%08x\n", ctrl, src);
+	f = fopen(LAYOUT ".tmp", "w");
+	if (!f || fprintf(f, "mode primary\nosd_ctrl 0x%08x\nosd_src 0x%08x\n",
+			  ctrl, src) < 0 || fclose(f) || rename(LAYOUT ".tmp", LAYOUT)) {
+		perror("write " LAYOUT);
+		goto restore;
+	}
+	printf("layout in " LAYOUT "\n");
+	fflush(stdout);
+
+	signal(SIGINT, on_signal);
+	signal(SIGTERM, on_signal);
+	signal(SIGHUP, on_signal);
+	while (dwell && !interrupted)
+		dwell = sleep(dwell);
+	rc = 0;
+restore:
+	unlink(LAYOUT);
+	/* The console's framebuffer back; failing that, closing restores it. */
+	if (old_fb && plane_set(fd, plane, crtc, old_fb))
+		fprintf(stderr, "could not put fb %u back (%s); the console restores "
+			"on exit\n", old_fb, strerror(errno));
+	else
+		printf("primary plane back on fb %u\n", old_fb);
+out:
+	if (fb)
+		drmModeRmFB(fd, fb);
+	destroy.handle = create.handle;
+	drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+	return rc;
+}
+
 static int write_layout(size_t bo_size, uint32_t y, uint32_t c)
 {
 	FILE *f = fopen(LAYOUT ".tmp", "w");
@@ -265,7 +434,8 @@ int main(int argc, char **argv)
 	uint32_t crtc = 0, plane = 0, fb = 0, sy, sc, ctrl;
 	drmModePlaneRes *pres = NULL;
 	drmModeRes *res = NULL;
-	unsigned dwell = argc > 1 ? (unsigned)atoi(argv[1]) : 3600;
+	int primary = argc > 1 && !strcmp(argv[1], "--primary");
+	unsigned dwell = argc > 1 + primary ? (unsigned)atoi(argv[1 + primary]) : 3600;
 	size_t end = 0;
 	char path[32];
 	uint8_t *p;
@@ -273,7 +443,7 @@ int main(int argc, char **argv)
 	int fd = -1, rc = 1;
 
 	if (!getenv("ARMED") || strcmp(getenv("ARMED"), "yes")) {
-		fprintf(stderr, "usage: ARMED=yes %s [dwell-seconds]\n", argv[0]);
+		fprintf(stderr, "usage: ARMED=yes %s [--primary] [dwell-seconds]\n", argv[0]);
 		return 2;
 	}
 	unlink(LAYOUT);
@@ -318,6 +488,10 @@ int main(int argc, char **argv)
 		goto out;
 	}
 	pres = drmModeGetPlaneResources(fd);
+	if (primary) {
+		rc = run_primary(fd, crtc, pres, dwell);
+		goto out;
+	}
 	for (i = 0; pres && i < pres->count_planes && !plane; i++) {
 		drmModePlane *pl = drmModeGetPlane(fd, pres->planes[i]);
 

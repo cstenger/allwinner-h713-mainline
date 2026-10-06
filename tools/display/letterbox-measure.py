@@ -5,6 +5,16 @@ Runs on the host.
     letterbox-measure.py VIDEO [--out DIR]           # the Phase 1 run: a, b, c
     letterbox-measure.py VIDEO c=852x480@214,120     # one step
     letterbox-measure.py --self-test
+    letterbox-measure.py VIDEO --mirror --log mirror.log [--out DIR]   # WP5 Phase 1
+
+MIRROR MODE (WP5, docs/mirror-plan.md). The card is nearly symmetric in luma
+(circles, diagonals, ticks), so orientation comes from the corner patches'
+COLOURS: TL red, TR green, BL blue, BR yellow on an upright card. A frame is
+CONTROL only if it is also upright, so a full-panel mirrored step is a window.
+A step whose bits change nothing on the glass leaves no window at all, so
+windows are matched to steps by TIME, from the wall-clock stamps in the
+executor's log (letterbox-test.sh mirror writes it), not by order; a step
+with no window is reported as NO VISIBLE CHANGE -- itself a result.
 
 WHY VIDEO, AND WHY IT NEEDS NO TRIPOD. Every Phase 1 step starts and ends on
 the full-panel control card (letterbox-card), whose white frame IS the panel
@@ -79,6 +89,68 @@ def step_panel(w, h, dx, dy, bar=16):
     p = np.full((PH, PW), bar, np.uint8)
     p[dy:dy + h, dx:dx + w] = card_luma(w, h)
     return p
+
+
+# --- orientation, from the chroma patches (letterbox-card.c colour_at) -------
+
+PATCH_BGR = {"red": (0, 0, 255), "green": (0, 255, 0), "blue": (255, 0, 0),
+             "yellow": (0, 255, 255)}
+UPRIGHT = ("red", "green", "blue", "yellow")          # TL, TR, BL, BR
+ORIENTS = {"": UPRIGHT,
+           "x": ("green", "red", "yellow", "blue"),    # left/right swapped
+           "y": ("blue", "yellow", "red", "green"),    # top/bottom swapped
+           "xy": ("yellow", "blue", "green", "red")}   # rotated 180
+
+
+def card_bgr(w, h, orient=""):
+    """The card in colour (patches coloured), optionally mirrored."""
+    out = cv2.cvtColor(card_luma(w, h), cv2.COLOR_GRAY2BGR)
+    for (x0, y0), c in zip(((40, 40), (w - 88, 40), (40, h - 88), (w - 88, h - 88)), UPRIGHT):
+        out[y0:y0 + 48, x0:x0 + 48] = PATCH_BGR[c]
+    if "x" in orient:
+        out = out[:, ::-1]
+    if "y" in orient:
+        out = out[::-1]
+    return np.ascontiguousarray(out)
+
+
+def step_panel_bgr(w, h, dx, dy, orient="", bar=16):
+    p = np.full((PH, PW, 3), bar, np.uint8)
+    p[dy:dy + h, dx:dx + w] = card_bgr(w, h, orient)
+    return p
+
+
+def patch_colour(bgr):
+    """Name the patch colour of a small BGR box by hue, or None."""
+    hsv = cv2.cvtColor(bgr.reshape(1, -1, 3), cv2.COLOR_BGR2HSV).reshape(-1, 3)
+    sat = hsv[:, 1] > 70
+    if sat.mean() < 0.5:
+        return None
+    hue = np.median(hsv[sat, 0])           # OpenCV hue, 0..180
+    if hue < 12 or hue >= 160:
+        return "red"
+    if 18 <= hue < 42:
+        return "yellow"
+    if 45 <= hue < 90:
+        return "green"
+    if 95 <= hue < 140:
+        return "blue"
+    return None
+
+
+def orientation(bgr, rect):
+    """Orientation of the card whose picture is `rect` (x, y, w, h) in `bgr`:
+    '', 'x', 'y' or 'xy', or None if the four patches do not read as one."""
+    x, y, w, h = (int(round(v)) for v in rect)
+    seen = []
+    for cx, cy in ((x + 64, y + 64), (x + w - 64, y + 64),
+                   (x + 64, y + h - 64), (x + w - 64, y + h - 64)):
+        box = bgr[max(cy - 10, 0):cy + 10, max(cx - 10, 0):cx + 10]
+        seen.append(patch_colour(box) if box.size else None)
+    for name, want in ORIENTS.items():
+        if tuple(seen) == want:
+            return name, seen
+    return None, seen
 
 
 # --- geometry -----------------------------------------------------------------
@@ -239,13 +311,55 @@ def frames(path):
 
 
 PHASE1 = "a=1280x536@0,0 b=1280x536@0,92 c=852x480@214,120"
+STEP_ORIENT = {}
+
+
+def log_windows(path):
+    """{step name: wall-clock time its window opened}, from letterbox-apply's log."""
+    out = {}
+    for line in open(path):
+        if "WINDOW OPEN: step" in line and " wall " in line:
+            name = line.split("WINDOW OPEN: step", 1)[1].split()[0]
+            out[name] = float(line.rsplit(" wall ", 1)[1].split()[0])
+    return out
+
+
+def assign_by_time(run_times, steps, opens, slack=2.5):
+    """Match windows (video times) to steps (board wall times) under the one
+    clock offset that explains the most windows. -> {step index: run index}."""
+    names = [s[0] for s in steps]
+    want = [(i, opens[n]) for i, n in enumerate(names) if n in opens]
+    best = {}
+    for ri, rt in enumerate(run_times):
+        for si, wt in want:
+            shift = rt - wt
+            m = {}
+            for sj, wt2 in want:
+                cands = [(abs(rt2 - (wt2 + shift)), rj) for rj, rt2 in enumerate(run_times)
+                         if abs(rt2 - (wt2 + shift)) <= slack]
+                if cands:
+                    m[sj] = min(cands)[1]
+            if len(m) > len(best):
+                best = m
+    return best
+
+
+# What each mirror step should show, in panel coordinates as seen on the glass
+# (letterbox-test.sh mirror). p* are the primary-route hypotheses: a
+# mismatch or NO VISIBLE CHANGE there is the finding, not a tool failure.
+MIRROR = ("h=1280x720@0,0:x v=1280x720@0,0:y hv=1280x720@0,0:xy "
+          "ch=852x480@428,0:x abv=1280x536@0,184:y "
+          "pv=1280x720@0,0:y php=1280x720@0,0:x pho=1280x720@0,0:x")
 
 
 def parse_steps(specs):
-    """'name=WxH@X,Y' (name optional) -> [(name, w, h, dx, dy)]."""
+    """'name=WxH@X,Y[:x|y|xy]' (name optional) -> [(name, w, h, dx, dy)].
+    The orientation, when given, goes to STEP_ORIENT[name]."""
     out = []
     for i, spec in enumerate(specs):
         name, _, geo = spec.rpartition("=")
+        geo, _, orient = geo.partition(":")
+        STEP_ORIENT[name or f"step{i + 1}"] = orient if orient in ORIENTS else ""
         size, at = geo.split("@")
         w, h = (int(v) for v in size.lower().split("x"))
         dx, dy = (int(v) for v in at.split(","))
@@ -253,7 +367,8 @@ def parse_steps(specs):
     return out
 
 
-def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0):
+def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0,
+            opens=None, mirror=False):
     """Measure every step window in one video.
 
     Frames are CONTROL (the full-panel card) or not. Windows are the runs of
@@ -287,10 +402,19 @@ def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0):
             area = cv2.contourArea(q.reshape(-1, 1, 2))
             own = cv2.warpPerspective(grey, homography(q), (PW, PH))
             s_own = ncc(own, native_t)
-            if (s_own > 0.55 and s_own > max(ncc(own, tt) for tt in temps) + 0.05
+            # Full-panel step templates ARE the control card in luma (mirror
+            # steps differ only in patch colour): orientation decides those.
+            rivals = [ncc(own, tt) for tt, st in zip(temps, steps)
+                      if (st[1], st[2], st[3], st[4]) != (PW, PH, 0, 0)]
+            if (s_own > 0.55 and s_own > max(rivals, default=-1.0) + 0.05
                     and (last_area is None or area >= 0.9 * last_area)):
-                control, hm = True, homography(q)
-                last_h, last_area = hm, area
+                # mirror mode: a full-panel card is CONTROL only if upright
+                if mirror and orientation(cv2.warpPerspective(bgr, homography(q), (PW, PH)),
+                                          (0, 0, PW, PH))[0] != "":
+                    pass
+                else:
+                    control, hm = True, homography(q)
+                    last_h, last_area = hm, area
         best = int(np.argmax(s_steps)) if s_steps and max(s_steps) > 0.45 else -1
         if dump and last_h is not None and n % 15 == 0:
             os.makedirs(outdir, exist_ok=True)
@@ -320,9 +444,23 @@ def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0):
         if (j - i) / fps >= min_run_s and i > 0 and j < len(seq):
             runs.append((i, j))          # frames i .. j-1
         i = j
-    if len(runs) != len(steps):
-        print(f"*** found {len(runs)} window(s) of >= {min_run_s:g} s, expected "
-              f"{len(steps)}: measuring the first {min(len(runs), len(steps))} in order")
+    if opens:
+        amap = assign_by_time([seq[r0][0] for r0, _ in runs], steps, opens)
+        pairs = []
+        for si, st in enumerate(steps):
+            if si in amap:
+                pairs.append((st, runs[amap[si]]))
+            elif st[0] in opens:
+                print(f"step {st[0]}: NO VISIBLE CHANGE (no window at its log time)")
+        spare = sorted(set(range(len(runs))) - set(amap.values()))
+        for ri in spare:
+            print(f"  unassigned window {seq[runs[ri][0]][0]:.2f}-{seq[runs[ri][1] - 1][0]:.2f} s "
+                  "(e.g. the holder switch)")
+    else:
+        if len(runs) != len(steps):
+            print(f"*** found {len(runs)} window(s) of >= {min_run_s:g} s, expected "
+                  f"{len(steps)}: measuring the first {min(len(runs), len(steps))} in order")
+        pairs = list(zip(steps, runs))
 
     T = np.array([[1, 0, M], [0, 1, M], [0, 0, 1]], np.float64)
     CW, CH = PW + 2 * M, PH + 2 * M
@@ -331,7 +469,7 @@ def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0):
         return cv2.warpPerspective(img, T @ hm, (CW, CH))
 
     results = {}
-    for (name, w, h, dx, dy), (r0, r1) in zip(steps, runs):
+    for (name, w, h, dx, dy), (r0, r1) in pairs:
         frames_in = list(range(r0, r1))
         votes = [seq[k][4] for k in frames_in]
         looks = max(set(votes), key=votes.count)
@@ -366,13 +504,14 @@ def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0):
                 # px); an implausible calibration is dropped, not applied.
                 print(f"  {side}: control-frame calibration implausible {tuple(round(b) for b in bias)}, not applied")
                 bias = (0, 0, 0, 0)
-            rects, mags = [], []
+            rects, mags, orients = [], [], []
             for k in picks:
                 bgr_r = warp(seq[k][3], hm)
                 g = cv2.cvtColor(bgr_r, cv2.COLOR_BGR2GRAY)
                 rr = picture_rect(g, ref_white)
                 if rr:
                     rects.append((rr[0] - M, rr[1] - M, rr[2], rr[3]))
+                    orients.append(orientation(bgr_r, rr))
                 mags.append(magenta(bgr_r))
                 last = (bgr_r, g)
             if outdir:
@@ -390,8 +529,11 @@ def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0):
             bar_level = float(np.median(g[bars])) if bars.any() else float("nan")
             n_mag, box = max(mags, key=lambda m: m[0])
             err = (x - dx, y - dy, rw - w, rh - h)
+            names = [o[0] for o in orients]
+            orient = max(set(names), key=names.count) if names else None
             res[side] = dict(x=x, y=y, w=rw, h=rh, err=err, bias=bias, bar=bar_level,
-                             grey=float(grey_level), magenta=n_mag, magenta_box=box)
+                             grey=float(grey_level), magenta=n_mag, magenta_box=box,
+                             orient=orient, patches=orients[0][1] if orients else None)
             if verbose:
                 flag = "" if max(abs(e) for e in err) <= TOL else "   *** OFF"
                 print(f"  {side:6}: picture x {x:7.1f} y {y:6.1f} w {rw:7.1f} h {rh:6.1f}"
@@ -400,6 +542,13 @@ def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0):
                       f"bars {bar_level:.0f} vs card grey {grey_level:.0f} "
                       f"(control white {ref_white:.0f}); magenta {n_mag} px"
                       + (f" in {box}" if box else ""))
+                if mirror or STEP_ORIENT.get(name):
+                    want = STEP_ORIENT.get(name, "")
+                    got = res[side]["orient"]
+                    print(f"          orientation {got if got else 'upright' if got == '' else 'UNREAD'}"
+                          f" (expected {want or 'upright'}); patches TL/TR/BL/BR "
+                          f"{res[side]['patches']}"
+                          + ("" if got == want else "   *** ORIENTATION DIFFERS"))
         results[name] = res
     if verbose and outdir:
         print(f"rectified frames in {outdir}")
@@ -425,11 +574,11 @@ def synth(path, segments, rng, fw=1920, fh=1080):
         for _ in range(count):
             drift += rng.normal(0, 0.6, (4, 2)).astype(np.float32)   # hand wobble
             m = cv2.getPerspectiveTransform(src, base + drift)
-            cam = cv2.warpPerspective(img, m, (fw, fh), borderValue=8)
+            cam = cv2.warpPerspective(img, m, (fw, fh), borderValue=(8, 8, 8))
             cam = cv2.GaussianBlur(cam, (3, 3), 0)
             cam = np.clip(cam.astype(np.float32) * 0.9 + rng.normal(0, 3, cam.shape),
                           0, 255).astype(np.uint8)
-            writer.write(cv2.cvtColor(cam, cv2.COLOR_GRAY2BGR))
+            writer.write(cam if cam.ndim == 3 else cv2.cvtColor(cam, cv2.COLOR_GRAY2BGR))
     writer.release()
 
 
@@ -475,7 +624,50 @@ def self_test(tmp="/tmp/letterbox-measure-selftest"):
     ok &= caught
     print("self-test misplaced b " + ("reported y error -92 on both sides" if caught
                                       else f"*** NOT caught: {eb}"))
+    ok &= mirror_self_test(tmp, rng)
     print("self-test", "PASS" if ok else "FAIL")
+    return ok
+
+
+def mirror_self_test(tmp, rng):
+    """A synthetic mirror session: every step at its expected place and
+    orientation, except pho, which changes nothing (no window). Windows are
+    found by the log's times under an unknown clock offset, with the holder
+    switch (a dark console) as an extra, unassigned window."""
+    ok = True
+    steps = parse_steps(MIRROR.split())
+    native = card_bgr(PW, PH)
+    dark = np.full((PH, PW, 3), 12, np.uint8)
+    segs, t, opens, wall0 = [(native, 90)], 3.0, {}, 1000.0
+    for name, w, h, dx, dy in steps:
+        if name == "pv":                     # the holder switch: 4 s of console
+            segs += [(dark, 120), (native, 60)]
+            t += 6.0
+        img = native if name == "pho" else step_panel_bgr(w, h, dx, dy, STEP_ORIENT[name])
+        opens[name] = wall0 + t
+        segs += [(img, 150), (native, 75)]
+        t += 7.5
+    vid = os.path.join(tmp, "mirror.mp4")
+    synth(vid, segs, rng)
+    r = analyse(vid, steps, verbose=False, opens=opens, mirror=True)
+    for name, *_ in steps:
+        if name == "pho":
+            good = name not in r
+            print(f"self-test mirror pho: " + ("no window, as built" if good else "*** got a window"))
+            ok &= good
+            continue
+        for side in ("before", "after"):
+            d = r.get(name, {}).get(side, {})
+            e, o = d.get("err"), d.get("orient")
+            good = bool(e) and max(abs(v) for v in e) <= TOL and o == STEP_ORIENT[name]
+            ok &= good
+            print(f"self-test mirror {name} {side}: orient {o!r} (want {STEP_ORIENT[name]!r}), "
+                  + (f"error {e[0]:+.1f} {e[1]:+.1f} {e[2]:+.1f} {e[3]:+.1f}" if e else "NOT MEASURED")
+                  + ("" if good else "   *** FAIL"))
+    # A wrong expectation must be caught: say v was expected to swap left/right.
+    if r.get("v", {}).get("before", {}).get("orient") == "x":
+        ok = False
+        print("self-test mirror: *** v read as 'x' -- a wrong expectation would pass")
     return ok
 
 
@@ -488,6 +680,10 @@ def main():
     ap.add_argument("--dump", action="store_true",
                     help="also save every 15th frame, rectified, to --out")
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--mirror", action="store_true",
+                    help=f"WP5 Phase 1: orientation-aware control frames; default steps {MIRROR}")
+    ap.add_argument("--log", help="letterbox-apply log with 'WINDOW OPEN ... wall T' stamps: "
+                                  "windows are matched to steps by time (needed with --mirror)")
     a = ap.parse_args()
     if a.self_test:
         return 0 if self_test() else 1
@@ -495,8 +691,12 @@ def main():
         ap.error("VIDEO [name=WxH@X,Y ...], or --self-test")
     if a.dump and not a.out:
         ap.error("--dump needs --out")
-    steps = parse_steps(a.steps or PHASE1.split())
-    return 0 if analyse(a.video, steps, a.out, dump=a.dump) else 1
+    if a.mirror and not a.log:
+        ap.error("--mirror needs --log (steps with no visible effect leave no window)")
+    steps = parse_steps(a.steps or (MIRROR if a.mirror else PHASE1).split())
+    opens = log_windows(a.log) if a.log else None
+    return 0 if analyse(a.video, steps, a.out, dump=a.dump, opens=opens,
+                        mirror=a.mirror) else 1
 
 
 if __name__ == "__main__":

@@ -74,6 +74,23 @@
 #        Same picture as s4 means the field does not matter here.
 #   s5   640x360 ->  960x540 at (160,90)  magnified AND placed on both axes
 #   letterbox-test.sh phase3b       the Phase 3 bisect (p0 p1 p2 p3 q3 q5 q1, below)
+#   letterbox-test.sh mirror        WP5 Phase 1 (docs/mirror-plan.md), ONE "ready":
+#                                   video card up + checks (stock self-test too),
+#                                   LEAD_S, video steps z h v hv ch abv, then the
+#                                   holder switches to the PRIMARY card (OSD route)
+#                                   and runs pv php pho, then the plane is released.
+#                                   `plan mirror` dry-runs both halves
+#   letterbox-test.sh card-primary  the RGB card on the primary plane + its gates
+#
+# MIRROR STEPS (hardware mirror, recipe --mirror; expected on the glass):
+#   h    native, mirror 1 (H)        left/right swapped, nothing shifted
+#   v    native, mirror 2 (V)        top/bottom swapped
+#   hv   native, mirror 3            rotated 180
+#   ch   852x480 at client (0,0), H  at (428,0), mirrored: bars L428 R0
+#   abv  1280x536 at client (0,0), V at (0,184), flipped, NO magenta at its top
+#   pv   primary card, OSD ctrl [3:2]=2           top/bottom swapped?
+#   php  primary card, panel 0x051c00a0[0]=1      left/right swapped? all 4 edges?
+#   pho  primary card, OSD ctrl [3:2]=1           left/right swapped?
 #   letterbox-test.sh show  z|a|b|c|s1..s5 each recipe register now: old / NEW / ???
 #   letterbox-test.sh restore       emergency: put back /tmp/letterbox-saved.json
 #   letterbox-test.sh off           release the plane (console returns)
@@ -113,12 +130,15 @@ TAIL_S=${TAIL_S:-5}
 SEQUENCE="z a b c"
 SEQUENCE_P3="z s1 s2 s3 s4 s4h s5"
 SEQUENCE_P3B="p0 p1 p2 p3 q3 q5 q1"
+SEQUENCE_MV="z h v hv ch abv"
+SEQUENCE_MP="pv php pho"
+STOCK=${STOCK:-$REPO/local/h713-lab/stock-capture-20261001/out}
 FRESH=$OUT/native-card.txt
 
 say(){ printf '%s\n' "$*"; }
 
 step_params(){
-	OUTSZ=; VARIANT=
+	OUTSZ=; VARIANT=; MIRROR=0; REFLECT=
 	case "${1:-}" in
 	s1)  SIZE=640x360; OUTSZ=1280x720; AT=0,0;    PITCH=640; REGION=s640; return ;;
 	s2)  SIZE=852x480; OUTSZ=1278x720; AT=0,0;    PITCH=864; REGION=c;    return ;;
@@ -150,7 +170,13 @@ step_params(){
 	a) SIZE=1280x536; AT=0,0;     PITCH=1280; REGION=ab ;;
 	b) SIZE=1280x536; AT=0,92;    PITCH=1280; REGION=ab ;;
 	c) SIZE=852x480;  AT=214,120; PITCH=864;  REGION=c  ;;
-	*) say "step must be z, a, b, c or s1..s5, s4h"; exit 2 ;;
+	# WP5 mirror steps; AT is the CLIENT position, the recipe maps it
+	h)   SIZE=1280x720; AT=0,0; PITCH=1280; REGION=native; MIRROR=1 ;;
+	v)   SIZE=1280x720; AT=0,0; PITCH=1280; REGION=native; MIRROR=2 ;;
+	hv)  SIZE=1280x720; AT=0,0; PITCH=1280; REGION=native; MIRROR=3 ;;
+	ch)  SIZE=852x480;  AT=0,0; PITCH=864;  REGION=c;      MIRROR=1 ;;
+	abv) SIZE=1280x536; AT=0,0; PITCH=1280; REGION=ab;     MIRROR=2 ;;
+	*) say "step must be z, a, b, c, s1..s5, s4h or h v hv ch abv"; exit 2 ;;
 	esac
 }
 
@@ -172,7 +198,8 @@ recipe_json(){	# step -> $OUT/step-<x>.json, from the fresh baseline
 	step_params "$1"
 	[ -s "$FRESH" ] || { say "no fresh baseline: run 'card' first"; exit 1; }
 	python3 "$HERE/letterbox-recipe.py" --live "$FRESH" "$SIZE" "$AT" \
-		--pitch "$PITCH" ${OUTSZ:+--out "$OUTSZ"} --json "$OUT/step-$1.json" \
+		--pitch "$PITCH" ${OUTSZ:+--out "$OUTSZ"} --mirror "$MIRROR" \
+		${REFLECT:+--reflect "$REFLECT"} --json "$OUT/step-$1.json" \
 		> "$OUT/step-$1.recipe.txt" ||
 		{ cat "$OUT/step-$1.recipe.txt"; say "recipe refused"; exit 1; }
 	if [ -n "$VARIANT" ]; then	# one field changed on top of the recipe
@@ -289,6 +316,41 @@ sequence_json(){	# recipes for every step + the sequence file, on the board
 	$SCP "$OUT/sequence.json" "root@$BOARD:$R/sequence.json" || exit 1
 }
 
+osd_sequence_json(){	# the primary-route steps (no recipe: OSD/panel bits)
+	cat > "$OUT/sequence-primary.json" <<-'EOF'
+	[{"name": "pv", "kind": "osd", "osd_bits": {"lsb": 2, "width": 2, "value": 2}, "panel_h": 0},
+	 {"name": "php", "kind": "osd", "osd_bits": null, "panel_h": 1},
+	 {"name": "pho", "kind": "osd", "osd_bits": {"lsb": 2, "width": 2, "value": 1}, "panel_h": 0}]
+	EOF
+	$SCP "$OUT/sequence-primary.json" "root@$BOARD:$R/sequence-primary.json" || exit 1
+}
+
+check_primary_gates(){
+	local bad=0 sel ctrl src lay
+	sel=$($SSH 'busybox devmem 0x051c006c' 2>/dev/null)
+	ctrl=$($SSH 'busybox devmem 0x05600140' 2>/dev/null)
+	src=$($SSH 'busybox devmem 0x05600178' 2>/dev/null)
+	lay=$($SSH 'cat /tmp/letterbox-card.layout 2>/dev/null' | awk '$1=="osd_src"{print $2}')
+	[ "$sel" = "0x29000000" ] || { say "  GATE FAIL selector $sel (want 0x29000000 = RGB)"; bad=1; }
+	[ "$ctrl" = "0x03001901" ] || { say "  GATE FAIL OSD ctrl $ctrl (want 0x03001901)"; bad=1; }
+	[ -n "$lay" ] || { say "  GATE FAIL no primary layout (card not up)"; bad=1; }
+	[ "$(printf '%s' "$src" | tr 'A-F' 'a-f')" = "$(printf '%s' "$lay" | tr 'A-F' 'a-f')" ] ||
+		{ say "  GATE FAIL OSD source $src is not the card's ($lay)"; bad=1; }
+	return $bad
+}
+
+bring_primary(){
+	say "== primary (RGB) card up =="
+	$SSH "p=\$(cat /tmp/letterbox-card.pid 2>/dev/null); [ -n \"\$p\" ] && kill -TERM \"\$p\" 2>/dev/null
+	      pkill -x letterbox-card >/dev/null 2>&1; sleep 1; rm -f /tmp/letterbox-card.pid
+	      setsid env ARMED=yes $R/letterbox-card --primary $DWELL_S >/tmp/letterbox-card.log 2>&1 < /dev/null &
+	      echo \$! > /tmp/letterbox-card.pid" >/dev/null 2>&1
+	sleep 2
+	$SSH 'cat /tmp/letterbox-card.log'
+	check_primary_gates || { say "REFUSING: the primary card is not demonstrably on the panel."; return 1; }
+	say "  primary gates OK"
+}
+
 bring_card(){
 	say "== control card up =="
 	$SSH "p=\$(cat /tmp/letterbox-card.pid 2>/dev/null); [ -n \"\$p\" ] && kill -TERM \"\$p\" 2>/dev/null
@@ -301,7 +363,8 @@ bring_card(){
 	say "  gates OK"
 	$SSH "python3 $R/letterbox-baseline.py" > "$FRESH" || { say "baseline failed"; return 1; }
 	say "  fresh baseline: $FRESH ($(wc -l < "$FRESH") words)"
-	python3 "$HERE/letterbox-recipe.py" --live "$FRESH" --self-test || return 1
+	python3 "$HERE/letterbox-recipe.py" --live "$FRESH" --self-test \
+		$([ -d "$STOCK" ] && printf -- '--stock %s' "$STOCK") || return 1
 	# Every register the recipe touches must read what the reference did.
 	python3 "$HERE/letterbox-recipe.py" --live "$FRESH" 852x480 214,120 \
 		--pitch 864 --json "$OUT/touched.json" > /dev/null || return 1
@@ -338,7 +401,24 @@ card)
 	say "  control card up; film each step handheld (see the header)"
 	;;
 
+card-primary)
+	bring_primary || exit 1
+	say "  primary card up; 'off' puts the console back"
+	;;
+
 plan)
+	if [ "${2:-}" = mirror ]; then
+		bring_card || exit 1
+		sequence_json "$SEQUENCE_MV"
+		$SSH "python3 $R/letterbox-apply.py --sequence $R/sequence.json --dry-run" |
+			grep -E 'step |preflight|REFUSED|SEQUENCE|dry run|V-mirror|panel|ctl'
+		osd_sequence_json
+		bring_primary || exit 1
+		$SSH "python3 $R/letterbox-apply.py --sequence $R/sequence-primary.json --dry-run" |
+			grep -E 'step |preflight|REFUSED|SEQUENCE|dry run|would write'
+		"$0" off
+		exit 0
+	fi
 	if [ "${2:-}" = bisect ]; then
 		bisect_json
 		check_gates || { say "REFUSING: gates are not satisfied. Run 'card' first."; exit 1; }
@@ -424,6 +504,48 @@ all|bisect|phase3|phase3b)
 	say "  measure: tools/display/letterbox-measure.py VIDEO --out $OUT/measure"
 	;;
 
+mirror)
+	bring_card || exit 1
+	sequence_json "$SEQUENCE_MV"
+	osd_sequence_json
+	check_gates || { say "REFUSING: gates are not satisfied."; exit 1; }
+	nv=6; np=3
+	total=$(( LEAD_S + (nv + np) * HOLD_S + (nv + np - 1) * GAP_S + 5 ))
+	# ONE detached job on the board: video half, holder switch, primary half.
+	# The primary half runs only if the video half completed and restored.
+	cat > "$OUT/mirror-run.sh" <<-EOF
+	#!/bin/sh
+	python3 $R/letterbox-apply.py --sequence $R/sequence.json --pre $LEAD_S --gap $GAP_S --hold $HOLD_S || exit \$?
+	p=\$(cat /tmp/letterbox-card.pid 2>/dev/null); [ -n "\$p" ] && kill -TERM "\$p" 2>/dev/null
+	sleep 2
+	setsid env ARMED=yes $R/letterbox-card --primary $DWELL_S >/tmp/letterbox-card.log 2>&1 < /dev/null &
+	echo \$! > /tmp/letterbox-card.pid
+	sleep 2
+	cat /tmp/letterbox-card.log
+	python3 $R/letterbox-apply.py --sequence $R/sequence-primary.json --pre $GAP_S --gap $GAP_S --hold $HOLD_S
+	EOF
+	$SCP "$OUT/mirror-run.sh" "root@$BOARD:$R/mirror-run.sh" || exit 1
+	say "== mirror, one go: $SEQUENCE_MV | holder switch | $SEQUENCE_MP; first window in ${LEAD_S}s, about ${total}s in all; the console returns at the end =="
+	$SSH "rm -f /tmp/letterbox-apply.log /tmp/letterbox-apply.pid
+	      setsid sh $R/mirror-run.sh > /tmp/letterbox-apply.log 2>&1 < /dev/null &
+	      echo \$! > /tmp/letterbox-apply.pid" >/dev/null 2>&1
+	follow $(( total + 120 ))
+	log=$OUT/mirror.log
+	$SSH 'cat /tmp/letterbox-apply.log' > "$log"
+	grep -E 'step |REFUSED|WINDOW|RECHECK|RESTORE|SEQUENCE|WATCH|OSD ctrl|\*\*\*' "$log"
+	say "  full log: $log"
+	if grep -q 'RESTORE INCOMPLETE' "$log"; then
+		say "*** NOT RESTORED -- holder left as is. Run: letterbox-test.sh restore"
+		exit 1
+	fi
+	sleep "$TAIL_S"
+	"$0" off >/dev/null
+	say "  plane released (console back = stop recording)"
+	[ "$(grep -c 'SEQUENCE COMPLETE' "$log")" -eq 2 ] ||
+		{ say "*** a sequence did not complete -- see the log"; exit 1; }
+	say "  measure: tools/display/letterbox-measure.py VIDEO --mirror --out $OUT/measure"
+	;;
+
 show)
 	recipe_json "${2:-}"
 	$SSH "python3 $R/letterbox-apply.py --show $R/step-$2.json"
@@ -442,7 +564,7 @@ off)
 	;;
 
 *)
-	sed -n '2,78p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,/^set -uo/p' "$0" | sed '$d; s/^# \{0,1\}//'
 	exit 2
 	;;
 esac
