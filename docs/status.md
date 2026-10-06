@@ -6,6 +6,13 @@ is not risked for bring-up.
 
 _Last updated: 2026-10-06._
 
+> **2026-10-06 — hardware mirror (WP5) done.** Kernel 0166 mirrors the panel
+> for rear and ceiling projection, as the stock firmware does: `h713-mirror
+> front|rear|rear-ceiling|ceiling [--persist]`, or the DRM `rotation`
+> property per plane. The console, the GPU path and plane playback all
+> follow it, with no GPU cost. 10-bit on the plane is refused under a
+> vertical flip ([mirror-plan.md](mirror-plan.md)).
+
 > **2026-10-02 — direction change.** The vendor stack does all file scaling,
 > letterboxing, rotation and keystone on the GPU, and uses hardware only for
 > the VE scaler above 1080p and the rear/ceiling mirror

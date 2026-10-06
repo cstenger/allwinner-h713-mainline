@@ -611,4 +611,14 @@ cat > "$R/etc/tmpfiles.d/h713-cpufreq.conf" <<EOF
 w /sys/devices/system/cpu/cpufreq/schedutil/rate_limit_us - - - - 10000
 EOF
 
+# WP5: h713-mirror sets the projector's installation mode (kernel 0166's
+# hardware mirror). No /etc/tmpfiles.d/h713-mirror.conf is written here: a
+# default file would override sun50i_h713_afbd.mirror_mode= on the kernel
+# command line at every boot. `h713-mirror MODE --persist` writes it.
+if [ -n "${H713_MIRROR_SRC:-}" ]; then
+  install -d -m 0755 "$R/usr/local/bin"
+  install -m 0755 "$H713_MIRROR_SRC" "$R/usr/local/bin/h713-mirror"
+  echo "[customize] installed h713-mirror"
+fi
+
 echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media), schedutil rate limit 10 ms"

@@ -83,6 +83,8 @@ tree. One caveat on `mpv`: its video outputs want DRM/KMS, X or Wayland, and
 this panel is driven through AFBD registers with panfrost as a render-only
 device — so mpv exercises decode and file handling, not scanout.
 
+**Every image carries `/usr/local/bin/h713-mirror`** (WP5, kernel 0166): it shows or sets the installation mode (`front`, `rear`, `rear-ceiling`, `ceiling`), and `--persist` keeps it across boots through `/etc/tmpfiles.d/h713-mirror.conf`. No default file ships, so `sun50i_h713_afbd.mirror_mode=` on the kernel command line still works.
+
 **Every image carries WP4's player** ([gpu-fallback-plan.md](gpu-fallback-plan.md)):
 
 - `/usr/local/bin/h713-play FILE` probes the file and plays it by the

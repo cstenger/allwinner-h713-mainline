@@ -312,8 +312,9 @@ attached, the display path can be brought up here, not only on the projector
      changes size mid-stream with one dark frame. Stock `kmssink` drives it,
      so non-16:9 and sub-720p H.264/HEVC/VP9/AV1 no longer need the GPU.
      Still on the GPU: 10-bit, rotation, non-square pixels and VP9/AV1
-     above the panel. Next on this line: the hardware mirror (WP5), for
-     which the placement state is already designed.
+     above the panel. The hardware mirror (WP5) followed the same day:
+     kernel 0166, `h713-mirror front|rear|rear-ceiling|ceiling`, both
+     paths, no GPU cost ([mirror-plan.md](mirror-plan.md)).
 
    **~~GE2D at `0x5240000`~~ — DEAD, and dead for the second time.**
    `ge2d@5240000` is the projector's display controller, not a 2D engine:

@@ -369,7 +369,7 @@ Routing: sources below 720p take plane-native through stock
   - AV1 `rc.ivf` is excluded: ffmpeg never renegotiates AV1.
 - **Geometry stress:** a script that alternates sizes every few frames for 10 minutes. Pass is zero IOMMU faults with the panel still alive.
 - **Refusals:** too-small buffers, odd sizes and off-panel offsets are all refused in check.
-- **The WP5 hardware mirror:** placement is computed in panel coordinates and mirrored by the driver (an H mirror maps x to 1280 − x − w). Design the state now; test it when WP5 lands. Design below.
+- **The WP5 hardware mirror:** DONE in kernel 0166 (2026-10-06): placed and magnified pictures mirror correctly, gated on the panel ([reference/mirror-phase2-2026-10-06.md](reference/mirror-phase2-2026-10-06.md)). The design notes below are historical.
 
 ### Mirror design (2026-10-06; implement and test with WP5)
 

@@ -1,6 +1,11 @@
 # WP5: the hardware mirror (installation mode): plan (2026-10-05)
 
-> **Status 2026-10-06: Phase 2 DONE: kernel 0166 mirrors the panel in hardware**
+> **Status 2026-10-06: Phase 3 DONE (pending one boot check).**
+> - `tools/display/h713-mirror [front|rear|rear-ceiling|ceiling|0-3] [--persist]` ships in every image (`tools/rootfs/customize.sh`).
+> - `--persist` writes `/etc/tmpfiles.d/h713-mirror.conf`. No default file ships, so the kernel parameter still works.
+> - Docs: kms-display, rootfs, register-index, roadmap, gpu-fallback-plan, letterbox-plan.
+>
+> **Phase 2 DONE: kernel 0166 mirrors the panel in hardware**
 > ([reference/mirror-phase2-2026-10-06.md](reference/mirror-phase2-2026-10-06.md)).
 > - Interface: sysfs `mirror_mode` (0–3, instant), module parameter `mirror_mode`, and plane `rotation` on both planes.
 > - Gate: 20/20 headless cases, plus the P010 refusal, playback switching, the GPU path and an operator look. No warnings or faults.

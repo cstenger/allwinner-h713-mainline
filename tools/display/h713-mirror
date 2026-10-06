@@ -1,0 +1,79 @@
+#!/bin/sh
+# h713-mirror -- the projector's installation mode, in display hardware.
+# RUNS ON THE TARGET, as root. Kernel 0166 (docs/mirror-plan.md).
+#
+#   h713-mirror                      print the current mode
+#   h713-mirror MODE [--persist]     set it now; --persist also at every boot
+#   h713-mirror --persist            keep the current mode at every boot
+#
+# MODE is a name or stock's number:
+#   front          0   table or floor, in front of the screen
+#   rear           1   behind a rear-projection screen   (left/right mirror)
+#   rear-ceiling   2   ceiling, behind the screen        (top/bottom flip)
+#   ceiling        3   ceiling, in front of the screen   (rotated 180)
+#
+# The mirror is the panel's: the console, the GPU path and video on the
+# plane all follow it at once, and no player needs to know. Changing it takes
+# about two frames; no reboot. --persist writes /etc/tmpfiles.d/h713-mirror.conf,
+# applied by systemd-tmpfiles early at boot (the kernel command line's
+# sun50i_h713_afbd.mirror_mode=N is the other way, from the first frame).
+#
+# Limits (0166): 10-bit (P010) video on the plane is refused while the mode
+# flips top/bottom (rear-ceiling, ceiling) -- h713-play sends 10-bit through
+# the GPU path, which mirrors. A mode change that would strand such a client
+# fails and leaves the mode as it was.
+set -u
+ATTR=$(ls /sys/bus/platform/drivers/sun50i-h713-afbd/*/mirror_mode 2>/dev/null | head -1)
+CONF=/etc/tmpfiles.d/h713-mirror.conf
+NAMES="front rear rear-ceiling ceiling"
+
+name_of() { n=$1; set -- $NAMES; shift "$n"; echo "$1"; }
+
+usage() { sed -n '5,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+[ -n "$ATTR" ] || { echo "h713-mirror: no mirror_mode attribute -- kernel without 0166?" >&2; exit 1; }
+
+persist() {
+	m=$(cat "$ATTR")
+	mkdir -p "$(dirname "$CONF")"
+	{
+		echo "# Written by h713-mirror -- the installation mode at boot ($(name_of "$m"))."
+		echo "w /sys/bus/platform/drivers/sun50i-h713-afbd/*/mirror_mode - - - - $m"
+	} > "$CONF.tmp" && mv "$CONF.tmp" "$CONF" ||
+		{ echo "h713-mirror: could not write $CONF" >&2; exit 1; }
+	echo "h713-mirror: $(name_of "$m") ($m) at every boot ($CONF)"
+}
+
+mode=; save=0
+for a in "$@"; do
+	case $a in
+	--persist) save=1 ;;
+	-h|--help) usage ;;
+	[0-3]) mode=$a ;;
+	*)	n=0; mode=
+		for x in $NAMES; do [ "$a" = "$x" ] && mode=$n; n=$((n + 1)); done
+		[ -n "$mode" ] || { echo "h713-mirror: unknown mode '$a'" >&2; usage; } ;;
+	esac
+done
+
+if [ -z "$mode" ] && [ $save = 0 ]; then
+	m=$(cat "$ATTR")
+	echo "$(name_of "$m") ($m)"
+	exit 0
+fi
+
+if [ -n "$mode" ]; then
+	if ! err=$( (echo "$mode" > "$ATTR") 2>&1 ); then
+		# The errno the kernel passes up varies; the cause does not.
+		case $err in
+		*"not supported"*) why="the hardware mirror is unavailable on this boot (see dmesg: hardware mirror)" ;;
+		*) why="${err##*: }"
+		   [ $((mode & 2)) = 2 ] && why="$why -- a 10-bit (P010) picture on the video plane cannot be flipped top/bottom; stop it, or play it with h713-play (GPU path)" ;;
+		esac
+		echo "h713-mirror: could not set $(name_of "$mode"): $why" >&2
+		exit 1
+	fi
+	echo "h713-mirror: $(name_of "$mode") ($mode)"
+fi
+[ $save = 1 ] && persist
+exit 0

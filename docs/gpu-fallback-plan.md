@@ -60,7 +60,7 @@ over the 43 capture clips plus the letterbox gate clips on the board
 | Rotation (any codec, any angle) | **GPU** | 180° later via the hardware H+V mirror (WP5) |
 | MPEG-2, VP8 | **GPU** | `h713-play` routes no plane decoder for them |
 | Subtitles / OSD over video | **GPU** | |
-| Rear/ceiling projection | **Hardware** mirror, on both paths | WP5; the letterbox placement is mirror-ready (letterbox-plan.md) |
+| Rear/ceiling projection | **Hardware** mirror, on both paths | WP5 done (0166): `h713-mirror MODE`; 10-bit on the plane is refused under a vertical flip, and h713-play's GPU route covers it |
 | Keystone | **GPU**, later | |
 
 The plane routes cost ~8% whole-board CPU with audio and leave the GPU
@@ -440,7 +440,7 @@ Still open in WP4:
 - Add `tools/video/h713-play FILE`. It probes codec, size, rotation and bit depth, applies the routing table, prints its decision, then runs stock mpv with the VE pre-shrink environment (aspect-fit, even, never upscale) or the 10-bit environment and shader, or the direct mode if WP2 keeps it.
 
 **Later.**
-- **WP5, the hardware mirror:** an installation setting (mode 0–3, sysfs, rootfs default) plus `REFLECT_X`/`REFLECT_Y` on both DRM planes. Plan: [mirror-plan.md](mirror-plan.md); Phase 0 (recipe, self-tested against stock) done 2026-10-06.
+- **WP5, the hardware mirror: DONE 2026-10-06.** Kernel 0166 adds the installation mode (`h713-mirror front|rear|rear-ceiling|ceiling [--persist]`, sysfs `mirror_mode`) and `rotation` (REFLECT_X/Y, ROTATE_180) on both DRM planes. It works on both paths with no GPU cost; P010 under V is refused. Plan: [mirror-plan.md](mirror-plan.md); gate: [reference/mirror-phase2-2026-10-06.md](reference/mirror-phase2-2026-10-06.md).
 - **WP6, VP9 VE scaling:** read Jernej's patches, then the stock 4K VE pages, then extend `cedrus_can_scale()`.
 - Keystone as a GL warp.
 - The hardware letterbox plan as an optimisation.

@@ -397,6 +397,7 @@ env \
   VA_DRIVER_SERIES="$(tar -xzOf "$VA_DRIVER_TAR" ./h713-va-driver.stamp | grep '^va_driver_series=')" \
   H713_PLAY_SRC="$PROJECT_ROOT/tools/video/h713-play" \
   PLANE_PLAY_SRC="$PROJECT_ROOT/tools/video/gst-plane-play.c" \
+  H713_MIRROR_SRC="$PROJECT_ROOT/tools/display/h713-mirror" \
   bash -ceu '
     mkdir -p "$ROOTFS_TREE"
     tar --numeric-owner --xattrs --acls --exclude="./dev/*" -C "$ROOTFS_TREE" -xf "$ROOTFS_TAR"
