@@ -63,15 +63,14 @@
 >   fixes the top border and drops the experiment parameter; it is
 >   booted 2026-10-06 (power cycle): geometry commits 33.5 ms, refusals
 >   31/31, `r01` 75/0 on the plane, kernel quiet, borders restored.
-> - **Open:** the 2-hour plane-ve scope soak (overnight queue). Then Phase 4
->   is done.
+> - **Phase 4 DONE:** 2-hour plane-ve scope soak PASSED 2026-10-06: 1920x800 clip, 122 min, route plane-ve, 219,161 frames rendered, 0 dropped, drift +1.3 ms (sync -3.9 -> -2.6 ms), gpu_irq 0, 0 new IOMMU kernel lines, CPU 5.7%, max 59 °C, PCM running throughout.
 >
 > **Phase 5 DONE 2026-10-06 (headless):** routing over 50 clips matches the
 > table; `va-regress.sh` 0 failing; the new native gate finds 0 of 1156
 > registers changed from the pre-letterbox capture (NV12 in four codecs,
 > P010 both layouts); the GPU path is unchanged from WP2; every image now
-> ships the VA driver. Docs updated. **The only open item in the whole plan
-> is the 2-hour scope soak.** Details: [Phase 5 results](#phase-5-results-2026-10-06-kernel-with-final-0165-headless).
+> ships the VA driver. Docs updated. **The scope soak has since passed
+> (Phase 4), so the plan is closed.** Details: [Phase 5 results](#phase-5-results-2026-10-06-kernel-with-final-0165-headless).
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
 >
 > **Status 2026-10-04: Phase 0 done.** Desk RE and a read-only baseline:
@@ -469,8 +468,7 @@ any panel time is spent.
   interrupts.
 - **Docs:** `gpu-fallback-plan.md` (routing table; the "limits of the plane
   routes" list marked superseded), `status.md`, `roadmap.md`, `rootfs.md`.
-- **Left:** Phase 4's 2-hour plane-ve scope soak (overnight queue). Then the
-  plan is closed; the mirror design waits for WP5.
+- **Closed 2026-10-06:** the 2-hour plane-ve scope soak PASSED 2026-10-06: 1920x800 clip, 122 min, route plane-ve, 219,161 frames rendered, 0 dropped, drift +1.3 ms (sync -3.9 -> -2.6 ms), gpu_irq 0, 0 new IOMMU kernel lines, CPU 5.7%, max 59 °C, PCM running throughout. The mirror design moved to WP5.
 
 ## Verification on this path
 
