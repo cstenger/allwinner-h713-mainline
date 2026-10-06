@@ -13,7 +13,9 @@
 #   plane-up      a picture SMALLER than its fit (480p, 576p, 360p), any of
 #                 H.264/HEVC/VP9/AV1: stock v4l2sl*dec ! kmssink; kmssink
 #                 commits its aspect-fit destination and the display's proc
-#                 block magnifies (kernel 0163, up to 4x per axis).
+#                 block magnifies (kernel 0163, up to 4x per axis). Square
+#                 pixels only: stock kmssink mishandles the source rectangle
+#                 for any other SAR, so those take the GPU.
 #   gpu           everything else: stock mpv --vo=gpu with the cheap scaling
 #                 settings WP2 measured (1080p real time in every codec).
 #
@@ -155,6 +157,12 @@ elif [ $depth != 8 ]; then why="10-bit"
 elif [ $rot != 0 ]; then why="rotated $rot"
 elif [ $letterbox = 0 ] && { [ $fw != $PANEL_W ] || [ $fh != $PANEL_H ]; }; then why="fits as ${fw}x${fh}, the plane shows only ${PANEL_W}x${PANEL_H} (no letterbox in this kernel)"
 elif [ $w = $fw ] && [ $h = $fh ]; then plane=native
+elif [ $sn != $sd ] && [ $w -le $fw ] && [ $h -le $fh ]; then
+	# Stock kmssink (1.26) puts the pixel-aspect correction into the SOURCE
+	# rectangle (720x576 at 16:15 is read as 768x576 from a 720-wide
+	# buffer), which no driver can honour. plane-ve is unaffected: the VE
+	# lands on square pixels and gst-plane-play declares them 1:1.
+	why="non-square pixels (sar $sn:$sd); stock kmssink cannot show them scaled"
 elif [ $w -le $fw ] && [ $h -le $fh ]; then
 	# Smaller than its fit on both axes (anamorphic SAR included): proc
 	# magnifies, up to 4x per axis, in display (SAR-corrected) units.

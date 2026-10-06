@@ -1,0 +1,63 @@
+drm: h713: make dumb buffers fetchable by the video plane
+
+kmssink allocates its buffer pool as dumb buffers and takes every plane's
+stride from the pitch dumb_create returns. Stock GStreamer copies frames into
+that pool whenever a decoder cannot hand over its own buffers.
+v4l2slh265dec does this for every HEVC stream whose SPS has a conformance
+crop (copy_frames = need_crop), e.g. 852x480 coded as 856.
+
+The DMA helper's pitch is the tight width (852). AFBD steps strides in whole
+16-sample units, so the plane refused the frame and kmssink failed outright
+(letterbox Phase 3 gate pre-run, 2026-10-05). Cedrus's own buffers were never
+the problem; they are 32-aligned (0125).
+
+  - pitch: 64-byte aligned. That is a multiple of AFBD's 16 samples for
+    NV12 and P010, and the alignment Panfrost needs to import a buffer;
+  - size: 16 more lines. The plane fetches whole 16x16 blocks, and kmssink
+    puts chroma at pitch x height with no padding, so a picture whose height
+    is not a multiple of 16 would otherwise be fetched past the object's end.
+
+The console's 1280x720 XRGB framebuffer (pitch 5120) keeps its pitch.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-05 22:42:26.116013797 -0700
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-05 23:09:17.696027293 -0700
+@@ -1229,6 +1229,30 @@
+ 
+ DEFINE_DRM_GEM_DMA_FOPS(h713_afbd_fops);
+ 
++/*
++ * Dumb buffers the video plane can fetch. kmssink allocates its own pool as
++ * dumb buffers and takes every plane's stride from the pitch returned here.
++ * Stock GStreamer copies into that pool whenever a decoder cannot hand its
++ * own buffers over: v4l2slh265dec does it for every HEVC stream with a
++ * conformance crop (852x480 coded as 856). At the helper's tight pitch
++ * (852) AFBD would refuse the frame -- it steps strides in whole 16-sample
++ * units -- and kmssink fails outright.
++ *
++ *  - pitch: 64-byte aligned, a multiple of AFBD's 16 samples for NV12 and
++ *    P010 alike, and the alignment Panfrost needs to import a buffer;
++ *  - size: 16 more lines, so the plane's whole-16x16-block fetch of a
++ *    picture whose height is not a multiple of 16 stays inside the object
++ *    (kmssink puts chroma at pitch x height, with no padding of its own).
++ */
++static int h713_afbd_dumb_create(struct drm_file *file, struct drm_device *drm,
++				 struct drm_mode_create_dumb *args)
++{
++	args->pitch = ALIGN(DIV_ROUND_UP(args->width * args->bpp, 8), 64);
++	args->size = (u64)args->pitch * (args->height + 16);
++
++	return drm_gem_dma_dumb_create_internal(file, drm, args);
++}
++
+ static const struct drm_driver h713_afbd_driver = {
+ 	/*
+ 	 * DRIVER_RENDER on a display-only device is deliberate and is a
+@@ -1253,7 +1277,7 @@
+ 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC |
+ 				  DRIVER_RENDER,
+ 	.fops			= &h713_afbd_fops,
+-	DRM_GEM_DMA_DRIVER_OPS,
++	DRM_GEM_DMA_DRIVER_OPS_WITH_DUMB_CREATE(h713_afbd_dumb_create),
+ 	DRM_FBDEV_DMA_DRIVER_OPS,
+ 	.name			= "sun50i-h713-afbd",
+ 	.desc			= "Allwinner H713 AFBD scanout",
