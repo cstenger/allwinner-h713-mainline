@@ -247,3 +247,29 @@ every window; every restore was exact; no kernel messages.
 No cut, grey streak or magenta; chroma on its luma everywhere. **The scaled
 recipe is hardware-correct. Phase 3's register work is done; next is the kernel
 (magnification in `atomic_check`/`atomic_update` on top of 0161).**
+
+## Phase 3 kernel (0163) on hardware, headless pre-run (2026-10-05)
+
+Cold boot OK. The probe self-check passed ("magnified up to 4x"), and
+h713-play sees SCALING_FILTER and routes all five gate clips plane-up.
+`upscale-gate.sh`, no operator; logs in `local/h713-lab/letterbox-phase3-kernel/gate0/`.
+
+| Clip | Result |
+| --- | --- |
+| 640x360 H.264 | **plays**: plane 640x360 → 1280x720, fb changing, GPU 0, cedrus 300, 300 rendered / 0 dropped, kernel quiet |
+| 352x288 VP9 | **plays**: plane 352x288 → 880x720 at (200,0), same counts |
+| 852x480 HEVC | refused: fb **pitch 852** |
+| 720x576 SAR 16:15 H.264 | refused: kmssink sources **768x576** from a 720-wide fb (ENOSPC) |
+| 720x480 SAR 32:27 AV1 | refused: kmssink sources **720x405** |
+
+The kernel refused nothing it should have shown. **All three failures are in GStreamer:**
+- **kmssink PAR bug** (1.26.2 `gst_kms_sink_show_frame`). It takes the
+  aspect-corrected display size as its *source* rectangle after centring. With
+  square pixels the two are equal. With non-square pixels the source rectangle
+  is wrong on any plane that scales.
+- **v4l2slh265dec copies every frame when the SPS has a conformance crop**
+  (`copy_frames = need_crop`). x265 codes 852 as 856 plus a crop. The H.264
+  decoder passes crops downstream as metadata instead. The copy lands in a
+  kmssink dumb buffer at pitch = width = 852, which AFBD cannot step (stride
+  must be a multiple of 16). It also costs a CPU copy per frame. Cedrus's own
+  buffers are 864-pitch (0125).
