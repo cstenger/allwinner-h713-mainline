@@ -172,3 +172,20 @@ Carry into Phase 2:
 - the border overlay must stay programmed: zero borders show garbage above the picture and turn it green;
 - the source-off transition flashes green, so blank around geometry changes;
 - the NR hold/release bracket and the slot/geometry ordering as in `letterbox-apply.py`.
+
+## Phase 2 on hardware (kernel 0161, 2026-10-05)
+
+- **Boot:** the probe snapshot matches the native model; "video plane: pictures up to the panel size, placed anywhere (letterbox)"; DRM minimum 64x64.
+- **Headless:** kmssink, unpatched, centres every picture by itself.
+  - scope 1920x800 → 1280x528 at (0,96);
+  - ultrawide 2560x1080 → 1280x544 at (0,88);
+  - 4:3 HEVC 1440x1080 → 960x720 at (160,0);
+  - native 960x720 at (160,0).
+
+  1280x720 native and 1080p plane-ve are unchanged. There were 0 drops and no kernel messages.
+- **Found and fixed on the way:** VE-scaled heights that are not a multiple of 16 (534, 536, 540) put chroma in the wrong place: colour shifted up and a green band at the bottom. `scanout-grab` showed the fault is in the buffer, not the display: a native 534 is clean. The cause is that the VE scaler writes chroma straight after the scaled height, while cedrus declares it after ALIGN16. The workaround is h713-play rounding to a multiple of 16 (commit 5859c4b). The proper cedrus/VA fix is a separate task.
+- **Operator, card re-run (with scanout references in `local/h713-lab/letterbox-phase2-20261005/rerun/`):** all four pictures look correct.
+- **Moving content (2026-10-05):** operator saw all correct. Four moving `testsrc2` clips (native 1280x720 control, scope, ultrawide, 4:3) were each grabbed six times (`local/h713-lab/letterbox-phase2-20261005/move/`), with 0 drops and 0 underruns.
+  - The earlier "doubled diagonal" was two things. The pattern draws its band bouncing off the edges, so it shows two segments in a software render too. And during the 534/536 fault the band's colour sat 16–20 lines above its luma, a real second diagonal, removed by the height rounding.
+- **PHASE 2 VERIFIED ON HARDWARE.**
+- **Open, separate task:** audio clicks at clip start.

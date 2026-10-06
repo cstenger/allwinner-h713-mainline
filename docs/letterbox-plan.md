@@ -8,6 +8,14 @@
 > height, not 720** (fixed in the recipe, 2026-10-05). **The confirmation
 > run PASSED (2026-10-05): a, b and c all whole and correctly placed. Phase 1
 > is DONE; next is Phase 2 (kernel).**
+>
+> **Phase 2 (kernel 0161) VERIFIED ON HARDWARE, 2026-10-05.** Stock kmssink
+> letterboxes scope, ultrawide, 4:3 and native-fit pictures on the plane,
+> centred with black bars and correct colour, still and moving. A VE scaler
+> chroma-placement bug is worked around by rounding scaled heights to 16
+> (h713-play); the proper fix and an audio start-up click are separate tasks.
+> **Next: Phase 3 (proc upscale for sources below 720p) and Phase 4 (the
+> green flash on geometry changes, mid-stream size changes).**
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
 >
 > **Status 2026-10-04: Phase 0 done.** Desk RE and a read-only baseline:
