@@ -13,15 +13,18 @@
 #
 #   clip                              fit        proc ratio
 #   up-640x360-h264.mp4               1280x720   2x
-#   up-852x480-hevc.mp4               1278x720   1.5x
+#   up-852x480-hevc.mp4               1278x720   1.5x (coded 856: a GPU-fallback check)
+#   up-848x480-hevc.mp4               1272x720   1.5x, no conformance crop
 #   up-352x288-vp9.mp4                880x720    2.5x, 200-px bars
 #   up-720x576-sar16x15-h264.mp4      960x720    1.333 H / 1.25 V, 160-px bars
 #   up-720x480-sar32x27-av1.mp4       1280x720   1.778 H / 1.5 V
 #   up-960x540-av1.mp4                1280x720   1.333x (AV1 core's 64-padded buffer)
 #
-# The two SAR clips are GPU-fallback checks since 2026-10-05: stock kmssink
-# mishandles the source rectangle for non-square pixels, so h713-play sends
-# them to the GPU. Their .ref.png shows what the GPU path should draw.
+# GPU-fallback checks since 2026-10-05 (h713-play sends them to the GPU):
+# the two SAR clips (stock kmssink mishandles the source rectangle for
+# non-square pixels) and 852x480 HEVC (stock v4l2slh265dec copies every
+# frame of a conformance-cropped stream, uncached, too slow). Their .ref.png
+# shows what the GPU path should draw.
 set -euo pipefail
 OUT=${1:?OUTDIR}
 SECS=${2:-10}
@@ -53,6 +56,7 @@ clip() {	# name w h sar_n sar_d encoder-args...
 
 clip up-640x360-h264          640 360  1  1 -c:v libx264 -profile:v high -g 30 -crf 20
 clip up-852x480-hevc          852 480  1  1 -c:v libx265 -x265-params log-level=error:keyint=30 -crf 22 -tag:v hvc1
+clip up-848x480-hevc          848 480  1  1 -c:v libx265 -x265-params log-level=error:keyint=30 -crf 22 -tag:v hvc1
 clip up-352x288-vp9           352 288  1  1 -c:v libvpx-vp9 -g 30 -crf 30 -b:v 0
 clip up-720x576-sar16x15-h264 720 576 16 15 -c:v libx264 -profile:v high -g 30 -crf 20
 clip up-720x480-sar32x27-av1  720 480 32 27 -c:v libsvtav1 -g 30 -crf 35 -preset 8 -svtav1-params log-level=0

@@ -19,6 +19,13 @@ the problem; they are 32-aligned (0125).
 
 The console's 1280x720 XRGB framebuffer (pitch 5120) keeps its pitch.
 
+On hardware (2026-10-05) this made the cropped-HEVC frames fetchable: the
+plane accepted them. The copy itself is too slow to use, though. The CPU
+reads cedrus's buffers uncached, about 53 ms a frame (8 of 300 frames
+shown in 10 s). h713-play therefore sends conformance-cropped HEVC to the
+GPU, and this patch is kept for what it guarantees: any kmssink-pool
+buffer is one the video plane and Panfrost can both use.
+
 --- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-05 22:42:26.116013797 -0700
 +++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-05 23:09:17.696027293 -0700
 @@ -1229,6 +1229,30 @@

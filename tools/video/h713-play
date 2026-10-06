@@ -64,18 +64,20 @@ case $route in auto|plane|gpu) ;; *) echo "h713-play: bad --route" >&2; exit 2 ;
 [ -n "${file:-}" ] && [ -r "$file" ] || { echo "usage: h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS...]" >&2; exit 2; }
 
 # --- probe -------------------------------------------------------------------
-codec= w=0 h=0 sar= pix= rot=0
+codec= w=0 h=0 cw=0 ch=0 sar= pix= rot=0
 while IFS== read -r k v; do
 	case $k in
 	codec_name) codec=$v ;;
 	width) w=$v ;;
 	height) h=$v ;;
+	coded_width) cw=$v ;;
+	coded_height) ch=$v ;;
 	sample_aspect_ratio) sar=$v ;;
 	pix_fmt) pix=$v ;;
 	rotation) rot=$v ;;
 	esac
 done < <(ffprobe -v error -select_streams v:0 \
-	-show_entries stream=codec_name,width,height,sample_aspect_ratio,pix_fmt:stream_side_data=rotation \
+	-show_entries stream=codec_name,width,height,coded_width,coded_height,sample_aspect_ratio,pix_fmt:stream_side_data=rotation \
 	-of default=nw=1 "$file")
 [ -n "$codec" ] && [ "$w" -gt 0 ] && [ "$h" -gt 0 ] || { echo "h713-play: no video stream in $file" >&2; exit 1; }
 
@@ -156,6 +158,12 @@ if [ -z "$gst" ]; then why="codec $codec has no plane decoder"
 elif [ $depth != 8 ]; then why="10-bit"
 elif [ $rot != 0 ]; then why="rotated $rot"
 elif [ $letterbox = 0 ] && { [ $fw != $PANEL_W ] || [ $fh != $PANEL_H ]; }; then why="fits as ${fw}x${fh}, the plane shows only ${PANEL_W}x${PANEL_H} (no letterbox in this kernel)"
+elif [ $gst = h265 ] && { [ $cw != $w ] || [ $ch != $h ]; } && [ $w -le $fw ] && [ $h -le $fh ]; then
+	# Stock v4l2slh265dec copies every frame of a conformance-cropped stream
+	# (852x480 coded as 856) instead of passing the crop on; the CPU reads
+	# cedrus's buffers uncached, ~53 ms a frame (2026-10-05), so the copy
+	# alone cannot keep up. The GPU path decodes through VA-API, no copy.
+	why="HEVC with a conformance crop (coded ${cw}x${ch}); stock v4l2slh265dec copies every frame"
 elif [ $w = $fw ] && [ $h = $fh ]; then plane=native
 elif [ $sn != $sd ] && [ $w -le $fw ] && [ $h -le $fh ]; then
 	# Stock kmssink (1.26) puts the pixel-aspect correction into the SOURCE

@@ -273,3 +273,34 @@ The kernel refused nothing it should have shown. **All three failures are in GSt
   kmssink dumb buffer at pitch = width = 852, which AFBD cannot step (stride
   must be a multiple of 16). It also costs a CPU copy per frame. Cedrus's own
   buffers are 864-pitch (0125).
+
+**Operator rule (2026-10-05): stock GStreamer only.** A GStreamer-side
+limitation is fixed in our driver or routed to the GPU. `patches/gstreamer`
+was deleted, and `/opt/gst-h713` was removed from the board.
+- **Anamorphic: GPU.** kmssink's source rectangle is rejected by the DRM core
+  before any driver sees it.
+- **Cropped HEVC: driver tried, then GPU.**
+  - Kernel 0164 (64-B dumb pitches, 16 lines of slack) made the copied
+    frames fetchable.
+  - But the copy runs at about 53 ms a frame, because the CPU reads cedrus
+    buffers uncached: 300 frames to system memory took 16 s, against 0.48 s
+    zero-copy.
+  - So h713-play routes HEVC whose coded size differs from its display size
+    (ffprobe `coded_width/height`) to the GPU.
+
+## Phase 3 kernel (0163 + 0164), headless pre-run 2 (2026-10-05)
+
+Logs in `local/h713-lab/letterbox-phase3-kernel/gate1/`.
+
+| Clip | Route | Result |
+| --- | --- | --- |
+| 640x360 H.264 | plane-up → 1280x720 | 300/0 dropped, GPU 0, fb flipping |
+| 848x480 HEVC (no crop) | plane-up → 1272x720 at x = 4 | 300/0, GPU 0, flipping (7 fb ids in 2 s) |
+| 352x288 VP9 | plane-up → 880x720 at (200,0) | 300/0, GPU 0 |
+| 960x540 AV1 | plane-up → 1280x720 | 300/0, GPU 0, AV1 core 300 |
+| 852x480 HEVC (coded 856) | **GPU** (cropped HEVC) | — |
+| 720x576 SAR 16:15 H.264 | **GPU** (non-square) | played, GPU 902 |
+| 720x480 SAR 32:27 AV1 | **GPU** (non-square) | played, GPU 903 |
+
+Kernel quiet throughout, no IOMMU faults. Next: the operator look at the
+glass against the `.ref.png` renders.
