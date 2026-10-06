@@ -261,6 +261,16 @@ physical-presentation gate. Source-to-photon latency, endurance, and normal
 monitor integration remain. See
 [physical-presentation evidence](hdmi-evidence/2026-09-27-physical-presentation-irq/README.md).
 
+**Progress, 2026-10-05 (current video-stack integration):** The rebased HDMI
+path coexists with the current Hantro video decoder and discovers its capture
+node dynamically at `/dev/video2`. An independent `HDMI-A-1` output supplied a
+bounded native run in which all 360 pipeline frames were rendered and all 360
+changed framebuffers were physically presented on consecutive panel vblanks.
+There were no drops, unstable frames, coalesced updates, aborted updates, or
+latency growth. The operator saw the OS menu and test video run as expected,
+then the console returned. See the
+[current-stack integration evidence](hdmi-evidence/2026-10-05-current-video-integration/README.md).
+
 1. Produce and checksum a 1280×720@60 EDID with the timings, color formats,
    and range the receiver can actually support. Verify the GPU reads that
    exact EDID and enables the native mode; inspect source-side output state.
@@ -312,6 +322,14 @@ time and panel response are not included. The later optical result above now
 cross-checks the complete path; the interactive desktop case and an agreed
 absolute acceptance limit remain before this gate closes. See
 [latency evidence](hdmi-evidence/2026-09-27-native-720-latency/README.md).
+
+**Progress, 2026-10-05 (rebased latency trace):** The current video-stack run
+joined all 360 pipeline buffers to changed physical presentations. Capture
+completion to panel vblank measured 37.38 ms median, 43.73 ms p95, 45.28 ms
+p99, and 51.91 ms maximum. The final 60-frame median was 6.88 ms lower than
+the first, so the bounded run showed no queue growth. The interactive pointer
+and endurance gates remain open. See the
+[current-stack integration evidence](hdmi-evidence/2026-10-05-current-video-integration/README.md).
 
 1. Time-stamp source frame changes, receiver/capture completion, V4L2 dequeue,
    display submit, and vblank/page flip. Film both source and projected panel

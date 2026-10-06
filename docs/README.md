@@ -43,7 +43,7 @@ These are the authorities. Prefer them over anything dated.
 | Audio | [`audio.md`](audio.md) | Playback works; speaker is on the headphone amp. |
 | Backlight | [`backlight-investigation.md`](backlight-investigation.md) | Dimming is PWM-of-enable at PB5, not PB4. |
 | WiFi | [`wifi-failure-2026-08-17.md`](wifi-failure-2026-08-17.md) | The "cannot carry a file" failure, characterised and fixed. |
-| HDMI input | [`hdmi-production-roadmap.md`](hdmi-production-roadmap.md) | Native 1280x720 capture-to-panel works at about 59 fps; source-screen-to-projector latency is 50 ms median, while the acceptance limit, interactive case, endurance, and normal integration remain. |
+| HDMI input | [`hdmi-production-roadmap.md`](hdmi-production-roadmap.md) | Native 1280x720 capture-to-panel is integrated with the current video stack at 360/360 consecutive-vblank presentations; capture-to-vsync latency is 37.38 ms median. Persistent monitor presence, the interactive case, endurance, and recovery remain. |
 | Rootfs / boot | [`rootfs.md`](rootfs.md) · [`standalone-boot.md`](standalone-boot.md) · [`kernel-bump.md`](kernel-bump.md) | Debian 13 arm64, power-on to login, no host. |
 
 ## 3. Closed — do not reopen without new evidence

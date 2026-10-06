@@ -3,15 +3,19 @@
 The ordered path from the current prototype to a native 1280×720@60,
 low-latency monitor is in the [HDMI production roadmap](hdmi-production-roadmap.md).
 
-**Current milestone (2026-09-28):** Native 1280x720 capture reaches the panel
-at 59.28 fps with one changed physical presentation per requested frame. A
-same-camera slow-motion view of the mirrored source display and projector
-measured a three-frame (50.00 ms) median optical differential; p95, p99, and
-maximum were five frames (83.33 ms), with no queue growth and clean console
-restoration. The next latency work is an agreed acceptance limit and an
-interactive desktop/pointer repetition. See the
+**Current milestone (2026-10-05):** The HDMI capture path is integrated with
+the current video-decode stack, where the Hantro decoder owns `/dev/video1`
+and HDMI capture is discovered dynamically at `/dev/video2`. An independent
+GPU HDMI output supplied 360 native 1280x720 frames to the board panel in
+6.085926 seconds. All 360 were rendered and physically presented on
+consecutive vblanks, with no drop, coalesce, abort, or latency growth. Mean
+capture-completion-to-vsync latency was 36.80 ms. The operator saw the OS menu
+and test video run as expected, followed by the restored console. See the
+[current-stack integration evidence](hdmi-evidence/2026-10-05-current-video-integration/README.md).
+Persistent monitor presence, the interactive pointer case, endurance, and
+recovery remain production gates. The prior
 [optical latency evidence](hdmi-evidence/2026-09-28-native-720-optical-latency/README.md)
-and the [production roadmap](hdmi-production-roadmap.md).
+measured the complete source-display-to-projector differential.
 
 **Earlier milestone (2026-09-25):** A [bounded live preview](hdmi-evidence/2026-09-25-panel-preview/README.md)
 showed the moving HDMI test pattern on the projector panel. The V4L2 bridge
