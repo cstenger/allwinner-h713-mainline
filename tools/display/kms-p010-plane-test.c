@@ -340,6 +340,13 @@ int main(int argc, char **argv)
 	int nv12 = !strcmp(fmt, "nv12");
 	uint32_t pitch = nv12 ? W : PITCH;
 	size_t size = (size_t)pitch * H * 3 / 2;
+	/*
+	 * GUARD=N (WP5): put the frame N rows into a buffer N rows taller, so a
+	 * fetch that starts up to N lines early stays inside the allocation --
+	 * for poking AFBD's slot addresses below the frame without risking an
+	 * IOMMU fault. Dumb buffers only.
+	 */
+	uint32_t guard = getenv("GUARD") ? (uint32_t)atoi(getenv("GUARD")) : 0;
 	uint32_t handle = 0;
 	int dmabuf = -1;
 	char path[32];
@@ -400,6 +407,9 @@ int main(int argc, char **argv)
 		if (heap_frame(fd, size, nv12, mode, &handle, &dmabuf))
 			goto out;
 	} else {
+		create.height += guard * 2 / 3 + 1;	/* bpp 16, 3/2 planes: >= guard rows */
+		if (guard)
+			create.height += guard;
 		if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create)) {
 			perror("CREATE_DUMB");
 			goto out;
@@ -419,17 +429,19 @@ int main(int argc, char **argv)
 			perror("mmap dumb");
 			goto out;
 		}
+		memset(p, 0, create.size);
 		if (nv12)
-			fill_nv12(p);
+			fill_nv12(p + (size_t)guard * pitch);
 		else
-			fill(p, mode);
+			fill(p + (size_t)guard * pitch, mode);
 		munmap(p, create.size);
 		handle = create.handle;
 	}
 
 	handles[0] = handles[1] = handle;
 	pitches[0] = pitches[1] = pitch;
-	offsets[1] = pitch * H;
+	offsets[0] = guard * pitch;
+	offsets[1] = guard * pitch + pitch * H;
 	if (nv12) {
 		if (drmModeAddFB2(fd, W, H, DRM_FORMAT_NV12, handles, pitches,
 				  offsets, &fb, 0)) {

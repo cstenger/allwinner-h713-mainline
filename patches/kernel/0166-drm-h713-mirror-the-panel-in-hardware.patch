@@ -41,6 +41,14 @@ otherwise it reports itself unavailable and creates no rotation property.
 debugfs h713_geometry prints the committed picture, its flips, the mirror
 registers, and every window-layer register against the model.
 
+P010 is refused while V is on. AFBD's bottom-up fetch mis-addresses it:
+each line comes out rotated by half its width. No slot-address shift
+corrects it: the best, both planes 1280 bytes earlier, still leaves
+about a row of pixels wrong in the panel histogram, against 26 for NV12.
+A 10-bit client therefore fails cleanly, and h713-play already sends
+10-bit to the GPU path, which mirrors through the RGB route. NV12 under
+V is exact.
+
 Also: the first-frame cover (0165) now touches only the border words. The
 new overlay-rectangle words sit in the same block, and a blanket cover
 would have overwritten them.
@@ -356,13 +364,26 @@ would have overwritten them.
  /*
   * A picture smaller than the panel, shown at (crtc_x, crtc_y), at its own
   * size or magnified by proc up to 4x per axis (it cannot shrink: larger
-@@ -882,13 +1033,20 @@
+@@ -882,13 +1033,33 @@
  	     !(p010 && fb->modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10)))
  		return -EINVAL;
  
 -	h713_plane_geom(new_state, &g);
 -	if (!h713_geom_eq(&g, &h->native)) {
 +	h713_video_geom(h, new_state, &g);
++	/*
++	 * AFBD's bottom-up fetch mis-addresses P010: each line comes out
++	 * rotated by half its width (luma and chroma alike), and no slot
++	 * address shift corrects it -- the best (both planes 1280 bytes
++	 * earlier) still leaves about a row's worth of pixels wrong in the
++	 * panel histogram, against 26 for NV12 (WP5 Phase 2,
++	 * docs/reference/mirror-phase2-2026-10-06.md). So P010 is refused
++	 * while V is on: a 10-bit client fails cleanly instead of showing a
++	 * scrambled picture, and an installation mode with V cannot be set
++	 * while one is on the plane.
++	 */
++	if (g.vflip && p010)
++		return -EINVAL;
 +	if (!h713_geom_same_rect(&g, &h->native)) {
  		ret = h713_lb_check(h, new_state, &g);
  		if (ret)
@@ -379,7 +400,7 @@ would have overwritten them.
  
  	if (/*
  	     * The framebuffer may be taller or wider than the picture: hantro
-@@ -929,7 +1087,7 @@
+@@ -929,7 +1100,7 @@
  	new_state = drm_atomic_get_new_plane_state(state, plane);
  	y = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 0);
  	c = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 1);
@@ -388,7 +409,7 @@ would have overwritten them.
  
  	/*
  	 * A new picture size or position reprograms the window layer, which
-@@ -1002,9 +1160,12 @@
+@@ -1002,9 +1173,12 @@
  	if (regeom)
  		h713_lb_program(h, &g, true);
  
@@ -402,7 +423,7 @@ would have overwritten them.
  	       h->regs + AFBD_VIDEO_CTRL);
  	writel(1, h->regs + AFBD_VIDEO_READY);
  	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
-@@ -1048,6 +1209,19 @@
+@@ -1048,6 +1222,19 @@
  	.atomic_destroy_state = drm_atomic_helper_plane_destroy_state,
  };
  
@@ -422,7 +443,7 @@ would have overwritten them.
  static void h713_afbd_pipe_enable(struct drm_simple_display_pipe *pipe,
  				  struct drm_crtc_state *crtc_state,
  				  struct drm_plane_state *plane_state)
-@@ -1058,6 +1232,7 @@
+@@ -1058,6 +1245,7 @@
  	 * The panel is already lit; there is nothing to turn on. Show the
  	 * buffer the client handed us so the first commit is not a no-op.
  	 */
@@ -430,7 +451,7 @@ would have overwritten them.
  	if (plane_state->fb)
  		h713_afbd_set_source(h,
  				     drm_fb_dma_get_gem_addr(plane_state->fb,
-@@ -1125,6 +1300,7 @@
+@@ -1125,6 +1313,7 @@
  	struct drm_pending_vblank_event *event;
  	unsigned long flags;
  
@@ -438,7 +459,7 @@ would have overwritten them.
  	if (state->fb)
  		h713_afbd_set_source(h,
  				     drm_fb_dma_get_gem_addr(state->fb, state, 0),
-@@ -1278,6 +1454,103 @@
+@@ -1278,6 +1467,103 @@
  DEFINE_DRM_GEM_DMA_FOPS(h713_afbd_fops);
  
  /*
@@ -542,7 +563,7 @@ would have overwritten them.
   * Dumb buffers the video plane can fetch. kmssink allocates its own pool as
   * dumb buffers and takes every plane's stride from the pitch returned here.
   * Stock GStreamer copies into that pool whenever a decoder cannot hand its
-@@ -1510,6 +1783,24 @@
+@@ -1510,6 +1796,24 @@
  			return PTR_ERR(h->vblend_regs);
  		h->lb_ok = h713_lb_snapshot(h);
  	}
@@ -567,7 +588,7 @@ would have overwritten them.
  	drm_info(drm, "video plane: %s\n", h->lb_ok ?
  		 "pictures up to the panel size, magnified up to 4x and placed anywhere (letterbox)" :
  		 "native size only");
-@@ -1599,6 +1890,20 @@
+@@ -1599,6 +1903,20 @@
  		if (ret)
  			return ret;
  	}
@@ -588,7 +609,7 @@ would have overwritten them.
  
  	drm_mode_config_reset(drm);
  
-@@ -1637,6 +1942,7 @@
+@@ -1637,6 +1955,7 @@
  	struct h713_afbd *h = platform_get_drvdata(pdev);
  
  	h713_afbd_video_stop(h);
@@ -596,7 +617,7 @@ would have overwritten them.
  	drm_atomic_helper_shutdown(&h->drm);
  	h713_afbd_drain_retires(h);
  }
-@@ -1654,6 +1960,7 @@
+@@ -1654,6 +1973,7 @@
  	.driver	= {
  		.name		= "sun50i-h713-afbd",
  		.of_match_table	= h713_afbd_of_match,

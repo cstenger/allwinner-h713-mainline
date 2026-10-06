@@ -117,6 +117,15 @@ def main():
         npass += ok
         print(f"{'PASS' if ok else 'FAIL'} {name:6} {route:7} mode {mode} rot {rot:3} "
               f"{commit:7} H{hf} V{vf}" + ("" if ok else "\n       " + "\n       ".join(errs)))
+    pr = os.path.join(d, "p010-refusal.txt")
+    if os.path.exists(pr):
+        t = open(pr).read()
+        want = ("setV-with-p010 refused", "mode-after 0", "p010-in-V refused", "nv12-in-V committed")
+        miss = [w for w in want if w not in t]
+        print(("PASS" if not miss else "FAIL") + " p010-refusal" +
+              ("" if not miss else ": missing " + ", ".join(miss) + "\n       got: " + t.replace("\n", " | ")))
+        if miss:
+            npass -= 1
     dm = open(os.path.join(d, "dmesg-after.txt")).read()
     faults = [l for l in dm.splitlines() if re.search(r'iommu.*fault|page fault|unhandled|translation fault', l, re.I)]
     print(f"{npass}/{len(cases)} cases pass; IOMMU/fault lines in dmesg: {len(faults)}")

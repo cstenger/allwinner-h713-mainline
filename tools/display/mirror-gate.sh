@@ -79,5 +79,15 @@ echo "$CASES" | while read -r name route mode rot commit rec; do
 	      echo 0 > /sys/bus/platform/drivers/sun50i-h713-afbd/*/mirror_mode" > "$OUT/$name.txt" 2>&1
 	echo "$name $route $mode $rot $commit $rec"
 done > "$OUT/cases.txt"
+# P010 under V is refused (0166): with P010 up, mode 2 must not take; in
+# mode 2, a P010 commit must fail while NV12 still commits.
+$SSH 'M=/sys/bus/platform/drivers/sun50i-h713-afbd/5600000.display/mirror_mode; cd /root/kmstest
+      setsid env ARMED=yes FMT=p010 FILL=msb ./kms-p010-plane-test 20 >/tmp/p010r.log 2>&1 </dev/null & sleep 2.5
+      if echo 2 > $M 2>/dev/null; then echo "setV-with-p010 ACCEPTED"; else echo "setV-with-p010 refused"; fi
+      echo "mode-after $(cat $M)"; kill $(pidof kms-p010-plane-test) 2>/dev/null; sleep 1; echo 0 > $M
+      echo 2 > $M
+      for f in p010 nv12; do env ARMED=yes FMT=$f FILL=msb ./kms-p010-plane-test 2 >/tmp/p010r.log 2>&1
+        if grep -q "atomic enable" /tmp/p010r.log; then echo "$f-in-V refused"; else echo "$f-in-V committed"; fi; done
+      echo 0 > $M' > "$OUT/p010-refusal.txt" 2>&1
 $SSH 'dmesg | grep -iE "iommu|fault|h713|afbd" | tail -20' > "$OUT/dmesg-after.txt"
 python3 "$HERE/mirror-gate-check.py" "$OUT"
