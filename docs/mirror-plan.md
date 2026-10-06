@@ -1,6 +1,6 @@
 # WP5: the hardware mirror (installation mode): plan (2026-10-05)
 
-> **Status 2026-10-06: Phase 3 DONE (pending one boot check).**
+> **Status 2026-10-06: Phase 3 DONE. WP5 complete.** Boot check: with `h713-mirror ceiling --persist`, a cold boot came up at mode 0 (probe) and switched to ceiling at 4.7 s (systemd-tmpfiles). The console showed upside down (operator), with the mirror registers right and no warnings. Restored to front, file removed.
 > - `tools/display/h713-mirror [front|rear|rear-ceiling|ceiling|0-3] [--persist]` ships in every image (`tools/rootfs/customize.sh`).
 > - `--persist` writes `/etc/tmpfiles.d/h713-mirror.conf`. No default file ships, so the kernel parameter still works.
 > - Docs: kms-display, rootfs, register-index, roadmap, gpu-fallback-plan, letterbox-plan.
