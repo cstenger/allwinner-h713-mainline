@@ -7,7 +7,7 @@ the motion pattern followed by Madame Leota, and returned to the Linux console.
 
 ## Instrumented boundary
 
-Kernel patch 0140 records an NV12 framebuffer only after `AFBD_VIDEO_READY`
+Kernel patch 0163 records an NV12 framebuffer only after `AFBD_VIDEO_READY`
 clears, which is the hardware acceptance boundary. The next AFBD physical-vsync
 interrupt consumes that pending identity and records its framebuffer ID, Y/C
 DMA addresses, submit-to-vsync latency, and interval from the prior physical

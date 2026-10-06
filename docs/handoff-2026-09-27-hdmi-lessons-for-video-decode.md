@@ -18,7 +18,7 @@ A later physical-presentation gate adds patch 0163 and evidence under
 That patch is optional diagnostic accounting rather than a lifetime fix, but
 its acceptance model applies directly to decoded NV12 buffers.
 
-Patch 0141 extends that diagnostic accounting with a fixed 512-entry trace of
+Patch 0164 extends that diagnostic accounting with a fixed 512-entry trace of
 framebuffer identity, accepted-submit time, physical-vsync time, and vblank
 sequence. The HDMI path joins it to per-buffer capture timestamps in
 [`analyze-native-720-latency.py`](../tools/hdmi/analyze-native-720-latency.py).
@@ -111,7 +111,7 @@ failure without timing evidence.
 
 ### 5. Physical-vsync presentation accounting
 
-Patch 0140 closes a limitation in DRM page-flip and sink counters. It records a
+Patch 0163 closes a limitation in DRM page-flip and sink counters. It records a
 video-plane framebuffer only after AFBD clears its READY handshake, then marks
 that accepted identity presented at the next AFBD physical-vsync interrupt.
 The accounting is asynchronous; waiting for an additional IRQ in atomic update
@@ -180,7 +180,7 @@ change the Cedrus buffer path.
 
 4. Build the full FIT. The AFBD driver is built in, so a module copy cannot
    validate this change.
-5. Optionally port patch 0140 after the lifetime fixes when physical
+5. Optionally port patch 0163 after the lifetime fixes when physical
    presentation evidence is needed. Keep it asynchronous and verify that its
    presence does not alter the baseline presentation rate.
 
@@ -222,7 +222,7 @@ Never reuse confirmation from a previous test.
 
 1. Use [`tools/display/kms-nv12-plane-test.c`](../tools/display/kms-nv12-plane-test.c)
    with its Cedrus and moving-frame modes to collect DRM page-flip event
-   timestamps, not merely ioctl return times. If patch 0140 is present, also
+   timestamps, not merely ioctl return times. If patch 0163 is present, also
    collect `h713_scanout_stats`; its AFBD interrupt is the stronger physical
    scan-boundary signal.
 2. Report submitted, physically presented, pending, coalesced, aborted, changed

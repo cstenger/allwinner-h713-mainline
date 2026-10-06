@@ -101,8 +101,8 @@ diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun5
  
  	for (i = 0; i < H713_VIDEO_SLOTS; i++) {
  		writel(0, h->regs + AFBD_VIDEO_Y0 + i * 4);
-@@ -399,6 +436,10 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
- 	struct h713_afbd *h = to_h713(plane->dev);
+@@ -791,6 +828,10 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 	bool regeom;
  	dma_addr_t y, c;
  	unsigned int i;
 +	unsigned long flags;
@@ -112,10 +112,18 @@ diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun5
  
  	new_state = drm_atomic_get_new_plane_state(state, plane);
  	y = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 0);
-@@ -438,7 +476,54 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+@@ -808,6 +849,7 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 		writel(h->video_ctrl_idle, h->regs + AFBD_VIDEO_CTRL);
+ 		writel(1, h->regs + AFBD_VIDEO_READY);
+ 		h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video geometry");
++		h713_afbd_abort_video_pending(h);
+ 	}
  
- 	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
- 	writel(H713_VIDEO_CTRL_ACTIVE, h->regs + AFBD_VIDEO_CTRL);
+ 	/* The hardware mux is exclusive: quiesce RGB before source 0. */
+@@ -871,8 +913,55 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 	writel(H713_VIDEO_CTRL_ACTIVE |
+ 	       h713_afbd_video_fmt(new_state->fb) << H713_VIDEO_FMT_SHIFT,
+ 	       h->regs + AFBD_VIDEO_CTRL);
 +
 +	submit_ns = ktime_get_mono_fast_ns();
 +	starting = !h->video_active;
@@ -168,7 +176,8 @@ diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun5
 +activate:
  	writel(H713_VIDEO_SELECTOR, h->lvds_regs + 0x06c);
  	h->video_active = true;
-@@ -641,12 +716,50 @@ static const struct drm_simple_display_pipe_funcs h713_afbd_pipe_funcs = {
+ }
+@@ -1084,12 +1173,50 @@ static const struct drm_simple_display_pipe_funcs h713_afbd_pipe_funcs = {
  	.disable_vblank	= h713_afbd_disable_vblank,
  };
  
@@ -219,7 +228,7 @@ diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun5
  	bool due = false;
  
  	if (!(status & AFBD_IRQ_VSYNC))
-@@ -654,8 +772,10 @@ static irqreturn_t h713_afbd_irq(int irq, void *data)
+@@ -1098,8 +1225,10 @@ static irqreturn_t h713_afbd_irq(int irq, void *data)
  	/* Write-1-to-clear, exactly as the vendor's dec_irq_query() acks it. */
  	writeb(status | AFBD_IRQ_VSYNC, h->regs + AFBD_IRQ_STATUS);
  
@@ -230,7 +239,7 @@ diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun5
  	retire = list_first_entry_or_null(&h->retire_list,
  					  struct h713_afbd_retire, node);
  	if (retire && retire->target_vblank <= h->retire_vblank_count)
-@@ -669,6 +789,78 @@ static irqreturn_t h713_afbd_irq(int irq, void *data)
+@@ -1113,6 +1242,78 @@ static irqreturn_t h713_afbd_irq(int irq, void *data)
  	return IRQ_HANDLED;
  }
  
@@ -309,7 +318,7 @@ diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun5
  static int h713_afbd_get_modes(struct drm_connector *connector)
  {
  	struct h713_afbd *h = to_h713(connector->dev);
-@@ -924,6 +1076,9 @@ static int h713_afbd_probe(struct platform_device *pdev)
+@@ -1429,6 +1630,9 @@ static int h713_afbd_probe(struct platform_device *pdev)
  
  	drm_mode_config_reset(drm);
  

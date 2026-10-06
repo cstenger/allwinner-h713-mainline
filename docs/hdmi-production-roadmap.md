@@ -297,7 +297,7 @@ an electrical HDMI-edge timestamp. The interactive desktop case and an agreed
 absolute acceptance limit remain before this gate closes. See
 [optical latency evidence](hdmi-evidence/2026-09-28-native-720-optical-latency/README.md).
 
-**Progress, 2026-09-27 (capture-completion to physical scanout):** Patch 0141
+**Progress, 2026-09-27 (capture-completion to physical scanout):** Patch 0164
 retains a bounded per-frame AFBD physical-presentation trace, and the native
 GStreamer runner now records the V4L2 sequence, capture-completion timestamp,
 conversion boundaries, display submission, and physical-vsync time on one

@@ -36,6 +36,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--probe-module", type=Path,
                     default=Path("/tmp/h713-scp-probe-720/h713-scp-probe.ko"))
+    ap.add_argument("--capture-module", type=Path, default=MODULE,
+                    help="H713 HDMI V4L2 module built for the running kernel")
+    ap.add_argument("--fallback-module", type=Path, default=FALLBACK,
+                    help="Module restored after the bounded native-mode trial")
     ap.add_argument("--frames", type=int, choices=range(1, 601), default=30)
     ap.add_argument("--sparse-verify", action="store_true")
     ap.add_argument("--cached-source", action="store_true",
@@ -47,9 +51,17 @@ def main():
     ap.add_argument("--gst-nv12", action="store_true",
                     help="Convert NV16 to NV12 with GStreamer and discard it")
     args = ap.parse_args()
-    for path in (args.probe_module, MODULE, FALLBACK):
+    for path in (args.probe_module, args.capture_module,
+                 args.fallback_module):
         if not path.is_file():
             ap.error(f"required module not found: {path}")
+
+    mips_state = run(SSH + ["python3 -u /root/mips-shell.py --status"])
+    if "MIPS core      ALIVE" not in mips_state:
+        raise RuntimeError(
+            "HDMI receiver MIPS is not live; cold-power the board, run the "
+            "guarded U-Boot source-3 transition, and then run "
+            "prepare-source3.py --postboot-only")
 
     output = Path("/tmp") / ("h713-native-720-v4l2-" +
                              datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
@@ -58,12 +70,14 @@ def main():
     print(run([sys.executable, str(HERE / "make-motion-pattern.py"),
                str(PATTERN), "--width", "1280", "--height", "720"],
               timeout=120).strip(), flush=True)
-    module_sha = hashlib.sha256(MODULE.read_bytes()).hexdigest()
+    module_sha = hashlib.sha256(args.capture_module.read_bytes()).hexdigest()
     (output / "module-sha256.txt").write_text(module_sha + "\n")
     run(SCP + [str(args.probe_module),
                "root@192.168.4.1:/tmp/h713-scp-probe.ko"])
-    run(SCP + [str(MODULE), "root@192.168.4.1:/tmp/h713-hdmi-v4l2-720.ko"])
-    run(SCP + [str(FALLBACK), "root@192.168.4.1:/tmp/h713-hdmi-v4l2.ko"])
+    run(SCP + [str(args.capture_module),
+               "root@192.168.4.1:/tmp/h713-hdmi-v4l2-720.ko"])
+    run(SCP + [str(args.fallback_module),
+               "root@192.168.4.1:/tmp/h713-hdmi-v4l2.ko"])
     verify = 0 if args.sparse_verify else 1
     source_cached = 1 if args.cached_source else 0
     use_vmalloc = 1 if args.cached_output else 0
