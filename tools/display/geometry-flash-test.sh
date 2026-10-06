@@ -23,11 +23,16 @@
 #   bars around it; the overlay latches on vsync, so a cover written before
 #   the commit is replaced before it can show. -> kernel 0165.
 #
-# MODE=kernel (default, kernel 0165): the driver covers that frame itself;
-# its transition_cover parameter picks the encoding per window
+# MODE=kernel (the 0165 EXPERIMENT build): the driver covers that frame
+# itself; its transition_cover parameter picked the encoding per window
 #   W1  transition_cover=0   positive control: green expected, as before
 #   W2  transition_cover=1   top border 720 lines
 #   W3  transition_cover=2   left border 1280
+#   RESULT 2026-10-06 (local/lcd-photos/test_98): W1 green as before; W2 and
+#   W3 one dark frame per transition, no green; W4/W5 no green. The final
+#   0165 fixes the top border and drops the parameter, so on it MODE=kernel
+#   runs W1-W3 all covered (the echo to the missing parameter fails
+#   harmlessly); MODE=user W1 is then the plain covered driver.
 #
 # Both modes then play, with the cover the kernel default leaves (1):
 #   W4  vp9-rc-30.ivf   a decoded stream: 640x360 -> 1280x720 -> 352x288 -> 640x360

@@ -53,13 +53,19 @@
 >   A full-panel cover written from userspace before the commit changed
 >   nothing: the border overlay latches on vsync, and the driver's own
 >   border write replaced the cover first.
-> - **Kernel 0165** (built and installed 2026-10-06, not yet booted): the
->   driver latches a full-panel cover with the source enable and writes the
->   real borders after it. `transition_cover` (0 off, 1 top = 720, 2 left
->   = 1280) lets one panel look pick the encoding:
->   `geometry-flash-test.sh run` (MODE=kernel).
-> - **Open:** that look, then fix the encoding; the 2-hour plane-ve scope
->   soak (overnight queue).
+> - **Kernel 0165 VERIFIED ON THE GLASS (2026-10-06, `test_98`):** the
+>   driver latches a full-panel vblender cover with the source enable and
+>   writes the real borders after it. With the cover, every transition shows
+>   ONE dark frame and no green (both encodings tried, top = 720 and
+>   left = 1280, looked the same); the cover-off control on the same boot
+>   still showed green; the decoded size-changing streams showed no green.
+>   **"At most one black frame per transition" holds.** The final 0165
+>   fixes the top border and drops the experiment parameter; it is
+>   installed and behaves as the verified setting, but has not been booted
+>   yet. After the next power cycle, a headless check that it boots and
+>   that `kms-geometry-flip` still commits in 33.5 ms is enough.
+> - **Open:** the 2-hour plane-ve scope soak (overnight queue). Then Phase 4
+>   is done.
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
 >
 > **Status 2026-10-04: Phase 0 done.** Desk RE and a read-only baseline:
