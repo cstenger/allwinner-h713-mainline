@@ -304,3 +304,35 @@ Logs in `local/h713-lab/letterbox-phase3-kernel/gate1/`.
 
 Kernel quiet throughout, no IOMMU faults. Next: the operator look at the
 glass against the `.ref.png` renders.
+
+## Phase 3 gate on the glass (2026-10-05): PASSES
+
+`upscale-gate.sh`, one operator look, one photo per clip
+(`local/h713-lab/letterbox-phase3-kernel/gate-look/`, photos and logs). Each
+was compared against its `.ref.png` from `make-upscale-clips.sh`.
+
+| Clip | Route | Plane | Frames | GPU IRQs | Scanout grab vs card | Glass |
+| --- | --- | --- | --- | --- | --- | --- |
+| 640x360 H.264 | plane-up | → 1280x720 | 300 / 0 dropped | 0 | 46.7 dB | matches |
+| 848x480 HEVC | plane-up | → 1272x720 at x = 4 | 300 / 0 | 0 | 47.5 dB | matches |
+| 352x288 VP9 | plane-up | → 880x720 at (200,0) | 300 / 0 | 0 | 46.3 dB | matches |
+| 960x540 AV1 | plane-up | → 1280x720 | 300 / 0 | 0 | 47.8 dB | matches |
+| 720x576 SAR 16:15 H.264 | GPU fallback | — | played | 903 | — | matches |
+
+Every plane clip ran with fb flipping, no kernel messages and no IOMMU faults.
+The scanout grabs are the source buffers, at source size, with the moving
+square masked; no pixel was more than 40 levels off. The operator saw no cut,
+streak, colour error or stutter. Everything runs on stock GStreamer 1.26.2.
+
+**Against the plan's Phase 3 gate:**
+- **640x360 (2x), 352x288 → 880x720 with 200-px bars:** met.
+- **852x480 (1.5x):** met with 848x480. 852 is conformance-cropped HEVC, which
+  goes to the GPU.
+- **720x576 SAR 16:15 and 720x480 SAR 32:27:** these take the GPU. Stock
+  kmssink's PAR source-rectangle bug cannot be honoured by a driver.
+- **P010:** NOT met. It stays native-size only, because the line-buffer
+  descriptors are not derived for 10-bit. 10-bit already goes to the GPU in
+  h713-play.
+- **No grey streak:** met.
+- **Geometry within one pixel row/column:** checked by element layout against
+  the renders, not measured to the pixel. Handheld photos don't resolve that.
