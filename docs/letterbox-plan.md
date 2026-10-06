@@ -20,8 +20,14 @@
 > unequal 1.333/1.25, pillarboxed and centred on both axes, all whole and
 > matching reference renders. The one new rule is that **`comp+858[31:16]` is the
 > destination height**. Retired 0111/0108 had two latent errors (picture window
-> sized from the source; H=3 on a unity axis). **Next: the Phase 3 kernel patch
-> on top of 0161, then Phase 4.**
+> sized from the source; H=3 on a unity axis). 
+>
+> **Phase 3 kernel (0163 magnify + 0164 dumb pitches) VERIFIED ON THE GLASS,
+> 2026-10-05.** Stock kmssink plays sub-panel H.264, HEVC, VP9 and AV1
+> magnified on the plane: 300 of 300 frames, GPU idle. Operator rule: stock
+> GStreamer only. So non-square pixels (kmssink's source-rectangle bug) and
+> conformance-cropped HEVC (v4l2slh265dec's uncached per-frame copy) take
+> the GPU. P010 stays native-only. **Next: Phase 4.**
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
 >
 > **Status 2026-10-04: Phase 0 done.** Desk RE and a read-only baseline:
