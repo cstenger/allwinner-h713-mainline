@@ -67,7 +67,7 @@
 #   s1   640x360 -> 1280x720 at (0,0)     2x both axes, whole panel
 #   s2   852x480 -> 1278x720 at (0,0)     1.5x, non-integer, stride 864
 #   s3   720x576 ->  960x720 at (160,0)   unequal ratios (1.333 H, 1.25 V) +
-#                                         pillarbox: circles become slightly TALL
+#                                         pillarbox: circles about 7% WIDE
 #   s4   352x288 ->  880x720 at (200,0)   2.5x + pillarbox, 200-px bars
 #   s4h  s4 with proc+038[31:16] = 1280-880+16 = 416: the firmware writes
 #        out.w < X ? X - out.w + 16 : 16 there, X unknown (node+0x90); live 16.

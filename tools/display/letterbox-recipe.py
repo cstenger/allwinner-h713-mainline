@@ -175,10 +175,13 @@ FIELDS = [
     ("comp", 0x844, 0, 16, "abs", lambda p: X0 + p.dx - 1, "read_fetch.x - 1"),
     ("comp", 0x844, 16, 16, "abs", lambda p: even(p.w), "read_fetch.w, even"),
     ("comp", 0x858, 0, 16, "rel", lambda p: p.dy, "out.y"),
-    # para[0] in NRWinNode::CalcWindow (0x8b1a3934): the PICTURE height.
-    # Left at 720 it ends the NR output early when dy > 0 (b lost 73 lines);
-    # = H gives the full picture. Hardware-confirmed 2026-10-05 (bisect set 3).
-    ("comp", 0x858, 16, 16, "abs", lambda p: p.h, "picture height (para[0])"),
+    # para[0] in NRWinNode::CalcWindow (0x8b1a3934), the NR out-window height
+    # passed in by WCETop: the DESTINATION height, in panel lines. Left at 720
+    # it ended every vertically offset picture early (Phase 1 bisect set 3);
+    # left at H it starved proc after H panel lines, cutting each magnified
+    # picture at H/ratio source lines (Phase 3 bisect p1, 2026-10-05). At unity
+    # the two readings agree.
+    ("comp", 0x858, 16, 16, "abs", lambda p: p.oh, "out-window height (dst, para[0])"),
     ("comp", 0x85c, 0, 16, "rel", lambda p: p.dx, "crop.x + out.x"),
     ("comp", 0x85c, 16, 16, "abs", lambda p: p.w, "crop.w"),
 
@@ -340,7 +343,9 @@ def self_test(live):
              (("proc", 0x03c), 0, 22, 0xE38E), (("proc", 0x008), 0, 22, 0x10000),
              (("proc", 0x008), 24, 3, 2), (("proc", 0x02c), 0, 16, 0x500),
              (("proc", 0x030), 0, 32, 0x000102D0), (("proc", 0x034), 0, 32, 0x05000280),
-             (("proc", 0x040), 0, 32, 0xC0000500)]
+             (("proc", 0x040), 0, 32, 0xC0000500),
+             # hardware, Phase 3 bisect p1 (2026-10-05): H here cut the picture
+             (("comp", 0x858), 16, 16, 720)]
     for label, wl, rr in (("720x480->1280x720", want,
                            recipe(live, P(720, 480, 0, 0, ow=1280, oh=720))),
                           ("1280x640->1280x720", want2, r)):

@@ -204,3 +204,29 @@ Carry into Phase 2:
 - **Reading (s4, 352x288 → 880x720):** the cut sits at about source line 115 = 288/2.5. The picture stops after **H panel lines** (the source height counted in output time), so the visible fraction is 1/scale. NR's output window is still in source lines while proc spreads them over OH. Phase 1 found `comp+858[31:16]` (`para[0]`, the NR out-window height **passed in by WCETop**, `0x8b1a3934`) ends that window. The firmware's one scaled log cannot settle it, because its path runs through DETN, which buffers through memory.
 
 **Bisect, `letterbox-test.sh phase3b`:** p0 = s4 as recipe; p1 = `858[31:16]` = OH; p2 = p1 + `840[31:16]` = OH+1 + `80c[15:0]` at OH; p3 = 840/80c only; q3/q5/q1 = s3/s5/s1 with p1. Dry run passes.
+
+## Phase 3 bisect (2026-10-05): `comp+858[31:16]` is the DESTINATION height
+
+`letterbox-test.sh phase3b`. The operator took one photo per window
+(`local/h713-lab/letterbox-phase3-20261005-bisect/photos/`), compared against
+renders of the card magnified and placed (`tools/display/letterbox-reference.py`,
+`ref-*.png` alongside). Registers held 47/47 in every window; every restore was exact.
+
+| Step | Change | Seen |
+| --- | --- | --- |
+| p0 | s4 as recipe | cut at about source line 115, white below (reproduced) |
+| **p1** | **`858[31:16]` = OH (720)** | **whole card; every element where the reference puts it** |
+| p2 | p1 + `840[31:16]` = OH+1, `80c` h at OH | same as p1 |
+| p3 | `840`/`80c` only | cut, same as p0 |
+| q3 | s3 (720x576 → 960x720) + p1 | whole, matches the reference |
+| q5 | s5 (640x360 → 960x540 centred) + p1 | whole, bars on all four sides, matches |
+| q1 | s1 (640x360 → 1280x720) + p1 | whole, full panel, matches |
+
+`para[0]` is the NR out-window height in panel lines, i.e. the window layer's
+**output**. At unity it equals H, so Phase 1's "picture height" was the same
+value under another name. The recipe now writes OH, and its self-test fails with
+H. The fetch-window heights (`840`, `80c`) stay at the source height.
+
+**Still to check:** a confirmation run of `phase3` with the corrected recipe
+(s1–s5 never ran whole as a set), including **s4h**: run 1's s4h could not
+judge `proc+038[31:16]` while the picture was cut.

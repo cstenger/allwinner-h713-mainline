@@ -27,7 +27,7 @@
  *
  * Phase 3 (proc magnification) shows the small cards scaled up, so the
  * circles stay round only where both axes scale alike; s3 (720x576 -> 960x720,
- * 4:3 from a 5:4 raster) is meant to come out as a slight vertical ellipse.
+ * 4:3 from a 5:4 raster) is meant to come out about 7% wide (1.333 H vs 1.25 V).
  *
  * The layout, with the slot addresses AFBD reads for the native card, goes to
  * /tmp/letterbox-card.layout once the card is on the plane. Nothing else is
