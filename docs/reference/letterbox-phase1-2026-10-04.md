@@ -227,6 +227,23 @@ renders of the card magnified and placed (`tools/display/letterbox-reference.py`
 value under another name. The recipe now writes OH, and its self-test fails with
 H. The fetch-window heights (`840`, `80c`) stay at the source height.
 
-**Still to check:** a confirmation run of `phase3` with the corrected recipe
-(s1–s5 never ran whole as a set), including **s4h**: run 1's s4h could not
-judge `proc+038[31:16]` while the picture was cut.
+## Phase 3 confirmation (2026-10-05): PASSES
+
+`letterbox-test.sh phase3` with the corrected recipe. One operator photo per
+state, all 15 states (`local/h713-lab/letterbox-phase3-20261005-confirm/photos/`,
+contact sheet alongside; references in `.../ref/`). Registers held 47/47 in
+every window; every restore was exact; no kernel messages.
+
+| Step | Seen, against the reference |
+| --- | --- |
+| z | identical to the control card |
+| s1 640x360 → 1280x720 | full panel, 2x patches, small circles beside the big one |
+| s2 852x480 → 1278x720 | the native-like layout with 72-px patches (native 48) |
+| s3 720x576 → 960x720 at (160,0) | side bars; small circles on the big circle's rim |
+| s4 352x288 → 880x720 at (200,0) | 200-px bars, figure-eights, bottom ruler present |
+| s4h | indistinguishable from s4, so **`proc+038[31:16]` has no visible effect**; it stays at its live 16 |
+| s5 640x360 → 960x540 at (160,90) | bars on all four sides, picture whole |
+
+No cut, grey streak or magenta; chroma on its luma everywhere. **The scaled
+recipe is hardware-correct. Phase 3's register work is done; next is the kernel
+(magnification in `atomic_check`/`atomic_update` on top of 0161).**

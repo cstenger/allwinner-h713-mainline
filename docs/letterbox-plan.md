@@ -15,8 +15,13 @@
 > misplacement at scaled heights not divisible by 16 was the VA driver's
 > pre-decode export (fixed: libva 0015 + kernel 0162, e28325d); the audio
 > start-up gap was fixed in gst-plane-play (15ec2d9).
-> **Next: Phase 3 (proc upscale for sources below 720p) and Phase 4 (the
-> green flash on geometry changes, mid-stream size changes).**
+> **Phase 3 recipe VERIFIED ON HARDWARE, 2026-10-05** (register-level panel
+> test, `letterbox-test.sh phase3`). Magnified pictures 2x, 1.5x, 2.5x and
+> unequal 1.333/1.25, pillarboxed and centred on both axes, all whole and
+> matching reference renders. The one new rule is that **`comp+858[31:16]` is the
+> destination height**. Retired 0111/0108 had two latent errors (picture window
+> sized from the source; H=3 on a unity axis). **Next: the Phase 3 kernel patch
+> on top of 0161, then Phase 4.**
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
 >
 > **Status 2026-10-04: Phase 0 done.** Desk RE and a read-only baseline:
