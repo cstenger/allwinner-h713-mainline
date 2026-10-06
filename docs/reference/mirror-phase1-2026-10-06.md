@@ -54,13 +54,27 @@ There is no downstream frame CRC (`tools/display/panel-signature.sh`, read-only)
 
 The firmware's vde −1 is necessary and sufficient on the video route. **The RGB route needs an equivalent one-line advance**, which Phase 2 must find. The histogram tests each candidate without an operator.
 
+### The RGB route's compensation: program window y + 1 (found the same day)
+
+Card upright on the primary plane, panel H on, histogram words `lvds+0x310/380/3b0/3fc`. Each poke was restored by a trap.
+
+| `lvds+0x0c0` (program window {h, y}, native `0x02D00016`) | Histogram |
+| --- | --- |
+| H alone | one white row lost |
+| H, y = 21 (earlier) | **two** rows lost: the wrong direction |
+| H, h = 721 | all white back, plus one black row: H delivers the picture one line late |
+| **H, y = 23 (`0x02D00017`)**, twice; also with OSD V | **bit-identical to upright** and to the software-mirrored cards |
+| y = 23 without H (control) | one row lost |
+
+So H on the RGB route = panel bit + **program window y + 1**. The video route reaches the same relation another way: the firmware moves everything upstream one line earlier (vde 21) and keeps the window at 22. In both cases the window starts one line after the source.
+
 ## Consequences for Phase 2 (kernel)
 
 - **Video plane:** transcribe the recipe as it stands. The kernel writes proc instance 0 only.
 - **Primary plane:**
   - V = OSD ctrl bit 3 in the value `set_source()` writes each flip (`rgb_ctrl_active | BIT(3)`).
   - H = the panel bit while the primary owns the mux.
-  - **One-line compensation needed** (histogram above). Its register is not yet known.
+  - **H also sets `lvds+0x0c0[15:0]` to 23** (native 22) while the RGB route is shown. The video route keeps 22 and uses the recipe's vde −1 instead. On a mux switch, the owner writes both the panel bit and the window y.
 - **The panel bit is shared.** Whoever owns the mux writes it; `video_stop` hands it back to the primary's value.
 - **No height rule for V.** A non-16 height flips cleanly, so `check` needs no `h % 16` refusal and the `h713-play` fit rounding stays.
 - **Still open, for the Phase 2 gate:**
