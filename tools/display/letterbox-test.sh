@@ -80,6 +80,11 @@
 #                                   holder switches to the PRIMARY card (OSD route)
 #                                   and runs pv php pho, then the plane is released.
 #                                   `plan mirror` dry-runs both halves
+#                                   NOTE: the holder switch shows the CONSOLE for a few
+#                                   seconds mid-run -- keep filming (2026-10-06's video
+#                                   stopped there and missed pv php pho)
+#   letterbox-test.sh mirror-primary  the primary half alone, ONE "ready": primary
+#                                   card up, LEAD_S, pv php pho, console back = stop
 #   letterbox-test.sh card-primary  the RGB card on the primary plane + its gates
 #
 # MIRROR STEPS (hardware mirror, recipe --mirror; expected on the glass):
@@ -544,6 +549,30 @@ mirror)
 	[ "$(grep -c 'SEQUENCE COMPLETE' "$log")" -eq 2 ] ||
 		{ say "*** a sequence did not complete -- see the log"; exit 1; }
 	say "  measure: tools/display/letterbox-measure.py VIDEO --mirror --out $OUT/measure"
+	;;
+
+mirror-primary)
+	osd_sequence_json
+	bring_primary || exit 1
+	total=$(( LEAD_S + 3 * HOLD_S + 2 * GAP_S ))
+	say "== mirror, primary half: $SEQUENCE_MP; first window in ${LEAD_S}s, about ${total}s in all; the console returns at the end =="
+	$SSH "rm -f /tmp/letterbox-apply.log /tmp/letterbox-apply.pid
+	      setsid python3 $R/letterbox-apply.py --sequence $R/sequence-primary.json \
+	          --pre $LEAD_S --gap $GAP_S --hold $HOLD_S > /tmp/letterbox-apply.log 2>&1 < /dev/null &
+	      echo \$! > /tmp/letterbox-apply.pid" >/dev/null 2>&1
+	follow $(( total + 120 ))
+	log=$OUT/mirror-primary.log
+	$SSH 'cat /tmp/letterbox-apply.log' > "$log"
+	grep -E 'step |REFUSED|WINDOW|RECHECK|RESTORE|SEQUENCE|\*\*\*|<-' "$log"
+	if grep -q 'RESTORE INCOMPLETE' "$log"; then
+		say "*** NOT RESTORED -- holder left as is. Run: letterbox-test.sh restore"
+		exit 1
+	fi
+	sleep "$TAIL_S"
+	"$0" off >/dev/null
+	say "  console back = stop recording"
+	grep -q 'SEQUENCE COMPLETE' "$log" || { say "*** sequence did not complete -- see the log"; exit 1; }
+	say "  measure: tools/display/letterbox-measure.py VIDEO --mirror --log $log pv=1280x720@0,0:y php=1280x720@0,0:x pho=1280x720@0,0:x"
 	;;
 
 show)

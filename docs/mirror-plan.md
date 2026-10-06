@@ -1,6 +1,12 @@
 # WP5: the hardware mirror (installation mode): plan (2026-10-05)
 
-> **Status 2026-10-06: Phase 0 DONE.**
+> **Status 2026-10-06: Phase 1 DONE. Every prediction held on the glass**
+> ([reference/mirror-phase1-2026-10-06.md](reference/mirror-phase1-2026-10-06.md)).
+> - Video plane: h, v, hv, an asymmetric placement and a non-16 height all behaved as predicted. The bars follow the mirror, and no padding showed.
+> - Console route: V = OSD control bit 3; H = the shared panel bit, with no visible row loss; OSD bit 2 is dead.
+> - **Next: Phase 2 (kernel, 0166+).**
+>
+> **Phase 0 DONE (2026-10-06).**
 > - The model in `letterbox-recipe.py` reproduces all four stock installation modes register for register. Four mutations are each caught.
 > - The vblender overlay y follows vde (firmware), and proc instances 1–3 follow instance 0 in hardware (board, read-only).
 > - The H mirror's `−1` was mislabelled "interlaced" in the letterbox reference; corrected.

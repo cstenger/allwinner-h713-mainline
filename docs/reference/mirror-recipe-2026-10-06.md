@@ -116,6 +116,13 @@ Example: 852x480 at client (0,0).
 
 ## Open, for Phase 1
 
+> **Answered 2026-10-06** ([mirror-phase1-2026-10-06.md](mirror-phase1-2026-10-06.md)):
+> 1. The panel bit mirrors the RGB route, with no visible row loss; OSD bit 2 does nothing; OSD bit 3 flips V.
+> 2. No: padding rows do not flip into view.
+> 4. The vblender is upstream (the bars follow).
+>
+> Items 3 (P010) and 5 (latch timing) move to the Phase 2 gate.
+
 1. Does the panel bit mirror the RGB route (selector `0x29000000`)? Or does it need OSD bit 2? Is a row lost on that route, given the RGB route has no vde shift of its own?
 2. With V and a height that is not a multiple of 16, do AFBD's padding rows flip into view? The card's magenta padding shows it.
 3. Does the V fetch work for P010 (AFBD formats 6/7)?
