@@ -1,0 +1,283 @@
+From a5f372710930ef987facab70b1bbcf61cc5167c2 Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Mon, 5 Oct 2026 17:06:50 -0700
+Subject: [PATCH] Export a VE-scaled surface in the layout the scaler writes
+
+GStreamer va creates and exports every surface before the first decode,
+and keeps those dma-bufs for the buffer's life, so the export has to
+predict the decode's CAPTURE layout exactly. With V4L2_REQUEST_SCALE
+set it did not: the prediction from the pending decode context was
+skipped, and the generic backing set a coded OUTPUT of the SCALED size
+on a throwaway cedrus instance. cedrus then saw an unscaled 1280x534
+picture and padded the height to 16, so the surface was exported with
+its chroma at pitch * 544, while the scaling decode writes it at
+pitch * 534 (the kernel's own format, honoured by the hardware). The
+colour sat 2 * (ALIGN(h, 16) - h) lines high and the bottom rows read
+as a solid green band at 534 and 536 lines; 528, 544 and 720 were clean
+by coincidence. backing_matches() compared only pitch and size, so the
+mismatched buffer was accepted as fitting.
+
+- The CAPTURE request (H713 crop and scale from the environment, the
+  64-byte NV12 pitch) moves into v4l2r_request_capture_format(), shared
+  by set_capture_format() and backing_alloc_predicted(), so the
+  prediction cannot drift from the decode again.
+- The prediction now also runs with the scaler or crop asked for.
+- backing_matches() compares the height too: single-plane NV12 puts
+  chroma at pitch * height, so a backing that differs in height shows
+  the picture with its colour shifted. Refusing it is the honest
+  failure.
+
+Needs kernel 0162, which pads the scaled sizeimage for the display
+plane's 16-line chroma fetch.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/context.c      | 71 ++++++++++++++++++++++++++++++----------------
+ src/surface.c      | 59 ++++++++++++++++++--------------------
+ src/v4l2_request.h |  3 ++
+ 3 files changed, 78 insertions(+), 55 deletions(-)
+
+diff --git a/src/context.c b/src/context.c
+index 429031b..fbb1f21 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -94,13 +94,21 @@ bool v4l2r_parse_size_env(const char *name, uint32_t *width, uint32_t *height)
+ 	return true;
+ }
+ 
+-static int set_capture_format(struct v4l2r_context *ctx,
+-			      enum v4l2_buf_type type, uint32_t pixelformat)
++/*
++ * Set the CAPTURE format a decode at @picture_width x @picture_height asks
++ * for on @fd, whose OUTPUT format is already set: the H713 scaler's crop and
++ * size from the environment, and the 64-byte NV12 pitch. Shared with the
++ * pre-decode export (surface.c), which has to predict this layout exactly:
++ * the chroma plane starts at pitch * height, and a scaled height is not
++ * padded the way a coded one is (534 stays 534; 1080 becomes 1088). @log
++ * reports the negotiation, once per context rather than once per surface.
++ */
++int v4l2r_request_capture_format(int fd, struct v4l2_format *format,
++				 uint32_t pixelformat, uint32_t picture_width,
++				 uint32_t picture_height, bool log)
+ {
+-	struct v4l2_format format = {
+-		.type = type,
+-	};
+-	uint32_t width = ctx->picture_width, height = ctx->picture_height;
++	enum v4l2_buf_type type = format->type;
++	uint32_t width = picture_width, height = picture_height;
+ 	uint32_t crop_w, crop_h;
+ 	bool scaled;
+ 
+@@ -113,25 +121,28 @@ static int set_capture_format(struct v4l2r_context *ctx,
+ 
+ 		/* Best effort: without a crop the scaler still works, it just
+ 		 * reads the coded padding too. */
+-		if (ioctl(ctx->video_fd, VIDIOC_S_SELECTION, &selection) < 0)
+-			v4l2r_log("no CAPTURE crop support: scaling the full "
+-				  "coded frame\n");
+-		else
++		if (ioctl(fd, VIDIOC_S_SELECTION, &selection) < 0) {
++			if (log)
++				v4l2r_log("no CAPTURE crop support: scaling "
++					  "the full coded frame\n");
++		} else if (log) {
+ 			v4l2r_log("cropped the coded frame to %ux%u\n",
+ 				  selection.r.width, selection.r.height);
++		}
+ 	}
+ 
+ 	scaled = v4l2r_parse_size_env("V4L2_REQUEST_SCALE", &width, &height);
+ 
++	memset(&format->fmt, 0, sizeof(format->fmt));
+ 	if (V4L2_TYPE_IS_MULTIPLANAR(type)) {
+-		format.fmt.pix_mp.width = width;
+-		format.fmt.pix_mp.height = height;
+-		format.fmt.pix_mp.pixelformat = pixelformat;
+-		format.fmt.pix_mp.num_planes = 1;
++		format->fmt.pix_mp.width = width;
++		format->fmt.pix_mp.height = height;
++		format->fmt.pix_mp.pixelformat = pixelformat;
++		format->fmt.pix_mp.num_planes = 1;
+ 	} else {
+-		format.fmt.pix.width = width;
+-		format.fmt.pix.height = height;
+-		format.fmt.pix.pixelformat = pixelformat;
++		format->fmt.pix.width = width;
++		format->fmt.pix.height = height;
++		format->fmt.pix.pixelformat = pixelformat;
+ 	}
+ 
+ 	/*
+@@ -145,23 +156,35 @@ static int set_capture_format(struct v4l2r_context *ctx,
+ 		uint32_t pitch = (width + 63) & ~63u;
+ 
+ 		if (V4L2_TYPE_IS_MULTIPLANAR(type))
+-			format.fmt.pix_mp.plane_fmt[0].bytesperline = pitch;
++			format->fmt.pix_mp.plane_fmt[0].bytesperline = pitch;
+ 		else
+-			format.fmt.pix.bytesperline = pitch;
++			format->fmt.pix.bytesperline = pitch;
+ 	}
+ 
+-	if (ioctl(ctx->video_fd, VIDIOC_S_FMT, &format) < 0)
++	if (ioctl(fd, VIDIOC_S_FMT, format) < 0)
+ 		return -errno;
+ 
+-	if (scaled)
++	if (scaled && log)
+ 		v4l2r_log("coded %ux%u, asked for %ux%u, got %ux%u\n",
+-			  ctx->picture_width, ctx->picture_height, width, height,
+-			  v4l2r_format_width(&format),
+-			  v4l2r_format_height(&format));
++			  picture_width, picture_height, width, height,
++			  v4l2r_format_width(format),
++			  v4l2r_format_height(format));
+ 
+ 	return 0;
+ }
+ 
++static int set_capture_format(struct v4l2r_context *ctx,
++			      enum v4l2_buf_type type, uint32_t pixelformat)
++{
++	struct v4l2_format format = {
++		.type = type,
++	};
++
++	return v4l2r_request_capture_format(ctx->video_fd, &format,
++					    pixelformat, ctx->picture_width,
++					    ctx->picture_height, true);
++}
++
+ static int query_buffer_capabilities(struct v4l2r_context *ctx,
+ 				     enum v4l2_buf_type type,
+ 				     uint32_t *capabilities)
+diff --git a/src/surface.c b/src/surface.c
+index 70e4d84..18225bb 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -698,11 +698,17 @@ static struct v4l2r_context *pending_decode_context(struct v4l2r_driver *drv,
+  * NV12 backing in the layout @ctx's decoder will write, predicted before
+  * the context configures CAPTURE: a throwaway instance of the same device
+  * with the context's OUTPUT format and the NV12 CAPTURE request that
+- * set_capture_format() makes (picture size, 64-byte pitch). The AV1 core
+- * pads the height and appends its own data to every buffer, so the generic
+- * export, sized by whichever decoder enumerates first (cedrus), never fits
+- * an AV1 context: the decode went to the driver's own buffers and the
+- * client's exported dma-bufs stayed black.
++ * set_capture_format() makes (picture size or the H713 scaler's size and
++ * crop, 64-byte pitch). The AV1 core pads the height and appends its own
++ * data to every buffer, so the generic export, sized by whichever decoder
++ * enumerates first (cedrus), never fits an AV1 context: the decode went to
++ * the driver's own buffers and the client's exported dma-bufs stayed black.
++ *
++ * The H713 scaler needs it as much. The generic export sets a coded OUTPUT
++ * of the SCALED size, so cedrus sees no scaling and pads the height to 16:
++ * a 534-line surface was exported with its chroma at pitch * 544, while the
++ * scaling decode writes it at pitch * 534. The colour sat 20 lines high and
++ * the bottom rows showed green (2026-10-05).
+  */
+ static VAStatus backing_alloc_predicted(struct v4l2r_context *ctx,
+ 					struct v4l2r_surface *surface)
+@@ -713,24 +719,10 @@ static VAStatus backing_alloc_predicted(struct v4l2r_context *ctx,
+ 			V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE :
+ 			V4L2_BUF_TYPE_VIDEO_CAPTURE,
+ 	};
+-	uint32_t pitch = (ctx->picture_width + 63) & ~63u;
+ 	struct v4l2r_surface_backing *backing;
+ 	char path[64];
+ 	int fd;
+ 
+-	if (V4L2_TYPE_IS_MULTIPLANAR(capture.type)) {
+-		capture.fmt.pix_mp.width = ctx->picture_width;
+-		capture.fmt.pix_mp.height = ctx->picture_height;
+-		capture.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
+-		capture.fmt.pix_mp.num_planes = 1;
+-		capture.fmt.pix_mp.plane_fmt[0].bytesperline = pitch;
+-	} else {
+-		capture.fmt.pix.width = ctx->picture_width;
+-		capture.fmt.pix.height = ctx->picture_height;
+-		capture.fmt.pix.pixelformat = V4L2_PIX_FMT_NV12;
+-		capture.fmt.pix.bytesperline = pitch;
+-	}
+-
+ 	snprintf(path, sizeof(path), "/proc/self/fd/%d", ctx->video_fd);
+ 	fd = open(path, O_RDWR | O_CLOEXEC);
+ 	if (fd < 0)
+@@ -745,7 +737,9 @@ static VAStatus backing_alloc_predicted(struct v4l2r_context *ctx,
+ 		backing->dmabuf_fd[i] = -1;
+ 
+ 	if (ioctl(fd, VIDIOC_S_FMT, &output) < 0 ||
+-	    ioctl(fd, VIDIOC_S_FMT, &capture) < 0 ||
++	    v4l2r_request_capture_format(fd, &capture, V4L2_PIX_FMT_NV12,
++					 ctx->picture_width,
++					 ctx->picture_height, false) < 0 ||
+ 	    v4l2r_format_pixelformat(&capture) != V4L2_PIX_FMT_NV12 ||
+ 	    backing_export_one(fd, &capture, backing) < 0) {
+ 		close(fd);
+@@ -777,15 +771,10 @@ static VAStatus backing_alloc_default(struct v4l2r_driver *drv,
+ 		pixelformat = V4L2_PIX_FMT_P010;
+ 
+ 	uint32_t width = surface->width, height = surface->height;
+-	uint32_t unused_w, unused_h;
+ 
+ 	/* Exported before the first decode of a known context: take that
+-	 * decoder's own layout. Not with the H713 scaler or crop asked for,
+-	 * whose CAPTURE request differs and which the generic path below
+-	 * already sizes. */
+-	if (pixelformat == V4L2_PIX_FMT_NV12 &&
+-	    !v4l2r_parse_size_env("V4L2_REQUEST_SCALE", &unused_w, &unused_h) &&
+-	    !v4l2r_parse_size_env("V4L2_REQUEST_CROP", &unused_w, &unused_h)) {
++	 * decoder's own layout, H713 scaler and crop included. */
++	if (pixelformat == V4L2_PIX_FMT_NV12) {
+ 		struct v4l2r_context *ctx = pending_decode_context(drv, surface);
+ 
+ 		if (ctx && backing_alloc_predicted(ctx, surface) ==
+@@ -793,9 +782,13 @@ static VAStatus backing_alloc_default(struct v4l2r_driver *drv,
+ 			return VA_STATUS_SUCCESS;
+ 	}
+ 
+-	/* H713 decode-time scaler: the surface will hold the scaled picture,
+-	 * and a client that exports before decoding (GStreamer va) keeps the
+-	 * layout it is given now for the buffer's whole life. */
++	/* H713 decode-time scaler with no known context: the surface will
++	 * hold the scaled picture, and a client that exports before decoding
++	 * (GStreamer va) keeps the layout it is given now for the buffer's
++	 * whole life. Only the size is right here: an unscaled instance pads
++	 * the height, so a scaled height that is not a multiple of 16 gets
++	 * the wrong chroma offset, and backing_matches() refuses to decode
++	 * into it. */
+ 	if (pixelformat == V4L2_PIX_FMT_NV12)
+ 		v4l2r_parse_size_env("V4L2_REQUEST_SCALE", &width, &height);
+ 
+@@ -814,8 +807,12 @@ static VAStatus backing_alloc_default(struct v4l2r_driver *drv,
+ static bool backing_matches(const struct v4l2r_surface_backing *backing,
+ 			    const struct v4l2_format *format)
+ {
++	/* The height too: single-plane NV12 puts chroma at pitch * height,
++	 * so a backing that differs only in height shows the picture with its
++	 * colour shifted, which is worse than refusing it. */
+ 	if (backing->pixelformat != v4l2r_format_pixelformat(format) ||
+-	    backing->pitch != v4l2r_format_bytesperline(format))
++	    backing->pitch != v4l2r_format_bytesperline(format) ||
++	    backing->height != v4l2r_format_height(format))
+ 		return false;
+ 
+ 	if (V4L2_TYPE_IS_MULTIPLANAR(format->type)) {
+diff --git a/src/v4l2_request.h b/src/v4l2_request.h
+index 0a4c880..747745e 100644
+--- a/src/v4l2_request.h
++++ b/src/v4l2_request.h
+@@ -231,6 +231,9 @@ bool v4l2r_surface_give_backing(struct v4l2r_surface *surface,
+ 				struct v4l2r_capture_buffer *capture);
+ bool v4l2r_parse_size_env(const char *name, uint32_t *width,
+ 			  uint32_t *height);
++int v4l2r_request_capture_format(int fd, struct v4l2_format *format,
++				 uint32_t pixelformat, uint32_t picture_width,
++				 uint32_t picture_height, bool log);
+ 
+ /* Per CAPTURE buffer state, lives in the context that allocated it. The
+  * buffer holds the current decoded content of ->surface, or is free when
+-- 
+2.55.0
+

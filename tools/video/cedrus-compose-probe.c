@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/dma-buf.h>
 #include <linux/videodev2.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -35,7 +36,18 @@
 #include <unistd.h>
 
 static int (*real_ioctl)(int, unsigned long, ...);
-static int decoder = -1, dumped;
+/*
+ * Every fd with an H.264/HEVC OUTPUT format, not just the last: megi's VA
+ * driver predicts a surface's layout on a throwaway reopen of the decoder
+ * (libva-v4l2_request 0011/0015), which sets its OUTPUT format after the real
+ * context's, and that reopen needs the same CAPTURE override to predict right.
+ */
+static unsigned char decoder_fd[4096];
+static int dumped;
+static int is_decoder(int fd)
+{
+    return fd >= 0 && fd < (int)sizeof(decoder_fd) && decoder_fd[fd];
+}
 static unsigned int completed;
 static struct v4l2_pix_format capture;
 
@@ -212,27 +224,38 @@ int ioctl(int fd, unsigned long req, ...)
         struct v4l2_format *fmt = arg;
         if (fmt->type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
             /* Both engines can feed the polyphase scaler. */
-            decoder = (fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_H264_SLICE ||
-                       fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_HEVC_SLICE)
-                      ? fd : -1;
-            dumped = 0;
-            completed = 0;
-            if (decoder >= 0 && (configure_crop(fd) < 0 ||
+            int h26x = fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_H264_SLICE ||
+                       fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_HEVC_SLICE;
+
+            /* No counter reset here: one stream per process, and the VA
+             * driver's per-surface layout probes repeat this S_FMT
+             * mid-stream, which restarted the count and overwrote the
+             * dump with a later frame. */
+            if (fd >= 0 && fd < (int)sizeof(decoder_fd))
+                decoder_fd[fd] = h26x;
+            if (h26x && (configure_crop(fd) < 0 ||
                                  configure_capture(fd) < 0))
                 return -1;
         }
-        if (fd == decoder && fmt->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
+        if (is_decoder(fd) && fmt->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
             if (configure_capture(fd) < 0 || real_ioctl(fd, VIDIOC_G_FMT, fmt) < 0)
                 return -1;
         }
     }
-    if (req == VIDIOC_DQBUF && fd == decoder && arg && !dumped && getenv("CEDRUS_DUMP")) {
+    if (req == VIDIOC_DQBUF && is_decoder(fd) && arg && !dumped && getenv("CEDRUS_DUMP")) {
         struct v4l2_buffer *done = arg;
         if (done->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
             const char *dump_at_env = getenv("CEDRUS_DUMP_AT");
             char *end = NULL;
             unsigned long dump_at = 1;
-            struct v4l2_buffer buf = {.type = done->type, .memory = V4L2_MEMORY_MMAP, .index = done->index};
+            struct v4l2_buffer buf = {.type = done->type, .memory = done->memory, .index = done->index};
+            /*
+             * megi's VA driver decodes into dma-bufs the client exported
+             * before decoding whenever they fit (libva-v4l2_request 0007),
+             * and FFmpeg's do: a DMABUF queue has no MMAP offsets, so map
+             * the dma-buf DQBUF handed back instead.
+             */
+            int dmabuf = done->memory == V4L2_MEMORY_DMABUF;
             void *map;
             FILE *out;
 
@@ -248,21 +271,35 @@ int ioctl(int fd, unsigned long req, ...)
             }
             if (completed != dump_at)
                 return rc;
-            if (done->flags & V4L2_BUF_FLAG_ERROR || real_ioctl(fd, VIDIOC_QUERYBUF, &buf) < 0 ||
+            if (dmabuf) {
+                off_t end_off = lseek(done->m.fd, 0, SEEK_END);
+
+                buf.length = end_off > 0 ? (unsigned int)end_off : 0;
+            }
+            if (done->flags & V4L2_BUF_FLAG_ERROR ||
+                (!dmabuf && real_ioctl(fd, VIDIOC_QUERYBUF, &buf) < 0) ||
                 buf.length < capture.sizeimage) {
                 fprintf(stderr, "compose-probe: invalid completed buffer\n");
                 errno = EIO;
                 return -1;
             }
-            map = mmap(NULL, buf.length, PROT_READ, MAP_SHARED, fd, buf.m.offset);
+            map = dmabuf ? mmap(NULL, buf.length, PROT_READ, MAP_SHARED, done->m.fd, 0) :
+                           mmap(NULL, buf.length, PROT_READ, MAP_SHARED, fd, buf.m.offset);
             if (map == MAP_FAILED)
                 return -1;
+            struct dma_buf_sync sync = {.flags = DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ};
+            if (dmabuf)
+                real_ioctl(done->m.fd, DMA_BUF_IOCTL_SYNC, &sync);
             size_t want = getenv("CEDRUS_DUMP_FULL") ? buf.length : capture.sizeimage;
             out = fopen(getenv("CEDRUS_DUMP"), "wb");
             int failed = !out;
             if (out) {
                 failed = fwrite(map, 1, want, out) != want;
                 if (fclose(out)) failed = 1;
+            }
+            if (dmabuf) {
+                sync.flags = DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ;
+                real_ioctl(done->m.fd, DMA_BUF_IOCTL_SYNC, &sync);
             }
             munmap(map, buf.length);
             if (failed) { errno = EIO; return -1; }

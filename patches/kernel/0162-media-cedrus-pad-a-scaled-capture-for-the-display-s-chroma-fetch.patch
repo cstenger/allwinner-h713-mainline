@@ -1,0 +1,44 @@
+media: cedrus: pad a scaled capture for the display's chroma fetch
+
+A scaled NV12 capture puts chroma straight after the scaled height:
+cedrus_buf_addr() points the scaler at bytesperline * height, and the
+format says the same, so a 534-line picture has its chroma at
+bytesperline * 534. That is right, and stays. What it lacked is room
+for the video plane: kernel 0161 fetches in 16-line blocks and checks
+offsets[1] + pitch * ALIGN(h, 16) / 2 against the buffer, and a buffer
+sized bytesperline * 534 * 3 / 2 (even page-rounded) is 5 pitch-rows
+short at 534 lines.
+
+Pad sizeimage to bytesperline * (h + ALIGN(h, 16) / 2) for scaled
+contexts. Heights that are multiples of 16 are unchanged; the decoded
+pixels and the chroma offset are unchanged at every height.
+
+The green band seen at 534/536 on 2026-10-05 was not the scaler
+ignoring its chroma address (cedrus-scaler-check.py has always read
+chroma at bytesperline * height at 478, 362 and 242 lines and scored
+clean): the VA driver exported GStreamer's surfaces with chroma at
+bytesperline * ALIGN(h, 16), fixed in libva-v4l2_request 0015. That
+fix makes the exported buffer this size, which is why this one is
+needed with it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_video.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_video.c
+@@ -376,7 +376,15 @@
+ 		 * A 32-byte pitch and even height preserve that alignment.
+ 		 */
+ 		pix_fmt->bytesperline = ALIGN(pix_fmt->bytesperline, 32);
+-		pix_fmt->sizeimage = pix_fmt->bytesperline * height * 3 / 2;
++		/*
++		 * Chroma starts right after the scaled height, where
++		 * cedrus_buf_addr() points the scaler, but the display plane
++		 * fetches in 16-line blocks: at 534 lines it reads 544/2
++		 * chroma rows, past a buffer sized for 534/2. Pad the tail
++		 * so that fetch stays inside the buffer.
++		 */
++		pix_fmt->sizeimage = pix_fmt->bytesperline *
++				     (height + ALIGN(height, 16) / 2);
+ 	}
+ 	if (ctx->current_codec->extra_cap_size)
+ 		pix_fmt->sizeimage += ctx->current_codec->extra_cap_size(ctx, pix_fmt);

@@ -47,6 +47,10 @@ int main(int argc, char **argv)
 
 	fd = open(card, O_RDWR | O_CLOEXEC);
 	if (fd < 0) { perror(card); return 1; }
+	/* Opened while no player holds the card, this fd becomes DRM master,
+	 * and a player starting meanwhile fails SetPlane with EACCES. Root
+	 * reads handles through CAP_SYS_ADMIN anyway. */
+	drmDropMaster(fd);
 	drmSetClientCap(fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
 
 	res = drmModeGetPlaneResources(fd);
