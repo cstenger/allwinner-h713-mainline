@@ -61,9 +61,8 @@
 >   still showed green; the decoded size-changing streams showed no green.
 >   **"At most one black frame per transition" holds.** The final 0165
 >   fixes the top border and drops the experiment parameter; it is
->   installed and behaves as the verified setting, but has not been booted
->   yet. After the next power cycle, a headless check that it boots and
->   that `kms-geometry-flip` still commits in 33.5 ms is enough.
+>   booted 2026-10-06 (power cycle): geometry commits 33.5 ms, refusals
+>   31/31, `r01` 75/0 on the plane, kernel quiet, borders restored.
 > - **Open:** the 2-hour plane-ve scope soak (overnight queue). Then Phase 4
 >   is done.
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
