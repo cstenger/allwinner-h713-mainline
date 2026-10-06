@@ -1,0 +1,604 @@
+drm: h713: mirror the panel in hardware (installation mode, plane reflect)
+
+A projector mounted on the ceiling or behind a rear-projection screen
+needs its whole picture mirrored. The stock firmware does it in display
+hardware (Installation mode -> PANEL_CONFIG_MIRROR -> the MIPS window
+layer); with the MIPS parked, this driver now does the same.
+
+The recipe is from static RE of display.bin, self-tested against stock
+captures of all four modes (docs/reference/mirror-recipe-2026-10-06.md),
+and checked on the panel and with the panel's own histogram
+(docs/reference/mirror-phase1-2026-10-06.md):
+
+ - H is the panel's line reversal, lvds+0x0a0[0]. It mirrors whatever the
+   selector feeds the panel, position and bars included, and costs one
+   line. The video route compensates upstream, as the firmware does: vde
+   - 1 on the dy-timed NR/proc fields and the border overlay's y. The RGB
+   route has no upstream to move, so its program window (lvds+0x0c0)
+   starts one line later instead. Without either, the histogram shows one
+   edge row lost; with them it is bit-identical to the upright picture.
+ - V is a bottom-up fetch: source 0 CTRL[3:2] = 2 with comp+0x040[3]
+   cleared inside NR's hold for video, OSD CTRL bit 3 for the RGB route.
+   It moves nothing; the histogram is bit-identical. OSD bit 2 is dead.
+
+Two inputs, combined by XOR:
+ - the installation mode, which mirrors the whole screen and is invisible
+   to clients: the sysfs attribute mirror_mode (0 front, 1 rear H,
+   2 rear ceiling V, 3 ceiling H+V) re-commits every plane at once,
+   because a warm reboot costs this display; the mirror_mode module
+   parameter sets it at probe;
+ - the DRM rotation property on both planes (REFLECT_X, REFLECT_Y,
+   ROTATE_180), which mirrors one plane's picture inside its rectangle.
+Placement is mapped to suit: x is pre-mirrored for a plane REFLECT_X,
+which the panel would move, and y for the installation V, which the
+fetch would not. The panel bit and window are shared, so whichever route
+owns the exclusive mux writes them, and video_stop hands them back to the
+RGB route's values.
+
+It needs the letterbox window layer and a board that booted unmirrored in
+AFBD source mode 2, which is the base the recipe is relative to;
+otherwise it reports itself unavailable and creates no rotation property.
+debugfs h713_geometry prints the committed picture, its flips, the mirror
+registers, and every window-layer register against the model.
+
+Also: the first-frame cover (0165) now touches only the border words. The
+new overlay-rectangle words sit in the same block, and a blanket cover
+would have overwritten them.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -44,6 +44,7 @@
+ #include <linux/of.h>
+ #include <linux/of_reserved_mem.h>
+ #include <linux/platform_device.h>
++#include <linux/seq_file.h>
+ #include <linux/slab.h>
+ #include <linux/wait.h>
+ #include <linux/workqueue.h>
+@@ -51,6 +52,8 @@
+ #include <drm/clients/drm_client_setup.h>
+ #include <drm/drm_atomic.h>
+ #include <drm/drm_atomic_helper.h>
++#include <drm/drm_blend.h>
++#include <drm/drm_debugfs.h>
+ #include <drm/drm_drv.h>
+ #include <drm/drm_fb_dma_helper.h>
+ #include <drm/drm_fbdev_dma.h>
+@@ -60,6 +63,7 @@
+ #include <drm/drm_gem_dma_helper.h>
+ #include <drm/drm_gem_framebuffer_helper.h>
+ #include <drm/drm_managed.h>
++#include <drm/drm_modeset_lock.h>
+ #include <drm/drm_plane.h>
+ #include <drm/drm_plane_helper.h>
+ #include <drm/drm_probe_helper.h>
+@@ -156,10 +160,14 @@
+ 
+ /*
+  * A video picture: w x h in memory (the source), shown as ow x oh at
+- * (dx, dy) on the panel. ow x oh > w x h means proc magnifies.
++ * (dx, dy) on the panel. ow x oh > w x h means proc magnifies. All of it in
++ * HARDWARE terms: (dx, dy) is where the window layer puts the picture before
++ * the panel's line reversal, hflip that reversal, vflip AFBD's bottom-up
++ * fetch (see MIRROR below).
+  */
+ struct h713_geom {
+ 	u32 w, h, dx, dy, ow, oh;
++	bool hflip, vflip;
+ };
+ 
+ /* Registers the letterbox recipe touches: see h713_lb_fields. */
+@@ -178,6 +186,14 @@
+ 	void __iomem *proc_regs;
+ 	void __iomem *vblend_regs;
+ 	bool lb_ok;
++	/* MIRROR: the installation mode, bit 0 = H, bit 1 = V; see below */
++	bool mirror_ok;
++	unsigned int mirror_mode;
++	u32 panel_win_native;		/* lvds+0x0c0, the program window */
++	u32 panel_hw;			/* what lvds+0x0a0 / +0x0c0 hold: */
++	u32 panel_win_hw;		/*   written only by h713_panel_set() */
++	u32 rgb_ctrl_cur;		/* rgb_ctrl_active + the OSD V bit */
++	bool rgb_hflip;			/* the RGB route's panel H */
+ 	struct h713_geom native;
+ 	struct h713_geom hw_geom;	/* what comp/route/proc/lvds/vblend hold */
+ 	unsigned int lb_nregs;
+@@ -209,6 +225,93 @@
+ }
+ 
+ /*
++ * MIRROR: the projector's installation mode (rear and ceiling projection),
++ * done in display hardware as the stock firmware does it -- the GPU is not
++ * involved. Recipe: docs/reference/mirror-recipe-2026-10-06.md (static RE of
++ * display.bin, self-tested against the stock captures of all four modes);
++ * checked on the panel and with the panel histogram in
++ * docs/reference/mirror-phase1-2026-10-06.md.
++ *
++ *  - H is the panel's line reversal, lvds+0x0a0[0]. It is global: it reverses
++ *    whatever the selector feeds the panel, picture AND position, bars
++ *    included. It costs one line, so the picture must reach it one line
++ *    earlier than the window that consumes it: the video route moves
++ *    everything upstream one line up (the firmware's vde - 1: the dy-timed
++ *    fields and the overlay y), the RGB route, which has no upstream to
++ *    move, starts the panel's program window (lvds+0x0c0) one line later.
++ *    Without either, one edge row of the picture is lost (histogram).
++ *  - V is a bottom-up fetch: AFBD source 0's CTRL[3:2] = 2 with comp+0x040[3]
++ *    cleared, inside NR's hold (fw 0x8b1a43f0, source mode 2), for video;
++ *    OSD CTRL bit 3 for the RGB route (stock's ge2d_dev.ko). It flips the
++ *    picture in place and moves nothing; OSD bit 2 does nothing at all.
++ *
++ * Two inputs, combined by XOR: the installation mode (sysfs mirror_mode,
++ * default from the mirror_mode module parameter) mirrors the WHOLE screen, so
++ * clients never see it; a plane's DRM rotation property (REFLECT_X/Y,
++ * ROTATE_180) mirrors only that plane's picture inside its rectangle. Hence
++ * x is pre-mirrored for a plane REFLECT_X (the panel would move it) and y
++ * for the installation V (the fetch would not):
++ *
++ *	hflip = mode_H ^ REFLECT_X	dx = REFLECT_X ? 1280 - x - w : x
++ *	vflip = mode_V ^ REFLECT_Y	dy = mode_V    ? 720  - y - h : y
++ *
++ * The panel bit and window are shared by both routes; whichever owns the
++ * exclusive mux writes them (h713_panel_set).
++ */
++static unsigned int h713_mirror_param;
++module_param_named(mirror_mode, h713_mirror_param, uint, 0444);
++MODULE_PARM_DESC(mirror_mode,
++		 "installation mirror at boot: 0 front, 1 rear (H), 2 rear ceiling (V), 3 ceiling (H+V)");
++
++#define LVDS_PANEL_MIRROR	0x0a0	/* bit 0 = H */
++#define LVDS_PROGRAM_WIN	0x0c0	/* [31:16] height, [15:0] y */
++#define AFBD_CTRL_VFLIP		BIT(3)	/* source 0 and OSD alike: [3:2] = 2 */
++#define COMP_SRC_MODE		0x030	/* [11:10] = 3: source mode 2 */
++#define COMP_VBIT		BIT(3)	/* in NR_ENABLE: cleared for V */
++
++static void h713_plane_flips(struct h713_afbd *h, const struct drm_plane_state *s,
++			     bool *rx, bool *ry)
++{
++	unsigned int rot = drm_rotation_simplify(s->rotation, DRM_MODE_ROTATE_0 |
++						 DRM_MODE_REFLECT_X | DRM_MODE_REFLECT_Y);
++
++	*rx = rot & DRM_MODE_REFLECT_X;
++	*ry = rot & DRM_MODE_REFLECT_Y;
++}
++
++/* Panel bit and program window for the route now on the mux. */
++static void h713_panel_set(struct h713_afbd *h, bool hflip, bool rgb)
++{
++	u32 a0 = (h->panel_hw & ~BIT(0)) | hflip;
++	u32 c0 = h->panel_win_native + (rgb && hflip);
++
++	if (!h->mirror_ok)
++		return;
++	if (c0 != h->panel_win_hw) {
++		writel(c0, h->lvds_regs + LVDS_PROGRAM_WIN);
++		h->panel_win_hw = c0;
++	}
++	if (a0 != h->panel_hw) {
++		writel(a0, h->lvds_regs + LVDS_PANEL_MIRROR);
++		h->panel_hw = a0;
++	}
++}
++
++/* The RGB route's flips for this primary-plane state. */
++static void h713_rgb_flips(struct h713_afbd *h, const struct drm_plane_state *s,
++			   bool *hflip, bool *vflip)
++{
++	bool rx = false, ry = false;
++
++	*hflip = *vflip = false;
++	if (!h->mirror_ok)
++		return;
++	h713_plane_flips(h, s, &rx, &ry);
++	*hflip = (h->mirror_mode & 1) ^ rx;
++	*vflip = !!(h->mirror_mode & 2) ^ ry;
++}
++
++/*
+  * LETTERBOX: a video picture smaller than the panel, placed anywhere on it.
+  *
+  * The MIPS display firmware's window layer does this for its capture inputs;
+@@ -258,7 +361,13 @@
+ static u32 lb_w(const struct h713_geom *g) { return g->w; }
+ static u32 lb_h(const struct h713_geom *g) { return g->h; }
+ static u32 lb_dx(const struct h713_geom *g) { return g->dx; }
+-static u32 lb_dy(const struct h713_geom *g) { return g->dy; }
++/*
++ * dy as the timing sees it: one line earlier under the H mirror (the
++ * firmware's vde - 1, WCETop 0x8b1a8928). Offset by one so a REL field's
++ * f(new) - f(native) never wraps; the offset cancels.
++ */
++static u32 lb_dyt(const struct h713_geom *g) { return g->dy + 1 - g->hflip; }
++static u32 lb_vde(const struct h713_geom *g) { return 1 - g->hflip; }
+ static u32 lb_even_w(const struct h713_geom *g) { return ALIGN(g->w, 2); }
+ static u32 lb_even_h(const struct h713_geom *g) { return ALIGN(g->h, 2); }
+ static u32 lb_half_h(const struct h713_geom *g) { return g->h / 2; }
+@@ -336,14 +445,14 @@
+ 	REL(LB_COMP, 0x804, 16, 16, lb_dx),
+ 	REL(LB_COMP, 0x808, 0, 16, lb_dx),
+ 	REL(LB_COMP, 0x80c, 0, 16, lb_h),
+-	REL(LB_COMP, 0x80c, 16, 16, lb_dy),
+-	REL(LB_COMP, 0x858, 0, 16, lb_dy),
++	REL(LB_COMP, 0x80c, 16, 16, lb_dyt),
++	REL(LB_COMP, 0x858, 0, 16, lb_dyt),
+ 	ABS(LB_COMP, 0x858, 16, 16, lb_oh),
+ 	REL(LB_COMP, 0x85c, 0, 16, lb_dx),
+ 	ABS(LB_COMP, 0x85c, 16, 16, lb_w),
+ 	REL(LB_COMP, 0x844, 0, 16, lb_dx),
+ 	ABS(LB_COMP, 0x844, 16, 16, lb_even_w),
+-	REL(LB_COMP, 0x840, 0, 16, lb_dy),
++	REL(LB_COMP, 0x840, 0, 16, lb_dyt),
+ 	ABS(LB_COMP, 0x840, 16, 16, lb_h_plus1),
+ 	/*
+ 	 * route windows, all at (0, 0): source (0x104/0x108/0x11c) is the
+@@ -367,7 +476,7 @@
+ 	ABS(LB_PROC, 0x040, 0, 16, lb_ow),
+ 	REL(LB_PROC, 0x044, 0, 16, lb_dx),
+ 	ABS(LB_PROC, 0x050, 0, 16, lb_vlines),
+-	REL(LB_PROC, 0x050, 16, 16, lb_dy),
++	REL(LB_PROC, 0x050, 16, 16, lb_dyt),
+ 	/*
+ 	 * The scaler. 0x038[31:16] is left alone: the firmware derives it from
+ 	 * a member it never sets, and the firmware's other reading made no
+@@ -395,6 +504,12 @@
+ 	ABS(LB_VBLEND, 0x004, 0, 12, lb_bottom),
+ 	ABS(LB_VBLEND, 0x004, 12, 4, lb_top_2),
+ 	ABS(LB_VBLEND, 0x004, 30, 1, lb_one),
++	/*
++	 * the overlays' panel rectangle y: vde, before the program window's
++	 * +1 (0x8b1a5460 vs 0x8b1a546c), so one line up under the H mirror
++	 */
++	REL(LB_VBLEND, 0x010, 0, 16, lb_vde),
++	REL(LB_VBLEND, 0x024, 0, 16, lb_vde),
+ };
+ 
+ /* The NR hold/release bracket (NRWinNode::WriteReg flags 0x100c0 / 0x8120). */
+@@ -548,6 +663,10 @@
+ 	h713_lb_rmw(h->comp_regs + NR_HOLD_A, BIT(17), BIT(17));
+ 	h713_lb_rmw(h->comp_regs + NR_HOLD_B, BIT(27), BIT(27));
+ 	h713_lb_rmw(h->comp_regs + NR_ENABLE, BIT(25), 0);
++	/* the V mirror's NR half, in the geometry group (fw 0x8b1a43f0) */
++	if (h->mirror_ok)
++		h713_lb_rmw(h->comp_regs + NR_ENABLE, COMP_VBIT,
++			    g->vflip ? 0 : COMP_VBIT);
+ 	for (i = 0; i < h->lb_nregs; i++)
+ 		if (h->lb_blk[i] == LB_COMP)
+ 			writel(words[i], h->comp_regs + h->lb_off[i]);
+@@ -560,14 +679,16 @@
+ 
+ 		if (h->lb_blk[i] == LB_COMP)
+ 			continue;
+-		if (cover && h->lb_blk[i] == LB_VBLEND)
++		/* the border words only; the overlay rectangle (0x010/0x024) stays */
++		if (cover && h->lb_blk[i] == LB_VBLEND && h->lb_off[i] <= 0x004)
+ 			w = h713_lb_cover(h->lb_off[i], w);
+ 		writel(w, h713_lb_base(h, h->lb_blk[i]) + h->lb_off[i]);
+ 	}
+ 
+ 	h->hw_geom = *g;
+-	drm_dbg_kms(&h->drm, "video picture %ux%u shown %ux%u at (%u,%u)\n",
+-		    g->w, g->h, g->ow, g->oh, g->dx, g->dy);
++	drm_dbg_kms(&h->drm, "video picture %ux%u shown %ux%u at (%u,%u)%s%s\n",
++		    g->w, g->h, g->ow, g->oh, g->dx, g->dy,
++		    g->hflip ? " H" : "", g->vflip ? " V" : "");
+ }
+ 
+ /* The real borders for @g, after a covered h713_lb_program(). */
+@@ -583,12 +704,20 @@
+ 			writel(words[i], h->vblend_regs + h->lb_off[i]);
+ }
+ 
+-static bool h713_geom_eq(const struct h713_geom *a, const struct h713_geom *b)
++/* Same picture size and place, whatever the flips. */
++static bool h713_geom_same_rect(const struct h713_geom *a, const struct h713_geom *b)
+ {
+ 	return a->w == b->w && a->h == b->h && a->dx == b->dx && a->dy == b->dy &&
+ 	       a->ow == b->ow && a->oh == b->oh;
+ }
+ 
++static bool h713_geom_eq(const struct h713_geom *a, const struct h713_geom *b)
++{
++	return a->w == b->w && a->h == b->h && a->dx == b->dx && a->dy == b->dy &&
++	       a->ow == b->ow && a->oh == b->oh &&
++	       a->hflip == b->hflip && a->vflip == b->vflip;
++}
++
+ static bool h713_afbd_retires_empty(struct h713_afbd *h)
+ {
+ 	unsigned long flags;
+@@ -747,7 +876,7 @@
+ 	if (pending)
+ 		writel(pending, h->regs + AFBD_STATUS);
+ 
+-	writel(h->rgb_ctrl_active, h->regs + AFBD_CTRL);
++	writel(h->rgb_ctrl_cur, h->regs + AFBD_CTRL);
+ 	writel(1, h->regs + AFBD_READY);
+ }
+ 
+@@ -779,11 +908,13 @@
+ 		h713_lb_program(h, &h->native, false);
+ 
+ 	/* Restore and commit RGB before selecting it downstream. */
+-	writel(h->rgb_ctrl_active, h->regs + AFBD_CTRL);
++	writel(h->rgb_ctrl_cur, h->regs + AFBD_CTRL);
+ 	writel(1, h->regs + AFBD_READY);
+ 	h713_afbd_wait_ready(h, AFBD_READY, "RGB enable");
+ 	writel(h->selector_rgb, h->lvds_regs + 0x06c);
+ 	h->video_active = false;
++	/* the panel's mirror state back to the RGB route's */
++	h713_panel_set(h, h->rgb_hflip, true);
+ }
+ 
+ /*
+@@ -806,6 +937,26 @@
+ 	g->oh = s->crtc_h & ~1;
+ }
+ 
++/* The plane's picture in hardware terms: placement mirrored as MIRROR says. */
++static void h713_video_geom(struct h713_afbd *h, const struct drm_plane_state *s,
++			    struct h713_geom *g)
++{
++	bool rx = false, ry = false;
++
++	h713_plane_geom(s, g);
++	g->hflip = g->vflip = false;
++	if (!h->mirror_ok)
++		return;
++	h713_plane_flips(h, s, &rx, &ry);
++	g->hflip = (h->mirror_mode & 1) ^ rx;
++	g->vflip = !!(h->mirror_mode & 2) ^ ry;
++	/* off-panel rectangles wrap here and are refused by the checks */
++	if (rx)
++		g->dx = h->native.w - g->dx - g->ow;
++	if (h->mirror_mode & 2)
++		g->dy = h->native.h - g->dy - g->oh;
++}
++
+ /*
+  * A picture smaller than the panel, shown at (crtc_x, crtc_y), at its own
+  * size or magnified by proc up to 4x per axis (it cannot shrink: larger
+@@ -882,13 +1033,20 @@
+ 	     !(p010 && fb->modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10)))
+ 		return -EINVAL;
+ 
+-	h713_plane_geom(new_state, &g);
+-	if (!h713_geom_eq(&g, &h->native)) {
++	h713_video_geom(h, new_state, &g);
++	if (!h713_geom_same_rect(&g, &h->native)) {
+ 		ret = h713_lb_check(h, new_state, &g);
+ 		if (ret)
+ 			return ret;
+ 		goto addresses;
+ 	}
++	/* native size, mirrored: the window layer is reprogrammed for it */
++	if (g.hflip || g.vflip) {
++		u32 words[H713_LB_MAX_REGS];
++
++		if (!h->mirror_ok || h713_lb_words(h, &g, words))
++			return -EINVAL;
++	}
+ 
+ 	if (/*
+ 	     * The framebuffer may be taller or wider than the picture: hantro
+@@ -929,7 +1087,7 @@
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+ 	y = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 0);
+ 	c = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 1);
+-	h713_plane_geom(new_state, &g);
++	h713_video_geom(h, new_state, &g);
+ 
+ 	/*
+ 	 * A new picture size or position reprograms the window layer, which
+@@ -1002,9 +1160,12 @@
+ 	if (regeom)
+ 		h713_lb_program(h, &g, true);
+ 
++	/* the panel's mirror state for the video route (MIRROR) */
++	h713_panel_set(h, g.hflip, false);
+ 	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
+ 	writel(H713_VIDEO_CTRL_ACTIVE |
+-	       h713_afbd_video_fmt(new_state->fb) << H713_VIDEO_FMT_SHIFT,
++	       h713_afbd_video_fmt(new_state->fb) << H713_VIDEO_FMT_SHIFT |
++	       (g.vflip ? AFBD_CTRL_VFLIP : 0),
+ 	       h->regs + AFBD_VIDEO_CTRL);
+ 	writel(1, h->regs + AFBD_VIDEO_READY);
+ 	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
+@@ -1048,6 +1209,19 @@
+ 	.atomic_destroy_state = drm_atomic_helper_plane_destroy_state,
+ };
+ 
++/* The RGB route's mirror bits for this primary-plane state (MIRROR). */
++static void h713_rgb_apply(struct h713_afbd *h, const struct drm_plane_state *s)
++{
++	bool hflip, vflip;
++
++	h713_rgb_flips(h, s, &hflip, &vflip);
++	h->rgb_ctrl_cur = (h->rgb_ctrl_active & ~GENMASK(3, 2)) |
++			  (vflip ? AFBD_CTRL_VFLIP : 0);
++	h->rgb_hflip = hflip;
++	if (!h->video_active)
++		h713_panel_set(h, hflip, true);
++}
++
+ static void h713_afbd_pipe_enable(struct drm_simple_display_pipe *pipe,
+ 				  struct drm_crtc_state *crtc_state,
+ 				  struct drm_plane_state *plane_state)
+@@ -1058,6 +1232,7 @@
+ 	 * The panel is already lit; there is nothing to turn on. Show the
+ 	 * buffer the client handed us so the first commit is not a no-op.
+ 	 */
++	h713_rgb_apply(h, plane_state);
+ 	if (plane_state->fb)
+ 		h713_afbd_set_source(h,
+ 				     drm_fb_dma_get_gem_addr(plane_state->fb,
+@@ -1125,6 +1300,7 @@
+ 	struct drm_pending_vblank_event *event;
+ 	unsigned long flags;
+ 
++	h713_rgb_apply(h, state);
+ 	if (state->fb)
+ 		h713_afbd_set_source(h,
+ 				     drm_fb_dma_get_gem_addr(state->fb, state, 0),
+@@ -1278,6 +1454,101 @@
+ DEFINE_DRM_GEM_DMA_FOPS(h713_afbd_fops);
+ 
+ /*
++ * The installation mode, at run time: write 0-3 and the panel follows at
++ * once -- every plane is re-committed with its current state, so a running
++ * client (kmssink, mpv, the console) needs no help. A warm reboot would cost
++ * the display, so this, not the command line, is how the mode changes.
++ */
++static ssize_t mirror_mode_show(struct device *dev, struct device_attribute *attr,
++				char *buf)
++{
++	struct h713_afbd *h = dev_get_drvdata(dev);
++
++	return sysfs_emit(buf, "%u\n", h->mirror_mode);
++}
++
++static ssize_t mirror_mode_store(struct device *dev, struct device_attribute *attr,
++				 const char *buf, size_t count)
++{
++	struct h713_afbd *h = dev_get_drvdata(dev);
++	struct drm_modeset_acquire_ctx ctx;
++	struct drm_atomic_state *state;
++	unsigned int mode, old = h->mirror_mode;
++	int ret;
++
++	ret = kstrtouint(buf, 0, &mode);
++	if (ret)
++		return ret;
++	if (mode > 3)
++		return -EINVAL;
++	if (!h->mirror_ok)
++		return mode ? -EOPNOTSUPP : count;
++
++	DRM_MODESET_LOCK_ALL_BEGIN((&h->drm), ctx, 0, ret);
++	h->mirror_mode = mode;
++	state = drm_atomic_helper_duplicate_state(&h->drm, &ctx);
++	if (IS_ERR(state)) {
++		ret = PTR_ERR(state);
++	} else {
++		ret = drm_atomic_commit(state);
++		drm_atomic_state_put(state);
++	}
++	if (ret)
++		h->mirror_mode = old;
++	DRM_MODESET_LOCK_ALL_END((&h->drm), ctx, ret);
++	if (ret)
++		return ret;
++	drm_info(&h->drm, "installation mirror mode %u\n", mode);
++	return count;
++}
++static DEVICE_ATTR_RW(mirror_mode);
++
++static struct attribute *h713_afbd_attrs[] = {
++	&dev_attr_mirror_mode.attr,
++	NULL
++};
++ATTRIBUTE_GROUPS(h713_afbd);
++
++/*
++ * debugfs h713_geometry: what the window layer holds, against what the model
++ * says it should for the committed picture -- the register diff the letterbox
++ * and mirror gates use, since no capture tool can see this state.
++ */
++static int h713_geometry_show(struct seq_file *m, void *unused)
++{
++	struct drm_debugfs_entry *entry = m->private;
++	struct h713_afbd *h = to_h713(entry->dev);
++	const struct h713_geom *g = &h->hw_geom;
++	static const char *const blk[] = { "comp", "route", "proc", "lvds", "vblend" };
++	u32 words[H713_LB_MAX_REGS];
++	unsigned int i, bad = 0;
++
++	seq_printf(m, "mirror_mode %u (%s), video %s\n", h->mirror_mode,
++		   h->mirror_ok ? "supported" : "unsupported",
++		   h->video_active ? "on" : "off");
++	seq_printf(m, "picture %ux%u shown %ux%u at (%u,%u) hflip %d vflip %d\n",
++		   g->w, g->h, g->ow, g->oh, g->dx, g->dy, g->hflip, g->vflip);
++	seq_printf(m, "afbd+010 %08x afbd+140 %08x comp+040 %08x lvds+06c %08x lvds+0a0 %08x lvds+0c0 %08x\n",
++		   readl(h->regs + AFBD_VIDEO_CTRL), readl(h->regs + AFBD_CTRL),
++		   h->comp_regs ? readl(h->comp_regs + NR_ENABLE) : 0,
++		   readl(h->lvds_regs + 0x06c),
++		   readl(h->lvds_regs + LVDS_PANEL_MIRROR),
++		   readl(h->lvds_regs + LVDS_PROGRAM_WIN));
++	if (!h->lb_ok || h713_lb_words(h, g, words))
++		return 0;
++	for (i = 0; i < h->lb_nregs; i++) {
++		u32 live = readl(h713_lb_base(h, h->lb_blk[i]) + h->lb_off[i]);
++		bool same = live == words[i];
++
++		bad += !same;
++		seq_printf(m, "%s+%03x %08x model %08x%s\n", blk[h->lb_blk[i]],
++			   h->lb_off[i], live, words[i], same ? "" : "  *");
++	}
++	seq_printf(m, "%u of %u registers differ from the model\n", bad, h->lb_nregs);
++	return 0;
++}
++
++/*
+  * Dumb buffers the video plane can fetch. kmssink allocates its own pool as
+  * dumb buffers and takes every plane's stride from the pitch returned here.
+  * Stock GStreamer copies into that pool whenever a decoder cannot hand its
+@@ -1510,6 +1781,24 @@
+ 			return PTR_ERR(h->vblend_regs);
+ 		h->lb_ok = h713_lb_snapshot(h);
+ 	}
++	/*
++	 * MIRROR needs the window layer (letterbox's registers and model) and
++	 * a board that booted unmirrored, in AFBD source mode 2: the recipe is
++	 * relative to that state.
++	 */
++	h->rgb_ctrl_cur = h->rgb_ctrl_active;
++	h->panel_hw = readl(h->lvds_regs + LVDS_PANEL_MIRROR);
++	h->panel_win_native = readl(h->lvds_regs + LVDS_PROGRAM_WIN);
++	h->panel_win_hw = h->panel_win_native;
++	h->mirror_ok = h->lb_ok && !(h->panel_hw & BIT(0)) &&
++		       ((readl(h->comp_regs + COMP_SRC_MODE) >> 10) & 3) == 3 &&
++		       (readl(h->comp_regs + NR_ENABLE) & COMP_VBIT) &&
++		       !(h->video_ctrl_idle & GENMASK(3, 2)) &&
++		       !(h->rgb_ctrl_active & GENMASK(3, 2));
++	if (h->mirror_ok)
++		h->mirror_mode = h713_mirror_param & 3;
++	drm_info(drm, "hardware mirror: %s, installation mode %u\n",
++		 h->mirror_ok ? "available" : "unavailable", h->mirror_mode);
+ 	drm_info(drm, "video plane: %s\n", h->lb_ok ?
+ 		 "pictures up to the panel size, magnified up to 4x and placed anywhere (letterbox)" :
+ 		 "native size only");
+@@ -1599,6 +1888,20 @@
+ 		if (ret)
+ 			return ret;
+ 	}
++	/* REFLECT_X/Y on both planes (MIRROR); 180 is the two together */
++	if (h->mirror_ok) {
++		const unsigned int rot = DRM_MODE_ROTATE_0 | DRM_MODE_ROTATE_180 |
++					 DRM_MODE_REFLECT_X | DRM_MODE_REFLECT_Y;
++
++		ret = drm_plane_create_rotation_property(&h->pipe.plane,
++							 DRM_MODE_ROTATE_0, rot);
++		if (!ret)
++			ret = drm_plane_create_rotation_property(&h->video_plane,
++								 DRM_MODE_ROTATE_0, rot);
++		if (ret)
++			return ret;
++	}
++	drm_debugfs_add_file(drm, "h713_geometry", h713_geometry_show, NULL);
+ 
+ 	drm_mode_config_reset(drm);
+ 
+@@ -1637,6 +1940,7 @@
+ 	struct h713_afbd *h = platform_get_drvdata(pdev);
+ 
+ 	h713_afbd_video_stop(h);
++	h713_panel_set(h, false, true);		/* unmirrored, as adopted */
+ 	drm_atomic_helper_shutdown(&h->drm);
+ 	h713_afbd_drain_retires(h);
+ }
+@@ -1654,6 +1958,7 @@
+ 	.driver	= {
+ 		.name		= "sun50i-h713-afbd",
+ 		.of_match_table	= h713_afbd_of_match,
++		.dev_groups	= h713_afbd_groups,
+ 	},
+ };
+ module_platform_driver(h713_afbd_platform_driver);

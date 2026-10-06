@@ -20,6 +20,14 @@
  * x / y / xy (the card mirrored in SOFTWARE), shift (moved 1 px right),
  * black, white, grey, red, green, blue.
  *
+ * WP5 Phase 2 gate (docs/mirror-plan.md), for kernels with the mirror (0166):
+ *   ROTATION=x|y|xy|180   sets the plane's rotation property (REFLECT_X,
+ *                         REFLECT_Y, both, ROTATE_180); either plane. It is
+ *                         put back to ROTATE_0 on exit, because a plane keeps
+ *                         its rotation and the next client would inherit it.
+ *   COMMIT=REGION@X,Y     (video plane) commit that region's card as its own
+ *                         framebuffer at (X,Y), instead of the native card.
+ *
  * WHY ONE BUFFER. The plane's atomic_check takes only a 1280x720, pitch-1280
  * framebuffer, so a sub-panel card cannot be committed through KMS. Instead
  * one dumb buffer holds every card at its own offset; the framebuffer covers
@@ -260,14 +268,36 @@ static uint32_t find_prop(int fd, uint32_t obj, const char *name)
 	return id;
 }
 
+/* The committed rectangle and rotation (COMMIT=, ROTATION=); see the header. */
+static unsigned rect_x, rect_y, rect_w = PANEL_W, rect_h = PANEL_H;
+static uint64_t rotation;	/* 0: leave the property alone */
+
+static uint64_t parse_rotation(const char *s)
+{
+	if (!s || !*s)
+		return 0;
+	if (!strcmp(s, "x"))
+		return DRM_MODE_ROTATE_0 | DRM_MODE_REFLECT_X;
+	if (!strcmp(s, "y"))
+		return DRM_MODE_ROTATE_0 | DRM_MODE_REFLECT_Y;
+	if (!strcmp(s, "xy"))
+		return DRM_MODE_ROTATE_0 | DRM_MODE_REFLECT_X | DRM_MODE_REFLECT_Y;
+	if (!strcmp(s, "180"))
+		return DRM_MODE_ROTATE_180;
+	if (!strcmp(s, "0"))
+		return DRM_MODE_ROTATE_0;
+	fprintf(stderr, "unknown ROTATION=%s\n", s);
+	exit(2);
+}
+
 static int plane_set(int fd, uint32_t plane, uint32_t crtc, uint32_t fb)
 {
 	static const char *const names[] = {
 		"CRTC_ID", "FB_ID", "CRTC_X", "CRTC_Y", "CRTC_W", "CRTC_H",
 		"SRC_X", "SRC_Y", "SRC_W", "SRC_H",
 	};
-	uint64_t on[] = { crtc, fb, 0, 0, PANEL_W, PANEL_H, 0, 0,
-			  (uint64_t)PANEL_W << 16, (uint64_t)PANEL_H << 16 };
+	uint64_t on[] = { crtc, fb, rect_x, rect_y, rect_w, rect_h, 0, 0,
+			  (uint64_t)rect_w << 16, (uint64_t)rect_h << 16 };
 	unsigned i, n = fb ? 10 : 2;
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
 	int ret;
@@ -276,6 +306,15 @@ static int plane_set(int fd, uint32_t plane, uint32_t crtc, uint32_t fb)
 		uint32_t id = find_prop(fd, plane, names[i]);
 
 		if (!id || drmModeAtomicAddProperty(req, plane, id, on[i]) < 0) {
+			drmModeAtomicFree(req);
+			return -1;
+		}
+	}
+	if (rotation) {
+		/* callers reset it to ROTATE_0 before a disable or restore */
+		uint32_t id = find_prop(fd, plane, "rotation");
+
+		if (!id || drmModeAtomicAddProperty(req, plane, id, rotation) < 0) {
 			drmModeAtomicFree(req);
 			return -1;
 		}
@@ -428,6 +467,8 @@ static int run_primary(int fd, uint32_t crtc, drmModePlaneRes *pres, unsigned dw
 restore:
 	unlink(LAYOUT);
 	/* The console's framebuffer back; failing that, closing restores it. */
+	if (rotation)
+		rotation = DRM_MODE_ROTATE_0;
 	if (old_fb && plane_set(fd, plane, crtc, old_fb))
 		fprintf(stderr, "could not put fb %u back (%s); the console restores "
 			"on exit\n", old_fb, strerror(errno));
@@ -481,6 +522,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	unlink(LAYOUT);
+	rotation = parse_rotation(getenv("ROTATION"));
 
 	for (i = 0; i < NREG; i++) {
 		struct region *rg = &regions[i];
@@ -569,16 +611,43 @@ int main(int argc, char **argv)
 	}
 	munmap(p, create.size);
 
-	handles[0] = handles[1] = create.handle;
-	pitches[0] = pitches[1] = PANEL_W;
-	offsets[1] = regions[0].c_off;
-	if (drmModeAddFB2(fd, PANEL_W, PANEL_H, DRM_FORMAT_NV12, handles,
-			  pitches, offsets, &fb, 0)) {
-		perror("AddFB2 NV12");
-		goto out;
+	{
+		/* COMMIT=REGION@X,Y: that region as its own placed framebuffer */
+		const struct region *cr = &regions[0];
+		const char *cm = getenv("COMMIT");
+
+		if (cm && *cm) {
+			char name[16];
+			unsigned x, y;
+
+			if (sscanf(cm, "%15[^@]@%u,%u", name, &x, &y) != 3) {
+				fprintf(stderr, "COMMIT=REGION@X,Y\n");
+				goto out;
+			}
+			for (i = 0; i < NREG && strcmp(regions[i].name, name); i++)
+				;
+			if (i == NREG) {
+				fprintf(stderr, "no region %s\n", name);
+				goto out;
+			}
+			cr = &regions[i];
+			rect_x = x;
+			rect_y = y;
+			rect_w = cr->w;
+			rect_h = cr->h;
+		}
+		handles[0] = handles[1] = create.handle;
+		pitches[0] = pitches[1] = cr->stride;
+		offsets[0] = cr->y_off;
+		offsets[1] = cr->c_off;
+		if (drmModeAddFB2(fd, cr->w, cr->h, DRM_FORMAT_NV12, handles,
+				  pitches, offsets, &fb, 0)) {
+			perror("AddFB2 NV12");
+			goto out;
+		}
+		printf("WATCH THE PANEL: %s %ux%u control card at (%u,%u) on plane %u "
+		       "for %us\n", cr->name, cr->w, cr->h, rect_x, rect_y, plane, dwell);
 	}
-	printf("WATCH THE PANEL: native 1280x720 control card on plane %u for %us\n",
-	       plane, dwell);
 	fflush(stdout);
 	if (plane_set(fd, plane, crtc, fb)) {
 		perror("atomic enable");
@@ -591,6 +660,11 @@ int main(int argc, char **argv)
 	}
 	printf("AFBD ctrl 0x%08x  slot Y 0x%08x  slot C 0x%08x  (C - Y = 0x%x)\n",
 	       ctrl, sy, sc, sc - sy);
+	if (rect_w != PANEL_W || rect_h != PANEL_H) {
+		printf("(a placed region: no layout for letterbox-apply)\n");
+		fflush(stdout);
+		goto hold;
+	}
 	if (sc - sy != regions[0].c_off) {
 		fprintf(stderr, "slot C - slot Y = 0x%x, expected 0x%zx: refusing to "
 			"publish a layout the executor could misuse\n",
@@ -603,7 +677,7 @@ int main(int argc, char **argv)
 	}
 	printf("layout in " LAYOUT "\n");
 	fflush(stdout);
-
+hold:
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
 	signal(SIGHUP, on_signal);
@@ -612,6 +686,8 @@ int main(int argc, char **argv)
 	rc = 0;
 off:
 	unlink(LAYOUT);
+	if (rotation)
+		rotation = DRM_MODE_ROTATE_0;
 	if (plane_set(fd, plane, 0, 0))
 		fprintf(stderr, "atomic disable failed: %s\n", strerror(errno));
 	else
