@@ -44,9 +44,21 @@
 >   ONE panel frame per transition, and that frame is the source-off one,
 >   which shows **green**. The other ~2 frames lost per transition (2.48
 >   in the stress) are GStreamer renegotiation: the decoder alone loses 0.
-> - **Open:** turn the green off frame black (the vblender border overlay
->   as a full-panel cover; `geometry-flash-test.sh` tests it from userspace
->   on the glass), the mirror design (below), and the 2-hour plane-ve scope
+> - **Green flash, panel run 1 (2026-10-06, 120 fps handheld,
+>   `local/lcd-photos/test_97`):** the green is NOT the source-off interval
+>   (the old picture stays up through it). It is the first frame after the
+>   source is re-enabled, solid green inside the NEW picture window with the
+>   new bars already around it. It appears on changes into letterboxed or
+>   pillarboxed geometries, never into full-panel ones (native, 2x 640x360).
+>   A full-panel cover written from userspace before the commit changed
+>   nothing: the border overlay latches on vsync, and the driver's own
+>   border write replaced the cover first.
+> - **Kernel 0165** (built and installed 2026-10-06, not yet booted): the
+>   driver latches a full-panel cover with the source enable and writes the
+>   real borders after it. `transition_cover` (0 off, 1 top = 720, 2 left
+>   = 1280) lets one panel look pick the encoding:
+>   `geometry-flash-test.sh run` (MODE=kernel).
+> - **Open:** that look, then fix the encoding; the 2-hour plane-ve scope
 >   soak (overnight queue).
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
 >

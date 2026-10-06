@@ -1,0 +1,162 @@
+drm: h713: cover the first frame after a geometry change
+
+Letterbox Phase 4 panel run (2026-10-06, 120 fps handheld video): at every
+change of picture size or position, one frame shows the NEW picture window
+solid green, with the new bars already around it. The old picture stays up
+while the source is off; the green is the first frame after the source is
+re-enabled, which has fetched nothing yet. A full-panel cover written from
+userspace before the commit had no effect, because the border overlay
+latches on vsync and the driver's own border write replaced it first.
+
+So the window layer is programmed with vblender borders that cover the whole
+panel. They latch together with the source enable, which makes that frame
+black instead of green, and the real borders are written as soon as the enable
+has latched, ready for the next frame (the first with a picture). The
+native restore path is not covered.
+
+The cover encoding (top border 720 lines, or left border 1280) has not been
+seen on the panel yet: transition_cover (0644) selects it, 0 restores the
+green, so a single boot can compare all three. It becomes fixed once a panel
+look picks one.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -497,6 +497,36 @@
+ 	return true;
+ }
+ 
++/*
++ * The first frame after a geometry change is solid green inside the new
++ * picture window: the bars around it are already the new ones, and the
++ * source, just re-enabled, has fetched nothing yet (letterbox Phase 4 panel
++ * run, 2026-10-06; the old picture stays up while the source is off). The
++ * border overlay latches on vsync, so the window layer is programmed with
++ * borders covering the whole panel -- they latch with the source enable, and
++ * that frame is black -- and the real borders are written once the enable
++ * has latched, for the next frame, the first with a picture.
++ *
++ * EXPERIMENT (one panel look picks the encoding, then this becomes fixed):
++ * 0 = no cover (green), 1 = top border 720 lines, 2 = left border 1280.
++ */
++static int transition_cover = 1;
++module_param(transition_cover, int, 0644);
++MODULE_PARM_DESC(transition_cover,
++		 "geometry-change cover: 0 off, 1 top=720, 2 left=1280");
++
++static u32 h713_lb_cover(u16 off, u32 word, int how)
++{
++	u32 top = how == 1 ? 720 : 0, left = how == 2 ? 1280 : 0;
++
++	if (off == 0x000)
++		return (word & ~(GENMASK(11, 0) | GENMASK(15, 12) |
++				 GENMASK(27, 16) | GENMASK(31, 28))) |
++		       (top & 0xf) << 12 | left << 16 | ((top >> 4) & 0xf) << 28;
++	return (word & ~(GENMASK(11, 0) | GENMASK(15, 12))) |
++	       ((top >> 8) & 0xf) << 12 | BIT(30);
++}
++
+ static void h713_lb_rmw(void __iomem *reg, u32 mask, u32 val)
+ {
+ 	writel((readl(reg) & ~mask) | val, reg);
+@@ -507,7 +537,8 @@
+  * order and inside its NR hold/release bracket. The video source must be
+  * stopped; AFBD's own geometry is the caller's.
+  */
+-static void h713_lb_program(struct h713_afbd *h, const struct h713_geom *g)
++static void h713_lb_program(struct h713_afbd *h, const struct h713_geom *g,
++			    int cover)
+ {
+ 	u32 words[H713_LB_MAX_REGS];
+ 	unsigned int i;
+@@ -528,16 +559,34 @@
+ 	h713_lb_rmw(h->comp_regs + NR_HOLD_B, BIT(27), 0);
+ 	h713_lb_rmw(h->comp_regs + NR_RELEASED, GENMASK(15, 0), 1);
+ 	h713_lb_rmw(h->comp_regs + NR_ENABLE, BIT(25), BIT(25));
+-	for (i = 0; i < h->lb_nregs; i++)
+-		if (h->lb_blk[i] != LB_COMP)
+-			writel(words[i], h713_lb_base(h, h->lb_blk[i]) +
+-					 h->lb_off[i]);
++	for (i = 0; i < h->lb_nregs; i++) {
++		u32 w = words[i];
++
++		if (h->lb_blk[i] == LB_COMP)
++			continue;
++		if (cover && h->lb_blk[i] == LB_VBLEND)
++			w = h713_lb_cover(h->lb_off[i], w, cover);
++		writel(w, h713_lb_base(h, h->lb_blk[i]) + h->lb_off[i]);
++	}
+ 
+ 	h->hw_geom = *g;
+ 	drm_dbg_kms(&h->drm, "video picture %ux%u shown %ux%u at (%u,%u)\n",
+ 		    g->w, g->h, g->ow, g->oh, g->dx, g->dy);
+ }
+ 
++/* The real borders for @g, after a covered h713_lb_program(). */
++static void h713_lb_borders(struct h713_afbd *h, const struct h713_geom *g)
++{
++	u32 words[H713_LB_MAX_REGS];
++	unsigned int i;
++
++	if (h713_lb_words(h, g, words))
++		return;
++	for (i = 0; i < h->lb_nregs; i++)
++		if (h->lb_blk[i] == LB_VBLEND)
++			writel(words[i], h->vblend_regs + h->lb_off[i]);
++}
++
+ static bool h713_geom_eq(const struct h713_geom *a, const struct h713_geom *b)
+ {
+ 	return a->w == b->w && a->h == b->h && a->dx == b->dx && a->dy == b->dy &&
+@@ -731,7 +780,7 @@
+ 
+ 	/* Hand the window layer back exactly as probe found it. */
+ 	if (h->lb_ok && !h713_geom_eq(&h->hw_geom, &h->native))
+-		h713_lb_program(h, &h->native);
++		h713_lb_program(h, &h->native, 0);
+ 
+ 	/* Restore and commit RGB before selecting it downstream. */
+ 	writel(h->rgb_ctrl_active, h->regs + AFBD_CTRL);
+@@ -878,6 +927,7 @@
+ 	struct h713_afbd *h = to_h713(plane->dev);
+ 	struct h713_geom g;
+ 	bool regeom;
++	int cover = 0;
+ 	dma_addr_t y, c;
+ 	unsigned int i;
+ 
+@@ -889,8 +939,9 @@
+ 	/*
+ 	 * A new picture size or position reprograms the window layer, which
+ 	 * must not happen under a running source -- the validated sequence
+-	 * (tools/display/letterbox-apply.py) stops it first. The panel shows
+-	 * green for the ~30 ms it is off.
++	 * (tools/display/letterbox-apply.py) stops it first. The commit takes
++	 * two vsyncs instead of one; the old picture stays up while the source
++	 * is off, and the frame after it is covered (h713_lb_cover).
+ 	 */
+ 	regeom = h->lb_ok && !h713_geom_eq(&g, &h->hw_geom);
+ 	if (regeom && h->video_active) {
+@@ -953,8 +1004,12 @@
+ 	writel(0, h->regs + AFBD_VIDEO_AUX_INFO);
+ 	writel(1, h->regs + AFBD_VIDEO_DIRTY);
+ 
+-	if (regeom)
+-		h713_lb_program(h, &g);
++	if (regeom) {
++		cover = READ_ONCE(transition_cover);
++		if (cover < 0 || cover > 2)
++			cover = 0;
++		h713_lb_program(h, &g, cover);
++	}
+ 
+ 	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
+ 	writel(H713_VIDEO_CTRL_ACTIVE |
+@@ -962,6 +1017,8 @@
+ 	       h->regs + AFBD_VIDEO_CTRL);
+ 	writel(1, h->regs + AFBD_VIDEO_READY);
+ 	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
++	if (cover)
++		h713_lb_borders(h, &g);
+ 	writel(H713_VIDEO_SELECTOR, h->lvds_regs + 0x06c);
+ 	h->video_active = true;
+ }

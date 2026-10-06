@@ -13,10 +13,23 @@
 # performs with the video source off for exactly one panel frame (33.5 ms
 # commit against 16.7 for a flip, measured 2026-10-05).
 #
-#   W1  --cover none    today's driver: the off frame is expected GREEN
+# MODE=user (run 1, kernel 0164): the cover is written from userspace
+#   W1  --cover none    the driver as it was
 #   W2  --cover top     border overlay covers the panel (top = 720) before
 #                       the commit
 #   W3  --cover left    the same with left = 1280
+#   RESULT 2026-10-06: W1-W3 identical. The green is the first frame AFTER
+#   the source is re-enabled, inside the new picture window with the new
+#   bars around it; the overlay latches on vsync, so a cover written before
+#   the commit is replaced before it can show. -> kernel 0165.
+#
+# MODE=kernel (default, kernel 0165): the driver covers that frame itself;
+# its transition_cover parameter picks the encoding per window
+#   W1  transition_cover=0   positive control: green expected, as before
+#   W2  transition_cover=1   top border 720 lines
+#   W3  transition_cover=2   left border 1280
+#
+# Both modes then play, with the cover the kernel default leaves (1):
 #   W4  vp9-rc-30.ivf   a decoded stream: 640x360 -> 1280x720 -> 352x288 -> 640x360
 #                       (2 s, 2 s, 1 s, 2 s) through h713-play / stock kmssink
 #   W5  r01             HEVC 640x480 -> 320x240 -> 640x480, 1 s each
@@ -37,12 +50,15 @@ GAP_S=${GAP_S:-5}
 CYCLES=${CYCLES:-3}
 HOLD=${HOLD:-60}
 VT=/root/video-test
+MODE=${MODE:-kernel}
+PARAM=/sys/module/sun50i_h713_afbd/parameters/transition_cover
 
 case ${1:-} in
 prep)
 	scp -q "$HERE/kms-geometry-flip.c" "root@$BOARD:/root/"
 	$SSH 'cc -O2 -Wall -o /root/kms-geometry-flip /root/kms-geometry-flip.c $(pkg-config --cflags --libs libdrm)'
 	$SSH "ls $VT/vp9-rc-30.ivf $VT/r01-resolution-change.h265 /root/h713-play >/dev/null"
+	[ "$MODE" = user ] || $SSH "cat $PARAM"
 	echo "prep ok"
 	;;
 plan)
@@ -54,18 +70,25 @@ plan)
 	echo "total ~$(( LEAD_S + 3 * w + 10 + 4 * GAP_S ))s"
 	;;
 run)
+	if [ "$MODE" = user ]; then
+		w1="--cover none" w2="--cover top" w3="--cover left" p1=: p2=: p3=: p4=:
+	else
+		w1="" w2="" w3=""
+		p1="echo 0 > $PARAM" p2="echo 1 > $PARAM" p3="echo 2 > $PARAM" p4="echo 1 > $PARAM"
+	fi
 	# Detached on the board, so a dropped ssh cannot strand the plane.
 	$SSH "cat > /tmp/geomflash.sh" <<EOF
 #!/bin/sh
 exec > /tmp/geomflash.log 2>&1
 dmesg -C
 sleep $LEAD_S
-echo "W1 \$(date +%T.%N)"; /root/kms-geometry-flip --cover none $CYCLES $HOLD | tail -1
+$p1; echo "W1 \$(date +%T.%N) $MODE"; /root/kms-geometry-flip $w1 $CYCLES $HOLD | tail -1
 sleep $GAP_S
-echo "W2 \$(date +%T.%N)"; /root/kms-geometry-flip --cover top $CYCLES $HOLD | tail -1
+$p2; echo "W2 \$(date +%T.%N)"; /root/kms-geometry-flip $w2 $CYCLES $HOLD | tail -1
 sleep $GAP_S
-echo "W3 \$(date +%T.%N)"; /root/kms-geometry-flip --cover left $CYCLES $HOLD | tail -1
+$p3; echo "W3 \$(date +%T.%N)"; /root/kms-geometry-flip $w3 $CYCLES $HOLD | tail -1
 sleep $GAP_S
+$p4
 echo "W4 \$(date +%T.%N)"; /root/h713-play --route=plane $VT/vp9-rc-30.ivf | tail -2
 sleep $GAP_S
 echo "W5 \$(date +%T.%N)"; /root/h713-play --route=plane $VT/r01-resolution-change.h265 | tail -2
