@@ -59,7 +59,21 @@
 # card scrolls); comp+858 y moves the window END (b3: end 555 -> 535).
 # BISECT_SET=3: line counts -- b1 chan-B LineNumber H+dy, b2/b3 comp+858
 # [31:16] = H / 720+dy, b4 AFBD budgets H+dy.
-#   letterbox-test.sh show  z|a|b|c each recipe register now: old / NEW / ???
+#   letterbox-test.sh phase3        like `all`, for Phase 3 (proc MAGNIFIES a small
+#                                   card up to its destination): z then
+#                                   s1 s2 s3 s4 s4h s5 (below); `plan phase3` dry-runs
+#
+# PHASE 3 STEPS (source in memory -> destination on the panel):
+#   s1   640x360 -> 1280x720 at (0,0)     2x both axes, whole panel
+#   s2   852x480 -> 1278x720 at (0,0)     1.5x, non-integer, stride 864
+#   s3   720x576 ->  960x720 at (160,0)   unequal ratios (1.333 H, 1.25 V) +
+#                                         pillarbox: circles become slightly TALL
+#   s4   352x288 ->  880x720 at (200,0)   2.5x + pillarbox, 200-px bars
+#   s4h  s4 with proc+038[31:16] = 1280-880+16 = 416: the firmware writes
+#        out.w < X ? X - out.w + 16 : 16 there, X unknown (node+0x90); live 16.
+#        Same picture as s4 means the field does not matter here.
+#   s5   640x360 ->  960x540 at (160,90)  magnified AND placed on both axes
+#   letterbox-test.sh show  z|a|b|c|s1..s5 each recipe register now: old / NEW / ???
 #   letterbox-test.sh restore       emergency: put back /tmp/letterbox-saved.json
 #   letterbox-test.sh off           release the plane (console returns)
 #
@@ -96,17 +110,28 @@ LEAD_S=${LEAD_S:-30}
 GAP_S=${GAP_S:-5}
 TAIL_S=${TAIL_S:-5}
 SEQUENCE="z a b c"
+SEQUENCE_P3="z s1 s2 s3 s4 s4h s5"
 FRESH=$OUT/native-card.txt
 
 say(){ printf '%s\n' "$*"; }
 
 step_params(){
+	OUTSZ=; VARIANT=
+	case "${1:-}" in
+	s1)  SIZE=640x360; OUTSZ=1280x720; AT=0,0;    PITCH=640; REGION=s640; return ;;
+	s2)  SIZE=852x480; OUTSZ=1278x720; AT=0,0;    PITCH=864; REGION=c;    return ;;
+	s3)  SIZE=720x576; OUTSZ=960x720;  AT=160,0;  PITCH=720; REGION=s720; return ;;
+	s4)  SIZE=352x288; OUTSZ=880x720;  AT=200,0;  PITCH=352; REGION=s352; return ;;
+	s4h) SIZE=352x288; OUTSZ=880x720;  AT=200,0;  PITCH=352; REGION=s352
+	     VARIANT="proc 0x038 16 16 416"; return ;;
+	s5)  SIZE=640x360; OUTSZ=960x540;  AT=160,90; PITCH=640; REGION=s640; return ;;
+	esac
 	case "${1:-}" in
 	z) SIZE=1280x720; AT=0,0;     PITCH=1280; REGION=native ;;
 	a) SIZE=1280x536; AT=0,0;     PITCH=1280; REGION=ab ;;
 	b) SIZE=1280x536; AT=0,92;    PITCH=1280; REGION=ab ;;
 	c) SIZE=852x480;  AT=214,120; PITCH=864;  REGION=c  ;;
-	*) say "step must be z, a, b or c"; exit 2 ;;
+	*) say "step must be z, a, b, c or s1..s5, s4h"; exit 2 ;;
 	esac
 }
 
@@ -128,8 +153,25 @@ recipe_json(){	# step -> $OUT/step-<x>.json, from the fresh baseline
 	step_params "$1"
 	[ -s "$FRESH" ] || { say "no fresh baseline: run 'card' first"; exit 1; }
 	python3 "$HERE/letterbox-recipe.py" --live "$FRESH" "$SIZE" "$AT" \
-		--pitch "$PITCH" --json "$OUT/step-$1.json" > "$OUT/step-$1.recipe.txt" ||
+		--pitch "$PITCH" ${OUTSZ:+--out "$OUTSZ"} --json "$OUT/step-$1.json" \
+		> "$OUT/step-$1.recipe.txt" ||
 		{ cat "$OUT/step-$1.recipe.txt"; say "recipe refused"; exit 1; }
+	if [ -n "$VARIANT" ]; then	# one field changed on top of the recipe
+		python3 - "$OUT/step-$1.json" $VARIANT <<-'EOF' || exit 1
+		import json, sys
+		path, blk, off, lsb, width, val = sys.argv[1], sys.argv[2], *map(lambda v: int(v, 0), sys.argv[3:])
+		doc = json.load(open(path))
+		for r in doc["regs"]:
+		    if r["block"] == blk and r["off"] == off:
+		        m = ((1 << width) - 1) << lsb
+		        r["new"] = (r["new"] & ~m) | (val << lsb)
+		        r["notes"] = r["notes"] + [f"VARIANT [{lsb + width - 1}:{lsb}]={val}"]
+		        break
+		else:
+		    sys.exit(f"{blk}+{off:03x} not in the recipe")
+		json.dump(doc, open(path, "w"), indent=1)
+		EOF
+	fi
 	$SCP "$OUT/step-$1.json" "root@$BOARD:$R/step-$1.json" || exit 1
 }
 
@@ -209,7 +251,7 @@ bisect_json(){	# step b's recipe + one-change variants, and their sequence file
 
 sequence_json(){	# recipes for every step + the sequence file, on the board
 	local st items=
-	for st in $SEQUENCE; do
+	for st in ${1:-$SEQUENCE}; do
 		recipe_json "$st"
 		items="$items${items:+,}{\"name\": \"$st\", \"recipe\": \"$R/step-$st.json\", \"region\": \"$REGION\"}"
 	done
@@ -274,8 +316,8 @@ plan)
 			grep -E 'step |preflight|REFUSED|SEQUENCE|dry run|BISECT'
 		exit 0
 	fi
-	if [ "${2:-}" = all ]; then
-		sequence_json
+	if [ "${2:-}" = all ] || [ "${2:-}" = phase3 ]; then
+		if [ "$2" = phase3 ]; then sequence_json "$SEQUENCE_P3"; else sequence_json; fi
 		check_gates || { say "REFUSING: gates are not satisfied. Run 'card' first."; exit 1; }
 		$SSH "python3 $R/letterbox-apply.py --sequence $R/sequence.json --dry-run" |
 			grep -E 'step |preflight|REFUSED|SEQUENCE|dry run'
@@ -289,7 +331,7 @@ plan)
 step)
 	recipe_json "${2:-}"
 	check_gates || { say "REFUSING: gates are not satisfied. Run 'card' first."; exit 1; }
-	say "== step $2: $SIZE at ($AT) stride $PITCH; window opens in ${PRE_S}s, holds ${HOLD_S}s =="
+	say "== step $2: $SIZE${OUTSZ:+ -> $OUTSZ} at ($AT) stride $PITCH; window opens in ${PRE_S}s, holds ${HOLD_S}s =="
 	$SSH "rm -f /tmp/letterbox-apply.log /tmp/letterbox-apply.pid
 	      setsid python3 $R/letterbox-apply.py --recipe $R/step-$2.json --region $REGION \
 	          --pre $PRE_S --hold $HOLD_S > /tmp/letterbox-apply.log 2>&1 < /dev/null &
@@ -308,12 +350,15 @@ step)
 	fi
 	;;
 
-all|bisect)
+all|bisect|phase3)
 	mode=$1
 	bring_card || exit 1
 	if [ "$mode" = bisect ]; then
 		say "== bisect: step b x5 variants, one go =="
 		bisect_json; seqfile=$R/sequence-bisect.json; n=5
+	elif [ "$mode" = phase3 ]; then
+		say "== phase 3, one go: $SEQUENCE_P3 =="
+		sequence_json "$SEQUENCE_P3"; seqfile=$R/sequence.json; n=7
 	else
 		say "== all steps, one go: $SEQUENCE =="
 		sequence_json; seqfile=$R/sequence.json; n=4

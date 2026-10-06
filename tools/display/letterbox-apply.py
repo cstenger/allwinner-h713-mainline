@@ -270,7 +270,10 @@ def run_step(mem, lay, rec, region, hold, pre, dry, name=""):
     global RESTORE_FAILED
     mem.failures = []
     pic = rec["picture"]
-    log(f"step {name}: {pic['w']}x{pic['h']} stride {pic['stride']} at "
+    shown = (pic.get("ow", pic["w"]), pic.get("oh", pic["h"]))
+    log(f"step {name}: {pic['w']}x{pic['h']} stride {pic['stride']}"
+        + (f" -> {shown[0]}x{shown[1]}" if shown != (pic["w"], pic["h"]) else "")
+        + " at "
         f"({pic['dx']},{pic['dy']}), region {region}, hold {hold:g}s"
         + ("  [DRY RUN]" if dry else ""))
 
@@ -338,7 +341,7 @@ def run_step(mem, lay, rec, region, hold, pre, dry, name=""):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--recipe")
-    ap.add_argument("--region", help="card region from the layout: native, ab or c")
+    ap.add_argument("--region", help="card region from the layout: native, ab, c, s640, s352 or s720")
     ap.add_argument("--sequence", metavar="FILE",
                     help='JSON list of {"name", "recipe", "region"}, run in order; '
                          "stops at the first refusal, failure or interruption")

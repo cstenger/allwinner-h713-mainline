@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Every display register a letterboxed (unscaled) video picture needs.
+"""Every display register a letterboxed video picture needs, scaled or not.
 Runs on the host. Reads nothing from hardware: it takes a baseline dump.
 
     letterbox-recipe.py --live native.txt 852x480 214,120
     letterbox-recipe.py --live native.txt 1280x536 0,92 --fmt nv12 --pitch 1280
+    letterbox-recipe.py --live native.txt 352x288 200,0 --out 880x720
     letterbox-recipe.py --live native.txt --self-test
 
 `native.txt` is tools/display/letterbox-baseline.py run while 1280x720 video
@@ -23,8 +24,20 @@ HOW A VALUE IS COMPUTED. Two kinds of field:
        derived. So these are `live + f(new) - f(native)`: the dependency on
        W/H/dx/dy comes from the firmware, the constant comes from hardware.
 
-Scope: proc at unity (no magnification) -- Phases 1 and 2 of
-docs/letterbox-plan.md. Upscaling (Phase 3) adds proc ratios and phases.
+SOURCE AND DESTINATION. The picture is W x H in memory (the source) and
+OW x OH on the panel (the destination, default = the source). Everything
+upstream of proc -- AFBD, the NR line buffers and fetch window, the route's
+source window -- takes the SOURCE size; proc magnifies, and its output, the
+route's picture and output windows, the panel's video window and the border
+overlay take the DESTINATION size. Positions (dx, dy) are panel positions for
+both: NR's output origin and proc's stream position are the same timing
+point. This is the firmware's own split: its one scaled log (720x480 ->
+1280x720, wce-elog-bringup-2026-09-04.txt) has NR and proc m_in_win at
+720x480, proc m_out_win and pic_win at 1280x720, all at (49, 22).
+
+Proc only MAGNIFIES (ProcWinNode::CalcScaleRatio, measured 2026-09-11), so
+OW >= W and OH >= H; 4x per axis is the largest ratio measured.
+Phases 1-2 of docs/letterbox-plan.md are the OW = W case; Phase 3 the rest.
 
 Exit status 1 if a field cannot be expressed (e.g. off-panel, odd size).
 """
@@ -59,16 +72,57 @@ def rowbyte(w):
     return math.ceil(w / 20)
 
 
-class P:
-    """Picture geometry: source W x H placed unscaled at panel (dx, dy)."""
+U = 0x10000     # proc unity, the firmware constant at 0x8b206dac
 
-    def __init__(self, w, h, dx, dy, fmt="nv12", pitch=None):
+
+class P:
+    """Picture geometry: source W x H, shown as OW x OH at panel (dx, dy)."""
+
+    def __init__(self, w, h, dx, dy, fmt="nv12", pitch=None, ow=None, oh=None):
         self.w, self.h, self.dx, self.dy, self.fmt = w, h, dx, dy, fmt
+        self.ow = ow if ow is not None else w
+        self.oh = oh if oh is not None else h
         cpp = 2 if fmt == "p010" else 1
         self.pitch = pitch if pitch is not None else w * cpp
         self.stride = self.pitch // cpp          # AFBD strides count samples
         self.ybudget = h * cpp                   # fetch lines (P010 doubles,
         self.cbudget = h // 2 * cpp              # driver-measured 2026-09-30)
+
+    # ProcWinNode::CalcScaleRatio (0x8b1a5f98): in * unity / out, truncated,
+    # for in < out; unity when equal.
+    @property
+    def ratio_h(self):
+        return self.w * U // self.ow
+
+    @property
+    def ratio_v(self):
+        return self.h * U // self.oh
+
+    # ProcWinNode::CalcWindow (0x8b1a63d0..0x8b1a6430, 0x8b1a6648): fractional
+    # phases (unity + ratio) >> 2 (H) and >> 1 (V); integer phases start at
+    # H=3 / V=2, and an axis whose fraction crosses its threshold (only unity
+    # does, for a magnifying ratio) advances to 4 / 3 with V wrapping to 0.
+    # Reproduces the live native 0x43010000 / 0x8000 / 0.
+    def _phase(self):
+        ph, pv = (U + self.ratio_h) >> 2, (U + self.ratio_v) >> 1
+        ih, iv = 3, 2
+        if ph >= 0x8000:
+            ih += 1
+            if ph >= 0x10000:
+                ph = 0
+        if pv >= 0x10000:
+            pv, iv = 0, iv + 1
+        return ph, pv, ih, iv
+
+    phase_h = property(lambda self: self._phase()[0])
+    phase_v = property(lambda self: self._phase()[1])
+    int_h = property(lambda self: self._phase()[2])
+    int_v = property(lambda self: self._phase()[3])
+
+    @property
+    def bypass(self):
+        # WriteReg 0x8b1a6730: bypass iff both ratios are unity
+        return int(self.ratio_h == U and self.ratio_v == U)
 
 
 NATIVE = P(PANEL_W, PANEL_H, 0, 0)
@@ -132,35 +186,52 @@ FIELDS = [
     ("route", 0x104, 16, 16, "abs", lambda p: even(p.w), "source win w"),
     ("route", 0x108, 16, 16, "abs", lambda p: even(p.h), "source win h"),
     ("route", 0x11c, 16, 16, "abs", lambda p: p.h, "source h"),
-    ("route", 0x124, 16, 16, "abs", lambda p: p.w, "picture win w"),
-    ("route", 0x128, 16, 16, "abs", lambda p: p.h, "picture win h"),
-    ("route", 0xd40, 16, 16, "abs", lambda p: p.w, "out w"),
-    ("route", 0xd44, 16, 16, "abs", lambda p: p.h, "out h"),
+    # pic_win {0, s3[8], 0, s3[0xc]} and the out window are the DESTINATION
+    # (node+0x9c / +0x7c, 0x8b1a6b50 / 0x8b1a6bb4; the 720x480 log prints
+    # pic_win 1280x720). Retired 0111 wrote the source size here.
+    ("route", 0x124, 16, 16, "abs", lambda p: p.ow, "picture win w (dst)"),
+    ("route", 0x128, 16, 16, "abs", lambda p: p.oh, "picture win h (dst)"),
+    ("route", 0xd40, 16, 16, "abs", lambda p: p.ow, "out w (dst)"),
+    ("route", 0xd44, 16, 16, "abs", lambda p: p.oh, "out h (dst)"),
 
-    # --- proc instance 0 (0x05180000) at unity, 0x8b1a66d0 ---
-    ("proc", 0x034, 16, 16, "abs", lambda p: p.w, "in_win.w"),
-    ("proc", 0x034, 0, 16, "abs", lambda p: p.h, "in_win.h"),
-    ("proc", 0x02c, 0, 16, "abs", lambda p: p.w, "out_win.w"),
+    # --- proc instance 0 (0x05180000), WriteReg subroutine 0x8b1a66d0 ---
+    ("proc", 0x000, 0, 16, "abs", lambda p: p.phase_h, "H phase"),
+    ("proc", 0x008, 0, 22, "abs", lambda p: p.ratio_h, "H ratio (in << 16) / out"),
+    ("proc", 0x008, 24, 3, "abs", lambda p: p.int_v, "V integer phase"),
+    ("proc", 0x008, 28, 3, "abs", lambda p: p.int_h, "H integer phase"),
+    ("proc", 0x014, 27, 1, "abs", lambda p: p.bypass, "bypass iff both ratios unity"),
+    ("proc", 0x014, 28, 4, "abs", lambda p: 0, "cleared by WriteReg"),
+    ("proc", 0x034, 16, 16, "abs", lambda p: p.w, "in_win.w (src)"),
+    ("proc", 0x034, 0, 16, "abs", lambda p: p.h, "in_win.h (src)"),
+    ("proc", 0x02c, 0, 16, "abs", lambda p: p.ow, "out_win.w (dst)"),
     ("proc", 0x02c, 16, 16, "rel", lambda p: p.dx, "stream.x + 4"),
-    ("proc", 0x030, 0, 16, "abs", lambda p: p.h, "out_win.h"),
-    ("proc", 0x040, 0, 16, "abs", lambda p: p.w, "out_win.w again"),
+    ("proc", 0x030, 0, 16, "abs", lambda p: p.oh, "out_win.h (dst)"),
+    ("proc", 0x030, 18, 2, "abs", lambda p: 0, "cleared by WriteReg"),
+    ("proc", 0x038, 0, 16, "abs", lambda p: p.phase_v, "V phase"),
+    # 0x038[31:16] is NOT modelled: the firmware writes
+    # out.w < node+0x90 ? node+0x90 - out.w + 16 : 16, and node+0x90 is never
+    # set in ProcWinNode (unknown). Live reads 16; letterbox-test.sh phase3
+    # tries the 1280 reading as a variant.
+    ("proc", 0x03c, 0, 22, "abs", lambda p: p.ratio_v, "V ratio (in << 16) / out"),
+    ("proc", 0x040, 0, 16, "abs", lambda p: p.ow, "out_win.w again (dst)"),
     ("proc", 0x044, 0, 16, "rel", lambda p: p.dx, "stream.x"),
-    ("proc", 0x050, 0, 16, "abs", lambda p: p.h, "max(in_h, out_h)"),
+    # line-enable window [start, max(in_h, out_h)] (0x8b1a6470; grey streak)
+    ("proc", 0x050, 0, 16, "abs", lambda p: max(p.h, p.oh), "max(in_h, out_h)"),
     ("proc", 0x050, 16, 16, "rel", lambda p: p.dy, "vs_delay+1+vde_start+mb_420"),
 
     # --- panel (0x051c0000), PanelWinNode::WriteReg 0x8b1a5a38 ---
     # program window 0xbc/0xc0 and crtc 0xfe00/04 stay: stream.x - out.x
-    ("lvds", 0x03c, 16, 16, "abs", lambda p: p.w, "video_win_2.w"),
-    ("lvds", 0x040, 16, 16, "abs", lambda p: p.h, "video_win_2.h"),
-    ("lvds", 0x0a4, 16, 16, "abs", lambda p: p.w, "video_win_2.w"),
-    ("lvds", 0x0a8, 16, 16, "abs", lambda p: p.h, "video_win_2.h"),
+    ("lvds", 0x03c, 16, 16, "abs", lambda p: p.ow, "video_win_2.w (dst)"),
+    ("lvds", 0x040, 16, 16, "abs", lambda p: p.oh, "video_win_2.h (dst)"),
+    ("lvds", 0x0a4, 16, 16, "abs", lambda p: p.ow, "video_win_2.w (dst)"),
+    ("lvds", 0x0a8, 16, 16, "abs", lambda p: p.oh, "video_win_2.h (dst)"),
 
     # --- border overlay (vblender 0x05200000), WriteBorderOverlay1 0x8b1a55d8 ---
-    ("vblend", 0x000, 0, 12, "abs", lambda p: PANEL_W - p.dx - p.w, "right"),
+    ("vblend", 0x000, 0, 12, "abs", lambda p: PANEL_W - p.dx - p.ow, "right"),
     ("vblend", 0x000, 16, 12, "abs", lambda p: p.dx, "left"),
     ("vblend", 0x000, 12, 4, "abs", lambda p: p.dy & 0xf, "top[3:0]"),
     ("vblend", 0x000, 28, 4, "abs", lambda p: (p.dy >> 4) & 0xf, "top[7:4]"),
-    ("vblend", 0x004, 0, 12, "abs", lambda p: PANEL_H - p.dy - p.h, "bottom"),
+    ("vblend", 0x004, 0, 12, "abs", lambda p: PANEL_H - p.dy - p.oh, "bottom"),
     ("vblend", 0x004, 12, 4, "abs", lambda p: (p.dy >> 8) & 0xf, "top[11:8]"),
     ("vblend", 0x004, 30, 1, "abs", lambda p: 1, "border enable"),
 ]
@@ -182,7 +253,14 @@ def check(p):
     errs = []
     if p.w % 2 or p.h % 2:
         errs.append("width and height must be even (4:2:0)")
-    if p.dx < 0 or p.dy < 0 or p.dx + p.w > PANEL_W or p.dy + p.h > PANEL_H:
+    if p.ow % 2 or p.oh % 2:
+        errs.append("destination width and height must be even")
+    if p.ow < p.w or p.oh < p.h:
+        errs.append("proc only magnifies: the destination cannot be smaller "
+                    "than the source (the VE scales down)")
+    if p.ow > 4 * p.w or p.oh > 4 * p.h:
+        errs.append("more than 4x per axis: nothing measured beyond 0x4000")
+    if p.dx < 0 or p.dy < 0 or p.dx + p.ow > PANEL_W or p.dy + p.oh > PANEL_H:
         errs.append("picture must lie fully on the panel")
     if p.dx % 2:
         errs.append("x offset must be even (4:2:0 chroma)")
@@ -245,6 +323,33 @@ def self_test(live):
     if borders != (428, 0, 240):
         ok = False
         print(f"FAIL 852x480 borders right/left/bottom {borders}, firmware (428, 0, 240)")
+    # 3. Scaled, against the firmware's own 720x480 -> 1280x720 log
+    #    (wce-elog-bringup-2026-09-04.txt: "ratio [36864 x 43690]",
+    #    pic_win [0, 0, 1280, 720]) and the proc words captured live at
+    #    1280x640 -> 1280x720 on 2026-09-13 (handoff-2026-09-14 section 5).
+    #    That capture's +050 length (640) and H integer phase (3) were the
+    #    driver's errors of the day, so they are not compared.
+    r = recipe(live, P(720, 480, 0, 0, ow=1280, oh=720))
+    f = lambda k, lsb, w: (r[k][1] >> lsb) & ((1 << w) - 1)
+    want = [(("proc", 0x008), 0, 22, 36864), (("proc", 0x03c), 0, 22, 43690),
+            (("route", 0x124), 16, 16, 1280), (("route", 0x128), 16, 16, 720),
+            (("proc", 0x034), 0, 32, 0x02D001E0), (("proc", 0x014), 27, 1, 0),
+            (("proc", 0x050), 0, 16, 720)]
+    r = recipe(live, P(1280, 640, 0, 0, ow=1280, oh=720))
+    want2 = [(("proc", 0x000), 0, 16, 0x8000), (("proc", 0x038), 0, 16, 0xF1C7),
+             (("proc", 0x03c), 0, 22, 0xE38E), (("proc", 0x008), 0, 22, 0x10000),
+             (("proc", 0x008), 24, 3, 2), (("proc", 0x02c), 0, 16, 0x500),
+             (("proc", 0x030), 0, 32, 0x000102D0), (("proc", 0x034), 0, 32, 0x05000280),
+             (("proc", 0x040), 0, 32, 0xC0000500)]
+    for label, wl, rr in (("720x480->1280x720", want,
+                           recipe(live, P(720, 480, 0, 0, ow=1280, oh=720))),
+                          ("1280x640->1280x720", want2, r)):
+        for k, lsb, w, v in wl:
+            got = (rr[k][1] >> lsb) & ((1 << w) - 1)
+            if got != v:
+                ok = False
+                print(f"FAIL {label} {k[0]}+{k[1]:03x}[{lsb + w - 1}:{lsb}]: "
+                      f"model {got:#x} reference {v:#x}")
     print("self-test", "PASS" if ok else "FAIL",
           f"({len(FIELDS)} fields, {len(recipe(live, NATIVE))} registers)")
     return ok
@@ -256,7 +361,10 @@ def main():
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--fmt", choices=("nv12", "p010"), default="nv12")
     ap.add_argument("--pitch", type=int, help="bytes per line (default: tight)")
-    ap.add_argument("size", nargs="?", help="WxH of the picture")
+    ap.add_argument("--out", metavar="OWxOH",
+                    help="destination size on the panel (default: the source "
+                         "size, unscaled); proc magnifies W x H up to it")
+    ap.add_argument("size", nargs="?", help="WxH of the picture in memory")
     ap.add_argument("at", nargs="?", default="centre", help="X,Y on the panel, or 'centre'")
     ap.add_argument("--json", metavar="FILE",
                     help="also write the recipe for letterbox-apply.py")
@@ -267,19 +375,23 @@ def main():
     if not a.size:
         ap.error("give WxH, or --self-test")
     w, h = (int(v) for v in a.size.lower().split("x"))
+    ow, oh = (int(v) for v in a.out.lower().split("x")) if a.out else (w, h)
     if a.at == "centre":
-        dx, dy = (PANEL_W - w) // 2 & ~1, (PANEL_H - h) // 2
+        dx, dy = (PANEL_W - ow) // 2 & ~1, (PANEL_H - oh) // 2
     else:
         dx, dy = (int(v) for v in a.at.split(","))
-    p = P(w, h, dx, dy, a.fmt, a.pitch)
+    p = P(w, h, dx, dy, a.fmt, a.pitch, ow, oh)
     errs = check(p)
     if errs:
         for e in errs:
             print("refused:", e, file=sys.stderr)
         return 1
     ylen, clen = buffer_needs(p)
-    print(f"# {w}x{h} {a.fmt} pitch {p.pitch} at ({dx},{dy}); "
-          f"borders L{dx} R{PANEL_W - dx - w} T{dy} B{PANEL_H - dy - h}")
+    print(f"# {w}x{h} {a.fmt} pitch {p.pitch} shown {ow}x{oh} at ({dx},{dy}); "
+          f"borders L{dx} R{PANEL_W - dx - ow} T{dy} B{PANEL_H - dy - oh}")
+    if (ow, oh) != (w, h):
+        print(f"# proc ratio H {p.ratio_h:#x} V {p.ratio_v:#x}, phase H "
+              f"{p.phase_h:#x}/{p.int_h} V {p.phase_v:#x}/{p.int_v}")
     print(f"# buffer must cover luma {ylen} B and chroma {clen} B from the "
           f"plane offsets (AFBD reads {a16(w)}x{a16(h)})")
     print("# write order (firmware): source 0 off; NR hold (comp+040[25]=0, "
@@ -295,7 +407,8 @@ def main():
     if a.json:
         regs = recipe(live, p)
         doc = {
-            "picture": {"w": w, "h": h, "dx": dx, "dy": dy, "fmt": a.fmt,
+            "picture": {"w": w, "h": h, "ow": ow, "oh": oh, "dx": dx, "dy": dy,
+                        "fmt": a.fmt,
                         "pitch": p.pitch, "stride": p.stride},
             "buffer": {"luma_bytes": ylen, "chroma_bytes": clen},
             "live": a.live,

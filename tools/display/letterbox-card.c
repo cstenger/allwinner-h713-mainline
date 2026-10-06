@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Hold a 1280x720 NV12 control card on the H713 video plane, with the
- * letterbox Phase 1 cards pre-rendered in the same buffer object.
+ * letterbox Phase 1 and Phase 3 cards pre-rendered in the same buffer object.
  * RUNS ON THE TARGET.
  *
  *   cc -O2 -Wall -o letterbox-card letterbox-card.c $(pkg-config --cflags --libs libdrm)
@@ -20,7 +20,14 @@
  *
  *   native  1280x720  stride 1280, 768 rows allocated  -- the framebuffer
  *   ab      1280x536  stride 1280, 544 rows (ALIGN16)  -- steps a and b
- *   c        852x480  stride  864, 480 rows            -- step c
+ *   c        852x480  stride  864, 480 rows            -- step c; Phase 3 s2
+ *   s640     640x360  stride  640, 368 rows (ALIGN16)  -- Phase 3 s1, s5
+ *   s352     352x288  stride  352, 288 rows            -- Phase 3 s4
+ *   s720     720x576  stride  720, 576 rows            -- Phase 3 s3
+ *
+ * Phase 3 (proc magnification) shows the small cards scaled up, so the
+ * circles stay round only where both axes scale alike; s3 (720x576 -> 960x720,
+ * 4:3 from a 5:4 raster) is meant to come out as a slight vertical ellipse.
  *
  * The layout, with the slot addresses AFBD reads for the native card, goes to
  * /tmp/letterbox-card.layout once the card is on the plane. Nothing else is
@@ -70,6 +77,9 @@ static struct region regions[] = {
 	{ "native", 1280, 720, 1280, 768, 0, 0 },
 	{ "ab",     1280, 536, 1280, 544, 0, 0 },
 	{ "c",       852, 480,  864, 480, 0, 0 },
+	{ "s640",    640, 360,  640, 368, 0, 0 },
+	{ "s352",    352, 288,  352, 288, 0, 0 },
+	{ "s720",    720, 576,  720, 576, 0, 0 },
 };
 #define NREG (sizeof(regions) / sizeof(regions[0]))
 

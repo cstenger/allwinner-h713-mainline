@@ -217,7 +217,29 @@ border, block count, a panel size).
 3. **The descriptor formula is fitted to two firmware-produced points.** It is not derived for every format. P010 is not covered: the firmware's own 10-bit branch takes formats 14/15, and the descriptors there are underived.
 4. **AFBD budget with stride ≠ width.** The firmware writes `H` into `+030/+048[28:16]`. The driver's `pitch × H / line` agrees only when stride equals width. The recipe follows the firmware, and P010 doubles it, as measured on 2026-09-30.
 5. **The `SetAspectRatio` caller rectangle is untyped.** The offset arguments at `0x8b1aa47c`/`0x8b1aa498` come from `sp+0xa4`/`sp+0xac` of the window-update frame. The mechanism (positive offsets added to hde/vde) is established; the name of the rectangle is not.
-6. **Upscaling (Phase 3) is not in the recipe.** It needs proc ratios and phases, and in/out windows that differ. The retired chain 0098–0111 has them.
+6. ~~**Upscaling (Phase 3) is not in the recipe.**~~ **In the recipe since 2026-10-05** (`--out OWxOH`); see "Phase 3: the scaled model" below.
+7. **`proc+038[31:16]` is not modelled.** The firmware writes `out.w < X ? X − out.w + 16 : 16` (`0x8b1a64cc`–`0x8b1a64f0`), and `X` (`node+0x90`) is set nowhere in ProcWinNode. The live value is 16. Phase 3's panel run tries `X = 1280` as variant s4h.
+
+## Phase 3: the scaled model (desk, 2026-10-05)
+
+The firmware's one scaled log (720x480 → 1280x720, `wce-elog-bringup-2026-09-04.txt`) and `ProcWinNode::CalcWindow`/`WriteReg` (`0x8b1a62c4`, `0x8b1a66d0`, `0x8b1a6a08`) split the window layer at proc:
+
+- **Source size (W x H):** AFBD, every NR field, route source window `0x104/0x108`, route `0x11c`, and proc `in_win` `+034`.
+- **Destination size (OW x OH):** proc `out_win` (`+02c`, `+030`, `+040`); route **picture window `0x124/0x128`** (`pic_win` = `{0, s3[8], 0, s3[0xc]}`, logged 1280x720); route out `0xd40/0xd44`; panel `video_win_2`; the border overlay.
+- **Positions:** (dx, dy) for both. In the log, NR out, proc in and proc out are all at the timing origin.
+- **Scaler:**
+  - ratio = `in × 0x10000 / out`, truncated (`+008[21:0]`, `+03c[21:0]`);
+  - phases `(U + r) >> 2` (H, `+000`) and `(U + r) >> 1` (V, `+038[15:0]`);
+  - integer phases 3/2 (`+008[30:28]`, `[26:24]`), with an axis at unity advancing to 4 (H) or 3 (V, fraction wrapped to 0);
+  - bypass `+014[27]` only when both axes are at unity;
+  - line-enable length `+050[15:0] = max(H, OH)`.
+
+  The model reproduces the native words (`0x43010000`, `0x8000`, `0`) and the firmware's ratios `[36864 x 43690]`. It also reproduces the proc words captured at 1280x640 → 1280x720 on 2026-09-13, except the two that were the driver's own errors that day.
+- **Two corrections to the retired chain:**
+  - 0111 wrote the *source* size into the picture window.
+  - 0108 forced H=3 on an axis at unity; the firmware gives 4.
+
+  Both were invisible while the destination was the whole panel.
 
 ## What this changes in the plan
 
