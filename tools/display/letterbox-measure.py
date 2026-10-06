@@ -147,10 +147,12 @@ def orientation(bgr, rect):
                    (x + 64, y + h - 64), (x + w - 64, y + h - 64)):
         box = bgr[max(cy - 10, 0):cy + 10, max(cx - 10, 0):cx + 10]
         seen.append(patch_colour(box) if box.size else None)
-    for name, want in ORIENTS.items():
-        if tuple(seen) == want:
-            return name, seen
-    return None, seen
+    # Three of four is enough when only one orientation fits: a projector's
+    # falloff can leave one corner patch too dim to name (2026-10-06, pv).
+    fits = [name for name, want in ORIENTS.items()
+            if sum(s == c for s, c in zip(seen, want)) >= 3
+            and all(s in (None, c) for s, c in zip(seen, want))]
+    return (fits[0] if len(fits) == 1 else None), seen
 
 
 # --- geometry -----------------------------------------------------------------
@@ -511,7 +513,11 @@ def analyse(path, steps, outdir=None, verbose=True, dump=False, min_run_s=2.0,
                 rr = picture_rect(g, ref_white)
                 if rr:
                     rects.append((rr[0] - M, rr[1] - M, rr[2], rr[3]))
-                    orients.append(orientation(bgr_r, rr))
+                # Patches are read at the EXPECTED rectangle: on real footage
+                # the edge finder loses the far edges (projector falloff; the
+                # 2026-10-06 run measured a 1280-wide card 717-910 wide), and
+                # sampling relative to those edges missed every patch.
+                orients.append(orientation(bgr_r, (dx + M, dy + M, w, h)))
                 mags.append(magenta(bgr_r))
                 last = (bgr_r, g)
             if outdir:
