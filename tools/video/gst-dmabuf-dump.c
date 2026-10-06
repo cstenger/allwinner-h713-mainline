@@ -25,8 +25,9 @@
  *      $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0 \
  *        gstreamer-video-1.0 gstreamer-allocators-1.0)
  *
- * The 10-bit format needs the project's v4l2codecs (patches/gstreamer):
- * source /opt/gst-h713/env first. The stock plugin refuses 10-bit AV1.
+ * Stock GStreamer only (operator, 2026-10-05): the project's v4l2codecs
+ * patches that taught it the AV1 core's 10-bit format are removed, so the
+ * stock plugin refuses 10-bit AV1 here.
  *
  *   usage: gst-dmabuf-dump '<pipeline without a sink>' out.raw
  *   e.g.   gst-dmabuf-dump 'filesrc location=hbd720.ivf ! ivfparse ! av1parse ! v4l2slav1dec' out.raw

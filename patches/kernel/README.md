@@ -204,8 +204,9 @@ with P010/P210) and `V4L2_PIX_FMT_P010_LSB` (`'PL10'`), with the V4L2
 format-info entry, the ENUM_FMT description and a hantro bit depth of 10.
 **0149** makes the AFBD video plane pick its format byte from the framebuffer
 (NV12 0, P010 6, P010 + LSB10 7) and advertise `IN_FORMATS`; **0147** offers
-PL10 for 10-bit AV1 sequences. Consumers: libva-v4l2-request 0017 and
-`patches/gstreamer/0003`. 0149 also lets the plane take a framebuffer larger
+PL10 for 10-bit AV1 sequences. Consumers: libva-v4l2-request 0017 (and,
+until it was deleted on 2026-10-05 under the stock-GStreamer-only rule,
+`patches/gstreamer/0003`). 0149 also lets the plane take a framebuffer larger
 than the 1280x720 picture (hantro's 768-line padding, as GStreamer describes
 it), which kmssink needs for any hantro stream. Hardware-verified 2026-10-01.
 

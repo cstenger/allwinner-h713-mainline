@@ -195,7 +195,7 @@ What the table says:
 - The loop-seek freeze (an underrun at a `--loop-file` seek, seen only on ALSA) did not occur on PipeWire: 120 of 120 forced underruns on stock `vo=gpu`, with a 10 s clip so the underruns kept crossing loops. **Correction:** the "120/120" for the direct path is void. That run passed `--ao=pipewire` to a build without it, so it most likely played with no audio and nothing to underrun.
 - **Recommendation:** keep the direct path for content that is already exactly 1280x720, and the GPU path for everything else. For native-720p content the direct path does the same job at about half the CPU, with the GPU idle.
 - **DECISION (operator, 2026-10-02): retire the direct path; stock mpv on the GPU path, audio through PipeWire.**
-  - `patches/mpv` and `patches/gstreamer` are retired (banners in their READMEs).
+  - `patches/mpv` and `patches/gstreamer` are retired (banners in their READMEs). **`patches/gstreamer` was deleted on 2026-10-05** (operator: stock GStreamer only; a GStreamer-side limitation is fixed in our driver or routed to the GPU). `/opt/gst-h713` went from the board with it.
   - On the bench board the patched binary is renamed to `/usr/local/bin/mpv-direct`, kept for the HDMI-in preview tool only. Plain `mpv` is `/usr/bin/mpv` and picks `[pipewire]` by itself. `tools/video/check-video-stack.sh` now checks for exactly that.
   - **Follow-up: close the CPU gap by other means** (9% vs 17% on native 720p). See "WP2 follow-up" below.
 
