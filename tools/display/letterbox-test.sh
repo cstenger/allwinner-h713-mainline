@@ -373,7 +373,7 @@ all|bisect|phase3)
 	follow $(( total + 120 ))
 	log=$OUT/$mode.log
 	$SSH 'cat /tmp/letterbox-apply.log' > "$log"
-	grep -E 'step |REFUSED|WINDOW|RESTORE|SEQUENCE|\*\*\*' "$log"
+	grep -E 'step |REFUSED|WINDOW|RECHECK|RESTORE|SEQUENCE|\*\*\*' "$log"
 	say "  full log: $log"
 	if grep -q 'RESTORE INCOMPLETE' "$log"; then
 		say "*** NOT RESTORED -- plane left as is. Run: letterbox-test.sh restore"

@@ -195,6 +195,19 @@ def write_group(mem, regs, key, label):
     return ok
 
 
+def recheck(mem, regs, when):
+    """Re-read every recipe register during the window. The write-time
+    readback cannot see a register the hardware rewrites a few frames later;
+    this can. scanout-grab cannot help here: the plane's framebuffer is the
+    native card throughout, so it shows the native card for every step."""
+    drift = [(r, mem.rd(r["addr"])) for r in regs if mem.rd(r["addr"]) != r["new"]]
+    for r, now in drift:
+        log(f"  RECHECK {when}: {r['block']}+{r['off']:03x} reads {now:08X}, "
+            f"wrote {r['new']:08X}")
+    status = " ".join(f"{a:#x}={mem.rd(a):08X}" for a in (CTRL, SELECTOR, SLOTS_Y[0]))
+    log(f"RECHECK {when}: {len(regs) - len(drift)}/{len(regs)} registers as written; {status}")
+
+
 def restore(mem, saved):
     """Back to the saved state. Best effort: never stops early."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -327,6 +340,14 @@ def run_step(mem, lay, rec, region, hold, pre, dry, name=""):
         log(f"=== WINDOW OPEN: step {name} {pic['w']}x{pic['h']} at "
             f"({pic['dx']},{pic['dy']}) for {hold:g} s ===")
         end = time.monotonic() + hold
+        mid = time.monotonic() + hold / 2
+        checked = False
+        while time.monotonic() < end - 0.5:
+            time.sleep(max(0.0, min(1.0, end - 0.5 - time.monotonic())))
+            if not checked and time.monotonic() >= mid:
+                recheck(mem, rec["regs"], "mid-hold")
+                checked = True
+        recheck(mem, rec["regs"], "end of hold")
         while time.monotonic() < end:
             time.sleep(min(1.0, end - time.monotonic()))
         return 0
