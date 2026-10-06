@@ -39,7 +39,20 @@ Logs: `local/h713-lab/mirror-phase1-20261006{,-p2}/`.
 - V comes from the fetch, through OSD control bit 3 (as stock `ge2d_dev.ko` sets it).
 - H comes from the one global panel bit, which sits after the selector.
 - OSD bit 2 is dead, despite U-Boot's 2-bit `mirror_mode` field.
-- The RGB route gets no vde shift and needs none visibly. Under H, the top and bottom frame lines match the upright card's thickness. A panel row is about 2.5 camera pixels in this footage, so a lost row would show. A sub-row timing offset is not excluded.
+- The RGB route gets no vde shift. In the photos, both frame lines looked intact under H. **The histogram later showed one row is lost** (see below); the photos could not resolve it.
+
+## Measured afterwards: the panel histogram (2026-10-06)
+
+There is no downstream frame CRC (`tools/display/panel-signature.sh`, read-only). There is, however, a luminance histogram at `lvds+0x378–0x3fc` whose bins count pixels. A correct mirror leaves it unchanged; a lost or garbage row moves 1280 pixels between bins.
+
+| Case | Histogram |
+| --- | --- |
+| OSD V (bit 3), primary card | identical: **pixel-exact** |
+| panel H, primary card (the RGB route) | `+0x380` gains 1280, `+0x3fc` loses 1280: **one white frame row turns black**. The photo verdict above ("no visible row loss") is **withdrawn**. |
+| video H, recipe with vde −1 | identical to native (2 px in one bin: chroma pairing at patch edges) |
+| video H without the vde shift | the same one-row loss |
+
+The firmware's vde −1 is necessary and sufficient on the video route. **The RGB route needs an equivalent one-line advance**, which Phase 2 must find. The histogram tests each candidate without an operator.
 
 ## Consequences for Phase 2 (kernel)
 
@@ -47,7 +60,7 @@ Logs: `local/h713-lab/mirror-phase1-20261006{,-p2}/`.
 - **Primary plane:**
   - V = OSD ctrl bit 3 in the value `set_source()` writes each flip (`rgb_ctrl_active | BIT(3)`).
   - H = the panel bit while the primary owns the mux.
-  - No vertical compensation.
+  - **One-line compensation needed** (histogram above). Its register is not yet known.
 - **The panel bit is shared.** Whoever owns the mux writes it; `video_stop` hands it back to the primary's value.
 - **No height rule for V.** A non-16 height flips cleanly, so `check` needs no `h % 16` refusal and the `h713-play` fit rounding stays.
 - **Still open, for the Phase 2 gate:**

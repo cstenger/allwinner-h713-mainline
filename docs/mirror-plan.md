@@ -3,7 +3,7 @@
 > **Status 2026-10-06: Phase 1 DONE. Every prediction held on the glass**
 > ([reference/mirror-phase1-2026-10-06.md](reference/mirror-phase1-2026-10-06.md)).
 > - Video plane: h, v, hv, an asymmetric placement and a non-16 height all behaved as predicted. The bars follow the mirror, and no padding showed.
-> - Console route: V = OSD control bit 3; H = the shared panel bit, with no visible row loss; OSD bit 2 is dead.
+> - Console route: V = OSD control bit 3 (pixel-exact); H = the shared panel bit, but it **loses one row** (panel histogram, `panel-signature.sh`), so the RGB route needs a one-line advance like the video route's vde −1. OSD bit 2 is dead.
 > - **Next: Phase 2 (kernel, 0166+).**
 >
 > **Phase 0 DONE (2026-10-06).**
