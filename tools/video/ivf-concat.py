@@ -5,12 +5,20 @@ Joining clips of different sizes gives a stream with a new sequence header
 (and so a resolution change) at each join -- the mid-stream case a stateless
 decoder has to renegotiate for.
 
-  usage: ivf-concat.py out.ivf a.ivf b.ivf [...]
+  usage: ivf-concat.py [--fps N] out.ivf a.ivf b.ivf [...]
+
+--fps sets the header's time base to 1/N (frame i at i/N s). Without it the
+first input's time base is kept: the committed vectors say 1/1000, which a
+decoder test does not care about but a player shows at 1000 fps.
 """
 import struct
 import sys
 
-out, ins = sys.argv[1], sys.argv[2:]
+args = sys.argv[1:]
+fps = None
+if args[:1] == ["--fps"]:
+    fps, args = int(args[1]), args[2:]
+out, ins = args[0], args[1:]
 frames = []
 header = None
 for path in ins:
@@ -24,6 +32,8 @@ for path in ins:
         frames.append(d[o + 12:o + 12 + n])
         o += 12 + n
 struct.pack_into("<I", header, 24, len(frames))
+if fps:
+    struct.pack_into("<II", header, 16, fps, 1)
 with open(out, "wb") as f:
     f.write(header)
     for i, fr in enumerate(frames):

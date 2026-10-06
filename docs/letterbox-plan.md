@@ -28,6 +28,26 @@
 > GStreamer only. So non-square pixels (kmssink's source-rectangle bug) and
 > conformance-cropped HEVC (v4l2slh265dec's uncached per-frame copy) take
 > the GPU. P010 stays native-only. **Next: Phase 4.**
+>
+> **Phase 4 started 2026-10-06 (headless half done, on kernel 0164):**
+> - **Size changes mid-stream:** `vp9-rc` (re-timed to 30 fps,
+>   `ivf-concat.py --fps 30`; the committed vector says 1000 fps) and HEVC
+>   `r01` through plane-up / stock kmssink: one geometry commit per
+>   transition, 0 refused, GPU and IOMMU silent, 201/210 and 74/75 rendered.
+> - **Refusals:** `kms-plane-refusals` (TEST_ONLY), **31/31**: 13 positive
+>   controls accepted, 18 bad geometries refused in check.
+> - **Geometry stress:** `make-geometry-stress.sh` + `geometry-stress.sh`,
+>   10 min, 2999 transitions over 9 sizes: **PASS**. 2997 geometry commits,
+>   0 refused, 0 IOMMU, 0 GPU, kernel quiet, the plane alive afterwards.
+> - **Cost of a transition:** a geometry commit takes exactly 2 vsyncs
+>   (33.5 ms) against 1 for a flip (`kms-geometry-flip`). The driver adds
+>   ONE panel frame per transition, and that frame is the source-off one,
+>   which shows **green**. The other ~2 frames lost per transition (2.48
+>   in the stress) are GStreamer renegotiation: the decoder alone loses 0.
+> - **Open:** turn the green off frame black (the vblender border overlay
+>   as a full-panel cover; `geometry-flash-test.sh` tests it from userspace
+>   on the glass), the mirror design (below), and the 2-hour plane-ve scope
+>   soak (overnight queue).
 > Details: [reference/letterbox-phase1-2026-10-04.md](reference/letterbox-phase1-2026-10-04.md).
 >
 > **Status 2026-10-04: Phase 0 done.** Desk RE and a read-only baseline:
@@ -326,7 +346,40 @@ Routing: sources below 720p take plane-native through stock
   - AV1 `rc.ivf` is excluded: ffmpeg never renegotiates AV1.
 - **Geometry stress:** a script that alternates sizes every few frames for 10 minutes. Pass is zero IOMMU faults with the panel still alive.
 - **Refusals:** too-small buffers, odd sizes and off-panel offsets are all refused in check.
-- **The WP5 hardware mirror:** placement is computed in panel coordinates and mirrored by the driver (an H mirror maps x to 1280 − x − w). Design the state now; test it when WP5 lands.
+- **The WP5 hardware mirror:** placement is computed in panel coordinates and mirrored by the driver (an H mirror maps x to 1280 − x − w). Design the state now; test it when WP5 lands. Design below.
+
+### Mirror design (2026-10-06; implement and test with WP5)
+
+**Open question:** where in the pipeline does the stock mirror act? The
+answer decides whether the driver remaps anything:
+- **At the panel, after the vblender** (the whole composed picture flipped):
+  the hardware already moves the picture and the bars. The driver must NOT
+  remap, or the mirror is applied twice.
+- **At the fetch or window layer, before placement** (the picture flipped in
+  place): the driver remaps the destination, `dx' = 1280 − dx − ow` for H and
+  `dy' = 720 − dy − oh` for V. The border overlay follows from the remapped
+  rectangle, so left/right and top/bottom swap by themselves.
+
+**The WP5 discriminating test:** one asymmetric placement, 852x480 at
+(0, 0), with mirror on. If it lands top-right with no remap, the mirror is
+panel-level. If it stays top-left, the driver remaps. The capture of the
+stock orientation menu (`vendor-capture-plan.md`) should rank these before
+any panel time is spent.
+
+**State, if remapping is needed:**
+- **Where it lives:** `REFLECT_X`/`REFLECT_Y` on the plane `rotation`
+  property, as WP5 plans. The mirror is global (the MIPS window layer), so
+  `atomic_check` refuses a state where the primary and video planes disagree.
+- **One function** maps the requested rectangle (viewer coordinates, as
+  kmssink computes it) to the hardware rectangle, after the existing even
+  rounding. x and ow are already even, so `1280 − x − ow` is even as well.
+  `h713_lb_check` validates the hardware rectangle; every rule is symmetric,
+  so a geometry valid in one orientation is valid in the other.
+- **`hw_geom` carries the reflect bits.** `h713_geom_eq` compares them, so
+  toggling the mirror with an unchanged picture is a geometry commit (source
+  off, reprogram), never an address-only flip.
+- **The native geometry** (1280x720 at (0,0)) is its own mirror image, so the
+  restore path is unchanged.
 - **2-hour soak** of a scope film through plane-ve.
 
 ## Phase 5 — routing, documents, rootfs
