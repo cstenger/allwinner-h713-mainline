@@ -42,8 +42,10 @@ Phases 1-2 of docs/letterbox-plan.md are the OW = W case; Phase 3 the rest.
 Exit status 1 if a field cannot be expressed (e.g. off-panel, odd size).
 """
 import argparse
+import copy
 import json
 import math
+import os
 import sys
 
 PANEL_W, PANEL_H = 1280, 720
@@ -78,8 +80,13 @@ U = 0x10000     # proc unity, the firmware constant at 0x8b206dac
 class P:
     """Picture geometry: source W x H, shown as OW x OH at panel (dx, dy)."""
 
-    def __init__(self, w, h, dx, dy, fmt="nv12", pitch=None, ow=None, oh=None):
+    def __init__(self, w, h, dx, dy, fmt="nv12", pitch=None, ow=None, oh=None,
+                 hflip=0, vflip=0):
         self.w, self.h, self.dx, self.dy, self.fmt = w, h, dx, dy, fmt
+        # Hardware mirror (WP5), in HARDWARE terms: hflip is the panel's line
+        # reversal, vflip AFBD's bottom-up fetch. dx/dy are hardware positions;
+        # hw_place() maps a client's rectangle to them.
+        self.hflip, self.vflip = int(hflip), int(vflip)
         self.ow = ow if ow is not None else w
         self.oh = oh if oh is not None else h
         cpp = 2 if fmt == "p010" else 1
@@ -118,6 +125,14 @@ class P:
     phase_v = property(lambda self: self._phase()[1])
     int_h = property(lambda self: self._phase()[2])
     int_v = property(lambda self: self._phase()[3])
+
+    @property
+    def vde(self):
+        # WCETop 0x8b1a8928 subtracts the H-mirror flag from the vertical
+        # active start (0x8b1a89a0..89b0): the panel's line reversal costs a
+        # line, so everything upstream of it starts one line earlier. Stock
+        # orient-rear: comp 80c/840/858 and proc +050 all move by -1.
+        return Y0 - self.hflip
 
     @property
     def bypass(self):
@@ -168,13 +183,13 @@ FIELDS = [
     ("comp", 0x804, 16, 16, "rel", lambda p: p.dx, "read_fetch.x - 5"),
     ("comp", 0x808, 0, 16, "rel", lambda p: p.dx, "out.x + crop.x"),
     ("comp", 0x80c, 0, 16, "rel", lambda p: p.h, "read_fetch.h"),
-    ("comp", 0x80c, 16, 16, "rel", lambda p: p.dy, "read_fetch.y"),
+    ("comp", 0x80c, 16, 16, "rel", lambda p: p.dy - p.hflip, "read_fetch.y (vde)"),
     # 0x840/0x844 are the flag-0x4000/0x2000 writes at 0x8b1a4cb4..4d34
-    ("comp", 0x840, 0, 16, "abs", lambda p: Y0 + p.dy - 1, "read_fetch.y - 1"),
+    ("comp", 0x840, 0, 16, "abs", lambda p: p.vde + p.dy - 1, "read_fetch.y - 1 (vde)"),
     ("comp", 0x840, 16, 16, "abs", lambda p: p.h + 1, "read_fetch.h + 1"),
     ("comp", 0x844, 0, 16, "abs", lambda p: X0 + p.dx - 1, "read_fetch.x - 1"),
     ("comp", 0x844, 16, 16, "abs", lambda p: even(p.w), "read_fetch.w, even"),
-    ("comp", 0x858, 0, 16, "rel", lambda p: p.dy, "out.y"),
+    ("comp", 0x858, 0, 16, "rel", lambda p: p.dy - p.hflip, "out.y (vde)"),
     # para[0] in NRWinNode::CalcWindow (0x8b1a3934), the NR out-window height
     # passed in by WCETop: the DESTINATION height, in panel lines. Left at 720
     # it ended every vertically offset picture early (Phase 1 bisect set 3);
@@ -220,7 +235,7 @@ FIELDS = [
     ("proc", 0x044, 0, 16, "rel", lambda p: p.dx, "stream.x"),
     # line-enable window [start, max(in_h, out_h)] (0x8b1a6470; grey streak)
     ("proc", 0x050, 0, 16, "abs", lambda p: max(p.h, p.oh), "max(in_h, out_h)"),
-    ("proc", 0x050, 16, 16, "rel", lambda p: p.dy, "vs_delay+1+vde_start+mb_420"),
+    ("proc", 0x050, 16, 16, "rel", lambda p: p.dy - p.hflip, "vs_delay+1+vde_start+mb_420"),
 
     # --- panel (0x051c0000), PanelWinNode::WriteReg 0x8b1a5a38 ---
     # program window 0xbc/0xc0 and crtc 0xfe00/04 stay: stream.x - out.x
@@ -228,6 +243,10 @@ FIELDS = [
     ("lvds", 0x040, 16, 16, "abs", lambda p: p.oh, "video_win_2.h (dst)"),
     ("lvds", 0x0a4, 16, 16, "abs", lambda p: p.ow, "video_win_2.w (dst)"),
     ("lvds", 0x0a8, 16, 16, "abs", lambda p: p.oh, "video_win_2.h (dst)"),
+    # H mirror: PanelWinNode::WriteReg 0x8b1a5c38..5c44 inserts node+0x10 (the
+    # H flag CalcWindow stores at 0x8b1a537c). Stock orient-rear 80000000 ->
+    # 80000001. Global: it reverses whatever the selector feeds the panel.
+    ("lvds", 0x0a0, 0, 1, "abs", lambda p: p.hflip, "H mirror (fw 0x8b1a5c44)"),
 
     # --- border overlay (vblender 0x05200000), WriteBorderOverlay1 0x8b1a55d8 ---
     ("vblend", 0x000, 0, 12, "abs", lambda p: PANEL_W - p.dx - p.ow, "right"),
@@ -237,7 +256,31 @@ FIELDS = [
     ("vblend", 0x004, 0, 12, "abs", lambda p: PANEL_H - p.dy - p.oh, "bottom"),
     ("vblend", 0x004, 12, 4, "abs", lambda p: (p.dy >> 8) & 0xf, "top[11:8]"),
     ("vblend", 0x004, 30, 1, "abs", lambda p: 1, "border enable"),
+    # the overlays' panel rectangle {x 49, y vde, w 1280, h 720}: node+0x9c is
+    # stored at 0x8b1a5460 BEFORE the H mirror's +1 (0x8b1a546c), which only
+    # the program window gets, so the overlay y follows vde (elog
+    # m_border_overlay_win [49,21] under H). Not in any stock dump.
+    ("vblend", 0x010, 0, 16, "abs", lambda p: p.vde, "overlay 1 y (fw 0x8b1a56bc)"),
+    ("vblend", 0x024, 0, 16, "abs", lambda p: p.vde, "overlay 2 y (fw 0x8b1a5874)"),
 ]
+
+# Control bits. They share their word with state letterbox-apply drives
+# itself (afbd+010 is source 0's CTRL, written on source on/off; comp+040
+# carries the NR hold bit 25), so they are never written as whole words:
+# they go out under "ctl" in the JSON and are applied read-modify-write.
+# fw 0x8b1a43f0, called from NRWinNode::WriteReg's geometry group (flag
+# 0x800, inside the hold bracket), for AFBD source mode 2 (comp+030[11:10]=3,
+# ours and stock's). Stock orient-rear-ceiling: 03000013 -> 0300001B and
+# 02090208 -> 02090200; nothing else moves -- AFBD flips internally.
+CTL_FIELDS = [
+    ("afbd", 0x010, 2, 2, "abs", lambda p: 2 if p.vflip else 0, "V mirror: bottom-up fetch"),
+    ("comp", 0x040, 3, 1, "abs", lambda p: 0 if p.vflip else 1, "V mirror, source mode 2"),
+]
+
+# Fields the H mirror's line shift moves, and the V control bit: the
+# self-test's mutations knock these out one group at a time.
+HSHIFT = {("comp", 0x80c, 16), ("comp", 0x840, 0), ("comp", 0x858, 0),
+          ("proc", 0x050, 16), ("vblend", 0x010, 0), ("vblend", 0x024, 0)}
 
 BASES = {"afbd": 0x05600000, "comp": 0x05000000, "route": 0x05140000,
          "proc": 0x05180000, "lvds": 0x051c0000, "vblend": 0x05200000}
@@ -282,18 +325,57 @@ def buffer_needs(p):
     return p.pitch * a16(p.h), p.pitch * a16(p.h) // 2
 
 
-def recipe(live, p):
-    """Return {(blk, off): (old, new, [notes])} for every touched register."""
+CTL = {(blk, off) for blk, off, *_ in CTL_FIELDS}
+
+# Mirror modes as stock numbers them (PANEL_CONFIG_MIRROR / mirror_mode):
+# bit 0 = H (panel line reversal), bit 1 = V (bottom-up fetch).
+MODES = {"front": 0, "rear": 1, "rear-ceiling": 2, "ceiling": 3}
+
+
+def hw_place(x, y, ow, oh, mode=0, rx=0, ry=0):
+    """A client's rectangle and reflection -> hardware (dx, dy, hflip, vflip).
+
+    The installation mode mirrors the whole screen, position included; a
+    plane reflection (DRM REFLECT_X/Y) mirrors only the picture inside its
+    rectangle. The panel's H reversal moves position AND content, so x is
+    pre-mirrored only for a plane reflection; AFBD's V flip moves content
+    only, so y is pre-mirrored only for the installation mode.
+    """
+    ih, iv = mode & 1, mode >> 1 & 1
+    dx = PANEL_W - x - ow if rx else x
+    dy = PANEL_H - y - oh if iv else y
+    return dx, dy, ih ^ rx, iv ^ ry
+
+
+def _mutant(p, fl, mutate):
+    blk, off, lsb = fl[0], fl[1], fl[2]
+    if mutate == "no-shift" and (blk, off, lsb) in HSHIFT:
+        q = copy.copy(p); q.hflip = 0; return q
+    if mutate == "proc-only" and (blk, off, lsb) in HSHIFT and blk != "proc":
+        q = copy.copy(p); q.hflip = 0; return q
+    if mutate == "v-polarity" and (blk, off) == ("comp", 0x040):
+        q = copy.copy(p); q.vflip = 1 - p.vflip; return q
+    if mutate == "no-panel-bit" and (blk, off) == ("lvds", 0x0a0):
+        q = copy.copy(p); q.hflip = 0; return q
+    return p
+
+
+def recipe(live, p, mutate=None):
+    """Return {(blk, off): (old, new, [notes])} for every touched register,
+    the control words (CTL) included. `mutate` deliberately breaks one part of
+    the mirror model, for the self-test."""
     out = {}
-    for blk, off, lsb, width, kind, f, prov in FIELDS:
+    for fl in FIELDS + CTL_FIELDS:
+        blk, off, lsb, width, kind, f, prov = fl
+        q = _mutant(p, fl, mutate)
         mask = ((1 << width) - 1) << lsb
         old = out.get((blk, off), (live[(blk, off)],))[0]
         cur = out.get((blk, off), (old, old, []))[1]
         if kind == "abs":
-            val = f(p)
+            val = f(q)
         else:
             base = (live[(blk, off)] & mask) >> lsb
-            val = base + f(p) - f(NATIVE)
+            val = base + f(q) - f(NATIVE)
         if not 0 <= val < (1 << width):
             raise ValueError(f"{blk}+{off:03x}[{lsb + width - 1}:{lsb}] = {val} "
                              f"does not fit ({prov})")
@@ -304,7 +386,7 @@ def recipe(live, p):
     return out
 
 
-def self_test(live):
+def self_test(live, stock=None):
     ok = True
     # 1. The model must reproduce the live native state exactly.
     for (blk, off), (old, new, notes) in recipe(live, NATIVE).items():
@@ -355,8 +437,97 @@ def self_test(live):
                 ok = False
                 print(f"FAIL {label} {k[0]}+{k[1]:03x}[{lsb + w - 1}:{lsb}]: "
                       f"model {got:#x} reference {v:#x}")
+    if stock:
+        ok &= stock_test(live, stock)
     print("self-test", "PASS" if ok else "FAIL",
-          f"({len(FIELDS)} fields, {len(recipe(live, NATIVE))} registers)")
+          f"({len(FIELDS) + len(CTL_FIELDS)} fields, {len(recipe(live, NATIVE))} registers)")
+    return ok
+
+
+# Stock 2026-10-01 captures (local/h713-lab/stock-capture-20261001/out), all
+# native 720p H.264 playing: mode 0 = the 1b clip and the keystone case
+# (keystone is GPU-only); 1-3 = Installation mode rear / rear ceiling / front
+# ceiling, two samples each.
+STOCK_CASES = {0: ("1b-h264-1280x720-1", "1b-h264-1280x720-2",
+                   "keystone-ltx10-1", "keystone-ltx10-2"),
+               1: ("orient-rear-1", "orient-rear-2"),
+               2: ("orient-rear-ceiling-1", "orient-rear-ceiling-2"),
+               3: ("orient-front-ceiling-1", "orient-front-ceiling-2")}
+
+
+def load_stock(path):
+    words = {}
+    for line in open(path):
+        a, v = line.split()
+        words[int(a, 16)] = int(v, 16)
+    return words
+
+
+def stock_test(live, stock_dir):
+    """The mirror model against the firmware's own mirrored states.
+
+    Stock never dumped the vblender, so those words come from our baseline;
+    every other recipe register comes from stock's own mode-0 capture. Then
+    the model, asked for each mode, must reproduce every recipe register the
+    stock capture of that mode holds, and each mutation of the mirror model
+    must fail somewhere."""
+    ok = True
+    caps = {m: [load_stock(os.path.join(stock_dir, c, "display.txt")) for c in cs]
+            for m, cs in STOCK_CASES.items()}
+    keys = list(recipe(live, NATIVE))
+    addr = lambda k: BASES[k[0]] + k[1]
+    # 1. our native baseline against stock mode 0 (diff against known-good).
+    #    Only the words the mirror moves must agree: elsewhere our parked-MIPS
+    #    state may legitimately differ (comp+278/2b8 bit 31 does), and those
+    #    words keep our value.
+    moved = {k for m in (1, 2, 3)
+             for k, (old, new, _n) in recipe(live, P(PANEL_W, PANEL_H, 0, 0, hflip=m & 1,
+                                                     vflip=m >> 1 & 1)).items()
+             if old != new}
+    for k in keys:
+        for w in caps[0]:
+            if addr(k) in w and w[addr(k)] != live[k]:
+                if k in moved:
+                    ok = False
+                print(f"{'FAIL' if k in moved else '  note'} stock mode 0 "
+                      f"{k[0]}+{k[1]:03x}: stock {w[addr(k)]:08X}, ours {live[k]:08X}"
+                      + ("" if k in moved else " (the mirror does not move it)"))
+                break
+    base = dict(live)
+    for k in keys:
+        if addr(k) in caps[0][0]:
+            base[k] = caps[0][0][addr(k)]
+    print(f"  mirror moves {len(moved)} registers: "
+          + " ".join(f"{k[0]}+{k[1]:03x}" for k in sorted(moved, key=addr)))
+    compared = sum(addr(k) in caps[0][0] for k in keys)
+
+    def mismatches(mode, mutate=None):
+        p = P(PANEL_W, PANEL_H, 0, 0, hflip=mode & 1, vflip=mode >> 1 & 1)
+        r = recipe(base, p, mutate)
+        bad = []
+        for k, (_old, new, _n) in r.items():
+            for w in caps[mode]:
+                if addr(k) in w and w[addr(k)] != new:
+                    bad.append((k, w[addr(k)], new))
+                    break
+        return bad
+
+    # 2. the model reproduces every mode
+    for mode in (0, 1, 2, 3):
+        for k, want, got in mismatches(mode):
+            ok = False
+            print(f"FAIL stock mode {mode} {k[0]}+{k[1]:03x}: stock {want:08X}, "
+                  f"model {got:08X}")
+    # 3. each mutation is caught
+    for mutate in ("no-shift", "proc-only", "v-polarity", "no-panel-bit"):
+        caught = sum(len(mismatches(m, mutate)) for m in (1, 2, 3))
+        if not caught:
+            ok = False
+            print(f"FAIL mutation {mutate} is not caught by the stock captures")
+        else:
+            print(f"  mutation {mutate}: caught ({caught} mismatches)")
+    print(f"  stock mirror: {compared} recipe registers in the stock dumps, "
+          f"modes 0-3 x {sum(map(len, caps.values()))} captures")
     return ok
 
 
@@ -364,6 +535,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--live", required=True, help="letterbox-baseline.py dump, native 720p video on")
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--stock", metavar="DIR",
+                    help="with --self-test: also check the mirror model against "
+                         "the stock captures (local/h713-lab/stock-capture-20261001/out)")
+    ap.add_argument("--mirror", default="0",
+                    help="installation mode: 0-3 or front|rear|rear-ceiling|ceiling "
+                         "(bit 0 H, bit 1 V); mirrors the whole screen")
+    ap.add_argument("--reflect", default="", choices=("", "x", "y", "xy", "180"),
+                    help="plane reflection (DRM REFLECT_X/Y; 180 = both): mirrors the "
+                         "picture inside its rectangle")
     ap.add_argument("--fmt", choices=("nv12", "p010"), default="nv12")
     ap.add_argument("--pitch", type=int, help="bytes per line (default: tight)")
     ap.add_argument("--out", metavar="OWxOH",
@@ -376,7 +556,12 @@ def main():
     a = ap.parse_args()
     live = load_live(a.live)
     if a.self_test:
-        return 0 if self_test(live) else 1
+        return 0 if self_test(live, a.stock) else 1
+    mode = MODES[a.mirror] if a.mirror in MODES else int(a.mirror, 0)
+    if not 0 <= mode <= 3:
+        ap.error("--mirror is 0-3")
+    rx = int(a.reflect in ("x", "xy", "180"))
+    ry = int(a.reflect in ("y", "xy", "180"))
     if not a.size:
         ap.error("give WxH, or --self-test")
     w, h = (int(v) for v in a.size.lower().split("x"))
@@ -385,7 +570,12 @@ def main():
         dx, dy = (PANEL_W - ow) // 2 & ~1, (PANEL_H - oh) // 2
     else:
         dx, dy = (int(v) for v in a.at.split(","))
-    p = P(w, h, dx, dy, a.fmt, a.pitch, ow, oh)
+    cx, cy = dx, dy
+    if not (0 <= cx and 0 <= cy and cx + ow <= PANEL_W and cy + oh <= PANEL_H):
+        print("refused: picture must lie fully on the panel", file=sys.stderr)
+        return 1
+    dx, dy, hflip, vflip = hw_place(cx, cy, ow, oh, mode, rx, ry)
+    p = P(w, h, dx, dy, a.fmt, a.pitch, ow, oh, hflip, vflip)
     errs = check(p)
     if errs:
         for e in errs:
@@ -394,6 +584,13 @@ def main():
     ylen, clen = buffer_needs(p)
     print(f"# {w}x{h} {a.fmt} pitch {p.pitch} shown {ow}x{oh} at ({dx},{dy}); "
           f"borders L{dx} R{PANEL_W - dx - ow} T{dy} B{PANEL_H - dy - oh}")
+    if mode or rx or ry:
+        print(f"# mirror mode {mode}, reflect {a.reflect or 'none'}: client ({cx},{cy}) "
+              f"-> hardware ({dx},{dy}), panel H {hflip}, fetch V {vflip}")
+        if vflip and h % 16:
+            print(f"# WARNING: V flip with a height ({h}) not a multiple of 16 -- "
+                  "AFBD reads whole blocks; whether the padding rows flip into "
+                  "view is untested (WP5 Phase 1 step ab-v)")
     if (ow, oh) != (w, h):
         print(f"# proc ratio H {p.ratio_h:#x} V {p.ratio_v:#x}, phase H "
               f"{p.phase_h:#x}/{p.int_h} V {p.phase_v:#x}/{p.int_v}")
@@ -405,7 +602,8 @@ def main():
           "source 0 on with the frame queued")
     for (blk, off), (old, new, notes) in sorted(recipe(live, p).items(),
                                                 key=lambda kv: BASES[kv[0][0]] + kv[0][1]):
-        mark = "" if old == new else "  *"
+        mark = ("" if old == new else "  *") + ("  (ctl: read-modify-write)"
+                                                 if (blk, off) in CTL else "")
         print(f"{BASES[blk] + off:#010x} {blk}+{off:03x} {old:08X} -> {new:08X}{mark}")
         for n in notes:
             print(f"    {n}")
@@ -413,14 +611,24 @@ def main():
         regs = recipe(live, p)
         doc = {
             "picture": {"w": w, "h": h, "ow": ow, "oh": oh, "dx": dx, "dy": dy,
-                        "fmt": a.fmt,
+                        "fmt": a.fmt, "hflip": hflip, "vflip": vflip,
+                        "mirror": mode, "reflect": a.reflect,
                         "pitch": p.pitch, "stride": p.stride},
             "buffer": {"luma_bytes": ylen, "chroma_bytes": clen},
             "live": a.live,
             # FIELDS order: afbd, comp, route, proc, lvds, vblend
             "regs": [{"block": blk, "off": off, "addr": BASES[blk] + off,
                       "old": old, "new": new, "notes": notes}
-                     for (blk, off), (old, new, notes) in regs.items()],
+                     for (blk, off), (old, new, notes) in regs.items()
+                     if (blk, off) not in CTL],
+            # words shared with source on/off and the NR hold: apply only the
+            # mirror bits, read-modify-write (afbd+010 with source 0's CTRL,
+            # comp+040 inside the hold bracket)
+            "ctl": [{"block": blk, "off": off, "addr": BASES[blk] + off,
+                     "lsb": lsb, "width": width,
+                     "value": (regs[(blk, off)][1] >> lsb) & ((1 << width) - 1),
+                     "notes": prov}
+                    for blk, off, lsb, width, _k, _f, prov in CTL_FIELDS],
         }
         with open(a.json, "w") as f:
             json.dump(doc, f, indent=1)

@@ -12,7 +12,12 @@ WHAT IS READ, AND WHY ONLY THIS. Two sources, nothing else:
   * beyond those, only registers the MIPS display firmware itself loads or
     stores (tools/mips/block-map.py over display.bin, plus the two
     PanelWinNode::WriteReg reaches through `ori 0xfe00` that the linear scanner
-    cannot see). A register the firmware programs is in a powered block.
+    cannot see). A register the firmware programs is in a powered block;
+  * for the WP5 mirror, a few readback words the stock capture
+    (local/h713-lab/stock-capture-20261001, display.txt) read on this SoC
+    with the same blocks powered and video on: proc instances 2-3's line
+    window and the panel's mirror status. The firmware writes only proc
+    instance 0, yet all four instances moved under stock's H mirror.
 
 Never 0x07091000 (a read wedges the SoC) or 0x06940000 (unpowered capture
 domain). Nothing here writes.
@@ -40,7 +45,10 @@ BLOCKS = [
     ("route", 0x05140000, 0x600, [
         0xd40, 0xd44, 0xd4c, 0xd50, 0xd54, 0xe00,
     ]),
-    ("proc", 0x05180000, 0x200, []),
+    ("proc", 0x05180000, 0x200, [
+        # WP5: instances 2-3's +050, read by the stock capture
+        0x250, 0x350,
+    ]),
     ("lvds", 0x051c0000, 0x100, [
         0x120, 0x124, 0x128, 0x12c, 0x130, 0x134, 0x138, 0x170,
         0x1bc, 0x200, 0x204, 0x21c, 0x220, 0x228, 0x238, 0x23c,
@@ -49,6 +57,8 @@ BLOCKS = [
         0x334, 0x338, 0x364, 0x370, 0x374,
         # PanelWinNode::WriteReg crtc window, reached via `ori 0xfe00`
         0xfe00, 0xfe04,
+        # WP5: H-mirror status (0 -> 1 with 0x0a0[0] in the stock capture)
+        0x164,
     ]),
     ("vblend", 0x05200000, 0x80, []),
     # DETNWinNode::WriteReg (0x8b1a1a64) writes window geometry here in the

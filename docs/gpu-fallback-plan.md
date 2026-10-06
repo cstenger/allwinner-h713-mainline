@@ -439,7 +439,7 @@ Still open in WP4:
 - Add `tools/video/h713-play FILE`. It probes codec, size, rotation and bit depth, applies the routing table, prints its decision, then runs stock mpv with the VE pre-shrink environment (aspect-fit, even, never upscale) or the 10-bit environment and shader, or the direct mode if WP2 keeps it.
 
 **Later.**
-- **WP5, the hardware mirror** as `REFLECT_X`/`REFLECT_Y` on the DRM planes, from the recipe in the stock reference.
+- **WP5, the hardware mirror:** an installation setting (mode 0–3, sysfs, rootfs default) plus `REFLECT_X`/`REFLECT_Y` on both DRM planes. Plan: [mirror-plan.md](mirror-plan.md); Phase 0 (recipe, self-tested against stock) done 2026-10-06.
 - **WP6, VP9 VE scaling:** read Jernej's patches, then the stock 4K VE pages, then extend `cedrus_can_scale()`.
 - Keystone as a GL warp.
 - The hardware letterbox plan as an optimisation.

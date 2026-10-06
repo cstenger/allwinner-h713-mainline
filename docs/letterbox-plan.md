@@ -374,6 +374,15 @@ Routing: sources below 720p take plane-native through stock
 
 ### Mirror design (2026-10-06; implement and test with WP5)
 
+> **Answered by WP5 Phase 0 (2026-10-06,
+> [reference/mirror-recipe-2026-10-06.md](reference/mirror-recipe-2026-10-06.md)):
+> both cases occur.**
+> - **H** is the panel's line reversal, after the vblender: an installation H needs **no** remap.
+> - **V** is AFBD's bottom-up fetch, in place: an installation V **does** remap, `dy' = 720 − dy − oh`.
+> - A plane `REFLECT_X` (content only) remaps x instead.
+> - `letterbox-recipe.py --mirror/--reflect` (`hw_place()`) carries the mapping, and [mirror-plan.md](mirror-plan.md) supersedes the state design below.
+> - The discriminating test below is WP5 Phase 1 step c-h.
+
 **Open question:** where in the pipeline does the stock mirror act? The
 answer decides whether the driver remaps anything:
 - **At the panel, after the vblender** (the whole composed picture flipped):

@@ -48,7 +48,7 @@ printed `[x, y, w, h]`. `PanelWinNode::DbgDump` at `0x8b1a4e7c` loads
 
 - WCETop computes NR's output origin:
   - `0x8b1a87f0`: `hde = hs_size + h_back_porch − 28 (− delays) + x_off`, adding `x_off` only when it is > 0;
-  - `0x8b1a8928`: `vde = vs_size + v_back_porch (− 1 if interlaced) + y_off`.
+  - `0x8b1a8928`: `vde = vs_size + v_back_porch (− 1 if H mirror) + y_off`. The −1 is the installation-mode H flag (`0x8b1a89a0`–`0x8b1a89b0`, set for mirror modes 1 and 3), not interlace (corrected 2026-10-06, [mirror-recipe-2026-10-06.md](mirror-recipe-2026-10-06.md)).
 - That origin becomes `NRWinNode.m_out_win.{x,y}` (the call at `0x8b1aa47c`/`0x8b1aa498`).
 - `NRWinNode::CalcWindow` (`0x8b1a3704`) then sets `m_read_fetch_win = {out.x, crop.x+crop.w, out.y, crop.y+crop.h}` (`0x8b1a3974`–`0x8b1a39a4`).
 - The live board has `hs_size 20`, `h_back_porch 57`, `vs_size 2` and `v_back_porch 20` (elog 2026-09-04), so the origin is **(49, 22)**. `proc+044 = 0x31` and `lvds+0c0[15:0] = 0x16` read it back.

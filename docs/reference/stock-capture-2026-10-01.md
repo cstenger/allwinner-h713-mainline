@@ -66,9 +66,17 @@ which calls Softwinner's `AwTvDisplayTypes.EnumPanelMirror` /
 | Mode | `mirror_mode` | Firmware log |
 | --- | --- | --- |
 | Front | 0 | reference |
-| Rear | 1 (H) | proc `+0x50` line window moves; NR `m_v_mirror_on: FALSE` |
+| Rear | 1 (H) | panel `0x051c00a0[0]`, plus vde 22 → 21 |
 | Rear ceiling | 2 (V) | NR `m_v_mirror_on: TRUE` (bottom-up fetch) |
-| Front ceiling | 3 (H+V) | both; panel `video_win` y 22 → 21 |
+| Front ceiling | 3 (H+V) | both |
+
+> **Corrected 2026-10-06** ([mirror-recipe-2026-10-06.md](mirror-recipe-2026-10-06.md)):
+> - The H mirror is the panel bit `0x051c00a0[0]`.
+> - The proc `+0x50` change is a one-line vde shift that comes with H: `y 22 → 21` happens in modes 1 *and* 3.
+> - Of the words listed below, the firmware writes only these:
+>   - H: `0x051c00a0`, comp `0x80c/0x840/0x858` and proc instance 0's `+0x50`;
+>   - V: `0x05600010` and `0x05000040`.
+> - The rest are status or readback (proc instances 1–3 follow instance 0 in hardware). `0x05040014` is noise.
 
 Register words that are stable within each capture and differ from native
 (diffed against two native and two keystone captures):
