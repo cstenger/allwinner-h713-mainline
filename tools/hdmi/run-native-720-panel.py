@@ -337,7 +337,7 @@ def main():
     run(SCP + [str(GST_RUNNER),
                "root@192.168.4.1:/tmp/h713-gst-native-720-panel.c"])
     try:
-        remote("set -e; if test -d /sys/module/h713_hdmi_v4l2; then "
+        setup = remote("set -e; if test -d /sys/module/h713_hdmi_v4l2; then "
                "rmmod h713_hdmi_v4l2; fi; "
                f"test \"$(sha256sum /tmp/h713-hdmi-v4l2-720.ko | cut -d' ' -f1)\" = {module_sha}; "
                "insmod /tmp/h713-hdmi-v4l2-720.ko width=1280 height=720 "
@@ -346,6 +346,12 @@ def main():
                "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/height)\" = 720; "
                "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/source_cached)\" = Y; "
                "test \"$(cat /sys/module/h713_hdmi_v4l2/parameters/use_vmalloc)\" = Y; "
+               "capture_device=; for node in /sys/class/video4linux/video*; do "
+               "if test \"$(cat \"$node/name\")\" = "
+               "\"H713 HDMI1 ring capture\"; then "
+               "capture_device=/dev/${node##*/}; break; fi; done; "
+               "test -n \"$capture_device\"; "
+               "echo capture_device $capture_device; "
                "test -f /tmp/h713-scp-probe.ko; "
                "set -- $(modinfo -F vermagic /tmp/h713-scp-probe.ko); "
                "test \"$1\" = \"$(uname -r)\"; "
@@ -359,6 +365,11 @@ def main():
                "-o /tmp/h713-gst-native-720-panel "
                "/tmp/h713-gst-native-720-panel.c "
                "$(pkg-config --cflags --libs gstreamer-1.0)")
+        match = re.search(r"^capture_device (/dev/video[0-9]+)$",
+                          setup.stdout, re.MULTILINE)
+        if not match:
+            raise RuntimeError("HDMI capture node was not reported after probe")
+        capture_device = match.group(1)
     except (RuntimeError, subprocess.TimeoutExpired):
         remote("if test -d /sys/module/h713_hdmi_v4l2; then "
                "rmmod h713_hdmi_v4l2; fi; "
@@ -374,6 +385,7 @@ def main():
     (output / "kms-before.log").write_text(kms_before)
     (output / "scanout-before.log").write_text(scanout_before_text)
     target = (f"H713_GST_TIMING_TRACE={PIPELINE_TRACE} "
+              f"H713_V4L2_DEVICE={capture_device} "
               "timeout -s INT 15s /tmp/h713-gst-native-720-panel "
               f"{args.frames}")
 
@@ -421,6 +433,7 @@ def main():
                 source_args = [
                     "mpv", "--no-config", "--no-audio", "--vo=gpu",
                     "--gpu-context=wayland", "--fullscreen",
+                    f"--screen-name={args.source_screen}",
                     f"--fs-screen-name={args.source_screen}", "--osc=no",
                     "--osd-level=0", "--no-input-default-bindings"]
                 if args.pattern_only:
@@ -433,6 +446,10 @@ def main():
                 time.sleep(1)
                 if source.poll() is not None:
                     raise RuntimeError("source visual exited early")
+                if (not args.interactive_pointer and
+                        "not found/unavailable" in source_log_path.read_text()):
+                    raise RuntimeError(
+                        "mpv could not target the HDMI source screen")
                 if (args.interactive_pointer and
                         f"READY screen={args.source_screen} " not in
                         source_log_path.read_text()):

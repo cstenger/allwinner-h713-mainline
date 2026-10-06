@@ -153,6 +153,7 @@ int main(int argc, char **argv)
 	GError *error = NULL;
 	gchar *description = NULL;
 	const char *trace_path;
+	const char *capture_device;
 	guint frames = DEFAULT_FRAMES;
 	guint64 rendered, dropped;
 	gint64 start_us, end_us;
@@ -180,6 +181,9 @@ int main(int argc, char **argv)
 	gst_init(&argc, &argv);
 	g_mutex_init(&timing.lock);
 	trace_path = g_getenv("H713_GST_TIMING_TRACE");
+	capture_device = g_getenv("H713_V4L2_DEVICE");
+	if (!capture_device)
+		capture_device = "/dev/video1";
 	selftest = g_getenv("H713_GST_SELFTEST") != NULL;
 	if (selftest)
 		description = g_strdup_printf(
@@ -190,12 +194,12 @@ int main(int argc, char **argv)
 			"! fakesink name=panel sync=false", frames);
 	else
 		description = g_strdup_printf(
-			"v4l2src name=source device=/dev/video1 num-buffers=%u io-mode=mmap "
+			"v4l2src name=source device=%s num-buffers=%u io-mode=mmap "
 			"! video/x-raw,format=NV16,width=1280,height=720,framerate=60/1 "
 			"! videoconvert n-threads=4 "
 			"! video/x-raw,format=NV12 "
 			"! kmssink name=panel driver-name=sun50i-h713-afbd "
-			"sync=false skip-vsync=true", frames);
+			"sync=false skip-vsync=true", capture_device, frames);
 	pipeline = gst_parse_launch(description, &error);
 	g_free(description);
 	if (!pipeline || error) {

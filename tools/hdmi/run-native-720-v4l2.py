@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import time
@@ -32,6 +33,18 @@ def run(argv, timeout=30):
     return result.stdout
 
 
+def source_screen_for_hdmi():
+    configuration = run(["cosmic-randr", "list", "--kdl"])
+    match = re.search(
+        r'^output "HDMI-A-1"[^\n]*\{(?P<body>.*?)(?=^output |\Z)',
+        configuration, re.MULTILINE | re.DOTALL)
+    if not match:
+        raise RuntimeError("HDMI-A-1 is absent from the compositor layout")
+    mirror = re.search(r'^\s+mirroring "([^"]+)"', match.group("body"),
+                       re.MULTILINE)
+    return (mirror.group(1) if mirror else "HDMI-A-1"), configuration
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--probe-module", type=Path,
@@ -40,6 +53,8 @@ def main():
                     help="H713 HDMI V4L2 module built for the running kernel")
     ap.add_argument("--fallback-module", type=Path, default=FALLBACK,
                     help="Module restored after the bounded native-mode trial")
+    ap.add_argument("--source-screen",
+                    help="Wayland output for the pattern; default follows the HDMI mirror")
     ap.add_argument("--frames", type=int, choices=range(1, 601), default=30)
     ap.add_argument("--sparse-verify", action="store_true")
     ap.add_argument("--cached-source", action="store_true",
@@ -92,9 +107,20 @@ def main():
             "insmod /tmp/h713-hdmi-v4l2-720.ko width=1280 height=720 "
             f"verify_full={verify} source_cached={source_cached} "
             f"use_vmalloc={use_vmalloc}; "
-            "v4l2-ctl -d /dev/video1 --all; "
-            "v4l2-ctl -d /dev/video1 --list-formats-ext"])
+            "capture_device=; for node in /sys/class/video4linux/video*; do "
+            "if test \"$(cat \"$node/name\")\" = "
+            "\"H713 HDMI1 ring capture\"; then "
+            "capture_device=/dev/${node##*/}; break; fi; done; "
+            "test -n \"$capture_device\"; "
+            "echo capture_device $capture_device; "
+            "v4l2-ctl -d $capture_device --all; "
+            "v4l2-ctl -d $capture_device --list-formats-ext"])
         (output / "v4l2-capability.txt").write_text(setup)
+        match = re.search(r"^capture_device (/dev/video[0-9]+)$", setup,
+                          re.MULTILINE)
+        if not match:
+            raise RuntimeError("HDMI capture node was not reported after probe")
+        capture_device = match.group(1)
         with (output / "trial.log").open("w") as log:
             trial = subprocess.Popen(
                 [sys.executable, str(HERE / "run-detection-trial.py"),
@@ -111,20 +137,28 @@ def main():
             else:
                 raise RuntimeError("source GPU did not enable the 720p output")
 
+            detected_screen, display_layout = source_screen_for_hdmi()
+            source_screen = args.source_screen or detected_screen
+            (output / "display-layout.kdl").write_text(display_layout)
+
             with (output / "mpv.log").open("w") as player_log:
                 player = subprocess.Popen(
                     ["mpv", "--no-config", "--no-audio", "--vo=gpu",
                      "--gpu-context=wayland", "--loop-file=inf", "--fullscreen",
-                     "--fs-screen-name=HDMI-A-1", "--osc=no", "--osd-level=0",
+                     f"--screen-name={source_screen}",
+                     f"--fs-screen-name={source_screen}",
+                     "--osc=no", "--osd-level=0",
                      "--no-input-default-bindings", str(PATTERN)],
                     stdout=player_log, stderr=subprocess.STDOUT)
                 time.sleep(2)
                 if player.poll() is not None:
                     raise RuntimeError("mpv exited before V4L2 capture")
+                if "not found/unavailable" in (output / "mpv.log").read_text():
+                    raise RuntimeError("mpv could not target the HDMI source screen")
                 if args.gst_nv12:
                     command = (
                         "timeout -s KILL 20s gst-launch-1.0 -e "
-                        f"v4l2src device=/dev/video1 num-buffers={args.frames} "
+                        f"v4l2src device={capture_device} num-buffers={args.frames} "
                         "io-mode=mmap ! video/x-raw,format=NV16,width=1280,"
                         "height=720 ! videoconvert n-threads=4 ! "
                         "video/x-raw,format=NV12 ! fakesink sync=false")
@@ -136,7 +170,8 @@ def main():
                 if not args.gst_nv12:
                     command = ("timeout -s KILL 20s ffmpeg -nostdin -y -hide_banner "
                                "-loglevel info -f v4l2 -input_format nv16 "
-                               "-video_size 1280x720 -i /dev/video1 -fps_mode passthrough "
+                               f"-video_size 1280x720 -i {capture_device} "
+                               "-fps_mode passthrough "
                                f"-frames:v {args.frames} {sink}")
                 capture = subprocess.run(SSH + [command], text=True,
                                          capture_output=True, timeout=25)
