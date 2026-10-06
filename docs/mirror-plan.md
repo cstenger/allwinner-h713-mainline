@@ -1,6 +1,13 @@
 # WP5: the hardware mirror (installation mode): plan (2026-10-05)
 
-> **Status 2026-10-06: Phase 1 DONE. Every prediction held on the glass**
+> **Status 2026-10-06: Phase 2 DONE: kernel 0166 mirrors the panel in hardware**
+> ([reference/mirror-phase2-2026-10-06.md](reference/mirror-phase2-2026-10-06.md)).
+> - Interface: sysfs `mirror_mode` (0–3, instant), module parameter `mirror_mode`, and plane `rotation` on both planes.
+> - Gate: 20/20 headless cases, plus the P010 refusal, playback switching, the GPU path and an operator look. No warnings or faults.
+> - P010 under V is refused: the hardware scrambles it; 10-bit goes through the GPU path anyway.
+> - **Next: Phase 3** (the `h713-mirror` tool, rootfs tmpfiles default, docs).
+>
+> **Phase 1 DONE (2026-10-06). Every prediction held on the glass**
 > ([reference/mirror-phase1-2026-10-06.md](reference/mirror-phase1-2026-10-06.md)).
 > - Video plane: h, v, hv, an asymmetric placement and a non-16 height all behaved as predicted. The bars follow the mirror, and no padding showed.
 > - Console route: V = OSD control bit 3 (pixel-exact); H = the shared panel bit, but it **loses one row** (panel histogram, `panel-signature.sh`), fixed by **program window `lvds+0x0c0` y 22 → 23** (histogram bit-identical). OSD bit 2 is dead.

@@ -392,6 +392,16 @@ YUV→RGB in the texture unit.
 **For real-time playback today, do not use the CPU.** mpv at 32 fps and
 `gles-play` at 59.71 both already work.
 
+## Hardware mirror (installation mode), 2026-10-06
+
+Kernel 0166 mirrors the panel in display hardware, as the stock firmware's Installation mode does:
+- **Installation mode:** `echo N > /sys/bus/platform/drivers/sun50i-h713-afbd/5600000.display/mirror_mode`, where N is 0 front, 1 rear, 2 rear ceiling or 3 ceiling. It re-commits every plane at once, invisibly to clients.
+- **Boot default:** `sun50i_h713_afbd.mirror_mode=N`.
+- **Per plane:** the `rotation` property on both planes (`reflect-x`, `reflect-y`, `rotate-180`), combined with the installation mode by XOR.
+- **P010 under the vertical mirror is refused.**
+- **Checking it:** `debugfs dri/5600000.display/h713_geometry` shows the state; `tools/display/mirror-gate.sh` gates it.
+- **Details:** [reference/mirror-phase2-2026-10-06.md](reference/mirror-phase2-2026-10-06.md).
+
 ## Still open
 
 - **Nobody has looked at the projector yet.** Every check above is a register,
