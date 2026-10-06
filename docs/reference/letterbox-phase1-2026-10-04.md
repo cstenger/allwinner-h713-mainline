@@ -183,9 +183,13 @@ Carry into Phase 2:
   - native 960x720 at (160,0).
 
   1280x720 native and 1080p plane-ve are unchanged. There were 0 drops and no kernel messages.
-- **Found and fixed on the way:** VE-scaled heights that are not a multiple of 16 (534, 536, 540) put chroma in the wrong place: colour shifted up and a green band at the bottom. `scanout-grab` showed the fault is in the buffer, not the display: a native 534 is clean. The cause is that the VE scaler writes chroma straight after the scaled height, while cedrus declares it after ALIGN16. The workaround is h713-play rounding to a multiple of 16 (commit 5859c4b). The proper cedrus/VA fix is a separate task.
+- **Found and fixed on the way:** VE-scaled heights that are not a multiple of 16 (534, 536, 540) put chroma in the wrong place: colour shifted up and a green band at the bottom. `scanout-grab` showed the fault is in the buffer, not the display: a native 534 is clean.
+  - **My first diagnosis was wrong.** I blamed the VE ignoring its chroma address and worked around it by rounding heights in h713-play (5859c4b).
+  - **The real cause** (found by its own task, e28325d): GStreamer va exports surfaces before the first decode, and the VA driver sized that export on a throwaway cedrus instance with no scaling, which padded the height to 16. So chroma was exported at pitch×544 but written at pitch×534.
+  - **The fix:** libva 0015 (pre-decode export uses the decode's own CAPTURE request) plus kernel 0162 (pad the scaled sizeimage for the plane's 16-line chroma fetch). The rounding is removed.
+  - **Re-verified 2026-10-05 with the real fix:** scope 1280x534 at (0,93), ultrawide 1280x540 at (0,90), 0 green rows, chroma on its luma (scanout grabs `fx-card-*.png`).
 - **Operator, card re-run (with scanout references in `local/h713-lab/letterbox-phase2-20261005/rerun/`):** all four pictures look correct.
-- **Moving content (2026-10-05):** operator saw all correct. Four moving `testsrc2` clips (native 1280x720 control, scope, ultrawide, 4:3) were each grabbed six times (`local/h713-lab/letterbox-phase2-20261005/move/`), with 0 drops and 0 underruns.
+- **Moving content (2026-10-05, with the rounding workaround still in place):** operator saw all correct. Four moving `testsrc2` clips (native 1280x720 control, scope, ultrawide, 4:3) were each grabbed six times (`local/h713-lab/letterbox-phase2-20261005/move/`), with 0 drops and 0 underruns.
   - The earlier "doubled diagonal" was two things. The pattern draws its band bouncing off the edges, so it shows two segments in a software render too. And during the 534/536 fault the band's colour sat 16–20 lines above its luma, a real second diagonal, removed by the height rounding.
 - **PHASE 2 VERIFIED ON HARDWARE.**
 - **Open, separate task:** audio clicks at clip start.
