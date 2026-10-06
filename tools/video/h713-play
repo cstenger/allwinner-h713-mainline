@@ -10,6 +10,10 @@
 #   plane-ve      H.264/HEVC larger than its fit: va*dec with the VE
 #                 decode-time scaler down to the fit size, onto the video
 #                 plane. Without letterbox only a 1280x720 fit qualifies.
+#   plane-up      a picture SMALLER than its fit (480p, 576p, 360p), any of
+#                 H.264/HEVC/VP9/AV1: stock v4l2sl*dec ! kmssink; kmssink
+#                 commits its aspect-fit destination and the display's proc
+#                 block magnifies (kernel 0163, up to 4x per axis).
 #   gpu           everything else: stock mpv --vo=gpu with the cheap scaling
 #                 settings WP2 measured (1080p real time in every codec).
 #
@@ -18,8 +22,9 @@
 # can show the picture as is. With kernel 0161 (letterbox, detected from the
 # DRM minimum framebuffer size) the plane shows any NV12 picture up to the
 # panel unscaled and centred by kmssink, with black bars; without it, exactly
-# 1280x720. It cannot magnify (pictures smaller than their fit stay on the
-# GPU until letterbox Phase 3) or rotate 90/270, and has no downscaler;
+# 1280x720. Kernel 0163 adds magnification, detected from the plane's
+# SCALING_FILTER property. The plane cannot rotate 90/270 and has no
+# downscaler;
 # the VE scaler downscales H.264 and
 # HEVC only (VP9 is WP6, AV1 has none). 10-bit goes to the GPU route: the VE
 # scaler cannot output it. There, V4L2_REQUEST_LSB10_LINEAR=1 lets mpv's
@@ -94,25 +99,55 @@ av1) gst=av1 ;;
 *) gst= ;;
 esac
 
-# Letterbox (kernel 0161) lowers the DRM minimum framebuffer width below the
-# panel's; read it from DRM_IOCTL_MODE_GETRESOURCES rather than trusting a
-# kernel version.
-min_w=$(python3 - <<'PY' 2>/dev/null || echo $PANEL_W
-import fcntl, glob, os, struct
+# Read what the kernel can do from DRM, never from a kernel version.
+# Letterbox (kernel 0161) lowers the minimum framebuffer width below the
+# panel's (DRM_IOCTL_MODE_GETRESOURCES). Magnification (kernel 0163) gives
+# the video plane a SCALING_FILTER property, the standard "this plane scales".
+# Neither needs DRM master. Prints "MIN_W SCALES".
+read -r min_w scales < <(python3 - <<'PY' 2>/dev/null || echo "$PANEL_W 0"
+import ctypes, fcntl, glob, os, struct
+def ioctl(fd, req, buf):
+    fcntl.ioctl(fd, req, buf, True)
 for dev in sorted(glob.glob("/dev/dri/card*")):
     fd = os.open(dev, os.O_RDWR)
-    buf = bytearray(64)
     try:
-        fcntl.ioctl(fd, 0xC04064A0, buf)       # DRM_IOCTL_MODE_GETRESOURCES
+        res = bytearray(64)
+        ioctl(fd, 0xC04064A0, res)              # DRM_IOCTL_MODE_GETRESOURCES
     except OSError:
         os.close(fd)
         continue
+    min_w, scales = struct.unpack_from("<I", res, 48)[0], 0
+    pr = bytearray(16)
+    ioctl(fd, 0xC01064B5, pr)                   # DRM_IOCTL_MODE_GETPLANERESOURCES
+    n = struct.unpack_from("<I", pr, 8)[0]
+    ids = (ctypes.c_uint32 * max(n, 1))()
+    struct.pack_into("<QI", pr, 0, ctypes.addressof(ids), n)
+    ioctl(fd, 0xC01064B5, pr)
+    for plane in ids[:n]:
+        op = bytearray(32)
+        struct.pack_into("<QQIII", op, 0, 0, 0, 0, plane, 0xEEEEEEEE)
+        ioctl(fd, 0xC02064B9, op)               # DRM_IOCTL_MODE_OBJ_GETPROPERTIES
+        cnt = struct.unpack_from("<I", op, 16)[0]
+        props = (ctypes.c_uint32 * max(cnt, 1))()
+        vals = (ctypes.c_uint64 * max(cnt, 1))()
+        struct.pack_into("<QQIII", op, 0, ctypes.addressof(props),
+                         ctypes.addressof(vals), cnt, plane, 0xEEEEEEEE)
+        ioctl(fd, 0xC02064B9, op)
+        for pid in props[:cnt]:
+            gp = bytearray(64)
+            struct.pack_into("<QQI", gp, 0, 0, 0, pid)
+            ioctl(fd, 0xC04064AA, gp)           # DRM_IOCTL_MODE_GETPROPERTY
+            if gp[24:56].split(b"\0")[0] == b"SCALING_FILTER":
+                scales = 1
     os.close(fd)
-    print(struct.unpack_from("<I", buf, 48)[0]); break
+    print(min_w, scales)
+    break
 PY
 )
 letterbox=0
 [ "${min_w:-$PANEL_W}" -lt $PANEL_W ] && letterbox=1
+magnify=0
+[ $letterbox = 1 ] && [ "${scales:-0}" = 1 ] && magnify=1
 
 why=
 if [ -z "$gst" ]; then why="codec $codec has no plane decoder"
@@ -120,8 +155,16 @@ elif [ $depth != 8 ]; then why="10-bit"
 elif [ $rot != 0 ]; then why="rotated $rot"
 elif [ $letterbox = 0 ] && { [ $fw != $PANEL_W ] || [ $fh != $PANEL_H ]; }; then why="fits as ${fw}x${fh}, the plane shows only ${PANEL_W}x${PANEL_H} (no letterbox in this kernel)"
 elif [ $w = $fw ] && [ $h = $fh ]; then plane=native
+elif [ $w -le $fw ] && [ $h -le $fh ]; then
+	# Smaller than its fit on both axes (anamorphic SAR included): proc
+	# magnifies, up to 4x per axis, in display (SAR-corrected) units.
+	if [ $magnify = 0 ]; then why="smaller than its ${fw}x${fh} fit and this kernel cannot magnify (kernel 0163)"
+	elif [ $fw -gt $(( 4 * w )) ] || [ $fh -gt $(( 4 * h )) ]; then why="more than 4x to its ${fw}x${fh} fit"
+	elif [ $(( w % 2 )) = 1 ] || [ $(( h % 2 )) = 1 ]; then why="odd size ${w}x${h}"
+	else plane=up
+	fi
 elif [ $gst != h264 ] && [ $gst != h265 ]; then why="no VE scaler for $codec"
-elif [ $w -lt $fw ]; then why="smaller than its ${fw}x${fh} fit (the VE scaler only shrinks; magnifying is letterbox Phase 3)"
+elif [ $w -lt $fw ] || [ $h -lt $fh ]; then why="needs magnifying on one axis and shrinking on the other (${w}x${h} -> ${fw}x${fh})"
 elif [ $w -gt $VA_MAX ] || [ $h -gt $VA_MAX ]; then why="larger than the VA driver's ${VA_MAX} cap"
 else plane=ve
 fi
@@ -139,6 +182,10 @@ player=$(command -v gst-plane-play || echo "$(dirname "$0")/gst-plane-play")
 case ${plane:-} in
 native)
 	echo "h713-play: $probe: plane-native (v4l2sl${gst}dec ! kmssink)"
+	cmd=("$player" "$file" "$gst" "v4l2sl${gst}dec")
+	;;
+up)
+	echo "h713-play: $probe: plane-up (v4l2sl${gst}dec ! kmssink, proc magnifies ${w}x${h} -> ${fw}x${fh})"
 	cmd=("$player" "$file" "$gst" "v4l2sl${gst}dec")
 	;;
 ve)
