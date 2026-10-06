@@ -17,6 +17,7 @@ CELL = WIDTH // 10
 SOURCE_RATE = 60
 ACTIVE_EDGE_MARGIN = 24
 MAX_DELAY_FRAMES = 12
+BAND_SEARCH_RADIUS = 36
 
 
 def parse_quad(value):
@@ -67,7 +68,19 @@ def sample_band(gray, top):
 def sample_display(frame, transform):
     warped = cv2.warpPerspective(frame, transform, (WIDTH, HEIGHT))
     gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
-    return [sample_band(gray, top) for top in BANDS]
+    # Phone stabilization and wide-angle lens distortion can move the warped
+    # bands by tens of rows even when the filmed displays stay fixed. Track
+    # each known left marker independently instead of treating the initial
+    # quadrilateral as a perfect per-frame registration.
+    marker_profile = np.mean(gray[:, 8:40], axis=1)
+    tops = []
+    for expected in BANDS:
+        first = max(0, expected - BAND_SEARCH_RADIUS)
+        last = min(HEIGHT - 48, expected + BAND_SEARCH_RADIUS)
+        scores = [float(np.mean(marker_profile[top + 8:top + 40]))
+                  for top in range(first, last + 1)]
+        tops.append(first + int(np.argmax(scores)))
+    return [sample_band(gray, top) for top in tops]
 
 
 def two_means(values):

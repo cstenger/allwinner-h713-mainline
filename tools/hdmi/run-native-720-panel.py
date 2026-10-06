@@ -16,6 +16,7 @@ ROOT = HERE.parents[1]
 MODULE = ROOT / "modules/hdmi-v4l2/h713-hdmi-v4l2.ko"
 GST_RUNNER = HERE / "gst-native-720-panel.c"
 LATENCY_ANALYZER = HERE / "analyze-native-720-latency.py"
+INTERACTIVE_PATTERN = HERE / "interactive-motion-pattern.py"
 PROBE = ROOT / "build/scp-probe-1280-720/h713-scp-probe.ko"
 # The tested module defaults to the conservative 640x480/full-verification
 # configuration.  Native 720p is selected only by the explicit insmod options
@@ -32,7 +33,7 @@ SCP = ["scp", "-F", "/dev/null", "-o", "BatchMode=yes", "-o",
 KERNEL_RELEASE = "6.18.38"
 EDID_SHA256 = "1bf44b2172fb4e512d8a575c58f2abbcfd96d2f2902bea5b8a7a323248fb9013"
 DEFAULT_PANEL_FRAMES = 360
-# Patch 0141 retains 512 presentations, including one KMS bootstrap repeat.
+# Patch 0164 retains 512 presentations, including one KMS bootstrap repeat.
 MAX_PANEL_FRAMES = 511
 PANEL_FPS = 60
 # kmssink enables the overlay with its first framebuffer, then submits that same
@@ -261,9 +262,17 @@ def main():
     ready.add_argument("--operator-ready", action="store_true",
                        help="confirm the operator is watching; no optical evidence retained")
     ap.add_argument("--video", type=Path, default=DEFAULT_VIDEO)
+    ap.add_argument("--probe-module", type=Path, default=PROBE,
+                    help="mode-specific SCP EDID probe for the running kernel")
+    ap.add_argument("--capture-module", type=Path, default=MODULE,
+                    help="H713 HDMI V4L2 module built for the running kernel")
+    ap.add_argument("--fallback-module", type=Path, default=FALLBACK,
+                    help="module restored after the bounded panel trial")
     ap.add_argument("--frames", type=int, default=DEFAULT_PANEL_FRAMES)
     ap.add_argument("--pattern-only", action="store_true",
                     help="loop the lossless frame-ID pattern instead of playing the video")
+    ap.add_argument("--interactive-pointer", action="store_true",
+                    help="draw a conspicuous marker driven by real mouse motion")
     ap.add_argument("--mirror-from", metavar="OUTPUT",
                     help="temporarily make HDMI-A-1 mirror this source output")
     ap.add_argument("--source-screen", default="HDMI-A-1",
@@ -273,9 +282,14 @@ def main():
         ap.error("stop and obtain operator confirmation before the visible run")
     if not 1 <= args.frames <= MAX_PANEL_FRAMES:
         ap.error(f"--frames must be 1..{MAX_PANEL_FRAMES}")
+    if args.interactive_pointer and not args.pattern_only:
+        ap.error("--interactive-pointer requires --pattern-only")
     if args.mirror_from:
         args.source_screen = args.mirror_from
-    required = [MODULE, GST_RUNNER, LATENCY_ANALYZER, PROBE]
+    required = [args.capture_module, args.fallback_module, GST_RUNNER,
+                LATENCY_ANALYZER, args.probe_module]
+    if args.interactive_pointer:
+        required.append(INTERACTIVE_PATTERN)
     if not args.pattern_only:
         required.append(args.video)
     for path in required:
@@ -285,6 +299,12 @@ def main():
         raise RuntimeError("GPU test connector is not disconnected and disabled")
     if remote("uname -r").stdout.strip() != KERNEL_RELEASE:
         raise RuntimeError("projector kernel release differs from the validated module")
+    mips_state = remote("python3 -u /root/mips-shell.py --status").stdout
+    if "MIPS core      ALIVE" not in mips_state:
+        raise RuntimeError(
+            "HDMI receiver MIPS is not live; cold-power the board, run the "
+            "guarded U-Boot source-3 transition, and then run "
+            "prepare-source3.py --postboot-only")
     if not PATTERN.is_file():
         print(run([sys.executable, str(HERE / "make-motion-pattern.py"),
                    str(PATTERN), "--width", "1280", "--height", "720"],
@@ -294,18 +314,26 @@ def main():
                              datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     output.mkdir()
     print(f"Logs: {output}", flush=True)
-    module_sha = hashlib.sha256(MODULE.read_bytes()).hexdigest()
+    module_sha = hashlib.sha256(args.capture_module.read_bytes()).hexdigest()
     runner_sha = hashlib.sha256(GST_RUNNER.read_bytes()).hexdigest()
-    probe_sha = hashlib.sha256(PROBE.read_bytes()).hexdigest()
+    interactive_sha = (hashlib.sha256(INTERACTIVE_PATTERN.read_bytes()).hexdigest()
+                       if args.interactive_pointer else None)
+    probe_sha = hashlib.sha256(args.probe_module.read_bytes()).hexdigest()
     (output / "module-sha256.txt").write_text(module_sha + "\n")
     (output / "runner-sha256.txt").write_text(runner_sha + "\n")
+    if interactive_sha is not None:
+        (output / "interactive-pattern-sha256.txt").write_text(
+            interactive_sha + "\n")
     (output / "probe-sha256.txt").write_text(probe_sha + "\n")
     display_before = output_configuration() if args.mirror_from else None
     if display_before is not None:
         (output / "display-before.kdl").write_text(display_before)
-    run(SCP + [str(PROBE), "root@192.168.4.1:/tmp/h713-scp-probe.ko"])
-    run(SCP + [str(MODULE), "root@192.168.4.1:/tmp/h713-hdmi-v4l2-720.ko"])
-    run(SCP + [str(FALLBACK), "root@192.168.4.1:/tmp/h713-hdmi-v4l2.ko"])
+    run(SCP + [str(args.probe_module),
+               "root@192.168.4.1:/tmp/h713-scp-probe.ko"])
+    run(SCP + [str(args.capture_module),
+               "root@192.168.4.1:/tmp/h713-hdmi-v4l2-720.ko"])
+    run(SCP + [str(args.fallback_module),
+               "root@192.168.4.1:/tmp/h713-hdmi-v4l2.ko"])
     run(SCP + [str(GST_RUNNER),
                "root@192.168.4.1:/tmp/h713-gst-native-720-panel.c"])
     try:
@@ -384,7 +412,12 @@ def main():
                                        "mirror configuration")
                 (output / "display-mirrored.kdl").write_text(display_mirrored)
 
-            with (output / "source-mpv.log").open("w") as source_log:
+            if args.interactive_pointer:
+                source_log_path = output / "source-interactive.log"
+                source_args = [sys.executable, str(INTERACTIVE_PATTERN),
+                               "--screen", args.source_screen]
+            else:
+                source_log_path = output / "source-mpv.log"
                 source_args = [
                     "mpv", "--no-config", "--no-audio", "--vo=gpu",
                     "--gpu-context=wayland", "--fullscreen",
@@ -394,11 +427,16 @@ def main():
                     source_args += ["--loop-file=inf", str(PATTERN)]
                 else:
                     source_args += [str(PATTERN), str(args.video)]
+            with source_log_path.open("w") as source_log:
                 source = subprocess.Popen(source_args, stdout=source_log,
                                           stderr=subprocess.STDOUT)
                 time.sleep(1)
                 if source.poll() is not None:
-                    raise RuntimeError("source playlist exited early")
+                    raise RuntimeError("source visual exited early")
+                if (args.interactive_pointer and
+                        f"READY screen={args.source_screen} " not in
+                        source_log_path.read_text()):
+                    raise RuntimeError("interactive source did not confirm its screen")
                 preview = subprocess.Popen(SSH + [target], stdout=subprocess.PIPE,
                                            stderr=subprocess.PIPE, text=True)
                 time.sleep(2)
@@ -419,6 +457,23 @@ def main():
                 preview = None
                 stop(source)
                 source = None
+            pointer_samples = []
+            if args.interactive_pointer:
+                for line in source_log_path.read_text().splitlines():
+                    match = re.fullmatch(r"POINTER ([0-9.]+) ([0-9.]+)", line)
+                    if match:
+                        pointer_samples.append(tuple(map(float, match.groups())))
+                if len(pointer_samples) < 5:
+                    raise RuntimeError("interactive source received too few mouse moves")
+                pointer_span = round(max(
+                    max(x for x, _ in pointer_samples) -
+                    min(x for x, _ in pointer_samples),
+                    max(y for _, y in pointer_samples) -
+                    min(y for _, y in pointer_samples)), 2)
+                if pointer_span < 200:
+                    raise RuntimeError("interactive pointer moved less than 200 pixels")
+            else:
+                pointer_span = None
             trial.wait(timeout=45)
             if trial.returncode:
                 raise RuntimeError("720p signal trial failed")
@@ -474,6 +529,9 @@ def main():
                   "operator_observation_only": args.operator_ready,
                   "pipeline_frames": args.frames,
                   "pattern_only": args.pattern_only,
+                  "interactive_pointer": args.interactive_pointer,
+                  "interactive_pointer_samples": len(pointer_samples),
+                  "interactive_pointer_span_pixels": pointer_span,
                   "source_screen": args.source_screen,
                   "mirror_from": args.mirror_from,
                   "pipeline_rendered": pipeline["rendered"],
