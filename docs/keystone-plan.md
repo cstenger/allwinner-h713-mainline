@@ -131,6 +131,7 @@ Widths of the white border, outer edge to outer edge:
   - On a ceiling or floor, the correction is the lens's tilt from that surface's normal toward the projector's own top: upright by construction, so `keystone.lua` ignores the upside-down flag off a wall.
   - Smoothing now averages the gravity vector, not the angles. A turn of more than 3° counts as a new pose.
   - The daemon suite is 49/49, adding `level_deg`, the surface, and a lens 80° up reading −10° to the ceiling.
+- **Image.** `tools/rootfs/build.sh --profile dev --kernel-tree <current>` built clean (rc 0). In `rootfs.tar`, `h713-keystone`, `h713-play`, `keystone.lua` and `keystone.glsl` are byte-identical to the commit, and `h713-keystone.service` is installed and enabled. The image hasn't been flashed: the board runs the same files, installed by hand.
 - **Mid-file handover.** When the lens is measured, `h713-play` runs a plane route under watch. If a correction comes due, it SIGTERMs `gst-plane-play`, which prints its position, and execs the GPU route with `--start` at that position.
   - Verified: plane-native at 0°, the state went to 20° → "handed over at 4.463 s"; mpv resumed at 00:00:04 with VA decode, warped.
   - A correction due at start (pitch or roll ≥ 0.5°) still goes straight to the GPU.
