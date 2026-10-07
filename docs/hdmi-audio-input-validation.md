@@ -81,11 +81,14 @@ receiver and MIPS had passed their checks immediately before insertion, but no
 new stage log was captured, so the precise failing write is not yet known. Do
 not repeat that combined load.
 
-The probe now splits bridge setup into cold-boot phases selected by
-`audbrg_stage=1..4`:
+The Audio Bridge DT node is present but disabled. Consequently Linux creates
+no platform device for it, and the first revised stage-1 attempt correctly
+returned `-ENODEV`. The probe now registers a private 32-bit direct-DMA root
+device solely for the coherent allocation and splits bridge setup into phases
+selected by `audbrg_stage=1..4`:
 
-1. acquire the platform DMA device and allocate/fill DMA while leaving bridge
-   DT interrupt 0 unmapped and performing no bridge-register writes;
+1. create the private DMA device and allocate/fill DMA while leaving bridge DT
+   interrupt 0 unmapped and performing no bridge-register writes;
 2. add address and inert stream register programming;
 3. log and clear all pending bridge status before mapping DT interrupt 0,
    request the stock-style one-shot threaded handler, and enable the owned
@@ -105,25 +108,32 @@ acknowledges all 14 Audio Bridge status bits. Revised stages 1 and 2 leave the
 bridge interrupt entirely unmapped; stage 3 isolates mapping plus the stock
 threaded shape after status logging and clearing.
 
-The revised exact-kernel build has SHA-256
-`c9b9a586314442927179e885404505b9e0597230f2502a816f8bf2de3706fa3b`.
+The current ordering has passed all four phases under continuous serial
+capture. Phase 1 allocated DMA at `0x76c60000` without changing the sentinel;
+phase 2 latched start `0x006c6000`, end `0x006c6fff`, block `0x40`, config
+`0x3207`, and upper-address word `0x70`; phase 3 cleared zero pending status,
+mapped Linux IRQ 336/GICv2 145, and enabled the threaded handler without an
+interrupt; phase 4 survived the flush/start toggle. MIPS remained responsive
+and every phase unloaded cleanly. The exact-kernel module has SHA-256
+`d08ff41b12967deef9b40ddb5c521da8c77feb758bae816f2040eadb01112bb7`.
 
-## Next bounded run
+## Full bridge/SPDI trial
 
-The board currently requires a physical cold power cycle. Stop at U-Boot,
-start continuous serial capture, and repeat the guarded source-3 transition.
-After Linux boots and `prepare-source3.py --postboot-only` passes:
+The canonical trial log is
+`/tmp/h713-hdmi-audio-status-20261007T095104Z`. It used the exact complete
+EDID, dynamically resolved `hw:0,8`, held receiver state 5 at 1280x720, and
+ran the deterministic 48-kHz stereo LPCM signal with the stage-4 bridge and
+SPDI1 path active. Across snapshots 2 through 5:
 
-1. load the corrected TVFE hold and verify MIPS plus state-5 video lock;
-2. load the revised staged audio probe with
-   `configure_audbrg=1 audbrg_stage=1`;
-3. verify MIPS and unload cleanly;
-4. advance by one stage per successful load/unload, never skipping a liveness
-   check and never advancing after a missing boundary log;
-5. only after stage 4 survives, run the lock-gated PCM trial and inspect DMA
-   changed-byte counts, bridge IRQs, and AudIf status.
+- AudIf status remained zero and its handler received zero interrupts;
+- Audio Bridge status remained zero and its handler received zero interrupts;
+- the 64-KiB sentinel buffer had zero changed bytes (FNV `62519dc5`);
+- MIPS remained responsive after playback.
 
-`run-audio-status-trial.py` supports `--configure-audbrg` and
-`--audbrg-stage`, but the trial runner is for a phase already proven safe. The
-initial stage ladder must be performed manually under continuous serial
-capture.
+This moves the missing boundary upstream of both the DMA engine and SPDI1.
+Stock ALSA capture open/config does not add another HDMI receiver write:
+`Thal_Alsa_Audio_Open` allocates the capture handle, enables the bridge
+interrupt, and opens output stream 0; config only records format fields; start
+calls the bridge/SPDI sequence already reproduced here. The next bounded work
+is therefore to identify the receiver/MIPS route that feeds recovered HDMI
+audio into SPDI1, not to repeat bridge DMA trials.

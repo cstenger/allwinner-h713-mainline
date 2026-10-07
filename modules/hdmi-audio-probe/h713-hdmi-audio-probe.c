@@ -2,6 +2,7 @@
 /* Bounded H713 HDMI-input audio status probe. */
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
+#include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -9,8 +10,6 @@
 #include <linux/of.h>
 #include <linux/of_clk.h>
 #include <linux/of_irq.h>
-#include <linux/of_platform.h>
-#include <linux/platform_device.h>
 #include <dt-bindings/clock/sun50i-h713-ccu.h>
 
 #define AUDIF_PHYS_BASE		0x06146000u
@@ -77,7 +76,7 @@ static void __iomem *audbrg;
 static void __iomem *audbrg_addr_hi;
 static void __iomem *audio_top;
 static void __iomem *audio_ihb_clk_reg;
-static struct platform_device *audio_bridge_pdev;
+static struct device *audbrg_dma_dev;
 static bool resources_ready;
 static bool audio_top_initialized;
 static bool audio_ihb_retimed;
@@ -277,11 +276,17 @@ static int configure_audbrg_ostream0(struct device_node *audio_bridge)
 	u32 active;
 	int ret;
 
-	pr_info("h713-hdmi-audio-probe: Audio Bridge stage 1 entering platform DMA-device lookup; IRQ 0 remains unmapped\n");
-	audio_bridge_pdev = of_find_device_by_node(audio_bridge);
-	if (!audio_bridge_pdev)
-		return -ENODEV;
-	pr_info("h713-hdmi-audio-probe: Audio Bridge platform DMA device acquired\n");
+	pr_info("h713-hdmi-audio-probe: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped\n");
+	audbrg_dma_dev = root_device_register("h713-hdmi-audbrg-dma");
+	if (IS_ERR(audbrg_dma_dev)) {
+		ret = PTR_ERR(audbrg_dma_dev);
+		audbrg_dma_dev = NULL;
+		return ret;
+	}
+	ret = dma_coerce_mask_and_coherent(audbrg_dma_dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
+	pr_info("h713-hdmi-audio-probe: Audio Bridge private direct-DMA device ready\n");
 
 	active = readl(audbrg + AUDBRG_OSTREAM0 + AUDBRG_STREAM_START) |
 		 readl(audbrg + AUDBRG_OSTREAM0 + AUDBRG_STREAM_END) |
@@ -295,7 +300,7 @@ static int configure_audbrg_ostream0(struct device_node *audio_bridge)
 		return -EBUSY;
 	}
 
-	audbrg_dma_area = dma_alloc_coherent(&audio_bridge_pdev->dev,
+	audbrg_dma_area = dma_alloc_coherent(audbrg_dma_dev,
 					     AUDBRG_DMA_SIZE,
 					     &audbrg_dma_addr,
 					     GFP_KERNEL | GFP_DMA32);
@@ -475,14 +480,14 @@ static void release_resources(void)
 		audbrg_irq = -1;
 	}
 	if (audbrg_dma_area) {
-		dma_free_coherent(&audio_bridge_pdev->dev, AUDBRG_DMA_SIZE,
+		dma_free_coherent(audbrg_dma_dev, AUDBRG_DMA_SIZE,
 				  audbrg_dma_area, audbrg_dma_addr);
 		audbrg_dma_area = NULL;
 		audbrg_dma_addr = 0;
 	}
-	if (audio_bridge_pdev) {
-		put_device(&audio_bridge_pdev->dev);
-		audio_bridge_pdev = NULL;
+	if (audbrg_dma_dev) {
+		root_device_unregister(audbrg_dma_dev);
+		audbrg_dma_dev = NULL;
 	}
 	if (audio_top_initialized) {
 		writel(audio_top_saved_cfg, audio_top + 0xc);
@@ -591,7 +596,7 @@ static int __init h713_hdmi_audio_probe_init(void)
 	audbrg = ioremap(AUDBRG_PHYS_BASE, AUDBRG_SIZE);
 	if (configure_audbrg)
 		audbrg_addr_hi = ioremap(AUDBRG_ADDR_HI_PHYS,
-					   AUDBRG_ADDR_HI_SIZE);
+					 AUDBRG_ADDR_HI_SIZE);
 	audio_ihb_clk_reg = ioremap(AUDIO_IHB_CLK_PHYS, AUDIO_IHB_CLK_SIZE);
 	audio_top = ioremap(AUDIO_TOP_PHYS_BASE, AUDIO_TOP_SIZE);
 	if (!audif || !audbrg || (configure_audbrg && !audbrg_addr_hi) ||

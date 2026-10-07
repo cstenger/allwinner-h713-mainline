@@ -50,37 +50,44 @@ SPDI1 W1C bits (`0x00300052`), writes route value `0x400`, and enables those
 mask bits. Its handler acknowledges only owned SPDI1 events. The saved mask,
 route, and controls are restored before the IRQ is released.
 
-`configure_audbrg=1` requires `open_spdi1=1`. It allocates a private coherent
-64-KiB DMA buffer, owns Audio Bridge DT interrupt index 0, and reproduces stock
-output stream 0: 1024-byte blocks and config word `0x00003207`. The exact word
-comes from `Thal_Alsa_Audio_Capture_Start(0)` passing `(0, 0, 2, 2)` through
+`configure_audbrg=1` requires `open_spdi1=1`. The Audio Bridge DT node is
+disabled, so Linux does not instantiate its platform device. The probe instead
+registers a private 32-bit direct-DMA root device and uses it only to allocate
+a coherent 64-KiB buffer. It owns Audio Bridge DT interrupt index 0 and
+reproduces stock output stream 0: 1024-byte blocks and config word
+`0x00003207`. The exact word comes from
+`Thal_Alsa_Audio_Capture_Start(0)` passing `(0, 0, 2, 2)` through
 `Trid_Audio_Output_SPDIF_Input` into `audbrg_ostream_config`; it must not be
 shortened to `0x2207` by dropping the live `r2` argument.
 
 Audio Bridge setup is deliberately split by `audbrg_stage=`:
 
-1. acquire the platform DMA device and allocate/fill DMA, leaving bridge DT
-   interrupt 0 entirely unmapped and performing no bridge-register writes;
+1. create the private direct-DMA device and allocate/fill DMA, leaving bridge
+   DT interrupt 0 entirely unmapped and performing no bridge-register writes;
 2. program the upper address nibble and inert stream start/end/block/config;
 3. log and clear all pending bridge status before mapping DT interrupt 0,
    request the stock-style `IRQF_ONESHOT` threaded handler, then enable
    output-stream-0 and global bridge IRQ bits;
 4. toggle the stock stream flush/start bit.
 
-The fail-safe default is stage 1; hardware investigation must advance one cold
-boot at a time and request later stages explicitly. Every stage prints a
-boundary message before its first write. A
-combined stage-4 load hard-hung the initial test boot before its log could be
-retrieved. A serial-instrumented stage-1 retry then stopped immediately after
-clock discovery and before audio-IHB setup. Deferring `request_irq()` produced
-the same boundary and never reached the next message after
-`irq_of_parse_and_map(..., 0)`, showing that creating the mapping for this
-already-asserted level source is itself unsafe. Phase 1 and phase 2 now leave
-DT interrupt 0 unmapped. The stock driver uses a threaded one-shot handler and
-acknowledges all 14 bridge status bits; that exact interrupt shape is isolated
-in phase 3, which must not be attempted without serial capture. Removal disables
-the source first, masks owned interrupts, synchronizes both handlers, restores
-every touched register, and frees coherent DMA.
+The fail-safe default is stage 1. Every stage prints a boundary message before
+its first write. Early combined and serial-instrumented attempts exposed two
+independent problems: the disabled DT node has no platform device, and mapping
+its level interrupt before clearing bridge status can stop the machine. The
+current ordering leaves the IRQ unmapped through stage 2, clears all 14 status
+bits before mapping it in stage 3, and uses the stock threaded one-shot handler.
+All four stages have now passed under continuous serial capture, including
+clean removal and a MIPS-liveness check after each stage. Removal disables the
+source first, masks owned interrupts, synchronizes both handlers, restores
+every touched register, frees coherent DMA, and unregisters the private DMA
+device.
+
+The stage-4 exact-kernel build validated on hardware has SHA-256
+`d08ff41b12967deef9b40ddb5c521da8c77feb758bae816f2040eadb01112bb7`.
+A full lock-gated trial at 1280x720 left all 64 KiB at the sentinel value and
+reported zero Audio Bridge and AudIf interrupts. This is a valid negative:
+the reproduced ALSA capture bridge/SPDI path is safe, but HDMI audio is not yet
+being routed into SPDI1 upstream.
 
 Any option that writes an audio register requires the separate
 `h713-hdmi-tvfe-hold` module to be loaded first. The trial runner enforces this
