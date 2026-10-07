@@ -1,6 +1,6 @@
 # Automatic keystone: plan (2026-10-06)
 
-> **Status 2026-10-06: Phase 2 DONE, verified on hardware.** `h713-keystone` and its service ship in the image. They publish the settled tilt and drive the ceiling flip. **Next: Phase 3**, the GL warp.
+> **Status 2026-10-06: Phase 3 built and verified on the GPU (scanout); needs the lens measured and a look at the wall.** Phase 2 DONE, verified on hardware. `h713-keystone` and its service ship in the image. They publish the settled tilt and drive the ceiling flip. **Next: Phase 3**, the GL warp.
 > - **Hardware run** ([log](reference/keystone-phase2-flip-2026-10-06.log)), with `ceiling auto` on:
 >   - Pitch tracked the stand from −1° to 89° and back.
 >   - Turning the projector upside down set mode 3 (`ceiling`) within a second; setting it upright again restored 0 (`front`).
@@ -67,8 +67,29 @@ Written atomically (rename), only when something changes:
 
 Both angles are in the projector's frame, **before the panel mirror**. The GPU draws the framebuffer and the panel mirrors it afterwards, so the warp has to apply `h713-mirror`'s current mode itself: under a V flip, the framebuffer's top is the panel's bottom.
 
-## Phase 3: the GL warp (open)
+## Phase 3: the GL warp
 
-- **Lens geometry:** measure the vertical field of view and the optical offset. One photo-rectified frame at two known pitches is enough. With those, `keystone_deg` gives a homography: pre-shrink the far edge, so the wall shows a rectangle.
-- **Warp:** a perspective shader on the GPU route (mpv user shader or `gles-play`). `h713-play` routes to the GPU when `keystone_deg` isn't zero.
-- **Cost:** digital keystone loses resolution at the far edge. Stock accepts that loss.
+> **Status 2026-10-06: built and verified on the GPU by scanout grab. Waiting on the lens measurement and a look at the wall.** Without a measured lens, everything stays idle.
+
+- **Model:** the projector is a pinhole. Frame position (u, v) leaves the lens along tangents x = s(2u − 1) and t = tt − (tt − tb)·v.
+  - Pitching by φ toward a surface at unit distance puts that ray at R(φ)·(x, t, 1). The rotation matrix itself is the homography.
+  - The frame lands as a trapezoid. The picture goes in the largest rectangle with the panel's aspect that fits, standing on the near (narrow) edge, letterboxed inside by the video's aspect.
+  - One 3×3 matrix maps a frame position to a picture position. The shader only divides and samples, and returns black outside the picture.
+- **Mirror:** under a top/bottom flip, the lens tangents and φ change sign; left/right flips change nothing. Verified: the `ceiling` frame is pre-warped narrow at the bottom (the panel's raw top, which is the far edge when inverted), and the picture is still upright.
+- **Auto past 45°:** the surface is the ceiling (or the floor), so the correction is pitch − 90 (or + 90). `h713-keystone` publishes `surface=`.
+- **Files:**
+  - `tools/video/shaders/keystone.glsl`: an `OUTPUT` hook template.
+  - `tools/video/keystone.lua`: runs in mpv. It polls the state every 0.5 s and writes a copy of the shader per matrix to `/tmp`, because `vo=gpu` has no `//!PARAM` (only gpu-next does).
+  - It sets `keepaspect=no` while the warp is on. mpv's own letterbox bars would clip a picture the warp moves down; the shader letterboxes instead.
+  - The warp turns on at |correction| ≥ 0.5° and is removed below that. A level projector costs nothing.
+- **h713-play:** once the lens is measured, the GPU route always loads the script, so a tilt mid-playback is followed. A correction due at start forces the GPU route; `--route=plane` refuses it.
+- **Lens:** `h713-keystone lens DIST WIDTH BOTTOM [TOP]` takes tape measurements. The projector must be level on its bottom detent, square to a wall. DIST is lens to wall; BOTTOM and TOP are the picture's edge heights above the lens centre. The height follows from the 16:9 square pixels, so TOP only checks it (±10%). Nothing is assumed.
+- **Verification so far:**
+  - `tools/video/keystone-check.py` inverts the Lua's matrices and casts the picture's corners through an independently written ray model: 15/15 land as the right rectangle. It does catch a 0.2° pitch error, a sign error and an aspect error.
+  - **On the GPU:** test cards played through mpv at 20°, grabbed with `scanout-grab` (6 grabs merged, because single grabs miss rows). The slanted side edges sit within 0.6 px of prediction on every interior row of the 16:9 and 2.39:1 cards.
+  - **Live:** 20° → 0° → 20° and a mirror change mid-playback switch the warp on, off and back.
+- **Known limits:**
+  - Roll is not corrected.
+  - The OSD is drawn after the warp, so it isn't warped.
+  - A plane route already playing doesn't warp when the projector is tilted mid-file.
+  - Digital keystone discards the far edge's resolution.

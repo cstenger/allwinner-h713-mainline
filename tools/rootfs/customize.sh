@@ -557,6 +557,12 @@ if [ -n "${PLANE_PLAY_SRC:-}" ]; then
   install -d -m 0755 "$R/usr/local/share/h713"
   install -m 0644 "$(dirname "$H713_PLAY_SRC")/shaders/lsb10.glsl" \
     "$R/usr/local/share/h713/lsb10.glsl"
+  # Keystone warp (docs/keystone-plan.md): mpv loads the script, which swaps
+  # in copies of the shader template; idle until h713-keystone lens is set.
+  install -m 0644 "$(dirname "$H713_PLAY_SRC")/shaders/keystone.glsl" \
+    "$R/usr/local/share/h713/keystone.glsl"
+  install -m 0644 "$(dirname "$H713_PLAY_SRC")/keystone.lua" \
+    "$R/usr/local/share/h713/keystone.lua"
   install -m 0644 "$PLANE_PLAY_SRC" "$R/tmp/gst-plane-play.c"
   : > "$R/dev/null"
   mount --bind /dev/null "$R/dev/null"

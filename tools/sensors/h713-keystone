@@ -10,14 +10,20 @@
 #                                          top/bottom flip follows gravity
 #   h713-keystone calibrate level|up       zero the sensor: at the lowest detent,
 #                                          then lens straight up (saved to /etc)
+#   h713-keystone lens DIST WIDTH BOTTOM [TOP]
+#                                          the lens geometry, from a tape measure
 #   h713-keystone daemon                   the sensor loop (h713-keystone.service)
 #
 # The daemon samples the sensor about ten times a second and acts only once
 # the projector has been still for about a second, so a hand on the stand
 # does not make the picture swim. It publishes /run/h713-keystone/state:
 #
-#   keystone_deg   the correction the picture warp applies: the settled pitch
-#                  in auto, DEG in manual, 0 when off
+#   keystone_deg   the correction the picture warp applies, in the projector's
+#                  frame like pitch_deg: in auto the settled pitch toward the
+#                  surface it faces (a wall up to 45 deg, then the ceiling:
+#                  pitch - 90; below -45 the floor: pitch + 90), DEG in
+#                  manual, 0 when off
+#   surface        wall, ceiling or floor (auto's assumption)
 #   pitch_deg      lens tilt toward the projector's own top (its +Y), so it
 #                  keeps its meaning upside down; +90 = pointing at its top
 #   roll_deg       the projector's right side above the horizon
@@ -38,6 +44,13 @@
 # (h713-mirror's number XOR 3), so front/rear stays your choice. It is off by
 # default, so an h713-mirror --persist setting is left alone.
 #
+# Lens geometry (`lens`): with the projector level on its lowest detent and
+# square to a wall, DIST is lens to wall, WIDTH the picture's width, BOTTOM
+# (and optionally TOP, as a check) the height of the picture's bottom (top)
+# edge above the centre of the lens; negative if below. Any one unit. The
+# panel's square pixels give the picture's height, so TOP only checks it.
+# keystone.lua (the warp) needs this; nothing is assumed.
+#
 # Settings: /etc/h713-keystone.conf with --persist, else /run/h713-keystone/conf
 # until the next boot. The daemon rereads them every second.
 #
@@ -49,7 +62,7 @@ ETC=${H713_KEYSTONE_ETC:-/etc/h713-keystone.conf}
 STATE=$RUN/state
 MIRROR=${H713_MIRROR_ATTR-$(ls /sys/bus/platform/drivers/sun50i-h713-afbd/*/mirror_mode 2>/dev/null | head -1)}
 
-usage() { sed -n '6,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '6,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { echo "h713-keystone: $*" >&2; exit 1; }
 
 find_dev() {
@@ -144,7 +157,7 @@ loop() { # DEV ONCE
 		f = run "/state.tmp"
 		printf "keystone_deg=%s\n", d1(applied) > f
 		printf "pitch_deg=%s\nroll_deg=%s\n", d1(pitch), d1(roll) > f
-		printf "inverted=%d\nsettled=%d\n", inverted, settled > f
+		printf "inverted=%d\nsettled=%d\nsurface=%s\n", inverted, settled, surf > f
 		printf "keystone=%s\nceiling=%s\nupdated=%.1f\n", ks, ceil, now() > f
 		close(f)
 		system("mv " f " " run "/state")
@@ -173,7 +186,7 @@ loop() { # DEV ONCE
 		# g, per-axis SD of a window. The sensor alone is 27-53 mg (normal
 		# mode, 2026-10-06); at 60 mg, 7% of still windows read as moving.
 		STILL = 0.10
-		inverted = 0; settled = 0; applied = 0; pitch = 0; roll = 0
+		inverted = 0; settled = 0; applied = 0; pitch = 0; roll = 0; surf = "wall"
 		have = 0; retry_at = 0; fresh = 0; nstill = 0; pend = 0
 		system("mkdir -p " run)
 		conf()
@@ -227,11 +240,15 @@ loop() { # DEV ONCE
 			# estimate is published once more.
 			if (!have || abs(ep - pitch) >= 0.5 || abs(er - roll) >= 0.5 ||
 			    (nstill == 8 && (abs(ep - pitch) >= 0.05 || abs(er - roll) >= 0.05))) { pitch = ep; roll = er }
-			want = (ks == "auto") ? pitch : (ks == "manual") ? manual : 0
+			# Auto assumes the surface the lens faces most: past 45 deg the
+			# ceiling (or the floor), whose normal is 90 deg from a wall normal.
+			surf = pitch > 45 ? "ceiling" : pitch < -45 ? "floor" : "wall"
+			face = pitch > 45 ? pitch - 90 : pitch < -45 ? pitch + 90 : pitch
+			want = (ks == "auto") ? face : (ks == "manual") ? manual : 0
 			# Anything in the state file: a flip can leave every angle as it was.
 			changed = !have || !settled || want != applied || ks != last_ks || ceil != last_ceil ||
-			    inverted != last_inv || pitch != last_p || roll != last_r
-			last_ks = ks; last_ceil = ceil; last_inv = inverted; last_p = pitch; last_r = roll
+			    inverted != last_inv || pitch != last_p || roll != last_r || surf != last_surf
+			last_ks = ks; last_ceil = ceil; last_inv = inverted; last_p = pitch; last_r = roll; last_surf = surf
 			settled = 1; applied = want; have = 1
 			# calibrate (once = 2) averages 8 still windows; status takes one.
 			if (once && nstill >= (once == 2 ? 8 : 1)) break
@@ -305,6 +322,23 @@ calibrate)
 	*)	usage ;;
 	esac
 	echo "h713-keystone: calibrated $1 (g $2 $3 $4), saved to $ETC" ;;
+lens)
+	[ $# = 4 ] || [ $# = 5 ] || usage
+	for v in "$2" "$3" "$4" ${5:+"$5"}; do
+		case $v in *[!0-9.+-]*|'') die "lens takes numbers: DIST WIDTH BOTTOM [TOP]" ;; esac
+	done
+	# Tangents of the picture's edges, seen from the lens: horizontal half
+	# width, bottom edge, top edge (from the panel's 16:9).
+	set -- $(awk -v d="$2" -v w="$3" -v b="$4" -v t="${5:-}" 'BEGIN {
+		if (d <= 0 || w <= 0) { print "bad"; exit }
+		s = w / (2 * d); tb = b / d; tt = tb + w * 720 / 1280 / d
+		chk = "ok"
+		if (t != "") { h = t - b; e = h / (w * 720 / 1280) - 1; if (e < -0.1 || e > 0.1) chk = sprintf("%+.0f%%", e * 100) }
+		printf "%.5f %.5f %.5f %s %.2f\n", s, tb, tt, chk, d / w }')
+	[ "$1" = bad ] && die "DIST and WIDTH must be positive"
+	[ "$4" = ok ] || die "TOP - BOTTOM is $4 off the 16:9 height WIDTH x 9/16: remeasure (is it level, square to the wall?)"
+	set_cal "lens_s=$1" "lens_tb=$2" "lens_tt=$3"
+	echo "h713-keystone: lens saved: throw ratio $5, edges at tan $2 (bottom) and $3 (top), half-width tan $1" ;;
 daemon)
 	dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
 	echo "h713-keystone: sensor $dev, mirror ${MIRROR:-unavailable}"

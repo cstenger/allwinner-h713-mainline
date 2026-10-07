@@ -484,6 +484,8 @@ env \
     test -x "$ROOTFS_TREE/usr/local/bin/h713-keystone"
     test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-keystone.service"
     grep -q "HOOK LUMA" "$ROOTFS_TREE/usr/local/share/h713/lsb10.glsl"   # 10-bit AV1 on GL
+    grep -q "KEYSTONE_MATRIX" "$ROOTFS_TREE/usr/local/share/h713/keystone.glsl"   # keystone warp
+    grep -q "h713-keystone" "$ROOTFS_TREE/usr/local/share/h713/keystone.lua"
     test -x "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
     file -b "$ROOTFS_TREE/usr/local/bin/gst-plane-play" | grep -q "ARM aarch64"
     grep -q "latency-time=40000" "$ROOTFS_TREE/usr/local/bin/gst-plane-play"

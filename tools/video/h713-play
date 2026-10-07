@@ -36,6 +36,13 @@
 # intermediates keep it at ~40% GPU); 10-bit HEVC arrives as cedrus's 8-bit
 # NV12 and must NOT get the shader.
 #
+# Keystone (docs/keystone-plan.md): once `h713-keystone lens` has measured
+# the lens, the gpu route always loads keystone.lua, which warps the picture
+# whenever h713-keystone asks for a correction -- also one that starts
+# mid-playback. The plane cannot warp, so a correction due at start sends
+# the file to the gpu route; one that starts later on a plane route waits
+# for the next file.
+#
 #   usage: h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS...]
 #
 # Prints one "h713-play:" line with the probe and the decision, then plays.
@@ -227,6 +234,21 @@ if [ $route = plane ] && [ -n "$why" ]; then
 	exit 1
 fi
 [ $route = gpu ] && { plane=; why="--route=gpu"; }
+
+# Keystone: the warp is a GPU pass, so a correction due now takes the GPU.
+KS_CONF=${H713_KEYSTONE_ETC:-/etc/h713-keystone.conf} KS_STATE=${H713_KEYSTONE_RUN:-/run/h713-keystone}/state
+share=
+for d in "${H713_SHARE:-/usr/local/share/h713}" "$(dirname "$0")/shaders"; do
+	[ -r "$d/keystone.glsl" ] && { share=$d; break; }
+done
+ks_lens=0
+[ -n "$share" ] && grep -q '^lens_s=' "$KS_CONF" 2>/dev/null && ks_lens=1
+ks_deg=$(sed -n 's/^keystone_deg=//p' "$KS_STATE" 2>/dev/null)
+if [ $ks_lens = 1 ] && [ -z "$why" ] &&
+   awk -v k="${ks_deg:-0}" 'BEGIN { exit !(k >= 0.5 || k <= -0.5) }'; then
+	[ $route = plane ] && { echo "h713-play: $file cannot go on the plane: keystone ${ks_deg} deg needs the GPU warp (h713-keystone off)" >&2; exit 1; }
+	why="keystone ${ks_deg} deg"
+fi
 [ -n "$why" ] && plane=
 
 probe="$codec ${w}x${h} sar $sn:$sd rot $rot ${depth}-bit -> fit ${fw}x${fh}"
@@ -262,6 +284,13 @@ ve)
 			extra=(--glsl-shaders="$shader" --fbo-format=rgb10_a2)
 			note=", LSB10 x64 shader"
 		fi
+	fi
+	if [ $ks_lens = 1 ]; then
+		ks_lua=$share/keystone.lua
+		[ -r "$ks_lua" ] || ks_lua=$(dirname "$0")/keystone.lua
+		extra+=(--script="$ks_lua" --script-opts-append=keystone-shader="$share/keystone.glsl"
+			--script-opts-append=keystone-state="$KS_STATE" --script-opts-append=keystone-conf="$KS_CONF")
+		note="$note, keystone"
 	fi
 	echo "h713-play: $probe: gpu ($why; mpv --vo=gpu$note)"
 	cmd=(mpv --vo=gpu --gpu-context=drm --hwdec=vaapi "${CHEAP[@]}" "${extra[@]}" "$@" "$file")
