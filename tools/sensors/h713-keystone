@@ -24,6 +24,9 @@
 #                  pitch - 90; below -45 the floor: pitch + 90), DEG in
 #                  manual, 0 when off
 #   surface        wall, ceiling or floor (auto's assumption)
+#   level_deg      the roll the warp levels out: the settled roll in auto on
+#                  a wall, else 0 (on a ceiling the picture's rotation is the
+#                  projector's yaw, which gravity cannot see)
 #   pitch_deg      lens tilt toward the projector's own top (its +Y), so it
 #                  keeps its meaning upside down; +90 = pointing at its top
 #   roll_deg       the projector's right side above the horizon
@@ -158,7 +161,7 @@ loop() { # DEV ONCE
 	function d1(x) { x = sprintf("%.1f", x); return x == "-0.0" ? "0.0" : x }
 	function publish(   f) {
 		f = run "/state.tmp"
-		printf "keystone_deg=%s\n", d1(applied) > f
+		printf "keystone_deg=%s\nlevel_deg=%s\n", d1(applied), d1(lvl) > f
 		printf "pitch_deg=%s\nroll_deg=%s\n", d1(pitch), d1(roll) > f
 		printf "inverted=%d\nsettled=%d\nsurface=%s\n", inverted, settled, surf > f
 		printf "keystone=%s\nceiling=%s\nupdated=%.1f\n", ks, ceil, now() > f
@@ -189,7 +192,7 @@ loop() { # DEV ONCE
 		# g, per-axis SD of a window. The sensor alone is 27-53 mg (normal
 		# mode, 2026-10-06); at 60 mg, 7% of still windows read as moving.
 		STILL = 0.10
-		inverted = 0; settled = 0; applied = 0; pitch = 0; roll = 0; surf = "wall"
+		inverted = 0; settled = 0; applied = 0; lvl = 0; pitch = 0; roll = 0; surf = "wall"
 		have = 0; retry_at = 0; fresh = 0; nstill = 0; pend = 0
 		system("mkdir -p " run)
 		conf()
@@ -248,11 +251,12 @@ loop() { # DEV ONCE
 			surf = pitch > 45 ? "ceiling" : pitch < -45 ? "floor" : "wall"
 			face = pitch > 45 ? pitch - 90 : pitch < -45 ? pitch + 90 : pitch
 			want = (ks == "auto") ? face : (ks == "manual") ? manual : 0
+			nlvl = (ks == "auto" && surf == "wall") ? roll : 0
 			# Anything in the state file: a flip can leave every angle as it was.
-			changed = !have || !settled || want != applied || ks != last_ks || ceil != last_ceil ||
+			changed = !have || !settled || want != applied || nlvl != lvl || ks != last_ks || ceil != last_ceil ||
 			    inverted != last_inv || pitch != last_p || roll != last_r || surf != last_surf
 			last_ks = ks; last_ceil = ceil; last_inv = inverted; last_p = pitch; last_r = roll; last_surf = surf
-			settled = 1; applied = want; have = 1
+			settled = 1; applied = want; lvl = nlvl; have = 1
 			# calibrate (once = 2) averages 8 still windows; status takes one.
 			if (once && nstill >= (once == 2 ? 8 : 1)) break
 			if (once) continue

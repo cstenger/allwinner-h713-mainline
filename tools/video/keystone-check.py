@@ -6,19 +6,28 @@ RUNS ON THE HOST, on the selftest lines keystone.lua prints on the target:
       --script=/usr/local/share/h713/keystone.lua \
       --script-opts=keystone-selftest=yes' | tools/video/keystone-check.py
 
-For each matrix (frame position -> picture position), invert it to find where
-the picture's corners and centre land in the frame, then cast those frame
-positions through the lens as rays -- written here from the geometry, not
-copied from the Lua -- onto a wall at unit distance from a projector pitched
-by the given angle. The picture must land as an axis-aligned rectangle with
-the video's aspect, wholly inside the frame, standing on the frame's near
-edge (or touching both sides, when letterboxing makes it the width that binds).
+Each line gives a pose (pitch, roll, upside down, mirror mode), a lens and a
+video aspect, and the 3x3 matrix keystone.lua made (frame position ->
+picture position). Independently of the Lua:
+
+  * the projector's attitude is built from Euler angles -- a roll about the
+    lens axis, then a pitch about the world's horizontal -- solved
+    numerically to give the published pitch/roll (the Lua builds it from the
+    up vector by Gram-Schmidt);
+  * the display mirror is applied to panel positions, not as a matrix;
+  * the wall is the plane square to the lens's horizontal direction.
+
+The picture's corners and centre, pulled back through the inverse matrix,
+must lie in the frame and land on the wall as a level rectangle with the
+video's aspect, oriented the way the unwarped frame lands (its top where the
+frame's top points, its left where the frame's left points: upright for front
+and ceiling, mirrored for the rear modes). A picture with the panel's aspect
+must also be the largest level rectangle that fits: no smaller than a
+brute-force search finds.
 """
 import math
 import re
 import sys
-
-TOL = 1e-6
 
 
 def inv3(m):
@@ -36,66 +45,174 @@ def apply(m, x, y):
     return p[0] / p[2], p[1] / p[2]
 
 
-def wall(u, v, deg, s, tb, tt):
-    """Where frame position (u, v) lands on a vertical wall 1 unit ahead."""
-    # The ray leaves the lens in the projector's frame: right, up, forward.
-    x = s * (2 * u - 1)
-    y = tt + (tb - tt) * v
-    z = 1.0
-    # Pitch the projector up by deg: forward turns toward up.
-    a = math.radians(deg)
-    y, z = y * math.cos(a) + z * math.sin(a), -y * math.sin(a) + z * math.cos(a)
-    assert z > 0, "ray misses the wall"
-    return x / z, y / z
+def matvec(m, v):
+    return [sum(m[r][c] * v[c] for c in range(3)) for r in range(3)]
 
 
-def check(deg, s, tb, tt, va, M):
-    inv = inv3(M)
-    corners = {}
+def matmul(a, b):
+    return [[sum(a[r][k] * b[k][c] for k in range(3)) for c in range(3)] for r in range(3)]
+
+
+def rot_lens(g):    # about the lens (forward) axis
+    c, s = math.cos(g), math.sin(g)
+    return [[c, -s, 0], [s, c, 0], [0, 0, 1]]
+
+
+def rot_pitch(e):   # forward turns toward up by e
+    c, s = math.cos(e), math.sin(e)
+    return [[1, 0, 0], [0, c, s], [0, -s, c]]
+
+
+def published(Q):
+    """The daemon's pitch, roll and upside-down flag for attitude Q."""
+    # Up in projector coordinates (right, up, forward): Q^T (0, 1, 0).
+    gx, gy, gf = Q[1][0], Q[1][1], Q[1][2]
+    inv = gy < 0
+    sgn = -1 if inv else 1
+    pitch = math.degrees(math.atan2(gf * sgn, abs(gy)))
+    roll = math.degrees(math.atan2(gx, math.hypot(gy, gf)))
+    return pitch, roll, inv
+
+
+def attitude(pitch, roll, inv):
+    """Solve Euler angles so the daemon would publish (pitch, roll, inv)."""
+    best = None
+    for gi in range(-180, 180, 2):
+        for ei in range(-80, 81, 2):
+            Q = matmul(rot_pitch(math.radians(ei)), rot_lens(math.radians(gi)))
+            p, r, i = published(Q)
+            if i != inv:
+                continue
+            err = (p - pitch) ** 2 + (r - roll) ** 2
+            if best is None or err < best[0]:
+                best = (err, math.radians(ei), math.radians(gi))
+    _, e, g = best
+    step = math.radians(1)
+    while step > 1e-12:
+        moved = False
+        for de, dg in ((step, 0), (-step, 0), (0, step), (0, -step)):
+            Q = matmul(rot_pitch(e + de), rot_lens(g + dg))
+            p, r, i = published(Q)
+            err = (p - pitch) ** 2 + (r - roll) ** 2
+            if i == inv and err < best[0]:
+                best, e, g, moved = (err, e + de, g + dg), e + de, g + dg, True
+        if not moved:
+            step /= 2
+    assert best[0] < 1e-16, f"attitude not found for {pitch}, {roll}, {inv}"
+    return matmul(rot_pitch(e), rot_lens(g))
+
+
+class Projector:
+    def __init__(self, Q, mode, s, tb, tt):
+        self.Q, self.mode, self.s, self.tb, self.tt = Q, mode, s, tb, tt
+
+    def wall(self, u, v):
+        """Where frame position (u, v) lands: the display mirrors, then the lens."""
+        if self.mode & 1:
+            u = 1 - u
+        if self.mode & 2:
+            v = 1 - v
+        ray = [self.s * (2 * u - 1), self.tt - (self.tt - self.tb) * v, 1.0]
+        X, Y, Z = matvec(self.Q, ray)
+        assert Z > 0, "ray misses the wall"
+        return X / Z, Y / Z
+
+
+def inside(poly, x, y):
+    sign = 0
+    for i in range(len(poly)):
+        (ax, ay), (bx, by) = poly[i], poly[(i + 1) % len(poly)]
+        c = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+        if abs(c) < 1e-12:
+            continue
+        if sign == 0:
+            sign = 1 if c > 0 else -1
+        elif (c > 0) != (sign > 0):
+            return False
+    return True
+
+
+def brute_largest(quad, ar):
+    """Largest level rectangle of height/width ar in quad, by grid search."""
+    xs = [p[0] for p in quad]
+    ys = [p[1] for p in quad]
+    best = 0.0
+    N = 48
+    for i in range(1, N):
+        for j in range(1, N):
+            cx = min(xs) + (max(xs) - min(xs)) * i / N
+            cy = min(ys) + (max(ys) - min(ys)) * j / N
+            if not inside(quad, cx, cy):
+                continue
+            lo, hi = best, max(xs) - min(xs)
+            def fits(w):
+                h = w * ar
+                return all(inside(quad, cx + dx * w / 2, cy + dy * h / 2) for dx in (-1, 1) for dy in (-1, 1))
+            if not fits(lo):
+                continue
+            for _ in range(40):
+                mid = (lo + hi) / 2
+                lo, hi = (mid, hi) if fits(mid) else (lo, mid)
+            best = lo
+    return best
+
+
+def check(pitch, roll, inv, mode, s, tb, tt, va, M):
+    proj = Projector(attitude(pitch, roll, inv), mode, s, tb, tt)
+    inv_m = inv3(M)
+    pts = {}
     for name, (pu, pv) in {"tl": (0, 0), "tr": (1, 0), "br": (1, 1), "bl": (0, 1), "c": (0.5, 0.5)}.items():
-        u, v = apply(inv, pu, pv)
-        if not (-TOL <= u <= 1 + TOL and -TOL <= v <= 1 + TOL):
-            return f"{name} lands outside the frame at ({u:.4f}, {v:.4f})"
-        corners[name] = (u, v, *wall(u, v, deg, s, tb, tt))
-    tl, tr, br, bl, c = (corners[k] for k in ("tl", "tr", "br", "bl", "c"))
+        u, v = apply(inv_m, pu, pv)
+        if not (-1e-6 <= u <= 1 + 1e-6 and -1e-6 <= v <= 1 + 1e-6):
+            return f"{name} lands outside the frame at ({u:.4f}, {v:.4f})", None
+        pts[name] = proj.wall(u, v)
+    tl, tr, br, bl, c = (pts[k] for k in ("tl", "tr", "br", "bl", "c"))
     errs = []
-    if abs(tl[2] - bl[2]) > 1e-5 or abs(tr[2] - br[2]) > 1e-5:
+    tol = 1e-5
+    if abs(tl[0] - bl[0]) > tol or abs(tr[0] - br[0]) > tol:
         errs.append("sides not vertical")
-    if abs(tl[3] - tr[3]) > 1e-5 or abs(bl[3] - br[3]) > 1e-5:
+    if abs(tl[1] - tr[1]) > tol or abs(bl[1] - br[1]) > tol:
         errs.append("top/bottom not level")
-    w, h = tr[2] - tl[2], tl[3] - bl[3]
-    if abs(w / h - va) > 1e-4:
-        errs.append(f"aspect {w / h:.4f}, want {va:.4f}")
-    if abs(c[2] - (tl[2] + tr[2]) / 2) > 1e-5 or abs(c[3] - (tl[3] + bl[3]) / 2) > 1e-5:
-        errs.append("centre not at the rectangle's centre")
-    # Largest possible: a picture with the panel's own aspect fills the
-    # corrected rectangle, which stands on the near (narrow) edge of the
-    # frame, corner to corner -- the bottom row when pitched up.
-    pa = s / (tt - tb) * 2
+    w, h = abs(tr[0] - tl[0]), abs(tl[1] - bl[1])
+    if h == 0 or abs(w / h - va) > 1e-4:
+        errs.append(f"aspect {w / h if h else 0:.4f}, want {va:.4f}")
+    if abs(c[0] - (tl[0] + tr[0]) / 2) > tol or abs(c[1] - (tl[1] + bl[1]) / 2) > tol:
+        errs.append("centre off")
+    # Orientation: as the unwarped frame lands.
+    f_up = proj.wall(0.5, 0.25)[1] - proj.wall(0.5, 0.75)[1]
+    f_right = proj.wall(0.75, 0.5)[0] - proj.wall(0.25, 0.5)[0]
+    if (tl[1] - bl[1]) * f_up <= 0:
+        errs.append("upside down relative to the frame")
+    if (tr[0] - tl[0]) * f_right <= 0:
+        errs.append("mirrored relative to the frame")
+    # Largest: only a picture with the panel's aspect fills its rectangle.
+    pa = 2 * s / (tt - tb)
     if abs(va - pa) < 1e-3:
-        a, b = (bl, br) if deg >= 0 else (tl, tr)
-        row = 1.0 if deg >= 0 else 0.0
-        if max(abs(a[1] - row), abs(b[1] - row), abs(a[0]), abs(b[0] - 1)) > 1e-5:
-            errs.append(f"not standing on the near edge: ({a[0]:.4f}, {a[1]:.4f}) to ({b[0]:.4f}, {b[1]:.4f})")
+        quad = [proj.wall(*p) for p in ((0, 0), (1, 0), (1, 1), (0, 1))]
+        b = brute_largest(quad, 1 / pa)
+        if w < b * (1 - 2e-3):
+            errs.append(f"not the largest: width {w:.4f}, a {b:.4f} fits")
     return "; ".join(errs) or None, (w, h)
 
 
 def main():
     n = bad = 0
-    pat = re.compile(r"selftest (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)")
+    pat = re.compile(r"selftest (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)")
     for line in sys.stdin:
         m = pat.search(line)
         if not m:
             continue
-        deg, s, tb, tt, va = map(float, m.groups()[:5])
-        kv = dict(x.split("=") for x in m.group(6).split(","))
+        pitch, roll = float(m.group(1)), float(m.group(2))
+        inv, mode = m.group(3) == "1", int(m.group(4))
+        s, tb, tt, va = map(float, m.group(5, 6, 7, 8))
+        kv = dict(x.split("=") for x in m.group(9).split(","))
         M = [[float(kv[f"k{r}{c}"]) for c in range(3)] for r in range(3)]
-        res = check(deg, s, tb, tt, va, M)
-        err, (w, h) = res if isinstance(res, tuple) else (res, (0, 0))
+        err, size = check(pitch, roll, inv, mode, s, tb, tt, va, M)
         n += 1
-        if err:
-            bad += 1
-        print(f"{'FAIL' if err else 'ok  '} pitch {deg:+5.1f}  aspect {va:.3f}  picture {w:.4f} x {h:.4f}" + (f"  {err}" if err else ""))
+        bad += bool(err)
+        if err or "-v" in sys.argv:
+            what = f"pitch {pitch:+5.1f} roll {roll:+4.1f} {'inv' if inv else 'up '} mode {mode} lens {tb:+.3f} aspect {va:.3f}"
+            print(f"{'FAIL' if err else 'ok  '} {what}" + (f"  {err}" if err else f"  picture {size[0]:.4f} x {size[1]:.4f}"))
     print(f"{n - bad} of {n} matrices land as the right rectangle")
     sys.exit(1 if bad or not n else 0)
 

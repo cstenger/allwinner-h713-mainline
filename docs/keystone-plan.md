@@ -108,7 +108,24 @@ Widths of the white border, outer edge to outer edge:
   - **On the GPU:** test cards played through mpv at 20°, grabbed with `scanout-grab` (6 grabs merged, because single grabs miss rows). The slanted side edges sit within 0.6 px of prediction on every interior row of the 16:9 and 2.39:1 cards.
   - **Live:** 20° → 0° → 20° and a mirror change mid-playback switch the warp on, off and back.
 - **Known limits:**
-  - Roll is not corrected.
-  - The OSD is drawn after the warp, so it isn't warped.
-  - A plane route already playing doesn't warp when the projector is tilted mid-file.
+  - mpv's OSD (seek bar, messages) is drawn after every shader hook in `vo=gpu`, so it stays unwarped; subtitles are warped (below).
   - Digital keystone discards the far edge's resolution.
+
+### Follow-ups (2026-10-06): roll, subtitles, mid-file handover
+
+- **Roll.** The warp now rebuilds the projector's full attitude from the published pitch, roll and upside-down flag. It takes the lens as facing the wall square, since yaw is invisible to gravity.
+  - The display mirror enters as R·D with D = diag(±1, ±1, 1). That is not a pure rotation for the rear modes.
+  - The picture keeps the orientation the mirror gives the unwarped frame: upright for front and ceiling, mirrored for rear.
+  - The daemon publishes `level_deg`, the roll to correct. It is non-zero only in `auto` on a wall; on a ceiling the picture's rotation is the projector's yaw.
+- **Largest fit.** The picture is now the largest level rectangle inside the frame's footprint, found by bisecting on width over the feasible centres (the edges moved in by the rectangle's half extent).
+  - For pure pitch this is **not** the old "stand on the near edge" rectangle: at 20° with this lens, the old one left the far edge unused. The new rectangle touches the far edge and both sides, and is ~3% wider.
+  - The wall result above was measured with the old rule. Its shape check stands, because the model is the same.
+- **Checker.** `keystone-check.py` is now fully independent of the Lua. It builds the attitude from Euler angles solved numerically to the published values, applies the mirror to panel positions, takes the expected orientation from where the unwarped frame lands, and compares the size against a brute-force largest-rectangle search.
+  - 360/360 pass: 2 lenses × front/rear/ceiling/rear-ceiling × 5 pitches × 3 rolls × 3 aspects.
+  - Mutants fail: a roll sign error (0/30 pass), a wrong mirror with roll (0/30), and the right shape but 2% smaller (0/12).
+  - The mutant rows that still pass are genuinely equivalent corrections: zero pose, or pitch-only with a centred lens.
+- **GPU with roll** (20° pitch, 5° roll; 6 merged grabs): all four slanted edges sit within 0.6 px of the matrix.
+- **Subtitles.** While warping, the script sets `blend-subtitles=video`, so subtitles are drawn into the video and warp with it; it restores the setting afterwards. Verified: all 2020 pixels of a cyan test subtitle lie inside the warped picture, and its baseline tilts with the picture's bottom edge.
+- **Mid-file handover.** When the lens is measured, `h713-play` runs a plane route under watch. If a correction comes due, it SIGTERMs `gst-plane-play`, which prints its position, and execs the GPU route with `--start` at that position.
+  - Verified: plane-native at 0°, the state went to 20° → "handed over at 4.463 s"; mpv resumed at 00:00:04 with VA decode, warped.
+  - A correction due at start (pitch or roll ≥ 0.5°) still goes straight to the GPU.

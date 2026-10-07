@@ -38,10 +38,11 @@
 #
 # Keystone (docs/keystone-plan.md): once `h713-keystone lens` has measured
 # the lens, the gpu route always loads keystone.lua, which warps the picture
-# whenever h713-keystone asks for a correction -- also one that starts
-# mid-playback. The plane cannot warp, so a correction due at start sends
-# the file to the gpu route; one that starts later on a plane route waits
-# for the next file.
+# whenever h713-keystone asks for a correction (pitch or roll) -- also one
+# that starts mid-playback. The plane cannot warp, so a correction due at
+# start sends the file to the gpu route, and a plane route watches the tilt:
+# if a correction comes due mid-file it stops the plane player (which reports
+# its position) and hands over to the gpu route from there.
 #
 #   usage: h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS...]
 #
@@ -243,33 +244,25 @@ for d in "${H713_SHARE:-/usr/local/share/h713}" "$(dirname "$0")/shaders"; do
 done
 ks_lens=0
 [ -n "$share" ] && grep -q '^lens_s=' "$KS_CONF" 2>/dev/null && ks_lens=1
-ks_deg=$(sed -n 's/^keystone_deg=//p' "$KS_STATE" 2>/dev/null)
-if [ $ks_lens = 1 ] && [ -z "$why" ] &&
-   awk -v k="${ks_deg:-0}" 'BEGIN { exit !(k >= 0.5 || k <= -0.5) }'; then
-	[ $route = plane ] && { echo "h713-play: $file cannot go on the plane: keystone ${ks_deg} deg needs the GPU warp (h713-keystone off)" >&2; exit 1; }
-	why="keystone ${ks_deg} deg"
+# A correction is due: pitch or roll at least half a degree (keystone.lua's
+# threshold). Prints it.
+ks_due() {
+	[ $ks_lens = 1 ] || return 1
+	awk -F= '$1 == "keystone_deg" { k = $2 } $1 == "level_deg" { l = $2 }
+		END { printf "keystone %s deg, level %s deg", k + 0, l + 0
+		      exit !(k >= 0.5 || k <= -0.5 || l >= 0.5 || l <= -0.5) }' "$KS_STATE" 2>/dev/null
+}
+if [ -z "$why" ] && due=$(ks_due); then
+	[ $route = plane ] && { echo "h713-play: $file cannot go on the plane: $due needs the GPU warp (h713-keystone off)" >&2; exit 1; }
+	why=$due
 fi
 [ -n "$why" ] && plane=
 
 probe="$codec ${w}x${h} sar $sn:$sd rot $rot ${depth}-bit -> fit ${fw}x${fh}"
-player=$(command -v gst-plane-play || echo "$(dirname "$0")/gst-plane-play")
-
-case ${plane:-} in
-native)
-	echo "h713-play: $probe: plane-native (v4l2sl${gst}dec ! kmssink)"
-	cmd=("$player" "$file" "$gst" "v4l2sl${gst}dec")
-	;;
-up)
-	echo "h713-play: $probe: plane-up (v4l2sl${gst}dec ! kmssink, proc magnifies ${w}x${h} -> ${fw}x${fh})"
-	cmd=("$player" "$file" "$gst" "v4l2sl${gst}dec")
-	;;
-ve)
-	echo "h713-play: $probe: plane-ve (va${gst}dec, VE scaler ${w}x${h} -> ${fw}x${fh}, kmssink)"
-	export LIBVA_DRIVER_NAME=v4l2_request GST_VA_ALL_DRIVERS=1
-	export V4L2_REQUEST_SCALE=${fw}x${fh} V4L2_REQUEST_CROP=${w}x${h}
-	cmd=("$player" "$file" "$gst" "va${gst}dec" "${fw}x${fh}")
-	;;
-*)
+mpv_args=("$@")
+# The gpu route's command, in cmd. $1 is why; any further arguments reach mpv
+# ahead of the user's.
+gpu_cmd() {
 	export LIBVA_DRIVER_NAME=v4l2_request
 	extra=()
 	note=
@@ -292,10 +285,57 @@ ve)
 			--script-opts-append=keystone-state="$KS_STATE" --script-opts-append=keystone-conf="$KS_CONF")
 		note="$note, keystone"
 	fi
-	echo "h713-play: $probe: gpu ($why; mpv --vo=gpu$note)"
-	cmd=(mpv --vo=gpu --gpu-context=drm --hwdec=vaapi "${CHEAP[@]}" "${extra[@]}" "$@" "$file")
+	echo "h713-play: $probe: gpu ($1; mpv --vo=gpu$note)"
+	shift
+	cmd=(mpv --vo=gpu --gpu-context=drm --hwdec=vaapi "${CHEAP[@]}" "${extra[@]}" "$@" "${mpv_args[@]}" "$file")
+}
+
+player=$(command -v gst-plane-play || echo "$(dirname "$0")/gst-plane-play")
+
+case ${plane:-} in
+native)
+	echo "h713-play: $probe: plane-native (v4l2sl${gst}dec ! kmssink)"
+	cmd=("$player" "$file" "$gst" "v4l2sl${gst}dec")
+	;;
+up)
+	echo "h713-play: $probe: plane-up (v4l2sl${gst}dec ! kmssink, proc magnifies ${w}x${h} -> ${fw}x${fh})"
+	cmd=("$player" "$file" "$gst" "v4l2sl${gst}dec")
+	;;
+ve)
+	echo "h713-play: $probe: plane-ve (va${gst}dec, VE scaler ${w}x${h} -> ${fw}x${fh}, kmssink)"
+	export LIBVA_DRIVER_NAME=v4l2_request GST_VA_ALL_DRIVERS=1
+	export V4L2_REQUEST_SCALE=${fw}x${fh} V4L2_REQUEST_CROP=${w}x${h}
+	cmd=("$player" "$file" "$gst" "va${gst}dec" "${fw}x${fh}")
+	;;
+*)
+	gpu_cmd "$why"
 	;;
 esac
 
 [ $dry = 1 ] && { printf 'h713-play: would run:'; printf ' %q' "${cmd[@]}"; echo; exit 0; }
-exec "${cmd[@]}"
+[ -n "${plane:-}" ] && [ $ks_lens = 1 ] || exec "${cmd[@]}"
+
+# A plane route that a tilt may hand over to the gpu route mid-file.
+out=$(mktemp)
+"${cmd[@]}" > "$out" &
+pid=$!
+trap 'kill -TERM $pid 2>/dev/null' INT TERM HUP
+while kill -0 $pid 2>/dev/null; do
+	sleep 0.5
+	due=$(ks_due) || continue
+	kill -TERM $pid
+	wait $pid
+	cat "$out"
+	# gst-plane-play reports where it stopped ("position 12.345 s").
+	pos=$(sed -n 's/.*position \([0-9][0-9.]*\) s.*/\1/p' "$out" | tail -1)
+	rm -f "$out"
+	trap - INT TERM HUP
+	unset V4L2_REQUEST_SCALE V4L2_REQUEST_CROP GST_VA_ALL_DRIVERS
+	gpu_cmd "$due mid-file: handed over at ${pos:-0} s" --start="${pos:-0}"
+	exec "${cmd[@]}"
+done
+wait $pid
+rc=$?
+cat "$out"
+rm -f "$out"
+exit $rc
