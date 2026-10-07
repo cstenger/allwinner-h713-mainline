@@ -1,6 +1,11 @@
 # Automatic keystone: plan (2026-10-06)
 
-> **Status 2026-10-06: Phase 2 DONE (pending a real ceiling flip on the board).** `h713-keystone` and its service ship in the image. They publish the settled tilt and drive the ceiling flip. **Next: Phase 3**, the GL warp.
+> **Status 2026-10-06: Phase 2 DONE, verified on hardware.** `h713-keystone` and its service ship in the image. They publish the settled tilt and drive the ceiling flip. **Next: Phase 3**, the GL warp.
+> - **Hardware run** ([log](reference/keystone-phase2-flip-2026-10-06.log)), with `ceiling auto` on:
+>   - Pitch tracked the stand from −1° to 89° and back.
+>   - Turning the projector upside down set mode 3 (`ceiling`) within a second; setting it upright again restored 0 (`front`).
+>   - The correction held while the projector was being moved, and roll stayed within ±1.5°.
+> - **The stand has ~10° detents.** Coming down, it settled at 89.3, 79.0, 68.4, 58.5, 48.1, 38.2, 29.0, 18.2, 8.9 and −1.0°.
 >
 > **Phase 1 DONE (2026-10-06), kernel 0168.** The tilt sensor is a Silan SC7A20, not the STK8BA58 the stock DT names. Mainline `st_accel` drives it, with a measured mount-matrix.
 
