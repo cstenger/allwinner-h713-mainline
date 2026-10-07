@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Read-only H713 HDMI-input audio status probe. */
+/* Bounded H713 HDMI-input audio status probe. */
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/io.h>
@@ -12,12 +12,18 @@
 #define AUDIF_SIZE		0x88u
 #define AUDBRG_PHYS_BASE	0x06148000u
 #define AUDBRG_SIZE		0x394u
+#define AUDIO_TOP_PHYS_BASE	0x0614a000u
+#define AUDIO_TOP_SIZE		0x10u
+#define AUDIO_IHB_CLK_PHYS	0x02001d50u
+#define AUDIO_IHB_CLK_SIZE	0x4u
+#define AUDIO_IHB_CLK_STOCK	0x81000002u
 
 #define AUDIF_IRQ_STATUS	0x00
 #define AUDIF_IRQ_MASK		0x04
 #define AUDIF_IRQ_ROUTE		0x08
 #define AUDIF_SPDS_STATUS	0x10
-#define AUDIF_SPDI1_CFG		0x38
+#define AUDIF_SPDI1_CTL0	0x34
+#define AUDIF_SPDI1_CTL1	0x38
 #define AUDIF_SPDI1_STATUS	0x3c
 #define AUDIF_SPDI2_CFG		0x48
 #define AUDIF_SPDI2_STATUS	0x4c
@@ -45,7 +51,17 @@ static struct probe_clock probe_clocks[] = {
 
 static void __iomem *audif;
 static void __iomem *audbrg;
+static void __iomem *audio_top;
+static void __iomem *audio_ihb_clk_reg;
 static bool resources_ready;
+static bool audio_top_initialized;
+static bool audio_ihb_retimed;
+static bool spdi1_activated;
+static u32 audio_top_saved_ctl;
+static u32 audio_top_saved_cfg;
+static u32 audio_ihb_saved;
+static u32 spdi1_saved_ctl0;
+static u32 spdi1_saved_ctl1;
 
 static bool armed;
 module_param(armed, bool, 0400);
@@ -59,12 +75,26 @@ static bool receiver_powered;
 module_param(receiver_powered, bool, 0400);
 MODULE_PARM_DESC(receiver_powered, "Required acknowledgement that TVFE/TVCAP holds are active");
 
+static bool init_audio_top;
+module_param(init_audio_top, bool, 0400);
+MODULE_PARM_DESC(init_audio_top, "Apply only the stock audio-top clock sequence, saved and restored on unload");
+
+static bool stock_audio_ihb;
+module_param(stock_audio_ihb, bool, 0400);
+MODULE_PARM_DESC(stock_audio_ihb, "Temporarily apply the stock audio-IHB mux/divider word, saved and restored on unload");
+
+static bool activate_spdi1;
+module_param(activate_spdi1, bool, 0400);
+MODULE_PARM_DESC(activate_spdi1, "Apply only the stock 48-kHz LPCM SPDI1 activation words, saved and restored on unload");
+
 static unsigned int snapshot;
 
 static void take_snapshot(unsigned int sequence)
 {
-	u32 ai_irq, ai_mask, ai_route, spds, spdi1_cfg, spdi1_status;
+	u32 ai_irq, ai_mask, ai_route, spds, spdi1_ctl0, spdi1_ctl1;
+	u32 spdi1_status;
 	u32 spdi2_cfg, spdi2_status, ab_enable, ab_mask, ab_status, ab_sync;
+	u32 top_ctl, top_cfg, ihb_clk;
 
 	/* None of these offsets is a FIFO/data port. Several are W1C when
 	 * written, but this probe only performs reads.
@@ -73,7 +103,8 @@ static void take_snapshot(unsigned int sequence)
 	ai_mask = readl(audif + AUDIF_IRQ_MASK);
 	ai_route = readl(audif + AUDIF_IRQ_ROUTE);
 	spds = readl(audif + AUDIF_SPDS_STATUS);
-	spdi1_cfg = readl(audif + AUDIF_SPDI1_CFG);
+	spdi1_ctl0 = readl(audif + AUDIF_SPDI1_CTL0);
+	spdi1_ctl1 = readl(audif + AUDIF_SPDI1_CTL1);
 	spdi1_status = readl(audif + AUDIF_SPDI1_STATUS);
 	spdi2_cfg = readl(audif + AUDIF_SPDI2_CFG);
 	spdi2_status = readl(audif + AUDIF_SPDI2_STATUS);
@@ -81,11 +112,14 @@ static void take_snapshot(unsigned int sequence)
 	ab_mask = readl(audbrg + AUDBRG_IRQ_MASK);
 	ab_status = readl(audbrg + AUDBRG_IRQ_STATUS);
 	ab_sync = readl(audbrg + AUDBRG_STREAM_SYNC);
+	top_ctl = readl(audio_top + 0x0);
+	top_cfg = readl(audio_top + 0xc);
+	ihb_clk = readl(audio_ihb_clk_reg);
 
-	pr_info("h713-hdmi-audio-probe: snapshot=%u audif_irq=%08x audif_mask=%08x audif_route=%08x spds=%08x spdi1_cfg=%08x spdi1_status=%08x spdi2_cfg=%08x spdi2_status=%08x audbrg_enable=%08x audbrg_mask=%08x audbrg_status=%08x audbrg_sync=%08x\n",
-		sequence, ai_irq, ai_mask, ai_route, spds, spdi1_cfg,
-		spdi1_status, spdi2_cfg, spdi2_status, ab_enable, ab_mask,
-		ab_status, ab_sync);
+	pr_info("h713-hdmi-audio-probe: snapshot=%u audif_irq=%08x audif_mask=%08x audif_route=%08x spds=%08x spdi1_ctl0=%08x spdi1_ctl1=%08x spdi1_status=%08x spdi2_cfg=%08x spdi2_status=%08x audbrg_enable=%08x audbrg_mask=%08x audbrg_status=%08x audbrg_sync=%08x top_ctl=%08x top_cfg=%08x ihb_clk=%08x\n",
+		sequence, ai_irq, ai_mask, ai_route, spds, spdi1_ctl0,
+		spdi1_ctl1, spdi1_status, spdi2_cfg, spdi2_status, ab_enable, ab_mask,
+		ab_status, ab_sync, top_ctl, top_cfg, ihb_clk);
 }
 
 static int set_snapshot(const char *value, const struct kernel_param *kp)
@@ -116,6 +150,37 @@ static void release_resources(void)
 	int i;
 
 	resources_ready = false;
+	if (spdi1_activated) {
+		writel(spdi1_saved_ctl0, audif + AUDIF_SPDI1_CTL0);
+		writel(spdi1_saved_ctl1, audif + AUDIF_SPDI1_CTL1);
+		readl(audif + AUDIF_SPDI1_CTL1);
+		spdi1_activated = false;
+		pr_info("h713-hdmi-audio-probe: restored SPDI1 ctl0=%08x ctl1=%08x\n",
+			spdi1_saved_ctl0, spdi1_saved_ctl1);
+	}
+	if (audio_top_initialized) {
+		writel(audio_top_saved_cfg, audio_top + 0xc);
+		writel(audio_top_saved_ctl, audio_top + 0x0);
+		readl(audio_top + 0x0);
+		audio_top_initialized = false;
+		pr_info("h713-hdmi-audio-probe: restored audio-top ctl=%08x cfg=%08x\n",
+			audio_top_saved_ctl, audio_top_saved_cfg);
+	}
+	if (audio_top) {
+		iounmap(audio_top);
+		audio_top = NULL;
+	}
+	if (audio_ihb_retimed) {
+		writel(audio_ihb_saved, audio_ihb_clk_reg);
+		readl(audio_ihb_clk_reg);
+		audio_ihb_retimed = false;
+		pr_info("h713-hdmi-audio-probe: restored audio-IHB clock=%08x\n",
+			audio_ihb_saved);
+	}
+	if (audio_ihb_clk_reg) {
+		iounmap(audio_ihb_clk_reg);
+		audio_ihb_clk_reg = NULL;
+	}
 	if (audbrg) {
 		iounmap(audbrg);
 		audbrg = NULL;
@@ -181,13 +246,70 @@ static int __init h713_hdmi_audio_probe_init(void)
 
 	audif = ioremap(AUDIF_PHYS_BASE, AUDIF_SIZE);
 	audbrg = ioremap(AUDBRG_PHYS_BASE, AUDBRG_SIZE);
-	if (!audif || !audbrg) {
+	audio_ihb_clk_reg = ioremap(AUDIO_IHB_CLK_PHYS, AUDIO_IHB_CLK_SIZE);
+	audio_top = ioremap(AUDIO_TOP_PHYS_BASE, AUDIO_TOP_SIZE);
+	if (!audif || !audbrg || !audio_ihb_clk_reg || !audio_top) {
 		ret = -ENOMEM;
 		goto fail;
 	}
+	if (stock_audio_ihb) {
+		audio_ihb_saved = readl(audio_ihb_clk_reg);
+		writel(AUDIO_IHB_CLK_STOCK, audio_ihb_clk_reg);
+		if (readl(audio_ihb_clk_reg) != AUDIO_IHB_CLK_STOCK) {
+			pr_err("h713-hdmi-audio-probe: audio-IHB clock write did not latch: %08x\n",
+				readl(audio_ihb_clk_reg));
+			writel(audio_ihb_saved, audio_ihb_clk_reg);
+			readl(audio_ihb_clk_reg);
+			ret = -EIO;
+			goto fail;
+		}
+		audio_ihb_retimed = true;
+		pr_info("h713-hdmi-audio-probe: audio-IHB clock stock word applied %08x->%08x\n",
+			audio_ihb_saved, readl(audio_ihb_clk_reg));
+	}
+	if (init_audio_top) {
+		u32 cfg;
+
+		audio_top_saved_ctl = readl(audio_top + 0x0);
+		audio_top_saved_cfg = readl(audio_top + 0xc);
+		writel(audio_top_saved_ctl | 0x700, audio_top + 0x0);
+		cfg = (audio_top_saved_cfg & 0xff000000) | 0x001a5e00;
+		writel(cfg, audio_top + 0xc);
+		writel(cfg | 0x01000000, audio_top + 0xc);
+		readl(audio_top + 0xc);
+		audio_top_initialized = true;
+		pr_info("h713-hdmi-audio-probe: audio-top initialized ctl=%08x->%08x cfg=%08x->%08x\n",
+			audio_top_saved_ctl, readl(audio_top + 0x0),
+			audio_top_saved_cfg, readl(audio_top + 0xc));
+	}
+	if (activate_spdi1) {
+		/* Stock capture-device 0 (SPDI1) activation for LPCM writes ctl1
+		 * first, then ctl0. It does not need an IRQ mask to clock/status
+		 * the input, so this probe deliberately leaves all masks at zero.
+		 */
+		spdi1_saved_ctl0 = readl(audif + AUDIF_SPDI1_CTL0);
+		spdi1_saved_ctl1 = readl(audif + AUDIF_SPDI1_CTL1);
+		writel(0x00003000, audif + AUDIF_SPDI1_CTL1);
+		writel(0x90000000, audif + AUDIF_SPDI1_CTL0);
+		if (readl(audif + AUDIF_SPDI1_CTL0) != 0x90000000 ||
+		    readl(audif + AUDIF_SPDI1_CTL1) != 0x00003000) {
+			pr_err("h713-hdmi-audio-probe: SPDI1 activation did not latch ctl0=%08x ctl1=%08x\n",
+				readl(audif + AUDIF_SPDI1_CTL0),
+				readl(audif + AUDIF_SPDI1_CTL1));
+			writel(spdi1_saved_ctl0, audif + AUDIF_SPDI1_CTL0);
+			writel(spdi1_saved_ctl1, audif + AUDIF_SPDI1_CTL1);
+			readl(audif + AUDIF_SPDI1_CTL1);
+			ret = -EIO;
+			goto fail;
+		}
+		spdi1_activated = true;
+		pr_info("h713-hdmi-audio-probe: SPDI1 activated ctl0=%08x->%08x ctl1=%08x->%08x; IRQ masks unchanged\n",
+			spdi1_saved_ctl0, readl(audif + AUDIF_SPDI1_CTL0),
+			spdi1_saved_ctl1, readl(audif + AUDIF_SPDI1_CTL1));
+	}
 
 	resources_ready = true;
-	pr_info("h713-hdmi-audio-probe: armed; read-only status snapshots available\n");
+	pr_info("h713-hdmi-audio-probe: armed; status snapshots available\n");
 	if (snapshot)
 		take_snapshot(snapshot);
 	of_node_put(ccu);
@@ -209,4 +331,4 @@ static void __exit h713_hdmi_audio_probe_exit(void)
 module_init(h713_hdmi_audio_probe_init);
 module_exit(h713_hdmi_audio_probe_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Read-only H713 HDMI-input audio status probe");
+MODULE_DESCRIPTION("Bounded H713 HDMI-input audio status probe");

@@ -51,13 +51,28 @@ def source_connector():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--module", type=Path, default=DEFAULT_MODULE)
+    parser.add_argument("--tvfe-hold-module", type=Path,
+                        help="stock-order TVFE hold required for audio-register writes")
     parser.add_argument("--edid-probe", type=Path, default=DEFAULT_EDID_PROBE,
                         help="canonical-EDID SCP probe built for the running kernel")
     parser.add_argument("--seconds", type=float, default=8.0,
                         help="tone duration (default: 8 seconds)")
+    parser.add_argument("--init-audio-top", action="store_true",
+                        help="apply only the reversible stock audio-top clock sequence")
+    parser.add_argument("--stock-audio-ihb", action="store_true",
+                        help="temporarily apply the stock audio-IHB mux/divider word")
+    parser.add_argument("--activate-spdi1", action="store_true",
+                        help="temporarily apply the stock 48-kHz LPCM SPDI1 activation")
     args = parser.parse_args()
     if not args.module.is_file():
         parser.error(f"module not found: {args.module}")
+    register_writes = (args.init_audio_top or args.stock_audio_ihb or
+                       args.activate_spdi1)
+    if register_writes and args.tvfe_hold_module is None:
+        parser.error("audio-register writes require --tvfe-hold-module")
+    if (args.tvfe_hold_module is not None and
+            not args.tvfe_hold_module.is_file()):
+        parser.error(f"TVFE hold module not found: {args.tvfe_hold_module}")
     if not args.edid_probe.is_file():
         parser.error(f"canonical EDID probe not found: {args.edid_probe}")
     if not 2 <= args.seconds <= 15:
@@ -75,9 +90,25 @@ def main():
                "--postboot-only"], timeout=100).stdout.strip(), flush=True)
 
     module_sha = hashlib.sha256(args.module.read_bytes()).hexdigest()
+    tvfe_sha = (hashlib.sha256(args.tvfe_hold_module.read_bytes()).hexdigest()
+                if args.tvfe_hold_module else None)
     probe_sha = hashlib.sha256(args.edid_probe.read_bytes()).hexdigest()
-    run(SCP + [str(args.module), str(args.edid_probe),
-               "root@192.168.4.1:/tmp/"])
+    staged = [str(args.module), str(args.edid_probe)]
+    if args.tvfe_hold_module:
+        staged.append(str(args.tvfe_hold_module))
+    run(SCP + staged + ["root@192.168.4.1:/tmp/"])
+    tvfe_preflight = ""
+    if args.tvfe_hold_module:
+        tvfe_preflight = (
+            "test ! -d /sys/module/h713_hdmi_tvfe_hold; "
+            "test \"$(sha256sum /tmp/h713-hdmi-tvfe-hold.ko | cut -d' ' -f1)\" = "
+            f"{tvfe_sha}; set -- $(modinfo -F vermagic "
+            "/tmp/h713-hdmi-tvfe-hold.ko); "
+            "test \"$1\" = \"$(uname -r)\"; "
+            "insmod /tmp/h713-hdmi-tvfe-hold.ko armed=1 live_source3=1 "
+            "receiver_powered=1; "
+            "timeout 5s python3 -u /root/mips-shell.py --cmd 'help win' "
+            "| grep -q 'VS:/'; ")
     preflight = remote(
         "set -e; test ! -d /sys/module/h713_hdmi_audio_probe; "
         "test -d /sys/module/h713_hdmi_power; "
@@ -90,8 +121,11 @@ def main():
         f"{probe_sha}; set -- $(modinfo -F vermagic /tmp/h713-scp-probe.ko); "
         "test \"$1\" = \"$(uname -r)\"; "
         "python3 -u /root/mips-shell.py --status | grep -q 'MIPS core      ALIVE'; "
+        f"{tvfe_preflight}"
         "insmod /tmp/h713-hdmi-audio-probe.ko armed=1 live_source3=1 "
-        "receiver_powered=1 snapshot=1")
+        f"receiver_powered=1 init_audio_top={int(args.init_audio_top)} "
+        f"stock_audio_ihb={int(args.stock_audio_ihb)} "
+        f"activate_spdi1={int(args.activate_spdi1)} snapshot=1")
     (output / "probe-load.log").write_text(preflight)
 
     detector_log = (output / "detection.log").open("w")
@@ -151,7 +185,12 @@ def main():
         print(evidence.strip(), flush=True)
         print(json.dumps({"logs": str(output), "pcm": pcm["pcm"],
                           "module_sha256": module_sha,
+                          "tvfe_hold_sha256": tvfe_sha,
                           "edid_probe_sha256": probe_sha,
+                          "init_audio_top": args.init_audio_top,
+                          "stock_audio_ihb": args.stock_audio_ihb,
+                          "activate_spdi1": args.activate_spdi1,
+                          "tvfe_hold_left_loaded": bool(args.tvfe_hold_module),
                           "probe_left_loaded": True}), flush=True)
         return output
     finally:
