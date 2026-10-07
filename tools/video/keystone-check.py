@@ -201,10 +201,64 @@ def check(pitch, roll, yaw, inv, mode, s, tb, tt, va, M):
     return "; ".join(errs) or None, (w, h)
 
 
+def line_dist(p, a, b):
+    """Distance of p from the line through a and b."""
+    return abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / math.dist(a, b)
+
+
+def cross_point(a, b, c, d):
+    """Where line ab meets line cd."""
+    x1, y1, x2, y2, x3, y3, x4, y4 = *a, *b, *c, *d
+    den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den
+    return x1 + t * (x2 - x1), y1 + t * (y2 - y1)
+
+
+def check_corners(q, va, M):
+    """Corner mode: the picture fills quad q (tl, tr, br, bl, frame 0..1)."""
+    inv = inv3(M)
+    tl, tr, br, bl = q
+    pts = {k: apply(inv, *p) for k, p in {"tl": (0, 0), "tr": (1, 0), "br": (1, 1), "bl": (0, 1), "c": (0.5, 0.5)}.items()}
+    errs = []
+    tol = 1e-6
+    # The picture's centre is where the quad's diagonals cross -- any
+    # projective map takes the square's centre there, whatever the letterbox.
+    if math.dist(pts["c"], cross_point(tl, br, tr, bl)) > tol:
+        errs.append("centre is not where the diagonals cross")
+    pa = 1280 / 720
+    if abs(va - pa) < 1e-3:
+        for k, want in zip(("tl", "tr", "br", "bl"), q):
+            if math.dist(pts[k], want) > tol:
+                errs.append(f"{k} at {pts[k][0]:.5f},{pts[k][1]:.5f}, want {want[0]:.5f},{want[1]:.5f}")
+    elif va > pa:   # wide: letterboxed top and bottom, full width
+        if max(line_dist(pts["tl"], tl, bl), line_dist(pts["bl"], tl, bl),
+               line_dist(pts["tr"], tr, br), line_dist(pts["br"], tr, br)) > tol:
+            errs.append("wide picture's sides are not on the quad's sides")
+    else:           # narrow: pillarboxed left and right, full height
+        if max(line_dist(pts["tl"], tl, tr), line_dist(pts["tr"], tl, tr),
+               line_dist(pts["bl"], bl, br), line_dist(pts["br"], bl, br)) > tol:
+            errs.append("narrow picture's top and bottom are not on the quad's")
+    return "; ".join(errs) or None
+
+
 def main():
     n = bad = 0
     pat = re.compile(r"selftest (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)")
+    cpat = re.compile(r"cornertest ((?:\S+ ){8})(\S+) (convex|crossed) (\S+)")
     for line in sys.stdin:
+        cm = cpat.search(line)
+        if cm:
+            v = list(map(float, cm.group(1).split()))
+            q = [(v[0], v[1]), (v[2], v[3]), (v[4], v[5]), (v[6], v[7])]
+            va = float(cm.group(2))
+            kv = dict(x.split("=") for x in cm.group(4).split(","))
+            M = [[float(kv[f"k{r}{c}"]) for c in range(3)] for r in range(3)]
+            err = check_corners(q, va, M)
+            n += 1
+            bad += bool(err)
+            if err or "-v" in sys.argv:
+                print(f"{'FAIL' if err else 'ok  '} corners {cm.group(1).strip()} aspect {va:.3f}" + (f"  {err}" if err else ""))
+            continue
         m = pat.search(line)
         if not m:
             continue

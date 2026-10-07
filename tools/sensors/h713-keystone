@@ -14,6 +14,9 @@
 #                                          the lens geometry, from a tape measure
 #   h713-keystone trim [pitch|roll|yaw +D|-D|=D] [--persist]
 #   h713-keystone trim reset [--persist]   manual adjustment on top of the above
+#   h713-keystone corners [--persist]      four-corner mode: the picture fills
+#   h713-keystone corner [tl|tr|br|bl x|y +D|-D|=D] [--persist]
+#   h713-keystone corner reset [--persist] the corners you set, in frame pixels
 #   h713-keystone daemon                   the sensor loop (h713-keystone.service)
 #
 # The daemon samples the sensor about ten times a second and acts only once
@@ -69,6 +72,15 @@
 # Alt+Up/Down (pitch), Alt+Left/Right (yaw), Alt+[ and Alt+] (roll) step
 # them by 0.5 deg and Alt+0 resets them, saved.
 #
+# Corner mode (`corners`) ignores the sensor and the trims: the picture
+# fills the quadrilateral whose corners are the frame's corners moved by
+# `corner` -- x right, y down, in pixels of the 1280x720 frame, each corner
+# kept inside it; tl (top-left), tr, br, bl as the picture shows. It needs
+# no measured lens. `auto` (or `manual`) brings the sensor back; the corners
+# are kept for the next time. While playing in corner mode, Alt+1..4 select
+# tl, tr, br, bl, Alt+arrows move the selected corner 4 px, Alt+0 resets
+# the corners, and Alt+c switches between corners and auto (saved).
+#
 # Settings: /etc/h713-keystone.conf with --persist, else /run/h713-keystone/conf
 # until the next boot. The daemon rereads them every second.
 #
@@ -80,7 +92,7 @@ ETC=${H713_KEYSTONE_ETC:-/etc/h713-keystone.conf}
 STATE=$RUN/state
 MIRROR=${H713_MIRROR_ATTR-$(ls /sys/bus/platform/drivers/sun50i-h713-afbd/*/mirror_mode 2>/dev/null | head -1)}
 
-usage() { sed -n '6,17p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '6,20p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { echo "h713-keystone: $*" >&2; exit 1; }
 
 find_dev() {
@@ -299,6 +311,7 @@ status() {
 	echo "keystone: $(get keystone auto)$( [ "$(get keystone auto)" = manual ] && echo " $(get manual_deg 0) deg")   ceiling: $(get ceiling off)   ($(conf))"
 	echo "calibration (g): x $(get bias_x 0)  y $(get bias_y 0)  z $(get bias_z 0)"
 	echo "trim (deg): pitch $(get trim_pitch 0)  roll $(get trim_roll 0)  yaw $(get trim_yaw 0)"
+	echo "corners (px): tl $(get corner_tl_x 0),$(get corner_tl_y 0)  tr $(get corner_tr_x 0),$(get corner_tr_y 0)  br $(get corner_br_x 0),$(get corner_br_y 0)  bl $(get corner_bl_x 0),$(get corner_bl_y 0)"
 	[ -n "$MIRROR" ] && echo "installation mode: $(h713-mirror 2>/dev/null)"
 	if [ -f "$STATE" ] && systemctl is-active -q h713-keystone 2>/dev/null; then
 		echo "daemon: running; $STATE:"
@@ -322,7 +335,7 @@ set -- $args
 
 case ${1:-} in
 '')	status ;;
-auto|off)
+auto|off|corners)
 	[ $# = 1 ] || usage
 	set_conf $persist "keystone=$1"
 	echo "h713-keystone: keystone $1" ;;
@@ -386,10 +399,11 @@ trim)
 	[ $# = 3 ] || usage
 	case $2 in pitch) lim=40 ;; roll|yaw) lim=30 ;; *) usage ;; esac
 	case $3 in
-	[+=-][0-9]*|[+=-].[0-9]*) ;;
-	*) die "trim takes +D, -D (adjust) or =D (set), in degrees, e.g. 'trim yaw +0.5'" ;;
+	[+=-][0-9]*|[+=-].[0-9]*|=-[0-9]*|=-.[0-9]*) ;;
+	*) die "trim takes +D, -D (adjust) or =D (set), in degrees, e.g. 'trim yaw +0.5' or 'trim yaw =-3'" ;;
 	esac
-	case ${3#?} in *[!0-9.]*) die "trim: '$3' is not a number of degrees" ;; esac
+	n=${3#?}; n=${n#-}
+	case $n in *[!0-9.]*|'') die "trim: '$3' is not a number of degrees" ;; esac
 	v=$(awk -v cur="$(get trim_$2 0)" -v a="$3" -v lim=$lim 'BEGIN {
 		op = substr(a, 1, 1); d = substr(a, 2) + 0
 		v = op == "=" ? d : op == "+" ? cur + d : cur - d
@@ -397,6 +411,56 @@ trim)
 		v = sprintf("%.1f", v); if (v == "-0.0") v = "0.0"; print v }')
 	set_conf $persist "trim_$2=$v"
 	echo "h713-keystone: trim $2 $v deg" ;;
+corner)
+	show() { echo "corners (px): tl $(get corner_tl_x 0),$(get corner_tl_y 0)  tr $(get corner_tr_x 0),$(get corner_tr_y 0)  br $(get corner_br_x 0),$(get corner_br_y 0)  bl $(get corner_bl_x 0),$(get corner_bl_y 0)"; }
+	if [ $# = 1 ]; then show; exit 0; fi
+	if [ "$2" = reset ]; then
+		[ $# = 2 ] || usage
+		set_conf $persist corner_tl_x=0 corner_tl_y=0 corner_tr_x=0 corner_tr_y=0 \
+			corner_br_x=0 corner_br_y=0 corner_bl_x=0 corner_bl_y=0
+		echo "h713-keystone: corners reset"
+		exit 0
+	fi
+	[ $# = 4 ] || usage
+	case $2 in tl|tr|br|bl) ;; *) usage ;; esac
+	case $3 in x) lim=1280 ;; y) lim=720 ;; *) usage ;; esac
+	case $4 in
+	[+=-][0-9]*|=-[0-9]*) ;;
+	*) die "corner takes +D, -D (move) or =D (set), in frame pixels, e.g. 'corner tl x +8' or 'corner br y =-20'" ;;
+	esac
+	n=${4#?}; n=${n#-}
+	case $n in *[!0-9]*|'') die "corner: '$4' is not a whole number of pixels" ;; esac
+	# An offset from the frame's own corner, kept inside the frame: the left
+	# corners move right from 0, the right ones left from 1280, and so on.
+	v=$(awk -v cur="$(get corner_$2_$3 0)" -v a="$4" -v lim=$lim -v c="$2" -v ax="$3" 'BEGIN {
+		op = substr(a, 1, 1); d = substr(a, 2) + 0
+		v = op == "=" ? d : op == "+" ? cur + d : cur - d
+		far = (ax == "x" && substr(c, 2, 1) == "r") || (ax == "y" && substr(c, 1, 1) == "b")
+		lo = far ? -lim : 0; hi = far ? 0 : lim
+		if (v < lo) v = lo; if (v > hi) v = hi
+		print v }')
+	# Refuse a quadrilateral that crosses itself or folds flat: the warp
+	# could not fill it.
+	q=
+	for c in tl tr br bl; do
+		x=$(get corner_${c}_x 0) y=$(get corner_${c}_y 0)
+		[ $c = "$2" ] && [ "$3" = x ] && x=$v
+		[ $c = "$2" ] && [ "$3" = y ] && y=$v
+		q="$q $x $y"
+	done
+	echo "$q" | awk '{
+		# tl, tr, br, bl offsets -> frame positions
+		split("0 0 1280 0 1280 720 0 720", base, " ")
+		for (i = 0; i < 4; i++) { X[i] = base[2 * i + 1] + $(2 * i + 1); Y[i] = base[2 * i + 2] + $(2 * i + 2) }
+		for (i = 0; i < 4; i++) {
+			a = i; b = (i + 1) % 4; c = (i + 2) % 4
+			z = (X[b] - X[a]) * (Y[c] - Y[b]) - (Y[b] - Y[a]) * (X[c] - X[b])
+			if (z == 0) exit 1
+			sz = z > 0 ? 1 : -1
+			if (i == 0) sg = sz; else if (sz != sg) exit 1
+		} }' || die "corner $2 $3 $v would make the corners cross or fold; not saved"
+	set_conf $persist "corner_$2_$3=$v"
+	echo "h713-keystone: corner $2 $3 $v px" ;;
 daemon)
 	dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
 	echo "h713-keystone: sensor $dev, mirror ${MIRROR:-unavailable}"

@@ -157,3 +157,26 @@ Trims are degrees added on top of `auto` (or `manual DEG`). They do nothing unde
   - Daemon suite 59/59: adjust, set, subtract, clamp, reset, refuse a bare number or a bad axis, persist.
   - On the GPU, a `keystone-trim yaw =6` message sent into a playing mpv went through the CLI into the (test) config. The frame redrew with yaw 6.0, and all four edges sit within 0.56 px of its matrix. The real `/etc` was untouched (md5).
 - **The 3.1° roll residual on the wall** matches about +6° of yaw (left side ~8% shorter). If that is what it was, `trim yaw +6` (or Alt+→ twelve times) takes it out. It hasn't been measured, because the current case gives no reference for squareness.
+
+### Corner mode (2026-10-06)
+
+Four-corner keystone: `h713-keystone corners` makes the picture fill the quadrilateral you set, ignoring the sensor and the angle trims. It needs no measured lens. `auto` brings the sensor back, and the corners are kept.
+
+- **CLI:**
+  - `h713-keystone corner tl|tr|br|bl x|y +D|-D|=D` moves a corner by whole frame pixels (x right, y down, 1280×720). `=-30` sets a negative value.
+  - `corner reset` puts all four back; `corner` alone shows them.
+  - Each corner is clamped inside the frame. A quadrilateral that would cross itself or fold flat is refused, not saved.
+- **While playing:**
+  - Alt+1/2/3/4 selects tl/tr/br/bl.
+  - Alt+arrows move the selected corner 4 px; outside corner mode they still adjust the angle trims. Alt+0 resets the corners.
+  - Alt+c switches between `corners` and `auto`.
+  - A yellow box marks the selected corner for 3 s. It is drawn on the OSD, in frame coordinates after the warp, so it lands on the picture's corner itself.
+  - `script-message keystone-corner C AXIS ARG` and `keystone-mode M` do the same for a remote.
+- **Math:** the inverse of the square-to-quad homography (Heckbert), then the letterbox. `keystone.lua` refuses a non-convex quadrilateral too, keeping the last good one.
+- **Mode source:** the script and `h713-play` now read the mode from the settings, not the daemon's state. The daemon republishes only when the projector is still, so a mode change made with the projector in hand was delayed.
+- **h713-play:** in corner mode, a correction is due when any corner has moved, lens or not.
+- **Verified:**
+  - Selftest: 15/15 corner matrices. The independent checks are that a 16:9 picture's corners land on the quadrilateral's, that the picture's centre lands where the diagonals cross, and that a letterboxed picture's edges lie on the quad's sides. Moving one corner by 0.01 fails 0/15.
+  - Daemon suite 77/77.
+  - On the GPU: corner mode and four corners set by script messages in playing mpv (the key path). The card's border corners measured within **0.12 px** of the set positions (edge lines fitted on merged grabs taken after the OSD cleared). The marker was centred on the selected corner and gone after its 3 s. A crossing quad was refused and the picture kept.
+- **While testing, the board's root filesystem filled up (100%)** with my frame grabs in `/var/tmp/ks`. I deleted them: 48 MB free. The settings survived, because writes go to a temp file and are renamed only on success. The filesystem was already near full: journal 250 MB, `/root` 783 MB.

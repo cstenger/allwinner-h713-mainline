@@ -165,6 +165,34 @@ check trim-show "$("$KS" trim)" "trim (deg): pitch 40.0  roll -0.5  yaw -1.0"
 check trim-reset "$("$KS" trim)" "trim (deg): pitch 0  roll 0  yaw 0"
 check trim-persisted "$(grep -c '^trim_yaw=0$' "$T/etc.conf")" 1
 
+echo "corners: the mode, moves, far-corner clamps, reset, refusals"
+cn() { "$KS" corner "$@" 2>/dev/null | sed -n 's/^h713-keystone: corner [a-z]* [xy] \([-0-9]*\) px$/\1/p'; }
+"$KS" corners >/dev/null; pose 0 985 -174; settle
+check corners-mode "$(st keystone)" corners
+check corners-no-sensor "$(st keystone_deg)" 0.0
+check corner-tl "$(cn tl x +8)" 8
+check corner-tr-clamp "$(cn tr x +8)" 0
+check corner-tr "$(cn tr x -8)" -8
+check corner-bl "$(cn bl y =-30)" -30
+check corner-bl-clamp "$(cn bl y =30)" 0
+# Clamped to -720, br would sit on the top edge: folded flat, refused.
+check corner-br-fold "$("$KS" corner br y -9999 >/dev/null 2>&1 && echo took || echo refused)" refused
+check corner-br-near "$(cn br y -9)" -9
+check corner-bare "$("$KS" corner tl x 8 >/dev/null 2>&1 && echo took || echo refused)" refused
+check corner-frac "$("$KS" corner tl x +1.5 >/dev/null 2>&1 && echo took || echo refused)" refused
+check corner-name "$("$KS" corner top x +1 >/dev/null 2>&1 && echo took || echo refused)" refused
+check corner-show "$("$KS" corner)" "corners (px): tl 8,0  tr -8,0  br 0,-9  bl 0,0"
+# tl past tr: the top edge would cross itself.
+check corner-cross "$("$KS" corner tl x =1275 >/dev/null 2>&1 && echo took || echo refused)" refused
+check corner-cross-kept "$("$KS" corner)" "corners (px): tl 8,0  tr -8,0  br 0,-9  bl 0,0"
+"$KS" corner reset >/dev/null
+check corner-reset "$("$KS" corner)" "corners (px): tl 0,0  tr 0,0  br 0,0  bl 0,0"
+"$KS" auto >/dev/null; settle
+# (The calibration section left offsets behind, so compare with the pitch.)
+check corners-back-to-auto "$(st keystone_deg)" "$(st pitch_deg)"
+check trim-set-negative "$(tr yaw =-3)" -3.0
+"$KS" trim reset >/dev/null
+
 echo "daemon log:"; sed 's/^/  /' "$T/log"
 echo "$pass passed, $fail failed"
 [ $fail = 0 ]

@@ -36,10 +36,10 @@
 # intermediates keep it at ~40% GPU); 10-bit HEVC arrives as cedrus's 8-bit
 # NV12 and must NOT get the shader.
 #
-# Keystone (docs/keystone-plan.md): once `h713-keystone lens` has measured
-# the lens, the gpu route always loads keystone.lua, which warps the picture
-# whenever h713-keystone asks for a correction (pitch or roll) -- also one
-# that starts mid-playback. The plane cannot warp, so a correction due at
+# Keystone (docs/keystone-plan.md): the gpu route always loads keystone.lua,
+# which warps the picture whenever h713-keystone asks for a correction --
+# angles (pitch, roll, yaw; they need `h713-keystone lens`) or, in corner
+# mode, the corners you set -- also one that starts mid-playback. The plane cannot warp, so a correction due at
 # start sends the file to the gpu route, and a plane route watches the tilt:
 # if a correction comes due mid-file it stops the plane player (which reports
 # its position) and hands over to the gpu route from there.
@@ -242,18 +242,29 @@ share=
 for d in "${H713_SHARE:-/usr/local/share/h713}" "$(dirname "$0")/shaders"; do
 	[ -r "$d/keystone.glsl" ] && { share=$d; break; }
 done
-ks_lens=0
-[ -n "$share" ] && grep -q '^lens_s=' "$KS_CONF" 2>/dev/null && ks_lens=1
-# A correction is due: pitch, roll or yaw, with the trims, at least half a
-# degree (keystone.lua's threshold); nothing under `off`. Prints it. The
-# settings in force are the runtime file while a non-persisted change made one.
+# The warp is available when its files are installed; angles also need the
+# measured lens, corner mode does not.
+ks_on=0
+[ -n "$share" ] && [ -r "$share/keystone.lua" -o -r "$(dirname "$0")/keystone.lua" ] && ks_on=1
+# A correction is due: in corner mode any corner moved; otherwise pitch, roll
+# or yaw, with the trims, at least half a degree (keystone.lua's threshold)
+# and a measured lens; nothing under `off`. Prints it. The settings in force
+# are the runtime file while a non-persisted change made one.
 ks_due() {
-	[ $ks_lens = 1 ] || return 1
+	[ $ks_on = 1 ] || return 1
 	conf=${KS_STATE%/state}/conf
 	[ -r "$conf" ] || conf=$KS_CONF
 	awk -F= 'FNR == NR { c[$1] = $2; next }
 		$1 == "keystone_deg" { k = $2 } $1 == "level_deg" { l = $2 } $1 == "keystone" { m = $2 }
-		END { if (m == "off") exit 1
+		END { if (c["keystone"] != "") m = c["keystone"]	# the setting, not the daemon
+		      if (m == "off") exit 1
+		      if (m == "corners") {
+		          moved = 0
+		          for (key in c) if (key ~ /^corner_(tl|tr|br|bl)_[xy]$/ && c[key] + 0 != 0) moved = 1
+		          printf "keystone corners"
+		          exit !moved
+		      }
+		      if (c["lens_s"] == "") exit 1
 		      k += c["trim_pitch"]; l += c["trim_roll"]; y = c["trim_yaw"] + 0
 		      printf "keystone %s deg, level %s deg, yaw %s deg", k + 0, l + 0, y
 		      exit !(k >= 0.5 || k <= -0.5 || l >= 0.5 || l <= -0.5 || y >= 0.5 || y <= -0.5) }' \
@@ -285,7 +296,7 @@ gpu_cmd() {
 			note=", LSB10 x64 shader"
 		fi
 	fi
-	if [ $ks_lens = 1 ]; then
+	if [ $ks_on = 1 ]; then
 		ks_lua=$share/keystone.lua
 		[ -r "$ks_lua" ] || ks_lua=$(dirname "$0")/keystone.lua
 		extra+=(--script="$ks_lua" --script-opts-append=keystone-shader="$share/keystone.glsl"
@@ -321,7 +332,7 @@ ve)
 esac
 
 [ $dry = 1 ] && { printf 'h713-play: would run:'; printf ' %q' "${cmd[@]}"; echo; exit 0; }
-[ -n "${plane:-}" ] && [ $ks_lens = 1 ] || exec "${cmd[@]}"
+[ -n "${plane:-}" ] && [ $ks_on = 1 ] || exec "${cmd[@]}"
 
 # A plane route that a tilt may hand over to the gpu route mid-file.
 out=$(mktemp)

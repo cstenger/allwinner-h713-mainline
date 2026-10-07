@@ -45,6 +45,17 @@
 -- (script-message keystone-trim AXIS +D|-D|=D|reset does the same, for a
 -- remote or a test).
 --
+-- Corner mode (h713-keystone corners) ignores the sensor and the trims: the
+-- picture fills the quadrilateral of the frame's corners moved by the
+-- corner_* offsets (frame pixels, x right, y down), letterboxed inside it by
+-- the video's aspect -- the square-to-quad homography, inverted. No lens
+-- needed. A quadrilateral that is not convex is refused (the last good one
+-- stays). While playing in corner mode Alt+1..4 select tl, tr, br, bl,
+-- Alt+arrows move it corner_step px, Alt+0 resets the corners and Alt+c
+-- switches to auto (and back); a marker shows the selected corner, which
+-- is drawn on the OSD -- frame coordinates, after the warp -- so it sits
+-- exactly on the picture's corner.
+--
 -- selftest=yes prints matrices for a grid of poses and quits (headless check:
 -- tools/video/keystone-check.py).
 
@@ -57,6 +68,7 @@ local opts = {
 	runconf = "/run/h713-keystone/conf",	-- non-persisted settings, if any
 	tool = "h713-keystone",
 	step = 0.5,
+	corner_step = 4,		-- frame pixels per press
 	shader = "/usr/local/share/h713/keystone.glsl",
 	min_deg = 0.5,		-- below this the warp is off (sensor noise ~0.1 deg)
 	max_deg = 40,		-- pitch; h713-keystone never asks for more than 45
@@ -141,6 +153,74 @@ local function fit(q, ar)
 	return cx / #poly, cy / #poly, lo, lo * ar
 end
 
+local function inv3(m)
+	local a, b, c = m[1][1], m[1][2], m[1][3]
+	local d, e, f = m[2][1], m[2][2], m[2][3]
+	local g, h, i = m[3][1], m[3][2], m[3][3]
+	local det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+	return {{(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det},
+		{(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det},
+		{(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det}}
+end
+
+-- The homography taking the unit square's (0,0), (1,0), (1,1), (0,1) to the
+-- quadrilateral q (Heckbert's square-to-quad).
+local function square_to_quad(q)
+	local x0, y0, x1, y1 = q[1][1], q[1][2], q[2][1], q[2][2]
+	local x2, y2, x3, y3 = q[3][1], q[3][2], q[4][1], q[4][2]
+	local dx1, dx2, dx3 = x1 - x2, x3 - x2, x0 - x1 + x2 - x3
+	local dy1, dy2, dy3 = y1 - y2, y3 - y2, y0 - y1 + y2 - y3
+	local g, h = 0, 0
+	if math.abs(dx3) > 1e-12 or math.abs(dy3) > 1e-12 then
+		local den = dx1 * dy2 - dx2 * dy1
+		g = (dx3 * dy2 - dx2 * dy3) / den
+		h = (dx1 * dy3 - dx3 * dy1) / den
+	end
+	return {{x1 - x0 + g * x1, x3 - x0 + h * x3, x0},
+		{y1 - y0 + g * y1, y3 - y0 + h * y3, y0},
+		{g, h, 1}}
+end
+
+-- Strictly convex, and wound one way: every turn has the same sign.
+local function convex(q)
+	local sign = 0
+	for i = 1, 4 do
+		local a, b, c = q[i], q[i % 4 + 1], q[(i + 1) % 4 + 1]
+		local z = (b[1] - a[1]) * (c[2] - b[2]) - (b[2] - a[2]) * (c[1] - b[1])
+		if math.abs(z) < 1e-9 then return false end
+		local sz = z > 0 and 1 or -1
+		if sign == 0 then sign = sz elseif sz ~= sign then return false end
+	end
+	return true
+end
+
+-- The letterbox: picture rectangle -> mpv's picture, stretched to the frame.
+local function letterbox(va, pa)
+	local lx, ly, lw, lh = 0, 0, 1, 1
+	if va > pa then lh = pa / va; ly = (1 - lh) / 2 else lw = va / pa; lx = (1 - lw) / 2 end
+	return {{1 / lw, 0, -lx / lw}, {0, 1 / lh, -ly / lh}, {0, 0, 1}}
+end
+
+local FW, FH = 1280, 720
+local CORNERS = {"tl", "tr", "br", "bl"}
+local CORNER_AT = {tl = {0, 0}, tr = {1, 0}, br = {1, 1}, bl = {0, 1}}
+
+-- Corner mode: the quadrilateral (frame 0..1) from the settings' offsets.
+local function corner_quad(cf)
+	local q = {}
+	for i, c in ipairs(CORNERS) do
+		local at = CORNER_AT[c]
+		q[i] = {at[1] + (tonumber(cf["corner_" .. c .. "_x"]) or 0) / FW,
+			at[2] + (tonumber(cf["corner_" .. c .. "_y"]) or 0) / FH}
+	end
+	return q
+end
+
+-- Frame position -> stretched-picture position for corner mode.
+local function corner_warp(q, va)
+	return mul(letterbox(va, FW / FH), inv3(square_to_quad(q)))
+end
+
 -- Frame position -> stretched-picture position, homogeneous. pitch: lens tilt
 -- toward the projector's own top, roll: its right side above the horizon
 -- (degrees, as h713-keystone publishes them), yaw: the projector turned to
@@ -188,11 +268,7 @@ local function warp(pitch, roll, yaw, inv, mode, s, tb, tt, va)
 		{0, 0, 1},
 	}
 	-- The rectangle -> mpv's picture, stretched to the frame by keepaspect=no.
-	local pa = 1 / ar
-	local lx, ly, lw, lh = 0, 0, 1, 1
-	if va > pa then lh = pa / va; ly = (1 - lh) / 2 else lw = va / pa; lx = (1 - lw) / 2 end
-	local C = {{1 / lw, 0, -lx / lw}, {0, 1 / lh, -ly / lh}, {0, 0, 1}}
-	return mul(C, mul(B, RA))
+	return mul(letterbox(va, 1 / ar), mul(B, RA))
 end
 
 local function read_kv(path)
@@ -281,13 +357,71 @@ local function settings()
 	return read_kv(opts.runconf) or read_kv(opts.conf) or {}
 end
 
+-- The mode is a setting: read it there, not from the daemon, which only
+-- republishes once the projector is still.
+local function mode_of(st, cf)
+	return cf.keystone or st.keystone or "auto"
+end
+
+local function install(M, what)
+	local text = M and shader_text(M)
+	if not text then
+		msg.error(M and ("cannot use " .. opts.shader .. " (missing, or no KEYSTONE_MATRIX)")
+			or "the frame does not reach the wall at this pose")
+		return
+	end
+	serial = serial + 1
+	local path = string.format("/tmp/h713-keystone-%s-%d.glsl", mp.get_property("pid"), serial)
+	local f = io.open(path, "w")
+	if not f then msg.error("cannot write " .. path); return end
+	f:write(text)
+	f:close()
+	if not active then
+		saved_blend = mp.get_property("blend-subtitles")
+		mp.set_property("keepaspect", "no")
+		mp.set_property("blend-subtitles", "video")
+	end
+	mp.commandv("change-list", "glsl-shaders", "append", path)
+	if active then
+		mp.commandv("change-list", "glsl-shaders", "remove", active)
+		os.remove(active)
+	end
+	active = path
+	msg.verbose("matrix " .. matrix_opts(M))
+	msg.info(what)
+end
+
+local function apply_corners(cf, va)
+	local q = corner_quad(cf)
+	local key = "corners"
+	for _, p in ipairs(q) do key = key .. string.format(" %.6f %.6f", p[1], p[2]) end
+	key = key .. string.format(" %.4f", va)
+	if key == last then return end
+	last = key
+	local moved = false
+	for i, c in ipairs(CORNERS) do
+		local at = CORNER_AT[c]
+		if math.abs(q[i][1] - at[1]) > 1e-9 or math.abs(q[i][2] - at[2]) > 1e-9 then moved = true end
+	end
+	if not moved then off("keystone off (corners at the frame)"); return end
+	if not convex(q) then
+		msg.error("corners do not make a convex quadrilateral; keeping the last good one")
+		mp.osd_message("keystone: those corners cross -- not applied", 2)
+		return
+	end
+	install(corner_warp(q, va), string.format("keystone corners tl %d,%d tr %d,%d br %d,%d bl %d,%d (video aspect %.3f)",
+		cf.corner_tl_x or 0, cf.corner_tl_y or 0, cf.corner_tr_x or 0, cf.corner_tr_y or 0,
+		cf.corner_br_x or 0, cf.corner_br_y or 0, cf.corner_bl_x or 0, cf.corner_bl_y or 0, va))
+end
+
 local function apply()
 	local st = read_kv(opts.state) or {}
 	local cf = settings()
+	if mode_of(st, cf) == "corners" then return apply_corners(cf, video_aspect()) end
 	local k = tonumber(st.keystone_deg) or 0
 	local l = tonumber(st.level_deg) or 0
 	local y = 0
-	if (st.keystone or cf.keystone or "auto") ~= "off" then
+	if mode_of(st, cf) ~= "off" then
 		k = k + (tonumber(cf.trim_pitch) or 0)
 		l = l + (tonumber(cf.trim_roll) or 0)
 		y = tonumber(cf.trim_yaw) or 0
@@ -314,58 +448,73 @@ local function apply()
 	k = math.max(-opts.max_deg, math.min(opts.max_deg, k))
 	l = math.max(-opts.max_roll, math.min(opts.max_roll, l))
 	y = math.max(-opts.max_roll, math.min(opts.max_roll, y))
-	local M = warp(k, l, y, inv, mode, s, tb, tt, va)
-	local text = M and shader_text(M)
-	if not text then
-		msg.error(M and ("cannot use " .. opts.shader .. " (missing, or no KEYSTONE_MATRIX)")
-			or "the frame does not reach the wall at this pose")
-		return
-	end
-	serial = serial + 1
-	local path = string.format("/tmp/h713-keystone-%s-%d.glsl", mp.get_property("pid"), serial)
-	local f = io.open(path, "w")
-	if not f then msg.error("cannot write " .. path); return end
-	f:write(text)
-	f:close()
-	if not active then
-		saved_blend = mp.get_property("blend-subtitles")
-		mp.set_property("keepaspect", "no")
-		mp.set_property("blend-subtitles", "video")
-	end
-	mp.commandv("change-list", "glsl-shaders", "append", path)
-	if active then
-		mp.commandv("change-list", "glsl-shaders", "remove", active)
-		os.remove(active)
-	end
-	active = path
-	msg.verbose("matrix " .. matrix_opts(M))
-	msg.info(string.format("keystone %.1f deg, level %.1f deg, yaw %.1f deg (%s, mirror %d, video aspect %.3f)",
-		k, l, y, inv and "upside down" or "upright", mode, va))
+	install(warp(k, l, y, inv, mode, s, tb, tt, va),
+		string.format("keystone %.1f deg, level %.1f deg, yaw %.1f deg (%s, mirror %d, video aspect %.3f)",
+			k, l, y, inv and "upside down" or "upright", mode, va))
 end
 
--- Manual adjustment: one trim through h713-keystone (so the CLI, the remote
--- and these keys share one setting), then redraw at once.
-local function trim(axis, arg)
-	local args = {opts.tool, "trim", axis}
-	if arg then args[#args + 1] = arg end
+-- Manual adjustment goes through h713-keystone (so the CLI, the remote and
+-- these keys share one saved setting), then redraws at once.
+local function tool(...)
+	local args = {opts.tool, ...}
 	args[#args + 1] = "--persist"
 	local r = mp.command_native({name = "subprocess", args = args, playback_only = false,
 		capture_stdout = true, capture_stderr = true})
 	if not r or r.status ~= 0 then
-		mp.osd_message("keystone trim failed: " .. ((r and r.stderr) or "?"), 3)
-		return
+		mp.osd_message("keystone: " .. ((r and r.stderr ~= "" and r.stderr) or "h713-keystone failed"), 3)
+		return false
 	end
 	last = nil
 	apply()
+	return true
+end
+
+local selected = "tl"
+local marker = mp.create_osd_overlay("ass-events")
+marker.res_x, marker.res_y = FW, FH
+local marker_timer
+
+-- Corner mode: a box on the selected corner. The OSD is drawn in frame
+-- coordinates after the warp, so this lands on the picture's corner itself.
+local function show_corners()
+	local cf = settings()
+	local q = corner_quad(cf)
+	local i = ({tl = 1, tr = 2, br = 3, bl = 4})[selected]
+	local x = math.max(0, math.min(FW - 24, q[i][1] * FW - 12))
+	local y = math.max(0, math.min(FH - 24, q[i][2] * FH - 12))
+	marker.data = string.format("{\\an7\\pos(%d,%d)\\bord2\\shad0\\1c&H00FFFF&\\3c&H000000&\\p1}m 0 0 l 24 0 24 24 0 24{\\p0}", x, y)
+	marker:update()
+	if marker_timer then marker_timer:kill() end
+	marker_timer = mp.add_timeout(3, function() marker:remove() end)
+	mp.osd_message(string.format("keystone corners [%s]  tl %s,%s  tr %s,%s  br %s,%s  bl %s,%s", selected,
+		cf.corner_tl_x or 0, cf.corner_tl_y or 0, cf.corner_tr_x or 0, cf.corner_tr_y or 0,
+		cf.corner_br_x or 0, cf.corner_br_y or 0, cf.corner_bl_x or 0, cf.corner_bl_y or 0), 3)
+end
+
+local function show_trims()
 	local cf = settings()
 	mp.osd_message(string.format("keystone trim  pitch %s  yaw %s  roll %s",
 		cf.trim_pitch or "0", cf.trim_yaw or "0", cf.trim_roll or "0"), 2)
 end
 
-local function bind(key, name, axis, sign)
-	mp.add_key_binding(key, name, function()
-		trim(axis, (sign > 0 and "+" or "-") .. opts.step)
-	end, {repeatable = true})
+local function in_corners()
+	return mode_of(read_kv(opts.state) or {}, settings()) == "corners"
+end
+
+-- One key, two meanings: a corner move in corner mode, a trim otherwise.
+local function arrow(dx, dy, trim_axis, trim_sign)
+	return function()
+		if in_corners() then
+			local ax, d = dx ~= 0 and "x" or "y", dx ~= 0 and dx or dy
+			if tool("corner", selected, ax, (d > 0 and "+" or "-") .. opts.corner_step) then show_corners() end
+		elseif trim_axis then
+			if tool("trim", trim_axis, (trim_sign > 0 and "+" or "-") .. opts.step) then show_trims() end
+		end
+	end
+end
+
+local function trim(axis, arg)		-- script-message keystone-trim
+	if tool("trim", axis, arg) then show_trims() end
 end
 
 if opts.selftest ~= "" then
@@ -390,16 +539,59 @@ if opts.selftest ~= "" then
 			end
 		end
 	end
+	-- Corner mode: offsets (frame px) for tl, tr, br, bl.
+	local quads = {
+		{{40, 30}, {-10, 60}, {-80, -20}, {0, 0}},
+		{{120, 0}, {-120, 0}, {0, 0}, {0, 0}},		-- a symmetric trapezoid
+		{{0, 0}, {0, 90}, {0, -90}, {0, 0}},		-- a sideways one
+		{{64, 36}, {64, 36}, {64, 36}, {64, 36}},	-- a pure shift
+		{{200, 150}, {-30, 10}, {-250, -40}, {15, -160}},
+	}
+	for _, o in ipairs(quads) do
+		local cf = {}
+		for i, c in ipairs(CORNERS) do
+			cf["corner_" .. c .. "_x"], cf["corner_" .. c .. "_y"] = o[i][1], o[i][2]
+		end
+		local q = corner_quad(cf)
+		for _, va in ipairs({16 / 9, 2.39, 4 / 3}) do
+			local pts = {}
+			for _, p in ipairs(q) do pts[#pts + 1] = string.format("%.6f %.6f", p[1], p[2]) end
+			print(string.format("cornertest %s %.6f %s %s", table.concat(pts, " "), va,
+				convex(q) and "convex" or "crossed", matrix_opts(corner_warp(q, va))))
+		end
+	end
 	mp.commandv("quit")
 else
-	bind("Alt+UP", "keystone-pitch-up", "pitch", 1)
-	bind("Alt+DOWN", "keystone-pitch-down", "pitch", -1)
-	bind("Alt+RIGHT", "keystone-yaw-right", "yaw", 1)
-	bind("Alt+LEFT", "keystone-yaw-left", "yaw", -1)
-	bind("Alt+]", "keystone-roll-right", "roll", 1)
-	bind("Alt+[", "keystone-roll-left", "roll", -1)
-	mp.add_key_binding("Alt+0", "keystone-trim-reset", function() trim("reset") end)
-	mp.register_script_message("keystone-trim", function(axis, arg) trim(axis, arg) end)
+	local rep = {repeatable = true}
+	mp.add_key_binding("Alt+UP", "keystone-up", arrow(0, -1, "pitch", 1), rep)
+	mp.add_key_binding("Alt+DOWN", "keystone-down", arrow(0, 1, "pitch", -1), rep)
+	mp.add_key_binding("Alt+RIGHT", "keystone-right", arrow(1, 0, "yaw", 1), rep)
+	mp.add_key_binding("Alt+LEFT", "keystone-left", arrow(-1, 0, "yaw", -1), rep)
+	mp.add_key_binding("Alt+]", "keystone-roll-right", arrow(0, 0, "roll", 1), rep)
+	mp.add_key_binding("Alt+[", "keystone-roll-left", arrow(0, 0, "roll", -1), rep)
+	mp.add_key_binding("Alt+0", "keystone-reset", function()
+		if in_corners() then
+			if tool("corner", "reset") then show_corners() end
+		elseif tool("trim", "reset") then show_trims() end
+	end)
+	for i, c in ipairs(CORNERS) do
+		mp.add_key_binding("Alt+" .. i, "keystone-select-" .. c, function()
+			selected = c
+			if in_corners() then show_corners() else mp.osd_message("keystone: Alt+c for corner mode", 2) end
+		end)
+	end
+	mp.add_key_binding("Alt+c", "keystone-corner-mode", function()
+		local to = in_corners() and "auto" or "corners"
+		if tool(to) then
+			if to == "corners" then show_corners() else mp.osd_message("keystone auto", 2) end
+		end
+	end)
+	mp.register_script_message("keystone-trim", trim)
+	mp.register_script_message("keystone-corner", function(c, ax, arg)
+		if c ~= "reset" then selected = c end
+		if tool("corner", c, ax, arg) then show_corners() end
+	end)
+	mp.register_script_message("keystone-mode", function(m) tool(m) end)
 	mp.add_periodic_timer(0.5, apply)
 	mp.register_event("shutdown", function() if active then os.remove(active) end end)
 	mp.observe_property("video-out-params", "native", function() last = nil; apply() end)
