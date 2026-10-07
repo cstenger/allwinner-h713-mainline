@@ -41,7 +41,9 @@ h713-keystone daemon                   h713-keystone.service
   - Ceiling auto is off by default, so `h713-mirror --persist` keeps working.
 - **Calibration:** the zero-g offsets are tens of mg (this unit: 14 mg side, 30 mg lens axis), about a degree, so uncalibrated the stand read −1° to 89°.
   - `h713-keystone calibrate level`, at the lowest detent, zeroes the lens and side axes. `calibrate up`, lens straight up, zeroes the up axis.
-  - Each averages 8 still windows. It refuses a pose more than ~6° off.
+  - Each averages 8 still windows, taking about 13 s with the daemon running (repeatable to 4 mg, ~0.2°). It refuses a pose more than ~6° off.
+  - **The stand reseats to within about 1°:** after a full tilt up and back, the bottom detent read −1° against the 0.1° just after calibrating. That is the mechanism, not the sensor.
+- **Noise and thresholds:** normal (10-bit) mode reads 27–53 mg SD per axis. A window counts as still below 0.10 g SD; at 0.06 g, 7% of still windows read as moving. A jump past 3° counts as a new pose. One window is about 0.7° of pitch noise.
   - The offsets are always saved to `/etc`. Then the stand reads 0° to 90°.
 - **Settings:** `/etc/h713-keystone.conf` (with `--persist`) or `/run/h713-keystone/conf`. They are reread every window.
 - **sh + mawk:** the product image has no python3.

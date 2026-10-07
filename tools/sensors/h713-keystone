@@ -170,7 +170,9 @@ loop() { # DEV ONCE
 		n = split(rd(dev "/mount_matrix"), t, /[;,] */)
 		for (i = 0; i < 9; i++) mm[int(i / 3), i % 3] = (n == 9) ? t[i + 1] + 0 : (i % 4 == 0)
 		W = 10			# window, samples: ~0.7 s at ODR 100
-		STILL = 0.06		# g, per-axis SD; the sensor alone is 0.015-0.037
+		# g, per-axis SD of a window. The sensor alone is 27-53 mg (normal
+		# mode, 2026-10-06); at 60 mg, 7% of still windows read as moving.
+		STILL = 0.10
 		inverted = 0; settled = 0; applied = 0; pitch = 0; roll = 0
 		have = 0; retry_at = 0; fresh = 0; nstill = 0; pend = 0
 		system("mkdir -p " run)
@@ -207,10 +209,10 @@ loop() { # DEV ONCE
 			sgn = inverted ? -1 : 1
 			p = deg(atan2(-m[2] * sgn, abs(m[1])))
 			r = deg(atan2(m[0], sqrt(m[1] ^ 2 + m[2] ^ 2)))
-			# One window is ~0.6 deg of noise. Average the still windows since
-			# the last move, so a new pose shows at once and then steadies;
-			# a jump past 1.5 deg is a new pose, not noise.
-			if (!fresh || abs(p - ep) > 1.5 || abs(r - er) > 1.5) {
+			# One window is ~0.7 deg of noise (SD). Average the still windows
+			# since the last move, so a new pose shows at once and then
+			# steadies; a jump past 3 deg is a new pose, not noise.
+			if (!fresh || abs(p - ep) > 3 || abs(r - er) > 3) {
 				# The first still window after a move can carry its tail:
 				# skip it and start from the next.
 				if (!pend) { pend = 1; continue }
@@ -288,6 +290,7 @@ ceiling)
 calibrate)
 	[ $# = 2 ] || usage
 	dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
+	echo "h713-keystone: hold it still -- about 15 s" >&2
 	set -- $2 $(loop "$dev" 2)
 	[ $# = 4 ] || die "no reading from the sensor"
 	ok=$(awk -v w="$1" -v x="$2" -v y="$3" -v z="$4" 'BEGIN {
