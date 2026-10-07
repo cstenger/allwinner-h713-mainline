@@ -442,7 +442,7 @@ Still open in WP4:
 **Later.**
 - **WP5, the hardware mirror: DONE 2026-10-06.** Kernel 0166 adds the installation mode (`h713-mirror front|rear|rear-ceiling|ceiling [--persist]`, sysfs `mirror_mode`) and `rotation` (REFLECT_X/Y, ROTATE_180) on both DRM planes. It works on both paths with no GPU cost; P010 under V is refused. Plan: [mirror-plan.md](mirror-plan.md); gate: [reference/mirror-phase2-2026-10-06.md](reference/mirror-phase2-2026-10-06.md).
 - **WP6, VP9 VE scaling: DONE 2026-10-06.** Kernel 0167 admits VP9 to the TOP1 polyphase scaler through the H.265 engine's secondary output (func_ctrl bit 9, Y/C at `+0x54/+0x58` >> 8, no `+0x80` low-address register, so the chroma base is 256-byte aligned). Stock's 4K VP9 VE page and Jernej's H6 VP9 P010 patch give the same recipe. 55.43 dB at 2x (H.265: 55.45), unscaled VP9 still bit-exact 12/12, and 1080p, scope and 4K VP9 play on plane-ve with 0 drops and 0 GPU IRQs. `h713-play` detects it from cedrus. Record: [reference/vp9-scaler-2026-10-06.md](reference/vp9-scaler-2026-10-06.md).
-- Keystone as a GL warp.
+- Keystone as a GL warp: the sensor (0168) and `h713-keystone` (phase 2) are done; the warp is [keystone-plan.md](keystone-plan.md) phase 3.
 - The hardware letterbox plan as an optimisation.
 
 ## Verification

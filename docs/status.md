@@ -13,6 +13,12 @@ _Last updated: 2026-10-06._
 > bit-exact ([reference/vp9-scaler-2026-10-06.md](reference/vp9-scaler-2026-10-06.md)).
 > AV1 above the panel is the one codec left on the GPU.
 
+> **2026-10-06 — tilt sensor and `h713-keystone`.** Kernel 0168 drives the
+> accelerometer (a Silan SC7A20) through mainline `st_accel`, with a measured
+> mount-matrix. `h713-keystone` publishes the settled tilt for automatic
+> keystone and can make the ceiling flip follow gravity. The GL warp that
+> applies the correction is next ([keystone-plan.md](keystone-plan.md)).
+
 > **2026-10-06 — hardware mirror (WP5) done.** Kernel 0166 mirrors the panel
 > for rear and ceiling projection, as the stock firmware does: `h713-mirror
 > front|rear|rear-ceiling|ceiling [--persist]`, or the DRM `rotation`

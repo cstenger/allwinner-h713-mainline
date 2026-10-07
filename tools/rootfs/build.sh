@@ -398,6 +398,7 @@ env \
   H713_PLAY_SRC="$PROJECT_ROOT/tools/video/h713-play" \
   PLANE_PLAY_SRC="$PROJECT_ROOT/tools/video/gst-plane-play.c" \
   H713_MIRROR_SRC="$PROJECT_ROOT/tools/display/h713-mirror" \
+  H713_KEYSTONE_SRC="$PROJECT_ROOT/tools/sensors/h713-keystone" \
   bash -ceu '
     mkdir -p "$ROOTFS_TREE"
     tar --numeric-owner --xattrs --acls --exclude="./dev/*" -C "$ROOTFS_TREE" -xf "$ROOTFS_TAR"
@@ -480,6 +481,8 @@ env \
     # WP4 playback: the launcher, the plane player (an arm64 build of this
     # tree, not a stale copy), what each runs on, and the tested ALSA default.
     test -x "$ROOTFS_TREE/usr/local/bin/h713-play"
+    test -x "$ROOTFS_TREE/usr/local/bin/h713-keystone"
+    test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-keystone.service"
     grep -q "HOOK LUMA" "$ROOTFS_TREE/usr/local/share/h713/lsb10.glsl"   # 10-bit AV1 on GL
     test -x "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
     file -b "$ROOTFS_TREE/usr/local/bin/gst-plane-play" | grep -q "ARM aarch64"

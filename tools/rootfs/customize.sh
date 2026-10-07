@@ -621,4 +621,31 @@ if [ -n "${H713_MIRROR_SRC:-}" ]; then
   echo "[customize] installed h713-mirror"
 fi
 
+# Auto-keystone phase 2: h713-keystone reads the SC7A20 tilt sensor (kernel
+# 0168) and publishes /run/h713-keystone/state for the picture warp. Ceiling
+# auto, which drives h713-mirror, is off unless the user turns it on, so an
+# h713-mirror --persist setting still holds. sh + mawk, like h713-mirror: the
+# product image has no python3.
+if [ -n "${H713_KEYSTONE_SRC:-}" ]; then
+  install -d -m 0755 "$R/usr/local/bin"
+  install -m 0755 "$H713_KEYSTONE_SRC" "$R/usr/local/bin/h713-keystone"
+  cat > "$systemd_dir/h713-keystone.service" <<EOF
+[Unit]
+Description=Projector tilt: automatic keystone and ceiling detection
+After=systemd-modules-load.service
+
+[Service]
+ExecStart=/usr/local/bin/h713-keystone daemon
+# A kernel without 0168 has no sensor: retry slowly rather than spin.
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  ln -sfn ../h713-keystone.service \
+    "$systemd_dir/multi-user.target.wants/h713-keystone.service"
+  echo "[customize] installed h713-keystone + h713-keystone.service"
+fi
+
 echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media), schedutil rate limit 10 ms"
