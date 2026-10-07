@@ -244,13 +244,20 @@ for d in "${H713_SHARE:-/usr/local/share/h713}" "$(dirname "$0")/shaders"; do
 done
 ks_lens=0
 [ -n "$share" ] && grep -q '^lens_s=' "$KS_CONF" 2>/dev/null && ks_lens=1
-# A correction is due: pitch or roll at least half a degree (keystone.lua's
-# threshold). Prints it.
+# A correction is due: pitch, roll or yaw, with the trims, at least half a
+# degree (keystone.lua's threshold); nothing under `off`. Prints it. The
+# settings in force are the runtime file while a non-persisted change made one.
 ks_due() {
 	[ $ks_lens = 1 ] || return 1
-	awk -F= '$1 == "keystone_deg" { k = $2 } $1 == "level_deg" { l = $2 }
-		END { printf "keystone %s deg, level %s deg", k + 0, l + 0
-		      exit !(k >= 0.5 || k <= -0.5 || l >= 0.5 || l <= -0.5) }' "$KS_STATE" 2>/dev/null
+	conf=${KS_STATE%/state}/conf
+	[ -r "$conf" ] || conf=$KS_CONF
+	awk -F= 'FNR == NR { c[$1] = $2; next }
+		$1 == "keystone_deg" { k = $2 } $1 == "level_deg" { l = $2 } $1 == "keystone" { m = $2 }
+		END { if (m == "off") exit 1
+		      k += c["trim_pitch"]; l += c["trim_roll"]; y = c["trim_yaw"] + 0
+		      printf "keystone %s deg, level %s deg, yaw %s deg", k + 0, l + 0, y
+		      exit !(k >= 0.5 || k <= -0.5 || l >= 0.5 || l <= -0.5 || y >= 0.5 || y <= -0.5) }' \
+		"$conf" "$KS_STATE" 2>/dev/null
 }
 if [ -z "$why" ] && due=$(ks_due); then
 	[ $route = plane ] && { echo "h713-play: $file cannot go on the plane: $due needs the GPU warp (h713-keystone off)" >&2; exit 1; }
@@ -282,7 +289,8 @@ gpu_cmd() {
 		ks_lua=$share/keystone.lua
 		[ -r "$ks_lua" ] || ks_lua=$(dirname "$0")/keystone.lua
 		extra+=(--script="$ks_lua" --script-opts-append=keystone-shader="$share/keystone.glsl"
-			--script-opts-append=keystone-state="$KS_STATE" --script-opts-append=keystone-conf="$KS_CONF")
+			--script-opts-append=keystone-state="$KS_STATE" --script-opts-append=keystone-conf="$KS_CONF"
+			--script-opts-append=keystone-runconf="${KS_STATE%/state}/conf")
 		note="$note, keystone"
 	fi
 	echo "h713-play: $probe: gpu ($1; mpv --vo=gpu$note)"

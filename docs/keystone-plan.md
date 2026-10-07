@@ -135,3 +135,25 @@ Widths of the white border, outer edge to outer edge:
 - **Mid-file handover.** When the lens is measured, `h713-play` runs a plane route under watch. If a correction comes due, it SIGTERMs `gst-plane-play`, which prints its position, and execs the GPU route with `--start` at that position.
   - Verified: plane-native at 0°, the state went to 20° → "handed over at 4.463 s"; mpv resumed at 00:00:04 with VA decode, warped.
   - A correction due at start (pitch or roll ≥ 0.5°) still goes straight to the GPU.
+
+### Manual adjustment (2026-10-06)
+
+Trims are degrees added on top of `auto` (or `manual DEG`). They do nothing under `off`.
+
+| Trim | Corrects | Positive means |
+| --- | --- | --- |
+| `pitch` | vertical keystone | as if the lens were higher |
+| `roll` | rotation | as if the right side were higher |
+| `yaw` | horizontal keystone; the projector turned left or right, which gravity cannot see | as if turned to its right (a picture whose **left** side is shorter wants more yaw) |
+
+- **CLI:** `h713-keystone trim [pitch|roll|yaw +D|-D|=D] [--persist]` adjusts or sets one trim; `trim reset` clears all three, and `trim` alone shows them. Pitch is clamped at ±40°, roll and yaw at ±30°.
+- **While playing:** `keystone.lua` binds Alt+↑/↓ (pitch), Alt+←/→ (yaw), Alt+[ / ] (roll), 0.5° a press and repeatable, and Alt+0 to reset.
+  - Each press runs `h713-keystone trim … --persist`, so the CLI, the keys and a remote share one saved setting. The script then redraws at once, without waiting for the daemon, and shows the trims on the OSD.
+  - `script-message keystone-trim AXIS ARG` does the same thing for a remote mapping or a test.
+- **Yaw in the model:** the world is turned about the vertical. The wall normal sits at −yaw in the projector's frame.
+- **h713-play** counts the trims, from the settings in force, when deciding whether a correction is due. For example, a level projector with a 2° yaw trim goes to the GPU.
+- **Verified:**
+  - `keystone-check.py` now builds the physical attitude as Ry(yaw)·(Euler attitude): 1080/1080 pass, adding yaw ∈ {0, 6, −10}. Both a yaw sign error and an ignored yaw fail 0/40.
+  - Daemon suite 59/59: adjust, set, subtract, clamp, reset, refuse a bare number or a bad axis, persist.
+  - On the GPU, a `keystone-trim yaw =6` message sent into a playing mpv went through the CLI into the (test) config. The frame redrew with yaw 6.0, and all four edges sit within 0.56 px of its matrix. The real `/etc` was untouched (md5).
+- **The 3.1° roll residual on the wall** matches about +6° of yaw (left side ~8% shorter). If that is what it was, `trim yaw +6` (or Alt+→ twelve times) takes it out. It hasn't been measured, because the current case gives no reference for squareness.

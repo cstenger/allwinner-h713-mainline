@@ -12,6 +12,8 @@
 #                                          then lens straight up (saved to /etc)
 #   h713-keystone lens DIST WIDTH BOTTOM [TOP]
 #                                          the lens geometry, from a tape measure
+#   h713-keystone trim [pitch|roll|yaw +D|-D|=D] [--persist]
+#   h713-keystone trim reset [--persist]   manual adjustment on top of the above
 #   h713-keystone daemon                   the sensor loop (h713-keystone.service)
 #
 # The daemon samples the sensor about ten times a second and acts only once
@@ -57,6 +59,16 @@
 # the correction comes out ~1% strong at 20 deg.
 # keystone.lua (the warp) needs this; nothing is assumed.
 #
+# Trims (`trim`) adjust the picture by hand, in degrees, on top of auto or
+# manual: pitch (vertical keystone), roll (rotation) and yaw (horizontal
+# keystone -- the projector turned left or right, which gravity cannot see).
+# +D/-D adjusts, =D sets. Positive pitch: as if the lens were higher; roll:
+# as if the right side were higher; yaw: as if the projector were turned to
+# its right (a picture whose left side is the shorter wants more yaw). They
+# do nothing under `off`. keystone.lua applies them, and while it plays,
+# Alt+Up/Down (pitch), Alt+Left/Right (yaw), Alt+[ and Alt+] (roll) step
+# them by 0.5 deg and Alt+0 resets them, saved.
+#
 # Settings: /etc/h713-keystone.conf with --persist, else /run/h713-keystone/conf
 # until the next boot. The daemon rereads them every second.
 #
@@ -68,7 +80,7 @@ ETC=${H713_KEYSTONE_ETC:-/etc/h713-keystone.conf}
 STATE=$RUN/state
 MIRROR=${H713_MIRROR_ATTR-$(ls /sys/bus/platform/drivers/sun50i-h713-afbd/*/mirror_mode 2>/dev/null | head -1)}
 
-usage() { sed -n '6,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '6,17p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { echo "h713-keystone: $*" >&2; exit 1; }
 
 find_dev() {
@@ -286,6 +298,7 @@ loop() { # DEV ONCE
 status() {
 	echo "keystone: $(get keystone auto)$( [ "$(get keystone auto)" = manual ] && echo " $(get manual_deg 0) deg")   ceiling: $(get ceiling off)   ($(conf))"
 	echo "calibration (g): x $(get bias_x 0)  y $(get bias_y 0)  z $(get bias_z 0)"
+	echo "trim (deg): pitch $(get trim_pitch 0)  roll $(get trim_roll 0)  yaw $(get trim_yaw 0)"
 	[ -n "$MIRROR" ] && echo "installation mode: $(h713-mirror 2>/dev/null)"
 	if [ -f "$STATE" ] && systemctl is-active -q h713-keystone 2>/dev/null; then
 		echo "daemon: running; $STATE:"
@@ -359,6 +372,31 @@ lens)
 	[ "$4" = ok ] || die "TOP - BOTTOM is $4 off the 16:9 height WIDTH x 9/16: remeasure (is it level, square to the wall?)"
 	set_cal "lens_s=$1" "lens_tb=$2" "lens_tt=$3"
 	echo "h713-keystone: lens saved: throw ratio $5, edges at tan $2 (bottom) and $3 (top), half-width tan $1" ;;
+trim)
+	if [ $# = 1 ]; then
+		echo "trim (deg): pitch $(get trim_pitch 0)  roll $(get trim_roll 0)  yaw $(get trim_yaw 0)"
+		exit 0
+	fi
+	if [ "$2" = reset ]; then
+		[ $# = 2 ] || usage
+		set_conf $persist trim_pitch=0 trim_roll=0 trim_yaw=0
+		echo "h713-keystone: trim reset"
+		exit 0
+	fi
+	[ $# = 3 ] || usage
+	case $2 in pitch) lim=40 ;; roll|yaw) lim=30 ;; *) usage ;; esac
+	case $3 in
+	[+=-][0-9]*|[+=-].[0-9]*) ;;
+	*) die "trim takes +D, -D (adjust) or =D (set), in degrees, e.g. 'trim yaw +0.5'" ;;
+	esac
+	case ${3#?} in *[!0-9.]*) die "trim: '$3' is not a number of degrees" ;; esac
+	v=$(awk -v cur="$(get trim_$2 0)" -v a="$3" -v lim=$lim 'BEGIN {
+		op = substr(a, 1, 1); d = substr(a, 2) + 0
+		v = op == "=" ? d : op == "+" ? cur + d : cur - d
+		if (v > lim) v = lim; if (v < -lim) v = -lim
+		v = sprintf("%.1f", v); if (v == "-0.0") v = "0.0"; print v }')
+	set_conf $persist "trim_$2=$v"
+	echo "h713-keystone: trim $2 $v deg" ;;
 daemon)
 	dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
 	echo "h713-keystone: sensor $dev, mirror ${MIRROR:-unavailable}"

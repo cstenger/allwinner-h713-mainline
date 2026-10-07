@@ -151,6 +151,20 @@ pose 15 866 -483; settle
 check refuses-tilted "$("$KS" calibrate level 2>/dev/null && echo ok || echo refused)" refused
 check refuses-not-up "$("$KS" calibrate up 2>/dev/null && echo ok || echo refused)" refused
 
+echo "trim: adjust, set, clamp, reset, refuse a bare number"
+tr() { "$KS" trim "$@" 2>/dev/null | sed -n 's/^h713-keystone: trim [a-z]* \([-0-9.]*\) deg$/\1/p'; }
+check trim-plus "$(tr yaw +0.5)" 0.5
+check trim-set "$(tr yaw =3)" 3.0
+check trim-minus "$(tr yaw -4)" -1.0
+check trim-clamp "$(tr pitch +50)" 40.0
+check trim-roll "$(tr roll -.5)" -0.5
+check trim-bare "$("$KS" trim yaw 3 >/dev/null 2>&1 && echo took || echo refused)" refused
+check trim-axis "$("$KS" trim tilt +1 >/dev/null 2>&1 && echo took || echo refused)" refused
+check trim-show "$("$KS" trim)" "trim (deg): pitch 40.0  roll -0.5  yaw -1.0"
+"$KS" trim reset --persist >/dev/null
+check trim-reset "$("$KS" trim)" "trim (deg): pitch 0  roll 0  yaw 0"
+check trim-persisted "$(grep -c '^trim_yaw=0$' "$T/etc.conf")" 1
+
 echo "daemon log:"; sed 's/^/  /' "$T/log"
 echo "$pass passed, $fail failed"
 [ $fail = 0 ]

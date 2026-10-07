@@ -37,6 +37,14 @@
 -- see. The OSD is drawn after every shader hook in vo=gpu and stays unwarped;
 -- subtitles are blended into the video first and warp with it.
 --
+-- Trims (h713-keystone trim) add to what the daemon publishes: pitch, roll,
+-- and yaw -- the projector turned left or right, which gravity cannot see,
+-- applied as a turn of the wall about the vertical. Not under `off`. While
+-- playing: Alt+Up/Down pitch, Alt+Left/Right yaw, Alt+[ / Alt+] roll, 0.5 deg
+-- a press, Alt+0 resets; each is saved through h713-keystone trim --persist
+-- (script-message keystone-trim AXIS +D|-D|=D|reset does the same, for a
+-- remote or a test).
+--
 -- selftest=yes prints matrices for a grid of poses and quits (headless check:
 -- tools/video/keystone-check.py).
 
@@ -46,6 +54,9 @@ local msg = require 'mp.msg'
 local opts = {
 	state = "/run/h713-keystone/state",
 	conf = "/etc/h713-keystone.conf",
+	runconf = "/run/h713-keystone/conf",	-- non-persisted settings, if any
+	tool = "h713-keystone",
+	step = 0.5,
 	shader = "/usr/local/share/h713/keystone.glsl",
 	min_deg = 0.5,		-- below this the warp is off (sensor noise ~0.1 deg)
 	max_deg = 40,		-- pitch; h713-keystone never asks for more than 45
@@ -132,16 +143,21 @@ end
 
 -- Frame position -> stretched-picture position, homogeneous. pitch: lens tilt
 -- toward the projector's own top, roll: its right side above the horizon
--- (degrees, as h713-keystone publishes them); inv: upside down; mode:
+-- (degrees, as h713-keystone publishes them), yaw: the projector turned to
+-- its right of square (degrees, a trim); inv: upside down; mode:
 -- h713-mirror's number; s, tb, tt: the lens tangents (half width, bottom and
 -- top edge); va: the video's aspect (width / height).
-local function warp(pitch, roll, inv, mode, s, tb, tt, va)
-	local p, r = math.rad(pitch), math.rad(roll)
+local function warp(pitch, roll, yaw, inv, mode, s, tb, tt, va)
+	local p, r, y = math.rad(pitch), math.rad(roll), math.rad(yaw)
 	local si = inv and -1 or 1
 	-- Up, in the projector's (right, up, forward) coordinates.
 	local up = {math.sin(r), si * math.cos(r) * math.cos(p), si * math.cos(r) * math.sin(p)}
 	local fw = unit({-up[3] * up[1], -up[3] * up[2], 1 - up[3] * up[3]})
 	local rt = cross(up, fw)
+	-- Turned right by yaw: the wall's normal sits that much to its left.
+	local cy, sy_ = math.cos(y), math.sin(y)
+	rt, fw = {cy * rt[1] + sy_ * fw[1], cy * rt[2] + sy_ * fw[2], cy * rt[3] + sy_ * fw[3]},
+		{cy * fw[1] - sy_ * rt[1], cy * fw[2] - sy_ * rt[2], cy * fw[3] - sy_ * rt[3]}
 	-- The frame reaches the lens mirrored by the display: D (x, t, 1).
 	local hx = mode % 2 == 1 and -1 or 1
 	local vy = math.floor(mode / 2) % 2 == 1 and -1 or 1
@@ -259,18 +275,30 @@ local function off(why)
 	msg.info(why)
 end
 
+-- The settings in force: the runtime file while a non-persisted change made
+-- one (it then holds everything), else /etc.
+local function settings()
+	return read_kv(opts.runconf) or read_kv(opts.conf) or {}
+end
+
 local function apply()
 	local st = read_kv(opts.state) or {}
-	local cf = read_kv(opts.conf) or {}
+	local cf = settings()
 	local k = tonumber(st.keystone_deg) or 0
 	local l = tonumber(st.level_deg) or 0
+	local y = 0
+	if (st.keystone or cf.keystone or "auto") ~= "off" then
+		k = k + (tonumber(cf.trim_pitch) or 0)
+		l = l + (tonumber(cf.trim_roll) or 0)
+		y = tonumber(cf.trim_yaw) or 0
+	end
 	-- Facing a ceiling or floor the daemon gives the tilt from its normal
 	-- toward the projector's own top: an upright pose by construction.
 	local inv = st.inverted == "1" and (st.surface or "wall") == "wall"
 	local s, tb, tt = tonumber(cf.lens_s), tonumber(cf.lens_tb), tonumber(cf.lens_tt)
 	local mode = mirror_mode()
 	local va = video_aspect()
-	local key = string.format("%s %s %s %s %s %s %d %.4f", k, l, inv, s, tb, tt, mode, va)
+	local key = string.format("%s %s %s %s %s %s %s %d %.4f", k, l, y, inv, s, tb, tt, mode, va)
 	if key == last then return end
 	last = key
 
@@ -278,14 +306,15 @@ local function apply()
 		off("keystone off: no lens geometry (h713-keystone lens)")
 		return
 	end
-	if math.abs(k) < opts.min_deg and math.abs(l) < opts.min_deg then
+	if math.abs(k) < opts.min_deg and math.abs(l) < opts.min_deg and math.abs(y) < opts.min_deg then
 		off("keystone off")
 		return
 	end
 
 	k = math.max(-opts.max_deg, math.min(opts.max_deg, k))
 	l = math.max(-opts.max_roll, math.min(opts.max_roll, l))
-	local M = warp(k, l, inv, mode, s, tb, tt, va)
+	y = math.max(-opts.max_roll, math.min(opts.max_roll, y))
+	local M = warp(k, l, y, inv, mode, s, tb, tt, va)
 	local text = M and shader_text(M)
 	if not text then
 		msg.error(M and ("cannot use " .. opts.shader .. " (missing, or no KEYSTONE_MATRIX)")
@@ -310,8 +339,33 @@ local function apply()
 	end
 	active = path
 	msg.verbose("matrix " .. matrix_opts(M))
-	msg.info(string.format("keystone %.1f deg, level %.1f deg (%s, mirror %d, video aspect %.3f)",
-		k, l, inv and "upside down" or "upright", mode, va))
+	msg.info(string.format("keystone %.1f deg, level %.1f deg, yaw %.1f deg (%s, mirror %d, video aspect %.3f)",
+		k, l, y, inv and "upside down" or "upright", mode, va))
+end
+
+-- Manual adjustment: one trim through h713-keystone (so the CLI, the remote
+-- and these keys share one setting), then redraw at once.
+local function trim(axis, arg)
+	local args = {opts.tool, "trim", axis}
+	if arg then args[#args + 1] = arg end
+	args[#args + 1] = "--persist"
+	local r = mp.command_native({name = "subprocess", args = args, playback_only = false,
+		capture_stdout = true, capture_stderr = true})
+	if not r or r.status ~= 0 then
+		mp.osd_message("keystone trim failed: " .. ((r and r.stderr) or "?"), 3)
+		return
+	end
+	last = nil
+	apply()
+	local cf = settings()
+	mp.osd_message(string.format("keystone trim  pitch %s  yaw %s  roll %s",
+		cf.trim_pitch or "0", cf.trim_yaw or "0", cf.trim_roll or "0"), 2)
+end
+
+local function bind(key, name, axis, sign)
+	mp.add_key_binding(key, name, function()
+		trim(axis, (sign > 0 and "+" or "-") .. opts.step)
+	end, {repeatable = true})
 end
 
 if opts.selftest ~= "" then
@@ -325,10 +379,12 @@ if opts.selftest ~= "" then
 		for _, ps in ipairs(poses) do
 			for _, p in ipairs({0, 10, 20, 30, -15}) do
 				for _, r in ipairs({0, 5, -8}) do
-					for _, va in ipairs({16 / 9, 2.39, 4 / 3}) do
-						local M = warp(p, r, ps[1], ps[2], ln[1], ln[2], ln[3], va)
-						print(string.format("selftest %g %g %d %d %.5f %.5f %.5f %.6f %s",
-							p, r, ps[1] and 1 or 0, ps[2], ln[1], ln[2], ln[3], va, matrix_opts(M)))
+					for _, y in ipairs({0, 6, -10}) do
+						for _, va in ipairs({16 / 9, 2.39, 4 / 3}) do
+							local M = warp(p, r, y, ps[1], ps[2], ln[1], ln[2], ln[3], va)
+							print(string.format("selftest %g %g %g %d %d %.5f %.5f %.5f %.6f %s",
+								p, r, y, ps[1] and 1 or 0, ps[2], ln[1], ln[2], ln[3], va, matrix_opts(M)))
+						end
 					end
 				end
 			end
@@ -336,6 +392,14 @@ if opts.selftest ~= "" then
 	end
 	mp.commandv("quit")
 else
+	bind("Alt+UP", "keystone-pitch-up", "pitch", 1)
+	bind("Alt+DOWN", "keystone-pitch-down", "pitch", -1)
+	bind("Alt+RIGHT", "keystone-yaw-right", "yaw", 1)
+	bind("Alt+LEFT", "keystone-yaw-left", "yaw", -1)
+	bind("Alt+]", "keystone-roll-right", "roll", 1)
+	bind("Alt+[", "keystone-roll-left", "roll", -1)
+	mp.add_key_binding("Alt+0", "keystone-trim-reset", function() trim("reset") end)
+	mp.register_script_message("keystone-trim", function(axis, arg) trim(axis, arg) end)
 	mp.add_periodic_timer(0.5, apply)
 	mp.register_event("shutdown", function() if active then os.remove(active) end end)
 	mp.observe_property("video-out-params", "native", function() last = nil; apply() end)

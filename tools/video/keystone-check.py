@@ -6,14 +6,15 @@ RUNS ON THE HOST, on the selftest lines keystone.lua prints on the target:
       --script=/usr/local/share/h713/keystone.lua \
       --script-opts=keystone-selftest=yes' | tools/video/keystone-check.py
 
-Each line gives a pose (pitch, roll, upside down, mirror mode), a lens and a
+Each line gives a pose (pitch, roll, yaw, upside down, mirror mode), a lens and a
 video aspect, and the 3x3 matrix keystone.lua made (frame position ->
 picture position). Independently of the Lua:
 
   * the projector's attitude is built from Euler angles -- a roll about the
     lens axis, then a pitch about the world's horizontal -- solved
     numerically to give the published pitch/roll (the Lua builds it from the
-    up vector by Gram-Schmidt);
+    up vector by Gram-Schmidt), then turned right by the yaw trim about the
+    world's vertical (the Lua turns the wall instead);
   * the display mirror is applied to panel positions, not as a matrix;
   * the wall is the plane square to the lens's horizontal direction.
 
@@ -61,6 +62,11 @@ def rot_lens(g):    # about the lens (forward) axis
 def rot_pitch(e):   # forward turns toward up by e
     c, s = math.cos(e), math.sin(e)
     return [[1, 0, 0], [0, c, s], [0, -s, c]]
+
+
+def rot_yaw(a):    # about the world vertical: forward turns to the right
+    c, s = math.cos(a), math.sin(a)
+    return [[c, 0, s], [0, 1, 0], [-s, 0, c]]
 
 
 def published(Q):
@@ -157,8 +163,8 @@ def brute_largest(quad, ar):
     return best
 
 
-def check(pitch, roll, inv, mode, s, tb, tt, va, M):
-    proj = Projector(attitude(pitch, roll, inv), mode, s, tb, tt)
+def check(pitch, roll, yaw, inv, mode, s, tb, tt, va, M):
+    proj = Projector(matmul(rot_yaw(math.radians(yaw)), attitude(pitch, roll, inv)), mode, s, tb, tt)
     inv_m = inv3(M)
     pts = {}
     for name, (pu, pv) in {"tl": (0, 0), "tr": (1, 0), "br": (1, 1), "bl": (0, 1), "c": (0.5, 0.5)}.items():
@@ -197,21 +203,21 @@ def check(pitch, roll, inv, mode, s, tb, tt, va, M):
 
 def main():
     n = bad = 0
-    pat = re.compile(r"selftest (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)")
+    pat = re.compile(r"selftest (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)")
     for line in sys.stdin:
         m = pat.search(line)
         if not m:
             continue
-        pitch, roll = float(m.group(1)), float(m.group(2))
-        inv, mode = m.group(3) == "1", int(m.group(4))
-        s, tb, tt, va = map(float, m.group(5, 6, 7, 8))
-        kv = dict(x.split("=") for x in m.group(9).split(","))
+        pitch, roll, yaw = float(m.group(1)), float(m.group(2)), float(m.group(3))
+        inv, mode = m.group(4) == "1", int(m.group(5))
+        s, tb, tt, va = map(float, m.group(6, 7, 8, 9))
+        kv = dict(x.split("=") for x in m.group(10).split(","))
         M = [[float(kv[f"k{r}{c}"]) for c in range(3)] for r in range(3)]
-        err, size = check(pitch, roll, inv, mode, s, tb, tt, va, M)
+        err, size = check(pitch, roll, yaw, inv, mode, s, tb, tt, va, M)
         n += 1
         bad += bool(err)
         if err or "-v" in sys.argv:
-            what = f"pitch {pitch:+5.1f} roll {roll:+4.1f} {'inv' if inv else 'up '} mode {mode} lens {tb:+.3f} aspect {va:.3f}"
+            what = f"pitch {pitch:+5.1f} roll {roll:+4.1f} yaw {yaw:+5.1f} {'inv' if inv else 'up '} mode {mode} lens {tb:+.3f} aspect {va:.3f}"
             print(f"{'FAIL' if err else 'ok  '} {what}" + (f"  {err}" if err else f"  picture {size[0]:.4f} x {size[1]:.4f}"))
     print(f"{n - bad} of {n} matrices land as the right rectangle")
     sys.exit(1 if bad or not n else 0)
