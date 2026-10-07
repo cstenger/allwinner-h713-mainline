@@ -47,6 +47,7 @@
 #define AUDBRG_STREAM_FLUSH	0x14
 #define AUDBRG_OSTREAM0_IRQ	BIT(4)
 #define AUDBRG_GLOBAL_IRQ_BIT	BIT(0)
+#define AUDBRG_IRQ_W1C_MASK	0x00003fffu
 #define AUDBRG_DMA_SIZE		SZ_64K
 #define AUDBRG_DMA_BLOCK	SZ_1K
 #define AUDBRG_OSTREAM0_CONFIG	0x00003207u
@@ -141,7 +142,7 @@ MODULE_PARM_DESC(configure_audbrg, "Configure stock Audio Bridge output stream 0
 
 static unsigned int audbrg_stage = 1;
 module_param(audbrg_stage, uint, 0400);
-MODULE_PARM_DESC(audbrg_stage, "Audio Bridge phase: 1=DMA/IRQ, 2=stream registers, 3=IRQ enable, 4=flush/start");
+MODULE_PARM_DESC(audbrg_stage, "Audio Bridge phase: 1=DMA only, 2=stream registers, 3=threaded IRQ enable, 4=flush/start");
 
 static unsigned int snapshot;
 
@@ -234,15 +235,14 @@ static irqreturn_t audif_interrupt(int irq, void *data)
 static irqreturn_t audbrg_interrupt(int irq, void *data)
 {
 	u32 status = readl(audbrg + AUDBRG_IRQ_STATUS) &
-		     AUDBRG_OSTREAM0_IRQ;
+		     AUDBRG_IRQ_W1C_MASK;
 
 	(void)irq;
 	(void)data;
-	if (!status)
-		return IRQ_NONE;
 	WRITE_ONCE(audbrg_irq_last, status);
 	atomic_inc(&audbrg_irq_count);
-	writel(status, audbrg + AUDBRG_IRQ_STATUS);
+	if (status)
+		writel(status, audbrg + AUDBRG_IRQ_STATUS);
 	return IRQ_HANDLED;
 }
 
@@ -275,6 +275,7 @@ static int configure_audbrg_ostream0(void)
 	u32 start;
 	u32 end;
 	u32 active;
+	int ret;
 
 	active = readl(audbrg + AUDBRG_OSTREAM0 + AUDBRG_STREAM_START) |
 		 readl(audbrg + AUDBRG_OSTREAM0 + AUDBRG_STREAM_END) |
@@ -318,7 +319,7 @@ static int configure_audbrg_ostream0(void)
 		readl(audbrg + AUDBRG_OSTREAM0 + AUDBRG_STREAM_FLUSH);
 	audbrg_configured = true;
 	audbrg_stage_applied = 1;
-	pr_info("h713-hdmi-audio-probe: Audio Bridge stage 1 ready irq=%d dma=%pad size=%u; no bridge registers written\n",
+	pr_info("h713-hdmi-audio-probe: Audio Bridge stage 1 ready irq=%d dma=%pad size=%u; IRQ not requested and no bridge registers written\n",
 		audbrg_irq, &audbrg_dma_addr, AUDBRG_DMA_SIZE);
 	if (audbrg_stage == 1)
 		return 0;
@@ -355,8 +356,19 @@ static int configure_audbrg_ostream0(void)
 		return 0;
 
 	audbrg_stage_applied = 3;
-	pr_info("h713-hdmi-audio-probe: Audio Bridge entering stage 3: clear and enable owned IRQ\n");
-	writel(AUDBRG_OSTREAM0_IRQ, audbrg + AUDBRG_IRQ_STATUS);
+	pr_info("h713-hdmi-audio-probe: Audio Bridge entering stage 3: status=%08x; clear, request stock-style threaded IRQ, and enable\n",
+		readl(audbrg + AUDBRG_IRQ_STATUS));
+	writel(readl(audbrg + AUDBRG_IRQ_STATUS) & AUDBRG_IRQ_W1C_MASK,
+	       audbrg + AUDBRG_IRQ_STATUS);
+	ret = request_threaded_irq(audbrg_irq, NULL, audbrg_interrupt,
+				   IRQF_ONESHOT, "h713-hdmi-audbrg-probe",
+				   &audbrg_irq);
+	if (ret) {
+		pr_err("h713-hdmi-audio-probe: Audio Bridge threaded IRQ request failed: %d\n",
+		       ret);
+		return ret;
+	}
+	audbrg_irq_requested = true;
 	writel(audbrg_saved_irq_mask | AUDBRG_OSTREAM0_IRQ,
 	       audbrg + AUDBRG_IRQ_MASK);
 	writel(audbrg_saved_global_irq_en | AUDBRG_GLOBAL_IRQ_BIT,
@@ -592,11 +604,8 @@ static int __init h713_hdmi_audio_probe_init(void)
 			ret = -EINVAL;
 			goto fail;
 		}
-		ret = request_irq(audbrg_irq, audbrg_interrupt, 0,
-				  "h713-hdmi-audbrg-probe", &audbrg_irq);
-		if (ret)
-			goto fail;
-		audbrg_irq_requested = true;
+		pr_info("h713-hdmi-audio-probe: Audio Bridge IRQ mapped to Linux IRQ %d; request deferred to stage 3\n",
+			audbrg_irq);
 	}
 	if (open_spdi1) {
 		audif_irq = irq_of_parse_and_map(audio_bridge, 1);

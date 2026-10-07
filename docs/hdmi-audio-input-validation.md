@@ -84,15 +84,26 @@ not repeat that combined load.
 The probe now splits bridge setup into cold-boot phases selected by
 `audbrg_stage=1..4`:
 
-1. own the IRQ and allocate/fill DMA without bridge-register writes;
+1. resolve but do not request the IRQ, and allocate/fill DMA without
+   bridge-register writes;
 2. add address and inert stream register programming;
-3. add W1C and owned interrupt enable;
+3. log and clear pending status, request the stock-style one-shot threaded
+   handler, and enable the owned interrupt bits;
 4. add the flush/start toggle.
 
 Each phase logs before its first new hardware action and restores only the
-state that phase touched. The staged local exact-kernel build has SHA-256
-`5e6fd5a4a3cff91e21998dafe1b9a7b4b733315ddfe573bf3ef31c221cb0b204`;
-it has not yet been loaded on hardware.
+state that phase touched. On the first serial-instrumented stage-1 retry, all
+five audio clocks logged and the machine then stopped before audio-IHB setup or
+DMA allocation. The eager `request_irq()` for DT interrupt 0 was the only new
+active operation at that boundary. Stock `AudBrg_Init` uses
+`request_threaded_irq(NULL, handler, IRQF_ONESHOT, ...)`, and its handler
+acknowledges all 14 Audio Bridge status bits; the hard handler had filtered to
+bit `0x10`, allowing an already-asserted level source to storm. The revised
+stage 1 no longer requests the interrupt, and stage 3 now reproduces the stock
+threaded shape after logging and clearing status.
+
+The revised exact-kernel build has SHA-256
+`c64fb51e65c0b2335d64ba9d04e36f0e7fa5788f278ef1f47f90109c5eb1106f`.
 
 ## Next bounded run
 
@@ -101,7 +112,8 @@ start continuous serial capture, and repeat the guarded source-3 transition.
 After Linux boots and `prepare-source3.py --postboot-only` passes:
 
 1. load the corrected TVFE hold and verify MIPS plus state-5 video lock;
-2. load the staged audio probe with `configure_audbrg=1 audbrg_stage=1`;
+2. load the revised staged audio probe with
+   `configure_audbrg=1 audbrg_stage=1`;
 3. verify MIPS and unload cleanly;
 4. advance by one stage per successful load/unload, never skipping a liveness
    check and never advancing after a missing boundary log;

@@ -59,16 +59,23 @@ shortened to `0x2207` by dropping the live `r2` argument.
 
 Audio Bridge setup is deliberately split by `audbrg_stage=`:
 
-1. own the IRQ and allocate/fill DMA, with no bridge-register writes;
+1. resolve (but do not request) the IRQ and allocate/fill DMA, with no
+   bridge-register writes;
 2. program the upper address nibble and inert stream start/end/block/config;
-3. clear and enable only output-stream-0 and global bridge IRQ bits;
+3. log and clear pending status, request the stock-style `IRQF_ONESHOT`
+   threaded handler, then enable output-stream-0 and global bridge IRQ bits;
 4. toggle the stock stream flush/start bit.
 
 The fail-safe default is stage 1; hardware investigation must advance one cold
 boot at a time and request later stages explicitly. Every stage prints a
 boundary message before its first write. A
 combined stage-4 load hard-hung the initial test boot before its log could be
-retrieved, so it must not be repeated without serial capture. Removal disables
+retrieved. A serial-instrumented stage-1 retry then stopped immediately after
+clock discovery and before audio-IHB setup, isolating the fault to the eager
+hard-IRQ request that used to precede DMA setup. The stock driver instead uses
+a threaded one-shot handler and acknowledges all 14 bridge status bits. The
+probe now defers that exact interrupt shape to stage 3, so it must not be
+advanced without serial capture. Removal disables
 the source first, masks owned interrupts, synchronizes both handlers, restores
 every touched register, and frees coherent DMA.
 
