@@ -2784,6 +2784,10 @@ the PH2/PH3 bus, address convention, and scanner. The earlier expectation that
 `0x6a` was the positive control was stale: the stock DT lists several
 alternative accelerometers, and this board populated the `0x18` choice.
 
+> **Corrected 2026-10-06:** the part at `0x18` is a Silan **SC7A20** (WHO_AM_I
+> `0x0f` = `0x11`), not an STK8BA58; only the stock node is named that. Mainline
+> `st_accel` drives it since kernel 0168.
+
 There was no response at `0x1b` after the stock PF6/PH16 power sequence and a
 live TCON run. Board B's stock DT also contains no DLPC node. Its unstripped
 `ge2d_dev.ko` does contain a legacy optional `DLPC3435` driver, but the exact

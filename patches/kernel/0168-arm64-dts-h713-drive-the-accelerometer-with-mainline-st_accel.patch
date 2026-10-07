@@ -1,0 +1,102 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Tue, 6 Oct 2026 18:00:00 -0700
+Subject: [PATCH] arm64: dts: h713: drive the accelerometer with mainline st_accel
+
+TWI1 (PH2/PH3) carries the projector's tilt sensor, which stock uses for
+keystone. The dtsi copied stock's children verbatim: an "stk,stk83xx" node
+named stk8ba58@18 plus kxtj3, mir3da and lsm6dsr alternatives. None of those
+compatibles has a mainline driver, and the board DTS kept the bus disabled.
+
+The chip at 0x18 is not an STK8BA58. The U-Boot scan of this bus answers only
+at 0x18, and stock's register dump of that device reads WHO_AM_I (0x0f) =
+0x11 with LIS3DH-style CTRL_REG1 = 0x37 (25 Hz, XYZ on) and CTRL_REG4 = 0x98
+(BDU, +/-4 g, high resolution) at 0x20/0x23. That is a Silan SC7A20, a LIS3DH
+clone, and stock's stk83xx driver is a multi-chip one with an sc7a20_reset
+attribute. Its reading at rest, 1264,272,-8144 left-justified at +/-4 g, is
+about -1 g on Z.
+
+Mainline st_accel binds "silan,sc7a20" and checks that same WHO_AM_I, so
+replace the vendor children with one node and enable the bus on the board. The
+sensor then appears as a standard IIO device (in_accel_{x,y,z}_raw/_scale).
+
+No interrupt is wired: stock lists an irq-gpio, but polled sysfs reads need
+none and its pin is not yet mapped.
+
+The mount-matrix was measured on the board by standing the projector lens-up
+(chip +Y read +0.98 g), level (chip Z read -1.03 g) and right side raised (chip
+X read -0.6 g). It maps the chip onto the IIO device frame as seen from behind
+the projector: X right, Y up, Z back toward the viewer, so a level projector
+reads +1 g on Y and a ceiling mount reads -1 g.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -764,32 +764,27 @@
+ 			#size-cells = <0>;
+ 			status = "okay";
+ 
+-			/* Stock TWI1 children (from live DTS dump) */
+-			stk8ba58@18 {
+-				compatible = "stk,stk83xx";
++			/*
++			 * Stock names this "stk8ba58" and lists kxtj3, mir3da
++			 * and lsm6dsr alternatives for other builds. Only 0x18
++			 * answers on this board, and stock's register dump of
++			 * it reads WHO_AM_I (0x0f) = 0x11 with a LIS3DH-style
++			 * CTRL_REG1..4 at 0x20: a Silan SC7A20, which mainline
++			 * st_accel drives. Stock's own driver is a multi-chip
++			 * one with an sc7a20_reset attribute.
++			 */
++			accelerometer@18 {
++				compatible = "silan,sc7a20";
+ 				reg = <0x18>;
+-				status = "okay";
+-				stk,direction = <2>;
+-				stk,prj_pianzhou = <1>;
+-				stk,swipe_xy = <0>;
+-			};
+-
+-			kxttj3@e {
+-				compatible = "kxtj3";
+-				reg = <0x0e>;  /* stock: name @18 but reg=0x0e */
+-				status = "disabled";
+-			};
+-
+-			da228ec@27 {
+-				compatible = "mir3da";
+-				reg = <0x27>;  /* stock: name @0e but reg=0x27 */
+-				status = "okay";
+-			};
+-
+-			lsm6dsr@6a {
+-				compatible = "lsm6dsr";
+-				reg = <0x6a>;
+-				status = "disabled";
++				/*
++				 * Projector frame, viewed from behind it: X right,
++				 * Y up, Z back toward the viewer (the lens is -Z).
++				 * Measured 2026-10-06: up = chip -Z, lens = chip +Y,
++				 * right = chip -X.
++				 */
++				mount-matrix = "-1",  "0",  "0",
++					        "0",  "0", "-1",
++					        "0", "-1",  "0";
+ 			};
+ 
+ 			/*
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -33,7 +33,7 @@
+ &cpu_comm_reserved { status = "okay"; };
+ &mips_framebuf { status = "okay"; };
+ &framebuf_reserved { status = "okay"; };
+-&twi1 { status = "disabled"; };
++&twi1 { status = "okay"; };
+ &codec { status = "okay"; };
+ &dummy_cpudai { status = "disabled"; };
+ &codec_machine { status = "disabled"; };
+-- 
+2.51.0
