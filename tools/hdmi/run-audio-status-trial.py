@@ -48,6 +48,13 @@ def source_connector():
     return None
 
 
+def receiver_lock():
+    result = remote("python3 /root/hdmi-safe-trace/read-mips-port-cache.py")
+    state = json.loads(result)
+    return next((port for port in state["ports"]
+                 if port["port_id"] == 1), None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--module", type=Path, default=DEFAULT_MODULE)
@@ -63,11 +70,24 @@ def main():
                         help="temporarily apply the stock audio-IHB mux/divider word")
     parser.add_argument("--activate-spdi1", action="store_true",
                         help="temporarily apply the stock 48-kHz LPCM SPDI1 activation")
+    parser.add_argument("--open-spdi1", action="store_true",
+                        help="apply the stock SPDI1 IRQ open sequence with an owned handler")
+    parser.add_argument("--configure-audbrg", action="store_true",
+                        help="configure stock Audio Bridge output stream 0 with private DMA")
+    parser.add_argument("--audbrg-stage", type=int, choices=range(1, 5), default=1,
+                        help="last Audio Bridge setup phase to apply (default: 1)")
+    parser.add_argument("--reuse-loaded-modules", action="store_true",
+                        help="verify and reuse an already-loaded guarded TVFE hold and audio probe")
     args = parser.parse_args()
     if not args.module.is_file():
         parser.error(f"module not found: {args.module}")
     register_writes = (args.init_audio_top or args.stock_audio_ihb or
-                       args.activate_spdi1)
+                       args.activate_spdi1 or args.open_spdi1 or
+                       args.configure_audbrg)
+    if args.open_spdi1 and not args.activate_spdi1:
+        parser.error("--open-spdi1 requires --activate-spdi1")
+    if args.configure_audbrg and not args.open_spdi1:
+        parser.error("--configure-audbrg requires --open-spdi1")
     if register_writes and args.tvfe_hold_module is None:
         parser.error("audio-register writes require --tvfe-hold-module")
     if (args.tvfe_hold_module is not None and
@@ -98,7 +118,13 @@ def main():
         staged.append(str(args.tvfe_hold_module))
     run(SCP + staged + ["root@192.168.4.1:/tmp/"])
     tvfe_preflight = ""
-    if args.tvfe_hold_module:
+    if args.reuse_loaded_modules:
+        tvfe_preflight = (
+            "test -d /sys/module/h713_hdmi_tvfe_hold; "
+            "test \"$(cat /sys/module/h713_hdmi_tvfe_hold/parameters/armed)\" = Y; "
+            "test \"$(cat /sys/module/h713_hdmi_tvfe_hold/parameters/live_source3)\" = Y; "
+            "test \"$(cat /sys/module/h713_hdmi_tvfe_hold/parameters/receiver_powered)\" = Y; ")
+    elif args.tvfe_hold_module:
         tvfe_preflight = (
             "test ! -d /sys/module/h713_hdmi_tvfe_hold; "
             "test \"$(sha256sum /tmp/h713-hdmi-tvfe-hold.ko | cut -d' ' -f1)\" = "
@@ -109,8 +135,36 @@ def main():
             "receiver_powered=1; "
             "timeout 5s python3 -u /root/mips-shell.py --cmd 'help win' "
             "| grep -q 'VS:/'; ")
+    if args.reuse_loaded_modules:
+        audio_preflight = (
+            "test -d /sys/module/h713_hdmi_audio_probe; "
+            "test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/armed)\" = Y; "
+            "test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/live_source3)\" = Y; "
+            "test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/receiver_powered)\" = Y; "
+            f"test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/init_audio_top)\" = "
+            f"{'Y' if args.init_audio_top else 'N'}; "
+            f"test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/stock_audio_ihb)\" = "
+            f"{'Y' if args.stock_audio_ihb else 'N'}; "
+            f"test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/activate_spdi1)\" = "
+            f"{'Y' if args.activate_spdi1 else 'N'}; "
+            f"test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/open_spdi1)\" = "
+            f"{'Y' if args.open_spdi1 else 'N'}; "
+            f"test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/configure_audbrg)\" = "
+            f"{'Y' if args.configure_audbrg else 'N'}; "
+            f"test \"$(cat /sys/module/h713_hdmi_audio_probe/parameters/audbrg_stage)\" = "
+            f"{args.audbrg_stage}; ")
+    else:
+        audio_preflight = (
+            "test ! -d /sys/module/h713_hdmi_audio_probe; "
+            "insmod /tmp/h713-hdmi-audio-probe.ko armed=1 live_source3=1 "
+            f"receiver_powered=1 init_audio_top={int(args.init_audio_top)} "
+            f"stock_audio_ihb={int(args.stock_audio_ihb)} "
+            f"activate_spdi1={int(args.activate_spdi1)} "
+            f"open_spdi1={int(args.open_spdi1)} "
+            f"configure_audbrg={int(args.configure_audbrg)} "
+            f"audbrg_stage={args.audbrg_stage} snapshot=1")
     preflight = remote(
-        "set -e; test ! -d /sys/module/h713_hdmi_audio_probe; "
+        "set -e; "
         "test -d /sys/module/h713_hdmi_power; "
         "test \"$(cat /sys/devices/h713-hdmi-tvfe/power/runtime_status)\" = active; "
         "test \"$(cat /sys/devices/h713-hdmi-tvcap/power/runtime_status)\" = active; "
@@ -121,11 +175,7 @@ def main():
         f"{probe_sha}; set -- $(modinfo -F vermagic /tmp/h713-scp-probe.ko); "
         "test \"$1\" = \"$(uname -r)\"; "
         "python3 -u /root/mips-shell.py --status | grep -q 'MIPS core      ALIVE'; "
-        f"{tvfe_preflight}"
-        "insmod /tmp/h713-hdmi-audio-probe.ko armed=1 live_source3=1 "
-        f"receiver_powered=1 init_audio_top={int(args.init_audio_top)} "
-        f"stock_audio_ihb={int(args.stock_audio_ihb)} "
-        f"activate_spdi1={int(args.activate_spdi1)} snapshot=1")
+        f"{tvfe_preflight}{audio_preflight}")
     (output / "probe-load.log").write_text(preflight)
 
     detector_log = (output / "detection.log").open("w")
@@ -146,12 +196,19 @@ def main():
                              check=False)
                 if result.returncode == 0:
                     pcm = json.loads(result.stdout)
-                    break
+                    receiver = receiver_lock()
+                    if (receiver is not None and
+                            (receiver["state"], receiver["hactive"],
+                         receiver["vactive"], receiver["pixel_repeat"]) ==
+                            (5, 1280, 720, 0)):
+                        break
             time.sleep(0.2)
         else:
             raise RuntimeError("source HDMI output/ELD did not become ready")
 
         (output / "pcm.json").write_text(json.dumps(pcm, indent=2) + "\n")
+        (output / "receiver-lock.json").write_text(
+            json.dumps(receiver, indent=2) + "\n")
         (output / "connector.txt").write_text(connector.name + "\n")
         (output / "eld.txt").write_text(Path(pcm["eld"]).read_text())
         snapshot(2)
@@ -184,12 +241,17 @@ def main():
         (output / "probe-dmesg.log").write_text(evidence)
         print(evidence.strip(), flush=True)
         print(json.dumps({"logs": str(output), "pcm": pcm["pcm"],
+                          "receiver": receiver,
                           "module_sha256": module_sha,
                           "tvfe_hold_sha256": tvfe_sha,
                           "edid_probe_sha256": probe_sha,
                           "init_audio_top": args.init_audio_top,
                           "stock_audio_ihb": args.stock_audio_ihb,
                           "activate_spdi1": args.activate_spdi1,
+                          "open_spdi1": args.open_spdi1,
+                          "configure_audbrg": args.configure_audbrg,
+                          "audbrg_stage": args.audbrg_stage,
+                          "reused_loaded_modules": args.reuse_loaded_modules,
                           "tvfe_hold_left_loaded": bool(args.tvfe_hold_module),
                           "probe_left_loaded": True}), flush=True)
         return output
@@ -206,8 +268,9 @@ def main():
             except subprocess.TimeoutExpired:
                 detector.kill()
         detector_log.close()
-        # Deliberately retain the status probe. It owns no IRQs or DMA, and a
-        # cold power cycle is the receiver experiment's teardown.
+        # Deliberately retain the status probe so post-trial state remains
+        # inspectable. Its optional IRQs and DMA are released on rmmod; a cold
+        # power cycle remains the normal receiver-experiment teardown.
 
 
 if __name__ == "__main__":

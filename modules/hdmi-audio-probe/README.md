@@ -1,9 +1,9 @@
 # Bounded HDMI audio status probe
 
-`h713-hdmi-audio-probe` is a deliberately small diagnostic module for the
-first HDMI-input audio experiments. It does not register an ALSA card, request
-an interrupt, allocate DMA, read FIFO/data ports, acknowledge IRQs, or start a
-stream. Its default mode does not write any register.
+`h713-hdmi-audio-probe` is a deliberately bounded diagnostic module for the
+first HDMI-input audio experiments. It does not register an ALSA card and its
+default mode does not write any register. Explicit options can reproduce the
+stock audio-top, SPDI1, and Audio Bridge setup in reversible phases.
 
 The module reads only recovered AudIf, AudBrg, and audio-top status/control
 words. It
@@ -28,9 +28,10 @@ Take later snapshots by writing a strictly increasing sequence number:
 echo 2 > /sys/module/h713_hdmi_audio_probe/parameters/snapshot
 ```
 
-Each snapshot is one parseable `dmesg` line beginning
-`h713-hdmi-audio-probe: snapshot=`. The intended first test compares silence,
-GPU LPCM playback, and post-playback snapshots. Use
+Each status snapshot begins with one parseable `dmesg` line containing
+`h713-hdmi-audio-probe: snapshot=`. A DMA-enabled probe adds
+`bridge_snapshot=` and `dma_snapshot=` lines. The intended test compares
+silence, GPU LPCM playback, and post-playback snapshots. Use
 `tools/hdmi/run-audio-status-trial.py`; it performs the source-3 preflight and
 stages the canonical 256-byte EDID probe explicitly (so an older specialty
 probe on the target cannot be selected accidentally). It leaves the audio
@@ -41,10 +42,35 @@ experiment.
 device 0 path for 48-kHz LPCM: `0x00003000` to `0x06146038`, followed by
 `0x90000000` to `0x06146034`. The ordering and values come directly from the
 stock `AudIf_spdi_Run`/`AudIf_spdi_activate` disassembly. Both original words
-are saved and restored on removal. The experiment intentionally leaves the
-AudIf IRQ status, mask, and route registers untouched, so no interrupt can be
-delivered and no W1C status is acknowledged. It also leaves the audio bridge,
-DMA, and FIFO/data registers untouched.
+are saved and restored on removal.
+
+`open_spdi1=1` additionally reproduces the stock `AudIf_spdi_Open` sequence.
+It requires `activate_spdi1=1`, owns DT interrupt index 1, clears only the
+SPDI1 W1C bits (`0x00300052`), writes route value `0x400`, and enables those
+mask bits. Its handler acknowledges only owned SPDI1 events. The saved mask,
+route, and controls are restored before the IRQ is released.
+
+`configure_audbrg=1` requires `open_spdi1=1`. It allocates a private coherent
+64-KiB DMA buffer, owns Audio Bridge DT interrupt index 0, and reproduces stock
+output stream 0: 1024-byte blocks and config word `0x00003207`. The exact word
+comes from `Thal_Alsa_Audio_Capture_Start(0)` passing `(0, 0, 2, 2)` through
+`Trid_Audio_Output_SPDIF_Input` into `audbrg_ostream_config`; it must not be
+shortened to `0x2207` by dropping the live `r2` argument.
+
+Audio Bridge setup is deliberately split by `audbrg_stage=`:
+
+1. own the IRQ and allocate/fill DMA, with no bridge-register writes;
+2. program the upper address nibble and inert stream start/end/block/config;
+3. clear and enable only output-stream-0 and global bridge IRQ bits;
+4. toggle the stock stream flush/start bit.
+
+The fail-safe default is stage 1; hardware investigation must advance one cold
+boot at a time and request later stages explicitly. Every stage prints a
+boundary message before its first write. A
+combined stage-4 load hard-hung the initial test boot before its log could be
+retrieved, so it must not be repeated without serial capture. Removal disables
+the source first, masks owned interrupts, synchronizes both handlers, restores
+every touched register, and frees coherent DMA.
 
 Any option that writes an audio register requires the separate
 `h713-hdmi-tvfe-hold` module to be loaded first. The trial runner enforces this

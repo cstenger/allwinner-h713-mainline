@@ -14,7 +14,6 @@
 #define CCU_TV_SIZE		0x58u
 #define TVFE_PHYS_BASE		0x06e00000u
 #define TVFE_SIZE		0x100u
-#define TVFE_INIT		0x003003ffu
 
 struct tvfe_word {
 	u16 offset;
@@ -68,31 +67,25 @@ static struct reset_control *demod_reset;
 static bool reset_deasserted;
 static bool words_applied;
 static bool bus_enabled;
-static bool tvfe_written;
 static u32 bus_saved;
 static u32 tvfe_saved;
 
 static bool armed;
 module_param(armed, bool, 0400);
-MODULE_PARM_DESC(armed, "Required acknowledgement before applying the stock TVFE sequence");
+MODULE_PARM_DESC(armed, "Required acknowledgment before applying the stock TVFE sequence");
 
 static bool live_source3;
 module_param(live_source3, bool, 0400);
-MODULE_PARM_DESC(live_source3, "Required acknowledgement that guarded source 3 is live");
+MODULE_PARM_DESC(live_source3, "Required acknowledgment that guarded source 3 is live");
 
 static bool receiver_powered;
 module_param(receiver_powered, bool, 0400);
-MODULE_PARM_DESC(receiver_powered, "Required acknowledgement that TVFE/TVCAP power holds are active");
+MODULE_PARM_DESC(receiver_powered, "Required acknowledgment that TVFE/TVCAP power holds are active");
 
 static void release_resources(void)
 {
 	int i;
 
-	if (tvfe_written) {
-		writel(tvfe_saved, tvfe);
-		readl(tvfe);
-		tvfe_written = false;
-	}
 	if (bus_enabled) {
 		writel(bus_saved | BIT(16), ccu_tv + 0x54);
 		readl(ccu_tv + 0x54);
@@ -243,17 +236,20 @@ static int __init h713_hdmi_tvfe_hold_init(void)
 	bus_enabled = true;
 	usleep_range(10000, 15000);
 
+	/* Source 3 is already live and owns the TVFE control word.  The cold
+	 * stock driver writes 0x003003ff here, but doing that after firmware
+	 * startup replaces the observed live value (0x00111111) and prevents
+	 * HDMI1 from reaching receiver state 5.  Preserve the live word and
+	 * fail closed if firmware did not initialize it.
+	 */
 	tvfe_saved = readl(tvfe);
-	writel(TVFE_INIT, tvfe);
-	if (readl(tvfe) != TVFE_INIT) {
-		pr_err("h713-hdmi-tvfe-hold: TVFE init did not latch: %08x\n",
-		       readl(tvfe));
-		ret = -EIO;
+	if (!tvfe_saved) {
+		pr_err("h713-hdmi-tvfe-hold: refusing uninitialized live TVFE control\n");
+		ret = -EBUSY;
 		goto fail;
 	}
-	tvfe_written = true;
-	pr_info("h713-hdmi-tvfe-hold: stock-order TVFE hold active; bus %08x->%08x tvfe %08x->%08x\n",
-		bus_saved, readl(ccu_tv + 0x54), tvfe_saved, readl(tvfe));
+	pr_info("h713-hdmi-tvfe-hold: stock-order clock hold active; bus %08x->%08x live tvfe preserved=%08x\n",
+		bus_saved, readl(ccu_tv + 0x54), tvfe_saved);
 
 	of_node_put(tvtop);
 	of_node_put(ccu);

@@ -15,8 +15,8 @@ insmod h713-hdmi-tvfe-hold.ko \
   armed=1 live_source3=1 receiver_powered=1
 ```
 
-It refuses an inherited active demod bus/reset state. On an accepted guarded
-boot it:
+It refuses an inherited active demod bus/reset state and also refuses a zero
+live TVFE control word. On an accepted guarded boot it:
 
 1. saves every affected CCU word and the TVFE initialization word;
 2. deasserts the named shared reset while the demod bus remains gated;
@@ -25,8 +25,15 @@ boot it:
 5. applies the fifteen exact functional-clock words common to four independent
    stock captures;
 6. enables the demod bus last and waits again;
-7. writes and verifies the stock `0x003003ff` TVFE initialization word.
+7. preserves and verifies the nonzero TVFE control word established by the
+   live MIPS receiver firmware.
 
-Failure and module removal restore the TVFE word, all CCU words, parent clock
-references, and the reset state. The module touches no HDMI audio registers,
-IRQs, DMA, or FIFOs. It must never be autoloaded.
+The first stock-order version wrote the cold stock initialization constant
+`0x003003ff` over the live firmware value `0x00111111`. That left MIPS alive
+but prevented the HDMI receiver from advancing beyond state 3. Preserving the
+live value restores stable state-5 1280x720 lock, so the cold constant must not
+be used during a guarded live-source experiment.
+
+Failure and module removal restore all CCU words, parent clock references, and
+the reset state. The module touches no HDMI audio registers, IRQs, DMA, or
+FIFOs. It must never be autoloaded.
