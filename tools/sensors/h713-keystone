@@ -49,6 +49,9 @@
 # (and optionally TOP, as a check) the height of the picture's bottom (top)
 # edge above the centre of the lens; negative if below. Any one unit. The
 # panel's square pixels give the picture's height, so TOP only checks it.
+# DIST is to the lens's projection point, which on this unit is ~1.2" behind
+# the front glass (fitted on the wall, docs/keystone-plan.md): add that, or
+# the correction comes out ~1% strong at 20 deg.
 # keystone.lua (the warp) needs this; nothing is assumed.
 #
 # Settings: /etc/h713-keystone.conf with --persist, else /run/h713-keystone/conf

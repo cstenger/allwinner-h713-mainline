@@ -1,6 +1,6 @@
 # Automatic keystone: plan (2026-10-06)
 
-> **Status 2026-10-06: Phase 3 built and verified on the GPU (scanout); needs the lens measured and a look at the wall.** Phase 2 DONE, verified on hardware. `h713-keystone` and its service ship in the image. They publish the settled tilt and drive the ceiling flip. **Next: Phase 3**, the GL warp.
+> **Status 2026-10-06: Phase 3 DONE, verified on the wall.** At 20°, the corrected picture matches the projector's level baseline to within 0.1% (tape measure). Phase 2 DONE, verified on hardware. `h713-keystone` and its service ship in the image. They publish the settled tilt and drive the ceiling flip. **Next: Phase 3**, the GL warp.
 > - **Hardware run** ([log](reference/keystone-phase2-flip-2026-10-06.log)), with `ceiling auto` on:
 >   - Pitch tracked the stand from −1° to 89° and back.
 >   - Turning the projector upside down set mode 3 (`ceiling`) within a second; setting it upright again restored 0 (`front`).
@@ -69,7 +69,26 @@ Both angles are in the projector's frame, **before the panel mirror**. The GPU d
 
 ## Phase 3: the GL warp
 
-> **Status 2026-10-06: built and verified on the GPU by scanout grab. Waiting on the lens measurement and a look at the wall.** Without a measured lens, everything stays idle.
+> **Status 2026-10-06: DONE.** Verified on the GPU by scanout grab, then on the wall with a tape measure. Without a measured lens, everything stays idle.
+
+### Wall result (2026-10-06, cold boot, bottom detent calibrated to 0°)
+
+**Lens** (front of the lens 25 3/4" from the wall):
+- The picture is 27" wide, with its bottom edge 7 9/16" below the lens centre and its top edge 7 9/16" above. The axis passes through the picture's centre, and the height agrees with 16:9 to 0.4%.
+- At that distance the throw ratio is 0.95, but the projection point sits about 1.2" behind the front glass. **Effective distance: 26.92"**, throw ratio 1.00. Stored as `lens_s=0.50149 lens_tb=-0.28092 lens_tt=0.28325`.
+
+Widths of the white border, outer edge to outer edge:
+
+| Pose | Top | Bottom | Top/bottom | Model |
+| --- | --- | --- | --- | --- |
+| Bottom detent (0.1°), no warp | 26 7/8" | 27 1/8" | 0.991 | 1.000 (baseline) |
+| 20.1°, no warp | 32" | 26 1/4" | 1.219 | 1.242 (tape D) / 1.230 (D 26.92) × baseline |
+| 20°, warp, tape D 25.75 | 25 3/4" | 26 1/4" | 0.981 | 0.981 predicted from the fit |
+| **20.0–20.3°, warp, D 26.92** | **25 3/4"** | **26"** | **0.990** | 0.991 (= baseline) |
+
+- **The fit:** both the uncorrected and the first corrected measurement were 1% off with the tape distance, and in the direction a projection point behind the glass predicts. Fitting D to the uncorrected shape predicted the corrected one exactly, and the refitted lens then corrected the picture to the baseline.
+- **The baseline −0.9%** (top narrower at level, with no warp) is outside the sensor's view: the wall, or the detent, is slightly off vertical. A manual trim could take it out; auto can't see it.
+- **For `lens`:** measure DIST to the lens front and add ~1.2", or do as here: measure the uncorrected top/bottom ratio at a known tilt and fit D.
 
 - **Model:** the projector is a pinhole. Frame position (u, v) leaves the lens along tangents x = s(2u − 1) and t = tt − (tt − tb)·v.
   - Pitching by φ toward a surface at unit distance puts that ray at R(φ)·(x, t, 1). The rotation matrix itself is the homography.
