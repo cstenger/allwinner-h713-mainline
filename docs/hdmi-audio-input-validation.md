@@ -84,26 +84,29 @@ not repeat that combined load.
 The probe now splits bridge setup into cold-boot phases selected by
 `audbrg_stage=1..4`:
 
-1. resolve but do not request the IRQ, and allocate/fill DMA without
-   bridge-register writes;
+1. acquire the platform DMA device and allocate/fill DMA while leaving bridge
+   DT interrupt 0 unmapped and performing no bridge-register writes;
 2. add address and inert stream register programming;
-3. log and clear pending status, request the stock-style one-shot threaded
-   handler, and enable the owned interrupt bits;
+3. log and clear all pending bridge status before mapping DT interrupt 0,
+   request the stock-style one-shot threaded handler, and enable the owned
+   interrupt bits;
 4. add the flush/start toggle.
 
 Each phase logs before its first new hardware action and restores only the
 state that phase touched. On the first serial-instrumented stage-1 retry, all
 five audio clocks logged and the machine then stopped before audio-IHB setup or
-DMA allocation. The eager `request_irq()` for DT interrupt 0 was the only new
-active operation at that boundary. Stock `AudBrg_Init` uses
+DMA allocation. The initial suspect was the eager hard-handler request for DT
+interrupt 0. A second cold boot deferred the request but stopped at the same
+boundary before the post-`irq_of_parse_and_map(..., 0)` message. Creating the
+mapping for this already-asserted level source is therefore itself unsafe on
+the current kernel. Stock `AudBrg_Init` uses
 `request_threaded_irq(NULL, handler, IRQF_ONESHOT, ...)`, and its handler
-acknowledges all 14 Audio Bridge status bits; the hard handler had filtered to
-bit `0x10`, allowing an already-asserted level source to storm. The revised
-stage 1 no longer requests the interrupt, and stage 3 now reproduces the stock
-threaded shape after logging and clearing status.
+acknowledges all 14 Audio Bridge status bits. Revised stages 1 and 2 leave the
+bridge interrupt entirely unmapped; stage 3 isolates mapping plus the stock
+threaded shape after status logging and clearing.
 
 The revised exact-kernel build has SHA-256
-`c64fb51e65c0b2335d64ba9d04e36f0e7fa5788f278ef1f47f90109c5eb1106f`.
+`c9b9a586314442927179e885404505b9e0597230f2502a816f8bf2de3706fa3b`.
 
 ## Next bounded run
 

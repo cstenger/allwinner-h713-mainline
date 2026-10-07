@@ -142,7 +142,7 @@ MODULE_PARM_DESC(configure_audbrg, "Configure stock Audio Bridge output stream 0
 
 static unsigned int audbrg_stage = 1;
 module_param(audbrg_stage, uint, 0400);
-MODULE_PARM_DESC(audbrg_stage, "Audio Bridge phase: 1=DMA only, 2=stream registers, 3=threaded IRQ enable, 4=flush/start");
+MODULE_PARM_DESC(audbrg_stage, "Audio Bridge phase: 1=DMA only, 2=stream registers, 3=map/thread/enable IRQ, 4=flush/start");
 
 static unsigned int snapshot;
 
@@ -269,13 +269,19 @@ static const struct kernel_param_ops snapshot_ops = {
 module_param_cb(snapshot, &snapshot_ops, &snapshot, 0600);
 MODULE_PARM_DESC(snapshot, "Strictly increasing sequence; each write performs status-only reads");
 
-static int configure_audbrg_ostream0(void)
+static int configure_audbrg_ostream0(struct device_node *audio_bridge)
 {
 	u32 addr_hi;
 	u32 start;
 	u32 end;
 	u32 active;
 	int ret;
+
+	pr_info("h713-hdmi-audio-probe: Audio Bridge stage 1 entering platform DMA-device lookup; IRQ 0 remains unmapped\n");
+	audio_bridge_pdev = of_find_device_by_node(audio_bridge);
+	if (!audio_bridge_pdev)
+		return -ENODEV;
+	pr_info("h713-hdmi-audio-probe: Audio Bridge platform DMA device acquired\n");
 
 	active = readl(audbrg + AUDBRG_OSTREAM0 + AUDBRG_STREAM_START) |
 		 readl(audbrg + AUDBRG_OSTREAM0 + AUDBRG_STREAM_END) |
@@ -319,8 +325,8 @@ static int configure_audbrg_ostream0(void)
 		readl(audbrg + AUDBRG_OSTREAM0 + AUDBRG_STREAM_FLUSH);
 	audbrg_configured = true;
 	audbrg_stage_applied = 1;
-	pr_info("h713-hdmi-audio-probe: Audio Bridge stage 1 ready irq=%d dma=%pad size=%u; IRQ not requested and no bridge registers written\n",
-		audbrg_irq, &audbrg_dma_addr, AUDBRG_DMA_SIZE);
+	pr_info("h713-hdmi-audio-probe: Audio Bridge stage 1 ready dma=%pad size=%u; bridge IRQ unmapped and no bridge registers written\n",
+		&audbrg_dma_addr, AUDBRG_DMA_SIZE);
 	if (audbrg_stage == 1)
 		return 0;
 
@@ -355,11 +361,19 @@ static int configure_audbrg_ostream0(void)
 	if (audbrg_stage == 2)
 		return 0;
 
-	audbrg_stage_applied = 3;
-	pr_info("h713-hdmi-audio-probe: Audio Bridge entering stage 3: status=%08x; clear, request stock-style threaded IRQ, and enable\n",
+	pr_info("h713-hdmi-audio-probe: Audio Bridge entering stage 3: pre-map status=%08x; clear all bridge W1C bits before mapping DT interrupt 0\n",
 		readl(audbrg + AUDBRG_IRQ_STATUS));
 	writel(readl(audbrg + AUDBRG_IRQ_STATUS) & AUDBRG_IRQ_W1C_MASK,
 	       audbrg + AUDBRG_IRQ_STATUS);
+	readl(audbrg + AUDBRG_IRQ_STATUS);
+	audbrg_irq = irq_of_parse_and_map(audio_bridge, 0);
+	if (!audbrg_irq)
+		return -EINVAL;
+	pr_info("h713-hdmi-audio-probe: Audio Bridge DT interrupt 0 mapped to Linux IRQ %d\n",
+		audbrg_irq);
+	audbrg_stage_applied = 3;
+	pr_info("h713-hdmi-audio-probe: Audio Bridge stage 3 post-map status=%08x; request stock-style threaded IRQ and enable\n",
+		readl(audbrg + AUDBRG_IRQ_STATUS));
 	ret = request_threaded_irq(audbrg_irq, NULL, audbrg_interrupt,
 				   IRQF_ONESHOT, "h713-hdmi-audbrg-probe",
 				   &audbrg_irq);
@@ -593,20 +607,6 @@ static int __init h713_hdmi_audio_probe_init(void)
 			goto fail;
 		}
 	}
-	if (configure_audbrg) {
-		audio_bridge_pdev = of_find_device_by_node(audio_bridge);
-		if (!audio_bridge_pdev) {
-			ret = -ENODEV;
-			goto fail;
-		}
-		audbrg_irq = irq_of_parse_and_map(audio_bridge, 0);
-		if (!audbrg_irq) {
-			ret = -EINVAL;
-			goto fail;
-		}
-		pr_info("h713-hdmi-audio-probe: Audio Bridge IRQ mapped to Linux IRQ %d; request deferred to stage 3\n",
-			audbrg_irq);
-	}
 	if (open_spdi1) {
 		audif_irq = irq_of_parse_and_map(audio_bridge, 1);
 		if (!audif_irq) {
@@ -650,7 +650,7 @@ static int __init h713_hdmi_audio_probe_init(void)
 			audio_top_saved_cfg, readl(audio_top + 0xc));
 	}
 	if (configure_audbrg) {
-		ret = configure_audbrg_ostream0();
+		ret = configure_audbrg_ostream0(audio_bridge);
 		if (ret)
 			goto fail;
 	}
