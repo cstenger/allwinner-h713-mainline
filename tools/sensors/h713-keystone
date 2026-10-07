@@ -135,6 +135,13 @@ loop() { # DEV ONCE
 	function now(   u) { split(rd("/proc/uptime"), u, " "); return u[1] + 0 }
 	function abs(x) { return x < 0 ? -x : x }
 	function deg(r) { return r * 57.29577951 }
+	# Degrees between two vectors.
+	function between(a, b,   d, la, lb, c) {
+		d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+		la = sqrt(a[0] ^ 2 + a[1] ^ 2 + a[2] ^ 2); lb = sqrt(b[0] ^ 2 + b[1] ^ 2 + b[2] ^ 2)
+		c = d / (la * lb); if (c > 1) c = 1; if (c < -1) c = -1
+		return deg(atan2(sqrt(1 - c * c), c))
+	}
 	function conf(   f, line, k, v) {
 		ks = "auto"; manual = 0; ceil = "off"; bias[0] = bias[1] = bias[2] = 0
 		f = run "/conf"
@@ -192,7 +199,7 @@ loop() { # DEV ONCE
 		# g, per-axis SD of a window. The sensor alone is 27-53 mg (normal
 		# mode, 2026-10-06); at 60 mg, 7% of still windows read as moving.
 		STILL = 0.10
-		inverted = 0; settled = 0; applied = 0; lvl = 0; pitch = 0; roll = 0; surf = "wall"
+		inverted = 0; settled = 0; applied = 0; lvl = 0; pitch = 0; roll = 0; face = 0; surf = "wall"
 		have = 0; retry_at = 0; fresh = 0; nstill = 0; pend = 0
 		system("mkdir -p " run)
 		conf()
@@ -225,31 +232,37 @@ loop() { # DEV ONCE
 			cal = bias[0] " " bias[1] " " bias[2]
 			if (inverted != was || cal != last_cal) fresh = 0
 			last_cal = cal
-			sgn = inverted ? -1 : 1
-			p = deg(atan2(-m[2] * sgn, abs(m[1])))
-			r = deg(atan2(m[0], sqrt(m[1] ^ 2 + m[2] ^ 2)))
-			# One window is ~0.7 deg of noise (SD). Average the still windows
-			# since the last move, so a new pose shows at once and then
-			# steadies; a jump past 3 deg is a new pose, not noise.
-			if (!fresh || abs(p - ep) > 3 || abs(r - er) > 3) {
+			# One window is ~0.7 deg of noise (SD). Average gravity over the
+			# still windows since the last move, so a new pose shows at once
+			# and then steadies; a turn past 3 deg is a new pose, not noise.
+			if (!fresh || between(m, e) > 3) {
 				# The first still window after a move can carry its tail:
 				# skip it and start from the next.
 				if (!pend) { pend = 1; continue }
-				ep = p; er = r; fresh = 1; nstill = 0
-				gs[0] = gs[1] = gs[2] = 0
-			} else { ep += 0.2 * (p - ep); er += 0.2 * (r - er) }
+				for (i = 0; i < 3; i++) { e[i] = m[i]; gs[i] = 0 }
+				fresh = 1; nstill = 0
+			} else for (i = 0; i < 3; i++) e[i] += 0.2 * (m[i] - e[i])
 			pend = 0; nstill++
 			for (i = 0; i < 3; i++) gs[i] += m[i]
+			sgn = inverted ? -1 : 1
+			p = deg(atan2(-e[2] * sgn, abs(e[1])))
+			r = deg(atan2(e[0], sqrt(e[1] ^ 2 + e[2] ^ 2)))
+			# Auto assumes the surface the lens faces most, by the lens
+			# elevation in the world: past 45 deg the ceiling (or the floor).
+			# There the correction is the tilt of the lens from the normal of
+			# that surface, toward the own top of the projector: the
+			# upside-down flag, held from before, means nothing lens-up.
+			el = deg(atan2(-e[2], sqrt(e[0] ^ 2 + e[1] ^ 2)))
+			s1 = el > 45 ? "ceiling" : el < -45 ? "floor" : "wall"
+			f = s1 == "ceiling" ? -deg(atan2(e[1], -e[2])) : s1 == "floor" ? -deg(atan2(-e[1], e[2])) : p
 			# Half a degree of hysteresis: noise must not redraw the warp.
 			# Hysteresis alone latches up to 0.5 deg short of a slow
 			# refinement, so after 8 still windows (~5 s) the converged
 			# estimate is published once more.
-			if (!have || abs(ep - pitch) >= 0.5 || abs(er - roll) >= 0.5 ||
-			    (nstill == 8 && (abs(ep - pitch) >= 0.05 || abs(er - roll) >= 0.05))) { pitch = ep; roll = er }
-			# Auto assumes the surface the lens faces most: past 45 deg the
-			# ceiling (or the floor), whose normal is 90 deg from a wall normal.
-			surf = pitch > 45 ? "ceiling" : pitch < -45 ? "floor" : "wall"
-			face = pitch > 45 ? pitch - 90 : pitch < -45 ? pitch + 90 : pitch
+			if (!have || abs(p - pitch) >= 0.5 || abs(r - roll) >= 0.5 || abs(f - face) >= 0.5 || s1 != surf ||
+			    (nstill == 8 && (abs(p - pitch) >= 0.05 || abs(r - roll) >= 0.05 || abs(f - face) >= 0.05))) {
+				pitch = p; roll = r; face = f; surf = s1
+			}
 			want = (ks == "auto") ? face : (ks == "manual") ? manual : 0
 			nlvl = (ks == "auto" && surf == "wall") ? roll : 0
 			# Anything in the state file: a flip can leave every angle as it was.

@@ -65,6 +65,7 @@ check mirror "$(cat "$T/mirror")" 2
 
 echo "lens straight up: held upside down, mirror unchanged"
 pose 0 0 -1000; settle
+check surface "$(st surface)" ceiling
 check inverted "$(st inverted)" 1
 check mirror "$(cat "$T/mirror")" 2
 check pitch "$(st pitch_deg)" -90.0
@@ -82,10 +83,22 @@ check pitch "$(st pitch_deg)" 10.0
 check mirror "$(cat "$T/mirror")" 2
 pose 0 985 -174; settle
 
+echo "lens 80 deg up, upright: the ceiling, 10 deg short of square"
+pose 0 174 -985; settle
+check surface-80 "$(st surface)" ceiling
+check keystone-80 "$(st keystone_deg)" -10.0
+pose 0 985 -174; settle
+
 echo "right side raised 20 deg"
 pose 342 940 0; settle
 check roll "$(st roll_deg)" 20.0
 check pitch "$(st pitch_deg)" 0.0
+check level "$(st level_deg)" 20.0
+"$KS" off >/dev/null; settle
+check level-off "$(st level_deg)" 0.0
+"$KS" manual 3 >/dev/null; settle
+check level-manual "$(st level_deg)" 0.0
+"$KS" auto >/dev/null
 pose 0 985 -174; settle
 
 echo "moving: correction held, settled 0"

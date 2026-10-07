@@ -126,6 +126,11 @@ Widths of the white border, outer edge to outer edge:
   - The mutant rows that still pass are genuinely equivalent corrections: zero pose, or pitch-only with a centred lens.
 - **GPU with roll** (20° pitch, 5° roll; 6 merged grabs): all four slanted edges sit within 0.6 px of the matrix.
 - **Subtitles.** While warping, the script sets `blend-subtitles=video`, so subtitles are drawn into the video and warp with it; it restores the setting afterwards. Verified: all 2020 pixels of a cyan test subtitle lie inside the warped picture, and its baseline tilts with the picture's bottom edge.
+- **Surface choice fixed.** The daemon used to pick the ceiling or floor from `pitch_deg`, which is measured toward the projector's own top. Turned lens-up while still flagged upside down, it read −90° and chose the floor.
+  - It now uses the lens's elevation in the world.
+  - On a ceiling or floor, the correction is the lens's tilt from that surface's normal toward the projector's own top: upright by construction, so `keystone.lua` ignores the upside-down flag off a wall.
+  - Smoothing now averages the gravity vector, not the angles. A turn of more than 3° counts as a new pose.
+  - The daemon suite is 49/49, adding `level_deg`, the surface, and a lens 80° up reading −10° to the ceiling.
 - **Mid-file handover.** When the lens is measured, `h713-play` runs a plane route under watch. If a correction comes due, it SIGTERMs `gst-plane-play`, which prints its position, and execs the GPU route with `--start` at that position.
   - Verified: plane-native at 0°, the state went to 20° → "handed over at 4.463 s"; mpv resumed at 00:00:04 with VA decode, warped.
   - A correction due at start (pitch or roll ≥ 0.5°) still goes straight to the GPU.

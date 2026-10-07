@@ -264,7 +264,9 @@ local function apply()
 	local cf = read_kv(opts.conf) or {}
 	local k = tonumber(st.keystone_deg) or 0
 	local l = tonumber(st.level_deg) or 0
-	local inv = st.inverted == "1"
+	-- Facing a ceiling or floor the daemon gives the tilt from its normal
+	-- toward the projector's own top: an upright pose by construction.
+	local inv = st.inverted == "1" and (st.surface or "wall") == "wall"
 	local s, tb, tt = tonumber(cf.lens_s), tonumber(cf.lens_tb), tonumber(cf.lens_tt)
 	local mode = mirror_mode()
 	local va = video_aspect()
