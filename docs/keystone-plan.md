@@ -39,9 +39,15 @@ h713-keystone daemon                   h713-keystone.service
   - The projector counts as upside down past −0.5 g on Y and as upright past +0.5 g. In between, the state holds, so a lens pointed at the ceiling doesn't flip the picture.
   - A refused flip (P010 on the plane) is retried every 10 s.
   - Ceiling auto is off by default, so `h713-mirror --persist` keeps working.
+- **Calibration:** the zero-g offsets are tens of mg (this unit: 14 mg side, 30 mg lens axis), about a degree, so uncalibrated the stand read −1° to 89°.
+  - `h713-keystone calibrate level`, at the lowest detent, zeroes the lens and side axes. `calibrate up`, lens straight up, zeroes the up axis.
+  - Each averages 8 still windows. It refuses a pose more than ~6° off.
+  - The offsets are always saved to `/etc`. Then the stand reads 0° to 90°.
 - **Settings:** `/etc/h713-keystone.conf` (with `--persist`) or `/run/h713-keystone/conf`. They are reread every window.
 - **sh + mawk:** the product image has no python3.
-- **Test:** `tools/sensors/h713-keystone-test.sh` runs on the board against a fake sensor and a fake mirror: 32 checks covering both flips, the refusal retry, the moving hold, hysteresis and persistence.
+- **Test:** `tools/sensors/h713-keystone-test.sh` runs on the board against a fake sensor and a fake mirror: 43 checks covering both flips, the refusal retry, the moving hold, hysteresis, persistence and calibration.
+  - The fake writes each axis atomically and costs 20 ms per read, like the chip. Earlier, instant reads of half-written files made the "moving" check pass for the wrong reason.
+  - Fixed along the way: hysteresis could latch up to 0.5° short (the converged estimate is now republished after 8 still windows); the first still window after a move is skipped (its tail seeded the average); a flip that leaves the angles unchanged is now published.
 
 ### The contract for Phase 3: `/run/h713-keystone/state`
 

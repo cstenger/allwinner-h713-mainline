@@ -24,16 +24,22 @@ echo "\$1" > "$T/mirror"
 EOF
 chmod +x "$T/bin/h713-mirror"
 export PATH="$T/bin:$PATH" H713_KEYSTONE_DEV="$T/dev" H713_KEYSTONE_RUN="$T/run" \
-	H713_KEYSTONE_ETC="$T/etc.conf" H713_MIRROR_ATTR="$T/mirror"
+	H713_KEYSTONE_ETC="$T/etc.conf" H713_MIRROR_ATTR="$T/mirror" \
+	H713_KEYSTONE_SAMPLE_DELAY=0.02
 
-pose() { echo "$1" > "$T/dev/in_accel_x_raw"; echo "$2" > "$T/dev/in_accel_y_raw"; echo "$3" > "$T/dev/in_accel_z_raw"; }
+# Atomic per file, as sysfs is: an echo can be read half-written (empty = 0 g).
+# W names the writer's temp files, so the background mover cannot collide.
+put() { echo "$2" > "$T/dev/.$1$W"; mv "$T/dev/.$1$W" "$T/dev/in_accel_$1_raw"; }
+pose() { put x "$1"; put y "$2"; put z "$3"; }
+W=fg
 st() { sed -n "s/^$1=//p" "$T/run/state" 2>/dev/null; }
 pass=0; fail=0
 check() { # NAME ACTUAL EXPECTED
 	if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1: $2"
 	else fail=$((fail + 1)); echo "  FAIL $1: got '$2', want '$3'"; fi
 }
-settle() { sleep 1.5; }
+# 8 still windows publish the converged estimate: ~8 x 10 x 25 ms, plus margin.
+settle() { sleep 4; }
 
 pose 0 1000 0
 "$KS" daemon > "$T/log" 2>&1 & DPID=$!
@@ -83,7 +89,7 @@ check pitch "$(st pitch_deg)" 0.0
 pose 0 985 -174; settle
 
 echo "moving: correction held, settled 0"
-( while :; do pose 0 985 -174; pose 300 700 -500; done ) & WPID=$!
+( W=bg; while :; do pose 0 985 -174; pose 300 700 -500; done ) & WPID=$!
 settle
 check settled "$(st settled)" 0
 check keystone "$(st keystone_deg)" 10.0
@@ -111,6 +117,26 @@ check mirror "$(cat "$T/mirror")" 1
 check logged "$(grep -c refused "$T/log")" 1
 rm "$T/refuse"; sleep 10
 check mirror "$(cat "$T/mirror")" 2
+
+echo "calibration: offsets of a real unit, then 0 at the bottom and 90 at the top"
+"$KS" ceiling off >/dev/null; echo 0 > "$T/mirror"
+pose 15 1040 17; settle
+check uncalibrated-level "$(st pitch_deg)" -0.9
+check cal-level "$("$KS" calibrate level >/dev/null && echo ok)" ok
+settle
+check level "$(st pitch_deg)" 0.0
+check level-roll "$(st roll_deg)" 0.0
+pose 15 12 -985; settle
+check uncalibrated-up "$(st pitch_deg)" 89.3
+check cal-up "$("$KS" calibrate up >/dev/null && echo ok)" ok
+settle
+check up "$(st pitch_deg)" 90.0
+pose 15 1040 17; settle
+check level-again "$(st pitch_deg)" 0.0
+check saved "$(grep -c '^bias_' "$T/etc.conf")" 3
+pose 15 866 -483; settle
+check refuses-tilted "$("$KS" calibrate level 2>/dev/null && echo ok || echo refused)" refused
+check refuses-not-up "$("$KS" calibrate up 2>/dev/null && echo ok || echo refused)" refused
 
 echo "daemon log:"; sed 's/^/  /' "$T/log"
 echo "$pass passed, $fail failed"

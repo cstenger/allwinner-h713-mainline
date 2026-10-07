@@ -8,6 +8,8 @@
 #   h713-keystone manual DEG [--persist]   a fixed correction, in degrees
 #   h713-keystone ceiling auto|off [--persist]
 #                                          top/bottom flip follows gravity
+#   h713-keystone calibrate level|up       zero the sensor: at the lowest detent,
+#                                          then lens straight up (saved to /etc)
 #   h713-keystone daemon                   the sensor loop (h713-keystone.service)
 #
 # The daemon samples the sensor about ten times a second and acts only once
@@ -25,6 +27,12 @@
 # Both angles are in the projector's frame before the panel mirror; the warp
 # composes h713-mirror's mode itself.
 #
+# Calibration: the sensor's zero-g offsets are tens of mg, about a degree, so
+# uncalibrated the stand reads -1 to 89 deg. `calibrate level` (lowest detent,
+# on a level surface) zeroes the lens and side axes; `calibrate up` (lens
+# straight up) zeroes the up axis. The offsets (bias_x/y/z, in g, projector
+# frame) are subtracted from every sample; then the stand reads 0 to 90.
+#
 # Ceiling auto changes only the top/bottom half of the installation mode:
 # turning the projector over is front <-> ceiling and rear <-> rear-ceiling
 # (h713-mirror's number XOR 3), so front/rear stays your choice. It is off by
@@ -33,14 +41,15 @@
 # Settings: /etc/h713-keystone.conf with --persist, else /run/h713-keystone/conf
 # until the next boot. The daemon rereads them every second.
 #
-# Tests point H713_KEYSTONE_DEV, _RUN, _ETC and H713_MIRROR_ATTR at fakes.
+# Tests point H713_KEYSTONE_DEV, _RUN, _ETC and H713_MIRROR_ATTR at fakes, and
+# H713_KEYSTONE_SAMPLE_DELAY gives a fake the ~25 ms per read the chip takes.
 set -u
 RUN=${H713_KEYSTONE_RUN:-/run/h713-keystone}
 ETC=${H713_KEYSTONE_ETC:-/etc/h713-keystone.conf}
 STATE=$RUN/state
 MIRROR=${H713_MIRROR_ATTR-$(ls /sys/bus/platform/drivers/sun50i-h713-afbd/*/mirror_mode 2>/dev/null | head -1)}
 
-usage() { sed -n '6,11p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '6,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { echo "h713-keystone: $*" >&2; exit 1; }
 
 find_dev() {
@@ -57,6 +66,21 @@ conf() { if [ -f "$RUN/conf" ]; then echo "$RUN/conf"; else echo "$ETC"; fi; }
 get() { # KEY DEFAULT
 	v=$(sed -n "s/^$1=//p" "$(conf)" 2>/dev/null | tail -1)
 	echo "${v:-$2}"
+}
+
+# Calibration is a property of this unit, not a preference: always to /etc,
+# and to the runtime file too if one is in force, so it applies at once.
+set_cal() { # KEY=VALUE...
+	for f in "$ETC" "$RUN/conf"; do
+		[ "$f" = "$ETC" ] || [ -f "$f" ] || continue
+		tmp=$(mktemp) || die "mktemp failed"
+		[ -f "$f" ] && cat "$f" > "$tmp"
+		for kv in "$@"; do
+			grep -v "^${kv%%=*}=" "$tmp" > "$tmp.n"; mv "$tmp.n" "$tmp"
+			echo "$kv" >> "$tmp"
+		done
+		mv "$tmp" "$f" && chmod 0644 "$f" || die "could not write $f"
+	done
 }
 
 set_conf() { # PERSIST KEY=VALUE...
@@ -79,20 +103,21 @@ set_conf() { # PERSIST KEY=VALUE...
 	fi
 }
 
-# The sensor loop. ONCE=1 takes one settled window, prints it and exits.
+# The sensor loop. ONCE=1 takes one settled window, prints it and exits;
+# ONCE=2 prints that window's mean g without the calibration, for calibrate.
 loop() { # DEV ONCE
 	dev=$1
 	# Every sysfs read powers the chip up for one sample; at the 1 Hz default
 	# that is a second per axis. 100 Hz makes a read about 25 ms.
 	echo 100 > "$dev/sampling_frequency" 2>/dev/null
 	awk -v dev="$dev" -v once="$2" -v run="$RUN" -v etc="$ETC" \
-	    -v mirror="$MIRROR" '
+	    -v mirror="$MIRROR" -v delay="${H713_KEYSTONE_SAMPLE_DELAY:-}" '
 	function rd(f,   v) { v = ""; getline v < f; close(f); return v }
 	function now(   u) { split(rd("/proc/uptime"), u, " "); return u[1] + 0 }
 	function abs(x) { return x < 0 ? -x : x }
 	function deg(r) { return r * 57.29577951 }
 	function conf(   f, line, k, v) {
-		ks = "auto"; manual = 0; ceil = "off"
+		ks = "auto"; manual = 0; ceil = "off"; bias[0] = bias[1] = bias[2] = 0
 		f = run "/conf"
 		if ((getline line < f) < 0) f = etc
 		close(run "/conf")	# reopened below, from its first line
@@ -103,6 +128,7 @@ loop() { # DEV ONCE
 			if (k == "keystone") ks = v
 			else if (k == "manual_deg") manual = v + 0
 			else if (k == "ceiling") ceil = v
+			else if (k ~ /^bias_[xyz]$/ && once != 2) bias[index("xyz", substr(k, 6)) - 1] = v + 0
 		}
 		close(f)
 	}
@@ -111,6 +137,7 @@ loop() { # DEV ONCE
 		# The mount-matrix maps the chip onto the projector frame.
 		for (i = 0; i < 3; i++)
 			g[i] = (mm[i,0] * c[0] + mm[i,1] * c[1] + mm[i,2] * c[2]) / 9.80665
+		if (delay != "") system("sleep " delay)
 	}
 	function d1(x) { x = sprintf("%.1f", x); return x == "-0.0" ? "0.0" : x }
 	function publish(   f) {
@@ -145,7 +172,7 @@ loop() { # DEV ONCE
 		W = 10			# window, samples: ~0.7 s at ODR 100
 		STILL = 0.06		# g, per-axis SD; the sensor alone is 0.015-0.037
 		inverted = 0; settled = 0; applied = 0; pitch = 0; roll = 0
-		have = 0; retry_at = 0; fresh = 0
+		have = 0; retry_at = 0; fresh = 0; nstill = 0; pend = 0
 		system("mkdir -p " run)
 		conf()
 		for (;;) {
@@ -160,34 +187,58 @@ loop() { # DEV ONCE
 				if (sqrt(s / W) > STILL) moving = 1
 			}
 			conf()
+			# After conf(), so a new calibration applies to this window too.
+			for (i = 0; i < 3; i++) m[i] -= bias[i]
 			if (moving) {
 				fresh = 0
+				pend = 0
 				if (settled) { settled = 0; if (!once) publish() }
 				continue
 			}
 			# Upside down past half a g either way; held in between, so a
 			# lens pointing at the ceiling does not flip the picture.
+			was = inverted
 			if (m[1] < -0.5) inverted = 1
 			else if (m[1] > 0.5) inverted = 0
+			# A flip or a new calibration starts the average again.
+			cal = bias[0] " " bias[1] " " bias[2]
+			if (inverted != was || cal != last_cal) fresh = 0
+			last_cal = cal
 			sgn = inverted ? -1 : 1
 			p = deg(atan2(-m[2] * sgn, abs(m[1])))
 			r = deg(atan2(m[0], sqrt(m[1] ^ 2 + m[2] ^ 2)))
 			# One window is ~0.6 deg of noise. Average the still windows since
 			# the last move, so a new pose shows at once and then steadies;
 			# a jump past 1.5 deg is a new pose, not noise.
-			if (!fresh || abs(p - ep) > 1.5 || abs(r - er) > 1.5) { ep = p; er = r; fresh = 1 }
-			else { ep += 0.2 * (p - ep); er += 0.2 * (r - er) }
+			if (!fresh || abs(p - ep) > 1.5 || abs(r - er) > 1.5) {
+				# The first still window after a move can carry its tail:
+				# skip it and start from the next.
+				if (!pend) { pend = 1; continue }
+				ep = p; er = r; fresh = 1; nstill = 0
+				gs[0] = gs[1] = gs[2] = 0
+			} else { ep += 0.2 * (p - ep); er += 0.2 * (r - er) }
+			pend = 0; nstill++
+			for (i = 0; i < 3; i++) gs[i] += m[i]
 			# Half a degree of hysteresis: noise must not redraw the warp.
-			if (!have || abs(ep - pitch) >= 0.5 || abs(er - roll) >= 0.5) { pitch = ep; roll = er }
+			# Hysteresis alone latches up to 0.5 deg short of a slow
+			# refinement, so after 8 still windows (~5 s) the converged
+			# estimate is published once more.
+			if (!have || abs(ep - pitch) >= 0.5 || abs(er - roll) >= 0.5 ||
+			    (nstill == 8 && (abs(ep - pitch) >= 0.05 || abs(er - roll) >= 0.05))) { pitch = ep; roll = er }
 			want = (ks == "auto") ? pitch : (ks == "manual") ? manual : 0
-			changed = !have || !settled || want != applied || ks != last_ks || ceil != last_ceil
-			last_ks = ks; last_ceil = ceil
+			# Anything in the state file: a flip can leave every angle as it was.
+			changed = !have || !settled || want != applied || ks != last_ks || ceil != last_ceil ||
+			    inverted != last_inv || pitch != last_p || roll != last_r
+			last_ks = ks; last_ceil = ceil; last_inv = inverted; last_p = pitch; last_r = roll
 			settled = 1; applied = want; have = 1
-			if (once) break
+			# calibrate (once = 2) averages 8 still windows; status takes one.
+			if (once && nstill >= (once == 2 ? 8 : 1)) break
+			if (once) continue
 			follow_gravity()
 			if (changed) publish()
 		}
-		if (once) {
+		if (once == 2) printf "%.4f %.4f %.4f\n", gs[0] / nstill, gs[1] / nstill, gs[2] / nstill
+		else if (once) {
 			printf "pitch %+.1f deg  roll %+.1f deg  %s  (g %+.3f %+.3f %+.3f)\n", pitch, roll, inverted ? "upside down" : "upright", m[0], m[1], m[2]
 		}
 	}'
@@ -195,6 +246,7 @@ loop() { # DEV ONCE
 
 status() {
 	echo "keystone: $(get keystone auto)$( [ "$(get keystone auto)" = manual ] && echo " $(get manual_deg 0) deg")   ceiling: $(get ceiling off)   ($(conf))"
+	echo "calibration (g): x $(get bias_x 0)  y $(get bias_y 0)  z $(get bias_z 0)"
 	[ -n "$MIRROR" ] && echo "installation mode: $(h713-mirror 2>/dev/null)"
 	if [ -f "$STATE" ] && systemctl is-active -q h713-keystone 2>/dev/null; then
 		echo "daemon: running; $STATE:"
@@ -233,6 +285,23 @@ ceiling)
 	[ "$2" = auto ] && [ -z "$MIRROR" ] && die "no mirror_mode attribute -- kernel without 0166?"
 	set_conf $persist "ceiling=$2"
 	echo "h713-keystone: ceiling $2" ;;
+calibrate)
+	[ $# = 2 ] || usage
+	dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
+	set -- $2 $(loop "$dev" 2)
+	[ $# = 4 ] || die "no reading from the sensor"
+	ok=$(awk -v w="$1" -v x="$2" -v y="$3" -v z="$4" 'BEGIN {
+		a = x < 0 ? -x : x
+		if (w == "level") print (y > 0.9 && a < 0.1 && z < 0.1 && z > -0.1)
+		else print (-z > 0.9 && a < 0.1 && y < 0.1 && y > -0.1) }')
+	case $1 in
+	level)	[ "$ok" = 1 ] || die "not level within ~6 deg (g $2 $3 $4): set it on its lowest detent on a level surface"
+		set_cal "bias_x=$2" "bias_z=$4" ;;
+	up)	[ "$ok" = 1 ] || die "lens not straight up within ~6 deg (g $2 $3 $4): tilt it to its highest detent"
+		set_cal "bias_y=$3" ;;
+	*)	usage ;;
+	esac
+	echo "h713-keystone: calibrated $1 (g $2 $3 $4), saved to $ETC" ;;
 daemon)
 	dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
 	echo "h713-keystone: sensor $dev, mirror ${MIRROR:-unavailable}"
