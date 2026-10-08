@@ -146,6 +146,7 @@ static int dsp_write(u16 address, u16 value)
 }
 
 static bool capture_route;
+static bool stock_graph;
 static bool dtvout_second;
 static u16 dtvout_saved;
 /* Direct preset route bd bypasses the processing graph selected by stock 8f.
@@ -164,7 +165,7 @@ static int set_capture_route(const char *value, const struct kernel_param *kp)
  if (ret)
   return ret;
  mutex_lock(&command_lock);
- if (!port || failed || next == capture_route || (!next && dtvout_second)) {
+ if (!port || failed || stock_graph || next == capture_route || (!next && dtvout_second)) {
   ret = -EPERM;
   goto out;
  }
@@ -237,6 +238,108 @@ module_param_cb(capture_route, &capture_ops, &capture_route, 0600);
 MODULE_PARM_DESC(
     capture_route,
     "Direct route bd with stock I2SIN1 format/gain, DTV channel0 and unmute; explicit0 restores five words");
+
+/* Fixed comparison trial recovered from Sound_Path_Init + route 8f, not a
+ * complete Android initialization recipe. Save all words before any write;
+ * preserve unknown bits and restore in reverse order on explicit zero.
+ */
+struct graph_setting { u16 address, mask, value; };
+static const struct graph_setting graph_settings[] = {
+ { 0x0003, 0x0f00, 0x0300 },
+ { 0x800c, 0x00f8, 0x0080 },
+ { 0x800d, 0x00ff, 0x0000 },
+ { 0x00ac, 0xffff, 0x0000 },
+ { 0x0077, 0xffff, 0x1617 },
+ { 0x004d, 0xffff, 0x696a },
+ { 0x805a, 0x00ff, 0x007d },
+ { 0x8059, 0x00ff, 0x007c },
+ { 0x0130, 0xffff, 0x696a },
+ { 0x0012, 0xa3ff, 0x8180 },
+ { 0x0017, 0xff00, 0x2000 },
+ { 0x801a, 0x0002, 0x0000 },
+ { 0x8017, 0x0001, 0x0000 },
+};
+static u16 graph_saved[ARRAY_SIZE(graph_settings)];
+static int set_stock_graph(const char *value, const struct kernel_param *kp)
+{
+ bool next, claimed = false;
+ u32 version0, version1, word;
+ unsigned int i, index;
+ u16 expected;
+ int ret = kstrtobool(value, &next);
+ if (ret)
+  return ret;
+ mutex_lock(&command_lock);
+ if (!port || failed || capture_route || dtvout_second || next == stock_graph) {
+  ret = -EPERM;
+  goto out;
+ }
+ ret = h713_dsp_claim(&dsp_lock);
+ if (ret)
+  goto out;
+ claimed = true;
+ if (next) {
+  ret = dsp_read(0, 0x80ff, &version0);
+  if (ret)
+   goto release;
+  ret = dsp_read(1, 0x80ff, &version1);
+  if (ret)
+   goto release;
+  if ((version0 & 0xffff) != 1 || (version1 & 0xffff) != 1) {
+   ret = -ENODEV;
+   goto release;
+  }
+  for (i = 0; i < ARRAY_SIZE(graph_settings); i++) {
+   ret = dsp_read(0, graph_settings[i].address, &word);
+   if (ret)
+    goto release;
+   graph_saved[i] = word & 0xffff;
+  }
+ }
+ for (i = 0; i < ARRAY_SIZE(graph_settings); i++) {
+  index = next ? i : ARRAY_SIZE(graph_settings) - 1 - i;
+  expected = next ? (graph_saved[index] & ~graph_settings[index].mask) |
+                    graph_settings[index].value : graph_saved[index];
+  ret = dsp_write(graph_settings[index].address, expected);
+  if (ret)
+   goto stop;
+  ret = dsp_read(0, graph_settings[index].address, &word);
+  if (ret)
+   goto stop;
+  if ((word & 0xffff) != expected) {
+   ret = -EIO;
+   goto stop;
+  }
+  pr_info("h713-hdmi-dsp-probe: graph word=%04x value=%04x saved=%04x mask=%04x restore=%u\n",
+          graph_settings[index].address, word & 0xffff, graph_saved[index],
+          graph_settings[index].mask, !next);
+ }
+ stock_graph = next;
+ pr_info("h713-hdmi-dsp-probe: fixed stock graph comparison=%u verified\n", next);
+ goto release;
+stop:
+ failed = true;
+ pr_warn("h713-hdmi-dsp-probe: graph trial stopped error=%d; cold boot required\n", ret);
+release:
+ if (claimed) {
+  int release_ret = h713_dsp_release(&dsp_lock);
+  pr_info("h713-hdmi-dsp-probe: stock DSP lock released ret=%d\n", release_ret);
+  if (release_ret) {
+   failed = true;
+   ret = release_ret;
+  }
+ }
+out:
+ mutex_unlock(&command_lock);
+ return ret;
+}
+static const struct kernel_param_ops graph_ops = {
+ .set = set_stock_graph,
+ .get = param_get_bool,
+};
+module_param_cb(stock_graph, &graph_ops, &stock_graph, 0600);
+MODULE_PARM_DESC(stock_graph,
+ "Fixed stock 8f graph comparison; explicit0 restores 13 saved words; never at insmod");
 
 static int stock_mask(u16 address, u16 mask, u16 value)
 {

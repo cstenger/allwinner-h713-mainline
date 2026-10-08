@@ -53,6 +53,17 @@ inferring clock failure from zero status/cached values. Prepare a bounded,
 reviewable save/restore experiment only after identifying the missing setup.
 Reapply the corrected RAM DT on the next boot before any bridge IRQ trial.
 
+The subsequent fixed13-word stock processing-graph comparison was run and
+restored. Unlike directbd, bridge IRQs advanced3029->4684 and the entire DMA
+buffer was written, but every PCM byte was zero. This is transport progress,
+not captured HDMI audio. See
+[stock graph trial](hdmi-evidence/2026-10-08-linux-stock-graph/README.md).
+Next compare omitted stock processing/effect/gain initialization and seek
+positive receiver audio readiness evidence. Avoid repeating the same subset.
+Current board is Linux/MIPS responsive with diagnostics unloaded; a physical
+cold boot is required to clear the remaining volatile DSP patch before another
+DSP trial. Boot artifacts and IR/suspend changes remain preserved.
+
 Keep the stop list against PLL reflash experiments and treating audible speaker
 output as a capture baseline. The prohibition on bridge trials until a working
 stock capture exists is now satisfied. Keep all original safety rules.

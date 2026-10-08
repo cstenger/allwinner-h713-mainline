@@ -1,4 +1,10 @@
-# Bounded DSP1 logical read diagnostic
+# Bounded DSP logical read and fixed route diagnostic
+
+Current protocol: peer05001530, own05001534, claim55/recheckpeer/releaseaa;
+lock_window_ready=1 required. Never write peer ownership. The original
+first-trial description below is historical; do not use its original lock
+addresses or idle-value restoration as instructions. See h713-dsp-lock.h and
+the October8 handoff for the corrected, validated protocol.
 
 Not a production driver. Never autoload. Build against the exact running
 kernel; it does not acquire audio clocks itself.
@@ -56,9 +62,21 @@ physical cold boot; unloading this module cannot undo the volatile DSP patch.
 
 `capture_route=1` in the optional build requires versions1/1. It saves and
 verifies word0130=1617 for preset routebd, clears HDMI mute bit0 at8017,
-and enables I2SIN1 via word0012 bit15 (vendor EnableInterface). Explicit
-`capture_route=0` restores and verifies all three originals. This is a route
+and enables I2SIN1 via word0012 bit15 (vendor EnableInterface). Input format/prescale and DTV channel0 are now also saved/applied. Explicit
+`capture_route=0` restores and verifies all five originals. This is a route
 experiment, not a complete Android graph or proven capture path. Two bounded
 stereo trials, with and without the separate interface enable, left the full
 64-KiB SPDI1/Audio Bridge capture buffer unchanged and both IRQ counts zero.
 See the dsp-readiness evidence for provenance, hashes and exact final state.
+
+## Fixed processing-graph comparison
+
+Optional stock-patch build exposes `stock_graph` as a sysfs-only operation.
+It requires patch versions1/1, rejects simultaneous direct/alternate routes,
+saves all13 fixed stock-code settings before any write, preserves unknown
+bits, verifies every write and reverse-restores on explicit0. It is a subset
+of Sound_Path_Init plus route8f, not a complete Android initialization.
+The bounded trial produced bridge interrupts and zero-filled DMA, without
+HDMI tones. No claim of complete capture or receiver audio readiness follows.
+See ../../docs/hdmi-evidence/2026-10-08-linux-stock-graph/README.md.
+Restore before removing audio clocks/holds; physical cold boot clears patch.

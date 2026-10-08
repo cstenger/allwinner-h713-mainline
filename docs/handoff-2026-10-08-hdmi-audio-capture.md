@@ -10,9 +10,11 @@ Older October 7 notes are historical and contain superseded hypotheses.
 The user authorized the Android comparison, return to preserved Linux, bounded
 capture diagnostics with restoration, and this documentation commit. On the
 latest message the board has been physically power-cycled and stopped at U-Boot.
-This clears the previous volatile DSP patch. No new MIPS launch or Linux test
-has happened after that latest cold boot at the time this handoff was written.
-Continue with the guarded first MIPS launch, source 3, and corrected RAM DT.
+That cold boot was subsequently used for a guarded first MIPS launch, source3,
+and corrected RAM-DT Linux boot. The stock processing-graph comparison is now
+complete and restored; board is currently at Linux, MIPS responsive. The new
+volatile DSP patch remains until another physical cold boot. See the latest
+result below before using the resume recipe.
 Preserve Claude's IR/suspend/poweroff work and unrelated dirty files. Do not
 reflash U-Boot, replace the kernel, save environment, or use a warm MIPS relaunch.
 No ongoing serial keypress spam or capture process remains.
@@ -134,7 +136,35 @@ This does not isolate route vs receiver readiness vs other initialization.
 All five route words restored reverse order with readback, bridge/SPDI/AudioTop
 and TVFE trial state restored, diagnostics unloaded, MIPS help win responded.
 Only base receiver-power/EDID holds remained. User's latest physical cold boot
-has now cleared the volatile patch and those runtime holds.
+cleared the earlier volatile patch and runtime holds before the subsequent
+stock-graph comparison described below.
+
+## Latest stock-graph comparison (after the initial handoff commit)
+
+Android handoff/evidence was committed first as b27e345. Then the requested
+Linux test used a new fixed `stock_graph` parameter in the optional DSP build,
+saving13 exact decoded logical words, preserving unknown bits, verifying every
+write, and reverse-restoring them. Source file/parameter remains mutually
+exclusive with capture_route/dtvout_second. Exact masks and cold saved values
+are recorded in [stock graph evidence](hdmi-evidence/2026-10-08-linux-stock-graph/README.md).
+
+Result: all four64KiB snapshots became entirely zero (instead of sentinel),
+and bridge IRQ samples advanced3029->3587->4124->4684. Playback/signal helper
+both returned0, receiver video1280x720. This is concrete transport progress
+relative to directbd, but zero PCM is not HDMI capture success. Cached N/CTS
+were6144/74250; rate/APLL history remained0, inconclusive due to cache coherence.
+The graph subset omitted other stock initialization/effects/gain controls.
+
+All13 original words restored with readback; DSP, bridge and TVFE trial modules
+unloaded, peripherals restored, MIPS help win responds. Current board: Linux,
+base receiver-power/EDID holds remain, volatile DSP patch still present. Before
+any new DSP experiment, physically cold boot and stop at U-Boot again. The RAM
+IRQ correction disappears on that boot; reapply before bridge trial.
+
+Next offline comparison should trace controls feeding8400/8f01/8d01 and
+9009/900a outputs, and distinguish missing processing setup from receiver audio
+readiness using positive evidence. Do not repeat directbd or the unchanged
+13-word graph subset without a new discriminator. No PLL reflash/word writes.
 
 ## Resume recipe and next test
 
@@ -169,10 +199,11 @@ has now cleared the volatile patch and those runtime holds.
    /home/chris/.codex/worktrees/hdmi-capture-current/h713/modules/hdmi-tvfe-hold.
    Build optional DSP patch with tools/hdmi/build-dsp-probe.py and exact
    audio-dsp-patch.bin (2896bytes, SHA8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5).
-5. First compare cold post-patch DSP selected graph words against code-derived
-   masks above. Existing dsp_word allowlist is small; extend only exact reviewed
-   logical words with bounded reads. Prepare fixed, saved/readback/restored
-   stock processing-graph route experiment; direct bd alone already failed.
+5. Cold post-patch selected graph values have now been recorded by stock_graph;
+   most are0, input prescale2000 and mute0001. Existing dsp_word allowlist is
+   small; extend only exact reviewed logical words with bounded reads. The
+   fixed13-word stock_graph trial now exists and yielded only zero PCM; choose
+   a new decoded prerequisite/discriminator before another trial.
    Receiver positive audio readiness must also be assessed; zero cache/status
    is inconclusive. Do not add PLL writes/reflash to force an assumed prerequisite.
 6. Bridge arguments from passed trial: armed=1 live_source3=1 receiver_powered=1
