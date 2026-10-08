@@ -78,9 +78,10 @@ Each tier works on its own and is a fallback for the one after it.
 > lifts the cap. `h713-keyd` runs `toggle` on `KEY_POWER` from either
 > source. Operator test with a video playing: case button -> on (mpv quit
 > cleanly), remote -> off, remote -> on, case button -> off, each within
-> ~1 s. With nobody touching it: `h713-standby on` over ssh and a
-> `systemd-run` timer ran `off` (14 s for a 10 s timer: use
-> `--timer-property=AccuracySec=1s`). Fan-off thermal: 15 min with PB5 low
+> ~1 s. With nobody touching it: `h713-standby on` over ssh went dark
+> (operator saw it; PB5 read 1 -> 0 -> 1 across the cycle), and a
+> `systemd-run` timer ran `off` per the journal -- that run was not
+> watched (14 s for a 10 s timer: use `--timer-property=AccuracySec=1s`). Fan-off thermal: 15 min with PB5 low
 > at 480 MHz, 54 C -> 59.1 C peak -> 57-58 C, against a 75 C passive trip,
 > so no thermal guard is needed while idle and capped. Playback is stopped
 > rather than paused: no player has a control channel.
