@@ -698,6 +698,20 @@ EOF
   # keys (the product has no reachable buttons; docs/standby-plan.md).
   install -d -m 0755 "$R/etc/modules-load.d"
   echo uinput > "$R/etc/modules-load.d/h713-uinput.conf"
+  # Power off (docs/standby-plan.md): PSCI SYSTEM_OFF only halts the CPUs,
+  # leaving the lamp, the fan and the last frame up. Switch the lamp (and with
+  # it the fan) off as the last step, so the projector stays dark until a
+  # power cycle. (Cutting PL6, the core-rail enable, was tried and only
+  # REBOOTS the board -- kernel patch 0177, out of series.)
+  install -d -m 0755 "$R/usr/lib/systemd/system-shutdown"
+  cat > "$R/usr/lib/systemd/system-shutdown/h713-off" <<'EOS'
+#!/bin/sh
+# systemd-shutdown hook: on poweroff/halt switch the lamp (and so the fan) off
+# before PSCI halts the CPUs, so the projector is dark until a power cycle.
+case "$1" in poweroff|halt) echo 4 > /sys/class/backlight/lamp/bl_power 2>/dev/null ;; esac
+exit 0
+EOS
+  chmod 0755 "$R/usr/lib/systemd/system-shutdown/h713-off"
   echo "[customize] installed h713-standby + h713-keyd.service"
 fi
 install -d -m 0755 "$R/etc/systemd/logind.conf.d"

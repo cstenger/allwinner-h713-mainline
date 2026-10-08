@@ -1,0 +1,55 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 7 Oct 2026 19:10:00 -0700
+Subject: [PATCH] arm64: dts: h713: hy200-qz713df-a1: power-off cuts the core rails
+
+OUT OF SERIES -- NEGATIVE RESULT (2026-10-07). Driving PL6 low does not keep
+the board off: it REBOOTS it. Tested live on the bench board (filesystems
+synced and remounted read-only first): the core rails collapse, the SoC
+resets, PL6 returns to its reset default, the rails come back with mains
+still present, and the serial console shows U-Boot SPL starting again. Stock
+can use PL6 for "super standby" only because the ARISC, on the standby rail,
+holds it low; with no ARISC firmware nothing survives the reset to do that.
+With this patch, poweroff would reboot. Kept for the record.
+
+poweroff never turned the board off. The only handler was PSCI SYSTEM_OFF,
+and this BL31 implements it by parking the CPUs: the power LED stays blue,
+the lamp and fan keep running and the panel holds the last frame
+(operator-observed 2026-10-07, after logind powered off on KEY_POWER).
+
+There is no PMIC. Stock's standby_param names PL6 as the enable for
+vdd-cpu, vdd-sys, vcc-pll and vcc-dram, and U-Boot leaves it an output,
+driven high. Describe it as a gpio-poweroff line, active low, so the end of
+poweroff drops the SoC's core rails and only a power cycle brings it back.
+
+Priority 255 makes it run before PSCI's handler (SYS_OFF_PRIO_FIRMWARE + 2),
+which never returns. The line is requested inactive (high), so probe leaves
+the rails alone.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -38,6 +38,23 @@
+ 		};
+ 	};
+ 
++	/*
++	 * Real power-off. PL6 enables the SoC's core rails: stock's
++	 * standby_param names it for vdd-cpu, vdd-sys, vcc-pll and vcc-dram,
++	 * and U-Boot leaves it an output, high. Dropping it at the end of
++	 * poweroff takes the SoC down for good -- only a power cycle brings it
++	 * back. Priority 255 runs it before PSCI SYSTEM_OFF (firmware + 2),
++	 * which on this BL31 only parks the CPUs with the rails, the lamp and
++	 * the last frame still up. Requested inactive, so nothing changes at
++	 * probe.
++	 */
++	poweroff {
++		compatible = "gpio-poweroff";
++		gpios = <&r_pio 0 6 GPIO_ACTIVE_LOW>;	/* PL6 */
++		priority = <255>;
++		timeout-ms = <1000>;
++	};
++
+ 	h713-edid-clock-hold {
+ 		compatible = "h713-lab,edid-clock-hold";
+ 		clocks = <&r_ccu CLK_R_EDID>;

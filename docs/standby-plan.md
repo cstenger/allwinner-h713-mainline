@@ -57,6 +57,31 @@ video player. Consequences:
   through USB remote wakeup, which nothing here has been tested with. It
   becomes usable only once the actual USB GPIO board is shown to wake it.
 
+## The three states
+
+| state | how you enter | how it comes back |
+| --- | --- | --- |
+| **standby** (light; the product's) | power key, `h713-standby on` | key, network, timer, USB input |
+| **suspend** (s2idle; opt-in) | `systemctl suspend` | case button, remote, RTC |
+| **off** | `poweroff` / `shutdown -h` | power cycle only |
+
+**Off (2026-10-07, verified):** PSCI `SYSTEM_OFF` on our BL31 only halts the
+CPUs, leaving the lamp, fan and last frame up. A systemd-shutdown hook
+(`/usr/lib/systemd/system-shutdown/h713-off`, rootfs) switches the lamp --
+and so the fan -- off as the last step. Operator-observed: lamp off, nothing
+came back; serial ends at `reboot: Power down` with no watchdog reset in
+90 s. The power LED turned red, but it probably follows PB5 (the lamp/fan
+enable) rather than the main rails, which stay up.
+
+**What did not work:** dropping PL6, the core-rail enable stock names for
+vdd-cpu/sys/pll/dram (kernel 0177, now out of series). The LED went red and
+the rails dropped, but the SoC reset, PL6 returned to its default and the
+board came straight back -- and that brownout restart then hung in U-Boot's
+display bring-up (FIFO status 0x2, no logo, lamp on) until a power cycle.
+Stock only holds PL6 low via ARISC firmware, which we do not load
+([arisc-route-scope.md](arisc-route-scope.md)); a true rails-off "off" would
+need that.
+
 ## Phase 0 — what is true today (measured on the bench board, 2026-10-07)
 
 | fact | evidence |
