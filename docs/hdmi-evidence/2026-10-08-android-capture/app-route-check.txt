@@ -1,0 +1,29 @@
+INPUT id=5 type=15 name=ADT-3
+INPUT id=7 type=9 name=ADT-3
+INPUT id=8 type=5 name=ADT-3
+INPUT id=10 type=25 name=ADT-3
+ROUTED HDMI id=7
+CAPTURE bytes=376320 frames=94080 rate=48000 stereo S16LE
+total 368
+-rw------- 1 u0_a66 u0_a66 376320 2025-09-21 19:54 route-check.pcm
+-rw------- 1 u0_a66 u0_a66    194 2025-09-21 19:54 status.txt
+--------- beginning of system
+--------- beginning of crash
+--------- beginning of main
+09-21 19:47:21.887  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:47:21.966  2408  6382 E AudioPolicyIntefaceImpl: getInputForAttr permission denied: recording not allowed for uid 2000 pid 7850
+09-21 19:54:05.314  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.340  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000004)
+09-21 19:54:05.340  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:54:05.341  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.342  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.573  2382  2661 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:54:05.575  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:54:05.575  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:54:05.579  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.580  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.605  2382  2661 D audio_hw_primary: adev_create_audio_patch 1: device; 2: thread; sources: 1, sinks: 2
+09-21 19:54:05.630  2382  8992 D audio_hw_primary: use card: 0 to capture audio
+09-21 19:54:05.632  2382  8992 D audio_hw_primary: do not use in resampler
+09-21 19:54:07.665  2382  2430 D audio_hw_primary: do_input_standby
+09-21 19:54:07.898  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status

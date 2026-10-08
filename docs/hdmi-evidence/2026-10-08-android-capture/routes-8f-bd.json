@@ -1,0 +1,211 @@
+{
+  "preset_sha256": "babda009400d6c4e7e3e7981e9fe398ffcfc5222fbc25f98b08c5ec525e59604",
+  "routes": [
+    {
+      "id": 143,
+      "name": "HDMI2PCM_MIXED_TO_S",
+      "offset": 31244,
+      "device": 4,
+      "selections": [
+        [
+          65281,
+          18,
+          0
+        ],
+        [
+          65281,
+          19,
+          1
+        ],
+        [
+          65282,
+          0,
+          0
+        ],
+        [
+          65282,
+          1,
+          1
+        ],
+        [
+          65283,
+          0,
+          0
+        ],
+        [
+          65283,
+          1,
+          1
+        ],
+        [
+          65284,
+          3,
+          9
+        ],
+        [
+          65284,
+          2,
+          8
+        ]
+      ],
+      "director_action_count": 2,
+      "edges": [
+        {
+          "source_module": 38400,
+          "source_port": 0,
+          "destination_module": 33792,
+          "destination_port": 0
+        },
+        {
+          "source_module": 38400,
+          "source_port": 1,
+          "destination_module": 33792,
+          "destination_port": 1
+        },
+        {
+          "source_module": 36873,
+          "source_port": 0,
+          "destination_module": 36097,
+          "destination_port": 0
+        },
+        {
+          "source_module": 36874,
+          "source_port": 0,
+          "destination_module": 36097,
+          "destination_port": 1
+        },
+        {
+          "source_module": 36609,
+          "source_port": 1,
+          "destination_module": 36874,
+          "destination_port": 0
+        },
+        {
+          "source_module": 36609,
+          "source_port": 0,
+          "destination_module": 36873,
+          "destination_port": 0
+        }
+      ]
+    },
+    {
+      "id": 189,
+      "name": "PATH_CAPTURE_HDMI2_",
+      "offset": 38996,
+      "device": 5,
+      "selections": [
+        [
+          65285,
+          16,
+          0
+        ],
+        [
+          65285,
+          17,
+          1
+        ]
+      ],
+      "director_action_count": 0,
+      "edges": [
+        {
+          "source_module": 38400,
+          "source_port": 0,
+          "destination_module": 38144,
+          "destination_port": 0
+        },
+        {
+          "source_module": 38400,
+          "source_port": 1,
+          "destination_module": 38144,
+          "destination_port": 1
+        }
+      ]
+    }
+  ],
+  "evidence": "static preset and offline emulation; not runtime execution",
+  "driver_sha256": "a03e6344ad0f672e5be965fd3008c8c44c74b367868318501a9d2a4798ce88ea",
+  "emulation": [
+    {
+      "route": 143,
+      "writes": [
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            119,
+            65280,
+            5632
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            119,
+            255,
+            23
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            77,
+            65280,
+            26880
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            77,
+            255,
+            106
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            32858,
+            255,
+            125
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            32857,
+            255,
+            124
+          ]
+        }
+      ]
+    },
+    {
+      "route": 189,
+      "writes": [
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            304,
+            65280,
+            5632
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            304,
+            255,
+            23
+          ]
+        }
+      ]
+    }
+  ]
+}

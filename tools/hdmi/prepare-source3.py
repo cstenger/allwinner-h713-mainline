@@ -9,6 +9,7 @@ launching MIPS again. It never flashes storage or changes the installed kernel.
 import argparse
 import subprocess
 import sys
+import shlex
 
 SSH = ["ssh", "-F", "/dev/null", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
        "root@192.168.4.1"]
@@ -25,8 +26,8 @@ def remote(command, timeout=20):
     return run(SSH + [command], timeout)
 
 
-def require_trace():
-    out = remote("python3 /root/hdmi-safe-trace/read-comm-trace-worker.py")
+def require_trace(reader):
+    out = remote("python3 " + shlex.quote(reader))
     if not all(token in out for token in ('"guards":"43414e31/43414e31"',
                                      '"source3_transition_complete":1',
                                      '"source3_worker_new":"00000003"')):
@@ -38,10 +39,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--postboot-only", action="store_true",
                     help="Only verify live MIPS and prepare Linux modules")
-    ap.parse_args()
+    ap.add_argument("--trace-reader",
+                    default="/root/hdmi-safe-trace/read-comm-trace-worker.py",
+                    help="Remote read-only verifier matching the installed U-Boot trace")
+    args = ap.parse_args()
     state = remote("python3 -u /root/mips-shell.py --status")
     if "MIPS core      ALIVE" in state:
-        require_trace()
+        require_trace(args.trace_reader)
     elif "MIPS core      parked" in state:
         raise RuntimeError(
             "MIPS is parked; refusing the warm reboot that can leave the panel "

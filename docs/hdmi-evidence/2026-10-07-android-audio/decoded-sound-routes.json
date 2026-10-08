@@ -1,0 +1,413 @@
+{
+  "preset_sha256": "babda009400d6c4e7e3e7981e9fe398ffcfc5222fbc25f98b08c5ec525e59604",
+  "routes": [
+    {
+      "id": 113,
+      "name": "DTV_GAME_TO_SPEAKER",
+      "offset": 27632,
+      "device": 3,
+      "selections": [
+        [
+          65281,
+          0,
+          0
+        ],
+        [
+          65281,
+          1,
+          1
+        ],
+        [
+          65283,
+          0,
+          0
+        ],
+        [
+          65283,
+          1,
+          1
+        ],
+        [
+          65284,
+          2,
+          0
+        ],
+        [
+          65284,
+          3,
+          1
+        ],
+        [
+          65286,
+          2,
+          0
+        ],
+        [
+          65286,
+          3,
+          1
+        ]
+      ],
+      "director_action_count": 0,
+      "edges": [
+        {
+          "source_module": 37888,
+          "source_port": 0,
+          "destination_module": 33792,
+          "destination_port": 0
+        },
+        {
+          "source_module": 37888,
+          "source_port": 1,
+          "destination_module": 33792,
+          "destination_port": 1
+        },
+        {
+          "source_module": 36609,
+          "source_port": 0,
+          "destination_module": 34560,
+          "destination_port": 0
+        },
+        {
+          "source_module": 36609,
+          "source_port": 1,
+          "destination_module": 34561,
+          "destination_port": 0
+        },
+        {
+          "source_module": 36096,
+          "source_port": 0,
+          "destination_module": 39424,
+          "destination_port": 0
+        },
+        {
+          "source_module": 36096,
+          "source_port": 1,
+          "destination_module": 39424,
+          "destination_port": 1
+        }
+      ]
+    },
+    {
+      "id": 137,
+      "name": "HDMI2PCM_MIXED_TO_S",
+      "offset": 30404,
+      "device": 3,
+      "selections": [
+        [
+          65281,
+          18,
+          0
+        ],
+        [
+          65281,
+          19,
+          1
+        ],
+        [
+          65283,
+          0,
+          0
+        ],
+        [
+          65283,
+          1,
+          1
+        ],
+        [
+          65284,
+          2,
+          0
+        ],
+        [
+          65284,
+          3,
+          1
+        ],
+        [
+          65286,
+          2,
+          0
+        ],
+        [
+          65286,
+          3,
+          1
+        ]
+      ],
+      "director_action_count": 0,
+      "edges": [
+        {
+          "source_module": 38400,
+          "source_port": 0,
+          "destination_module": 33792,
+          "destination_port": 0
+        },
+        {
+          "source_module": 38400,
+          "source_port": 1,
+          "destination_module": 33792,
+          "destination_port": 1
+        },
+        {
+          "source_module": 36609,
+          "source_port": 0,
+          "destination_module": 34560,
+          "destination_port": 0
+        },
+        {
+          "source_module": 36609,
+          "source_port": 1,
+          "destination_module": 34561,
+          "destination_port": 0
+        },
+        {
+          "source_module": 36096,
+          "source_port": 0,
+          "destination_module": 39424,
+          "destination_port": 0
+        },
+        {
+          "source_module": 36096,
+          "source_port": 1,
+          "destination_module": 39424,
+          "destination_port": 1
+        }
+      ]
+    },
+    {
+      "id": 128,
+      "name": "CAPTURE_HDMI_PCM",
+      "offset": 29168,
+      "device": 5,
+      "selections": [
+        [
+          65285,
+          10,
+          0
+        ],
+        [
+          65285,
+          11,
+          1
+        ]
+      ],
+      "director_action_count": 0,
+      "edges": [
+        {
+          "source_module": 38402,
+          "source_port": 0,
+          "destination_module": 38144,
+          "destination_port": 0
+        },
+        {
+          "source_module": 38402,
+          "source_port": 1,
+          "destination_module": 38144,
+          "destination_port": 1
+        }
+      ]
+    },
+    {
+      "id": 189,
+      "name": "PATH_CAPTURE_HDMI2_",
+      "offset": 38996,
+      "device": 5,
+      "selections": [
+        [
+          65285,
+          16,
+          0
+        ],
+        [
+          65285,
+          17,
+          1
+        ]
+      ],
+      "director_action_count": 0,
+      "edges": [
+        {
+          "source_module": 38400,
+          "source_port": 0,
+          "destination_module": 38144,
+          "destination_port": 0
+        },
+        {
+          "source_module": 38400,
+          "source_port": 1,
+          "destination_module": 38144,
+          "destination_port": 1
+        }
+      ]
+    }
+  ],
+  "evidence": "static preset and offline emulation; not runtime execution",
+  "driver_sha256": "a03e6344ad0f672e5be965fd3008c8c44c74b367868318501a9d2a4798ce88ea",
+  "emulation": [
+    {
+      "route": 113,
+      "writes": [
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            119,
+            65280,
+            14848
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            119,
+            255,
+            59
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            280,
+            65280,
+            31744
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            280,
+            255,
+            125
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            32,
+            65280,
+            11776
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            32,
+            255,
+            47
+          ]
+        }
+      ]
+    },
+    {
+      "route": 137,
+      "writes": [
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            119,
+            65280,
+            5632
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            119,
+            255,
+            23
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            280,
+            65280,
+            31744
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            280,
+            255,
+            125
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            32,
+            65280,
+            11776
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            32,
+            255,
+            47
+          ]
+        }
+      ]
+    },
+    {
+      "route": 128,
+      "writes": [
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            304,
+            65280,
+            9728
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            304,
+            255,
+            39
+          ]
+        }
+      ]
+    },
+    {
+      "route": 189,
+      "writes": [
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            304,
+            65280,
+            5632
+          ]
+        },
+        {
+          "function": "tdAudioDSPWriteRegMaskWord",
+          "args": [
+            0,
+            304,
+            255,
+            23
+          ]
+        }
+      ]
+    }
+  ]
+}

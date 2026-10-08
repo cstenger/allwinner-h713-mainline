@@ -1,0 +1,23 @@
+uid=2000(shell) gid=2000(shell) groups=2000(shell),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid) context=u:r:shell:s0
+1
+ 0 [audiocodec     ]: audiocodec - audiocodec
+                      audiocodec
+ 1 [sndowa1        ]: sndowa1 - sndowa1
+                      sndowa1
+ 2 [snddaudio0     ]: snddaudio0 - snddaudio0
+                      snddaudio0
+ 3 [snddaudio1     ]: snddaudio1 - snddaudio1
+                      snddaudio1
+ 4 [TridentALSA    ]: TridentALSA - TridentALSA
+                      TridentALSA0
+00-00: SUNXI-CODEC 2030000.codec-0 :  : playback 1 : capture 1
+01-00: 2037000.owa-snd-soc-dummy-dai snd-soc-dummy-dai-0 :  : playback 1 : capture 1
+02-00: 2032000.daudio-snd-soc-dummy-dai snd-soc-dummy-dai-0 :  : playback 1 : capture 1
+03-00: 2033000.daudio-snd-soc-dummy-dai snd-soc-dummy-dai-0 :  : playback 1 : capture 1
+04-00: TridentPCM : Trid PCM : playback 1 : capture 1
+04-01: TridentPCM : Trid PCM : playback 1 : capture 1
+04-02: TridentPCM : Trid PCM : playback 1
+04-03: TridentPCM : Trid PCM : playback 1
+-rwxr-xr-x 1 shell shell 1976 2026-10-01 15:13 /data/local/tmp/cap/hidtvreg-read
+-rwxr-xr-x 1 shell shell 9292 2026-10-01 15:16 /data/local/tmp/cap/stock-capture.sh
+    mResumedActivity: ActivityRecord{bd7a394 u0 com.htc.magcubicos/.activity.MainActivity t84}

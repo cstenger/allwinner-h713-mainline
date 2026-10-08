@@ -1,0 +1,45 @@
+09-21 19:32:42.153  6488  6488 W AwLiveTVMain: source status: InputSource [id: com.softwinner.vis/.HdmiInputService/HW1, name: HDMI1, uri: content://android.media.tv/passthrough/com.softwinner.vis%2F.HdmiInputService%2FHW1 ,type: 1007 ,port: 1 ] 
+09-21 19:32:42.154  6488  6488 W AwLiveTVMain: source: com.softwinner.vis/.HdmiInputService/HW1 content://android.media.tv/passthrough/com.softwinner.vis%2F.HdmiInputService%2FHW1
+09-21 19:32:42.155  6488  6488 D AwLiveTVMain: setCurrentSource CurrentSource = InputSource [id: com.softwinner.vis/.HdmiInputService/HW1, name: HDMI1, uri: content://android.media.tv/passthrough/com.softwinner.vis%2F.HdmiInputService%2FHW1 ,type: 1007 ,port: 1 ]
+09-21 19:32:42.155  6488  6488 D AwLiveTVMain:  ============ id = com.softwinner.vis/.HdmiInputService/HW1 ,getCurrentHDMIChannelPortId: 1
+09-21 19:32:42.169  4196  4196 I HdmiInputService: onCreateSession ++ inputId = com.softwinner.vis/.HdmiInputService/HW1
+09-21 19:32:42.180  4196  4196 I HdmiInputService: SessionImpl inputId com.softwinner.vis/.HdmiInputService/HW1
+09-21 19:32:42.182  4196  4196 D HdmiInputService: mFrontInputId = 1
+09-21 19:32:42.191  2398  2398 D hdmi-cec: is_connected_hook port_id = 1
+09-21 19:32:42.193  2398  2398 D hdmi-cec: hdmi port1 status = 1
+09-21 19:32:42.194  2398  2398 D hdmi-cec: is_connected_hook port_id = 2
+09-21 19:32:42.196  2398  2398 D hdmi-cec: hdmi port2 status = 0
+09-21 19:32:42.197  2398  2398 D hdmi-cec: is_connected_hook port_id = 3
+09-21 19:32:42.199  2398  2398 D hdmi-cec: hdmi port3 status = 0
+09-21 19:32:42.233  4196  4196 D HdmiInputService: AW- mCurrentHDMIChannelPortId: 1
+09-21 19:32:42.244  4196  4196 D HdmiInputService: port_code = 1
+09-21 19:32:42.244  4196  4196 D HdmiInputService: SessionImpl new notifyVideoUnavailable
+09-21 19:32:42.307  4196  5625 D HdmiInputService: HardwareCallback StreamConfigChanged configs = [Landroid.media.tv.TvStreamConfig;@d5c0e59
+09-21 19:32:42.352  4196  4196 D HdmiInputService: SessionImpl onSetSurface: surface: Surface(name=null)/@0x8b63715
+09-21 19:32:42.515  4196  4196 D HdmiInputService: onSurfaceChanged width = 1280 height = 720
+09-21 19:32:42.516  4196  4196 D HdmiInputService: onOverlayViewSizeChanged: 1280,720
+09-21 19:32:42.516  4196  4196 D HdmiInputService: onCreateOverlayView
+09-21 19:32:42.654  4196  4196 D HdmiInputService: SessionImpl onTune: channeluri: content://android.media.tv/passthrough/com.softwinner.vis%2F.HdmiInputService%2FHW1
+09-21 19:32:42.841  2398  2398 I hdmi-cec: callback::onTvEvent source = 3
+09-21 19:32:42.845  4196  5625 D HdmiInputService: HardwareCallback StreamConfigChanged configs = [Landroid.media.tv.TvStreamConfig;@502f91
+09-21 19:32:42.850  4196  4196 D HdmiInputService: HdmiSignalReceiver signal_id = 0
+09-21 19:32:42.850  4196  4196 D HdmiInputService: HdmiSignalReceiver source_id = 1
+09-21 19:32:42.850  4196  4196 D HdmiInputService: HdmiSignalReceiver mFrontInputId = 1
+09-21 19:32:42.850  4196  4196 D HdmiInputService: HdmiSignalReceiver dvi_mode = 0
+09-21 19:32:42.850  4196  4196 D HdmiInputService: mSignalReady: -1
+09-21 19:32:42.896  4196  4196 D HDMI_INPUT_JNI: HDMI JNI_OnLoad
+09-21 19:32:42.896  4196  4196 W HDMI_TIF_Service: HVIS, Signal Change, device:'1', signal_id:'0'
+09-21 19:32:42.897  4196  4196 D HdmiInputService:  the video signal is hdmi mode
+09-21 19:32:44.781  2398  2398 I hdmi-cec: callback::onTvEvent source = 3
+09-21 19:32:44.783  4196  4225 D HdmiInputService: HardwareCallback StreamConfigChanged configs = [Landroid.media.tv.TvStreamConfig;@bc89ef6
+09-21 19:32:44.784  4196  4196 D HdmiInputService: HdmiSignalReceiver signal_id = 44
+09-21 19:32:44.785  4196  4196 D HdmiInputService: HdmiSignalReceiver source_id = 1
+09-21 19:32:44.785  4196  4196 D HdmiInputService: HdmiSignalReceiver mFrontInputId = 1
+09-21 19:32:44.785  4196  4196 D HdmiInputService: HdmiSignalReceiver dvi_mode = 0
+09-21 19:32:44.785  4196  4196 D HdmiInputService: mSignalReady: 0
+09-21 19:32:44.785  4196  4196 W HDMI_TIF_Service: HVIS, Signal Change, device:'1', signal_id:'44'
+09-21 19:32:44.785  4196  4196 D HdmiInputService:  the video signal is hdmi mode
+09-21 19:32:44.966  3674  3679 D audio_hw_primary: adev_set_parameters, hdmi_input=on
+09-21 19:32:45.262  4196  6615 W HDMI_TIF_Service: signal ready, info: 
+09-21 19:32:45.262  4196  6615 W HDMI_TIF_Service: signal_id:'44'
+09-21 19:32:45.263  4196  6615 I HDMI_TIF_Service: do FrameList_P_Init_PSignal

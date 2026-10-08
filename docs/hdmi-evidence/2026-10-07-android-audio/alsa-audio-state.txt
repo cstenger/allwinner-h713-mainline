@@ -1,0 +1,87 @@
+ 0 [audiocodec     ]: audiocodec - audiocodec
+                      audiocodec
+ 1 [sndowa1        ]: sndowa1 - sndowa1
+                      sndowa1
+ 2 [snddaudio0     ]: snddaudio0 - snddaudio0
+                      snddaudio0
+ 3 [snddaudio1     ]: snddaudio1 - snddaudio1
+                      snddaudio1
+ 4 [TridentALSA    ]: TridentALSA - TridentALSA
+                      TridentALSA0
+00-00: SUNXI-CODEC 2030000.codec-0 :  : playback 1 : capture 1
+01-00: 2037000.owa-snd-soc-dummy-dai snd-soc-dummy-dai-0 :  : playback 1 : capture 1
+02-00: 2032000.daudio-snd-soc-dummy-dai snd-soc-dummy-dai-0 :  : playback 1 : capture 1
+03-00: 2033000.daudio-snd-soc-dummy-dai snd-soc-dummy-dai-0 :  : playback 1 : capture 1
+04-00: TridentPCM : Trid PCM : playback 1 : capture 1
+04-01: TridentPCM : Trid PCM : playback 1 : capture 1
+04-02: TridentPCM : Trid PCM : playback 1
+04-03: TridentPCM : Trid PCM : playback 1
+/proc/asound/card0/pcm0c/sub0/status
+closed
+/proc/asound/card1/pcm0c/sub0/status
+closed
+/proc/asound/card2/pcm0c/sub0/status
+closed
+/proc/asound/card3/pcm0c/sub0/status
+closed
+/proc/asound/card4/pcm0c/sub0/status
+closed
+/proc/asound/card4/pcm1c/sub0/status
+closed
+/proc/asound/card0/pcm0c/sub0/hw_params
+closed
+/proc/asound/card1/pcm0c/sub0/hw_params
+closed
+/proc/asound/card2/pcm0c/sub0/hw_params
+closed
+/proc/asound/card3/pcm0c/sub0/hw_params
+closed
+/proc/asound/card4/pcm0c/sub0/hw_params
+closed
+/proc/asound/card4/pcm1c/sub0/hw_params
+closed
+09-21 19:31:10.243  3674  3680 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3702
+09-21 19:31:10.244  3674  3680 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3708
+09-21 19:31:10.344  3674  3679 D audio_hw_primary: adev_set_parameters, speaker_volume=64
+09-21 19:31:10.354  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.357  3674  3679 D audio_hw_primary: adev_set_parameters, headphone_volume=60
+09-21 19:31:10.370  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.376  3674  3679 D audio_hw_primary: adev_set_parameters, digital_volume=60
+09-21 19:31:10.377  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3699
+09-21 19:31:10.377  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3702
+09-21 19:31:10.377  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3708
+09-21 19:31:10.611  3674  3680 D audio_hw_primary: adev_set_parameters, speaker_volume=64
+09-21 19:31:10.623  3674  3680 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.631  3674  3680 D audio_hw_primary: adev_set_parameters, headphone_volume=60
+09-21 19:31:10.637  3674  3680 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.642  3674  3679 D audio_hw_primary: adev_set_parameters, digital_volume=60
+09-21 19:31:10.642  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3699
+09-21 19:31:10.643  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3702
+09-21 19:31:10.643  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3708
+09-21 19:31:16.440  3674  3679 D audio_hw_primary: adev_get_parameters, audio_devices_out
+09-21 19:31:16.440  3674  3679 D audio_hw_primary: getAudioDevices()
+09-21 19:31:16.440  3674  3679 D audio_hw_primary: out playback: AUDIO_SPEAKER,AUDIO_OWA,AUDIO_ARC,AUDIO_HEADPHONE,AUDIO_A2DP
+09-21 19:31:16.459  3674  3680 D audio_hw_primary: adev_set_parameters, mediasw.sft.rawdata=PCM
+09-21 19:31:16.461  3674  3680 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:16.463  3674  3680 D audio_hw_primary: adev_set_parameters, audio_devices_out_active=AUDIO_SPEAKER
+09-21 19:31:16.463  3674  3680 V audio_hw_primary: out AUDIO_PARAMETER_DEVICES_OUT_ACTIVE: AUDIO_SPEAKER
+09-21 19:31:16.464  3674  3680 V audio_hw_primary: set property vendor.audio.output.active: AUDIO_SPEAKER ok
+09-21 19:31:16.464  3674  3680 D audio_hw_primary: init_codec_output_path output_device_id: 1
+09-21 19:31:16.464  3674  3680 D audio_hw_primary: output_route: media-speaker-i2s
+09-21 19:31:16.632  3674  3680 D audio_hw_primary: set_audio_devices_active sink: 1 -> 1
+09-21 19:31:16.684  3674  3680 D audio_hw_primary: mytest: Check_Sound_Unmute, Audio_mute: 0 Lock_mute: 0
+09-21 19:31:16.686  3674  3680 D audio_hw_primary: [set_codec_speaker_mute] Now SPK Set Mute: 1
+09-21 19:31:16.853  3674  3680 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+--------- beginning of crash
+09-21 19:32:44.796  3674  3679 D audio_hw_primary: adev_set_parameters, audio_mute=true
+09-21 19:32:44.797  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:32:44.797  3674  3679 D audio_hw_primary: [set_codec_speaker_mute] Now SPK Set Mute: 0
+09-21 19:32:44.966  3674  3679 D audio_hw_primary: adev_set_parameters, hdmi_input=on
+09-21 19:32:44.966  3674  3679 D audio_hw_primary: [create_audio_patch] audio_source: 1, audio_sink: 1
+09-21 19:32:44.969  3674  3679 D audio_hw_primary: connect_hdmiin_path
+09-21 19:32:44.969  3674  3679 D audio_hw_primary: hdmiin format: 0
+09-21 19:32:45.080  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:32:45.082  3674  3679 D audio_hw_primary: adev_set_parameters, audio_mute=false
+09-21 19:32:45.082  3674  3679 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:32:45.082  3674  3679 D audio_hw_primary: mytest: Check_Sound_Unmute, Audio_mute: 0 Lock_mute: 0
+09-21 19:32:45.085  3674  3679 D audio_hw_primary: [set_codec_speaker_mute] Now SPK Set Mute: 1

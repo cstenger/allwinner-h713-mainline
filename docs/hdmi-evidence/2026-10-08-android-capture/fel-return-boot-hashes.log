@@ -1,0 +1,12 @@
+mmc dev 1
+switch to partitions #0, OK
+mmc1(part 0) is current device
+=> mmc read 0x48000000 0x10 0x40
+MMC read: dev # 1, block # 16, count 64 ... 64 blocks read: OK
+=> hash sha256 0x48000000 0x8000
+Unknown command 'hash' - try 'help'
+=> mmc read 0x48000000 0x49ac00 0x706
+MMC read: dev # 1, block # 4828160, count 1798 ... 1798 blocks read: OK
+=> hash sha256 0x48000000 0xe0c00
+Unknown command 'hash' - try 'help'
+=> 

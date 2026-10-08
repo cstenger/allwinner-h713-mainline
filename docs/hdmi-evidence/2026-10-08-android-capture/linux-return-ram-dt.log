@@ -1,0 +1,13 @@
+fatload mmc 1:2 0x50000000 h713-kernel.fit
+7789216 bytes read in 500 ms (14.9 MiB/s)
+=> fdt addr 0x50000000
+Working FDT set to 50000000
+=> fdt get addr hdmi_trial_fdt /images/fdt-1 data
+=> cp.b ${hdmi_trial_fdt} 0x4f000000 0x8319
+=> fdt addr 0x4f000000
+Working FDT set to 4f000000
+=> fdt resize 0x1000
+=> fdt set /soc/audio-bridge@203042c interrupts <0x0 0x73 0x4 0x0 0x71 0x4>
+=> fdt print /soc/audio-bridge@203042c interrupts
+interrupts = <0x00000000 0x00000073 0x00000004 0x00000000 0x00000071 0x00000004>
+=> 

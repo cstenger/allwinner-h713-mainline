@@ -1,0 +1,15 @@
+ip -br address; cat /proc/device-tree/soc/audio-bridge@203042 c/interrupts | od -An -tx1; python3 -u /root/mips-shell.py --status
+[?2004l[36mlo               [0mUNKNOWN        [35m127.0.0.1[0m/8 [34m::1[0m/128 
+[36msit0@NONE        [0m[31mDOWN           [0m
+[36mwlan0            [0m[32mUP             [0m[35m192.168.4.1[0m/24 [34mfe80::3e3b:adff:fe78:f028[0m/64 
+ 00 00 00 00 00 00 00 73 00 00 00 04 00 00 00 00
+ 00 00 00 71 00 00 00 04
+control block  0x4bd01000  acID b'RV\x00\x00\x00\x00 TERMINAL\x00'
+MIPS core      ALIVE (0x0306101c)
+  up[0]   buf=0x4bd01300 size=0x41c00 wr=8 rd=0 flags=0x0
+  up[1]   buf=0x4bd43000 size=0x7d000 wr=0 rd=0 flags=0x0
+  up[2]   buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+  down[0] buf=0x4bd01200 size=0x100 wr=0 rd=0 flags=0x0
+  down[1] buf=0x4bd42f00 size=0x100 wr=0 rd=0 flags=0x0
+  down[2] buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+[?2004hroot@h713-arm64:~# 

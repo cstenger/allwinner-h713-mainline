@@ -1,0 +1,52 @@
+AppOps service (appops) commands:
+  help
+    Print this help text.
+  start [--user <USER_ID>] [--attribution <ATTRIBUTION_TAG>] <PACKAGE | UID> <OP> 
+    Starts a given operation for a particular application.
+  stop [--user <USER_ID>] [--attribution <ATTRIBUTION_TAG>] <PACKAGE | UID> <OP> 
+    Stops a given operation for a particular application.
+  set [--user <USER_ID>] <[--uid] PACKAGE | UID> <OP> <MODE>
+    Set the mode for a particular application and operation.
+  get [--user <USER_ID>] [--attribution <ATTRIBUTION_TAG>] <PACKAGE | UID> [<OP>]
+    Return the mode for a particular application and optional operation.
+  query-op [--user <USER_ID>] <OP> [<MODE>]
+    Print all packages that currently have the given op in the given mode.
+  reset [--user <USER_ID>] [<PACKAGE>]
+    Reset the given application or all applications to default modes.
+  write-settings
+    Immediately write pending changes to storage.
+  read-settings
+    Read the last written settings, replacing current state in RAM.
+  options:
+    <PACKAGE> an Android package name or its UID if prefixed by --uid
+    <OP>      an AppOps operation.
+    <MODE>    one of allow, ignore, deny, or default
+    <USER_ID> the user id under which the package is installed. If --user is
+              not specified, the current user is assumed.
+    userId=2000
+    userId=2000
+09-21 19:42:46.918  2623  3177 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1123)
+09-21 19:42:46.918  2408  6181 E AudioPolicyIntefaceImpl: startInput permission denied: recording not allowed for uid 2000 pid 7195
+09-21 19:42:46.919  7195  7195 W AudioRecord: restoreRecord_l(38): failed status -1, retries 2
+09-21 19:42:47.660  2623  7096 E AppOps  : startOperation
+09-21 19:42:47.660  2623  7096 E AppOps  : java.lang.SecurityException: Specified package android under uid 2000 but it is really 1000
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(AppOpsService.java:3876)
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at com.android.server.appop.AppOpsService.startOperation(AppOpsService.java:3400)
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at com.android.internal.app.IAppOpsService$Stub.onTransact(IAppOpsService.java:473)
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1123)
+09-21 19:42:47.660  2408  2588 E AudioPolicyIntefaceImpl: startInput permission denied: recording not allowed for uid 2000 pid 7195
+09-21 19:42:47.661  7195  7195 W AudioRecord: restoreRecord_l(40): failed status -1, retries 1
+09-21 19:42:47.666  7195  7195 E AudioRecord: start(40): status -1
+09-21 19:43:36.953  7338  7338 W AudioRecord: restoreRecord_l(42): dead IAudioRecord, creating a new one from start()
+09-21 19:43:37.176  2408  6382 E AudioPolicyIntefaceImpl: startInput permission denied: recording not allowed for uid 2000 pid 7338
+09-21 19:43:37.177  7338  7338 W AudioRecord: restoreRecord_l(44): failed status -1, retries 3
+09-21 19:43:37.681  2408  6382 E AudioPolicyIntefaceImpl: getInputForAttr permission denied: recording not allowed for uid 2000 pid 7338
+09-21 19:43:37.681  7338  7338 E AudioRecord: createRecord_l(44): AudioFlinger could not create record track, status: -1
+09-21 19:43:37.681  7338  7338 W AudioRecord: restoreRecord_l(44): failed status -1, retries 2
+09-21 19:43:38.186  2408  6382 E AudioPolicyIntefaceImpl: getInputForAttr permission denied: recording not allowed for uid 2000 pid 7338
+09-21 19:43:38.186  7338  7338 E AudioRecord: createRecord_l(44): AudioFlinger could not create record track, status: -1
+09-21 19:43:38.186  7338  7338 W AudioRecord: restoreRecord_l(44): failed status -1, retries 1
+09-21 19:43:38.187  7338  7338 E AudioRecord: start(44): status -1
+09-21 19:47:21.966  2408  6382 E AudioPolicyIntefaceImpl: getInputForAttr permission denied: recording not allowed for uid 2000 pid 7850
+09-21 19:47:21.967  7850  7850 E AudioRecord: createRecord_l(1280068684): AudioFlinger could not create record track, status: -1

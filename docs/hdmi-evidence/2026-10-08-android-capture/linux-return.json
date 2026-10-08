@@ -1,0 +1,20 @@
+{
+  "installed_fit_sha256": "a298eeb8c131aa045c94279c2e89de73dcec3091173fff8d4fa0d25e948d399b",
+  "kernel": "Linux 6.18.38 #1 SMP Wed Oct 7 18:57:16 PDT 2026",
+  "source3_transition_complete": 1,
+  "mips_status": "ALIVE",
+  "loaded_interrupts": [
+    0,
+    115,
+    4,
+    0,
+    113,
+    4
+  ],
+  "installed_fit_modified": false,
+  "persistent_environment_modified": false,
+  "dt_correction": "Copied exact installed FIT DT to 0x4f000000 and changed only interrupts, then bootm 0x50000000 - 0x4f000000",
+  "hdmi_preparation": "Source 3 verified, MIPS responsive, TVFE/TVCAP and four clocks held, EDID clock on",
+  "trace_verifier": "/tmp/h713-linux-return/read-comm-trace.py",
+  "trace_verifier_note": "Prior /root/hdmi-safe-trace/read-comm-trace-worker.py expected temporary DSP-write trace jump 0x0ec54252 at 0x4b12052c. Restored installed U-Boot has established normal trace jump 0x0ec40190, matching host read-comm-trace.py. Matching verifier validated full patch list and canaries; no firmware edits were made."
+}

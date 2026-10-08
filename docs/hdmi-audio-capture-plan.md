@@ -1,5 +1,62 @@
 # HDMI-in audio: review findings and plan
 
+## 2026-10-08 update: stock capture proven; revised execution order
+
+The original review below is retained as historical evidence. Its SPDI-status
+and codec-RXCNT prerequisites are superseded by the
+[verified stock capture baseline](hdmi-evidence/2026-10-08-android-capture/README.md).
+Stock Android captured 17.96 seconds of channel-separated 1-kHz/2-kHz HDMI
+tones through Trident card 4/device 0 when the normal HAL output parameter was
+set to AUDIO_A2DP. Speaker mode was restored and the temporary app removed.
+No direct DSP writes or Bluetooth pairing were required.
+
+During proven capture, bridge IRQ 115 advanced while AudIf IRQ 113 and SPDI1
+status stayed zero. During operator-confirmed audible stock speaker playback,
+codec RXCNT also stayed zero. Therefore the original conclusions "no stream
+ever reached SPDI1" and "DSP never drove the I2S link" are not established by
+those observations. Do not require those counters/status bits to move.
+
+The source IRQ correction and real DSP ownership lock are implemented;
+the installed Linux DT still needs correction before any bridge IRQ trial.
+Stock capture CONFIG is 0x2207, versus the prior probe's 0x3207. The stock
+driver bounds the corresponding mode field to 0..2; the probe now matches the
+observed value. DMA addresses must remain private Linux allocations.
+
+Revised order: preserve current boot/IR/suspend work, recover stock A2DP HDMI
+route calls offline, correct the loaded DT, return via the exact SPL restoration
+program, then run one bounded Linux capture trial against the stock baseline.
+There is no need to make speaker RXCNT increment first. Success requires
+channel-correlated PCM; Android's HDMI device label and nonzero data alone are
+insufficient (speaker-mode AudioRecord actually used codec card 0 and gave noise).
+DSP selector 0x0130 and 0x801a were not read live during stock capture.
+Offline stock HAL execution now selects Sound_Connect(0x8f) for HDMI source 1
+and A2DP sink 3; speaker sink 1 selects 0x89. Route 0xbd is an alternate direct
+I2SIN1-to-DTVOUT1 path, not the route selected by the successful Android setup.
+See `hal-route-selection.json`, `routes-8f-bd.json` and `capture-init-code.json`
+in the stock capture evidence directory. Stock Sound_Path_Init connects
+DTVOUT1 to processing outputs 0x9009/0x900a (selector 0x0130=0x696a); this is
+code intent, not live DSP readback. Do not replay the entire emulated
+initialization as a hardware recipe.
+
+The first corrected Linux direct-route trial is complete: stock DSP patch
+versions 1/1, route 0xbd, stock I2S input format and prescale, DTV channel 0,
+bridge CONFIG 0x2207 and corrected IRQs. Host tone playback succeeded and
+video locked at 1280x720, but four private DMA snapshots remained entirely
+0xa5 and bridge IRQ count stayed zero. All five route words, bridge/SPDI1,
+AudioTop, and TVFE trial settings were restored; MIPS still responds. The
+volatile DSP patch requires a physical cold boot to clear. See
+[trial evidence](hdmi-evidence/2026-10-08-linux-direct-capture/README.md).
+
+Next: compare the stock 0x8f processing graph and its initialization against
+the cold Linux defaults offline, and verify receiver audio readiness without
+inferring clock failure from zero status/cached values. Prepare a bounded,
+reviewable save/restore experiment only after identifying the missing setup.
+Reapply the corrected RAM DT on the next boot before any bridge IRQ trial.
+
+Keep the stop list against PLL reflash experiments and treating audible speaker
+output as a capture baseline. The prohibition on bridge trials until a working
+stock capture exists is now satisfied. Keep all original safety rules.
+
 Date: 2026-10-08. Written by Claude for the agent continuing the HDMI audio
 capture work (`~/.codex/worktrees/hdmi-capture-current/h713`, plus the
 uncommitted `docs/hdmi-evidence/2026-10-07-*` and `modules/hdmi-dsp-probe/` in

@@ -1,0 +1,40 @@
+AUDIO_SPEAKER=
+--------- beginning of system
+--------- beginning of crash
+--------- beginning of main
+09-21 19:54:05.314  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.340  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000004)
+09-21 19:54:05.340  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:54:05.341  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.342  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.573  2382  2661 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:54:05.575  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:54:05.575  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:54:05.579  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.580  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:54:05.605  2382  2661 D audio_hw_primary: adev_create_audio_patch 1: device; 2: thread; sources: 1, sinks: 2
+09-21 19:54:05.630  2382  8992 D audio_hw_primary: use card: 0 to capture audio
+09-21 19:54:05.632  2382  8992 D audio_hw_primary: do not use in resampler
+09-21 19:54:07.665  2382  2430 D audio_hw_primary: do_input_standby
+09-21 19:54:07.898  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:55:03.001  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:55:03.011  2382  2430 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000004)
+09-21 19:55:03.011  2382  2430 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:55:03.012  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:55:03.012  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:55:03.227  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:55:03.229  2382  2430 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:55:03.229  2382  2430 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:55:03.232  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:55:03.233  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:55:03.260  2382  2430 D audio_hw_primary: adev_create_audio_patch 1: device; 2: thread; sources: 1, sinks: 2
+09-21 19:55:03.273  2382  9236 D audio_hw_primary: use card: 0 to capture audio
+09-21 19:55:03.283  2382  9236 D audio_hw_primary: do not use in resampler
+09-21 19:55:21.317  2382  2661 D audio_hw_primary: do_input_standby
+09-21 19:55:21.537  2382  2661 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:59:45.569  2382  2661 D audio_hw_primary: adev_get_parameters, audio_devices_out_active
+09-21 19:59:45.569  2382  2661 D audio_hw_primary: get_audio_devices_active: 
+09-21 19:59:45.569  2382  2661 D audio_hw_primary: get_audio_devices_active: AUDIO_SPEAKER
+09-21 20:01:42.062  2382  2661 D audio_hw_primary: adev_get_parameters, audio_devices_out_active
+09-21 20:01:42.062  2382  2661 D audio_hw_primary: get_audio_devices_active: 
+09-21 20:01:42.062  2382  2661 D audio_hw_primary: get_audio_devices_active: AUDIO_SPEAKER

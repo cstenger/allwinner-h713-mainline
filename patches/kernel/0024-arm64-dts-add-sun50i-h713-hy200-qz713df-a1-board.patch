@@ -760,13 +760,13 @@
 +		 * The driver hard-maps all MMIO windows (0x06146000, 0x06148000,
 +		 * 0x0614a000, etc.) via devm_ioremap with physical addresses.
 +		 * Only the "logic" register and IRQs come from DTS.
-+		 * IRQs: GIC_SPI 113 = audbrg (bridge core), GIC_SPI 115 = audif (ABP DTV)
++		 * IRQs: GIC_SPI 115 = audbrg (bridge core), GIC_SPI 113 = audif (ABP DTV)
 +		 */
 +		audio_bridge: audio-bridge@203042c {
 +			compatible = "vs,trid-audio-bridge";
 +			reg = <0x0203042c 0x4>;
-+			interrupts = <GIC_SPI 113 IRQ_TYPE_LEVEL_HIGH>,
-+				     <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>;
++			interrupts = <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 113 IRQ_TYPE_LEVEL_HIGH>;
 +			clocks = <&ccu CLK_AUDIO_CPU>,
 +				 <&ccu CLK_AUDIO_UMAC>,
 +				 <&ccu CLK_AUDIO_IHB>;
