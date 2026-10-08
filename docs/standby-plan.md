@@ -40,6 +40,23 @@ projector into standby and wakes it. On top of that, everything must also
 work with nobody touching the device: from the CLI, over the network, on a
 timer, and later from the HDMI source (CEC).
 
+**Requirement (2026-10-07): the product must come back from standby with no
+physical access.** The board is sealed inside the product, so the case button
+is not reachable; a USB GPIO board on the USB port will drive standby and the
+video player. Consequences:
+
+- **Light standby (phase 2) is the product's standby.** The network and USB
+  stay up, so a USB keypad, a GPIO-to-uinput bridge, ssh and timers can all
+  wake it. `h713-keyd` takes `KEY_POWER` from any input device, including
+  ones plugged in after it started (inotify on /dev/input), and
+  `CONFIG_INPUT_UINPUT=m` (loaded at boot) lets a non-HID GPIO board inject
+  keys. Verified with a hotplugged virtual USB keypad: press -> on,
+  press -> off.
+- **s2idle (phase 3) is not used by default.** It switches the hotspot off,
+  so nothing on the network can wake it, and a USB device can only wake it
+  through USB remote wakeup, which nothing here has been tested with. It
+  becomes usable only once the actual USB GPIO board is shown to wake it.
+
 ## Phase 0 — what is true today (measured on the bench board, 2026-10-07)
 
 | fact | evidence |

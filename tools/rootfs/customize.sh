@@ -694,6 +694,10 @@ WantedBy=multi-user.target
 EOF
   ln -sfn ../h713-keyd.service \
     "$systemd_dir/multi-user.target.wants/h713-keyd.service"
+  # uinput lets a non-HID USB GPIO board's bridge inject KEY_POWER and player
+  # keys (the product has no reachable buttons; docs/standby-plan.md).
+  install -d -m 0755 "$R/etc/modules-load.d"
+  echo uinput > "$R/etc/modules-load.d/h713-uinput.conf"
   echo "[customize] installed h713-standby + h713-keyd.service"
 fi
 install -d -m 0755 "$R/etc/systemd/logind.conf.d"

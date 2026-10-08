@@ -12,6 +12,10 @@
  * HOLDOFF_MS after it, so one press is one toggle however long the remote
  * keeps repeating and whichever of the two sources it came from.
  *
+ * Devices may come and go -- a USB keypad or GPIO board plugged in later is
+ * picked up as soon as its /dev/input node appears (inotify), and a device
+ * that goes away makes it reopen the rest.
+ *
  * logind must not act on KEY_POWER (HandlePowerKey=ignore) or the board
  * powers off on the first press. docs/standby-plan.md.
  *
@@ -24,6 +28,7 @@
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -101,28 +106,44 @@ static void run(char **cmd)
 int main(int argc, char **argv)
 {
 	char **cmd = argc > 1 ? argv + 1 : default_cmd;
-	struct pollfd pfd[MAX_DEVS];
+	struct pollfd pfd[MAX_DEVS + 1];
 	struct input_event ev[64];
 	long long quiet_until = 0;
-	int n, i;
+	int n, i, ino;
+
+	/* /dev/input changes (hotplug) make us reopen everything. */
+	ino = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (ino < 0 || inotify_add_watch(ino, "/dev/input", IN_CREATE | IN_DELETE) < 0) {
+		perror("h713-keyd: inotify /dev/input");
+		return 1;
+	}
 
 	for (;;) {
-		while ((n = open_devices(pfd)) == 0)
-			sleep(2);	/* drivers not up yet */
+		n = open_devices(pfd);
+		pfd[n].fd = ino;	/* always last; poll() with no devices too */
+		pfd[n].events = POLLIN;
 
 		for (;;) {
-			int fire = 0, lost = 0;
+			int fire = 0, reopen = 0;
 
-			if (poll(pfd, n, -1) < 0) {
+			if (poll(pfd, n + 1, -1) < 0) {
 				if (errno == EINTR)
 					continue;
 				break;
+			}
+			if (pfd[n].revents & POLLIN) {
+				char buf[4096];
+
+				while (read(ino, buf, sizeof(buf)) > 0)
+					;
+				usleep(200000);	/* let udev finish the node */
+				reopen = 1;
 			}
 			for (i = 0; i < n; i++) {
 				ssize_t r;
 
 				if (pfd[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
-					lost = 1;
+					reopen = 1;
 					continue;
 				}
 				if (!(pfd[i].revents & POLLIN))
@@ -134,7 +155,7 @@ int main(int argc, char **argv)
 							fire = 1;
 				}
 				if (r < 0 && errno != EAGAIN)
-					lost = 1;
+					reopen = 1;
 			}
 			if (fire) {
 				run(cmd);
@@ -144,8 +165,8 @@ int main(int argc, char **argv)
 						;
 				quiet_until = now_ms() + HOLDOFF_MS;
 			}
-			if (lost)
-				break;	/* a device went away: reopen them all */
+			if (reopen)
+				break;
 		}
 		for (i = 0; i < n; i++)
 			close(pfd[i].fd);
