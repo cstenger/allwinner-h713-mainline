@@ -399,6 +399,7 @@ env \
   PLANE_PLAY_SRC="$PROJECT_ROOT/tools/video/gst-plane-play.c" \
   H713_MIRROR_SRC="$PROJECT_ROOT/tools/display/h713-mirror" \
   H713_KEYSTONE_SRC="$PROJECT_ROOT/tools/sensors/h713-keystone" \
+  H713_STANDBY_DIR="$PROJECT_ROOT/tools/standby" \
   bash -ceu '
     mkdir -p "$ROOTFS_TREE"
     tar --numeric-owner --xattrs --acls --exclude="./dev/*" -C "$ROOTFS_TREE" -xf "$ROOTFS_TAR"

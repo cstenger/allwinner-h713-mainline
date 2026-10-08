@@ -1,11 +1,13 @@
 # Standby: plan (2026-10-07)
 
-> **Status 2026-10-07: Phase 1 (inputs) DONE, verified on the bench board.**
+> **Status 2026-10-07: Phases 1 (inputs) and 2 (software standby) DONE,
+> verified on the bench board. Next: Phase 3 (s2idle).**
+>
+> Phase 1:
 > Kernel 0169–0173 from a cold boot, no userspace setup: the case button
 > sends `KEY_POWER` (3/3 presses), and every remote key arrives as its
 > keymap code — POWER 116, UP 103, mirror 149, input 202, mouse 148,
-> mute 113 — and the board stays up (logind ignores the key). Next: Phase 2,
-> `h713-standby`.
+> mute 113 — and the board stays up (logind ignores the key).
 
 ## Phase 1 findings (2026-10-07)
 
@@ -67,6 +69,21 @@ Each tier works on its own and is a fallback for the one after it.
   the standby daemon owns it.
 
 ### Phase 2 — software standby (`h713-standby`)
+
+> **2026-10-07: DONE, verified on the bench board.** Kernel 0174 turns PB5
+> from a gpio-hog into a gpio-backlight, `/sys/class/backlight/lamp`
+> (`bl_power` 4 = lamp and fan off); no dark gap at boot (operator).
+> `h713-standby on|off|toggle` stops the players, switches the lamp off and
+> caps the CPU at 480 MHz; leaving turns the lamp (fan) on first, then
+> lifts the cap. `h713-keyd` runs `toggle` on `KEY_POWER` from either
+> source. Operator test with a video playing: case button -> on (mpv quit
+> cleanly), remote -> off, remote -> on, case button -> off, each within
+> ~1 s. With nobody touching it: `h713-standby on` over ssh and a
+> `systemd-run` timer ran `off` (14 s for a 10 s timer: use
+> `--timer-property=AccuracySec=1s`). Fan-off thermal: 15 min with PB5 low
+> at 480 MHz, 54 C -> 59.1 C peak -> 57-58 C, against a 75 C passive trip,
+> so no thermal guard is needed while idle and capped. Playback is stopped
+> rather than paused: no player has a control channel.
 
 The SoC stays up. Everything the user sees or hears turns off:
 stop playback, mute (DAC volume 0 — **never** `Speaker Switch` 0, see

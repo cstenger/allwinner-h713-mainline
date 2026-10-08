@@ -15,7 +15,10 @@ unclaimed in our DT (pinmux-pins: UNCLAIMED).
 import json, mmap, os, select, struct, sys, threading, time
 
 R_PIO = 0x07022000
-CFG0, DAT, PULL0 = 0x00, 0x10, 0x1C
+# R_PIO is the new (HW_TYPE_1) layout: pull registers at +0x24. The first run
+# (2026-10-07) used +0x1c, a drive-strength register, and restored it; its
+# "PL4 is driven externally" verdict came from DAT alone and still stands.
+CFG0, DAT, PULL0 = 0x00, 0x10, 0x24
 PIN = 4                     # PL4
 RC = "/sys/class/rc/rc0/protocols"
 OUT = sys.argv[1] if len(sys.argv) > 1 else time.strftime("/root/standby-probe-%Y%m%d-%H%M%S")

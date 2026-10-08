@@ -1,0 +1,82 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 7 Oct 2026 18:00:00 -0700
+Subject: [PATCH] arm64: dts: h713: PB5 is the lamp switch, not a hog
+
+PB5 enables the light engine's boost converter and also powers the cooling
+fan. 0030 made it a gpio-hog held high, which kept the fan running but left
+no way to turn the lamp off -- and standby needs exactly that.
+
+Describe it as a gpio-backlight named "lamp": /sys/class/backlight/lamp,
+bl_power 4 turns the light (and the fan) off, 0 turns them back on. Nothing
+references the node, so with default-on the driver requests the pin as is
+and keeps the high level U-Boot left; there is no off-glitch at boot.
+
+It is deliberately not the existing pwm-backlight's enable-gpios. That
+driver calls the backlight off at probe whenever its PWM is not already
+running, and drives the enable low to match; PWM2 is not running after
+U-Boot, so the lamp and the fan would stay off after every boot until
+userspace intervened.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -611,19 +611,6 @@
+ 
+ 
+ 
+-			/*
+-			 * PB5 = panel-backlight enable AND cooling-fan power; must stay
+-			 * HIGH so the fan's +V rail is driven. sunxi gpio specifiers are
+-			 * 3-cell <bank pin flags> (bank B = 1, pin 5); the earlier
+-			 * <37 ...> was a linear number on a #gpio-cells=3 controller, so
+-			 * gpiolib could not parse the hog and left the rail off.
+-			 */
+-			fan_power_hog: fan-power-hog {
+-				gpio-hog;
+-				gpios = <1 5 GPIO_ACTIVE_HIGH>;
+-				output-high;
+-				line-name = "pb5-bl-fan-power";
+-			};
+ 			uart1_pg_pins: uart1-pg-pins {
+ 				pins = "PG6", "PG7", "PG8", "PG9";
+ 				function = "uart1";
+@@ -1945,6 +1932,22 @@
+ 	};
+ 
+ 	/*
++	 * PB5 enables the light engine's boost converter (36 V -> 52.6 V) AND
++	 * powers the cooling fan; there is no separate fan control. It used to
++	 * be a gpio-hog held high. As a gpio-backlight it is the lamp's on/off
++	 * switch -- /sys/class/backlight/lamp, bl_power 4 = off -- for standby
++	 * (docs/standby-plan.md). Nothing references this node, so with
++	 * default-on the driver keeps the state U-Boot left (high) at probe;
++	 * there is no off-glitch at boot. Driving it low also stops the fan:
++	 * only do that with the SoC idle.
++	 */
++	lamp: lamp {
++		compatible = "gpio-backlight";
++		gpios = <&pio 1 5 GPIO_ACTIVE_HIGH>;	/* PB5 */
++		default-on;
++	};
++
++	/*
+ 	 * Panel backlight dimming (bench bring-up).
+ 	 *
+ 	 * Brightness input is PWM channel 2 on PB4 -- the stock dimmer. The
+@@ -1954,10 +1957,11 @@
+ 	 * pwm-backlight so brightness is controllable from
+ 	 * /sys/class/backlight/backlight/brightness for evaluation.
+ 	 *
+-	 * PB5 (panel_bl_en) is shared with cooling-fan power and is held high by
+-	 * fan_power_hog; it must never be driven low (that cuts the fan). It is
+-	 * therefore deliberately NOT wired here as enable-gpios -- this node
+-	 * varies PWM duty only, and the panel stays powered by the hog.
++	 * PB5 (panel_bl_en) is shared with cooling-fan power and belongs to the
++	 * lamp node above. It is deliberately NOT wired here as enable-gpios:
++	 * pwm-backlight would drive it low at probe whenever PWM2 is not yet
++	 * running, which leaves the lamp and the fan off after boot. This node
++	 * varies PWM duty only.
+ 	 *
+ 	 * Polarity is the stock vendor-DTB value (normal, flag 0). If a duty
+ 	 * sweep reads inverted, change the third pwms cell to

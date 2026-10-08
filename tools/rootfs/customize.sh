@@ -569,6 +569,13 @@ if [ -n "${PLANE_PLAY_SRC:-}" ]; then
   chroot "$R" sh -ec 'gcc -O2 -Wall -o /usr/local/bin/gst-plane-play \
     /tmp/gst-plane-play.c $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-video-1.0)'
   rm -f "$R/tmp/gst-plane-play.c"
+  # Standby's power-key listener (docs/standby-plan.md), compiled here while
+  # gcc exists; installed with its unit below.
+  if [ -n "${H713_STANDBY_DIR:-}" ]; then
+    install -m 0644 "$H713_STANDBY_DIR/h713-keyd.c" "$R/tmp/h713-keyd.c"
+    chroot "$R" gcc -O2 -Wall -o /usr/local/bin/h713-keyd /tmp/h713-keyd.c
+    rm -f "$R/tmp/h713-keyd.c"
+  fi
   # The VA-API driver, from the patched tree build.sh exported
   # (build-va-driver.sh --tree-tar). It must export __vaDriverInit for THIS
   # image's libva or the loader silently falls back to software; check that
@@ -658,6 +665,25 @@ fi
 # remote both send KEY_POWER. logind's default for it is poweroff, and on this
 # board poweroff only parks the CPUs -- rails, backlight and the last frame
 # stay up. h713-standby owns the key; logind must not act on it.
+if [ -n "${H713_STANDBY_DIR:-}" ]; then
+  install -m 0755 "$H713_STANDBY_DIR/h713-standby" "$R/usr/local/bin/h713-standby"
+  cat > "$systemd_dir/h713-keyd.service" <<EOF
+[Unit]
+Description=Projector power key: case button and remote toggle standby
+After=systemd-udevd.service
+
+[Service]
+ExecStart=/usr/local/bin/h713-keyd
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  ln -sfn ../h713-keyd.service \
+    "$systemd_dir/multi-user.target.wants/h713-keyd.service"
+  echo "[customize] installed h713-standby + h713-keyd.service"
+fi
 install -d -m 0755 "$R/etc/systemd/logind.conf.d"
 cat > "$R/etc/systemd/logind.conf.d/h713-power-key.conf" <<EOF
 [Login]

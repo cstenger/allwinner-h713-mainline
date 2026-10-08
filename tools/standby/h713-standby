@@ -1,0 +1,77 @@
+#!/bin/sh
+# h713-standby -- the projector's standby, phase 2 of docs/standby-plan.md.
+# RUNS ON THE TARGET, as root.
+#
+#   h713-standby                 print the state: on (in standby) or off
+#   h713-standby on              enter standby
+#   h713-standby off             leave standby
+#   h713-standby toggle          what the power key does (h713-keyd)
+#
+# Standby here is "everything the user sees or hears is off, the SoC stays
+# up": playback is stopped, the lamp is switched off -- which also stops the
+# fan, they share PB5 (kernel 0174, /sys/class/backlight/lamp) -- and the
+# CPU is capped at its lowest OPP. WiFi, ssh and this command keep working,
+# so standby can be entered and left with nobody touching the projector:
+# over ssh, from a timer (systemd-run --timer-property=AccuracySec=1s
+# --on-calendar=... /usr/local/bin/h713-standby off; without AccuracySec a
+# timer may fire up to a minute late),
+# or from the case button / remote via h713-keyd.
+#
+# Playback is stopped, not paused: none of the players has a control
+# channel, and a muted, paused player would keep the VE and the plane busy.
+# Stopping them also silences the speaker, so there is no separate mute.
+#
+# Fan off is safe only because the SoC is idle and capped: measured
+# 2026-10-07 (tools/standby/thermal-fan-off.py), PB5 low at 480 MHz for 15
+# min, the SoC went from 54 C to a 59.1 C peak and settled at 57-58 C; the
+# passive trip is 75 C. Leaving standby turns the lamp (and so the fan) on
+# before it lifts the CPU cap.
+set -u
+RUN=/run/h713-standby
+LAMP=/sys/class/backlight/lamp
+POLICY=/sys/devices/system/cpu/cpufreq/policy0
+PLAYERS="h713-play gst-plane-play mpv"
+
+state() { cat "$RUN/state" 2>/dev/null || echo off; }
+say() { logger -t h713-standby "$*"; [ -t 1 ] && echo "$*"; return 0; }   # once in the journal
+
+stop_players() {
+  for p in $PLAYERS; do pkill -TERM -x "$p"; done
+  i=0
+  while [ $i -lt 30 ]; do
+    busy=
+    for p in $PLAYERS; do pgrep -x "$p" >/dev/null && busy=$p; done
+    [ -z "$busy" ] && return 0
+    sleep 0.1; i=$((i + 1))
+  done
+  for p in $PLAYERS; do pkill -KILL -x "$p"; done
+  say "players killed after 3 s"
+}
+
+enter() {
+  [ "$(state)" = on ] && { echo on; return 0; }
+  [ -w "$LAMP/bl_power" ] || { echo "h713-standby: no $LAMP (kernel 0174)" >&2; exit 1; }
+  mkdir -p "$RUN"
+  stop_players
+  echo 4 > "$LAMP/bl_power"                         # lamp and fan off
+  cat "$POLICY/scaling_max_freq" > "$RUN/max_freq"
+  cat "$POLICY/cpuinfo_min_freq" > "$POLICY/scaling_max_freq"
+  echo on > "$RUN/state"
+  say "standby on"
+}
+
+leave() {
+  [ "$(state)" = off ] && { echo off; return 0; }
+  echo 0 > "$LAMP/bl_power"                         # lamp and fan on
+  [ -s "$RUN/max_freq" ] && cat "$RUN/max_freq" > "$POLICY/scaling_max_freq"
+  echo off > "$RUN/state"
+  say "standby off"
+}
+
+case "${1:-}" in
+  "")     state ;;
+  on)     enter ;;
+  off)    leave ;;
+  toggle) if [ "$(state)" = on ]; then leave; else enter; fi ;;
+  *)      sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac
