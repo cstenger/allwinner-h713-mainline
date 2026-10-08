@@ -654,4 +654,15 @@ EOF
   echo "[customize] installed h713-keystone + h713-keystone.service"
 fi
 
+# Standby (docs/standby-plan.md): the case button (kernel 0170/0171) and the
+# remote both send KEY_POWER. logind's default for it is poweroff, and on this
+# board poweroff only parks the CPUs -- rails, backlight and the last frame
+# stay up. h713-standby owns the key; logind must not act on it.
+install -d -m 0755 "$R/etc/systemd/logind.conf.d"
+cat > "$R/etc/systemd/logind.conf.d/h713-power-key.conf" <<EOF
+[Login]
+HandlePowerKey=ignore
+HandlePowerKeyLongPress=ignore
+EOF
+
 echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media), schedutil rate limit 10 ms"

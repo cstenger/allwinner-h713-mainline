@@ -1,0 +1,56 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 7 Oct 2026 16:30:00 -0700
+Subject: [PATCH] arm64: dts: h713: hy200-qz713df-a1: the case power button
+
+Stock wires the case power button to PL4 as KEY_POWER and a wakeup source:
+keyboard@2009800 carries power-key = <KEY_POWER> and power-gpio = PL4, and
+standby_param names power_key = "PL4" with a 50 ms debounce. Our DT left
+the pin unclaimed and its function disabled.
+
+Measured on the bench board on 2026-10-07: as an input, PL4 reads high 200
+of 200 samples with the internal pull off, up and down, so it is pulled up
+on the board; three short presses gave three clean low pulses of 210-290 ms
+with no bounce at 2 ms polling. So the key is active low, whatever stock's
+flag cell says (its own keyboard driver interprets that).
+
+Describe it with gpio-keys. The projector board is left alone until its DT
+is audited against the hardware.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -1,6 +1,7 @@
+ /dts-v1/;
+ 
+ #include "sun50i-h713.dtsi"
++#include <dt-bindings/input/input.h>
+ 
+ / {
+ 	model = "HY200 QZ713DF_A1 (Allwinner H713)";
+@@ -18,6 +19,25 @@
+ 		};
+ 	};
+ 
++	/*
++	 * The case power button. Stock wires it to PL4 as KEY_POWER and a
++	 * wakeup source (keyboard@2009800 power-gpio, standby_param
++	 * power_key, 50 ms debounce). On this board PL4 reads high under
++	 * every internal pull, so it is pulled up externally, and a press
++	 * drives it low (three presses, 2026-10-07).
++	 */
++	gpio-keys {
++		compatible = "gpio-keys";
++
++		key-power {
++			label = "Power";
++			gpios = <&r_pio 0 4 GPIO_ACTIVE_LOW>;	/* PL4 */
++			linux,code = <KEY_POWER>;
++			debounce-interval = <50>;
++			wakeup-source;
++		};
++	};
++
+ 	h713-edid-clock-hold {
+ 		compatible = "h713-lab,edid-clock-hold";
+ 		clocks = <&r_ccu CLK_R_EDID>;

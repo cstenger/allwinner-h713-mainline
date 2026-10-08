@@ -1,0 +1,123 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 7 Oct 2026 17:15:00 -0700
+Subject: [PATCH] media: rc: keymap for the HY200 projector remote
+
+The remote that ships with the HY200 (Allwinner H713) projector sends NEC
+frames at address 0x00. With 0169 the sunxi-cir driver decodes them; every
+key was captured on the bench board on 2026-10-07 and matches the stock
+firmware's customer_ir_ff00.kl (POWER 0x14, which is also stock's
+ir_power_key_code0 in cir_param). Stock names are kept as comments.
+
+Four keys have no Linux equivalent and get KEY_PROG1..3 or the nearest
+standard code: MOUSE (pointer mode), PRJ_MIRACAST (screen mirroring) and
+PRJ_AIRPLAY, which on this remote is printed as the input/source key.
+
+Built in, the map also enables the NEC decoder at boot, so the remote works
+with no userspace keytable. Select it for the bench board.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/Documentation/devicetree/bindings/media/rc.yaml
++++ b/Documentation/devicetree/bindings/media/rc.yaml
+@@ -78,6 +78,7 @@
+       - rc-hauppauge
+       - rc-hisi-poplar
+       - rc-hisi-tv-demo
++      - rc-hy200-projector
+       - rc-imon-mce
+       - rc-imon-pad
+       - rc-imon-rsc
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -45,6 +45,10 @@
+ 	};
+ };
+ 
++&r_ir {
++	linux,rc-map-name = "rc-hy200-projector";
++};
++
+ &ppu {
+ 	allwinner,keep-tvcap-on;
+ };
+--- a/drivers/media/rc/keymaps/Makefile
++++ b/drivers/media/rc/keymaps/Makefile
+@@ -59,6 +59,7 @@
+ 			rc-hauppauge.o \
+ 			rc-hisi-poplar.o \
+ 			rc-hisi-tv-demo.o \
++			rc-hy200-projector.o \
+ 			rc-imon-mce.o \
+ 			rc-imon-pad.o \
+ 			rc-imon-rsc.o \
+--- /dev/null
++++ b/drivers/media/rc/keymaps/rc-hy200-projector.c
+@@ -0,0 +1,58 @@
++// SPDX-License-Identifier: GPL-2.0+
++// Copyright (c) 2026 Christopher Stenger
++
++#include <media/rc-map.h>
++#include <linux/module.h>
++
++/*
++ * Keymap for the IR remote shipped with HY200 (Allwinner H713) projectors.
++ * NEC, address 0x00. Codes captured from the remote and matched against the
++ * stock firmware's customer_ir_ff00.kl, whose names are in the comments.
++ */
++
++static struct rc_map_table hy200_projector[] = {
++	{ 0x0014, KEY_POWER },		/* POWER */
++	{ 0x0001, KEY_MUTE },		/* VOLUME_MUTE */
++	{ 0x000b, KEY_VOLUMEUP },	/* VOLUME_UP */
++	{ 0x0058, KEY_VOLUMEDOWN },	/* VOLUME_DOWN */
++
++	{ 0x0003, KEY_UP },		/* DPAD_UP */
++	{ 0x0002, KEY_DOWN },		/* DPAD_DOWN */
++	{ 0x000e, KEY_LEFT },		/* DPAD_LEFT */
++	{ 0x001a, KEY_RIGHT },		/* DPAD_RIGHT */
++	{ 0x0007, KEY_OK },		/* DPAD_CENTER */
++
++	{ 0x005c, KEY_BACK },		/* BACK */
++	{ 0x0048, KEY_HOMEPAGE },	/* HOME */
++	{ 0x0013, KEY_MENU },		/* SETTINGS */
++
++	{ 0x0082, KEY_PROG1 },		/* MOUSE: pointer mode */
++	{ 0x0098, KEY_PROG2 },		/* PRJ_MIRACAST: screen mirroring */
++	{ 0x0093, KEY_PROG3 },		/* PRJ_AIRPLAY: the input/source key */
++};
++
++static struct rc_map_list hy200_projector_map = {
++	.map = {
++		.scan     = hy200_projector,
++		.size     = ARRAY_SIZE(hy200_projector),
++		.rc_proto = RC_PROTO_NEC,
++		.name     = RC_MAP_HY200_PROJECTOR,
++	}
++};
++
++static int __init init_rc_map_hy200_projector(void)
++{
++	return rc_map_register(&hy200_projector_map);
++}
++
++static void __exit exit_rc_map_hy200_projector(void)
++{
++	rc_map_unregister(&hy200_projector_map);
++}
++
++module_init(init_rc_map_hy200_projector)
++module_exit(exit_rc_map_hy200_projector)
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Christopher Stenger <chris.h.stenger@gmail.com>");
++MODULE_DESCRIPTION("HY200 projector remote controller keytable");
+--- a/include/media/rc-map.h
++++ b/include/media/rc-map.h
+@@ -265,6 +265,7 @@
+ #define RC_MAP_HAUPPAUGE_NEW             "rc-hauppauge"
+ #define RC_MAP_HISI_POPLAR               "rc-hisi-poplar"
+ #define RC_MAP_HISI_TV_DEMO              "rc-hisi-tv-demo"
++#define RC_MAP_HY200_PROJECTOR           "rc-hy200-projector"
+ #define RC_MAP_IMON_MCE                  "rc-imon-mce"
+ #define RC_MAP_IMON_PAD                  "rc-imon-pad"
+ #define RC_MAP_IMON_RSC                  "rc-imon-rsc"
