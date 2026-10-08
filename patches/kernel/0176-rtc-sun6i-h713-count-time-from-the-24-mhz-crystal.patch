@@ -1,0 +1,104 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 7 Oct 2026 18:45:00 -0700
+Subject: [PATCH] rtc: sun6i: h713: count time from the 24 MHz crystal
+
+The H713 RTC ran at 0.717x real time. Measured on the bench board on
+2026-10-07 against the arch timer (24 MHz crystal): the RTC advanced 53 s
+in 73.8 s, and every alarm fired late by the same factor -- +10 s after
+14.5 s, +20 s after 29.3 s, and an s2idle rtcwake of 20 s woke after 28 s.
+That makes the RTC useless as a timed wake source and as a clock.
+
+There is no 32.768 kHz crystal on these boards (the stock DT has none), so
+LOSC_CTRL bit 0 leaves the RTC on the internal 16 MHz RC oscillator, which
+Allwinner rates at +/-30% and which reads ~28% slow here. The H616-style
+IOSC calibration register (+0x0c) is not implemented: writing its enable
+bits reads back 0 and changes nothing.
+
+The stock 5.4 kernel's sun50iw12 RTC CCU (read from its DWARF) has a second
+source for the RTC's own 32k: a mux at LOSC_CTRL bit 1 (keyed 0x16aa)
+choosing between osc32k and "dcxo24M-div32k", the 24 MHz crystal divided
+down, behind a gate at LOSC_OUT_GATING bit 16. The 1 Hz counter runs from
+that /32 ("rtc-1k"). Selecting it without opening the gate stops the RTC
+(measured); with the gate open the RTC ran at 1.00008x over 40 s, within
+the measurement's resolution.
+
+Give the H713 its own clock data with has_dcxo_32k: when no external
+oscillator is described, open the gate and select the crystal source at
+clock init. Every later LOSC_CTRL write is read-modify-write, so the bit
+stays. The osc32k clock itself, which other blocks consume, is unchanged.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/rtc/rtc-sun6i.c
++++ b/drivers/rtc/rtc-sun6i.c
+@@ -37,6 +37,7 @@
+ #define SUN6I_LOSC_CTRL_RTC_HMS_ACC		BIT(8)
+ #define SUN6I_LOSC_CTRL_RTC_YMD_ACC		BIT(7)
+ #define SUN6I_LOSC_CTRL_EXT_LOSC_EN		BIT(4)
++#define SUN6I_LOSC_CTRL_RTC_SRC_DCXO		BIT(1)	/* H713: rtc32k = 24M/750 */
+ #define SUN6I_LOSC_CTRL_EXT_OSC			BIT(0)
+ #define SUN6I_LOSC_CTRL_ACC_MASK		GENMASK(9, 7)
+ 
+@@ -69,6 +70,7 @@
+ 
+ #define SUN6I_LOSC_OUT_GATING			0x0060
+ #define SUN6I_LOSC_OUT_GATING_EN_OFFSET		0
++#define SUN6I_LOSC_OUT_GATING_DCXO_32K_EN	BIT(16)	/* H713: 24M/750 gate */
+ 
+ /* General-purpose data */
+ #define SUN6I_GP_DATA				0x0100
+@@ -137,6 +139,7 @@
+ 	unsigned int has_out_clk : 1;
+ 	unsigned int has_losc_en : 1;
+ 	unsigned int has_auto_swt : 1;
++	unsigned int has_dcxo_32k : 1;
+ };
+ 
+ #define RTC_LINEAR_DAY	BIT(0)
+@@ -264,6 +267,17 @@
+ 		reg |= SUN6I_LOSC_CTRL_EXT_OSC;
+ 		if (rtc->data->has_losc_en)
+ 			reg |= SUN6I_LOSC_CTRL_EXT_LOSC_EN;
++	} else if (rtc->data->has_dcxo_32k) {
++		/*
++		 * No 32k crystal: count time from the 24 MHz crystal divided
++		 * down (24M/750, then /32 to the 1 kHz counter) instead of the
++		 * internal RC oscillator, which is only accurate to 30%. Open
++		 * that clock's gate before selecting it, or the RTC stops.
++		 */
++		writel(readl(rtc->base + SUN6I_LOSC_OUT_GATING) |
++		       SUN6I_LOSC_OUT_GATING_DCXO_32K_EN,
++		       rtc->base + SUN6I_LOSC_OUT_GATING);
++		reg |= SUN6I_LOSC_CTRL_RTC_SRC_DCXO;
+ 	}
+ 	writel(reg, rtc->base + SUN6I_LOSC_CTRL);
+ 
+@@ -387,10 +401,26 @@
+  * The H713 (sun50iw12) reuses the H6 RTC clock block and is the canonical
+  * osc32k/iosc provider on that SoC, but it stores the calendar date as a
+  * linear day count like the H616/R329 (see the OF match data below), so it
+- * pairs the H6 clock provider with RTC_LINEAR_DAY.
++ * pairs the H6 clock provider with RTC_LINEAR_DAY. Boards carry no 32k
++ * crystal, and the internal RC runs ~28% slow (measured: 0.717x), so the RTC
++ * takes its 32k from the 24 MHz crystal instead, as stock firmware does.
+  */
++static const struct sun6i_rtc_clk_data sun50i_h713_rtc_data = {
++	.rc_osc_rate = 16000000,
++	.fixed_prescaler = 32,
++	.has_prescaler = 1,
++	.has_out_clk = 1,
++	.has_losc_en = 1,
++	.has_auto_swt = 1,
++	.has_dcxo_32k = 1,
++};
++
++static void __init sun50i_h713_rtc_clk_init(struct device_node *node)
++{
++	sun6i_rtc_clk_init(node, &sun50i_h713_rtc_data);
++}
+ CLK_OF_DECLARE_DRIVER(sun50i_h713_rtc_clk, "allwinner,sun50i-h713-rtc",
+-		      sun50i_h6_rtc_clk_init);
++		      sun50i_h713_rtc_clk_init);
+ 
+ /*
+  * The R40 user manual is self-conflicting on whether the prescaler is

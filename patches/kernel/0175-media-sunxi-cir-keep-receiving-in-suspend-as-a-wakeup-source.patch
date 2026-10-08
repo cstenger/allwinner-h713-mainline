@@ -1,0 +1,66 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 7 Oct 2026 18:20:00 -0700
+Subject: [PATCH] media: sunxi-cir: keep receiving in suspend as a wakeup source
+
+sunxi-cir gates its clocks and asserts reset on suspend, so a remote can
+never wake the system. Stock H713 firmware wakes from the remote's power key,
+and the projector's standby (s2idle, there being no PSCI SYSTEM_SUSPEND)
+needs the same.
+
+Honour the standard wakeup-source property: register the device as wakeup
+capable, and when wakeup is enabled leave the receiver running across
+suspend and arm its interrupt as a wake interrupt instead of shutting it
+down. Without the property nothing changes.
+
+The decoder runs on the CPU, so in s2idle any IR frame wakes the system,
+not only the power key; the standby daemon decides what to do once awake.
+Mark the bench board's receiver wakeup-source.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -47,6 +47,7 @@
+ 
+ &r_ir {
+ 	linux,rc-map-name = "rc-hy200-projector";
++	wakeup-source;
+ };
+ 
+ &ppu {
+--- a/drivers/media/rc/sunxi-cir.c
++++ b/drivers/media/rc/sunxi-cir.c
+@@ -266,6 +266,12 @@
+ 
+ static int __maybe_unused sunxi_ir_suspend(struct device *dev)
+ {
++	struct sunxi_ir *ir = dev_get_drvdata(dev);
++
++	/* A wakeup source keeps receiving, so a key press can wake us. */
++	if (device_may_wakeup(dev))
++		return enable_irq_wake(ir->irq);
++
+ 	sunxi_ir_hw_exit(dev);
+ 
+ 	return 0;
+@@ -273,6 +279,11 @@
+ 
+ static int __maybe_unused sunxi_ir_resume(struct device *dev)
+ {
++	struct sunxi_ir *ir = dev_get_drvdata(dev);
++
++	if (device_may_wakeup(dev))
++		return disable_irq_wake(ir->irq);
++
+ 	return sunxi_ir_hw_init(dev);
+ }
+ 
+@@ -393,6 +404,8 @@
+ 	if (ret)
+ 		goto exit_free_dev;
+ 
++	device_init_wakeup(dev, of_property_read_bool(dn, "wakeup-source"));
++
+ 	dev_info(dev, "initialized sunXi IR driver\n");
+ 
+ 	return 0;

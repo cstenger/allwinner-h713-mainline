@@ -293,3 +293,8 @@ CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1
 # that overlapped the RTC register region.
 CONFIG_NVMEM_REBOOT_MODE=y
 CONFIG_SUNXI_H713_AV1_PROBE=m
+# Standby phase 3 (docs/standby-plan.md): /sys/power/pm_test, so suspend can be
+# exercised one stage at a time and resume on its own, and pm_print_times.
+CONFIG_PM_DEBUG=y
+CONFIG_PM_ADVANCED_DEBUG=y
+CONFIG_PM_SLEEP_DEBUG=y

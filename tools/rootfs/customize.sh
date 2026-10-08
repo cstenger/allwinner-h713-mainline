@@ -497,6 +497,18 @@ EOF
     "$systemd_dir/multi-user.target.wants/h713-hotspot.service"
   ln -sfn /dev/null "$systemd_dir/wpa_supplicant.service"
   ln -sfn /dev/null "$systemd_dir/dnsmasq.service"
+  # Suspend (standby phase 3) stops the AP: with no WoWLAN, cfg80211 tears it
+  # down in wiphy_suspend ("wlan0: AP Stopped") and hostapd, still running,
+  # never re-establishes it. Restart the hotspot after every resume; clients
+  # re-associate on their own. Measured 2026-10-07 (docs/standby-plan.md).
+  install -d -m 0755 "$R/usr/lib/systemd/system-sleep"
+  cat > "$R/usr/lib/systemd/system-sleep/h713-hotspot" <<'EOS'
+#!/bin/sh
+# systemd-sleep hook: bring the WiFi hotspot back after a resume.
+[ "$1" = post ] && systemctl restart --no-block h713-hotspot.service
+exit 0
+EOS
+  chmod 0755 "$R/usr/lib/systemd/system-sleep/h713-hotspot"
   echo "[customize] boot hotspot enabled: SSID=$HOTSPOT_SSID ch=$HOTSPOT_CHANNEL ip=$HOTSPOT_IP"
 fi
 

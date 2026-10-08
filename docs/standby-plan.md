@@ -100,6 +100,28 @@ keep working.
 
 ### Phase 3 — s2idle (`systemctl suspend`)
 
+> **2026-10-07: in progress.** `tools/standby/suspend-ladder.sh` runs
+> `pm_test` stages (CONFIG_PM_DEBUG) then a real s2idle, with a health check
+> after each (vblank, a VE decode, WiFi, new kernel errors). Results:
+> `freezer` pass; `devices` pass -- every driver suspends and resumes, the
+> display and the VE work after -- once the WiFi AP is restarted (cfg80211
+> stops it on suspend; a systemd-sleep hook now restarts h713-hotspot and
+> clients re-associate); a real `rtcwake -m freeze` suspended and was woken
+> by the RTC (pm_wakeup_irq = the RTC's), all healthy after. 0175 keeps the
+> IR receiver running as a wakeup source.
+>
+> **The RTC ran at 0.717x real time**, so every alarm was ~40% late (20 s
+> woke after 28 s). No 32k crystal is fitted; it counted on the internal RC
+> (+/-30%), and the H616 calibration register is not implemented on H713.
+> Stock instead feeds the RTC from the 24 MHz crystal (/750, gate at
+> LOSC_OUT_GATING bit 16, mux at LOSC_CTRL bit 1 -- selecting it with the
+> gate closed STOPS the RTC). Measured live: 1.00008x. Kernel 0176.
+>
+> With 0176 from a cold boot: RTC 0.99998x, and a real 20 s rtcwake slept
+> 20 s. Woken from real s2idle (`tools/standby/wake-sources.sh`, 60 s RTC
+> safety net): the case button after 7.2 s (pm_wakeup_irq = Power, PL4) and
+> the remote's POWER after 7.4 s (sunxi-ir). All three wake sources work.
+
 CPUs idle in WFI, devices suspend, and any wake-capable interrupt resumes.
 Wake sources: PL4, IR (`s_cir` is in the R domain), RTC alarm (`rtcwake`),
 and WiFi if the aic8800 supports WoWLAN on this firmware.
