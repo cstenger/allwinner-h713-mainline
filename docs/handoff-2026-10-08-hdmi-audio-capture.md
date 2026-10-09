@@ -166,6 +166,37 @@ Next offline comparison should trace controls feeding8400/8f01/8d01 and
 readiness using positive evidence. Do not repeat directbd or the unchanged
 13-word graph subset without a new discriminator. No PLL reflash/word writes.
 
+## RESULT (Claude, 2026-10-08): Linux captures HDMI audio
+
+Attempt 2 of the 22-word `graph_chain` trial put the host's L 1 kHz / R 2 kHz
+tone into the private bridge DMA buffer: 97-99 % of each channel's energy in
+its own tone, crosstalk ~1e-5, and a level that matches stock. Cold values
+show two breaks in the 13-word trial: 8500 -> 8f01 was unwired and its mixer
+gains were 0, and 9009/900a were user-muted (0059/005a = 8000). All restored;
+board at Linux with diagnostics unloaded. See
+[the capture evidence](hdmi-evidence/2026-10-08-linux-graph-chain/attempt2/README.md).
+Next: turn the probe sequence into a real ALSA capture driver.
+
+## Offline follow-up (Claude, 2026-10-08): the missing chain
+
+The zero PCM has a concrete code-level explanation. Stock route 8f carries HDMI
+as 9600 -> 8400 -> 8500 -> 8f01 in2/3 -> 9009/900a -> DTVOUT1. The 13-word
+trial never wired 8400 -> 8500 -> 8f01 (007c/007d/007e, 8102/8103) and never
+set the 8f01 input-2/3 mixer gains (0102/0103). Stock init also leaves 9009/900a
+user-muted (0059/005a bit 15), which only the HAL's runtime unmute clears. See
+[graph-chain evidence](hdmi-evidence/2026-10-08-graph-chain-offline/README.md).
+The probe now has load-time `graph_chain=1` (22 words). It is built and its
+table is checked, but it has not been run. Next trial = the stock-graph recipe
+with `graph_chain=1`, after a physical cold boot. Only this one parameter
+differs from the recorded trial.
+
+Attempt 1 (same day) aborted: the DSP probe's own 100-us completion-clear check
+timed out reading back 0077. Stock allows 50 ms. The probe now keeps the clear
+check but within stock's 50 ms budget (build 8b5c8e64...). See
+[attempt 1](hdmi-evidence/2026-10-08-linux-graph-chain/README.md). The board is at
+Linux, diagnostics unloaded, partial DSP graph present. Cold boot before retrying.
+Host /tmp is not durable: rebuild TVFE/bridge modules (they reproduce bit-exact).
+
 ## Resume recipe and next test
 
 1. Verify current U-Boot prompt over tools/serial/console.py auto (Allwinner CDC

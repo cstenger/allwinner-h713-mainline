@@ -64,6 +64,11 @@ Current board is Linux/MIPS responsive with diagnostics unloaded; a physical
 cold boot is required to clear the remaining volatile DSP patch before another
 DSP trial. Boot artifacts and IR/suspend changes remain preserved.
 
+**2026-10-08 later: capture works on Linux.** The 22-word graph (13 + the
+8500 -> 8f01 edges, the 8f01 mixer gains and the 9009/900a unmute) captured the
+host tone with the channels separated. See
+[graph-chain attempt 2](hdmi-evidence/2026-10-08-linux-graph-chain/attempt2/README.md).
+
 Keep the stop list against PLL reflash experiments and treating audible speaker
 output as a capture baseline. The prohibition on bridge trials until a working
 stock capture exists is now satisfied. Keep all original safety rules.

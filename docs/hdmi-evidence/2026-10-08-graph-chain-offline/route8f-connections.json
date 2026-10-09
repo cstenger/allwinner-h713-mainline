@@ -1,0 +1,314 @@
+{
+ "evidence": "Sound_Path_Init + Sound_Path_Connect(0x8f) SetSourceSelectPort/SetMixer calls, tools/stock/decode-speaker-init.py --route 0x8f; offline emulation, not live readback",
+ "hashes": {
+  "libmspsound.so": "61f349440c08dd28ef1289f463a7934b3213b15518113ff1044f881bf237e8c4",
+  "libmsp_util.so": "e949a32dcf0f3108d364425d1aaa5dea291ba0f09464b4d2ef07a35fe071e447",
+  "libmspdriver.so": "a03e6344ad0f672e5be965fd3008c8c44c74b367868318501a9d2a4798ce88ea"
+ },
+ "connections": [
+  {
+   "phase": "init",
+   "destination": "8f00.0",
+   "source": "9600.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8f00.1",
+   "source": "9600.1"
+  },
+  {
+   "phase": "init",
+   "destination": "8f00.2",
+   "source": "9600.2"
+  },
+  {
+   "phase": "init",
+   "destination": "8f00.3",
+   "source": "9600.3"
+  },
+  {
+   "phase": "init",
+   "destination": "8f00.4",
+   "source": "9600.4"
+  },
+  {
+   "phase": "init",
+   "destination": "8f00.5",
+   "source": "9600.5"
+  },
+  {
+   "phase": "init",
+   "destination": "8f01.0",
+   "source": "9402.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8f01.1",
+   "source": "9402.1"
+  },
+  {
+   "phase": "init",
+   "destination": "8f01.2",
+   "source": "8500.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8f01.3",
+   "source": "8500.1"
+  },
+  {
+   "phase": "init",
+   "destination": "9800.0",
+   "source": "8d01.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9800.1",
+   "source": "8d01.1"
+  },
+  {
+   "phase": "init",
+   "destination": "9500.0",
+   "source": "9009.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9500.1",
+   "source": "900a.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8901.0",
+   "source": "8702.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8901.1",
+   "source": "8703.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9005.0",
+   "source": "8901.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9006.0",
+   "source": "8901.1"
+  },
+  {
+   "phase": "init",
+   "destination": "8d02.0",
+   "source": "9005.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8d02.1",
+   "source": "9006.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8902.0",
+   "source": "8704.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8902.1",
+   "source": "8705.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9007.0",
+   "source": "8902.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9008.0",
+   "source": "8902.1"
+  },
+  {
+   "phase": "init",
+   "destination": "9200.0",
+   "source": "8d03.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9200.1",
+   "source": "8d03.1"
+  },
+  {
+   "phase": "init",
+   "destination": "8d03.0",
+   "source": "9007.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8d03.1",
+   "source": "9008.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9b00.0",
+   "source": "8d02.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9b00.1",
+   "source": "8d02.1"
+  },
+  {
+   "phase": "init",
+   "destination": "8d00.0",
+   "source": "9002.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8d00.1",
+   "source": "9003.0"
+  },
+  {
+   "phase": "init",
+   "destination": "900b.0",
+   "source": "9300.0"
+  },
+  {
+   "phase": "init",
+   "destination": "900c.0",
+   "source": "9300.1"
+  },
+  {
+   "phase": "init",
+   "destination": "8500.0",
+   "source": "8400.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8500.1",
+   "source": "8400.1"
+  },
+  {
+   "phase": "init",
+   "destination": "8500.2",
+   "source": "8400.2"
+  },
+  {
+   "phase": "init",
+   "destination": "8500.3",
+   "source": "8400.3"
+  },
+  {
+   "phase": "init",
+   "destination": "8500.4",
+   "source": "8400.4"
+  },
+  {
+   "phase": "init",
+   "destination": "8500.5",
+   "source": "8400.5"
+  },
+  {
+   "phase": "init",
+   "destination": "8900.0",
+   "source": "8700.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8900.1",
+   "source": "8701.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8b01.0",
+   "source": "8900.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8b01.1",
+   "source": "8900.1"
+  },
+  {
+   "phase": "init",
+   "destination": "8b00.0",
+   "source": "8b01.0"
+  },
+  {
+   "phase": "init",
+   "destination": "8b00.1",
+   "source": "8b01.1"
+  },
+  {
+   "phase": "init",
+   "destination": "9002.0",
+   "source": "8b00.0"
+  },
+  {
+   "phase": "init",
+   "destination": "9003.0",
+   "source": "8b00.1"
+  },
+  {
+   "phase": "connect",
+   "destination": "8400.0",
+   "source": "9600.0"
+  },
+  {
+   "phase": "connect",
+   "destination": "8400.1",
+   "source": "9600.1"
+  },
+  {
+   "phase": "connect",
+   "destination": "8d01.0",
+   "source": "9009.0"
+  },
+  {
+   "phase": "connect",
+   "destination": "8d01.1",
+   "source": "900a.0"
+  },
+  {
+   "phase": "connect",
+   "destination": "900a.0",
+   "source": "8f01.1"
+  },
+  {
+   "phase": "connect",
+   "destination": "9009.0",
+   "source": "8f01.0"
+  }
+ ],
+ "mixer": [
+  {
+   "args": [
+    "8f01",
+    0,
+    0,
+    32
+   ]
+  },
+  {
+   "args": [
+    "8f01",
+    0,
+    2,
+    32
+   ]
+  },
+  {
+   "args": [
+    "8f01",
+    1,
+    1,
+    32
+   ]
+  },
+  {
+   "args": [
+    "8f01",
+    1,
+    3,
+    32
+   ]
+  }
+ ]
+}

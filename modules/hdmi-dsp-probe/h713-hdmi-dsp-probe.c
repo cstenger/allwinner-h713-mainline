@@ -23,6 +23,8 @@ module_param(live_source3, bool, 0400);
 module_param(audio_ready, bool, 0400);
 module_param(lock_window_ready, bool, 0400);
 MODULE_PARM_DESC(lock_window_ready, "Explicit acknowledgement: stock lock window power/clocks checked and exclusive ARM DSP client");
+/* Stock aud_dsp1_read_reg/write_reg give up after 49999 us. */
+#define H713_DSP_WAIT_US 50000
 static unsigned int dsp_word;
 static int dsp_read(unsigned int device, u16 address, u32 *response)
 {
@@ -33,7 +35,7 @@ static int dsp_read(unsigned int device, u16 address, u32 *response)
 	u32 command_offset = device ? 0x18 : 0x10;
 	const char *phase = "busy";
 	int ret;
-	ret = readl_poll_timeout(port, status, !(status & busy_mask), 10, 10000);
+	ret = readl_poll_timeout(port, status, !(status & busy_mask), 10, H713_DSP_WAIT_US);
 	if (ret)
 		goto done;
 	/* Completion is sticky after response reads. A new command must clear
@@ -50,10 +52,22 @@ static int dsp_read(unsigned int device, u16 address, u32 *response)
 	writel(address << 16, port + command_offset);
 	ret = readl_poll_timeout_atomic(port, status, !(status & done_mask), 1, 100);
 	local_irq_restore(flags);
+	/* After a graph write the DSP can take longer than 100 us to accept the
+	 * next command (2026-10-08: timeout reading back 0077). Stock
+	 * aud_dsp1_read_reg allows 50 ms. Keep the stale-response guard: still
+	 * require done to clear first, now within the same 50 ms budget.
+	 */
+	if (ret) {
+		ktime_t start = ktime_get();
+
+		ret = readl_poll_timeout(port, status, !(status & done_mask), 2, H713_DSP_WAIT_US);
+		pr_info("h713-hdmi-dsp-probe: device=%u word=%04x slow completion-clear %lld us ret=%d\n",
+			device, address, ktime_us_delta(ktime_get(), start) + 100, ret);
+	}
 	if (ret)
 		goto done;
 	phase = "completion-set";
-	ret = readl_poll_timeout(port, status, status & done_mask, 10, 10000);
+	ret = readl_poll_timeout(port, status, status & done_mask, 10, H713_DSP_WAIT_US);
 	if (ret)
 		goto done;
 	*response = readl(port + command_offset);
@@ -136,13 +150,13 @@ static bool patch_attempted;
 static int dsp_write(u16 address, u16 value)
 {
 	u32 status;
-	int ret = readl_poll_timeout(port, status, !(status & BIT(4)), 10, 10000);
+	int ret = readl_poll_timeout(port, status, !(status & BIT(4)), 10, H713_DSP_WAIT_US);
 	if (ret)
 		return ret;
 	writel(((u32)address << 16) | value, port + 0xc);
 	/* Vendor patch loop sleeps one millisecond after every pair. */
 	usleep_range(1000, 1100);
-	return readl_poll_timeout(port, status, !(status & BIT(4)), 10, 10000);
+	return readl_poll_timeout(port, status, !(status & BIT(4)), 10, H713_DSP_WAIT_US);
 }
 
 static bool capture_route;
@@ -258,14 +272,36 @@ static const struct graph_setting graph_settings[] = {
  { 0x0017, 0xff00, 0x2000 },
  { 0x801a, 0x0002, 0x0000 },
  { 0x8017, 0x0001, 0x0000 },
+ /* graph_chain only, from tools/stock/decode-graph-edges.py and
+  * decode-path-unmute.py: the route 8f data path is
+  * 9600 -> 8400 -> 8500 -> 8f01 in2/3 -> 9009/900a -> DTVOUT1. The 13 words
+  * above leave 8400 -> 8500 -> 8f01 unwired and its mixer gains unset.
+  */
+ { 0x007c, 0xffff, 0x8081 },	/* 8500.0/1 <- 8400.0/1 */
+ { 0x007d, 0xffff, 0x8283 },	/* 8500.2/3 <- 8400.2/3 */
+ { 0x007e, 0xffff, 0x8485 },	/* 8500.4/5 <- 8400.4/5 */
+ { 0x8102, 0x00ff, 0x0086 },	/* 8f01.2 <- 8500.0 */
+ { 0x8103, 0x00ff, 0x0087 },	/* 8f01.3 <- 8500.1 */
+ { 0x0102, 0xff00, 0x2000 },	/* mixer 8f01 out0 <- in2 gain 0x20 */
+ { 0x0103, 0x00ff, 0x0020 },	/* mixer 8f01 out1 <- in3 gain 0x20 */
+ /* HAL Check_Sound_Unmute(path 8f): clear user mute and 0 dB on 9009/900a. */
+ { 0x0059, 0xffc0, 0x0000 },
+ { 0x005a, 0xffc0, 0x0000 },
 };
+#define GRAPH_BASE_COUNT 13
+static_assert(ARRAY_SIZE(graph_settings) == GRAPH_BASE_COUNT + 9);
 static u16 graph_saved[ARRAY_SIZE(graph_settings)];
+static bool graph_chain;
+module_param(graph_chain, bool, 0400);
+MODULE_PARM_DESC(graph_chain,
+ "Load-time: stock_graph also wires 8400->8500->8f01, sets its mixer gains and unmutes 9009/900a (22 words)");
 static int set_stock_graph(const char *value, const struct kernel_param *kp)
 {
  bool next, claimed = false;
  u32 version0, version1, word;
  unsigned int i, index;
  u16 expected;
+ const unsigned int count = graph_chain ? ARRAY_SIZE(graph_settings) : GRAPH_BASE_COUNT;
  int ret = kstrtobool(value, &next);
  if (ret)
   return ret;
@@ -289,15 +325,15 @@ static int set_stock_graph(const char *value, const struct kernel_param *kp)
    ret = -ENODEV;
    goto release;
   }
-  for (i = 0; i < ARRAY_SIZE(graph_settings); i++) {
+  for (i = 0; i < count; i++) {
    ret = dsp_read(0, graph_settings[i].address, &word);
    if (ret)
     goto release;
    graph_saved[i] = word & 0xffff;
   }
  }
- for (i = 0; i < ARRAY_SIZE(graph_settings); i++) {
-  index = next ? i : ARRAY_SIZE(graph_settings) - 1 - i;
+ for (i = 0; i < count; i++) {
+  index = next ? i : count - 1 - i;
   expected = next ? (graph_saved[index] & ~graph_settings[index].mask) |
                     graph_settings[index].value : graph_saved[index];
   ret = dsp_write(graph_settings[index].address, expected);
@@ -315,7 +351,8 @@ static int set_stock_graph(const char *value, const struct kernel_param *kp)
           graph_settings[index].mask, !next);
  }
  stock_graph = next;
- pr_info("h713-hdmi-dsp-probe: fixed stock graph comparison=%u verified\n", next);
+ pr_info("h713-hdmi-dsp-probe: fixed stock graph comparison=%u words=%u verified\n",
+         next, count);
  goto release;
 stop:
  failed = true;
@@ -339,7 +376,7 @@ static const struct kernel_param_ops graph_ops = {
 };
 module_param_cb(stock_graph, &graph_ops, &stock_graph, 0600);
 MODULE_PARM_DESC(stock_graph,
- "Fixed stock 8f graph comparison; explicit0 restores 13 saved words; never at insmod");
+ "Fixed stock 8f graph comparison; explicit0 restores the 13 (22 with graph_chain) saved words; never at insmod");
 
 static int stock_mask(u16 address, u16 mask, u16 value)
 {

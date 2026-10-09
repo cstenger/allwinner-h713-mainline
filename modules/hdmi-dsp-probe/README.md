@@ -80,3 +80,10 @@ The bounded trial produced bridge interrupts and zero-filled DMA, without
 HDMI tones. No claim of complete capture or receiver audio readiness follows.
 See ../../docs/hdmi-evidence/2026-10-08-linux-stock-graph/README.md.
 Restore before removing audio clocks/holds; physical cold boot clears patch.
+
+Load-time `graph_chain=1` extends `stock_graph` to 22 words. The extra nine
+wire 8400 -> 8500 -> 8f01 inputs 2/3, set those mixer gains, and clear the
+9009/900a user mute that stock init leaves set. They come from
+`tools/stock/decode-graph-edges.py` and `decode-path-unmute.py`. Same
+save/verify/restore rules apply. See
+../../docs/hdmi-evidence/2026-10-08-graph-chain-offline/README.md.
