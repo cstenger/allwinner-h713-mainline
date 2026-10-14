@@ -216,3 +216,70 @@ python3 tools/hdmi/run-alsa-physical-reconnect-test.py /tmp/h713-physical-return
   --recorder /tmp/h713-linux-return/arecord
 python3 tools/hdmi/test-alsa-rate-transition-analysis.py
 ```
+
+## Guarded runtime service
+
+`tools/hdmi/boot-managed-audio.py OUTPUT --cold-boot-confirmed` coordinates the
+proven cold-U-Boot source3 launch, RAM-only FDT IRQ correction and Linux boot,
+then stages the target session and a runtime-only systemd unit. It requires a
+physical cold cycle with autoboot stopped. It never flashes or saves boot
+environment. The existing FIT and matching modules must already be built.
+
+The host binds its cold/source3 proof to the resulting Linux boot ID. The
+session checks firmware size/hash, kernel/module ABI, source trace guards and
+receiver ownership before loading managed audio. Healthy repeated starts are
+read-only; stop or failed initialization latches out another initialization
+on that boot. No retry may bypass a DSP timeout or this latch.
+
+Close capture clients before `systemctl stop h713-hdmi-capture.service`.
+Consumers should order themselves `After=h713-hdmi-capture.service` so they
+stop first. Stop verifies all22 DSP graph words and15 TVFE clock words/bus,
+restores the previous WirePlumber state and retains the live receiver owner.
+Normal service stop retains firmware-owned power holds. The separate explicit
+`h713-hdmi-session.py park --terminal-shutdown` handoff passed on a cold
+`--park-capable` boot after verified audio stop. Actual system poweroff and
+suspend integration remain unvalidated; the unit is staged
+under `/run/systemd/system`, with no persistent enablement.
+
+See [lifecycle evidence](../../docs/hdmi-evidence/2026-10-14-managed-lifecycle/README.md).
+
+## Automatic shutdown ordering (hardware validated)
+
+A parking-capable cold boot now stages `h713-hdmi-capture-shutdown.conf` as a
+runtime drop-in. It replaces ExecStop with `shutdown --terminal-shutdown`,
+which restores/verifies audio before terminal parking and receiver release.
+This also makes a manual stop of that service terminal for the current boot;
+its warm restart remains deliberately refused. Capture-only boots do not
+install the drop-in and retain their receiver holds on stop.
+
+Managed recorder services must specify both:
+
+```ini
+[Unit]
+Requires=h713-hdmi-capture.service
+After=h713-hdmi-capture.service
+```
+
+The consumer then closes first when the backend is stopped. The backend stops
+before user@1000.service, preserving WirePlumber access during restoration;
+explicit mount dependencies keep its /tmp bundle and /run state available.
+Busy clients and restoration failures prevent parking. Failure is logged and
+holds are retained; an ExecStop failure does not cancel the system shutdown.
+The existing late lamp/fan poweroff hook is unchanged. Suspend is not wired
+into this terminal operation.
+
+Twenty-four native Python tests, a target systemd ordering fixture and a fresh
+hardware transaction pass. Stopping only the backend closed a real recorder
+first, then automatically restored22 DSP/15 TVFE words, parked MIPS and removed
+the receiver. Repeated shutdown is harmless. Full-system poweroff, suspend and
+persistent installation remain separate validation.
+See [shutdown integration evidence](../../docs/hdmi-evidence/2026-10-14-shutdown-ordering/README.md).
+
+
+Full OS poweroff subsequently passed from the verified parked/unloaded state:
+normal systemctl poweroff reached `reboot: Power down`, no reboot appeared for
+90seconds and the operator confirmed lamp/fan off. The original late poweroff
+hook was unchanged. This is separate from a single poweroff transaction with
+an actively recording consumer. Main-rail cutoff, persistent installation and
+suspend remain outside the validated scope. See
+[poweroff evidence](../../docs/hdmi-evidence/2026-10-14-full-poweroff/README.md).

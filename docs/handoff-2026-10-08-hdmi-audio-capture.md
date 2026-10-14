@@ -5,6 +5,128 @@ Start here, then read [the updated plan](hdmi-audio-capture-plan.md),
 [Linux direct-route evidence](hdmi-evidence/2026-10-08-linux-direct-capture/README.md).
 Older October 7 notes are historical and contain superseded hypotheses.
 
+## Latest: full OS poweroff from verified parked state passed
+
+One normal `systemctl poweroff` completed from the previous validated terminal
+state (boot f23247eb-1346-40ed-bc66-de720a4b7fb8, MIPS parked, audio/receiver
+unloaded). Serial showed filesystem unmount/sync, display fetch quiesce and
+`reboot: Power down`. A bounded serial watch observed no reboot for90 seconds.
+The operator confirmed both lamp and fan off and the board stayed off.
+See [poweroff evidence](hdmi-evidence/2026-10-14-full-poweroff/README.md).
+
+The existing h713-off lamp/fan hook was used unchanged; no force, reboot,
+GPIO experiment or persistent configuration change occurred. Serial capture
+closed automatically. A Bluetooth HCI shutdown timeout appeared but did not
+prevent poweroff. **Current board: OS off, lamp/fan off.** Physical cold cycle
+is required before further firmware/DSP work. The SoC's known SYSTEM_OFF/main-
+rail limitation remains: this validates OS halt and lamp/fan-off, not rail cut.
+The combined live-recorder service stop passed earlier; poweroff from an active
+HDMI recorder in the same single transaction has not been tested. Persistent
+startup installation and suspend remain separate work.
+
+## Latest: integrated automatic shutdown ordering passed on hardware
+
+On a fresh parking-capable cold boot, the runtime capture service's combined
+ExecStop passed with a real recording consumer(PID869). Stopping only the
+backend caused systemd to stop its Requires/After consumer first, then verify
+all22 DSP/15 TVFE restoration words, park MIPS and release/unload the receiver.
+The journal verifies ordering and successful deactivation; no separate park
+command was issued. Repeated combined shutdown was harmless.
+
+Twenty-four Python guard tests and the target ordering fixture also pass.
+See [shutdown evidence](hdmi-evidence/2026-10-14-shutdown-ordering/README.md).
+Existing key/standby/hotspot and late lamp/fan poweroff hook configuration is
+unchanged. This validates the service stop transaction, not a full-machine
+poweroff/halt. Persistent installation and suspend remain unvalidated.
+
+**Current board:** Linux responsive, MIPS parked/status0, module/bus MIPS gates
+off, TVFE off and TVCAP still on under keep-tvcap-on. Audio/receiver/recording
+and runtime units/drop-ins are removed. WirePlumber active, firmware path
+restored; no signal helpers/listener. Physical cold cycle is required before
+any new firmware/DSP initialization. No boot image/environment was modified.
+
+## Latest: shutdown ordering implemented; fresh hardware transaction pending
+
+Parking-capable cold boots now install a runtime-only ExecStop override for
+`shutdown --terminal-shutdown`: verified audio restoration precedes parking
+and receiver release. Capture consumers require/order after the backend; it
+stops before the user manager and retains its bundle/state mounts until done.
+Capture-only boots retain their original stop behavior. Existing key, standby,
+hotspot and late lamp/fan poweroff hook configuration is unchanged.
+
+Twenty-four Python guard tests pass. Target systemd unit verification and an
+ordering fixture passed (consumer closes before backend, user manager active),
+and the new shutdown CLI is harmless on the parked board. Runtime fixtures
+were removed. See [shutdown evidence](hdmi-evidence/2026-10-14-shutdown-ordering/README.md).
+Current board remains parked with audio/receiver unloaded. A physical cold
+cycle is required before testing the combined ExecStop with a real ordered
+recorder. Full system poweroff, persistent installation and suspend remain
+unvalidated. No forced parking, warm initialization or GPIO action occurred.
+
+## Latest: terminal MIPS parking and receiver release passed
+
+The parking-capable cold coordinator, hardware live-client parking rejection,
+three-rate capture (48/32/44.1kHz input, fixed48kHz output, zero XRUNs), full22
+DSP/15 TVFE restoration and explicit terminal parking/owner removal passed.
+All three CCU resets verified and MIPS hardware status reached0. MIPS clocks
+are disabled, TVFE off and owner domain consumers removed. TVCAP stays on
+under the existing keep-tvcap-on policy. Linux remained responsive.
+
+An initial capture attempt saw no HDMI connection/ELD; reseating the cable
+restored source detection and all passing captures used the same DSP load.
+Twenty Python guard tests and the native policy matrix pass. Repeated stop
+preserves the terminal latch; warm start/repeat park refuse without hardware
+changes. See [parking evidence](hdmi-evidence/2026-10-14-parked-handoff/README.md).
+
+**Current board:** Linux running, MIPS parked, audio/receiver modules and
+runtime unit removed, no capture/player/signal helper/listener. WirePlumber
+active and firmware path restored. A physical cold cycle is required before
+any new firmware/DSP initialization. No persistent boot environment or image
+was modified. System poweroff ordering, suspend, TVCAP power-off and persistent
+startup integration remain unvalidated. Preserve existing IR/poweroff work.
+
+## Latest: uninterrupted cold coordinator passed; parking candidate ready
+
+The corrected coordinator completed cold parked MIPS to source3 to Linux to
+runtime audio service without a guard stop or resume. Full22 DSP/15 TVFE
+restoration, idempotent stop and warm-restart refusal passed afterward.
+Current board audio is unloaded, runtime unit removed, receiver retained and
+MIPS responsive. See [parking candidate evidence](hdmi-evidence/2026-10-14-parked-handoff/README.md).
+
+New optional owner-locked terminal parking uses exclusive CCU reset handles
+and MIPS clock holds from a volatile DT consumer. The exact-kernel W=1 build,
+20 Python guard tests and native policy matrix pass; hardware parking is still
+unvalidated. The target session requires persisted verified audio restoration
+before parking. Next boot must use `--park-capable` to load the candidate owner
+and its RAM consumer together. Do not upgrade the current live pinned owner.
+A physical cold cycle is required. No persistent installation/poweroff/suspend
+integration has been added, and no raw Linux reset writes were attempted.
+
+## Latest: guarded runtime startup/stop passed (2026-10-14)
+
+The new cold-U-Boot host coordinator stages a boot-ID-bound target session
+and runtime-only systemd unit. Receiver/DSP/audio startup, healthy duplicate
+start, busy-stop refusal, three-rate capture (48/32/44.1kHz input, fixed48kHz
+output, zero XRUNs), full22-word DSP/15-word TVFE restoration, idempotent stop
+and warm-restart refusal passed. Sixteen native guard tests passed.
+
+The initial FDT guard exposed a hexadecimal-size assumption (`8319` means
+0x8319 bytes). It stopped before Linux. After correcting the constant, a
+verified source3 resume completed RAM boot without relaunching MIPS; this is
+not an uninterrupted hardware run of the corrected cold coordinator.
+See [lifecycle evidence](hdmi-evidence/2026-10-14-managed-lifecycle/README.md).
+
+**Current board:** audio unloaded, receiver clients0/pinY/EDIDY/clocks4 and
+both domains active; MIPS responsive, WirePlumber active, empty firmware path
+restored. Runtime unit removed; no capture/player/transient helper/listener.
+Physical cold boot is required for another managed audio initialization.
+No persistent boot artifact/environment or service enablement was changed.
+
+Actual MIPS parking, parked receiver release, system poweroff with consumers
+and suspend remain unvalidated. Close capture clients before service stop.
+Next: validate safe MIPS parking/receiver handoff before persistent startup
+or integrating system shutdown. Preserve existing IR/suspend/poweroff work.
+
 ## Current recovery result (2026-10-14, after checkpoint8244151)
 
 **Same-open recovery passed:** source48->32->44.1->48kHz changes used one

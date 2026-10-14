@@ -265,6 +265,35 @@ void h713_receiver_release(void)
 }
 EXPORT_SYMBOL_GPL(h713_receiver_release);
 
+static int park_for_shutdown(const char *value, const struct kernel_param *kp)
+{
+ bool next;
+ int ret = kstrtobool(value, &next);
+
+ if (ret)
+  return ret;
+ if (!next || !mips_status)
+  return -EINVAL;
+ mutex_lock(&owner_lock);
+ if (!firmware_pin || !h713_receiver_park_allowed(readl(mips_status), clients,
+        h713_receiver_shutdown_ready, accepting_clients, init_error)) {
+  ret = -EBUSY;
+  goto out;
+ }
+ /* Serialize against audio acquisition and parked resource release. */
+ accepting_clients = false;
+ ret = h713_receiver_park_commit(mips_status);
+ if (ret)
+  init_error = ret; /* Retain all receiver holds and block new audio clients. */
+out:
+ mutex_unlock(&owner_lock);
+ return ret;
+}
+static const struct kernel_param_ops park_ops = { .set = park_for_shutdown };
+module_param_cb(park_for_shutdown, &park_ops, NULL, 0200);
+MODULE_PARM_DESC(park_for_shutdown,
+ "Terminal opt-in bench parking, only with shutdown DT consumer and no audio clients; never restarts MIPS");
+
 static int release_parked(const char *value, const struct kernel_param *kp)
 {
 	bool next;
@@ -274,7 +303,7 @@ static int release_parked(const char *value, const struct kernel_param *kp)
 	if (!next || !mips_status)
 		return -EINVAL;
 	mutex_lock(&owner_lock);
-	if (!firmware_pin ||
+	if (!firmware_pin || h713_receiver_park_incomplete() ||
 	    !h713_receiver_release_allowed(readl(mips_status), clients)) {
 		ret = -EBUSY;
 		goto out;
@@ -313,7 +342,9 @@ static int __init h713_receiver_init(void)
 	}
 	__module_get(THIS_MODULE);
 	firmware_pin = true;
-	init_error = initialize_resources();
+	init_error = h713_receiver_park_prepare();
+	if (!init_error)
+		init_error = initialize_resources();
 	if (!init_error)
 		accepting_clients = true;
 	else
@@ -325,6 +356,7 @@ static void __exit h713_receiver_exit(void)
 {
 	/* Reached only after the parked-only interface dropped the firmware pin. */
 	release_resources();
+	h713_receiver_park_cleanup();
 	if (mips_status)
 		iounmap(mips_status);
 }

@@ -1,0 +1,15 @@
+[Unit]
+Description=Guarded H713 HDMI capture session
+After=systemd-modules-load.service user@1000.service
+Before=shutdown.target
+RequiresMountsFor=/tmp/h713-linux-return /run/h713-hdmi-session
+ConditionPathExists=/tmp/h713-linux-return/h713-hdmi-session.py
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /tmp/h713-linux-return/h713-hdmi-session.py start
+ExecStop=/usr/bin/python3 /tmp/h713-linux-return/h713-hdmi-session.py stop
+Restart=no
+TimeoutStartSec=60
+TimeoutStopSec=30

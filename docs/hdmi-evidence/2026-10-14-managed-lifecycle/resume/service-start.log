@@ -1,0 +1,42 @@
+active
+{"boot_id": "f3f32838-4782-42fd-8edd-2a0360ddf266", "state": {"boot_id": "f3f32838-4782-42fd-8edd-2a0360ddf266", "phase": "ready"}, "audio_loaded": true, "receiver_loaded": true}
+[   11.442042] Bluetooth: MGMT ver 1.23
+[   11.754015] systemd-journald[109]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   11.780132] systemd-journald[109]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[   11.811183] systemd-journald[109]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   27.567576] h713-hdmi-receiver: domain 1 power event 2
+[   27.574191] h713-hdmi-receiver: domain 1 power event 3
+[   27.581184] h713-hdmi-receiver: domain 1 resumed
+[   27.586978] h713-hdmi-receiver: domain 2 resumed
+[   27.592953] h713-hdmi-receiver: 2 domains and 0 receiver clocks held on; no receiver MMIO
+[   27.605057] h713-hdmi-receiver: enabled clock 0 (bus-tvcap)
+[   29.411394] h713-hdmi-receiver: enabled clock 1 (bus-cap-300m)
+[   31.184411] h713-hdmi-receiver: enabled clock 2 (vincap-dma)
+[   32.957474] h713-hdmi-receiver: enabled clock 3 (tvfe-1296m)
+[   32.966667] h713-receiver-edid h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[   36.549845] h713-hdmi-audio: TVFE: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[   36.560940] h713-hdmi-audio: TVFE: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[   36.585950] h713-hdmi-audio: TVFE: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[   36.598398] h713-hdmi-audio: clock=bus-hdmi-audio inherited_on=1 enabled_by_driver=0 rate=100000000
+[   36.608534] h713-hdmi-audio: clock=hdmi-audio inherited_on=1 enabled_by_driver=0 rate=1152000000
+[   36.618404] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000
+[   36.628108] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[   36.637897] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[   36.647794] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[   36.656452] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   36.666327] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[   36.674892] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[   36.686939] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[   36.696386] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   36.710366] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[   36.719072] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   36.730197] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   36.744052] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   36.752591] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   36.764720] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   36.775109] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   36.785225] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   36.797193] h713-hdmi-audio: DSP versions 0000/0000
+[   37.717878] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[   37.753309] h713-hdmi-audio: managed DSP graph verified 22 words
+[   37.764448] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically

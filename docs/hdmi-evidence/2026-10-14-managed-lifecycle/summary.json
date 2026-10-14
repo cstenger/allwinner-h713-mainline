@@ -1,0 +1,38 @@
+{
+  "pass": true,
+  "boot": "cold launch, FDT size guard corrected, guarded RAM resume without relaunch",
+  "runtime_service_start": true,
+  "target_unit_verify": true,
+  "idempotent_start_no_dmesg_change": true,
+  "busy_stop_refused": true,
+  "captures": [
+    {
+      "input_rate_hz": 48000,
+      "capture_seconds": 16,
+      "pass": true,
+      "new_xruns": 0
+    },
+    {
+      "input_rate_hz": 32000,
+      "capture_seconds": 16,
+      "pass": true,
+      "new_xruns": 0
+    },
+    {
+      "input_rate_hz": 44100,
+      "capture_seconds": 16,
+      "pass": true,
+      "new_xruns": 0
+    }
+  ],
+  "dsp_restored_words": 22,
+  "tvfe_restored_words": 15,
+  "idempotent_stop": true,
+  "warm_restart_refused_without_dmesg_change": true,
+  "runtime_unit_removed": true,
+  "receiver_retained": true,
+  "wireplumber_active": true,
+  "firmware_path_restored": true,
+  "native_tests": 16,
+  "parked_shutdown_validated": false
+}

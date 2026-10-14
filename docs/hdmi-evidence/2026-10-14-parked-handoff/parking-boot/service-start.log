@@ -1,0 +1,42 @@
+active
+{"boot_id": "d7295e5f-3f18-4b90-b48e-036375a71b9f", "state": {"boot_id": "d7295e5f-3f18-4b90-b48e-036375a71b9f", "phase": "ready"}, "audio_loaded": true, "receiver_loaded": true}
+[   11.524185] systemd-journald[108]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   11.552995] systemd-journald[108]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[   11.583137] systemd-journald[108]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   27.017776] h713-hdmi-receiver: terminal parking prepared; 3 exclusive resets and 2 MIPS clock holds, no reset writes
+[   27.030867] h713-hdmi-receiver: domain 1 power event 2
+[   27.038559] h713-hdmi-receiver: domain 1 power event 3
+[   27.046200] h713-hdmi-receiver: domain 1 resumed
+[   27.052735] h713-hdmi-receiver: domain 2 resumed
+[   27.059181] h713-hdmi-receiver: 2 domains and 0 receiver clocks held on; no receiver MMIO
+[   27.072818] h713-hdmi-receiver: enabled clock 0 (bus-tvcap)
+[   28.846432] h713-hdmi-receiver: enabled clock 1 (bus-cap-300m)
+[   30.635277] h713-hdmi-receiver: enabled clock 2 (vincap-dma)
+[   32.424953] h713-hdmi-receiver: enabled clock 3 (tvfe-1296m)
+[   32.432430] h713-receiver-edid h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[   36.009995] h713-hdmi-audio: TVFE: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[   36.021104] h713-hdmi-audio: TVFE: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[   36.046995] h713-hdmi-audio: TVFE: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[   36.059086] h713-hdmi-audio: clock=bus-hdmi-audio inherited_on=1 enabled_by_driver=0 rate=100000000
+[   36.069245] h713-hdmi-audio: clock=hdmi-audio inherited_on=1 enabled_by_driver=0 rate=1152000000
+[   36.079141] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000
+[   36.088847] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[   36.098643] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[   36.108533] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[   36.117218] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   36.127107] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[   36.135652] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[   36.147692] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[   36.157212] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   36.171232] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[   36.179952] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   36.191099] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   36.205009] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   36.213573] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   36.225928] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   36.236374] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   36.246499] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   36.258512] h713-hdmi-audio: DSP versions 0000/0000
+[   37.179283] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[   37.214764] h713-hdmi-audio: managed DSP graph verified 22 words
+[   37.227191] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically
