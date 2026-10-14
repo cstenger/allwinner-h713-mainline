@@ -1,0 +1,19 @@
+1
+Y
+PASS: audio client holds receiver; live release rejected
+bash: line 1: echo: write error: Device or resource busy
+Module                  Size  Used by
+h713_hdmi_audio        28672  1
+h713_hdmi_receiver     12288  3
+hci_uart               28672  1
+hy310_cpu_comm         98304  0
+hantro_vpu            196608  0
+sunxi_scanout_dmabuf    12288  0
+uinput                 20480  0
+sunxi_cedrus           81920  0
+v4l2_h264              16384  1 hantro_vpu
+[  136.733011] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[  136.745008] h713-hdmi-audio: DSP versions 0000/0000
+[  137.666014] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[  137.699896] h713-hdmi-audio: managed DSP graph verified 22 words
+[  137.710902] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically

@@ -1,0 +1,33 @@
+60a2059069cc6f6494c61a8be1b5f10a8b311e0e32eedcd50685e0fcfeaf0d2b  /tmp/h713-linux-return/h713-hdmi-dsp-probe.ko
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win
+command help of win
+for window debug only
+
+VS:/$ 
+[   85.824009] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000
+[   85.833723] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[   85.843514] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[   85.853332] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[   85.862008] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   85.871890] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[   85.880439] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[   85.892471] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[   85.901464] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   85.915458] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[   85.924172] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   85.935301] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   85.949161] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   85.957720] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   85.969926] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   85.980358] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   85.990473] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   86.006997] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph must be prepared before recording
+[   86.039143] h713-hdmi-dsp-probe: status=00000000; stock lock mapped; no command issued
+[   86.049659] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000000
+[   86.058237] h713-hdmi-dsp-probe: device=0 word=80ff value=0000 response=00000000 status=00000020
+[   86.068204] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[   86.075610] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[   86.084063] h713-hdmi-dsp-probe: device=1 word=80ff value=0000 response=00000000 status=00000120
+[   86.094054] h713-hdmi-dsp-probe: stock DSP lock released ret=0

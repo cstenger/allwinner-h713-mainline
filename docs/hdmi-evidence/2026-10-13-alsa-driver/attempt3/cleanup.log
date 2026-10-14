@@ -1,0 +1,41 @@
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win
+command help of win
+for window debug only
+
+VS:/$ 
+[  570.610157] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  570.618439] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  570.628843] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  570.637116] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  570.647517] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  570.655743] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  570.666103] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  570.674314] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  570.684681] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  570.692912] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  570.703263] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  570.711450] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  570.721790] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  570.729969] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  570.739155] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  570.747556] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  587.489343] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[  587.498552] h713-hdmi-audio: restored Audio Bridge output stream 0
+[  587.506122] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[  587.513937] h713-hdmi-audio: restored audio-IHB clock=81000002
+[  587.520735] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+[  587.556016] h713-hdmi-tvfe-hold: saved TVFE clock/reset state restored
+Module                  Size  Used by
+h713_edid_clock        12288  0
+h713_hdmi_power        12288  0
+hci_uart               28672  1
+hy310_cpu_comm         98304  0
+sunxi_scanout_dmabuf    12288  0
+hantro_vpu            196608  0
+uinput                 20480  0
+v4l2_h264              16384  1 hantro_vpu
+sunxi_cedrus           81920  0
+v4l2_jpeg              12288  1 hantro_vpu
+panfrost               77824  0

@@ -1,0 +1,37 @@
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win
+command help of win
+for window debug only
+
+VS:/$ 
+[  135.123938] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[  135.132350] h713-hdmi-dsp-probe: device=1 word=80ff value=0000 response=00000000 status=00000120
+[  135.142299] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  152.183264] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  152.191889] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  152.200408] h713-hdmi-dsp-probe: beginning fixed stock init/724-pair volatile patch; physical cold boot required for teardown
+[  152.213038] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  152.222712] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  152.281174] h713-hdmi-dsp-probe: device=0 word=00ee slow completion-clear 50100 us ret=-110
+[  152.290645] h713-hdmi-dsp-probe: device=0 word=00ee phase=completion-clear timeout status=00000120; cold boot required
+[  152.302457] h713-hdmi-dsp-probe: stock-patch stopped phase=clock-init pair=0 error=-110; cold boot required
+[  152.313346] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  220.572230] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[  220.580672] h713-hdmi-audio: restored Audio Bridge output stream 0
+[  220.588300] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[  220.596250] h713-hdmi-audio: restored audio-IHB clock=81000002
+[  220.603185] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+[  220.636605] h713-hdmi-tvfe-hold: saved TVFE clock/reset state restored
+Module                  Size  Used by
+h713_edid_clock        12288  0
+h713_hdmi_power        12288  0
+hci_uart               28672  1
+hy310_cpu_comm         98304  0
+sunxi_scanout_dmabuf    12288  0
+hantro_vpu            196608  0
+panfrost               77824  0
+uinput                 20480  0
+sunxi_cedrus           81920  0
+v4l2_h264              16384  1 hantro_vpu
+v4l2_jpeg              12288  1 hantro_vpu

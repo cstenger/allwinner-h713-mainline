@@ -1,0 +1,160 @@
+{
+  "pass": true,
+  "trials": [
+    {
+      "input_rate_hz": 48000,
+      "pass": true,
+      "playback_returncode": 0,
+      "capture_returncode": 0,
+      "signal_returncode": 0,
+      "analysis": {
+        "tone_windows": [
+          {
+            "channels": [
+              {
+                "rms": 4434.03189260587,
+                "peak": 6270.0,
+                "dc": -0.46539306640625,
+                "inferred_capture_hz": 47998.735225940814,
+                "candidates": {
+                  "32000": {
+                    "tone_fraction": 1.8373991462130612e-11,
+                    "opposite_fraction": 3.3341622942105306e-10
+                  },
+                  "44100": {
+                    "tone_fraction": 3.772370562483366e-09,
+                    "opposite_fraction": 9.825071898216358e-12
+                  },
+                  "48000": {
+                    "tone_fraction": 0.9999997921330885,
+                    "opposite_fraction": 6.296201799565386e-12
+                  }
+                }
+              },
+              {
+                "rms": 4436.8514348748895,
+                "peak": 6267.0,
+                "dc": -0.6636962890625,
+                "inferred_capture_hz": 48001.99281352356,
+                "candidates": {
+                  "32000": {
+                    "tone_fraction": 1.337491695033837e-11,
+                    "opposite_fraction": 1.7373608958911554e-11
+                  },
+                  "44100": {
+                    "tone_fraction": 5.277804361675735e-11,
+                    "opposite_fraction": 1.0816228743379129e-11
+                  },
+                  "48000": {
+                    "tone_fraction": 0.9999997771479148,
+                    "opposite_fraction": 3.6342213316721937e-12
+                  }
+                }
+              }
+            ],
+            "capture_rate_hz": 48000,
+            "tone_pass": true,
+            "silence_pass": false
+          },
+          {
+            "channels": [
+              {
+                "rms": 4434.150192463184,
+                "peak": 6267.0,
+                "dc": 0.7139892578125,
+                "inferred_capture_hz": 47998.679269784436,
+                "candidates": {
+                  "32000": {
+                    "tone_fraction": 1.5982182174240755e-11,
+                    "opposite_fraction": 3.3669743625618665e-10
+                  },
+                  "44100": {
+                    "tone_fraction": 3.758318388549817e-09,
+                    "opposite_fraction": 5.582641041635758e-12
+                  },
+                  "48000": {
+                    "tone_fraction": 0.9999996534257286,
+                    "opposite_fraction": 5.323730432242108e-12
+                  }
+                }
+              },
+              {
+                "rms": 4436.646232802876,
+                "peak": 6253.0,
+                "dc": -1.8402099609375,
+                "inferred_capture_hz": 48001.937741808164,
+                "candidates": {
+                  "32000": {
+                    "tone_fraction": 1.0211159479395262e-11,
+                    "opposite_fraction": 2.735182051161604e-11
+                  },
+                  "44100": {
+                    "tone_fraction": 5.606643374631978e-11,
+                    "opposite_fraction": 3.585514390821347e-11
+                  },
+                  "48000": {
+                    "tone_fraction": 0.9999996394896657,
+                    "opposite_fraction": 3.767245748435403e-12
+                  }
+                }
+              }
+            ],
+            "capture_rate_hz": 48000,
+            "tone_pass": true,
+            "silence_pass": false
+          },
+          {
+            "channels": [
+              {
+                "rms": 4434.42534695476,
+                "peak": 6272.0,
+                "dc": 1.75244140625,
+                "inferred_capture_hz": 47998.62814298902,
+                "candidates": {
+                  "32000": {
+                    "tone_fraction": 2.3078147576377618e-11,
+                    "opposite_fraction": 3.5089031934165025e-10
+                  },
+                  "44100": {
+                    "tone_fraction": 3.835346274888816e-09,
+                    "opposite_fraction": 7.142705375858997e-12
+                  },
+                  "48000": {
+                    "tone_fraction": 0.9999993406885332,
+                    "opposite_fraction": 9.197416462064337e-12
+                  }
+                }
+              },
+              {
+                "rms": 4436.276469697124,
+                "peak": 6275.0,
+                "dc": -2.68438720703125,
+                "inferred_capture_hz": 48001.887208503955,
+                "candidates": {
+                  "32000": {
+                    "tone_fraction": 2.259487008412979e-11,
+                    "opposite_fraction": 9.422296230929867e-12
+                  },
+                  "44100": {
+                    "tone_fraction": 3.563463241141868e-11,
+                    "opposite_fraction": 1.0038615418363085e-11
+                  },
+                  "48000": {
+                    "tone_fraction": 0.9999993978135984,
+                    "opposite_fraction": 1.1495143912150452e-11
+                  }
+                }
+              }
+            ],
+            "capture_rate_hz": 48000,
+            "tone_pass": true,
+            "silence_pass": false
+          }
+        ],
+        "final_second_all_zero": true,
+        "pass": true
+      },
+      "expected_reader_overrun": true
+    }
+  ]
+}

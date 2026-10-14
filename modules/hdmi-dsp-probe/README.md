@@ -1,89 +1,88 @@
-# Bounded DSP logical read and fixed route diagnostic
+# Bounded H713 DSP diagnostic
 
-Current protocol: peer05001530, own05001534, claim55/recheckpeer/releaseaa;
-lock_window_ready=1 required. Never write peer ownership. The original
-first-trial description below is historical; do not use its original lock
-addresses or idle-value restoration as instructions. See h713-dsp-lock.h and
-the October8 handoff for the corrected, validated protocol.
+Current protocol,2026-10-13: stock busy-clear/request/done-set completion is
+now the default. The previous extra clear-edge requirement intermittently
+rejected completed reads; the new default passed24 full graph apply/restore
+cycles and three real ALSA captures, with cleanup. See
+[completion evidence](../../docs/hdmi-evidence/2026-10-13-dsp-completion/attempt3/README.md).
+This remains a diagnostic helper. The ALSA driver now manages DSP state by
+default; load this helper only for explicit external-helper diagnostics. Both
+modules now reserve the DSP command/ownership resources and exclude each other.
 
-Not a production driver. Never autoload. Build against the exact running
-kernel; it does not acquire audio clocks itself.
+## Prerequisites and ownership
 
-Before loading, verify the guarded cold U-Boot source-3 transition, live MIPS,
-TVFE/TVCAP holds, four receiver clocks, the stock-order TVFE hold, and the audio
-probe with `init_audio_top=1 stock_audio_ihb=1`. No ALSA stream or Linux driver
-may own the handshake windows at 02031078/02032078. The current kernel's codec
-owns only 02030000–0203032b and its playback stream was closed during validation.
-These prerequisites are explicit caller acknowledgements, not checks enforced
-by this module. Unload this module before removing either power/clock hold.
+Use the guarded physical cold boot, single MIPS launch and source3 transition,
+verified trace canaries, TVFE/TVCAP power and four receiver clocks, stock-order
+TVFE hold, and the ALSA driver's audio clock/IHB/AudioTop initialization.
+See [ALSA instructions](../hdmi-audio/README.md). Load after the audio driver
+and unload before its audio clocks or TVFE hold are removed. Exclude other ARM
+DSP diagnostic clients. Module loading issues no DSP command.
 
-Load with `armed=1 live_source3=1 audio_ready=1`. Initial load only reads command
-status and both ownership words. It never downloads firmware, changes a DSP
-selector, or enables DMA/interrupts. Do not set `dsp_word` during module load.
+Load with `armed=1 live_source3=1 audio_ready=1 lock_window_ready=1`.
+The real stock lock maps05001530(peer) and05001534(ARM): wait for peer!=55,
+publish ARM55, recheck peer, release ARMaa. Never write the peer word.
+The shared lock header has native contention/race/timeout/readback controls.
+Historical02031078/02032078 lock claims were incorrect; do not use them.
 
-A sysfs write to `dsp_word` accepts only 0x77, 0x130 or 0xfff7. It claims the
-stock user-owner word with 0x55, verifies that kernel ownership is not 0x55,
-waits at most 10 ms for command-not-busy, writes the logical read request,
-requires completion to clear within 1 ms and rise within 10 ms, reads the
-response, then restores the original ownership word. Idle user values are
-restricted to 0, 0xaa and the measured Linux cold value 0x50.
+`dsp_word` accepts only logical0077/0130/fff7/80ff on device0 and encoded
+180ff for device1's80ff. Device0 reads use command+10, busy bit4/done bit5;
+device1 uses+18,busy bit7/done bit8. Ownership covers the entire transaction.
+Busy-clear and done-set waits are each bounded50ms. Completion may finish
+before the first sample; no visible clear edge is required or manually forced.
 
-Completion stays asserted after a response read. Requiring an observed clear
-protects against stale completion but can reject an operation that completes
-before the first sample. Such a timeout is inconclusive, not proof of DSP
-failure. The first selector trial observed a clear/set transition for 0x77,
-returning zero; the next request at 0x130 did not observe clear and stopped.
+Any DSP timeout blocks later commands for the lifetime of the module.
+**Physical cold boot is required before another DSP trial after timeout.**
+Reloading is never a recovery for the failure latch. On failure, raw port
+observations are evidence only and never accepted as a completed response.
 
-Any timeout blocks subsequent commands for the lifetime of the loaded module.
-**Physically power-cycle after timeout before any new DSP trial.** Unloading
-and reloading resets this software latch; it does not recover the hardware.
-See ../../docs/hdmi-evidence/2026-10-07-dsp-cold/README.md for measured results.
+For historical comparisons only, `stock_completion=0` selects the older
+clear-then-set requirement. `dense_clear_poll=1` additionally samples clear
+continuously with a precomputed deadline and initial100-us IRQ-off bound.
+Both old paths can miss a fast clear and reject an otherwise completed read.
 
-## Revised completion and fixed stock initialization
+## Optional pinned patch and graph build
 
-The current reader samples immediately after the request with IRQs disabled
-for at most 100 us, then performs the longer completion wait with IRQs enabled.
-It supports DSP0 logical80ff and DSP1 logical80ff (encoded0x180ff). All four
-readiness/selector reads passed on the next cold boot. DSP1 uses command+18,
-status busy bit7/completion bit8; DSP0 uses+10,bits4/5, from the vendor functions.
+`tools/hdmi/build-dsp-probe.py` creates an isolated optional build, accepting
+only the recovered2896-byte patch with SHA256
+8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5.
+It generates724 exact big-endian pairs in the build directory. The ordinary
+module has no proprietary patch table or graph parameters.
 
-`tools/hdmi/build-dsp-probe.py` optionally compiles a fixed stock patch build
-in a separate directory. It accepts only the recovered 2896-byte patch with
-SHA2568e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5,
-generating724 exact big-endian pairs. The ordinary module build has no patch
-or capture-route parameter. No proprietary patch table is added to this source.
+`stock_patch=1` is a sysfs-only one-shot operation. It requires versions0/0,
+verifies stock masked initialization at00ee/8034/8017, sends the stock prefix
+and724 pairs with1ms pacing/bounded busy waits, then verifies versions1/1.
+The volatile patch has no inverse; cold boot clears it.
 
-`stock_patch=1` is a one-shot sysfs operation, never an insmod argument.
-It requires both version words to be zero, claims ownership, verifies stock
-masked control writes at00ee/8034/8017, then writes the stock prefix and724
-pairs with1ms pacing and bounded busy waits. It verifies both stock version
-words afterward. On hardware both changed0->1. Partial failure requires a
-physical cold boot; unloading this module cannot undo the volatile DSP patch.
+The optional `stock_graph=1 graph_chain=1` mode saves all22 original words,
+applies the fixed stock route8f processing chain and verifies each write.
+The `graph_chain=1` acknowledgment is an insmod argument; `stock_graph` is
+sysfs-only. Explicit `stock_graph=0` restores saved words in reverse order with
+readback. Restore while audio clocks and TVFE remain held, before module
+removal. If any command fails, stop; do not attempt DSP restoration after the
+failure latch. Partial state requires cold boot.
 
-`capture_route=1` in the optional build requires versions1/1. It saves and
-verifies word0130=1617 for preset routebd, clears HDMI mute bit0 at8017,
-and enables I2SIN1 via word0012 bit15 (vendor EnableInterface). Input format/prescale and DTV channel0 are now also saved/applied. Explicit
-`capture_route=0` restores and verifies all five originals. This is a route
-experiment, not a complete Android graph or proven capture path. Two bounded
-stereo trials, with and without the separate interface enable, left the full
-64-KiB SPDI1/Audio Bridge capture buffer unchanged and both IRQ counts zero.
-See the dsp-readiness evidence for provenance, hashes and exact final state.
+Alternative direct-route `capture_route` and `dtvout_second` diagnostic
+parameters remain mutually exclusive with `stock_graph`; they are not the
+validated capture graph. They save and restore their own words on explicit0.
 
-## Fixed processing-graph comparison
+## Repeatable checks
 
-Optional stock-patch build exposes `stock_graph` as a sysfs-only operation.
-It requires patch versions1/1, rejects simultaneous direct/alternate routes,
-saves all13 fixed stock-code settings before any write, preserves unknown
-bits, verifies every write and reverse-restores on explicit0. It is a subset
-of Sound_Path_Init plus route8f, not a complete Android initialization.
-The bounded trial produced bridge interrupts and zero-filled DMA, without
-HDMI tones. No claim of complete capture or receiver audio readiness follows.
-See ../../docs/hdmi-evidence/2026-10-08-linux-stock-graph/README.md.
-Restore before removing audio clocks/holds; physical cold boot clears patch.
+Build both ordinary and pinned variants against the exact installed kernel.
+Native controls: `tools/hdmi/test-dsp-lock.py`,
+`tools/hdmi/test-dsp-stock-response.c`, and `tools/hdmi/test-dsp-completion.c`.
+The latter two compile with ordinary `cc -Wall -Wextra -Werror` and run without
+board access.
 
-Load-time `graph_chain=1` extends `stock_graph` to 22 words. The extra nine
-wire 8400 -> 8500 -> 8f01 inputs 2/3, set those mixer gains, and clear the
-9009/900a user mute that stock init leaves set. They come from
-`tools/stock/decode-graph-edges.py` and `decode-path-unmute.py`. Same
-save/verify/restore rules apply. See
-../../docs/hdmi-evidence/2026-10-08-graph-chain-offline/README.md.
+For graph-cycle testing, keep ALSA closed, `graph_ready=N`, `stock_graph=N`,
+and require `stock_completion=Y`, `graph_chain=Y`, `stock_patch=Y` from successful
+setup. Run on the host:
+
+```sh
+python3 tools/hdmi/run-dsp-graph-test.py --cycles 20 /tmp/h713-dsp-cycles
+```
+
+It stops immediately on error, records read-only evidence in finally, and
+checks68 completed reads per full cycle. It never loads modules, patches the
+DSP, retries a timeout or resets a failure latch. Real capture remains tested
+by `tools/hdmi/run-alsa-capture-test.py` after graph verification and explicitly
+setting the ALSA driver's `graph_ready` acknowledgment.

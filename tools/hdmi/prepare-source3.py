@@ -42,19 +42,39 @@ def main():
     ap.add_argument("--trace-reader",
                     default="/root/hdmi-safe-trace/read-comm-trace-worker.py",
                     help="Remote read-only verifier matching the installed U-Boot trace")
+    ap.add_argument("--receiver-owner", action="store_true",
+                    help="Use the firmware-lifetime receiver owner instead of diagnostic power/EDID holds")
     args = ap.parse_args()
     state = remote("python3 -u /root/mips-shell.py --status")
     if "MIPS core      ALIVE" in state:
         require_trace(args.trace_reader)
     elif "MIPS core      parked" in state:
         raise RuntimeError(
-            "MIPS is parked; refusing the warm reboot that can leave the panel "
-            "black. Arm tools/serial/reboot-to-uboot.py with "
-            "--wait-for-power-cycle before a physical cold boot, complete the "
+            "MIPS is parked. Physically cold boot and manually stop at U-Boot, complete the "
             "guarded source-3 transition at U-Boot, run bootcmd, then rerun "
             "this script with --postboot-only")
     else:
         raise RuntimeError("MIPS state is not a verified parked/live state; leaving board unchanged")
+
+    if args.receiver_owner:
+        remote("set -e; test ! -d /sys/module/h713_hdmi_power; "
+               "test ! -d /sys/module/h713_edid_clock; "
+               "cp /root/hdmi-diagnostic-merged/h713-ddc-pins.ko /tmp/; "
+               "cp /root/hdmi-diagnostic-merged/h713-scp-probe.ko /tmp/; "
+               "if ! test -d /sys/module/h713_hdmi_receiver; then "
+               "insmod /tmp/h713-linux-return/h713-hdmi-receiver.ko armed=1 live_source3=1; fi; "
+               "test \"$(cat /sys/module/h713_hdmi_receiver/parameters/init_error)\" = 0")
+        for n in range(1, 5):
+            remote(f"set -e; current=$(cat /sys/module/h713_hdmi_receiver/parameters/clock_count); "
+                   f"if test \"$current\" -lt {n}; then echo {n} > /sys/module/h713_hdmi_receiver/parameters/clock_count; fi; "
+                   "timeout 5s python3 /root/mips-shell.py --cmd 'help win' "
+                   f">/tmp/h713-owner-clock-{n}.log; "
+                   f"grep -q 'VS:/' /tmp/h713-owner-clock-{n}.log")
+        remote("set -e; test \"$(cat /sys/module/h713_hdmi_receiver/parameters/edid_ready)\" = Y; "
+               "test \"$(cat /sys/module/h713_hdmi_receiver/parameters/firmware_pin)\" = Y; "
+               "test -L /sys/bus/platform/devices/h713-edid-clock-hold/driver")
+        print("Ready: firmware-lifetime owner, both domains/four clocks/EDID, MIPS responsive", flush=True)
+        return
 
     remote("set -e; test -f /root/hdmi-diagnostic-merged/h713-hdmi-power.ko; "
            "test -f /root/hdmi-diagnostic-merged/h713-edid-clock.ko; "

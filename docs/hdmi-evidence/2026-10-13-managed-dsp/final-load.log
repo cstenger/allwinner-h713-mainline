@@ -1,0 +1,15 @@
+insmod: ERROR: could not insert module /tmp/h713-linux-return/h713-hdmi-audio.ko: Device or resource busy
+[ 2595.472079] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[ 2595.482787] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[ 2595.496213] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[ 2595.504320] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[ 2595.515993] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[ 2595.525931] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[ 2595.535611] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[ 2595.547134] h713-hdmi-audio: DSP versions 0001/0001
+[ 2595.552846] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[ 2595.560380] h713-hdmi-audio: restored Audio Bridge output stream 0
+[ 2595.567508] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[ 2595.575106] h713-hdmi-audio: restored audio-IHB clock=81000002
+cat: /sys/module/h713_hdmi_audio/parameters/graph_ready: No such file or directory
+cat: /sys/module/h713_hdmi_audio/parameters/dsp_failed: No such file or directory

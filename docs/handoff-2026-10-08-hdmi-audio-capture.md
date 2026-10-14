@@ -5,6 +5,104 @@ Start here, then read [the updated plan](hdmi-audio-capture-plan.md),
 [Linux direct-route evidence](hdmi-evidence/2026-10-08-linux-direct-capture/README.md).
 Older October 7 notes are historical and contain superseded hypotheses.
 
+## Driver implementation update (2026-10-14)
+
+Latest: **firmware-lifetime receiver ownership replaces all diagnostic
+power/EDID/TVFE/DSP helpers.** The managed audio driver requires a readiness
+reference from `h713-hdmi-receiver`, then prepares/restores TVFE and DSP itself.
+All three input-rate recordings passed; audio removal restored22 DSP words and
+15 TVFE clock words/bus, dropped clients1->0, and left both receiver domains,
+four clocks and EDID active with responsive MIPS. See
+[receiver-owner validation](hdmi-evidence/2026-10-14-receiver-owner/README.md).
+
+Current receiver module SHA256:
+`49258d661f70cd211944dd652f0932b0eed071ebff3a23a20f8db03a494a20af`.
+Current audio module SHA256:
+`633a8e7bda3244eafd3256030c0a182b3493a8a6da72ef98201e34e22981b778`.
+Sources are in `modules/hdmi-receiver` and `modules/hdmi-audio`. See
+[receiver instructions](../modules/hdmi-receiver/README.md) and
+[audio instructions](../modules/hdmi-audio/README.md).
+
+Current board: Linux and MIPS responsive, audio module unloaded and all graph/
+audio/TVFE state restored. The new receiver owner remains loaded intentionally:
+clients0, firmware_pinY, edid_readyY, clock_count4, init_error0, both domains
+active. WirePlumber and the original empty firmware search path are restored.
+All four legacy helpers are absent. No listener or recovery is pending.
+
+Do not force receiver removal. Live-firmware release, module removal and clock
+decreases were rejected before capture and after audio unload. The parked-only
+release predicate is natively checked; actual parked power-down is unvalidated.
+The owner never parks/resets MIPS and retains partial holds on startup failure.
+The volatile DSP patch remains until physical cold boot; another audio load
+requires fresh0/0 DSP versions. Never reload to bypass a DSP timeout.
+
+For the next trial, physically cold boot/manual U-Boot stop, single guarded
+MIPS launch/source3, preserved FIT and RAM-only IRQ correction as before. Stage
+the receiver module and trace reader in board RAM, run
+`prepare-source3.py --postboot-only --receiver-owner --trace-reader
+/tmp/h713-linux-return/read-comm-trace.py`, then `load-managed-audio.py`.
+The latter stages audio/firmware and verifies temporary search-path restoration.
+Source3 automatic boot, parked shutdown, hours-long recording, physical hotplug,
+open-stream rate changes and suspend remain pending. Two-minute recordings
+are now validated in the sustained update below. No boot artifacts were
+flashed, environment saved or modules installed persistently.
+
+## Sustained validation passed (2026-10-14)
+
+The integrated receiver/TVFE/DSP driver passed120-second recordings at48,32,
+and44.1kHz input on one managed audio instance:165 sampled tone windows,
+exact5,760,000-frame recordings, silence tails, no recorder overruns, zero new
+driver XRUNs, clean PCM closure and transient-helper restoration. Audio unload
+restored22 DSP graph words and15 TVFE clocks/bus, receiver clients0, both
+domains active, MIPS responsive and WirePlumber restored. Current board remains
+Linux with audio unloaded and the firmware-lifetime receiver owner active.
+See [sustained evidence](hdmi-evidence/2026-10-14-sustained-capture/README.md).
+
+Two harness problems were corrected and are recorded: a video-only EDID build
+prevented audio enumeration; then an insufficient monitor deadline raced SCP
+restoration after a successful recording. The isolated builder now accepts
+validated `--edid` input, and cleanup requires completed SCP initialization and
+successful removal before releasing DDC pins. Signal-monitor restoration
+margin is60 seconds; helper hold maximum150 seconds, default10 unchanged.
+The successful end-to-end sweep is `bench/capture-test3` in the evidence.
+
+Use repository `tools/mips/read-comm-trace.py` with a sibling `mips-shell.py`
+when staging the reader in `/tmp/h713-linux-return`; the historical PLL reader
+has different trace opcodes and is rejected on this U-Boot. After receiver
+preparation, stage `build/scp-sustained-audio/h713-scp-probe.ko` built with the
+proven256-byte audio EDID; direct source-directory builds use video-only EDID.
+See the audio README for exact build/capture commands. The sustained evidence
+manifest covers the current test tools and tested modules. No DSP retry or
+reinitialization occurred between the corrected test attempts.
+
+Hours-long recording, sample-accurate drift, open-stream rate changes,
+physical hotplug endurance, suspend, automatic source3 boot and parked
+receiver teardown remain unvalidated. Any new managed audio initialization
+requires a physical cold boot to clear the volatile DSP patch. No listener
+or recovery is pending.
+
+## Latest rate-sweep result (Codex, 2026-10-08)
+
+The user requested testing the remaining advertised PCM rates before driver
+work. The cold-boot rate sweep **48 ->32 ->44.1 ->48kHz passed**: each actual
+host hardware rate was verified, and all12 tone-correlated private DMA rings
+classified as48kHz capture. All four active-stream silence tails were zero;
+channel RMS levels stayed within0.11% of the initial control. See
+[rate-sweep evidence](hdmi-evidence/2026-10-08-audio-rate-test/attempt2/README.md)
+and [the repeatable test](hdmi-audio-rate-test.md).
+
+First ALSA driver scope: fixed48kHz stereoS16_LE capture; HDMI input at
+32/44.1/48kHz is now tested. Native32/44.1kHz capture, other bit depths,
+multichannel and compressed formats are not established. Long-term drift and
+continuous-stream source format changes remain untested.
+
+All22 original DSP graph words restored with readback. DSP/bridge/TVFE
+diagnostics unloaded, peripheral state restored, MIPS responds. The remaining
+volatile patch still requires physical cold boot before another DSP trial.
+No serial listener remains (user requested manual U-Boot stop). An earlier
+setup attempt failed at0012 completion-clear; its records remain beside the
+successful attempt. No further DSP commands were issued after that timeout.
+
 ## Current state and authorization
 
 The user authorized the Android comparison, return to preserved Linux, bounded

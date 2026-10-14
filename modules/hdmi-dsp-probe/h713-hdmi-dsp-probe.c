@@ -7,12 +7,14 @@
  */
 #include <linux/delay.h>
 #include <linux/io.h>
+#include <linux/ioport.h>
 #include <linux/iopoll.h>
 #include <linux/irqflags.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 
 #include "h713-dsp-lock.h"
+#include "h713-dsp-completion.h"
 
 static void __iomem *port, *lock_window;
 static struct h713_dsp_lock dsp_lock;
@@ -26,6 +28,18 @@ MODULE_PARM_DESC(lock_window_ready, "Explicit acknowledgement: stock lock window
 /* Stock aud_dsp1_read_reg/write_reg give up after 49999 us. */
 #define H713_DSP_WAIT_US 50000
 static unsigned int dsp_word;
+static bool dense_clear_poll;
+static bool stock_completion = true;
+static unsigned int stock_read_count;
+module_param(stock_completion, bool, 0400);
+MODULE_PARM_DESC(stock_completion, "Stock busy-clear/request/done-set protocol (default); disable only for historical clear-edge diagnostics; failure latch retained");
+module_param(stock_read_count, uint, 0444);
+static unsigned int clear_fast_count, clear_slow_count, clear_timeout_count;
+module_param(dense_clear_poll, bool, 0400);
+MODULE_PARM_DESC(dense_clear_poll, "Diagnostic continuous clear-edge polling; preserves clear-then-set and timeout failure latch");
+module_param(clear_fast_count, uint, 0444);
+module_param(clear_slow_count, uint, 0444);
+module_param(clear_timeout_count, uint, 0444);
 static int dsp_read(unsigned int device, u16 address, u32 *response)
 {
 	unsigned long flags;
@@ -38,20 +52,43 @@ static int dsp_read(unsigned int device, u16 address, u32 *response)
 	ret = readl_poll_timeout(port, status, !(status & busy_mask), 10, H713_DSP_WAIT_US);
 	if (ret)
 		goto done;
-	/* Completion is sticky after response reads. A new command must clear
-	 * it before a fresh completion can be accepted. Never clear it manually.
+	/* Stock accepts done-set after publishing a new request. Completion can
+	 * finish before the first status read. The optional historical mode below
+	 * additionally requires an observable clear edge; it can reject a valid
+	 * fast response. Neither mode manually clears completion status.
 	 */
 	pr_info("h713-hdmi-dsp-probe: requesting device=%u word=%04x status=%08x\n", device,
 		address, status);
+	if (stock_completion) {
+		phase = "completion-set";
+		ret = h713_dsp_stock_response(port, port + command_offset, address,
+					      done_mask, &status, response);
+		if (!ret)
+			stock_read_count++;
+		goto done;
+	}
 	/* Keep the command-to-first-status-read gap short and non-schedulable.
 	 * IRQs are disabled only for the bounded 100-us clear observation;
-	 * the longer completion wait remains sleepable. No status writes.
+	 * the longer wait has IRQs enabled (and sleeps in the original mode).
+	 * Dense mode continuously samples the edge; no status writes in either.
 	 */
 	phase = "completion-clear";
 	local_irq_save(flags);
-	writel(address << 16, port + command_offset);
-	ret = readl_poll_timeout_atomic(port, status, !(status & done_mask), 1, 100);
+	if (dense_clear_poll) {
+		/* Compute the deadline before publishing the request: a clock
+		 * function call after the write can itself hide the clear edge.
+		 */
+		u64 deadline = ktime_get_ns() + 100000;
+
+		writel(address << 16, port + command_offset);
+		ret = h713_dsp_wait_clear_until(port, &status, done_mask, deadline);
+	} else {
+		writel(address << 16, port + command_offset);
+		ret = readl_poll_timeout_atomic(port, status, !(status & done_mask), 1, 100);
+	}
 	local_irq_restore(flags);
+	if (!ret)
+		clear_fast_count++;
 	/* After a graph write the DSP can take longer than 100 us to accept the
 	 * next command (2026-10-08: timeout reading back 0077). Stock
 	 * aud_dsp1_read_reg allows 50 ms. Keep the stale-response guard: still
@@ -60,12 +97,18 @@ static int dsp_read(unsigned int device, u16 address, u32 *response)
 	if (ret) {
 		ktime_t start = ktime_get();
 
-		ret = readl_poll_timeout(port, status, !(status & done_mask), 2, H713_DSP_WAIT_US);
+		clear_slow_count++;
+		if (dense_clear_poll)
+			ret = h713_dsp_wait_clear(port, &status, done_mask, H713_DSP_WAIT_US);
+		else
+			ret = readl_poll_timeout(port, status, !(status & done_mask), 2, H713_DSP_WAIT_US);
 		pr_info("h713-hdmi-dsp-probe: device=%u word=%04x slow completion-clear %lld us ret=%d\n",
 			device, address, ktime_us_delta(ktime_get(), start) + 100, ret);
 	}
-	if (ret)
+	if (ret) {
+		clear_timeout_count++;
 		goto done;
+	}
 	phase = "completion-set";
 	ret = readl_poll_timeout(port, status, status & done_mask, 10, H713_DSP_WAIT_US);
 	if (ret)
@@ -74,6 +117,11 @@ static int dsp_read(unsigned int device, u16 address, u32 *response)
 done:
 	if (ret) {
 		failed = true;
+		/* Raw command/response-port observation only, never another request
+		 * and never accepted as a response after a missing completion edge.
+		 */
+		pr_warn("h713-hdmi-dsp-probe: failed-read raw command-response=%08x expected-request=%08x\n",
+			readl(port + command_offset), (u32)address << 16);
 		pr_warn("h713-hdmi-dsp-probe: device=%u word=%04x phase=%s timeout status=%08x; "
 			"cold boot required\n",
 			device, address, phase, status);
@@ -569,6 +617,12 @@ static int __init probe_init(void)
 {
 	if (!armed || !live_source3 || !audio_ready || !lock_window_ready)
 		return -EPERM;
+	if (!request_mem_region(0x06144000, 0x1c, "h713-hdmi-dsp-probe"))
+		return -EBUSY;
+	if (!request_mem_region(0x05001530, 8, "h713-hdmi-dsp-probe-lock")) {
+		release_mem_region(0x06144000, 0x1c);
+		return -EBUSY;
+	}
 	port = ioremap(0x06144000, 0x1c);
 	lock_window = ioremap(0x05001530, 8);
 	if (!port || !lock_window) {
@@ -577,6 +631,8 @@ static int __init probe_init(void)
 		if (lock_window)
 			iounmap(lock_window);
 		port = NULL;
+		release_mem_region(0x05001530, 8);
+		release_mem_region(0x06144000, 0x1c);
 		return -ENOMEM;
 	}
 	dsp_lock.peer = lock_window;
@@ -589,6 +645,8 @@ static void __exit probe_exit(void)
 {
 	iounmap(port);
 	iounmap(lock_window);
+	release_mem_region(0x05001530, 8);
+	release_mem_region(0x06144000, 0x1c);
 }
 module_init(probe_init);
 module_exit(probe_exit);

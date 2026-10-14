@@ -16,7 +16,7 @@ SSH=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','S
 CONNECTOR=Path('/sys/class/drm/card1-HDMI-A-1')
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--stock-io',action='store_true',help='Use four saved/restored stock timing/control settings')
-parser.add_argument('--seconds',type=int,choices=range(1,31),default=10,help='Bounded HPD hold in seconds (1–30)')
+parser.add_argument('--seconds',type=int,choices=range(1,151),default=10,help='Bounded HPD hold in seconds (1–150)')
 parser.add_argument('--run-hdmird',action='store_true',help='Run the fixed SetSource(3) trial as soon as the source is enabled')
 parser.add_argument('--tvfe-only',action='store_true',help='Require TVFE and EDID clock only; no explicit TVCAP/receiver-clock hold')
 parser.add_argument('--probe-port-status',action='store_true',help='Sample the read-only MIPS HDMI port-status RPC during the signal window')
@@ -50,7 +50,7 @@ def sample():
  try:return {'status':(CONNECTOR/'status').read_text().strip(),'edid':(CONNECTOR/'edid').read_bytes(),'modes':(CONNECTOR/'modes').read_text().splitlines(),'enabled':(CONNECTOR/'enabled').read_text().strip()}
  except OSError as e:return {'status':str(e),'edid':b'','modes':[],'enabled':'unknown'}
 if sample()['status']!='disconnected':raise SystemExit('Expected disconnected test connector; leaving hardware unchanged.')
-check_cmd='test -d /sys/module/h713_hdmi_power && test -d /sys/module/h713_edid_clock && test -L /sys/bus/platform/devices/h713-edid-clock-hold/driver'
+check_cmd='( ( test -d /sys/module/h713_hdmi_power && test -d /sys/module/h713_edid_clock ) || ( test -d /sys/module/h713_hdmi_receiver && test "$(cat /sys/module/h713_hdmi_receiver/parameters/edid_ready)" = Y && test "$(cat /sys/module/h713_hdmi_receiver/parameters/init_error)" = 0 ) ) && test -L /sys/bus/platform/devices/h713-edid-clock-hold/driver'
 if args.tvfe_only:
  check_cmd+=' && test "$(cat /sys/devices/h713-hdmi-tvfe/power/runtime_status)" = active'
 else:
@@ -197,7 +197,7 @@ if args.probe_framebuf and not probe_framebuf('before'):
  raise SystemExit('Framebuf probe failed before the signal window; leaving HPD unchanged.')
 p=subprocess.Popen(SSH+[command],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
 try:
- while time.monotonic()-start<args.seconds+12:
+ while time.monotonic()-start<args.seconds+60:
   s=sample();digest=hashlib.sha256(s['edid']).hexdigest() if s['edid'] else None
   r={'seconds':round(time.monotonic()-start,3),'status':s['status'],'edid_bytes':len(s['edid']),'edid_sha256':digest,'modes':s['modes'],'enabled':s['enabled']}
   key=(r['status'],digest,tuple(r['modes']),r['enabled'])
@@ -249,7 +249,7 @@ finally:
   except subprocess.TimeoutExpired:
    receiver.kill();a,b=receiver.communicate();(OUT/'receiver.log').write_text(a+b+'\nRead did not complete.\n')
   if receiver.returncode:result=receiver.returncode
- cleanup=ssh('if test -d /sys/module/h713_scp_probe; then rmmod h713_scp_probe; fi; if test -d /sys/module/h713_ddc_pins; then rmmod h713_ddc_pins; fi; /root/mmio-rw r 7000400; /root/mmio-rw r 7022004')
+ cleanup=ssh('set -e; if test -d /sys/module/h713_scp_probe; then test \"$(cat /sys/module/h713_scp_probe/initstate)\" = live; rmmod h713_scp_probe; fi; if test -d /sys/module/h713_ddc_pins; then rmmod h713_ddc_pins; fi; /root/mmio-rw r 7000400; /root/mmio-rw r 7022004')
  (OUT/'cleanup.log').write_text(cleanup.stdout+cleanup.stderr);print(cleanup.stdout+cleanup.stderr,flush=True)
  if args.v4l2_frames:
   if v4l2_proc is None:

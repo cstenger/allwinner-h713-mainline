@@ -1,0 +1,43 @@
+[ 2226.171969] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[ 2226.185870] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[ 2226.194494] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[ 2226.205541] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[ 2226.219327] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[ 2226.227803] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[ 2226.239895] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[ 2226.250248] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[ 2226.260321] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[ 2226.272203] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[ 2226.280070] h713-hdmi-audio: restored Audio Bridge output stream 0
+[ 2226.287552] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[ 2226.295692] h713-hdmi-audio: restored audio-IHB clock=81000002
+[ 2247.443242] h713-hdmi-audio: clock=bus-hdmi-audio inherited_on=1 enabled_by_driver=0 rate=100000000
+[ 2247.453802] h713-hdmi-audio: clock=hdmi-audio inherited_on=1 enabled_by_driver=0 rate=1152000000
+[ 2247.464087] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000
+[ 2247.473938] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[ 2247.483733] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[ 2247.493614] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[ 2247.502330] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[ 2247.512195] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[ 2247.520722] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[ 2247.532713] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[ 2247.541499] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[ 2247.555422] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[ 2247.564063] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[ 2247.575120] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[ 2247.588907] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[ 2247.597378] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[ 2247.609501] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[ 2247.619841] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[ 2247.629872] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[ 2247.641801] h713-hdmi-audio: DSP versions 0000/0000
+[ 2248.563287] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[ 2248.597095] h713-hdmi-audio: managed DSP graph verified 22 words
+[ 2248.606268] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph must be prepared before recording
+Y
+Y
+N
+ 0 [Codec          ]: sun4i-codec - H713 Audio Codec
+                      h713-audio-codec
+ 1 [H713HDMI       ]: H713HDMI - H713 HDMI Input
+                      H713 HDMI input, DSP to Audio Bridge ostream0

@@ -27,6 +27,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT/'modules/hdmi-dsp-probe/h713-hdmi-dsp-probe.c', output)
     shutil.copy2(ROOT/'modules/hdmi-dsp-probe/h713-dsp-lock.h', output)
+    shutil.copy2(ROOT/'modules/hdmi-dsp-probe/h713-dsp-completion.h', output)
     (output/'Makefile').write_text('obj-m += h713-hdmi-dsp-probe.o\nccflags-y += -DH713_STOCK_DSP_PATCH\n')
     pairs = [struct.unpack_from('>HH', data, n) for n in range(0, len(data), 4)]
     (output/'stock-dsp-patch.h').write_text(

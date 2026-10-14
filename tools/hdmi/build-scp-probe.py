@@ -62,26 +62,30 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--mode", choices=("640x480", "1280x720"),
                     default="1280x720")
+    ap.add_argument("--edid", type=Path, help="Existing 256-byte EDID with audio extension")
     ap.add_argument("--kernel-build", type=Path)
     ap.add_argument("--output", type=Path)
     args = ap.parse_args()
 
     output = (args.output or
               ROOT / "build" / f"scp-probe-{args.mode.replace('x', '-')}")
+    output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     kernel_build = find_kernel_build(args.kernel_build)
     shutil.copy2(SOURCE / "Makefile", output / "Makefile")
     shutil.copy2(SOURCE / "h713-scp-probe.c", output / "h713-scp-probe.c")
-    run([sys.executable, str(HERE / "make-edid-trial-code.py"),
-         "--mode", args.mode, str(output / "edid-trial-code.h")])
+    generator = [sys.executable, str(HERE / "make-edid-trial-code.py"), "--mode", args.mode]
+    if args.edid:
+        generator += ["--edid", str(args.edid)]
+    run(generator + [str(output / "edid-trial-code.h")])
     run(["make", "-C", str(kernel_build), f"M={output}", "ARCH=arm64",
-         "LLVM=1", "modules"])
+         "LLVM=1", "W=1", "modules"])
 
     module = output / "h713-scp-probe.ko"
     vermagic = run(["modinfo", "-F", "vermagic", str(module)]).strip()
     if vermagic.split()[0] != KERNEL_RELEASE:
         raise RuntimeError(f"unexpected probe vermagic: {vermagic}")
-    result = {"mode": args.mode, "module": str(module),
+    result = {"mode": args.mode, "edid": str(args.edid) if args.edid else None, "module": str(module),
               "sha256": hashlib.sha256(module.read_bytes()).hexdigest(),
               "kernel_build": str(kernel_build), "vermagic": vermagic}
     print(json.dumps(result))

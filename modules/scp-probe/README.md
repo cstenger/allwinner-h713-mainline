@@ -37,7 +37,10 @@ python3 tools/hdmi/build-scp-probe.py --mode 1280x720
 
 The helper selects the kernel build used by the current capture module when
 available, regenerates the chosen EDID payload in an isolated build directory,
-builds the probe, and validates its vermagic. The lower-level equivalent is:
+builds the probe, and validates its vermagic. For audio tests, pass `--edid`
+with the previously validated256-byte audio EDID; generated video modes do
+not advertise audio. The supplied payload must have valid base/extension
+checksums and exactly one nonempty extension. The lower-level equivalent is:
 
 ```sh
 mkdir -p build/scp-probe
@@ -79,7 +82,9 @@ private #3 kernel. Access without EDID resources previously stalled the SCP bus.
 `edid_backup=1` copies all three EDID windows and configuration to SRAM without
 peripheral writes. `edid_trial=1` performs the saved/restored ten-second trial.
 Only the last mode writes HPD/DDC/EDID. `hold_ms` defaults to 10000 and is
-restricted to 1000–30000; the helper accepts `--seconds 1..30`. `stock_io=1` optionally reproduces four
+restricted to 1000–150000; the helper accepts `--seconds 1..150`.
+The default remains 10 seconds; the extended bound supports two-minute audio
+recordings with setup and restoration margins. `stock_io=1` optionally reproduces four
 stock control/timing writes and restores them; it is rejected outside trial mode
 and is unnecessary for the validated repeat detection test.
 
