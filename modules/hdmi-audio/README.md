@@ -182,3 +182,37 @@ peripheral restoration and removes the transient helpers.
 Finish with the established audio unload/restoration checks; keep the
 firmware-lifetime receiver owner active. A fresh cold DSP boot is required
 before managed audio initialization.
+
+## Open-stream recovery tests
+
+Both source-rate transitions and physical unplug/replug passed with unchanged
+capture ownership, fresh returned audio and zero driver XRUNs. Full DSP/TVFE
+teardown then passed. This establishes one cable cycle; repeated endurance
+remains untested.
+
+`run-alsa-rate-transition-test.py` holds one70-second HPD window and one
+48-second fixed48kHz capture while host playback changes48->32->44.1->48kHz.
+It verifies actual host hardware rates, unchanged capture owner/format and
+RUNNING state between phases. Alternating channel signatures and capture
+pointer-indexed recording windows require fresh audio after each transition;
+the final silence tail, exact frame count, no overruns, zero new driver XRUNs
+and helper cleanup are also required.
+
+`run-alsa-physical-reconnect-test.py` holds HPD for one150-second window and
+records120 seconds. After the first tone, stdout requests physical unplug,
+then reconnect. Unplug has a70-second deadline and return has20 seconds. The operator should
+unplug HDMI for about5 seconds and reconnect, leaving board power/USB intact.
+The runner observes source connector loss, requires the same capture PID to
+stay RUNNING while unplugged, and verifies fresh swapped-channel audio after
+return. A deadline failure retains evidence and waits for bounded restoration.
+These tests use the already initialized driver; neither loads modules nor
+issues DSP commands. Results and current validation status belong in the
+[stream recovery evidence](../../docs/hdmi-evidence/2026-10-14-stream-recovery/README.md).
+
+```sh
+python3 tools/hdmi/run-alsa-rate-transition-test.py /tmp/h713-rate-transitions \
+  --recorder /tmp/h713-linux-return/arecord
+python3 tools/hdmi/run-alsa-physical-reconnect-test.py /tmp/h713-physical-return \
+  --recorder /tmp/h713-linux-return/arecord
+python3 tools/hdmi/test-alsa-rate-transition-analysis.py
+```

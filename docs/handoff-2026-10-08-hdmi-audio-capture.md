@@ -5,6 +5,28 @@ Start here, then read [the updated plan](hdmi-audio-capture-plan.md),
 [Linux direct-route evidence](hdmi-evidence/2026-10-08-linux-direct-capture/README.md).
 Older October 7 notes are historical and contain superseded hypotheses.
 
+## Current recovery result (2026-10-14, after checkpoint8244151)
+
+**Same-open recovery passed:** source48->32->44.1->48kHz changes used one
+capture PID, fixed48kHz stereo output,8/8 fresh-signature windows, exact
+48-second frame count and zero driver XRUNs. A separate physical HDMI1
+unplug/replug was observed during a120-second capture: same PID/trigger while
+unplugged and returned,17 initial tone windows followed by16 fresh swapped
+windows, zero overruns/XRUNs and clean helper restoration. The first physical
+operator window missed the action; the successful retry was observed and
+confirmed. See [stream recovery evidence](hdmi-evidence/2026-10-14-stream-recovery/README.md).
+
+**Current board:** audio unloaded after all22 DSP graph words and15 TVFE clock
+words/bus restored with verification. Receiver clients0, pinY, EDIDY, clocks4,
+init_error0, both domains active. MIPS responds, WirePlumber active, original
+empty firmware path restored. No capture, transient helper or listener remains.
+The volatile DSP patch requires physical cold boot before a new managed audio
+initialization. No recovery or operator action is pending.
+
+Next: hours-long capture/measured drift and repeated hotplug endurance, then
+source3 boot/shutdown integration; suspend remains unvalidated. These recovery
+changes are newer than checkpoint8244151.
+
 ## Driver implementation update (2026-10-14)
 
 Latest: **firmware-lifetime receiver ownership replaces all diagnostic
