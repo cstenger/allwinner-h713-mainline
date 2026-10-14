@@ -217,6 +217,64 @@ python3 tools/hdmi/run-alsa-physical-reconnect-test.py /tmp/h713-physical-return
 python3 tools/hdmi/test-alsa-rate-transition-analysis.py
 ```
 
+## Endurance and drift test (one hour validated)
+
+One hour at48kHz input/output passed:120 markers and tone windows, exact
+172,800,000 stereo frames, zero driver XRUNs and full DSP/TVFE teardown.
+Measured source-relative sample drift was18.89ppm.
+
+`run-alsa-endurance-test.py` streams raw PCM to the host rather than storing
+hours of audio in board RAM. It generates unique markers every30 seconds,
+fits their source/capture sample positions for relative drift, checks settled
+channel tones after every marker, and separately samples capture cadence
+against board CLOCK_MONOTONIC_RAW. Native controls verify known drift and
+reject replayed/missing/displaced markers. See
+[endurance evidence](../../docs/hdmi-evidence/2026-10-14-audio-endurance/README.md)
+for acceptance limits and current status.
+
+Build/stage the updated SCP helper with the canonical audio EDID after
+receiver preparation. Its150-second ordinary limit remains; only explicit
+`long_hold=1` enables the3660-second maximum. The runner selects this opt-in
+through `run-detection-trial.py --audio-endurance`; other diagnostic options
+are excluded in that mode.
+
+```sh
+python3 tools/hdmi/run-alsa-endurance-test.py /tmp/h713-endurance-qualification \
+  --recorder /tmp/h713-linux-return/arecord --seconds 90
+python3 tools/hdmi/run-alsa-endurance-test.py /tmp/h713-endurance-hour \
+  --recorder /tmp/h713-linux-return/arecord --seconds 3600
+python3 tools/hdmi/test-audio-endurance-analysis.py
+```
+
+A completed hour consumes about692MB capture plus690MB source on the host.
+Do not reload DSP between qualification and endurance. Finish with audio
+unload and full DSP/TVFE restoration checks, keeping the receiver owner active.
+
+## Repeated HPD recovery (ten recoveries validated)
+
+Ten recoveries passed on one capture PID, with all eleven unique markers/
+channel windows, zero XRUNs and full DSP/TVFE teardown.
+
+`run-alsa-hpd-cycle-test.py --cycles 10` keeps one capture open across an initial
+baseline window and ten subsequent source returns. Each saved/restored HPD
+window is12 seconds, with3-second disconnected gaps. Actual source hardware
+format, unchanged capture PID/RUNNING state during loss and return, advancing
+capture pointer and healthy DSP state are required. Each return contains a
+unique filtered-noise marker and alternating channel tones, so repeated or
+cached prior-cycle audio is rejected. Capture streams directly to the host;
+exact frame count, zero silence tail, no overruns/new driver XRUNs and all
+helper cleanup checks are required. These are automated software HPD cycles;
+physical cable endurance remains a separate test.
+
+```sh
+python3 tools/hdmi/run-alsa-hpd-cycle-test.py /tmp/h713-hpd-cycles \
+  --recorder /tmp/h713-linux-return/arecord --cycles 10
+python3 tools/hdmi/test-alsa-hpd-cycle-analysis.py
+```
+
+See [cycle evidence](../../docs/hdmi-evidence/2026-10-14-hpd-cycles/README.md)
+for the current outcome. No DSP reload occurs between cycles.
+
 ## Guarded runtime service
 
 `tools/hdmi/boot-managed-audio.py OUTPUT --cold-boot-confirmed` coordinates the

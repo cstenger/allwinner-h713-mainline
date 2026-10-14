@@ -127,6 +127,54 @@ and suspend remain unvalidated. Close capture clients before service stop.
 Next: validate safe MIPS parking/receiver handoff before persistent startup
 or integrating system shutdown. Preserve existing IR/suspend/poweroff work.
 
+## Latest: repeated HPD recovery passed (2026-10-14)
+
+Ten software HPD-loss recoveries after a baseline connection passed with one
+capture PID1076, all eleven unique markers and tone windows, exact240-second
+recording/11,520,000 stereo frames, zero overruns/new driver XRUNs, zero final
+silence and clean helper restoration/removal on every window. No DSP reload
+occurred between cycles. See [cycle evidence](hdmi-evidence/2026-10-14-hpd-cycles/README.md).
+These are automated HPD transitions, distinct from repeated physical cable
+endurance; a single physical unplug/replug passed earlier.
+
+**Current board:** audio unloaded after all22 DSP graph words and15 TVFE clock
+words/bus restored with verification; receiver clients0/pinY/EDIDY/clocks4,
+init_error0, both domains active. MIPS responds, WirePlumber active, original
+empty firmware path restored. No capture/player/transient helper/listener or
+recovery remains. New managed audio initialization requires physical cold
+boot to clear the volatile DSP patch. No boot artifact/environment was saved.
+
+One-hour endurance and repeated-HPD tools/evidence are newer than commit
+71dca46. Next driver integration work: automatic guarded source3 startup and
+parked shutdown ownership; repeated physical cable endurance and suspend
+remain unvalidated. Preserve existing IR/suspend/poweroff work.
+
+## Latest: one-hour endurance passed (2026-10-14, after checkpoint71dca46)
+
+One hour of48kHz stereoS16_LE input/output passed on the integrated driver:
+120 unique timing markers and120 settled tone windows, exact172,800,000 frames
+(691,200,000 raw bytes), zero overruns/new driver XRUNs, unchanged PID1402,
+zero final silence and full helper restoration. Source-relative sample drift
+was18.891ppm (~68ms/h), minimum correlation.99836 and maximum adjacent
+interval change2.07 frames.119 board CLOCK_MONOTONIC_RAW samples separately
+fit47,999.9983 frames/raw-second; this is not calibrated oscillator accuracy.
+See [endurance evidence](hdmi-evidence/2026-10-14-audio-endurance/README.md).
+
+**Current board:** audio unloaded, all22 DSP graph words and15 TVFE clock
+words/bus restored with verification; receiver clients0/pinY/EDIDY/clocks4,
+init_error0, both domains active. MIPS responds, WirePlumber active and original
+empty firmware path restored. No capture, source player, transient helper,
+serial listener or recovery remains. New managed audio initialization requires
+physical cold boot to clear the volatile DSP patch.
+
+The endurance test streams PCM to the host, uses bounded-memory source/analysis,
+and has independent capture/HPD deadlines. Ordinary150-second HPD bounds and
+10-second default remain; explicit `long_hold=1` allows at most3660 seconds
+and host `--audio-endurance` excludes other diagnostic modes. New analysis/
+runner/policy tests and plot/CSV are newer than commit71dca46. No persistent
+boot or module installation changed. Next: repeated hotplug endurance and
+source3 boot/parked shutdown integration; suspend remains unvalidated.
+
 ## Current recovery result (2026-10-14, after checkpoint8244151)
 
 **Same-open recovery passed:** source48->32->44.1->48kHz changes used one

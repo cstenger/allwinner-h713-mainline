@@ -103,3 +103,13 @@ active. It records source state/EDID, the eight validated receiver words, and
 cleanup in a unique local /tmp directory. It returns DDC pins to input state,
 which differs from the initial disabled mux. Run only with exclusive bench
 ownership. See [results](../../docs/hdmi-source-detection-validation.md).
+
+## Explicit endurance hold
+
+Ordinary trials retain their150-second limit and10-second default. An explicit
+`long_hold=1` permits at most3660000ms for bounded audio endurance, with the
+same saved/restored payload and no additional peripheral writes. The predicate
+in `h713-scp-hold.h` is natively tested. The host helper requires
+`--audio-endurance` for more than150 seconds and excludes the other optional
+diagnostics in this mode. Both reader and HPD hold remain independently
+bounded; never release DDC holds under an SCP module still initializing.

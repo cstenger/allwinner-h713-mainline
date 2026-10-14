@@ -1,0 +1,98 @@
+closed
+681232
+708481248
+680768
+0
+N
+[   89.496682] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[   89.506679] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[   89.516638] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[   89.525295] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   89.535188] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[   89.543788] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[   89.555854] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[   89.564847] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   89.578818] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[   89.587506] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   89.598634] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   89.612494] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   89.621031] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   89.633208] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   89.643624] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   89.653746] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   89.665801] h713-hdmi-audio: DSP versions 0000/0000
+[   90.587958] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[   90.623364] h713-hdmi-audio: managed DSP graph verified 22 words
+[   90.634110] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically
+[   94.901714] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[   94.924307] h713-scp-probe: payload=ffffff00,00ffffff pre-enable EDID=ffffff00,ffffff00,ffffff00
+[   94.934886] h713-scp-probe: active HPD=00000000 b00=00a0a0a0 b04=07000007 b08=00c0c0c0 headers=00000000,00000000,00000000
+[   94.947012] h713-scp-probe: active IO 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[   94.956702] h713-scp-probe: EDID trial ready; holding HPD asserted for 120000 ms
+[  216.039959] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  216.052487] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+[  220.624295] h713-ddc-pins: DDC pins returned to inputs and ownership released
+[  336.691055] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[  336.713831] h713-scp-probe: payload=ffffff00,00ffffff pre-enable EDID=ffffff00,ffffff00,ffffff00
+[  336.724269] h713-scp-probe: active HPD=00000000 b00=00a0a0a0 b04=07000007 b08=00c0c0c0 headers=00000000,00000000,00000000
+[  336.736365] h713-scp-probe: active IO 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  336.746037] h713-scp-probe: EDID trial ready; holding HPD asserted for 3630000 ms
+[ 3970.024044] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[ 3970.038666] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+[ 3973.168947] h713-ddc-pins: DDC pins returned to inputs and ownership released
+[ 4016.865033] h713-hdmi-audio: DSP restore 005a=8000 verified
+[ 4016.874520] h713-hdmi-audio: DSP restore 0059=8000 verified
+[ 4016.883307] h713-hdmi-audio: DSP restore 0103=0000 verified
+[ 4016.891961] h713-hdmi-audio: DSP restore 0102=0000 verified
+[ 4016.900061] h713-hdmi-audio: DSP restore 8103=0000 verified
+[ 4016.908624] h713-hdmi-audio: DSP restore 8102=0000 verified
+[ 4016.917111] h713-hdmi-audio: DSP restore 007e=8485 verified
+[ 4016.924946] h713-hdmi-audio: DSP restore 007d=8283 verified
+[ 4016.932918] h713-hdmi-audio: DSP restore 007c=8081 verified
+[ 4016.940861] h713-hdmi-audio: DSP restore 8017=0001 verified
+[ 4016.948696] h713-hdmi-audio: DSP restore 801a=0000 verified
+[ 4016.956509] h713-hdmi-audio: DSP restore 0017=2000 verified
+[ 4016.964301] h713-hdmi-audio: DSP restore 0012=0000 verified
+[ 4016.972015] h713-hdmi-audio: DSP restore 0130=0000 verified
+[ 4016.979869] h713-hdmi-audio: DSP restore 8059=0000 verified
+[ 4016.987599] h713-hdmi-audio: DSP restore 805a=0000 verified
+[ 4016.995220] h713-hdmi-audio: DSP restore 004d=0000 verified
+[ 4017.002831] h713-hdmi-audio: DSP restore 0077=0000 verified
+[ 4017.010441] h713-hdmi-audio: DSP restore 00ac=0000 verified
+[ 4017.018008] h713-hdmi-audio: DSP restore 800d=0000 verified
+[ 4017.025548] h713-hdmi-audio: DSP restore 800c=0000 verified
+[ 4017.033074] h713-hdmi-audio: DSP restore 0003=0000 verified
+[ 4017.039466] h713-hdmi-audio: managed DSP graph restored 22 words
+[ 4017.046323] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[ 4017.053876] h713-hdmi-audio: restored Audio Bridge output stream 0
+[ 4017.060947] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[ 4017.068511] h713-hdmi-audio: restored audio-IHB clock=81000002
+[ 4017.075206] h713-hdmi-audio: managed TVFE clock/reset state restored; 15 clock words and bus verified
+[ 4017.085224] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+0
+Y
+Y
+4
+0
+active
+active
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win
+command help of win
+for window debug only
+
+VS:/$ 
+
+
+Module                  Size  Used by
+h713_hdmi_receiver     12288  1
+hci_uart               28672  1
+hy310_cpu_comm         98304  0
+hantro_vpu            196608  0
+v4l2_h264              16384  1 hantro_vpu
+sunxi_cedrus           81920  0
+sunxi_scanout_dmabuf    12288  0
+panfrost               77824  0
+v4l2_jpeg              12288  1 hantro_vpu
+active

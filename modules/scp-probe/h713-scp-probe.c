@@ -7,6 +7,7 @@
 #include <linux/of.h>
 #include <linux/slab.h>
 #include "edid-trial-code.h"
+#include "h713-scp-hold.h"
 
 #define SRAM_BASE 0x00100000
 #define SRAM_SIZE 0x5000
@@ -28,6 +29,9 @@ MODULE_PARM_DESC(hpd_read, "Also perform the fixed SCP-side HPD register read");
 static uint hold_ms = 10000;
 module_param(hold_ms, uint, 0400);
 MODULE_PARM_DESC(hold_ms, "Trial HPD hold duration, 1000 to 150000 ms");
+static bool long_hold;
+module_param(long_hold, bool, 0400);
+MODULE_PARM_DESC(long_hold, "Explicit endurance opt-in: permit HPD hold up to 3660000 ms");
 static bool edid_trial;
 module_param(edid_trial, bool, 0400);
 MODULE_PARM_DESC(edid_trial, "Bounded EDID/HPD trial with saved peripheral restoration");
@@ -178,7 +182,7 @@ static int __init h713_scp_probe_init(void)
 
 	if (edid_snapshot || trial_program)
 		hpd_read = true;
-	if (edid_trial && (hold_ms < 1000 || hold_ms > 150000))
+	if (edid_trial && !h713_scp_hold_valid(hold_ms, long_hold))
 		return -EINVAL;
 	if (stock_io && !edid_trial)
 		return -EINVAL;

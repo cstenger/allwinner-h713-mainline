@@ -74,6 +74,7 @@ def main():
     kernel_build = find_kernel_build(args.kernel_build)
     shutil.copy2(SOURCE / "Makefile", output / "Makefile")
     shutil.copy2(SOURCE / "h713-scp-probe.c", output / "h713-scp-probe.c")
+    shutil.copy2(SOURCE / "h713-scp-hold.h", output / "h713-scp-hold.h")
     generator = [sys.executable, str(HERE / "make-edid-trial-code.py"), "--mode", args.mode]
     if args.edid:
         generator += ["--edid", str(args.edid)]

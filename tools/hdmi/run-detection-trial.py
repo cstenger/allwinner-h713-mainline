@@ -16,7 +16,8 @@ SSH=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','S
 CONNECTOR=Path('/sys/class/drm/card1-HDMI-A-1')
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--stock-io',action='store_true',help='Use four saved/restored stock timing/control settings')
-parser.add_argument('--seconds',type=int,choices=range(1,151),default=10,help='Bounded HPD hold in seconds (1–150)')
+parser.add_argument('--seconds',type=int,default=10,help='Bounded HPD hold: 1–150 seconds; up to3660 with --audio-endurance')
+parser.add_argument('--audio-endurance',action='store_true',help='Explicit long HPD hold opt-in for audio endurance only')
 parser.add_argument('--run-hdmird',action='store_true',help='Run the fixed SetSource(3) trial as soon as the source is enabled')
 parser.add_argument('--tvfe-only',action='store_true',help='Require TVFE and EDID clock only; no explicit TVCAP/receiver-clock hold')
 parser.add_argument('--probe-port-status',action='store_true',help='Sample the read-only MIPS HDMI port-status RPC during the signal window')
@@ -32,6 +33,11 @@ parser.add_argument('--frame-size',choices=('640x480','1280x720'),default='640x4
 parser.add_argument('--v4l2-frames',type=int,default=0,help='Capture this many NV16 frames from /dev/video1 with FFmpeg (1–120)')
 parser.add_argument('--read-detn',action='store_true',help='Also run the optional DETN register snapshot when the GPU connects')
 args=parser.parse_args()
+if not 1<=args.seconds<=(3660 if args.audio_endurance else 150):
+ parser.error('--seconds exceeds the selected bounded hold limit')
+if args.audio_endurance and any((args.run_hdmird,args.tvfe_only,args.probe_port_status,args.probe_port_cache,args.probe_afbd_pair,args.probe_framebuf,args.dump_candidate,args.probe_ring,args.dump_nv16,args.dump_coherent,args.v4l2_frames,args.read_detn)):
+ parser.error('--audio-endurance allows only stock-io and the long HPD hold')
+long_hold_arg=' long_hold=1' if args.audio_endurance else ''
 if args.tvfe_only and args.read_detn:
  parser.error('--read-detn requires the full receiver power hold')
 if args.coherent_count>1 and not args.dump_coherent:
@@ -79,7 +85,7 @@ if args.run_hdmird:
  check_cmd+=' && test -d /sys/module/h713_thdmirx_init && test -d /sys/module/hy310_cpu_comm && test -x /root/hy310-hdmird-callback'
 check=ssh(check_cmd)
 if check.returncode:raise SystemExit('Required target prerequisites are missing.')
-command=f'set -e; if test -d /sys/module/h713_scp_probe; then rmmod h713_scp_probe; fi; insmod /tmp/h713-ddc-pins.ko run=1; insmod /tmp/h713-scp-probe.ko run=1 edid_trial=1 stock_io={int(args.stock_io)} hold_ms={args.seconds*1000}; dmesg | tail -7; cat /sys/module/h713_scp_probe/parameters/peripheral_restored /sys/module/h713_scp_probe/parameters/restored /sys/module/h713_scp_probe/parameters/edid_mismatch'
+command=f'set -e; if test -d /sys/module/h713_scp_probe; then rmmod h713_scp_probe; fi; insmod /tmp/h713-ddc-pins.ko run=1; insmod /tmp/h713-scp-probe.ko run=1 edid_trial=1 stock_io={int(args.stock_io)} hold_ms={args.seconds*1000}{long_hold_arg}; dmesg | tail -7; cat /sys/module/h713_scp_probe/parameters/peripheral_restored /sys/module/h713_scp_probe/parameters/restored /sys/module/h713_scp_probe/parameters/edid_mismatch'
 records=[];last=None;receiver=None;daemon=None;start=time.monotonic();ended=None;result=1
 port_status=[];last_port_sample=-10
 port_cache=[];last_cache_sample=-10
