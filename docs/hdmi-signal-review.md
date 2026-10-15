@@ -85,41 +85,84 @@ the exact fixture EDID while the module was ready. It is **deployed** with
   [hdmi-signal-lifetime-bench.md](hdmi-signal-lifetime-bench.md), with the bundle in
   `build/signal-lifetime/`.
 
-### H2. There is no defined policy for an `ExecStop` failure during poweroff
+### H2. ExecStop-failure policy: adopted and guarded, bench runs pending
 
-Here is the trace when `h713-hdmi-signal.py stop` fails during shutdown. The
-causes are a busy PCM, a refused `stop`, incomplete restoration, or a failed
-`rmmod`:
+**How a failure plays out.** When `h713-hdmi-signal.py stop` fails during
+shutdown (a busy PCM, a refused `stop`, incomplete restoration, or a failed
+`rmmod`):
+1. systemd marks the unit failed and continues.
+2. The backend refuses to park ("signal owner/helper must restore and stop
+   before backend shutdown"), so the DSP/TVFE restoration, MIPS park and
+   receiver release do not run.
+3. The final stage runs with MIPS live, the receiver held, and possibly the
+   SCP still asserting HPD.
 
-1. systemd marks the signal unit failed and continues.
-2. The backend's `shutdown` raises "signal owner/helper must restore and stop
-   before backend shutdown" (`h713-hdmi-session.py:184`). Because of this, the
-   DSP/TVFE restoration, MIPS park and receiver release all do **not** run.
-3. The kernel powers off with MIPS live, the receiver held, and the SCP still
-   running the payload with HPD asserted.
+M1 and any backend failure end in the same state.
 
-Every validated poweroff so far started from a *parked* state. The unparked
-outcome is the failure mode for **every** signal-side failure, including the
-by-design retention after an init failure. It needs one bench run.
+**Board facts that shape the policy:**
+- `h713-off` (a systemd-shutdown hook) switches the lamp, and so the fan, off
+  **only** for `poweroff`/`halt`.
+- systemd-shutdown hooks run in parallel at the very end, with root
+  read-only and journald stopped.
+- `RebootWatchdogSec=16s` warm-resets the SoC if the final stage stalls.
+- The journal is persistent (`/var/log/journal`), so the failure messages
+  from the earlier phase survive. Read them by boot ID; the RTC is wrong, so
+  relative `-b -1` can pick the wrong boot.
 
-*Proposed policy (recommended; I have not implemented it):*
-1. **Never tear down partially.** This is already true: each step requires the
-   previous one.
-2. **Poweroff proceeds**, and the power cut is the recovery. Validate it once:
-   force a signal stop failure with a busy PCM, run `systemctl poweroff`, then
-   confirm `reboot: Power down`, lamp/fan off, and no reboot for 90 s.
-3. **Warm reboot, fastboot and kexec after a failed stop are unsupported.** The
-   GP6 latch already makes the next boot skip capture. However, it is unverified
-   whether the R_CPUCFG `0x07000400` bit 0 and the modified SRAM page survive a
-   warm reset. Reading `0x07000400` is safe, because the module already does it.
-   Until a bench run answers that, have the wrapper write
-   `/run/h713-hdmi-signal/cold-cycle-required` on failure. Then either:
-   - make a `/usr/lib/systemd/system-shutdown/` hook turn a `reboot`/`kexec` verb
-     into a forced poweroff, or
-   - at minimum, print a loud console line.
-4. **Persist the failure** to `/var/lib/h713-hdmi-startup/` (it is still
-   writable at `ExecStop` time) so the next boot can report it. Journald
-   persistence on the target is not guaranteed.
+**Policy (adopted 2026-10-14):**
+1. **Fail closed and never tear down partially.** This was already true: each
+   step requires the previous one.
+2. **Shutdown is never blocked by a hold.** A powered-off board is the safe
+   state, and removing power is the recovery.
+3. **Retained holds make reboot and kexec into poweroff.** By the existing
+   hardware rules, a retained hold needs a physical cold cycle, and a warm
+   reset cannot give one. Whether R_CPUCFG and the SCP survive a warm reset is
+   also unverified. This applies to `reboot fastboot`/`bootloader` too.
+   - **Trade-off:** on a sealed unit, recovering from such a failure needs a
+     mains power cycle, which the hardware rules already require.
+   - The 16 s reboot watchdog remains a warm-reset fallback if the final stage
+     itself hangs.
+4. **Record:** the earlier failure messages are in the persistent journal.
+   The guard also logs to `/dev/kmsg` and `/dev/console` (serial).
+
+**Implemented:**
+- `tools/hdmi/h713-hdmi-hold-guard` is installed as
+  `/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard` by
+  `update-signal-owner.sh` and `install-startup.sh`. It decides from actual
+  state: whether any of `h713_hdmi_signal`, `h713_ddc_pins`, `h713_scp_probe`,
+  `h713_hdmi_audio` or `h713_hdmi_receiver` is still loaded. Clean terminal
+  parking removes all five, and the receiver/audio modules are only ever
+  `insmod`ed by the session. So the guard covers every failure path,
+  including backend failures, without relying on markers.
+  - With holds, `reboot`/`kexec` becomes `h713-off poweroff` (lamp off), then
+    `systemctl --force --force poweroff`.
+  - `poweroff`/`halt` only log.
+- Host tests (`test-hdmi-hold-guard.py`) cover all five holds against each
+  verb, and clean state against every verb. Three mutants are caught.
+- `check-startup.sh` now requires the guard to be installed.
+- Deployed 2026-10-14
+  ([evidence](hdmi-evidence/2026-10-14-hold-guard/)). A live dry run against
+  the real `/sys/module`, with lamp-off and poweroff stubbed, named the four
+  loaded holds. It only logged for `poweroff` and converted `reboot`.
+
+**Bench runs pending (operator watching)** with `tools/hdmi/run-hold-failure.sh`:
+- **Run 1:** `inject poweroff`.
+- **Run 2:** `inject reboot`.
+
+Each run starts a transient recorder unit ordered `Before=` the signal unit,
+so at shutdown it still holds the PCM when the signal stop runs. This is the
+realistic failure. On the following cold boot, `verify` proves from the
+injected boot's journal that:
+- the stop refused;
+- the backend refused to park;
+- nothing was restored or parked;
+- shutdown reached its final stage.
+
+Pass criteria:
+- Run 1: the lamp and fan go off, with no reboot for 90 s. This is the first
+  unparked poweroff.
+- Run 2: the board **stays off** instead of rebooting, and the lamp and fan
+  go off.
 
 ### M1. A clean pre-launch init failure still leads to an unparked poweroff
 
@@ -258,6 +301,9 @@ gives `stop_signal()`'s mutex acquire a matching release.
 | `modules/hdmi-signal/h713-hdmi-signal.c` | `report()` logs status, META originals, readback and the active snapshot at ready, at setup failure, and before the stop restore. Init publishes `ready`/`failed` under `signal_lock`. H1: verified readback poison before launch, readback == META required before any release, and a build `#error` without the readback header. |
 | `tools/hdmi/make-edid-trial-code.py` | H1: opt-in `--verify-restore` post-restore readback at 0x4aa0. The program is wrapped in `build()`. Default output is byte-identical. |
 | `tools/hdmi/test-edid-trial-payload.py` | H1: OR1K payload simulator with 3 tests (clean readback, dropped write caught, default unchanged). |
+| `tools/hdmi/h713-hdmi-hold-guard`, `test-hdmi-hold-guard.py` | H2: systemd-shutdown guard that turns reboot/kexec into lamp-off poweroff while HDMI holds are retained. |
+| `tools/hdmi/update-signal-owner.sh`, `install-startup.sh`, `build-startup.py`, `check-startup.sh` | H2: the guard is shipped, installed into `system-shutdown/`, and required at startup. The updater scope now includes the guard and `install-startup.sh`, and backup directories are unique (`mktemp`). |
+| `tools/hdmi/run-hold-failure.sh` | H2: bench failure injection (busy PCM ordered to outlive the signal stop) and next-boot journal verification. |
 | `tools/hdmi/run-signal-lifetime.sh` | Self-checking bench lifetime cycle through a runtime-only drop-in ([procedure](hdmi-signal-lifetime-bench.md)). The wrapper also gained `--bundle`, which has a test. |
 | `modules/hdmi-signal/README.md` | Build command uses `--verify-restore`. Describes the readback proof. |
 | `modules/ddc-bringup/h713-ddc-pins.c` | Exit claims restoration only on success, and says so when it releases ownership despite a failed restore. |

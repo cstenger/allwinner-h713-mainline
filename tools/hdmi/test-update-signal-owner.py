@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 SCRIPT=Path(__file__).with_name('update-signal-owner.sh')
-SCOPE=['h713-hdmi-signal.ko','h713-ddc-pins.ko','h713-hdmi-signal.py']
+SCOPE=['h713-hdmi-signal.ko','h713-ddc-pins.ko','h713-hdmi-signal.py','h713-hdmi-hold-guard','install-startup.sh']
 OTHER=['h713-hdmi-receiver.ko','h713-hdmi.scr','firmware/h713/hdmi-audio-dsp.bin']
 
 
@@ -24,8 +24,9 @@ def tree(root):
 class Update(unittest.TestCase):
     def setUp(self):
         tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);t=Path(tmp.name)
-        self.bundle,self.install,self.state,self.sys=t/'bundle',t/'install',t/'state',t/'sys'
-        for d in (self.install,self.state,self.sys):d.mkdir()
+        self.bundle,self.install,self.state,self.sys,self.hooks=t/'bundle',t/'install',t/'state',t/'sys',t/'hooks'
+        for d in (self.install,self.state,self.sys,self.hooks):d.mkdir()
+        (self.hooks/'h713-off').write_text('lamp hook')
         for name in OTHER:
             (self.install/name).parent.mkdir(parents=True,exist_ok=True);(self.install/name).write_text('same '+name)
         for name in SCOPE:(self.install/name).write_text('old '+name)
@@ -37,13 +38,13 @@ class Update(unittest.TestCase):
         sums(self.bundle)
 
     def run_update(self):
-        env={'PATH':'/usr/bin:/bin','H713_HDMI_INSTALL':str(self.install),'H713_HDMI_STATE':str(self.state),'H713_HDMI_SYSMODULE':str(self.sys)}
+        env={'PATH':'/usr/bin:/bin','H713_HDMI_INSTALL':str(self.install),'H713_HDMI_STATE':str(self.state),'H713_HDMI_SYSMODULE':str(self.sys),'H713_HDMI_SHUTDOWN_HOOKS':str(self.hooks)}
         return subprocess.run(['sh',str(self.bundle/'update-signal-owner.sh')],env=env,capture_output=True,text=True)
 
     def assert_refused(self,reason):
-        before=tree(self.install);r=self.run_update()
+        before=tree(self.install),tree(self.hooks);r=self.run_update()
         self.assertNotEqual(r.returncode,0);self.assertIn(reason,r.stderr);self.assertIn('nothing changed',r.stderr)
-        self.assertEqual(tree(self.install),before);self.assertEqual(list(self.state.iterdir()),[])
+        self.assertEqual((tree(self.install),tree(self.hooks)),before);self.assertEqual(list(self.state.iterdir()),[])
 
     def test_replaces_only_scope_keeps_backup_and_is_idempotent(self):
         others={n:(self.install/n).read_bytes() for n in OTHER}
@@ -52,6 +53,9 @@ class Update(unittest.TestCase):
         self.assertEqual((self.install/'SHA256SUMS').read_bytes(),(self.bundle/'SHA256SUMS').read_bytes())
         self.assertEqual({n:(self.install/n).read_bytes() for n in OTHER},others)
         self.assertEqual(oct((self.install/'h713-hdmi-signal.py').stat().st_mode&0o777),'0o755')
+        hook=self.hooks/'h713-hdmi-hold-guard'
+        self.assertEqual(hook.read_text(),'new h713-hdmi-hold-guard');self.assertEqual(oct(hook.stat().st_mode&0o777),'0o755')
+        self.assertEqual((self.hooks/'h713-off').read_text(),'lamp hook')
         backup,=self.state.iterdir()
         self.assertEqual({p.name:p.read_text() for p in backup.iterdir() if p.name!='SHA256SUMS'},{n:'old '+n for n in SCOPE})
         subprocess.run(['sha256sum','-c','--quiet','SHA256SUMS'],cwd=self.install,check=True)
@@ -70,6 +74,15 @@ class Update(unittest.TestCase):
         self.assert_refused('bundle checksum mismatch')
         self.setUp();(self.install/'h713-hdmi.scr').write_text('edited in place')
         self.assert_refused('installed generation fails its own checksums')
+
+    def test_restores_a_missing_or_edited_hook_copy(self):
+        self.assertEqual(self.run_update().returncode,0)
+        for damage in ('edit','remove'):
+            with self.subTest(damage=damage):
+                hook=self.hooks/'h713-hdmi-hold-guard'
+                hook.write_text('edited') if damage=='edit' else hook.unlink()
+                r=self.run_update();self.assertEqual(r.returncode,0,r.stderr);self.assertNotIn('already current',r.stdout)
+                self.assertEqual(hook.read_text(),'new h713-hdmi-hold-guard')
 
     def test_completes_an_interrupted_update(self):
         (self.install/'h713-hdmi-signal.ko').write_text('new h713-hdmi-signal.ko')  # first file landed, SUMS still old

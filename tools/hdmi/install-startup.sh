@@ -26,6 +26,7 @@ cp -a . /usr/lib/h713-hdmi/
 chmod -R go-w /usr/lib/h713-hdmi
 install -m 0644 h713-hdmi-capture.service /etc/systemd/system/h713-hdmi-capture.service
 install -m 0644 h713-hdmi-signal.service /etc/systemd/system/h713-hdmi-signal.service
+install -m 0755 h713-hdmi-hold-guard /usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard
 systemd-analyze verify /etc/systemd/system/h713-hdmi-capture.service /etc/systemd/system/h713-hdmi-signal.service
 cp h713-hdmi.scr /mnt/boot/h713-hdmi.scr.new
 sync

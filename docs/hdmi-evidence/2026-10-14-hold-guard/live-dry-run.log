@@ -1,0 +1,9 @@
+== poweroff
+rc=0
+== reboot
+poweroff
+would-run-systemctl-poweroff
+rc=0
+[ 1067.859310] h713-hold-guard: dry run follows (stubbed lamp/poweroff)
+[ 1067.870622] h713-hdmi-hold-guard: poweroff with HDMI holds retained ( h713_hdmi_signal h713_ddc_pins h713_hdmi_audio h713_hdmi_receiver ); cold cycle required
+[ 1067.893858] h713-hdmi-hold-guard: reboot refused, HDMI holds retained ( h713_hdmi_signal h713_ddc_pins h713_hdmi_audio h713_hdmi_receiver ); powering off, cold cycle required

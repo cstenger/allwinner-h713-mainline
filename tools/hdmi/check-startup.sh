@@ -26,6 +26,7 @@ for kv in h713_hdmi_receiver:clock_count:4 h713_hdmi_receiver:init_error:0 h713_
   [ "$got" = "$want" ] || fail "$m.$k is '$got', want '$want'"
 done
 [ -d $P/h713_ddc_pins ] || fail 'DDC pins not held'
+[ -x /usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard ] || fail 'shutdown hold guard not installed'
 for d in tvfe tvcap; do
   [ "$(cat /sys/devices/h713-hdmi-$d/power/runtime_status)" = active ] || fail "$d domain inactive"
 done
