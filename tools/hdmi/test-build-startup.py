@@ -77,6 +77,23 @@ class StartupScript(unittest.TestCase):
         with self.assertRaises(ValueError):parse_cells('<0x0x00000003 1>') # double prefix
     def test_ccu_is_not_double_prefixed(self):
         self.assertNotIn('0x${hdmi_ccu}',self.text)
+    def test_image_guards_come_from_the_pinned_kernel_sizes(self):
+        self.assertIn(f'itest ${{filesize}} == {m.FIT_SIZE:x} ',self.text)
+        self.assertIn(f'itest ${{hdmi_fdt_size}} == {m.FDT_SIZE:x} ',self.text)
+        self.assertIn(f'itest ${{hdmi_fdt_end}} -le {0x50000000+m.FIT_SIZE:x} ',self.text)
+    def test_build_refuses_a_kernel_the_script_does_not_pin(self):
+        # 2026-10-15: a new FIT reached the board with the old sizes pinned
+        # here, and U-Boot (correctly) refused to boot it.
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            fit,dtb=Path(d)/'k.fit',Path(d)/'b.dtb'
+            fit.write_bytes(bytes(m.FIT_SIZE));dtb.write_bytes(bytes(m.FDT_SIZE))
+            m.check_kernel(fit,dtb)
+            for path,size in ((fit,m.FIT_SIZE+4),(dtb,m.FDT_SIZE-4)):
+                with self.subTest(path=path.name):
+                    path.write_bytes(bytes(size))
+                    with self.assertRaises(SystemExit):m.check_kernel(fit,dtb)
+                    fit.write_bytes(bytes(m.FIT_SIZE));dtb.write_bytes(bytes(m.FDT_SIZE))
 
 
 if __name__=='__main__':

@@ -15,6 +15,13 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 LATCH=0x07090118
 MAGIC=0x48444d49
+# The exact validated kernel FIT (patches through 0179) and its board FDT.
+# U-Boot refuses any other image before it launches anything; build() checks
+# these against build/out so a kernel swap cannot silently outdate them.
+FIT_SIZE=7789772
+FDT_SIZE=34037
+FIT=ROOT/'build/out/h713-kernel.fit'
+DTB=ROOT/'build/out/sun50i-h713-hy200-qz713df-a1.dtb'
 PREBOOT='if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi; usb start'
 BOOTCMD='if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi'
 
@@ -24,14 +31,14 @@ def script():
     stages={
       'image':[
         'fatload mmc 1:2 0x50000000 h713-kernel.fit',
-        'itest ${filesize} == 76daa0', # exact proven FIT size, hex
+        f'itest ${{filesize}} == {FIT_SIZE:x}', # exact proven FIT size, hex
         'fdt addr 0x50000000',
         'fdt get size hdmi_fdt_size /images/fdt-1 data',
-        'itest ${hdmi_fdt_size} == 8319',
+        f'itest ${{hdmi_fdt_size}} == {FDT_SIZE:x}',
         'fdt get addr hdmi_fdt /images/fdt-1 data',
         'itest ${hdmi_fdt} -ge 50000000',
         'setexpr hdmi_fdt_end ${hdmi_fdt} + ${hdmi_fdt_size}',
-        'itest ${hdmi_fdt_end} -le 5076daa0',
+        f'itest ${{hdmi_fdt_end}} -le {0x50000000+FIT_SIZE:x}',
         'cp.b ${hdmi_fdt} 0x4f000000 ${hdmi_fdt_size}',
         'fdt addr 0x4f000000', 'fdt resize 0x1000',
         'fdt set /soc/audio-bridge@203042c interrupts <0 115 4 0 113 4>',
@@ -116,7 +123,13 @@ def legacy_image(data):
     return header[:4]+struct.pack('>I',crc)+header[8:]+payload
 
 
+def check_kernel(fit=FIT,dtb=DTB):
+    for path,size in ((fit,FIT_SIZE),(dtb,FDT_SIZE)):
+        if path.exists() and path.stat().st_size!=size:
+            raise SystemExit(f'{path} is {path.stat().st_size} bytes, startup script pins {size}; update FIT_SIZE/FDT_SIZE only for a validated kernel')
+
 def build(output):
+    check_kernel()
     output.mkdir(parents=True,exist_ok=True)
     sources={
       'h713-hdmi-session.py':'tools/hdmi/h713-hdmi-session.py',

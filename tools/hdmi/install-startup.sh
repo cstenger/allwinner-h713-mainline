@@ -16,7 +16,7 @@ done
 mkdir -p /mnt/boot
 mountpoint -q /mnt/boot || mount -t vfat /dev/mmcblk0p2 /mnt/boot
 [ "$(findmnt -n -o SOURCE /mnt/boot)" = /dev/mmcblk0p2 ]
-[ "$(stat -c %s /mnt/boot/h713-kernel.fit)" = 7789216 ]
+[ "$(stat -c %s /mnt/boot/h713-kernel.fit)" = 7789772 ]
 [ ! -e /mnt/boot/h713-hdmi.scr ]
 [ ! -e /etc/systemd/system/h713-hdmi-capture.service ]
 # The original FIT is untouched. Rollback state is outside the small boot FAT.

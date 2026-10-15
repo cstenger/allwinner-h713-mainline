@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* DDC pin ownership (PL10-PL15) for the HDMI signal owner, through the
- * pinctrl framework. Returning the pins is an explicit, fallible release=1
- * that keeps the module pinned on failure; exit only drops bookkeeping.
- * The PL8-PL15 mux register is read to prove each transition, never written
- * here: PL9 in the same register is the IR receiver. */
-#include <linux/device.h>
+/* DDC pin ownership (PL10-PL15) for the HDMI signal owner. The pins and
+ * their states live in the device tree (h713-lab,ddc-pins, kernel patch
+ * 0179): binding this driver applies "default" (s_twi0/1/2); release=1
+ * applies "sleep" (io_disabled, the reset state, patch 0178), verifies it
+ * and only then lets the module go, which is the only way out. The PL8-PL15
+ * mux register is read to prove each transition, never written here: PL9 in
+ * the same register is the IR receiver. */
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/pinctrl/machine.h>
+#include <linux/platform_device.h>
 
 #define PL_MUX_REG 0x07022004 /* R_PIO bank L, pins 8-15, 4 bits each */
 #define PL10_15(reg) ((reg) >> 8)
 #define DDC_MUX 0x222222 /* s_twi0/1/2 */
-#define IDLE_MUX 0x000000 /* gpio_in */
+#define IDLE_MUX 0xffffff /* io_disabled */
 
 static bool run, released, held;
-static DEFINE_MUTEX(ddc_lock); /* release is writable before and during init */
 static unsigned int original_mux, released_mux;
 module_param(run, bool, 0400);
 module_param(released, bool, 0444);
@@ -26,19 +26,10 @@ module_param(original_mux, uint, 0444);
 MODULE_PARM_DESC(original_mux, "PL10-PL15 mux fields (PL10 lowest) before the claim");
 module_param(released_mux, uint, 0444);
 MODULE_PARM_DESC(released_mux, "PL10-PL15 mux fields read back after release");
-static struct device *device;
+static DEFINE_MUTEX(ddc_lock); /* release is writable before and during init */
 static struct pinctrl *pins;
-static struct pinctrl_state *idle;
+static struct pinctrl_state *sleep;
 static void __iomem *mux;
-#define MAP(pin, fn) PIN_MAP_MUX_GROUP("h713-ddc-pins", "ddc", "7022000.pinctrl", pin, fn)
-#define IDLE(pin) PIN_MAP_MUX_GROUP("h713-ddc-pins", "idle", "7022000.pinctrl", pin, "gpio_in")
-static const struct pinctrl_map maps[] = {
-	MAP("PL10", "s_twi0"), MAP("PL11", "s_twi0"),
-	MAP("PL12", "s_twi1"), MAP("PL13", "s_twi1"),
-	MAP("PL14", "s_twi2"), MAP("PL15", "s_twi2"),
-	IDLE("PL10"), IDLE("PL11"), IDLE("PL12"), IDLE("PL13"),
-	IDLE("PL14"), IDLE("PL15"),
-};
 
 static int release_pins(const char *value, const struct kernel_param *kp)
 {
@@ -52,9 +43,9 @@ static int release_pins(const char *value, const struct kernel_param *kp)
 		ret = released ? 0 : -EPERM;
 		goto out;
 	}
-	ret = pinctrl_select_state(pins, idle);
+	ret = pinctrl_select_state(pins, sleep);
 	if (ret) {
-		pr_err("h713-ddc-pins: input-state restore failed: %d; pins and module retained\n", ret);
+		pr_err("h713-ddc-pins: sleep-state restore failed: %d; pins and module retained\n", ret);
 		goto out;
 	}
 	released_mux = PL10_15(readl(mux));
@@ -65,9 +56,9 @@ static int release_pins(const char *value, const struct kernel_param *kp)
 		goto out;
 	}
 	released = true;
-	pr_info("h713-ddc-pins: DDC pins returned to inputs (mux %06x, original %06x%s); module may be removed\n",
+	pr_info("h713-ddc-pins: DDC pins returned to io_disabled (mux %06x, original %06x%s); module may be removed\n",
 		released_mux, original_mux,
-		original_mux == IDLE_MUX ? "" : ", differs: pinctrl has no disabled function");
+		original_mux == IDLE_MUX ? "" : ", differs from the original");
 	module_put(THIS_MODULE);
 out:
 	mutex_unlock(&ddc_lock);
@@ -75,52 +66,25 @@ out:
 }
 static const struct kernel_param_ops release_ops = { .set = release_pins };
 module_param_cb(release, &release_ops, NULL, 0200);
-MODULE_PARM_DESC(release, "Return PL10-PL15 to inputs and verify the mux; required before rmmod");
+MODULE_PARM_DESC(release, "Return PL10-PL15 to io_disabled and verify the mux; required before rmmod");
 
-static int __init h713_ddc_pins_init(void)
+/* The driver core has already applied "default" when this runs. */
+static int h713_ddc_pins_probe(struct platform_device *pdev)
 {
-	struct pinctrl_state *ddc;
-	unsigned int claimed;
+	unsigned int claimed = PL10_15(readl(mux));
 	int ret;
 
-	if (!run || !of_machine_is_compatible("allwinner,sun50i-h713"))
-		return -EINVAL;
-	/* pinctrl owns the region; this mapping only reads it. */
-	mux = ioremap(PL_MUX_REG, 4);
-	if (!mux)
-		return -ENOMEM;
-	original_mux = PL10_15(readl(mux));
-	ret = pinctrl_register_mappings(maps, ARRAY_SIZE(maps));
-	if (ret)
-		goto unmap;
-	device = root_device_register("h713-ddc-pins");
-	if (IS_ERR(device)) {
-		ret = PTR_ERR(device);
-		goto unregister_maps;
-	}
-	pins = pinctrl_get(device);
-	if (IS_ERR(pins)) {
-		ret = PTR_ERR(pins);
-		goto unregister_device;
-	}
-	idle = pinctrl_lookup_state(pins, "idle");
-	if (IS_ERR(idle)) {
-		ret = PTR_ERR(idle);
-		goto put_pins;
-	}
-	ddc = pinctrl_lookup_state(pins, "ddc");
-	if (IS_ERR(ddc)) {
-		ret = PTR_ERR(ddc);
-		goto put_pins;
-	}
-	ret = pinctrl_select_state(pins, ddc);
-	claimed = PL10_15(readl(mux));
-	if (!ret && claimed != DDC_MUX)
-		ret = -EIO;
-	if (ret) {
-		pinctrl_select_state(pins, idle);
-		pr_err("h713-ddc-pins: claim failed: %d (mux %06x)\n", ret, claimed);
-		goto put_pins;
+	pins = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(pins))
+		return PTR_ERR(pins);
+	sleep = pinctrl_lookup_state(pins, PINCTRL_STATE_SLEEP);
+	if (IS_ERR(sleep))
+		return PTR_ERR(sleep);
+	if (claimed != DDC_MUX) {
+		ret = pinctrl_select_state(pins, sleep);
+		pr_err("h713-ddc-pins: claim reads mux %06x, want %06x; sleep restore %d\n",
+		       claimed, DDC_MUX, ret);
+		return -EIO;
 	}
 	__module_get(THIS_MODULE); /* dropped only by a verified release */
 	mutex_lock(&ddc_lock);
@@ -129,12 +93,44 @@ static int __init h713_ddc_pins_init(void)
 	pr_info("h713-ddc-pins: PL10-PL15 claimed for three DDC ports (mux %06x, original %06x)\n",
 		claimed, original_mux);
 	return 0;
-put_pins:
-	pinctrl_put(pins);
-unregister_device:
-	root_device_unregister(device);
-unregister_maps:
-	pinctrl_unregister_mappings(maps);
+}
+
+static const struct of_device_id h713_ddc_pins_match[] = {
+	{ .compatible = "h713-lab,ddc-pins" },
+	{ }
+};
+
+static struct platform_driver h713_ddc_pins_driver = {
+	.probe = h713_ddc_pins_probe,
+	.driver = {
+		.name = "h713-ddc-pins",
+		.of_match_table = h713_ddc_pins_match,
+		.suppress_bind_attrs = true, /* no sysfs unbind around release */
+	},
+};
+
+static int __init h713_ddc_pins_init(void)
+{
+	int ret;
+
+	if (!run || !of_machine_is_compatible("allwinner,sun50i-h713"))
+		return -EINVAL;
+	/* r_pio owns the region; this mapping only reads it. */
+	mux = ioremap(PL_MUX_REG, 4);
+	if (!mux)
+		return -ENOMEM;
+	original_mux = PL10_15(readl(mux)); /* before binding applies "default" */
+	ret = platform_driver_register(&h713_ddc_pins_driver);
+	if (ret)
+		goto unmap;
+	if (!held) { /* no h713-lab,ddc-pins node (older DTB) or a failed claim */
+		pr_err("h713-ddc-pins: no DDC pin node bound; nothing claimed\n");
+		ret = -ENODEV;
+		goto unregister;
+	}
+	return 0;
+unregister:
+	platform_driver_unregister(&h713_ddc_pins_driver);
 unmap:
 	iounmap(mux);
 	return ret;
@@ -142,15 +138,14 @@ unmap:
 
 static void __exit h713_ddc_pins_exit(void)
 {
-	/* Reachable only after release dropped the pin: nothing can fail here. */
+	/* Reachable only after release dropped the pin: nothing can fail here,
+	 * and unbinding only drops pin ownership, never the mux. */
 	WARN_ON(!released);
-	pinctrl_put(pins);
-	root_device_unregister(device);
-	pinctrl_unregister_mappings(maps);
+	platform_driver_unregister(&h713_ddc_pins_driver);
 	iounmap(mux);
 	pr_info("h713-ddc-pins: ownership released\n");
 }
 module_init(h713_ddc_pins_init);
 module_exit(h713_ddc_pins_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("H713 DDC pinmux hold with verified, fallible release");
+MODULE_DESCRIPTION("H713 DDC pin owner via device-tree pinctrl states, verified fallible release");

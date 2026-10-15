@@ -109,7 +109,7 @@ stop)
   say "original $original"; say "readback $readback"
   [ -n "$original" ] && [ "$original" = "$readback" ] || fail 'readback differs from originals'
   grep -q 'h713-hdmi-signal: peripheral readback, SRAM and vectors restored' "$OUT/stop-dmesg.log" || fail 'no restoration line'
-  grep -q 'h713-ddc-pins: DDC pins returned to inputs' "$OUT/stop-dmesg.log" || fail 'DDC idle restore not confirmed'
+  grep -q 'h713-ddc-pins: DDC pins returned to ' "$OUT/stop-dmesg.log" || fail 'DDC idle restore not confirmed'
   ! grep -qE 'WARNING:|BUG:|Oops|input-state restore failed' "$OUT/stop-dmesg.log" || fail 'kernel warning during stop'
   say 'PASS stop: readback equals originals; SCP stopped; client and DDC released'
   ;;

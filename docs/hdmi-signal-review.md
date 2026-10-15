@@ -238,7 +238,7 @@ can open the PCM in between and lose HPD/EDID mid-stream.
   the signal stop begins. This could be an exported "signal stopping" flag
   checked in `pcm open`.
 
-### M3. DDC release now fails safe and is proven from the mux register (hardware-verified); exact "disabled" restore remains open
+### M3. DDC pins: fallible release, DT pin states, exact io_disabled restore (hardware-verified)
 
 **Before:** `h713_ddc_pins_exit()` was `void`. A failed idle restore was only
 logged, and ownership was released anyway: the module-static maps forbid
@@ -273,16 +273,26 @@ the original.
   - The unit stopped `inactive success`.
   - The upgrade poweroff exercised the fallback.
 
-**Measured gap:** the pre-claim mux is `ffffff`: all six pins were 0xF,
-"disabled". The H713 R_PIO driver, like every mainline sunxi table, exposes
-no function for 0xF, so the pins return to `gpio_in`, which is also high
-impedance. The helper logs this difference on every release.
+**Measured gap, then closed (long-term fix, same day):** the pre-claim mux
+was `ffffff`, meaning all six pins were 0xF, "disabled", which no pinctrl
+function could select. The fix:
+- Kernel patch `0178` adds `io_disabled` (0xF) to every R_PIO pin.
+- `0179` moves the pins into the board DT as an `h713-lab,ddc-pins` node:
+  `default` = `s_twi0/1/2`, `sleep` = `io_disabled`.
+- The helper is now a platform driver for that node. It records the original
+  mux before binding, the claim is applied by the driver core, and release
+  selects `sleep` and requires `ffffff`.
 
-*Options:*
-1. Accept `gpio_in` as the documented idle state. This is the current state.
-2. Add a project pinctrl patch that exposes 0xF for PL10–15, point the
-   helper's idle map at it, and require `released_mux == original_mux`. That
-   needs a kernel rebuild and reflash.
+On hardware (kernel FIT `68c0b730…`,
+[evidence](hdmi-evidence/2026-10-15-ddc-dt-pins/README.md)): the claim read
+`222222` with the pins owned by the DT device, and the release read
+`ffffff`. The live register returned to `0xFFFFFF3F`, bit-for-bit the
+pre-claim state.
+
+The first boot of the new FIT stopped at U-Boot, because the guarded startup
+script still pinned the old FIT and FDT sizes. That stop was safe: it
+happened before any launch. `build-startup.py` now derives those guards from
+one constant and refuses to build against a different `build/out` kernel.
 
 ### M4. A post-release init failure leaves the SCP running, and `stop` is then always refused
 

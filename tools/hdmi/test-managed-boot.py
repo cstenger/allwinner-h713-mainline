@@ -19,8 +19,8 @@ class FakeSerial:
             'h713_disp commdev':'chan=0000 pid=8b8f275c foo <== LIVE\n=> ',
             'h713_disp commcall eaf13de5 chan=0 pid=8b8f275c 3':'MIPS sender completed RETURN\nRETURN_ACK publication consumed\n=> ',
             'h713_disp commtrace':'transition-complete=1 worker-new=00000003\n=> ',
-            'fatload mmc 1:2 0x50000000 h713-kernel.fit':'7789216 bytes read\n=> ',
-            'printenv hdmi_trial_fdt_size':'hdmi_trial_fdt_size=8319\n=> ',
+            'fatload mmc 1:2 0x50000000 h713-kernel.fit':'7789772 bytes read\n=> ',
+            'printenv hdmi_trial_fdt_size':'hdmi_trial_fdt_size=84f5\n=> ',
             'printenv hdmi_trial_fdt':'hdmi_trial_fdt=50001000\n=> ',
             'fdt print /soc/audio-bridge@203042c interrupts':'<0x00000000 0x00000073 0x00000004 0x00000000 0x00000071 0x00000004>\n=> ',
             'bootm 0x50000000 - 0x4f000000':'Linux version 6.18.38'}
@@ -59,7 +59,7 @@ class Boot(unittest.TestCase):
             (prior/'result.json').write_text(json.dumps({'pass':False,'error':'unexpected FIT FDT size'}))
             current=FakeSerial({'md.l 0x0306101c 1':'0306101c: 00000001'})
             result=m.resume(current,prior)
-            self.assertEqual(result['fdt_bytes'],33561)
+            self.assertEqual(result['fdt_bytes'],34037)
             self.assertFalse(any('mips-comm-trace' in c or 'commcall' in c for c in current.commands))
             changed=FakeSerial({'md.l 0x0306101c 1':'0306101c: 00000001','h713_disp commdev':'chan=0000 pid=8b111111 <== LIVE'})
             with self.assertRaises(RuntimeError):m.resume(changed,prior)

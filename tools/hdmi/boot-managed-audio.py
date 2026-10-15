@@ -17,8 +17,8 @@ ROOT=Path(__file__).resolve().parents[2]
 BASE='/tmp/h713-linux-return'
 SSH=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5','root@192.168.4.1']
 SCP=['scp','-F','/dev/null','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5']
-FIT_SIZE=7789216
-FDT_SIZE=0x8319
+FIT_SIZE=7789772
+FDT_SIZE=0x84f5
 FILES=[('modules/hdmi-receiver/h713-hdmi-receiver.ko','h713-hdmi-receiver.ko'),('modules/hdmi-audio/h713-hdmi-audio.ko','h713-hdmi-audio.ko'),('tools/mips/read-comm-trace.py','read-comm-trace.py'),('tools/mips/mips-shell.py','mips-shell.py'),('tools/hdmi/h713-hdmi-session.py','h713-hdmi-session.py'),('tools/hdmi/h713-hdmi-capture.service','h713-hdmi-capture.service'),('tools/hdmi/h713-hdmi-capture-shutdown.conf','h713-hdmi-capture-shutdown.conf'),('build/hdmi-alsa-utils/usr/bin/aplay','arecord'),('docs/hdmi-evidence/2026-10-07-android-audio/audio-dsp-patch.bin','firmware/h713/hdmi-audio-dsp.bin')]
 
 
