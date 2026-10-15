@@ -341,3 +341,21 @@ hook was unchanged. This is separate from a single poweroff transaction with
 an actively recording consumer. Main-rail cutoff, persistent installation and
 suspend remain outside the validated scope. See
 [poweroff evidence](../../docs/hdmi-evidence/2026-10-14-full-poweroff/README.md).
+
+
+A subsequent full OS poweroff started with verified live HDMI stereo tones and
+an owned recorder still RUNNING at the request. Kernel serial showed full22
+DSP/15 TVFE restoration, MIPS parking, EDID release and Power down; no reboot
+occurred for90seconds and lamp/fan off was operator-confirmed. The journal
+relay used the display console, so the strict service-order checker failed;
+its failure and a separate kernel/SSH-based functional assessment are retained.
+Exact stop timestamps were not captured. See
+[active-recording poweroff evidence](../../docs/hdmi-evidence/2026-10-14-active-recording-poweroff/README.md).
+
+
+The corrected active-poweroff relay subsequently passed the unchanged strict
+checker: UART captured actual recording at request, consumer and signal stop,
+all22 DSP/15 TVFE restoration words, MIPS parking/receiver removal and Power
+down, followed by90seconds without reboot. The relay outlives backend teardown,
+stops before serial-getty, ignores SIGHUP and reopens UART after hangup. Earlier
+failed checker outputs remain preserved alongside the successful attempt3.

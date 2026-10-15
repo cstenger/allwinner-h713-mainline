@@ -1,0 +1,79 @@
+[  125.178695] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[  125.201964] h713-scp-probe: payload=ffffff00,00ffffff pre-enable EDID=ffffff00,ffffff00,ffffff00
+[  125.212056] h713-scp-probe: active HPD=00000000 b00=00a0a0a0 b04=07000007 b08=00c0c0c0 headers=00000000,00000000,00000000
+[  125.224411] h713-scp-probe: active IO 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  125.234053] h713-scp-probe: EDID trial ready; holding HPD asserted for 45000 ms
+
+Broadcast message from root@h713-arm64 (Mon 2026-04-13 19:40:16 UTC):
+
+The system will power off now!
+
+[?2004l[?2004h[?2004l
+[  133.699266] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[  133.718609] get_txpwr_max:txpwr_max:18 
+[  133.725506] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[  133.735057] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[  133.742751] change_if: 3 to 2, 8, 2
+[  133.742778] get_txpwr_max:txpwr_max:18 
+[!p]104[?7h[6n[32766;32766H[6n[  135.686069] Bluetooth: hci0: command 0x203d tx timeout
+[  135.686072] Bluetooth: hci0: Opcode 0x203d failed: -110
+[  137.734059] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[  170.984071] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  170.996683] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+[  171.119318] h713-ddc-pins: DDC pins returned to inputs and ownership released
+[  171.906410] h713-hdmi-audio: DSP restore 005a=8000 verified
+[  171.914868] h713-hdmi-audio: DSP restore 0059=8000 verified
+[  171.923233] h713-hdmi-audio: DSP restore 0103=0000 verified
+[  171.931311] h713-hdmi-audio: DSP restore 0102=0000 verified
+[  171.939343] h713-hdmi-audio: DSP restore 8103=0000 verified
+[  171.947472] h713-hdmi-audio: DSP restore 8102=0000 verified
+[  171.955439] h713-hdmi-audio: DSP restore 007e=8485 verified
+[  171.963396] h713-hdmi-audio: DSP restore 007d=8283 verified
+[  171.971330] h713-hdmi-audio: DSP restore 007c=8081 verified
+[  171.979158] h713-hdmi-audio: DSP restore 8017=0001 verified
+[  171.986977] h713-hdmi-audio: DSP restore 801a=0000 verified
+[  171.994778] h713-hdmi-audio: DSP restore 0017=2000 verified
+[  172.002557] h713-hdmi-audio: DSP restore 0012=0000 verified
+[  172.010313] h713-hdmi-audio: DSP restore 0130=0000 verified
+[  172.017970] h713-hdmi-audio: DSP restore 8059=0000 verified
+[  172.025627] h713-hdmi-audio: DSP restore 805a=0000 verified
+[  172.026762] h713-hdmi-audio: DSP restore 004d=0000 verified
+[  172.039891] h713-hdmi-audio: DSP restore 0077=0000 verified
+[  172.047494] h713-hdmi-audio: DSP restore 00ac=0000 verified
+[  172.055075] h713-hdmi-audio: DSP restore 800d=0000 verified
+[  172.062622] h713-hdmi-audio: DSP restore 800c=0000 verified
+[  172.070152] h713-hdmi-audio: DSP restore 0003=0000 verified
+[  172.076542] h713-hdmi-audio: managed DSP graph restored 22 words
+[  172.083403] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[  172.091015] h713-hdmi-audio: restored Audio Bridge output stream 0
+[  172.098148] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[  172.105768] h713-hdmi-audio: restored audio-IHB clock=81000002
+[  172.112444] h713-hdmi-audio: managed TVFE clock/reset state restored; 15 clock words and bus verified
+[  172.122466] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+[  175.880323] h713-hdmi-receiver: terminal MIPS reset 0 asserted and verified
+[  175.888366] h713-hdmi-receiver: terminal MIPS reset 1 asserted and verified
+[  175.896232] h713-hdmi-receiver: terminal MIPS reset 2 asserted and verified
+[  175.904055] h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required
+[  176.156102] h713-receiver-edid h713-edid-clock-hold: EDID reset state and clock reference released
+[  177.674186] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  177.772904] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[  177.797418] systemd-journald[109]: Received SIGTERM from PID 1 (systemd-shutdow).
+[  177.831597] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[  177.856798] systemd-shutdown[1]: Unmounting file systems.
+[  177.866695] (sd-umount)[1165]: Unmounting '/run/credentials/systemd-journald.service'.
+[  177.880917] (sd-remount)[1166]: Remounting '/' read-only with options ''.
+[  177.929044] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[  177.951737] systemd-shutdown[1]: All filesystems unmounted.
+[  177.959164] systemd-shutdown[1]: Deactivating swaps.
+[  177.965869] systemd-shutdown[1]: All swaps deactivated.
+[  177.972798] systemd-shutdown[1]: Detaching loop devices.
+[  177.983594] systemd-shutdown[1]: All loop devices detached.
+[  177.990523] systemd-shutdown[1]: Stopping MD devices.
+[  177.997168] systemd-shutdown[1]: All MD devices stopped.
+[  178.003752] systemd-shutdown[1]: Detaching DM devices.
+[  178.010361] systemd-shutdown[1]: All DM devices detached.
+[  178.016891] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[  178.039813] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  178.048445] systemd-shutdown[1]: Powering off.
+[  178.076157] sun50i-h713-afbd 5600000.display: [drm] RGB fetch quiesced at physical vblank 10557
+[  178.086379] reboot: Power down

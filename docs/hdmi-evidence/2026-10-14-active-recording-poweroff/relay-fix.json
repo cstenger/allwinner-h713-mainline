@@ -1,0 +1,12 @@
+{
+  "display_console_routing_fix": "Use explicit /dev/ttyS0",
+  "second_issue": "Previous persistent journal shows serial-getty stopping immediately before relay exit1",
+  "lifetime_fix": "After=serial-getty@ttyS0.service, Before=capture; non-controlling UART writer reopens after hangup and ignores SIGHUP",
+  "hardware_retest_of_complete_fix": true,
+  "strict_hardware_pass": "attempt3/result.json",
+  "tested_sources_preserved": [
+    "attempt1/tested-sources",
+    "attempt2/tested-sources",
+    "attempt3/tested-sources"
+  ]
+}

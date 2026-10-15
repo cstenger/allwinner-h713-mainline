@@ -5,6 +5,58 @@ Start here, then read [the updated plan](hdmi-audio-capture-plan.md),
 [Linux direct-route evidence](hdmi-evidence/2026-10-08-linux-direct-capture/README.md).
 Older October 7 notes are historical and contain superseded hypotheses.
 
+## Latest: active-recording poweroff strict UART check passed
+
+The fresh attempt3 rerun verified actual48kHz stereo HDMI tones and a recorder
+RUNNING at poweroff request, then captured the complete UART journal order:
+recorder stop, restored signal helper stop, backend restoration/parking and
+receiver removal, then Power down. The unchanged strict checker passed and
+no reboot appeared for90seconds. Lamp/fan off and stayed-off state were
+operator-confirmed.
+Current board OS is off; physical cold cycle is required for more DSP work.
+
+The previous journal confirmed serial-getty stopped just before relay exit1.
+The successful relay orders its stop before getty, outlives backend teardown,
+ignores SIGHUP and reopens the non-controlling UART on hangup. Two native
+writer controls pass. All three attempt records and exact source snapshots
+are preserved; no driver or persistent configuration change occurred. See
+[active poweroff evidence](hdmi-evidence/2026-10-14-active-recording-poweroff/README.md).
+
+## Latest: active poweroff rerun exposed UART relay lifetime issue
+
+The explicit ttyS0 relay captured the request marker and initial journal
+entries; recorder PID953 and real stereo HDMI tones were verified. The journal
+stream ended after poweroff was requested, so the strict stop-order checker
+still failed. Kernel serial recorded full restoration, MIPS parking and Power
+down; no reboot appeared for90seconds, with lamp/fan off operator-confirmed.
+The failed strict result and exact used scripts are preserved under attempt2.
+
+A candidate now orders relay teardown before serial-getty and reopens the UART
+on console hangup, with SIGHUP ignored and bounded retries. Two native writer
+controls pass; hardware validation remains pending. Suspected getty/TTY hangup
+needs confirmation from the previous boot's persistent journal. Current board
+is off; a physical cold boot is required before further testing. See
+[active poweroff evidence](hdmi-evidence/2026-10-14-active-recording-poweroff/README.md).
+
+## Latest: full poweroff began with active HDMI recording
+
+A fresh integrated boot verified real48kHz stereo HDMI tones and arecord
+PID946 RUNNING at the exact systemctl poweroff request. Kernel serial evidence
+shows SCP/DDC cleanup, all22 DSP/15 TVFE restores, audio removal, all three
+MIPS resets verified/status0, EDID release and Power down. No reboot occurred
+for90seconds; the operator confirmed lamp/fan off and board stayed off.
+Current board is off; physical cold cycle is required for new firmware/DSP work.
+
+The strict checker failed to capture service-order journal lines because its
+relay targeted /dev/console (display) instead of UART. The failure is preserved;
+a separate assessment verifies the SSH active-recording proof and ordered
+kernel teardown. Exact consumer stop timestamps/module-unload journal message
+are missing; consumer closure is inferred from successful guarded removal.
+Future routing is corrected to /dev/ttyS0, syntax-checked but not hardware
+retested. See [active poweroff evidence](hdmi-evidence/2026-10-14-active-recording-poweroff/README.md).
+No driver/persistent configuration change or automatic retry occurred. Main-
+rail cutoff, persistent installation and suspend remain separate work.
+
 ## Latest: full OS poweroff from verified parked state passed
 
 One normal `systemctl poweroff` completed from the previous validated terminal

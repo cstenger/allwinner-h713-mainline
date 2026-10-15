@@ -1,0 +1,96 @@
+[    8.631114] h713-arm64 systemd[1]: Started serial-getty@ttyS0.service - Serial Getty on ttyS0.
+[   12.559544] h713-arm64 unix_chkpwd[337]: account root has password changed in future
+[   12.603577] h713-arm64 login[270]: pam_env(login:session): Unable to open env file: /etc/default/locale
+[   12.605097] h713-arm64 login[270]: pam_unix(login:session): session opened for user root(uid=0) by (uid=0)
+[   28.062169] h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - Guarded H713 HDMI capture session...
+[   39.336104] h713-arm64 python3[759]: {"phase": "ready", "already_ready": false}
+[   39.416970] h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - Guarded H713 HDMI capture session.
+[   55.346193] h713-arm64 systemd[1]: Started h713-hdmi-poweroff-relay.service - Bounded HDMI poweroff test journal relay.
+[   55.368667] h713-arm64 systemd[1]: Started h713-hdmi-poweroff-signal.service - Bounded HDMI signal owner for poweroff test.
+[   55.655361] h713-arm64 python3[926]: {"argv": ["insmod", "/tmp/h713-ddc-pins.ko", "run=1"], "rc": 0, "out": "", "err": ""}
+[   57.486932] h713-arm64 systemd[1]: Started h713-hdmi-poweroff-recorder.service - Active HDMI recorder for full poweroff test.
+[   64.297674] h713-arm64 systemd[1]: Stopping h713-hdmi-poweroff-recorder.service - Active HDMI recorder for full poweroff test...
+[   64.313060] h713-arm64 systemd[1]: Stopping serial-getty@ttyS0.service - Serial Getty on ttyS0...
+[   64.392605] h713-arm64 systemd[1]: serial-getty@ttyS0.service: Deactivated successfully.
+[   64.393196] h713-arm64 systemd[1]: Stopped serial-getty@ttyS0.service - Serial Getty on ttyS0.
+[   64.747119] h713-arm64 systemd[1]: h713-hdmi-poweroff-relay.service: Main process exited, code=exited, status=1/FAILURE
+[   64.747713] h713-arm64 systemd[1]: h713-hdmi-poweroff-relay.service: Failed with result 'exit-code'.
+[   64.748755] h713-arm64 systemd[1]: Stopped h713-hdmi-poweroff-relay.service - Bounded HDMI poweroff test journal relay.
+[   64.753580] h713-arm64 systemd[1]: h713-hdmi-poweroff-recorder.service: Deactivated successfully.
+[   64.754137] h713-arm64 systemd[1]: Stopped h713-hdmi-poweroff-recorder.service - Active HDMI recorder for full poweroff test.
+[   64.806880] h713-arm64 systemd[1]: Stopping h713-hdmi-poweroff-signal.service - Bounded HDMI signal owner for poweroff test...
+[  101.370286] h713-arm64 python3[926]: {"argv": ["insmod", "/tmp/h713-scp-probe.ko", "run=1", "edid_trial=1", "stock_io=1", "hold_ms=45000"], "rc": 0, "out": "", "err": ""}
+[  101.424611] h713-arm64 python3[1067]: {"signal_restore": {"restored": "Y", "peripheral_restored": "Y", "edid_mismatch": "0"}}
+[  101.454978] h713-arm64 python3[1067]: {"argv": ["rmmod", "h713_scp_probe"], "rc": 0, "out": "", "err": ""}
+[  101.493952] h713-arm64 python3[1067]: {"argv": ["rmmod", "h713_ddc_pins"], "rc": 0, "out": "", "err": ""}
+[  101.493952] h713-arm64 python3[1067]: H713 signal helper restoration and removal verified
+[  101.578708] h713-arm64 systemd[1]: h713-hdmi-poweroff-signal.service: Deactivated successfully.
+[  101.579328] h713-arm64 systemd[1]: Stopped h713-hdmi-poweroff-signal.service - Bounded HDMI signal owner for poweroff test.
+[  101.588428] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - Guarded H713 HDMI capture session...
+[  101.909685] h713-arm64 runuser[1082]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[  101.974499] h713-arm64 runuser[1082]: pam_unix(runuser:session): session closed for user media
+[  102.029419] h713-arm64 runuser[1090]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[  102.152165] h713-arm64 runuser[1090]: pam_unix(runuser:session): session closed for user media
+[  104.309003] h713-arm64 runuser[1104]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[  104.381900] h713-arm64 runuser[1104]: pam_unix(runuser:session): session closed for user media
+[  106.539186] h713-arm64 python3[1081]: {"phase": "parked", "receiver_removed": true, "cold_boot_required": true, "audio_stop": {"phase": "stopped", "already_stopped": false, "receiver_retained": true, "dsp_restored_words": 22, "tvfe_restored_words": 15}}
+[  106.617391] h713-arm64 systemd[1]: h713-hdmi-capture.service: Deactivated successfully.
+[  106.618492] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - Guarded H713 HDMI capture session.
+[  106.620976] h713-arm64 systemd[1]: h713-hdmi-capture.service: Consumed 1.672s CPU time.
+# /usr/lib/systemd/system/serial-getty@.service
+#  SPDX-License-Identifier: LGPL-2.1-or-later
+#
+#  This file is part of systemd.
+#
+#  systemd is free software; you can redistribute it and/or modify it
+#  under the terms of the GNU Lesser General Public License as published by
+#  the Free Software Foundation; either version 2.1 of the License, or
+#  (at your option) any later version.
+
+[Unit]
+Description=Serial Getty on %I
+Documentation=man:agetty(8) man:systemd-getty-generator(8)
+Documentation=https://0pointer.de/blog/projects/serial-console.html
+BindsTo=dev-%i.device
+After=dev-%i.device systemd-user-sessions.service plymouth-quit-wait.service getty-pre.target
+After=rc-local.service
+
+# If additional gettys are spawned during boot then we should make
+# sure that this is synchronized before getty.target, even though
+# getty.target didn't actually pull it in.
+Before=getty.target
+IgnoreOnIsolate=yes
+
+# IgnoreOnIsolate causes issues with sulogin, if someone isolates
+# rescue.target or starts rescue.service from multi-user.target or
+# graphical.target.
+Conflicts=rescue.service
+Before=rescue.service
+
+[Service]
+# The '-o' option value tells agetty to replace 'login' arguments with '--' for
+# safety, and then the entered username.
+ExecStart=-/sbin/agetty -o '-- \\u' --noreset --noclear --keep-baud 115200,57600,38400,9600 - ${TERM}
+Type=idle
+Restart=always
+UtmpIdentifier=%I
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/%I
+TTYReset=yes
+TTYVHangup=yes
+IgnoreSIGPIPE=no
+SendSIGHUP=yes
+ImportCredential=tty.serial.%I.agetty.*:agetty.
+ImportCredential=tty.serial.%I.login.*:login.
+ImportCredential=agetty.*
+ImportCredential=login.*
+ImportCredential=shell.*
+
+[Install]
+WantedBy=getty.target
+
+# /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
