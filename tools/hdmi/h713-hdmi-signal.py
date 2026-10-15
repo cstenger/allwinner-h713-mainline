@@ -20,6 +20,15 @@ def require(ok,message):
 def run(args):subprocess.run(args,check=True,timeout=20)
 def param(name):return (MODULE/'parameters'/name).read_text().strip()
 def mark(path,text):path.parent.mkdir(mode=0o700,exist_ok=True);path.write_text(text);path.chmod(0o600)
+def release_ddc():
+    # The helper restores and verifies the pin mux in a fallible release
+    # and stays pinned until it succeeds. Helpers from before that change
+    # have no release parameter and restore in their module exit.
+    release=DDC/'parameters/release'
+    if release.exists():
+        try:release.write_text('1\n')
+        except OSError as error:raise RuntimeError(f'DDC pin restore failed ({error.strerror}); DDC retained, cold cycle required') from error
+    run(['rmmod','h713_ddc_pins'])
 def launch(bundle):
     try:run(['insmod',str(bundle/'h713-hdmi-signal.ko'),'armed=1'])
     except subprocess.CalledProcessError:
@@ -28,7 +37,7 @@ def launch(bundle):
         # SRAM restore and released all it took before SCP release, so DDC
         # is the only hold left; drop it so the backend can still park.
         require(not MODULE.exists(),'signal init failed with the module loaded; holds retained, cold cycle required')
-        try:run(['rmmod','h713_ddc_pins'])
+        try:release_ddc()
         except Exception as error:raise RuntimeError('signal init refused before SCP release, and DDC release failed; DDC retained, cold cycle required') from error
         OWNED.unlink()
         raise RuntimeError('signal init refused before SCP release; nothing retained, retry needs a cold cycle') from None
@@ -60,7 +69,7 @@ def main():
             require(param('restored')=='Y' and param('ready')=='N' and param('failed')=='N','signal restoration incomplete')
             run(['rmmod','h713_hdmi_signal'])
         require(not MODULE.exists(),'signal still owns SCP; DDC retained')
-        if DDC.exists():run(['rmmod','h713_ddc_pins'])
+        if DDC.exists():release_ddc()
         OWNED.unlink();ATTEMPTED.unlink(missing_ok=True)
         print('EDID/HPD, SCP SRAM/vectors and DDC ownership restored',flush=True)
 

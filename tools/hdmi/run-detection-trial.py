@@ -255,7 +255,7 @@ finally:
   except subprocess.TimeoutExpired:
    receiver.kill();a,b=receiver.communicate();(OUT/'receiver.log').write_text(a+b+'\nRead did not complete.\n')
   if receiver.returncode:result=receiver.returncode
- cleanup=ssh('set -e; if test -d /sys/module/h713_scp_probe; then test \"$(cat /sys/module/h713_scp_probe/initstate)\" = live; rmmod h713_scp_probe; fi; if test -d /sys/module/h713_ddc_pins; then rmmod h713_ddc_pins; fi; /root/mmio-rw r 7000400; /root/mmio-rw r 7022004')
+ cleanup=ssh('set -e; if test -d /sys/module/h713_scp_probe; then test \"$(cat /sys/module/h713_scp_probe/initstate)\" = live; rmmod h713_scp_probe; fi; if test -d /sys/module/h713_ddc_pins; then if test -e /sys/module/h713_ddc_pins/parameters/release; then echo 1 > /sys/module/h713_ddc_pins/parameters/release; fi; rmmod h713_ddc_pins; fi; /root/mmio-rw r 7000400; /root/mmio-rw r 7022004')
  (OUT/'cleanup.log').write_text(cleanup.stdout+cleanup.stderr);print(cleanup.stdout+cleanup.stderr,flush=True)
  if args.v4l2_frames:
   if v4l2_proc is None:

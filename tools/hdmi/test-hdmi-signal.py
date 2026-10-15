@@ -19,6 +19,8 @@ class Signal(unittest.TestCase):
         m.GRAPH.write_text('Y\n')
         (m.MODULE/'parameters').mkdir(parents=True);m.DDC.mkdir();m.PCM.write_text('closed\n');m.OWNED.write_text('owned');m.ATTEMPTED.write_text('attempted')
         self.events=[];self.bad_restore=False;self.failed=False;self.init='ready';self.ddc_rmmod_fails=False
+        self.ddc_release=True # current helper; False models one without the parameter
+        if self.ddc_release:(m.DDC/'parameters').mkdir();(m.DDC/'parameters/release').write_text('')
     def param(self,name):
         stopped=(m.MODULE/'parameters/stop').exists()
         return {'failed':'Y' if self.failed else 'N','ready':'N' if stopped else 'Y','restored':'Y' if stopped and not self.bad_restore else 'N'}[name]
@@ -27,10 +29,13 @@ class Signal(unittest.TestCase):
         if args==['rmmod','h713_hdmi_signal']:shutil.rmtree(m.MODULE)
         elif args==['rmmod','h713_ddc_pins']:
             if self.ddc_rmmod_fails:raise subprocess.CalledProcessError(1,args)
+            # A pinned helper refuses rmmod until a verified release.
+            release=m.DDC/'parameters/release'
+            if release.exists():self.assertEqual(release.read_text(),'1\n')
             shutil.rmtree(m.DDC)
         elif args[0]=='insmod' and args[1].endswith('h713-ddc-pins.ko'):
             self.assertTrue(m.ATTEMPTED.exists()) # latched before the first hold
-            m.DDC.mkdir()
+            m.DDC.mkdir();(m.DDC/'parameters').mkdir();(m.DDC/'parameters/release').write_text('')
         elif args[0]=='insmod' and args[1].endswith('h713-hdmi-signal.ko'):
             # Ownership must be recorded before SCP can be released.
             self.assertTrue(m.OWNED.exists() and m.DDC.exists())
@@ -105,6 +110,19 @@ class Signal(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'module loaded; holds retained'):self.action('start')
         self.assertTrue(m.MODULE.exists() and m.DDC.exists() and m.OWNED.exists())
         self.assertNotIn(['rmmod','h713_ddc_pins'],self.events)
+    def test_stop_releases_ddc_pins_before_removing_the_helper(self):
+        self.action('stop')
+        self.assertEqual(self.events[-1],['rmmod','h713_ddc_pins']);self.assertFalse(m.DDC.exists())
+    def test_failed_ddc_pin_restore_keeps_the_helper_and_ownership(self):
+        (m.DDC/'parameters/release').unlink();(m.DDC/'parameters/release').mkdir() # write raises OSError, as -EIO would
+        with self.assertRaisesRegex(RuntimeError,'DDC pin restore failed.*DDC retained'):self.action('stop')
+        self.assertNotIn(['rmmod','h713_ddc_pins'],self.events)
+        self.assertTrue(m.DDC.exists() and m.OWNED.exists() and m.ATTEMPTED.exists())
+        self.assertFalse(m.MODULE.exists()) # the signal owner itself was restored first
+    def test_helper_without_release_parameter_is_removed_directly(self):
+        shutil.rmtree(m.DDC/'parameters') # helper loaded before the release change
+        self.action('stop')
+        self.assertEqual(self.events[-1],['rmmod','h713_ddc_pins']);self.assertFalse(m.DDC.exists())
     def test_start_after_a_complete_stop_is_allowed(self):
         self.action('stop');self.events=[]
         self.action('start')

@@ -238,31 +238,51 @@ can open the PCM in between and lose HPD/EDID mid-stream.
   the signal stop begins. This could be an exported "signal stopping" flag
   checked in `pcm open`.
 
-### M3. The DDC idle-restore failure cannot propagate, and "idle" may not equal the original state
+### M3. DDC release now fails safe and is proven from the mux register (hardware-verified); exact "disabled" restore remains open
 
-`h713_ddc_pins_exit()` is `void`. Skipping cleanup on failure is **not** an
-option. `pinctrl_register_mappings()` keeps a pointer to the module-static
-`maps[]`, so if they leaked they would point into freed module memory. The
-exit must therefore release ownership even when `pinctrl_select_state(idle)`
-fails. Before this change it also printed "returned to inputs" in that case.
+**Before:** `h713_ddc_pins_exit()` was `void`. A failed idle restore was only
+logged, and ownership was released anyway: the module-static maps forbid
+skipping cleanup in exit. The idle state, `gpio_in`, was also assumed to be
+the original.
 
-The idle state is also `gpio_in`. Nobody has verified that this matches the
-PL10–PL15 mux from before the claim; on newer sunxi parts the reset default is
-often function 7 (disabled).
+**Fixed (2026-10-15):**
+- The helper now holds a self-reference from a verified claim until a
+  verified release. Restoration is an explicit `release=1` parameter that
+  returns the pinctrl error and keeps the module pinned on failure. `rmmod`
+  without a release is refused, and exit only drops bookkeeping.
+- It reads the PL8–15 mux register (`0x07022004`; read only, since PL9 is the
+  IR receiver):
+  - at load, recording `original_mux`;
+  - after claim, requiring all six fields to read DDC (`222222`);
+  - after release, requiring `000000` and recording `released_mux`.
+- A `held` flag under a lock prevents a release before or during init.
+  Without it, `insmod … release=1` would dereference NULL.
+- The wrapper's `release_ddc()` writes `release=1` before `rmmod`. On
+  failure it keeps the helper and the ownership record. A helper without the
+  parameter is removed directly, which kept the upgrade boot working.
+- `run-detection-trial.py` also releases first.
 
-*Fix applied (safe):* exit now prints the success line only on success. On
-failure it says that ownership was released with the pins possibly still
-muxed to DDC.
+**Verification:**
+- **Host:** 17 wrapper tests, including a failed restore keeping DDC and
+  ownership and the old-helper fallback. Three mutants are caught. W=1 build
+  clean.
+- **Hardware** ([evidence](hdmi-evidence/2026-10-15-ddc-release/README.md)):
+  - The bare `rmmod` was refused.
+  - The release read back `000000`, and the live register became `0x0000003F`
+    with the IR pin unchanged.
+  - The unit stopped `inactive success`.
+  - The upgrade poweroff exercised the fallback.
 
-*Proposed:* mirror the signal module's design:
-- Call `__module_get()` at init.
-- Add a `release=1` param that selects idle and returns the error, keeping the
-  self-ref on failure, and calls `module_put()` on success. Exit then does only
-  bookkeeping.
-- Have the wrapper write `release` before `rmmod` and keep `OWNED` on failure.
-- Record the pre-claim PL function once on the bench and use it as the idle
-  state, instead of assuming `gpio_in`.
-- Drop the "Test-only" header comment, since this is now in the production path.
+**Measured gap:** the pre-claim mux is `ffffff`: all six pins were 0xF,
+"disabled". The H713 R_PIO driver, like every mainline sunxi table, exposes
+no function for 0xF, so the pins return to `gpio_in`, which is also high
+impedance. The helper logs this difference on every release.
+
+*Options:*
+1. Accept `gpio_in` as the documented idle state. This is the current state.
+2. Add a project pinctrl patch that exposes 0xF for PL10–15, point the
+   helper's idle map at it, and require `released_mux == original_mux`. That
+   needs a kernel rebuild and reflash.
 
 ### M4. A post-release init failure leaves the SCP running, and `stop` is then always refused
 
@@ -343,6 +363,7 @@ gives `stop_signal()`'s mutex acquire a matching release.
 | `tools/hdmi/h713-hdmi-hold-guard`, `test-hdmi-hold-guard.py` | H2: systemd-shutdown guard that turns reboot/kexec into lamp-off poweroff while HDMI holds are retained. |
 | `tools/hdmi/update-signal-owner.sh`, `install-startup.sh`, `build-startup.py`, `check-startup.sh` | H2: the guard is shipped, installed into `system-shutdown/`, and required at startup. The updater scope now includes the guard and `install-startup.sh`, and backup directories are unique (`mktemp`). |
 | `tools/hdmi/h713-hdmi-signal.py`, `test-hdmi-signal.py` | M1: per-boot `attempted` latch written before the first hold. A clean pre-launch init refusal releases DDC, so the backend can park. |
+| `modules/ddc-bringup/h713-ddc-pins.c`, wrapper `release_ddc()` | M3: pinned until a verified, fallible `release=1`. Mux register readback proves the claim and the release, and records the original mux. |
 | `tools/hdmi/run-hold-failure.sh` | H2: bench failure injection (busy PCM ordered to outlive the signal stop) and next-boot journal verification. |
 | `tools/hdmi/run-signal-lifetime.sh` | Self-checking bench lifetime cycle through a runtime-only drop-in ([procedure](hdmi-signal-lifetime-bench.md)). The wrapper also gained `--bundle`, which has a test. |
 | `modules/hdmi-signal/README.md` | Build command uses `--verify-restore`. Describes the readback proof. |
