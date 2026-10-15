@@ -116,13 +116,17 @@ def main():
     if args.action=='start':
         if MODULE.exists():
             require(OWNED.exists(),'signal module is not owned by this service')
+            # Restored (holds already released) but an earlier rmmod failed.
+            require(param('restored')!='Y','signal owner already restored but not removed; run stop to finish (no hardware holds)')
             require(param('ready')=='Y' and param('failed')=='N','signal owner failed; cold cycle required');return
         require(not ATTEMPTED.exists() and not OWNED.exists(),'signal initialization already attempted on this boot; cold cycle required')
         require(not DDC.exists() and not PROBE.exists(),'competing signal helper')
         require(GRAPH.read_text().strip()=='Y','capture backend not ready')
+        # Both records precede the first hold, so no hold can exist that this
+        # service cannot later prove it owns.
         mark(ATTEMPTED,'signal initialization attempted on this boot\n')
+        mark(OWNED,'DDC and signal owner acquired by signal service\n')
         run(['insmod',str(args.bundle/'h713-ddc-pins.ko'),'run=1'])
-        mark(OWNED,'DDC acquired by signal service\n')
         launch(args.bundle,args.signal_arg)
         if param('failed')=='Y':recover_init_failure()
         require(param('ready')=='Y' and param('failed')=='N','signal setup failed; holds retained, cold cycle required')
@@ -131,17 +135,19 @@ def main():
         if not MODULE.exists() and not DDC.exists():return
         require(OWNED.exists(),'signal resources not owned by this service; refusing removal')
         if MODULE.exists():
-            require(param('failed')=='N','signal owner failed; holds retained, cold cycle required')
-            dev=capture_device()
-            reclaim(dev)
-            held=hold_capture(dev)
-            try:
-                # The module marks a failed stop terminal and keeps every hold; keep DDC too.
-                try:(MODULE/'parameters/stop').write_text('1\n')
-                except OSError as error:raise RuntimeError(f'signal stop refused ({error.strerror}); holds retained, cold cycle required') from error
-                require(param('restored')=='Y' and param('ready')=='N' and param('failed')=='N','signal restoration incomplete')
-            finally:
-                if held is not None:close_capture(held)
+            # Already restored (an earlier rmmod failed): nothing left to restore.
+            if param('restored')!='Y':
+                require(param('failed')=='N','signal owner failed; holds retained, cold cycle required')
+                dev=capture_device()
+                reclaim(dev)
+                held=hold_capture(dev)
+                try:
+                    # The module marks a failed stop terminal and keeps every hold; keep DDC too.
+                    try:(MODULE/'parameters/stop').write_text('1\n')
+                    except OSError as error:raise RuntimeError(f'signal stop refused ({error.strerror}); holds retained, cold cycle required') from error
+                    require(param('restored')=='Y' and param('ready')=='N' and param('failed')=='N','signal restoration incomplete')
+                finally:
+                    if held is not None:close_capture(held)
             run(['rmmod','h713_hdmi_signal'])
         require(not MODULE.exists(),'signal still owns SCP; DDC retained')
         if DDC.exists():release_ddc()

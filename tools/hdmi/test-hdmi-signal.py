@@ -58,7 +58,8 @@ class Signal(unittest.TestCase):
             if release.exists():self.assertEqual(release.read_text(),'1\n')
             shutil.rmtree(m.DDC)
         elif args[0]=='insmod' and args[1].endswith('h713-ddc-pins.ko'):
-            self.assertTrue(m.ATTEMPTED.exists()) # latched before the first hold
+            if getattr(self,'ddc_insmod_fails',False):raise subprocess.CalledProcessError(1,args)
+            self.assertTrue(m.ATTEMPTED.exists() and m.OWNED.exists()) # latched and owned before the first hold
             m.DDC.mkdir();(m.DDC/'parameters').mkdir();(m.DDC/'parameters/release').write_text('')
         elif args[0]=='insmod' and args[1].endswith('h713-hdmi-signal.ko'):
             # Ownership must be recorded before SCP can be released.
@@ -209,6 +210,19 @@ class Signal(unittest.TestCase):
     def test_graph_not_ready_means_nobody_can_capture(self):
         self.not_ready=True
         self.action('stop');self.assertIsNone(self.holding)
+    def test_start_names_a_restored_but_unremoved_owner(self):
+        (m.MODULE/'parameters/stop').write_text('1\n') # restored; an earlier rmmod failed
+        with self.assertRaisesRegex(RuntimeError,'already restored but not removed; run stop'):self.action('start')
+        self.shutdown=True;self.pids=[4242] # nothing to restore: no reclaim, no hold
+        self.action('stop') # and stop finishes it
+        self.assertEqual(self.events,[['rmmod','h713_hdmi_signal'],['rmmod','h713_ddc_pins']])
+        self.assertEqual(self.kills,[]);self.assertEqual(self.opens,0)
+    def test_failed_ddc_insmod_leaves_records_but_no_holds(self):
+        self.fresh();self.ddc_insmod_fails=True
+        with self.assertRaises(subprocess.CalledProcessError):self.action('start')
+        self.assertFalse(m.DDC.exists() or m.MODULE.exists());self.assertTrue(m.ATTEMPTED.exists())
+        self.action('stop') # nothing held: a harmless no-op
+        with self.assertRaisesRegex(RuntimeError,'already attempted'):self.action('start')
     def test_start_after_a_complete_stop_is_allowed(self):
         self.action('stop');self.events=[]
         self.action('start')

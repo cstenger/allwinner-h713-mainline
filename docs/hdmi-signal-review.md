@@ -403,28 +403,36 @@ gives `stop_signal()`'s mutex acquire a matching release.
 - **Partial `ioremap` failure:** this calls `iounmap(NULL)`, which is a no-op
   with arm64 generic ioremap.
 
-### L3. Other minor wrapper and unit points
+### L3. Other minor wrapper and unit points: all resolved (2026-10-15)
 
-- `start` writes `OWNED` *after* DDC `insmod`. If that write failed, DDC would
-  be held with no owner record, and `stop` would refuse forever. Write an
-  `attempted` record before the DDC `insmod` (this fits naturally with the M1
-  change).
-- If the module is present with `restored=Y` after an earlier `rmmod` failure,
-  `start` reports "signal owner failed; cold cycle required". That is
-  conservative but misleading.
-- After a successful stop, `systemctl restart` relaunches the payload in the
-  same boot. This relies on repeated launches per boot being safe, as they were
-  for the bounded probe. Make it an explicit, tested claim, or latch per boot.
-- `stop_signal()` writes the init-time snapshot `original` back to R_CPUCFG
-  instead of doing read-modify-write on bit 0. That is harmless unless
-  something else changes other bits in the meantime.
-- The validation step checks the vector delay-slot word (`+4 == nop`), but the
-  module never writes it, so it depends on the stock vector table. This is
-  inherited from the probe; worth one comment.
-- The unit's ordering is correct. `Requires`+`After` the backend means the
-  signal stops first. The `Condition` matches the backend's, so a skipped
-  backend cannot satisfy `Requires` while the signal runs. The 20 s subprocess
-  timeouts fit inside the 30 s stop timeout.
+- **Ownership before the first hold (fixed).** `start` now writes both the
+  `attempted` latch and `OWNED` **before** the DDC `insmod`. No hold can exist
+  that this service cannot later prove it owns. A failed DDC `insmod` leaves
+  only the records: `stop` is a no-op and a retry is still refused (tested).
+- **Restored but not removed (fixed).** `start` now reports "already restored
+  but not removed; run stop to finish (no hardware holds)". `stop` on an
+  owner that is already restored goes straight to `rmmod`, with no reclaim,
+  no capture hold and no rewrite of `stop` (tested, including during
+  shutdown).
+- **Same-boot relaunch (now an evidenced claim).** A complete stop clears the
+  latch, so a restart relaunches the payload. On hardware this has run 3
+  times on one boot: the installed owner and two bench faults
+  ([M4 bench](hdmi-evidence/2026-10-15-m4-recovery/README.md)). The
+  lifetime bench ran a stop and a second launch. Every restoration was
+  byte-exact. The wrapper test `test_start_after_a_complete_stop_is_allowed`
+  pins the behaviour.
+- **R_CPUCFG write (fixed).** `restore_sram()` now does read-modify-write of
+  bit 0 only and verifies it. It warns if other bits changed since init,
+  instead of writing back the init-time snapshot. This runs on every stop. It
+  was built W=1 and deployed for the next boot; hardware confirmation is
+  pending (see below).
+- **Vector delay slot (documented).** A comment at the validation step says
+  that only the jump word is written, and that the stock table's `nop` delay
+  slot is required.
+- **Unit ordering (verified, no change).** `Requires`+`After` the backend
+  means the signal stops first. The matching `Condition` means a skipped
+  backend cannot leave the signal running. The 20 s subprocess timeouts fit
+  inside the 30 s stop timeout.
 
 ## Changes made in this review
 

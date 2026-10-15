@@ -67,9 +67,14 @@ static void release_resources(void)
 static int restore_sram(void)
 {
 	unsigned int i;
+	u32 stopped = readl(reset) & ~BIT(0);
 
-	writel(original & ~BIT(0), reset);
-	if (readl(reset) != (original & ~BIT(0)))
+	/* Only bit 0 (SCP run) is ours: never write back a stale snapshot. */
+	if (stopped != (original & ~BIT(0)))
+		pr_warn("h713-hdmi-signal: R_CPUCFG other bits changed since init (%08x -> %08x)\n",
+			original, stopped);
+	writel(stopped, reset);
+	if (readl(reset) != stopped)
 		return -EIO;
 	udelay(10);
 	memcpy_toio(sram + SCP_PAGE_OFFSET, backup, PAGE_BYTES);
@@ -276,6 +281,8 @@ static int __init signal_init(void)
 	writeq(1, sram + MARKER_OFFSET + 32);
 	writeq(1, sram + MARKER_OFFSET + 64);
 	wmb();
+	/* Each vector is "j target; nop". Only the jump word is written; the
+	 * delay-slot nop comes from the stock vector table, so require it. */
 	for (i = 0; i < VECTOR_COUNT; i++) {
 		u32 expected = i ? (TRAP_BASE + 0x20 * (i - 1) - 0x100 * (i + 1)) / 4 :
 			(SCP_PAGE_OFFSET - 0x100) / 4;
