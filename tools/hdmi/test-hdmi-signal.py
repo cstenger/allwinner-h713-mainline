@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
+import subprocess
 
 spec=importlib.util.spec_from_file_location('signal_owner',Path(__file__).with_name('h713-hdmi-signal.py'))
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -14,9 +15,10 @@ class Signal(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name)
-        for name in ('MODULE','DDC','PCM','OWNED'):setattr(m,name,root/name)
+        for name in ('MODULE','DDC','PCM','OWNED','PROBE','GRAPH'):setattr(m,name,root/name)
+        m.GRAPH.write_text('Y\n')
         (m.MODULE/'parameters').mkdir(parents=True);m.DDC.mkdir();m.PCM.write_text('closed\n');m.OWNED.write_text('owned')
-        self.events=[];self.bad_restore=False;self.failed=False
+        self.events=[];self.bad_restore=False;self.failed=False;self.init='ready'
     def param(self,name):
         stopped=(m.MODULE/'parameters/stop').exists()
         return {'failed':'Y' if self.failed else 'N','ready':'N' if stopped else 'Y','restored':'Y' if stopped and not self.bad_restore else 'N'}[name]
@@ -24,9 +26,15 @@ class Signal(unittest.TestCase):
         self.events.append(args)
         if args==['rmmod','h713_hdmi_signal']:shutil.rmtree(m.MODULE)
         elif args==['rmmod','h713_ddc_pins']:shutil.rmtree(m.DDC)
+        elif args[0]=='insmod' and args[1].endswith('h713-ddc-pins.ko'):m.DDC.mkdir()
+        elif args[0]=='insmod' and args[1].endswith('h713-hdmi-signal.ko'):
+            # Ownership must be recorded before SCP can be released.
+            self.assertTrue(m.OWNED.exists() and m.DDC.exists())
+            if self.init=='refused':raise subprocess.CalledProcessError(1,args)
+            (m.MODULE/'parameters').mkdir(parents=True);self.failed=self.init=='failed'
         else:raise AssertionError(args)
-    def action(self,action):
-        with patch('sys.argv',['signal',action]),patch.object(m,'param',self.param),patch.object(m,'run',self.command):m.main()
+    def action(self,action,*extra):
+        with patch('sys.argv',['signal',action,*extra]),patch.object(m,'param',self.param),patch.object(m,'run',self.command):m.main()
     def test_ordered_stop_requires_restoration_before_releasing_ddc(self):
         self.action('stop')
         self.assertEqual(self.events,[['rmmod','h713_hdmi_signal'],['rmmod','h713_ddc_pins']])
@@ -51,5 +59,49 @@ class Signal(unittest.TestCase):
         m.OWNED.unlink()
         with self.assertRaisesRegex(RuntimeError,'not owned'):self.action('start')
         self.assertEqual(self.events,[])
+    def fresh(self):
+        shutil.rmtree(m.MODULE);shutil.rmtree(m.DDC);m.OWNED.unlink()
+    def test_start_claims_ddc_then_releases_scp(self):
+        self.fresh();self.action('start')
+        self.assertEqual([e[1].rsplit('/',1)[1] for e in self.events],['h713-ddc-pins.ko','h713-hdmi-signal.ko'])
+        self.assertTrue(m.OWNED.exists());self.events=[]
+        self.action('start') # already ready is harmless
+        self.assertEqual(self.events,[])
+    def test_start_loads_modules_from_the_named_bundle(self):
+        self.fresh();self.action('start','--bundle','/tmp/candidate')
+        self.assertEqual([e[1] for e in self.events],['/tmp/candidate/h713-ddc-pins.ko','/tmp/candidate/h713-hdmi-signal.ko'])
+        self.fresh();self.events=[];self.action('start')
+        self.assertEqual([e[1] for e in self.events],['/usr/lib/h713-hdmi/h713-ddc-pins.ko','/usr/lib/h713-hdmi/h713-hdmi-signal.ko'])
+    def test_start_failure_after_scp_release_retains_everything(self):
+        self.fresh();self.init='failed'
+        with self.assertRaisesRegex(RuntimeError,'holds retained'):self.action('start')
+        self.assertTrue(m.MODULE.exists() and m.DDC.exists() and m.OWNED.exists())
+        for action in ('start','stop'):
+            with self.subTest(action=action),self.assertRaisesRegex(RuntimeError,'cold cycle'):self.action(action)
+        self.assertFalse((m.MODULE/'parameters/stop').exists())
+        self.assertEqual(len(self.events),2) # no rmmod, no second insmod
+    def test_refused_insmod_latches_the_attempt_and_keeps_ddc(self):
+        self.fresh();self.init='refused'
+        with self.assertRaises(subprocess.CalledProcessError):self.action('start')
+        self.assertTrue(m.DDC.exists() and m.OWNED.exists());self.assertFalse(m.MODULE.exists())
+        with self.assertRaisesRegex(RuntimeError,'already attempted'):self.action('start')
+        self.assertEqual(len(self.events),2)
+    def test_start_refuses_competing_helpers_and_unready_backend(self):
+        for case in ('ddc','probe','graph'):
+            with self.subTest(case=case):
+                self.setUp();self.fresh()
+                if case=='ddc':m.DDC.mkdir()
+                elif case=='probe':m.PROBE.mkdir()
+                else:m.GRAPH.write_text('N\n')
+                with self.assertRaises(RuntimeError):self.action('start')
+                self.assertEqual(self.events,[]);self.assertFalse(m.OWNED.exists())
+    def test_refused_stop_write_retains_ddc_and_ownership(self):
+        (m.MODULE/'parameters/stop').mkdir() # write raises OSError
+        with self.assertRaisesRegex(RuntimeError,'stop refused.*holds retained'):self.action('stop')
+        self.assertTrue(m.MODULE.exists() and m.DDC.exists() and m.OWNED.exists())
+        self.assertEqual(self.events,[])
+    def test_stop_after_signal_unloaded_releases_remaining_ddc(self):
+        shutil.rmtree(m.MODULE);self.action('stop')
+        self.assertEqual(self.events,[['rmmod','h713_ddc_pins']]);self.assertFalse(m.OWNED.exists())
 
 if __name__=='__main__':unittest.main()

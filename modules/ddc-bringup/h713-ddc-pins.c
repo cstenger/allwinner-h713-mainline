@@ -71,12 +71,15 @@ static void __exit h713_ddc_pins_exit(void)
 {
 	int ret = pinctrl_select_state(pins, idle);
 
-	if (ret)
-		pr_err("h713-ddc-pins: input-state restore failed: %d\n", ret);
+	/* Exit cannot fail, and the maps live in this module, so ownership is
+	 * released either way; only the message may claim restoration. */
 	pinctrl_put(pins);
 	root_device_unregister(device);
 	pinctrl_unregister_mappings(maps);
-	pr_info("h713-ddc-pins: DDC pins returned to inputs and ownership released\n");
+	if (ret)
+		pr_err("h713-ddc-pins: input-state restore failed: %d; ownership released with pins possibly still muxed to DDC\n", ret);
+	else
+		pr_info("h713-ddc-pins: DDC pins returned to inputs and ownership released\n");
 }
 module_init(h713_ddc_pins_init);
 module_exit(h713_ddc_pins_exit);

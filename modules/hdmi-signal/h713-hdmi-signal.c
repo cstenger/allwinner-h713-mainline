@@ -9,6 +9,9 @@
 #include <linux/of.h>
 #include <linux/slab.h>
 #include "edid-trial-code.h"
+#ifndef EDID_CHECK_OFFSET
+#error "regenerate edid-trial-code.h with make-edid-trial-code.py --verify-restore"
+#endif
 
 extern int h713_receiver_acquire(void);
 extern void h713_receiver_release(void);
@@ -21,6 +24,9 @@ extern void h713_receiver_release(void);
 #define TRAP_BASE 0x4c00
 #define MARKER_OFFSET 0x4f00
 #define MARKER 0x48444d49
+/* HPD 1014, DDC 1b00/1b04/1b08, IO 1020/1030/1034/1038: originals at META,
+ * the SCP's post-restore readback at CHECK, in the same order. */
+#define RESTORED_REGS 8
 static bool armed, ready, failed, restored, receiver_owned;
 static void __iomem *sram, *reset;
 static u8 *backup;
@@ -64,6 +70,32 @@ static int restore_sram(void)
 	return 0;
 }
 
+/* The page restore erases the payload's evidence; log it first. Reads only
+ * SCP SRAM, never receiver MMIO. */
+static void report(const char *phase)
+{
+	u32 meta[RESTORED_REGS], check[RESTORED_REGS], active[11];
+	unsigned int i;
+
+	for (i = 0; i < RESTORED_REGS; i++) {
+		meta[i] = readl(sram + EDID_META_OFFSET + 4 * i);
+		check[i] = readl(sram + EDID_CHECK_OFFSET + 4 * i);
+	}
+	for (i = 0; i < ARRAY_SIZE(active); i++)
+		active[i] = readl(sram + MARKER_OFFSET + 36 + 4 * (i < 7 ? i : i + 1));
+	pr_info("h713-hdmi-signal: %s marker=%08x ready=%08x exception=%u error=%u done=%08x\n",
+		phase, readl(sram + MARKER_OFFSET), readl(sram + MARKER_OFFSET + 8),
+		readl(sram + MARKER_OFFSET + 12), readl(sram + MARKER_OFFSET + 24),
+		readl(sram + MARKER_OFFSET + 28));
+	pr_info("h713-hdmi-signal: %s original 1014=%08x 1b00=%08x 1b04=%08x 1b08=%08x 1020=%08x 1030=%08x 1034=%08x 1038=%08x\n",
+		phase, meta[0], meta[1], meta[2], meta[3], meta[4], meta[5], meta[6], meta[7]);
+	pr_info("h713-hdmi-signal: %s readback 1014=%08x 1b00=%08x 1b04=%08x 1b08=%08x 1020=%08x 1030=%08x 1034=%08x 1038=%08x\n",
+		phase, check[0], check[1], check[2], check[3], check[4], check[5], check[6], check[7]);
+	pr_info("h713-hdmi-signal: %s active 1014=%08x 1b00=%08x 1b04=%08x 1b08=%08x c00=%08x d00=%08x e00=%08x 1020=%08x 1030=%08x 1034=%08x 1038=%08x\n",
+		phase, active[0], active[1], active[2], active[3], active[4], active[5],
+		active[6], active[7], active[8], active[9], active[10]);
+}
+
 static int stop_signal(const char *value, const struct kernel_param *kp)
 {
 	bool stop;
@@ -82,16 +114,22 @@ static int stop_signal(const char *value, const struct kernel_param *kp)
 			break;
 		usleep_range(1000, 1500);
 	}
+	report("stop");
 	ret = -EIO;
 	if (i == 100 || readl(sram + MARKER_OFFSET + 24) ||
 	    readl(sram + MARKER_OFFSET + 12))
 		goto out;
+	/* ARM must not read receiver MMIO; the SCP's readback is the proof. */
+	for (i = 0; i < RESTORED_REGS; i++)
+		if (readl(sram + EDID_CHECK_OFFSET + 4 * i) !=
+		    readl(sram + EDID_META_OFFSET + 4 * i))
+			goto out;
 	ret = restore_sram();
 	if (ret)
 		goto out;
 	ready = false;restored = true;failed = false;
 	release_resources();
-	pr_info("h713-hdmi-signal: peripheral, SRAM and vectors restored; SCP stopped; receiver client released\n");
+	pr_info("h713-hdmi-signal: peripheral readback, SRAM and vectors restored; SCP stopped; receiver client released\n");
 	module_put(THIS_MODULE);
 out:
 	mutex_unlock(&signal_lock);
@@ -145,6 +183,12 @@ static int __init signal_init(void)
 	writel((SCP_PAGE_OFFSET - 0x100) / 4, sram + 0x100);
 	for (i = 0; i < 128; i += 8)
 		writeq(0, sram + MARKER_OFFSET + i);
+	/* Poison, not zero: zero is a legitimate original IO value. */
+	for (i = 0; i < 4 * RESTORED_REGS; i += 8) {
+		writeq(~0ULL, sram + EDID_CHECK_OFFSET + i);
+		if (readq(sram + EDID_CHECK_OFFSET + i) != ~0ULL)
+			goto before_launch_failed;
+	}
 	for (i = 0; i < sizeof(edid_trial_data); i += 8) {
 		u64 word;
 		memcpy(&word, edid_trial_data + i, 8);
@@ -177,13 +221,19 @@ static int __init signal_init(void)
 		if (readl(sram + MARKER_OFFSET) == MARKER &&
 		    readl(sram + MARKER_OFFSET + 8) == MARKER &&
 		    !readl(sram + MARKER_OFFSET + 24)) {
+			report("ready");
+			mutex_lock(&signal_lock); /* stop is writable during init */
 			ready = true;
+			mutex_unlock(&signal_lock);
 			pr_info("h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry\n");
 			return 0;
 		}
 		usleep_range(1000, 1500);
 	}
+	report("setup");
+	mutex_lock(&signal_lock);
 	failed = true;
+	mutex_unlock(&signal_lock);
 	pr_err("h713-hdmi-signal: setup failed; holds retained, physical cold boot required\n");
 	return 0;
 before_launch_failed:
