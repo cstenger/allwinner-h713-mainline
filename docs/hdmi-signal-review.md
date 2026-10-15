@@ -42,7 +42,9 @@ originals and the active snapshot. It runs at ready, at setup failure, and in
 (2026-10-14, [evidence](hdmi-evidence/2026-10-14-signal-lifetime/README.md)):*
 the stop readback equalled the originals for all 8 registers
 (`1014=7 b00=00a0a0a0 b04=07000000 b08=00606060`, IO all 0), and the source saw
-the exact fixture EDID while the module was ready. Details:
+the exact fixture EDID while the module was ready. It is **deployed** with
+`update-signal-owner.sh` and passed an unattended cold boot
+([deploy evidence](hdmi-evidence/2026-10-14-signal-owner-deploy/README.md)). Details:
 
 - **Payload** (`make-edid-trial-code.py --verify-restore`): after the last
   restore write, and before the `+28` completion marker, the SCP reads all 8

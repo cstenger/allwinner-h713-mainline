@@ -131,7 +131,8 @@ def build(output):
       'firmware/h713/hdmi-audio-dsp.bin':'docs/hdmi-evidence/2026-10-07-android-audio/audio-dsp-patch.bin',
       'h713-hdmi-capture.service':'tools/hdmi/h713-hdmi-capture-startup.service',
       'install-startup.sh':'tools/hdmi/install-startup.sh',
-      'update-startup-script.sh':'tools/hdmi/update-startup-script.sh'}
+      'update-startup-script.sh':'tools/hdmi/update-startup-script.sh',
+      'update-signal-owner.sh':'tools/hdmi/update-signal-owner.sh'}
     for dest,src in sources.items():
         path=output/dest;path.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/src,path)
     text=script();(output/'h713-hdmi.cmd').write_text(text)

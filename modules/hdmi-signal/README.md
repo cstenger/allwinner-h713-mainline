@@ -29,4 +29,7 @@ Without `--verify-restore` the generator output is byte-identical to the tested
 endurance header; the flag only appends the 16-instruction readback block
 before the completion marker (relocating later branches). The module refuses
 to build against a header without it.
-The module builds cleanly with W=1; hardware lifetime validation is pending.
+The module builds cleanly with W=1. One bench lifetime cycle passed with
+readback equal to the originals (docs/hdmi-evidence/2026-10-14-signal-lifetime/).
+It was installed with `tools/hdmi/update-signal-owner.sh` and passed an
+unattended cold boot (docs/hdmi-evidence/2026-10-14-signal-owner-deploy/).
