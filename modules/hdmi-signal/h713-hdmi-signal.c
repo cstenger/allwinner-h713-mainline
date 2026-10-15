@@ -28,6 +28,19 @@ extern void h713_receiver_release(void);
  * the SCP's post-restore readback at CHECK, in the same order. */
 #define RESTORED_REGS 8
 static bool armed, ready, failed, restored, receiver_owned;
+/* init_failed: the payload never reported ready after SCP release. terminal:
+ * an attempt to act on hardware began and did not finish; nothing more is
+ * tried. recovery: which proven state an init failure was undone from. */
+enum { RECOVERY_NONE, RECOVERY_LATE_READY, RECOVERY_SELF_RESTORED, RECOVERY_UNTOUCHED };
+static bool init_failed, terminal;
+static unsigned int recovery;
+#ifdef H713_SIGNAL_FAULT_INJECTION
+/* Bench builds only: 1 corrupts the EDID header after ARM verified it (the
+ * payload takes data_failed), 2 makes the payload's first EDID verify load
+ * the wrong word (mismatch, then its own full restore). */
+static unsigned int fault;
+module_param(fault, uint, 0400);
+#endif
 static void __iomem *sram, *reset;
 static u8 *backup;
 static u32 original, vectors[VECTOR_COUNT];
@@ -36,6 +49,8 @@ module_param(armed, bool, 0400);
 module_param(ready, bool, 0444);
 module_param(failed, bool, 0444);
 module_param(restored, bool, 0444);
+module_param(recovery, uint, 0444);
+MODULE_PARM_DESC(recovery, "Init failure undone from: 1 late ready, 2 payload self-restored, 3 receiver untouched");
 
 static void release_resources(void)
 {
@@ -96,40 +111,100 @@ static void report(const char *phase)
 		active[6], active[7], active[8], active[9], active[10]);
 }
 
+static u32 marker(unsigned int offset) { return readl(sram + MARKER_OFFSET + offset); }
+
+/* ARM must not read receiver MMIO; the SCP's post-restore readback is the
+ * proof, or (untouched) the readback area still holding the launch poison. */
+static bool readback_matches(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < RESTORED_REGS; i++)
+		if (readl(sram + EDID_CHECK_OFFSET + 4 * i) !=
+		    readl(sram + EDID_META_OFFSET + 4 * i))
+			return false;
+	return true;
+}
+
+static bool readback_poisoned(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < RESTORED_REGS; i++)
+		if (readl(sram + EDID_CHECK_OFFSET + 4 * i) != ~0U)
+			return false;
+	return true;
+}
+
+/* The payload, in its wait loop, restores the peripheral on request. */
+static int cooperative_restore(void)
+{
+	int i;
+
+	writel(1, sram + MARKER_OFFSET + 16);
+	readl(sram + MARKER_OFFSET + 16);
+	for (i = 0; i < 100; i++) {
+		if (marker(28) == MARKER)
+			break;
+		usleep_range(1000, 1500);
+	}
+	report("stop");
+	if (i == 100 || marker(24) || marker(12) || !readback_matches())
+		return -EIO;
+	return 0;
+}
+
+/* Which proven state a post-release init failure left, read only from the
+ * payload's own SRAM words. Anything else is not undone. */
+static unsigned int classify_init_failure(void)
+{
+	bool done = marker(28) == MARKER;
+
+	if (marker(12) || marker(0) != MARKER)
+		return RECOVERY_NONE; /* trap, or never ran its first store */
+	if (marker(8) == MARKER && !marker(24) && !done)
+		return RECOVERY_LATE_READY; /* in the wait loop after all */
+	if (marker(24) == 1 && done && marker(8) != MARKER && readback_matches())
+		return RECOVERY_SELF_RESTORED; /* EDID mismatch, then its own restore */
+	if (marker(24) == 3 && done && marker(8) != MARKER && readback_poisoned())
+		return RECOVERY_UNTOUCHED; /* header check failed before any receiver write */
+	return RECOVERY_NONE;
+}
+
 static int stop_signal(const char *value, const struct kernel_param *kp)
 {
+	unsigned int from = RECOVERY_NONE;
 	bool stop;
-	int i, ret = kstrtobool(value, &stop);
+	int ret = kstrtobool(value, &stop);
 
 	if (ret || !stop)
 		return -EINVAL;
 	mutex_lock(&signal_lock);
 	if (restored) {ret = 0;goto out;}
-	if (!ready || failed) {ret = -EPERM;goto out;}
-	failed = true; /* A failed restoration is terminal; retain every hold. */
-	writel(1, sram + MARKER_OFFSET + 16);
-	readl(sram + MARKER_OFFSET + 16);
-	for (i = 0; i < 100; i++) {
-		if (readl(sram + MARKER_OFFSET + 28) == MARKER)
-			break;
-		usleep_range(1000, 1500);
+	if (terminal || !sram) {ret = -EPERM;goto out;}
+	if (failed) {
+		if (!init_failed) {ret = -EPERM;goto out;}
+		report("recover");
+		from = classify_init_failure();
+		if (from == RECOVERY_NONE) {ret = -EPERM;goto out;} /* nothing touched */
+	} else if (!ready) {
+		ret = -EPERM;goto out;
 	}
-	report("stop");
+	/* From here a failure is terminal; retain every hold. */
+	failed = true;terminal = true;
 	ret = -EIO;
-	if (i == 100 || readl(sram + MARKER_OFFSET + 24) ||
-	    readl(sram + MARKER_OFFSET + 12))
+	if ((from == RECOVERY_NONE || from == RECOVERY_LATE_READY) && cooperative_restore())
 		goto out;
-	/* ARM must not read receiver MMIO; the SCP's readback is the proof. */
-	for (i = 0; i < RESTORED_REGS; i++)
-		if (readl(sram + EDID_CHECK_OFFSET + 4 * i) !=
-		    readl(sram + EDID_META_OFFSET + 4 * i))
-			goto out;
-	ret = restore_sram();
+	ret = restore_sram(); /* stops the SCP first */
 	if (ret)
 		goto out;
-	ready = false;restored = true;failed = false;
+	ready = false;restored = true;failed = false;terminal = false;recovery = from;
 	release_resources();
-	pr_info("h713-hdmi-signal: peripheral readback, SRAM and vectors restored; SCP stopped; receiver client released\n");
+	if (from == RECOVERY_NONE)
+		pr_info("h713-hdmi-signal: peripheral readback, SRAM and vectors restored; SCP stopped; receiver client released\n");
+	else
+		pr_info("h713-hdmi-signal: init failure undone from proven state %u; SRAM and vectors restored; SCP stopped; receiver client released\n",
+			from);
 	module_put(THIS_MODULE);
 out:
 	mutex_unlock(&signal_lock);
@@ -212,7 +287,23 @@ static int __init signal_init(void)
 		if (readq(sram + SCP_PAGE_OFFSET + 4 * i) !=
 		    ((u64)edid_trial_code[i + 1] << 32 | edid_trial_code[i]))
 			goto before_launch_failed;
-	/* From release onward, failures retain the module and every resource. */
+#ifdef H713_SIGNAL_FAULT_INJECTION
+	if (fault == 1) {
+		writeq(0, sram + EDID_PAYLOAD_OFFSET);
+	} else if (fault == 2) {
+		/* verify0's "lwz r8,0(r5)" is the word before the first "lwz r9,0(r6)" */
+		for (i = 1; i < ARRAY_SIZE(edid_trial_code); i++)
+			if (edid_trial_code[i] == 0x85260000)
+				break;
+		if (i < ARRAY_SIZE(edid_trial_code))
+			writel(0x85050004, sram + SCP_PAGE_OFFSET + 4 * (i - 1));
+		else
+			fault = 0; /* pattern absent: inject nothing */
+	}
+	pr_warn("h713-hdmi-signal: BENCH BUILD, fault injection %u\n", fault);
+#endif
+	/* From release onward, failures retain the module and every resource
+	 * unless stop=1 later proves the failure left a recoverable state. */
 	__module_get(THIS_MODULE);
 	writel(original | BIT(0), reset);readl(reset);
 	for (i = 0; i < 100; i++) {
@@ -232,9 +323,9 @@ static int __init signal_init(void)
 	}
 	report("setup");
 	mutex_lock(&signal_lock);
-	failed = true;
+	failed = true;init_failed = true;
 	mutex_unlock(&signal_lock);
-	pr_err("h713-hdmi-signal: setup failed; holds retained, physical cold boot required\n");
+	pr_err("h713-hdmi-signal: setup failed; holds retained until stop=1 proves a recoverable state\n");
 	return 0;
 before_launch_failed:
 	ret = restore_sram();

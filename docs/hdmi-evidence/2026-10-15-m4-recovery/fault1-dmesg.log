@@ -1,0 +1,15 @@
+[  480.337712] h713-signal-fault: inject 1 1776109562
+[  483.598097] h713-ddc-pins: PL10-PL15 claimed for three DDC ports (mux 222222, original ffffff)
+[  483.633477] h713-hdmi-signal: BENCH BUILD, fault injection 1
+[  483.790391] h713-hdmi-signal: setup marker=48444d49 ready=00000000 exception=0 error=3 done=48444d49
+[  483.802255] h713-hdmi-signal: setup original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  483.820349] h713-hdmi-signal: setup readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[  483.837768] h713-hdmi-signal: setup active 1014=00000000 1b00=00000000 1b04=00000000 1b08=00000000 c00=00000000 d00=00000000 e00=00000000 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  483.859197] h713-hdmi-signal: setup failed; holds retained until stop=1 proves a recoverable state
+[  483.895178] h713-hdmi-signal: recover marker=48444d49 ready=00000000 exception=0 error=3 done=48444d49
+[  483.908168] h713-hdmi-signal: recover original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  483.929461] h713-hdmi-signal: recover readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[  483.950978] h713-hdmi-signal: recover active 1014=00000000 1b00=00000000 1b04=00000000 1b08=00000000 c00=00000000 d00=00000000 e00=00000000 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  483.976674] h713-hdmi-signal: init failure undone from proven state 3; SRAM and vectors restored; SCP stopped; receiver client released
+[  484.026707] h713-ddc-pins: DDC pins returned to io_disabled (mux ffffff, original ffffff); module may be removed
+[  484.051768] h713-ddc-pins: ownership released

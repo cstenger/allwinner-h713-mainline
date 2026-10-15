@@ -27,11 +27,13 @@ class Signal(unittest.TestCase):
         # cannot see holds it (foreign_busy); graph_ready N gives EAGAIN.
         self.pids=[];self.foreign_busy=False;self.not_ready=False;self.ignores_term=set()
         self.shutdown=False;self.kills=[];self.holding=None;self.clock=0.0
+        self.recover='refused' # an init failure the module will not undo
+        self.opens=0
     def open_capture(self,dev):
         self.assertFalse((m.MODULE/'parameters/stop').is_file()) # held before the stop is written
         if self.not_ready:raise OSError(errno.EAGAIN,'Resource temporarily unavailable')
         if self.pids or self.foreign_busy:raise OSError(errno.EBUSY,'Device or resource busy')
-        self.holding=True;self.opens=getattr(self,'opens',0)+1;return 99
+        self.holding=True;self.opens+=1;return 99
     def close_capture(self,fd):
         self.assertEqual(fd,99);self.assertTrue(self.holding)
         self.assertTrue((m.MODULE/'parameters/stop').exists()) # released after the stop
@@ -41,8 +43,11 @@ class Signal(unittest.TestCase):
         if not (sig==signal.SIGTERM and pid in self.ignores_term) and pid in self.pids:self.pids.remove(pid)
     def sleep(self,seconds):self.clock+=seconds
     def param(self,name):
-        stopped=(m.MODULE/'parameters/stop').exists()
-        return {'failed':'Y' if self.failed else 'N','ready':'N' if stopped else 'Y','restored':'Y' if stopped and not self.bad_restore else 'N'}[name]
+        stopped=(m.MODULE/'parameters/stop').is_file()
+        failed=self.failed and not (stopped and self.recover in ('2','3'))
+        ready='N' if stopped or self.failed else 'Y'
+        return {'failed':'Y' if failed else 'N','ready':ready,'restored':'Y' if stopped and not self.bad_restore else 'N',
+                'recovery':self.recover if stopped and self.recover in ('2','3') else '0'}[name]
     def command(self,args):
         self.events.append(args)
         if args==['rmmod','h713_hdmi_signal']:shutil.rmtree(m.MODULE)
@@ -62,6 +67,7 @@ class Signal(unittest.TestCase):
             if self.init=='refused_loaded':
                 (m.MODULE/'parameters').mkdir(parents=True);raise subprocess.CalledProcessError(1,args)
             (m.MODULE/'parameters').mkdir(parents=True);self.failed=self.init=='failed'
+            if self.failed and self.recover=='refused':(m.MODULE/'parameters/stop').mkdir() # module refuses: EPERM
         else:raise AssertionError(args)
     def action(self,action,*extra):
         with patch('sys.argv',['signal',action,*extra]),patch.object(m,'param',self.param),patch.object(m,'run',self.command),\
@@ -106,13 +112,33 @@ class Signal(unittest.TestCase):
         self.assertEqual([e[1] for e in self.events],['/tmp/candidate/h713-ddc-pins.ko','/tmp/candidate/h713-hdmi-signal.ko'])
         self.fresh();self.events=[];self.action('start')
         self.assertEqual([e[1] for e in self.events],['/usr/lib/h713-hdmi/h713-ddc-pins.ko','/usr/lib/h713-hdmi/h713-hdmi-signal.ko'])
+    def test_init_failure_from_a_proven_state_is_undone_and_releases_everything(self):
+        for state in ('2','3'):
+            with self.subTest(state=state):
+                self.setUp();self.fresh();self.init='failed';self.recover=state
+                with self.assertRaisesRegex(RuntimeError,f'undone from proven state {state}, nothing retained'):self.action('start')
+                self.assertEqual([e[0]+' '+e[1].rsplit('/',1)[-1] for e in self.events],
+                                 ['insmod h713-ddc-pins.ko','insmod h713-hdmi-signal.ko','rmmod h713_hdmi_signal','rmmod h713_ddc_pins'])
+                self.assertFalse(m.MODULE.exists() or m.DDC.exists() or m.OWNED.exists())
+                self.assertTrue(m.ATTEMPTED.exists());self.assertEqual(self.opens,1);self.assertFalse(self.holding)
+                self.events=[]
+                with self.assertRaisesRegex(RuntimeError,'already attempted'):self.action('start')
+    def test_bench_signal_args_reach_the_insmod(self):
+        self.fresh();self.action('start','--signal-arg','fault=2')
+        self.assertEqual(self.events[1][2:],['armed=1','fault=2'])
+        self.fresh();self.events=[];self.action('start')
+        self.assertEqual(self.events[1][2:],['armed=1'])
+    def test_init_failure_recovery_waits_for_no_capture(self):
+        self.fresh();self.init='failed';self.recover='3';self.pids=[4242]
+        with self.assertRaisesRegex(RuntimeError,'capture is open'):self.action('start')
+        self.assertTrue(m.MODULE.exists() and m.DDC.exists() and m.OWNED.exists());self.assertEqual(self.kills,[])
     def test_start_failure_after_scp_release_retains_everything(self):
         self.fresh();self.init='failed'
-        with self.assertRaisesRegex(RuntimeError,'holds retained'):self.action('start')
+        with self.assertRaisesRegex(RuntimeError,'not provably recoverable.*holds retained'):self.action('start')
         self.assertTrue(m.MODULE.exists() and m.DDC.exists() and m.OWNED.exists())
         for action in ('start','stop'):
             with self.subTest(action=action),self.assertRaisesRegex(RuntimeError,'cold cycle'):self.action(action)
-        self.assertFalse((m.MODULE/'parameters/stop').exists())
+        self.assertFalse((m.MODULE/'parameters/stop').is_file()) # attempted, refused by the module
         self.assertEqual(len(self.events),2) # no rmmod, no second insmod
     def test_refused_insmod_releases_ddc_so_the_backend_can_park(self):
         # M1: a clean pre-launch failure leaves no HDMI signal hold behind.

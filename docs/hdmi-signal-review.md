@@ -332,19 +332,44 @@ script still pinned the old FIT and FDT sizes. That stop was safe: it
 happened before any launch. `build-startup.py` now derives those guards from
 one constant and refuses to build against a different `build/out` kernel.
 
-### M4. A post-release init failure leaves the SCP running, and `stop` is then always refused
+### M4. Post-release init failures: undone from proven states (hardware-verified)
 
-After a timeout or exception, init sets `failed` and returns 0 without
-resetting the SCP. This is unlike the bounded probe, which always reset it and
-restored the SRAM. The payload might still sit in its wait loop with HPD
-asserted, or be spinning in an error state. That is consistent with the
-"retain every hold" rule, but two things should be stated explicitly:
-- HPD/EDID may stay asserted until the power cut.
-- `stop` refuses (`-EPERM`) even when the markers show a clean wait loop
-  (`+8 == MARKER`, `+12 == +24 == 0`).
+Previously, init set `failed` without resetting the SCP, and `stop` always
+refused, so any post-release failure held everything until a cold cycle. At
+shutdown that ended in the H2 guarded unparked poweroff.
 
-*Option:* allow a cooperative stop from `failed` only in that exact marker
-state. That needs a hardware fault-injection run.
+**Fixed (2026-10-15; policy approved):** `stop=1` on an init-failed owner
+reads the payload's own SRAM words and undoes the failure only from proven
+states:
+1. **Late ready** (code 1): the normal cooperative stop, with readback ==
+   originals.
+2. **EDID mismatch** (code 2): the payload ran its own full restore, and the
+   readback equals the originals.
+3. **`data_failed`** (code 3): the header check failed before any receiver
+   write, and the readback is still the launch poison.
+
+Each undo asserts SCP reset and restores SRAM and vectors byte-exactly. Other
+states refuse without touching anything, and once an attempt begins acting
+any failure is terminal.
+
+The wrapper attempts the recovery at `start` itself, under the exclusive
+capture hold. On success it removes the module and releases DDC, so nothing
+is retained. The per-boot latch still forbids a retry.
+
+Bench builds (`-DH713_SIGNAL_FAULT_INJECTION`) add `fault=1|2` to inject
+`data_failed` and the mismatch. Production builds contain neither.
+
+*Verification:*
+- **Host:** the OR1K simulator classifies both injected faults as intended,
+  with no receiver registers left changed. There are 29 wrapper tests, and
+  four mutants are caught.
+- **Hardware**
+  ([evidence](hdmi-evidence/2026-10-15-m4-recovery/README.md)): `fault=1`
+  was undone from state 3. `fault=2` was undone from state 2, after the
+  payload's own restore ran on hardware with readback == originals. After
+  each, nothing was held and the DDC register read `0xFFFFFF3F`. The
+  following poweroff parked MIPS normally.
+- Late ready (state 1) shares the normal stop path but was not injected.
 
 ### L1. Concurrent `stop` writes and state reads: no torn state is observable (verified)
 
@@ -413,6 +438,7 @@ gives `stop_signal()`'s mutex acquire a matching release.
 | `tools/hdmi/h713-hdmi-signal.py`, `test-hdmi-signal.py` | M1: per-boot `attempted` latch written before the first hold. A clean pre-launch init refusal releases DDC, so the backend can park. |
 | `modules/ddc-bringup/h713-ddc-pins.c`, wrapper `release_ddc()` | M3: pinned until a verified, fallible `release=1`. Mux register readback proves the claim and the release, and records the original mux. |
 | wrapper `reclaim()`/`hold_capture()`, `run-hold-failure.sh consumer` | M2: exclusive capture hold across the stop; shutdown-only reclaim of capture consumers; `no-reclaim` bench knob; consumer bench mode. |
+| module `classify_init_failure()`/`recovery`, wrapper `recover_init_failure()`, `run-signal-fault.sh` | M4: proven-state recovery of post-release init failures, bench fault-injection build and script. |
 | `tools/hdmi/run-hold-failure.sh` | H2: bench failure injection (busy PCM ordered to outlive the signal stop) and next-boot journal verification. |
 | `tools/hdmi/run-signal-lifetime.sh` | Self-checking bench lifetime cycle through a runtime-only drop-in ([procedure](hdmi-signal-lifetime-bench.md)). The wrapper also gained `--bundle`, which has a test. |
 | `modules/hdmi-signal/README.md` | Build command uses `--verify-restore`. Describes the readback proof. |

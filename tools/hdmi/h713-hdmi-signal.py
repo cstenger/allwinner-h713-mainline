@@ -81,8 +81,23 @@ def hold_capture(dev):
         if error.errno==errno.EBUSY:raise RuntimeError('capture is open; signal retained') from None
         if error.errno==errno.EAGAIN:return None # graph not ready: nobody can open it
         raise RuntimeError(f'capture device check failed ({error.strerror}); signal retained') from error
-def launch(bundle):
-    try:run(['insmod',str(bundle/'h713-hdmi-signal.ko'),'armed=1'])
+def recover_init_failure():
+    # The module undoes a post-release init failure only from a state its
+    # payload proved recoverable; anything else refuses and keeps every hold.
+    held=hold_capture(capture_device())
+    try:
+        try:(MODULE/'parameters/stop').write_text('1\n')
+        except OSError as error:raise RuntimeError(f'signal setup failed after SCP release and the state is not provably recoverable ({error.strerror}); holds retained, cold cycle required') from error
+        require(param('restored')=='Y' and param('failed')=='N','signal recovery incomplete; holds retained, cold cycle required')
+        state=param('recovery')
+    finally:
+        if held is not None:close_capture(held)
+    run(['rmmod','h713_hdmi_signal'])
+    release_ddc()
+    OWNED.unlink()
+    raise RuntimeError(f'signal setup failed after SCP release; undone from proven state {state}, nothing retained, retry needs a cold cycle')
+def launch(bundle,extra=()):
+    try:run(['insmod',str(bundle/'h713-hdmi-signal.ko'),'armed=1',*extra])
     except subprocess.CalledProcessError:
         # Present means init returned 0 with failed=Y (holds kept) or never
         # finished: keep everything. Absent means the module verified its
@@ -95,7 +110,9 @@ def launch(bundle):
         raise RuntimeError('signal init refused before SCP release; nothing retained, retry needs a cold cycle') from None
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('action',choices=('start','stop'))
-    parser.add_argument('--bundle',type=Path,default=BUNDLE,help='module directory (bench runs stage a candidate here)');args=parser.parse_args()
+    parser.add_argument('--bundle',type=Path,default=BUNDLE,help='module directory (bench runs stage a candidate here)')
+    parser.add_argument('--signal-arg',action='append',default=[],help='bench only: extra signal module parameter')
+    args=parser.parse_args()
     if args.action=='start':
         if MODULE.exists():
             require(OWNED.exists(),'signal module is not owned by this service')
@@ -106,7 +123,8 @@ def main():
         mark(ATTEMPTED,'signal initialization attempted on this boot\n')
         run(['insmod',str(args.bundle/'h713-ddc-pins.ko'),'run=1'])
         mark(OWNED,'DDC acquired by signal service\n')
-        launch(args.bundle)
+        launch(args.bundle,args.signal_arg)
+        if param('failed')=='Y':recover_init_failure()
         require(param('ready')=='Y' and param('failed')=='N','signal setup failed; holds retained, cold cycle required')
         print('EDID/HPD ready; receiver client and DDC pins retained',flush=True)
     else:
