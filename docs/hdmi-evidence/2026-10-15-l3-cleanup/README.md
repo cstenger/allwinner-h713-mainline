@@ -9,6 +9,15 @@ installed:
 
 The installed tree verifies, and the running owner is untouched.
 
-The new module first runs at the next boot, and its R_CPUCFG path at the
-stop after that. Confirm both by checking that the stop restores normally
-and that there is no "R_CPUCFG other bits changed" warning.
+**Confirmed on hardware** (cold boot `5a00a2dc…`, untouched):
+- **`check-startup.log`:** PASS. The installed signal module's hash
+  (`0a6987ce…`) matches the new build, and `start` left both `attempted` and
+  `owned`.
+- **`stop.log`:** R_CPUCFG `0x07000400` read `0x00000001` while the SCP ran
+  and `0x00000000` after `systemctl stop h713-hdmi-signal`. Only the run bit
+  cleared, and there was no "other bits changed" warning.
+- The stop itself was normal:
+  - readback == originals, with SRAM, vectors and SCP restored and the
+    client released;
+  - DDC back to `io_disabled` (`0xFFFFFF3F`);
+  - both modules unloaded, `clients=1`, and the unit `inactive success`.

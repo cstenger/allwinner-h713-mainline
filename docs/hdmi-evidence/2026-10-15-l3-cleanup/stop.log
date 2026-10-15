@@ -1,0 +1,19 @@
+0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497  /usr/lib/h713-hdmi/h713-hdmi-signal.ko
+attempted
+owned
+== R_CPUCFG while SCP runs
+07000400 0x00000001
+closed
+unit: inactive success
+== R_CPUCFG after stop
+07000400 0x00000000
+07022004 0xFFFFFF3F
+signal+ddc unloaded
+1
+[   49.807283] h713-hdmi-signal: stop marker=48444d49 ready=48444d49 exception=0 error=0 done=48444d49
+[   49.817855] h713-hdmi-signal: stop original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[   49.833014] h713-hdmi-signal: stop readback 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[   49.848127] h713-hdmi-signal: stop active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[   49.868188] h713-hdmi-signal: peripheral readback, SRAM and vectors restored; SCP stopped; receiver client released
+[   49.915338] h713-ddc-pins: DDC pins returned to io_disabled (mux ffffff, original ffffff); module may be removed
+[   49.936196] h713-ddc-pins: ownership released

@@ -423,9 +423,9 @@ gives `stop_signal()`'s mutex acquire a matching release.
   pins the behaviour.
 - **R_CPUCFG write (fixed).** `restore_sram()` now does read-modify-write of
   bit 0 only and verifies it. It warns if other bits changed since init,
-  instead of writing back the init-time snapshot. This runs on every stop. It
-  was built W=1 and deployed for the next boot; hardware confirmation is
-  pending (see below).
+  instead of writing back the init-time snapshot. **Confirmed on hardware:**
+  `0x00000001` while the SCP ran became `0x00000000` after the stop, with no
+  warning ([evidence](hdmi-evidence/2026-10-15-l3-cleanup/README.md)).
 - **Vector delay slot (documented).** A comment at the validation step says
   that only the jump word is written, and that the stock table's `nop` delay
   slot is required.
