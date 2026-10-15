@@ -176,23 +176,50 @@ injected boot's journal that:
 - the reboot-to-fastboot variant;
 - a sealed-unit recovery without a bench operator.
 
-### M1. A clean pre-launch init failure still leads to an unparked poweroff
+### M1. A clean pre-launch init failure left DDC held: fixed (wrapper), host-verified
 
 If `insmod h713-hdmi-signal.ko` fails before SCP release, the kernel has
 already reverted everything: the SRAM restore is verified and the receiver
 client is released. The failures are `-EAGAIN`, `-EBUSY`, an SCP that is
-already running, or an SRAM readback mismatch. In the wrapper, though, the DDC
-helper stays loaded and `OWNED` stays set. The unit is `failed`, so systemd
-never runs its `ExecStop`, and DDC is held until poweroff. Because
-`h713_ddc_pins` is loaded, the backend refuses to park (finding H2).
+already running, or an SRAM readback mismatch. Before the fix, the wrapper
+then left the DDC helper loaded and `OWNED` set. The unit was `failed`, so
+systemd never ran its `ExecStop`, DDC stayed held until poweroff, and the
+backend refused to park. The H2 guard made that outcome safe, but it remained
+an avoidable unparked shutdown.
 
-*Proposed:* when `insmod` fails **and** `/sys/module/h713_hdmi_signal` is absent
-(only possible after a full kernel-side revert), `rmmod h713_ddc_pins` in
-`start`. Then replace `OWNED` with a separate `attempted` latch so retries in
-the same boot are still refused. The new test
-`test_refused_insmod_latches_the_attempt_and_keeps_ddc` pins down today's
-behaviour and needs updating with this change. I left it as a proposal because
-it changes the documented "wrapper retains DDC on failure" design.
+*Fixed (2026-10-15):*
+- `h713-hdmi-signal.py start` writes a per-boot latch,
+  `/run/h713-hdmi-signal/attempted`, **before** the first hold. This also
+  fixes the L3 ordering point.
+- If the signal `insmod` fails and the module is absent, it unloads the DDC
+  helper, clears `OWNED`, and reports "refused before SCP release; nothing
+  retained". The backend can then park normally.
+- The latch still refuses a retry on the same boot. Only a complete stop
+  removes it, so restarting after a clean stop works as before.
+- Every hold is kept in these cases:
+  - the module is still present after a failed `insmod` (an init that
+    returned 0 with `failed=Y`, or an `insmod` that never finished);
+  - the DDC unload fails, which is reported as "DDC retained".
+
+  An `insmod` timeout is not treated as a refusal.
+
+*Verification:*
+- **Host:** `test-hdmi-signal.py` has 14 tests. They cover:
+  - releasing DDC so the backend can park, with a no-op unit stop afterwards;
+  - the latch refusing a retry;
+  - ownership kept when the DDC release fails;
+  - every hold kept when the module stays loaded;
+  - the latch being written before the DDC `insmod`;
+  - a restart after a complete stop.
+
+  Five mutants are caught.
+- **Hardware:** deployed with `update-signal-owner.sh`
+  ([evidence](hdmi-evidence/2026-10-15-m1-wrapper-deploy/)). The next boot's
+  start and shutdown exercise the new wrapper's normal path. The refusal
+  branch itself has **not** run on hardware: no clean pre-launch failure can
+  be triggered under the service without a test-only module. Its hardware
+  action, `rmmod h713_ddc_pins`, is the same step as the normal stop, which is
+  validated.
 
 ### M2. User-session PCM consumers cannot be ordered before the signal stop
 
@@ -315,6 +342,7 @@ gives `stop_signal()`'s mutex acquire a matching release.
 | `tools/hdmi/test-edid-trial-payload.py` | H1: OR1K payload simulator with 3 tests (clean readback, dropped write caught, default unchanged). |
 | `tools/hdmi/h713-hdmi-hold-guard`, `test-hdmi-hold-guard.py` | H2: systemd-shutdown guard that turns reboot/kexec into lamp-off poweroff while HDMI holds are retained. |
 | `tools/hdmi/update-signal-owner.sh`, `install-startup.sh`, `build-startup.py`, `check-startup.sh` | H2: the guard is shipped, installed into `system-shutdown/`, and required at startup. The updater scope now includes the guard and `install-startup.sh`, and backup directories are unique (`mktemp`). |
+| `tools/hdmi/h713-hdmi-signal.py`, `test-hdmi-signal.py` | M1: per-boot `attempted` latch written before the first hold. A clean pre-launch init refusal releases DDC, so the backend can park. |
 | `tools/hdmi/run-hold-failure.sh` | H2: bench failure injection (busy PCM ordered to outlive the signal stop) and next-boot journal verification. |
 | `tools/hdmi/run-signal-lifetime.sh` | Self-checking bench lifetime cycle through a runtime-only drop-in ([procedure](hdmi-signal-lifetime-bench.md)). The wrapper also gained `--bundle`, which has a test. |
 | `modules/hdmi-signal/README.md` | Build command uses `--verify-restore`. Describes the readback proof. |
