@@ -1,0 +1,43 @@
+# /etc/systemd/system/h713-hdmi-capture.service
+[Unit]
+Description=H713 HDMI audio capture
+After=systemd-modules-load.service user@1000.service
+Before=shutdown.target
+RequiresMountsFor=/usr/lib/h713-hdmi /run/h713-hdmi-session
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-session.py start --bundle /usr/lib/h713-hdmi --boot-handoff
+ExecStop=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-session.py shutdown --bundle /usr/lib/h713-hdmi --terminal-shutdown
+Restart=no
+TimeoutStartSec=60
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
+
+# /run/systemd/system/h713-hdmi-capture.service.d/10-terminal-shutdown.conf
+# Runtime-only opt-in for the validated --park-capable cold boot.
+[Service]
+ExecStop=
+ExecStop=/usr/bin/python3 /tmp/h713-linux-return/h713-hdmi-session.py shutdown --terminal-shutdown
+TimeoutStopSec=60
+enabled
+a867b4242be51fc0fef3349241436bd26a4bdc752e2f42e65ff18267b7c98160  /mnt/boot/h713-hdmi.scr
+{"boot_id": "8651413d-e2eb-4933-9074-312782fea299", "state": {"boot_id": "8651413d-e2eb-4933-9074-312782fea299", "phase": "parked", "cold_boot_required": true, "restore_verified": true}, "audio_loaded": false, "receiver_loaded": false}
+[   88.601583] h713-hdmi-audio: DSP restore 800c=0000 verified
+[   88.609077] h713-hdmi-audio: DSP restore 0003=0000 verified
+[   88.615426] h713-hdmi-audio: managed DSP graph restored 22 words
+[   88.622249] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[   88.629821] h713-hdmi-audio: restored Audio Bridge output stream 0
+[   88.636935] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[   88.644488] h713-hdmi-audio: restored audio-IHB clock=81000002
+[   88.651116] h713-hdmi-audio: managed TVFE clock/reset state restored; 15 clock words and bus verified
+[   88.661097] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+[   92.425312] h713-hdmi-receiver: terminal MIPS reset 0 asserted and verified
+[   92.433320] h713-hdmi-receiver: terminal MIPS reset 1 asserted and verified
+[   92.442720] h713-hdmi-receiver: terminal MIPS reset 2 asserted and verified
+[   92.451484] h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required
+[   92.709077] h713-receiver-edid h713-edid-clock-hold: EDID reset state and clock reference released

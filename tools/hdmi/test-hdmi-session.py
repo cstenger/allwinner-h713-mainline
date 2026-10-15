@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import struct
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,7 +22,9 @@ class FakeBoard:
         self.fail_park=False;self.fail_release=False;self.bad_trace=False;self.bad_patch=False;self.bad_ipc=False;self.mips_live=True
     def exists(self,p):return p in self.files or p.removeprefix(m.BASE) in self.modules
     def read(self,p):return self.files[p]
-    def binary(self,p):return b'bad' if self.bad_patch else PATCH
+    def binary(self,p):
+        if p==m.HANDOFF:return self.files[p]
+        return b'bad' if self.bad_patch else PATCH
     def write(self,p,text):
         self.events.append(('write',p));self.writes.append((p,text));self.files[p]=text
         if p.endswith('/park_for_shutdown'):
@@ -72,6 +75,18 @@ class FakeBoard:
 
 class Lifecycle(unittest.TestCase):
     def setUp(self):self.b=FakeBoard();self.s=m.Session(self.b,'/bundle')
+    def test_normal_startup_requires_current_device_tree_handoff(self):
+        self.s=m.Session(self.b,'/bundle',boot_handoff=True)
+        # A host proof file cannot substitute for the kernel's boot handoff.
+        with self.assertRaises(KeyError):self.s.start()
+        for payload in (b'',struct.pack('>III',0,0,123),struct.pack('>III',0x48444d49,1,123),struct.pack('>III',0x48444d49,0,0)):
+            self.b.files[m.HANDOFF]=payload
+            with self.assertRaises(RuntimeError):self.s.start()
+            self.assertFalse(self.b.modules);self.assertFalse(self.b.writes)
+        self.b.files[m.HANDOFF]=struct.pack('>III',0x48444d49,0,0x8b8f275c)
+        self.assertEqual(self.s.start()['phase'],'ready')
+        self.assertTrue(self.s.start()['already_ready'])
+
     def test_start_idempotence_stop_and_warm_retry(self):
         self.assertFalse(self.s.start()['already_ready'])
         self.assertEqual(self.b.read(m.FW_PATH),'\n')
@@ -139,6 +154,13 @@ class Lifecycle(unittest.TestCase):
         self.b.param(m.OWNER,'shutdown_ready','Y');self.b.files[m.PCM]='state: RUNNING'
         with self.assertRaisesRegex(RuntimeError,'capture is open'):self.s.shutdown()
         self.assertEqual(len(self.b.events),before)
+    def test_shutdown_requires_signal_owner_to_release_first(self):
+        self.s.start();self.b.param(m.OWNER,'shutdown_ready','Y')
+        for module in ('h713_hdmi_signal','h713_ddc_pins','h713_scp_probe'):
+            self.b.modules.add(module);before=len(self.b.events)
+            with self.assertRaisesRegex(RuntimeError,'signal owner/helper'):self.s.shutdown()
+            self.assertEqual(len(self.b.events),before)
+            self.b.modules.remove(module)
     def test_shutdown_failures_never_continue_or_retry_terminal_operations(self):
         for failure in ('fail_remove','bad_restore','fail_park','fail_release'):
             self.setUp();self.s.start();self.b.param(m.OWNER,'shutdown_ready','Y')

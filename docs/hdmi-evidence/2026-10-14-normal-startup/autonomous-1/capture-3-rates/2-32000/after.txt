@@ -1,0 +1,22 @@
+active
+closed
+[   18.609115] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[   18.617812] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   18.627720] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[   18.636284] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[   18.648309] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[   18.658471] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   18.672525] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[   18.681323] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   18.692548] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   18.706458] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   18.715054] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   18.727216] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   18.737654] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   18.747817] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   18.759795] h713-hdmi-audio: DSP versions 0000/0000
+[   19.681761] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[   19.718045] h713-hdmi-audio: managed DSP graph verified 22 words
+[   19.730728] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically
+[   20.133859] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[   20.171404] h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry

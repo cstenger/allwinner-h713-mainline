@@ -57,7 +57,13 @@ def analyze_wave(path, seconds=16):
             "pass": silent and all(t["tone_pass"] and t["capture_rate_hz"] == 48000 for t in tone)}
 
 
-def run_trial(out, rate, index, recorder_command="arecord", stall_reader=False, seconds=16):
+PERSISTENT_SIGNAL = ("set -e; P=/sys/module/h713_hdmi_signal/parameters; "
+                     "test \"$(cat $P/ready)\" = Y; test \"$(cat $P/failed)\" = N; "
+                     "test -d /sys/module/h713_ddc_pins; test ! -d /sys/module/h713_scp_probe; "
+                     "systemctl is-active h713-hdmi-signal.service; ")
+
+
+def run_trial(out, rate, index, recorder_command="arecord", stall_reader=False, seconds=16, persistent_signal=False):
     out.mkdir()
     rate_test.make_wave(out / "tone.wav", rate, tone_seconds=seconds - 6)
     result = {"input_rate_hz": rate, "capture_seconds": seconds, "pass": False}
@@ -66,10 +72,15 @@ def run_trial(out, rate, index, recorder_command="arecord", stall_reader=False, 
     try:
         counters_before = read_counters(out / "counters-before.txt")
         with (out / "signal.log").open("w") as signal_log, (out / "capture.log").open("w") as capture_log, (out / "playback.log").open("w") as play_log:
-            helper = subprocess.Popen([sys.executable, str(HERE / "run-detection-trial.py"), "--seconds", str(seconds + 14), "--stock-io"], stdout=signal_log, stderr=subprocess.STDOUT)
+            if persistent_signal:
+                # The normal-startup service already owns EDID/HPD; starting
+                # the bounded helper would compete with it.
+                remote(PERSISTENT_SIGNAL + "grep . /sys/module/h713_hdmi_signal/parameters/ready /sys/module/h713_hdmi_signal/parameters/failed /sys/module/h713_hdmi_signal/parameters/restored", out / "signal-before.txt")
+            else:
+                helper = subprocess.Popen([sys.executable, str(HERE / "run-detection-trial.py"), "--seconds", str(seconds + 14), "--stock-io"], stdout=signal_log, stderr=subprocess.STDOUT)
             deadline = time.monotonic() + 10
             while True:
-                if helper.poll() is not None:
+                if helper is not None and helper.poll() is not None:
                     raise RuntimeError("signal helper ended before ELD")
                 try:
                     card, device, eld = rate_test.find_pcm()
@@ -120,14 +131,14 @@ finally:
                     raise RuntimeError("reader did not recover to RUNNING after XRUN")
             result["playback_returncode"] = player.wait(timeout=seconds + 2)
             result["capture_returncode"] = recorder.wait(timeout=10)
-            result["signal_returncode"] = helper.wait(timeout=seconds + 75)
+            result["signal_returncode"] = helper.wait(timeout=seconds + 75) if helper else 0
         subprocess.run(SCP + [f"root@192.168.4.1:{remote_path}", str(out / "capture.wav")], check=True, capture_output=True, timeout=15)
         result["analysis"] = analyze_wave(out / "capture.wav", seconds)
         log = (out / "capture.log").read_text().lower()
         result["expected_reader_overrun"] = stall_reader
         result["pass"] = (result["analysis"]["pass"] and (("overrun" in log) == stall_reader)
                           and all(result[k] == 0 for k in ("playback_returncode", "capture_returncode", "signal_returncode")))
-        remote("set -e; test ! -d /sys/module/h713_scp_probe; test ! -d /sys/module/h713_ddc_pins; cat /proc/asound/H713HDMI/pcm0c/sub0/status; dmesg | tail -20", out / "after.txt")
+        remote((PERSISTENT_SIGNAL if persistent_signal else "set -e; test ! -d /sys/module/h713_scp_probe; test ! -d /sys/module/h713_ddc_pins; ") + "cat /proc/asound/H713HDMI/pcm0c/sub0/status; dmesg | tail -20", out / "after.txt")
         counters_after = read_counters(out / "counters-after.txt")
         result["counter_delta"] = {name: counters_after[name] - value
                                    for name, value in counters_before.items()}
@@ -163,13 +174,15 @@ def main():
     parser.add_argument("output", type=Path, help="new evidence directory")
     parser.add_argument("--recorder", default="arecord", help="board recorder executable, optionally staged in /tmp")
     parser.add_argument("--stall-reader", action="store_true", help="48 kHz only: stop the reader for one second, require XRUN and successful same-open recovery")
+    parser.add_argument("--persistent-signal", action="store_true",
+                        help="use the running h713-hdmi-signal.service instead of the bounded SCP helper")
     parser.add_argument("--seconds", type=int, choices=range(16, 121), default=16,
                         help="capture duration per rate, 16–120 seconds (default: 16)")
     args = parser.parse_args()
     if args.stall_reader and args.seconds != 16:
         parser.error("--stall-reader requires the default 16-second capture")
     args.output.mkdir(parents=True, exist_ok=False)
-    remote("set -e; test -d /sys/module/h713_hdmi_audio; "
+    remote((PERSISTENT_SIGNAL if args.persistent_signal else "") + "set -e; test -d /sys/module/h713_hdmi_audio; "
            "test \"$(cat /sys/module/h713_hdmi_audio/parameters/graph_ready)\" = Y; "
            "if test -f /sys/module/h713_hdmi_audio/parameters/manage_dsp && "
            "test \"$(cat /sys/module/h713_hdmi_audio/parameters/manage_dsp)\" = Y; then "
@@ -182,7 +195,8 @@ def main():
     rates = (48000,) if args.stall_reader else (48000, 32000, 44100)
     for index, rate in enumerate(rates, 1):
         print(f"ALSA capture test: {rate} Hz HDMI input", flush=True)
-        result = run_trial(args.output / f"{index}-{rate}", rate, index, args.recorder, args.stall_reader, args.seconds)
+        result = run_trial(args.output / f"{index}-{rate}", rate, index, args.recorder, args.stall_reader, args.seconds,
+                           args.persistent_signal)
         trials.append(result)
         print(json.dumps({"input_rate_hz": rate, "pass": result["pass"], "error": result.get("error")}), flush=True)
         if not result["pass"]:

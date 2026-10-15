@@ -1,0 +1,22 @@
+active
+closed
+[   18.778564] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   18.788457] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[   18.797043] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[   18.809113] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[   18.819891] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   18.833914] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[   18.842632] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   18.853795] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   18.867683] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   18.876243] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   18.888529] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   18.899176] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   18.909445] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   18.921457] h713-hdmi-audio: DSP versions 0000/0000
+[   19.842282] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[   19.877959] h713-hdmi-audio: managed DSP graph verified 22 words
+[   19.891795] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically
+[   20.292421] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[   20.330153] h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry
+[   66.939612] FAT-fs (mmcblk0p2): Volume was not properly unmounted. Some data may be corrupt. Please run fsck.

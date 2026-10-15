@@ -1,0 +1,18 @@
+[Unit]
+Description=H713 HDMI audio capture
+After=systemd-modules-load.service user@1000.service
+Before=shutdown.target
+RequiresMountsFor=/usr/lib/h713-hdmi /run/h713-hdmi-session
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-session.py start --bundle /usr/lib/h713-hdmi --boot-handoff
+ExecStop=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-session.py shutdown --bundle /usr/lib/h713-hdmi --terminal-shutdown
+Restart=no
+TimeoutStartSec=60
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

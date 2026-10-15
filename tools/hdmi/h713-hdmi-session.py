@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,7 @@ PCM='/proc/asound/H713HDMI/pcm0c/sub0/status'
 FW_PATH='/sys/module/firmware_class/parameters/path'
 BOOT_ID='/proc/sys/kernel/random/boot_id'
 STATE='/run/h713-hdmi-session/state.json'
+HANDOFF='/proc/device-tree/chosen/h713,hdmi-boot-v1'
 PATCH_SHA='8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5'
 
 
@@ -39,7 +41,8 @@ class Board:
 
 
 class Session:
-    def __init__(self,board,bundle):self.b=board;self.bundle=str(Path(bundle));self.boot=self.b.read(BOOT_ID).strip()
+    def __init__(self,board,bundle,boot_handoff=False):
+        self.b=board;self.bundle=str(Path(bundle));self.boot=self.b.read(BOOT_ID).strip();self.boot_handoff=boot_handoff
     def param(self,module,name):return self.b.read(BASE+module+'/parameters/'+name).strip()
     def loaded(self,module):return self.b.exists(BASE+module)
     def save(self,phase,**extra):self.b.state({'boot_id':self.boot,'phase':phase,**extra})
@@ -57,7 +60,7 @@ class Session:
         for domain in ('tvfe','tvcap'):
             if self.b.read('/sys/devices/h713-hdmi-'+domain+'/power/runtime_status').strip()!='active':raise RuntimeError('receiver domain inactive')
     def audio_ready(self):
-        self.owner_ready(1)
+        self.owner_ready(2 if self.loaded('h713_hdmi_signal') else 1)
         for key,value in [('graph_ready','Y'),('dsp_failed','N'),('manage_dsp','Y'),('manage_tvfe','Y'),('require_receiver_owner','Y')]:
             if self.param(AUDIO,key)!=value:raise RuntimeError('audio readiness failed: '+key)
     def start(self):
@@ -70,9 +73,17 @@ class Session:
         if prior:raise RuntimeError('initialization already attempted on this boot; physical cold boot required')
         for legacy in ('h713_hdmi_power','h713_edid_clock','h713_hdmi_tvfe_hold','h713_hdmi_dsp_probe','h713_scp_probe','h713_ddc_pins'):
             if self.loaded(legacy):raise RuntimeError('competing diagnostic owner: '+legacy)
-        proof=json.loads(self.b.read(self.bundle+'/cold-boot-proof.json'))
-        if proof.get('boot_id')!=self.boot or proof.get('cold_boot_confirmed') is not True or proof.get('parked_status_before_launch')!=0 or proof.get('source3_verified') is not True:
-            raise RuntimeError('cold-U-Boot proof does not match this Linux boot')
+        if self.boot_handoff:
+            handoff=self.b.binary(HANDOFF)
+            if len(handoff)!=12:
+                raise RuntimeError('invalid U-Boot HDMI handoff length')
+            magic,initial_status,pid=struct.unpack('>III',handoff)
+            if magic!=0x48444d49 or initial_status!=0 or pid==0:
+                raise RuntimeError('invalid U-Boot HDMI handoff')
+        else:
+            proof=json.loads(self.b.read(self.bundle+'/cold-boot-proof.json'))
+            if proof.get('boot_id')!=self.boot or proof.get('cold_boot_confirmed') is not True or proof.get('parked_status_before_launch')!=0 or proof.get('source3_verified') is not True:
+                raise RuntimeError('cold-U-Boot proof does not match this Linux boot')
         patch=self.b.binary(self.bundle+'/firmware/h713/hdmi-audio-dsp.bin')
         if len(patch)!=2896 or hashlib.sha256(patch).hexdigest()!=PATCH_SHA:raise RuntimeError('pinned firmware hash/size mismatch')
         release=self.b.run(['uname','-r']).stdout.strip()
@@ -170,6 +181,8 @@ class Session:
             return {'phase':'parked','already_parked':True,'receiver_removed':True}
         if prior.get('phase') in ('parking','parking_failed'):
             raise RuntimeError('terminal parking already attempted; physical cold boot required')
+        if self.loaded('h713_hdmi_signal') or self.loaded('h713_ddc_pins') or self.loaded('h713_scp_probe'):
+            raise RuntimeError('signal owner/helper must restore and stop before backend shutdown')
         # Check capability before stopping audio. Never leave a capture-only
         # owner half transitioned because a shutdown drop-in was misapplied.
         if not self.loaded(OWNER) or self.param(OWNER,'shutdown_ready')!='Y':
@@ -187,12 +200,13 @@ def main():
     parser.add_argument('action',choices=('start','stop','status','park','shutdown'))
     parser.add_argument('--bundle',type=Path,default=Path('/tmp/h713-linux-return'))
     parser.add_argument('--terminal-shutdown',action='store_true',help='Explicit terminal parking opt-in; no restart is provided')
+    parser.add_argument('--boot-handoff',action='store_true',help='Require the guarded normal-startup device-tree handoff')
     args=parser.parse_args()
     if args.action in ('park','shutdown') and not args.terminal_shutdown:parser.error(args.action+' requires --terminal-shutdown')
     Path('/run/h713-hdmi-session').mkdir(exist_ok=True)
     with open('/run/h713-hdmi-session/lock','w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        session=Session(Board(),args.bundle)
+        session=Session(Board(),args.bundle,args.boot_handoff)
         print(json.dumps(getattr(session,args.action)()),flush=True)
 
 

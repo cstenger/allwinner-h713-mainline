@@ -1,0 +1,29 @@
+{
+  "installed": true,
+  "saved_environment": true,
+  "warm_guard_verified": true,
+  "kernel_binary_changed": false,
+  "uboot_binary_changed": false,
+  "automatic_cold_boot_verified": true,
+  "persistent_signal_hardware_verified": true,
+  "capture_after_automatic_startup_verified": true,
+  "awaiting": "remaining production work (see docs/hdmi-normal-startup.md); no commit requested yet",
+  "automatic_cold_boot_failure": "source3 verified; fdt set handoff rejected bare hex PID 8b8f275c (cold-autoboot-1-fdt-pid-failure.txt)",
+  "handoff_document": "docs/handoff-claude-hdmi-startup-2026-10-14.md",
+  "fdt_pid_fix": "build-startup.py emits 0x${hdmi_pid}; hdmi_ccu unchanged (fdt get value already stores 0x%08X); regression tools/hdmi/test-build-startup.py fails on the old script",
+  "fixed_script_sha256": "1e677d4b51d1e47ca31eb8c82f873782444f73b263b2b1101f4ccdf6bcdd7eb8",
+  "installed_script_sha256": "a867b4242be51fc0fef3349241436bd26a4bdc752e2f42e65ff18267b7c98160",
+  "fixed_script_installed": true,
+  "fixed_script_cold_run_verified": true,
+  "handoff_cells": "48444d49 00000000 8b8f275c",
+  "linux_autostart_verified": true,
+  "capture_rates_passed": [
+    48000,
+    32000,
+    44100
+  ],
+  "poweroff_with_persistent_signal_verified": true,
+  "poweroff_note": "poweroff-1/: live 48 kHz tones, recorder RUNNING at request; recorder -> signal restore (SCP/SRAM/vectors, client released) -> DDC release -> backend 22 DSP/15 TVFE restore, parked, receiver removed -> Power down; 90.03 s no reboot",
+  "poweroff_lamp_fan_operator_confirmation": "confirmed (poweroff-1/operator-confirmation.json)",
+  "automatic_cold_boot_note": "autonomous-1/: serial+USB unplugged, no interaction; FAT script loaded by bootcmd, handoff 48444d49/0/8b8f275c; services active by ~23 s uptime (still activating at 14 s); check-startup PASS; 48/32/44.1 kHz capture PASS via persistent signal"
+}

@@ -1,0 +1,18 @@
+[Unit]
+Description=H713 HDMI EDID and hotplug owner
+Requires=h713-hdmi-capture.service
+After=h713-hdmi-capture.service
+Before=shutdown.target
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-signal.py start
+ExecStop=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-signal.py stop
+Restart=no
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
