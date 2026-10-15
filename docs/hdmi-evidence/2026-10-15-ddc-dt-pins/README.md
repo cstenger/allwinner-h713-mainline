@@ -58,4 +58,18 @@ The recovery followed the 2026-10-14 resume precedent:
     value; PL9 (IR) is unchanged.
   - The pins show `UNCLAIMED` and the receiver has `clients=1`.
 
-**Pending:** an unattended cold boot through the persisted fixed script.
+## Unattended boot through the persisted script (boot `534aa29d…`)
+After a routine poweroff and the operator's power cycle, with nobody at the
+board (`unattended-boot/`):
+- The FAT script is `f317cd4e…`.
+- The handoff is `48444d49 0 <pid>`, and `check-startup.sh` PASS.
+- The new kernel booted.
+- The helper bound to the DT node, with original `ffffff` and claim
+  `222222`.
+- The signal module's readback poison is intact at ready.
+- The host reads the fixture EDID, and dmesg has no warnings.
+
+Power was off for only about 15 s (poweroff at 03:56:32, back up at about
+39 s of uptime at 03:57:24), shorter than the ≥1 min cold-cycle rule. The
+script still found GP6 clear and MIPS stopped and took the full launch path,
+which `check-startup.sh`'s handoff check confirms.
