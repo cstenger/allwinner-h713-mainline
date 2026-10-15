@@ -1,0 +1,18 @@
+[ 1385.640057] h713-arm64 h713-hold-failure: injecting poweroff with capture open
+[ 1385.794482] h713-arm64 systemd[1]: Stopping h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[ 1386.093785] h713-arm64 python3[1210]: capture is open; signal retained
+[ 1386.268824] h713-arm64 systemd[1]: h713-hdmi-signal.service: Control process exited, code=exited, status=1/FAILURE
+[ 1386.269353] h713-arm64 systemd[1]: h713-hdmi-signal.service: Failed with result 'exit-code'.
+[ 1386.270095] h713-arm64 systemd[1]: Stopped h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[ 1386.320626] h713-arm64 systemd[1]: Stopping h713-h2-busy-pcm.service - [systemd-run] /tmp/arecord -q -D hw:H713HDMI,0 -f S16_LE -r 48000 -c 2 -t raw /dev/null...
+[ 1386.325622] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+[ 1386.337798] h713-arm64 systemd[1]: h713-h2-busy-pcm.service: Main process exited, code=exited, status=1/FAILURE
+[ 1386.338172] h713-arm64 systemd[1]: h713-h2-busy-pcm.service: Failed with result 'exit-code'.
+[ 1386.338957] h713-arm64 systemd[1]: Stopped h713-h2-busy-pcm.service - [systemd-run] /tmp/arecord -q -D hw:H713HDMI,0 -f S16_LE -r 48000 -c 2 -t raw /dev/null.
+[ 1386.662032] h713-arm64 python3[1224]: signal owner/helper must restore and stop before backend shutdown
+[ 1386.733263] h713-arm64 systemd[1]: h713-hdmi-capture.service: Control process exited, code=exited, status=1/FAILURE
+[ 1386.733835] h713-arm64 systemd[1]: h713-hdmi-capture.service: Failed with result 'exit-code'.
+[ 1386.734652] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+[ 1387.361591] h713-arm64 systemd[1]: Finished systemd-poweroff.service - System Power Off.
+[ 1387.363359] h713-arm64 systemd[1]: Reached target poweroff.target - System Power Off.
+[ 1387.364994] h713-arm64 systemd[1]: Shutting down.

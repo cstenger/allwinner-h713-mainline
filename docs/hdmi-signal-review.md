@@ -85,7 +85,7 @@ the exact fixture EDID while the module was ready. It is **deployed** with
   [hdmi-signal-lifetime-bench.md](hdmi-signal-lifetime-bench.md), with the bundle in
   `build/signal-lifetime/`.
 
-### H2. ExecStop-failure policy: adopted and guarded, bench runs pending
+### H2. ExecStop-failure policy: adopted, guarded, and bench-validated
 
 **How a failure plays out.** When `h713-hdmi-signal.py stop` fails during
 shutdown (a busy PCM, a refused `stop`, incomplete restoration, or a failed
@@ -145,7 +145,19 @@ M1 and any backend failure end in the same state.
   the real `/sys/module`, with lamp-off and poweroff stubbed, named the four
   loaded holds. It only logged for `poweroff` and converted `reboot`.
 
-**Bench runs pending (operator watching)** with `tools/hdmi/run-hold-failure.sh`:
+**Both bench runs PASSED (2026-10-14/15, operator watching):**
+- [Run 1](hdmi-evidence/2026-10-14-hold-guard/run1-poweroff/README.md):
+  forced failure, then `poweroff`. The stop refused, the backend refused to
+  park, and the board made its **first unparked poweroff**: lamp and fan off,
+  no reboot or watchdog reset.
+- [Run 2](hdmi-evidence/2026-10-14-hold-guard/run2-reboot/README.md): the same
+  failure, then `reboot`. The journal reaches `reboot.target` and "Shutting
+  down", but the board **stayed off** with lamp and fan off. Its access point
+  was still absent almost 5 min later, so the guard converted the reboot.
+
+The next cold boot after each run verified clean.
+
+Both runs used `tools/hdmi/run-hold-failure.sh`:
 - **Run 1:** `inject poweroff`.
 - **Run 2:** `inject reboot`.
 
@@ -158,11 +170,11 @@ injected boot's journal that:
 - nothing was restored or parked;
 - shutdown reached its final stage.
 
-Pass criteria:
-- Run 1: the lamp and fan go off, with no reboot for 90 s. This is the first
-  unparked poweroff.
-- Run 2: the board **stays off** instead of rebooting, and the lamp and fan
-  go off.
+**Still not exercised:**
+- a hang in the final stage, which would hand over to the 16 s watchdog's warm
+  reset;
+- the reboot-to-fastboot variant;
+- a sealed-unit recovery without a bench operator.
 
 ### M1. A clean pre-launch init failure still leads to an unparked poweroff
 
