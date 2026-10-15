@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import subprocess
+import errno
+import signal
 
 spec=importlib.util.spec_from_file_location('signal_owner',Path(__file__).with_name('h713-hdmi-signal.py'))
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -15,12 +17,29 @@ class Signal(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name)
-        for name in ('MODULE','DDC','PCM','OWNED','ATTEMPTED','PROBE','GRAPH'):setattr(m,name,root/name)
+        for name in ('MODULE','DDC','OWNED','ATTEMPTED','PROBE','GRAPH','NO_RECLAIM'):setattr(m,name,root/name)
         m.GRAPH.write_text('Y\n')
-        (m.MODULE/'parameters').mkdir(parents=True);m.DDC.mkdir();m.PCM.write_text('closed\n');m.OWNED.write_text('owned');m.ATTEMPTED.write_text('attempted')
+        (m.MODULE/'parameters').mkdir(parents=True);m.DDC.mkdir();m.OWNED.write_text('owned');m.ATTEMPTED.write_text('attempted')
         self.events=[];self.bad_restore=False;self.failed=False;self.init='ready';self.ddc_rmmod_fails=False
         self.ddc_release=True # current helper; False models one without the parameter
         if self.ddc_release:(m.DDC/'parameters').mkdir();(m.DDC/'parameters/release').write_text('')
+        # Capture device model: consumers hold it (pids) or something we
+        # cannot see holds it (foreign_busy); graph_ready N gives EAGAIN.
+        self.pids=[];self.foreign_busy=False;self.not_ready=False;self.ignores_term=set()
+        self.shutdown=False;self.kills=[];self.holding=None;self.clock=0.0
+    def open_capture(self,dev):
+        self.assertFalse((m.MODULE/'parameters/stop').is_file()) # held before the stop is written
+        if self.not_ready:raise OSError(errno.EAGAIN,'Resource temporarily unavailable')
+        if self.pids or self.foreign_busy:raise OSError(errno.EBUSY,'Device or resource busy')
+        self.holding=True;self.opens=getattr(self,'opens',0)+1;return 99
+    def close_capture(self,fd):
+        self.assertEqual(fd,99);self.assertTrue(self.holding)
+        self.assertTrue((m.MODULE/'parameters/stop').exists()) # released after the stop
+        self.holding=False
+    def kill(self,pid,sig):
+        self.kills.append((pid,sig))
+        if not (sig==signal.SIGTERM and pid in self.ignores_term) and pid in self.pids:self.pids.remove(pid)
+    def sleep(self,seconds):self.clock+=seconds
     def param(self,name):
         stopped=(m.MODULE/'parameters/stop').exists()
         return {'failed':'Y' if self.failed else 'N','ready':'N' if stopped else 'Y','restored':'Y' if stopped and not self.bad_restore else 'N'}[name]
@@ -45,7 +64,11 @@ class Signal(unittest.TestCase):
             (m.MODULE/'parameters').mkdir(parents=True);self.failed=self.init=='failed'
         else:raise AssertionError(args)
     def action(self,action,*extra):
-        with patch('sys.argv',['signal',action,*extra]),patch.object(m,'param',self.param),patch.object(m,'run',self.command):m.main()
+        with patch('sys.argv',['signal',action,*extra]),patch.object(m,'param',self.param),patch.object(m,'run',self.command),\
+             patch.object(m,'capture_device',lambda:Path('/dev/snd/pcmC1D0c')),patch.object(m,'open_capture',self.open_capture),\
+             patch.object(m,'close_capture',self.close_capture),patch.object(m,'holders',lambda dev:list(self.pids)),\
+             patch.object(m,'kill',self.kill),patch.object(m,'shutting_down',lambda:self.shutdown),\
+             patch.object(m.time,'sleep',self.sleep),patch.object(m.time,'monotonic',lambda:self.clock):m.main()
     def test_ordered_stop_requires_restoration_before_releasing_ddc(self):
         self.action('stop')
         self.assertEqual(self.events,[['rmmod','h713_hdmi_signal'],['rmmod','h713_ddc_pins']])
@@ -55,7 +78,7 @@ class Signal(unittest.TestCase):
         for failure in ('busy','failed','foreign'):
             with self.subTest(failure=failure):
                 self.setUp()
-                if failure=='busy':m.PCM.write_text('state: RUNNING')
+                if failure=='busy':self.pids=[4242]
                 elif failure=='failed':self.failed=True
                 else:m.OWNED.unlink()
                 with self.assertRaises(RuntimeError):self.action('stop')
@@ -123,6 +146,43 @@ class Signal(unittest.TestCase):
         shutil.rmtree(m.DDC/'parameters') # helper loaded before the release change
         self.action('stop')
         self.assertEqual(self.events[-1],['rmmod','h713_ddc_pins']);self.assertFalse(m.DDC.exists())
+    def test_stop_holds_the_capture_device_across_restoration(self):
+        self.action('stop')
+        self.assertEqual(self.opens,1);self.assertFalse(self.holding) # taken before the stop, released after it
+        self.assertEqual(self.events,[['rmmod','h713_hdmi_signal'],['rmmod','h713_ddc_pins']])
+    def test_hold_is_released_when_restoration_is_incomplete(self):
+        self.bad_restore=True
+        with self.assertRaisesRegex(RuntimeError,'restoration incomplete'):self.action('stop')
+        self.assertFalse(self.holding)
+    def test_running_system_never_kills_consumers(self):
+        self.pids=[4242]
+        with self.assertRaisesRegex(RuntimeError,'capture is open'):self.action('stop')
+        self.assertEqual(self.kills,[]);self.assertFalse((m.MODULE/'parameters/stop').exists())
+    def test_shutdown_closes_consumers_then_restores(self):
+        self.shutdown=True;self.pids=[4242,4343]
+        self.action('stop')
+        self.assertEqual(self.kills,[(4242,signal.SIGTERM),(4343,signal.SIGTERM)])
+        self.assertEqual(self.events[0],['rmmod','h713_hdmi_signal'])
+    def test_shutdown_escalates_to_sigkill_after_the_grace(self):
+        self.shutdown=True;self.pids=[4242];self.ignores_term={4242}
+        self.action('stop')
+        self.assertEqual(self.kills,[(4242,signal.SIGTERM),(4242,signal.SIGKILL)])
+        self.assertGreaterEqual(self.clock,5)
+    def test_bench_no_reclaim_keeps_consumers_and_refuses(self):
+        self.shutdown=True;self.pids=[4242];m.NO_RECLAIM.write_text('')
+        with self.assertRaisesRegex(RuntimeError,'capture is open'):self.action('stop')
+        self.assertEqual(self.kills,[])
+    def test_failed_owner_never_reclaims_consumers(self):
+        self.shutdown=True;self.pids=[4242];self.failed=True
+        with self.assertRaisesRegex(RuntimeError,'owner failed'):self.action('stop')
+        self.assertEqual(self.kills,[])
+    def test_an_open_by_an_unseen_holder_still_refuses(self):
+        self.shutdown=True;self.foreign_busy=True # e.g. a holder we could not read
+        with self.assertRaisesRegex(RuntimeError,'capture is open'):self.action('stop')
+        self.assertFalse((m.MODULE/'parameters/stop').exists())
+    def test_graph_not_ready_means_nobody_can_capture(self):
+        self.not_ready=True
+        self.action('stop');self.assertIsNone(self.holding)
     def test_start_after_a_complete_stop_is_allowed(self):
         self.action('stop');self.events=[]
         self.action('start')

@@ -1,0 +1,28 @@
+[  599.436065] h713-arm64 h713-hold-failure: consumer still capturing at poweroff
+[  599.592134] h713-arm64 systemd[1]: Stopping h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[  600.182772] h713-arm64 python3[1507]: shutdown: closing HDMI capture consumers [328]
+[  600.210583] h713-arm64 systemd[1]: h713-m2-consumer.service: Main process exited, code=exited, status=1/FAILURE
+[  600.211237] h713-arm64 systemd[1]: h713-m2-consumer.service: Failed with result 'exit-code'.
+[  600.214475] h713-arm64 systemd[1]: Stopped h713-m2-consumer.service - [systemd-run] /usr/bin/pw-record --target alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback /dev/null.
+[  600.216076] h713-arm64 kernel: h713-hdmi-signal: stop marker=48444d49 ready=48444d49 exception=0 error=0 done=48444d49
+[  600.216512] h713-arm64 kernel: h713-hdmi-signal: stop original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  600.216600] h713-arm64 kernel: h713-hdmi-signal: stop readback 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  600.216683] h713-arm64 kernel: h713-hdmi-signal: stop active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  600.216765] h713-arm64 kernel: h713-hdmi-signal: peripheral readback, SRAM and vectors restored; SCP stopped; receiver client released
+[  600.336073] h713-arm64 kernel: h713-ddc-pins: DDC pins returned to io_disabled (mux ffffff, original ffffff); module may be removed
+[  600.352065] h713-arm64 kernel: h713-ddc-pins: ownership released
+[  600.371133] h713-arm64 python3[1507]: EDID/HPD, SCP SRAM/vectors and DDC ownership restored
+[  600.453402] h713-arm64 systemd[1]: h713-hdmi-signal.service: Deactivated successfully.
+[  600.453919] h713-arm64 systemd[1]: Stopped h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[  600.473638] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+[  604.740925] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 0 asserted and verified
+[  604.741442] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 1 asserted and verified
+[  604.741661] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 2 asserted and verified
+[  604.762366] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required
+[  605.058564] h713-arm64 python3[1536]: {"phase": "parked", "receiver_removed": true, "cold_boot_required": true, "audio_stop": {"phase": "stopped", "already_stopped": false, "receiver_retained": true, "dsp_restored_words": 22, "tvfe_restored_words": 15}}
+[  605.134709] h713-arm64 systemd[1]: h713-hdmi-capture.service: Deactivated successfully.
+[  605.135691] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+[  605.138018] h713-arm64 systemd[1]: h713-hdmi-capture.service: Consumed 1.533s CPU time.
+[  605.681406] h713-arm64 systemd[1]: Finished systemd-poweroff.service - System Power Off.
+[  605.683060] h713-arm64 systemd[1]: Reached target poweroff.target - System Power Off.
+[  605.684569] h713-arm64 systemd[1]: Shutting down.

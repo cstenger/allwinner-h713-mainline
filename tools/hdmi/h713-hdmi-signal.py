@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 """Own DDC pins and the persistent, reversible SCP EDID/HPD module."""
 import argparse
+import errno
+import os
+import signal
 import subprocess
+import time
 from pathlib import Path
 import sys
 BUNDLE=Path('/usr/lib/h713-hdmi')
 MODULE=Path('/sys/module/h713_hdmi_signal')
 DDC=Path('/sys/module/h713_ddc_pins')
-PCM=Path('/proc/asound/H713HDMI/pcm0c/sub0/status')
+CARD=Path('/proc/asound/H713HDMI')
+SND=Path('/dev/snd')
+PROC=Path('/proc')
+# Bench-only, runtime-only: keeps capture consumers alive at shutdown so a
+# busy PCM still makes the stop fail (H2 failure injection).
+NO_RECLAIM=Path('/run/h713-hdmi-signal/no-reclaim')
 OWNED=Path('/run/h713-hdmi-signal/owned')
 # Per-boot latch: written before any hold, removed only by a complete stop.
 ATTEMPTED=Path('/run/h713-hdmi-signal/attempted')
@@ -29,6 +38,49 @@ def release_ddc():
         try:release.write_text('1\n')
         except OSError as error:raise RuntimeError(f'DDC pin restore failed ({error.strerror}); DDC retained, cold cycle required') from error
     run(['rmmod','h713_ddc_pins'])
+def capture_device():
+    # The single capture substream; None when the audio card is absent.
+    if not CARD.exists():return None
+    return SND/f'pcmC{CARD.resolve().name.removeprefix("card")}D0c'
+def open_capture(dev):return os.open(dev,os.O_RDONLY|os.O_NONBLOCK|os.O_CLOEXEC)
+def close_capture(fd):os.close(fd)
+def holders(dev):
+    pids=[]
+    for fds in PROC.glob('[0-9]*/fd'):
+        try:
+            if any(os.readlink(fd)==str(dev) for fd in fds.iterdir()):pids.append(int(fds.parent.name))
+        except OSError:pass # exited or not ours to read
+    return sorted(set(pids)-{os.getpid()})
+def kill(pid,sig):
+    try:os.kill(pid,sig)
+    except ProcessLookupError:pass
+def shutting_down():
+    state=subprocess.run(['systemctl','is-system-running'],capture_output=True,text=True,timeout=5).stdout.strip()
+    return state=='stopping'
+def reclaim(dev):
+    # User-session consumers (PipeWire for WirePlumber's default source,
+    # pw-record, ...) outlive this unit at shutdown: the backend is ordered
+    # after user@1000 on purpose. systemd would kill them moments later;
+    # do it now, and only during shutdown. A running system keeps refusing.
+    if dev is None or NO_RECLAIM.exists() or not shutting_down():return
+    pids=holders(dev)
+    if not pids:return
+    print(f'shutdown: closing HDMI capture consumers {pids}',flush=True)
+    for sig,grace in ((signal.SIGTERM,5),(signal.SIGKILL,2)):
+        for pid in pids:kill(pid,sig)
+        deadline=time.monotonic()+grace
+        while (pids:=holders(dev)) and time.monotonic()<deadline:time.sleep(0.1)
+        if not pids:return
+def hold_capture(dev):
+    # Owning the only substream for the whole restoration closes the gap
+    # between "nobody is capturing" and the stop: any other open now fails
+    # (or, if blocking, waits until the source is already gone).
+    if dev is None:return None
+    try:return open_capture(dev)
+    except OSError as error:
+        if error.errno==errno.EBUSY:raise RuntimeError('capture is open; signal retained') from None
+        if error.errno==errno.EAGAIN:return None # graph not ready: nobody can open it
+        raise RuntimeError(f'capture device check failed ({error.strerror}); signal retained') from error
 def launch(bundle):
     try:run(['insmod',str(bundle/'h713-hdmi-signal.ko'),'armed=1'])
     except subprocess.CalledProcessError:
@@ -61,12 +113,17 @@ def main():
         if not MODULE.exists() and not DDC.exists():return
         require(OWNED.exists(),'signal resources not owned by this service; refusing removal')
         if MODULE.exists():
-            require(PCM.read_text().strip()=='closed','capture is open; signal retained')
             require(param('failed')=='N','signal owner failed; holds retained, cold cycle required')
-            # The module marks a failed stop terminal and keeps every hold; keep DDC too.
-            try:(MODULE/'parameters/stop').write_text('1\n')
-            except OSError as error:raise RuntimeError(f'signal stop refused ({error.strerror}); holds retained, cold cycle required') from error
-            require(param('restored')=='Y' and param('ready')=='N' and param('failed')=='N','signal restoration incomplete')
+            dev=capture_device()
+            reclaim(dev)
+            held=hold_capture(dev)
+            try:
+                # The module marks a failed stop terminal and keeps every hold; keep DDC too.
+                try:(MODULE/'parameters/stop').write_text('1\n')
+                except OSError as error:raise RuntimeError(f'signal stop refused ({error.strerror}); holds retained, cold cycle required') from error
+                require(param('restored')=='Y' and param('ready')=='N' and param('failed')=='N','signal restoration incomplete')
+            finally:
+                if held is not None:close_capture(held)
             run(['rmmod','h713_hdmi_signal'])
         require(not MODULE.exists(),'signal still owns SCP; DDC retained')
         if DDC.exists():release_ddc()

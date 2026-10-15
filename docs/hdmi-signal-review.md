@@ -221,22 +221,60 @@ an avoidable unparked shutdown.
   action, `rmmod h713_ddc_pins`, is the same step as the normal stop, which is
   validated.
 
-### M2. User-session PCM consumers cannot be ordered before the signal stop
+### M2. User-session capture consumers and the closed-check/stop race: fixed (hardware-verified)
 
-`h713-hdmi-capture.service` is deliberately `After=user@1000.service`, so
-WirePlumber stays available during restoration. As a result, the signal unit
-stops while the user session is still running. A PipeWire, WirePlumber or
-`pw-record` stream on `H713HDMI` keeps `pcm0c/sub0/status` non-`closed`. The
-signal stop then refuses, and the case becomes H2. Separately, there is a
-TOCTOU window: Python checks for `closed`, then writes `stop`, and a consumer
-can open the PCM in between and lose HPD/EDID mid-stream.
+**The problem:** `h713-hdmi-capture.service` is deliberately
+`After=user@1000.service`, so at shutdown the signal unit stops while the
+user session still runs. WirePlumber publishes the HDMI capture as **the
+default source** ("H713 HDMI Input Stereo"). Any client recording from the
+default input (a browser, `pw-record`, a voice app) therefore makes the
+user's PipeWire hold the PCM. That made the stop refuse, which ended in the
+H2 guarded, unparked poweroff. Separately, the wrapper checked "status
+closed" and only then wrote `stop`, so a consumer could open the device in
+between.
 
-*Proposed:*
-- Give `stop` a bounded wait for `closed` (about 10 s inside
-  `TimeoutStopSec=30`), and log the PIDs holding `/dev/snd/pcmC*D0c`.
-- Longer term, add a kernel interlock: the audio module refuses new opens once
-  the signal stop begins. This could be an exported "signal stopping" flag
-  checked in `pcm open`.
+**Fixed (2026-10-15)** in `h713-hdmi-signal.py stop`:
+- **Exclusive hold.** The wrapper opens the single capture substream
+  `O_NONBLOCK` and holds it across the `stop` write and its checks,
+  releasing it before `rmmod` (in a `finally`).
+  - `EBUSY` means a consumer has the device, which is the existing refusal.
+  - `EAGAIN` means the graph isn't ready, so nobody can capture.
+  - Any other open now fails, or, if it is a blocking open, waits until the
+    source is gone. This replaces the status check.
+  - `pcm_open` has no hardware effect. `pcm_close` only rewrites the inert
+    stream registers, as every consumer's close already does.
+- **Reclaim at shutdown only.** When `systemctl is-system-running` reports
+  `stopping`, the wrapper sends SIGTERM to the processes holding *this*
+  device, waits up to 5 s, then sends SIGKILL with 2 s more, before taking
+  the hold. systemd would kill those processes moments later anyway.
+  - On a running system, a stop with a consumer still refuses: user apps
+    are never killed there.
+  - A failed owner never reclaims.
+- **Bench-only knob.** A runtime file, `/run/h713-hdmi-signal/no-reclaim`,
+  keeps consumers alive so H2's busy-PCM injection still fails;
+  `run-hold-failure.sh inject` sets it.
+
+*Verification:*
+- **Host:** 26 wrapper tests. They cover:
+  - the hold taken before and released after the stop, including after an
+    incomplete restoration;
+  - no killing on a running system;
+  - SIGTERM, then SIGKILL escalation;
+  - the knob;
+  - a failed owner;
+  - a busy device whose holder can't be seen;
+  - a graph that isn't ready.
+
+  Six mutants are caught.
+- **Hardware**
+  ([evidence](hdmi-evidence/2026-10-15-m2-consumers/README.md)): `pw-record`
+  ran through the user's PipeWire and kept capturing past the signal stop.
+  The shutdown logged "closing HDMI capture consumers [328]" (PipeWire, which
+  released on SIGTERM), then restored, returned DDC, parked MIPS and powered
+  off. Next-boot `verify` passed.
+
+*Not covered:* a consumer that reopens faster than the reclaim loop can
+catch it. The hold then refuses and the H2 guard handles it.
 
 ### M3. DDC pins: fallible release, DT pin states, exact io_disabled restore (hardware-verified)
 
@@ -374,6 +412,7 @@ gives `stop_signal()`'s mutex acquire a matching release.
 | `tools/hdmi/update-signal-owner.sh`, `install-startup.sh`, `build-startup.py`, `check-startup.sh` | H2: the guard is shipped, installed into `system-shutdown/`, and required at startup. The updater scope now includes the guard and `install-startup.sh`, and backup directories are unique (`mktemp`). |
 | `tools/hdmi/h713-hdmi-signal.py`, `test-hdmi-signal.py` | M1: per-boot `attempted` latch written before the first hold. A clean pre-launch init refusal releases DDC, so the backend can park. |
 | `modules/ddc-bringup/h713-ddc-pins.c`, wrapper `release_ddc()` | M3: pinned until a verified, fallible `release=1`. Mux register readback proves the claim and the release, and records the original mux. |
+| wrapper `reclaim()`/`hold_capture()`, `run-hold-failure.sh consumer` | M2: exclusive capture hold across the stop; shutdown-only reclaim of capture consumers; `no-reclaim` bench knob; consumer bench mode. |
 | `tools/hdmi/run-hold-failure.sh` | H2: bench failure injection (busy PCM ordered to outlive the signal stop) and next-boot journal verification. |
 | `tools/hdmi/run-signal-lifetime.sh` | Self-checking bench lifetime cycle through a runtime-only drop-in ([procedure](hdmi-signal-lifetime-bench.md)). The wrapper also gained `--bundle`, which has a test. |
 | `modules/hdmi-signal/README.md` | Build command uses `--verify-restore`. Describes the readback proof. |
