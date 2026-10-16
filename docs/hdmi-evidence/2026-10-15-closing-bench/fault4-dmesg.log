@@ -1,0 +1,19 @@
+[  235.514955] h713-signal-fault: inject 4 1776109318
+[  238.812393] h713-ddc-pins: PL10-PL15 claimed for three DDC ports (mux 222222, original ffffff)
+[  238.846783] h713-hdmi-signal: BENCH BUILD, fault injection 4
+[  238.854303] h713-hdmi-signal: setup marker=48444d49 ready=00000000 exception=0 error=0 done=00000000
+[  238.865213] h713-hdmi-signal: setup original 1014=321c0108 1b00=b9004288 1b04=94000c02 1b08=b940f268 1020=528005e9 1030=52800140 1034=33181d28 1038=b900f268
+[  238.880784] h713-hdmi-signal: setup readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[  238.896309] h713-hdmi-signal: setup active 1014=00000000 1b00=00000000 1b04=00000000 1b08=00000000 c00=00000000 d00=00000000 e00=00000000 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  238.916548] h713-hdmi-signal: setup failed; holds retained until stop=1 proves a recoverable state
+[  238.953104] h713-hdmi-signal: recover marker=48444d49 ready=48444d49 exception=0 error=0 done=00000000
+[  238.964073] h713-hdmi-signal: recover original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  238.981293] h713-hdmi-signal: recover readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[  238.998500] h713-hdmi-signal: recover active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  239.020445] h713-hdmi-signal: stop marker=48444d49 ready=48444d49 exception=0 error=0 done=48444d49
+[  239.031044] h713-hdmi-signal: stop original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  239.046475] h713-hdmi-signal: stop readback 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  239.061869] h713-hdmi-signal: stop active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  239.082546] h713-hdmi-signal: init failure undone from proven state 1; SRAM and vectors restored; SCP stopped; receiver client released
+[  239.115035] h713-ddc-pins: DDC pins returned to io_disabled (mux ffffff, original ffffff); module may be removed
+[  239.136009] h713-ddc-pins: ownership released

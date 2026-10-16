@@ -170,10 +170,17 @@ injected boot's journal that:
 - nothing was restored or parked;
 - shutdown reached its final stage.
 
+**Clean reboots with the guard installed (closing bench):**
+- A parked `systemctl reboot` rebooted and came back by itself. U-Boot took
+  the latched warm path and the HDMI units were skipped.
+- `reboot fastboot` reached U-Boot's GP7 fastboot dispatch.
+
+So the guard blocks nothing that it shouldn't
+([evidence](hdmi-evidence/2026-10-15-closing-bench/README.md)).
+
 **Still not exercised:**
 - a hang in the final stage, which would hand over to the 16 s watchdog's warm
   reset;
-- the reboot-to-fastboot variant;
 - a sealed-unit recovery without a bench operator.
 
 ### M1. A clean pre-launch init failure left DDC held: fixed (wrapper), host-verified
@@ -220,6 +227,11 @@ an avoidable unparked shutdown.
   be triggered under the service without a test-only module. Its hardware
   action, `rmmod h713_ddc_pins`, is the same step as the normal stop, which is
   validated.
+- **Hardware (2026-10-15, closing bench):** the bench build's `fault=3`
+  refuses just before SCP release. The wrapper released DDC and reported
+  "nothing retained", with no module held and the DDC register at
+  `0xFFFFFF3F`
+  ([evidence](hdmi-evidence/2026-10-15-closing-bench/README.md)).
 
 ### M2. User-session capture consumers and the closed-check/stop race: fixed (hardware-verified)
 
@@ -369,7 +381,10 @@ Bench builds (`-DH713_SIGNAL_FAULT_INJECTION`) add `fault=1|2` to inject
   payload's own restore ran on hardware with readback == originals. After
   each, nothing was held and the DDC register read `0xFFFFFF3F`. The
   following poweroff parked MIPS normally.
-- Late ready (state 1) shares the normal stop path but was not injected.
+- Late ready (state 1) was injected in the closing bench with `fault=4`,
+  where init gives up the poll at once. It was undone from state 1 through
+  the full cooperative stop, with readback == originals
+  ([evidence](hdmi-evidence/2026-10-15-closing-bench/README.md)).
 
 ### L1. Concurrent `stop` writes and state reads: no torn state is observable (verified)
 

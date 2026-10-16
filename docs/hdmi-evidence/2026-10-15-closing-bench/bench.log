@@ -1,0 +1,60 @@
+production startup check passed
+stopping the installed signal owner
+h713_hdmi_receiver.clients=1
+PL mux register 0xFFFFFF3F
+starting the bench owner with fault=1 (expect: undone from proven state 3, nothing retained)
+[  227.208426] h713-hdmi-signal: BENCH BUILD, fault injection 1
+[  227.365275] h713-hdmi-signal: setup marker=48444d49 ready=00000000 exception=0 error=3 done=48444d49
+[  227.377797] h713-hdmi-signal: setup original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  227.393897] h713-hdmi-signal: setup readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[  227.409155] h713-hdmi-signal: setup active 1014=00000000 1b00=00000000 1b04=00000000 1b08=00000000 c00=00000000 d00=00000000 e00=00000000 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  227.428869] h713-hdmi-signal: setup failed; holds retained until stop=1 proves a recoverable state
+[  227.465612] h713-hdmi-signal: recover marker=48444d49 ready=00000000 exception=0 error=3 done=48444d49
+[  227.476335] h713-hdmi-signal: recover original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  227.493160] h713-hdmi-signal: recover readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[  227.510086] h713-hdmi-signal: recover active 1014=00000000 1b00=00000000 1b04=00000000 1b08=00000000 c00=00000000 d00=00000000 e00=00000000 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  227.530850] h713-hdmi-signal: init failure undone from proven state 3; SRAM and vectors restored; SCP stopped; receiver client released
+h713_hdmi_receiver.clients=1
+PL mux register 0xFFFFFF3F
+PASS fault=1: undone from proven state 3, nothing retained; nothing held
+starting the bench owner with fault=2 (expect: undone from proven state 2, nothing retained)
+[  231.169363] h713-hdmi-signal: BENCH BUILD, fault injection 2
+[  231.326254] h713-hdmi-signal: setup marker=48444d49 ready=00000000 exception=0 error=1 done=48444d49
+[  231.338550] h713-hdmi-signal: setup original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  231.356474] h713-hdmi-signal: setup readback 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  231.371914] h713-hdmi-signal: setup active 1014=00000000 1b00=00000000 1b04=00000000 1b08=00000000 c00=00000000 d00=00000000 e00=00000000 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  231.391975] h713-hdmi-signal: setup failed; holds retained until stop=1 proves a recoverable state
+[  231.427955] h713-hdmi-signal: recover marker=48444d49 ready=00000000 exception=0 error=1 done=48444d49
+[  231.441332] h713-hdmi-signal: recover original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  231.463412] h713-hdmi-signal: recover readback 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  231.483596] h713-hdmi-signal: recover active 1014=00000000 1b00=00000000 1b04=00000000 1b08=00000000 c00=00000000 d00=00000000 e00=00000000 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  231.504660] h713-hdmi-signal: init failure undone from proven state 2; SRAM and vectors restored; SCP stopped; receiver client released
+h713_hdmi_receiver.clients=1
+PL mux register 0xFFFFFF3F
+PASS fault=2: undone from proven state 2, nothing retained; nothing held
+starting the bench owner with fault=3 (expect: refused before SCP release; nothing retained)
+[  235.137487] h713-hdmi-signal: BENCH BUILD, fault injection 3
+h713_hdmi_receiver.clients=1
+PL mux register 0xFFFFFF3F
+PASS fault=3: refused before SCP release; nothing retained; nothing held
+starting the bench owner with fault=4 (expect: undone from proven state 1, nothing retained)
+[  238.846783] h713-hdmi-signal: BENCH BUILD, fault injection 4
+[  238.854303] h713-hdmi-signal: setup marker=48444d49 ready=00000000 exception=0 error=0 done=00000000
+[  238.865213] h713-hdmi-signal: setup original 1014=321c0108 1b00=b9004288 1b04=94000c02 1b08=b940f268 1020=528005e9 1030=52800140 1034=33181d28 1038=b900f268
+[  238.880784] h713-hdmi-signal: setup readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[  238.896309] h713-hdmi-signal: setup active 1014=00000000 1b00=00000000 1b04=00000000 1b08=00000000 c00=00000000 d00=00000000 e00=00000000 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  238.916548] h713-hdmi-signal: setup failed; holds retained until stop=1 proves a recoverable state
+[  238.953104] h713-hdmi-signal: recover marker=48444d49 ready=48444d49 exception=0 error=0 done=00000000
+[  238.964073] h713-hdmi-signal: recover original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  238.981293] h713-hdmi-signal: recover readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[  238.998500] h713-hdmi-signal: recover active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  239.020445] h713-hdmi-signal: stop marker=48444d49 ready=48444d49 exception=0 error=0 done=48444d49
+[  239.031044] h713-hdmi-signal: stop original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  239.046475] h713-hdmi-signal: stop readback 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  239.061869] h713-hdmi-signal: stop active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  239.082546] h713-hdmi-signal: init failure undone from proven state 1; SRAM and vectors restored; SCP stopped; receiver client released
+h713_hdmi_receiver.clients=1
+PL mux register 0xFFFFFF3F
+PASS fault=4: undone from proven state 1, nothing retained; nothing held
+PASS: faults 1-4 undone or refused with nothing held; the backend must park at the next shutdown
+rc=0

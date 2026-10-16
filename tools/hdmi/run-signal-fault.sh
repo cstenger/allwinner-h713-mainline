@@ -6,7 +6,9 @@
 # (-DH713_SIGNAL_FAULT_INJECTION): fault=1 corrupts the EDID header after
 # ARM verified it (payload: data_failed, receiver untouched), fault=2 makes
 # the payload's first EDID verify read the wrong word (mismatch, then its own
-# full restore). Both start through a runtime-only drop-in (gone next boot).
+# full restore), fault=3 refuses just before SCP release (M1: the wrapper must
+# drop DDC), fault=4 gives up the ready poll at once (late ready: a full
+# cooperative stop). All start through a runtime-only drop-in (gone next boot).
 # The first failed check stops the script; it never rmmods or undoes holds.
 set -u
 D=$(cd "$(dirname "$0")" && pwd)
@@ -30,8 +32,9 @@ nothing_held() {
   reg=$(/root/mmio-rw r 7022004 | awk '{print $2}'); say "PL mux register $reg"
   [ "$reg" = 0xFFFFFF3F ] || fail "DDC pins not back to io_disabled ($reg)"
 }
+# inject FAULT KERNEL-LINE UNIT-LINE [after-release]
 inject() {
-  fault=$1 state=$2
+  fault=$1 kernel=$2 unit=$3 released=${4:-}
   mark="h713-signal-fault: inject $fault $(date +%s)"
   echo "$mark" > /dev/kmsg
   cat > "$DROP" <<EOF
@@ -45,19 +48,23 @@ ExecStop=
 ExecStop=/usr/bin/python3 $D/h713-hdmi-signal.py stop --bundle $D
 EOF
   systemctl daemon-reload
-  say "starting the bench owner with fault=$fault (expect undone from state $state)"
+  say "starting the bench owner with fault=$fault (expect: $unit)"
   ! systemctl start $U 2>>"$LOG" || fail "fault=$fault did not fail the start"
   since "$mark" > "$OUT/fault$fault-dmesg.log"
   journalctl -u $U -b --no-pager | tail -4 > "$OUT/fault$fault-unit.log"
   grep 'h713-hdmi-signal' "$OUT/fault$fault-dmesg.log" | tee -a "$LOG"
   grep -q "BENCH BUILD, fault injection $fault" "$OUT/fault$fault-dmesg.log" || fail 'bench build did not inject'
-  grep -q 'h713-hdmi-signal: setup failed' "$OUT/fault$fault-dmesg.log" || fail 'init did not fail after release'
-  grep -q "init failure undone from proven state $state;" "$OUT/fault$fault-dmesg.log" || fail "not undone from state $state"
-  grep -q "undone from proven state $state, nothing retained" "$OUT/fault$fault-unit.log" || fail 'wrapper did not report the recovery'
+  if [ -n "$released" ]; then
+    grep -q 'h713-hdmi-signal: setup failed' "$OUT/fault$fault-dmesg.log" || fail 'init did not fail after release'
+  else
+    ! grep -q 'h713-hdmi-signal: setup failed' "$OUT/fault$fault-dmesg.log" || fail 'SCP was released'
+  fi
+  grep -q "$kernel" "$OUT/fault$fault-dmesg.log" || fail "kernel did not log: $kernel"
+  grep -q "$unit" "$OUT/fault$fault-unit.log" || fail "wrapper did not report: $unit"
   ! grep -qE 'WARNING:|BUG:|Oops' "$OUT/fault$fault-dmesg.log" || fail 'kernel warning'
   nothing_held
   [ -e $LATCH ] || fail 'per-boot latch missing after the failure'
-  say "PASS fault=$fault: undone from state $state; nothing held"
+  say "PASS fault=$fault: $unit; nothing held"
 }
 
 [ "$(id -u)" = 0 ] || fail 'run as root'
@@ -72,8 +79,13 @@ systemctl stop $U
 [ "$(systemctl show -p ActiveState --value $U) $(systemctl show -p Result --value $U)" = 'inactive success' ] || fail 'installed signal stop failed; holds retained'
 nothing_held
 mkdir -p "${DROP%/*}"
-inject 1 3
-rm "$LATCH" # bench only: a second launch on this boot, as the bounded probe did
-systemctl reset-failed $U
-inject 2 2
-say 'PASS: both proven-state init failures undone; power off next, the backend must park'
+again() { rm "$LATCH"; systemctl reset-failed $U; } # bench only: another launch this boot
+inject 1 'init failure undone from proven state 3;' 'undone from proven state 3, nothing retained' released
+again
+inject 2 'init failure undone from proven state 2;' 'undone from proven state 2, nothing retained' released
+again
+inject 3 'BENCH BUILD, fault injection 3' 'refused before SCP release; nothing retained'
+again
+inject 4 'init failure undone from proven state 1;' 'undone from proven state 1, nothing retained' released
+grep -q 'h713-hdmi-signal: stop readback' "$OUT/fault4-dmesg.log" || fail 'late ready did not take the cooperative stop'
+say 'PASS: faults 1-4 undone or refused with nothing held; the backend must park at the next shutdown'

@@ -1,0 +1,65 @@
+[  164.051624] h713-closing: reboot fastboot with guard
+
+Broadcast message from root@h713-arm64 (Mon 2026-04-13 19:40:46 UTC):
+
+The system will reboot now!
+
+[?2004l[?2004h[?2004l
+[?2004h[  164.254491] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[  164.278444] get_txpwr_max:txpwr_max:18 
+[  164.283909] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[  164.289780] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[  164.296408] change_if: 3 to 2, 8, 2
+[  164.296444] get_txpwr_max:txpwr_max:18 
+[!p]104[?7h[6n[32766;32766H[6n[  166.214101] Bluetooth: hci0: command 0x2039 tx timeout
+[  166.214101] Bluetooth: hci0: Opcode 0x2039 failed: -110
+[  168.262100] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[  168.452311] watchdog: watchdog0: watchdog did not stop!
+[  168.526765] systemd-shutdown[1]: Using hardware watchdog 'sunxi-wdt', version 0, device /dev/watchdog0
+[  168.536163] systemd-shutdown[1]: Watchdog running with a hardware timeout of 16s.
+[  168.577378] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  168.595875] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[  168.620305] systemd-journald[106]: Received SIGTERM from PID 1 (systemd-shutdow).
+[  168.646238] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[  168.665871] systemd-shutdown[1]: Unmounting file systems.
+[  168.673589] (sd-umount)[546]: Unmounting '/run/credentials/systemd-journald.service'.
+[  168.684202] (sd-remount)[547]: Remounting '/' read-only with options ''.
+[  168.724028] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[  168.743831] systemd-shutdown[1]: All filesystems unmounted.
+[  168.749515] systemd-shutdown[1]: Deactivating swaps.
+[  168.754578] systemd-shutdown[1]: All swaps deactivated.
+[  168.759835] systemd-shutdown[1]: Detaching loop devices.
+[  168.768953] systemd-shutdown[1]: All loop devices detached.
+[  168.774576] systemd-shutdown[1]: Stopping MD devices.
+[  168.780005] systemd-shutdown[1]: All MD devices stopped.
+[  168.785366] systemd-shutdown[1]: Detaching DM devices.
+[  168.790908] systemd-shutdown[1]: All DM devices detached.
+[  168.796329] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[  168.805997] watchdog: watchdog0: watchdog did not stop!
+[  168.830043] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  168.837347] systemd-shutdown[1]: Rebooting with argument 'fastboot'.
+[  168.866521] reboot: Restarting system with command 'fastboot'
+
+U-Boot SPL 2026.07-rc5-g7b178056c329-dirty (Aug 25 2026 - 20:13:26 -0700)
+DRAM: 1024 MiB
+Trying to boot from MMC2
+NOTICE:  BL31: v2.15.0(release):47ee829f7
+NOTICE:  BL31: Built : 03:25:48, Jul 27 2026
+NOTICE:  BL31: Detected Allwinner H713 SoC (1860)
+NOTICE:  BL31: Found U-Boot DTB at 0x4a0d2900, model: HY200 QZ713DF_A1 (Allwinner H713)
+
+
+U-Boot 2026.07-rc5-ga1358432003c-dirty (Sep 24 2026 - 10:58:54 -0700) Allwinner Technology
+
+CPU:   Allwinner H713 (SUN50I)
+Model: HY200 QZ713DF_A1 (Allwinner H713)
+DRAM:  1 GiB
+Core:  37 devices, 19 uclasses, devicetree: separate
+WDT:   Not starting watchdog@2051000
+MMC:   mmc@4022000: 1
+Loading Environment from MMC... Reading from MMC(1)... OK
+In:    serial
+Out:   serial
+Err:   serial
+Net:   No ethernet found.
+Allwinner mUSB OTG (Peripheral)

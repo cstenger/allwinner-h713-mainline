@@ -1,0 +1,20 @@
+e5eb933c-3399-4533-af89-02c1acd0f6f9
+24.47
+Linux version 6.18.38 (chris@cachyos) (clang version 23.1.1, LLD 23.1.1) #1 SMP Thu Oct 15 03:24:04 PDT 2026
+h713-hdmi-capture: inactive no 
+h713-hdmi-signal: inactive no 
+no-handoff
+no-hdmi-modules
+== previous boot teardown
+[  286.520108] h713-arm64 h713-closing: clean systemctl reboot with guard
+[  286.671980] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+[  287.540894] h713-arm64 kernel: h713-hdmi-audio: managed DSP graph restored 22 words
+[  291.333009] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required
+[  291.652363] h713-arm64 python3[1165]: {"phase": "parked", "receiver_removed": true, "cold_boot_required": true, "audio_stop": {"phase": "stopped", "already_stopped": false, "receiver_retained": true, "dsp_restored_words": 22, "tvfe_restored_words": 15}}
+[  291.742892] h713-arm64 systemd[1]: h713-hdmi-capture.service: Deactivated successfully.
+[  291.743523] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+[  291.744907] h713-arm64 systemd[1]: h713-hdmi-capture.service: Consumed 1.696s CPU time.
+[  292.323408] h713-arm64 systemd[1]: systemd-reboot.service: Deactivated successfully.
+[  292.323552] h713-arm64 systemd[1]: Finished systemd-reboot.service - System Reboot.
+[  292.325319] h713-arm64 systemd[1]: Reached target reboot.target - System Reboot.
+[  292.326909] h713-arm64 systemd[1]: Shutting down.

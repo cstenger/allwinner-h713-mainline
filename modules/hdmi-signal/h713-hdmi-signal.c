@@ -37,7 +37,9 @@ static unsigned int recovery;
 #ifdef H713_SIGNAL_FAULT_INJECTION
 /* Bench builds only: 1 corrupts the EDID header after ARM verified it (the
  * payload takes data_failed), 2 makes the payload's first EDID verify load
- * the wrong word (mismatch, then its own full restore). */
+ * the wrong word (mismatch, then its own full restore), 3 refuses just
+ * before SCP release through the real pre-launch failure path, 4 stops the
+ * ready poll at once so the payload becomes ready only after init failed. */
 static unsigned int fault;
 module_param(fault, uint, 0400);
 #endif
@@ -223,7 +225,7 @@ static int __init signal_init(void)
 	u32 trap[] = {0x18000000, 0xa8604f00, 0xa8e00000, 0xd403380c,
 		0x00000000, 0x15000000, 0x15000000, 0x15000000};
 	u8 readback[sizeof(edid_trial_data)];
-	unsigned int i, j;
+	unsigned int i, j, polls = 100;
 	int ret;
 
 	if (!armed || !of_machine_is_compatible("allwinner,sun50i-h713"))
@@ -308,12 +310,16 @@ static int __init signal_init(void)
 			fault = 0; /* pattern absent: inject nothing */
 	}
 	pr_warn("h713-hdmi-signal: BENCH BUILD, fault injection %u\n", fault);
+	if (fault == 3)
+		goto before_launch_failed;
+	if (fault == 4)
+		polls = 0;
 #endif
 	/* From release onward, failures retain the module and every resource
 	 * unless stop=1 later proves the failure left a recoverable state. */
 	__module_get(THIS_MODULE);
 	writel(original | BIT(0), reset);readl(reset);
-	for (i = 0; i < 100; i++) {
+	for (i = 0; i < polls; i++) {
 		if (readl(sram + MARKER_OFFSET + 12))
 			break;
 		if (readl(sram + MARKER_OFFSET) == MARKER &&
