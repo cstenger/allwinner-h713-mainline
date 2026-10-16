@@ -1,0 +1,12 @@
+version; mmc dev 1; mmc read 0x42000000 0x4a0c00 0x706; mmc read 0x43000000 0x49ac00 0x706; cmp.b 0x42000000 0x43000000 0xe0c00; md.l 0x42000000 2
+U-Boot 2026.07-rc5-ga1358432003c-dirty (Sep 24 2026 - 10:58:54 -0700) Allwinner Technology
+
+clang version 22.1.8
+LLD 22.1.8 (compatible with GNU linkers)
+switch to partitions #0, OK
+mmc1(part 0) is current device
+MMC read: dev # 1, block # 4852736, count 1798 ... 1798 blocks read: OK
+MMC read: dev # 1, block # 4828160, count 1798 ... 1798 blocks read: OK
+Total of 920576 byte(s) were the same
+42000000: edfe0dd0 690a0e00                    .......i
+=> 

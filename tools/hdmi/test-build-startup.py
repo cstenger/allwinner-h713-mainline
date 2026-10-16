@@ -77,6 +77,40 @@ class StartupScript(unittest.TestCase):
         with self.assertRaises(ValueError):parse_cells('<0x0x00000003 1>') # double prefix
     def test_ccu_is_not_double_prefixed(self):
         self.assertNotIn('0x${hdmi_ccu}',self.text)
+    def test_panel_timing_relatched_after_last_firmware_call(self):
+        line = next(l for l in self.text.splitlines() if l.startswith("setenv hdmi_source '"))
+        source = line[len("setenv hdmi_source '"):-1].split(' && ')
+        relatch = source.index('mw.l 0x05880024 02d00500')
+        self.assertLess(source.index('h713_disp commcall eaf13de5 chan=0 pid=${hdmi_pid} 3'), relatch)
+        self.assertLess(relatch, source.index('bootm 0x50000000 - 0x4f000000'))
+        self.assertIn('itest.l *0x05880024 == 02d00500', source)
+        self.assertFalse(any(' & ' in c or ' | ' in c for c in source))
+
+    def stage(self, name):
+        line = next(l for l in self.text.splitlines() if l.startswith(f"setenv hdmi_{name} '"))
+        return line[len(f"setenv hdmi_{name} '"):-1].split(' && ')
+
+    def test_lamp_dark_during_cold_bring_up_and_lit_before_boot(self):
+        launch, source = self.stage('launch'), self.stage('source')
+        self.assertLess(launch.index('gpio clear PB5'), launch.index('h713_disp auto 0x34 logo'))
+        self.assertLess(source.index('echo H713 panel 720p timing re-latched after source 3'),
+                        source.index('gpio set PB5'))
+        self.assertLess(source.index('gpio set PB5'), source.index('bootm 0x50000000 - 0x4f000000'))
+
+    def test_every_failure_branch_relights_the_lamp_and_fan(self):
+        failures = [l for l in self.text.splitlines() if 'failed - ' in l]
+        self.assertEqual(len(failures), 2)
+        for l in failures:
+            self.assertLess(l.index('gpio set PB5'), l.index('echo'))
+
+    def test_warm_path_draws_the_logo_and_relights_before_boot(self):
+        body = self.text.split('else\n  if run hdmi_image')[0].split('physical cold cycle')[1]
+        order = ['itest.l *0x0306101c == 0', 'gpio clear PB5', 'h713_disp auto 0x34 logo',
+                 'gpio set PB5', 'bootm 0x50000000']
+        self.assertEqual([body.index(c) for c in order], sorted(body.index(c) for c in order))
+        self.assertNotIn('mips-comm-trace', body)
+        self.assertNotIn('hdmi-boot-v1', body)
+
     def test_image_guards_come_from_the_pinned_kernel_sizes(self):
         self.assertIn(f'itest ${{filesize}} == {m.FIT_SIZE:x} ',self.text)
         self.assertIn(f'itest ${{hdmi_fdt_size}} == {m.FDT_SIZE:x} ',self.text)

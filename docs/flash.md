@@ -329,6 +329,22 @@ slot here**, and using it fails with "Card did not respond to voltage select".
 The 64 KiB upload goes through the SPL loader, which relocates around the
 BROM-reserved regions, so it is unaffected by the raw-write hazard above.
 
+### Rescuing a bad U-Boot proper (proven 2026-10-16)
+
+A FEL-started SPL *can* boot U-Boot proper from eMMC. The silent stop after
+BL31 seen before was `env_init()` failing: the SRAM SPL header says
+`eGON.FEL`, so proper finds no environment driver (`ENV_IS_IN_MMC` only) and
+halts before the console exists. `build/out/h713-rescue-spl.bin`
+(`CONFIG_H713_SPL_FORCE_MMC` + `CONFIG_H713_SPL_RESCUE`,
+[patch](reference/uboot-h713-spl-rescue.patch)) rewrites that header to an eMMC
+boot and loads U-Boot proper from the spare slot **LBA `0x4a0c00`** (`empty` +
+12 MiB), which holds a known-good proper. Unplug everything ≥ 1 min, hold FEL,
+apply board power only, then plug USB and serial, and
+`sunxi-fel -p spl build/out/h713-rescue-spl.bin` → prompt →
+`mmc dev 1; mmc read 0x42000000 0x4a0c00 0x706; mmc write 0x42000000 0x49ac00 0x706`.
+Keep the spare slot holding a proper you trust. Evidence:
+[hdmi-evidence/2026-10-16-uboot-lamp](hdmi-evidence/2026-10-16-uboot-lamp/README.md).
+
 **Known gap — `sunxi-fel uboot` does not work on H713.** Loading the SPL alone
 is reliable (`sunxi-fel spl ...` returns and FEL still responds afterwards), but
 transferring U-Boot proper fails, and the transfer completes yet the SPL still

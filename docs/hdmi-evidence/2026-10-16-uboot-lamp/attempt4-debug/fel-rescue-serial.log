@@ -1,0 +1,26 @@
+
+U-Boot SPL 2026.07-rc5-g320a17f71d41-dirty (Oct 16 2026 - 01:31:56 -0700)
+DRAM: 1024 MiB
+Trying to boot from MMC2
+NOTICE:  BL31: v2.15.0(release):47ee829f7
+NOTICE:  BL31: Built : 03:25:48, Jul 27 2026
+NOTICE:  BL31: Detected Allwinner H713 SoC (1860)
+NOTICE:  BL31: Found U-Boot DTB at 0x4a0d3900, model: HY200 QZ713DF_A1 (Allwinner H713)
+
+<debug_uart>
+[setup_mon_len]
+[fdtdec_setup]
+[initf_malloc]
+[initf_upl]
+[log_init]
+[initf_bootstage]
+[event_init]
+[bloblist_maybe_init]
+[setup_spl_handoff]
+[arch_cpu_init]
+[mach_cpu_init]
+[initf_dm]
+[timer_init]
+[env_init]
+initcall_run_f(): initcall env_init() failed
+### ERROR ### Please RESET the board ###

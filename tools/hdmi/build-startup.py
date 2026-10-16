@@ -15,10 +15,10 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 LATCH=0x07090118
 MAGIC=0x48444d49
-# The exact validated kernel FIT (patches through 0179) and its board FDT.
+# The exact kernel FIT (playback-gated PA candidate through 0181) and its board FDT.
 # U-Boot refuses any other image before it launches anything; build() checks
 # these against build/out so a kernel swap cannot silently outdate them.
-FIT_SIZE=7789772
+FIT_SIZE=7790520
 FDT_SIZE=34037
 FIT=ROOT/'build/out/h713-kernel.fit'
 DTB=ROOT/'build/out/sun50i-h713-hy200-qz713df-a1.dtb'
@@ -50,6 +50,10 @@ def script():
         'fdt set /soc/hdmi-mips-shutdown clocks <${hdmi_ccu} 19 ${hdmi_ccu} 20>'],
       'launch':[
         'itest.l *0x0306101c == 0',
+        # Lamp (PB5, shared with the fan) off while the panel is powered
+        # without drive (white field) and while the relaunch drops the 720p
+        # timing; hdmi_source turns it back on once the final frame is latched.
+        'gpio clear PB5',
         'mw.l 0x07090118 0x48444d49',
         'itest.l *0x07090118 == 48444d49',
         'h713_disp auto 0x34 logo',
@@ -74,6 +78,27 @@ def script():
         'itest.l *0x4d980080 == 43414e31',
         'itest.l *0x4d980ffc == 43414e31',
         'itest.l *0x4d980078 == 3', 'itest.l *0x4d98007c == 1',
+        # The live firmware reprograms the panel TCON to 1080p (2200x1125);
+        # the 720p panel cannot lock and stays black. Replay U-Boot's
+        # h713_disp_latch_panel_timing(): mode[2:0]=4, 720p timing, then
+        # pulse +0x0c bit 0. Arithmetic only, no bare & in hush.
+        'setexpr.l hdmi_tm *0x0588001c',
+        'setexpr hdmi_tr ${hdmi_tm} % 8',
+        'setexpr hdmi_tm ${hdmi_tm} - ${hdmi_tr}',
+        'setexpr hdmi_tm ${hdmi_tm} + 4',
+        'mw.l 0x0588001c ${hdmi_tm}',
+        'mw.l 0x05880020 02f80550', 'mw.l 0x05880024 02d00500',
+        'mw.l 0x05880028 00140028', 'mw.l 0x0588002c 80000014',
+        'mw.l 0x05880030 80010003',
+        'setexpr.l hdmi_tc *0x0588000c',
+        'setexpr hdmi_tr ${hdmi_tc} % 2',
+        'setexpr hdmi_tc ${hdmi_tc} - ${hdmi_tr}',
+        'setexpr hdmi_tr ${hdmi_tc} + 1',
+        'mw.l 0x0588000c ${hdmi_tr}', 'mw.l 0x0588000c ${hdmi_tc}',
+        'itest.l *0x05880020 == 02f80550', 'itest.l *0x05880024 == 02d00500',
+        'itest.l *0x05880030 == 80010003',
+        'echo H713 panel 720p timing re-latched after source 3',
+        'gpio set PB5',
         'fdt addr 0x4f000000',
         # setexpr stores bare %lx; fdt cells parse base 0, so prefix 0x.
         # hdmi_ccu needs none: fdt get value already stores 0x%08X.
@@ -93,6 +118,12 @@ def script():
     lines += [
       'if itest.l *0x07090118 != 0; then',
       '  echo H713 HDMI launch latch set - capture disabled until physical cold cycle',
+      # Warm boots still need the panel: Linux only adopts what U-Boot drew.
+      '  if itest.l *0x0306101c == 0; then',
+      '    gpio clear PB5',
+      '    if h713_disp auto 0x34 logo; then true; else echo H713 warm logo bring-up failed; fi',
+      '    gpio set PB5',
+      '  fi',
       '  if fatload mmc 1:2 0x50000000 h713-kernel.fit; then bootm 0x50000000; fi',
       'else',
       '  if run hdmi_image && run hdmi_launch; then',
@@ -109,8 +140,8 @@ def script():
       '      else setenv hdmi_bad 1; fi',
       '      setexpr hdmi_rec ${hdmi_rec} + 30',
       '    done',
-      '    if run hdmi_source; then true; else echo H713 HDMI source/boot failed - cold cycle required; false; fi',
-      '  else echo H713 HDMI preparation/launch failed - inspect state before retry; false; fi',
+      '    if run hdmi_source; then true; else gpio set PB5; echo H713 HDMI source/boot failed - cold cycle required; false; fi',
+      '  else gpio set PB5; echo H713 HDMI preparation/launch failed - inspect state before retry; false; fi',
       'fi', '']
     return '\n'.join(lines)
 
