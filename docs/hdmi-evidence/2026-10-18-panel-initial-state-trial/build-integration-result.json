@@ -1,0 +1,27 @@
+{
+  "source_pin": "320a17f71d41ed0d4be7aab25947ce015c98c48e",
+  "prepared_source": "/home/chris/Projects/h713/build/uboot-src-6cb8f7726a638728fff176eedc7f0954f569342bd53a9a436c5606535b0eab5d",
+  "display_source_sha256": "3c44fc5af23eaa55a698fbc1e5e509cb23cff76382c4d5425b1d178cc829b450",
+  "ddr3_config_identical_to_validated": true,
+  "builds": "DDR3 and LPDDR3 full builds passed; quick helper passed; LPDDR3 hardware untested",
+  "native_sequence_cases": 11,
+  "shared_kernel_DT_check": "PASS",
+  "concurrent_prepare_same_cache": "PASS",
+  "external_u_boot_checkout": "untouched",
+  "hardware_flashed_during_integration": false,
+  "artifacts": {
+    "ddr3": {
+      "image": "build/out/u-boot-sunxi-with-spl-ddr3.bin",
+      "sha256": "4aa6ffe0fd8b829a9bc2ea9f93addbdb3f77d5d247755e38cbe69a5d6e0589d5",
+      "bytes": 988433,
+      "inputs": "build/out/u-boot-ddr3.inputs"
+    },
+    "lpddr3": {
+      "image": "build/out/u-boot-sunxi-with-spl-lpddr3.bin",
+      "sha256": "dd4e2d46c472f5ffd5f71d7e39de777210083ed448c39af43c4f4eeb9adc974c",
+      "bytes": 878641,
+      "inputs": "build/out/u-boot-lpddr3.inputs"
+    }
+  },
+  "staged_commit_self_containment": "PASS: exact index inputs, kernel prerequisites0182-0187 only; audio0180/0181 and ACL edits excluded; staged build preparation produces identical U-Boot source cache"
+}

@@ -3,8 +3,9 @@
 #
 #   TF-A BL31  ->  U-Boot (SPL + BL31 + proper)  ->  Linux kernel  ->  images
 #
-# Sources are the git submodules under external/ and two curated patch series on
-# pinned upstream tarballs — patches/kernel/ and patches/aic8800/ (see
+# Sources are git submodules under external/ and curated patch series;
+# U-Boot exports its validated commit and applies patches/u-boot/, while
+# Linux and AIC8800 use pinned upstream tarballs (see
 # patches/README.md); versions are pinned in config/versions.env. LLVM-only
 # (clang / ld.lld) — see config/toolchain.md.
 #
@@ -94,6 +95,13 @@ build_bl31() {
 }
 
 # --- U-Boot (embeds BL31) ---------------------------------------------------
+prepare_uboot() {
+  local kernel
+  have
+  kernel=$(prepare_kernel)
+  "$ROOT/tools/build/prepare-uboot.sh" "$kernel"
+}
+
 uboot_make() {
   local O="$1"; shift
   make -C "$UBOOT" O="$O" \
@@ -107,11 +115,18 @@ uboot_make() {
 build_uboot() {
   have
   [ -f "$OUT/bl31.bin" ] || build_bl31
+  UBOOT=$(prepare_uboot)
   local O="$BUILD/uboot-$BOARD"
   log "U-Boot  ($UBOOT_DEFCONFIG, board=$BOARD)"
   uboot_make "$O" "$UBOOT_DEFCONFIG"
   uboot_make "$O" -j"$JOBS"
   install -m 0644 "$O/u-boot-sunxi-with-spl.bin" "$OUT/u-boot-sunxi-with-spl-$BOARD.bin"
+  {
+    cat "$UBOOT/.h713-build-inputs"
+    printf 'board %s\nconfig %s\nbl31 %s\nimage %s\n' "$BOARD" \
+      "$(hash_file "$O/.config")" "$(hash_file "$OUT/bl31.bin")" \
+      "$(hash_file "$OUT/u-boot-sunxi-with-spl-$BOARD.bin")"
+  } > "$OUT/u-boot-$BOARD.inputs"
   log "image -> $OUT/u-boot-sunxi-with-spl-$BOARD.bin ($(stat -c%s "$OUT/u-boot-sunxi-with-spl-$BOARD.bin") bytes)"
 }
 
@@ -429,12 +444,13 @@ build_images() {
     sha256sum "${files[@]}" > SHA256SUMS
   )
   note "SHA-256 manifest -> $OUT/SHA256SUMS"
-  note "Flash U-Boot to eMMC sector 16 using a verified raw write — see docs/flash.md."
+  note "Build only; existing split-layout boards update proper separately — see docs/uboot-panel-initial-state.md."
 }
 
 case "${1:-all}" in
   bl31)    build_bl31 ;;
   uboot)   build_uboot ;;
+  uboot-tree) prepare_uboot ;;
   kernel)  build_kernel ;;
   aic8800) build_aic8800 ;;
   images)  build_images ;;
@@ -445,5 +461,5 @@ case "${1:-all}" in
   # way to guarantee that is to ask the build. Honours KERNEL_CONFIG.
   kernel-tree)
     printf '%s/linux-%s-%s\n' "$BUILD" "$KERNEL_VERSION" "$(kernel_inputs_digest)" ;;
-  *) echo "usage: $0 [all|bl31|uboot|kernel|aic8800|images|kernel-tree]" >&2; exit 2 ;;
+  *) echo "usage: $0 [all|bl31|uboot|uboot-tree|kernel|aic8800|images|kernel-tree]" >&2; exit 2 ;;
 esac

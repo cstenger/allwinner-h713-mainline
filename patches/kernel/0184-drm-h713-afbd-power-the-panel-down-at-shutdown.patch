@@ -1,0 +1,240 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Fri, 16 Oct 2026 15:42:47 -0700
+Subject: [PATCH] drm/h713-afbd: hold the panel supply, power the panel down at shutdown
+
+The driver adopts a running panel and never touched its power. At
+shutdown it left it alone too, so every warm reboot reset the SoC with
+the panel powered and the LVDS lanes driven, and U-Boot's bring-up then
+"powered on" a panel that was still up. That left the panel lit but
+black on every later boot, through one-minute power cycles, until a long
+power-off.
+
+When the board describes the panel's power-supply (and optionally
+panel-reset-gpios and a backlight), the driver claims the supply and
+takes the panel down in the general LVDS order with the panel's own off
+timings, as U-Boot's h713_disp_teardown() does: lamp off, LVDS signal to
+its at-rest values, 20 ms, reset asserted, 75 ms, supply off, then the
+supply's off-on-delay-us for the rail to discharge. Scanout is already
+stopped by the pipe's disable in drm_atomic_helper_shutdown().
+
+The supply is claimed only after every resource that can defer, so a
+deferral never cycles the panel, and the ordered power-down is the
+claim's release action, so a failed probe or an unbind also takes the
+panel down in order rather than cutting the rail. A probe that fails
+before the claim leaves the supply unclaimed, and the regulator core
+switches it off about 30 s after boot; that is the one remaining case.
+
+The MIPS may still be live on the HDMI startup path, so the signal words
+are read back after the supply is off and logged with its state.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -9,7 +9,10 @@
+  * bring-up, so this driver deliberately does NOT touch timing, the PHY, or the
+  * display reset -- asserting rst_bus_disp here would kill a panel it cannot
+  * bring back. It takes over exactly one thing: which buffer is scanned out, and
+- * when the swap happens.
++ * when the swap happens. The one exception is the panel's power: when the
++ * board describes the panel supply, the driver keeps the panel powered while
++ * it runs and, at shutdown, takes it down in order so that the next bring-up
++ * starts from an unpowered panel (see h713_panel_power_down()).
+  *
+  * That is enough for /dev/dri/card0, so any DRM client -- mpv --vo=drm, a
+  * compositor, fbcon -- can put pixels on the projector.
+@@ -33,9 +36,11 @@
+  * Copyright (C) 2026 Christopher Stenger
+  */
+ 
++#include <linux/backlight.h>
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+ #include <linux/dma-mapping.h>
++#include <linux/gpio/consumer.h>
+ #include <linux/interrupt.h>
+ #include <linux/iopoll.h>
+ #include <linux/list.h>
+@@ -44,6 +49,7 @@
+ #include <linux/of.h>
+ #include <linux/of_reserved_mem.h>
+ #include <linux/platform_device.h>
++#include <linux/regulator/consumer.h>
+ #include <linux/seq_file.h>
+ #include <linux/slab.h>
+ #include <linux/wait.h>
+@@ -181,6 +187,12 @@
+ 	void __iomem *regs;
+ 	void __iomem *route_regs;
+ 	void __iomem *lvds_regs;
++	/* the panel's supply: optional, see h713_panel_power_down() */
++	struct backlight_device *lamp;
++	struct regulator *panel_supply;
++	struct gpio_desc *panel_reset;
++	u32 panel_discharge_us;		/* the supply's off-on-delay-us */
++	bool panel_powered;		/* this driver holds the supply on */
+ 	/* letterbox: optional, all three or none */
+ 	void __iomem *comp_regs;
+ 	void __iomem *proc_regs;
+@@ -219,6 +231,8 @@
+ 	bool rgb_quiesced;
+ };
+ 
++static void h713_panel_release(void *data);
++
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+ {
+ 	return container_of(drm, struct h713_afbd, drm);
+@@ -1695,6 +1709,34 @@
+ 	if (IS_ERR(h->lvds_regs))
+ 		return PTR_ERR(h->lvds_regs);
+ 
++	/*
++	 * The panel's supply, reset and lamp. The panel is live, so taking them
++	 * changes nothing: the supply registered on (regulator-boot-on), the
++	 * reset line is taken GPIOD_ASIS, and the lamp's driver keeps the level
++	 * U-Boot left. The supply is claimed further down.
++	 */
++	h->panel_supply = devm_regulator_get_optional(dev, "power");
++	if (IS_ERR(h->panel_supply)) {
++		if (PTR_ERR(h->panel_supply) != -ENODEV)
++			return dev_err_probe(dev, PTR_ERR(h->panel_supply),
++					     "no panel supply\n");
++		h->panel_supply = NULL;
++	} else {
++		struct device_node *np = of_parse_phandle(dev->of_node,
++							  "power-supply", 0);
++
++		of_property_read_u32(np, "off-on-delay-us",
++				     &h->panel_discharge_us);
++		of_node_put(np);
++	}
++	h->panel_reset = devm_gpiod_get_optional(dev, "panel-reset", GPIOD_ASIS);
++	if (IS_ERR(h->panel_reset))
++		return dev_err_probe(dev, PTR_ERR(h->panel_reset),
++				     "no panel-reset line\n");
++	h->lamp = devm_of_find_backlight(dev);
++	if (IS_ERR(h->lamp))
++		return dev_err_probe(dev, PTR_ERR(h->lamp), "no lamp\n");
++
+ 	irq = platform_get_irq(pdev, 0);
+ 	if (irq < 0)
+ 		return irq;
+@@ -1712,6 +1754,24 @@
+ 	if (IS_ERR(h->clk_afbd))
+ 		return dev_err_probe(dev, PTR_ERR(h->clk_afbd), "no clk_afbd\n");
+ 
++	/*
++	 * Claim the panel supply only now, after every resource that can defer:
++	 * a deferral must not power the panel down and up again. From here a
++	 * failed probe, unbind or remove all run the ordered power-down, never a
++	 * bare rail cut. A probe that fails before this point leaves the supply
++	 * unclaimed, and the regulator core switches unclaimed supplies off ~30 s
++	 * after boot -- the one case the panel loses power out of order.
++	 */
++	if (h->panel_supply) {
++		ret = regulator_enable(h->panel_supply);
++		if (ret)
++			return dev_err_probe(dev, ret, "cannot claim the panel supply\n");
++		h->panel_powered = true;
++		ret = devm_add_action_or_reset(dev, h713_panel_release, h);
++		if (ret)
++			return ret;
++	}
++
+ 	/* AFBD's source register is 32-bit, so scanout must live below 4 GiB. */
+ 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+ 	if (ret)
+@@ -1950,6 +2010,84 @@
+ 	       h->regs + AFBD_IRQ_ENABLE);
+ }
+ 
++/*
++ * The LVDS signal at rest: the values every cold probe in the U-Boot bring-up
++ * recorded before init, and what its h713_disp_teardown() writes back.
++ */
++#define LVDS_PHY_CTRL		0x014
++#define LVDS_PHY_CTRL_OFF	0x18000000
++#define LVDS_PHY_MID		0x028
++#define LVDS_PHY_MID_OFF	0x00000030
++#define LVDS_PHY_TAIL0		0x0d4	/* four words, 0x0d4..0x0e0 */
++#define ROUTE_LVDS		0x054
++#define ROUTE_LVDS_OFF		0x40000000
++
++/*
++ * panel_config.ini PanelOffTiming0/2, ordered as U-Boot's teardown uses them.
++ * OffTiming1, the rail's discharge, is the supply's off-on-delay-us.
++ */
++#define H713_PANEL_OFF_SIGNAL_MS	20	/* signal off -> reset */
++#define H713_PANEL_OFF_RESET_MS		75	/* reset -> rail off */
++
++/*
++ * Take the panel down before the SoC resets or powers off: lamp, then signal,
++ * then reset, then the rail, and give the rail time to discharge.
++ *
++ * Without this a warm reboot reset the SoC with the panel powered and its
++ * LVDS lanes driven, and U-Boot's bring-up then "powered on" a panel that was
++ * still up. After long sessions that left the panel lit but black on every
++ * later boot, through one-minute power cycles, until it was off overnight --
++ * with every SoC-side register correct. Panels can latch up when the data
++ * lanes outlive the rail; this is the general LVDS order (backlight, signal,
++ * VCC) with the panel's own off timings, as U-Boot's teardown has it.
++ *
++ * Scanout is already stopped: drm_atomic_helper_shutdown() ran the pipe's
++ * disable, which quiesces RGB fetch. The MIPS may still be running on the
++ * HDMI startup path, so the signal words are read back after the rail is
++ * down: the log shows whether anything rewrote them.
++ *
++ * Runs at shutdown, and as the release action of the supply claim (failed
++ * probe, unbind); whichever comes first does it, once.
++ */
++static void h713_panel_power_down(struct h713_afbd *h)
++{
++	struct device *dev = h->drm.dev;
++	unsigned int i;
++
++	if (!h->panel_powered)
++		return;		/* not described, or already down */
++
++	if (h->lamp)
++		backlight_disable(h->lamp);
++
++	for (i = 0; i < 4; i++)
++		writel(0, h->lvds_regs + LVDS_PHY_TAIL0 + 4 * i);
++	writel(LVDS_PHY_CTRL_OFF, h->lvds_regs + LVDS_PHY_CTRL);
++	writel(LVDS_PHY_MID_OFF, h->lvds_regs + LVDS_PHY_MID);
++	writel(ROUTE_LVDS_OFF, h->route_regs + ROUTE_LVDS);
++	msleep(H713_PANEL_OFF_SIGNAL_MS);
++
++	if (h->panel_reset)
++		gpiod_direction_output(h->panel_reset, 1);	/* asserted */
++	msleep(H713_PANEL_OFF_RESET_MS);
++
++	regulator_disable(h->panel_supply);
++	h->panel_powered = false;
++	fsleep(h->panel_discharge_us);
++
++	dev_info(dev, "panel powered down: supply %s, reset line %d, PHY %08x/%08x, route %08x\n",
++		 regulator_is_enabled(h->panel_supply) ? "STILL ON" : "off",
++		 h->panel_reset ? gpiod_get_raw_value(h->panel_reset) : -1,
++		 readl(h->lvds_regs + LVDS_PHY_CTRL),
++		 readl(h->lvds_regs + LVDS_PHY_MID),
++		 readl(h->route_regs + ROUTE_LVDS));
++}
++
++static void h713_panel_release(void *data)
++{
++	h713_panel_power_down(data);
++}
++
+ static void h713_afbd_shutdown(struct platform_device *pdev)
+ {
+ 	struct h713_afbd *h = platform_get_drvdata(pdev);
+@@ -1958,6 +2096,7 @@
+ 	h713_panel_set(h, false, true);		/* unmirrored, as adopted */
+ 	drm_atomic_helper_shutdown(&h->drm);
+ 	h713_afbd_drain_retires(h);
++	h713_panel_power_down(h);
+ }
+ 
+ static const struct of_device_id h713_afbd_of_match[] = {

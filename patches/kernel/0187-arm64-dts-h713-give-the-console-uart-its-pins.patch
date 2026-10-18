@@ -1,0 +1,22 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Fri, 16 Oct 2026 15:00:39 -0700
+Subject: [PATCH] arm64: dts: h713: give the console UART its pins
+
+uart0_ph_pins (PH0/PH1, 10 mA, pull-up) was defined but the console
+UART did not reference it, so the pins kept whatever the bootloader set.
+Reference it. U-Boot, moving to this device tree, applied exactly this
+group from its own tree, so neither side's pin state changes.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -716,6 +716,8 @@
+ 			clocks = <&ccu CLK_BUS_UART0>;
+ 			resets = <&ccu RST_BUS_UART0>;
+ 			clock-frequency = <24000000>;
++			pinctrl-names = "default";
++			pinctrl-0 = <&uart0_ph_pins>;
+ 			status = "okay";
+ 		};
+ 

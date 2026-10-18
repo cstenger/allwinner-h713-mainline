@@ -5,7 +5,7 @@ The whole stack builds with **LLVM (clang / ld.lld)** — no aarch64 GCC needed.
 **The fast path is the orchestrator:** `tools/build/build.sh [all|bl31|uboot|kernel|images]`
 (board via `BOARD=ddr3|lpddr3`). It reads pinned versions from
 `config/versions.env`, builds each stage from the `external/` submodules and
-`patches/kernel/`, and drops artifacts in `build/out/`. The sections below
+curated component patch series, and drops artifacts in `build/out/`. The sections below
 document the underlying recipes it runs (and the gotchas behind them).
 
 `build/` holds generated output only — the scripts that produce it live in
@@ -40,10 +40,19 @@ make -j PLAT=sun50i_h713 DEBUG=0 BL31_IN_DRAM=1 \
 
 ## 2. U-Boot (SPL + BL31 + proper -> u-boot-sunxi-with-spl.bin)
 
-Use `tools/build/uboot-build.sh <O-dir> <defconfig>`, or directly:
+Use `tools/build/build.sh uboot` or
+`tools/build/uboot-build.sh <O-dir> <defconfig>`. Both use the pinned validated
+commit plus `patches/u-boot/series`, with the kernel H713 DT/bindings and CCU
+synced into a separate cached source tree. The source submodule is unchanged.
+See [panel build, validation and rollback](uboot-panel-initial-state.md).
+The orchestrator writes an input/hash record beside each image. Builds do not
+flash; existing split-layout boards update proper separately and preserve SPL,
+environment and rescue. For the underlying make recipe, prepare the source:
+
 
 ```
-make -C external/u-boot O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-linux-gnu' \
+UBOOT_TREE=$(tools/build/build.sh uboot-tree)
+make -C "$UBOOT_TREE" O=<O> ARCH=arm HOSTCC=clang CC='clang -target aarch64-linux-gnu' \
   LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
   READELF=llvm-readelf STRIP=llvm-strip \
   KAFLAGS=-fintegrated-as \

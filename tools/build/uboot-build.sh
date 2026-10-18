@@ -9,7 +9,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=../../config/paths.sh
 source "$ROOT/config/paths.sh"
 O="$1"; DEF="$2"; shift 2
-UBOOT="$ROOT/external/u-boot"
+UBOOT=$("$ROOT/tools/build/build.sh" uboot-tree)
 BL31="$H713_BUILD_DIR/out/bl31.bin"
 [ -f "$BL31" ] || { echo "missing $BL31 — run: tools/build/build.sh bl31" >&2; exit 1; }
 F=(ARCH=arm HOSTCC=clang CC='clang -target aarch64-linux-gnu'

@@ -1,0 +1,22 @@
+active
+closed
+[   18.446877] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[   18.450323] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   18.450356] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[   18.450364] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   18.450373] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   18.450516] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   18.450524] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   18.450786] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   18.450799] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   18.450809] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   18.451032] h713-hdmi-audio: DSP versions 0000/0000
+[   19.369530] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[   19.395574] h713-hdmi-audio: managed DSP graph verified 22 words
+[   19.397394] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically
+[   19.800594] h713-ddc-pins: PL10-PL15 claimed for three DDC ports (mux 222222, original ffffff)
+[   19.821105] h713-hdmi-signal: ready marker=48444d49 ready=48444d49 exception=0 error=0 done=00000000
+[   19.821135] h713-hdmi-signal: ready original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[   19.821146] h713-hdmi-signal: ready readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[   19.821156] h713-hdmi-signal: ready active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[   19.821168] h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry

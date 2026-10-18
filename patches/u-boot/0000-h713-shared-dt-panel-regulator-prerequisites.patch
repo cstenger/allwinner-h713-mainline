@@ -1,0 +1,547 @@
+Subject: [PATCH] sunxi: h713: use the shared kernel DT and panel regulator
+
+Prerequisites already exercised in the stage-2 bench image: use a generated
+H713 CCU table and kernel binding IDs, bind the compatible USB PHY, provide
+U-Boot-only DT overlays, and obtain panel supply/reset through driver model.
+Keep the validated DDR3 lamp/fan startup policy (PB5 enabled by the guarded
+logo script, rather than early board_init).
+
+The build synchronizes the kernel DT/bindings and generates clk_h713.c;
+those generated sources are deliberately not duplicated in this patch.
+Based on the hardware-tested worktree at 320a17f71d41, before the focused
+initial-off fix in the next patch. The LPDDR3 profile is build-only; the
+hardware validation is for HY200 QZ713DF_A1.
+
+diff --git a/arch/arm/mach-sunxi/h713_mips.c b/arch/arm/mach-sunxi/h713_mips.c
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -18,6 +18,9 @@
+ #include <linux/kernel.h>
+ #include <vsprintf.h>
+ #include <sunxi_gpio.h>
++#include <dm.h>
++#include <asm/gpio.h>
++#include <power/regulator.h>
+ #include <linux/string.h>
+ #include <asm/io.h>
+ #include <asm/unaligned.h>
+@@ -4430,14 +4433,10 @@
+  */
+ #define H713_PIO_BASE		0x02000000UL
+ #define H713_PIO_BANK_B		1
+-#define H713_PIO_BANK_F		5
+ #define H713_PIO_BANK_H		7
+ #define H713_PB_CFG0		(H713_PIO_BASE + \
+ 				 H713_PIO_BANK_B * SUNXI_PINCTRL_BANK_SIZE)
+ #define H713_PB_DATA		(H713_PB_CFG0 + 0x10)
+-#define H713_PF_CFG0		(H713_PIO_BASE + \
+-				 H713_PIO_BANK_F * SUNXI_PINCTRL_BANK_SIZE)
+-#define H713_PF_DATA		(H713_PF_CFG0 + 0x10)
+ #define H713_PH_CFG0		(H713_PIO_BASE + \
+ 				 H713_PIO_BANK_H * SUNXI_PINCTRL_BANK_SIZE)
+ #define H713_PH_DATA		(H713_PH_CFG0 + 0x10)
+@@ -4813,53 +4812,110 @@
+ }
+ 
+ /*
++ * The panel's supply and reset come from the device tree U-Boot shares with
++ * Linux: the display node's power-supply (vcc-panel; PF6 on board B) and
++ * panel-reset-gpios (PH16, active low). No pin numbers live here.
++ *
++ * U-Boot's view of vcc-panel drops regulator-boot-on (the board's
++ * -u-boot.dtsi): U-Boot reads it as "switch on at init", and the panel must
++ * come up inside this sequence, not before the logo records.
++ */
++static struct udevice *h713_panel_supply_dev;
++static struct gpio_desc h713_panel_reset;
++
++static ofnode h713_panel_display(void)
++{
++	return ofnode_by_compatible(ofnode_null(), "allwinner,sun50i-h713-afbd");
++}
++
++static int h713_panel_supply(struct udevice **devp)
++{
++	ofnode supply;
++	int ret;
++
++	if (!h713_panel_supply_dev) {
++		supply = ofnode_parse_phandle(h713_panel_display(),
++					      "power-supply", 0);
++		if (!ofnode_valid(supply)) {
++			printf("H713 panel: no display power-supply in the device tree\n");
++			return -ENODEV;
++		}
++		ret = uclass_get_device_by_ofnode(UCLASS_REGULATOR, supply,
++						  &h713_panel_supply_dev);
++		if (ret) {
++			printf("H713 panel: panel supply unavailable (%d)\n", ret);
++			return ret;
++		}
++	}
++	*devp = h713_panel_supply_dev;
++	return 0;
++}
++
++/* Drive the reset line: 1 holds the panel in reset (the line low). */
++static int h713_panel_hold_reset(int hold)
++{
++	int ret;
++
++	if (dm_gpio_is_valid(&h713_panel_reset))
++		return dm_gpio_set_value(&h713_panel_reset, hold);
++
++	ret = gpio_request_by_name_nodev(h713_panel_display(),
++					 "panel-reset-gpios", 0,
++					 &h713_panel_reset,
++					 GPIOD_IS_OUT |
++					 (hold ? GPIOD_IS_OUT_ACTIVE : 0));
++	if (ret)
++		printf("H713 panel: no panel-reset-gpios in the device tree (%d)\n",
++		       ret);
++	return ret;
++}
++
++static void h713_panel_print_power(const char *phase)
++{
++	struct udevice *supply;
++
++	printf("H713 panel: %s: supply %s, reset %s\n", phase,
++	       h713_panel_supply(&supply) ? "?" :
++	       regulator_get_enable(supply) ? "on" : "off",
++	       !dm_gpio_is_valid(&h713_panel_reset) ? "untouched" :
++	       dm_gpio_get_value(&h713_panel_reset) ? "held" : "released");
++}
++
++/*
+  * Stock fastlogo applies all LogoRegData groups, waits poweron_delay1
+- * (550 ms), then invokes its panel-power method. The board-B runtime TOC1 DT
+- * identifies panel_power_en as PF6, not the PH19 found in the older board-A
+- * dump. It identifies panel_gpio_0 as PH16. Enable PF6 and pulse PH16 low for
+- * 2 ms, then high for 5 ms. The state
+- * machine waits poweron_delay0 (20 ms) before continuing into the display
+- * clocks and MIPS release.
+- *
+- * Both GPIOs carry GPIO_PULL_DOWN in the stock DT. Set the data latch before
+- * selecting output mode so the power line cannot glitch low as it is enabled.
+- *
+- * Do not use the legacy gpio_set_value() compatibility wrapper here. This
+- * build uses DM_GPIO, whose compatibility wrapper reconstructs a descriptor
+- * without its previous output-direction flags; the second value change then
+- * does not reach this driver's set_flags() output path. Accessing the PF/PH
+- * data latches directly also lets the diagnostic verify the exact registers.
++ * (550 ms), then invokes its panel-power method: the supply on, then the
++ * reset low for 2 ms and high for 5 ms. The state machine waits
++ * poweron_delay0 (20 ms) before continuing into the display clocks and MIPS
++ * release.
++ *
++ * The DM GPIO path writes the data latch before selecting output, so neither
++ * line can glitch as it is taken.
+  */
+ static int h713_disp_stock_panel_power(void)
+ {
+-	const uint power = SUNXI_GPF(6);
+-	const uint reset = SUNXI_GPH(16);
+-	u32 pf_dat;
+-	u32 ph_dat;
++	struct udevice *supply;
++	int ret;
+ 
+ 	printf("H713 panel: stock power pre-delay 550 ms\n");
+ 	mdelay(550);
+ 
+-	sunxi_gpio_set_pull(power, SUNXI_GPIO_PULL_DOWN);
+-	sunxi_gpio_set_pull(reset, SUNXI_GPIO_PULL_DOWN);
+-
+-	setbits_le32((void *)H713_PF_DATA, BIT(6));
+-	sunxi_gpio_set_cfgpin(power, SUNXI_GPIO_OUTPUT);
+-
+-	clrbits_le32((void *)H713_PH_DATA, BIT(16));
+-	sunxi_gpio_set_cfgpin(reset, SUNXI_GPIO_OUTPUT);
++	ret = h713_panel_supply(&supply);
++	if (ret)
++		return ret;
++	ret = regulator_set_enable(supply, true);
++	if (ret && ret != -EALREADY) {
++		printf("H713 panel: cannot enable the panel supply (%d)\n", ret);
++		return ret;
++	}
++
++	ret = h713_panel_hold_reset(1);
++	if (ret)
++		return ret;
+ 	mdelay(2);
+-	setbits_le32((void *)H713_PH_DATA, BIT(16));
++	h713_panel_hold_reset(0);
+ 	mdelay(5);
+ 
+-	pf_dat = readl(H713_PF_DATA);
+-	ph_dat = readl(H713_PH_DATA);
+-	printf("H713 panel: stock GPIO phase complete: "
+-	       "PF6 cfg=%x latch=%d, PH16 cfg=%x latch=%d, "
+-	       "PF_DAT=%08x PH_DAT=%08x\n",
+-	       sunxi_gpio_get_cfgpin(power), !!(pf_dat & BIT(6)),
+-	       sunxi_gpio_get_cfgpin(reset), !!(ph_dat & BIT(16)),
+-	       pf_dat, ph_dat);
++	h713_panel_print_power("stock power phase complete");
+ 	mdelay(20);
+ 
+ 	return 0;
+@@ -5590,12 +5646,7 @@
+ 
+ 	h713_disp_clocks();
+ 	if (stock_panel_power)
+-		printf("H713 panel: post-stock GPIO mux: "
+-		       "PF6 cfg=%x latch=%d, PH16 cfg=%x latch=%d\n",
+-		       sunxi_gpio_get_cfgpin(SUNXI_GPF(6)),
+-		       !!(readl(H713_PF_DATA) & BIT(6)),
+-		       sunxi_gpio_get_cfgpin(SUNXI_GPH(16)),
+-		       !!(readl(H713_PH_DATA) & BIT(16)));
++		h713_panel_print_power("after display clocks");
+ 
+ 	writel(1, 0x06940000);			/* INCAP */
+ 	mdelay(12);
+@@ -6013,9 +6064,11 @@
+  * delay bracketing the power rail, and Off2 fills the gap between dropping
+  * reset and dropping power. If a panel datasheet or the stock power-down path
+  * ever contradicts this, believe them, not this comment.
++ *
++ * Off1, the rail's discharge, is the panel supply's off-on-delay-us in the
++ * device tree, which the regulator honours; Linux's shutdown uses the same.
+  */
+ #define H713_PANEL_OFF_T0_MS	20
+-#define H713_PANEL_OFF_T1_MS	250
+ #define H713_PANEL_OFF_T2_MS	75
+ 
+ /*
+@@ -6279,7 +6332,9 @@
+ 
+ static void h713_disp_teardown(const char *why)
+ {
++	struct udevice *supply;
+ 	u32 ctrl;
++	int ret;
+ 
+ 	printf("H713 teardown: %s\n", why);
+ 
+@@ -6332,18 +6387,23 @@
+ 
+ 	mdelay(H713_PANEL_OFF_T0_MS);
+ 
+-	/* 4. Reset asserted, then the rail, then let it discharge. */
+-	clrbits_le32((void *)H713_PH_DATA, BIT(16));
+-	dmb();
++	/*
++	 * 4. Reset asserted, then the rail, then let it discharge: the
++	 *    supply's off-on-delay-us, which the regulator waits after turning
++	 *    off. A supply this run never enabled is already off, so wait it
++	 *    here.
++	 */
++	h713_panel_hold_reset(1);
+ 	mdelay(H713_PANEL_OFF_T2_MS);
+ 
+-	clrbits_le32((void *)H713_PF_DATA, BIT(6));
+-	dmb();
+-	mdelay(H713_PANEL_OFF_T1_MS);
+-
+-	printf("H713 teardown: panel down (PF_DAT=%08x PH_DAT=%08x), "
+-	       "PHY %08x/%08x, route %08x, MIPS reset=%08x\n",
+-	       readl(H713_PF_DATA), readl(H713_PH_DATA),
++	if (!h713_panel_supply(&supply)) {
++		ret = regulator_set_enable(supply, false);
++		if (ret == -EALREADY)
++			udelay(dev_read_u32_default(supply, "off-on-delay-us", 0));
++	}
++
++	h713_panel_print_power("teardown");
++	printf("H713 teardown: PHY %08x/%08x, route %08x, MIPS reset=%08x\n",
+ 	       readl(0x051c0014), readl(0x051c0028), readl(0x05140054),
+ 	       readl(H713_MIPS_RESET_REG));
+ }
+@@ -7157,17 +7217,12 @@
+ static void h713_disp_print_panel_gpio(const char *phase)
+ {
+ 	u32 pb = readl(H713_PB_DATA);
+-	u32 pf = readl(H713_PF_DATA);
+-	u32 ph = readl(H713_PH_DATA);
+-
+-	printf("H713 panel: %s: PB4 cfg=%x latch=%d, "
+-	       "PB5 cfg=%x latch=%d; PH16 cfg=%x latch=%d, "
+-	       "PF6 cfg=%x latch=%d\n",
++
++	printf("H713 panel: %s: PB4 cfg=%x latch=%d, PB5 cfg=%x latch=%d\n",
+ 	       phase,
+ 	       sunxi_gpio_get_cfgpin(SUNXI_GPB(4)), !!(pb & BIT(4)),
+-	       sunxi_gpio_get_cfgpin(SUNXI_GPB(5)), !!(pb & BIT(5)),
+-	       sunxi_gpio_get_cfgpin(SUNXI_GPH(16)), !!(ph & BIT(16)),
+-	       sunxi_gpio_get_cfgpin(SUNXI_GPF(6)), !!(pf & BIT(6)));
++	       sunxi_gpio_get_cfgpin(SUNXI_GPB(5)), !!(pb & BIT(5)));
++	h713_panel_print_power(phase);
+ }
+ 
+ /*
+@@ -7175,12 +7230,12 @@
+  * source active and the panel timing already at 1280x720.
+  *
+  * PB5 is shared by the LED backlight and cooling fan. It is forced high and
+- * never toggled. PH16 is the active-high panel reset/enable and PF6 is panel
+- * power. Do not exercise PB4 as brightness here: it is PWM2 from the
++ * never toggled. The panel's reset and supply come from the device tree
++ * (h713_panel_hold_reset(), h713_panel_supply()). Do not exercise PB4 as brightness here: it is PWM2 from the
+  * pre-override DT, while board B's panel_config.ini selects PWM5. The PWM5 pin
+  * route is not proven.
+  *
+- * The PF6 power cycle is performed with PH16 asserted low, then the stock
++ * The supply power cycle is performed with the reset held, then the stock
+  * low-to-high reset sequence is replayed after power returns. This makes a
+  * visible opacity/flash change useful evidence that the named GPIOs reach live
+  * panel hardware even if the LVDS image remains absent.
+@@ -7188,8 +7243,7 @@
+ static void h713_disp_panel_control_test(void)
+ {
+ 	const uint fan_bl = SUNXI_GPB(5);
+-	const uint reset = SUNXI_GPH(16);
+-	const uint power = SUNXI_GPF(6);
++	struct udevice *supply;
+ 	u32 saved_rgb0 = readl(H713_DISP_PANEL_BLUE_RGB0);
+ 	u32 saved_rgb1 = readl(H713_DISP_PANEL_BLUE_RGB1);
+ 	u32 saved_ctrl = readl(H713_DISP_PANEL_BLUE_CTRL);
+@@ -7198,8 +7252,8 @@
+ 	/* Preserve the fan/backlight safety interlock throughout this test. */
+ 	setbits_le32((void *)H713_PB_DATA, BIT(5));
+ 	sunxi_gpio_set_cfgpin(fan_bl, SUNXI_GPIO_OUTPUT);
+-	sunxi_gpio_set_cfgpin(reset, SUNXI_GPIO_OUTPUT);
+-	sunxi_gpio_set_cfgpin(power, SUNXI_GPIO_OUTPUT);
++	if (h713_panel_supply(&supply))
++		return;
+ 
+ 	writel(white, H713_DISP_PANEL_BLUE_RGB0);
+ 	writel(white, H713_DISP_PANEL_BLUE_RGB1);
+@@ -7211,28 +7265,28 @@
+ 	h713_disp_print_panel_gpio("control baseline");
+ 	mdelay(2000);
+ 
+-	printf("H713 panel: PH16 reset/enable LOW for 3 seconds\n");
+-	clrbits_le32((void *)H713_PH_DATA, BIT(16));
+-	h713_disp_print_panel_gpio("PH16 low");
++	printf("H713 panel: reset held for 3 seconds\n");
++	h713_panel_hold_reset(1);
++	h713_disp_print_panel_gpio("reset held");
+ 	mdelay(3000);
+ 
+-	printf("H713 panel: PH16 reset/enable HIGH for 3 seconds\n");
+-	setbits_le32((void *)H713_PH_DATA, BIT(16));
+-	h713_disp_print_panel_gpio("PH16 high");
++	printf("H713 panel: reset released for 3 seconds\n");
++	h713_panel_hold_reset(0);
++	h713_disp_print_panel_gpio("reset released");
+ 	mdelay(3000);
+ 
+-	printf("H713 panel: PF6 panel power OFF for 3 seconds; "
+-	       "PH16 held LOW, PB5 stays HIGH\n");
+-	clrbits_le32((void *)H713_PH_DATA, BIT(16));
++	printf("H713 panel: panel supply OFF for 3 seconds; "
++	       "reset held, PB5 stays HIGH\n");
++	h713_panel_hold_reset(1);
+ 	mdelay(100);
+-	clrbits_le32((void *)H713_PF_DATA, BIT(6));
+-	h713_disp_print_panel_gpio("PF6 low");
++	regulator_set_enable(supply, false);
++	h713_disp_print_panel_gpio("supply off");
+ 	mdelay(3000);
+ 
+-	printf("H713 panel: PF6 panel power ON; replaying stock PH16 release\n");
+-	setbits_le32((void *)H713_PF_DATA, BIT(6));
++	printf("H713 panel: panel supply ON; replaying the stock reset release\n");
++	regulator_set_enable(supply, true);
+ 	mdelay(2);
+-	setbits_le32((void *)H713_PH_DATA, BIT(16));
++	h713_panel_hold_reset(0);
+ 	mdelay(5);
+ 	h713_disp_print_panel_gpio("panel repowered");
+ 	mdelay(5000);
+diff --git a/drivers/clk/sunxi/Kconfig b/drivers/clk/sunxi/Kconfig
+--- a/drivers/clk/sunxi/Kconfig
++++ b/drivers/clk/sunxi/Kconfig
+@@ -89,11 +89,19 @@
+ 
+ config CLK_SUN20I_D1
+ 	bool "Clock driver for Allwinner D1"
+-	default MACH_SUN8I_R528 || MACH_SUN50I_H713
++	default MACH_SUN8I_R528
+ 	help
+ 	  This enables common clock driver support for platforms based
+-	  on Allwinner D1 SoC. The H713 CCU shares the D1 register
+-	  layout and reuses these tables.
++	  on Allwinner D1 SoC.
++
++config CLK_SUN50I_H713
++	bool "Clock driver for Allwinner H713"
++	default MACH_SUN50I_H713
++	help
++	  This enables common clock driver support for platforms based
++	  on Allwinner H713 SoC. Its gates and resets are generated from
++	  the kernel's CCU driver and keyed by the kernel's binding IDs,
++	  so U-Boot can use the kernel's device tree.
+ 
+ config CLK_SUN50I_H6
+ 	bool "Clock driver for Allwinner H6"
+diff --git a/drivers/clk/sunxi/Makefile b/drivers/clk/sunxi/Makefile
+--- a/drivers/clk/sunxi/Makefile
++++ b/drivers/clk/sunxi/Makefile
+@@ -20,6 +20,7 @@
+ obj-$(CONFIG_CLK_SUN9I_A80) += clk_a80.o
+ obj-$(CONFIG_CLK_SUN8I_H3) += clk_h3.o
+ obj-$(CONFIG_CLK_SUN20I_D1) += clk_d1.o
++obj-$(CONFIG_CLK_SUN50I_H713) += clk_h713.o
+ obj-$(CONFIG_CLK_SUN50I_H6) += clk_h6.o
+ obj-$(CONFIG_CLK_SUN50I_H6_R) += clk_h6_r.o
+ obj-$(CONFIG_CLK_SUN50I_H616) += clk_h616.o
+diff --git a/drivers/clk/sunxi/clk_sunxi.c b/drivers/clk/sunxi/clk_sunxi.c
+--- a/drivers/clk/sunxi/clk_sunxi.c
++++ b/drivers/clk/sunxi/clk_sunxi.c
+@@ -118,6 +118,7 @@
+ extern const struct ccu_desc a80_mmc_clk_desc;
+ extern const struct ccu_desc a83t_ccu_desc;
+ extern const struct ccu_desc d1_ccu_desc;
++extern const struct ccu_desc h713_ccu_desc;
+ extern const struct ccu_desc f1c100s_ccu_desc;
+ extern const struct ccu_desc h3_ccu_desc;
+ extern const struct ccu_desc h6_ccu_desc;
+@@ -201,14 +202,10 @@
+ #ifdef CONFIG_CLK_SUN20I_D1
+ 	{ .compatible = "allwinner,sun20i-d1-ccu",
+ 	  .data = (ulong)&d1_ccu_desc },
+-	/*
+-	 * The H713 (sun50iw12) CCU uses the D1 register layout for
+-	 * every block verified so far (MMC 0x84c/0x830, USB 0xa70/0xa8c,
+-	 * UART 0x90c), so reuse the D1 gate/reset tables until a
+-	 * dedicated binding exists.
+-	 */
++#endif
++#ifdef CONFIG_CLK_SUN50I_H713
+ 	{ .compatible = "allwinner,sun50i-h713-ccu",
+-	  .data = (ulong)&d1_ccu_desc },
++	  .data = (ulong)&h713_ccu_desc },
+ #endif
+ #ifdef CONFIG_CLK_SUN50I_H6
+ 	{ .compatible = "allwinner,sun50i-h6-ccu",
+diff --git a/drivers/phy/allwinner/phy-sun4i-usb.c b/drivers/phy/allwinner/phy-sun4i-usb.c
+--- a/drivers/phy/allwinner/phy-sun4i-usb.c
++++ b/drivers/phy/allwinner/phy-sun4i-usb.c
+@@ -669,6 +669,8 @@
+ 	{ .compatible = "allwinner,sun8i-r40-usb-phy", .data = (ulong)&sun8i_r40_cfg },
+ 	{ .compatible = "allwinner,sun8i-v3s-usb-phy", .data = (ulong)&sun8i_v3s_cfg },
+ 	{ .compatible = "allwinner,sun20i-d1-usb-phy", .data = (ulong)&sun20i_d1_cfg },
++	/* The H713 PHY block is the D1 one plus a third port U-Boot does not use. */
++	{ .compatible = "allwinner,sun50i-h713-usb-phy", .data = (ulong)&sun20i_d1_cfg },
+ 	{ .compatible = "allwinner,sun50i-a64-usb-phy", .data = (ulong)&sun50i_a64_cfg},
+ 	{ .compatible = "allwinner,sun50i-h6-usb-phy", .data = (ulong)&sun50i_h6_cfg},
+ 	{ .compatible = "allwinner,sun50i-h616-usb-phy", .data = (ulong)&sun50i_h616_cfg },
+diff --git a/configs/hy200_qz713df_a1_defconfig b/configs/hy200_qz713df_a1_defconfig
+--- a/configs/hy200_qz713df_a1_defconfig
++++ b/configs/hy200_qz713df_a1_defconfig
+@@ -30,7 +30,7 @@
+ CONFIG_DRAM_SUNXI_TPR12=0x00006666
+ CONFIG_DRAM_SUNXI_TPR13=0xb4016103
+ CONFIG_MACH_SUN50I_H713=y
+-CONFIG_H713_POWERON_LIGHT_FAN=y
++# CONFIG_H713_POWERON_LIGHT_FAN is not set
+ CONFIG_H713_MIPS_BOOT=y
+ CONFIG_SUNXI_DRAM_H713_DDR3_STOCK=y
+ CONFIG_MMC_SUNXI_SLOT_EXTRA=2
+diff --git a/arch/arm/dts/sun50i-h713-u-boot.dtsi b/arch/arm/dts/sun50i-h713-u-boot.dtsi
+new file mode 100644
+--- /dev/null
++++ b/arch/arm/dts/sun50i-h713-u-boot.dtsi
+@@ -0,0 +1,60 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * U-Boot's view of the H713 device tree.
++ *
++ * The tree itself is the kernel's, copied verbatim into dts/upstream by the
++ * h713 project's tools/build/sync-uboot-dts.sh, so U-Boot and Linux share one
++ * hardware description. Only what U-Boot must see differently lives here.
++ */
++
++#include "sunxi-u-boot.dtsi"
++
++/ {
++	aliases {
++		/*
++		 * U-Boot's numbering, which the environment and every boot
++		 * script use (mmc 1:2): the eMMC is mmc 1. Linux's own alias
++		 * (eMMC = mmc0, hence mmcblk0) stays in the kernel tree.
++		 */
++		/delete-property/ mmc0;
++		mmc1 = &mmc2;
++	};
++};
++
++/*
++ * U-Boot fills these windows (display firmware, its framebuffer and the
++ * logo, the CPU_COMM shared memory) and hands them to Linux, which keeps
++ * them. In U-Boot they must stay loadable: fs_read() refuses to write into
++ * reserved memory. The BL31 reservation stays.
++ */
++&mips_reserved { status = "disabled"; };
++&decd_reserved { status = "disabled"; };
++&cpu_comm_reserved { status = "disabled"; };
++&mips_framebuf { status = "disabled"; };
++&framebuf_reserved { status = "disabled"; };
++
++/*
++ * U-Boot's sunxi clock driver has gates and resets only, no rates; the MMC
++ * driver programs its module clock itself. An assigned rate would fail the
++ * probe with -ENOSYS.
++ */
++&mmc2 {
++	/delete-property/ assigned-clocks;
++	/delete-property/ assigned-clock-rates;
++};
++
++/* The DRD port's device side, for fastboot. */
++&usb_otg {
++	dr_mode = "peripheral";
++	status = "okay";
++};
++
++/* Hardware U-Boot does not use: left unbound, as before this tree. */
++&uart1 { status = "disabled"; };
++&ehci0 { status = "disabled"; };
++&ohci0 { status = "disabled"; };
++&ehci1 { status = "disabled"; };
++&ohci1 { status = "disabled"; };
++&ehci2 { status = "disabled"; };
++&ohci2 { status = "disabled"; };
++&r_pio { status = "disabled"; };
+diff --git a/arch/arm/dts/sun50i-h713-hy200-qz713df-a1-u-boot.dtsi b/arch/arm/dts/sun50i-h713-hy200-qz713df-a1-u-boot.dtsi
+new file mode 100644
+--- /dev/null
++++ b/arch/arm/dts/sun50i-h713-hy200-qz713df-a1-u-boot.dtsi
+@@ -0,0 +1,17 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++#include "sun50i-h713-u-boot.dtsi"
++
++/* The HDMI trace page is another window U-Boot fills for Linux. */
++&hdmi_trace_reserved { status = "disabled"; };
++
++/*
++ * In U-Boot, regulator-boot-on means "switch on at init" (the regulator is
++ * probed after bind and enabled). The panel must come up inside the display
++ * sequence, after the logo records and the pre-delay, so U-Boot leaves the
++ * supply off until h713_disp enables it. Linux keeps the property: there it
++ * means the bootloader left the supply on.
++ */
++&reg_panel {
++	/delete-property/ regulator-boot-on;
++};
+diff --git a/arch/arm/dts/sun50i-h713-hy200-qz713-v2-u-boot.dtsi b/arch/arm/dts/sun50i-h713-hy200-qz713-v2-u-boot.dtsi
+new file mode 100644
+--- /dev/null
++++ b/arch/arm/dts/sun50i-h713-hy200-qz713-v2-u-boot.dtsi
+@@ -0,0 +1,3 @@
++// SPDX-License-Identifier: GPL-2.0+
++
++#include "sun50i-h713-u-boot.dtsi"

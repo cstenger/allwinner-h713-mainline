@@ -4,6 +4,16 @@ How to write images to the H713 eMMC. Neither board has an SD slot — boot medi
 is **eMMC or FEL only**. There is a hardware **FEL button** (recovery vector),
 so a bad first stage is recoverable.
 
+## Current U-Boot update and rollback (2026-10-18)
+
+For the validated panel fix and this bench board's split layout, use the
+[U-Boot panel build/results/rollback runbook](uboot-panel-initial-state.md).
+The installed trial proper is 1867 sectors at `0x49ac00`; exact pre-fix
+rollback and the separate older rescue slot are retained. Normal build output
+is a combined SPL+proper image and is not a whole-image update for this
+installed board. The older layout/flash recipes below are historical; verify
+current regions and backups before using them.
+
 ## ⚠ State of the bench board as of 2026-08-09
 
 Read this before assuming anything about what is on the eMMC. The board is

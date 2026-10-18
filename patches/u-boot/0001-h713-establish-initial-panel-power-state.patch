@@ -1,0 +1,171 @@
+Subject: [PATCH] sunxi: h713: establish panel off state before logo replay
+
+On first acquisition the fixed regulator can drive PF6 inactive and return
+-EALREADY for disable without waiting. The existing 550 ms delay precedes
+that acquisition, so it cannot establish the panel off interval.
+
+With MIPS parked, prepare the display fabric, quiet LVDS, assert and verify
+panel reset, and acquire/disable/verify the panel supply before replaying
+logo records. Always hold that state for at least three seconds, or the
+larger DT off-on-delay-us. Preserve the stock on-side sequence and propagate
+reset-release failures. Keep the firmware-only relaunch path unchanged.
+
+Three seconds is the conservative interval used in the successful bench
+sequences, not a measured minimum. Readback verifies control state, not
+physical rail voltage. Three cold/first-warm pairs, an extra warm boot and
+one immediate emergency-reset trial recovered logo/console on the DDR3 bench
+board. See docs/uboot-panel-initial-state.md for scope and remaining limits.
+
+diff --git a/arch/arm/mach-sunxi/h713_mips.c b/arch/arm/mach-sunxi/h713_mips.c
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -4692,6 +4692,8 @@
+ /* Set once a sequence has run, so the dump knows the blocks are clocked. */
+ static bool h713_disp_configured;
+ 
++#define H713_DISP_AFBD_CTRL_REG		0x05600140UL
++
+ static int h713_disp_lookup(ulong blob, u32 project,
+ 			    struct h713_disp_sel *sel)
+ {
+@@ -4881,12 +4883,91 @@
+ 	       dm_gpio_get_value(&h713_panel_reset) ? "held" : "released");
+ }
+ 
++/* Call only with the display clocks/fabric accessible and MIPS parked. */
++static void h713_disp_signal_off(void)
++{
++	writel(0, 0x051c00d4);
++	writel(0, 0x051c00d8);
++	writel(0, 0x051c00dc);
++	writel(0, 0x051c00e0);
++	writel(0x18000000, 0x051c0014);
++	writel(0x00000030, 0x051c0028);
++	writel(0x40000000, 0x05140054);
++	dmb();
++}
++
++/*
++ * Two black U-Boot sessions recovered with an ordered panel power cycle;
++ * output restart and reset with the supply on did not recover the second.
++ * Three seconds is the tested conservative hold, not a measured minimum.
++ */
++#define H713_PANEL_INITIAL_OFF_US	3000000U
++
++static int h713_disp_panel_initial_off(void)
++{
++	struct udevice *supply;
++	u32 off_us;
++	int ret;
++
++	/* Never remove power underneath a live firmware display owner. */
++	if (readl(H713_MIPS_STATUS_REG) != 0) {
++		printf("H713 panel: initial power cycle requires parked MIPS\n");
++		return -EBUSY;
++	}
++
++	/* As in teardown: clocks alone do not make this fabric safe to read. */
++	if (!h713_disp_configured)
++		h713_display_prepare();
++
++	clrbits_le32((void *)H713_DISP_AFBD_CTRL_REG, BIT(0));
++	h713_disp_signal_off();
++	mdelay(20);
++
++	ret = h713_panel_hold_reset(1);
++	if (ret)
++		return ret;
++	ret = dm_gpio_get_value(&h713_panel_reset);
++	if (ret != 1)
++		return ret < 0 ? ret : -EIO;
++	mdelay(75);
++
++	/* Acquisition may itself drive the supply off: start the hold below. */
++	ret = h713_panel_supply(&supply);
++	if (ret)
++		return ret;
++	ret = regulator_set_enable(supply, false);
++	if (ret && ret != -EALREADY)
++		return ret;
++	ret = regulator_get_enable(supply);
++	if (ret)
++		return ret < 0 ? ret : -EBUSY;
++
++	/*
++	 * A first-probe/-EALREADY disable need not have waited at all. The old
++	 * 550 ms pre-delay ran before regulator acquisition and did not prove
++	 * an off interval. Always wait after verified control of the off state.
++	 * This verifies the GPIO/control state, not the physical rail voltage.
++	 */
++	off_us = max_t(u32, H713_PANEL_INITIAL_OFF_US,
++		       dev_read_u32_default(supply, "off-on-delay-us", 0));
++	printf("H713 panel: initial supply off, reset held; waiting %u us\n",
++	       off_us);
++	mdelay(off_us / 1000);
++	udelay(off_us % 1000);
++
++	return 0;
++}
++
+ /*
+  * Stock fastlogo applies all LogoRegData groups, waits poweron_delay1
+  * (550 ms), then invokes its panel-power method: the supply on, then the
+  * reset low for 2 ms and high for 5 ms. The state machine waits
+  * poweron_delay0 (20 ms) before continuing into the display clocks and MIPS
+  * release.
++ *
++ * h713_disp_panel_initial_off() has already claimed the supply, held reset
++ * and enforced the off interval before any logo records were replayed.
++ * Keep the stock on-side delays here; they do not establish power-off.
+  *
+  * The DM GPIO path writes the data latch before selecting output, so neither
+  * line can glitch as it is taken.
+@@ -4912,7 +4993,9 @@
+ 	if (ret)
+ 		return ret;
+ 	mdelay(2);
+-	h713_panel_hold_reset(0);
++	ret = h713_panel_hold_reset(0);
++	if (ret)
++		return ret;
+ 	mdelay(5);
+ 
+ 	h713_panel_print_power("stock power phase complete");
+@@ -5621,6 +5704,13 @@
+ 	if (ret)
+ 		return ret;
+ 
++	/* The trace/source relaunch intentionally keeps the panel powered. */
++	if (stock_panel_power) {
++		ret = h713_disp_panel_initial_off();
++		if (ret)
++			return ret;
++	}
++
+ 	ret = h713_logo_walk(blob, h713_disp_prologue[sel.prologue - 1].start,
+ 			     h713_disp_prologue[sel.prologue - 1].end, true);
+ 	if (ret)
+@@ -6027,7 +6117,6 @@
+ 					 H713_DISP_OSD_HEIGHT)
+ #define H713_DISP_OSD_CTRL_REG		0x0524c000UL
+ #define H713_DISP_OSD_OPEN_REG		0x0524c01cUL
+-#define H713_DISP_AFBD_CTRL_REG		0x05600140UL
+ #define H713_DISP_AFBD_READY_REG	0x05600144UL
+ #define H713_DISP_AFBD_STATUS_REG	0x05600168UL
+ #define H713_DISP_AFBD_STRIDE_REG	0x05600170UL
+@@ -6376,14 +6465,7 @@
+ 	 *    has recorded before init: 051c0014=18000000, 051c0028=00000030,
+ 	 *    05140054=40000000.
+ 	 */
+-	writel(0x00000000, 0x051c00d4);
+-	writel(0x00000000, 0x051c00d8);
+-	writel(0x00000000, 0x051c00dc);
+-	writel(0x00000000, 0x051c00e0);
+-	writel(0x18000000, 0x051c0014);
+-	writel(0x00000030, 0x051c0028);
+-	writel(0x40000000, 0x05140054);
+-	dmb();
++	h713_disp_signal_off();
+ 
+ 	mdelay(H713_PANEL_OFF_T0_MS);
+ 
