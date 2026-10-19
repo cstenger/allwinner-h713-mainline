@@ -15,11 +15,12 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 LATCH=0x07090118
 MAGIC=0x48444d49
-# The exact kernel FIT (playback-gated PA candidate through 0181) and its board FDT.
+# Validated Oct 16 FIT and board FDT: playback-gated PA (0181) plus
+# panel/shared-DT prerequisites (0182-0187).
 # U-Boot refuses any other image before it launches anything; build() checks
 # these against build/out so a kernel swap cannot silently outdate them.
-FIT_SIZE=7790520
-FDT_SIZE=34037
+FIT_SIZE=7795668
+FDT_SIZE=34666
 FIT=ROOT/'build/out/h713-kernel.fit'
 DTB=ROOT/'build/out/sun50i-h713-hy200-qz713df-a1.dtb'
 PREBOOT='if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi; usb start'

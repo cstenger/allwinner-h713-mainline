@@ -6,7 +6,8 @@ each start and stops before signal restoration and capture backend teardown.
 The capture backend alone exposes an ALSA input; it does not play that input.
 
 The opt-in startup bundle uses the installed September 24 U-Boot and the
-validated 6.18.38 FIT (7,789,216 bytes). It prepares HDMI1/source 3 in U-Boot,
+validated October 16 6.18.38 FIT (7,795,668 bytes; board FDT 34,666 bytes).
+It prepares HDMI1/source 3 in U-Boot,
 then enables the managed ALSA capture device through a persistent systemd unit.
 It does not continuously record to disk. Consumers can open `hw:H713HDMI,0`
 at 48 kHz, stereo, S16_LE and should declare `Requires=` and `After=` on

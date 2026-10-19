@@ -1,0 +1,45 @@
+Linux h713-arm64 6.18.38 #1 SMP Thu Oct 15 21:45:30 PDT 2026 aarch64 GNU/Linux
+2418550f-0c8b-4d96-8845-65df709c9574
+active
+active
+active
+NRestarts=0
+DAC Playback Volume                          int    43   [0..63]
+Line Out Playback Volume                     int    15   [0..31]
+Line Out Playback Switch                     bool   1 1
+Speaker Switch                               bool   1
+Line Out Source Playback Route               enum   0 0   [0..1]
+[   20.256210] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[   20.315392] h713-arm64 enable-mixer.sh[398]: DAC Playback Volume                          set to 43   [0..63]
+[   20.317514] h713-arm64 enable-mixer.sh[399]: Line Out Playback Volume                     set to 15   [0..31]
+[   20.319454] h713-arm64 enable-mixer.sh[400]: Line Out Playback Switch                     set to 1 1
+[   20.321482] h713-arm64 enable-mixer.sh[401]: Speaker Switch                               set to 1
+[   20.326675] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[   21.585248] h713-arm64 hdmi-speaker[403]: HDMI speaker ready; fading in after silent pre-roll
+state: RUNNING
+owner_pid   : 403
+trigger_time: 21.304390425
+tstamp      : 0.000000000
+delay       : 3808
+avail       : 32
+avail_max   : 3360
+-----
+hw_ptr      : 4442432
+appl_ptr    : 4446240
+state: RUNNING
+owner_pid   : 403
+trigger_time: 21.277764467
+tstamp      : 113.860474886
+delay       : 32
+avail       : 32
+avail_max   : 512
+-----
+hw_ptr      : 4443964
+appl_ptr    : 4443932
+gpiochip0: 256 GPIOs, parent: platform/2000000.pinctrl, 2000000.pinctrl:
+ gpio-37  (                    |lamp                ) out hi 
+
+gpiochip1: 64 GPIOs, parent: platform/7022000.pinctrl, 7022000.pinctrl:
+ gpio-2   (                    |allwinner,pa        ) out hi 
+ gpio-4   (                    |Power               ) in  hi IRQ ACTIVE LOW
+ gpio-33  (                    |wlan_regon          ) out hi 

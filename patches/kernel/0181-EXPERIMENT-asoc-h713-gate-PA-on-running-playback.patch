@@ -1,0 +1,175 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH EXPERIMENT] ASoC: h713: gate the external PA on running playback
+
+The 0180 trace still shows PA high before PCM RUNNING, and five seconds after
+PCM close due to DAPM power-down delay. Require both the powered Speaker widget
+and a playback trigger. Enable PA 200 ms after START; STOP immediately disables
+it before DRQ is cleared. Leave gain, registers and other codec variants alone.
+
+Serialize the delayed enable and trigger/DAPM state with a spinlock, require
+a non-sleeping PA GPIO, cancel pending work on stop and drain it on teardown.
+This is an acoustic test candidate; click elimination is not yet established.
+
+---
+--- a/sound/soc/sunxi/sun4i-codec.c
++++ b/sound/soc/sunxi/sun4i-codec.c
+@@ -20,6 +20,9 @@
+ #include <linux/regmap.h>
+ #include <linux/reset.h>
+ #include <linux/gpio/consumer.h>
++#include <linux/spinlock.h>
++#include <linux/workqueue.h>
++#include <linux/jiffies.h>
+ 
+ #include <sound/core.h>
+ #include <sound/jack.h>
+@@ -343,6 +346,14 @@
+ 	struct gpio_desc *gpio_pa;
+ 	struct gpio_desc *gpio_hp;
+ 
++	/* H713 PA GPIO is non-sleeping; trigger and work share this lock. */
++	bool pa_on_playback;
++	bool pa_speaker_on;
++	bool pa_playback_on;
++	unsigned long pa_ready_at;
++	spinlock_t pa_lock;
++	struct delayed_work pa_work;
++
+ 	/* ADC_FIFOC register is at different offset on different SoCs */
+ 	struct regmap_field *reg_adc_fifoc;
+ 	/* DAC_FIFOC register is at different offset on different SoCs */
+@@ -354,6 +365,60 @@
+ 	struct snd_dmaengine_dai_dma_data	playback_dma_data;
+ };
+ 
++/* Enable PA only after the running DAC has consumed its initial samples. */
++static void sun50i_h713_codec_pa_work(struct work_struct *work)
++{
++	struct sun4i_codec *scodec = container_of(to_delayed_work(work),
++						struct sun4i_codec, pa_work);
++	unsigned long flags, now;
++
++	spin_lock_irqsave(&scodec->pa_lock, flags);
++	now = jiffies;
++	if (scodec->pa_speaker_on && scodec->pa_playback_on) {
++		/* A previous callback may race with a fresh START. */
++		if (time_before(now, scodec->pa_ready_at))
++			mod_delayed_work(system_wq, &scodec->pa_work,
++					 scodec->pa_ready_at - now);
++		else
++			gpiod_set_value(scodec->gpio_pa, 1);
++	}
++	spin_unlock_irqrestore(&scodec->pa_lock, flags);
++}
++
++static void sun50i_h713_codec_pa_update_locked(struct sun4i_codec *scodec)
++{
++	if (scodec->pa_speaker_on && scodec->pa_playback_on) {
++		/* Longer than the consumer's 80 ms playback ring. */
++		scodec->pa_ready_at = jiffies + msecs_to_jiffies(200);
++		mod_delayed_work(system_wq, &scodec->pa_work,
++				 msecs_to_jiffies(200));
++	} else {
++		cancel_delayed_work(&scodec->pa_work);
++		gpiod_set_value(scodec->gpio_pa, 0);
++	}
++}
++
++static void sun50i_h713_codec_pa_playback(struct sun4i_codec *scodec, bool on)
++{
++	unsigned long flags;
++
++	if (!scodec->pa_on_playback)
++		return;
++
++	spin_lock_irqsave(&scodec->pa_lock, flags);
++	scodec->pa_playback_on = on;
++	sun50i_h713_codec_pa_update_locked(scodec);
++	spin_unlock_irqrestore(&scodec->pa_lock, flags);
++}
++
++static void sun50i_h713_codec_pa_cleanup(void *data)
++{
++	struct sun4i_codec *scodec = data;
++
++	sun50i_h713_codec_pa_playback(scodec, false);
++	cancel_delayed_work_sync(&scodec->pa_work);
++}
++
+ static void sun4i_codec_start_playback(struct sun4i_codec *scodec)
+ {
+ 	/* Flush TX FIFO */
+@@ -363,10 +428,12 @@
+ 	/* Enable DAC DRQ */
+ 	regmap_field_set_bits(scodec->reg_dac_fifoc,
+ 			      BIT(SUN4I_CODEC_DAC_FIFOC_DAC_DRQ_EN));
++	sun50i_h713_codec_pa_playback(scodec, true);
+ }
+ 
+ static void sun4i_codec_stop_playback(struct sun4i_codec *scodec)
+ {
++	sun50i_h713_codec_pa_playback(scodec, false);
+ 	/* Disable DAC DRQ */
+ 	regmap_field_clear_bits(scodec->reg_dac_fifoc,
+ 				BIT(SUN4I_CODEC_DAC_FIFOC_DAC_DRQ_EN));
+@@ -2243,6 +2310,7 @@
+ 	unsigned int reg_adc_rxdata;	/* RX FIFO offset for DMA config */
+ 	bool has_reset;
+ 	bool playback_only;
++	bool pa_on_playback;
+ 	u32 dma_max_burst;
+ 	/* Module clock multiple, when not the family default of 512x. 0 = 1x */
+ 	unsigned int mod_freq_mult;
+@@ -2343,17 +2411,18 @@
+ 
+ /* Keep the external amplifier off while the H713 analog path settles. */
+ static int sun50i_h713_codec_spk_event(struct snd_soc_dapm_widget *w,
+-                                     struct snd_kcontrol *k, int event)
++				     struct snd_kcontrol *k, int event)
+ {
+ 	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(w->dapm->card);
++	unsigned long flags;
+ 
+ 	if (SND_SOC_DAPM_EVENT_ON(event))
+-		/* DAPM POST_PMU: DAC and HP Amp have already powered up. */
+ 		msleep(700);
+ 
+-	/* PRE_PMD disables the PA before DAPM powers down its sources. */
+-	gpiod_set_value_cansleep(scodec->gpio_pa,
+-				!!SND_SOC_DAPM_EVENT_ON(event));
++	spin_lock_irqsave(&scodec->pa_lock, flags);
++	scodec->pa_speaker_on = !!SND_SOC_DAPM_EVENT_ON(event);
++	sun50i_h713_codec_pa_update_locked(scodec);
++	spin_unlock_irqrestore(&scodec->pa_lock, flags);
+ 	return 0;
+ }
+ 
+@@ -2415,6 +2484,7 @@
+ 	.reg_dac_fifoc	= REG_FIELD(SUN50I_H616_CODEC_DAC_FIFOC, 0, 31),
+ 	.reg_dac_txdata	= SUN8I_H3_CODEC_DAC_TXDATA,
+ 	.has_reset	= true,
++	.pa_on_playback	= true,
+ 	.dma_max_burst	= SUN4I_DMA_MAX_BURST,
+ 	.mod_freq_mult	= 2,
+ };
+@@ -2543,6 +2613,20 @@
+ 		return ret;
+ 	}
+ 
++	if (quirks->pa_on_playback) {
++		/* Trigger callbacks run in atomic context. Never use an expander. */
++		if (gpiod_cansleep(scodec->gpio_pa))
++			return dev_err_probe(&pdev->dev, -EINVAL,
++					     "PA GPIO must be non-sleeping\n");
++		scodec->pa_on_playback = true;
++		spin_lock_init(&scodec->pa_lock);
++		INIT_DELAYED_WORK(&scodec->pa_work, sun50i_h713_codec_pa_work);
++		ret = devm_add_action_or_reset(&pdev->dev,
++					      sun50i_h713_codec_pa_cleanup, scodec);
++		if (ret)
++			return ret;
++	}
++
+ 	scodec->gpio_hp = devm_gpiod_get_optional(&pdev->dev, "hp-det", GPIOD_IN);
+ 	if (IS_ERR(scodec->gpio_hp)) {
+ 		ret = PTR_ERR(scodec->gpio_hp);

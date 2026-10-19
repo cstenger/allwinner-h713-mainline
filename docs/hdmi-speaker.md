@@ -61,3 +61,15 @@ Disable automatic forwarding with
 
 Validation and cold-boot status are recorded in
 [persistent speaker evidence](hdmi-evidence/2026-10-15-persistent-speaker/README.md).
+
+The speaker-startup kernel candidates are tracked in
+[the speaker-last evidence](hdmi-evidence/2026-10-15-speaker-last/README.md).
+Patch 0180 delayed external PA enable until after analog settling, but the
+operator still heard two clicks on its cold test. Candidate 0181 additionally
+requires running playback and delays PA enable by 200 ms after START; STOP
+mutes PA immediately instead of waiting for the five-second DAPM timeout.
+Its locking/deadline helper tests and kernel build pass. On the first 0181
+physical cold cycle, the operator reported no startup clicks and successful
+music; gain 43 was reapplied automatically. The preceding shutdown click
+occurred while 0180 was still running, so shutdown-click suppression on 0181
+remains unverified. See the evidence for the exact kernel and test scope.
