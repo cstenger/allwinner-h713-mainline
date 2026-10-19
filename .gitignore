@@ -31,3 +31,18 @@ __pycache__/
 .backup/
 # generated test cards -- regenerate with tools/display/make-scaler-testcard.py
 local/testcards/
+
+# Out-of-tree kernel module build products. Keep bench sources and Makefiles.
+/modules/**/*.o
+/modules/**/*.ko
+/modules/**/.*.cmd
+/modules/**/*.mod
+/modules/**/*.mod.c
+/modules/**/Module.symvers
+/modules/**/modules.order
+/modules/**/.tmp_versions/
+
+# Raw bench media stays local; retain summaries, hashes, scripts and figures.
+/docs/hdmi-evidence/**/*.wav
+/docs/hdmi-evidence/**/*.nv16
+/docs/hdmi-evidence/**/*.mkv
