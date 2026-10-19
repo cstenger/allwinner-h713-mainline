@@ -123,7 +123,9 @@ class Images(unittest.TestCase):
         for filename, evidence in [
             ('make-audio-monitor-trace.py', '2026-10-07-audio-monitor-trace'),
             ('make-audio-regr-trace.py', '2026-10-07-pll-readback'),
-            ('make-audio-dispatch-trace.py', '2026-10-07-audio-dispatch')]:
+            ('make-audio-dispatch-trace.py', '2026-10-07-audio-dispatch'),
+            ('make-audio-pll-retry.py', '2026-10-07-audio-pll-retry'),
+            ('make-audio-pll-init.py', '2026-10-07-pll-initialization')]:
             module = load(filename)
             trace = getattr(module, 'monitor', module)
             historical = json.loads((ROOT / 'docs/hdmi-evidence' / evidence / 'audio-monitor-profile.json').read_text())
@@ -247,6 +249,34 @@ class DeviceReader(unittest.TestCase):
                     self.reader.main()
         self.open.assert_not_called()
 
+    def test_functional_verifiers_close_and_publish_no_fields(self):
+        for mode in ('retry', 'init'):
+            verifier = load(f'verify-audio-pll-{mode}.py')
+            self.reader.trace = verifier.reader.trace
+            self.assertEqual(self.reader.trace.FIELDS, {})
+            with patch.object(sys, 'argv', ['verify']), contextlib.redirect_stdout(io.StringIO()) as output:
+                verifier.main()
+            self.assertIn(f'PLL_{mode.upper()}_PROFILE_VERIFIED', output.getvalue())
+            self.assertTrue(all(m.closed for m in self.maps))
+        self.assertEqual(self.close.call_count, 2)
+
+    def test_functional_verifier_failure_cleanup(self):
+        for mode in ('retry', 'init'):
+            verifier = load(f'verify-audio-pll-{mode}.py')
+            with patch.object(sys, 'argv', ['verify']), patch.object(verifier.reader, 'verify', side_effect=ValueError('wrong profile')):
+                with self.assertRaisesRegex(ValueError, 'wrong profile'):
+                    verifier.main()
+        self.assertEqual(self.close.call_count, 2)
+
+    def test_functional_verifier_help_before_device_open(self):
+        for mode in ('retry', 'init'):
+            verifier = load(f'verify-audio-pll-{mode}.py')
+            with patch.object(sys, 'argv', ['verify', '--help']), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as result:
+                    verifier.main()
+            self.assertEqual(result.exception.code, 0)
+        self.open.assert_not_called()
+
     def test_snapshot_detects_count_change(self):
         class Changing:
             count = 0
@@ -257,6 +287,28 @@ class DeviceReader(unittest.TestCase):
                 return 0
         self_reader = self.reader
         self.assertTrue(self.reader.snapshot(Changing())['monitor_count_changed_during_read'])
+
+
+class OfflinePLLModel(unittest.TestCase):
+    def test_import_does_not_read_private_input_and_pin_cannot_be_skipped(self):
+        path = HERE.parent / 'stock/decode-mips-audio-pll.py'
+        spec = importlib.util.spec_from_file_location('model', path)
+        model = importlib.util.module_from_spec(spec)
+        with patch.object(Path, 'read_bytes', side_effect=AssertionError('unexpected input read')):
+            spec.loader.exec_module(model)
+        with patch.object(model, 'Uc', side_effect=AssertionError('emulation before pin check')):
+            with self.assertRaisesRegex(ValueError, 'SHA256'):
+                model.run(b'wrong firmware', 0x8B13BCB8)
+
+    def test_model_rejects_wrong_init_branch(self):
+        path = HERE.parent / 'stock/decode-mips-audio-pll.py'
+        spec = importlib.util.spec_from_file_location('model', path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        firmware = bytes(0x3C62C)
+        with patch.object(model, 'FW_SHA', hashlib.sha256(firmware).hexdigest()):
+            with self.assertRaisesRegex(ValueError, 'branch mismatch'):
+                model.run(firmware, 0x8B13C524, initialize_zero=True)
 
 
 class WithdrawnInstaller(unittest.TestCase):

@@ -127,3 +127,8 @@ exports retain 86 original whitespace diagnostics (serial prompts, boot logs
 and two exact script snapshots); these are not silently rewritten. The full
 evidence diff is checked with end-of-line/end-of-file whitespace warnings
 disabled, while hashes verify the documented exports.
+
+The metadata retry and init-on-zero layers are reviewed separately in the
+[PLL experiment guide](../audio-pll-experiments/README.md). The shared host
+suite now also covers those functional profiles and the offline PLL model;
+it requires Unicorn for the model import/pin check.

@@ -160,3 +160,16 @@ hashes. Their raw log/script originals and binary/media/disassembly inputs
 remain local; see the manifest for dispositions. Later metadata retry/init,
 PLL word/byte tools and October 8 evidence remain follow-ups. This cleanup
 performed no hardware access.
+
+## October 19 metadata retry / PLL initialization follow-up
+
+The next audio group is curated in
+[audio-pll-experiments](audio-pll-experiments/README.md): metadata retry and
+init-on-zero generators/verifiers/tests, plus the supporting tracked stock
+PLL model with explicit private input and mandatory identity checks. Both
+candidates and complete profiles reproduce their historical identities.
+The two October 7 evidence directories have curated summaries, exact text
+script/notes snapshots, normalized logs and source/export hashes. The later
+scalar-byte correction is retained; collapsed-byte-store and missing-upper-byte
+hypotheses are withdrawn. PLL word-write/byte-read tools and October 8 records
+remain follow-ups. No new hardware trials were performed.
