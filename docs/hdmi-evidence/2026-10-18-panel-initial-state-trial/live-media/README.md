@@ -32,7 +32,7 @@ inadequate stable-copy window at720p; retain that failure in
 passed unchanged probe-page checks and content-ID tests. Probe pages do not
 prove every pixel tear-free; sampled frame IDs/stripes strengthen the result.
 See `video-result.json`, `video-frame-metadata.jsonl`, `video-first-frame.png`
-and reproducible `test-video.py`. Host taskbar overlays the top ID band; the
+and the [historical video wrapper](../historical-scripts/test-video.py.txt). Host taskbar overlays the top ID band; the
 existing analyzer checks three lower bands and all three moving stripes.
 
 Digital audio: existing persistent-owner ALSA test PASS at48/32/44.1kHz HDMI
@@ -40,7 +40,8 @@ input, with48kHz stereo S16_LE output. Each16s recording passed tone frequency,
 channel separation, frame-count and post-tone digital-silence checks. Capture
 XRUN delta0 for every trial. Speaker consumer alone was stopped to release the
 PCM, then restored in finally. Capture/signal owners remained active.
-See `audio-rates/summary.json`, recordings and `test-audio.py`.
+See `audio-rates/summary.json`, local recordings and the
+[historical audio wrapper](../historical-scripts/test-audio.py.txt).
 
 Audible check: sent8s stereo1000/2000Hz tone with200ms fade at source peak3500
 through the exact HDMI ALSA device (`hw:1,8`), return0. No default output or
@@ -125,3 +126,17 @@ unexplained; the weaker earlier waveform and intervening consumer/codec tests
 prevent assigning its cause. Existing sampled live720p video and bounded
 48/32/44.1kHz digital capture passes stand within their documented scope.
 Normal playback remains running; no reboot requested.
+
+
+## Supporting capture records
+
+[The clean-listening serial text](cold-listening-01/serial.txt) and its
+[operator status note](cold-listening-01/status.txt) are preserved with the
+existing result. [cold-serial.txt](cold-serial.txt) ends during early kernel
+startup in the initial digital session; later readiness and media checks are
+recorded separately above. The raw captures remain local; conversion and
+source hashes are in [the support manifest](../support-files.json).
+
+The audio/video wrappers above are exact historical text archives with their
+known session assumptions documented, not independently validated reusable
+launchers. Their archival inclusion adds no new media or acoustic test.

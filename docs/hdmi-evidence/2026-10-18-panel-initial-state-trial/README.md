@@ -2,7 +2,8 @@
 
 Trial proper installed at LBA `0x49ac00`, 1867 sectors, SHA-256
 `4391dfa07bcf396b5096714814e933c7b59cff408b7a9964163812f686283880`.
-See `manifest.json`, `install.sh`, `install.log` and fresh backups here.
+See `manifest.json`, the [historical installer snapshot](historical-scripts/install.sh.txt),
+`install.log` and retained local backups.
 The full 2 MiB region tail beyond the image, rescue slot, SPL and environment
 were verified unchanged after writing. Kernel/startup script unchanged.
 
@@ -60,8 +61,8 @@ initial-state timing gap remains unproven.
 
 ## Capture and observations
 
-`serial-capture.py` records raw bytes and host timestamps and reconnects after
-USB removal. The first detached recorder exited with its launching process;
+The [original recorder snapshot](historical-scripts/serial-capture.py.txt)
+records raw bytes and host timestamps and reconnects after USB removal. The first detached recorder exited with its launching process;
 the installation warm boot has only late kernel output, not U-Boot, and is
 excluded from sequencing evidence. It did reach Linux (see
 `install-boot-linux.txt`). A foreground persistent execution session now owns
@@ -195,3 +196,44 @@ continuously appended parent serial logs remain local and are not in Git.
 Their paths and hashes above identify retained bench artifacts; preserve them
 separately for hardware rollback. Older diagnostic directories referenced by
 this historical record may likewise be local evidence.
+
+
+## Support-file cleanup, October 18
+
+The [support manifest](support-files.json) identifies all 17 files reviewed
+against the original untracked-file inventory. This is archival cleanup of
+existing observations; no additional boot, reset, playback or capture was run.
+
+The three cold trials now include readable `cold-01/serial.txt`,
+`cold-02/serial.txt` and `cold-03/serial.txt`, plus their original setup-status
+notes. The notes say when the session was armed; they are not visual results.
+The command records `install-reboot-command.log` and
+`warm-check-reboot-command.log` retain the original boot IDs and request uptimes.
+The installation reboot still has no U-Boot capture or visual pass.
+
+The listening trial's `live-media/cold-listening-01/serial.txt` and `status.txt`
+support its existing boot/result record. `live-media/cold-serial.txt` is the
+partial early-boot capture from the initial digital media session, not another
+complete boot verification. The derived `live-media/video-first-frame.png`
+shows sampled framebuffer content with the host taskbar over the top band;
+it is not a photograph or proof of panel output, nor a full-rate video test.
+
+Serial text views retain every decoded line: CRLF becomes LF, invalid UTF-8
+bytes and non-printing controls are represented visibly. The manifest records
+both original raw and exported text hashes. Original per-trial raw `.log`
+files, continuous parent captures, media and byte-offset bookkeeping stay local.
+
+The installer, reset trigger and media wrappers are retained as
+[exact historical text snapshots](historical-scripts/README.md). Review found
+session-specific assumptions and assertion-based guards, so they have not been
+promoted to reusable hardware tools. The passive recorder alone is promoted to
+`tools/serial/capture-panel-validation.py`, with explicit device/new-directory
+arguments, fatal output-error handling and offline reconnection tests.
+
+
+Cleanup checks: five fake-UART tests pass, including reconnect, EOF, setup
+failure, existing-output refusal and fatal full/short log writes. All 17
+source/evidence hashes match the prior inventory; historical Python/shell
+snapshots pass syntax checks without execution. Documentation links resolve.
+The four complete cold captures retain off-hold, logo-commit, cold-handoff
+and Linux-adoption witnesses; the initial media capture ends before adoption.

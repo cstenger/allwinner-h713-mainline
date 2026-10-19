@@ -1,0 +1,16 @@
+from pathlib import Path
+import subprocess,sys
+out=Path(__file__).resolve().parent
+ssh=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=2','root@192.168.4.1']
+restore=None
+try:
+ p=subprocess.run(ssh+['set -e; test "$(cat /proc/sys/kernel/random/boot_id)" = fe482468-f917-463c-afde-20f6baa83d3c; systemctl is-active --quiet h713-hdmi-speaker; systemctl stop h713-hdmi-speaker; systemctl is-active --quiet h713-hdmi-capture; systemctl is-active --quiet h713-hdmi-signal; cat /proc/asound/H713HDMI/pcm0c/sub0/status'],capture_output=True,text=True,timeout=15)
+ (out/'speaker-stop.txt').write_text(p.stdout+p.stderr)
+ assert p.returncode==0 and 'closed' in p.stdout,'Speaker did not release capture PCM'
+ p=subprocess.run([sys.executable,'tools/hdmi/run-alsa-capture-test.py',str(out/'audio-rates'),'--persistent-signal','--recorder','/tmp/h713-trial-arecord'],timeout=120)
+ if p.returncode:raise RuntimeError('Digital audio rate test failed; see audio-rates/')
+finally:
+ restore=subprocess.run(ssh+['systemctl start h713-hdmi-speaker; systemctl is-active h713-hdmi-capture h713-hdmi-signal h713-hdmi-speaker; cat /proc/asound/H713HDMI/pcm0c/sub0/status; cat /proc/asound/Codec/pcm0p/sub0/status'],capture_output=True,text=True,timeout=20)
+ (out/'speaker-restored.txt').write_text(restore.stdout+restore.stderr)
+ print('Speaker restore command return:',restore.returncode,flush=True)
+ if restore.returncode:raise RuntimeError('Speaker restoration needs attention')

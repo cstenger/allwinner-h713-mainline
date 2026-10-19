@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+base=/root/panel-initial-state-trial
+trial=$base/uboot-proper-trial.bin
+expected=4391dfa07bcf396b5096714814e933c7b59cff408b7a9964163812f686283880
+[ "$(wc -c < "$trial")" -eq 955904 ]
+[ "$(sha256sum "$trial" | cut -d ' ' -f1)" = "$expected" ]
+region_hash() { dd if=/dev/mmcblk0 bs=512 skip="$1" count="$2" iflag=direct status=none | sha256sum | cut -d ' ' -f1; }
+[ "$(region_hash 4828160 1867)" = cf1941d6f94441e55607f96ca83239b1c895b9b92166ccf2d6914aac46001423 ]
+[ "$(region_hash 4852736 1798)" = c882461d5ee69128c79d99b784fde668ee4d57ab09ae308738e3f9ea91fd1ce7 ]
+[ "$(region_hash 16 64)" = cb9da87448a57aa1cafbc7ebf66200b5183304cef1eafe23d0818b99696a49ec ]
+[ "$(region_hash 4844544 128)" = de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31 ]
+dd if="$trial" of=/dev/mmcblk0 bs=512 seek=4828160 count=1867 conv=fsync,notrunc status=progress
+[ "$(region_hash 4828160 1867)" = "$expected" ]
+# Verify every byte outside the replacement within the saved 2 MiB region.
+dd if=/dev/mmcblk0 of="$base/proper-region-after-2MiB.bin" bs=512 skip=4828160 count=4096 iflag=direct status=none
+tail -c +955905 "$base/proper-region-before-2MiB.bin" > "$base/tail-before.bin"
+tail -c +955905 "$base/proper-region-after-2MiB.bin" > "$base/tail-after.bin"
+cmp "$base/tail-before.bin" "$base/tail-after.bin"
+[ "$(region_hash 4852736 1798)" = c882461d5ee69128c79d99b784fde668ee4d57ab09ae308738e3f9ea91fd1ce7 ]
+[ "$(region_hash 16 64)" = cb9da87448a57aa1cafbc7ebf66200b5183304cef1eafe23d0818b99696a49ec ]
+[ "$(region_hash 4844544 128)" = de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31 ]
+echo 'PASS: trial readback matches; surrounding bytes, rescue, SPL and environment unchanged'

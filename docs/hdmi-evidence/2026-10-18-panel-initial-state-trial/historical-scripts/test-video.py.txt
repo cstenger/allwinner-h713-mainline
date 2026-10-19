@@ -1,0 +1,24 @@
+from pathlib import Path
+import subprocess,time,json,importlib.util
+out=Path(__file__).resolve().parent
+ssh=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','ServerAliveInterval=3','-o','ServerAliveCountMax=2','root@192.168.4.1']
+player=None
+try:
+ with (out/'video-player.log').open('w') as log:
+  player=subprocess.Popen(['mpv','--no-config','--no-audio','--vo=gpu','--gpu-context=wayland','--loop-file=inf','--fullscreen','--fs-screen-name=HDMI-A-1','--osc=no','--osd-level=0','--no-input-default-bindings',str(out/'motion-720p.mkv')],stdout=log,stderr=subprocess.STDOUT)
+  time.sleep(2)
+  assert player.poll() is None,'Test video player exited'
+  p=subprocess.run(ssh+['python3 /tmp/h713-trial-read-coherent-frame.py --width 1280 --height 720 --count 8 --copies 1 --timeout 12'],capture_output=True,timeout=25)
+  (out/'video.nv16').write_bytes(p.stdout);(out/'video-frame-metadata.jsonl').write_bytes(p.stderr)
+  assert p.returncode==0,p.stderr.decode(errors='replace')
+  assert len(p.stdout)==8*1280*720*2
+  spec=importlib.util.spec_from_file_location('motion',Path.cwd()/'tools/hdmi/analyze-motion-stream.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+  result=m.analyze(out/'video.nv16',1280,720)
+  result['pass']=result['frames']==8 and result['patterned_frames']==8 and result['band_mismatches']==0 and result['stripe_mismatches']==0 and len(set(result['first_ids']))>1
+  result['scope']='Read-only single-copy DRAM samples with unchanged probe pages and frame-ID/stripe consistency checks; not double-copy verified, continuous V4L2 streaming or projector preview'
+  (out/'video-result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))
+finally:
+ if player is not None and player.poll() is None:
+  player.terminate()
+  try:player.wait(timeout=5)
+  except subprocess.TimeoutExpired:player.kill();player.wait()

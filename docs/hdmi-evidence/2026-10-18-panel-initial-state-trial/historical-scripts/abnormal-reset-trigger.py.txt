@@ -1,0 +1,16 @@
+import os, json, time
+from pathlib import Path
+assert Path('/proc/sys/kernel/random/boot_id').read_text().strip() == '4b89c33b-9059-47c8-afce-6aa2dbeb4eac', 'Unexpected boot; no reset sent'
+import subprocess
+for unit in ('h713-hdmi-capture','h713-hdmi-signal','h713-hdmi-speaker'):
+ subprocess.run(['systemctl','is-active','--quiet',unit],check=True)
+for card,stream in (('H713HDMI','pcm0c'),('Codec','pcm0p')):
+ assert 'state: RUNNING' in Path(f'/proc/asound/{card}/{stream}/sub0/status').read_text(), 'PCM not running'
+p=Path('/root/panel-initial-state-trial');p.mkdir(exist_ok=True)
+record={'method':'SysRq b immediate emergency reset','boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip(),'pre_sync_uptime':Path('/proc/uptime').read_text().strip(),'normal_shutdown_requested':False,'HDMI_services':'all active; both PCMs RUNNING'}
+(p/'abnormal-reset-01-before.json').write_text(json.dumps(record,indent=2)+'\n')
+os.sync()
+marker='H713_ABNORMAL_RESET01_SYNC_DONE_UPTIME '+Path('/proc/uptime').read_text().strip()+'\n'
+with open('/dev/console','w') as f:f.write(marker);f.flush()
+with open('/proc/sysrq-trigger','w') as f:f.write('b')
+raise RuntimeError('SysRq reset returned unexpectedly')

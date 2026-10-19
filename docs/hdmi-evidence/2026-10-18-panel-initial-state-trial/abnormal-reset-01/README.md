@@ -13,7 +13,8 @@ HDMI/panel teardown. Firmware/kernel/bootloader unchanged.
 
 This tests an immediate kernel emergency reset with hardware still active.
 It does not inject a kernel hang or demonstrate autonomous hardware watchdog
-expiry. Evidence: trigger.py, trigger-output.log, serial.log and after-boot
+expiry. Evidence: [historical trigger source](../historical-scripts/abnormal-reset-trigger.py.txt),
+trigger-output.log, serial.log and after-boot
 health checks. The console marker was not captured on UART; exact kernel SysRq timestamp
 465.752331s and saved pre-sync uptime465.71s establish timing.
 normal HDMI/panel shutdown messages should be absent from that interval.
