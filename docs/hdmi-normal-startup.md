@@ -1,5 +1,10 @@
 # HDMI audio at normal startup
 
+For automatic playback through the internal speaker, install the separate
+[persistent speaker consumer](hdmi-speaker.md). It applies the codec mixer on
+each start and stops before signal restoration and capture backend teardown.
+The capture backend alone exposes an ALSA input; it does not play that input.
+
 The opt-in startup bundle uses the installed September 24 U-Boot and the
 validated 6.18.38 FIT (7,789,216 bytes). It prepares HDMI1/source 3 in U-Boot,
 then enables the managed ALSA capture device through a persistent systemd unit.

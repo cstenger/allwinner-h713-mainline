@@ -118,7 +118,7 @@ static int do_set(int fd, const char *name, int argc, char **argv)
 	/* Read first so unspecified channels keep their current value. */
 	ioctl(fd, SNDRV_CTL_IOCTL_ELEM_READ, &val);
 	for (i = 0; i < info.count; i++) {
-		long v = strtol(argv[i < (unsigned int)argc ? i : argc - 1],
+		long v = strtol(argv[i < (unsigned int)argc ? i : (unsigned int)argc - 1],
 				NULL, 0);
 
 		if (info.type == SNDRV_CTL_ELEM_TYPE_ENUMERATED)

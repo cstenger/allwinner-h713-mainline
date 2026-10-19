@@ -1,0 +1,56 @@
+14e9f021-8cbd-4fe2-a052-1138d27aaefc
+DAC Playback Volume                          int    43   [0..63]
+Line Out Playback Volume                     int    15   [0..31]
+Line Out Playback Switch                     bool   1 1
+Speaker Switch                               bool   1
+Line Out Source Playback Route               enum   0 0   [0..1]
+NRestarts=0
+Id=h713-hdmi-speaker.service
+ActiveState=active
+SubState=running
+ConditionResult=yes
+
+NRestarts=0
+Id=h713-hdmi-signal.service
+ActiveState=active
+SubState=exited
+ConditionResult=yes
+
+NRestarts=0
+Id=h713-hdmi-capture.service
+ActiveState=active
+SubState=exited
+ConditionResult=yes
+state: RUNNING
+owner_pid   : 402
+trigger_time: 21.277696550
+tstamp      : 37.163960016
+delay       : 192
+avail       : 192
+avail_max   : 480
+-----
+hw_ptr      : 762524
+appl_ptr    : 762332
+state: RUNNING
+owner_pid   : 402
+trigger_time: 21.304219716
+tstamp      : 0.000000000
+delay       : 3648
+avail       : 192
+avail_max   : 3360
+-----
+hw_ptr      : 761472
+appl_ptr    : 765120
+0
+Apr 13 19:38:10 h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...
+Apr 13 19:38:22 h713-arm64 python3[206]: {"phase": "ready", "already_ready": false}
+Apr 13 19:38:22 h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.
+Apr 13 19:38:22 h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+Apr 13 19:38:22 h713-arm64 python3[389]: EDID/HPD ready; receiver client and DDC pins retained
+Apr 13 19:38:22 h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+Apr 13 19:38:22 h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[397]: DAC Playback Volume                          set to 43   [0..63]
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[398]: Line Out Playback Volume                     set to 15   [0..31]
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[399]: Line Out Playback Switch                     set to 1 1
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[400]: Speaker Switch                               set to 1
+Apr 13 19:38:22 h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.

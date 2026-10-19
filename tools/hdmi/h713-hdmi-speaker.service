@@ -1,0 +1,19 @@
+[Unit]
+Description=H713 HDMI input to internal speaker
+BindsTo=h713-hdmi-signal.service h713-hdmi-capture.service
+After=h713-hdmi-signal.service h713-hdmi-capture.service
+Before=shutdown.target
+RequiresMountsFor=/usr/lib/h713-hdmi-speaker
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+
+[Service]
+Type=simple
+ExecStartPre=/usr/lib/h713-hdmi-speaker/enable-mixer.sh
+ExecStart=/usr/lib/h713-hdmi-speaker/hdmi-speaker
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
