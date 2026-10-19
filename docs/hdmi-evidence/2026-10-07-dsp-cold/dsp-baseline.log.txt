@@ -1,0 +1,32 @@
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win\x0d
+command help of win\x0d
+for window debug only\x0d
+\x0d
+VS:/$ 
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win\x0d
+command help of win\x0d
+for window debug only\x0d
+\x0d
+VS:/$ 
+[  127.768096] h713-scp-probe: active IO 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  127.777836] h713-scp-probe: EDID trial ready; holding HPD asserted for 30000 ms
+[  158.695931] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  158.708625] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+[  163.000814] h713-ddc-pins: DDC pins returned to inputs and ownership released
+[  213.065902] h713-hdmi-tvfe-hold: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[  213.076896] h713-hdmi-tvfe-hold: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[  213.101551] h713-hdmi-tvfe-hold: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[  214.890092] h713-hdmi-audio-probe: clock=bus-hdmi-audio inherited_on=1 enabled_by_probe=0 rate=100000000
+[  214.901151] h713-hdmi-audio-probe: clock=hdmi-audio inherited_on=1 enabled_by_probe=0 rate=1152000000
+[  214.911878] h713-hdmi-audio-probe: clock=audio-cpu inherited_on=1 enabled_by_probe=0 rate=100000000
+[  214.922411] h713-hdmi-audio-probe: clock=audio-umac inherited_on=1 enabled_by_probe=0 rate=100000000
+[  214.933023] h713-hdmi-audio-probe: clock=audio-ihb inherited_on=1 enabled_by_probe=0 rate=100000000
+[  214.943678] h713-hdmi-audio-probe: audio-IHB clock stock word applied 81000002->81000002
+[  214.953265] h713-hdmi-audio-probe: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[  214.964099] h713-hdmi-audio-probe: armed; status snapshots available
+[  214.971928] h713-hdmi-audio-probe: snapshot=1 audif_irq=00000000 audif_mask=00000000 audif_route=00000000 spds=00000000 spdi1_ctl0=00000000 spdi1_ctl1=00000000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000000 audbrg_mask=00000000 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[  216.788729] h713-hdmi-dsp-probe: status=00000000 user_owner=00000050 kernel_owner=00000000; no command issued

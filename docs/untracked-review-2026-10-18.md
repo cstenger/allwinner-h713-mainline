@@ -202,3 +202,17 @@ Useful logs/structured traces and exact original notes are committed with
 source/export hashes. Raw rings, WAV/EDID copies and empty companion outputs
 remain local with explicit dispositions. No source/ignore rules changed and
 no hardware, network or playback operations were performed.
+
+## October 19 early audio/DSP history follow-up
+
+The final substantive evidence group identified by the later untracked audit
+is curated in [audio-bringup-history](audio-bringup-history/README.md): October 7
+cold resume, DSP cold-start and DSP readiness. All 61 candidates are accounted
+for, plus five already-local disassemblies. There are 54 unique exports, six
+mapped duplicate originals and one empty command log. Cached metadata is kept
+separate from execution/PCM evidence; old DSP ownership and PLL interpretations
+link forward to their later corrections. The failed probe and successful
+route-restoration boundaries remain distinct. No hardware, code or ignore-rule
+changes were made. Remaining original raw records, snapshots, research and
+bookkeeping stay local under the existing dispositions; the October 19 audit
+report remains a separate documentation follow-up.

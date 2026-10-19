@@ -1,0 +1,42 @@
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win\x0d
+command help of win\x0d
+for window debug only\x0d
+\x0d
+VS:/$ 
+[  777.844462] h713-hdmi-dsp-probe: route owner restored=00000050 kernel_owner=00000000
+[  780.482692] h713-hdmi-dsp-probe: status=00000120 user_owner=00000050 kernel_owner=00000000; no command issued
+[  780.496932] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  780.506035] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  780.516062] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  780.525976] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  780.535790] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  780.546681] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  780.556969] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  780.567194] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  780.576282] h713-hdmi-dsp-probe: I2SIN1 interface word0012=8000 saved=0000
+[  780.584981] h713-hdmi-dsp-probe: capture_route=1 selector=1617 mute=00 saved_selector=0000 saved_mute=01
+[  780.596265] h713-hdmi-dsp-probe: route owner restored=00000050 kernel_owner=00000000
+[  780.615626] h713-hdmi-bridge-trial: clock=bus-hdmi-audio inherited_on=1 enabled_by_probe=0 rate=100000000
+[  780.626753] h713-hdmi-bridge-trial: clock=hdmi-audio inherited_on=1 enabled_by_probe=0 rate=1152000000
+[  780.637783] h713-hdmi-bridge-trial: clock=audio-cpu inherited_on=1 enabled_by_probe=0 rate=100000000
+[  780.648487] h713-hdmi-bridge-trial: clock=audio-umac inherited_on=1 enabled_by_probe=0 rate=100000000
+[  780.659140] h713-hdmi-bridge-trial: clock=audio-ihb inherited_on=1 enabled_by_probe=0 rate=100000000
+[  780.669810] h713-hdmi-bridge-trial: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[  780.682622] h713-hdmi-bridge-trial: Audio Bridge private direct-DMA device ready
+[  780.692324] h713-hdmi-bridge-trial: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[  780.707032] h713-hdmi-bridge-trial: Audio Bridge entering stage 2: inert stream registers
+[  780.716451] h713-hdmi-bridge-trial: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00003207
+[  780.728256] h713-hdmi-bridge-trial: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[  780.742774] h713-hdmi-bridge-trial: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[  780.751960] h713-hdmi-bridge-trial: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[  780.764702] h713-hdmi-bridge-trial: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[  780.775687] h713-hdmi-bridge-trial: Audio Bridge entering stage 4: flush/start
+[  780.784032] h713-hdmi-bridge-trial: Audio Bridge stage 4 ready; output stream 0 started
+[  780.793123] h713-hdmi-bridge-trial: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[  780.803769] h713-hdmi-bridge-trial: SPDI1 activated ctl0=00000000->90000000 ctl1=00000000->00003000 open=1
+[  780.814459] h713-hdmi-bridge-trial: armed; status snapshots available
+[  780.821925] h713-hdmi-bridge-trial: snapshot=1 audif_irq=00000000 audif_mask=00300052 audif_route=00000000 spds=00000000 spdi1_ctl0=90000000 spdi1_ctl1=00003000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000001 audbrg_mask=00000010 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[  780.859475] h713-hdmi-bridge-trial: bridge_snapshot=1 start=006c6000 end=006c6fff block=00000040 config=00003207 flush=00000000 addr_hi=00000070
+[  780.884297] h713-hdmi-bridge-trial: dma_snapshot=1 addr=0x0000000076c60000 changed=0 first=65536 last=0 fnv1a=62519dc5 bridge_irq_count=0 bridge_irq_last=00000000

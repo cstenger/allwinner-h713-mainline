@@ -1,0 +1,61 @@
+[
+  {
+    "function": "MAPI_AUD_EnableInterface",
+    "args": [
+      38400,
+      0
+    ],
+    "returncode": 0,
+    "writes": [
+      {
+        "function": "tdAudioDSPWriteRegMaskWord",
+        "args": [
+          0,
+          18,
+          32768,
+          65535
+        ]
+      }
+    ]
+  },
+  {
+    "function": "MAPI_AUD_SetDTVOutChannel",
+    "args": [
+      38144,
+      0,
+      0
+    ],
+    "returncode": 0,
+    "writes": [
+      {
+        "function": "tdAudioDSPWriteRegMaskWord",
+        "args": [
+          0,
+          32794,
+          2,
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "function": "MAPI_AUD_CFG_SetI2SInputConfig",
+    "args": [
+      38400,
+      0,
+      0
+    ],
+    "returncode": 0,
+    "writes": [
+      {
+        "function": "tdAudioDSPWriteRegMaskWord",
+        "args": [
+          0,
+          18,
+          9215,
+          0
+        ]
+      }
+    ]
+  }
+]
