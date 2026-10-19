@@ -64,7 +64,11 @@ The final build SHA256
 DSP resource reservation, formatting and accurate readiness logging. A no-MMIO
 resource-owner test proved that a conflicting reservation rejects initialization
 before audio setup, with unchanged kernel log. Its source is retained as
-`resource-owner-test.c`. [Result](early-resource-rejection.log).
+[the standalone test module](../../../modules/hdmi-dsp-resource-test/h713-dsp-resource-owner-test.c).
+It preserves the original command-range reservation; build instructions and
+offline checks are in the [helper guide](../../hdmi-capture-test-helpers.md).
+[Historical result](early-resource-rejection.log); no new hardware test was
+performed during the source move.
 
 On the new guarded boot, the final build automatically initialized DSP from0/0,
 verified1/1 and all22 graph words. A16-second capture at48kHz input deliberately

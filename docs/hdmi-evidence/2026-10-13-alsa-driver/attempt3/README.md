@@ -26,7 +26,11 @@ WAVs, host hardware parameters, ELD, capture logs and bounded signal-helper
 evidence. [Continuity analysis](continuity-analysis.json) screens the settled
 3–9 second interval in 960-frame blocks: maximum residual phase increment was
 less than 0.00088 radians, with relative amplitude above 0.99998. Its companion
-script includes clean-tone, phase-step and silence-gap controls. Periodic tones
+[tool](../../../../tools/hdmi/check-continuity.py) now accepts explicit input
+WAVs and a new report path; its separate
+[offline tests](../../../../tools/hdmi/test-continuity.py) include clean-tone,
+phase-step and silence-gap controls. See the [helper guide](../../../hdmi-capture-test-helpers.md).
+The historical report above is unchanged. Periodic tones
 cannot detect every possible dropped/repeated sample; this is a short bench
 acceptance result, not proof of long-term continuity.
 
