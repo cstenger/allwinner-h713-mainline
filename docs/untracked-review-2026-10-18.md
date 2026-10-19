@@ -1,5 +1,11 @@
 # Remaining untracked-file review — October 18, 2026
 
+Final status, October 19: all planned tool/evidence groups below are complete.
+The [refreshed final audit](untracked-review-2026-10-19.md) accounts for all 546
+remaining untracked files as local-only, with no unresolved code/evidence
+candidate. The original snapshot and dated follow-up notes below are retained
+as review history; no additional ignore rules or local exclusions were applied.
+
 Snapshot after speaker-split commit `5baedcb`: **1,214 initially untracked,
 non-ignored files**. Every file has a category, size and SHA-256 in the local
 `build/untracked-review-2026-10-18/inventory.json`; that directory also contains
