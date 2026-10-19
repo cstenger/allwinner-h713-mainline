@@ -1,0 +1,24 @@
+[sent 14 bytes: 'regr 06880004']
+[reply: 60 bytes]
+regr 06880004\x0d
+addr: 06880004, Value: 0x00000010
+\x0d
+VS:/$ 
+[sent 14 bytes: 'regr 0688000c']
+[reply: 60 bytes]
+regr 0688000c\x0d
+addr: 0688000c, Value: 0x00000000
+\x0d
+VS:/$ 
+[  140.528780] h713-hdmi-audio-probe: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[  140.539480] h713-hdmi-audio-probe: armed; status snapshots available
+[  140.547184] h713-hdmi-audio-probe: snapshot=1 audif_irq=00000000 audif_mask=00000000 audif_route=00000000 spds=00000000 spdi1_ctl0=00000000 spdi1_ctl1=00000000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000000 audbrg_mask=00000000 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[  149.600673] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[  149.624598] h713-scp-probe: payload=ffffff00,00ffffff pre-enable EDID=ffffff00,ffffff00,ffffff00
+[  149.634815] h713-scp-probe: active HPD=00000000 b00=00a0a0a0 b04=07000007 b08=00c0c0c0 headers=00000000,00000000,00000000
+[  149.647090] h713-scp-probe: active IO 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  149.656946] h713-scp-probe: EDID trial ready; holding HPD asserted for 30000 ms
+[  175.384546] h713-hdmi-audio-probe: snapshot=2 audif_irq=00000000 audif_mask=00000000 audif_route=00000000 spds=00000000 spdi1_ctl0=00000000 spdi1_ctl1=00000000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000000 audbrg_mask=00000000 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[  181.223839] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  181.238456] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+[  185.994118] h713-ddc-pins: DDC pins returned to inputs and ownership released

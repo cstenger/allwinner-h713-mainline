@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "scope": "diagnostic firmware patch table; no live MIPS code patching",
+  "firmware_sha256": "4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce",
+  "installed_uboot_padded_sha256": "c882461d5ee69128c79d99b784fde668ee4d57ab09ae308738e3f9ea91fd1ce7",
+  "fit_table_offset": 601380,
+  "uboot_data_offset": 308,
+  "ram_offset_from_relocaddr": 601072,
+  "table_bytes": 672,
+  "mailbox_physical": 1301807104,
+  "fields": {
+    "monitor_calls": 256,
+    "status_change_dispatches": 260,
+    "current_status": 264,
+    "previous_status": 268,
+    "n": 272,
+    "sample_rate_hz": 276,
+    "audio_object": 280
+  },
+  "removed_feature": "VIncap interrupt-mask counters",
+  "preserved_features": "CPU_COMM, source-3, canaries, panel traces",
+  "cold_start_required": true
+}

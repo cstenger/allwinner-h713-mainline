@@ -146,3 +146,17 @@ The two TVFE duplicates and the duplicate completion header were compared
 byte-for-byte with their tracked counterparts. Every original file is hashed
 in the local inventory. No follow-up sources or evidence have been staged or
 committed as part of this review.
+
+## October 19 audio tracing follow-up
+
+The first audio group is now curated in
+[audio-trace-diagnostics](audio-trace-diagnostics/README.md): monitor, RTT
+readback and dispatch generators/readers/tests, with the RAM installer reduced
+to an unconditional refusal and its prototype archived as text. Exact-image
+candidate regeneration matches all three historical profiles and hashes.
+The four October 7 baseline/trace directories have curated summaries,
+non-executable script/notes snapshots and normalized logs with source/export
+hashes. Their raw log/script originals and binary/media/disassembly inputs
+remain local; see the manifest for dispositions. Later metadata retry/init,
+PLL word/byte tools and October 8 evidence remain follow-ups. This cleanup
+performed no hardware access.
