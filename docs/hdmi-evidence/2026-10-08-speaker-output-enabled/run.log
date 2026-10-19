@@ -1,0 +1,44 @@
+  7.22 $ echo idle; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+idle
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=00000000
+  0.00 START: control beep
+  2.93 $ echo after-beep; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+after-beep
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=80000000
+  6.27 LOCK state 5 1280x720
+  6.27 host pcm {'card': 0, 'device': 8, 'pcm': 'hw:0,8', 'eld': '/proc/asound/card0/eld#0.8', 'monitor_name': 'H713 HDMI IN', 'connection_type': 'HDMI', 'sad_count': 1}
+  6.76 $ echo 1 > /sys/module/h713_hdmi_speaker_split/parameters/dac_i2s
+  6.76 DAC <- DSP I2S
+  7.15 $ echo dac-i2s-no-tone; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+dac-i2s-no-tone
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+  9.52 $ echo dac-i2s-no-tone+2; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+dac-i2s-no-tone+2
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+  9.52 HDMI TONE START
+Playing WAVE '/tmp/h713-split-tone.wav' : Signed 16 bit Little Endian, Rate 48000 Hz, Stereo
+ 11.95 $ echo tone-0; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+tone-0
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+ 15.15 $ echo tone-1; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+tone-1
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+ 18.16 $ echo tone-2; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+tone-2
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+ 21.19 $ echo tone-3; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+tone-3
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+ 24.19 $ echo tone-4; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+tone-4
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+ 27.23 $ echo tone-5; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+tone-5
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+ 27.84 HDMI TONE END rc=0
+ 28.26 $ echo after-tone; cat /sys/module/h713_hdmi_speaker_split/parameters/status
+after-tone
+ctl=00000013 ista=00000000 fsta=00000100 rxcnt=00000000 dac_dpc=e0000000
+ 28.73 $ echo 0 > /sys/module/h713_hdmi_speaker_split/parameters/dac_i2s
+ 29.13 $ pkill -x pw-play || test $? -eq 1
+ 40.26 END hpd trial rc=0

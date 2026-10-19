@@ -8,17 +8,18 @@
  * of that path so a listener can say whether HDMI audio reaches the DSP.
  *
  * insmod:  check both DSP versions are nonzero (stock patch already loaded),
- *          save and apply route 0x89 selectors, HDMI unmute and I2SIN1 enable,
+ *          save and apply route 0x89 selectors, HDMI unmute and I2S interface settings,
  *          save and apply the stock internal-I2S init (vendor kernel
  *          0xc08320a0) plus the I2S half of the stock "DAC Src Select = I2S"
  *          put (0xc0831e2c).
  * dac_i2s: 1 sets DAC_DPC bits 30 and 29 (the DAC half of that put); 0 clears
  *          them. Toggle only while an ALSA playback stream keeps the DAC on.
- * rmmod:   restores every DSP word and codec register this module changed.
+ * rmmod: restores codec registers, and DSP words while the port remains healthy.
+ * A DSP timeout stops commands and requires a cold restart before further tests.
  *
- * The DSP command protocol is copied from h713-hdmi-dsp-probe, which was
- * validated on hardware. Its 0x02031078 "owner" handshake is NOT used: that
- * address is a register of the internal I2S block this module configures.
+ * DSP commands use stock WaitDSPFree/ReleaseDSP at 0x05001530/34.
+ * The caller must establish power/clocks and exclusive ARM diagnostic access
+ * before acknowledging lock_window_ready=1.
  */
 #include <linux/delay.h>
 #include <linux/io.h>
@@ -26,13 +27,17 @@
 #include <linux/irqflags.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include "h713-dsp-lock.h"
 
-static void __iomem *port, *codec, *i2s;
+static void __iomem *port, *codec, *i2s, *lock_window;
+static struct h713_dsp_lock dsp_lock;
 static DEFINE_MUTEX(lock);
-static bool armed, applied, dac_i2s, failed;
+static bool armed, applied, dac_i2s, failed, lock_window_ready;
 module_param(armed, bool, 0400);
+module_param(lock_window_ready, bool, 0400);
+MODULE_PARM_DESC(lock_window_ready, "Stock lock window power/clocks checked; exclusive ARM DSP diagnostic client");
 
-static int dsp_read(u16 address, u32 *response)
+static int dsp_read_unlocked(u16 address, u32 *response)
 {
 	unsigned long flags;
 	u32 status;
@@ -58,7 +63,7 @@ done:
 	return ret;
 }
 
-static int dsp_read1(u16 address, u32 *response)
+static int dsp_read1_unlocked(u16 address, u32 *response)
 {
 	unsigned long flags;
 	u32 status;
@@ -84,7 +89,7 @@ done:
 	return ret;
 }
 
-static int dsp_write(u16 address, u16 value)
+static int dsp_write_unlocked(u16 address, u16 value)
 {
 	u32 status;
 	int ret = readl_poll_timeout(port, status, !(status & BIT(4)), 10, 10000);
@@ -94,6 +99,69 @@ static int dsp_write(u16 address, u16 value)
 	writel(((u32)address << 16) | value, port + 0xc);
 	usleep_range(1000, 1100);
 	return readl_poll_timeout(port, status, !(status & BIT(4)), 10, 10000);
+}
+
+/* Each DSP command uses the cross-processor lock. The module's mutex
+ * additionally serializes its sysfs/teardown operations on ARM.
+ */
+static int dsp_read(u16 address, u32 *response)
+{
+	int ret, release_ret;
+
+	if (failed)
+		return -EIO;
+	ret = h713_dsp_claim(&dsp_lock);
+	if (ret) {
+		failed = true;
+		return ret;
+	}
+	ret = dsp_read_unlocked(address, response);
+	release_ret = h713_dsp_release(&dsp_lock);
+	if (release_ret) {
+		failed = true;
+		return release_ret;
+	}
+	return ret;
+}
+
+static int dsp_read1(u16 address, u32 *response)
+{
+	int ret, release_ret;
+
+	if (failed)
+		return -EIO;
+	ret = h713_dsp_claim(&dsp_lock);
+	if (ret) {
+		failed = true;
+		return ret;
+	}
+	ret = dsp_read1_unlocked(address, response);
+	release_ret = h713_dsp_release(&dsp_lock);
+	if (release_ret) {
+		failed = true;
+		return release_ret;
+	}
+	return ret;
+}
+
+static int dsp_write(u16 address, u16 value)
+{
+	int ret, release_ret;
+
+	if (failed)
+		return -EIO;
+	ret = h713_dsp_claim(&dsp_lock);
+	if (ret) {
+		failed = true;
+		return ret;
+	}
+	ret = dsp_write_unlocked(address, value);
+	release_ret = h713_dsp_release(&dsp_lock);
+	if (release_ret) {
+		failed = true;
+		return release_ret;
+	}
+	return ret;
 }
 
 /* Write a whole word and read it back. */
@@ -114,9 +182,10 @@ static int dsp_set(u16 address, u16 value)
 }
 
 /* Route 0x89 (HDMI2PCM_MIXED_TO_S), decoded from the stock preset and executed
- * offline against the stock library; plus HDMI unmute and I2SIN1 enable.
+ * offline against the stock library; plus stock I2SIN1/I2SOUT1 format and
+ * enables. See 2026-10-08-audio-safety/speaker-init-code.json.
  */
-static const u16 dsp_words[] = { 0x0077, 0x0118, 0x0020, 0x8017, 0x0012 };
+static const u16 dsp_words[] = { 0x0077, 0x0118, 0x0020, 0x001f, 0x001e, 0x0012, 0x8017 };
 static u32 dsp_saved[ARRAY_SIZE(dsp_words)];
 
 static u16 dsp_target(unsigned int i)
@@ -126,7 +195,10 @@ static u16 dsp_target(unsigned int i)
 	case 0x0118: return 0x7c7d;
 	case 0x0020: return 0x2e2f;
 	case 0x8017: return dsp_saved[i] & ~1;
-	default:     return dsp_saved[i] | 0x8000;
+	case 0x001f: return (dsp_saved[i] & ~0xf93f) | 0x3000;
+	case 0x001e: return 0xa440; /* enable + stock 0x3000a440 configuration */
+	case 0x0012: return (dsp_saved[i] & ~0x23ff) | 0x8180;
+	default:     return dsp_saved[i];
 	}
 }
 
@@ -220,15 +292,22 @@ static void restore_all(void)
 {
 	unsigned int i;
 
-	writel((readl(codec) & ~(BIT(30) | BIT(29))) | (dpc_saved & (BIT(30) | BIT(29))), codec);
-	for (i = ARRAY_SIZE(i2s_regs); i-- > 0;)
-		writel(i2s_saved[i], i2s + i2s_regs[i]);
+	if (applied) {
+		writel((readl(codec) & ~(BIT(30) | BIT(29))) |
+		       (dpc_saved & (BIT(30) | BIT(29))), codec);
+		for (i = ARRAY_SIZE(i2s_regs); i-- > 0;)
+			writel(i2s_saved[i], i2s + i2s_regs[i]);
+	}
 	if (failed) {
 		pr_warn("h713-speaker-split: DSP failed earlier; DSP words left as they are\n");
 		return;
 	}
-	for (i = 0; i < ARRAY_SIZE(dsp_words); i++)
-		dsp_set(dsp_words[i], dsp_saved[i]);
+	for (i = ARRAY_SIZE(dsp_words); i-- > 0;) {
+		if (dsp_set(dsp_words[i], dsp_saved[i])) {
+			pr_err("h713-speaker-split: restore failed at %04x; stop, cold restart required\n", dsp_words[i]);
+			return;
+		}
+	}
 	dump_i2s("restored");
 }
 
@@ -238,12 +317,15 @@ static int __init split_init(void)
 	unsigned int i;
 	int ret;
 
-	if (!armed)
+	if (!armed || !lock_window_ready)
 		return -EPERM;
 	port = ioremap(0x06144000, 0x1c);
 	codec = ioremap(0x02030000, 4);
 	i2s = ioremap(0x02031000, 0x7c);
-	if (!port || !codec || !i2s) {
+	lock_window = ioremap(0x05001530, 8);
+	dsp_lock.peer = lock_window;
+	dsp_lock.own = lock_window ? lock_window + 4 : NULL;
+	if (!port || !codec || !i2s || !lock_window) {
 		ret = -ENOMEM;
 		goto unmap;
 	}
@@ -273,13 +355,13 @@ static int __init split_init(void)
 		if (ret)
 			break;
 	}
-	apply_i2s();
-	applied = true;
-	dump_i2s("applied");
 	if (ret) {
 		restore_all();
 		goto unmap;
 	}
+	apply_i2s();
+	applied = true;
+	dump_i2s("applied");
 	return 0;
 unmap:
 	if (port)
@@ -288,6 +370,8 @@ unmap:
 		iounmap(codec);
 	if (i2s)
 		iounmap(i2s);
+	if (lock_window)
+		iounmap(lock_window);
 	return ret;
 }
 
@@ -299,6 +383,7 @@ static void __exit split_exit(void)
 	iounmap(port);
 	iounmap(codec);
 	iounmap(i2s);
+	iounmap(lock_window);
 }
 module_init(split_init);
 module_exit(split_exit);
