@@ -190,3 +190,15 @@ or recovered PCM. All MIPS tool groups from this inventory are now handled.
 Older October 8 audio safety/rate evidence remains a separate follow-up, and
 raw sources/images/media/dumps/disassemblies remain local as documented.
 No hardware was accessed in this cleanup.
+
+## October 19 October 8 audio-history follow-up
+
+The audio safety and rate-test records are curated in
+[audio-oct8-history](audio-oct8-history/README.md). The safety preflight,
+pre-playback DSP setup abort and successful cold-start rate sweep remain
+separate. All 16 retained raw DMA rings were re-analyzed offline; saved tone,
+silence, level and inferred-rate results reproduce, as do IRQ-rate calculations.
+Useful logs/structured traces and exact original notes are committed with
+source/export hashes. Raw rings, WAV/EDID copies and empty companion outputs
+remain local with explicit dispositions. No source/ignore rules changed and
+no hardware, network or playback operations were performed.

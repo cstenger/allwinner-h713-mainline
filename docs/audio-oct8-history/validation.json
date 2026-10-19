@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-19",
+  "python": "3.14.8",
+  "hardware_accessed": false,
+  "network_accessed": false,
+  "source_or_ignore_rules_changed": false,
+  "original_files_in_manifest": 149,
+  "evidence_exports_verified": 82,
+  "local_files_preserved": 67,
+  "original_and_export_hashes_verified": true,
+  "active_document_links_checked": true,
+  "historical_preflight": {
+    "initial_lock_and_clock_words": {
+      "02001d48": "80000002",
+      "02001d4c": "80000002",
+      "05001530": "00000000",
+      "05001534": "00000000"
+    },
+    "post_version_read_words": {
+      "02001d48": "80000002",
+      "02001d4c": "80000002",
+      "05001530": "00000000",
+      "05001534": "000000aa"
+    },
+    "device_version_reads": [
+      1,
+      1
+    ],
+    "lock_test": "Historical PASS record, 1000 cycles; not rerun"
+  },
+  "speaker_model": {
+    "model_rerun": false,
+    "init_returncode": 0,
+    "connect_returncode": 0,
+    "init_events": 1225,
+    "init_writes": 990,
+    "connect_writes": 6,
+    "interface_writes_confirmed_in_saved_trace": true,
+    "scope": "Offline code execution with hardware/timing stubs; not a live initialization recipe"
+  },
+  "aborted_attempt": {
+    "verified_graph_writes": 9,
+    "timeout_word": "0012",
+    "completion_clear_us": 50102,
+    "playback_ran": false,
+    "partial_dsp_graph_restoration_verified": false
+  },
+  "completed_attempt": {
+    "applied_graph_words": 22,
+    "reverse_restored_words": 22,
+    "saved_value_readbacks_match": true,
+    "rate_trials": 4,
+    "raw_rings_reanalyzed": 16,
+    "source_helpers": [
+      {
+        "path": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-evidence/source.json",
+        "sha256": "92bdd91038a332a55b1ae40cb4129d32be0e23e0c254c2abb49504abc3fd9878",
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "final_status": "disconnected",
+        "final_enabled": "disabled"
+      },
+      {
+        "path": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-evidence/source.json",
+        "sha256": "f8063481a10bd508df6ccfec63c1c8f1b148e533c0488f3f27c5eb52c590a4cb",
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "final_status": "disconnected",
+        "final_enabled": "disabled"
+      },
+      {
+        "path": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-evidence/source.json",
+        "sha256": "a61a575b69b56a22b68d53b6db1749e993f10de38194cc020954d208166502e3",
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "final_status": "disconnected",
+        "final_enabled": "disabled"
+      },
+      {
+        "path": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-evidence/source.json",
+        "sha256": "dc0b818dc9025ec4cbbc0810495124fda6dfccb2bdf28b82e919ce86599dcced",
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "final_status": "disconnected",
+        "final_enabled": "disabled"
+      }
+    ]
+  },
+  "limits": "Archive integrity and offline re-analysis only, not a fresh hardware trial. Boot states and partial/complete DSP cleanup remain distinct. No physical clock measurement, continuous capture/drift or seamless rate-transition claim."
+}
