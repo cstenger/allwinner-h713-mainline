@@ -1,0 +1,52 @@
+{
+  "recording_duration": 199.59466666666665,
+  "test_start_approx_seconds": 109.37,
+  "strong_transient_candidates_seconds": [
+    26.4,
+    32.84,
+    64.22
+  ],
+  "tones": [
+    {
+      "source_dbfs_peak": -36,
+      "recorded_fundamental_dbfs_approx": -58.1603637928346,
+      "recorded_harmonic_ratio_percent_uncalibrated": 23.734056229252488
+    },
+    {
+      "source_dbfs_peak": -30,
+      "recorded_fundamental_dbfs_approx": -54.04706111337822,
+      "recorded_harmonic_ratio_percent_uncalibrated": 12.98641600357934
+    },
+    {
+      "source_dbfs_peak": -24,
+      "recorded_fundamental_dbfs_approx": -48.520091897970296,
+      "recorded_harmonic_ratio_percent_uncalibrated": 10.0714182790014
+    },
+    {
+      "source_dbfs_peak": -18,
+      "recorded_fundamental_dbfs_approx": -41.12087453014035,
+      "recorded_harmonic_ratio_percent_uncalibrated": 9.524456747930284
+    },
+    {
+      "source_dbfs_peak": -12,
+      "recorded_fundamental_dbfs_approx": -33.5634704133019,
+      "recorded_harmonic_ratio_percent_uncalibrated": 11.177812861563133
+    },
+    {
+      "source_dbfs_peak": -6,
+      "recorded_fundamental_dbfs_approx": -28.86670060730343,
+      "recorded_harmonic_ratio_percent_uncalibrated": 7.2769235359411635
+    }
+  ],
+  "limitations": "Phone AAC/microphone/AGC and ambient sound prevent calibrated THD/SPL or identifying transient origin without operator timing.",
+  "candidate_impulse_peak_dbfs": -13.689227104187012,
+  "whole_recording_sample_peak_dbfs": -8.75272274017334,
+  "timing_correlation": {
+    "method": "Host playback launch and WAV alignment, host time minus board uptime via SSH. Approximate: includes unmeasured playback latency, SSH midpoint error and possible host clock adjustments.",
+    "estimated_board_boot_in_recording_seconds": 45.79,
+    "speaker_service_start_in_recording_seconds": 66.28,
+    "codec_pcm_trigger_in_recording_seconds": 67.35,
+    "fade_ready_in_recording_seconds": 67.63,
+    "interpretation": "Strong impulse at 64.22 precedes estimated speaker service startup. It is near earlier HDMI backend initialization, but timing alone does not establish its source."
+  }
+}
