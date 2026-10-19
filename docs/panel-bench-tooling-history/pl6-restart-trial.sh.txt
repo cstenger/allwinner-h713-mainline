@@ -1,0 +1,71 @@
+#!/bin/sh
+# Rail-level restart trial for the lit-but-black panel (see the 2026-10-16
+# evidence under docs/hdmi-evidence/2026-10-16-uboot-kernel-dts/).
+# RUNS ON THE HOST, serial on /dev/ttyUSB0, board on $BOARD.
+#
+# Each round: display register dump, ordered panel power-down (unbinding the
+# display driver), sync + emergency read-only remount, then PL6 low. PL6
+# enables the SoC's core rails (vdd-cpu/vdd-sys/vcc-pll/vcc-dram); dropping
+# it collapses them, the SoC resets and the board comes back by itself on
+# mains (kernel patch 0177's negative result). Serial is captured across it.
+#
+#   usage: tools/display/pl6-restart-trial.sh <out-dir> [rounds] [settle-s]
+set -eu
+OUT=${1:?usage: $0 <out-dir> [rounds] [settle-seconds]}
+ROUNDS=${2:-3}
+SETTLE=${3:-60}
+BOARD=${BOARD:-192.168.4.1}
+TTY=${TTY:-/dev/ttyUSB0}
+HERE=$(cd "$(dirname "$0")" && pwd)
+SSH="ssh -o BatchMode=yes -o ConnectTimeout=5 root@$BOARD"
+mkdir -p "$OUT"
+
+wait_up() { until $SSH true 2>/dev/null; do sleep 3; done; }
+
+dump() {
+	scp -q -o BatchMode=yes "$HERE/disp-regdump.sh" "root@$BOARD:/tmp/disp-regdump.sh"
+	$SSH 'cat /proc/sys/kernel/random/boot_id; cat /proc/uptime;
+	      ls /proc/device-tree/chosen | grep h713 || echo "warm path";
+	      sh /tmp/disp-regdump.sh' > "$1"
+}
+
+wait_up
+# On a cold HDMI boot, cut only from a running HDMI session: wait for the
+# signal owner, then let the session run a little.
+if $SSH 'ls /proc/device-tree/chosen | grep -q h713'; then
+	until [ "$($SSH 'systemctl is-active h713-hdmi-signal' 2>/dev/null)" = active ]; do
+		sleep 2
+	done
+	echo "== HDMI session up; cutting in 30 s"
+	sleep 30
+fi
+r=1
+while [ $r -le "$ROUNDS" ]; do
+	D="$OUT/round$r"
+	mkdir -p "$D"
+	echo "== round $r: session up $($SSH 'cut -d" " -f1 /proc/uptime') s, path $($SSH 'ls /proc/device-tree/chosen | grep -q h713 && echo cold-HDMI || echo warm')"
+	dump "$D/before.txt"
+	stty -F "$TTY" 115200 raw -echo
+	timeout 120 cat "$TTY" > "$D/serial.log" &
+	CAT=$!
+	sleep 1
+	echo "   rail cut at $(date +%T)"
+	$SSH 'dmesg -n 7
+	      echo 5600000.display > /sys/bus/platform/drivers/sun50i-h713-afbd/unbind
+	      sleep 1; sync
+	      echo s > /proc/sysrq-trigger; echo u > /proc/sysrq-trigger; sleep 2
+	      R=0x07022000; d=$(busybox devmem $((R+0x10)))
+	      busybox devmem $((R+0x10)) 32 $(printf 0x%08x $(( d & ~(1<<6) )))
+	      sleep 5; echo "PL6 cut did not reset the board"' || true
+	sleep 20
+	wait_up
+	wait $CAT || true
+	echo "   back at $(date +%T) -- note the lens now"
+	dump "$D/after.txt"
+	tr -d '\r' < "$D/serial.log" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' |
+		grep -aE "panel powered down|U-Boot SPL|FIFO|stock power|boot logo published" |
+		cut -c1-150 | sed 's/^/   /'
+	[ $r -lt "$ROUNDS" ] && sleep "$SETTLE"
+	r=$((r + 1))
+done
+echo "== done at $(date +%T)"

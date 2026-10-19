@@ -1,0 +1,17 @@
+#!/bin/sh
+# Snapshot of the always-on (R) domain registers that survive a warm reset
+# and a PL6 core-rail cut. RUNS ON THE TARGET; diff two runs.
+# Only blocks the kernel itself reads at runtime: the PPU power domains,
+# R_CCU and the R_PIO L bank. Never 0x0709xxxx (a read of 0x07091000 wedges
+# the SoC; see the CPUS/ARISC MMIO notes).
+set -eu
+rd() { printf '0x%08x %s\n' "$1" "$(busybox devmem "$1")"; }
+# PPU: per domain (stride 0x80) wait-mode, off/on delays, control, status
+for d in 0 1 2 3 4; do
+	for o in 0x00 0x04 0x08 0x0c 0x10; do rd $((0x07001014 + d * 0x80 + o)); done
+done
+# R_CCU 0x07010000..0x070102fc
+o=0
+while [ $o -lt 768 ]; do rd $((0x07010000 + o)); o=$((o + 4)); done
+# R_PIO bank L: cfg0..3, data, drive0..1, pull0..1
+for o in 0x00 0x04 0x08 0x0c 0x10 0x14 0x18 0x24 0x28; do rd $((0x07022000 + o)); done

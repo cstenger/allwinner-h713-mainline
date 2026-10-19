@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Catch U-Boot on a cold boot and send it down the WARM path.
+
+Waits (across the serial adapter coming and going) for U-Boot's autoboot
+prompt, stops it, writes the HDMI launch latch (RTC GP6 = 0x48444d49) and
+boots. The guarded startup script then takes its warm branch: logo only, no
+MIPS relaunch / source 3, no HDMI handoff -- a cold power state without the
+cold HDMI path. Bench use for the lit-but-black panel investigation.
+
+  usage: catch-uboot-warm-path.py <log> [tty]
+"""
+import os
+import sys
+import termios
+import time
+
+LOG = sys.argv[1]
+TTY = sys.argv[2] if len(sys.argv) > 2 else '/dev/ttyUSB0'
+log = open(LOG, 'ab', buffering=0)
+t0 = time.time()
+
+
+def note(text):
+    log.write(f'\n[host +{time.time() - t0:.1f}s] {text}\n'.encode())
+
+
+def open_tty():
+    while True:
+        try:
+            fd = os.open(TTY, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+            a = termios.tcgetattr(fd)
+            a[0] = 0; a[1] = 0; a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL; a[3] = 0
+            a[4] = a[5] = termios.B115200
+            a[6][termios.VMIN] = 0; a[6][termios.VTIME] = 0
+            termios.tcsetattr(fd, termios.TCSANOW, a)
+            note(f'opened {TTY}')
+            return fd
+        except OSError:
+            time.sleep(0.5)
+
+
+fd = open_tty()
+buf = b''
+
+
+def pump(secs):
+    global fd, buf
+    end = time.time() + secs
+    while time.time() < end:
+        try:
+            chunk = os.read(fd, 4096)
+        except BlockingIOError:
+            chunk = b''
+        except OSError:
+            note('tty went away')
+            fd = open_tty()
+            chunk = b''
+        if chunk:
+            buf += chunk
+            log.write(chunk)
+        time.sleep(0.01)
+
+
+def send(text):
+    for b in text.encode():
+        os.write(fd, bytes([b]))
+        time.sleep(0.003)
+
+
+# 1. Wait for U-Boot proper (not the old Linux session still printing).
+while b'U-Boot 20' not in buf[-200000:] or b'SPL' in buf[-200:]:
+    pump(0.2)
+    if b'Hit any key' in buf:
+        break
+note('U-Boot seen; stopping autoboot')
+# 2. Keep tapping a space until the prompt appears.
+mark = len(buf)
+deadline = time.time() + 30
+while b'=> ' not in buf[mark:] and time.time() < deadline:
+    send(' ')
+    pump(0.05)
+if b'=> ' not in buf[mark:]:
+    note('no U-Boot prompt; giving up (normal boot continues)')
+    sys.exit(1)
+send('\x15\n')
+pump(0.5)
+# 3. Latch GP6, show it, boot.
+for cmd in ('md.l 0x07090118 1', 'mw.l 0x07090118 0x48444d49', 'md.l 0x07090118 1', 'boot'):
+    note('sending: ' + cmd)
+    send(cmd + '\n')
+    pump(1.5)
+mark = len(buf)
+deadline = time.time() + 240
+while b'login:' not in buf[mark:] and time.time() < deadline:
+    pump(0.5)
+note('reached login' if b'login:' in buf[mark:] else 'no login prompt within 240 s')

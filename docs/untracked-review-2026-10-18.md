@@ -78,10 +78,11 @@ logs, JSON summaries or figures in that snapshot were hidden.
    RTC launch latch; the PL6 trial cuts the core rails; the watchdog module
    installs a restart handler. They are distinct hardware interventions.
 
-   The TVFE bench `.c` and `.h` copies are byte-identical to
-   `modules/hdmi-audio/h713-hdmi-tvfe.c` and `.h`. Keep those copies local for
-   now, and update the bench build to share the production source before its
-   commit. The remaining bench sources depend on resolving that duplication.
+   Correction from the October 19 tooling review: the TVFE bench `.c` and
+   `.h` entries are relative symlinks to `modules/hdmi-audio/`, rather than
+   copied source. The original hash inventory followed the links. The tooling
+   cleanup tracks those symlinks and tests their targets, so the bench shares
+   the production source without introducing duplicate contents.
 
    Archive the selected October 16/17 logs and the updated
    `docs/review-2026-10-17-panel-black-chatgpt.md` separately, with a short
@@ -126,7 +127,8 @@ The 48 entries in `local-research.txt` comprise:
   experiments. Preserve them locally; use hashes/diffs for provenance where
   needed. The attempt-3 completion header is identical to the tracked
   `modules/hdmi-dsp-probe/h713-dsp-completion.h`.
-- Two duplicate TVFE source files described above.
+- Two TVFE symlink entries originally classified as duplicates; see the
+  October 19 correction above. They are promoted with the bench tooling.
 - Ten serial byte-offset files and three aggregate capture/session logs.
   Retain them to map raw captures to the per-trial excerpts; commit the
   identified trial records instead.
