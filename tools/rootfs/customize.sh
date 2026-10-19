@@ -636,6 +636,36 @@ cat > "$R/etc/tmpfiles.d/h713-cpufreq.conf" <<EOF
 w /sys/devices/system/cpu/cpufreq/schedutil/rate_limit_us - - - - 10000
 EOF
 
+# Logging. The kernel console (ttyS0 and the panel, kernel 0064) defaults to
+# level 7, so every pr_info from the h713 HDMI modules (receiver-edid,
+# hdmi-audio, ddc-pins, hdmi-signal...) was printed on screen. Only warnings
+# and worse go to the console now; info and debug stay in dmesg and the
+# journal. The modules keep logging at info: h713-hdmi-session.py verifies
+# the DSP/TVFE restore by reading those lines back from dmesg. systemd-sysctl
+# runs at ~9 s, before the HDMI modules load (~15 s); only earlier boot lines
+# (aicbsp) still reach the console, as loglevel= lives in the DTS bootargs.
+#   runtime:  dmesg -n 7 (info), dmesg -n 8 (debug), dmesg -n 5 (back to warnings)
+#   read:     journalctl -k -p info -g h713-hdmi-audio ; dmesg -l info,debug
+#   pr_debug: echo "module NAME +p" > /sys/kernel/debug/dynamic_debug/control
+install -d -m 0755 "$R/etc/sysctl.d"
+cat > "$R/etc/sysctl.d/10-h713-console.conf" <<EOF
+# console, default message, minimum console, boot-default console levels.
+# The console prints levels strictly below the first field: 5 shows
+# warnings (4) and worse. Raise it to 7 for info or 8 for debug.
+kernel.printk = 5 4 1 7
+EOF
+# The journal is persistent on a nearly full root (2.7 GB) and had grown to
+# 184 MB. Cap it and rotate in 4 MB files, so the oldest are dropped first.
+install -d -m 0755 "$R/etc/systemd/journald.conf.d"
+cat > "$R/etc/systemd/journald.conf.d/h713-size.conf" <<EOF
+[Journal]
+SystemMaxUse=32M
+SystemMaxFileSize=4M
+SystemKeepFree=64M
+RuntimeMaxUse=16M
+ForwardToConsole=no
+EOF
+
 # WP5: h713-mirror sets the projector's installation mode (kernel 0166's
 # hardware mirror). No /etc/tmpfiles.d/h713-mirror.conf is written here: a
 # default file would override sun50i_h713_afbd.mirror_mode= on the kernel
@@ -721,4 +751,4 @@ HandlePowerKey=ignore
 HandlePowerKeyLongPress=ignore
 EOF
 
-echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media), schedutil rate limit 10 ms"
+echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media), schedutil rate limit 10 ms, console warnings only, journal capped at 32M"
