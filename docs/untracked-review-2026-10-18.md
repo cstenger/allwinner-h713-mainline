@@ -173,3 +173,20 @@ script/notes snapshots, normalized logs and source/export hashes. The later
 scalar-byte correction is retained; collapsed-byte-store and missing-upper-byte
 hypotheses are withdrawn. PLL word-write/byte-read tools and October 8 records
 remain follow-ups. No new hardware trials were performed.
+
+## October 19 PLL access follow-up
+
+The remaining MIPS PLL word-write/byte-read sources are curated in
+[pll-access-experiments](pll-access-experiments/README.md). Shims build from
+committed assembly in unique temporary directories and must match reviewed
+hashes. Candidate guards use exceptions; verifiers take explicit profile paths
+and authenticate all 96 records before opening device memory. Existing real
+stock-epilogue/access-width tests now take explicit private firmware and build
+fresh shims. Both historical candidates and full profiles reproduce exactly.
+The two October 7 evidence directories have curated summaries, text-only script
+snapshots, normalized logs and source/export hashes. The word-write DSP timeout
+is not a valid capture result; the byte-read correction does not establish lock
+or recovered PCM. All MIPS tool groups from this inventory are now handled.
+Older October 8 audio safety/rate evidence remains a separate follow-up, and
+raw sources/images/media/dumps/disassemblies remain local as documented.
+No hardware was accessed in this cleanup.

@@ -123,3 +123,7 @@ all within the original diagnostic table. Generated instructions and full
 profiles remain identical to the historical ones. Source/curated Markdown
 passes strict whitespace checks; exact historical text is checked with
 end-of-line/end-of-file whitespace diagnostics disabled.
+
+The word-write and byte-read layer is now curated separately in the
+[PLL access experiment guide](../pll-access-experiments/README.md), including
+its assembly sources, explicit-profile verifiers and historical correction.

@@ -67,8 +67,9 @@ class Reader:
 
 def verify(reader):
     for address, _, word in trace.monitor_records():
-        if word == 0x3C18AE34:
-            word = 0x3C18AD98
+        # The loader relocates both t8 and k0 trace-base constants.
+        if word in (0x3C18AE34, 0x3C1AAE34):
+            word = (word & 0xFFFF0000) | 0xAD98
         if reader.word(address) != word:
             raise ValueError(f"audio trace instruction mismatch at {address:#x}")
     if reader.word(BASE + 4) != 0x434F4D4D:

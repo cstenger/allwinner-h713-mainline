@@ -1,0 +1,55 @@
+[   55.282865] h713-hdmi-power: enabled clock 2 (vincap-dma)
+[   57.537328] h713-hdmi-power: enabled clock 3 (tvfe-1296m)
+[   59.797155] h713-edid-clock-hold h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[   60.721775] h713-hdmi-tvfe-hold: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[   60.732742] h713-hdmi-tvfe-hold: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[   60.757789] h713-hdmi-tvfe-hold: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[   63.048897] h713-hdmi-audio-probe: clock=bus-hdmi-audio inherited_on=1 enabled_by_probe=0 rate=100000000
+[   63.059928] h713-hdmi-audio-probe: clock=hdmi-audio inherited_on=1 enabled_by_probe=0 rate=1152000000
+[   63.070561] h713-hdmi-audio-probe: clock=audio-cpu inherited_on=1 enabled_by_probe=0 rate=100000000
+[   63.080927] h713-hdmi-audio-probe: clock=audio-umac inherited_on=1 enabled_by_probe=0 rate=100000000
+[   63.091290] h713-hdmi-audio-probe: clock=audio-ihb inherited_on=1 enabled_by_probe=0 rate=100000000
+[   63.101451] h713-hdmi-audio-probe: audio-IHB clock stock word applied 81000002->81000002
+[   63.110631] h713-hdmi-audio-probe: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   63.121024] h713-hdmi-audio-probe: armed; status snapshots available
+[   63.128463] h713-hdmi-audio-probe: snapshot=1 audif_irq=00000000 audif_mask=00000000 audif_route=00000000 spds=00000000 spdi1_ctl0=00000000 spdi1_ctl1=00000000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000000 audbrg_mask=00000000 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[   76.693324] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[   76.715909] h713-scp-probe: payload=ffffff00,00ffffff pre-enable EDID=ffffff00,ffffff00,ffffff00
+[   76.726115] h713-scp-probe: active HPD=00000000 b00=00a0a0a0 b04=07000007 b08=00c0c0c0 headers=00000000,00000000,00000000
+[   76.738399] h713-scp-probe: active IO 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[   76.748297] h713-scp-probe: EDID trial ready; holding HPD asserted for 30000 ms
+[  107.495797] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  107.508474] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+[  110.309432] h713-ddc-pins: DDC pins returned to inputs and ownership released
+[  127.935067] h713-hdmi-dsp-probe: status=00000000 user_owner=00000050 kernel_owner=00000000; no command issued
+[  127.948093] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000000
+[  127.956797] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[  127.965799] h713-hdmi-dsp-probe: beginning fixed stock init/724-pair volatile patch; physical cold boot required for teardown
+[  127.978633] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  127.988453] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  127.997009] h713-hdmi-dsp-probe: stock-init word=00ee before=0200 after=0180 expected=0180
+[  128.006564] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[  128.016168] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[  128.024526] h713-hdmi-dsp-probe: stock-init word=8034 before=0000 after=0010 expected=0010
+[  128.033920] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  128.043417] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  128.051708] h713-hdmi-dsp-probe: stock-init word=8017 before=0000 after=0001 expected=0001
+[  128.972866] h713-hdmi-dsp-probe: requesting device=0 word=fff7 status=00000120
+[  128.982962] h713-hdmi-dsp-probe: patch-word fff7=0000
+[  128.990794] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  129.000846] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  129.010878] h713-hdmi-dsp-probe: stock-patch pairs=724 version0=0001 version1=0001
+[  129.021254] h713-hdmi-dsp-probe: patch owner restored=00000050 kernel_owner=00000000
+[  129.031809] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  129.040771] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  129.049709] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  129.058382] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  129.066861] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  129.076446] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  129.086368] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  129.096890] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  129.105285] h713-hdmi-dsp-probe: I2SIN1 interface word0012=8000 saved=0000
+[  129.113332] h713-hdmi-dsp-probe: capture_route=1 selector=1617 mute=00 saved_selector=0000 saved_mute=01
+[  129.124327] h713-hdmi-dsp-probe: route owner restored=00000050 kernel_owner=00000000
+[  129.142877] h713_hdmi_bridge_trial: unknown parameter 'audio_ready' ignored
+[  129.151035] h713-hdmi-bridge-trial: refusing: armed=1 live_source3=1 receiver_powered=1 are all required

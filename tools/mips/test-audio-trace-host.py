@@ -171,7 +171,7 @@ class DeviceReader(unittest.TestCase):
             self.assertEqual((fd, length, flags, prot), (99, 4096, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE))
             page = real_mmap(-1, length)
             self.maps.append(page)
-            values = {a: (0x3C18AD98 if w == 0x3C18AE34 else w)
+            values = {a: ((w & 0xFFFF0000) | 0xAD98 if w in (0x3C18AE34, 0x3C1AAE34) else w)
                       for a, _, w in self.reader.trace.monitor_records()}
             values.update({self.reader.BASE + off: 0 for off in self.reader.trace.FIELDS.values()})
             values.update({self.reader.BASE+4: 0x434F4D4D, self.reader.BASE+0x80: 0x43414E31,

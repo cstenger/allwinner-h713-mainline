@@ -1,0 +1,20 @@
+[  152.360327] h713-hdmi-bridge-trial: clock=audio-cpu inherited_on=1 enabled_by_probe=0 rate=100000000
+[  152.370563] h713-hdmi-bridge-trial: clock=audio-umac inherited_on=1 enabled_by_probe=0 rate=100000000
+[  152.380774] h713-hdmi-bridge-trial: clock=audio-ihb inherited_on=1 enabled_by_probe=0 rate=100000000
+[  152.391108] h713-hdmi-bridge-trial: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[  152.403544] h713-hdmi-bridge-trial: Audio Bridge private direct-DMA device ready
+[  152.412792] h713-hdmi-bridge-trial: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[  152.427153] h713-hdmi-bridge-trial: Audio Bridge entering stage 2: inert stream registers
+[  152.436231] h713-hdmi-bridge-trial: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00003207
+[  152.447718] h713-hdmi-bridge-trial: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[  152.461928] h713-hdmi-bridge-trial: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[  152.470827] h713-hdmi-bridge-trial: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[  152.483293] h713-hdmi-bridge-trial: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[  152.493990] h713-hdmi-bridge-trial: Audio Bridge entering stage 4: flush/start
+[  152.502085] h713-hdmi-bridge-trial: Audio Bridge stage 4 ready; output stream 0 started
+[  152.510943] h713-hdmi-bridge-trial: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[  152.521365] h713-hdmi-bridge-trial: SPDI1 activated ctl0=00000000->90000000 ctl1=00000000->00003000 open=1
+[  152.531889] h713-hdmi-bridge-trial: armed; status snapshots available
+[  152.539200] h713-hdmi-bridge-trial: snapshot=1 audif_irq=00000000 audif_mask=00300052 audif_route=00000000 spds=00000000 spdi1_ctl0=90000000 spdi1_ctl1=00003000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000001 audbrg_mask=00000010 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[  152.576414] h713-hdmi-bridge-trial: bridge_snapshot=1 start=006c6000 end=006c6fff block=00000040 config=00003207 flush=00000000 addr_hi=00000070
+[  152.601162] h713-hdmi-bridge-trial: dma_snapshot=1 addr=0x0000000076c60000 changed=0 first=65536 last=0 fnv1a=62519dc5 bridge_irq_count=0 bridge_irq_last=00000000
