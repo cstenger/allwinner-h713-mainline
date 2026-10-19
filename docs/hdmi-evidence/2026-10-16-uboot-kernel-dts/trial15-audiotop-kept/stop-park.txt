@@ -1,0 +1,10 @@
+{"phase": "stopped", "tvfe_restored": true}
+stop exit=0
+audio-top now ctl=0x00000000 cfg=0x00000000
+{"phase": "parked", "receiver_removed": true, "cold_boot_required": true}
+park exit=0
+all removed
+[   97.201663] h713-tvfe-bench: audio-top kept at ctl=00000700 cfg=011a5e00 (not restored)
+[   97.201688] h713-tvfe-bench: restored audio-IHB clock=81000002
+[   97.201732] h713-hdmi-audio: managed TVFE clock/reset state restored; 15 clock words and bus verified
+[   99.365682] h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required

@@ -1,0 +1,26 @@
+{
+  "scope": "Offline consistency checks on historical text; no new experiment",
+  "original_inventory_matches": 425,
+  "staged_boundary_checks": [
+    {
+      "folder": "lvds-only/attempt4",
+      "timing_boundaries": 16,
+      "all_timing_readbacks_equal_baseline": true,
+      "mips_reset_words_zero": true
+    },
+    {
+      "folder": "quiet-reset",
+      "timing_boundaries": 20,
+      "all_timing_readbacks_equal_baseline": true,
+      "mips_reset_words_zero": true
+    },
+    {
+      "folder": "staged-supply-cycle",
+      "timing_boundaries": 24,
+      "all_timing_readbacks_equal_baseline": true,
+      "mips_reset_words_zero": true
+    }
+  ],
+  "supply_reset_control_sequence": "GPIO data readbacks only, not rail voltage",
+  "caveat": "Checks do not validate physical waveforms, infer a minimum off interval or add visual results"
+}

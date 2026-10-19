@@ -1,6 +1,6 @@
 # U-Boot panel initial state: build, validation and rollback
 
-Updated 2026-10-18. The normal build includes the panel initial-state fix tested
+Updated 2026-10-19. The normal build includes the panel initial-state fix tested
 on the HY200 QZ713DF_A1 DDR3 bench board. It establishes quiet LVDS, held reset
 and an off panel-supply control state before logo register replay, then waits
 at least three seconds (or a larger DT `off-on-delay-us`). Normal on-side timing
@@ -60,6 +60,9 @@ the tested display/clock/PHY/DT sources and DDR3 configuration match.
 
 Detailed logs and qualifications are in
 [the trial record](hdmi-evidence/2026-10-18-panel-initial-state-trial/README.md).
+The [October 16/17 investigation history](panel-investigation-history/README.md)
+keeps the earlier controls, failed outcomes and superseded hypotheses separate
+from this October 18 validation set. Archival cleanup adds no new trials.
 
 | Test | Result |
 | --- | --- |

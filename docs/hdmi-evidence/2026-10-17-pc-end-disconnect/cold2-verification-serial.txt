@@ -1,0 +1,40 @@
+0xb8f275c0
+[    7.392192] cpu_comm: addressing CALLs to channel row 0 (chan=0x0 pid=0x8b8f275c)
+[    7.400782] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[    7.406705] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[    7.413326] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[    7.420585] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[    7.984640] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    7.984645] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    8.218950] get_txpwr_max:txpwr_max:18 \x0d
+[    8.224272] get_txpwr_max:txpwr_max:18 \x0d
+[    8.230048] get_txpwr_max:txpwr_max:18 \x0d
+[    8.230132] change_if: 2 to 3, 8, 2
+[    8.235216] get_txpwr_max:txpwr_max:18 \x0d
+[    8.236472] get_txpwr_max:txpwr_max:18 \x0d
+[    8.739271] get_txpwr_max:txpwr_max:18 \x0d
+[    8.745226] chan.flags 0 
+[   11.175433] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+\x1b[!p\x1b]104\x07\x1b[?7h\x1b[6n\x1b[32766;32766H\x1b[6n\x1b[!p\x1b]104\x07\x1b[?7h\x1b[6n\x1b[32766;32766H\x1b[6n\x0d
+Debian GNU/Linux 13 h713-arm64 ttyS0
+
+h713-arm64 login: root (automatic login)
+\x0d
+Linux h713-arm64 6.18.38 #1 SMP Fri Oct 16 15:44:49 PDT 2026 aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+\x1b[?2004hroot@h713-arm64:~# echo H713_COLD2_VERIFY_BEGIN; cat /proc/sys/kernel/random/boot\x0dt_id; cat /proc/uptime; if [ -f /proc/device-tree/chosen/h713,hdmi-boot-v1 ]; the\x0den od -An -tx1 /proc/device-tree/chosen/h713,hdmi-boot-v1; fi; busybox devmem 0x0\x0d07090118 32; systemctl is-active h713-hdmi-capture h713-hdmi-signal; echo H713_CO\x0dOLD2_VERIFY_END
+\x1b[?2004l\x0dH713_COLD2_VERIFY_BEGIN
+3a511e0e-a5b8-4370-aee0-8a4bc56b8284
+34.49 102.62
+ 48 44 4d 49 00 00 00 00 8b 8f 27 5c
+0x48444D49
+active
+active
+H713_COLD2_VERIFY_END
+\x1b[?2004hroot@h713-arm64:~# 

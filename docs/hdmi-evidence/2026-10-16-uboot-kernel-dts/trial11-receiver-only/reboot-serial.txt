@@ -1,0 +1,711 @@
+\x0d
+Broadcast message from root@h713-arm64 (Mon 2026-04-13 19:41:09 UTC):\x0d
+\x0d
+The system will reboot now!\x0d
+\x0d
+\x1b[?2004l\x0d\x1b[?2004h\x1b[?2004l\x0d
+[  187.119648] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[  187.153642] get_txpwr_max:txpwr_max:18 \x0d
+[  187.172671] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[  187.181167] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[  187.182003] change_if: 3 to 2, 8, 2
+[  187.182032] get_txpwr_max:txpwr_max:18 \x0d
+\x1b[!p\x1b]104\x07\x1b[?7h\x1b[6n\x1b[32766;32766H\x1b[6n[  189.127527] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[  189.346879] watchdog: watchdog0: watchdog did not stop!
+[  189.401989] systemd-shutdown[1]: Using hardware watchdog 'sunxi-wdt', version 0, device /dev/watchdog0
+[  189.412492] systemd-shutdown[1]: Watchdog running with a hardware timeout of 16s.
+[  189.453125] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  189.466843] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[  189.490505] systemd-journald[109]: Received SIGTERM from PID 1 (systemd-shutdow).
+[  189.519643] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[  189.541238] systemd-shutdown[1]: Unmounting file systems.
+[  189.550106] (sd-umount)[1865]: Unmounting '/run/credentials/systemd-journald.service'.
+[  189.562830] (sd-remount)[1866]: Remounting '/' read-only with options ''.
+[  189.589820] EXT4-fs error (device mmcblk0p26): ext4_mark_recovery_complete:6280: comm (sd-remount): Orphan file not empty on read-only fs.
+[  189.604113] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[  189.620777] systemd-shutdown[1]: All filesystems unmounted.
+[  189.627745] systemd-shutdown[1]: Deactivating swaps.
+[  189.634238] systemd-shutdown[1]: All swaps deactivated.
+[  189.640851] systemd-shutdown[1]: Detaching loop devices.
+[  189.650583] systemd-shutdown[1]: All loop devices detached.
+[  189.657538] systemd-shutdown[1]: Stopping MD devices.
+[  189.664233] systemd-shutdown[1]: All MD devices stopped.
+[  189.670733] systemd-shutdown[1]: Detaching DM devices.
+[  189.677253] systemd-shutdown[1]: All DM devices detached.
+[  189.683720] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[  189.694453] watchdog: watchdog0: watchdog did not stop!
+[  189.714429] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  189.722755] systemd-shutdown[1]: Rebooting.
+[  189.758419] sun50i-h713-afbd 5600000.display: [drm] RGB fetch quiesced at physical vblank 11219
+[  190.127489] sun50i-h713-afbd 5600000.display: panel powered down: supply off, reset line 0, PHY 18000000/00000030, route 40000000
+[  190.144435] reboot: Restarting system
+
+U-Boot SPL 2026.07-rc5-g7b178056c329-dirty (Aug 25 2026 - 20:13:26 -0700)
+DRAM: 1024 MiB
+Trying to boot from MMC2
+NOTICE:  BL31: v2.15.0(release):47ee829f7
+NOTICE:  BL31: Built : 03:25:48, Jul 27 2026
+NOTICE:  BL31: Detected Allwinner H713 SoC (1860)
+NOTICE:  BL31: Found U-Boot DTB at 0x4a0d2950, model: HY200 QZ713DF_A1 (Allwinner H713)
+
+
+U-Boot 2026.07-rc5-g320a17f71d41-dirty (Oct 16 2026 - 15:45:32 -0700) Allwinner Technology
+
+CPU:   Allwinner H713 (SUN50I)
+Model: HY200 QZ713DF_A1 (Allwinner H713)
+DRAM:  1 GiB
+Core:  50 devices, 19 uclasses, devicetree: separate
+WDT:   Not starting watchdog@2051000
+MMC:   mmc@4022000: 1
+Loading Environment from MMC... Reading from MMC(1)... OK
+In:    serial
+Out:   serial
+Err:   serial
+Net:   No ethernet found.
+starting USB...
+No USB controllers found
+       scanning usb for storage devices... 0 Storage Device(s) found
+\x1b[2K\x0dHit any key to stop autoboot: 5\x1b[2K\x0dHit any key to stop autoboot: 4\x1b[2K\x0dHit any key to stop autoboot: 3\x1b[2K\x0dHit any key to stop autoboot: 2\x1b[2K\x0dHit any key to stop autoboot: 1\x1b[2K\x0dHit any key to stop autoboot: 0
+4245 bytes read in 1 ms (4 MiB/s)
+## Executing script at 52000000
+H713 HDMI launch latch set - capture disabled until physical cold cycle
+gpio: pin PB5 (gpio 37) value is 0
+H713 disp: loading vendor artifacts from mmc 1:2
+H713 MIPS: workspace cleared (cfg@0x4be01000, tse@0x4be41000 kept)
+  mips/display.bin             -> 0x4b100000  1255696 bytes
+  mips/display_cfg.xml         -> 0x4be01000  4743 bytes
+  mips/database.TSE            -> 0x4be41000  282464 bytes
+  mips/pq_custom.TSE           -> 0x4be85f60  15016 bytes
+  mips/projecttable.TSE        -> 0x4be89a08  1384 bytes
+  mips/ProjectID_0x0034.TSE    -> 0x4be89f70  17304 bytes
+H713 disp: config/TSE windows published for MIPS
+  mips/LogoRegData.bin         -> 0x4e000000  15652 bytes
+H713 disp: project 0x34 -> prologue 3, timing 6, de 6
+  +0x1674  058c0014  00002a00 -> 00002300  shift 8 mask 0xff
+  +0x1694  058c0014  01000000 -> 00000000  shift 24 mask 0x1
+  +0x1714  058c0014  0000001e -> 0000231e  shift 8 mask 0xff
+  +0x1754  058c0014  00002a00 -> 00002300  shift 8 mask 0xff
+  +0x17b4  05800000  01e0a40c -> 01e0a404  shift 3 mask 0x3
+  +0x18c4  058c0024  00000000 -> 2f000000  shift 24 mask 0x3f
+  +0x18c4  058c0024  2f000000 -> 2f000007  shift 0 mask 0x7
+  +0x370c  0525c000  02e4059f -> 02f8059f  shift 16 mask 0xffff
+  +0x370c  0525c000  02f8059f -> 02f80550  shift 0 mask 0xffff
+  +0x371c  0525c004  00000404 -> 00001404  shift 8 mask 0xff
+  +0x371c  0525c004  00001404 -> 00001402  shift 0 mask 0xff
+  +0x377c  0525c01c  05000014 -> 0500003c  shift 0 mask 0xffff
+  +0x378c  0525c020  02d00010 -> 02d00016  shift 0 mask 0xffff
+  +0x37cc  0525c030  02d00010 -> 02d00016  shift 0 mask 0xffff
+  +0x37dc  0525c034  05000014 -> 0500003c  shift 0 mask 0xffff
+  +0x380c  0524c004  00100010 -> 05000010  shift 16 mask 0xffff
+  +0x380c  0524c004  05000010 -> 05000016  shift 0 mask 0xffff
+  +0x383c  0524c010  02e4059f -> 02f8059f  shift 16 mask 0xffff
+  +0x383c  0524c010  02f8059f -> 02f80550  shift 0 mask 0xffff
+  +0x384c  0524c014  00000000 -> 00000200  shift 8 mask 0xff
+  +0x38fc  05280088  00000011 -> 00000016  shift 0 mask 0xffff
+  +0x390c  0528008c  0000007b -> 00000000  shift 0 mask 0xffff
+H713 panel: config applied, 22 record field(s) patched, 12 guarded by record mask
+H713 logo: applied 32 record(s), 0 pulse(s), 13 delay(s), 0 resync step(s)
+H713 logo: applied 32 record(s), 1 pulse(s), 7 delay(s), 0 resync step(s)
+H713 disp: FIFO status 0x00000002; reset applied
+H713 logo: applied 56 record(s), 0 pulse(s), 0 delay(s), 0 resync step(s)
+H713 panel: stock power pre-delay 550 ms
+H713 panel: stock power phase complete: supply on, reset released
+H713 panel: after display clocks: supply on, reset released
+H713 probe [ARM records applied   ] 051c0014=18000000 051c0028=00000030 05140054=40000000
+H713 MIPS: display.bin SHA-256 4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce
+H713 MIPS: firmware identity accepted
+H713 MIPS: HDCP key-load wait defeated
+H713 MIPS: readiness probe shared memory prepared (12 spinlocks, 1224 call entries, 8 share_seq, 5 lists, 256 records)
+H713 MIPS: released, status=0x00000001 witness=0x00000000
+H713 MIPS: firmware execution proven (witness overwritten)
+H713 probe [MIPS ready            ] 051c0014=18000005 051c0028=1f300030 05140054=40000000
+H713 disp: LVDS PHY tail applied: 00000000 00000000 08000800 08000000
+H713 disp: sequence complete, LVDS FIFO status=0x00000000
+H713 MIPS: readiness status=0x00000001 witness=0x00000000
+H713 MIPS: CPU_COMM magic=deadbeef/deadbeef ARM=00000005 MIPS=00000005
+H713 MIPS: firmware readiness proven by MIPS READY
+H713 MIPS: application readiness proven
+H713 panel: MIPS core quiesced, display clocks retained; reset=00000000 status=00000000 scan=021c009d->03840205->00e50366
+H713 panel: 720p timing latched: 00000004 02f80550 02d00500 00140028 80000014 80010003
+H713 panel: re-asserting DE block 6 after MIPS readiness
+H713 logo: applied 56 record(s), 0 pulse(s), 0 delay(s), 0 resync step(s)
+  bootlogo.bmp                 -> 0x6d000000  2764854 bytes
+H713 panel: bootlogo.bmp SHA-256 e812cd928c67b89608c7424ac80066c19633e76b150378abf4de9d62698eb22c
+H713 panel: bootlogo.bmp published at 0x6c100000 (24-bit BMP -> 0xffRRGGBB)
+H713 panel: frame commit irq=00000002->00000000->00000002 wait=3500us AFBD-ctrl=03001901 ready=00000000 OSD=00fc0202 scan=0199001a
+H713 disp: boot logo published and committed
+gpio: pin PB5 (gpio 37) value is 1
+7795668 bytes read in 500 ms (14.9 MiB/s)
+## Loading kernel (any) from FIT Image at 50000000 ...
+   Using 'conf-1' configuration
+   Trying 'kernel' kernel subimage
+     Description:  Linux 6.18.38
+     Type:         Kernel Image
+     Compression:  gzip compressed
+     Data Start:   0x500000d0
+     Data Size:    7760002 Bytes = 7.4 MiB
+     Architecture: AArch64
+     OS:           Linux
+     Load Address: 0x48000000
+     Entry Point:  0x48000000
+     Hash algo:    sha256
+     Hash value:   0d2410f7852f7089e1178f852f6fe00192d3bbf4526e7a0a7371f2d2f68485e6
+   Verifying Hash Integrity ... sha256+ OK
+## Loading fdt (any) from FIT Image at 50000000 ...
+   Using 'conf-1' configuration
+   Trying 'fdt-1' fdt subimage
+     Description:  sun50i-h713-hy200-qz713df-a1
+     Type:         Flat Device Tree
+     Compression:  uncompressed
+     Data Start:   0x50766a5c
+     Data Size:    34666 Bytes = 33.9 KiB
+     Architecture: AArch64
+     Hash algo:    sha256
+     Hash value:   4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940
+   Verifying Hash Integrity ... sha256+ OK
+   Booting using the fdt blob at 0x7bf1c170
+Working FDT set to 7bf1c170
+   Uncompressing Kernel Image to 48000000
+   Loading Device Tree to 0000000049ff4000, end 0000000049fff769 ... OK
+Working FDT set to 49ff4000
+
+Starting kernel ...
+
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 6.18.38 (chris@cachyos) (clang version 23.1.1, LLD 23.1.1) #1 SMP Fri Oct 16 15:44:49 PDT 2026
+[    0.000000] Machine model: HY200 QZ713DF_A1 (Allwinner H713)
+[    0.000000] earlycon: uart0 at MMIO32 0x0000000002500000 (options '115200n8')
+[    0.000000] printk: legacy bootconsole [uart0] enabled
+[    0.000000] efi: UEFI not found.
+[    0.000000] OF: reserved mem: 0x0000000040000000..0x00000000400fffff (1024 KiB) nomap non-reusable secure-bl31@40000000
+[    0.000000] Reserved memory: created DMA memory pool at 0x000000004b100000, size 14 MiB
+[    0.000000] OF: reserved mem: initialized node mips-firmware@4b100000, compatible id shared-dma-pool
+[    0.000000] OF: reserved mem: 0x000000004b100000..0x000000004bf40fff (14596 KiB) nomap non-reusable mips-firmware@4b100000
+[    0.000000] OF: reserved mem: 0x000000004d941000..0x000000004d960fff (128 KiB) nomap non-reusable decoder@4d941000
+[    0.000000] OF: reserved mem: 0x000000004e300000..0x000000004e7fffff (5120 KiB) nomap non-reusable cpu-comm@4e300000
+[    0.000000] OF: reserved mem: 0x000000004bf41000..0x000000004d940fff (26624 KiB) nomap non-reusable framebuf@4bf41000
+[    0.000000] OF: reserved mem: 0x000000006c100000..0x000000006c8fffff (8192 KiB) nomap non-reusable uboot-scanout@6c100000
+[    0.000000] OF: reserved mem: 0x000000004d980000..0x000000004d980fff (4 KiB) nomap non-reusable hdmi-trace@4d980000
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x00000000400fffff]
+[    0.000000]   node   0: [mem 0x0000000040100000-0x000000004b0fffff]
+[    0.000000]   node   0: [mem 0x000000004b100000-0x000000004d960fff]
+[    0.000000]   node   0: [mem 0x000000004d961000-0x000000004d97ffff]
+[    0.000000]   node   0: [mem 0x000000004d980000-0x000000004d980fff]
+[    0.000000]   node   0: [mem 0x000000004d981000-0x000000004e2fffff]
+[    0.000000]   node   0: [mem 0x000000004e300000-0x000000004e7fffff]
+[    0.000000]   node   0: [mem 0x000000004e800000-0x000000006c0fffff]
+[    0.000000]   node   0: [mem 0x000000006c100000-0x000000006c8fffff]
+[    0.000000]   node   0: [mem 0x000000006c900000-0x000000007fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000] cma: Reserved 128 MiB at 0x0000000076c00000
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: MIGRATE_INFO_TYPE not supported.
+[    0.000000] psci: SMC Calling Convention v1.5
+[    0.000000] percpu: Embedded 20 pages/cpu s42648 r8192 d31080 u81920
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] alternatives: applying boot alternatives
+[    0.000000] Kernel command line: console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M
+[    0.000000] printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[    0.000000] Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] software IO TLB: SWIOTLB bounce buffer size adjusted to 1MB
+[    0.000000] software IO TLB: area num 4.
+[    0.000000] software IO TLB: mapped [mem 0x0000000076b00000-0x0000000076c00000] (1MB)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 262144
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=4.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] Root IRQ handler: gic_handle_irq
+[    0.000000] GIC: Using split EOI/Deactivate mode
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] arch_timer: cp15 timer running at 24.00MHz (phys).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000001] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.008918] Console: colour dummy device 160x45
+[    0.013685] printk: legacy console [tty0] enabled
+[    0.018630] printk: legacy bootconsole [uart0] disabled
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 6.18.38 (chris@cachyos) (clang version 23.1.1, LLD 23.1.1) #1 SMP Fri Oct 16 15:44:49 PDT 2026
+[    0.000000] Machine model: HY200 QZ713DF_A1 (Allwinner H713)
+[    0.000000] earlycon: uart0 at MMIO32 0x0000000002500000 (options '115200n8')
+[    0.000000] printk: legacy bootconsole [uart0] enabled
+[    0.000000] efi: UEFI not found.
+[    0.000000] OF: reserved mem: 0x0000000040000000..0x00000000400fffff (1024 KiB) nomap non-reusable secure-bl31@40000000
+[    0.000000] Reserved memory: created DMA memory pool at 0x000000004b100000, size 14 MiB
+[    0.000000] OF: reserved mem: initialized node mips-firmware@4b100000, compatible id shared-dma-pool
+[    0.000000] OF: reserved mem: 0x000000004b100000..0x000000004bf40fff (14596 KiB) nomap non-reusable mips-firmware@4b100000
+[    0.000000] OF: reserved mem: 0x000000004d941000..0x000000004d960fff (128 KiB) nomap non-reusable decoder@4d941000
+[    0.000000] OF: reserved mem: 0x000000004e300000..0x000000004e7fffff (5120 KiB) nomap non-reusable cpu-comm@4e300000
+[    0.000000] OF: reserved mem: 0x000000004bf41000..0x000000004d940fff (26624 KiB) nomap non-reusable framebuf@4bf41000
+[    0.000000] OF: reserved mem: 0x000000006c100000..0x000000006c8fffff (8192 KiB) nomap non-reusable uboot-scanout@6c100000
+[    0.000000] OF: reserved mem: 0x000000004d980000..0x000000004d980fff (4 KiB) nomap non-reusable hdmi-trace@4d980000
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x00000000400fffff]
+[    0.000000]   node   0: [mem 0x0000000040100000-0x000000004b0fffff]
+[    0.000000]   node   0: [mem 0x000000004b100000-0x000000004d960fff]
+[    0.000000]   node   0: [mem 0x000000004d961000-0x000000004d97ffff]
+[    0.000000]   node   0: [mem 0x000000004d980000-0x000000004d980fff]
+[    0.000000]   node   0: [mem 0x000000004d981000-0x000000004e2fffff]
+[    0.000000]   node   0: [mem 0x000000004e300000-0x000000004e7fffff]
+[    0.000000]   node   0: [mem 0x000000004e800000-0x000000006c0fffff]
+[    0.000000]   node   0: [mem 0x000000006c100000-0x000000006c8fffff]
+[    0.000000]   node   0: [mem 0x000000006c900000-0x000000007fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000] cma: Reserved 128 MiB at 0x0000000076c00000
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: MIGRATE_INFO_TYPE not supported.
+[    0.000000] psci: SMC Calling Convention v1.5
+[    0.000000] percpu: Embedded 20 pages/cpu s42648 r8192 d31080 u81920
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] alternatives: applying boot alternatives
+[    0.000000] Kernel command line: console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M
+[    0.000000] printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[    0.000000] Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] software IO TLB: SWIOTLB bounce buffer size adjusted to 1MB
+[    0.000000] software IO TLB: area num 4.
+[    0.000000] software IO TLB: mapped [mem 0x0000000076b00000-0x0000000076c00000] (1MB)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 262144
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=4.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] Root IRQ handler: gic_handle_irq
+[    0.000000] GIC: Using split EOI/Deactivate mode
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] arch_timer: cp15 timer running at 24.00MHz (phys).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000001] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.008918] Console: colour dummy device 160x45
+[    0.013685] printk: legacy console [tty0] enabled
+[    0.018630] printk: legacy bootconsole [uart0] disabled
+[    0.024163] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[    0.024186] pid_max: default: 32768 minimum: 301
+[    0.024352] Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.024375] Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.025192] cacheinfo: Unable to detect cache hierarchy for CPU 0
+[    0.026217] rcu: Hierarchical SRCU implementation.
+[    0.026232] rcu: 	Max phase no-delay instances is 1000.
+[    0.026449] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    0.026882] EFI services will not be available.
+[    0.027110] smp: Bringing up secondary CPUs ...
+[    0.027611] Detected VIPT I-cache on CPU1
+[    0.027709] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.028333] Detected VIPT I-cache on CPU2
+[    0.028389] CPU2: Booted secondary processor 0x0000000002 [0x410fd034]
+[    0.028890] Detected VIPT I-cache on CPU3
+[    0.028941] CPU3: Booted secondary processor 0x0000000003 [0x410fd034]
+[    0.029044] smp: Brought up 1 node, 4 CPUs
+[    0.029093] SMP: Total of 4 processors activated.
+[    0.029102] CPU: All CPU(s) started at EL2
+[    0.029112] CPU features: detected: 32-bit EL0 Support
+[    0.029122] CPU features: detected: CRC32 instructions
+[    0.029138] CPU features: detected: PMUv3
+[    0.029186] alternatives: applying system-wide alternatives
+[    0.030126] Memory: 818212K/1048576K available (11200K kernel code, 1544K rwdata, 3464K rodata, 896K init, 483K bss, 94984K reserved, 131072K cma-reserved)
+[    0.030740] devtmpfs: initialized
+[    0.036247] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.036302] posixtimers hash table entries: 2048 (order: 3, 32768 bytes, linear)
+[    0.036410] futex hash table entries: 1024 (65536 bytes on 1 NUMA nodes, total 64 KiB, linear).
+[    0.039257] 28320 pages in range for non-PLT usage
+[    0.039280] 519840 pages in range for PLT usage
+[    0.039416] pinctrl core: initialized pinctrl subsystem
+[    0.040228] DMI not present or invalid.
+[    0.040815] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.042159] DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations
+[    0.042585] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.043367] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[    0.044340] thermal_sys: Registered thermal governor 'step_wise'
+[    0.044501] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.044613] ASID allocator initialised with 65536 entries
+[    0.055603] iommu: Default domain type: Translated
+[    0.055638] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.056526] SCSI subsystem initialized
+[    0.056897] usbcore: registered new interface driver usbfs
+[    0.056955] usbcore: registered new interface driver hub
+[    0.057000] usbcore: registered new device driver usb
+[    0.057229] mc: Linux media interface: v0.10
+[    0.057275] videodev: Linux video capture interface: v2.00
+[    0.057335] pps_core: LinuxPPS API ver. 1 registered
+[    0.057350] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.057375] PTP clock support registered
+[    0.057712] Advanced Linux Sound Architecture Driver Initialized.
+[    0.058267] Bluetooth: Core ver 2.22
+[    0.058303] NET: Registered PF_BLUETOOTH protocol family
+[    0.058318] Bluetooth: HCI device and connection manager initialized
+[    0.058339] Bluetooth: HCI socket layer initialized
+[    0.058355] Bluetooth: L2CAP socket layer initialized
+[    0.058376] Bluetooth: SCO socket layer initialized
+[    0.058971] clocksource: Switched to clocksource arch_sys_counter
+[    0.066145] NET: Registered PF_INET protocol family
+[    0.066369] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.067368] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[    0.067406] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.067429] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.067510] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.067798] TCP: Hash tables configured (established 8192 bind 8192)
+[    0.067921] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.067980] UDP-Lite hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.068150] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.068618] RPC: Registered named UNIX socket transport module.
+[    0.068638] RPC: Registered udp transport module.
+[    0.068652] RPC: Registered tcp transport module.
+[    0.068664] RPC: Registered tcp-with-tls transport module.
+[    0.068677] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.070380] Initialise system trusted keyrings
+[    0.070570] workingset: timestamp_bits=62 max_order=18 bucket_order=0
+[    0.071157] NFS: Registering the id_resolver key type
+[    0.071192] Key type id_resolver registered
+[    0.071207] Key type id_legacy registered
+[    0.115015] Key type asymmetric registered
+[    0.115034] Asymmetric key parser 'x509' registered
+[    0.115096] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.115115] io scheduler mq-deadline registered
+[    0.115129] io scheduler kyber registered
+[    0.115156] io scheduler bfq registered
+[    0.118466] gpio gpiochip0: Static allocation of GPIO base is deprecated, use dynamic allocation.
+[    0.125169] sun50i-h713-pinctrl 2000000.pinctrl: initialized sunXi PIO driver
+[    0.126501] sun8i-pwm 2000c00.pwm: Allwinner H713 PWM controller registered (8 channels)
+[    0.136446] sun50i-h713-ppu 7001014.power-controller: H713 PPU: 5 power domains registered
+[    0.136500] sun50i-h713-ppu 7001014.power-controller: TVCAP domain retained from boot
+[    0.179004] Serial: 8250/16550 driver, 8 ports, IRQ sharing disabled
+[    0.182088] printk: legacy console [ttyS0] disabled
+[    0.202658] 2500000.serial: ttyS0 at MMIO 0x2500000 (irq = 246, base_baud = 1500000) is a 16550A
+[    0.202833] printk: legacy console [ttyS0] enabled
+[    1.204987] 2500400.serial: ttyS1 at MMIO 0x2500400 (irq = 247, base_baud = 1500000) is a 16550A
+[    1.215070] platform 1c0e000.video-codec: Adding to iommu group 0
+[    1.221241] platform 1c0d000.av1: Adding to iommu group 0
+[    1.226763] platform 5600000.display: Adding to iommu group 0
+[    1.240866] CAN device driver interface
+[    1.245662] usbcore: registered new interface driver usb-storage
+[    1.245838] phy phy-4100400.phy.0: Changing dr_mode to 1
+[    1.245873] ehci-platform 4200000.usb: EHCI Host Controller
+[    1.245896] ehci-platform 4200000.usb: new USB bus registered, assigned bus number 1
+[    1.245929] ehci-platform 4300000.usb: EHCI Host Controller
+[    1.245949] ehci-platform 4300000.usb: new USB bus registered, assigned bus number 2
+[    1.246024] ehci-platform 4200000.usb: irq 250, io mem 0x04200000
+[    1.246034] ehci-platform 4300000.usb: irq 251, io mem 0x04300000
+[    1.251216] ohci-platform 4200400.usb: Generic Platform OHCI controller
+[    1.251235] ohci-platform 4200400.usb: new USB bus registered, assigned bus number 3
+[    1.251301] ohci-platform 4300400.usb: Generic Platform OHCI controller
+[    1.251317] ohci-platform 4300400.usb: new USB bus registered, assigned bus number 4
+[    1.251345] ohci-platform 4200400.usb: irq 253, io mem 0x04200400
+[    1.251383] ohci-platform 4300400.usb: irq 254, io mem 0x04300400
+[    1.253494] sun6i-rtc 7090000.rtc: registered as rtc0
+[    1.257074] ehci-platform 4101000.usb: EHCI Host Controller
+[    1.257091] ohci-platform 4101400.usb: Generic Platform OHCI controller
+[    1.257125] ehci-platform 4101000.usb: new USB bus registered, assigned bus number 5
+[    1.257190] sun6i-rtc 7090000.rtc: setting system clock to 1970-01-02T00:03:31 UTC (86611)
+[    1.257452] i2c_dev: i2c /dev entries driver
+[    1.258576] IR NEC protocol handler initialized
+[    1.258582] IR RC5(x/sz) protocol handler initialized
+[    1.258586] IR RC6 protocol handler initialized
+[    1.259009] ehci-platform 4200000.usb: USB 2.0 started, EHCI 1.00
+[    1.259746] hub 1-0:1.0: USB hub found
+[    1.259783] hub 1-0:1.0: 1 port detected
+[    1.260395] sunxi-wdt 2051000.watchdog: Watchdog enabled (timeout=16 sec, nowayout=0)
+[    1.261238] SMCCC: SOC_ID: ID = jep106:091e:1860 Revision = 0x00000001
+[    1.261925] usbcore: registered new interface driver usbhid
+[    1.261932] usbhid: USB HID core driver
+[    1.262426] st-accel-i2c 0-0018: supply vdd not found, using dummy regulator
+[    1.262526] st-accel-i2c 0-0018: supply vddio not found, using dummy regulator
+[    1.262790] ohci-platform 4101400.usb: new USB bus registered, assigned bus number 6
+[    1.270648] ehci-platform 4101000.usb: irq 249, io mem 0x04101000
+[    1.270978] ehci-platform 4300000.usb: USB 2.0 started, EHCI 1.00
+[    1.271654] hub 2-0:1.0: USB hub found
+[    1.271686] hub 2-0:1.0: 1 port detected
+[    1.275013] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    1.276263] ohci-platform 4101400.usb: irq 252, io mem 0x04101400
+[    1.286978] sunxi-mmc 4021000.mmc: initialized, max. request size: 1024 KB, uses new timings mode
+[    1.288061] sunxi-mmc 4022000.mmc: initialized, max. request size: 2048 KB, uses new timings mode
+[    1.292335] SPI driver st-accel-spi has no spi_device_id for st,lis302dl-spi
+[    1.294973] ehci-platform 4101000.usb: USB 2.0 started, EHCI 1.00
+[    1.295588] hub 5-0:1.0: USB hub found
+[    1.295616] hub 5-0:1.0: 1 port detected
+[    1.303615] hub 3-0:1.0: USB hub found
+[    1.310552] SPI driver st-accel-spi has no spi_device_id for st,lis3lv02dl-accel
+[    1.310560] SPI driver st-accel-spi has no spi_device_id for st,lis3dh-accel
+[    1.310580] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    1.317203] hub 3-0:1.0: 1 port detected
+[    1.318465] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    1.324925] SPI driver st-accel-spi has no spi_device_id for st,lsm330d-accel
+[    1.324931] SPI driver st-accel-spi has no spi_device_id for st,lsm330dl-accel
+[    1.331913] hub 4-0:1.0: USB hub found
+[    1.337131] SPI driver st-accel-spi has no spi_device_id for st,lsm330dlc-accel
+[    1.337171] hub 4-0:1.0: 1 port detected
+[    1.342210] SPI driver st-accel-spi has no spi_device_id for st,lis331dlh-accel
+[    1.342216] SPI driver st-accel-spi has no spi_device_id for st,lsm330-accel
+[    1.352374] hub 6-0:1.0: USB hub found
+[    1.354428] SPI driver st-accel-spi has no spi_device_id for st,lsm303agr-accel
+[    1.362208] hub 6-0:1.0: 1 port detected
+[    1.370425] SPI driver st-accel-spi has no spi_device_id for st,lis2dh12-accel
+[    1.370432] SPI driver st-accel-spi has no spi_device_id for st,lng2dm-accel
+[    1.577670] mmc0: new HS400 MMC card at address 0001
+[    1.581412] SPI driver st-accel-spi has no spi_device_id for st,h3lis331dl-accel
+[    1.581418] SPI driver st-accel-spi has no spi_device_id for st,lis331dl-accel
+[    1.582249] mmcblk0: mmc0:0001 8GTF4R 7.28 GiB
+[    1.588742] SPI driver st-accel-spi has no spi_device_id for st,lsm303c-accel
+[    1.589778] sun50i-h713-lradc 2009800.lradc: H713 LRADC IIO registered (2 channels)
+[    1.595083]  mmcblk0: p1 p2 p3 p4 p5 p6 p7 p8 p9 p10 p11 p12 p13 p14 p15 p16 p17 p18 p19 p20 p21 p22 p23 p24 p25 p26 p27
+[    1.602325] NET: Registered PF_INET6 protocol family
+[    1.610603] mmcblk0boot0: mmc0:0001 8GTF4R 4.00 MiB
+[    1.611844] Segment Routing with IPv6
+[    1.620435] mmcblk0boot1: mmc0:0001 8GTF4R 4.00 MiB
+[    1.622229] In-situ OAM (IOAM) with IPv6
+[    1.708520] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    1.715017] NET: Registered PF_PACKET protocol family
+[    1.720087] can: controller area network core
+[    1.724498] NET: Registered PF_CAN protocol family
+[    1.729302] can: raw protocol
+[    1.732284] can: broadcast manager protocol
+[    1.736483] can: netlink gateway - max_hops=1
+[    1.740929] Key type dns_resolver registered
+[    1.751482] Loading compiled-in X.509 certificates
+[    1.770428] sun50i-h713-pinctrl 2000000.pinctrl: supply vcc-pf not found, using dummy regulator
+[    1.770553] gpio gpiochip1: Static allocation of GPIO base is deprecated, use dynamic allocation.
+[    1.790285] sun50i-h713-r-pinctrl 7022000.pinctrl: initialized sunXi PIO driver
+[    1.797839] sunxi-mmc 4021000.mmc: Failed to create device link (0x180) with supplier 7022000.pinctrl for /soc/mmc@4021000/wifi@1
+[    1.810021] sun8i-pwm 7020c00.pwm: Allwinner H713 PWM controller registered (3 channels)
+[    1.819304] sun50i-h713-afbd 5600000.display: framebuffers from the system CMA pool
+[    1.826998] sun50i-h713-afbd 5600000.display: [drm] adopting 1280x720, stride 5120, source 6c100000
+[    1.836194] sun50i-h713-afbd 5600000.display: [drm] hardware mirror: available, installation mode 0
+[    1.845251] sun50i-h713-afbd 5600000.display: [drm] video plane: pictures up to the panel size, magnified up to 4x and placed anywhere (letterbox)
+[    1.859262] [drm] Initialized sun50i-h713-afbd 1.0.0 for 5600000.display on minor 0
+[    1.904079] Console: switching to colour frame buffer device 160x45
+[    1.928304] sun50i-h713-afbd 5600000.display: [drm] fb0: sun50i-h713-afb frame buffer device
+[    1.938937] Registered IR keymap rc-hy200-projector
+[    1.945191] rc rc0: sunxi-ir as /devices/platform/soc/7040000.ir/rc/rc0
+[    1.953237] rc rc0: lirc_dev: driver sunxi-ir registered at minor = 0, raw IR receiver, no transmitter
+[    1.963953] input: sunxi-ir as /devices/platform/soc/7040000.ir/rc/rc0/input0
+[    1.972844] sunxi-ir 7040000.ir: h713-ir regs ctl=0xf3 rxctl=0x4 rxint=0x1313 rxsta=0x0 cir=0x2d04
+[    1.983228] sunxi-ir 7040000.ir: initialized sunXi IR driver
+[    1.997632] input: gpio-keys as /devices/platform/gpio-keys/input/input1
+[    2.005925] cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[    2.016599] Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
+[    2.024177] Loaded X.509 cert 'wens: 61c038651aabdcf94bd0ac7ff06c7248db18c600'
+[    2.032780] clk: Not disabling unused clocks
+[    2.038372] PM: genpd: Not disabling unused power domains
+[    2.045098] ALSA device list:
+[    2.049360]   #0: h713-audio-codec
+[    2.054222] check access for rdinit=/init failed: -2, ignoring
+[    2.054276] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2
+[    2.059360] EXT4-fs (mmcblk0p26): warning: mounting fs with errors, running e2fsck is recommended
+[    2.062711] cfg80211: failed to load regulatory.db
+[    2.120961] EXT4-fs (mmcblk0p26): recovery complete
+[    2.127163] EXT4-fs (mmcblk0p26): mounted filesystem 956d9901-0eb3-4d75-bb44-e37a46ba9f40 r/w with ordered data mode. Quota mode: disabled.
+[    2.141077] VFS: Mounted root (ext4 filesystem) on device 259:18.
+[    2.148952] devtmpfs: mounted
+[    2.153702] Freeing unused kernel memory: 896K
+[    2.159596] Run /sbin/init as init process
+[    2.373966] systemd[1]: System time advanced to built-in epoch: Mon 2026-04-13 19:38:05 UTC
+[    2.436522] systemd[1]: systemd 257.13-1~deb13u1 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK +BTF -XKBCOMMON -UTMP +SYSVINIT +LIBARCHIVE)
+[    2.477920] systemd[1]: Detected architecture arm64.
+[    2.498368] systemd[1]: Hostname set to <h713-arm64>.
+[    2.578089] systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[    3.141729] systemd[1]: Queued start job for default target graphical.target.
+[    3.168356] systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[    3.179900] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[    3.191603] systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[    3.203763] systemd[1]: Created slice user.slice - User and Session Slice.
+[    3.213613] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[    3.227581] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[    3.240910] systemd[1]: proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point skipped, unmet condition check ConditionPathExists=/proc/sys/fs/binfmt_misc
+[    3.260915] systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...
+[    3.270564] systemd[1]: Reached target paths.target - Path Units.
+[    3.279480] systemd[1]: Reached target remote-fs.target - Remote File Systems.
+[    3.289501] systemd[1]: Reached target slices.target - Slice Units.
+[    3.298590] systemd[1]: Reached target swap.target - Swaps.
+[    3.311544] systemd[1]: Listening on systemd-creds.socket - Credential Encryption/Decryption.
+[    3.323594] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[    3.335695] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[    3.347984] systemd[1]: Listening on systemd-journald.socket - Journal Sockets.
+[    3.358374] systemd[1]: systemd-pcrextend.socket - TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.371754] systemd[1]: systemd-pcrlock.socket - Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.385250] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[    3.396666] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[    3.407944] systemd[1]: dev-hugepages.mount - Huge Pages File System skipped, unmet condition check ConditionPathExists=/sys/kernel/mm/hugepages
+[    3.422564] systemd[1]: dev-mqueue.mount - POSIX Message Queue File System skipped, unmet condition check ConditionPathExists=/proc/sys/fs/mqueue
+[    3.440168] systemd[1]: Mounting run-lock.mount - Legacy Locks Directory /run/lock...
+[    3.454105] systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...
+[    3.466025] systemd[1]: sys-kernel-tracing.mount - Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing
+[    3.483078] systemd[1]: tmp.mount: Directory /tmp to mount over is not empty, mounting anyway.
+[    3.496848] systemd[1]: Mounting tmp.mount - Temporary Directory /tmp...
+[    3.510712] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+[    3.526701] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+[    3.542150] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[    3.556873] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+[    3.572809] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+[    3.584348] systemd[1]: systemd-fsck-root.service - File System Check on Root Device skipped, unmet condition check ConditionPathIsReadWrite=!/
+[    3.598940] systemd[1]: systemd-hibernate-clear.service - Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
+[    3.622710] systemd[1]: systemd-journald.service: unit configures an IP firewall, but the local system does not support BPF/cgroup firewalling.
+[    3.637013] systemd[1]: systemd-journald.service: (This warning is only shown for the first unit using IP firewalling.)
+[    3.653425] systemd[1]: Starting systemd-journald.service - Journal Service...
+[    3.668462] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[    3.680049] systemd[1]: systemd-pcrmachine.service - TPM PCR Machine ID Measurement skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.697681] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[    3.710853] systemd[1]: systemd-tpm2-setup-early.service - Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.728466] systemd[1]: Starting systemd-udev-load-credentials.service - Load udev Rules from Credentials...
+[    3.732784] aic8800_bsp: loading out-of-tree module taints kernel.
+[    3.748974] aicbsp_init
+[    3.749006] RELEASE_DATE:2026_0123_5f7be68d\x0d
+[    3.749009] aicbsp_resv_mem_init 
+[    3.770593] aicbsp: aicbsp_set_subsys, subsys: AIC_WIFI, state to: 1
+[    3.778540] aicbsp: aicbsp_set_subsys, power state change to 1 dure to AIC_WIFI
+[    3.787331] aicbsp: aicbsp_platform_power_on
+[    3.791597] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[    3.792261] systemd-journald[109]: Collecting audit messages is disabled.
+[    3.793317] aicbsp: wlan_regon GPIO 385 configured as output
+[    3.818404] aicbsp: 24MHz DCXO output already enabled (bootloader)
+[    3.826035] aicbsp: found mmc_host mmc1
+[    3.826045] aicbsp: disabled MMC_CAP_UHS_DDR50 for mmc1
+[    3.845506] systemd[1]: Mounted run-lock.mount - Legacy Locks Directory /run/lock.
+[    3.857141] systemd[1]: Mounted sys-kernel-debug.mount - Kernel Debug File System.
+[    3.868774] systemd[1]: Started systemd-journald.service - Journal Service.
+[    3.876069] aicbsp: wlan_regon PM1 set to 0
+[    3.932565] aicbsp: wlan_regon PM1 set to 1
+[    3.988062] aicbsp: mmc_detect_change on mmc1 host=ffff000001ed5800 mmc_hostname=mmc1
+[    3.997157] aicbsp: mmc_detect_change returned
+[    4.023847] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40.
+[    4.128979] EXT4-fs warning (device mmcblk0p26): ext4_resize_begin:82: There are errors in the filesystem, so online resizing is not allowed
+[    4.134549] systemd-journald[109]: Received client request to flush runtime journal.
+[    4.171306] systemd-journald[109]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/system.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[    4.189315] systemd-journald[109]: Rotating system journal.
+[    4.211036] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    4.240719] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    4.263091] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    4.304549] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=4 DRV=00010000 NTSR=81710000
+[    4.318299] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=6 width=4 DRV=00010000 NTSR=81710000
+[    4.329150] sunxi-mmc 4021000.mmc: v5p3x delay: rate=50000000 timing=6 width=4 DRV=00030000 NTSR=81710110
+[    4.342132] mmc1: new UHS-I speed SDR104 SDIO card at address 6721
+[    4.387134] aicbsp: aicbsp_sdio_probe:1 vid:0xC8A1  did:0x0082
+[    4.394805] aicbsp: aicbsp_sdio_probe:2 vid:0xC8A1  did:0x0182
+[    4.401953] aicbsp: aicbsp_sdio_probe after replace:1
+[    4.408220] aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    4.415804] aicbsp: aicwf_sdio_reg_init
+[    4.430067] aicbsp: sdio_err:<aicwf_sdio_hal_irqhandler,1775>: Interrupt but no data
+[    4.439348] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_table_8800d80_u02.bin  
+[    4.453886] file md5:0c9bf9c9c10f7a90a22a4c35fa58c967\x0d
+[    4.460526] rwnx_plat_bin_fw_upload_android
+[    4.466056] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_adid_8800d80_u02.bin  
+[    4.478338] file md5:f546881a81b960d89a672578eb45a809\x0d
+[    4.485602] rwnx_plat_bin_fw_upload_android
+[    4.485619] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_8800d80_u02.bin  
+[    4.486663] file md5:35d137b8a76daaeb4f5034df8e15bcde\x0d
+[    4.531006] aicbt_patch_table_load bt btmode[3]:5 \x0d
+[    4.531028] aicbt_patch_table_load bt uart_baud[3]:1500000 \x0d
+[    4.531033] aicbt_patch_table_load bt uart_flowctrl[3]:1 \x0d
+[    4.531036] aicbt_patch_table_load bt lpm_enable[3]:0 \x0d
+[    4.531040] aicbt_patch_table_load bt tx_pwr[3]:28463 \x0d
+[    4.635438] aicbsp: bt patch version: - Mar 07 2024 14:29:05 - git f94a3e4
+[    4.643617] rwnx_plat_bin_fw_upload_android
+[    4.649015] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fmacfw_8800d80_h_u02.bin  
+[    4.667266] file md5:5f3302e5557d8b5fc1526d30d2b20899\x0d
+[    4.906401] rd_version_val=06090101
+[    4.938176] aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    4.945771] aicsdio: aicwf_sdio_reg_init
+[    4.970200] aicbsp: aicbsp_resv_mem_alloc_skb, alloc resv_mem_txdata succuss, id: 0, size: 98304
+[    4.986458] aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    4.995576] tcp_ack_init 
+[    5.004541] AICWFDBG(LOGERROR)	invalid cmd: loss_enable
+[    5.010988] AICWFDBG(LOGERROR)	invalid cmd: loss_value
+[    6.022996] random: crng init done
+[    6.449442] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[    6.456614] rwnx_reg_notifier Enter\x0d
+[    6.461749] ieee80211 phy0: 
+[    6.461749] *******************************************************
+[    6.461749] ** CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES **
+[    6.461749] *******************************************************
+[    6.498790] get_txpwr_max:txpwr_max:18 \x0d
+[    6.505773] aic_bluetooth_mod_init
+[    6.510878] -->rfkill_bluetooth_init
+[    6.515783] bluetooth_set_power: start_block=1
+[    6.521401] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 0
+[    6.529356] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    6.537900] bluetooth_set_power: end_block=1
+[    6.543370] <--rfkill_bluetooth_init
+[    6.566026] cedrus 1c0e000.video-codec: Device registered as /dev/video0
+[    6.566423] scanout-dmabuf: carveout 0x000000006c100000 + 8192 KiB
+[    6.592953] panfrost 1800000.gpu: clock rate = 600000000
+[    6.599397] panfrost 1800000.gpu: bus_clock rate = 100000000
+[    6.610237] panfrost 1800000.gpu: mali-g31 id 0x7093 major 0x0 minor 0x0 status 0x0
+[    6.619087] panfrost 1800000.gpu: features: 00000000,000027f7, issues: 00000000,00000400
+[    6.628303] panfrost 1800000.gpu: Features: L2:0x07100206 Shader:0x00000000 Tiler:0x00000209 Mem:0x1 MMU:0x00002821 AS:0xff JS:0x7
+[    6.641222] panfrost 1800000.gpu: shader_present=0x1 l2_present=0x1
+[    6.646802] hantro-vpu 1c0d000.av1: registered allwinner,sun50i-h713-av1-dec as /dev/video1
+[    6.652807] [drm] Initialized panfrost 1.4.0 for 1800000.gpu on minor 1
+[    6.890444] hy310-cpu-comm 3003000.cpu-comm: shared memory: 0x4e300000 size 0x500000
+[    6.899614] cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff800081d07000 size=0x500000
+[    6.909765] cpu_comm: HW mapped — MIPS ctrl @ 000000001f9c7a99, msgbox @ 000000006daebaeb (version 0x00020000, tx fifo 0, rx fifo 0)
+[    6.923007] cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor parked
+[    6.933689] cpu_comm: initialising shared memory (valid=1 mips=0)
+[    6.941196] cpu_comm: wrote ShMemAddr=0x4e300000 to MIPS share regs
+[    6.949090] cpu_comm: /dev/cpu_comm_fd registered (major=241)
+[    6.956255] bluetooth_set_power: start_block=0
+[    6.957703] cpu_comm: MIPS elog BEFORE: mode=0 en2=0 wp2=0
+[    6.961876] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    6.961895] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    6.962979] cpu_comm: MIPS elog staying on Mode 1 (ring buffer) (2MB buffer)
+[    6.964029] bluetooth_set_power: end_block=0
+[    6.967124] cpu_comm: InitCommSeqMem(0): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[    7.007116] cpu_comm: InitCommSeqMem(1): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[    7.016097] cpu_comm: routine table initialized (1224 slots)
+[    7.016119] cpu_comm: SMM heap initialized: base=0xffff800081d34000 size=5059343 pages=1236
+[    7.016128] cpu_comm: ARM flag pre-set to 0x5 before spinlock release
+[    7.016132] cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+[    7.055757] cpu_comm: msgbox RX by hrtimer poll (250 us busy / 4 ms idle) (IRQ 334 available, not requested)
+[    7.066726] cpu_comm: CPU ARM app ready
+[    7.071641] cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x0
+[    7.590994] cpu_comm: POST-WAIT: ARM=0x5 MIPS=0x0
+[    7.596886] cpu_comm: auto-registered 18/18 MIPS VP routes
+[    7.603360] cpu_comm: MIPS parked — no channel table to read; CALLs will not be dispatched
+[    7.612844] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[    7.618720] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[    7.625367] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[    7.632678] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[    8.098779] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    8.106917] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    8.308519] get_txpwr_max:txpwr_max:18 \x0d
+[    8.313947] get_txpwr_max:txpwr_max:18 \x0d
+[    8.320182] get_txpwr_max:txpwr_max:18 \x0d
+[    8.325767] change_if: 2 to 3, 8, 2
+[    8.325800] get_txpwr_max:txpwr_max:18 \x0d
+[    8.336733] get_txpwr_max:txpwr_max:18 \x0d
+[    8.827794] get_txpwr_max:txpwr_max:18 \x0d
+[    8.834073] chan.flags 0 
+[   11.268811] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+\x1b[!p\x1b]104\x07\x1b[?7h\x1b[6n\x1b[32766;32766H\x1b[6n\x1b[!p\x1b]104\x07\x1b[?7h\x1b[6n\x1b[32766;32766H\x1b[6n\x0d
+Debian GNU/Linux 13 h713-arm64 ttyS0
+
+h713-arm64 login: root (automatic login)
+\x0d
+Linux h713-arm64 6.18.38 #1 SMP Fri Oct 16 15:44:49 PDT 2026 aarch64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+\x1b[?2004hroot@h713-arm64:~# 

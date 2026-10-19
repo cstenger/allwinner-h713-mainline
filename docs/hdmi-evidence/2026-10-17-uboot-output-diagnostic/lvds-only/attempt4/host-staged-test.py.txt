@@ -1,0 +1,84 @@
+import os, re, time
+from pathlib import Path
+
+root = Path('/home/chris/Projects/h713/docs/hdmi-evidence/2026-10-17-uboot-output-diagnostic')
+out = root/'lvds-only/attempt4'
+log = root/'serial.log'
+fd = os.open('/dev/ttyUSB0', os.O_WRONLY | os.O_NOCTTY)
+snapshot_commands = 'md.l 0x0588000c 1; md.l 0x0588001c a; md.l 0x051c0014 1; md.l 0x051c0028 1; md.l 0x05140054 1; md.l 0x051c00d4 4; md.l 0x0200160c 1; md.l 0x0306101c 1; md.l 0x02000100 1; md.l 0x02000160 1'
+
+def command(cmd, end, name):
+    if len(cmd) >= 500:
+        raise RuntimeError('Conservative console line limit exceeded')
+    offset = log.stat().st_size
+    os.write(fd, (cmd+'\n').encode())
+    deadline = time.monotonic()+10
+    while time.monotonic()<deadline:
+        text = log.read_bytes()[offset:].replace(b'\r',b'').decode(errors='replace')
+        if re.search(r'(?:\n|^)' + re.escape(end) + r'\n',text):
+            (out/name).write_text(text)
+            if any(v in text for v in ('Unknown command', 'Usage:', 'Error:')):
+                raise RuntimeError('Console reported error; inspect '+name)
+            return text
+        time.sleep(0.05)
+    raise RuntimeError('No completed marker '+end)
+
+def parse(text):
+    regs={}
+    for line in text.splitlines():
+        m=re.match(r'^([0-9a-f]{8}):\s+(.+)',line)
+        if m:
+            for i,word in enumerate(m[2].split()):
+                if not re.fullmatch('[0-9a-fA-F]{8}',word):break
+                regs[int(m[1],16)+4*i]=int(word,16)
+    return regs
+
+def snap(label):
+    begin='H713_L4_'+label+'_BEGIN';end='H713_L4_'+label+'_END'
+    text=command('echo '+begin+'; '+snapshot_commands+'; echo '+end,end,label+'.txt')
+    regs=parse(text)
+    for addr,value in ((0x02000100,0x40),(0x02000160,0x10000),(0x0200160c,0),(0x0306101c,0)):
+        if regs.get(addr)!=value:raise RuntimeError('Unexpected panel GPIO/MIPS state at '+label)
+    return regs
+
+saved=None
+completed=False
+try:
+    saved=snap('BASELINE')
+    expected={0x051c0014:0x18000005,0x051c0028:0x1f300030,0x05140054:0x40000080,0x051c00d4:0,0x051c00d8:0,0x051c00dc:0x08000800,0x051c00e0:0x08000000}
+    if any(saved.get(a)!=v for a,v in expected.items()):
+        raise RuntimeError('Output baseline differs from reviewed values')
+    stages=[
+        ('TAIL_OFF',[(0x051c00d4,0),(0x051c00d8,0),(0x051c00dc,0),(0x051c00e0,0)]),
+        ('CTRL_OFF',[(0x051c0014,0x18000000)]),
+        ('MID_OFF',[(0x051c0028,0x30)]),
+        ('ROUTE_OFF',[(0x05140054,0x40000000)]),
+        ('ROUTE_RESTORE',[(0x05140054,saved[0x05140054])]),
+        ('MID_RESTORE',[(0x051c0028,saved[0x051c0028])]),
+        ('CTRL_RESTORE',[(0x051c0014,saved[0x051c0014])]),
+        ('TAIL_RESTORE',[(a,saved[a]) for a in (0x051c00d4,0x051c00d8,0x051c00dc,0x051c00e0)])]
+    summary=[]
+    for index,(label,writes) in enumerate(stages,1):
+        before=snap(f'S{index}_{label}_BEFORE')
+        marker=f'H713_L4_S{index}_WRITE_DONE'
+        cmd='; '.join(f'mw.l 0x{a:08x} 0x{v:08x}' for a,v in writes)+'; echo '+marker
+        command(cmd,marker,f'S{index}_{label}_write.txt')
+        after=snap(f'S{index}_{label}_AFTER')
+        if any(after.get(a)!=v for a,v in writes):raise RuntimeError('Output write readback mismatch '+label)
+        changes=[f'{a:08x}: {before.get(a):08x}->{after.get(a):08x}' for a in (0x0588000c,*range(0x0588001c,0x05880044,4)) if before.get(a)!=after.get(a)]
+        line=f'S{index} {label}: timing changes '+(', '.join(changes) if changes else 'NONE')
+        summary.append(line)
+        print(line,flush=True)
+        (out/'stage-summary.txt').write_text('\n'.join(summary)+'\n')
+        if index==4:time.sleep(1)
+    final=snap('FINAL')
+    if any(final.get(a)!=v for a,v in expected.items()):raise RuntimeError('Final output state differs')
+    completed=True
+    print('COMPLETE: output restored; PF6/PH16 high and MIPS reset throughout sampled boundaries',flush=True)
+finally:
+    if not completed and saved is not None:
+        restore=[(a,saved[a]) for a in (0x05140054,0x051c0028,0x051c0014,0x051c00d4,0x051c00d8,0x051c00dc,0x051c00e0) if a in saved]
+        cmd='; '.join(f'mw.l 0x{a:08x} 0x{v:08x}' for a,v in restore)+'; echo H713_L4_ERROR_OUTPUT_RESTORE'
+        try:command(cmd,'H713_L4_ERROR_OUTPUT_RESTORE','error-output-restore.txt')
+        except Exception as error:print('Restore error:',str(error),flush=True)
+    os.close(fd)
