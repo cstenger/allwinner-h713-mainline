@@ -5,6 +5,10 @@ is a source/evidence investigation, with no board access, reset, installation,
 or firmware retry. The completion plan was committed as `cc5421d` before this
 investigation. A safe automatic recovery implementation is not established.
 
+The subsequent [staged instrumentation preparation](hdmi-reset-instrumentation-2026-10-20.md)
+provides bench-only hooks, a successful offline DDR3 build, and a paired-trial
+procedure. Those probes have not been installed or run on the board.
+
 ## Findings that change the recovery design
 
 **The current warm path already executes temporary MIPS firmware.**
