@@ -84,6 +84,11 @@ compressed/multichannel audio, protected content/HDCP, and suspend/resume need
 separate qualification before being advertised. EDID must match this contract.
 
 Make assembly reproducible across the panel, audio, rootfs, and speaker work.
+The [October 20 baseline](hdmi-evidence/2026-10-20-reset-baseline/README.md)
+confirmed an environment-offset narrowing defect: the active saved environment
+is at LBA `0x32ec00`, not configured LBA `0x49ec00`. Correct the address handling
+with a controlled environment migration before qualifying the final build;
+an offset-only change would lose the saved startup guards on the next boot.
 The [startup builder](../tools/hdmi/build-startup.py) and
 [speaker builder](../tools/hdmi/build-speaker.py) currently produce separate
 bundles; neither alone constitutes a complete HDMI image. Include the managed

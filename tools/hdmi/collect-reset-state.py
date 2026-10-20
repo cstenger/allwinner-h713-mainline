@@ -17,7 +17,8 @@ MODULE_PARAMS = {
     'h713_hdmi_receiver': (
         'armed', 'live_source3', 'clients', 'init_error', 'firmware_pin',
         'clock_count', 'edid_ready', 'shutdown_ready', 'parked', 'park_failed'),
-    'h713_hdmi_audio': ('dsp_failed', 'manage_dsp', 'manage_tvfe'),
+    'h713_hdmi_audio': ('dsp_failed', 'manage_dsp', 'manage_tvfe',
+                        'period_xruns', 'period_irq_seen', 'period_irq_status'),
     'h713_hdmi_signal': ('ready', 'failed', 'restored', 'recovery'),
     'h713_ddc_pins': (),
     'h713_scp_probe': (),

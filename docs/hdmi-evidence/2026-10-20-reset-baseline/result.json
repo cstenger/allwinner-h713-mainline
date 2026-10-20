@@ -1,0 +1,237 @@
+{
+  "date": "2026-10-20",
+  "source_commit": "5ebc711",
+  "actions": "read-only SSH inventory and raw block reads; no installation or reset",
+  "boot_id": "db069b53-ae5d-41f8-9005-b05ae7aa956f",
+  "boot_unchanged": true,
+  "handoff_hex": "48444d49000000008b8f275c",
+  "receiver": {
+    "present": true,
+    "parameters": {
+      "armed": {
+        "value": "Y\n",
+        "truncated": false
+      },
+      "live_source3": {
+        "value": "Y\n",
+        "truncated": false
+      },
+      "clients": {
+        "value": "2\n",
+        "truncated": false
+      },
+      "init_error": {
+        "value": "0\n",
+        "truncated": false
+      },
+      "firmware_pin": {
+        "value": "Y\n",
+        "truncated": false
+      },
+      "clock_count": {
+        "value": "4\n",
+        "truncated": false
+      },
+      "edid_ready": {
+        "value": "Y\n",
+        "truncated": false
+      },
+      "shutdown_ready": {
+        "value": "Y\n",
+        "truncated": false
+      },
+      "parked": {
+        "value": "N\n",
+        "truncated": false
+      },
+      "park_failed": {
+        "value": "N\n",
+        "truncated": false
+      }
+    }
+  },
+  "signal": {
+    "present": true,
+    "parameters": {
+      "ready": {
+        "value": "Y\n",
+        "truncated": false
+      },
+      "failed": {
+        "value": "N\n",
+        "truncated": false
+      },
+      "restored": {
+        "value": "N\n",
+        "truncated": false
+      },
+      "recovery": {
+        "value": "0\n",
+        "truncated": false
+      }
+    }
+  },
+  "audio": {
+    "present": true,
+    "parameters": {
+      "dsp_failed": {
+        "value": "N\n",
+        "truncated": false
+      },
+      "manage_dsp": {
+        "value": "Y\n",
+        "truncated": false
+      },
+      "manage_tvfe": {
+        "value": "Y\n",
+        "truncated": false
+      },
+      "period_xruns": {
+        "value": "0\n",
+        "truncated": false
+      },
+      "period_irq_seen": {
+        "value": "449484\n",
+        "truncated": false
+      },
+      "period_irq_status": {
+        "value": "449484\n",
+        "truncated": false
+      }
+    }
+  },
+  "capture_pcm": {
+    "value": "state: RUNNING\nowner_pid   : 401\ntrigger_time: 20.861596134\ntstamp      : 2455.575439503\ndelay       : 128\navail       : 128\navail_max   : 544\n-----\nhw_ptr      : 116866236\nappl_ptr    : 116866108\n",
+    "truncated": false
+  },
+  "environment": {
+    "crc_valid": true,
+    "lba": 3337216,
+    "byte_offset": "0x65d80000",
+    "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+    "bundle_commands_match": true
+  },
+  "environment_offset_cause": {
+    "configured_byte_offset": "0x93d80000",
+    "int32_result": -1814560768,
+    "capacity_bytes": 7818182656,
+    "capacity_relative": "0x165d80000",
+    "u32_byte_offset": "0x65d80000",
+    "actual_lba": 3337216,
+    "configured_lba": 4844544,
+    "configured_region_all_zero": true
+  },
+  "candidate": {
+    "source_commit": "5ebc711",
+    "scope": "proper FIT only; prepared, not installed",
+    "lba": 4828160,
+    "sectors": 1867,
+    "active_env_lba": 3337216,
+    "bl31_unchanged": true,
+    "uboot_dtb_unchanged": true,
+    "files": {
+      "active-environment-backup.bin": {
+        "bytes": 65536,
+        "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc"
+      },
+      "candidate-bl31.bin": {
+        "bytes": 45164,
+        "sha256": "5ea11b14cc59a85b3219b4969836948a1f99ab0381d620476e557f993c78636c"
+      },
+      "candidate-uboot.dtb": {
+        "bytes": 45968,
+        "sha256": "8361009b1b72345c6d03d0e7ad98b6930753aea5c387e848677bdc0e587f464e"
+      },
+      "check-regions.sh": {
+        "bytes": 1062,
+        "sha256": "d7b79a4b3d01319cbe076ddb37a6b87ce63f0f21e33f52e12ed2f5ce653eafde"
+      },
+      "install.sh": {
+        "bytes": 685,
+        "sha256": "a8b1accec63d57b6c2b04eb071dcac6a78e7df7f48f229c1d1febb2bd3925c3d"
+      },
+      "proper-rollback-1867.bin": {
+        "bytes": 955904,
+        "sha256": "4391dfa07bcf396b5096714814e933c7b59cff408b7a9964163812f686283880"
+      },
+      "proper-trace-1867.bin": {
+        "bytes": 955904,
+        "sha256": "314d81a3e17646c0250bbbadaac38762560acad8378e1f8b0b141487b068664c"
+      },
+      "rollback.sh": {
+        "bytes": 613,
+        "sha256": "384155501e290ca55a495fa038e14b559b52c6915264b89d67c93b2578b45eb9"
+      }
+    }
+  },
+  "hardware_recovery": "unproven",
+  "limitations": [
+    "No new audible/visual observation",
+    "No warm reboot or abrupt reset",
+    "No UART device present on this host",
+    "No firmware, environment, service, or boot media changes"
+  ],
+  "local_only_evidence": {
+    "linux-before.json": {
+      "bytes": 49760,
+      "sha256": "be555218ae307ce271895f2d53397738721a7de445cae1b6d6c6e3fe25ffeea1"
+    },
+    "linux-after-inventory.json": {
+      "bytes": 50056,
+      "sha256": "8faf566d3b26c517f7f6e690b077bdeafbe25e686e673d8bb8265316620bc17d"
+    },
+    "inventory.txt": {
+      "bytes": 6791,
+      "sha256": "0148ab3ad4de95745211d3f38ca70ec19528d20a8006109f72d1590f6b6400fa"
+    },
+    "partition-types.txt": {
+      "bytes": 2567,
+      "sha256": "3c991a1f1d214a998c9596a71d599b6baa2828a4b384c11ce80b5fe68ce62f4b"
+    },
+    "artifacts.tar": {
+      "bytes": 38072320,
+      "sha256": "9586785ba4dd2eb9cdcf8b34a5e16879ce7dd2f25bbf213f606211e44a60747b"
+    },
+    "environment-derived-64KiB.bin": {
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc"
+    },
+    "environment-selected.json": {
+      "bytes": 940,
+      "sha256": "3e4c1238d2b8be39090a0de02756213798deb84cbbbc6cd42d60dcfa50b9c78f"
+    },
+    "package-preflight.txt": {
+      "bytes": 46,
+      "sha256": "d692bcb3b05cfc1475b76d9b61270a661867d84f4c6c0873547f311050ad71f5"
+    },
+    "read-artifacts.py": {
+      "bytes": 1762,
+      "sha256": "af73a39f0e6c296690012be8340392feb5e68f3fbc6763ad25d734ee21308697"
+    },
+    "prepare-package.py": {
+      "bytes": 2924,
+      "sha256": "8c8fade0342502878f64157fcf05778d1f7d6079a4fca1f41cd177bf5b3d8cf1"
+    },
+    "trial-package/manifest.json": {
+      "bytes": 1349,
+      "sha256": "a1fdabe475cdb61fe94207b7214a962c23c65e2e91eaaebf8937e8a41bd23b6e"
+    },
+    "installed-kernel.fit": {
+      "bytes": 7795668,
+      "sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70"
+    },
+    "installed-fat-hdmi.scr": {
+      "bytes": 4245,
+      "sha256": "391835c5400cc5e583be8c1b82144ff85e03b483c8502b412147c6f7d9abb376"
+    },
+    "test-package.py": {
+      "bytes": 2986,
+      "sha256": "8c40032a06ca8e79db4d812cde2ac09eebbb6c8805d8ffcecc0037ac2b33cd52"
+    },
+    "package-fixture-results.txt": {
+      "bytes": 157,
+      "sha256": "963281573b229ace74bf570b487b6e76179f6d7bab5ff775ec14ddabcd683308"
+    }
+  },
+  "collector_sha256": "7133acf9af79e3f74f00252fec0548a0768de1eaac97245e199cfde63f8a4a35"
+}

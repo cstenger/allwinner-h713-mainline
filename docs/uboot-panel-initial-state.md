@@ -178,6 +178,11 @@ reset
 The FEL-to-rescue-prompt path was rehearsed on 2026-10-16; this particular
 1867-sector YMODEM rollback has not been executed during validation. The
 older rescue-slot image is not the exact stage-2 rollback and has a different
-size. Do not overwrite SPL at LBA `0x10`, environment at `0x49ec00`, or rescue
-at `0x4a0c00`. Keep the existing rescue SPL and backups when cleaning build
+size. Do not overwrite SPL at LBA `0x10`, the configured environment area at
+`0x49ec00`, or rescue at `0x4a0c00`. The
+[October 20 readback](hdmi-evidence/2026-10-20-reset-baseline/README.md)
+found that address narrowing actually places the saved environment at
+LBA `0x32ec00`; preserve that location too. The older zero-filled environment
+backup does not contain the active startup guards.
+Keep the existing rescue SPL and backups when cleaning build
 output; preserve them elsewhere before deleting their only local copy.
