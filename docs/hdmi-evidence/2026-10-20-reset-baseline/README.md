@@ -179,3 +179,15 @@ features to make the next test pass. Return to the
 after the filesystem prerequisite is resolved. The board remains running on
 the instrumented proper with HDMI services active; no further reset was made.
 Automatic warm capture and the environment migration remain unfinished.
+
+## Subsequent filesystem repair
+
+The [offline ext4 repair](../2026-10-20-ext4-repair/README.md) preserved a full
+backup, repaired the orphan metadata on a working copy, and verified the
+entire partition after writeback. Linux then mounted without the recorded
+errors, root growfs succeeded, and an orderly maintenance reboot left clean
+unmounted superblock flags. This supersedes the pending repair prerequisite
+above. It does not prove a cause or sustained active-HDMI shutdown behavior.
+The board now uses the guarded warm path; obtain a fresh cold HDMI baseline
+before continuing paired reset trials. Warm capture recovery and environment
+migration remain unfinished.

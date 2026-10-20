@@ -1,0 +1,47 @@
+Warning: skipping journal recovery because doing a read-only filesystem check.
+Pass 1: Checking inodes, blocks, and sizes
+Deleted inode 131074 has zero dtime.  Fix? no
+
+Deleted inode 131088 has zero dtime.  Fix? no
+
+Deleted inode 131373 has zero dtime.  Fix? no
+
+Deleted inode 131381 has zero dtime.  Fix? no
+
+Deleted inode 131382 has zero dtime.  Fix? no
+
+Deleted inode 131383 has zero dtime.  Fix? no
+
+Deleted inode 131384 has zero dtime.  Fix? no
+
+Deleted inode 131385 has zero dtime.  Fix? no
+
+Deleted inode 131386 has zero dtime.  Fix? no
+
+Deleted inode 131387 has zero dtime.  Fix? no
+
+Deleted inode 131390 has zero dtime.  Fix? no
+
+Deleted inode 131393 has zero dtime.  Fix? no
+
+Pass 2: Checking directory structure
+Pass 3: Checking directory connectivity
+Pass 4: Checking reference counts
+Pass 5: Checking group summary information
+Block bitmap differences:  -410624 -473600 -481792 -(527994--527995) -(527997--528000) -(528384--528385) -531200
+Fix? no
+
+Inode bitmap differences:  -131074 -131088 -131373 -(131381--131387) -131390 -131393
+Fix? no
+
+Orphan file (inode 12) block 0 is not clean.
+Clear? no
+
+Failed to initialize orphan file.
+Recreate? no
+
+
+linux: ********** WARNING: Filesystem still has errors **********
+
+linux: 40970/180224 files (0.7% non-contiguous), 648257/720896 blocks
+e2fsck 1.47.4 (6-Mar-2025)

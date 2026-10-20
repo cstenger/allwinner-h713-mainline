@@ -6,11 +6,12 @@ qualified. **Automatic warm-reboot HDMI recovery is required before release**
 panel recovery after reboot is not HDMI recovery.
 
 October 20 bench update: the instrumented proper is installed and its first
-cold baseline passed boot/startup checks. Further clean/abrupt reset trials
-are deferred because the root filesystem carries recorded ext4 errors and
-failed its shutdown orphan-file check. Prepare an offline filesystem check
-before continuing; see the
-[current baseline and prerequisite](hdmi-evidence/2026-10-20-reset-baseline/README.md).
+cold baseline passed boot/startup checks. The root filesystem's recorded
+ext4/orphan errors were subsequently repaired offline, with a full backup,
+verified writeback, successful root growfs and a clean orderly shutdown.
+See the [repair evidence](hdmi-evidence/2026-10-20-ext4-repair/README.md).
+Resume the clean/abrupt reset comparison from a fresh instrumented cold HDMI
+baseline; automatic warm HDMI recovery remains unimplemented.
 
 This plan reconciles the latest recorded evidence at repository commit
 `6ce4977`. It does not report new hardware tests. Counts and durations below

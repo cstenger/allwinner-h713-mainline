@@ -1,0 +1,11 @@
+cat /proc/sys/kernel/random/boot_id; findmnt -n -o SOURCE,FST YPE,OPTIONS /; systemctl show systemd-growfs-root.service -p Result -p ExecMainS tatus; dmesg | grep -Ei "EXT4|JBD2|I/O error"
+66f84444-13e2-47af-930b-388059812113
+/dev/mmcblk0p26 ext4 rw,noatime
+Result=success
+ExecMainStatus=0
+[    0.000000] Kernel command line: console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M
+[    2.120442] EXT4-fs (mmcblk0p26): mounted filesystem 956d9901-0eb3-4d75-bb44-e37a46ba9f40 r/w with ordered data mode. Quota mode: disabled.
+[    2.134299] VFS: Mounted root (ext4 filesystem) on device 259:18.
+[    4.047330] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40.
+[    4.335070] EXT4-fs (mmcblk0p26): resizing filesystem from 720896 to 720896 blocks
+root@h713-arm64:~#
