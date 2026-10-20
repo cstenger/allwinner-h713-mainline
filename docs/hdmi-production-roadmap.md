@@ -1,5 +1,10 @@
 # HDMI input to panel: production roadmap
 
+For the current evidence assessment and release priorities, see the
+[October 20 completion plan](hdmi-completion-plan-2026-10-20.md). The dated
+prototype progress below is historical; later component tests and the new
+requirement for automatic warm-reboot HDMI recovery supersede its open items.
+
 This is the ordered work from the present board-B prototype to using the
 projector as a 1280×720, 60 Hz, low-latency HDMI monitor for the connected
 computer. Each gate needs hardware evidence before the next depends on it.
