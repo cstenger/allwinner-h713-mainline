@@ -23,10 +23,18 @@ RTC general-purpose nvmem bank documented and retention-tested by kernel
 patch 0029; GP7 remains exclusively the existing reboot-mode handoff.
 No other code in our boot chain writes GP6. Do not clear GP6 in software.
 
-A nonzero GP6 skips every display/MIPS launch and boots the original FIT
-without a capture handoff. Thus warm reboots still reach Linux, with HDMI
-capture disabled until a physical cold cycle. An unexpected GP6 value also
-fails closed. Removing power must include serial and USB to avoid backpower.
+A nonzero GP6 skips the sustained trace/source-3 capture launch and boots the
+original FIT without a capture handoff. The current script still runs
+`h713_disp auto 0x34 logo` when MIPS status is zero: that sequence temporarily
+releases MIPS for panel initialization, proves readiness, then quiesces it
+before publishing the logo. The October 18 abnormal-reset serial log records
+this sequence. Thus warm reboots reach Linux with a logo/console but HDMI
+capture disabled until a physical cold cycle. This differs from the older
+October 14 warm-guard test below, which reported no MIPS launch. An unexpected
+GP6 value also takes the capture-disabled branch. Removing power must include
+serial and USB to avoid backpower. See the
+[reset investigation](hdmi-warm-reset-investigation-2026-10-20.md) for the
+remaining automatic-recovery work; do not bypass the guard.
 
 On a zero latch, the script validates the FIT/FDT sizes and copies its FDT to
 RAM. It corrects the Audio Bridge IRQ and adds the same CCU parking consumer

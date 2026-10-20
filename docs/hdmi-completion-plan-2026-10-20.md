@@ -41,7 +41,10 @@ and therefore invalidate later integration testing.
 
 The [current startup contract](hdmi-normal-startup.md) permits one MIPS launch
 per physical power cycle. Retained RTC GP6 skips launch and capture handoff on
-warm reset. The audio backend also latches certain failed DSP operations until
+warm reset. The current warm branch can temporarily run MIPS for the logo,
+then quiesces it; it skips the sustained source-3 capture launch. See the
+[reset-state investigation](hdmi-warm-reset-investigation-2026-10-20.md).
+The audio backend also latches certain failed DSP operations until
 a physical cold boot. Clearing GP6 or retrying a latched MIPS/DSP launch is not
 a demonstrated recovery mechanism.
 
