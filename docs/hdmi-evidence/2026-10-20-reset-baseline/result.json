@@ -1,7 +1,7 @@
 {
   "date": "2026-10-20",
   "source_commit": "5ebc711",
-  "actions": "read-only SSH inventory and raw block reads; no installation or reset",
+  "actions": "Initial read-only inventory; subsequent user-approved proper-only install, orderly poweroff and user-performed physical cold cycle; no further resets or filesystem repairs",
   "boot_id": "db069b53-ae5d-41f8-9005-b05ae7aa956f",
   "boot_unchanged": true,
   "handoff_hex": "48444d49000000008b8f275c",
@@ -167,9 +167,8 @@
   "hardware_recovery": "unproven",
   "limitations": [
     "No new audible/visual observation",
-    "No warm reboot or abrupt reset",
-    "No UART device present on this host",
-    "No firmware, environment, service, or boot media changes"
+    "Orderly shutdown reached Power down but emitted an ext4 orphan-file error; further reset trials await cold-boot investigation",
+    "No warm-reboot or abrupt-reset comparison performed; offline root filesystem check is the next prerequisite"
   ],
   "local_only_evidence": {
     "linux-before.json": {
@@ -231,7 +230,108 @@
     "package-fixture-results.txt": {
       "bytes": 157,
       "sha256": "963281573b229ace74bf570b487b6e76179f6d7bab5ff775ec14ddabcd683308"
+    },
+    "stage-package.log": {
+      "bytes": 234,
+      "sha256": "fc7d331e53ea97fe97f6e36f4f18fa0fa43da7f8d4408d5a37798879316fc0aa"
+    },
+    "trial-package.tar": {
+      "bytes": 2099200,
+      "sha256": "9ad660b9e19c933e81087a51b46ab66e8e1924219d97ee002fed448953e9e12e"
+    },
+    "install-proper.log": {
+      "bytes": 431,
+      "sha256": "7e18d5f5a81ee944f58a121ebb75fcc463b5bfb3c7d3a34f0921b8df833ddd05"
+    },
+    "shutdown-start.json": {
+      "bytes": 158,
+      "sha256": "118ed1a78f015c1c07785cbc00a892829cf357f4a0f5486b8e7c79ca400aa896"
+    },
+    "shutdown-request.log": {
+      "bytes": 40,
+      "sha256": "bdfea02ed4d8955325471c8f1e5da55afc3e56b13f8c3d0c745207e7940c0bbd"
+    },
+    "shutdown-serial-snapshot.log": {
+      "bytes": 687,
+      "sha256": "a375704e18c4c8336c8b523c65475e0c171c1449fdcb0bdc3c91d89e166bbf8b"
+    },
+    "cold-first-health.txt": {
+      "bytes": 1176,
+      "sha256": "8f381006bd2f16f9f27101e9dafafa8b55654ae961fbbe62dde0fb48822b5004"
+    },
+    "instrumented-cold.serial.log": {
+      "bytes": 55168,
+      "sha256": "03ba48aaa2901685be4ea2fa328711bbc0a84c592bd32424f6d43506d7d838d9"
+    },
+    "instrumented-cold-markers.json": {
+      "bytes": 1253,
+      "sha256": "65dd4154a10f00ca42eb28811e4f9b58f39e67a6710c2b68c7958f7835dc2a98"
+    },
+    "instrumented-cold-linux.json": {
+      "bytes": 50012,
+      "sha256": "862621ac898d22ca5fd64c8914fa2a7ef47cfd445fbce8a60a6f8ac532fb6119"
+    },
+    "filesystem-health-and-shutdown.txt": {
+      "bytes": 8629,
+      "sha256": "d9497f5e4d061ecba2921e46edb3c69d4f235f2f594256420f2ff7e02a3fc43c"
+    },
+    "exact-prior-boot-units.txt": {
+      "bytes": 3486,
+      "sha256": "6f45b4eaf2379ccdfd60d48684afb0916373992bd0116afb860f2ddfbf18873a"
+    },
+    "uart-trial/serial.log": {
+      "bytes": 55927,
+      "sha256": "9e143669912760886bffd58e7d5f98b001e7a47a3298189e64e6986df208e437"
+    },
+    "uart-trial/serial-timestamped.log": {
+      "bytes": 73948,
+      "sha256": "48126140480f6a0c059d08dfa15a8f7d8eca3098f870b322cdf9af3256dc2394"
     }
   },
-  "collector_sha256": "7133acf9af79e3f74f00252fec0548a0768de1eaac97245e199cfde63f8a4a35"
+  "collector_sha256": "7133acf9af79e3f74f00252fec0548a0768de1eaac97245e199cfde63f8a4a35",
+  "followup_staging": {
+    "uart": "/dev/ttyUSB0",
+    "uart_reception_verified": true,
+    "passive_capture": "build/hdmi-reset-baseline-2026-10-20/uart-trial",
+    "serial_prefix_bytes": 69,
+    "serial_prefix_sha256": "b83a5310394d3810adef2447c14c2cda58180b19aec402d81cebb57cd97bd43e",
+    "board_package": "/root/hdmi-reset-trace-2026-10-20",
+    "all_eight_file_checksums": "PASS",
+    "live_read_only_preflight": "PASS",
+    "firmware_installed": true,
+    "reset_performed": false,
+    "fel_otg_confirmation": "confirmed by user",
+    "installation": "PASS: full region and protected area readbacks",
+    "shutdown_requested": "systemctl poweroff",
+    "kernel_power_down_observed": true,
+    "lamp_fan_observation": "User confirmed both off",
+    "cold_boot": "PASS: instrumented boot and automatic capture/signal/speaker startup",
+    "filesystem_error": "EXT4-fs error mmcblk0p26: ext4_mark_recovery_complete: Orphan file not empty on read-only fs.",
+    "filesystem_error_preexisting_evidence": [
+      "docs/hdmi-evidence/2026-10-18-panel-initial-state-trial/cold-01/warm-01/serial.log",
+      "docs/hdmi-evidence/2026-10-18-panel-initial-state-trial/cold-02/warm-01/serial.log"
+    ],
+    "new_boot_id": "fedfb946-1ce2-4617-b809-89ef2c8f53c0",
+    "capture_period_xruns": 0,
+    "capture_handoff": "48444d49000000008b8f275c",
+    "passive_capture_status": "stopped cleanly after cold baseline"
+  },
+  "ordered_hdmi_shutdown": {
+    "speaker_signal_backend_order": "PASS",
+    "dsp_restored_words": 22,
+    "tvfe_restored_words": 15,
+    "phase": "parked",
+    "receiver_removed": true,
+    "root_filesystem_shutdown": "not clean: ext4 orphan-file error"
+  },
+  "filesystem_health": {
+    "device": "/dev/mmcblk0p26",
+    "uuid": "956d9901-0eb3-4d75-bb44-e37a46ba9f40",
+    "superblock_state": "clean with errors",
+    "recorded_error_count": 61,
+    "first_and_last_error_function": "ext4_mark_recovery_complete",
+    "growfs_root": "failed: online resizing refused due filesystem errors",
+    "offline_check": "required; not performed",
+    "repairs_performed": false
+  }
 }

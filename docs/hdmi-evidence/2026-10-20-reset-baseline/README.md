@@ -1,13 +1,15 @@
 # Reset investigation baseline — October 20, 2026
 
-Read-only SSH inventory of boot `db069b53-ae5d-41f8-9005-b05ae7aa956f`, using
-instrumentation source commit `5ebc711`. No firmware, environment, boot media,
-service state, or power/reset action was changed. Full local snapshots,
+Initial read-only SSH inventory of boot `db069b53-ae5d-41f8-9005-b05ae7aa956f`,
+using instrumentation source commit `5ebc711`. That inventory changed no
+firmware, environment, boot media, service state, or power/reset state. The
+subsequent approved installation, shutdown and cold baseline are recorded
+below. Full local snapshots,
 recovery binaries and preparation scripts are under
 `build/hdmi-reset-baseline-2026-10-20/`; their identities are recorded in
 [result.json](result.json). Raw firmware/environment backups stay local.
 
-## Current state
+## Initial running baseline
 
 The board runs the expected October 16 6.18.38 kernel. Capture and signal
 services are active and the speaker service is running. The handoff is
@@ -102,12 +104,78 @@ tests pass. Generated package files remain local for review before a trial.
 
 ## Next hardware step
 
-No UART/ACM device is currently available on this host. UART and FEL/OTG rescue
-access must be restored before the firmware trial and paired cold/clean/abrupt
-reset captures can proceed. The user was asked to connect them while leaving
-board power and HDMI unchanged. No reset was attempted in their absence.
+The initial inventory had no UART device. After the user connected
+`/dev/ttyUSB0`, passive recording started and received an explicit diagnostic
+line emitted from the board's `ttyS0`. The boot ID and active services still
+match the baseline. The exact trial package is staged in the new board
+directory `/root/hdmi-reset-trace-2026-10-20`; all eight file checksums and the
+live read-only region preflight pass. This copies review/recovery files onto
+the root filesystem but does not write boot media or change startup policy.
 
-After recovery access is confirmed, review the exact proper-only installation
-and rollback package, establish the instrumented cold baseline, and follow the
-[paired trial procedure](../../hdmi-reset-instrumentation-2026-10-20.md).
+The user then confirmed FEL/OTG availability and authorized installation and
+orderly shutdown. `install.sh install` wrote exactly 1867 sectors at
+LBA `0x49ac00`. The full 2-MiB region matched its expected after-image, and SPL,
+rescue and both environment locations retained their expected hashes. The
+readback checks passed; no SPL, environment or startup script was written.
+
+At uptime 3018.87 s all three services were active and capture XRUNs were zero.
+An ordinary `systemctl poweroff` request reached kernel `Power down` at
+3026.147970 s. At 3025.722898 s it also reported
+`ext4_mark_recovery_complete: Orphan file not empty on read-only fs` on
+`mmcblk0p26`. The same error exists in the October 18 panel-trial shutdown
+logs, so it predates this image; the cause and filesystem health remain open.
+Do not count this as a clean-filesystem shutdown or proceed directly to an
+abrupt reset. The user confirmed the lamp and fan were off, then completed
+the requested physical cold cycle.
+
+The exact previous boot's unit journal confirms speaker stop → signal/SCP/DDC
+restoration → backend restoration of 22 DSP and 15 TVFE words → terminal
+parking and receiver removal. Journal queries use the explicit boot ID and
+monotonic output because the board's wall clock resets to an old date.
+The HDMI teardown passed independently of the filesystem shutdown error.
+
+The passive recorder was stopped cleanly after the cold baseline in
+`build/hdmi-reset-baseline-2026-10-20/uart-trial/`. Installation, shutdown,
+complete UART capture and Linux/journal snapshots have local hashes in
+`result.json`.
+
+## Instrumented cold baseline
+
+Boot `fedfb946-1ce2-4617-b809-89ef2c8f53c0` reached Linux automatically with
+all three HDMI services active, the expected handoff, receiver clocks=4 and
+clients=2, signal ready, and zero capture XRUNs in the snapshot. DSP again
+started at `0/0` and verified the pinned patch at `1/1`. No new optical or
+acoustic quality observation was requested or inferred from these checks.
+
+The installed banner is
+`g320a17f71d41-reset-trace-77307168a30b`. Parsed
+[cold-markers.json](cold-markers.json) retains these stages:
+
+| Stage | GP6 | MIPS clock | MIPS reset | MIPS status |
+| --- | --- | --- | --- | --- |
+| Proper before preboot | `00000000` | `00000000` | `00000000` | `00000000` |
+| Before logo workspace clear | `48444d49` | `00000000` | `00000000` | `00000000` |
+| After logo commit/quiescence | `48444d49` | `80000002` | `00000000` | `00000000` |
+| Before capture workspace clear | `48444d49` | `80000002` | `00000000` | `00000000` |
+
+GP7 was zero throughout. Optional SPL probes were not installed. The trace
+establishes that the observations occur before workspace clearing and shows
+the normal cold path's two loads. It is not a warm-reset comparison or proof
+of DSP reset-domain behavior.
+
+The root mounted read-write after journal recovery, warning that it has
+recorded errors. Read-only `dumpe2fs -h` reports `clean with errors`, error
+count 61, with first and last recorded errors in
+`ext4_mark_recovery_complete`. The growfs service failed because ext4 refuses
+online resizing in that state. `needs_recovery`/`orphan_present` feature flags
+were also visible while mounted; those flags alone are not an offline
+consistency verdict. No fsck or repair was run against the mounted root.
+
+Prepare an offline check with `/dev/mmcblk0p26` unmounted, retain a rootfs
+backup and diagnostic output, then review any required repairs before making
+filesystem changes. Do not clear the error flag or disable orphan-file
+features to make the next test pass. Return to the
+[paired trial procedure](../../hdmi-reset-instrumentation-2026-10-20.md) only
+after the filesystem prerequisite is resolved. The board remains running on
+the instrumented proper with HDMI services active; no further reset was made.
 Automatic warm capture and the environment migration remain unfinished.

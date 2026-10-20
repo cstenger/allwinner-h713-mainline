@@ -5,6 +5,13 @@ qualified. **Automatic warm-reboot HDMI recovery is required before release**
 (user decision, October 20). The present GP6 policy deliberately prevents that;
 panel recovery after reboot is not HDMI recovery.
 
+October 20 bench update: the instrumented proper is installed and its first
+cold baseline passed boot/startup checks. Further clean/abrupt reset trials
+are deferred because the root filesystem carries recorded ext4 errors and
+failed its shutdown orphan-file check. Prepare an offline filesystem check
+before continuing; see the
+[current baseline and prerequisite](hdmi-evidence/2026-10-20-reset-baseline/README.md).
+
 This plan reconciles the latest recorded evidence at repository commit
 `6ce4977`. It does not report new hardware tests. Counts and durations below
 are proposed qualification targets, not completed results. Historical evidence
