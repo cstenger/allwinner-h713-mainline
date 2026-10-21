@@ -10,8 +10,10 @@
  * read and initialize AudioTop, sample the TVFE control word and the DSP
  * status. Steps 93-104 (TVTOP stage) apply U-Boot h713_display_prepare()'s
  * TVTOP routing, without which the 0x05xxxxxx fabric hard-locks on access.
- * Steps 105-108 sample both lock words. No DSP request is sent and no lock
- * word is written.
+ * Steps 105-108 sample both lock words. Steps 109-119 (version stage) claim
+ * the ARM lock word, request logical 0x80ff from DSP devices 0 and 1 with
+ * production's ports/bits/bounds, and release the lock. The peer (MIPS) lock
+ * word is never written; no patch, graph or selector word is written.
  *
  * Error retains the module pin and acquired resources until cold poweroff.
  * After the first state-changing step there is no software restore: the
@@ -23,6 +25,7 @@
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/ioport.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -48,6 +51,24 @@ module_param(tvfe_ctl, uint, 0444);
 module_param(dsp_status, uint, 0444);
 module_param(lock_peer, uint, 0444);
 module_param(lock_own, uint, 0444);
+/* Version stage. Outcome: 0 not run, 1 done, 2 timeout, 3 skipped after a timeout. */
+static bool dsp_timeout;
+static unsigned int lock_own_before, lock_peer_before, version0, version1;
+static unsigned int dev0_outcome, dev1_outcome, dev0_status, dev1_status;
+module_param(dsp_timeout, bool, 0444);
+module_param(lock_own_before, uint, 0444);
+module_param(lock_peer_before, uint, 0444);
+module_param(version0, uint, 0444);
+module_param(version1, uint, 0444);
+module_param(dev0_outcome, uint, 0444);
+module_param(dev1_outcome, uint, 0444);
+module_param(dev0_status, uint, 0444);
+module_param(dev1_status, uint, 0444);
+#define DSP_OUTCOME_DONE 1
+#define DSP_OUTCOME_TIMEOUT 2
+#define DSP_OUTCOME_SKIPPED 3
+#define DSP_RELEASED 0xaa
+#define DSP_VERSION_ADDRESS 0x80ff
 module_param(completed, uint, 0444);
 module_param(attempted, uint, 0444);
 module_param(last_value, uint, 0444);
@@ -174,6 +195,15 @@ enum action {
 	MAP_TVTOP,
 	READ_TVTOP_COLD,
 	WRITE_TVTOP,
+	/* Version stage. */
+	CHECK_LOCK_FREE,
+	CLAIM_LOCK,
+	RECHECK_PEER,
+	WAIT_DEV_IDLE,
+	REQUEST_DEV_VERSION,
+	READ_DEV_RESPONSE,
+	RELEASE_LOCK,
+	FINAL_VERSION_RECHECK,
 };
 struct audit_step {
 	enum action action;
@@ -305,6 +335,20 @@ static const struct audit_step steps[] = {
 	{ READ_LOCK_PEER, 0, "read-lock-peer" },
 	{ READ_LOCK_OWN, 0, "read-lock-own" },
 	{ FINAL_AT_RECHECK, 0, "final-audiotop-recheck" },
+	/* 109-111: claim the ARM lock word (stock WaitDSPFree). */
+	{ CHECK_LOCK_FREE, 0, "check-lock-free" },
+	{ CLAIM_LOCK, 0, "claim-lock" },
+	{ RECHECK_PEER, 0, "recheck-peer-after-claim" },
+	/* 112-117: one logical 0x80ff request per device. */
+	{ WAIT_DEV_IDLE, 0, "wait-dev0-idle" },
+	{ REQUEST_DEV_VERSION, 0, "request-dev0-version" },
+	{ READ_DEV_RESPONSE, 0, "read-dev0-response" },
+	{ WAIT_DEV_IDLE, 1, "wait-dev1-idle" },
+	{ REQUEST_DEV_VERSION, 1, "request-dev1-version" },
+	{ READ_DEV_RESPONSE, 1, "read-dev1-response" },
+	/* 118-119: release (stock ReleaseDSP) and final recheck. */
+	{ RELEASE_LOCK, 0, "release-lock" },
+	{ FINAL_VERSION_RECHECK, 0, "final-version-recheck" },
 };
 #undef CLOCK_STEP
 #undef ENABLE_STEP
@@ -312,7 +356,7 @@ static const struct audit_step steps[] = {
 #define PREFIX_STEPS 33
 #define LAST_READ_ONLY_STEP 40
 #define EXTENSION_STEPS 82
-static_assert(ARRAY_SIZE(steps) == 108);
+static_assert(ARRAY_SIZE(steps) == 119);
 static_assert(ARRAY_SIZE(tv_offsets) == 15);
 
 static int next_operation_get(char *buffer, const struct kernel_param *kp)
@@ -626,6 +670,77 @@ static int execute_step(const struct audit_step *s, unsigned int step)
 		last_value = tvtop_set[s->arg] =
 			readl(tvtop_regs + tvtop_routing[s->arg].offset);
 		return last_value == tvtop_routing[s->arg].value ? 0 : -EIO;
+	case CHECK_LOCK_FREE:
+		last_value = lock_own_before = readl(lock_window + 4);
+		lock_peer_before = readl(lock_window);
+		/* Do not steal a claim from another ARM client or clear a stale claim. */
+		if (lock_own_before == DSP_ARM_OWNED)
+			return -EBUSY;
+		return readl_poll_timeout(lock_window, value, value != DSP_ARM_OWNED,
+					  10, 10000);
+	case CLAIM_LOCK:
+		writel(DSP_ARM_OWNED, lock_window + 4);
+		op_done(step);
+		last_value = readl(lock_window + 4);
+		return last_value == DSP_ARM_OWNED ? 0 : -EIO;
+	case RECHECK_PEER:
+		/* Stock rechecks the peer after publishing its own claim. */
+		ret = readl_poll_timeout(lock_window, value, value != DSP_ARM_OWNED,
+					 10, 10000);
+		last_value = value;
+		return ret;
+	case WAIT_DEV_IDLE:
+		if (dsp_timeout)
+			return 0; /* Recorded no-op: no command after a timeout. */
+		ret = readl_poll_timeout(dsp_port, value,
+					 !(value & BIT(s->arg ? 7 : 4)), 10, 50000);
+		last_value = value;
+		return ret;
+	case REQUEST_DEV_VERSION:
+		if (dsp_timeout) {
+			*(s->arg ? &dev1_outcome : &dev0_outcome) = DSP_OUTCOME_SKIPPED;
+			return 0;
+		}
+		writel((u32)DSP_VERSION_ADDRESS << 16, dsp_port + (s->arg ? 0x18 : 0x10));
+		op_done(step);
+		ret = readl_poll_timeout(dsp_port, value, value & BIT(s->arg ? 8 : 5),
+					 10, 50000);
+		last_value = value;
+		*(s->arg ? &dev1_status : &dev0_status) = value;
+		if (ret == -ETIMEDOUT) {
+			/* A recorded answer, not a hazard: latch like production. */
+			dsp_timeout = true;
+			*(s->arg ? &dev1_outcome : &dev0_outcome) = DSP_OUTCOME_TIMEOUT;
+			pr_notice("h713-dsp-access-audit: device %u version request timed out status=%08x; later requests skipped\n",
+				  s->arg, value);
+			return 0;
+		}
+		if (ret)
+			return ret;
+		*(s->arg ? &dev1_outcome : &dev0_outcome) = DSP_OUTCOME_DONE;
+		return 0;
+	case READ_DEV_RESPONSE:
+		if ((s->arg ? dev1_outcome : dev0_outcome) != DSP_OUTCOME_DONE)
+			return 0; /* No completed request to consume. */
+		last_value = readl(dsp_port + (s->arg ? 0x18 : 0x10));
+		*(s->arg ? &version1 : &version0) = last_value;
+		return 0;
+	case RELEASE_LOCK:
+		writel(DSP_RELEASED, lock_window + 4);
+		op_done(step);
+		last_value = readl(lock_window + 4);
+		return last_value == DSP_RELEASED ? 0 : -EIO;
+	case FINAL_VERSION_RECHECK:
+		ret = stopped();
+		if (ret)
+			return ret;
+		if ((readl(ppu_status[0]) & PPU_STATE_MASK) != PPU_STATE_ON ||
+		    (readl(ppu_status[1]) & PPU_STATE_MASK) != PPU_STATE_ON ||
+		    readl(tvtop_regs) != 0xfff11111 ||
+		    readl(lock_window + 4) != DSP_RELEASED)
+			return -EIO;
+		last_value = readl(lock_window);
+		return last_value == DSP_ARM_OWNED ? -EIO : 0;
 	}
 	return -EINVAL;
 }
@@ -665,7 +780,7 @@ static int advance(const char *value, const struct kernel_param *kp)
 		completed == EXTENSION_STEPS ?
 			"; extension end, NO AudioTop/DSP/lock access yet" :
 		stage_complete ?
-			"; stage end, NO DSP request or lock write; poweroff only" :
+			"; version stage end, lock released; poweroff only" :
 			"");
 out:
 	mutex_unlock(&audit_lock);

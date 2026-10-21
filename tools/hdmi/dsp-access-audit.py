@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """One explicit staged-access step per invocation; never run a stage loop.
 
-A failed/uncertain operation consumes this boot. No DSP request, lock write,
-reset or reboot. AudioTop/DSP access is limited to steps 83-92, TVTOP routing
-to 93-104, and lock-word reads to 105-108. Crossing a stage boundary needs a read-only `snapshot`
+A failed/uncertain operation consumes this boot. No reset or reboot.
+AudioTop/DSP access is limited to steps 83-92, TVTOP routing to 93-104,
+lock-word reads to 105-108, and the one-shot lock claim, 0x80ff version
+pair and release to 109-119. The peer lock word is never written; no patch,
+graph or selector write exists. Crossing a stage boundary needs a read-only `snapshot`
 and then `--stage-ack <stage>`. From step 41 on, the only supported end is
 an orderly poweroff with the module loaded; `release` is refused.
 This helper must be staged with the guard and a pinned manifest.
@@ -22,7 +24,7 @@ KO = 'h713-hdmi-dsp-access-audit.ko'
 PARAM = '/sys/module/' + MODULE + '/parameters/'
 STATE = '/run/h713-dsp-access-audit/state.json'
 GUARD = '/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard'
-SCHEMA = 'h713-dsp-access-tvtop-v1'
+SCHEMA = 'h713-dsp-access-version-v1'
 PPU_NODE = '/proc/device-tree/soc/power-controller@7001014/'
 # INIT/BEGIN/DONE are pr_notice (level 5); the console prints levels strictly
 # below its threshold, and the rootfs default is 5 (warnings only).
@@ -62,7 +64,11 @@ STEPS = (
     'map-tvtop', 'read-tvtop-40', 'read-tvtop-44', 'read-tvtop-80',
     *('write-tvtop-' + o for o in ('04', '44', '88', '00', '40', '80', '84')),
     'recheck-stopped-after-tvtop',
-    'map-lock-window', 'read-lock-peer', 'read-lock-own', 'final-audiotop-recheck')
+    'map-lock-window', 'read-lock-peer', 'read-lock-own', 'final-audiotop-recheck',
+    'check-lock-free', 'claim-lock', 'recheck-peer-after-claim',
+    'wait-dev0-idle', 'request-dev0-version', 'read-dev0-response',
+    'wait-dev1-idle', 'request-dev1-version', 'read-dev1-response',
+    'release-lock', 'final-version-recheck')
 PREFIX_STEPS = 33
 LAST_READ_ONLY_STEP = 40
 # Completing the step on the left ends the named stage. The next step needs
@@ -70,10 +76,15 @@ LAST_READ_ONLY_STEP = 40
 STAGES = {33: 'prefix', 40: 'census', 45: 'power', 53: 'receiver',
           69: 'tvfe-words', 74: 'audio', 81: 'display', 82: 'extension',
           86: 'audiotop-read', 90: 'audiotop-init', 92: 'dsp-status',
-          96: 'tvtop-census', 104: 'tvtop-routing', 108: 'lock-sampled'}
+          96: 'tvtop-census', 104: 'tvtop-routing', 108: 'lock-sampled',
+          111: 'lock-claimed', 114: 'dev0', 117: 'dev1', 119: 'versions'}
 # Hardware samples reported in the step result once taken (step -> params).
 SAMPLES = {85: ('audiotop_ctl', 'audiotop_cfg'), 86: ('tvfe_ctl',), 92: ('dsp_status',),
-           96: ('tvtop_cold',), 103: ('tvtop_set',), 106: ('lock_peer',), 107: ('lock_own',)}
+           96: ('tvtop_cold',), 103: ('tvtop_set',), 106: ('lock_peer',), 107: ('lock_own',),
+           109: ('lock_own_before', 'lock_peer_before'),
+           113: ('dev0_outcome', 'dev0_status', 'dsp_timeout'), 114: ('version0',),
+           116: ('dev1_outcome', 'dev1_status', 'dsp_timeout'), 117: ('version1',)}
+BOOL_SAMPLES = ('dsp_timeout',)  # Y/N, reported as text
 ARRAY_SAMPLES = ('tvtop_cold', 'tvtop_set')  # comma-separated decimal, reported as text
 SNAPSHOTS = ('/sys/kernel/debug/clk/clk_summary', '/sys/kernel/debug/pm_genpd/pm_genpd_summary')
 
@@ -260,7 +271,7 @@ class Audit:
             result['tvcap_reset_before'] = int(self.b.read(PARAM + 'tvcap_reset_before'))
         for name in SAMPLES.get(expected_step, ()):
             raw = self.b.read(PARAM + name).decode().strip()
-            result[name] = raw if name in ARRAY_SAMPLES else int(raw)
+            result[name] = raw if name in ARRAY_SAMPLES + BOOL_SAMPLES else int(raw)
         self.save('paused', expected_step)
         return result
 

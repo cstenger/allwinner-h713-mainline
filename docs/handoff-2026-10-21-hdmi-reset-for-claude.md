@@ -68,8 +68,12 @@ solution has not been demonstrated.
   `cold-tvtop-01` (boot `046a1262-cc72-4d5e-b505-f174b90eccb6`): all 108 steps
   passed. Cold TVTOP is SPL-only. After the seven routing writes the lock
   words read `fffffffe` with no hang. The old bench's complete `ready` state is
-  reproduced from cold with every precondition verified. Next: the
-  version-request stage design (the first DSP protocol state change).
+  reproduced from cold with every precondition verified.
+- **Version-request stage implemented offline only:**
+  [design](hdmi-dsp-version-request-stage-design-2026-10-21.md) (steps
+  109–119: lock claim, one-shot `0x80ff` pair, release; timeout recorded,
+  not fatal), [preparation](hdmi-evidence/2026-10-21-dsp-access-version/README.md),
+  bundle `build/hdmi-dsp-access-version-2026-10-21/bundle/`. Awaits a cold run.
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
 - The last Linux boot was `046a1262-cc72-4d5e-b505-f174b90eccb6` (ended by

@@ -39,6 +39,7 @@ class Fake:
         self.active = 'inactive'
         self.release = '6.18.38'
         self.extension = 'Y'
+        self.dsp_timeout = False
 
     def note(self, *args, **kwargs):pass
     def read(self, path):return self.files[path]
@@ -66,7 +67,9 @@ class Fake:
             self.params(failed='N', released='N', extension_available=self.extension,
                         tv_words='0,0,0,0,0,0,0,0,0,0,0,0,0,0,0', tvcap_reset_before=4294967295,
                         audiotop_ctl=0, audiotop_cfg=0, tvfe_ctl=0, dsp_status=0,
-                        lock_peer=0, lock_own=0, tvtop_cold='0,0,0', tvtop_set='0,0,0,0,0,0,0')
+                        lock_peer=0, lock_own=0, tvtop_cold='0,0,0', tvtop_set='0,0,0,0,0,0,0',
+                        dsp_timeout='N', lock_own_before=0, lock_peer_before=0, version0=0,
+                        version1=0, dev0_outcome=0, dev1_outcome=0, dev0_status=0, dev1_status=0)
             self.cursor(0)
         elif argv[0] == 'rmmod':self.files.pop('/sys/module/' + m.MODULE)
         return ''
@@ -84,6 +87,11 @@ class Fake:
             if n == 85:self.params(audiotop_ctl=0x123)
             if n == 96:self.params(tvtop_cold='16,16,16')
             if n == 107:self.params(lock_own=0xaa)
+            if n == 113:
+                self.params(dev0_outcome=2 if self.dsp_timeout else 1, dev0_status=0x20,
+                            dsp_timeout='Y' if self.dsp_timeout else 'N')
+            if n == 114 and not self.dsp_timeout:self.params(version0=0)
+            if n == 116:self.params(dev1_outcome=3 if self.dsp_timeout else 1)
             if self.fail == 'lost-ack':self.files['/proc/sys/kernel/random/boot_id'] = b'other'
         elif path == m.PARAM + 'release_prefix':
             assert self.saved[-1]['phase'] == 'releasing'
@@ -199,8 +207,9 @@ class AuditBoundary(unittest.TestCase):
                                     82: 'extension', 86: 'audiotop-read',
                                     90: 'audiotop-init', 92: 'dsp-status',
                                     96: 'tvtop-census', 104: 'tvtop-routing',
-                                    108: 'lock-sampled'})
-        self.assertEqual(len(m.STEPS), 108)
+                                    108: 'lock-sampled', 111: 'lock-claimed', 114: 'dev0',
+                                    117: 'dev1', 119: 'versions'})
+        self.assertEqual(len(m.STEPS), 119)
 
     def test_stage_ack_refused_away_from_boundary_and_snapshot_only_at_boundary(self):
         self.a.load()
@@ -216,20 +225,26 @@ class AuditBoundary(unittest.TestCase):
         self.run_to(39)
         self.assertNotIn('snapshot_at', self.b.saved[-1])
 
-    def test_all_108_steps_end_without_request_lock_write_or_release(self):
+    def test_all_119_steps_end_with_release_and_no_patch_or_graph(self):
         self.a.load()
         self.run_to(len(m.STEPS))
         result = self.a.paused()[1]
         self.assertEqual(result['next_operation'], 'stage-end')
         self.assertEqual(result['stage_complete'], 'Y')
-        self.assertEqual(len([w for w in self.b.writes if w[0].endswith('advance')]), 108)
-        with self.assertRaises(RuntimeError):self.a.step(109, 'request-version')
+        self.assertEqual(len([w for w in self.b.writes if w[0].endswith('advance')]), 119)
+        with self.assertRaises(RuntimeError):self.a.step(120, 'load-patch')
         with self.assertRaises(RuntimeError):self.a.release()
-        self.assertEqual(self.a.snapshot()['stage_complete'], 'lock-sampled')
+        self.assertEqual(self.a.snapshot()['stage_complete'], 'versions')
         for name in m.STEPS:
-            self.assertNotIn('request', name)
-            self.assertNotIn('version', name)
-            self.assertFalse(name.startswith('write-lock'))
+            for word in ('patch', 'graph', 'selector', 'peer-write', 'write-lock'):
+                self.assertNotIn(word, name)
+        # The only version requests are the two 0x80ff steps, inside claim/release.
+        idx = {s: i for i, s in enumerate(m.STEPS)}
+        self.assertEqual([s for s in m.STEPS if s.startswith('request-')],
+                         ['request-dev0-version', 'request-dev1-version'])
+        self.assertLess(idx['claim-lock'], idx['request-dev0-version'])
+        self.assertLess(idx['request-dev1-version'], idx['release-lock'])
+        self.assertEqual(m.STEPS[-1], 'final-version-recheck')
         # AudioTop/DSP/lock access appears only from step 83.
         access = ('map-audiotop', 'read-audiotop', 'write-audiotop', 'map-dsp', 'read-dsp',
                   'map-lock', 'read-lock')
@@ -314,7 +329,7 @@ class AuditBoundary(unittest.TestCase):
                              or (item.group(3) and 'enable-clock-' + item.group(3))
                              or 'write-tv-word-' + item.group(4))
         self.assertEqual(tuple(names), m.STEPS)
-        self.assertEqual(len(names), 108)
+        self.assertEqual(len(names), 119)
         # Stage boundaries and the release limit match the C constants.
         self.assertIn('#define PREFIX_STEPS %d' % m.PREFIX_STEPS, source)
         self.assertIn('#define LAST_READ_ONLY_STEP %d' % m.LAST_READ_ONLY_STEP, source)
@@ -340,6 +355,34 @@ class AuditBoundary(unittest.TestCase):
         self.assertEqual(re.findall(r'0x([0-9a-f]+)', cold), ['40', '44', '80'])
         self.assertEqual(['read-tvtop-' + o for o in re.findall(r'0x([0-9a-f]+)', cold)],
                          [s for s in m.STEPS if s.startswith('read-tvtop-')])
+
+    def test_version_samples_and_timeout_path(self):
+        self.a.load()
+        self.run_to(112)
+        r = self.a.step(113, m.STEPS[112])
+        self.assertEqual((r['dev0_outcome'], r['dsp_timeout']), (1, 'N'))
+        self.setUp()
+        self.b.dsp_timeout = True
+        self.a.load()
+        self.run_to(112)
+        r = self.a.step(113, m.STEPS[112])
+        self.assertEqual((r['dev0_outcome'], r['dsp_timeout']), (2, 'Y'))
+        # The run still continues to the release and final recheck after a timeout.
+        self.run_to(len(m.STEPS))
+        self.assertEqual(self.a.paused()[1]['stage_complete'], 'Y')
+
+    def test_c_never_writes_peer_word_and_uses_production_protocol(self):
+        root = Path(__file__).resolve().parents[2]
+        source = (root / 'modules/hdmi-dsp-access-audit/h713-hdmi-dsp-access-audit.c').read_text()
+        self.assertIsNone(re.search(r'writel\([^;]*,\s*lock_window\s*\)', source))
+        self.assertIn('#define DSP_VERSION_ADDRESS 0x80ff', source)
+        # Every device-port expression (request write and response read) maps dev1->+0x18, dev0->+0x10.
+        ports = re.findall(r'dsp_port \+ \(s->arg \? (0x[0-9a-f]+) : (0x[0-9a-f]+)\)', source)
+        self.assertEqual(ports, [('0x18', '0x10')] * 2)
+        self.assertIn('BIT(s->arg ? 7 : 4)', source)   # busy dev1/dev0
+        self.assertIn('BIT(s->arg ? 8 : 5)', source)   # done dev1/dev0
+        self.assertIn('#define DSP_RELEASED 0xaa', source)
+        self.assertIn('#define DSP_ARM_OWNED 0x55', source)
 
     def test_tv_word_steps_match_c_offsets(self):
         root = Path(__file__).resolve().parents[2]
