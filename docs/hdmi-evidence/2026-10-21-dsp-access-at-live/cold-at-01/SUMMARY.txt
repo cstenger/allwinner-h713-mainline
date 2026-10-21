@@ -1,0 +1,29 @@
+cold-at-01 — 2026-10-21 (host time), boot e49a6b15-5824-47a0-bffc-8b7fa78b76a8
+AT bundle: module 26faf61f…, helper 3e14a860…, guard 96f37655… (live guard matched). boot-v4.
+
+Cold catch: one SPL; preboot gp6/gp7/MIPS 0; tvcap_bus=0 (TVCAP reset asserted) as in cold-ext-01.
+boot-v4 RAM boot 22/22 OK (fdt rm OK); bootm sha256 OK; boot IDs match; ext4 clean; v1+v2 markers, flag absent;
+genpd TVCAP off-0, TVFE off-0. Console 5->7, panic 5->0, notice marker on UART. Load INIT DONE extension=1.
+
+Steps 1-82: identical to cold-ext-01 (census both PPU 00020000, TVCAP reset 1, clock mask 00010000, TV words
+  as U-Boot; both domains -> 00010000; TVCAP reset released; all clocks; 15 words exact; demod gate 00010001;
+  audio/display clocks; final recheck pass). clk_summary at boundary 69 identical to cold-ext-01 (excl. CPU).
+  Every boundary snapshot reviewed before --stage-ack.
+AudioTop stage:
+  83 map-audiotop ok
+  84 read-audiotop-ctl = 00000000   <- the read the old bench most likely hung on: COMPLETES in verified state
+  85 read-audiotop-cfg = 00000000   (cold default; inherited-setup refusal not triggered)
+  86 read-tvfe-ctl (0x06e00000) = 00000010  (not stock-cold 003003ff, not MIPS-live 00111111)
+  87 ctl -> 00000700, 88 cfg -> 001a5e00, 89 cfg -> 011a5e00 (Android baseline), all exact readback
+  90 MIPS/SCP still stopped
+  91 map-dsp-port ok
+  92 read-dsp-status (0x06144000) = 00000000 (not busy)
+  93 map-lock-window ok
+  94 read-lock-peer (0x05001530): BEGIN printed at 810.146 s, NO DONE. Helper's last event: before-write
+     advance=94. SSH timed out (120 s). No further UART output (> 2.5 min; no RCU stall report although
+     CONFIG_RCU_CPU_STALL_TIMEOUT=21, so SoC-wide wedge). Board AP gone; ping/SSH: no route.
+     => HARD LOCK on the plain read of the lock window 0x05001530, in the fully verified state
+        (both TV domains on, TVCAP+demod resets released, receiver/audio/display clocks on,
+        display reset deasserted, AudioTop initialized, DSP status readable).
+State: module pinned, attempt state 'executing' step 94 (tmpfs; lost at power-off). kernel.panic=0, so no
+  auto-reboot. Recorder stopped after confirming silence. Physical cold recovery required.

@@ -1,6 +1,6 @@
 # AudioTop stage design: AudioTop, DSP status and lock sampling — October 21, 2026
 
-**Status: implemented and tested offline; no live run yet.** See the [preparation evidence](hdmi-evidence/2026-10-21-dsp-access-at/README.md). The kernel parameter named `complete` below became `stage_complete`.
+**Status: run live ([cold-at-01](hdmi-evidence/2026-10-21-dsp-access-at-live/README.md)): steps 1–93 passed (AudioTop readable and initialized, DSP status readable); step 94, the lock-window read at `0x05001530`, hard-locked the SoC.** See the [preparation evidence](hdmi-evidence/2026-10-21-dsp-access-at/README.md). The kernel parameter named `complete` below became `stage_complete`.
 This continues the [extension](hdmi-dsp-access-extension-design-2026-10-21.md),
 which [passed live](hdmi-evidence/2026-10-21-dsp-access-ext-live/README.md) to a
 hardware-verified state: both TV domains on, TVCAP and demod resets released,
