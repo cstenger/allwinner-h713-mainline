@@ -1,0 +1,120 @@
+{
+  "scope": "logo-free access setup bench; not a recovery path",
+  "kernel_release": "6.18.38",
+  "module_sha256": "9d6fdcece8769017a571f2c1643aaf4146697a0e3a8aa9026d9777fb78645d7c",
+  "guard_sha256": "365fe6c97cefb24794d5e4a315d6711b08a8a136874eebb00a08a750cc8e7de6",
+  "files": {
+    "h713-hdmi-dsp-observe.ko": {
+      "bytes": 33544,
+      "sha256": "9d6fdcece8769017a571f2c1643aaf4146697a0e3a8aa9026d9777fb78645d7c"
+    },
+    "dsp-observe.py": {
+      "bytes": 6657,
+      "sha256": "5d806d496613a7a2f52fecd3b5ef5101a9f1ef3f49744a59603af9b2fa9aea59"
+    },
+    "h713-hdmi-hold-guard": {
+      "bytes": 1234,
+      "sha256": "365fe6c97cefb24794d5e4a315d6711b08a8a136874eebb00a08a750cc8e7de6"
+    }
+  },
+  "source_files": {
+    "modules/hdmi-dsp-observe/h713-hdmi-dsp-observe.c": {
+      "bytes": 14507,
+      "sha256": "54870054cf0431543b1f3d4cf31281939bf365abfd72e6869d6a7de6e17582aa"
+    },
+    "modules/hdmi-dsp-observe/Makefile": {
+      "bytes": 33,
+      "sha256": "5dbd7a06fcab3d4e256b12883ae724c0fe408881347f086429c3e250ed4bbbfb"
+    },
+    "modules/hdmi-dsp-probe/h713-dsp-lock.h": {
+      "bytes": 1198,
+      "sha256": "deb4f7a828c96de153fee730297adf069f00c4a86f933290cf2589a439aecf4e"
+    },
+    "modules/hdmi-dsp-probe/h713-dsp-completion.h": {
+      "bytes": 1551,
+      "sha256": "4e975872bc82ff17345208a79e87a9676cb3a2af1abfd16ba35f94dd00445728"
+    },
+    "tools/hdmi/dsp-observe.py": {
+      "bytes": 6657,
+      "sha256": "5d806d496613a7a2f52fecd3b5ef5101a9f1ef3f49744a59603af9b2fa9aea59"
+    },
+    "tools/hdmi/prepare-dsp-observe-boot.py": {
+      "bytes": 4128,
+      "sha256": "c6483f98e724ee9dbd50df77c595950b811394f3d232e98695b49d938e751306"
+    },
+    "tools/serial/catch-cold-uboot.py": {
+      "bytes": 3066,
+      "sha256": "766e5bc169b50f0c531a135f7fed26834f17d00b4dfb6cee74f2b835264037d6"
+    },
+    "tools/serial/run-dsp-observe-boot.py": {
+      "bytes": 2065,
+      "sha256": "f1d80c86319c073f3abd531de09efd3779b647b18b30dc3faf15ed9349ee8d44"
+    },
+    "tools/hdmi/h713-hdmi-hold-guard": {
+      "bytes": 1234,
+      "sha256": "365fe6c97cefb24794d5e4a315d6711b08a8a136874eebb00a08a750cc8e7de6"
+    }
+  },
+  "compiler": "clang version 23.1.3\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n",
+  "vermagic": "6.18.38 SMP mod_unload aarch64",
+  "boot": {
+    "scope": "cold-only RAM DT edits; no environment save or boot-media write",
+    "fit_sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+    "dtb_sha256": "4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940",
+    "disabled_nodes": [
+      "/soc/display@5600000",
+      "/soc/cpu-comm@3003000"
+    ],
+    "gp6": "require zero, then set launch budget; never clear",
+    "commands_sha256": "3dab66432fa2f7ddd04c1cc4fa415e23ff6fd93d6462902d35ff6157d395f797",
+    "ram_transport_crc32": "d84f128d",
+    "hash_limit": "Installed U-Boot lacks hash command. FIT SHA256 pinned offline; RAM transport CRC and bootm subimage SHA256 checks retained."
+  },
+  "state": "built and offline checked; no DSP hardware access or logo-free boot yet",
+  "local_checks": {
+    "module-build.txt": {
+      "bytes": 164,
+      "sha256": "1a13e6d39926a593d59f5d6a4e1610b61354876ae34cd954fa4a6b70128d301c"
+    },
+    "observe-tests.txt": {
+      "bytes": 103,
+      "sha256": "6273232de4d3ef7acd4ecafa5c86beeeb974f56586b21089a2990b3f72facbe6"
+    },
+    "boot-tests.txt": {
+      "bytes": 101,
+      "sha256": "33060fd73862c5e1af97335504d5b45211fce6d229657f556d8deceeadc52ce4"
+    },
+    "guard-tests.txt": {
+      "bytes": 101,
+      "sha256": "ca3dcf078063fdb28d91e34bfb42032e3e70af47717ac32ee57110ea8aaaf10f"
+    },
+    "lock-tests.txt": {
+      "bytes": 124,
+      "sha256": "3012885198af55169871b8c6fb76f4928acbe37f05a16d72c5ba101a4b4794b8"
+    },
+    "response-tests.txt": {
+      "bytes": 113,
+      "sha256": "ae9b31cc27d57fa091897cf3337a12808945f435ab3adfb33304cefb1b0d913a"
+    }
+  },
+  "kernel_build": {
+    ".config": {
+      "bytes": 167238,
+      "sha256": "fc69fdaae188cc9ab84a30eec937635ceae259101ff201dd103290cbff1155bc"
+    },
+    "Module.symvers": {
+      "bytes": 679371,
+      "sha256": "23e549bf3bd2af01485082cb8716e4bb6824e589645c27a86828ce9663a7955f"
+    },
+    "include/generated/utsrelease.h": {
+      "bytes": 30,
+      "sha256": "6b6ca370af5659bf360543cc52325993c5ff83ee3fdd42df22470cf82e5aea25"
+    }
+  },
+  "current_fat_read": {
+    "boot_id": "a02e888b-4f77-4b65-a95d-bafefa1705c5",
+    "image_sha256": "d5b523ca73495c033ca197b4744ff276a4940b6c464a77fa79eb83c9ac927050",
+    "kernel_sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70"
+  },
+  "boot_prepared_directory": "boot-v3"
+}

@@ -9,7 +9,7 @@ M=${H713_GUARD_SYSMODULE:-/sys/module}
 OFF=${H713_GUARD_LAMP_OFF:-/usr/lib/systemd/system-shutdown/h713-off}
 POWEROFF=${H713_GUARD_POWEROFF:-systemctl --force --force poweroff}
 held=
-for m in h713_hdmi_signal h713_ddc_pins h713_scp_probe h713_hdmi_audio h713_hdmi_receiver; do
+for m in h713_hdmi_signal h713_ddc_pins h713_scp_probe h713_hdmi_audio h713_hdmi_receiver h713_hdmi_dsp_observe; do
   [ ! -d "$M/$m" ] || held="$held $m"
 done
 [ -n "$held" ] || exit 0
