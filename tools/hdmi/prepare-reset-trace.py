@@ -34,7 +34,7 @@ def tree_digest(root):
     return hasher.hexdigest()
 
 
-def prepare(base, output, include_spl=False):
+def prepare(base, output, include_spl=False, include_domains=False):
     base, output = base.resolve(), output.resolve()
     if output == base or base in output.parents:
         raise ValueError('output must be outside the prepared base tree')
@@ -46,11 +46,14 @@ def prepare(base, output, include_spl=False):
     patches = [HERE / 'reset-trace/0001-proper-reset-observation.patch']
     if include_spl:
         patches.append(HERE / 'reset-trace/0002-optional-spl-reset-observation.patch')
+    if include_domains:
+        patches.append(HERE / 'reset-trace/0003-proper-domain-controls.patch')
     base_digest = tree_digest(base)
     manifest = {
         'schema': 1, 'purpose': 'bench reset observation; not installed',
         'source_pin': pin, 'normal_inputs': inputs,
         'base_tree_sha256': base_digest, 'optional_spl_probe': include_spl,
+        'optional_domain_controls': include_domains,
         'patches': {p.name: digest(p) for p in patches},
     }
     output.mkdir(parents=True, exist_ok=False)
@@ -74,8 +77,10 @@ def main():
     parser.add_argument('output', type=Path, help='new bench directory, outside the base')
     parser.add_argument('--include-spl', action='store_true',
                         help='also prepare optional pre/post-DRAM SPL probes; no installation')
+    parser.add_argument('--include-domains', action='store_true',
+                        help='proper-only CCU/SCP control reads; no DSP/receiver access')
     args = parser.parse_args()
-    print(prepare(args.base, args.output, args.include_spl))
+    print(prepare(args.base, args.output, args.include_spl, args.include_domains))
 
 
 if __name__ == '__main__':
