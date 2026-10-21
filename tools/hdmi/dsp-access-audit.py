@@ -19,6 +19,9 @@ PARAM = '/sys/module/' + MODULE + '/parameters/'
 STATE = '/run/h713-dsp-access-audit/state.json'
 GUARD = '/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard'
 SCHEMA = 'h713-dsp-access-prefix-v1'
+# INIT/BEGIN/DONE are pr_notice (level 5); the console prints levels strictly
+# below its threshold, and the rootfs default is 5 (warnings only).
+CONSOLE_MIN = 6
 COMPETITORS = ('h713_hdmi_receiver', 'h713_hdmi_audio', 'h713_hdmi_signal',
                'h713_ddc_pins', 'h713_scp_probe', 'h713_hdmi_dsp_probe',
                'h713_tvfe_bench', 'h713_hdmi_power', 'h713_hdmi_tvfe_hold',
@@ -113,6 +116,12 @@ class Audit:
         for node in ('display@5600000', 'cpu-comm@3003000'):
             if self.b.read('/proc/device-tree/soc/' + node + '/status') != b'disabled\0':
                 raise RuntimeError('Competing DT node is not disabled: ' + node)
+        printk = self.b.read('/proc/sys/kernel/printk').split()
+        if not printk or not printk[0].isdigit() or int(printk[0]) < CONSOLE_MIN:
+            raise RuntimeError('Console threshold hides UART BEGIN/DONE markers; run dmesg -n 7 first')
+        # panic=5 on the cmdline would warm-reboot past the shutdown guard.
+        if self.b.read('/proc/sys/kernel/panic').strip() != b'0':
+            raise RuntimeError('Panic would auto-reboot; run sysctl kernel.panic=0 first')
         if self.b.exists('/dev/cpu_comm_fd'):raise RuntimeError('CPU_COMM device exists')
         for name in COMPETITORS:
             if self.b.exists('/sys/module/' + name):raise RuntimeError('Competing owner: ' + name)

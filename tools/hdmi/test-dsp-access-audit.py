@@ -18,7 +18,9 @@ class Fake:
         self.files = {'/proc/sys/kernel/random/boot_id': b'boot-a\n',
                       '/proc/device-tree/chosen/h713,dsp-observation-v1': bytes.fromhex('44535031'),
                       '/bundle/' + m.KO: b'module', m.GUARD: b'guard',
-                      '/bundle/dsp-access-audit.py': b'helper'}
+                      '/bundle/dsp-access-audit.py': b'helper',
+                      '/proc/sys/kernel/printk': b'7\t4\t1\t7\n',
+                      '/proc/sys/kernel/panic': b'0\n'}
         for node in ('display@5600000', 'cpu-comm@3003000'):
             self.files['/proc/device-tree/soc/' + node + '/status'] = b'disabled\0'
         self.files['/bundle/manifest.json'] = json.dumps({
@@ -95,6 +97,9 @@ class AuditBoundary(unittest.TestCase):
             'guard': (m.GUARD, b'old'),
             'module': ('/bundle/' + m.KO, b'other'),
             'helper': ('/bundle/dsp-access-audit.py', b'other'),
+            'console-default': ('/proc/sys/kernel/printk', b'5\t4\t1\t7\n'),
+            'console-garbled': ('/proc/sys/kernel/printk', b''),
+            'panic-reboot': ('/proc/sys/kernel/panic', b'5\n'),
         }
         for label, (path, value) in cases.items():
             with self.subTest(label=label):

@@ -21,11 +21,16 @@ solution has not been demonstrated.
 - Repository: `/home/chris/Projects/h713`, branch `h713-letterbox`.
 - Latest live investigation: `7f256b0` — successful logo-free boot and stalled
   preparation; failed monolithic bench source: `a6b7f8c`. `b1c3c7c` committed
-  the standalone handoff. The subsequent staged-prefix work is described below
-  and identified by its preparation/source hashes.
-- The user confirmed **everything is off and disconnected** after the stall:
-  board power, USB and UART. Leave the board off while preparing the revised
-  experiment. Recheck physical state with the operator before live work.
+  the standalone handoff. The staged-prefix source and preparation evidence
+  are committed as `d2f47d5`.
+- The user confirmed **everything was off and disconnected** after the
+  October 21 stall. **That is no longer the latest live state.** A later,
+  uncurated run is in `build/hdmi-dsp-access-audit-2026-10-21/cold-prefix-01/`
+  (boot `460adf1a-ac3d-4c8e-b6bb-b86b2154fd0b`): cold catch, new guard
+  installed, `load`, then steps 1–9 acknowledged with UART BEGIN/DONE. Step 9
+  `read-mips-stopped` read `00000000`. The UART recorder ran to its 60-minute
+  deadline with nothing after step 9. The board's state after that run is
+  not recorded; ask the operator before assuming it is off or still paused.
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
 - The last Linux boot was `fcff9719-ac23-418c-b013-b7d030984a04` (now ended).
@@ -35,9 +40,13 @@ solution has not been demonstrated.
   Do not bulk-add, delete or recurate them as part of this investigation.
 - New `modules/hdmi-dsp-access-audit/` and `tools/hdmi/dsp-access-audit.py`
   implement a 33-step **initial read-only prefix only**, not the full access
-  setup. It builds for 6.18.38 and all 18 offline tests pass. No new board
-  staging, guard installation, module load or live step has occurred yet. The
-  original failed bundle remains on disk and must not be retried unchanged.
+  setup. It builds for 6.18.38 and all 18 offline tests pass. Its first live
+  run is summarized above. The helper now also refuses unless the console
+  threshold is at least 6 and `kernel.panic` is 0 (see below); that change
+  postdates the bundle staged for `cold-prefix-01`; the next boot uses
+  `build/hdmi-dsp-access-audit-2026-10-21/bundle-v2/` (helper
+  `432dd643…`, module and guard unchanged), staged in a new board directory. The original failed bundle remains on disk
+  and must not be retried unchanged.
 
 Read these first, in order:
 
@@ -111,8 +120,14 @@ a later retained-patch control would be needed to distinguish that.
 
 This is consistent with a board/kernel stall during pending preparation, but
 **the failing instruction/stage is unknown**. Userspace lacks a flushed
-before-insmod milestone; the module's first informative log is late, at
-AudioTop. We could not retrieve phase state, loaded-module state or flags.
+before-insmod milestone. The module's first informative log is late, at
+AudioTop, and it is `pr_info`: the rootfs console threshold
+(`kernel.printk = 5 4 1 7`) prints only warnings and worse, so **no bench
+info line could have reached the UART however far the module got**. The
+empty `bench-uart.log` therefore says nothing about progress. No RCU stall
+report (`pr_err`, which would print) appeared either, which fits an SoC-wide
+or UART-path wedge but does not prove one. We could not retrieve phase
+state, loaded-module state or flags.
 Do not claim insmod completion, blame a particular domain, or infer DSP state
 from missing UART output. The DSP command timeout was never exercised.
 
@@ -142,7 +157,14 @@ The helper checks identities and eligibility before each action, flushes
 milestones, fsyncs attempt state before load/step/release, requires both exact
 next step number/name, and blocks retry after uncertainty even if the kernel
 may have finished. Each next stage needs retained UART and helper
-acknowledgments; do not run a stage loop. A healthy prefix can explicitly
+acknowledgments; do not run a stage loop. Those UART markers are `pr_notice`
+and stay invisible unless the console threshold is raised first: run
+`dmesg -n 7` and `sysctl kernel.panic=0` before `load` (the maintenance
+cmdline has `panic=5`, which would warm-reboot past the shutdown guard on a
+panic). The helper refuses to run otherwise. Steps 1–8 touch no hardware and
+double as a check that markers reach the UART. The helper's fsync'd state is
+on tmpfs (`/run`): it blocks retries within one boot but does not survive a
+power cycle. A healthy prefix can explicitly
 release software resources only; failure retains its pin/resources for cold
 recovery. Successful prefix completion does not prove later access safe.
 
@@ -208,7 +230,8 @@ repair, if needed, has its own recovery procedure and backups.
 ### 3. Qualify access, then observation
 
 Stage/verify the new prefix bundle and extended guard after Linux health
-checks. First run `load` only and retain INIT DONE/cursor zero. Then run only
+checks. Raise the console threshold and set `kernel.panic=0`, confirm a
+notice-level marker on the UART, then run `load` only and retain INIT DONE/cursor zero. Then run only
 the reviewed next stage, inspect its result, and continue explicitly one stage
 at a time. Stop at the first unexplained failure; preserve evidence
 and use physical cold recovery rather than trying another clock/reset mix.
@@ -487,7 +510,7 @@ pin, but that state could not be verified in the failed run.
 
 All relative paths below are under `/home/chris/Projects/h713`.
 
-- New offline prefix preparation: `build/hdmi-dsp-access-audit-2026-10-21/`;
+- New offline prefix preparation: `build/hdmi-dsp-access-audit-2026-10-21/` (next boot: `bundle-v2/`);
   its `bundle/manifest.json` pins the new module/helper/guard. Never substitute
   the old monolithic bundle. Details/checks: `docs/hdmi-dsp-access-audit-2026-10-21.md`.
 - Canonical committed live evidence:
