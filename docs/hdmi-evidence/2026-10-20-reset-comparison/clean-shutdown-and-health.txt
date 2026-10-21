@@ -1,0 +1,38 @@
+18f37fd5-1962-4abc-9509-cf80a11b1144
+Filesystem features:      has_journal ext_attr resize_inode dir_index orphan_file filetype needs_recovery extent 64bit flex_bg metadata_csum_seed sparse_super large_file huge_file dir_nlink extra_isize metadata_csum orphan_present
+Filesystem state:         clean
+Result=success
+ExecMainStatus=0
+-- No entries --
+[    8.136659] h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...
+[   19.452126] h713-arm64 python3[204]: {"phase": "ready", "already_ready": false}
+[   19.528568] h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.
+[   19.534438] h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[   19.863197] h713-arm64 python3[386]: EDID/HPD ready; receiver client and DDC pins retained
+[   19.932596] h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[   19.942383] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[   20.023640] h713-arm64 enable-mixer.sh[394]: DAC Playback Volume                          set to 43   [0..63]
+[   20.026909] h713-arm64 enable-mixer.sh[395]: Line Out Playback Volume                     set to 15   [0..31]
+[   20.029327] h713-arm64 enable-mixer.sh[396]: Line Out Playback Switch                     set to 1 1
+[   20.031637] h713-arm64 enable-mixer.sh[397]: Speaker Switch                               set to 1
+[   20.038111] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[   21.328912] h713-arm64 hdmi-speaker[399]: HDMI speaker ready; fading in after silent pre-roll
+[   93.817092] h713-arm64 systemd[1]: Stopping h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[   94.269994] h713-arm64 systemd[1]: h713-hdmi-speaker.service: Deactivated successfully.
+[   94.270559] h713-arm64 systemd[1]: Stopped h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[   94.272768] h713-arm64 systemd[1]: h713-hdmi-speaker.service: Consumed 6.650s CPU time.
+[   94.323822] h713-arm64 systemd[1]: Stopping h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[   94.800954] h713-arm64 python3[536]: EDID/HPD, SCP SRAM/vectors and DDC ownership restored
+[   94.886776] h713-arm64 systemd[1]: h713-hdmi-signal.service: Deactivated successfully.
+[   94.887342] h713-arm64 systemd[1]: Stopped h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[   94.897861] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+[   95.219108] h713-arm64 runuser[551]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[   95.277080] h713-arm64 runuser[551]: pam_unix(runuser:session): session closed for user media
+[   95.331917] h713-arm64 runuser[559]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[   95.472096] h713-arm64 runuser[559]: pam_unix(runuser:session): session closed for user media
+[   97.395736] h713-arm64 runuser[572]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[   97.466848] h713-arm64 runuser[572]: pam_unix(runuser:session): session closed for user media
+[   99.562833] h713-arm64 python3[550]: {"phase": "parked", "receiver_removed": true, "cold_boot_required": true, "audio_stop": {"phase": "stopped", "already_stopped": false, "receiver_retained": true, "dsp_restored_words": 22, "tvfe_restored_words": 15}}
+[   99.639797] h713-arm64 systemd[1]: h713-hdmi-capture.service: Deactivated successfully.
+[   99.640414] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+[   99.641563] h713-arm64 systemd[1]: h713-hdmi-capture.service: Consumed 1.391s CPU time.

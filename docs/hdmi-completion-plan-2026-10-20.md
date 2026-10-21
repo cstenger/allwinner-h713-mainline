@@ -10,8 +10,13 @@ cold baseline passed boot/startup checks. The root filesystem's recorded
 ext4/orphan errors were subsequently repaired offline, with a full backup,
 verified writeback, successful root growfs and a clean orderly shutdown.
 See the [repair evidence](hdmi-evidence/2026-10-20-ext4-repair/README.md).
-Resume the clean/abrupt reset comparison from a fresh instrumented cold HDMI
-baseline; automatic warm HDMI recovery remains unimplemented.
+The subsequent [paired reset evidence](hdmi-evidence/2026-10-20-reset-comparison/README.md)
+found identical GP6/GP7 and MIPS clock/reset/status words at all three proper
+probe stages after clean and synced SysRq-b resets. Both recorded warm paths
+park MIPS and skip capture. A later operator powerdown separates the current
+live session from the recorded abrupt boot. Next prepare reviewed pre-logo
+DSP/SCP/receiver observations and close immediate boot-ID correlation;
+automatic warm HDMI recovery remains unimplemented.
 
 This plan reconciles the latest recorded evidence at repository commit
 `6ce4977`. It does not report new hardware tests. Counts and durations below

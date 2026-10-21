@@ -1,0 +1,24 @@
+{
+  "starting_boot_id": "c805a755-a1ea-4df4-839a-212692bc98a0",
+  "method": "normal systemctl reboot",
+  "operator_cold_cycle_confirmed": true,
+  "source_format": "not supplied by operator; ALSA capture fixed 48 kHz does not establish input rate",
+  "uart_cold_start_offset": 466,
+  "uart_reset_request_offset": 63096,
+  "capture_path": "uart-clean/serial.log",
+  "status": "clean trial collected",
+  "post_reset_boot_id": "18f37fd5-1962-4abc-9509-cf80a11b1144",
+  "uart_reset_boot_offset": 63685,
+  "uart_extracted_end_offset": 111695,
+  "reset_log_sha256": "1a0492c3d006890d0bbd783e172fa2edcde9c55e1f1298be6f8a34bbe1730ed1",
+  "shutdown": {
+    "signal_restored": true,
+    "dsp_restored_words": 22,
+    "tvfe_restored_words": 15,
+    "parked": true,
+    "receiver_removed": true
+  },
+  "root_state_after": "clean; growfs success",
+  "warm_capture": "intentionally skipped by GP6; HDMI units inactive",
+  "recovery": "unproven"
+}

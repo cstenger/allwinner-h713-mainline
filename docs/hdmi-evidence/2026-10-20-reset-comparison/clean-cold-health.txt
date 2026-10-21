@@ -1,0 +1,37 @@
+c805a755-a1ea-4df4-839a-212692bc98a0
+Filesystem features:      has_journal ext_attr resize_inode dir_index orphan_file filetype needs_recovery extent 64bit flex_bg metadata_csum_seed sparse_super large_file huge_file dir_nlink extra_isize metadata_csum orphan_present
+Filesystem state:         clean
+Result=success
+ExecMainStatus=0
+state: RUNNING
+owner_pid   : 399
+trigger_time: 21.021545799
+tstamp      : 75.207402200
+delay       : 96
+avail       : 96
+avail_max   : 512
+-----
+hw_ptr      : 2600892
+appl_ptr    : 2600796
+access: RW_INTERLEAVED
+format: S16_LE
+subformat: STD
+channels: 2
+rate: 48000 (48000/1)
+period_size: 256
+buffer_size: 16384
+0
+N
+[    8.136659] h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...
+[   19.452126] h713-arm64 python3[204]: {"phase": "ready", "already_ready": false}
+[   19.528568] h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.
+[   19.534438] h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[   19.863197] h713-arm64 python3[386]: EDID/HPD ready; receiver client and DDC pins retained
+[   19.932596] h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[   19.942383] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[   20.023640] h713-arm64 enable-mixer.sh[394]: DAC Playback Volume                          set to 43   [0..63]
+[   20.026909] h713-arm64 enable-mixer.sh[395]: Line Out Playback Volume                     set to 15   [0..31]
+[   20.029327] h713-arm64 enable-mixer.sh[396]: Line Out Playback Switch                     set to 1 1
+[   20.031637] h713-arm64 enable-mixer.sh[397]: Speaker Switch                               set to 1
+[   20.038111] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[   21.328912] h713-arm64 hdmi-speaker[399]: HDMI speaker ready; fading in after silent pre-roll
