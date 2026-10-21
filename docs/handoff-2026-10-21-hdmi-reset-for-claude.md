@@ -55,6 +55,11 @@ solution has not been demonstrated.
   (logo/MIPS provides it in production). **Do not read `0x0500xxxx` in a
   logo-free bench until that prerequisite is identified offline.** The
   October 21 bench would have hung there at the latest.
+- **Offline result:** the missing prerequisite is almost certainly **TVTOP
+  routing at `0x05700000`** (U-Boot `h713_display_prepare()` writes), not
+  clocks. This is the same failure as the 2026-08-07 AFBD hang. See the
+  [lock-window prerequisite note](hdmi-dsp-lock-window-prerequisite-2026-10-21.md);
+  the next step is a TVTOP stage before the lock read.
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
 - The last Linux boot was `e49a6b15-5824-47a0-bffc-8b7fa78b76a8` (ended by a
