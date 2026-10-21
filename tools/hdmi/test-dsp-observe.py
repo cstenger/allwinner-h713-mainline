@@ -53,7 +53,7 @@ class Boundary(unittest.TestCase):
         self.assertEqual(self.s.prepare()['DSP_commands_issued'], 0)
         self.assertEqual(self.b.writes, [])
     def test_cross_boot_handoff_missing_marker_competitor_and_bad_guard_refuse_before_load(self):
-        for kind in ('boot', 'handoff', 'marker', 'owner', 'guard', 'module', 'display', 'cpucomm'):
+        for kind in ('boot', 'handoff', 'marker', 'owner', 'guard', 'module', 'display', 'cpucomm', 'auditowner', 'auditstate'):
             with self.subTest(kind=kind):
                 self.setUp()
                 if kind=='boot':self.b.files['/proc/sys/kernel/random/boot_id']=b'other'
@@ -62,6 +62,8 @@ class Boundary(unittest.TestCase):
                 elif kind=='owner':self.b.files['/sys/module/h713_hdmi_signal']=b''
                 elif kind=='guard':self.b.files[m.GUARD]=b'old guard'
                 elif kind=='display':self.b.files['/proc/device-tree/soc/display@5600000/status']=b'okay\0'
+                elif kind=='auditowner':self.b.files['/sys/module/h713_hdmi_dsp_access_audit']=b''
+                elif kind=='auditstate':self.b.files['/run/h713-dsp-access-audit/state.json']=b'{}'
                 elif kind=='cpucomm':self.b.files['/dev/cpu_comm_fd']=b''
                 else:self.b.files['/bundle/h713-hdmi-dsp-observe.ko']=b'other module'
                 with self.assertRaises(RuntimeError):self.s.prepare()

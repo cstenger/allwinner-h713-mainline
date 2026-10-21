@@ -10,6 +10,8 @@ recovery alone does not qualify.
 
 The immediate assignment is to **localize the stall in logo-free DSP access
 preparation**, then establish a safe observation path for the reset contract.
+A new staged initial-prefix bench is now built/tested offline; qualify it on
+a fresh cold maintenance boot before designing later power/clock operations.
 Do not start by implementing an assumed DSP reset or retrying the failed bench.
 Automatic warm HDMI recovery is still unimplemented, and a software-only
 solution has not been demonstrated.
@@ -17,8 +19,10 @@ solution has not been demonstrated.
 ## Current state at handoff
 
 - Repository: `/home/chris/Projects/h713`, branch `h713-letterbox`.
-- Latest investigation commit: `7f256b0` — documents the successful logo-free
-  boot and stalled preparation. Bench implementation: `a6b7f8c`.
+- Latest live investigation: `7f256b0` — successful logo-free boot and stalled
+  preparation; failed monolithic bench source: `a6b7f8c`. `b1c3c7c` committed
+  the standalone handoff. The subsequent staged-prefix work is described below
+  and identified by its preparation/source hashes.
 - The user confirmed **everything is off and disconnected** after the stall:
   board power, USB and UART. Leave the board off while preparing the revised
   experiment. Recheck physical state with the operator before live work.
@@ -29,16 +33,20 @@ solution has not been demonstrated.
 - Tracked working tree was clean before this handoff was created. Many
   historical/local untracked files remain intentionally outside commits.
   Do not bulk-add, delete or recurate them as part of this investigation.
-- No revised staged-access implementation has been written yet. The current
-  bench module/bundle is the one associated with the stall.
+- New `modules/hdmi-dsp-access-audit/` and `tools/hdmi/dsp-access-audit.py`
+  implement a 33-step **initial read-only prefix only**, not the full access
+  setup. It builds for 6.18.38 and all 18 offline tests pass. No new board
+  staging, guard installation, module load or live step has occurred yet. The
+  original failed bundle remains on disk and must not be retried unchanged.
 
 Read these first, in order:
 
-1. [Latest failed cold attempt and next-stage gate](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
-2. [DSP access rationale and experiment design](hdmi-dsp-observation-2026-10-20.md).
-3. [Completion plan and release gates](hdmi-completion-plan-2026-10-20.md).
-4. [Expanded clean/abrupt reset comparison](hdmi-evidence/2026-10-20-reset-controls/README.md).
-5. [Warm-reset investigation](hdmi-warm-reset-investigation-2026-10-20.md).
+1. [Staged access audit, findings and next live gate](hdmi-dsp-access-audit-2026-10-21.md).
+2. [Latest failed cold attempt and next-stage gate](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
+3. [DSP access rationale and experiment design](hdmi-dsp-observation-2026-10-20.md).
+4. [Completion plan and release gates](hdmi-completion-plan-2026-10-20.md).
+5. [Expanded clean/abrupt reset comparison](hdmi-evidence/2026-10-20-reset-controls/README.md).
+6. [Warm-reset investigation](hdmi-warm-reset-investigation-2026-10-20.md).
 
 Some historical documents/manifests say the board is running an earlier boot
 or that the bench is only prepared. Those are snapshots of their dates;
@@ -110,7 +118,48 @@ from missing UART output. The DSP command timeout was never exercised.
 
 ## Next steps, in priority order
 
-### 1. Prepare and review a revised experiment offline
+### 1. Review the prepared initial-prefix experiment
+
+The [staged access audit](hdmi-dsp-access-audit-2026-10-21.md) records the new
+findings and exact live protocol. Source inspection and the exact maintenance
+DT revealed a dependency to verify: `allwinner,keep-tvcap-on` initializes the
+PPU driver's TVCAP genpd as already on without checking the hardware power
+state in that branch. This is **not a demonstrated stall cause**. PPU probe
+also changes its own reset/clock/timing controls during Linux startup, so even
+logo-free samples are not pristine reset state. Do not remove the property or
+power-cycle a domain speculatively.
+
+The new prefix module loads with software/DT checks only. Separate steps
+cover resource claims, control-window mappings, individual initial MIPS/SCP/
+CCU/status reads, exclusive reset-handle lookup/status, and all 17 clock-handle
+lookups. It stops before domain creation/resume; there are no clock enables,
+reset changes, TVFE/AudioTop writes, DSP/lock reads or DSP requests. Step 9 is
+the first direct register read. Clock lookup is distinct from enable; reset
+lookup is distinct from deassertion. The disabled tvtop DT node still contains
+the required reset descriptors and need not be enabled for those lookups.
+
+The helper checks identities and eligibility before each action, flushes
+milestones, fsyncs attempt state before load/step/release, requires both exact
+next step number/name, and blocks retry after uncertainty even if the kernel
+may have finished. Each next stage needs retained UART and helper
+acknowledgments; do not run a stage loop. A healthy prefix can explicitly
+release software resources only; failure retains its pin/resources for cold
+recovery. Successful prefix completion does not prove later access safe.
+
+New guard source covers `h713_hdmi_dsp_access_audit`; the board's currently
+installed guard does not. The pinned new bundle cannot load through its helper
+until that guard is backed up, atomically installed and verified. The legacy
+and new helpers mutually exclude experiment owners/attempts in the same boot.
+
+Local prepared files are in `build/hdmi-dsp-access-audit-2026-10-21/`:
+`bundle/`, `preparation.json`, `steps.json`, `dt-audit.json`, isolated `module/`
+and check outputs. Committed preparation evidence is under
+`docs/hdmi-evidence/2026-10-21-dsp-access-audit/`. Ten new prefix tests, three
+guard tests and five legacy-helper tests pass; W=1 build/vermagic match with
+the known compiler-version warning. No hardware pass is claimed.
+
+For later extensions beyond the prefix, the following audit requirements
+still apply:
 
 Audit the no-logo DT and dependencies against production receiver/display/audio
 setup. Existing production success follows source3/logo and does not establish
@@ -122,7 +171,7 @@ that the same access sequence works without it. Useful sources:
 - `tools/hdmi/dsp-observe.py`
 - Installed-kernel PPU/CCU sources in the build tree listed below.
 
-Prepare a separately identified bench with:
+Any later extension needs:
 
 - Flushed/persisted userspace milestones before each preflight operation and
   before/after module loading; preserve the exact invoked command and boot ID.
@@ -148,8 +197,8 @@ Use only one UART reader; arm the cold catcher before power is applied. Require
 fresh SPL evidence and stop before logo initialization. If the catcher misses
 the boundary, do not improvise a warm restart to recreate a cold baseline.
 
-The already-tested RAM boot tools can be a starting point after reviewing
-artifact identities; they do not authorize the failed access setup. Use fresh
+The already-tested RAM boot tools can be reused after reviewing artifact
+identities; do not use the failed monolithic access setup. Use fresh
 output directories, and preserve all acknowledgments. After Linux boots,
 correlate UART/SSH boot IDs immediately and inspect root/journal/growfs health
 **before further hardware work**. The last run ended by physical disconnection
@@ -158,10 +207,15 @@ repair, if needed, has its own recovery procedure and backups.
 
 ### 3. Qualify access, then observation
 
-Run only the reviewed first stage, inspect its result, and continue explicitly
-one stage at a time. Stop at the first unexplained failure; preserve evidence
+Stage/verify the new prefix bundle and extended guard after Linux health
+checks. First run `load` only and retain INIT DONE/cursor zero. Then run only
+the reviewed next stage, inspect its result, and continue explicitly one stage
+at a time. Stop at the first unexplained failure; preserve evidence
 and use physical cold recovery rather than trying another clock/reset mix.
-Only after access preparation is established should a separate one-shot
+The present prefix stops before domain operations and has no version action.
+If it passes, separately design staged domain/clock/reset and peripheral
+access; check the inherited TVCAP assumption before those transitions. Only
+after full access preparation is established should a separate one-shot
 logical 0x80ff device-0/device-1 version pair be considered.
 
 Then design a retained-patch comparison with explicit limits on setup effects.
@@ -425,12 +479,17 @@ pin, but that state could not be verified in the failed run.
   SHA-256: `365fe6c97cefb24794d5e4a315d6711b08a8a136874eebb00a08a750cc8e7de6`.
   Exact previous hook is staged as `original-hold-guard` in that board bundle;
   host copy is `build/hdmi-dsp-prelogo-2026-10-20/guard-before.sh`.
-  The older `/usr/lib/h713-hdmi` bundle guard copy was not updated.
+  The older `/usr/lib/h713-hdmi` bundle guard copy was not updated. This live
+  hook covers the legacy observation module only. The new prefix requires a
+  separately verified guard update; source preparation is not installation.
 
 ## Host files, tools and validation
 
 All relative paths below are under `/home/chris/Projects/h713`.
 
+- New offline prefix preparation: `build/hdmi-dsp-access-audit-2026-10-21/`;
+  its `bundle/manifest.json` pins the new module/helper/guard. Never substitute
+  the old monolithic bundle. Details/checks: `docs/hdmi-dsp-access-audit-2026-10-21.md`.
 - Canonical committed live evidence:
   `docs/hdmi-evidence/2026-10-21-dsp-cold-access/`.
   `prepare.txt` is intentionally empty. `bench-uart.log` contains only the
@@ -465,5 +524,6 @@ All relative paths below are under `/home/chris/Projects/h713`.
 
 Keep new source changes and live evidence reviewable in focused commits.
 Preserve the distinction between observed facts, hypotheses and proposed
-qualification. The key next deliverable is a reviewed staged prerequisite
-experiment, not a claim that HDMI warm recovery has already been solved.
+qualification. The next deliverable is a correlated live result from the prepared initial
+prefix; any later domain/peripheral extension needs its own staged review.
+HDMI warm recovery has not been solved.

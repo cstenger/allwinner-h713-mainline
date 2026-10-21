@@ -1,0 +1,58 @@
+{
+  "dtb_sha256": "46ca7e4311f0419e3b2ff496850965c19a4b208ae7f0aef2cb8519bab30c6dfd",
+  "queries": [
+    {
+      "query": [
+        "-p",
+        "/soc/power-controller@7001014"
+      ],
+      "returncode": 0,
+      "stdout": "compatible\nreg\nclocks\nclock-names\nresets\nreset-names\n#power-domain-cells\nstatus\nallwinner,keep-tvcap-on\nphandle\n",
+      "stderr": ""
+    },
+    {
+      "query": [
+        "-t",
+        "s",
+        "/soc/tvtop@5700000",
+        "reset-names"
+      ],
+      "returncode": 0,
+      "stdout": "reset_bus_disp reset_bus_tvcap reset_bus_demod\n",
+      "stderr": ""
+    },
+    {
+      "query": [
+        "-t",
+        "x",
+        "/soc/tvtop@5700000",
+        "resets"
+      ],
+      "returncode": 0,
+      "stdout": "5 39 5 38 5 37\n",
+      "stderr": ""
+    },
+    {
+      "query": [
+        "-t",
+        "s",
+        "/soc/tvtop@5700000",
+        "status"
+      ],
+      "returncode": 0,
+      "stdout": "disabled\n",
+      "stderr": ""
+    },
+    {
+      "query": [
+        "-t",
+        "s",
+        "/soc/display@5600000",
+        "status"
+      ],
+      "returncode": 0,
+      "stdout": "disabled\n",
+      "stderr": ""
+    }
+  ]
+}

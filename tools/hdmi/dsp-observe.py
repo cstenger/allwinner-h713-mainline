@@ -18,7 +18,7 @@ STATE = '/run/h713-dsp-observe/state.json'
 COMPETITORS = ('h713_hdmi_receiver', 'h713_hdmi_audio', 'h713_hdmi_signal',
                'h713_ddc_pins', 'h713_scp_probe', 'h713_hdmi_dsp_probe',
                'h713_tvfe_bench', 'h713_hdmi_power', 'h713_hdmi_tvfe_hold',
-               'h713_edid_clock')
+               'h713_edid_clock', 'h713_hdmi_dsp_access_audit')
 
 
 class Backend:
@@ -50,6 +50,8 @@ class Observation:
 
     def prepare(self):
         self.boot()
+        if self.b.exists('/run/h713-dsp-access-audit/state.json'):
+            raise RuntimeError('Staged prefix audit attempted; require fresh cold boot')
         if self.prior() or self.b.exists('/sys/module/' + MODULE):
             raise RuntimeError('Observation already attempted; no reload/retry')
         if self.b.exists('/proc/device-tree/chosen/h713,hdmi-boot-v1'):

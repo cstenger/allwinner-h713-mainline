@@ -5,6 +5,9 @@ single access-preparation attempt became unresponsive before any result. No
 version request was sent. [Evidence and next-stage gate](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
 Do not repeat the current bundle unchanged; localize prerequisite setup with
 staged acknowledgments and serial markers before further DSP access.
+The [new initial-prefix audit](hdmi-dsp-access-audit-2026-10-21.md) is prepared
+offline and stops before domain/clock/reset changes; no live prefix result
+exists yet. It is separate from the failed module described below.
 
 The [expanded reset trials](hdmi-evidence/2026-10-20-reset-controls/README.md)
 found identical SCP/CCU controls after clean and abrupt resets. Before logo,

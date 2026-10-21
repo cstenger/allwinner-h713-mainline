@@ -1,15 +1,16 @@
 #!/bin/sh
 # systemd-shutdown hook (runs last, root read-only, journald gone). If any HDMI
-# owner module is still loaded, teardown failed somewhere and holds were
-# retained (MIPS unparked, SCP payload possibly still asserting HPD). Those
-# need a physical cold cycle, which a warm reset cannot give, so a reboot or
+# owner or cold-only audit module is still loaded, teardown is incomplete
+# or a bench session remains active. Retained state can include unparked MIPS
+# or SCP still asserting HPD. These sessions need a physical cold cycle,
+# which a warm reset cannot give, so a reboot or
 # kexec is turned into a poweroff, lamp off first. Poweroff/halt proceed as
 # requested. Never touches hardware itself.
 M=${H713_GUARD_SYSMODULE:-/sys/module}
 OFF=${H713_GUARD_LAMP_OFF:-/usr/lib/systemd/system-shutdown/h713-off}
 POWEROFF=${H713_GUARD_POWEROFF:-systemctl --force --force poweroff}
 held=
-for m in h713_hdmi_signal h713_ddc_pins h713_scp_probe h713_hdmi_audio h713_hdmi_receiver h713_hdmi_dsp_observe; do
+for m in h713_hdmi_signal h713_ddc_pins h713_scp_probe h713_hdmi_audio h713_hdmi_receiver h713_hdmi_dsp_observe h713_hdmi_dsp_access_audit; do
   [ ! -d "$M/$m" ] || held="$held $m"
 done
 [ -n "$held" ] || exit 0

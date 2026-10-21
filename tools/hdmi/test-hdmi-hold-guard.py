@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 GUARD=Path(__file__).with_name('h713-hdmi-hold-guard')
-HOLDS=['h713_hdmi_signal','h713_ddc_pins','h713_scp_probe','h713_hdmi_audio','h713_hdmi_receiver','h713_hdmi_dsp_observe']
+HOLDS=['h713_hdmi_signal','h713_ddc_pins','h713_scp_probe','h713_hdmi_audio','h713_hdmi_receiver','h713_hdmi_dsp_observe','h713_hdmi_dsp_access_audit']
 
 
 class Guard(unittest.TestCase):

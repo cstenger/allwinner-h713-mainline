@@ -31,6 +31,11 @@ requires staged setup acknowledgments and serial markers before any further
 DSP access; do not repeat the current bundle unchanged. The board was left
 physically off. Access setup changes power/clocks/AudioTop and cannot alone
 establish pristine reset-entry DSP state.
+A [staged initial-prefix audit](hdmi-dsp-access-audit-2026-10-21.md) is now
+built/tested offline. It stops before power/clock/reset writes and exposes
+33 explicitly acknowledged initial operations. The retained-TVCAP software
+assumption needs verification before a later domain extension. No new live
+result or automatic recovery is established.
 
 The original baseline assessment used repository commit `6ce4977`; the dated
 updates above record subsequent live investigation. Counts and durations below
