@@ -6,10 +6,12 @@
  * enables or reset changes. Steps 34-40 add read-only census samples.
  * Steps 41-82 (extension, boot-v4 DT only) power the TVFE/TVCAP domains,
  * enable clocks, release resets and write the stock TVFE CCU words, one
- * operation per step with hardware read-back. Steps 83-96 (AudioTop stage)
- * read and initialize AudioTop, sample the TVFE control word, and take plain
- * samples of the DSP status and both lock words. No DSP request is sent and
- * no lock word is written.
+ * operation per step with hardware read-back. Steps 83-92 (AudioTop stage)
+ * read and initialize AudioTop, sample the TVFE control word and the DSP
+ * status. Steps 93-104 (TVTOP stage) apply U-Boot h713_display_prepare()'s
+ * TVTOP routing, without which the 0x05xxxxxx fabric hard-locks on access.
+ * Steps 105-108 sample both lock words. No DSP request is sent and no lock
+ * word is written.
  *
  * Error retains the module pin and acquired resources until cold poweroff.
  * After the first state-changing step there is no software restore: the
@@ -55,7 +57,27 @@ static struct reset_control *display_reset, *demod, *tvcap_reset;
 static struct clk *clocks[17];
 static unsigned int clocks_acquired, regions_acquired;
 static void __iomem *maps[4], *ppu_status[2];
-static void __iomem *audiotop, *tvfe_ctl_map, *dsp_port, *lock_window;
+static void __iomem *audiotop, *tvfe_ctl_map, *dsp_port, *lock_window, *tvtop_regs;
+#define TVTOP_PHYS 0x05700000 /* SPL "NSI" file; MBUS-clocked; unclaimed */
+/* h713_display_prepare() routing, in its order. Captured MIPS-live values
+ * equal these (+0x88 aside, which the running firmware changes).
+ */
+static const struct {
+	u16 offset;
+	u32 value;
+} tvtop_routing[] = {
+	{ 0x04, 0x00000001 }, { 0x44, 0x11111111 }, { 0x88, 0x11111111 },
+	{ 0x00, 0xfff11111 }, { 0x40, 0x00011111 }, { 0x80, 0x00001111 },
+	{ 0x84, 0xfff000ef },
+};
+/* Only offsets SPL already read-modify-writes at cold. */
+static const u16 tvtop_cold_offsets[] = { 0x40, 0x44, 0x80 };
+static unsigned int tvtop_cold[ARRAY_SIZE(tvtop_cold_offsets)];
+static unsigned int tvtop_cold_count = ARRAY_SIZE(tvtop_cold_offsets);
+module_param_array(tvtop_cold, uint, &tvtop_cold_count, 0444);
+static unsigned int tvtop_set[ARRAY_SIZE(tvtop_routing)];
+static unsigned int tvtop_set_count = ARRAY_SIZE(tvtop_routing);
+module_param_array(tvtop_set, uint, &tvtop_set_count, 0444);
 #define AUDIOTOP_PHYS 0x0614a000 /* claimed at step 3 */
 #define TVFE_CTL_PHYS 0x06e00000 /* tvtop window; tvtop node is disabled */
 #define DSP_PORT_PHYS 0x06144000 /* claimed at step 1 */
@@ -148,6 +170,10 @@ enum action {
 	READ_LOCK_PEER,
 	READ_LOCK_OWN,
 	FINAL_AT_RECHECK,
+	/* TVTOP stage. */
+	MAP_TVTOP,
+	READ_TVTOP_COLD,
+	WRITE_TVTOP,
 };
 struct audit_step {
 	enum action action;
@@ -257,9 +283,24 @@ static const struct audit_step steps[] = {
 	{ WRITE_AT_CFG, 0, "write-audiotop-cfg" },
 	{ WRITE_AT_CFG_LATCH, 0, "write-audiotop-cfg-latch" },
 	{ RECHECK_STOPPED, 0, "recheck-stopped-after-audiotop" },
-	/* 91-96: plain DSP status and lock samples; no request, no lock write. */
+	/* 91-92: plain DSP status sample (needs no TVTOP routing). */
 	{ MAP_DSP_PORT, 0, "map-dsp-port" },
 	{ READ_DSP_STATUS, 0, "read-dsp-status" },
+	/* 93-96: TVTOP cold census, SPL-proven offsets only. */
+	{ MAP_TVTOP, 0, "map-tvtop" },
+	{ READ_TVTOP_COLD, 0, "read-tvtop-40" },
+	{ READ_TVTOP_COLD, 1, "read-tvtop-44" },
+	{ READ_TVTOP_COLD, 2, "read-tvtop-80" },
+	/* 97-104: h713_display_prepare() routing, one word per step. */
+	{ WRITE_TVTOP, 0, "write-tvtop-04" },
+	{ WRITE_TVTOP, 1, "write-tvtop-44" },
+	{ WRITE_TVTOP, 2, "write-tvtop-88" },
+	{ WRITE_TVTOP, 3, "write-tvtop-00" },
+	{ WRITE_TVTOP, 4, "write-tvtop-40" },
+	{ WRITE_TVTOP, 5, "write-tvtop-80" },
+	{ WRITE_TVTOP, 6, "write-tvtop-84" },
+	{ RECHECK_STOPPED, 0, "recheck-stopped-after-tvtop" },
+	/* 105-108: plain lock samples; no request, no lock write. */
 	{ MAP_LOCK, 0, "map-lock-window" },
 	{ READ_LOCK_PEER, 0, "read-lock-peer" },
 	{ READ_LOCK_OWN, 0, "read-lock-own" },
@@ -271,7 +312,7 @@ static const struct audit_step steps[] = {
 #define PREFIX_STEPS 33
 #define LAST_READ_ONLY_STEP 40
 #define EXTENSION_STEPS 82
-static_assert(ARRAY_SIZE(steps) == 96);
+static_assert(ARRAY_SIZE(steps) == 108);
 static_assert(ARRAY_SIZE(tv_offsets) == 15);
 
 static int next_operation_get(char *buffer, const struct kernel_param *kp)
@@ -563,10 +604,28 @@ static int execute_step(const struct audit_step *s, unsigned int step)
 		if ((readl(ppu_status[0]) & PPU_STATE_MASK) != PPU_STATE_ON ||
 		    (readl(ppu_status[1]) & PPU_STATE_MASK) != PPU_STATE_ON)
 			return -EIO;
-		last_value = readl(audiotop + 0xc);
-		return last_value == ((audiotop_cfg & 0xff000000) | 0x011a5e00) ?
-			       0 :
-			       -EIO;
+		if (readl(audiotop + 0xc) !=
+		    ((audiotop_cfg & 0xff000000) | 0x011a5e00))
+			return -EIO;
+		last_value = readl(tvtop_regs);
+		return last_value == 0xfff11111 ? 0 : -EIO;
+	case MAP_TVTOP:
+		/* Not claimed: SPL/DRAM code owns it as the NSI file; map like the PPU. */
+		tvtop_regs = ioremap(TVTOP_PHYS, 0x90);
+		return tvtop_regs ? 0 : -ENOMEM;
+	case READ_TVTOP_COLD:
+		last_value = tvtop_cold[s->arg] =
+			readl(tvtop_regs + tvtop_cold_offsets[s->arg]);
+		return 0;
+	case WRITE_TVTOP:
+		writel(tvtop_routing[s->arg].value,
+		       tvtop_regs + tvtop_routing[s->arg].offset);
+		if (s->arg == ARRAY_SIZE(tvtop_routing) - 1)
+			usleep_range(12000, 15000); /* prepare()'s settle. */
+		op_done(step);
+		last_value = tvtop_set[s->arg] =
+			readl(tvtop_regs + tvtop_routing[s->arg].offset);
+		return last_value == tvtop_routing[s->arg].value ? 0 : -EIO;
 	}
 	return -EINVAL;
 }
@@ -621,6 +680,10 @@ static void release_resources(void)
 
 	/* Reached only while no domain is attached (release limited to census). */
 	WARN_ON(attached);
+	if (tvtop_regs) {
+		iounmap(tvtop_regs);
+		tvtop_regs = NULL;
+	}
 	if (lock_window) {
 		iounmap(lock_window);
 		lock_window = NULL;

@@ -26,7 +26,9 @@ lock window are touched only in steps 83–96, and no lock word is written.
 | 75–82 | Display tree, display reset only if asserted, final recheck. | v4 only |
 | 83–86 | Map AudioTop; read `ctl`, then `cfg` (refuse an inherited setup); read-only TVFE control word `0x06e00000`. | v4 only |
 | 87–90 | AudioTop `ctl \| 0x700`, cfg `0x001a5e00`, bit-24 latch, each with readback; MIPS/SCP recheck. | v4 only |
-| 91–96 | Plain DSP status and lock peer/own samples (refuse busy bits or `0x55`); final recheck. No request, no lock write. | v4 only |
+| 91–92 | Plain DSP status sample (refuse busy bits). | v4 only |
+| 93–104 | TVTOP: map `0x05700000`; read SPL-proven `+0x40`/`+0x44`/`+0x80`; U-Boot `h713_display_prepare()` routing writes, one per step with readback; MIPS/SCP recheck. Without this the `0x05xxxxxx` fabric hard-locks (cold-at-01). | v4 only |
+| 105–108 | Lock peer/own samples (refuse `0x55`); final recheck incl. TVTOP. No request, no lock write. | v4 only |
 
 Steps 34 onward run only when the booted DT carries
 `h713,dsp-observation-v2` and the PPU node lacks `allwinner,keep-tvcap-on`
@@ -45,7 +47,7 @@ pin and everything acquired until physical cold recovery. Do not force-unload.
 Use `tools/hdmi/dsp-access-audit.py` from a pinned staged bundle. `load` must
 acknowledge cursor zero before any `step`; every step needs both its exact
 number and operation name. At each stage boundary (after steps 33, 40, 45,
-53, 69, 74, 81, 82, 86, 90, and the end-of-run 96) the helper requires a read-only `snapshot` (clock and genpd
+53, 69, 74, 81, 82, 86, 90, 92, 96, 104, and the end-of-run 108) the helper requires a read-only `snapshot` (clock and genpd
 summaries) and then `--stage-ack <stage>`. Before every modifying action it
 checks boot ID, boot-v4 markers, the absent TVCAP flag, disabled nodes, no
 competing owners or HDMI services, console threshold ≥ 6, `kernel.panic` 0,
@@ -66,8 +68,8 @@ cp modules/hdmi-dsp-access-audit/Makefile modules/hdmi-dsp-access-audit/h713-hdm
 make -C build/linux-6.18.38-da2bc49e45e531a23632a1063266bd439454e31dd383f49c502ddb793277d731 M="$task_build" ARCH=arm64 LLVM=1 W=1 modules
 ```
 
-The current bundle is `build/hdmi-dsp-access-at-2026-10-21/bundle/` (steps
-1–96); boot with `build/hdmi-dsp-access-ext-2026-10-21/boot-v4/`. The
+The current bundle is `build/hdmi-dsp-access-tvtop-2026-10-21/bundle/` (steps
+1–108); boot with `build/hdmi-dsp-access-ext-2026-10-21/boot-v4/`. The
 extension-only bundle beside boot-v4 pins the 82-step helper. The earlier prefix bundles (`bundle/`,
 `bundle-v2/` under `build/hdmi-dsp-access-audit-2026-10-21/`) pin the
 prefix-only helper. No generated `.ko` is tracked or packaged for normal startup.

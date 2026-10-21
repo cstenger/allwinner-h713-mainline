@@ -66,7 +66,7 @@ class Fake:
             self.params(failed='N', released='N', extension_available=self.extension,
                         tv_words='0,0,0,0,0,0,0,0,0,0,0,0,0,0,0', tvcap_reset_before=4294967295,
                         audiotop_ctl=0, audiotop_cfg=0, tvfe_ctl=0, dsp_status=0,
-                        lock_peer=0, lock_own=0)
+                        lock_peer=0, lock_own=0, tvtop_cold='0,0,0', tvtop_set='0,0,0,0,0,0,0')
             self.cursor(0)
         elif argv[0] == 'rmmod':self.files.pop('/sys/module/' + m.MODULE)
         return ''
@@ -82,7 +82,8 @@ class Fake:
             self.cursor(n)
             if n == 38:self.params(tvcap_reset_before=1)
             if n == 85:self.params(audiotop_ctl=0x123)
-            if n == 95:self.params(lock_own=0xaa)
+            if n == 96:self.params(tvtop_cold='16,16,16')
+            if n == 107:self.params(lock_own=0xaa)
             if self.fail == 'lost-ack':self.files['/proc/sys/kernel/random/boot_id'] = b'other'
         elif path == m.PARAM + 'release_prefix':
             assert self.saved[-1]['phase'] == 'releasing'
@@ -196,8 +197,10 @@ class AuditBoundary(unittest.TestCase):
         self.assertEqual(m.STAGES, {33: 'prefix', 40: 'census', 45: 'power', 53: 'receiver',
                                     69: 'tvfe-words', 74: 'audio', 81: 'display',
                                     82: 'extension', 86: 'audiotop-read',
-                                    90: 'audiotop-init', 96: 'dsp-sampled'})
-        self.assertEqual(len(m.STEPS), 96)
+                                    90: 'audiotop-init', 92: 'dsp-status',
+                                    96: 'tvtop-census', 104: 'tvtop-routing',
+                                    108: 'lock-sampled'})
+        self.assertEqual(len(m.STEPS), 108)
 
     def test_stage_ack_refused_away_from_boundary_and_snapshot_only_at_boundary(self):
         self.a.load()
@@ -213,16 +216,16 @@ class AuditBoundary(unittest.TestCase):
         self.run_to(39)
         self.assertNotIn('snapshot_at', self.b.saved[-1])
 
-    def test_all_96_steps_end_without_request_lock_write_or_release(self):
+    def test_all_108_steps_end_without_request_lock_write_or_release(self):
         self.a.load()
         self.run_to(len(m.STEPS))
         result = self.a.paused()[1]
         self.assertEqual(result['next_operation'], 'stage-end')
         self.assertEqual(result['stage_complete'], 'Y')
-        self.assertEqual(len([w for w in self.b.writes if w[0].endswith('advance')]), 96)
-        with self.assertRaises(RuntimeError):self.a.step(97, 'request-version')
+        self.assertEqual(len([w for w in self.b.writes if w[0].endswith('advance')]), 108)
+        with self.assertRaises(RuntimeError):self.a.step(109, 'request-version')
         with self.assertRaises(RuntimeError):self.a.release()
-        self.assertEqual(self.a.snapshot()['stage_complete'], 'dsp-sampled')
+        self.assertEqual(self.a.snapshot()['stage_complete'], 'lock-sampled')
         for name in m.STEPS:
             self.assertNotIn('request', name)
             self.assertNotIn('version', name)
@@ -232,14 +235,22 @@ class AuditBoundary(unittest.TestCase):
                   'map-lock', 'read-lock')
         self.assertFalse(any(s.startswith(access) for s in m.STEPS[:82]))
         self.assertTrue(all(any(s.startswith(p) for s in m.STEPS[82:]) for p in access))
+        # TVTOP routing strictly before any lock-window access; DSP status before TVTOP.
+        idx = {s: i for i, s in enumerate(m.STEPS)}
+        tvtop = [i for s, i in idx.items() if 'tvtop' in s]
+        lock = [i for s, i in idx.items() if s.startswith(('map-lock', 'read-lock'))]
+        self.assertLess(max(tvtop), min(lock))
+        self.assertLess(idx['read-dsp-status'], min(tvtop))
         self.assertFalse(hasattr(self.a, 'versions'))
 
     def test_audiotop_and_dsp_samples_reported_at_their_steps(self):
         self.a.load()
         self.run_to(84)
         self.assertEqual(self.a.step(85, m.STEPS[84])['audiotop_ctl'], 0x123)
-        self.run_to(94)
-        self.assertEqual(self.a.step(95, m.STEPS[94])['lock_own'], 0xaa)
+        self.run_to(95)
+        self.assertEqual(self.a.step(96, m.STEPS[95])['tvtop_cold'], '16,16,16')
+        self.run_to(106)
+        self.assertEqual(self.a.step(107, m.STEPS[106])['lock_own'], 0xaa)
 
     def test_census_results_recorded_at_last_read_only_step(self):
         self.a.load()
@@ -303,7 +314,7 @@ class AuditBoundary(unittest.TestCase):
                              or (item.group(3) and 'enable-clock-' + item.group(3))
                              or 'write-tv-word-' + item.group(4))
         self.assertEqual(tuple(names), m.STEPS)
-        self.assertEqual(len(names), 96)
+        self.assertEqual(len(names), 108)
         # Stage boundaries and the release limit match the C constants.
         self.assertIn('#define PREFIX_STEPS %d' % m.PREFIX_STEPS, source)
         self.assertIn('#define LAST_READ_ONLY_STEP %d' % m.LAST_READ_ONLY_STEP, source)
@@ -312,6 +323,23 @@ class AuditBoundary(unittest.TestCase):
             self.assertEqual(m.CLOCKS[int(idx)], name)
         for idx, name in re.findall(r'CLOCK_STEP\((\d+), "([^"]+)"\)', plan):
             self.assertEqual(m.CLOCKS[int(idx)], name)
+
+    def test_tvtop_steps_match_c_routing_table(self):
+        root = Path(__file__).resolve().parents[2]
+        source = (root / 'modules/hdmi-dsp-access-audit/h713-hdmi-dsp-access-audit.c').read_text()
+        table = source.split('} tvtop_routing[] = {', 1)[1].split('};', 1)[0]
+        pairs = re.findall(r'\{ 0x([0-9a-f]+), 0x([0-9a-f]+) \}', table)
+        # h713_display_prepare() order and values, pinned here independently.
+        self.assertEqual([(int(o, 16), int(v, 16)) for o, v in pairs],
+                         [(0x04, 0x00000001), (0x44, 0x11111111), (0x88, 0x11111111),
+                          (0x00, 0xfff11111), (0x40, 0x00011111), (0x80, 0x00001111),
+                          (0x84, 0xfff000ef)])
+        self.assertEqual(['write-tvtop-%02x' % int(o, 16) for o, _ in pairs],
+                         [s for s in m.STEPS if s.startswith('write-tvtop-')])
+        cold = source.split('tvtop_cold_offsets[] = {', 1)[1].split('};', 1)[0]
+        self.assertEqual(re.findall(r'0x([0-9a-f]+)', cold), ['40', '44', '80'])
+        self.assertEqual(['read-tvtop-' + o for o in re.findall(r'0x([0-9a-f]+)', cold)],
+                         [s for s in m.STEPS if s.startswith('read-tvtop-')])
 
     def test_tv_word_steps_match_c_offsets(self):
         root = Path(__file__).resolve().parents[2]
