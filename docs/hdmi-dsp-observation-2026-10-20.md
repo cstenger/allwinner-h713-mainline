@@ -1,5 +1,11 @@
 # DSP observation without logo firmware — October 20, 2026
 
+**October 21 live result:** the logo-free maintenance boot passed, but the
+single access-preparation attempt became unresponsive before any result. No
+version request was sent. [Evidence and next-stage gate](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
+Do not repeat the current bundle unchanged; localize prerequisite setup with
+staged acknowledgments and serial markers before further DSP access.
+
 The [expanded reset trials](hdmi-evidence/2026-10-20-reset-controls/README.md)
 found identical SCP/CCU controls after clean and abrupt resets. Before logo,
 demod reset is asserted, the demod bus is gated and audio functional clocks
@@ -110,11 +116,12 @@ markers, exactly one interrupt and missed/repeated-boot refusal. Offline DT
 checks confirm disabled nodes and the dedicated marker. These are not live
 DSP or physical reset-domain passes.
 
-Next collect one fully disconnected cold control: no firmware launch, access
-setup, status/ownership snapshot, then one version pair only if setup is
-healthy. Preserve UART/SSH boot IDs and the complete sequence. On any failure,
-stop rather than trying another clock/reset/command combination on that boot.
-A successful version pair would establish access **after this setup**. It
-would not prove that a warm reset erases the DSP patch. That requires a later
+The original first-run protocol called for a fully disconnected cold control:
+no firmware launch, access setup, status/ownership snapshot, then one version
+pair only after healthy setup. It required correlated UART/SSH boot IDs and
+the complete sequence, with no retry after a failure.
+That first attempt stalled during preparation, so this protocol is now gated
+by the October 21 investigation above. A future successful version pair would
+establish access **after its recorded setup**. It would not prove that a warm reset erases the DSP patch. That requires a later
 controlled retained-patch trial with the same setup and explicit intervention
 limits. Automatic warm HDMI recovery remains unimplemented.

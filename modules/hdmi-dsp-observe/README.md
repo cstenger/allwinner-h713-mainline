@@ -1,5 +1,11 @@
 # Logo-free DSP access bench
 
+**Live status, October 21:** the first logo-free Linux boot passed, but access
+preparation became unresponsive before any result. No version request was
+sent. Do not repeat this module unchanged. See the
+[failed cold attempt and next-stage gate](../../docs/hdmi-evidence/2026-10-21-dsp-cold-access/README.md)
+before preparing a revised experiment.
+
 This module is experimental and excluded from normal startup. It does not
 implement warm HDMI recovery. See
 [the protocol and access audit](../../docs/hdmi-dsp-observation-2026-10-20.md)

@@ -23,13 +23,17 @@ with immediate UART/SSH boot-ID correlation and identical values for all
 22 SCP/CCU controls at every stage. Both warm boots skip capture. Next review
 a dedicated pre-logo DSP observation protocol; DSP protocol/SRAM observations
 remain excluded from the current instrumentation by the access audit.
-A [logo-free DSP access bench](hdmi-dsp-observation-2026-10-20.md) is now
-prepared for a controlled setup followed by one version pair. It avoids
-source3/logo but changes power/clocks/AudioTop before observation, so it
-cannot by itself establish pristine reset-entry DSP state.
+The [logo-free DSP access bench](hdmi-dsp-observation-2026-10-20.md) passed
+its first maintenance Linux boot on October 21, but the single access
+preparation became unresponsive before a result. No version request was sent.
+The [recorded failure](hdmi-evidence/2026-10-21-dsp-cold-access/README.md)
+requires staged setup acknowledgments and serial markers before any further
+DSP access; do not repeat the current bundle unchanged. The board was left
+physically off. Access setup changes power/clocks/AudioTop and cannot alone
+establish pristine reset-entry DSP state.
 
-This plan reconciles the latest recorded evidence at repository commit
-`6ce4977`. It does not report new hardware tests. Counts and durations below
+The original baseline assessment used repository commit `6ce4977`; the dated
+updates above record subsequent live investigation. Counts and durations below
 are proposed qualification targets, not completed results. Historical evidence
 remains valid for its recorded binaries and conditions; component passes do
 not qualify a newly assembled image.
