@@ -14,7 +14,7 @@ spec.loader.exec_module(m)
 
 
 def name_after(n):
-    return m.STEPS[n] if n < len(m.STEPS) else 'extension-end'
+    return m.STEPS[n] if n < len(m.STEPS) else 'stage-end'
 
 
 class Fake:
@@ -51,7 +51,7 @@ class Fake:
     def cursor(self, n):
         self.params(completed=n, attempted=n, last_value=0,
                     prefix_complete='Y' if n >= m.PREFIX_STEPS else 'N',
-                    extension_complete='Y' if n == len(m.STEPS) else 'N',
+                    stage_complete='Y' if n == len(m.STEPS) else 'N',
                     next_operation=name_after(n))
 
     def run(self, argv):
@@ -64,7 +64,9 @@ class Fake:
             if self.fail == 'load':raise subprocess.TimeoutExpired(argv, 30)
             self.files['/sys/module/' + m.MODULE] = b''
             self.params(failed='N', released='N', extension_available=self.extension,
-                        tv_words='0,0,0,0,0,0,0,0,0,0,0,0,0,0,0', tvcap_reset_before=4294967295)
+                        tv_words='0,0,0,0,0,0,0,0,0,0,0,0,0,0,0', tvcap_reset_before=4294967295,
+                        audiotop_ctl=0, audiotop_cfg=0, tvfe_ctl=0, dsp_status=0,
+                        lock_peer=0, lock_own=0)
             self.cursor(0)
         elif argv[0] == 'rmmod':self.files.pop('/sys/module/' + m.MODULE)
         return ''
@@ -79,6 +81,8 @@ class Fake:
             n = int(value)
             self.cursor(n)
             if n == 38:self.params(tvcap_reset_before=1)
+            if n == 85:self.params(audiotop_ctl=0x123)
+            if n == 95:self.params(lock_own=0xaa)
             if self.fail == 'lost-ack':self.files['/proc/sys/kernel/random/boot_id'] = b'other'
         elif path == m.PARAM + 'release_prefix':
             assert self.saved[-1]['phase'] == 'releasing'
@@ -162,7 +166,7 @@ class AuditBoundary(unittest.TestCase):
         for fields in ({'attempted': 1}, {'completed': 1},
                        {'next_operation': 'unexpected'}, {'failed': 'Y'},
                        {'prefix_complete': 'Y'}, {'released': 'Y'},
-                       {'extension_available': 'N'}, {'extension_complete': 'Y'}):
+                       {'extension_available': 'N'}, {'stage_complete': 'Y'}):
             with self.subTest(fields=fields):
                 self.setUp()
                 self.a.load()
@@ -174,6 +178,7 @@ class AuditBoundary(unittest.TestCase):
     def test_every_stage_boundary_needs_snapshot_and_exact_ack(self):
         self.a.load()
         for boundary, stage in m.STAGES.items():
+            if boundary == len(m.STEPS):continue  # end-of-run snapshot only
             with self.subTest(stage=stage):
                 self.run_to(boundary)
                 nxt = m.STEPS[boundary]
@@ -185,6 +190,14 @@ class AuditBoundary(unittest.TestCase):
                 self.assertEqual(len(self.b.writes), writes)
                 self.a.step(boundary + 1, nxt, stage)
                 self.assertEqual(len(self.b.writes), writes + 1)
+
+    def test_stage_boundaries_are_the_reviewed_set(self):
+        # Pinned independently of the helper so a dropped gate fails here.
+        self.assertEqual(m.STAGES, {33: 'prefix', 40: 'census', 45: 'power', 53: 'receiver',
+                                    69: 'tvfe-words', 74: 'audio', 81: 'display',
+                                    82: 'extension', 86: 'audiotop-read',
+                                    90: 'audiotop-init', 96: 'dsp-sampled'})
+        self.assertEqual(len(m.STEPS), 96)
 
     def test_stage_ack_refused_away_from_boundary_and_snapshot_only_at_boundary(self):
         self.a.load()
@@ -200,17 +213,33 @@ class AuditBoundary(unittest.TestCase):
         self.run_to(39)
         self.assertNotIn('snapshot_at', self.b.saved[-1])
 
-    def test_all_82_steps_end_without_audiotop_or_release(self):
+    def test_all_96_steps_end_without_request_lock_write_or_release(self):
         self.a.load()
         self.run_to(len(m.STEPS))
         result = self.a.paused()[1]
-        self.assertEqual(result['next_operation'], 'extension-end')
-        self.assertEqual(result['extension_complete'], 'Y')
-        self.assertEqual(len([w for w in self.b.writes if w[0].endswith('advance')]), 82)
-        with self.assertRaises(RuntimeError):self.a.step(83, 'map-audiotop')
+        self.assertEqual(result['next_operation'], 'stage-end')
+        self.assertEqual(result['stage_complete'], 'Y')
+        self.assertEqual(len([w for w in self.b.writes if w[0].endswith('advance')]), 96)
+        with self.assertRaises(RuntimeError):self.a.step(97, 'request-version')
         with self.assertRaises(RuntimeError):self.a.release()
-        self.assertFalse(any('audiotop' in s or 'dsp-port' in s for s in m.STEPS[33:]))
+        self.assertEqual(self.a.snapshot()['stage_complete'], 'dsp-sampled')
+        for name in m.STEPS:
+            self.assertNotIn('request', name)
+            self.assertNotIn('version', name)
+            self.assertFalse(name.startswith('write-lock'))
+        # AudioTop/DSP/lock access appears only from step 83.
+        access = ('map-audiotop', 'read-audiotop', 'write-audiotop', 'map-dsp', 'read-dsp',
+                  'map-lock', 'read-lock')
+        self.assertFalse(any(s.startswith(access) for s in m.STEPS[:82]))
+        self.assertTrue(all(any(s.startswith(p) for s in m.STEPS[82:]) for p in access))
         self.assertFalse(hasattr(self.a, 'versions'))
+
+    def test_audiotop_and_dsp_samples_reported_at_their_steps(self):
+        self.a.load()
+        self.run_to(84)
+        self.assertEqual(self.a.step(85, m.STEPS[84])['audiotop_ctl'], 0x123)
+        self.run_to(94)
+        self.assertEqual(self.a.step(95, m.STEPS[94])['lock_own'], 0xaa)
 
     def test_census_results_recorded_at_last_read_only_step(self):
         self.a.load()
@@ -274,7 +303,7 @@ class AuditBoundary(unittest.TestCase):
                              or (item.group(3) and 'enable-clock-' + item.group(3))
                              or 'write-tv-word-' + item.group(4))
         self.assertEqual(tuple(names), m.STEPS)
-        self.assertEqual(len(names), 82)
+        self.assertEqual(len(names), 96)
         # Stage boundaries and the release limit match the C constants.
         self.assertIn('#define PREFIX_STEPS %d' % m.PREFIX_STEPS, source)
         self.assertIn('#define LAST_READ_ONLY_STEP %d' % m.LAST_READ_ONLY_STEP, source)

@@ -6,8 +6,10 @@
  * enables or reset changes. Steps 34-40 add read-only census samples.
  * Steps 41-82 (extension, boot-v4 DT only) power the TVFE/TVCAP domains,
  * enable clocks, release resets and write the stock TVFE CCU words, one
- * operation per step with hardware read-back. Nothing maps or reads
- * AudioTop, the DSP port or the lock window.
+ * operation per step with hardware read-back. Steps 83-96 (AudioTop stage)
+ * read and initialize AudioTop, sample the TVFE control word, and take plain
+ * samples of the DSP status and both lock words. No DSP request is sent and
+ * no lock word is written.
  *
  * Error retains the module pin and acquired resources until cold poweroff.
  * After the first state-changing step there is no software restore: the
@@ -29,14 +31,21 @@
 #include <linux/reset.h>
 
 static bool armed, failed, released, prefix_complete, pinned, initialized;
-static bool extension_available, extension_complete;
+static bool extension_available, stage_complete;
 static unsigned int completed, attempted, last_value;
 module_param(armed, bool, 0400);
 module_param(failed, bool, 0444);
 module_param(released, bool, 0444);
 module_param(prefix_complete, bool, 0444);
 module_param(extension_available, bool, 0444);
-module_param(extension_complete, bool, 0444);
+module_param(stage_complete, bool, 0444);
+static unsigned int audiotop_ctl, audiotop_cfg, tvfe_ctl, dsp_status, lock_peer, lock_own;
+module_param(audiotop_ctl, uint, 0444);
+module_param(audiotop_cfg, uint, 0444);
+module_param(tvfe_ctl, uint, 0444);
+module_param(dsp_status, uint, 0444);
+module_param(lock_peer, uint, 0444);
+module_param(lock_own, uint, 0444);
 module_param(completed, uint, 0444);
 module_param(attempted, uint, 0444);
 module_param(last_value, uint, 0444);
@@ -46,6 +55,12 @@ static struct reset_control *display_reset, *demod, *tvcap_reset;
 static struct clk *clocks[17];
 static unsigned int clocks_acquired, regions_acquired;
 static void __iomem *maps[4], *ppu_status[2];
+static void __iomem *audiotop, *tvfe_ctl_map, *dsp_port, *lock_window;
+#define AUDIOTOP_PHYS 0x0614a000 /* claimed at step 3 */
+#define TVFE_CTL_PHYS 0x06e00000 /* tvtop window; tvtop node is disabled */
+#define DSP_PORT_PHYS 0x06144000 /* claimed at step 1 */
+#define LOCK_PHYS 0x05001530 /* claimed at step 2 */
+#define DSP_ARM_OWNED 0x55
 static const struct {
 	resource_size_t base, size;
 } regions[] = {
@@ -119,6 +134,20 @@ enum action {
 	SET_DEMOD_BUS_GATE,
 	DEASSERT_DISP_RESET,
 	FINAL_RECHECK,
+	/* AudioTop stage. */
+	MAP_AUDIOTOP,
+	READ_AT_CTL,
+	READ_AT_CFG,
+	READ_TVFE_CTL,
+	WRITE_AT_CTL,
+	WRITE_AT_CFG,
+	WRITE_AT_CFG_LATCH,
+	MAP_DSP_PORT,
+	READ_DSP_STATUS,
+	MAP_LOCK,
+	READ_LOCK_PEER,
+	READ_LOCK_OWN,
+	FINAL_AT_RECHECK,
 };
 struct audit_step {
 	enum action action;
@@ -216,20 +245,38 @@ static const struct audit_step steps[] = {
 	ENABLE_STEP(15, "afbd"),
 	ENABLE_STEP(16, "bus-disp"),
 	{ DEASSERT_DISP_RESET, 0, "deassert-display-reset-if-asserted" },
-	/* 82: final read-only recheck. */
+	/* 82: read-only recheck; stage boundary before AudioTop. */
 	{ FINAL_RECHECK, 0, "final-recheck" },
+	/* 83-86: AudioTop read; 84 repeats the read the old bench most likely hung on. */
+	{ MAP_AUDIOTOP, 0, "map-audiotop" },
+	{ READ_AT_CTL, 0, "read-audiotop-ctl" },
+	{ READ_AT_CFG, 0, "read-audiotop-cfg" },
+	{ READ_TVFE_CTL, 0, "read-tvfe-ctl" },
+	/* 87-90: AudioTop init with production values. */
+	{ WRITE_AT_CTL, 0, "write-audiotop-ctl" },
+	{ WRITE_AT_CFG, 0, "write-audiotop-cfg" },
+	{ WRITE_AT_CFG_LATCH, 0, "write-audiotop-cfg-latch" },
+	{ RECHECK_STOPPED, 0, "recheck-stopped-after-audiotop" },
+	/* 91-96: plain DSP status and lock samples; no request, no lock write. */
+	{ MAP_DSP_PORT, 0, "map-dsp-port" },
+	{ READ_DSP_STATUS, 0, "read-dsp-status" },
+	{ MAP_LOCK, 0, "map-lock-window" },
+	{ READ_LOCK_PEER, 0, "read-lock-peer" },
+	{ READ_LOCK_OWN, 0, "read-lock-own" },
+	{ FINAL_AT_RECHECK, 0, "final-audiotop-recheck" },
 };
 #undef CLOCK_STEP
 #undef ENABLE_STEP
 #undef TV_WORD_STEP
 #define PREFIX_STEPS 33
 #define LAST_READ_ONLY_STEP 40
-static_assert(ARRAY_SIZE(steps) == 82);
+#define EXTENSION_STEPS 82
+static_assert(ARRAY_SIZE(steps) == 96);
 static_assert(ARRAY_SIZE(tv_offsets) == 15);
 
 static int next_operation_get(char *buffer, const struct kernel_param *kp)
 {
-	const char *name = "extension-end";
+	const char *name = "stage-end";
 
 	if (failed)
 		name = "failed";
@@ -461,6 +508,65 @@ static int execute_step(const struct audit_step *s, unsigned int step)
 			       (last_value & PPU_STATE_MASK) == PPU_STATE_ON ?
 			       0 :
 			       -EIO;
+	case MAP_AUDIOTOP:
+		audiotop = ioremap(AUDIOTOP_PHYS, 0x10);
+		return audiotop ? 0 : -ENOMEM;
+	case READ_AT_CTL:
+		last_value = audiotop_ctl = readl(audiotop);
+		return 0;
+	case READ_AT_CFG:
+		last_value = audiotop_cfg = readl(audiotop + 0xc);
+		/* First cold control only: do not overwrite an inherited setup. */
+		return (audiotop_ctl & 0x700) || (audiotop_cfg & 0x00ffffff) ?
+			       -EBUSY :
+			       0;
+	case READ_TVFE_CTL:
+		tvfe_ctl_map = ioremap(TVFE_CTL_PHYS, 4);
+		if (!tvfe_ctl_map)
+			return -ENOMEM;
+		last_value = tvfe_ctl = readl(tvfe_ctl_map);
+		return 0;
+	case WRITE_AT_CTL:
+		value = audiotop_ctl | 0x700;
+		writel(value, audiotop);
+		op_done(step);
+		last_value = readl(audiotop);
+		return last_value == value ? 0 : -EIO;
+	case WRITE_AT_CFG:
+	case WRITE_AT_CFG_LATCH:
+		value = (audiotop_cfg & 0xff000000) | 0x001a5e00;
+		if (s->action == WRITE_AT_CFG_LATCH)
+			value |= 0x01000000;
+		writel(value, audiotop + 0xc);
+		op_done(step);
+		last_value = readl(audiotop + 0xc);
+		return last_value == value ? 0 : -EIO;
+	case MAP_DSP_PORT:
+		dsp_port = ioremap(DSP_PORT_PHYS, 0x1c);
+		return dsp_port ? 0 : -ENOMEM;
+	case READ_DSP_STATUS:
+		last_value = dsp_status = readl(dsp_port);
+		return dsp_status & (BIT(4) | BIT(7)) ? -EBUSY : 0;
+	case MAP_LOCK:
+		lock_window = ioremap(LOCK_PHYS, 8);
+		return lock_window ? 0 : -ENOMEM;
+	case READ_LOCK_PEER:
+		last_value = lock_peer = readl(lock_window);
+		return lock_peer == DSP_ARM_OWNED ? -EBUSY : 0;
+	case READ_LOCK_OWN:
+		last_value = lock_own = readl(lock_window + 4);
+		return lock_own == DSP_ARM_OWNED ? -EBUSY : 0;
+	case FINAL_AT_RECHECK:
+		ret = stopped();
+		if (ret)
+			return ret;
+		if ((readl(ppu_status[0]) & PPU_STATE_MASK) != PPU_STATE_ON ||
+		    (readl(ppu_status[1]) & PPU_STATE_MASK) != PPU_STATE_ON)
+			return -EIO;
+		last_value = readl(audiotop + 0xc);
+		return last_value == ((audiotop_cfg & 0xff000000) | 0x011a5e00) ?
+			       0 :
+			       -EIO;
 	}
 	return -EINVAL;
 }
@@ -491,14 +597,16 @@ static int advance(const char *value, const struct kernel_param *kp)
 	}
 	completed = step;
 	prefix_complete = completed >= PREFIX_STEPS;
-	extension_complete = completed == ARRAY_SIZE(steps);
+	stage_complete = completed == ARRAY_SIZE(steps);
 	pr_notice(
 		"h713-dsp-access-audit: DONE step=%u operation=%s value=%08x%s\n",
 		step, steps[step - 1].name, last_value,
 		completed == PREFIX_STEPS ?
 			"; prefix end, NO domain/clock/reset writes or DSP access" :
-		extension_complete ?
-			"; extension end, NO AudioTop/DSP/lock access; poweroff only" :
+		completed == EXTENSION_STEPS ?
+			"; extension end, NO AudioTop/DSP/lock access yet" :
+		stage_complete ?
+			"; stage end, NO DSP request or lock write; poweroff only" :
 			"");
 out:
 	mutex_unlock(&audit_lock);
@@ -513,6 +621,22 @@ static void release_resources(void)
 
 	/* Reached only while no domain is attached (release limited to census). */
 	WARN_ON(attached);
+	if (lock_window) {
+		iounmap(lock_window);
+		lock_window = NULL;
+	}
+	if (dsp_port) {
+		iounmap(dsp_port);
+		dsp_port = NULL;
+	}
+	if (tvfe_ctl_map) {
+		iounmap(tvfe_ctl_map);
+		tvfe_ctl_map = NULL;
+	}
+	if (audiotop) {
+		iounmap(audiotop);
+		audiotop = NULL;
+	}
 	for (i = 0; i < ARRAY_SIZE(ppu_status); i++) {
 		if (ppu_status[i]) {
 			iounmap(ppu_status[i]);
@@ -645,4 +769,4 @@ module_init(audit_init);
 module_exit(audit_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION(
-	"Cold logo-free staged access audit; individually acknowledged steps, no AudioTop/DSP access");
+	"Cold logo-free staged access audit; individually acknowledged steps, no DSP request");

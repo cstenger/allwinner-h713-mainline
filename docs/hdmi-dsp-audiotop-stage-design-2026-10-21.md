@@ -1,6 +1,6 @@
 # AudioTop stage design: AudioTop, DSP status and lock sampling — October 21, 2026
 
-**Status: design for review. Nothing here is implemented or tested.**
+**Status: implemented and tested offline; no live run yet.** See the [preparation evidence](hdmi-evidence/2026-10-21-dsp-access-at/README.md). The kernel parameter named `complete` below became `stage_complete`.
 This continues the [extension](hdmi-dsp-access-extension-design-2026-10-21.md),
 which [passed live](hdmi-evidence/2026-10-21-dsp-access-ext-live/README.md) to a
 hardware-verified state: both TV domains on, TVCAP and demod resets released,

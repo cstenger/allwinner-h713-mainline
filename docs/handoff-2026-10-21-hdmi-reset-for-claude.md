@@ -44,7 +44,10 @@ solution has not been demonstrated.
   cold **TVCAP is physically off and its bus reset asserted**; under the old
   DT genpd hid this, so the October 21 bench reached AudioTop with TVCAP
   unpowered and in reset (leading stall explanation, not yet proven).
-  AudioTop was not accessed. Next: the AudioTop stage design.
+  AudioTop was not accessed. Next live stage, implemented offline only:
+  [AudioTop stage](hdmi-dsp-audiotop-stage-design-2026-10-21.md) (steps
+  83–96, no DSP request), bundle `build/hdmi-dsp-access-at-2026-10-21/bundle/`,
+  [preparation](hdmi-evidence/2026-10-21-dsp-access-at/README.md).
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
 - The last Linux boot was `0c26fed5-c211-4dbd-8c68-7aa45b942bd9` (ended by
