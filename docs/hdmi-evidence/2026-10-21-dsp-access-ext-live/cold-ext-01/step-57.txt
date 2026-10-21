@@ -1,0 +1,130 @@
+{"host_event": "sending", "argv": ["python3", "/root/hdmi-dsp-access-ext-2026-10-21/dsp-access-audit.py", "step", "--bundle", "/root/hdmi-dsp-access-ext-2026-10-21", "--expected-boot", "0c26fed5-c211-4dbd-8c68-7aa45b942bd9", "--expected-step", "57", "--operation", "write-tv-word-d28"], "host_time": 1792583318.8373492}
+{"event": "before-read", "monotonic_ns": 580524758651, "path": "/proc/sys/kernel/random/boot_id"}
+{"event": "after-read", "monotonic_ns": 580525190734, "path": "/proc/sys/kernel/random/boot_id"}
+{"event": "before-exists", "monotonic_ns": 580525328193, "path": "/run/h713-dsp-observe/state.json"}
+{"event": "after-exists", "monotonic_ns": 580525631234, "path": "/run/h713-dsp-observe/state.json", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580525704943, "path": "/proc/device-tree/chosen/h713,hdmi-boot-v1"}
+{"event": "after-exists", "monotonic_ns": 580525934943, "path": "/proc/device-tree/chosen/h713,hdmi-boot-v1", "exists": false}
+{"event": "before-read", "monotonic_ns": 580526002901, "path": "/proc/device-tree/chosen/h713,dsp-observation-v1"}
+{"event": "after-read", "monotonic_ns": 580526310234, "path": "/proc/device-tree/chosen/h713,dsp-observation-v1"}
+{"event": "before-exists", "monotonic_ns": 580526402109, "path": "/proc/device-tree/chosen/h713,dsp-observation-v2"}
+{"event": "after-exists", "monotonic_ns": 580526606568, "path": "/proc/device-tree/chosen/h713,dsp-observation-v2", "exists": true}
+{"event": "before-read", "monotonic_ns": 580526669609, "path": "/proc/device-tree/chosen/h713,dsp-observation-v2"}
+{"event": "after-read", "monotonic_ns": 580526933109, "path": "/proc/device-tree/chosen/h713,dsp-observation-v2"}
+{"event": "before-exists", "monotonic_ns": 580527011943, "path": "/proc/device-tree/soc/power-controller@7001014/allwinner,keep-tvcap-on"}
+{"event": "after-exists", "monotonic_ns": 580527225359, "path": "/proc/device-tree/soc/power-controller@7001014/allwinner,keep-tvcap-on", "exists": false}
+{"event": "before-read", "monotonic_ns": 580527284693, "path": "/proc/device-tree/soc/display@5600000/status"}
+{"event": "after-read", "monotonic_ns": 580527522984, "path": "/proc/device-tree/soc/display@5600000/status"}
+{"event": "before-read", "monotonic_ns": 580527586443, "path": "/proc/device-tree/soc/cpu-comm@3003000/status"}
+{"event": "after-read", "monotonic_ns": 580527792484, "path": "/proc/device-tree/soc/cpu-comm@3003000/status"}
+{"event": "before-read", "monotonic_ns": 580527847776, "path": "/proc/sys/kernel/printk"}
+{"event": "after-read", "monotonic_ns": 580528131234, "path": "/proc/sys/kernel/printk"}
+{"event": "before-read", "monotonic_ns": 580528226651, "path": "/proc/sys/kernel/panic"}
+{"event": "after-read", "monotonic_ns": 580528456901, "path": "/proc/sys/kernel/panic"}
+{"event": "before-exists", "monotonic_ns": 580528565401, "path": "/dev/cpu_comm_fd"}
+{"event": "after-exists", "monotonic_ns": 580528770068, "path": "/dev/cpu_comm_fd", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580528829026, "path": "/sys/module/h713_hdmi_receiver"}
+{"event": "after-exists", "monotonic_ns": 580528980859, "path": "/sys/module/h713_hdmi_receiver", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580529039068, "path": "/sys/module/h713_hdmi_audio"}
+{"event": "after-exists", "monotonic_ns": 580529179109, "path": "/sys/module/h713_hdmi_audio", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580529230359, "path": "/sys/module/h713_hdmi_signal"}
+{"event": "after-exists", "monotonic_ns": 580529364151, "path": "/sys/module/h713_hdmi_signal", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580529413984, "path": "/sys/module/h713_ddc_pins"}
+{"event": "after-exists", "monotonic_ns": 580529547359, "path": "/sys/module/h713_ddc_pins", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580529597193, "path": "/sys/module/h713_scp_probe"}
+{"event": "after-exists", "monotonic_ns": 580529731151, "path": "/sys/module/h713_scp_probe", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580529781193, "path": "/sys/module/h713_hdmi_dsp_probe"}
+{"event": "after-exists", "monotonic_ns": 580529915151, "path": "/sys/module/h713_hdmi_dsp_probe", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580529965484, "path": "/sys/module/h713_tvfe_bench"}
+{"event": "after-exists", "monotonic_ns": 580530100484, "path": "/sys/module/h713_tvfe_bench", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580530150943, "path": "/sys/module/h713_hdmi_power"}
+{"event": "after-exists", "monotonic_ns": 580530284276, "path": "/sys/module/h713_hdmi_power", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580530334359, "path": "/sys/module/h713_hdmi_tvfe_hold"}
+{"event": "after-exists", "monotonic_ns": 580530467818, "path": "/sys/module/h713_hdmi_tvfe_hold", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580530518068, "path": "/sys/module/h713_edid_clock"}
+{"event": "after-exists", "monotonic_ns": 580530651859, "path": "/sys/module/h713_edid_clock", "exists": false}
+{"event": "before-exists", "monotonic_ns": 580530702068, "path": "/sys/module/h713_hdmi_dsp_observe"}
+{"event": "after-exists", "monotonic_ns": 580530836568, "path": "/sys/module/h713_hdmi_dsp_observe", "exists": false}
+{"event": "before-command", "monotonic_ns": 580530902901, "argv": ["systemctl", "show", "h713-hdmi-capture.service", "-p", "ActiveState", "--value"]}
+{"event": "after-command", "monotonic_ns": 580576554484, "argv": ["systemctl", "show", "h713-hdmi-capture.service", "-p", "ActiveState", "--value"]}
+{"event": "before-command", "monotonic_ns": 580576739026, "argv": ["systemctl", "show", "h713-hdmi-signal.service", "-p", "ActiveState", "--value"]}
+{"event": "after-command", "monotonic_ns": 580626379651, "argv": ["systemctl", "show", "h713-hdmi-signal.service", "-p", "ActiveState", "--value"]}
+{"event": "before-command", "monotonic_ns": 580626572234, "argv": ["systemctl", "show", "h713-hdmi-speaker.service", "-p", "ActiveState", "--value"]}
+{"event": "after-command", "monotonic_ns": 580675847484, "argv": ["systemctl", "show", "h713-hdmi-speaker.service", "-p", "ActiveState", "--value"]}
+{"event": "before-read", "monotonic_ns": 580676094109, "path": "/root/hdmi-dsp-access-ext-2026-10-21/manifest.json"}
+{"event": "after-read", "monotonic_ns": 580676547026, "path": "/root/hdmi-dsp-access-ext-2026-10-21/manifest.json"}
+{"event": "before-read", "monotonic_ns": 580676807984, "path": "/root/hdmi-dsp-access-ext-2026-10-21/h713-hdmi-dsp-access-audit.ko"}
+{"event": "after-read", "monotonic_ns": 580677271693, "path": "/root/hdmi-dsp-access-ext-2026-10-21/h713-hdmi-dsp-access-audit.ko"}
+{"event": "before-read", "monotonic_ns": 580677620276, "path": "/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard"}
+{"event": "after-read", "monotonic_ns": 580678055234, "path": "/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard"}
+{"event": "before-read", "monotonic_ns": 580678216193, "path": "/root/hdmi-dsp-access-ext-2026-10-21/dsp-access-audit.py"}
+{"event": "after-read", "monotonic_ns": 580678630359, "path": "/root/hdmi-dsp-access-ext-2026-10-21/dsp-access-audit.py"}
+{"event": "before-command", "monotonic_ns": 580678812068, "argv": ["uname", "-r"]}
+{"event": "after-command", "monotonic_ns": 580682121984, "argv": ["uname", "-r"]}
+{"event": "before-command", "monotonic_ns": 580682309359, "argv": ["modinfo", "-F", "vermagic", "/root/hdmi-dsp-access-ext-2026-10-21/h713-hdmi-dsp-access-audit.ko"]}
+{"event": "after-command", "monotonic_ns": 580693205318, "argv": ["modinfo", "-F", "vermagic", "/root/hdmi-dsp-access-ext-2026-10-21/h713-hdmi-dsp-access-audit.ko"]}
+{"event": "before-read", "monotonic_ns": 580693433776, "path": "/proc/sys/kernel/random/boot_id"}
+{"event": "after-read", "monotonic_ns": 580694219234, "path": "/proc/sys/kernel/random/boot_id"}
+{"event": "before-exists", "monotonic_ns": 580694383318, "path": "/run/h713-dsp-access-audit/state.json"}
+{"event": "after-exists", "monotonic_ns": 580694721609, "path": "/run/h713-dsp-access-audit/state.json", "exists": true}
+{"event": "before-read", "monotonic_ns": 580694794193, "path": "/run/h713-dsp-access-audit/state.json"}
+{"event": "after-read", "monotonic_ns": 580695176901, "path": "/run/h713-dsp-access-audit/state.json"}
+{"event": "before-read", "monotonic_ns": 580695469943, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/failed"}
+{"event": "after-read", "monotonic_ns": 580695896234, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/failed"}
+{"event": "before-read", "monotonic_ns": 580696031609, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/released"}
+{"event": "after-read", "monotonic_ns": 580696472734, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/released"}
+{"event": "before-read", "monotonic_ns": 580696563026, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/prefix_complete"}
+{"event": "after-read", "monotonic_ns": 580696935859, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/prefix_complete"}
+{"event": "before-read", "monotonic_ns": 580697013984, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/extension_available"}
+{"event": "after-read", "monotonic_ns": 580697392359, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/extension_available"}
+{"event": "before-read", "monotonic_ns": 580697477609, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/extension_complete"}
+{"event": "after-read", "monotonic_ns": 580697853068, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/extension_complete"}
+{"event": "before-read", "monotonic_ns": 580697930401, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/completed"}
+{"event": "after-read", "monotonic_ns": 580698287693, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/completed"}
+{"event": "before-read", "monotonic_ns": 580698391776, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/attempted"}
+{"event": "after-read", "monotonic_ns": 580698767234, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/attempted"}
+{"event": "before-read", "monotonic_ns": 580698847359, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/next_operation"}
+{"event": "after-read", "monotonic_ns": 580699202734, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/next_operation"}
+{"event": "before-read", "monotonic_ns": 580699280026, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/last_value"}
+{"event": "after-read", "monotonic_ns": 580699629484, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/last_value"}
+{"event": "before-state-save", "monotonic_ns": 580699866693, "boot_id": "0c26fed5-c211-4dbd-8c68-7aa45b942bd9", "schema": "h713-dsp-access-ext-v1", "phase": "executing", "completed": 56, "attempted": 57, "operation": "write-tv-word-d28"}
+{"event": "state-saved", "monotonic_ns": 580701297734, "boot_id": "0c26fed5-c211-4dbd-8c68-7aa45b942bd9", "schema": "h713-dsp-access-ext-v1", "phase": "executing", "completed": 56, "attempted": 57, "operation": "write-tv-word-d28"}
+{"event": "before-write", "monotonic_ns": 580701489734, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/advance", "value": "57"}
+{"event": "after-write", "monotonic_ns": 580722319026, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/advance"}
+{"event": "before-read", "monotonic_ns": 580722525859, "path": "/proc/sys/kernel/random/boot_id"}
+{"event": "after-read", "monotonic_ns": 580723253859, "path": "/proc/sys/kernel/random/boot_id"}
+{"event": "before-read", "monotonic_ns": 580723385693, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/failed"}
+{"event": "after-read", "monotonic_ns": 580723902776, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/failed"}
+{"event": "before-read", "monotonic_ns": 580724071234, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/released"}
+{"event": "after-read", "monotonic_ns": 580724585818, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/released"}
+{"event": "before-read", "monotonic_ns": 580724681859, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/prefix_complete"}
+{"event": "after-read", "monotonic_ns": 580725256859, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/prefix_complete"}
+{"event": "before-read", "monotonic_ns": 580725353276, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/extension_available"}
+{"event": "after-read", "monotonic_ns": 580725740859, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/extension_available"}
+{"event": "before-read", "monotonic_ns": 580725822901, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/extension_complete"}
+{"event": "after-read", "monotonic_ns": 580726198359, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/extension_complete"}
+{"event": "before-read", "monotonic_ns": 580726286651, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/completed"}
+{"event": "after-read", "monotonic_ns": 580726668401, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/completed"}
+{"event": "before-read", "monotonic_ns": 580726754068, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/attempted"}
+{"event": "after-read", "monotonic_ns": 580727122776, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/attempted"}
+{"event": "before-read", "monotonic_ns": 580727204943, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/next_operation"}
+{"event": "after-read", "monotonic_ns": 580727578026, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/next_operation"}
+{"event": "before-read", "monotonic_ns": 580727660443, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/last_value"}
+{"event": "after-read", "monotonic_ns": 580728084359, "path": "/sys/module/h713_hdmi_dsp_access_audit/parameters/last_value"}
+{"event": "before-state-save", "monotonic_ns": 580728275151, "boot_id": "0c26fed5-c211-4dbd-8c68-7aa45b942bd9", "schema": "h713-dsp-access-ext-v1", "phase": "paused", "completed": 57}
+{"event": "state-saved", "monotonic_ns": 580729408734, "boot_id": "0c26fed5-c211-4dbd-8c68-7aa45b942bd9", "schema": "h713-dsp-access-ext-v1", "phase": "paused", "completed": 57}
+{
+  "event": "acknowledged",
+  "result": {
+    "failed": "N",
+    "released": "N",
+    "prefix_complete": "Y",
+    "extension_available": "Y",
+    "extension_complete": "N",
+    "completed": 57,
+    "attempted": 57,
+    "next_operation": "write-tv-word-d2c",
+    "last_value": 2147483650
+  }
+}
+{"host_event": "returned", "code": 0, "host_time": 1792583319.8522928}

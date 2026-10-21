@@ -1,6 +1,6 @@
 # DSP access extension design: domains, clocks, resets — October 21, 2026
 
-**Status: implemented and tested offline; no live run yet.** Module, helper,
+**Status: PASSED live (all 82 steps, [cold-ext-01](hdmi-evidence/2026-10-21-dsp-access-ext-live/README.md)); TVCAP confirmed off and in reset at cold.** Module, helper,
 boot-v4 and checks: see [preparation evidence](hdmi-evidence/2026-10-21-dsp-access-ext/README.md).
 This extends the [read-only prefix](hdmi-dsp-access-audit-2026-10-21.md), which
 [passed live](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md), through the
