@@ -1,0 +1,7 @@
+17a18,19
+> fdt rm /soc/power-controller@7001014 allwinner,keep-tvcap-on
+> fdt set /chosen h713,dsp-observation-v2 <0x44535032>
+20c22
+< echo H713 DSP OBSERVATION cold RAM boot - no logo or source3
+---
+> echo H713 DSP OBSERVATION cold RAM boot - no logo or source3 - TVCAP genpd from hardware

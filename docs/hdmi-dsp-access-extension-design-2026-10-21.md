@@ -1,6 +1,7 @@
 # DSP access extension design: domains, clocks, resets — October 21, 2026
 
-**Status: design for review. Nothing here is implemented or tested.**
+**Status: implemented and tested offline; no live run yet.** Module, helper,
+boot-v4 and checks: see [preparation evidence](hdmi-evidence/2026-10-21-dsp-access-ext/README.md).
 This extends the [read-only prefix](hdmi-dsp-access-audit-2026-10-21.md), which
 [passed live](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md), through the
 remaining power, clock and reset operations of the old monolithic setup
@@ -103,9 +104,12 @@ anything else.
 
 **D1. Boot `boot-v4`: remove `allwinner,keep-tvcap-on` from the RAM-only
 maintenance DT.** Add one guarded U-Boot command after the existing node
-edits, `fdt rm /soc/power-controller@7001014 allwinner,keep-tvcap-on`. Also
-add an `fdt get` check that it is gone, and a distinct marker
-`h713,dsp-observation-v2` so module and helper can tell the boots apart. The
+edits, `fdt rm /soc/power-controller@7001014 allwinner,keep-tvcap-on`, which
+fails (stopping the runner) unless the property existed and was removed. Add
+a distinct marker `h713,dsp-observation-v2` so module and helper can tell the
+boots apart. Absence is verified in Linux against the DT the kernel actually
+booted: module init disables the extension, and the helper refuses, if the
+property is present. The
 PPU probe performs the same three init writes either way. Only genpd's initial
 state changes: it now comes from hardware, and `pd_ignore_unused` still
 prevents any power-off. This is the proper fix for E1 rather than a
@@ -121,8 +125,7 @@ Init refuses extension mode unless the v2 marker is present and the PPU node
 lacks `allwinner,keep-tvcap-on`.
 
 **D3. No software restore once hardware changes.** `release_prefix` remains
-available only while every completed step is read-only (≤ the last census
-step). After the first state-changing step, the only supported end is an
+available only while every completed step is read-only (step 40 or earlier). After the first state-changing step, the only supported end is an
 orderly `systemctl poweroff` with the module still loaded. The guard permits
 poweroff, and physical power-down restores everything. This avoids writing
 and trusting untested restore code; the old bench's restore was never
@@ -159,45 +162,50 @@ read. Claims from the prefix stay held.
 
 ## Step table (continues the prefix)
 
-Stage **C — census** (read-only; release still allowed after it):
+As implemented in `h713-hdmi-dsp-access-audit.c` (82 steps; `steps.json` in
+the preparation evidence is generated from the helper and tested for parity
+with the C table). Stage boundaries are after steps 33, 40, 45, 53, 69, 74
+and 81.
+
+Stage **C — census** (read-only; `release` still allowed through step 40):
 
 | # | Operation | Touches | Pass condition |
 | --- | --- | --- | --- |
-| 34 | read-ppu-tvfe-status | read `0x070010a4` | readable; record |
-| 35 | read-ppu-tvcap-status | read `0x07001124` | readable; record |
-| 36 | get-tvcap-reset | handle lookup | handle |
-| 37 | read-tvcap-reset | CCU `0xd88` b16 | 0 or 1; record |
-| 38 | census-clock-enabled | 17 × `__clk_is_enabled` (CCU reads) | record bitmask |
-| 39 | read-tv-ccu-words | 15 CCU words `0xd10`…`0xd60` | record all |
+| 34 | map-ppu-status | ioremap `0x070010a4`, `0x07001124` (unclaimed, as the PPU driver) | software only |
+| 35 | read-ppu-tvfe-status | read `0x070010a4` | readable; record |
+| 36 | read-ppu-tvcap-status | read `0x07001124` | readable; record |
+| 37 | get-tvcap-reset | handle lookup | handle |
+| 38 | read-tvcap-reset | CCU `0xd88` b16 | 0 or 1; record |
+| 39 | census-clock-enabled | 17 × `__clk_is_enabled` (CCU reads) | record bitmask |
+| 40 | read-tv-ccu-words | 15 CCU words `0xd10`…`0xd60` | record (`tv_words`) |
 
-Boundary snapshot plus `--stage-ack census`. **Decision rule:** with boot-v4,
-genpd and PPU status must agree for both domains. If they disagree, stop:
-the premise is wrong. If TVCAP reads ON at cold, record it and continue; the
-domain steps then become no-ops.
+**Decision rule at the census boundary:** with boot-v4, genpd
+(`pm_genpd_summary`) and PPU status must agree for both domains. If they
+disagree, stop: the premise is wrong. If TVCAP reads ON at cold, record it
+and continue; the domain steps then become no-ops.
 
-Stage **P — power domains** (first state change; release disabled from here):
+Stage **P — power domains** (first state change; `release` refused from here):
 
-| # | Operation | Touches | Pass condition |
-| --- | --- | --- | --- |
-| 40 | attach-tvfe | root device + `of_genpd_add_device` (idx 1) | software only |
-| 41 | resume-tvfe | genpd power_on → PPU ctrl write + polls | OP-DONE; then status `00010000` |
-| 42 | attach-tvcap | idx 2 | software only |
-| 43 | resume-tvcap | PPU ctrl write + polls | status `00010000` |
-| 44 | recheck-stopped | MIPS/SCP reads | still stopped |
+| # | Operation | Pass condition |
+| --- | --- | --- |
+| 41 | attach-tvfe: root device, `of_genpd_add_device` (idx 1), notifier | software only |
+| 42 | resume-tvfe: genpd power_on, PPU ctrl write and polls | OP-DONE; status `00010000` |
+| 43 | attach-tvcap (idx 2) | software only |
+| 44 | resume-tvcap | OP-DONE; status `00010000` |
+| 45 | recheck-stopped-after-power | MIPS 0, SCP b0 clear |
 
-genpd notifiers (as in `h713-receiver-power.c`) print PRE_ON and ON from inside
-each transition.
+genpd notifiers print each power event from inside the transition.
 
 Stage **R — TV resets and receiver clocks:**
 
 | # | Operation | Pass condition |
 | --- | --- | --- |
-| 45 | deassert-tvcap-reset — **only if step 37 read asserted**, else recorded no-op | status 0 |
-| 46–49 | enable bus-tvcap, bus-cap-300m, vincap-dma, tvfe-1296m (old order, one per step) | enabled; record parent PLLs at boundary |
-| 50 | deassert-demod-reset, 10 ms | status 0 |
-| 51–52 | enable pll-video0, pll-adc (expected already-on via tvfe-1296m) | enabled/already-on |
+| 46 | deassert-tvcap-reset-if-asserted (no-op, `last_value` 0, if step 38 read 0) | status 0 |
+| 47–50 | enable-clock bus-tvcap, bus-cap-300m, vincap-dma, tvfe-1296m | enabled (`last_value` 1 = already on) |
+| 51 | deassert-demod-reset, 10 ms | status 0 |
+| 52–53 | enable-clock pll-video0, pll-adc (expected already on via tvfe-1296m) | enabled |
 
-Step 45 is new relative to the old bench. It is included because production
+Step 46 is new relative to the old bench. It is included because production
 always runs after MIPS, which may release that reset, and nothing in our code
 does. Its no-op branch keeps the old behaviour when the reset is already
 deasserted.
@@ -207,27 +215,27 @@ these clocks, which is acceptable because no restore follows, D3):
 
 | # | Operation | Pass condition |
 | --- | --- | --- |
-| 53–67 | write one stock word each, offsets `0x00`…`0x50` ascending | exact readback |
-| 68 | set demod bus gate `0xd64` b0, 10 ms | b0 and b16 set |
+| 54–68 | write-tv-word-d10 … d60, one stock word each | exact readback |
+| 69 | set-demod-bus-gate `0xd64` b0, 10 ms | b0 and b16 set |
 
 Stage **A — audio clocks:**
 
 | # | Operation | Pass condition |
 | --- | --- | --- |
-| 69–73 | enable bus-hdmi-audio, hdmi-audio, audio-cpu, audio-umac, audio-ihb | enabled/already-on |
+| 70–74 | enable-clock bus-hdmi-audio, hdmi-audio, audio-cpu, audio-umac, audio-ihb | enabled |
 
-Stage **D — display tree** (old bench did this *first*; moved last because
-only the later lock-window stage needs it, and E6 shows it largely open
-already):
+Stage **D — display tree** (the old bench did this *first*; moved last
+because only the later lock-window stage needs it, and E6 shows it largely
+open already):
 
 | # | Operation | Pass condition |
 | --- | --- | --- |
-| 74 | enable pll-video2, 12 ms | enabled/already-on |
-| 75–79 | enable deint, panel, svp-dtl, afbd, bus-disp | enabled/already-on |
-| 80 | deassert-display-reset — only if asserted (prefix saw deasserted), 12 ms | status 0 |
-| 81 | recheck-stopped; final census (repeat 34/35/37/38/39 reads) | record |
+| 75 | enable-clock pll-video2, 12 ms if enabled now | enabled |
+| 76–80 | enable-clock deint, panel, svp-dtl, afbd, bus-disp | enabled |
+| 81 | deassert-display-reset-if-asserted (prefix saw deasserted), 12 ms | status 0 |
+| 82 | final-recheck: MIPS/SCP stopped, both PPU status words ON | pass |
 
-Then the boundary snapshot, the `ext-end` state, and orderly poweroff.
+Then the boundary snapshot, the `extension-end` state, and orderly poweroff.
 
 Reordering the display tree after the TV stages departs from the old
 sequence. If the extension passes completely, the old order is not
@@ -254,7 +262,7 @@ wanted, run stage D directly after stage C in a second boot.
 - The safety of these operations with MIPS running. Production follows the
   logo path, and 09-18 shows TVCAP cycling breaks MIPS.
 
-## Implementation work (after this design is approved)
+## Implementation work (items 1–4 done offline; item 5 pending)
 
 1. `tools/hdmi/prepare-dsp-observe-boot.py`: emit `boot-v4` (property
    removal, its check, and the v2 marker); regenerate the reference DTB and
@@ -265,7 +273,7 @@ wanted, run stage D directly after stage C in a second boot.
 3. Helper: new schema; `--stage-ack`; boundary snapshots; refuse release
    after the first state change; keep the console/panic preflight.
 4. Offline tests: step-table parity with the C source, stage-ack refusal,
-   release refusal after step 39, the v1-marker refusal, and the
+   release refusal after step 40, the v1-marker refusal, and the
    keep-tvcap-on refusal. Build W=1 against the exact kernel and check imports
    (now expected to include genpd/runtime-PM, clk enable and reset deassert).
 5. Live run: one cold boot, same protocol as `cold-prefix-02`, with stage

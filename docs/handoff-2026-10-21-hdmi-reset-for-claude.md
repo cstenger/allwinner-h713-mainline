@@ -36,6 +36,14 @@ solution has not been demonstrated.
   previous guard is backed up on the board as
   `/root/hdmi-dsp-access-audit-2026-10-21/previous-hold-guard`.
   Recheck physical state with the operator before further live work.
+- **Next live stage is implemented offline only:** the
+  [extension design](hdmi-dsp-access-extension-design-2026-10-21.md) (steps
+  34–82: census, TVFE/TVCAP power, resets, clocks, TVFE words; stops before
+  AudioTop) and its [preparation](hdmi-evidence/2026-10-21-dsp-access-ext/README.md):
+  `boot-v4` drops `allwinner,keep-tvcap-on` from the RAM-only DT, bundle in
+  `build/hdmi-dsp-access-ext-2026-10-21/bundle/`. Leading stall hypothesis:
+  the old bench read AudioTop with TVCAP physically off, because the flag
+  made its TVCAP resume a no-op. Not yet confirmed live.
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
 - The last Linux boot was `36c40861-5bd6-4d21-875a-fce2fc1811b9` (ended by
@@ -56,13 +64,14 @@ solution has not been demonstrated.
 
 Read these first, in order:
 
-1. [Prefix live runs and what they establish](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md).
-2. [Staged access audit, findings and next live gate](hdmi-dsp-access-audit-2026-10-21.md).
-3. [Stalled monolithic cold attempt](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
-4. [DSP access rationale and experiment design](hdmi-dsp-observation-2026-10-20.md).
-5. [Completion plan and release gates](hdmi-completion-plan-2026-10-20.md).
-6. [Expanded clean/abrupt reset comparison](hdmi-evidence/2026-10-20-reset-controls/README.md).
-7. [Warm-reset investigation](hdmi-warm-reset-investigation-2026-10-20.md).
+1. [Extension design (next live stage)](hdmi-dsp-access-extension-design-2026-10-21.md).
+2. [Prefix live runs and what they establish](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md).
+3. [Staged access audit, findings and next live gate](hdmi-dsp-access-audit-2026-10-21.md).
+4. [Stalled monolithic cold attempt](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
+5. [DSP access rationale and experiment design](hdmi-dsp-observation-2026-10-20.md).
+6. [Completion plan and release gates](hdmi-completion-plan-2026-10-20.md).
+7. [Expanded clean/abrupt reset comparison](hdmi-evidence/2026-10-20-reset-controls/README.md).
+8. [Warm-reset investigation](hdmi-warm-reset-investigation-2026-10-20.md).
 
 Some historical documents/manifests say the board is running an earlier boot
 or that the bench is only prepared. Those are snapshots of their dates;

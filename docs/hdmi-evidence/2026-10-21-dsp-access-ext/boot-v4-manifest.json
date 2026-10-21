@@ -1,0 +1,16 @@
+{
+  "scope": "cold-only RAM DT edits; no environment save or boot-media write",
+  "fit_sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+  "dtb_sha256": "4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940",
+  "disabled_nodes": [
+    "/soc/display@5600000",
+    "/soc/cpu-comm@3003000"
+  ],
+  "variant": "v2",
+  "removed_property": "/soc/power-controller@7001014 allwinner,keep-tvcap-on",
+  "marker_v2": "44535032",
+  "gp6": "require zero, then set launch budget; never clear",
+  "commands_sha256": "72e83c264742a578c3adb54560912262ba44da81084c3d50fd71efc8cbb0a4e4",
+  "ram_transport_crc32": "d84f128d",
+  "hash_limit": "Installed U-Boot lacks hash command. FIT SHA256 pinned offline; RAM transport CRC and bootm subimage SHA256 checks retained."
+}

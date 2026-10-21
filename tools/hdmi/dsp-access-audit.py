@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""One explicit read-only prefix step per invocation; never run a stage loop.
+"""One explicit staged-access step per invocation; never run a stage loop.
 
-A failed/uncertain operation consumes this boot. No DSP request, reset or boot.
-This helper must be staged with the new guard and a pinned manifest.
+A failed/uncertain operation consumes this boot. No AudioTop/DSP access,
+reset or reboot. Crossing a stage boundary needs a read-only `snapshot`
+and then `--stage-ack <stage>`. From step 41 on, the only supported end is
+an orderly poweroff with the module loaded; `release` is refused.
+This helper must be staged with the guard and a pinned manifest.
 """
 import argparse
 import fcntl
@@ -18,7 +21,8 @@ KO = 'h713-hdmi-dsp-access-audit.ko'
 PARAM = '/sys/module/' + MODULE + '/parameters/'
 STATE = '/run/h713-dsp-access-audit/state.json'
 GUARD = '/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard'
-SCHEMA = 'h713-dsp-access-prefix-v1'
+SCHEMA = 'h713-dsp-access-ext-v1'
+PPU_NODE = '/proc/device-tree/soc/power-controller@7001014/'
 # INIT/BEGIN/DONE are pr_notice (level 5); the console prints levels strictly
 # below its threshold, and the rootfs default is 5 (warnings only).
 CONSOLE_MIN = 6
@@ -26,17 +30,37 @@ COMPETITORS = ('h713_hdmi_receiver', 'h713_hdmi_audio', 'h713_hdmi_signal',
                'h713_ddc_pins', 'h713_scp_probe', 'h713_hdmi_dsp_probe',
                'h713_tvfe_bench', 'h713_hdmi_power', 'h713_hdmi_tvfe_hold',
                'h713_edid_clock', 'h713_hdmi_dsp_observe')
+CLOCKS = ('pll-video0', 'pll-adc', 'bus-tvcap', 'bus-cap-300m', 'vincap-dma',
+          'tvfe-1296m', 'bus-hdmi-audio', 'hdmi-audio', 'audio-cpu', 'audio-umac',
+          'audio-ihb', 'pll-video2', 'deint', 'panel', 'svp-dtl', 'afbd', 'bus-disp')
 STEPS = (
     'claim-dsp-port', 'claim-lock-window', 'claim-audiotop', 'claim-scp-reset',
     'map-mips-status', 'map-scp-reset', 'map-tv-ccu', 'map-display-ccu',
     'read-mips-stopped', 'read-scp-stopped', 'read-demod-bus', 'read-display-bus',
     'get-display-reset', 'read-display-reset', 'get-demod-reset', 'read-demod-reset',
-    'get-clock-pll-video0', 'get-clock-pll-adc', 'get-clock-bus-tvcap',
-    'get-clock-bus-cap-300m', 'get-clock-vincap-dma', 'get-clock-tvfe-1296m',
-    'get-clock-bus-hdmi-audio', 'get-clock-hdmi-audio', 'get-clock-audio-cpu',
-    'get-clock-audio-umac', 'get-clock-audio-ihb', 'get-clock-pll-video2',
-    'get-clock-deint', 'get-clock-panel', 'get-clock-svp-dtl', 'get-clock-afbd',
-    'get-clock-bus-disp')
+    *('get-clock-' + c for c in CLOCKS),
+    'map-ppu-status', 'read-ppu-tvfe-status', 'read-ppu-tvcap-status',
+    'get-tvcap-reset', 'read-tvcap-reset', 'census-clock-enabled', 'read-tv-ccu-words',
+    'attach-tvfe', 'resume-tvfe', 'attach-tvcap', 'resume-tvcap',
+    'recheck-stopped-after-power',
+    'deassert-tvcap-reset-if-asserted',
+    *('enable-clock-' + c for c in CLOCKS[2:6]),
+    'deassert-demod-reset',
+    *('enable-clock-' + c for c in CLOCKS[0:2]),
+    *('write-tv-word-' + w for w in ('d10', 'd20', 'd24', 'd28', 'd2c', 'd30', 'd34',
+                                     'd38', 'd40', 'd48', 'd4c', 'd50', 'd58', 'd5c', 'd60')),
+    'set-demod-bus-gate',
+    *('enable-clock-' + c for c in CLOCKS[6:11]),
+    *('enable-clock-' + c for c in CLOCKS[11:17]),
+    'deassert-display-reset-if-asserted',
+    'final-recheck')
+PREFIX_STEPS = 33
+LAST_READ_ONLY_STEP = 40
+# Completing the step on the left ends the named stage. The next step needs
+# a snapshot taken at that cursor plus --stage-ack <name>.
+STAGES = {33: 'prefix', 40: 'census', 45: 'power', 53: 'receiver',
+          69: 'tvfe-words', 74: 'audio', 81: 'display'}
+SNAPSHOTS = ('/sys/kernel/debug/clk/clk_summary', '/sys/kernel/debug/pm_genpd/pm_genpd_summary')
 
 
 class Backend:
@@ -57,7 +81,11 @@ class Backend:
 
     def write(self, path, value):
         self.note('before-write', path=path, value=value.decode().strip())
-        Path(path).write_bytes(value)
+        try:
+            Path(path).write_bytes(value)
+        except OSError as error:
+            self.note('write-failed', path=path, errno=error.errno, error=str(error))
+            raise
         self.note('after-write', path=path)
 
     def run(self, argv):
@@ -90,6 +118,10 @@ class Backend:
         self.note('state-saved', **value)
 
 
+def next_name(n):
+    return STEPS[n] if n < len(STEPS) else 'extension-end'
+
+
 class Audit:
     def __init__(self, backend, bundle, boot):
         self.b, self.bundle, self.expected = backend, str(bundle), boot
@@ -113,6 +145,11 @@ class Audit:
             raise RuntimeError('HDMI handoff exists')
         if self.b.read('/proc/device-tree/chosen/h713,dsp-observation-v1') != bytes.fromhex('44535031'):
             raise RuntimeError('Missing observation marker')
+        if (not self.b.exists('/proc/device-tree/chosen/h713,dsp-observation-v2') or
+                self.b.read('/proc/device-tree/chosen/h713,dsp-observation-v2') != bytes.fromhex('44535032')):
+            raise RuntimeError('Not a boot-v4 maintenance boot (v2 marker missing)')
+        if self.b.exists(PPU_NODE + 'allwinner,keep-tvcap-on'):
+            raise RuntimeError('TVCAP retention flag present; genpd TVCAP state would not reflect hardware')
         for node in ('display@5600000', 'cpu-comm@3003000'):
             if self.b.read('/proc/device-tree/soc/' + node + '/status') != b'disabled\0':
                 raise RuntimeError('Competing DT node is not disabled: ' + node)
@@ -143,31 +180,33 @@ class Audit:
             raise RuntimeError('Kernel ABI mismatch')
         self.boot()
 
-    def snapshot(self):
+    def snapshot_kernel(self):
         result = {name: self.b.read(PARAM + name).decode().strip() for name in
-                  ('failed', 'released', 'prefix_complete', 'completed', 'attempted',
-                   'next_operation', 'last_value')}
-        result['completed'] = int(result['completed'])
-        result['attempted'] = int(result['attempted'])
-        result['last_value'] = int(result['last_value'])
-        n = result['completed']
-        if not 0 <= n <= len(STEPS):raise RuntimeError('Invalid kernel cursor')
+                  ('failed', 'released', 'prefix_complete', 'extension_available',
+                   'extension_complete', 'completed', 'attempted', 'next_operation',
+                   'last_value')}
+        for key in ('completed', 'attempted', 'last_value'):
+            result[key] = int(result[key])
+        if not 0 <= result['completed'] <= len(STEPS):raise RuntimeError('Invalid kernel cursor')
         return result
+
+    def expect(self, result, n):
+        return (result['failed'] == 'N' and result['released'] == 'N' and
+                result['extension_available'] == 'Y' and
+                result['completed'] == n and result['attempted'] == n and
+                result['next_operation'] == next_name(n) and
+                result['prefix_complete'] == ('Y' if n >= PREFIX_STEPS else 'N') and
+                result['extension_complete'] == ('Y' if n == len(STEPS) else 'N'))
 
     def paused(self):
         state = self.prior() or {}
         if (state.get('boot_id') != self.expected or state.get('schema') != SCHEMA or
                 state.get('phase') != 'paused'):
             raise RuntimeError('No acknowledged paused stage; no retry/reload')
-        result = self.snapshot()
-        n = state['completed']
-        next_name = STEPS[n] if n < len(STEPS) else 'prefix-end'
-        if (result['failed'] != 'N' or result['released'] != 'N' or
-                result['completed'] != n or result['attempted'] != n or
-                result['next_operation'] != next_name or
-                result['prefix_complete'] != ('Y' if n == len(STEPS) else 'N')):
+        result = self.snapshot_kernel()
+        if not self.expect(result, state['completed']):
             raise RuntimeError('Uncertain kernel state; stop and cold power off')
-        return result
+        return state, result
 
     def load(self):
         self.preflight()
@@ -176,39 +215,57 @@ class Audit:
         self.save('loading', 0)
         self.b.run(['insmod', self.bundle + '/' + KO, 'armed=1'])
         self.boot()
-        result = self.snapshot()
-        if (result['completed'] != 0 or result['attempted'] != 0 or result['failed'] != 'N' or
-                result['released'] != 'N' or result['prefix_complete'] != 'N' or
-                result['next_operation'] != STEPS[0]):
+        result = self.snapshot_kernel()
+        if not self.expect(result, 0):
             raise RuntimeError('Load acknowledgment failed; no retry')
         self.save('paused', 0)
         return result
 
-    def step(self, expected_step, operation):
+    def step(self, expected_step, operation, stage_ack=None):
         self.preflight()
-        before = self.paused()
-        if (expected_step != before['completed'] + 1 or not 1 <= expected_step <= len(STEPS) or
+        state, before = self.paused()
+        n = before['completed']
+        if (expected_step != n + 1 or not 1 <= expected_step <= len(STEPS) or
                 operation != STEPS[expected_step - 1]):
             raise RuntimeError('Stale, skipped, terminal or mismatched step; no access')
-        self.save('executing', before['completed'], attempted=expected_step, operation=operation)
+        if n in STAGES:
+            if stage_ack != STAGES[n] or state.get('snapshot_at') != n:
+                raise RuntimeError('Stage boundary: take a snapshot, review it, then pass --stage-ack '
+                                   + STAGES[n] + '; no access')
+        elif stage_ack is not None:
+            raise RuntimeError('No stage boundary here; --stage-ack refused')
+        self.save('executing', n, attempted=expected_step, operation=operation)
         self.b.write(PARAM + 'advance', (str(expected_step) + '\n').encode())
         self.boot()
-        result = self.snapshot()
-        if (result['failed'] != 'N' or result['released'] != 'N' or
-                result['completed'] != expected_step or result['attempted'] != expected_step or
-                result['next_operation'] != (STEPS[expected_step] if expected_step < len(STEPS) else 'prefix-end') or
-                result['prefix_complete'] != ('Y' if expected_step == len(STEPS) else 'N')):
+        result = self.snapshot_kernel()
+        if not self.expect(result, expected_step):
             raise RuntimeError('Stage acknowledgment failed; no retry or cleanup')
+        if expected_step == LAST_READ_ONLY_STEP:
+            result['tv_words'] = self.b.read(PARAM + 'tv_words').decode().strip()
+            result['tvcap_reset_before'] = int(self.b.read(PARAM + 'tvcap_reset_before'))
         self.save('paused', expected_step)
         return result
 
+    def snapshot(self):
+        """Read-only clock/genpd census at a stage boundary; records the cursor."""
+        self.preflight()
+        state, result = self.paused()
+        n = result['completed']
+        if n not in STAGES:raise RuntimeError('Snapshots are taken at stage boundaries only')
+        captured = {path: self.b.read(path).decode(errors='replace') for path in SNAPSHOTS}
+        self.save('paused', n, snapshot_at=n)
+        return {'stage_complete': STAGES[n], 'kernel': result, 'snapshots': captured}
+
     def status(self):
         self.boot()
-        return {'state': self.prior(), 'kernel': self.snapshot()}
+        return {'state': self.prior(), 'kernel': self.snapshot_kernel()}
 
     def release(self):
         self.preflight()
-        result = self.paused()
+        state, result = self.paused()
+        if result['completed'] > LAST_READ_ONLY_STEP:
+            raise RuntimeError('Hardware state changed (step > 40): no software restore; '
+                               'orderly poweroff with the module loaded is the only end')
         self.save('releasing', result['completed'])
         self.b.write(PARAM + 'release_prefix', b'1\n')
         self.boot()
@@ -221,22 +278,27 @@ class Audit:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('load', 'step', 'status', 'release'))
+    parser.add_argument('action', choices=('load', 'step', 'snapshot', 'status', 'release'))
     parser.add_argument('--bundle', type=Path, required=True)
     parser.add_argument('--expected-boot', required=True)
     parser.add_argument('--expected-step', type=int)
     parser.add_argument('--operation')
+    parser.add_argument('--stage-ack')
     args = parser.parse_args()
     if args.action == 'step' and (args.expected_step is None or args.operation is None):
         parser.error('step requires --expected-step and --operation; there is no automatic loop')
-    if args.action != 'step' and (args.expected_step is not None or args.operation is not None):
+    if args.action != 'step' and (args.expected_step is not None or args.operation is not None
+                                  or args.stage_ack is not None):
         parser.error('step arguments apply only to step')
     lock = Path(STATE).parent / 'lock'
     lock.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with lock.open('a') as stream:
         fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         audit = Audit(Backend(), args.bundle, args.expected_boot)
-        result = audit.step(args.expected_step, args.operation) if args.action == 'step' else getattr(audit, args.action)()
+        if args.action == 'step':
+            result = audit.step(args.expected_step, args.operation, args.stage_ack)
+        else:
+            result = getattr(audit, args.action)()
         print(json.dumps({'event': 'acknowledged', 'result': result}, indent=2), flush=True)
 
 
