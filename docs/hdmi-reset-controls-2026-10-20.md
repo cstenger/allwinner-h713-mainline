@@ -105,4 +105,6 @@ one orderly reset. See the [live result record](hdmi-evidence/2026-10-20-reset-c
 for boot IDs, exact readback and unchanged-region checks. The cold run passed
 the new read boundary and autonomous startup checks; the clean reboot restored
 all owners and skipped warm capture. The independently cold-started abrupt
-comparison is pending. DSP freshness and automatic recovery remain unproven.
+comparison also completed with immediate UART/SSH boot-ID correlation: all
+22 control words match the orderly trial at all three stages. DSP freshness
+and automatic recovery remain unproven.

@@ -38,8 +38,55 @@ cold control, logo initialization then changes the TVCAP TCD3/DMA/shared bus,
 HDMI-audio and bus/reset controls. The zero programmed bus words do not prove
 rails discharged, DSP patch erased or a safe receiver access window.
 
-Linux was then powered off normally for an independently cold-started abrupt
-trial. That comparison is pending. Full raw capture and Linux collectors
-remain local under `build/hdmi-reset-controls-2026-10-20/`. Automatic warm
-capture recovery remains unproven; GP6 and all recovery/shutdown guards stay
-intact. Do not infer an abrupt-reset result from the orderly result.
+## Abrupt-reset result and comparison
+
+After a separate operator-confirmed disconnected cold cycle, boot
+`eb7f026a-3363-4035-b974-025d504a8504` passed active units, both PCMs RUNNING,
+DSP failure N, zero capture XRUNs and clean root. Four complete cold vectors
+are retained in [abrupt-cold.serial.log](abrupt-cold.serial.log).
+
+The [guarded trigger](abrupt-reset-trigger.py.txt) synced filesystem writes,
+rechecked boot ID/services/PCMs/DSP failure, and drained its complete UART
+marker before SysRq-b. Reset occurred at **61.307404 seconds**. The
+[trigger interval](abrupt-trigger-interval.serial.log) contains the marker
+and `sysrq: Resetting`, with no normal teardown sequence. This is an
+emergency-reset test, not actual watchdog expiry or a hung-kernel injection.
+
+New Linux boot `a02e888b-4f77-4b65-a95d-bafefa1705c5` was captured directly in
+UART and SSH before recording ended. It reports parked MIPS, no handoff and
+all three HDMI units skipped. Ext4 reports recovery complete, root clean and
+growfs success; both environment regions, SPL, rescue and primary image still
+match. Journald replaced system/user journals as corrupted or uncleanly shut
+down; this is not evidence of lossless logging or an offline filesystem check.
+See [post-reset health](abrupt-after-health.txt) and [raw trace](abrupt-reset.serial.log).
+
+[Domain comparison](domain-comparison.json) finds **no differences in any of
+22 control words** at proper-preboot, pre-workspace or post-logo. The
+[original five-field comparison](mips-comparison.json) also matches at all
+stages. Both warm traces begin with SCP run/reset zero and the same TVFE/audio
+and TVCAP control values as the corresponding cold baseline. The logo then
+sets the same TVCAP controls in both. There are no missing control stages.
+The analyzers still label hardware recovery `unproven`.
+
+The board remains on that guarded warm boot. Full raw captures and collectors
+are local under `build/hdmi-reset-controls-2026-10-20/`; extraction offsets,
+hashes and status are in [installation.json](installation.json). The capture
+was closed only after both immediate post-reset boot IDs and collectors were
+retained. This pair has no usage-limit boot-attribution gap.
+
+## What this permits next
+
+At proper initialization, neither SCP run nor these programmed CCU controls
+distinguishes clean teardown from this synced abrupt reset. They do not prove
+DSP RAM/patch reset, cleared protocol locks, receiver readiness, SCP SRAM
+freshness, power discharge or the responsible reset domain. Earlier SPL/BL31
+and initialization effects remain unseparated.
+
+Next review a dedicated pre-logo DSP observation protocol: establish which
+power/clock/reset and ownership predicates are sufficient before issuing even
+a version read; preserve original controls and refuse inherited ownership or
+busy/failure state. Alternatively instrument an existing firmware initialization
+read before it overwrites DSP evidence. Neither approach is implemented or
+authorized by these control values alone. Do not launch SCP merely to read
+receiver state, overwrite retained SRAM, relax DSP versions, clear GP6 or
+retry source3. Automatic warm HDMI recovery remains a release blocker.

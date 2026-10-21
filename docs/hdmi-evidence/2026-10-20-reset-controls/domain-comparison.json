@@ -1,0 +1,213 @@
+{
+  "schema": 1,
+  "hardware_recovery": "unproven",
+  "trials": {
+    "clean": {
+      "path": "build/hdmi-reset-controls-2026-10-20/clean-reset.serial.log",
+      "sha256": "88eaa9b814432b6785c4edc4d63ae87e1c69ea3285682990b32651aed2f60068",
+      "records": [
+        {
+          "stage": "proper_preboot",
+          "occurrence": 1,
+          "line": 23,
+          "values": {
+            "scp_reset": "00000000",
+            "adc_clk": "01000005",
+            "tvfe_clk": "00000000",
+            "i2h_clk": "00000007",
+            "cip_tsx": "00000002",
+            "cip_mcx": "00000005",
+            "cip_tsp": "00000004",
+            "tsa_tsp": "00000004",
+            "cip27": "0000000b",
+            "cip_mts0": "0000020a",
+            "audio_cpu": "00000002",
+            "audio_umac": "00000002",
+            "audio_ihb": "00000007",
+            "tsa432": "00000002",
+            "mpg0": "0000020b",
+            "mpg1": "0000020b",
+            "demod_bus": "00000000",
+            "tcd3": "00000305",
+            "vincap_dma": "00000007",
+            "cap_bus": "00000000",
+            "hdmi_audio": "00000000",
+            "tvcap_bus": "00000000"
+          }
+        },
+        {
+          "stage": "pre_workspace",
+          "occurrence": 1,
+          "line": 41,
+          "values": {
+            "scp_reset": "00000000",
+            "adc_clk": "01000005",
+            "tvfe_clk": "00000000",
+            "i2h_clk": "00000007",
+            "cip_tsx": "00000002",
+            "cip_mcx": "00000005",
+            "cip_tsp": "00000004",
+            "tsa_tsp": "00000004",
+            "cip27": "0000000b",
+            "cip_mts0": "0000020a",
+            "audio_cpu": "00000002",
+            "audio_umac": "00000002",
+            "audio_ihb": "00000007",
+            "tsa432": "00000002",
+            "mpg0": "0000020b",
+            "mpg1": "0000020b",
+            "demod_bus": "00000000",
+            "tcd3": "00000305",
+            "vincap_dma": "00000007",
+            "cap_bus": "00000000",
+            "hdmi_audio": "00000000",
+            "tvcap_bus": "00000000"
+          }
+        },
+        {
+          "stage": "post_logo",
+          "occurrence": 1,
+          "line": 107,
+          "values": {
+            "scp_reset": "00000000",
+            "adc_clk": "01000005",
+            "tvfe_clk": "00000000",
+            "i2h_clk": "00000007",
+            "cip_tsx": "00000002",
+            "cip_mcx": "00000005",
+            "cip_tsp": "00000004",
+            "tsa_tsp": "00000004",
+            "cip27": "0000000b",
+            "cip_mts0": "0000020a",
+            "audio_cpu": "00000002",
+            "audio_umac": "00000002",
+            "audio_ihb": "00000007",
+            "tsa432": "00000002",
+            "mpg0": "0000020b",
+            "mpg1": "0000020b",
+            "demod_bus": "00000000",
+            "tcd3": "80000305",
+            "vincap_dma": "81000001",
+            "cap_bus": "c0000000",
+            "hdmi_audio": "80000000",
+            "tvcap_bus": "00010001"
+          }
+        }
+      ]
+    },
+    "abrupt": {
+      "path": "build/hdmi-reset-controls-2026-10-20/abrupt-reset.serial.log",
+      "sha256": "8b9371eed4a59dfd0aa44c85e51e2d6fd0b9dea14bfd263a2e0702c710d8522f",
+      "records": [
+        {
+          "stage": "proper_preboot",
+          "occurrence": 1,
+          "line": 23,
+          "values": {
+            "scp_reset": "00000000",
+            "adc_clk": "01000005",
+            "tvfe_clk": "00000000",
+            "i2h_clk": "00000007",
+            "cip_tsx": "00000002",
+            "cip_mcx": "00000005",
+            "cip_tsp": "00000004",
+            "tsa_tsp": "00000004",
+            "cip27": "0000000b",
+            "cip_mts0": "0000020a",
+            "audio_cpu": "00000002",
+            "audio_umac": "00000002",
+            "audio_ihb": "00000007",
+            "tsa432": "00000002",
+            "mpg0": "0000020b",
+            "mpg1": "0000020b",
+            "demod_bus": "00000000",
+            "tcd3": "00000305",
+            "vincap_dma": "00000007",
+            "cap_bus": "00000000",
+            "hdmi_audio": "00000000",
+            "tvcap_bus": "00000000"
+          }
+        },
+        {
+          "stage": "pre_workspace",
+          "occurrence": 1,
+          "line": 41,
+          "values": {
+            "scp_reset": "00000000",
+            "adc_clk": "01000005",
+            "tvfe_clk": "00000000",
+            "i2h_clk": "00000007",
+            "cip_tsx": "00000002",
+            "cip_mcx": "00000005",
+            "cip_tsp": "00000004",
+            "tsa_tsp": "00000004",
+            "cip27": "0000000b",
+            "cip_mts0": "0000020a",
+            "audio_cpu": "00000002",
+            "audio_umac": "00000002",
+            "audio_ihb": "00000007",
+            "tsa432": "00000002",
+            "mpg0": "0000020b",
+            "mpg1": "0000020b",
+            "demod_bus": "00000000",
+            "tcd3": "00000305",
+            "vincap_dma": "00000007",
+            "cap_bus": "00000000",
+            "hdmi_audio": "00000000",
+            "tvcap_bus": "00000000"
+          }
+        },
+        {
+          "stage": "post_logo",
+          "occurrence": 1,
+          "line": 107,
+          "values": {
+            "scp_reset": "00000000",
+            "adc_clk": "01000005",
+            "tvfe_clk": "00000000",
+            "i2h_clk": "00000007",
+            "cip_tsx": "00000002",
+            "cip_mcx": "00000005",
+            "cip_tsp": "00000004",
+            "tsa_tsp": "00000004",
+            "cip27": "0000000b",
+            "cip_mts0": "0000020a",
+            "audio_cpu": "00000002",
+            "audio_umac": "00000002",
+            "audio_ihb": "00000007",
+            "tsa432": "00000002",
+            "mpg0": "0000020b",
+            "mpg1": "0000020b",
+            "demod_bus": "00000000",
+            "tcd3": "80000305",
+            "vincap_dma": "81000001",
+            "cap_bus": "c0000000",
+            "hdmi_audio": "80000000",
+            "tvcap_bus": "00010001"
+          }
+        }
+      ]
+    }
+  },
+  "comparison": [
+    {
+      "stage": "post_logo",
+      "occurrence": 1,
+      "missing_trial": null,
+      "differences": {}
+    },
+    {
+      "stage": "pre_workspace",
+      "occurrence": 1,
+      "missing_trial": null,
+      "differences": {}
+    },
+    {
+      "stage": "proper_preboot",
+      "occurrence": 1,
+      "missing_trial": null,
+      "differences": {}
+    }
+  ],
+  "limits": "Control words are not DSP versions, power-good, receiver readiness or SCP SRAM freshness. Sequential reads; earlier boot effects remain."
+}

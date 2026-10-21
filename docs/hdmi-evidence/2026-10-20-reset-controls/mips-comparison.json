@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "hardware_recovery": "unproven",
+  "trials": {
+    "clean": {
+      "path": "build/hdmi-reset-controls-2026-10-20/clean-reset.serial.log",
+      "sha256": "88eaa9b814432b6785c4edc4d63ae87e1c69ea3285682990b32651aed2f60068",
+      "records": [
+        {
+          "stage": "proper_preboot",
+          "occurrence": 1,
+          "line": 22,
+          "gp6": "48444d49",
+          "gp7": "00000000",
+          "mips_clk": "00000000",
+          "mips_reset": "00000000",
+          "mips_status": "00000000"
+        },
+        {
+          "stage": "pre_workspace",
+          "occurrence": 1,
+          "line": 40,
+          "gp6": "48444d49",
+          "gp7": "00000000",
+          "mips_clk": "00000000",
+          "mips_reset": "00000000",
+          "mips_status": "00000000"
+        },
+        {
+          "stage": "post_logo",
+          "occurrence": 1,
+          "line": 106,
+          "gp6": "48444d49",
+          "gp7": "00000000",
+          "mips_clk": "80000002",
+          "mips_reset": "00000000",
+          "mips_status": "00000000"
+        }
+      ],
+      "coverage": {
+        "spl_pre_dram": 0,
+        "spl_post_dram": 0,
+        "proper_preboot": 1,
+        "pre_workspace": 1,
+        "post_logo": 1,
+        "manual": 0
+      }
+    },
+    "abrupt": {
+      "path": "build/hdmi-reset-controls-2026-10-20/abrupt-reset.serial.log",
+      "sha256": "8b9371eed4a59dfd0aa44c85e51e2d6fd0b9dea14bfd263a2e0702c710d8522f",
+      "records": [
+        {
+          "stage": "proper_preboot",
+          "occurrence": 1,
+          "line": 22,
+          "gp6": "48444d49",
+          "gp7": "00000000",
+          "mips_clk": "00000000",
+          "mips_reset": "00000000",
+          "mips_status": "00000000"
+        },
+        {
+          "stage": "pre_workspace",
+          "occurrence": 1,
+          "line": 40,
+          "gp6": "48444d49",
+          "gp7": "00000000",
+          "mips_clk": "00000000",
+          "mips_reset": "00000000",
+          "mips_status": "00000000"
+        },
+        {
+          "stage": "post_logo",
+          "occurrence": 1,
+          "line": 106,
+          "gp6": "48444d49",
+          "gp7": "00000000",
+          "mips_clk": "80000002",
+          "mips_reset": "00000000",
+          "mips_status": "00000000"
+        }
+      ],
+      "coverage": {
+        "spl_pre_dram": 0,
+        "spl_post_dram": 0,
+        "proper_preboot": 1,
+        "pre_workspace": 1,
+        "post_logo": 1,
+        "manual": 0
+      }
+    }
+  },
+  "comparison": [
+    {
+      "stage": "post_logo",
+      "occurrence": 1,
+      "missing_trial": null,
+      "differences": {}
+    },
+    {
+      "stage": "pre_workspace",
+      "occurrence": 1,
+      "missing_trial": null,
+      "differences": {}
+    },
+    {
+      "stage": "proper_preboot",
+      "occurrence": 1,
+      "missing_trial": null,
+      "differences": {}
+    }
+  ],
+  "limits": "Values are stage-specific observations; equality is not reset, DSP freshness, or recovery proof."
+}

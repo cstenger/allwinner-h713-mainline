@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "started_utc": "2026-04-13T19:38:31.189211+00:00",
+  "scope": "Linux-visible, non-atomic snapshot; not reset proof",
+  "hardware_reset_state": "unknown",
+  "files": {
+    "/proc/sys/kernel/random/boot_id": {
+      "value": "a02e888b-4f77-4b65-a95d-bafefa1705c5\n",
+      "truncated": false
+    },
+    "/proc/uptime": {
+      "value": "28.61 84.92\n",
+      "truncated": false
+    },
+    "/proc/version": {
+      "value": "Linux version 6.18.38 (chris@cachyos) (clang version 23.1.1, LLD 23.1.1) #1 SMP Fri Oct 16 15:44:49 PDT 2026\n",
+      "truncated": false
+    },
+    "/proc/cmdline": {
+      "value": "console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M\n",
+      "truncated": false
+    },
+    "/proc/modules": {
+      "value": "hci_uart 28672 1 - Live 0xffff80007924e000\nhy310_cpu_comm 98304 0 - Live 0xffff8000792ad000\nsunxi_scanout_dmabuf 12288 0 - Live 0xffff8000792a7000\nuinput 20480 0 - Live 0xffff80007925a000\nsunxi_cedrus 81920 0 - Live 0xffff800079286000 (O)\nhantro_vpu 196608 0 - Live 0xffff80007925e000\nv4l2_h264 16384 1 hantro_vpu, Live 0xffff800079252000\npanfrost 77824 0 - Live 0xffff800079232000\nv4l2_jpeg 12288 1 hantro_vpu, Live 0xffff800079228000\nv4l2_vp9 28672 2 sunxi_cedrus,hantro_vpu, Live 0xffff80007921a000\naic8800_btlpm 12288 0 - Live 0xffff800079210000 (O)\naic8800_fdrv 516096 0 - Live 0xffff800079179000 (O)\naic8800_bsp 90112 2 aic8800_btlpm,aic8800_fdrv, Live 0xffff800079160000 (O)\n",
+      "truncated": false
+    },
+    "/proc/asound/cards": {
+      "value": " 0 [Codec          ]: sun4i-codec - H713 Audio Codec\n                      h713-audio-codec\n",
+      "truncated": false
+    },
+    "/proc/asound/H713HDMI/pcm0c/sub0/status": {
+      "error": "[Errno 2] No such file or directory: '/proc/asound/H713HDMI/pcm0c/sub0/status'"
+    },
+    "/run/h713-hdmi-session/state.json": {
+      "error": "[Errno 2] No such file or directory: '/run/h713-hdmi-session/state.json'"
+    },
+    "/sys/devices/h713-hdmi-tvfe/power/runtime_status": {
+      "error": "[Errno 2] No such file or directory: '/sys/devices/h713-hdmi-tvfe/power/runtime_status'"
+    },
+    "/sys/devices/h713-hdmi-tvcap/power/runtime_status": {
+      "error": "[Errno 2] No such file or directory: '/sys/devices/h713-hdmi-tvcap/power/runtime_status'"
+    },
+    "/proc/device-tree/chosen/h713,hdmi-boot-v1": {
+      "error": "[Errno 2] No such file or directory: '/proc/device-tree/chosen/h713,hdmi-boot-v1'"
+    }
+  },
+  "modules": {
+    "h713_hdmi_receiver": {
+      "present": false,
+      "parameters": {}
+    },
+    "h713_hdmi_audio": {
+      "present": false,
+      "parameters": {}
+    },
+    "h713_hdmi_signal": {
+      "present": false,
+      "parameters": {}
+    },
+    "h713_ddc_pins": {
+      "present": false,
+      "parameters": {}
+    },
+    "h713_scp_probe": {
+      "present": false,
+      "parameters": {}
+    },
+    "h713_hdmi_v4l2": {
+      "present": false,
+      "parameters": {}
+    }
+  },
+  "finished_utc": "2026-04-13T19:38:31.440067+00:00",
+  "curation": "Commands omitted; original full collector retained locally and hashed in installation.json."
+}
