@@ -97,3 +97,12 @@ The remaining DSP freshness question requires a separately reviewed access
 protocol or firmware-side passive observation before logo initialization.
 Clock-control equality alone cannot authorize a DSP command. Recovery design
 and actual watchdog-expiry qualification remain pending.
+
+## Hardware status
+
+Subsequently installed and validated through one physical cold control and
+one orderly reset. See the [live result record](hdmi-evidence/2026-10-20-reset-controls/README.md)
+for boot IDs, exact readback and unchanged-region checks. The cold run passed
+the new read boundary and autonomous startup checks; the clean reboot restored
+all owners and skipped warm capture. The independently cold-started abrupt
+comparison is pending. DSP freshness and automatic recovery remain unproven.

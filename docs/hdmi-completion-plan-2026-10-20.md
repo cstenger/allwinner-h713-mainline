@@ -17,6 +17,10 @@ park MIPS and skip capture. A later operator powerdown separates the current
 live session from the recorded abrupt boot. Next prepare reviewed pre-logo
 DSP/SCP/receiver observations and close immediate boot-ID correlation;
 automatic warm HDMI recovery remains unimplemented.
+The [expanded controls image](hdmi-evidence/2026-10-20-reset-controls/README.md)
+is now installed: one cold control and orderly reset passed, with matching
+pre-logo SCP/CCU controls. Its independent abrupt comparison is pending;
+DSP protocol/SRAM observations are still excluded by the access audit.
 
 This plan reconciles the latest recorded evidence at repository commit
 `6ce4977`. It does not report new hardware tests. Counts and durations below

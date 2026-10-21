@@ -1,0 +1,49 @@
+{
+  "source_commit": "ed5b1e1",
+  "status": "installed; cold control and orderly warm reset passed; abrupt comparison pending",
+  "installed_sha256": "1b1f702fc7b52adf8246b124b8fbe209b7dadc651a37e53a600689810c45302e",
+  "lba": 4828160,
+  "sectors": 1877,
+  "installation_boot_id": "c21ffe52-9f0e-4bb5-9e2a-f823e6a721af",
+  "cold_boot_id": "679a3e47-b729-40e1-a05c-d3c4b5bffd79",
+  "operator_cold_cycle_confirmed": true,
+  "cold_control": "complete adjacent vectors at four proper stages; both PCMs RUNNING; active capture/signal/speaker; DSP failed N; XRUNs zero; root clean, growfs success",
+  "proprietary_bl31_dtb_unchanged": true,
+  "hardware_recovery": "unproven",
+  "local_evidence": {
+    "install.txt": {
+      "bytes": 255,
+      "sha256": "86ff70161f10bbba00ce8bf2d7bb9bbbcaa41d55d0c687e79f5d3bedf58a5628"
+    },
+    "package-readback.txt": {
+      "bytes": 628,
+      "sha256": "d2dc1d08a2d61cf37d72ad6f3ca7c1e4b6d453728bae54fab542745ae6f3371e"
+    },
+    "cold-health.txt": {
+      "bytes": 523,
+      "sha256": "6db197883d6b51665e0ab7d8d3a7c08e659f1f15654207ccddf0f953f5c1f407"
+    },
+    "cold-settled-linux.json": {
+      "bytes": 49913,
+      "sha256": "12542235d448dfab5066534736b7bfdfd5bd52e3458eaf638780ad901bb46deb"
+    },
+    "cold.serial.log": {
+      "bytes": 56915,
+      "sha256": "bf49cb792fe548917c5c68d0201ff24a07dee9d4b8a7a81f70decf17210aa4ee"
+    },
+    "cold-controls.json": {
+      "bytes": 3375,
+      "sha256": "80c81ee5358766cfbc2eea07ebb43b3b7153dbb96d201d5b2f14ecab332a0482"
+    },
+    "board-preflight.txt": {
+      "bytes": 118,
+      "sha256": "e463940fc26e80f3b3f1c133a8b48ae50616b5248f9290765ab88c20d5cf5bbe"
+    },
+    "final-preinstall.txt": {
+      "bytes": 169,
+      "sha256": "f3990baa47d7e7c48fbc037059bd0fe501d4ff47ec667dca2f45536fbf46fe21"
+    }
+  },
+  "clean_post_reset_boot_id": "4f75d15b-014e-4c69-8005-539d2dd59fc4",
+  "clean_result": "22 DSP and 15 TVFE words restored, signal restored, firmware parked, receiver removed; post-reset HDMI units skipped; root clean; controls complete"
+}
