@@ -1,6 +1,6 @@
 # Lock-window prerequisite: TVTOP routing — offline investigation, October 21, 2026
 
-**Status: offline analysis; no hardware access.** Follows the
+**Status: CONFIRMED live by [cold-tvtop-01](hdmi-evidence/2026-10-21-dsp-access-tvtop-live/README.md) (lock reads complete after the routing writes).** Follows the
 [AudioTop stage run](hdmi-evidence/2026-10-21-dsp-access-at-live/README.md),
 where a plain read of the DSP lock word at `0x05001530` hard-locked the SoC.
 At that point both TV domains were powered, the TVCAP and demod resets were

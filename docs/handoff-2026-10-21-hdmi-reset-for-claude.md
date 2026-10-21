@@ -62,11 +62,18 @@ solution has not been demonstrated.
   the [TVTOP stage](hdmi-dsp-tvtop-stage-design-2026-10-21.md) (steps 93–104,
   then the lock read at 105–108) is implemented offline
   ([preparation](hdmi-evidence/2026-10-21-dsp-access-tvtop/README.md), bundle
-  `build/hdmi-dsp-access-tvtop-2026-10-21/bundle/`) and awaits a cold run.
+  `build/hdmi-dsp-access-tvtop-2026-10-21/bundle/`).
+- **TVTOP stage passed live; the board is off.**
+  [Live run](hdmi-evidence/2026-10-21-dsp-access-tvtop-live/README.md)
+  `cold-tvtop-01` (boot `046a1262-cc72-4d5e-b505-f174b90eccb6`): all 108 steps
+  passed. Cold TVTOP is SPL-only. After the seven routing writes the lock
+  words read `fffffffe` with no hang. The old bench's complete `ready` state is
+  reproduced from cold with every precondition verified. Next: the
+  version-request stage design (the first DSP protocol state change).
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
-- The last Linux boot was `e49a6b15-5824-47a0-bffc-8b7fa78b76a8` (ended by a
-  hard lock at step 94, then physical power-off).
+- The last Linux boot was `046a1262-cc72-4d5e-b505-f174b90eccb6` (ended by
+  orderly poweroff after all 108 steps).
   Every subsequent live action needs a newly collected boot ID.
 - Tracked working tree was clean before this handoff was created. Many
   historical/local untracked files remain intentionally outside commits.
@@ -83,16 +90,17 @@ solution has not been demonstrated.
 
 Read these first, in order:
 
-1. [AudioTop stage live run and the lock-window hard lock](hdmi-evidence/2026-10-21-dsp-access-at-live/README.md).
-2. [Extension live run and the TVCAP finding](hdmi-evidence/2026-10-21-dsp-access-ext-live/README.md).
-3. [Extension design](hdmi-dsp-access-extension-design-2026-10-21.md).
-4. [Prefix live runs and what they establish](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md).
-5. [Staged access audit, findings and next live gate](hdmi-dsp-access-audit-2026-10-21.md).
-6. [Stalled monolithic cold attempt](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
-7. [DSP access rationale and experiment design](hdmi-dsp-observation-2026-10-20.md).
-8. [Completion plan and release gates](hdmi-completion-plan-2026-10-20.md).
-9. [Expanded clean/abrupt reset comparison](hdmi-evidence/2026-10-20-reset-controls/README.md).
-10. [Warm-reset investigation](hdmi-warm-reset-investigation-2026-10-20.md).
+1. [TVTOP stage live run: the complete verified pre-request state](hdmi-evidence/2026-10-21-dsp-access-tvtop-live/README.md).
+2. [AudioTop stage live run and the lock-window hard lock](hdmi-evidence/2026-10-21-dsp-access-at-live/README.md).
+3. [Extension live run and the TVCAP finding](hdmi-evidence/2026-10-21-dsp-access-ext-live/README.md).
+4. [Extension design](hdmi-dsp-access-extension-design-2026-10-21.md).
+5. [Prefix live runs and what they establish](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md).
+6. [Staged access audit, findings and next live gate](hdmi-dsp-access-audit-2026-10-21.md).
+7. [Stalled monolithic cold attempt](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
+8. [DSP access rationale and experiment design](hdmi-dsp-observation-2026-10-20.md).
+9. [Completion plan and release gates](hdmi-completion-plan-2026-10-20.md).
+10. [Expanded clean/abrupt reset comparison](hdmi-evidence/2026-10-20-reset-controls/README.md).
+11. [Warm-reset investigation](hdmi-warm-reset-investigation-2026-10-20.md).
 
 Some historical documents/manifests say the board is running an earlier boot
 or that the bench is only prepared. Those are snapshots of their dates;

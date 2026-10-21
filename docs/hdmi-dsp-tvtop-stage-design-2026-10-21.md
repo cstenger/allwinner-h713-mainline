@@ -1,8 +1,8 @@
 # TVTOP stage design: routing before the lock window — October 21, 2026
 
-**Status: design; implemented offline in the same change (see the
-[preparation evidence](hdmi-evidence/2026-10-21-dsp-access-tvtop/README.md)).
-No live run yet.** Based on the
+**Status: PASSED live (all 108 steps,
+[cold-tvtop-01](hdmi-evidence/2026-10-21-dsp-access-tvtop-live/README.md)): TVTOP
+routing confirmed as the lock-window prerequisite; lock words read `fffffffe`.** Based on the
 [lock-window prerequisite note](hdmi-dsp-lock-window-prerequisite-2026-10-21.md).
 That note concluded that the `0x05xxxxxx` display fabric, which holds the
 lock window, needs TVTOP routing at `0x05700000` as well as clocks.
