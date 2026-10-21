@@ -1,16 +1,16 @@
 # Staged DSP access audit — October 21, 2026
 
-**Status: prefix bench prepared; a first live run exists but is not curated.**
-`build/hdmi-dsp-access-audit-2026-10-21/cold-prefix-01/` (boot
-`460adf1a-ac3d-4c8e-b6bb-b86b2154fd0b`) records a cold catch, guard install,
-`load`, and steps 1–9 acknowledged with UART BEGIN/DONE; step 9
-`read-mips-stopped` read `00000000`. The recorder then ran to its 60-minute
-deadline with no further output. The console threshold was raised by hand
-before step 1 (finding 7). Nothing beyond step 9 was sent, and the board's
-state after that run is not recorded. Curate that run into
-`docs/hdmi-evidence/` before relying on it. The stalled
-[earlier experiment](hdmi-evidence/2026-10-21-dsp-cold-access/README.md) remains
-unlocalized. Do not repeat that monolithic preparation unchanged.
+**Status: the 33-step prefix PASSED live on a fresh cold boot; board off after
+an orderly poweroff.** See the [live runs](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md):
+`cold-prefix-02` (boot `36c40861…`, bundle v2) completed all 33 steps, each
+with a helper acknowledgment and UART BEGIN/DONE, then released and powered
+off cleanly. `cold-prefix-01` (bundle v1) passed steps 1–9; its end was not
+recorded. The stalled
+[earlier experiment](hdmi-evidence/2026-10-21-dsp-cold-access/README.md) is now
+most likely in what the prefix omits (domain resume, clock enable, reset
+release, TVFE, AudioTop), but this is not localized to an operation. Do not
+repeat that monolithic preparation unchanged. The next stage (step 7 of the
+live gate below) needs its own design and review.
 
 ## Findings from source and exact maintenance DT
 

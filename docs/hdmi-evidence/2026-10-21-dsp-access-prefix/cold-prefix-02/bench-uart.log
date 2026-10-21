@@ -1,0 +1,106 @@
+=== soak-capture start 2026-10-21 04:02:58 (deadline 180 min) ===
+[04:03:06 T+    8.2] [   92.428896] H713 PREFIX CONSOLE CHECK boot=36c40861-5bd6-4d21-875a-fce2fc1811b9 notice-level; no module loaded
+[04:03:30 T+   31.9] [  116.159574] h713-dsp-access-audit: INIT software validation only; no MMIO
+[04:03:30 T+   31.9] [  116.166657] h713-dsp-access-audit: INIT DONE completed=0; waiting for one explicit step
+[04:03:50 T+   51.9] [  136.213318] h713-dsp-access-audit: BEGIN step=1 operation=claim-dsp-port
+[04:03:50 T+   51.9] [  136.220177] h713-dsp-access-audit: DONE step=1 operation=claim-dsp-port value=00000000
+[04:03:56 T+   57.5] [  141.791237] h713-dsp-access-audit: BEGIN step=2 operation=claim-lock-window
+[04:03:56 T+   57.5] [  141.798325] h713-dsp-access-audit: DONE step=2 operation=claim-lock-window value=00000000
+[04:04:01 T+   63.2] [  147.465170] h713-dsp-access-audit: BEGIN step=3 operation=claim-audiotop
+[04:04:01 T+   63.2] [  147.471966] h713-dsp-access-audit: DONE step=3 operation=claim-audiotop value=00000000
+[04:04:07 T+   69.1] [  153.359107] h713-dsp-access-audit: BEGIN step=4 operation=claim-scp-reset
+[04:04:07 T+   69.1] [  153.365983] h713-dsp-access-audit: DONE step=4 operation=claim-scp-reset value=00000000
+[04:04:13 T+   74.9] [  159.116550] h713-dsp-access-audit: BEGIN step=5 operation=map-mips-status
+[04:04:13 T+   74.9] [  159.123711] h713-dsp-access-audit: DONE step=5 operation=map-mips-status value=00000000
+[04:04:18 T+   80.3] [  164.541131] h713-dsp-access-audit: BEGIN step=6 operation=map-scp-reset
+[04:04:18 T+   80.3] [  164.547831] h713-dsp-access-audit: DONE step=6 operation=map-scp-reset value=00000000
+[04:04:24 T+   85.9] [  170.153143] h713-dsp-access-audit: BEGIN step=7 operation=map-tv-ccu
+[04:04:24 T+   85.9] [  170.159590] h713-dsp-access-audit: DONE step=7 operation=map-tv-ccu value=00000000
+[04:04:30 T+   91.6] [  175.899482] h713-dsp-access-audit: BEGIN step=8 operation=map-display-ccu
+[04:04:30 T+   91.6] [  175.906366] h713-dsp-access-audit: DONE step=8 operation=map-display-ccu value=00000000
+[04:04:44 T+  106.0] [  190.279708] h713-dsp-access-audit: BEGIN step=9 operation=read-mips-stopped
+[04:04:44 T+  106.0] [  190.286774] h713-dsp-access-audit: DONE step=9 operation=read-mips-stopped value=00000000
+[04:04:52 T+  113.4] [  197.679646] h713-dsp-access-audit: BEGIN step=10 operation=read-scp-stopped
+[04:04:52 T+  113.4] [  197.686688] h713-dsp-access-audit: DONE step=10 operation=read-scp-stopped value=00000000
+[04:04:57 T+  119.3] [  203.622359] h713-dsp-access-audit: BEGIN step=11 operation=read-demod-bus
+[04:04:58 T+  119.4] [  203.629244] h713-dsp-access-audit: DONE step=11 operation=read-demod-bus value=00000000
+[04:05:08 T+  130.1] [  214.393827] h713-dsp-access-audit: BEGIN step=12 operation=read-display-bus
+[04:05:08 T+  130.1] [  214.400856] h713-dsp-access-audit: DONE step=12 operation=read-display-bus value=00010001
+[04:05:17 T+  138.7] [  222.988338] h713-dsp-access-audit: BEGIN step=13 operation=get-display-reset
+[04:05:17 T+  138.7] [  222.995490] h713-dsp-access-audit: DONE step=13 operation=get-display-reset value=00000000
+[04:05:23 T+  144.4] [  228.626104] h713-dsp-access-audit: BEGIN step=14 operation=read-display-reset
+[04:05:23 T+  144.4] [  228.633314] h713-dsp-access-audit: DONE step=14 operation=read-display-reset value=00000000
+[04:05:28 T+  150.3] [  234.582535] h713-dsp-access-audit: BEGIN step=15 operation=get-demod-reset
+[04:05:28 T+  150.3] [  234.589522] h713-dsp-access-audit: DONE step=15 operation=get-demod-reset value=00000000
+[04:05:34 T+  155.8] [  240.106688] h713-dsp-access-audit: BEGIN step=16 operation=read-demod-reset
+[04:05:34 T+  155.8] [  240.113735] h713-dsp-access-audit: DONE step=16 operation=read-demod-reset value=00000001
+[04:05:41 T+  162.9] [  247.161928] h713-dsp-access-audit: BEGIN step=17 operation=get-clock-pll-video0
+[04:05:41 T+  162.9] [  247.169340] h713-dsp-access-audit: DONE step=17 operation=get-clock-pll-video0 value=00000000
+[04:05:47 T+  168.8] [  253.043075] h713-dsp-access-audit: BEGIN step=18 operation=get-clock-pll-adc
+[04:05:47 T+  168.8] [  253.050235] h713-dsp-access-audit: DONE step=18 operation=get-clock-pll-adc value=00000000
+[04:05:53 T+  174.5] [  258.761218] h713-dsp-access-audit: BEGIN step=19 operation=get-clock-bus-tvcap
+[04:05:53 T+  174.5] [  258.768617] h713-dsp-access-audit: DONE step=19 operation=get-clock-bus-tvcap value=00000000
+[04:05:58 T+  180.1] [  264.365893] h713-dsp-access-audit: BEGIN step=20 operation=get-clock-bus-cap-300m
+[04:05:58 T+  180.1] [  264.373478] h713-dsp-access-audit: DONE step=20 operation=get-clock-bus-cap-300m value=00000000
+[04:06:04 T+  185.8] [  270.076685] h713-dsp-access-audit: BEGIN step=21 operation=get-clock-vincap-dma
+[04:06:04 T+  185.8] [  270.084085] h713-dsp-access-audit: DONE step=21 operation=get-clock-vincap-dma value=00000000
+[04:06:09 T+  191.3] [  275.541235] h713-dsp-access-audit: BEGIN step=22 operation=get-clock-tvfe-1296m
+[04:06:09 T+  191.3] [  275.548632] h713-dsp-access-audit: DONE step=22 operation=get-clock-tvfe-1296m value=00000000
+[04:06:15 T+  197.3] [  281.567912] h713-dsp-access-audit: BEGIN step=23 operation=get-clock-bus-hdmi-audio
+[04:06:15 T+  197.3] [  281.575671] h713-dsp-access-audit: DONE step=23 operation=get-clock-bus-hdmi-audio value=00000000
+[04:06:21 T+  202.9] [  287.150018] h713-dsp-access-audit: BEGIN step=24 operation=get-clock-hdmi-audio
+[04:06:21 T+  202.9] [  287.157444] h713-dsp-access-audit: DONE step=24 operation=get-clock-hdmi-audio value=00000000
+[04:06:27 T+  208.4] [  292.720187] h713-dsp-access-audit: BEGIN step=25 operation=get-clock-audio-cpu
+[04:06:27 T+  208.4] [  292.727506] h713-dsp-access-audit: DONE step=25 operation=get-clock-audio-cpu value=00000000
+[04:06:32 T+  214.1] [  298.362543] h713-dsp-access-audit: BEGIN step=26 operation=get-clock-audio-umac
+[04:06:32 T+  214.1] [  298.369940] h713-dsp-access-audit: DONE step=26 operation=get-clock-audio-umac value=00000000
+[04:06:38 T+  219.8] [  304.094424] h713-dsp-access-audit: BEGIN step=27 operation=get-clock-audio-ihb
+[04:06:38 T+  219.8] [  304.101759] h713-dsp-access-audit: DONE step=27 operation=get-clock-audio-ihb value=00000000
+[04:06:44 T+  225.6] [  309.835285] h713-dsp-access-audit: BEGIN step=28 operation=get-clock-pll-video2
+[04:06:44 T+  225.6] [  309.842676] h713-dsp-access-audit: DONE step=28 operation=get-clock-pll-video2 value=00000000
+[04:06:49 T+  231.3] [  315.539047] h713-dsp-access-audit: BEGIN step=29 operation=get-clock-deint
+[04:06:49 T+  231.3] [  315.546016] h713-dsp-access-audit: DONE step=29 operation=get-clock-deint value=00000000
+[04:06:55 T+  236.8] [  321.100459] h713-dsp-access-audit: BEGIN step=30 operation=get-clock-panel
+[04:06:55 T+  236.8] [  321.107448] h713-dsp-access-audit: DONE step=30 operation=get-clock-panel value=00000000
+[04:07:01 T+  242.5] [  326.827661] h713-dsp-access-audit: BEGIN step=31 operation=get-clock-svp-dtl
+[04:07:01 T+  242.5] [  326.834807] h713-dsp-access-audit: DONE step=31 operation=get-clock-svp-dtl value=00000000
+[04:07:07 T+  248.3] [  332.624399] h713-dsp-access-audit: BEGIN step=32 operation=get-clock-afbd
+[04:07:07 T+  248.3] [  332.631322] h713-dsp-access-audit: DONE step=32 operation=get-clock-afbd value=00000000
+[04:07:12 T+  254.2] [  338.421531] h713-dsp-access-audit: BEGIN step=33 operation=get-clock-bus-disp
+[04:07:12 T+  254.2] [  338.428763] h713-dsp-access-audit: DONE step=33 operation=get-clock-bus-disp value=00000000; prefix end, NO domain/clock/reset writes or DSP access
+[04:10:29 T+  450.5] [  534.814370] h713-dsp-access-audit: BEGIN software resource release
+[04:10:29 T+  450.5] [  534.821010] h713-dsp-access-audit: DONE software resource release
+[04:10:35 T+  457.3] Broadcast message from root@h713-arm64 (Mon 2026-04-13 19:47:04 UTC):
+[04:10:35 T+  457.3] The system will power off now!
+[04:10:35 T+  457.3] [?2004l
+[04:10:35 T+  457.3] [?2004h[?2004l
+[04:10:36 T+  457.4] [  541.667539] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[04:10:36 T+  457.4] [  541.691336] get_txpwr_max:txpwr_max:18 
+[04:10:36 T+  457.4] [  541.704445] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[04:10:36 T+  457.4] [  541.715840] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[04:10:36 T+  457.5] [  541.725699] change_if: 3 to 2, 8, 2
+[04:10:36 T+  457.5] [  541.725741] get_txpwr_max:txpwr_max:18 
+[04:10:38 T+  459.4] [!p]104[?7h[6n[32766;32766H[6n[  543.654795] Bluetooth: hci0: command 0x2039 tx timeout
+[04:10:38 T+  459.4] [  543.654795] Bluetooth: hci0: Opcode 0x2039 failed: -110
+[04:10:40 T+  461.4] [  545.702826] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[04:10:40 T+  461.7] [  545.989127] systemd-shutdown[1]: Syncing filesystems and block devices.
+[04:10:40 T+  461.8] [  546.049331] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[04:10:40 T+  461.8] [  546.079383] systemd-journald[107]: Received SIGTERM from PID 1 (systemd-shutdow).
+[04:10:40 T+  461.8] [  546.112130] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[04:10:40 T+  461.9] [  546.138129] systemd-shutdown[1]: Unmounting file systems.
+[04:10:40 T+  461.9] [  546.146672] (sd-umount)[1442]: Unmounting '/run/credentials/systemd-journald.service'.
+[04:10:40 T+  461.9] [  546.158520] (sd-remount)[1443]: Remounting '/' read-only with options ''.
+[04:10:40 T+  461.9] [  546.190679] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[04:10:40 T+  461.9] [  546.211626] systemd-shutdown[1]: All filesystems unmounted.
+[04:10:40 T+  461.9] [  546.217299] systemd-shutdown[1]: Deactivating swaps.
+[04:10:40 T+  461.9] [  546.222383] systemd-shutdown[1]: All swaps deactivated.
+[04:10:40 T+  461.9] [  546.227659] systemd-shutdown[1]: Detaching loop devices.
+[04:10:40 T+  462.0] [  546.237911] systemd-shutdown[1]: All loop devices detached.
+[04:10:40 T+  462.0] [  546.243552] systemd-shutdown[1]: Stopping MD devices.
+[04:10:40 T+  462.0] [  546.249088] systemd-shutdown[1]: All MD devices stopped.
+[04:10:40 T+  462.0] [  546.254465] systemd-shutdown[1]: Detaching DM devices.
+[04:10:40 T+  462.0] [  546.259943] systemd-shutdown[1]: All DM devices detached.
+[04:10:40 T+  462.0] [  546.265379] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[04:10:40 T+  462.0] [  546.290067] systemd-shutdown[1]: Syncing filesystems and block devices.
+[04:10:40 T+  462.0] [  546.297167] systemd-shutdown[1]: Powering off.
+[04:10:40 T+  462.0] [  546.315469] reboot: Power down

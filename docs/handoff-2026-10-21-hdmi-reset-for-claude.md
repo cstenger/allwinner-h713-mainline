@@ -10,6 +10,9 @@ recovery alone does not qualify.
 
 The immediate assignment is to **localize the stall in logo-free DSP access
 preparation**, then establish a safe observation path for the reset contract.
+**Update:** the read-only opening prefix passed live (cold-prefix-02). The
+next stage is to design and review the staged domain/clock/reset extension
+(section 3 below) without power transitions taken on assumption.
 A new staged initial-prefix bench is now built/tested offline; qualify it on
 a fresh cold maintenance boot before designing later power/clock operations.
 Do not start by implementing an assumed DSP reset or retrying the failed bench.
@@ -23,25 +26,28 @@ solution has not been demonstrated.
   preparation; failed monolithic bench source: `a6b7f8c`. `b1c3c7c` committed
   the standalone handoff. The staged-prefix source and preparation evidence
   are committed as `d2f47d5`.
-- The user confirmed **everything was off and disconnected** after the
-  October 21 stall. **That is no longer the latest live state.** A later,
-  uncurated run is in `build/hdmi-dsp-access-audit-2026-10-21/cold-prefix-01/`
-  (boot `460adf1a-ac3d-4c8e-b6bb-b86b2154fd0b`): cold catch, new guard
-  installed, `load`, then steps 1–9 acknowledged with UART BEGIN/DONE. Step 9
-  `read-mips-stopped` read `00000000`. The UART recorder ran to its 60-minute
-  deadline with nothing after step 9. The board's state after that run is
-  not recorded; ask the operator before assuming it is off or still paused.
+- **Latest live state: the read-only prefix passed and the board is off.**
+  [Live runs](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md):
+  `cold-prefix-02` (boot `36c40861-5bd6-4d21-875a-fce2fc1811b9`, bundle v2)
+  completed all 33 steps on a fresh cold boot, released its software
+  resources and ended with an orderly poweroff (root remounted read-only,
+  `reboot: Power down`). An earlier `cold-prefix-01` (bundle v1) passed steps
+  1–9; its end was not recorded. The live guard is now `96f37655…`; the
+  previous guard is backed up on the board as
+  `/root/hdmi-dsp-access-audit-2026-10-21/previous-hold-guard`.
+  Recheck physical state with the operator before further live work.
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
-- The last Linux boot was `fcff9719-ac23-418c-b013-b7d030984a04` (now ended).
+- The last Linux boot was `36c40861-5bd6-4d21-875a-fce2fc1811b9` (ended by
+  orderly poweroff).
   Every subsequent live action needs a newly collected boot ID.
 - Tracked working tree was clean before this handoff was created. Many
   historical/local untracked files remain intentionally outside commits.
   Do not bulk-add, delete or recurate them as part of this investigation.
 - New `modules/hdmi-dsp-access-audit/` and `tools/hdmi/dsp-access-audit.py`
   implement a 33-step **initial read-only prefix only**, not the full access
-  setup. It builds for 6.18.38 and all 18 offline tests pass. Its first live
-  run is summarized above. The helper now also refuses unless the console
+  setup. It builds for 6.18.38, all 18 offline tests pass, and it passed live
+  (above). The helper now also refuses unless the console
   threshold is at least 6 and `kernel.panic` is 0 (see below); that change
   postdates the bundle staged for `cold-prefix-01`; the next boot uses
   `build/hdmi-dsp-access-audit-2026-10-21/bundle-v2/` (helper
@@ -50,12 +56,13 @@ solution has not been demonstrated.
 
 Read these first, in order:
 
-1. [Staged access audit, findings and next live gate](hdmi-dsp-access-audit-2026-10-21.md).
-2. [Latest failed cold attempt and next-stage gate](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
-3. [DSP access rationale and experiment design](hdmi-dsp-observation-2026-10-20.md).
-4. [Completion plan and release gates](hdmi-completion-plan-2026-10-20.md).
-5. [Expanded clean/abrupt reset comparison](hdmi-evidence/2026-10-20-reset-controls/README.md).
-6. [Warm-reset investigation](hdmi-warm-reset-investigation-2026-10-20.md).
+1. [Prefix live runs and what they establish](hdmi-evidence/2026-10-21-dsp-access-prefix/README.md).
+2. [Staged access audit, findings and next live gate](hdmi-dsp-access-audit-2026-10-21.md).
+3. [Stalled monolithic cold attempt](hdmi-evidence/2026-10-21-dsp-cold-access/README.md).
+4. [DSP access rationale and experiment design](hdmi-dsp-observation-2026-10-20.md).
+5. [Completion plan and release gates](hdmi-completion-plan-2026-10-20.md).
+6. [Expanded clean/abrupt reset comparison](hdmi-evidence/2026-10-20-reset-controls/README.md).
+7. [Warm-reset investigation](hdmi-warm-reset-investigation-2026-10-20.md).
 
 Some historical documents/manifests say the board is running an earlier boot
 or that the bench is only prepared. Those are snapshots of their dates;
@@ -547,6 +554,6 @@ All relative paths below are under `/home/chris/Projects/h713`.
 
 Keep new source changes and live evidence reviewable in focused commits.
 Preserve the distinction between observed facts, hypotheses and proposed
-qualification. The next deliverable is a correlated live result from the prepared initial
-prefix; any later domain/peripheral extension needs its own staged review.
+qualification. The initial prefix now has a correlated live pass; the next
+deliverable is a reviewed, staged domain/peripheral extension design.
 HDMI warm recovery has not been solved.

@@ -1,0 +1,40 @@
+  "event": "acknowledged",
+  "result": {
+    "state": {
+      "boot_id": "36c40861-5bd6-4d21-875a-fce2fc1811b9",
+      "schema": "h713-dsp-access-prefix-v1",
+      "phase": "paused",
+      "completed": 33
+    },
+    "kernel": {
+      "failed": "N",
+      "released": "N",
+      "prefix_complete": "Y",
+      "completed": 33,
+      "attempted": 33,
+      "next_operation": "prefix-end",
+      "last_value": 0
+    }
+  }
+}
+===
+348.66 1304.21
+h713_hdmi_dsp_access_audit 12288 1 - Live 0xffff800079247000 (O)
+===
+[    6.342857] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 0
+[    6.349770] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    6.822471] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    6.829358] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    7.833151] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    7.840062] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    8.010821] get_txpwr_max:txpwr_max:18 
+[    8.015061] get_txpwr_max:txpwr_max:18 
+[    8.019687] get_txpwr_max:txpwr_max:18 
+[    8.023912] change_if: 2 to 3, 8, 2
+[    8.023945] get_txpwr_max:txpwr_max:18 
+[    8.032480] get_txpwr_max:txpwr_max:18 
+[    8.517124] get_txpwr_max:txpwr_max:18 
+[    8.521878] chan.flags 0 
+[   10.979533] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+===
+68
