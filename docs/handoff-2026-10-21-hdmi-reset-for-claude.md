@@ -2,15 +2,17 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
-**In progress: warm-retention test, cycle 1 (orderly reboot): B1–B3 done; poweroff, then cycle 2 (abrupt).**
+**In progress: warm-retention test. Cycle 1 (orderly reboot) COMPLETE; next is cycle 2 (abrupt), which needs an operator cold cycle.**
 Design: [warm-retention test](hdmi-warm-retention-test-design-2026-10-21.md).
 Tools: `tools/serial/warm-retention-uboot.py` (U-Boot set U) and
 `tools/hdmi/warm-retention-census.py` (Linux set L, read-only, streamed with
 `ssh root@192.168.4.1 'python3 - LABEL' < tools/hdmi/warm-retention-census.py`).
 Raw outputs: `build/hdmi-warm-retention-2026-10-21/cycle1/` (not yet curated).
 
-**Board state at last update: RUNNING normal production, cold-live, boot
-`f5c76641-c095-4f6f-ac7b-03f92ddb493b`** (HDMI handoff present; capture,
+**Board state at last update: OFF** (orderly poweroff from warm boot
+`4062c792`, UART `reboot: Power down`, `cycle1/end-poweroff-*`). Earlier in
+cycle 1 it ran normal production cold-live as boot
+`f5c76641-c095-4f6f-ac7b-03f92ddb493b` (HDMI handoff present; capture,
 signal and speaker active; h713_ddc_pins/hdmi_audio/hdmi_receiver/hdmi_signal
 loaded). A passive UART recorder (`soak-capture.py`, 60-minute deadline from
 about 19:04 local) may still hold `/dev/ttyUSB0`. Make sure no other reader
