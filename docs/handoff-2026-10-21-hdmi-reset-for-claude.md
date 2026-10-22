@@ -2,6 +2,40 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**Codex live continuation COMPLETE; board OFF.**
+[Pre-logo PPU results](hdmi-evidence/2026-10-21-warm-prelogo-ppu/README.md):
+from production boot `fe51947d` (DSP `0/0` then patch `1/1`), orderly reboot
+was caught before logo. After opening only bus-r-ppu, **TVFE and TVCAP were
+both ON**. Both were still ON at the prompt after one logo invocation;
+MIPS was parked. After direct warm-branch FIT boot, Linux boot `1889c531`
+had **TVFE OFF, TVCAP ON**, no handoff/owners. Orderly poweroff recorded
+`reboot: Power down`. The cold preboot capture was missed because host UART
+was invisible inside the sandbox; the logo completion UART also has a gap
+from the three-second silence timeout. Read the evidence limitations before
+drawing conclusions. No DSP version request or TV-domain power command was
+sent. **Next: instrument the interval from final U-Boot sample through
+kernel PPU probe/runtime callbacks offline.** The transition is localized
+to that interval in this diagnostic cycle, not yet to a specific writer.
+All host UART/network operations need escalation in this environment;
+verify a real `OPEN /dev/ttyUSB0` event before asking for power. No catcher
+is currently armed. DSP retention and automatic warm recovery remain unresolved.
+
+**Codex continuation: offline warm-logo review complete; pre-logo PPU probe
+prepared, not run.** Operator confirmed the board is unpowered; cold catcher armed at
+`build/hdmi-warm-prelogo-ppu-2026-10-21/cold-catch/`, awaiting reconnection. See
+[review and next-run protocol](hdmi-warm-prelogo-ppu-review-2026-10-21.md).
+All 41 curated A–C evidence hashes match. No direct ARM PPU power-off was
+identified in the actual installed-build logo source; the table walker
+rejects PPU addresses, but the logo runs MIPS firmware, so this does not
+exclude firmware power control. `pd_ignore_unused` only excludes the late
+unused-domain sweep, not every runtime-PM transition; earlier wording below
+overstates that exclusion. The next measurement is before both logo and Linux.
+`warm-retention-uboot.py --open-ppu-bus` now checks the expected bootcmd,
+closed bus, production GP6 latch and parked MIPS, checkpoints intent, writes
+only bus-r-ppu `00010001`, verifies it and reads both PPU statuses. It forbids
+automatic boot and stops at the prompt. All 19 offline tests pass. **Phase D
+and automatic warm HDMI recovery remain unimplemented.**
+
 **Warm-retention test phases A–C: BOTH CYCLES COMPLETE; board OFF** (orderly poweroff from boot `4f760916`, UART `reboot: Power down`). Curated evidence: [warm-retention results](hdmi-evidence/2026-10-21-warm-retention/README.md) (raw copies remain in `build/hdmi-warm-retention-2026-10-21/`).
 
 **Results (identical for orderly and abrupt reset):**

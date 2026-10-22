@@ -1,0 +1,791 @@
+1889c531-069d-4a9b-8499-fa74326f186e
+console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M
+domain                          status          children        performance
+    /device                         runtime status                  managed by
+------------------------------------------------------------------------------
+AV1                             off-0                           0
+    1c0d000.av1                     suspended                   0           SW
+VE                              off-0                           0
+    1c0e000.video-codec             suspended                   0           SW
+TVCAP                           on                              0
+TVFE                            off-0                           0
+GPU                             off-0                           0
+    1800000.gpu                     suspended                   0           SW
+[    3.877209] h713-arm64 kernel: Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    3.877373] h713-arm64 kernel: Linux version 6.18.38 (chris@cachyos) (clang version 23.1.1, LLD 23.1.1) #1 SMP Fri Oct 16 15:44:49 PDT 2026
+[    3.877440] h713-arm64 kernel: Machine model: HY200 QZ713DF_A1 (Allwinner H713)
+[    3.877493] h713-arm64 kernel: earlycon: uart0 at MMIO32 0x0000000002500000 (options '115200n8')
+[    3.877543] h713-arm64 kernel: printk: legacy bootconsole [uart0] enabled
+[    3.877594] h713-arm64 kernel: efi: UEFI not found.
+[    3.877658] h713-arm64 kernel: OF: reserved mem: 0x0000000040000000..0x00000000400fffff (1024 KiB) nomap non-reusable secure-bl31@40000000
+[    3.877711] h713-arm64 kernel: Reserved memory: created DMA memory pool at 0x000000004b100000, size 14 MiB
+[    3.877764] h713-arm64 kernel: OF: reserved mem: initialized node mips-firmware@4b100000, compatible id shared-dma-pool
+[    3.877815] h713-arm64 kernel: OF: reserved mem: 0x000000004b100000..0x000000004bf40fff (14596 KiB) nomap non-reusable mips-firmware@4b100000
+[    3.877866] h713-arm64 kernel: OF: reserved mem: 0x000000004d941000..0x000000004d960fff (128 KiB) nomap non-reusable decoder@4d941000
+[    3.877917] h713-arm64 kernel: OF: reserved mem: 0x000000004e300000..0x000000004e7fffff (5120 KiB) nomap non-reusable cpu-comm@4e300000
+[    3.877980] h713-arm64 kernel: OF: reserved mem: 0x000000004bf41000..0x000000004d940fff (26624 KiB) nomap non-reusable framebuf@4bf41000
+[    3.878034] h713-arm64 kernel: OF: reserved mem: 0x000000006c100000..0x000000006c8fffff (8192 KiB) nomap non-reusable uboot-scanout@6c100000
+[    3.878097] h713-arm64 kernel: OF: reserved mem: 0x000000004d980000..0x000000004d980fff (4 KiB) nomap non-reusable hdmi-trace@4d980000
+[    3.878153] h713-arm64 kernel: Zone ranges:
+[    3.878205] h713-arm64 kernel:   DMA      [mem 0x0000000040000000-0x000000007fffffff]
+[    3.878253] h713-arm64 kernel:   DMA32    empty
+[    3.878303] h713-arm64 kernel:   Normal   empty
+[    3.878353] h713-arm64 kernel: Movable zone start for each node
+[    3.878404] h713-arm64 kernel: Early memory node ranges
+[    3.878464] h713-arm64 kernel:   node   0: [mem 0x0000000040000000-0x00000000400fffff]
+[    3.878527] h713-arm64 kernel:   node   0: [mem 0x0000000040100000-0x000000004b0fffff]
+[    3.878579] h713-arm64 kernel:   node   0: [mem 0x000000004b100000-0x000000004d960fff]
+[    3.878629] h713-arm64 kernel:   node   0: [mem 0x000000004d961000-0x000000004d97ffff]
+[    3.878678] h713-arm64 kernel:   node   0: [mem 0x000000004d980000-0x000000004d980fff]
+[    3.878728] h713-arm64 kernel:   node   0: [mem 0x000000004d981000-0x000000004e2fffff]
+[    3.878779] h713-arm64 kernel:   node   0: [mem 0x000000004e300000-0x000000004e7fffff]
+[    3.878830] h713-arm64 kernel:   node   0: [mem 0x000000004e800000-0x000000006c0fffff]
+[    3.878879] h713-arm64 kernel:   node   0: [mem 0x000000006c100000-0x000000006c8fffff]
+[    3.878930] h713-arm64 kernel:   node   0: [mem 0x000000006c900000-0x000000007fffffff]
+[    3.878980] h713-arm64 kernel: Initmem setup node 0 [mem 0x0000000040000000-0x000000007fffffff]
+[    3.879030] h713-arm64 kernel: cma: Reserved 128 MiB at 0x0000000076c00000
+[    3.879080] h713-arm64 kernel: psci: probing for conduit method from DT.
+[    3.879128] h713-arm64 kernel: psci: PSCIv1.1 detected in firmware.
+[    3.879178] h713-arm64 kernel: psci: Using standard PSCI v0.2 function IDs
+[    3.879227] h713-arm64 kernel: psci: MIGRATE_INFO_TYPE not supported.
+[    3.879277] h713-arm64 kernel: psci: SMC Calling Convention v1.5
+[    3.879326] h713-arm64 kernel: percpu: Embedded 20 pages/cpu s42648 r8192 d31080 u81920
+[    3.879393] h713-arm64 kernel: pcpu-alloc: s42648 r8192 d31080 u81920 alloc=20*4096
+[    3.879458] h713-arm64 kernel: pcpu-alloc: [0] 0 [0] 1 [0] 2 [0] 3 
+[    3.879508] h713-arm64 kernel: Detected VIPT I-cache on CPU0
+[    3.879572] h713-arm64 kernel: alternatives: applying boot alternatives
+[    3.879630] h713-arm64 kernel: Kernel command line: console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M
+[    3.879683] h713-arm64 kernel: printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[    3.879732] h713-arm64 kernel: Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    3.879782] h713-arm64 kernel: Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    3.879831] h713-arm64 kernel: software IO TLB: SWIOTLB bounce buffer size adjusted to 1MB
+[    3.879880] h713-arm64 kernel: software IO TLB: area num 4.
+[    3.879929] h713-arm64 kernel: software IO TLB: mapped [mem 0x0000000076b00000-0x0000000076c00000] (1MB)
+[    3.879978] h713-arm64 kernel: Built 1 zonelists, mobility grouping on.  Total pages: 262144
+[    3.880073] h713-arm64 kernel: mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    3.880124] h713-arm64 kernel: SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    3.880174] h713-arm64 kernel: rcu: Hierarchical RCU implementation.
+[    3.880228] h713-arm64 kernel: rcu:         RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=4.
+[    3.880277] h713-arm64 kernel: rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    3.880339] h713-arm64 kernel: rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+[    3.880389] h713-arm64 kernel: NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    3.880438] h713-arm64 kernel: Root IRQ handler: gic_handle_irq
+[    3.880486] h713-arm64 kernel: GIC: Using split EOI/Deactivate mode
+[    3.880536] h713-arm64 kernel: rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    3.880585] h713-arm64 kernel: arch_timer: cp15 timer running at 24.00MHz (phys).
+[    3.880635] h713-arm64 kernel: clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    3.880688] h713-arm64 kernel: sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    3.880737] h713-arm64 kernel: Console: colour dummy device 160x45
+[    3.880792] h713-arm64 kernel: printk: legacy console [tty0] enabled
+[    3.880846] h713-arm64 kernel: printk: legacy bootconsole [uart0] disabled
+[    3.880900] h713-arm64 kernel: Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[    3.880954] h713-arm64 kernel: pid_max: default: 32768 minimum: 301
+[    3.881016] h713-arm64 kernel: Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    3.881071] h713-arm64 kernel: Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    3.881124] h713-arm64 kernel: cacheinfo: Unable to detect cache hierarchy for CPU 0
+[    3.881180] h713-arm64 kernel: rcu: Hierarchical SRCU implementation.
+[    3.881235] h713-arm64 kernel: rcu:         Max phase no-delay instances is 1000.
+[    3.881289] h713-arm64 kernel: Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    3.881342] h713-arm64 kernel: EFI services will not be available.
+[    3.881398] h713-arm64 kernel: smp: Bringing up secondary CPUs ...
+[    3.881460] h713-arm64 kernel: Detected VIPT I-cache on CPU1
+[    3.881516] h713-arm64 kernel: CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    3.881571] h713-arm64 kernel: Detected VIPT I-cache on CPU2
+[    3.881625] h713-arm64 kernel: CPU2: Booted secondary processor 0x0000000002 [0x410fd034]
+[    3.881681] h713-arm64 kernel: Detected VIPT I-cache on CPU3
+[    3.881736] h713-arm64 kernel: CPU3: Booted secondary processor 0x0000000003 [0x410fd034]
+[    3.881790] h713-arm64 kernel: smp: Brought up 1 node, 4 CPUs
+[    3.881843] h713-arm64 kernel: SMP: Total of 4 processors activated.
+[    3.881897] h713-arm64 kernel: CPU: All CPU(s) started at EL2
+[    3.881973] h713-arm64 kernel: CPU features: detected: 32-bit EL0 Support
+[    3.882029] h713-arm64 kernel: CPU features: detected: CRC32 instructions
+[    3.882084] h713-arm64 kernel: CPU features: detected: PMUv3
+[    3.882138] h713-arm64 kernel: alternatives: applying system-wide alternatives
+[    3.882194] h713-arm64 kernel: Memory: 818212K/1048576K available (11200K kernel code, 1544K rwdata, 3464K rodata, 896K init, 483K bss, 94984K reserved, 131072K cma-reserved)
+[    3.882250] h713-arm64 kernel: devtmpfs: initialized
+[    3.882307] h713-arm64 kernel: clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    3.882362] h713-arm64 kernel: posixtimers hash table entries: 2048 (order: 3, 32768 bytes, linear)
+[    3.882417] h713-arm64 kernel: futex hash table entries: 1024 (65536 bytes on 1 NUMA nodes, total 64 KiB, linear).
+[    3.882497] h713-arm64 kernel: 28320 pages in range for non-PLT usage
+[    3.882553] h713-arm64 kernel: 519840 pages in range for PLT usage
+[    3.882608] h713-arm64 kernel: pinctrl core: initialized pinctrl subsystem
+[    3.882662] h713-arm64 kernel: DMI not present or invalid.
+[    3.882719] h713-arm64 kernel: NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    3.882773] h713-arm64 kernel: DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations
+[    3.882827] h713-arm64 kernel: DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    3.882882] h713-arm64 kernel: DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[    3.882936] h713-arm64 kernel: thermal_sys: Registered thermal governor 'step_wise'
+[    3.883001] h713-arm64 kernel: hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    3.883057] h713-arm64 kernel: ASID allocator initialised with 65536 entries
+[    3.883111] h713-arm64 kernel: iommu: Default domain type: Translated
+[    3.883166] h713-arm64 kernel: iommu: DMA domain TLB invalidation policy: strict mode
+[    3.883220] h713-arm64 kernel: SCSI subsystem initialized
+[    3.883273] h713-arm64 kernel: libata version 3.00 loaded.
+[    3.883329] h713-arm64 kernel: usbcore: registered new interface driver usbfs
+[    3.883383] h713-arm64 kernel: usbcore: registered new interface driver hub
+[    3.883436] h713-arm64 kernel: usbcore: registered new device driver usb
+[    3.883503] h713-arm64 kernel: mc: Linux media interface: v0.10
+[    3.883558] h713-arm64 kernel: videodev: Linux video capture interface: v2.00
+[    3.883613] h713-arm64 kernel: pps_core: LinuxPPS API ver. 1 registered
+[    3.883667] h713-arm64 kernel: pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    3.883724] h713-arm64 kernel: PTP clock support registered
+[    3.883798] h713-arm64 kernel: Advanced Linux Sound Architecture Driver Initialized.
+[    3.883853] h713-arm64 kernel: Bluetooth: Core ver 2.22
+[    3.883908] h713-arm64 kernel: NET: Registered PF_BLUETOOTH protocol family
+[    3.883967] h713-arm64 kernel: Bluetooth: HCI device and connection manager initialized
+[    3.884052] h713-arm64 kernel: Bluetooth: HCI socket layer initialized
+[    3.884117] h713-arm64 kernel: Bluetooth: L2CAP socket layer initialized
+[    3.884174] h713-arm64 kernel: Bluetooth: SCO socket layer initialized
+[    3.884231] h713-arm64 kernel: clocksource: Switched to clocksource arch_sys_counter
+[    3.884284] h713-arm64 kernel: NET: Registered PF_INET protocol family
+[    3.884339] h713-arm64 kernel: IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    3.884394] h713-arm64 kernel: tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[    3.884449] h713-arm64 kernel: Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    3.884513] h713-arm64 kernel: TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    3.884569] h713-arm64 kernel: TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    3.884624] h713-arm64 kernel: TCP: Hash tables configured (established 8192 bind 8192)
+[    3.884678] h713-arm64 kernel: UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    3.884733] h713-arm64 kernel: UDP-Lite hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    3.884787] h713-arm64 kernel: NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    3.884841] h713-arm64 kernel: RPC: Registered named UNIX socket transport module.
+[    3.884895] h713-arm64 kernel: RPC: Registered udp transport module.
+[    3.884955] h713-arm64 kernel: RPC: Registered tcp transport module.
+[    3.885009] h713-arm64 kernel: RPC: Registered tcp-with-tls transport module.
+[    3.885063] h713-arm64 kernel: RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    3.885143] h713-arm64 kernel: Initialise system trusted keyrings
+[    3.885199] h713-arm64 kernel: workingset: timestamp_bits=62 max_order=18 bucket_order=0
+[    3.885254] h713-arm64 kernel: NFS: Registering the id_resolver key type
+[    3.885308] h713-arm64 kernel: Key type id_resolver registered
+[    3.885363] h713-arm64 kernel: Key type id_legacy registered
+[    3.885417] h713-arm64 kernel: Key type asymmetric registered
+[    3.885490] h713-arm64 kernel: Asymmetric key parser 'x509' registered
+[    3.885547] h713-arm64 kernel: Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    3.885602] h713-arm64 kernel: io scheduler mq-deadline registered
+[    3.885657] h713-arm64 kernel: io scheduler kyber registered
+[    3.885711] h713-arm64 kernel: io scheduler bfq registered
+[    3.886726] h713-arm64 kernel: gpio gpiochip0: Static allocation of GPIO base is deprecated, use dynamic allocation.
+[    3.887481] h713-arm64 kernel: sun50i-h713-pinctrl 2000000.pinctrl: initialized sunXi PIO driver
+[    3.888217] h713-arm64 kernel: sun8i-pwm 2000c00.pwm: Allwinner H713 PWM controller registered (8 channels)
+[    3.888928] h713-arm64 kernel: sun50i-h713-ppu 7001014.power-controller: H713 PPU: 5 power domains registered
+[    3.889557] h713-arm64 kernel: sun50i-h713-ppu 7001014.power-controller: TVCAP domain retained from boot
+[    3.889645] h713-arm64 kernel: Serial: 8250/16550 driver, 8 ports, IRQ sharing disabled
+[    3.889703] h713-arm64 kernel: printk: legacy console [ttyS0] disabled
+[    3.889759] h713-arm64 kernel: 2500000.serial: ttyS0 at MMIO 0x2500000 (irq = 246, base_baud = 1500000) is a 16550A
+[    3.889814] h713-arm64 kernel: printk: legacy console [ttyS0] enabled
+[    3.889896] h713-arm64 kernel: 2500400.serial: ttyS1 at MMIO 0x2500400 (irq = 247, base_baud = 1500000) is a 16550A
+[    3.890741] h713-arm64 kernel: platform 1c0e000.video-codec: Adding to iommu group 0
+[    3.891428] h713-arm64 kernel: platform 1c0d000.av1: Adding to iommu group 0
+[    3.892113] h713-arm64 kernel: platform 5600000.display: Adding to iommu group 0
+[    3.892202] h713-arm64 kernel: CAN device driver interface
+[    3.892259] h713-arm64 kernel: usbcore: registered new interface driver usb-storage
+[    3.892918] h713-arm64 kernel: ehci-platform 4300000.usb: EHCI Host Controller
+[    3.893628] h713-arm64 kernel: phy phy-4100400.phy.0: Changing dr_mode to 1
+[    3.894282] h713-arm64 kernel: ehci-platform 4101000.usb: EHCI Host Controller
+[    3.894899] h713-arm64 kernel: ehci-platform 4101000.usb: new USB bus registered, assigned bus number 1
+[    3.895551] h713-arm64 kernel: ehci-platform 4200000.usb: EHCI Host Controller
+[    3.896332] h713-arm64 kernel: ehci-platform 4200000.usb: new USB bus registered, assigned bus number 2
+[    3.897154] h713-arm64 kernel: ehci-platform 4101000.usb: irq 249, io mem 0x04101000
+[    3.898033] h713-arm64 kernel: ehci-platform 4200000.usb: irq 251, io mem 0x04200000
+[    3.898801] h713-arm64 kernel: ohci-platform 4200400.usb: Generic Platform OHCI controller
+[    3.899553] h713-arm64 kernel: ohci-platform 4200400.usb: new USB bus registered, assigned bus number 3
+[    3.900322] h713-arm64 kernel: ohci-platform 4300400.usb: Generic Platform OHCI controller
+[    3.901104] h713-arm64 kernel: ohci-platform 4300400.usb: new USB bus registered, assigned bus number 4
+[    3.901840] h713-arm64 kernel: ohci-platform 4200400.usb: irq 253, io mem 0x04200400
+[    3.902585] h713-arm64 kernel: ohci-platform 4300400.usb: irq 254, io mem 0x04300400
+[    3.903240] h713-arm64 kernel: sun6i-rtc 7090000.rtc: registered as rtc0
+[    3.903854] h713-arm64 kernel: ehci-platform 4101000.usb: USB 2.0 started, EHCI 1.00
+[    3.904614] h713-arm64 kernel: hub 1-0:1.0: USB hub found
+[    3.905311] h713-arm64 kernel: hub 1-0:1.0: 1 port detected
+[    3.905922] h713-arm64 kernel: ehci-platform 4300000.usb: new USB bus registered, assigned bus number 5
+[    3.906494] h713-arm64 kernel: sun6i-rtc 7090000.rtc: setting system clock to 1970-01-02T00:04:50 UTC (86690)
+[    3.907071] h713-arm64 kernel: ehci-platform 4300000.usb: irq 250, io mem 0x04300000
+[    3.907167] h713-arm64 kernel: i2c_dev: i2c /dev entries driver
+[    3.907743] h713-arm64 kernel: ehci-platform 4200000.usb: USB 2.0 started, EHCI 1.00
+[    3.908520] h713-arm64 kernel: hub 2-0:1.0: USB hub found
+[    3.909175] h713-arm64 kernel: hub 2-0:1.0: 1 port detected
+[    3.909755] h713-arm64 kernel: ehci-platform 4300000.usb: USB 2.0 started, EHCI 1.00
+[    3.909823] h713-arm64 kernel: IR NEC protocol handler initialized
+[    3.910450] h713-arm64 kernel: hub 5-0:1.0: USB hub found
+[    3.910520] h713-arm64 kernel: IR RC5(x/sz) protocol handler initialized
+[    3.911142] h713-arm64 kernel: hub 5-0:1.0: 1 port detected
+[    3.911212] h713-arm64 kernel: IR RC6 protocol handler initialized
+[    3.911854] h713-arm64 kernel: hub 3-0:1.0: USB hub found
+[    3.912485] h713-arm64 kernel: sunxi-wdt 2051000.watchdog: Watchdog enabled (timeout=16 sec, nowayout=0)
+[    3.913103] h713-arm64 kernel: hub 3-0:1.0: 1 port detected
+[    3.913170] h713-arm64 kernel: SMCCC: SOC_ID: ID = jep106:091e:1860 Revision = 0x00000001
+[    3.913826] h713-arm64 kernel: hub 4-0:1.0: USB hub found
+[    3.913924] h713-arm64 kernel: usbcore: registered new interface driver usbhid
+[    3.914505] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    3.915129] h713-arm64 kernel: hub 4-0:1.0: 1 port detected
+[    3.915202] h713-arm64 kernel: usbhid: USB HID core driver
+[    3.915816] h713-arm64 kernel: st-accel-i2c 0-0018: supply vdd not found, using dummy regulator
+[    3.916477] h713-arm64 kernel: sunxi-mmc 4022000.mmc: initialized, max. request size: 2048 KB, uses new timings mode
+[    3.917094] h713-arm64 kernel: st-accel-i2c 0-0018: supply vddio not found, using dummy regulator
+[    3.917701] h713-arm64 kernel: sunxi-mmc 4021000.mmc: initialized, max. request size: 1024 KB, uses new timings mode
+[    3.918297] h713-arm64 kernel: ohci-platform 4101400.usb: Generic Platform OHCI controller
+[    3.918368] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lis302dl-spi
+[    3.918926] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    3.919485] h713-arm64 kernel: ohci-platform 4101400.usb: new USB bus registered, assigned bus number 6
+[    3.920050] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    3.920118] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lis3lv02dl-accel
+[    3.920679] h713-arm64 kernel: ohci-platform 4101400.usb: irq 252, io mem 0x04101400
+[    3.920766] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lis3dh-accel
+[    3.920822] h713-arm64 kernel: mmc0: new HS400 MMC card at address 0001
+[    3.920884] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lsm330d-accel
+[    3.920940] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lsm330dl-accel
+[    3.920995] h713-arm64 kernel: mmcblk0: mmc0:0001 8GTF4R 7.28 GiB
+[    3.921051] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lsm330dlc-accel
+[    3.921106] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lis331dlh-accel
+[    3.921161] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lsm330-accel
+[    3.921813] h713-arm64 kernel: hub 6-0:1.0: USB hub found
+[    3.921885] h713-arm64 kernel:  mmcblk0: p1 p2 p3 p4 p5 p6 p7 p8 p9 p10 p11 p12 p13 p14 p15 p16 p17 p18 p19 p20 p21 p22 p23 p24 p25 p26 p27
+[    3.921942] h713-arm64 kernel: mmcblk0boot0: mmc0:0001 8GTF4R 4.00 MiB
+[    3.921998] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lsm303agr-accel
+[    3.922054] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lis2dh12-accel
+[    3.922109] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lng2dm-accel
+[    3.922163] h713-arm64 kernel: mmcblk0boot1: mmc0:0001 8GTF4R 4.00 MiB
+[    3.922759] h713-arm64 kernel: hub 6-0:1.0: 1 port detected
+[    3.922841] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,h3lis331dl-accel
+[    3.922899] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lis331dl-accel
+[    3.922953] h713-arm64 kernel: SPI driver st-accel-spi has no spi_device_id for st,lsm303c-accel
+[    3.923533] h713-arm64 kernel: sun50i-h713-lradc 2009800.lradc: H713 LRADC IIO registered (2 channels)
+[    3.923615] h713-arm64 kernel: NET: Registered PF_INET6 protocol family
+[    3.923670] h713-arm64 kernel: Segment Routing with IPv6
+[    3.923725] h713-arm64 kernel: In-situ OAM (IOAM) with IPv6
+[    3.923780] h713-arm64 kernel: sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    3.923846] h713-arm64 kernel: NET: Registered PF_PACKET protocol family
+[    3.923902] h713-arm64 kernel: can: controller area network core
+[    3.923957] h713-arm64 kernel: NET: Registered PF_CAN protocol family
+[    3.924051] h713-arm64 kernel: can: raw protocol
+[    3.924108] h713-arm64 kernel: can: broadcast manager protocol
+[    3.924162] h713-arm64 kernel: can: netlink gateway - max_hops=1
+[    3.924218] h713-arm64 kernel: Key type dns_resolver registered
+[    3.924272] h713-arm64 kernel: Loading compiled-in X.509 certificates
+[    3.924852] h713-arm64 kernel: sun50i-h713-pinctrl 2000000.pinctrl: supply vcc-pf not found, using dummy regulator
+[    3.925511] h713-arm64 kernel: gpio gpiochip1: Static allocation of GPIO base is deprecated, use dynamic allocation.
+[    3.926094] h713-arm64 kernel: sun50i-h713-r-pinctrl 7022000.pinctrl: initialized sunXi PIO driver
+[    3.926665] h713-arm64 kernel: sunxi-mmc 4021000.mmc: Failed to create device link (0x180) with supplier 7022000.pinctrl for /soc/mmc@4021000/wifi@1
+[    3.927249] h713-arm64 kernel: sun8i-pwm 7020c00.pwm: Allwinner H713 PWM controller registered (3 channels)
+[    3.927820] h713-arm64 kernel: sun50i-h713-afbd 5600000.display: framebuffers from the system CMA pool
+[    3.928442] h713-arm64 kernel: sun50i-h713-afbd 5600000.display: [drm] adopting 1280x720, stride 5120, source 6c100000
+[    3.929002] h713-arm64 kernel: sun50i-h713-afbd 5600000.display: [drm] hardware mirror: available, installation mode 0
+[    3.929554] h713-arm64 kernel: sun50i-h713-afbd 5600000.display: [drm] video plane: pictures up to the panel size, magnified up to 4x and placed anywhere (letterbox)
+[    3.929624] h713-arm64 kernel: [drm] Initialized sun50i-h713-afbd 1.0.0 for 5600000.display on minor 0
+[    3.929686] h713-arm64 kernel: Console: switching to colour frame buffer device 160x45
+[    3.930229] h713-arm64 kernel: sun50i-h713-afbd 5600000.display: [drm] fb0: sun50i-h713-afb frame buffer device
+[    3.930299] h713-arm64 kernel: Registered IR keymap rc-hy200-projector
+[    3.930879] h713-arm64 kernel: rc rc0: sunxi-ir as /devices/platform/soc/7040000.ir/rc/rc0
+[    3.931438] h713-arm64 kernel: rc rc0: lirc_dev: driver sunxi-ir registered at minor = 0, raw IR receiver, no transmitter
+[    3.931508] h713-arm64 kernel: input: sunxi-ir as /devices/platform/soc/7040000.ir/rc/rc0/input0
+[    3.932146] h713-arm64 kernel: sunxi-ir 7040000.ir: h713-ir regs ctl=0xf3 rxctl=0x4 rxint=0x1313 rxsta=0x0 cir=0x2d04
+[    3.932768] h713-arm64 kernel: sunxi-ir 7040000.ir: initialized sunXi IR driver
+[    3.932838] h713-arm64 kernel: input: gpio-keys as /devices/platform/gpio-keys/input/input1
+[    3.932897] h713-arm64 kernel: cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[    3.932959] h713-arm64 kernel: Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
+[    3.933047] h713-arm64 kernel: Loaded X.509 cert 'wens: 61c038651aabdcf94bd0ac7ff06c7248db18c600'
+[    3.933104] h713-arm64 kernel: clk: Not disabling unused clocks
+[    3.933163] h713-arm64 kernel: PM: genpd: Not disabling unused power domains
+[    3.933219] h713-arm64 kernel: ALSA device list:
+[    3.933275] h713-arm64 kernel:   #0: h713-audio-codec
+[    3.933331] h713-arm64 kernel: check access for rdinit=/init failed: -2, ignoring
+[    3.933874] h713-arm64 kernel: faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2
+[    3.933948] h713-arm64 kernel: cfg80211: failed to load regulatory.db
+[    3.934016] h713-arm64 kernel: EXT4-fs (mmcblk0p26): mounted filesystem 956d9901-0eb3-4d75-bb44-e37a46ba9f40 r/w with ordered data mode. Quota mode: disabled.
+[    3.934073] h713-arm64 kernel: VFS: Mounted root (ext4 filesystem) on device 259:18.
+[    3.934129] h713-arm64 kernel: devtmpfs: mounted
+[    3.934184] h713-arm64 kernel: Freeing unused kernel memory: 896K
+[    3.934237] h713-arm64 kernel: Run /sbin/init as init process
+[    3.934291] h713-arm64 kernel:   with arguments:
+[    3.934344] h713-arm64 kernel:     /sbin/init
+[    3.934397] h713-arm64 kernel:   with environment:
+[    3.934451] h713-arm64 kernel:     HOME=/
+[    3.934511] h713-arm64 kernel:     TERM=linux
+[    3.934572] h713-arm64 systemd[1]: System time advanced to built-in epoch: Mon 2026-04-13 19:38:05 UTC
+[    3.934647] h713-arm64 systemd[1]: systemd 257.13-1~deb13u1 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK +BTF -XKBCOMMON -UTMP +SYSVINIT +LIBARCHIVE)
+[    3.934711] h713-arm64 systemd[1]: Detected architecture arm64.
+[    3.934772] h713-arm64 systemd[1]: Hostname set to <h713-arm64>.
+[    3.934833] h713-arm64 systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[    3.934893] h713-arm64 systemd[1]: Queued start job for default target graphical.target.
+[    3.934963] h713-arm64 systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[    3.935025] h713-arm64 systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[    3.935089] h713-arm64 systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[    3.935149] h713-arm64 systemd[1]: Created slice user.slice - User and Session Slice.
+[    3.935211] h713-arm64 systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[    3.935272] h713-arm64 systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[    3.935355] h713-arm64 systemd[1]: proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point skipped, unmet condition check ConditionPathExists=/proc/sys/fs/binfmt_misc
+[    3.935417] h713-arm64 systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...
+[    3.935487] h713-arm64 systemd[1]: Reached target paths.target - Path Units.
+[    3.935548] h713-arm64 systemd[1]: Reached target remote-fs.target - Remote File Systems.
+[    3.935607] h713-arm64 systemd[1]: Reached target slices.target - Slice Units.
+[    3.935666] h713-arm64 systemd[1]: Reached target swap.target - Swaps.
+[    3.935726] h713-arm64 systemd[1]: Listening on systemd-creds.socket - Credential Encryption/Decryption.
+[    3.935788] h713-arm64 systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[    3.935848] h713-arm64 systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[    3.935911] h713-arm64 systemd[1]: Listening on systemd-journald.socket - Journal Sockets.
+[    3.935981] h713-arm64 systemd[1]: systemd-pcrextend.socket - TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.936066] h713-arm64 systemd[1]: systemd-pcrlock.socket - Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.936127] h713-arm64 systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[    3.936188] h713-arm64 systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[    3.936249] h713-arm64 systemd[1]: dev-hugepages.mount - Huge Pages File System skipped, unmet condition check ConditionPathExists=/sys/kernel/mm/hugepages
+[    3.936310] h713-arm64 systemd[1]: dev-mqueue.mount - POSIX Message Queue File System skipped, unmet condition check ConditionPathExists=/proc/sys/fs/mqueue
+[    3.936374] h713-arm64 systemd[1]: Mounting run-lock.mount - Legacy Locks Directory /run/lock...
+[    3.936433] h713-arm64 systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...
+[    3.936506] h713-arm64 systemd[1]: sys-kernel-tracing.mount - Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing
+[    3.936567] h713-arm64 systemd[1]: tmp.mount: Directory /tmp to mount over is not empty, mounting anyway.
+[    3.936628] h713-arm64 systemd[1]: Mounting tmp.mount - Temporary Directory /tmp...
+[    3.936690] h713-arm64 systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+[    3.936752] h713-arm64 systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+[    3.936811] h713-arm64 systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[    3.936872] h713-arm64 systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+[    3.936933] h713-arm64 systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+[    3.936999] h713-arm64 systemd[1]: systemd-fsck-root.service - File System Check on Root Device skipped, unmet condition check ConditionPathIsReadWrite=!/
+[    3.937063] h713-arm64 systemd[1]: systemd-hibernate-clear.service - Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
+[    3.937128] h713-arm64 systemd[1]: systemd-journald.service: unit configures an IP firewall, but the local system does not support BPF/cgroup firewalling.
+[    3.937190] h713-arm64 systemd[1]: systemd-journald.service: (This warning is only shown for the first unit using IP firewalling.)
+[    3.937251] h713-arm64 systemd[1]: Starting systemd-journald.service - Journal Service...
+[    3.937311] h713-arm64 systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[    3.937380] h713-arm64 systemd[1]: systemd-pcrmachine.service - TPM PCR Machine ID Measurement skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.937442] h713-arm64 systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[    3.937504] h713-arm64 systemd[1]: systemd-tpm2-setup-early.service - Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.937564] h713-arm64 systemd[1]: Starting systemd-udev-load-credentials.service - Load udev Rules from Credentials...
+[    3.937624] h713-arm64 systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[    3.937684] h713-arm64 kernel: aic8800_bsp: loading out-of-tree module taints kernel.
+[    3.937742] h713-arm64 systemd[1]: Mounted run-lock.mount - Legacy Locks Directory /run/lock.
+[    3.937799] h713-arm64 kernel: aicbsp_init
+[    3.937856] h713-arm64 systemd[1]: Mounted sys-kernel-debug.mount - Kernel Debug File System.
+[    3.937920] h713-arm64 kernel: RELEASE_DATE:2026_0123_5f7be68d
+[    3.937976] h713-arm64 kernel: aicbsp_resv_mem_init 
+[    3.938033] h713-arm64 systemd[1]: Mounted tmp.mount - Temporary Directory /tmp.
+[    3.938184] h713-arm64 systemd-journald[107]: Collecting audit messages is disabled.
+[    3.938317] h713-arm64 kernel: aicbsp: aicbsp_set_subsys, subsys: AIC_WIFI, state to: 1
+[    3.938372] h713-arm64 kernel: EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40.
+[    3.938428] h713-arm64 kernel: aicbsp: aicbsp_set_subsys, power state change to 1 dure to AIC_WIFI
+[    3.938482] h713-arm64 kernel: aicbsp: aicbsp_platform_power_on
+[    3.938536] h713-arm64 kernel: aicbsp: wlan_regon GPIO 385 configured as output
+[    3.938593] h713-arm64 kernel: aicbsp: 24MHz DCXO output already enabled (bootloader)
+[    3.938674] h713-arm64 kernel: aicbsp: found mmc_host mmc1
+[    3.938735] h713-arm64 kernel: aicbsp: disabled MMC_CAP_UHS_DDR50 for mmc1
+[    3.938792] h713-arm64 systemd-journald[107]: Journal started
+[    3.938901] h713-arm64 systemd-journald[107]: Runtime Journal (/run/log/journal/919c0a2c9fc24766b18bb771e1db330c) is 2M, max 16M, 14M free.
+[    3.835914] h713-arm64 systemd-modules-load[108]: Inserted module 'aic8800_bsp'
+[    3.956043] h713-arm64 kernel: aicbsp: wlan_regon PM1 set to 0
+[    3.996028] h713-arm64 systemd[1]: Started systemd-journald.service - Journal Service.
+[    4.012043] h713-arm64 kernel: aicbsp: wlan_regon PM1 set to 1
+[    4.024499] h713-arm64 systemd[1]: Finished kmod-static-nodes.service - Create List of Static Device Nodes.
+[    4.027217] h713-arm64 systemd[1]: modprobe@configfs.service: Deactivated successfully.
+[    4.027705] h713-arm64 systemd[1]: Finished modprobe@configfs.service - Load Kernel Module configfs.
+[    4.030570] h713-arm64 systemd[1]: modprobe@drm.service: Deactivated successfully.
+[    4.031058] h713-arm64 systemd[1]: Finished modprobe@drm.service - Load Kernel Module drm.
+[    4.033879] h713-arm64 systemd[1]: modprobe@efi_pstore.service: Deactivated successfully.
+[    4.034386] h713-arm64 systemd[1]: Finished modprobe@efi_pstore.service - Load Kernel Module efi_pstore.
+[    4.037206] h713-arm64 systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[    4.037735] h713-arm64 systemd[1]: Finished modprobe@fuse.service - Load Kernel Module fuse.
+[    4.040579] h713-arm64 systemd[1]: Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.
+[    4.056275] h713-arm64 systemd[1]: sys-fs-fuse-connections.mount - FUSE Control File System skipped, unmet condition check ConditionPathExists=/sys/fs/fuse/connections
+[    4.056736] h713-arm64 systemd[1]: sys-kernel-config.mount - Kernel Configuration File System skipped, unmet condition check ConditionPathExists=/sys/kernel/config
+[    4.064150] h713-arm64 kernel: aicbsp: mmc_detect_change on mmc1 host=ffff000001352800 mmc_hostname=mmc1
+[    4.064460] h713-arm64 kernel: aicbsp: mmc_detect_change returned
+[    4.059615] h713-arm64 systemd[1]: Starting systemd-growfs-root.service - Grow Root File System...
+[    4.077382] h713-arm64 systemd[1]: systemd-hwdb-update.service - Rebuild Hardware Database skipped, unmet condition check ConditionNeedsUpdate=/etc
+[    4.088639] h713-arm64 systemd[1]: Starting systemd-journal-flush.service - Flush Journal to Persistent Storage...
+[    4.091104] h713-arm64 systemd[1]: systemd-pstore.service - Platform Persistent Storage Archival skipped, unmet condition check ConditionDirectoryNotEmpty=/sys/fs/pstore
+[    4.094521] h713-arm64 systemd[1]: Starting systemd-random-seed.service - Load/Save OS Random Seed...
+[    4.104656] h713-arm64 systemd[1]: Starting systemd-tmpfiles-setup-dev-early.service - Create Static Device Nodes in /dev gracefully...
+[    4.112763] h713-arm64 systemd[1]: systemd-tpm2-setup.service - TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-uki
+[    4.124412] h713-arm64 systemd[1]: Finished systemd-udev-load-credentials.service - Load udev Rules from Credentials.
+[    4.156108] h713-arm64 kernel: EXT4-fs (mmcblk0p26): resizing filesystem from 720896 to 720896 blocks
+[    4.172045] h713-arm64 systemd-journald[107]: Time spent on flushing to /var/log/journal/919c0a2c9fc24766b18bb771e1db330c is 68.917ms for 383 entries.
+[    4.172045] h713-arm64 systemd-journald[107]: System Journal (/var/log/journal/919c0a2c9fc24766b18bb771e1db330c) is 32M, max 32M, 0B free.
+[    5.144527] h713-arm64 systemd-journald[107]: Received client request to flush runtime journal.
+[    5.144841] h713-arm64 systemd-journald[107]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/system.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[    5.145004] h713-arm64 systemd-journald[107]: Rotating system journal.
+[    5.145137] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    5.146419] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    5.147285] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    5.148184] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=4 DRV=00010000 NTSR=81710000
+[    5.149091] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=6 width=4 DRV=00010000 NTSR=81710000
+[    5.149991] h713-arm64 kernel: sunxi-mmc 4021000.mmc: v5p3x delay: rate=50000000 timing=6 width=4 DRV=00030000 NTSR=81710110
+[    5.150866] h713-arm64 kernel: mmc1: new UHS-I speed SDR104 SDIO card at address 6721
+[    5.150973] h713-arm64 kernel: aicbsp: aicbsp_sdio_probe:1 vid:0xC8A1  did:0x0082
+[    5.151059] h713-arm64 kernel: aicbsp: aicbsp_sdio_probe:2 vid:0xC8A1  did:0x0182
+[    5.151142] h713-arm64 kernel: aicbsp: aicbsp_sdio_probe after replace:1
+[    5.151218] h713-arm64 kernel: aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    5.151285] h713-arm64 kernel: aicbsp: aicwf_sdio_reg_init
+[    5.151350] h713-arm64 kernel: aicbsp: sdio_err:<aicwf_sdio_hal_irqhandler,1775>: Interrupt but no data
+[    5.151419] h713-arm64 kernel: rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_table_8800d80_u02.bin  
+[    5.151520] h713-arm64 kernel: file md5:0c9bf9c9c10f7a90a22a4c35fa58c967
+[    4.177083] h713-arm64 systemd-random-seed[127]: Kernel entropy pool is not initialized yet, waiting until it is.
+[    4.177138] h713-arm64 systemd-growfs[125]: Successfully resized "/" to 2.7G bytes.
+[    4.181997] h713-arm64 systemd[1]: Finished systemd-growfs-root.service - Grow Root File System.
+[    4.222010] h713-arm64 systemd[1]: Finished systemd-tmpfiles-setup-dev-early.service - Create Static Device Nodes in /dev gracefully.
+[    4.225309] h713-arm64 systemd[1]: systemd-sysusers.service - Create System Users skipped, no trigger condition checks were met.
+[    4.230290] h713-arm64 systemd[1]: Starting systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev...
+[    4.340680] h713-arm64 systemd[1]: Finished systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev.
+[    4.342727] h713-arm64 systemd[1]: Reached target local-fs-pre.target - Preparation for Local File Systems.
+[    4.344475] h713-arm64 systemd[1]: Reached target local-fs.target - Local File Systems.
+[    4.711472] h713-arm64 systemd[1]: Listening on systemd-sysext.socket - System Extension Image Management.
+[    4.945341] h713-arm64 systemd[1]: systemd-binfmt.service - Set Up Additional Binary Formats skipped, unmet condition check ConditionPathIsMountPoint=/proc/sys/fs/binfmt_misc
+[    4.948862] h713-arm64 systemd[1]: Starting systemd-udevd.service - Rule-based Manager for Device Events and Files...
+[    4.954602] h713-arm64 systemd[1]: Finished systemd-udev-trigger.service - Coldplug All udev Devices.
+[    5.148503] h713-arm64 systemd[1]: Starting ifupdown-pre.service - Helper to synchronize boot up for ifupdown...
+[    5.154084] h713-arm64 systemd-udevd[143]: Using default interface naming scheme 'v257'.
+[    5.157755] h713-arm64 systemd[1]: Finished systemd-journal-flush.service - Flush Journal to Persistent Storage.
+[    5.176719] h713-arm64 systemd[1]: Starting systemd-tmpfiles-setup.service - Create System Files and Directories...
+[    5.177951] h713-arm64 kernel: rwnx_plat_bin_fw_upload_android
+[    5.178184] h713-arm64 kernel: rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_adid_8800d80_u02.bin  
+[    5.180203] h713-arm64 kernel: file md5:f546881a81b960d89a672578eb45a809
+[    5.192077] h713-arm64 kernel: rwnx_plat_bin_fw_upload_android
+[    5.192350] h713-arm64 kernel: rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_8800d80_u02.bin  
+[    5.212102] h713-arm64 kernel: file md5:35d137b8a76daaeb4f5034df8e15bcde
+[    5.230957] h713-arm64 systemd[1]: Finished ifupdown-pre.service - Helper to synchronize boot up for ifupdown.
+[    5.234952] h713-arm64 systemd[1]: Started systemd-udevd.service - Rule-based Manager for Device Events and Files.
+[    5.261730] h713-arm64 systemd-tmpfiles[148]: /usr/lib/tmpfiles.d/legacy.conf:14: Duplicate line for path "/run/lock", ignoring.
+[    5.264190] h713-arm64 kernel: aicbt_patch_table_load bt btmode[3]:5 
+[    5.264327] h713-arm64 kernel: aicbt_patch_table_load bt uart_baud[3]:1500000 
+[    5.264391] h713-arm64 kernel: aicbt_patch_table_load bt uart_flowctrl[3]:1 
+[    5.285351] h713-arm64 kernel: aicbt_patch_table_load bt lpm_enable[3]:0 
+[    5.285539] h713-arm64 kernel: aicbt_patch_table_load bt tx_pwr[3]:28463 
+[    5.324464] h713-arm64 (udev-worker)[154]: Network interface NamePolicy= disabled on kernel command line.
+[    5.389235] h713-arm64 systemd[1]: Finished systemd-tmpfiles-setup.service - Create System Files and Directories.
+[    5.398726] h713-arm64 systemd[1]: ldconfig.service - Rebuild Dynamic Linker Cache skipped, no trigger condition checks were met.
+[    5.399539] h713-arm64 systemd[1]: systemd-firstboot.service - First Boot Wizard skipped, unmet condition check ConditionFirstBoot=yes
+[    5.400753] h713-arm64 systemd[1]: systemd-journal-catalog-update.service - Rebuild Journal Catalog skipped, unmet condition check ConditionNeedsUpdate=/var
+[    5.401943] h713-arm64 systemd[1]: systemd-update-done.service - Update is Completed skipped, no trigger condition checks were met.
+[    5.428605] h713-arm64 kernel: aicbsp: bt patch version: - Mar 07 2024 14:29:05 - git f94a3e4
+[    5.428919] h713-arm64 kernel: rwnx_plat_bin_fw_upload_android
+[    5.429009] h713-arm64 kernel: rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fmacfw_8800d80_h_u02.bin  
+[    5.444063] h713-arm64 kernel: file md5:5f3302e5557d8b5fc1526d30d2b20899
+[    5.620066] h713-arm64 kernel: rd_version_val=06090101
+[    5.659325] h713-arm64 kernel: aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    5.659512] h713-arm64 kernel: aicsdio: aicwf_sdio_reg_init
+[    5.689470] h713-arm64 kernel: aicbsp: aicbsp_resv_mem_alloc_skb, alloc resv_mem_txdata succuss, id: 0, size: 98304
+[    5.689666] h713-arm64 kernel: aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    5.697038] h713-arm64 kernel: tcp_ack_init 
+[    5.717774] h713-arm64 kernel: AICWFDBG(LOGERROR)        invalid cmd: loss_enable
+[    5.718147] h713-arm64 kernel: AICWFDBG(LOGERROR)        invalid cmd: loss_value
+[    5.996085] h713-arm64 kernel: random: crng init done
+[    6.253112] h713-arm64 systemd[1]: Finished systemd-random-seed.service - Load/Save OS Random Seed.
+[    6.654424] h713-arm64 systemd[1]: Created slice system-systemd\x2dbacklight.slice - Slice /system/systemd-backlight.
+[    6.656218] h713-arm64 systemd[1]: first-boot-complete.target - First Boot Complete skipped, unmet condition check ConditionFirstBoot=yes
+[    6.656522] h713-arm64 systemd[1]: Listening on systemd-rfkill.socket - Load/Save RF Kill Switch Status /dev/rfkill Watch.
+[    6.660835] h713-arm64 systemd[1]: Starting systemd-backlight@backlight:backlight.service - Load/Save Screen Backlight Brightness of backlight:backlight...
+[    6.666098] h713-arm64 systemd[1]: Starting systemd-backlight@backlight:lamp.service - Load/Save Screen Backlight Brightness of backlight:lamp...
+[    6.668207] h713-arm64 systemd[1]: systemd-machine-id-commit.service - Save Transient machine-id to Disk skipped, unmet condition check ConditionPathIsMountPoint=/etc/machine-id
+[    6.742040] h713-arm64 systemd[1]: Finished systemd-backlight@backlight:lamp.service - Load/Save Screen Backlight Brightness of backlight:lamp.
+[    6.745224] h713-arm64 systemd[1]: Finished systemd-backlight@backlight:backlight.service - Load/Save Screen Backlight Brightness of backlight:backlight.
+[    7.152126] h713-arm64 kernel: ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[    7.154545] h713-arm64 kernel: rwnx_reg_notifier Enter
+[    7.161315] h713-arm64 systemd[1]: Starting systemd-rfkill.service - Load/Save RF Kill Switch Status...
+[    7.189194] h713-arm64 kernel: ieee80211 phy0: 
+                                  *******************************************************
+                                  ** CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES **
+                                  *******************************************************
+[    7.202177] h713-arm64 systemd-modules-load[108]: Inserted module 'aic8800_fdrv'
+[    7.204855] h713-arm64 kernel: get_txpwr_max:txpwr_max:18 
+[    7.205121] h713-arm64 kernel: aic_bluetooth_mod_init
+[    7.227214] h713-arm64 kernel: -->rfkill_bluetooth_init
+[    7.227523] h713-arm64 kernel: bluetooth_set_power: start_block=1
+[    7.227767] h713-arm64 kernel: aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 0
+[    7.227878] h713-arm64 kernel: aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    7.246220] h713-arm64 kernel: bluetooth_set_power: end_block=1
+[    7.246411] h713-arm64 kernel: <--rfkill_bluetooth_init
+[    7.246616] h713-arm64 systemd-modules-load[108]: Inserted module 'aic8800_btlpm'
+[    7.249387] h713-arm64 systemd[1]: Found device dev-ttyS0.device - /dev/ttyS0.
+[    7.268195] h713-arm64 kernel: panfrost 1800000.gpu: clock rate = 600000000
+[    7.278319] h713-arm64 kernel: panfrost 1800000.gpu: bus_clock rate = 100000000
+[    7.281295] h713-arm64 kernel: panfrost 1800000.gpu: mali-g31 id 0x7093 major 0x0 minor 0x0 status 0x0
+[    7.305105] h713-arm64 kernel: panfrost 1800000.gpu: features: 00000000,000027f7, issues: 00000000,00000400
+[    7.307492] h713-arm64 kernel: panfrost 1800000.gpu: Features: L2:0x07100206 Shader:0x00000000 Tiler:0x00000209 Mem:0x1 MMU:0x00002821 AS:0xff JS:0x7
+[    7.312399] h713-arm64 kernel: panfrost 1800000.gpu: shader_present=0x1 l2_present=0x1
+[    7.319587] h713-arm64 systemd-modules-load[108]: Inserted module 'uinput'
+[    7.320427] h713-arm64 kernel: cedrus 1c0e000.video-codec: Device registered as /dev/video0
+[    7.330545] h713-arm64 kernel: hantro-vpu 1c0d000.av1: registered allwinner,sun50i-h713-av1-dec as /dev/video1
+[    7.340078] h713-arm64 kernel: scanout-dmabuf: carveout 0x000000006c100000 + 8192 KiB
+[    7.346346] h713-arm64 systemd-modules-load[108]: Inserted module 'sunxi_scanout_dmabuf'
+[    7.360185] h713-arm64 kernel: [drm] Initialized panfrost 1.4.0 for 1800000.gpu on minor 1
+[    7.373373] h713-arm64 systemd[1]: Finished systemd-modules-load.service - Load Kernel Modules.
+[    7.556089] h713-arm64 kernel: hy310-cpu-comm 3003000.cpu-comm: shared memory: 0x4e300000 size 0x500000
+[    7.557023] h713-arm64 kernel: cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff800081cf1000 size=0x500000
+[    7.564277] h713-arm64 kernel: cpu_comm: HW mapped — MIPS ctrl @ 0000000023378ccf, msgbox @ 00000000317dbe05 (version 0x00020000, tx fifo 0, rx fifo 0)
+[    7.587096] h713-arm64 kernel: cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor parked
+[    7.587322] h713-arm64 kernel: cpu_comm: initialising shared memory (valid=1 mips=0)
+[    7.602043] h713-arm64 kernel: cpu_comm: wrote ShMemAddr=0x4e300000 to MIPS share regs
+[    7.609652] h713-arm64 kernel: cpu_comm: /dev/cpu_comm_fd registered (major=241)
+[    7.616655] h713-arm64 kernel: cpu_comm: MIPS elog BEFORE: mode=0 en2=0 wp2=0
+[    7.616885] h713-arm64 kernel: cpu_comm: MIPS elog staying on Mode 1 (ring buffer) (2MB buffer)
+[    7.634089] h713-arm64 kernel: cpu_comm: InitCommSeqMem(0): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[    7.642933] h713-arm64 kernel: cpu_comm: InitCommSeqMem(1): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[    7.644238] h713-arm64 kernel: cpu_comm: routine table initialized (1224 slots)
+[    7.659241] h713-arm64 kernel: cpu_comm: SMM heap initialized: base=0xffff800081d1e000 size=5059343 pages=1236
+[    7.659459] h713-arm64 kernel: cpu_comm: ARM flag pre-set to 0x5 before spinlock release
+[    7.674934] h713-arm64 kernel: cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+[    7.675089] h713-arm64 kernel: cpu_comm: msgbox RX by hrtimer poll (250 us busy / 4 ms idle) (IRQ 334 available, not requested)
+[    7.690780] h713-arm64 kernel: cpu_comm: CPU ARM app ready
+[    7.690940] h713-arm64 kernel: cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x0
+[    7.816185] h713-arm64 kernel: bluetooth_set_power: start_block=0
+[    7.816411] h713-arm64 kernel: aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    7.816492] h713-arm64 kernel: aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    7.816558] h713-arm64 kernel: bluetooth_set_power: end_block=0
+[    7.842707] h713-arm64 systemd[1]: Started systemd-rfkill.service - Load/Save RF Kill Switch Status.
+[    8.232484] h713-arm64 kernel: cpu_comm: POST-WAIT: ARM=0x5 MIPS=0x0
+[    8.232750] h713-arm64 kernel: cpu_comm: auto-registered 18/18 MIPS VP routes
+[    8.232823] h713-arm64 kernel: cpu_comm: MIPS parked — no channel table to read; CALLs will not be dispatched
+[    8.247884] h713-arm64 kernel: cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[    8.248034] h713-arm64 kernel: cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[    8.261763] h713-arm64 kernel: cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[    8.261857] h713-arm64 kernel: hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[    8.517226] h713-arm64 systemd[1]: Reached target sound.target - Sound Card.
+[    8.521774] h713-arm64 systemd[1]: Starting systemd-sysctl.service - Apply Kernel Variables...
+[    8.603905] h713-arm64 systemd[1]: Finished systemd-sysctl.service - Apply Kernel Variables.
+[    8.608552] h713-arm64 systemd[1]: Reached target sysinit.target - System Initialization.
+[    8.611395] h713-arm64 systemd[1]: apt-daily.timer: Not using persistent file timestamp Sat 2026-08-22 22:08:11 UTC as it is in the future.
+[    8.611638] h713-arm64 systemd[1]: Started apt-daily.timer - Daily apt download activities.
+[    8.613783] h713-arm64 systemd[1]: apt-daily-upgrade.timer: Not using persistent file timestamp Tue 2026-04-14 06:28:03 UTC as it is in the future.
+[    8.613975] h713-arm64 systemd[1]: Started apt-daily-upgrade.timer - Daily apt upgrade and clean activities.
+[    8.616047] h713-arm64 systemd[1]: dpkg-db-backup.timer: Not using persistent file timestamp Tue 2026-04-14 00:00:11 UTC as it is in the future.
+[    8.616224] h713-arm64 systemd[1]: Started dpkg-db-backup.timer - Daily dpkg database backup timer.
+[    8.618252] h713-arm64 systemd[1]: e2scrub_all.timer: Not using persistent file timestamp Sun 2026-08-23 03:10:58 UTC as it is in the future.
+[    8.618612] h713-arm64 systemd[1]: Started e2scrub_all.timer - Periodic ext4 Online Metadata Check for All Filesystems.
+[    8.620685] h713-arm64 systemd[1]: fstrim.timer: Not using persistent file timestamp Sat 2026-08-22 22:08:11 UTC as it is in the future.
+[    8.621079] h713-arm64 systemd[1]: Started fstrim.timer - Discard unused filesystem blocks once a week.
+[    8.623085] h713-arm64 systemd[1]: Started systemd-tmpfiles-clean.timer - Daily Cleanup of Temporary Directories.
+[    8.625100] h713-arm64 systemd[1]: Reached target timers.target - Timer Units.
+[    8.627400] h713-arm64 systemd[1]: Listening on dbus.socket - D-Bus System Message Bus Socket.
+[    8.636521] h713-arm64 systemd[1]: Listening on sshd-unix-local.socket - OpenSSH Server Socket (systemd-ssh-generator, AF_UNIX Local).
+[    8.638999] h713-arm64 systemd[1]: Listening on systemd-hostnamed.socket - Hostname Service Socket.
+[    8.641142] h713-arm64 systemd[1]: Reached target sockets.target - Socket Units.
+[    8.646230] h713-arm64 systemd[1]: Starting networking.service - Raise network interfaces...
+[    8.648341] h713-arm64 systemd[1]: systemd-pcrphase-sysinit.service - TPM PCR Barrier (Initialization) skipped, unmet condition check ConditionSecurity=measured-uki
+[    8.648513] h713-arm64 systemd[1]: Reached target basic.target - Basic System.
+[    8.651602] h713-arm64 systemd[1]: System is tainted: unmerged-bin
+[    8.655093] h713-arm64 systemd[1]: Starting dbus.service - D-Bus System Message Bus...
+[    8.662796] h713-arm64 systemd[1]: Starting e2scrub_reap.service - Remove Stale Online ext4 Metadata Check Snapshots...
+[    8.665045] h713-arm64 systemd[1]: getty-static.service - getty on tty2-tty6 if dbus and logind are not available skipped, unmet condition check ConditionPathExists=!/usr/bin/dbus-daemon
+[    8.672893] h713-arm64 systemd[1]: Starting h713-bt-attach.service - AIC8800 Bluetooth HCI attach (ttyS1, H4, noflow)...
+[    8.676345] h713-arm64 systemd[1]: h713-hdmi-capture.service - H713 HDMI audio capture skipped, unmet condition check ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+[    8.676550] h713-arm64 systemd[1]: h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner skipped, unmet condition check ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+[    8.676655] h713-arm64 systemd[1]: h713-hdmi-speaker.service - H713 HDMI input to internal speaker skipped, unmet condition check ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+[    8.683330] h713-arm64 systemd[1]: Started h713-hotspot.service - H713 WiFi hotspot (hostapd + dnsmasq on wlan0).
+[    8.705083] h713-arm64 systemd[1]: Started h713-keyd.service - Projector power key: case button and remote toggle standby.
+[    8.716703] h713-arm64 systemd[1]: Started h713-keystone.service - Projector tilt: automatic keystone and ceiling detection.
+[    8.732746] h713-arm64 systemd[1]: Starting h713-ssh-host-keys.service - Generate missing SSH host keys...
+[    8.733761] h713-arm64 rfkill[210]: unblock set for type bluetooth
+[    8.736614] h713-arm64 kernel: bluetooth_set_power: start_block=0
+[    8.736738] h713-arm64 kernel: aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    8.736812] h713-arm64 kernel: aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    8.736879] h713-arm64 kernel: bluetooth_set_power: end_block=0
+[    8.754662] h713-arm64 rfkill[215]: unblock set for type wifi
+[    8.764126] h713-arm64 kernel: Bluetooth: HCI UART driver ver 2.3
+[    8.764442] h713-arm64 kernel: Bluetooth: HCI UART protocol H4 registered
+[    8.773241] h713-arm64 systemd[1]: sshd-keygen.service - Generate sshd host keys on first boot skipped, unmet condition check ConditionFirstBoot=yes
+[    8.798879] h713-arm64 systemd[1]: Starting systemd-logind.service - User Login Management...
+[    8.803046] h713-arm64 systemd[1]: systemd-pcrphase.service - TPM PCR Barrier (User) skipped, unmet condition check ConditionSecurity=measured-uki
+[    8.817612] h713-arm64 h713-keyd[206]: h713-keyd: watching /dev/input/event1 (gpio-keys)
+[    8.817612] h713-arm64 h713-keyd[206]: h713-keyd: watching /dev/input/event0 (sunxi-ir)
+[    8.823659] h713-arm64 systemd[1]: Started dbus.service - D-Bus System Message Bus.
+[    8.843457] h713-arm64 h713-keystone[208]: h713-keystone: sensor /sys/bus/iio/devices/iio:device0, mirror /sys/bus/platform/drivers/sun50i-h713-afbd/5600000.display/mirror_mode
+[    8.913472] h713-arm64 systemd[1]: Finished h713-ssh-host-keys.service - Generate missing SSH host keys.
+[    8.939282] h713-arm64 kernel: get_txpwr_max:txpwr_max:18 
+[    8.939539] h713-arm64 kernel: get_txpwr_max:txpwr_max:18 
+[    8.941040] h713-arm64 kernel: get_txpwr_max:txpwr_max:18 
+[    8.949740] h713-arm64 kernel: change_if: 2 to 3, 8, 2
+[    8.950620] h713-arm64 kernel: get_txpwr_max:txpwr_max:18 
+[    8.960873] h713-arm64 kernel: get_txpwr_max:txpwr_max:18 
+[    8.967034] h713-arm64 systemd[1]: e2scrub_reap.service: Deactivated successfully.
+[    8.967977] h713-arm64 systemd[1]: Finished e2scrub_reap.service - Remove Stale Online ext4 Metadata Check Snapshots.
+[    8.969884] h713-arm64 h713-hotspot-up[243]: wlan0: interface state UNINITIALIZED->HT_SCAN
+[    8.999576] h713-arm64 systemd[1]: Finished networking.service - Raise network interfaces.
+[    9.002242] h713-arm64 systemd[1]: Reached target network.target - Network.
+[    9.004174] h713-arm64 systemd[1]: hostapd.service - Access point and authentication server for Wi-Fi and Ethernet skipped, unmet condition check ConditionFileNotEmpty=/etc/hostapd/hostapd.conf
+[    9.008485] h713-arm64 systemd[1]: Starting ssh.service - OpenBSD Secure Shell server...
+[    9.013950] h713-arm64 systemd[1]: Starting systemd-user-sessions.service - Permit User Sessions...
+[    9.045086] h713-arm64 dnsmasq[205]: started, version 2.91 DNS disabled
+[    9.045117] h713-arm64 dnsmasq[205]: compile time options: IPv6 GNU-getopt DBus no-UBus i18n IDN2 DHCP DHCPv6 no-Lua TFTP conntrack ipset nftset auth DNSSEC loop-detect inotify dumpfile
+[    9.045149] h713-arm64 dnsmasq-dhcp[205]: DHCP, IP range 192.168.4.10 -- 192.168.4.100, lease time 12h
+[    9.045167] h713-arm64 dnsmasq-dhcp[205]: DHCP, sockets bound exclusively to interface wlan0
+[    9.054280] h713-arm64 systemd-logind[220]: New seat seat0.
+[    9.067655] h713-arm64 systemd-logind[220]: Watching system buttons on /dev/input/event1 (gpio-keys)
+[    9.068335] h713-arm64 systemd-logind[220]: Watching system buttons on /dev/input/event0 (sunxi-ir)
+[    9.080225] h713-arm64 systemd[1]: Created slice user-1000.slice - User Slice of UID 1000.
+[    9.089190] h713-arm64 systemd[1]: Started systemd-logind.service - User Login Management.
+[    9.096503] h713-arm64 systemd[1]: Starting user-runtime-dir@1000.service - User Runtime Directory /run/user/1000...
+[    9.101695] h713-arm64 systemd[1]: Finished systemd-user-sessions.service - Permit User Sessions.
+[    9.112384] h713-arm64 systemd[1]: Started getty@tty1.service - Getty on tty1.
+[    9.126368] h713-arm64 systemd[1]: Started serial-getty@ttyS0.service - Serial Getty on ttyS0.
+[    9.131052] h713-arm64 systemd[1]: Reached target getty.target - Login Prompts.
+[    9.200370] h713-arm64 systemd[1]: Finished user-runtime-dir@1000.service - User Runtime Directory /run/user/1000.
+[    9.210620] h713-arm64 systemd[1]: Starting user@1000.service - User Manager for UID 1000...
+[    9.248603] h713-arm64 sshd[271]: Server listening on 0.0.0.0 port 22.
+[    9.248699] h713-arm64 sshd[271]: Server listening on :: port 22.
+[    9.249132] h713-arm64 systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+[    9.283546] h713-arm64 unix_chkpwd[275]: account media has password changed in future
+[    9.305163] h713-arm64 (systemd)[274]: pam_unix(systemd-user:session): session opened for user media(uid=1000) by (uid=0)
+[    9.315067] h713-arm64 systemd-logind[220]: New session c1 of user media.
+[    9.452078] h713-arm64 kernel: get_txpwr_max:txpwr_max:18 
+[    9.452315] h713-arm64 kernel: chan.flags 0 
+[    9.784073] h713-arm64 kernel: aicwf_sdio mmc1:6721:1 wlan0: AP started: ch=0, bcmc_idx=32 channel=2437 bw=2
+[    9.845342] h713-arm64 systemd[1]: Starting bluetooth.service - Bluetooth service...
+[    9.896683] h713-arm64 (uetoothd)[290]: bluetooth.service: ConfigurationDirectory 'bluetooth' already exists but the mode is different. (File system: 755 ConfigurationDirectoryMode: 555)
+[    9.999119] h713-arm64 bluetoothd[290]: Bluetooth daemon 5.82
+[   10.004795] h713-arm64 systemd[1]: Started bluetooth.service - Bluetooth service.
+[   10.008098] h713-arm64 systemd[1]: Reached target bluetooth.target - Bluetooth Support.
+[   10.009222] h713-arm64 bluetoothd[290]: Starting SDP server
+[   10.023690] h713-arm64 bluetoothd[290]: profiles/network/bnep.c:bnep_init() kernel lacks bnep-protocol support
+[   10.029172] h713-arm64 dbus-daemon[202]: [system] Activating via systemd: service name='org.freedesktop.hostname1' unit='dbus-org.freedesktop.hostname1.service' requested by ':1.4' (uid=0 pid=290 comm="/usr/libexec/bluetooth/bluetoothd")
+[   10.029617] h713-arm64 bluetoothd[290]: Bluetooth management interface 1.23 initialized
+[   10.030632] h713-arm64 bluetoothd[290]: Battery Provider Manager created
+[   10.032494] h713-arm64 kernel: Bluetooth: MGMT ver 1.23
+[   10.038511] h713-arm64 systemd[1]: Starting systemd-hostnamed.service - Hostname Service...
+[   10.052996] h713-arm64 bluetoothd[290]: profiles/sap/server.c:sap_server_register() Can't listen at channel 8.
+[   10.053160] h713-arm64 bluetoothd[290]: sap-server: Operation not permitted (1)
+[   10.237431] h713-arm64 systemd[1]: Started systemd-hostnamed.service - Hostname Service.
+[   10.238708] h713-arm64 dbus-daemon[202]: [system] Successfully activated service 'org.freedesktop.hostname1'
+[   11.901584] h713-arm64 kernel: Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[   11.900271] h713-arm64 bluetoothd[290]: Battery Provider Manager destroyed
+[   11.906583] h713-arm64 h713-bt-attach[303]: Device setup complete
+[   11.926273] h713-arm64 kernel: Bluetooth: MGMT ver 1.23
+[   11.926629] h713-arm64 bluetoothd[290]: Battery Provider Manager created
+[   11.926645] h713-arm64 systemd[1]: Stopped target bluetooth.target - Bluetooth Support.
+[   11.934441] h713-arm64 h713-bt-attach[309]: hci0 up on attempt 1 baud=1500000 drain=1 prime=1
+[   11.939477] h713-arm64 systemd[1]: Finished h713-bt-attach.service - AIC8800 Bluetooth HCI attach (ttyS1, H4, noflow).
+[   11.944040] h713-arm64 systemd[1]: Reached target multi-user.target - Multi-User System.
+[   11.946412] h713-arm64 systemd[1]: Reached target graphical.target - Graphical Interface.
+[   11.950076] h713-arm64 bluetoothd[290]: profiles/sap/server.c:sap_server_register() Can't listen at channel 8.
+[   11.950212] h713-arm64 bluetoothd[290]: sap-server: Operation not permitted (1)
+[   11.953142] h713-arm64 bluetoothd[290]: Failed to set privacy: Rejected (0x0b)
+[   12.143005] h713-arm64 systemd[274]: Queued start job for default target default.target.
+[   12.166790] h713-arm64 systemd-journald[107]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[   12.184902] h713-arm64 systemd[274]: Created slice app.slice - User Application Slice.
+[   12.185587] h713-arm64 systemd[274]: Created slice session.slice - User Core Session Slice.
+[   12.185708] h713-arm64 systemd[274]: Reached target bluetooth.target - Bluetooth.
+[   12.185842] h713-arm64 systemd[274]: Reached target paths.target - Paths.
+[   12.185982] h713-arm64 systemd[274]: Reached target timers.target - Timers.
+[   12.188146] h713-arm64 systemd[274]: Starting dbus.socket - D-Bus User Message Bus Socket...
+[   12.188702] h713-arm64 systemd[274]: Listening on pipewire.socket - PipeWire Multimedia System Sockets.
+[   12.191008] h713-arm64 systemd[274]: Starting ssh-agent.socket - OpenSSH Agent socket...
+[   12.283398] h713-arm64 systemd[274]: Listening on dbus.socket - D-Bus User Message Bus Socket.
+[   12.284318] h713-arm64 systemd[274]: Listening on ssh-agent.socket - OpenSSH Agent socket.
+[   12.289271] h713-arm64 systemd[274]: Reached target sockets.target - Sockets.
+[   12.289574] h713-arm64 systemd[274]: Reached target basic.target - Basic System.
+[   12.290121] h713-arm64 systemd[1]: Started user@1000.service - User Manager for UID 1000.
+[   12.292427] h713-arm64 systemd[274]: Starting dbus.service - D-Bus User Message Bus...
+[   12.294660] h713-arm64 systemd[1]: Startup finished in 2.346s (kernel) + 9.948s (userspace) = 12.294s.
+[   12.296855] h713-arm64 systemd[274]: Started pipewire.service - PipeWire Multimedia Service.
+[   12.319303] h713-arm64 systemd[274]: Started filter-chain.service - PipeWire filter chain daemon.
+[   12.325965] h713-arm64 systemd[274]: Started wireplumber.service - Multimedia Service Session Manager.
+[   12.340548] h713-arm64 systemd[274]: Started dbus.service - D-Bus User Message Bus.
+[   12.364876] h713-arm64 systemd[274]: Started mpris-proxy.service - Bluetooth mpris proxy.
+[   12.365084] h713-arm64 systemd[274]: Reached target default.target - Main User Target.
+[   12.365274] h713-arm64 systemd[274]: Startup finished in 3.004s.
+[   12.425211] h713-arm64 pipewire[318]: mod.rt: RTKit error: org.freedesktop.DBus.Error.ServiceUnknown
+[   12.425253] h713-arm64 pipewire[318]: mod.rt: RTKit does not give us MaxRealtimePriority, using 1
+[   12.427493] h713-arm64 pipewire[318]: mod.rt: RTKit error: org.freedesktop.DBus.Error.ServiceUnknown
+[   12.427545] h713-arm64 pipewire[318]: mod.rt: RTKit does not give us MinNiceLevel, using 0
+[   12.429958] h713-arm64 pipewire[318]: mod.rt: RTKit error: org.freedesktop.DBus.Error.ServiceUnknown
+[   12.429999] h713-arm64 pipewire[318]: mod.rt: RTKit does not give us RTTimeUSecMax, using -1
+[   12.481675] h713-arm64 wireplumber[320]: mod.rt: RTKit error: org.freedesktop.DBus.Error.ServiceUnknown
+[   12.481707] h713-arm64 wireplumber[320]: mod.rt: RTKit does not give us MaxRealtimePriority, using 1
+[   12.482609] h713-arm64 wireplumber[320]: mod.rt: RTKit error: org.freedesktop.DBus.Error.ServiceUnknown
+[   12.482632] h713-arm64 wireplumber[320]: mod.rt: RTKit does not give us MinNiceLevel, using 0
+[   12.483586] h713-arm64 wireplumber[320]: mod.rt: RTKit error: org.freedesktop.DBus.Error.ServiceUnknown
+[   12.483609] h713-arm64 wireplumber[320]: mod.rt: RTKit does not give us RTTimeUSecMax, using -1
+[   12.494207] h713-arm64 wireplumber[320]: wp-internal-comp-loader: Loading profile 'main'
+[   13.037150] h713-arm64 unix_chkpwd[335]: account root has password changed in future
+[   13.079730] h713-arm64 login[270]: pam_env(login:session): Unable to open env file: /etc/default/locale
+[   13.082768] h713-arm64 login[270]: pam_unix(login:session): session opened for user root(uid=0) by (uid=0)
+[   13.147353] h713-arm64 systemd-logind[220]: New session c2 of user root.
+[   13.153475] h713-arm64 systemd[1]: Created slice user-0.slice - User Slice of UID 0.
+[   13.158597] h713-arm64 systemd[1]: Starting user-runtime-dir@0.service - User Runtime Directory /run/user/0...
+[   13.235115] h713-arm64 systemd[1]: Finished user-runtime-dir@0.service - User Runtime Directory /run/user/0.
+[   13.245593] h713-arm64 systemd[1]: Starting user@0.service - User Manager for UID 0...
+[   13.309583] h713-arm64 unix_chkpwd[345]: account root has password changed in future
+[   13.331414] h713-arm64 (systemd)[344]: pam_unix(systemd-user:session): session opened for user root(uid=0) by (uid=0)
+[   13.340044] h713-arm64 systemd-logind[220]: New session c3 of user root.
+[   13.701379] h713-arm64 wireplumber[320]: wp-device: SPA handle 'api.libcamera.enum.manager' could not be loaded; is it installed?
+[   13.701445] h713-arm64 wireplumber[320]: s-monitors-libcamera: PipeWire's libcamera SPA plugin is missing or broken. Some camera types may not be supported.
+[   16.209212] h713-arm64 systemd[344]: Queued start job for default target default.target.
+[   16.212335] h713-arm64 systemd[344]: Created slice app.slice - User Application Slice.
+[   16.213270] h713-arm64 systemd[344]: Created slice session.slice - User Core Session Slice.
+[   16.213471] h713-arm64 systemd[344]: Reached target paths.target - Paths.
+[   16.213690] h713-arm64 systemd[344]: Reached target timers.target - Timers.
+[   16.215886] h713-arm64 systemd[344]: Starting dbus.socket - D-Bus User Message Bus Socket...
+[   16.215996] h713-arm64 systemd[344]: pipewire.socket - PipeWire Multimedia System Sockets skipped, unmet condition check ConditionUser=!root
+[   16.218352] h713-arm64 systemd[344]: Starting ssh-agent.socket - OpenSSH Agent socket...
+[   16.322962] h713-arm64 systemd[344]: Listening on dbus.socket - D-Bus User Message Bus Socket.
+[   16.323833] h713-arm64 systemd[344]: Listening on ssh-agent.socket - OpenSSH Agent socket.
+[   16.329014] h713-arm64 systemd[344]: Reached target sockets.target - Sockets.
+[   16.329317] h713-arm64 systemd[344]: Reached target basic.target - Basic System.
+[   16.329886] h713-arm64 systemd[1]: Started user@0.service - User Manager for UID 0.
+[   16.332204] h713-arm64 systemd[344]: Starting dbus.service - D-Bus User Message Bus...
+[   16.332358] h713-arm64 systemd[344]: pipewire.service - PipeWire Multimedia Service skipped, unmet condition check ConditionUser=!root
+[   16.332466] h713-arm64 systemd[344]: filter-chain.service: Bound to unit pipewire.service, but unit isn't active.
+[   16.332498] h713-arm64 systemd[344]: Dependency failed for filter-chain.service - PipeWire filter chain daemon.
+[   16.332535] h713-arm64 systemd[344]: filter-chain.service: Job filter-chain.service/start failed with result 'dependency'.
+[   16.332587] h713-arm64 systemd[344]: wireplumber.service: Bound to unit pipewire.service, but unit isn't active.
+[   16.332613] h713-arm64 systemd[344]: Dependency failed for wireplumber.service - Multimedia Service Session Manager.
+[   16.332641] h713-arm64 systemd[344]: wireplumber.service: Job wireplumber.service/start failed with result 'dependency'.
+[   16.333995] h713-arm64 systemd[1]: Started session-c2.scope - Session c2 of User root.
+[   16.369999] h713-arm64 login[270]: DIALUP AT ttyS0 BY root
+[   16.370020] h713-arm64 login[270]: ROOT LOGIN ON ttyS0
+[   16.388542] h713-arm64 systemd[344]: Started dbus.service - D-Bus User Message Bus.
+[   16.401424] h713-arm64 systemd[344]: mpris-proxy.service - Bluetooth mpris proxy skipped, unmet condition check ConditionUser=!@system
+[   16.401579] h713-arm64 systemd[344]: Reached target default.target - Main User Target.
+[   16.401810] h713-arm64 systemd[344]: Startup finished in 3.014s.
+[   16.927924] h713-arm64 systemd[1]: systemd-rfkill.service: Deactivated successfully.
+[   40.280820] h713-arm64 systemd[1]: systemd-hostnamed.service: Deactivated successfully.
+[   43.259688] h713-arm64 hostapd[260]: wlan0: STA 08:5b:d6:d9:c2:13 IEEE 802.11: associated (aid 1)
+[   43.278937] h713-arm64 hostapd[260]: wlan0: STA 08:5b:d6:d9:c2:13 RADIUS: starting accounting session C6110333D90B4716
+[   43.279000] h713-arm64 hostapd[260]: wlan0: STA 08:5b:d6:d9:c2:13 WPA: pairwise key handshake completed (RSN)
+[   43.308519] h713-arm64 dnsmasq-dhcp[205]: DHCPREQUEST(wlan0) 192.168.4.78 08:5b:d6:d9:c2:13
+[   43.308562] h713-arm64 dnsmasq-dhcp[205]: DHCPACK(wlan0) 192.168.4.78 08:5b:d6:d9:c2:13 cachyos
+[   55.902455] h713-arm64 sshd-session[395]: Postponed publickey for root from 192.168.4.78 port 57488 ssh2 [preauth]
+[   55.975759] h713-arm64 unix_chkpwd[402]: account root has password changed in future
+[   55.987678] h713-arm64 sshd-session[395]: Accepted publickey for root from 192.168.4.78 port 57488 ssh2: ED25519 SHA256:Gbck/7/Day1OxHn1cjJ9o1F+CK+FbRCi1nfXCL6PFVA
+[   56.012949] h713-arm64 sshd-session[395]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[   56.037139] h713-arm64 systemd-logind[220]: New session c4 of user root.
+[   56.061097] h713-arm64 systemd[1]: Started session-c4.scope - Session c4 of User root.
+[   56.077182] h713-arm64 sshd-session[395]: pam_env(sshd:session): Unable to open env file: /etc/default/locale
+[   57.017189] h713-arm64 sshd-session[410]: Received disconnect from 192.168.4.78 port 57488:11: disconnected by user
+[   57.017523] h713-arm64 sshd-session[410]: Disconnected from user root 192.168.4.78 port 57488
+[   57.019654] h713-arm64 sshd-session[395]: pam_unix(sshd:session): session closed for user root
+[   57.063063] h713-arm64 systemd[1]: session-c4.scope: Deactivated successfully.
+[   57.067582] h713-arm64 systemd-logind[220]: Session c4 logged out. Waiting for processes to exit.
+[   57.074323] h713-arm64 systemd-logind[220]: Removed session c4.
+[   77.191432] h713-arm64 sshd-session[435]: Postponed publickey for root from 192.168.4.78 port 35174 ssh2 [preauth]
+[   77.230570] h713-arm64 unix_chkpwd[442]: account root has password changed in future
+[   77.242268] h713-arm64 sshd-session[435]: Accepted publickey for root from 192.168.4.78 port 35174 ssh2: ED25519 SHA256:Gbck/7/Day1OxHn1cjJ9o1F+CK+FbRCi1nfXCL6PFVA
+[   77.259396] h713-arm64 sshd-session[435]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[   77.284817] h713-arm64 systemd-logind[220]: New session c5 of user root.
+[   77.305097] h713-arm64 systemd[1]: Started session-c5.scope - Session c5 of User root.
+[   77.322307] h713-arm64 sshd-session[435]: pam_env(sshd:session): Unable to open env file: /etc/default/locale
+/sys/kernel/debug/pm_genpd/GPU/devices
+/sys/kernel/debug/pm_genpd/GPU/total_idle_time
+/sys/kernel/debug/pm_genpd/GPU/active_time
+/sys/kernel/debug/pm_genpd/GPU/idle_states
+/sys/kernel/debug/pm_genpd/GPU/sub_domains
+/sys/kernel/debug/pm_genpd/GPU/current_state
+/sys/kernel/debug/pm_genpd/TVFE/devices
+/sys/kernel/debug/pm_genpd/TVFE/total_idle_time
+/sys/kernel/debug/pm_genpd/TVFE/active_time
+/sys/kernel/debug/pm_genpd/TVFE/idle_states
+/sys/kernel/debug/pm_genpd/TVFE/sub_domains
+/sys/kernel/debug/pm_genpd/TVFE/current_state
+/sys/kernel/debug/pm_genpd/TVCAP/devices
+/sys/kernel/debug/pm_genpd/TVCAP/total_idle_time
+/sys/kernel/debug/pm_genpd/TVCAP/active_time
+/sys/kernel/debug/pm_genpd/TVCAP/idle_states
+/sys/kernel/debug/pm_genpd/TVCAP/sub_domains
+/sys/kernel/debug/pm_genpd/TVCAP/current_state
+/sys/kernel/debug/pm_genpd/VE/devices
+/sys/kernel/debug/pm_genpd/VE/total_idle_time
+/sys/kernel/debug/pm_genpd/VE/active_time
+/sys/kernel/debug/pm_genpd/VE/idle_states
+/sys/kernel/debug/pm_genpd/VE/sub_domains
+/sys/kernel/debug/pm_genpd/VE/current_state
+/sys/kernel/debug/pm_genpd/AV1/devices
+/sys/kernel/debug/pm_genpd/AV1/total_idle_time
+/sys/kernel/debug/pm_genpd/AV1/active_time
+/sys/kernel/debug/pm_genpd/AV1/idle_states
+/sys/kernel/debug/pm_genpd/AV1/sub_domains
+/sys/kernel/debug/pm_genpd/AV1/current_state
+/sys/kernel/debug/pm_genpd/pm_genpd_summary
