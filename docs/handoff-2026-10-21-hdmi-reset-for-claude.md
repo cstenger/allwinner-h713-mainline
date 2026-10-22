@@ -3,6 +3,38 @@
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
 
+**October 22: next reset/logo/AudioTop diagnostic PREPARED OFFLINE; board OFF;
+no capture armed.**
+[Design/runbook](hdmi-dsp-boundary-design-2026-10-22.md),
+[build/tests](hdmi-evidence/2026-10-22-dsp-boundary-preparation/README.md).
+Use `build/hdmi-dsp-boundary-2026-10-22/candidate/`: FIT SHA-256
+`bbadfaaa28b299ee6d4d4e514e9d38c2f11e180b7f8171aaeaca1d289e171a83`,
+kernel `6.18.38 #4`. Both arms share one FIT/DT; display and CPU_COMM are
+now disabled to prevent premature logo-free MMIO. Existing TVFE hold and
+shutdown guard unchanged; new opt-in `h713_dsp_boundary=1` publishes the
+73-step observer. It attempts versions before AudioTop writes, then after
+control/config/latch individually, with four separate claim/read/release/
+check pairs. The no-logo prefix adds conditional display/TVCAP reset
+release and proven routing words, with readbacks/original-state records.
+**One-logo first** qualifies the new pre-AudioTop access; no-logo needs a
+separate fully disconnected cold cycle/fresh patched baseline. Stop if the
+lock is unwritable or a new access stalls. After any request timeout only
+current-pair skip/release/final is permitted, never later setup/requests.
+Host loader validates arm history and RAM image/hook checks; binder creates
+boot/FIT/baseline-bound proof before helper steps. Generic warm census is
+still unsafe. All four pairs, interventions, journal and UART are exported.
+Real kernel/modules build has no warnings; FIT extraction, exact DT edits
+and unchanged symbol versions verified; 11 new tests +48 regressions pass.
+No board access/staging occurred. Pre-AudioTop access remains exploratory:
+completed zeros do not prove DSP RAM contents through an unqualified
+interface. Reset+early boot/access preparation remain one bracket even if
+zero precedes logo/setup; all-negative outcomes may remain inconclusive.
+Disabled display means no DRM panel-shutdown callback: lamp stays off and
+physical disconnection follows poweroff. Previous bench guard stays
+installed with original backup preserved. No automatic recovery relaxation.
+
+
+
 **October 22: DSP retention live diagnostic COMPLETE; board OFF.**
 [Live evidence and interpretation](hdmi-evidence/2026-10-22-dsp-retention-live/README.md).
 Cold production boot `96cae8c6` established DSP `0/0` → pinned patch verified
