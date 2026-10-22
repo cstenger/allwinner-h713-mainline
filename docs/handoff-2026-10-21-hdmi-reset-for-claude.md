@@ -2,7 +2,7 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
-**In progress: warm-retention test. Cycle 1 (orderly reboot) COMPLETE; next is cycle 2 (abrupt), which needs an operator cold cycle.**
+**In progress: warm-retention test. Cycle 1 (orderly reboot) COMPLETE. Cycle 2 (abrupt) started:** operator unplugged everything; the cold catcher was armed at 02:18:27Z into `cycle2/cold-catch/`. Next: A1 (set U, `--record-bootcmd cycle2/bootcmd.txt --boot`), A2, then the SysRq-b trigger (catcher armed first), C2, C3, poweroff.
 Design: [warm-retention test](hdmi-warm-retention-test-design-2026-10-21.md).
 Tools: `tools/serial/warm-retention-uboot.py` (U-Boot set U) and
 `tools/hdmi/warm-retention-census.py` (Linux set L, read-only, streamed with
