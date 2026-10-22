@@ -51,10 +51,19 @@ class Evidence(unittest.TestCase):
     def test_bad_or_unsafe_markers_and_mixed_boots_refuse(self):
         for text in (sample('x', gate='00000000'), sample('x', gate='00000001'),
                      sample('x', gate='00010000'), 'H713 TVFE v1 stage=x broken',
-                     'Linux version 6.18.38\nLinux version 6.18.38',
+                     'Linux version 6.18.38 build-a\nLinux version 6.18.38 build-b',
                      sample('x').splitlines()[1], sample('x').splitlines()[0] + '\n' + sample('x')):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 analyzer.analyze(text)
+
+    def test_console_banner_replay_is_not_an_extra_boot(self):
+        banner = '[    0.000000] Linux version 6.18.38 diagnostic #2\r\n'
+        result = analyzer.analyze(banner * 2 + sample('linux_early_initcall'))
+        self.assertEqual(len(result['samples']), 1)
+
+    def test_repeated_early_init_rejects_two_same_build_boots(self):
+        with self.assertRaisesRegex(ValueError, 'multiple early-init'):
+            analyzer.analyze(sample('linux_early_initcall') * 2)
 
     def test_begun_but_missing_readback_is_explicit(self):
         r = analyzer.analyze('H713 TVFE v1 stage=ppu_probe_entry gate=00010001 state=begin\n')

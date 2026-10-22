@@ -16,8 +16,11 @@ DOMAIN_INIT = ('domain_init_before', 'domain_init_after_wait',
 
 
 def analyze(text, require_uboot=False):
-    if len(re.findall(r'Linux version 6\.18\.38', text)) > 1:
-        raise ValueError('multiple Linux boots; split evidence by boot')
+    # Switching boot consoles can replay the identical initial printk banner.
+    # Distinct builds or repeated early-init samples indicate mixed evidence.
+    banners = re.findall(r'Linux version 6\.18\.38[^\r\n]*', text)
+    if len(set(banners)) > 1:
+        raise ValueError('distinct Linux banners; split evidence by boot')
     samples, skipped, pending = [], [], set()
     for line_no, line in enumerate(text.splitlines(), 1):
         if 'H713 TVFE v1 stage=' not in line:
@@ -45,6 +48,8 @@ def analyze(text, require_uboot=False):
         samples.append({'stage': stage, 'line': line_no, 'gate': gate_hex,
                         'tvfe': tvfe, 'tvcap': tvcap,
                         'tvfe_state': {0x10000: 'on', 0x20000: 'off'}.get(int(tvfe, 16) & 0x30000, 'unknown')})
+    if sum(s['stage'] == 'linux_early_initcall' for s in samples) > 1:
+        raise ValueError('multiple early-init samples; split evidence by boot')
     seen = {s['stage'] for s in samples}
     missing = [s for s in REQUIRED + (UBOOT if require_uboot else ()) if s not in seen]
     # The exact production driver initializes all five physical domains.
