@@ -13,6 +13,9 @@ one-logo warm path; minimum individual bits and patch-loss timing remain
 unresolved. Next work is a no-reset patched positive control and a matched
 boundary experiment. Reset/early boot, warm logo, interface preparation and
 the control write remain inside the loss interval.
+The [next owner-based positive-control/boundary batch](hdmi-dsp-owner-boundary-design-2026-10-22.md)
+is now prepared offline and tests graph/AudioTop shutdown operations before
+adding another reset or warm logo.
 
 The [boundary trial](hdmi-evidence/2026-10-22-dsp-boundary-one-logo-live/README.md)
 failed before AudioTop setup: device 0 timed out, status `0x10`, no completed

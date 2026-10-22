@@ -1,0 +1,51 @@
+{
+  "new_suite": {
+    "command": "python3 tools/hdmi/test-dsp-owner-boundary.py",
+    "tests": 14,
+    "result": "PASS"
+  },
+  "regressions": [
+    {
+      "command": "python3 tools/hdmi/test-build-startup.py",
+      "tests": 11,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-managed-boot.py",
+      "tests": 7,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-dsp-minimum.py",
+      "tests": 11,
+      "result": "PASS"
+    }
+  ],
+  "total_tests": 43,
+  "new_native_cases": [
+    "sham",
+    "preserved",
+    "lose-graph",
+    "lose-cfg",
+    "lose-ctl",
+    "missing-arm",
+    "health-bad",
+    "lock-bad",
+    "busy-timeout",
+    "done-timeout",
+    "bad-positive",
+    "context-drift",
+    "late-timeout",
+    "graph-failure",
+    "missing-marker"
+  ],
+  "additional_checks": [
+    "Python compile",
+    "legacy script header/data CRC",
+    "script payload equality",
+    "bundle/assets/firmware hashes",
+    "module vermagic versus installed module",
+    "production kernel Symbol versions unchanged",
+    "loaded module build-ID note recorded for live checks"
+  ]
+}

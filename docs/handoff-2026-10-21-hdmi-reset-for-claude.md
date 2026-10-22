@@ -3,6 +3,52 @@
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
 
+**October 22: no-reset patched positive control / matched shutdown-prefix
+batch PREPARED OFFLINE; board OFF; no capture armed.**
+[Design/runbook](hdmi-dsp-owner-boundary-design-2026-10-22.md),
+[build and tests](hdmi-evidence/2026-10-22-dsp-owner-boundary-preparation/README.md).
+Use `build/hdmi-dsp-owner-boundary-2026-10-22/candidate/`.
+**Two new cold-cycle runs:** arm 1 sham must complete four patched `1/1`
+pairs; arm 2 is permitted only with that exact successful record and a
+separate fresh boot/matched baseline/saved graph values. Normal audio
+teardown restores 22 saved DSP graph words, then AudioTop config/control,
+then clocks and possibly demod reset, before CPU reset. The next test
+therefore brackets these earlier shutdown operations instead of attributing
+previous zeros directly to reset/logo.
+Same isolated owner module in both arms, SHA-256
+`6cbc305cfcd14b20d9c72c25c293402cc2c7490d1cf3e977ba60654c5bf62001`,
+production kernel `6.18.38 #1 SMP Fri Oct 16 15:44:49 PDT 2026` unchanged.
+RAM-only cold script SHA-256
+`0f3245113d33501761e51aa87c59980e63e03c2569d6b05e3276b47d18e6e1d1`.
+This is not the earlier warm minimum kernel. Script retains exact guarded
+cold source3 startup, removes warm fallback, sets bench DT marker and
+runtime service masks, panic 0/loglevel 7, lamp off. No media/env update.
+Owner loads pinned patch/graph once as baseline, omits PCM, disables audio
+IRQs and pins itself/receiver/resources. No competing ARM probe, service
+teardown, unload, reset or warm logo after patching. Arm immutable at load.
+Up to 25 explicit operations: patched pair; existing 22-word graph restore
+(or sham) and pair; config clear (or sham) and pair; control off/on (or sham)
+and pair. Stop at the first changed/mixed/timed-out pair; no later boundary.
+Timeout allows only current-pair skip/release/checkpoint/export/poweroff.
+Hard failure or uncertain ledger means stop, no forced cleanup/retry.
+Exact command echo is ambiguous, never version zero. Full raw words,
+protocol phases, original saved graph words, state/ledger/journal/UART saved.
+Host proof checks exact kernel/bundle/loaded module build ID/fresh cold
+capture/arm/boot/guard; arm 2 checks exact qualified sham and context.
+43 offline tests pass (14 new +29 relevant regressions); real W=1 module
+build, vermagic/Symvers and script CRC/payload/hash checks pass. Kbuild notes
+host clang 23.1.3 versus kernel clang 23.1.1; no C diagnostics. No board access
+or install occurred. Existing guard/original backup remain unchanged.
+Next live action: separately arm sole cold catcher for **sham arm 1** before
+power. One launch per cold cycle; use the new cold loader. After either arm,
+export/checksum, checked poweroff, record UART Power down, physically unplug.
+If a clear boundary appears, expect one confirmation run; if all preserve
+patch reports, budget roughly 2–4 further matched runs for remaining
+SPDI/bridge/clock/demod/reset/early-boot/logo bracket. Estimate, not a hard
+upper bound. No more control-only qualification repeats are planned.
+Normal startup/recovery policy and production one-launch protections stay.
+
+
 **October 22 afternoon: fresh control-only replication COMPLETE; board OFF;
 recorder closed. Control-only access sufficiency replicated in two cycles.**
 [Replication evidence](hdmi-evidence/2026-10-22-dsp-minimum-control-replication/README.md).
