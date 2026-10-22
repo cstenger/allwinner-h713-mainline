@@ -2,6 +2,26 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**October 22: next DSP-retention diagnostic PREPARED OFFLINE; board remains
+shut down; no catcher armed.**
+[Design/runbook](hdmi-dsp-retention-design-2026-10-22.md),
+[preparation evidence](hdmi-evidence/2026-10-22-dsp-retention-preparation/README.md).
+Use `build/hdmi-dsp-retention-2026-10-21/candidate-v2/`, not the prototype
+`candidate/`. Bench flags verify warm latch/parked processors/open bus and
+both domains ON/idle, then retain only TVFE via `GENPD_FLAG_ALWAYS_ON`.
+No OFF domain is powered on. A built-in, idle-until-stepped observer provides
+46 operations for clocks, conditional AudioTop preparation, stock lock and
+one `0x80ff` pair; no patch/graph/reset assertion or firmware launch exists.
+The separate bench shutdown hook blocks reboot/kexec on the retain cmdline
+even before observation starts; RAM loader verifies its installed bytes.
+Real kernel/modules build, unchanged production DTB and exported symbols,
+11 new tests plus 37 regressions pass. No board installation/live action
+was performed during preparation. Next live work needs a newly captured cold
+patched baseline, verified hook backup/install, one orderly warm reboot,
+hold proof, staged access and poweroff. Generic warm census is unsafe before
+interface clocks in this held-domain boot; use the new helper's snapshots.
+DSP retention is still unmeasured; read the runbook's intervention limits.
+
 **TVFE OFF writer FOUND; diagnostic live run complete; board OFF.**
 [Live trace and interpretation](hdmi-evidence/2026-10-21-tvfe-boot-trace-live/README.md).
 Cold boot `d7017dce` passed DSP `0/0` → verified `1/1` with both domains ON.
