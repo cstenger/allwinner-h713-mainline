@@ -2,6 +2,59 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**October 22: CLAUDE TAKEOVER — board fully unplugged, user confirmed.**
+No running capture, UART reader, SSH diagnostic or bench operation. Last
+completed run is matched boundary arm 2, commit `57c6328`; it preserved
+reported patched versions `1/1` after graph restoration, config clear and
+control off/on, matching successful sham commit `119be31`. Both completed
+runs exported/checksummed and reached UART Power down; recorders closed.
+User requests next diagnostic preparation and this handoff because Codex
+usage is nearly exhausted. No permission question is pending.
+
+**Next diagnostic design is prepared; executable implementation/build is
+still required.** Read
+[remaining teardown/reset design](hdmi-dsp-remaining-teardown-design-2026-10-22.md)
+and [source review/preparation](hdmi-evidence/2026-10-22-dsp-remaining-teardown-preparation/README.md).
+First implement **Phase A: normal-order graph → SPDI → Audio Bridge →
+AudioTop**, inside a new isolated, pinned sole-owner bench. The old module
+has only 25 graph/AT operations; do not use it for unimplemented boundaries
+or silently accept the old sham for a changed build. New matching sham and
+intervention arm are required. No new module/FIT/boot script was generated,
+no new board staging occurred, and no capture has been armed for this plan.
+
+Source review found an important extra bracket: normal session shutdown
+performs audio clock/TVFE restoration and possible **demod reset**, then
+terminal **MIPS parking asserts three resets before CPU reboot**. Receiver
+parked release can subsequently release clocks/domains. These are distinct
+from CPU reset and warm logo; previous post-warm zeros do not isolate any
+one of them. `h713_receiver_release()` only decrements the audio client;
+actual parked resource release is separate. Preserve that distinction.
+
+After Phase A qualifies, design/validate clock restore → access reacquisition
+without demod reset, then demod reset separately. Clock-off observer cannot
+read DSP/stock lock/debug providers blindly. Existing owner health requires
+MIPS live; parked-MIPS observer needs a separate contract, and production
+park refuses audio clients. Do not bypass client accounting or relaunch MIPS.
+Keep domains held until an explicitly separate domain test. CPU reset /
+pre-logo observer comes only after earlier qualified boundaries as needed.
+Implementation safety/acceptance gates and precise source/register map are
+in the new design. No raw MMIO commands or automatic reset sequence provided.
+
+**Claude's immediate next action:** read the design, implement Phase A in a
+new directory (preserve old candidate/evidence), native/Python negative tests,
+real W=1 production-kernel module build and pinned provenance checks. Only
+then arm a sole cold catcher, verify OPEN and tell user when to apply power.
+Use UART `/dev/ttyUSB0` 115200; SSH `root@192.168.4.1`, host Wi-Fi `spirits`.
+Host hardware/network calls in this Codex environment require escalated
+execution; local sandbox does not expose the host UART. No credentials in
+handoff. Installed guard and original backup remain unchanged (hashes below).
+One launch per fresh disconnected cold cycle; do not write GP7/clear GP6 or
+restart a failed/uncertain cycle. Follow exact stop/export/poweroff rules.
+Further run count depends on the new matched tests; old 2–4 estimate is not
+a promise. The current no-reset graph/AT batch needs no automatic repeat.
+
+
+
 **October 22: matched boundary arm 2 COMPLETE — tested boundaries preserved `1/1`.**
 [Live evidence](hdmi-evidence/2026-10-22-dsp-owner-boundary-live/README.md).
 All four version pairs completed **`1/1`**, including after 22 verified

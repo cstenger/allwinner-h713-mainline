@@ -1,0 +1,30 @@
+{
+  "status": "source-reviewed design; not implemented, built, armed or hardware tested",
+  "board": "fully unplugged, user confirmed",
+  "sources": {
+    "modules/hdmi-audio/h713-hdmi-pcm.c": "0dc33b3ca0fb6bcb61df30b8d9009587ee833849f9a7c18af1f8b8dcae856e1a",
+    "modules/hdmi-audio/h713-hdmi-dsp.c": "466baed82dcb9df4ba58ee3aafd2b23e9172460b51c0739f713e7cfd4d024be2",
+    "modules/hdmi-audio/h713-hdmi-tvfe.c": "4a58038dff996db65fbdafd1c1ad368a8082bfa16b8a8c86f1b879ec635c23d7",
+    "modules/hdmi-receiver/h713-receiver-power.c": "c016912f0a05eb3da9974cf7e860de38acbdd008748db073e536a30f30aec72e",
+    "modules/hdmi-receiver/h713-receiver-park.c": "f912203c189370fb7c8aafe792e1e10df71a50398413ee62e5bf94a1102cfdcb",
+    "modules/hdmi-receiver/h713-receiver-edid.c": "7eb967a210405b9678a3f2893c23945f54d4b0032a688612bdb1b63fdc2e9f9c",
+    "tools/hdmi/h713-hdmi-session.py": "b113aaf35d06132a8ec5d8e95c70dd08a93a3e5d7e451e93b68a990e1df29e77",
+    "tools/hdmi/prepare-dsp-owner-boundary.py": "4d640d083da8a57d8cb3303aee79ee7855cdab8fdc0b0e5174754d6114872fd1",
+    "tools/hdmi/dsp-owner-boundary/observer.inc": "8abe6f06ebcbedd80c2c0365d30eaf135911666b4b705aa9def603fd43106522",
+    "tools/hdmi/dsp-owner-boundary/audiotop.inc": "163326956a33b7d0566e8e78607808f79a6807c82d53239c8ceabd50a00933d0"
+  },
+  "completed_batch_classification": "matched_tested_shutdown_boundaries_preserved_patch",
+  "sham_boot_id": "dcfe762c-9cb5-44ca-a546-049f03e2a1fd",
+  "boundary_boot_id": "77d7afff-6ff8-4629-961d-1fa56dc3015d",
+  "next_target": "same-owner SPDI/Audio Bridge teardown in normal graph -> SPDI -> bridge -> AudioTop order",
+  "later_targets": [
+    "clock restoration/reacquisition without demod reset",
+    "demod reset separately",
+    "MIPS terminal reset while domains held",
+    "domain release separately if needed",
+    "CPU reset/early boot before warm logo"
+  ],
+  "existing_candidate_can_execute_next_target": false,
+  "new_sham_required": true,
+  "first_action_for_claude": "implement Phase A in a new isolated candidate and run offline acceptance gates"
+}
