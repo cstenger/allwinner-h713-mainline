@@ -37,7 +37,7 @@ def validate(prepared):
     return fit
 
 
-def boot(con, expected_bootcmd, fit):
+def boot(con, expected_bootcmd, fit, before_load=None):
     # Every checked command must return its own prompt, not just an echo.
     r = warm.census(con)
     if r['bootcmd'] != expected_bootcmd:
@@ -48,6 +48,8 @@ def boot(con, expected_bootcmd, fit):
         value = warm.parse_md(con.run('md.l 0x%08x 1' % addr), addr)
         if value != required:
             raise RuntimeError('requires production warm latch and parked MIPS')
+    if before_load:
+        before_load(con)
     con.checked('ext4load mmc 1:1a 0x50000000 ' + REMOTE_FIT)
     # U-Boot filesize and RAM CRC pin the actual transfer before bootm verifies FIT hashes.
     con.checked('itest ${filesize} == %x' % len(fit))
