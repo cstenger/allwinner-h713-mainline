@@ -47,8 +47,11 @@ class Board:
     def read(self, path):
         try:
             return Path(path).read_text()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             return None
+
+    def exists(self, path):
+        return Path(path).exists()
 
 
 def census(board, label):
@@ -58,7 +61,8 @@ def census(board, label):
         return int(reads[name], 16)
     r = {'label': label, 'time': time.time(), 'reads': reads, 'skipped': []}
     r['boot_id'] = (board.read('/proc/sys/kernel/random/boot_id') or '').strip()
-    r['hdmi_handoff'] = board.read('/proc/device-tree/chosen/h713,hdmi-boot-v1') is not None
+    # Binary DT property: presence is the signal, never decode it.
+    r['hdmi_handoff'] = board.exists('/proc/device-tree/chosen/h713,hdmi-boot-v1')
     r['units'] = {u: board.run(['systemctl', 'show', 'h713-hdmi-%s.service' % u, '-p',
                                 'ActiveState', '--value']).strip()
                   for u in ('capture', 'signal', 'speaker')}

@@ -1,5 +1,93 @@
 # HDMI reset recovery handoff for Claude — October 21, 2026
 
+## LIVE STATUS — read this first (updated continuously; newest at top)
+
+**In progress: warm-retention test, cycle 1 (orderly reboot), between steps A2 and B1.**
+Design: [warm-retention test](hdmi-warm-retention-test-design-2026-10-21.md).
+Tools: `tools/serial/warm-retention-uboot.py` (U-Boot set U) and
+`tools/hdmi/warm-retention-census.py` (Linux set L, read-only, streamed with
+`ssh root@192.168.4.1 'python3 - LABEL' < tools/hdmi/warm-retention-census.py`).
+Raw outputs: `build/hdmi-warm-retention-2026-10-21/cycle1/` (not yet curated).
+
+**Board state at last update: RUNNING normal production, cold-live, boot
+`f5c76641-c095-4f6f-ac7b-03f92ddb493b`** (HDMI handoff present; capture,
+signal and speaker active; h713_ddc_pins/hdmi_audio/hdmi_receiver/hdmi_signal
+loaded). A passive UART recorder (`soak-capture.py`, 60-minute deadline from
+about 19:04 local) may still hold `/dev/ttyUSB0`. Make sure no other reader
+holds the port before arming a catcher (`fuser /dev/ttyUSB0`). If the
+recorder is still alive it belongs to the previous agent; stopping it loses
+nothing.
+
+Done so far in cycle 1:
+- **First attempt aborted:** the board booted before the catcher opened, and
+  GP6 was still `48444d49` (not a cold start). Its log is in
+  `cycle1/cold-catch/` and `passive-after-abort.log`. The operator cut power.
+- **A1 cold catch** (`cycle1/cold-catch-2/`, `cycle1/A1-cold-preboot/`): one
+  SPL, `gp6=0`. Set U: **R_CCU `0x070101ac` = `00000000`** (PPU bus closed, so
+  the PPU was not read, as designed). `bootcmd` recorded in
+  `cycle1/bootcmd.txt` (sha256 `b88572b5…`). Then `boot`.
+- **A2 cold-live** (`cycle1/A2-health.txt`, `cycle1/A2-census.json`): journal
+  `DSP versions 0000/0000`, then `pinned 724-pair DSP patch verified versions 1/1`.
+  Census: MIPS status 1; R_CCU PPU `00010001`; PPU TVFE/TVCAP `00010000` (both
+  ON); TVTOP production routing (`fff11111`/`1`/`00011111`/`11111111`/
+  `00001111`/`fff000ef`/`11111111`); AudioTop `700`/`011a5e00`; DSP status
+  `0x120`; **lock peer `0`, own `0xaa`** (the lock works MIPS-live).
+  - The first census attempt failed before any read (a binary DT property was
+    decoded as text). The census was fixed to use an existence check and
+    rerun; the failed attempt is kept as `A2-census-attempt1-unicode-error.txt`.
+
+**Next steps (exact):**
+1. **B1:** arm `tools/serial/catch-cold-uboot.py --port /dev/ttyUSB0 --output
+   build/hdmi-warm-retention-2026-10-21/cycle1/B2-warm-catch` (it waits for
+   the next SPL), then over SSH run `systemctl reboot`. Production teardown
+   runs, and the guard permits the reboot once no HDMI owner remains. Keep
+   the teardown evidence: `journalctl -b -1` after the warm boot, matched by
+   `_BOOT_ID`.
+2. **B2:** `python3 tools/serial/warm-retention-uboot.py --port /dev/ttyUSB0
+   --output .../cycle1/B2-warm-preboot --label warm-preboot --expected-bootcmd
+   .../cycle1/bootcmd.txt --boot`. **The key result is R_CCU `0x070101ac`
+   and, if open, PPU TVFE/TVCAP state at warm preboot.**
+3. **B3:** after the warm Linux is up (expect no handoff, HDMI units skipped,
+   MIPS parked), run the census with label `B3-warm-parked`.
+4. Orderly `systemctl poweroff`. No HDMI owner is loaded on the warm path.
+5. **Cycle 2:** operator cold cycle; repeat A1/A2 into `cycle2/`. Then a SysRq-b
+   trigger using the guarded script
+   `docs/hdmi-evidence/2026-10-20-reset-controls/abrupt-reset-trigger.py.txt`
+   (arm the catcher first), then C2 (set U), C3 (census), poweroff.
+6. Curate both cycles into `docs/hdmi-evidence/2026-10-21-warm-retention/`,
+   interpret them per the design's table, then design phase D (the gated
+   warm version read).
+
+Rules that still apply:
+- Never clear GP6 or reuse GP7.
+- Read `0x070010a4`/`0x07001124` only behind an open `0x070101ac`.
+- Never read `0x07091xxx`.
+- Never read `0x0500xxxx` without TVTOP routing.
+- Never write the lock peer word.
+- One step per action, retaining UART and acknowledgments.
+- A cold cycle means unplugging serial and USB too, for at least a minute,
+  with the catcher armed *before* reconnecting.
+
+### Findings since the October 21 morning handoff (all committed)
+
+- The October 21 stall cause has two parts:
+  - **TVCAP is physically off and in reset at a logo-free cold boot.**
+    `keep-tvcap-on` hid this from genpd; boot-v4 drops it. See the
+    [extension run](hdmi-evidence/2026-10-21-dsp-access-ext-live/README.md).
+  - **The `0x0500xxxx` lock window needs TVTOP routing.** See the
+    [AudioTop stage run](hdmi-evidence/2026-10-21-dsp-access-at-live/README.md)
+    (hard lock), the [prerequisite note](hdmi-dsp-lock-window-prerequisite-2026-10-21.md)
+    and the [TVTOP stage run](hdmi-evidence/2026-10-21-dsp-access-tvtop-live/README.md)
+    (fixed).
+- **Logo-free, the lock words are readable but do not hold writes.** See the
+  [version-stage run](hdmi-evidence/2026-10-21-dsp-access-version-live/README.md)
+  and [what backs the lock](hdmi-dsp-lock-word-backing-2026-10-21.md). No
+  firmware or vendor table addresses `0x0500153x`. Hence the pivot to the
+  MIPS-live warm-retention test above.
+- Staged audit module, helper and docs: `modules/hdmi-dsp-access-audit/`,
+  `tools/hdmi/dsp-access-audit.py`, and the stage design docs
+  `docs/hdmi-dsp-*-2026-10-21.md`.
+
 ## Objective and immediate assignment
 
 Finish HDMI support for the final integrated H713 build. The user explicitly

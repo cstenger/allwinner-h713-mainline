@@ -87,6 +87,9 @@ class FakeBoard:
     def read(self, path):
         return 'boot-x\n' if path.endswith('boot_id') else None
 
+    def exists(self, path):
+        return path.endswith('h713,hdmi-boot-v1')
+
 
 def tvtop(routed):
     base = {cen.TVTOP + 0x40: 0x00011111 if routed else 0x10,
@@ -136,6 +139,17 @@ class Census(unittest.TestCase):
         values = {cen.R_CCU_PPU: 0, **tvtop(False)}
         values[cen.TVTOP + 0x40] = 0  # neither SPL-only nor routed
         self.check(values, self.ALWAYS)
+
+    def test_handoff_is_presence_not_decoded(self):
+        r = self.check({cen.R_CCU_PPU: 0, **tvtop(False)}, self.ALWAYS)
+        self.assertTrue(r['hdmi_handoff'])
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b'\x00\x8b\xff binary')
+        try:
+            self.assertIsNone(cen.Board().read(f.name))
+        finally:
+            os.unlink(f.name)
 
     def test_forbidden_window_and_no_writes(self):
         with self.assertRaises(RuntimeError):
