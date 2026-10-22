@@ -1,0 +1,36 @@
+  "event": "acknowledged",
+  "result": {
+    "state": {
+      "boot_id": "55a8aced-dc37-4c16-8d0d-70216e952ecf",
+      "schema": "h713-dsp-access-version-v1",
+      "phase": "executing",
+      "completed": 109,
+      "attempted": 110,
+      "operation": "claim-lock"
+    },
+    "kernel": {
+      "failed": "Y",
+      "released": "N",
+      "prefix_complete": "Y",
+      "extension_available": "Y",
+      "stage_complete": "N",
+      "completed": 109,
+      "attempted": 110,
+      "next_operation": "failed",
+      "last_value": 4294967295
+    }
+  }
+}
+===
+814.97 3027.82
+h713_hdmi_dsp_access_audit 24576 1 - Live 0xffff80007924f000 (O)
+failed=Y
+completed=109
+attempted=110
+last_value=4294967295
+lock_own_before=4294967295
+lock_peer_before=4294967295
+dsp_timeout=N
+dev0_outcome=0
+===WARN
+[  801.460852] h713-dsp-access-audit: FAIL step=110 error=-5 value=ffffffff; cold poweroff required

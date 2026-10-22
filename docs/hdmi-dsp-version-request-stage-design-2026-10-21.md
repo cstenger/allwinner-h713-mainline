@@ -1,6 +1,6 @@
 # Version-request stage design: one-shot `0x80ff` pair — October 21, 2026
 
-**Status: implemented and tested offline; no live run yet.** See the [preparation evidence](hdmi-evidence/2026-10-21-dsp-access-version/README.md).
+**Status: run live ([cold-version-01](hdmi-evidence/2026-10-21-dsp-access-version-live/README.md)): steps 1–109 passed; step 110 stopped because the ARM lock word did not hold `0x55` (read back `ffffffff`). No request was sent.** See the [preparation evidence](hdmi-evidence/2026-10-21-dsp-access-version/README.md).
 This continues the [TVTOP stage](hdmi-dsp-tvtop-stage-design-2026-10-21.md),
 which [passed live](hdmi-evidence/2026-10-21-dsp-access-tvtop-live/README.md).
 That run reproduced the old bench's complete `ready` state from cold with every

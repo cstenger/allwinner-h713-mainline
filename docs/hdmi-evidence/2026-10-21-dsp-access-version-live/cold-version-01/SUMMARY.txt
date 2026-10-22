@@ -1,0 +1,21 @@
+cold-version-01 — 2026-10-21 (host time), boot 55a8aced-dc37-4c16-8d0d-70216e952ecf
+Version bundle: module 393117e5…, helper 533bb60f…, guard 96f37655… (live). boot-v4.
+
+Cold catch one SPL, cold predicates 0; boot-v4 22/22 OK; boot IDs match; ext4 clean; genpd TVCAP/TVFE off-0.
+Console 5->7, panic 5->0, marker on UART.
+Steps 1-108: identical to cold-tvtop-01 (census, domains on, resets, clocks, TVFE words, AudioTop
+  0/0 -> 700/011a5e00, TVFE ctl 10, DSP status 0, cold TVTOP 10x3, routing 7/7 exact).
+  Only clock-summary difference vs cold-tvtop-01: idle GPU clock rate (600 vs 150 MHz; en=0, hw=N, domain off).
+  Lock words this boot: peer ffffffff, own ffffffff (cold-tvtop-01: fffffffe both) -> not a fixed value.
+Version stage:
+  109 check-lock-free: own_before ffffffff, peer_before ffffffff (neither 0x55) -> pass
+  110 claim-lock: writel(0x55, 0x05001534); OP-DONE printed (write completed, no hang);
+      readback ffffffff != 0x55 -> FAIL error=-5 (design: readback mismatch = hard stop)
+  No version request sent (dev0_outcome 0, dsp_timeout N). No peer write. Lock never held.
+Read-only diagnostics after failure (status-after-fail.txt): failed=Y completed=109 attempted=110; board responsive;
+  only warning is the FAIL line.
+End: orderly poweroff with module loaded; root ro; guard "poweroff with HDMI holds retained"; reboot: Power down.
+
+Conclusion: in the verified logo-free state the ARM lock word 0x05001534 is readable but NOT writable:
+a 0x55 write completes but reads back ffffffff. Lock-window values vary between boots (fffffffe / ffffffff).
+The lock window is not behaving as the stock RAM-backed handshake word it is in production (MIPS-live).
