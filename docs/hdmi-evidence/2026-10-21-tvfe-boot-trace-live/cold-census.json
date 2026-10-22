@@ -1,0 +1,42 @@
+{
+  "label": "cold-live",
+  "time": 1776109135.7572286,
+  "reads": {
+    "mips_status": "00000001",
+    "r_ccu_ppu": "00010001",
+    "ppu_tvfe": "00010000",
+    "ppu_tvcap": "00010000",
+    "tvtop_40": "00011111",
+    "tvtop_44": "11111111",
+    "tvtop_80": "00001111",
+    "tvtop_00": "fff11111",
+    "tvtop_04": "00000001",
+    "tvtop_84": "fff000ef",
+    "tvtop_88": "11111111",
+    "audiotop_ctl": "00000700",
+    "audiotop_cfg": "011a5e00",
+    "dsp_status": "00000120",
+    "lock_peer": "00000000",
+    "lock_own": "000000aa"
+  },
+  "skipped": [],
+  "boot_id": "d7017dce-174d-4795-bf23-0049f73f04b4",
+  "hdmi_handoff": true,
+  "units": {
+    "capture": "active",
+    "signal": "active",
+    "speaker": "active"
+  },
+  "dsp_journal": [
+    "[   18.375069] h713-arm64 kernel: h713-hdmi-audio: DSP versions 0000/0000",
+    "[   19.296044] h713-arm64 kernel: h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1"
+  ],
+  "h713_modules": [
+    "h713_ddc_pins",
+    "h713_hdmi_audio",
+    "h713_hdmi_receiver",
+    "h713_hdmi_signal"
+  ],
+  "tv_domains_both_on": true,
+  "tvtop_routed": true
+}

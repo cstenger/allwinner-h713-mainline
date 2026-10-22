@@ -1,7 +1,9 @@
 # Locate TVFE OFF during boot — prepared October 21, 2026
 
-**Status: built and tested offline; not installed or run. Board remains
-unpowered as confirmed by the operator. No catcher is armed.**
+**Status: first RAM-kernel stage run; TVFE OFF localized to genpd provider
+sync-state.** See [live results](hdmi-evidence/2026-10-21-tvfe-boot-trace-live/README.md).
+Board ended in orderly poweroff; no catcher is armed. The optional U-Boot
+proper remains uninstalled. The following is the pre-run design.
 
 The [preceding diagnostic](hdmi-evidence/2026-10-21-warm-prelogo-ppu/README.md)
 found TVFE ON at a warm prompt after one logo invocation, but OFF in Linux.

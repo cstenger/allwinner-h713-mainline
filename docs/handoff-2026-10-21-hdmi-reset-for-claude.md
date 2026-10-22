@@ -2,6 +2,25 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**TVFE OFF writer FOUND; diagnostic live run complete; board OFF.**
+[Live trace and interpretation](hdmi-evidence/2026-10-21-tvfe-boot-trace-live/README.md).
+Cold boot `d7017dce` passed DSP `0/0` → verified `1/1` with both domains ON.
+After orderly warm reset, both domains were ON before the logo and at final
+U-Boot sampling. Diagnostic Linux boot `73c7ebcb` kept TVFE ON through early
+init and every PPU init write. At ~7.35 s, deferred-probe **`genpd_sync_state`
+called the TVFE power-off callback**; the explicit `domain=TVFE hw=1 on=0`
+command is bracketed by `00010000` → `00020002`. TVCAP stayed ON.
+`pd_ignore_unused` suppresses the late unused sweep, **not provider sync-state**.
+Full stack, exact-boot journal, source excerpts and complete kernel coverage
+are curated. One warm-logo success was fully captured. Optional proper was
+not installed; only a diagnostic FIT was staged separately and RAM-booted.
+Orderly poweroff ended boot `73c7ebcb` with UART `reboot: Power down`.
+No catcher remains armed. Next: design a narrowly scoped bench retention
+policy to prevent this observation-induced TVFE OFF, then the warm DSP
+version-read sequence. DSP retention and automatic HDMI recovery remain
+unmeasured/unimplemented. Analyzer now accepts identical console-banner
+replay; 15 offline tests pass. See the live record for limits.
+
 **Next diagnostic PREPARED OFFLINE; board remains unpowered; no catcher armed.**
 [TVFE boot trace design/runbook](hdmi-tvfe-boot-trace-design-2026-10-21.md),
 [build/test evidence](hdmi-evidence/2026-10-21-tvfe-boot-trace-preparation/README.md).
