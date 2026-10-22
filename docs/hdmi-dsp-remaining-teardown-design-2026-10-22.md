@@ -1,6 +1,10 @@
 # Remaining teardown versus reset — next diagnostic design, October 22
 
-**Source-reviewed design and takeover instructions; not an executable candidate.**
+**Status (Claude, October 22): Phase A is implemented, built and offline-verified** —
+see [preparation evidence](hdmi-evidence/2026-10-22-dsp-teardown-a-preparation/README.md).
+Phases B and C below remain design only.
+
+**Source-reviewed design and takeover instructions.**
 The user confirmed the board is fully unplugged after matched boundary arm 2.
 No capture is armed. No hardware access, new module build, board staging or
 reset was performed while preparing this document. Claude must implement,

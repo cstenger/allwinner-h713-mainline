@@ -2,6 +2,45 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**October 22: Phase A bench BUILT and offline-verified (Claude); board still
+unplugged; no catcher armed; no power requested.**
+[Preparation evidence](hdmi-evidence/2026-10-22-dsp-teardown-a-preparation/README.md).
+New isolated candidate `build/hdmi-dsp-teardown-a-2026-10-22/candidate/`
+(old owner candidate untouched). 37 one-shot steps, six version pairs:
+positive → common graph restore (both arms) → SPDI1 restore → bridge restore
+→ AudioTop config → AudioTop control off/on, each followed by a pair; first
+changed/echo/timeout pair is terminal. Sham performs identical reads/waits
+but no SPDI/bridge/AudioTop writes. W=1 build clean against the unchanged
+production kernel; module `cffa83e6…`; 26 new tests (real includes on fake
+MMIO, 13 mutations caught) plus 43 regressions pass. New DT marker
+`h713,dsp-teardown-a-v1`, bootarg `h713_teardown_a=1`, state schema
+`h713-teardown-a-v1`; old sham cannot qualify this module.
+
+**Next: arm 1 (new sham) on a fresh cold cycle, then arm 2 on another.**
+Runbook per cycle (`R` = new `docs/hdmi-evidence/<date>-dsp-teardown-a-<sham|teardown>-live`,
+whose name is also the remote bundle directory under
+`/root/hdmi-dsp-teardown-a-2026-10-22/`):
+1. Board fully unplugged ≥1 min (user confirms). Write `R/capture-plan.json`
+   with `arm` (1 or 2), candidate path, manifest/module/script hashes, and
+   for arm 2 the sham `snapshot-37.json` path and canonical hash.
+2. Start the sole catcher in the background:
+   `tools/serial/catch-cold-uboot.py --port /dev/ttyUSB0 --output R/cold-catch`;
+   confirm `OPEN` in `R/cold-catch/events.log`; only then ask for power.
+3. At the captured prompt: `tools/serial/run-dsp-teardown-cold.py --prepared
+   <candidate> --cold-catch R/cold-catch/serial.log --arm N [--sham-record …]
+   --port /dev/ttyUSB0 --output R/cold-boot` (one launch, never repeated).
+   Check source3, 720p re-latch and handoff in `R/cold-boot/serial.log`.
+4. Wi-Fi `spirits`, then `tools/hdmi/dsp-teardown-a-host.py --run R`:
+   `health-stage`; `uart` (background, sole reader); `snapshot`;
+   `initialize`; then for n = 1…37: `step n <ack>` where `<ack>` is
+   the stage name of the previous step if it is in `STAGES` (see
+   `tools/hdmi/dsp-teardown-a.py`), and `snapshot` after every staged step.
+   Stop at `terminal`. Then `export`, `poweroff`; confirm UART
+   `reboot: Power down`; `touch R/stop-steps-uart`.
+5. Arm 2 only after `analyze-dsp-teardown-a.py` gives
+   `sham_positive_control_passed` on the sham's terminal snapshot.
+Do not continue to Phase B on a cycle that ends in a changed pair/timeout.
+
 **October 22: CLAUDE TAKEOVER — board fully unplugged, user confirmed.**
 No running capture, UART reader, SSH diagnostic or bench operation. Last
 completed run is matched boundary arm 2, commit `57c6328`; it preserved
