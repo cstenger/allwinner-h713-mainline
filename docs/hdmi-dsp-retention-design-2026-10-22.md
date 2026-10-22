@@ -1,8 +1,11 @@
 # Warm DSP patch retention diagnostic — October 22, 2026
 
-**Prepared and built offline; not installed or run. Board remains shut down.
-No UART catcher is armed.** Preparation began October 21; the experiment
-directory retains that date. Use **`candidate-v2`**, not the earlier prototype.
+**Live run completed October 22: both DSP requests completed with versions
+`0/0`, TVFE held ON, no timeout. Board ended in orderly poweroff; recorder
+closed. Bench shutdown hook remains installed with exact original backup.**
+[Live result and restoration details](hdmi-evidence/2026-10-22-dsp-retention-live/README.md).
+Preparation began October 21; the experiment directory retains that date.
+Use **`candidate-v2`**, not the earlier prototype.
 
 The [last live trace](hdmi-evidence/2026-10-21-tvfe-boot-trace-live/README.md)
 proved that Linux provider sync-state explicitly powers TVFE OFF after its

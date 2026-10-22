@@ -2,6 +2,32 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+
+**October 22: DSP retention live diagnostic COMPLETE; board OFF.**
+[Live evidence and interpretation](hdmi-evidence/2026-10-22-dsp-retention-live/README.md).
+Cold production boot `96cae8c6` established DSP `0/0` → pinned patch verified
+`1/1`, active owners and both domains ON. One orderly warm reset and one
+successful normal warm logo preceded RAM-only diagnostic boot `9fd2d002`.
+TVFE hold was eligible/applied; no TVFE power command or violation occurred.
+All 46 explicit operations passed: stock lock claim/release verified, both
+`0x80ff` requests completed and returned **`0/0`**, no timeout or retry.
+Final hold valid, both domains ON, owners inactive. Thus patched versions did
+not survive this tested warm-access path even without Linux powering TVFE
+OFF. This is **not direct DSP RAM-erasure proof**: demod bus reset initially
+asserted and was released; AudioTop control/config were `0/0`, requiring the
+known three-step setup. Warm-logo and interface startup effects remain to
+be separated before attributing first loss to reset. No new patch/graph,
+DSP reset assertion, source3 relaunch or GP6/GP7 writes occurred.
+UART confirms orderly `reboot: Power down` at 696.521177 s; recorder closed.
+**Bench shutdown hook remains installed**, with exact original mode-0755
+backup at `/root/hdmi-dsp-retention-2026-10-21/previous-hold-guard` (also in
+live evidence). Restore only after a fully disconnected cold normal boot
+without retain flag and hash verification. Normal FIT/script/environment/
+bootloader unchanged. Next: offline review/design to separate early warm
+reset/logo/interface effects; new bench trial requires fresh cold baseline.
+Automatic HDMI recovery remains unproven; production one-launch policy stays.
+
+
 **October 22: next DSP-retention diagnostic PREPARED OFFLINE; board remains
 shut down; no catcher armed.**
 [Design/runbook](hdmi-dsp-retention-design-2026-10-22.md),

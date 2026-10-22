@@ -1,0 +1,92 @@
+{"event": "before-step", "boot": "9fd2d002-951b-43d8-a656-eec7cc02c995", "number": 13, "operation": "stock-ccu-d28"}
+{
+  "warm_boot_id": "9fd2d002-951b-43d8-a656-eec7cc02c995",
+  "state": {
+    "schema": "h713-dsp-retention-v1",
+    "step": 13,
+    "attempted": 13,
+    "hold": 1,
+    "violated": 0,
+    "failed": 0,
+    "timeout": 0,
+    "claimed": 0,
+    "interface_inherited": 0,
+    "ctl_before": 0,
+    "cfg_before": 0,
+    "outcome0": 0,
+    "outcome1": 0,
+    "raw0": 4294967295,
+    "raw1": 4294967295,
+    "last": 2147483650,
+    "demod_before": 1,
+    "tv_before": [
+      16777221,
+      0,
+      7,
+      2,
+      5,
+      4,
+      4,
+      11,
+      522,
+      2,
+      2,
+      7,
+      2,
+      523,
+      523
+    ]
+  },
+  "baseline": {
+    "label": "cold-production",
+    "time": 1776109112.301158,
+    "reads": {
+      "mips_status": "00000001",
+      "r_ccu_ppu": "00010001",
+      "ppu_tvfe": "00010000",
+      "ppu_tvcap": "00010000",
+      "tvtop_40": "00011111",
+      "tvtop_44": "11111111",
+      "tvtop_80": "00001111",
+      "tvtop_00": "fff11111",
+      "tvtop_04": "00000001",
+      "tvtop_84": "fff000ef",
+      "tvtop_88": "11111111",
+      "audiotop_ctl": "00000700",
+      "audiotop_cfg": "011a5e00",
+      "dsp_status": "00000120",
+      "lock_peer": "00000000",
+      "lock_own": "000000aa"
+    },
+    "skipped": [],
+    "boot_id": "96cae8c6-c621-4133-b416-0583ae9ca996",
+    "hdmi_handoff": true,
+    "units": {
+      "capture": "active",
+      "signal": "active",
+      "speaker": "active"
+    },
+    "dsp_journal": [
+      "[   18.316925] h713-arm64 kernel: h713-hdmi-audio: DSP versions 0000/0000",
+      "[   19.240057] h713-arm64 kernel: h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1"
+    ],
+    "h713_modules": [
+      "h713_ddc_pins",
+      "h713_hdmi_audio",
+      "h713_hdmi_receiver",
+      "h713_hdmi_signal"
+    ],
+    "tv_domains_both_on": true,
+    "tvtop_routed": true
+  },
+  "preflight_valid": true,
+  "monotonic_ns": 221421884355,
+  "analysis": {
+    "classification": "inconclusive",
+    "patch_version_survives_tested_warm_path": null,
+    "versions": null,
+    "dsp_ram_erasure": "not directly measured",
+    "automatic_hdmi_recovery": "unproven",
+    "audiotop_was_inherited": false
+  }
+}
