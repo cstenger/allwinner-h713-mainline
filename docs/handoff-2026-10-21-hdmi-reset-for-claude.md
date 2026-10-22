@@ -2,7 +2,7 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
-**In progress: warm-retention test, cycle 1 (orderly reboot): B1 and B2 done, B3 next.**
+**In progress: warm-retention test, cycle 1 (orderly reboot): B1–B3 done; poweroff, then cycle 2 (abrupt).**
 Design: [warm-retention test](hdmi-warm-retention-test-design-2026-10-21.md).
 Tools: `tools/serial/warm-retention-uboot.py` (U-Boot set U) and
 `tools/hdmi/warm-retention-census.py` (Linux set L, read-only, streamed with
@@ -47,6 +47,22 @@ Done so far in cycle 1:
   default.** The PPU was not read, as designed. This shows the R_CCU was
   reset; it does not by itself prove the TV power switches dropped. Then
   `boot` was sent; the board should be booting the production warm branch.
+
+- **B3 warm-parked** (`cycle1/B3-census.json`, boot `4062c792-2301-44df-84c7-22235e7b9162`):
+  MIPS parked (0), no handoff, HDMI units inactive, no h713 modules. R_CCU
+  PPU `00010001` (reopened by Linux). **PPU TVFE `00020000` (OFF), TVCAP
+  `00010000` (ON)**; both were ON in A2. TVTOP fully routed by the warm logo
+  path. **Lock peer `0`, own `0`**: own was `0xaa` before the reboot, so it
+  was cleared across reset and logo, and it reads like functional storage
+  again (not the logo-free all-ones). AudioTop/DSP status skipped by the gate
+  (TVFE off).
+  - **Caveat:** TVFE OFF may come from production's orderly teardown, which
+    releases the receiver domain references, not from the reset itself.
+    TVCAP is retained by `keep-tvcap-on`. **Cycle 2 (abrupt, no teardown)
+    discriminates.**
+  - The cold boot's journal was not found in the board's boot list (boot
+    clock resets): `cycle1/B3-journal-boot-check.txt`. Teardown evidence is
+    therefore only the B1 request plus the UART `reboot: Restarting system`.
 
 **Next steps (exact):**
 1. ~~B1~~ done. (Original instructions kept for cycle 2:) arm `tools/serial/catch-cold-uboot.py --port /dev/ttyUSB0 --output
