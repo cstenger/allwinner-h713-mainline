@@ -1,6 +1,6 @@
 # MIPS-live warm-retention test design — October 21, 2026
 
-**Status: phases A–C tooling implemented offline; not run.**
+**Status: phases A–C RUN; see [results](hdmi-evidence/2026-10-21-warm-retention/README.md). Both resets: R_CCU PPU bus reset to 0; warm-parked TVFE OFF, TVCAP ON, lock cleared. DSP retention not yet measured; phase D pending.**
 - `tools/serial/warm-retention-uboot.py`: the U-Boot runner, set U. It allows
   only `printenv bootcmd`, `md.l` of the three addresses, and `boot`. The PPU
   is read only behind an open bus-r-ppu gate and reset. `--record-bootcmd` /

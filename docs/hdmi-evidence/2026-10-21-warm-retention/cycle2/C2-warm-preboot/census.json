@@ -1,0 +1,10 @@
+{
+  "bootcmd": "if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi",
+  "bootcmd_sha256": "b88572b52e20b7fa35fee4d287ffca32526b5a399329eb8499ae92cea4950911",
+  "r_ccu_ppu": "00000000",
+  "ppu_bus_open": false,
+  "ppu_tvfe": null,
+  "ppu_tvcap": null,
+  "ppu_skipped": "bus-r-ppu gate/reset not open; PPU not read",
+  "label": "abrupt-warm-preboot"
+}

@@ -2,7 +2,7 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
-**Warm-retention test phases A–C: BOTH CYCLES COMPLETE; board OFF** (orderly poweroff from boot `4f760916`, UART `reboot: Power down`). Raw data is in `build/hdmi-warm-retention-2026-10-21/cycle{1,2}/`, **not yet curated or committed as evidence**.
+**Warm-retention test phases A–C: BOTH CYCLES COMPLETE; board OFF** (orderly poweroff from boot `4f760916`, UART `reboot: Power down`). Curated evidence: [warm-retention results](hdmi-evidence/2026-10-21-warm-retention/README.md) (raw copies remain in `build/hdmi-warm-retention-2026-10-21/`).
 
 **Results (identical for orderly and abrupt reset):**
 
@@ -25,8 +25,7 @@ Interpretation:
   DSP RAM is in TVFE, its power-down would erase the patch (inference only).
 
 **Next steps:**
-1. Curate `cycle1`/`cycle2` into `docs/hdmi-evidence/2026-10-21-warm-retention/`
-   (README, sha256, results table above). Mark the design doc's status.
+1. ~~Curate~~ done.
 2. **Separate "reset powers TVFE off" from "U-Boot warm branch powers TVFE
    off":** at warm preboot, the PPU bus is closed. Options: (a) a single
    reviewed U-Boot write opening bus-r-ppu (`0x070101ac` ← `0x00010001`, the
