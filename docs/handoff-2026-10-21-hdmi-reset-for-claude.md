@@ -3,6 +3,37 @@
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
 
+**October 22 afternoon: fresh control-only replication COMPLETE; board OFF;
+recorder closed. Control-only access sufficiency replicated in two cycles.**
+[Replication evidence](hdmi-evidence/2026-10-22-dsp-minimum-control-replication/README.md).
+Full cold SPL captured this time: GP6/GP7 zero, MIPS parked, unchanged
+bootcmd. Fresh production boot `47702c3c` verified DSP `0/0` → pinned
+patch `1/1`, active owners and both domains ON. One checked/captured warm
+reset and one successful lamp-off warm logo preceded the same exact
+minimum FIT/kernel at fixed level 1, warm boot `cb320a62`.
+All 58 steps passed. AudioTop initial `0/0`, control `0x700` readback,
+config/latch skipped. Both single version requests completed, returning
+**`0/0`**, phase `[5,5]`, sent/outcomes `[1,1]`, statuses `20/120`, no timeout.
+Lock released; terminal hold/domain/interface/exact `700/0` checks and
+certain ledger passed. Entire terminal observer state is identical to
+live-control-02, including reset/clock/routing context and responses.
+No TVFE power command or violation. Full step UART audited once/in order;
+records exported and checksum verified before checked poweroff.
+UART `reboot: Power down` at 306.378926 s; user instructed to physically
+disconnect and leave board off. Host Wi-Fi/SSH worked after both boots.
+No individual-bit minimum or reset RAM-erasure claim. Loss interval still
+includes reset/early boot, warm logo, interface/demod-reset preparation and
+control write. Next: design a no-reset patched positive control and matched
+boundary trial using the replicated control-only access recipe. Levels 2/3
+are unnecessary for sufficiency; no extra request/no-logo/reboot in this boot.
+Normal boot files/environment/bootloader unchanged; bench guard and original
+mode-0755 backup preserved. Restore only after cold normal boot/hash checks.
+Work directory `build/hdmi-dsp-minimum-2026-10-22/live-control-03/`;
+previous completed board staging archived as
+`/root/hdmi-dsp-minimum-2026-10-22-previous-68081628`. No automatic recovery
+or production one-launch policy changes.
+
+
 **October 22 afternoon: control-only AudioTop trial COMPLETE; board OFF;
 recorder closed. Host Wi-Fi works after the user restarted both machines.**
 [Live evidence](hdmi-evidence/2026-10-22-dsp-minimum-control-live/README.md).

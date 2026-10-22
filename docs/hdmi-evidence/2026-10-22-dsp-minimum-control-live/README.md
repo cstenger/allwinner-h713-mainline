@@ -50,6 +50,11 @@ not replaced. Only the RAM diagnostic boot changed the live kernel/DT.
 
 ## Interpretation and next work
 
+**Subsequent update:** [fresh cold-cycle replication](../2026-10-22-dsp-minimum-control-replication/README.md)
+completed with the same `0/0` response pair and identical final observer
+state, now including cold SPL capture. The replication requested below is
+complete; next work is the positive control/matched boundary design.
+
 Control `0x700` is sufficient for completed access under this tested warm
 path. No config or latch write is required to observe zero versions here;
 those later writes cannot be the only necessary cause of the observed loss.

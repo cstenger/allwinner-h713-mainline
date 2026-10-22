@@ -1,15 +1,18 @@
 # Minimum AudioTop setup for DSP version access — October 22, 2026
 
-**Level 1 completed October 22: control `0x700` alone completed both DSP
-version reads, returning `0/0`, with no timeout. Board powered down; recorder
-closed.** [Live evidence](hdmi-evidence/2026-10-22-dsp-minimum-control-live/README.md).
-All 58 steps and terminal checks passed. Configuration/latch writes were
-skipped; exact final control/config `700/0` verified. This proves sufficiency
-in one warm trial; replicate in a fresh disconnected cold cycle before
-adopting a stable recipe. Reset/early boot, warm logo, interface preparation
-and the control write remain within the patch-loss interval. The cold SPL
-was not captured in this run because the user had already powered the board;
-the fresh production baseline and entire warm reset were recorded.
+**Level 1 sufficiency replicated October 22: control `0x700` alone completed
+both DSP version reads, returning `0/0` without timeout in two separate cold
+cycles. Board powered down; recorder closed.**
+[First trial](hdmi-evidence/2026-10-22-dsp-minimum-control-live/README.md),
+[replication](hdmi-evidence/2026-10-22-dsp-minimum-control-replication/README.md).
+Both trials passed all 58 steps with configuration/latch writes skipped,
+exact final control/config `700/0`, and identical terminal observer state.
+The replication captured the full cold SPL, addressing the first trial's
+missing cold capture. Control-only access is sufficient under the tested
+one-logo warm path; minimum individual bits and patch-loss timing remain
+unresolved. Next work is a no-reset patched positive control and a matched
+boundary experiment. Reset/early boot, warm logo, interface preparation and
+the control write remain inside the loss interval.
 
 The [boundary trial](hdmi-evidence/2026-10-22-dsp-boundary-one-logo-live/README.md)
 failed before AudioTop setup: device 0 timed out, status `0x10`, no completed
