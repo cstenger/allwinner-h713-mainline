@@ -79,7 +79,12 @@ solution has not been demonstrated.
   `cold-version-01` (boot `55a8aced-dc37-4c16-8d0d-70216e952ecf`): steps 1–109
   passed. A `0x55` write to `0x05001534` completed but read back `ffffffff`, so
   the claim stopped the run before any DSP request. Lock-word cold values vary
-  per boot. Next: offline investigation of what backs the lock in production.
+  per boot. Offline follow-up:
+  [what backs the lock words](hdmi-dsp-lock-word-backing-2026-10-21.md). No
+  firmware or vendor table addresses `0x0500153x`; the leading candidate is
+  that the composition block is not running without MIPS. The note proposes
+  a read-only two-state census and recommends asking the warm-reset version
+  question on the MIPS-live path.
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
 - The last Linux boot was `55a8aced-dc37-4c16-8d0d-70216e952ecf` (ended by
