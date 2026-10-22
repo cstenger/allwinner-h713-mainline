@@ -3,6 +3,36 @@
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
 
+**October 22: no-reset patched positive-control SHAM COMPLETE — PASS.**
+[Live evidence](hdmi-evidence/2026-10-22-dsp-owner-sham-live/README.md).
+All four measured version pairs completed **`1/1`**: eight single requests,
+phase/outcome/sent `[5,5]/[1,1]/[1,1]`, full responses `00000001`, statuses
+`00000120` for both devices throughout. All 25 explicit steps and UART
+BEGIN/DONE checked once/in order; no timeout, failure, skip or uncertainty.
+AudioTop remained `700/011a5e00`, all 22 graph values held, saved words
+unchanged. Terminal lock released, resources pinned, both domains ON.
+Fresh production boot `dcfe762c-9cb5-44ca-a546-049f03e2a1fd`, one captured
+cold SPL/source3/handoff and initial-zero → pinned-patch `1/1` setup.
+No graph/AudioTop change, reset, warm logo or teardown after patching.
+Exact module/script/manifest unchanged from preparation; Wi-Fi/SSH worked.
+Export verified on host: 264868 bytes, SHA-256
+`1362d88effaceb1e82df5996f9deecd4655d70b4ad762f23be30ae4d240c7bf5`.
+Checked poweroff, UART `reboot: Power down` at 414.276830 seconds, recorder
+closed. User instructed to physically unplug and leave off; disconnection
+not yet confirmed. No active capture or arm-2 initialization.
+Use exact exported successful sham:
+`docs/hdmi-evidence/2026-10-22-dsp-owner-sham-live/board-export/snapshot-25.json`.
+Canonical sorted-JSON-plus-newline hash
+`eb31e9e00a49666804f1f3cfe7060b2251152da655a1c01d337823ff2f728fa6`.
+Next is **arm 2**, separate disconnected cold cycle >=1 minute, same prepared
+candidate and exact sham, fresh boot ID/proof and matching baseline/saved
+22 graph words. Follow runbook; graph restore → pair, config clear → pair,
+control off/on → pair; stop at first change/timeout. No automatic capture
+armed. This pass qualifies access/control and does not establish reset
+retention or locate loss yet. One matched run remains in this batch,
+usually one further confirmation if clear. Guard/original backup unchanged.
+
+
 **October 22: no-reset patched positive control / matched shutdown-prefix
 batch PREPARED OFFLINE; board OFF; no capture armed.**
 [Design/runbook](hdmi-dsp-owner-boundary-design-2026-10-22.md),
