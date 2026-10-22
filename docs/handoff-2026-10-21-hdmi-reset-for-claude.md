@@ -2,6 +2,22 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**Next diagnostic PREPARED OFFLINE; board remains unpowered; no catcher armed.**
+[TVFE boot trace design/runbook](hdmi-tvfe-boot-trace-design-2026-10-21.md),
+[build/test evidence](hdmi-evidence/2026-10-21-tvfe-boot-trace-preparation/README.md).
+`build/hdmi-tvfe-boot-trace-2026-10-21/candidate/` contains a built diagnostic
+kernel FIT and optional U-Boot proper. The first run RAM-loads only the kernel
+under installed U-Boot. Opt-in `h713_tvfe_trace=1` samples early Linux, PPU
+probe, each original init write and power callbacks; TVFE OFF callbacks dump
+their caller/stack. Both builds pass; 13 new tests and 19 regressions pass;
+production DTB and exported symbol versions unchanged. Exact kernel base is
+`edffad3…` (October 16 Image); historical `da2bc49…` has identical PPU source
+but an older Image. Guarded RAM runner verifies warm state and loaded CRC,
+sets `panic=0`, and records a fixed-duration UART log. Optional proper adds
+read-only bootm cleanup samples, but is **not installed and has no new
+installation/rollback package**. No live operations were performed during
+this preparation. Read the runbook before requesting power.
+
 **Codex live continuation COMPLETE; board OFF.**
 [Pre-logo PPU results](hdmi-evidence/2026-10-21-warm-prelogo-ppu/README.md):
 from production boot `fe51947d` (DSP `0/0` then patch `1/1`), orderly reboot
