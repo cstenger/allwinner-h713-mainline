@@ -3,6 +3,34 @@
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
 
+**October 22: boundary one-logo trial ENDED INCONCLUSIVE; board OFF;
+recorder closed.**
+[Live evidence](hdmi-evidence/2026-10-22-dsp-boundary-one-logo-live/README.md).
+Cold production `013a628c` verified DSP `0/0` → pinned patch `1/1` with both
+TV domains ON and all owners active. One orderly warm reset/one successful
+warm logo preceded RAM boundary kernel `#4`, boot `5b3937e4`. Hold eligible/
+applied, no TVFE power command. Steps 1–51 passed: clocks/routing verified,
+demod reset released; display/TVCAP reset already released; no routing
+writes; AudioTop census `0/0`; stock lock claim verified; DSP status idle.
+**First pre-AudioTop device-0 attempt at step 52 timed out**, status `0x10`
+(busy bit 4 set, done bit 5 clear), outcome 2, raw unknown `ffffffff`.
+Device 1 was skipped (outcome 3), lock release/final check passed at 55.
+No step 56+, no AudioTop setup, request retry or no-logo trial. Analyzer
+reports inconclusive; no completed version pair. Current trace cannot
+separate initial-busy timeout from post-command done timeout: at most one
+command write, not a proven command-sent event. Do not treat unknown as zero.
+UART confirms `reboot: Power down` at 436.198947 s. Lamp stayed off; display
+DT node disabled, so no normal DRM panel-shutdown callback. User must fully
+disconnect power before another trial. Existing bench guard/original backup
+remain unchanged; boundary bundle/boot-bound arm proof staged separately.
+Normal FIT/script/environment/bootloader unchanged. Next: separately design
+minimum-interface qualification with explicit wait/command-sent phases and
+ultimately a no-reset patched positive control. Pre-AudioTop access is not
+qualified, so do not advance to no-logo or add setup after this timeout.
+Patch-loss location and automatic warm recovery remain unresolved.
+
+
+
 **October 22: next reset/logo/AudioTop diagnostic PREPARED OFFLINE; board OFF;
 no capture armed.**
 [Design/runbook](hdmi-dsp-boundary-design-2026-10-22.md),

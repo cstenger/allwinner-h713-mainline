@@ -1,7 +1,11 @@
 # Separating reset, warm-logo and AudioTop effects — October 22, 2026
 
-**Prepared offline; not installed or run. Board remains shut down after the
-previous diagnostic. No UART capture is armed.**
+**One-logo live run ended at step 55 after the pre-AudioTop device-0 attempt
+TIMED OUT. No completed version pair; no AudioTop writes; no-logo arm not
+run. Board ended in orderly poweroff and UART recorder closed.**
+[Live evidence and next diagnostic requirement](hdmi-evidence/2026-10-22-dsp-boundary-one-logo-live/README.md).
+The runbook below records the tested design; pre-AudioTop qualification
+failed, so do not advance to its no-logo arm or retry this path unchanged.
 
 The [previous live run](hdmi-evidence/2026-10-22-dsp-retention-live/README.md)
 returned completed DSP versions `0/0` after an orderly reset, one warm logo

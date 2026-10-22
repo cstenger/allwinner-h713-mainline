@@ -1,0 +1,25 @@
+{
+  "before": {
+    "bootcmd": "if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi",
+    "bootcmd_sha256": "b88572b52e20b7fa35fee4d287ffca32526b5a399329eb8499ae92cea4950911",
+    "r_ccu_ppu": "00010001",
+    "ppu_bus_open": true,
+    "ppu_tvfe": "00010000",
+    "ppu_tvfe_state": "on",
+    "ppu_tvcap": "00010000",
+    "ppu_tvcap_state": "on"
+  },
+  "final": {
+    "bootcmd": "if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi",
+    "bootcmd_sha256": "b88572b52e20b7fa35fee4d287ffca32526b5a399329eb8499ae92cea4950911",
+    "r_ccu_ppu": "00010001",
+    "ppu_bus_open": true,
+    "ppu_tvfe": "00010000",
+    "ppu_tvfe_state": "on",
+    "ppu_tvcap": "00010000",
+    "ppu_tvcap_state": "on"
+  },
+  "bootargs": "console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=0 clk_ignore_unused pd_ignore_unused cma=128M h713_tvfe_trace=1 loglevel=7 h713_tvfe_retain=1 h713_dsp_boundary=1",
+  "fit_sha256": "bbadfaaa28b299ee6d4d4e514e9d38c2f11e180b7f8171aaeaca1d289e171a83",
+  "arm": "one-logo"
+}

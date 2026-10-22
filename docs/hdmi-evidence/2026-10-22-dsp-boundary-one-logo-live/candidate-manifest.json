@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "purpose": "bench DSP boundary attribution; not installed",
+  "base": "/home/chris/Projects/h713/build/hdmi-tvfe-boot-trace-2026-10-21/candidate",
+  "baseline": {
+    "kernel_config": "1b2b9392fd8801b8199e20c6e09638b15b80efd77b866b5d237daa4d98ea8522",
+    "kernel_image": "ada92f56dd892eab8c4a4bf76e6d92ce609e6e620daccf8de2b419c5aae35d29",
+    "kernel_symvers": "c70895af49e62c1821f8a1e1e22f518b365761f256f9842eb59a528107356f70",
+    "dtb": "4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940",
+    "uboot_config": "ea0d027d55758b4e86a4f1ade4db7cc45c52db079d9a10925aeb7723361443f9",
+    "uboot_binary": "e16ede6254491ea59fbcf36e8a295d744e6bc3a73d5b9594818c8530a97c72f9"
+  },
+  "built": true,
+  "base_source_sha256": "3b5c2b2303d5c0c8b4a4917b5f25ef774ec135220a27530bf4d92734f99e60f4",
+  "patched_source_sha256": "25641dfbdbafbe2e1b467f3024aa1e385980f58462946af2c7e2fed7bfbd8cf0",
+  "assets": {
+    "observer.inc": "279e9aa67f16afbb56e5909ab9f5bff68247677d3c7e8770ab714c030a8defb5",
+    "native-test.c": "36d6f5a5ae258153ea4b17e5129e4eece45c635549c9f3b02b7986846d7ccb38"
+  },
+  "guard_previous_expected_sha256": "96f37655b33bf78d95b33fa4f431721be5a7506c73c12dcd4df58032cad27113",
+  "requires": [
+    "h713_tvfe_trace=1",
+    "h713_tvfe_retain=1",
+    "panic=0",
+    "loglevel=7",
+    "h713_dsp_boundary=1"
+  ],
+  "bundle": {
+    "dsp-boundary.py": "5990213a29159b0cebef75dd65ac1b5cb9cc10dea51340d754c1f715945b648f",
+    "analyze-dsp-boundary.py": "466016781a6af0ac8d73953a9825a320e88660021e3a2d27451394e566862acd",
+    "h713-hdmi-hold-guard": "5ad26677ac791d2be659db88165d689d997705f45ee4d516015e786342ad764d",
+    "kernel.fit": "bbadfaaa28b299ee6d4d4e514e9d38c2f11e180b7f8171aaeaca1d289e171a83"
+  },
+  "build_command": [
+    "make",
+    "-C",
+    "/home/chris/Projects/h713/build/hdmi-dsp-boundary-2026-10-22/candidate/kernel",
+    "ARCH=arm64",
+    "LLVM=1",
+    "-j12",
+    "Image",
+    "modules"
+  ],
+  "compiler": "clang version 23.1.3\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n",
+  "kernel_release": "6.18.38",
+  "symvers_unchanged": true,
+  "kernel_uts_version": "#4 SMP Thu Oct 22 01:01:15 PDT 2026",
+  "retention_base": "/home/chris/Projects/h713/build/hdmi-dsp-retention-2026-10-21/candidate-v2",
+  "observer_sha256": "279e9aa67f16afbb56e5909ab9f5bff68247677d3c7e8770ab714c030a8defb5",
+  "disabled_nodes": [
+    "/soc/display@5600000",
+    "/soc/cpu-comm@3003000"
+  ],
+  "dt_marker": "424e4431",
+  "artifacts": {
+    "Image.gz": {
+      "size": 7718569,
+      "sha256": "5214e11ad75bf5072aae26f5a4b36109dc2835e54266099b132d5afdabcb0042"
+    },
+    "board.dtb": {
+      "size": 34711,
+      "sha256": "b789b4c9119dd7710c6e45a15e10d9e3098d47a0fbfd91d19170eabed1c0ec6a"
+    },
+    "kernel.its": {
+      "size": 860,
+      "sha256": "1ae50b68de3c5f0c7db87642fe21b59483515c0b8784baa02569931df0c530ba"
+    },
+    "kernel.fit": {
+      "size": 7754288,
+      "sha256": "bbadfaaa28b299ee6d4d4e514e9d38c2f11e180b7f8171aaeaca1d289e171a83"
+    }
+  }
+}
