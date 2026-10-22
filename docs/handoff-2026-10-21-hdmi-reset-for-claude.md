@@ -3,6 +3,37 @@
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
 
+**October 22: minimum AudioTop diagnostic PREPARED OFFLINE; board OFF;
+no capture armed.**
+[Runbook](hdmi-dsp-minimum-design-2026-10-22.md),
+[build and tests](hdmi-evidence/2026-10-22-dsp-minimum-preparation/README.md).
+Use `build/hdmi-dsp-minimum-2026-10-22/candidate/`: FIT SHA-256
+`e1b475a8cb66ba86846a30dc8845c6cb0e76c8459f0d2bc2f3ba47edf63d8aeb`,
+exact kernel `6.18.38 #4 SMP Thu Oct 22 02:35:16 PDT 2026` (not the older
+boundary #4 timestamp). Next live trial: **level 1, control 0x700 only**
+before any DSP request. Level 2 adds config `001a5e00`, level 3 adds latch
+`011a5e00`; each requires a separate disconnected cold cycle, fresh patched
+baseline and one warm logo. Boot flag `h713_dsp_at_level=N` fixes the level;
+`h713_dsp_minimum=1` plus trace/retain enables the new 58-step observer.
+It refuses inherited/nonzero initial AudioTop setup. Prefix/access/TVFE
+hold unchanged; display/CPU_COMM disabled and minimum DT marker added.
+Explicit BUSY_WAIT/COMMAND_WRITE_BEGIN/COMMAND_SENT/DONE_WAIT/COMPLETE or
+TIMEOUT traces and per-device phase/sent fields resolve the previous gap.
+Only one version attempt/device; timeout allows only skip/release/final,
+never setup afterward, retry, reset, firmware or patch. Host level-bound
+loader/binder/helper verify kernel/FIT/DT/baseline/boot/owners/guard/proof.
+Completed zero versions count as access success, not retained patch. The
+analyzer compares matched independent levels conservatively; minimum means
+lowest completed nonempty stock prefix under this path, not individual bits
+or all register orders. Initial-busy/invalid/missing lower trials do not
+establish a minimum; first success should be replicated in a new cold cycle.
+Real kernel/modules build no warnings; FIT/DT/ABI checks pass; 11 new tests
++59 regressions pass. No board access/install occurred. Existing bench
+guard/original backup unchanged. Lamp off, physical disconnect after
+poweroff (display shutdown callback disabled). Automatic recovery unchanged.
+
+
+
 **October 22: boundary one-logo trial ENDED INCONCLUSIVE; board OFF;
 recorder closed.**
 [Live evidence](hdmi-evidence/2026-10-22-dsp-boundary-one-logo-live/README.md).
