@@ -1,6 +1,16 @@
 # MIPS-live warm-retention test design — October 21, 2026
 
-**Status: design for review. Nothing here is implemented or run.**
+**Status: phases A–C tooling implemented offline; not run.**
+- `tools/serial/warm-retention-uboot.py`: the U-Boot runner, set U. It allows
+  only `printenv bootcmd`, `md.l` of the three addresses, and `boot`. The PPU
+  is read only behind an open bus-r-ppu gate and reset. `--record-bootcmd` /
+  `--expected-bootcmd` refuse to boot on a `bootcmd` mismatch.
+- `tools/hdmi/warm-retention-census.py`: set L, read-only, every read through
+  a single `busybox devmem ADDR 32`. It applies the PPU / exact-routing /
+  both-domains gates, refuses the CPUS window, and has no write path.
+- `tools/hdmi/test-warm-retention.py`: 12 tests, mutation-checked.
+
+Phase D is not designed yet.
 
 ## Question
 
