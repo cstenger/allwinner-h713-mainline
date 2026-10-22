@@ -2,15 +2,51 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
-**In progress: warm-retention test. Cycle 1 (orderly reboot) COMPLETE. Cycle 2 (abrupt) started:** operator unplugged everything; the cold catcher was armed at 02:18:27Z into `cycle2/cold-catch/`. A1 done: one SPL, `gp6=0`, R_CCU PPU `00000000`, `bootcmd` identical to cycle 1. A2 done (`cycle2/A2-*`): **board RUNNING production cold-live, boot `63bb0271-b454-494e-818e-a5cee4d56822`**; DSP `0000/0000` → `1/1`; census identical to cycle 1 A2 (both ON, routed, AudioTop baseline, DSP status `0x120`, lock `0`/`0xaa`). C1 done (`cycle2/C1-*`): guarded SysRq-b fired from boot `63bb0271`, all units active and PCMs RUNNING; UART marker `H713_WARM_RETENTION_ABRUPT_SYNC_DONE` at 88.95 s, then `sysrq: Resetting`, no teardown. C2 done (`cycle2/C2-warm-*`): one warm SPL, `gp6=48444d49`, `bootcmd` matched, **R_CCU PPU `00000000`, the same as the orderly case.** `boot` sent. Next: C3 census (label `C3-abrupt-warm-parked`), then poweroff, then curation.
+**Warm-retention test phases A–C: BOTH CYCLES COMPLETE; board OFF** (orderly poweroff from boot `4f760916`, UART `reboot: Power down`). Raw data is in `build/hdmi-warm-retention-2026-10-21/cycle{1,2}/`, **not yet curated or committed as evidence**.
+
+**Results (identical for orderly and abrupt reset):**
+
+| Point | R_CCU PPU `0x070101ac` | TVFE | TVCAP | lock peer/own | other |
+| --- | --- | --- | --- | --- | --- |
+| cold preboot | `00000000` | not read | not read | — | GP6 0 |
+| cold-live (production) | `00010001` | ON | ON | `0`/`0xaa` | DSP `0000/0000` → `1/1`; AudioTop `700`/`011a5e00`; DSP status `0x120` |
+| warm preboot (orderly **and** SysRq-b) | **`00000000`** | not read | not read | — | GP6 latched |
+| warm-parked Linux (both) | `00010001` | **OFF** | ON | `0`/**`0`** | MIPS parked, no handoff, HDMI skipped; TVTOP routed |
+
+Interpretation:
+- Both resets return the R_CCU PPU bus gate/reset to cold default.
+- **TVFE is OFF after both warm boots, including the abrupt one with no
+  teardown.** It is not caused by production teardown. The production
+  cmdline has `pd_ignore_unused`, so Linux genpd did not do it either. It
+  comes from the reset itself or from U-Boot's warm branch (logo path).
+- TVCAP stays ON. The lock own word is cleared (`0xaa` → `0`) in both.
+- Whether the DSP patch survives is **still not measured**: no version read
+  was done, and AudioTop/DSP status were skipped because TVFE is off. If the
+  DSP RAM is in TVFE, its power-down would erase the patch (inference only).
+
+**Next steps:**
+1. Curate `cycle1`/`cycle2` into `docs/hdmi-evidence/2026-10-21-warm-retention/`
+   (README, sha256, results table above). Mark the design doc's status.
+2. **Separate "reset powers TVFE off" from "U-Boot warm branch powers TVFE
+   off":** at warm preboot, the PPU bus is closed. Options: (a) a single
+   reviewed U-Boot write opening bus-r-ppu (`0x070101ac` ← `0x00010001`, the
+   same thing Linux does), then read the PPU; or (b) find, offline in U-Boot
+   `h713_mips.c` and the warm `h713-hdmi.scr` script, whether the warm branch
+   touches the PPU/TVFE. Do (b) first, offline.
+3. Design phase D (the warm version read). It now needs TVFE powered, which
+   is a domain transition; extension stage P shows how. Read versions with
+   the stock lock (it reads `0` in the warm-parked state).
+
+(Historical record of cycle 2 progress follows.) Cycle 2 (abrupt) started:** operator unplugged everything; the cold catcher was armed at 02:18:27Z into `cycle2/cold-catch/`. A1 done: one SPL, `gp6=0`, R_CCU PPU `00000000`, `bootcmd` identical to cycle 1. A2 done (`cycle2/A2-*`): **board RUNNING production cold-live, boot `63bb0271-b454-494e-818e-a5cee4d56822`**; DSP `0000/0000` → `1/1`; census identical to cycle 1 A2 (both ON, routed, AudioTop baseline, DSP status `0x120`, lock `0`/`0xaa`). C1 done (`cycle2/C1-*`): guarded SysRq-b fired from boot `63bb0271`, all units active and PCMs RUNNING; UART marker `H713_WARM_RETENTION_ABRUPT_SYNC_DONE` at 88.95 s, then `sysrq: Resetting`, no teardown. C2 done (`cycle2/C2-warm-*`): one warm SPL, `gp6=48444d49`, `bootcmd` matched, **R_CCU PPU `00000000`, the same as the orderly case.** `boot` sent. Next: C3 census (label `C3-abrupt-warm-parked`), then poweroff, then curation.
 Design: [warm-retention test](hdmi-warm-retention-test-design-2026-10-21.md).
 Tools: `tools/serial/warm-retention-uboot.py` (U-Boot set U) and
 `tools/hdmi/warm-retention-census.py` (Linux set L, read-only, streamed with
 `ssh root@192.168.4.1 'python3 - LABEL' < tools/hdmi/warm-retention-census.py`).
 Raw outputs: `build/hdmi-warm-retention-2026-10-21/cycle1/` (not yet curated).
 
-**Board state at last update: OFF** (orderly poweroff from warm boot
-`4062c792`, UART `reboot: Power down`, `cycle1/end-poweroff-*`). Earlier in
+**Board state at last update: OFF** after cycle 2 (orderly poweroff from boot
+`4f760916`). Cycle 1 ended with an orderly poweroff from warm boot
+`4062c792` (`cycle1/end-poweroff-*`). Earlier in
 cycle 1 it ran normal production cold-live as boot
 `f5c76641-c095-4f6f-ac7b-03f92ddb493b` (HDMI handoff present; capture,
 signal and speaker active; h713_ddc_pins/hdmi_audio/hdmi_receiver/hdmi_signal
@@ -205,8 +241,8 @@ solution has not been demonstrated.
   question on the MIPS-live path.
 - No UART reader or pending SSH client from the failed attempt remains active.
   Do not reuse old process/session IDs.
-- The last Linux boot was `55a8aced-dc37-4c16-8d0d-70216e952ecf` (ended by
-  orderly poweroff after the step-110 refusal).
+- The last Linux boot was `4f760916-de5d-48e5-89db-d3281518da36` (warm-parked
+  after SysRq-b; ended by orderly poweroff).
   Every subsequent live action needs a newly collected boot ID.
 - Tracked working tree was clean before this handoff was created. Many
   historical/local untracked files remain intentionally outside commits.
