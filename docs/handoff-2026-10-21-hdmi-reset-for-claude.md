@@ -3,6 +3,39 @@
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
 
+**October 22 afternoon: control-only AudioTop trial COMPLETE; board OFF;
+recorder closed. Host Wi-Fi works after the user restarted both machines.**
+[Live evidence](hdmi-evidence/2026-10-22-dsp-minimum-control-live/README.md).
+Fresh production boot `e5d341d0` verified DSP `0/0` → pinned patch `1/1`,
+active owners and both domains ON. User reported hours fully off; cold SPL
+was not captured because power was already applied. One captured orderly
+warm reset and one successful lamp-off warm logo preceded exact minimum
+kernel `#4 SMP Thu Oct 22 02:35:16 PDT 2026`, warm boot `68081628`.
+All 58 explicit operations passed. TVFE hold eligible/applied, no TVFE power
+command/violation; AudioTop census exact `0/0`. **Control `0x700` alone
+completed both version reads, returning `0/0`**. Setup mask 1, config/latch
+skipped, phase `[5,5]`, sent `[1,1]`, outcomes `[1,1]`, statuses `20/120`,
+no timeout. ARM lock released; final exact `700/0`, domain/interface health
+and certain ledger verified. UART records every BEGIN/DONE once and both
+command-sent/COMPLETE sequences. Evidence exported/checksummed before
+checked poweroff; UART `reboot: Power down` at 367.918841 s.
+Control-only setup is sufficient in this trial. Config/latch writes are
+not needed to observe zero versions; the loss interval still includes
+reset/early boot, warm logo, interface preparation/demod reset release and
+the control write. No claim of direct DSP RAM erasure or minimal individual
+control bits. Routing matched (zero writes); display/TVCAP reset already
+released. Next: replicate level 1 in a new disconnected cold cycle with
+cold SPL capture, then design a no-reset patched positive control/matched
+boundary experiment. No reason to escalate to levels 2/3 in this boot.
+Normal boot files/environment/bootloader unchanged; existing bench guard
+and original backup preserved. Lamp off; user instructed to disconnect
+power and leave it off. Restore guard only after cold normal boot/hash
+checks. Work directory `build/hdmi-dsp-minimum-2026-10-22/live-control-02/`.
+Earlier live-control-01 ended before warm reboot/observer steps; its UART
+FIT transfer completed successfully, and old board staging was archived.
+No automatic recovery or production one-launch policy changes.
+
+
 **October 22: minimum AudioTop diagnostic PREPARED OFFLINE; board OFF;
 no capture armed.**
 [Runbook](hdmi-dsp-minimum-design-2026-10-22.md),

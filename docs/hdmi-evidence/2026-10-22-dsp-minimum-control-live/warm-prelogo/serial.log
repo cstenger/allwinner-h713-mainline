@@ -1,0 +1,17 @@
+
+=> printenv bootcmd
+bootcmd=if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi
+=> md.l 0x070101ac 1
+070101ac: 00000000                             ....
+=> md.l 0x07090118 1
+07090118: 48444d49                             IMDH
+=> md.l 0x0306101c 1
+0306101c: 00000000                             ....
+=> mw.l 0x070101ac 0x00010001 1
+=> md.l 0x070101ac 1
+070101ac: 00010001                             ....
+=> md.l 0x070010a4 1
+070010a4: 00010000                             ....
+=> md.l 0x07001124 1
+07001124: 00010000                             ....
+=> 

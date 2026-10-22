@@ -1,7 +1,15 @@
 # Minimum AudioTop setup for DSP version access — October 22, 2026
 
-**Prepared and built offline. Not installed or run; board remains shut down
-from the previous trial. No UART capture is armed.**
+**Level 1 completed October 22: control `0x700` alone completed both DSP
+version reads, returning `0/0`, with no timeout. Board powered down; recorder
+closed.** [Live evidence](hdmi-evidence/2026-10-22-dsp-minimum-control-live/README.md).
+All 58 steps and terminal checks passed. Configuration/latch writes were
+skipped; exact final control/config `700/0` verified. This proves sufficiency
+in one warm trial; replicate in a fresh disconnected cold cycle before
+adopting a stable recipe. Reset/early boot, warm logo, interface preparation
+and the control write remain within the patch-loss interval. The cold SPL
+was not captured in this run because the user had already powered the board;
+the fresh production baseline and entire warm reset were recorded.
 
 The [boundary trial](hdmi-evidence/2026-10-22-dsp-boundary-one-logo-live/README.md)
 failed before AudioTop setup: device 0 timed out, status `0x10`, no completed
