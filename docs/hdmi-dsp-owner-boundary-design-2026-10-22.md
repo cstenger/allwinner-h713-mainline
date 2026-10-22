@@ -1,11 +1,15 @@
 # No-reset patched control and matched shutdown boundaries — October 22, 2026
 
-**Arm 1 completed and passed:** four measured `1/1` version pairs, no reset,
-graph restoration or AudioTop change. [Live evidence](hdmi-evidence/2026-10-22-dsp-owner-sham-live/README.md).
-Board reached checked Power down; recorder closed, user instructed to
-physically unplug and leave off. Arm 2 remains pending; no capture armed.
-Use the exact live `board-export/snapshot-25.json` as its qualified sham.
-The following implementation/runbook describes the prepared two-arm design.
+**Both arms complete:** sham and matched boundary run returned four `1/1`
+version pairs each. Graph restoration, config clear and control off/on
+preserved the patch report in the tested no-reset sequence.
+[Sham evidence](hdmi-evidence/2026-10-22-dsp-owner-sham-live/README.md),
+[matched boundary evidence](hdmi-evidence/2026-10-22-dsp-owner-boundary-live/README.md).
+Matched baseline registers and all 22 saved graph words verified; no timeout.
+Boundary run reached checked Power down; recorder closed, user instructed to
+fully unplug and leave off. No capture active. Remaining teardown/reset/logo
+boundaries require a new design; reset retention is not established.
+The following implementation/runbook records the completed two-arm design.
 [Build/test evidence](hdmi-evidence/2026-10-22-dsp-owner-boundary-preparation/README.md).
 
 The two [control-only trials](hdmi-evidence/2026-10-22-dsp-minimum-control-replication/README.md)

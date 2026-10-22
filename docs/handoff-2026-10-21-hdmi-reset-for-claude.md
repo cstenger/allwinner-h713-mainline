@@ -2,6 +2,38 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**October 22: matched boundary arm 2 COMPLETE — tested boundaries preserved `1/1`.**
+[Live evidence](hdmi-evidence/2026-10-22-dsp-owner-boundary-live/README.md).
+All four version pairs completed **`1/1`**, including after 22 verified
+reverse-order graph restores, AudioTop config clear, then control off/on.
+All full responses `00000001`, statuses `00000120`, phase `[5,5]`, sent/
+outcome `[1,1]`. Eight requests once each, no timeout/echo/skip/failure.
+All 25 ordered UART BEGIN/DONE and exact restores validated. Terminal lock
+released, graph_remaining 0, ctl/cfg `700/0`, resources/domains retained,
+certain ledger. Fresh production boot `77d7afff-6ff8-4629-961d-1fa56dc3015d`;
+exact candidate and all baseline registers/saved graph words matched sham.
+Cold origin, single source3/handoff and initial-zero → pinned-patch `1/1`
+verified. No reset/warm logo/repatch/unload after initialization.
+Export 266333 bytes, SHA-256
+`e4ad3512a5f1aa1901d737b0419b424cbac60a7ce5e80a89b41a5a57f8f2e0b9`,
+verified on host before checked poweroff. UART `reboot: Power down` at
+274.472661 seconds; sole recorder closed. User instructed to fully unplug
+and leave off; post-run physical disconnection not yet confirmed. No capture
+active. Guard and original backup unchanged. Wi-Fi reconnect/SSH worked.
+**Interpretation:** this matched no-reset graph/AudioTop sequence preserved
+the version report. It did not reproduce earlier post-shutdown/reset/logo
+zeros and does not prove reset retention or directly inspect patch RAM.
+Normal SPDI/bridge restoration was omitted in both arms; order/interactions
+remain relevant. Next design should bracket omitted SPDI/bridge and
+clock restoration/demod reset, followed by CPU reset/early boot/warm logo
+as required. No new intervention improvised after terminal checkpoint.
+Both planned arms complete; no clear loss finding to confirm yet. Roughly
+2–4 further matched runs remains an estimate, depending on results.
+Exact boundary record:
+`docs/hdmi-evidence/2026-10-22-dsp-owner-boundary-live/board-export/snapshot-25.json`.
+Exact sham record follows in prior status. Normal one-launch/recovery policy
+unchanged; restore guard only under documented cold normal-boot conditions.
+
 
 **October 22: no-reset patched positive-control SHAM COMPLETE — PASS.**
 [Live evidence](hdmi-evidence/2026-10-22-dsp-owner-sham-live/README.md).
