@@ -2,7 +2,7 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
-**In progress: warm-retention test, cycle 1 (orderly reboot), between steps A2 and B1.**
+**In progress: warm-retention test, cycle 1 (orderly reboot): B1 and B2 done, B3 next.**
 Design: [warm-retention test](hdmi-warm-retention-test-design-2026-10-21.md).
 Tools: `tools/serial/warm-retention-uboot.py` (U-Boot set U) and
 `tools/hdmi/warm-retention-census.py` (Linux set L, read-only, streamed with
@@ -36,8 +36,20 @@ Done so far in cycle 1:
     decoded as text). The census was fixed to use an existence check and
     rerun; the failed attempt is kept as `A2-census-attempt1-unicode-error.txt`.
 
+- **B1** (`cycle1/B1-reboot-request.txt`, `cycle1/B2-warm-catch/`):
+  `systemctl reboot` from boot `f5c76641` with all units active; UART
+  `reboot: Restarting system` at 124.5 s; one warm SPL; `gp6=48444d49`
+  (latch, as expected), MIPS 0 at preboot.
+- **B2 warm preboot** (`cycle1/B2-warm-preboot/census.json`): `bootcmd`
+  matched the cold record. **R_CCU `0x070101ac` = `00000000`**, the same as
+  cold preboot and not the `00010001` Linux had before the reboot. **The
+  orderly warm reset returned the R-domain PPU bus gate/reset to cold
+  default.** The PPU was not read, as designed. This shows the R_CCU was
+  reset; it does not by itself prove the TV power switches dropped. Then
+  `boot` was sent; the board should be booting the production warm branch.
+
 **Next steps (exact):**
-1. **B1:** arm `tools/serial/catch-cold-uboot.py --port /dev/ttyUSB0 --output
+1. ~~B1~~ done. (Original instructions kept for cycle 2:) arm `tools/serial/catch-cold-uboot.py --port /dev/ttyUSB0 --output
    build/hdmi-warm-retention-2026-10-21/cycle1/B2-warm-catch` (it waits for
    the next SPL), then over SSH run `systemctl reboot`. Production teardown
    runs, and the guard permits the reboot once no HDMI owner remains. Keep
