@@ -176,6 +176,29 @@ Candidates, as the cold UART shows them:
 | 720p re-latch | No | The firmware rewrites the timing on every source-3 launch. |
 | Handoff property | No | It's how Linux knows the receiver is live. |
 
+## End goal: slim everything and minimize boot time
+
+Once warm recovery works, cold and warm boots both get the same treatment:
+remove every step that isn't needed, and make boot time a tracked number.
+
+* **Measure first.** Each run's UART and `events.log` give a baseline per
+  stage: SPL → U-Boot prompt → script → logo → MIPS launch → source 3 →
+  re-latch → kernel → services ready → capture RUNNING. U-Boot lines carry no
+  timestamps, so the runner should stamp stage markers on the host as they
+  arrive. That makes every later change a measured before/after.
+* **Then cut, one change at a time,** with the same acceptance check as warm
+  slimming (`check-warm-shared.py` plus the picture), on cold and warm boots,
+  including an abrupt reset. Known candidates:
+  * the double firmware start (logo, then relaunch);
+  * the 3 s + 550 ms panel waits, once panel-black is understood;
+  * the 5 s autoboot delay, kept only as long as recovery needs it;
+  * reading the 7.8 MB FIT from FAT (~0.5 s);
+  * the ~20 s from kernel start to HDMI services ready (unit ordering,
+    `After=user@1000`, module load, DSP patch upload).
+* **Don't remove safety.** Cheap guards (itests, size/CRC pins, the DSP
+  `0/0` gate, the hold guard) stay unless replaced by something equivalent.
+  Time comes out of waits and duplicated work, not checks.
+
 ## After the first pass
 
 1. Two more warm-test repeats, with orderly reboot and SysRq-b reset.

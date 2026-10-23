@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Offline tests for the first warm shared-startup test (script, runner, checker)."""
-import array,contextlib,importlib.util,io,json,math,pathlib,re,struct,tempfile,unittest,wave,zlib
+import contextlib,importlib.util,io,json,pathlib,re,struct,tempfile,unittest,zlib
 from unittest import mock
 HERE=pathlib.Path(__file__).resolve().parent;ROOT=HERE.parents[1]
 def load(name,file):
@@ -112,32 +112,41 @@ class Census(unittest.TestCase):
     def test_fit_crc_mismatch_refused(self):
         with self.assertRaises(RuntimeError):self.run_census(dict(self.GOOD),crc=1)
 
-def tone_wav(amplitude=0.3,seconds=5.0):
-    n=int(seconds*c.RATE);s=array.array('h',(int(amplitude*32767*math.sin(2*math.pi*440*i/c.RATE)) for i in range(n) for _ in (0,1)))
-    buf=io.BytesIO()
-    with wave.open(buf,'wb') as w:w.setnchannels(2);w.setsampwidth(2);w.setframerate(c.RATE);w.writeframes(s.tobytes())
-    return buf.getvalue().hex()
-GOOD_REC=lambda label='cold',boot='b1',amp=0.3:{'label':label,'boot_id':boot,'check_startup':{'rc':0,'output':'...\nPASS'},'dsp_lines':['h713-hdmi-audio: DSP versions 0000/0000','h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1'],'pcm_during':'state: RUNNING\n','wav_hex':tone_wav(amp)}
+def sample(t,periods,play,xruns=0,owner='hdmi-speaker',cap='state: RUNNING',ps='state: RUNNING'):
+    return {'t':t,'periods':periods,'xruns':xruns,'capture_state':cap,'capture_owner':owner,'capture_ptr':periods*256,'play_state':ps,'play_owner':owner,'play_ptr':play}
+def flow(rate=48000.0,play_rate=48000.0,**kw):
+    return [sample(10.0,1000,500000),sample(13.0,1000+int(3*rate/256),500000+int(3*play_rate),**kw)]
+GOOD_REC=lambda label='cold',boot='b1':{'label':label,'boot_id':boot,'check_startup':{'rc':0,'output':'...\nPASS'},'speaker':'active',
+    'dsp_lines':['h713-hdmi-audio: DSP versions 0000/0000','h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1'],'flow':flow()}
 class Checker(unittest.TestCase):
-    def test_tone_level(self):
-        lv=c.wav_level(bytes.fromhex(tone_wav(0.3)));self.assertAlmostEqual(lv['rms'],0.3/math.sqrt(2),places=2);self.assertAlmostEqual(lv['peak'],0.3,places=2)
-    def test_good_session_passes(self):self.assertTrue(c.evaluate(GOOD_REC())['passed'])
+    def test_period_counter_undercount_is_not_judged(self):
+        # Real October 23 samples: pointer 47979 Hz, period counter 47287 Hz.
+        f=[{'t':0.0,'periods':0,'xruns':0,'capture_state':'state: RUNNING','capture_owner':'hdmi-speaker','capture_ptr':0,'play_state':'state: RUNNING','play_owner':'hdmi-speaker','play_ptr':0},
+           {'t':3.0,'periods':int(3*47287/256),'xruns':0,'capture_state':'state: RUNNING','capture_owner':'hdmi-speaker','capture_ptr':int(3*47979),'play_state':'state: RUNNING','play_owner':'hdmi-speaker','play_ptr':144000}]
+        rec=GOOD_REC();rec['flow']=f;self.assertTrue(c.evaluate(rec)['passed'])
+        rec['flow'][1]['capture_ptr']=int(3*44100);self.assertFalse(c.evaluate(rec)['passed'])
+    def test_good_session_passes(self):
+        res=c.evaluate(GOOD_REC());self.assertTrue(res['passed'],res['reasons']);self.assertAlmostEqual(res['flow']['period_rate'],48000,delta=200)
     def test_each_failure_is_reported(self):
-        for key,value,why in (('check_startup',{'rc':1,'output':'FAIL: x'},'check-startup'),('pcm_during','state: PREPARED','RUNNING'),('wav_hex',tone_wav(0.0),'silence'),('wav_hex',None,'no recording'),
-                              ('dsp_lines',['h713-hdmi-audio: DSP versions 0001/0001','pinned 724-pair DSP patch verified versions 1/1'],'0/0'),('dsp_lines',['h713-hdmi-audio: DSP versions 0000/0000'],'1/1'),('wav_hex',tone_wav(0.3,2.0),'shorter')):
+        cases=(('check_startup',{'rc':1,'output':'FAIL: x'},'check-startup'),('speaker','inactive','speaker not active'),('flow',None,'no audio flow'),
+               ('flow',flow(rate=44100),'capture rate'),('flow',flow(play_rate=0),'playback not advancing'),('flow',flow(xruns=0)[:1]+[sample(13.0,1562,644000,xruns=2)],'xruns'),
+               ('flow',flow(owner='pipewire'),'not owned by hdmi-speaker'),('flow',flow(cap='state: PREPARED'),'capture PCM not RUNNING'),('flow',flow(ps='state: SETUP'),'playback not RUNNING'),
+               ('dsp_lines',['h713-hdmi-audio: DSP versions 0001/0001','pinned 724-pair DSP patch verified versions 1/1'],'0/0'),('dsp_lines',['h713-hdmi-audio: DSP versions 0000/0000'],'1/1'))
+        for key,value,why in cases:
             rec=GOOD_REC();rec[key]=value;res=c.evaluate(rec)
-            self.assertFalse(res['passed'],key);self.assertTrue(any(why in x for x in res['reasons']),(key,res['reasons']))
+            self.assertFalse(res['passed'],key);self.assertTrue(any(why in x for x in res['reasons']),(key,why,res['reasons']))
     def test_pass_requires_last_line_pass(self):
         rec=GOOD_REC();rec['check_startup']={'rc':0,'output':'PASS\nsomething after'};self.assertFalse(c.evaluate(rec)['passed'])
     def test_compare(self):
         self.assertTrue(c.compare(GOOD_REC(),GOOD_REC('warm','b2'))['passed'])
         self.assertFalse(c.compare(GOOD_REC(),GOOD_REC('warm','b1'))['passed'])
-        res=c.compare(GOOD_REC(),GOOD_REC('warm','b2',amp=0.1));self.assertFalse(res['passed']);self.assertLess(res['level_change_db'],-3)
         self.assertFalse(c.compare(GOOD_REC('warm','b2'),GOOD_REC())['passed'])
-        bad=GOOD_REC('warm','b2');bad['pcm_during']='';self.assertFalse(c.compare(GOOD_REC(),bad)['passed'])
-    def test_remote_script_compiles_and_reads_only(self):
+        bad=GOOD_REC('warm','b2');bad['speaker']='failed';self.assertFalse(c.compare(GOOD_REC(),bad)['passed'])
+    def test_remote_script_compiles_and_never_adds_a_reader_or_restarts(self):
         compile(c.REMOTE,'remote','exec')
-        for bad in ('systemctl restart','systemctl start','systemctl stop','insmod','rmmod','/dev/mem','devmem','07091'):self.assertNotIn(bad,c.REMOTE)
+        for bad in ('systemctl restart','systemctl start','systemctl stop','insmod','rmmod','/dev/mem','devmem','07091','pw-record','arecord','alsasrc','hw:H713HDMI'):self.assertNotIn(bad,c.REMOTE)
+    def test_remote_waits_for_speaker_playback_before_sampling(self):
+        self.assertLess(c.REMOTE.index("startswith('state: RUNNING')"),c.REMOTE.index('a=sample()'))
     def test_collect_sends_check_startup_unchanged(self):
         calls=[]
         def run(cmd,**kw):
@@ -145,6 +154,35 @@ class Checker(unittest.TestCase):
         with mock.patch.object(c.subprocess,'run',run):c.collect('cold')
         self.assertEqual(calls[0],('cat > /run/h713-warm-shared-check.py',c.REMOTE))
         self.assertEqual(calls[1],('python3 /run/h713-warm-shared-check.py cold',(ROOT/'tools/hdmi/check-startup.sh').read_text()))
+
+class Resume(unittest.TestCase):
+    """Resume continues only an untouched recorded cold session."""
+    def setUp(self):
+        self.t=tempfile.TemporaryDirectory();self.out=pathlib.Path(self.t.name)/'run';self.out.mkdir()
+        self.prepared=ROOT/'build/hdmi-warm-shared-2026-10-23'
+        if not self.prepared.exists():self.skipTest('candidate not built')
+        (self.out/'manifest.json').write_text((self.prepared/'manifest.json').read_text())
+        (self.out/'uart-cold-and-reboot.log').write_bytes(COLD)
+        (self.out/'events.log').write_text('x OPEN /dev/ttyUSB0\nx cold-boot: complete\nx cold boot B1\nx cold health passed=False\n')
+        (self.out/'cold-health.json').write_text('{}')
+    def tearDown(self):self.t.cleanup()
+    def attempt(self,boot='B1',running='B1'):
+        run=r.Run(self.out,'x')
+        with mock.patch.object(run,'wait_ssh',return_value=running),mock.patch.object(r,'open_port') as op,mock.patch.object(run,'reboot_from_cold',side_effect=RuntimeError('reached reboot')) as rb:
+            with self.assertRaises(RuntimeError) as e:run.resume(self.prepared,boot)
+        return str(e.exception),op.called
+    def test_good_resume_reaches_the_reboot_and_keeps_attempt1(self):
+        msg,opened=self.attempt();self.assertEqual(msg,'reached reboot');self.assertTrue(opened)
+        self.assertTrue((self.out/'cold-health-attempt1.json').exists());self.assertFalse((self.out/'cold-health.json').exists())
+    def test_refusals_before_the_uart_is_opened(self):
+        for change in ('reboot','launch','other-boot','wrong-arg','no-failure','resumed'):
+            self.setUp()
+            if change=='reboot':(self.out/'events.log').write_text((self.out/'events.log').read_text()+'x REBOOT REQUESTED\n')
+            if change=='launch':(self.out/'launch-attempted').write_text('x')
+            if change=='no-failure':(self.out/'events.log').write_text((self.out/'events.log').read_text().replace('passed=False','passed=True'))
+            if change=='resumed':(self.out/'uart-resume-and-reboot.log').write_bytes(b'')
+            msg,opened=self.attempt(boot='B2' if change=='wrong-arg' else 'B1',running='B9' if change=='other-boot' else 'B1')
+            self.assertNotEqual(msg,'reached reboot',change);self.assertFalse(opened,change)
 
 class Runner(unittest.TestCase):
     def test_refuses_existing_output_and_changed_script(self):

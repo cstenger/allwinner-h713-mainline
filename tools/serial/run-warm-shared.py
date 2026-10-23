@@ -2,6 +2,8 @@
 """First direct warm test of the shared cold/warm HDMI startup. One run per
 fresh cold cycle; every action happens once and nothing retries.
 
+  resume   continue from the recorded cold session of a run that stopped
+           before any reboot or launch (same boot still up).
   run      cold production boot (watched, never interrupted) -> cold health
            -> orderly reboot -> catch the warm prompt -> census -> RAM
            warm-shared.scr -> one `source` -> warm health -> cold/warm compare.
@@ -130,10 +132,13 @@ class Run:
         con.checked('fatload mmc 1:2 0x50000000 h713-kernel.fit');con.checked('itest ${filesize} == %x'%FIT.stat().st_size)
         m=re.search(rb'==>\s*([0-9a-fA-F]{8})\b',con.run('crc32 0x50000000 %x'%FIT.stat().st_size))
         if not m or int(m.group(1),16)!=zlib.crc32(FIT.read_bytes()):raise RuntimeError('on-media FIT CRC differs; no launch')
-    def run(self,prepared):
+    def prepared(self,prepared):
         m=json.loads((prepared/'manifest.json').read_text())
         assert hashlib.sha256((prepared/'warm-shared.scr').read_bytes()).hexdigest()==m['warm_script_sha256']
         assert hashlib.sha256(FIT.read_bytes()).hexdigest()==m['production_fit_sha256']
+        return m
+    def run(self,prepared):
+        m=self.prepared(prepared)
         self.out.mkdir(parents=True,exist_ok=False);(self.out/'manifest.json').write_text(json.dumps(m,indent=2)+'\n')
         fd=open_port(self.port)
         try:
@@ -141,15 +146,45 @@ class Run:
                 uart=Uart(fd,raw);self.note('OPEN '+self.port)
                 try:
                     cold,pos=self.watch(uart,cold_stage(),900,start=0);check_cold_preboot(cold.preboot())
-                    cold_boot=self.wait_ssh(None)
-                    self.note('cold boot '+cold_boot);rec,res=self.health('cold')
-                    if not res['passed']:raise RuntimeError('cold session unhealthy; warm test not started: '+'; '.join(res['reasons']))
-                    pos=len(uart.data);self.ssh('reboot-request','systemctl reboot --no-block')
-                    self.note('REBOOT REQUESTED')
-                    warm,pos=self.watch(uart,reboot_stage(),300,start=pos);check_warm_preboot(warm.preboot())
+                    cold_boot=self.wait_ssh(None);self.note('cold boot '+cold_boot)
+                    rec=self.reboot_from_cold(uart)
                 finally:uart.stop()
                 self.census(fd,raw,m)
         finally:os.close(fd)
+        self.launch(prepared,cold_boot,rec)
+    def resume(self,prepared,boot):
+        """Continue from the recorded cold session of an earlier `run` that
+        stopped before any reboot or launch (e.g. a checker defect). Refuses
+        unless that exact boot is still up and nothing after cold health ran."""
+        m=self.prepared(prepared)
+        events=(self.out/'events.log').read_text()
+        old=json.loads((self.out/'manifest.json').read_text())
+        if old['warm_script_sha256']!=m['warm_script_sha256'] or old['production_fit_sha256']!=m['production_fit_sha256']:raise RuntimeError('prepared script/FIT differ from the original run')
+        if 'cold-boot: complete' not in events or 'cold boot '+boot not in events or 'cold health passed=False' not in events:raise RuntimeError('no recorded failed cold health for that boot')
+        if 'REBOOT REQUESTED' in events or (self.out/'launch-attempted').exists() or (self.out/'uart-resume-and-reboot.log').exists():raise RuntimeError('a reboot, launch or resume already happened; cold cycle required')
+        cold=cold_stage()
+        if cold.feed((self.out/'uart-cold-and-reboot.log').read_bytes())!='done':raise RuntimeError('recorded cold boot incomplete')
+        check_cold_preboot(cold.preboot())
+        if self.wait_ssh(None,seconds=30)!=boot:raise RuntimeError('a different boot is running; cold cycle required')
+        for n in ('cold-health','cold-evaluation'):
+            if (self.out/(n+'.json')).exists():(self.out/(n+'.json')).rename(self.out/(n+'-attempt1.json'))
+        fd=open_port(self.port)
+        try:
+            with (self.out/'uart-resume-and-reboot.log').open('xb',buffering=0) as raw:
+                uart=Uart(fd,raw);self.note('OPEN '+self.port+' RESUME cold boot '+boot)
+                try:rec=self.reboot_from_cold(uart)
+                finally:uart.stop()
+                self.census(fd,raw,m)
+        finally:os.close(fd)
+        self.launch(prepared,boot,rec)
+    def reboot_from_cold(self,uart):
+        rec,res=self.health('cold')
+        if not res['passed']:raise RuntimeError('cold session unhealthy; warm test not started: '+'; '.join(res['reasons']))
+        pos=len(uart.data);self.ssh('reboot-request','systemctl reboot --no-block')
+        self.note('REBOOT REQUESTED')
+        warm,pos=self.watch(uart,reboot_stage(),300,start=pos);check_warm_preboot(warm.preboot())
+        return rec
+    def launch(self,prepared,cold_boot,rec):
         # The sender verifies the RAM CRC before it returns.
         t=subprocess.run([sys.executable,str(HERE/'ymodem-send.py'),str(prepared/'warm-shared.scr'),'0x52000000','--port',self.port],capture_output=True,text=True,timeout=60)
         (self.out/'script-transfer.log').write_text(t.stdout+t.stderr);t.check_returncode()
@@ -183,9 +218,11 @@ class Run:
         finally:os.close(fd);self.note('CLOSE')
 def main():
     p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('action',choices=('run','poweroff'));p.add_argument('--output',required=True,type=Path)
+    p.add_argument('action',choices=('run','resume','poweroff'));p.add_argument('--output',required=True,type=Path)
+    p.add_argument('--cold-boot',help='resume: the recorded cold boot ID that must still be running')
     p.add_argument('--prepared',type=Path,default=ROOT/'build/hdmi-warm-shared-2026-10-23');p.add_argument('--port',default='/dev/ttyUSB0')
     a=p.parse_args();r=Run(a.output.resolve(),a.port)
     if a.action=='run':r.run(a.prepared.resolve())
+    elif a.action=='resume':r.resume(a.prepared.resolve(),a.cold_boot)
     else:r.poweroff()
 if __name__=='__main__':main()
