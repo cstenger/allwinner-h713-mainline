@@ -2,6 +2,39 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**October 23: first warm shared-startup test BUILT offline; no catcher
+armed; no power requested.** [Preparation and runbook](hdmi-evidence/2026-10-23-warm-shared-preparation/README.md).
+`tools/serial/run-warm-shared.py run` does the whole sequence: healthy cold
+production session, orderly reboot, catch the warm prompt, census, RAM
+`warm-shared.scr` (the installed cold branch with four reviewed changes),
+one `source`, warm health and a cold/warm comparison. Nothing is installed.
+23 tests on real UART fixtures, with 12 mutations caught. A black panel
+afterwards is the known separate problem.
+
+**October 23: DIRECTION CHANGE: Phase B PAUSED; shared cold/warm startup is
+the plan.** Read [shared startup plan](hdmi-shared-startup-plan-2026-10-23.md)
+first. The release goal is automatic warm HDMI recovery. Evidence already shows
+the DSP reads `0/0` after a warm reset (fresh, as the driver needs), and
+that warm boots already release MIPS for the logo. HDMI is skipped on warm
+boots only by the GP6 precaution, so the next step is one RAM-only warm
+test of the unchanged cold sequence, not more teardown bracketing. Phase B
+stays built, unrun and uncommitted, in case that test points at DSP state.
+Panel-black after warm reboot is a separate open blocker.
+
+**October 23: Phase B bench BUILT and offline-verified (Claude); board
+unplugged after Phase A; no catcher armed; no power requested.**
+[Preparation evidence](hdmi-evidence/2026-10-23-dsp-teardown-b-preparation/README.md).
+Candidate `build/hdmi-dsp-teardown-b-2026-10-23/candidate/`, module `50a63980…`.
+39 steps / 4 pairs: positive → Phase A prefix (both arms) → closed access
+gate → TVFE clock-off edge (arm 2) → 1 s hold → prepare-order reacquire →
+open gate → pair (**clock round trip**); then the same with the shared
+demod reset asserted/deasserted (**clock + demod reset**) → pair. Sham does
+all common gate/IHB/rewrite transactions, no clock/parent/reset change.
+No AudioTop/AudIf/bridge/DSP/lock/debug-summary access with the gate closed.
+30 new tests (22 mutations caught) + 69 regressions pass.
+**Next:** sham cold cycle, then arm 2 — same runbook as Phase A with the
+`-b` tools (`dsp-teardown-b-host.py`, `run-dsp-teardown-b-cold.py`).
+
 **October 23: Phase A MATCHED ARM COMPLETE — all boundaries preserved `1/1`;
 board powered down (UART Power down at 223.11 s); user to unplug.**
 [Arm-2 evidence](hdmi-evidence/2026-10-22-dsp-teardown-a-teardown-live/README.md):
