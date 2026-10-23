@@ -1,0 +1,22 @@
+{
+ "classification": "tested_teardown_boundaries_preserved_patch",
+ "matched": "matched_tested_teardown_boundaries_preserved_patch",
+ "host_matches_board_state": true,
+ "sham_bytes_staged_equal": true,
+ "uart_begin_done_ordered": true,
+ "uart_complete_requests": 12,
+ "uart_graph_restores": 22,
+ "uart_spdi_restore": [
+  "spdi-restore ctl0=00000000 ctl1=00000000 mask=00000000 written"
+ ],
+ "uart_bridge_restore": [
+  "bridge-restore mask=00000000 global=00000000 stream=00000000/00000000/00000000/00000000/00000000 sync=00000000 addr_hi=00000000 written"
+ ],
+ "uart_order": true,
+ "uart_no_failure": true,
+ "uart_power_down": true,
+ "journal_initial_zero_then_patch": true,
+ "cold_handoff": true,
+ "export_sha_verified": true,
+ "boot_distinct_from_sham": true
+}

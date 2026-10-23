@@ -2,6 +2,28 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**October 23: Phase A MATCHED ARM COMPLETE — all boundaries preserved `1/1`;
+board powered down (UART Power down at 223.11 s); user to unplug.**
+[Arm-2 evidence](hdmi-evidence/2026-10-22-dsp-teardown-a-teardown-live/README.md):
+boot `835e0bf5…`, `matched_tested_teardown_boundaries_preserved_patch`.
+Graph → SPDI1 (`0/0/0`) → bridge (all zeros) → AudioTop config → control
+off/on, each followed by a `1/1` pair, 12 requests, readbacks exact.
+Phase A is closed; no repeat needed. **Next: Phase B** (clock restoration
+round trip without demod reset, then demod reset separately) — design says
+it needs new observation logic and offline tests before any power request.
+No catcher armed.
+
+**October 22: Phase A SHAM QUALIFIED; board powered down (UART Power down);
+user to fully unplug before arm 2.**
+[Sham evidence](hdmi-evidence/2026-10-22-dsp-teardown-a-sham-live/README.md):
+boot `7397c984-778a-455a-925d-44f060e5ad33`, all six pairs `1/1`, 12 requests,
+no SPDI/bridge/AudioTop writes, `sham_positive_control_passed`; canonical
+sham `8b6a068a…`. Export verified before checked poweroff; recorder closed.
+Arm-2 capture plan prepared at
+`docs/hdmi-evidence/2026-10-22-dsp-teardown-a-teardown-live/capture-plan.json`
+(no catcher armed). Run arm 2 with `--arm 2 --sham-record
+docs/hdmi-evidence/2026-10-22-dsp-teardown-a-sham-live/board-export/snapshot-37.json`.
+
 **October 22: Phase A bench BUILT and offline-verified (Claude); board still
 unplugged; no catcher armed; no power requested.**
 [Preparation evidence](hdmi-evidence/2026-10-22-dsp-teardown-a-preparation/README.md).

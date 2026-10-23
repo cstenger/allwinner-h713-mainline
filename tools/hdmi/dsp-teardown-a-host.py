@@ -13,7 +13,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[2]
 CANDIDATE=ROOT/'build/hdmi-dsp-teardown-a-2026-10-22/candidate'
 REMOTE='/root/hdmi-dsp-teardown-a-2026-10-22/'
 SSH=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','ServerAliveInterval=5','-o','ServerAliveCountMax=1','root@192.168.4.1']
-PREVIOUS_BOOTS=('dcfe762c-9cb5-44ca-a546-049f03e2a1fd','77d7afff-6ff8-4629-961d-1fa56dc3015d')
+PREVIOUS_BOOTS=('dcfe762c-9cb5-44ca-a546-049f03e2a1fd','77d7afff-6ff8-4629-961d-1fa56dc3015d','7397c984-778a-455a-925d-44f060e5ad33')
 HEALTH=r'''
 import pathlib,os,hashlib,subprocess,json,sys
 P=pathlib.Path

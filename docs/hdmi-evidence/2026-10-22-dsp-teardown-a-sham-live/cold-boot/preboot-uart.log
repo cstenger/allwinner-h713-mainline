@@ -1,0 +1,15 @@
+
+=> printenv bootcmd
+bootcmd=if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi
+=> md.l 0x07090118 1
+07090118: 00000000                             ....
+=> md.l 0x0306101c 1
+0306101c: 00000000                             ....
+=> if fatload mmc 1:2 0x50000000 h713-kernel.fit; then echo H713_TVFE_STEP_1_OK; else echo H713_TVFE_STEP_FAILED; fi
+7795668 bytes read in 500 ms (14.9 MiB/s)
+H713_TVFE_STEP_1_OK
+=> if itest ${filesize} == 76f3d4; then echo H713_TVFE_STEP_2_OK; else echo H713_TVFE_STEP_FAILED; fi
+H713_TVFE_STEP_2_OK
+=> crc32 0x50000000 76f3d4
+crc32 for 50000000 ... 5076f3d3 ==> d84f128d
+=> 
