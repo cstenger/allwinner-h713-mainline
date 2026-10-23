@@ -1,0 +1,44 @@
+{
+  "label": "warm",
+  "boot_id": "6e1c3d14-577c-4ae7-9770-d5a9119c3ac5",
+  "uptime": 19.72,
+  "handoff": "48444d49000000008b8f275c",
+  "units": {
+    "h713-hdmi-capture": "active",
+    "h713-hdmi-signal": "active"
+  },
+  "check_startup": {
+    "rc": 0,
+    "output": "== boot 6e1c3d14-577c-4ae7-9770-d5a9119c3ac5 6.18.38 up 21.87s\nhandoff 48444d49000000008b8f275c\nh713-hdmi-capture: success 0 active yes \nh713-hdmi-signal: success 0 active yes \nh713_hdmi_receiver.clock_count=4\nh713_hdmi_receiver.init_error=0\nh713_hdmi_receiver.firmware_pin=Y\nh713_hdmi_receiver.edid_ready=Y\nh713_hdmi_receiver.clients=2\nh713_hdmi_audio.dsp_failed=N\nh713_hdmi_audio.manage_dsp=Y\nh713_hdmi_audio.manage_tvfe=Y\nh713_hdmi_signal.ready=Y\nh713_hdmi_signal.failed=N\nh713_hdmi_signal.restored=N\n[   18.360288] h713-hdmi-audio: DSP versions 0000/0000\n[   19.289815] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1\nstate: RUNNING\nowner_pid   : 469\ntrigger_time: 20.925707425\ntstamp      : 22.177001967\ndelay       : 224\navail       : 224\navail_max   : 480\n-----\nhw_ptr      : 60028\nappl_ptr    : 59904\nrtc gp6 latch unknown from Linux (U-Boot checked)\nApr 13 19:38:10 h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...\nApr 13 19:38:21 h713-arm64 python3[208]: {\"phase\": \"ready\", \"already_ready\": false}\nApr 13 19:38:22 h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.\nApr 13 19:38:22 h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...\nApr 13 19:38:22 h713-arm64 python3[448]: EDID/HPD ready; receiver client and DDC pins retained\nApr 13 19:38:22 h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.\nPASS\n"
+  },
+  "speaker": "active",
+  "speaker_wait_s": 0.0,
+  "flow": [
+    {
+      "t": 22.347025592,
+      "periods": 262,
+      "xruns": 0,
+      "capture_state": "state: RUNNING",
+      "capture_owner": "hdmi-speaker",
+      "capture_ptr": 68188,
+      "play_state": "state: RUNNING",
+      "play_owner": "hdmi-speaker",
+      "play_ptr": 66944
+    },
+    {
+      "t": 25.35172051,
+      "periods": 817,
+      "xruns": 0,
+      "capture_state": "state: RUNNING",
+      "capture_owner": "hdmi-speaker",
+      "capture_ptr": 212380,
+      "play_state": "state: RUNNING",
+      "play_owner": "hdmi-speaker",
+      "play_ptr": 211168
+    }
+  ],
+  "dsp_lines": [
+    "h713-hdmi-audio: DSP versions 0000/0000",
+    "h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1"
+  ]
+}

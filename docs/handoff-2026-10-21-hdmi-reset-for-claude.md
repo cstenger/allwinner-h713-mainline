@@ -2,6 +2,16 @@
 
 ## LIVE STATUS — read this first (updated continuously; newest at top)
 
+**October 23: FIRST WARM SHARED-STARTUP TEST PASSED; board powered off.**
+[Live evidence](hdmi-evidence/2026-10-23-warm-shared-live/README.md). After an
+orderly reboot from a healthy cold session, the warm boot ran the installed
+cold sequence unchanged (RAM `warm-shared.scr`, one `source`): handoff, DSP
+`0/0`→`1/1`, capture and speaker at 48 kHz with 0 xruns, and a 440 Hz tone
+received at −0.3 dB and heard. Picture: logo, then console (whether a cold
+boot shows HDMI video is still to be confirmed). One trial. Next: repeats
+(orderly + SysRq-b), then the production change (needs approval of the
+GP6 crash-loop rule), then slimming and boot time.
+
 **October 23: first warm shared-startup test BUILT offline; no catcher
 armed; no power requested.** [Preparation and runbook](hdmi-evidence/2026-10-23-warm-shared-preparation/README.md).
 `tools/serial/run-warm-shared.py run` does the whole sequence: healthy cold

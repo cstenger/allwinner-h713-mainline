@@ -1,0 +1,26 @@
+{
+  "label": "cold",
+  "boot_id": "2998fe6a-fd78-4431-98a5-1f864c2fe418",
+  "uptime": 38.01,
+  "handoff": "48444d49000000008b8f275c",
+  "units": {
+    "h713-hdmi-capture": "active",
+    "h713-hdmi-signal": "active"
+  },
+  "check_startup": {
+    "rc": 0,
+    "output": "== boot 2998fe6a-fd78-4431-98a5-1f864c2fe418 6.18.38 up 38.09s\nhandoff 48444d49000000008b8f275c\nh713-hdmi-capture: success 0 active yes \nh713-hdmi-signal: success 0 active yes \nh713_hdmi_receiver.clock_count=4\nh713_hdmi_receiver.init_error=0\nh713_hdmi_receiver.firmware_pin=Y\nh713_hdmi_receiver.edid_ready=Y\nh713_hdmi_receiver.clients=2\nh713_hdmi_audio.dsp_failed=N\nh713_hdmi_audio.manage_dsp=Y\nh713_hdmi_audio.manage_tvfe=Y\nh713_hdmi_signal.ready=Y\nh713_hdmi_signal.failed=N\nh713_hdmi_signal.restored=N\n[   18.422608] h713-hdmi-audio: DSP versions 0000/0000\n[   19.342714] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1\nstate: RUNNING\nowner_pid   : 396\ntrigger_time: 20.893687342\ntstamp      : 38.408342892\ndelay       : 64\navail       : 64\navail_max   : 480\n-----\nhw_ptr      : 840668\nappl_ptr    : 840604\nrtc gp6 latch unknown from Linux (U-Boot checked)\nApr 13 19:38:10 h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...\nApr 13 19:38:22 h713-arm64 python3[203]: {\"phase\": \"ready\", \"already_ready\": false}\nApr 13 19:38:22 h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.\nApr 13 19:38:22 h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...\nApr 13 19:38:22 h713-arm64 python3[384]: EDID/HPD ready; receiver client and DDC pins retained\nApr 13 19:38:22 h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.\nPASS\n"
+  },
+  "card": "card1",
+  "pcm_during": "state: RUNNING\nowner_pid   : 396\ntrigger_time: 20.893687342\ntstamp      : 41.030204560\ndelay       : 96\navail       : 96\navail_max   : 480\n-----\nhw_ptr      : 966524\nappl_ptr    : 966428\n",
+  "record": {
+    "rc": 124,
+    "output": "",
+    "node": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"
+  },
+  "wav_hex": "524946462400000057415645666d7420100000000100020080bb000000ee0200040010006461746100000000",
+  "dsp_lines": [
+    "h713-hdmi-audio: DSP versions 0000/0000",
+    "h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1"
+  ]
+}

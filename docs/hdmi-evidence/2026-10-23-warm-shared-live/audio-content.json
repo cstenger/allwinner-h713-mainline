@@ -1,0 +1,9 @@
+{
+  "boot_id": "6e1c3d14-577c-4ae7-9770-d5a9119c3ac5",
+  "note": "Measured after the automated run, with h713-hdmi-speaker stopped for ~3 s each time so one GStreamer alsasrc hw:H713HDMI,0 capture of 102400 frames could be taken; speaker restarted and active afterwards.",
+  "without_source_audio": {"host": "no sink-inputs; all host HDMI sinks SUSPENDED (nothing playing)", "L": {"rms": 0.0, "peak": 0.0, "nonzero": 0}, "R": {"rms": 0.0, "peak": 0.0, "nonzero": 0}},
+  "with_tone": {"host": "pw-play 440 Hz sine, amplitude 0.3, s16 stereo 48 kHz, to alsa_output.pci-0000_0c_00.1.hdmi-stereo-extra2 (ELD 'H713 HDMI IN')",
+                "L": {"rms": 0.2047, "peak": 0.2895, "nonzero": 102396}, "R": {"rms": 0.2047, "peak": 0.2895, "nonzero": 102396},
+                "expected_rms": 0.2121, "rising_zero_crossings_per_s": 440.16},
+  "operator": {"picture": "logo, then the Linux console", "tone": "not heard while the source sent no audio; heard once the tone played"}
+}

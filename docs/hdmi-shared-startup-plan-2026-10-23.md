@@ -79,7 +79,7 @@ that step shows.
 
 ## First direct warm test (one cold cycle, one warm reboot, RAM-only)
 
-**Built offline October 23:** [preparation and runbook](hdmi-evidence/2026-10-23-warm-shared-preparation/README.md).
+**PASSED live October 23** ([evidence](hdmi-evidence/2026-10-23-warm-shared-live/README.md)): HDMI capture and audible tone after a warm reboot. **Built offline October 23:** [preparation and runbook](hdmi-evidence/2026-10-23-warm-shared-preparation/README.md).
 
 Tests the real shared path with the real production modules. Nothing is
 installed: the warm boot runs a RAM copy of the script, sent over YMODEM
