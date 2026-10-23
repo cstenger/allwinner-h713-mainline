@@ -1,0 +1,51 @@
+--- a/h713-hdmi-pcm.c
++++ b/h713-hdmi-pcm.c
+@@ -447,7 +447,7 @@
+ 	.sync_stop = pcm_sync_stop, .pointer = pcm_pointer,
+ };
+ 
+-static int register_pcm(void)
++static int __maybe_unused register_pcm(void)
+ {
+ 	struct snd_pcm *pcm;
+ 	struct snd_dma_buffer *buffer;
+@@ -747,6 +747,8 @@
+ 	}
+ }
+ 
++#include "teardown-pcm.inc"
++
+ static int verify_stock_irqs(void)
+ {
+ 	struct device_node *node;
+@@ -782,6 +784,8 @@
+ 	u32 cfg;
+ 	int ret = 0;
+ 
++	ret = h713_owner_init_check();
++	if (ret) return ret;
+ 	if (!armed || !live_source3 || !receiver_powered) {
+ 		pr_err("h713-hdmi-audio: refusing: armed=1 live_source3=1 receiver_powered=1 are all required\n");
+ 		return -EPERM;
+@@ -890,6 +894,7 @@
+ 
+ 	audio_top_saved_ctl = readl(audio_top + 0x0);
+ 	audio_top_saved_cfg = readl(audio_top + 0xc);
++	if (audio_top_saved_ctl || audio_top_saved_cfg) { ret = -EPERM; goto fail; }
+ 	writel(audio_top_saved_ctl | 0x700, audio_top + 0x0);
+ 	cfg = (audio_top_saved_cfg & 0xff000000) | 0x001a5e00;
+ 	writel(cfg, audio_top + 0xc);
+@@ -974,10 +979,11 @@
+ 			goto fail;
+ 		graph_ready = true;
+ 	}
+-	ret = register_pcm();
++	/* Bench has no PCM device or userspace stream. */
++	ret = h713_owner_pin();
+ 	if (ret)
+ 		goto fail;
+-	pr_info("h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph %s\n",
++	pr_info("h713-hdmi-audio: Phase B teardown bench ready; PCM omitted, IRQs disabled, module pinned; DSP graph %s\n",
+ 		manage_dsp ? "verified automatically" : "requires external setup");
+ 	of_node_put(audio_bridge);
+ 	of_node_put(ccu);

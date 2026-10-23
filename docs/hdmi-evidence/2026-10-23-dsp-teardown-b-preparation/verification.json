@@ -1,0 +1,35 @@
+{
+  "bundle_and_asset_hashes_verified": true,
+  "firmware_hash_verified": true,
+  "legacy_script_header_payload_crc_verified": true,
+  "exact_source_payload_verified": true,
+  "same_vermagic_as_production": "6.18.38 SMP mod_unload aarch64",
+  "production_kernel_symvers_unchanged": true,
+  "production_sources_unchanged": {
+    "h713-hdmi-pcm.c": "0dc33b3ca0fb6bcb61df30b8d9009587ee833849f9a7c18af1f8b8dcae856e1a",
+    "h713-hdmi-dsp.c": "466baed82dcb9df4ba58ee3aafd2b23e9172460b51c0739f713e7cfd4d024be2",
+    "h713-hdmi-tvfe.c": "4a58038dff996db65fbdafd1c1ad368a8082bfa16b8a8c86f1b879ec635c23d7"
+  },
+  "new_undefined_symbols_vs_phase_a_module": [
+    "msleep (exported by the production kernel)"
+  ],
+  "no_exported_symbols": true,
+  "dt_marker": "h713,dsp-teardown-b-v1 = 0x54445242 (Phase A and owner markers absent)",
+  "bootarg": "h713_teardown_b=1",
+  "cold_script_diff_vs_phase_a_script": "marker, bootarg and refusal echo only",
+  "module_sha256": "50a6398043db1d435d3820abaca1ba0732871db98da8b64c5406a579fdcb314d",
+  "module_note_sha256": "e96eef1fc7cd1adc64dfbef2b2b4e67fb2cd728e7ae7ae396ac0a3d2bdff2dda",
+  "cold_script_sha256": "7d4898098c1a2f3548f18e63c25db56ae0a9ff2186520aebc6c05cd920cc3f53",
+  "manifest_sha256": "a7cd35fe9aa43cbf337ab2d051539e6f58ce4794de9e41666537e66478149cee",
+  "plan_steps": 39,
+  "max_version_requests": 8,
+  "phase_a_candidate_untouched": true,
+  "host_tools_sha256": {
+    "hdmi/dsp-teardown-b-host.py": "e1d538b69a49adfd47c102e2de3d4c24c45da0798478cf342616698618698d70",
+    "serial/run-dsp-teardown-b-cold.py": "92afb5d4b68bcb92798177288a86cdeeace95171fa1f7ac85cd02227bc0b403f",
+    "hdmi/prepare-dsp-teardown-b.py": "98eb5d2785db6e437b756b5031ca300d182ce5419b17c9dd1158942358541485",
+    "hdmi/test-dsp-teardown-b.py": "cc91f07581f294178995379259b46da1da8e3e48166453794d0394fa19fe12db"
+  },
+  "compiler_note": "Kernel clang 23.1.1 versus host clang 23.1.3; only the Kbuild notice; zero C diagnostics with W=1.",
+  "board_access": false
+}

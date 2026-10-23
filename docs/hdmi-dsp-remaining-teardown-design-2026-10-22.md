@@ -1,8 +1,11 @@
 # Remaining teardown versus reset — next diagnostic design, October 22
 
-**Status (Claude, October 22): Phase A is implemented, built and offline-verified** —
-see [preparation evidence](hdmi-evidence/2026-10-22-dsp-teardown-a-preparation/README.md).
-Phases B and C below remain design only.
+**Status (Claude, October 23): Phase A COMPLETE** — matched arm preserved `1/1`
+([result](hdmi-evidence/2026-10-22-dsp-teardown-a-teardown-live/README.md)).
+**Phase B implemented, built and offline-verified, not run** —
+[preparation](hdmi-evidence/2026-10-23-dsp-teardown-b-preparation/README.md).
+Phase C below remains design only.
+**Paused October 23** in favour of the [shared startup plan](hdmi-shared-startup-plan-2026-10-23.md).
 
 **Source-reviewed design and takeover instructions.**
 The user confirmed the board is fully unplugged after matched boundary arm 2.
