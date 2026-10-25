@@ -29,7 +29,9 @@ cold boot, warm boot and runtime plugging.
 * Board root fs has ~170 MB free: never stream frames to a file there.
 * Nothing is installed; staging goes under `/run` (reboot erases it).
   Production install needs explicit user approval. Only push to `cstenger/*`.
-  Nothing from this work is committed yet.
+  Route B + event-driven switching are committed as `3a797cc` on
+  `h713-letterbox` (not pushed). The earlier panel-source phases (T4–T6, Test
+  1–3 tools/evidence, patches 0188/0189) are still uncommitted.
 
 ## How HDMI reaches the panel (route B, proven on glass 10-24)
 
