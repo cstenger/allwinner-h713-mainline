@@ -1,0 +1,20 @@
+[Unit]
+Description=H713 HDMI-in capture bridge
+BindsTo=h713-hdmi-signal.service h713-hdmi-capture.service
+After=h713-hdmi-signal.service h713-hdmi-capture.service
+Before=shutdown.target
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Route B: pair completion (production has no VIncap hook), NV12 for the
+# KMS video plane, cacheable ring. Staging overrides H713_BRIDGE.
+Environment=H713_BRIDGE=/usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko
+ExecStart=/sbin/insmod ${H713_BRIDGE} completion=pair
+ExecStop=/sbin/rmmod h713_hdmi_v4l2
+TimeoutStartSec=10
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

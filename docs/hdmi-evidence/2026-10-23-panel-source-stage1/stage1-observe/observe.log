@@ -1,0 +1,104 @@
+board ktime at start: 6169.43 23238.89
+signal now: locked 1280x720
+device /dev/video2
+Video input : 0 (HDMI1: ok)
+DV timings:
+	Active width: 1280
+	Active height: 720
+	Total width: 1650
+	Total height: 750
+	Frame format: progressive
+	Polarities: +vsync +hsync
+	Pixelclock: 74250000 Hz (60.00 frames per second)
+	Horizontal frontporch: 110
+	Horizontal sync: 40
+	Horizontal backporch: 220
+	Vertical frontporch: 5
+	Vertical sync: 5
+	Vertical backporch: 20
+	Standards: CTA-861
+	CTA-861 VIC: 4
+	Flags: framerate can be reduced by 1/1.001, CE-video, has CTA-861 VIC
+Format Video Capture:
+	Width/Height      : 1280/720
+	Pixel Format      : 'NV16' (Y/UV 4:2:2)
+	Field             : None
+	Bytes per Line    : 1280
+	Size Image        : 1843200
+	Colorspace        : Rec. 709
+	Transfer Function : Default (maps to Rec. 709)
+	YCbCr/HSV Encoding: Default (maps to Rec. 709)
+	Quantization      : Limited Range
+	Flags             : 
+ioctl: VIDIOC_ENUM_DV_TIMINGS
+	Index: 0
+	Active width: 1280
+	Active height: 720
+	Total width: 1650
+	Total height: 750
+	Frame format: progressive
+	Polarities: +vsync +hsync
+	Pixelclock: 74250000 Hz (60.00 frames per second)
+	Horizontal frontporch: 110
+	Horizontal sync: 40
+	Active width: 1280
+	Active height: 720
+	Total width: 1650
+	Total height: 750
+	Frame format: progressive
+	Polarities: +vsync +hsync
+	Pixelclock: 74250000 Hz (60.00 frames per second)
+	Horizontal frontporch: 110
+	Horizontal sync: 40
+	Horizontal backporch: 220
+	Vertical frontporch: 5
+	Vertical sync: 5
+	test VIDIOC_ENUM/G/S/QUERY_DV_TIMINGS: OK
+	test VIDIOC_DV_TIMINGS_CAP: OK
+		warn: v4l2-test-controls.cpp(1159): V4L2_CID_DV_RX_POWER_PRESENT not found for input 0
+	test VIDIOC_(UN)SUBSCRIBE_EVENT/DQEVENT: OK (Not Supported)
+		warn: v4l2-test-buffers.cpp(813): VIDIOC_CREATE_BUFS not supported
+Total for h713-hdmi-ring device /dev/video2: 48, Succeeded: 48, Failed: 0, Warnings: 2
+watching for 300s; transitions (kernel time):
+KERNEL[6228.822360] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=holding
+H713_HDMI_MODE=1280x720
+KERNEL[6230.366438] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=none
+H713_HDMI_MODE=0x0
+KERNEL[6234.326810] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=acquiring
+H713_HDMI_MODE=0x0
+KERNEL[6234.548383] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=locked
+H713_HDMI_MODE=1280x720
+KERNEL[6239.854212] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=holding
+H713_HDMI_MODE=1280x720
+KERNEL[6241.399890] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=none
+H713_HDMI_MODE=0x0
+KERNEL[6243.660666] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=acquiring
+H713_HDMI_MODE=0x0
+KERNEL[6243.685990] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=none
+H713_HDMI_MODE=0x0
+KERNEL[6243.715213] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=acquiring
+H713_HDMI_MODE=0x0
+KERNEL[6243.937942] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=locked
+H713_HDMI_MODE=1280x720
+KERNEL[6247.939207] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=holding
+H713_HDMI_MODE=1280x720
+KERNEL[6249.478556] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=none
+H713_HDMI_MODE=0x0
+KERNEL[6251.728248] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=acquiring
+H713_HDMI_MODE=0x0
+KERNEL[6251.949678] change   /devices/platform/h713-hdmi-ring/video4linux/video2 (video4linux)
+H713_HDMI_SIGNAL=locked
+H713_HDMI_MODE=1280x720

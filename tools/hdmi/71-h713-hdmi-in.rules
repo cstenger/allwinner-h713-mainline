@@ -1,0 +1,15 @@
+# H713 HDMI-in on the panel (HDMI panel-source design 4 and 10.26).
+#
+# The bridge (h713-hdmi-v4l2, node name "h713-hdmi-in") publishes its signal
+# state in the "signal" attribute of its parent platform device and sends a
+# "change" uevent on every transition. The device unit
+# dev-h713\x2dhdmi\x2din.device is ready only while the signal is locked or
+# holding; becoming ready pulls in h713-hdmi-video.service, and going
+# not-ready stops it (BindsTo=). READY is set explicitly both ways because
+# udev may carry properties over from the previous event (0 first, then 1
+# on a match: no negative ATTRS{} match). The node's own
+# name is ATTR{}, not ATTRS{}: several ATTRS{} keys must all match on ONE
+# device, and "signal" lives on the parent (stage 3, 10.26.2).
+SUBSYSTEM=="video4linux", ATTR{name}=="h713-hdmi-in", SYMLINK+="h713-hdmi-in", TAG+="systemd", ENV{SYSTEMD_WANTS}+="h713-hdmi-video.service"
+SUBSYSTEM=="video4linux", ATTR{name}=="h713-hdmi-in", ENV{SYSTEMD_READY}="0"
+SUBSYSTEM=="video4linux", ATTR{name}=="h713-hdmi-in", ATTRS{signal}=="locked*|holding*", ENV{SYSTEMD_READY}="1"
