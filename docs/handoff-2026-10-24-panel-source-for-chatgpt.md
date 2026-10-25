@@ -30,8 +30,9 @@ cold boot, warm boot and runtime plugging.
 * Nothing is installed; staging goes under `/run` (reboot erases it).
   Production install needs explicit user approval. Only push to `cstenger/*`.
   Route B + event-driven switching are committed as `3a797cc` on
-  `h713-letterbox` (not pushed). The earlier panel-source phases (T4–T6, Test
-  1–3 tools/evidence, patches 0188/0189) are still uncommitted.
+  `h713-letterbox` (not pushed); the earlier panel-source phases (T4–T6,
+  Test 1–3 tools and evidence, experimental patches 0188/0189, the
+  tools/stock sweeps) are `8a6d771`.
 
 ## How HDMI reaches the panel (route B, proven on glass 10-24)
 
