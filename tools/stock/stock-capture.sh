@@ -53,6 +53,18 @@
 #                                                   snap+display+elog again
 #           stock-capture.sh logs    <label>        logcat and codec state
 #           stock-capture.sh ir      <label> <sec>  input binding + key events
+#           stock-capture.sh sweep   <label>        snap, then lists A, A', B
+#                                                   (words) and C (raw DRAM)
+#  RISKY=1    stock-capture.sh risky   <tier>         LAST step only: unexplored
+#                                                   pages, streamed to stdout
+#
+# SWEEP (docs/hdmi-panel-source-design-2026-10-23.md section 10.21): the
+# known-good reference for the HDMI picture path.  A = DISPLAY_BLOCKS (08-31),
+# A' = the 08-28 block-sweep windows A lacks, B = extended (AFBD tail, vblend,
+# TCON, IOMMU tail), C = the MIPS DRAM image.  The same lists, in the same
+# output format, as tools/hdmi/display-sweep.py on our Linux, whose self-test
+# parses the variables below.  Every address passes allowed() first; DRY=1
+# prints the plan and reads nothing (dry-run with dash on our Linux).
 #           stock-capture.sh irq     <label> <sec>  two interrupt snapshots <sec> apart
 
 T=${T:-/data/local/tmp/cap}
@@ -63,6 +75,23 @@ OUT=$T/out
 # The display windows. Each is one page, which is all hidtvreg-read reads per
 # call. Never add 0x069xxxxx or 0x0709xxxx here.
 DISPLAY_BLOCKS="05000000:400 05040000:400 050c0000:400 05140000:400 05180000:400 051c0000:100 05600000:80"
+SWEEP_A2="05700000:30 0525c000:20 0524c000:20 05280080:10 058c0010:8 05240000:10 03061010:4 02010000:20"
+SWEEP_B="05600200:80 05200000:20 05880000:40 02010080:30"
+SWEEP_C="4b100000:e41000:mips-image.bin"
+# RISKY (section 10.21.4): pages never read on either stack, for the final
+# step of a stock session only, after everything else is pulled.  A wedge
+# costs a power cycle (the session ends in a FEL restore anyway); a read
+# cannot change persistent state.  Tiers, most useful first:
+#   1  composition page 2 (0x05001xxx, incl. the 0x0500153x lock word that
+#      reads only MIPS-live -- stock is MIPS-live and routed)
+#   2  pages 2..64 of each video-path block (each only ever read as page 1)
+#   3  one probe per unexplored 64 KiB in 0x05000000-0x05ffffff
+#   4  the capture page 0x06940000 (forbidden on ours; powered on stock HDMI)
+# Never: 0x0709xxxx (RTC GP6/GP7, CPUS), VE, AV1.
+RISKY_T1="05001000"
+RISKY_T2_BLOCKS="05000000:40 05040000:40 050c0000:40 05140000:40 05180000:40 051c0000:40 05200000:40 05600000:10"
+RISKY_T3_KNOWN="0500 0504 050c 0514 0518 051c 0520 0524 0525 0528 0560 0570 0588 058c"
+RISKY_T4="06940000"
 AFBD_VIDEOINFO="05600098 0560009c 056000a0 056000a4"	# per-slot VideoInfo pointers
 ELOG_BASE=4b270000 ELOG_BYTES=200000
 CFG_BASE=4be01000 CFG_BYTES=2000	# display_cfg.xml as the firmware received it
@@ -73,7 +102,7 @@ CCU_MBUS=02001804	# bit4 mbus_av1
 PPU=07001000		# status for domain d at +0x24 + d*0x80
 
 die() { echo "stock-capture: $*" >&2; exit 1; }
-[ -x "$R" ] || die "missing $R -- adb push hidtvreg-read first"
+[ -n "$DRY" ] || [ -x "$R" ] || die "missing $R -- adb push hidtvreg-read first"
 
 # One register, as a decimal number. hidtvreg-read prints "aaaaaaaa 0xVVVVVVVV".
 reg() {
@@ -199,7 +228,96 @@ cmd_ir() {
 	echo "ir $1: $(grep -c EV_KEY "$d/getevent-keys.txt") key events"
 }
 
+# allowed <hex-address> <hex-words>: refuse what has wedged this SoC or is
+# off limits.  Pattern-matched on the hex digits (mksh integers are signed).
+allowed() {
+	a=$(echo "$1" | tr 'A-F' 'a-f')
+	case "$a" in
+	069*|0709*|05001*|01c0d*|01c0e*) return 1 ;;
+	esac
+	# stay inside one page: offset + 4*words <= 0x1000
+	off=$(printf '%d' "0x${a#?????}")
+	n=$(printf '%d' "0x$2")
+	[ "$n" -ge 1 ] && [ $((off + 4 * n)) -le 4096 ]
+}
+
+cmd_sweep() {
+	label=$1
+	d=$OUT/$label
+	if [ -z "$DRY" ]; then
+		mkdir -p "$d" || die "cannot create $d"
+		[ -x "$RAW" ] || die "missing $RAW -- adb push hidtvreg-raw first"
+		cmd_snap "$label"
+	fi
+	for list in A A2 B; do
+		case $list in A) blocks=$DISPLAY_BLOCKS ;; A2) blocks=$SWEEP_A2 ;; B) blocks=$SWEEP_B ;; esac
+		[ -n "$DRY" ] || : > "$d/$list.txt"
+		for b in $blocks; do
+			addr=${b%%:*} words=${b##*:}
+			allowed "$addr" "$words" || die "sweep: $addr:$words refused"
+			if [ -n "$DRY" ]; then echo "READ $list $addr $words"
+			else $R "$addr" "$words" >> "$d/$list.txt" 2>&1; sync
+			fi
+		done
+	done
+	for c in $SWEEP_C; do
+		addr=${c%%:*} rest=${c#*:} size=${rest%%:*} name=${rest#*:}
+		case "$addr" in 4b[1-9a-f]?????) ;; *) die "sweep: raw $addr refused" ;; esac
+		if [ -n "$DRY" ]; then echo "RAW C $addr $size $name"
+		else $RAW "$addr" "$size" > "$d/$name" || echo "sweep $label: hidtvreg-raw FAILED"; sync
+		fi
+	done
+	[ -n "$DRY" ] || echo "sweep $label: A $(grep -c '^0' "$d/A.txt") A' $(grep -c '^0' "$d/A2.txt") B $(grep -c '^0' "$d/B.txt") words; C $(wc -c < "$d/mips-image.bin") bytes"
+}
+
+# risky_ok <hex-address>: the risky tiers' own guard.  Still refuses the
+# 0x0709xxxx window (GP7 must never be touched; 0x07091000 always wedges and
+# answers nothing), VE and AV1; allows only 0x05xxxxxx and the capture page.
+risky_ok() {
+	a=$(echo "$1" | tr 'A-F' 'a-f')
+	case "$a" in
+	0709*|01c0d*|01c0e*) return 1 ;;
+	05??????|06940???) return 0 ;;
+	esac
+	return 1
+}
+
+# One page (or probe) to stdout, announced first so a wedge names it.
+risky_read() {
+	risky_ok "$1" || die "risky: $1 refused"
+	echo "## READ $1 $2"
+	[ -n "$DRY" ] || $R "$1" "$2"
+}
+
+cmd_risky() {
+	[ "$RISKY" = 1 ] || die "risky needs RISKY=1 (last step of a session only)"
+	case "$1" in
+	1) risky_read "$RISKY_T1" 400 ;;
+	2)
+		for b in $RISKY_T2_BLOCKS; do
+			base=${b%%:*} pages=$(printf '%d' "0x${b##*:}") i=1
+			while [ "$i" -lt "$pages" ]; do
+				a=$(printf '%08x' $(( $(printf '%d' "0x$base") + i * 4096 )))
+				[ "$a" = 05001000 ] || risky_read "$a" 400
+				i=$((i + 1))
+			done
+		done ;;
+	3)
+		i=0
+		while [ "$i" -lt 256 ]; do
+			hi=$(printf '%04x' $((0x0500 + i)))
+			case " $RISKY_T3_KNOWN " in *" $hi "*) ;; *) risky_read "${hi}0000" 4 ;; esac
+			i=$((i + 1))
+		done ;;
+	4) risky_read "$RISKY_T4" 400 ;;
+	*) die "risky tier 1..4" ;;
+	esac
+	echo "## DONE tier $1"
+}
+
 case "$1" in
+risky)   cmd_risky "${2:?tier}" ;;
+sweep)   cmd_sweep "${2:?label}" ;;
 snap)    cmd_snap "${2:?label}" ;;
 display) cmd_display "${2:?label}" ;;
 elog)    cmd_elog "${2:?label}" ;;
@@ -208,5 +326,5 @@ play)    cmd_play "${2:?label}" "$3" ;;
 logs)    cmd_logs "${2:?label}" ;;
 irq)     cmd_irq "${2:?label}" "$3" ;;
 ir)      cmd_ir "${2:?label}" "$3" ;;
-*) sed -n '2,62p' "$0"; exit 2 ;;
+*) sed -n '2,74p' "$0"; exit 2 ;;
 esac

@@ -11,6 +11,7 @@
 #
 #   capture-session.sh check                adb up, hidtvreg readable
 #   capture-session.sh push                 tools + media to the board
+#   capture-session.sh push-tools           tools only (the 10-23 sweep session; no media)
 #   capture-session.sh baseline             fw identity + idle state
 #   capture-session.sh case FILE [TAG]      play FILE, capture, summarise (leaves it playing)
 #   capture-session.sh state TAG            capture whatever is on screen now (menus)
@@ -65,6 +66,14 @@ summary() {  # TAG
 	echo "$1" > "$OUT/.last"
 }
 
+cmd_push_tools() {
+	[ -x "$LAB/hidtvreg-read" ] && [ -x "$LAB/hidtvreg-raw" ] || die "stage hidtvreg-read and hidtvreg-raw in $LAB"
+	adb shell "mkdir -p $T/out"
+	adb push "$LAB/hidtvreg-read" "$LAB/hidtvreg-raw" "$ROOT/tools/stock/stock-capture.sh" $T/
+	adb shell "chmod 755 $T/hidtvreg-read $T/hidtvreg-raw $T/stock-capture.sh"
+	adb shell "cd $T && sha256sum hidtvreg-read hidtvreg-raw stock-capture.sh"
+}
+
 cmd_baseline() {
 	sc fw fw
 	sc play idle
@@ -106,6 +115,7 @@ cmd_state() {
 case ${1:-} in
 check)    cmd_check ;;
 push)     cmd_push ;;
+push-tools) cmd_push_tools ;;
 baseline) cmd_baseline ;;
 case)     cmd_case "${2:?file}" "${3:-}" ;;
 state)    cmd_state "${2:?tag}" ;;

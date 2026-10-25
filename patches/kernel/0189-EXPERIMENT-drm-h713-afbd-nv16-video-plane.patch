@@ -1,0 +1,92 @@
+EXPERIMENT: drm: h713: put NV16 (4:2:2) on the video plane
+
+Not for merging, not in the series. HDMI panel-source design section 10.25,
+Test 3: does AFBD source 0, in the KMS driver's queue mode and decoder
+routing, present 4:2:2 correctly?
+
+The HDMI capture ring holds NV16 (Test 1, section 10.23.6). If the video
+plane can scan NV16 directly, the conversion route needs no conversion and
+no copy (route A); if not, the V4L2 bridge emits NV12 instead (route B).
+
+AFBD_VIDEO_CTRL bits 15:8 = 2 is the display firmware's own code for
+yuv422_888 (its colour-format table at 0x8b1f4bb0 through the resolver at
+0x8b1a31e8, consistent with NV12 = 0 and P010 = 6/7 on hardware). The chroma
+line budget in +0x4c is the full picture height for 4:2:2.
+
+Scope is deliberately minimal: native, unmirrored 1280x720, linear only.
+h713_lb_check already refuses anything but NV12 away from the native size,
+and mirroring is refused for NV16 here. Nothing downstream of AFBD is
+changed: whether the decoder-routed chain handles 4:2:2 is the measurement.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -138,11 +138,21 @@
+  */
+ #define H713_VIDEO_FMT_SHIFT	8
+ #define H713_VIDEO_FMT_NV12	0
++/*
++ * EXPERIMENT (HDMI panel-source design 10.25, Test 3): NV16 as AFBD format 2,
++ * the display firmware's own code for yuv422_888 (its colour-format table
++ * 0x8b1f4bb0 through the resolver 0x8b1a31e8). Native, unmirrored 1280x720
++ * only: whether the decoder-routed chain after AFBD presents 4:2:2 is what
++ * the experiment measures.
++ */
++#define H713_VIDEO_FMT_NV16	2
+ #define H713_VIDEO_FMT_P010	6
+ #define H713_VIDEO_FMT_P010_LSB	7
+ 
+ static u32 h713_afbd_video_fmt(const struct drm_framebuffer *fb)
+ {
++	if (fb->format->format == DRM_FORMAT_NV16)
++		return H713_VIDEO_FMT_NV16;
+ 	if (fb->format->format != DRM_FORMAT_P010)
+ 		return H713_VIDEO_FMT_NV12;
+ 	if (fb->modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10)
+@@ -1015,7 +1025,7 @@
+ 	struct drm_framebuffer *fb;
+ 	struct h713_geom g;
+ 	dma_addr_t y, c;
+-	bool p010;
++	bool p010, nv16;
+ 	int ret;
+ 
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+@@ -1041,8 +1051,9 @@
+ 
+ 	fb = new_state->fb;
+ 	p010 = fb->format->format == DRM_FORMAT_P010;
++	nv16 = fb->format->format == DRM_FORMAT_NV16;
+ 	if (!new_state->visible ||
+-	    (fb->format->format != DRM_FORMAT_NV12 && !p010) ||
++	    (fb->format->format != DRM_FORMAT_NV12 && !p010 && !nv16) ||
+ 	    (fb->modifier != DRM_FORMAT_MOD_LINEAR &&
+ 	     !(p010 && fb->modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10)))
+ 		return -EINVAL;
+@@ -1061,6 +1072,9 @@
+ 	 */
+ 	if (g.vflip && p010)
+ 		return -EINVAL;
++	/* EXPERIMENT NV16: native and unmirrored only (h713_lb_check refuses it too) */
++	if (nv16 && (g.hflip || g.vflip))
++		return -EINVAL;
+ 	if (!h713_geom_same_rect(&g, &h->native)) {
+ 		ret = h713_lb_check(h, new_state, &g);
+ 		if (ret)
+@@ -1154,7 +1168,8 @@
+ 		const struct drm_framebuffer *f = new_state->fb;
+ 		u32 cpp = f->format->cpp[0];
+ 		u32 y = g.h * cpp;
+-		u32 c = g.h / 2 * cpp;
++		/* 4:2:2 chroma is full height (EXPERIMENT NV16) */
++		u32 c = (f->format->format == DRM_FORMAT_NV16 ? g.h : g.h / 2) * cpp;
+ 
+ 		writel(y << 16 | ALIGN(g.w, 2), h->regs + AFBD_VIDEO_Y_ROWS);
+ 		writel(y << 16 | ALIGN(g.w, 4), h->regs + AFBD_VIDEO_Y_ROWS2);
+@@ -1641,6 +1656,7 @@
+ static const u32 h713_afbd_video_formats[] = {
+ 	DRM_FORMAT_NV12,
+ 	DRM_FORMAT_P010,	/* EXPERIMENT */
++	DRM_FORMAT_NV16,	/* EXPERIMENT: Test 3, native only */
+ };
+ 
+ static const u64 h713_afbd_video_modifiers[] = {
