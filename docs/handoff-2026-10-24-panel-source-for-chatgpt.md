@@ -100,6 +100,10 @@ reboot HDMI stays off until a cold boot (U-Boot warm path).
 
 ## Next steps
 
+The full task list for the remaining work, with steps and acceptance criteria:
+[chatgpt-hdmi-remaining-work-2026-10-24.md](chatgpt-hdmi-remaining-work-2026-10-24.md).
+
+
 1. ~~Rerun stage 3~~ done, PASS (§10.26.3).
 2. Stage 5 install (approval): `cd /root/hdmi-video && sh install-hdmi-video.sh`
    (bundle already on the board; `--dry-run` passed). Then cold boot with the
