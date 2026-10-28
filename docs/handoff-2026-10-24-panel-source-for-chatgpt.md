@@ -1,5 +1,36 @@
 # Handoff: HDMI-in on the panel (route B + event-driven switching), 2026-10-24
 
+## October 28 — item 3 policy installed and accepted
+
+Chris chose **HDMI priority** and **640×480 unsupported**. The supported
+launcher and plane player now refuse local playback before decoder/DRM
+probing during the entire HDMI boot/session, including signal loss and
+stopped services: MIPS remains live, and runtime local handover is unqualified.
+Local decoding requires a normal local-playback boot. Raw player/diagnostic
+commands bypass the supported policy and must not decode on an HDMI boot.
+Production and observation ring loads explicitly set `allow_480p=0`.
+
+Six new offline tests pass and catch 13 faulty variants. Existing installer
+checks and signal scenarios/five recorded trace replays pass. Read-only board
+preflight confirms the same calibrated HDMI boot, active services, 480p
+disabled and available target build dependencies.
+
+Chris then approved installation and restart verification. Target arm64 compile,
+staged and installed refusal checks (direct policy check and launcher auto,
+plane and GPU dry runs) pass. Installed the player pair and video bundle with
+backups. The ring/video restart recovered 59.63 fps with zero rejected frames,
+capture xruns or automatic restarts. Capture, signal and speaker start times
+and the saved 40 ms delay are unchanged. Chris confirmed motion, colours and
+clear continuous tone from the projector-only host test source. No reboot.
+Physical 480p/local-playback boot tests were not part of this sequence.
+
+Playback backup `/var/lib/h713-playback-policy/backup.iw1NyX`; prior video
+bundle `/var/lib/h713-hdmi-video/backup.qqVRof`, both also archived on host.
+Test player stopped, host volume restored to 35% unmuted, board left on.
+Included in the requested policy commit; no push. Next: item 5 production
+cleanup; board clock remains incorrect.
+[Results, exact scripts, backups and qualifications](hdmi-evidence/2026-10-28-playback-ownership/README.md).
+
 ## Current A/V calibration — 40 ms saved and reboot verified
 
 **PASS with qualifications.** `/etc/default/h713-hdmi-speaker` saves
@@ -24,8 +55,9 @@ raw 22937/35%, unmuted. Board left powered on with saved 40 ms active.
 [Results, exact installed defaults, reproduction and qualifications](hdmi-evidence/2026-10-27-avsync-calibration/README.md),
 with machine verdict `CALIBRATION-RESULT.json`. Original camera MOVs remain
 local; their hashes, derived signals and analysis are included.
-The earlier lifecycle/reboot commit `a93a741` was pushed; this calibration
-commit has not been pushed. Historical board-off statements below describe
+The lifecycle/reboot commit `a93a741` and calibration commit `a23ab7f` were
+pushed to the fork's `h713-letterbox` branch. Historical board-off statements
+below describe
 the end of the earlier reboot acceptance, before this calibration session.
 
 

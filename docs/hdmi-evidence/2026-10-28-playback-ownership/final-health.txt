@@ -1,0 +1,34 @@
+c8f3308e-5c02-4be1-bc0e-3ee5991761e8
+NRestarts=0
+ExecMainStartTimestampMonotonic=11684098
+Id=h713-hdmi-capture.service
+ActiveState=active
+
+NRestarts=0
+ExecMainStartTimestampMonotonic=22790143
+Id=h713-hdmi-signal.service
+ActiveState=active
+
+NRestarts=0
+ExecMainStartTimestampMonotonic=23301592
+Id=h713-hdmi-speaker.service
+ActiveState=active
+
+NRestarts=0
+ExecMainStartTimestampMonotonic=2308143632
+Id=h713-hdmi-ring.service
+ActiveState=active
+
+NRestarts=0
+ExecMainStartTimestampMonotonic=2308528622
+Id=h713-hdmi-video.service
+ActiveState=active
+N
+0
+0
+{"verified": true, "version": 1, "boot_id": "c8f3308e-5c02-4be1-bc0e-3ee5991761e8", "server_pid": 317, "route": {"source": {"id": 51, "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"}, "sink": {"id": 43, "name": "alsa_output.platform-2030000.codec.stereo-fallback"}}, "nodes": {"h713-hdmi-loop-capture": 56, "h713-hdmi-loop-playback": 55}}
+# HY200 QZ713DF_A1 bench calibration, 2026-10-27
+# 720p60 HDMI, internal codec/speaker; camera-qualified, absolute camera bias unmeasured.
+# PipeWire target delay, not an additive delay; see A/V calibration evidence.
+H713_HDMI_AUDIO_DELAY_SEC=0.040
+hdmi-priority-v1

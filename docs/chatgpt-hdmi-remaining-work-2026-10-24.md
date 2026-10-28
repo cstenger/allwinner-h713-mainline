@@ -170,21 +170,27 @@ reboot. Record every occurrence.
 **Done when:** a warm reboot from HDMI comes back to HDMI video with
 audible audio, on repeated reboots including an abrupt reset.
 
-### 2. Two decisions for the user (ask, then implement)
+### 2. Ownership and 640×480 decisions — installed and accepted October 28
 
-* **Q7: HDMI vs local video playback.** If HDMI is locked while the user
-  plays a local file (Cedrus decoder → video plane), who wins? Cedrus
-  traffic plus live MIPS once hard-locked the board, so they must not run
-  together. Options: HDMI wins and local playback is refused during an HDMI
-  session (proposal), or local playback wins and stops the HDMI unit.
-  Implementation hint: `Conflicts=` between units, or an `ExecStartPre=`
-  refusal in `h713-hdmi-video.service`.
-* **Q9: 640×480 sources.** Today they are marked unsupported and the
-  console stays. Options: keep that; show 640×480 1:1 (module parameter
-  `allow_480p=1` in `h713-hdmi-ring.service`; the pipeline already follows
-  the size); or remove 640×480 from the EDID (needs the signal owner
-  re-pinned; bigger change).
-  Design doc §8 has the full question list.
+* **Q7 decided by Chris: HDMI takes priority.** The launcher and direct plane
+  player now refuse local playback before decoder/DRM probing while the HDMI
+  boot handoff or a session/owner marker exists. The GPU route follows the
+  same rule. This covers the whole HDMI boot, including no signal, unsupported
+  input and stopped services: MIPS stays live and there is no qualified
+  runtime handover back to local playback. Use a local-playback boot instead.
+  Raw mpv/GStreamer/diagnostic commands bypass the supported launcher and
+  must not be used for local decoding during an HDMI boot.
+* **Q9 decided by Chris: keep 640×480 unsupported.** Both the production ring
+  unit and the observation script explicitly load with `allow_480p=0`.
+  The existing signal state machine keeps the console up; EDID is unchanged.
+
+**Installed and accepted with the scope above.** Staged/installed refusal checks
+pass, HDMI recovered after the authorized ring/video restart at 59.63 fps,
+and Chris confirmed correct motion/colours/continuous tone. Zero capture xruns,
+rejected frames or automatic restarts; capture/signal/speaker start times and
+saved 40 ms delay unchanged. Test stopped and host 35% volume restored; board
+left on. No physical 480p or local-playback boot test in this sequence.
+See [ownership results, backups and qualifications](hdmi-evidence/2026-10-28-playback-ownership/README.md).
 
 ### 3. Audio through PipeWire, and A/V sync
 

@@ -1,0 +1,23 @@
+PASS local_boot
+PASS hdmi_owners
+PASS signal_loss
+PASS unknown_ownership
+PASS launcher_barrier
+PASS unsupported_480p
+CAUGHT local_boot return 0;
+}
+
+static gint
+CAUGHT signal_loss if (check_playback_policy())
+CAUGHT unknown_ownership if (errno != ENOENT)
+CAUGHT launcher_barrier "$player" --check-playback-policy
+CAUGHT hdmi_owners "/proc/device-tree/chosen/h713,hdmi-boot-v1"
+CAUGHT hdmi_owners "/sys/firmware/devicetree/base/chosen/h713,hdmi-boot-v1"
+CAUGHT hdmi_owners "/sys/module/h713_hdmi_receiver"
+CAUGHT hdmi_owners "/sys/module/h713_hdmi_audio"
+CAUGHT hdmi_owners "/sys/module/h713_hdmi_signal"
+CAUGHT hdmi_owners "/sys/module/h713_hdmi_v4l2"
+CAUGHT hdmi_owners "/run/h713-hdmi-session/state.json"
+CAUGHT unsupported_480p allow_480p=0
+CAUGHT unsupported_480p allow_480p=0
+6 tests passed; 13 mutations caught

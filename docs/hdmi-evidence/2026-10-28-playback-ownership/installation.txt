@@ -1,0 +1,26 @@
+gst-plane-play.c: OK
+h713-play: OK
+hdmi-video/71-h713-hdmi-in.rules: OK
+hdmi-video/SHA256SUMS: OK
+hdmi-video/h713-hdmi-ring.service: OK
+hdmi-video/h713-hdmi-v4l2.ko: OK
+hdmi-video/h713-hdmi-video.service: OK
+hdmi-video/install-hdmi-video.sh: OK
+hdmi-video/stage-hdmi-video.sh: OK
+/usr/local/bin/h713-play: OK
+/usr/local/bin/gst-plane-play: OK
+/usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko: OK
+install-hdmi-video: dry run OK: would replace the installed generation into /usr/lib/h713-hdmi-video, /etc/systemd/system, /etc/udev/rules.d
+Playback backup: /var/lib/h713-playback-policy/backup.iw1NyX
+Local playback unavailable: HDMI has priority for this boot/session. Use a local-playback boot; unplugging HDMI or stopping its services does not release the live firmware.
+Local playback unavailable: HDMI has priority for this boot/session. Use a local-playback boot; unplugging HDMI or stopping its services does not release the live firmware.
+Local playback unavailable: HDMI has priority for this boot/session. Use a local-playback boot; unplugging HDMI or stopping its services does not release the live firmware.
+Local playback unavailable: HDMI has priority for this boot/session. Use a local-playback boot; unplugging HDMI or stopping its services does not release the live firmware.
+install-hdmi-video: previous generation backed up to /var/lib/h713-hdmi-video/backup.qqVRof
+582d16ac58f325c92b8abafb6d6072fda6fda353515f96ea146de3ae97b0b14e  /usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko
+5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a  /etc/systemd/system/h713-hdmi-ring.service
+f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9  /etc/systemd/system/h713-hdmi-video.service
+4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370  /etc/udev/rules.d/71-h713-hdmi-in.rules
+install-hdmi-video: installed; the panel follows the HDMI signal. Revert: sh /usr/lib/h713-hdmi-video/install-hdmi-video.sh --remove
+/etc/default/h713-hdmi-speaker: OK
+PASS: installed playback guard and restarted HDMI video/ring; speaker calibration unchanged

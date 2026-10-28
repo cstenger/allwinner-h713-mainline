@@ -11,7 +11,8 @@ RemainAfterExit=yes
 # Route B: pair completion (production has no VIncap hook), NV12 for the
 # KMS video plane, cacheable ring. Staging overrides H713_BRIDGE.
 Environment=H713_BRIDGE=/usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko
-ExecStart=/sbin/insmod ${H713_BRIDGE} completion=pair
+# Q9: keep 640x480 unsupported; do not rely on the module's default.
+ExecStart=/sbin/insmod ${H713_BRIDGE} completion=pair allow_480p=0
 ExecStop=/sbin/rmmod h713_hdmi_v4l2
 TimeoutStartSec=10
 TimeoutStopSec=10

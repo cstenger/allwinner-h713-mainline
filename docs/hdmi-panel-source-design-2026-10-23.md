@@ -530,10 +530,11 @@ size.
 * **Failure:** a busy DRM master or a format refusal makes `gst-launch` exit
   nonzero. systemd restarts it after 1 s, at most 3 times a minute, and the
   next lock event clears the limit. The console stays up throughout.
-* **Coexistence (Q7):** `ExecStartPre=/bin/sh -c '! fuser -s /dev/video0'`
-  refuses while Cedrus is busy (Cedrus traffic plus live MIPS has hard-locked
-  the board, [[display-yuv-fetch-closed]]). Which side wins is the user's
-  decision.
+* **Coexistence (Q7, decided October 28):** HDMI takes priority. The supported
+  local launcher and plane player refuse before probing/opening Cedrus during
+  an HDMI boot/session. Checking only the renderer or `/dev/video0` is not
+  sufficient: MIPS stays live during signal loss and after renderer stop.
+  See §10.27 for implementation, scope and deployment status.
 
 ## 5. Audio and A/V sync
 
@@ -669,14 +670,11 @@ refinement.
 4. **A 5 V field in the port object** (diagnostic only).
 5. **Do lock and unlock events write TCON, composition or window state?**
 6. **Panel-black after a reboot from video** ([[panel-black-2026-10-16]]).
-7. **HDMI or local playback priority.** Proposal: HDMI wins while LOCKED,
-   and Cedrus playback is refused during an HDMI session. **Needs your
-   decision.**
+7. **HDMI or local playback priority — decided October 28:** HDMI wins.
+   Refuse local playback throughout the HDMI boot/session; see §10.27.
 8. **Console blanking:** make sure the console that comes back is visible.
-9. **640×480.** A PC may deliberately pick it. The choices are: keep the
-   console (v1 default); show it 1:1 centred, or pillarboxed to 960×720
-   through the letterbox route (0161/0163); or drop VIC 1 from the EDID,
-   which re-pins the signal owner. **Needs your decision.**
+9. **640×480 — decided October 28:** keep it unsupported and show the
+   console. Explicit `allow_480p=0`; EDID remains unchanged. See §10.27.
 10. **Zero-copy ring import** and CPU/thermal cost alongside audio,
     including a static desktop still costing per-frame copies.
 11. **4:4:4/RGB capture** (firmware YUV444 formats, `kmssink` NV24):
@@ -3550,6 +3548,40 @@ operator-ready gate remain. Proposed soak is five orderly and one synced
 SysRq-b reboot through installed startup (no GP7 stop/RAM source), plus a
 no-source cold boot and runtime reconnect. Track prior panel-black/cold-audio
 observations; no service restarts may mask an acceptance failure. No commit/push.
+
+### 10.27 HDMI priority and 640×480 policy (October 28)
+
+Chris chose HDMI priority and keeping 640×480 unsupported. The implementation
+is installed and accepted after the explicitly authorized update/restart.
+`h713-play` checks ownership through the matching
+`gst-plane-play --check-playback-policy` before even probing the file or
+decoder capabilities. Direct plane-player launches also check before
+GStreamer initialization. This covers forced/GPU routes and keystone
+handover. No service is stopped to make room for a local player.
+
+The boot handoff, HDMI owner modules and saved session state each refuse
+local playback. Unknown ownership fails closed. The immutable boot handoff
+is necessary: MIPS remains live with no signal, unsupported input or stopped
+services. A normal local-playback boot is required to resume local decode;
+there is no qualified runtime handover. This policy guards supported
+launchers; raw decoder/diagnostic commands remain outside it and must not
+be used on an HDMI boot. Production firmware already runs before Linux,
+so local playback cannot precede HDMI lock on those boots.
+
+Both ring-service and observation loads explicitly set `allow_480p=0`.
+EDID and bridge binary remain unchanged. Six policy tests and 13 caught
+mutations, 16 installer checks and existing signal scenarios/five recorded
+trace replays pass. The rootfs already builds/installs the updated player
+and launcher together. Native/target arm64 compile and syntax checks pass;
+staged/installed policy checks and launcher auto/plane/GPU dry-run refusals
+pass without local decoder execution. Installed ring/video restart recovers
+59.63 fps with zero rejected frames/capture xruns/automatic restarts. Capture,
+signal and speaker start times and the saved 40 ms delay are unchanged.
+Chris confirmed motion, colours and continuous tone. Test player stopped,
+host volume restored to 35% unmuted; board left on. No reboot, physical 480p
+test or local-playback boot test in this sequence. Sources and evidence are
+included in the requested policy commit; no push.
+[Results, exact scripts, backups and qualifications](hdmi-evidence/2026-10-28-playback-ownership/README.md).
 
 ## 11. Deleted relative to revision 1
 

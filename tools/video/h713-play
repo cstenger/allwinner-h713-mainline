@@ -48,6 +48,8 @@
 #
 # Prints one "h713-play:" line with the probe and the decision, then plays.
 # --route=plane fails if the plane cannot show FILE; MPV-ARGS reach mpv only.
+# HDMI owns an HDMI boot/session, including signal loss and unsupported input.
+# Local playback requires a local-playback boot with the HDMI firmware parked.
 set -euo pipefail
 
 PANEL_W=1280
@@ -71,6 +73,13 @@ while [ $# -gt 0 ]; do
 done
 case $route in auto|plane|gpu) ;; *) echo "h713-play: bad --route" >&2; exit 2 ;; esac
 [ -n "${file:-}" ] && [ -r "$file" ] || { echo "usage: h713-play [--dry-run] [--route=auto|plane|gpu] FILE [-- MPV-ARGS...]" >&2; exit 2; }
+
+# Check before probing: the VP9 capability probe opens Cedrus. The plane
+# player owns this shared, read-only policy check, including for GPU routes.
+# A missing or older player fails closed; install the launcher/player pair.
+player=$(command -v gst-plane-play || echo "$(dirname "$0")/gst-plane-play")
+[ -x "$player" ] || { echo 'h713-play: matching gst-plane-play is required for the HDMI ownership check' >&2; exit 1; }
+"$player" --check-playback-policy
 
 # --- probe -------------------------------------------------------------------
 codec= w=0 h=0 cw=0 ch=0 sar= pix= rot=0
@@ -308,8 +317,6 @@ gpu_cmd() {
 	shift
 	cmd=(mpv --vo=gpu --gpu-context=drm --hwdec=vaapi "${CHEAP[@]}" "${extra[@]}" "$@" "${mpv_args[@]}" "$file")
 }
-
-player=$(command -v gst-plane-play || echo "$(dirname "$0")/gst-plane-play")
 
 case ${plane:-} in
 native)

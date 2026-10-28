@@ -30,7 +30,7 @@ observe)
 	loaded && die "the bridge is already loaded"
 	[ -f "$HERE/h713-hdmi-v4l2.ko" ] || die "no module in $HERE"
 	dmesg -n 7 || true
-	insmod "$HERE/h713-hdmi-v4l2.ko" completion=pair
+	insmod "$HERE/h713-hdmi-v4l2.ko" completion=pair allow_480p=0
 	trap 'rmmod h713_hdmi_v4l2 2>/dev/null || true' EXIT HUP INT TERM
 	echo "signal now: $(cat $ATTR)"
 	DEV=/dev/$(basename "$(dirname "$(grep -l '^h713-hdmi-in$' /sys/class/video4linux/*/name)")")

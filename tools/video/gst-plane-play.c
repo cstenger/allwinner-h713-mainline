@@ -40,12 +40,54 @@
  *       $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-video-1.0)
  */
 #include <glib-unix.h>
+#include <errno.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+
+/* Compile-time fake root for offline tests; no runtime override on the board. */
+#ifndef H713_POLICY_ROOT
+#define H713_POLICY_ROOT ""
+#endif
+
+static int check_playback_policy(void)
+{
+	/* The firmware remains live through signal loss and service stop. The
+	 * immutable boot handoff therefore takes precedence over signal state.
+	 * Module/session markers also cover manually staged HDMI sessions.
+	 * No MMIO, decoder opens, firmware calls or service changes here. */
+	static const char *const owners[] = {
+		H713_POLICY_ROOT "/proc/device-tree/chosen/h713,hdmi-boot-v1",
+		H713_POLICY_ROOT "/sys/firmware/devicetree/base/chosen/h713,hdmi-boot-v1",
+		H713_POLICY_ROOT "/sys/module/h713_hdmi_receiver",
+		H713_POLICY_ROOT "/sys/module/h713_hdmi_audio",
+		H713_POLICY_ROOT "/sys/module/h713_hdmi_signal",
+		H713_POLICY_ROOT "/sys/module/h713_hdmi_v4l2",
+		H713_POLICY_ROOT "/run/h713-hdmi-session/state.json",
+	};
+	struct stat st;
+	size_t i;
+
+	for (i = 0; i < G_N_ELEMENTS(owners); i++) {
+		if (lstat(owners[i], &st) == 0) {
+			fprintf(stderr, "Local playback unavailable: HDMI has priority "
+				"for this boot/session. Use a local-playback boot; "
+				"unplugging HDMI or stopping its services does not "
+				"release the live firmware.\n");
+			return 1;
+		}
+		if (errno != ENOENT) {
+			fprintf(stderr, "Cannot establish HDMI ownership (%s): %s; "
+				"local playback refused.\n", owners[i], strerror(errno));
+			return 1;
+		}
+	}
+	return 0;
+}
 
 static gint out_w, out_h;
 
@@ -260,6 +302,16 @@ int main(int argc, char **argv)
 	GstClock *clock;
 	gchar *uri;
 
+	/* Also used by h713-play before ffprobe, DRM/VP9 capability probes and
+	 * route selection, so the GPU fallback obeys the same priority policy. */
+	if (argc == 2 && !strcmp(argv[1], "--playback-policy-version")) {
+		puts("hdmi-priority-v1");
+		return 0;
+	}
+	if (check_playback_policy())
+		return 1;
+	if (argc == 2 && !strcmp(argv[1], "--check-playback-policy"))
+		return 0;
 	gst_init(&argc, &argv);
 
 	if (argc < 4 ||

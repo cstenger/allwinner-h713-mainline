@@ -1,0 +1,18 @@
+gst-plane-play.c: OK
+h713-play: OK
+hdmi-video/71-h713-hdmi-in.rules: OK
+hdmi-video/SHA256SUMS: OK
+hdmi-video/h713-hdmi-ring.service: OK
+hdmi-video/h713-hdmi-v4l2.ko: OK
+hdmi-video/h713-hdmi-video.service: OK
+hdmi-video/install-hdmi-video.sh: OK
+hdmi-video/stage-hdmi-video.sh: OK
+PASS: compiled player is little-endian ELF64 AArch64
+Local playback unavailable: HDMI has priority for this boot/session. Use a local-playback boot; unplugging HDMI or stopping its services does not release the live firmware.
+Local playback unavailable: HDMI has priority for this boot/session. Use a local-playback boot; unplugging HDMI or stopping its services does not release the live firmware.
+Local playback unavailable: HDMI has priority for this boot/session. Use a local-playback boot; unplugging HDMI or stopping its services does not release the live firmware.
+Local playback unavailable: HDMI has priority for this boot/session. Use a local-playback boot; unplugging HDMI or stopping its services does not release the live firmware.
+install-hdmi-video: dry run OK: would replace the installed generation into /usr/lib/h713-hdmi-video, /etc/systemd/system, /etc/udev/rules.d
+f50f679b22b7144de05b69e2806428d7d6d3a06e275b1ff48883923732e684d8  gst-plane-play
+1858570f45de37e5d3a0ba31b14de0369fdf08c664cf62f804e141d9f86dcd25  h713-play
+PASS: target compile, policy refusal on all launcher routes and video installer dry run
