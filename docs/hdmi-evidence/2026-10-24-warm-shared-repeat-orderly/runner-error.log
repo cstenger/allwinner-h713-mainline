@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "/home/chris/Projects/h713/build/hdmi-warm-shared-source-2026-10-24/run-orderly-gated.py", line 18, in <module>
+    Gated(OUT,'/dev/ttyUSB0',reset='orderly',require_video=True).run(ROOT/'build/hdmi-warm-shared-repeat-2026-10-24')
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/chris/Projects/h713/tools/serial/run-warm-shared.py", line 178, in run
+    rec=self.reboot_from_cold(uart)
+  File "/home/chris/Projects/h713/tools/serial/run-warm-shared.py", line 222, in reboot_from_cold
+    warm,pos=self.watch(uart,reboot_stage(self.reset),300,start=pos);check_warm_preboot(warm.preboot())
+             ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/chris/Projects/h713/tools/serial/run-warm-shared.py", line 120, in watch
+    if uart.error:raise uart.error
+                  ^^^^^^^^^^^^^^^^
+  File "/home/chris/Projects/h713/tools/serial/run-warm-shared.py", line 105, in loop
+    chunk=os.read(self.fd,65536)
+BlockingIOError: [Errno 11] Resource temporarily unavailable

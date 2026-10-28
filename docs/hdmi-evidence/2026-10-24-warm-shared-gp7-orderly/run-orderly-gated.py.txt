@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""One approved orderly trial; pause health checks until each host source is confirmed."""
+import importlib.util,pathlib,time
+ROOT=pathlib.Path('/home/chris/Projects/h713')
+spec=importlib.util.spec_from_file_location('warm_runner',ROOT/'tools/serial/run-warm-shared.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+OUT=ROOT/'docs/hdmi-evidence/2026-10-24-warm-shared-gp7-orderly'
+class Gated(m.Run):
+    def health(self,label):
+        if label in ('cold','warm'):
+            self.note('WAITING for '+label+'-host-source-confirmed; no health checks before this gate')
+            deadline=time.monotonic()+900
+            while not (self.out/(label+'-host-source-confirmed')).exists():
+                if time.monotonic()>deadline:raise RuntimeError(label+' source not confirmed; stopping')
+                time.sleep(1)
+            self.note(label+' host source confirmed; beginning health checks')
+        return super().health(label)
+Gated(OUT,'/dev/ttyUSB0',reset='orderly',require_video=True,boot_stop='gp7').run(ROOT/'build/hdmi-warm-shared-gp7-2026-10-24')

@@ -1,0 +1,32 @@
+
+from pathlib import Path
+import subprocess,time,json,signal,os
+p=Path('/run/h713-audio-inspect');unit='h713-hdmi-speaker';r={}
+assert Path('/proc/sys/kernel/random/boot_id').read_text().strip()=='ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac'
+env=os.environ.copy();env['PIPEWIRE_RUNTIME_DIR']='/run/user/1000'
+args=['pw-loopback','--name=h713-hdmi-speaker','--channels=2','--channel-map=[ FL, FR ]','--latency=20','--capture=alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback','--playback=alsa_output.platform-2030000.codec.stereo-fallback','--capture-props={ node.name=h713-hdmi-loop-capture node.dont-fallback=true audio.rate=48000 }','--playback-props={ node.name=h713-hdmi-loop-playback node.dont-fallback=true audio.rate=48000 }']
+try:
+ subprocess.run(['systemctl','stop',unit],check=True,timeout=15)
+ with (p/'pipewire-trial.log').open('xb') as log:
+  proc=subprocess.Popen(args,stdout=log,stderr=subprocess.STDOUT,env=env)
+  (p/'pipewire-trial.pid').write_text(str(proc.pid))
+  try:
+   time.sleep(5);assert proc.poll() is None,'loopback exited'
+   # Keep the established hardware mixer; changing servers must not raise gain.
+   subprocess.run(['/usr/lib/h713-hdmi-speaker/enable-mixer.sh'],check=True)
+   (p/'pipewire-trial-graph.json').write_text(subprocess.check_output(['pw-dump'],env=env,text=True))
+   r['capture_status']=Path('/proc/asound/H713HDMI/pcm0c/sub0/status').read_text();r['playback_status']=Path('/proc/asound/Codec/pcm0p/sub0/status').read_text()
+   (p/'pipewire-trial-ready.json').write_text(json.dumps(r,indent=2))
+   time.sleep(100)
+  finally:
+   if proc.poll() is None:proc.terminate()
+   try:proc.wait(timeout=8)
+   except subprocess.TimeoutExpired:proc.kill();proc.wait()
+finally:
+ # PipeWire's PCM must close before restoring the direct-ALSA consumer.
+ deadline=time.monotonic()+12
+ while time.monotonic()<deadline:
+  if Path('/proc/asound/H713HDMI/pcm0c/sub0/status').read_text().strip()=='closed' and Path('/proc/asound/Codec/pcm0p/sub0/status').read_text().strip()=='closed':break
+  time.sleep(.5)
+ subprocess.run(['systemctl','start',unit],check=True,timeout=20)
+ (p/'pipewire-trial-finished.txt').write_text(subprocess.check_output(['systemctl','is-active',unit],text=True))

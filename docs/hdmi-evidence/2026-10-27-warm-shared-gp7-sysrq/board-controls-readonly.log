@@ -1,0 +1,16 @@
+DAC Playback Volume                          int    43   [0..63]
+Line Out Playback Volume                     int    15   [0..31]
+Line Out Playback Switch                     bool   1 1
+Speaker Switch                               bool   1
+Line Out Source Playback Route               enum   0 0   [0..1]
+ 0 [Codec          ]: sun4i-codec - H713 Audio Codec
+                      h713-audio-codec
+ 1 [H713HDMI       ]: H713HDMI - H713 HDMI Input
+                      H713 HDMI input, DSP to Audio Bridge ostream0
+[   19.716215] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[   19.776700] h713-arm64 enable-mixer.sh[401]: DAC Playback Volume                          set to 43   [0..63]
+[   19.778582] h713-arm64 enable-mixer.sh[402]: Line Out Playback Volume                     set to 15   [0..31]
+[   19.780849] h713-arm64 enable-mixer.sh[403]: Line Out Playback Switch                     set to 1 1
+[   19.783165] h713-arm64 enable-mixer.sh[404]: Speaker Switch                               set to 1
+[   19.788185] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[   21.104857] h713-arm64 hdmi-speaker[406]: HDMI speaker ready; fading in after silent pre-roll

@@ -1,5 +1,24 @@
 # HDMI panel-source policy — design, October 23 (revision 2)
 
+<!-- pipewire-acceptance:start -->
+## Current PipeWire board reboot acceptance — completed October 27
+
+**PASS with host-source qualifications.** Installed PipeWire audio passes
+physical cold startup, all five orderly warm reboots and a synced abrupt
+reset, including actual 440-Hz capture/codec-monitor content and operator
+picture/colour/continuous-tone confirmation. Zero rejected frames/capture
+xruns and no board service recovery on these runs. Repeated abrupt audio
+checks remained healthy through 156 s; final same-boot health passed at 200 s.
+No-source cold startup and same-boot reconnection functionally pass. The PC
+needed one cable reseat after its first reconnect remained undetected;
+unassisted first-reconnect/continuous-client hotplug are not qualified.
+Five warm passes span two cold sessions due to the interruption after run 3.
+Exact retired direct-consumer mechanism remains unisolated; A/V delay
+calibration remains separate. Board powered down, host volume restored to
+35%, test player/serial recorder stopped. Source/tests/evidence included in the requested commit; no push.
+[Verdict, qualifications and evidence](hdmi-evidence/2026-10-27-audio-lifecycle-fix/acceptance/README.md).
+<!-- pipewire-acceptance:end -->
+
 **Status: design for review. Nothing is built, installed or tested on hardware.**
 Every claim below cites evidence. Where the evidence runs out, it is listed
 as an open question rather than assumed. Revision 2 folds in the review from
@@ -30,7 +49,7 @@ design keeps it that way (§1.4).
 | Boot with the cable already in? | The driver samples once before it registers the video node, so the coldplug `add` event already carries `locked`. systemd starts the unit with no boot-time branch. |
 | Mode changes (login, resolution change)? | Brief gaps are absorbed by a 1–2 s driver **HOLD** state, during which the driver delivers black frames. A real mode change raises `V4L2_EVENT_SOURCE_CHANGE`, and stock `v4l2src` (≥ 1.24; the board has 1.26.2) renegotiates without a restart. |
 | Chroma for desktop text | v1 goal: scan out **NV16 directly** on the video plane, with no `videoconvert`. That keeps 4:2:2 chroma, avoids a second halving and a 60 fps CPU conversion, and is pending the AFBD format encoding (§1.5). The fallback is today's proven NV16→NV12. |
-| Audio | The speaker moves to a PipeWire loopback, as the user wants. Video does **not** go through PipeWire. A/V sync comes from matching latencies with one measured, tunable loopback delay (§5). |
+| Audio | The speaker uses a PipeWire loopback (installed October 27). Video does **not** go through PipeWire. Audio delay is configurable; measured A/V latency calibration (§5) is still pending. |
 
 ## 1. How HDMI video can reach the panel today
 
@@ -3207,6 +3226,300 @@ Evidence: `docs/hdmi-evidence/2026-10-23-panel-source-stage1/stage5-install/`.
 * **Warm reboot from HDMI:** the video stopped first and the console showed during shutdown, as designed. After boot the panel stayed on the console. The production U-Boot warm path doesn't set `/chosen/h713,hdmi-boot-v1`, so the capture owner, signal owner, speaker and bridge all skip. That is the §6 warm fallback, not a fault in this stack. No panel-black (Q6). HDMI after a warm reboot needs the shared warm-startup work in U-Boot.
 * **Revert:** `sh /usr/lib/h713-hdmi-video/install-hdmi-video.sh --remove`.
 
+#### 10.26.6 Warm recovery repeat preparation (2026-10-24): offline only
+
+The two RAM-only repeats are prepared, **not run**. See the
+[exact runbook, validation and pinned artifacts](hdmi-evidence/2026-10-24-warm-shared-repeat-preparation/README.md).
+The runner supports orderly reboot and a boot-ID/health-guarded, synced
+SysRq-b reset without driver teardown. `--require-video` checks both boots
+for locked 720p, active ring/video units and advancing bridge counters with
+no added rejects. Health evidence includes unit status/start timestamps,
+monotonic journals and bridge dmesg. Existing DSP/audio flow checks remain;
+audible tone and a moving picture require operator confirmation.
+
+32 offline tests pass; eight deliberate code mutations were caught, covering
+all six new tests. The RAM image matches the October 23 image byte for byte.
+No board access, installation, production GP6 policy change, commit or push.
+Panel-black remains a separate release blocker. Next: approved operator-timed
+orderly trial, then a separately approved SysRq-b trial.
+
+#### 10.26.7 Orderly warm trial (2026-10-24): inconclusive, host runner stopped
+
+[Evidence](hdmi-evidence/2026-10-24-warm-shared-repeat-orderly/README.md).
+Cold picture/tone were confirmed by the operator and digital health passed.
+One orderly reboot reached warm SPL, then host os.read raised transient
+EAGAIN despite select readiness. Runner stopped before census/transfer/source;
+no warm startup acceptance result. Operator reported catching U-Boot; no
+recovery command or further board action was sent.
+
+Offline reader fix continues on BlockingIOError, preserving fatal I/O errors.
+33 tests pass; reverting the fix fails the added regression test. The host
+player was stopped after HDMI disappeared and PipeWire moved its audio to
+host speakers. Retry needs fresh approval, new evidence/tool pins and source
+routing verification after reconnect. Production startup remains unchanged.
+
+#### 10.26.8 Orderly retry 1 (2026-10-24): inconclusive, missing UART bytes
+
+[Evidence](hdmi-evidence/2026-10-24-warm-shared-repeat-orderly-retry1/README.md).
+Cold moving picture/colour/tone confirmed; cold digital checks pass (~59.5
+delivered fps, zero rejected, zero new audio xruns, video start 20.908 s).
+One orderly reboot issued. Warm raw capture lacks SPL/preboot markers and
+contains visibly truncated lines, though five autoboot countdown strings
+are present. No interrupt, census, transfer or RAM source was sent. Installed
+warm fallback booted Linux; read-only SSH confirms absent handoff and inactive
+HDMI units. No operator manual interruption was expected.
+
+Host runner and source player stopped; board left running without further
+board writes. This does not test shared warm startup. Cause of capture loss
+remains unresolved; a snapshot found only the runner owning the tty and a
+host kernel USB/serial journal filter found no matching errors. Investigate
+capture reliability before asking for another cold-cycle trial.
+
+#### 10.26.9 GP7 boot-stop orderly runner (2026-10-24): prepared offline
+
+User clarified that GP7's established one-shot bootloader-stop use is allowed;
+it remains reserved for reboot-mode handoff. `--boot-stop gp7 --reset orderly`
+uses the installed kernel nvmem reboot-mode driver through the bootloader reboot
+argument. No raw GP7 writes, GP6 change, saved environment change or timed key.
+U-Boot consumes GP7 and waits at the prompt. Runner requires full reset evidence,
+checks early GP7 magic, then consumed GP7=0, unchanged preboot/bootcmd and
+volatile bootdelay=-1 before existing census/FIT/one-launch gates.
+
+39 offline tests pass; 11 GP7 mutations and 8 earlier mutations caught.
+RAM startup image is unchanged. [Artifacts and revised live sequence](hdmi-evidence/2026-10-24-warm-shared-gp7-preparation/README.md).
+No board access during preparation. UART byte-loss cause remains unresolved;
+incomplete evidence stops rather than bypassing guards. SysRq-b+GP7 is refused
+because the abrupt reset skips reboot notifiers; its arming needs separate work.
+
+#### 10.26.10 GP7 orderly warm trial (2026-10-24): PASS on glass and digitally
+
+[Complete evidence](hdmi-evidence/2026-10-24-warm-shared-gp7-orderly/README.md).
+One orderly reboot with kernel bootloader argument stopped automatically at
+U-Boot; early GP7=b007c0de was consumed to zero, GP6 retained, MIPS parked,
+bootcmd/preboot unchanged and volatile bootdelay=-1. All census/FIT/CRC checks
+passed; exactly one RAM shared-startup source, re-latch and handoff succeeded.
+
+Both boots passed DSP 0000/0000 -> verified 1/1, active audio/video and flow
+checks. Warm video delivered ~59.8 fps, zero new rejected frames, NRestarts=0,
+service start 21.255 s after kernel; audio capture/playback ~48 kHz, zero new
+xruns. Operator confirmed Linux console -> host desktop -> video and audible
+tone after warm boot; no black reported. Colour was not separately reported.
+Host player was stopped across reset and restarted explicitly after hotplug,
+so continuous-source recovery timing was not measured. This is one orderly
+RAM-only repetition, not the complete release criterion.
+
+Checked final poweroff confirmed on UART; host player stopped and board left
+powered down. No install, saved environment change, commit or push. Next:
+separately reviewed GP7 arming for SysRq-b and its operator-approved trial;
+production GP6 guard/health-ack, installation approval and soak remain.
+
+#### 10.26.11 SysRq-b with GP7 stop (2026-10-27): prepared offline, not run
+
+[Runbook, trigger example, tests and artifact pins](hdmi-evidence/2026-10-27-warm-shared-gp7-sysrq-preparation/README.md).
+User authorized offline preparation using GP7 for its existing boot-stop
+purpose; board reported off. No board access or actions during preparation.
+`--reset sysrq-b --boot-stop gp7` now syncs storage, pins the RTC nvmem
+provider/cell and boot ID/HDMI health, requires expected GP6 and zero GP7,
+then writes exactly four bytes at nvmem offset 0x1c. Readback must prove GP7
+magic and unchanged GP6; health is checked again before UART acknowledgement
+and SysRq-b. No service stop, driver teardown, ordinary reboot or raw MMIO.
+
+Any failure after the write leaves GP7 potentially armed; stop/report with
+no automatic retry, clear or recovery. U-Boot stream still requires full
+census and consumes GP7 before prompt checks, FIT/CRC and one RAM launch.
+45 offline tests pass; all 12 new mutations caught, covering six new tests
+using fake sysfs/proc and local fixture nvmem only. RAM image unchanged.
+Await operator cold-cycle ready and OPEN before serial/mains. Live abrupt
+acceptance, production GP6/health-ack, installation and soak remain pending.
+
+#### 10.26.12 SysRq-b trial cold baseline (2026-10-27): paused for inaudible audio
+
+[Evidence and captured samples](hdmi-evidence/2026-10-27-warm-shared-gp7-sysrq/README.md).
+Complete cold UART, live video and correct colour confirmed. No audible tone,
+including after host projector sink changed from 35% to 100%. Mixer read-only
+values are DAC 43, Line Out 15, switches enabled; both PCM pointers advance.
+Host software monitor has tone-level content. Operator-approved diagnostic
+briefly stopped speaker, captured incoming ALSA samples and restored speaker
+in finally. Captured stereo 440 Hz, RMS 0.204677 / peak 0.289490, matching
+prior successful content. Source/receiver/capture provide nonzero tone; the
+downstream audibility cause remains open. Speaker restored active with both
+PCMs RUNNING. No module/mixer change, GP7 arm or reset; cold gate stays closed.
+Await operator report, and do not equate digital samples with audible output.
+Operator then confirmed audible tone after service restoration. Current audio
+baseline is restored; initial cold-boot silence remains unexplained. SysRq-b
+stays paused under the latest user instruction, with no gate release or reset.
+
+#### 10.26.13 SysRq-b attempt (2026-10-27): held at U-Boot, acknowledgement truncated
+
+[Live evidence](hdmi-evidence/2026-10-27-warm-shared-gp7-sysrq/README.md).
+User resumed after audible audio returned. Fresh cold health passed; one
+GP7-armed SysRq-b reached prompt with GP6 preserved, GP7 magic and parked MIPS
+in the early census. UART acknowledgement ended at `gp7=b` immediately before
+sysrq: Resetting. The complete-marker guard stopped census/transfer/source;
+no warm shared launch or recovery PASS. Host reader/player stopped, board
+left held at U-Boot with no further action. Earlier speaker restart is retained
+as a diagnostic intervention, not hidden as an untouched cold-start success.
+
+Likely reset overtook queued UART output; added explicit tty drain after
+stream flush and before SysRq-b offline. [Fix evidence](hdmi-evidence/2026-10-27-warm-shared-sysrq-uart-drain/README.md):
+46 tests pass and omitting drain fails its new regression. No hardware run of
+the fix; no general claim that serial capture loss is resolved. Further board
+continuation/retry requires approval. Initial cold audio silence remains open.
+
+#### 10.26.14 Approved held-prompt continuation (2026-10-27): warm digital PASS
+
+User approved fresh live prompt/census verification followed by the first
+RAM-only startup, with no further reset. All GP6/consumed-GP7/MIPS/PPU,
+preboot/bootcmd/volatile-delay and FIT/CRC checks passed; one RAM source
+produced re-latch, handoff and new Linux boot. Warm health/comparison PASS:
+DSP 0/0 -> 1/1, ~48 kHz capture/playback, zero new xruns, video ~59.76 fps,
+zero rejects, NRestarts=0, video service start 22.000 s. Await operator warm
+picture/colour/tone report. [Evidence](hdmi-evidence/2026-10-27-warm-shared-gp7-sysrq/README.md).
+
+One SysRq-b total, not repeated. Original reset ACK still truncated; the
+offline drain fix was not exercised in another reset. Approximately six
+minutes held at U-Boot may affect panel-black settling; earlier cold speaker
+restart and explicit host-source restart remain documented. This does not
+establish unattended or uninterrupted-source recovery behavior.
+
+#### 10.26.15 Abrupt warm continuation: on-glass acceptance and checked poweroff
+
+October 27 operator confirmed moving warm picture, correct colour and audible
+tone. Functional recovery after the single SysRq-b and single RAM startup is
+proven with §10.26.14 limitations. No warm speaker restart or mixer change was
+needed. Initial cold silence remains unresolved; this is not a clean cold-audio
+or unattended-runner PASS. Need fresh live UART-drain validation without the
+six-minute prompt hold before extrapolating prompt recovery/panel-black behavior.
+
+Host projector volume restored to prior 35%, test player stopped, checked final
+poweroff confirmed on UART at 09:24:09 UTC. Board powered down. [Final evidence](hdmi-evidence/2026-10-27-warm-shared-gp7-sysrq/README.md).
+No production install, GP6 policy change, commit or push. Remaining work:
+UART-drain abrupt repeat, cold audio diagnosis, production shared branch and
+health acknowledgement, install approval and soak.
+
+#### 10.26.16 Clean GP7/SysRq-b repeat with UART drain (2026-10-27): PASS
+
+[Complete evidence](hdmi-evidence/2026-10-27-warm-shared-gp7-sysrq-clean/README.md).
+Fresh cold cycle, full cold census/handoff; operator confirmed picture,
+colour and tone without diagnostic restart. Fresh cold health passed.
+One synced GP7-armed SysRq-b produced the complete drained acknowledgement
+including expected boot ID before reset, one SPL/early census and automatic
+prompt/census/FIT/CRC/one-RAM-source sequence. No manual continuation or long
+diagnostic hold (normal census/transfer 31.52 s). GP7 consumed, GP6 preserved.
+
+Warm DSP 0/0 -> 1/1, audio ~48 kHz with zero new xruns, video ~59.8 fps with
+zero rejected frames, NRestarts=0 and service start 21.279 s. Operator confirmed
+warm moving video, correct colour and audible tone. No board speaker restart
+or mixer writes on either boot. UART-drain fix validated on this clean run;
+earlier unrelated serial loss and isolated cold silence are not erased.
+
+Host source was explicitly restarted after HDMI hotplug, so uninterrupted
+source timing is not claimed. Host volume restored to 35%, player stopped;
+checked poweroff confirmed 10:04:05 UTC, board powered down. No production
+install, saved environment/GP6 policy change, commit or push. Required orderly
+and abrupt RAM repeats pass. Next: offline production shared branch/four-state
+GP6 guard and health ack, explicit policy/install approval, repeated warm soak.
+
+#### 10.26.17 Production shared branch/GP6 guard/health ack: offline (2026-10-27)
+
+**Final checked poweroff completed:** user explicitly requested poweroff.
+Expected boot ID verified at uptime 28794.51 s; capture/signal/speaker/video/
+health units all active/success/NRestarts=0. One sync and detached systemctl
+poweroff, no retry/reset/GP7/GP6 write. Passive UART confirms
+`[28803.057353] reboot: Power down` (~8 h 0 min uptime). Host test player
+stopped; passive UART recorder closed. Board now powered down. Saved host
+projector volume is 35% (raw 22937), but restoration failed because HDMI sink
+vanished at shutdown; restore that exact endpoint on its next connection,
+without changing other audio devices. No periodic automation was created.
+[Evidence](hdmi-evidence/2026-10-27-shared-startup-production-install/README.md).
+
+**Quiet runtime interval ended, ~11:27 PDT October 27:** same warm boot now
+~7 h 46 min uptime, ~7 h 37 min after silent baseline. Final read-only checks:
+~59.6 fps, zero cumulative rejected frames/capture xruns, five units healthy
+with NRestarts=0; host still playing on projector at software volume zero.
+15-minute scheduled checks were not established, so this is baseline/final
+long-run evidence, not fully monitored soak or repeated-reset acceptance.
+No further waiting. Board left on and silent; no new reset/service mutation.
+[Result and limitations](hdmi-evidence/2026-10-27-shared-startup-production-install/README.md).
+
+**Operator warm confirmation received:** moving video, correct colour and audible tone. First installed orderly warm boot is a functional digital/on-glass PASS after host-only player restart. Soak remains paused for host hotplug investigation; board stays on, no further board commands/reset. [Evidence](hdmi-evidence/2026-10-27-shared-startup-production-install/README.md).
+
+**First installed orderly warm boot: digital PASS, soak paused for host source:**
+one ordinary reboot from HDOK completed unattended through installed startup,
+with no GP7 stop/RAM source. New boot `23410156-c962-4d95-99b5-ac5e2dd6e562`;
+early GP6 HDOK/GP7 zero, HDMI latched before firmware, shared source/re-latch/
+handoff complete. Automatic ack wrote HDOK at 21.011 s; no board service
+restart/manual ack. DSP 0/0→1/1, audio ~48 kHz/zero xruns, video ~59.84 fps/
+zero rejects; cold/warm comparison PASS. Host mpv lost its HDMI window report
+and PipeWire moved its stream to SoundSticks while HDMI disappeared. Endpoint
+returned but routing/window did not self-recover. Further reboots stopped;
+host-only restoration attempts exited mpv, then a fresh host player restored
+verified HDMI video/audio routing. Await operator warm picture/colour/tone.
+This is functional digital recovery, **not** uninterrupted-source acceptance.
+Board remains on; UART/new host player running. Four remaining ordinary runs,
+SysRq-b and no-source trial not executed; fix host harness before clean soak.
+[Evidence](hdmi-evidence/2026-10-27-shared-startup-production-install/README.md).
+
+**First installed cold boot now digitally PASS (operator confirmation pending):**
+boot `a0cdeb59-4933-41e6-bafd-b31dad5a96ca`, shared handoff/re-latch verified and automatic
+GP6 HDMI→HDOK at 20.877 s, GP7 zero. Health unit active/exited/status 0/no
+restarts; dry-run observes HDOK without writing. DSP 0/0→1/1, audio ~48 kHz
+zero xruns, video ~59.44 fps/zero rejects. No manual ack or board service
+restart. Host player was relaunched after this physical cold cycle; no
+uninterrupted-source timing claim. UART/player running; await operator cold
+picture/colour/tone before any installed warm reboot. [Live evidence](hdmi-evidence/2026-10-27-shared-startup-production-install/README.md).
+
+**Installation now complete, first new cold boot pending:** approved delta
+installed once and verified; health unit enabled but inactive, GP6 HDMI/GP7
+zero. Exact backup `/var/lib/h713-hdmi-startup/shared-20260413T194157-c5fec89a`
+is copied/checksummed on host; rollback dry-run passed. FIT and saved environment
+unchanged (active CRC-valid environment is documented LBA 0x32ec00, not configured
+0x49ec00). Final current-boot health passed and checked poweroff confirmed on
+UART at 2026-10-27 10:34:27 UTC. Reader closed. Await disconnected >=1 minute
+cold cycle/ready, then fresh OPEN before power. New startup/automatic HDOK and
+warm soak remain untested. [Evidence](hdmi-evidence/2026-10-27-shared-startup-production-install/README.md).
+
+**Installation trial now authorized/in progress:** user approved production
+install and GP6 policy and completed the ≥1 minute disconnected cold cycle.
+UART OPEN preceded power; old cold digital baseline passes, GP6 HDMI/GP7 zero,
+18 backend checksums match. Host video/tone routed to projector; awaiting
+operator cold picture/colour/tone before installation. No install/reset/latch
+write yet. [Live evidence](hdmi-evidence/2026-10-27-shared-startup-production-install/README.md).
+
+[Evidence, artifact pins and proposed install/test sequence](hdmi-evidence/2026-10-27-shared-startup-production-preparation/README.md).
+Offline production changes authorized; no board access or installation.
+`build-startup.py` accepts GP6 0/HDOK and writes HDMI before firmware only
+after MIPS status/clock/reset, GP7 and PPU census pass. HDMI/unknown retain
+existing logo-only fallback. Image/record stages and source-3/TCON/handoff
+operations retain installed behavior (source diagnostic message updated).
+The acknowledgement unit follows/requires capture and signal, verifies this
+boot's handoff/session and existing startup checker, validates RTC identity,
+then writes exactly GP6 HDOK through nvmem and verifies unchanged GP7.
+Signal lock and video/speaker consumers are not health prerequisites; no
+retries, resets, GP7 writes or new shutdown actions. This guard acknowledges
+startup health; a crash after HDOK permits a new launch on the next boot.
+
+Dedicated delta builder/updater pins the installed predecessor and FIT,
+verifies backend checksums, backs up the old transaction, fsyncs/stages health
+files, enables its unit without starting it, and activates FAT last. Only
+script/cmd entries in the old manifest change; existing modules/firmware/units
+stay installed. Both builder entry points now emit the same delta to avoid
+pairing the shared script with a legacy installer lacking acknowledgement.
+Failures leave an INCOMPLETE marker; tested rollback validates known hashes
+and restores old files without RTC writes. Cold cycle required after install
+and rollback. Arbitrary power-loss boundaries have not been exhaustively tested.
+
+70 tests PASS (11 + 46 + 13), 17 implementation mutations caught covering
+every new test, combined systemd unit verification exit 0 and bundle hashes
+PASS. No real guard-state injections: all negative tests use fake roots or
+dry-run. Bundle `build/hdmi-shared-startup-production-2026-10-27`, script hash
+`fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b`.
+No production acceptance claimed: explicit GP6-policy/install approval and
+operator-ready gate remain. Proposed soak is five orderly and one synced
+SysRq-b reboot through installed startup (no GP7 stop/RAM source), plus a
+no-source cold boot and runtime reconnect. Track prior panel-black/cold-audio
+observations; no service restarts may mask an acceptance failure. No commit/push.
+
 ## 11. Deleted relative to revision 1
 
 * The custom `hdmi-video.c` policy daemon and its event loop
@@ -3225,3 +3538,93 @@ Evidence: `docs/hdmi-evidence/2026-10-23-panel-source-stage1/stage5-install/`.
   and unit verification plus the `vivid` test.
 * `videoconvert` as the default path. It is now the fallback; direct NV16 is
   the v1 goal.
+
+## October 27 reboot acceptance continuation: cold audio failure
+
+New evidence: [reboot acceptance](hdmi-evidence/2026-10-27-reboot-acceptance/README.md).
+Fresh physical cold boot e8ebd15e-a1c5-4c95-afb5-e814c8fb1b0a passed digital
+startup/video/audio-flow gates and automatic HDOK (~21.15 s), but operator
+reported moving video with no tone. Host/stream/board were unmuted; raising
+only host projector endpoint 35% to 100% did not restore audibility. Board
+mixer 43/15, line/speaker switches on, PA GPIO high, PCMs RUNNING.
+Bounded consumer-only stop/capture/restore produced nonzero stereo tone
+(RMS 0.20468, peak 0.28949). Operator confirmed tone after restoration.
+No firmware restart, mixer change or reset in this diagnosis. Cold audibility
+FAIL remains open; do not call this an intervention-free cold acceptance.
+Proceeding with requested warm acceptance from recovered audible baseline,
+with this deviation explicit. Root cause remains unresolved.
+
+## October 27 installed orderly acceptance progress
+
+Four remaining installed orderly reboots now digitally pass (warm-02..05):
+59.36–59.80 fps, zero cumulative rejected frames/capture xruns; automatic
+HDOK and GP7 zero each boot, DSP/startup/audio/video checks pass, no board
+service recovery, prompt holds, RAM launches or GP7 writes. Operator has
+confirmed picture/colour/tone for warm-02..04; warm-05 confirmation pending.
+The prior installed warm-01 passed in the production-install record. Host
+fixture now explicitly recreates only the player's outputs after hotplug
+(ao-reload, vo=null→gpu, loadfile), with actual HDMI routing/window verified.
+This tests board recovery with a managed host source, not uninterrupted
+client recovery. Cold audibility failure on this run remains unresolved.
+[Evidence](hdmi-evidence/2026-10-27-reboot-acceptance/README.md).
+
+## October 27 installed abrupt-reset result: digital PASS
+
+All five installed orderly warm boots now have operator picture/colour/tone
+confirmation (warm-01 in prior install record; warm-02..05 in current record).
+One synced SysRq-b from warm-05 reached ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac
+through the installed startup without service teardown, GP7 arm, prompt hold
+or RAM launch. Complete UART sync marker drained before reset. Digital gates
+PASS: ~59.48 fps, zero cumulative rejected frames/capture xruns; DSP 0/0→1/1,
+automatic HDOK, GP7 zero, units healthy/NRestarts=0. Abrupt operator confirmation
+pending; no-source cold/reconnection still pending. Managed host output recreation
+remains explicit, not continuous-client acceptance. Initial cold-audio silence
+still unresolved and prevents claiming complete release acceptance.
+[Evidence](hdmi-evidence/2026-10-27-reboot-acceptance/README.md).
+
+## October 27 final acceptance result: FAIL — audio lifecycle
+
+**HDMI reboot acceptance is NOT complete/passing.** Four remaining installed
+orderly reboots warm-02..05 pass digital checks and operator picture/colour/
+tone (prior warm-01 passed in the installation record). Managed host source
+recreation is explicit; uninterrupted host-client recovery is not qualified.
+
+Installed synced SysRq-b reached ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac with
+complete drained sync marker, expected HDOK/zero GP7/reset census and automatic
+HDOK acknowledgement; ~59.48 fps, zero rejected frames/capture xruns, no
+board service recovery. **Operator abrupt audio FAIL:** picture and colour
+correct, tone started/stopped twice and then never returned. Digital flow
+PASS is not acoustic PASS. Host HDMI monitor while silent has RMS 0.20993,
+peak 0.29999 with exact projector routing/unmuted 100% source. Both board
+PCMs RUNNING, mixer 43/15 and switches on, PA GPIO high, speaker NRestarts=0.
+Saved silent PCM/mixer/GPIO, codec control registers and audio clock state.
+Kernel denied the bounded read-only capture DRAM /dev/mem inspection; no
+protection change or alternate raw-memory probe followed.
+
+Initial cold boot also failed audibility until a documented consumer-only
+stop/capture/restore. Incoming diagnostic tone was captured after reopening
+the capture PCM and cannot establish original silent-buffer content. Root
+cause remains open across capture/consumer/codec lifecycle. Do not mask this
+with an automatic speaker restart or claim startup fixed.
+
+Per stop-on-failure runbook, no further reset/poweroff/speaker restart was
+issued. **No-source cold/reconnection case remains unrun.** Board left powered
+on in the current silent failure, host player and sole passive UART recorder
+running for diagnosis. Host projector test endpoint is 100%; saved original
+35% (raw 22937) still needs restoration when testing finishes. No commit/push.
+Next: diagnose/fix audio lifecycle, then requalify fresh cold/abrupt audibility
+and execute the final no-source cold/reconnection case.
+[Evidence and machine-readable verdict](hdmi-evidence/2026-10-27-reboot-acceptance/ACCEPTANCE-RESULT.json).
+
+## October 27 PipeWire speaker fix installed; requalification pending
+
+The direct consumer was replaced by the planned PipeWire loopback after
+read-only volume inspection excluded a stuck fade/mute and a PCM re-prime
+restored audibility. Exact old GStreamer/ALSA mechanism remains unisolated.
+11 lifecycle tests / 17 mutations plus 46 existing warm tests pass. New route
+passed stop/start capture closure, 600-ms client-pause recovery, actual capture
+and codec-monitor 440-Hz content, updated graph/PCM ownership checks and
+operator picture/tone. No backend/firmware/kernel/startup change. Backup
+/var/lib/h713-hdmi-speaker/backup.AaUgab saved on host. Physical cold and full
+reboot/no-source requalification remain pending; no PASS claimed yet.
+[Evidence](hdmi-evidence/2026-10-27-audio-lifecycle-fix/README.md).

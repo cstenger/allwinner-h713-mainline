@@ -1,0 +1,85 @@
+import sys,json,subprocess,time,socket,os,importlib.util,re
+from pathlib import Path
+ROOT=Path('/home/chris/Projects/h713');OUT=ROOT/'docs/hdmi-evidence/2026-10-27-audio-lifecycle-fix/acceptance'
+SSH=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','-o','ServerAliveInterval=5','-o','ServerAliveCountMax=1','root@192.168.4.1']
+name,mode=sys.argv[1:];assert mode in ('orderly','sysrq-b')
+step=OUT/name;step.mkdir(exist_ok=False)
+def save(n,v): (step/n).write_text(json.dumps(v,indent=2) if not isinstance(v,str) else v)
+def remote(code,timeout=20):
+ r=subprocess.run(SSH+['python3 -'],input=code,text=True,capture_output=True,timeout=timeout)
+ if r.returncode:raise RuntimeError(r.stderr+r.stdout)
+ return r.stdout
+spec=importlib.util.spec_from_file_location('checker',ROOT/'tools/hdmi/check-warm-shared.py');c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
+def host():
+ s=socket.socket(socket.AF_UNIX);s.settimeout(4);s.connect('/tmp/h713-accept.sock');f=s.makefile('rb');d={}
+ for n,k in enumerate(('display-names','audio-device','pause','volume','mute','time-pos')):
+  s.sendall((json.dumps({'command':['get_property',k],'request_id':n})+'\n').encode())
+  while True:
+   r=json.loads(f.readline())
+   if r.get('request_id')==n:break
+  assert r['error']=='success',r;d[k]=r['data']
+ s.close()
+ d['inputs']=json.loads(subprocess.check_output(['pactl','-f','json','list','sink-inputs'],text=True));d['sinks']=json.loads(subprocess.check_output(['pactl','-f','json','list','sinks'],text=True))
+ return d
+def host_gate(d):
+ assert d['display-names']==['HDMI-A-1'] and not d['pause'] and not d['mute'] and d['volume']==100,'host window/playback not on projector'
+ sink='alsa_output.pci-0000_0c_00.1.hdmi-stereo-extra2'
+ targets=[x for x in d['sinks'] if x['name']==sink];assert len(targets)==1
+ streams=[x for x in d['inputs'] if x.get('properties',{}).get('application.name')=='mpv'];assert len(streams)==1
+ assert streams[0]['sink']==targets[0]['index'] and not streams[0]['mute']
+ assert streams[0]['properties'].get('node.dont-fallback')=='true'
+h=host();save('host-before.json',h);host_gate(h)
+r=c.collect('warm');save('before.json',r);ev=c.evaluate(r,True);save('before-evaluation.json',ev);assert ev['passed'],ev
+subprocess.run(['python3','/tmp/h713-pw-tone.py',str(step/'tone-before.json')],check=True)
+boot=r['boot_id'];save('preflight.log',remote("import subprocess,pathlib\nassert pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()==%r\nsubprocess.run(['python3','/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.py','--dry-run'],check=True)\nsubprocess.run(['systemctl','show','h713-hdmi-capture','h713-hdmi-signal','h713-hdmi-speaker','h713-hdmi-video','h713-hdmi-health-ack','-p','Id,ActiveState,Result,NRestarts'],check=True)\n"%boot))
+assert '"gp6_before": "48444f4b"' in (step/'preflight.log').read_text()
+pid=int((OUT/'capture.pid').read_text());assert b'capture-panel-validation.py' in (Path('/proc')/str(pid)/'cmdline').read_bytes()
+r0=subprocess.run(['fuser','/dev/ttyUSB0'],capture_output=True,text=True);assert r0.returncode==0 and r0.stdout.split()==[str(pid)]
+raw=OUT/'uart/serial.log';offset=raw.stat().st_size;save('serial-offset.txt',str(offset))
+inner="""import pathlib,subprocess,os,time,termios
+assert pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()==%r
+time.sleep(1)
+%s
+"""%(boot,"subprocess.run(['systemctl','reboot','--no-block'],check=True)" if mode=='orderly' else "os.sync()\nwith open('/dev/ttyS0','w') as f:\n f.write('H713_ACCEPT_SYNC_DONE boot='+%r+'\\n');f.flush();termios.tcdrain(f.fileno())\nwith open('/proc/sysrq-trigger','w') as f:f.write('b')"%boot)
+(step/'dispatch-intent.json').open('x').write(json.dumps({'boot':boot,'mode':mode}))
+save('dispatch.log',remote("import subprocess,pathlib\nassert pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()==%r\np=subprocess.Popen(['python3','-c',%r],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)\nprint('ONE reset dispatched pid='+str(p.pid))\n"%(boot,inner)))
+print(name,mode,'dispatched once from',boot,flush=True)
+deadline=time.monotonic()+240;new=None
+while time.monotonic()<deadline:
+ data=raw.read_bytes()[offset:]
+ assert data.count(b'U-Boot SPL ')<=1,'Unexpected additional reset; stop'
+ assert b'Kernel panic' not in data and b'launch latch set - capture disabled' not in data,'Boot failure'
+ p=subprocess.run(SSH+['cat /proc/sys/kernel/random/boot_id'],capture_output=True,text=True,timeout=12)
+ if p.returncode==0 and p.stdout.strip()!=boot:
+  new=p.stdout.strip();break
+ time.sleep(3)
+assert new,'No new reachable boot; no retry'
+print('new boot',new,flush=True)
+time.sleep(8)
+h=host();save('host-after-initial.json',h)
+try:host_gate(h)
+except AssertionError:
+ # Explicit host fixture step: reopen outputs once after the endpoint returns.
+ # No board command, fullscreen toggle or process restart. Not a continuity pass.
+ s=socket.socket(socket.AF_UNIX);s.settimeout(5);s.connect('/tmp/h713-accept.sock');f=s.makefile('rb');replies=[]
+ for n,cmd in enumerate((['ao-reload'],['set_property','vo','null'],['set_property','vo','gpu'],['loadfile',str(ROOT/'build/hdmi-warm-shared-source-2026-10-24/moving-720p-tone.mkv'),'replace'])):
+  s.sendall((json.dumps({'command':cmd,'request_id':n})+'\n').encode())
+  while True:
+   reply=json.loads(f.readline())
+   if reply.get('request_id')==n:break
+  replies.append({'command':cmd,'reply':reply});assert reply['error']=='success';time.sleep(.5)
+ s.close();save('host-fixture-output-reopen.json',replies);time.sleep(3)
+ h=host()
+save('host-after.json',h);host_gate(h)
+r=c.collect('warm');save('after.json',r);ev=c.evaluate(r,True);save('after-evaluation.json',ev);assert ev['passed'],ev
+cmp=c.compare(json.loads((OUT/'cold.json').read_text()),r,True);save('comparison.json',cmp);assert cmp['passed'],cmp
+save('health-ack.log',remote("import subprocess\nsubprocess.run(['python3','/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.py','--dry-run'],check=True)\nsubprocess.run(['journalctl','-b','-u','h713-hdmi-health-ack','--no-pager','-o','short-monotonic'],check=True)\nsubprocess.run(['systemctl','show','h713-hdmi-capture','h713-hdmi-signal','h713-hdmi-speaker','h713-hdmi-video','h713-hdmi-health-ack','-p','Id,ActiveState,Result,NRestarts'],check=True)\n"))
+log=(step/'health-ack.log').read_text();assert '"gp6_before": "48444f4b"' in log and '"written": true' in log and '"gp7": "00000000"' in log
+assert log.count('NRestarts=0')==5 and log.count('ActiveState=active')==5 and log.count('Result=success')==5
+u=raw.read_bytes()[offset:];(step/'serial.log').write_bytes(u)
+assert u.count(b'U-Boot SPL ')==1 and b'H713 HDMI shared startup handoff verified' in u
+m=re.search(rb'stage=proper_preboot gp6=(\w+) gp7=(\w+) mips_clk=(\w+) mips_reset=(\w+) mips_status=(\w+)',u)
+assert m and m.groups()==(b'48444f4b',b'00000000',b'00000000',b'00000000',b'00000000'),m.groups() if m else 'no preboot'
+a,b=r['video'];fps=(b['counters']['frames_delivered']-a['counters']['frames_delivered'])/(b['t']-a['t']);save('RESULT.json',{'digital_pass':True,'boot':new,'fps':fps,'operator_check':'pending','mode':mode,'continuous_client_pass':False,'source_fixture':'explicit output recreation after hotplug'})
+subprocess.run(['python3','/tmp/h713-pw-tone.py',str(step/'tone-after.json')],check=True)
+print('DIGITAL PASS',name,new,'fps',fps,'operator check pending',flush=True)

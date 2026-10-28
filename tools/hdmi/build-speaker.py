@@ -12,6 +12,7 @@ SOURCES = {
     'install-speaker.sh': 'tools/hdmi/install-speaker.sh',
     'alsa-ctl.c': 'tools/audio/alsa-ctl.c',
     'hdmi-speaker.c': 'tools/hdmi/hdmi-speaker.c',
+    'pipewire-speaker.py': 'tools/hdmi/pipewire-speaker.py',
 }
 
 

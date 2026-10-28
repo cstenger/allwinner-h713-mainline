@@ -1,0 +1,55 @@
+{
+  "boot_id": "0ab8fbc0-9cfe-43b4-992e-6349864d4537",
+  "start_uptime": "475.50 1585.59",
+  "stop_attempted": true,
+  "stopped_uptime": "475.87 1586.77",
+  "capture_command": [
+    "gst-launch-1.0",
+    "-q",
+    "alsasrc",
+    "device=hw:H713HDMI,0",
+    "buffer-time=40000",
+    "latency-time=10000",
+    "num-buffers=300",
+    "!",
+    "audio/x-raw,format=S16LE,rate=48000,channels=2",
+    "!",
+    "fdsink",
+    "fd=1"
+  ],
+  "capture_rc": 0,
+  "restore_attempted_uptime": "478.01 1593.66",
+  "restored_active": "active",
+  "capture_pcm": "state: RUNNING\nowner_pid   : 637\ntrigger_time: 478.540048227\ntstamp      : 480.223143353\ndelay       : 160\navail       : 160\navail_max   : 480\n-----\nhw_ptr      : 80764\nappl_ptr    : 80604\n",
+  "playback_pcm": "state: RUNNING\nowner_pid   : 637\ntrigger_time: 478.566678769\ntstamp      : 0.000000000\ndelay       : 3488\navail       : 352\navail_max   : 3360\n-----\nhw_ptr      : 79552\nappl_ptr    : 83040\n",
+  "end_uptime": "480.22 1600.67",
+  "sample_bytes": 307200
+}
+{
+  "boot_id": "0ab8fbc0-9cfe-43b4-992e-6349864d4537",
+  "start_uptime": "475.50 1585.59",
+  "stop_attempted": true,
+  "stopped_uptime": "475.87 1586.77",
+  "capture_command": [
+    "gst-launch-1.0",
+    "-q",
+    "alsasrc",
+    "device=hw:H713HDMI,0",
+    "buffer-time=40000",
+    "latency-time=10000",
+    "num-buffers=300",
+    "!",
+    "audio/x-raw,format=S16LE,rate=48000,channels=2",
+    "!",
+    "fdsink",
+    "fd=1"
+  ],
+  "capture_rc": 0,
+  "restore_attempted_uptime": "478.01 1593.66",
+  "restored_active": "active",
+  "capture_pcm": "state: RUNNING\nowner_pid   : 637\ntrigger_time: 478.540048227\ntstamp      : 480.223143353\ndelay       : 160\navail       : 160\navail_max   : 480\n-----\nhw_ptr      : 80764\nappl_ptr    : 80604\n",
+  "playback_pcm": "state: RUNNING\nowner_pid   : 637\ntrigger_time: 478.566678769\ntstamp      : 0.000000000\ndelay       : 3488\navail       : 352\navail_max   : 3360\n-----\nhw_ptr      : 79552\nappl_ptr    : 83040\n",
+  "end_uptime": "480.22 1600.67",
+  "sample_bytes": 307200
+}
+active

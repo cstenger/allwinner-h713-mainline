@@ -1,19 +1,23 @@
 [Unit]
-Description=H713 HDMI input to internal speaker
+Description=H713 HDMI input to internal speaker through PipeWire
+Requires=user@1000.service
 BindsTo=h713-hdmi-signal.service h713-hdmi-capture.service
-After=h713-hdmi-signal.service h713-hdmi-capture.service
+After=h713-hdmi-signal.service h713-hdmi-capture.service user@1000.service
 Before=shutdown.target
 RequiresMountsFor=/usr/lib/h713-hdmi-speaker
 ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
 
 [Service]
 Type=simple
+Environment=PIPEWIRE_RUNTIME_DIR=/run/user/1000
+EnvironmentFile=-/etc/default/h713-hdmi-speaker
 ExecStartPre=/usr/lib/h713-hdmi-speaker/enable-mixer.sh
-ExecStart=/usr/lib/h713-hdmi-speaker/hdmi-speaker
+ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi-speaker/pipewire-speaker.py run
+ExecStopPost=/usr/bin/python3 /usr/lib/h713-hdmi-speaker/pipewire-speaker.py release
 Restart=on-failure
 RestartSec=2
 KillMode=control-group
-TimeoutStopSec=10
+TimeoutStopSec=20
 
 [Install]
 WantedBy=multi-user.target

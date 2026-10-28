@@ -1,0 +1,41 @@
+{"boot_id": "772696a0-8ed2-4ed7-8635-e9830aea48d7", "gp6_before": "48444f4b", "gp7": "00000000", "dry_run": true, "written": false}
+[   23.262653] h713-arm64 systemd[1]: Starting h713-hdmi-health-ack.service - Acknowledge healthy H713 HDMI shared startup...
+[   23.275739] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker through PipeWire...
+[   23.333022] h713-arm64 enable-mixer.sh[397]: DAC Playback Volume                          set to 43   [0..63]
+[   23.335331] h713-arm64 enable-mixer.sh[398]: Line Out Playback Volume                     set to 15   [0..31]
+[   23.338455] h713-arm64 enable-mixer.sh[399]: Line Out Playback Switch                     set to 1 1
+[   23.342073] h713-arm64 enable-mixer.sh[400]: Speaker Switch                               set to 1
+[   23.349033] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker through PipeWire.
+[   23.701393] h713-arm64 python3[402]: {"boot_id": "772696a0-8ed2-4ed7-8635-e9830aea48d7", "route": {"source": {"id": 51, "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"}, "sink": {"id": 43, "name": "alsa_output.platform-2030000.codec.stereo-fallback"}}, "delay_sec": 0.0}
+[   24.518006] h713-arm64 python3[392]: {"boot_id": "772696a0-8ed2-4ed7-8635-e9830aea48d7", "gp6_before": "48444d49", "gp7": "00000000", "dry_run": false, "written": true, "gp6_after": "48444f4b"}
+[   24.608026] h713-arm64 systemd[1]: Finished h713-hdmi-health-ack.service - Acknowledge healthy H713 HDMI shared startup.
+Result=success
+NRestarts=0
+Id=h713-hdmi-capture.service
+ActiveState=active
+
+Result=success
+NRestarts=0
+Id=h713-hdmi-signal.service
+ActiveState=active
+
+Result=success
+NRestarts=0
+Id=h713-hdmi-speaker.service
+ActiveState=active
+
+Result=success
+NRestarts=0
+Id=h713-hdmi-video.service
+ActiveState=active
+
+Result=success
+NRestarts=0
+Id=h713-hdmi-health-ack.service
+ActiveState=active
+alsa-ctl.c: OK
+enable-mixer.sh: OK
+h713-hdmi-speaker.service: OK
+hdmi-speaker.c: OK
+install-speaker.sh: OK
+pipewire-speaker.py: OK

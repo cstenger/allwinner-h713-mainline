@@ -1,0 +1,12 @@
+{
+  "acceptance_pass": false,
+  "orderly_runs": "Prior installed warm-01 plus remaining warm-02..05: functional digital/on-panel PASS; managed host source interventions explicitly recorded.",
+  "cold_audio": "FAIL: initial silent cold startup, audible only after bounded speaker stop/capture/restore.",
+  "abrupt_reset": "FAIL audio audibility; video/colour and digital flow gates pass. Tone intermittent then permanently absent.",
+  "no_source_cold_reconnect": "NOT RUN: stopped after abrupt audio failure.",
+  "board_boot_id": "ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac",
+  "board_state": "Powered on, current silent failure preserved. Host test player and passive UART remain running.",
+  "host_volume": "Projector test endpoint 100%; restore raw 22937 (35%) when tests finish.",
+  "changes": "No new production installation, mixer changes, manual HDOK, GP7 write, U-Boot hold, RAM launch, commit or push. One diagnostic consumer stop/capture/restore on initial cold boot; four orderly and one synced abrupt reset.",
+  "next": "Diagnose/fix silent capture/consumer/codec lifecycle; then fresh cold and abrupt audibility acceptance, and final no-source cold/reconnection case. Existing digital gate can pass while inaudible."
+}

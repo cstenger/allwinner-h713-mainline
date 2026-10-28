@@ -1,0 +1,9 @@
+Sandbox attempt (host-local files only):
+exit_status=1
+Failed to turn off SO_PASSRIGHTS on user lookup socket, ignoring: Operation not permitted
+Failed to enable SO_PASSCRED on handoff timestamp socket: Operation not permitted
+
+Read-only host verification outside sandbox:
+systemd-analyze verify <temporary>/h713-hdmi-health-ack.service <temporary>/h713-hdmi-capture.service <temporary>/h713-hdmi-signal.service
+exit_status=0
+stdout/stderr empty. No units loaded or started.

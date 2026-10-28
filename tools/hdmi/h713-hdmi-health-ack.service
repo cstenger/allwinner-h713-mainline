@@ -1,0 +1,16 @@
+[Unit]
+Description=Acknowledge healthy H713 HDMI shared startup
+Requires=h713-hdmi-capture.service h713-hdmi-signal.service
+After=h713-hdmi-capture.service h713-hdmi-signal.service
+Before=shutdown.target
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi-health/h713-hdmi-health-ack.py
+TimeoutStartSec=130
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

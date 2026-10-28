@@ -1,0 +1,45 @@
+alsa-ctl.c: OK
+enable-mixer.sh: OK
+h713-hdmi-speaker.service: OK
+hdmi-speaker.c: OK
+install-speaker.sh: OK
+pipewire-speaker.py: OK
+alsa-ctl.c: OK
+enable-mixer.sh: OK
+h713-hdmi-speaker.service: OK
+hdmi-speaker.c: OK
+install-speaker.sh: OK
+Speaker rollback backup: /var/lib/h713-hdmi-speaker/backup.AaUgab
+cf18eb76c191644387a4aafb889dd0b45267036ca128e6b72b3c4b30b112a65e  /usr/lib/h713-hdmi-speaker/alsa-ctl
+a897c4c02c48e05f2b2b98b1ec56663462ad2e6326d3ba618ba73f25339bf530  /usr/lib/h713-hdmi-speaker/enable-mixer.sh
+8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd  /etc/systemd/system/h713-hdmi-speaker.service
+Persistent speaker consumer installed; HDMI backend ownership unchanged.
+MainPID=1814
+Result=success
+NRestarts=0
+ActiveState=active
+DAC Playback Volume                          int    43   [0..63]
+Line Out Playback Volume                     int    15   [0..31]
+Line Out Playback Switch                     bool   1 1
+Speaker Switch                               bool   1
+Line Out Source Playback Route               enum   0 0   [0..1]
+[ 1299.598736] h713-arm64 systemd[1]: h713-hdmi-speaker.service: Consumed 18.471s CPU time.
+[ 1306.155721] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker through PipeWire...
+[ 1306.216800] h713-arm64 enable-mixer.sh[1807]: DAC Playback Volume                          set to 43   [0..63]
+[ 1306.221875] h713-arm64 enable-mixer.sh[1808]: Line Out Playback Volume                     set to 15   [0..31]
+[ 1306.223503] h713-arm64 enable-mixer.sh[1809]: Line Out Playback Switch                     set to 1 1
+[ 1306.227609] h713-arm64 enable-mixer.sh[1810]: Speaker Switch                               set to 1
+[ 1306.231746] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker through PipeWire.
+[ 1306.625112] h713-arm64 python3[1814]: {"boot_id": "ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac", "route": {"source": {"id": 51, "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"}, "sink": {"id": 43, "name": "alsa_output.platform-2030000.codec.stereo-fallback"}}, "delay_sec": 0.0}
+Traceback (most recent call last):
+  File "/usr/lib/h713-hdmi-speaker/pipewire-speaker.py", line 186, in <module>
+    main()
+    ~~~~^^
+  File "/usr/lib/h713-hdmi-speaker/pipewire-speaker.py", line 165, in main
+    print(json.dumps(check()))
+                     ~~~~~^^
+  File "/usr/lib/h713-hdmi-speaker/pipewire-speaker.py", line 124, in check
+    nodes = verify(objects, route)
+  File "/usr/lib/h713-hdmi-speaker/pipewire-speaker.py", line 84, in verify
+    raise RuntimeError('missing or duplicate loopback node ' + name)
+RuntimeError: missing or duplicate loopback node h713-hdmi-loop-capture

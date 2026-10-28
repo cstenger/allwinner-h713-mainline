@@ -104,7 +104,7 @@ class StartupScript(unittest.TestCase):
             self.assertLess(l.index('gpio set PB5'), l.index('echo'))
 
     def test_warm_path_draws_the_logo_and_relights_before_boot(self):
-        body = self.text.split('else\n  if run hdmi_image')[0].split('physical cold cycle')[1]
+        body = self.text.split('else\n  if run hdmi_image')[0].split('logo-only fallback')[1]
         order = ['itest.l *0x0306101c == 0', 'gpio clear PB5', 'h713_disp auto 0x34 logo',
                  'gpio set PB5', 'bootm 0x50000000']
         self.assertEqual([body.index(c) for c in order], sorted(body.index(c) for c in order))

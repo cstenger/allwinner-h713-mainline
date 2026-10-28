@@ -1,0 +1,60 @@
+[
+  {
+    "command": [
+      "ao-reload"
+    ],
+    "reply": {
+      "data": null,
+      "request_id": 0,
+      "error": "success"
+    }
+  },
+  {
+    "command": [
+      "set_property",
+      "vo",
+      "gpu"
+    ],
+    "reply": {
+      "request_id": 1,
+      "error": "success"
+    }
+  },
+  {
+    "command": [
+      "loadfile",
+      "/home/chris/Projects/h713/build/hdmi-warm-shared-source-2026-10-24/moving-720p-tone.mkv",
+      "replace"
+    ],
+    "reply": {
+      "data": {
+        "playlist_entry_id": 2
+      },
+      "request_id": 2,
+      "error": "success"
+    }
+  },
+  {
+    "display-names": {
+      "data": [
+        "HDMI-A-1"
+      ],
+      "request_id": 100,
+      "error": "success"
+    }
+  },
+  {
+    "audio-device": {
+      "data": "pipewire/alsa_output.pci-0000_0c_00.1.hdmi-stereo-extra2",
+      "request_id": 101,
+      "error": "success"
+    }
+  },
+  {
+    "time-pos": {
+      "data": 1.85,
+      "request_id": 102,
+      "error": "success"
+    }
+  }
+]

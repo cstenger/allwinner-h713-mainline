@@ -1,0 +1,13 @@
+from pathlib import Path
+import subprocess,os,json
+root=Path('/home/chris/Projects/h713');out=root/'docs/hdmi-evidence/2026-10-27-audio-lifecycle-fix/acceptance'
+assert not Path('/tmp/h713-accept.sock').exists(),'Existing IPC socket; inspect before launch'
+sink='alsa_output.pci-0000_0c_00.1.hdmi-stereo-extra2'
+sinks=json.loads(subprocess.check_output(['pactl','-f','json','list','sinks'],text=True));assert len([s for s in sinks if s['name']==sink])==1,'Projector endpoint absent or ambiguous'
+prior={k:subprocess.check_output(['pactl',v,sink],text=True) for k,v in [('volume','get-sink-volume'),('mute','get-sink-mute')]}
+(out/'resume-host-prior.json').open('x').write(json.dumps(prior,indent=2))
+subprocess.run(['pactl','set-sink-volume',sink,'100%'],check=True);subprocess.run(['pactl','set-sink-mute',sink,'0'],check=True)
+env=os.environ.copy();env['PIPEWIRE_PROPS']='{ node.dont-fallback = true }'
+args=['mpv','--no-config','--no-terminal','--loop-file=inf','--vo=gpu','--fullscreen','--screen-name=HDMI-A-1','--fs-screen-name=HDMI-A-1','--audio-device=pipewire/'+sink,'--volume=100','--mute=no','--osc=no','--osd-level=0','--input-ipc-server=/tmp/h713-accept.sock','--log-file='+str(out/'resume-player-details.log'),str(root/'build/hdmi-warm-shared-source-2026-10-24/moving-720p-tone.mkv')]
+with (out/'resume-player-console.log').open('xb') as log:p=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,env=env,start_new_session=True)
+(out/'resume-player.pid').write_text(str(p.pid));(out/'resume-player-command.json').write_text(json.dumps(args,indent=2));print('Host fixture started',p.pid)

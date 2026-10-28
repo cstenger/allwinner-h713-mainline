@@ -1,3 +1,33 @@
+# HDMI audio through PipeWire
+
+**October 27: PipeWire replacement installed; board reboot acceptance PASS with host-source qualifications.**
+`h713-hdmi-speaker.service` now connects the existing media-user server's HDMI
+capture node to the Codec sink via `pw-loopback`. It resolves ALSA identities,
+refuses ambiguous/fallback routes and checks stereo graph links plus PCM
+ownership. Video continues directly through KMS. Hardware gains remain DAC 43
+and Line Out 15.
+
+On ordered stop the loopback exits, then `pipewire-speaker.py release` suspends
+only HDMI capture and verifies the PCM closes before the backend can tear down.
+Other capture clients cause refusal, preserving the existing shutdown guard.
+The server is the established `/run/user/1000` media session.
+
+Build/install use the existing `build-speaker.py` / `install-speaker.sh --update`
+workflow. Check with `python3 /usr/lib/h713-hdmi-speaker/pipewire-speaker.py check`.
+Optional `H713_HDMI_AUDIO_DELAY_SEC=...` in `/etc/default/h713-hdmi-speaker`
+adds 0..0.5 s delay; zero by default, latency calibration remains outstanding.
+
+The direct GStreamer route failed cold/abrupt audibility despite digital
+progress. Its gain filter was demonstrably unmuted; PCM re-prime restored
+sound. Exact old failure mechanism remains unisolated. The replacement passed
+cold startup, five orderly warm boots, a synced abrupt reset and functional
+no-source reconnection, with verified content and operator checks. Host output
+recreation and a PC-end cable reseat are explicit source qualifications. [Design, diagnosis and evidence](hdmi-evidence/2026-10-27-audio-lifecycle-fix/README.md).
+
+[Completed acceptance and qualifications](hdmi-evidence/2026-10-27-audio-lifecycle-fix/acceptance/README.md).
+
+## Historical direct GStreamer consumer
+
 # Persistent HDMI-to-speaker playback
 
 The board's optional `h713-hdmi-speaker.service` forwards `hw:H713HDMI,0`

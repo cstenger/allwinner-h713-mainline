@@ -1,0 +1,117 @@
+{
+  "verdict": "PASS_WITH_SOURCE_FIXTURE_QUALIFICATIONS",
+  "board_reboot_acceptance_complete": true,
+  "physical_cold_boot": "PASS, zero preboot census, automatic HDOK, digital/content/operator checks, no board recovery",
+  "orderly_reboots": [
+    {
+      "run": "warm-01",
+      "boot_id": "a412b30d-e2c2-4448-833a-3cbd65de8941",
+      "fps": 59.26228993849247,
+      "video_rejected": 0,
+      "capture_xruns": 0,
+      "operator": "PASS",
+      "tone_content": "PASS",
+      "route": "PipeWire stereo, verified PCM ownership",
+      "host_fixture_recovery": true
+    },
+    {
+      "run": "warm-02",
+      "boot_id": "b3a7a81a-57ae-4f2a-b91d-ab8a497a3631",
+      "fps": 59.41617550347074,
+      "video_rejected": 0,
+      "capture_xruns": 0,
+      "operator": "PASS",
+      "tone_content": "PASS",
+      "route": "PipeWire stereo, verified PCM ownership",
+      "host_fixture_recovery": true
+    },
+    {
+      "run": "warm-03",
+      "boot_id": "8298b717-e455-48ab-85f2-103f737a1fbe",
+      "fps": 59.79519898666795,
+      "video_rejected": 0,
+      "capture_xruns": 0,
+      "operator": "PASS",
+      "tone_content": "PASS",
+      "route": "PipeWire stereo, verified PCM ownership",
+      "host_fixture_recovery": true
+    },
+    {
+      "run": "warm-04",
+      "boot_id": "5855b2c1-08ff-4a52-9261-ea8c2aaafe85",
+      "fps": 59.516211237175824,
+      "video_rejected": 0,
+      "capture_xruns": 0,
+      "operator": "PASS",
+      "tone_content": "PASS",
+      "route": "PipeWire stereo, verified PCM ownership",
+      "host_fixture_recovery": true
+    },
+    {
+      "run": "warm-05",
+      "boot_id": "f6408a88-fee6-4e3b-a5a2-11d3803b8256",
+      "fps": 59.4889855469159,
+      "video_rejected": 0,
+      "capture_xruns": 0,
+      "operator": "PASS",
+      "tone_content": "PASS",
+      "route": "PipeWire stereo, verified PCM ownership",
+      "host_fixture_recovery": true
+    }
+  ],
+  "synced_abrupt_reset": {
+    "run": "abrupt-01",
+    "boot_id": "76a37f98-7df6-400e-8d59-45e4963bb0ea",
+    "fps": 59.21924359027172,
+    "video_rejected": 0,
+    "capture_xruns": 0,
+    "operator": "PASS",
+    "tone_content": "PASS",
+    "route": "PipeWire stereo, verified PCM ownership",
+    "host_fixture_recovery": true
+  },
+  "abrupt_delayed_audio": {
+    "pass": true,
+    "snapshots": [
+      {
+        "snapshot": "tone-stability-01.json",
+        "uptime_before": 105.4,
+        "passed": true
+      },
+      {
+        "snapshot": "tone-stability-02.json",
+        "uptime_before": 131.92,
+        "passed": true
+      },
+      {
+        "snapshot": "tone-stability-03.json",
+        "uptime_before": 156.36,
+        "passed": true
+      }
+    ],
+    "last_health_uptime": "200.72 638.39"
+  },
+  "no_source_cold_runtime_reconnection": {
+    "digital_pass": true,
+    "boot": "cf6a1d00-38b9-43a2-a720-f4f270499327",
+    "signal": "none",
+    "console": "KMS fbcon active, video plane detached",
+    "automatic_hdok": true,
+    "operator_console": "visible before HDMI connection",
+    "runtime_reconnect": "functional PASS, same boot, no board recovery",
+    "operator_reconnected": "moving picture/colours/clean continuous tone correct",
+    "source_intervention": "initial projector-end connection left host DRM disconnected; one PC-end reseat restored detection; new host test fixture launched",
+    "unassisted_first_reconnect_pass": false
+  },
+  "qualifications": [
+    "Managed host player outputs explicitly recreated after HDMI endpoint loss; continuous host-client hotplug not qualified.",
+    "First no-source runtime projector-end reconnection left host DRM disconnected/EDID absent. One PC-end cable reseat restored detection; board then recovered without restart. Electrical cause not isolated.",
+    "Five orderly passes span two cold sessions because the host was interrupted and board switched off after run 3; not claimed as five consecutive resets without power cycling.",
+    "Exact retired GStreamer/ALSA internal fault remains unisolated; mute was excluded and PCM re-prime restored audio. The PipeWire replacement passed all listed board lifecycle tests.",
+    "A/V latency calibration remains separate; optional PipeWire delay is zero by default. This is not a long-duration soak."
+  ],
+  "installed_backup": "/var/lib/h713-hdmi-speaker/backup.AaUgab",
+  "board_state": "powered down, UART Power down verified",
+  "host_state": "test player stopped; projector endpoint restored to 35% raw 22937 before poweroff; sole UART recorder closed",
+  "version_control": "Source, tests and evidence are included in the requested repository commit; publication is separate."
+}

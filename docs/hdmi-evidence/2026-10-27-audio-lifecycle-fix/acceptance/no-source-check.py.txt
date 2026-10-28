@@ -1,0 +1,20 @@
+from pathlib import Path
+import subprocess,json
+out=Path('/home/chris/Projects/h713/docs/hdmi-evidence/2026-10-27-audio-lifecycle-fix/acceptance/no-source-cold');out.mkdir(exist_ok=False)
+code=r'''
+from pathlib import Path
+import subprocess,json
+p=Path;r={'boot_id':p('/proc/sys/kernel/random/boot_id').read_text().strip(),'uptime':p('/proc/uptime').read_text().strip(),'signal':p('/sys/devices/platform/h713-hdmi-ring/signal').read_text().strip()}
+units=['h713-hdmi-'+x for x in ('capture','signal','speaker','ring','video','health-ack')]
+r['units']=subprocess.check_output(['systemctl','show',*units,'-p','Id,ActiveState,Result,NRestarts'],text=True)
+r['ack_dry_run']=json.loads(subprocess.check_output(['python3','/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.py','--dry-run'],text=True))
+r['ack_journal']=subprocess.check_output(['journalctl','-b','-u','h713-hdmi-health-ack','--no-pager','-o','short-monotonic'],text=True)
+r['kms_state']=p('/sys/kernel/debug/dri/0/state').read_text() if p('/sys/kernel/debug/dri/0/state').exists() else 'unavailable'
+print(json.dumps(r,indent=2))
+'''
+p=subprocess.run(['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','root@192.168.4.1','python3 -'],input=code,capture_output=True,text=True,timeout=25);(out/'snapshot.json').write_text(p.stdout);(out/'stderr.log').write_text(p.stderr);assert p.returncode==0,p.stderr
+r=json.loads(p.stdout);assert r['signal']=='none',r['signal'];a=r['ack_dry_run'];assert a['gp6_before']=='48444f4b' and a['gp7']=='00000000' and a['written']==False
+assert '"written": true' in r['ack_journal'],'no automatic ack evidence'
+for unit in ('capture','signal','health-ack'):
+ q=subprocess.run(['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','root@192.168.4.1','systemctl is-active h713-hdmi-'+unit],capture_output=True,text=True,timeout=10);assert q.returncode==0 and q.stdout.strip()=='active'
+print('No-source startup digital PASS',r['boot_id'],a,r['signal'])

@@ -1,0 +1,14 @@
+from pathlib import Path
+import subprocess,time,json
+out=Path('/home/chris/Projects/h713/docs/hdmi-evidence/2026-10-27-audio-lifecycle-fix/acceptance/abrupt-01');expected='76a37f98-7df6-400e-8d59-45e4963bb0ea';rows=[]
+ssh=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','root@192.168.4.1']
+for i in range(1,8):
+ p=subprocess.run(ssh+['cat /proc/sys/kernel/random/boot_id; cat /proc/uptime'],capture_output=True,text=True,timeout=10);assert p.returncode==0,p.stderr
+ lines=p.stdout.splitlines();assert lines[0]==expected,'boot changed; stop';uptime=float(lines[1].split()[0]);name=f'tone-stability-{i:02}.json'
+ subprocess.run(['python3','/tmp/h713-pw-tone.py',str(out/name)],check=True)
+ r=json.loads((out/name).read_text());assert r['route']['boot_id']==expected
+ rows.append({'snapshot':name,'uptime_before':uptime,'passed':True});(out/'stability-summary.json').write_text(json.dumps(rows,indent=2));print('STABILITY PASS uptime',uptime,flush=True)
+ if uptime>=150:break
+ time.sleep(min(20,150-uptime))
+else:raise RuntimeError('bounded observation did not reach target uptime')
+print('SAME-BOOT DELAYED-AUDIO CHECK COMPLETE',flush=True)

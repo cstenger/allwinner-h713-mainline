@@ -1,0 +1,20 @@
+PASS: 11 lifecycle tests
+CAUGHT: if identity in found:
+CAUGHT: if len(matches) != 1:
+CAUGHT: card == identities[identity] and props.get('device.api') == 'alsa'
+CAUGHT: if not math.isfinite(delay) or not 0 <= delay <= 0.5:
+CAUGHT: ' node.dont-fallback=true audio.rate=48000 }'
+CAUGHT: if any(len(ports) != 2 for ports in links.values()):
+CAUGHT: elif pair[0] == nodes[PLAYBACK] or pair[1] == nodes[CAPTURE]:
+CAUGHT: if info.get('state') != 'active' or info.get('error'):
+CAUGHT: if props.get('node.dont-fallback') not in (True, 'true'):
+CAUGHT: str(source), 'Suspend'
+CAUGHT: if any(o.get('type') == 'PipeWire:Interface:Link' and
+CAUGHT: raise RuntimeError('PipeWire did not close HDMI capture; backend must retain holds')
+CAUGHT: if pcm_pid(path) != pid:
+PASS: all 13 implementation mutations caught
+CAUGHT checker: route.get('verified') is not True
+CAUGHT checker: route.get('version')!=1
+CAUGHT checker: route.get('boot_id')!=rec.get('boot_id')
+CAUGHT checker: rec.get('pipewire_check',{}).get('rc')!=0
+PASS: PipeWire warm-checker acceptance/refusal cases and 4 mutations

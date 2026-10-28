@@ -50,16 +50,50 @@ def sample():
     return {'t':time.monotonic(),'periods':prm('period_active'),'xruns':prm('period_xruns'),'capture_state':cap.split('\n',1)[0],
             'capture_owner':owner(cap),'capture_ptr':ptr(cap),'play_state':play.split('\n',1)[0],'play_owner':owner(play),'play_ptr':ptr(play)}
 out['speaker']=subprocess.run(['systemctl','is-active','h713-hdmi-speaker'],capture_output=True,text=True).stdout.strip()
+speaker_exec=subprocess.run(['systemctl','show','h713-hdmi-speaker','-p','ExecStart','--value'],capture_output=True,text=True).stdout
+out['route_kind']='pipewire' if 'pipewire-speaker.py' in speaker_exec else 'direct'
 if r.returncode==0 and P('/sys/module/h713_hdmi_audio').exists():
     # The speaker fades in after a silent pre-roll (cold boot: playback from ~80 s).
     deadline=time.monotonic()+150
     while time.monotonic()<deadline and not status('/proc/asound/Codec/pcm0p/sub0/status').startswith('state: RUNNING'):time.sleep(2)
     out['speaker_wait_s']=round(150-(deadline-time.monotonic()),1)
     a=sample();time.sleep(3);b=sample();out['flow']=[a,b]
+if out['route_kind']=='pipewire':
+    rpw=subprocess.run(['python3','/usr/lib/h713-hdmi-speaker/pipewire-speaker.py','check'],capture_output=True,text=True,timeout=15)
+    out['pipewire_check']={'rc':rpw.returncode,'output':rpw.stdout,'stderr':rpw.stderr}
+    if rpw.returncode==0:out['pipewire_route']=json.loads(rpw.stdout)
 j=subprocess.run(['journalctl','-k','-b','--no-pager','-o','cat'],capture_output=True,text=True).stdout
 out['dsp_lines']=[l for l in j.splitlines() if 'DSP versions' in l or 'patch verified' in l]
+# Video is observed through the installed bridge; never open another stream.
+def video_sample():
+    base=P('/sys/module/h713_hdmi_v4l2/parameters')
+    return {'t':time.monotonic(), 'signal':status('/sys/devices/platform/h713-hdmi-ring/signal').strip(),
+            'units':{u:subprocess.run(['systemctl','is-active',u],capture_output=True,text=True).stdout.strip()
+                     for u in ('h713-hdmi-ring','h713-hdmi-video')},
+            'counters':{k:int((base/k).read_text()) if (base/k).exists() else None
+                        for k in ('frames_produced','frames_delivered','frames_rejected')}}
+a=video_sample();time.sleep(3);b=video_sample();out['video']=[a,b]
+out['video_status']=subprocess.run(['systemctl','status','h713-hdmi-ring','h713-hdmi-video','--no-pager','-l'],capture_output=True,text=True).stdout
+out['video_properties']=subprocess.run(['systemctl','show','h713-hdmi-video','-p','ActiveState,Result,NRestarts,ActiveEnterTimestampMonotonic,ExecMainStartTimestampMonotonic'],capture_output=True,text=True).stdout
+out['video_journal']=subprocess.run(['journalctl','-b','-u','h713-hdmi-ring','-u','h713-hdmi-video','--no-pager','-o','short-monotonic'],capture_output=True,text=True).stdout
+out['bridge_dmesg']=[l for l in j.splitlines() if 'h713-hdmi-v4l2' in l]
 print(json.dumps(out))
 '''
+def evaluate_video(rec):
+    reasons=[];samples=rec.get('video',[])
+    if len(samples)!=2:return ['no video flow samples']
+    a,b=samples
+    if b['t']<=a['t']:reasons.append('invalid video sample interval')
+    for s in samples:
+        if s.get('signal')!='locked 1280x720':reasons.append('video signal not locked 1280x720')
+        if any(s.get('units',{}).get(u)!='active' for u in ('h713-hdmi-ring','h713-hdmi-video')):
+            reasons.append('video units not active')
+    for k in ('frames_produced','frames_delivered','frames_rejected'):
+        x,y=a.get('counters',{}).get(k),b.get('counters',{}).get(k)
+        if x is None or y is None:reasons.append('missing video counter '+k)
+        elif (y<=x if k!='frames_rejected' else y!=x):reasons.append('video counter failed '+k)
+    if not rec.get('bridge_dmesg'):reasons.append('no bridge boot log')
+    return reasons
 def flow(rec):
     """Measured audio flow between the two samples, or None."""
     f=rec.get('flow')
@@ -72,7 +106,7 @@ def flow(rec):
             'play_rate':(b['play_ptr']-a['play_ptr'])/dt if a.get('play_ptr') is not None and b.get('play_ptr') is not None else None,
             'capture_running':a['capture_state']==b['capture_state']=='state: RUNNING','play_running':a['play_state']==b['play_state']=='state: RUNNING',
             'owners':sorted({a['capture_owner'],b['capture_owner'],a['play_owner'],b['play_owner']},key=str)}
-def evaluate(rec):
+def evaluate(rec,require_video=False):
     """Pass only with the unchanged startup check, the DSP gate and audio flowing to the speaker."""
     out={'label':rec.get('label'),'boot_id':rec.get('boot_id'),'reasons':[]}
     cs=rec.get('check_startup',{})
@@ -86,14 +120,21 @@ def evaluate(rec):
     else:
         if not f['capture_running']:out['reasons'].append('capture PCM not RUNNING')
         if not f['play_running']:out['reasons'].append('speaker playback not RUNNING')
-        if f['owners']!=['hdmi-speaker']:out['reasons'].append('PCMs not owned by hdmi-speaker: '+','.join(map(str,f['owners'])))
+        expected=['pipewire'] if rec.get('route_kind')=='pipewire' else ['hdmi-speaker']
+        if f['owners']!=expected:out['reasons'].append('PCMs not owned by '+expected[0]+': '+','.join(map(str,f['owners'])))
         if abs(f['capture_rate']/RATE-1)>RATE_TOLERANCE:out['reasons'].append('capture rate %.0f Hz is not 48 kHz'%f['capture_rate'])
         if f['xruns']:out['reasons'].append('%d capture xruns while sampling'%f['xruns'])
         if f['play_rate'] is None or abs(f['play_rate']/RATE-1)>RATE_TOLERANCE:out['reasons'].append('speaker playback not advancing at 48 kHz')
+    if rec.get('route_kind')=='pipewire':
+        route=rec.get('pipewire_route',{})
+        if (rec.get('pipewire_check',{}).get('rc')!=0 or route.get('verified') is not True or
+                route.get('version')!=1 or route.get('boot_id')!=rec.get('boot_id')):
+            out['reasons'].append('PipeWire route/ownership verification failed')
+    if require_video:out['reasons'].extend(evaluate_video(rec))
     out['passed']=not out['reasons'];return out
-def compare(cold,warm):
+def compare(cold,warm,require_video=False):
     """The warm session must be a new boot whose audio path behaves like the cold one."""
-    a,b=evaluate(cold),evaluate(warm);out={'cold':a,'warm':b,'reasons':[]}
+    a,b=evaluate(cold,require_video),evaluate(warm,require_video);out={'cold':a,'warm':b,'reasons':[]}
     if cold.get('label')!='cold' or warm.get('label')!='warm':out['reasons'].append('labels must be cold then warm')
     if not cold.get('boot_id') or cold.get('boot_id')==warm.get('boot_id'):out['reasons'].append('warm record is not a new boot')
     if not a['passed']:out['reasons'].append('cold session did not pass')

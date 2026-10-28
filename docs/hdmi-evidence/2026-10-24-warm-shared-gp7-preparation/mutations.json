@@ -1,0 +1,68 @@
+[
+  {
+    "mutation": "interrupt re-enabled",
+    "test": "test_gp7_prompt_requires_markers_but_never_sends_an_interrupt",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_gp7_prompt_requires_markers_but_never_sends_an_interrupt (warm_tests.GP7Stop.test_gp7_prompt_requires_markers_but_never_sends_an_interrupt)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 225, in test_gp7_prompt_requires_markers_but_never_sends_an_interrupt\n    self.assertEqual(feed(stage,self.trace(),size=1),['done'])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: ['space', 'done'] != ['done']\n\nFirst differing element 0:\n'space'\n'done'\n\nFirst list contains 1 additional elements.\nFirst extra element 1:\n'done'\n\n- ['space', 'done']\n+ ['done']\n\n----------------------------------------------------------------------\nRan 1 test in 0.007s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "preboot magic checked as zero",
+    "test": "test_gp7_prompt_requires_markers_but_never_sends_an_interrupt",
+    "caught": true,
+    "output": "E\n======================================================================\nERROR: test_gp7_prompt_requires_markers_but_never_sends_an_interrupt (warm_tests.GP7Stop.test_gp7_prompt_requires_markers_but_never_sends_an_interrupt)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 227, in test_gp7_prompt_requires_markers_but_never_sends_an_interrupt\n    r.check_warm_preboot(stage.preboot(),'gp7')\n    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/chris/Projects/h713/tools/serial/run-warm-shared.py\", line 120, in check_warm_preboot\n    if p!={'gp6':'48444d49','gp7':GP7_STOP if boot_stop=='gp7' else '00000000','mips_clk':'00000000','mips_reset':'00000000','mips_status':'00000000'}:raise RuntimeError('warm preboot not the expected cold-path warm state: '+json.dumps(p))\n                                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nRuntimeError: warm preboot not the expected cold-path warm state: {\"gp6\": \"48444d49\", \"gp7\": \"b007c0de\", \"mips_clk\": \"00000000\", \"mips_reset\": \"00000000\", \"mips_status\": \"00000000\"}\n\n----------------------------------------------------------------------\nRan 1 test in 0.007s\n\nFAILED (errors=1)\n"
+  },
+  {
+    "mutation": "automatic kernel boot accepted",
+    "test": "test_gp7_missing_markers_extra_reset_or_automatic_boot_never_launches",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_gp7_missing_markers_extra_reset_or_automatic_boot_never_launches (warm_tests.GP7Stop.test_gp7_missing_markers_extra_reset_or_automatic_boot_never_launches)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 235, in test_gp7_missing_markers_extra_reset_or_automatic_boot_never_launches\n    with self.assertRaises(RuntimeError):r.reboot_stage('orderly','gp7').feed(self.trace().replace(b'=> ',bad+b'\\r\\n=> '))\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^\nAssertionError: RuntimeError not raised\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "prompt environment checks skipped",
+    "test": "test_prompt_env_and_consumed_gp7_are_verified_before_fit_load",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_prompt_env_and_consumed_gp7_are_verified_before_fit_load (warm_tests.GP7Stop.test_prompt_env_and_consumed_gp7_are_verified_before_fit_load)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 248, in test_prompt_env_and_consumed_gp7_are_verified_before_fit_load\n    with self.assertRaises(RuntimeError):run.census(None,io.BytesIO(),{})\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^\nAssertionError: RuntimeError not raised\n\n----------------------------------------------------------------------\nRan 1 test in 0.008s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "consumed GP7 not checked",
+    "test": "test_prompt_env_and_consumed_gp7_are_verified_before_fit_load",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_prompt_env_and_consumed_gp7_are_verified_before_fit_load (warm_tests.GP7Stop.test_prompt_env_and_consumed_gp7_are_verified_before_fit_load)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 248, in test_prompt_env_and_consumed_gp7_are_verified_before_fit_load\n    with self.assertRaises(RuntimeError):run.census(None,io.BytesIO(),{})\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^\nAssertionError: RuntimeError not raised\n\n----------------------------------------------------------------------\nRan 1 test in 0.005s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "wrong reboot argument",
+    "test": "test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards (warm_tests.GP7Stop.test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 270, in test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards\n    self.assertEqual(['systemctl','reboot','--no-block','--reboot-argument=bootloader'] in calls,failure is None,failure)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: False != True\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "boot-ID guard disabled",
+    "test": "test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards",
+    "caught": true,
+    "output": "E\n======================================================================\nERROR: test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards (warm_tests.GP7Stop.test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 252, in test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards\n    script=r.orderly_bootstop_script('B1');compile(script,'gp7-trigger','exec')\n  File \"/home/chris/Projects/h713/tools/serial/run-warm-shared.py\", line 42, in orderly_bootstop_script\n        return '''import pathlib,subprocess\n               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n    ...<8 lines>...\n    subprocess.run(['systemctl','reboot','--no-block','--reboot-argument=bootloader'],check=True)\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n    ''' % boot\n    ~~~~^~~~~~\nTypeError: not all arguments converted during string formatting\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n"
+  },
+  {
+    "mutation": "driver binding ignored",
+    "test": "test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards (warm_tests.GP7Stop.test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 268, in test_orderly_trigger_uses_kernel_bootloader_argument_only_after_guards\n    with self.assertRaises(RuntimeError):exec(script,{})\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^\nAssertionError: RuntimeError not raised\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "request no longer detached",
+    "test": "test_gp7_request_is_detached_once_and_intent_precedes_submission",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_gp7_request_is_detached_once_and_intent_precedes_submission (warm_tests.GP7Stop.test_gp7_request_is_detached_once_and_intent_precedes_submission)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 283, in test_gp7_request_is_detached_once_and_intent_precedes_submission\n    run.reboot_from_cold(mock.Mock(data=b''))\n    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/chris/Projects/h713/tools/serial/run-warm-shared.py\", line 263, in reboot_from_cold\n    self.ssh('reboot-request',command)\n    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/mock.py\", line 1176, in __call__\n    return self._mock_call(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/mock.py\", line 1180, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/mock.py\", line 1247, in _execute_mock_call\n    result = effect(*args, **kwargs)\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 280, in request\n    self.assertTrue(command.endswith('< /dev/null &'))\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: False is not true\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "GP7 allowed with SysRq-b",
+    "test": "test_gp7_sysrq_and_resume_mode_changes_refused_before_uart",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_gp7_sysrq_and_resume_mode_changes_refused_before_uart (warm_tests.GP7Stop.test_gp7_sysrq_and_resume_mode_changes_refused_before_uart)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 288, in test_gp7_sysrq_and_resume_mode_changes_refused_before_uart\n    with self.assertRaises(ValueError):r.Run(pathlib.Path('/unused'),'unused',reset='sysrq-b',boot_stop='gp7')\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: ValueError not raised\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "resume ignores mode changes",
+    "test": "test_gp7_sysrq_and_resume_mode_changes_refused_before_uart",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_gp7_sysrq_and_resume_mode_changes_refused_before_uart (warm_tests.GP7Stop.test_gp7_sysrq_and_resume_mode_changes_refused_before_uart)\n----------------------------------------------------------------------\nRuntimeError: a different boot is running; cold cycle required\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 294, in test_gp7_sysrq_and_resume_mode_changes_refused_before_uart\n    with self.assertRaisesRegex(RuntimeError,'resume options differ'):run.resume(fixture.prepared,'B1')\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"resume options differ\" does not match \"a different boot is running; cold cycle required\"\n\n----------------------------------------------------------------------\nRan 1 test in 0.005s\n\nFAILED (failures=1)\n"
+  }
+]

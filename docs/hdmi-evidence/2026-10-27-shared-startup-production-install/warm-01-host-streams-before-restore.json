@@ -1,0 +1,59 @@
+[
+  {
+    "index": 700,
+    "driver": "PipeWire",
+    "owner_module": null,
+    "client": "699",
+    "sink": 62,
+    "sample_specification": "s16le 2ch 48000Hz",
+    "channel_map": "front-left,front-right",
+    "format": "pcm, format.sample_format = \"\\\"s16le\\\"\"  format.rate = \"48000\"  format.channels = \"2\"  format.channel_map = \"\\\"front-left,front-right\\\"\"",
+    "corked": false,
+    "mute": false,
+    "volume": {
+      "front-left": {
+        "value": 65536,
+        "value_percent": "100%",
+        "db": "0.00 dB"
+      },
+      "front-right": {
+        "value": 65536,
+        "value_percent": "100%",
+        "db": "0.00 dB"
+      }
+    },
+    "balance": 0.0,
+    "buffer_latency_usec": 0.0,
+    "sink_latency_usec": 0.0,
+    "resample_method": "PipeWire",
+    "properties": {
+      "media.type": "Audio",
+      "media.category": "Playback",
+      "node.name": "mpv",
+      "device.description": "mpv",
+      "application.name": "mpv",
+      "application.id": "mpv",
+      "application.icon_name": "mpv",
+      "node.always-process": "true",
+      "target.object": "alsa_output.pci-0000_0c_00.1.hdmi-stereo-extra2",
+      "node.rate": "1/48000",
+      "media.name": "moving-720p-tone.mkv - mpv",
+      "stream.is-live": "true",
+      "node.want-driver": "true",
+      "node.autoconnect": "true",
+      "media.class": "Stream/Output/Audio",
+      "port.group": "stream.0",
+      "adapt.follower.spa-node": "",
+      "object.register": "false",
+      "factory.id": "9",
+      "clock.quantum-limit": "8192",
+      "node.loop.name": "data-loop.0",
+      "library.name": "audioconvert/libspa-audioconvert",
+      "client.id": "111",
+      "object.id": "112",
+      "object.serial": "700",
+      "node.driver-id": "62",
+      "module-stream-restore.id": "sink-input-by-application-id:mpv"
+    }
+  }
+]

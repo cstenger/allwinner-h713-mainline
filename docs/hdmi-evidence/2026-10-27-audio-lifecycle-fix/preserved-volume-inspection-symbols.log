@@ -1,0 +1,31 @@
+[New LWP 534]
+[New LWP 440]
+[New LWP 436]
+[New LWP 435]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/aarch64-linux-gnu/libthread_db.so.1".
+0x0000ffff94e9ef68 in ?? () from /lib/aarch64-linux-gnu/libc.so.6
+[Switching to thread 1 (Thread 0xffff951ecc80 (LWP 422))]
+#0  0x0000ffff94e9ef68 in ?? () from /lib/aarch64-linux-gnu/libc.so.6
+#0  0x0000ffff94e9ef68 in ?? () from /lib/aarch64-linux-gnu/libc.so.6
+#1  0x0000ffff94e92618 in ?? () from /lib/aarch64-linux-gnu/libc.so.6
+#2  0x0000ffff94e9265c in ?? () from /lib/aarch64-linux-gnu/libc.so.6
+#3  0x0000ffff94ef3b0c in ppoll () from /lib/aarch64-linux-gnu/libc.so.6
+#4  0x0000ffff952a3174 in gst_poll_wait () from /lib/aarch64-linux-gnu/libgstreamer-1.0.so.0
+#5  0x0000ffff9524788c in gst_bus_timed_pop_filtered () from /lib/aarch64-linux-gnu/libgstreamer-1.0.so.0
+#6  0x0000aaaab04b0e3c in main ()
+VOLUME_STATE {"pointer": "0xaaaab07eb0a0", "mute": 0, "volume": 1.0, "current_mute": 0, "current_volume": 1.0, "current_vol_i16": 2048, "negotiated": 1}
+[Inferior 1 (process 422) detached]
+ 
+GDB_SECONDS 0.7185696250001001
+state: RUNNING
+owner_pid   : 422
+trigger_time: 683.809662532
+tstamp      : 0.000000000
+delay       : 3424
+avail       : 416
+avail_max   : 3840
+-----
+hw_ptr      : 5216
+appl_ptr    : 8640
+
