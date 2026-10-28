@@ -24,7 +24,10 @@
  * written in the same graph cycle that fills the ring, and the DAC plays it
  * that much later.
  *
- *   usage: av-sync-probe SECONDS     (start it after playback has begun)
+ *   usage: av-sync-probe SECONDS [SINK_NODE [PLAYBACK_STATUS]]
+ * Start after playback begins. HDMI measurements must name the Codec node
+ * and /proc/asound/Codec/pcm0p/sub0/status, rather than selecting defaults.
+ * PAIR_CSV records use CLOCK_MONOTONIC seconds; offset is audio minus video.
  *
  * Build on the board:
  *   gcc -O2 -Wall -o av-sync-probe av-sync-probe.c -lm \
@@ -65,6 +68,7 @@ static double now(void)
 static int16_t *pcm;
 static size_t pcm_len, pcm_cap;
 static double env_offset = 1e30;	/* min(arrival - samples / RATE) */
+static const char *playback_status;
 
 static GstFlowReturn on_sample(GstAppSink *sink, gpointer data)
 {
@@ -100,7 +104,8 @@ static long alsa_delay(void)
 	glob_t g;
 	long delay = -1;
 
-	if (glob("/proc/asound/card*/pcm*p/sub0/status", 0, NULL, &g))
+	if (glob(playback_status ? playback_status :
+		 "/proc/asound/card*/pcm*p/sub0/status", 0, NULL, &g))
 		return -1;
 	for (size_t i = 0; i < g.gl_pathc && delay < 0; i++) {
 		char line[128];
@@ -233,17 +238,30 @@ int main(int argc, char **argv)
 	static double flashes[MAX_EVENTS], beeps[MAX_EVENTS], offs[MAX_EVENTS];
 	static long delays[100000];
 	int nflash = 0, nbeep = 0, noff = 0, ndelay = 0;
-	double seconds = argc > 1 ? atof(argv[1]) : 20, t0, end, last_alsa = 0;
-	GstElement *pipeline, *sink;
+	double seconds = 20, t0, end, last_alsa = 0;
+	GstElement *pipeline, *sink, *monitor;
+	GstStructure *props;
+	const char *target = NULL;
+	char *duration_end;
 	drmModePlaneRes *res;
 	GError *error = NULL;
 	int fd, bright = 0;
 
 	gst_init(&argc, &argv);
-	if (seconds <= 0) {
-		fprintf(stderr, "usage: av-sync-probe SECONDS\n");
+	if (argc > 1) {
+		seconds = strtod(argv[1], &duration_end);
+		if (!*argv[1] || *duration_end || !isfinite(seconds))
+			seconds = -1;
+	}
+	if (argc > 4 || seconds <= 0 || seconds > 120) {
+		fprintf(stderr, "usage: av-sync-probe SECONDS(0..120) "
+			"[SINK_NODE [PLAYBACK_STATUS]]\n");
 		return 2;
 	}
+	if (argc > 2)
+		target = argv[2];
+	if (argc > 3)
+		playback_status = argv[3];
 
 	fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
 	/* The first opener of a DRM device with no master becomes master, and
@@ -259,13 +277,22 @@ int main(int argc, char **argv)
 	}
 
 	pipeline = gst_parse_launch(
-		"pipewiresrc stream-properties=\"props,stream.capture.sink=true\" "
+		"pipewiresrc name=monitor "
 		"! audioconvert ! audio/x-raw,format=S16LE,channels=1,rate=48000 "
 		"! appsink name=a sync=false", &error);
-	if (!pipeline) {
-		fprintf(stderr, "audio: %s\n", error->message);
+	if (!pipeline || error) {
+		fprintf(stderr, "audio: %s\n", error ? error->message : "pipeline creation failed");
 		return 1;
 	}
+	monitor = gst_bin_get_by_name(GST_BIN(pipeline), "monitor");
+	props = gst_structure_new("props", "stream.capture.sink", G_TYPE_BOOLEAN, TRUE,
+				 "node.dont-fallback", G_TYPE_BOOLEAN, TRUE,
+				 "node.name", G_TYPE_STRING, "h713-hdmi-avsync-monitor", NULL);
+	if (target)
+		gst_structure_set(props, "target.object", G_TYPE_STRING, target, NULL);
+	g_object_set(monitor, "stream-properties", props, NULL);
+	gst_structure_free(props);
+	gst_object_unref(monitor);
 	sink = gst_bin_get_by_name(GST_BIN(pipeline), "a");
 	gst_app_sink_set_callbacks(GST_APP_SINK(sink),
 				   &(GstAppSinkCallbacks){ .new_sample = on_sample },
@@ -296,6 +323,11 @@ int main(int argc, char **argv)
 		usleep(1000);
 	}
 	gst_element_set_state(pipeline, GST_STATE_NULL);
+	if (!ndelay || pcm_len < (size_t)(seconds * RATE * 0.9)) {
+		fprintf(stderr, "Incomplete measurement: audio %.3f s of %.3f s; "
+			"playback-delay samples %d\n", (double)pcm_len / RATE, seconds, ndelay);
+		return 1;
+	}
 
 	/* Beeps: onsets of the 1 ms envelope crossing half of its maximum,
 	 * at least 0.5 s apart. */
@@ -371,6 +403,8 @@ int main(int argc, char **argv)
 					printf("  flash %8.3f s  beep %+7.1f ms\n",
 					       flashes[i] - t0,
 					       (beeps[j] - flashes[i]) * 1000);
+					printf("PAIR_CSV,%.9f,%.9f,%.6f\n", flashes[i], beeps[j],
+					       (beeps[j] - flashes[i]) * 1000);
 					break;
 				}
 	}
@@ -380,6 +414,9 @@ int main(int argc, char **argv)
 		       "min %+.1f, max %+.1f, n=%d of %d flashes\n",
 		       offs[noff / 2] * 1000, offs[0] * 1000,
 		       offs[noff - 1] * 1000, noff, nflash);
+		printf("offset spread: p05 %+.1f ms, p95 %+.1f ms\n",
+		       offs[(noff - 1) * 5 / 100] * 1000,
+		       offs[(noff - 1) * 95 / 100] * 1000);
 	} else {
 		printf("A/V offset: no flash/beep pairs\n");
 	}

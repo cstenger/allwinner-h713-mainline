@@ -1,5 +1,34 @@
 # Handoff: HDMI-in on the panel (route B + event-driven switching), 2026-10-24
 
+## Current A/V calibration — 40 ms saved and reboot verified
+
+**PASS with qualifications.** `/etc/default/h713-hdmi-speaker` saves
+`H713_HDMI_AUDIO_DELAY_SEC=0.040`; no temporary override remains. At this
+setting, `test2.mov` gives 15/15 recorded flash/beep matches, median −2.44 ms,
+p05/p95 −15.07/+3.03 ms, threshold-sweep median −9.13..−0.35 ms.
+Camera/export bias remains unmeasured; one-foot sound flight is ~0.9 ms.
+This is calibration to the recording, not certified absolute zero, absolute
+glass-to-glass latency or long-run drift.
+
+One orderly reboot reached `c8f3308e-5c02-4be1-bc0e-3ee5991761e8`; the saved
+target and actual `--delay=0.04` returned. Video, speaker and health
+acknowledgment were active, with no recovery restarts or board service
+intervention. Flow was 59.64 fps with zero rejected-frame increment/capture
+xruns. Warm timing matched 38/38 events; electronic median −32.35 ms must
+not be treated as perceptual sync. Operator confirmed normal flashes/beeps.
+Host-only audio/video output reopening was required after hotplug and is
+logged. A PC-end HDMI reseat was required on the initial cold boot.
+
+Cleanup: test player and passive UART stopped; host HDMI restored to original
+raw 22937/35%, unmuted. Board left powered on with saved 40 ms active.
+[Results, exact installed defaults, reproduction and qualifications](hdmi-evidence/2026-10-27-avsync-calibration/README.md),
+with machine verdict `CALIBRATION-RESULT.json`. Original camera MOVs remain
+local; their hashes, derived signals and analysis are included.
+The earlier lifecycle/reboot commit `a93a741` was pushed; this calibration
+commit has not been pushed. Historical board-off statements below describe
+the end of the earlier reboot acceptance, before this calibration session.
+
+
 <!-- pipewire-acceptance:start -->
 ## Current PipeWire board reboot acceptance — completed October 27
 

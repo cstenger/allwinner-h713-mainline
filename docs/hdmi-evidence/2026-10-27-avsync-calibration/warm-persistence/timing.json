@@ -1,0 +1,22 @@
+{
+  "measurement": "electronic display-plane / codec-monitor estimate",
+  "sign": "positive means audio late",
+  "matched": 38,
+  "flashes": 38,
+  "beeps": 38,
+  "span_sec": 38.92267885199999,
+  "offset_ms": {
+    "median": -32.3534645,
+    "p05": -39.86104345,
+    "p95": -24.73754025,
+    "min": -40.162534,
+    "max": 13.028292
+  },
+  "within_window_slope_ms_per_min": 12.293776720453943,
+  "current_audio_delay_sec": 0.04,
+  "audio_timing_correction_sec": 0.0323534645,
+  "electronic_only_candidate_delay_sec": 0.07235346449999999,
+  "candidate_note": "Local estimate only: PipeWire subtracts stream latency from its target delay. A zero target does not identify intrinsic latency; measure a nonzero trial first. Re-measure every candidate.",
+  "candidate_outside_supported_range": false,
+  "qualification": "DRM state can precede scanout by one vblank; panel/acoustic latency unmeasured. Confirm projected flash/speaker sync with calibrated camera. Short-window slope is not a long-run drift verdict."
+}

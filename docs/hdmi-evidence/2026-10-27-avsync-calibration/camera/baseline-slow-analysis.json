@@ -1,0 +1,103 @@
+{
+  "pairs": [
+    {
+      "flash_frame": 248,
+      "flash_midpoint_export_sec": 8.25,
+      "beep_export_sec": 8.091066695709598,
+      "audio_minus_flash_real_ms": -19.866663036300245
+    },
+    {
+      "flash_frame": 537,
+      "flash_midpoint_export_sec": 17.8833335,
+      "beep_export_sec": 17.69343914424274,
+      "audio_minus_flash_real_ms": -23.736794469657596
+    },
+    {
+      "flash_frame": 778,
+      "flash_midpoint_export_sec": 25.916666499999998,
+      "beep_export_sec": 25.691111765602464,
+      "audio_minus_flash_real_ms": -28.194341799691713
+    },
+    {
+      "flash_frame": 1088,
+      "flash_midpoint_export_sec": 36.25,
+      "beep_export_sec": 36.09036800994991,
+      "audio_minus_flash_real_ms": -19.953998756260916
+    },
+    {
+      "flash_frame": 1257,
+      "flash_midpoint_export_sec": 41.8833335,
+      "beep_export_sec": 41.69223517533224,
+      "audio_minus_flash_real_ms": -23.8872905834695
+    }
+  ],
+  "paired": 5,
+  "cadence_fit_slow_factor": 8.002660203851491,
+  "cadence_fit_max_export_residual_sec": 0.0400530040770235,
+  "source_gap_phase": 5,
+  "offset_ms": {
+    "min": -28.194341799691713,
+    "p05": -27.33293155644727,
+    "median": -23.736794469657596,
+    "p95": -19.88413018029238,
+    "max": -19.866663036300245
+  },
+  "real_span_sec": 4.2041666875,
+  "file": "local/lcd-photos/test_111/baseline.mov",
+  "sha256": "32dd16aa6fb19a26284e54321aaba151cc95a32eca34d2ef9edc86c5408d7c75",
+  "slow_export_region_sec": [
+    4,
+    46
+  ],
+  "retime_factor": 8,
+  "audio_detector_hz": 125.0,
+  "real_frame_interval_ms": 4.166666666666667,
+  "threshold_sensitivity": [
+    {
+      "video_fraction": 0.25,
+      "audio_fraction": 0.25,
+      "median_ms": -25.216289506223788
+    },
+    {
+      "video_fraction": 0.25,
+      "audio_fraction": 0.5,
+      "median_ms": -23.736794469657596
+    },
+    {
+      "video_fraction": 0.25,
+      "audio_fraction": 0.75,
+      "median_ms": -22.305697751773046
+    },
+    {
+      "video_fraction": 0.5,
+      "audio_fraction": 0.25,
+      "median_ms": -25.216289506223788
+    },
+    {
+      "video_fraction": 0.5,
+      "audio_fraction": 0.5,
+      "median_ms": -23.736794469657596
+    },
+    {
+      "video_fraction": 0.5,
+      "audio_fraction": 0.75,
+      "median_ms": -22.305697751773046
+    },
+    {
+      "video_fraction": 0.75,
+      "audio_fraction": 0.25,
+      "median_ms": -29.377176559920226
+    },
+    {
+      "video_fraction": 0.75,
+      "audio_fraction": 0.5,
+      "median_ms": -27.899551626652475
+    },
+    {
+      "video_fraction": 0.75,
+      "audio_fraction": 0.75,
+      "median_ms": -26.471579396995182
+    }
+  ],
+  "qualification": "Uncalibrated camera A/V and slow-motion export bias; sound propagation included. No visible simultaneous physical/acoustic calibration reference identified. Short real-time span does not qualify drift. AAC decoded with original edit/skip metadata; no manual priming subtraction."
+}

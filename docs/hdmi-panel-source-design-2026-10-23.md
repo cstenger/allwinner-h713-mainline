@@ -49,7 +49,7 @@ design keeps it that way (§1.4).
 | Boot with the cable already in? | The driver samples once before it registers the video node, so the coldplug `add` event already carries `locked`. systemd starts the unit with no boot-time branch. |
 | Mode changes (login, resolution change)? | Brief gaps are absorbed by a 1–2 s driver **HOLD** state, during which the driver delivers black frames. A real mode change raises `V4L2_EVENT_SOURCE_CHANGE`, and stock `v4l2src` (≥ 1.24; the board has 1.26.2) renegotiates without a restart. |
 | Chroma for desktop text | v1 goal: scan out **NV16 directly** on the video plane, with no `videoconvert`. That keeps 4:2:2 chroma, avoids a second halving and a 60 fps CPU conversion, and is pending the AFBD format encoding (§1.5). The fallback is today's proven NV16→NV12. |
-| Audio | The speaker uses a PipeWire loopback (installed October 27). Video does **not** go through PipeWire. Audio delay is configurable; measured A/V latency calibration (§5) is still pending. |
+| Audio | The speaker uses a PipeWire loopback (installed October 27). Video does **not** go through PipeWire. Audio target delay is configurable; the October 27 recording-matched setting is 40 ms (§5), with a camera-bias qualification; orderly warm-reboot persistence passes. |
 
 ## 1. How HDMI video can reach the panel today
 
@@ -594,6 +594,37 @@ Recommended.
 * Keep `sync=false` and minimal buffering throughout. For desktop use,
   latency wins over lip sync: the loopback delay may *add* audio delay to
   match video, but video is never buffered to match audio.
+
+### October 27 measured A/V calibration
+
+The installed board now uses `H713_HDMI_AUDIO_DELAY_SEC=0.040` in
+`/etc/default/h713-hdmi-speaker`. This is a PipeWire target, not a promise of
+40 ms extra delay: the loopback subtracts reported stream latencies.
+Video remains direct NV12 KMS with `sync=false skip-vsync=true`.
+
+A validated lossless 720p60/48 kHz PCM irregular flash/beep source replaced
+the older compressed fixture for this measurement. The supplied slow-motion
+exports contain eightfold retimed interiors; analysis checks source cadence
+and detects the retimed 125 Hz beep, excluding normal-speed/ramp ends. At
+40 ms, 15 projected-flash/speaker pairs over 14.50 real seconds give a
+recorded audio-minus-flash median −2.44 ms and p05/p95 −15.07/+3.03 ms.
+Threshold sensitivity gives median −9.13..−0.35 ms. Speaker-to-phone
+distance is about one foot (~0.9 ms sound flight).
+
+This is a **recording-matched calibration**. Camera/export A/V bias is not
+independently measured: the operator could not clap while filming. Absolute
+optical/acoustic zero, host-monitor-to-projection latency and long-run drift
+remain unqualified. The display-plane/codec software estimate differs from
+the phone result (40 ms trial median −29.36 ms); do not interpret its zero
+as perceptual sync or assign the discrepancy to a measured panel latency.
+The saved file has passed a speaker-only restart and an orderly warm reboot.
+After reboot, the same 40 ms target, normal route/flow and operator-confirmed
+flashes/beeps returned without board service intervention. Host outputs
+required the documented player reopen after hotplug. An optional visible
+one-handed hard-surface tap provides a camera timing reference for a later
+refinement.
+
+[Measurements, source validation, tests and qualifications](hdmi-evidence/2026-10-27-avsync-calibration/README.md).
 
 ## 6. Interaction with the warm shared startup
 

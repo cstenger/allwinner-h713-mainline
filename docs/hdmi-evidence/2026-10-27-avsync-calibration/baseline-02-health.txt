@@ -1,0 +1,31 @@
+NRestarts=0
+Id=h713-hdmi-video.service
+ActiveState=active
+
+NRestarts=0
+Id=h713-hdmi-speaker.service
+ActiveState=active
+{"verified": true, "version": 1, "boot_id": "e0d594d9-32e8-458e-b674-2c19121eb64b", "server_pid": 322, "route": {"source": {"id": 51, "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"}, "sink": {"id": 43, "name": "alsa_output.platform-2030000.codec.stereo-fallback"}}, "nodes": {"h713-hdmi-loop-capture": 56, "h713-hdmi-loop-playback": 55}}
+/sys/module/h713_hdmi_audio/parameters/period_xruns
+/sys/module/h713_hdmi_audio/parameters/period_active
+state: RUNNING
+owner_pid   : 322
+trigger_time: 24.760233344
+tstamp      : 237.479612278
+delay       : 801
+avail       : 31967
+avail_max   : 32255
+-----
+hw_ptr      : 10210576
+appl_ptr    : 10211377
+state: RUNNING
+owner_pid   : 322
+trigger_time: 24.748605052
+tstamp      : 237.482450737
+delay       : 380
+avail       : 380
+avail_max   : 540
+-----
+hw_ptr      : 10211196
+appl_ptr    : 10210816
+cat: /sys/kernel/debug/h713_hdmi/status: No such file or directory

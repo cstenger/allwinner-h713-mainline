@@ -1,0 +1,82 @@
+{"verified": true, "version": 1, "boot_id": "e0d594d9-32e8-458e-b674-2c19121eb64b", "server_pid": 322, "route": {"source": {"id": 51, "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"}, "sink": {"id": 43, "name": "alsa_output.platform-2030000.codec.stereo-fallback"}}, "nodes": {"h713-hdmi-loop-capture": 64, "h713-hdmi-loop-playback": 56}}
+pw-loopback --name=h713-hdmi-speaker --channels=2 --channel-map=[ FL, FR ] --latency=20 --delay=0.045 --capture=alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback --playback=alsa_output.platform-2030000.codec.stereo-fallback --capture-props={ node.name=h713-hdmi-loop-capture node.dont-fallback=true audio.rate=48000 } --playback-props={ node.name=h713-hdmi-loop-playback node.dont-fallback=true audio.rate=48000 }
+audio: 1920000 samples, peak 4744, ALSA delay median 698 frames (14.5 ms, 769 samples)
+flashes 38, beeps 38
+  flash    0.825 s  beep   -22.8 ms
+PAIR_CSV,307.668675812,307.645841080,-22.834732
+  flash    1.830 s  beep   -27.7 ms
+PAIR_CSV,308.673567104,308.645861914,-27.705190
+  flash    3.103 s  beep   +20.8 ms
+PAIR_CSV,309.946387605,309.967216080,20.828475
+  flash    3.840 s  beep   -16.1 ms
+PAIR_CSV,310.683345730,310.667236914,-16.108816
+  flash    4.945 s  beep   -21.5 ms
+PAIR_CSV,311.788735105,311.767257747,-21.477358
+  flash    5.833 s  beep    -9.0 ms
+PAIR_CSV,312.676316856,312.667278580,-9.038276
+  flash    7.240 s  beep   -15.8 ms
+PAIR_CSV,314.083161273,314.067320247,-15.841026
+  flash    8.044 s  beep   -19.9 ms
+PAIR_CSV,314.887187940,314.867320247,-19.867693
+  flash    9.233 s  beep    -8.8 ms
+PAIR_CSV,316.076200607,316.067361914,-8.838693
+  flash   10.238 s  beep   -13.8 ms
+PAIR_CSV,317.081150150,317.067382747,-13.767403
+  flash   11.544 s  beep   -20.1 ms
+PAIR_CSV,318.387528317,318.367403580,-20.124737
+  flash   12.247 s  beep   -23.5 ms
+PAIR_CSV,319.090966984,319.067424414,-23.542570
+  flash   13.336 s  beep   -12.5 ms
+PAIR_CSV,320.179983443,320.167445247,-12.538196
+  flash   14.240 s  beep   -16.7 ms
+PAIR_CSV,321.084119443,321.067466080,-16.653363
+  flash   15.647 s  beep   -23.3 ms
+PAIR_CSV,322.490812610,322.467507747,-23.304863
+  flash   16.434 s  beep   -10.5 ms
+PAIR_CSV,323.277986028,323.267528580,-10.457448
+  flash   17.640 s  beep   -16.2 ms
+PAIR_CSV,324.483767986,324.467549414,-16.218572
+  flash   18.645 s  beep   -21.1 ms
+PAIR_CSV,325.488647320,325.467570247,-21.077073
+  flash   19.935 s  beep   -10.8 ms
+PAIR_CSV,326.778371488,326.767591080,-10.780408
+  flash   20.638 s  beep   -14.2 ms
+PAIR_CSV,327.481783863,327.467611914,-14.171949
+  flash   21.743 s  beep   -19.5 ms
+PAIR_CSV,328.587116405,328.567632747,-19.483658
+  flash   22.649 s  beep   -24.9 ms
+PAIR_CSV,329.492584697,329.467653580,-24.931117
+  flash   24.038 s  beep   -13.9 ms
+PAIR_CSV,330.881559864,330.867695247,-13.864617
+  flash   24.842 s  beep   -17.8 ms
+PAIR_CSV,331.685523698,331.667716080,-17.807618
+  flash   26.048 s  beep   -23.6 ms
+PAIR_CSV,332.891328074,332.867736914,-23.591160
+  flash   27.036 s  beep   -11.8 ms
+PAIR_CSV,333.879543033,333.867757747,-11.785286
+  flash   28.342 s  beep   -18.2 ms
+PAIR_CSV,335.185933283,335.167778580,-18.154703
+  flash   29.046 s  beep   -21.6 ms
+PAIR_CSV,335.889351325,335.867799414,-21.551911
+  flash   30.134 s  beep   -10.2 ms
+PAIR_CSV,336.977974367,336.967820247,-10.154120
+  flash   31.039 s  beep   -14.5 ms
+PAIR_CSV,337.882309576,337.867841080,-14.468496
+  flash   32.445 s  beep   -21.2 ms
+PAIR_CSV,339.289109993,339.267882747,-21.227246
+  flash   33.233 s  beep    -8.4 ms
+PAIR_CSV,340.076285911,340.067903580,-8.382331
+  flash   34.439 s  beep   -14.3 ms
+PAIR_CSV,341.282205828,341.267924414,-14.281414
+  flash   35.443 s  beep   -19.2 ms
+PAIR_CSV,342.287133162,342.267945247,-19.187915
+  flash   36.733 s  beep    -8.7 ms
+PAIR_CSV,343.576681412,343.567966080,-8.715332
+  flash   37.436 s  beep   -12.1 ms
+PAIR_CSV,344.280109371,344.267986914,-12.122457
+  flash   38.542 s  beep   -17.5 ms
+PAIR_CSV,345.385490288,345.368007747,-17.482541
+  flash   39.447 s  beep   -22.1 ms
+PAIR_CSV,346.290153747,346.268028580,-22.125167
+A/V offset (beep - flash, + = audio late): median -16.2 ms, min -27.7, max +20.8, n=38 of 38 flashes
+offset spread: p05 -24.9 ms, p95 -8.7 ms
