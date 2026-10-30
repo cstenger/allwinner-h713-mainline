@@ -1,0 +1,57 @@
+{
+  "files": 155,
+  "status_counts": {
+    "recorded_manifest": 4,
+    "runtime_generated_cache": 4,
+    "recorded_configuration_snapshot": 1,
+    "pinned_firmware_match": 9,
+    "retained_artifact_match": 12,
+    "source_match": 43,
+    "source_difference": 2,
+    "regenerated_match": 5,
+    "historical_backup_or_log": 10,
+    "binary_rebuild_unproven": 30,
+    "rootfs_recipe_difference": 6,
+    "directory_metadata": 1,
+    "rootfs_recipe_match": 11,
+    "board_local_configuration": 5,
+    "board_configuration_match": 1,
+    "boot_pin_match": 1,
+    "accepted_binary_match": 1,
+    "installed_binary_fingerprinted": 3,
+    "absent_or_unreadable": 5,
+    "installation_provenance_stamp": 1
+  },
+  "bundle_checks": {
+    "/usr/lib/h713-hdmi/SHA256SUMS": true,
+    "/usr/lib/h713-hdmi-health/SHA256SUMS": true,
+    "/usr/lib/h713-hdmi-video/SHA256SUMS": true,
+    "/usr/lib/h713-hdmi-speaker/SHA256SUMS": true
+  },
+  "boot_checks": {
+    "h713-kernel.fit": {
+      "sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+      "bytes": 7795668,
+      "local_artifact": "build/out/h713-kernel.fit",
+      "local_sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+      "local_artifact_present": true,
+      "matches_local": true
+    },
+    "h713-hdmi.scr": {
+      "sha256": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+      "bytes": 4414,
+      "local_artifact": "build/out/h713-hdmi.scr",
+      "local_sha256": null,
+      "local_artifact_present": false,
+      "matches_local": null,
+      "matches_installed_backend": true,
+      "matches_regenerated": true
+    }
+  },
+  "kernel_tree": {
+    "path": "/home/chris/Projects/h713/build/linux-6.18.38-e4d917fc5b2d4afd419249d7716cad28821159d1c37a3c4d32fd655dfa8b79a6",
+    "exists": false,
+    "running_config_available": false,
+    "qualification": "No current-input kernel build executed. Disk FIT identity is not an independent hash of the running kernel."
+  }
+}

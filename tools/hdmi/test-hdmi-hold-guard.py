@@ -12,6 +12,13 @@ HOLDS=['h713_hdmi_signal','h713_ddc_pins','h713_scp_probe','h713_hdmi_audio','h7
 class Guard(unittest.TestCase):
     def setUp(self):
         tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);t=Path(tmp.name)
+        # Exercise the real guard with only its diagnostic output redirected.
+        # Never write the host kernel log/console, even when tests run as root.
+        source=GUARD.read_text()
+        for device in ('/dev/kmsg','/dev/console'):
+            self.assertEqual(source.count(device),2)
+            source=source.replace(device,str(t/device.rsplit('/',1)[1]))
+        self.script=t/'guard';self.script.write_text(source)
         self.sys,self.calls=t/'sys',t/'calls';self.sys.mkdir()
         for name in ('lamp-off','poweroff'):
             (t/name).write_text(f'#!/bin/sh\necho "{name} $*" >> {self.calls}\n');(t/name).chmod(0o755)
@@ -21,7 +28,7 @@ class Guard(unittest.TestCase):
 
     def guard(self,verb):
         self.calls.unlink(missing_ok=True)
-        r=subprocess.run(['sh',str(GUARD),verb],env=self.env,capture_output=True,text=True)
+        r=subprocess.run(['sh',str(self.script),verb],env=self.env,capture_output=True,text=True)
         self.assertEqual(r.returncode,0,r.stderr)
         return [line.strip() for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
 

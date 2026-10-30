@@ -21,6 +21,8 @@ detail belongs in the file it points at.
 
 | file | what it is |
 | --- | --- |
+| [`handoff-2026-10-30-guard-sync.md`](handoff-2026-10-30-guard-sync.md) | Latest: shutdown guards synchronized; both copies and full manifest verified. |
+| [`handoff-2026-10-28-production-cleanup.md`](handoff-2026-10-28-production-cleanup.md) | Latest shutdown checkpoint: production audit, recovery files and next work. |
 | [`status.md`](status.md) | What works today, per subsystem. The front page. |
 | [`roadmap.md`](roadmap.md) | What comes next, ordered by dependency. |
 | [`build.md`](build.md) · [`flash.md`](flash.md) | Build the firmware; write it to a board. |
