@@ -1,0 +1,14 @@
+[Unit]
+Description=H713 HDMI re-advertise when no source sends
+Requires=h713-hdmi-signal.service
+After=h713-hdmi-signal.service
+PartOf=h713-hdmi-signal.service
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-readvertise.py
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

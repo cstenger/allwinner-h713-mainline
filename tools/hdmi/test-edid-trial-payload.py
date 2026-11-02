@@ -38,6 +38,7 @@ class Payload(unittest.TestCase):
 
 
 MARKER, BASE, CHECK, META = 0x48444d49, 0x4f00, 0x4aa0, 0x4a80
+EXT, ACK, HOLD, DDC_ON, RELEASE = 0x4ac0, 116, 2, 3, 4
 REGS = [0x1014, 0x1b00, 0x1b04, 0x1b08, 0x1020, 0x1030, 0x1034, 0x1038]
 # Pre-trial values seen on hardware; 1b00/1b08 bits 31:24 read back as zero.
 ORIGINAL = {0x1014: 7, 0x1b00: 0x00a0a0a0, 0x1b04: 0x07000000, 0x1b08: 0x00606060}
@@ -51,9 +52,12 @@ class Scp:
     """Just enough big-endian-decoded OR1K for the generated payload. SRAM
     words are the ARM's little-endian u32 view, as on hardware."""
     def __init__(self, header, drop=()):
-        code = [int(x, 16) for x in re.findall(r'0x([0-9a-f]{8}),', header.split('edid_trial_data')[0])]
+        main, _, rest = header.partition('edid_readvertise_code')
+        code = [int(x, 16) for x in re.findall(r'0x([0-9a-f]{8}),', main.split('edid_trial_data')[0])]
+        ext = [int(x, 16) for x in re.findall(r'0x([0-9a-f]{8}),', rest.split('edid_trial_data')[0])]
         data = bytes(int(x, 16) for x in re.findall(r'0x([0-9a-f]{2})', header.split('edid_trial_data[] = {', 1)[1]))
         self.sram = {0x4000 + 4 * i: w for i, w in enumerate(code)}
+        self.sram.update({EXT + 4 * i: w for i, w in enumerate(ext)})
         self.sram.update({0x4680 + i: int.from_bytes(data[i:i + 4], 'little') for i in range(0, 256, 4)})
         self.sram.update({CHECK + 4 * i: 0xffffffff for i in range(8)})
         self.sram[BASE + 32] = self.sram[BASE + 64] = 1
@@ -162,6 +166,66 @@ class Readback(unittest.TestCase):
         scp.sram[BASE + 16] = 1
         scp.run_until(28)
         self.assertEqual([scp.sram[CHECK + 4 * i] for i in range(8)], [0xffffffff] * 8)
+
+
+class Readvertise(unittest.TestCase):
+    def ready(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'payload.h'
+            subprocess.run([sys.executable, str(GENERATOR), '--verify-restore', '--readvertise', '--edid', str(EDID), str(output)],
+                           check=True, capture_output=True)
+            scp = Scp(output.read_text())
+        scp.run_until(8)
+        return scp
+
+    def request(self, scp, command):
+        scp.sram[BASE + ACK] = 0
+        scp.sram[BASE + 16] = command
+        for _ in range(1000):
+            if scp.sram[BASE + 16] == 0:
+                return scp.sram[BASE + ACK]
+            scp.step()
+        raise AssertionError(f'request {command} never acknowledged')
+
+    def test_hold_ddc_on_release_cycle(self):
+        scp = self.ready()
+        edid = {a: scp.io[a] for a in scp.io if a >= 0x1c00}
+        self.assertEqual(self.request(scp, HOLD), HOLD)
+        self.assertEqual(scp.io[0x1014] & 7, 7)       # HPD forced low
+        self.assertEqual(scp.io[0x1b04] & 7, 0)       # DDC disabled
+        self.assertEqual(self.request(scp, DDC_ON), DDC_ON)
+        self.assertEqual(scp.io[0x1b04] & 7, 7)
+        self.assertEqual(scp.io[0x1014] & 7, 7)       # still held until release
+        self.assertEqual(self.request(scp, RELEASE), RELEASE)
+        self.assertEqual(scp.io[0x1014], ORIGINAL[0x1014] & ~7)
+        self.assertEqual({a: scp.io[a] for a in edid}, edid)  # EDID banks untouched
+        self.assertEqual(scp.sram.get(BASE + 24, 0), 0)
+
+    def test_unknown_request_writes_nothing(self):
+        scp = self.ready()
+        before = dict(scp.io)
+        self.assertEqual(self.request(scp, 9), 0xff)
+        self.assertEqual(scp.io, before)
+
+    def test_stop_still_restores_every_original_after_a_cycle(self):
+        scp = self.ready()
+        for command in (HOLD, DDC_ON, RELEASE, HOLD):  # ends held: stop must still restore
+            self.request(scp, command)
+        scp.sram[BASE + 16] = 1
+        scp.run_until(28)
+        self.assertEqual(scp.sram.get(BASE + 24, 0), 0)
+        self.assertEqual([scp.sram[CHECK + 4 * i] for i in range(8)], [scp.sram[META + 4 * i] for i in range(8)])
+        self.assertEqual({a: scp.io.get(a, 0) for a in REGS}, {a: ORIGINAL.get(a, 0) for a in REGS})
+
+    def test_handler_fits_before_the_trap_area(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'payload.h'
+            subprocess.run([sys.executable, str(GENERATOR), '--verify-restore', '--readvertise', '--edid', str(EDID), str(output)],
+                           check=True, capture_output=True)
+            header = output.read_text()
+        ext = re.findall(r'0x([0-9a-f]{8}),', header.split('edid_readvertise_code')[1].split('edid_trial_data')[0])
+        self.assertEqual(len(ext) % 2, 0)
+        self.assertLessEqual(EXT + 4 * len(ext), 0x4c00)
 
 
 if __name__ == '__main__':

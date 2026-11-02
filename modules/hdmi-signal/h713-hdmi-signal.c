@@ -220,6 +220,66 @@ out:
 static const struct kernel_param_ops stop_ops = { .set = stop_signal };
 module_param_cb(stop, &stop_ops, NULL, 0200);
 
+#ifdef EDID_EXT_OFFSET
+static unsigned int readvertised;
+module_param(readvertised, uint, 0444);
+MODULE_PARM_DESC(readvertised, "Completed HPD re-advertise cycles");
+
+/* One request through the stop word; the payload acks and clears it. */
+static int scp_request(u32 request)
+{
+	int i;
+
+	writel(0, sram + MARKER_OFFSET + EDID_ACK_OFFSET);
+	writel(request, sram + MARKER_OFFSET + 16);
+	readl(sram + MARKER_OFFSET + 16);
+	for (i = 0; i < 100; i++) {
+		if (!marker(16) && marker(EDID_ACK_OFFSET) == request)
+			return 0;
+		usleep_range(1000, 1500);
+	}
+	return -EIO;
+}
+
+/* Hold HPD low with DDC off for the written number of milliseconds, enable
+ * DDC, then raise HPD once the EDID can be read: what a sink does to make a
+ * source detect it again. */
+static int readvertise_signal(const char *value, const struct kernel_param *kp)
+{
+	unsigned int hold_ms;
+	int ret = kstrtouint(value, 0, &hold_ms);
+
+	if (ret || hold_ms < 100 || hold_ms > 15000)
+		return -EINVAL;
+	mutex_lock(&signal_lock);
+	if (!ready || failed || restored || terminal || !sram) {ret = -EPERM;goto out;}
+	ret = scp_request(EDID_REQ_HOLD);
+	if (!ret) {
+		msleep(hold_ms);
+		ret = scp_request(EDID_REQ_DDC_ON);
+	}
+	if (!ret) {
+		msleep(100);
+		ret = scp_request(EDID_REQ_RELEASE);
+	}
+	if (ret || marker(12) || marker(24)) {
+		/* The payload left its wait loop or reported an error: terminal,
+		 * like a failed stop, and every hold is retained. */
+		report("readvertise");
+		failed = true;terminal = true;ret = -EIO;
+		pr_err("h713-hdmi-signal: re-advertise failed; holds retained, cold cycle required\n");
+		goto out;
+	}
+	readvertised++;
+	pr_info("h713-hdmi-signal: HPD re-advertised after a %u ms hold (%u)\n", hold_ms, readvertised);
+out:
+	mutex_unlock(&signal_lock);
+	return ret;
+}
+static const struct kernel_param_ops readvertise_ops = { .set = readvertise_signal };
+module_param_cb(readvertise, &readvertise_ops, NULL, 0200);
+#endif
+
 static int __init signal_init(void)
 {
 	u32 trap[] = {0x18000000, 0xa8604f00, 0xa8e00000, 0xd403380c,
@@ -262,6 +322,10 @@ static int __init signal_init(void)
 	}
 	for (i = 0; i < ARRAY_SIZE(edid_trial_code); i += 2)
 		writeq((u64)edid_trial_code[i + 1] << 32 | edid_trial_code[i], sram + SCP_PAGE_OFFSET + 4 * i);
+#ifdef EDID_EXT_OFFSET
+	for (i = 0; i < ARRAY_SIZE(edid_readvertise_code); i += 2)
+		writeq((u64)edid_readvertise_code[i + 1] << 32 | edid_readvertise_code[i], sram + EDID_EXT_OFFSET + 4 * i);
+#endif
 	writel((SCP_PAGE_OFFSET - 0x100) / 4, sram + 0x100);
 	for (i = 0; i < 128; i += 8)
 		writeq(0, sram + MARKER_OFFSET + i);
@@ -296,6 +360,12 @@ static int __init signal_init(void)
 		if (readq(sram + SCP_PAGE_OFFSET + 4 * i) !=
 		    ((u64)edid_trial_code[i + 1] << 32 | edid_trial_code[i]))
 			goto before_launch_failed;
+#ifdef EDID_EXT_OFFSET
+	for (i = 0; i < ARRAY_SIZE(edid_readvertise_code); i += 2)
+		if (readq(sram + EDID_EXT_OFFSET + 4 * i) !=
+		    ((u64)edid_readvertise_code[i + 1] << 32 | edid_readvertise_code[i]))
+			goto before_launch_failed;
+#endif
 #ifdef H713_SIGNAL_FAULT_INJECTION
 	if (fault == 1) {
 		writeq(0, sram + EDID_PAYLOAD_OFFSET);
