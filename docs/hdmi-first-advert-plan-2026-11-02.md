@@ -247,6 +247,22 @@ byte-identical to the validated one (`fb3bdcf0…`). `install-readvertise.sh` th
 
 Offline tests: 6 installer tests on a fake root, with 4 of 4 guard breaks caught.
 
+**Production check (02:32–02:34): PASS.** The signal service ran its plain production command with
+no drop-ins. In fresh host boot `8d3da819` and board boot `ae0a0c9b`:
+
+| Uptime | Event |
+| --- | --- |
+| 23.4 s | EDID/HPD ready |
+| 33.7 s | Re-advertise requested |
+| 35.9 s | Cycle done |
+| 37.2 s | Locked at 1280x720 |
+
+The host connected at 02:34:05. The installed generation verifies, and the health-ack service is
+active. That makes 4 out of 4 with the fix.
+
+Not yet exercised with the fix: a host rebooting while the board stays on, and a source unplugged
+then re-plugged after a long session.
+
 ### 2. Build the product fix: re-advertise when no source arrives
 
 In the production signal owner, after EDID/HPD ready: if no TMDS signal locks within *T*, hold HPD
