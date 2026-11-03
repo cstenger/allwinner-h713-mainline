@@ -21,6 +21,7 @@ detail belongs in the file it points at.
 
 | file | what it is |
 | --- | --- |
+| [`HDMI final regression checks`](hdmi-evidence/2026-11-02-hdmi-regressions/README.md) | Host reboot, 3 h 38 min input session and functional physical reconnect pass; exact reconnect latency unmeasured. |
 | [`U-Boot native save-path validation`](hdmi-evidence/2026-11-02-uboot-savepath/README.md) | PASS: corrected-slot native save, marker reload and cleanup; protected storage and 59 file checks pass. |
 | [`handoff-2026-10-30-guard-sync.md`](handoff-2026-10-30-guard-sync.md) | Latest: shutdown guards synchronized; both copies and full manifest verified. |
 | [`handoff-2026-10-28-production-cleanup.md`](handoff-2026-10-28-production-cleanup.md) | Latest shutdown checkpoint: production audit, recovery files and next work. |

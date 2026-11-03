@@ -260,8 +260,12 @@ no drop-ins. In fresh host boot `8d3da819` and board boot `ae0a0c9b`:
 The host connected at 02:34:05. The installed generation verifies, and the health-ack service is
 active. That makes 4 out of 4 with the fix.
 
-Not yet exercised with the fix: a host rebooting while the board stays on, and a source unplugged
-then re-plugged after a long session.
+**Remaining regressions completed November 2:** host reboot with the board left
+powered passes, followed by 3 h 38 min of continuously observed HDMI input at
+59.708 fps with zero errors. Physical unplug/reconnect functionally passes:
+normal desktop return, unchanged board boot/owner services, final 59 file and
+startup checks passing. The bounded recorders expired during the long unplug,
+so exact plug-to-picture latency is unmeasured. [Results and timing qualification](hdmi-evidence/2026-11-02-hdmi-regressions/README.md).
 
 ### 2. Build the product fix: re-advertise when no source arrives
 
