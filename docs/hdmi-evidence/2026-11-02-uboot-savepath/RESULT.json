@@ -1,0 +1,48 @@
+{
+  "status": "PASS native U-Boot save/reload/cleanup",
+  "host_recorded_utc": "2026-11-03T02:52:47.791362+00:00",
+  "preflight_boot_id": "b0148c8b-4ca5-4d07-b54d-54316cf93b2b",
+  "probe_boot_id": "0fba51b1-f44e-4e5b-ade8-2416456e80f9",
+  "cleanup_boot_id": "0d1179fa-3f1a-4e65-b3d0-ffabbda024b3",
+  "warm_reboots": 2,
+  "native_save_attempts": 2,
+  "native_save_successes": 2,
+  "write_lba": "0x49ec00",
+  "write_offset": "0x93d80000",
+  "write_sectors": 128,
+  "write_bytes": 65536,
+  "probe_reload_observed": true,
+  "cleanup_marker_absent": true,
+  "startup_guards_preserved": true,
+  "protected_regions": 9,
+  "installed_file_checks": 59,
+  "old_environment_unchanged": true,
+  "probe_environment_sha256": "e529777af20e7aefb2dc14da0983fdae278aa118cc81511de9d709b6a8b33a02",
+  "accepted_environment_sha256": "89862e4ba5304fcae54affe09d87ff7da026316c80c8b4a5a17d7a44eb3ce206",
+  "cleanup_byte_identical_to_original": false,
+  "allowed_metadata_difference": [
+    "fdtcontroladdr"
+  ],
+  "outside_slot_comparison": {
+    "probe": {
+      "captured_ranges_checked": 9,
+      "all_captured_bytes_outside_slot_unchanged": true
+    },
+    "cleanup": {
+      "captured_ranges_checked": 9,
+      "all_captured_bytes_outside_slot_unchanged": true
+    }
+  },
+  "controller_tests": 49,
+  "controller_mutations_caught": 12,
+  "qualification": "First countdown parser stopped before any save. PB5 high confirmed. Explicit operator-approved continuation reused held prompt; no extra reboot or failed save.",
+  "final_signal": "locked 1280x720",
+  "final_capture_xruns": 0,
+  "final_rejected_frames": 0,
+  "board_left": "Linux running; HDMI active; UART released",
+  "not_exercised": [
+    "independent reload after cleanup save",
+    "hardware rollback",
+    "power-loss atomicity"
+  ]
+}

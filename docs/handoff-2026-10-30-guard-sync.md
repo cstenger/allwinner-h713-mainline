@@ -1,5 +1,13 @@
 # Shutdown guard preparation handoff — October 30, 2026
 
+**Latest endpoint, November 2: native U-Boot save-path validation PASS.**
+Two native saves/two synced warm boots prove the corrected slot, probe reload
+and cleanup. All nine protected regions, 59 file checks and startup health
+pass. Board running Linux with HDMI locked at 1280×720; UART released.
+The accepted environment now has SHA-256 `89862e4ba5304fcae54affe09d87ff7da026316c80c8b4a5a17d7a44eb3ce206`.
+Older `6eb7b795…` environment pins are historical; do not reuse them as the
+current generation. [Evidence and parser-stop qualification](hdmi-evidence/2026-11-02-uboot-savepath/README.md).
+
 ## Latest endpoint — installed and verified
 
 Chris explicitly approved installation, powered on the board and confirmed it
