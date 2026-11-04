@@ -59,7 +59,7 @@ done
 # the board install and the rootfs build.
 series_id() {
 	while read -r p; do
-		[ -n "$p" ] && sha256sum "$PATCHES/$p"
+		[ -n "$p" ] && printf '%s  %s\n' "$(sha256sum "$PATCHES/$p" | cut -d' ' -f1)" "$p"
 	done < "$PATCHES/series" | sha256sum | cut -c1-16
 }
 

@@ -1,5 +1,12 @@
 # Flashing
 
+**Current DDR3 layout warning (November 3, 2026):** Linux is GPT p26 `linux`
+(2.75 GiB), Android userdata is GPT p27 `UDISK` (about 1.88 GiB), and the GPT
+has 28 entry slots. Historical `fastboot flash UDISK` examples below target
+Android on this board. Follow the fresh device/partition gates in the
+[production qualification plan](production-qualification-plan.md). Do not
+expand the GPT entry array across the SPL at LBA 16.
+
 How to write images to the H713 eMMC. Neither board has an SD slot — boot media
 is **eMMC or FEL only**. There is a hardware **FEL button** (recovery vector),
 so a bad first stage is recoverable.

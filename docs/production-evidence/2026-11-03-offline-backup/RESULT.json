@@ -1,0 +1,63 @@
+{
+  "scope": "Read-only offline backup; no candidate installation or repartitioning",
+  "device_read_comparison": {
+    "status": "PASS two independent direct device reads",
+    "bytes": 7818182656,
+    "sha256": "c79e110a8e1029a69b0ca5e7e93c2108cf0aed1cbd74c780245c7ad7f3f0095c",
+    "device_open_mode": "O_RDONLY|O_DIRECT via direct host open with read-only ACL",
+    "host_nodes_readonly": 28,
+    "unmounted": true,
+    "device_storage_writes": false,
+    "elapsed_seconds": 1505.7
+  },
+  "host_copy_verification": {
+    "status": "PASS backup integrity; existing boot FAT inconsistencies recorded",
+    "user_area_sha256": "c79e110a8e1029a69b0ca5e7e93c2108cf0aed1cbd74c780245c7ad7f3f0095c",
+    "primary_and_backup_gpt": "PASS CRC and identical arrays; 28 slots / 27 partitions",
+    "protected_regions": "PASS exact pre-shutdown comparisons",
+    "filesystem_checks": {
+      "rootfs": {
+        "returncode": 0
+      },
+      "boot-fat": {
+        "returncode": 1,
+        "status": "EXISTING INCONSISTENCIES; non-modifying check; no repair",
+        "details": "Dirty bit, root/boot-sector label mismatch and vendor ProjectID_0x0014.TSE short-name warning"
+      }
+    },
+    "rollback_extents": {
+      "bootloader-b-fat.img": {
+        "bytes": 33554432,
+        "sha256": "79c14f0566ada36158df2bef4995f73674a532987cfe8674c0c5e46789672de5"
+      },
+      "linux-p26.ext4": {
+        "bytes": 2952790016,
+        "sha256": "4b8bf31cecc12b1ae3f630e60bf33dc27f2475c6b43e8d87f27dc4218bd85760"
+      },
+      "spl-region.bin": {
+        "bytes": 32768,
+        "sha256": "cb9da87448a57aa1cafbc7ebf66200b5183304cef1eafe23d0818b99696a49ec"
+      },
+      "u-boot-proper-1867-sectors.bin": {
+        "bytes": 955904,
+        "sha256": "d85af62d0afaf79b4e4055922c6a933e8a508df1a2fca0c074f7f02e1aebab88"
+      },
+      "environment-64KiB.bin": {
+        "bytes": 65536,
+        "sha256": "89862e4ba5304fcae54affe09d87ff7da026316c80c8b4a5a17d7a44eb3ce206"
+      }
+    },
+    "runtime_files_verified": 69,
+    "accepted_fit_sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+    "fat_reader_note": "mtools read-only extraction with geometry checks skipped for legacy zero-CHS BPB; fsck findings retained; image not modified",
+    "board_storage_writes": false
+  },
+  "final_board_state": "Held U-Boot prompt; PB5 output 1 confirmed after exiting UMS",
+  "host_cleanup": {
+    "usb_storage": "Disconnected",
+    "read_acl": "Removed with USB device",
+    "desktop_automount_and_gvfs": "Original states restored",
+    "temporary_udev_rule": "Removed by operator; absence verified",
+    "status": "PASS cleanup verified"
+  }
+}

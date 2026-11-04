@@ -86,11 +86,12 @@ build_bl31() {
   have
   log "TF-A BL31  (PLAT=$ATF_PLAT, BL31_IN_DRAM=1)"
   make -C "$ATF" -j"$JOBS" \
+    BUILD_BASE="$BUILD/arm-trusted-firmware" \
     PLAT="$ATF_PLAT" DEBUG=0 BL31_IN_DRAM=1 \
     CC=clang LD=ld.lld AR=llvm-ar OC=llvm-objcopy OD=llvm-objdump \
     NM=llvm-nm READELF=llvm-readelf \
-    CFLAGS='-Wno-error=deprecated-non-prototype -fno-stack-protector' bl31
-  install -m 0644 "$ATF/build/$ATF_PLAT/release/bl31.bin" "$OUT/bl31.bin"
+    CFLAGS='-Wno-error=deprecated-non-prototype -Wno-error=unused-but-set-global -fno-stack-protector' bl31
+  install -m 0644 "$BUILD/arm-trusted-firmware/$ATF_PLAT/release/bl31.bin" "$OUT/bl31.bin"
   log "bl31.bin -> $OUT/bl31.bin ($(stat -c%s "$OUT/bl31.bin") bytes)"
 }
 
@@ -227,7 +228,7 @@ build_kernel() {
     }
   fi
   make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 -j"$JOBS" Image dtbs modules
-  gzip -9 -kf "$tree/arch/arm64/boot/Image"
+  gzip -n -9 -kf "$tree/arch/arm64/boot/Image"
   install -m 0644 "$tree/arch/arm64/boot/Image.gz" "$OUT/Image$suffix.gz"
   install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB.dtb" "$OUT/$KERNEL_DTB.dtb"
   install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB_PROJECTOR.dtb" \

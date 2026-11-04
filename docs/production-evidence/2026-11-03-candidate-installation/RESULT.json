@@ -1,0 +1,226 @@
+{
+  "status": "HARDWARE QUALIFICATION COMPLETE FOR DOCUMENTED SCOPE; GF1 CLOSED BY ENGINEERING DISPOSITION",
+  "packet_sha256": "c2491f0f7a84ff14221d5ad35122895adf69259acecf5bf41656f23407894390",
+  "preboot_device_sha256": "bb665353bf41129f618eec2daff893c2f4d794884220c5059f1dabb3df825048",
+  "bytes_verified": 7818182656,
+  "write_order": [
+    "root",
+    "fat",
+    "proper",
+    "spl"
+  ],
+  "crc_chunks_verified": [
+    128,
+    2,
+    1,
+    1
+  ],
+  "first_boot_id": "c21bf705-28a4-4ab4-8a3d-c32bd5ea0580",
+  "runtime_files_verified": 71,
+  "runtime_audit": "PASS candidate runtime identity/startup checks",
+  "operator_desktop": "normal without reseating or service recovery",
+  "decoder_gate": {
+    "status": "PASS isolated local-boot decoder qualification",
+    "boot_id": "ae7e4e3d-cf54-4067-abe7-a914ffb22240",
+    "h264_va_vectors": 5,
+    "hevc_gstreamer_vectors": 7,
+    "hevc_va_vectors": 7,
+    "pixel_hashes": "bit-exact",
+    "hardware_interrupts": "positive for every vector",
+    "skipped": 0,
+    "h264_irq_pairs": [
+      [
+        0,
+        8
+      ],
+      [
+        8,
+        68
+      ],
+      [
+        68,
+        128
+      ],
+      [
+        128,
+        188
+      ],
+      [
+        188,
+        248
+      ]
+    ]
+  },
+  "remaining": [],
+  "warm_boots": [
+    {
+      "boot_id": "deceb44b-fbbe-4d69-8eaa-3888d37d2863",
+      "runtime_audit": "PASS",
+      "services_restarts": 0
+    },
+    {
+      "boot_id": "6d219952-bc85-4596-b93b-fc7cc3eec7b1",
+      "runtime_audit": "PASS",
+      "services_restarts": 0
+    }
+  ],
+  "local_boot_id": "ae7e4e3d-cf54-4067-abe7-a914ffb22240",
+  "local_gpu_operator": "normal picture/motion and continuous tone",
+  "local_gpu": {
+    "operator": "normal picture and continuous tone",
+    "hardware_decode": "vaapi",
+    "audio": "pipewire",
+    "dropped_frames": 0,
+    "decoder_dropped_frames": 0
+  },
+  "local_mirror": {
+    "all_four_modes": "operator PASS",
+    "restored": "front"
+  },
+  "local_keystone": {
+    "manual_10_degrees": "operator PASS",
+    "restored": "original automatic runtime configuration",
+    "persistent_calibration": "unchanged"
+  },
+  "local_plane": {
+    "operator": "normal picture and continuous tone",
+    "native_frames": 1800,
+    "native_drops": 0,
+    "upscale_frames": 16,
+    "upscale_drops": 0,
+    "downscale_frames": 60,
+    "downscale_drops": 0
+  },
+  "additional_codec_checks": {
+    "vp9": "16/16 exact, positive VE IRQ",
+    "av1": "16/16 exact, positive AV1 IRQ, zero new kernel decoder errors"
+  },
+  "temporary_target_media_tools": "removed",
+  "physical_case_button": {
+    "status": "PASS physical case-button standby/wake",
+    "boot_id": "ae7e4e3d-cf54-4067-abe7-a914ffb22240",
+    "operator": "lamp, fan and picture returned",
+    "cpu_max_before_khz": 480000,
+    "cpu_max_after_khz": 1296000,
+    "poll_interval_seconds": 1,
+    "keyd_toggle_exit_codes": [
+      0,
+      0
+    ],
+    "post_wake_runtime_audit": "PASS",
+    "first_standby_timing": "original 180s observer expired before operator press; standby state and monotonic journal verified separately"
+  },
+  "ir_remote": {
+    "status": "PASS remote IR standby/wake",
+    "boot_id": "ae7e4e3d-cf54-4067-abe7-a914ffb22240",
+    "power_scancode": "0x14",
+    "power_keycode": 116,
+    "standby_press_uptime": 1592.24,
+    "standby_observed_uptime": 1593.43,
+    "wake_press_uptime": 1730.83,
+    "wake_observed_uptime": 1730.88,
+    "lamp_states": [
+      4,
+      0
+    ],
+    "cpu_max_khz": [
+      480000,
+      1296000
+    ],
+    "operator": "lamp/fan off, then lamp/fan/picture returned",
+    "mapping_changes": false,
+    "mute": "0x01 / KEY_MUTE confirmed; operator clarified first suspected Power press was wrong button"
+  },
+  "return_cold_hdmi": {
+    "status": "PASS runtime and operator desktop",
+    "boot_id": "b1592dff-0165-4071-8c9e-0b7a97a19691",
+    "runtime_files": 71,
+    "baseline_errors": 0
+  },
+  "host_reboot": {
+    "status": "PASS",
+    "host_before": "d7c0e174-ba7d-4717-9ecb-a0674e22bb38",
+    "host_after": "177e1e9c-1ecb-4534-a5ab-913aea935060",
+    "board_boot_unchanged": "b1592dff-0165-4071-8c9e-0b7a97a19691",
+    "operator": "Host boot and desktop visible without intervention",
+    "errors": 0,
+    "runtime_files_verified": 71
+  },
+  "continuous_input": {
+    "result": "PASS",
+    "mode": "soak",
+    "boot_id": "b1592dff-0165-4071-8c9e-0b7a97a19691",
+    "samples": 2068,
+    "seconds": 10652.95,
+    "final_signal": "locked 1280x720",
+    "errors": {
+      "afbd_invalid": 0,
+      "bad_guard": 0,
+      "rejected": 0,
+      "xruns": 0
+    },
+    "board_rebooted": false,
+    "frames_per_second": 59.70806208608882,
+    "window_reason": "Post-host-desktop-crash interval; full recorder history verified after operator clarification. Original interrupted interval remains invalid."
+  },
+  "hdmi_reconnect": {
+    "functional_result": "PASS physical unplug, no-source, reconnect, stable video and operator desktop",
+    "strict_zero_error_recovery_gate": "NOT PASSED: preexisting rejected=1 before unplug, no counter clearing or waiver",
+    "board_boot_id": "b1592dff-0165-4071-8c9e-0b7a97a19691",
+    "board_boot_changed": false,
+    "first_lock_uptime": 21221.2,
+    "kernel_lock_uptime": 21221.120072,
+    "renderer_started_uptime": 21221.169859,
+    "stable_recovered_seconds": 360.6800000000003,
+    "stable_recovered_fps": 59.70666518797822,
+    "current_errors": {
+      "afbd_invalid": 0,
+      "bad_guard": 0,
+      "rejected": 0,
+      "xruns": 0
+    },
+    "runtime_files_verified": 71,
+    "operator_desktop": "returned normally without intervention",
+    "operator_hdmi_speaker": "steady and clear 440 Hz tone",
+    "timing": {
+      "observed_host_connected_to_board_lock_clock_alignment_range_seconds": [
+        0.7305062679988623,
+        1.574239175999537
+      ],
+      "host_max_poll_gap_seconds": 3.195798986002046,
+      "board_max_poll_gap_seconds": 0.3056332080013817,
+      "physical_insertion_latency": "not measured exactly; snapshot alignment above also has polling/read latency and clock drift uncertainty"
+    },
+    "extended_observation_anomaly": {
+      "first_rejected_sample_uptime": 19154.59,
+      "preceding_sample_uptime": 19149.43,
+      "frames_rejected": 1,
+      "stream_completions": 1211737,
+      "stream_unstable_copies": 1,
+      "explanation": "Driver discarded one unstable copy; exact scheduling/copy-race trigger not established. No renderer restart at that event. After the defined passing soak, before unplug. Remains an open qualification issue."
+    }
+  },
+  "temporary_recorders": "logs SHA-preserved; temporary units stopped and /run files removed",
+  "recovery_entry": {
+    "status": "PASS non-writing FEL rescue entry/access and cold return to installed candidate",
+    "storage_writes": false,
+    "usb_gates": 20,
+    "protected_crc_regions": 4,
+    "candidate_return_boot_id": "446e81f5-4f1a-479d-bd92-d363b39d4ad2",
+    "candidate_return_runtime_files": 71,
+    "operator_desktop": "normal",
+    "full_rollback_write_rehearsed": false
+  },
+  "guarded_discard_disposition": {
+    "finding": "GF1",
+    "status": "RESOLVED_BY_ENGINEERING_DISPOSITION: expected protective discard, no delivered corruption established",
+    "evidence": "../2026-11-04-guarded-discard-disposition/RESULT.json",
+    "strict_zero_error_failure_retained": true,
+    "production_binary_changes": false
+  },
+  "qualification_limits": [
+    "One reviewed protective discard in extended observation; exact old timing trigger not captured.",
+    "Non-writing FEL recovery entry/access and cold return tested; full rollback write not performed.",
+    "Codec coverage is the documented H.264/HEVC vectors and VP9/AV1 smoke checks, not exhaustive conformance."
+  ]
+}

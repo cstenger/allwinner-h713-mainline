@@ -43,5 +43,29 @@ class Tests(unittest.TestCase):
         for bad in bads:
             with self.assertRaises(ValueError):o.analyze(bad,'soak')
 
+    def test_soak_rejects_interruptions_hidden_between_signal_samples(self):
+        good=rows(['locked 1280x720']*1441)
+        for fault in ('renderer','counter','inactive'):
+            bad=copy.deepcopy(good)
+            if fault=='renderer':
+                for row in bad[100:]:row['services']['h713-hdmi-video.service']['ExecMainStartTimestampMonotonic']='456'
+            if fault=='counter':
+                for row in bad[100:]:row['frames']-=30000
+            if fault=='inactive':bad[100]['services']['h713-hdmi-video.service']['ActiveState']='inactive'
+            # Overall frame rate still exceeds 50 fps: averaging cannot detect this.
+            self.assertGreaterEqual(bad[-1]['frames']-bad[0]['frames'],50*7200)
+            with self.subTest(fault=fault),self.assertRaises(ValueError):o.analyze(bad,'soak')
+
+    def test_recovery_allows_new_renderer_after_source_loss(self):
+        good=rows(['locked 1280x720','none']+['locked 1280x720']*4)
+        for row in good[2:]:row['services']['h713-hdmi-video.service']['ExecMainStartTimestampMonotonic']='456'
+        self.assertEqual(o.analyze(good,'recovery')['result'],'PASS')
+
+    def test_guarded_discard_remains_a_strict_failure_requiring_review(self):
+        data=rows(['locked 1280x720','none']+['locked 1280x720']*4)
+        data[0]['errors']['rejected']=1
+        with self.assertRaisesRegex(ValueError,'frame rejection requires review'):
+            o.analyze(data,'recovery')
+
 
 if __name__=='__main__':unittest.main()

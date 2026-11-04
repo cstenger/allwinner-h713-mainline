@@ -1,0 +1,31 @@
+{
+  "status": "PASS non-writing FEL rescue entry/access and cold return to installed candidate",
+  "scope": "RAM rescue entry, identity/GPT, bounded raw alias/getvar gates and protected-region CRC checks; full rollback write NOT rehearsed",
+  "fel_rom": "H713 0x1860",
+  "rescue_banner": "U-Boot 2026.07-rc5-ga1358432003c-dirty (Sep 24 2026 - 10:58:54 -0700) Allwinner Technology",
+  "gpt": "27 exact partition extents/names/GUIDs match sealed baseline",
+  "usb_getvar_gates": 20,
+  "storage_writes": false,
+  "saved_environment_changes": false,
+  "protected_readback": {
+    "status": "PASS bounded read-only boot/environment/rescue CRC checkpoints",
+    "regions": [
+      "proper",
+      "spl",
+      "saved-environment",
+      "preserved-rescue-proper"
+    ],
+    "storage_writes": false
+  },
+  "limitations": [
+    "Rescue build lacks mmc reg read; full CID unavailable via that CLI. Expected card manufacturer/name plus board serial and all GPT GUIDs verified.",
+    "Pinned FEL spl command waited for a return to ROM after successful rescue handoff. Host wait was terminated only after UART proved expected held rescue; source confirms post-SPL ROM signature read expectation. Future invocation must use a bounded host wait with UART success as independent receipt.",
+    "One guarded frame-copy discard remains open; release not qualified."
+  ],
+  "probe_source_sha256": "42827209a36e20c2d432def09f2a17546d5a1e12126ed2cdc44a11b080c5b6ee",
+  "candidate_return_boot_id": "446e81f5-4f1a-479d-bd92-d363b39d4ad2",
+  "candidate_return_runtime": "PASS 71 files/packages/kernel/raw boot/environment/manifests/startup",
+  "candidate_return_operator": "Desktop returned normally without reseat or service recovery",
+  "host_wait_documentation": "Future packet generator documents a 30s bounded host wait and independent fresh UART receipt; existing sealed packet unchanged.",
+  "qualification_status": "UNQUALIFIED: guarded frame-discard finding remains open; full rollback write not rehearsed"
+}

@@ -38,7 +38,7 @@ echo "=== kernel module (sunxi-cedrus) ==="
 #
 # KERNEL_CONFIG matters and is stated, not assumed: the shipping kernel carries
 # the sysrq fragment, and a different fragment set is a different tree.
-KERNEL_CONFIG=${KERNEL_CONFIG:-sysrq}
+KERNEL_CONFIG=${KERNEL_CONFIG:-production}
 export KERNEL_CONFIG
 tree=$(cd "$ROOT" && tools/build/build.sh kernel-tree 2>/dev/null)
 echo "    config: KERNEL_CONFIG=$KERNEL_CONFIG"
@@ -72,7 +72,7 @@ echo
 echo "=== VA-API driver (libva-v4l2_request, megi) ==="
 
 series_id=$(while read -r p; do
-	[ -n "$p" ] && sha256sum "$ROOT/patches/libva-v4l2_request/$p"
+	[ -n "$p" ] && printf '%s  %s\n' "$(sha256sum "$ROOT/patches/libva-v4l2_request/$p" | cut -d' ' -f1)" "$p"
 done < "$ROOT/patches/libva-v4l2_request/series" | sha256sum | cut -c1-16)
 
 board_id=$($SSH 'sed -n "s/^va_driver_series=//p" /etc/h713-video-stack 2>/dev/null')

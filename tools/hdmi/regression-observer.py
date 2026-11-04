@@ -50,7 +50,15 @@ def healthy(samples):
     for row in samples:
         if row.get('boot_id') != baseline['boot_id']:
             raise ValueError('board boot changed')
-        if row.get('errors') != {key: 0 for key in ERRORS}:
+        errors = row.get('errors')
+        if (isinstance(errors, dict) and set(errors) == set(ERRORS)
+                and errors['rejected'] > 0
+                and all(errors[key] == 0 for key in ERRORS if key != 'rejected')):
+            # Pair-mode rejects can be protective copy discards. Still fail
+            # strict qualification; review evidence instead of inferring that
+            # a corrupt frame was delivered from this counter alone.
+            raise ValueError('frame rejection requires review; delivered corruption is not established')
+        if errors != {key: 0 for key in ERRORS}:
             raise ValueError('capture error or missing error evidence')
         if row.get('owner_ready') != 'Y' or row.get('owner_failed') != 'N':
             raise ValueError('signal owner unhealthy')
@@ -77,10 +85,17 @@ def analyze(samples, mode, seconds=7200):
     if samples[-1]['services']['h713-hdmi-video.service']['ActiveState'] != 'active':
         raise ValueError('video did not return')
     if mode == 'soak':
-        if samples[-1]['uptime'] - baseline['uptime'] < seconds:
-            raise ValueError('session too short')
         if any(row['signal'] != 'locked 1280x720' for row in samples):
             raise ValueError('source interrupted during session')
+        video = 'h713-hdmi-video.service'
+        for row in samples:
+            unit = row['services'][video]
+            if unit.get('ActiveState') != 'active' or unit.get('ExecMainStartTimestampMonotonic') != baseline['services'][video].get('ExecMainStartTimestampMonotonic'):
+                raise ValueError('video renderer interrupted during session')
+        if any(b['frames'] < a['frames'] for a, b in zip(samples, samples[1:])):
+            raise ValueError('frame counter reset during session')
+        if samples[-1]['uptime'] - baseline['uptime'] < seconds:
+            raise ValueError('session too short')
         if samples[-1]['frames'] - baseline['frames'] < 50 * (samples[-1]['uptime'] - baseline['uptime']):
             raise ValueError('capture did not sustain 50 fps')
     else:

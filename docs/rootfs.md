@@ -1,5 +1,12 @@
 # arm64 Debian rootfs
 
+**Current DDR3 layout warning (November 3, 2026):** Linux is p26, GPT label
+`linux`, 2.75 GiB. Android userdata is p27, GPT label `UDISK`, about 1.88 GiB.
+The historical `fastboot flash UDISK` example below targets Android on this
+split board. Use the fresh identity/partition gates in the
+[production qualification plan](production-qualification-plan.md); do not
+choose a flash destination from an ext4 filesystem label or old instructions.
+
 `tools/rootfs/build.sh` creates a signed Debian 13 (trixie) arm64 root
 filesystem for the eMMC `UDISK` partition (`/dev/mmcblk0p26`). The build is
 rootless, installs the modules from the exact pinned Linux 6.18.38 build tree,

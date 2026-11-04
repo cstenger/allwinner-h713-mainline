@@ -1,0 +1,61 @@
+{
+  "finding": "GF1",
+  "status": "RESOLVED_BY_ENGINEERING_DISPOSITION: expected protective discard, no delivered corruption established",
+  "disposition": "Close this specific release hold as intended pair-mode guard behavior, retaining the original strict zero-error test failure. This is not a timing fix, a reproduced historical trigger, or an automatic allowance for future rejects.",
+  "acceptance_basis": "Original Route B bench contract calls for near-zero rejects; defined 2 h 57 min strict soak passed with zero. The later isolated guard event is reviewed separately.",
+  "original_event": {
+    "discarded_copies": 1,
+    "completions": 1211737,
+    "rate_percent": 8.252615872916317e-05,
+    "first_observed_uptime": 19154.59,
+    "cause_class": "source hash/full-copy guard or pair-index guard rejected a raced copy",
+    "exact_guard_branch_and_timing_trigger": "not captured; cannot determine retrospectively",
+    "no_service_restart": true,
+    "no_invalid_pair_bad_guard_or_audio_xruns": true
+  },
+  "source_contract": {
+    "source_matches_candidate_lock": "2fcb471c3e5f553efc557beb80b558e7640e7ec1b8c930b57d1f94f975a79b10",
+    "actual_C_functions_tested": [
+      "h713_copy_frame",
+      "h713_capture_thread_pair"
+    ],
+    "cases": [
+      "stable copy delivered",
+      "changed source hash discarded; next valid frame delivered",
+      "pair advanced after copy discarded; next valid frame delivered"
+    ],
+    "guard_bypass_negative_control": "Both raced cases fail when the actual worker guard is bypassed",
+    "limits": "Deterministic control-flow test, not hardware DMA coherency or a reproduction of the original timing."
+  },
+  "bounded_hardware_diagnostic": {
+    "planned_load_seconds": 90,
+    "observed_load_seconds": 26.449999999999932,
+    "outcome": "Stopped by configured 73C thermal condition; not a completed 90-second run",
+    "four_workers": true,
+    "payload_memory_MiB": 128,
+    "minimum_observed_available_MiB": 583.74609375,
+    "last_logged_temperature_before_stop_mC": 72911,
+    "guarded_discard_delta": 0,
+    "hard_error_deltas": 0,
+    "worker_cleanup": "verified no remaining stdin load processes",
+    "recovery_seconds": 20.019999999999982,
+    "recovery_fps": 59.690309690309746,
+    "recovery_temperature_mC": 55976,
+    "five_core_service_identities_unchanged": true,
+    "all_seven_services_active_zero_restarts": true
+  },
+  "production_changes": {
+    "driver_binary": false,
+    "guard": false,
+    "kernel": false,
+    "services_restarted": false,
+    "installed_framework": false
+  },
+  "final_runtime": {
+    "status": "PASS candidate runtime identity/startup checks",
+    "files_verified": 71,
+    "boot_id": "446e81f5-4f1a-479d-bd92-d363b39d4ad2"
+  },
+  "monitor_change": "Strict zero-reject gate still fails. It now says frame rejection requires review rather than implying delivered corruption. Existing historical failures retained.",
+  "full_rollback_write_trial": "not performed; only non-writing recovery entry/access and cold return rehearsed"
+}

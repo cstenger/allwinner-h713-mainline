@@ -21,6 +21,13 @@ detail belongs in the file it points at.
 
 | file | what it is |
 | --- | --- |
+| [`Rebuilt-candidate hardware qualification`](production-evidence/2026-11-03-candidate-installation/README.md) | Exact install/readback, boot/HDMI/decoder/control checks and non-writing recovery entry; tested scope and GF1 disposition recorded. |
+| [`Guarded frame-discard disposition`](production-evidence/2026-11-04-guarded-discard-disposition/README.md) | Reviewed protective drop; actual-source race/guard-bypass tests, strict failure retained, unchanged installed binary. |
+| [`Exact installation/rollback packet`](production-evidence/2026-11-03-installation-packet/README.md) | Sealed bounded installation/rollback inputs and protected readback; preparation record, with live results below. |
+| [`Offline rollback backup`](production-evidence/2026-11-03-offline-backup/README.md) | Two complete direct eMMC reads match; Linux/files/pins verify; existing boot FAT inconsistencies preserved; no installation or repartitioning. |
+| [`Production reproducibility result`](production-evidence/2026-11-03-reproducible-build/README.md) | Two complete source builds produce identical boot/firmware/rootfs bytes; production test payloads excluded. |
+| [`Rebuilding the production system`](reproducible-production.md) | Source-built candidate workflow, pinned private inputs and production image contents; hardware qualification remains required. |
+| [`Rebuilt-system qualification plan`](production-qualification-plan.md) | Backup, exact installation scope and hardware acceptance gates for the DDR3 board. |
 | [`HDMI final regression checks`](hdmi-evidence/2026-11-02-hdmi-regressions/README.md) | Host reboot, 3 h 38 min input session and functional physical reconnect pass; exact reconnect latency unmeasured. |
 | [`U-Boot native save-path validation`](hdmi-evidence/2026-11-02-uboot-savepath/README.md) | PASS: corrected-slot native save, marker reload and cleanup; protected storage and 59 file checks pass. |
 | [`handoff-2026-10-30-guard-sync.md`](handoff-2026-10-30-guard-sync.md) | Latest: shutdown guards synchronized; both copies and full manifest verified. |

@@ -1,0 +1,114 @@
+{
+  "status": "PASS OFFLINE PREPARATION; NO LIVE HARDWARE ACTIONS",
+  "packet_sha256": "c2491f0f7a84ff14221d5ad35122895adf69259acecf5bf41656f23407894390",
+  "packet_ledger_sha256": "64a9314f59a8fdcc36cdcffc18cafc476a1bd15adabbc670f7ab43f696dc0958",
+  "baseline_sha256": "c79e110a8e1029a69b0ca5e7e93c2108cf0aed1cbd74c780245c7ad7f3f0095c",
+  "expected_install_disk_sha256": "bb665353bf41129f618eec2daff893c2f4d794884220c5059f1dabb3df825048",
+  "expected_rollback_disk_sha256": "c79e110a8e1029a69b0ca5e7e93c2108cf0aed1cbd74c780245c7ad7f3f0095c",
+  "packet_verification": {
+    "status": "PASS packet checksums, layout, bounded phases, all-RAW payloads and complete disk overlays",
+    "preparation_only": true,
+    "hardware_executed": false,
+    "files": 37
+  },
+  "unit_test_groups": 8,
+  "unsafe_plan_mutations_caught": 10,
+  "fastboot_loopback": {
+    "client": "37.0.0p1-android-tools",
+    "fixture_bytes": 41943040,
+    "downloads": 3,
+    "blocks_each_written_once": 10240,
+    "scope": "127.0.0.1 memory-only mock; no USB"
+  },
+  "standard_sparse_roundtrips": {
+    "install": {
+      "status": "PASS standard simg2img full-size roundtrip",
+      "bytes": 2147483648,
+      "sha256": "f347b00da610500b4fc88c95035203c9caaf7be38876af855dfbeefbc4bd0c24"
+    },
+    "rollback": {
+      "status": "PASS standard simg2img full-size roundtrip",
+      "bytes": 2952790016,
+      "sha256": "4b8bf31cecc12b1ae3f630e60bf33dc27f2475c6b43e8d87f27dc4218bd85760"
+    }
+  },
+  "writes": {
+    "install": [
+      {
+        "role": "root",
+        "start_lba": 5555200,
+        "sectors": 4194304,
+        "bytes": 2147483648,
+        "sha256": "f347b00da610500b4fc88c95035203c9caaf7be38876af855dfbeefbc4bd0c24"
+      },
+      {
+        "role": "fat",
+        "start_lba": 139264,
+        "sectors": 65536,
+        "bytes": 33554432,
+        "sha256": "c73d86b43181fa61a319ca99a37e0ebecf41986aafa166eb25eb450200aa132a"
+      },
+      {
+        "role": "proper",
+        "start_lba": 4828160,
+        "sectors": 1867,
+        "bytes": 955904,
+        "sha256": "326661503b28376284c3082477335f19c5908b5cd33c4970373df5fb8874746b"
+      },
+      {
+        "role": "spl",
+        "start_lba": 16,
+        "sectors": 64,
+        "bytes": 32768,
+        "sha256": "d593ab799b6d422523d67a33c7427c481765e5afac71f065cc2f16e162ce18cf"
+      }
+    ],
+    "rollback": [
+      {
+        "role": "root",
+        "start_lba": 5555200,
+        "sectors": 5767168,
+        "bytes": 2952790016,
+        "sha256": "4b8bf31cecc12b1ae3f630e60bf33dc27f2475c6b43e8d87f27dc4218bd85760"
+      },
+      {
+        "role": "fat",
+        "start_lba": 139264,
+        "sectors": 65536,
+        "bytes": 33554432,
+        "sha256": "79c14f0566ada36158df2bef4995f73674a532987cfe8674c0c5e46789672de5"
+      },
+      {
+        "role": "proper",
+        "start_lba": 4828160,
+        "sectors": 1867,
+        "bytes": 955904,
+        "sha256": "d85af62d0afaf79b4e4055922c6a933e8a508df1a2fca0c074f7f02e1aebab88"
+      },
+      {
+        "role": "spl",
+        "start_lba": 16,
+        "sectors": 64,
+        "bytes": 32768,
+        "sha256": "cb9da87448a57aa1cafbc7ebf66200b5183304cef1eafe23d0818b99696a49ec"
+      }
+    ]
+  },
+  "board_actions": false,
+  "installation_performed": false,
+  "partition_changes": false,
+  "hardware_qualification": "PENDING",
+  "preservation": "Every byte outside four bounded write windows must match the baseline; no GPT, Android, environment, stash or rescue writes.",
+  "source_tools": {
+    "tools/release/prepare-install.py": "4d604126f0081d7f7678741202566784ac6dbb6699dc9b6991b659821dc6aae8",
+    "tools/release/test-install-packet.py": "16025082b4aa831c05bfc3cb9fe732290ab1c558e98415b9fb4c5d0e3db6e221",
+    "tools/release/test-fastboot-raw-transfer.py": "70df7491e6393366a324876e9be8e7e4b11d6eefa787099af50e7b70a5fccb15"
+  },
+  "bundled_fel_host_tool_sha256": "7a6deced27f02c9c0620945bca486e59c65be2c8d29c78c11d45787594084248",
+  "host_fel_dynamic_libraries": "All dependencies resolved on the preparation host",
+  "udev_rule_validation": {
+    "status": "PASS",
+    "udev_version": "262",
+    "note": "udev accepts OWNER=chris but emits a deprecation notice for non-system ownership; revalidate on the live execution host."
+  }
+}

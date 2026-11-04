@@ -28,19 +28,19 @@ PREBOOT='if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastb
 BOOTCMD='if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi'
 
 
-def script():
+def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE):
     # Commands in each stage are chained: no partial stage can authorize Linux.
     stages={
       'image':[
         'fatload mmc 1:2 0x50000000 h713-kernel.fit',
-        f'itest ${{filesize}} == {FIT_SIZE:x}', # exact proven FIT size, hex
+        f'itest ${{filesize}} == {fit_size:x}', # exact selected FIT size, hex
         'fdt addr 0x50000000',
         'fdt get size hdmi_fdt_size /images/fdt-1 data',
-        f'itest ${{hdmi_fdt_size}} == {FDT_SIZE:x}',
+        f'itest ${{hdmi_fdt_size}} == {fdt_size:x}',
         'fdt get addr hdmi_fdt /images/fdt-1 data',
         'itest ${hdmi_fdt} -ge 50000000',
         'setexpr hdmi_fdt_end ${hdmi_fdt} + ${hdmi_fdt_size}',
-        f'itest ${{hdmi_fdt_end}} -le {0x50000000+FIT_SIZE:x}',
+        f'itest ${{hdmi_fdt_end}} -le {0x50000000+fit_size:x}',
         'cp.b ${hdmi_fdt} 0x4f000000 ${hdmi_fdt_size}',
         'fdt addr 0x4f000000', 'fdt resize 0x1000',
         'fdt set /soc/audio-bridge@203042c interrupts <0 115 4 0 113 4>',

@@ -10,6 +10,7 @@ matching CCU table. Both the orchestrator and quick helper use this tree.
 | --- | --- |
 | `0000-h713-shared-dt-panel-regulator-prerequisites.patch` | Tested DT/clock/PHY integration, DM panel supply/reset helpers, DDR3 lamp/fan policy |
 | `0001-h713-establish-initial-panel-power-state.patch` | Verified reset/supply-off control state and explicit minimum 3 s hold before logo replay |
+| `0003-env-mmc-preserve-configured-offset-width.patch` | Preserve the configured 64-bit environment-offset fallback and report the load address; source cases/mutations and production hardware validation pass. |
 
 The focused `0001` patch remains incremental to `0000` plus the shared kernel
 DT. Its resulting `h713_mips.c` SHA-256 is
@@ -42,3 +43,8 @@ are unproven. Earlier transient audio silence remains unexplained.
 See [the build/results/rollback runbook](../../docs/uboot-panel-initial-state.md)
 and [raw trial evidence](../../docs/hdmi-evidence/2026-10-18-panel-initial-state-trial/README.md).
 The installed trial proper remains unchanged by this source integration.
+
+The offset correction requires paired environment migration on an unmigrated
+split board. Use fresh identity/storage pins and the
+[production qualification plan](../../docs/production-qualification-plan.md);
+do not install the replacement proper alone at a guessed environment address.

@@ -606,10 +606,31 @@ if [ -n "${PLANE_PLAY_SRC:-}" ]; then
     echo "va_driver_installed=image"
   } > "$R/etc/h713-video-stack"
   rm -rf "$R/tmp/va-driver"
+  # The production HDMI overlay is assembled on the host. Only its tiny ALSA
+  # helper needs the target compiler; never compile the retired GST consumer.
+  if [ -n "${RELEASE_OVERLAY:-}" ]; then
+    test -f "$RELEASE_OVERLAY/.h713-release-overlay"
+    cp -a "$RELEASE_OVERLAY/." "$R/"
+    rm -f "$R/.h713-release-overlay"
+    chroot "$R" gcc -O2 -Wall -Wextra -Werror -o /usr/lib/h713-hdmi-speaker/alsa-ctl \
+      /usr/lib/h713-hdmi-speaker/alsa-ctl.c
+    rm "$R/usr/lib/h713-hdmi-speaker/alsa-ctl.c"
+    # Seal target-compiled payloads together with their source-built bundles.
+    for bundle in h713-hdmi h713-hdmi-health h713-hdmi-video h713-hdmi-speaker; do
+      chroot "$R" sh -ec 'cd "/usr/lib/$1"; find . -type f ! -name SHA256SUMS -print0 |
+        sort -z | xargs -0 sha256sum > SHA256SUMS' sh "$bundle"
+    done
+    chroot "$R" dpkg-query -W '-f=${binary:Package}\t${Version}\n' \
+      > "$R/usr/share/h713-release/build-packages.tsv"
+  fi
   if [ "${DEV_PROFILE:-0}" != 1 ]; then
     chroot "$R" env DEBIAN_FRONTEND=noninteractive \
       apt-get purge -y -q --autoremove \
       $(echo "$PLAYER_BUILD_PACKAGES,$VA_BUILD_PACKAGES" | tr , ' ') >/dev/null
+  fi
+  if [ -n "${RELEASE_OVERLAY:-}" ]; then
+    chroot "$R" dpkg-query -W '-f=${binary:Package}\t${Version}\n' \
+      > "$R/usr/share/h713-release/runtime-packages.tsv"
   fi
   umount "$R/dev/null"
   rm -f "$R/dev/null"

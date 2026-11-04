@@ -14,8 +14,11 @@ IMAGE_SIZE=$ROOTFS_IMAGE_SIZE
 SSH_KEY=
 KERNEL_TREE=
 EXTRA_PACKAGES=
+RELEASE_OVERLAY=
+DEBIAN_CACHE=
 PROFILES=
 DEV_PROFILE=0
+PRODUCTION_PROFILE=0
 ORIGINAL_ARGS=("$@")
 
 # The image is otherwise minimal, but this is a projector: the video RUNTIME is
@@ -120,7 +123,8 @@ DEV_MIN_IMAGE_SIZE=3G
 usage() {
   cat <<EOF
 usage: $0 --ssh-key FILE [--kernel-tree DIR] [--output-dir DIR] [--image-size SIZE]
-          [--profile NAME] [--extra-packages LIST]
+          [--profile NAME] [--extra-packages LIST] [--release-overlay DIR]
+          [--mirror URL] [--hotspot-conf FILE]
 
 Build Debian $DEBIAN_SUITE/$DEBIAN_ARCH into rootfs.ext4 and rootfs.simg.
 The SSH public key is required and is copied into root's authorized_keys; it is
@@ -148,6 +152,10 @@ while (($#)); do
     --image-size)  IMAGE_SIZE=${2:?missing value for --image-size}; shift 2 ;;
     --profile)     PROFILES=${PROFILES:+$PROFILES,}${2:?missing value for --profile}; shift 2 ;;
     --extra-packages) EXTRA_PACKAGES=${2:?missing value for --extra-packages}; shift 2 ;;
+    --release-overlay) RELEASE_OVERLAY=$(realpath "${2:?missing overlay}"); shift 2 ;;
+    --debian-cache) DEBIAN_CACHE=$(realpath -m "${2:?missing cache}"); shift 2 ;;
+    --mirror) DEBIAN_MIRROR=${2:?missing mirror}; shift 2 ;;
+    --hotspot-conf) HOTSPOT_CONF=${2:?missing hotspot config}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -165,6 +173,11 @@ size_to_bytes() {
 
 for profile in ${PROFILES//,/ }; do
   case "$profile" in
+    production)
+      PRODUCTION_PROFILE=1
+      BASE_PACKAGES=${BASE_PACKAGES//,v4l-utils/}
+      BASE_PACKAGES=$BASE_PACKAGES,python3
+      ;;
     dev)
       DEV_PROFILE=1
       EXTRA_PACKAGES=${EXTRA_PACKAGES:+$EXTRA_PACKAGES,}$DEV_PACKAGES
@@ -178,10 +191,11 @@ for profile in ${PROFILES//,/ }; do
         IMAGE_SIZE=$DEV_MIN_IMAGE_SIZE
       fi
       ;;
-    *) echo "error: unknown profile: $profile (known: dev)" >&2; exit 2 ;;
+    *) echo "error: unknown profile: $profile (known: production, dev)" >&2; exit 2 ;;
   esac
 done
 
+[ "$PRODUCTION_PROFILE$DEV_PROFILE" != 11 ] || { echo 'production and dev profiles cannot be combined' >&2; exit 2; }
 [ -n "$SSH_KEY" ] || { echo "error: --ssh-key FILE is required" >&2; exit 2; }
 SSH_KEY=$(realpath "$SSH_KEY")
 [ -s "$SSH_KEY" ] || { echo "error: SSH public key not found: $SSH_KEY" >&2; exit 1; }
@@ -309,7 +323,7 @@ for m in "${AIC_MODULES[@]}"; do
     exit 1
   }
 done
-AIC_FW_SRC_ABS="$PROJECT_ROOT/$AIC8800_FW_SRC"
+AIC_FW_SRC_ABS=${H713_AIC_FW_SOURCE:-"$PROJECT_ROOT/$AIC8800_FW_SRC"}
 [ -d "$AIC_FW_SRC_ABS" ] || { echo "error: AIC8800 firmware source not found: $AIC_FW_SRC_ABS" >&2; exit 1; }
 ( cd "$AIC_FW_SRC_ABS" && sha256sum -c "$PROJECT_ROOT/$AIC8800_FW_SUMS" ) >/dev/null || {
   echo "error: AIC8800 firmware failed SHA-256 verification against $AIC8800_FW_SUMS" >&2
@@ -321,9 +335,11 @@ AIC_FW_SRC_ABS="$PROJECT_ROOT/$AIC8800_FW_SRC"
 HOTSPOT_ENABLED=0
 HOTSPOT_SSID= HOTSPOT_PASSPHRASE= HOTSPOT_CHANNEL= HOTSPOT_IP=
 HOTSPOT_DHCP_START= HOTSPOT_DHCP_END=
-if [ -n "${HOTSPOT_CONF:-}" ] && [ -f "$PROJECT_ROOT/$HOTSPOT_CONF" ]; then
+HOTSPOT_PATH=${HOTSPOT_CONF:-}
+case "$HOTSPOT_PATH" in /*) ;; *) HOTSPOT_PATH="$PROJECT_ROOT/$HOTSPOT_PATH" ;; esac
+if [ -n "${HOTSPOT_CONF:-}" ] && [ -f "$HOTSPOT_PATH" ]; then
   # shellcheck disable=SC1090
-  . "$PROJECT_ROOT/$HOTSPOT_CONF"
+  . "$HOTSPOT_PATH"
   : "${HOTSPOT_CHANNEL:=6}" "${HOTSPOT_IP:=192.168.4.1}"
   : "${HOTSPOT_DHCP_START:=192.168.4.10}" "${HOTSPOT_DHCP_END:=192.168.4.100}"
   [ -n "${HOTSPOT_SSID:-}" ] && [ "${#HOTSPOT_SSID}" -le 32 ] || {
@@ -352,10 +368,20 @@ fi
 
 printf '\n==> Patched VA-API driver source\n'
 VA_DRIVER_TAR="$WORK_DIR/va-driver.tar.gz"
-"$PROJECT_ROOT/tools/video/build-va-driver.sh" --tree-tar "$VA_DRIVER_TAR"
+SRC="${H713_VA_DRIVER_SRC:-$PROJECT_ROOT/local/upstream/va-driver-megi-src}" \
+  "$PROJECT_ROOT/tools/video/build-va-driver.sh" --tree-tar "$VA_DRIVER_TAR"
 
 printf '\n==> Bootstrap signed Debian %s/%s\n' "$DEBIAN_SUITE" "$DEBIAN_ARCH"
+cache_hooks=()
+if [ -n "$DEBIAN_CACHE" ]; then
+  hook=$(python3 -c 'import shlex,sys; print(shlex.join(sys.argv[1:]))' \
+    python3 "$PROJECT_ROOT/tools/rootfs/cache-debs.py")
+  cache_arg=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$DEBIAN_CACHE")
+  cache_hooks=("--setup-hook=$hook seed $cache_arg \"\$1\"" \
+               "--customize-hook=$hook save $cache_arg \"\$1\"")
+fi
 mmdebstrap \
+  "${cache_hooks[@]}" \
   --mode=unshare \
   --variant=minbase \
   --arch="$DEBIAN_ARCH" \
@@ -367,6 +393,8 @@ mmdebstrap \
   "deb [signed-by=$BOOTSTRAP_KEYRING] $DEBIAN_MIRROR $DEBIAN_SUITE main"
 
 printf '\n==> Customize, install Linux %s modules, and create ext4\n' "$KERNEL_RELEASE"
+WIFI_BASELINE_SOURCE="$PROJECT_ROOT/tools/wifi/wifi-baseline.sh"
+[ "$PRODUCTION_PROFILE" != 1 ] || WIFI_BASELINE_SOURCE=
 env \
   ROOTFS_TAR="$ROOTFS_TAR" \
   FINAL_ROOTFS_TAR="$FINAL_ROOTFS_TAR" \
@@ -379,7 +407,7 @@ env \
   KERNEL_RELEASE="$KERNEL_RELEASE" \
   AIC_KO_DIR="$AIC_KO_DIR" \
   AIC_FW_SRC="$AIC_FW_SRC_ABS" \
-  WIFI_BASELINE_SRC="$PROJECT_ROOT/tools/wifi/wifi-baseline.sh" \
+  WIFI_BASELINE_SRC="$WIFI_BASELINE_SOURCE" \
   AIC_FW_DEST="$AIC8800_FW_DEST" \
   HOTSPOT_ENABLED="$HOTSPOT_ENABLED" \
   HOTSPOT_SSID="$HOTSPOT_SSID" \
@@ -391,6 +419,7 @@ env \
   DEBIAN_MIRROR="$DEBIAN_MIRROR" \
   DEBIAN_SUITE="$DEBIAN_SUITE" \
   DEV_PROFILE="$DEV_PROFILE" \
+  PRODUCTION_PROFILE="$PRODUCTION_PROFILE" \
   PLAYER_BUILD_PACKAGES="$PLAYER_BUILD_PACKAGES" \
   VA_BUILD_PACKAGES="$VA_BUILD_PACKAGES" \
   VA_DRIVER_TAR="$VA_DRIVER_TAR" \
@@ -400,6 +429,7 @@ env \
   H713_MIRROR_SRC="$PROJECT_ROOT/tools/display/h713-mirror" \
   H713_KEYSTONE_SRC="$PROJECT_ROOT/tools/sensors/h713-keystone" \
   H713_STANDBY_DIR="$PROJECT_ROOT/tools/standby" \
+  RELEASE_OVERLAY="$RELEASE_OVERLAY" \
   bash -ceu '
     mkdir -p "$ROOTFS_TREE"
     tar --numeric-owner --xattrs --acls --exclude="./dev/*" -C "$ROOTFS_TREE" -xf "$ROOTFS_TAR"
@@ -452,7 +482,11 @@ env \
     # fmacfw, and wlan0 never appears.
     test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfw_8800d80_h_u02.bin"
     # the baseline tool must be on the board: it cannot be copied there later
-    test -x "$ROOTFS_TREE/usr/local/sbin/wifi-baseline"
+    if [ "$PRODUCTION_PROFILE" = 1 ]; then
+      test ! -e "$ROOTFS_TREE/usr/local/sbin/wifi-baseline"
+    else
+      test -x "$ROOTFS_TREE/usr/local/sbin/wifi-baseline"
+    fi
     grep -qx "aic8800_fdrv" "$ROOTFS_TREE/etc/modules-load.d/aic8800.conf"
     test -x "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     grep -q "noflow" "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
@@ -476,7 +510,11 @@ env \
     test -e "$L/gstreamer-1.0/libgstv4l2codecs.so"              # v4l2slh264dec
     test -x "$ROOTFS_TREE/usr/bin/gst-launch-1.0"
     test -x "$ROOTFS_TREE/usr/bin/gst-inspect-1.0"
-    test -x "$ROOTFS_TREE/usr/bin/v4l2-ctl"
+    if [ "$PRODUCTION_PROFILE" = 1 ]; then
+      test ! -e "$ROOTFS_TREE/usr/bin/v4l2-ctl"
+    else
+      test -x "$ROOTFS_TREE/usr/bin/v4l2-ctl"
+    fi
     test -x "$ROOTFS_TREE/usr/bin/mpv"
     grep -qx "sunxi_scanout_dmabuf" "$ROOTFS_TREE/etc/modules-load.d/h713-video.conf"
     # WP4 playback: the launcher, the plane player (an arm64 build of this
@@ -540,11 +578,35 @@ env \
       test -L "$ROOTFS_TREE/etc/systemd/system/wpa_supplicant.service"   # masked
     fi
 
-    tar --numeric-owner --xattrs --acls -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
+    if [ "$PRODUCTION_PROFILE" = 1 ]; then
+      # These optional package test suites/plugins are never used by runtime
+      # services. Keep Python itself and its runtime standard library intact.
+      rm -rf "$ROOTFS_TREE"/usr/lib/python3.*/test \
+        "$ROOTFS_TREE/usr/lib/aarch64-linux-gnu/spa-0.2/test"
+    fi
+    if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+      # Build-session logs and the ldconfig host-inode cache are not runtime
+      # inputs. Preserve package/version metadata, not transient timestamps.
+      rm -rf "$ROOTFS_TREE/var/log/apt" "$ROOTFS_TREE/var/lib/apt/periodic"
+      rm -f "$ROOTFS_TREE/var/log/dpkg.log" "$ROOTFS_TREE/var/log/alternatives.log" \
+        "$ROOTFS_TREE/var/cache/ldconfig/aux-cache" \
+        "$ROOTFS_TREE/var/cache/apt/pkgcache.bin" "$ROOTFS_TREE/var/cache/apt/srcpkgcache.bin"
+      find "$ROOTFS_TREE" -xdev -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+      tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --numeric-owner --xattrs --acls \
+        --pax-option=delete=atime,delete=ctime -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
+    else
+      tar --numeric-owner --xattrs --acls -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
+    fi
     truncate -s "$IMAGE_SIZE" "$ROOTFS_EXT4"
-    mke2fs -q -F -t ext4 -L UDISK -m 1 \
-      -E lazy_itable_init=0,lazy_journal_init=0 \
-      -d "$ROOTFS_TREE" "$ROOTFS_EXT4"
+    if [ -n "${H713_RELEASE_UUID:-}" ]; then
+      LC_ALL=C.UTF-8 mke2fs -q -F -t ext4 -L UDISK -m 1 -U "$H713_RELEASE_UUID" \
+        -E "hash_seed=$H713_RELEASE_UUID,lazy_itable_init=0,lazy_journal_init=0" \
+        -d "$FINAL_ROOTFS_TAR" "$ROOTFS_EXT4"
+    else
+      mke2fs -q -F -t ext4 -L UDISK -m 1 \
+        -E lazy_itable_init=0,lazy_journal_init=0 \
+        -d "$ROOTFS_TREE" "$ROOTFS_EXT4"
+    fi
   '
 
 e2fsck -fn "$ROOTFS_EXT4"
@@ -557,7 +619,7 @@ architecture=$DEBIAN_ARCH
 mirror=$DEBIAN_MIRROR
 archive_keyring=/usr/share/keyrings/debian-archive-keyring.gpg
 kernel_release=$KERNEL_RELEASE
-kernel_tree=${KERNEL_TREE#$PROJECT_ROOT/}
+kernel_tree=${KERNEL_TREE##*/}
 kernel_modules=$module_build_count
 image_size=$IMAGE_SIZE
 profiles=${PROFILES:-none}

@@ -1,0 +1,51 @@
+From: H713 maintainers
+Subject: [PATCH] env: mmc: preserve full-width configured fallback
+
+An absolute CONFIG_ENV_OFFSET above INT_MAX is narrowed by the int-valued
+ofnode_conf_read_int() even when /config or its property is absent. It then
+looks like a negative capacity-relative address. Read the DT property
+explicitly and retain the s64 configured fallback on absence/read failure.
+Preserve the existing signed 32-bit interpretation of explicit DT values.
+Partition/GUID precedence and non-OF behavior are unchanged.
+Include the selected byte offset in the existing singular-load message so
+UART acceptance can distinguish the migrated slot without editing its data.
+
+On the DDR3 H713 bench this changes the environment from unintended LBA
+0x32ec00 to configured LBA 0x49ec00. Installation requires the paired
+migration package; never deploy the image alone.
+
+--- a/env/mmc.c
++++ b/env/mmc.c
+@@ -160,6 +160,8 @@
+ 		.offset = "u-boot,mmc-env-offset",
+ 	};
+ 	s64 val = 0, defvalue;
++	ofnode config;
++	u32 dt_offset;
+ 	const char *propname;
+ 	const char *str;
+ 	int hwpart = 0;
+@@ -199,7 +201,13 @@
+ 		propname = dt_prop.offset_redund;
+ 	}
+ 
+-	return ofnode_conf_read_int(propname, defvalue);
++	/* Keep the configured s64 fallback out of the signed int DT helper. */
++	config = ofnode_path("/config");
++	if (ofnode_valid(config) &&
++	    !ofnode_read_u32(config, propname, &dt_offset))
++		return (s32)dt_offset;
++
++	return defvalue;
+ }
+ #else
+ static inline s64 mmc_offset(struct mmc *mmc, int copy)
+@@ -542,7 +550,7 @@
+ 		goto fini;
+ 	}
+ 
+-	printf("Reading from MMC(%d)... ", dev);
++	printf("Reading from MMC(%d) at 0x%08x... ", dev, offset);
+ 
+ 	ret = env_import(buf, 1, H_EXTERNAL);
+ 	if (!ret) {
