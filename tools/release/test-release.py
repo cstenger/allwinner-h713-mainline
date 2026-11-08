@@ -15,6 +15,27 @@ b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_signal_module_is_the_qualified_event_pulse_build(self):
+        root=Path(b.ROOT)
+        with tempfile.TemporaryDirectory() as directory:
+            header=Path(directory)/'edid-trial-code.h'
+            subprocess.run(['python3',root/'tools/hdmi/make-edid-trial-code.py',*b.SIGNAL_SCP_FLAGS,
+                            '--edid',root/'tools/hdmi/fixtures/hdmi-audio-edid.hex',header],check=True,capture_output=True)
+            text=header.read_text()
+        for define in ('#define EDID_HPD_PULSE 1','#define EDID_SCAN_BYTES 1','#define EDID_SCAN_ARM 0x06840094',
+                       '#define EDID_SCAN_BUSY ','#define EDID_CHECK_OFFSET ','#define EDID_EXT_OFFSET '):
+            self.assertIn(define,text)
+        for absent in ('EDID_HPD_DIAGNOSTIC','EDID_DDC_DIAGNOSTIC','EDID_SAMPLER_OFFSET','EDID_SCAN_WORDS','EDID_INITIAL_'):
+            self.assertNotIn(absent,text)
+        source=(root/'modules/hdmi-signal/h713-hdmi-signal.c').read_text()
+        self.assertIn('#elif defined(EDID_HPD_PULSE) && defined(EDID_SCAN_BUSY)\n',source)
+        self.assertIn('MODULE_VERSION("hpd-event-v1");',source)
+        policy=(root/'tools/hdmi/h713-hdmi-readvertise.py').read_text()
+        self.assertIn("EVENT_VERSIONS = ('hpd-event-v1',)",policy)
+        self.assertIn("ddc_activity('source_lost', clock, rearm=True)",policy)
+        self.assertNotIn('DIAGNOSTIC_DDC_ONLY = True',policy)
+        self.assertNotIn('DIAGNOSTIC_HPD_ONLY = True',policy)
+
     def test_generated_module_outputs_do_not_become_source_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);module=root/'modules/hdmi-signal';module.mkdir(parents=True)

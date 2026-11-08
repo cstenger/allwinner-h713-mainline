@@ -241,6 +241,217 @@ static int scp_request(u32 request)
 	return -EIO;
 }
 
+#ifdef EDID_DDC_DIAGNOSTIC
+static unsigned int ddc_cycles;
+module_param(ddc_cycles, uint, 0444);
+MODULE_PARM_DESC(ddc_cycles, "Diagnostic DDC-only reset cycles; no programmed HPD edge");
+
+/* Bench-only isolation of the two actions in the proven fallback. The
+ * caller must require signal none; no callback, RPC or ARM receiver read. */
+static int cycle_ddc(const char *value, const struct kernel_param *kp)
+{
+	unsigned int hold_ms;
+	u32 hpd, ddc;
+	int ret = kstrtouint(value, 0, &hold_ms);
+
+	if (ret || hold_ms != 2000)
+		return -EINVAL;
+	mutex_lock(&signal_lock);
+	if (!ready || failed || restored || terminal || !sram || ddc_cycles || readvertised) {
+		ret = -EPERM;
+		goto out;
+	}
+	hpd = readl(sram + EDID_META_OFFSET) & ~7U;
+	ddc = marker(44) & ~7U;
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_HPD_OFFSET);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_DDC_OFFSET);
+	ret = scp_request(EDID_REQ_DDC_OFF);
+	if (ret || marker(12) || marker(24) ||
+	    marker(EDID_RELEASE_HPD_OFFSET) != hpd || marker(EDID_RELEASE_DDC_OFFSET) != ddc)
+		goto failed_cycle;
+	msleep(hold_ms);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_HPD_OFFSET);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_DDC_OFFSET);
+	ret = scp_request(EDID_REQ_DDC_ON);
+	if (ret || marker(12) || marker(24) ||
+	    marker(EDID_RELEASE_HPD_OFFSET) != hpd || marker(EDID_RELEASE_DDC_OFFSET) != (ddc | 7U))
+		goto failed_cycle;
+	msleep(100);
+	ddc_cycles++;
+	pr_info("h713-hdmi-signal: diagnostic DDC-only cycle %u, HPD unchanged %08x, DDC %08x; SCP verified\n",
+		ddc_cycles, hpd, marker(EDID_RELEASE_DDC_OFFSET));
+	ret = 0;
+	goto out;
+failed_cycle:
+	failed = true;
+	terminal = true;
+	ret = -EIO;
+	pr_err("h713-hdmi-signal: diagnostic DDC-only cycle failed; holds retained\n");
+out:
+	mutex_unlock(&signal_lock);
+	return ret;
+}
+static const struct kernel_param_ops ddc_cycle_ops = { .set = cycle_ddc };
+module_param_cb(ddc_cycle, &ddc_cycle_ops, NULL, 0200);
+#endif
+
+#ifdef EDID_HPD_PULSE
+static unsigned int hpd_pulses;
+module_param(hpd_pulses, uint, 0444);
+MODULE_PARM_DESC(hpd_pulses, "Completed HPD-only pulses (DDC never written)");
+
+/* HDMI 1.4 8.5: a sink signals "re-read my EDID" with an HPD low pulse of at
+ * least 100 ms. Force HPD low for the written milliseconds without touching
+ * DDC, then release it, checking the SCP's HPD/DDC readbacks after each step.
+ * Some sources (NVIDIA 615.78.08 after its own boot) ignore the first HPD
+ * rise but connect on such a pulse. A failed step is terminal and keeps every
+ * hold, like a failed re-advertise. */
+static int pulse_hpd(const char *value, const struct kernel_param *kp)
+{
+	unsigned int low_ms;
+	u32 hpd, ddc;
+	int ret = kstrtouint(value, 0, &low_ms);
+
+	if (ret || low_ms < 100 || low_ms > 2000)
+		return -EINVAL;
+	mutex_lock(&signal_lock);
+	if (!ready || failed || restored || terminal || !sram) {
+		ret = -EPERM;
+		goto out;
+	}
+	hpd = readl(sram + EDID_META_OFFSET) & ~7U;
+	ddc = marker(44);
+	if ((ddc & 7U) != 7U) {
+		ret = -EPERM;
+		goto out;
+	}
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_HPD_OFFSET);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_DDC_OFFSET);
+	ret = scp_request(EDID_REQ_HPD_LOW);
+	if (ret || marker(12) || marker(24) ||
+	    marker(EDID_RELEASE_HPD_OFFSET) != (hpd | 7U) || marker(EDID_RELEASE_DDC_OFFSET) != ddc)
+		goto failed_pulse;
+	msleep(low_ms);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_HPD_OFFSET);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_DDC_OFFSET);
+	ret = scp_request(EDID_REQ_RELEASE);
+	if (ret || marker(12) || marker(24) ||
+	    marker(EDID_RELEASE_HPD_OFFSET) != hpd || marker(EDID_RELEASE_DDC_OFFSET) != ddc)
+		goto failed_pulse;
+	hpd_pulses++;
+	pr_info("h713-hdmi-signal: HPD pulsed low for %u ms, DDC unchanged %08x (%u)\n",
+		low_ms, ddc, hpd_pulses);
+	ret = 0;
+	goto out;
+failed_pulse:
+	report("hpd pulse");
+	failed = true;
+	terminal = true;
+	ret = -EIO;
+	pr_err("h713-hdmi-signal: HPD pulse failed; holds retained, cold cycle required\n");
+out:
+	mutex_unlock(&signal_lock);
+	return ret;
+}
+static const struct kernel_param_ops hpd_pulse_ops = { .set = pulse_hpd };
+module_param_cb(hpd_pulse, &hpd_pulse_ops, NULL, 0200);
+#endif
+
+#ifdef EDID_HPD_DIAGNOSTIC
+static unsigned int hpd_cycles;
+module_param(hpd_cycles, uint, 0444);
+MODULE_PARM_DESC(hpd_cycles, "Diagnostic HPD-only pulses; DDC never written");
+
+/* Bench-only mirror of cycle_ddc: one HPD low pulse with DDC left enabled.
+ * The caller must require signal none; no callback, RPC or ARM receiver read. */
+static int cycle_hpd(const char *value, const struct kernel_param *kp)
+{
+	unsigned int hold_ms;
+	u32 hpd, ddc;
+	int ret = kstrtouint(value, 0, &hold_ms);
+
+	if (ret || hold_ms != 2000)
+		return -EINVAL;
+	mutex_lock(&signal_lock);
+	if (!ready || failed || restored || terminal || !sram || hpd_cycles || readvertised) {
+		ret = -EPERM;
+		goto out;
+	}
+	hpd = readl(sram + EDID_META_OFFSET) & ~7U;
+	ddc = marker(44);
+	if ((ddc & 7U) != 7U) {
+		ret = -EPERM;
+		goto out;
+	}
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_HPD_OFFSET);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_DDC_OFFSET);
+	ret = scp_request(EDID_REQ_HPD_LOW);
+	if (ret || marker(12) || marker(24) ||
+	    marker(EDID_RELEASE_HPD_OFFSET) != (hpd | 7U) || marker(EDID_RELEASE_DDC_OFFSET) != ddc)
+		goto failed_cycle;
+	msleep(hold_ms);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_HPD_OFFSET);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_DDC_OFFSET);
+	ret = scp_request(EDID_REQ_RELEASE);
+	if (ret || marker(12) || marker(24) ||
+	    marker(EDID_RELEASE_HPD_OFFSET) != hpd || marker(EDID_RELEASE_DDC_OFFSET) != ddc)
+		goto failed_cycle;
+	hpd_cycles++;
+	pr_info("h713-hdmi-signal: diagnostic HPD-only pulse %u after a %u ms hold, DDC unchanged %08x; SCP verified\n",
+		hpd_cycles, hold_ms, ddc);
+	ret = 0;
+	goto out;
+failed_cycle:
+	failed = true;
+	terminal = true;
+	ret = -EIO;
+	pr_err("h713-hdmi-signal: diagnostic HPD-only pulse failed; holds retained\n");
+out:
+	mutex_unlock(&signal_lock);
+	return ret;
+}
+static const struct kernel_param_ops hpd_cycle_ops = { .set = cycle_hpd };
+module_param_cb(hpd_cycle, &hpd_cycle_ops, NULL, 0200);
+#endif
+
+#ifdef EDID_INITIAL_HPD_DEFERRED
+/* Initial setup already verified EDID and enabled DDC while holding HPD.
+ * Match the proven retry's DDC settle interval before the first HPD rise.
+ * No preliminary advertisement, pulse or readvertise count is hidden here. */
+static int initial_advertise(void)
+{
+	int ret;
+
+	if ((marker(36) & 7) != 7 || marker(44) == ~0U)
+		return -EIO;
+#ifdef EDID_INITIAL_DDC_HOLD_MS
+	if (marker(44) & 7)
+		return -EIO;
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_DDC_OFFSET);
+	msleep(EDID_INITIAL_DDC_HOLD_MS);
+	ret = scp_request(EDID_REQ_DDC_ON);
+	if (ret || marker(12) || marker(24) ||
+	    marker(EDID_RELEASE_DDC_OFFSET) != (marker(44) | 7U))
+		return -EIO;
+	pr_info("h713-hdmi-signal: initial DDC enabled after %u ms disabled hold; SCP readback verified\n",
+		EDID_INITIAL_DDC_HOLD_MS);
+#else
+	if ((marker(44) & 7) != 7)
+		return -EIO;
+#endif
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_HPD_OFFSET);
+	writel(~0U, sram + MARKER_OFFSET + EDID_RELEASE_DDC_OFFSET);
+	msleep(100);
+	ret = scp_request(EDID_REQ_RELEASE);
+	if (ret || marker(12) || marker(24) ||
+	    marker(EDID_RELEASE_HPD_OFFSET) != (readl(sram + EDID_META_OFFSET) & ~7U) ||
+	    marker(EDID_RELEASE_DDC_OFFSET) != (marker(44) | 7U))
+		return -EIO;
+	pr_info("h713-hdmi-signal: first HPD release after 100 ms DDC settle; SCP readback verified\n");
+	return 0;
+}
+#endif
+
 /* Hold HPD low with DDC off for the written number of milliseconds, enable
  * DDC, then raise HPD once the EDID can be read: what a sink does to make a
  * source detect it again. */
@@ -278,6 +489,146 @@ out:
 }
 static const struct kernel_param_ops readvertise_ops = { .set = readvertise_signal };
 module_param_cb(readvertise, &readvertise_ops, NULL, 0200);
+#endif
+
+#ifdef EDID_SAMPLER_OFFSET
+/* Read-only DDC/HPD sampler report: the SCP polls stock-accessed receiver
+ * registers in its idle loop and keeps, per register, the value at owner ready
+ * (first), the latest value and every bit that toggled since the last clear.
+ * Reading copies SCP SRAM only; no receiver access from the ARM. */
+static int sample_get(char *buf, const struct kernel_param *kp)
+{
+	int i, n;
+
+	if (!sram || !ready)
+		return sysfs_emit(buf, "unavailable\n");
+	n = sysfs_emit(buf, "seq %u\n", readl(sram + EDID_SAMPLE_SEQ));
+	for (i = 0; i < EDID_SAMPLE_COUNT; i++)
+		n += sysfs_emit_at(buf, n, "%08x first %08x last %08x toggled %08x\n",
+				   edid_sample_regs[i], readl(sram + EDID_SAMPLE_FIRST + 4 * i),
+				   readl(sram + EDID_SAMPLE_PAIRS + 8 * i),
+				   readl(sram + EDID_SAMPLE_PAIRS + 8 * i + 4));
+	return n;
+}
+/* Writing 1 asks the sampler to restart its toggle masks; SRAM only. */
+static int sample_clear(const char *value, const struct kernel_param *kp)
+{
+	bool yes;
+
+	if (kstrtobool(value, &yes) || !yes)
+		return -EINVAL;
+	if (!sram || !ready || failed || restored)
+		return -EPERM;
+	writel(1, sram + EDID_SAMPLE_CLR);
+	return 0;
+}
+static const struct kernel_param_ops sample_ops = { .get = sample_get, .set = sample_clear };
+module_param_cb(ddc_sample, &sample_ops, NULL, 0600);
+#endif
+
+#ifdef EDID_SCAN_OFFSET
+/* Read-only scan of the undocumented DDC block. The SCP idle loop reads the
+ * 16 receiver offsets in its SRAM table; per entry it keeps the value on the
+ * first pass after a window change (first), the latest value and every bit
+ * that toggled since. Writing "<addr> [count]" points count (1..16) entries
+ * at consecutive words from addr inside 0x07091b00-0x07091bfc and parks the
+ * rest on the stock-read 0x07091b04; "off" parks all of them. Only SCP SRAM
+ * is touched from the ARM: the receiver is read by the SCP alone. */
+static u32 scan_start, scan_count;
+#ifdef EDID_SCAN_BYTES
+/* Byte variant: full SCP addresses read with l.lbz, limited to the byte-wide
+ * MIPS HDCP/DDC wrapper; parked entries read the SCP's own SRAM marker. */
+#define SCAN_LO 0x06840000
+#define SCAN_HI 0x06840fff
+#define SCAN_STEP 1
+#define SCAN_ENTRY(a) (a)
+#define SCAN_SHOW(v) (v)
+#elif defined(EDID_SCAN_WORDS)
+/* Word variant: full SCP addresses read with l.lwz, limited to the SCP-owned
+ * receiver block below the EDID RAM; parked entries read SCP SRAM. */
+#define SCAN_LO 0x07091000
+#define SCAN_HI 0x07091bfc
+#define SCAN_STEP 4
+#define SCAN_ENTRY(a) (a)
+#define SCAN_SHOW(v) (v)
+#else
+#undef EDID_SCAN_ACT
+#undef EDID_SCAN_BUSY
+#define SCAN_LO 0x07091b00
+#define SCAN_HI 0x07091bfc
+#define SCAN_STEP 4
+#define SCAN_ENTRY(a) ((a) & 0xffff)
+#define SCAN_SHOW(v) (0x07090000 | (v))
+#endif
+static int scan_get(char *buf, const struct kernel_param *kp)
+{
+	int i, n;
+
+	if (!sram || !ready)
+		return sysfs_emit(buf, "unavailable\n");
+	n = sysfs_emit(buf, "window %08x count %u seq %u clear %u", scan_start, scan_count,
+		       readl(sram + EDID_SCAN_SEQ), readl(sram + EDID_SCAN_CLR));
+#ifdef EDID_SCAN_ACT
+	/* act: seq+1 of the first pass with any toggle since the last clear; 0 = none. */
+	n += sysfs_emit_at(buf, n, " act %u", readl(sram + EDID_SCAN_ACT));
+#endif
+#ifdef EDID_SCAN_BUSY
+	/* last: seq+1 of the latest toggling pass; busy: toggling passes since clear. */
+	n += sysfs_emit_at(buf, n, " last %u busy %u", readl(sram + EDID_SCAN_LASTACT),
+			   readl(sram + EDID_SCAN_BUSY));
+#endif
+	n += sysfs_emit_at(buf, n, "\n");
+	for (i = 0; i < EDID_SCAN_COUNT; i++)
+		n += sysfs_emit_at(buf, n, "%08x first %08x last %08x toggled %08x\n",
+				   SCAN_SHOW(readl(sram + EDID_SCAN_TABLE + 4 * i)),
+				   readl(sram + EDID_SCAN_FIRST + 4 * i),
+				   readl(sram + EDID_SCAN_LAST + 4 * i),
+				   readl(sram + EDID_SCAN_MASK + 4 * i));
+	return n;
+}
+static int scan_set(const char *value, const struct kernel_param *kp)
+{
+	u32 start = 0, count = 0;
+	int i, ret = 0;
+
+	if (sysfs_streq(value, "off")) {
+		start = 0;
+		count = 0;
+	} else {
+		i = sscanf(value, "%x %u", &start, &count);
+		if (i == 1)
+			count = EDID_SCAN_COUNT;
+		if (i < 1 || start & (SCAN_STEP - 1) || count < 1 || count > EDID_SCAN_COUNT ||
+		    start < SCAN_LO || start + SCAN_STEP * (count - 1) > SCAN_HI)
+			return -EINVAL;
+	}
+	mutex_lock(&signal_lock);
+	if (!sram || !ready || failed || restored) {
+		ret = -EPERM;
+		goto out;
+	}
+	for (i = 0; i < EDID_SCAN_COUNT; i++)
+		writel(i < count ? SCAN_ENTRY(start + SCAN_STEP * i) : EDID_SCAN_IDLE,
+		       sram + EDID_SCAN_TABLE + 4 * i);
+	wmb();	/* the whole table lands before the SCP sees the clear */
+	writel(1, sram + EDID_SCAN_CLR);
+	scan_start = start;
+	scan_count = count;
+	pr_info("h713-hdmi-signal: DDC scan window %08x count %u\n", start, count);
+out:
+	mutex_unlock(&signal_lock);
+	return ret;
+}
+static const struct kernel_param_ops scan_ops = { .get = scan_get, .set = scan_set };
+static u32 scan_entry_at_init(int i)
+{
+#ifdef EDID_SCAN_ARM
+	if (i < EDID_SCAN_ARM_COUNT)
+		return EDID_SCAN_ARM + i;
+#endif
+	return EDID_SCAN_IDLE;
+}
+module_param_cb(ddc_scan, &scan_ops, NULL, 0600);
 #endif
 
 static int __init signal_init(void)
@@ -326,6 +677,40 @@ static int __init signal_init(void)
 	for (i = 0; i < ARRAY_SIZE(edid_readvertise_code); i += 2)
 		writeq((u64)edid_readvertise_code[i + 1] << 32 | edid_readvertise_code[i], sram + EDID_EXT_OFFSET + 4 * i);
 #endif
+#ifdef EDID_SAMPLER_OFFSET
+	for (i = 0; i < ARRAY_SIZE(edid_sampler_code); i += 2)
+		writeq((u64)edid_sampler_code[i + 1] << 32 | edid_sampler_code[i], sram + EDID_SAMPLER_OFFSET + 4 * i);
+	/* seq 0 tells the sampler its first pass records the owner-ready values. */
+	for (i = 0; i < 4 * EDID_SAMPLE_COUNT; i += 4)
+		writel(0, sram + EDID_SAMPLE_FIRST + i);
+	for (i = EDID_SAMPLE_SEQ; i < EDID_SAMPLE_PAIRS + 8 * EDID_SAMPLE_COUNT; i += 4)
+		writel(0, sram + i);
+#endif
+#ifdef EDID_SCAN_OFFSET
+	for (i = 0; i < ARRAY_SIZE(edid_scan_code); i += 2)
+		writeq((u64)edid_scan_code[i + 1] << 32 | edid_scan_code[i], sram + EDID_SCAN_OFFSET + 4 * i);
+	/* Parked (or, with EDID_SCAN_ARM, watching the DDC line byte from owner
+	 * ready); clear 1 records first on pass 1. */
+	for (i = 0; i < 4 * EDID_SCAN_COUNT; i += 4) {
+		writel(scan_entry_at_init(i / 4), sram + EDID_SCAN_TABLE + i);
+		writel(0, sram + EDID_SCAN_LAST + i);
+		writel(0, sram + EDID_SCAN_MASK + i);
+		writel(0, sram + EDID_SCAN_FIRST + i);
+	}
+	writel(0, sram + EDID_SCAN_SEQ);
+	writel(1, sram + EDID_SCAN_CLR);
+#ifdef EDID_SCAN_ACT
+	writel(0, sram + EDID_SCAN_ACT);
+#endif
+#ifdef EDID_SCAN_BUSY
+	writel(0, sram + EDID_SCAN_LASTACT);
+	writel(0, sram + EDID_SCAN_BUSY);
+#endif
+#ifdef EDID_SCAN_ARM
+	scan_start = EDID_SCAN_ARM;
+	scan_count = EDID_SCAN_ARM_COUNT;
+#endif
+#endif
 	writel((SCP_PAGE_OFFSET - 0x100) / 4, sram + 0x100);
 	for (i = 0; i < 128; i += 8)
 		writeq(0, sram + MARKER_OFFSET + i);
@@ -366,6 +751,25 @@ static int __init signal_init(void)
 		    ((u64)edid_readvertise_code[i + 1] << 32 | edid_readvertise_code[i]))
 			goto before_launch_failed;
 #endif
+#ifdef EDID_SAMPLER_OFFSET
+	for (i = 0; i < ARRAY_SIZE(edid_sampler_code); i += 2)
+		if (readq(sram + EDID_SAMPLER_OFFSET + 4 * i) !=
+		    ((u64)edid_sampler_code[i + 1] << 32 | edid_sampler_code[i]))
+			goto before_launch_failed;
+	if (readl(sram + EDID_SAMPLE_SEQ))
+		goto before_launch_failed;
+#endif
+#ifdef EDID_SCAN_OFFSET
+	for (i = 0; i < ARRAY_SIZE(edid_scan_code); i += 2)
+		if (readq(sram + EDID_SCAN_OFFSET + 4 * i) !=
+		    ((u64)edid_scan_code[i + 1] << 32 | edid_scan_code[i]))
+			goto before_launch_failed;
+	for (i = 0; i < 4 * EDID_SCAN_COUNT; i += 4)
+		if (readl(sram + EDID_SCAN_TABLE + i) != scan_entry_at_init(i / 4))
+			goto before_launch_failed;
+	if (readl(sram + EDID_SCAN_SEQ) || readl(sram + EDID_SCAN_CLR) != 1)
+		goto before_launch_failed;
+#endif
 #ifdef H713_SIGNAL_FAULT_INJECTION
 	if (fault == 1) {
 		writeq(0, sram + EDID_PAYLOAD_OFFSET);
@@ -395,6 +799,15 @@ static int __init signal_init(void)
 		if (readl(sram + MARKER_OFFSET) == MARKER &&
 		    readl(sram + MARKER_OFFSET + 8) == MARKER &&
 		    !readl(sram + MARKER_OFFSET + 24)) {
+#ifdef EDID_INITIAL_HPD_DEFERRED
+			ret = initial_advertise();
+			if (ret) {
+				mutex_lock(&signal_lock);
+				terminal = true;
+				mutex_unlock(&signal_lock);
+				break;
+			}
+#endif
 			report("ready");
 			mutex_lock(&signal_lock); /* stop is writable during init */
 			ready = true;
@@ -431,3 +844,31 @@ module_init(signal_init);
 module_exit(signal_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("H713 managed HDMI EDID/HPD firmware lifetime owner");
+#if defined(EDID_HPD_PULSE) && defined(EDID_SCAN_WORDS)
+MODULE_VERSION("reg-scan-hpd-pulse-v1");
+#elif defined(EDID_HPD_PULSE) && defined(EDID_SCAN_BUSY)
+/* HPD pulse + the SCP DDC-line watch armed at owner ready (0x06840094..97):
+ * the policy pulses on a failed-EDID-read signature. Same binary layout as the
+ * ddc-activity-hpd-pulse-v2 diagnostic, now the event-driven candidate. */
+MODULE_VERSION("hpd-event-v1");
+#elif defined(EDID_HPD_PULSE) && defined(EDID_SCAN_ARM)
+MODULE_VERSION("ddc-activity-hpd-pulse-v1");
+#elif defined(EDID_HPD_PULSE) && defined(EDID_SCAN_BYTES)
+MODULE_VERSION("byte-scan-hpd-pulse-v1");
+#elif defined(EDID_HPD_PULSE) && defined(EDID_SCAN_OFFSET)
+MODULE_VERSION("ddc-scan-hpd-pulse-v1");
+#elif defined(EDID_HPD_PULSE)
+MODULE_VERSION("hpd-pulse-v1");
+#elif defined(EDID_SAMPLER_OFFSET) && defined(EDID_HPD_DIAGNOSTIC)
+MODULE_VERSION("ddc-sampler-hpd-only-v1");
+#elif defined(EDID_SAMPLER_OFFSET)
+MODULE_VERSION("ddc-sampler-v1");
+#elif defined(EDID_HPD_DIAGNOSTIC)
+MODULE_VERSION("hpd-only-isolation-v1");
+#elif defined(EDID_DDC_DIAGNOSTIC)
+MODULE_VERSION("ddc-hpd-isolation-v1");
+#elif defined(EDID_INITIAL_DDC_HOLD_MS)
+MODULE_VERSION("first-advert-ddc-reset-v2");
+#elif defined(EDID_INITIAL_HPD_DEFERRED)
+MODULE_VERSION("first-advert-ddc-settle-v1");
+#endif

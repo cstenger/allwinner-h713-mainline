@@ -2,10 +2,13 @@
 """Check when the re-advertise service asks the signal owner for an HPD cycle."""
 import importlib.util
 import io
+import errno
+import struct
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('readvertise', Path(__file__).with_name('h713-hdmi-readvertise.py'))
 m = importlib.util.module_from_spec(spec)
@@ -92,6 +95,70 @@ class Readvertise(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             self.assertEqual(m.main(clock=lambda: self.now, sleep=lambda s: setattr(self, 'now', self.now + s), polls=60), 1)
         self.assertTrue(orig.is_dir())
+
+    def power(self, sample):
+        test = self
+        class FakePower:
+            def read(self):
+                return sample(test.now)
+            def wait(self, seconds, sleep):
+                sleep(seconds)
+            def close(self):
+                self.closed = True
+        return FakePower()
+
+    def test_known_absent_never_pulses(self):
+        power = self.power(lambda now: False)
+        m.main(clock=lambda: self.now, sleep=self.sleep, polls=400, power=power)
+        self.assertEqual(self.requests, [])
+        self.assertTrue(power.closed)
+
+    def test_reconnect_starts_a_full_wait(self):
+        power = self.power(lambda now: now >= 100)
+        m.main(clock=lambda: self.now, sleep=self.sleep, polls=200, power=power)
+        self.assertEqual([t for t, _ in self.requests], [110, 130, 170])
+
+    def test_disconnect_resets_an_exhausted_schedule(self):
+        power = self.power(lambda now: not 320 <= now < 400)
+        m.main(clock=lambda: self.now, sleep=self.sleep, polls=440, power=power)
+        self.assertEqual([t for t, _ in self.requests], [10, 30, 70, 150, 310, 410, 430])
+
+    def test_unknown_after_absent_preserves_timeout_fallback(self):
+        power = self.power(lambda now: False if now < 100 else None)
+        m.main(clock=lambda: self.now, sleep=self.sleep, polls=180, power=power)
+        self.assertEqual([t for t, _ in self.requests], [109, 129, 169])
+
+    def test_reconnect_does_not_pulse_acquiring_video(self):
+        m.SIGNAL.write_text('acquiring\n')
+        power = self.power(lambda now: now >= 100)
+        m.main(clock=lambda: self.now, sleep=self.sleep, polls=400, power=power)
+        self.assertEqual(self.requests, [])
+
+    def test_absent_at_final_recheck_prevents_request(self):
+        reads = [True] * 11 + [False] * 100
+        power = self.power(lambda now: reads.pop(0))
+        m.main(clock=lambda: self.now, sleep=self.sleep, polls=40, power=power)
+        self.assertEqual(self.requests, [])
+
+    def test_native_empty_event_queue_keeps_power_status_available(self):
+        for empty_errno in (errno.ENOENT, errno.EAGAIN):
+            for value in (0, 1):
+                calls = []
+                def ioctl(fd, request, data, *args):
+                    calls.append(request)
+                    if request == m.DQEVENT:
+                        raise OSError(empty_errno, 'empty event queue')
+                    if request == m.QUERYCTRL:
+                        data[:] = struct.pack('=II32siiiiIII', m.POWER_ID, 8, b'Power Present', 0, 1, 0, 0, 4, 0, 0)
+                    if request == m.G_CTRL:
+                        data[:] = struct.pack('=Ii', m.POWER_ID, value)
+                monitor = m.PowerEvents()
+                with self.subTest(errno=empty_errno, value=value), patch.object(m.os, 'open', return_value=42), patch.object(m.os, 'close') as close, patch.object(m.fcntl, 'ioctl', ioctl):
+                    self.assertIs(monitor.read(), bool(value))
+                    self.assertEqual(monitor.fd, 42)
+                    close.assert_not_called()
+                    self.assertEqual(calls, [m.SUBSCRIBE_EVENT, m.SUBSCRIBE_EVENT, m.DQEVENT, m.QUERYCTRL, m.G_CTRL, m.QUERYCTRL])
+                    monitor.close()
 
 
 if __name__ == '__main__':

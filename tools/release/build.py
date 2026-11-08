@@ -200,6 +200,14 @@ def external_sources():
     return result
 
 
+# The signal owner's SCP program: restore-verified EDID/HPD ownership, the
+# request handler, the HDMI-spec HPD-only pulse, and the DDC-line watch armed at
+# owner ready (MIPS wrapper 0x06840094..97). Together they build MODULE_VERSION
+# "hpd-event-v1": h713-hdmi-readvertise.py pulses on a failed-EDID-read
+# signature (qualified 2026-11-07/08, local/recovery/2026-11-07-hpd-event).
+SIGNAL_SCP_FLAGS = ('--verify-restore', '--readvertise', '--hpd-pulse', '--scan-bytes')
+
+
 def modules(kernel, work, env):
     outputs = {}
     # These shared protocol headers are also used by the diagnostic source;
@@ -213,7 +221,7 @@ def modules(kernel, work, env):
         for p in module_sources(dirname):
             copy(p, dest/p.name)
         if kind == 'signal':
-            run(['python3', ROOT/'tools/hdmi/make-edid-trial-code.py', '--verify-restore', '--readvertise',
+            run(['python3', ROOT/'tools/hdmi/make-edid-trial-code.py', *SIGNAL_SCP_FLAGS,
                  '--edid', ROOT/'tools/hdmi/fixtures/hdmi-audio-edid.hex', dest/'edid-trial-code.h'], env)
         symbols = [] if kind in ('receiver', 'ddc', 'video') else [f'KBUILD_EXTRA_SYMBOLS={outputs["receiver"].parent}/Module.symvers']
         run(['make', '-C', kernel, f'M={dest}', 'ARCH=arm64', 'LLVM=1', 'W=1', *symbols, 'modules'], env)
