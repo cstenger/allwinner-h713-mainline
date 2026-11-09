@@ -44,8 +44,27 @@ Each step below was measured on the board and the source.
    * the MIPS firmware's log (`elog`, DRAM `0x4b270000`) is identical up to the
      advert in failing and passing boots (HDCP/DDC reset released at tick 12990
      in both), and the MIPS does nothing during the read or the pulse;
-   * pin mux (PL10–15 fn2) and the MIPS HDCP/DDC wrapper are unchanged.
-   The only variable is whether the source PC has just booted. No single
+   * pin mux (PL10–15 fn2) is unchanged;
+   * the whole MIPS HDCP/DDC wrapper `0x06840000–0x06840fff` (4096 bytes,
+     SCP byte reads, 2026-11-09) carries no NAK indicator. Failed vs recovered
+     differs in 64 bytes, nearly all the receiver's measurement of incoming 720p
+     video (e.g. `+0x28..0x3e` = 1280/1650/110/370/220/40, 720/750/5/30/20/5).
+     A control with the EDID answering (PC `i2cdump` returns the EDID) but the
+     PC's output disabled leaves only bytes that latch once video has run and
+     stay set after it stops (`+0x05/08/0e/0f/11/13/79/9b/1ad`); the failed
+     state is the only one in which video never ran, so they cannot separate
+     the NAK from "no video yet". The HDCP/DDC reset byte `+0x1b` (00), i2c
+     busy `+0x95` and DDC lines `+0x96` are identical in all three states.
+     The scans did not clear the NAK (`XX` afterwards). Evidence:
+     `local/recovery/2026-11-08-wrapper-scan/`.
+
+   The register-level investigation is **closed**: without probing the DDC
+   pins there is nothing left to read. The NAK is a known limit of this board;
+   the event-driven pulse below is the accepted fix.
+
+   The source does not need to be freshly booted: a board power-on after an
+   overnight off, with the PC left running, also hit the failed read (busy 36)
+   and was recovered by the event pulse. No single
    standard DDC transaction from the PC's userspace (0x50/0x37/0x3a/0x54/0x30,
    segment write) reproduces the stuck state.
 5. **Stock does the same.** The vendor SCP re-raises HPD on a timer
