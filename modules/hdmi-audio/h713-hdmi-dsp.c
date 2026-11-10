@@ -86,7 +86,16 @@ static int dsp_read(unsigned int device, u16 address, u32 *response)
 	return ret;
 }
 
-static int dsp_write(u16 address, u16 value)
+/*
+ * AudioTop bit 4 is the write handshake: the DSP clears it once it has taken
+ * the word. Back to back, it stays set ~19 us per patch pair (max 39 us over
+ * five boots, 2026-11-10), about one DSP read round trip, and the next write
+ * waits for it. Stock msp_download_sxl also sleeps 1 ms before every pair;
+ * the patch stream skips that margin (@settle false: 724 pairs in 15 ms
+ * instead of 824 ms, versions 1/1, graph and 32/44.1/48 kHz tone captures
+ * verified on four warm and one cold boot). Other writes keep it.
+ */
+static int dsp_post(u16 address, u16 value, bool settle)
 {
 	u32 status;
 	int ret;
@@ -95,7 +104,8 @@ static int dsp_write(u16 address, u16 value)
 	ret = readl_poll_timeout(port, status, !(status & BIT(4)), 10, 50000);
 	if (!ret) {
 		writel(((u32)address << 16) | value, port + 0xc);
-		usleep_range(1000, 1100);
+		if (settle)
+			usleep_range(1000, 1100);
 		ret = readl_poll_timeout(port, status, !(status & BIT(4)), 10,
 					 50000);
 	}
@@ -105,6 +115,11 @@ static int dsp_write(u16 address, u16 value)
 		       address);
 	}
 	return ret;
+}
+
+static int dsp_write(u16 address, u16 value)
+{
+	return dsp_post(address, value, true);
 }
 
 static int write_verified(u16 address, u16 value)
@@ -153,8 +168,8 @@ static int initialize_patch(const struct firmware *firmware)
 	if (!ret)
 		ret = dsp_write(0, 0);
 	for (i = 0; !ret && i < firmware->size; i += 4)
-		ret = dsp_write(get_unaligned_be16(firmware->data + i),
-				get_unaligned_be16(firmware->data + i + 2));
+		ret = dsp_post(get_unaligned_be16(firmware->data + i),
+			       get_unaligned_be16(firmware->data + i + 2), false);
 	if (ret)
 		return ret;
 	usleep_range(100000, 101000);

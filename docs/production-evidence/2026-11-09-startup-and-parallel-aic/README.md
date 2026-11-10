@@ -287,3 +287,36 @@ rebuilt on this host.
   kallsyms objects. No text symbol moves. The 5526 `.rodata` symbols after
   the blob move down 58 bytes, so the instructions that reference them
   change. Section sizes are unchanged.
+
+## DSP patch without the per-pair 1 ms settle
+
+HDMI prepare spent ~0.82 s streaming the 724-pair DSP patch, 1 ms per pair.
+That gap is the vendor's: re-running stock `msp_download_sxl` offline
+(with `awemu`'s built-in `usleep` stub renamed so the call is recorded; the
+default stub swallows it) shows 200 ms after `fff7=0`/`0000=0`, then 1 ms
+before every pair. The write routine itself only waits for AudioTop
+(`0x06144000`) bit 4.
+
+An instrumented build (`local/recovery/2026-11-10-dsp-gap`; unmodified
+sources rebuilt byte-for-byte to the installed modules first) timed bit 4
+after every patch write and a DSP read round trip:
+
+| | 1 ms gap (1 warm) | no gap (4 warm, 1 cold) |
+| --- | ---: | ---: |
+| Patch stream | 824 ms | 14.9-15.4 ms |
+| Bit 4 still set after the write | 229 of 724, <= 8.5 us | 693-724 of 724, mean ~19 us, max 39 us |
+| Read round trip | 19 us mean | 17-24 us mean, max 33 us |
+| Versions / graph / tone check | 1/1, 22 words, pass | same, every boot |
+
+Bit 4 is the write handshake: back to back, the DSP holds it for about one
+read round trip per word and the next write waits for it; after a 1 ms idle
+the DSP has already taken the word. The tone check
+(`tools/hdmi/run-pipewire-tone-check.py`: this PC plays 1 kHz/2 kHz over
+HDMI at 48/32/44.1 kHz, the board records its PipeWire HDMI source) rejects
+swapped channels and a 1 s dropout.
+
+`h713-hdmi-dsp.c` now posts the patch pairs without the settle (`dsp_post(...,
+false)`); the masked init, prefix and graph writes keep it, as does the
+100 ms wait before the version check. Installed module `45ba26fe`, warm boot
+`676a12bc`: versions to verified 122 ms (was 931 ms), tone check 3/3,
+prepare done 8.73 s (was 9.50 s), video 10.87 s (was 11.69 s).
