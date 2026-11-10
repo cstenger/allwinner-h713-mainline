@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Exercise actual service state machine with simulated IO, never hardware."""
+import fcntl
 import hashlib
 import importlib.util
 import json
 import struct
+import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,16 +41,27 @@ class FakeBoard:
         if p.endswith('/clock_count') and text.strip()=='4':self.files[m.BASE+m.OWNER+'/parameters/edid_ready']='Y'
     def state(self,value):self.files[m.STATE]=json.dumps(value)
     def param(self,module,name,value):self.files[m.BASE+module+'/parameters/'+name]=str(value)
+    # In-process MIPS helpers: logged as pseudo-commands so the tests that
+    # count hardware work still see every check.
+    def mips_alive(self,bundle):
+        self.events.append(('run',['mips','status']));self.commands.append(['mips','status'])
+        assert bundle=='/bundle'
+        return self.mips_live
+    def source_trace(self,bundle):
+        self.events.append(('run',['mips','trace']));self.commands.append(['mips','trace'])
+        return {'guards':'bad' if self.bad_trace else '43414e31/43414e31','source3_transition_complete':1,'source3_worker_new':'00000003'}
+    def mips_ipc(self,bundle):
+        self.events.append(('run',['mips','ipc']));self.commands.append(['mips','ipc'])
+        self.ipc_count+=1
+        if self.ipc_count==self.fail_ipc_at:raise RuntimeError('MIPS IPC deadline expired')
+        if self.ipc_result is not None:
+            try:return json.loads(self.ipc_result)
+            except ValueError:return self.ipc_result
+        return 'missing' if self.bad_ipc else {'schema':'h713-mips-ipc-v1','complete':True,'command':'help win'}
     def run(self,argv,check=True,timeout=15):
         self.events.append(('run',argv));self.commands.append(argv);out='';rc=0
         if argv[0]=='uname':out='6.18.38\n'
         elif argv[0]=='modinfo':out='6.18.38 SMP mod_unload aarch64\n'
-        elif '--status' in argv:out='MIPS core      ALIVE' if self.mips_live else 'MIPS core      parked'
-        elif '--source-only' in argv:out=json.dumps({'guards':'bad' if self.bad_trace else '43414e31/43414e31','source3_transition_complete':1,'source3_worker_new':'00000003'})
-        elif '--check-ipc' in argv:
-            self.ipc_count+=1
-            if self.ipc_count==self.fail_ipc_at:raise RuntimeError('MIPS IPC deadline expired')
-            out=self.ipc_result if self.ipc_result is not None else ('missing' if self.bad_ipc else json.dumps({'schema':'h713-mips-ipc-v1','complete':True,'command':'help win'}))
         elif argv[0]=='insmod':
             if argv[1].endswith('h713-hdmi-receiver.ko'):
                 self.modules.add(m.OWNER)
@@ -123,6 +137,18 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual(self.s.prior()['phase'],'parked')
         self.s.stop();self.assertEqual(self.s.prior()['phase'],'parked')
         with self.assertRaisesRegex(RuntimeError,'cold boot'):self.s.start()
+    def test_parking_requires_the_hardware_status_not_only_the_driver(self):
+        # The receiver reports parked, but the MIPS reset status still says alive.
+        self.s.start();self.s.stop();self.b.param(m.OWNER,'shutdown_ready','Y')
+        write=self.b.write
+        def write_but_core_stays_up(p,text):
+            write(p,text)
+            if p.endswith('/park_for_shutdown'):self.b.mips_live=True
+        self.b.write=write_but_core_stays_up
+        with self.assertRaisesRegex(RuntimeError,'hardware MIPS parked status missing'):self.s.park()
+        self.assertIn(m.OWNER,self.b.modules)
+        self.assertFalse(any(p.endswith('/release_when_parked') for p,_ in self.b.writes))
+        self.assertEqual(self.s.prior()['phase'],'parking_failed')
     def test_terminal_failure_latches_and_retains_receiver(self):
         for release_failure in (False,True):
             self.setUp();self.s.start();self.s.stop();self.b.param(m.OWNER,'shutdown_ready','Y')
@@ -246,6 +272,7 @@ class Lifecycle(unittest.TestCase):
 
     def test_completion_result_cannot_be_replaced_by_prompt_or_wrong_schema(self):
         for result in ('VS:/$', '[]', 'null', '{}',
+                       json.dumps({'schema':'h713-mips-ipc-v0','complete':True,'command':'help win'}),
                        json.dumps({'schema':'h713-mips-ipc-v1','complete':False,'command':'help win'}),
                        json.dumps({'schema':'h713-mips-ipc-v1','complete':True,'command':'other'})):
             board=FakeBoard();board.ipc_result=result;session=m.Session(board,'/bundle')
@@ -264,6 +291,88 @@ class Lifecycle(unittest.TestCase):
         self.assertTrue(capture.prior()['restore_verified'])
         self.assertTrue(self.b.wp)
 
+
+
+
+STUB_SHELL = """
+import sys
+LOADS = globals().setdefault('LOADS', [])
+LOADS.append(1)
+EXIT = None
+CALLS = []
+class Terminal:
+    def __init__(self):
+        if EXIT: sys.exit(EXIT)
+        self.mem = 'mem'
+def mips_alive(mem):
+    CALLS.append(('alive', mem)); return True
+def check_ipc(term, alive, timeout):
+    CALLS.append(('ipc', term.mem, alive, timeout))
+    return {'schema': 'h713-mips-ipc-v1', 'complete': True, 'command': 'help win'}
+"""
+STUB_TRACE = """
+def source_snapshot(shell):
+    shell.CALLS.append(('trace',))
+    return {'guards': '43414e31/43414e31'}
+"""
+
+
+class InProcessHelpers(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+        root=Path(self.tmp.name);(root/'mips-shell.py').write_text(STUB_SHELL);(root/'read-comm-trace.py').write_text(STUB_TRACE)
+        self.bundle=str(root);self.lock=root/'mips.lock'
+        patcher=mock.patch.object(m,'MIPS_LOCK',str(self.lock));patcher.start();self.addCleanup(patcher.stop)
+        self.board=m.Board()
+    def shell(self):return self.board.helper(self.bundle,'mips-shell.py')
+    def test_helpers_load_once_and_match_the_cli_calls(self):
+        self.assertIs(self.board.mips_alive(self.bundle),True)
+        result=self.board.mips_ipc(self.bundle)
+        self.assertEqual(result['command'],'help win')
+        self.assertEqual(self.board.source_trace(self.bundle),{'guards':'43414e31/43414e31'})
+        self.assertEqual(self.shell().CALLS,[('alive','mem'),('alive','mem'),('ipc','mem',True,1.5),('trace',)])
+        self.assertEqual(len(self.shell().LOADS),1)
+    def test_ipc_refuses_while_another_terminal_user_holds_the_lock(self):
+        with open(self.lock,'a') as other:
+            fcntl.flock(other,fcntl.LOCK_EX)
+            with self.assertRaisesRegex(RuntimeError,'busy'):self.board.mips_ipc(self.bundle)
+        self.assertEqual(self.shell().CALLS,[])
+        self.board.mips_ipc(self.bundle)
+    def test_helper_exit_becomes_an_error_the_session_can_latch(self):
+        self.shell().EXIT='device global is zero'
+        with self.assertRaisesRegex(RuntimeError,'device global is zero'):self.board.mips_alive(self.bundle)
+        with self.assertRaisesRegex(RuntimeError,'device global is zero'):self.board.mips_ipc(self.bundle)
+
+
+TRACE=importlib.util.spec_from_file_location('read_comm_trace',Path(__file__).resolve().parents[1]/'mips/read-comm-trace.py')
+
+
+class TraceReader(unittest.TestCase):
+    def setUp(self):
+        self.t=importlib.util.module_from_spec(TRACE);TRACE.loader.exec_module(self.t)
+        words={a:v for a,v in self.t.PATCHED_WORDS}
+        words.update({a:v for a,v in self.t.ADAPTER_PATCHED_WORDS})
+        words[0x4B1863A4]=0x8C470008
+        words[self.t.MAILBOX+4]=self.t.MAGIC
+        words[self.t.MAILBOX+0x80]=words[self.t.MAILBOX+0xffc]=self.t.CANARY
+        words[self.t.MAILBOX+0x78]=3;words[self.t.MAILBOX+0x7c]=1
+        self.words=words
+        test=self
+        class Mem:
+            def u32(self,a):return test.words.get(a,0)
+        self.shell=SimpleNamespace(Mem=Mem)
+    def test_snapshot_is_the_source_only_sample(self):
+        snap=self.t.source_snapshot(self.shell)
+        self.assertEqual(snap['guards'],'%08x/%08x'%(self.t.CANARY,self.t.CANARY))
+        self.assertEqual((snap['source3_transition_complete'],snap['source3_worker_new']),(1,'00000003'))
+        mem,a,c=self.t.open_trace(self.shell)
+        self.assertEqual(snap,self.t.sample(mem,a,c,source_only=True))
+        self.assertNotIn('comm',snap)
+    def test_bad_guard_or_patch_raises_instead_of_exiting(self):
+        self.words[self.t.MAILBOX+0xffc]=0
+        with self.assertRaisesRegex(RuntimeError,'page guard'):self.t.source_snapshot(self.shell)
+        self.words[self.t.MAILBOX+0xffc]=self.t.CANARY;self.words[self.t.PATCHED_WORDS[0][0]]=0
+        with self.assertRaisesRegex(RuntimeError,'patch mismatch'):self.t.source_snapshot(self.shell)
 
 
 if __name__=='__main__':unittest.main()

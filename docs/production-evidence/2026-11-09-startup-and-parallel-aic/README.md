@@ -84,3 +84,36 @@ condition and started video at 13.93 s. `systemd-growfs-root` no longer runs,
 root stays `rw,noatime` at 2.7 GB, no failed units. In these boots sysinit
 (~4.5 s) was gated by udev coldplug, so the typical saving is small; the
 change removes the 1.7 s outlier and the per-boot resize.
+
+## HDMI prepare: MIPS checks in-process (Fix A)
+
+A profile of `h713-hdmi-prepare` (7.10 s) found that each of the five receiver
+clock stages started a fresh Python interpreter for the MIPS `help win` IPC
+check, the alive check and the trace snapshot. The firmware reply itself is
+~0.44 s; the rest was interpreter start-up and module import. The session now
+loads `h713-mips-shell.py` and `read-comm-trace.py` once and calls the same
+functions in-process: the same `/run/lock/h713-mips-shell.lock` (refused,
+not waited on, when busy), the same reply schema/completion checks, and the
+same stop-on-failure. `read-comm-trace.py` was split into `open_trace`,
+`sample` and `source_snapshot`; its CLI output is unchanged. A read-only check
+on the live board gave the same trace snapshot through both paths.
+
+Installed with `tools/hdmi/install-inprocess-ipc.py` (guarded like the
+stage-1 installer; backup `inprocess-ipc-91c180e0...`). Warm reboot
+`1f07d80d`:
+
+| | Before | In-process |
+| --- | ---: | ---: |
+| HDMI prepare | 7.10 s | **5.03 s** (4.62-9.65 s) |
+| Each clock stage | 0.7-0.9 s | 0.45 s |
+| Video active | 13.9 s | 14.0 s |
+
+No failed units; HDMI locked. Video did not move because capture is also
+ordered `After=user@1000.service`, which became active at 11.49 s; inside it
+`systemd --user` logged nothing from 8.44 s to 11.34 s (its generators take
+~0.25 s). Prepare now finishes ~2 s before the user session, so the user
+session is the next item on the critical path.
+
+The historical installer tests now check frozen, content-addressed copies of
+the payloads they deployed (`tools/hdmi/test-payloads/`), so later edits to
+the live scripts no longer break them.

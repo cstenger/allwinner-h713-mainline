@@ -129,6 +129,110 @@ SOURCE_STAGES = {
 }
 
 
+def open_trace(shell):
+    """Verify the trampolines, magic and page guards; return what sample needs.
+
+    Raises RuntimeError rather than exiting so in-process callers (the HDMI
+    session) keep their own failure handling.
+    """
+    mem = shell.Mem()
+
+    for address, expected in PATCHED_WORDS:
+        actual = mem.u32(address)
+        if actual != expected:
+            raise RuntimeError(f"comm-trace patch mismatch at {address:#x}: "
+                             f"{actual:#010x} != {expected:#010x}")
+    adapter_site = mem.u32(0x4b10a228)
+    adapter_enabled = adapter_site == ADAPTER_PATCHED_WORDS[0][1]
+    if adapter_enabled:
+        for address, expected in ADAPTER_PATCHED_WORDS:
+            actual = mem.u32(address)
+            if actual != expected:
+                raise RuntimeError(f"adapter patch mismatch at {address:#x}: "
+                                 f"{actual:#010x} != {expected:#010x}")
+    elif adapter_site != 0x0ec52d12:
+        raise RuntimeError(f"unrecognized adapter call patch {adapter_site:#010x}")
+    capture_site = mem.u32(0x4B1863A4)
+    capture_enabled = capture_site == CAPTURE_PATCHED_WORDS[-1][1]
+    if capture_enabled:
+        for address, expected in CAPTURE_PATCHED_WORDS:
+            actual = mem.u32(address)
+            if actual != expected:
+                raise RuntimeError(f"capture patch mismatch at {address:#x}: "
+                                 f"{actual:#010x} != {expected:#010x}")
+    elif capture_site != 0x8C470008:
+        raise RuntimeError(f"unrecognized VIncap hook {capture_site:#010x}")
+    if mem.u32(MAILBOX + 4) != MAGIC:
+        raise RuntimeError("comm-trace magic absent; refusing to interpret mailbox")
+    if (mem.u32(MAILBOX + 0x80) != CANARY or
+            mem.u32(MAILBOX + 0xffc) != CANARY):
+        raise RuntimeError("comm-trace page guard absent; refusing to interpret mailbox")
+
+    return mem, adapter_enabled, capture_enabled
+
+
+def sample(mem, adapter_enabled, capture_enabled, source_only=False):
+    guards = (mem.u32(MAILBOX + 0x80), mem.u32(MAILBOX + 0xffc))
+    adapter = ({
+        "adapter": f"{mem.u32(MAILBOX + 0x58):04x}",
+        "requested": mem.u32(MAILBOX + 0x5c),
+        "callback_object": f"{mem.u32(MAILBOX + 0x60):08x}",
+        "dispatch_target": f"{mem.u32(MAILBOX + 0x64):08x}",
+        "dispatch_source": f"{mem.u32(MAILBOX + 0x68):08x}",
+        "source3_callback_event0": mem.u32(MAILBOX + 0x6c),
+        "source3_worker_event0": mem.u32(MAILBOX + 0x70),
+        "source3_worker_old": f"{mem.u32(MAILBOX + 0x74):08x}",
+        "source3_worker_new": f"{mem.u32(MAILBOX + 0x78):08x}",
+        "source3_transition_complete": mem.u32(MAILBOX + 0x7c),
+    } if adapter_enabled else {})
+    capture = ({
+        "cap_irq": mem.u32(MAILBOX + 0x84),
+        "cap_vde": mem.u32(MAILBOX + 0x88),
+        "cap_vs": mem.u32(MAILBOX + 0x8c),
+        "cap_mode_change": mem.u32(MAILBOX + 0x90),
+    } if capture_enabled else {})
+    if source_only:
+        callback, event, new, old, source_queue, worker, vp_init = (
+            mem.u32(MAILBOX + off) for off in
+            (0x20, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38))
+        return {
+            "guards": f"{guards[0]:08x}/{guards[1]:08x}",
+            **adapter, **capture,
+            "callback": f"{callback:04x}:{SOURCE_STAGES.get(callback, 'other')}",
+            "worker": f"{worker:04x}:{SOURCE_STAGES.get(worker, 'other')}",
+            "event": event, "new": new, "old": old,
+            "source_queue": f"{source_queue:08x}",
+            "vp_init": f"{vp_init:04x}",
+        }
+    values = [mem.u32(MAILBOX + off) for off in
+              (0x00, 0x08, 0x0c, 0x10, 0x20, 0x24, 0x28, 0x2c,
+               0x30, 0x34, 0x38, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54)]
+    (comm, queue, call, ack, callback, event, new, old, source_queue,
+     worker, vp_init, frame, dirty, mode, control, commit, dirty_latch) = values
+    return {
+        "guards": f"{guards[0]:08x}/{guards[1]:08x}",
+        **adapter, **capture,
+        "comm": f"{comm:04x}:{COMM_STAGES.get(comm, 'other')}",
+        "call": f"{call:04x}:{CALL_STAGES.get(call, 'other')}",
+        "ack": f"{ack:04x}:{ACK_STAGES.get(ack, 'other')}",
+        "queue": f"{queue:08x}",
+        "callback": f"{callback:04x}:{SOURCE_STAGES.get(callback, 'other')}",
+        "worker": f"{worker:04x}:{SOURCE_STAGES.get(worker, 'other')}",
+        "event": event, "new": new, "old": old,
+        "source_queue": f"{source_queue:08x}",
+        "vp_init": f"{vp_init:04x}", "frame": f"{frame:04x}",
+        "dirty": f"{dirty:08x}", "mode": f"{mode:08x}",
+        "control": f"{control:08x}", "commit": f"{commit:08x}",
+        "dirty_latch": f"{dirty_latch:08x}",
+    }
+
+
+def source_snapshot(shell):
+    """One --source-only sample, without starting another interpreter."""
+    mem, adapter_enabled, capture_enabled = open_trace(shell)
+    return sample(mem, adapter_enabled, capture_enabled, source_only=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--watch", type=float, default=0,
@@ -149,101 +253,18 @@ def main():
         "mips_shell", Path(__file__).with_name("mips-shell.py"))
     shell = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(shell)
-    mem = shell.Mem()
-
-    for address, expected in PATCHED_WORDS:
-        actual = mem.u32(address)
-        if actual != expected:
-            raise SystemExit(f"comm-trace patch mismatch at {address:#x}: "
-                             f"{actual:#010x} != {expected:#010x}")
-    adapter_site = mem.u32(0x4b10a228)
-    adapter_enabled = adapter_site == ADAPTER_PATCHED_WORDS[0][1]
-    if adapter_enabled:
-        for address, expected in ADAPTER_PATCHED_WORDS:
-            actual = mem.u32(address)
-            if actual != expected:
-                raise SystemExit(f"adapter patch mismatch at {address:#x}: "
-                                 f"{actual:#010x} != {expected:#010x}")
-    elif adapter_site != 0x0ec52d12:
-        raise SystemExit(f"unrecognized adapter call patch {adapter_site:#010x}")
-    capture_site = mem.u32(0x4B1863A4)
-    capture_enabled = capture_site == CAPTURE_PATCHED_WORDS[-1][1]
-    if capture_enabled:
-        for address, expected in CAPTURE_PATCHED_WORDS:
-            actual = mem.u32(address)
-            if actual != expected:
-                raise SystemExit(f"capture patch mismatch at {address:#x}: "
-                                 f"{actual:#010x} != {expected:#010x}")
-    elif capture_site != 0x8C470008:
-        raise SystemExit(f"unrecognized VIncap hook {capture_site:#010x}")
-    if mem.u32(MAILBOX + 4) != MAGIC:
-        raise SystemExit("comm-trace magic absent; refusing to interpret mailbox")
-    if (mem.u32(MAILBOX + 0x80) != CANARY or
-            mem.u32(MAILBOX + 0xffc) != CANARY):
-        raise SystemExit("comm-trace page guard absent; refusing to interpret mailbox")
+    try:
+        mem, adapter_enabled, capture_enabled = open_trace(shell)
+    except RuntimeError as error:
+        raise SystemExit(str(error))
 
     kmsg = open("/dev/kmsg", "w", buffering=1) if args.kmsg else None
-
-    def sample():
-        guards = (mem.u32(MAILBOX + 0x80), mem.u32(MAILBOX + 0xffc))
-        adapter = ({
-            "adapter": f"{mem.u32(MAILBOX + 0x58):04x}",
-            "requested": mem.u32(MAILBOX + 0x5c),
-            "callback_object": f"{mem.u32(MAILBOX + 0x60):08x}",
-            "dispatch_target": f"{mem.u32(MAILBOX + 0x64):08x}",
-            "dispatch_source": f"{mem.u32(MAILBOX + 0x68):08x}",
-            "source3_callback_event0": mem.u32(MAILBOX + 0x6c),
-            "source3_worker_event0": mem.u32(MAILBOX + 0x70),
-            "source3_worker_old": f"{mem.u32(MAILBOX + 0x74):08x}",
-            "source3_worker_new": f"{mem.u32(MAILBOX + 0x78):08x}",
-            "source3_transition_complete": mem.u32(MAILBOX + 0x7c),
-        } if adapter_enabled else {})
-        capture = ({
-            "cap_irq": mem.u32(MAILBOX + 0x84),
-            "cap_vde": mem.u32(MAILBOX + 0x88),
-            "cap_vs": mem.u32(MAILBOX + 0x8c),
-            "cap_mode_change": mem.u32(MAILBOX + 0x90),
-        } if capture_enabled else {})
-        if args.source_only:
-            callback, event, new, old, source_queue, worker, vp_init = (
-                mem.u32(MAILBOX + off) for off in
-                (0x20, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38))
-            return {
-                "guards": f"{guards[0]:08x}/{guards[1]:08x}",
-                **adapter, **capture,
-                "callback": f"{callback:04x}:{SOURCE_STAGES.get(callback, 'other')}",
-                "worker": f"{worker:04x}:{SOURCE_STAGES.get(worker, 'other')}",
-                "event": event, "new": new, "old": old,
-                "source_queue": f"{source_queue:08x}",
-                "vp_init": f"{vp_init:04x}",
-            }
-        values = [mem.u32(MAILBOX + off) for off in
-                  (0x00, 0x08, 0x0c, 0x10, 0x20, 0x24, 0x28, 0x2c,
-                   0x30, 0x34, 0x38, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54)]
-        (comm, queue, call, ack, callback, event, new, old, source_queue,
-         worker, vp_init, frame, dirty, mode, control, commit, dirty_latch) = values
-        return {
-            "guards": f"{guards[0]:08x}/{guards[1]:08x}",
-            **adapter, **capture,
-            "comm": f"{comm:04x}:{COMM_STAGES.get(comm, 'other')}",
-            "call": f"{call:04x}:{CALL_STAGES.get(call, 'other')}",
-            "ack": f"{ack:04x}:{ACK_STAGES.get(ack, 'other')}",
-            "queue": f"{queue:08x}",
-            "callback": f"{callback:04x}:{SOURCE_STAGES.get(callback, 'other')}",
-            "worker": f"{worker:04x}:{SOURCE_STAGES.get(worker, 'other')}",
-            "event": event, "new": new, "old": old,
-            "source_queue": f"{source_queue:08x}",
-            "vp_init": f"{vp_init:04x}", "frame": f"{frame:04x}",
-            "dirty": f"{dirty:08x}", "mode": f"{mode:08x}",
-            "control": f"{control:08x}", "commit": f"{commit:08x}",
-            "dirty_latch": f"{dirty_latch:08x}",
-        }
 
     started = time.monotonic()
     previous = None
     while True:
         now = time.monotonic()
-        state = sample()
+        state = sample(mem, adapter_enabled, capture_enabled, args.source_only)
         state["seconds"] = round(now - started, 3)
         comparable = tuple((key, value) for key, value in state.items()
                            if key != "seconds")

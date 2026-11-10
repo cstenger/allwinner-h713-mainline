@@ -12,6 +12,12 @@ spec=importlib.util.spec_from_file_location('installer',HERE/'install-ipc-comple
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 
+def payload(digest):
+    """The frozen copy of a pinned installer payload (test-payloads/<sha256>)."""
+    data=(HERE/'test-payloads'/digest).read_bytes()
+    assert hashlib.sha256(data).hexdigest()==digest,digest
+    return data
+
 class Install(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
@@ -39,8 +45,8 @@ class Install(unittest.TestCase):
         m.target(self.root,'SHA256SUMS').write_text(''.join(lines));m.target(self.root,'SHA256SUMS').chmod(0o644)
         self.before=[m.target(self.root,name).read_bytes() for name in m.NAMES]
         self.manifest=m.sha(self.before[2])
-        for name,source in zip(m.NAMES[:2],(HERE.parent/'mips/mips-shell.py',HERE/'h713-hdmi-session.py')):
-            path=self.bundle/m.io.BACKEND/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(source.read_bytes())
+        for name,digest in zip(m.NAMES[:2],m.NEW):
+            path=self.bundle/m.io.BACKEND/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(payload(digest))
     def run_install(self,apply=False):return m.install(self.root,self.bundle,'B1',self.manifest,apply)
     def files(self):return {str(p.relative_to(self.root)):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
     def test_preview_then_install_and_exact_rollback(self):

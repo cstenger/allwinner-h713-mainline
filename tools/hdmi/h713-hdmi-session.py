@@ -7,6 +7,7 @@ of this service. A boot-ID latch forbids retry after stop or failed setup.
 import argparse
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -24,6 +25,7 @@ BOOT_ID='/proc/sys/kernel/random/boot_id'
 STATE='/run/h713-hdmi-session/state.json'
 HANDOFF='/proc/device-tree/chosen/h713,hdmi-boot-v1'
 PATCH_SHA='8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5'
+MIPS_LOCK='/run/lock/h713-mips-shell.lock'
 
 
 class Board:
@@ -38,6 +40,40 @@ class Board:
         p=subprocess.run(argv,text=True,capture_output=True,timeout=timeout)
         if check and p.returncode:raise RuntimeError(f'{argv[0]} failed: {p.stderr or p.stdout}')
         return p
+    # The bundle's MIPS helpers, loaded once and called in this process: a
+    # separate interpreter per check cost ~0.3 s each (7 per start) at boot.
+    # Their own checks and the CLI's shared lock are unchanged; their exits
+    # become errors so the session's failure latch still records them.
+    def helper(self,bundle,name):
+        cache=self.__dict__.setdefault('_helpers',{})
+        path=str(Path(bundle)/name)
+        if path not in cache:
+            spec=importlib.util.spec_from_file_location(name.replace('-','_').removesuffix('.py'),path)
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+            cache[path]=module
+        return cache[path]
+    def call(self,what,function,*args):
+        try:return function(*args)
+        except SystemExit as error:raise RuntimeError(what+': '+str(error.code)) from None
+    def mips_alive(self,bundle):
+        # As `mips-shell.py --status`: the published debug terminal must
+        # exist, then the core's reset status says alive or parked.
+        shell=self.helper(bundle,'mips-shell.py')
+        term=self.call('MIPS terminal',shell.Terminal)
+        return shell.mips_alive(term.mem)
+    def mips_ipc(self,bundle):
+        # As `mips-shell.py --check-ipc`: exclusive CLI lock for the whole
+        # transaction, one bounded request, no retry.
+        shell=self.helper(bundle,'mips-shell.py')
+        with open(MIPS_LOCK,'a') as lock:
+            try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:raise RuntimeError('MIPS shell is busy; refusing concurrent terminal access') from None
+            term=self.call('MIPS terminal',shell.Terminal)
+            return shell.check_ipc(term,shell.mips_alive(term.mem),1.5)
+    def source_trace(self,bundle):
+        # As `read-comm-trace.py --source-only`, one sample.
+        trace=self.helper(bundle,'read-comm-trace.py')
+        return self.call('comm trace',trace.source_snapshot,self.helper(bundle,'mips-shell.py'))
 
 
 class Session:
@@ -51,17 +87,16 @@ class Session:
         state=json.loads(self.b.read(STATE))
         return state if state.get('boot_id')==self.boot else None
     def ipc(self):
-        p=self.b.run(['python3',self.bundle+'/mips-shell.py','--check-ipc'],timeout=6)
         try:
-            result=json.loads(p.stdout)
-        except ValueError as error:
-            raise RuntimeError('MIPS IPC completion result missing') from error
+            result=self.b.mips_ipc(self.bundle)
+        except (RuntimeError,ValueError) as error:
+            raise RuntimeError('MIPS IPC check failed: '+str(error)) from None
         if (not isinstance(result,dict) or result.get('schema')!='h713-mips-ipc-v1' or
                 result.get('complete') is not True or result.get('command')!='help win'):
             raise RuntimeError('MIPS IPC completion not verified')
         # Preserve per-check latency in the service journal without changing
         # the session CLI's machine-readable stdout result.
-        print('MIPS IPC completion '+p.stdout.strip(),file=sys.stderr,flush=True)
+        print('MIPS IPC completion '+json.dumps(result),file=sys.stderr,flush=True)
     def owner_ready(self,clients=None):
         for key,value in [('clock_count','4'),('init_error','0'),('firmware_pin','Y'),('edid_ready','Y')]:
             if self.param(OWNER,key)!=value:raise RuntimeError('receiver readiness failed: '+key)
@@ -99,9 +134,8 @@ class Session:
         if release!='6.18.38':raise RuntimeError('unexpected kernel release')
         for module in ('h713-hdmi-receiver.ko','h713-hdmi-audio.ko'):
             if self.b.run(['modinfo','-F','vermagic',self.bundle+'/'+module]).stdout.split()[0]!=release:raise RuntimeError('module ABI mismatch')
-        status=self.b.run(['python3',self.bundle+'/mips-shell.py','--status']).stdout
-        if 'MIPS core      ALIVE' not in status:raise RuntimeError('MIPS is not proven live; guarded cold U-Boot launch required')
-        trace=json.loads(self.b.run(['python3',self.bundle+'/read-comm-trace.py','--source-only']).stdout)
+        if self.b.mips_alive(self.bundle) is not True:raise RuntimeError('MIPS is not proven live; guarded cold U-Boot launch required')
+        trace=self.b.source_trace(self.bundle)
         if trace.get('guards')!='43414e31/43414e31' or trace.get('source3_transition_complete')!=1 or trace.get('source3_worker_new')!='00000003':raise RuntimeError('source3 trace guard failed')
         self.save('attempted')
         try:
@@ -170,8 +204,7 @@ class Session:
             self.b.write(BASE+OWNER+'/parameters/park_for_shutdown','1\n')
             if self.param(OWNER,'parked')!='Y' or self.param(OWNER,'park_failed')!='N':
                 raise RuntimeError('terminal parking not verified; receiver holds retained')
-            status=self.b.run(['python3',self.bundle+'/mips-shell.py','--status']).stdout
-            if 'MIPS core      parked' not in status:
+            if self.b.mips_alive(self.bundle) is not False:
                 raise RuntimeError('hardware MIPS parked status missing; receiver holds retained')
             self.b.write(BASE+OWNER+'/parameters/release_when_parked','1\n')
             if self.param(OWNER,'firmware_pin')!='N' or self.param(OWNER,'clients')!='0' or self.param(OWNER,'edid_ready')!='N':

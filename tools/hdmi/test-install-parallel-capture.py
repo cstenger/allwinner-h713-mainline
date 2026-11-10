@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise exact unit update/rollback and partial installation; no services."""
+import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -10,6 +11,12 @@ HERE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('installer',HERE/'install-parallel-capture.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
+
+def payload(digest):
+    """The frozen copy of a pinned installer payload (test-payloads/<sha256>)."""
+    data=(HERE/'test-payloads'/digest).read_bytes()
+    assert hashlib.sha256(data).hexdigest()==digest,digest
+    return data
 
 class Install(unittest.TestCase):
     def setUp(self):
@@ -24,13 +31,13 @@ class Install(unittest.TestCase):
         def attrs(path):
             result=metadata(path);result.update(uid=0,gid=0);return result
         self.patch=patch.object(m.io,'metadata',attrs);self.patch.start();self.addCleanup(self.patch.stop)
-        capture=(HERE/'h713-hdmi-capture-startup.service').read_bytes()
+        capture=payload(m.CAPTURE_NEW)
         old=capture.replace(b'Requires=h713-hdmi-prepare.service\n',b'').replace(b' user@1000.service h713-hdmi-prepare.service',b' user@1000.service')
         self.assertEqual(m.sha(old),m.CAPTURE_OLD)
         for name in m.TARGETS[2:4]:
             (self.root/name).write_bytes(old);(self.root/name).chmod(0o644)
-        for name,source in (('mips-shell.py',HERE.parent/'mips/mips-shell.py'),('h713-hdmi-session.py',HERE/'h713-hdmi-session.py')):
-            path=self.root/m.BACKEND/name;path.write_bytes(source.read_bytes());path.chmod(0o644)
+        for name in ('mips-shell.py','h713-hdmi-session.py'):
+            path=self.root/m.BACKEND/name;path.write_bytes(payload(m.SCRIPTS[name]));path.chmod(0o644)
             self.assertEqual(m.sha(path.read_bytes()),m.SCRIPTS[name])
         (self.root/m.BACKEND/'unchanged.ko').write_bytes(b'unchanged')
         lines=[]
@@ -40,7 +47,7 @@ class Install(unittest.TestCase):
         self.manifest=m.sha((self.root/m.TARGETS[4]).read_bytes())
         for name in m.TARGETS[:4]:
             path=self.bundle/name;path.parent.mkdir(parents=True,exist_ok=True)
-            path.write_bytes((HERE/('h713-hdmi-prepare.service' if 'prepare' in name else 'h713-hdmi-capture-startup.service')).read_bytes())
+            path.write_bytes(payload(m.PREPARE_NEW if 'prepare' in name else m.CAPTURE_NEW))
         self.before=m.current(self.root)
     def install(self,apply=False):return m.install(self.root,self.bundle,'B1',self.manifest,apply)
     def files(self):return {str(p.relative_to(self.root)):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
