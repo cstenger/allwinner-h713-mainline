@@ -3,22 +3,27 @@
 #
 #   TF-A BL31  ->  U-Boot (SPL + BL31 + proper)  ->  Linux kernel  ->  images
 #
-# Sources are the git submodules under external/ and two curated patch series on
-# pinned upstream tarballs — patches/kernel/ and patches/aic8800/ (see
+# Sources are git submodules under external/ and curated patch series;
+# U-Boot exports its validated commit and applies patches/u-boot/, while
+# Linux and AIC8800 use pinned upstream tarballs (see
 # patches/README.md); versions are pinned in config/versions.env. LLVM-only
 # (clang / ld.lld) — see config/toolchain.md.
 #
 # Usage:
-#   build/build.sh [all|bl31|uboot|kernel|aic8800|images]   # default: all
+#   tools/build/build.sh [all|bl31|uboot|kernel|aic8800|images]   # default: all
 #
 # Env:
 #   BOARD=ddr3|lpddr3   board profile (default ddr3): ddr3=HY200 QZ713DF_A1 bench, lpddr3=HY200 QZ713_V2 projector
 #   JOBS=N              parallelism (default: nproc)
+#   H713_BUILD_DIR=DIR  where artifacts go (default: build/; see config/paths.sh)
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-# shellcheck source=../config/versions.env
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=../../config/versions.env
 source "$ROOT/config/versions.env"
+# shellcheck source=../../config/paths.sh
+source "$ROOT/config/paths.sh"
+BUILD=$H713_BUILD_DIR
 
 BOARD=${BOARD:-ddr3}
 JOBS=${JOBS:-$(nproc)}
@@ -28,8 +33,8 @@ JOBS=${JOBS:-$(nproc)}
 # source tree instead of quietly reusing the production one's objects, and its
 # outputs are suffixed so it cannot overwrite the FIT the board boots from.
 KERNEL_CONFIG=${KERNEL_CONFIG:-}
-OUT="$ROOT/build/out"
-CACHE="$ROOT/build/cache"
+OUT="$BUILD/out"
+CACHE="$BUILD/cache"
 UBOOT="$ROOT/external/u-boot"
 ATF="$ROOT/external/arm-trusted-firmware"
 mkdir -p "$OUT" "$CACHE"
@@ -81,15 +86,23 @@ build_bl31() {
   have
   log "TF-A BL31  (PLAT=$ATF_PLAT, BL31_IN_DRAM=1)"
   make -C "$ATF" -j"$JOBS" \
+    BUILD_BASE="$BUILD/arm-trusted-firmware" \
     PLAT="$ATF_PLAT" DEBUG=0 BL31_IN_DRAM=1 \
     CC=clang LD=ld.lld AR=llvm-ar OC=llvm-objcopy OD=llvm-objdump \
     NM=llvm-nm READELF=llvm-readelf \
-    CFLAGS='-Wno-error=deprecated-non-prototype -fno-stack-protector' bl31
-  install -m 0644 "$ATF/build/$ATF_PLAT/release/bl31.bin" "$OUT/bl31.bin"
+    CFLAGS='-Wno-error=deprecated-non-prototype -Wno-error=unused-but-set-global -fno-stack-protector' bl31
+  install -m 0644 "$BUILD/arm-trusted-firmware/$ATF_PLAT/release/bl31.bin" "$OUT/bl31.bin"
   log "bl31.bin -> $OUT/bl31.bin ($(stat -c%s "$OUT/bl31.bin") bytes)"
 }
 
 # --- U-Boot (embeds BL31) ---------------------------------------------------
+prepare_uboot() {
+  local kernel
+  have
+  kernel=$(prepare_kernel)
+  "$ROOT/tools/build/prepare-uboot.sh" "$kernel"
+}
+
 uboot_make() {
   local O="$1"; shift
   make -C "$UBOOT" O="$O" \
@@ -103,11 +116,18 @@ uboot_make() {
 build_uboot() {
   have
   [ -f "$OUT/bl31.bin" ] || build_bl31
-  local O="$ROOT/build/uboot-$BOARD"
+  UBOOT=$(prepare_uboot)
+  local O="$BUILD/uboot-$BOARD"
   log "U-Boot  ($UBOOT_DEFCONFIG, board=$BOARD)"
   uboot_make "$O" "$UBOOT_DEFCONFIG"
   uboot_make "$O" -j"$JOBS"
   install -m 0644 "$O/u-boot-sunxi-with-spl.bin" "$OUT/u-boot-sunxi-with-spl-$BOARD.bin"
+  {
+    cat "$UBOOT/.h713-build-inputs"
+    printf 'board %s\nconfig %s\nbl31 %s\nimage %s\n' "$BOARD" \
+      "$(hash_file "$O/.config")" "$(hash_file "$OUT/bl31.bin")" \
+      "$(hash_file "$OUT/u-boot-sunxi-with-spl-$BOARD.bin")"
+  } > "$OUT/u-boot-$BOARD.inputs"
   log "image -> $OUT/u-boot-sunxi-with-spl-$BOARD.bin ($(stat -c%s "$OUT/u-boot-sunxi-with-spl-$BOARD.bin") bytes)"
 }
 
@@ -115,7 +135,7 @@ build_uboot() {
 prepare_kernel() {
   local digest tree
   digest=$(kernel_inputs_digest)
-  tree="$ROOT/build/linux-$KERNEL_VERSION-$digest"
+  tree="$BUILD/linux-$KERNEL_VERSION-$digest"
   local tarball="$CACHE/linux-$KERNEL_VERSION.tar.xz"
   if [ -f "$tree/.h713-inputs-$digest" ]; then echo "$tree"; return; fi
   if [ -e "$tree" ]; then
@@ -141,7 +161,7 @@ prepare_kernel() {
   fi
 
   local tmp
-  tmp=$(mktemp -d "$ROOT/build/.linux-$KERNEL_VERSION.XXXXXX")
+  tmp=$(mktemp -d "$BUILD/.linux-$KERNEL_VERSION.XXXXXX")
   log "extract + patch linux-$KERNEL_VERSION" >&2
   tar -C "$tmp" --strip-components=1 -xf "$tarball"
   local n=0 p
@@ -163,12 +183,12 @@ prepare_kernel() {
 # locate a mkimage: prefer one the U-Boot stage already built, else build tools-only
 find_mkimage() {
   local m
-  for m in "$ROOT"/build/uboot-*/tools/mkimage; do [ -x "$m" ] && { echo "$m"; return; }; done
-  m="$ROOT/build/uboot-tools/tools/mkimage"
+  for m in "$BUILD"/uboot-*/tools/mkimage; do [ -x "$m" ] && { echo "$m"; return; }; done
+  m="$BUILD/uboot-tools/tools/mkimage"
   if [ ! -x "$m" ]; then
     log "building mkimage (u-boot tools-only)" >&2
-    make -C "$UBOOT" O="$ROOT/build/uboot-tools" HOSTCC=clang tools-only_defconfig >/dev/null 2>&1
-    make -C "$UBOOT" O="$ROOT/build/uboot-tools" HOSTCC=clang -j"$JOBS" tools-only >/dev/null 2>&1
+    make -C "$UBOOT" O="$BUILD/uboot-tools" HOSTCC=clang tools-only_defconfig >/dev/null 2>&1
+    make -C "$UBOOT" O="$BUILD/uboot-tools" HOSTCC=clang -j"$JOBS" tools-only >/dev/null 2>&1
   fi
   [ -x "$m" ] && echo "$m"
 }
@@ -208,7 +228,7 @@ build_kernel() {
     }
   fi
   make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 -j"$JOBS" Image dtbs modules
-  gzip -9 -kf "$tree/arch/arm64/boot/Image"
+  gzip -n -9 -kf "$tree/arch/arm64/boot/Image"
   install -m 0644 "$tree/arch/arm64/boot/Image.gz" "$OUT/Image$suffix.gz"
   install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB.dtb" "$OUT/$KERNEL_DTB.dtb"
   install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB_PROJECTOR.dtb" \
@@ -234,42 +254,51 @@ aic8800_inputs_digest() {
   } | sha256sum | awk '{print $1}'
 }
 
-verify_aic8800_tarball() {
-  printf '%s  %s\n' "$AIC8800_TARBALL_SHA256" "$1" | sha256sum --check --status
+# The submodule replaces a pinned tarball + SHA-256 (removed 2026-08-24). The
+# tarball URL was codeload's tar.gz for this same repo at this same commit, so
+# nothing about the source changed -- `diff -rq` over src/ and debian/ between a
+# checkout and the old tarball is empty. What changed is that the source is now
+# readable at a stable path instead of being a build artifact, which is why the
+# superseded copy under modules/aic8800/ could go.
+#
+# The SHA-256 was the pin, so something has to replace it: the submodule's
+# checked-out commit is asserted against AIC8800_COMMIT here. A submodule left
+# on some other commit -- easy to do by hand, and silent -- would otherwise
+# build a driver that no pin describes.
+verify_aic8800_checkout() {
+  local head
+  [ -d "$1/.git" ] || [ -f "$1/.git" ] || {
+    echo "error: external/aic8800 is not checked out." >&2
+    echo "       run: git submodule update --init external/aic8800" >&2
+    return 1
+  }
+  head=$(git -C "$1" rev-parse HEAD 2>/dev/null) || {
+    echo "error: cannot read HEAD in $1" >&2; return 1; }
+  [ "$head" = "$AIC8800_COMMIT" ] || {
+    echo "error: external/aic8800 is at $head" >&2
+    echo "       versions.env pins  $AIC8800_COMMIT" >&2
+    echo "       run: git submodule update --checkout external/aic8800" >&2
+    return 1
+  }
 }
 
 prepare_aic8800() {
-  local digest tree tarball
+  local digest tree src
   digest=$(aic8800_inputs_digest)
-  tree="$ROOT/build/aic8800-${AIC8800_COMMIT:0:12}-$digest"
-  tarball="$CACHE/aic8800-${AIC8800_COMMIT:0:12}.tar.gz"
+  tree="$BUILD/aic8800-${AIC8800_COMMIT:0:12}-$digest"
+  src="$ROOT/external/aic8800"
   if [ -f "$tree/.h713-inputs-$digest" ]; then echo "$tree"; return; fi
   if [ -e "$tree" ]; then
     echo "error: incomplete aic8800 tree exists at $tree; remove it and retry" >&2
     return 1
   fi
 
-  if [ -f "$tarball" ]; then
-    verify_aic8800_tarball "$tarball" || {
-      echo "error: checksum mismatch for $tarball; remove it and retry" >&2
-      return 1
-    }
-  else
-    local partial="$tarball.part"
-    log "fetch aic8800 ${AIC8800_COMMIT:0:12}" >&2
-    curl --fail --location --retry 3 --output "$partial" "$AIC8800_TARBALL_URL"
-    verify_aic8800_tarball "$partial" || {
-      rm -f "$partial"
-      echo "error: downloaded aic8800 tarball failed SHA-256 verification" >&2
-      return 1
-    }
-    mv "$partial" "$tarball"
-  fi
+  verify_aic8800_checkout "$src" || return 1
 
-  local tmp; tmp=$(mktemp -d "$ROOT/build/.aic8800.XXXXXX")
-  log "extract + patch aic8800 (vendor series, then ours)" >&2
-  tar -C "$tmp" --strip-components=1 -xf "$tarball" \
-    "aic8800-$AIC8800_COMMIT/src" "aic8800-$AIC8800_COMMIT/debian"
+  local tmp; tmp=$(mktemp -d "$BUILD/.aic8800.XXXXXX")
+  log "copy + patch aic8800 (vendor series, then ours)" >&2
+  # Only src/ and debian/ are used, matching what the tarball extraction took.
+  cp -a "$src/src" "$src/debian" "$tmp/"
 
   # Vendor's own kernel-compat series. Failures are only tolerated for the
   # names pinned in AIC8800_VENDOR_PATCH_SKIP; anything else stops the build.
@@ -294,7 +323,7 @@ prepare_aic8800() {
   # context matching -- which is what makes the next upstream bump survivable.
   local sub="$tmp/$AIC8800_SUBTREE"
   [ -d "$sub" ] || { rm -rf "$tmp"; echo "error: subtree missing: $AIC8800_SUBTREE" >&2; return 1; }
-  local stage; stage=$(mktemp -d "$ROOT/build/.aic8800-sdio.XXXXXX")
+  local stage; stage=$(mktemp -d "$BUILD/.aic8800-sdio.XXXXXX")
   cp -a "$sub/." "$stage/"
   rm -rf "$tmp"
   git -C "$stage" init -q
@@ -326,7 +355,7 @@ prepare_aic8800() {
 build_aic8800() {
   local tree; tree=$(prepare_kernel)
   [ -f "$tree/Module.symvers" ] || {
-    echo "error: kernel not built (no Module.symvers in $tree) — run build/build.sh kernel first" >&2
+    echo "error: kernel not built (no Module.symvers in $tree) — run tools/build/build.sh kernel first" >&2
     return 1
   }
   local moddir; moddir=$(prepare_aic8800)
@@ -405,7 +434,7 @@ build_images() {
   done
   for image in "${files[@]}"; do
     [ -f "$OUT/$image" ] || {
-      echo "error: missing $OUT/$image; run build/build.sh all first" >&2
+      echo "error: missing $OUT/$image; run tools/build/build.sh all first" >&2
       return 1
     }
   done
@@ -416,15 +445,22 @@ build_images() {
     sha256sum "${files[@]}" > SHA256SUMS
   )
   note "SHA-256 manifest -> $OUT/SHA256SUMS"
-  note "Flash U-Boot to eMMC sector 16 using a verified raw write — see docs/flash.md."
+  note "Build only; existing split-layout boards update proper separately — see docs/uboot-panel-initial-state.md."
 }
 
 case "${1:-all}" in
   bl31)    build_bl31 ;;
   uboot)   build_uboot ;;
+  uboot-tree) prepare_uboot ;;
   kernel)  build_kernel ;;
   aic8800) build_aic8800 ;;
   images)  build_images ;;
   all)     build_bl31; build_uboot; build_kernel; build_aic8800; build_images ;;
-  *) echo "usage: $0 [all|bl31|uboot|kernel|aic8800|images]" >&2; exit 2 ;;
+  # Print where THIS configuration's kernel tree lives, without building
+  # anything. Tools that need to answer "is the board running what the tree
+  # says?" must identify the tree the same way the build does, and the only
+  # way to guarantee that is to ask the build. Honours KERNEL_CONFIG.
+  kernel-tree)
+    printf '%s/linux-%s-%s\n' "$BUILD" "$KERNEL_VERSION" "$(kernel_inputs_digest)" ;;
+  *) echo "usage: $0 [all|bl31|uboot|uboot-tree|kernel|aic8800|images|kernel-tree]" >&2; exit 2 ;;
 esac

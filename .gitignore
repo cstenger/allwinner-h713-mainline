@@ -1,8 +1,9 @@
-# Build artifacts and large binaries — never committed
-build/out/
-build/cache/
-build/uboot-*/
-build/aic8800-*/
+# Build artifacts and large binaries — never committed.
+#
+# build/ is generated output only; the scripts that produce it live in
+# tools/build/, so the whole directory is ignored rather than enumerated
+# subdirectory by subdirectory. Keep it pruned — see config/paths.sh.
+/build/
 *.bin
 *.fit
 *.img
@@ -24,3 +25,24 @@ local/
 .DS_Store
 __pycache__/
 *.pyc
+
+# User-owned Magisk boot-image backup metadata, dropped here by an Android
+# extraction. Not ours to track or remove -- see docs/handoff-wifi-sdio-2026-08-17.md.
+.backup/
+# generated test cards -- regenerate with tools/display/make-scaler-testcard.py
+local/testcards/
+
+# Out-of-tree kernel module build products. Keep bench sources and Makefiles.
+/modules/**/*.o
+/modules/**/*.ko
+/modules/**/.*.cmd
+/modules/**/*.mod
+/modules/**/*.mod.c
+/modules/**/Module.symvers
+/modules/**/modules.order
+/modules/**/.tmp_versions/
+
+# Raw bench media stays local; retain summaries, hashes, scripts and figures.
+/docs/hdmi-evidence/**/*.wav
+/docs/hdmi-evidence/**/*.nv16
+/docs/hdmi-evidence/**/*.mkv

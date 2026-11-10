@@ -1,5 +1,31 @@
 # Hardware tools
 
+`check-repo.sh` — **host-side consistency gate, no board required.** Verifies
+that `docs/register-index.md` still matches its source
+(`docs/re/registers.yaml`, which it also validates) and that every relative link
+under `docs/` resolves. Exit 0 only when both pass, so it can gate a commit:
+
+    ln -s ../../tools/check-repo.sh .git/hooks/pre-commit
+
+Not installed automatically — hooks are local state. Its board-side counterpart
+is `video/check-video-stack.sh`, which answers the different question of whether
+the board is running what the tree describes.
+
+Current headless decoder regression tools under `video/`:
+
+- `cedrus-compose-probe.c`: LD_PRELOAD adapter for CAPTURE/COMPOSE geometry,
+  pitch, and raw dumps, including true unscaled controls. Measurement only;
+  do not display its VA surfaces with their original coded metadata.
+- `cedrus-scaler-api-test.c`: format/selection state, busy guards, Main10 sizing,
+  pitch, and rotation-control absence.
+- `cedrus-control-test.c`: valid SPS defaults, pure TRY, committed Main10 sizing,
+  and rejection of depth increases with allocated buffers.
+- `cedrus-scaler-check.py`: 53-capture hardware pixel matrix using raw software
+  references, concurrent codecs, later P-frames, and temporary DMA guards.
+
+Build/run commands, current module identity, and results are in
+[the current handoff](../docs/handoff-2026-09-17-shared-scaler.md).
+
 `serial/` — talk to the board over the console and load images:
 - `acm.py CMD [--port <tty>]` — run one U-Boot command, print reply.
 - `load_fit.py FILE [--port <tty>]` — single-fd `loady` + YMODEM (big FITs).
@@ -11,9 +37,248 @@ The CDC tools default to `--port auto`, resolving the board by USB vendor ID
 destructive and local-artifact-dependent runners live under ignored `local/`,
 not in the supported tool set. See ../README.md gotchas.
 
+`display/` — read and probe display registers on the target. Two families,
+because the two software stacks reach MMIO differently:
+
+- **Our arm64 Linux**, through `/dev/mem` (root). `devmem32.c` takes individual
+  addresses and defaults to the display handoff set with expected values.
+  `mmio-read.c` takes an address and word count, so a new window needs no
+  rebuild. Both use `mmap`, never `read()`: on arm64 the `/dev/mem` read path is
+  gated by `valid_phys_addr_range()` and MMIO is not memory, so `read()` returns
+  `-EFAULT` on a perfectly healthy board. `mmio-rw.c` adds writing and dumping
+  to the same interface, for poking one register during bring-up.
+  `frame-stage-watch.c` is the crash-resistant special case for MIPS/DECD work:
+  it busy-polls the shared frame-stage marker, synchronously persists the full
+  composition page at each transition, and exits at stage `0x6103`. It is
+  freestanding and syscall-only, and is meant to be run `SCHED_FIFO` on a pinned
+  CPU, because a shell watcher is not reliably scheduled after a risky submit —
+  the first unprotected attempt hard-locked and left a zero-length file.
+- **Stock Android**, through the vendor's `/dev/hidtvreg`, which is world
+  accessible so no root is needed. Build these as 32-bit ARM — stock userspace is
+  `armv7l`. `hidtvreg-dump.c` captures the fixed AFBD/mixer/TVTOP window used for
+  diffing, `hidtvreg-read.c` takes an arbitrary address and count, and
+  `hidtvreg-poke.c` writes a value, polls to prove it *persisted*, then restores
+  what it read, so a probe that blanks the panel recovers by itself.
+
+Two rules worth reading before using them. **Writes to the AFBD block are inert
+until the per-register commit latch is pulsed** — control at `+0x00`, latch at
+`+0x04`. An uncommitted write lands in the register, reads back, holds
+indefinitely and does nothing, so readback proves nothing there. And
+`mmio-read.c` and `hidtvreg-read.c` deliberately emit a **byte-identical output
+format** so captures from the two stacks diff line-for-line; the first stock
+capture of this project used a different case convention and 90 of 150 lines came
+back as changed on formatting alone. Do not tidy the formatting. Results in
+[../docs/handoff-2026-08-29.md](../docs/handoff-2026-08-29.md).
+
+The two bounded KMS/video-plane scripts answer different hardware questions.
+`kms-video-plane-test.sh` is the retained negative coexistence control: it left
+the KMS RGB channel fetching and the verified NV12 frame rendered as garbage.
+Do not rerun it for the fullscreen question. `kms-video-handoff-test.sh` first
+commits the serviced RGB channel off, then enables and selects source 0, and
+performs the inverse exclusive transition on restore. Both require
+`ARMED=yes`; the handoff test additionally fails closed unless the exact 0077
+idle state and frame-60 hash are present. Its default one-slot mode is also a
+recorded negative: DECD's static submission actually repeats Y, C, and
+VideoInfo across a four-slot ring and marks it dirty. `RING_ALL=yes` reproduces
+that complete queue using the page generated by `make-video-info.c`; use that
+mode as the retained register-level positive control.
+
+`kms-nv12-plane-test.c` is the corresponding driver-level test for experimental
+patch 0078. It opens the KMS card, obtains the known frame-60 carveout through
+`/dev/scanout-dmabuf`, imports it as PRIME, creates an NV12 framebuffer with Y
+and C offsets, and enables/disables the new plane using atomic properties only.
+It never opens `/dev/mem`. Build it on the target against libdrm and run it only
+with `ARMED=yes` after the observer explicitly says they are ready.
+
+`page-sample.sh` and `page-classify.py` are the pair for comparing a window
+between the two stacks. The script runs on either board and takes four samples
+— twice in a resting state, twice in the state under test — and the host
+classifier turns those into static / state-driven / free-running before diffing
+the two stacks against each other. **Four samples, not two, whenever the window
+might contain telemetry.** The firmware-owned composition page at `0x05000000`
+mixes configuration with counters that change between reads a second apart, so a
+one-sample-per-stack diff of it reports noise and configuration
+indistinguishably. Sampling twice in *both* states also catches registers that
+free-run in only one — AFBD's buffer ring is still at idle and cycles during
+playback, and a single idle pair would misfile it as state-driven.
+
+The same directory holds the CPU_COMM side, for calling routines in the MIPS
+display firmware from Linux:
+
+- `cpu-comm-probe.c` — guarded client for `/dev/cpu_comm`. Resolves routine
+  names from `/proc/cpu_comm/routines` rather than taking hex, refuses an
+  ambiguous prefix instead of picking one, requires `--id` for a raw id, and
+  **blacklists `0x0152f134` (`THal_Vp_EnableScreenCover`) by resolved id** —
+  that call wedges CPU_COMM and needs a physical power cycle, so the refusal
+  belongs in the binary and not in anyone's memory. It also zeros the result
+  area before every call, because the kernel only writes it for a returned count
+  of `<= 10` and any other count leaves a client reading its own stack.
+- `cpu-comm-enable.c` — one-shot test shim (`Kbuild`) that flips the DT `status`
+  on `/soc/cpu-comm@3003000`, so the driver can be loaded on a board whose
+  running DTB still says `disabled`, with no reflash. Re-running it returns
+  `-ENODEV` because the node stays `OF_POPULATED`; to iterate on the driver,
+  `rmmod hy310_cpu_comm` and re-insmod it alone.
+- `cc-addr-check.c` — bench module for the `cc_ref()` physical-reference
+  conversion. It reproduces both driver-private allocations and prints
+  `virt_to_phys()` beside a page-table walk, because a module lives in the
+  vmalloc region on arm64 and `virt_to_phys()` there takes its
+  `__kimg_to_phys()` branch and returns an address that is not the data's.
+
+Protocol, hazards and the read-only calls worth making first are in
+[../docs/cpu-comm-client-plan.md](../docs/cpu-comm-client-plan.md).
+
+`mips/` — static analysis of the display firmware. `disasm.py` disassembles a
+window and exists to centralise one fact that has already gone wrong once (the
+base is `0x8b100000`); `--self-test` fails loudly on a wrong base rather than
+describing unrelated code confidently. `block-survey.py` counts `lui` sites into
+the display aperture to answer which blocks the firmware addresses at all — it
+is how the mixer was closed structurally, and how three firmware-driven blocks
+that appear nowhere in `docs/` were found. Both take the raw `display.bin`.
+
+`video/` — decode and display-path tools that run **on the target**. Most of the
+directory is the Cedrus/VA-API test suite (`decode-*.sh`, `hevc-*`, `soak-*`,
+`va-decode-test.sh`) and the GLES scanout probes (`gles-*.c`); build them with
+`rootfs/verify-video-tooling.sh`, which compiles every one with the image `gcc`.
+The three that drive the direct no-GPU YUV route are worth calling out:
+
+- `decd-client.c` — the low-level `/dev/decd` client. `show FRAME.nv12` submits
+  one static NV12 frame, `stream A B SECONDS FPS` alternates two carveout
+  dma-bufs on an absolute monotonic schedule, and `blue`/`pm`/`vsync`/`stop`
+  reach the remaining ioctls. Build it as `decd-client.coord1080`, or check the
+  hash: an older **source-coordinate** build exists and silently reproduces the
+  already-understood 852x480 result instead of testing anything.
+- `decd-play.c` — the zero-copy player. It runs
+  `filesrc ! h264parse ! v4l2slh264dec ! NV12 ! appsink` and passes Cedrus's own
+  dma-buf FD straight into the stock 112-byte DECD descriptor. It is
+  deliberately intolerant: anything but one dma-buf-backed `GstMemory` at offset
+  zero, with a `GstVideoMeta` describing linear 1280x720 NV12 at stride 1280 and
+  chroma offset 921600, is a hard failure rather than a quiet CPU copy. Needs
+  the `gstreamer-app`, `-allocators` and `-video` pkg-config modules.
+  Surfaces are retired on the release fence `FRAME_SUBMIT` returns, which needs
+  kernel patch 0071 — before it the returned `sync_file` referenced a freed
+  `dma_fence`. Keep `DECD_MAX_PENDING` (default 4) below the decoder's
+  capture-pool size: DECD retires a frame only when a *later* one displaces it
+  from the slots, so too deep a hold is a circular wait rather than simple
+  exhaustion. Read the `RETIRE_STATS` line before anything else — `stalls=0`
+  with `fence-retired` near the frame count means retirement kept up.
+  Diagnostic environment variables are intentionally explicit:
+
+  - `DECD_DUMP=/path/frame.nv12` CPU-maps and dumps the first frame selected for
+    submission, bracketed by `DMA_BUF_IOCTL_SYNC`.
+  - `DECD_FREEZE=1` stops decoding after the selected frame and resubmits that
+    one quiescent buffer for the requested submission count.
+  - `DECD_FREEZE_AT=N` discards decoded frames `0..N-1` without submitting them,
+    then freezes frame N. **It does nothing on its own** — the discard branch is
+    gated on `freeze &&`, so you must pass `DECD_FREEZE=1` too or you silently
+    get an ordinary moving run instead of the control you meant to run. Frame 0
+    of the `leota-720p.h264` diagnostic clip is black; use `DECD_FREEZE_AT=60`
+    for its known-visible close-up-face control. That frame is dark (Y mean 27)
+    but has an unmistakable lit face — a near-black panel is not a plausible
+    rendering of it, so do not accept one as "looked correct".
+  - `DECD_CARVEOUT=1` copies the selected decoded bytes into the scanout
+    carveout at physical `0x6c500000` and submits that contiguous dma-buf;
+    supplying a numeric value chooses another physical base.
+
+  The frame-60 board dump and host reference both hash to
+  `70bddcf8d5c05caf4c6abd0d29399b7467f47caea470c80f7d3998831379cfec`.
+  On 2026-09-01, `DECD_CARVEOUT=1 DECD_FREEZE=1 DECD_FREEZE_AT=60`
+  produced an operator-confirmed recognizable, apparently correct still. That
+  is the provenance control; direct segmented Cedrus imports are invalid.
+  Patch 0074 now allocates Cedrus CAPTURE from a dedicated contiguous pool and
+  is hardware-proven: direct frame 60 looked good, a 300-frame moving clip had
+  no noticed issues, three more 300-frame sessions passed, and the logo was
+  restored after every visible run. **Patch 0074 was dropped from the series on
+  2026-09-01** — with IOMMU translation on master 2, a segmented buffer at
+  `breaks=56 longest-run=32KiB` played 300 moving frames correctly, so its 64 MiB
+  permanent DRAM reservation bought nothing. It is kept out of series as a
+  fallback control for a bypass kernel.
+
+  **Reading the `PHYS` line: `absent=N` invalidates it.** On a 0074
+  contiguous-pool build the probe prints `contiguous=yes breaks=0` from **zero**
+  resolved pages (`absent=338`), because reserved `no-map` memory has no
+  `struct page` for pagemap to report. Any contiguity claim from a 0074 build is
+  vacuous; only `absent=0` lines are real measurements.
+- `decd-visible-sequence.sh` — the guard that owns the shared display state.
+  Nothing above touches source enable, source geometry, chroma gain or the
+  plane-1 selector; this script applies them, snapshots every register it
+  writes, and restores on normal exit, error, `SIGINT` and `SIGTERM`. It refuses
+  to run unless `ARMED=yes` (an observer is watching a *visual* test) and the DT
+  proves KMS is disabled and DECD owns the window. `--play` additionally needs
+  `ALLOW_STOPPED_MIPS=yes` to run in the parked-MIPS state.
+
+### Running a visible IOMMU test
+
+With patches 0075 + 0076 (runtime IOMMU on master 2), just run the test — the
+driver parks the video source across the bypass→translation flip and re-enables
+it once a real frame address exists, so a visible run can be the first DECD
+session of the boot:
+
+```sh
+ARMED=yes ALLOW_STOPPED_MIPS=yes PLAYER=/root/freeze-at/decd-play-freeze-at \
+  /root/decd-visible-sequence.sh --play /root/leota-720p.h264 300
+```
+
+A clean run shows `runtime translation on: bypass 0x7c -> 0x78` and no page
+fault. Any fault voids the run — reboot rather than trying to repair it with
+another submission.
+
+**Confirm the logo is visible after loading the modules, before every visible
+test.** U-Boot prints `boot logo published and committed` on a black boot too, so
+the log is not a control. Two runs were once watched against a panel whose state
+was unknown, and "the test showed nothing" is indistinguishable from "the panel
+died an hour ago".
+
+**Never enable the video source without a frame behind it.** It rests at base 0
+with an inherited 1920x1088 geometry, so enabling it early scans the bottom of
+physical memory: garbage on the panel under bypass, an AFBD-wedging fault under
+translation. `decd-visible-sequence.sh` waits for the Y ring
+(`0x05600070`–`7c`, any slot) to arm before applying the route; anything else
+driving this block should do the same.
+
+**Fallback on a kernel with 0075 but not 0076** — spend the flip nonvisibly:
+
+```sh
+DECD_FREEZE=1 DECD_FREEZE_AT=60 \
+  /root/freeze-at/decd-play-freeze-at /root/leota-720p.h264 300
+```
+
+then run the visible test as a second session. Full rationale:
+[../docs/reference/iommu-runtime-flip-ordering-2026-09-01.md](../docs/reference/iommu-runtime-flip-ordering-2026-09-01.md).
+
+**Verify what you are actually running.** `CONFIG_SUNXI_DECD=m` with no
+`CONFIG_MODVERSIONS` means a stale `.ko` from `/lib/modules` loads silently
+against a new kernel and you measure the old code. Boot with
+`modprobe.blacklist=sunxi_decd,sunxi_cedrus,sunxi_scanout_dmabuf`, `insmod` by
+path, and SHA-256 the modules **and the FIT** first — the two runtime FITs
+differ only by build timestamp in `uname -v`.
+
+Two hazards specific to this path. **Real Cedrus traffic plus a live display
+MIPS hard-locks the whole SoC** — no watchdog recovery, physical power cycle
+required — so decoded playback runs with the MIPS parked, where the Linux DECD
+IRQ handler owns the four-slot Y/C ring. Static carveout frames with the MIPS
+alive are fine and have run for over an hour. And **do not invoke DECD PM-off or
+unload `sunxi_decd` afterwards**: both can reset or clock-gate display hardware
+shared with the adopted logo path. Results in
+[../docs/reference/linux-decd-scanout-confirmed-2026-08-31.md](../docs/reference/linux-decd-scanout-confirmed-2026-08-31.md)
+and
+[../docs/reference/cedrus-decd-first-visible-playback-2026-08-31.md](../docs/reference/cedrus-decd-first-visible-playback-2026-08-31.md).
+
 `flash-standalone.sh` — flash the kernel FIT to the `boot_a` partition (via
 fastboot) and print the U-Boot `bootcmd` for power-on → Debian. See
 [../docs/standalone-boot.md](../docs/standalone-boot.md).
+
+`boot-switch.sh` — move the board between our stack and the vendor's, and flash
+ours. Only the 32 KiB first stage at LBA `0x10` is contended; both chains stay
+resident. `install --via fastboot` is the least troublesome path (the `--dev`
+route needs root for `dd`). Note `sunxi-fel -p uboot` does **not** work on this
+SoC — it loads everything and then fails the AArch64 warm-reset handoff, going
+silent — so FEL recovery is `-p spl` with the restore SPL, which is a 32-bit SPL
+running in SRAM. See [../docs/flash.md](../docs/flash.md).
+
+`split-udisk.sh` — split the factory `UDISK` into a Debian partition and an
+Android `UDISK`, so the vendor stack stays bootable for register captures rather
+than being something a reflash trades away. Read-only checks by default; needs
+`--apply` to write.
 
 `cpufreq-thermal-validate.sh` — runs **on the target** to validate the
 voltage-scaling CPU OPP table and its thermal cooling-device binding. It sweeps

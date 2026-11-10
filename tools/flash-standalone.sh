@@ -6,9 +6,11 @@
 # Usage: tools/flash-standalone.sh [path/to/h713-kernel.fit]
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-FIT=${1:-$ROOT/build/out/h713-kernel.fit}
+# shellcheck source=../config/paths.sh
+source "$ROOT/config/paths.sh"
+FIT=${1:-$H713_BUILD_DIR/out/h713-kernel.fit}
 
-[ -f "$FIT" ] || { echo "no FIT at $FIT — run: build/build.sh kernel" >&2; exit 1; }
+[ -f "$FIT" ] || { echo "no FIT at $FIT — run: tools/build/build.sh kernel" >&2; exit 1; }
 command -v fastboot >/dev/null || { echo "fastboot not found (install android-tools)" >&2; exit 1; }
 
 SZ=$(stat -c%s "$FIT")

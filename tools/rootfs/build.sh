@@ -4,16 +4,21 @@
 set -euo pipefail
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=../../config/paths.sh
+source "$PROJECT_ROOT/config/paths.sh"
 # shellcheck source=../../config/versions.env
 source "$PROJECT_ROOT/config/versions.env"
 
-OUTPUT_DIR="$PROJECT_ROOT/build/out"
+OUTPUT_DIR="$H713_BUILD_DIR/out"
 IMAGE_SIZE=$ROOTFS_IMAGE_SIZE
 SSH_KEY=
 KERNEL_TREE=
 EXTRA_PACKAGES=
+RELEASE_OVERLAY=
+DEBIAN_CACHE=
 PROFILES=
 DEV_PROFILE=0
+PRODUCTION_PROFILE=0
 ORIGINAL_ARGS=("$@")
 
 # The image is otherwise minimal, but this is a projector: the video RUNTIME is
@@ -39,7 +44,32 @@ ORIGINAL_ARGS=("$@")
 #                              this panel is driven through AFBD registers with
 #                              panfrost as a render-only device -- so mpv tests
 #                              decode and file handling, not scanout.
-VIDEO_RUNTIME_PACKAGES=libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-libav,v4l-utils,mpv
+#                              (Superseded: with kernel 0092 stock mpv
+#                              --vo=gpu --gpu-context=drm scans out through
+#                              KMS -- docs/gpu-fallback-plan.md.)
+#   gstreamer1.0-gl            glimagesink / glshader, the GStreamer GPU path
+#                              (va*dec or v4l2sl*dec ! glimagesink). Its own
+#                              library is already pulled in; the plugin is not.
+#                              Added 2026-10-02 (WP2), pulls libgraphene.
+#   pipewire, wireplumber      the sound server mpv plays through (ao=pipewire).
+#                              Driving ALSA directly can deadlock after an
+#                              underrun (docs/audio-underrun-deadlock.md);
+#                              customize.sh runs it as the user "media".
+#   gstreamer1.0-alsa,         how GStreamer plays into that server: alsasink
+#   pipewire-alsa              device=pipewire (WP4's gst-plane-play). Stock and
+#                              in sync, -2..+12 ms on av-sync-probe; without a
+#                              sink autoaudiosink settled on openalsink, silent.
+#                              customize.sh keeps the hardware as the default
+#                              ALSA device, as tested. Added 2026-10-03 (WP4).
+#   gstreamer1.0-pipewire      pipewiresrc, which av-sync-probe records the
+#                              sink monitor with. Not for playback: pipewiresink
+#                              ran +768 ms late after idle (patches/pipewire,
+#                              retired). Added 2026-10-03 (WP4).
+#   ffmpeg                     ffprobe, which h713-play reads codec, size,
+#                              SAR, rotation and bit depth with. The libraries
+#                              already come with mpv; this adds the CLIs.
+#                              Added 2026-10-03 (WP4).
+VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,gstreamer1.0-alsa,pipewire-alsa,gstreamer1.0-pipewire,ffmpeg,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
 BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
 
 # --profile dev: rebuild tools/video ON the board. This half is genuinely
@@ -73,6 +103,18 @@ BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-s
 #            not developed against, so a backtrace is the expected first
 #            question, not an unlikely one.
 DEV_PACKAGES=build-essential,libgles-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libv4l-dev,libdrm-dev,libva-dev,vainfo,meson,ninja-build,ffmpeg,gdb,python3,strace
+# WP4's plane player (tools/video/gst-plane-play.c) is C and every image
+# carries it, so customize.sh compiles it inside the target. These are
+# bootstrapped for that and purged again afterwards unless --profile dev
+# keeps them (DEV_PACKAGES has them all): the product never compiles.
+PLAYER_BUILD_PACKAGES=gcc,libc6-dev,pkgconf,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev
+# The VA-API driver (megi's libva-v4l2_request + patches/libva-v4l2_request)
+# is compiled inside the target too, and for a reason beyond convenience: its
+# entry point __vaDriverInit_<major>_<minor> comes from the libva it is built
+# against, and only the image's own libva gives the right one
+# (tools/video/build-va-driver.sh). Without it plane-ve has no va*dec and
+# the GPU route decodes in software. Purged like the player's.
+VA_BUILD_PACKAGES=libva-dev,libdrm-dev,meson,ninja-build
 # Measured 2026-08-15: base + runtime + dev is 1.45 GiB on disk, so it fits the
 # 2G default with little headroom. Raise the floor rather than have the next
 # added package fail in mke2fs at the end of a ~10 minute bootstrap.
@@ -81,7 +123,8 @@ DEV_MIN_IMAGE_SIZE=3G
 usage() {
   cat <<EOF
 usage: $0 --ssh-key FILE [--kernel-tree DIR] [--output-dir DIR] [--image-size SIZE]
-          [--profile NAME] [--extra-packages LIST]
+          [--profile NAME] [--extra-packages LIST] [--release-overlay DIR]
+          [--mirror URL] [--hotspot-conf FILE]
 
 Build Debian $DEBIAN_SUITE/$DEBIAN_ARCH into rootfs.ext4 and rootfs.simg.
 The SSH public key is required and is copied into root's authorized_keys; it is
@@ -109,6 +152,10 @@ while (($#)); do
     --image-size)  IMAGE_SIZE=${2:?missing value for --image-size}; shift 2 ;;
     --profile)     PROFILES=${PROFILES:+$PROFILES,}${2:?missing value for --profile}; shift 2 ;;
     --extra-packages) EXTRA_PACKAGES=${2:?missing value for --extra-packages}; shift 2 ;;
+    --release-overlay) RELEASE_OVERLAY=$(realpath "${2:?missing overlay}"); shift 2 ;;
+    --debian-cache) DEBIAN_CACHE=$(realpath -m "${2:?missing cache}"); shift 2 ;;
+    --mirror) DEBIAN_MIRROR=${2:?missing mirror}; shift 2 ;;
+    --hotspot-conf) HOTSPOT_CONF=${2:?missing hotspot config}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -126,6 +173,11 @@ size_to_bytes() {
 
 for profile in ${PROFILES//,/ }; do
   case "$profile" in
+    production)
+      PRODUCTION_PROFILE=1
+      BASE_PACKAGES=${BASE_PACKAGES//,v4l-utils/}
+      BASE_PACKAGES=$BASE_PACKAGES,python3
+      ;;
     dev)
       DEV_PROFILE=1
       EXTRA_PACKAGES=${EXTRA_PACKAGES:+$EXTRA_PACKAGES,}$DEV_PACKAGES
@@ -139,10 +191,11 @@ for profile in ${PROFILES//,/ }; do
         IMAGE_SIZE=$DEV_MIN_IMAGE_SIZE
       fi
       ;;
-    *) echo "error: unknown profile: $profile (known: dev)" >&2; exit 2 ;;
+    *) echo "error: unknown profile: $profile (known: production, dev)" >&2; exit 2 ;;
   esac
 done
 
+[ "$PRODUCTION_PROFILE$DEV_PROFILE" != 11 ] || { echo 'production and dev profiles cannot be combined' >&2; exit 2; }
 [ -n "$SSH_KEY" ] || { echo "error: --ssh-key FILE is required" >&2; exit 2; }
 SSH_KEY=$(realpath "$SSH_KEY")
 [ -s "$SSH_KEY" ] || { echo "error: SSH public key not found: $SSH_KEY" >&2; exit 1; }
@@ -195,7 +248,7 @@ prepare_archive_keyring() {
     return
   fi
 
-  local cache="$PROJECT_ROOT/build/cache/debian-archive-keyring"
+  local cache="$H713_BUILD_DIR/cache/debian-archive-keyring"
   local url package signature extracted partial
   mkdir -p "$cache"
   url=$(pacman -Sp --print-format '%l' debian-archive-keyring)
@@ -238,7 +291,7 @@ if [ -z "$KERNEL_TREE" ]; then
   )
   if ((${#kernel_candidates[@]} != 1)); then
     echo "error: expected one built linux-$KERNEL_VERSION content-addressed tree; found ${#kernel_candidates[@]}" >&2
-    echo "run build/build.sh kernel or pass --kernel-tree DIR" >&2
+    echo "run tools/build/build.sh kernel or pass --kernel-tree DIR" >&2
     exit 1
   fi
   KERNEL_TREE=${kernel_candidates[0]}
@@ -256,21 +309,21 @@ KERNEL_RELEASE=$(make -s -C "$KERNEL_TREE" ARCH=arm64 LLVM=1 kernelrelease)
 module_build_count=$(find "$KERNEL_TREE" -type f -name '*.ko' | wc -l)
 ((module_build_count > 0)) || { echo "error: no built kernel modules found" >&2; exit 1; }
 
-# AIC8800 WiFi/BT: out-of-tree modules (staged by build/build.sh aic8800) plus
+# AIC8800 WiFi/BT: out-of-tree modules (staged by tools/build/build.sh aic8800) plus
 # the pinned firmware blob. Verify both on the host before entering the mount
 # namespace, so failures are reported early and clearly.
-AIC_KO_DIR="$PROJECT_ROOT/build/out/modules"
+AIC_KO_DIR="$H713_BUILD_DIR/out/modules"
 AIC_MODULES=(aic8800_bsp aic8800_fdrv aic8800_btlpm)
 for m in "${AIC_MODULES[@]}"; do
   ko="$AIC_KO_DIR/$m.ko"
-  [ -f "$ko" ] || { echo "error: missing $ko — run build/build.sh aic8800 first" >&2; exit 1; }
+  [ -f "$ko" ] || { echo "error: missing $ko — run tools/build/build.sh aic8800 first" >&2; exit 1; }
   vm=$(modinfo -F vermagic "$ko" 2>/dev/null | awk '{print $1}')
   [ "$vm" = "$KERNEL_RELEASE" ] || {
-    echo "error: $m.ko vermagic '$vm' != kernel '$KERNEL_RELEASE' — rerun build/build.sh aic8800" >&2
+    echo "error: $m.ko vermagic '$vm' != kernel '$KERNEL_RELEASE' — rerun tools/build/build.sh aic8800" >&2
     exit 1
   }
 done
-AIC_FW_SRC_ABS="$PROJECT_ROOT/$AIC8800_FW_SRC"
+AIC_FW_SRC_ABS=${H713_AIC_FW_SOURCE:-"$PROJECT_ROOT/$AIC8800_FW_SRC"}
 [ -d "$AIC_FW_SRC_ABS" ] || { echo "error: AIC8800 firmware source not found: $AIC_FW_SRC_ABS" >&2; exit 1; }
 ( cd "$AIC_FW_SRC_ABS" && sha256sum -c "$PROJECT_ROOT/$AIC8800_FW_SUMS" ) >/dev/null || {
   echo "error: AIC8800 firmware failed SHA-256 verification against $AIC8800_FW_SUMS" >&2
@@ -282,9 +335,11 @@ AIC_FW_SRC_ABS="$PROJECT_ROOT/$AIC8800_FW_SRC"
 HOTSPOT_ENABLED=0
 HOTSPOT_SSID= HOTSPOT_PASSPHRASE= HOTSPOT_CHANNEL= HOTSPOT_IP=
 HOTSPOT_DHCP_START= HOTSPOT_DHCP_END=
-if [ -n "${HOTSPOT_CONF:-}" ] && [ -f "$PROJECT_ROOT/$HOTSPOT_CONF" ]; then
+HOTSPOT_PATH=${HOTSPOT_CONF:-}
+case "$HOTSPOT_PATH" in /*) ;; *) HOTSPOT_PATH="$PROJECT_ROOT/$HOTSPOT_PATH" ;; esac
+if [ -n "${HOTSPOT_CONF:-}" ] && [ -f "$HOTSPOT_PATH" ]; then
   # shellcheck disable=SC1090
-  . "$PROJECT_ROOT/$HOTSPOT_CONF"
+  . "$HOTSPOT_PATH"
   : "${HOTSPOT_CHANNEL:=6}" "${HOTSPOT_IP:=192.168.4.1}"
   : "${HOTSPOT_DHCP_START:=192.168.4.10}" "${HOTSPOT_DHCP_END:=192.168.4.100}"
   [ -n "${HOTSPOT_SSID:-}" ] && [ "${#HOTSPOT_SSID}" -le 32 ] || {
@@ -297,7 +352,7 @@ if [ -n "${HOTSPOT_CONF:-}" ] && [ -f "$PROJECT_ROOT/$HOTSPOT_CONF" ]; then
 fi
 
 mkdir -p "$PROJECT_ROOT/build" "$OUTPUT_DIR"
-WORK_DIR=$(mktemp -d "$PROJECT_ROOT/build/.rootfs.XXXXXX")
+WORK_DIR=$(mktemp -d "$H713_BUILD_DIR/.rootfs.XXXXXX")
 
 ROOTFS_TAR="$WORK_DIR/rootfs.tar"
 FINAL_ROOTFS_TAR="$WORK_DIR/rootfs-final.tar"
@@ -305,14 +360,28 @@ ROOTFS_TREE="$WORK_DIR/tree"
 ROOTFS_EXT4="$WORK_DIR/rootfs.ext4"
 ROOTFS_SIMG="$WORK_DIR/rootfs.simg"
 
-INCLUDE_PACKAGES=$BASE_PACKAGES
+INCLUDE_PACKAGES=$BASE_PACKAGES,$PLAYER_BUILD_PACKAGES,$VA_BUILD_PACKAGES
 if [ -n "$EXTRA_PACKAGES" ]; then
-  INCLUDE_PACKAGES="$BASE_PACKAGES,$EXTRA_PACKAGES"
+  INCLUDE_PACKAGES="$INCLUDE_PACKAGES,$EXTRA_PACKAGES"
   printf '\n==> Extra packages requested: %s\n' "$EXTRA_PACKAGES"
 fi
 
+printf '\n==> Patched VA-API driver source\n'
+VA_DRIVER_TAR="$WORK_DIR/va-driver.tar.gz"
+SRC="${H713_VA_DRIVER_SRC:-$PROJECT_ROOT/local/upstream/va-driver-megi-src}" \
+  "$PROJECT_ROOT/tools/video/build-va-driver.sh" --tree-tar "$VA_DRIVER_TAR"
+
 printf '\n==> Bootstrap signed Debian %s/%s\n' "$DEBIAN_SUITE" "$DEBIAN_ARCH"
+cache_hooks=()
+if [ -n "$DEBIAN_CACHE" ]; then
+  hook=$(python3 -c 'import shlex,sys; print(shlex.join(sys.argv[1:]))' \
+    python3 "$PROJECT_ROOT/tools/rootfs/cache-debs.py")
+  cache_arg=$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$DEBIAN_CACHE")
+  cache_hooks=("--setup-hook=$hook seed $cache_arg \"\$1\"" \
+               "--customize-hook=$hook save $cache_arg \"\$1\"")
+fi
 mmdebstrap \
+  "${cache_hooks[@]}" \
   --mode=unshare \
   --variant=minbase \
   --arch="$DEBIAN_ARCH" \
@@ -324,6 +393,8 @@ mmdebstrap \
   "deb [signed-by=$BOOTSTRAP_KEYRING] $DEBIAN_MIRROR $DEBIAN_SUITE main"
 
 printf '\n==> Customize, install Linux %s modules, and create ext4\n' "$KERNEL_RELEASE"
+WIFI_BASELINE_SOURCE="$PROJECT_ROOT/tools/wifi/wifi-baseline.sh"
+[ "$PRODUCTION_PROFILE" != 1 ] || WIFI_BASELINE_SOURCE=
 env \
   ROOTFS_TAR="$ROOTFS_TAR" \
   FINAL_ROOTFS_TAR="$FINAL_ROOTFS_TAR" \
@@ -336,7 +407,7 @@ env \
   KERNEL_RELEASE="$KERNEL_RELEASE" \
   AIC_KO_DIR="$AIC_KO_DIR" \
   AIC_FW_SRC="$AIC_FW_SRC_ABS" \
-  WIFI_BASELINE_SRC="$PROJECT_ROOT/tools/wifi/wifi-baseline.sh" \
+  WIFI_BASELINE_SRC="$WIFI_BASELINE_SOURCE" \
   AIC_FW_DEST="$AIC8800_FW_DEST" \
   HOTSPOT_ENABLED="$HOTSPOT_ENABLED" \
   HOTSPOT_SSID="$HOTSPOT_SSID" \
@@ -348,6 +419,17 @@ env \
   DEBIAN_MIRROR="$DEBIAN_MIRROR" \
   DEBIAN_SUITE="$DEBIAN_SUITE" \
   DEV_PROFILE="$DEV_PROFILE" \
+  PRODUCTION_PROFILE="$PRODUCTION_PROFILE" \
+  PLAYER_BUILD_PACKAGES="$PLAYER_BUILD_PACKAGES" \
+  VA_BUILD_PACKAGES="$VA_BUILD_PACKAGES" \
+  VA_DRIVER_TAR="$VA_DRIVER_TAR" \
+  VA_DRIVER_SERIES="$(tar -xzOf "$VA_DRIVER_TAR" ./h713-va-driver.stamp | grep '^va_driver_series=')" \
+  H713_PLAY_SRC="$PROJECT_ROOT/tools/video/h713-play" \
+  PLANE_PLAY_SRC="$PROJECT_ROOT/tools/video/gst-plane-play.c" \
+  H713_MIRROR_SRC="$PROJECT_ROOT/tools/display/h713-mirror" \
+  H713_KEYSTONE_SRC="$PROJECT_ROOT/tools/sensors/h713-keystone" \
+  H713_STANDBY_DIR="$PROJECT_ROOT/tools/standby" \
+  RELEASE_OVERLAY="$RELEASE_OVERLAY" \
   bash -ceu '
     mkdir -p "$ROOTFS_TREE"
     tar --numeric-owner --xattrs --acls --exclude="./dev/*" -C "$ROOTFS_TREE" -xf "$ROOTFS_TAR"
@@ -400,11 +482,24 @@ env \
     # fmacfw, and wlan0 never appears.
     test -f "$ROOTFS_TREE/$AIC_FW_DEST/fmacfw_8800d80_h_u02.bin"
     # the baseline tool must be on the board: it cannot be copied there later
-    test -x "$ROOTFS_TREE/usr/local/sbin/wifi-baseline"
+    if [ "$PRODUCTION_PROFILE" = 1 ]; then
+      test ! -e "$ROOTFS_TREE/usr/local/sbin/wifi-baseline"
+    else
+      test -x "$ROOTFS_TREE/usr/local/sbin/wifi-baseline"
+    fi
     grep -qx "aic8800_fdrv" "$ROOTFS_TREE/etc/modules-load.d/aic8800.conf"
     test -x "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     grep -q "noflow" "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-bt-attach.service"
+    # PipeWire runs as the media user, lingering; root shells point at it.
+    grep -q "^media:x:1000:" "$ROOTFS_TREE/etc/passwd"
+    grep -qE "^audio:[^:]*:[^:]*:(.*,)?media(,|\$)" "$ROOTFS_TREE/etc/group"
+    test -f "$ROOTFS_TREE/var/lib/systemd/linger/media"
+    test -f "$ROOTFS_TREE/etc/profile.d/h713-pipewire.sh"
+    grep -qx "PIPEWIRE_RUNTIME_DIR=/run/user/1000" "$ROOTFS_TREE/etc/environment"
+    test -f "$ROOTFS_TREE/etc/wireplumber/wireplumber.conf.d/50-h713-default-volume.conf"
+    test -x "$ROOTFS_TREE/usr/bin/pipewire"
+    test -x "$ROOTFS_TREE/usr/bin/wireplumber"
     # Video runtime: assert the files that are actually dlopened and linked, not
     # just that the packages installed. A package rename or split would
     # otherwise ship an image that fails on the target hours later.
@@ -415,9 +510,40 @@ env \
     test -e "$L/gstreamer-1.0/libgstv4l2codecs.so"              # v4l2slh264dec
     test -x "$ROOTFS_TREE/usr/bin/gst-launch-1.0"
     test -x "$ROOTFS_TREE/usr/bin/gst-inspect-1.0"
-    test -x "$ROOTFS_TREE/usr/bin/v4l2-ctl"
+    if [ "$PRODUCTION_PROFILE" = 1 ]; then
+      test ! -e "$ROOTFS_TREE/usr/bin/v4l2-ctl"
+    else
+      test -x "$ROOTFS_TREE/usr/bin/v4l2-ctl"
+    fi
     test -x "$ROOTFS_TREE/usr/bin/mpv"
     grep -qx "sunxi_scanout_dmabuf" "$ROOTFS_TREE/etc/modules-load.d/h713-video.conf"
+    # WP4 playback: the launcher, the plane player (an arm64 build of this
+    # tree, not a stale copy), what each runs on, and the tested ALSA default.
+    test -x "$ROOTFS_TREE/usr/local/bin/h713-play"
+    test -x "$ROOTFS_TREE/usr/local/bin/h713-keystone"
+    test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-keystone.service"
+    grep -q "HOOK LUMA" "$ROOTFS_TREE/usr/local/share/h713/lsb10.glsl"   # 10-bit AV1 on GL
+    grep -q "KEYSTONE_MATRIX" "$ROOTFS_TREE/usr/local/share/h713/keystone.glsl"   # keystone warp
+    grep -q "h713-keystone" "$ROOTFS_TREE/usr/local/share/h713/keystone.lua"
+    test -x "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
+    file -b "$ROOTFS_TREE/usr/local/bin/gst-plane-play" | grep -q "ARM aarch64"
+    grep -q "latency-time=40000" "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
+    grep -q "skip-vsync=true" "$ROOTFS_TREE/usr/local/bin/gst-plane-play"
+    test -x "$ROOTFS_TREE/usr/bin/ffprobe"
+    # The VA driver: an arm64 build of the current series, whose entry point
+    # matches the libva of the image (customize.sh checked the symbol in the
+    # target; this checks what landed).
+    file -b "$L/dri/v4l2_request_drv_video.so" | grep -q "ARM aarch64"
+    grep -qx "$VA_DRIVER_SERIES" "$ROOTFS_TREE/etc/h713-video-stack"
+    test -e "$L/gstreamer-1.0/libgstalsa.so"                     # alsasink
+    test -e "$L/gstreamer-1.0/libgstva.so"                       # va*dec
+    test -e "$L/gstreamer-1.0/libgstkms.so"                      # kmssink
+    test -e "$L/gstreamer-1.0/libgstpipewire.so"                 # the A/V probe
+    test -e "$L/alsa-lib/libasound_module_pcm_pipewire.so"       # device=pipewire
+    test ! -e "$ROOTFS_TREE/etc/alsa/conf.d/99-pipewire-default.conf"
+    if [ "$DEV_PROFILE" != 1 ]; then
+      test ! -e "$ROOTFS_TREE/usr/bin/gcc"                       # purged again
+    fi
     test -n "$(find "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE" -name "sunxi-scanout-dmabuf.ko*" -print -quit)"
     if [ "$DEV_PROFILE" = 1 ]; then
       # The exact headers, link targets and .pc files tools/video resolves.
@@ -452,11 +578,35 @@ env \
       test -L "$ROOTFS_TREE/etc/systemd/system/wpa_supplicant.service"   # masked
     fi
 
-    tar --numeric-owner --xattrs --acls -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
+    if [ "$PRODUCTION_PROFILE" = 1 ]; then
+      # These optional package test suites/plugins are never used by runtime
+      # services. Keep Python itself and its runtime standard library intact.
+      rm -rf "$ROOTFS_TREE"/usr/lib/python3.*/test \
+        "$ROOTFS_TREE/usr/lib/aarch64-linux-gnu/spa-0.2/test"
+    fi
+    if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+      # Build-session logs and the ldconfig host-inode cache are not runtime
+      # inputs. Preserve package/version metadata, not transient timestamps.
+      rm -rf "$ROOTFS_TREE/var/log/apt" "$ROOTFS_TREE/var/lib/apt/periodic"
+      rm -f "$ROOTFS_TREE/var/log/dpkg.log" "$ROOTFS_TREE/var/log/alternatives.log" \
+        "$ROOTFS_TREE/var/cache/ldconfig/aux-cache" \
+        "$ROOTFS_TREE/var/cache/apt/pkgcache.bin" "$ROOTFS_TREE/var/cache/apt/srcpkgcache.bin"
+      find "$ROOTFS_TREE" -xdev -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+      tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --numeric-owner --xattrs --acls \
+        --pax-option=delete=atime,delete=ctime -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
+    else
+      tar --numeric-owner --xattrs --acls -C "$ROOTFS_TREE" -cf "$FINAL_ROOTFS_TAR" .
+    fi
     truncate -s "$IMAGE_SIZE" "$ROOTFS_EXT4"
-    mke2fs -q -F -t ext4 -L UDISK -m 1 \
-      -E lazy_itable_init=0,lazy_journal_init=0 \
-      -d "$ROOTFS_TREE" "$ROOTFS_EXT4"
+    if [ -n "${H713_RELEASE_UUID:-}" ]; then
+      LC_ALL=C.UTF-8 mke2fs -q -F -t ext4 -L UDISK -m 1 -U "$H713_RELEASE_UUID" \
+        -E "hash_seed=$H713_RELEASE_UUID,lazy_itable_init=0,lazy_journal_init=0" \
+        -d "$FINAL_ROOTFS_TAR" "$ROOTFS_EXT4"
+    else
+      mke2fs -q -F -t ext4 -L UDISK -m 1 \
+        -E lazy_itable_init=0,lazy_journal_init=0 \
+        -d "$ROOTFS_TREE" "$ROOTFS_EXT4"
+    fi
   '
 
 e2fsck -fn "$ROOTFS_EXT4"
@@ -469,7 +619,7 @@ architecture=$DEBIAN_ARCH
 mirror=$DEBIAN_MIRROR
 archive_keyring=/usr/share/keyrings/debian-archive-keyring.gpg
 kernel_release=$KERNEL_RELEASE
-kernel_tree=${KERNEL_TREE#$PROJECT_ROOT/}
+kernel_tree=${KERNEL_TREE##*/}
 kernel_modules=$module_build_count
 image_size=$IMAGE_SIZE
 profiles=${PROFILES:-none}

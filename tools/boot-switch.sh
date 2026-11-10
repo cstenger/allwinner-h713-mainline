@@ -33,9 +33,11 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-OURS_IMG="$ROOT/build/out/u-boot-sunxi-with-spl-ddr3.bin"
+# shellcheck source=../config/paths.sh
+source "$ROOT/config/paths.sh"
+OURS_IMG="$H713_BUILD_DIR/out/u-boot-sunxi-with-spl-ddr3.bin"
 VENDOR_BOOT0="$ROOT/local/stock-boot/boot0-board-b-emmc-sector16.bin"
-RESTORE_SPL="$ROOT/build/out/h713-restore-spl.bin"
+RESTORE_SPL="$H713_BUILD_DIR/out/h713-restore-spl.bin"
 SUNXI_FEL="$ROOT/external/sunxi-tools/sunxi-fel"
 
 FIRST_STAGE_LBA=16       # 0x10     BROM entry, 64 sectors
@@ -120,7 +122,7 @@ fb_flash() {  # alias file
 }
 
 split_ours() {  # -> $TMP/spl.bin, $TMP/uboot-proper.bin
-	[ -f "$OURS_IMG" ] || die "missing $OURS_IMG — run build/build.sh"
+	[ -f "$OURS_IMG" ] || die "missing $OURS_IMG — run tools/build/build.sh"
 	# An image built for an older layout expects U-Boot proper elsewhere.  Writing
 	# it to the new locations produces an SPL that loads nothing, so refuse.
 	local def="$ROOT/external/u-boot/configs/hy200_qz713df_a1_defconfig"

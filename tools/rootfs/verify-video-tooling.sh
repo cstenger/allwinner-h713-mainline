@@ -20,7 +20,9 @@
 set -euo pipefail
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-ROOTFS=${1:-$PROJECT_ROOT/build/out/rootfs.tar}
+# shellcheck source=../../config/paths.sh
+source "$PROJECT_ROOT/config/paths.sh"
+ROOTFS=${1:-$H713_BUILD_DIR/out/rootfs.tar}
 ORIGINAL_ARGS=("$@")
 
 [ -e "$ROOTFS" ] || { echo "error: no such rootfs: $ROOTFS" >&2; exit 1; }
@@ -111,6 +113,7 @@ declare -a TOOLS=(
   "gputest|gcc -O2 -o gputest gputest.c -lEGL -lGLESv2"
   "h713-present|gcc -O2 -o h713-present h713-present.c"
   "decd-client|gcc -O2 -o decd-client decd-client.c"
+  "decd-play|gcc -O2 -Wall -Wextra -o decd-play decd-play.c \$(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0 gstreamer-allocators-1.0 gstreamer-video-1.0)"
 )
 
 printf '==> compiling %s tools with the image gcc (%s)\n' "${#TOOLS[@]}" \

@@ -1,5 +1,6 @@
 #!/bin/sh
-# Customize an extracted Debian rootfs without executing target binaries.
+# Customize an extracted Debian rootfs. Target binaries run only through
+# chroot (qemu binfmt): update-alternatives, and compiling WP4's plane player.
 # Usage: customize.sh ROOTFS SSH_PUBLIC_KEY_FILE DEBIAN_MIRROR DEBIAN_SUITE
 set -eu
 
@@ -78,7 +79,8 @@ install -d -m 0755 \
   "$systemd_dir/getty.target.wants" \
   "$systemd_dir/multi-user.target.wants" \
   "$systemd_dir/ssh.service.wants" \
-  "$systemd_dir/serial-getty@ttyS0.service.d"
+  "$systemd_dir/serial-getty@ttyS0.service.d" \
+  "$systemd_dir/getty@tty1.service.d"
 ln -sfn /usr/lib/systemd/system/serial-getty@.service \
   "$systemd_dir/getty.target.wants/serial-getty@ttyS0.service"
 ln -sfn /usr/lib/systemd/system/ssh.service \
@@ -101,6 +103,18 @@ cat > "$systemd_dir/serial-getty@ttyS0.service.d/autologin.conf" <<EOF
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I \$TERM
+EOF
+
+# Keep the boot log on the panel. getty@.service ships TTYVTDisallocate=yes,
+# which clears tty1 when the getty starts -- on this board that lands at about
+# 7.8 s and wipes everything fbcon has painted, so the projector showed a login
+# prompt and nothing of the boot. Turning it off appends the login banner below
+# the boot log instead of erasing it; the prompt still works. TTYReset is not
+# the culprit and is left alone. Verified on hardware 2026-08-24 by restarting
+# the getty and reading the surviving text back out of /dev/vcs1.
+cat > "$systemd_dir/getty@tty1.service.d/10-keep-boot-log.conf" <<EOF
+[Service]
+TTYVTDisallocate=no
 EOF
 
 # Load the AIC8800 WiFi/BT modules at boot. bsp registers the SDIO glue and
@@ -483,7 +497,282 @@ EOF
     "$systemd_dir/multi-user.target.wants/h713-hotspot.service"
   ln -sfn /dev/null "$systemd_dir/wpa_supplicant.service"
   ln -sfn /dev/null "$systemd_dir/dnsmasq.service"
+  # Suspend (standby phase 3) stops the AP: with no WoWLAN, cfg80211 tears it
+  # down in wiphy_suspend ("wlan0: AP Stopped") and hostapd, still running,
+  # never re-establishes it. Restart the hotspot after every resume; clients
+  # re-associate on their own. Measured 2026-10-07 (docs/standby-plan.md).
+  install -d -m 0755 "$R/usr/lib/systemd/system-sleep"
+  cat > "$R/usr/lib/systemd/system-sleep/h713-hotspot" <<'EOS'
+#!/bin/sh
+# systemd-sleep hook: bring the WiFi hotspot back after a resume.
+[ "$1" = post ] && systemctl restart --no-block h713-hotspot.service
+exit 0
+EOS
+  chmod 0755 "$R/usr/lib/systemd/system-sleep/h713-hotspot"
   echo "[customize] boot hotspot enabled: SSID=$HOTSPOT_SSID ch=$HOTSPOT_CHANNEL ip=$HOTSPOT_IP"
 fi
 
-echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload"
+# --- Audio: PipeWire as a dedicated user (docs/audio-underrun-deadlock.md) ---
+# mpv driving ALSA directly can deadlock for good after an underrun (a race in
+# its ao_alsa recovery: the PCM is left PREPARED and full, never started).
+# Through PipeWire, mpv uses ao=pipewire, the server owns the device, and that
+# code never runs: stock Debian mpv recovered from 320 of 320 forced underruns,
+# where it froze at #32 on ALSA. Debian's units refuse to run as root
+# (ConditionUser=!root), so PipeWire runs as "media", lingering, so its user
+# manager starts it at boot with no login. Done by editing the account files,
+# not by running useradd, to keep this script free of target binaries.
+MEDIA_UID=1000
+if ! grep -q '^media:' "$R/etc/passwd"; then
+	echo "media:x:$MEDIA_UID:$MEDIA_UID:PipeWire session for playback:/var/lib/media:/usr/sbin/nologin" >> "$R/etc/passwd"
+	echo "media:x:$MEDIA_UID:" >> "$R/etc/group"
+	echo "media:!*:20000:0:99999:7:::" >> "$R/etc/shadow"
+	for g in audio video render; do
+		grep -q "^$g:" "$R/etc/group" || { echo "[customize] ERROR: no group $g" >&2; exit 1; }
+		# append to the member list, without a leading comma when it was empty
+		sed -i -E "s/^($g:[^:]*:[^:]*:)$/\1media/; t; s/^($g:[^:]*:[^:]*:.+)$/\1,media/" "$R/etc/group"
+	done
+fi
+mkdir -p "$R/var/lib/media" "$R/var/lib/systemd/linger"
+chown "$MEDIA_UID:$MEDIA_UID" "$R/var/lib/media"
+chmod 0750 "$R/var/lib/media"
+: > "$R/var/lib/systemd/linger/media"
+# Every session reaches media's server. /etc/environment is read by PAM for any
+# session, including a plain `ssh board cmd`, which never reads profile.d: without
+# it such a client finds no server and mpv silently falls back to ALSA -- the very
+# path this exists to avoid. profile.d covers anything that skips PAM.
+grep -q '^PIPEWIRE_RUNTIME_DIR=' "$R/etc/environment" 2>/dev/null ||
+	echo "PIPEWIRE_RUNTIME_DIR=/run/user/$MEDIA_UID" >> "$R/etc/environment"
+cat > "$R/etc/profile.d/h713-pipewire.sh" <<'PWPROFILE'
+# The playback sound server runs as the "media" user (rootfs customize.sh).
+: "${PIPEWIRE_RUNTIME_DIR:=/run/user/1000}"
+export PIPEWIRE_RUNTIME_DIR
+PWPROFILE
+# WirePlumber starts a new device at 0.4. ALSA playback on this board never had
+# a software volume (no alsa-utils; the codec mixer sits at its kernel
+# defaults), so 0.4 would be a 60% cut. Start at full scale; volume is
+# PipeWire's from here.
+mkdir -p "$R/etc/wireplumber/wireplumber.conf.d"
+cat > "$R/etc/wireplumber/wireplumber.conf.d/50-h713-default-volume.conf" <<'PWVOL'
+wireplumber.settings = {
+  device.routes.default-sink-volume = 1.0
+}
+PWVOL
+# WP4 playback: h713-play (the launcher) and gst-plane-play (the plane
+# player), compiled here inside the target, under qemu, against its own
+# GStreamer. The compiler and headers were bootstrapped for this alone
+# (build.sh PLAYER_BUILD_PACKAGES) and go again unless --profile dev keeps
+# them. The tree has no /dev, which gcc and apt want for /dev/null: bind the
+# host's for the duration (this runs in build.sh's mount namespace).
+if [ -n "${PLANE_PLAY_SRC:-}" ]; then
+  install -d -m 0755 "$R/usr/local/bin"
+  install -m 0755 "$H713_PLAY_SRC" "$R/usr/local/bin/h713-play"
+  install -d -m 0755 "$R/usr/local/share/h713"
+  install -m 0644 "$(dirname "$H713_PLAY_SRC")/shaders/lsb10.glsl" \
+    "$R/usr/local/share/h713/lsb10.glsl"
+  # Keystone warp (docs/keystone-plan.md): mpv loads the script, which swaps
+  # in copies of the shader template; idle until h713-keystone lens is set.
+  install -m 0644 "$(dirname "$H713_PLAY_SRC")/shaders/keystone.glsl" \
+    "$R/usr/local/share/h713/keystone.glsl"
+  install -m 0644 "$(dirname "$H713_PLAY_SRC")/keystone.lua" \
+    "$R/usr/local/share/h713/keystone.lua"
+  install -m 0644 "$PLANE_PLAY_SRC" "$R/tmp/gst-plane-play.c"
+  : > "$R/dev/null"
+  mount --bind /dev/null "$R/dev/null"
+  chroot "$R" sh -ec 'gcc -O2 -Wall -o /usr/local/bin/gst-plane-play \
+    /tmp/gst-plane-play.c $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-video-1.0)'
+  rm -f "$R/tmp/gst-plane-play.c"
+  # Standby's power-key listener (docs/standby-plan.md), compiled here while
+  # gcc exists; installed with its unit below.
+  if [ -n "${H713_STANDBY_DIR:-}" ]; then
+    install -m 0644 "$H713_STANDBY_DIR/h713-keyd.c" "$R/tmp/h713-keyd.c"
+    chroot "$R" gcc -O2 -Wall -o /usr/local/bin/h713-keyd /tmp/h713-keyd.c
+    rm -f "$R/tmp/h713-keyd.c"
+    install -m 0644 "$H713_STANDBY_DIR/h713-lamp-ramp.c" "$R/tmp/h713-lamp-ramp.c"
+    chroot "$R" gcc -O2 -Wall -Wextra -Werror -o /usr/local/bin/h713-lamp-ramp /tmp/h713-lamp-ramp.c
+    rm -f "$R/tmp/h713-lamp-ramp.c"
+  fi
+  # The VA-API driver, from the patched tree build.sh exported
+  # (build-va-driver.sh --tree-tar). It must export __vaDriverInit for THIS
+  # image's libva or the loader silently falls back to software; check that
+  # here, where nm still exists.
+  install -d "$R/tmp/va-driver"
+  tar -xzf "$VA_DRIVER_TAR" -C "$R/tmp/va-driver"
+  chroot "$R" sh -ec 'cd /tmp/va-driver
+    meson setup build >/dev/null && ninja -C build >/dev/null
+    want=$(pkg-config --modversion libva | cut -d. -f1,2 | tr . _)
+    nm -D --defined-only build/src/v4l2_request_drv_video.so | grep -q "__vaDriverInit_$want" ||
+      { echo "VA driver lacks __vaDriverInit_$want" >&2; exit 1; }
+    install -m 0644 build/src/v4l2_request_drv_video.so \
+      "$(pkg-config --variable=driverdir libva)/v4l2_request_drv_video.so"'
+  { echo "# Written by tools/rootfs/customize.sh -- do not edit by hand."
+    cat "$R/tmp/va-driver/h713-va-driver.stamp"
+    echo "va_driver_installed=image"
+  } > "$R/etc/h713-video-stack"
+  rm -rf "$R/tmp/va-driver"
+  # The production HDMI overlay is assembled on the host. Only its tiny ALSA
+  # helper needs the target compiler; never compile the retired GST consumer.
+  if [ -n "${RELEASE_OVERLAY:-}" ]; then
+    test -f "$RELEASE_OVERLAY/.h713-release-overlay"
+    cp -a "$RELEASE_OVERLAY/." "$R/"
+    rm -f "$R/.h713-release-overlay"
+    chroot "$R" gcc -O2 -Wall -Wextra -Werror -o /usr/lib/h713-hdmi-speaker/alsa-ctl \
+      /usr/lib/h713-hdmi-speaker/alsa-ctl.c
+    rm "$R/usr/lib/h713-hdmi-speaker/alsa-ctl.c"
+    # Seal target-compiled payloads together with their source-built bundles.
+    for bundle in h713-hdmi h713-hdmi-health h713-hdmi-video h713-hdmi-speaker; do
+      chroot "$R" sh -ec 'cd "/usr/lib/$1"; find . -type f ! -name SHA256SUMS -print0 |
+        sort -z | xargs -0 sha256sum > SHA256SUMS' sh "$bundle"
+    done
+    chroot "$R" dpkg-query -W '-f=${binary:Package}\t${Version}\n' \
+      > "$R/usr/share/h713-release/build-packages.tsv"
+  fi
+  if [ "${DEV_PROFILE:-0}" != 1 ]; then
+    chroot "$R" env DEBIAN_FRONTEND=noninteractive \
+      apt-get purge -y -q --autoremove \
+      $(echo "$PLAYER_BUILD_PACKAGES,$VA_BUILD_PACKAGES" | tr , ' ') >/dev/null
+  fi
+  if [ -n "${RELEASE_OVERLAY:-}" ]; then
+    chroot "$R" dpkg-query -W '-f=${binary:Package}\t${Version}\n' \
+      > "$R/usr/share/h713-release/runtime-packages.tsv"
+  fi
+  umount "$R/dev/null"
+  rm -f "$R/dev/null"
+  echo "[customize] installed h713-play, gst-plane-play and the VA driver (compiled in the target)"
+fi
+
+# pipewire-alsa is there for alsasink device=pipewire (WP4's plane player).
+# Its 99-pipewire-default.conf would also make PipeWire the default ALSA
+# device for every program; the WP4 measurements were taken without it, so
+# the default stays the hardware (Debian's documented opt-out: delete the
+# /etc link, which dpkg then leaves alone).
+rm -f "$R/etc/alsa/conf.d/99-pipewire-default.conf"
+
+# schedutil may retarget the CPU clock only every 10 ms, not every 462 us
+# (the default, from cpuinfo_transition_latency). At the default it changed
+# the clock ~740 times a second during video, each change waiting on the
+# CPU PLL to relock. Measured 2026-10-04 on 30 s of 720p H.264 with audio
+# (busy x average MHz x 4 cores): 651 at 462 us, 382 at 10 ms, the average
+# clock unchanged, 0 dropped frames. 10 ms is a third of a 30 fps frame;
+# 50 ms saved more but is longer than a frame. cpufreq-dt and its vdd-cpu
+# regulator are built in, so the file exists before systemd-tmpfiles runs.
+install -d -m 0755 "$R/etc/tmpfiles.d"
+cat > "$R/etc/tmpfiles.d/h713-cpufreq.conf" <<EOF
+w /sys/devices/system/cpu/cpufreq/schedutil/rate_limit_us - - - - 10000
+EOF
+
+# Logging. The kernel console (ttyS0 and the panel, kernel 0064) defaults to
+# level 7, so every pr_info from the h713 HDMI modules (receiver-edid,
+# hdmi-audio, ddc-pins, hdmi-signal...) was printed on screen. Only warnings
+# and worse go to the console now; info and debug stay in dmesg and the
+# journal. The modules keep logging at info: h713-hdmi-session.py verifies
+# the DSP/TVFE restore by reading those lines back from dmesg. systemd-sysctl
+# runs at ~9 s, before the HDMI modules load (~15 s); only earlier boot lines
+# (aicbsp) still reach the console, as loglevel= lives in the DTS bootargs.
+#   runtime:  dmesg -n 7 (info), dmesg -n 8 (debug), dmesg -n 5 (back to warnings)
+#   read:     journalctl -k -p info -g h713-hdmi-audio ; dmesg -l info,debug
+#   pr_debug: echo "module NAME +p" > /sys/kernel/debug/dynamic_debug/control
+install -d -m 0755 "$R/etc/sysctl.d"
+cat > "$R/etc/sysctl.d/10-h713-console.conf" <<EOF
+# console, default message, minimum console, boot-default console levels.
+# The console prints levels strictly below the first field: 5 shows
+# warnings (4) and worse. Raise it to 7 for info or 8 for debug.
+kernel.printk = 5 4 1 7
+EOF
+# The journal is persistent on a nearly full root (2.7 GB) and had grown to
+# 184 MB. Cap it and rotate in 4 MB files, so the oldest are dropped first.
+install -d -m 0755 "$R/etc/systemd/journald.conf.d"
+cat > "$R/etc/systemd/journald.conf.d/h713-size.conf" <<EOF
+[Journal]
+SystemMaxUse=32M
+SystemMaxFileSize=4M
+SystemKeepFree=64M
+RuntimeMaxUse=16M
+ForwardToConsole=no
+EOF
+
+# WP5: h713-mirror sets the projector's installation mode (kernel 0166's
+# hardware mirror). No /etc/tmpfiles.d/h713-mirror.conf is written here: a
+# default file would override sun50i_h713_afbd.mirror_mode= on the kernel
+# command line at every boot. `h713-mirror MODE --persist` writes it.
+if [ -n "${H713_MIRROR_SRC:-}" ]; then
+  install -d -m 0755 "$R/usr/local/bin"
+  install -m 0755 "$H713_MIRROR_SRC" "$R/usr/local/bin/h713-mirror"
+  echo "[customize] installed h713-mirror"
+fi
+
+# Auto-keystone phase 2: h713-keystone reads the SC7A20 tilt sensor (kernel
+# 0168) and publishes /run/h713-keystone/state for the picture warp. Ceiling
+# auto, which drives h713-mirror, is off unless the user turns it on, so an
+# h713-mirror --persist setting still holds. sh + mawk, like h713-mirror: the
+# product image has no python3.
+if [ -n "${H713_KEYSTONE_SRC:-}" ]; then
+  install -d -m 0755 "$R/usr/local/bin"
+  install -m 0755 "$H713_KEYSTONE_SRC" "$R/usr/local/bin/h713-keystone"
+  cat > "$systemd_dir/h713-keystone.service" <<EOF
+[Unit]
+Description=Projector tilt: automatic keystone and ceiling detection
+After=systemd-modules-load.service
+
+[Service]
+ExecStart=/usr/local/bin/h713-keystone daemon
+# A kernel without 0168 has no sensor: retry slowly rather than spin.
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  ln -sfn ../h713-keystone.service \
+    "$systemd_dir/multi-user.target.wants/h713-keystone.service"
+  echo "[customize] installed h713-keystone + h713-keystone.service"
+fi
+
+# Standby (docs/standby-plan.md): the case button (kernel 0170/0171) and the
+# remote both send KEY_POWER. logind's default for it is poweroff, and on this
+# board poweroff only parks the CPUs -- rails, backlight and the last frame
+# stay up. h713-standby owns the key; logind must not act on it.
+if [ -n "${H713_STANDBY_DIR:-}" ]; then
+  install -m 0755 "$H713_STANDBY_DIR/h713-standby" "$R/usr/local/bin/h713-standby"
+  cat > "$systemd_dir/h713-keyd.service" <<EOF
+[Unit]
+Description=Projector power key: case button and remote toggle standby
+After=systemd-udevd.service
+
+[Service]
+ExecStart=/usr/local/bin/h713-keyd
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  ln -sfn ../h713-keyd.service \
+    "$systemd_dir/multi-user.target.wants/h713-keyd.service"
+  # uinput lets a non-HID USB GPIO board's bridge inject KEY_POWER and player
+  # keys (the product has no reachable buttons; docs/standby-plan.md).
+  install -d -m 0755 "$R/etc/modules-load.d"
+  echo uinput > "$R/etc/modules-load.d/h713-uinput.conf"
+  # Power off (docs/standby-plan.md): PSCI SYSTEM_OFF only halts the CPUs,
+  # leaving the lamp, the fan and the last frame up. Switch the lamp (and with
+  # it the fan) off as the last step, so the projector stays dark until a
+  # power cycle. (Cutting PL6, the core-rail enable, was tried and only
+  # REBOOTS the board -- kernel patch 0177, out of series.)
+  install -d -m 0755 "$R/usr/lib/systemd/system-shutdown"
+  cat > "$R/usr/lib/systemd/system-shutdown/h713-off" <<'EOS'
+#!/bin/sh
+# systemd-shutdown hook: on poweroff/halt switch the lamp (and so the fan) off
+# before PSCI halts the CPUs, so the projector is dark until a power cycle.
+case "$1" in poweroff|halt) echo 4 > /sys/class/backlight/lamp/bl_power 2>/dev/null ;; esac
+exit 0
+EOS
+  chmod 0755 "$R/usr/lib/systemd/system-shutdown/h713-off"
+  echo "[customize] installed h713-standby + h713-keyd.service"
+fi
+install -d -m 0755 "$R/etc/systemd/logind.conf.d"
+cat > "$R/etc/systemd/logind.conf.d/h713-power-key.conf" <<EOF
+[Login]
+HandlePowerKey=ignore
+HandlePowerKeyLongPress=ignore
+EOF
+
+echo "[customize] configured key-only SSH, ttyS0 autologin, AIC8800 autoload + BT attach, scanout-dmabuf autoload, PipeWire (user media), schedutil rate limit 10 ms, console warnings only, journal capped at 32M"
