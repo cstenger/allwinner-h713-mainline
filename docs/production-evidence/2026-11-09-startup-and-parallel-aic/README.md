@@ -176,3 +176,41 @@ The cold boot carried the `h713,hdmi-boot-v1` handoff, so the script's
 image-size check accepted the new FIT. No failed units; WiFi, `hci0` and HDMI
 lock normal. Video did not move: `h713-hdmi-prepare` (ends ~9.44 s) is now
 the critical path, ~2.5 s after the user session.
+
+## Console <-> video hand-over without a bad frame (kernel 0190)
+
+The operator saw a green frame at the boot switch from the console to HDMI.
+It was not the closed green stall (stall words 0, latches toggling). 120 fps
+video of video-service restarts (`local/lcd-photos/test_112`) showed one
+flat pale frame at every switch in both directions: the driver stopped the
+selected route's source before moving the selector (`lvds+0x06c`), so the
+panel showed a route with its source off (pale), or source 0 enabled with
+nothing fetched yet (green).
+
+Two live register tests decided the fix. The 0165 vblender cover has no
+effect while the console route is selected (`test_112`). With the cover on,
+selecting the video route while source 0 is idle shows black, and switching
+the selector into and out of it is clean (`test_113`). Patch 0190 therefore
+carries every hand-over on the covered video route: cover, wait one vblank,
+select the video route, wait one vblank, then the existing source switch,
+and uncover once source 0 has latched. On the way back: cover while the
+video route is still selected, stop source 0, keep the cover through the
+window-layer restore, restore and select RGB, wait one vblank, uncover.
+
+Built against the installed kernel (`b4fd5939`): identical `.config`,
+`Module.symvers`, release and DTB, and of 2370 objects only
+`sun50i-h713-afbd.o` differs in its allocated sections. Installed as FIT
+`d4cb9c95` with script `349a8c74` (backup `kernel-fit-ae78b3d1...`).
+
+- Warm boot `ccb84903`: no failed units, no driver warnings; three restart
+  cycles (`test_114`) show every switch dipping to black for ~25 ms, no pale
+  or green frame. The frame check that finds nothing here flags the known
+  flashes in `test_112` and `test_113`.
+- Cold boot `096e9358`: `hdmi-boot-v1` handoff present, video 12.3 s;
+  `test_115` shows console, the cover scanning down, then video.
+
+Build note: Kconfig probes `rustc` even with `CONFIG_RUST` off and writes the
+result into `.config`, which IKCONFIG embeds in the FIT. rustup was removed
+from the build host on 2026-11-09, so this kernel was built with the
+remaining rustc 1.99 toolchain on `PATH` to reproduce the installed config.
+The release build does not pin rustc yet.

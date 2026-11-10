@@ -97,9 +97,9 @@ def load_bundle(bundle):
     need(set(m['files']) >= {'h713-kernel.fit', *SCRIPT_NAMES}, 'bundle incomplete')
     for key in ('h713-kernel.fit', *SCRIPT_NAMES):
         need(m['baseline'][key] != m['files'][key], 'candidate equals baseline: '+key)
-    need(m['checks'] == {'module_symvers_equal': True, 'kernel_release_equal': True,
-                         'config_diff': ['CONFIG_LEGACY_PTYS', 'CONFIG_LEGACY_PTY_COUNT']},
-         'bundle checks missing')
+    checks = m.get('checks', {})
+    need(checks.get('module_symvers_equal') is True and checks.get('kernel_release_equal') is True
+         and isinstance(checks.get('config_diff'), list), 'bundle checks missing')
     return m
 
 

@@ -1,0 +1,166 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Mon, 9 Nov 2026 23:40:00 -0800
+Subject: [PATCH] drm/h713-afbd: cover the console <-> video route hand-over
+
+Every switch between the console (RGB route) and the video plane showed
+one bad panel frame: a flat pale field, or solid green at boot. The
+selector at lvds+0x06c picks the route; the driver stopped the selected
+route's source before moving the selector, so for one frame the panel
+showed a route whose source was off (pale), or source 0 enabled but with
+nothing fetched yet (green, as after a geometry change before 0165).
+
+Measured on the panel with 120 fps video:
+ - test_112: one pale frame at both switches; the 0165 vblender cover
+   has no effect while the console route is selected;
+ - test_113: the cover blacks out the video route even with source 0
+   idle, and switching the selector into and out of it is clean.
+
+So the video route, covered, carries every hand-over:
+ - console -> video: cover, select the video route, then quiesce RGB
+   and enable source 0 as before; the borders come back once source 0
+   has latched (as 0165 does after a geometry change);
+ - video -> console: cover while the video route is still selected,
+   stop source 0, keep the cover through the window-layer restore,
+   restore RGB, select it, then put the native borders back.
+
+Each latch is waited for with one vblank (h713_afbd_next_frame), so a
+hand-over shows two or three black frames instead of a pale or green
+one. Boards without the window layer (no vblend range) keep the old
+sequence.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -718,6 +718,52 @@
+ 			writel(words[i], h->vblend_regs + h->lb_off[i]);
+ }
+ 
++/*
++ * Black out the video route for a route hand-over. The selector at
++ * lvds+0x06c switches the panel between the RGB and video routes, and the
++ * route it selects must never show a source that is off: that frame is a
++ * flat pale field (test_112, 120 fps: one panel frame at every console <->
++ * video switch), or solid green when source 0 is on but has fetched nothing
++ * yet (seen at boot, 2026-11-09). The vblender border overlay sits on the
++ * video route only (test_112: no effect on the console) and covers it even
++ * with source 0 idle (test_113: black, clean switches both ways). Only the
++ * two border words change, in the current geometry; h713_lb_borders()
++ * takes the cover down.
++ */
++static void h713_lb_cover_now(struct h713_afbd *h)
++{
++	u32 words[H713_LB_MAX_REGS];
++	unsigned int i;
++
++	if (h713_lb_words(h, &h->hw_geom, words))
++		return;
++	for (i = 0; i < h->lb_nregs; i++)
++		if (h->lb_blk[i] == LB_VBLEND && h->lb_off[i] <= 0x004)
++			writel(h713_lb_cover(h->lb_off[i], words[i]),
++			       h->vblend_regs + h->lb_off[i]);
++}
++
++/* Let one panel frame boundary pass, so vsync-latched writes have taken. */
++static void h713_afbd_next_frame(struct h713_afbd *h, const char *why)
++{
++	struct drm_crtc *crtc = &h->pipe.crtc;
++	unsigned long flags;
++	u64 target;
++
++	if (drm_crtc_vblank_get(crtc)) {
++		msleep(20);	/* one 60 Hz frame and margin */
++		return;
++	}
++	spin_lock_irqsave(&h->retire_lock, flags);
++	target = h->retire_vblank_count + 1;
++	spin_unlock_irqrestore(&h->retire_lock, flags);
++	if (!wait_event_timeout(h->retire_wait,
++				READ_ONCE(h->retire_vblank_count) >= target,
++				msecs_to_jiffies(100)))
++		drm_warn(&h->drm, "%s: no vblank within 100 ms\n", why);
++	drm_crtc_vblank_put(crtc);
++}
++
+ /* Same picture size and place, whatever the flips. */
+ static bool h713_geom_same_rect(const struct h713_geom *a, const struct h713_geom *b)
+ {
+@@ -901,6 +947,12 @@
+ 	if (!h->video_active)
+ 		return;
+ 
++	/* The video route stays selected until RGB runs: keep it black. */
++	if (h->lb_ok) {
++		h713_lb_cover_now(h);
++		h713_afbd_next_frame(h, "video stop cover");
++	}
++
+ 	/* Stop source 0 before removing any address from its queue. */
+ 	writel(h->video_ctrl_idle, h->regs + AFBD_VIDEO_CTRL);
+ 	writel(1, h->regs + AFBD_VIDEO_READY);
+@@ -919,7 +971,7 @@
+ 
+ 	/* Hand the window layer back exactly as probe found it. */
+ 	if (h->lb_ok && !h713_geom_eq(&h->hw_geom, &h->native))
+-		h713_lb_program(h, &h->native, false);
++		h713_lb_program(h, &h->native, true);
+ 
+ 	/* Restore and commit RGB before selecting it downstream. */
+ 	writel(h->rgb_ctrl_cur, h->regs + AFBD_CTRL);
+@@ -929,6 +981,11 @@
+ 	h->video_active = false;
+ 	/* the panel's mirror state back to the RGB route's */
+ 	h713_panel_set(h, h->rgb_hflip, true);
++	/* RGB is on the panel now; the video route's borders back to native */
++	if (h->lb_ok) {
++		h713_afbd_next_frame(h, "console select");
++		h713_lb_borders(h, &h->native);
++	}
+ }
+ 
+ /*
+@@ -1107,7 +1164,7 @@
+ 	struct drm_plane_state *new_state;
+ 	struct h713_afbd *h = to_h713(plane->dev);
+ 	struct h713_geom g;
+-	bool regeom;
++	bool regeom, covered;
+ 	dma_addr_t y, c;
+ 	unsigned int i;
+ 
+@@ -1124,12 +1181,26 @@
+ 	 * is off, and the frame after it is covered (h713_lb_cover).
+ 	 */
+ 	regeom = h->lb_ok && !h713_geom_eq(&g, &h->hw_geom);
++	covered = regeom || (h->lb_ok && !h->video_active);
+ 	if (regeom && h->video_active) {
+ 		writel(h->video_ctrl_idle, h->regs + AFBD_VIDEO_CTRL);
+ 		writel(1, h->regs + AFBD_VIDEO_READY);
+ 		h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video geometry");
+ 	}
+ 
++	/*
++	 * Taking over from the console: select the video route while it is
++	 * covered, before RGB stops, so the panel shows black -- never the
++	 * stopped RGB route or a source 0 that has fetched nothing.
++	 */
++	if (!h->video_active && h->lb_ok) {
++		h713_lb_cover_now(h);
++		h713_afbd_next_frame(h, "video start cover");
++		writel(H713_VIDEO_SELECTOR, h->lvds_regs + 0x06c);
++		h713_panel_set(h, g.hflip, false);
++		h713_afbd_next_frame(h, "video route select");
++	}
++
+ 	/* The hardware mux is exclusive: quiesce RGB before source 0. */
+ 	if (!h->video_active) {
+ 		writel((h->rgb_ctrl_active | BIT(31)) & ~BIT(0),
+@@ -1196,7 +1267,7 @@
+ 	       h->regs + AFBD_VIDEO_CTRL);
+ 	writel(1, h->regs + AFBD_VIDEO_READY);
+ 	h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video enable");
+-	if (regeom)
++	if (covered)
+ 		h713_lb_borders(h, &g);
+ 	writel(H713_VIDEO_SELECTOR, h->lvds_regs + 0x06c);
+ 	h->video_active = true;
