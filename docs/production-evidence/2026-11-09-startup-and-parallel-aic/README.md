@@ -213,4 +213,77 @@ Build note: Kconfig probes `rustc` even with `CONFIG_RUST` off and writes the
 result into `.config`, which IKCONFIG embeds in the FIT. rustup was removed
 from the build host on 2026-11-09, so this kernel was built with the
 remaining rustc 1.99 toolchain on `PATH` to reproduce the installed config.
-The release build does not pin rustc yet.
+Closed below.
+
+## Kernel config no longer depends on host rustc
+
+Kconfig probes `$(RUSTC)` with `CONFIG_RUST` off and writes eight lines into
+`.config`. With rustc 1.99 they are `RUSTC_VERSION=109900`,
+`RUSTC_LLVM_VERSION=230101`, five `RUSTC_HAS_*=y` and
+`HAVE_CFI_ICALL_NORMALIZE_INTEGERS_RUSTC=y`; without rustc they are `0`, `0`
+and absent. IKCONFIG embeds `.config` in the FIT, so having rustc on `PATH`
+changed the image. No C code reads these symbols.
+
+Pinning rustc as a release toolchain would have made a tool the kernel does
+not use a required input. Instead `tools/build/build.sh` passes
+`RUSTC=/dev/null/rustc` (a path that cannot exist) to every kernel `make`
+(`kernel_make`), so the probe always finds no rustc. It rejects
+`CONFIG_RUST=y` and fails if a rustc result reaches `.config`, both after
+configuration and after the build. `tools/release/build.py` refuses
+`H713_KERNEL_RUSTC` and checks the built `.config` again.
+
+Checks:
+- `tools/build/test-kernel-rustc-probe.py` (about 20 s, own build directory)
+  runs `build.sh kernel-config` with the production fragment twice: once
+  with a fake rustc 1.99 first on `PATH`, once with no rustc. Both `.config`
+  files are identical, with `RUSTC_VERSION=0`. A control run with
+  `H713_KERNEL_RUSTC=<fake>` gives exactly the eight rustc 1.99 lines above,
+  so the fake is really probed.
+- `tools/release/test-release.py` (`rustc_probe_leaks`) and
+  `tools/hdmi/test-kernel-fit-bundle.py` cover the release check and the
+  bundle transition.
+
+### Transition (not done yet)
+
+Every installed FIT (`d4cb9c95` now) embeds rustc 1.99's probe results, so
+the new default build cannot reproduce it. The next kernel bundle carries the
+change:
+
+1. Baseline: the installed sources with
+   `H713_KERNEL_RUSTC=$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc`.
+   This is the only remaining use of that toolchain, and it must stay on the
+   host until the transition FIT is installed.
+2. Candidate: the default build, with no override.
+3. `build-kernel-fit-bundle.py --rustc-probe-transition` (plus any real
+   `--config-diff`). It requires exactly those eight symbols to go from the
+   rustc 1.99 values to "none", and still refuses any other config change.
+
+After it is installed, baselines build without rustc and the 1.99 toolchain
+can be deleted.
+
+Built 2026-11-10 as a config-only bundle of the installed sources
+(`local/recovery/2026-11-10-rustc-probe`, same kernel tree digest
+`f49750b0` as the installed build). Installed the same day from boot
+`096e9358` (backup `kernel-fit-a3fb1362...`). Warm boot `8a6014a4`:
+`/proc/config.gz` is byte-identical to the candidate `.config`
+(`RUSTC_VERSION=0`); `running`, no failed units, video active at 11.8 s,
+WLAN and `hci0` up. Cold boot `4a122258` (serial and USB unplugged): the
+`h713,hdmi-boot-v1` handoff is present, so the script's image-size check
+accepted the new FIT. Same config, no failed units, video active at 11.8 s.
+The bundle tool's `INSTALLED_*` defaults now name this FIT, and later
+baselines build without rustc. The rustc 1.99 toolchain and the two build trees were
+deleted afterwards, so FITs from before this change can no longer be
+rebuilt on this host.
+
+- The baseline with `H713_KERNEL_RUSTC` reproduces the installed FIT
+  `d4cb9c95` byte for byte.
+- The candidate FIT is `9d496308`, with script cmd `2dd9adb1` / scr
+  `4c2453a4`. `--rustc-probe-transition` passed, and the installer's
+  `load_bundle` accepts the bundle.
+- `.config` differs only in the eight rustc lines. `Module.symvers`, the
+  kernel release and the board DTB are identical.
+- Of 2474 `.o`/`.ko` files only `kernel/configs.o` differs (the IKCONFIG
+  blob, 64 bytes less `.rodata`), plus the link-stage `vmlinux.o` and
+  kallsyms objects. No text symbol moves. The 5526 `.rodata` symbols after
+  the blob move down 58 bytes, so the instructions that reference them
+  change. Section sizes are unchanged.

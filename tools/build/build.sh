@@ -33,6 +33,15 @@ JOBS=${JOBS:-$(nproc)}
 # source tree instead of quietly reusing the production one's objects, and its
 # outputs are suffixed so it cannot overwrite the FIT the board boots from.
 KERNEL_CONFIG=${KERNEL_CONFIG:-}
+# Kconfig probes $(RUSTC) even with CONFIG_RUST off and writes the answer
+# (RUSTC_VERSION, RUSTC_LLVM_VERSION, RUSTC_HAS_*, ..._RUSTC) into .config,
+# which IKCONFIG embeds in the image: a host rustc on PATH changed the FIT.
+# Rust is not a kernel input here, so every kernel make gets a rustc that can
+# never exist (a path under /dev/null) and the probe always answers "none".
+# H713_KERNEL_RUSTC overrides it ONLY to rebuild a FIT installed before
+# 2026-11-09's fix (built with rustc 1.99 on PATH); release builds refuse it.
+KERNEL_RUSTC_NONE=/dev/null/rustc
+KERNEL_RUSTC=${H713_KERNEL_RUSTC:-$KERNEL_RUSTC_NONE}
 OUT="$BUILD/out"
 CACHE="$BUILD/cache"
 UBOOT="$ROOT/external/u-boot"
@@ -193,12 +202,41 @@ find_mkimage() {
   [ -x "$m" ] && echo "$m"
 }
 
-build_kernel() {
-  local tree; tree=$(prepare_kernel)
-  local suffix=""
-  [ -n "$KERNEL_CONFIG" ] && suffix="-${KERNEL_CONFIG//,/-}"
-  log "Linux kernel  ($KERNEL_DEFCONFIG${KERNEL_CONFIG:+ + $KERNEL_CONFIG}, arch=$KERNEL_ARCH)"
-  make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 "$KERNEL_DEFCONFIG"
+# Every make that can (re)run Kconfig on the kernel tree goes through here:
+# a make without RUSTC= would re-probe the host (syncconfig reruns when the
+# recorded RUSTC differs) and put the host's rustc back into .config.
+kernel_make() {
+  local tree=$1; shift
+  make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 RUSTC="$KERNEL_RUSTC" "$@"
+}
+
+# Fail if the host's rustc reached .config (see KERNEL_RUSTC above).
+check_kernel_rustc_probe() {
+  local config=$1 leaked
+  if [ "$KERNEL_RUSTC" != "$KERNEL_RUSTC_NONE" ]; then
+    note "H713_KERNEL_RUSTC=$KERNEL_RUSTC: rustc probe NOT neutralised (pre-fix baseline only)"
+    return 0
+  fi
+  grep -q -x 'CONFIG_RUST=y' "$config" && {
+    echo "error: CONFIG_RUST=y needs a pinned rustc; the build only supports Rust-free kernels" >&2
+    return 1
+  }
+  leaked=$(grep -E '^CONFIG_RUSTC_(VERSION|LLVM_VERSION)=[^0]|^CONFIG_(RUSTC_HAS_[A-Z0-9_]+|[A-Z0-9_]+_RUSTC|RUST_IS_AVAILABLE)=y' \
+    "$config" || true)
+  [ -z "$leaked" ] || {
+    printf 'error: host rustc leaked into %s:\n%s\n' "$config" "$leaked" >&2
+    return 1
+  }
+  grep -q -x 'CONFIG_RUSTC_VERSION=0' "$config" || {
+    echo "error: $config has no CONFIG_RUSTC_VERSION=0; the rustc probe check is stale" >&2
+    return 1
+  }
+}
+
+# .config for this KERNEL_CONFIG: defconfig + fragments, checked.
+configure_kernel() {
+  local tree=$1
+  kernel_make "$tree" "$KERNEL_DEFCONFIG"
   for frag in ${KERNEL_CONFIG//,/ }; do
     local path="$ROOT/patches/kernel/board/$frag.config"
     [ -f "$path" ] || { echo "error: no config fragment: $path" >&2; return 1; }
@@ -206,7 +244,7 @@ build_kernel() {
       "$tree/.config" "$path" >/dev/null
   done
   if [ -n "$KERNEL_CONFIG" ]; then
-    make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 olddefconfig
+    kernel_make "$tree" olddefconfig
     # merge_config warns about a request it could not honour, but olddefconfig
     # can drop a symbol afterwards for an unmet dependency and say nothing.
     # Check the config that was BUILT, not the one that was asked for: a KASAN
@@ -227,7 +265,18 @@ build_kernel() {
       return 1
     }
   fi
-  make -C "$tree" ARCH="$KERNEL_ARCH" LLVM=1 -j"$JOBS" Image dtbs modules
+  check_kernel_rustc_probe "$tree/.config"
+}
+
+build_kernel() {
+  local tree; tree=$(prepare_kernel)
+  local suffix=""
+  [ -n "$KERNEL_CONFIG" ] && suffix="-${KERNEL_CONFIG//,/-}"
+  log "Linux kernel  ($KERNEL_DEFCONFIG${KERNEL_CONFIG:+ + $KERNEL_CONFIG}, arch=$KERNEL_ARCH)"
+  configure_kernel "$tree"
+  kernel_make "$tree" -j"$JOBS" Image dtbs modules
+  # Recheck what IKCONFIG embedded: the build itself may have rerun Kconfig.
+  check_kernel_rustc_probe "$tree/.config"
   gzip -n -9 -kf "$tree/arch/arm64/boot/Image"
   install -m 0644 "$tree/arch/arm64/boot/Image.gz" "$OUT/Image$suffix.gz"
   install -m 0644 "$tree/arch/arm64/boot/dts/allwinner/$KERNEL_DTB.dtb" "$OUT/$KERNEL_DTB.dtb"
@@ -453,6 +502,8 @@ case "${1:-all}" in
   uboot)   build_uboot ;;
   uboot-tree) prepare_uboot ;;
   kernel)  build_kernel ;;
+  # Generate and check .config only (tools/build/test-kernel-rustc-probe.py).
+  kernel-config) kernel_tree=$(prepare_kernel); configure_kernel "$kernel_tree" ;;
   aic8800) build_aic8800 ;;
   images)  build_images ;;
   all)     build_bl31; build_uboot; build_kernel; build_aic8800; build_images ;;
@@ -462,5 +513,5 @@ case "${1:-all}" in
   # way to guarantee that is to ask the build. Honours KERNEL_CONFIG.
   kernel-tree)
     printf '%s/linux-%s-%s\n' "$BUILD" "$KERNEL_VERSION" "$(kernel_inputs_digest)" ;;
-  *) echo "usage: $0 [all|bl31|uboot|uboot-tree|kernel|aic8800|images|kernel-tree]" >&2; exit 2 ;;
+  *) echo "usage: $0 [all|bl31|uboot|uboot-tree|kernel|kernel-config|aic8800|images|kernel-tree]" >&2; exit 2 ;;
 esac

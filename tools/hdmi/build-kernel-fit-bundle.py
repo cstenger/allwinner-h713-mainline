@@ -12,6 +12,13 @@ from the installed sources and the candidate with the change. Refused unless:
     out-of-tree and in-tree modules keep loading),
   - the board DTB is identical, and
   - the baseline script reproduces the installed startup script.
+
+--rustc-probe-transition is for the first bundle after build.sh stopped
+letting host rustc into .config (2026-11-09). FITs installed before it embed
+rustc 1.99's probe results, so their baseline only reproduces with
+H713_KERNEL_RUSTC=<that rustc>; the candidate is built normally. The option
+expects exactly RUSTC_PROBE_SYMBOLS to differ, set in the baseline and "none"
+in the candidate. Later baselines build without rustc and need no option.
 """
 import argparse
 import hashlib
@@ -22,11 +29,18 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-# Installed since 2026-11-09 (0190 route hand-over cover, install-kernel-fit.py).
-INSTALLED_FIT = 'd4cb9c9586172ec88c6e1c4f349a8f6a2506d23acc1bda12c0cd5c1164fb1bb0'
-INSTALLED_CMD = 'bb89537cdbb0bedc5df5275859c5c83e43b5a058a4c2e3ccbbc70ef2ad69f2e5'
-INSTALLED_SCR = '349a8c7485daa16b622c9761bf7e559b292842c212e5d1d3e2939315b7543a73'
+# Installed since 2026-11-10 (0190 + rustc-free kernel config, install-kernel-fit.py).
+INSTALLED_FIT = '9d49630823d0d8636fc192cb4db7b000dbbf57f30361ee845e9e2fe517675ca6'
+INSTALLED_CMD = '2dd9adb1bdd42a9325b429abfad68aabea3330f4012fe0a10a872896718c7b0b'
+INSTALLED_SCR = '4c2453a4ee311bc8cec1b069cf078ce3d471172c87157fdfb1f4d9150f1c02d8'
 DTB = 'sun50i-h713-hy200-qz713df-a1.dtb'
+# What rustc 1.99 (installed kernels up to 2026-11-09) wrote into .config.
+RUSTC_PROBE_SYMBOLS = {
+    'CONFIG_RUSTC_VERSION': ('109900', '0'), 'CONFIG_RUSTC_LLVM_VERSION': ('230101', '0'),
+    **{'CONFIG_RUSTC_HAS_'+s: ('y', None) for s in
+       ('COERCE_POINTEE', 'SPAN_FILE', 'UNNECESSARY_TRANSMUTES', 'FILE_WITH_NUL', 'FILE_AS_C_STR')},
+    'CONFIG_HAVE_CFI_ICALL_NORMALIZE_INTEGERS_RUSTC': ('y', None),
+}
 
 
 def sha(b): return hashlib.sha256(b).hexdigest()
@@ -50,7 +64,7 @@ def config(path):
     return out
 
 
-def check(baseline, candidate, installed_fit, expected_diff):
+def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=False):
     bt, ct = tree(baseline), tree(candidate)
     bfit = (baseline/'build/out/h713-kernel-production.fit').read_bytes()
     cfit = (candidate/'build/out/h713-kernel-production.fit').read_bytes()
@@ -58,6 +72,11 @@ def check(baseline, candidate, installed_fit, expected_diff):
     need(cfit != bfit, 'candidate FIT equals the baseline')
     bc, cc = config(bt/'.config'), config(ct/'.config')
     diff = sorted(k for k in set(bc) | set(cc) if bc.get(k) != cc.get(k))
+    if rustc_transition:
+        for k, (old, new) in RUSTC_PROBE_SYMBOLS.items():
+            need((bc.get(k), cc.get(k)) == (old, new), 'not the rustc probe transition: %s %s -> %s'
+                 % (k, bc.get(k), cc.get(k)))
+        expected_diff = [*expected_diff, *RUSTC_PROBE_SYMBOLS]
     need(diff == sorted(expected_diff), 'unexpected config difference: '+str(diff))
     need((bt/'Module.symvers').read_bytes() == (ct/'Module.symvers').read_bytes(), 'Module.symvers differs')
     release = lambda t: (t/'include/config/kernel.release').read_text()
@@ -77,8 +96,11 @@ def main():
     p.add_argument('--installed-scr', default=INSTALLED_SCR)
     p.add_argument('--config-diff', action='append', default=[],
                    help='a CONFIG_ symbol the candidate is meant to change (repeat)')
+    p.add_argument('--rustc-probe-transition', action='store_true',
+                   help='baseline built with H713_KERNEL_RUSTC (rustc 1.99), candidate without')
     a = p.parse_args()
-    bfit, cfit, dtb = check(a.baseline, a.candidate, a.installed_fit, a.config_diff)
+    bfit, cfit, dtb = check(a.baseline, a.candidate, a.installed_fit, a.config_diff, a.rustc_probe_transition)
+    if a.rustc_probe_transition: a.config_diff += list(RUSTC_PROBE_SYMBOLS)
     spec = importlib.util.spec_from_file_location('startup', ROOT/'tools/hdmi/build-startup.py')
     st = importlib.util.module_from_spec(spec);spec.loader.exec_module(st)
     old = st.script(fit_size=len(bfit), fdt_size=len(dtb)).encode()

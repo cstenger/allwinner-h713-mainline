@@ -41,6 +41,16 @@ SPEAKER = {'h713-hdmi-speaker.service': 'tools/hdmi/h713-hdmi-speaker.service',
            'alsa-ctl.c': 'tools/audio/alsa-ctl.c'}
 
 
+# Kconfig writes the host rustc it probes into .config even with CONFIG_RUST
+# off, and IKCONFIG embeds .config in the FIT. build.sh pins RUSTC to a tool
+# that cannot exist; this rechecks the result independently.
+RUSTC_PROBE_LEAK=re.compile(r'^CONFIG_RUSTC_(?:VERSION|LLVM_VERSION)=(?!0$).*$'
+                            r'|^CONFIG_(?:RUSTC_HAS_\w+|\w+_RUSTC|RUST_IS_AVAILABLE|RUST)=y$',re.M)
+def rustc_probe_leaks(config_text):
+    leaks=RUSTC_PROBE_LEAK.findall(config_text)
+    if not re.search(r'^CONFIG_RUSTC_VERSION=0$',config_text,re.M):leaks.append('missing CONFIG_RUSTC_VERSION=0')
+    return leaks
+
 def need(ok, message):
     if not ok:
         raise ValueError(message)
@@ -316,6 +326,7 @@ def build(a):
                KBUILD_BUILD_TIMESTAMP=datetime.fromtimestamp(a.epoch,timezone.utc).strftime('%a %b %d %H:%M:%S UTC %Y'))
     for key in ('CFLAGS','CXXFLAGS','CPPFLAGS','LDFLAGS','KCFLAGS','KCPPFLAGS','LOCALVERSION','CROSS_COMPILE'):
         env.pop(key,None)
+    need('H713_KERNEL_RUSTC' not in env,'H713_KERNEL_RUSTC only rebuilds pre-fix baselines; unset it for a release')
     # Out-of-tree Wi-Fi/HDMI objects can embed absolute kernel-header __FILE__
     # strings. Map the private build root before compilation, not after linking.
     env['KCFLAGS']='-ffile-prefix-map='+str(work)+'=.'
@@ -328,6 +339,8 @@ def build(a):
     for stage in ['kernel', 'bl31', 'uboot', 'aic8800']:
         run([ROOT/'tools/build/build.sh', stage], env)
     kernel = Path(subprocess.check_output([ROOT/'tools/build/build.sh','kernel-tree'],env=env,text=True).strip())
+    leaks=rustc_probe_leaks((kernel/'.config').read_text())
+    need(not leaks,'host rustc reached the kernel .config (IKCONFIG): '+', '.join(leaks))
     kout = work/'build/out'
     fit = kout/'h713-kernel-production.fit'
     dtb = kout/'sun50i-h713-hy200-qz713df-a1.dtb'

@@ -36,6 +36,19 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn('DIAGNOSTIC_DDC_ONLY = True',policy)
         self.assertNotIn('DIAGNOSTIC_HPD_ONLY = True',policy)
 
+    def test_host_rustc_in_kernel_config_is_refused(self):
+        clean='CONFIG_RUSTC_VERSION=0\nCONFIG_RUSTC_LLVM_VERSION=0\nCONFIG_RUSTC_SUPPORTS_ARM64=y\nCONFIG_HAVE_RUST=y\n'
+        self.assertEqual(b.rustc_probe_leaks(clean),[])
+        # The eight lines rustc 1.99 put into the production .config (2026-11-09).
+        host=('CONFIG_RUSTC_VERSION=109900\nCONFIG_RUSTC_LLVM_VERSION=230101\nCONFIG_RUSTC_HAS_COERCE_POINTEE=y\n'
+              'CONFIG_RUSTC_HAS_SPAN_FILE=y\nCONFIG_RUSTC_HAS_UNNECESSARY_TRANSMUTES=y\nCONFIG_RUSTC_HAS_FILE_WITH_NUL=y\n'
+              'CONFIG_RUSTC_HAS_FILE_AS_C_STR=y\nCONFIG_HAVE_CFI_ICALL_NORMALIZE_INTEGERS_RUSTC=y\n')
+        self.assertEqual(b.rustc_probe_leaks(host),host.splitlines()+['missing CONFIG_RUSTC_VERSION=0'])
+        for line in host.splitlines()[1:]:
+            self.assertEqual(len(b.rustc_probe_leaks(clean+line+'\n')),1,line)
+        self.assertEqual(b.rustc_probe_leaks(clean+'CONFIG_RUST=y\n'),['CONFIG_RUST=y'])
+        self.assertEqual(b.rustc_probe_leaks('CONFIG_RUSTC_SUPPORTS_ARM64=y\n'),['missing CONFIG_RUSTC_VERSION=0'])
+
     def test_generated_module_outputs_do_not_become_source_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);module=root/'modules/hdmi-signal';module.mkdir(parents=True)
