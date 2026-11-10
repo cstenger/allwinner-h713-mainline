@@ -21,7 +21,7 @@ detail belongs in the file it points at.
 
 | file | what it is |
 | --- | --- |
-| [`First HDMI advert: cause and event-driven fix — November 8`](hdmi-first-advert-root-cause-2026-11-08.md) | Source reads EDID but our slave NAKs until an HPD edge; SCP DDC-line watch + failed-read pulse (`hpd-event-v1`): lock owner +2.12 s; qualification table; open AFBD green stall. |
+| [`First HDMI advert: cause and event-driven fix — November 8`](hdmi-first-advert-root-cause-2026-11-08.md) | Source reads EDID but our slave NAKs until an HPD edge; SCP DDC-line watch + failed-read pulse (`hpd-event-v1`): lock owner +2.12 s; qualification table; AFBD green stall closed as a rare known limit (1/9 boots). |
 | [`Rebuilt-candidate hardware qualification`](production-evidence/2026-11-03-candidate-installation/README.md) | Exact install/readback, boot/HDMI/decoder/control checks and non-writing recovery entry; tested scope and GF1 disposition recorded. |
 | [`Guarded frame-discard disposition`](production-evidence/2026-11-04-guarded-discard-disposition/README.md) | Reviewed protective drop; actual-source race/guard-bypass tests, strict failure retained, unchanged installed binary. |
 | [`Exact installation/rollback packet`](production-evidence/2026-11-03-installation-packet/README.md) | Sealed bounded installation/rollback inputs and protected readback; preparation record, with live results below. |

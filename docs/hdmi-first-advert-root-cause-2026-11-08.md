@@ -93,17 +93,59 @@ A 128-byte read at 100 kHz is ~200 passes, so 120 sits between them; a source
 using fast-mode DDC would be misread as failed and get one harmless extra
 pulse.
 
-## Separate open issue: green picture (AFBD stall)
+## Closed separately: green picture (AFBD stall) — known rare limit
 
-On 1 of 9 boots in this work the picture was green with magenta highlights —
-luma being fetched as chroma. Capture, our NV12 frames (read back through
-V4L2), the KMS framebuffer, the AFBD Y/C addresses, strides, format, IOMMU
-bypass `0x58`, panel selector and chroma gain were all correct. A green vs good
-display-register sweep shows the AFBD stalled: publish latches `0x05600014` and
-`0x0560006c` stuck at 1, `0x05600038=0x10`, `0x05600338=0x01000001`,
-`0x056001cc/0x056001fc` set. A pipeline restart does not clear it; a power
-cycle does. No link to the HPD change is established. Per-boot check:
-`local/recovery/2026-11-07-hpd-event/qual-check.sh` (latches sampled 50x).
+**Status: CLOSED 2026-11-09 as a known, rare limit. Not reproduced, no fix.**
+
+On 1 of 9 boots in this work (`q-fresh-01`, board boot `51a31267`) the picture
+was green with magenta highlights, which is luma being fetched as chroma
+(chroma = luma gives Y40 → (0,132,0) and Y220 → (255,123,255)). Capture, our
+NV12 frames read back through V4L2, the KMS framebuffer, the AFBD Y/C
+addresses, strides, format `0x05600010=03000013`, IOMMU bypass `0x58`, panel
+selector and chroma gain were all correct. Restarting `h713-hdmi-video` (which
+stops source 0 and starts it again) did not clear it. A power cycle did.
+
+**The robust signature is four status words.** Every healthy streaming boot
+reads 0 in all of them. The green boot read:
+
+| word | green | healthy (7 boots, `qual-check.sh`) |
+| --- | --- | --- |
+| `0x05600038` | `0x00000010` | 0 |
+| `0x05600338` | `0x01000001` | 0 |
+| `0x056001cc` | `0x02cf0130` (line 719, x 304) | 0 |
+| `0x056001fc` | `0x02cf04f0` (line 719, x 1264) | 0 |
+
+**Correction: the "stuck publish latches" are not evidence.** The first write-up
+counted `0x05600014=1` and `0x0560006c=1` as stuck latches. They came from one
+read per sweep. A healthy stream reads 1 in 37–40 of 50 samples, because the
+driver publishes every frame and each publish waits for the next vsync. A
+single 1 is what a healthy board shows most of the time. Also, a latch that
+never retired would make every `atomic_update` hit the 50 ms
+`h713_afbd_wait_ready()` timeout and log `video enable READY did not clear`.
+The green boot logged no AFBD warning and delivered frames at the normal rate.
+So the publishes were retiring. What actually went wrong is the fetch state
+above, not the latch handshake.
+
+**Why it is closed and not chased:**
+
+* n = 1 in 9 boots, with no trigger found. To see it again, and to test a fix
+  afterwards, would take tens of operator-timed cold boots. Fresh-source runs
+  also reboot the host, which ends the Claude session.
+* Neither the event pulse nor the capture module writes AFBD. The capture
+  module only *reads* `+0x320/+0x324`. The one green boot was an event-pulse
+  boot, and so were two later good boots (`q-fresh-02/03`).
+* Soft recovery doesn't work: the service restart already did the source-0
+  stop/start that a driver watchdog would do. Resetting AFBD would also reset
+  the RGB console and the MIPS logo path. Nothing safe is left to try without a
+  repro.
+
+**If it recurs:** don't power-cycle first. Run
+`local/recovery/2026-11-07-hpd-event/qual-check.sh RUN`, which flags `STALL`
+on any of the four words. Then take a `tools/hdmi/display-sweep.py --no-raw` and diff it
+against `q-primed-01/sweep-good*` (`tools/hdmi/diff-display-sweeps.py`). Then try
+`modprobe -r`/reload of the KMS stack before the power cycle. Composition
+diffs `0x05000a2c/a34` and `0x0500096c` bit 31 from the one sweep are still
+uninterpreted.
 
 ## Tools added
 
