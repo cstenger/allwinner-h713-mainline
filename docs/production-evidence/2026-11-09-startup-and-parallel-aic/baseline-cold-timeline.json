@@ -1,0 +1,52 @@
+{
+ "board_boot": "2b825f9d-2ff3-4d74-8618-a81a5740c2ff",
+ "installed": {
+  "signal": "hpd-event-v1",
+  "v4l2": "reject-trace-power-v2",
+  "startup_cmd": "d2e8cb7a (single launch)",
+  "session": "e8b0a1c3"
+ },
+ "source": "primed host, but host output disabled until ~90 s: HDMI lock not measured",
+ "uart_anomaly": "Not a fault: Chris confirmed the supply was switched on twice. The first power-on was cut during the 3 s panel hold; timings use the second SPL.",
+ "firmware_from_second_spl_s": {
+  "proper": 1.953,
+  "script": 2.153,
+  "panel_wait_start": 3.155,
+  "logo": 6.159,
+  "hdmi_handoff": 8.213,
+  "starting_kernel": 8.714,
+  "login": 23.589
+ },
+ "linux_monotonic_s": {
+  "kernel_to_userspace": 2.418,
+  "modules_load": [
+   4.02,
+   6.75
+  ],
+  "aic8800_in_modules_load": [
+   4.02,
+   6.59
+  ],
+  "sysinit": 8.03,
+  "prepare": [
+   8.11,
+   14.14
+  ],
+  "receiver_insmod": 9.52,
+  "ipc_check_each": 0.44,
+  "dsp_patch": [
+   13.11,
+   14.02
+  ],
+  "capture": [
+   14.15,
+   14.57
+  ],
+  "signal_owner_ready": 14.9,
+  "user_manager": [
+   8.67,
+   11.96
+  ],
+  "systemd_finished": 17.83
+ }
+}

@@ -195,11 +195,11 @@ first-advertisement reliability. The existing copy-guard rejection history is
 separate and remains preserved. No automatic extra reboot or configuration
 rollback was performed to replace this failed observation with a passing one.
 
-## Rootfs form of the experiment (not in the default build)
+## Rootfs form of the experiment
 
 `rootfs-parallel-aic.patch` is the same change written into
-`tools/rootfs/customize.sh` and `build.sh`: an explicit
-`h713-aic8800-modules.service` replaces global `modules-load.d` loading, with
-coldplug blacklisted. The board went back to global loading (control B) during
-the first-advert investigation, so the default rootfs build keeps global
-loading. To build the parallel form, `git apply` this patch.
+`tools/rootfs/customize.sh` and `build.sh`. It was held out of the default
+build while the board ran global loading (control B), then applied on
+2026-11-09 after three qualifying cold boots
+([qualification](../2026-11-09-startup-and-parallel-aic/README.md)).
+The rootfs builder now emits it by default; the patch is kept as a record.

@@ -470,7 +470,7 @@ env \
     case "$root_hash" in "!"*) ;; *) echo "error: root password is not locked" >&2; exit 1 ;; esac
     test -s "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/modules.dep"
     test "$(find "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE" -type f -name "*.ko*" | wc -l)" -gt 0
-    # AIC8800 WiFi/BT: modules installed, indexed by depmod, firmware + autoload present
+    # AIC8800 WiFi/BT: explicit owner outside global modules-load, aliases gated.
     test -f "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/updates/aic8800/aic8800_fdrv.ko"
     test -f "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/updates/aic8800/aic8800_btlpm.ko"
     grep -q "updates/aic8800/aic8800_fdrv.ko" "$ROOTFS_TREE/lib/modules/$KERNEL_RELEASE/modules.dep"
@@ -487,7 +487,16 @@ env \
     else
       test -x "$ROOTFS_TREE/usr/local/sbin/wifi-baseline"
     fi
-    grep -qx "aic8800_fdrv" "$ROOTFS_TREE/etc/modules-load.d/aic8800.conf"
+    ! grep -qE "^[[:space:]]*aic8800_" "$ROOTFS_TREE/etc/modules-load.d/aic8800.conf"
+    for m in aic8800_bsp aic8800_fdrv aic8800_btlpm; do
+      grep -qx "blacklist $m" "$ROOTFS_TREE/etc/modprobe.d/h713-aic8800-startup.conf"
+      grep -qx "ExecStart=/usr/sbin/modprobe $m" "$ROOTFS_TREE/etc/systemd/system/h713-aic8800-modules.service"
+    done
+    test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-aic8800-modules.service"
+    grep -qx "Requires=h713-aic8800-modules.service" "$ROOTFS_TREE/etc/systemd/system/h713-bt-attach.service"
+    if [ "${HOTSPOT_ENABLED:-0}" = 1 ]; then
+      grep -qx "Requires=h713-aic8800-modules.service" "$ROOTFS_TREE/etc/systemd/system/h713-hotspot.service"
+    fi
     test -x "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     grep -q "noflow" "$ROOTFS_TREE/usr/local/sbin/h713-bt-attach"
     test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-bt-attach.service"

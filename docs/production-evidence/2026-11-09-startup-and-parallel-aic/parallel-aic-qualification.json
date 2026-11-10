@@ -1,0 +1,34 @@
+{
+ "summary": "parallel AIC: 3 cold boots, all healthy, no HPD pulse, 0 failed units",
+ "boots": {
+  "cold-01": {
+   "boot": "0f1cecc5",
+   "prepare_start": 4.6,
+   "edid_hpd_ready": 12.45,
+   "video": 13.87,
+   "preceded_by": "clean shutdown (old config)"
+  },
+  "cold-02": {
+   "boot": "addba87b",
+   "prepare_start": 6.17,
+   "edid_hpd_ready": 13.83,
+   "video": 15.82,
+   "preceded_by": "clean shutdown (new config)",
+   "note": "systemd-growfs-root took 1.70 s (usually ~0.15 s) and early tmpfiles waited behind it; sysinit 6.08. Power cut at ~110 s by operator, journal kept first 41 s."
+  },
+  "cold-03": {
+   "boot": "648e97ae",
+   "prepare_start": 4.68,
+   "edid_hpd_ready": 12.49,
+   "video": 13.91,
+   "preceded_by": "abrupt power cut; ext4 journal recovery complete"
+  }
+ },
+ "baseline": {
+  "boot": "2b825f9d",
+  "prepare_start": 8.11,
+  "edid_hpd_ready": 14.9,
+  "video_expected": "~16.3 (lock ~1.37 s after ready on primed source)"
+ },
+ "shutdown": "0f1cecc5 clean under new config: signal, capture, prepare, PipeWire stopped in order; no failures or timeouts; poweroff.target reached"
+}

@@ -117,14 +117,40 @@ cat > "$systemd_dir/getty@tty1.service.d/10-keep-boot-log.conf" <<EOF
 TTYVTDisallocate=no
 EOF
 
-# Load the AIC8800 WiFi/BT modules at boot. bsp registers the SDIO glue and
-# powers the chip; fdrv (WiFi) and btlpm (BT) depend on it, so ordering matters.
+# AIC8800 initialization runs alongside HDMI after basic.target. Keep alias
+# coldplug from pulling the combo chip back into the global sysinit barrier.
 install -d -m 0755 "$R/etc/modules-load.d"
-cat > "$R/etc/modules-load.d/aic8800.conf" <<EOF
-aic8800_bsp
-aic8800_fdrv
-aic8800_btlpm
+cat > "$R/etc/modules-load.d/aic8800.conf" <<'EOF'
+# Loaded explicitly by h713-aic8800-modules.service, outside the sysinit barrier.
 EOF
+install -d -m 0755 "$R/etc/modprobe.d"
+cat > "$R/etc/modprobe.d/h713-aic8800-startup.conf" <<'EOF'
+# Block alias/udev coldplug; explicit service modprobe calls still work.
+blacklist aic8800_bsp
+blacklist aic8800_fdrv
+blacklist aic8800_btlpm
+EOF
+cat > "$systemd_dir/h713-aic8800-modules.service" <<'EOF'
+[Unit]
+Description=Initialize AIC8800 WiFi and Bluetooth alongside HDMI
+After=systemd-modules-load.service
+Before=h713-hotspot.service h713-bt-attach.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/modprobe aic8800_bsp
+ExecStart=/usr/sbin/modprobe aic8800_fdrv
+ExecStart=/usr/sbin/modprobe aic8800_btlpm
+ExecStart=/usr/bin/test -d /sys/class/net/wlan0
+# Keep the shared chip powered; clients retain their existing shutdown paths.
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -sfn ../h713-aic8800-modules.service \
+  "$systemd_dir/multi-user.target.wants/h713-aic8800-modules.service"
 
 # Quiet the WiFi driver for production. aic8800_fdrv's aicwf_dbg_level defaults
 # to LOGERROR|LOGINFO|LOGDEBUG|LOGTRACE|LOGFW (0x40F); the DEBUG/TRACE bits flood
@@ -254,8 +280,9 @@ chmod 0755 "$R/usr/local/sbin/h713-bt-attach"
 cat > "$systemd_dir/h713-bt-attach.service" <<EOF
 [Unit]
 Description=AIC8800 Bluetooth HCI attach (ttyS1, H4, noflow)
-After=systemd-modules-load.service
+After=systemd-modules-load.service h713-aic8800-modules.service
 Wants=systemd-modules-load.service
+Requires=h713-aic8800-modules.service
 
 [Service]
 Type=oneshot
@@ -481,8 +508,9 @@ EOS
   cat > "$systemd_dir/h713-hotspot.service" <<EOF
 [Unit]
 Description=H713 WiFi hotspot (hostapd + dnsmasq on wlan0)
-After=systemd-modules-load.service
+After=systemd-modules-load.service h713-aic8800-modules.service
 Wants=systemd-modules-load.service
+Requires=h713-aic8800-modules.service
 
 [Service]
 Type=simple
