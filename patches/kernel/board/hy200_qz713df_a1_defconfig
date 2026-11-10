@@ -89,6 +89,10 @@ CONFIG_INPUT_MISC=y
 CONFIG_INPUT_UINPUT=m
 CONFIG_INPUT_AXP20X_PEK=y
 CONFIG_SERIO_SUN4I_PS2=y
+# Obsolete BSD ptys (/dev/ptyp*, /dev/ttyp*); everything uses /dev/pts. The
+# 256 pairs gave ~500 systemd device units, ~1.2 s of CPU at every manager
+# start or reload (docs/production-evidence/2026-11-09-startup-and-parallel-aic).
+# CONFIG_LEGACY_PTYS is not set
 CONFIG_SERIAL_8250=y
 CONFIG_SERIAL_8250_CONSOLE=y
 CONFIG_SERIAL_8250_NR_UARTS=8
