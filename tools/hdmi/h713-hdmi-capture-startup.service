@@ -9,7 +9,13 @@ ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-session.py start --bundle /usr/lib/h713-hdmi --boot-handoff
+# Readiness is established by h713-hdmi-prepare (Requires/After), whose start
+# ends by verifying the receiver owner, audio parameters and session state and
+# saving "ready". Re-running the session here repeated those ~10 ms of checks
+# inside ~0.4 s of interpreter start-up on the path to HPD (2026-11-10). This
+# unit's job is teardown ownership and its stop order: h713-hdmi-signal starts
+# after it, so it stops first, before the session shutdown below.
+ExecStart=/usr/bin/true
 ExecStop=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-session.py shutdown --bundle /usr/lib/h713-hdmi --terminal-shutdown
 Restart=no
 TimeoutStartSec=60

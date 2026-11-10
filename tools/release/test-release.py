@@ -126,7 +126,8 @@ class ReleaseTests(unittest.TestCase):
             cal=b.calibration(b.ROOT/'config/hy200-ddr3-calibration.json')
             out=root/'overlay';b.overlay(out,modules,vendor,fit,dtb,cal)
             units=out/'etc/systemd/system'
-            self.assertIn('--boot-handoff',(units/'h713-hdmi-capture.service').read_text())
+            self.assertIn('--boot-handoff',(units/'h713-hdmi-prepare.service').read_text())
+            self.assertIn('ExecStart=/usr/bin/true',(units/'h713-hdmi-capture.service').read_text())
             self.assertTrue((units/'multi-user.target.wants/h713-hdmi-readvertise.service').is_symlink())
             self.assertFalse((units/'multi-user.target.wants/h713-hdmi-video.service').exists())
             self.assertFalse((units/'multi-user.target.wants/h713-hdmi-prepare.service').exists())

@@ -10,7 +10,7 @@ H=/proc/device-tree/chosen/h713,hdmi-boot-v1
 handoff=$(od -An -tx1 -v "$H" | tr -d ' \n'); echo "handoff $handoff"
 case "$handoff" in 48444d4900000000????????) ;; *) fail 'handoff not magic/0/pid';; esac
 [ "${handoff#48444d4900000000}" != 00000000 ] || fail 'handoff pid zero'
-for u in h713-hdmi-capture h713-hdmi-signal; do
+for u in h713-hdmi-prepare h713-hdmi-capture h713-hdmi-signal; do
   s=$(systemctl show -p ActiveState,Result,ConditionResult,ExecMainStatus --value $u | tr '\n' ' ')
   echo "$u: $s"
   [ "$(systemctl is-active $u)" = active ] || fail "$u not active"
@@ -40,7 +40,8 @@ grep -q H713HDMI /proc/asound/cards || fail 'no ALSA card'
 cat /proc/asound/H713HDMI/pcm0c/sub0/status
 # No dependency on a bench bundle or host-provided proof.
 ls -d /tmp/h713* /tmp/*hdmi* 2>/dev/null && echo 'note: /tmp artifacts exist (units use only /usr/lib/h713-hdmi)'
-systemctl show -p ExecStart --value h713-hdmi-capture | grep -q -- '--boot-handoff' || fail 'service not using DT handoff'
+# The guarded start runs in prepare; capture's start is a no-op (2026-11-10).
+systemctl show -p ExecStart --value h713-hdmi-prepare | grep -q -- '--boot-handoff' || fail 'service not using DT handoff'
 echo "rtc gp6 latch unknown from Linux (U-Boot checked)"
-journalctl -b -u h713-hdmi-capture -u h713-hdmi-signal --no-pager | tail -15
+journalctl -b -u h713-hdmi-prepare -u h713-hdmi-capture -u h713-hdmi-signal --no-pager | tail -15
 echo PASS

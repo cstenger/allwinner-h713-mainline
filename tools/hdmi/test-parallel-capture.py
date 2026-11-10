@@ -50,8 +50,11 @@ class Ordering(unittest.TestCase):
         self.assertNotIn('ExecStop', units[prepare]['Service'])
         self.assertEqual(units[prepare]['Unit']['ConditionPathExists'],
                          units[capture]['Unit']['ConditionPathExists'])
-        self.assertEqual(units[prepare]['Service']['ExecStart'],
-                         units[capture]['Service']['ExecStart'])
+        # prepare does the one guarded start; capture's start is a no-op
+        # (prepare already verified and saved "ready"), it owns teardown.
+        self.assertIn('session.py start --bundle', units[prepare]['Service']['ExecStart'])
+        self.assertIn('--boot-handoff', units[prepare]['Service']['ExecStart'])
+        self.assertEqual(units[capture]['Service']['ExecStart'], '/usr/bin/true')
         self.assertNotIn('Install', units[prepare])
 
     @unittest.skipUnless(shutil.which('systemd-analyze'), 'systemd-analyze required')
@@ -64,7 +67,7 @@ class Ordering(unittest.TestCase):
                 (units/f'{target}.target').write_text('[Unit]\nDescription=Offline target\n')
             for name in ('user@1000.service', 'systemd-modules-load.service'):
                 (units/name).write_text('[Service]\nExecStart=/usr/bin/python3\n')
-            for binary in ('usr/bin/python3', 'usr/bin/gst-launch-1.0', 'sbin/insmod', 'sbin/rmmod',
+            for binary in ('usr/bin/python3', 'usr/bin/true', 'usr/bin/gst-launch-1.0', 'sbin/insmod', 'sbin/rmmod',
                            'usr/lib/h713-hdmi-speaker/enable-mixer.sh'):
                 path = root/binary;path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('# never executed: offline unit verification fixture\n');path.chmod(0o755)
