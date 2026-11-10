@@ -53,18 +53,22 @@ def parse_cells(arg):
 
 
 class SingleLaunch(unittest.TestCase):
-    def test_default_keeps_the_qualified_double_launch(self):
+    def test_default_is_the_installed_single_launch(self):
         text=m.script()
+        self.assertIn(' && h713_disp auto 0x34 logo comm-trace && itest.l *0x0306101c == 1 && ',text)
+        self.assertNotIn('mips-comm-trace',text)
+        self.assertEqual(text,m.script(single_launch=True))
+    def test_double_launch_is_still_available_for_old_packages(self):
+        text=m.script(single_launch=False)
         self.assertIn(' && h713_disp auto 0x34 logo && h713_disp mips-comm-trace 0x34 && ',text)
-        self.assertNotIn('comm-trace && ',text.replace('mips-comm-trace','x'))
     def test_single_launch_replaces_only_the_two_launch_commands(self):
-        double=m.script().split(' && ');single=m.script(single_launch=True).split(' && ')
+        double=m.script(single_launch=False).split(' && ');single=m.script().split(' && ')
         i=double.index('h713_disp auto 0x34 logo')
         self.assertEqual(double[i:i+2],m.LAUNCH_DOUBLE)
         self.assertEqual(single[:i]+m.LAUNCH_DOUBLE+single[i+1:],double)
         self.assertEqual(single[i+1],'itest.l *0x0306101c == 1')
     def test_fallback_path_never_uses_the_single_launch(self):
-        tail=m.script(single_launch=True).split('\nif ',1)[1]
+        tail=m.script().split('\nif ',1)[1]
         self.assertIn('h713_disp auto 0x34 logo; then',tail)
         self.assertNotIn('comm-trace',tail)
 
@@ -109,7 +113,7 @@ class StartupScript(unittest.TestCase):
 
     def test_lamp_dark_during_cold_bring_up_and_lit_before_boot(self):
         launch, source = self.stage('launch'), self.stage('source')
-        self.assertLess(launch.index('gpio clear PB5'), launch.index('h713_disp auto 0x34 logo'))
+        self.assertLess(launch.index('gpio clear PB5'), launch.index(m.LAUNCH_SINGLE[0]))
         self.assertLess(source.index('echo H713 panel 720p timing re-latched after source 3'),
                         source.index('gpio set PB5'))
         self.assertLess(source.index('gpio set PB5'), source.index('bootm 0x50000000 - 0x4f000000'))

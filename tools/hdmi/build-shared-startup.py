@@ -15,7 +15,7 @@ def build(out):
     out.mkdir(parents=True)
     for name in ('h713-hdmi-health-ack.py','h713-hdmi-health-ack.service','check-startup.sh','install-shared-startup.py'):
         shutil.copyfile(ROOT/'tools/hdmi'/name,out/name)
-    text=m.script();(out/'h713-hdmi.cmd').write_text(text);(out/'h713-hdmi.scr').write_bytes(m.legacy_image(text.encode()))
+    text=m.script(single_launch=False);(out/'h713-hdmi.cmd').write_text(text);(out/'h713-hdmi.scr').write_bytes(m.legacy_image(text.encode()))
     manifest={'schema':'h713-shared-startup-update-v1','fit_sha256':FIT_SHA,
               'previous':{n:sha(OLD/n) for n in ('h713-hdmi.scr','h713-hdmi.cmd')},
               'candidate':{n:sha(out/n) for n in ('h713-hdmi.scr','h713-hdmi.cmd')},

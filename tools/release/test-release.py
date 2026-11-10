@@ -67,8 +67,14 @@ class ReleaseTests(unittest.TestCase):
 
     def test_accepted_startup_bytes_unchanged_by_parameterization(self):
         startup=b.load_module(b.ROOT/'tools/hdmi/build-startup.py')
-        self.assertEqual(hashlib.sha256(startup.legacy_image(startup.script().encode())).hexdigest(),
+        # The pre-0004 two-launch script, still reproducible on request.
+        self.assertEqual(hashlib.sha256(startup.legacy_image(startup.script(single_launch=False).encode())).hexdigest(),
                          'fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b')
+        # The default: the single-launch script installed 2026-11-06, built
+        # for that kernel (FIT 0x7428ec, DTB 0x876a), byte for byte.
+        self.assertEqual(hashlib.sha256(startup.script(fit_size=0x7428ec,fdt_size=0x876a).encode()).hexdigest(),
+                         'd2e8cb7a2744c0abb8bce97a441a75ff05d03c0a1a0df7959f215d3cd28e7ad2')
+        self.assertIn('h713_disp auto 0x34 logo comm-trace',startup.script())
         changed=startup.script(fit_size=0x123456,fdt_size=0x7890)
         self.assertIn('itest ${filesize} == 123456',changed)
         self.assertIn('itest ${hdmi_fdt_size} == 7890',changed)

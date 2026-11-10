@@ -29,13 +29,16 @@ BOOTCMD='if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; el
 
 
 # Single display-firmware launch (U-Boot patch 0004, `auto 0x34 logo
-# comm-trace`). Opt-in until hardware qualified: an older proper parses the
-# extra token as a custom logo file and the launch stage fails closed.
+# comm-trace`): the default since it was installed and passed cold and warm
+# boots on 2026-11-06 (kernel starts 1.10 s earlier). It needs a proper with
+# 0004: an older proper parses the extra token as a custom logo file and the
+# launch stage fails closed. single_launch=False reproduces the older
+# two-launch script that pre-0004 packages were built and pinned with.
 LAUNCH_DOUBLE=['h713_disp auto 0x34 logo', 'h713_disp mips-comm-trace 0x34']
 LAUNCH_SINGLE=['h713_disp auto 0x34 logo comm-trace']
 
 
-def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=False):
+def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=True):
     # Commands in each stage are chained: no partial stage can authorize Linux.
     stages={
       'image':[
