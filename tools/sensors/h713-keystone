@@ -1,0 +1,469 @@
+#!/bin/sh
+# h713-keystone -- the projector's tilt, for automatic keystone and ceiling
+# detection. RUNS ON THE TARGET, as root. Needs kernel 0168 (the SC7A20
+# accelerometer on st_accel, with the projector's mount-matrix).
+#
+#   h713-keystone                          status: settings, tilt, what is applied
+#   h713-keystone auto|off [--persist]     keystone follows the tilt, or none
+#   h713-keystone manual DEG [--persist]   a fixed correction, in degrees
+#   h713-keystone ceiling auto|off [--persist]
+#                                          top/bottom flip follows gravity
+#   h713-keystone calibrate level|up       zero the sensor: at the lowest detent,
+#                                          then lens straight up (saved to /etc)
+#   h713-keystone lens DIST WIDTH BOTTOM [TOP]
+#                                          the lens geometry, from a tape measure
+#   h713-keystone trim [pitch|roll|yaw +D|-D|=D] [--persist]
+#   h713-keystone trim reset [--persist]   manual adjustment on top of the above
+#   h713-keystone corners [--persist]      four-corner mode: the picture fills
+#   h713-keystone corner [tl|tr|br|bl x|y +D|-D|=D] [--persist]
+#   h713-keystone corner reset [--persist] the corners you set, in frame pixels
+#   h713-keystone daemon                   the sensor loop (h713-keystone.service)
+#
+# The daemon samples the sensor about ten times a second and acts only once
+# the projector has been still for about a second, so a hand on the stand
+# does not make the picture swim. It publishes /run/h713-keystone/state:
+#
+#   keystone_deg   the correction the picture warp applies, in the projector's
+#                  frame like pitch_deg: in auto the settled pitch toward the
+#                  surface it faces (a wall up to 45 deg, then the ceiling:
+#                  pitch - 90; below -45 the floor: pitch + 90), DEG in
+#                  manual, 0 when off
+#   surface        wall, ceiling or floor (auto's assumption)
+#   level_deg      the roll the warp levels out: the settled roll in auto on
+#                  a wall, else 0 (on a ceiling the picture's rotation is the
+#                  projector's yaw, which gravity cannot see)
+#   pitch_deg      lens tilt toward the projector's own top (its +Y), so it
+#                  keeps its meaning upside down; +90 = pointing at its top
+#   roll_deg       the projector's right side above the horizon
+#   inverted       1 when upside down (ceiling); held near vertical
+#   settled        0 while it is moving; the last correction stays applied
+#
+# Both angles are in the projector's frame before the panel mirror; the warp
+# composes h713-mirror's mode itself.
+#
+# Calibration: the sensor's zero-g offsets are tens of mg, about a degree, so
+# uncalibrated the stand reads -1 to 89 deg. `calibrate level` (lowest detent,
+# on a level surface) zeroes the lens and side axes; `calibrate up` (lens
+# straight up) zeroes the up axis. The offsets (bias_x/y/z, in g, projector
+# frame) are subtracted from every sample; then the stand reads 0 to 90.
+#
+# Ceiling auto changes only the top/bottom half of the installation mode:
+# turning the projector over is front <-> ceiling and rear <-> rear-ceiling
+# (h713-mirror's number XOR 3), so front/rear stays your choice. It is off by
+# default, so an h713-mirror --persist setting is left alone.
+#
+# Lens geometry (`lens`): with the projector level on its lowest detent and
+# square to a wall, DIST is lens to wall, WIDTH the picture's width, BOTTOM
+# (and optionally TOP, as a check) the height of the picture's bottom (top)
+# edge above the centre of the lens; negative if below. Any one unit. The
+# panel's square pixels give the picture's height, so TOP only checks it.
+# DIST is to the lens's projection point, which on this unit is ~1.2" behind
+# the front glass (fitted on the wall, docs/keystone-plan.md): add that, or
+# the correction comes out ~1% strong at 20 deg.
+# keystone.lua (the warp) needs this; nothing is assumed.
+#
+# Trims (`trim`) adjust the picture by hand, in degrees, on top of auto or
+# manual: pitch (vertical keystone), roll (rotation) and yaw (horizontal
+# keystone -- the projector turned left or right, which gravity cannot see).
+# +D/-D adjusts, =D sets. Positive pitch: as if the lens were higher; roll:
+# as if the right side were higher; yaw: as if the projector were turned to
+# its right (a picture whose left side is the shorter wants more yaw). They
+# do nothing under `off`. keystone.lua applies them, and while it plays,
+# Alt+Up/Down (pitch), Alt+Left/Right (yaw), Alt+[ and Alt+] (roll) step
+# them by 0.5 deg and Alt+0 resets them, saved.
+#
+# Corner mode (`corners`) ignores the sensor and the trims: the picture
+# fills the quadrilateral whose corners are the frame's corners moved by
+# `corner` -- x right, y down, in pixels of the 1280x720 frame, each corner
+# kept inside it; tl (top-left), tr, br, bl as the picture shows. It needs
+# no measured lens. `auto` (or `manual`) brings the sensor back; the corners
+# are kept for the next time. While playing in corner mode, Alt+1..4 select
+# tl, tr, br, bl, Alt+arrows move the selected corner 4 px, Alt+0 resets
+# the corners, and Alt+c switches between corners and auto (saved).
+#
+# Settings: /etc/h713-keystone.conf with --persist, else /run/h713-keystone/conf
+# until the next boot. The daemon rereads them every second.
+#
+# Tests point H713_KEYSTONE_DEV, _RUN, _ETC and H713_MIRROR_ATTR at fakes, and
+# H713_KEYSTONE_SAMPLE_DELAY gives a fake the ~25 ms per read the chip takes.
+set -u
+RUN=${H713_KEYSTONE_RUN:-/run/h713-keystone}
+ETC=${H713_KEYSTONE_ETC:-/etc/h713-keystone.conf}
+STATE=$RUN/state
+MIRROR=${H713_MIRROR_ATTR-$(ls /sys/bus/platform/drivers/sun50i-h713-afbd/*/mirror_mode 2>/dev/null | head -1)}
+
+usage() { sed -n '6,20p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+die() { echo "h713-keystone: $*" >&2; exit 1; }
+
+find_dev() {
+	[ -n "${H713_KEYSTONE_DEV:-}" ] && { echo "$H713_KEYSTONE_DEV"; return 0; }
+	for n in /sys/bus/iio/devices/iio:device*/name; do
+		[ -r "$n" ] && [ "$(cat "$n")" = sc7a20 ] && { dirname "$n"; return 0; }
+	done
+	return 1
+}
+
+# The settings file in force: the runtime one if a non-persisted change made it.
+conf() { if [ -f "$RUN/conf" ]; then echo "$RUN/conf"; else echo "$ETC"; fi; }
+
+get() { # KEY DEFAULT
+	v=$(sed -n "s/^$1=//p" "$(conf)" 2>/dev/null | tail -1)
+	echo "${v:-$2}"
+}
+
+# Calibration is a property of this unit, not a preference: always to /etc,
+# and to the runtime file too if one is in force, so it applies at once.
+set_cal() { # KEY=VALUE...
+	for f in "$ETC" "$RUN/conf"; do
+		[ "$f" = "$ETC" ] || [ -f "$f" ] || continue
+		tmp=$(mktemp) || die "mktemp failed"
+		[ -f "$f" ] && cat "$f" > "$tmp"
+		for kv in "$@"; do
+			grep -v "^${kv%%=*}=" "$tmp" > "$tmp.n"; mv "$tmp.n" "$tmp"
+			echo "$kv" >> "$tmp"
+		done
+		mv "$tmp" "$f" && chmod 0644 "$f" || die "could not write $f"
+	done
+}
+
+set_conf() { # PERSIST KEY=VALUE...
+	p=$1; shift
+	src=$(conf); tmp=$(mktemp) || die "mktemp failed"
+	[ -f "$src" ] && grep -v '^#' "$src" > "$tmp"
+	for kv in "$@"; do
+		k=${kv%%=*}
+		grep -v "^$k=" "$tmp" > "$tmp.n"; mv "$tmp.n" "$tmp"
+		echo "$kv" >> "$tmp"
+	done
+	if [ "$p" = 1 ]; then
+		{ echo "# Written by h713-keystone --persist."; cat "$tmp"; } > "$ETC.tmp" &&
+			mv "$ETC.tmp" "$ETC" || die "could not write $ETC"
+		rm -f "$RUN/conf" "$tmp"
+		echo "h713-keystone: saved to $ETC"
+	else
+		mkdir -p "$RUN" && mv "$tmp" "$RUN/conf" || die "could not write $RUN/conf"
+		chmod 0644 "$RUN/conf"
+	fi
+}
+
+# The sensor loop. ONCE=1 takes one settled window, prints it and exits;
+# ONCE=2 prints that window's mean g without the calibration, for calibrate.
+loop() { # DEV ONCE
+	dev=$1
+	# Every sysfs read powers the chip up for one sample; at the 1 Hz default
+	# that is a second per axis. 100 Hz makes a read about 25 ms.
+	echo 100 > "$dev/sampling_frequency" 2>/dev/null
+	awk -v dev="$dev" -v once="$2" -v run="$RUN" -v etc="$ETC" \
+	    -v mirror="$MIRROR" -v delay="${H713_KEYSTONE_SAMPLE_DELAY:-}" '
+	function rd(f,   v) { v = ""; getline v < f; close(f); return v }
+	function now(   u) { split(rd("/proc/uptime"), u, " "); return u[1] + 0 }
+	function abs(x) { return x < 0 ? -x : x }
+	function deg(r) { return r * 57.29577951 }
+	# Degrees between two vectors.
+	function between(a, b,   d, la, lb, c) {
+		d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+		la = sqrt(a[0] ^ 2 + a[1] ^ 2 + a[2] ^ 2); lb = sqrt(b[0] ^ 2 + b[1] ^ 2 + b[2] ^ 2)
+		c = d / (la * lb); if (c > 1) c = 1; if (c < -1) c = -1
+		return deg(atan2(sqrt(1 - c * c), c))
+	}
+	function conf(   f, line, k, v) {
+		ks = "auto"; manual = 0; ceil = "off"; bias[0] = bias[1] = bias[2] = 0
+		f = run "/conf"
+		if ((getline line < f) < 0) f = etc
+		close(run "/conf")	# reopened below, from its first line
+		while ((getline line < f) > 0) {
+			if (line ~ /^#/ || line !~ /=/) continue
+			k = substr(line, 1, index(line, "=") - 1)
+			v = substr(line, index(line, "=") + 1)
+			if (k == "keystone") ks = v
+			else if (k == "manual_deg") manual = v + 0
+			else if (k == "ceiling") ceil = v
+			else if (k ~ /^bias_[xyz]$/ && once != 2) bias[index("xyz", substr(k, 6)) - 1] = v + 0
+		}
+		close(f)
+	}
+	function sample(   i, c) {
+		for (i = 0; i < 3; i++) c[i] = rd(dev "/in_accel_" ax[i] "_raw") * scale
+		# The mount-matrix maps the chip onto the projector frame.
+		for (i = 0; i < 3; i++)
+			g[i] = (mm[i,0] * c[0] + mm[i,1] * c[1] + mm[i,2] * c[2]) / 9.80665
+		if (delay != "") system("sleep " delay)
+	}
+	function d1(x) { x = sprintf("%.1f", x); return x == "-0.0" ? "0.0" : x }
+	function publish(   f) {
+		f = run "/state.tmp"
+		printf "keystone_deg=%s\nlevel_deg=%s\n", d1(applied), d1(lvl) > f
+		printf "pitch_deg=%s\nroll_deg=%s\n", d1(pitch), d1(roll) > f
+		printf "inverted=%d\nsettled=%d\nsurface=%s\n", inverted, settled, surf > f
+		printf "keystone=%s\nceiling=%s\nupdated=%.1f\n", ks, ceil, now() > f
+		close(f)
+		system("mv " f " " run "/state")
+	}
+	function follow_gravity(   m, want, r) {
+		if (ceil != "auto" || mirror == "") return
+		m = rd(mirror) + 0
+		if (int(m / 2) % 2 == inverted) return
+		if (now() < retry_at) return
+		want = 3 - m		# m XOR 3: flips top/bottom, keeps front/rear
+		r = system("h713-mirror " want " >/dev/null 2>&1")
+		if (r == 0)
+			printf "h713-keystone: %s -> installation mode %d\n", inverted ? "upside down" : "upright", want
+		else {
+			printf "h713-keystone: h713-mirror %d refused (10-bit video on the plane?); retrying in 10 s\n", want
+			retry_at = now() + 10
+		}
+		fflush()
+	}
+	BEGIN {
+		split("x y z", t, " "); ax[0] = t[1]; ax[1] = t[2]; ax[2] = t[3]
+		scale = rd(dev "/in_accel_x_scale") + 0
+		n = split(rd(dev "/mount_matrix"), t, /[;,] */)
+		for (i = 0; i < 9; i++) mm[int(i / 3), i % 3] = (n == 9) ? t[i + 1] + 0 : (i % 4 == 0)
+		W = 10			# window, samples: ~0.7 s at ODR 100
+		# g, per-axis SD of a window. The sensor alone is 27-53 mg (normal
+		# mode, 2026-10-06); at 60 mg, 7% of still windows read as moving.
+		STILL = 0.10
+		inverted = 0; settled = 0; applied = 0; lvl = 0; pitch = 0; roll = 0; face = 0; surf = "wall"
+		have = 0; retry_at = 0; fresh = 0; nstill = 0; pend = 0
+		system("mkdir -p " run)
+		conf()
+		for (;;) {
+			for (k = 0; k < W; k++) {
+				sample()
+				for (i = 0; i < 3; i++) win[k, i] = g[i]
+			}
+			moving = 0
+			for (i = 0; i < 3; i++) {
+				s = 0; for (k = 0; k < W; k++) s += win[k, i]; m[i] = s / W
+				s = 0; for (k = 0; k < W; k++) s += (win[k, i] - m[i]) ^ 2
+				if (sqrt(s / W) > STILL) moving = 1
+			}
+			conf()
+			# After conf(), so a new calibration applies to this window too.
+			for (i = 0; i < 3; i++) m[i] -= bias[i]
+			if (moving) {
+				fresh = 0
+				pend = 0
+				if (settled) { settled = 0; if (!once) publish() }
+				continue
+			}
+			# Upside down past half a g either way; held in between, so a
+			# lens pointing at the ceiling does not flip the picture.
+			was = inverted
+			if (m[1] < -0.5) inverted = 1
+			else if (m[1] > 0.5) inverted = 0
+			# A flip or a new calibration starts the average again.
+			cal = bias[0] " " bias[1] " " bias[2]
+			if (inverted != was || cal != last_cal) fresh = 0
+			last_cal = cal
+			# One window is ~0.7 deg of noise (SD). Average gravity over the
+			# still windows since the last move, so a new pose shows at once
+			# and then steadies; a turn past 3 deg is a new pose, not noise.
+			if (!fresh || between(m, e) > 3) {
+				# The first still window after a move can carry its tail:
+				# skip it and start from the next.
+				if (!pend) { pend = 1; continue }
+				for (i = 0; i < 3; i++) { e[i] = m[i]; gs[i] = 0 }
+				fresh = 1; nstill = 0
+			} else for (i = 0; i < 3; i++) e[i] += 0.2 * (m[i] - e[i])
+			pend = 0; nstill++
+			for (i = 0; i < 3; i++) gs[i] += m[i]
+			sgn = inverted ? -1 : 1
+			p = deg(atan2(-e[2] * sgn, abs(e[1])))
+			r = deg(atan2(e[0], sqrt(e[1] ^ 2 + e[2] ^ 2)))
+			# Auto assumes the surface the lens faces most, by the lens
+			# elevation in the world: past 45 deg the ceiling (or the floor).
+			# There the correction is the tilt of the lens from the normal of
+			# that surface, toward the own top of the projector: the
+			# upside-down flag, held from before, means nothing lens-up.
+			el = deg(atan2(-e[2], sqrt(e[0] ^ 2 + e[1] ^ 2)))
+			s1 = el > 45 ? "ceiling" : el < -45 ? "floor" : "wall"
+			f = s1 == "ceiling" ? -deg(atan2(e[1], -e[2])) : s1 == "floor" ? -deg(atan2(-e[1], e[2])) : p
+			# Half a degree of hysteresis: noise must not redraw the warp.
+			# Hysteresis alone latches up to 0.5 deg short of a slow
+			# refinement, so after 8 still windows (~5 s) the converged
+			# estimate is published once more.
+			if (!have || abs(p - pitch) >= 0.5 || abs(r - roll) >= 0.5 || abs(f - face) >= 0.5 || s1 != surf ||
+			    (nstill == 8 && (abs(p - pitch) >= 0.05 || abs(r - roll) >= 0.05 || abs(f - face) >= 0.05))) {
+				pitch = p; roll = r; face = f; surf = s1
+			}
+			want = (ks == "auto") ? face : (ks == "manual") ? manual : 0
+			nlvl = (ks == "auto" && surf == "wall") ? roll : 0
+			# Anything in the state file: a flip can leave every angle as it was.
+			changed = !have || !settled || want != applied || nlvl != lvl || ks != last_ks || ceil != last_ceil ||
+			    inverted != last_inv || pitch != last_p || roll != last_r || surf != last_surf
+			last_ks = ks; last_ceil = ceil; last_inv = inverted; last_p = pitch; last_r = roll; last_surf = surf
+			settled = 1; applied = want; lvl = nlvl; have = 1
+			# calibrate (once = 2) averages 8 still windows; status takes one.
+			if (once && nstill >= (once == 2 ? 8 : 1)) break
+			if (once) continue
+			follow_gravity()
+			if (changed) publish()
+		}
+		if (once == 2) printf "%.4f %.4f %.4f\n", gs[0] / nstill, gs[1] / nstill, gs[2] / nstill
+		else if (once) {
+			printf "pitch %+.1f deg  roll %+.1f deg  %s  (g %+.3f %+.3f %+.3f)\n", pitch, roll, inverted ? "upside down" : "upright", m[0], m[1], m[2]
+		}
+	}'
+}
+
+status() {
+	echo "keystone: $(get keystone auto)$( [ "$(get keystone auto)" = manual ] && echo " $(get manual_deg 0) deg")   ceiling: $(get ceiling off)   ($(conf))"
+	echo "calibration (g): x $(get bias_x 0)  y $(get bias_y 0)  z $(get bias_z 0)"
+	echo "trim (deg): pitch $(get trim_pitch 0)  roll $(get trim_roll 0)  yaw $(get trim_yaw 0)"
+	echo "corners (px): tl $(get corner_tl_x 0),$(get corner_tl_y 0)  tr $(get corner_tr_x 0),$(get corner_tr_y 0)  br $(get corner_br_x 0),$(get corner_br_y 0)  bl $(get corner_bl_x 0),$(get corner_bl_y 0)"
+	[ -n "$MIRROR" ] && echo "installation mode: $(h713-mirror 2>/dev/null)"
+	if [ -f "$STATE" ] && systemctl is-active -q h713-keystone 2>/dev/null; then
+		echo "daemon: running; $STATE:"
+		sed 's/^/  /' "$STATE"
+	else
+		echo "daemon: not running; one live reading:"
+		dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
+		printf '  '; loop "$dev" 1
+	fi
+}
+
+persist=0; args=
+for a in "$@"; do
+	case $a in
+	--persist) persist=1 ;;
+	-h|--help) usage ;;
+	*) args="$args $a" ;;
+	esac
+done
+set -- $args
+
+case ${1:-} in
+'')	status ;;
+auto|off|corners)
+	[ $# = 1 ] || usage
+	set_conf $persist "keystone=$1"
+	echo "h713-keystone: keystone $1" ;;
+manual)
+	[ $# = 2 ] || usage
+	case $2 in *[!0-9.+-]*|'') die "manual takes degrees, e.g. 'manual 12' or 'manual -5'" ;; esac
+	set_conf $persist keystone=manual "manual_deg=$2"
+	echo "h713-keystone: keystone manual $2 deg" ;;
+ceiling)
+	[ $# = 2 ] || usage
+	case $2 in auto|off) ;; *) usage ;; esac
+	[ "$2" = auto ] && [ -z "$MIRROR" ] && die "no mirror_mode attribute -- kernel without 0166?"
+	set_conf $persist "ceiling=$2"
+	echo "h713-keystone: ceiling $2" ;;
+calibrate)
+	[ $# = 2 ] || usage
+	dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
+	echo "h713-keystone: hold it still -- about 15 s" >&2
+	set -- $2 $(loop "$dev" 2)
+	[ $# = 4 ] || die "no reading from the sensor"
+	ok=$(awk -v w="$1" -v x="$2" -v y="$3" -v z="$4" 'BEGIN {
+		a = x < 0 ? -x : x
+		if (w == "level") print (y > 0.9 && a < 0.1 && z < 0.1 && z > -0.1)
+		else print (-z > 0.9 && a < 0.1 && y < 0.1 && y > -0.1) }')
+	case $1 in
+	level)	[ "$ok" = 1 ] || die "not level within ~6 deg (g $2 $3 $4): set it on its lowest detent on a level surface"
+		set_cal "bias_x=$2" "bias_z=$4" ;;
+	up)	[ "$ok" = 1 ] || die "lens not straight up within ~6 deg (g $2 $3 $4): tilt it to its highest detent"
+		set_cal "bias_y=$3" ;;
+	*)	usage ;;
+	esac
+	echo "h713-keystone: calibrated $1 (g $2 $3 $4), saved to $ETC" ;;
+lens)
+	[ $# = 4 ] || [ $# = 5 ] || usage
+	for v in "$2" "$3" "$4" ${5:+"$5"}; do
+		case $v in *[!0-9.+-]*|'') die "lens takes numbers: DIST WIDTH BOTTOM [TOP]" ;; esac
+	done
+	# Tangents of the picture's edges, seen from the lens: horizontal half
+	# width, bottom edge, top edge (from the panel's 16:9).
+	set -- $(awk -v d="$2" -v w="$3" -v b="$4" -v t="${5:-}" 'BEGIN {
+		if (d <= 0 || w <= 0) { print "bad"; exit }
+		s = w / (2 * d); tb = b / d; tt = tb + w * 720 / 1280 / d
+		chk = "ok"
+		if (t != "") { h = t - b; e = h / (w * 720 / 1280) - 1; if (e < -0.1 || e > 0.1) chk = sprintf("%+.0f%%", e * 100) }
+		printf "%.5f %.5f %.5f %s %.2f\n", s, tb, tt, chk, d / w }')
+	[ "$1" = bad ] && die "DIST and WIDTH must be positive"
+	[ "$4" = ok ] || die "TOP - BOTTOM is $4 off the 16:9 height WIDTH x 9/16: remeasure (is it level, square to the wall?)"
+	set_cal "lens_s=$1" "lens_tb=$2" "lens_tt=$3"
+	echo "h713-keystone: lens saved: throw ratio $5, edges at tan $2 (bottom) and $3 (top), half-width tan $1" ;;
+trim)
+	if [ $# = 1 ]; then
+		echo "trim (deg): pitch $(get trim_pitch 0)  roll $(get trim_roll 0)  yaw $(get trim_yaw 0)"
+		exit 0
+	fi
+	if [ "$2" = reset ]; then
+		[ $# = 2 ] || usage
+		set_conf $persist trim_pitch=0 trim_roll=0 trim_yaw=0
+		echo "h713-keystone: trim reset"
+		exit 0
+	fi
+	[ $# = 3 ] || usage
+	case $2 in pitch) lim=40 ;; roll|yaw) lim=30 ;; *) usage ;; esac
+	case $3 in
+	[+=-][0-9]*|[+=-].[0-9]*|=-[0-9]*|=-.[0-9]*) ;;
+	*) die "trim takes +D, -D (adjust) or =D (set), in degrees, e.g. 'trim yaw +0.5' or 'trim yaw =-3'" ;;
+	esac
+	n=${3#?}; n=${n#-}
+	case $n in *[!0-9.]*|'') die "trim: '$3' is not a number of degrees" ;; esac
+	v=$(awk -v cur="$(get trim_$2 0)" -v a="$3" -v lim=$lim 'BEGIN {
+		op = substr(a, 1, 1); d = substr(a, 2) + 0
+		v = op == "=" ? d : op == "+" ? cur + d : cur - d
+		if (v > lim) v = lim; if (v < -lim) v = -lim
+		v = sprintf("%.1f", v); if (v == "-0.0") v = "0.0"; print v }')
+	set_conf $persist "trim_$2=$v"
+	echo "h713-keystone: trim $2 $v deg" ;;
+corner)
+	show() { echo "corners (px): tl $(get corner_tl_x 0),$(get corner_tl_y 0)  tr $(get corner_tr_x 0),$(get corner_tr_y 0)  br $(get corner_br_x 0),$(get corner_br_y 0)  bl $(get corner_bl_x 0),$(get corner_bl_y 0)"; }
+	if [ $# = 1 ]; then show; exit 0; fi
+	if [ "$2" = reset ]; then
+		[ $# = 2 ] || usage
+		set_conf $persist corner_tl_x=0 corner_tl_y=0 corner_tr_x=0 corner_tr_y=0 \
+			corner_br_x=0 corner_br_y=0 corner_bl_x=0 corner_bl_y=0
+		echo "h713-keystone: corners reset"
+		exit 0
+	fi
+	[ $# = 4 ] || usage
+	case $2 in tl|tr|br|bl) ;; *) usage ;; esac
+	case $3 in x) lim=1280 ;; y) lim=720 ;; *) usage ;; esac
+	case $4 in
+	[+=-][0-9]*|=-[0-9]*) ;;
+	*) die "corner takes +D, -D (move) or =D (set), in frame pixels, e.g. 'corner tl x +8' or 'corner br y =-20'" ;;
+	esac
+	n=${4#?}; n=${n#-}
+	case $n in *[!0-9]*|'') die "corner: '$4' is not a whole number of pixels" ;; esac
+	# An offset from the frame's own corner, kept inside the frame: the left
+	# corners move right from 0, the right ones left from 1280, and so on.
+	v=$(awk -v cur="$(get corner_$2_$3 0)" -v a="$4" -v lim=$lim -v c="$2" -v ax="$3" 'BEGIN {
+		op = substr(a, 1, 1); d = substr(a, 2) + 0
+		v = op == "=" ? d : op == "+" ? cur + d : cur - d
+		far = (ax == "x" && substr(c, 2, 1) == "r") || (ax == "y" && substr(c, 1, 1) == "b")
+		lo = far ? -lim : 0; hi = far ? 0 : lim
+		if (v < lo) v = lo; if (v > hi) v = hi
+		print v }')
+	# Refuse a quadrilateral that crosses itself or folds flat: the warp
+	# could not fill it.
+	q=
+	for c in tl tr br bl; do
+		x=$(get corner_${c}_x 0) y=$(get corner_${c}_y 0)
+		[ $c = "$2" ] && [ "$3" = x ] && x=$v
+		[ $c = "$2" ] && [ "$3" = y ] && y=$v
+		q="$q $x $y"
+	done
+	echo "$q" | awk '{
+		# tl, tr, br, bl offsets -> frame positions
+		split("0 0 1280 0 1280 720 0 720", base, " ")
+		for (i = 0; i < 4; i++) { X[i] = base[2 * i + 1] + $(2 * i + 1); Y[i] = base[2 * i + 2] + $(2 * i + 2) }
+		for (i = 0; i < 4; i++) {
+			a = i; b = (i + 1) % 4; c = (i + 2) % 4
+			z = (X[b] - X[a]) * (Y[c] - Y[b]) - (Y[b] - Y[a]) * (X[c] - X[b])
+			if (z == 0) exit 1
+			sz = z > 0 ? 1 : -1
+			if (i == 0) sg = sz; else if (sz != sg) exit 1
+		} }' || die "corner $2 $3 $v would make the corners cross or fold; not saved"
+	set_conf $persist "corner_$2_$3=$v"
+	echo "h713-keystone: corner $2 $3 $v px" ;;
+daemon)
+	dev=$(find_dev) || die "no sc7a20 IIO device -- kernel without 0168?"
+	echo "h713-keystone: sensor $dev, mirror ${MIRROR:-unavailable}"
+	loop "$dev" 0 ;;
+*)	usage ;;
+esac
