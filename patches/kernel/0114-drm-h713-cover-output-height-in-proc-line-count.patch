@@ -1,0 +1,46 @@
+drm: h713: cover the output height in proc line count
+
+The firmware CalcWindow sequence at 0x8b1a5b90 selects max(input height,
+output height). Its movz was previously misread as selecting the minimum,
+and Linux programmed the source height for vertical upscale.
+
+A 240-line black source showed a streak near output row 250. Changing only
+PROC_FRAME_LINES from 240 to 480 moved it down; 720 removed it, and
+restoring 240 brought it back. Match the firmware maximum-height rule,
+preserving the upstream start field and the source window and ratio.
+
+---
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -135,7 +135,7 @@
+ #define PROC_PHASE_V		0x38	/* [15:0] */
+ #define PROC_RATIO_V		0x3c	/* [21:0] */
+ #define PROC_OUT_W_DUP		0x40	/* bit 31 enable, [15:0] width */
+-#define PROC_FRAME_LINES	0x50	/* [31:16] start, [15:0] input h */
++#define PROC_FRAME_LINES	0x50	/* [31:16] start, [15:0] max(in h, out h) */
+ 
+ /*
+  * DRM expresses plane scale as SOURCE over DESTINATION in 16.16, so a
+@@ -439,8 +439,10 @@
+ 	h713_proc_rmw(h, PROC_OUT_H, PROC_FIELD16_MASK, out_h);
+ 	/*
+ 	 * ProcWinNode::WriteReg writes output width twice and arms the second
+-	 * copy with bit 31. More subtly, FRAME_LINES names the number of source
+-	 * lines the vertical engine may consume in the low half. Preserve the
++	 * copy with bit 31. CalcWindow sets FRAME_LINES to the larger of input
++	 * and output heights, not the source height alone. Truncating this count
++	 * during vertical upscale produces a visible line-boundary artifact.
++	 * Preserve the
+ 	 * upper start-line field from the firmware-owned upstream pipeline.
+ 	 * CalcWindow derives it from input VS delay, upstream vertical start,
+ 	 * and the MB420 format term. The firmware's 39-line interlaced path
+@@ -449,7 +451,8 @@
+ 	 */
+ 	h713_proc_rmw(h, PROC_OUT_W_DUP, BIT(31) | PROC_FIELD16_MASK,
+ 		      BIT(31) | out_w);
+-	h713_proc_rmw(h, PROC_FRAME_LINES, PROC_FIELD16_MASK, in_h);
++	h713_proc_rmw(h, PROC_FRAME_LINES, PROC_FIELD16_MASK,
++		      max(in_h, out_h));
+ 	/*
+ 	 * ProcWinNode::CalcWindow starts the integer phases at H=3/V=2.
+ 	 * Unity is the exceptional case that advances each to H=4/V=3 while

@@ -1,0 +1,36 @@
+media: cedrus: map scale fields to rotated output axes
+
+COMPOSE keeps scale shifts in source coordinates. The secondary-output
+register uses the final output axes, so exchange its fields for quarter
+turns. An oversized 256x256 capture of a 128x64 quadrant frame requested
+as 64x32 at 90 degrees instead wrote 16x128 with the old programming.
+Equal-axis tests could not expose this mismatch.
+
+---
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -708,6 +708,7 @@
+ 	dma_addr_t luma = cedrus_buf_addr(dst, &ctx->dst_fmt, 0);
+ 	dma_addr_t chroma = cedrus_buf_addr(dst, &ctx->dst_fmt, 1);
+ 	unsigned int stride = ctx->dst_fmt.bytesperline;
++	u8 h_shift = ctx->sd_h_shift, v_shift = ctx->sd_v_shift;
+ 	u32 reg;
+ 
+ 	if (!cedrus_transforming(ctx))
+@@ -734,10 +735,14 @@
+ 	reg |= VE_H264_CTRL_SDROT_ENABLE;
+ 	cedrus_write(dev, VE_H264_CTRL, reg);
+ 
++	/* Scale fields use output axes; COMPOSE stores source-axis shifts. */
++	if (ctx->rotation == 90 || ctx->rotation == 270)
++		swap(h_shift, v_shift);
++
+ 	cedrus_write(dev, VE_H264_SDROT_CTRL,
+ 		     VE_H264_SDROT_CTRL_ROTATE(ctx->rotation) |
+-		     VE_H264_SDROT_CTRL_H_SHIFT(ctx->sd_h_shift) |
+-		     VE_H264_SDROT_CTRL_V_SHIFT(ctx->sd_v_shift));
++		     VE_H264_SDROT_CTRL_H_SHIFT(h_shift) |
++		     VE_H264_SDROT_CTRL_V_SHIFT(v_shift));
+ 
+ 	/*
+ 	 * A zero address here means the engine was not enabled when we wrote

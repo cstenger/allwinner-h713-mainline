@@ -11,8 +11,8 @@
 # deserves care:
 #
 #   * the FAT at mmcblk0p2 is 32 MiB and ~90% full -- there is NOT room for two
-#     FITs, so the outgoing kernel is copied to the rootfs first and the script
-#     refuses to continue if that backup fails;
+#     FITs, so the outgoing kernel is copied to the media-data filesystem first
+#     and the script refuses to continue if that backup fails;
 #   * the copy is verified by md5 on the board after unmount, not assumed from
 #     scp's exit status;
 #   * the board is left running the OLD kernel unless --reboot is given, so a
@@ -27,8 +27,12 @@ set -euo pipefail
 FIT=${1:?usage: install-kernel-fit.sh <fit-file> [--reboot]}
 REBOOT=${2:-}
 BOARD=${BOARD:-192.168.4.1}
-SSH="ssh -o ConnectTimeout=5 root@$BOARD"
+SSH=(ssh -F /dev/null -o ConnectTimeout=5 "root@$BOARD")
 TARGET_NAME=${TARGET_NAME:-h713-kernel.fit}
+MEDIA_DEVICE=${MEDIA_DEVICE:-/dev/mmcblk0p23}
+MEDIA_FSTYPE=${MEDIA_FSTYPE:-vfat}
+MEDIA_MOUNT=${MEDIA_MOUNT:-/mnt/media-data}
+STAGE_DIR=${STAGE_DIR:-$MEDIA_MOUNT/h713-kernel-fits}
 STAMP=$(date +%Y%m%d-%H%M%S)
 
 [ -r "$FIT" ] || { echo "error: no such FIT: $FIT" >&2; exit 1; }
@@ -42,25 +46,30 @@ size=$(stat -c%s "$FIT")
 sum=$(md5sum "$FIT" | cut -d' ' -f1)
 echo "==> $FIT ($size bytes, md5 $sum) -> $BOARD:$TARGET_NAME"
 
-$SSH "mkdir -p /root/fits"
-echo "==> uploading to /root/fits/staged-$STAMP.fit"
-scp -o ConnectTimeout=5 "$FIT" "root@$BOARD:/root/fits/staged-$STAMP.fit" >/dev/null
+"${SSH[@]}" "set -e
+	if ! mountpoint -q '$MEDIA_MOUNT'; then
+		mount -t '$MEDIA_FSTYPE' '$MEDIA_DEVICE' '$MEDIA_MOUNT'
+	fi
+	mkdir -p '$STAGE_DIR'"
+echo "==> uploading to $STAGE_DIR/staged-$STAMP.fit"
+scp -F /dev/null -o ConnectTimeout=5 "$FIT" \
+	"root@$BOARD:$STAGE_DIR/staged-$STAMP.fit" >/dev/null
 
-$SSH "set -e
-	got=\$(md5sum /root/fits/staged-$STAMP.fit | cut -d' ' -f1)
+"${SSH[@]}" "set -e
+	got=\$(md5sum '$STAGE_DIR/staged-$STAMP.fit' | cut -d' ' -f1)
 	[ \"\$got\" = '$sum' ] || { echo 'error: upload corrupted'; exit 1; }
 
 	mkdir -p /mnt/boot
 	mountpoint -q /mnt/boot || mount -t vfat /dev/mmcblk0p2 /mnt/boot
 
 	if [ -f /mnt/boot/$TARGET_NAME ]; then
-		cp /mnt/boot/$TARGET_NAME /root/fits/replaced-$STAMP.fit
-		echo \"    backed up the outgoing kernel to /root/fits/replaced-$STAMP.fit\"
+		cp /mnt/boot/$TARGET_NAME '$STAGE_DIR/replaced-$STAMP.fit'
+		echo \"    backed up the outgoing kernel to $STAGE_DIR/replaced-$STAMP.fit\"
 	else
 		echo '    note: no existing $TARGET_NAME on the FAT'
 	fi
 
-	cp /root/fits/staged-$STAMP.fit /mnt/boot/$TARGET_NAME
+	cp '$STAGE_DIR/staged-$STAMP.fit' /mnt/boot/$TARGET_NAME
 	sync
 	umount /mnt/boot
 
@@ -72,7 +81,7 @@ $SSH "set -e
 
 if [ "$REBOOT" = "--reboot" ]; then
 	echo "==> rebooting"
-	$SSH "( sleep 1; reboot ) >/dev/null 2>&1 &" || true
+	"${SSH[@]}" "( sleep 1; reboot ) >/dev/null 2>&1 &" || true
 	echo "    give it ~30 s, then: ssh root@$BOARD uname -a"
 else
 	echo "==> NOT rebooting (pass --reboot to boot it now)"

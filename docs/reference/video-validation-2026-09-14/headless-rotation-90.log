@@ -1,0 +1,20 @@
+Setting pipeline to PAUSED ...
+Pipeline is PREROLLING ...
+Redistribute latency...
+/GstPipeline:pipeline0/GstH264Parse:h264parse0.GstPad:src: caps = video/x-h264, pixel-aspect-ratio=(fraction)1/1, width=(int)1920, height=(int)1080, framerate=(fraction)30000/1001, coded-picture-structure=(string)frame, chroma-format=(string)4:2:0, bit-depth-luma=(uint)8, bit-depth-chroma=(uint)8, colorimetry=(string)bt709, parsed=(boolean)true, stream-format=(string)avc, alignment=(string)au, profile=(string)high, level=(string)4, lcevc=(boolean)false, codec_data=(buffer)01640028ffe1001d67640028acd100780227e5c05a808080a000007d20001d4c01e306224001000468eb8f2cfdf8f800
+/GstPipeline:pipeline0/v4l2slh264dec:v4l2slh264dec0.GstPad:src: caps = video/x-raw, format=(string)NV12, width=(int)1088, height=(int)480, interlace-mode=(string)progressive, multiview-mode=(string)mono, multiview-flags=(GstVideoMultiviewFlagsSet)0:ffffffff:/right-view-first/left-flipped/left-flopped/right-flipped/right-flopped/half-aspect/mixed-mono, pixel-aspect-ratio=(fraction)1/1, colorimetry=(string)bt709, framerate=(fraction)30000/1001
+/GstPipeline:pipeline0/GstCapsFilter:capsfilter0.GstPad:src: caps = video/x-raw, format=(string)NV12, width=(int)1088, height=(int)480, interlace-mode=(string)progressive, multiview-mode=(string)mono, multiview-flags=(GstVideoMultiviewFlagsSet)0:ffffffff:/right-view-first/left-flipped/left-flopped/right-flipped/right-flopped/half-aspect/mixed-mono, pixel-aspect-ratio=(fraction)1/1, colorimetry=(string)bt709, framerate=(fraction)30000/1001
+/GstPipeline:pipeline0/GstFakeSink:fakesink0.GstPad:sink: caps = video/x-raw, format=(string)NV12, width=(int)1088, height=(int)480, interlace-mode=(string)progressive, multiview-mode=(string)mono, multiview-flags=(GstVideoMultiviewFlagsSet)0:ffffffff:/right-view-first/left-flipped/left-flopped/right-flipped/right-flopped/half-aspect/mixed-mono, pixel-aspect-ratio=(fraction)1/1, colorimetry=(string)bt709, framerate=(fraction)30000/1001
+/GstPipeline:pipeline0/GstCapsFilter:capsfilter0.GstPad:sink: caps = video/x-raw, format=(string)NV12, width=(int)1088, height=(int)480, interlace-mode=(string)progressive, multiview-mode=(string)mono, multiview-flags=(GstVideoMultiviewFlagsSet)0:ffffffff:/right-view-first/left-flipped/left-flopped/right-flipped/right-flopped/half-aspect/mixed-mono, pixel-aspect-ratio=(fraction)1/1, colorimetry=(string)bt709, framerate=(fraction)30000/1001
+Redistribute latency...
+/GstPipeline:pipeline0/v4l2slh264dec:v4l2slh264dec0.GstPad:sink: caps = video/x-h264, pixel-aspect-ratio=(fraction)1/1, width=(int)1920, height=(int)1080, framerate=(fraction)30000/1001, coded-picture-structure=(string)frame, chroma-format=(string)4:2:0, bit-depth-luma=(uint)8, bit-depth-chroma=(uint)8, colorimetry=(string)bt709, parsed=(boolean)true, stream-format=(string)avc, alignment=(string)au, profile=(string)high, level=(string)4, lcevc=(boolean)false, codec_data=(buffer)01640028ffe1001d67640028acd100780227e5c05a808080a000007d20001d4c01e306224001000468eb8f2cfdf8f800
+ERROR: from element /GstPipeline:pipeline0/v4l2slh264dec:v4l2slh264dec0: Not enough memory to decode H264 stream.
+Additional debug info:
+v4l2codecs/gstv4l2codech264dec.c(1040): gst_v4l2_codec_h264_dec_ensure_bitstream (): /GstPipeline:pipeline0/v4l2slh264dec:v4l2slh264dec0
+ERROR: pipeline doesn't want to preroll.
+Setting pipeline to NULL ...
+ERROR: from element /GstPipeline:pipeline0/v4l2slh264dec:v4l2slh264dec0: Not enough memory to decode H264 stream.
+Additional debug info:
+v4l2codecs/gstv4l2codech264dec.c(1040): gst_v4l2_codec_h264_dec_ensure_bitstream (): /GstPipeline:pipeline0/v4l2slh264dec:v4l2slh264dec0
+ERROR: pipeline doesn't want to preroll.
+Freeing pipeline ...

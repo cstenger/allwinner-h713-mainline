@@ -1,0 +1,26 @@
+drm: h713-afbd: select integer phase independently for each axis
+
+ProcWinNode::CalcWindow at linked address 0x8b1a59e0 increments H integer
+phase at fractional phase 0x8000 and V integer phase at 0x10000. For this
+upscale-only driver those thresholds are reached at unity on the respective
+axis. Patch 0108 always selected H=3/V=2 when either axis was scaled, so
+vertical-only scaling used H=3 instead of 4 and horizontal-only scaling used
+V=2 instead of 3. Select each phase from its own ratio.
+
+Both-axis scaling retains H=3/V=2, and native scanout still restores saved
+state. This corrects the firmware mismatch; it is not claimed to resolve the
+grey streak, which has also been observed with both axes scaled.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -460,8 +460,8 @@
+ 	h713_proc_rmw(h, PROC_RATIO_H,
+ 		      PROC_RATIO_MASK | PROC_H_INT_PHASE_MASK |
+ 		      PROC_V_INT_PHASE_MASK,
+-		      ratio_h | PROC_H_INT_PHASE(3) |
+-		      PROC_V_INT_PHASE(2));
++		      ratio_h | PROC_H_INT_PHASE(ratio_h == PROC_UNITY ? 4 : 3) |
++		      PROC_V_INT_PHASE(ratio_v == PROC_UNITY ? 3 : 2));
+ 	h713_proc_rmw(h, PROC_RATIO_V, PROC_RATIO_MASK, ratio_v);
+ 	h713_proc_rmw(h, PROC_PHASE_H, PROC_PHASE_MASK,
+ 		      (PROC_UNITY + ratio_h) >> 2);

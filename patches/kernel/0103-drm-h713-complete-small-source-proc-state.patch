@@ -1,0 +1,73 @@
+drm: h713-afbd: complete the proc state for a smaller source
+
+The firmware programs two proc registers that the initial scaler support
+missed.  The duplicate output-width register also carries the vertical engine
+enable, while FRAME_LINES limits the number of source lines consumed.  Leaving
+FRAME_LINES at the native 720 makes a 544-line source terminate at the old
+boundary and exposes the fill colour.
+
+The MIPS fetch path advances by the 1280-pixel panel pitch even for a narrower
+visible window.  Require that padded layout explicitly; a tightly packed small
+frame shears from line to line and eventually reads beyond its mapping.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -134,6 +134,8 @@
+ #define PROC_IN_WIN		0x34	/* (w << 16) | h */
+ #define PROC_PHASE_V		0x38	/* [15:0] */
+ #define PROC_RATIO_V		0x3c	/* [21:0] */
++#define PROC_OUT_W_DUP		0x40	/* bit 31 enable, [15:0] width */
++#define PROC_FRAME_LINES	0x50	/* [31:16] start, [15:0] input h */
+ 
+ /*
+  * DRM expresses plane scale as SOURCE over DESTINATION in 16.16, so a
+@@ -159,6 +161,7 @@
+ static const u16 h713_proc_saved_regs[] = {
+ 	PROC_PHASE_H, PROC_RATIO_H, PROC_BYPASS, PROC_OUT_W,
+ 	PROC_OUT_H, PROC_IN_WIN, PROC_PHASE_V, PROC_RATIO_V,
++	PROC_OUT_W_DUP, PROC_FRAME_LINES,
+ };
+ 
+ /* The four queue slots are 4 bytes apart in each address ring. */
+@@ -375,6 +378,18 @@
+ 	h713_proc_rmw(h, PROC_IN_WIN, ~0u, (in_w << 16) | in_h);
+ 	h713_proc_rmw(h, PROC_OUT_W, PROC_FIELD16_MASK, out_w);
+ 	h713_proc_rmw(h, PROC_OUT_H, PROC_FIELD16_MASK, out_h);
++	/*
++	 * ProcWinNode::WriteReg writes output width twice and arms the second
++	 * copy with bit 31. More subtly, FRAME_LINES names the number of source
++	 * lines the vertical engine may consume. Leaving its native 720 there
++	 * makes a 544-line source finish early and exposes the fill colour.
++	 * Preserve the upper start-line field: it is accumulated latency from
++	 * the firmware-owned upstream pipeline, which this driver does not
++	 * reconfigure.
++	 */
++	h713_proc_rmw(h, PROC_OUT_W_DUP, BIT(31) | PROC_FIELD16_MASK,
++		      BIT(31) | out_w);
++	h713_proc_rmw(h, PROC_FRAME_LINES, PROC_FIELD16_MASK, in_h);
+ 	h713_proc_rmw(h, PROC_RATIO_H, PROC_RATIO_MASK, ratio_h);
+ 	h713_proc_rmw(h, PROC_RATIO_V, PROC_RATIO_MASK, ratio_v);
+ 	h713_proc_rmw(h, PROC_PHASE_H, PROC_PHASE_MASK,
+@@ -463,8 +478,8 @@
+ 	fb = new_state->fb;
+ 	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
+ 	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
+-	    fb->pitches[0] != fb->width ||
+-	    fb->pitches[1] != fb->width ||
++	    fb->pitches[0] != H713_VIDEO_STRIDE ||
++	    fb->pitches[1] != H713_VIDEO_STRIDE ||
+ 	    new_state->src_x || new_state->src_y ||
+ 	    new_state->src_w != fb->width << 16 ||
+ 	    new_state->src_h != fb->height << 16 ||
+@@ -475,7 +490,10 @@
+ 
+ 	/*
+ 	 * AFBD_VIDEO_BLOCK_M1 counts 16x16 blocks, so a source that is not a
+-	 * whole number of them has no representation in the fetcher.
++	 * whole number of them has no representation in the fetcher. The MIPS
++	 * source path also advances by the panel pitch between lines even when
++	 * its visible window is narrower; require that padded layout explicitly
++	 * so a tight smaller framebuffer cannot shear and run past its mapping.
+ 	 */
+ 	if (fb->width % 16 || fb->height % 16 || !fb->width || !fb->height)
+ 		return -EINVAL;

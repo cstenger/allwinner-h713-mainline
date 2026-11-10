@@ -1,0 +1,31 @@
+drm: h713-afbd: preserve progressive proc line start
+
+ProcWinNode::CalcWindow at 0x8b1a5b50 derives line start as input VS delay
+plus one, upstream vertical start, and the MB420 format term. The logged
+39-line start belongs to an interlaced/deinterlaced path with input delay 15;
+the progressive path has delay 3 and start 27. Vertical scaling alone does
+not justify changing that upstream timing. Document why it is preserved.
+
+Cold-boot tests of both start values retained the grey streak. This patch
+does not claim to fix that artifact.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -388,11 +388,12 @@
+ 	/*
+ 	 * ProcWinNode::WriteReg writes output width twice and arms the second
+ 	 * copy with bit 31. More subtly, FRAME_LINES names the number of source
+-	 * lines the vertical engine may consume. Leaving its native 720 there
+-	 * makes a 544-line source finish early and exposes the fill colour.
+-	 * Preserve the upper start-line field: it is accumulated latency from
+-	 * the firmware-owned upstream pipeline, which this driver does not
+-	 * reconfigure.
++	 * lines the vertical engine may consume in the low half. Preserve the
++	 * upper start-line field from the firmware-owned upstream pipeline.
++	 * CalcWindow derives it from input VS delay, upstream vertical start,
++	 * and the MB420 format term. The firmware's 39-line interlaced path
++	 * does not establish extra latency for progressive vertical scaling;
++	 * this progressive AFBD route retains its boot-time start (27).
+ 	 */
+ 	h713_proc_rmw(h, PROC_OUT_W_DUP, BIT(31) | PROC_FIELD16_MASK,
+ 		      BIT(31) | out_w);

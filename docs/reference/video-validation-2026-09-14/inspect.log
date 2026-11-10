@@ -1,0 +1,113 @@
+Factory Details:
+  Rank                     primary + 1 (257)
+  Long-name                V4L2 Stateless H.264 Video Decoder
+  Klass                    Codec/Decoder/Video/Hardware
+  Description              A V4L2 based H.264 video decoder
+  Author                   Nicolas Dufresne <nicolas.dufresne@collabora.com>
+  Documentation            https://gstreamer.freedesktop.org/documentation/v4l2codecs/v4l2slh264dec.html
+
+Plugin Details:
+  Name                     v4l2codecs
+  Description              V4L2 CODEC Accelerators plugin
+  Filename                 /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstv4l2codecs.so
+  Version                  1.26.2
+  License                  LGPL
+  Source module            gst-plugins-bad
+  Documentation            https://gstreamer.freedesktop.org/documentation/v4l2codecs/
+  Source release date      2025-05-29
+  Binary package           GStreamer Bad Plugins (Debian)
+  Origin URL               https://tracker.debian.org/pkg/gst-plugins-bad1.0
+
+GObject
+ +----GInitiallyUnowned
+       +----GstObject
+             +----GstElement
+                   +----GstVideoDecoder
+                         +----GstH264Decoder
+                               +----v4l2slh264dec
+
+Element Flags:
+
+Pad Templates:
+  SINK template: 'sink'
+    Availability: Always
+    Capabilities:
+      video/x-h264
+          stream-format: { (string)avc, (string)avc3, (string)byte-stream }
+              alignment: au
+  
+  SRC template: 'src'
+    Availability: Always
+    Capabilities:
+      video/x-raw(memory:DMABuf)
+                 format: DMA_DRM
+                  width: [ 1, 2147483647 ]
+                 height: [ 1, 2147483647 ]
+              framerate: [ 0/1, 2147483647/1 ]
+      video/x-raw
+                 format: { (string)MT2110R, (string)MT2110T, (string)NV12_10LE40_4L4, (string)NV12_10LE40, (string)P010_10LE, (string)YUY2, (string)NV12_16L32S, (string)NV12_32L32, (string)NV12_4L4, (string)NV12, (string)I420 }
+                  width: [ 1, 2147483647 ]
+                 height: [ 1, 2147483647 ]
+              framerate: [ 0/1, 2147483647/1 ]
+
+Element has no clocking capabilities.
+Element has no URI handling capabilities.
+
+Pads:
+  SINK: 'sink'
+    Pad Template: 'sink'
+  SRC: 'src'
+    Pad Template: 'src'
+
+Element Properties:
+
+  automatic-request-sync-point-flags: Flags to use when automatically requesting sync points
+                        flags: readable, writable
+                        Flags "GstVideoDecoderRequestSyncPointFlags" Default: 0x00000003, "corrupt-output+discard-input"
+                           (0x00000001): discard-input    - GST_VIDEO_DECODER_REQUEST_SYNC_POINT_DISCARD_INPUT
+                           (0x00000002): corrupt-output   - GST_VIDEO_DECODER_REQUEST_SYNC_POINT_CORRUPT_OUTPUT
+  
+  automatic-request-sync-points: Automatically request sync points when it would be useful
+                        flags: readable, writable
+                        Boolean. Default: false
+  
+  compliance          : The decoder's behavior in compliance with the h264 spec.
+                        flags: readable, writable
+                        Enum "GstH264DecoderCompliance" Default: 0, "auto"
+                           (0): auto             - GST_H264_DECODER_COMPLIANCE_AUTO
+                           (1): strict           - GST_H264_DECODER_COMPLIANCE_STRICT
+                           (2): normal           - GST_H264_DECODER_COMPLIANCE_NORMAL
+                           (3): flexible         - GST_H264_DECODER_COMPLIANCE_FLEXIBLE
+  
+  discard-corrupted-frames: Discard frames marked as corrupted instead of outputting them
+                        flags: readable, writable
+                        Boolean. Default: false
+  
+  max-errors          : Max consecutive decoder errors before returning flow error
+                        flags: readable, writable
+                        Integer. Range: -1 - 2147483647 Default: -1 
+  
+  media-device        : Path to the media device node
+                        flags: readable, writable, can be set only at object construction time
+                        String. Default: "/dev/media0"
+  
+  min-force-key-unit-interval: Minimum interval between force-keyunit requests in nanoseconds
+                        flags: readable, writable
+                        Unsigned Integer64. Range: 0 - 18446744073709551615 Default: 0 
+  
+  name                : The name of the object
+                        flags: readable, writable
+                        String. Default: "v4l2slh264dec0"
+  
+  parent              : The parent of the object
+                        flags: readable, writable
+                        Object of type "GstObject"
+  
+  qos                 : Handle Quality-of-Service events from downstream
+                        flags: readable, writable
+                        Boolean. Default: true
+  
+  video-device        : Path to the video device node
+                        flags: readable, writable, can be set only at object construction time
+                        String. Default: "/dev/video0"
+  
