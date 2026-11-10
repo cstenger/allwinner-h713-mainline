@@ -414,6 +414,15 @@ cat > "$R/etc/udev/rules.d/70-h713-wifi-crashlog.rules" <<'EOF'
 # AIC8800 firmware crash -> aic8800_fdrv sends KOBJ_CHANGE with DHDISDOWN=1.
 ACTION=="change", ENV{DHDISDOWN}=="1", TAG+="systemd", ENV{SYSTEMD_WANTS}+="h713-wifi-recover.service"
 EOF
+# Systemd needs a device unit only for the root partition. The 27 kept
+# Android partitions (plus the whole disk and boot0/1) gave ~300 device units,
+# about ten aliases each, and every manager start or reload paid systemd's
+# drop-in search for each name: ~1.4 s of CPU, which delayed user@1000 and so
+# HDMI capture. Nothing mounts them; /dev nodes and /dev/disk links stay.
+# Must sort after 99-systemd.rules, which adds the tag.
+cat > "$R/etc/udev/rules.d/99-zz-h713-unused-partitions.rules" <<'EOF'
+SUBSYSTEM=="block", KERNEL=="mmcblk0*", ENV{ID_PART_ENTRY_NAME}!="linux", TAG-="systemd"
+EOF
 cat > "$systemd_dir/h713-wifi-recover.service" <<EOF
 [Unit]
 Description=Recover from an AIC8800 WiFi firmware crash (DHDISDOWN)

@@ -461,6 +461,11 @@ env \
     grep -qx "ConditionPathExists=!/var/lib/h713-rootfs-grown" "$ROOTFS_TREE/etc/systemd/system/h713-rootfs-grow-once.service"
     test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-rootfs-grow-once.service"
     test ! -e "$ROOTFS_TREE/var/lib/h713-rootfs-grown"
+    grep -qx 'SUBSYSTEM=="block", KERNEL=="mmcblk0\*", ENV{ID_PART_ENTRY_NAME}!="linux", TAG-="systemd"' \
+      "$ROOTFS_TREE/etc/udev/rules.d/99-zz-h713-unused-partitions.rules"
+    test -f "$ROOTFS_TREE/usr/lib/udev/rules.d/99-systemd.rules"
+    test "$(printf '%s\n' 99-systemd.rules 99-zz-h713-unused-partitions.rules | LC_ALL=C sort | tail -1)" = \
+      99-zz-h713-unused-partitions.rules
     ! grep -R "trusted=yes" "$ROOTFS_TREE/etc/apt" >/dev/null 2>&1
     grep -qx "Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg" \
       "$ROOTFS_TREE/etc/apt/sources.list.d/debian.sources"
