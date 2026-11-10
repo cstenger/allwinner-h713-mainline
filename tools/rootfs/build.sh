@@ -456,7 +456,11 @@ env \
     cmp -s "$SSH_KEY" "$ROOTFS_TREE/root/.ssh/authorized_keys"
     grep -qx "PasswordAuthentication no" "$ROOTFS_TREE/etc/ssh/sshd_config.d/10-h713.conf"
     grep -qx "AuthenticationMethods publickey" "$ROOTFS_TREE/etc/ssh/sshd_config.d/10-h713.conf"
-    grep -q "x-systemd.growfs" "$ROOTFS_TREE/etc/fstab"
+    ! grep -q "x-systemd.growfs" "$ROOTFS_TREE/etc/fstab"
+    grep -qx "ExecStart=/usr/lib/systemd/systemd-growfs /" "$ROOTFS_TREE/etc/systemd/system/h713-rootfs-grow-once.service"
+    grep -qx "ConditionPathExists=!/var/lib/h713-rootfs-grown" "$ROOTFS_TREE/etc/systemd/system/h713-rootfs-grow-once.service"
+    test -L "$ROOTFS_TREE/etc/systemd/system/multi-user.target.wants/h713-rootfs-grow-once.service"
+    test ! -e "$ROOTFS_TREE/var/lib/h713-rootfs-grown"
     ! grep -R "trusted=yes" "$ROOTFS_TREE/etc/apt" >/dev/null 2>&1
     grep -qx "Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg" \
       "$ROOTFS_TREE/etc/apt/sources.list.d/debian.sources"

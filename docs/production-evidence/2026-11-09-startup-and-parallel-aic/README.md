@@ -66,3 +66,21 @@ U-Boot reported the panel had been off for 0.837 s when the logo step reached
 the hold, and waited 2.163 s more. Linux: no failed units, hotspot and `hci0`
 up, EDID/HPD ready 12.48 s, locked 13.82 s, video 13.88 s, no re-advertise
 pulse. Video starts about 21.6 s after the first SPL output.
+
+## Root filesystem grown once, not every boot
+
+`x-systemd.growfs` made systemd run a no-op online resize of the root before
+local-fs on every boot (usually ~0.15 s; 1.70 s on parallel-AIC boot 2). The
+release image is deliberately small, so growth is still needed once:
+`h713-rootfs-grow-once.service` runs `systemd-growfs /` after local-fs, off
+the critical path, then writes `/var/lib/h713-rootfs-grown`. A freshly
+written image has no marker and grows on its first boot.
+
+Installed on the board (fstab backup under
+`/var/lib/h713-hdmi-startup/growfs-once-*`) and checked over two warm
+reboots: reboot 1 ran grow-once at 4.67-5.35 s ("Successfully resized"),
+created the marker and started video at 13.97 s; reboot 2 skipped it by
+condition and started video at 13.93 s. `systemd-growfs-root` no longer runs,
+root stays `rw,noatime` at 2.7 GB, no failed units. In these boots sysinit
+(~4.5 s) was gated by udev coldplug, so the typical saving is small; the
+change removes the 1.7 s outlier and the per-boot resize.

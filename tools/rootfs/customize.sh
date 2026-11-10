@@ -18,10 +18,12 @@ cat > "$R/etc/hosts" <<EOF
 127.0.1.1	h713-arm64
 EOF
 
-# UDISK is factory GPT partition 26. systemd-growfs expands this deliberately
-# small image to the full partition on first boot.
+# UDISK is factory GPT partition 26. The image is deliberately small and is
+# grown to the full partition once, by h713-rootfs-grow-once.service below.
+# Not x-systemd.growfs: that reruns a no-op online resize before local-fs on
+# every boot (usually ~0.15 s, 1.7 s once), ahead of the whole HDMI startup.
 printf '%s\n' \
-  '/dev/mmcblk0p26  /  ext4  defaults,noatime,x-systemd.growfs  0  1' \
+  '/dev/mmcblk0p26  /  ext4  defaults,noatime  0  1' \
   > "$R/etc/fstab"
 
 mkdir -p "$R/etc/network"
@@ -151,6 +153,26 @@ WantedBy=multi-user.target
 EOF
 ln -sfn ../h713-aic8800-modules.service \
   "$systemd_dir/multi-user.target.wants/h713-aic8800-modules.service"
+
+# Grow the root filesystem to its partition once, off the boot critical path.
+# Online ext4 growth is safe on the mounted root; the marker lives on that
+# root, so a freshly written image (without it) grows on its first boot.
+cat > "$systemd_dir/h713-rootfs-grow-once.service" <<'EOF'
+[Unit]
+Description=Grow the root filesystem to its partition once
+After=local-fs.target
+ConditionPathExists=!/var/lib/h713-rootfs-grown
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/systemd/systemd-growfs /
+ExecStart=/usr/bin/touch /var/lib/h713-rootfs-grown
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -sfn ../h713-rootfs-grow-once.service \
+  "$systemd_dir/multi-user.target.wants/h713-rootfs-grow-once.service"
 
 # Quiet the WiFi driver for production. aic8800_fdrv's aicwf_dbg_level defaults
 # to LOGERROR|LOGINFO|LOGDEBUG|LOGTRACE|LOGFW (0x40F); the DEBUG/TRACE bits flood
