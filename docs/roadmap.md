@@ -28,6 +28,14 @@ descriptions below are historical where they conflict with
 
 ## Phase 1 — Build & OS polish (bench, near-term)
 
+- [ ] **RC build boot/startup time — measure and reduce as much as possible.**
+  Establish repeatable cold-power-on and warm-reboot baselines on the current
+  release candidate, measuring through usable panel/HDMI/audio and system
+  readiness. Break down bootloader, kernel and userspace startup time, identify
+  the critical path, and remove or shorten unnecessary waits and serial work
+  while preserving reliable startup and recovery. Record before/after timings
+  over repeated boots, verify existing functional checks still pass, and
+  document the remaining bottlenecks and achieved minimum.
 - **Rootfs workflow — complete and hardware-verified.** The rootless
   `tools/rootfs/build.sh` verifies signed Debian metadata, requires an SSH key,
   disables password SSH, installs all 24 Linux 6.18.38 modules, builds

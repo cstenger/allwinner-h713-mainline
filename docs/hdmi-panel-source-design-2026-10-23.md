@@ -1,5 +1,74 @@
 # HDMI panel-source policy — design, October 23 (revision 2)
 
+## October 30 production bootloader preparation
+
+**October 31 one guarded SCP capture PASS:** all 14 reads, return proof and
+post-capture read-only verification pass. The no-signal state remains; owner
+lock, guard and scratch stay resident. No release or reboot. [Result and
+restrictions](hdmi-evidence/2026-10-31-scp-capture-live/README.md).
+The preparation-only entries below are historical.
+
+**October 31 SCP sampler v2:** replacement monitor and owner-lock companion are
+built/tested offline and packaged for a separately authorized guarded capture.
+No insertion, restart or reboot occurred. The current no-signal state, boot,
+SRAM and 56 installed-file pins remain unchanged. [Tests, package and retained
+lifecycle](hdmi-evidence/2026-10-31-scp-capture-v2/README.md).
+The board-off preparation paragraph below is historical.
+
+**October 31 save-path preparation:** backups and UART controller/state/PTY
+tests pass offline. No live save, GPIO/latch change, reboot or UART arming
+was performed; operator now reports board off. Fresh Linux preflight and
+separate operator-ready authorization precede the two proposed warm entries.
+[Protocol and evidence](uboot-savepath-validation-2026-10-31.md).
+
+**October 31: migrated ordinary warm boot PASS.** One authorized normal reboot
+loaded the environment at `0x93d80000` OK and booted Linux unattended. New
+boot/storage/startup checks pass with no errors/recovery. From a no-signal
+baseline, HDMI returned locked 1280×720 and the operator confirmed the host
+desktop. No extra reset or manual recovery. Capture stopped cleanly; board on.
+[Warm evidence and limits](hdmi-evidence/2026-10-31-uboot-warm-validation/README.md).
+
+**October 31 warm preparation:** fresh sole passive UART reader is armed under
+host user-service supervision; read-only preflight passes, no reboot issued.
+Await ready for one ordinary unattended warm boot from current no-source
+baseline. The prior reader was alive in the host namespace; its earlier
+absence report was a restricted-namespace visibility error, now corrected.
+It was cleanly stopped before replacement. [Plan and correction evidence](hdmi-evidence/2026-10-31-uboot-warm-validation/README.md).
+
+**October 31: first migrated cold boot validated.** The new proper reads its
+environment from `0x93d80000` and reports OK on UART; shared HDMI handoff and
+autoboot to Linux succeed. New boot passes the read-only startup checker,
+all storage/file/manifest checks, HDOK/GP7 zero and zero error/restart counts.
+No validation write or reset was issued. Picture/audio, warm boot and save-path
+acceptance remain pending. [Proof and UART coverage limits](hdmi-evidence/2026-10-31-uboot-first-boot/README.md).
+
+**Latest: migration installed and independently read back; no reboot.**
+New boot-bound preflight matched the reviewed bytes. Environment was staged
+first, then the candidate proper; both match and eight protected ranges remain
+unchanged. HDMI manifests/runtime/service identities, latches and calibration
+are preserved. Boot `3474b865-26f2-4b2d-bf37-1baddef732fe` remains on; new proper
+has not executed. [Installed result and recovery](hdmi-evidence/2026-10-30-uboot-migration-install/README.md).
+First-boot/media qualification is pending explicit operator approval. No
+source commit or push. Preparation history follows.
+
+**Latest continuation:** fresh read-only identity/storage preflight passes;
+the package now pins actual CID, both validated GPT copies, current preimages
+and exact boot/runtime generation. Twenty preflight and 31 host rehearsal
+cases pass; 19 fresh-guard and 14 transaction mutations caught. No board files
+staged, installation, service restart or reboot.
+[Current finalized package and read-only preview](hdmi-evidence/2026-10-30-uboot-migration-live/README.md).
+The earlier offline endpoint follows as preparation history.
+
+The normal DDR3 U-Boot series now preserves the full-width configured
+environment fallback and reports its selected byte offset at singular load.
+The new candidate requires environment migration from unintended LBA `0x32ec00`
+to intended LBA `0x49ec00` before deployment. No board contact or installation
+was performed for this work; installed startup/HDMI behavior is unchanged.
+Thirteen source, eleven panel and twenty-nine migration rehearsal cases pass;
+nine source and fourteen migration mutations are caught. The private package
+accepts regular host images only and still needs fresh live device/GPT/preimage
+finalization. [Implementation, identities and qualifications](hdmi-evidence/2026-10-30-uboot-migration/README.md).
+
 <!-- pipewire-acceptance:start -->
 ## Current PipeWire board reboot acceptance — completed October 27
 

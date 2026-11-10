@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+#ifndef H713_DSP_COMPLETION_H
+#define H713_DSP_COMPLETION_H
+/* Continuous clear-edge observation with a real elapsed-time bound. Unlike
+ * the atomic iopoll macro's iteration budget, this stays bounded when MMIO
+ * reads are slow. Caller controls IRQ state; no sleep or register write here.
+ */
+static inline int h713_dsp_wait_clear(void __iomem *status_port, u32 *status,
+				    u32 done_mask, unsigned int timeout_us)
+{
+	u64 deadline = ktime_get_ns() + (u64)timeout_us * 1000;
+
+	for (;;) {
+		*status = readl(status_port);
+		if (!(*status & done_mask))
+			return 0;
+		if (ktime_get_ns() >= deadline)
+			return -ETIMEDOUT;
+		cpu_relax();
+	}
+}
+#endif

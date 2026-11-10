@@ -10,6 +10,123 @@ current generation. [Evidence and parser-stop qualification](hdmi-evidence/2026-
 
 ## Latest endpoint — installed and verified
 
+**Latest board-focused check, November 1:** one operator power-on captured
+passively; correct environment load, Linux/startup and all 56 file pins pass.
+Boot `afe48e93-6604-44de-a220-acb9416e8363` remains on with HDMI none and zero
+transitions/frames; host has no HDMI EDID. No recovery action. UART capture
+completed and host recorder stopped cleanly. [Fresh evidence](hdmi-evidence/2026-11-01-board-boot/README.md).
+
+**Latest host NVIDIA attempt, November 1:** one authorized attempt denied Device
+allocation (`0x1b`), freed its own client and stopped before display queries.
+The control-only design missed a required caller GPU FD; no retry or privilege
+change ran. Later host boot changed; board remains powered off as reported.
+[Analysis and consumed authorization](hdmi-evidence/2026-11-01-nvidia-cache-live/README.md).
+
+**Latest operator state:** board powered off; the preserved HDMI failure and
+live SCP session have ended. NVIDIA cached reader v2 is prepared/tested, with
+no live GPU ioctl or board action. Do not reuse the old boot-bound SCP packet.
+[Qualification and next snapshot](nvidia-cache-reader-2026-10-31.md).
+Earlier retained-session paragraphs below are historical.
+
+**Latest live SCP capture:** one authorized guarded sample and read-only
+verification PASS. All 14 reads completed; 56 file pins, boot and HDMI bad state
+are unchanged. Companion/owner lock/guard/scratch remain resident. Do not rerun,
+unload, read locked owner parameters or run ordinary startup checks. No release,
+HPD pulse, restart or reboot. [Retained endpoint](hdmi-evidence/2026-10-31-scp-capture-live/README.md).
+
+**Latest SCP preparation:** sampler v2 is qualified offline and packaged against
+the exact running kernel. No module was loaded and no live sample was attempted.
+Same boot/SRAM, all 56 file pins and the HDMI bad state pass final read-only
+checks. Capture remains a separate explicit action and retains the owner stop
+lock on success or ambiguity. [Result and operating constraints](hdmi-evidence/2026-10-31-scp-capture-v2/README.md).
+
+**Latest read-only preflight:** board now on in Linux boot
+`2d8c3970-4164-4a38-8e86-375bb440c971`; identity, environment/storage/GPTs,
+nine protected ranges, 56 pins and startup pass. No signal/video service
+activation, so the controller's six-service gate holds live readiness.
+No UART arming, service changes, save or reboot. [Fresh evidence](hdmi-evidence/2026-10-31-uboot-savepath-preflight-01/README.md).
+The next power-off/preparation paragraph is historical.
+
+**Current preparation, October 31:** save-path backups and the UART controller
+are tested offline, including probe/cleanup PTY sessions and fault handling.
+No recorder is armed and no hardware save or reboot occurred during this
+preparation. The operator reports the board off; obtain a fresh normal Linux
+boot and read-only preflight before the separately authorized warm sequence.
+[Reviewable protocol/package](uboot-savepath-validation-2026-10-31.md).
+The powered-on endpoints below are historical.
+
+**Latest: one ordinary migrated warm reboot PASS, October 31.** Operator ready
+and reboot authorization recorded; UART shows one restart, correct new proper,
+environment load at `0x93d80000` OK and unattended Linux return. Boot
+`b6849123-0398-4736-b06f-cfe25b19e593` is healthy: automatic startup/HDOK/GP7,
+manifests/files, both writes/eight protected ranges and zero error/recovery
+counts pass. Signal became 1280×720 lock; operator saw normal boot and the
+host desktop. No extra reboot, prompt hold, RAM script, manual latch arming,
+service recovery or saveenv. Fresh UART service stopped cleanly after capture;
+board left on. [Warm result and coverage](hdmi-evidence/2026-10-31-uboot-warm-validation/README.md).
+Audio, repeated lifecycle, save-path and hardware rollback remain pending.
+No commit or push. Preparation/cold/installation entries below are history.
+
+**Warm validation prepared, not run:** fresh passive UART service
+`h713-uboot-warm-uart-20261031-01.service` is the sole reader; current-boot
+read-only storage/files/startup/latch/diagnostic preflight passes. Await
+operator ready for exactly one ordinary warm reboot and unattended Linux
+return. [Plan and state](hdmi-evidence/2026-10-31-uboot-warm-validation/README.md).
+
+**Latest production-cleanup endpoint, October 31: first migrated cold boot
+passes.** Expected new U-Boot loaded environment from MMC(1) byte address
+`0x93d80000` (`0x49ec00` LBA), reported OK, completed shared handoff and booted
+Linux automatically. Boot `85768624-6a6e-4637-a50f-f45b2c156f31` passes read-only
+storage/startup checks, all manifests and file pins, with HDOK/GP7 zero and no
+capture/reject/restart errors. Both writes/eight protected ranges are intact.
+[Current cold-boot verdict](hdmi-evidence/2026-10-31-uboot-first-boot/README.md).
+No validation writes or reset/reboot; board left on. Warm boot/media/save-path
+acceptance remains pending. UART log covers SPL through Linux prompt. The
+earlier absent-PID interpretation was incorrect because the query used the
+restricted process namespace. Host-level ownership found the original reader
+alive; it was stopped cleanly before the fresh reader started. Confirm the
+host user-service MainPID/sole ownership immediately before a timed test.
+New work is uncommitted.
+Earlier installation/preparation endpoints below are history.
+
+**Latest production-cleanup endpoint: U-Boot/environment migration installed,
+independently verified, no reboot.** Current boot
+`3474b865-26f2-4b2d-bf37-1baddef732fe` remains running. Both write regions match
+the pinned package and all eight protected regions are unchanged; four HDMI
+manifests, file/metadata pins, services/start identities, counters, latches and
+40-ms calibration pass. New proper has not run; first-boot qualification
+requires a separately approved sequence. Persistent board rollback/journal:
+`/var/lib/h713-uboot-migration/20261030-9efcb1e7488515a1/`; host backup under
+`local/recovery/2026-10-30-uboot-migration-install/`.
+[Current installed verdict](hdmi-evidence/2026-10-30-uboot-migration-install/README.md).
+No service restart, clock/latch write, commit or push. Earlier checkpoints
+below are retained as history.
+
+**Latest production-cleanup continuation:** fresh read-only board/storage
+preflight passes and the migration package is finalized with actual CID, GPT,
+preimages and boot/runtime pins. No board staging, install, restart or reboot.
+Same boot as the guard update. Twenty preflight/31 rehearsal cases pass;
+19 fresh-guard/14 transaction mutations caught. Private archive:
+`local/recovery/2026-10-30-uboot-migration-live/package.tar.gz`.
+[Current verdict and qualifications](hdmi-evidence/2026-10-30-uboot-migration-live/README.md).
+Installation still requires explicit authorization; new work is uncommitted.
+
+**Latest continuation:** the requested U-Boot source fix, normal DDR3 candidate
+and private migration package now pass offline rehearsal. No board contact or
+installation. [New endpoint and deployment limits](uboot-environment-migration-2026-10-30.md).
+Thirteen source/eleven panel/twenty-nine migration cases pass; nine source and
+fourteen migration mutations are caught. New work remains uncommitted.
+The package refuses block devices; fresh live identity/GPT/preimage collection
+and finalization precede any deployment approval.
+
+**Subsequent cleanup continuation:** `848339d` was pushed to Chris's fork.
+The [offline U-Boot/environment migration plan](uboot-environment-migration-2026-10-30.md)
+now pins recovery inputs and transaction/recovery ordering. Retained-input
+verification, seven host tests and eight caught validation mutations pass.
+No board contact or candidate build/installation in that continuation; source
+fix and migration-package implementation/rehearsal are next. New work remains
+uncommitted. The installation checkpoint below is preserved.
+
 Chris explicitly approved installation, powered on the board and confirmed it
 had booted. Preflight matched the reviewed generation. The guard-only update
 is now installed: both copies are `96f37655…`, root:root 0755, and the backend

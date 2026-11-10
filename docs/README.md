@@ -22,6 +22,8 @@ detail belongs in the file it points at.
 | file | what it is |
 | --- | --- |
 | [`First HDMI advert: cause and event-driven fix — November 8`](hdmi-first-advert-root-cause-2026-11-08.md) | Source reads EDID but our slave NAKs until an HPD edge; SCP DDC-line watch + failed-read pulse (`hpd-event-v1`): lock owner +2.12 s; qualification table; AFBD green stall closed as a rare known limit (1/9 boots). |
+| [`Claude board-completion handoff — November 6`](handoff-2026-11-06-claude-board-completion.md) | Current live/disk state, single-launch and EDID/DDC boot work, retry evidence, remaining optimization and DDR3 completion gates before LPDDR3. |
+| [`Early HDMI boot review — November 6`](hdmi-early-boot-review-2026-11-06.md) | U-Boot's two firmware launches, resource ordering, stock comparison and prepared-only observation checkpoints. |
 | [`Rebuilt-candidate hardware qualification`](production-evidence/2026-11-03-candidate-installation/README.md) | Exact install/readback, boot/HDMI/decoder/control checks and non-writing recovery entry; tested scope and GF1 disposition recorded. |
 | [`Guarded frame-discard disposition`](production-evidence/2026-11-04-guarded-discard-disposition/README.md) | Reviewed protective drop; actual-source race/guard-bypass tests, strict failure retained, unchanged installed binary. |
 | [`Exact installation/rollback packet`](production-evidence/2026-11-03-installation-packet/README.md) | Sealed bounded installation/rollback inputs and protected readback; preparation record, with live results below. |
@@ -31,7 +33,24 @@ detail belongs in the file it points at.
 | [`Rebuilt-system qualification plan`](production-qualification-plan.md) | Backup, exact installation scope and hardware acceptance gates for the DDR3 board. |
 | [`HDMI final regression checks`](hdmi-evidence/2026-11-02-hdmi-regressions/README.md) | Host reboot, 3 h 38 min input session and functional physical reconnect pass; exact reconnect latency unmeasured. |
 | [`U-Boot native save-path validation`](hdmi-evidence/2026-11-02-uboot-savepath/README.md) | PASS: corrected-slot native save, marker reload and cleanup; protected storage and 59 file checks pass. |
-| [`handoff-2026-10-30-guard-sync.md`](handoff-2026-10-30-guard-sync.md) | Latest: shutdown guards synchronized; both copies and full manifest verified. |
+| [`Claude HDMI second-opinion handoff`](handoff-2026-11-01-hdmi-detection-for-claude.md) | Current evidence/code map, both cold controls passed, latest unrecorded abrupt cycle, review questions and live-work constraints. Offline review first. |
+| [`HDMI zero-control cold validation`](hdmi-evidence/2026-11-01-zero-control-cold/README.md) | 0 ms cold control also passed: correct EDID, 720p lock, host desktop and healthy Linux. Both delay conditions passed once; two-second causal benefit unproven. Recordings sealed; zero override remains installed. |
+| [`HDMI matched zero-control staging`](hdmi-evidence/2026-11-01-zero-control-stage/README.md) | 0 ms control staged with verified backups; only the delay argument changed. Running two-second boot untouched; no reload, restart, shutdown or reboot. |
+| [`HDMI delayed cold-start validation`](hdmi-evidence/2026-11-01-startup-delay-cold/README.md) | Passed one power-off startup: measured 2.0217 s wait, expected host EDID, 720p lock, normal desktop/Linux and 56 pins/ten storage regions verified. Recordings sealed; staging subsequently switched to matched 0 ms control. |
+| [`HDMI delayed warm-boot validation`](hdmi-evidence/2026-11-01-startup-delay-boot/README.md) | One ordinary reboot passed: measured 2.021 s wait, matching host EDID, 720p lock, normal desktop and Linux. Recorders stopped; temporary override remains installed. |
+| [`HDMI delay startup staging`](hdmi-evidence/2026-11-01-startup-delay-stage/README.md) | 2,000 ms variant staged for next boot with verified backups; 56 production pins and ten storage regions pass before/after. No reload, restart or reboot. |
+| [`HDMI delay-only startup package`](hdmi-evidence/2026-11-01-startup-delay/README.md) | Temporary 2,000 ms variant and matched control prepared; 55 offline tests, six mutation checks and both unit checks pass. Offline preparation record. |
+| [`HDMI startup timing comparison`](hdmi-startup-timing-analysis-2026-11-01.md) | Known-good startup has nearly identical readiness timing; propose a controlled delay-only board startup test. No live changes. |
+| [`Board boot HDMI recheck`](hdmi-evidence/2026-11-01-board-boot/README.md) | No-detection reproduced on fresh boot; UART/environment/startup/56 pins pass. Board on, no recovery attempted. |
+| [`NVIDIA live attempt`](hdmi-evidence/2026-11-01-nvidia-cache-live/README.md) | Device allocation denied; own client freed, no display snapshot. Control-only lifecycle is not viable; no retry. |
+| [`NVIDIA cached reader v2`](nvidia-cache-reader-2026-10-31.md) | Real transport prepared/tested; no live ioctl. Board powered off; old preserved HDMI/SCP session ended. |
+| [`Live SCP analysis`](hdmi-scp-capture-analysis-2026-10-31.md) | Sampled controls match handoff; active EDID zeros also occur with successful detection. Next: audit host cache-only hotplug reader. |
+| [`Guarded SCP capture`](hdmi-evidence/2026-10-31-scp-capture-live/README.md) | One live capture passes; current bad state unchanged, owner lock/guard/scratch retained. Do not rerun or unload. |
+| [`SCP sampler v2`](hdmi-evidence/2026-10-31-scp-capture-v2/README.md) | Replacement qualified offline and packaged for a guarded capture; unloaded, current bad state unchanged. |
+| [`SCP sampling safety review`](hdmi-evidence/2026-10-31-scp-capture-safety/README.md) | First probe fails live safety gates; bad state preserved, no insertion/reset/restart. |
+| [`uboot-savepath-validation-2026-10-31.md`](uboot-savepath-validation-2026-10-31.md) | Fresh preflight held for no HDMI detection; bad state preserved for software diagnosis. UART unarmed, no save/reboot. |
+| [`uboot-environment-migration-2026-10-30.md`](uboot-environment-migration-2026-10-30.md) | Latest cleanup: cold and one ordinary warm boot pass corrected environment load/Linux checks; desktop return confirmed. |
+| [`handoff-2026-10-30-guard-sync.md`](handoff-2026-10-30-guard-sync.md) | Shutdown guards synchronized; both copies and full manifest verified. |
 | [`handoff-2026-10-28-production-cleanup.md`](handoff-2026-10-28-production-cleanup.md) | Latest shutdown checkpoint: production audit, recovery files and next work. |
 | [`status.md`](status.md) | What works today, per subsystem. The front page. |
 | [`roadmap.md`](roadmap.md) | What comes next, ordered by dependency. |
