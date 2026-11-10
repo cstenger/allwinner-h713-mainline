@@ -1,0 +1,104 @@
+media: hantro: add an H713 G2 variant with the sibling clocks
+
+The H713 carries a second decoder at 0x1c0d000, separate from cedrus, and
+the binary evidence says it is VeriSilicon Hantro G2 family: libawvp9Hw.so
+carries the whole G2 endianness-swap register group (pic/dirmv/rscan/tab0-3/
+stream_swap), 20 DWL* symbols, and VeriSilicon's own "treshold" misspelling
+that mainline spells correctly. libawav1.so shares the Asic* API and the
+vp9hwd_* tables with it, so one block does VP9 and AV1. Full evidence in
+docs/reference/vp9-av1-hantro-g2-2026-09-23.md.
+
+sunxi_vpu_variant cannot be reused unchanged. It asks for two clocks,
+{"mod", "bus"}, because that is what the H6's G2 needs. On H713 the block
+needs more, and this is measured rather than assumed:
+
+  - It shares cedrus's module clock. The vendor CCU defines NO AV1 module
+    clock -- every "av1" symbol in the vendor kernel is a gate -- and the
+    vendor DT's own clock index 32, which its AV1 node names "av1",
+    resolves to ve_core_clk. Read out of vmlinux.fex's DWARF.
+  - It needs BUS_VE as well as BUS_AV1, and RST_BUS_VE as well as
+    RST_BUS_AV1. The vendor node lists both; so does cedrus, which holds
+    BUS_VE3 for the same sibling reason and shows it in silicon as
+    0x0200169c reading 0x00050005 while decoding.
+  - It needs the VE power domain. Powering only the AV1 domain leaves the
+    block reading zero; it answered 0x0003B16D only with the VE domain up.
+
+So: a separate variant with four clocks. Resets come from the DT node --
+hantro takes them all via devm_reset_control_array_get_optional_exclusive --
+and the power domain attaches through runtime PM from the node's
+power-domains property.
+
+This is a BIND ATTEMPT, not a validated port. Three attempts to bring the
+block up by hand hard-locked the SoC twice, because clocks, resets and power
+domains are the only things devmem can reach and they are demonstrably not
+sufficient. The point of doing it in the driver is that the SRAM claim,
+IOMMU attach and runtime-PM ordering happen in code that knows the sequence,
+and a failure prints a diagnosable error instead of taking the SoC down.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff -ruN a/drivers/media/platform/verisilicon/hantro_drv.c b/drivers/media/platform/verisilicon/hantro_drv.c
+--- a/drivers/media/platform/verisilicon/hantro_drv.c	2026-09-22 22:31:00.474437730 -0700
++++ b/drivers/media/platform/verisilicon/hantro_drv.c	2026-09-22 22:31:18.972953263 -0700
+@@ -733,6 +733,7 @@
+ #endif
+ #ifdef CONFIG_VIDEO_HANTRO_SUNXI
+ 	{ .compatible = "allwinner,sun50i-h6-vpu-g2", .data = &sunxi_vpu_variant, },
++	{ .compatible = "allwinner,sun50i-h713-vpu-g2", .data = &sun50i_h713_vpu_variant, },
+ #endif
+ #ifdef CONFIG_VIDEO_HANTRO_STM32MP25
+ 	{ .compatible = "st,stm32mp25-vdec", .data = &stm32mp25_vdec_variant, },
+diff -ruN a/drivers/media/platform/verisilicon/hantro_hw.h b/drivers/media/platform/verisilicon/hantro_hw.h
+--- a/drivers/media/platform/verisilicon/hantro_hw.h	2026-09-22 22:31:00.476380832 -0700
++++ b/drivers/media/platform/verisilicon/hantro_hw.h	2026-09-22 22:31:18.973009188 -0700
+@@ -417,6 +417,7 @@
+ extern const struct hantro_variant rk3588_vpu981_variant;
+ extern const struct hantro_variant sama5d4_vdec_variant;
+ extern const struct hantro_variant sunxi_vpu_variant;
++extern const struct hantro_variant sun50i_h713_vpu_variant;
+ extern const struct hantro_variant stm32mp25_vdec_variant;
+ extern const struct hantro_variant stm32mp25_venc_variant;
+ 
+diff -ruN a/drivers/media/platform/verisilicon/sunxi_vpu_hw.c b/drivers/media/platform/verisilicon/sunxi_vpu_hw.c
+--- a/drivers/media/platform/verisilicon/sunxi_vpu_hw.c	2026-09-22 22:31:00.477838089 -0700
++++ b/drivers/media/platform/verisilicon/sunxi_vpu_hw.c	2026-09-22 22:31:18.973042511 -0700
+@@ -127,3 +127,39 @@
+ 	.legacy_regs = 1,
+ 	.late_postproc = 1,
+ };
++
++/*
++ * H713's G2 sits next to cedrus and shares its module clock: the vendor CCU
++ * defines no AV1 module clock at all, and the vendor DT's "av1" clock resolves
++ * to ve_core. It also needs the VE bus gate held alongside its own, the same
++ * sibling-clock requirement cedrus has for VE3 on this SoC.
++ *
++ *   mod     CLK_VE_CORE    shared with cedrus
++ *   bus     CLK_BUS_AV1    its own AHB gate
++ *   bus_ve  CLK_BUS_VE     sibling, required
++ *   mbus    CLK_MBUS_AV1   memory path
++ *
++ * Resets (RST_BUS_VE + RST_BUS_AV1) and the VE power domain come from the DT
++ * node. See docs/reference/vp9-av1-hantro-g2-2026-09-23.md.
++ */
++static const char * const sun50i_h713_clk_names[] = {
++	"mod", "bus", "bus_ve", "mbus"
++};
++
++const struct hantro_variant sun50i_h713_vpu_variant = {
++	.dec_fmts = sunxi_vpu_dec_fmts,
++	.num_dec_fmts = ARRAY_SIZE(sunxi_vpu_dec_fmts),
++	.postproc_fmts = sunxi_vpu_postproc_fmts,
++	.num_postproc_fmts = ARRAY_SIZE(sunxi_vpu_postproc_fmts),
++	.postproc_ops = &hantro_g2_postproc_ops,
++	.codec = HANTRO_VP9_DECODER,
++	.codec_ops = sunxi_vpu_codec_ops,
++	.init = sunxi_vpu_hw_init,
++	.irqs = sunxi_irqs,
++	.num_irqs = ARRAY_SIZE(sunxi_irqs),
++	.clk_names = sun50i_h713_clk_names,
++	.num_clocks = ARRAY_SIZE(sun50i_h713_clk_names),
++	.double_buffer = 1,
++	.legacy_regs = 1,
++	.late_postproc = 1,
++};

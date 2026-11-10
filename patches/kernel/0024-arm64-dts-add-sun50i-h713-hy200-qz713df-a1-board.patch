@@ -1038,13 +1038,13 @@
 +		 * H713 AV1 decoder block (separate address from Cedrus VE to avoid 0x01c0e000 conflict)
 +		 */
 +		av1_decoder: av1-decoder@1c0d000 {
-+			compatible = "allwinner,sunxi-google-ve", "allwinner,sun50i-h713-av1-decoder";
-+			reg = <0x01c0d000 0x1000>, <0x03000000 0x10>;
++			compatible = "allwinner,sun50i-h713-vpu-g2";
++			reg = <0x01c0d000 0x1000>;
 +			interrupts = <GIC_SPI 107 IRQ_TYPE_LEVEL_HIGH>;
-+			clocks = <&ccu CLK_BUS_VE>, <&ccu CLK_BUS_VE3>, <&ccu CLK_BUS_AV1>, <&ccu CLK_MBUS_VE3>;
-+			clock-names = "bus_ve", "bus_ve3", "av1", "mbus_ve3";
-+			resets = <&ccu RST_BUS_VE>, <&ccu RST_BUS_VE3>;
-+			reset-names = "reset_ve", "reset_ve3";
++			clocks = <&ccu CLK_VE_CORE>, <&ccu CLK_BUS_AV1>, <&ccu CLK_BUS_VE>, <&ccu CLK_MBUS_AV1>;
++			clock-names = "mod", "bus", "bus_ve", "mbus";
++			resets = <&ccu RST_BUS_AV1>;
++			power-domains = <&ppu 3>;
 +			memory-region = <&decd_reserved>;
 +			status = "okay";
 +		};
