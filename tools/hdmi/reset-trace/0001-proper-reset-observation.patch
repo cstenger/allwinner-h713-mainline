@@ -1,0 +1,90 @@
+--- /dev/null
++++ b/include/h713_reset_trace.h
+@@ -0,0 +1,28 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/* Bench-only observation. No peripheral, SRAM, DSP protocol or reset writes. */
++#ifndef H713_RESET_TRACE_H
++#define H713_RESET_TRACE_H
++#include <asm/io.h>
++#include <linux/types.h>
++#include <stdio.h>
++
++static inline void h713_reset_trace(const char *stage, bool with_status)
++{
++	u32 gp6 = readl(0x07090118UL);
++	u32 gp7 = readl(0x0709011cUL);
++	u32 mips_clk = readl(0x02001600UL);
++	u32 mips_reset = readl(0x0200160cUL);
++	u32 status = 0;
++
++	/* No MIPS CPUCFG access from the optional pre-DRAM SPL probe. */
++	if (with_status)
++		status = readl(0x0306101cUL);
++	printf("H713 RESET v1 stage=%s gp6=%08x gp7=%08x "
++	       "mips_clk=%08x mips_reset=%08x ",
++	       stage, gp6, gp7, mips_clk, mips_reset);
++	if (with_status)
++		printf("mips_status=%08x\n", status);
++	else
++		printf("mips_status=unread\n");
++}
++#endif
+--- a/board/sunxi/board.c
++++ b/board/sunxi/board.c
+@@ -11,6 +11,7 @@
+  */
+ 
+ #include <clock_legacy.h>
++#include <h713_reset_trace.h>
+ #include <dm.h>
+ #include <env.h>
+ #include <fastboot.h>
+@@ -1001,6 +1002,9 @@
+ 
+ int board_late_init(void)
+ {
++#if defined(CONFIG_MACH_SUN50I_H713) && !defined(CONFIG_XPL_BUILD)
++	h713_reset_trace("proper_preboot", true);
++#endif
+ #ifdef CONFIG_USB_ETHER
+ 	usb_ether_init();
+ #endif
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -9,6 +9,7 @@
+  */
+ 
+ #include <command.h>
++#include <h713_reset_trace.h>
+ #include <bmp_layout.h>
+ #include <console.h>
+ #include <cpu_func.h>
+@@ -6018,6 +6019,8 @@
+ 
+ 	printf("H713 disp: loading vendor artifacts from %s %s\n",
+ 	       H713_DISP_FS_IF, H713_DISP_FS_DEV);
++
++	h713_reset_trace("pre_workspace", true);
+ 
+ 	/* Clear first: the workspace wipe must not run over what we load. */
+ 	h713_mips_clear_workspace();
+@@ -10791,6 +10794,7 @@
+ 		return h713_disp_fail(ret);
+ 	h713_disp_commit_osd_frame();
+ 
++	h713_reset_trace("post_logo", true);
+ 	printf("H713 disp: boot logo published and committed\n");
+ 
+ 	/*
+@@ -10827,6 +10831,11 @@
+ 			char *const argv[])
+ {
+ 	ulong blob;
++
++	if (argc == 2 && !strcmp(argv[1], "reset-state")) {
++		h713_reset_trace("manual", true);
++		return CMD_RET_SUCCESS;
++	}
+ 
+ 	if ((argc == 2 || argc == 3) && !strcmp(argv[1], "dump")) {
+ 		bool force = argc == 3 && !strcmp(argv[2], "force");

@@ -1,0 +1,30 @@
+--- a/arch/arm/mach-sunxi/board.c
++++ b/arch/arm/mach-sunxi/board.c
+@@ -10,6 +10,7 @@
+  */
+ 
+ #include <cpu_func.h>
++#include <h713_reset_trace.h>
+ #include <init.h>
+ #include <log.h>
+ #include <mmc.h>
+@@ -562,6 +563,9 @@
+ 
+ 	spl_init();
+ 	preloader_console_init();
++#ifdef CONFIG_MACH_SUN50I_H713
++	h713_reset_trace("spl_pre_dram", false);
++#endif
+ 
+ #if CONFIG_IS_ENABLED(I2C) && CONFIG_IS_ENABLED(SYS_I2C_LEGACY)
+ 	/* Needed early by sunxi_board_init if PMU is enabled */
+@@ -569,6 +573,9 @@
+ 	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
+ #endif
+ 	sunxi_board_init();
++#ifdef CONFIG_MACH_SUN50I_H713
++	h713_reset_trace("spl_post_dram", false);
++#endif
+ 
+ #ifdef CONFIG_H713_VENDOR_CHAINLOAD
+ 	/*

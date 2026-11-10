@@ -1,0 +1,52 @@
+--- a/boot/bootm.c
++++ b/boot/bootm.c
+@@ -5,6 +5,9 @@
+  */
+ 
+ #ifndef USE_HOSTCC
++#if defined(CONFIG_MACH_SUN50I_H713) && !defined(CONFIG_XPL_BUILD)
++#include <h713_tvfe_boot_trace.h>
++#endif
+ #include <bootm.h>
+ #include <bootstage.h>
+ #include <dm/root.h>
+@@ -1197,6 +1200,10 @@
+ 
+ void bootm_final(int flag)
+ {
++#if defined(CONFIG_MACH_SUN50I_H713) && !defined(CONFIG_XPL_BUILD)
++	h713_tvfe_boot_trace("uboot_final_entry");
++#endif
++
+ 	printf("\nStarting kernel ...%s\n\n",
+ 	       (flag & BOOTM_STATE_OS_FAKE_GO) ?
+ 	       " (fake run for tracing)" : "");
+@@ -1209,14 +1216,28 @@
+ 	if (IS_ENABLED(CONFIG_BOOTSTAGE_REPORT))
+ 		bootstage_report();
+ 
++#if defined(CONFIG_MACH_SUN50I_H713) && !defined(CONFIG_XPL_BUILD)
++	h713_tvfe_boot_trace("uboot_before_quiesce");
++#endif
+ 	board_quiesce_devices();
++#if defined(CONFIG_MACH_SUN50I_H713) && !defined(CONFIG_XPL_BUILD)
++	h713_tvfe_boot_trace("uboot_after_quiesce");
++#endif
++
+ 
+ 	/*
+ 	 * Call remove function of all devices with a removal flag set.
+ 	 * This may be useful for last-stage operations, like cancelling
+ 	 * of DMA operation or releasing device internal buffers.
+ 	 */
++#if defined(CONFIG_MACH_SUN50I_H713) && !defined(CONFIG_XPL_BUILD)
++	h713_tvfe_boot_trace("uboot_before_dm_remove");
++#endif
+ 	dm_remove_devices_active();
++#if defined(CONFIG_MACH_SUN50I_H713) && !defined(CONFIG_XPL_BUILD)
++	h713_tvfe_boot_trace("uboot_after_dm_remove");
++#endif
++
+ }
+ 
+ #else /* USE_HOSTCC */

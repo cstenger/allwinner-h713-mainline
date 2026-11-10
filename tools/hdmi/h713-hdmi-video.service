@@ -1,0 +1,20 @@
+[Unit]
+Description=H713 HDMI input on the panel
+# Started by the udev rule when the bridge's device becomes ready (signal
+# locked or holding); stopped when it becomes not-ready or the bridge goes.
+BindsTo=dev-h713\x2dhdmi\x2din.device h713-hdmi-ring.service
+After=dev-h713\x2dhdmi\x2din.device h713-hdmi-ring.service
+Before=shutdown.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+# Route B (design 10.25.6): NV12 from the bridge as dmabufs straight onto
+# the KMS video plane; the console returns when kmssink closes its DRM fd.
+# No size or rate in the caps: v4l2src takes them from the DV timings.
+ExecStart=/usr/bin/gst-launch-1.0 -e -q v4l2src device=/dev/h713-hdmi-in io-mode=dmabuf ! video/x-raw,format=NV12 ! kmssink driver-name=sun50i-h713-afbd sync=false skip-vsync=true
+KillSignal=SIGINT
+TimeoutStopSec=5
+Restart=on-failure
+RestartSec=1

@@ -1,0 +1,286 @@
+From 0e949dee927d0ca09b6532d227ded04aaa7503b4 Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 3 Oct 2026 02:54:18 -0700
+Subject: [PATCH] pipewiresink: start audio when the graph pulls, and keep it
+ aligned to the clock
+
+A/V sync on an H713 board, timing a flash at scan-out against its beep at
+the sound card (av-sync-probe), with stock pipewiresink:
+
+- +768 ms for the whole stream when the sink had been idle. STREAMING only
+  means linked; the suspended device took ~740 ms to pull its first
+  buffer, everything queued meanwhile played late, and since supply then
+  matched consumption the backlog never drained.
+- +80 ms even warm, and nothing would ever correct it: the stream plays
+  continuously, so its first samples fix the alignment for good, and no
+  code compared where samples are heard with where they belong.
+
+Audio now waits for the graph's first process callback before anything
+is queued (dropped until then, as it already was before STREAMING), and
+each buffer is checked against the clock before it is queued: heard at
+pw_time.now + delay + (queued + buffered) / rate, moved into the
+pipeline clock; belongs at base time + running time + latency. Beyond
+30 ms (audiobasesink's alignment-threshold is 40) late samples are
+skipped and early ones get silence in front. basesink is asked for the
+graph delay plus a quantum as render-delay, so buffers arrive with lead
+time to align.
+
+pw_buffer.size was mem->size / 4 whatever the format; it is now in
+frames of the negotiated format, which pw_time.queued is read in.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/gst/gstpipewiresink.c | 164 +++++++++++++++++++++++++++++++++++++-
+ src/gst/gstpipewiresink.h |   5 ++
+ 2 files changed, 168 insertions(+), 1 deletion(-)
+
+diff --git a/src/gst/gstpipewiresink.c b/src/gst/gstpipewiresink.c
+index b79ae6a..28d123d 100644
+--- a/src/gst/gstpipewiresink.c
++++ b/src/gst/gstpipewiresink.c
+@@ -18,6 +18,8 @@
+ #include "config.h"
+ #include "gstpipewiresink.h"
+ 
++#include <gst/audio/audio.h>
++
+ #include <string.h>
+ #include <stdlib.h>
+ #include <fcntl.h>
+@@ -41,6 +43,9 @@ GST_DEBUG_CATEGORY_STATIC (pipewire_sink_debug);
+ #define DEFAULT_PROP_USE_BUFFERPOOL USE_BUFFERPOOL_AUTO
+ 
+ #define MIN_BUFFERS     8u
++/* Resync audio when where it will be heard and where it belongs differ by
++ * more than this; audiobasesink's alignment-threshold is 40 ms. */
++#define ALIGNMENT_THRESHOLD (30 * GST_MSECOND)
+ 
+ enum
+ {
+@@ -640,7 +645,9 @@ do_send_buffer (GstPipeWireSink *pwsink, GstBuffer *buffer)
+     d->chunk->size = mem->size;
+     d->chunk->stride = stream->pool->video_info.stride[i];
+ 
+-    data->b->size += mem->size / 4;
++    /* in frames, as pw_time.queued is then read (stream.h advises frames
++     * for audio); was mem->size / 4 whatever the format */
++    data->b->size += mem->size / (pwsink->bpf > 0 ? pwsink->bpf : 4);
+   }
+ 
+   GstVideoMeta *meta = gst_buffer_get_video_meta (buffer);
+@@ -681,6 +688,10 @@ on_process (void *data)
+ {
+   GstPipeWireSink *pwsink = data;
+   GST_LOG_OBJECT (pwsink, "signal");
++  if (!pwsink->consuming) {
++    GST_DEBUG_OBJECT (pwsink, "graph is consuming");
++    pwsink->consuming = TRUE;
++  }
+   g_cond_signal (&pwsink->stream->pool->cond);
+ }
+ 
+@@ -692,6 +703,9 @@ on_state_changed (void *data, enum pw_stream_state old, enum pw_stream_state sta
+   GST_DEBUG_OBJECT (pwsink, "got stream state \"%s\" (%d)",
+       pw_stream_state_as_string(state), state);
+ 
++  if (state != PW_STREAM_STATE_STREAMING)
++    pwsink->consuming = FALSE;
++
+   switch (state) {
+     case PW_STREAM_STATE_UNCONNECTED:
+     case PW_STREAM_STATE_CONNECTING:
+@@ -751,9 +765,12 @@ gst_pipewire_sink_setcaps (GstBaseSink * bsink, GstCaps * caps)
+ 
+   s = gst_caps_get_structure (caps, 0);
+   if (gst_structure_has_name (s, "audio/x-raw")) {
++    GstAudioInfo info;
++
+     gst_structure_get_int (s, "rate", &rate);
+     pwsink->rate = rate;
+     pwsink->rate_match = true;
++    pwsink->bpf = gst_audio_info_from_caps (&info, caps) ? GST_AUDIO_INFO_BPF (&info) : 0;
+ 
+     /* Don't provide bufferpool for audio if not requested by the application/user */
+     if (pwsink->use_bufferpool != USE_BUFFERPOOL_YES)
+@@ -859,6 +876,101 @@ start_error:
+   }
+ }
+ 
++/*
++ * Audio alignment, called with the loop lock held. Returns how late (> 0) or
++ * early (< 0) the first sample of @buffer would be heard if queued now,
++ * against when it belongs, in ns; 0 when that cannot be known.
++ *
++ * Heard at: the last graph cycle's time, plus the graph and device delay,
++ * plus everything queued and buffered ahead of it (pw_time, stream.h), moved
++ * into the pipeline clock by reading both clocks back to back. Belongs at:
++ * base time + running time + latency, as basesink syncs it.
++ *
++ * Without this nothing tied PipeWire's playback position to the clock. The
++ * stream plays continuously, so its first samples fixed the alignment for
++ * good: whatever backlog or gap start-up left, the whole stream kept.
++ */
++static GstClockTimeDiff
++audio_misalignment (GstPipeWireSink *pwsink, GstBuffer *buffer, GstClockTime *delay)
++{
++  GstBaseSink *bsink = GST_BASE_SINK (pwsink);
++  GstPipeWireStream *stream = pwsink->stream;
++  GstClockTime pts = GST_BUFFER_PTS (buffer), running, clock_now, base;
++  GstClock *clock;
++  struct pw_time ts;
++  gint64 pw_now, heard;
++
++  *delay = GST_CLOCK_TIME_NONE;
++  if (pwsink->rate <= 0 || pwsink->bpf <= 0 || !GST_CLOCK_TIME_IS_VALID (pts) ||
++      !gst_base_sink_get_sync (bsink))
++    return 0;
++  if (pw_stream_get_time_n (stream->pwstream, &ts, sizeof (ts)) < 0 ||
++      ts.now == 0 || ts.rate.denom == 0)
++    return 0;
++
++  running = gst_segment_to_running_time (&bsink->segment, GST_FORMAT_TIME, pts);
++  clock = gst_element_get_clock (GST_ELEMENT_CAST (pwsink));
++  if (!clock || !GST_CLOCK_TIME_IS_VALID (running)) {
++    if (clock)
++      gst_object_unref (clock);
++    return 0;
++  }
++  clock_now = gst_clock_get_time (clock);
++  pw_now = pw_stream_get_nsec (stream->pwstream);
++  gst_object_unref (clock);
++  base = gst_element_get_base_time (GST_ELEMENT_CAST (pwsink));
++
++  *delay = gst_util_uint64_scale (ts.delay > 0 ? ts.delay : 0,
++      GST_SECOND * ts.rate.num, ts.rate.denom);
++  heard = ts.now + (gint64) *delay +
++      (gint64) gst_util_uint64_scale (ts.queued + ts.buffered, GST_SECOND, pwsink->rate) +
++      ((gint64) clock_now - pw_now);
++
++  return heard - (gint64) (base + running + gst_base_sink_get_latency (bsink));
++}
++
++/* Queue @frames of silence, called with the loop lock held (and returns
++ * with it held). */
++static GstFlowReturn
++send_silence (GstPipeWireSink *pwsink, guint64 frames)
++{
++  GstPipeWireStream *stream = pwsink->stream;
++  GstAudioInfo info;
++  GstCaps *caps = gst_pad_get_current_caps (GST_BASE_SINK_PAD (pwsink));
++  gboolean ok = caps && gst_audio_info_from_caps (&info, caps);
++
++  if (caps)
++    gst_caps_unref (caps);
++  if (!ok)
++    return GST_FLOW_OK;
++
++  while (frames > 0) {
++    GstBufferPoolAcquireParams params = { 0, };
++    GstBuffer *b = NULL;
++    GstMapInfo map;
++    GstFlowReturn res;
++    gsize bytes;
++
++    pw_thread_loop_unlock (stream->core->loop);
++    params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_LAST;
++    res = gst_buffer_pool_acquire_buffer (GST_BUFFER_POOL_CAST (stream->pool), &b, &params);
++    pw_thread_loop_lock (stream->core->loop);
++    if (res != GST_FLOW_OK)
++      return res == GST_FLOW_CUSTOM_ERROR_1 ? GST_FLOW_OK : res;
++
++    gst_buffer_map (b, &map, GST_MAP_WRITE);
++    bytes = MIN (frames * pwsink->bpf, map.maxsize / pwsink->bpf * pwsink->bpf);
++    gst_audio_format_info_fill_silence (info.finfo, map.data, bytes);
++    gst_buffer_unmap (b, &map);
++    gst_buffer_resize (b, 0, bytes);
++    frames -= bytes / pwsink->bpf;
++
++    do_send_buffer (pwsink, b);
++    gst_buffer_unref (b);
++  }
++  return GST_FLOW_OK;
++}
++
+ static GstFlowReturn
+ gst_pipewire_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
+ {
+@@ -896,10 +1008,60 @@ gst_pipewire_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
+   if (pw_stream_get_state (pwsink->stream->pwstream, &error) != PW_STREAM_STATE_STREAMING)
+     goto done_unlock;
+ 
++  /* STREAMING only means linked: a suspended device can take most of a
++   * second to start pulling, and audio queued meanwhile was played that
++   * late for the rest of the stream (+768 ms after the sink had been idle).
++   * Drop audio until the graph first asks for data, as before STREAMING.
++   * Not when this stream drives the graph: it pulls only after a queue. */
++  if (!pwsink->is_video && !pwsink->consuming &&
++      !pw_stream_is_driving (pwsink->stream->pwstream)) {
++    GST_LOG_OBJECT (pwsink, "graph not consuming yet, dropping %" GST_PTR_FORMAT,
++        buffer);
++    goto done_unlock;
++  }
++
+   if (buffer->pool != GST_BUFFER_POOL_CAST (pwsink->stream->pool)) {
+     gsize offset = 0;
+     gsize buf_size = gst_buffer_get_size (buffer);
+ 
++    if (!pwsink->is_video) {
++      GstClockTime delay;
++      GstClockTimeDiff err = audio_misalignment (pwsink, buffer, &delay);
++
++      /* Lead time for the resync to work with: basesink releases a buffer
++       * at its clock time, and it cannot be heard sooner than the graph
++       * delay after that. One quantum more absorbs the cycle phase. */
++      if (GST_CLOCK_TIME_IS_VALID (delay)) {
++        GstClockTime lead = delay + gst_util_uint64_scale (1024, GST_SECOND, pwsink->rate);
++
++        if (gst_base_sink_get_render_delay (bsink) < lead) {
++          pw_thread_loop_unlock (pwsink->stream->core->loop);
++          gst_base_sink_set_render_delay (bsink, lead);
++          pw_thread_loop_lock (pwsink->stream->core->loop);
++        }
++      }
++
++      if (err > (GstClockTimeDiff) ALIGNMENT_THRESHOLD) {
++        gsize skip = gst_util_uint64_scale (err, pwsink->rate, GST_SECOND) * pwsink->bpf;
++
++        GST_INFO_OBJECT (pwsink, "audio %" GST_STIME_FORMAT " late, skipping %"
++            G_GSIZE_FORMAT " bytes", GST_STIME_ARGS (err), skip);
++        if (skip >= buf_size)
++          goto done_unlock;
++        offset = skip;
++        buf_size -= skip;
++      } else if (err < -(GstClockTimeDiff) ALIGNMENT_THRESHOLD) {
++        GST_INFO_OBJECT (pwsink, "audio %" GST_STIME_FORMAT " early, inserting "
++            "silence", GST_STIME_ARGS (-err));
++        res = send_silence (pwsink, gst_util_uint64_scale (-err, pwsink->rate, GST_SECOND));
++        if (res != GST_FLOW_OK)
++          goto done_unlock;
++      } else {
++        GST_LOG_OBJECT (pwsink, "audio aligned within %" GST_STIME_FORMAT,
++            GST_STIME_ARGS (err));
++      }
++    }
++
+     GST_TRACE_OBJECT(pwsink, "Buffer is not from pipewirepool, copying into our pool");
+ 
+     /* For some streams, the buffer size is changed and may exceed the acquired
+diff --git a/src/gst/gstpipewiresink.h b/src/gst/gstpipewiresink.h
+index 60eb3b7..d77d1ec 100644
+--- a/src/gst/gstpipewiresink.h
++++ b/src/gst/gstpipewiresink.h
+@@ -73,6 +73,11 @@ struct _GstPipeWireSink {
+ 
+   GstPipeWireSinkMode mode;
+   GstPipeWireSinkSlaveMethod slave_method;
++
++  /* audio: bytes per frame of the negotiated format */
++  gint bpf;
++  /* audio: the graph has asked for data since the stream started */
++  gboolean consuming;
+ };
+ 
+ GType gst_pipewire_sink_mode_get_type (void);
+-- 
+2.55.0
+

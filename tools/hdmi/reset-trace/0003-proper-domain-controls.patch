@@ -1,0 +1,61 @@
+--- a/include/h713_reset_trace.h
++++ b/include/h713_reset_trace.h
+@@ -5,6 +5,50 @@
+ #include <asm/io.h>
+ #include <linux/types.h>
+ #include <stdio.h>
++
++/* Control windows only: no DSP port/lock, receiver MMIO or SCP SRAM.
++ * Read the complete vector before UART output. Sequential, not atomic.
++ * This is a proper-only census; optional SPL probes do not call it.
++ */
++static inline void h713_domain_trace(const char *stage)
++{
++	static const struct {
++		const char *name;
++		unsigned long address;
++	} words[] = {
++		{ "scp_reset", 0x07000400UL },
++		{ "adc_clk", 0x02001d10UL },
++		{ "tvfe_clk", 0x02001d20UL },
++		{ "i2h_clk", 0x02001d24UL },
++		{ "cip_tsx", 0x02001d28UL },
++		{ "cip_mcx", 0x02001d2cUL },
++		{ "cip_tsp", 0x02001d30UL },
++		{ "tsa_tsp", 0x02001d34UL },
++		{ "cip27", 0x02001d38UL },
++		{ "cip_mts0", 0x02001d40UL },
++		{ "audio_cpu", 0x02001d48UL },
++		{ "audio_umac", 0x02001d4cUL },
++		{ "audio_ihb", 0x02001d50UL },
++		{ "tsa432", 0x02001d58UL },
++		{ "mpg0", 0x02001d5cUL },
++		{ "mpg1", 0x02001d60UL },
++		{ "demod_bus", 0x02001d64UL },
++		{ "tcd3", 0x02001d6cUL },
++		{ "vincap_dma", 0x02001d74UL },
++		{ "cap_bus", 0x02001d80UL },
++		{ "hdmi_audio", 0x02001d84UL },
++		{ "tvcap_bus", 0x02001d88UL },
++	};
++	u32 values[sizeof(words) / sizeof(words[0])];
++	unsigned int i;
++
++	for (i = 0; i < sizeof(words) / sizeof(words[0]); i++)
++		values[i] = readl(words[i].address);
++	printf("H713 DOMAINS v1 stage=%s", stage);
++	for (i = 0; i < sizeof(words) / sizeof(words[0]); i++)
++		printf(" %s=%08x", words[i].name, values[i]);
++	printf("\n");
++}
+ 
+ static inline void h713_reset_trace(const char *stage, bool with_status)
+ {
+@@ -24,5 +68,7 @@
+ 		printf("mips_status=%08x\n", status);
+ 	else
+ 		printf("mips_status=unread\n");
++	if (with_status)
++		h713_domain_trace(stage);
+ }
+ #endif

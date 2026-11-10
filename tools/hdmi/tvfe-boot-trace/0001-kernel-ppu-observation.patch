@@ -1,0 +1,146 @@
+--- a/drivers/pmdomain/sunxi/sun50i-h713-ppu.c
++++ b/drivers/pmdomain/sunxi/sun50i-h713-ppu.c
+@@ -57,6 +57,7 @@
+  */
+ 
+ #include <linux/clk.h>
++#include <linux/init.h>
+ #include <linux/io.h>
+ #include <linux/iopoll.h>
+ #include <linux/module.h>
+@@ -66,6 +67,63 @@
+ #include <linux/pm_domain.h>
+ #include <linux/reset.h>
+ 
++/* Bench instrumentation, enabled only by h713_tvfe_trace=1. */
++static bool h713_tvfe_trace_enabled;
++static void __iomem *h713_tvfe_trace_r_ccu;
++static void __iomem *h713_tvfe_trace_ppu;
++
++static int __init h713_tvfe_trace_setup(char *value)
++{
++	if (!value || strcmp(value, "1"))
++		return -EINVAL;
++	h713_tvfe_trace_enabled = true;
++	return 0;
++}
++early_param("h713_tvfe_trace", h713_tvfe_trace_setup);
++
++static void h713_tvfe_boot_trace(const char *stage)
++{
++	u32 gate, tvfe, tvcap;
++
++	if (!h713_tvfe_trace_enabled || !h713_tvfe_trace_r_ccu ||
++	    !h713_tvfe_trace_ppu)
++		return;
++	gate = readl(h713_tvfe_trace_r_ccu + 0x1ac);
++	pr_info("H713 TVFE v1 stage=%s gate=%08x state=begin\n", stage, gate);
++	if ((gate & (BIT(0) | BIT(16))) != (BIT(0) | BIT(16))) {
++		pr_info("H713 TVFE v1 stage=%s gate=%08x state=skipped\n", stage, gate);
++		return;
++	}
++	tvfe = readl(h713_tvfe_trace_ppu + 0xa4);
++	tvcap = readl(h713_tvfe_trace_ppu + 0x124);
++	pr_info("H713 TVFE v1 stage=%s gate=%08x state=sample tvfe=%08x tvcap=%08x\n",
++		stage, gate, tvfe, tvcap);
++}
++
++static int __init h713_tvfe_trace_early(void)
++{
++	if (!h713_tvfe_trace_enabled)
++		return 0;
++	if (!of_machine_is_compatible("allwinner,sun50i-h713")) {
++		pr_err("H713 TVFE trace: wrong machine; disabled\n");
++		h713_tvfe_trace_enabled = false;
++		return 0;
++	}
++	h713_tvfe_trace_r_ccu = ioremap(0x07010000, 0x1000);
++	h713_tvfe_trace_ppu = ioremap(0x07001000, 0x400);
++	if (!h713_tvfe_trace_r_ccu || !h713_tvfe_trace_ppu) {
++		pr_err("H713 TVFE trace: map failed; disabled\n");
++		iounmap(h713_tvfe_trace_r_ccu);
++		iounmap(h713_tvfe_trace_ppu);
++		h713_tvfe_trace_enabled = false;
++		return 0;
++	}
++	/* Retain these read-only diagnostic mappings for later callbacks. */
++	h713_tvfe_boot_trace("linux_early_initcall");
++	return 0;
++}
++early_initcall(h713_tvfe_trace_early);
++
+ /* Register offsets relative to the DT window at PMU + 0x14 */
+ #define H713_PPU_WAIT_MODE_OFF	0x00
+ #define H713_PPU_PWR_OFF_DELAY	0x04
+@@ -135,7 +193,12 @@
+ 	if (ret)
+ 		return ret;
+ 
++	h713_tvfe_boot_trace("power_cmd_before");
++	if (h713_tvfe_trace_enabled)
++		pr_info("H713 TVFE command domain=%s hw=%d on=%d\n",
++			pd->genpd.name, pd->hw_id, on);
+ 	writel(on ? H713_PPU_CMD_ON : H713_PPU_CMD_OFF, pwr_reg);
++	h713_tvfe_boot_trace("power_cmd_after");
+ 
+ 	/* Wait for transition to complete */
+ 	ret = readl_poll_timeout(status_reg, val,
+@@ -162,14 +225,25 @@
+ 
+ static int h713_ppu_power_off(struct generic_pm_domain *genpd)
+ {
++	if (h713_tvfe_trace_enabled && to_h713_ppu_pd(genpd)->hw_id == 1) {
++		pr_info("H713 TVFE power_off caller=%pS\n",
++			(void *)_RET_IP_);
++		dump_stack();
++	}
+ 	return h713_ppu_set_power(to_h713_ppu_pd(genpd), false);
+ }
+ 
+ static void h713_ppu_init_domain(struct h713_ppu_pd *pd)
+ {
++	if (h713_tvfe_trace_enabled)
++		pr_info("H713 TVFE init domain=%s hw=%d\n", pd->genpd.name, pd->hw_id);
++	h713_tvfe_boot_trace("domain_init_before");
+ 	writel(H713_PPU_WAIT_MODE_INIT,    h713_ppu_reg(pd, H713_PPU_WAIT_MODE_OFF));
++	h713_tvfe_boot_trace("domain_init_after_wait");
+ 	writel(H713_PPU_PWR_ON_DLY_INIT,  h713_ppu_reg(pd, H713_PPU_PWR_ON_DELAY));
++	h713_tvfe_boot_trace("domain_init_after_on_delay");
+ 	writel(H713_PPU_PWR_OFF_DLY_INIT, h713_ppu_reg(pd, H713_PPU_PWR_OFF_DELAY));
++	h713_tvfe_boot_trace("domain_init_after_off_delay");
+ }
+ 
+ static int h713_ppu_probe(struct platform_device *pdev)
+@@ -183,6 +257,8 @@
+ 	bool keep_tvcap_on;
+ 	int ret, i;
+ 
++	h713_tvfe_boot_trace("ppu_probe_entry");
++
+ 	/*
+ 	 * Use of_iomap() rather than devm_platform_ioremap_resource() to
+ 	 * avoid EBUSY: the R_CCU clock driver has already exclusively claimed
+@@ -205,11 +281,15 @@
+ 		goto err_unmap;
+ 	}
+ 
++	h713_tvfe_boot_trace("ppu_before_reset_deassert");
+ 	ret = reset_control_deassert(rst);
++	h713_tvfe_boot_trace("ppu_after_reset_deassert");
+ 	if (ret)
+ 		goto err_unmap;
+ 
++	h713_tvfe_boot_trace("ppu_before_clock_enable");
+ 	ret = clk_prepare_enable(clk);
++	h713_tvfe_boot_trace("ppu_after_clock_enable");
+ 	if (ret)
+ 		goto err_assert_reset;
+ 
+@@ -272,6 +352,7 @@
+ 		goto err_remove_domains;
+ 	}
+ 
++	h713_tvfe_boot_trace("ppu_probe_complete");
+ 	dev_info(dev, "H713 PPU: %d power domains registered\n",
+ 		 H713_PPU_NUM_DOMAINS);
+ 	if (keep_tvcap_on)

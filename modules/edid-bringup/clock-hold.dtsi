@@ -1,0 +1,8 @@
+/* Test consumer: append only to the private board DTS used for a one-time FIT. */
+/ {
+	h713-edid-clock-hold {
+		compatible = "h713-lab,edid-clock-hold";
+		clocks = <&r_ccu CLK_R_EDID>;
+		resets = <&r_ccu RST_R_EDID>;
+	};
+};
