@@ -1,0 +1,152 @@
+From: H713 maintainers
+Subject: [PATCH] h713: single display-firmware launch for the HDMI boot
+
+The guarded HDMI boot ran the display firmware twice: `auto 0x34 logo`
+(panel power, firmware to readiness, quiesce, 720p latch, DE replay, logo)
+and then `mips-comm-trace 0x34` (reload firmware/assets, install the
+CPU_COMM RETURN trace, release and prove readiness again) before source 3.
+The second instance inherited the powered panel and the logo pixels in the
+OSD framebuffer; the first instance's only lasting contribution was that.
+
+Add `h713_disp auto <id> logo comm-trace`: one load, one h713_disp_run()
+with stock panel power, HDCP-wait override, CPU_COMM trace and readiness
+proof. The hash-checked vendor logo is published and committed after the
+ARM display records and before the single MIPS release, so the firmware
+initialises with the same framebuffer state the second launch saw. The
+core is left running for source selection; 720p is latched afterwards and
+the boot script still re-latches after source 3.
+
+Existing `auto <id> logo`, `mips-comm-trace` and `logo-live` are
+unchanged, so the GP6 fallback path and rollback scripts keep working.
+Not hardware qualified by this patch.
+
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -183,6 +183,20 @@
+  * than a mode of operation.
+  */
+ static bool h713_disp_keep_layer_xoff;
++
++/*
++ * Set only by the single-launch boot logo (`auto <id> logo comm-trace`).
++ * h713_disp_run() then publishes and commits the authenticated logo after
++ * the ARM display records and before the one MIPS release, instead of the
++ * caller quiescing the core and replaying the DE block afterwards. That is
++ * the state the old second launch (`mips-comm-trace`) inherited -- logo
++ * pixels already in the OSD framebuffer while the firmware initialised --
++ * without first running and then resetting another firmware instance.
++ */
++static bool h713_disp_single_launch_logo;
++
++static int h713_disp_publish_vendor_bootlogo(bool load, bool chroma);
++static void h713_disp_commit_osd_frame(void);
+ static bool h713_comm_trace_active;
+ 
+ /* Previous value of every trace slot, so streaming reports only changes. */
+@@ -5758,6 +5772,18 @@
+ 	 */
+ 	h713_disp_probe_contested("ARM records applied");
+ 
++	if (h713_disp_single_launch_logo) {
++		if (!release_mips || !prove_ready || !comm_trace ||
++		    !stock_panel_power)
++			return -EINVAL;
++		ret = h713_disp_publish_vendor_bootlogo(true, false);
++		if (ret)
++			return ret;
++		h713_disp_commit_osd_frame();
++		printf("H713 disp: boot logo committed before the single "
++		       "MIPS release\n");
++	}
++
+ 	if (release_mips) {
+ 		ret = h713_mips_release_raw(skip_hdcp_wait, prove_ready, trace,
+ 					    stability, comm_trace);
+@@ -10818,6 +10844,43 @@
+ 	return 0;
+ }
+ 
++/*
++ * Production single launch: one cold firmware instance from panel power-up to
++ * the Linux handoff. Panel power/reset sequencing, the HDCP wait override,
++ * the CPU_COMM RETURN trace, readiness proof and the authenticated vendor logo
++ * are the same as the former `auto <id> logo` + `mips-comm-trace <id>` pair;
++ * the first instance's quiesce/DE-replay and the second firmware/asset reload
++ * are gone. The core is deliberately left running for the caller's source
++ * selection. The firmware rewrites TCON timing during its startup, so 720p is
++ * latched here and must be latched again after every later source change.
++ */
++static int h713_disp_auto_logo_single(u32 project)
++{
++	int ret;
++
++	if (h713_panel_test_ran)
++		h713_disp_teardown("second run this boot, tearing down first");
++	h713_panel_test_ran = true;
++
++	ret = h713_disp_load(project);
++	if (ret)
++		return h713_disp_fail(ret);
++
++	h713_disp_single_launch_logo = true;
++	ret = h713_disp_run(H713_DISP_LOGO_ADDR, project, true, true, false,
++			    false, true, true, true);
++	h713_disp_single_launch_logo = false;
++	if (ret)
++		return h713_disp_fail(ret);
++
++	h713_disp_latch_panel_timing();
++	printf("H713 disp: single launch complete; MIPS left running with "
++	       "CPU_COMM trace, reset=%08x status=%08x scan=%08x\n",
++	       readl(H713_MIPS_RESET_REG), readl(H713_MIPS_STATUS_REG),
++	       readl(H713_DISP_LVDS_SCAN_REG));
++	return 0;
++}
++
+ static int h713_disp_auto_logo(u32 project, const char *logo_file)
+ {
+ 	return h713_disp_auto_logo_mode(project, logo_file, true);
+@@ -11162,6 +11225,7 @@
+ 		u32 project = hextoul(argv[2], NULL);
+ 		bool nowait = false;
+ 		bool logo = false;
++		bool comm = false;
+ 		const char *logo_file = NULL;
+ 		int i;
+ 
+@@ -11170,6 +11234,8 @@
+ 				nowait = true;
+ 			else if (!strcmp(argv[i], "logo"))
+ 				logo = true;
++			else if (logo && !strcmp(argv[i], "comm-trace"))
++				comm = true;
+ 			else if (logo && !logo_file)
+ 				/* A token after "logo" is a custom BMP on the
+ 				 * FAT, published without the vendor hash. */
+@@ -11178,6 +11244,17 @@
+ 				return CMD_RET_USAGE;
+ 		}
+ 
++		/*
++		 * Single launch: vendor logo only (hash-checked), no nowait, no
++		 * custom file -- the production combination and nothing else.
++		 */
++		if (comm) {
++			if (nowait || logo_file)
++				return CMD_RET_USAGE;
++			return h713_disp_auto_logo_single(project) ?
++			       CMD_RET_FAILURE : CMD_RET_SUCCESS;
++		}
++
+ 		/* Opt-in boot logo; the default stays prep-only. */
+ 		if (logo)
+ 			return h713_disp_auto_logo(project, logo_file) ?
+@@ -11292,6 +11369,8 @@
+ 	   "                                      logo: publish the boot logo and leave it up (product boot step)\n"
+ 	   "                                            optional file.bmp on mmc 1:2 is a custom 1280x720 24-bit logo (no hash);\n"
+ 	   "                                            default is the hashed vendor bootlogo.bmp\n"
++	   "h713_disp auto <project-id> logo comm-trace - production single launch: hashed vendor logo,\n"
++	   "                                      CPU_COMM trace, MIPS left running for source selection\n"
+ 	   "h713_disp load <project-id>         - load from eMMC only\n"
+ 	   "h713_disp <blob-addr> <project-id> [nowait] - run against a staged blob\n"
+ 	   "h713_disp list <blob-addr>          - show every project's tables\n"
