@@ -45,8 +45,8 @@ def main():
     spec = importlib.util.spec_from_file_location('startup', ROOT / 'tools/hdmi/build-startup.py')
     st = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(st)
-    old = st.script(fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=False).encode()
-    new = st.script(fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=True).encode()
+    old = st.script(fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=False, early_panel_off=False).encode()
+    new = st.script(fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=True, early_panel_off=False).encode()
     if sha(old) != BASE_CMD or sha(st.legacy_image(old)) != BASE_SCR:
         raise SystemExit('default script does not reproduce the installed script')
     a.output.mkdir(parents=True, exist_ok=False)

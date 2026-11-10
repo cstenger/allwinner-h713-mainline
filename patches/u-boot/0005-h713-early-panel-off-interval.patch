@@ -1,0 +1,129 @@
+From: H713 maintainers
+Subject: [PATCH] h713: start the panel off interval before the slow loads
+
+The HDMI boot spent about one second between the startup script and the
+start of the 3 s panel off hold: the FIT load (0.49 s), FDT checks, the
+display blob load and panel record patching. None of that touches the
+panel, yet the hold only began inside `h713_disp auto ... logo`.
+
+Add `h713_disp panel-off`: the same verified entry as the hold (MIPS
+parked, display fabric prepared, signals quiet, reset asserted and read
+back, supply disabled and read back), with the start time recorded. The
+next stock-power logo bring-up re-verifies that the state is still intact
+and waits only the remainder of the same interval, or the full hold if
+anything changed. Without `panel-off`, behaviour is unchanged.
+
+The interval itself is not shortened: it is the same tested 3 s, or the
+DT off-on-delay-us if larger, measured from the same verified point.
+
+diff --git a/arch/arm/mach-sunxi/h713_mips.c b/arch/arm/mach-sunxi/h713_mips.c
+index 41355dfc663..04c1d10b052 100644
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -4970,10 +4970,19 @@ static void h713_disp_signal_off(void)
+  */
+ #define H713_PANEL_INITIAL_OFF_US	3000000U
+ 
+-static int h713_disp_panel_initial_off(void)
++/*
++ * Set by `h713_disp panel-off`: the verified off state was entered early so
++ * that slow, display-independent work (FIT/blob loads, panel record patching)
++ * runs inside the off interval. The hold is unchanged; it only starts sooner.
++ */
++static bool h713_panel_off_early;
++static u64 h713_panel_off_start_us;
++static u32 h713_panel_off_hold_us;
++
++/* Enter and verify the off state. Returns the hold the caller must enforce. */
++static int h713_disp_panel_enter_off(u32 *hold_us)
+ {
+ 	struct udevice *supply;
+-	u32 off_us;
+ 	int ret;
+ 
+ 	/* Never remove power underneath a live firmware display owner. */
+@@ -5015,8 +5024,61 @@ static int h713_disp_panel_initial_off(void)
+ 	 * an off interval. Always wait after verified control of the off state.
+ 	 * This verifies the GPIO/control state, not the physical rail voltage.
+ 	 */
+-	off_us = max_t(u32, H713_PANEL_INITIAL_OFF_US,
+-		       dev_read_u32_default(supply, "off-on-delay-us", 0));
++	*hold_us = max_t(u32, H713_PANEL_INITIAL_OFF_US,
++			 dev_read_u32_default(supply, "off-on-delay-us", 0));
++	return 0;
++}
++
++/* The early off state is still in force: MIPS parked, reset held, supply off. */
++static bool h713_disp_panel_still_off(void)
++{
++	struct udevice *supply;
++
++	return readl(H713_MIPS_STATUS_REG) == 0 &&
++	       dm_gpio_get_value(&h713_panel_reset) == 1 &&
++	       !h713_panel_supply(&supply) && regulator_get_enable(supply) == 0;
++}
++
++static int h713_disp_panel_off_early(void)
++{
++	u32 hold_us;
++	int ret;
++
++	ret = h713_disp_panel_enter_off(&hold_us);
++	if (ret)
++		return ret;
++	h713_panel_off_start_us = timer_get_us();
++	h713_panel_off_hold_us = hold_us;
++	h713_panel_off_early = true;
++	printf("H713 panel: initial supply off, reset held early; the logo "
++	       "waits out the rest of %u us\n", hold_us);
++	return 0;
++}
++
++static int h713_disp_panel_initial_off(void)
++{
++	u64 elapsed;
++	u32 off_us;
++	int ret;
++
++	if (h713_panel_off_early) {
++		h713_panel_off_early = false;
++		if (h713_disp_panel_still_off()) {
++			elapsed = timer_get_us() - h713_panel_off_start_us;
++			off_us = elapsed >= h713_panel_off_hold_us ? 0 :
++				 h713_panel_off_hold_us - (u32)elapsed;
++			printf("H713 panel: off for %llu us since the early start; "
++			       "waiting %u us more\n", elapsed, off_us);
++			mdelay(off_us / 1000);
++			udelay(off_us % 1000);
++			return 0;
++		}
++		printf("H713 panel: early off state not intact; full hold\n");
++	}
++
++	ret = h713_disp_panel_enter_off(&off_us);
++	if (ret)
++		return ret;
+ 	printf("H713 panel: initial supply off, reset held; waiting %u us\n",
+ 	       off_us);
+ 	mdelay(off_us / 1000);
+@@ -11112,6 +11174,11 @@ static int do_h713_disp(struct cmd_tbl *cmdtp, int flag, int argc,
+ 		return CMD_RET_SUCCESS;
+ 	}
+ 
++	/* Start the verified panel off interval before the slow loads. */
++	if (argc == 2 && !strcmp(argv[1], "panel-off"))
++		return h713_disp_panel_off_early() ? CMD_RET_FAILURE :
++		       CMD_RET_SUCCESS;
++
+ 	if (argc == 2 && !strcmp(argv[1], "commdev"))
+ 		return h713_disp_comm_dev() ?
+ 		       CMD_RET_FAILURE : CMD_RET_SUCCESS;
+@@ -11347,6 +11414,8 @@ U_BOOT_CMD(h713_disp, 15, 0, do_h713_disp,
+ 	   "                                      buf is a ~2.6 KB ring and wraps; sync does not\n"
+ 	   "h713_disp mips-test <project-id>    - run with CPU_COMM readiness proof\n"
+ 	   "h713_disp mips-trace <project-id>   - stream full-launch startup markers\n"
++	   "h713_disp panel-off - enter the verified panel off state now; the next\n"
++	   "    logo bring-up waits only the rest of the off interval\n"
+ 	   "h713_disp mips-comm-trace <project-id> - trace CPU_COMM RETURN progress\n"
+ 	   "h713_disp mips-stability <project-id> - run 60s heartbeat/exception test\n"
+ 	   "h713_disp calltable [raw-entries]   - read the live CPU_COMM call table\n"

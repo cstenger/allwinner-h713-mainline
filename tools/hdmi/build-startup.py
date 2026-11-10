@@ -38,9 +38,21 @@ LAUNCH_DOUBLE=['h713_disp auto 0x34 logo', 'h713_disp mips-comm-trace 0x34']
 LAUNCH_SINGLE=['h713_disp auto 0x34 logo comm-trace']
 
 
-def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=True):
+# Early panel off (U-Boot patch 0005, `h713_disp panel-off`): enter the
+# verified panel off state before the FIT/FDT/blob loads, so they run inside
+# the 3 s hold instead of before it. The preconditions move with it because
+# panel-off prepares the display clocks (0x02001600/0x0200160c). The default
+# since it was installed on 2026-11-09 (kernel starts 0.80 s earlier). It needs
+# a proper with 0005: an older proper rejects `panel-off` and the boot stops at
+# "preparation/launch failed", so the proper and script are installed together.
+PRECONDITIONS=['itest.l *0x0306101c == 0', 'itest.l *0x02001600 == 0', 'itest.l *0x0200160c == 0',
+               'itest.l *0x0709011c == 0', 'itest.l *0x070101ac == 0']
+
+
+def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=True, early_panel_off=True):
     # Commands in each stage are chained: no partial stage can authorize Linux.
     stages={
+      **({'off':[*PRECONDITIONS, 'gpio clear PB5', 'h713_disp panel-off']} if early_panel_off else {}),
       'image':[
         'fatload mmc 1:2 0x50000000 h713-kernel.fit',
         f'itest ${{filesize}} == {fit_size:x}', # exact selected FIT size, hex
@@ -61,11 +73,7 @@ def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=True):
         'fdt set /soc/hdmi-mips-shutdown resets <${hdmi_ccu} 1 ${hdmi_ccu} 2 ${hdmi_ccu} 3>',
         'fdt set /soc/hdmi-mips-shutdown clocks <${hdmi_ccu} 19 ${hdmi_ccu} 20>'],
       'launch':[
-        'itest.l *0x0306101c == 0',
-        'itest.l *0x02001600 == 0',
-        'itest.l *0x0200160c == 0',
-        'itest.l *0x0709011c == 0',
-        'itest.l *0x070101ac == 0',
+        *([] if early_panel_off else PRECONDITIONS),
         # Lamp (PB5, shared with the fan) off while the panel is powered
         # without drive (white field) and while the relaunch drops the 720p
         # timing; hdmi_source turns it back on once the final frame is latched.
@@ -141,7 +149,7 @@ def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=True):
       '  fi',
       '  if fatload mmc 1:2 0x50000000 h713-kernel.fit; then bootm 0x50000000; fi',
       'else',
-      '  if run hdmi_image && run hdmi_launch; then',
+      '  if '+('run hdmi_off && ' if early_panel_off else '')+'run hdmi_image && run hdmi_launch; then',
       '    for hdmi_i in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do',
       '      if run hdmi_record; then',
       '        if itest ${hdmi_key} != ffffffff; then',

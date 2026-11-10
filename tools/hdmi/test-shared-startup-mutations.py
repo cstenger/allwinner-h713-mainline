@@ -15,7 +15,7 @@ def mutated(module,old,new):
 cases=[
  ('Startup.test_both_builders_include_the_health_integration','b','return package.build(output)','return None'),
  ('Startup.test_four_states_and_unacknowledged_second_boot','b','!= 48444f4b; then','== 48444f4b; then'),
- ('Startup.test_each_census_failure_stops_before_lamp_or_firmware','b',"        'itest.l *0x02001600 == 0',\n",''),
+ ('Startup.test_each_census_failure_stops_before_lamp_or_firmware','b',"'itest.l *0x02001600 == 0', ",''),
  ('Startup.test_proven_source_and_image_stages_unchanged_except_echo','b','chan=0 pid=${hdmi_pid} 3','chan=0 pid=${hdmi_pid} 4'),
  ('Ack.test_single_gp6_write_idempotence_and_dry_run','h',"struct.pack('<I',HDOK),0x18","struct.pack('<I',HDOK),0x1c"),
  ('Ack.test_health_handoff_and_session_fail_closed','h',"if state.get('boot_id')!=boot or state.get('phase')!='ready':","if False:"),

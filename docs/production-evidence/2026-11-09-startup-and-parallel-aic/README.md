@@ -44,3 +44,25 @@ Boot 2 was slower because `systemd-growfs-root` took 1.70 s (usually
 size; disabling the resize on the product image is a candidate follow-up.
 
 The rootfs builder now emits this configuration by default.
+
+## Early panel off (U-Boot 0005)
+
+`h713_disp panel-off` enters the same verified off state as the 3 s hold
+(MIPS parked, signals quiet, reset and supply read back) at the start of the
+script; the logo step re-verifies it and waits only the remainder. The hold
+is not shortened. The current series rebuilt reproducibly to the installed
+proper (`7e7835d0`); the candidate is `33bc73c8`, same size, no new warnings.
+
+Installed with the unchanged `install-single-launch.py` (proper, then a warm
+reboot on the old script: healthy, then the script). Cold boot `888e9f1d`:
+
+| From SPL | Before (parallel AIC boot 1) | Early panel off |
+| --- | ---: | ---: |
+| Panel off state entered | ~3.1 s | 2.25 s |
+| Logo | 6.01 s | 5.26 s |
+| Starting kernel | 8.56 s | **7.76 s** |
+
+U-Boot reported the panel had been off for 0.837 s when the logo step reached
+the hold, and waited 2.163 s more. Linux: no failed units, hotspot and `hci0`
+up, EDID/HPD ready 12.48 s, locked 13.82 s, video 13.88 s, no re-advertise
+pulse. Video starts about 21.6 s after the first SPL output.

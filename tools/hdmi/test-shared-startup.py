@@ -18,13 +18,17 @@ itest.l() {
 }
 mw.l() { echo "WRITE $1 $2"; [ "$1" = 0x07090118 ] || return 1; gp6=${2#0x}; }
 gpio() { echo "GPIO $*"; }
-h713_disp() { echo "FIRMWARE gp6=$gp6"; }
+h713_disp() { if [ "$1" = panel-off ]; then echo PANEL_OFF; else echo "FIRMWARE gp6=$gp6"; fi; }
 fatload() { return 0; }
 bootm() { echo FALLBACK_BOOT; }
 setexpr() { return 0; }
 run() {
  echo "RUN $1"
  case "$1" in
+ hdmi_off)
+  local cmd
+  while IFS= read -r cmd; do eval "$cmd" || return 1
+  done < <(printf '%s\n' "$hdmi_off" | sed 's/ \&\& /\n/g');;
  hdmi_launch)
   local cmd
   while IFS= read -r cmd; do
@@ -62,6 +66,7 @@ class Startup(unittest.TestCase):
         for addr in ('0306101c','02001600','0200160c','0709011c','070101ac'):
             for state in (0,h.HDOK):
                 r=simulate(state,'*0x'+addr);self.assertNotEqual(r.returncode,0);self.assertNotIn('FIRMWARE',r.stdout)
+                self.assertNotIn('PANEL_OFF',r.stdout)
                 self.assertNotIn('GPIO clear',r.stdout);self.assertNotIn('WRITE',r.stdout);self.assertIn('GPIO set PB5',r.stdout)
     def test_proven_source_and_image_stages_unchanged_except_echo(self):
         def stages(s):return {l.split()[1]:l for l in s.splitlines() if l.startswith('setenv hdmi_')}

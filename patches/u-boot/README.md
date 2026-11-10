@@ -11,6 +11,8 @@ matching CCU table. Both the orchestrator and quick helper use this tree.
 | `0000-h713-shared-dt-panel-regulator-prerequisites.patch` | Tested DT/clock/PHY integration, DM panel supply/reset helpers, DDR3 lamp/fan policy |
 | `0001-h713-establish-initial-panel-power-state.patch` | Verified reset/supply-off control state and explicit minimum 3 s hold before logo replay |
 | `0003-env-mmc-preserve-configured-offset-width.patch` | Preserve configured 64-bit fallback and report the singular-load byte offset; cold/one ordinary warm boot verified, paired environment migration required |
+| `0004-h713-single-display-firmware-launch.patch` | `h713_disp auto <id> logo comm-trace`: one firmware load and release instead of two; installed 2026-11-06, kernel starts 1.10 s earlier |
+| `0005-h713-early-panel-off-interval.patch` | `h713_disp panel-off`: enter the verified panel off state before the FIT/blob loads; the logo step re-verifies it and waits only the rest of the same 3 s; installed 2026-11-09, kernel starts 0.80 s earlier |
 
 **Paired environment migration is required for the unmigrated split layout.**
 The prior diagnostic image read saved environment at unintended LBA `0x32ec00`;

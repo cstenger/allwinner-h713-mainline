@@ -57,12 +57,12 @@ class SingleLaunch(unittest.TestCase):
         text=m.script()
         self.assertIn(' && h713_disp auto 0x34 logo comm-trace && itest.l *0x0306101c == 1 && ',text)
         self.assertNotIn('mips-comm-trace',text)
-        self.assertEqual(text,m.script(single_launch=True))
+        self.assertEqual(text,m.script(single_launch=True,early_panel_off=True))
     def test_double_launch_is_still_available_for_old_packages(self):
-        text=m.script(single_launch=False)
+        text=m.script(single_launch=False,early_panel_off=False)
         self.assertIn(' && h713_disp auto 0x34 logo && h713_disp mips-comm-trace 0x34 && ',text)
     def test_single_launch_replaces_only_the_two_launch_commands(self):
-        double=m.script(single_launch=False).split(' && ');single=m.script().split(' && ')
+        double=m.script(single_launch=False,early_panel_off=False).split(' && ');single=m.script(early_panel_off=False).split(' && ')
         i=double.index('h713_disp auto 0x34 logo')
         self.assertEqual(double[i:i+2],m.LAUNCH_DOUBLE)
         self.assertEqual(single[:i]+m.LAUNCH_DOUBLE+single[i+1:],double)
@@ -71,6 +71,33 @@ class SingleLaunch(unittest.TestCase):
         tail=m.script().split('\nif ',1)[1]
         self.assertIn('h713_disp auto 0x34 logo; then',tail)
         self.assertNotIn('comm-trace',tail)
+
+
+class EarlyPanelOff(unittest.TestCase):
+    def stage(self, text, name):
+        line = next(l for l in text.splitlines() if l.startswith(f"setenv hdmi_{name} '"))
+        return line[len(f"setenv hdmi_{name} '"):-1].split(' && ')
+    def test_default_is_the_installed_early_panel_off(self):
+        self.assertEqual(m.script(),m.script(early_panel_off=True))
+    def test_opt_out_has_no_off_stage(self):
+        text=m.script(early_panel_off=False)
+        self.assertNotIn('panel-off',text);self.assertNotIn('hdmi_off',text)
+        self.assertEqual(self.stage(text,'launch')[:5],m.PRECONDITIONS)
+    def test_off_stage_runs_first_and_checks_before_touching_the_panel(self):
+        text=m.script(early_panel_off=True);off=self.stage(text,'off')
+        self.assertEqual(off,[*m.PRECONDITIONS,'gpio clear PB5','h713_disp panel-off'])
+        self.assertIn('  if run hdmi_off && run hdmi_image && run hdmi_launch; then',text)
+        self.assertLess(text.index("setenv hdmi_off '"),text.index("setenv hdmi_image '"))
+    def test_launch_drops_only_the_moved_preconditions(self):
+        early=self.stage(m.script(early_panel_off=True),'launch');plain=self.stage(m.script(early_panel_off=False),'launch')
+        self.assertEqual(plain[5:],early)
+        self.assertFalse(any(c in early for c in m.PRECONDITIONS))
+    def test_image_and_later_stages_are_unchanged(self):
+        a,b=m.script(early_panel_off=False),m.script(early_panel_off=True)
+        for name in ('image','source','record'):self.assertEqual(self.stage(a,name),self.stage(b,name))
+    def test_fallback_branch_never_uses_panel_off(self):
+        tail=m.script(early_panel_off=True).split('\nif ',1)[1].split('\nelse\n',1)[0]
+        self.assertNotIn('panel-off',tail)
 
 
 class StartupScript(unittest.TestCase):
