@@ -1,0 +1,44 @@
+#!/bin/sh
+# Leave HDMI before the reboot (docs/hdmi-evidence/2026-10-16-uboot-kernel-dts).
+# RUNS ON THE HOST, serial on /dev/ttyUSB0, board on $BOARD.
+#
+# On a cold-path boot (U-Boot ran SetSource(3); the HDMI session is up, cable
+# connected), ask the live TV firmware to switch to its power-on source
+# (1 = VideoDecoder) the way stock does on an input change, then run the
+# production stop (audio restore + terminal MIPS park) and the usual
+# warm-reboot trial. Tests whether leaving source 3 undoes the state that
+# blacks the panel after a warm reset.
+#
+#   usage: tools/display/source-away-trial.sh <out-dir> [source]
+set -eu
+OUT=${1:?usage: $0 <out-dir> [source]}
+SRC=${2:-1}
+BOARD=${BOARD:-192.168.4.1}
+HERE=$(cd "$(dirname "$0")" && pwd)
+SSH="ssh -o BatchMode=yes -o ConnectTimeout=5 root@$BOARD"
+mkdir -p "$OUT"
+TRACE='python3 /usr/lib/h713-hdmi/read-comm-trace.py --source-only'
+
+$SSH "ls /proc/device-tree/chosen | grep -q h713,hdmi-boot-v1" ||
+	{ echo "not a cold-path boot (no HDMI handoff): refusing"; exit 1; }
+$SSH 'systemctl is-active h713-hdmi-capture h713-hdmi-signal' > "$OUT/services.txt"
+$SSH "$TRACE" > "$OUT/trace-before.json"
+echo "== before: $(cat "$OUT/trace-before.json")"
+
+echo "== SetSource($SRC) at $(date +%T)"
+$SSH "/root/cpu-comm-probe THal_Vp_SetSource_1_000 $SRC" 2>&1 | tee "$OUT/setsource.txt"
+sleep 2
+$SSH "$TRACE" > "$OUT/trace-after.json"
+echo "== after: $(cat "$OUT/trace-after.json")"
+# Compact JSON; old/new are the latest transition (source3_* keep source 3's).
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(not (d["old"] == 3 and d["new"] == int(sys.argv[2])))' \
+	"$OUT/trace-after.json" "$SRC" ||
+	{ echo "firmware did not report the switch to source $SRC: stopping before the reboot"; exit 1; }
+
+echo "== production stop (audio restore + park)"
+$SSH 'systemctl stop h713-hdmi-signal h713-hdmi-capture; dmesg --color=never | grep -E "h713-hdmi|h713-receiver|terminal MIPS" | tail -12' |
+	tee "$OUT/stop.txt"
+grep -q 'terminal MIPS parked' "$OUT/stop.txt" ||
+	{ echo "park not confirmed: stopping before the reboot"; exit 1; }
+
+"$HERE/warm-reboot-trial.sh" "$OUT"

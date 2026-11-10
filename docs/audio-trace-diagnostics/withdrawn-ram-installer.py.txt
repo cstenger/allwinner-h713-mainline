@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""WITHDRAWN: U-Boot maps this patch table read-only; the CLI refuses to run.
+
+Retained to document the guarded prototype and mocked tests. The first
+hardware write faulted before modifying RAM and reset U-Boot. Do not retry.
+"""
+import argparse
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import struct
+import sys
+import time
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "serial"))
+import console
+
+spec = importlib.util.spec_from_file_location("audio_trace", HERE / "make-audio-monitor-trace.py")
+trace = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(trace)
+
+
+def parse_words(output, address, count):
+    found = {}
+    for line in output.splitlines():
+        match = re.match(r"^\s*([0-9a-fA-F]{8,16}):\s+(.*)", line)
+        if not match:
+            continue
+        base = int(match[1], 16)
+        for i, word in enumerate(match[2].split()[:4]):
+            if not re.fullmatch(r"[0-9a-fA-F]{8}", word):
+                break
+            found[base + i * 4] = int(word, 16)
+    try:
+        return [found[address + i * 4] for i in range(count)]
+    except KeyError as error:
+        raise ValueError("incomplete U-Boot memory readback") from error
+
+
+def install(fd, profile):
+    def command(text):
+        console.write_slow(fd, text.encode() + b"\n")
+        time.sleep(0.15)
+        result = console.drain(fd, 0.4, echo=False).decode("utf-8", "replace")
+        print(result, end="", flush=True)
+        if "=>" not in result or "Unknown command" in result or "Usage:" in result:
+            raise ValueError("U-Boot command/prompt verification failed")
+        return result
+
+    command("")
+    version = command("version")
+    if "U-Boot 2026.07-rc5-ga1358432003c-dirty" not in version:
+        raise ValueError("installed U-Boot version mismatch")
+    reset = parse_words(command("md.l 0200160c 1"), 0x0200160C, 1)[0]
+    if reset != 0:
+        raise ValueError("MIPS reset is not asserted; physical power cycle required")
+    bdinfo = command("bdinfo")
+    match = re.search(r"relocaddr\s*=\s*(?:0x)?([0-9a-fA-F]+)", bdinfo)
+    if not match:
+        raise ValueError("could not locate U-Boot relocation address")
+    relocation = int(match[1], 16)
+    if not 0x40000000 <= relocation < 0xC0000000:
+        raise ValueError("unexpected U-Boot relocation address")
+    address = relocation + profile["ram_offset_from_relocaddr"]
+    old = bytes.fromhex(profile["old_table_hex"])
+    new = bytes.fromhex(profile["new_table_hex"])
+    count = len(old) // 4
+    oldwords = list(struct.unpack(f"<{count}I", old))
+    newwords = list(struct.unpack(f"<{count}I", new))
+    actual = parse_words(command(f"md.l {address:x} {count:x}"), address, count)
+    if actual != oldwords:
+        raise ValueError("RAM patch table does not match; no writes made")
+    writes = [f"mw.l {address + i * 4:x} {word:08x} 1"
+              for i, word in enumerate(newwords) if word != oldwords[i]]
+    for i in range(0, len(writes), 4):
+        command("; ".join(writes[i:i + 4]))
+    actual = parse_words(command(f"md.l {address:x} {count:x}"), address, count)
+    if actual != newwords:
+        raise ValueError("overlay readback mismatch; power-cycle before MIPS launch")
+    print(f"Verified {len(new)}-byte RAM overlay at {address:#x}; MIPS not launched.", flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("profile", type=Path)
+    parser.add_argument("--uboot", type=Path, required=True)
+    parser.add_argument("--firmware", type=Path, required=True)
+    parser.add_argument("--port", default="/dev/ttyUSB0")
+    args = parser.parse_args()
+    parser.error("RAM installation withdrawn: this U-Boot maps its table read-only; first write caused a permission abort. No writes attempted.")
+    _, expected = trace.prepare(args.uboot.read_bytes(), args.firmware.read_bytes())
+    profile = json.loads(args.profile.read_text())
+    if profile != json.loads(json.dumps(expected)):
+        raise ValueError("profile differs from freshly validated generation")
+    fd = console.open_port(args.port)
+    try:
+        console.drain(fd, 0.2, echo=False)
+        install(fd, profile)
+    finally:
+        os.close(fd)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ValueError, OSError) as error:
+        sys.exit(str(error))

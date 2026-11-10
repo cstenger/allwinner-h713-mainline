@@ -6,7 +6,7 @@ move off `6.16.7` onto the newer **6.18.38 longterm** kernel.
 
 ## Status: rebased and building (2026-07-18)
 
-`config/versions.env` is pinned to **6.18.38**; `build/build.sh kernel` applies
+`config/versions.env` is pinned to **6.18.38**; `tools/build/build.sh kernel` applies
 all 24 patches cleanly and builds `Image.gz`. Of the 22 driver patches, 18
 applied clean; the rebase needed five small fixes, all captured in the series:
 
@@ -22,7 +22,7 @@ The `SUN20I_D1_R_CCU` arm64 enable is now a proper patch (**0023**), replacing
 the earlier scripted sed (which was too broad — it also hit `SUN20I_D1_CCU`).
 
 The arm64 board **DTS** is now reconstructed and in the series (**patch 0024**),
-so `build/build.sh kernel` emits the DTB and a bootable FIT
+so `tools/build/build.sh kernel` emits the DTB and a bootable FIT
 (`build/out/h713-kernel.fit`: gzip Image + DTB, load/entry `0x48000000`).
 
 **Boot-verified (2026-07-18):** `h713-kernel.fit` was booted on the HY200 bench
@@ -44,7 +44,7 @@ boot-good kernel.
 
 1. Bump the pin: `KERNEL_VERSION=6.18.38` in `config/versions.env` (keep
    `KERNEL_TARGET` pointing at the next candidate).
-2. `build/build.sh kernel` fetches the new tarball and tries the series. Expect
+2. `tools/build/build.sh kernel` fetches the new tarball and tries the series. Expect
    fuzz/rejects — resolve per subsystem, in `series` order. The arch-neutral
    0001–0022 are the most likely to need touch-ups in CCU/pinctrl/cedrus.
 3. Re-derive the two arm64 additions against the new tree:
@@ -54,7 +54,7 @@ boot-good kernel.
    `sun50i-h713-hy200-qz713df-a1` for arm64 from the 32-bit board DTS in
    `allwinner-h713-linux/dts/` plus `arm,armv8-timer` and the
    `secure-bl31@40000000 reg=<0x40000000 0x100000> no-map` reservation. Add it
-   as a board patch so `build/build.sh kernel` can emit a DTB + bootable FIT.
+   as a board patch so `tools/build/build.sh kernel` can emit a DTB + bootable FIT.
 5. Build `Image` + DTB, wrap as a FIT (`arch=arm64`, load/entry
    `KERNEL_LOAD=0x48000000`), boot on the **HY200 bench board** (never the
    projector first). Confirm 4-core SMP + HS400 eMMC as on 6.16.7.

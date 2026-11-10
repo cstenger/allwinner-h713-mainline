@@ -1,3 +1,41 @@
+# MIPS display recovery — working journal (2026-07-21 → 2026-08-28)
+
+> **Read this first. It is 7,900 lines and it is not a reference manual.**
+>
+> This is a **dated lab journal, newest entry first**, covering the MIPS display
+> coprocessor bring-up. Every `#` heading is one session's finding, with the date
+> in the title. It has not been appended to since **2026-08-28**; the project
+> moved to per-session `handoff-*.md` files after that, so **nothing here
+> reflects work done later than that date.**
+>
+> **Do not read it top-to-bottom, and do not quote an entry as current.** Several
+> entries were falsified by later ones — that is deliberate, the corrections are
+> the instructive part, and the superseded ones say so in their own titles.
+>
+> **For what is true now, go to:**
+>
+> | question | authority |
+> | --- | --- |
+> | Does the display work? | [`status.md`](status.md) |
+> | How does the KMS driver work? | [`kms-display.md`](kms-display.md) |
+> | The display bring-up story, condensed | [`claude-display-handoff.md`](claude-display-handoff.md) |
+> | Backlight | [`backlight-investigation.md`](backlight-investigation.md) — **the authority**; the PB4/PWM2 entries below are the dead end it replaced |
+> | Anything else | [`README.md`](README.md) |
+>
+> **Layout, because it is two documents concatenated:**
+>
+> - **here → `# MIPS display recovery plan`** — the August journal, newest first.
+> - **`# MIPS display recovery plan` → `## Milestone 0`** — despite that heading,
+>   this is mostly the *July journal*, not a plan.
+> - **`## Milestone 0` → end** (~160 lines) — the original milestone plan, and
+>   the only genuinely obsolete part. See the banner there before using it.
+>
+> Its value is the primary reverse engineering: disassembly, register tables, and
+> hypotheses with their disconfirming evidence attached. That is expensive to
+> recreate and is why none of it has been deleted.
+
+---
+
 # The firmware's UART shell: it starts, and it is on UART4 (2026-08-07)
 
 Static analysis of `display.bin`, no bench time. Both questions the item asked
@@ -687,6 +725,15 @@ question mark over the whole display log: if 0x34 drove different tables, no
 **It does not. Every 0x33 result stands.** Predicted statically, then confirmed
 on hardware in a back-to-back A/B.
 
+> **Scope correction, 2026-08-28.** That sentence is true of what it measured --
+> the LogoRegData replay and the rendered panel -- and it was over-generalised.
+> It does **not** extend to the firmware's runtime RPC. Under `0x34` the CPU_COMM
+> CALL worker never runs: calls are accepted and `CALL_ACK`ed and then nothing is
+> serviced, while the identical traced call completes under `0x33`. See
+> "Project 0x34 is not 0x33 for RPC" below. The A/B above compared *rendering*,
+> and rendering is exactly the part of the firmware that turns out not to
+> discriminate.
+
 ## The blob analysed is the blob the board runs
 
 `LogoRegData.bin` word 1 is a packed version: `[31:24]` year, `[23:20]` month,
@@ -835,6 +882,136 @@ This does not establish that the MIPS parses by placement rather than by header
 -- the display rendered correctly under both orders, and the allocation delta
 is not itself a fault. It does retire the argument that the order could not
 matter.
+
+## Project 0x34 RPC: the reported scheduler failure does not reproduce (2026-08-28)
+
+An external review reported that under project `0x34` a CPU_COMM CALL is
+accepted and `CALL_ACK`ed but never serviced -- no adapter entered, no RETURN,
+ThreadX clock frozen at tick `0x2c` -- while the same call completes under
+`0x33`. That was written up here as "0x34 is not 0x33 for RPC" and then tested
+directly the same day. **It does not reproduce. Under `0x34` the firmware is
+healthy and CPU_COMM works.**
+
+Measured on board B, diagnostic U-Boot `g7b178056c329-dirty`, clean boots:
+
+| | project `0x33` | project `0x34` |
+| --- | --- | --- |
+| readiness chain (execution, MIPS READY, app ready, magic) | passes | passes |
+| ThreadX tick over 60 s | 210 -> 60665, ~1008/s | **210 -> 60665, tick-for-tick identical** |
+| recorded exceptions | 0 | **0** |
+| `status` / `MIPS` flags throughout | `1` / `5` | `1` / `5` |
+| no-op CALL (`2f02f7dd`) | round trip | **round trip, 1 ms, `nret=0`, slot recycled** |
+| `THal_Vp_Init([0, 1, phys])` | returns `1` | **returns `1`, under 1 ms** |
+| `0xd800` bulk copy | lands | **lands** |
+
+The 60-second stability window under `0x34` is not merely "fine", it is
+*numerically identical* to `0x33` at every one-second sample. There is no
+frozen tick, no wedged scheduler, and no project-dependent RPC failure.
+
+So the roadmap item "resolve the project-0x34 scheduler failure before another
+live MIPS handoff" is **closed, negative -- there was no failure to resolve.**
+
+### The instrumentation is not the cause either
+
+The first guess was that the comm-trace trampolines were at fault. Two of the
+five `THal_Vp_Init` trampolines displace a live instruction with `jal` rather
+than `j`, and a `jal` planted mid-function destroys the enclosing function's
+live `ra`:
+
+```
+{ 0x4b109f28, 0x8e24000c, 0x0ec40280 },  /* jal 0x8b100a00 */
+{ 0x4b109f50, 0x24020001, 0x0ec40288 },  /* jal 0x8b100a20 */
+```
+
+**That hypothesis is refuted, statically and then on hardware.** The adapter
+spills `ra` on entry and does not reload it until after both sites:
+
+```
+8b109f04: addiu sp, sp, -0x20
+8b109f10: sw    ra, 0x1c(sp)      <-- ra spilled
+8b109f18: jal   0x8b149d70        <-- 7101 site
+8b109f20: jal   0x8b149754        <-- 7102 site
+8b109f28: lw    a0, 0xc(s1)       <-- 7103 site
+8b109f2c: lui   v1, 0xa000            (becomes the delay slot)
+8b109f50: addiu v0, zero, 1       <-- 7104 site
+8b109f54: lw    s1, 0x18(sp)          (becomes the delay slot)
+8b109f58: lw    ra, 0x1c(sp)      <-- ra restored
+8b109f74: j     0x8b14c174        <-- 7105 site, tail call
+```
+
+`ra` is dead at both `jal` sites, so clobbering it costs nothing. The other
+hazard these two introduce -- displacing a *data* instruction means its original
+successor runs first, as the jump's delay slot -- is also harmless here:
+`lui v1,0xa000` does not touch `a0`/`s1`, and `lw s1,0x18(sp)` does not touch
+`v0`. All five trampolines are correct as written, and the caves at
+`0x8b1009c0`-`0x8b100a60` are confirmed zero in the image.
+
+Re-run with the comm-trace set installed under `0x34`, the call completes and
+every boundary fires:
+
+```
+comm trace: stage=0xc013 (SendComm2CPUEx returned to CALL worker)
+comm trace: CALL=0xe011, HISR queue send=00000000 (success)
+comm trace: RETURN_ACK=0xf003
+VP-init trace: stage=0x7105 (entering callback installation)
+reply after 1 ms, nret=1, ret[0]=00000001
+```
+
+So the reported failure does not reproduce **instrumented or uninstrumented**.
+Whatever produced it was specific to that session -- a stale or mismatched
+U-Boot, or the malformed zero-argument call whose transaction never resolved --
+and it is not a property of project `0x34`, of the firmware, or of these
+trampolines.
+
+Two lessons, both ones this project keeps paying for. **Instrumentation is a
+change to the system under test**, so a null seen only through a new trampoline
+set needs the uninstrumented control before it is a fact. And **a hypothesis
+with the right shape is still a guess**: "`jal` clobbers `ra`" was mechanically
+plausible, cheap to check against the disassembly, and wrong -- checking it cost
+one `python3` dump of forty words.
+
+### What is true, and newly measured
+
+- **`THal_Vp_Init` works under both project ids** with the corrected
+  `[0, 1, phys]` ABI. The bare-argument call remains malformed.
+- **The VP state it copies is project-specific.** Destination `0x4d800000` reads
+  `00050000 0011000b 001d0017 00290023 0035002f 0041003b 004d0047 00590053`
+  under `0x34`, against the reported `00040000 000c0008 00150010 ...` under
+  `0x33`. Same structure, different table -- which is what a ProjectID file is
+  for, and is the first positive evidence that the id reaches the VP layer.
+- **`THal_Vp_Init` does not touch the video path.** `0x05600000`-`0x0560007f`
+  is byte-identical immediately before and immediately after the call, and
+  across two independent boots:
+
+```
+05600000: 80000020 00000000 00000000 00000000
+05600010: 03000010 00000000 00000000 00000000   <- source 0: enable[1:0]=0, fmt[15:8]=0
+05600020: 043f077f 00420077 00000000 00000000   <- 1920x1088
+05600030: 02d00500 00080808 00000000 00000000   <- 1280x720
+05600040: 00000780 00000780 02d00500 01680500
+05600050: 00000000 00000000 00000000 00000000
+05600060: 00000001 00000000 00000122 00000000
+05600070: 00000000 00000000 00000000 00000000   <- Y/C queue empty
+```
+
+  So completing VP init is *not* what programs the video source. The video
+  source's enable and format both still read zero with the MIPS running and VP
+  initialised. That does not refute "the MIPS firmware configures it" -- stock
+  does more after VP init (`powerCtrl`, `DecoderDisplay::enable(1)`,
+  `iommuEnable`, `dispCpuResume`, then DECD frames) -- but it does remove
+  `THal_Vp_Init` alone as the missing step.
+
+### Two operational rules
+
+- **A U-Boot `reset` is sufficient for a clean MIPS launch.** It is not a
+  physical power cycle, but the full readiness chain passes after one, and the
+  60-second stability window is clean. The one-launch-per-power-cycle budget is
+  really one-launch-per-*reset*. This removes the operator from the loop for any
+  MIPS experiment that does not need someone watching the panel: neutralise
+  `preboot`'s `h713_disp auto`, `saveenv`, and drive the whole sequence over
+  serial.
+- **Do not issue `h713_disp commstate` while a transaction is unresolved.** That,
+  not the call, caused the earlier apparent whole-board lock.
 
 ## Method note
 
@@ -2607,6 +2784,10 @@ the PH2/PH3 bus, address convention, and scanner. The earlier expectation that
 `0x6a` was the positive control was stale: the stock DT lists several
 alternative accelerometers, and this board populated the `0x18` choice.
 
+> **Corrected 2026-10-06:** the part at `0x18` is a Silan **SC7A20** (WHO_AM_I
+> `0x0f` = `0x11`), not an STK8BA58; only the stock node is named that. Mainline
+> `st_accel` drives it since kernel 0168.
+
 There was no response at `0x1b` after the stock PF6/PH16 power sequence and a
 live TCON run. Board B's stock DT also contains no DLPC node. Its unstripped
 `ge2d_dev.ko` does contain a legacy optional `DLPC3435` driver, but the exact
@@ -4190,7 +4371,13 @@ RTT note above for why the firmware's own log is not currently reachable.
   compiled in but never executed by the firmware. That is *why* it is a
   reliable specification of what the ARM must build.
 
-# MIPS display recovery plan
+# MIPS display recovery plan — and, below it, the July journal
+
+> **The heading is misleading and is kept only because links point at it.**
+> What follows is ~3,400 lines of **July 2026 journal entries** — CPU_COMM
+> recovery, the board-B handoffs, the firmware startup trace — in the same
+> newest-first order as the August half above. The actual plan is the last ~160
+> lines, from `## Milestone 0` onward, and it is obsolete; see the banner there.
 
 This plan recovers the H713 bench kernel first, then brings up the display
 coprocessor one dependency at a time. It deliberately separates "the kernel
@@ -7631,10 +7818,31 @@ addresses re-derived for `4380f1b3...`.
   experiments.
 - Treat `display.bin` and vendor image extracts as local-only research inputs.
   Record their hashes, but do not embed workstation-specific paths in defconfig.
-- Every patch-series edit must pass a fresh `build/build.sh kernel`; cached or
+- Every patch-series edit must pass a fresh `tools/build/build.sh kernel`; cached or
   previously published artifacts are not proof of the current tree.
 - A driver must return an error when its hardware does not become ready. Probe
   success and log messages must not conceal a failed reset/clock/firmware step.
+
+---
+
+> # ⚠ EVERYTHING BELOW IS THE ORIGINAL JULY PLAN, AND IT IS OBSOLETE
+>
+> Kept as a record of how the work was scoped before any of it was done. **It is
+> not a to-do list, and two of its milestones propose work that has since been
+> settled the other way.** Read it as history or not at all.
+>
+> | milestone | what happened |
+> | --- | --- |
+> | 0 — preserve evidence, buildable series | done |
+> | 1 — verify recovery kernel on the bench | done |
+> | 2 / 2b — U-Boot loader, Linux ownership | done; the display survives into Linux |
+> | 3 — CPU_COMM address model | done, **and its premise is dead**: CPU_COMM is a control channel and cannot carry frames — the frame-submit routines are verified stubs ([`reference/cpu-comm-call-table.md`](reference/cpu-comm-call-table.md)) |
+> | 4 — TVTOP and DECD | done; DECD drives the panel, and the data path is its Y/C ring |
+> | 5 — **GE2D and visible panel path** | **abandoned. GE2D is the projector's display controller, not a 2D engine** — zero scale/blit symbols. Do not start a GE2D driver; it has been re-proposed and re-killed twice ([`kms-display.md`](kms-display.md)) |
+>
+> The safety rules immediately above this banner are the part that aged well and
+> are still worth reading — particularly "a driver must return an error when its
+> hardware does not become ready."
 
 ## Milestone 0 — preserve evidence and restore a buildable series
 
@@ -7651,7 +7859,7 @@ Actions:
 
 Acceptance:
 
-- `build/build.sh kernel` applies every patch from a clean extraction.
+- `tools/build/build.sh kernel` applies every patch from a clean extraction.
 - `Image`, both board DTBs, modules, and the bench FIT are published.
 - The bench DTB has no enabled MIPS/display device and contains only the
   no-map firmware DRAM reservation.

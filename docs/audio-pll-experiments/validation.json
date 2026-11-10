@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-19",
+  "python": "3.14.8",
+  "unicorn": "2.1.4",
+  "hardware_accessed": false,
+  "retry_paths": 4050,
+  "init_retry_paths": 4050,
+  "generated_and_stock_branch_paths": 212,
+  "host_tests": 20,
+  "host_tests_pass_with_python_optimized": true,
+  "evidence_exports_verified": 84,
+  "local_inputs_preserved": 12,
+  "original_and_export_hashes_verified": true,
+  "active_document_links_checked": true,
+  "private_input_regeneration": [
+    {
+      "mode": "retry",
+      "candidate_sha256": "a253ac5e08d4b9fed8bbbd4fd38d679dc949fee714da3b809746f3c2364b6a5b",
+      "full_profile_matches_historical": true,
+      "changed_bytes": 177,
+      "bytes": 920576
+    },
+    {
+      "mode": "init",
+      "candidate_sha256": "3c2dd5d5208a23f1c4511c37b704a3d17e8a9bce29f16293dc8e768a7582660a",
+      "full_profile_matches_historical": true,
+      "changed_bytes": 180,
+      "bytes": 920576
+    }
+  ],
+  "model_results_match_historical_all_fields": true,
+  "model_comparison_note": "Current output adds word_write_shim=false; all historical fields match in all four runs.",
+  "historical_restoration_records": {
+    "audio-pll-retry": {
+      "path": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/restored-and-profile.log.txt",
+      "sha256": "15e290eb3e35773b622ea9ef270a1f044a77272e99353e0443dcb575ac31ebd3"
+    },
+    "pll-initialization": {
+      "path": "docs/hdmi-evidence/2026-10-07-pll-initialization/restored-and-profile.log.txt",
+      "sha256": "72cd8377a8ff18f1abc9d3f0536506817c5f6ddac260716f0d164f5511fd125e"
+    }
+  },
+  "historical_tone_snapshots": [
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-cache-trial.json",
+      "sha256": "f8a3fd293cec0231e4682470385df4295d904fcbe667da601bd3792c1ffb80e0",
+      "pll_last_n": 6144,
+      "pll_last_sample_rate_hz": 48000
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/audio-cache-trial.json",
+      "sha256": "2a953c769f24e44e3825abc0d00ce98db4387c72971cde6684c7fc6dd6b9e9f4",
+      "pll_last_n": 6144,
+      "pll_last_sample_rate_hz": 48000
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-cache-trial.json",
+      "sha256": "2355619c02028ec63e0ded79950439fbc6b9824f06dad2370fc89b91edc6a136",
+      "pll_last_n": 0,
+      "pll_last_sample_rate_hz": 0
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/audio-cache-trial.json",
+      "sha256": "3d03f79727d829eb230e5c03b53ad003509e94c2057a539bf5e6dca05720ae49",
+      "pll_last_n": 6144,
+      "pll_last_sample_rate_hz": 48000
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/audio-cache-trial.json",
+      "sha256": "2fd411dcd3986395b7d6a7f6643776791347854489b6c57bc3c3292b3d18d309",
+      "pll_last_n": 6144,
+      "pll_last_sample_rate_hz": 48000
+    }
+  ],
+  "positive_init_log": {
+    "path": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/elog-hdmi.txt",
+    "sha256": "e1d76840a1b20575ce4a9ccb98cd4fa028367bdff72b6a14981ecde7ca87005d"
+  },
+  "limits": "Offline regression and evidence consistency only. Init execution is supported by historical positive logs; physical PLL lock and PCM success remain unproven. Collapsed-byte-store model is hypothetical and its hardware interpretation was withdrawn."
+}

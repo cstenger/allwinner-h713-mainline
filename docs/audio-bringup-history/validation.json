@@ -1,0 +1,121 @@
+{
+  "date": "2026-10-19",
+  "python": "3.14.8",
+  "hardware_accessed": false,
+  "network_accessed": false,
+  "scripts_executed": false,
+  "firmware_or_model_executed": false,
+  "original_files": 66,
+  "review_candidates": 61,
+  "unique_exports_verified": 54,
+  "duplicate_originals_mapped": 6,
+  "local_disassemblies": 5,
+  "local_empty_command_logs": 1,
+  "original_and_export_hashes_verified": true,
+  "script_snapshots_parsed": 3,
+  "active_links_checked": true,
+  "cache_field_raw_word_comparisons": 1494,
+  "cache_trials": [
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-cold-resume/audio-cache-trial.json",
+      "sha256": "5b0032948ec358c3b35571c3923bc39ac55e9396208f2e4c06648b0e66a05bed",
+      "phase_counts": {
+        "waiting": 3,
+        "tone": 6,
+        "after-tone": 4
+      },
+      "locked_tone_metadata_hz": 48000,
+      "scope": "Cached metadata; not PCM rate or PLL execution evidence"
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-dsp-cold/audio-cache-trial.json",
+      "sha256": "09f25213d5acb63b9f021c33db732f83df442b8e0b3007d17d439b4eb813c737",
+      "phase_counts": {
+        "waiting": 4,
+        "tone": 6,
+        "after-tone": 4
+      },
+      "locked_tone_metadata_hz": 48000,
+      "scope": "Cached metadata; not PCM rate or PLL execution evidence"
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-dsp-readiness/audio-cache-trial.json",
+      "sha256": "f696f05025b527e2918380be6850a42e3cd26f452b0b59e5ab8fbfa854f93bbb",
+      "phase_counts": {
+        "waiting": 4,
+        "tone": 4,
+        "after-tone": 6
+      },
+      "locked_tone_metadata_hz": 48000,
+      "scope": "Cached metadata; not PCM rate or PLL execution evidence"
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-dsp-readiness/without-interface/audio-cache-trial.json",
+      "sha256": "f44ff4d50b1459b5461b25029eae1e3ff4ec962cfcb071b17e2c1695674540df",
+      "phase_counts": {
+        "waiting": 4,
+        "tone": 4,
+        "after-tone": 6
+      },
+      "locked_tone_metadata_hz": 48000,
+      "scope": "Cached metadata; not PCM rate or PLL execution evidence"
+    }
+  ],
+  "canonical_edid_logs": [
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-cold-resume/cache-trial.log.txt",
+      "sha256": "b8e2ca340bdc47731cbc31d706dcb9f5a7ada4f6cc4ce2938ac580475ef1d092",
+      "canonical_edid_present": true,
+      "final_disconnected_disabled": true
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-dsp-cold/cache-trial.log.txt",
+      "sha256": "4f63e8f2109b3bd31518e068472997a7cb8f3644499025272feb8360c91c8701",
+      "canonical_edid_present": true,
+      "final_disconnected_disabled": true
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-dsp-readiness/cache-trial.log.txt",
+      "sha256": "7796385c50a55ebf5fac0aa32113b2b4b6d85b65d8c6a0485011a906b8924c60",
+      "canonical_edid_present": true,
+      "final_disconnected_disabled": true
+    }
+  ],
+  "no_stock_io_control_tone_ran": false,
+  "cold_dsp": {
+    "fff7_read": 0,
+    "selector0077_read": 0,
+    "selector0130_response_accepted": false,
+    "timeout_latched": true,
+    "failed_probe_still_loaded": true
+  },
+  "readiness": {
+    "version_before": [
+      0,
+      0
+    ],
+    "patch_pairs": 724,
+    "version_after": [
+      1,
+      1
+    ],
+    "offline_interface_trace_rerun": false,
+    "dma_epochs": [
+      {
+        "records": 11,
+        "first_uptime": 504.40354,
+        "last_uptime": 649.130749
+      },
+      {
+        "records": 11,
+        "first_uptime": 780.884297,
+        "last_uptime": 811.952337
+      }
+    ],
+    "changed_bytes_in_logged_snapshots": 0,
+    "bridge_irqs_in_logged_snapshots": 0,
+    "route_interface_mute_readbacks_restored": true,
+    "volatile_patch_reverted": false
+  },
+  "limits": "Archive consistency and saved witnesses only. Duplicated logs are not independent trials. Early lock ownership interpretation is superseded, cached zeros are not execution evidence, completion-clear failure is inconclusive, and no PCM capture or physical clock/PLL lock is established."
+}

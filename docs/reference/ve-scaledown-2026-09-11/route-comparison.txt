@@ -1,0 +1,10 @@
+source: VE-decoded 1920x1080; hardware stage: 960x540 (of 960x544)
+route           PSNR vs native  SSIM vs native  PSNR vs lanczos  SSIM vs lanczos
+A bilinear               19.01          0.9066            27.59           0.9627
+A lanczos                18.74          0.9067            29.86           0.9678
+B polyphase              18.96          0.9347            38.31           0.9947
+lanczos ref              18.66          0.9363              inf           1.0000
+
+information available to each route, before any upscale:
+  route A carries 960x540  =  518400 luma samples  (56% of the panel)
+  route B carries 1280x720 =  921600 luma samples  (100%)

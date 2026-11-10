@@ -1,0 +1,304 @@
+SOAK-DECODE start 2026-04-13T19:47:10+00:00 duration=7200s vectors=17
+SOAK-DECODE baseline ve=2250 timeouts=0 oops=0 cma=127896kB memavail=867648kB
+SOAK-DECODE kernel=6.18.38 maxfreq=1296000
+SOAK t=120s iter=97 pass=97 fail=0 ve_delta=3373 cma_raw=127924kB memavail=814880kB temp=65452 khz=1008000 v04-1280x720-high_ms=1686(first=1686)
+SOAK t=240s iter=197 pass=197 fail=0 ve_delta=6871 cma_raw=127924kB memavail=804548kB temp=65384 khz=1008000 v02-1280x720-baseline_ms=1729(first=1728)
+SOAK t=360s iter=296 pass=296 fail=0 ve_delta=10411 cma_raw=127924kB memavail=824380kB temp=63704 khz=1008000 h07-640x480-main10_ms=793(first=789)
+SOAK t=480s iter=395 pass=395 fail=0 ve_delta=13969 cma_raw=127924kB memavail=828940kB temp=63368 khz=1008000 h04-640x480-scaling_ms=869(first=869)
+SOAK t=600s iter=493 pass=493 fail=0 ve_delta=17487 cma_raw=127924kB memavail=807880kB temp=64712 khz=1008000 m06-720x576-field-clean_ms=911(first=923)
+SOAK t=720s iter=592 pass=592 fail=0 ve_delta=20945 cma_raw=127924kB memavail=806260kB temp=64444 khz=1008000 m01-352x288-progressive_ms=735(first=744)
+SOAK t=840s iter=692 pass=692 fail=0 ve_delta=24478 cma_raw=127924kB memavail=821560kB temp=65989 khz=1008000 v04-1280x720-high_ms=1694(first=1686)
+SOAK t=960s iter=792 pass=792 fail=0 ve_delta=27976 cma_raw=127924kB memavail=815544kB temp=65452 khz=1008000 v02-1280x720-baseline_ms=1735(first=1728)
+SOAK t=1080s iter=891 pass=891 fail=0 ve_delta=31516 cma_raw=127924kB memavail=839640kB temp=63704 khz=1008000 h07-640x480-main10_ms=793(first=789)
+SOAK t=1200s iter=989 pass=989 fail=0 ve_delta=35049 cma_raw=127924kB memavail=812072kB temp=63368 khz=1008000 h03-640x480-nowpp_ms=872(first=871)
+SOAK t=1320s iter=1087 pass=1087 fail=0 ve_delta=38532 cma_raw=127924kB memavail=811276kB temp=64309 khz=1008000 m04-720x576-interlaced_ms=1060(first=1063)
+SOAK t=1440s iter=1186 pass=1186 fail=0 ve_delta=42025 cma_raw=127924kB memavail=809200kB temp=65922 khz=1008000 v05-1920x1080-high_ms=2871(first=2847)
+SOAK t=1561s iter=1287 pass=1287 fail=0 ve_delta=45583 cma_raw=127924kB memavail=817100kB temp=67064 khz=1008000 v04-1280x720-high_ms=1739(first=1686)
+SOAK t=1681s iter=1387 pass=1387 fail=0 ve_delta=49081 cma_raw=127924kB memavail=808596kB temp=67266 khz=1008000 v02-1280x720-baseline_ms=1745(first=1728)
+SOAK t=1801s iter=1486 pass=1486 fail=0 ve_delta=52621 cma_raw=127924kB memavail=817332kB temp=63772 khz=1008000 h07-640x480-main10_ms=797(first=789)
+SOAK t=1921s iter=1585 pass=1585 fail=0 ve_delta=56179 cma_raw=127924kB memavail=827220kB temp=63100 khz=1008000 h04-640x480-scaling_ms=848(first=869)
+SOAK t=2041s iter=1683 pass=1683 fail=0 ve_delta=59697 cma_raw=127924kB memavail=801104kB temp=64242 khz=1008000 m06-720x576-field-clean_ms=917(first=923)
+SOAK-FAIL iter=1747 v05-1920x1080-high MISMATCH got=b1ec4d609b99db105b6c1ce3bd47796f want=879fb65957fff181941ef5d06d0ab4d6 ve+47 t=2119s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff68074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1764 v05-1920x1080-high MISMATCH got=afde21ce07aec0bdf3cd00cf32b86e94 want=879fb65957fff181941ef5d06d0ab4d6 ve+33 t=2139s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff88074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1781 v05-1920x1080-high MISMATCH got=f3d53003daaceeb4801812134c4fc01e want=879fb65957fff181941ef5d06d0ab4d6 ve+37 t=2158s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7c074590] Failed to create surface: 2 (resource allocation failed).
+SOAK t=2161s iter=1784 pass=1781 fail=3 ve_delta=63192 cma_raw=127924kB memavail=792984kB temp=63637 khz=1008000 m04-720x576-interlaced_ms=1051(first=1063)
+SOAK-FAIL iter=1798 v05-1920x1080-high MISMATCH got=d7bd54c72126b40f8fd41862d66c8738 want=879fb65957fff181941ef5d06d0ab4d6 ve+32 t=2178s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8c074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1815 v05-1920x1080-high MISMATCH got=d20eb8d3b7dd9cf0c5810d80070c4478 want=879fb65957fff181941ef5d06d0ab4d6 ve+16 t=2199s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff60074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1821 h02-1280x720-main MISMATCH got=290cd92aa7515789a3c517a240e2d9ac want=c898a8f06beea7c242de29eb912434c7 ve+18 t=2205s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff58011760] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1830 v03-1280x720-main MISMATCH got=72f83f00fe4ecb60071b2b1bd0412c69 want=fd535804e6f4431a1834624065da7e5c ve+39 t=2215s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff5c07a340] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1831 v04-1280x720-high MISMATCH got=ed53b655ae6bac008f61b5ce1c980949 want=a991db21f2ba77332a48452f3a51e668 ve+39 t=2217s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff9007a300] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1832 v05-1920x1080-high MISMATCH got=262698d49d712a49baf06da454b43697 want=879fb65957fff181941ef5d06d0ab4d6 ve+3 t=2219s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff94074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1838 h02-1280x720-main MISMATCH got=5a2427767f23d3a020846817242bce84 want=c898a8f06beea7c242de29eb912434c7 ve+15 t=2225s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff80011760] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1846 v02-1280x720-baseline MISMATCH got=85c2e723003af1b2316154d79a035df2 want=c778def53560f3eb0694842c7340a058 ve+42 t=2233s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6807b0b0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1847 v03-1280x720-main MISMATCH got=3390ccbb558f51139ca065783fe0e2cf want=fd535804e6f4431a1834624065da7e5c ve+35 t=2235s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff9407a340] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1848 v04-1280x720-high MISMATCH got=6dc2d216641b7162f91b5d528886cbd4 want=a991db21f2ba77332a48452f3a51e668 ve+35 t=2237s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8007a300] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1849 v05-1920x1080-high MISMATCH got=98628250ea00e059435a3e7bd1f527a4 want=879fb65957fff181941ef5d06d0ab4d6 ve+2 t=2240s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff80074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1850 m01-352x288-progressive MISMATCH got=bbb1005fde265a71f9dd5bc8f2801497 want=cf0fc0b7aefacf1525f5595c907334f3 ve+20 t=2240s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7c000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1851 m02-720x576-progressive MISMATCH got=e16f8eeff06aaf31a4e1e4ec1b46a8c0 want=c944784e8c3804a0e0ec2ef3a855132c ve+31 t=2242s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff70000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1852 m04-720x576-interlaced MISMATCH got=9d524fbd8d9d091223dc6798f7b014b8 want=9558b821b54ad677a1602e08e37c5827 ve+32 t=2243s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff84000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1854 h01-640x480-main MISMATCH got=c39e151f92b2f17c145e34efe8399dcd want=9ebd49ecbf0ed5411af2aca6a0706e49 ve+13 t=2246s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6c036b20] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1855 h02-1280x720-main MISMATCH got=4efebbd7829528e67309430f75f1402a want=c898a8f06beea7c242de29eb912434c7 ve+5 t=2247s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff78011760] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1856 h03-640x480-nowpp MISMATCH got=d8a929b857ae90b1373e864c784ba150 want=c6d06c0129c6cc6cd8801fc2721796bd ve+16 t=2248s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8c036ab0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1857 h04-640x480-scaling MISMATCH got=4c6b7f9f83d0b933dc4c48101bd44d98 want=dfbaa7db9d6f678d40b30a1850158e43 ve+16 t=2249s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff84036ae0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1858 h05-640x480-scaling-custom MISMATCH got=566e4c065ecea242b91e0de755b7b9f3 want=13ed952f773dcc0c41ee6c9d48782fc8 ve+16 t=2250s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff74036d60] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1859 h10-656x480-unaligned MISMATCH got=1673e073735213865b44195e7525f39f want=b892b3512a554ff5eb510308027e76a9 ve+12 t=2252s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff5400d500] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1860 h07-640x480-main10 MISMATCH got=d7153ee12902a22435431a457328d65c want=a9ddccddc50810c15afa2745a9b2468c ve+9 t=2253s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff640404c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1861 h09-642x482-main10 MISMATCH got=0ddbaeed3be5f7aa9dd4b2c7f4680218 want=ceaace9418a9386b45f1af46fe4a4323 ve+9 t=2253s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6000d2c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1863 v02-1280x720-baseline MISMATCH got=f6f7fbfb01687afaf7ca4e7fe2eb8883 want=c778def53560f3eb0694842c7340a058 ve+5 t=2257s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8c07b0b0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1864 v03-1280x720-main MISMATCH got=f6babf9d606e8c3e5166f3d5f52a00da want=fd535804e6f4431a1834624065da7e5c ve+15 t=2259s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8407a340] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1865 v04-1280x720-high MISMATCH got=dcb5f4413ffde8750b7aa1ae7426b447 want=a991db21f2ba77332a48452f3a51e668 ve+14 t=2261s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6c07a300] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1866 v05-1920x1080-high SOFTWARE FALLBACK ve+0 t=2262s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff80074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1867 m01-352x288-progressive MISMATCH got=f604f4a6133526d678f07f7eb5b79cce want=cf0fc0b7aefacf1525f5595c907334f3 ve+2 t=2264s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff74000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1868 m02-720x576-progressive MISMATCH got=1a91f9c6628a95ca0e522c58269ae454 want=c944784e8c3804a0e0ec2ef3a855132c ve+2 t=2266s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8c000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1869 m04-720x576-interlaced MISMATCH got=fae98ce96da8fa881ce694743179b30a want=9558b821b54ad677a1602e08e37c5827 ve+2 t=2268s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7c000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1870 m06-720x576-field-clean MISMATCH got=95b8fbc4a922f81fe138024830c0c589 want=d728cc1386258fde07038c2c7d83201b ve+2 t=2269s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff64000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1871 h01-640x480-main MISMATCH got=ef070b4932060e1b1c207aebd0f50dbd want=9ebd49ecbf0ed5411af2aca6a0706e49 ve+1 t=2270s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff88036b20] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1872 h02-1280x720-main SOFTWARE FALLBACK ve+0 t=2272s
+          v4l2-request: Unable to enable stream: Cannot allocate memory
+          [hevc @ 0xaaaabb54aa90] Failed to create decode context: 1 (operation failed).
+SOAK-FAIL iter=1873 h03-640x480-nowpp MISMATCH got=782a1873ed3506ccc3fdc32267cfed75 want=c6d06c0129c6cc6cd8801fc2721796bd ve+1 t=2273s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff78036ab0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1874 h04-640x480-scaling MISMATCH got=3c90a8711b9c35d36cdaa19aa14dee16 want=dfbaa7db9d6f678d40b30a1850158e43 ve+1 t=2275s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff5c036ae0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1875 h05-640x480-scaling-custom MISMATCH got=8ab5b1e97fc77202ea72274737718ae5 want=13ed952f773dcc0c41ee6c9d48782fc8 ve+1 t=2276s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff60036d60] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1876 h10-656x480-unaligned MISMATCH got=df7fd35770241eb4c4da24aeb87dcb10 want=b892b3512a554ff5eb510308027e76a9 ve+1 t=2277s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8400d500] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1877 h07-640x480-main10 MISMATCH got=d98819079f7346c5e283ecf3e0465ddc want=a9ddccddc50810c15afa2745a9b2468c ve+1 t=2279s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff740404c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1878 h09-642x482-main10 MISMATCH got=a7e4c1e0e278a1f80a2cd7b69c868c1d want=ceaace9418a9386b45f1af46fe4a4323 ve+1 t=2280s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8000d2c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1879 v01-320x240-baseline MISMATCH got=31ecf7d31c7246ad0fc58032d2706ff8 want=98a4dbc6e165766cbdfa4d8d4cc1238f ve+1 t=2281s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff900752b0] Failed to create surface: 2 (resource allocation failed).
+SOAK t=2281s iter=1879 pass=1837 fail=42 ve_delta=65462 cma_raw=127924kB memavail=822932kB temp=61420 khz=1008000 v01-320x240-baseline_ms=880(first=721)
+SOAK-FAIL iter=1880 v02-1280x720-baseline SOFTWARE FALLBACK ve+0 t=2282s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff5c07b0b0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1881 v03-1280x720-main SOFTWARE FALLBACK ve+0 t=2283s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff5c07a340] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1882 v04-1280x720-high SOFTWARE FALLBACK ve+0 t=2285s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8c07a300] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1883 v05-1920x1080-high SOFTWARE FALLBACK ve+0 t=2286s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff70074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1884 m01-352x288-progressive SOFTWARE FALLBACK ve+0 t=2287s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff98000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1885 m02-720x576-progressive SOFTWARE FALLBACK ve+0 t=2289s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff74000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1886 m04-720x576-interlaced SOFTWARE FALLBACK ve+0 t=2290s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff78000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1887 m06-720x576-field-clean SOFTWARE FALLBACK ve+0 t=2291s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7c000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1888 h01-640x480-main SOFTWARE FALLBACK ve+0 t=2292s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff94036b20] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1889 h02-1280x720-main SOFTWARE FALLBACK ve+0 t=2294s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff60011760] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1890 h03-640x480-nowpp SOFTWARE FALLBACK ve+0 t=2295s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff5c036ab0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1891 h04-640x480-scaling SOFTWARE FALLBACK ve+0 t=2296s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff60036ae0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1892 h05-640x480-scaling-custom SOFTWARE FALLBACK ve+0 t=2298s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff94036d60] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1893 h10-656x480-unaligned SOFTWARE FALLBACK ve+0 t=2299s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff9000d500] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1894 h07-640x480-main10 SOFTWARE FALLBACK ve+0 t=2300s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff840404c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1895 h09-642x482-main10 SOFTWARE FALLBACK ve+0 t=2302s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7000d2c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1896 v01-320x240-baseline SOFTWARE FALLBACK ve+0 t=2303s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff600752b0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1897 v02-1280x720-baseline SOFTWARE FALLBACK ve+0 t=2304s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff5c07b0b0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1898 v03-1280x720-main SOFTWARE FALLBACK ve+0 t=2306s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6807a340] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1899 v04-1280x720-high SOFTWARE FALLBACK ve+0 t=2307s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7c07a300] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1900 v05-1920x1080-high SOFTWARE FALLBACK ve+0 t=2308s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff60074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1901 m01-352x288-progressive SOFTWARE FALLBACK ve+0 t=2310s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff64000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1902 m02-720x576-progressive SOFTWARE FALLBACK ve+0 t=2311s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff88000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1903 m04-720x576-interlaced SOFTWARE FALLBACK ve+0 t=2312s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff84000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1904 m06-720x576-field-clean SOFTWARE FALLBACK ve+0 t=2313s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff80000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1905 h01-640x480-main SOFTWARE FALLBACK ve+0 t=2315s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7c036b20] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1906 h02-1280x720-main SOFTWARE FALLBACK ve+0 t=2316s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6c011760] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1907 h03-640x480-nowpp SOFTWARE FALLBACK ve+0 t=2317s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff64036ab0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1908 h04-640x480-scaling SOFTWARE FALLBACK ve+0 t=2319s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8c036ae0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1909 h05-640x480-scaling-custom SOFTWARE FALLBACK ve+0 t=2320s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff60036d60] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1910 h10-656x480-unaligned SOFTWARE FALLBACK ve+0 t=2321s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7800d500] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1911 h07-640x480-main10 SOFTWARE FALLBACK ve+0 t=2323s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff900404c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1912 h09-642x482-main10 SOFTWARE FALLBACK ve+0 t=2324s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff8c00d2c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1913 v01-320x240-baseline SOFTWARE FALLBACK ve+0 t=2325s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff740752b0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1914 v02-1280x720-baseline SOFTWARE FALLBACK ve+0 t=2327s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6c07b0b0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1915 v03-1280x720-main SOFTWARE FALLBACK ve+0 t=2328s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6007a340] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1916 v04-1280x720-high SOFTWARE FALLBACK ve+0 t=2329s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff7807a300] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1917 v05-1920x1080-high SOFTWARE FALLBACK ve+0 t=2330s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff74074590] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1918 m01-352x288-progressive SOFTWARE FALLBACK ve+0 t=2332s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff9c000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1919 m02-720x576-progressive SOFTWARE FALLBACK ve+0 t=2333s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff80000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1920 m04-720x576-interlaced SOFTWARE FALLBACK ve+0 t=2334s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffffa0000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1921 m06-720x576-field-clean SOFTWARE FALLBACK ve+0 t=2336s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff9c000e70] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1922 h01-640x480-main SOFTWARE FALLBACK ve+0 t=2337s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff70036b20] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1923 h02-1280x720-main SOFTWARE FALLBACK ve+0 t=2338s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff64011760] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1924 h03-640x480-nowpp SOFTWARE FALLBACK ve+0 t=2340s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff88036ab0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1925 h04-640x480-scaling SOFTWARE FALLBACK ve+0 t=2341s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff94036ae0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1926 h05-640x480-scaling-custom SOFTWARE FALLBACK ve+0 t=2342s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff90036d60] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1927 h10-656x480-unaligned SOFTWARE FALLBACK ve+0 t=2344s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff5c00d500] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1928 h07-640x480-main10 SOFTWARE FALLBACK ve+0 t=2345s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff740404c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1929 h09-642x482-main10 SOFTWARE FALLBACK ve+0 t=2346s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6000d2c0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1930 v01-320x240-baseline SOFTWARE FALLBACK ve+0 t=2347s
+          v4l2-request: Unable to create buffer for type 2: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6c0752b0] Failed to create surface: 2 (resource allocation failed).
+SOAK-FAIL iter=1931 v02-1280x720-baseline SOFTWARE FALLBACK ve+0 t=2349s
+          v4l2-request: Unable to create buffer for type 1: Cannot allocate memory
+          [AVHWFramesContext @ 0xffff6807b0b0] Failed to create surface: 2 (resource allocation failed).

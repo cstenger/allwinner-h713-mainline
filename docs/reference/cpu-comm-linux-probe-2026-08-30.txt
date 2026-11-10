@@ -1,0 +1,137 @@
+CPU_COMM probes under Linux -- 2026-08-30
+=========================================
+
+First time the ported driver has run on hardware. Board on Debian, normal
+boot (U-Boot `h713_disp auto 0x34 logo`), MIPS parked, display live.
+
+HOW IT WAS LOADED, and why not by reflashing
+--------------------------------------------
+
+The running kernel dates from Aug 25 and its DTB still carries
+cpu-comm@3003000 with status = "disabled", so Linux creates no platform
+device and the driver has nothing to bind to. Rebooting a freshly built
+FIT would also have pulled in every other in-series change since that
+kernel was built, which is a much larger blast radius than "does it
+probe". So the module was loaded against the running kernel (vermagic
+`6.18.38 SMP mod_unload aarch64` matches; MODVERSIONS is off) and a
+throwaway shim repointed the node's `status` property in the live tree
+and called of_platform_device_create().
+
+  Gotcha worth keeping: for the initial device tree, property VALUES
+  point into the FDT blob, which is mapped read-only. A first attempt
+  memcpy'd "okay" over prop->value and took
+
+    Unable to handle kernel write to read-only memory
+    at virtual address ffffffffff60359c        <- the FDT fixmap
+
+  The `struct property` itself comes from memblock and IS writable, so
+  the fix is to repoint prop->value at a kmalloc'd buffer rather than
+  writing through it. The board shrugged the oops off -- display never
+  flickered -- but the module was left unremovable (stuck refcount),
+  so the retry had to be built under a different name.
+
+PRE-STATE (read-only, before anything was loaded)
+-------------------------------------------------
+
+  MIPS status  0x0306101c : 0x00000000     coprocessor parked
+  share ADDR   0x03061024 : 0x00000000
+  share SIZE   0x03061028 : 0x00000000
+  msgbox ver   0x03003810 : 0x00020000     block is clocked
+  msgbox rx    0x03003164 : 0x00000000
+  msgbox tx    0x03003864 : 0x00000000
+  AFBD ch2     0x05600140 : 0x03001901     display live
+  0x03003000 unclaimed in /proc/iomem; hwspinlock@3004000 okay;
+  reserved mem 0x4e300000..0x4e7fffff (5120 KiB) nomap.
+
+PROBE
+-----
+
+  ccprobe2: /soc/cpu-comm@3003000 currently disabled
+  ccprobe2: status -> okay (now available)
+  hy310-cpu-comm 3003000.cpu-comm: shared memory: 0x4e300000 size 0x500000
+  cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff800081cd5000 size=0x500000
+  cpu_comm: PRE-WIPE: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef
+  cpu_comm: HW mapped - MIPS ctrl @ ..., msgbox @ ... (version 0x00020000, tx fifo 0, rx fifo 0)
+  cpu_comm: wrote ShMemAddr=0x4e300000 to MIPS share regs
+  cpu_comm: /dev/cpu_comm_fd registered (major=242)
+  cpu_comm: InitCommSeqMem(0): sock[248]=0x1 (remote sem @ offset 0x3E0)
+  cpu_comm: InitCommSeqMem(1): sock[248]=0x1 (remote sem @ offset 0x3E0)
+  cpu_comm: routine table initialized (1224 slots)
+  cpu_comm: SMM heap initialized: base=0xffff800081d02000 size=5059343 pages=1236
+  cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+  cpu_comm: msgbox RX poll started (1ms interval, IRQ 332 reserved)
+  cpu_comm: CPU ARM app ready
+  cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x0
+  cpu_comm: POST-WAIT: ARM=0x5 MIPS=0x0
+  cpu_comm: auto-registered 18/18 MIPS VP routes
+  cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+  hy310-cpu-comm 3003000.cpu-comm: probed successfully
+
+/dev/cpu_comm (243,0) and /dev/cpu_comm_fd (242,0) created; driver bound
+to 3003000.cpu-comm. /proc/cpu_comm/status reports ARM Ready 1, ARM App
+Ready 1, MIPS Ready 0, MIPS App Ready 0.
+
+NO WARN, NO BUG, NO OOPS from the driver. That is coverage, not just
+absence of testing: InitCommSeqMem() and InitCommShareSeqMem() together
+drive on the order of 120 cc_ref() calls, and cc_ref()'s out-of-region
+path is a WARN_ONCE. Silence means every one of them resolved to either
+the shared mapping or a registered arena.
+
+THE ENCODING, CHECKED AGAINST AN INDEPENDENT SOURCE
+---------------------------------------------------
+
+The shared half of the cc_ref model stores ARM-physical addresses. These
+words were read back out of shared memory after the probe and compared
+with values U-Boot had previously recorded from the firmware's own view
+of the same ring -- so this is not a self-consistency check.
+
+  share_seq(1,0,0) = 0x4E300000 + 0x26B8 = 0x4E3026B8
+      (U-Boot's H713_COMM_CALL_SEQ_OFF is 0x000026b8)
+
+  addr         read         expected / source
+  0x4E302748   0x4E302778   U-Boot observed base=4e302778
+  0x4E302778   0x4E302820   share_seq + 360, the first call entry
+  0x4E302788   0x4E3029C0   U-Boot observed slot 4 @ 0x4e3029c0
+  0x4E302740   0x00000015   capacity 21
+  0x4E302744   0x00000004   item_size 4
+  0x4E3029C4   0x0004       entry[4] carries its own index
+
+WHAT THIS DOES NOT SHOW
+-----------------------
+
+No message has been exchanged. The MIPS is parked, so MIPS Ready stays 0
+and no CALL was attempted: the corrected doorbell, the TX_IRQ_EN pulse
+and the tagged-LOCAL half of the encoding are all still unexercised end
+to end.
+
+A PRE-EXISTING DEFECT THIS TURNED UP
+------------------------------------
+
+The probe logs "wrote ShMemAddr=0x4e300000 to MIPS share regs", but
+afterwards
+
+  0x03061024 : 0x00000000
+  0x03061028 : 0x00000000
+
+The write does not stick with the MIPS in reset, so the coprocessor
+would never learn the shared-memory base by that route. This is old
+code, untouched by the port, and it is a blocker for bringing the MIPS
+up under Linux.
+
+AFTER A REBOOT
+--------------
+
+Everything the test left behind is cleared: no modules, no /dev nodes,
+node status back to "disabled", zero oops/BUG lines, taint back to the
+usual 5120 (OOT + CRAP, from aic8800 and cedrus). Display and WiFi came
+back normally.
+
+The shared region is restored by U-Boot on every boot:
+
+  magic1 @0x4E300090   : 0xDEADBEEF
+  ARM flag @0x4E304CDC : 0x00000005
+  MIPS flag @0x4E304CE0 : 0x00000005
+
+-- exactly the PRE-WIPE values above, so the driver's wipe leaves nothing
+behind across a reboot. Note the MIPS flag reads 0x5 while 0x0306101c is
+0: U-Boot writes both flags, so that flag is NOT a MIPS-liveness signal.

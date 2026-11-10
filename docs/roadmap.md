@@ -6,13 +6,21 @@ just priority. See [status.md](status.md) for what already works.
 
 ## Guiding constraints
 
+**Video priorities updated 2026-09-17:** the shared H.264/HEVC arbitrary-ratio
+scaler and compliance repair are complete (88 patches, 49/49, 53 pixel captures).
+Next integrate scaled surfaces into playback, resolve coded padding/crop, then
+validate the panel and remove redundant display scaling. Rotation remains out;
+4:2:2 remains unsupported and is not required for compliance. The older phase
+descriptions below are historical where they conflict with
+[the current handoff](handoff-2026-09-17-shared-scaler.md).
+
 - **Bench (`HY200_QZ713DF_A1`, DDR3) is the safe dev board.** The projector
   (`HY200_QZ713_V2`, LPDDR3) lives inside a projector and is untested — bring it
   up carefully, FEL-first, brick-avoidance paramount.
 - **The kernel is a patch series, and that's its home by design.**
   `patches/kernel/` applied to a pinned mainline tarball is deliberate (the tree
   is too big to fork, and this keeps our delta reviewable + rebasable). Driver
-  work = edit the series + `build/build.sh kernel`. No "kernel fork" is needed;
+  work = edit the series + `tools/build/build.sh kernel`. No "kernel fork" is needed;
   what *is* worth adding is a hackable persistent tree for iteration (Phase 1).
 - **UART is the recovery anchor.** It is now the reliable U-Boot default, while
   ACM is an explicit faster mode. Networking/SSH still removes the throughput
@@ -20,6 +28,14 @@ just priority. See [status.md](status.md) for what already works.
 
 ## Phase 1 — Build & OS polish (bench, near-term)
 
+- [ ] **RC build boot/startup time — measure and reduce as much as possible.**
+  Establish repeatable cold-power-on and warm-reboot baselines on the current
+  release candidate, measuring through usable panel/HDMI/audio and system
+  readiness. Break down bootloader, kernel and userspace startup time, identify
+  the critical path, and remove or shorten unnecessary waits and serial work
+  while preserving reliable startup and recovery. Record before/after timings
+  over repeated boots, verify existing functional checks still pass, and
+  document the remaining bottlenecks and achieved minimum.
 - **Rootfs workflow — complete and hardware-verified.** The rootless
   `tools/rootfs/build.sh` verifies signed Debian metadata, requires an SSH key,
   disables password SSH, installs all 24 Linux 6.18.38 modules, builds
@@ -61,7 +77,9 @@ just priority. See [status.md](status.md) for what already works.
   underran this session (the marginal weak-RF placement that produced the original
   `FIFO_RUN_ERROR` didn't reproduce), so it stands as defense-in-depth; to observe
   it firing, retest from the −71…−80 dBm spot. DVFS was ruled out (wedged even
-  pinned at 1416 MHz).
+  pinned at 1416 MHz) — note that finding is about *this* SDIO wedge only and
+  does not transfer; 1416 MHz was later found to corrupt memory under a
+  different load and was removed (item 2 below).
   **Superseded 2026-08-18/21 — the link is now done.** Patch 0046 fixed the real
   bulk-RX defect (the v5p3x IDMA descriptor encoding for an exact 4096-byte
   segment), and 0048 fixed a 4x clock-accounting error that had every rate
@@ -113,7 +131,19 @@ attached, the display path can be brought up here, not only on the projector
    untested against a real crash, and coverage is one client at close range on one
    board. See [status.md](status.md) and
    [handoff-wifi-sdio-2026-08-17.md](handoff-wifi-sdio-2026-08-17.md).
-2. **Thermal / cpufreq / DVFS — done; safety + real performance.**
+2. **Thermal / cpufreq / DVFS — done, with the ceiling now 1296 MHz.**
+   - **1416 MHz was REMOVED 2026-08-22 (patch 0055).** It corrupts kernel
+     memory under sustained load. It surfaced as the *display* path killing
+     the board in 40-90 s, and cost most of a session in the video stack --
+     cedrus, VA-API, the IOMMU, panfrost and CMA were each excluded by
+     experiment before the operating point was suspected. Capping at 1296
+     (or 1200) gives 20 minutes clean; *transitions* are innocent, since the
+     capped arms ran schedutil throughout. The vendor never uses 1416 at any
+     voltage. See [vaapi-scope.md](vaapi-scope.md). The original
+     qualification was a 2-minute CPU-only load at 68 C, against a failing
+     workload of tens of minutes of GPU + display at 78 C -- a correct
+     measurement generalised past its power. 1392 MHz at 1100 mV is the
+     vendor's top usable point and would recover most of the loss, untested.
    - **Bench cooling fan (0030) — DONE.** The fan is a 3-wire (VCC/GND/tach)
      on/off part, not PWM-speed-controlled (DMM: tach at its 3.3 V pull-up, +V
      floating/unpowered). It stayed dead because the PB5 backlight/fan
@@ -162,6 +192,201 @@ attached, the display path can be brought up here, not only on the projector
    plane-address path" did not reproduce — those registers are not in the
    scanout fetch path — and the "28 fps cross-process handoff ceiling" was
    really the ~44 MB/s uncached read of the decoder's output buffer.
+
+   **The no-GPU variant reaches the panel as of 2026-08-31, and is now an
+   implementation task rather than an investigation.** Its premise was confirmed
+   on hardware first (2026-08-29): with stock Android playing video and the
+   player UI hidden, the Mali runtime-PM counters read `active +0 ms, suspended
+   +15115 ms` over 15 s, so the vendor really does put video on the panel with
+   the GPU asleep. Scope is bounded — only AFBD's Y/C buffer bases are driven per
+   frame; TVTOP, mixer, DE/OSD, PLL, LVDS PHY and GE2D are configured once and
+   never touched during playback.
+
+   The black screen is solved. A bounded DECD-exclusive Linux test displayed a
+   1280x720 NV12 test card in full colour and correct geometry; the missing state
+   was four source-geometry words (the source block held an inherited
+   1920x1088 / stride-1920 fallback), source enable plus commit, the YUV chroma
+   gain `0x05140508 = 0x144C0000`, and the plane-1 selector
+   `0x051C006C = 0x39000000`. A 30-fps two-buffer run then completed 150/150
+   visible submissions, so the route is per-stream state, not a per-frame
+   register sequence.
+
+   **The remaining direct-path fault is now proven to be physical-buffer
+   provenance (2026-09-01).** Cedrus capture dma-bufs are physically segmented,
+   but DECD keeps only the first segment base and scans linearly beyond it,
+   producing the recorded bands and green output. The reconstructed release
+   fence did have a real lifetime bug; patch 0071 fixes it and hardware retires
+   299/300 surfaces by signalled fence with zero stalls, but the picture is
+   unchanged, so reuse is not the cause. Patch 0072 now refuses segmented
+   imports and 0073 declares the single-mapping constraint.
+
+   **PLAYBACK IS DONE AT 720p (2026-09-03); above it is answered but unbuilt
+   (2026-09-12, below).** A file plays on the panel with picture and sound,
+   hardware-decoded, GPU idle, through a patched `mpv --vo=drm --hwdec=vaapi`
+   (`patches/mpv/`, built by `tools/video/build-mpv.sh`). Operator-confirmed.
+
+   **The remaining limit is resolution, and it is structural: we own the
+   fetcher, not the pipeline.** Our KMS driver maps three windows — `afbd`,
+   `route`, `lvds`. It does not map the scaler, the vblender, the mixer or the
+   TCON; those are set up once at U-Boot/MIPS bring-up as a fixed 1280×720
+   single window. So the middle stage of the pipeline is largely absent from our
+   path: DECD itself is a fetcher with one coordinate space and no ratio
+   register, and there is **no compositing** — the two DECD sources are a switch,
+   not a blender, so an OSD over video is the same class of problem. The one
+   exception, found 2026-09-10 and confirmed on the panel 2026-09-12, is the
+   proc **upscaler** at `0x05180000`: it sits on our video raster, we can drive
+   it directly, and it magnifies. It cannot shrink.
+
+   **~~Stock scales with the inline scaler at `0x05000000`~~ — WITHDRAWN
+   2026-09-10.** That block has no scaler at all. The registers the `lui` scan
+   found (`+0x0f0`/`+0x174`/`+0x1b4`/`+0x210`/`+0x274`/`+0x2b4` and the
+   `+0x178`/`+0x1b8`/`+0x278`/`+0x2b8` group) are **line-buffer geometry** —
+   Rowbyte, LineBufLevel and LineNumber for the Y and C planes, named in the
+   producing function's own log line. Rowbyte is linear in picture width, which
+   is the whole of what the apparent "ratio" ever showed. See
+   [reference/composition-ratio-registers-are-line-buffers-2026-09-10.md](reference/composition-ratio-registers-are-line-buffers-2026-09-10.md).
+
+   **Above 720p is ANSWERED 2026-09-12, and the answer needs no GPU:**
+   **[handoff-2026-09-12-ve-scaledown.md](handoff-2026-09-12-ve-scaledown.md)**.
+
+   > **SUPERSEDED 2026-09-17, and the display half RETIRED 2026-09-23.** The
+   > composite route below was the answer while the VE could only halve or
+   > quarter. Patch 0120 gave both codecs the VE+0xf00 polyphase scaler, so the
+   > decoder reaches 1280x720 in one step with no display-side stage, and the
+   > shear and vertical-magnification defects named below are moot. The proc
+   > patches (0098/0103/0105/0106/0108/0111) are **out of `series`** — see
+   > [the retirement handoff](handoff-2026-09-23-retire-display-scaling.md).
+   > The narrative is kept for the investigation, not as current policy.
+
+   ```
+   1920x1080 --[ VE power-of-two, decode-time ]--> 960x544
+             --[ proc upscaler 0x05180000, 1.333x ]--> 1280x720
+   ```
+
+   Both halves are hardware-confirmed, and **both driver pieces are now written
+   AND RUNNING ON THE BOARD** — patches 0098 (KMS) and 0099 (cedrus). A genuine
+   960x544 framebuffer renders on the panel, which closes most of the last
+   validation gap. **Two defects remain:** a source narrower than the panel
+   *shears* at a 1280-pixel row length, and vertical magnification does nothing.
+   Full account, including nine registers eliminated and the live lead, in
+   [handoff-2026-09-12-driver-on-hardware.md](handoff-2026-09-12-driver-on-hardware.md). 0099 makes the 960x544 secondary output the V4L2 capture buffer,
+   selected through `V4L2_SEL_TGT_COMPOSE`, with every DPB reference pointer
+   routed through one helper onto per-buffer internal full-size frames (the
+   risky half — a mistake there yields plausible corruption, not an error).
+   0098 drops `DRM_PLANE_NO_SCALING`, accepts the smaller source, and programs
+   the proc upscaler, which also needed a DT reg range.
+   The route costs **~8.5 dB** against a true 1.5x downscale and carries 56% of
+   the panel's luma samples. It is the only no-GPU option, and it is not good.
+
+   **Next is desk work, not board time:** the firmware feeds source registers
+   `0x020` and `0x030` from two *different* geometry structures (picture window
+   vs output window) and patch 0098 sets both to the source size. Type those
+   structures from the callers of the routine at `0x8b1a3ea0` and the shear
+   should follow. Do not resume by poking registers — nine are already
+   eliminated.
+
+   Closed on the way there, none of them worth re-testing:
+
+   - **~~Drive the inline scaler from Linux with the MIPS parked~~ — CLOSED
+     2026-09-04**, and doubly so since 09-10: the registers took writes and did
+     nothing because they are not ratios. The window-layer plan in
+     **[mips-window-layer-plan.md](mips-window-layer-plan.md)** still holds for
+     *presentation* state, which the MIPS does own.
+   - **~~The VE's arbitrary-ratio scaler~~ — CLOSED 2026-09-12.** Real in the
+     vendor code (14 ratio buckets, 1.5x squarely supported), register block
+     located at **VE + `0xf00`**, every write latches and holds, the genuine
+     polyphase coefficients extracted and uploaded, and the selection is **pure
+     software with no hardware enable bit** — and nothing ever comes out.
+     `VE_VERSION` reads `0`. The one remaining falsifier is booting the vendor
+     stack and watching what it emits; that is a separate errand.
+   - **~~A downscaler anywhere in the display pipeline~~ — CLOSED 2026-09-11**
+     by a whole-image census of `display.bin`: exactly **three** ratio-carrying
+     blocks exist, and all three are ruled out
+     ([reference/scaler-census-2026-09-11.md](reference/scaler-census-2026-09-11.md)).
+     `0x050c0000` is noise reduction / motion estimation, not a scaler.
+   - **The GPU path** — `vo=gpu` on the stock mpv runs 1080p at ~0.83x realtime
+     with sync intact but 481 dropped frames and visible artifacts. It is the
+     fallback of last resort now that a no-GPU route exists, not the cheap
+     option; do not propose it ahead of finishing the composite route.
+     **Superseded 2026-10-02:** the stock capture showed the vendor does all
+     file scaling, letterboxing and rotation on the GPU. The direction is now
+     "hardware first, GPU fallback, stock applications"
+     ([gpu-fallback-plan.md](gpu-fallback-plan.md)). The 0.83x figure predates
+     the 2026-09-03 zero-copy fix and is stale.
+   - **Letterbox on the video plane — DONE 2026-10-06** (Phases 0–5 of
+     [letterbox-plan.md](letterbox-plan.md); the 2-hour scope soak is the
+     one item left, queued overnight). The plane places any picture up to
+     the panel with black bars, magnifies sub-panel pictures up to 4x and
+     changes size mid-stream with one dark frame. Stock `kmssink` drives it,
+     so non-16:9 and sub-720p H.264/HEVC/VP9/AV1 no longer need the GPU.
+     Still on the GPU: 10-bit, rotation, non-square pixels and AV1
+     above the panel (VP9 above the panel moved to plane-ve with WP6,
+     kernel 0167, 2026-10-06). The hardware mirror (WP5) followed the same day:
+     kernel 0166, `h713-mirror front|rear|rear-ceiling|ceiling`, both
+     paths, no GPU cost ([mirror-plan.md](mirror-plan.md)).
+
+   **~~GE2D at `0x5240000`~~ — DEAD, and dead for the second time.**
+   `ge2d@5240000` is the projector's display controller, not a 2D engine:
+   `compatible = "trix,ge2d"`, reg windows OSD/LVDS/AFBD, vendor sources
+   `sunxi_ge2d_panel.c`/`_backlight.c`/`_dlpc3435.c`/`_osd.c`. `ge2d_dev.ko` has
+   1111 symbols and **zero** matching scale/resize/blit/rotate, and the MIPS
+   firmware never references the block at all. This was established 2026-08-25
+   and marked "do not spend a session on this", then re-introduced here on
+   09-03 and re-confirmed dead on 09-04. Do not propose it a third time.
+
+   **CPU_COMM cannot carry frames to the MIPS either** (asked 2026-09-04):
+   `THal_Vp_SetImageBufferAddr` and `GetImageBufferAddr` are verified stubs,
+   stock's frame handoff is the DECD ring rather than the RPC surface, the
+   scaler is inline so there is no result to return, and live MIPS + real Cedrus
+   traffic is a reproducible whole-SoC hard lock with no watchdog.
+
+   Detail: [handoff-2026-09-03-video-playback.md](handoff-2026-09-03-video-playback.md)
+   and [handoff-2026-09-04-video-scaling-and-display.md](handoff-2026-09-04-video-scaling-and-display.md) §6.
+
+   The end-to-end control passes: decoded frame 60 is byte-identical to the
+   visible host reference and, copied into one physical carveout run, was
+   operator-confirmed as recognizable and apparently correct for 300
+   submissions. (The earlier black carveout run selected frame 0, whose content
+   is actually black.)
+
+   **DONE 2026-09-01: moving decoded video renders on the panel through the
+   IOMMU** — 300 frames at 27.13 fps, zero faults, logo restored, with a buffer
+   at `breaks=56 longest-run=32KiB`, more scattered than the one that produced
+   green corruption on bypass. The vendor-style runtime IOMMU enable (patch 0075)
+   is the answer, and the missing precondition was **ordering**: the master-2
+   `0x7c -> 0x78` flip must happen while the DECD video source is still disabled,
+   because that source rests at base `0x00000000` with inherited 1920x1088
+   geometry and starts scanning low memory the moment it is enabled. Only
+   0069/0070's early-attachment implementation is negative. Patch 0074's
+   contiguous pool is a valid control but **not required**.
+
+   **Patch 0076 is hardware-validated**, so the flip ordering is now a driver
+   behaviour rather than an operator procedure: it parks source 0 across the
+   transition and re-enables it after `dec_reg_enable()`, gated on the Y ring.
+   A frozen still and a 300-frame moving clip both rendered correctly as the
+   *first* DECD session of a boot, zero faults, logo restored.
+
+   Next on this thread, in rough order:
+
+   1. **Decide the series shape.** 0075 + 0076 are out of series and pair with
+      the out-of-series 0068, which disables KMS to give DECD exclusive
+      ownership — so promoting them is not a simple append; DECD and the AFBD
+      KMS driver cannot both own the block. That question is bigger than the
+      IOMMU work and has not been designed yet.
+   2. **Re-check the cross-session release-fence stall**, which did not
+      reproduce today but is not disproven.
+
+   Done 2026-09-01: **patch 0074 dropped from the series.** Its 64 MiB permanent
+   DRAM reservation existed to keep Cedrus CAPTURE physically contiguous for a
+   bypassing DECD; with master 2 translating that is unnecessary. The patch is
+   kept out of series as a fallback control for a bypass kernel.
+
+   See
+   [reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md),
+   [handoff-2026-09-01-iommu-runtime.md](handoff-2026-09-01-iommu-runtime.md),
+   [reference/cedrus-decd-first-visible-playback-2026-08-31.md](reference/cedrus-decd-first-visible-playback-2026-08-31.md),
+   [reference/linux-decd-scanout-confirmed-2026-08-31.md](reference/linux-decd-scanout-confirmed-2026-08-31.md)
+   and [handoff-2026-08-31.md](handoff-2026-08-31.md).
 
    **Read the HANDOFF section at the top of
    [video-decode.md](video-decode.md)**, which also carries the loose ends to

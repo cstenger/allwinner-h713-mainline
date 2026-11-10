@@ -1,0 +1,1215 @@
+{
+  "schema": 1,
+  "curated_date": "2026-10-19",
+  "scope": "October 8 audio safety preflight and aborted/successful rate-test sessions",
+  "normalization": "JSON and original notes preserved exactly. Logs decode UTF-8 with backslashreplace, CRLF becomes LF and C0 except tab/LF plus DEL are escaped as \\xNN. No lines filtered; trailing whitespace preserved. Raw original backups are local under build/audio-oct8-review/originals/evidence.",
+  "files": [
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/README.md",
+      "source_sha256": "9362d25be0548eb98d1c3c53864fe5892c2d36cc8e2267454d01b296c48e317f",
+      "source_bytes": 4851,
+      "disposition": "exact historical notes snapshot",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/README.md.txt",
+      "export_sha256": "9362d25be0548eb98d1c3c53864fe5892c2d36cc8e2267454d01b296c48e317f",
+      "export_bytes": 4851
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/dsp-build.json",
+      "source_sha256": "aaadcd44e21f754957b5a5bfb3a6553fea9b74a1168900382ea98f9ad01263f4",
+      "source_bytes": 375,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/dsp-build.json",
+      "export_sha256": "aaadcd44e21f754957b5a5bfb3a6553fea9b74a1168900382ea98f9ad01263f4",
+      "export_bytes": 375
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/lock-test.log",
+      "source_sha256": "3012885198af55169871b8c6fb76f4928acbe37f05a16d72c5ba101a4b4794b8",
+      "source_bytes": 124,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/lock-test.log.txt",
+      "export_sha256": "3012885198af55169871b8c6fb76f4928acbe37f05a16d72c5ba101a4b4794b8",
+      "export_bytes": 124
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/module-sha256.txt",
+      "source_sha256": "924c36af659e6eb7cf419c632dde8f48c746a976c770538c51f979468e3ad966",
+      "source_bytes": 355,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/module-sha256.txt",
+      "export_sha256": "924c36af659e6eb7cf419c632dde8f48c746a976c770538c51f979468e3ad966",
+      "export_bytes": 355
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/preflight-resources.log",
+      "source_sha256": "ad1cb9af9af9aaeab2eee025b39f712969b71af18d826e22639d03eb5f5c41d3",
+      "source_bytes": 2700,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/preflight-resources.log.txt",
+      "export_sha256": "ad1cb9af9af9aaeab2eee025b39f712969b71af18d826e22639d03eb5f5c41d3",
+      "export_bytes": 2700
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/preflight-system.log",
+      "source_sha256": "932ef8c7237db5731b405b669e2bfe7d2e608a1b0affdd222ab9a5ac8ad275f8",
+      "source_bytes": 40235,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/preflight-system.log.txt",
+      "export_sha256": "932ef8c7237db5731b405b669e2bfe7d2e608a1b0affdd222ab9a5ac8ad275f8",
+      "export_bytes": 40235
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/speaker-init-code.json",
+      "source_sha256": "3ccb1d335ad7515574ddd0d5bafe8f6d5e48c80922ee363052e6873eddc0b3cf",
+      "source_bytes": 418845,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/speaker-init-code.json",
+      "export_sha256": "3ccb1d335ad7515574ddd0d5bafe8f6d5e48c80922ee363052e6873eddc0b3cf",
+      "export_bytes": 418845
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/speaker-module-load.log",
+      "source_sha256": "a44e2f52a13afc4973cd2f173a995f741c19f230e29e104bbbfa0cfd9042661d",
+      "source_bytes": 3679,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/speaker-module-load.log.txt",
+      "export_sha256": "a44e2f52a13afc4973cd2f173a995f741c19f230e29e104bbbfa0cfd9042661d",
+      "export_bytes": 3679
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/stock-lock-and-clocks.json",
+      "source_sha256": "d85dcb7aa2d2dc71214df73c87923b162d52ee3d43c93edfcbd5714c238d7154",
+      "source_bytes": 97,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/stock-lock-and-clocks.json",
+      "export_sha256": "d85dcb7aa2d2dc71214df73c87923b162d52ee3d43c93edfcbd5714c238d7154",
+      "export_bytes": 97
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/stock-lock-read-test.log",
+      "source_sha256": "8b4bf1c61adf14bb01b667f6abc1adc0df0b2fbc4f3a738e43408fd30642abd0",
+      "source_bytes": 1304,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/stock-lock-read-test.log.txt",
+      "export_sha256": "aa09c8497d18d96bb72062adf29a12d0254719ccd7c761b95d34fa9f0fa2c845",
+      "export_bytes": 1312
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/tinyalsa-build.json",
+      "source_sha256": "00faf43d840a52128323f59946f02395af5a1fafe045b383502f8dff15a1162c",
+      "source_bytes": 913,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/tinyalsa-build.json",
+      "export_sha256": "00faf43d840a52128323f59946f02395af5a1fafe045b383502f8dff15a1162c",
+      "export_bytes": 913
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-safety/tinycap-usage.txt",
+      "source_sha256": "db03b8c7e91333c48ca6b93cbf40c6b3e8d425756b09e76d888749f15a3f9bc8",
+      "source_bytes": 220,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-safety/tinycap-usage.txt",
+      "export_sha256": "db03b8c7e91333c48ca6b93cbf40c6b3e8d425756b09e76d888749f15a3f9bc8",
+      "export_bytes": 220
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/README.md",
+      "source_sha256": "c5a4227c3dfd4afba16e4e512682289e93f0cbbbdb8fdfca5040a7ee5a442170",
+      "source_bytes": 3315,
+      "disposition": "exact historical notes snapshot",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/README.md.txt",
+      "export_sha256": "c5a4227c3dfd4afba16e4e512682289e93f0cbbbdb8fdfca5040a7ee5a442170",
+      "export_bytes": 3315
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/README.md",
+      "source_sha256": "104e6af852d0c9ce0d0c6c2d7de9bc2ac661b8a95c117fce42a49eb2622f228e",
+      "source_bytes": 3538,
+      "disposition": "exact historical notes snapshot",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/README.md.txt",
+      "export_sha256": "104e6af852d0c9ce0d0c6c2d7de9bc2ac661b8a95c117fce42a49eb2622f228e",
+      "export_bytes": 3538
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/audio-setup.log",
+      "source_sha256": "0ef31f44193493ea7d3e44177a108ed69d66c4b04ba62e0312581ccc4f6115f9",
+      "source_bytes": 6381,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/audio-setup.log.txt",
+      "export_sha256": "fb319b425d6a8b096e045cd074af2ea52daa39b94268bae00516eba46663905b",
+      "export_bytes": 6383
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/cleanup.log",
+      "source_sha256": "871965352351fef1ed315a115256302909e8fe37699251dccf25b770b41b538e",
+      "source_bytes": 2390,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/cleanup.log.txt",
+      "export_sha256": "85b38a23d15c1d6b5269a255a3b09a460c2f6ded45c29f6af16731840e58ec1a",
+      "export_bytes": 2398
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/dsp-graph-restored.log",
+      "source_sha256": "1a1e1cc6fd0b350c4200612600b75c339833a9b90265edb9805f4acc9ba3cda2",
+      "source_bytes": 6039,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/dsp-graph-restored.log.txt",
+      "export_sha256": "1a1e1cc6fd0b350c4200612600b75c339833a9b90265edb9805f4acc9ba3cda2",
+      "export_bytes": 6039
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/dsp-graph.log",
+      "source_sha256": "9f02960f596c782b5a66695fc8fe86d80a3c3a902226d3de0adf70a64fbda4ca",
+      "source_bytes": 6962,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/dsp-graph.log.txt",
+      "export_sha256": "9f02960f596c782b5a66695fc8fe86d80a3c3a902226d3de0adf70a64fbda4ca",
+      "export_bytes": 6962
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/dsp-patch.log",
+      "source_sha256": "8b831dbd07cf7209f07b5881e65aa231d09f568d868b686ff7d81ba52acdd2bf",
+      "source_bytes": 2108,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/dsp-patch.log.txt",
+      "export_sha256": "8b831dbd07cf7209f07b5881e65aa231d09f568d868b686ff7d81ba52acdd2bf",
+      "export_bytes": 2108
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/linux-preparation.log",
+      "source_sha256": "350023a56872e2b20ec5b1deb355f866039db3bc084a5f46485e81cb04551402",
+      "source_bytes": 123,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/linux-preparation.log.txt",
+      "export_sha256": "350023a56872e2b20ec5b1deb355f866039db3bc084a5f46485e81cb04551402",
+      "export_bytes": 123
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/mips-start.log",
+      "source_sha256": "71f30d1e5acd44c9ed72fdb68f8c8bcfac62c187603e7c4f851120f480fd69f5",
+      "source_bytes": 5443,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/mips-start.log.txt",
+      "export_sha256": "f5f2f13a66c30c59e6954aef5669d4ee4cfcb1ba6281775c19885aec15d4d676",
+      "export_bytes": 5364
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/ram-dt-boot.log",
+      "source_sha256": "51334c994905d740e6b3decb4f0f99bc967be8bf1b4662fd6adf0f475e2dbc7a",
+      "source_bytes": 36939,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/ram-dt-boot.log.txt",
+      "export_sha256": "f991efd0d46c4ba313759278b5e557691b00d6db99294d0a67bda0c284897037",
+      "export_bytes": 36473
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/source3-fit.log",
+      "source_sha256": "76df924022ea226e7de23c08af38e88560595e9f9c6ffe00d77206865083fcda",
+      "source_bytes": 2382,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/source3-fit.log.txt",
+      "export_sha256": "e202751a9271a3d2df198020b56706a8627bc2165628842fb3a21f65f3a0c2cd",
+      "export_bytes": 2345
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/eld.txt",
+      "source_sha256": "abc485cca08673bd534bfeb5decdeeb9494e6908cd2a484b873ffde788d0c4c1",
+      "source_bytes": 455,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/eld.txt",
+      "export_sha256": "abc485cca08673bd534bfeb5decdeeb9494e6908cd2a484b873ffde788d0c4c1",
+      "export_bytes": 455
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/hw-params.txt",
+      "source_sha256": "9ba09b4672df0c921ddbc722fc543f8cffadfb48802b4ff061634cb01937d9ce",
+      "source_bytes": 124,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/hw-params.txt",
+      "export_sha256": "9ba09b4672df0c921ddbc722fc543f8cffadfb48802b4ff061634cb01937d9ce",
+      "export_bytes": 124
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/playback.log",
+      "source_sha256": "c533469a49db15f9b7f5a028be2c34a72f47f57462cdbe299b0c690abddab4e1",
+      "source_bytes": 763,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/playback.log.txt",
+      "export_sha256": "c533469a49db15f9b7f5a028be2c34a72f47f57462cdbe299b0c690abddab4e1",
+      "export_bytes": 763
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/result.json",
+      "source_sha256": "057e01fd23c10f7eb342c9181d6bf1bf5d9e7976d8629d9f406a3fd23424dd57",
+      "source_bytes": 6321,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/result.json",
+      "export_sha256": "057e01fd23c10f7eb342c9181d6bf1bf5d9e7976d8629d9f406a3fd23424dd57",
+      "export_bytes": 6321
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-cleanup-check.txt",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-cleanup-check.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-evidence/cleanup.log",
+      "source_sha256": "b9090ffa89b46a30bfeccfbb3db51ac17dabecb55f436b901cfd4413059e6047",
+      "source_bytes": 40,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-evidence/cleanup.log.txt",
+      "export_sha256": "b9090ffa89b46a30bfeccfbb3db51ac17dabecb55f436b901cfd4413059e6047",
+      "export_bytes": 40
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-evidence/edid-edab9bfc48547939.bin",
+      "source_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+      "source_bytes": 256,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-evidence/source.json",
+      "source_sha256": "92bdd91038a332a55b1ae40cb4129d32be0e23e0c254c2abb49504abc3fd9878",
+      "source_bytes": 1023,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-evidence/source.json",
+      "export_sha256": "92bdd91038a332a55b1ae40cb4129d32be0e23e0c254c2abb49504abc3fd9878",
+      "export_bytes": 1023
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-evidence/target.log",
+      "source_sha256": "384f45f470a1fe7af34cfc52e0f14f23a25f7ba0e21d1d9cf337f4a96e3538b0",
+      "source_bytes": 759,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal-evidence/target.log.txt",
+      "export_sha256": "384f45f470a1fe7af34cfc52e0f14f23a25f7ba0e21d1d9cf337f4a96e3538b0",
+      "export_bytes": 759
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal.log",
+      "source_sha256": "07df59f8b51c58ed6be4728969aa1ae025787467d6443b7b29de133db6a3c2b3",
+      "source_bytes": 1650,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/signal.log.txt",
+      "export_sha256": "07df59f8b51c58ed6be4728969aa1ae025787467d6443b7b29de133db6a3c2b3",
+      "export_bytes": 1650
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/silence.bin",
+      "source_sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/silence.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-1.txt",
+      "source_sha256": "63ae52db903f3fde7ccd64d027c8626dd0799a0da7ba20c0b68c24e65fae95bc",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-1.txt",
+      "export_sha256": "63ae52db903f3fde7ccd64d027c8626dd0799a0da7ba20c0b68c24e65fae95bc",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-1.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-2.txt",
+      "source_sha256": "351a86cec0bae5148867b79298662b80c8a00fbe78a3243db922287cc6beff36",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-2.txt",
+      "export_sha256": "351a86cec0bae5148867b79298662b80c8a00fbe78a3243db922287cc6beff36",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-2.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-3.txt",
+      "source_sha256": "c3fb76e9f9b98a846621c76778fa5b1b17492d9cd81db5b7d1a580ae564d6371",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-3.txt",
+      "export_sha256": "c3fb76e9f9b98a846621c76778fa5b1b17492d9cd81db5b7d1a580ae564d6371",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-3.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-silence.txt",
+      "source_sha256": "31ae3a18f60d647697af905a14dffcaea6a7981175f4ea7ffdfe69706cd9bbcf",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-silence.txt",
+      "export_sha256": "31ae3a18f60d647697af905a14dffcaea6a7981175f4ea7ffdfe69706cd9bbcf",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/timing-silence.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-1.bin",
+      "source_sha256": "b60f8eb6ef708fad04400858a77a22838c0cb510d4004a64cf93bc2626f73c6b",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-1.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-2.bin",
+      "source_sha256": "237b662b07a1bff45e43fbbb0a4e6682c05ec402a87e1cdac2444dcaaa232ac0",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-2.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-3.bin",
+      "source_sha256": "b9ad4d851374c3e55de2030c14855e56964d2cb0c14c23bd7ec8df47f92e5fe8",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-3.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone.wav",
+      "source_sha256": "7f64aba5cb622a0b8809d28c08c1a6bd857d86cee7aae680617ace04fb0c2511",
+      "source_bytes": 2688044,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/eld.txt",
+      "source_sha256": "abc485cca08673bd534bfeb5decdeeb9494e6908cd2a484b873ffde788d0c4c1",
+      "source_bytes": 455,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/eld.txt",
+      "export_sha256": "abc485cca08673bd534bfeb5decdeeb9494e6908cd2a484b873ffde788d0c4c1",
+      "export_bytes": 455
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/hw-params.txt",
+      "source_sha256": "5523b24b50cad4a0b5be15f3f61bc3005f4ad5525be7b86360bc9d4713d26c03",
+      "source_bytes": 124,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/hw-params.txt",
+      "export_sha256": "5523b24b50cad4a0b5be15f3f61bc3005f4ad5525be7b86360bc9d4713d26c03",
+      "export_bytes": 124
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/playback.log",
+      "source_sha256": "0dcdc808704500df403e2a1278b11ff24c8a813f09e0f9c92c3d758b49d85a81",
+      "source_bytes": 763,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/playback.log.txt",
+      "export_sha256": "0dcdc808704500df403e2a1278b11ff24c8a813f09e0f9c92c3d758b49d85a81",
+      "export_bytes": 763
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/result.json",
+      "source_sha256": "a794d87cbec88e2de54f1be52420fff40e4963a3ad13965d335eb005592e79b8",
+      "source_bytes": 6335,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/result.json",
+      "export_sha256": "a794d87cbec88e2de54f1be52420fff40e4963a3ad13965d335eb005592e79b8",
+      "export_bytes": 6335
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-cleanup-check.txt",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-cleanup-check.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-evidence/cleanup.log",
+      "source_sha256": "b9090ffa89b46a30bfeccfbb3db51ac17dabecb55f436b901cfd4413059e6047",
+      "source_bytes": 40,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-evidence/cleanup.log.txt",
+      "export_sha256": "b9090ffa89b46a30bfeccfbb3db51ac17dabecb55f436b901cfd4413059e6047",
+      "export_bytes": 40
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-evidence/edid-edab9bfc48547939.bin",
+      "source_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+      "source_bytes": 256,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-evidence/source.json",
+      "source_sha256": "f8063481a10bd508df6ccfec63c1c8f1b148e533c0488f3f27c5eb52c590a4cb",
+      "source_bytes": 1021,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-evidence/source.json",
+      "export_sha256": "f8063481a10bd508df6ccfec63c1c8f1b148e533c0488f3f27c5eb52c590a4cb",
+      "export_bytes": 1021
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-evidence/target.log",
+      "source_sha256": "49662bd2b600a826a5d1aee13775e30d2c89e42dacf9c3b83e40291d555e03c4",
+      "source_bytes": 759,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal-evidence/target.log.txt",
+      "export_sha256": "49662bd2b600a826a5d1aee13775e30d2c89e42dacf9c3b83e40291d555e03c4",
+      "export_bytes": 759
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal.log",
+      "source_sha256": "959d006384daf971cf682066fd1f89eb2dc68b178519ade66e07017d78b2b062",
+      "source_bytes": 1648,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/signal.log.txt",
+      "export_sha256": "959d006384daf971cf682066fd1f89eb2dc68b178519ade66e07017d78b2b062",
+      "export_bytes": 1648
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/silence.bin",
+      "source_sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/silence.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-1.txt",
+      "source_sha256": "aa3397c595fe7c8a05776de7c0fc556e66cf318b8c9e352fe4387b1b280f2fbb",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-1.txt",
+      "export_sha256": "aa3397c595fe7c8a05776de7c0fc556e66cf318b8c9e352fe4387b1b280f2fbb",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-1.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-2.txt",
+      "source_sha256": "bf5ea47ff91f27e017fbcbb9a2c7370c94b2b53f69ba3422043a530c02501eda",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-2.txt",
+      "export_sha256": "bf5ea47ff91f27e017fbcbb9a2c7370c94b2b53f69ba3422043a530c02501eda",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-2.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-3.txt",
+      "source_sha256": "90c1273526aa10ea8435b5e0cc47e442e4a2f675cf8f6c25d01cbdd50efe6284",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-3.txt",
+      "export_sha256": "90c1273526aa10ea8435b5e0cc47e442e4a2f675cf8f6c25d01cbdd50efe6284",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-3.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-silence.txt",
+      "source_sha256": "9ce143679521716762fcde321d5a18f2cb54569e62f30aaccc996b4fce6cc596",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-silence.txt",
+      "export_sha256": "9ce143679521716762fcde321d5a18f2cb54569e62f30aaccc996b4fce6cc596",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/timing-silence.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-1.bin",
+      "source_sha256": "a74fc727db5e24e2a40fbb70bf114019680172c42dc3368adaabd86dbe93f741",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-1.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-2.bin",
+      "source_sha256": "2d6400f4d9c7efa53cad92c36eaddd2c86c57c9ff0dca44be29066fb74dc717a",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-2.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-3.bin",
+      "source_sha256": "5518cb0d950817478376dd4adff3000ecc01b1c8b4156b11fe699caf15d4d7a6",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-3.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone.wav",
+      "source_sha256": "96c4699d255f800be8c197c924f5755c31bdd60ca3038db695b625b77f7b0f45",
+      "source_bytes": 1792044,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/eld.txt",
+      "source_sha256": "abc485cca08673bd534bfeb5decdeeb9494e6908cd2a484b873ffde788d0c4c1",
+      "source_bytes": 455,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/eld.txt",
+      "export_sha256": "abc485cca08673bd534bfeb5decdeeb9494e6908cd2a484b873ffde788d0c4c1",
+      "export_bytes": 455
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/hw-params.txt",
+      "source_sha256": "2b0ce14f5a9e742170d231babe070835bb704b6450170b683b53db9531924634",
+      "source_bytes": 124,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/hw-params.txt",
+      "export_sha256": "2b0ce14f5a9e742170d231babe070835bb704b6450170b683b53db9531924634",
+      "export_bytes": 124
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/playback.log",
+      "source_sha256": "6d5ac85cf0289f3723a83c441434397c82685a7208ba2ce5750a5099e626d2aa",
+      "source_bytes": 763,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/playback.log.txt",
+      "export_sha256": "6d5ac85cf0289f3723a83c441434397c82685a7208ba2ce5750a5099e626d2aa",
+      "export_bytes": 763
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/result.json",
+      "source_sha256": "b24c2f9df29ebb11f63533d66b69f25595c9a4a5e8ac092859d5c5b30ddc5e07",
+      "source_bytes": 6349,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/result.json",
+      "export_sha256": "b24c2f9df29ebb11f63533d66b69f25595c9a4a5e8ac092859d5c5b30ddc5e07",
+      "export_bytes": 6349
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-cleanup-check.txt",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-cleanup-check.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-evidence/cleanup.log",
+      "source_sha256": "b9090ffa89b46a30bfeccfbb3db51ac17dabecb55f436b901cfd4413059e6047",
+      "source_bytes": 40,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-evidence/cleanup.log.txt",
+      "export_sha256": "b9090ffa89b46a30bfeccfbb3db51ac17dabecb55f436b901cfd4413059e6047",
+      "export_bytes": 40
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-evidence/edid-edab9bfc48547939.bin",
+      "source_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+      "source_bytes": 256,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-evidence/source.json",
+      "source_sha256": "a61a575b69b56a22b68d53b6db1749e993f10de38194cc020954d208166502e3",
+      "source_bytes": 1022,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-evidence/source.json",
+      "export_sha256": "a61a575b69b56a22b68d53b6db1749e993f10de38194cc020954d208166502e3",
+      "export_bytes": 1022
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-evidence/target.log",
+      "source_sha256": "0b2ec6b9aba314a8dd03b18dca6166c8a0001e2fe5e9fcd3b5941c2188c67d3c",
+      "source_bytes": 759,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal-evidence/target.log.txt",
+      "export_sha256": "0b2ec6b9aba314a8dd03b18dca6166c8a0001e2fe5e9fcd3b5941c2188c67d3c",
+      "export_bytes": 759
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal.log",
+      "source_sha256": "36c4d24c32fa513ed0635c91b84d4cb09c690b016821acab38a12746330bb9bf",
+      "source_bytes": 1649,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/signal.log.txt",
+      "export_sha256": "36c4d24c32fa513ed0635c91b84d4cb09c690b016821acab38a12746330bb9bf",
+      "export_bytes": 1649
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/silence.bin",
+      "source_sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/silence.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-1.txt",
+      "source_sha256": "5da983f64eeb1e1967e9a191bb747300fc4e29e28ed97a84da947b9ce4f4baf8",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-1.txt",
+      "export_sha256": "5da983f64eeb1e1967e9a191bb747300fc4e29e28ed97a84da947b9ce4f4baf8",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-1.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-2.txt",
+      "source_sha256": "4f62595c66a24b02bf2f2ad82de5c3de765b80658cc8a13ce2305f4e0f2fd3aa",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-2.txt",
+      "export_sha256": "4f62595c66a24b02bf2f2ad82de5c3de765b80658cc8a13ce2305f4e0f2fd3aa",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-2.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-3.txt",
+      "source_sha256": "4a2d30d49db2a172d6f705db86d4316ef56cd26edeb7f9891c732cb52da004e4",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-3.txt",
+      "export_sha256": "4a2d30d49db2a172d6f705db86d4316ef56cd26edeb7f9891c732cb52da004e4",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-3.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-silence.txt",
+      "source_sha256": "a7db25e23332a78f82b7b7a1a4c51f5aac33fb6a27b1b5ad17dfc55415348040",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-silence.txt",
+      "export_sha256": "a7db25e23332a78f82b7b7a1a4c51f5aac33fb6a27b1b5ad17dfc55415348040",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/timing-silence.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-1.bin",
+      "source_sha256": "edb95658b16d68d0dfded65c6d633eccf17a9e2a687dd5589ed3fe54b790f80f",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-1.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-2.bin",
+      "source_sha256": "6e2c8b282cc36b03bcaa3d91b067517d8162697e2d6153ef7dec01a1f0a17dc5",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-2.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-3.bin",
+      "source_sha256": "91806e1a25233f73501183889c5cd4a3fea9d61fba3ef23fdef8a4a4044a1a4d",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-3.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone.wav",
+      "source_sha256": "8e455280b9133487c8405ecfdcde286c157e74b498b97e2216637872447ccf6f",
+      "source_bytes": 2469644,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/eld.txt",
+      "source_sha256": "abc485cca08673bd534bfeb5decdeeb9494e6908cd2a484b873ffde788d0c4c1",
+      "source_bytes": 455,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/eld.txt",
+      "export_sha256": "abc485cca08673bd534bfeb5decdeeb9494e6908cd2a484b873ffde788d0c4c1",
+      "export_bytes": 455
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/hw-params.txt",
+      "source_sha256": "9ba09b4672df0c921ddbc722fc543f8cffadfb48802b4ff061634cb01937d9ce",
+      "source_bytes": 124,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/hw-params.txt",
+      "export_sha256": "9ba09b4672df0c921ddbc722fc543f8cffadfb48802b4ff061634cb01937d9ce",
+      "export_bytes": 124
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/playback.log",
+      "source_sha256": "fdb1545dede7066ca6ce63e1e3bf577cac5f0d09363716d9cea9b3b8559cf0a3",
+      "source_bytes": 763,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/playback.log.txt",
+      "export_sha256": "fdb1545dede7066ca6ce63e1e3bf577cac5f0d09363716d9cea9b3b8559cf0a3",
+      "export_bytes": 763
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/result.json",
+      "source_sha256": "645745b9d0f6257f5e8fba9b5bd88eaade2249b7b4e47d65db5d42fd71581b59",
+      "source_bytes": 6347,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/result.json",
+      "export_sha256": "645745b9d0f6257f5e8fba9b5bd88eaade2249b7b4e47d65db5d42fd71581b59",
+      "export_bytes": 6347
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-cleanup-check.txt",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-cleanup-check.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-evidence/cleanup.log",
+      "source_sha256": "b9090ffa89b46a30bfeccfbb3db51ac17dabecb55f436b901cfd4413059e6047",
+      "source_bytes": 40,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-evidence/cleanup.log.txt",
+      "export_sha256": "b9090ffa89b46a30bfeccfbb3db51ac17dabecb55f436b901cfd4413059e6047",
+      "export_bytes": 40
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-evidence/edid-edab9bfc48547939.bin",
+      "source_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+      "source_bytes": 256,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-evidence/source.json",
+      "source_sha256": "dc0b818dc9025ec4cbbc0810495124fda6dfccb2bdf28b82e919ce86599dcced",
+      "source_bytes": 873,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-evidence/source.json",
+      "export_sha256": "dc0b818dc9025ec4cbbc0810495124fda6dfccb2bdf28b82e919ce86599dcced",
+      "export_bytes": 873
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-evidence/target.log",
+      "source_sha256": "6542616a353b343dac2b1bc8b1ddcd6daab9bf4de675c8b4e0dac2dc5e98afb0",
+      "source_bytes": 759,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal-evidence/target.log.txt",
+      "export_sha256": "6542616a353b343dac2b1bc8b1ddcd6daab9bf4de675c8b4e0dac2dc5e98afb0",
+      "export_bytes": 759
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal.log",
+      "source_sha256": "b988a4a2c4f57b0c4bb85be9c2d30e66986ba9e75443a478659d55fd89af1c22",
+      "source_bytes": 1531,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/signal.log.txt",
+      "export_sha256": "b988a4a2c4f57b0c4bb85be9c2d30e66986ba9e75443a478659d55fd89af1c22",
+      "export_bytes": 1531
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/silence.bin",
+      "source_sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/silence.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-1.txt",
+      "source_sha256": "e041ce32899345383e3deb85de4d6f636dded5676542e11bf6f06af88500d905",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-1.txt",
+      "export_sha256": "e041ce32899345383e3deb85de4d6f636dded5676542e11bf6f06af88500d905",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-1.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-2.txt",
+      "source_sha256": "3a959e3a650fe8ac6d89aab7eed725901fab4d8417f4daa1417bd7f3719ed998",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-2.txt",
+      "export_sha256": "3a959e3a650fe8ac6d89aab7eed725901fab4d8417f4daa1417bd7f3719ed998",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-2.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-3.txt",
+      "source_sha256": "c45055afa2d14ef9c823662de232cb966fb6040f60bd08dcb309b535998ec751",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-3.txt",
+      "export_sha256": "c45055afa2d14ef9c823662de232cb966fb6040f60bd08dcb309b535998ec751",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-3.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-silence.txt",
+      "source_sha256": "bb3e932e1ab8418b65f4d37fea83d93ff3621f2c3ba99eb00c1e4e3e8625fd17",
+      "source_bytes": 3002,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-silence.txt",
+      "export_sha256": "bb3e932e1ab8418b65f4d37fea83d93ff3621f2c3ba99eb00c1e4e3e8625fd17",
+      "export_bytes": 3002
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/timing-silence.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-1.bin",
+      "source_sha256": "d373465f26527b354e1813a2328bf38fd767e0f2aa800f158a2c5fb6880af26f",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-1.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-2.bin",
+      "source_sha256": "3a030ed1d8a0697d46228ade69796775a7a1b17d8e0831de9061a7cab8f0750c",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-2.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-3.bin",
+      "source_sha256": "791a8b10fab70d2c878405e8f4446d2a012cdf5fd60706da14319311635ac4d4",
+      "source_bytes": 65536,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-3.bin.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone.wav",
+      "source_sha256": "7f64aba5cb622a0b8809d28c08c1a6bd857d86cee7aae680617ace04fb0c2511",
+      "source_bytes": 2688044,
+      "disposition": "local",
+      "reason": "raw DMA ring, generated EDID copy or tone WAV; retain original locally"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/preflight.txt",
+      "source_sha256": "dce71d649bdf0c97e84ebc5bc24f3eb2af4d6b9eddbd033a1fff50d11b3f17b3",
+      "source_bytes": 79,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/preflight.txt",
+      "export_sha256": "dce71d649bdf0c97e84ebc5bc24f3eb2af4d6b9eddbd033a1fff50d11b3f17b3",
+      "export_bytes": 79
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/preflight.txt.stderr",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/summary.json",
+      "source_sha256": "c1ac290c7ee13ddf275761febc2086c3972749f151d7a7cf3ca6075f7ddfd7cc",
+      "source_bytes": 29283,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/summary.json",
+      "export_sha256": "c1ac290c7ee13ddf275761febc2086c3972749f151d7a7cf3ca6075f7ddfd7cc",
+      "export_bytes": 29283
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/audio-setup.log",
+      "source_sha256": "4cd2a67e354b82ef66e04893685baae3b9dd23a2cc769091afcdd76cebcf3086",
+      "source_bytes": 6381,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/audio-setup.log.txt",
+      "export_sha256": "b9b7c7ae958dd6e2d45d3d161b5e98cb5a41bde327d5a7b9f3a88d106db1337b",
+      "export_bytes": 6383
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/channels.log",
+      "source_sha256": "385c9e4aee1c532a8175380337279332151425d58255e1963e20f692846ad8ba",
+      "source_bytes": 1936,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/channels.log.txt",
+      "export_sha256": "9f27d357017b527e918498abe5755a005ab479e69f993084a1236b57a6532ad2",
+      "export_bytes": 1912
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/cleanup.log",
+      "source_sha256": "4b318e5158506b9ea4aa095b37f01a9e78885e05b164177b6ef0bef3c6ac1010",
+      "source_bytes": 2691,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/cleanup.log.txt",
+      "export_sha256": "c484ab26419d888dbbfb48a4d5544623b286ae1babbd1a98c9b0605ab2ff7a83",
+      "export_bytes": 2699
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/cold-listener.log",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/dsp-graph-failure.log",
+      "source_sha256": "3218e296e6a6090c48914ce9468dd65398525f775b8de2c30fcc558912f66784",
+      "source_bytes": 9552,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/dsp-graph-failure.log.txt",
+      "export_sha256": "3218e296e6a6090c48914ce9468dd65398525f775b8de2c30fcc558912f66784",
+      "export_bytes": 9552
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/dsp-graph.log",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_bytes": 0,
+      "disposition": "local",
+      "reason": "empty companion stdout/stderr/log; no independent content; hash retained without implying missing or failed command"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/dsp-patch.log",
+      "source_sha256": "62f7d54e26ef4ebf3aad8e958439f71aeefeb9b2e60b17337783f94217081e03",
+      "source_bytes": 2108,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/dsp-patch.log.txt",
+      "export_sha256": "62f7d54e26ef4ebf3aad8e958439f71aeefeb9b2e60b17337783f94217081e03",
+      "export_bytes": 2108
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/linux-preparation.log",
+      "source_sha256": "350023a56872e2b20ec5b1deb355f866039db3bc084a5f46485e81cb04551402",
+      "source_bytes": 123,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/linux-preparation.log.txt",
+      "export_sha256": "350023a56872e2b20ec5b1deb355f866039db3bc084a5f46485e81cb04551402",
+      "export_bytes": 123
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/mips-start.log",
+      "source_sha256": "9bef1668f86d674e406f18237c71708fd2922f6d432c323f413ca3d89511c80d",
+      "source_bytes": 4373,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/mips-start.log.txt",
+      "export_sha256": "8ba41d1fead5e1738c953f78c002dcb9115fbdccbb9152b86c5796f3009d15e0",
+      "export_bytes": 4308
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/ram-dt-boot.log",
+      "source_sha256": "076d6b9fdb9dc509d35f25b93158c59c9cfd55a59ae7d9ba643d92454eab31c4",
+      "source_bytes": 37074,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/ram-dt-boot.log.txt",
+      "export_sha256": "ddeb1c63dbf87e8a69e7731443f315e2939e5a5f412b9e95eef754bf235f01af",
+      "export_bytes": 36607
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/source3-fit.log",
+      "source_sha256": "76df924022ea226e7de23c08af38e88560595e9f9c6ffe00d77206865083fcda",
+      "source_bytes": 2382,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-08-audio-rate-test/source3-fit.log.txt",
+      "export_sha256": "e202751a9271a3d2df198020b56706a8627bc2165628842fb3a21f65f3a0c2cd",
+      "export_bytes": 2345
+    }
+  ]
+}

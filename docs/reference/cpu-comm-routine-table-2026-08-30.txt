@@ -1,0 +1,124 @@
+H713 CPU_COMM firmware routine table
+====================================
+
+Read live from the MIPS display firmware via /proc/cpu_comm/routines, with
+the coprocessor alive (preboot `h713_disp init 0x34`) on 2026-08-30.
+
+The table is the shared hash table at ShMemAddrBase + 30152: 1224 slots of
+96 bytes, comp_id at +8, cpu_id at +2, a 32-byte name at +12 (hence the
+truncated names), chain link at +92. comp_id is exactly the value a CALL
+carries at msg+0x28 -- this is the name-to-number map for invoking anything.
+
+100 entries: 82 named THal_Vp_* routines published by the firmware, plus 18
+"(unnamed)" rows whose comp_id is a 0x8B10xxxx firmware KSEG address. Those
+18 are OUR OWN registrations from cpu_comm_dev.c's mips_vp_ids[] -- a
+different namespace, not firmware-published routines. They were previously
+mistaken for "18 MIPS VP routes" available to call.
+
+HAZARD, confirmed here by name: 0x0152f134 is THal_Vp_EnableScreenCover.
+Calling it wedges CPU_COMM and hangs the SoC; physical power cycle only.
+
+version 200, count 100
+index  comp_id     cpu  next  name
+   13  0xcfc4bc0d    1     -1  THal_Vp_GetSNR_1_000
+   19  0x50817813    1     -1  THal_Vp_SetHDCP22Key_1_000
+   23  0x7221d017    1     -1  THal_Vp_SetBrightness_1_000
+   36  0xa16b7c24    1     -1  THal_Vp_AtvSetRegion_1_000
+   51  0x023c4033    1     -1  THal_Vp_SetContrast_1_000
+   56  0x24f44438    1     -1  THal_Vp_CvbsSetPedestalMode_1_00
+   67  0x1a116843    1     -1  THal_Vp_SetGamma_1_000
+   72  0x9ce74c48    1     -1  THal_Vp_HDMI_SetPortMap_1_000
+   86  0x5432b456    1     -1  THal_Vp_GetHue_1_000
+  107  0xa30d4c6b    1     -1  THal_Vp_EnableBlackScreen_1_000
+  111  0x2fdcdc6f    1     -1  THal_Vp_EnableVideoFreeze_1_000
+  135  0x143ffc87    1     -1  THal_Vp_DisableScreenCover_1_000
+  136  0x71a4c888    1   1025  Thal_Vp_AtvIsFastSyncLock_1_000
+  166  0x671ceca6    1     -1  THal_Vp_RegisterSignalChangeCall
+  171  0x563e60ab    1     -1  THal_Vp_GetSharpness_1_000
+  177  0x096b60b1    1     -1  THal_Vp_GetVBIData_1_000
+  180  0xec2ca0b4    1     -1  THal_Vp_GetVBIOffset_1_000
+  191  0x83a878bf    1     -1  THal_Vp_SetPictureMode_1_000
+  195  0x2d8338c3    1     -1  THal_Vp_GetPictureMode_1_000
+  201  0xeaaa24c9    1     -1  THal_Vp_Deinit_1_000
+  208  0x8b109cd0    1     -1  (unnamed)
+  211  0xf6a798d3    1     -1  THal_Vp_SetDCI_1_000
+  224  0x8b10a0e0    1     -1  (unnamed)
+  232  0x8b10a0e8    1     -1  (unnamed)
+  248  0x8b109cf8    1     -1  (unnamed)
+  254  0xa138c8fe    1     -1  THal_Vp_AtvChannelChange_1_000
+  268  0x0fe1790c    1     -1  THal_Vp_StartVBI_1_000
+  270  0x9c91450e    1     -1  THal_Vp_ResetVBI_1_000
+  272  0x8b10a110    1     -1  (unnamed)
+  276  0x93965d14    1     -1  THal_Vp_TurnOnARCAudioPath_1_000
+  288  0x8b109d20    1     -1  (unnamed)
+  299  0x5263b52b    1     -1  THal_Vp_GetSaturation_1_000
+  308  0x0152f134    1     -1  THal_Vp_EnableScreenCover_1_000
+  312  0x8b10a138    1     -1  (unnamed)
+  325  0xb46ce545    1     -1  Thal_Vp_SetBacklightPwmInfo_1_00
+  327  0x6e857547    1     -1  THal_Vp_AtvEnableSnowScreen_1_00
+  330  0xc5429d4a    1     -1  THal_Vp_SeamlessDisable_1_000
+  331  0x3356c54b    1     -1  THal_Vp_Wce_SetWindow_1_000
+  340  0x8b109d54    1     -1  (unnamed)
+  352  0x8b10a160    1     -1  (unnamed)
+  362  0x6eb4c96a    1     -1  THal_Vp_HDMI_SetHPDTimeInterval_
+  385  0x8f8a9581    1     -1  THal_Vp_Wce_EnablePixel2PixelMod
+  388  0x72341984    1     -1  THal_Vp_UnregisterCallbackOfDisp
+  391  0x5c135587    1     -1  THal_Vp_SetBlackExtension_1_000
+  392  0x8b10a188    1     -1  (unnamed)
+  446  0x2692bdbe    1     -1  THal_Vp_UnregisterSignalChangeCa
+  448  0x8b109dc0    1     -1  (unnamed)
+  449  0x9817a1c1    1     -1  THal_Vp_SetVideoRange_1_000
+  450  0x8f5859c2    1     -1  THal_Vp_GetVBIAddr_1_000
+  452  0xaba5d1c4    1     -1  THal_Vp_GetTNR_1_000
+  472  0xb66041d8    1     -1  THal_Vp_DisableBlackScreen_1_000
+  476  0x3ab1d1dc    1     -1  THal_Vp_DisableVideoFreeze_1_000
+  485  0xeaf13de5    1     -1  THal_Vp_SetSource_1_000
+  492  0x8b10a1ec    1     -1  (unnamed)
+  511  0xc32fe5ff    1     -1  THal_Vp_GetLowLatencyMode_1_000
+  524  0xfc42fe0c    1     -1  THal_Vp_SetWhiteBalance_1_000
+  536  0x8b10a218    1     -1  (unnamed)
+  537  0x96046e19    1     -1  THal_Vp_GetVBISize_1_000
+  543  0xe661461f    1     -1  THal_Vp_GetColorManagement_1_000
+  544  0xc201c220    1     -1  THal_Vp_SetLowLatencyMode_1_000
+  547  0x9558d223    1     -1  THal_Vp_AtvChannelScanEnd_1_000
+  580  0x8b10a244    1     -1  (unnamed)
+  583  0xcbf83247    1     -1  THal_Vp_HDMI_GetPortStatus_1_000
+  589  0xe9b4464d    1     -1  THal_Vp_SwitchARCTXPath_1_000
+  592  0xf9b94e50    1     -1  THal_Vp_GetDCI_1_000
+  598  0x80e56656    1     -1  THal_Vp_AtvSetSignalStd_1_000
+  600  0x5d3d7258    1     -1  THal_Vp_GetBlackExtension_1_000
+  607  0xcb6d765f    1     -1  THal_Vp_SeamlessEnable_1_000
+  624  0xba3e5a70    1     -1  THal_Vp_SetHDMIHotPlugByPortCall
+  641  0x6665fe81    1     -1  THal_Vp_GetContrast_1_000
+  654  0xc0da6a8e    1     -1  THal_Vp_SetSNR_1_000
+  682  0xfa085aaa    1     -1  THal_Vp_SetHDCP22Pkf_1_000
+  703  0x396f16bf    1     -1  THal_Vp_SetImageBufferAddr_1_000
+  708  0x39d6eec4    1     -1  THal_Vp_AtvChannelScanStart_1_00
+  715  0x8a0d26cb    1     -1  THal_Vp_StopVBI_1_000
+  725  0x5b2c62d5    1     -1  THal_Vp_SetHue_1_000
+  747  0x09ffc6eb    1     -1  THal_Vp_Wce_SetMirrorMode_1_000
+  757  0xea7ffef5    1     -1  THal_Vp_Wce_DisablePixel2PixelMo
+  767  0x880be6ff    1     -1  THal_Vp_GetBrightness_1_000
+  772  0x8b109f04    1     -1  (unnamed)
+  782  0x4d80db0e    1     -1  THal_Vp_SetBacklightWorkMode_1_0
+  804  0xf3772724    1     -1  THal_Vp_EnableVBILine_1_000
+  809  0x623d9729    1     -1  THal_Vp_GetVideoRange_1_000
+  832  0x8b109b40    1     -1  (unnamed)
+  839  0x1c6ff747    1   1024  THal_Vp_Init_1_000
+  840  0x8b109b48    1     -1  (unnamed)
+  871  0xfd483f67    1     -1  THal_Vp_Wce_GetWindow_1_000
+  882  0x7bbd5772    1     -1  THal_Vp_Wce_GetActiveWindow_1_00
+  892  0x8b109f7c    1     -1  (unnamed)
+  893  0xf00ca77d    1     -1  THal_Vp_SetColorManagement_1_000
+  894  0x51ad877e    1     -1  Thal_Vp_SetBacklightLevel_1_000
+  944  0x434567b0    1     -1  THal_Vp_GetDisplayLatency_1_000
+  949  0x7335ebb5    1     -1  THal_Vp_SetSharpness_1_000
+  951  0x24b17fb7    1     -1  THal_Vp_GetSignalInfo_1_000
+  963  0xa84983c3    1     -1  THal_Vp_SetSaturation_1_000
+  969  0x24efc7c9    1     -1  THal_Vp_GetSource_1_000
+  989  0x2f02f7dd    1     -1  THal_Vp_GetImageBufferAddr_1_000
+ 1000  0x449effe8    1     -1  THal_Vp_HDMI_ReloadHdcp14Key_1_0
+ 1024  0xa4bb0747    1     -1  THal_Vp_SetTNR_1_000
+ 1025  0x87a96488    1     -1  THal_Vp_RegisterCallbackOfDispla
+
+100 entries listed of 1224 slots

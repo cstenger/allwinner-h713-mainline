@@ -1,0 +1,634 @@
+# Handoff — 2026-09-08: video plays on the panel
+
+Companion to [the MIPS callback trace handoff](handoff-2026-09-08-mips-callback-trace.md)
+(a separate session, same day) and successor to
+[the composition-block handoff](handoff-2026-09-06-composition-block.md).
+
+> **Later: [the 2026-09-12 VE scale-down handoff](handoff-2026-09-12-ve-scaledown.md)**
+> answers the resolution question this one leaves at 720p — 1080p reaches the
+> panel with no GPU by decoding to 960x544 in the VE and magnifying 1.333x in the
+> proc upscaler. Both halves hardware-confirmed, neither built.
+
+**Real Cedrus-decoded video renders correctly on the panel with the MIPS core
+alive, and the source route now lives in the driver.**
+
+Chain: Cedrus decode → zero-copy dma-buf → IOMMU translation → DECD fetch →
+MIPS window layer → panel. 29.96 fps, `0x0306101c = 1` throughout.
+
+Photographs: `local/lcd-photos/test_80` (static frame), `test_81` (the doubling
+regression, since fixed). Commits `bdd1506`, `6fda761`, `8225282`, `5479f4e`.
+
+**Session ran 2026-09-08 into 2026-09-09.** Three power cycles, all in the last
+stretch and all from the hard-lock described below.
+
+> **Read this first if you are rebuilding the DECD module.** The build tree that
+> produced the working module was missing three patches that are *in the series*
+> — `0071` (release fence lifetime), `0072` (refuse non-contiguous dma_buf
+> import), `0073` (single-mapping DMA constraint). Rebuilding with them applied
+> stopped the SoC hard-lock reproducing. See "The hard-lock, and the three
+> missing patches".
+
+## The three faults
+
+| | wrong | right |
+| --- | --- | --- |
+| format byte `0x05600011` | `0` = RGB888 | **`3` = NV12** |
+| plane-address publish | — | **`0x0560006c`** |
+| source-config commit | — | **`0x05600014`**, and it **retires on vsync** |
+
+The two latches do different jobs and are not interchangeable:
+
+- **`0x05600014`** commits the **source configuration** — seven geometry words
+  and the source enable.
+- **`0x0560006c`** publishes the **plane addresses** of the two-plane YUV path.
+
+Both were already documented in
+`patches/kernel/0065-drm-h713-afbd-scan-out-nv12-directly.patch`, whose comment
+names the exact trap: *"they set the format byte and kept feeding AFBD_SRC, so
+the fetch stayed 4 bytes/pixel."*
+
+### The commit retires on vsync — the thing nobody had written down
+
+Every shell recipe that ever worked wrote registers through separate `devmem`
+processes and then slept 100 ms — six vsyncs. Issued back to back from the
+kernel the commit gets microseconds, **does not retire, and the hardware
+silently ignores the configuration while every register still reads back
+correct**.
+
+Symptom: the frame renders **doubled side by side at half height** — a
+2-bytes-per-pixel fetch, each display row consuming two source rows, so even
+rows land left, odd rows right, and 720 rows end at display row 360 (`test_81`).
+
+**The failure is invisible to a register dump.** Proving that required dumping
+three whole regions and finding them byte-identical between a working run and a
+broken one:
+
+| region | span | result |
+| --- | --- | --- |
+| afbd | `0x05600000..0x1FF` | identical |
+| top | `0x05700000..0xFF` | identical — **never compared before this session** |
+| composition | `0x05000000..0x87c` | identical |
+
+The only differing words, `+0x630..+0x648`, are already classified in
+`reference/frame-composition-block-capture-2026-08-31.txt` as *"live or
+per-frame telemetry"* — a symptom of the different picture, not a cause.
+
+Poll the latch to zero with a budget **longer than 16.7 ms**. A 10 ms poll gives
+up before the first frame boundary, logs `source commit did not retire`, and
+reproduces the doubling exactly.
+
+## What is in the driver now
+
+`patches/kernel/0095` (in series) programs the seven geometry words, source
+enable, format byte and config commit **from the submitted descriptor**:
+
+```
+decd 5600000.dec: DECD route: 1280x720 stride 1280 hw-format 3
+```
+
+- Staged in `frame_item_create()`, applied from the submit ioctl **after
+  `dec_reg_enable()`** — `docs/ge2d-plane-open-re.md` records that the vendor
+  never writes the format selector alone.
+- Re-applied whenever the source enable bits are clear. Caching on geometry
+  alone silently skips it after anything disables the source between streams.
+- `item->format_shadow` was hardcoded to `0` (= RGB888), which is why every
+  trace reported format 0 while the panel was fed NV12: the byte was only ever
+  traced, never programmed. It now comes from `fmt_attr_tbl` column 8.
+
+**Deliberately not in the driver:** chroma gain `0x05140508` and plane selector
+`0x051c006c`. They live in the display engine, are not mapped by this driver,
+and are shared with the MIPS logo path. Routing the panel to video is a
+display-ownership decision, not a decoder one.
+
+## The harness
+
+`tools/video/decd-all-preconditions.sh` drives three sources through one
+verified sequence and **refuses to hold for a visual test unless every
+precondition passes**. A refusal costs no operator attention.
+
+```
+MODE=static     file staged into the carveout      bypass + physical
+MODE=carveout   Cedrus frame 0 copied there        bypass + physical
+MODE=live       Cedrus, driver-owned ring          translation + IOVAs
+DRIVER_ROUTE=1  AFBD block left entirely to the driver
+```
+
+It checks core, IOMMU, selector, gain, seven geometry words, format byte, all
+eight ring slots (or, in live mode, that each is driver-written and each Y/C pair
+is separated by exactly the luma-plane size, with the ring advancing), all
+seventeen composition registers, that the frame bytes are present at the fetch
+address, and that the source process is still alive.
+
+It caught, before any of them reached the panel: a `0x7C` vs `0x0000007C` width
+mismatch; a spent cumulative `ring_writes_max`; a false pass validating the
+previous run's leftover addresses; a cleared source enable; and a racy Y/C read
+that returned a negative delta.
+
+## Corrections to the record
+
+- **"Composition is the cause" (2026-09-06) — withdrawn.** On a normal boot all
+  seventeen registers are already at 1280x720; the 852x480 state was
+  self-inflicted by that session's own source-coordinate client run. Composition
+  *does* own the displayed footprint.
+- **"Translation is the fault" — withdrawn and disproven.** It came from
+  `decd-static-via-iova.sh`, which carried the missing `0x05600014` commit and
+  so never tested translation. `MODE=live` renders correctly through IOVAs.
+- **`f410ebf`'s inference retired**: zero IOMMU faults does **not** prove the
+  IOVAs are mapped — it is equally consistent with silent zeroes. The conclusion
+  it supported happens to be true; the reasoning was invalid.
+- **Stock playback is not evidence for our path.** Its `0x05600010 = 0x03000013`
+  (format 0) was cited as proof format 0 was correct, but stock composites video
+  into an RGB surface. A matching register is evidence only when both sides are
+  doing the same thing.
+- **The 60 Hz hard-lock claim was made, retracted, and then explained.** First
+  declared non-reproducing on four clean runs; then it locked twice in two
+  attempts on a fresh boot; then rebuilding with the three missing patches
+  stopped it reproducing, including under the exact fresh-boot condition. The
+  intermediate claim was premature — four samples on one boot were never
+  evidence about a hazard that had shaped experiment design since 2026-09-04.
+  See the dedicated section below.
+
+## The hard-lock, and the three missing patches
+
+**Symptom:** the whole SoC wedges during live Cedrus playback with the MIPS
+alive. No SSH, no serial, no console; only a power cycle recovers.
+
+**Cause, very likely:** the build tree that produces the DECD module branches
+from a point that predates three patches which are in the series:
+
+| patch | state in the tree we were building from |
+| --- | --- |
+| `0071-misc-decd-fix-release-fence-lifetime` | **was ABSENT** |
+| `0072-misc-decd-refuse-a-non-contiguous-dma-buf-import` | **was ABSENT** |
+| `0073-misc-decd-declare-the-single-mapping-dma-constraint` | **was ABSENT** |
+| `0094` (`ring_writes_max`), `0095` (driver route) | present |
+
+`0071` exists because `frame_item_release()` did `kfree(item->fence)` while
+`FRAME_SUBMIT` had handed userspace a `sync_file` holding a reference to that
+same `dma_fence`. So **every frame retirement freed a fence userspace might
+still hold**. Live playback retires ~30 frames/second; static single-frame tests
+retire almost none — which matches "static stable, live locks" exactly.
+
+**Evidence after applying all three and rebuilding:**
+
+```
+uptime 47 s   300 frames, 29.94 fps, core alive     <- the locks were at ~57 s
+uptime 88 s   preconditions pass, core alive
+uptime 95 s   preconditions pass, core alive
++ six further clean live runs on a warm board
+```
+
+Nine clean live runs, three inside the first 100 s of uptime, against **two
+locks in two attempts in that same window** immediately before. Two independent
+improvements came with it: standalone `decd-play` previously reported *"release
+fence has not signalled in 2000 ms with 4 held"* and now completes, and the
+`decd-client` segfault disappeared.
+
+**What is NOT established: the mechanism.** A dangling `dma_fence` producing a
+*silent* whole-SoC wedge — no oops, no serial output — is not an obvious failure
+mode; a use-after-free normally leaves a trace. `0072`/`0073` constrain DMA
+imports and feel closer to a bus-level hang. Which of the three actually matters
+is unknown, and this is absence-of-failure evidence. Do not treat it as closed.
+
+**Practical consequence:** build the module from a tree with 0071/0072/0073
+applied. They apply cleanly on top of the 0094/0095 tree. The module currently
+on the board is `/root/sunxi-decd-fenced.ko`.
+
+## Board state
+
+Core alive (`0x0306101c = 1`), test FIT
+`h713-kernel-decd-iommu-0076v3.fit` with
+`initcall_blacklist=h713_afbd_platform_driver_init`,
+**`/root/sunxi-decd-fenced.ko`** loaded (`auto_route=1`, `ring_writes_max=1`) —
+this is the build WITH 0071/0072/0073; `sunxi-decd-route.ko` is the older build
+without them and should not be used,
+`hy310-cpu-comm-next.ko` loaded, logo path restored, IOMMU state preserved
+across harness runs. `display_cfg.xml` on the FAT still has elog enabled —
+**leave it**.
+
+Bring-up from a cold boot:
+
+```sh
+python3 tools/serial/reboot-to-uboot.py /dev/ttyUSB0 45
+python3 tools/serial/console.py --port /dev/ttyUSB0 --wait 3 'h713_disp init 0x34'
+python3 tools/serial/boot_kernel.py --load /root/fits/h713-kernel-decd-iommu-0076v3.fit \
+    --extra initcall_blacklist=h713_afbd_platform_driver_init --secs 30
+```
+
+Then on the board:
+
+```sh
+rmmod sunxi_decd; insmod /root/sunxi-decd-fenced.ko ring_writes_max=1
+insmod /root/hy310-cpu-comm-next.ko
+DRIVER_ROUTE=1 MODE=live DWELL=30 sh /root/decd-all-preconditions.sh
+```
+
+One `h713_disp init` per boot; never re-release a quiesced core with direct MMIO.
+
+## Scaling: attempted, negative, with a clear next step
+
+**2026-09-09.** The session's original goal was 1080p scaled onto the 720p
+panel with no GPU. It was attempted end to end and did **not** work. What was
+established:
+
+**The 1080p input path works.** `tools/video/decd-client.c` now takes
+`DECD_W`/`DECD_H` at runtime, and staging a 1920x1080 NV12 frame makes patch
+0095 program the fetcher automatically from the descriptor:
+
+```
+DECD route: 1920x1080 stride 1920 hw-format 3
+0x05600020 = 0x0437077F   0x05600030 = 0x04380780
+0x05600040 = 0x00000780   0x0560004c = 0x021C0780
+```
+
+That part is solid, and it is what 0095 was for.
+
+**The firmware does NOT reprogram composition for a 1080p source.** It only does
+that when it SERVICES a frame, and our ring writer is capped at
+`ring_writes_max=1`, so composition stays at 1280x720 unity and has to be set by
+hand.
+
+**Two configurations tried, both wrong:**
+
+| composition | AFBD | panel |
+| --- | --- | --- |
+| 1280x720 unity (mismatched) | 1920x1080 | picture **doubled** horizontally |
+| 1920x1080, ratio `0x00600060` | 1920x1080 | **fully black** |
+
+Black persisted with `0x05000278`/`0x050002b8` both set to guessed values *and*
+left at their existing 720p values, so those two are **not** the cause.
+
+**The likely reason, and the reframe: the scaler may be upscale-only.** Every
+ratio ever observed on this hardware is a step at or below unity:
+
+```
+source 1280 -> output 1280 : 0x40 = 1.00  unity
+source  852 -> output 1280 : 0x2B = 0.67  UPscale (source smaller than panel)
+```
+
+`0x60` = 1.50 is a **downscale**, a direction never observed. If the composition
+scaler cannot step faster than 1.0, 1080p->720p is not available by this route
+at all and the goal needs a different mechanism.
+
+**Next step, and it needs no board time:** trace how the firmware programs the
+scaler in `display.bin`. It demonstrably does — it set `0x002B002B` itself — so
+the encoding, the valid range and the companion words are all in there. That
+replaces inference from two captured states, which is what every failed attempt
+above rested on. Note the MIPS address map: **MIPS = ARM physical + 0xB5000000**,
+so composition at `0x05000000` is `0xBA000000` in firmware address space.
+
+`tools/video/decd-scale-test.sh` reproduces both configurations
+(`PHASE=crop|scale`, `SET_278=1` to include the guessed words).
+
+## Open work
+
+- ~~No vsync-correct flipping~~ — **measured 2026-09-08, and it is already
+  correct.** See "Flipping is already vsync-correct" below.
+- **The DECD driver leaked `sunxi_scanout_dmabuf` exports — now BOUNDED**
+  (`patches/kernel/0096`, in series). Was +2 per run forever; now 2 total,
+  released when the next client displaces the frame. See below. `dec_release_file()` was a no-op, so whatever a
+  client submitted last stayed pinned after it exited (a frame is released only
+  when a *later* frame displaces it). Measured +2 references per `decd-client`
+  run even on clean exit, 89 in one session; leaked references pin identity
+  IOVAs and Cedrus then cannot allocate. After the fix: six client runs and
+  three live runs with **zero** refcount growth.
+
+  **The refcount model, which two attempts got wrong before it worked:**
+  all four ring slots **alias one frame holding one reference** (put once, not
+  four times — putting each slot is a use-after-free and segfaulted the client);
+  `q->interlace_hold` is the literal `(void *)1` **armed flag**, never a
+  pointer; the repeat path increments the refcount **once per vsync** and pushes
+  one `release_fifo` entry each time, so **fifo depth is the outstanding
+  reference count and is not bounded by the four slots** (eleven observed) — a
+  fixed 8-entry array silently capped and the leak survived that "fix";
+  `q->last_released` and the global `last_frame` are each separate holders.
+
+  Recognising the symptom: GStreamer reports *"Not enough memory to allocate
+  source buffers"* while `MemFree`, `CmaFree` and `buddyinfo` are all healthy.
+  It is not memory pressure. Pre-existing leaked references are orphaned and
+  still need a reboot to clear.
+
+**Attempted fix regresses playback.** `patches/kernel/0096` drains held frames
+on the last close and does fix the leak (zero refcount growth over six client
+and three live runs). But the drain sets `q->slots[i] = NULL`, and
+`dec_frame_queue_sync()` writes a **blank (zero) address for every NULL slot**
+on each vsync — so the ring alternates between zeros and new frames. On the
+panel: solid colours cycling black / pink-purple / black, with `0x05600070`
+reading zero for the whole hold while preconditions had passed moments earlier.
+"Last close" is not a sufficient guard: the drain fires while a player is still
+running, and why `open_count` reaches zero mid-run was not diagnosed.
+
+Next attempt should either find why `open_count` hits zero while a player runs
+and gate on active streaming instead, or **drain without nulling the slots**, so
+`dec_frame_queue_sync()` never sees a NULL slot to blank.
+- **`decd-play` requests VideoInfo selector 0**, which the firmware resolver maps
+  to hardware format 0 = RGB888. It only works because the driver never programs
+  the format byte from that selector. Selector 6 resolves to format 3 and is the
+  honest value — but **changing it was tried and reverted** (`fd9ec35`,
+  reverted by `6284b2c`). It is verifiably correct and has **zero** effect on
+  rendering, so it carries no benefit; it was backed out to stop carrying a
+  pointless change while an unexplained hard-lock is in play. If it is
+  revisited, note the failed hypothesis: selector 6 is the firmware resolver's
+  input, so it *might* make the firmware act on the descriptor and conflict with
+  the driver's route. That is plausible and wrong — the lock reproduced with
+  selector 0, and was in any case the missing fence patch. The change itself was
+  never shown to be harmful; it was dropped because it has no benefit and was
+  muddying an unexplained failure. It could reasonably be re-landed now that the
+  lock is understood.
+- **`0x05600024 = 0x002C004F`** (crop origin) is still an undecoded constant.
+- **Gain and selector still applied by shell**, by design. If the decoder should
+  own them, that is a design decision about display ownership.
+- Audio is not wired into this path; `mpv` playback remains the separate
+  VA-API/DRM route.
+
+## Flipping is already vsync-correct
+
+The earlier "no vsync-correct flipping, tearing expected" line was an inherited
+assumption, never a measurement. Both halves have now been measured and both
+are correct, so there is nothing to fix.
+
+**Atomicity** — `tools/display/latch-timing.c`. The plane-address publish at
+`0x0560006c` retires with a **uniform 0..16.7 ms** distribution under randomised
+write phase (n=60: min 775 us, median 10.3 ms, max 16.6 ms, flat histogram
+across eighths of a frame, **0/60 under 50 us**). That is the signature of a
+register latching on the frame boundary, so a ring rewrite cannot split a frame.
+The config commit at `0x05600014` behaves the same way, which is consistent with
+the vsync-retirement finding above.
+
+> **Sampler trap, recorded because it nearly produced a wrong answer.** A fixed
+> 3 ms inter-sample delay plus the ~13.7 ms wait sums to one frame period, which
+> phase-locks the sampler to the panel: every write lands at the same point in
+> the frame and the spread collapses to a constant 13.69 ms. That reads exactly
+> like a fixed hardware latency. Randomising the delay is what exposes the true
+> uniform spread.
+
+**Cadence** — `tools/display/flip-cadence.c`, which timestamps every change of
+the live Y address at `0x05600070`. During real playback:
+
+```
+flips=120, active span 3.97 s  =>  29.98 fps displayed   (source 29.97)
+mean dwell 33.4 ms (2.00 vsyncs), worst 50.2 ms
+  1 vsync :   2      2 vsyncs : 116      3 vsyncs : 1
+```
+
+116 of 119 frames held for exactly 2 vsyncs — correct 2:2 for 29.97 fps content
+on a 60 Hz panel — and the displayed rate matches the source to 0.03%. The
+single 1+3 pair is one late frame in four seconds.
+
+> Report the rate over the **active span**, not the sample window. The clip is
+> short; if playback ends mid-window, dividing by the window reports a fraction
+> of the real rate next to a correct per-frame dwell, which looks like a
+> contradiction and is purely an artefact. The first run of this tool printed
+> "8.50 fps" beside a correct 33.3 ms dwell for exactly that reason.
+
+Minor and not a defect: the vsync handler rewrites all four ring slots every
+vsync even when the frame has not changed (`ring_writes_done` advances ~61/s
+against 30 fps content). Redundant work, but the publish is idempotent and
+atomic, so it costs bus traffic rather than correctness.
+
+## 0071/0072/0073 — confirmed visually on both paths
+
+**2026-09-09, from a cold-boot baseline, one change at a time.**
+
+| step | module | result |
+| --- | --- | --- |
+| baseline | `81bad18a` (0094+0095) | static frame **correct** (operator-confirmed) |
+| + 0071/0072/0073 | `67d9d788` | static frame **correct** |
+| + 0071/0072/0073 | `67d9d788` | live playback **correct**, 300 frames @ 29.94 fps, logo restored |
+
+So the three patches are good on both the static and playback paths, and every
+attribution made during the preceding confused stretch — patch 0096, the
+VideoInfo format selector, the rebuilt client binaries, and these three patches
+— was **wrong**. The cause was board-state drift alone (next section).
+
+**Caveat on the format selector.** `2ed6218` re-lands VideoInfo selector 6 in
+`tools/video/decd-{play,client}.c`, but the visual confirmations above used the
+**restored original binaries** (`decd-client.coord1080` = `256143c8`,
+`decd-play` = `ab5f6814`), which request selector 0. **Selector 6 is therefore
+committed but not visually verified.** Rebuild and re-confirm before relying on
+it; it has no effect on rendering by analysis, so this is low risk but unproven.
+
+## Bounding the leak without touching the ring
+
+`patches/kernel/0096` drops the **surplus** frame references on the last close
+and deliberately leaves `q->slots[0..3]` alone.
+
+- Before: **+2 dma_buf references per `decd-client` run**, even on clean exit.
+- After: +2 on the first run, then **flat** across five more. Six live runs
+  pass, the ring advances for a full 10 s window, and sustained playback was
+  operator-confirmed over a 25 s hold.
+
+**Soak result, 30 consecutive client runs:**
+
+```
+run   0   5   10   15   20   25   30
+ref   9  10   10   10   10   10   10
+```
+
+It plateaus and stops. The number it settles at depends on the starting point
+(observed 6 and 10 in different sessions), not on the number of runs. Before the
+patch it was +2 per run without bound, reaching the 89 that broke Cedrus.
+
+Two claims made and corrected while measuring this, both from too few samples:
+"flat across five more runs" (six runs, it happened to sit still) and then "not
+bounded, +4 over twelve" (one noisy sample against the ceiling). Neither was
+earned; the 30-run trend is.
+
+
+**It bounds, it does not eliminate.** Two references stay held — the displayed
+frame — and are released when the next client's frame displaces it. Steady state
+is 2 instead of 2 per run. Retiring the displayed frame safely is unsolved.
+
+**Why the ring is untouched.** The first version released the slots and NULLed
+them. It fixed the leak completely and broke playback:
+`dec_frame_queue_sync()` writes a blank address for every NULL slot each vsync,
+so the ring alternated between zeros and new frames — solid colours cycling on
+the panel. Dropping the slot reference while leaving the pointer is worse still:
+the sync path would walk freed memory.
+
+Released here: `ready_list`, `release_fifo`, `last_released`, `last_frame`.
+Untouched: `slots[0..3]`, and `interlace_hold` (the `(void *)1` armed flag).
+
+## What the vendor binary says about retiring the displayed frame
+
+**Read from `local/h713-lab/extracted/decd.ko` (ARM 32-bit vendor module),
+2026-09-09.** This is the direction for eliminating the last two references;
+it has NOT been implemented or tested.
+
+**Stock never retires on close either.** `dec_release` (0x0eb0) is an atomic
+decrement and `return 0` — a module refcount, nothing else. The peer port's
+reconstruction (`local/allwinner-h713-linux/drivers/decd/decd_core.c`) has the
+same stub. So stock relies on the compositor submitting continuously, and
+patch 0096's bounded approach **matches stock behaviour** rather than working
+around it.
+
+**`dec_disable` (0x1f74) gives the safe teardown order**, and the missing piece
+is the second line:
+
+```
+dec_frame_manager_stop(fmgr)
+disable_irq(irq)                 <-- quiesce the vsync handler FIRST
+dec_frame_manager_exit(fmgr)
+dec->fmgr = NULL
+dec_reg_int_to_display(regs)
+dec_reg_enable(regs, 0)
+```
+
+**`dec_frame_manager_exit` (0x60cc) quiesces every async path** before touching
+frame state:
+
+```
+tasklet_kill(&fmgr->refresh_tasklet)
+flush_work(&fmgr->release_work)
+__kfifo_free(recycle_fifo) / __kfifo_free(release_fifo) / kfree(queue)
+dec_frame_manager_free(fmgr)
+kfree(fmgr)
+```
+
+**Why this explains the failed drain.** That version nulled the ring slots while
+the vsync handler was still running, so `dec_frame_queue_sync()` immediately
+wrote a blank address for every NULL slot — the solid colours on the panel. The
+vendor never does that: IRQ, tasklet and deferred work are all stopped first.
+
+**Proposed next step, untested:** `disable_irq` → drain the slots → clear
+`q->dirty` → `enable_irq`. The next submit's `dec_frame_queue_resume()` refills
+all four slots, so there is no window in which the handler observes a NULL slot.
+This touches interrupt state and deserves a fresh session.
+
+Note in passing: the vendor's `exit` calls `__kfifo_free` **without releasing the
+fifo contents**, so stock leaks those references too — it simply does not matter
+at module-unload time.
+
+## The freeze was the harness, not the hardware
+
+**2026-09-09.** Every "video plays for a few seconds, then freezes" report was
+self-inflicted, including runs previously recorded as clean.
+
+`decd-play` stops at **end of stream**, not at its `max-frames` argument, and the
+fixture `leota-720p.h264` is only ~300 frames (~10 s). With a 25-30 s hold the
+player therefore exits partway through; the harness's "source process alive"
+check then fails, it restores, and `restore()` puts `ring_writes_max` back to 1
+— which **freezes the ring writer**. The picture was correct until the clip
+ended, then stopped updating.
+
+Measured before the fix, with `flip-cadence`:
+
+```
+flips=160, active span 5.31 s => 29.95 fps    (12 s sample window)
+```
+
+Flips for 5.3 s, then nothing. And the budget counters caught it directly:
+
+```
+t=6s:   max=13584  done=11932     budget active, ring advancing
+t=12s:  max=1      done=11964     max RESET to 1, ring frozen
+```
+
+Only 380 of a 2000-write budget was used, so nothing was exhausted — the knob
+was simply put back.
+
+**Fix:** live mode now loops the clip for the duration of the hold, so the player
+outlives it. After: 448 of 456 dwells at exactly 2 vsyncs over 18 s, zero
+harness failures, budget not reset, and **operator-confirmed sustained playback
+for a full 25 s hold**. The only artefacts are brief hitches at the loop seam
+every ~10 s (two 8-vsync gaps and one 1.4 s outlier).
+
+**Corrects the record.** Earlier live runs recorded as "played correctly" were
+only ever valid for the first ~10 s; nobody had seen sustained playback until
+now. `PLAY_COMPLETE` in the player log is **not** evidence the display kept
+updating — it only means the player finished submitting.
+
+**Free health signal, which was in the logs all along:** the harness prints
+`Y0=` every 5 s. If it is **constant across samples the ring is frozen**; if it
+changes, frames are advancing. A frozen `Y0` accompanied every freeze tonight and
+was read past as normal.
+
+## Degradation is measurable without the panel — use the fence-stall rate
+
+The drift below also shows up in telemetry, which means it can be tracked
+without spending operator looks.
+
+`decd-play` stalls when a release fence does not signal within 2000 ms
+(*"frame N's release fence has not signalled in 2000 ms with 4 held (cap 4)"*),
+and a stalled run simply omits `PLAY_COMPLETE`. So **completion rate is a proxy
+for board health**:
+
+| board state | result |
+| --- | --- |
+| fresh boot, refcount ~6 | completes, **29.94 fps** |
+| ~28 min uptime, refcount 23 | **6 stalls in 12 runs**, ~27 fps |
+
+Measured 2026-09-09 while trying to attribute an intermittent freeze to the
+VideoInfo format selector:
+
+```
+selector 6:  X . . X . .    2 stalls / 6
+selector 0:  X X X . X .    4 stalls / 6      (. = completed, X = fence stall)
+```
+
+**Selector 6 stalls less than selector 0** — opposite to the hypothesis and well
+inside noise at six samples each. The selector is **not** the cause; the stall is
+intermittent and tracks accumulated board state, exactly like the rendering
+failure.
+
+**Use this before and after any change**: run the harness six times and count
+completions. It costs no operator attention and it distinguishes "my change
+broke it" from "the board has drifted" — the distinction that cost several hours
+of wrong attributions.
+
+Note also that a rebuilt `decd-play` runs at ~27 fps where the historical binary
+(`ab5f6814`) reached 29.94 fps. Whether that is build flags or source drift is
+not established.
+
+## Board-state drift — cold boot before debugging a rendering regression
+
+**2026-09-09.** Byte-identical software — module `81bad18a` (patch 0095) and
+client `256143c8` — rendered correctly, then produced **solid black/pink** after
+roughly an hour of uptime and a dozen module load/unload cycles (including one
+broken build), with 28 leaked scanout references outstanding.
+
+Everything verifiable still checked out: all seven geometry words, format byte 3,
+all eight ring slots, all seventeen composition registers, frame bytes present at
+`Y_PHYS`, bypass, selector. Vsync healthy at 61 IRQ/s. The config commit retired
+with no warning. The harness passed every precondition.
+
+**A cold boot restored it immediately**, with the same binaries and module,
+first submit on the fresh boot.
+
+Consequences:
+
+- **Rendering can fail while every measurable precondition is correct.** The
+  harness cannot catch this; only the panel can.
+- **Cold boot before debugging a rendering regression** on a board that has been
+  up a long time with many module cycles. Re-establish the baseline visually,
+  then change one thing at a time with a look after each.
+- What actually drifts is **unknown**. Candidates: leaked scanout references
+  pinning IOVAs, MIPS firmware state, accumulated display-block state.
+
+Cost of learning this the hard way: several hours attributing the failure in
+turn to patch 0096, then the VideoInfo format selector, then rebuilt client
+binaries, then 0071-0073 — every attribution wrong and reverted, because the
+baseline had silently moved underneath all of them.
+
+## Method notes
+
+**When a register dump says two runs are identical and they visibly are not,
+stop diffing values and instrument the transaction.** Four rounds of plausible
+theories produced nothing; instrumenting the commit latch produced the answer in
+one run, and the fix followed from arithmetic (10 ms poll against a 16.7 ms
+frame boundary).
+
+**"One more run, then stop" is the right rule for guessing, not for measuring.**
+This session was one run from being abandoned. The distinction that matters is
+whether the next step produces a *measurement* or another hypothesis.
+
+**Read the project's own record before spending an operator look.** The two
+latches, the vendor's accompanying calls, and the classification of
+`+0x630..+0x648` were all already written down. Three of the day's operator
+looks were spent on hypotheses that a register read — or a `grep` — could have
+ranked for free beforehand.
+
+**A `grep` that silently drops half the data is worse than no grep.** `^056000`
+excluded every address from `0x05600100` up, so two sessions of "full block"
+diffs compared only half the block, and the OSD-channel differences were all in
+the half never examined.

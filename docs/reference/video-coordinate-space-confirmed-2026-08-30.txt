@@ -1,0 +1,53 @@
+H713 canonical VideoInfo coordinate-space confirmation
+======================================================
+
+Host date: 2026-08-30 America/Los_Angeles
+Board clock: Mon Apr 13 19:39:46 UTC 2026 (RTC intentionally stale)
+Kernel: 6.18.38 DECD-exclusive test FIT
+Client: separately compiled tools/video/decd-client.c
+Client SHA-256: 256143c876bd6fa2f1564946436564c7a32c5c13b79abe26f78bf1fdff363651
+Input: DECD_FMT=0, one frame, 300 ms dwell
+
+Preconditions
+-------------
+
+0x0306101c                         0x00000001 (MIPS alive)
+display@5600000/status             disabled
+dec@5600000/status                 okay
+/dev/decd                          present
+/dev/scanout-dmabuf                present
+
+Register readback
+-----------------
+
+register       before         after
+0x05600010     0x03000010     0x03000013
+0x05600020     0x043F077F     0x02CF04FF
+0x05600030     0x02D00500     0x02D00500
+0x05600040     0x00000780     0x00000500
+0x0560004c     0x01680500     0x01680500
+0x05600070     0x00000000     0x6C500000
+0x05600084     0x00000000     0x6C5E1000
+0x05600098     0x00000000     0x4D941000
+DECD IRQs      0              30
+
+Client output
+-------------
+
+VideoInfo format selector overridden to 0
+prepared image dma-buf at 0x6c500000 and VideoInfo dma-buf at 0x6c8f0000
+PM_HINT on ok
+FRAME_SUBMIT format=6 desc=112 repeat@+0x10=1 fence_fd=7
+holding 300 ms; leaving DECD enabled to avoid shared display reset
+client rc=0
+
+Verdict
+-------
+
+The submit was live and fully processed, while the two geometry registers
+remained at the predicted full-width values. Restoring the canonical
+0x7800/0x4380 VideoInfo crop and display-frame values eliminates the prior
+852x480 result. The stock capture's 720-versus-current-360 second-plane height
+remains a separate question.
+
+The board-side full log is /root/fmt-test-20260413-193946-fmt0.log.

@@ -1,0 +1,222 @@
+# WCE log lines from the MIPS firmware's elog, bring-up 2026-09-04
+#
+# First capture of the window layer describing itself.  Obtained by:
+#   1. display_cfg.xml elog_init_setting: level 1 -> 5, mode 1 -> 2 (buf)
+#      (level 5 with mode 1/route uart BREAKS the readiness handshake --
+#       "MIPS=00000000, firmware readiness not proven" -- because the
+#       synchronous UART flood stalls init.  mode 2 buffers instead.)
+#   2. h713_disp init 0x34   (full bring-up, core left running)
+#   3. boot Linux with initcall_blacklist=h713_afbd_platform_driver_init
+#   4. read the linear elog buffer from /dev/mem around 0x4b272000
+#
+# Window rectangles are [x, y, w, h].  win_mgr's src_cfg/dst_cfg are in
+# 1/16-pixel fixed point: 30720 = 1920<<4, 17280 = 1080<<4.
+#
+D/wce_top    [     0] (./WCETop.cpp 418                  ) refresh_node:2
+D/wce_top    [     0] (./WCETop.cpp 424                  ) mirror mode:0
+I/win_mgr    [     0] (./window_manager.cpp 255          ) UpdateWce : ENTER
+I/win_mgr    [     0] (./window_manager.cpp 318          ) src_cfg             : [    0,     0,  7680,  4320][    0,     0,  7680,  4320]
+I/win_mgr    [     0] (./window_manager.cpp 319          ) dst_cfg             : [    0,     0,  7680,  4320][    0,     0,  7680,  4320]
+I/win_mgr    [     0] (./window_manager.cpp 320          ) aspect_ratio       : 2
+I/win_mgr    [     0] (./window_manager.cpp 321          ) b_seamless         : 0
+I/win_mgr    [     0] (./window_manager.cpp 322          ) display_active_win : [-1953908296, -1960509440, -1953908252, -1960509440]
+I/win_mgr    [     0] (./window_manager.cpp 323          ) capture_cfg        : [    0,     0,   720,   240][    0,     0,   720,   240]
+I/win_mgr    [     0] (./window_manager.cpp 324          ) display_cfg        : [    0,     0,  1280,   720][    0,     0,  1280,   720]
+D/wce_top    [     0] (./WCETop.cpp 418                  ) refresh_node:2
+D/wce_top    [     0] (./WCETop.cpp 424                  ) mirror mode:0
+I/wce_top    [     0] (./WCETop.cpp 1019                 ) SetWindow : ENTER
+D/wce_top    [     0] (./WCETop.cpp 1035                 ) m_low_latency :1
+I/wce_top    [     0] (./WCETop.cpp 1037                 ) src_cfg : [    0,     0,   720,   240][    0,     0,   720,   240]
+I/wce_top    [     0] (./WCETop.cpp 1038                 ) dst_cfg : [    0,     0,  1280,   720][    0,     0,  1280,   720]
+D/wce_top    [     0] (./WCETop.cpp 132                  ) No need to enable panel down scaler
+D/wce_top    [     0] (./WCETop.cpp 108                  ) No need to enable panel crtc timing
+I/wce_top    [     0] (./WCETop.cpp 1071                 ) capture_cfg : [    0,     0,   720,   240][    0,     0,   720,   240]
+I/wce_top    [     0] (./WCETop.cpp 1072                 ) display_cfg : [    0,     0,  1280,   720][    0,     0,  1280,   720]
+D/wce_top    [     0] (./WCETop.cpp 321                  ) b_enable_capture_down_scaler_partial :0
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 0 :  720 x  240,  720 x  240
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 1 :  720 x  240,  720 x  240
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 2 :  720 x  240,  720 x  480
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 3 :  720 x  480, 1280 x  720
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 4 : 1280 x  720, 1280 x  720
+I/wce_cap    [     0] (./CapWinNode.cpp 35               ) CalcWindow : ENTER
+I/wce_cap    [     0] (./CapWinNode.cpp 98               ) color_format:4
+I/wce_cap    [     0] (./CapWinNode.cpp 229              ) in_win       : [  119,    19,   720,   240]
+I/wce_cap    [     0] (./CapWinNode.cpp 230              ) crop_win     : [  119,    19,   720,   240]
+I/wce_cap    [     0] (./CapWinNode.cpp 231              ) picture_win  : [    0,     0,   720,   240]
+I/wce_cap    [     0] (./CapWinNode.cpp 232              ) out_win      : [    0,     0,   720,   240]
+I/wce_cap    [     0] (./CapWinNode.cpp 233              ) m_scale_ratio_h:0x10000
+I/wce_cap    [     0] (./CapWinNode.cpp 234              ) m_scale_ratio_v:0x10000
+I/wce_cap    [     0] (./CapWinNode.cpp 235              ) m_psu_rowbyte_y:45, m_psu_line_buf_level_y:45, m_psu_line_num_y:240
+I/wce_cap    [     0] (./CapWinNode.cpp 236              ) m_psu_rowbyte_c:45, m_psu_line_buf_level_c:45, m_psu_line_num_c:240
+I/wce_cap    [     0] (./CapWinNode.cpp 88               ) CalcWindow : EXIT
+I/wce_top    [     0] (./WCETop.cpp 431                  ) hs_size:20, h_back_porch:57
+I/wce_proc   [     0] (./ProcWinNode.cpp 267             ) hs_delay:0
+I/wce_top    [     0] (./WCETop.cpp 456                  ) NR out hde_start :0x32
+I/wce_top    [     0] (./WCETop.cpp 469                  ) vs_size:2, v_back_porch:20
+I/wce_top    [     0] (./WCETop.cpp 474                  ) panel in vde_start:0x16
+I/wce_top    [     0] (./WCETop.cpp 496                  ) NR out vde_start :0x16
+I/wce_nr     [     0] (./NRWinNode.cpp 101               ) CalcWindow : ENTER
+I/wce_nr     [     0] (./NRWinNode.cpp 352               ) hs_delay:78
+I/wce_nr     [     0] (./NRWinNode.cpp 394               ) vs_delay :8
+I/wce_nr     [     0] (./NRWinNode.cpp 250               ) win: : [    0,     0,   720,   240]
+D/wce_nr     [     0] (./NRWinNode.cpp 251               ) pic_fmt.dwCompRatio_Y:0x3d09  pic_fmt.dwCompRatio_C:0x3d09  pic_fmt.eCompFormat:0x1  pic_fmt.eFormat:0x2
+I/wce_nr     [     0] (./NRWinNode.cpp 944               ) m_in_win              : [    0,     0,   720,   240]
+I/wce_nr     [     0] (./NRWinNode.cpp 945               ) m_out_win             : [   50,    22,   720,   240]
+I/wce_nr     [     0] (./NRWinNode.cpp 946               ) m_crop_win            : [    0,     0,   720,   480]
+I/wce_nr     [     0] (./NRWinNode.cpp 947               ) m_read_fetch_win      : [   50,    22,   720,   480]
+I/wce_nr     [     0] (./NRWinNode.cpp 949               ) hs_delay              : 78
+I/wce_nr     [     0] (./NRWinNode.cpp 950               ) vs_delay              : 8
+I/wce_nr     [     0] (./NRWinNode.cpp 951               ) m_v_mirror_on         : FALSE
+I/wce_nr     [     0] (./NRWinNode.cpp 952               ) m_afbd_source_mode    : 1
+I/wce_nr     [     0] (./NRWinNode.cpp 213               ) CalcWindow : EXIT
+I/wce_nr     [     0] (./NRWinNode.cpp 394               ) vs_delay :8
+I/wce_detn   [     0] (./DETNWinNode.cpp 23              ) CalcWindow : ENTER
+I/wce_detn   [     0] (./DETNWinNode.cpp 360             ) m_out_win       : [   49,    22,   720,   480]
+I/wce_detn   [     0] (./DETNWinNode.cpp 361             ) m_detn_win      : [   49,    18,   720,   480]
+I/wce_detn   [     0] (./DETNWinNode.cpp 362             ) m_video_win     : [   50,    22,   720,   240]
+I/wce_detn   [     0] (./DETNWinNode.cpp 363             ) m_picture_win   : [    0,     0,   720,   240]
+I/wce_detn   [     0] (./DETNWinNode.cpp 364             ) m_motion_win    : [   49,    18,   720,   240]
+I/wce_detn   [     0] (./DETNWinNode.cpp 365             ) m_motion_win_1  : [   14,    48,   691,   144]
+I/wce_detn   [     0] (./DETNWinNode.cpp 366             ) m_motion_win_2  : [   14,   163,   691,    72]
+I/wce_detn   [     0] (./DETNWinNode.cpp 367             ) m_motion_win_3  : [   14,     4,   691,    72]
+I/wce_detn   [     0] (./DETNWinNode.cpp 84              ) CalcWindow : EXIT
+I/wce_proc   [     0] (./ProcWinNode.cpp 26              ) CalcWindow : ENTER
+I/wce_proc   [     0] (./ProcWinNode.cpp 132             ) in_win_size  : [  720,   480]
+I/wce_proc   [     0] (./ProcWinNode.cpp 133             ) out_win_size : [ 1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 134             ) ratio [36864 x 43690]
+I/wce_proc   [     0] (./ProcWinNode.cpp 148             ) in_win_size  : [  720,   480]
+I/wce_proc   [     0] (./ProcWinNode.cpp 149             ) out_win_size : [ 1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 320             ) m_in_win           : [   49,    22,   720,   480]
+I/wce_proc   [     0] (./ProcWinNode.cpp 321             ) m_out_win          : [   49,    22,  1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 322             ) m_meter_win        : [    0,     0,  1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 324             ) m_in_vs_delay         : 15
+I/wce_proc   [     0] (./ProcWinNode.cpp 325             ) mb_420_format         : 1
+I/wce_proc   [     0] (./ProcWinNode.cpp 326             ) m_line_enable_v_start : 39
+I/wce_proc   [     0] (./ProcWinNode.cpp 104             ) CalcWindow : EXIT
+I/wce_proc   [     0] (./ProcWinNode.cpp 283             ) pic_win: : [    0,     0,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 87             ) CalcWindow : ENTER
+D/wce_panel  [     0] (./PanelWinNode.cpp 43             ) No need to enable panel crtc timing
+I/wce_panel  [     0] (./PanelWinNode.cpp 81             ) vde_start:22
+I/wce_panel  [     0] (./PanelWinNode.cpp 111            ) b_crtc_timing:0, base_v_start:22
+I/wce_panel  [     0] (./PanelWinNode.cpp 358            ) m_out_win             : [    0,     0,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 359            ) m_video_win           : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 360            ) m_video_win_2         : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 361            ) m_program_win         : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 362            ) m_crtc_panel_win      : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 363            ) m_21_9_scaler_win     : [   50,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 364            ) m_border_overlay_win  : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 154            ) CalcWindow : EXIT
+I/wce_top    [     0] (./WCETop.cpp 1303                 ) SetWindow : EXIT
+I/wce_cap    [     0] (./CapWinNode.cpp 118              ) WriteReg : ENTER
+I/wce_cap    [     0] (./CapWinNode.cpp 128              ) WriteReg : EXIT
+I/wce_nr     [     0] (./NRWinNode.cpp 400               ) WriteReg : ENTER
+I/wce_nr     [     0] (./NRWinNode.cpp 852               ) y:720, c:720
+I/wce_nr     [     0] (./NRWinNode.cpp 863               ) y_width:720, c_width:720, v_size:240
+I/wce_nr     [     0] (./NRWinNode.cpp 466               ) WriteReg : EXIT
+I/wce_detn   [     0] (./DETNWinNode.cpp 130             ) WriteReg : ENTER
+I/wce_detn   [     0] (./DETNWinNode.cpp 314             ) compress:0x8b207288, row_byte_y:0x1, line_buf_level_y:0x60, row_byte_c:0x24, line_buf_level_c:0x60
+I/wce_detn   [     0] (./DETNWinNode.cpp 242             ) compress:0x8b207218, row_byte_y:0x1, line_buf_level_y:0x60, row_byte_c:0x24, line_buf_level_c:0x60
+I/wce_detn   [     0] (./DETNWinNode.cpp 154             ) WriteReg : EXIT
+I/wce_proc   [     0] (./ProcWinNode.cpp 155             ) WriteReg : ENTER
+I/wce_proc   [     0] (./ProcWinNode.cpp 166             ) WriteReg : EXIT
+I/wce_panel  [     0] (./PanelWinNode.cpp 160            ) WriteReg : ENTER
+I/wce_panel  [     0] (./PanelWinNode.cpp 228            ) top_width:0, bottom_width:0, left_width:0, right_width:0
+I/wce_panel  [     0] (./PanelWinNode.cpp 280            ) top_width:0, bottom_width:0, left_width:0, right_width:0
+I/wce_panel  [     0] (./PanelWinNode.cpp 328            ) bypass
+I/wce_panel  [     0] (./PanelWinNode.cpp 174            ) WriteReg : EXIT
+D/win_mgr    [     0] (./window_manager.cpp 111          ) SetSignalInfo
+D/win_mgr    [     0] (./window_manager.cpp 136          ) SetCaptureCfg
+I/win_mgr    [     0] (./window_manager.cpp 139          ) m_src_cfg : [    0,     0, 30720, 17280][    0,     0, 30720, 17280]
+D/win_mgr    [     0] (./window_manager.cpp 144          ) SetDisplayCfg
+I/win_mgr    [     0] (./window_manager.cpp 147          ) m_dst_cfg : [    0,     0, 30720, 17280][    0,     0, 30720, 17280]
+D/win_mgr    [     0] (./window_manager.cpp 158          ) aspect_ratio:2
+D/win_mgr    [     0] (./window_manager.cpp 118          ) node:0x1
+D/win_mgr    [     0] (./window_manager.cpp 152          ) low_latency:1
+D/win_mgr    [     0] (./window_manager.cpp 185          ) b_by_vs :0
+I/win_mgr    [     0] (./window_manager.cpp 255          ) UpdateWce : ENTER
+I/win_mgr    [     0] (./window_manager.cpp 318          ) src_cfg             : [    0,     0, 30720, 17280][    0,     0, 30720, 17280]
+I/win_mgr    [     0] (./window_manager.cpp 319          ) dst_cfg             : [    0,     0, 30720, 17280][    0,     0, 30720, 17280]
+I/win_mgr    [     0] (./window_manager.cpp 320          ) aspect_ratio       : 2
+I/win_mgr    [     0] (./window_manager.cpp 321          ) b_seamless         : 0
+I/win_mgr    [     0] (./window_manager.cpp 322          ) display_active_win : [   32, -1960509440,     0, 3487793]
+I/win_mgr    [     0] (./window_manager.cpp 323          ) capture_cfg        : [    0,     0,  1920,  1080][    0,     0,  1920,  1080]
+I/win_mgr    [     0] (./window_manager.cpp 324          ) display_cfg        : [    0,     0,  1280,   720][    0,     0,  1280,   720]
+D/wce_top    [     0] (./WCETop.cpp 418                  ) refresh_node:1
+D/wce_top    [     0] (./WCETop.cpp 424                  ) mirror mode:0
+I/wce_top    [     0] (./WCETop.cpp 1019                 ) SetWindow : ENTER
+D/wce_top    [     0] (./WCETop.cpp 1035                 ) m_low_latency :1
+I/wce_top    [     0] (./WCETop.cpp 1037                 ) src_cfg : [    0,     0,  1920,  1080][    0,     0,  1920,  1080]
+I/wce_top    [     0] (./WCETop.cpp 1038                 ) dst_cfg : [    0,     0,  1280,   720][    0,     0,  1280,   720]
+D/wce_top    [     0] (./WCETop.cpp 132                  ) No need to enable panel down scaler
+D/wce_top    [     0] (./WCETop.cpp 108                  ) No need to enable panel crtc timing
+I/wce_top    [     0] (./WCETop.cpp 1071                 ) capture_cfg : [    0,     0,  1920,  1080][    0,     0,  1920,  1080]
+I/wce_top    [     0] (./WCETop.cpp 1072                 ) display_cfg : [    0,     0,  1280,   720][    0,     0,  1280,   720]
+D/wce_top    [     0] (./WCETop.cpp 321                  ) b_enable_capture_down_scaler_partial :0
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 0 : 1920 x 1080, 1280 x  720
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 1 : 1280 x  720, 1280 x  720
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 2 : 1280 x  720, 1280 x  720
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 3 : 1280 x  720, 1280 x  720
+I/wce_top    [     0] (./WCETop.cpp 323                  ) 4 : 1280 x  720, 1280 x  720
+D/wce_top    [     0] (./WCETop.cpp 339                  ) color_fmt_temp = 0x0
+D/wce_top    [     0] (./WCETop.cpp 346                  ) compress_fmt_temp = 0x0
+D/wce_top    [     0] (./WCETop.cpp 347                  ) buffer_stride:1920
+I/wce_top    [     0] (./WCETop.cpp 431                  ) hs_size:20, h_back_porch:57
+I/wce_proc   [     0] (./ProcWinNode.cpp 267             ) hs_delay:0
+I/wce_top    [     0] (./WCETop.cpp 456                  ) NR out hde_start :0x31
+I/wce_top    [     0] (./WCETop.cpp 469                  ) vs_size:2, v_back_porch:20
+I/wce_top    [     0] (./WCETop.cpp 474                  ) panel in vde_start:0x16
+I/wce_top    [     0] (./WCETop.cpp 496                  ) NR out vde_start :0x16
+I/wce_nr     [     0] (./NRWinNode.cpp 101               ) CalcWindow : ENTER
+I/wce_nr     [     0] (./NRWinNode.cpp 352               ) hs_delay:113
+I/wce_nr     [     0] (./NRWinNode.cpp 394               ) vs_delay :3
+I/wce_nr     [     0] (./NRWinNode.cpp 250               ) win: : [    0,     0,  1280,   720]
+D/wce_nr     [     0] (./NRWinNode.cpp 251               ) pic_fmt.dwCompRatio_Y:0x3d09  pic_fmt.dwCompRatio_C:0x3d09  pic_fmt.eCompFormat:0x1  pic_fmt.eFormat:0x2
+I/wce_nr     [     0] (./NRWinNode.cpp 944               ) m_in_win              : [    0,     0,  1280,   720]
+I/wce_nr     [     0] (./NRWinNode.cpp 945               ) m_out_win             : [   49,    22,  1280,   720]
+I/wce_nr     [     0] (./NRWinNode.cpp 946               ) m_crop_win            : [    0,     0,  1280,   720]
+I/wce_nr     [     0] (./NRWinNode.cpp 947               ) m_read_fetch_win      : [   49,    22,  1280,   720]
+I/wce_nr     [     0] (./NRWinNode.cpp 949               ) hs_delay              : 113
+I/wce_nr     [     0] (./NRWinNode.cpp 950               ) vs_delay              : 3
+I/wce_nr     [     0] (./NRWinNode.cpp 951               ) m_v_mirror_on         : FALSE
+I/wce_nr     [     0] (./NRWinNode.cpp 952               ) m_afbd_source_mode    : 2
+I/wce_nr     [     0] (./NRWinNode.cpp 213               ) CalcWindow : EXIT
+I/wce_nr     [     0] (./NRWinNode.cpp 394               ) vs_delay :3
+I/wce_proc   [     0] (./ProcWinNode.cpp 26              ) CalcWindow : ENTER
+I/wce_proc   [     0] (./ProcWinNode.cpp 132             ) in_win_size  : [ 1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 133             ) out_win_size : [ 1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 134             ) ratio [65536 x 65536]
+I/wce_proc   [     0] (./ProcWinNode.cpp 148             ) in_win_size  : [ 1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 149             ) out_win_size : [ 1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 320             ) m_in_win           : [   49,    22,  1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 321             ) m_out_win          : [   49,    22,  1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 322             ) m_meter_win        : [    0,     0,  1280,   720]
+I/wce_proc   [     0] (./ProcWinNode.cpp 324             ) m_in_vs_delay         : 3
+I/wce_proc   [     0] (./ProcWinNode.cpp 325             ) mb_420_format         : 1
+I/wce_proc   [     0] (./ProcWinNode.cpp 326             ) m_line_enable_v_start : 27
+I/wce_proc   [     0] (./ProcWinNode.cpp 104             ) CalcWindow : EXIT
+I/wce_proc   [     0] (./ProcWinNode.cpp 283             ) pic_win: : [    0,     0,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 87             ) CalcWindow : ENTER
+D/wce_panel  [     0] (./PanelWinNode.cpp 43             ) No need to enable panel crtc timing
+I/wce_panel  [     0] (./PanelWinNode.cpp 81             ) vde_start:22
+I/wce_panel  [     0] (./PanelWinNode.cpp 111            ) b_crtc_timing:0, base_v_start:22
+I/wce_panel  [     0] (./PanelWinNode.cpp 358            ) m_out_win             : [    0,     0,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 359            ) m_video_win           : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 360            ) m_video_win_2         : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 361            ) m_program_win         : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 362            ) m_crtc_panel_win      : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 363            ) m_21_9_scaler_win     : [   50,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 364            ) m_border_overlay_win  : [   49,    22,  1280,   720]
+I/wce_panel  [     0] (./PanelWinNode.cpp 154            ) CalcWindow : EXIT
+I/wce_top    [     0] (./WCETop.cpp 1303                 ) SetWindow : EXIT
+I/wce_nr     [     0] (./NRWinNode.cpp 400               ) WriteReg : ENTER
+I/wce_nr     [     0] (./NRWinNode.cpp 852               ) y:1920, c:1920
+I/wce_nr     [     0] (./NRWinNode.cpp 863               ) y_width:1280, c_width:1280, v_size:720
+I/wce_nr     [     0] (./NRWinNode.cpp 466               ) WriteReg : EXIT
+I/wce_proc   [     0] (./ProcWinNode.cpp 155             ) WriteReg : ENTER
+I/wce_proc   [     0] (./ProcWinNode.cpp 166             ) WriteReg : EXIT
+I/wce_panel  [     0] (./PanelWinNode.cpp 160            ) WriteReg : ENTER
+I/wce_panel  [     0] (./PanelWinNode.cpp 228            ) top_width:0, bottom_width:0, left_width:0, right_width:0
+I/wce_panel  [     0] (./PanelWinNode.cpp 280            ) top_width:0, bottom_width:0, left_width:0, right_width:0
+I/wce_panel  [     0] (./PanelWinNode.cpp 328            ) bypass
+I/wce_panel  [     0] (./PanelWinNode.cpp 174            ) WriteReg : EXIT
+D/win_mgr    [     0] (./window_manager.cpp 111          ) SetSignalInfo

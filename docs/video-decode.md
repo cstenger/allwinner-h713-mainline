@@ -1,14 +1,452 @@
 # H713 video decode (VE / Cedrus → panel)
 
+> **This is a 3,300-line working journal, not a reference manual.** It is cited
+> as the authority for video decode, and for *how things were found* it is —
+> but if you arrived wanting "how does decode work today", read
+> [`status.md`](status.md) and
+> [`decode-production-readiness.md`](decode-production-readiness.md) first and
+> come here for the evidence behind them.
+>
+> **Entries are dated, and mostly newest-first — but not strictly.** The long
+> VA-API zero-copy investigation sits at the *end* despite being September work,
+> after the August milestones. Trust the date in a heading, never its position.
+>
+> **Wrong conclusions are kept on purpose.** Sections titled `RETRACTED`,
+> `CORRECTION`, `conclusion WRONG, kept as the trail` and
+> `original negative (kept as trail)` are deliberate: this file records how
+> several confident claims died, and that is the part worth re-reading. Do not
+> quote an entry without checking whether a later one overturns it —
+> §"Three claims in this file were wrong and are retracted" collects the worst.
+>
+> **Layout**, by heading rather than line number so it survives edits:
+>
+> | from | to | what |
+> | --- | --- | --- |
+> | top | `# HANDOFF — state as of 2026-08-15` | Sept/Aug journal, newest first |
+> | that handoff | `## Milestones` | an embedded session snapshot, then August hardware results |
+> | `## Milestones` | `## Tooling changes` | M1–M4, with 27 subsections — the bulk of the file |
+> | `## mpv plays hardware-decoded video TODAY` | end | the September VA-API zero-copy hunt, out of chronological position |
+>
+> Current answers for the things most often looked up here: **10-bit** →
+> [`hevc-10bit-findings.md`](hevc-10bit-findings.md); **scaler** → the handoff
+> linked immediately below; **hardening** →
+> [`decode-production-readiness.md`](decode-production-readiness.md); **anything
+> else** → [`README.md`](README.md).
+
+**Scaler update 2026-09-17:** H.264 and HEVC now share the H713 polyphase
+scaler, with arbitrary even NV12 output sizes and no rotation control. See
+[the current scaler handoff](handoff-2026-09-17-shared-scaler.md) for negotiation,
+hardware results, and the remaining playback/crop integration.
+[The control follow-up](reference/cedrus-controls-2026-09-17/README.md) fixes
+the last compliance failure: **49/49, zero warnings** with patch 0121.
+The [4:2:2 assessment](reference/chroma-422-assessment-2026-09-17.md) finds
+no working vendor H.264/HEVC 4:2:2 path; silicon support remains unproven.
+
 Started 2026-08-07, immediately after display bring-up completed. Operational
 companion to [claude-display-handoff.md](claude-display-handoff.md), which is
 what this work builds on.
 
 Goal for this phase: **decoded video visible on the projector panel.**
+**Reached 2026-09-01.**
+
+---
+
+## 2026-09-03: stock mpv VA-API zero-copy works
+
+The `--hwdec=vaapi --vo=gpu --gpu-context=drm` path is fixed. Stock mpv now
+decodes with Cedrus, exports the capture surfaces as dma-bufs, imports them into
+Panfrost, and presents moving video without a CPU readback:
+
+```text
+Using hardware decoding (vaapi).
+VO: [gpu] 1280x720 vaapi[nv12]
+```
+
+The root cause was not the request fd, surface state, sync target, or EGL
+holding a decoded buffer. mpv first created and exported two **128x128** VA
+surfaces to probe interop, destroyed their VA objects, and then requested the
+real **1280x720** decoder surfaces. The VA driver retained two pieces of stale
+V4L2 state:
+
+- `SET_FORMAT_OF_OUTPUT_ONCE` kept the OUTPUT queue at 128x128 for the life of
+  the process;
+- `RequestDestroySurfaces` unmapped userspace but never issued `REQBUFS(0)`, so
+  the probe's `CREATE_BUFS` allocations survived their VA objects.
+
+The later decoder surfaces consequently had only 24,576 bytes of 128x128
+backing. The first 1280x720 request queued successfully, then Cedrus read past
+that allocation. `sun50i-iommu` reported a master-0 read fault, the Cedrus job
+timed out, and only then did later buffer reuse produce the misleading
+double-QBUF/EINVAL symptom. Narrow sync tracing also directly refuted the old
+handoff suspect: `request_fd=18` was valid and `media_request_queue()` had
+succeeded; the completion wait timed out because the hardware faulted.
+
+Patch
+[`0007-Release-probe-buffers-before-decoder-format.patch`](../patches/libva-v4l2-request/0007-Release-probe-buffers-before-decoder-format.patch)
+tracks the programmed pixel format and geometry, releases both queues when the
+last pre-context surface goes away, and resets that state at context teardown.
+It also handles a second client behavior: after decode starts, libavutil asks
+for a 16x16 upload-probe surface. The active V4L2 mem2mem queue cannot change
+format, so the auxiliary VA object keeps its logical 16x16 dimensions while
+its buffer uses the active 1280x720 queue geometry. Without that case all
+decode requests finish, but mpv performs a CPU hwdownload during filter
+negotiation.
+
+Validation with the instrumented functional build:
+
+```text
+five-frame focus: decoded surfaces exported at 1,382,400 bytes
+300-frame stress: capture QBUF=300, capture DQBUF=300, failures=0, hwdownloads=0
+20-second paced:  capture QBUF=300, capture DQBUF=300, failures=0, hwdownloads=0
+kernel delta:     no new IOMMU fault, no new Cedrus timeout
+visual result:    moving video, operator-confirmed
+```
+
+The clean patch applies independently to the six-patch pinned base and builds
+without warnings. Its clean native board build/install remains the packaging
+step; the hardware proof above used an equivalent instrumented build. The long
+chronological investigation near the end of this file intentionally preserves
+discarded hypotheses—this section is the current conclusion.
+
+---
+
+## 2026-09-01 (later): moving decoded video on the panel, through the IOMMU
+
+**300 frames of decoded H.264 rendered on the projector at 27.13 fps, zero
+IOMMU faults, logo restored.** Operator-confirmed. This closes the corruption
+investigation that began 2026-08-26.
+
+The decisive measurement is the fragmentation of the buffer that played:
+`pages=338 contiguous=NO breaks=56 longest-run=8(32KiB) absent=0`. That is
+*more* scattered than the 31-break / 64 KiB buffer that produced green
+corruption on a bypass kernel. Under translation it played perfectly, which
+confirms root cause and fix end to end: DECD scans linearly from one base, and
+translation is what makes a scattered buffer scannable.
+
+**The whole difficulty was ordering, not addressing.** The master-2
+`IOMMU_BYPASS 0x7c -> 0x78` transition must happen while the DECD **video source
+is disabled** — only the inherited logo route live. The source rests at base
+`0x00000000` with inherited 1920x1088 geometry, so enabling it starts a raster
+scan through the first ~2 MB of physical memory: harmless under bypass, and
+L1-invalid the instant translation arrives. Four visible runs faulted at
+`0x29000`, `0x26000`, `0x81000` and `0x16000` — all inside that window, none
+near the identity-mapped logo (`0x6c100000`) or the frame IOVA (`0xfe000000`).
+
+Bench procedure: spend the flip with a **nonvisible** run first, then run the
+visible test as a second session. Patch 0075 guards the flip with
+`dec->iommu_runtime_enabled`, which persists until module unload or reboot.
+
+Consequences for what is written below:
+
+- **Patch 0074's contiguous pool is not required, and was dropped from the
+  series on 2026-09-01.** Fragmented CAPTURE displays correctly through a single
+  IOVA, so its 64 MiB permanent DRAM reservation bought nothing. The patch is
+  kept out of series as a fallback control for a bypass kernel; the section
+  below describing it is the record of that work.
+- **The banding was never a surface-reuse race.** None appeared in moving
+  playback. Patch 0071 stands as a correct independent fix.
+- **"One master-2 fault wedges AFBD for the boot" is the wrong rule.** The fault
+  does wedge it, but it is avoidable — design for zero faults, not one per boot.
+- Any `contiguous=yes` reported by a 0074 build is **vacuous**: `absent=338`
+  means pagemap resolved no pages at all, because reserved `no-map` memory has
+  no `struct page`. Segmented builds report `absent=0` and are real.
+
+**Patch 0076 makes that a driver behaviour and is hardware-validated.** It parks
+source 0 across the transition and re-enables it after `dec_reg_enable()`, gated
+on the Y ring holding a real address. Run as the *first* DECD session of a boot
+with no operator procedure, both a frozen still and a 300-frame moving clip
+rendered correctly with zero faults and restored the logo.
+
+`decd-visible-sequence.sh` was fixed alongside: it enabled the video source at a
+fixed `sleep 0.2`, long before any frame existed, so a `--freeze-at` run showed
+up to two seconds of the source scanning low memory. It now waits for the ring to
+arm. With that in place the moving run needed no park at all — the source was
+already disabled at flip time — so the wrapper ordering is the mechanism and 0076
+is the safety net. Keep both.
+
+Full account, all six runs and the register evidence:
+[reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md).
+Operational handoff: [handoff-2026-09-01-iommu-runtime.md](handoff-2026-09-01-iommu-runtime.md).
+
+---
+
+## 2026-09-01: contiguous Cedrus CAPTURE hardware-proven
+
+The route gap is closed and real decoder integration has begun.  A strict
+target-side player now sends Cedrus-owned 1280x720 linear NV12 dma-buf FDs
+directly through the reconstructed 112-byte DECD ABI, with no CPU pixel copy
+and no Mali render.  A 300-frame nonvisual run completed at 29.95 fps and real
+Y/C addresses cycled through DECD.  Two-second visible runs showed recognizable
+moving decoded content and restored the logo.
+
+Direct submission of segmented Cedrus buffers is not correct. Operator
+recordings show horizontal bands that initially looked mixed from multiple
+decoded pictures. Immediate sample return and deep retention were both tried,
+but the fence and frozen-frame results below disprove reuse/timing; DECD is
+instead scanning linearly beyond the buffer's first physical segment. Do not
+use a live display MIPS for this test: one 30-frame real Cedrus preflight
+hard-locked the SoC and required a power cycle. The Linux DECD IRQ owns the
+address ring with MIPS parked.
+
+**Fixed, and the fence works on hardware.** Patch 0071 fixes the
+reconstructed release-fence lifetime — `frame_item_release()` signalled its
+`dma_fence` and then `kfree()`d it while the returned `sync_file` still held a
+reference — so the fence is finally usable as the retirement signal it already
+was in timing terms.  `decd-play` now holds each sample until its fence signals,
+with a bounded queue that fails loudly rather than reusing a surface DECD is
+still scanning.  The eight-sample starvation also has a mechanism now: DECD
+retires a frame only when a *later* frame displaces it, so a deep hold is a
+circular wait, not simple exhaustion.
+
+Measured: **299 of 300 surfaces retired on a signalled fence, zero stalls**, and
+a cap sweep (2/4/6/8) shows `peak-held` saturating at **4** regardless — the hold
+self-regulates to DECD's four-slot ring depth, so `cap=8` no longer starves the
+capture pool at all. **But the picture did not improve** (`test_60`), so
+premature surface reuse is eliminated as the cause. `DECD_FREEZE=1` then
+resubmitted **one** complete, quiescent decoder buffer 89 times at a fixed
+address: the image is **steady and corrupt**, which eliminates timing altogether
+— not retirement, not producer readiness, not frame mixing, not a fetch race,
+since DECD reads the same wrong thing deterministically. The fault is in what
+DECD reads from a Cedrus buffer. Next steps are byte-level and cost no operator
+time. That dump is done: the buffer read through the **same FD given to DECD**
+is **bit-exact** against a host software decode (SHA-256
+`3b3d249c…` both sides), so the NV12_32L32 tiling hypothesis is **refuted** and
+the content and layout are correct. Content, layout and timing are now all
+eliminated. The pagemap walk then found the cause: the decoder's buffer is
+**338 pages with 31 breaks, longest contiguous run 64 KiB**, while
+`dec_dma_map()` keeps only `sg_dma_address(sgt->sgl)` and the hardware scans
+linearly from that single base. DECD starts correctly — `0x05600070` is exactly
+the buffer's first page — then reads 51 of 720 luma lines and unrelated memory
+for the rest, with chroma at `y + 0xE1000` landing outside the buffer entirely
+(hence green). Carveout frames always worked because they are one segment.
+Patch 0072 refuses a segmented import instead of corrupting silently, and 0073
+declares the constraint (`dma_set_max_seg_size`) so the mapping is deterministic
+rather than dependent on memory fragmentation.
+
+**The bypass carveout control now passes with known-visible decoded content.**
+The first attempt copied decoded frame 0 and appeared black, but host decode
+showed that frame is itself black (`YAVG=16.0002`, `U=V=128`; NV12 SHA-256
+`3b3d249c…`). `DECD_FREEZE_AT=60` was added so the diagnostic can discard
+frames without submitting them and hold an exact later frame. The board's frame
+60 dump is byte-for-byte the visibly nonblack host reference (SHA-256
+`70bddcf8…`). On the bypass kernel, copying those bytes to physical
+`0x6c500000` and resubmitting them 300 times produced an operator-confirmed
+recognizable, apparently correct video still; the logo state returned after
+restore. Therefore decoded content and all DECD route/layout programming are
+good. **Physical-buffer provenance is the remaining direct-path fault.**
+
+Patch 0074 implements the shortest path: a 64 MiB reusable
+`shared-dma-pool` on the VE plus `DMA_ATTR_FORCE_CONTIGUOUS` on Cedrus's
+CAPTURE queue only. The force attribute is necessary: with VE masters 0/1
+behind the IOMMU, a pool alone can still be remapped from scattered physical
+pages. The normal series and the out-of-series 0068 test configuration both
+build cleanly.
+
+The patch also passes its nonvisual hardware acceptance on a RAM-only boot.
+Linux reserved the dedicated pool at `0x7c000000`, attached Cedrus to it, and
+patch 0072 accepted a direct dma-buf import that it refused on the segmented
+build. Frozen decoded frame 60 completed 90 submissions and its dump still
+matched the host reference exactly (`70bddcf8…`). A separate 150-frame moving
+run completed at 24.76 fps with 149 fence retirements, peak hold 4 and zero
+stalls. The log contained no 0072 refusal, warning, or IOMMU fault; master 2
+remained bypassed and the logo selector remained `0x29000000`. Userspace could
+not read any pagemap PFNs on this image, so its `contiguous=yes` report is not
+evidence; successful passage through 0072's full-length one-segment kernel
+check is.
+
+**Those final checks pass.** Direct frame 60 held for 300 submissions and the
+operator reported, “It looked good”; the logo returned after the test. A
+300-frame moving run then completed at 27.09 fps with 299 fence retirements,
+peak hold 4 and zero stalls. The operator saw the short clip, noticed no issues,
+and confirmed the logo returned. Three further consecutive 300-frame sessions
+all completed at 27.09–27.12 fps with 299 fence retirements, peak hold 4 and
+zero stalls. No new kernel message appeared, master 2 remained bypassed, and
+the selector remained `0x29000000`. Patch 0074's bypass direct path is therefore
+hardware-proven for a known-visible still, moving playback, repeated allocation
+and teardown, fence retirement, and display-state restoration.
+
+**The early-attachment 0069/0070 IOMMU route is closed; the runtime transition
+it pointed at is not — and it works.** Attaching translated from probe
+reliably coalesces the import but renders black with this adopted-display
+configuration and no faults. The vendor DTB only describes the initial state:
+master 2 starts in bypass (`<&mmu_aw 2 0>`), while reverse engineering shows HWC
+calling `sunxi_enable_device_iommu(2, 1)` at the playback boundary. Patch 0075
+models exactly that runtime transition, and **it is hardware-proven** — see the
+2026-09-01 section at the top of this file. The one thing it needs that was not
+obvious: the flip must land while the video source is still disabled.
+Full account in [handoff-2026-08-31.md](handoff-2026-08-31.md) and
+[reference/iommu-runtime-flip-ordering-2026-09-01.md](reference/iommu-runtime-flip-ordering-2026-09-01.md).
+
+Complete measurements, artifact and recording hashes, current board state and
+next steps:
+[reference/cedrus-decd-first-visible-playback-2026-08-31.md](reference/cedrus-decd-first-visible-playback-2026-08-31.md).
+
+---
+
+## 2026-08-29: the premise is confirmed, and the stock diff is exhausted
+
+Superseded by the 08-31 section above, which found the missing state and put a
+frame on the panel. Kept because its eliminations still stand and are worth not
+re-testing — but read its closing "the black is source 0's output not reaching
+composition" as the working hypothesis of the time, not a conclusion: the actual
+cause was inherited source geometry, a zero chroma gain and the plane-1
+selector. Full account in [handoff-2026-08-29.md](handoff-2026-08-29.md).
+
+**The no-GPU premise is measured, not inferred.** With stock Android playing
+video and the player's transport controls auto-hidden, Mali runtime PM reads
+`active +0 ms, suspended +15115 ms` over 15 seconds — the GPU is fully asleep
+while video is on the panel. Measured with the controls *visible* it reads 100%
+active, which is the player's UI, and a single sample would have supported the
+opposite conclusion.
+
+**Only AFBD is driven per frame.** Sweeping eleven register windows at idle twice
+and during playback, the only video-driven registers are AFBD's Y bases
+`0x05600070`-`7c` and C bases `0x05600084`-`90`, cycling as a ring. TVTOP, the
+mixer, DE/OSD, LAYER, ROUTE, LVDS PHY, PLL, GE2D and the IOMMU show **zero**
+registers differing between idle and playback. They are load-bearing but
+configured once, so the per-frame surface is just AFBD's buffer slots.
+
+**Overlays are a GPU composite on stock.** Video alone runs decoder → dma-buf →
+AFBD source 0 → panel with the GPU asleep; video *with* UI wakes the GPU to
+composite both into one buffer that AFBD scans out. There is no hardware
+subtitle blending on this path.
+
+**Every candidate difference has been forced onto working stock hardware and
+none causes the black:**
+
+| forced onto stock | result |
+| --- | --- |
+| bit 31 on `0x05600100`/`0x05600140`, committed | no effect |
+| fmt 4 rather than stock's fmt 0, committed | tiled, half-height, colour-shifted |
+| IOMMU master 2 bypassed | coloured static |
+| mixer layer control, our value and zeroed, ±latch | no effect |
+
+Since *every* way of breaking source 0 still puts something on the panel, the
+black is source 0's output **not reaching composition** rather than a
+misconfigured source. fmt 0 is still a real fix worth making — stock's value is
+correct for NV12 and ours is not — but it is necessary, not sufficient.
+
+**Two rules that change how to test here.** Writes to the AFBD block are **inert
+until the per-register commit latch is pulsed** (control at `+0x00`, latch at
+`+0x04`): an uncommitted write lands, reads back, holds indefinitely and does
+nothing, so readback proves nothing. And the mixer, DE and TCON H/V totals are
+**coupled** — changing two of three to match stock blanked the panel; the revert
+restored it. Capture `0x05880020` on stock before revisiting that.
+
+---
+
+## 2026-08-26 correction: DECD is the vendor no-GPU display path
+
+The older handoff below says DECD "has no job." That is now disproved by stock
+Android: `hwcomposer.ares.so` calls `DECD_IOC_FRAME_SUBMIT` from
+`DecoderDisplay::present()` for ordinary uncompressed video, passing an image
+dma-buf plus a 32 KiB VideoInfo dma-buf. The missed ioctl is assembled as split
+Thumb-2 `movw`/`movt` immediates, so the earlier byte search could not find it.
+
+The photographed patch-0066 result remains useful, but only establishes that
+the tested live OSD source fetched the NV12 bytes as packed 32-bit pixels. It
+does not rule out DECD's distinct hardware YUV-to-RGB route. The corrected
+112-byte ABI, metadata magic, and repeat-count offset are in patch 0067; the
+mutually-exclusive, no-shared-reset test boot is patch 0068 (out of series).
+
+That controlled boot was run on 2026-08-26. The request returned a real release
+fence, the frame manager advanced, DECD/vsync ran at 59.7 Hz, the expected Y/C
+and VideoInfo addresses reached its four-slot register file, and panfrost stayed
+at zero interrupts. The panel still showed the U-Boot logo; hiding its serviced
+packed-OSD channel showed black. Geometry correction did not expose DECD. So
+the submission path works, but its output is not routed into the adopted
+U-Boot display topology. Enabling DECD's stock internal blue generator while
+the OSD was hidden also remained black for the entire observation. Because that
+generator bypasses NV12 and VideoInfo, this isolates the failure to downstream
+routing/plane topology rather than frame contents, format or metadata.
+
+**The `/dev/ge2d` `0x4631` plan is withdrawn (2026-08-26, later).**
+`tgd_put_plane_info()` was disassembled in full. It is the RGB OSD plane flip —
+four colour formats, all RGB, no chroma plane, no DECD register anywhere in
+`ge2d_dev.ko` — and it does what `sun50i-h713-afbd` already does every atomic
+flip. Stock HWC pairs it with DECD because HWC has two layers to present, not
+because it commits the video path.
+
+What replaced it is better. The AFBD writeback engine in the same module
+enumerates **three** sources with a uniform (enable, pixel format, size)
+interface: `0x05600010` (bits 1:0 enable), `0x05600100` and `0x05600140`. Ids 1
+and 2 are the OSD channels; **id 0 is the video source, and it is exactly the
+register set DECD programs.** Patch 0066 wrote source 0's format byte and then
+observed source 2's fetch, so it was never able to answer the YUV question.
+
+**Tested 2026-08-26 and negative.** `tools/video/decd-enable-test.sh` set source
+0's enable bits with DECD provably submitting at 60 Hz and valid Y/C in the
+queue: all three values read back, and the panel did not change. Bits 1:0 are
+writable and were never set, but setting them is not sufficient.
+
+The finding that matters came from the test's own geometry check:
+`dec_reg_video_channel_attr_config`, the only writer of the video source's
+pixel-format selector, is **dead code in stock `decd.ko`** — no relocations
+reference it and the module exports nothing. **So nothing on the ARM side
+programs the video source's format**, and the component that does is almost
+certainly the **MIPS firmware**, fed by DECD's VideoInfo dma-buf — which U-Boot
+parks (`MIPS core quiesced`) on every boot we have tested. That predicts this
+null and also explains why DECD's internal blue generator showed nothing.
+
+Next work is CPU_COMM/VideoInfo, not AFBD registers. See
+[ge2d-plane-open-re.md](ge2d-plane-open-re.md), "ioctl `0x4631` is the RGB OSD
+flip". Historical conclusions below are retained as an audit trail, not as
+current guidance.
+
+### Where that went, 2026-08-28
+
+Chased through, and the blocker moved. Full account in
+[plane-brief-for-external-review.md](plane-brief-for-external-review.md) §0;
+the short version:
+
+- **ARM-side DECD submission is solid.** A diagnostic module that bypasses the
+  reconstructed queue, programs all four hardware slots directly and masks the
+  ARM DECD IRQ holds a frame indefinitely with the MIPS stopped. Nothing about
+  the frame, format, stride, dma-buf or VideoInfo is the problem.
+- **Routing is still absent, and it is downstream of fetch/format.** Source-0
+  enable 1/2/3, mixer layer 0 (`0x0525c004: 0x1402 -> 0x1403`) and the fuller
+  `0x1003` candidate were all negative, and so was the corrected internal-blue
+  generator (`0x05600065[0]`) -- which bypasses Y, C, stride, dma-buf and
+  VideoInfo entirely. Black in every combination.
+- **Two candidate causes eliminated.** TVTOP's live route table already matches
+  the authenticated firmware values exactly, so `dec_reg_top_enable()` is not a
+  missing initialisation; and the stock-DT 200 MHz AFBD clock (we ran 100 MHz)
+  makes no difference.
+- **Releasing the MIPS under Linux is not the answer.** It reports running and
+  then hard-locks the SoC -- Wi-Fi and serial with it. Shared ownership between
+  the ARM reconstruction and the firmware is unsafe as currently built.
+- **The real blocker is now CPU_COMM under project `0x34`.** Stock's startup is
+  a handshake (`cpu_comm_dev` -> `mipsloader` loads image/config/TSE -> wait for
+  CPU_COMM -> restart MIPS -> ~800 ms -> `THal_Vp_Init` -> HWC resumes SVP and
+  DECD), and board B's vendor image has the `loadmips`/`libmips.so` /
+  `display.mips.bootfinish` path to prove it. `THal_Vp_Init` now completes
+  end to end under project `0x33` with its real ABI. Under `0x34` the firmware
+  accepts the call and never schedules it. See
+  [mips-display-recovery.md](mips-display-recovery.md), "Project 0x34 is not
+  0x33 for RPC".
+
+Also corrected in passing: `dec_reg_blue_en()` drives `workaround + 5` bit 0,
+not `workaround + 16` bit 4 (patch 0013 was editing the low byte of a queued Y
+address); the DECD frame descriptor is **112** bytes, not 128; the repeat count
+lives at ioctl-wrapper `+0x10`, not `+0x18`; and the VideoInfo magic is
+`0x61770000`, not `0x61766b40`. Patch 0067 carries these.
+
+One more thing worth trusting: board A and board B ship a **byte-identical**
+`hwcomposer.ares.so`, and their `decd.ko` / `ge2d_dev.ko` differ only in build
+id -- the DECD enable, mux, blue, top-enable and IRQ routines normalise to the
+same code. Use **board B** as ground truth for DT, module builds and boot-state
+comparisons, but expect the video architecture to be shared.
 
 ---
 
 # HANDOFF — state as of 2026-08-15
+
+> **A SNAPSHOT FROM 2026-08-15, EMBEDDED MID-FILE. Its "DONE" is scoped to what
+> was true that day and has been overtaken several times since.** It describes
+> H.264 reaching the panel *through the GPU*; the no-GPU DECD path that
+> supersedes it landed 2026-09-01, and HEVC, MPEG-2, VP8, 10-bit, the VE scaler
+> and the chroma-pitch fix all came after. Read it as a milestone marker, not as
+> the state of the project. Current state: [`status.md`](status.md).
 
 **Video decode is DONE.** Decoded H.264 reaches the panel through the GPU with
 the CPU never touching a pixel, at the vsync ceiling, without tearing.
@@ -124,11 +562,22 @@ Forcing NV12 is required for the same reason as H.264: unforced it negotiates
 the 32x32 tiled `ST12`, which is correct output that can never match a linear
 reference. Vectors come from `tools/video/make-test-streams.sh`.
 
-**10-bit does not work**, and the blocker is in the kernel, not this SoC:
-mainline cedrus exposes no 10-bit capture format at all, so `Main10` reaches EOS
-having decoded zero frames even though the capability bit and the hardware
-registers are both present. Full analysis, and what it would take for stock mpv
-to use the VE at all, in [vaapi-scope.md](vaapi-scope.md).
+**10-bit works, and it is bit-exact** — the claim that it "does not work" was
+wrong twice over. The engine decodes Main10 and writes Allwinner's 8-bit plane
+plus a packed 2-bit plane; read both back and every sample matches a software
+10-bit decode exactly (2026-09-23, three vectors, all three planes). cedrus
+negotiates an 8-bit fourcc and sizes the buffer for both planes, so a client
+today gets a correct 8-bit rendition of a 10-bit stream. What is missing is a
+V4L2 fourcc describing the 8+2 layout, not the ability to decode.
+
+**That gap is deliberately left open (2026-09-23).** This panel is 8-bit RGB, so
+a fourcc would fix the negotiation and the two extra bits would still be
+discarded at the end of the pipeline — nothing on the glass would change. It is
+an academic item, not a defect; revisit only if the target becomes transcode,
+frame capture or upstreaming. See
+[hevc-10bit-findings.md](hevc-10bit-findings.md), which carries the full chain
+and the cost; what it would take for stock mpv to use the VE at all is in
+[vaapi-scope.md](vaapi-scope.md).
 
 ## NEXT PHASE — audio
 
@@ -1176,6 +1625,27 @@ physical addresses to `0x05600070`/`0x05600084` with format 3 and the dirty
 latch, commit. That removes the CPU read (~48 MB/s), the conversion (7.5 ms) and
 the blit (3.8 ms) together.
 
+> **TRIED IT — 2026-08-25. The registers are not in the scanout path.** Kernel
+> patch 0065 implements exactly the above in `sun50i-h713-afbd`. `kmssink`
+> negotiated NV12 (it had refused before) and every value landed in hardware:
+> `0x05600011 = 3`, both strides 1280, `Y = 0x77100000`, `C = 0x771E1000` —
+> `C - Y = 0xE1000`, precisely one 1280x720 luma plane. **The panel did not
+> change**; it kept showing the console. Read back during the same run, the
+> channel-1 block this driver scans out of was untouched: stride `0x1400`
+> (5120 = 1280x4) and source `0x76D00000`, the fbcon framebuffer. The dirty
+> latch read back 0.
+>
+> These registers are DECD's frame-submit file for a **separate video plane**,
+> not a YUV mode of the AFBD channel. Configuring them programs a plane that is
+> not in the active pipeline — which is the question the sequencing note below
+> raised ("whether DECD can feed it at all given its registers are not in the
+> scanout path") and it is now answered: not without opening the plane first,
+> and the plane hunt established that plane-open cannot be poked into a running
+> pipeline. The register semantics recovered from the vendor driver still look
+> right; what is missing is the topology step. Patch 0065 is **out of series**
+> with the full result attached, because on its own it only adds a format that
+> negotiates and then shows nothing.
+
 ### The original attempts (conclusion WRONG, kept as the trail)
 
 The prize was killing the CPU colour conversion (convert 8.7 ms + blit 3.8 ms =
@@ -1215,6 +1685,30 @@ here, no value written to an AFBD format byte can produce YUV on this plane, and
 the change needed is to route through a VI channel in the mixer — which means
 owning the DE configuration that currently arrives wholesale from the vendor's
 `LogoRegData` replay. That is M4-scale work, not a poke.
+
+> **⚠ The block below over-claims — corrected later the same day.** What patch
+> 0066 established is that the live channel fetched **linear packed 32-bit under
+> the tested recipe**. It does NOT identify the cause, and so does not prove this
+> inference: an incomplete recipe, or a wrong format encoding (row 3 is a
+> three-point fit, not established), produces an identical photograph. A
+> never-tested address pair at `0x05600320/324` holds live DRAM addresses on the
+> running board, so "the register space is covered" is false. Correctly scoped:
+> *direct NV12 does not work through the tested AFBD_SRC channel recipe; whether
+> another AFBD/DECD/video-plane configuration does is open.* See
+> [ge2d-plane-open-re.md](ge2d-plane-open-re.md) § "SCOPE CORRECTION".
+>
+> **Patch 0066, as run.** Patch 0066 wrote the
+> format selector, both plane strides, both Y/C plane addresses *and* the
+> channel block's own stride and source in a single commit — the combination
+> neither this attempt nor patch 0065 ever ran — and confirmed all of it in
+> hardware live mid-stream. The 4x repeat came back. Sweeping the channel stride
+> 1280 → 5120 then reproduced a packed 4-bytes/pixel fetch to the pixel: luma
+> over chroma at a measured 1.9:1 against the 2:1 NV12 requires. `0x170` is
+> honoured, `0x011` is inert, and the hardware walks the NV12 buffer linearly as
+> one packed RGB surface. Full account in
+> [ge2d-plane-open-re.md](ge2d-plane-open-re.md). This conclusion is retained
+> only as history; the 2026-08-26 correction at the top of this file supersedes
+> it.
 
 **What was established anyway, and is durable:**
 
@@ -1848,3 +2342,963 @@ U-Boot currently owns the AFBD registers, and DECD would want them.
 - The bench board is a **WiFi AP at 192.168.4.1** with sshd running. Joining it
   from the host would give a fast file path, at the cost of the host's own
   network. `ums` from U-Boot is the transfer route used instead.
+
+## mpv plays hardware-decoded video TODAY, with no source changes (2026-09-03)
+
+The handoff recorded this as blocked: *"mpv cannot use the video plane. This
+build has no drmprime hwdec, only vaapi, and mpv's VA-API route goes through
+vo=gpu, which wants a render node the display-only driver has none of."*
+
+**Both halves of that are wrong.** Measured on the board:
+
+```sh
+LIBVA_DRIVER_NAME=v4l2_request \
+  mpv --vo=drm --hwdec=vaapi-copy clip.h264
+```
+
+```text
+libva: Trying to open .../v4l2_request_drv_video.so
+libva: va_openDriver() returns 0
+Initialized VAAPI: version 1.22
+Using hardware decoding (vaapi-copy).
+VO: [drm] 1280x720 nv12
+Exiting... (End of file)
+```
+
+Hardware decode on the VE plus display, no rebuild of ffmpeg, mpv or anything
+else. The only missing piece was `LIBVA_DRIVER_NAME=v4l2_request`, because
+libva otherwise derives the driver name from the DRM device and looks for a
+`sun50i-h713-afbd_drv_video.so` that does not exist.
+
+### And `vo=gpu` works too — the render-node claim was false
+
+```text
+GL_VERSION  = '3.1 Mesa 25.0.7-2+deb13u1'
+GL_RENDERER = 'Mali-G31 (Panfrost)'
+VO: [gpu] 1280x720 yuv420p
+```
+
+Mesa pairs the two devices by itself — `card0` is `sun50i-h713-afbd`
+(display-only, no `DRIVER_RENDER`, correctly) and `card1`/`renderD128` is
+`panfrost`. GBM allocates on the display device, Panfrost renders, EGL comes up.
+This is the ordinary split render/display arrangement every ARM SBC uses, and it
+needed no configuration at all.
+
+So the driver was never missing anything: it already advertises
+`DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC` with `DRM_GEM_DMA_DRIVER_OPS`
+(PRIME import/export plus dumb buffers), which is exactly what GBM and a
+compositor need.
+
+### What is still not working
+
+`--hwdec=vaapi` (zero-copy) with `vo=gpu` fails at *"Could not create a VA
+display"* — before `vaInitialize`, since no `libva info:` lines appear at all.
+Note `vo=drm` creates the VA display fine with the same driver and env, so this
+is mpv's `vo=gpu` VA-display path specifically, not the VA driver.
+
+The gap between the two paths:
+
+| | works | copy |
+| --- | --- | --- |
+| `vo=drm` + `vaapi-copy` | **yes** | frame copied back to CPU, software scaled |
+| `vo=gpu` + `vaapi` | no | would be zero-copy via EGL dmabuf interop |
+| `vo=gpu` + `vaapi-copy` | untested | GPU-composited, still a readback |
+
+`GL_EXT_EGL_image_storage` interop is present, so the zero-copy path is
+plausible once the display is created.
+
+### Upstream note: v4l2request is NOT in FFmpeg
+
+Checked FFmpeg master's `configure`: no `--enable-v4l2-request`, no
+`v4l2request` hwaccel entries, nothing. The `*_v4l2m2m` decoders that *are*
+present are the **stateful** M2M wrappers and cannot drive Cedrus, which is a
+**stateless** Request-API decoder. So "build ffmpeg with v4l2request" means
+applying an out-of-tree patchset — which is now unnecessary anyway.
+
+### Remaining rough edge
+
+`vo=drm` prints `Failed to commit atomic request: Error number 22` (EINVAL) on
+exit, after playing to EOF. Teardown only, but it is our driver returning
+EINVAL to an atomic commit and worth understanding.
+
+### `vaapi-copy` + `vo=gpu` also works, and the numbers are the real story
+
+Both outputs work with hardware decode. Measured with `--untimed --no-audio`,
+300 frames (`--loop-file=4`) so mpv's ~1.9 s startup is amortised — the first
+attempt used 60-frame clips and was almost entirely startup, reporting 8 fps for
+a path that actually does 40:
+
+```text
+720p                              1080p high
+  vaapi-copy vo=null   137.3 fps    vaapi-copy vo=null    90.6 fps
+  software   vo=null   206.9 fps    software   vo=null   174.5 fps
+  vaapi-copy vo=drm     96.7 fps    vaapi-copy vo=drm     57.5 fps
+                                    vaapi-copy vo=gpu     40.7 fps
+```
+
+**Software decode beats hardware-decode-plus-copy at both resolutions.** The VE
+decodes fine; the readback of the decoded frame out of its buffer costs more
+than four A53s spend decoding H.264 in the first place. That is the whole
+result, and it reframes what `vaapi-copy` is for: it is not a throughput win, it
+is a **CPU-offload** win, and the copy erases most of even that.
+
+Displayed playback is comfortably realtime either way — 57.5 fps at 1080p
+through `vo=drm`, 40.7 through `vo=gpu` — so this is a usable player today. But
+hardware decode only *pays* once the copy is gone.
+
+Two caveats on the numbers: the clips are 60 frames looped, so they sit in cache
+and likely flatter software decode; and `--untimed` measures throughput, not
+sustained realtime playback with audio and a UI competing for CPU.
+
+### So zero-copy is the point, not an optimisation
+
+This is what the DECD/KMS NV12 plane already demonstrated at **59.71 fps
+unpaced with the GPU idle** — no readback, no CPU in the frame path. Getting
+mpv onto that path is worth real effort, because it is the only configuration
+where the VE is actually earning its keep.
+
+### The VA-display failure: root-caused, fixed, and still not enough
+
+The cause was **this device having no render node**. mpv's DRM/EGL context calls
+`drmGetRenderDeviceNameFromFd()` on the *display* device to find a render node
+for VA interop, and ours has none:
+
+```text
+/dev/dri/by-path/platform-5600000.display-card -> card0      (only card0 + controlD64)
+/dev/dri/by-path/platform-1800000.gpu-render   -> renderD128 (panfrost)
+```
+
+The node mpv wants belongs to panfrost, and mpv gives no way to point it there —
+`--vaapi-device` is honoured for the copy path and **ignored for interop**
+(tested).
+
+Patch 0092 (out of series) adds `DRIVER_RENDER`, giving `renderD129`. Results:
+
+- **VA display now creates** on the interop path: `va_openDriver() returns 0`,
+  `Initialized VAAPI: version 1.22`. So the diagnosis was right.
+- **Mesa's pairing survived** — `GL_RENDERER='Mali-G31 (Panfrost)'` still, so
+  the flagged risk of breaking kmsro did not materialise.
+- **No regression**: `vaapi-copy` still decodes in hardware, 75.7 fps at 720p
+  through `vo=gpu`.
+- **But zero-copy still does not decode.** It now fails one layer deeper:
+
+```text
+h264: Failed to end picture decode issue: 1 (operation failed)
+h264: hardware accelerator failed to decode picture
+Attempting next decoding method after failure of h264-vaapi.
+```
+
+`vaEndPicture` — the actual decode submission — fails, repeatedly, and ffmpeg
+falls back to software. So the render node was **necessary but not sufficient**.
+
+Worth weighing before keeping 0092: `DRIVER_RENDER` on a display-only device
+advertises a capability the hardware lacks, purely to satisfy a userspace
+assumption. It bought a real step forward and broke nothing, but it does not
+complete the job, so it earns its place only if the `vaEndPicture` failure turns
+out to be solvable.
+
+Next question for that: the copy path builds its VA device on `renderD128`
+(panfrost) while interop now builds it on `renderD129` (this driver). If
+`libva-v4l2-request` uses the DRM fd for surface allocation, those are not
+equivalent, and that difference is the first thing to check.
+
+### Method note
+
+The first check after installing 0092 reported "no render node" and was wrong.
+`install-kernel-fit.sh --reboot` returns immediately, so a ping-poll can find
+the board still up on the OLD kernel and query that. Always confirm
+`/proc/version` matches the FIT's build time before believing a post-install
+measurement.
+
+### The render node is NOT the discriminator — decode works on both
+
+Compared the two VA devices directly with ffmpeg, taking mpv out of the picture:
+
+```text
+LIBVA_DRIVER_NAME=v4l2_request ffmpeg -hwaccel vaapi \
+  -hwaccel_device /dev/dri/renderD128 -i clip.h264 -f null -    exit 0
+  -hwaccel_device /dev/dri/renderD129 -i clip.h264 -f null -    exit 0
+```
+
+**Both decode cleanly.** So the earlier hypothesis — that the copy path works
+because it uses panfrost's node while interop fails on ours — is **refuted**.
+Decode does not care which DRM fd the VA device was built on.
+
+What does fail is the interop plumbing:
+
+```text
+-vf hwmap=derive_device=drm,format=drm_prime
+  Failed to created derived device context: -38   (ENOSYS)
+```
+
+ffmpeg cannot derive a DRM device from this VA-API device, which is precisely
+the capability zero-copy needs. Note the driver *does* export the symbol —
+`ExportSurfaceHandle`, `AcquireBufferHandle`, `DeriveImage` are all present in
+`v4l2_request_drv_video.so` — so this is not a missing entry point.
+
+### Where the zero-copy blocker actually is
+
+Bounded, after eliminating the alternatives:
+
+- **not the render node** — decode works on both, proven above;
+- **not the VA driver's decode** — ffmpeg decodes on both nodes, and mpv's
+  `vaapi-copy` decodes through the same driver at 75.7 fps;
+- **not a missing export entry point** — the symbols are there.
+
+It is the **VA-API ↔ DRM interop layer**: ffmpeg's device derivation returns
+ENOSYS, and mpv's interop decode fails at `vaEndPicture` while the identical
+driver decodes fine when nothing asks for exportable surfaces. The live
+hypothesis is that mpv's interop path requests surface attributes the driver
+allocates differently, and Cedrus then rejects the submission.
+
+The full `libva-v4l2-request` source is built **on the board**, not in this
+tree, which is where that thread continues.
+
+### EndPicture has four failure paths, and one fits
+
+Source is on the board at `/root/libva-v4l2-request/src/picture.c`
+(`RequestEndPicture`, line 252). It returns `VA_STATUS_ERROR_OPERATION_FAILED`
+from exactly four places:
+
+```c
+1. video_format == NULL                             format lookup failed
+2. media_request_alloc(media_fd) < 0                no request fd
+3. v4l2_queue_buffer(video_fd, -1, capture_type,…)  queueing the CAPTURE buffer
+4. v4l2_queue_buffer(video_fd, request_fd, output_type,…)  the OUTPUT buffer
+```
+
+**Path 3 is the one that fits the evidence**, and the reasoning is the useful
+part:
+
+- Paths 1 and 2 are set up per context, not per frame, and would fail
+  identically under `vaapi-copy` — which decodes fine at 75.7 fps through this
+  same driver. They do not discriminate.
+- Path 3 queues the **capture** buffer, the one holding decoded output. Under
+  zero-copy that buffer is exported as a dma-buf and **held by EGL/GL for
+  display**, so it cannot be re-queued while still referenced — `EBUSY`, and
+  the pool runs dry. Under `vaapi-copy` the frame is copied out immediately and
+  the buffer returns to the pool at once.
+
+That is exactly the difference between the two paths, and it explains why the
+failure repeats every frame rather than failing once at init.
+
+It also rhymes with a problem this project already solved once: the DECD work
+hit the same shape — surfaces returned to Cedrus while still being scanned out —
+and the fix was a release fence. See the display notes.
+
+**This is a ranked hypothesis, not a proven cause.** The decisive test is one
+`printf` per path in `RequestEndPicture` and a rebuild on the board, which names
+the branch directly instead of reasoning about it.
+
+### Instrumented: it is `RequestSyncSurface`, by elimination
+
+Marked every `OPERATION_FAILED`-capable exit of `RequestEndPicture` in the
+on-board driver, rebuilt and ran `--hwdec=vaapi`. **None of them fired**, while
+the decode failed three times. Complete exit coverage of the function:
+
+```text
+P1 video_format NULL          marked   did not fire
+P2 media_request_alloc        marked   did not fire
+P5 codec_set_controls rc      marked   did not fire
+P3 queue CAPTURE buffer       marked   did not fire
+P4 queue OUTPUT buffer        marked   did not fire
+INVALID_CONTEXT/CONFIG/SURFACE  --     wrong code; ffmpeg reported 1
+return status;  <- RequestSyncSurface  UNMARKED, the only path left
+return VA_STATUS_SUCCESS
+```
+
+So the `OPERATION_FAILED` propagates out of **`RequestSyncSurface`**, which is
+where the driver *waits for the decode and dequeues the capture buffer*.
+
+That refines the earlier hypothesis rather than overturning it. The guess was
+path 3, queueing the capture buffer; the reality is one step later, at
+dequeue/sync. The underlying story is the same and now better located: under
+zero-copy the capture buffer is exported as a dma-buf and held by EGL, so the
+driver cannot complete the round trip on it. Under `vaapi-copy` the frame is
+copied out immediately and the buffer comes straight back.
+
+**Two method notes, both of which nearly produced a wrong answer:**
+
+- The first instrumentation went into `/root/libva-v4l2-request`, which is
+  **not** the tree that builds the installed driver — that is
+  `/root/va-driver-build`. `ninja` reporting "no work to do" and the marker
+  being absent from the binary is what caught it. Check which tree produces the
+  installed artifact before editing.
+- Marking only the literal `return VA_STATUS_ERROR_OPERATION_FAILED` statements
+  missed two exits that propagate a status from a callee. Enumerate *every*
+  return in the function, not just the ones matching the error you are chasing.
+
+### State of the board
+
+The instrumented driver is installed; the original is at
+`/usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so.orig-preprintf`, and
+the pristine source at `/root/va-driver-build/src/picture.c.orig-preprintf`. The
+markers only print on failure, so `vaapi-copy` is unaffected.
+
+### ROOT CAUSE: the surface reaches sync with no media-request fd
+
+Instrumented all seven failure exits of `RequestSyncSurface` (`surface.c`) the
+same way. Exactly one fires:
+
+```text
+H713-SYNC: unknown failed rc=65535 errno=0
+```
+
+`rc` is uninitialised garbage and `errno` is 0, so this is a **state check, not
+a syscall failure**. It is this one:
+
+```c
+request_fd = surface_object->request_fd;
+if (request_fd < 0) {
+        status = VA_STATUS_ERROR_OPERATION_FAILED;
+        goto error;
+}
+```
+
+**The surface arrives at sync with no media-request fd.** Note the branch just
+above returns `VA_STATUS_SUCCESS` for any surface not in `VASurfaceRendering`,
+so this surface *is* marked Rendering while carrying `request_fd < 0` — an
+inconsistent state rather than a resource or timing problem.
+
+That is a real narrowing, and it moves the diagnosis off the buffer-lifetime
+theory. Nothing here is starved, busy or timing out: `media_request_wait_completion`
+and both `v4l2_dequeue_buffer` calls never even run. The earlier reasoning
+about EGL holding capture buffers was plausible and is **not** what is
+happening.
+
+`RequestEndPicture` allocates the fd and stores it on the surface, so the
+question is what clears or bypasses it on the interop path. Two candidates,
+neither yet tested:
+
+- **a double sync.** `picture.c:236` calls `RequestSyncSurface` internally, and
+  mpv's interop also syncs explicitly before exporting the surface for EGL. If
+  the first sync releases the fd without moving the surface out of
+  `VASurfaceRendering`, the second finds `-1`.
+- **a surface that never went through EndPicture** — e.g. one taken from the
+  pool and synced before being rendered.
+
+The asymmetry to explain: 3 decode failures but only 1 sync marker, so the other
+two failures leave by some path that is still unaccounted for.
+
+### State of the board
+
+Instrumented driver installed. Pristine copies kept alongside:
+`picture.c.orig-preprintf`, `surface.c.orig-preprintf`, and
+`v4l2_request_drv_video.so.orig-preprintf`. Markers print only on failure, so
+`vaapi-copy` playback is unaffected.
+
+### CORRECTION: EndPicture never runs, and the sync failure is a symptom
+
+Entry logging settles it and **overturns the conclusion above**:
+
+```text
+H713-ENTRY sync:   surface=67108865 state=4 request_fd=-1
+H713-ENTRY sync:   surface=67108864 state=1 request_fd=-1
+H713-SYNC: unknown failed
+
+ENTRY endpic     0      <- RequestEndPicture's body NEVER runs
+ENTRY sync       2
+decode failures  3
+```
+
+`RequestEndPicture` never reaches its body across all three failures. The
+earlier "by elimination it must be `RequestSyncSurface`" reasoning silently
+assumed EndPicture was running; it is not, so the elimination was invalid even
+though every individual observation in it was correct.
+
+The sync failure is a **consequence, not the cause**. Surface `67108864` sits in
+state 1 (`VASurfaceRendering`) with `request_fd = -1` because EndPicture never
+got far enough to allocate one. Surface `67108865` is state 4
+(`VASurfaceReady`) and returns SUCCESS through the early branch, which is why
+only one of the two syncs fails.
+
+**The instrumentation flaw that hid this**: the entry log was placed before
+`gettimeofday`, which is *after* the `INVALID_CONTEXT` / `INVALID_CONFIG` /
+`INVALID_SURFACE` early returns. An exit through any of those is invisible to
+it. Marking only the paths that return the error you are chasing, and logging
+"entry" somewhere other than the first line, both hide exits.
+
+### Where it actually stands
+
+`vaEndPicture` returns `VA_STATUS_ERROR_OPERATION_FAILED` (ffmpeg reports code
+1) while the driver's implementation never reaches its body. Only two things can
+produce that:
+
+- an exit through one of the three unmarked `INVALID_*` returns — but those
+  return codes 4, 5 and 6, not 1, so they do not match what ffmpeg reported;
+- **the failure happens inside libva, before dispatch to the driver at all.**
+
+The second is now the leading candidate, and it is a different problem from
+everything investigated so far — not the render node, not buffer lifetime, not
+the driver's decode path.
+
+### It IS dispatched — and exits through an unmarked INVALID_* return
+
+Moving the entry log to the first line corrects the previous section as well:
+
+```text
+H713-ENTRY sync:   surface=67108865 state=4 request_fd=-1   -> SUCCESS (Ready)
+H713-ENTRY endpic: CALLED ctx=33554432
+H713-ENTRY endpic: CALLED ctx=33554432
+H713-ENTRY sync:   surface=67108864 state=1 request_fd=-1   -> FAILS
+H713-ENTRY endpic: CALLED ctx=33554432
+
+ENTRY endpic: CALLED   3     matching the 3 decode failures
+H713-ENDPIC            0     no OPERATION_FAILED path fires
+```
+
+So "never dispatched" was wrong too. `RequestEndPicture` **is** called, three
+times, once per failure. It exits before its main body — it never reaches
+`gettimeofday`, which is why the earlier entry log was silent, and never reaches
+the internal `RequestSyncSurface` at the end, which is why only two syncs appear
+instead of five.
+
+By order of the exits, and with `P1` (`video_format NULL`) instrumented and
+silent, the only remaining ways out before the body are the three **unmarked**
+returns:
+
+```c
+return VA_STATUS_ERROR_INVALID_CONTEXT;   /* context_object == NULL */
+return VA_STATUS_ERROR_INVALID_CONFIG;    /* config_object  == NULL */
+return VA_STATUS_ERROR_INVALID_SURFACE;   /* surface_object == NULL */
+```
+
+**One thing does not add up and is left open honestly.** Those return codes are
+5, 4 and 6, while ffmpeg reports `issue: 1`, which is
+`VA_STATUS_ERROR_OPERATION_FAILED`. Either ffmpeg's message is not reporting the
+driver's return directly, or something between the driver and ffmpeg
+substitutes the code. That discrepancy should be resolved rather than assumed
+away — it is the kind of gap that has already invalidated two conclusions in
+this investigation.
+
+Note the context id is stable at `33554432` across all three calls, so the
+context handle itself is not obviously being lost between calls.
+
+### RETRACTION: the instrumentation broke the driver
+
+Marking the three `INVALID_*` returns produced a run where **nothing at all
+fired** — not `P1`, not the `INVALID_*` markers, not the mid-function entry log
+— while EndPicture was entered three times. Reading the patched source explains
+why, and invalidates everything measured since the first instrumented build:
+
+```c
+	if (video_format == NULL)
+		fprintf(stderr, "H713-ENDPIC: P1 video_format NULL\n");
+		return VA_STATUS_ERROR_OPERATION_FAILED;   /* now UNCONDITIONAL */
+```
+
+The original is a **braceless `if`**. Inserting a line before the return left
+the `if` guarding only the `fprintf` and made the return unconditional, so
+`RequestEndPicture` failed immediately on every call — returning exactly
+`VA_STATUS_ERROR_OPERATION_FAILED`, which is precisely the symptom under
+investigation.
+
+**Everything measured after the first instrumented driver was installed is
+void:**
+
+- "the failure is in `RequestSyncSurface`, by elimination" — void;
+- "EndPicture never runs" — void;
+- "EndPicture exits via an unmarked `INVALID_*` return" — void.
+
+Each was reasoned correctly from observations that were themselves artefacts.
+The one genuine clue in the whole sequence — that the marked paths stayed silent
+— had a much simpler explanation than any of the theories built on it.
+
+Also note the "discrepancy" flagged earlier, that the `INVALID_*` codes are
+4/5/6 while ffmpeg reported 1, was the tell. It was recorded as unresolved
+rather than explained away, and it was pointing straight at this.
+
+**What survives**: the pre-instrumentation observation stands, because it was
+taken against the pristine driver — `--hwdec=vaapi` fails with
+`Failed to end picture decode issue: 1` while `--hwdec=vaapi-copy` works. That
+is still the real bug, and it is still uninvestigated.
+
+The driver has been restored from `picture.c.orig-preprintf` and
+`surface.c.orig-preprintf`, rebuilt and reinstalled; `vaapi-copy` verified
+working again with zero decode failures.
+
+### The lesson, which is the durable part
+
+**Never insert a statement before a `return` without checking for braces.** A
+text-level edit that is syntactically valid can silently change control flow. If
+instrumenting, either add the braces or log from inside an existing block — and
+after patching, *read the patched source* rather than trusting that the edit did
+what was intended. The project already had a rule for this ("verify edits, not
+strings"); this is the same failure in a new form, and it cost four rounds.
+
+### Correctly instrumented: queueing the CAPTURE buffer fails with EINVAL
+
+Re-instrumented converting each braceless `if` into a braced block in the same
+edit, and **read the patched source before building** this time. Seven exits
+instrumented, each with a distinct label, plus a control run:
+
+```text
+control (vaapi-copy):  hw decode 1, failures 0, markers 0   <- driver healthy
+zero-copy (vaapi):     H713-ENDPIC: E6 queue CAPTURE failed
+                       rc=-1 errno=22 (Invalid argument)
+```
+
+So the failure is at **`v4l2_queue_buffer(video_fd, -1, capture_type, ...)`** —
+queueing the capture buffer — which was the original hypothesis before the
+broken instrumentation buried it.
+
+**But the errno refutes the reasoning behind that hypothesis.** The story was
+that EGL holds the exported dma-buf so the buffer cannot be re-queued; that
+would give **EBUSY**. It gives **EINVAL**. Nothing is held or busy — the driver
+is passing an argument V4L2 rejects.
+
+EINVAL from `VIDIOC_QBUF` usually means the buffer index is out of range, the
+buffer type is wrong, or **the memory type does not match how the queue was set
+up** — e.g. queueing `V4L2_MEMORY_MMAP` against a queue configured for
+`V4L2_MEMORY_DMABUF`, or the reverse. That last one is exactly the kind of
+mismatch zero-copy interop would introduce and the copy path would not, which
+makes it the strongest candidate.
+
+The control run matters as much as the result: `vaapi-copy` produces **zero
+markers and zero failures** on the same instrumented driver, so the
+instrumentation is not itself changing behaviour this time.
+
+One asymmetry still unexplained: one marker against three decode failures. The
+other two may fail after the first leaves the queue in a different state, or
+may fail elsewhere entirely. Do not assume all three share a cause.
+
+### The failing QBUF, with arguments
+
+```text
+H713-ENDPIC: E6 queue CAPTURE failed rc=-1 errno=22 (Invalid argument)
+             type=1  index=2  count=1  surface=67108864
+```
+
+`v4l2_queue_buffer` hardcodes `buffer.memory = V4L2_MEMORY_MMAP` and sets
+`buffer.index = index`, `buffer.length = buffers_count`. So a memory-type
+mismatch is **ruled out** — the copy path uses the same hardcoded value and
+works. `type=1` is `V4L2_BUF_TYPE_VIDEO_CAPTURE` (non-mplane) and `count=1`,
+both identical in principle between the paths since the same function computes
+them.
+
+That leaves **`index=2`**.
+
+### The ordering is the clue
+
+Instrumenting `VIDIOC_REQBUFS` shows the failing queue happens **before the
+buffers exist**:
+
+```text
+zero-copy:  E6 queue CAPTURE failed ... index=2      <- FIRST
+            H713-REQBUFS: type=2 asked=0 granted=0
+            H713-REQBUFS: type=1 asked=0 granted=0
+
+control:    H713-REQBUFS: type=2 asked=0 granted=0
+            H713-REQBUFS: type=1 asked=0 granted=0
+            (no E6, no failures)
+```
+
+Note both runs only ever log `asked=0`, which is REQBUFS' *free* operation, so
+these are teardown. **No allocating REQBUFS is logged at all in either run** —
+the capture buffers are not allocated through `v4l2_request_buffers` on this
+path, and where `destination_index = 2` comes from is therefore still unknown.
+
+The working reading of the evidence: under interop the surface carries a
+`destination_index` that does not correspond to an allocated buffer at the
+moment EndPicture queues it, and `VIDIOC_QBUF` rejects the index with EINVAL.
+That is consistent with EINVAL rather than EBUSY, and with the copy path never
+hitting it.
+
+**Still unexplained, and worth not papering over:** one E6 marker against three
+decode failures. If every frame took this path there should be three.
+
+### ROOT CAUSE: the third surface is half-allocated
+
+The buffers come from **`v4l2_create_buffers` (`VIDIOC_CREATE_BUFS`)**, not
+REQBUFS — which is why the earlier REQBUFS instrumentation only ever saw
+teardown. Instrumenting the real allocator and the `destination_index`
+assignment shows the two paths diverging on the third surface:
+
+```text
+CONTROL (vaapi-copy, works)          ZERO-COPY (vaapi, fails)
+CREATEBUFS type=1 -> index_base=0    CREATEBUFS type=1 -> index_base=0
+CREATEBUFS type=2 -> index_base=0    CREATEBUFS type=2 -> index_base=0
+ASSIGN destination_index=0           ASSIGN destination_index=0
+CREATEBUFS type=1 -> index_base=1    CREATEBUFS type=1 -> index_base=1
+CREATEBUFS type=2 -> index_base=1    CREATEBUFS type=2 -> index_base=1
+ASSIGN destination_index=1           ASSIGN destination_index=1
+(stops -- 2 surfaces)                CREATEBUFS type=1 -> index_base=2
+                                     (no type=2, no ASSIGN)
+```
+
+Every `CREATE_BUFS` succeeds (`rc=0 granted=1`). The difference is that
+zero-copy requests a **third** surface, and its setup **aborts after the capture
+buffer is created and before the output buffer is created** — so
+`destination_index` is never assigned for it.
+
+That produces exactly the observed failure: a half-built surface whose capture
+buffer exists at index 2 while the surface itself was never completed, queued
+later by `EndPicture` and rejected with **EINVAL**.
+
+It also explains the 1-marker/3-failure asymmetry that had been outstanding:
+only the third surface is broken, so only one queue attempt hits E6 while
+ffmpeg retries and reports three.
+
+**Where the abort happens** is now the narrow question. Between the two
+`v4l2_create_buffers` calls, `surface.c` does a `v4l2_query_buffer` on the
+output queue and an `mmap`, either of which returns
+`VA_STATUS_ERROR_ALLOCATION_FAILED`:
+
+```c
+rc = v4l2_query_buffer(driver_data->video_fd, output_type, ...);
+if (rc < 0) return VA_STATUS_ERROR_ALLOCATION_FAILED;
+source_data = mmap(...);
+if (source_data == MAP_FAILED) return VA_STATUS_ERROR_ALLOCATION_FAILED;
+```
+
+Neither is instrumented yet, and the type=2 `CREATE_BUFS` for surface 3 never
+even logs its "asked" line, so the abort is at or before that call.
+
+### RETRACTION: the third surface is NOT half-allocated
+
+The section above is wrong, and the cause was **my own truncated output** — the
+trace was read through `head -12`, which cut it mid-sequence. The full log:
+
+```text
+CREATEBUFS type=1 -> index_base=2
+CREATEBUFS type=2 -> index_base=2      <- the "missing" output buffer
+ASSIGN destination_index=2             <- the "missing" assignment
+CREATEBUFS type=1 -> index_base=3
+CREATEBUFS type=2 -> index_base=3
+ASSIGN destination_index=3
+E6 queue CAPTURE failed ... index=2
+```
+
+**All four surfaces are fully built**, capture and output and assignment, and
+every `CREATE_BUFS` returns `rc=0 granted=1`. The queue failure happens *after*
+allocation completes, on a buffer that genuinely exists and is genuinely
+assigned.
+
+So "half-allocated surface" is void, and with it the tidy explanation it gave
+for the 1-marker/3-failure asymmetry. That asymmetry is **open again**.
+
+### What is actually established
+
+- Buffers are created with `VIDIOC_CREATE_BUFS`, one capture and one output per
+  surface, indices 0..3. Zero-copy builds four surfaces; copy builds two.
+- The failing call queues **capture index 2**, which exists, with EINVAL.
+- `buffer.memory` is hardcoded `V4L2_MEMORY_MMAP` on both paths, so that is not
+  the difference.
+
+### The candidate this reopens
+
+`VIDIOC_QBUF` on a buffer that is **already queued** is rejected, and several
+V4L2 drivers report that as EINVAL rather than EBUSY. That is the original
+buffer-lifetime hypothesis, which was dismissed earlier *on the grounds that
+EINVAL is not EBUSY* — reasoning that was never verified against what this
+driver actually returns. Under interop the decoded frame is exported and held
+by EGL, so the buffer would still be queued when EndPicture tries to queue it
+again; under copy it is dequeued immediately.
+
+That is now the leading explanation and it has not been tested.
+
+### CONFIRMED: the capture buffer is queued twice and never dequeued
+
+Logging every `VIDIOC_QBUF` and `VIDIOC_DQBUF` on the capture queue settles it,
+with the working path as the control:
+
+```text
+CONTROL (vaapi-copy, works)        ZERO-COPY (vaapi, fails)
+QBUF  index=0                      QBUF  index=2   rc=0
+DQBUF index=0                      QBUF  index=3   rc=0
+QBUF  index=1                      QBUF  index=2   rc=-1 errno=22
+DQBUF index=1
+QBUF  index=2                      60 QBUF / 60 DQBUF  vs  3 QBUF / 0 DQBUF
+DQBUF index=2   ... strict 1:1
+```
+
+**The copy path queues and dequeues each buffer exactly once, 1:1. The interop
+path never dequeues at all**, and the third queue reuses index 2 while it is
+still queued — which V4L2 rejects with **EINVAL**.
+
+So the original buffer-lifetime hypothesis was right, and the reasoning that
+dismissed it was wrong. It was dismissed because the errno was EINVAL rather
+than EBUSY; **V4L2 returns EINVAL for queueing an already-queued buffer**, so
+the errno never contradicted the theory. Assuming a specific errno for a
+condition, without checking what the interface actually returns, cost several
+rounds.
+
+This also explains the 1-marker/3-failure asymmetry that has been open
+throughout: only one re-queue collides before decoding stops.
+
+### Why it happens
+
+Under `vaapi-copy` the decoded frame is copied out immediately, so the buffer is
+dequeued and returns to the pool. Under interop the frame is exported as a
+dma-buf for EGL and **nothing ever completes the round trip** — no dequeue
+happens, buffers are never recycled, and the driver eventually re-queues an
+index that is still outstanding.
+
+That is the same class of bug as the DECD release fence this project already
+solved once: a consumer holds a buffer and the producer is never told it is
+free.
+
+### Who should dequeue: `RequestSyncSurface` — and it early-exits instead
+
+`RequestSyncSurface` owns the dequeue. It **is** being called on the interop
+path; it simply never reaches the dequeue:
+
+```text
+CONTROL (vaapi-copy):  120 SyncSurface calls -> 60 DQBUF
+ZERO-COPY (vaapi):       4 SyncSurface calls ->  0 DQBUF
+```
+
+The sequence shows the shape of it:
+
+```text
+SYNC surface=67108865        <- sync before any queue
+QBUF index=2 rc=0
+SYNC surface=67108864
+QBUF index=3 rc=0
+SYNC surface=67108865
+SYNC surface=67108864
+QBUF index=2 rc=-1 errno=22
+```
+
+The function opens with a state guard:
+
+```c
+if (surface_object->status != VASurfaceRendering) {
+        status = VA_STATUS_SUCCESS;
+        goto complete;          /* returns SUCCESS without dequeuing */
+}
+```
+
+Every interop sync takes that branch, because the surfaces are not in
+`VASurfaceRendering`. The guard is reasonable in itself — syncing a surface that
+was never rendered should be a no-op — so the fault is upstream of it: **nothing
+is putting these surfaces into `Rendering` state.**
+
+That is consistent with the whole chain. `EndPicture` is what would normally
+drive a surface through rendering, and on this path its capture queue fails, so
+the surface never advances; the next sync sees a non-Rendering surface, returns
+SUCCESS, no dequeue happens, the buffer stays queued, and the following queue of
+the same index is rejected. Cause and symptom sit in a loop, which is why each
+individual step looked like the culprit in turn.
+
+### The open question, stated precisely
+
+Which is first: does the surface fail to enter `Rendering` because the queue
+failed, or does the queue fail because the surface was never in `Rendering`?
+The very first `QBUF index=2` **succeeds** (`rc=0`), so at least one queue
+happens before any failure — meaning the state problem is not merely downstream
+of a failed queue.
+
+Worth noting the timing too: the first sync happens *before* any queue at all,
+which suggests mpv syncs a surface it is about to reuse. In the copy path that
+sync finds a rendered surface and dequeues it; here it finds nothing to do.
+
+### State transitions correlated: the cycle never completes, and syncs target the wrong surface
+
+All four `surface_object->status` assignments instrumented and correlated with
+the sync calls:
+
+```text
+CONTROL (vaapi-copy, works)          ZERO-COPY (vaapi, fails)
+60 Rendering                          3 Rendering
+60 Displaying                         0 Displaying
+ 1 Ready(image)                       3 Ready(image)
+
+create -> Ready                       create -> Ready
+Rendering        (BeginPicture)       image.c -> Ready      <- per surface
+SYNC (same surface)                   create -> Ready
+DQBUF index=N                         image.c -> Ready
+Displaying                            SYNC surface=...65    <- no-op, not Rendering
+                                      Rendering
+                                      QBUF index=2 rc=0
+                                      SYNC surface=...64    <- a DIFFERENT surface
+```
+
+Two things fall out.
+
+**The cycle never completes.** `Displaying` is set only after a successful
+dequeue (`surface.c:434`), so 0 Displaying is the exact mirror of 0 DQBUF. The
+copy path's 60/60 balance is what a healthy cycle looks like.
+
+**The syncs target a different surface than the one just rendered.** In the copy
+path, `Rendering` is immediately followed by a sync of *that same* surface, then
+its dequeue. Under interop, surface X is marked `Rendering` and queued, while the
+sync that follows names surface Y — so the in-flight buffer is never the one
+being synced, and nothing ever dequeues it.
+
+**Also unexpected:** `image.c:208 -> Ready` fires **once per surface creation**
+under interop (3 times) but only **once in total** in the copy path. The image
+path is being entered on the zero-copy path, and it resets each freshly created
+surface to `Ready`. That is the opposite of the assumption made earlier that the
+image path belongs to the copy path — worth checking rather than believing,
+given how many assumptions in this investigation have turned out backwards.
+
+### Where this points
+
+The driver's state machine is consistent on its own terms: sync no-ops on a
+non-`Rendering` surface, so no dequeue, so no `Displaying`, so the buffer stays
+queued and the next queue of that index is rejected. The mismatch is between
+*which surface mpv syncs* and *which surface is in flight*.
+
+Whether that is mpv driving the API in a way this driver does not expect, or the
+driver failing to track surfaces the way mpv assumes, is **not yet established**
+and should not be guessed at.
+
+### With surface ids: the sync IS correct, and something resets the state
+
+Tagging the `Rendering` transition and the capture queue with surface ids
+**corrects the previous section** — the syncs are not targeting the wrong
+surface. That reading came from ordering alone, without ids, and was wrong:
+
+```text
+CONTROL (works)                        ZERO-COPY (fails)
+Rendering surface=64 -> queue idx=0    Rendering surface=64 -> queue idx=2  OK
+SYNC 64 -> DQBUF idx=0        OK       SYNC 64  -> no dequeue
+Rendering surface=65 -> queue idx=1    Rendering surface=65 -> queue idx=3  OK
+SYNC 65 -> DQBUF idx=1        OK       SYNC 65  -> no dequeue
+Rendering surface=66 -> queue idx=2    Rendering surface=64 -> queue idx=2  EINVAL
+```
+
+Each sync follows the queue of **that same surface** on both paths. The copy
+path dequeues; the interop path does not.
+
+Since `RequestSyncSurface` only dequeues when the surface is in
+`VASurfaceRendering`, and `BeginPicture` sets exactly that before the queue,
+**something moves the surface out of `Rendering` between the queue and the
+sync.** The candidate is the transition already observed firing once per surface
+on this path and once in total on the copy path:
+
+```text
+image.c:208   surface_object->status = VASurfaceReady;
+```
+
+Full chain, with only the last link unconfirmed:
+
+1. `BeginPicture` sets `Rendering` — **observed**
+2. `EndPicture` queues the capture buffer, `rc=0` — **observed**
+3. something resets the surface to `Ready` via `image.c:208` — **fires on this
+   path 3x vs 1x on copy, but not yet ordered against steps 2 and 4**
+4. sync sees non-`Rendering`, returns SUCCESS without dequeuing — **observed**
+5. buffer stays queued; next reuse of that index gives EINVAL — **observed**
+
+Note the surface-to-index mapping also differs: under copy each of three
+surfaces owns one index (64→0, 65→1, 66→2); under interop two surfaces cycle
+over indices 2 and 3, because four surfaces were created and mpv uses the last
+two. That is a consequence of the pool size, not obviously a fault.
+
+### Ordering confirmed — and it REFUTES the image.c hypothesis
+
+No sequence numbers were needed: stderr is unbuffered, so log order already is
+the sequence. The earlier greps had simply filtered the `image.c` lines out.
+Read unfiltered:
+
+```text
+CREATEBUFS ... index_base=2
+STATE: surface.c:282 -> Ready(create)
+ASSIGN destination_index=2
+STATE: image.c:208 -> Ready          <- fires at CREATION
+STATE: Rendering surface=67108864    <- Rendering set AFTER it
+QCAP: about to queue surface=67108864 index=2
+QBUF type=1 index=2 rc=0
+QBUF type=2 index=2 rc=0
+SYNC: CALLED surface=67108864        <- sync arrives AFTER the queue
+```
+
+`image.c:208` fires during surface **creation**, before `Rendering` is ever set.
+It cannot be resetting state between the queue and the sync, so step 3 of the
+chain is **refuted**. The 3x-vs-1x count difference was real but irrelevant —
+it reflects interop creating more surfaces, not a state reset.
+
+### What that leaves, and it reopens an earlier observation
+
+The sync arrives at a surface that **is** in `VASurfaceRendering` — it passes
+the state guard — and still never issues a dequeue. So it exits between the
+guard and `v4l2_dequeue_buffer`. Those exits are:
+
+```c
+request_fd = surface_object->request_fd;
+if (request_fd < 0)              -> OPERATION_FAILED      <- suspect
+media_request_queue(request_fd)  -> OPERATION_FAILED
+media_request_wait_completion()  -> OPERATION_FAILED
+media_request_reinit()           -> OPERATION_FAILED
+then: v4l2_dequeue_buffer(OUTPUT), v4l2_dequeue_buffer(CAPTURE)
+```
+
+The first of those — `request_fd < 0` — is **exactly what an earlier run
+reported** (`H713-SYNC: unknown failed rc=65535 errno=0`). That observation was
+discarded wholesale as contaminated, because it came from the run with the
+broken braceless-`if` driver. Discarding it was right at the time, but the
+condition it named may be genuine: it now fits as the only exit consistent with
+everything measured since.
+
+**It has not been re-measured on a correct driver**, and it should be before it
+is believed. The sync-exit markers were removed when `surface.c` was restored.
+
+### Suggested next steps, cheapest first
+
+1. Re-instrument `RequestSyncSurface`'s exits on the **current, correct** driver
+   — those blocks are already braced, so the earlier hazard does not apply — and
+   confirm whether it really leaves at `request_fd < 0`.
+2. If so, ask why `EndPicture` allocated a request fd (it must have, since the
+   queue with `request_fd` succeeded) yet sync sees `-1`. That points at the fd
+   being consumed or reset between the two.
+3. Compare the same trace on the copy path, where sync reaches the dequeue.
+2. Find the caller of `image.c:208` on the interop path. If it is
+   `vaDeriveImage`/`vaGetImage` being invoked where the copy path would not, the
+   question becomes why mpv calls it during zero-copy.
+3. Only then decide ownership: a driver that resets state on an image operation
+   against an in-flight surface may simply be wrong, regardless of what mpv
+   does.
+2. Find what calls into `image.c:208` under interop — if `vaDeriveImage` or
+   similar is being used to reset state, that is a concrete difference between
+   the paths.
+3. Compare against another `libva-v4l2-request` consumer if one is available;
+   if zero-copy works elsewhere, the driver is fine and mpv's usage is the
+   variable.
+2. Check whether `vaExportSurfaceHandle` (the interop-only call) moves the
+   surface out of `Rendering` without dequeuing. It is the one operation the
+   copy path never performs, which makes it the prime suspect for breaking the
+   state machine.
+2. Compare the surface release path: `vaapi-copy` presumably syncs and
+   dequeues, while interop's exported surfaces may never reach that code.
+3. Whether the eventual fix belongs in `libva-v4l2-request` or in how mpv
+   releases surfaces is open, but the missing operation is now specific.
+2. Confirm what the Cedrus/V4L2 core returns for a double `QBUF`, rather than
+   assuming EINVAL means "invalid argument" in the narrow sense.
+3. Re-explain the 1-marker/3-failure gap, which no longer has an account.
+2. Ask why interop wants three surfaces where copy wants two. If the third is
+   simply one more than the driver can build, the fix may be a pool-size limit
+   rather than a bug in the failing call.
+2. Trace the real allocation path, since `v4l2_request_buffers` is only being
+   called with count=0 — the buffers are created somewhere else, and that
+   somewhere is what differs between interop and copy.
+3. Explain the 1-marker/3-failure discrepancy before treating this as solved.
+2. Check how the capture queue is configured (`VIDIOC_REQBUFS` memory type)
+   versus what the surfaces are exported as under interop.
+3. Explain the 1-marker/3-failure gap before treating the cause as settled.
+2. Then resolve the code mismatch: log the value `RequestEndPicture` actually
+   returns, and compare it against what ffmpeg prints. If they differ, the
+   problem is between libva and ffmpeg, not in the driver.
+3. Note the failing surface reaches sync in `VASurfaceRendering`, so
+   `BeginPicture` ran and set that state. Whatever lookup fails in EndPicture
+   succeeded in Begin, which is a useful asymmetry to exploit.
+2. If it is never dispatched, instrument `RequestBeginPicture` and
+   `RequestRenderPicture` too — the surface reaching sync in `Rendering` state
+   means Begin ran, so the break is between Begin and End.
+3. Only then look at libva's dispatch layer.
+2. Only then decide whether the fix belongs in the driver (keep the fd, or
+   return SUCCESS for an already-synced surface) or in how mpv drives it.
+2. If it is buffer starvation, count the capture buffers the pool is given and
+   whether mpv/EGL ever release them. This is the same class of problem as the
+   DECD release fence, which this project has already solved once.
+2. If it is path 3, the question becomes buffer lifetime: how many capture
+   buffers the pool has, and whether mpv/EGL release them. That is the same
+   class of problem as the DECD release fence. `vo=gpu` +
+   `vaapi-copy` creates a VA display fine with the same driver and env, so the
+   fault is narrow and the `GL_EXT_EGL_image_storage` interop is present.
+2. A Wayland compositor plus mpv's `dmabuf-wayland` vo (already compiled in) is
+   the other zero-copy route needing no media-stack changes.
+3. Investigate the EINVAL our driver returns on `vo=drm` atomic teardown.
+   `vo=gpu` does not provoke it.
+4. Re-measure with longer, non-looping content before drawing conclusions about
+   sustained playback.

@@ -1,0 +1,18 @@
+0x8b147dd0  27bdff50  addiu    $sp, $sp, -0xb0
+0x8b147dd4  8c820000  lw       $v0, ($a0)
+0x8b147dd8  248500b0  addiu    $a1, $a0, 0xb0
+0x8b147ddc  afa50098  sw       $a1, 0x98($sp)
+0x8b147de0  8c420018  lw       $v0, 0x18($v0)
+0x8b147de4  00003025  move     $a2, $zero
+0x8b147de8  afb000a0  sw       $s0, 0xa0($sp)
+0x8b147dec  afb100a4  sw       $s1, 0xa4($sp)
+0x8b147df0  afb200a8  sw       $s2, 0xa8($sp)
+0x8b147df4  afbf00ac  sw       $ra, 0xac($sp)
+0x8b147df8  00808025  move     $s0, $a0
+0x8b147dfc  0040f809  jalr     $v0
+0x8b147e00  24910140  addiu    $s1, $a0, 0x140
+0x8b147e04  10400039  beqz     $v0, 0x8b147eec
+0x8b147e08  8fa50098  lw       $a1, 0x98($sp)
+0x8b147e0c  02203025  move     $a2, $s1
+0x8b147e10  02002025  move     $a0, $s0
+0x8b147e14  0ec51ef6  jal      0x8b147bd8

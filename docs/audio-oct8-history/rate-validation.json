@@ -1,0 +1,204 @@
+{
+  "date": "2026-10-19",
+  "hardware_accessed": false,
+  "python": "3.14.8",
+  "numpy": "2.5.4",
+  "analyzer": {
+    "path": "tools/hdmi/audio-rate-analysis.py",
+    "sha256": "1b13ccd01841c2d507f37303e259a0fbc86b9c691b465bb81a4ec66b8835af50"
+  },
+  "historical_summary_sha256": "c1ac290c7ee13ddf275761febc2086c3972749f151d7a7cf3ca6075f7ddfd7cc",
+  "comparison_tolerance": {
+    "relative": 1e-10,
+    "absolute": 1e-08
+  },
+  "raw_rings_reanalyzed": 16,
+  "historical_results_and_irq_rates_reproduced": true,
+  "trials": [
+    {
+      "trial": 1,
+      "input_rate_hz": 48000,
+      "inferred_capture_rate_hz": 48000,
+      "tone_snapshots": 3,
+      "minimum_expected_tone_fraction": 0.9582188666209723,
+      "maximum_opposite_tone_fraction": 6.028308381716157e-05,
+      "amplitude_ratio_to_first_control": [
+        1.0,
+        1.0
+      ],
+      "bridge_irq_hz": [
+        183.91959798995154,
+        185.0515463917528,
+        184.34650455927016
+      ],
+      "silence_all_zero": true,
+      "raw_records": [
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-1.bin",
+          "sha256": "b60f8eb6ef708fad04400858a77a22838c0cb510d4004a64cf93bc2626f73c6b",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-2.bin",
+          "sha256": "237b662b07a1bff45e43fbbb0a4e6682c05ec402a87e1cdac2444dcaaa232ac0",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/tone-3.bin",
+          "sha256": "b9ad4d851374c3e55de2030c14855e56964d2cb0c14c23bd7ec8df47f92e5fe8",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/1-48000/silence.bin",
+          "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        }
+      ],
+      "result_sha256": "057e01fd23c10f7eb342c9181d6bf1bf5d9e7976d8629d9f406a3fd23424dd57",
+      "host_rate_confirmed_by_hw_params_and_playback": true
+    },
+    {
+      "trial": 2,
+      "input_rate_hz": 32000,
+      "inferred_capture_rate_hz": 48000,
+      "tone_snapshots": 3,
+      "minimum_expected_tone_fraction": 0.9723792165631592,
+      "maximum_opposite_tone_fraction": 3.705441123965276e-05,
+      "amplitude_ratio_to_first_control": [
+        1.0000008383610153,
+        1.0010311863116097
+      ],
+      "bridge_irq_hz": [
+        184.3137254901968,
+        184.0,
+        184.66257668711629
+      ],
+      "silence_all_zero": true,
+      "raw_records": [
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-1.bin",
+          "sha256": "a74fc727db5e24e2a40fbb70bf114019680172c42dc3368adaabd86dbe93f741",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-2.bin",
+          "sha256": "2d6400f4d9c7efa53cad92c36eaddd2c86c57c9ff0dca44be29066fb74dc717a",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/tone-3.bin",
+          "sha256": "5518cb0d950817478376dd4adff3000ecc01b1c8b4156b11fe699caf15d4d7a6",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/2-32000/silence.bin",
+          "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        }
+      ],
+      "result_sha256": "a794d87cbec88e2de54f1be52420fff40e4963a3ad13965d335eb005592e79b8",
+      "host_rate_confirmed_by_hw_params_and_playback": true
+    },
+    {
+      "trial": 3,
+      "input_rate_hz": 44100,
+      "inferred_capture_rate_hz": 48000,
+      "tone_snapshots": 3,
+      "minimum_expected_tone_fraction": 0.9913053689940236,
+      "maximum_opposite_tone_fraction": 1.1491295501579371e-05,
+      "amplitude_ratio_to_first_control": [
+        0.9998328175431533,
+        1.0001833793088224
+      ],
+      "bridge_irq_hz": [
+        184.57711442786155,
+        184.80392156862817,
+        184.60342146189717
+      ],
+      "silence_all_zero": true,
+      "raw_records": [
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-1.bin",
+          "sha256": "edb95658b16d68d0dfded65c6d633eccf17a9e2a687dd5589ed3fe54b790f80f",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-2.bin",
+          "sha256": "6e2c8b282cc36b03bcaa3d91b067517d8162697e2d6153ef7dec01a1f0a17dc5",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/tone-3.bin",
+          "sha256": "91806e1a25233f73501183889c5cd4a3fea9d61fba3ef23fdef8a4a4044a1a4d",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/3-44100/silence.bin",
+          "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        }
+      ],
+      "result_sha256": "b24c2f9df29ebb11f63533d66b69f25595c9a4a5e8ac092859d5c5b30ddc5e07",
+      "host_rate_confirmed_by_hw_params_and_playback": true
+    },
+    {
+      "trial": 4,
+      "input_rate_hz": 48000,
+      "inferred_capture_rate_hz": 48000,
+      "tone_snapshots": 3,
+      "minimum_expected_tone_fraction": 0.9574407056959868,
+      "maximum_opposite_tone_fraction": 5.279551771607799e-05,
+      "amplitude_ratio_to_first_control": [
+        0.9998301739475924,
+        1.000009269000125
+      ],
+      "bridge_irq_hz": [
+        184.15841584158582,
+        184.92462311557705,
+        184.5916795069343
+      ],
+      "silence_all_zero": true,
+      "raw_records": [
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-1.bin",
+          "sha256": "d373465f26527b354e1813a2328bf38fd767e0f2aa800f158a2c5fb6880af26f",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-2.bin",
+          "sha256": "3a030ed1d8a0697d46228ade69796775a7a1b17d8e0831de9061a7cab8f0750c",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/tone-3.bin",
+          "sha256": "791a8b10fab70d2c878405e8f4446d2a012cdf5fd60706da14319311635ac4d4",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        },
+        {
+          "source": "docs/hdmi-evidence/2026-10-08-audio-rate-test/attempt2/sweep/4-48000/silence.bin",
+          "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+          "bytes": 65536,
+          "analysis_matches_historical": true
+        }
+      ],
+      "result_sha256": "645745b9d0f6257f5e8fba9b5bd88eaade2249b7b4e47d65db5d42fd71581b59",
+      "host_rate_confirmed_by_hw_params_and_playback": true
+    }
+  ],
+  "limits": "Offline re-analysis of 12 live-ring tone snapshots and four silence snapshots, not a new hardware trial, continuous timing/drift test, open-capture rate transition test or proof of which block resamples."
+}

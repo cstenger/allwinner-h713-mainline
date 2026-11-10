@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-19",
+  "python": "3.14.8",
+  "hardware_accessed": false,
+  "generated_instruction_paths": 1500,
+  "host_tests": 15,
+  "archived_whitespace_diagnostics": 86,
+  "source_and_curated_markdown_whitespace_check": "pass",
+  "archive_whitespace_policy": "Preserve trailing prompt/log whitespace and exact script snapshots; full diff checked with blank-at-eol/blank-at-eof disabled",
+  "evidence_exports_verified": 173,
+  "local_inputs_preserved": 23,
+  "evidence_hashes_and_backups_verified": true,
+  "active_document_links_checked": true,
+  "private_input_regeneration": [
+    {
+      "mode": "monitor",
+      "candidate_sha256": "ec277392463beced5b369baae973952397f2d4975c882f81f6923cb0485a5e6b",
+      "profile_matches_historical": true,
+      "bytes": 920576,
+      "changed_bytes": 176
+    },
+    {
+      "mode": "regr",
+      "candidate_sha256": "5bb6ad2b22840d658b7846d8b0678d4aa2f6b33b6d787a2d3e9e24ef3cc189cd",
+      "profile_matches_historical": true,
+      "bytes": 920576,
+      "changed_bytes": 181
+    },
+    {
+      "mode": "dispatch",
+      "candidate_sha256": "ea5828f159fc6be1f40473804dea8f37430810d0629eb21b54ebea3bbb00f9cb",
+      "profile_matches_historical": true,
+      "bytes": 920576,
+      "changed_bytes": 183
+    }
+  ],
+  "historical_watches": [
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-audio-monitor-trace/monitor-watch.jsonl",
+      "sha256": "2c679cca90f2811909460678b580409137b9d2cff77bc1f77a2dda8895593a15",
+      "samples": 181,
+      "first_monitor_calls": 3187,
+      "last_monitor_calls": 6361,
+      "count_change_flags": 2
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-audio-dispatch/dispatch-watch.jsonl",
+      "sha256": "fb930511f4d3bf21c1a1f9cfb376ad0254f62fcab94365c5771544fe90895676",
+      "samples": 181,
+      "first_monitor_calls": 0,
+      "last_monitor_calls": 3125,
+      "count_change_flags": 1
+    },
+    {
+      "path": "docs/hdmi-evidence/2026-10-07-audio-dispatch/audio-holds/dispatch-watch.jsonl",
+      "sha256": "896cc8e3425a502fa5f0e3fccfbb38d7face63bf878359c37a218fb73ab19983",
+      "samples": 181,
+      "first_monitor_calls": 3125,
+      "last_monitor_calls": 6258,
+      "count_change_flags": 1
+    }
+  ],
+  "limits": "Offline regression and historical evidence consistency only; no new hardware result, PLL-lock or PCM-success claim."
+}

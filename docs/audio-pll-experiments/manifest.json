@@ -1,0 +1,848 @@
+{
+  "schema": 1,
+  "curated_date": "2026-10-19",
+  "scope": "October 7 metadata retry and stock PLL init-on-zero experiment history",
+  "normalization": "Logs decode UTF-8 with backslashreplace; CRLF becomes LF; remaining C0 except tab/LF and DEL escaped as \\xNN. No lines filtered; trailing prompt/log whitespace preserved. Original notes/scripts are exact non-executable text snapshots. Original source backups stay under build/audio-pll-review/originals/evidence.",
+  "files": [
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/README.md",
+      "source_sha256": "2b8786156fd5d9f923664770f9f2484ae55611c095962ad88e088b70591cad3b",
+      "source_bytes": 6668,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/README.md.txt",
+      "export_sha256": "2b8786156fd5d9f923664770f9f2484ae55611c095962ad88e088b70591cad3b",
+      "export_bytes": 6668
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-cache-after.json",
+      "source_sha256": "7d956058cdd1a8ab62b8890aca3decee0f4f4692f6ad3144f597fc28c61ac078",
+      "source_bytes": 3211,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-cache-after.json",
+      "export_sha256": "7d956058cdd1a8ab62b8890aca3decee0f4f4692f6ad3144f597fc28c61ac078",
+      "export_bytes": 3211
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-cache-trial.json",
+      "source_sha256": "f8a3fd293cec0231e4682470385df4295d904fcbe667da601bd3792c1ffb80e0",
+      "source_bytes": 23088,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-cache-trial.json",
+      "export_sha256": "f8a3fd293cec0231e4682470385df4295d904fcbe667da601bd3792c1ffb80e0",
+      "export_bytes": 23088
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-hold.log",
+      "source_sha256": "6bb62f6b8621dafb384b5cb301c78e4f6ab9ddb7a4e136a51817413c46861a55",
+      "source_bytes": 112,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-hold.log.txt",
+      "export_sha256": "7c753fec10494a15fd268c388b4ca31b1f44a0d2746bac105566f8a1bd82ca90",
+      "export_bytes": 120
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-monitor-profile.json",
+      "source_sha256": "81333d6dbabf025f57b0d194dbd0d1bb08654739ffd0e75fe4e7b2111a3bb513",
+      "source_bytes": 5723,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-monitor-profile.json",
+      "export_sha256": "81333d6dbabf025f57b0d194dbd0d1bb08654739ffd0e75fe4e7b2111a3bb513",
+      "export_bytes": 5723
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/audio-monitor-table.bin",
+      "source_sha256": "74867936c344854ffa83e0b233771c5f2632d2011b4c981b9513077e4c7247ed",
+      "source_bytes": 672,
+      "disposition": "local",
+      "reason": "private firmware/generated images, tables or raw DRAM dumps"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/cache-trial.log",
+      "source_sha256": "d31d8da6dfc7fd3cd06351217071913cbd1242052f845fe014f5b4b810591f67",
+      "source_bytes": 13860,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/cache-trial.log.txt",
+      "export_sha256": "d31d8da6dfc7fd3cd06351217071913cbd1242052f845fe014f5b4b810591f67",
+      "export_bytes": 13860
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/candidate-manifest.json",
+      "source_sha256": "a4f12b3dde3920d1479071b8b9b2a41379bb2169c86e8d2eb82a760b99389c01",
+      "source_bytes": 459,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/candidate-manifest.json",
+      "export_sha256": "a4f12b3dde3920d1479071b8b9b2a41379bb2169c86e8d2eb82a760b99389c01",
+      "export_bytes": 459
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/audio-cache-after.json",
+      "source_sha256": "36c3126eee4c526e82d0c6999c2ca6c35683c985f58a2bb8f4e4ffd000664788",
+      "source_bytes": 3211,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/audio-cache-after.json",
+      "export_sha256": "36c3126eee4c526e82d0c6999c2ca6c35683c985f58a2bb8f4e4ffd000664788",
+      "export_bytes": 3211
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/audio-cache-trial.json",
+      "source_sha256": "2a953c769f24e44e3825abc0d00ce98db4387c72971cde6684c7fc6dd6b9e9f4",
+      "source_bytes": 23092,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/audio-cache-trial.json",
+      "export_sha256": "2a953c769f24e44e3825abc0d00ce98db4387c72971cde6684c7fc6dd6b9e9f4",
+      "export_bytes": 23092
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/cache-trial.log",
+      "source_sha256": "a5e360d41a876a73e5d3b2c558b95d1af78d126df6552a1b287d44898afd8b84",
+      "source_bytes": 14395,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/cache-trial.log.txt",
+      "export_sha256": "a5e360d41a876a73e5d3b2c558b95d1af78d126df6552a1b287d44898afd8b84",
+      "export_bytes": 14395
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/dmesg-active.log",
+      "source_sha256": "2a5c92c534906bc77f073ecc3bc6ff0b3a91115595b3f7633052841f878694cd",
+      "source_bytes": 3414,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/dmesg-active.log.txt",
+      "export_sha256": "2a5c92c534906bc77f073ecc3bc6ff0b3a91115595b3f7633052841f878694cd",
+      "export_bytes": 3414
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/pll-active-0.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/pll-active-0.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/pll-active-1.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/pll-active-1.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/source-audio-pcm.json",
+      "source_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "source_bytes": 170,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/source-audio-pcm.json",
+      "export_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "export_bytes": 170
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/trial-command.py",
+      "source_sha256": "cf0b20a73d8a6fe4f1edb9b15f94a21ba39e8584ea0a67171f124fc1c45ba478",
+      "source_bytes": 3672,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/trial-command.py.txt",
+      "export_sha256": "cf0b20a73d8a6fe4f1edb9b15f94a21ba39e8584ea0a67171f124fc1c45ba478",
+      "export_bytes": 3672
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/trial-summary.log",
+      "source_sha256": "2505563b0507136a9851cc74bb9bb2f48cdd07bb1e295de26ea94d48c4272fd4",
+      "source_bytes": 1549,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/capture/trial-summary.log.txt",
+      "export_sha256": "2505563b0507136a9851cc74bb9bb2f48cdd07bb1e295de26ea94d48c4272fd4",
+      "export_bytes": 1549
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/cleanup.log",
+      "source_sha256": "69d1877949fbf715f9f8e6eaa907beee096b7736217ba66a6e4226c4b552123f",
+      "source_bytes": 5820,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/cleanup.log.txt",
+      "export_sha256": "4fa708a865ac532d1e155b6555f26cf106ea731a9d82ddf1a1311f3232835c9d",
+      "export_bytes": 5828
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/cold-launch.log",
+      "source_sha256": "71f30d1e5acd44c9ed72fdb68f8c8bcfac62c187603e7c4f851120f480fd69f5",
+      "source_bytes": 5443,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/cold-launch.log.txt",
+      "export_sha256": "f5f2f13a66c30c59e6954aef5669d4ee4cfcb1ba6281775c19885aec15d4d676",
+      "export_bytes": 5364
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/dsp-bridge-load.log",
+      "source_sha256": "bac8be77a0c2626201992b0c3ed1f07249d2cd2faebd475ce9e6dde7c59f875a",
+      "source_bytes": 4692,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/dsp-bridge-load.log.txt",
+      "export_sha256": "bac8be77a0c2626201992b0c3ed1f07249d2cd2faebd475ce9e6dde7c59f875a",
+      "export_bytes": 4692
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/dsp-build.json",
+      "source_sha256": "8e7bc200f33cd416302514a51c4d1ba91f1c37b5fbb21d07121c5ed471ec920c",
+      "source_bytes": 374,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/dsp-build.json",
+      "export_sha256": "8e7bc200f33cd416302514a51c4d1ba91f1c37b5fbb21d07121c5ed471ec920c",
+      "export_bytes": 374
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/install-script.py",
+      "source_sha256": "c0759dd797d59b5e3ffc0d0f4d2d7a4f5607eec108e27cc558a568f39bc11de3",
+      "source_bytes": 1004,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/install-script.py.txt",
+      "export_sha256": "c0759dd797d59b5e3ffc0d0f4d2d7a4f5607eec108e27cc558a568f39bc11de3",
+      "export_bytes": 1004
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/install.log",
+      "source_sha256": "d7a197ac96a2f59b657c78db6d0b61f5bc9a115e47dc702954721de8ea64d8d2",
+      "source_bytes": 163,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/install.log.txt",
+      "export_sha256": "d7a197ac96a2f59b657c78db6d0b61f5bc9a115e47dc702954721de8ea64d8d2",
+      "export_bytes": 163
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/linux-boot.log",
+      "source_sha256": "b62c742a8060c047fcecb1306ae84a7cb41afaf083705d8cf04efdc98b7a67ff",
+      "source_bytes": 42448,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/linux-boot.log.txt",
+      "export_sha256": "de7a4bbeaa4ba6fe8e3bb08e29c9c209837f77054648dcdec8bc225122a63845",
+      "export_bytes": 41968
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/pll-active-0.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/pll-active-0.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/pll-active-1.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/pll-active-1.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/pll-powerup.asm",
+      "source_sha256": "cd201db2dbf0d9a32041e35f4339dfcb9e4185089fc0c3a44aed26c2a801d9f9",
+      "source_bytes": 1577,
+      "disposition": "local",
+      "reason": "generated research disassembly"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/pll-setup-update.asm",
+      "source_sha256": "aa361d40f2c90639afec978d1e80847677c69a69088b33015f2af71b98307653",
+      "source_bytes": 13615,
+      "disposition": "local",
+      "reason": "generated research disassembly"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/prepare-linux.log",
+      "source_sha256": "350023a56872e2b20ec5b1deb355f866039db3bc084a5f46485e81cb04551402",
+      "source_bytes": 123,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/prepare-linux.log.txt",
+      "export_sha256": "350023a56872e2b20ec5b1deb355f866039db3bc084a5f46485e81cb04551402",
+      "export_bytes": 123
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/restore-script.py",
+      "source_sha256": "d0f7b11591fc9d17cb85e7de50da16ed00c77bada5b330dc7b149cf0cf8c58a8",
+      "source_bytes": 857,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/restore-script.py.txt",
+      "export_sha256": "d0f7b11591fc9d17cb85e7de50da16ed00c77bada5b330dc7b149cf0cf8c58a8",
+      "export_bytes": 857
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/restored-and-profile.log",
+      "source_sha256": "15e290eb3e35773b622ea9ef270a1f044a77272e99353e0443dcb575ac31ebd3",
+      "source_bytes": 228,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/restored-and-profile.log.txt",
+      "export_sha256": "15e290eb3e35773b622ea9ef270a1f044a77272e99353e0443dcb575ac31ebd3",
+      "export_bytes": 228
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/source-audio-pcm.json",
+      "source_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "source_bytes": 170,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/source-audio-pcm.json",
+      "export_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "export_bytes": 170
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/source3.log",
+      "source_sha256": "aef96840d91bffed24d20035b183b7c623c0d8a11e1a7d02928f3902efc30559",
+      "source_bytes": 2124,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/source3.log.txt",
+      "export_sha256": "6496b0e90a372e3fca5c6ec5a05540348a5ab8c9a71c661a42974f7b5519f5a4",
+      "export_bytes": 2094
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/staging-boot.log",
+      "source_sha256": "cac49dafac3bb25c963b9773a170697a92f5b9033b9ab0543fc5fbfa180a0a06",
+      "source_bytes": 42437,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/staging-boot.log.txt",
+      "export_sha256": "81daf36bb4190d4e110f060b1a06bb2501666ca41dc38aee6fb98f0c78570e4a",
+      "export_bytes": 41957
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/staging-state.log",
+      "source_sha256": "c4c418f99afc6dfd0a4885fd06ebdfb693adf32572d2a69e856445df39d8c5a2",
+      "source_bytes": 517,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/staging-state.log.txt",
+      "export_sha256": "c4c418f99afc6dfd0a4885fd06ebdfb693adf32572d2a69e856445df39d8c5a2",
+      "export_bytes": 517
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/trial-command.py",
+      "source_sha256": "580b2931b6dc86f6a1b7a530068296fdc8d113eb4847f1f506c2f34d665e90f4",
+      "source_bytes": 3528,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/trial-command.py.txt",
+      "export_sha256": "580b2931b6dc86f6a1b7a530068296fdc8d113eb4847f1f506c2f34d665e90f4",
+      "export_bytes": 3528
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/trial-summary.log",
+      "source_sha256": "2505563b0507136a9851cc74bb9bb2f48cdd07bb1e295de26ea94d48c4272fd4",
+      "source_bytes": 1549,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/trial-summary.log.txt",
+      "export_sha256": "2505563b0507136a9851cc74bb9bb2f48cdd07bb1e295de26ea94d48c4272fd4",
+      "export_bytes": 1549
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/uboot-audio-monitor.bin",
+      "source_sha256": "a253ac5e08d4b9fed8bbbd4fd38d679dc949fee714da3b809746f3c2364b6a5b",
+      "source_bytes": 920576,
+      "disposition": "local",
+      "reason": "private firmware/generated images, tables or raw DRAM dumps"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-audio-pll-retry/uboot-before.bin",
+      "source_sha256": "c882461d5ee69128c79d99b784fde668ee4d57ab09ae308738e3f9ea91fd1ce7",
+      "source_bytes": 920576,
+      "disposition": "local",
+      "reason": "private firmware/generated images, tables or raw DRAM dumps"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/README.md",
+      "source_sha256": "e96d82c998d5c271e71f3b53ada5a1bba5d47b0be37a7a829e698c60554ec7de",
+      "source_bytes": 6424,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/README.md.txt",
+      "export_sha256": "e96d82c998d5c271e71f3b53ada5a1bba5d47b0be37a7a829e698c60554ec7de",
+      "export_bytes": 6424
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-cache-after.json",
+      "source_sha256": "8e10515d11ff15290851ca82cc4875069bef6a11f15a90e5fcc561d249718373",
+      "source_bytes": 3211,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-cache-after.json",
+      "export_sha256": "8e10515d11ff15290851ca82cc4875069bef6a11f15a90e5fcc561d249718373",
+      "export_bytes": 3211
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-cache-trial.json",
+      "source_sha256": "2355619c02028ec63e0ded79950439fbc6b9824f06dad2370fc89b91edc6a136",
+      "source_bytes": 23083,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-cache-trial.json",
+      "export_sha256": "2355619c02028ec63e0ded79950439fbc6b9824f06dad2370fc89b91edc6a136",
+      "export_bytes": 23083
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-hold.log",
+      "source_sha256": "6bb62f6b8621dafb384b5cb301c78e4f6ab9ddb7a4e136a51817413c46861a55",
+      "source_bytes": 112,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-hold.log.txt",
+      "export_sha256": "7c753fec10494a15fd268c388b4ca31b1f44a0d2746bac105566f8a1bd82ca90",
+      "export_bytes": 120
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-monitor-profile.json",
+      "source_sha256": "a392cceca2493c29f7bbb95c3fa38cf2d1b46a4801f4e432f7800ae16e98f5c8",
+      "source_bytes": 5739,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-monitor-profile.json",
+      "export_sha256": "a392cceca2493c29f7bbb95c3fa38cf2d1b46a4801f4e432f7800ae16e98f5c8",
+      "export_bytes": 5739
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/audio-monitor-table.bin",
+      "source_sha256": "3fac169ef1ec0eecce6353f2309b1f5f71763cac93a290bd46cc2312abf16f1d",
+      "source_bytes": 672,
+      "disposition": "local",
+      "reason": "private firmware/generated images, tables or raw DRAM dumps"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/before-install.log",
+      "source_sha256": "ccdb8612ea07297baf4cbff882f08ac72533c4734d55a5dc9ccc27fe71435116",
+      "source_bytes": 191,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/before-install.log.txt",
+      "export_sha256": "75de753950cb6ca2d3b07b110f5070021c5fb285f0449770e2328754c43e52a4",
+      "export_bytes": 199
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/cache-trial.log",
+      "source_sha256": "01b354e315b0eba7529b1a3b6fcd7a4a368703caa1b9d3a67b82b838cb2852c5",
+      "source_bytes": 13862,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/cache-trial.log.txt",
+      "export_sha256": "01b354e315b0eba7529b1a3b6fcd7a4a368703caa1b9d3a67b82b838cb2852c5",
+      "export_bytes": 13862
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/candidate-manifest.json",
+      "source_sha256": "96b663d49c58e70c138666b6d6aac01c368f83b6092655a8cfcf00e014ec0c1d",
+      "source_bytes": 459,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/candidate-manifest.json",
+      "export_sha256": "96b663d49c58e70c138666b6d6aac01c368f83b6092655a8cfcf00e014ec0c1d",
+      "export_bytes": 459
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/audio-cache-after.json",
+      "source_sha256": "e9fa92e8a5d839c718e9796fd5d9bfb9e7563bc05cd09f57251cf55b152cf84b",
+      "source_bytes": 3211,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/audio-cache-after.json",
+      "export_sha256": "e9fa92e8a5d839c718e9796fd5d9bfb9e7563bc05cd09f57251cf55b152cf84b",
+      "export_bytes": 3211
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/audio-cache-trial.json",
+      "source_sha256": "3d03f79727d829eb230e5c03b53ad003509e94c2057a539bf5e6dca05720ae49",
+      "source_bytes": 23093,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/audio-cache-trial.json",
+      "export_sha256": "3d03f79727d829eb230e5c03b53ad003509e94c2057a539bf5e6dca05720ae49",
+      "export_bytes": 23093
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/cache-trial.log",
+      "source_sha256": "f0a2e2ba3bc187694336b60f5d4821a79164038f33e3037fbaf33f6b68f8f97c",
+      "source_bytes": 14396,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/cache-trial.log.txt",
+      "export_sha256": "f0a2e2ba3bc187694336b60f5d4821a79164038f33e3037fbaf33f6b68f8f97c",
+      "export_bytes": 14396
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/commands-and-dma.log",
+      "source_sha256": "3d775604ab60f7a0afdb42def1c3fe4539bf850fc650215b82c69745c7cf3fcd",
+      "source_bytes": 3649,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/commands-and-dma.log.txt",
+      "export_sha256": "6524a3008bbe0f69f6fc6974bd5183dc0af52558b831c6dd9f2887b7c9994da1",
+      "export_bytes": 3695
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/pll-active-0.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/pll-active-0.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/pll-active-1.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/pll-active-1.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/source-audio-pcm.json",
+      "source_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "source_bytes": 170,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/source-audio-pcm.json",
+      "export_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "export_bytes": 170
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/trial-command.py",
+      "source_sha256": "00880dc9118525ca70667417140c6a3525fd31f66b940e410d4b4ad716e00844",
+      "source_bytes": 3675,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/trial-command.py.txt",
+      "export_sha256": "00880dc9118525ca70667417140c6a3525fd31f66b940e410d4b4ad716e00844",
+      "export_bytes": 3675
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/trial-summary.log",
+      "source_sha256": "2505563b0507136a9851cc74bb9bb2f48cdd07bb1e295de26ea94d48c4272fd4",
+      "source_bytes": 1549,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/capture/trial-summary.log.txt",
+      "export_sha256": "2505563b0507136a9851cc74bb9bb2f48cdd07bb1e295de26ea94d48c4272fd4",
+      "export_bytes": 1549
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/cleanup.log",
+      "source_sha256": "a84d445c572864583eddc637196740e93078b8fb898efecdc9fb50ad40f61626",
+      "source_bytes": 3498,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/cleanup.log.txt",
+      "export_sha256": "779a8a46a7f8b2b643550a144c2d7f4f035e33cc748f59d2828e1eaa64f0a56d",
+      "export_bytes": 3514
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/cold-launch.log",
+      "source_sha256": "71f30d1e5acd44c9ed72fdb68f8c8bcfac62c187603e7c4f851120f480fd69f5",
+      "source_bytes": 5443,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/cold-launch.log.txt",
+      "export_sha256": "f5f2f13a66c30c59e6954aef5669d4ee4cfcb1ba6281775c19885aec15d4d676",
+      "export_bytes": 5364
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/config-after.log",
+      "source_sha256": "f399cce0171c3071d286efa9cebbe0c48e9d68ec8f58fa6f7348c3134070ebec",
+      "source_bytes": 336,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/config-after.log.txt",
+      "export_sha256": "7ceb66de45cb2c1a813393bc00aea08be011bbad218a23582e73a820c5e01631",
+      "export_bytes": 345
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/dsp-bridge-load.log",
+      "source_sha256": "a477745a104f6ccdae12ca73703dad4464243c98df5184ee5306015ccc53059f",
+      "source_bytes": 4692,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/dsp-bridge-load.log.txt",
+      "export_sha256": "a477745a104f6ccdae12ca73703dad4464243c98df5184ee5306015ccc53059f",
+      "export_bytes": 4692
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-before.bin",
+      "source_sha256": "f627ca4c2c322f15db26152df306bd4f983f0146409b81a4341b9b340c365a16",
+      "source_bytes": 102400,
+      "disposition": "local",
+      "reason": "private firmware/generated images, tables or raw DRAM dumps"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-enable.log",
+      "source_sha256": "74bd7b778aa445980470433995f1aa1e4e088f7baa4f164ce8fb326b41100472",
+      "source_bytes": 230,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-enable.log.txt",
+      "export_sha256": "a3aade8abdcd09222a3b48b5dbada81600c8038fc893eae1b4259dae1875dec9",
+      "export_bytes": 242
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-help.log",
+      "source_sha256": "74343be07404fa7e5c3ccfafc48b87514795af1e7af1aa583745b6512f87374e",
+      "source_bytes": 107,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-help.log.txt",
+      "export_sha256": "f07f3619b7a04a03d590daf3fc116e717145b56bb5ec48d815b7dc47ca7556b7",
+      "export_bytes": 115
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-read.log",
+      "source_sha256": "4c042045bc9301062e76d5a47aa579dd96baac7f196f116767137dfb898416ba",
+      "source_bytes": 13,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-read.log.txt",
+      "export_sha256": "4c042045bc9301062e76d5a47aa579dd96baac7f196f116767137dfb898416ba",
+      "export_bytes": 13
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-usage.log",
+      "source_sha256": "4fc599e438ef8397b1a2ea40b2f59195ce6777ec632298a81e60bdc7c83dfd77",
+      "source_bytes": 58,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/elog-usage.log.txt",
+      "export_sha256": "a6312813ca8dbb1ffe1db5d9eceebae16e320d7c7f7ad3d304fc03e6ccf9165b",
+      "export_bytes": 62
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/emulation.json",
+      "source_sha256": "475e70f036b6f9211819d7ef061fd359eaf8210bf68d831205332fd766b39e09",
+      "source_bytes": 10528,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/emulation.json",
+      "export_sha256": "475e70f036b6f9211819d7ef061fd359eaf8210bf68d831205332fd766b39e09",
+      "export_bytes": 10528
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/install-script.py",
+      "source_sha256": "abe9a2a579db9ac0e1629dadaf4a3a9a1ef5874ed535144fceee535a533e941e",
+      "source_bytes": 1001,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/install-script.py.txt",
+      "export_sha256": "abe9a2a579db9ac0e1629dadaf4a3a9a1ef5874ed535144fceee535a533e941e",
+      "export_bytes": 1001
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/install.log",
+      "source_sha256": "12c905f7f11c588c0476bf021560961ae8393bfeeac6af447ade3e0802330ca5",
+      "source_bytes": 163,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/install.log.txt",
+      "export_sha256": "12c905f7f11c588c0476bf021560961ae8393bfeeac6af447ade3e0802330ca5",
+      "export_bytes": 163
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/linux-boot.log",
+      "source_sha256": "7778f2369b15da8049880e267f3cfafc07f67c6989fd9dca6cb51ca656968445",
+      "source_bytes": 42565,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/linux-boot.log.txt",
+      "export_sha256": "95e784f9c29d1395a472e5c89c7011b78c4a0dbd8b376bc76f54754a8290397a",
+      "export_bytes": 42084
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/audio-cache-after.json",
+      "source_sha256": "cf4228d7f0aba84b72a8e4ca30bcaa914b8a8c2b4f66ec3f21fab8792696b3f1",
+      "source_bytes": 3211,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/audio-cache-after.json",
+      "export_sha256": "cf4228d7f0aba84b72a8e4ca30bcaa914b8a8c2b4f66ec3f21fab8792696b3f1",
+      "export_bytes": 3211
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/audio-cache-trial.json",
+      "source_sha256": "2fd411dcd3986395b7d6a7f6643776791347854489b6c57bc3c3292b3d18d309",
+      "source_bytes": 23093,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/audio-cache-trial.json",
+      "export_sha256": "2fd411dcd3986395b7d6a7f6643776791347854489b6c57bc3c3292b3d18d309",
+      "export_bytes": 23093
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/cache-trial.log",
+      "source_sha256": "216f101d733763e70b057499bd8eb6b27f3f9be0c8dc791273c867ff290abfb0",
+      "source_bytes": 14276,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/cache-trial.log.txt",
+      "export_sha256": "216f101d733763e70b057499bd8eb6b27f3f9be0c8dc791273c867ff290abfb0",
+      "export_bytes": 14276
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/elog-during.bin",
+      "source_sha256": "4cd32ff89f51aa9020b0134e0c2e78c499aa0915fe7da96ceaaf386e6ee3a7bb",
+      "source_bytes": 102400,
+      "disposition": "local",
+      "reason": "private firmware/generated images, tables or raw DRAM dumps"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/elog-hdmi.txt",
+      "source_sha256": "e1d76840a1b20575ce4a9ccb98cd4fa028367bdff72b6a14981ecde7ca87005d",
+      "source_bytes": 4591,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/elog-hdmi.txt",
+      "export_sha256": "e1d76840a1b20575ce4a9ccb98cd4fa028367bdff72b6a14981ecde7ca87005d",
+      "export_bytes": 4591
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/log-read-and-dma.log",
+      "source_sha256": "572a0dfa60e0d4ca06bd46ffc0e721d1982ca9d4b847340490c2b5d9f73f2bcc",
+      "source_bytes": 2335,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/log-read-and-dma.log.txt",
+      "export_sha256": "572a0dfa60e0d4ca06bd46ffc0e721d1982ca9d4b847340490c2b5d9f73f2bcc",
+      "export_bytes": 2335
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/pll-active-0.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/pll-active-0.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/pll-active-1.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/pll-active-1.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/source-audio-pcm.json",
+      "source_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "source_bytes": 170,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/source-audio-pcm.json",
+      "export_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "export_bytes": 170
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/trial-command.py",
+      "source_sha256": "75a5d99e19c5df1ffbaab9b91b7476d23fc4388137e6bc8f291c4c1c1542a4e7",
+      "source_bytes": 3674,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/trial-command.py.txt",
+      "export_sha256": "75a5d99e19c5df1ffbaab9b91b7476d23fc4388137e6bc8f291c4c1c1542a4e7",
+      "export_bytes": 3674
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/trial-summary.log",
+      "source_sha256": "2505563b0507136a9851cc74bb9bb2f48cdd07bb1e295de26ea94d48c4272fd4",
+      "source_bytes": 1549,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/logged/trial-summary.log.txt",
+      "export_sha256": "2505563b0507136a9851cc74bb9bb2f48cdd07bb1e295de26ea94d48c4272fd4",
+      "export_bytes": 1549
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/pll-active-0.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/pll-active-0.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/pll-active-1.log",
+      "source_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "source_bytes": 218,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/pll-active-1.log.txt",
+      "export_sha256": "a6d82eba6b431667b37888af9b1baf2ef36aac93b849c86bf76bcecfd34242f3",
+      "export_bytes": 218
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/pll-calculate.asm",
+      "source_sha256": "d79007c1985990a24ae4efd5d7fe96f855f0d3f005fbb2c06b7d1a3254ce2463",
+      "source_bytes": 17083,
+      "disposition": "local",
+      "reason": "generated research disassembly"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/prepare-linux.log",
+      "source_sha256": "350023a56872e2b20ec5b1deb355f866039db3bc084a5f46485e81cb04551402",
+      "source_bytes": 123,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/prepare-linux.log.txt",
+      "export_sha256": "350023a56872e2b20ec5b1deb355f866039db3bc084a5f46485e81cb04551402",
+      "export_bytes": 123
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/profile-verified.log",
+      "source_sha256": "e78255c61f62c98aab9534b7f7ec19b8ba09bb3feabc26e3c6d94654a5fb793d",
+      "source_bytes": 65,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/profile-verified.log.txt",
+      "export_sha256": "e78255c61f62c98aab9534b7f7ec19b8ba09bb3feabc26e3c6d94654a5fb793d",
+      "export_bytes": 65
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/read-known-ring.py",
+      "source_sha256": "dc59aa9c290ee1c89a457cbc6128e0419ab91064491ed5beeb93eee3ad1b2d27",
+      "source_bytes": 515,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/read-known-ring.py.txt",
+      "export_sha256": "dc59aa9c290ee1c89a457cbc6128e0419ab91064491ed5beeb93eee3ad1b2d27",
+      "export_bytes": 515
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/restore-script.py",
+      "source_sha256": "cbb39551aaf94b5580ca5111235792734e522ac738f9327aa5e75bbf45889357",
+      "source_bytes": 856,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/restore-script.py.txt",
+      "export_sha256": "cbb39551aaf94b5580ca5111235792734e522ac738f9327aa5e75bbf45889357",
+      "export_bytes": 856
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/restored-and-profile.log",
+      "source_sha256": "72cd8377a8ff18f1abc9d3f0536506817c5f6ddac260716f0d164f5511fd125e",
+      "source_bytes": 162,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/restored-and-profile.log.txt",
+      "export_sha256": "72cd8377a8ff18f1abc9d3f0536506817c5f6ddac260716f0d164f5511fd125e",
+      "export_bytes": 162
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/source-audio-pcm.json",
+      "source_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "source_bytes": 170,
+      "disposition": "structured evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/source-audio-pcm.json",
+      "export_sha256": "acd888338c40b04cfe303543d6d5b396ca991ce23aa32ec479420e2c5b7670d8",
+      "export_bytes": 170
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/source3.log",
+      "source_sha256": "aef96840d91bffed24d20035b183b7c623c0d8a11e1a7d02928f3902efc30559",
+      "source_bytes": 2124,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/source3.log.txt",
+      "export_sha256": "6496b0e90a372e3fca5c6ec5a05540348a5ab8c9a71c661a42974f7b5519f5a4",
+      "export_bytes": 2094
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/stock-receiver-pll-config.asm",
+      "source_sha256": "c06d9c8b4d63782af39008575f4730ccbd2259f5af2f59be4bbd156265fea1bb",
+      "source_bytes": 8054,
+      "disposition": "local",
+      "reason": "generated research disassembly"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/trial-command.py",
+      "source_sha256": "dc220dc1481bc543e4e3c2f6848b971ad82bcc8a524f6a5dd8339a177117f35e",
+      "source_bytes": 3531,
+      "disposition": "exact historical text snapshot",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/trial-command.py.txt",
+      "export_sha256": "dc220dc1481bc543e4e3c2f6848b971ad82bcc8a524f6a5dd8339a177117f35e",
+      "export_bytes": 3531
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/trial-summary.log",
+      "source_sha256": "498e25618cec18c641761309e3cd9f20d5e34366bfedba7a908866486effd6ae",
+      "source_bytes": 1541,
+      "disposition": "normalized text evidence",
+      "export": "docs/hdmi-evidence/2026-10-07-pll-initialization/trial-summary.log.txt",
+      "export_sha256": "498e25618cec18c641761309e3cd9f20d5e34366bfedba7a908866486effd6ae",
+      "export_bytes": 1541
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/uboot-audio-monitor.bin",
+      "source_sha256": "3c2dd5d5208a23f1c4511c37b704a3d17e8a9bce29f16293dc8e768a7582660a",
+      "source_bytes": 920576,
+      "disposition": "local",
+      "reason": "private firmware/generated images, tables or raw DRAM dumps"
+    },
+    {
+      "source": "docs/hdmi-evidence/2026-10-07-pll-initialization/uboot-before.bin",
+      "source_sha256": "c882461d5ee69128c79d99b784fde668ee4d57ab09ae308738e3f9ea91fd1ce7",
+      "source_bytes": 920576,
+      "disposition": "local",
+      "reason": "private firmware/generated images, tables or raw DRAM dumps"
+    }
+  ]
+}

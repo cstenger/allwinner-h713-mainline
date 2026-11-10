@@ -1,0 +1,85 @@
+diff --git a/arch/arm/mach-sunxi/Kconfig b/arch/arm/mach-sunxi/Kconfig
+index ba417d985a9..c9a408623cf 100644
+--- a/arch/arm/mach-sunxi/Kconfig
++++ b/arch/arm/mach-sunxi/Kconfig
+@@ -69,6 +69,16 @@ config H713_SPL_FORCE_MMC
+ 	  send it. Recovers a board whose first stage was overwritten while
+ 	  U-Boot proper is still intact. Never enable this in a shipping image.
+ 
++config H713_SPL_RESCUE
++	bool "H713 recovery: FEL-loaded SPL boots U-Boot proper from eMMC"
++	depends on H713_SPL_FORCE_MMC
++	help
++	  Skip the sector-16 restore hook and continue into U-Boot proper,
++	  loaded from SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR. Pointed at a spare
++	  copy of a known-good U-Boot proper, this brings up a prompt when
++	  the normal U-Boot proper slot no longer starts. Never enable this
++	  in a shipping image.
++
+ config DRAM_SUN50I_A133
+ 	bool
+ 	help
+diff --git a/arch/arm/mach-sunxi/board.c b/arch/arm/mach-sunxi/board.c
+index 19975d265bd..1fe941be99d 100644
+--- a/arch/arm/mach-sunxi/board.c
++++ b/arch/arm/mach-sunxi/board.c
+@@ -371,7 +371,7 @@ unsigned long board_spl_mmc_get_uboot_raw_sector(struct mmc *mmc,
+ 	return sector;
+ }
+ 
+-#ifdef CONFIG_H713_SPL_FORCE_MMC
++#if defined(CONFIG_H713_SPL_FORCE_MMC) && !defined(CONFIG_H713_SPL_RESCUE)
+ #include <mmc.h>
+ #include "h713_spl_payload.h"
+ 
+@@ -436,6 +436,28 @@ void spl_board_prepare_for_boot(void)
+ }
+ #endif
+ 
++#ifdef CONFIG_H713_SPL_RESCUE
++#include <sunxi_image.h>
++
++/*
++ * Rescue: the FEL loader leaves "eGON.FEL" in the SPL header in SRAM, so
++ * U-Boot proper's sunxi_get_boot_device() reports BOOT_DEVICE_BOARD and
++ * env_get_location() finds no environment driver (ENV_IS_IN_MMC only);
++ * env_init() then fails before the console exists and the board halts
++ * silently. U-Boot proper was loaded from eMMC, so say so: restore the
++ * eGON magic and mark the boot medium as eMMC (MMC2). Proper is unchanged.
++ */
++void spl_board_prepare_for_boot(void)
++{
++	struct boot_file_head *head = (void *)(ulong)SPL_ADDR;
++
++	memcpy(head->magic, BOOT0_MAGIC, sizeof(head->magic));
++	writeb(SUNXI_BOOTED_FROM_MMC2, &head->boot_media);
++	head->fel_script_address = 0;
++	printf("H713 rescue: SPL header marked eMMC boot for U-Boot proper\n");
++}
++#endif
++
+ u32 spl_boot_device(void)
+ {
+ #ifdef CONFIG_H713_SPL_FORCE_MMC
+diff --git a/include/initcall.h b/include/initcall.h
+index 220a55ad84d..512fb1b668a 100644
+--- a/include/initcall.h
++++ b/include/initcall.h
+@@ -12,8 +12,17 @@
+ 
+ _Static_assert(EVT_COUNT < 256, "Can only support 256 event types with 8 bits");
+ 
++#ifdef H713_INITCALL_TRACE
++/* Debug-only: name each init step on the debug UART before running it. */
++#include <debug_uart.h>
++#define H713_TRACE_STEP(_s) printascii("[" _s "]\r\n")
++#else
++#define H713_TRACE_STEP(_s) do { } while (0)
++#endif
++
+ #define INITCALL(_call) \
+ 	do { \
++		H713_TRACE_STEP(#_call); \
+ 		if (_call()) { \
+ 			printf("%s(): initcall %s() failed\n", __func__, \
+ 			       #_call); \

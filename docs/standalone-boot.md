@@ -12,7 +12,7 @@ and point `bootcmd` at it.
 
 ## The plan
 
-- `build/build.sh kernel` produces `build/out/h713-kernel.fit` (gzip Image +
+- `tools/build/build.sh kernel` produces `build/out/h713-kernel.fit` (gzip Image +
   `sun50i-h713-hy200-qz713df-a1` DTB, load/entry `0x48000000`).
 - `boot_a` is **GPT partition 5**, start LBA `0x32400` (205824), **64 MiB** —
   the factory Android boot slot, unused by our stack, so we repurpose it as a
@@ -27,7 +27,7 @@ Full chain, no host: `BROM → SPL (DRAM) → BL31 → U-Boot → read boot_a �
 **1. Build the FIT** (host):
 
 ```
-build/build.sh kernel        # -> build/out/h713-kernel.fit
+tools/build/build.sh kernel        # -> build/out/h713-kernel.fit
 ```
 
 **2. Flash it to `boot_a`.** Put the board in fastboot mode from the default

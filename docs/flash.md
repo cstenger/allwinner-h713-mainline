@@ -1,8 +1,25 @@
 # Flashing
 
+**Current DDR3 layout warning (November 3, 2026):** Linux is GPT p26 `linux`
+(2.75 GiB), Android userdata is GPT p27 `UDISK` (about 1.88 GiB), and the GPT
+has 28 entry slots. Historical `fastboot flash UDISK` examples below target
+Android on this board. Follow the fresh device/partition gates in the
+[production qualification plan](production-qualification-plan.md). Do not
+expand the GPT entry array across the SPL at LBA 16.
+
 How to write images to the H713 eMMC. Neither board has an SD slot — boot media
 is **eMMC or FEL only**. There is a hardware **FEL button** (recovery vector),
 so a bad first stage is recoverable.
+
+## Current U-Boot update and rollback (2026-10-18)
+
+For the validated panel fix and this bench board's split layout, use the
+[U-Boot panel build/results/rollback runbook](uboot-panel-initial-state.md).
+The installed trial proper is 1867 sectors at `0x49ac00`; exact pre-fix
+rollback and the separate older rescue slot are retained. Normal build output
+is a combined SPL+proper image and is not a whole-image update for this
+installed board. The older layout/flash recipes below are historical; verify
+current regions and backups before using them.
 
 ## ⚠ State of the bench board as of 2026-08-09
 
@@ -301,7 +318,7 @@ host-side U-Boot upload.
 2. Build the restore SPL:
 
    ```
-   build/uboot-build.sh "$PWD/build/uboot-felmmc" hy200_h713_felmmc_defconfig spl/sunxi-spl.bin
+   tools/build/uboot-build.sh "$PWD/build/uboot-felmmc" hy200_h713_felmmc_defconfig spl/sunxi-spl.bin
    cp build/uboot-felmmc/spl/sunxi-spl.bin build/out/h713-restore-spl.bin
    ```
 
@@ -329,6 +346,22 @@ slot here**, and using it fails with "Card did not respond to voltage select".
 The 64 KiB upload goes through the SPL loader, which relocates around the
 BROM-reserved regions, so it is unaffected by the raw-write hazard above.
 
+### Rescuing a bad U-Boot proper (proven 2026-10-16)
+
+A FEL-started SPL *can* boot U-Boot proper from eMMC. The silent stop after
+BL31 seen before was `env_init()` failing: the SRAM SPL header says
+`eGON.FEL`, so proper finds no environment driver (`ENV_IS_IN_MMC` only) and
+halts before the console exists. `build/out/h713-rescue-spl.bin`
+(`CONFIG_H713_SPL_FORCE_MMC` + `CONFIG_H713_SPL_RESCUE`,
+[patch](reference/uboot-h713-spl-rescue.patch)) rewrites that header to an eMMC
+boot and loads U-Boot proper from the spare slot **LBA `0x4a0c00`** (`empty` +
+12 MiB), which holds a known-good proper. Unplug everything ≥ 1 min, hold FEL,
+apply board power only, then plug USB and serial, and
+`sunxi-fel -p spl build/out/h713-rescue-spl.bin` → prompt →
+`mmc dev 1; mmc read 0x42000000 0x4a0c00 0x706; mmc write 0x42000000 0x49ac00 0x706`.
+Keep the spare slot holding a proper you trust. Evidence:
+[hdmi-evidence/2026-10-16-uboot-lamp](hdmi-evidence/2026-10-16-uboot-lamp/README.md).
+
 **Known gap — `sunxi-fel uboot` does not work on H713.** Loading the SPL alone
 is reliable (`sunxi-fel spl ...` returns and FEL still responds afterwards), but
 transferring U-Boot proper fails, and the transfer completes yet the SPL still
@@ -342,7 +375,28 @@ Two of the symptoms once cited here have since been explained and should not be
 read as evidence about the handoff (2026-07-29): the `usb_bulk_recv() ERROR -8:
 Overflow` was an undersized bulk IN buffer, now fixed; and the
 `usb_bulk_send() ERROR -7` timeouts came from the raw-write hazard above.
-**This gap has not been retested since those fixes landed** — do that first
+**RETESTED 2026-08-25, after those fixes: the gap persists.** `sunxi-fel uboot
+build/out/u-boot-sunxi-with-spl-ddr3.bin` returns rc=0 — the transfer itself is
+clean now — and the serial console shows the SPL reaching exactly the same
+place and stopping:
+
+```
+U-Boot SPL 2026.07-rc5-g7b178056c329-dirty (Aug 24 2026 - 15:37:16 -0700)
+DRAM: 1024 MiB
+Trying to boot from FEL
+```
+
+U-Boot proper never starts. Afterwards the board still enumerates as
+`1f3a:efe8` but **the FEL protocol stops responding** (`sunxi-fel version`
+returns nothing), so the SPL is holding the USB while waiting for a
+continuation that never arrives — recovery is a power cycle, not another FEL
+command.
+
+So the transport fixes were necessary but not sufficient: this is the
+`fel_stash` continuation path, as suspected, and it is a real bug rather than
+an artifact of the old raw-write hazard. **The practical consequence is that
+U-Boot code changes cannot be tested without flashing the bootloader**, which
+matters for any experiment needing modified bring-up. Use the restore SPL below
 before investigating `fel_stash`, because the transfer half of the problem may
 already be gone. U-Boot proper also lands in DRAM, which is its own unresolved
 issue on this board.
@@ -763,3 +817,29 @@ All extracted from `board-b-mmcblk0-20260705T075628Z.img`, all in the ignored
   is a *different board's* firmware build; prefer the captures.
 - Take a fresh capture before the next destructive operation anyway. The
   existing ones predate every write this project has made.
+
+## Recovering from a kernel that hangs at probe (2026-09-02)
+
+A bad kernel on the boot FAT is not a serial-transfer problem. U-Boot can read
+the rootfs, and `install-kernel-fit.sh` leaves every previous kernel there:
+
+```text
+=> ext4ls   mmc 1:1a /root/fits
+=> ext4load mmc 1:1a 0x50000000 /root/fits/replaced-<stamp>.fit
+7752948 bytes read in 497 ms (14.9 MiB/s)
+=> bootm 0x50000000
+```
+
+**14.9 MiB/s**, no host-side transfer at all — far better than UMS and not
+comparable to YMODEM over the UART. Boot the backup, then reinstall a good
+kernel from Linux over WiFi in the normal way.
+
+Two gotchas, both of which cost time:
+
+- **U-Boot parses partition numbers as HEX.** The rootfs that `part list mmc 1`
+  displays as partition **26** is `mmc 1:1a`. Using `1:26` fails with
+  "Invalid partition 38" — which is `0x26`.
+- **`bootdelay` was `-1`**, U-Boot for *never autoboot*, which is why the board
+  parked at `=>` after every reboot and needed a manual `boot`. It is now `5`
+  and saved. If a session ever finds the board waiting again, check this first
+  rather than assuming a boot failure.

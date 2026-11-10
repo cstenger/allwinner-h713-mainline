@@ -1,0 +1,173 @@
+# Firmware-owned composition block during a serviced frame, 2026-08-31
+
+Question: after PanelWinNode accepts a Linux DECD frame and commits AFBD
+source 0, what does the firmware do to its otherwise-unswept ARM
+0x05000000 composition block?
+
+Setup
+-----
+
+    h713_disp mips-comm-trace 0x34
+    ext4load mmc 1:1a 0x50000000 /root/h713-kernel-decd-test.fit
+    bootm 0x50000000
+
+A background watcher polled the persistent stage word at 0x4e340040. On the
+first observation of stage 0x6103 it captured ARM 0x05000000..0x0500087c,
+the trace words, and AFBD 0x05600000..0x0560007c, then synced the files. This
+survives the known MIPS-plus-DECD hard lock. The first attempt without the
+watcher did hard-lock immediately after the client printed its 300 ms hold;
+no post-submit shell commands ran and the unsynced baseline file remained
+zero length after recovery.
+
+The watcher-protected run completed normally and proved the frame boundary:
+
+    stage         0x00006103
+    dirty mask    0xffffffff
+    node mode     0x00000002
+    source ctrl   0x03000010
+    commit latch  0x00000001
+    AFBD dirty    0x00000001
+
+An important apparatus correction
+----------------------------------
+
+The first protected run invoked /root/decd-client, SHA-256
+7c072cfb80c410489fa3d20ec25671d3fea9c31eff597857911c039225c55122.
+That was the older, source-coordinate build. Directly reading its submitted
+VideoInfo at 0x6c8f106c showed:
+
+    crop/display width   0x00005000  (1280 << 4)
+    crop/display height  0x00002d00  ( 720 << 4)
+
+It therefore reproduced the already-understood 852x480 result. The corrected
+binary was already present as /root/decd-client.coord1080, SHA-256
+256143c876bd6fa2f1564946436564c7a32c5c13b79abe26f78bf1fdff363651,
+exactly matching the hash in video-coordinate-space-confirmed-2026-08-30.txt.
+Its live VideoInfo contained the stock canonical values 0x7800/0x4380.
+
+Composition result
+------------------
+
+The source-coordinate frame changed the composition block from its 1280x720
+baseline to 852x480 in every relevant size family, not only in AFBD:
+
+    register(s)                         1280x720 state   852x480 state
+    0x050000f0, 0x05000210              0x63004040       0x63002b2b
+    0x05000174, 0x050001b4              0x00400040       0x002b002b
+    0x05000224                          0x02d00500       0x01e00354
+    0x05000274                          0x00400040       0x002b002b
+    0x05000278                          0x60020168       0xe00200f0
+    0x050002b4                          0x00400040       0x002b002b
+    0x050002b8                          0x600202d0       0xe00201e0
+    0x05000444, 0x05000544              0x02d00500       0x01e00354
+    0x05000804                          0x002c0500       0x002c0354
+    0x0500080c                          0x001402d0       0x001401e0
+    0x05000840                          0x02d10015       0x01e10015
+    0x05000844                          0x05000030       0x03540030
+    0x05000858                          0x02d00015       0x01e00015
+    0x0500085c                          0x05000030       0x03540030
+
+Running the corrected canonical-coordinate client immediately afterward
+reversed every entry in that table back to the 1280x720 value. Its simultaneous
+AFBD snapshot was:
+
+    0x05600020  0x02cf04ff  source 1280x720 minus one
+    0x05600030  0x02d00500  1280x720 picture
+    0x05600040  0x00000500  stride 1280
+    0x0560004c  0x01680500  1280x360 chroma size
+    0x05600060  0x00000001  DECD enabled
+    0x05600070  0x6c500000  Y address
+
+Thus the canonical-coordinate rule propagates through the firmware-owned
+composition block and is now confirmed at both AFBD and downstream
+composition. The 852x480 signature is not a mysterious register convention
+and is not the black-output cause.
+
+Two first-frame-only changes
+----------------------------
+
+The first accepted frame also made two changes which the second, corrected
+submit did not reverse:
+
+    0x05000058  0x80040000 -> 0x00040000
+    0x05000104  0x1b00ff00 -> 0x1100ff00
+
+PanelWinNode::update at 0x8b1a48cc contains no direct accesses to either
+offset. They may be hardware status/commit effects or work done by another
+path, and should not yet be described as missing enables. The route words
+0x05000030 and 0x05000040 did not change in either capture.
+
+Clean corrected-first control
+-----------------------------
+
+A fresh boot then made /root/decd-client.coord1080 the first and only frame.
+The first attempt panicked because PID 1 received a fatal signal
+(`Attempted to kill init! exitcode=0x0000008b`) and then hard-locked during
+the advertised five-second reboot. The shell watcher never observed 0x6103,
+so this crash provided no post-frame snapshot.
+
+To remove ARM scheduling from the uncertainty,
+tools/display/frame-stage-watch.c was added. It is a 3040-byte freestanding
+AArch64 binary that maps the trace and register pages directly, busy-polls the
+stage word, emits one full-page record for every stage transition through an
+O_SYNC descriptor, and fsyncs each record. It was run SCHED_FIFO priority 90
+on CPU 3. Binary SHA-256:
+
+    874195f0eb07b49d9b7a92c7c9ad970cfaca0ad3b9141e95903f2a8e2d6d1123
+
+The retry completed normally and captured three 1073-line records:
+
+    stage 0x00000000
+    stage 0x00006101
+    stage 0x00006103
+
+The saved board log is /root/clean-canonical-first-stage-watch.txt, 3219
+lines, SHA-256
+0703d57f645306d8697a9bd4ea648f443e8f70263298a20996a0bfc1bee29a75.
+
+This clean control is decisive for the composition page through +0x87c:
+
+- all geometry and routing words were already the correct 1280x720 values and
+  stayed byte-identical;
+- 0x05000030 and 0x05000040 stayed byte-identical;
+- the only changes were the same two first-frame effects:
+
+      0x05000058  0x80040000 -> 0x00040000
+      0x05000104  0x1b00ff00 -> 0x1100ff00
+
+So neither change is residue from the earlier 852x480 submission. Both are a
+normal consequence of the first accepted canonical frame on this boot. The
+stage-0x6101 record already contains both final values, but note that a
+21-KiB MMIO snapshot is not atomic: firmware advanced while the watcher read
+the page, so that observation does not order the changes against individual
+instructions inside the frame programmer.
+
+Extending the capture to the whole 4-KiB page also exposed activity at
++0x630..+0x648, +0x940..+0x958, and +0x9d8..+0xae0. Much of this is live or
+per-frame telemetry rather than static routing: +0xa04/+0xa08 continued to
+change between snapshots one second apart, and several other groups changed
+between the immediate and delayed samples. These words need semantics before
+they can be used as evidence of fetch or composition.
+
+Content-dependence control
+--------------------------
+
+A subsequent red-green-red control isolated one stable word from that
+telemetry. All three frames used identical metadata and the same DMA addresses;
+only the constant NV12 buffer samples changed. Register 0x05000a60 followed the
+content in A-B-A order:
+
+    red    0x0a3c0a3c
+    green  0x06080608
+    red    0x0a3c0a3c
+
+Both the green and final-red values remained stable across five one-second
+samples. Each submit reached trace stages 0x6101 and 0x6103, returned a valid
+fence, and left the panel showing the boot logo without any visible change.
+The register's semantics and tap position remain unknown, so it is not yet safe
+to name it as a CRC or final-output monitor. The repeatable content dependence
+is strong evidence that a hardware stage downstream of DECD address programming
+samples the submitted video data, narrowing the missing gate to later blend
+participation, routing, or output selection.
+
+Full result: video-content-fetch-confirmed-2026-08-31.txt.

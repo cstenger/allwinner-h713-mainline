@@ -1,0 +1,88 @@
+# PanelWinNode frame-service gate: confirmed on hardware, 2026-08-31
+
+Question: does a Linux DECD submit merely configure source registers, or does
+it traverse the firmware's real frame worker and issue the display-engine
+commit?
+
+Instrumentation (authenticated against display.bin SHA-256
+4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce):
+
+- hook PanelWinNode's dirty-mask bit-0x800 branch immediately before its call
+  to frame programmer 0x8b1a4538;
+- hook the programmer's source-0 commit store at MIPS 0xba600014;
+- hook its AFBD dirty store at MIPS 0xba60006c;
+- write persistent markers and values to CPU_COMM shared memory, readable by
+  Linux at 0x4e340040..0x4e340054.
+
+Trace-enabled U-Boot image:
+
+    build/out/u-boot-sunxi-with-spl-frame-trace.bin
+    size 948841
+    SHA-256 6f7c32c06d6702206ab8ab52195bfb5cdd1d11820047512fdb52c1af2ebe3929
+
+The previously installed image was reconstructed from eMMC before the update
+and matched its known MD5 exactly: 6b390c8a929d3f2867bc3544ffcddef4.
+Both halves of the new image were read back and matched before reboot.
+
+Setup:
+
+    h713_disp mips-comm-trace 0x34
+    ext4load mmc 1:1a 0x50000000 /root/h713-kernel-decd-test.fit
+    bootm 0x50000000
+
+The U-Boot baseline proved the existing source startup transition but no frame
+hit:
+
+    source worker = 0x5203, new=1 old=0, queue=0
+    frame stage   = 0
+
+Linux saw the same clean shared-memory baseline and MIPS status 1. It then ran
+one bounded fmt-0 submission:
+
+    DECD_FMT=0 timeout 6s /root/decd-client show \
+        /root/decd-test-frame.nv12 300
+
+The concurrent watcher changed directly from stage 0 to the persistent final
+stage:
+
+    stage         0x00006103
+    dirty mask    0xffffffff
+    node mode     0x00000002
+    source ctrl   0x03000010
+    commit latch  0x00000001   (immediate read after the store)
+    AFBD dirty    0x00000001   (immediate read after the store)
+    client rc     0
+
+The dirty mask includes 0x800, so the firmware took the exact branch identified
+statically. Stage 0x6103 can only be reached after the real frame programmer
+has written both source-0's commit latch and the AFBD dirty word.
+
+Delayed live state after the client returned:
+
+    MIPS status       0x0306101c = 0x00000001
+    source ctrl       0x05600010 = 0x03000013
+    source commit     0x05600014 = 0x00000000  (consumed)
+    source dimensions 0x05600020 = 0x02cf04ff
+    picture size      0x05600030 = 0x01e00354
+    second size       0x0560004c = 0x00f00354
+    DECD enable       0x05600060 = 0x00000001
+    AFBD dirty        0x0560006c = 0x00000001
+    Y / C             0x6c500000 / 0x6c5e1000
+    OSD ctrl/commit   0x03001901 / 0x00000000
+    mixer enable      0x0525c004 = 0x00001402
+    DECD IRQ count    2051 (approximately 60/s in the established test)
+
+Conclusion: the original "configured versus serviced" question is closed for
+this submission path. Linux reaches the firmware worker, PanelWinNode accepts
+the frame dirty bit, the AFBD frame programmer runs, and the source commit is
+consumed by hardware. The black output therefore cannot be attributed to an
+unserviced firmware channel or an unconsumed source commit. The remaining gate
+is downstream of that accepted commit: actual source fetch, selection into the
+mixer output, or composition.
+
+One useful ordering detail remains to explain. The frame programmer committed
+control 0x03000010, while the delayed register value was 0x03000013. A later
+path sets source-enable bits 1:0 outside this instrumented programmer. That
+ordering is a narrower next trace target, but earlier hardware already proved
+that explicitly setting and committing enable values 1, 2, or 3 still produces
+black, so it is not itself a likely fix.

@@ -8,6 +8,378 @@ run that proves it. `h713_disp mips-test 0x33` does; `h713_disp test` does not
 (it passes `prove_ready=false` and patches `source_id` to 2, which makes the
 firmware abandon init).
 
+> **This table is also live under project `0x34` (2026-08-28).** A report that
+> `0x34` accepts CALLs and never services them was tested directly and **does
+> not reproduce**: under `0x34` the 60-second stability window is tick-for-tick
+> identical to `0x33`, a no-op call (`2f02f7dd`) round-trips in 1 ms, and
+> `THal_Vp_Init` returns `1`. The channel row differs per boot -- read it from
+> `h713_disp commdev` rather than reusing a pid from these notes (a `0x34` boot
+> gave `chan=0 pid=0x8b8f275c`, not the `0x8b8f32b0` recorded below). See
+> "Project 0x34 RPC: the reported scheduler failure does not reproduce" in
+> [../mips-display-recovery.md](../mips-display-recovery.md).
+
+## RE-EXAMINED 2026-08-30: the "exhausted" verdict was wrong
+
+This table was closed with "CPU_COMM cannot carry any of it -- 82 entries, all
+`THal_Vp_*`, no resume/power/IOMMU/decoder-enable routine exists. Don't go
+looking again." The search was accurate and the question was wrong. It looked for
+a routine that would *start* something, and never asked whether the firmware
+might be actively *suppressing* output.
+
+The 82 entries reduce to 22 unique routines, and three of them are suppression
+mechanisms that would each produce precisely our symptom -- everything configured
+correctly, nothing on the panel:
+
+| routine | id | handler | code? |
+| --- | --- | --- | --- |
+| `THal_Vp_EnableBlackScreen` | `a30d4c6b` | `8b10a0e8` | **real** |
+| `THal_Vp_DisableBlackScreen` | `b66041d8` | `8b10a110` | **real** |
+| `THal_Vp_EnableVideoFreeze` | `2fdcdc6f` | `8b10a138` | **real** |
+| `THal_Vp_DisableVideoFreeze` | `3ab1d1dc` | `8b10a160` | **real** |
+| `THal_Vp_EnableScreenCover` | `0152f134` | `8b10a188` | **real** |
+| `THal_Vp_DisableScreenCover` | `143ffc87` | `8b10a1ec` | **real** |
+| `THal_Vp_Wce_SetWindow` | `3356c54b` | `8b109d54` | **real** |
+| `THal_Vp_Wce_GetWindow` | `fd483f67` | `8b109dc0` | **real** |
+| `THal_Vp_Wce_GetActiveWindow` | `7bbd5772` | `8b109e2c` | **real** |
+| `THal_Vp_GetSignalInfo` | `24b17fb7` | `8b109b40` | stub |
+
+"Real" means the handler begins with an actual prologue (`addiu sp,sp,-24; ...`)
+rather than `jr ra; nop`. Verified against
+`local/mips-display/board-b-mips/display.bin` at file offset `VA - 0x8b100000`.
+
+**The method is self-validating.** The previously established stubs
+`THal_Vp_SetImageBufferAddr` (`0x8b10ada8`) and `GetImageBufferAddr`
+(`0x8b10adb0`) both read `03e00008 00000000` at their computed offsets, which
+independently reproduces that finding and confirms the base and the
+little-endian encoding. `GetSignalInfo` reading as a stub is a second control:
+the check discriminates, so "real" is not an artifact of pointing at the wrong
+place.
+
+**What to do with it, cheapest first.** `Wce_GetWindow` and `Wce_GetActiveWindow`
+are **read-only** and take no state change to try. If the firmware's video window
+is empty, off-screen or zero-sized, that is the black, and one query says so.
+`DisableBlackScreen`, `DisableVideoFreeze` and `DisableScreenCover` are each a
+single call that would clear a suppression if one is latched.
+
+This does not overturn the other findings on this path -- `THal_Vp_Init` still
+does not touch the video path, `SetSource` still changes nothing, and the
+frame-handoff routines are still stubs. It overturns the *conclusion* drawn from
+them, which was that the RPC surface has nothing to offer. It has ten live
+routines nobody has called.
+
+### The argument ABI, corrected on Linux (2026-08-31)
+
+The original U-Boot experiment used these calls, MIPS alive under `init 0x34`:
+
+```
+h713_disp commcall fd483f67 chan=0 pid=8b8f275c 0 4d800000 4d810000 4d820000
+h713_disp commcall 7bbd5772 chan=0 pid=8b8f275c 0 4d830000 4d840000 4d850000
+```
+
+```
+GetWindow        4d800000: 00000000 00007800 00000000 00004380
+GetActiveWindow  4d830000: 00000000 00005000 00000000 00002d00
+```
+
+They recovered the fixed-point encoding, but not the parameter indexing. The
+leading `0` made the adapter's first output pointer null; `0x4d800000` and
+`0x4d830000` actually received each adapter's **second** output. Linux wire
+capture and calls with every output populated corrected the ABI:
+
+- `Wce_GetActiveWindow` takes **two ARM physical output addresses**. It returns
+  a 1920x1080 first struct and an active 1280x720 second struct.
+- `Wce_GetWindow` takes **three ARM physical output addresses**. It returns two
+  1920x1080 structs and scalar `2`.
+- There is **no dummy parameter** in the Linux ioctl ABI. The adapter is passed
+  the message at `+0x28`, where the component id lives; its reads at `+4`,
+  `+8`, `+12` are the first three payload values at message `+0x2c`.
+- **Pass the ARM physical address unmodified.** The `0xA0000000` OR inside the
+  adapter is its own business; translating to "MIPS physical" by subtracting
+  `0x40000000` is wrong and was the error that made the first attempt fail.
+- Output is a **four-word struct `{x, width, y, height}`** in **1/16-pixel fixed
+  point**.
+- The destination must be **untouched workspace** U-Boot cleared. Planting
+  sentinels first creates dirty ARM cache lines and the read comes back stale --
+  this build has no `dcache` command to flush them.
+
+Correct Linux client forms, using the verified scratch page, are:
+
+```
+cpu-comm-probe Wce_GetWindow 0x4d830000 0x4d830010 0x4d830020
+cpu-comm-probe Wce_GetActiveWindow 0x4d830000 0x4d830010
+```
+
+**The encoding is self-validating.** The second `GetActiveWindow` output is
+`0x5000`/`0x2d00`,
+which divided by 16 is exactly **1280x720** -- the panel. The fixed-point reading
+was not assumed; the panel-sized answer confirmed it, and the same layout then
+reads `GetWindow` as a clean 1920x1080.
+
+### The discrepancy
+
+| call | value |
+| --- | --- |
+| `Wce_GetActiveWindow` | **1280 x 720** at (0,0) -- the panel |
+| `Wce_GetWindow` | **1920 x 1080** at (0,0) |
+
+The firmware's configured video window is **1080p on a 720p panel**. That
+corroborates a long-standing observation from the register side: with the MIPS
+parked, `0x05600020` reads `0x043F077F` = 1920x1088, and it took a DECD submit to
+rewrite it to 1280x720.
+
+**What this does and does not establish.** It establishes the ABI, the encoding,
+and the discrepancy -- all measured. It does **not** establish that the 1080p
+window causes the black. `GetActiveWindow` already reporting 1280x720 is
+consistent with the effective window being correct and the 1920x1080 being a
+configured default that is not in use. Do not skip that check.
+
+`THal_Vp_Wce_SetWindow` (`3356c54b`) is the lever if it does matter, and it takes
+the same argument shape.
+
+### Settled 2026-08-30 by disassembly: the window is NOT the black
+
+The check above ("do not skip that check") is now done, statically, with no
+hardware time. Disassembled with `tools/mips/disasm.py`. **The 1080p window is a
+linked-in default that nothing reads back into the display, and
+`Wce_SetWindow` cannot change what is on the panel.**
+
+The three routines are not peers. Two are pure accessors over firmware globals
+and one is a live query:
+
+| routine | what it actually does |
+| --- | --- |
+| `Wce_GetWindow` (`0x8b14cef0`) | copies **globals** `0x8b22f1b0`, `0x8b22f1a0`, `0x8b22f19c` to the caller. Touches no hardware. |
+| `Wce_SetWindow` (`0x8b14cd18`) | stores the caller's structs **into those same globals**, then calls `0x8b1099c8` |
+| `Wce_GetActiveWindow` (`0x8b14cf64`) | resolves an object via `0x8b1ac5f8` and makes a **virtual call** through its vtable `+0x24` -- a genuine live query |
+
+The load-bearing fact: **`0x8b1099c8` is a stub** -- `jr $ra; addiu $v0, $zero, 1`.
+It is the only thing `SetWindow` calls that is not a trace or a `memcpy`, so
+`SetWindow` is a write to three globals that only `GetWindow` reads back.
+
+And the globals have never been written. `0x8b22f1b0` in the **static image**
+already reads `00000000 00007800 00000000 00004380`, byte-identical to what the
+live board returned, so no call has ever modified it -- consistent with
+`SetWindow` having exactly one caller path (ours, never used). The 1920x1080 is
+also materialised as a literal inside `SetWindow`'s own prologue
+(`addiu $v1, $zero, 0x7800` / `addiu $v0, $zero, 0x4380`) as the default it
+substitutes for null arguments.
+
+So `GetActiveWindow` returning 1280x720 was the live answer all along, and the
+`GetWindow`/`GetActiveWindow` discrepancy is exactly the benign case the caveat
+described: a configured default that is not in use. **Do not spend hardware time
+calling `SetWindow`.** It would change what `GetWindow` returns and nothing else.
+
+Two corroborations worth keeping, because both were free:
+
+- The adapter disassembly **confirms the physical-address mapping**. The
+  adapters read their arguments at `4($a0)`, `8($a0)`, and where applicable
+  `0xc($a0)`, then map each with `ext rX, rX, 0, 0x1c` and
+  `or 0xa0000000`, i.e.
+  low 28 bits into the MIPS uncached window. That is why the **unmodified ARM
+  physical address is correct** and subtracting `0x40000000` was wrong. `movz`
+  preserves a null, so a null argument stays null rather than becoming
+  `0xa0000000`.
+- The trace strings inside `SetWindow` are `%s() ENTER`, `hal`,
+  `./thal_display_wce.cpp`, `THal_Vp_Wce_SetWindow`. This is the **first
+  confirmation of the call table's name-to-handler mapping from outside the
+  table itself**.
+
+One correction to the entry above: `0x8b12bb30` is a plain 16-byte copy, not a
+converter. The 1/16 fixed-point reading rests solely on the 1280x720 match, which
+is still good evidence, but nothing in the firmware independently labels the
+units.
+
+`Wce_GetWindow` also fills **two** structs and a scalar, not one. Linux now
+confirms both structs as 1920x1080 and the scalar as `2` on hardware.
+
+### The suppression routines are real -- and they are the surviving lead
+
+The same deeper check was applied to the six suppression routines, because the
+previous entry's "ten live routines" claim was measured at the **adapter** level
+only, and `Wce_SetWindow` proves that test is too shallow: a real prologue can
+still bottom out in a stub. These do not.
+
+`EnableBlackScreen` (`0x8b1498a4`) and `DisableBlackScreen` (`0x8b149948`) are
+trace / **`jal 0x8b106bec`** / trace, passing a 12-byte message whose first word
+is an opcode -- `0xc` to enable, `0xd` to disable. `0x8b106bec` is a real
+dispatcher:
+
+```
+lui  $v0, 0x8b25
+lw   $v0, 0x3570($v0)   ; the singleton pointer at 0x8b253570
+beqz $v0, +0x20         ; NOT registered -> jr ra with v0 = 0, silently no-op
+lw   $v1, ($v0)         ; vtable
+lw   $t9, 0xc($v1)      ; method
+jr   $t9                ; tail-call, $a0 = object, $a1 = message
+```
+
+The method at vtable `+0xc` (`0x8b106a70`) posts the message to a **ThreadX
+queue** created by the constructor (`0x8b15c320(obj+4, 0x390, 0xc)` -- 12-byte
+messages), so these are genuine asynchronous commands to a live worker, not
+state flags.
+
+**The gate is closed only if nothing registered the singleton, and something
+does.** `0x8b253570` is past the end of `display.bin` (image ends `0x8b232910`),
+so it is BSS and starts at zero; it is written by a lazy singleton initialiser at
+`0x8b106b7c` (allocate `0xc`, construct, store). That initialiser has exactly one
+caller, `0x8b153598`, which is an **unconditional straight-line `jal`** near the
+end of the early-system-init function `0x8b15340c` -- our **marker 55**. Since
+CPU_COMM registration runs *after* `0x8b15340c` returns, and the call table is
+demonstrably populated and serving calls, that init completes on our board.
+Therefore the singleton exists and the dispatch is live.
+
+So the cheapest experiment from the previous entry is now justified rather than
+speculative: **`DisableBlackScreen` (`b66041d8`), `DisableVideoFreeze`
+(`3ab1d1dc`), `DisableScreenCover` (`143ffc87`)**, each a bare call, no
+arguments. If one of them is latched, clearing it is the black.
+
+### There is a SECOND 1920x1080, and it is NOT eliminated
+
+Do not let the section above contaminate this one. Two different things carry
+`0x7800`/`0x4380`, and only one of them is dead:
+
+| where | status |
+| --- | --- |
+| firmware globals `0x8b22f1b0` / `0x8b22f1a0` (`Wce_GetWindow`) | **inert** -- no path to any register, `SetWindow`'s worker is a stub |
+| `tools/video/decd-client.c` VideoInfo `+0x70` and `+0x80` | **live input, handed to the firmware on every frame submit** |
+
+The client declared `W 1280` / `H 720`, set the source dimensions and output
+window from them, and then hardcoded `0x7800`/`0x4380` into the crop and display
+frame -- under a comment reading `identity setDisplayFrame()`, which it was not.
+`0x7800`/`0x4380` is also the firmware's own linked-in default window, which is
+the likely origin of the copy.
+
+That the two blocks share the encoding is not an assumption. The
+`{x, width, y, height}` 1/16-pixel layout was recovered from the firmware today
+and validated against the panel, and `0x5000`/`0x2d00` -- what `W << 4` and
+`H << 4` produce -- is exactly what `Wce_GetActiveWindow` returns.
+
+Changed to derive from `W`/`H`. **Untested on hardware**, and there is no stock
+VideoInfo capture to confirm the vendor sends source-sized values here rather
+than always sending 1080p and letting the pipeline scale. Capturing stock's
+VideoInfo would settle it; until then this is an internal-consistency fix with a
+plausible mechanism, not a demonstrated one.
+
+### Tested on hardware 2026-08-30: no observable effect, and one routine hangs the SoC
+
+Run at the U-Boot prompt, `h713_disp init 0x34` (MIPS alive), live row
+`chan=0 pid=8b8f275c`, panel showing the vendor logo.
+
+| call | transport | panel |
+| --- | --- | --- |
+| `2f02f7dd` no-op (control) | reply 1 ms | -- |
+| `a30d4c6b` `EnableBlackScreen` | reply 0 ms | **no change** |
+| `b66041d8` `DisableBlackScreen` | reply 0 ms | no change |
+| `2fdcdc6f` `EnableVideoFreeze` | reply 0 ms | no change |
+| `0152f134` `EnableScreenCover` | **no reply, FIFO never drained** | no change |
+
+**`THal_Vp_EnableScreenCover` wedges CPU_COMM.** After it, the same no-op that
+had round-tripped in 1 ms was never accepted. U-Boot's `reset` then printed
+`resetting ...` and produced no further output at all -- the board needed a
+physical power cycle. Do not call `0152f134` unless that is the experiment.
+
+**Register evidence, which is the part that does not depend on anyone watching.**
+With black screen enabled, `h713_disp dump` was captured; `DisableBlackScreen`
+was then called and it was captured again. Across all 22 blocks the dump covers
+-- TVTOP, LVDS, LVDS PHY x3, disp-PLL, mixer, display-route, VBlender, OSD ch0,
+DE-top, DE-layers, DE2 ch0/ch1, DE, AFBD x4, PLL-video2, disp-modclk -- the two
+are **identical except for `lvds` `0x05880000+0x00`, the free-running scan
+position counter**. Baseline saved as
+`uboot-init34-mips-alive-idle-2026-08-30.txt`.
+
+**What this does and does not establish.** The transport control makes this a
+genuine negative rather than a dead channel: the calls reached the firmware and
+it replied. In this state the suppression routines change nothing, anywhere we
+can see.
+
+It does **not** prove they are inert in general, and the earlier
+positive-control design was flawed: the logo renders on the **OSD** channel
+`0x05600140`, while these are `THal_Vp_*` -- *video processor* -- routines that
+would act on the video channel `0x05600100`, which is empty in this state. So
+the test could not discriminate "inert" from "working, aimed at a layer with
+nothing in it". The static side agrees that this is possible: `0x8b1177ac` does
+a registered-handler lookup keyed on a field of its argument, and with no video
+window registered it would legitimately do nothing.
+
+A valid test needs video actually being composited, which needs Linux + DECD
+with the MIPS alive -- the combination that hard-locks the SoC in seconds --
+and `commcall` only exists in U-Boot. **That is the blocker, and it is why this
+lead is being left here rather than closed.** The cheap experiments are spent;
+what remains needs a way to issue CPU_COMM calls from Linux.
+
+### Blocker closed on hardware 2026-08-31: all three clears called during live DECD
+
+The guarded Linux client closed the missing experiment. The first attempt
+loaded CPU_COMM before submitting the frame and hard-locked inside the submit,
+before any call ran. After a power cycle, the order was reversed: DECD submitted
+one fmt-0 1280x720 NV12 frame successfully, and CPU_COMM was loaded only after
+the submit returned and interrupts were advancing.
+
+All three no-argument clears completed during the four-second live interval:
+
+| call | elapsed | return |
+| --- | ---: | --- |
+| `b66041d8` `DisableBlackScreen` | 86,121 us | `nret=0` |
+| `3ab1d1dc` `DisableVideoFreeze` | 68,827 us | `nret=0` |
+| `143ffc87` `DisableScreenCover` | 29,600 us | `nret=0` |
+
+The DECD interrupt count advanced from 75 to 127 across the calls. Before and
+after values were identical: source control `0x03000013`, source latch `0`, Y/C
+`0x6c500000`/`0x6c5e1000`, video-channel control/latch
+`0x00010000`/`0`, OSD-channel control/latch `0x03001901`/`0`, and mixer enable
+`0x00001402`. Both the DECD client and the call worker returned zero. The known
+hazardous `EnableScreenCover` (`0152f134`) was never invoked.
+
+Mechanically, this closes the three suppression latches as an explanation for
+the missing DECD image: each command reached the firmware while a valid frame
+was actively being serviced, yet none changed the captured display state.
+The operator saw black during the brief live interval and no green frame or
+obvious recovery. Because the three calls were intentionally compressed into
+one short window, the visual report cannot distinguish the calls individually;
+the IRQ and register evidence supplies that separation mechanically.
+
+### Live `SetSource(1)` attempt on 2026-08-31: no call, no result
+
+The next experiment armed a worker to load CPU_COMM 500 ms after a green fmt-0
+DECD submit, then capture `GetSource`, call `SetSource(1)` (`VideoDec`), wait one
+second, and capture the route state again. `FRAME_SUBMIT` returned a valid fence
+and the client printed its five-second hold, but the whole SoC hard-locked before
+the delayed worker printed its first line. CPU_COMM was never loaded and neither
+`GetSource` nor `SetSource` ran. The operator saw the logo remain unchanged.
+
+This is not a negative `SetSource` result. It is evidence that the MIPS+DECD
+lock does not require the Linux CPU_COMM module: it occurred after a successful
+submit return but before that module was inserted. Do not repeat the same
+live-dwell timing loop; the source-selection question needs a method that runs
+inside the frame-processing path or static proof from the firmware.
+
+### `SetSource(1)` closed without repeating the lock-prone Linux timing loop
+
+A clean project-`0x34` U-Boot trace supplied both the missing real transition
+and the equality control:
+
+- firmware startup completed source `0 -> 1` (`VideoDec`), with worker marker
+  `0x5203`, queue result zero;
+- a subsequent `THal_Vp_SetSource(1)` was accepted with `nret=0` and produced no
+  new worker transition or AFBD change.
+
+That is exactly the static equality branch: the requested source already equals
+the private current source, so the worker has nothing to transition. Also,
+`THal_Vp_GetSource` is not evidence against this result; its handler at
+`0x8b14b524` always returns zero rather than reading the private source state.
+
+The firmware therefore already selects VideoDec during startup. Repeating
+`SetSource(1)` in Linux cannot unlock the black DECD path and should not be run
+again merely to replace the earlier no-call attempt.
+
+A near-miss worth recording as method. The first cross-reference scan for writes
+to `0x8b253570` reported **zero stores**, which would have supported a confident
+and wrong "nothing ever registers it". It missed `sw $s1, 0x3570($s0)` at
+`0x8b106bc0` because the scan only tracked `lui`-formed bases. Re-running it as a
+base-register-independent opcode/immediate match over the raw image found the
+store immediately. When a scan's answer is "none", check that the scan could have
+seen one.
+
 ## Entry layout
 
 | offset | contents |
@@ -28,6 +400,41 @@ Invocation form, known good:
 ```
 h713_disp commcall 2f02f7dd chan=0 pid=8b8f32b0
 ```
+
+## Arguments: `THal_Vp_Init` is not a no-argument call
+
+Most routines here were exercised with no parameters, which is correct for the
+getters and the black-screen/screen-cover toggles. **`THal_Vp_Init` is not one
+of them, and calling it bare is a malformed test.** Recovered 2026-08-28 by
+disassembling the registered adapter and independently tracing board-B stock
+`libhaldisplay.so`:
+
+```
+h713_disp commcall 1c6ff747 chan=<chan> pid=<pid> 0 1 <phys>
+```
+
+- ARM allocates a **`0xd800`-byte** buffer and passes its **physical** address.
+- The three input words are `0`, `1`, and that address.
+- The adapter runs a local state reset, then the VP initializer, then copies
+  `0xd800` bytes of VP state to the supplied address through an uncached alias,
+  returns one value, and installs an application callback.
+
+A bare call supplies destination address `0`, so the bulk copy has nowhere to
+go. Any earlier "standalone `THal_Vp_Init` does not initialise the display"
+result taken from a zero-argument call is void, as is any register observation
+made after it -- that transaction never resolved.
+
+Under project `0x33` the corrected call completes the whole transport in ~1 ms,
+returns `1`, fires every adapter boundary, and the destination holds an exact
+copy of the firmware's VP state at `0x8b48c304` (`00040000 000c0008 00150010
+...`). Use a destination inside the workspace U-Boot clears and flushes before
+releasing MIPS (e.g. `0x4d800000`); a destination the ARM has dirty cache lines
+over reads back as zeros and proves nothing about the copy.
+
+Related correction: the firmware's virtual base is **`0x8b100000`**, not
+`0x8b101000`. A disassembly helper carrying the 4 KiB-high base described
+unrelated code as the registered adapter, which is how the zero-argument ABI
+was believed in the first place.
 
 ## Display state -- the teardown set
 

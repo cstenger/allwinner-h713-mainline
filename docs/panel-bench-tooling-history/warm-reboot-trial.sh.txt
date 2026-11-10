@@ -1,0 +1,51 @@
+#!/bin/sh
+# Warm-reboot panel trial (docs/hdmi-evidence/2026-10-16-uboot-kernel-dts).
+# RUNS ON THE HOST, serial on /dev/ttyUSB0, board on $BOARD.
+#
+# 1. Display register dump on the running (working) board.
+# 2. Console to level 7, so the shutdown's panel power-down line reaches serial.
+# 3. Serial capture across a warm reboot (no keystrokes: U-Boot is not stopped;
+#    reading the display blocks at its prompt, with their clocks gated after
+#    the reset, would wedge the SoC).
+# 4. The same dump on the rebooted board. Each dump also takes an R-domain
+#    snapshot (rdomain-snapshot.sh): the state that survives the reset.
+#
+#   usage: tools/display/warm-reboot-trial.sh <out-dir>
+set -eu
+OUT=${1:?usage: $0 <out-dir>}
+BOARD=${BOARD:-192.168.4.1}
+TTY=${TTY:-/dev/ttyUSB0}
+HERE=$(cd "$(dirname "$0")" && pwd)
+SSH="ssh -o BatchMode=yes -o ConnectTimeout=5 root@$BOARD"
+mkdir -p "$OUT"
+
+dump() {
+	scp -q -o BatchMode=yes "$HERE/disp-regdump.sh" "$HERE/rdomain-snapshot.sh" "root@$BOARD:/tmp/"
+	$SSH 'sh /tmp/rdomain-snapshot.sh' > "$OUT/rdomain-${1%.txt}.txt"
+	$SSH 'cat /proc/sys/kernel/random/boot_id; cat /proc/uptime;
+	      ls /proc/device-tree/chosen | grep h713 || echo "warm path";
+	      grep -A1 vcc-panel /sys/kernel/debug/regulator/regulator_summary;
+	      grep -E "gpio-(37|166|240) " /sys/kernel/debug/gpio;
+	      sh /tmp/disp-regdump.sh' > "$OUT/$1"
+	echo "  $1: $(wc -l < "$OUT/$1") lines"
+}
+
+echo "== before (board up $($SSH 'cut -d" " -f1 /proc/uptime') s)"
+dump linux-before.txt
+
+stty -F "$TTY" 115200 raw -echo
+timeout 120 cat "$TTY" > "$OUT/reboot-serial.log" &
+CAT=$!
+sleep 1
+echo "== warm reboot at $(date +%T)"
+$SSH 'dmesg -n 7; systemctl reboot' || true
+sleep 30
+until $SSH true 2>/dev/null; do sleep 3; done
+wait $CAT || true
+echo "  serial: $(wc -c < "$OUT/reboot-serial.log") bytes"
+
+echo "== after"
+dump linux-after.txt
+tr -d '\r' < "$OUT/reboot-serial.log" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' |
+	grep -aE "panel powered down|RGB fetch quiesced|reboot: Restarting|U-Boot 20|FIFO|stock power|LVDS PHY tail|720p timing|frame commit|boot logo|Starting kernel" |
+	cut -c1-170

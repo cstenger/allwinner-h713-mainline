@@ -1,0 +1,42 @@
+0x8b146e34  27bdffd0  addiu    $sp, $sp, -0x30
+0x8b146e38  24020001  addiu    $v0, $zero, 1
+0x8b146e3c  afb00024  sw       $s0, 0x24($sp)
+0x8b146e40  afb10028  sw       $s1, 0x28($sp)
+0x8b146e44  14a2002a  bne      $a1, $v0, 0x8b146ef0
+0x8b146e48  afbf002c  sw       $ra, 0x2c($sp)
+0x8b146e4c  908205a4  lbu      $v0, 0x5a4($a0)
+0x8b146e50  10400004  beqz     $v0, 0x8b146e64
+0x8b146e54  00808025  move     $s0, $a0
+0x8b146e58  8c820008  lw       $v0, 8($a0)
+0x8b146e5c  50450038  beql     $v0, $a1, 0x8b146f40
+0x8b146e60  afa2001c  sw       $v0, 0x1c($sp)
+0x8b146e64  3c028b20  lui      $v0, 0x8b20
+0x8b146e68  24428ad0  addiu    $v0, $v0, -0x7530        # -> 0x8b1f8ad0
+0x8b146e6c  afa20018  sw       $v0, 0x18($sp)
+0x8b146e70  3c028b20  lui      $v0, 0x8b20
+0x8b146e74  24428b00  addiu    $v0, $v0, -0x7500        # -> 0x8b1f8b00
+0x8b146e78  24110001  addiu    $s1, $zero, 1
+0x8b146e7c  afa20014  sw       $v0, 0x14($sp)
+0x8b146e80  3c078b20  lui      $a3, 0x8b20
+0x8b146e84  24020039  addiu    $v0, $zero, 0x39
+0x8b146e88  3c068b20  lui      $a2, 0x8b20
+0x8b146e8c  3c058b20  lui      $a1, 0x8b20
+0x8b146e90  24e79134  addiu    $a3, $a3, -0x6ecc        # -> 0x8b1f9134
+0x8b146e94  24c68aa0  addiu    $a2, $a2, -0x7560        # -> 0x8b1f8aa0
+0x8b146e98  24a58ab0  addiu    $a1, $a1, -0x7550        # -> 0x8b1f8ab0
+0x8b146e9c  24040003  addiu    $a0, $zero, 3
+0x8b146ea0  afa20010  sw       $v0, 0x10($sp)
+0x8b146ea4  0ec54252  jal      0x8b150948
+0x8b146ea8  afb1001c  sw       $s1, 0x1c($sp)
+0x8b146eac  ae110008  sw       $s1, 8($s0)
+0x8b146eb0  ae1105a0  sw       $s1, 0x5a0($s0)
+0x8b146eb4  0ec5605f  jal      0x8b15817c
+0x8b146eb8  a21105a4  sb       $s1, 0x5a4($s0)
+0x8b146ebc  00402025  move     $a0, $v0
+0x8b146ec0  8c420000  lw       $v0, ($v0)
+0x8b146ec4  00003825  move     $a3, $zero
+0x8b146ec8  260600bc  addiu    $a2, $s0, 0xbc
+0x8b146ecc  8c42000c  lw       $v0, 0xc($v0)
+0x8b146ed0  0040f809  jalr     $v0
+0x8b146ed4  24050008  addiu    $a1, $zero, 8
+0x8b146ed8  8fb00024  lw       $s0, 0x24($sp)
