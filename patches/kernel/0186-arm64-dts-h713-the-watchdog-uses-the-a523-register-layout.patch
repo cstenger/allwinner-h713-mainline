@@ -1,0 +1,42 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Fri, 16 Oct 2026 14:57:28 -0700
+Subject: [PATCH] arm64: dts: h713: the watchdog uses the A523 register layout
+
+The node claimed the H6/A31 watchdog (control 0x10, config 0x14, mode
+0x18, no key). The H713's is the key-protected A523 one: control 0x0c,
+config 0x10, mode 0x14, writes carrying 0x16aa in the top half. U-Boot
+found that on hardware and has driven it that way; the live registers
+agree (read as A31, the mode word 0x1f would be a running watchdog with
+a one-unit timeout, on a board that does not reset).
+
+So Linux's sunxi-wdt has been writing the wrong registers: the reboot
+watchdog systemd arms (RebootWatchdogSec=16s in the rootfs) never ran.
+With the right layout it does, and the driver still stops it at the
+kernel's reboot/halt/power-off notifier (watchdog_stop_on_reboot), so it
+bounds the shutdown phase only and a power-off stays off.
+
+U-Boot is moving to this device tree, which is what surfaced it.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1519,10 +1519,15 @@
+ 			};
+ 		};
+ 
+-		/* === Watchdog === */
++		/*
++		 * === Watchdog ===
++		 * The key-protected A523 register layout (control 0x0c, config
++		 * 0x10, mode 0x14, key 0x16aa), as U-Boot found on hardware --
++		 * not the H6/A31 one (0x10/0x14/0x18, no key).
++		 */
+ 		watchdog: watchdog@2051000 {
+-			compatible = "allwinner,sun50i-h6-wdt",
+-				     "allwinner,sun6i-a31-wdt";
++			compatible = "allwinner,sun50i-h713-wdt",
++				     "allwinner,sun55i-a523-wdt";
+ 			reg = <0x02051000 0x20>;
+ 			interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
+ 			clocks = <&osc24M>;

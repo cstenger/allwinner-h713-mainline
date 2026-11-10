@@ -1,0 +1,105 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 26 Sep 2026 13:45:00 -0700
+Subject: [PATCH] drm: h713-afbd: wait for scanout before releasing old framebuffer
+
+AFBD latches AFBD_SRC at vertical blank after software writes READY.  The
+vblank interrupt is sufficient for presentation timing, but it is not a safe
+retirement fence for the old DMA mapping: the engine can still have reads in
+flight from the previous source after that interrupt.
+
+This became visible with a 1280x720 dumb buffer.  On mpv exit DRM restored the
+fbcon framebuffer in software, then unmapped mpv's old IOVA while display
+master 2 was still fetching it.  The IOMMU reported a read fault at
+0xff368000, inside the retired 0xff000000..0xff384000 buffer, and AFBD stayed
+black until reboot even though KMS and AFBD_SRC both named the console buffer.
+
+AFBD_STATUS_DONE is the hardware completion acknowledgement used by the
+original direct-scanout test path, but hardware testing shows that old-source
+reads can remain in flight when it asserts.  Wait for it and one additional
+vblank from cleanup_fb before DRM can release a replaced framebuffer.  Pair
+the callback with an explicit
+drm_gem_plane_helper_prepare_fb() call, as required by the simple-pipe helper
+when cleanup_fb is present.  Aborted preparations and unchanged-framebuffer
+commits do not wait.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/gpu/drm/tiny/sun50i-h713-afbd.c | 49 ++++++++++++++++++++++++--
+ 1 file changed, 47 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -219,6 +219,23 @@ static void h713_afbd_wait_ready(struct h713_afbd *h, u32 reg,
+ 			 name, ready);
+ }
+ 
++static void h713_afbd_wait_source_done(struct h713_afbd *h)
++{
++	u32 status;
++	int ret;
++
++	ret = readl_poll_timeout(h->regs + AFBD_STATUS, status,
++				 status & AFBD_STATUS_DONE, 100, 50000);
++	if (ret) {
++		drm_warn(&h->drm,
++			 "scanout completion did not arrive (%08x)\n", status);
++		return;
++	}
++
++	/* AFBD_STATUS is write-1-to-clear. */
++	writel(AFBD_STATUS_DONE, h->regs + AFBD_STATUS);
++}
++
+ /*
+  * Point AFBD at a buffer and latch it. Identical in order and content to
+  * gles-play's commit path, minus its 50 ms poll for STATUS_DONE: here the
+@@ -405,6 +422,34 @@ static void h713_afbd_pipe_update(struct drm_simple_display_pipe *pipe,
+ 	spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
+ }
+ 
++static int h713_afbd_prepare_fb(struct drm_simple_display_pipe *pipe,
++				 struct drm_plane_state *plane_state)
++{
++	return drm_gem_plane_helper_prepare_fb(&pipe->plane, plane_state);
++}
++
++static void h713_afbd_cleanup_fb(struct drm_simple_display_pipe *pipe,
++				  struct drm_plane_state *old_state)
++{
++	struct h713_afbd *h = to_h713(pipe->crtc.dev);
++
++	/*
++	 * cleanup_fb is also used to unwind a failed prepare.  Only a state
++	 * whose framebuffer was actually replaced needs a retirement fence.
++	 */
++	if (!old_state->fb || old_state->fb == pipe->plane.state->fb)
++		return;
++
++	h713_afbd_wait_source_done(h);
++
++	/*
++	 * DONE acknowledges the source latch, not complete retirement of every
++	 * old-source read.  Keep its mapping alive through one more scanout.
++	 */
++	if (pipe->crtc.state->active)
++		drm_crtc_wait_one_vblank(&pipe->crtc);
++}
++
+ static int h713_afbd_enable_vblank(struct drm_simple_display_pipe *pipe)
+ {
+ 	struct h713_afbd *h = to_h713(pipe->crtc.dev);
+@@ -426,9 +471,9 @@ static void h713_afbd_disable_vblank(struct drm_simple_display_pipe *pipe)
+ static const struct drm_simple_display_pipe_funcs h713_afbd_pipe_funcs = {
+ 	.enable		= h713_afbd_pipe_enable,
+ 	.disable	= h713_afbd_pipe_disable,
+ 	.update		= h713_afbd_pipe_update,
+-	/* No prepare_fb: with neither hook set the simple-pipe helper calls
+-	 * drm_gem_plane_helper_prepare_fb() itself, which is what we want. */
++	.prepare_fb	= h713_afbd_prepare_fb,
++	.cleanup_fb	= h713_afbd_cleanup_fb,
+ 	.enable_vblank	= h713_afbd_enable_vblank,
+ 	.disable_vblank	= h713_afbd_disable_vblank,
+ };
+-- 
+2.51.0

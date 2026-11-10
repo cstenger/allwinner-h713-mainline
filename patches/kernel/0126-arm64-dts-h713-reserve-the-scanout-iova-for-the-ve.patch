@@ -1,0 +1,115 @@
+arm64: dts: h713: reserve the scanout IOVA range for the VE
+
+Sustained decoding fails after roughly 35 minutes.  A two-hour soak ran 1683
+iterations clean, then began failing -- first only the 1080p vector, within
+minutes every vector including 352x288, at which point ~40% of iterations were
+failing and the rate was still climbing.  Each failure is an md5 mismatch, but
+the mismatch is a symptom: the decode is truncated because buffer allocation
+failed partway through.
+
+    sun50i-iommu 2010000.iommu: iova 0x000000006c800000 already mapped to
+        0x000000006c800000 cannot remap to 0x0000000040e21000 prot: 0x3
+    cedrus 1c0e000.video-codec: dma alloc of size 3133440 failed
+
+It is not memory pressure.  MemAvailable oscillates with no trend and returns
+to its baseline afterwards, CmaFree is constant to the kilobyte across the
+whole run, buddyinfo shows 61 free order-10 blocks at the moment of failure,
+and there is no allocation-failure or OOM message anywhere.
+
+Every one of the 606 colliding IOVAs falls inside 0x6c100000-0x6c8fffff, which
+is uboot-scanout@6c100000: the 8 MiB framebuffer the display adopts from U-Boot
+and identity-maps so the panel can scan out of it.  The VE and the display sit
+in the same IOMMU group and so share one IOVA space.  Nothing withheld that
+range from the VE's DMA allocator, so the allocator eventually reached it, and
+from then on every allocation landing there was refused -- permanently, because
+an identity mapping is not transient.
+
+The reservation that should have prevented this exists but does not reach the
+VE.  of_iommu_get_resv_regions() only produces a region for a device when that
+device lists the node in its own memory-region AND the node's iommu-addresses
+names that device's phandle; uboot-scanout named only &display.  The group-wide
+view hides this, because /sys/kernel/iommu_groups/0/reserved_regions aggregates
+across the group and duly showed the range -- while the allocator the VE
+actually draws from had never heard of it.
+
+That matters more than it looks, because iova_reserve_iommu_regions() runs for
+exactly one device per domain: the first to initialise it.  Every later device
+hits
+
+    /* start_pfn is always nonzero for an already-initialised domain */
+    if (iovad->start_pfn)
+            return 0;
+
+in iommu_dma_init_domain() and never contributes its regions at all.  The VE
+probes first here, so the VE's regions are the only ones that were ever going
+to be applied -- and it had none.
+
+Adding a second reserved-memory node, with no "reg", gives the VE an
+IOMMU_RESV_RESERVED for the same range: the IOVA is withheld from its allocator
+and nothing is mapped.  Reusing the existing node instead would not work -- it
+has a "reg", so iommu_resv_region_get_type() would return IOMMU_RESV_DIRECT for
+the VE as well and the direct-mapping pass would try to identity-map a range
+that is already identity-mapped.  A reg-less reserved-memory node costs no
+memory and produces no warning: __reserved_mem_reserve_reg() returns -ENOENT
+for it silently, and with no "size" property it is not treated as a dynamic
+region either.
+
+Declaring it on both devices, rather than only on the VE, makes the fix
+independent of probe order.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -116,6 +116,38 @@
+ 			no-map;
+ 			iommu-addresses = <&display 0x6c100000 0x800000>;
+ 		};
++
++		/*
++		 * The same range again, as an IOVA reservation for the VE.
++		 *
++		 * The VE and the display share one IOMMU group, and therefore
++		 * one IOVA space. The node above makes the display identity-map
++		 * this range; nothing made the VE's DMA allocator avoid it, so
++		 * after roughly 35 minutes of sustained decoding the allocator
++		 * walked into it and every allocation there failed permanently
++		 * ("iova 0x6c800000 already mapped ... cannot remap").
++		 *
++		 * It cannot be fixed by adding &ve to the node above: that node
++		 * has a "reg", so of_iommu_get_resv_regions() would classify it
++		 * IOMMU_RESV_DIRECT for the VE too and try to identity-map an
++		 * already-mapped range. A node with NO "reg" is classified
++		 * IOMMU_RESV_RESERVED instead -- the IOVA range is withheld from
++		 * the allocator and nothing is mapped, which is exactly what the
++		 * VE needs. The reserved-memory scan ignores a reg-less node
++		 * (-ENOENT, silently), so this costs no memory and warns about
++		 * nothing; it exists only as a handle for the IOMMU code.
++		 *
++		 * Both devices must declare it because the IOVA allocator is
++		 * populated per DEVICE, by whichever one initialises the shared
++		 * domain first -- every later device takes the "already
++		 * initialised" early return in iommu_dma_init_domain() and never
++		 * contributes its regions. The VE probes first today, so the VE
++		 * is the one that must carry it; declaring it on both makes the
++		 * result independent of probe order.
++		 */
++		ve_scanout_iova: iova-reserve-scanout {
++			iommu-addresses = <&ve 0x6c100000 0x800000>;
++		};
+ 	};
+ 
+ 	psci {
+@@ -1307,6 +1339,14 @@
+ 			 * fault, because nothing ever touched an unmapped IOVA.
+ 			 */
+ 			iommus = <&iommu 0 1>, <&iommu 1 1>;
++			/*
++			 * Not a buffer pool -- an IOVA reservation. See
++			 * iova-reserve-scanout in reserved-memory. Nothing
++			 * claims this as DMA memory: the auto-claim in
++			 * of_dma_set_restricted_buffer() only fires for a
++			 * "restricted-dma-pool" compatible, which this is not.
++			 */
++			memory-region = <&ve_scanout_iova>;
+ 			status = "okay";
+ 		};
+ 

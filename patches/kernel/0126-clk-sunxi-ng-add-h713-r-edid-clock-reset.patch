@@ -1,0 +1,180 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] clk: sunxi-ng: add H713 R_CCU EDID clock and reset
+
+The symbolized vendor sun50iw12 R_CCU has r_apb0_edid_clk with an
+enable at 0x124 bit 31, M/P dividers at bits 0/8 and a source mux
+at bit 24. Its reset table has 0x120 bit 16. Stock SCP initialization
+also deasserts that reset and enables the clock before EDID access.
+Both registers are zero under our boot chain, and a proven SCP SRAM
+program stalls when it tries the EDID/HPD register window.
+
+Describe the recovered clock and reset in an H713-specific variant;
+keep the D1 clock/reset tables unchanged. Select the variant using an
+H713 compatible and keep the inherited public IDs stable. This adds
+provider support only and does not automatically turn on EDID hardware.
+
+Vendor vmlinux SHA256:
+3e0d2d3420e066277021fe78d8398eff3937afdaf00c3625354becfbc398bc04
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- /dev/null
++++ b/include/dt-bindings/clock/sun50i-h713-r-ccu.h
+@@ -0,0 +1,6 @@
++/* SPDX-License-Identifier: (GPL-2.0+ OR MIT) */
++#ifndef _DT_BINDINGS_CLK_SUN50I_H713_R_CCU_H_
++#define _DT_BINDINGS_CLK_SUN50I_H713_R_CCU_H_
++#include <dt-bindings/clock/sun20i-d1-r-ccu.h>
++#define CLK_R_EDID 11
++#endif
+--- /dev/null
++++ b/include/dt-bindings/reset/sun50i-h713-r-ccu.h
+@@ -0,0 +1,6 @@
++/* SPDX-License-Identifier: (GPL-2.0+ OR MIT) */
++#ifndef _DT_BINDINGS_RST_SUN50I_H713_R_CCU_H_
++#define _DT_BINDINGS_RST_SUN50I_H713_R_CCU_H_
++#include <dt-bindings/reset/sun20i-d1-r-ccu.h>
++#define RST_R_EDID 7
++#endif
+--- a/drivers/clk/sunxi-ng/ccu-sun20i-d1-r.c
++++ b/drivers/clk/sunxi-ng/ccu-sun20i-d1-r.c
+@@ -6,6 +6,9 @@
+ 
+ #include <linux/clk-provider.h>
+ #include <linux/module.h>
++#include <linux/of_device.h>
++#include <dt-bindings/clock/sun50i-h713-r-ccu.h>
++#include <dt-bindings/reset/sun50i-h713-r-ccu.h>
+ #include <linux/platform_device.h>
+ 
+ #include "ccu_common.h"
+@@ -77,6 +80,11 @@
+ 				    0x130, 24, 2, BIT(31), 0);
+ static SUNXI_CCU_GATE_HWS(bus_r_pwm_clk,		"bus-r-pwm",	&r_apb0_hw,
+ 			  0x13c, BIT(0), 0);
++
++/* H713 has an EDID clock/reset absent from D1. */
++static SUNXI_CCU_MP_DATA_WITH_MUX_GATE(r_edid_clk, "r-edid",
++				     r_ahb_apb0_parents, 0x124,
++				     0, 5, 8, 2, 24, 2, BIT(31), 0);
+ 
+ static struct ccu_common *sun20i_d1_r_ccu_clks[] = {
+ 	&r_ahb_clk.common,
+@@ -129,19 +137,75 @@
+ 	.num_resets	= ARRAY_SIZE(sun20i_d1_r_ccu_resets),
+ };
+ 
++static struct ccu_common *sun50i_h713_r_ccu_clks[] = {
++	&r_ahb_clk.common,
++	&r_apb0_clk.common,
++	&bus_r_timer_clk.common,
++	&bus_r_twd_clk.common,
++	&bus_r_ppu_clk.common,
++	&r_ir_rx_clk.common,
++	&bus_r_ir_rx_clk.common,
++	&bus_r_rtc_clk.common,
++	&bus_r_cpucfg_clk.common,
++	&bus_r_pwm_clk.common,
++	&r_pwm_clk.common,
++	&r_edid_clk.common,
++};
++
++static struct clk_hw_onecell_data sun50i_h713_r_hw_clks = {
++	.num	= CLK_R_EDID + 1,
++	.hws	= {
++		[CLK_R_AHB]		= &r_ahb_clk.common.hw,
++		[CLK_R_APB0]		= &r_apb0_clk.common.hw,
++		[CLK_BUS_R_TIMER]	= &bus_r_timer_clk.common.hw,
++		[CLK_BUS_R_TWD]		= &bus_r_twd_clk.common.hw,
++		[CLK_BUS_R_PPU]		= &bus_r_ppu_clk.common.hw,
++		[CLK_R_IR_RX]		= &r_ir_rx_clk.common.hw,
++		[CLK_BUS_R_IR_RX]	= &bus_r_ir_rx_clk.common.hw,
++		[CLK_BUS_R_RTC]		= &bus_r_rtc_clk.common.hw,
++		[CLK_BUS_R_CPUCFG]	= &bus_r_cpucfg_clk.common.hw,
++		[CLK_BUS_R_PWM]		= &bus_r_pwm_clk.common.hw,
++		[CLK_R_PWM]		= &r_pwm_clk.common.hw,
++		[CLK_R_EDID]		= &r_edid_clk.common.hw,
++	},
++};
++
++static const struct ccu_reset_map sun50i_h713_r_ccu_resets[] = {
++	[RST_BUS_R_TIMER]	= { 0x11c, BIT(16) },
++	[RST_BUS_R_TWD]		= { 0x12c, BIT(16) },
++	[RST_BUS_R_PPU]		= { 0x1ac, BIT(16) },
++	[RST_BUS_R_IR_RX]	= { 0x1cc, BIT(16) },
++	[RST_BUS_R_RTC]		= { 0x20c, BIT(16) },
++	[RST_BUS_R_CPUCFG]	= { 0x22c, BIT(16) },
++	[RST_BUS_R_PWM]		= { 0x13c, BIT(16) },
++	[RST_R_EDID]		= { 0x120, BIT(16) },
++};
++
++static const struct sunxi_ccu_desc sun50i_h713_r_ccu_desc = {
++	.ccu_clks	= sun50i_h713_r_ccu_clks,
++	.num_ccu_clks	= ARRAY_SIZE(sun50i_h713_r_ccu_clks),
++
++	.hw_clks	= &sun50i_h713_r_hw_clks,
++
++	.resets		= sun50i_h713_r_ccu_resets,
++	.num_resets	= ARRAY_SIZE(sun50i_h713_r_ccu_resets),
++};
++
+ static int sun20i_d1_r_ccu_probe(struct platform_device *pdev)
+ {
++	const struct sunxi_ccu_desc *desc = of_device_get_match_data(&pdev->dev);
+ 	void __iomem *reg;
+ 
+ 	reg = devm_platform_ioremap_resource(pdev, 0);
+ 	if (IS_ERR(reg))
+ 		return PTR_ERR(reg);
+ 
+-	return devm_sunxi_ccu_probe(&pdev->dev, reg, &sun20i_d1_r_ccu_desc);
++	return devm_sunxi_ccu_probe(&pdev->dev, reg, desc);
+ }
+ 
+ static const struct of_device_id sun20i_d1_r_ccu_ids[] = {
+-	{ .compatible = "allwinner,sun20i-d1-r-ccu" },
++	{ .compatible = "allwinner,sun20i-d1-r-ccu", .data = &sun20i_d1_r_ccu_desc },
++	{ .compatible = "allwinner,sun50i-h713-r-ccu", .data = &sun50i_h713_r_ccu_desc },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, sun20i_d1_r_ccu_ids);
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -9,8 +9,8 @@
+ 
+ #include <dt-bindings/clock/sun50i-h713-ccu.h>
+ #include <dt-bindings/reset/sun50i-h713-ccu.h>
+-#include <dt-bindings/clock/sun20i-d1-r-ccu.h>
+-#include <dt-bindings/reset/sun20i-d1-r-ccu.h>
++#include <dt-bindings/clock/sun50i-h713-r-ccu.h>
++#include <dt-bindings/reset/sun50i-h713-r-ccu.h>
+ #include <dt-bindings/clock/sun6i-rtc.h>
+ #include <dt-bindings/interrupt-controller/arm-gic.h>
+ #include <dt-bindings/interrupt-controller/irq.h>
+@@ -1409,7 +1409,7 @@
+ 		 *  and has compatible register layout with H713)
+ 		 */
+ 		r_ccu: clock-controller@7010000 {
+-			compatible = "allwinner,sun20i-d1-r-ccu";
++			compatible = "allwinner,sun50i-h713-r-ccu";
+ 			/*
+ 			 * D1 R_CCU highest register: 0x22C (RST_BUS_R_CPUCFG).
+ 			 * Size 0x240 covers all CCU registers and stays below
+--- a/Documentation/devicetree/bindings/clock/allwinner,sun4i-a10-ccu.yaml
++++ b/Documentation/devicetree/bindings/clock/allwinner,sun4i-a10-ccu.yaml
+@@ -36,6 +36,7 @@
+       - allwinner,sun9i-a80-ccu
+       - allwinner,sun20i-d1-ccu
+       - allwinner,sun20i-d1-r-ccu
++      - allwinner,sun50i-h713-r-ccu
+       - allwinner,sun50i-a64-ccu
+       - allwinner,sun50i-a64-r-ccu
+       - allwinner,sun50i-a100-ccu
+@@ -82,6 +83,7 @@
+         - allwinner,sun8i-a83t-r-ccu
+         - allwinner,sun8i-h3-r-ccu
+         - allwinner,sun20i-d1-r-ccu
++        - allwinner,sun50i-h713-r-ccu
+         - allwinner,sun50i-a64-r-ccu
+         - allwinner,sun50i-a100-r-ccu
+         - allwinner,sun50i-h6-r-ccu

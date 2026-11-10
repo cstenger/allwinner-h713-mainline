@@ -1,0 +1,279 @@
+From: h713 <h713@local>
+Date: Mon, 1 Sep 2026 22:40:00 -0700
+Subject: [PATCH] misc: decd: flip the IOMMU with the video source parked
+
+Patch 0075 enables IOMMU master-2 translation inside the first frame submit.
+That works, but only if the DECD video source happens to be disabled at that
+moment, and 0075 gives no such guarantee: dec_frame_submit() is precisely the
+path reachable with the source already enabled by whatever set up the display
+route.
+
+The AFBD video source rests at base address 0x00000000 with an inherited
+1920x1088 / stride-1920 geometry, so while it is enabled it is raster-scanning
+from physical address 0 across roughly the first 2 MB. Under bypass those reads
+are harmless, which is why the DECD route always worked on a bypass boot. The
+instant master 2 starts translating they are L1-invalid, and one master-2 fault
+wedges the AFBD fetch engine for the rest of the boot.
+
+Measured on hardware 2026-09-01. Flipping with the source enabled faulted 4 of
+4 times, at 0x29000, 0x26000, 0x81000 and 0x16000 -- page-aligned, different
+every run (a scan caught at whatever offset it had reached), all inside that
+first 2 MB, and never near the identity-mapped logo carveout at 0x6c100000 or
+the frame IOVA at 0xfe000000. Flipping with only the inherited logo route live
+faulted zero times, and a following visible session played 300 moving frames at
+27.13 fps from a Cedrus buffer with 56 physical breaks and a 32 KiB longest run.
+
+So park the source across the transition: clear source 0's enable bits, pulse
+the commit latch, flip, and re-enable afterwards. Clearing bits 1:0 of AFBD
++0x10 and pulsing the latch at +0x14 is a measured way to stop the fetch rather
+than an inference -- on stock that pair replaced playing video with solid green
+(zero luma) and reverted cleanly, while the identical write *without* the latch
+pulse was completely inert, landing and reading back but holding the picture
+unchanged for 300 samples over six seconds.
+
+The subtlety is *when* to re-enable, and two measured failures pinned it down.
+
+A first version restored the source immediately after the flip and faulted at
+exactly 0x00000000, seventeen milliseconds after an otherwise clean transition:
+the frame's address is not programmed that early, so re-enabling merely
+restarted the same scan from base 0, now under translation. The fault address
+moving from a mid-scan value to precisely zero is what identified it.
+
+A second version moved the restore after the enqueue and gated it on the Y base
+becoming non-zero. That ran with zero faults but timed out and left the source
+parked -- and a post-run read then found all four Y slots holding 0xFDC00000.
+The base was never late; the poll was in the wrong place. dec_reg_enable() at
+the end of dec_frame_submit() is what kicks the block into consuming the queue,
+and it runs after the enqueue, so the ring cannot be armed before it.
+
+So unpark after dec_reg_enable(), and gate on any of the four Y ring slots being
+non-zero -- waiting on slot 0 alone would be a guess about which slot the first
+frame lands in, and a wrong guess is indistinguishable from "no base arrived".
+If none ever arrives, leave the source parked and warn: a blank panel costs a
+restore, a master-2 fault costs the whole boot. That safety gate has already
+earned itself once, turning what would have been a second wedged boot into a
+warning line and a clean recovery.
+
+The failure path restores immediately, which is safe because
+sun50i_iommu_set_master_translation() only reports -EIO when the bypass bit is
+still set, so the master is still bypassing and a scan from base 0 cannot fault.
+
+HARDWARE-VALIDATED 2026-09-01, as the first DECD session of a boot with no
+operator procedure of any kind:
+
+  - visible frozen frame 60: zero faults, "video source unparked onto
+    0xfe000000 after 75 us", operator-confirmed still, logo restored;
+  - visible moving playback: zero faults, 300 frames at 27.12 fps, 299 fence
+    retirements, zero stalls, operator-confirmed animation, logo restored.
+
+The 75 us is worth keeping: the ring arms on the first poll iteration once
+dec_reg_enable() has run, which is why the v2 poll could never have succeeded at
+any timeout -- it was in the wrong place, not too short.
+
+In the moving run no park was needed at all, because the diagnostic wrapper was
+also fixed to wait for the ring before enabling the source, so the source was
+already disabled when the flip happened. That is the better arrangement and this
+patch becomes the safety net for callers that do not do it. Both belong in
+place: userspace should not enable a source with no frame behind it, and the
+driver should not assume userspace got that right.
+
+(One comment was corrected after the validated build -- it described the unpark
+point as "once a frame has been enqueued", the exact rule that was wrong in v2.
+Comment text only; the tested object is otherwise identical.) It should make the two-step bench
+procedure (spend the flip with a nonvisible run, then run the visible test)
+unnecessary; until a visible run confirms that, keep using the procedure, which
+is proven. Applies on top of the out-of-series 0075 and shares its out-of-series
+status.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/misc/sunxi_decd/decd_ioctl.c b/drivers/misc/sunxi_decd/decd_ioctl.c
+--- a/drivers/misc/sunxi_decd/decd_ioctl.c
++++ b/drivers/misc/sunxi_decd/decd_ioctl.c
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: GPL-2.0
+ 
++#include <linux/delay.h>
+ #include <linux/pm_runtime.h>
+ #include <linux/sun50i-iommu.h>
+ #include <linux/uaccess.h>
+@@ -45,11 +46,151 @@
+  *   - mutex_unlock(a1)
+  *   - always returns 0
+  */
++
++/*
++ * Source 0's control word, its commit latch, and its Y base address.  A write
++ * to the AFBD block does nothing until the latch is pulsed: an uncommitted
++ * write lands, reads back and holds forever while remaining inert, so readback
++ * alone proves nothing here.
++ */
++#define DECD_AFBD_SRC0_CTRL	0x10
++#define DECD_AFBD_SRC0_CTRL_EN	GENMASK(1, 0)
++#define DECD_AFBD_SRC0_COMMIT	0x14
++#define DECD_AFBD_SRC0_Y_RING	0x70
++#define DECD_AFBD_SRC0_Y_SLOTS	4
++
++/*
++ * The latch is self-clearing: the hardware consumes the bit, so reading back 0
++ * is success and reading back 1 means it was not taken.  Measured well under a
++ * millisecond; the bound only stops us spinning forever if the block is wedged.
++ */
++static void dec_afbd_commit(void __iomem *afbd)
++{
++	int i;
++
++	writel(1, afbd + DECD_AFBD_SRC0_COMMIT);
++
++	for (i = 0; i < 1000; i++) {
++		if (!readl(afbd + DECD_AFBD_SRC0_COMMIT))
++			return;
++		udelay(10);
++	}
++}
++
++/*
++ * Park the AFBD video source across the bypass->translation transition.
++ *
++ * The source sits at base 0 with an inherited 1920x1088 geometry until a frame
++ * programs it, so while it is enabled it is scanning the bottom of physical
++ * memory.  That is harmless under bypass and an immediate L1-invalid fault
++ * under translation, and one master-2 fault wedges the AFBD fetch engine for
++ * the rest of the boot.
++ *
++ * On success the source is left PARKED and *parked is set: the caller must call
++ * dec_afbd_unpark_source() after dec_reg_enable(), because re-enabling
++ * it any earlier just restarts the same scan from base 0 under translation.
++ * That is not hypothetical -- doing exactly that faulted at 0x00000000,
++ * seventeen milliseconds after an otherwise clean flip.
++ *
++ * On failure the flip did not take (sun50i_iommu_set_master_translation only
++ * reports -EIO when the bypass bit is still set), so the master is still
++ * bypassing and restoring immediately is safe.
++ */
++static int dec_iommu_enable_translation(struct dec_device *dec, u32 *saved_ctrl,
++					bool *parked)
++{
++	void __iomem *afbd = dec->regs ? dec->regs->afbd : NULL;
++	u32 ctrl = 0;
++	int ret;
++
++	*parked = false;
++	*saved_ctrl = 0;
++
++	if (!afbd) {
++		dev_warn(dec->dev,
++			 "no AFBD mapping; enabling translation without parking the source\n");
++		return sun50i_iommu_set_master_translation(dec->dev, true);
++	}
++
++	ctrl = readl(afbd + DECD_AFBD_SRC0_CTRL);
++	if (ctrl & DECD_AFBD_SRC0_CTRL_EN) {
++		writel(ctrl & ~DECD_AFBD_SRC0_CTRL_EN, afbd + DECD_AFBD_SRC0_CTRL);
++		dec_afbd_commit(afbd);
++		*saved_ctrl = ctrl;
++		*parked = true;
++	}
++
++	ret = sun50i_iommu_set_master_translation(dec->dev, true);
++	if (ret && *parked) {
++		writel(ctrl, afbd + DECD_AFBD_SRC0_CTRL);
++		dec_afbd_commit(afbd);
++		*parked = false;
++	}
++
++	return ret;
++}
++
++/*
++ * Re-enable the video source, but only once the hardware has a base address to
++ * fetch from.  Gate on the Y ring rather than assuming it is programmed by the
++ * time we get here: the ring is filled asynchronously once dec_reg_enable()
++ * kicks the block, so an unconditional restore would only move the fault rather
++ * than remove it.
++ *
++ * Any of the four slots counts.  Waiting on slot 0 alone would be a guess about
++ * which slot the first frame lands in, and a wrong guess here is indistinguish-
++ * able from "the base never arrived".
++ *
++ * If no base ever arrives, leave the source parked.  A blank panel costs a
++ * restore; a master-2 fault costs the whole boot.
++ */
++static bool dec_afbd_ring_armed(void __iomem *afbd, u32 *base)
++{
++	int slot;
++
++	for (slot = 0; slot < DECD_AFBD_SRC0_Y_SLOTS; slot++) {
++		u32 v = readl(afbd + DECD_AFBD_SRC0_Y_RING + slot * 4);
++
++		if (v) {
++			*base = v;
++			return true;
++		}
++	}
++	return false;
++}
++
++static void dec_afbd_unpark_source(struct dec_device *dec, u32 ctrl)
++{
++	void __iomem *afbd = dec->regs ? dec->regs->afbd : NULL;
++	u32 base = 0;
++	int i;
++
++	if (!afbd)
++		return;
++
++	for (i = 0; i < 5000; i++) {
++		if (dec_afbd_ring_armed(afbd, &base)) {
++			writel(ctrl, afbd + DECD_AFBD_SRC0_CTRL);
++			dec_afbd_commit(afbd);
++			dev_info(dec->dev,
++				 "video source unparked onto %#x after %d us\n",
++				 base, i * 75);
++			return;
++		}
++		usleep_range(50, 100);
++	}
++
++	dev_warn(dec->dev,
++		 "video source has no base address after enqueue; leaving it parked\n");
++}
++
+ int dec_frame_submit(struct dec_device *dec,
+ 		     struct dec_frame_submit_desc *desc,
+ 		     int *release_fence_fd, int repeat)
+ {
+ 	struct dec_frame_item *item;
++	bool parked = false;
++	u32 src_ctrl = 0;
+ 	int ret = 0;
+ 
+ 	if (!dec || !desc)
+@@ -68,8 +209,8 @@
+ 		item = frame_item_create(dec, desc);
+ 		if (item) {
+ 			if (!dec->iommu_runtime_enabled) {
+-				ret = sun50i_iommu_set_master_translation(dec->dev,
+-								      true);
++				ret = dec_iommu_enable_translation(dec, &src_ctrl,
++								   &parked);
+ 				if (ret) {
+ 					dev_err(dec->dev,
+ 						"cannot enable runtime IOMMU translation: %d\n",
+@@ -98,6 +239,16 @@
+ 	}
+ 	dec_reg_blue_en(dec->regs, desc->blue_en);
+ 	dec_reg_enable(dec->regs, true);
++
++	/*
++	 * dec_reg_enable() above is what kicks the hardware into consuming the
++	 * queue, so this is the earliest point at which the ring can hold a real
++	 * address -- an earlier attempt polled before this call and timed out
++	 * with all four slots still zero, then found them all programmed once
++	 * the run finished.
++	 */
++	if (parked)
++		dec_afbd_unpark_source(dec, src_ctrl);
+ out:
+ 	mutex_unlock(&dec->lock);
+ 	return ret;

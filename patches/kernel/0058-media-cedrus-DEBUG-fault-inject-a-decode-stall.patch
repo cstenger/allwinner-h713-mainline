@@ -1,0 +1,63 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] media: cedrus: DEBUG fault-inject a decode stall
+
+DEBUG ONLY -- deliberately NOT in patches/kernel/series. It exists to test
+the watchdog recovery path in patch 0057 on demand, because waiting for a
+malformed stream to stall the engine by luck is not a test one can run twice.
+
+sunxi_cedrus.fault_stall_hevc=N programs the next N HEVC slices with a bit
+length four times the data actually queued. The VLD then starves waiting for
+bits that were never sent and the engine stalls the way it does on a real
+truncated stream -- which matters, because the alternative fault injections
+(skipping the trigger, or finishing the job early) test a watchdog firing on
+an engine that is perfectly healthy, and prove nothing about recovering one
+that is not.
+
+Bounded on purpose. Four times a slice length is a few hundred kilobytes at
+most, the VE is behind the IOMMU on this board (patch 0042), and the count
+decrements, so one write buys exactly one stall and the very next decode is
+expected to succeed. That "next decode" is the measurement.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_h265.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_h265.c
+@@ -414,6 +414,24 @@
+ 	}
+ }
+ 
++/*
++ * DEBUG ONLY -- fault injection for the decode-timeout recovery path
++ * (sunxi_cedrus.fault_stall_hevc). Set it to N and the next N HEVC slices are
++ * programmed with a bit length four times the data actually queued, so the VLD
++ * starves waiting for bits that are not there and the engine stalls exactly as
++ * it does on a genuinely malformed stream. The watchdog then fires on a real
++ * hardware stall rather than on a job that was never triggered -- which is the
++ * difference between testing the recovery path and testing nothing.
++ *
++ * It is deliberate that this cannot be reached without being asked for: the
++ * count is zero unless somebody writes to it, and it decrements, so one write
++ * buys one timeout and the engine is expected to work again immediately after.
++ */
++static int fault_stall_hevc;
++module_param(fault_stall_hevc, int, 0644);
++MODULE_PARM_DESC(fault_stall_hevc,
++		 "DEBUG: stall the VE on the next N HEVC slices (bit length x4)");
++
+ static int cedrus_h265_setup(struct cedrus_ctx *ctx, struct cedrus_run *run)
+ {
+ 	struct cedrus_dev *dev = ctx->dev;
+@@ -492,6 +510,13 @@
+ 	cedrus_write(dev, VE_DEC_H265_BITS_OFFSET, 0);
+ 
+ 	reg = slice_bytes * 8;
++	if (fault_stall_hevc > 0) {
++		fault_stall_hevc--;
++		reg *= 4;
++		v4l2_info(&dev->v4l2_dev,
++			  "FAULT INJECTION: programming %u bits for %zu bytes of slice data\n",
++			  reg, slice_bytes);
++	}
+ 	cedrus_write(dev, VE_DEC_H265_BITS_LEN, reg);
+ 
+ 	/* Source beginning and end addresses. */

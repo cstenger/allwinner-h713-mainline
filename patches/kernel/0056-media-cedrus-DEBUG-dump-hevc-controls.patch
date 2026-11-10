@@ -1,0 +1,79 @@
+media: cedrus: DEBUG dump the HEVC controls it receives
+
+Debug only -- never put this in the shipping series.
+
+h03-640x480-nowpp decodes bit-exact through GStreamer and stalls through
+libva-v4l2-request, and the two streams it is compared against differ ONLY
+by entropy_coding_sync_enabled_flag (verified: SPS, PPS and slice headers
+all diff to zero, tools/video/hevc-bitstream-dump.py). Three hypotheses
+have been tested and refuted from the userspace side alone, because the one
+thing that cannot be seen from there is what GStreamer -- the known-good
+client -- actually sends.
+
+This prints the received slice_params and decode_params at the top of
+cedrus_h265_setup(), so the same stream can be run through both clients and
+the controls diffed directly. It is the cheapest way to stop guessing.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_h265.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_h265.c
+@@ -445,6 +445,58 @@
+ 	cedrus_buf = vb2_to_cedrus_buffer(&run->dst->vb2_buf);
+ 	slice_bytes = vb2_get_plane_payload(&run->src->vb2_buf, 0);
+ 
++	/* CEDRUS_H265_CTRL_DUMP -- temporary, see docs/vaapi-scope.md */
++	{
++		int _i;
++
++		pr_info("CTRLDUMP slice: type=%u nal=%u poc=%d bits=%u dbo=%u nepo=%u seg=%u l0m1=%u l1m1=%u col=%u merge=%u qpd=%d flags=0x%llx\n",
++			slice_params->slice_type, slice_params->nal_unit_type,
++			slice_params->slice_pic_order_cnt, slice_params->bit_size,
++			slice_params->data_byte_offset,
++			slice_params->num_entry_point_offsets,
++			slice_params->slice_segment_addr,
++			slice_params->num_ref_idx_l0_active_minus1,
++			slice_params->num_ref_idx_l1_active_minus1,
++			slice_params->collocated_ref_idx,
++			slice_params->five_minus_max_num_merge_cand,
++			slice_params->slice_qp_delta,
++			(unsigned long long)slice_params->flags);
++
++		pr_info("CTRLDUMP decode: poc=%d strps=%u ltrps=%u ndpb=%u before=%u after=%u lt=%u ndprps=%u flags=0x%llx\n",
++			decode_params->pic_order_cnt_val,
++			decode_params->short_term_ref_pic_set_size,
++			decode_params->long_term_ref_pic_set_size,
++			decode_params->num_active_dpb_entries,
++			decode_params->num_poc_st_curr_before,
++			decode_params->num_poc_st_curr_after,
++			decode_params->num_poc_lt_curr,
++			decode_params->num_delta_pocs_of_ref_rps_idx,
++			(unsigned long long)decode_params->flags);
++
++		for (_i = 0; _i < decode_params->num_active_dpb_entries &&
++			     _i < V4L2_HEVC_DPB_ENTRIES_NUM_MAX; _i++)
++			pr_info("CTRLDUMP   dpb[%d]: poc=%d flags=0x%x field=%u ts=%llu\n",
++				_i, decode_params->dpb[_i].pic_order_cnt_val,
++				decode_params->dpb[_i].flags,
++				decode_params->dpb[_i].field_pic,
++				(unsigned long long)decode_params->dpb[_i].timestamp);
++
++		pr_info("CTRLDUMP   stcb=[%u %u %u %u] stca=[%u %u %u %u] ltc=[%u %u %u %u]\n",
++			decode_params->poc_st_curr_before[0], decode_params->poc_st_curr_before[1],
++			decode_params->poc_st_curr_before[2], decode_params->poc_st_curr_before[3],
++			decode_params->poc_st_curr_after[0], decode_params->poc_st_curr_after[1],
++			decode_params->poc_st_curr_after[2], decode_params->poc_st_curr_after[3],
++			decode_params->poc_lt_curr[0], decode_params->poc_lt_curr[1],
++			decode_params->poc_lt_curr[2], decode_params->poc_lt_curr[3]);
++
++		pr_info("CTRLDUMP   refl0=[%u %u %u %u] refl1=[%u %u %u %u] ppsflags=0x%llx slice_bytes=%zu\n",
++			slice_params->ref_idx_l0[0], slice_params->ref_idx_l0[1],
++			slice_params->ref_idx_l0[2], slice_params->ref_idx_l0[3],
++			slice_params->ref_idx_l1[0], slice_params->ref_idx_l1[1],
++			slice_params->ref_idx_l1[2], slice_params->ref_idx_l1[3],
++			(unsigned long long)pps->flags, slice_bytes);
++	}
++
+ 	/*
+ 	 * If entry points offsets are present, we should get them
+ 	 * exactly the right amount.

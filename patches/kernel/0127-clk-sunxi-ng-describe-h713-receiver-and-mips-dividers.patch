@@ -1,0 +1,63 @@
+From: H713 HDMI capture workstream
+Subject: [PATCH] clk: sunxi-ng: describe H713 receiver and MIPS functional clocks
+
+The symbolized vendor H713 CCU tables provide the divider widths, mux order,
+and gates. Receiver module clocks are not AHB gates; MIPS also has a different
+mux order and M divider width. Keep public clock IDs and existing rate flags.
+No assigned rates or automatic rate/parent requests are added.
+
+--- a/drivers/clk/sunxi-ng/ccu-sun50i-h713.c
++++ b/drivers/clk/sunxi-ng/ccu-sun50i-h713.c
+@@ -267,10 +267,11 @@
+ 				 BIT(31),	/* gate */
+ 				 CLK_IS_CRITICAL);
+ 
+-static const char * const mips_parents[] = { "osc24M", "pll-periph0-2x",
+-					     "pll-periph1-2x", "pll-cpux" };
++/* Vendor H713 mux order: periph0-2x, video0-4x, dcxo24M. */
++static const char * const mips_parents[] = { "pll-periph0-2x", "pll-video0-4x",
++					     "osc24M" };
+ static SUNXI_CCU_M_WITH_MUX_GATE(mips_clk, "mips", mips_parents, 0x600,
+-				 0, 4,		/* M */
++				 0, 3,		/* M */
+ 				 24, 2,		/* mux */
+ 				 BIT(31),	/* gate */
+ 				 0);
+@@ -557,8 +558,10 @@
+ 		      0xd10, BIT(31), 0);
+ static SUNXI_CCU_GATE(dtmb_120m_clk, "dtmb-120m", "ahb",
+ 		      0xd18, BIT(31), 0);
+-static SUNXI_CCU_GATE(tvfe_1296m_clk, "tvfe-1296m", "ahb",
+-		      0xd20, BIT(31), 0);
++/* Functional receiver clocks have local dividers and source muxes. */
++static const char * const tvfe_parents[] = { "pll-video0-4x", "pll-adc" };
++static SUNXI_CCU_MP_WITH_MUX_GATE(tvfe_1296m_clk, "tvfe-1296m", tvfe_parents,
++				0xd20, 0, 5, 8, 2, 24, 1, BIT(31), 0);
+ static SUNXI_CCU_GATE(i2h_clk, "i2h", "ahb",
+ 		      0xd24, BIT(31), 0);
+ static SUNXI_CCU_GATE(cip_tsx_clk, "cip-tsx", "ahb",
+@@ -587,16 +590,18 @@
+ 		      0xd60, BIT(31), 0);
+ static SUNXI_CCU_GATE(bus_demod_clk, "bus-demod", "ahb",
+ 		      0xd64, BIT(0), 0);
+-static SUNXI_CCU_GATE(tcd3_clk, "tcd3", "ahb",
+-		      0xd6c, BIT(31), 0);
+-static SUNXI_CCU_GATE(vincap_dma_clk, "vincap-dma", "ahb",
+-		      0xd74, BIT(31), 0);
++static SUNXI_CCU_MP_WITH_MUX_GATE(tcd3_clk, "tcd3", tvfe_parents,
++				0xd6c, 0, 3, 8, 2, 24, 1, BIT(31), 0);
++static const char * const vincap_dma_parents[] = { "pll-video2-4x", "pll-periph0" };
++static SUNXI_CCU_M_WITH_MUX_GATE(vincap_dma_clk, "vincap-dma", vincap_dma_parents,
++			       0xd74, 0, 5, 24, 1, BIT(31), 0);
+ static SUNXI_CCU_GATE(bus_hdmi_audio_clk, "bus-hdmi-audio", "ahb",
+ 		      0xd80, BIT(31), 0);
+ static SUNXI_CCU_GATE(bus_cap_300m_clk, "bus-cap-300m", "ahb",
+ 		      0xd80, BIT(30), 0);
+-static SUNXI_CCU_GATE(hdmi_audio_clk, "hdmi-audio", "ahb",
+-		      0xd84, BIT(31), 0);
++static const char * const hdmi_audio_parents[] = { "pll-video3-4x", "pll-periph0-2x" };
++static SUNXI_CCU_M_WITH_MUX_GATE(hdmi_audio_clk, "hdmi-audio", hdmi_audio_parents,
++			       0xd84, 0, 5, 24, 1, BIT(31), 0);
+ static SUNXI_CCU_GATE(bus_tvcap_clk, "bus-tvcap", "ahb",
+ 		      0xd88, BIT(0), 0);
+ /*

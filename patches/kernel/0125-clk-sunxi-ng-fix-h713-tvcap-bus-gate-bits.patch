@@ -1,0 +1,37 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] clk: sunxi-ng: fix H713 TVCAP bus gate bits
+
+The H713 CCU models the two gates in TVCAP bus register 0xd80 at
+bits 0 and 1. The vendor kernel's fully symbolized clock descriptors
+show bus_hdmi_audio_clk.enable = 0x80000000 and
+bus_cap_300M_clk.enable = 0x40000000, both at register 0xd80.
+The vendor ccu_gate_enable function loads this enable mask directly
+and passes it to ccu_gate_helper_enable.
+
+Stock U-Boot independently writes 0xc0000000 to 0x02001d80.
+During HDMI bring-up, requesting bus-cap-300m changed the framework
+prepare/enable counts to 1/1 while hardware is_enabled remained false.
+Use the actual gate masks so normal clock consumers can enable them.
+
+This corrects the clock definitions only. It does not claim complete
+HDMI receiver initialization or fix the wrapper-access lock on its own.
+
+Vendor vmlinux SHA256:
+3e0d2d3420e066277021fe78d8398eff3937afdaf00c3625354becfbc398bc04
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/clk/sunxi-ng/ccu-sun50i-h713.c
++++ b/drivers/clk/sunxi-ng/ccu-sun50i-h713.c
+@@ -592,9 +592,9 @@
+ static SUNXI_CCU_GATE(vincap_dma_clk, "vincap-dma", "ahb",
+ 		      0xd74, BIT(31), 0);
+ static SUNXI_CCU_GATE(bus_hdmi_audio_clk, "bus-hdmi-audio", "ahb",
+-		      0xd80, BIT(0), 0);
++		      0xd80, BIT(31), 0);
+ static SUNXI_CCU_GATE(bus_cap_300m_clk, "bus-cap-300m", "ahb",
+-		      0xd80, BIT(1), 0);
++		      0xd80, BIT(30), 0);
+ static SUNXI_CCU_GATE(hdmi_audio_clk, "hdmi-audio", "ahb",
+ 		      0xd84, BIT(31), 0);
+ static SUNXI_CCU_GATE(bus_tvcap_clk, "bus-tvcap", "ahb",

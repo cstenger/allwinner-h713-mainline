@@ -1,0 +1,81 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Fri, 16 Oct 2026 15:42:47 -0700
+Subject: [PATCH] arm64: dts: h713: hy200-qz713df-a1: the panel's supply and reset
+
+Describe the panel's power: PF6 enables its power switch, so it is a
+fixed regulator, vcc-panel, the display's power-supply; PH16 is its
+reset; the lamp is its backlight. These are the lines U-Boot drives to
+bring the panel up (board-B TOC1 panel_power_en and panel_gpio_0; the
+dtsi's vendor panel_power_en = PH19 is board A), and U-Boot reads them
+from this tree too.
+
+regulator-boot-on because U-Boot leaves the panel powered; without it the
+fixed regulator drives the enable low when it registers. off-on-delay-us
+is the panel's off timing for the rail (panel_config.ini
+PanelOffTiming1, 250 ms): its discharge before it may come back.
+
+A warm reboot reset the SoC with the panel still powered and its LVDS
+lanes driven. After that the panel stayed lit but black on every boot,
+through one-minute power cycles, until it was off overnight, with every
+SoC-side register correct. The display driver now takes it down in order.
+
+Referencing the lamp gives the gpio-backlight node a phandle, so its
+driver now reads the line at probe instead of using default-on; both keep
+the level U-Boot left. The dtsi comment is updated to match.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -127,3 +127,35 @@
+ &motor_ctr { status = "disabled"; };
+ &adc_keys { status = "disabled"; };
+ &board_mgr { status = "disabled"; };
++
++/*
++ * The panel's supply and reset, as U-Boot drives them to bring it up
++ * (board-B TOC1: panel_power_en = PF6, panel_gpio_0 = PH16; the dtsi's
++ * vendor panel_power_en = PH19 is board A). PF6 enables the panel's power
++ * switch, so it is the panel supply. U-Boot powers the panel up from these
++ * nodes; the display driver keeps it up and, at shutdown, takes it down in
++ * order -- lamp, signal, reset, rail -- before the SoC resets. Without that
++ * a warm reboot restarted the panel from a half-powered state and left it
++ * lit but black until a long power-off.
++ */
++/ {
++	reg_panel: regulator-panel {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc-panel";
++		gpio = <&pio 5 6 GPIO_ACTIVE_HIGH>;	/* PF6 */
++		enable-active-high;
++		/*
++		 * U-Boot leaves the panel powered: keep it on when this
++		 * registers, instead of driving the enable low.
++		 */
++		regulator-boot-on;
++		/* panel_config.ini PanelOffTiming1: the rail's discharge. */
++		off-on-delay-us = <250000>;
++	};
++};
++
++&display {
++	backlight = <&lamp>;
++	power-supply = <&reg_panel>;
++	panel-reset-gpios = <&pio 7 16 GPIO_ACTIVE_LOW>;	/* PH16 */
++};
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1936,9 +1936,10 @@
+ 	 * powers the cooling fan; there is no separate fan control. It used to
+ 	 * be a gpio-hog held high. As a gpio-backlight it is the lamp's on/off
+ 	 * switch -- /sys/class/backlight/lamp, bl_power 4 = off -- for standby
+-	 * (docs/standby-plan.md). Nothing references this node, so with
+-	 * default-on the driver keeps the state U-Boot left (high) at probe;
+-	 * there is no off-glitch at boot. Driving it low also stops the fan:
++	 * (docs/standby-plan.md). The driver keeps the state U-Boot left (high)
++	 * at probe: unreferenced, through default-on; referenced (the bench
++	 * board's display, for its shutdown sequence), by reading the line.
++	 * There is no off-glitch at boot. Driving it low also stops the fan:
+ 	 * only do that with the SoC idle.
+ 	 */
+ 	lamp: lamp {

@@ -1,0 +1,200 @@
+misc: decd: bound the dma_buf leak by dropping surplus frame references
+
+A frame is released only when a LATER frame displaces it, and
+dec_release_file() was a no-op, so whatever a client submitted last stayed
+pinned after it exited or was killed.
+
+Measured before: +2 dma_buf references per decd-client run even on clean exit
+(the image and VideoInfo buffers of the pinned frame), 89 accumulated in one
+session.  Leaked references pin identity IOVAs, after which Cedrus cannot
+allocate:
+
+  sun50i-iommu: iova 0x6c800000 already mapped to 0x6c800000 cannot remap ...
+  cedrus 1c0e000.video-codec: dma alloc of size 1384448 failed
+
+Userspace sees "Not enough memory to allocate source buffers" while MemFree,
+CmaFree and buddyinfo are all healthy.  Neither STOP_VIDEO_STREAM nor rmmod
+reclaims them, so only a reboot did.
+
+Measured after: refcount rises by 2 on the first run and then stays FLAT across
+five more; six live playback runs pass; the ring advances for a full 10 s
+sample window; and sustained playback was operator-confirmed over a 25 s hold.
+
+THIS BOUNDS THE LEAK RATHER THAN ELIMINATING IT.  Two references remain held --
+the displayed frame -- and are released when the next client's frame displaces
+it through dec_frame_queue_resume().  Steady state is 2 references instead of 2
+per run.  Eliminating it entirely needs the displayed frame retired safely,
+which is not solved here.
+
+WHY THIS DOES NOT TOUCH THE RING, learned the hard way.  A previous version
+released the ring slots and set them to NULL.  It fixed the leak completely and
+BROKE PLAYBACK: dec_frame_queue_sync() writes a blank (zero) address for every
+NULL slot on each vsync, so the ring alternated between zeros and new frames --
+solid colours cycling black/pink-purple on the panel.  The slot reference also
+cannot merely be dropped while leaving the pointer, since the sync path would
+then walk freed memory.  So the slots are left exactly as they are.
+
+THE REFCOUNT MODEL, which three attempts were needed to get right:
+
+  - dec_frame_queue_resume() assigns ONE frame to ALL FOUR slots and nets a
+    single reference.  The slots ALIAS.  Putting each slot separately is a
+    use-after-free on the second put and segfaults the client.
+  - q->interlace_hold is the literal (void *)1 ARMED FLAG, not a pointer, and
+    must never be passed to video_frame_put().
+  - The repeat path increments the refcount once per vsync and pushes one
+    release_fifo entry each time, all aliasing the same object.  Fifo depth IS
+    the outstanding reference count and is NOT bounded by the four ring slots --
+    eleven observed.  A fixed 8-entry array silently caps and the leak survives
+    a "fix" that logs success.
+  - q->last_released and the global last_frame are separate holders.
+
+Surplus holders released here: fmgr->ready_list, q->release_fifo,
+q->last_released, and last_frame.  Not touched: q->slots[0..3] and
+q->interlace_hold.
+
+--- a/drivers/misc/sunxi_decd/decd_frame.c
++++ b/drivers/misc/sunxi_decd/decd_frame.c
+@@ -1597,6 +1597,98 @@
+  * Then if state!=0: wait_event_timeout(2500).
+  * If timeout remaining > 0 (= didn't time out): free.
+  */
++/*
++ * dec_frame_drop_surplus_refs -- bound the dma_buf leak without touching the ring.
++ *
++ * THE LEAK.  A frame is released only when a LATER frame displaces it, and
++ * dec_release_file() was a no-op, so whatever a client submitted last stayed
++ * pinned after it exited.  Measured +2 dma_buf references per decd-client run
++ * even on clean exit, 89 in one session; leaked references pin identity IOVAs
++ * and Cedrus then cannot allocate, recoverable only by reboot.
++ *
++ * WHY THIS DOES NOT TOUCH THE RING.  An earlier attempt released the ring slots
++ * and set them to NULL.  That fixed the leak and BROKE PLAYBACK:
++ * dec_frame_queue_sync() writes a blank (zero) address for every NULL slot on
++ * each vsync, so the ring alternated between zeros and new frames -- solid
++ * colours cycling on the panel.  The slot reference also cannot simply be
++ * dropped while leaving the pointer, since the sync path would then use freed
++ * memory.
++ *
++ * SO: drop every SURPLUS reference and leave the slots exactly as they are.
++ * The displayed frame stays displayed and stays valid; it retires normally when
++ * the next client's frame displaces it through dec_frame_queue_resume().  That
++ * turns an unbounded leak (+2 per run, forever) into a bounded one (2
++ * references, released by the next run).
++ *
++ * Surplus holders, from the refcount model:
++ *   - fmgr->ready_list  frames queued but never displayed
++ *   - q->release_fifo   one entry per vsync repeat, all aliasing one frame;
++ *                       depth is the outstanding reference count and is NOT
++ *                       bounded by the four slots (eleven observed)
++ *   - q->last_released  a holder of its own
++ *   - last_frame        global, released only when the next frame is popped
++ *
++ * NOT touched: q->slots[0..3] (they alias one reference), and
++ * q->interlace_hold, which is the literal (void *)1 armed flag rather than a
++ * pointer.
++ */
++void dec_frame_drop_surplus_refs(struct dec_device *dec)
++{
++	struct dec_frame_manager *fmgr;
++	struct dec_frame_queue *q;
++	struct dec_video_frame *vf, *tmp;
++	unsigned long flags;
++	int ready_n = 0, fifo_n = 0, misc_n = 0, got;
++	LIST_HEAD(detached);
++
++	if (!dec || !dec->fmgr || !dec->fmgr->queue)
++		return;
++	fmgr = dec->fmgr;
++	q = fmgr->queue;
++
++	spin_lock_irqsave(&fmgr->ready_lock, flags);
++	list_splice_init(&fmgr->ready_list, &detached);
++	fmgr->ready_count = 0;
++	spin_unlock_irqrestore(&fmgr->ready_lock, flags);
++	list_for_each_entry_safe(vf, tmp, &detached, node) {
++		list_del_init(&vf->node);
++		ready_n++;
++		video_frame_put(vf);
++	}
++
++	for (;;) {
++		vf = NULL;
++		spin_lock_irqsave(&q->lock, flags);
++		got = kfifo_out(&q->release_fifo, &vf, 1);
++		spin_unlock_irqrestore(&q->lock, flags);
++		if (got != 1 || !vf)
++			break;
++		fifo_n++;
++		video_frame_put(vf);
++	}
++
++	spin_lock_irqsave(&q->lock, flags);
++	vf = q->last_released;
++	q->last_released = NULL;
++	spin_unlock_irqrestore(&q->lock, flags);
++	if (vf) {
++		misc_n++;
++		video_frame_put(vf);
++	}
++
++	if (last_frame) {
++		vf = last_frame;
++		last_frame = NULL;
++		misc_n++;
++		video_frame_put(vf);
++	}
++
++	if (ready_n || fifo_n || misc_n)
++		dev_dbg(dec->dev,
++			"DECD surplus refs dropped: ready=%d fifo=%d misc=%d\n",
++			ready_n, fifo_n, misc_n);
++}
++
+ int dec_frame_manager_stop(struct dec_frame_manager *fmgr)
+ {
+ 	long remaining;
+--- a/drivers/misc/sunxi_decd/decd_types.h
++++ b/drivers/misc/sunxi_decd/decd_types.h
+@@ -245,6 +245,8 @@
+ };
+ 
+ struct dec_device {
++	/* opens of /dev/decd; the last close drops surplus frame refs */
++	atomic_t open_count;
+ 	struct device *dev;
+ 	struct platform_device *pdev;
+ 	struct cdev cdev;
+@@ -293,6 +295,7 @@
+ struct dec_frame_manager *dec_frame_manager_init(void);
+ int dec_frame_manager_exit(struct dec_frame_manager *fmgr);
+ int dec_frame_manager_stop(struct dec_frame_manager *fmgr);
++void dec_frame_drop_surplus_refs(struct dec_device *dec);
+ int dec_frame_manager_register_sync_cb(struct dec_frame_manager *fmgr,
+ 				       struct dec_device *dec,
+ 				       void (*sync_cb)(struct dec_device *dec,
+--- a/drivers/misc/sunxi_decd/decd_core.c
++++ b/drivers/misc/sunxi_decd/decd_core.c
+@@ -37,11 +37,23 @@
+ static int dec_open(struct inode *inode, struct file *file)
+ {
+ 	file->private_data = g_dec;
++	if (g_dec)
++		atomic_inc(&g_dec->open_count);
+ 	return 0;
+ }
+ 
++/*
++ * On the last close, drop the frame references the client left behind.  The
++ * ring is deliberately NOT touched -- see dec_frame_drop_surplus_refs().  The
++ * displayed frame stays displayed and retires when the next client displaces
++ * it, which bounds the leak instead of letting it grow per run.
++ */
+ static int dec_release_file(struct inode *inode, struct file *file)
+ {
++	struct dec_device *dec = file->private_data;
++
++	if (dec && atomic_dec_and_test(&dec->open_count))
++		dec_frame_drop_surplus_refs(dec);
+ 	return 0;
+ }
+ 

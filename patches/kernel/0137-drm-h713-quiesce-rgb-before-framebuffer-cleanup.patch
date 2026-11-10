@@ -1,0 +1,170 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 26 Sep 2026 16:10:00 -0700
+Subject: [PATCH] drm: h713-afbd: quiesce RGB before framebuffer cleanup
+
+The eight-vsync retirement queue is driven by physical scan progress, but its
+depth is still an empirical bound.  Use the vendor teardown principle for a
+CRTC disable: stop the fetcher and prove that the disable crossed a physical
+frame boundary before allowing cleanup to release the outgoing mapping.
+
+The RGB quiesce register sequence is already hardware-proven by the NV12
+overlay handoff.  Clear the RGB enable bit through READY, wait for DONE, and
+then wait for one further physical AFBD vsync.  Timing and the LVDS PHY stay
+running, and the next source commit restores the exact active RGB control word.
+
+If any acknowledgement times out, leave rgb_quiesced false so cleanup_fb uses
+the validated eight-vsync retirement queue.  Active page flips also retain the
+existing queue; this change only removes the empirical hold from a successfully
+quiesced teardown.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/gpu/drm/tiny/sun50i-h713-afbd.c | 65 +++++++++++++++++++++++++++----
+ 1 file changed, 56 insertions(+), 9 deletions(-)
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -145,6 +145,7 @@ struct h713_afbd {
+ 	struct work_struct retire_work;
+ 	wait_queue_head_t retire_wait;
+ 	u64 retire_vblank_count;
++	bool rgb_quiesced;
+ };
+ 
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+@@ -249,8 +250,8 @@ static void h713_afbd_init_video_info(struct h713_afbd *h)
+ 	dma_wmb();
+ }
+ 
+-static void h713_afbd_wait_ready(struct h713_afbd *h, u32 reg,
+-				 const char *name)
++static int h713_afbd_wait_ready(struct h713_afbd *h, u32 reg,
++			       const char *name)
+ {
+ 	u32 ready;
+ 	int ret;
+@@ -259,9 +260,11 @@ static void h713_afbd_wait_ready(struct h713_afbd *h, u32 reg,
+ 	if (ret)
+ 		drm_warn(&h->drm, "%s READY did not clear (%08x)\n",
+ 			 name, ready);
++
++	return ret;
+ }
+ 
+-static void h713_afbd_wait_source_done(struct h713_afbd *h)
++static int h713_afbd_wait_source_done(struct h713_afbd *h)
+ {
+ 	u32 status;
+ 	int ret;
+@@ -271,11 +274,12 @@ static void h713_afbd_wait_source_done(struct h713_afbd *h)
+ 	if (ret) {
+ 		drm_warn(&h->drm,
+ 			 "scanout completion did not arrive (%08x)\n", status);
+-		return;
++		return ret;
+ 	}
+ 
+ 	/* AFBD_STATUS is write-1-to-clear. */
+ 	writel(AFBD_STATUS_DONE, h->regs + AFBD_STATUS);
++	return 0;
+ }
+ 
+ /*
+@@ -311,7 +315,7 @@ static void h713_afbd_set_source(struct h713_afbd *h, dma_addr_t addr,
+ 	if (pending)
+ 		writel(pending, h->regs + AFBD_STATUS);
+ 
+-	writel(readl(h->regs + AFBD_CTRL) | 1u, h->regs + AFBD_CTRL);
++	writel(h->rgb_ctrl_active, h->regs + AFBD_CTRL);
+ 	writel(1, h->regs + AFBD_READY);
+ }
+ 
+@@ -478,18 +482,56 @@ static void h713_afbd_pipe_enable(struct drm_simple_display_pipe *pipe,
+ 				     drm_fb_dma_get_gem_addr(plane_state->fb,
+ 							     plane_state, 0),
+ 				     plane_state->fb->pitches[0]);
++	h->rgb_quiesced = false;
+ 
+ 	drm_crtc_vblank_on(&pipe->crtc);
+ }
+ 
+ static void h713_afbd_pipe_disable(struct drm_simple_display_pipe *pipe)
+ {
++	struct h713_afbd *h = to_h713(pipe->crtc.dev);
++	unsigned long flags;
++	u32 pending;
++	u64 target;
++	long ret;
++
+ 	/*
+-	 * Leave the panel and its last frame alone: this driver cannot bring the
+-	 * display back up, so blanking it would strand the board with a dark
+-	 * projector until the next reboot.  The physical IRQ remains enabled for
+-	 * the driver's independent retirement counter.
++	 * Stop new RGB reads before DRM releases the outgoing mapping.  This is
++	 * the same validated source quiesce used when the NV12 overlay takes the
++	 * panel; it leaves timing and the PHY untouched, and pipe_enable restores
++	 * RGB fetch with the normal source commit.
+ 	 */
++	h->rgb_quiesced = false;
++	pending = readl(h->regs + AFBD_STATUS);
++	if (pending)
++		writel(pending, h->regs + AFBD_STATUS);
++	writel((h->rgb_ctrl_active | BIT(31)) & ~BIT(0),
++	       h->regs + AFBD_CTRL);
++	writel(1, h->regs + AFBD_READY);
++	if (h713_afbd_wait_ready(h, AFBD_READY, "RGB disable") ||
++	    h713_afbd_wait_source_done(h))
++		goto out;
++
++	/*
++	 * READY/DONE acknowledge the disable latch.  Observe the next physical
++	 * frame boundary as well, so no transaction issued before that latch can
++	 * remain in the scanout pipeline when cleanup_fb drops the mapping.
++	 */
++	spin_lock_irqsave(&h->retire_lock, flags);
++	target = h->retire_vblank_count + 1;
++	spin_unlock_irqrestore(&h->retire_lock, flags);
++	ret = wait_event_timeout(h->retire_wait,
++				 READ_ONCE(h->retire_vblank_count) >= target,
++				 msecs_to_jiffies(100));
++	if (!ret)
++		drm_warn(&h->drm, "RGB quiesce vblank timed out\n");
++	else {
++		h->rgb_quiesced = true;
++		drm_info(&h->drm, "RGB fetch quiesced at physical vblank %llu\n",
++			 target);
++	}
++
++out:
+ 	drm_crtc_vblank_off(&pipe->crtc);
+ }
+ 
+@@ -506,6 +548,8 @@ static void h713_afbd_pipe_update(struct drm_simple_display_pipe *pipe,
+ 		h713_afbd_set_source(h,
+ 				     drm_fb_dma_get_gem_addr(state->fb, state, 0),
+ 				     state->fb->pitches[0]);
++	if (state->fb)
++		h->rgb_quiesced = false;
+ 
+ 	spin_lock_irqsave(&crtc->dev->event_lock, flags);
+ 	event = crtc->state->event;
+@@ -545,6 +589,8 @@ static void h713_afbd_cleanup_fb(struct drm_simple_display_pipe *pipe,
+ 	 */
+ 	if (!old_state->fb || old_state->fb == pipe->plane.state->fb)
+ 		return;
++	if (h->rgb_quiesced)
++		return;
+ 
+ 	h713_afbd_wait_source_done(h);
+ 
+@@ -617,6 +663,7 @@ static irqreturn_t h713_afbd_irq(int irq, void *data)
+ 	spin_unlock_irqrestore(&h->retire_lock, flags);
+ 	if (due)
+ 		queue_work(system_wq, &h->retire_work);
++	wake_up_all(&h->retire_wait);
+ 
+ 	drm_crtc_handle_vblank(&h->pipe.crtc);
+ 	return IRQ_HANDLED;
+-- 
+2.47.3

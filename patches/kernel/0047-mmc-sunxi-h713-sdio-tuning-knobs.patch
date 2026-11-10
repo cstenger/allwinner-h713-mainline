@@ -1,0 +1,233 @@
+--- a/drivers/mmc/host/sunxi-mmc.c
++++ b/drivers/mmc/host/sunxi-mmc.c
+@@ -91,6 +91,52 @@
+ #define SDXC_THLD_READ_EN	BIT(0)
+ #define SDXC_THLD_SIZE_MASK	GENMASK(27, 16)
+ 
++/*
++ * H713 SDIO tuning knobs (debug).  These exist so a single kernel can sweep
++ * the 50 MHz search space from the kernel command line instead of needing a
++ * rebuild per state.  All default to "behave exactly as before".
++ */
++static int h713_fmax;			/* Hz; 0 = keep the device-tree value */
++module_param(h713_fmax, int, 0444);
++MODULE_PARM_DESC(h713_fmax, "H713: override mmc f_max in Hz (0 = device tree)");
++
++static int h713_uhs = -1;		/* -1 keep, else ceiling: 0/12/25/50/104 */
++module_param(h713_uhs, int, 0444);
++MODULE_PARM_DESC(h713_uhs, "H713: highest UHS mode to advertise (0=none, 25, 50, 104)");
++
++static int h713_dly[4] = { -1, -1, -1, -1 };	/* cmd_drv dat_drv cmd_ph dat_ph */
++static int h713_dly_cnt;
++module_param_array(h713_dly, int, &h713_dly_cnt, 0444);
++MODULE_PARM_DESC(h713_dly, "H713: force cmd_drv,dat_drv,cmd_phase,dat_phase above 26 MHz");
++
++static int h713_sampdl = -1;		/* raw SAMP_DL/DS_DL value, <0 = default */
++module_param(h713_sampdl, int, 0444);
++MODULE_PARM_DESC(h713_sampdl, "H713: raw SAMP_DL/DS_DL value (<0 = 0x2000 default)");
++
++static bool h713_relatch;		/* stock set_dly_raw() re-latches 2X mode */
++module_param(h713_relatch, bool, 0444);
++MODULE_PARM_DESC(h713_relatch, "H713: toggle 2X timing mode after programming phases");
++
++/*
++ * The SDIO path doubles the module clock for the controller's 2X timing mode,
++ * while the H616 CCU already carries a fixed /2 post-divider on the MMC clocks.
++ * If those two compound, every nominal rate is physically double.  This knob
++ * drops the driver-side doubling so the two can be told apart on hardware.
++ */
++static bool h713_nodouble;
++module_param(h713_nodouble, bool, 0444);
++MODULE_PARM_DESC(h713_nodouble, "H713: do not double the SDIO module clock");
++
++/*
++ * Time individual CMD53 payloads.  Per-request software overhead is tens of
++ * microseconds against milliseconds of bus time, so the implied bit rate reads
++ * the card clock absolutely -- the only way to tell a real rate from a
++ * mislabelled one, since every pass/fail ladder is symmetric under a factor 2.
++ */
++static bool h713_timing;
++module_param(h713_timing, bool, 0644);
++MODULE_PARM_DESC(h713_timing, "H713: log measured CMD53 duration and implied clock");
++
+ #define mmc_readl(host, reg) \
+ 	readl((host)->reg_base + SDXC_##reg)
+ #define mmc_writel(host, reg, value) \
+@@ -320,6 +366,7 @@
+ #define SUNXI_MMC_CMD53_FIFO_RETRIES	15	/* FIFO underrun / AHB bus-contention */
+ 
+ struct sunxi_mmc_host {
++	ktime_t		dbg_data_start;	/* h713_timing: CMD53 payload start */
+ 	struct device *dev;
+ 	struct mmc_host	*mmc;
+ 	struct reset_control *reset;
+@@ -764,6 +811,21 @@
+ 
+ 		if (data)
+ 			data->bytes_xfered = data->blocks * data->blksz;
++
++		if (h713_timing && data && host->cfg->v5p3x &&
++		    data->bytes_xfered >= 512) {
++			u64 ns = ktime_to_ns(ktime_sub(ktime_get(),
++						       host->dbg_data_start));
++
++			if (ns)
++				dev_info(mmc_dev(host->mmc),
++					 "cmd53 timing: %u bytes %s in %llu us -> %llu kHz implied on 4 bits (ios %u Hz)\n",
++					 data->bytes_xfered,
++					 (data->flags & MMC_DATA_READ) ? "read" : "write",
++					 ns / 1000,
++					 div64_u64((u64)data->bytes_xfered * 2 * 1000000, ns),
++					 host->mmc->ios.clock);
++		}
+ 	}
+ 
+ 	if (data) {
+@@ -1340,7 +1402,9 @@
+ 					struct mmc_ios *ios,
+ 					unsigned long rate)
+ {
+-	u32 cmd_drv = 1, dat_drv = 0, sample_phase = 0;
++	u32 cmd_drv = 1, dat_drv = 0;
++	u32 cmd_phase = 0, dat_phase = 0;
++	u32 samp_dl = SDXC_V5P3X_DL_DEFAULT;
+ 	u32 rval;
+ 
+ 	if (!host->cfg->v5p3x)
+@@ -1367,17 +1431,35 @@
+ 		if (ios->bus_width == MMC_BUS_WIDTH_4 &&
+ 		    ios->timing == MMC_TIMING_UHS_DDR50) {
+ 			dat_drv = 0;
+-			sample_phase = 2;
++			cmd_phase = 2;
++			dat_phase = 2;
+ 		} else {
+ 			dat_drv = 1;
+-			sample_phase = 1;
++			cmd_phase = 1;
++			dat_phase = 1;
+ 		}
+ 	} else if (rate > 52000000 && rate <= 104000000) {
+ 		dat_drv = 1;
+-		sample_phase = 1;
++		cmd_phase = 1;
++		dat_phase = 1;
+ 	} else if (rate > 104000000) {
+ 		dat_drv = 0;
+-		sample_phase = 1;
++		cmd_phase = 1;
++		dat_phase = 1;
++	}
++
++	/* Command-line overrides apply only above the validated 26 MHz path. */
++	if (rate > 26000000) {
++		if (h713_dly[0] >= 0)
++			cmd_drv = h713_dly[0];
++		if (h713_dly[1] >= 0)
++			dat_drv = h713_dly[1];
++		if (h713_dly[2] >= 0)
++			cmd_phase = h713_dly[2] & 3;
++		if (h713_dly[3] >= 0)
++			dat_phase = h713_dly[3] & 3;
++		if (h713_sampdl >= 0)
++			samp_dl = h713_sampdl;
+ 	}
+ 
+ 	rval = readl(host->reg_base + SDXC_REG_DRV_DL);
+@@ -1390,22 +1472,31 @@
+ 
+ 	rval = mmc_readl(host, REG_SD_NTSR);
+ 	rval &= ~(SDXC_V5P3X_CMD_PHASE_MASK | SDXC_V5P3X_DAT_PHASE_MASK);
+-	rval |= (sample_phase << SDXC_V5P3X_CMD_PHASE_SHIFT) &
++	rval |= (cmd_phase << SDXC_V5P3X_CMD_PHASE_SHIFT) &
+ 		SDXC_V5P3X_CMD_PHASE_MASK;
+-	rval |= (sample_phase << SDXC_V5P3X_DAT_PHASE_SHIFT) &
++	rval |= (dat_phase << SDXC_V5P3X_DAT_PHASE_SHIFT) &
+ 		SDXC_V5P3X_DAT_PHASE_MASK;
+ 	mmc_writel(host, REG_SD_NTSR, rval);
+ 
+-	writel(SDXC_V5P3X_DL_DEFAULT,
+-	       host->reg_base + SDXC_REG_SAMP_DL_REG);
+-	writel(SDXC_V5P3X_DL_DEFAULT,
+-	       host->reg_base + SDXC_REG_DS_DL_REG);
++	/*
++	 * Stock's sunxi_mmc_set_dly_raw() drops and re-asserts the 2X timing
++	 * mode bit after changing phases, which re-latches the timing block.
++	 * Our normal path never did; make it testable.
++	 */
++	if (h713_relatch) {
++		mmc_writel(host, REG_SD_NTSR, rval & ~SDXC_2X_TIMING_MODE);
++		mmc_writel(host, REG_SD_NTSR, rval | SDXC_2X_TIMING_MODE);
++	}
++
++	writel(samp_dl, host->reg_base + SDXC_REG_SAMP_DL_REG);
++	writel(samp_dl, host->reg_base + SDXC_REG_DS_DL_REG);
+ 
+ 	dev_info(mmc_dev(host->mmc),
+-		 "v5p3x delay: rate=%lu timing=%u width=%u DRV=%08x NTSR=%08x\n",
++		 "v5p3x delay: rate=%lu timing=%u width=%u DRV=%08x NTSR=%08x SAMP=%08x\n",
+ 		 rate, ios->timing, 1U << ios->bus_width,
+ 		 readl(host->reg_base + SDXC_REG_DRV_DL),
+-		 mmc_readl(host, REG_SD_NTSR));
++		 mmc_readl(host, REG_SD_NTSR),
++		 readl(host->reg_base + SDXC_REG_SAMP_DL_REG));
+ }
+ 
+ static int sunxi_mmc_clk_set_rate(struct sunxi_mmc_host *host,
+@@ -1427,7 +1518,7 @@
+ 		return 0;
+ 
+ 	/* H713 v5p3x: 2X timing halves output. Double module clock. */
+-	if (host->cfg->no_wait_pre_over)
++	if (host->cfg->no_wait_pre_over && !h713_nodouble)
+ 		clock <<= 1;
+ 
+ 	/*
+@@ -1481,7 +1572,7 @@
+ 	/* update card clock rate to account for internal divider */
+ 	rate /= div;
+ 	/* H713: 2X timing halves output */
+-	if (host->cfg->no_wait_pre_over)
++	if (host->cfg->no_wait_pre_over && !h713_nodouble)
+ 		rate >>= 1;
+ 
+ 	/*
+@@ -1843,6 +1934,7 @@
+ 
+ 	if (data) {
+ 		sunxi_mmc_thld_ctl_v5p3x(host, data);
++		host->dbg_data_start = ktime_get();
+ 		mmc_writel(host, REG_BLKSZ, data->blksz);
+ 		mmc_writel(host, REG_BCNTR, data->blksz * data->blocks);
+ 		sunxi_mmc_start_dma(host, data);
+@@ -2269,6 +2361,30 @@
+ 	if (!host->cfg->supports_hs400)
+ 		mmc->caps2 &= ~MMC_CAP2_HS400;
+ 
++	/*
++	 * Debug knobs: lower the advertised UHS ceiling and/or the maximum
++	 * clock without rebuilding, so one kernel can A/B the H713 SDIO link.
++	 */
++	if (host->cfg->v5p3x && h713_uhs >= 0) {
++		u32 clear = 0;
++
++		if (h713_uhs < 104)
++			clear |= MMC_CAP_UHS_SDR104;
++		if (h713_uhs < 50)
++			clear |= MMC_CAP_UHS_SDR50 | MMC_CAP_UHS_DDR50;
++		if (h713_uhs < 25)
++			clear |= MMC_CAP_UHS_SDR25;
++		if (h713_uhs < 12)
++			clear |= MMC_CAP_UHS_SDR12;
++		mmc->caps &= ~clear;
++		dev_info(&pdev->dev, "h713: UHS ceiling %d, caps now %08x\n",
++			 h713_uhs, mmc->caps);
++	}
++	if (host->cfg->v5p3x && h713_fmax > 0) {
++		mmc->f_max = h713_fmax;
++		dev_info(&pdev->dev, "h713: f_max forced to %u Hz\n", mmc->f_max);
++	}
++
+ 	ret = sunxi_mmc_init_host(host);
+ 	if (ret)
+ 		goto error_free_dma;

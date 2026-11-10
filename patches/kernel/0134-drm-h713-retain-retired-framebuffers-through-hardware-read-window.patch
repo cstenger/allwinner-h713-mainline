@@ -1,0 +1,145 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 26 Sep 2026 14:02:00 -0700
+Subject: [PATCH] drm: h713-afbd: retain retired framebuffers through hardware read window
+
+Waiting for AFBD_STATUS_DONE and an additional vblank before releasing the
+old framebuffer is still insufficient on H713.  A 1280x720 mpv dumb buffer
+was unmapped after that sequence, then display master 2 faulted while reading
+0xff22a000 inside the retired 0xff000000 buffer.  The panel showed a stale
+solid frame even though KMS and AFBD_SRC both reported the restored fbcon
+buffer.
+
+Keep an extra framebuffer reference for 100 ms after DONE.  That reference
+pins every GEM object and DMA mapping owned by the framebuffer across the
+hardware's post-latch read window.  Release it from a dedicated ordered work
+queue so atomic cleanup does not block and the established page-flip cadence
+is not limited by the retirement margin.  Destroying the work queue drains
+all delayed releases before the driver can be removed.
+
+The 100 ms bound matches the delay that made the original register-level
+display recipes reliable and is six nominal panel refresh periods.  Allocation
+failure falls back to the same delay synchronously so it cannot reintroduce an
+unsafe early unmap under memory pressure.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/gpu/drm/tiny/sun50i-h713-afbd.c | 56 +++++++++++++++++++++++--
+ 1 file changed, 52 insertions(+), 4 deletions(-)
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -34,6 +34,7 @@
+  */
+ 
+ #include <linux/clk.h>
++#include <linux/delay.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/interrupt.h>
+ #include <linux/iopoll.h>
+@@ -42,6 +43,8 @@
+ #include <linux/of.h>
+ #include <linux/of_reserved_mem.h>
+ #include <linux/platform_device.h>
++#include <linux/slab.h>
++#include <linux/workqueue.h>
+ 
+ #include <drm/clients/drm_client_setup.h>
+ #include <drm/drm_atomic.h>
+@@ -105,6 +108,14 @@
+ /* The four queue slots are 4 bytes apart in each address ring. */
+ #define H713_VIDEO_SLOTS	4
+ 
++/* Stock-style register recipes leave at least this much retirement slack. */
++#define H713_AFBD_RETIRE_DELAY_MS	100
++
++struct h713_afbd_retire {
++	struct delayed_work work;
++	struct drm_framebuffer *fb;
++};
++
+ struct h713_afbd {
+ 	struct drm_device drm;
+ 	struct drm_simple_display_pipe pipe;
+@@ -124,6 +135,7 @@
+ 	u32 gain_idle;
+ 	u32 selector_rgb;
+ 	bool video_active;
++	struct workqueue_struct *retire_wq;
+ };
+ 
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+@@ -131,6 +143,23 @@
+ 	return container_of(drm, struct h713_afbd, drm);
+ }
+ 
++static void h713_afbd_retire_work(struct work_struct *work)
++{
++	struct h713_afbd_retire *retire =
++		container_of(to_delayed_work(work),
++			     struct h713_afbd_retire, work);
++
++	drm_framebuffer_put(retire->fb);
++	kfree(retire);
++}
++
++static void h713_afbd_destroy_retire_wq(void *data)
++{
++	struct h713_afbd *h = data;
++
++	destroy_workqueue(h->retire_wq);
++}
++
+ static void h713_afbd_init_video_info(struct h713_afbd *h)
+ {
+ 	u32 *v = h->video_info;
+@@ -461,6 +490,7 @@
+ 				  struct drm_plane_state *old_state)
+ {
+ 	struct h713_afbd *h = to_h713(pipe->crtc.dev);
++	struct h713_afbd_retire *retire;
+ 
+ 	/*
+ 	 * cleanup_fb is also used to unwind a failed prepare.  Only a state
+@@ -473,10 +503,23 @@
+ 
+ 	/*
+ 	 * DONE acknowledges the source latch, not complete retirement of every
+-	 * old-source read.  Keep its mapping alive through one more scanout.
++	 * old-source read.  Do not block atomic cleanup or guess a vblank count:
++	 * keep a framebuffer reference asynchronously so its DMA mapping cannot
++	 * disappear during the hardware's measured post-latch read window.
+ 	 */
+-	if (pipe->crtc.state->active)
+-		drm_crtc_wait_one_vblank(&pipe->crtc);
++	retire = kmalloc(sizeof(*retire), GFP_KERNEL);
++	if (!retire) {
++		drm_warn(&h->drm,
++			 "retire allocation failed; delaying cleanup synchronously\n");
++		msleep(H713_AFBD_RETIRE_DELAY_MS);
++		return;
++	}
++
++	drm_framebuffer_get(old_state->fb);
++	retire->fb = old_state->fb;
++	INIT_DELAYED_WORK(&retire->work, h713_afbd_retire_work);
++	queue_delayed_work(h->retire_wq, &retire->work,
++			   msecs_to_jiffies(H713_AFBD_RETIRE_DELAY_MS));
+ }
+ 
+ static int h713_afbd_enable_vblank(struct drm_simple_display_pipe *pipe)
+@@ -613,6 +656,13 @@
+ 	if (IS_ERR(h))
+ 		return PTR_ERR(h);
+ 	drm = &h->drm;
++	h->retire_wq = alloc_ordered_workqueue("h713-afbd-retire",
++					       WQ_MEM_RECLAIM);
++	if (!h->retire_wq)
++		return -ENOMEM;
++	ret = devm_add_action_or_reset(dev, h713_afbd_destroy_retire_wq, h);
++	if (ret)
++		return ret;
+ 
+ 	h->regs = devm_platform_ioremap_resource_byname(pdev, "afbd");
+ 	if (IS_ERR(h->regs))
+-- 
+2.51.0

@@ -1,0 +1,28 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 26 Sep 2026 23:55:00 -0700
+Subject: [PATCH] media: videobuf2: make the vmalloc allocator selectable
+
+VIDEOBUF2_VMALLOC is normally a hidden dependency selected by in-tree
+drivers.  The H713 HDMI diagnostic bridge is intentionally kept out of tree,
+so it cannot select the allocator and a defconfig assignment is discarded by
+Kconfig.
+
+Give the allocator a prompt so the board defconfig can provide its runtime
+dependency without enabling an unrelated media driver.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/media/common/videobuf2/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/media/common/videobuf2/Kconfig
++++ b/drivers/media/common/videobuf2/Kconfig
+@@ -16,7 +16,7 @@ config VIDEOBUF2_DMA_CONTIG
+ 	select DMA_SHARED_BUFFER
+ 
+ config VIDEOBUF2_VMALLOC
+-	tristate
++	tristate "vmalloc video buffer allocator"
+ 	select VIDEOBUF2_CORE
+ 	select VIDEOBUF2_MEMOPS
+ 	select DMA_SHARED_BUFFER

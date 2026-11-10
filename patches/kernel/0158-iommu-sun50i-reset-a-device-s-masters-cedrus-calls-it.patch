@@ -1,0 +1,138 @@
+iommu: sun50i: reset a device's masters on request; cedrus calls it
+
+On the H713, a GStreamer vah265dec decode of a damaged HEVC stream made
+the VE read an unmapped address: "Page fault for 0x776da000 (master 1,
+dir rd)", an invalid L1 entry. The fault handler cleared it and reset
+master 1 at once, and the IOMMU stayed healthy: the AV1 decoder behind
+it kept decoding. The VE did not. Every later job gave one frame, then
+"frame processing timed out!" and "timed out waiting to skip bits" on
+every frame after it, through VE resets, runtime suspends and a cedrus
+reload, until the board was powered off.
+
+Measured 2026-10-04 by reproducing the wedge and applying one remedy
+at a time to the VE's masters (0 and 1) from userspace: a TLB flush
+left it wedged (1 frame); pulsing their master resets again, now that
+the VE was stopped, brought back 60/60 frames every time. So the reset
+the fault handler does mid-transaction is not enough; the port needs
+one more once the master is idle.
+
+Add sun50i_iommu_reset_masters(dev), which pulses the reset bits of
+exactly the masters in the device's fwspec under the IOMMU lock (a
+no-op while no paging domain is attached, when the registers are
+unclocked), and call it from cedrus after the watchdog resets the VE
+and on every runtime resume, when the VE has nothing in flight.
+
+This is recovery, not the cause: why the VE read an unmapped address
+from GStreamer's decode and not FFmpeg's is still open.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+--- a/drivers/iommu/sun50i-iommu.c
++++ b/drivers/iommu/sun50i-iommu.c
+@@ -22,6 +22,7 @@
+ #include <linux/pm.h>
+ #include <linux/pm_runtime.h>
+ #include <linux/reset.h>
++#include <linux/sun50i-iommu.h>
+ #include <linux/sizes.h>
+ #include <linux/slab.h>
+ #include <linux/spinlock.h>
+@@ -1086,6 +1087,48 @@
+ 	return IRQ_HANDLED;
+ }
+ 
++/*
++ * Reset the IOMMU master ports of @dev, for its driver to call once the
++ * device itself is idle and reset.
++ *
++ * The fault handler resets a faulting master at the moment of the fault,
++ * while the device may still have transactions in flight. On the H713 that
++ * was not enough: a VE read of an unmapped address (master 1) left the VE
++ * giving one frame, then a timeout on every frame, through any number of VE
++ * resets and a cedrus reload, until power-off. Pulsing the VE's master
++ * resets again once the VE was stopped cleared it every time; a TLB flush
++ * alone did not (2026-10-04).
++ */
++int sun50i_iommu_reset_masters(struct device *dev)
++{
++	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
++	struct sun50i_iommu *iommu = sun50i_iommu_from_dev(dev);
++	unsigned long flags;
++	u32 mask = 0;
++	unsigned int i;
++
++	if (!iommu || !fwspec)
++		return -ENODEV;
++
++	/* Registers are only clocked while a paging domain is attached. */
++	if (!iommu->domain || iommu->domain == &sun50i_iommu_identity_domain)
++		return 0;
++
++	for (i = 0; i < fwspec->num_ids; i++)
++		mask |= BIT(fwspec->ids[i]);
++	mask &= sun50i_iommu_master_mask(iommu);
++	if (!mask)
++		return 0;
++
++	spin_lock_irqsave(&iommu->iommu_lock, flags);
++	iommu_write(iommu, IOMMU_RESET_REG, ~mask);
++	iommu_write(iommu, IOMMU_RESET_REG, IOMMU_RESET_RELEASE_ALL);
++	spin_unlock_irqrestore(&iommu->iommu_lock, flags);
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(sun50i_iommu_reset_masters);
++
+ static int sun50i_iommu_probe(struct platform_device *pdev)
+ {
+ 	struct sun50i_iommu *iommu;
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -23,6 +23,7 @@
+ #include <linux/regmap.h>
+ #include <linux/reset.h>
+ #include <linux/soc/sunxi/sunxi_sram.h>
++#include <linux/sun50i-iommu.h>
+ 
+ #include <media/videobuf2-core.h>
+ #include <media/v4l2-mem2mem.h>
+@@ -430,6 +431,9 @@
+ 
+ 	v4l2_err(&dev->v4l2_dev, "frame processing timed out!\n");
+ 	reset_control_reset(dev->rstc);
++	/* A timeout can follow an IOMMU fault that leaves the VE's master
++	 * ports stuck past any VE reset; reset them now the VE is stopped. */
++	sun50i_iommu_reset_masters(dev->dev);
+ 	ctx->decode_error = false;
+ 	v4l2_m2m_buf_done_and_job_finish(ctx->dev->m2m_dev, ctx->fh.m2m_ctx,
+ 					 VB2_BUF_STATE_ERROR);
+@@ -463,6 +467,10 @@
+ 		return ret;
+ 	}
+ 
++	/* The VE was reset while suspended and has nothing in flight: the
++	 * safe moment to clear its IOMMU master ports (see the watchdog). */
++	sun50i_iommu_reset_masters(dev->dev);
++
+ 	if (dev->rstc_ve3) {
+ 		ret = reset_control_deassert(dev->rstc_ve3);
+ 		if (ret) {
+--- /dev/null
++++ b/include/linux/sun50i-iommu.h
+@@ -0,0 +1,16 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef __LINUX_SUN50I_IOMMU_H
++#define __LINUX_SUN50I_IOMMU_H
++
++struct device;
++
++#if IS_ENABLED(CONFIG_SUN50I_IOMMU)
++int sun50i_iommu_reset_masters(struct device *dev);
++#else
++static inline int sun50i_iommu_reset_masters(struct device *dev)
++{
++	return 0;
++}
++#endif
++
++#endif /* __LINUX_SUN50I_IOMMU_H */

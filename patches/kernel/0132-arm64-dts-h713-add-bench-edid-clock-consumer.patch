@@ -1,0 +1,20 @@
+From: H713 HDMI capture workstream
+Subject: [PATCH] arm64: dts: h713: add a bench EDID clock/reset consumer
+
+The bounded SCP HPD/EDID trial requires h713-edid-clock.ko to bind a
+platform device. The first dedicated-trace FIT omitted that test node, so
+the module loaded but did not hold the EDID clock or release its reset. Add
+the board-local consumer only to the HDMI diagnostic kernel branch. The
+module still must be loaded deliberately; the node alone does not touch
+the peripheral.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -20,1 +20,7 @@
++
++	h713-edid-clock-hold {
++		compatible = "h713-lab,edid-clock-hold";
++		clocks = <&r_ccu CLK_R_EDID>;
++		resets = <&r_ccu RST_R_EDID>;
++	};
+ };

@@ -1,6 +1,25 @@
 From: Christopher Stenger <chris.h.stenger@gmail.com>
 Subject: [PATCH] media: cedrus: halt the VE before freeing its DMA buffers
 
+*** OUT OF patches/kernel/series SINCE 2026-08-23. DO NOT RE-ADD WITHOUT
+*** READING docs/decode-production-readiness.md.
+***
+*** It causes a deadlock. Three concurrent decode clients wedge the engine:
+*** one client's teardown resets the device while another context has a job in
+*** flight, that job never completes, and the next STREAMOFF waits forever in
+*** v4l2_m2m_cancel_job() in D state, beyond the reach of SIGKILL. Only a
+*** reboot recovers. The "Diagnostic before fix" paragraph below predicted
+*** exactly this and it was shipped anyway.
+***
+*** Proven by a within-boot A/B on sunxi_cedrus.stop_reset: N gives 9/9
+*** bit-exact across three clients, Y deadlocks on the first round. Three
+*** deadlocks on Y, none on N.
+***
+*** And its reason for existing is gone. It was written to stop memory
+*** corruption that was later traced to the CPU's 1416 MHz operating point
+*** (patch 0055), and the A/B that appeared to support it was retracted as
+*** underpowered.
+
 cedrus_stop_streaming() frees the codec's auxiliary DMA buffers -- for
 H.264, pic_info_buf and neighbor_info_buf -- and returns the capture
 buffers, without ever asserting the engine's reset or waiting for it to go

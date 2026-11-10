@@ -1,0 +1,393 @@
+drm: h713: magnify a smaller video picture with proc (letterbox Phase 3)
+
+0161 let the video plane show a picture smaller than the panel, anywhere on
+it, at its own size. A 480p or 360p picture therefore stayed a postage stamp
+and went to the GPU instead. This lets the plane MAGNIFY such a picture up to
+4x per axis through the proc upscaler at 0x05180000, placed anywhere, with
+black bars around it. Stock kmssink then letterboxes sub-panel video by
+itself: its aspect-fit destination, which the plane used to refuse as a scale,
+is now accepted as it stands.
+
+The model is the display firmware's own, extended and hardware-checked in
+letterbox Phase 3 (docs/reference/letterbox-recipe-2026-10-04.md "Phase 3:
+the scaled model", letterbox-phase1-2026-10-04.md). The table transcribes
+tools/display/letterbox-recipe.py, and tools/display/letterbox-kernel-
+compare.sh compiles this driver's own table and checks it against the recipe
+word for word: 440 words over 11 geometries, all equal.
+
+  - The window layer splits at proc. The SOURCE size runs upstream of it
+    (AFBD, the NR line buffers and fetch window, the route source window,
+    proc's input window) and the DESTINATION size from its output on (the
+    route picture and output windows, the panel video window, the border
+    overlay). That is the firmware's split in its one scaled log (720x480 ->
+    1280x720).
+  - comp+0x858[31:16] is the DESTINATION height. 0161 wrote the source
+    height, which is the same thing at unity. Under magnification it starved
+    proc after H panel lines and cut every picture at H/ratio source lines
+    (bisected on the panel, 2026-10-05).
+  - Proc:
+      * ratio (in << 16) / out;
+      * fractional phases (unity + ratio) >> 2 (H) and >> 1 (V);
+      * integer phases 3/2, a unity axis advancing to 4/3;
+      * bypass only when both axes are at unity;
+      * line-enable length max(in_h, out_h), which was the grey streak of
+        2026-09-13;
+      * bypass written last.
+    The retired chain (0098-0111) had two latent errors here, invisible
+    while its destination was always the whole panel. 0111 sized the route
+    picture window from the source, and 0108 forced H=3 on a unity axis.
+    They are not restored.
+  - proc+0x038[31:16] is left alone. The firmware derives it from a member
+    it never sets, and its other reading made no visible difference on the
+    panel.
+
+The plane gains DRM's SCALING_FILTER property (Default only), the standard
+way to say "this plane scales"; h713-play reads its presence to route
+sub-panel video to the plane.
+
+At unity every new field reproduces 0161's value, so every geometry 0161
+accepted is programmed exactly as before; the probe snapshot check covers the
+new scaler words too.
+
+atomic_check now allows a source/destination scale from 1:1 down to 1:4.
+DRM counts scale as source over destination, so 4x is the MINIMUM. It refuses:
+  - shrinking (the VE's job, at decode time);
+  - destinations off the panel;
+  - P010 at anything but native size, as before.
+
+The destination's x, width and height are rounded down to even rather than
+refused. kmssink centres 852x480 as 1278x720 at x = 1, and on any refusal it
+falls back to an unscaled postage stamp. The picture lands at most 1 px from
+where it was asked for. 0161 refused an odd x; no unscaled picture kmssink
+produces has one.
+
+Verified on the panel before this patch, with the same register values
+written from userspace (letterbox-test.sh phase3, 2026-10-05):
+  - 640x360 -> 1280x720;
+  - 852x480 -> 1278x720;
+  - 720x576 -> 960x720 at (160,0);
+  - 352x288 -> 880x720 at (200,0);
+  - 640x360 -> 960x540 at (160,90).
+All were whole and matched reference renders.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-05 22:36:28.849875691 -0700
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-05 22:42:26.116013797 -0700
+@@ -154,13 +154,16 @@
+ 	u64 target_vblank;
+ };
+ 
+-/* A video picture's size and its offset on the panel, in panel pixels. */
++/*
++ * A video picture: w x h in memory (the source), shown as ow x oh at
++ * (dx, dy) on the panel. ow x oh > w x h means proc magnifies.
++ */
+ struct h713_geom {
+-	u32 w, h, dx, dy;
++	u32 w, h, dx, dy, ow, oh;
+ };
+ 
+ /* Registers the letterbox recipe touches: see h713_lb_fields. */
+-#define H713_LB_MAX_REGS	40
++#define H713_LB_MAX_REGS	48
+ 
+ struct h713_afbd {
+ 	struct drm_device drm;
+@@ -223,12 +226,24 @@
+  *  - Fields marked ABS are the firmware's formula. REL fields are timing
+  *    positions whose fixed per-register delays are not all derived; they are
+  *    the probe snapshot plus f(new) - f(native).
+- *  - comp+0x858[31:16] is the PICTURE height: left at the panel's 720 it
+- *    clips the bottom of every vertically offset picture (bisected on
+- *    hardware 2026-10-05).
++ *  - SOURCE size upstream of proc (AFBD, the NR line buffers and fetch
++ *    window, the route source window, proc's input window); DESTINATION size
++ *    from proc's output on (the route picture and output windows, the panel
++ *    video window, the border overlay). The firmware's one scaled log
++ *    (720x480 -> 1280x720) splits it the same way.
++ *  - comp+0x858[31:16] is the DESTINATION height (NR's out window, in panel
++ *    lines): left at the panel's 720 it clipped every vertically offset
++ *    picture (Phase 1); left at the source height it starved proc and cut a
++ *    magnified picture at H/ratio source lines (Phase 3, 2026-10-05).
++ *  - Proc magnifies up to 4x per axis and cannot shrink: ratio
++ *    (in << 16) / out, fractional phases (unity + ratio) >> 2 (H) and >> 1
++ *    (V), integer phases 3/2 with a unity axis advancing to 4/3
++ *    (ProcWinNode::CalcWindow), bypass only when both axes are at unity,
++ *    and a line-enable length of max(in_h, out_h) -- the grey streak of
++ *    2026-09-13 was that length left at in_h.
+  *
+- * Unscaled only (proc at unity) and NV12 only: the line-buffer descriptors
+- * are not derived for P010.
++ * NV12 only away from the native geometry: the line-buffer descriptors are
++ * not derived for P010.
+  */
+ enum { LB_COMP, LB_ROUTE, LB_PROC, LB_LVDS, LB_VBLEND };
+ 
+@@ -251,10 +266,45 @@
+ /* GetPsuPfuWin's compressed branch: ((0.8 W << 3) + 0x7f) >> 7 = ceil(W/20) */
+ static u32 lb_rowbyte(const struct h713_geom *g) { return DIV_ROUND_UP(g->w, 20); }
+ static u32 lb_one(const struct h713_geom *g) { return 1; }
++static u32 lb_zero(const struct h713_geom *g) { return 0; }
++static u32 lb_ow(const struct h713_geom *g) { return g->ow; }
++static u32 lb_oh(const struct h713_geom *g) { return g->oh; }
++static u32 lb_vlines(const struct h713_geom *g) { return max(g->h, g->oh); }
++
++/* ProcWinNode::CalcScaleRatio (0x8b1a5f98) and CalcWindow (0x8b1a63d0) */
++#define PROC_UNITY	0x10000u
++static u32 lb_ratio_h(const struct h713_geom *g) { return (g->w << 16) / g->ow; }
++static u32 lb_ratio_v(const struct h713_geom *g) { return (g->h << 16) / g->oh; }
++static u32 lb_phase_raw_h(const struct h713_geom *g)
++{
++	return (PROC_UNITY + lb_ratio_h(g)) >> 2;
++}
++static u32 lb_phase_raw_v(const struct h713_geom *g)
++{
++	return (PROC_UNITY + lb_ratio_v(g)) >> 1;
++}
++static u32 lb_phase_h(const struct h713_geom *g)
++{
++	u32 p = lb_phase_raw_h(g);
++
++	return p >= 0x10000 ? 0 : p;
++}
++static u32 lb_phase_v(const struct h713_geom *g)
++{
++	u32 p = lb_phase_raw_v(g);
++
++	return p >= 0x10000 ? 0 : p;
++}
++static u32 lb_int_h(const struct h713_geom *g) { return 3 + (lb_phase_raw_h(g) >= 0x8000); }
++static u32 lb_int_v(const struct h713_geom *g) { return 2 + (lb_phase_raw_v(g) >= 0x10000); }
++static u32 lb_bypass(const struct h713_geom *g)
++{
++	return g->w == g->ow && g->h == g->oh;
++}
+ 
+ /* WriteBorderOverlay1 (0x8b1a55d8): panel 1280x720 assumed by the caller. */
+-static u32 lb_right(const struct h713_geom *g) { return 1280 - g->dx - g->w; }
+-static u32 lb_bottom(const struct h713_geom *g) { return 720 - g->dy - g->h; }
++static u32 lb_right(const struct h713_geom *g) { return 1280 - g->dx - g->ow; }
++static u32 lb_bottom(const struct h713_geom *g) { return 720 - g->dy - g->oh; }
+ static u32 lb_top_0(const struct h713_geom *g) { return g->dy & 0xf; }
+ static u32 lb_top_1(const struct h713_geom *g) { return (g->dy >> 4) & 0xf; }
+ static u32 lb_top_2(const struct h713_geom *g) { return (g->dy >> 8) & 0xf; }
+@@ -288,36 +338,55 @@
+ 	REL(LB_COMP, 0x80c, 0, 16, lb_h),
+ 	REL(LB_COMP, 0x80c, 16, 16, lb_dy),
+ 	REL(LB_COMP, 0x858, 0, 16, lb_dy),
+-	ABS(LB_COMP, 0x858, 16, 16, lb_h),
++	ABS(LB_COMP, 0x858, 16, 16, lb_oh),
+ 	REL(LB_COMP, 0x85c, 0, 16, lb_dx),
+ 	ABS(LB_COMP, 0x85c, 16, 16, lb_w),
+ 	REL(LB_COMP, 0x844, 0, 16, lb_dx),
+ 	ABS(LB_COMP, 0x844, 16, 16, lb_even_w),
+ 	REL(LB_COMP, 0x840, 0, 16, lb_dy),
+ 	ABS(LB_COMP, 0x840, 16, 16, lb_h_plus1),
+-	/* route windows, all at (0, 0) */
++	/*
++	 * route windows, all at (0, 0): source (0x104/0x108/0x11c) is the
++	 * source size; picture (0x124/0x128, the firmware's pic_win) and out
++	 * (0xd40/0xd44) are the destination (0x8b1a6b50, 0x8b1a6bb4)
++	 */
+ 	ABS(LB_ROUTE, 0x104, 16, 16, lb_even_w),
+ 	ABS(LB_ROUTE, 0x108, 16, 16, lb_even_h),
+ 	ABS(LB_ROUTE, 0x11c, 16, 16, lb_h),
+-	ABS(LB_ROUTE, 0x124, 16, 16, lb_w),
+-	ABS(LB_ROUTE, 0x128, 16, 16, lb_h),
+-	ABS(LB_ROUTE, 0xd40, 16, 16, lb_w),
+-	ABS(LB_ROUTE, 0xd44, 16, 16, lb_h),
+-	/* proc instance 0 at unity */
++	ABS(LB_ROUTE, 0x124, 16, 16, lb_ow),
++	ABS(LB_ROUTE, 0x128, 16, 16, lb_oh),
++	ABS(LB_ROUTE, 0xd40, 16, 16, lb_ow),
++	ABS(LB_ROUTE, 0xd44, 16, 16, lb_oh),
++	/* proc instance 0: in = source, out = destination (0x8b1a66d0) */
+ 	ABS(LB_PROC, 0x034, 16, 16, lb_w),
+ 	ABS(LB_PROC, 0x034, 0, 16, lb_h),
+-	ABS(LB_PROC, 0x02c, 0, 16, lb_w),
++	ABS(LB_PROC, 0x02c, 0, 16, lb_ow),
+ 	REL(LB_PROC, 0x02c, 16, 16, lb_dx),
+-	ABS(LB_PROC, 0x030, 0, 16, lb_h),
+-	ABS(LB_PROC, 0x040, 0, 16, lb_w),
++	ABS(LB_PROC, 0x030, 0, 16, lb_oh),
++	ABS(LB_PROC, 0x030, 18, 2, lb_zero),
++	ABS(LB_PROC, 0x040, 0, 16, lb_ow),
+ 	REL(LB_PROC, 0x044, 0, 16, lb_dx),
+-	ABS(LB_PROC, 0x050, 0, 16, lb_h),
++	ABS(LB_PROC, 0x050, 0, 16, lb_vlines),
+ 	REL(LB_PROC, 0x050, 16, 16, lb_dy),
++	/*
++	 * The scaler. 0x038[31:16] is left alone: the firmware derives it from
++	 * a member it never sets, and the firmware's other reading made no
++	 * visible difference on hardware (letterbox Phase 3, step s4h).
++	 */
++	ABS(LB_PROC, 0x000, 0, 16, lb_phase_h),
++	ABS(LB_PROC, 0x038, 0, 16, lb_phase_v),
++	ABS(LB_PROC, 0x008, 0, 22, lb_ratio_h),
++	ABS(LB_PROC, 0x008, 24, 3, lb_int_v),
++	ABS(LB_PROC, 0x008, 28, 3, lb_int_h),
++	ABS(LB_PROC, 0x03c, 0, 22, lb_ratio_v),
++	/* engage last, once the geometry it acts on is in place */
++	ABS(LB_PROC, 0x014, 27, 1, lb_bypass),
++	ABS(LB_PROC, 0x014, 28, 4, lb_zero),
+ 	/* panel video_win_2 sizes; program and crtc windows stay */
+-	ABS(LB_LVDS, 0x03c, 16, 16, lb_w),
+-	ABS(LB_LVDS, 0x040, 16, 16, lb_h),
+-	ABS(LB_LVDS, 0x0a4, 16, 16, lb_w),
+-	ABS(LB_LVDS, 0x0a8, 16, 16, lb_h),
++	ABS(LB_LVDS, 0x03c, 16, 16, lb_ow),
++	ABS(LB_LVDS, 0x040, 16, 16, lb_oh),
++	ABS(LB_LVDS, 0x0a4, 16, 16, lb_ow),
++	ABS(LB_LVDS, 0x0a8, 16, 16, lb_oh),
+ 	/* vblender border overlay */
+ 	ABS(LB_VBLEND, 0x000, 0, 12, lb_right),
+ 	ABS(LB_VBLEND, 0x000, 12, 4, lb_top_0),
+@@ -444,8 +513,8 @@
+ 	unsigned int i;
+ 
+ 	if (h713_lb_words(h, g, words)) {
+-		drm_err(&h->drm, "letterbox %ux%u at (%u,%u) is not expressible\n",
+-			g->w, g->h, g->dx, g->dy);
++		drm_err(&h->drm, "letterbox %ux%u -> %ux%u at (%u,%u) is not expressible\n",
++			g->w, g->h, g->ow, g->oh, g->dx, g->dy);
+ 		return;
+ 	}
+ 
+@@ -465,13 +534,14 @@
+ 					 h->lb_off[i]);
+ 
+ 	h->hw_geom = *g;
+-	drm_dbg_kms(&h->drm, "video picture %ux%u at (%u,%u)\n",
+-		    g->w, g->h, g->dx, g->dy);
++	drm_dbg_kms(&h->drm, "video picture %ux%u shown %ux%u at (%u,%u)\n",
++		    g->w, g->h, g->ow, g->oh, g->dx, g->dy);
+ }
+ 
+ static bool h713_geom_eq(const struct h713_geom *a, const struct h713_geom *b)
+ {
+-	return a->w == b->w && a->h == b->h && a->dx == b->dx && a->dy == b->dy;
++	return a->w == b->w && a->h == b->h && a->dx == b->dx && a->dy == b->dy &&
++	       a->ow == b->ow && a->oh == b->oh;
+ }
+ 
+ static bool h713_afbd_retires_empty(struct h713_afbd *h)
+@@ -671,18 +741,31 @@
+ 	h->video_active = false;
+ }
+ 
++/*
++ * The destination's x, width and height are rounded down to even: the
++ * window layer places and magnifies in pixel pairs. kmssink centres an
++ * aspect-fit rectangle wherever the arithmetic lands -- 852x480 fits as
++ * 1278x720 at x = 1 -- and on any refusal falls back to an unscaled
++ * postage stamp, so the plane shows such a picture at most 1 px off rather
++ * than refusing it. y needs no rounding (an odd y was checked on the panel,
++ * letterbox Phase 2).
++ */
+ static void h713_plane_geom(const struct drm_plane_state *s,
+ 			    struct h713_geom *g)
+ {
+ 	g->w = s->src_w >> 16;
+ 	g->h = s->src_h >> 16;
+-	g->dx = s->crtc_x;
++	g->dx = s->crtc_x & ~1;
+ 	g->dy = s->crtc_y;
++	g->ow = s->crtc_w & ~1;
++	g->oh = s->crtc_h & ~1;
+ }
+ 
+ /*
+- * A picture smaller than the panel, shown unscaled at (crtc_x, crtc_y).
+- * Everything the hardware cannot do is refused here, never in atomic_update:
++ * A picture smaller than the panel, shown at (crtc_x, crtc_y), at its own
++ * size or magnified by proc up to 4x per axis (it cannot shrink: larger
++ * pictures are the VE's to scale down at decode time). Everything the
++ * hardware cannot do is refused here, never in atomic_update:
+  * AFBD rounds the stride up to 16 samples (a pitch that is not a multiple
+  * shears) and fetches whole 16x16 blocks (the buffer must cover them, or the
+  * fetch runs past it and faults the IOMMU).
+@@ -699,10 +782,11 @@
+ 	if (!h->lb_ok || fb->format->format != DRM_FORMAT_NV12)
+ 		return -EINVAL;
+ 	if (s->src_x || s->src_y || (s->src_w & 0xffff) || (s->src_h & 0xffff) ||
+-	    s->crtc_w != g->w || s->crtc_h != g->h ||
+-	    s->crtc_x < 0 || s->crtc_y < 0 || (s->crtc_x & 1) ||
++	    s->crtc_x < 0 || s->crtc_y < 0 ||
+ 	    g->w < 64 || g->h < 64 || (g->w & 1) || (g->h & 1) ||
+-	    g->dx + g->w > h->native.w || g->dy + g->h > h->native.h)
++	    g->ow < g->w || g->oh < g->h ||
++	    g->ow > 4 * g->w || g->oh > 4 * g->h ||
++	    g->dx + g->ow > h->native.w || g->dy + g->oh > h->native.h)
+ 		return -EINVAL;
+ 	if (fb->pitches[1] != pitch || pitch % 16 || pitch < ALIGN(g->w, 16))
+ 		return -EINVAL;
+@@ -732,9 +816,14 @@
+ 	if (IS_ERR(crtc_state))
+ 		return PTR_ERR(crtc_state);
+ 
+-	/* No scaling; positioning only when the letterbox registers are ours. */
++	/*
++	 * Positioning and magnification only when the letterbox registers are
++	 * ours. DRM's scale is source over destination in 16.16, so proc's 4x
++	 * magnification is the MINIMUM and "never shrink" the maximum.
++	 */
+ 	ret = drm_atomic_helper_check_plane_state(new_state, crtc_state,
+-						  DRM_PLANE_NO_SCALING,
++						  h->lb_ok ? DRM_PLANE_NO_SCALING / 4 :
++							     DRM_PLANE_NO_SCALING,
+ 						  DRM_PLANE_NO_SCALING,
+ 						  h->lb_ok, false);
+ 	if (ret)
+@@ -1332,7 +1421,8 @@
+ 	 * them keeps the native-only plane, as does a board whose window layer
+ 	 * does not read as the model predicts.
+ 	 */
+-	h->native = (struct h713_geom){ h->mode.hdisplay, h->mode.vdisplay, 0, 0 };
++	h->native = (struct h713_geom){ h->mode.hdisplay, h->mode.vdisplay, 0, 0,
++					h->mode.hdisplay, h->mode.vdisplay };
+ 	h->hw_geom = h->native;
+ 	if (platform_get_resource_byname(pdev, IORESOURCE_MEM, "comp") &&
+ 	    platform_get_resource_byname(pdev, IORESOURCE_MEM, "proc") &&
+@@ -1349,7 +1439,7 @@
+ 		h->lb_ok = h713_lb_snapshot(h);
+ 	}
+ 	drm_info(drm, "video plane: %s\n", h->lb_ok ?
+-		 "pictures up to the panel size, placed anywhere (letterbox)" :
++		 "pictures up to the panel size, magnified up to 4x and placed anywhere (letterbox)" :
+ 		 "native size only");
+ 
+ 	ret = drmm_mode_config_init(drm);
+@@ -1385,12 +1475,11 @@
+ 	 * already applies when it sanity-checks the adopted geometry.
+ 	 */
+ 	/*
+-	 * With letterbox the plane takes any picture from 64x64 up, unscaled,
++	 * With letterbox the plane takes any picture from 64x64 up,
+ 	 * so the minimum comes down with it -- in the same change, because a
+ 	 * minimum the plane cannot honour only moves the failure to commit.
+-	 * kmssink then negotiates the stream's own size, tries an aspect-fit
+-	 * destination, and on the plane's refusal to scale falls back to the
+-	 * picture centred at native size.
++	 * kmssink then negotiates the stream's own size and commits an
++	 * aspect-fit destination, which proc magnifies to (up to 4x per axis).
+ 	 */
+ 	drm->mode_config.min_width = h->lb_ok ? 64 : h->mode.hdisplay;
+ 	drm->mode_config.max_width = 4096;
+@@ -1426,6 +1515,18 @@
+ 	if (ret)
+ 		return ret;
+ 	drm_plane_helper_add(&h->video_plane, &h713_afbd_video_helper_funcs);
++	/*
++	 * A plane that scales says so: userspace (h713-play) reads the
++	 * property's presence to know proc magnification is available, where
++	 * 0161's lowered framebuffer minimum only says "letterbox". Proc has
++	 * one filter, so Default is the only choice.
++	 */
++	if (h->lb_ok) {
++		ret = drm_plane_create_scaling_filter_property(&h->video_plane,
++				BIT(DRM_SCALING_FILTER_DEFAULT));
++		if (ret)
++			return ret;
++	}
+ 
+ 	drm_mode_config_reset(drm);
+ 

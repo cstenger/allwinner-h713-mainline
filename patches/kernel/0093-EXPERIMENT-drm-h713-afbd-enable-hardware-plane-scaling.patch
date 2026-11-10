@@ -1,0 +1,127 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Thu, 3 Sep 2026 23:30:00 -0700
+Subject: [PATCH] drm: h713-afbd: enable hardware plane scaling on video overlay
+
+Allow the video overlay plane to accept and display frames scaled between
+0.5x and 2.0x (specifically enabling 1920x1080 -> 1280x720 downscaling).
+Calculate the plane size, block count, and strides dynamically per frame,
+and update the VideoInfo descriptor with the actual frame dimensions
+so the TVDISP hardware scaler at 0x05000000 scales directly to the panel.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ drivers/gpu/drm/tiny/sun50i-h713-afbd.c | 59 ++++++++++++++++++++++++---------
+ 1 file changed, 44 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -258,6 +258,7 @@ static int h713_afbd_video_atomic_check(struct drm_plane *plane,
+ 	struct drm_crtc_state *crtc_state;
+ 	struct drm_framebuffer *fb;
+ 	dma_addr_t y, c;
++	u32 src_w, src_h;
+ 	int ret;
+ 
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+@@ -268,26 +269,32 @@ static int h713_afbd_video_atomic_check(struct drm_plane *plane,
+ 	if (IS_ERR(crtc_state))
+ 		return PTR_ERR(crtc_state);
+ 
++	/*
++	 * Allow scaling up to 2:1 downscale (0x20000) or 1:2 upscale (0x08000).
++	 * 1920x1080 -> 1280x720 is 1.5x downscale (0x18000), supported by hardware.
++	 */
+ 	ret = drm_atomic_helper_check_plane_state(new_state, crtc_state,
+-						  DRM_PLANE_NO_SCALING,
+-						  DRM_PLANE_NO_SCALING,
+-						  false, false);
++						  (1 << 16) / 2,
++						  (1 << 16) * 2,
++						  true, false);
+ 	if (ret)
+ 		return ret;
+ 
+ 	fb = new_state->fb;
+ 	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
+-	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
+-	    fb->width != H713_VIDEO_WIDTH ||
+-	    fb->height != H713_VIDEO_HEIGHT ||
+-	    fb->pitches[0] != H713_VIDEO_STRIDE ||
+-	    fb->pitches[1] != H713_VIDEO_STRIDE ||
+-	    new_state->src_x || new_state->src_y ||
+-	    new_state->src_w != H713_VIDEO_WIDTH << 16 ||
+-	    new_state->src_h != H713_VIDEO_HEIGHT << 16 ||
++	    fb->modifier != DRM_FORMAT_MOD_LINEAR)
++		return -EINVAL;
++
++	src_w = new_state->src_w >> 16;
++	src_h = new_state->src_h >> 16;
++
++	if (new_state->src_x || new_state->src_y ||
+ 	    new_state->crtc_x || new_state->crtc_y ||
+ 	    new_state->crtc_w != H713_VIDEO_WIDTH ||
+-	    new_state->crtc_h != H713_VIDEO_HEIGHT)
++	    new_state->crtc_h != H713_VIDEO_HEIGHT ||
++	    src_w < 640 || src_w > 1920 ||
++	    src_h < 360 || src_h > 1088 ||
++	    fb->pitches[0] < src_w || fb->pitches[1] < src_w)
+ 		return -EINVAL;
+ 
+ 	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
+@@ -304,12 +311,23 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 	struct drm_plane_state *new_state;
+ 	struct h713_afbd *h = to_h713(plane->dev);
+ 	dma_addr_t y, c;
++	u32 src_w, src_h, y_stride, c_stride;
++	u32 size_m1, block_m1;
++	u32 *v;
+ 	unsigned int i;
+ 
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+ 	y = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 0);
+ 	c = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 1);
+ 
++	src_w = new_state->src_w >> 16;
++	src_h = new_state->src_h >> 16;
++	y_stride = new_state->fb->pitches[0];
++	c_stride = new_state->fb->pitches[1];
++
++	size_m1 = ((src_h - 1) << 16) | ((src_w - 1) & 0xffff);
++	block_m1 = ((DIV_ROUND_UP(src_h, 16) - 1) << 16) | ((DIV_ROUND_UP(src_w, 16) - 1) & 0xffff);
++
+ 	/* The hardware mux is exclusive: quiesce RGB before source 0. */
+ 	if (!h->video_active) {
+ 		writel((h->rgb_ctrl_active | BIT(31)) & ~BIT(0),
+@@ -318,14 +336,27 @@ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 		h713_afbd_wait_ready(h, AFBD_READY, "RGB disable");
+ 	}
+ 
+-	writel(H713_VIDEO_SIZE_M1, h->regs + AFBD_VIDEO_SIZE_M1);
+-	writel(H713_VIDEO_BLOCK_M1, h->regs + AFBD_VIDEO_BLOCK_M1);
+-	writel(H713_VIDEO_STRIDE, h->regs + AFBD_VIDEO_Y_STRIDE);
+-	writel(H713_VIDEO_STRIDE, h->regs + AFBD_VIDEO_C_STRIDE);
++	writel(size_m1, h->regs + AFBD_VIDEO_SIZE_M1);
++	writel(block_m1, h->regs + AFBD_VIDEO_BLOCK_M1);
++	writel(y_stride, h->regs + AFBD_VIDEO_Y_STRIDE);
++	writel(c_stride, h->regs + AFBD_VIDEO_C_STRIDE);
+ 	writel(1, h->regs + AFBD_VIDEO_GATE);
+ 	writel(0, h->regs + AFBD_VIDEO_FIELD);
+ 	writel(0x00000122, h->regs + AFBD_VIDEO_RING_MUX);
+ 
++	/* Update VideoInfo descriptor for the current frame geometry. */
++	v = h->video_info;
++	v[0x08 / 4] = src_w;
++	v[0x0c / 4] = src_h;
++	v[0x10 / 4] = src_w;
++	v[0x14 / 4] = src_h;
++	v[0x18 / 4] = 0;
++	v[0x1c / 4] = src_h;
++	v[0x20 / 4] = 0;
++	v[0x24 / 4] = src_w;
++	v[0x58 / 4] = src_w;
++	dma_wmb();
++
+ 	/*
+ 	 * The live display service consumes a complete four-entry queue. A
+ 	 * repeated frame is the proven static representation of one KMS buffer.

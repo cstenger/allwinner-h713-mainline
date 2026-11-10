@@ -1,0 +1,142 @@
+media: cedrus: scale VP9 with the polyphase scaler
+
+VP9 runs on the H.265 engine, and the engine's secondary output feeds
+the VE+0xf00 polyphase scaler for VP9 exactly as it does for H.265.
+Two independent sources give the same recipe:
+
+  - stock Android scaling 3840x2160 VP9 to 1920x1080 (stock capture
+    2026-10-01, case 50-vp9-2160-2, caught mid-frame): engine func_ctrl
+    0x207 (bit 9 = secondary output), secondary luma/chroma at
+    +0x54/+0x58 as address >> 8, and VE top and TOP1 words identical
+    to stock's 4K HEVC case;
+  - Jernej Skrabec's H6 VP9 P010 support (LibreELEC PR 11799,
+    0413-media-cedrus-Add-VP9-P010-output-support): func_ctrl bit 9,
+    +0x50 = 0, +0x54/+0x58 = address >> 8.
+
+So admit VP9 to cedrus_can_scale() and give cedrus_sd_program() a VP9
+branch. It differs from H.265 in two places:
+
+  - +0x80 is H.265's LOW_ADDR, which carries the low byte of the
+    secondary chroma address. VP9 has no such register (stock leaves
+    +0x80 zero), so the chroma base must be 256-byte aligned. For VP9
+    the scaled capture's pitch is widened just enough for
+    bytesperline * height to be; at a 1280 pitch, or any height that
+    is a multiple of 8, nothing changes.
+  - func_ctrl was already written by cedrus_vp9_setup(), with the
+    vendor's DDR-consistency width band, so bit 9 is added to it
+    rather than the register being rebuilt.
+
+cedrus_vp9_align() derives the reference pitch field from the capture
+pitch. While scaling, references are the private full-size
+reconstructions, so it reads the reconstruction's pitch instead.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.h
+@@ -320,12 +320,16 @@
+ 	return vb2_v4l2_to_cedrus_buffer(to_vb2_v4l2_buffer(p));
+ }
+ 
+-/* The group-7 datapath is validated on H713, not on its H6 DT fallback. */
++/*
++ * The group-7 datapath is validated on H713, not on its H6 DT fallback.
++ * VP9 runs on the H.265 engine and feeds the scaler the same way.
++ */
+ static inline bool cedrus_can_scale(struct cedrus_ctx *ctx)
+ {
+ 	return (ctx->dev->capabilities & CEDRUS_CAPABILITY_POLYPHASE) &&
+ 	       (ctx->src_fmt.pixelformat == V4L2_PIX_FMT_H264_SLICE ||
+-		ctx->src_fmt.pixelformat == V4L2_PIX_FMT_HEVC_SLICE);
++		ctx->src_fmt.pixelformat == V4L2_PIX_FMT_HEVC_SLICE ||
++		ctx->src_fmt.pixelformat == V4L2_PIX_FMT_VP9_FRAME);
+ }
+ 
+ /*
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -283,6 +283,39 @@
+ 
+ }
+ 
++/*
++ * VP9 runs on the H.265 engine, and its secondary output is the same three
++ * registers: ctrl at +0x50, luma and chroma at +0x54/+0x58 shifted right by 8,
++ * enabled by bit 9 of the engine's func_ctrl. Stock's 4K VP9 playback
++ * (cedarc's scaler open, 3840x2160 -> 1920x1080) programs exactly that,
++ * func_ctrl 0x207, and Jernej Skrabec's H6 VP9 P010 support drives the same
++ * bit and addresses. Two differences from H.265:
++ *
++ *  - +0x80 is not H.265's LOW_ADDR here, and stock leaves it 0. There is
++ *    nowhere for the chroma address's low byte to go, so the chroma base
++ *    must be 256-byte aligned; cedrus_prepare_capture_format() sees to it.
++ *  - cedrus_vp9_setup() has already written func_ctrl, including the DDR
++ *    consistency bit the vendor sets for one width band. Add bit 9 to it
++ *    rather than rebuilding it.
++ */
++static void cedrus_sd_program_vp9(struct cedrus_ctx *ctx, dma_addr_t luma,
++				  dma_addr_t chroma)
++{
++	struct cedrus_dev *dev = ctx->dev;
++
++	cedrus_write(dev, VE_DEC_H265_SDRT_LUMA_ADDR,
++		     (u32)(luma >> VE_DEC_H265_SDRT_ADDR_SHIFT));
++	cedrus_write(dev, VE_DEC_H265_SDRT_CHROMA_ADDR,
++		     (u32)(chroma >> VE_DEC_H265_SDRT_ADDR_SHIFT));
++
++	/* No power-of-two shift: TOP1 does all of the scaling, as for H.265. */
++	cedrus_write(dev, VE_DEC_H265_SDRT_CTRL, 0);
++
++	cedrus_write(dev, VE_DEC_H265_CTRL,
++		     cedrus_read(dev, VE_DEC_H265_CTRL) |
++		     VE_DEC_H265_CTRL_ROTATE_SCALE_OUT_EN);
++}
++
+ void cedrus_sd_program(struct cedrus_ctx *ctx, struct vb2_buffer *dst)
+ {
+ 	struct cedrus_dev *dev = ctx->dev;
+@@ -310,6 +343,8 @@
+ 
+ 	if (ctx->src_fmt.pixelformat == V4L2_PIX_FMT_HEVC_SLICE) {
+ 		cedrus_sd_program_h265(ctx, luma, chroma);
++	} else if (ctx->src_fmt.pixelformat == V4L2_PIX_FMT_VP9_FRAME) {
++		cedrus_sd_program_vp9(ctx, luma, chroma);
+ 	} else {
+ 		cedrus_write(dev, VE_H264_SDROT_LUMA_ADDR, (u32)luma);
+ 		cedrus_write(dev, VE_H264_SDROT_CHROMA_ADDR, (u32)chroma);
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_video.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_video.c
+@@ -377,6 +377,16 @@
+ 		 */
+ 		pix_fmt->bytesperline = ALIGN(pix_fmt->bytesperline, 32);
+ 		/*
++		 * VP9 has no low-address register for the secondary chroma, so
++		 * its base, bytesperline * height, must be 256-byte aligned.
++		 * Widen the pitch only as far as the height needs: a 1280
++		 * pitch, or any height that is a multiple of 8, is unchanged.
++		 */
++		if (ctx->src_fmt.pixelformat == V4L2_PIX_FMT_VP9_FRAME && height)
++			pix_fmt->bytesperline =
++				ALIGN(pix_fmt->bytesperline,
++				      max(32U, 256U >> min(__ffs(height), 8UL)));
++		/*
+ 		 * Chroma starts right after the scaled height, where
+ 		 * cedrus_buf_addr() points the scaler, but the display plane
+ 		 * fetches in 16-line blocks: at 534 lines it reads 544/2
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_vp9.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_vp9.c
+@@ -643,7 +643,13 @@
+  */
+ static u32 cedrus_vp9_align(struct cedrus_ctx *ctx, unsigned int width)
+ {
+-	unsigned int pitch = ctx->dst_fmt.bytesperline;
++	/*
++	 * References are reconstructions: while scaling they live in the
++	 * private full-size frames, at the reconstruction's pitch, and the
++	 * capture pitch describes the scaled picture instead.
++	 */
++	unsigned int pitch = cedrus_scaling(ctx) ? ctx->recon_fmt.bytesperline
++						 : ctx->dst_fmt.bytesperline;
+ 	unsigned int v;
+ 
+ 	for (v = 1; v < 8; v++)

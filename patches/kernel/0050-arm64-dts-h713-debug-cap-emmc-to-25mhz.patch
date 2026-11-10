@@ -1,0 +1,40 @@
+From: h713 <build@h713>
+Date: Fri, 21 Aug 2026 18:30:00 -0700
+Subject: [PATCH] arm64: dts: h713: DEBUG cap the eMMC to 25 MHz
+
+Debug only -- never put this in the shipping series.
+
+The eMMC's read throughput is limited by its NAND at about 118 MB/s, far below
+either candidate bus rate (400 MB/s if the card clock really is the labelled
+200 MHz, 800 MB/s if it is the 400 MHz the CCU divider chain actually emits).
+So a payload-timing probe at the normal rate measures the media and says
+nothing about the clock.
+
+Capping the ceiling to 25 MHz moves the bottleneck onto the bus, where the two
+hypotheses separate cleanly:
+
+  card clock == label   ->  25 MHz
+  card clock == 2x label ->  50 MHz
+
+Both are far under the 118 MB/s media ceiling, so whichever the probe measures
+is the answer.  Drop the HS200/HS400/DDR mode flags too, so the card negotiates
+a plain high-speed mode at that rate rather than failing to tune.
+
+---
+ arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -901,10 +901,7 @@
+ 			bus-width = <8>;
+ 			non-removable;
+ 			cap-mmc-highspeed;
+-			mmc-ddr-1_8v;
+-			mmc-hs200-1_8v;
+-			mmc-hs400-1_8v;
+-			max-frequency = <200000000>;
++			max-frequency = <25000000>;
+ 			status = "okay";
+ 		};
+

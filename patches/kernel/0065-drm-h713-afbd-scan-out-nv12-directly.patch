@@ -1,0 +1,242 @@
+From: h713 <h713@local>
+Date: Mon, 25 Aug 2026 00:20:00 -0700
+Subject: [PATCH] drm: h713-afbd: scan out NV12 directly
+
+The CPU colour-conversion path costs 3.15 fps default and 14.93 fps with
+videoconvert n-threads=4, because the decoder's CAPTURE buffers are uncached
+CMA and reading them runs at ~44 MB/s. The GPU path avoids that entirely and
+sustains 59.71 fps. This adds a third option that costs neither: let the
+display fetch the decoder's NV12 and do the colour conversion at scanout,
+which is what the vendor stack does -- "the vendor never reads the decoded
+frame on the CPU".
+
+THE REGISTERS ARE A SEPARATE PATH, not a mode of the existing one. AFBD_SRC
+takes a single packed source and is the RGB path. NV12 needs a format selector,
+both plane strides, both plane addresses, and an explicit publish:
+
+  0x011  format   fmt_attr_tbl row index; 3 = 8-bit YUV420
+  0x040  stride   luma bytes per line
+  0x044  stride   chroma bytes per line
+  0x070  address  Y plane, physical
+  0x084  address  C plane, physical
+  0x06c  dirty    write 1 to publish
+
+WHY THIS WAS PREVIOUSLY THOUGHT IMPOSSIBLE, because the trail matters. The
+2026-08-09 and 2026-08-12 attempts set the format byte and kept feeding
+AFBD_SRC. The fetch therefore stayed 4 bytes/pixel and packed four source rows
+into every display row -- the "4x repeat, greyscale" photographs. From that
+null came the conclusion that this is a UI channel and Allwinner UI channels
+are RGB-only, which was recorded at the time as an inference and later found
+to be wrong: AFBD_PLANE_ADDR0/1 read zero throughout those runs and were
+dismissed as "a parallel mechanism we do not use". They are the mechanism.
+The addresses here come from the vendor's dec_reg_set_address() (base + 0x60,
+index 0 at +16 and +36) and dec_reg_set_dirty().
+
+The RGB path is left byte-for-byte as it was. The format selector is only
+written when the format actually changes, and h->format is seeded at probe
+with what U-Boot leaves running, so an RGB-only session issues exactly the
+same register writes as before this patch.
+
+NOT YET CONFIRMED ON HARDWARE at the time of writing: the individual registers
+were verified to accept and retain values, and the sequence is the vendor's,
+but the complete NV12 scanout has never been run. If it produces the 4x-repeat
+signature again, the fetch is still packed and the format selector is not what
+this patch assumes.
+
+
+=======================================================================
+REFUTED ON HARDWARE 2026-08-25. NOT IN series. KEPT FOR THE TRAIL.
+=======================================================================
+
+This patch is correct about everything except the one thing that matters:
+the registers it writes are not in the scanout path.
+
+Applied, built and booted. kmssink negotiated NV12 (it had failed to before),
+and every value landed in hardware exactly as intended -- read back live while
+a 1280x720 NV12 SMPTE source was streaming:
+
+    0x05600011 = 0x03          format selector, NV12 row
+    0x05600040 = 0x00000500    luma stride 1280
+    0x05600044 = 0x00000500    chroma stride 1280
+    0x05600070 = 0x77100000    Y plane
+    0x05600084 = 0x771E1000    C plane   (C - Y = 0xE1000 = 1280*720 exactly)
+
+The operator saw no colour bars. The panel still showed the login prompt.
+Reading the channel-1 block that this driver actually scans out of, during the
+same run, says why:
+
+    0x05600170 = 0x00001400    stride 5120 = 1280 * 4 bytes/pixel
+    0x05600178 = 0x76D00000    still the fbcon RGB framebuffer
+    0x05600140 = 0x03001901    vendor RGB ctrl, untouched
+
+The fetch never stopped being packed RGB from AFBD_SRC. The dirty latch at
+0x0560006c read back 0.
+
+CONCLUSION: 0x011/0x040/0x044/0x06c/0x070/0x084 are DECD's frame-submit
+register file, driving a SEPARATE video plane. They are not a YUV mode of the
+AFBD channel this driver flips. Writing them configures a plane that is not in
+the active pipeline, which is why the sequence is inert rather than wrong.
+
+This is the outcome video-decode.md predicted in its sequencing note -- "then
+discover whether DECD can feed it at all given its registers are not in the
+scanout path". That question now has an answer: it cannot, not without opening
+the plane first.
+
+Note what this does NOT refute. The register semantics recovered from the
+vendor driver look right: the selector accepts 3, and the two plane addresses
+are laid out exactly as NV12 requires. What is missing is the plane-open /
+topology step, which the plane hunt established cannot be poked into a running
+pipeline. Reviving this patch means doing that work first; on its own it only
+adds a format that negotiates and shows nothing, which is a trap for the next
+person, and is why it is out of series.
+
+---
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -67,6 +67,35 @@
+ #define AFBD_STRIDE		0x170	/* bytes per line */
+ #define AFBD_SRC		0x178	/* source physical address */
+ 
++/*
++ * The two-plane YUV path, which is a different set of registers rather than a
++ * variation on the one above. AFBD_SRC feeds a single packed source and is the
++ * RGB path; NV12 needs the format selector, both plane strides, both plane
++ * addresses, and an explicit publish.
++ *
++ * This is why the 2026-08-09 and 2026-08-12 attempts failed and why the
++ * "UI channels are RGB-only" conclusion drawn from them was wrong: they set the
++ * format byte and kept feeding AFBD_SRC, so the fetch stayed 4 bytes/pixel and
++ * packed four source rows into every display row. AFBD_PLANE_ADDR0/1 read zero
++ * throughout and were dismissed as a mechanism we did not use; they are the
++ * mechanism. Recovered from the vendor's dec_reg_set_address() (base + 0x60,
++ * index 0 at +16 and +36) and dec_reg_set_dirty().
++ */
++#define AFBD_FORMAT		0x011	/* byte: fmt_attr_tbl row index */
++#define AFBD_PLANE_STRIDE0	0x040	/* luma bytes per line */
++#define AFBD_PLANE_STRIDE1	0x044	/* chroma bytes per line */
++#define AFBD_DIRTY		0x06c	/* write 1 to publish the config */
++#define AFBD_PLANE_ADDR0	0x070	/* Y plane physical address */
++#define AFBD_PLANE_ADDR1	0x084	/* C plane physical address */
++
++/*
++ * fmt_attr_tbl row indices, not DEC_FORMAT_* ids. Row 0 is what the live path
++ * U-Boot leaves running reads as; the vendor writes 6 and 7 for 10-bit YUV420
++ * and AV1, which puts 8-bit NV12 at row 3.
++ */
++#define AFBD_FMT_RGB888		0
++#define AFBD_FMT_NV12		3
++
+ #define AFBD_IRQ_VSYNC		BIT(0)
+ #define AFBD_STATUS_DONE	BIT(1)
+ 
+@@ -79,6 +108,7 @@
+ 	struct clk *clk_bus;
+ 	struct drm_display_mode mode;
+ 	unsigned int stride;
++	u32 format;		/* last DRM fourcc programmed */
+ };
+ 
+ static inline struct h713_afbd *to_h713(struct drm_device *drm)
+@@ -91,17 +121,49 @@
+  * gles-play's commit path, minus its 50 ms poll for STATUS_DONE: here the
+  * vblank interrupt reports completion, so nothing spins.
+  */
+-static void h713_afbd_set_source(struct h713_afbd *h, dma_addr_t addr,
+-				 unsigned int stride)
++static void h713_afbd_set_source(struct h713_afbd *h,
++				 struct drm_plane_state *state)
+ {
++	struct drm_framebuffer *fb = state->fb;
+ 	u32 pending;
+ 
+-	if (stride != h->stride) {
+-		writel(stride, h->regs + AFBD_STRIDE);
+-		h->stride = stride;
+-	}
++	if (fb->format->format == DRM_FORMAT_NV12) {
++		dma_addr_t y = drm_fb_dma_get_gem_addr(fb, state, 0);
++		dma_addr_t c = drm_fb_dma_get_gem_addr(fb, state, 1);
++
++		if (h->format != DRM_FORMAT_NV12) {
++			writeb(AFBD_FMT_NV12, h->regs + AFBD_FORMAT);
++			h->format = DRM_FORMAT_NV12;
++			/* Force the RGB stride to be rewritten on the way back. */
++			h->stride = 0;
++		}
++
++		writel(fb->pitches[0], h->regs + AFBD_PLANE_STRIDE0);
++		writel(fb->pitches[1], h->regs + AFBD_PLANE_STRIDE1);
++		writel(lower_32_bits(y), h->regs + AFBD_PLANE_ADDR0);
++		writel(lower_32_bits(c), h->regs + AFBD_PLANE_ADDR1);
++		writel(1, h->regs + AFBD_DIRTY);
++	} else {
++		unsigned int stride = fb->pitches[0];
+ 
+-	writel(lower_32_bits(addr), h->regs + AFBD_SRC);
++		/*
++		 * Only touched when coming back from NV12. U-Boot leaves the
++		 * selector on the RGB row, so the packed path stays exactly as
++		 * it was before this register was known about.
++		 */
++		if (h->format != fb->format->format) {
++			writeb(AFBD_FMT_RGB888, h->regs + AFBD_FORMAT);
++			h->format = fb->format->format;
++		}
++
++		if (stride != h->stride) {
++			writel(stride, h->regs + AFBD_STRIDE);
++			h->stride = stride;
++		}
++
++		writel(lower_32_bits(drm_fb_dma_get_gem_addr(fb, state, 0)),
++		       h->regs + AFBD_SRC);
++	}
+ 
+ 	pending = readl(h->regs + AFBD_STATUS);
+ 	if (pending)
+@@ -122,10 +184,7 @@
+ 	 * buffer the client handed us so the first commit is not a no-op.
+ 	 */
+ 	if (plane_state->fb)
+-		h713_afbd_set_source(h,
+-				     drm_fb_dma_get_gem_addr(plane_state->fb,
+-							     plane_state, 0),
+-				     plane_state->fb->pitches[0]);
++		h713_afbd_set_source(h, plane_state);
+ 
+ 	drm_crtc_vblank_on(&pipe->crtc);
+ }
+@@ -150,9 +209,7 @@
+ 	unsigned long flags;
+ 
+ 	if (state->fb)
+-		h713_afbd_set_source(h,
+-				     drm_fb_dma_get_gem_addr(state->fb, state, 0),
+-				     state->fb->pitches[0]);
++		h713_afbd_set_source(h, state);
+ 
+ 	spin_lock_irqsave(&crtc->dev->event_lock, flags);
+ 	event = crtc->state->event;
+@@ -256,6 +313,12 @@
+ static const u32 h713_afbd_formats[] = {
+ 	DRM_FORMAT_XRGB8888,
+ 	DRM_FORMAT_ARGB8888,
++	/*
++	 * Two-plane YUV straight off the decoder: no colour conversion on the
++	 * CPU and none on the GPU, which is how the vendor stack drives this
++	 * display. See AFBD_PLANE_ADDR0/1 above.
++	 */
++	DRM_FORMAT_NV12,
+ };
+ 
+ /*
+@@ -280,6 +343,9 @@
+ 	}
+ 
+ 	h->stride = readl(h->regs + AFBD_STRIDE);
++	/* U-Boot leaves the packed RGB path running; match it so the first
++	 * RGB commit does not rewrite a selector that is already correct. */
++	h->format = DRM_FORMAT_XRGB8888;
+ 	drm_info(drm, "adopting %ux%u, stride %u, source %08x\n",
+ 		 w, hgt, h->stride, readl(h->regs + AFBD_SRC));
+ 

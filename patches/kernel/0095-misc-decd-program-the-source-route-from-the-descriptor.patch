@@ -1,0 +1,296 @@
+misc: decd: program the source route from the submitted descriptor
+
+Moves the DECD source route out of shell and into the driver: seven geometry
+words, source enable, two-plane format byte and the config commit, all derived
+from the submitted descriptor.  Hardware-verified 2026-09-08 -- the colour-bar
+test frame renders correctly with the driver programming the block and no shell
+writes to it at all.
+
+  decd 5600000.dec: DECD route: 1280x720 stride 1280 hw-format 3
+
+THE COMMIT AT 0x05600014 RETIRES ON VSYNC.  This is the whole reason the patch
+was hard, and it is not written down anywhere else.
+
+Every shell recipe that ever worked wrote the registers through separate devmem
+processes and then slept 100 ms -- six vsyncs -- before touching anything else.
+Issued back to back from the kernel the commit gets microseconds, does not
+retire, and the hardware silently ignores the configuration.  The registers
+still read back exactly right, so the failure is invisible to a register dump:
+
+  - the frame renders DOUBLED side by side at half height, the signature of a
+    2-bytes-per-pixel fetch (each display row consumes two source rows, so even
+    rows land left, odd rows right, and 720 rows end at display row 360)
+  - a full dump of the afbd block (0x05600000..0x1FF), the top block
+    (0x05700000..0xFF) and the whole composition page (0x05000000..0x87c) is
+    BYTE-IDENTICAL between a working run and a broken one
+
+The only differing words were +0x630..+0x648, which the 2026-08-31 composition
+capture already identifies as live per-frame telemetry -- a symptom of the
+different picture, not a cause.
+
+So the route polls the latch until it reads 0 (consume-on-write) with a 50 ms
+budget, three vsyncs of margin.  An earlier attempt polled 10 ms and gave up
+before the first frame boundary ever arrived, which logged "source commit did
+not retire" and reproduced the doubling exactly.
+
+ORDERING.  The route is staged in frame_item_create() and applied from the
+submit ioctl AFTER dec_reg_enable(), not before.  docs/ge2d-plane-open-re.md
+records that the vendor never writes the format selector alone -- it is always
+accompanied by dec_reg_mux_select(), dec_reg_top_enable() and dec_reg_enable()
+-- and the recorded rule is likewise "after dec_reg_enable()".
+
+Within the route, commit the config while the format byte still reads 0, then
+switch the byte.  0x05600014 commits the SOURCE CONFIG; 0x0560006c publishes
+the PLANE ADDRESSES.  Both are needed and they are not interchangeable.
+
+The route is applied per stream, and re-applied whenever the source enable bits
+are clear -- caching on geometry alone silently skips it after anything
+disables the source between streams, such as the ordering rule that requires
+the source be off across an IOMMU bypass flip.
+
+item->format_shadow was hardcoded to 0 (= RGB888), which is why every trace
+reported format 0 while the panel was fed NV12: the byte was only ever traced,
+never programmed, so whatever U-Boot left in 0x05600011 stayed.  It now comes
+from fmt_attr_tbl column 8.  Only the descriptor-format-6 -> hardware-format-3
+path (linear 8-bit NV12) is hardware-verified; auto_route=0 falls back to
+manual routing.
+
+DELIBERATELY NOT INCLUDED: chroma gain 0x05140508 and plane selector
+0x051c006c.  They live in the display engine, are not mapped by this driver,
+and are shared with the MIPS logo path.  Routing the panel to video is a
+display-ownership decision, not a decoder one.
+
+Still undecoded: 0x05600024 = 0x002C004F, the crop origin, is carried through
+as a constant from the verified recipe.
+
+--- a/drivers/misc/sunxi_decd/decd_hw.c
++++ b/drivers/misc/sunxi_decd/decd_hw.c
+@@ -3,6 +3,7 @@
+ #include <linux/bitops.h>
+ #include <linux/clk.h>
+ #include <linux/interrupt.h>
++#include <linux/delay.h>
+ #include <linux/io.h>
+ #include <linux/ktime.h>
+ #include <linux/pm_runtime.h>
+@@ -291,6 +292,94 @@
+ 	writeb((v & ~BIT(4)) | (on ? BIT(4) : 0), regs->workaround + 0x04);
+ }
+ 
++/*
++ * dec_reg_route_nv12 -- program the source configuration for a linear two-plane
++ * YUV frame, in DECD's own register block.
++ *
++ * Hardware-verified 2026-09-08 (docs/reference/nv12-scanout-solved-2026-09-08).
++ * Until now this was applied by hand from shell before every run.
++ *
++ * TWO LATCHES, DIFFERENT JOBS -- this is the whole trick:
++ *
++ *   0x14  commits the SOURCE CONFIG    (geometry words + source enable)
++ *   0x6c  publishes the PLANE ADDRESSES (two-plane YUV path)
++ *
++ * Both are required.  Writing only 0x6c leaves the geometry and enable
++ * uncommitted: they read back correctly and the fetcher still has no valid
++ * picture, so it fetches nothing and the panel shows SOLID GREEN (Y=U=V=0
++ * through BT.601 clamps R and B to 0 and gives G ~= 135).  That cost four
++ * operator looks before it was found.
++ *
++ * ORDER IS LOAD-BEARING: commit the config while the format byte still reads 0,
++ * then switch the byte to the two-plane format.  The plane addresses and the
++ * 0x6c publish are NOT done here -- the per-frame path already writes the four
++ * ring slots and calls dec_reg_set_dirty() after slot 3.
++ *
++ * The chroma gain (0x05140508) and the plane selector (0x051c006c) are
++ * deliberately NOT touched: they live in the display engine, are not mapped by
++ * this driver, and are shared with the MIPS logo path.  Routing the panel to
++ * video is a display-ownership decision, not a decoder one.
++ */
++void dec_reg_route_nv12(struct dec_reg_block *regs, u32 w, u32 h, u32 stride,
++			u8 hw_format)
++{
++	void __iomem *b;
++	int i;
++
++	if (!regs || !regs->afbd || !w || !h || !stride)
++		return;
++
++	b = regs->afbd;
++
++	writel(((h - 1) << 16) | (w - 1), b + 0x20);	/* crop, minus one */
++	writel(0x002C004F,                b + 0x24);	/* origin; constant from
++							 * the verified recipe,
++							 * not yet decoded */
++	writel((h << 16) | w,             b + 0x30);	/* picture size */
++	writel((h << 16) | w,             b + 0x48);
++	writel(((h / 2) << 16) | w,       b + 0x4c);	/* chroma is half height */
++	writel(stride,                    b + 0x40);	/* luma pitch */
++	writel(stride,                    b + 0x44);	/* chroma pitch */
++
++	/*
++	 * Commit the configuration, WAIT FOR THE LATCH TO CONSUME, then select
++	 * the two-plane format.
++	 *
++	 * The wait is the point.  The shell recipe this replaces wrote every
++	 * register through a separate devmem process, so the commit had ~10 ms to
++	 * retire before anything else touched the block.  Issued back to back from
++	 * the kernel it gets microseconds, and the result is a frame rendered
++	 * doubled side by side at half height -- a 2-bytes-per-pixel fetch -- with
++	 * a register dump that is byte-identical to a working run across the afbd
++	 * block, the top block and the whole composition page.  Only the timing
++	 * differs, and no dump can show it.
++	 *
++	 * 0x14 is consume-on-write: reading 0 means it retired.
++	 */
++	writel(0x03000013, b + 0x10);
++	writel(1,          b + 0x14);
++
++	/*
++	 * Must outlast a vsync: the commit retires on the frame boundary, which
++	 * is 16.7 ms at 60 Hz.  The first version polled 1000 x 10 us = 10 ms and
++	 * gave up before the first vsync ever arrived -- "source commit did not
++	 * retire" -- so the format byte was written while the latch was still
++	 * pending.  The shell recipe this replaces always had a 100 ms sleep here,
++	 * six vsyncs, which is why it never hit this.  5000 x 10 us = 50 ms is
++	 * three vsyncs of margin.
++	 */
++	for (i = 0; i < 5000; i++) {
++		if (!readl(b + 0x14))
++			break;
++		udelay(10);
++	}
++	if (readl(b + 0x14))
++		pr_warn("sunxi-decd: source commit did not retire\n");
++
++	udelay(200);
++	writeb(hw_format,  b + 0x11);
++}
++
+ /* IDA 0x39f8: *(result+8) = workaround, offset +12 */
+ void dec_reg_set_dirty(struct dec_reg_block *regs, bool dirty)
+ {
+--- a/drivers/misc/sunxi_decd/decd_types.h
++++ b/drivers/misc/sunxi_decd/decd_types.h
+@@ -246,6 +246,17 @@
+ 	struct device *chrdev;
+ 
+ 	struct dec_reg_block *regs;
++	/* last route programmed, so it is applied per stream not per frame */
++	u32 routed_w;
++	u32 routed_h;
++	u32 routed_stride;
++	u8 routed_format;
++	/* staged by frame_item_create, applied after dec_reg_enable() */
++	bool route_pending;
++	u32 route_w;
++	u32 route_h;
++	u32 route_stride;
++	u8 route_format;
+ 	int irq;
+ 	u32 clk_rate;
+ 	struct clk *clk_afbd;
+@@ -307,6 +318,8 @@
+ void dec_reg_set_address(struct dec_reg_block *regs, u32 *planes, u32 aux,
+ 			 char field, int idx);
+ int dec_reg_video_channel_attr_config(struct dec_reg_block *regs, u32 *cfg);
++void dec_reg_route_nv12(struct dec_reg_block *regs, u32 w, u32 h,
++			u32 stride, u8 hw_format);
+ void dec_reg_set_dirty(struct dec_reg_block *regs, bool dirty);
+ bool dec_reg_is_dirty(struct dec_reg_block *regs);
+ u32 dec_reg_frame_cnt(struct dec_reg_block *regs);
+--- a/drivers/misc/sunxi_decd/decd_frame.c
++++ b/drivers/misc/sunxi_decd/decd_frame.c
+@@ -711,6 +711,19 @@
+ }
+ 
+ /*
++ * auto_route: program the source geometry, enable and two-plane format byte
++ * from the submitted descriptor, instead of requiring a shell script to poke
++ * them before every run.  See dec_reg_route_nv12().
++ *
++ * Only the descriptor-format-6 -> hardware-format-3 (linear 8-bit NV12) path is
++ * hardware-verified.  Other entries come from fmt_attr_tbl column 8 and are
++ * untested, so this can be turned off to fall back to manual routing.
++ */
++static int auto_route = 1;
++module_param(auto_route, int, 0644);
++MODULE_PARM_DESC(auto_route, "program source geometry/format on submit (default 1)");
++
++/*
+  * fmt_attr_tbl — IDA global at 0x81a0
+  * 8 entries × 10 dwords each. Entry[0]=format_id, Entry[1]=bpp_class.
+  * If entry[1]==8 → multiplier=1, else multiplier=2.
+@@ -807,7 +820,39 @@
+ 	item->y_aux = 0;
+ 	item->c_addr = y_dma + c_offset;
+ 	item->c_aux = 0;
+-	item->format_shadow = 0;
++	/*
++	 * The hardware format byte, not the descriptor's selector.  This was
++	 * hardcoded to 0 (= RGB888), which is why every trace reported format 0
++	 * while the panel was fed NV12 -- the byte was only ever traced, never
++	 * programmed, so whatever U-Boot left in 0x05600011 stayed.
++	 */
++	item->format_shadow = (i < 8) ? (u8)fmt_attr_tbl[i][8] : 0;
++
++	/*
++	 * Apply the source route once per stream rather than per frame: it is
++	 * per-stream state, and rewriting it every frame would re-commit the
++	 * config underneath a running fetch.
++	 */
++	/*
++	 * STAGE the route; do not apply it here.  frame_item_create() runs from
++	 * the submit ioctl BEFORE dec_reg_enable(), and committing the source
++	 * config via 0x05600014 before the source is enabled latches a
++	 * 2-bytes-per-pixel interpretation: the frame renders doubled side by
++	 * side in the top half (test_81).  The register values end up identical
++	 * either way, so a dump cannot see it -- only the order matters.
++	 *
++	 * docs/ge2d-plane-open-re.md records that the vendor never writes the
++	 * format selector alone; it is always accompanied by dec_reg_mux_select(),
++	 * dec_reg_top_enable() and dec_reg_enable().  The recorded ordering rule
++	 * is likewise "after dec_reg_enable()".  So the apply happens there.
++	 */
++	if (auto_route && i < 8 && stride && dec->regs && dec->regs->afbd) {
++		dec->route_w = desc->width;
++		dec->route_h = desc->height;
++		dec->route_stride = stride;
++		dec->route_format = item->format_shadow;
++		dec->route_pending = true;
++	}
+ 
+ 	/* IDA: split-field handling at desc byte 96 */
+ 	if (desc->split_fields) {
+--- a/drivers/misc/sunxi_decd/decd_ioctl.c
++++ b/drivers/misc/sunxi_decd/decd_ioctl.c
+@@ -78,6 +78,31 @@
+ 	}
+ 	dec_reg_blue_en(dec->regs, desc->blue_en);
+ 	dec_reg_enable(dec->regs, true);
++
++	/*
++	 * Apply the staged source route AFTER dec_reg_enable().  Committing the
++	 * config before the source is enabled latches 2 bytes/pixel and renders
++	 * the frame doubled -- see the comment in frame_item_create().
++	 */
++	if (dec->route_pending) {
++		dec->route_pending = false;
++		if ((readl(dec->regs->afbd + 0x10) & 0x3) != 0x3 ||
++		    dec->routed_w != dec->route_w ||
++		    dec->routed_h != dec->route_h ||
++		    dec->routed_stride != dec->route_stride ||
++		    dec->routed_format != dec->route_format) {
++			dec_reg_route_nv12(dec->regs, dec->route_w, dec->route_h,
++					   dec->route_stride, dec->route_format);
++			dec->routed_w = dec->route_w;
++			dec->routed_h = dec->route_h;
++			dec->routed_stride = dec->route_stride;
++			dec->routed_format = dec->route_format;
++			dev_info(dec->dev,
++				 "DECD route: %ux%u stride %u hw-format %u\n",
++				 dec->route_w, dec->route_h, dec->route_stride,
++				 dec->route_format);
++		}
++	}
+ out:
+ 	mutex_unlock(&dec->lock);
+ 	return 0;

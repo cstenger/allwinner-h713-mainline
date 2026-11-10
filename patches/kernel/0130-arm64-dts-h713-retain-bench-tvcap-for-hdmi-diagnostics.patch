@@ -1,0 +1,22 @@
+From: H713 HDMI capture workstream
+Subject: [PATCH] arm64: dts: h713: retain QZ713DF_A1 TVCAP for HDMI diagnostics
+
+The display MIPS is left running by U-Boot. A TVCAP power cycle under Linux
+stops its scheduler, so the HDMI diagnostic kernel must preserve the domain
+through boot. Enable the opt-in PPU behavior on the QZ713DF_A1 board DT,
+which is the DTB reported by the target and packaged by the kernel build
+recipe. This is a branch-local diagnostic setting.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -10,6 +10,10 @@
+ 		bootargs = "console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M";
+ 	};
+ };
++
++&ppu {
++	allwinner,keep-tvcap-on;
++};
+ 
+ &mips_reserved { status = "okay"; };
+ &cpu_comm_reserved { status = "okay"; };

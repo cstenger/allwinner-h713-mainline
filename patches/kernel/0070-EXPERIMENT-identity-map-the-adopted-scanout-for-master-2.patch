@@ -1,0 +1,179 @@
+From: h713 <h713@local>
+Date: Thu, 28 Aug 2026 19:20:00 -0700
+Subject: [PATCH] EXPERIMENT: identity-map the adopted scanout so master 2 can
+ be translated
+
+Pairs with 0068 and 0069, and exists because 0069 alone produced a confounded
+boot. Out of series with them.
+
+THE PROBLEM 0069 RAN INTO. Attaching dec@5600000 to IOMMU master 2 with
+translation on faults immediately:
+
+  platform 5600000.dec: Adding to iommu group 0
+  sun50i-iommu 2010000.iommu: Page fault for 0x000000006c332000 (master 2, rd)
+
+0x6c332000 is inside U-Boot's scanout carveout at 0x6c100000. Master 2 is the
+display's own fetch path, and Linux adopts a display that U-Boot already
+programmed with a *physical* source address. The moment that master starts
+translating, the address the hardware is still fetching stops resolving.
+
+The damage is not limited to the logo. A control on that boot repointed the
+live OSD channel at DECD's own valid, mapped IOVA, saw the READY latch consumed
+and no fault, and still got a black panel -- while vsync held 59.7 Hz. One
+translation fault appears to wedge the AFBD fetch engine for the rest of the
+boot. So 0069's black screen said nothing about DECD routing, and could not.
+
+WHAT THIS DOES. Give the domain an identity mapping for the carveout the
+adopted scanout is fetching, so translation is transparent to it:
+
+  - framebuf_reserved gains `iommu-addresses = <&dec 0x6c100000 0x800000>`.
+    of_iommu_get_resv_regions() walks the device's `memory-region` list, and
+    for each entry whose `iommu-addresses` phandle points back at the device
+    it builds a reserved region. Because the requested IOVA equals the node's
+    own `reg` base and the lengths match, iommu_resv_region_get_type() classes
+    it IOMMU_RESV_DIRECT -- an identity mapping -- rather than a bare
+    reservation.
+  - dec@5600000 lists that node in `memory-region` so the walk finds it. It
+    stays at index 1: the driver takes `of_parse_phandle(..., "memory-region",
+    0)` for its own frame carveout, which is unchanged at index 0.
+  - sun50i-iommu gains `.get_resv_regions = iommu_dma_get_resv_regions`, the
+    standard helper that forwards to of_iommu_get_resv_regions(). The driver
+    had no get_resv_regions op at all, so the core had nothing to apply and
+    reserved regions were silently inert. This is the piece that makes the DT
+    property mean anything. exynos-iommu.c is the pattern being followed,
+    including the private "dma-iommu.h" include.
+
+The core does the rest: iommu_create_device_direct_mappings() maps
+IOMMU_RESV_DIRECT regions into the default domain when the device attaches,
+before anything else touches it.
+
+WHAT SUCCESS LOOKS LIKE. The U-Boot logo survives the boot -- that alone is the
+result, because it means a translated master 2 no longer breaks the display
+Linux inherited. No page fault at attach. Then DECD frames can be submitted
+with the fetch engine in a known-good state, and a black panel would finally
+mean something about routing rather than about a wedged engine.
+
+WHAT THIS IS NOT. It is not what stock does. Stock owns the display from reset
+and never has a foreign physical scanout address live at attach time, so it
+needs no such mapping. This is scaffolding for making the adopted-display model
+testable under translation, not a step toward the vendor configuration. If the
+no-GPU route ever ships, the honest form is Linux programming the display
+itself, and then this patch is unnecessary.
+
+RUN ON HARDWARE 2026-08-28. It works, and it made the DECD question answerable
+for the first time.
+
+The first cut of this patch panicked on every boot, which is how the driver bug
+above was found. With the fix in place:
+
+  platform 5600000.dec: Adding to iommu group 0
+  (no page fault)
+  decd 5600000.dec: reconstructed decd probed
+
+Zero faults, zero panics, userspace up -- and the operator confirmed the U-Boot
+logo was still on the panel, with master 2 translating. That is the success
+criterion stated above, met.
+
+Then, all on that one boot, with the fetch engine demonstrably healthy:
+
+  DECD holding a red NV12 frame   60 IRQ/s, Y=0xFFE00000 C=0xFFEE1000
+                                  (delta 0xE1000 = one 1280x720 luma plane),
+                                  zero faults, panfrost GPU/MMU/job all zero
+  logo channel disabled           panel BLACK, DECD still at 60 IRQ/s
+  OSD repointed at DECD's IOVA    panel went WHITE -- it responded
+
+That last line is the control that the 0069 run could not produce. The panel,
+the raster and the IOMMU all work; DECD's buffer is fetchable through
+translation; and the frame is genuinely red (Y=0x81, U=0x5A, V=0xF0, textbook
+BT.601). So the black is specifically DECD's output not being routed, not a
+wedged engine, a bad address, or an empty buffer.
+
+Throughout all of it:
+
+  0x05600010 = 0x03000010    video source 0: enable[1:0] = 0, format[15:8] = 0
+
+Frames flowing at vsync, addresses translated exactly as stock's hardware sees
+them at playback, and all three ARM-side resume steps reproduced -- and the
+video source is still neither enabled nor given a pixel format. Stock's only
+writer of that field, dec_reg_video_channel_attr_config(), is dead code in
+decd.ko. Nothing ARM-side programs it, and this run shows nothing ARM-side can
+make it unnecessary either. The MIPS firmware fed by DECD's VideoInfo dma-buf
+is the only candidate left, and U-Boot parks it on every boot tested.
+
+ONE MORE RULE, now reproducible. A single IOMMU page fault on master 2 wedges
+the AFBD fetch engine for the rest of the boot. Seen on the 0069 boot, and
+again here: the OSD control ran off the end of the 1.38 MB DECD mapping
+(fault at 0xFFF52000, one page past the buffer end at 0xFFF51800) and the panel
+stuck white -- the logo could not be restored by any register write, only by a
+reboot. Budget one fault per boot; design experiments so the fault comes last.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/iommu/sun50i-iommu.c b/drivers/iommu/sun50i-iommu.c
+--- a/drivers/iommu/sun50i-iommu.c
++++ b/drivers/iommu/sun50i-iommu.c
+@@ -27,5 +27,6 @@
+ #include <linux/spinlock.h>
+ #include <linux/types.h>
+ 
++#include "dma-iommu.h"
+ #include "iommu-pages.h"
+ 
+@@ -729,7 +730,20 @@
+ 	sun50i_domain = kzalloc(sizeof(*sun50i_domain), GFP_KERNEL);
+ 	if (!sun50i_domain)
+ 		return NULL;
+ 
++	/*
++	 * Bind the instance now rather than waiting for attach_domain().
++	 * The core builds a device's IOMMU_RESV_DIRECT mappings from
++	 * iommu_device_register(), which runs before any device has
++	 * attached, and both sun50i_table_flush() and the page-table
++	 * allocator dereference sun50i_domain->iommu. Without this a
++	 * reserved direct mapping NULL-derefs in sun50i_iommu_map()
++	 * during probe. There is one IOMMU instance on this SoC and
++	 * attach_domain() assigns the same pointer, so this is strictly
++	 * an earlier assignment of the same value.
++	 */
++	sun50i_domain->iommu = sun50i_iommu_from_dev(dev);
++
+ 	sun50i_domain->dt =
+ 		iommu_alloc_pages_sz(GFP_KERNEL | GFP_DMA32, DT_SIZE);
+ 	if (!sun50i_domain->dt)
+@@ -913,6 +927,7 @@
+ static const struct iommu_ops sun50i_iommu_ops = {
+ 	.identity_domain = &sun50i_iommu_identity_domain,
+ 	.device_group	= generic_single_device_group,
+ 	.domain_alloc_paging = sun50i_iommu_domain_alloc_paging,
++	.get_resv_regions = iommu_dma_get_resv_regions,
+ 	.of_xlate	= sun50i_iommu_of_xlate,
+ 	.probe_device	= sun50i_iommu_probe_device,
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -114,6 +114,17 @@
+ 		framebuf_reserved: uboot-scanout@6c100000 {
+ 			reg = <0x6c100000 0x800000>;
+ 			no-map;
++			/*
++			 * Identity-map this into master 2's domain. The
++			 * display is adopted from U-Boot and is still
++			 * fetching this range by physical address, so a
++			 * translated master 2 faults on it and wedges the
++			 * AFBD fetch engine. IOVA == reg base and the
++			 * lengths match, which is what makes the core
++			 * class this IOMMU_RESV_DIRECT rather than a bare
++			 * reservation. Inert unless dec@5600000 is enabled.
++			 */
++			iommu-addresses = <&dec 0x6c100000 0x800000>;
+ 		};
+ 	};
+ 
+@@ -1663,6 +1674,6 @@
+ 			resets = <&ccu RST_BUS_DISP>;
+ 			reset-names = "rst_bus_disp";
+-			memory-region = <&decd_reserved>;
++			memory-region = <&decd_reserved>, <&framebuf_reserved>;
+ 			/*
+ 			 * Master 2, translation on -- the port of stock's
+ 			 * /dev/ge2d ioctl 0x4681, which is exactly

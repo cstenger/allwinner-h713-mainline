@@ -1,0 +1,63 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Thu, 15 Oct 2026 03:00:00 -0700
+Subject: [PATCH] arm64: dts: h713: hy200-qz713df-a1: DDC pins for the HDMI
+ signal owner
+
+PL10-PL15 carry DDC for the three HDMI input ports (s_twi0/1/2) to the
+receiver's EDID slaves. Until now the out-of-tree DDC helper registered a
+runtime pinctrl map against a root device and returned the pins to gpio_in,
+which is not the state it found them in (0xF, I/O disabled; see patch 0178).
+
+Describe them where they belong: an h713-lab,ddc-pins node with a
+"default" state muxing the three s_twi pairs and a "sleep" state returning
+all six to io_disabled. No driver binds this node at boot, so the pins keep
+their reset state; the HDMI signal owner's helper binds it for the firmware
+lifetime, selects "sleep" and verifies it before it lets go.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -43,6 +43,42 @@
+ 		clocks = <&r_ccu CLK_R_EDID>;
+ 		resets = <&r_ccu RST_R_EDID>;
+ 	};
++
++	/*
++	 * PL10-PL15 carry the three HDMI ports' DDC (s_twi0/1/2) to the
++	 * receiver's EDID slaves. Nothing binds this at boot, so the pins
++	 * stay in their reset state, I/O disabled; the HDMI signal owner's
++	 * helper binds it for the firmware lifetime ("default") and returns
++	 * the pins with "sleep" before it lets go.
++	 */
++	h713-ddc-pins {
++		compatible = "h713-lab,ddc-pins";
++		pinctrl-names = "default", "sleep";
++		pinctrl-0 = <&r_ddc0_pins>, <&r_ddc1_pins>, <&r_ddc2_pins>;
++		pinctrl-1 = <&r_ddc_disabled_pins>;
++	};
++};
++
++&r_pio {
++	r_ddc0_pins: r-ddc0-pins {
++		pins = "PL10", "PL11";
++		function = "s_twi0";
++	};
++
++	r_ddc1_pins: r-ddc1-pins {
++		pins = "PL12", "PL13";
++		function = "s_twi1";
++	};
++
++	r_ddc2_pins: r-ddc2-pins {
++		pins = "PL14", "PL15";
++		function = "s_twi2";
++	};
++
++	r_ddc_disabled_pins: r-ddc-disabled-pins {
++		pins = "PL10", "PL11", "PL12", "PL13", "PL14", "PL15";
++		function = "io_disabled";
++	};
+ };
+ 
+ &r_ir {

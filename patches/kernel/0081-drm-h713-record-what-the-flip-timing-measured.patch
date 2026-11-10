@@ -1,0 +1,105 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Tue, 2 Sep 2026 03:10:00 -0700
+Subject: [PATCH] drm: h713-afbd: record what the flip timing measured
+
+Two things in the video plane's commit path look expensive enough to cost
+frames, and measurement says neither does. Write that down at the call sites,
+because the next reader will otherwise re-derive the same suspicion and "fix"
+working code -- which is exactly the reasoning this patch exists to stop.
+
+atomic_update() rewrites all per-stream state on every commit (geometry, both
+strides, the ring-mux word, all four queue slots, the dirty latch) when a
+page-flip only needs the Y/C addresses. wait_ready() is called twice on enable.
+Yet the plane sustains 59.71 fps on a 59.97 Hz panel with every flip on its own
+vsync -- n=298, sd 0.03 ms, zero drops -- and PTS-paced 29.97 fps content runs
+with nothing late.
+
+No behavioural change. An attempt at one is recorded in the comment because it
+failed usefully: the wait_ready() bound was tightened from 50 ms to 2 ms on the
+theory that the latch clears in ~75 us. That figure is DECD's ring-arm timing,
+carried across by analogy, and it is wrong for this register. On hardware it
+produced 275 "READY did not clear" warnings in a single 10-second run, and the
+log spam pushed a frame late -- max delta 42.15 ms against 33.68 ms before,
+3x+=1 where every prior run had zero.
+
+What that measured is worth keeping: this latch is consumed at VSYNC, not
+immediately. It reads 1 for up to a refresh period by design, so any bound must
+exceed one frame period. The original 50 ms is roughly three, which is margin
+rather than sloppiness.
+
+Also documented: the four slots are a hardware ring DECD advances through with
+a different frame in each, but this driver writes the same address to all four.
+That is correct for a page-flip model and is measured working; it also means
+the ring provides no buffering, so anyone adding queueing to absorb jitter has
+to change it first. That is a landmine, not a bug.
+
+And a hazard note on wait_ready(): readl_poll_timeout() sleeps. Fine from the
+commit worker, which is the only caller, but moving plane updates into the
+vblank handler -- the obvious next optimisation -- would make it a
+sleep-in-atomic bug.
+
+OUT OF SERIES. Apply after 0080.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -181,6 +181,22 @@
+ 	u32 ready;
+ 	int ret;
+ 
++	/*
++	 * HAZARD: readl_poll_timeout() SLEEPS. That is fine from the atomic
++	 * commit worker, which is the only caller today, but moving plane
++	 * updates into the vblank handler -- the obvious next optimisation --
++	 * would make this a sleep-in-atomic bug. Switch to the _atomic variant
++	 * first if that ever happens.
++	 *
++	 * 50 ms is deliberate and must stay above one frame period. MEASURED:
++	 * this latch is consumed at VSYNC, not immediately -- tightening the
++	 * bound to 2 ms on the theory that it clears in ~75 us (which is DECD's
++	 * ring-arm figure, carried across by analogy and wrong for this
++	 * register) produced 275 "READY did not clear" warnings in a single
++	 * 10-second run, and the resulting log spam pushed a frame late. The
++	 * latch reads 1 for up to a refresh period by design; 50 ms is roughly
++	 * three, which is margin rather than sloppiness.
++	 */
+ 	ret = readl_poll_timeout(h->regs + reg, ready, !ready, 100, 50000);
+ 	if (ret)
+ 		drm_warn(&h->drm, "%s READY did not clear (%08x)\n",
+@@ -298,6 +314,20 @@
+ 	return 0;
+ }
+ 
++/*
++ * MEASURED, so do not "optimise" the two things that look expensive here.
++ *
++ * This function rewrites all per-stream state on every commit -- geometry,
++ * both strides, the ring-mux word, all four queue slots and the dirty latch --
++ * when a page-flip only needs the Y/C addresses to change. It also calls
++ * h713_afbd_wait_ready() twice on the enable path. Both look like they should
++ * cost frames. They do not: the plane sustains 59.71 fps on a 59.97 Hz panel
++ * with every flip landing on its own vsync (n=298, sd 0.03 ms, zero drops),
++ * and PTS-paced 29.97 fps content runs with nothing late.
++ *
++ * Splitting first-enable from per-flip updates is therefore a change with no
++ * problem to solve. Measure before touching it.
++ */
+ static void h713_afbd_video_atomic_update(struct drm_plane *plane,
+ 					  struct drm_atomic_state *state)
+ {
+@@ -329,6 +359,13 @@
+ 	/*
+ 	 * The live display service consumes a complete four-entry queue. A
+ 	 * repeated frame is the proven static representation of one KMS buffer.
++	 *
++	 * Note what this is NOT: the four slots are a hardware ring that DECD
++	 * advances through with a different frame in each. Here every slot gets
++	 * the same address, so the ring is used as one buffer replicated four
++	 * times. That is correct for a page-flip model and is measured working,
++	 * but anyone adding queueing to absorb jitter must change this first --
++	 * the ring currently provides no buffering at all.
+ 	 */
+ 	for (i = 0; i < H713_VIDEO_SLOTS; i++) {
+ 		writel(lower_32_bits(y), h->regs + AFBD_VIDEO_Y0 + i * 4);

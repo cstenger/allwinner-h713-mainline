@@ -1,0 +1,57 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH EXPERIMENT] ASoC: h713: settle the analog path before enabling PA
+
+The shared speaker callback currently enables the external amplifier before
+waiting 700 ms for the DAC. Give H713 its own callback and move that existing
+delay before amplifier enable at POST_PMU. Disable the amplifier at PRE_PMD,
+before its upstream analog widgets power down. Other codec variants retain
+their current behavior; no new register values or GPIO ownership are added.
+
+This candidate has not been acoustically verified. The recorded cold-start
+pop appears earlier than the speaker service, so this ordering correction
+alone must not be presented as a confirmed fix for that pop. Cold-boot
+acoustic validation is pending.
+
+---
+--- a/sound/soc/sunxi/sun4i-codec.c
++++ b/sound/soc/sunxi/sun4i-codec.c
+@@ -2341,6 +2341,28 @@
+ 	{ "LINEOUT", NULL, "HP Amp" },
+ };
+ 
++/* Keep the external amplifier off while the H713 analog path settles. */
++static int sun50i_h713_codec_spk_event(struct snd_soc_dapm_widget *w,
++                                     struct snd_kcontrol *k, int event)
++{
++	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(w->dapm->card);
++
++	if (SND_SOC_DAPM_EVENT_ON(event))
++		/* DAPM POST_PMU: DAC and HP Amp have already powered up. */
++		msleep(700);
++
++	/* PRE_PMD disables the PA before DAPM powers down its sources. */
++	gpiod_set_value_cansleep(scodec->gpio_pa,
++				!!SND_SOC_DAPM_EVENT_ON(event));
++	return 0;
++}
++
++static const struct snd_soc_dapm_widget sun50i_h713_codec_card_dapm_widgets[] = {
++	SND_SOC_DAPM_HP("Headphone", NULL),
++	SND_SOC_DAPM_LINE("Line Out", NULL),
++	SND_SOC_DAPM_SPK("Speaker", sun50i_h713_codec_spk_event),
++};
++
+ static struct snd_soc_card *sun50i_h713_codec_create_card(struct device *dev)
+ {
+ 	struct snd_soc_card *card;
+@@ -2364,8 +2386,8 @@
+ 	card->driver_name	= "sun4i-codec";
+ 	card->controls		= sun50i_h616_card_controls;
+ 	card->num_controls	= ARRAY_SIZE(sun50i_h616_card_controls);
+-	card->dapm_widgets	= sun50i_h616_codec_card_dapm_widgets;
+-	card->num_dapm_widgets	= ARRAY_SIZE(sun50i_h616_codec_card_dapm_widgets);
++	card->dapm_widgets	= sun50i_h713_codec_card_dapm_widgets;
++	card->num_dapm_widgets	= ARRAY_SIZE(sun50i_h713_codec_card_dapm_widgets);
+ 	card->dapm_routes	= sun50i_h713_codec_card_routes;
+ 	card->num_dapm_routes	= ARRAY_SIZE(sun50i_h713_codec_card_routes);
+ 	card->fully_routed	= true;

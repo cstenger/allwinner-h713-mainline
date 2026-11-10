@@ -1,0 +1,32 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Fri, 16 Oct 2026 14:28:50 -0700
+Subject: [PATCH] pinctrl: sunxi: h713: describe PF6
+
+The pin table stops at PF5, but PF6 is bonded out: on board B it is the
+panel's power enable, which U-Boot drives as an output to power the
+panel. sunxi registers a GPIO range per described pin, so a consumer of
+PF6 could never map it to the pin controller and deferred forever: the
+display driver, asking for the panel's power line, never probed.
+
+Describe it with the GPIO functions only; nothing shows another mux
+function or an interrupt on it.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/pinctrl/sunxi/pinctrl-sun50i-h713.c
++++ b/drivers/pinctrl/sunxi/pinctrl-sun50i-h713.c
+@@ -490,6 +490,14 @@
+ 		  SUNXI_FUNCTION(0x3, "mmc0"),
+ 		  SUNXI_FUNCTION(0x4, "jtag"),
+ 		  SUNXI_FUNCTION_IRQ_BANK(0xe, 4, 5)),
++	/*
++	 * Not in the vendor pin table, but bonded out: the board-B panel's
++	 * power enable. U-Boot drives it as an output to power the panel.
++	 * Only the GPIO functions are known.
++	 */
++	SUNXI_PIN(SUNXI_PINCTRL_PIN(F, 6),
++		  SUNXI_FUNCTION(0x0, "gpio_in"),
++		  SUNXI_FUNCTION(0x1, "gpio_out")),
+ 	SUNXI_PIN(SUNXI_PINCTRL_PIN(G, 0),
+ 		  SUNXI_FUNCTION(0x0, "gpio_in"),
+ 		  SUNXI_FUNCTION(0x1, "gpio_out"),

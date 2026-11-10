@@ -1,0 +1,129 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] media: cedrus: DEBUG probe the H265 second output for P010
+
+DEBUG ONLY -- deliberately NOT in patches/kernel/series.
+
+10-bit HEVC already decodes on this hardware: the engine writes an 8-bit
+plane plus a separate 2-bit plane, and the picture is correct (57 dB PSNR
+against a software decode, the residual being truncation versus dithering).
+What is missing is a way to hand that to userspace, because NO V4L2 fourcc
+describes an 8+2 layout -- exposing it means inventing one, which is where
+the upstream 10-bit series stalled.
+
+VE_DEC_H265_10BIT_CONFIGURE has a SECOND_OUT_FMT field whose value 1 is
+P010, a format V4L2 and every player already understand, and the driver has
+never used the second output at all. If it works, 10-bit costs a format
+entry instead of a uAPI argument.
+
+The unknown is addressing. The driver never writes VE_DEC_H265_LOW_ADDR,
+whose SECONDARY_CHROMA field implies a second address pair exists somewhere,
+and the only lever we have is VE_DEC_H265_OFFSET_ADDR_SECOND_OUT -- an
+offset from the frame base, by symmetry with FIRST_OUT. So: enlarge the
+capture buffer, point that offset at the spare room, ask for P010, decode,
+and look. Nothing landing there is an answer too -- it says the second
+output needs base registers we have not identified, and the 8+2 fourcc is
+the only route.
+
+sunxi_cedrus.probe_second_out = 0 off, 1 P010, 2 10-bit 4x4 tiled.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_h265.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_h265.c
+@@ -41,6 +41,38 @@
+ 	__s8	offset;
+ } __packed;
+ 
++/*
++ * DEBUG ONLY -- probe for the video engine's SECOND OUTPUT
++ * (sunxi_cedrus.probe_second_out: 0 = off, 1 = P010, 2 = 10-bit 4x4 tiled).
++ *
++ * The question it answers: the first output writes Allwinner's own 10-bit
++ * layout -- an 8-bit plane plus a separate 2-bit plane -- which no V4L2 fourcc
++ * describes, so exposing it upstream means inventing one. But
++ * VE_DEC_H265_10BIT_CONFIGURE has a SECOND_OUT_FMT field whose value 1 is
++ * P010, a format V4L2 and every player already understand. The driver has
++ * never used the second output at all.
++ *
++ * What is NOT known is how the second output is addressed. The driver never
++ * writes VE_DEC_H265_LOW_ADDR, whose SECONDARY_CHROMA field implies a second
++ * address pair exists somewhere; the only lever we have is
++ * VE_DEC_H265_OFFSET_ADDR_SECOND_OUT, which by symmetry with FIRST_OUT should
++ * be an offset from the frame buffer's base. So the probe enlarges the capture
++ * buffer, points that offset at the spare room, asks for P010, and looks to
++ * see whether anything lands there. Nothing landing is a real answer too: it
++ * means the second output needs base registers we have not identified.
++ */
++static int probe_second_out;
++module_param(probe_second_out, int, 0644);
++MODULE_PARM_DESC(probe_second_out,
++		 "DEBUG: 10-bit second-output probe (0 off, 1 P010, 2 tiled)");
++
++/* Bytes of P010 for a frame, which is what the probe reserves. */
++static unsigned int cedrus_h265_p010_size(unsigned int width,
++					  unsigned int height)
++{
++	return ALIGN(width, 16) * ALIGN(height, 16) * 3;
++}
++
+ static unsigned int cedrus_h265_2bit_size(unsigned int width,
+ 					  unsigned int height)
+ {
+@@ -815,13 +847,30 @@
+ 
+ 	if (ctx->bit_depth > 8) {
+ 		unsigned int stride = ALIGN(ctx->dst_fmt.width / 4, 32);
++		unsigned int two_bit = cedrus_h265_2bit_size(ctx->dst_fmt.width,
++							     ctx->dst_fmt.height);
+ 
+-		reg = ctx->dst_fmt.sizeimage -
+-		      cedrus_h265_2bit_size(ctx->dst_fmt.width,
+-					    ctx->dst_fmt.height);
++		reg = ctx->dst_fmt.sizeimage - two_bit;
+ 		cedrus_write(dev, VE_DEC_H265_OFFSET_ADDR_FIRST_OUT, reg);
+ 
+ 		reg = VE_DEC_H265_10BIT_CONFIGURE_FIRST_2BIT_STRIDE(stride);
++
++		if (probe_second_out) {
++			unsigned int p010 =
++				cedrus_h265_p010_size(ctx->dst_fmt.width,
++						      ctx->dst_fmt.height);
++			unsigned int off = ctx->dst_fmt.sizeimage - two_bit - p010;
++
++			cedrus_write(dev, VE_DEC_H265_OFFSET_ADDR_SECOND_OUT,
++				     off);
++			reg |= VE_DEC_H265_10BIT_CONFIGURE_SECOND_OUT_FMT(probe_second_out);
++
++			v4l2_info(&dev->v4l2_dev,
++				  "SECOND-OUT PROBE: fmt=%d offset=%u size=%u (buffer %u)\n",
++				  probe_second_out, off, p010,
++				  ctx->dst_fmt.sizeimage);
++		}
++
+ 		cedrus_write(dev, VE_DEC_H265_10BIT_CONFIGURE, reg);
+ 	}
+ 
+@@ -905,8 +954,21 @@
+ static unsigned int cedrus_h265_extra_cap_size(struct cedrus_ctx *ctx,
+ 					       struct v4l2_pix_format *pix_fmt)
+ {
+-	if (ctx->bit_depth > 8)
+-		return cedrus_h265_2bit_size(pix_fmt->width, pix_fmt->height);
++	if (ctx->bit_depth > 8) {
++		unsigned int extra = cedrus_h265_2bit_size(pix_fmt->width,
++							   pix_fmt->height);
++
++		/*
++		 * Room for the second output to land in, laid out after the
++		 * first output's planes and before its 2-bit plane, so the
++		 * existing FIRST_OUT offset arithmetic keeps working.
++		 */
++		if (probe_second_out)
++			extra += cedrus_h265_p010_size(pix_fmt->width,
++						       pix_fmt->height);
++
++		return extra;
++	}
+ 
+ 	return 0;
+ }

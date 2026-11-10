@@ -1,0 +1,189 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] media: cedrus: reset a stuck engine from the job context
+
+*** OUT OF patches/kernel/series: HARDENING WITH NO DEMONSTRABLE EFFECT. ***
+***
+*** Written for a wedge that turned out not to exist on the shipping stack.
+*** The engine absorbs repeated stalls and clients killed mid-decode without
+*** trouble -- measured, see below -- so this fixes nothing that can be shown
+*** to happen, and by this project's standard that is not a shipping change.
+*** The code path it hardens is real; the failure is not reachable today.
+
+WHAT THIS WAS WRITTEN FOR, and what measurement then said.
+
+The premise was that a client stalling or dying mid-decode takes video away
+from the whole system until reboot -- observed as a storm of "Failed to setup
+decoding job: -22" affecting every client, GStreamer included.
+
+IT DOES NOT REPRODUCE ON THE SHIPPING STACK. Measured on a clean boot:
+12 watchdog timeouts from stalled decodes, five clients SIGKILLed mid-decode,
+three SIGKILLed while a stall was pending, and two SIGKILLed out of three
+concurrent clients -- the engine was healthy after every one, and dmesg showed
+ZERO setup failures. Every observation behind the original premise came from
+runs with the work-in-progress resolution-change driver installed, which
+re-sets the coded format mid-life; that driver, not the client crashes, is
+what poisoned the engine.
+
+THE MECHANISM IT HARDENS, which is real by inspection. cedrus_h265_setup() reads the engine's own bit reader while
+building a job:
+
+    cedrus_h265_skip_bits(dev, (slice_params->data_byte_offset - 1) * 8);
+    padding = cedrus_h265_show_bits(dev, 8);
+    if (padding == 0)
+            return -EINVAL;
+
+A VLD left stuck by a stalled decode reads back zero forever, so EVERY later
+job fails there -- for every client, GStreamer included:
+
+    cedrus 1c0e000.video-codec: Failed to setup decoding job: -22
+
+and nothing puts the engine right. The watchdog resets only the "ve" line on
+its own timeout path, and a stalled VLD has been observed to survive that;
+stop_streaming stopped resetting anything when the halt-before-free patch was
+dropped for deadlocking concurrent clients.
+
+THE FIX IS WHERE, NOT WHAT. Reset the engine at the start of the next job,
+gated on a flag set wherever the engine becomes suspect: a decode timeout, a
+failed job setup, or a context tearing down mid-stream.
+
+device_run() is the only safe place. A reset is device-wide, so doing it from
+stop_streaming() breaks a job belonging to another context -- exactly how the
+previous attempt deadlocked three concurrent decoders inside
+v4l2_m2m_cancel_job(), a failure that needed a reboot to clear and whose own
+patch comment had predicted it. In device_run() the m2m core has already given
+this context the device and no other job can be in flight, so safety comes
+from construction rather than from timing. That is the alternative the earlier
+patch named and did not take.
+
+Stateless decoding keeps no engine state between jobs -- every parameter set,
+buffer address and control is programmed per job -- so a reset here costs
+microseconds and loses nothing.
+
+Behind sunxi_cedrus.job_reset, default on and writable at runtime, so both
+behaviours can be compared inside one boot.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.h
+@@ -202,6 +202,14 @@
+ 	unsigned int		capabilities;
+ 
+ 	struct delayed_work	watchdog_work;
++
++	/*
++	 * Set when the engine may have been left in an indeterminate state --
++	 * a decode timeout, a failed job setup, or a context tearing down
++	 * mid-stream. Acted on at the start of the next job, which is the only
++	 * point where the device is known to be idle. See cedrus_device_run().
++	 */
++	bool			needs_reset;
+ };
+ 
+ extern struct cedrus_dec_ops cedrus_dec_ops_mpeg2;
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+@@ -19,9 +19,21 @@
+ #include <media/v4l2-mem2mem.h>
+ 
+ #include "cedrus.h"
++#include <linux/moduleparam.h>
++#include <linux/reset.h>
++
+ #include "cedrus_dec.h"
+ #include "cedrus_hw.h"
+ 
++/*
++ * Runtime switch so both behaviours can be compared inside one boot, the way
++ * every other engine-state change in this driver has been.
++ */
++static bool job_reset = true;
++module_param(job_reset, bool, 0644);
++MODULE_PARM_DESC(job_reset,
++		 "reset the VE before a job when it may have been left stuck");
++
+ void cedrus_device_run(void *priv)
+ {
+ 	struct cedrus_ctx *ctx = priv;
+@@ -92,12 +104,45 @@
+ 
+ 	v4l2_m2m_buf_copy_metadata(run.src, run.dst, true);
+ 
++	/*
++	 * Put the engine back to a known state before programming it, if
++	 * anything since the last job suggested it might not be in one.
++	 *
++	 * WHY HERE AND NOWHERE ELSE. A reset is device-wide, so doing it from
++	 * stop_streaming() breaks a job belonging to another context -- that
++	 * is exactly how the previous attempt (dropped) deadlocked three
++	 * concurrent clients inside v4l2_m2m_cancel_job(). device_run() is the
++	 * one place where the m2m core has already given this context the
++	 * device and no other job can be in flight, so the reset is safe by
++	 * construction rather than by timing.
++	 *
++	 * WHY IT IS NEEDED. cedrus_h265_setup() reads the engine's bit reader
++	 * (skip_bits/show_bits) while building a job and returns -EINVAL if it
++	 * reads back zero. A VLD left stuck by a stalled decode therefore
++	 * fails EVERY later job, for EVERY client -- GStreamer included --
++	 * until the module is reloaded or the board rebooted. One client
++	 * stalling or dying took video away from the whole system.
++	 *
++	 * Stateless decoding carries no engine state between jobs: every
++	 * parameter set, buffer address and control is programmed per job, so
++	 * a reset here costs a few microseconds and loses nothing.
++	 */
++	if (job_reset && dev->needs_reset) {
++		if (dev->rstc_ve3)
++			reset_control_reset(dev->rstc_ve3);
++		reset_control_reset(dev->rstc);
++		dev->needs_reset = false;
++	}
++
+ 	cedrus_dst_format_set(dev, &ctx->dst_fmt);
+ 
+ 	error = ctx->current_codec->setup(ctx, &run);
+-	if (error)
++	if (error) {
+ 		v4l2_err(&ctx->dev->v4l2_dev,
+ 			 "Failed to setup decoding job: %d\n", error);
++		/* The engine is a candidate for having caused this. */
++		dev->needs_reset = true;
++	}
+ 
+ 	/* Complete request(s) controls if needed. */
+ 
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -205,6 +205,14 @@
+ 		return;
+ 
+ 	v4l2_err(&dev->v4l2_dev, "frame processing timed out!\n");
++
++	/*
++	 * The reset below covers the "ve" line only, and a stalled VLD has
++	 * been observed to survive it -- every later job then fails in
++	 * cedrus_h265_setup() with -EINVAL. Mark the engine so the next job
++	 * resets it fully, from the one context where that is safe.
++	 */
++	dev->needs_reset = true;
+ 	reset_control_reset(dev->rstc);
+ 	v4l2_m2m_buf_done_and_job_finish(ctx->dev->m2m_dev, ctx->fh.m2m_ctx,
+ 					 VB2_BUF_STATE_ERROR);
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_video.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_video.c
+@@ -654,6 +654,15 @@
+ 	struct cedrus_dev *dev = ctx->dev;
+ 
+ 	if (V4L2_TYPE_IS_OUTPUT(vq->type)) {
++		/*
++		 * A context is leaving. It may have been mid-decode -- a
++		 * player killed, a client that crashed -- so the engine is
++		 * suspect. Flag it rather than resetting here: this runs on
++		 * the departing context's thread while another context may
++		 * have a job in flight.
++		 */
++		dev->needs_reset = true;
++
+ 		if (ctx->current_codec->stop)
+ 			ctx->current_codec->stop(ctx);
+ 

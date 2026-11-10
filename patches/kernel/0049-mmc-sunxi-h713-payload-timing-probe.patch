@@ -1,0 +1,75 @@
+From: h713 <build@h713>
+Date: Fri, 21 Aug 2026 18:00:00 -0700
+Subject: [PATCH] mmc: sunxi: H713 raw data-payload timing probe (debug)
+
+Debug-only, inert unless sunxi_mmc.h713_probe=1.  Times a single data
+payload and logs raw bytes/ns plus the bus geometry, so the implied card
+clock is computed offline rather than trusting the clock model under test.
+
+Unlike patches/kernel/0047, this is NOT gated on cfg->v5p3x: the point is to
+compare the SDIO controller, whose CCU post-divider patch 0048 removed,
+against the eMMC controller, which kept it.
+
+---
+--- a/drivers/mmc/host/sunxi-mmc.c
++++ b/drivers/mmc/host/sunxi-mmc.c
+@@ -319,7 +319,28 @@
+ #define SUNXI_MMC_CMD53_RETRY_TIMEOUT_MS	2000
+ #define SUNXI_MMC_CMD53_FIFO_RETRIES	15	/* FIFO underrun / AHB bus-contention */
+ 
++/*
++ * H713 bus-rate probe (debug).  Times one data payload and reports the raw
++ * numbers, so the implied card clock can be computed offline instead of
++ * trusting the clock model that produced ios.clock in the first place.
++ *
++ * This deliberately does NOT filter by controller: the whole point is to
++ * compare the SDIO path, whose CCU post-divider was removed, against the eMMC
++ * path, which kept it.  Bus geometry is emitted rather than assumed -- SDIO is
++ * 4-bit SDR at 2 bytes per card clock, HS400 eMMC is 8-bit DDR at 2 bytes per
++ * card clock, and those coincide, so width and timing must be reported or the
++ * two cannot be told apart.
++ */
++static bool h713_probe;
++module_param(h713_probe, bool, 0644);
++MODULE_PARM_DESC(h713_probe, "H713: log raw data-payload timings (debug)");
++
++static unsigned int h713_probe_min = 16384;
++module_param(h713_probe_min, uint, 0644);
++MODULE_PARM_DESC(h713_probe_min, "H713: only log payloads of at least N bytes");
++
+ struct sunxi_mmc_host {
++	ktime_t		dbg_data_start;	/* h713_probe: payload submit time */
+ 	struct device *dev;
+ 	struct mmc_host	*mmc;
+ 	struct reset_control *reset;
+@@ -766,6 +787,22 @@
+ 			data->bytes_xfered = data->blocks * data->blksz;
+ 	}
+ 
++	if (h713_probe && data && !data->error &&
++	    data->bytes_xfered >= h713_probe_min) {
++		u64 ns = ktime_to_ns(ktime_sub(ktime_get(),
++					       host->dbg_data_start));
++		struct mmc_ios *ios = &host->mmc->ios;
++
++		if (ns)
++			dev_info(mmc_dev(host->mmc),
++				 "h713probe: %s bytes=%u ns=%llu dir=%s width=%u timing=%u ios=%u\n",
++				 mmc_hostname(host->mmc),
++				 data->bytes_xfered, ns,
++				 (data->flags & MMC_DATA_READ) ? "r" : "w",
++				 1U << ios->bus_width, ios->timing,
++				 ios->clock);
++	}
++
+ 	if (data) {
+ 		mmc_writel(host, REG_IDST, 0x337);
+ 		mmc_writel(host, REG_DMAC, 0);
+@@ -1848,6 +1885,7 @@
+ 
+ 	if (data) {
+ 		sunxi_mmc_thld_ctl_v5p3x(host, data);
++		host->dbg_data_start = ktime_get();
+ 		mmc_writel(host, REG_BLKSZ, data->blksz);
+ 		mmc_writel(host, REG_BCNTR, data->blksz * data->blocks);
+ 		sunxi_mmc_start_dma(host, data);

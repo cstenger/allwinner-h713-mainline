@@ -1,0 +1,41 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 7 Oct 2026 17:40:00 -0700
+Subject: [PATCH] media: sunxi-cir: h713: keep the mainline sample config
+
+Patch 0021's H713 init writes the vendor value 0x00200b2a to CIR_CONFIG
+after sunxi_ir_set_timeout() has programmed it. Its low bits select a /256
+sample clock where the driver computes durations for /64, so every pulse
+arrives at a quarter of its length and nothing decodes.
+
+Whether it survived depended on ordering. With a keymap, the rc core enables
+NEC while the device registers and that s_timeout write lands first; hw_init
+then runs and the vendor value stays, so the remote was dead from boot. Any
+later protocol change re-runs s_timeout and silently fixes it, which is why
+it decoded in earlier tests. hw_init also runs on every resume, so the remote
+would have died after each suspend.
+
+Measured on the bench board on 2026-10-07 with the stock remote, POWER twice
+under each value: 0x2d04 (what s_timeout writes) gave a 8943/4462 us leader
+and 600/520/1663 us bits -- NEC's 9000/4500/560/1690 -- and two clean
+KEY_POWER presses; 0x00200b2a gave a 2235/1108 us leader, exactly 1/4, and
+no scancode.
+
+Drop the vendor write and keep the configuration the timeout hook manages.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/drivers/media/rc/sunxi-cir.c
++++ b/drivers/media/rc/sunxi-cir.c
+@@ -203,12 +203,6 @@
+ 	/* Set noise threshold and idle threshold */
+ 	sunxi_ir_set_timeout(ir->rc, ir->rc->timeout);
+ 
+-	/* H713 vendor-like sample config tuning (IDA-correlated) */
+-	if (ir->is_h713_vendor_init) {
+-		/* NTHR=8, ITHR=0xb2 plus vendor extra bitfields */
+-		writel(0x00200b2a, ir->base + SUNXI_IR_CIR_REG);
+-	}
+-
+ 	/* Invert Input Signal */
+ 	writel(REG_RXCTL_RPPI, ir->base + SUNXI_IR_RXCTL_REG);
+ 

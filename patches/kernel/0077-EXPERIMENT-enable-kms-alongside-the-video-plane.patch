@@ -1,0 +1,47 @@
+From: h713 <h713@local>
+Date: Mon, 1 Sep 2026 23:55:00 -0700
+Subject: [PATCH] EXPERIMENT: bind KMS to the AFBD block for a video-plane test
+
+The current series leaves display@5600000 disabled and dec@5600000 okay, so the
+AFBD KMS driver is built but never binds and there is no DRM target on the panel.
+That arrangement was chosen to give DECD the block; it also means every
+video-plane result so far was obtained with the *U-Boot* logo on the other
+channel, never a KMS-driven one.
+
+Patch 0065 tried to make the KMS driver's own RGB channel interpret NV12 and
+failed, but its registers were only part of the story: it never enabled the
+source, never gave it a size, never set the chroma gain and never wrote the
+plane-1 downstream selector. Those are known now. What is still unknown is
+whether the video plane can be lit at all while the KMS driver owns the block --
+whether its bind-time reset or its atomic commits stomp the plane.
+
+Enable KMS and disable DECD so that question can be asked directly. With DECD
+absent there is no frame submission, so the test drives the video plane by
+register poke against a static NV12 frame placed in the adopted scanout carveout
+with /dev/mem, which is reachable because that region is no-map.
+
+OUT OF SERIES. This is the inverse of the out-of-series 0068 and cannot be
+applied with it: KMS and DECD share AFBD MMIO and SPI 110, so exactly one may
+be enabled.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -48,3 +48,15 @@
+ &motor_ctr { status = "disabled"; };
+ &adc_keys { status = "disabled"; };
+ &board_mgr { status = "disabled"; };
++
++/*
++ * Inverse of 0068: give the AFBD block to KMS so the video plane can be tested
++ * underneath a KMS-driven RGB channel rather than U-Boot's adopted logo.
++ */
++&display {
++	status = "okay";
++};
++
++&dec {
++	status = "disabled";
++};

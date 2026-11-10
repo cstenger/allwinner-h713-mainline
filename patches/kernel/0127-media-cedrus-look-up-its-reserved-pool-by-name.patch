@@ -1,0 +1,58 @@
+media: cedrus: look up its reserved-memory pool by name
+
+Patch 0126 gave the VE an IOVA reservation by listing a reserved-memory node in
+its memory-region.  That broke the probe outright:
+
+    cedrus 1c0e000.video-codec: Failed to reserve memory
+    cedrus 1c0e000.video-codec: probe with driver cedrus failed with error -22
+
+and with no /dev/video0 every decode gate went to zero -- 0/5, 0/7, 0/6.
+
+cedrus_hw_probe() calls of_reserved_mem_device_init(), which is index 0 of
+memory-region.  The reservation node deliberately has no "reg", because that is
+what makes of_iommu_get_resv_regions() classify it IOMMU_RESV_RESERVED rather
+than IOMMU_RESV_DIRECT.  No "reg" means the reserved-memory scan never built a
+reserved_mem for it, so of_reserved_mem_lookup() finds nothing and
+of_reserved_mem_device_init_by_idx() returns -EINVAL.  cedrus tolerates -ENODEV
+but not -EINVAL, so it failed.
+
+memory-region is not only a list of buffer pools.  An entry can exist purely to
+describe an IOVA reservation, and a driver that assumes index 0 is its pool
+cannot coexist with one.  The named lookup separates the two uses: with no
+"pool" entry it returns -ENODEV, exactly the answer the index-0 lookup gave
+back when the VE had no memory-region at all, and already tolerated.
+
+This is the same fix, for the same reason, that patch 0080 applied to the
+display driver -- which is where the pattern and its rationale come from.
+
+Note for anyone reinstating a VE carveout (patch 0074, out of series): it must
+now carry memory-region-names = "pool" to be found.  Nothing in the series does
+today, which is why this is a rename rather than a behaviour change.
+
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -539,7 +539,23 @@
+ 		return ret;
+ 	}
+ 
+-	ret = of_reserved_mem_device_init(dev->dev);
++	/*
++	 * By NAME, not index 0.  memory-region is not only a list of buffer
++	 * pools: an entry may exist purely so of_iommu_get_resv_regions() can
++	 * find its iommu-addresses and withhold an IOVA range from this
++	 * device's allocator.  Such an entry has no "reg" and therefore no
++	 * reserved_mem ops, so the index-0 lookup rejects it with -EINVAL and
++	 * fails the probe -- which is what happened the first time the VE was
++	 * given the scanout IOVA reservation.
++	 *
++	 * The named lookup returns -ENODEV when there is no "pool" entry,
++	 * which is the same answer the index-0 lookup gave when the VE had no
++	 * memory-region at all, and is already tolerated below.  A carveout,
++	 * if one is ever wired up again, must be tagged
++	 * memory-region-names = "pool" to be found.
++	 */
++	ret = of_reserved_mem_device_init_by_name(dev->dev, dev->dev->of_node,
++						  "pool");
+ 	if (ret && ret != -ENODEV) {
+ 		dev_err(dev->dev, "Failed to reserve memory\n");
+ 

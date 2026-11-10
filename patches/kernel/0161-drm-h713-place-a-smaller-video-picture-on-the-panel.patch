@@ -1,0 +1,639 @@
+drm: h713: place a smaller video picture on the panel (letterbox)
+
+The video plane took exactly one geometry, a 1280x720 picture at the origin,
+so every source that is not 16:9 -- or is smaller than the panel -- went to
+the GPU. This lets the plane show any NV12 picture from 64x64 up to the panel
+size, unscaled, anywhere on the panel, with black bars around it. Stock
+kmssink then letterboxes by itself: it negotiates the stream's own size,
+tries an aspect-fit destination and, on the refusal to scale, falls back to
+the picture centred at native size; for a picture the VE has already scaled
+to its fit size the two are the same.
+
+With the MIPS parked, nothing places the picture but this driver. The model
+is the display firmware's own window layer, recovered from display.bin and
+checked on hardware (docs/reference/letterbox-recipe-2026-10-04.md and
+letterbox-phase1-2026-10-04.md); tools/display/letterbox-recipe.py is the
+single source of the formulas and this patch's table transcribes it -- all
+105 register words for the three Phase 1 geometries compared equal on the
+host.
+
+  - Placement is an offset added to the NR (composition) output origin.
+    Proc copies its input position to its output; the panel's program window
+    stays put; the bars are the vblender border overlay at 0x05200000. NR's
+    fetch window (0x05000804-0x0500085c) carries the picture size -- left at
+    1280 it is what sheared every small source on 2026-09-12.
+  - comp+0x858[31:16] is the picture height. Left at the panel's 720 it
+    clipped the bottom of every vertically offset picture; three handheld
+    bisect runs found it (2026-10-05).
+  - The window layer is written in the firmware's order, inside its NR
+    hold/release bracket (NRWinNode::WriteReg flags 0x100c0 / 0x8120), with
+    video source 0 stopped. The panel shows green for the ~30 ms that takes,
+    so a geometry change flashes once; same-geometry flips are unchanged.
+  - AFBD's own geometry now follows the picture: whole 16x16 blocks, the
+    even width, 4-aligned line lengths, a fetch budget of H lines (2H for
+    P010). For 1280x720 these are exactly the constants it always wrote.
+
+atomic_check refuses everything the hardware cannot do: a stride that is
+not a multiple of 16 samples (AFBD rounds it up and would shear), a buffer
+that does not cover the block-aligned fetch (it would read past it and fault
+the IOMMU), odd sizes or x, anything off the panel, scaling, and P010 at
+anything but native size (the line-buffer descriptors are not derived for
+it). Native-size commits keep exactly the old checks.
+
+The window layer's registers need three more ranges (comp, proc, vblend).
+A device tree without them, or a board whose registers do not read back as
+the model predicts for 1280x720 -- checked field by field at probe, as the
+tool's self-test does -- keeps the native-only plane and the old minimum
+framebuffer size. Disabling the plane puts every register back exactly as
+probe found it.
+
+The minimum framebuffer size comes down to 64x64 in the same change, as
+0063 warned it must: a minimum the plane cannot honour only moves the failure
+from caps negotiation to commit.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi	2026-10-05 02:57:33.639209778 -0700
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi	2026-10-05 03:01:36.370540737 -0700
+@@ -1865,8 +1865,17 @@
+ 			compatible = "allwinner,sun50i-h713-afbd";
+ 			reg = <0x05600000 0x400>,
+ 			      <0x05140000 0x1000>,
+-			      <0x051c0000 0x100>;
+-			reg-names = "afbd", "route", "lvds";
++			      <0x051c0000 0x100>,
++			      <0x05000000 0x1000>,
++			      <0x05180000 0x200>,
++			      <0x05200000 0x100>;
++			/*
++			 * comp (NR line buffers and fetch window), proc and
++			 * vblend (border overlay) place a picture smaller than
++			 * the panel; without them the video plane is
++			 * native-size only.
++			 */
++			reg-names = "afbd", "route", "lvds", "comp", "proc", "vblend";
+ 			interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>;
+ 			clocks = <&ccu CLK_AFBD>,
+ 				 <&ccu CLK_BUS_DISP>;
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-05 02:57:33.638307255 -0700
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c	2026-10-05 03:01:36.369698638 -0700
+@@ -104,8 +104,6 @@
+ #define H713_VIDEO_WIDTH	1280u
+ #define H713_VIDEO_HEIGHT	720u
+ #define H713_VIDEO_STRIDE	1280u
+-#define H713_VIDEO_SIZE_M1	0x02cf04ff
+-#define H713_VIDEO_BLOCK_M1	0x002c004f
+ #define H713_VIDEO_CTRL_ACTIVE	0x03000013
+ #define H713_VIDEO_GAIN		0x144c0000
+ #define H713_VIDEO_SELECTOR	0x39000000
+@@ -156,6 +154,14 @@
+ 	u64 target_vblank;
+ };
+ 
++/* A video picture's size and its offset on the panel, in panel pixels. */
++struct h713_geom {
++	u32 w, h, dx, dy;
++};
++
++/* Registers the letterbox recipe touches: see h713_lb_fields. */
++#define H713_LB_MAX_REGS	40
++
+ struct h713_afbd {
+ 	struct drm_device drm;
+ 	struct drm_simple_display_pipe pipe;
+@@ -164,6 +170,17 @@
+ 	void __iomem *regs;
+ 	void __iomem *route_regs;
+ 	void __iomem *lvds_regs;
++	/* letterbox: optional, all three or none */
++	void __iomem *comp_regs;
++	void __iomem *proc_regs;
++	void __iomem *vblend_regs;
++	bool lb_ok;
++	struct h713_geom native;
++	struct h713_geom hw_geom;	/* what comp/route/proc/lvds/vblend hold */
++	unsigned int lb_nregs;
++	u8 lb_blk[H713_LB_MAX_REGS];
++	u16 lb_off[H713_LB_MAX_REGS];
++	u32 lb_snap[H713_LB_MAX_REGS];	/* native values, read at probe */
+ 	struct clk *clk_afbd;
+ 	struct clk *clk_bus;
+ 	struct drm_display_mode mode;
+@@ -188,6 +205,275 @@
+ 	return container_of(drm, struct h713_afbd, drm);
+ }
+ 
++/*
++ * LETTERBOX: a video picture smaller than the panel, placed anywhere on it.
++ *
++ * The MIPS display firmware's window layer does this for its capture inputs;
++ * with the MIPS parked, this driver writes the same registers itself. The
++ * model comes from static RE of display.bin and is hardware-checked
++ * (docs/reference/letterbox-recipe-2026-10-04.md and
++ * letterbox-phase1-2026-10-04.md). tools/display/letterbox-recipe.py is the
++ * single source of these formulas; the table below transcribes its FIELDS.
++ *
++ *  - Placement is an offset added to the NR (composition, 0x05000000) output
++ *    origin; proc copies its input position to its output; the panel's
++ *    program window stays put. The bars are the vblender border overlay
++ *    (0x05200000) -- which must stay programmed: with zero borders the lines
++ *    above the picture show garbage and the picture turns green.
++ *  - Fields marked ABS are the firmware's formula. REL fields are timing
++ *    positions whose fixed per-register delays are not all derived; they are
++ *    the probe snapshot plus f(new) - f(native).
++ *  - comp+0x858[31:16] is the PICTURE height: left at the panel's 720 it
++ *    clips the bottom of every vertically offset picture (bisected on
++ *    hardware 2026-10-05).
++ *
++ * Unscaled only (proc at unity) and NV12 only: the line-buffer descriptors
++ * are not derived for P010.
++ */
++enum { LB_COMP, LB_ROUTE, LB_PROC, LB_LVDS, LB_VBLEND };
++
++struct h713_lb_field {
++	u8 blk;
++	u16 off;
++	u8 lsb, width;
++	bool rel;
++	u32 (*f)(const struct h713_geom *g);
++};
++
++static u32 lb_w(const struct h713_geom *g) { return g->w; }
++static u32 lb_h(const struct h713_geom *g) { return g->h; }
++static u32 lb_dx(const struct h713_geom *g) { return g->dx; }
++static u32 lb_dy(const struct h713_geom *g) { return g->dy; }
++static u32 lb_even_w(const struct h713_geom *g) { return ALIGN(g->w, 2); }
++static u32 lb_even_h(const struct h713_geom *g) { return ALIGN(g->h, 2); }
++static u32 lb_half_h(const struct h713_geom *g) { return g->h / 2; }
++static u32 lb_h_plus1(const struct h713_geom *g) { return g->h + 1; }
++/* GetPsuPfuWin's compressed branch: ((0.8 W << 3) + 0x7f) >> 7 = ceil(W/20) */
++static u32 lb_rowbyte(const struct h713_geom *g) { return DIV_ROUND_UP(g->w, 20); }
++static u32 lb_one(const struct h713_geom *g) { return 1; }
++
++/* WriteBorderOverlay1 (0x8b1a55d8): panel 1280x720 assumed by the caller. */
++static u32 lb_right(const struct h713_geom *g) { return 1280 - g->dx - g->w; }
++static u32 lb_bottom(const struct h713_geom *g) { return 720 - g->dy - g->h; }
++static u32 lb_top_0(const struct h713_geom *g) { return g->dy & 0xf; }
++static u32 lb_top_1(const struct h713_geom *g) { return (g->dy >> 4) & 0xf; }
++static u32 lb_top_2(const struct h713_geom *g) { return (g->dy >> 8) & 0xf; }
++
++#define ABS(b, o, l, w, fn)	{ b, o, l, w, false, fn }
++#define REL(b, o, l, w, fn)	{ b, o, l, w, true, fn }
++
++/* In the firmware's write order: NR (flag order), route, proc, panel, vblend. */
++static const struct h713_lb_field h713_lb_fields[] = {
++	/* NR line-buffer descriptors, A (0x4) then B (0x2) */
++	ABS(LB_COMP, 0x0f0, 0, 8, lb_rowbyte),
++	ABS(LB_COMP, 0x0f0, 8, 8, lb_rowbyte),
++	ABS(LB_COMP, 0x174, 0, 16, lb_rowbyte),
++	ABS(LB_COMP, 0x174, 16, 12, lb_rowbyte),
++	ABS(LB_COMP, 0x1b4, 0, 16, lb_rowbyte),
++	ABS(LB_COMP, 0x1b4, 16, 12, lb_rowbyte),
++	ABS(LB_COMP, 0x210, 0, 8, lb_rowbyte),
++	ABS(LB_COMP, 0x210, 8, 8, lb_rowbyte),
++	ABS(LB_COMP, 0x224, 0, 16, lb_w),
++	ABS(LB_COMP, 0x224, 16, 16, lb_h),
++	ABS(LB_COMP, 0x274, 0, 16, lb_rowbyte),
++	ABS(LB_COMP, 0x274, 16, 12, lb_rowbyte),
++	ABS(LB_COMP, 0x278, 0, 16, lb_half_h),
++	ABS(LB_COMP, 0x2b4, 0, 16, lb_rowbyte),
++	ABS(LB_COMP, 0x2b4, 16, 12, lb_rowbyte),
++	ABS(LB_COMP, 0x2b8, 0, 16, lb_h),
++	/* NR fetch window (0x400, 0x1000, 0x2000, 0x4000) */
++	ABS(LB_COMP, 0x804, 0, 16, lb_even_w),
++	REL(LB_COMP, 0x804, 16, 16, lb_dx),
++	REL(LB_COMP, 0x808, 0, 16, lb_dx),
++	REL(LB_COMP, 0x80c, 0, 16, lb_h),
++	REL(LB_COMP, 0x80c, 16, 16, lb_dy),
++	REL(LB_COMP, 0x858, 0, 16, lb_dy),
++	ABS(LB_COMP, 0x858, 16, 16, lb_h),
++	REL(LB_COMP, 0x85c, 0, 16, lb_dx),
++	ABS(LB_COMP, 0x85c, 16, 16, lb_w),
++	REL(LB_COMP, 0x844, 0, 16, lb_dx),
++	ABS(LB_COMP, 0x844, 16, 16, lb_even_w),
++	REL(LB_COMP, 0x840, 0, 16, lb_dy),
++	ABS(LB_COMP, 0x840, 16, 16, lb_h_plus1),
++	/* route windows, all at (0, 0) */
++	ABS(LB_ROUTE, 0x104, 16, 16, lb_even_w),
++	ABS(LB_ROUTE, 0x108, 16, 16, lb_even_h),
++	ABS(LB_ROUTE, 0x11c, 16, 16, lb_h),
++	ABS(LB_ROUTE, 0x124, 16, 16, lb_w),
++	ABS(LB_ROUTE, 0x128, 16, 16, lb_h),
++	ABS(LB_ROUTE, 0xd40, 16, 16, lb_w),
++	ABS(LB_ROUTE, 0xd44, 16, 16, lb_h),
++	/* proc instance 0 at unity */
++	ABS(LB_PROC, 0x034, 16, 16, lb_w),
++	ABS(LB_PROC, 0x034, 0, 16, lb_h),
++	ABS(LB_PROC, 0x02c, 0, 16, lb_w),
++	REL(LB_PROC, 0x02c, 16, 16, lb_dx),
++	ABS(LB_PROC, 0x030, 0, 16, lb_h),
++	ABS(LB_PROC, 0x040, 0, 16, lb_w),
++	REL(LB_PROC, 0x044, 0, 16, lb_dx),
++	ABS(LB_PROC, 0x050, 0, 16, lb_h),
++	REL(LB_PROC, 0x050, 16, 16, lb_dy),
++	/* panel video_win_2 sizes; program and crtc windows stay */
++	ABS(LB_LVDS, 0x03c, 16, 16, lb_w),
++	ABS(LB_LVDS, 0x040, 16, 16, lb_h),
++	ABS(LB_LVDS, 0x0a4, 16, 16, lb_w),
++	ABS(LB_LVDS, 0x0a8, 16, 16, lb_h),
++	/* vblender border overlay */
++	ABS(LB_VBLEND, 0x000, 0, 12, lb_right),
++	ABS(LB_VBLEND, 0x000, 12, 4, lb_top_0),
++	ABS(LB_VBLEND, 0x000, 16, 12, lb_dx),
++	ABS(LB_VBLEND, 0x000, 28, 4, lb_top_1),
++	ABS(LB_VBLEND, 0x004, 0, 12, lb_bottom),
++	ABS(LB_VBLEND, 0x004, 12, 4, lb_top_2),
++	ABS(LB_VBLEND, 0x004, 30, 1, lb_one),
++};
++
++/* The NR hold/release bracket (NRWinNode::WriteReg flags 0x100c0 / 0x8120). */
++#define NR_ENABLE		0x040	/* bit 25 */
++#define NR_HOLD_A		0x860	/* bit 17 */
++#define NR_HOLD_B		0x138	/* bit 27 */
++#define NR_RELEASED		0x82c	/* [15:0] = 1 on release */
++
++static void __iomem *h713_lb_base(struct h713_afbd *h, u8 blk)
++{
++	switch (blk) {
++	case LB_COMP:	return h->comp_regs;
++	case LB_ROUTE:	return h->route_regs;
++	case LB_PROC:	return h->proc_regs;
++	case LB_LVDS:	return h->lvds_regs;
++	default:	return h->vblend_regs;
++	}
++}
++
++static int h713_lb_reg_index(struct h713_afbd *h, u8 blk, u16 off)
++{
++	unsigned int i;
++
++	for (i = 0; i < h->lb_nregs; i++)
++		if (h->lb_blk[i] == blk && h->lb_off[i] == off)
++			return i;
++	return -1;
++}
++
++/*
++ * Every register word for geometry @g, from the native snapshot. Returns
++ * -ERANGE if a field does not fit, so a geometry the model cannot express is
++ * refused in atomic_check, never written.
++ */
++static int h713_lb_words(struct h713_afbd *h, const struct h713_geom *g,
++			 u32 *words)
++{
++	unsigned int i;
++
++	memcpy(words, h->lb_snap, h->lb_nregs * sizeof(*words));
++	for (i = 0; i < ARRAY_SIZE(h713_lb_fields); i++) {
++		const struct h713_lb_field *fl = &h713_lb_fields[i];
++		int r = h713_lb_reg_index(h, fl->blk, fl->off);
++		u32 mask = GENMASK(fl->lsb + fl->width - 1, fl->lsb);
++		s64 val;
++
++		if (r < 0)
++			return -EINVAL;
++		if (fl->rel)
++			val = (s64)((h->lb_snap[r] & mask) >> fl->lsb) +
++			      fl->f(g) - fl->f(&h->native);
++		else
++			val = fl->f(g);
++		if (val < 0 || val > (s64)(mask >> fl->lsb))
++			return -ERANGE;
++		words[r] = (words[r] & ~mask) | ((u32)val << fl->lsb);
++	}
++	return 0;
++}
++
++/*
++ * Snapshot the registers at probe and require the model to reproduce them
++ * for the native geometry, field by field -- the same test
++ * letterbox-recipe.py --self-test runs. A board whose state differs keeps the
++ * native-only plane rather than writing values derived from a wrong base.
++ */
++static bool h713_lb_snapshot(struct h713_afbd *h)
++{
++	u32 words[H713_LB_MAX_REGS];
++	unsigned int i;
++
++	h->lb_nregs = 0;
++	for (i = 0; i < ARRAY_SIZE(h713_lb_fields); i++) {
++		const struct h713_lb_field *fl = &h713_lb_fields[i];
++
++		if (h713_lb_reg_index(h, fl->blk, fl->off) >= 0)
++			continue;
++		if (WARN_ON(h->lb_nregs == H713_LB_MAX_REGS))
++			return false;
++		h->lb_blk[h->lb_nregs] = fl->blk;
++		h->lb_off[h->lb_nregs] = fl->off;
++		h->lb_snap[h->lb_nregs] = readl(h713_lb_base(h, fl->blk) + fl->off);
++		h->lb_nregs++;
++	}
++	if (h713_lb_words(h, &h->native, words))
++		return false;
++	for (i = 0; i < h->lb_nregs; i++)
++		if (words[i] != h->lb_snap[i]) {
++			drm_warn(&h->drm,
++				 "letterbox off: block %u +0x%03x reads %08x, model %08x\n",
++				 h->lb_blk[i], h->lb_off[i], h->lb_snap[i], words[i]);
++			return false;
++		}
++	if (!(readl(h->comp_regs + NR_ENABLE) & BIT(25)) ||
++	    readl(h->comp_regs + NR_HOLD_A) & BIT(17) ||
++	    readl(h->comp_regs + NR_HOLD_B) & BIT(27)) {
++		drm_warn(&h->drm, "letterbox off: NR is not in its released state\n");
++		return false;
++	}
++	return true;
++}
++
++static void h713_lb_rmw(void __iomem *reg, u32 mask, u32 val)
++{
++	writel((readl(reg) & ~mask) | val, reg);
++}
++
++/*
++ * Program comp, route, proc, panel and vblender for @g, in the firmware's
++ * order and inside its NR hold/release bracket. The video source must be
++ * stopped; AFBD's own geometry is the caller's.
++ */
++static void h713_lb_program(struct h713_afbd *h, const struct h713_geom *g)
++{
++	u32 words[H713_LB_MAX_REGS];
++	unsigned int i;
++
++	if (h713_lb_words(h, g, words)) {
++		drm_err(&h->drm, "letterbox %ux%u at (%u,%u) is not expressible\n",
++			g->w, g->h, g->dx, g->dy);
++		return;
++	}
++
++	h713_lb_rmw(h->comp_regs + NR_HOLD_A, BIT(17), BIT(17));
++	h713_lb_rmw(h->comp_regs + NR_HOLD_B, BIT(27), BIT(27));
++	h713_lb_rmw(h->comp_regs + NR_ENABLE, BIT(25), 0);
++	for (i = 0; i < h->lb_nregs; i++)
++		if (h->lb_blk[i] == LB_COMP)
++			writel(words[i], h->comp_regs + h->lb_off[i]);
++	h713_lb_rmw(h->comp_regs + NR_HOLD_A, BIT(17), 0);
++	h713_lb_rmw(h->comp_regs + NR_HOLD_B, BIT(27), 0);
++	h713_lb_rmw(h->comp_regs + NR_RELEASED, GENMASK(15, 0), 1);
++	h713_lb_rmw(h->comp_regs + NR_ENABLE, BIT(25), BIT(25));
++	for (i = 0; i < h->lb_nregs; i++)
++		if (h->lb_blk[i] != LB_COMP)
++			writel(words[i], h713_lb_base(h, h->lb_blk[i]) +
++					 h->lb_off[i]);
++
++	h->hw_geom = *g;
++	drm_dbg_kms(&h->drm, "video picture %ux%u at (%u,%u)\n",
++		    g->w, g->h, g->dx, g->dy);
++}
++
++static bool h713_geom_eq(const struct h713_geom *a, const struct h713_geom *b)
++{
++	return a->w == b->w && a->h == b->h && a->dx == b->dx && a->dy == b->dy;
++}
++
+ static bool h713_afbd_retires_empty(struct h713_afbd *h)
+ {
+ 	unsigned long flags;
+@@ -373,6 +659,10 @@
+ 	writel(0, h->regs + AFBD_VIDEO_DIRTY);
+ 	writel(h->gain_idle, h->route_regs + 0x508);
+ 
++	/* Hand the window layer back exactly as probe found it. */
++	if (h->lb_ok && !h713_geom_eq(&h->hw_geom, &h->native))
++		h713_lb_program(h, &h->native);
++
+ 	/* Restore and commit RGB before selecting it downstream. */
+ 	writel(h->rgb_ctrl_active, h->regs + AFBD_CTRL);
+ 	writel(1, h->regs + AFBD_READY);
+@@ -381,12 +671,55 @@
+ 	h->video_active = false;
+ }
+ 
++static void h713_plane_geom(const struct drm_plane_state *s,
++			    struct h713_geom *g)
++{
++	g->w = s->src_w >> 16;
++	g->h = s->src_h >> 16;
++	g->dx = s->crtc_x;
++	g->dy = s->crtc_y;
++}
++
++/*
++ * A picture smaller than the panel, shown unscaled at (crtc_x, crtc_y).
++ * Everything the hardware cannot do is refused here, never in atomic_update:
++ * AFBD rounds the stride up to 16 samples (a pitch that is not a multiple
++ * shears) and fetches whole 16x16 blocks (the buffer must cover them, or the
++ * fetch runs past it and faults the IOMMU).
++ */
++static int h713_lb_check(struct h713_afbd *h,
++			 const struct drm_plane_state *s,
++			 const struct h713_geom *g)
++{
++	struct drm_framebuffer *fb = s->fb;
++	u32 words[H713_LB_MAX_REGS];
++	u32 pitch = fb->pitches[0];
++	u32 rows = ALIGN(g->h, 16);
++
++	if (!h->lb_ok || fb->format->format != DRM_FORMAT_NV12)
++		return -EINVAL;
++	if (s->src_x || s->src_y || (s->src_w & 0xffff) || (s->src_h & 0xffff) ||
++	    s->crtc_w != g->w || s->crtc_h != g->h ||
++	    s->crtc_x < 0 || s->crtc_y < 0 || (s->crtc_x & 1) ||
++	    g->w < 64 || g->h < 64 || (g->w & 1) || (g->h & 1) ||
++	    g->dx + g->w > h->native.w || g->dy + g->h > h->native.h)
++		return -EINVAL;
++	if (fb->pitches[1] != pitch || pitch % 16 || pitch < ALIGN(g->w, 16))
++		return -EINVAL;
++	if (fb->offsets[0] + (size_t)pitch * rows > drm_gem_fb_get_obj(fb, 0)->size ||
++	    fb->offsets[1] + (size_t)pitch * rows / 2 > drm_gem_fb_get_obj(fb, 1)->size)
++		return -ERANGE;
++	return h713_lb_words(h, g, words);
++}
++
+ static int h713_afbd_video_atomic_check(struct drm_plane *plane,
+ 					struct drm_atomic_state *state)
+ {
++	struct h713_afbd *h = to_h713(plane->dev);
+ 	struct drm_plane_state *new_state;
+ 	struct drm_crtc_state *crtc_state;
+ 	struct drm_framebuffer *fb;
++	struct h713_geom g;
+ 	dma_addr_t y, c;
+ 	bool p010;
+ 	int ret;
+@@ -399,10 +732,11 @@
+ 	if (IS_ERR(crtc_state))
+ 		return PTR_ERR(crtc_state);
+ 
++	/* No scaling; positioning only when the letterbox registers are ours. */
+ 	ret = drm_atomic_helper_check_plane_state(new_state, crtc_state,
+ 						  DRM_PLANE_NO_SCALING,
+ 						  DRM_PLANE_NO_SCALING,
+-						  false, false);
++						  h->lb_ok, false);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -411,8 +745,18 @@
+ 	if (!new_state->visible ||
+ 	    (fb->format->format != DRM_FORMAT_NV12 && !p010) ||
+ 	    (fb->modifier != DRM_FORMAT_MOD_LINEAR &&
+-	     !(p010 && fb->modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10)) ||
+-	    /*
++	     !(p010 && fb->modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10)))
++		return -EINVAL;
++
++	h713_plane_geom(new_state, &g);
++	if (!h713_geom_eq(&g, &h->native)) {
++		ret = h713_lb_check(h, new_state, &g);
++		if (ret)
++			return ret;
++		goto addresses;
++	}
++
++	if (/*
+ 	     * The framebuffer may be taller or wider than the picture: hantro
+ 	     * pads heights to 64 and GStreamer describes the whole buffer
+ 	     * (1280x768 for 720p). Only the source window below is shown.
+@@ -429,6 +773,7 @@
+ 	    new_state->crtc_h != H713_VIDEO_HEIGHT)
+ 		return -EINVAL;
+ 
++addresses:
+ 	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
+ 	c = drm_fb_dma_get_gem_addr(fb, new_state, 1);
+ 	if (!y || !c || upper_32_bits(y) || upper_32_bits(c))
+@@ -442,12 +787,28 @@
+ {
+ 	struct drm_plane_state *new_state;
+ 	struct h713_afbd *h = to_h713(plane->dev);
++	struct h713_geom g;
++	bool regeom;
+ 	dma_addr_t y, c;
+ 	unsigned int i;
+ 
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+ 	y = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 0);
+ 	c = drm_fb_dma_get_gem_addr(new_state->fb, new_state, 1);
++	h713_plane_geom(new_state, &g);
++
++	/*
++	 * A new picture size or position reprograms the window layer, which
++	 * must not happen under a running source -- the validated sequence
++	 * (tools/display/letterbox-apply.py) stops it first. The panel shows
++	 * green for the ~30 ms it is off.
++	 */
++	regeom = h->lb_ok && !h713_geom_eq(&g, &h->hw_geom);
++	if (regeom && h->video_active) {
++		writel(h->video_ctrl_idle, h->regs + AFBD_VIDEO_CTRL);
++		writel(1, h->regs + AFBD_VIDEO_READY);
++		h713_afbd_wait_ready(h, AFBD_VIDEO_READY, "video geometry");
++	}
+ 
+ 	/* The hardware mux is exclusive: quiesce RGB before source 0. */
+ 	if (!h->video_active) {
+@@ -457,24 +818,27 @@
+ 		h713_afbd_wait_ready(h, AFBD_READY, "RGB disable");
+ 	}
+ 
+-	writel(H713_VIDEO_SIZE_M1, h->regs + AFBD_VIDEO_SIZE_M1);
+-	writel(H713_VIDEO_BLOCK_M1, h->regs + AFBD_VIDEO_BLOCK_M1);
++	/*
++	 * The display firmware's AFBD geometry (0x8b1a40e0, 0x8b1a4220): whole
++	 * 16x16 blocks, the even width, 4-aligned line lengths. Line lengths
++	 * and strides count samples; the high halves are a fetch budget in
++	 * lines of line-length bytes -- the picture height, doubled for P010
++	 * (measured 2026-09-30), halved for 4:2:0 chroma. For the native
++	 * 1280x720 these are exactly the constants this driver always wrote.
++	 */
++	writel((ALIGN(g.h, 16) - 1) << 16 | (ALIGN(g.w, 16) - 1),
++	       h->regs + AFBD_VIDEO_SIZE_M1);
++	writel((ALIGN(g.h, 16) / 16 - 1) << 16 | (ALIGN(g.w, 16) / 16 - 1),
++	       h->regs + AFBD_VIDEO_BLOCK_M1);
+ 	{
+-		/*
+-		 * Everything below follows the framebuffer's format and the
+-		 * source window (fixed by atomic_check, and smaller than a
+-		 * padded fb): line length and stride in samples, fetch budget
+-		 * in line-length bytes per plane (NV12: 720/360, P010:
+-		 * 1440/720 -- both measured).
+-		 */
+ 		const struct drm_framebuffer *f = new_state->fb;
+-		u32 line = H713_VIDEO_WIDTH;
+-		u32 y = f->pitches[0] * H713_VIDEO_HEIGHT / line;
+-		u32 c = f->pitches[1] * (H713_VIDEO_HEIGHT / 2) / line;
+-
+-		writel(y << 16 | line, h->regs + AFBD_VIDEO_Y_ROWS);
+-		writel(y << 16 | line, h->regs + AFBD_VIDEO_Y_ROWS2);
+-		writel(c << 16 | line, h->regs + AFBD_VIDEO_C_ROWS);
++		u32 cpp = f->format->cpp[0];
++		u32 y = g.h * cpp;
++		u32 c = g.h / 2 * cpp;
++
++		writel(y << 16 | ALIGN(g.w, 2), h->regs + AFBD_VIDEO_Y_ROWS);
++		writel(y << 16 | ALIGN(g.w, 4), h->regs + AFBD_VIDEO_Y_ROWS2);
++		writel(c << 16 | ALIGN(g.w, 4), h->regs + AFBD_VIDEO_C_ROWS);
+ 		writel(f->pitches[0] / f->format->cpp[0],
+ 		       h->regs + AFBD_VIDEO_Y_STRIDE);
+ 		/* cpp[0]: bytes per component; NV12's cpp[1] counts the UV pair */
+@@ -500,6 +864,9 @@
+ 	writel(0, h->regs + AFBD_VIDEO_AUX_INFO);
+ 	writel(1, h->regs + AFBD_VIDEO_DIRTY);
+ 
++	if (regeom)
++		h713_lb_program(h, &g);
++
+ 	writel(H713_VIDEO_GAIN, h->route_regs + 0x508);
+ 	writel(H713_VIDEO_CTRL_ACTIVE |
+ 	       h713_afbd_video_fmt(new_state->fb) << H713_VIDEO_FMT_SHIFT,
+@@ -960,6 +1327,31 @@
+ 		return dev_err_probe(dev, -ENODEV,
+ 			"video handoff state is not the validated 1280x720 configuration\n");
+ 
++	/*
++	 * Letterbox needs three more register blocks. A device tree without
++	 * them keeps the native-only plane, as does a board whose window layer
++	 * does not read as the model predicts.
++	 */
++	h->native = (struct h713_geom){ h->mode.hdisplay, h->mode.vdisplay, 0, 0 };
++	h->hw_geom = h->native;
++	if (platform_get_resource_byname(pdev, IORESOURCE_MEM, "comp") &&
++	    platform_get_resource_byname(pdev, IORESOURCE_MEM, "proc") &&
++	    platform_get_resource_byname(pdev, IORESOURCE_MEM, "vblend")) {
++		h->comp_regs = devm_platform_ioremap_resource_byname(pdev, "comp");
++		if (IS_ERR(h->comp_regs))
++			return PTR_ERR(h->comp_regs);
++		h->proc_regs = devm_platform_ioremap_resource_byname(pdev, "proc");
++		if (IS_ERR(h->proc_regs))
++			return PTR_ERR(h->proc_regs);
++		h->vblend_regs = devm_platform_ioremap_resource_byname(pdev, "vblend");
++		if (IS_ERR(h->vblend_regs))
++			return PTR_ERR(h->vblend_regs);
++		h->lb_ok = h713_lb_snapshot(h);
++	}
++	drm_info(drm, "video plane: %s\n", h->lb_ok ?
++		 "pictures up to the panel size, placed anywhere (letterbox)" :
++		 "native size only");
++
+ 	ret = drmm_mode_config_init(drm);
+ 	if (ret)
+ 		return ret;
+@@ -992,9 +1384,17 @@
+ 	 * would have to scale. 4096 is the same ceiling h713_afbd_read_mode()
+ 	 * already applies when it sanity-checks the adopted geometry.
+ 	 */
+-	drm->mode_config.min_width = h->mode.hdisplay;
++	/*
++	 * With letterbox the plane takes any picture from 64x64 up, unscaled,
++	 * so the minimum comes down with it -- in the same change, because a
++	 * minimum the plane cannot honour only moves the failure to commit.
++	 * kmssink then negotiates the stream's own size, tries an aspect-fit
++	 * destination, and on the plane's refusal to scale falls back to the
++	 * picture centred at native size.
++	 */
++	drm->mode_config.min_width = h->lb_ok ? 64 : h->mode.hdisplay;
+ 	drm->mode_config.max_width = 4096;
+-	drm->mode_config.min_height = h->mode.vdisplay;
++	drm->mode_config.min_height = h->lb_ok ? 64 : h->mode.vdisplay;
+ 	drm->mode_config.max_height = 4096;
+ 	drm->mode_config.funcs = &h713_afbd_mode_config_funcs;
+ 

@@ -1,0 +1,27 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 26 Sep 2026 23:35:00 -0700
+Subject: [PATCH] arm64: export dcache_inval_poc for diagnostics
+
+The out-of-tree H713 HDMI diagnostic bridge reads a no-map DRAM ring written
+by the capture engine.  A cacheable mapping needs an explicit invalidate to
+observe those non-coherent writes, but arm64 does not currently export its
+existing invalidate-to-PoC primitive to GPL modules.
+
+Export the primitive so the diagnostic module can evaluate the cacheable read
+path without duplicating architecture cache-maintenance assembly.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+ arch/arm64/mm/flush.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/arch/arm64/mm/flush.c
++++ b/arch/arm64/mm/flush.c
+@@ -85,6 +85,7 @@ void flush_dcache_page(struct page *page)
+  * Additional functions defined in assembly.
+  */
+ EXPORT_SYMBOL(caches_clean_inval_pou);
++EXPORT_SYMBOL_GPL(dcache_inval_poc);
+ 
+ #ifdef CONFIG_ARCH_HAS_PMEM_API
+ void arch_wb_cache_pmem(void *addr, size_t size)

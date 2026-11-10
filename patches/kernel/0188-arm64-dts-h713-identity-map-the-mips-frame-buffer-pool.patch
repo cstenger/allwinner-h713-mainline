@@ -1,0 +1,82 @@
+From: Christopher Stenger
+Subject: [PATCH] arm64: dts: h713: identity-map the MIPS frame-buffer pool for the display
+
+When the MIPS firmware presents an HDMI source itself, AFBD source 0 fetches
+the capture ring inside the firmware's frame-buffer pool (0x4bf41000, 26 MiB,
+display_cfg.xml <frame_buffer>) at physical addresses the capture hardware
+latches into AFBD +0x320/+0x324. The display's IOMMU master translates from
+probe, so without an identity map those fetches fault, and one fault wedges
+the AFBD fetch engine for the boot.
+
+Give the pool node iommu-addresses for the display and list it in the
+display's memory-region (by name "mips-framebuf"; the driver still allocates
+from the system CMA pool, looked up by name "framebuffer"). Add a reg-less
+reservation of the same range for the VE, which shares the IOMMU group and
+initialises the IOVA allocator first, as iova-reserve-scanout does for the
+U-Boot scanout.
+
+Measured on board B (docs/hdmi-panel-source-design-2026-10-23.md 10.11-10.12):
+the firmware programs source 0 for capture with no address slots, taking its
+addresses from the capture pair inside this pool.
+
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -91,10 +91,20 @@
+ 			no-map;
+ 		};
+ 
+-		/* The firmware's own framebuffer, per display_cfg.xml frame_buffer */
++		/*
++		 * The firmware's own framebuffer, per display_cfg.xml frame_buffer.
++		 * Every MIPS frame buffer comes from this pool, including the HDMI
++		 * capture ring. When the firmware presents HDMI itself, AFBD source
++		 * 0 fetches that ring at the physical addresses the capture side
++		 * latches into AFBD +0x320/+0x324 -- through the display's IOMMU
++		 * master, which translates from probe. Identity-map the pool for
++		 * the display so those fetches resolve; iova-reserve-mips-framebuf
++		 * below keeps the shared IOVA allocator out of it.
++		 */
+ 		mips_framebuf: framebuf@4bf41000 {
+ 			reg = <0x4bf41000 0x1a00000>;
+ 			no-map;
++			iommu-addresses = <&display 0x4bf41000 0x1a00000>;
+ 		};
+ 
+ 		/*
+@@ -148,6 +158,15 @@
+ 		ve_scanout_iova: iova-reserve-scanout {
+ 			iommu-addresses = <&ve 0x6c100000 0x800000>;
+ 		};
++
++		/*
++		 * The firmware pool again, as an IOVA reservation for the VE, for
++		 * the reason iova-reserve-scanout above gives: the shared domain's
++		 * allocator is populated by whichever device initialises it first.
++		 */
++		ve_mips_framebuf_iova: iova-reserve-mips-framebuf {
++			iommu-addresses = <&ve 0x4bf41000 0x1a00000>;
++		};
+ 	};
+ 
+ 	psci {
+@@ -1406,7 +1425,7 @@
+ 			 * of_dma_set_restricted_buffer() only fires for a
+ 			 * "restricted-dma-pool" compatible, which this is not.
+ 			 */
+-			memory-region = <&ve_scanout_iova>;
++			memory-region = <&ve_scanout_iova>, <&ve_mips_framebuf_iova>;
+ 			status = "okay";
+ 		};
+ 
+@@ -1899,8 +1918,8 @@
+ 			 * the identity map below.
+ 			 */
+ 			iommus = <&iommu 2 1>;
+-			memory-region = <&framebuf_reserved>;
+-			memory-region-names = "adopted-scanout";
++			memory-region = <&framebuf_reserved>, <&mips_framebuf>;
++			memory-region-names = "adopted-scanout", "mips-framebuf";
+ 			status = "okay";
+ 		};
+ 

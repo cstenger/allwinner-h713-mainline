@@ -1,0 +1,79 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Thu, 3 Sep 2026 00:30:00 -0700
+Subject: [PATCH] EXPERIMENT: drm: h713: expose a render node to unblock VA-API interop
+
+mpv plays hardware-decoded video today with --hwdec=vaapi-copy, but the
+zero-copy --hwdec=vaapi path fails at "Could not create a VA display", and the
+cause is not the VA driver. The same driver and environment create a display
+fine under vo=drm and under vo=gpu with vaapi-copy.
+
+It is this device having no render node. mpv's DRM/EGL context calls
+drmGetRenderDeviceNameFromFd() on the DISPLAY device to find a render node for
+VA-API interop:
+
+  [vo/gpu/opengl] Could not find path to render node.
+  [vo/gpu/vaapi]  Trying to open a drm VA display...
+  [vo/gpu/vaapi]  Could not create a VA display.
+
+  /dev/dri/by-path/platform-5600000.display-card -> card0     (this driver)
+  /dev/dri/by-path/platform-1800000.gpu-render   -> renderD128 (panfrost)
+
+card0 has only card0 and controlD64. The render node mpv should use belongs to
+panfrost, and mpv offers no option to point it there -- --vaapi-device is
+honoured for the copy path and ignored for interop.
+
+So expose a render node here. It carries only the GEM and PRIME ioctls; the
+core keeps dumb-buffer ioctls master-only. libva does not care what the fd is,
+because v4l2_request talks to /dev/media* rather than to DRM, so any valid fd
+is enough to get past display creation.
+
+BE CLEAR ABOUT WHAT THIS IS. DRIVER_RENDER on a display-only device advertises
+a capability the hardware does not have. It is a workaround for a userspace
+assumption -- that a display device's render node is the right one to use --
+and the honest fix lives in mpv, or in using a Wayland compositor with
+dmabuf-wayland instead. It is tried here because it is small, reversible, and
+settles empirically whether the render node is really the only thing in the way.
+
+THE RISK, and the thing to check before keeping it: mesa currently pairs this
+display-only card with panfrost's render node by itself, which is what makes
+vo=gpu work at all (GL_RENDERER='Mali-G31 (Panfrost)'). A render node appearing
+on this device could change that pairing. If vo=gpu stops reaching Mali-G31,
+this costs more than it buys and should be dropped.
+
+OUT OF SERIES.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -504,7 +504,28 @@
+ DEFINE_DRM_GEM_DMA_FOPS(h713_afbd_fops);
+ 
+ static const struct drm_driver h713_afbd_driver = {
+-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
++	/*
++	 * DRIVER_RENDER on a display-only device is deliberate and is a
++	 * userspace workaround, not a claim about the hardware. mpv's DRM/EGL
++	 * context calls drmGetRenderDeviceNameFromFd() on the DISPLAY device to
++	 * find a render node for VA-API interop; this device has none, so mpv
++	 * logs "Could not find path to render node", leaves render_fd unset and
++	 * then cannot create a VA display -- which is what blocks zero-copy
++	 * --hwdec=vaapi. The render node it should use belongs to panfrost, and
++	 * mpv offers no option to point it there.
++	 *
++	 * With this flag the device gains a render node exposing only the GEM
++	 * and PRIME ioctls (dumb-buffer ioctls stay master-only, as the core
++	 * enforces). libva does not care what the fd is -- v4l2_request talks to
++	 * /dev/media*, not to DRM -- so any valid fd unblocks it.
++	 *
++	 * The risk being tested is mesa: it currently pairs this display-only
++	 * card with panfrost's render node by itself (kmsro), and a render node
++	 * appearing here could change that pairing and break the working
++	 * vo=gpu path. Verify vo=gpu still reaches Mali-G31 before keeping this.
++	 */
++	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC |
++				  DRIVER_RENDER,
+ 	.fops			= &h713_afbd_fops,
+ 	DRM_GEM_DMA_DRIVER_OPS,
+ 	DRM_FBDEV_DMA_DRIVER_OPS,

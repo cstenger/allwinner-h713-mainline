@@ -1,0 +1,45 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Fri, 16 Oct 2026 14:51:57 -0700
+Subject: [PATCH] arm64: dts: h713: describe the USB OTG controller
+
+The DRD port's musb controller at 0x4100000 was missing; only the same
+port's host side (ehci0/ohci0) was described. U-Boot drives it as a
+peripheral for fastboot and is moving to this device tree, so describe
+it: the D1/A33 musb glue, the OTG bus gate and reset, PHY 0, and the
+interrupt from the stock udc-controller@4100000 node (SPI 32).
+
+Disabled: Linux does not use the port's device side, so nothing changes
+there.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1086,6 +1086,27 @@
+ 			};
+ 		};
+ 
++		/*
++		 * === USB OTG (DRD port, device side) ===
++		 * The musb controller on the DRD port; ehci0/ohci0 below are the same
++		 * port's host side. U-Boot uses it as a peripheral (fastboot); Linux
++		 * does not, so it is disabled here. Interrupt from the stock
++		 * udc-controller@4100000 node.
++		 */
++		usb_otg: usb@4100000 {
++			compatible = "allwinner,sun20i-d1-musb",
++				     "allwinner,sun8i-a33-musb";
++			reg = <0x04100000 0x400>;
++			interrupts = <GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "mc";
++			clocks = <&ccu CLK_BUS_OTG0>;
++			resets = <&ccu RST_BUS_OTG0>;
++			extcon = <&usbphy 0>;
++			phys = <&usbphy 0>;
++			phy-names = "usb";
++			status = "disabled";
++		};
++
+ 		/* === USB PHY === */
+ 		usbphy: phy@4100400 {
+ 			compatible = "allwinner,sun50i-h713-usb-phy";

@@ -1,0 +1,124 @@
+drm: h713: scale a source window inside the native video raster
+
+*** OUT OF patches/kernel/series SINCE 2026-09-23: SUPERSEDED BY THE VE SCALER.
+***
+*** This patch is one of six that let the display magnify a decoded picture
+*** smaller than the panel (VE power-of-two scale-down to 960x544, then the
+*** proc block at 0x05180000 back up to 1280x720). Patch 0120 replaced that
+*** route: the VE's polyphase scaler produces arbitrary even sizes from 1x to
+*** 4x per axis, so the decoder lands on exactly 1280x720 and the display has
+*** nothing left to scale. The retired six are 0098, 0103, 0105, 0106, 0108
+*** and 0111; they are a chain and only come back together.
+***
+*** Nothing in the shipping stack could still reach this path. mpv's vo_drm
+*** refuses any configuration whose displayed source size differs from the
+*** mode (patches/mpv/0003), and vd_lavc only ever asks the decoder to SHRINK
+*** (patches/mpv/0004), so a sub-panel picture never reaches the plane at all.
+***
+*** REOPEN CONDITION: content SMALLER than the panel, magnified with no GPU --
+*** 480p on this 720p panel. The VE cannot upscale, so that is the one job
+*** this hardware block could still do. It would also need a producer that
+*** writes the small picture into a panel-sized canvas (cedrus patch 0107
+*** already separates COMPOSE from the capture canvas, so the kernel half
+*** exists). Restore all six to `series` together; they were hardware-clean
+*** when they were dropped, not broken.
+***
+*** See docs/handoff-2026-09-23-retire-display-scaling.md.
+***
+*** THIS ONE is the one that established the current KMS contract: AFBD
+*** always scans its native 1280x720 raster and only the proc input window
+*** moves. Without the chain, the plane goes back to the same fixed geometry
+*** by a shorter route -- the pre-0098 atomic_check, which rejects any source
+*** that is not the full panel.
+***
+
+The AFBD video fetch path does not honor a smaller raster even when its pitch
+is padded to the panel width: it wraps the 960x544 picture three times across
+the top of the panel and fills the remainder green.  The downstream proc block
+has independently been shown to scale a smaller input window correctly while
+AFBD remains at its native 1280x720 geometry.
+
+Make that proven arrangement the KMS contract.  Require a native NV12
+framebuffer, take the proc input window from the plane source rectangle, and
+leave every AFBD and VideoInfo geometry field at the framebuffer size.  This
+also gives decoded scale-down output a native chroma offset and allocation
+while retaining its smaller visible rectangle.
+
+--- a/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
++++ b/drivers/gpu/drm/tiny/sun50i-h713-afbd.c
+@@ -468,11 +468,11 @@
+ 	fb = new_state->fb;
+ 	if (!new_state->visible || fb->format->format != DRM_FORMAT_NV12 ||
+ 	    fb->modifier != DRM_FORMAT_MOD_LINEAR ||
++	    fb->width != H713_VIDEO_WIDTH ||
++	    fb->height != H713_VIDEO_HEIGHT ||
+ 	    fb->pitches[0] != H713_VIDEO_STRIDE ||
+ 	    fb->pitches[1] != H713_VIDEO_STRIDE ||
+ 	    new_state->src_x || new_state->src_y ||
+-	    new_state->src_w != fb->width << 16 ||
+-	    new_state->src_h != fb->height << 16 ||
+ 	    new_state->crtc_x || new_state->crtc_y ||
+ 	    new_state->crtc_w != H713_VIDEO_WIDTH ||
+ 	    new_state->crtc_h != H713_VIDEO_HEIGHT)
+@@ -485,7 +485,10 @@
+ 	 * its visible window is narrower; require that padded layout explicitly
+ 	 * so a tight smaller framebuffer cannot shear and run past its mapping.
+ 	 */
+-	if (fb->width % 16 || fb->height % 16 || !fb->width || !fb->height)
++	if (!(new_state->src_w >> 16) || !(new_state->src_h >> 16) ||
++	    (new_state->src_w & 0xffff) || (new_state->src_h & 0xffff) ||
++	    (new_state->src_w >> 16) % 16 ||
++	    (new_state->src_h >> 16) % 16)
+ 		return -EINVAL;
+ 
+ 	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
+@@ -508,8 +511,8 @@
+ 
+ 	new_state = drm_atomic_get_new_plane_state(state, plane);
+ 	fb = new_state->fb;
+-	src_w = fb->width;
+-	src_h = fb->height;
++	src_w = new_state->src_w >> 16;
++	src_h = new_state->src_h >> 16;
+ 	y = drm_fb_dma_get_gem_addr(fb, new_state, 0);
+ 	c = drm_fb_dma_get_gem_addr(fb, new_state, 1);
+ 
+@@ -522,23 +525,27 @@
+ 	}
+ 
+ 	/*
+-	 * Source geometry follows the framebuffer, not the panel. A stale
+-	 * 1920x1088 inherited here is what made the fetcher scan past the end
+-	 * of a smaller buffer, so it is derived rather than assumed.
++	 * AFBD always scans its proven native raster.  A smaller decoded picture
++	 * occupies the top-left source window and the downstream proc block
++	 * magnifies that window; changing the AFBD raster itself makes this
++	 * hardware wrap each line as repeated/sheared pictures.
+ 	 */
+-	if (src_w != h->video_info_w ||
+-	    src_h != h->video_info_h ||
++	if (fb->width != h->video_info_w ||
++	    fb->height != h->video_info_h ||
+ 	    fb->pitches[0] != h->video_info_pitch)
+-		h713_afbd_init_video_info(h, src_w, src_h, fb->pitches[0]);
++		h713_afbd_init_video_info(h, fb->width, fb->height,
++				     fb->pitches[0]);
+ 
+-	writel(((src_h - 1) << 16) | (src_w - 1), h->regs + AFBD_VIDEO_SIZE_M1);
+-	writel(((src_h / 16 - 1) << 16) | (src_w / 16 - 1),
++	writel(((fb->height - 1) << 16) | (fb->width - 1),
++	       h->regs + AFBD_VIDEO_SIZE_M1);
++	writel(((fb->height / 16 - 1) << 16) | (fb->width / 16 - 1),
+ 	       h->regs + AFBD_VIDEO_BLOCK_M1);
+ 	writel(fb->pitches[0], h->regs + AFBD_VIDEO_Y_STRIDE);
+ 	writel(fb->pitches[1], h->regs + AFBD_VIDEO_C_STRIDE);
+-	writel((src_h << 16) | src_w, h->regs + AFBD_VIDEO_SIZE);
+-	writel((src_h << 16) | src_w, h->regs + AFBD_VIDEO_Y_SIZE);
+-	writel(((src_h / 2) << 16) | src_w, h->regs + AFBD_VIDEO_C_SIZE);
++	writel((fb->height << 16) | fb->width, h->regs + AFBD_VIDEO_SIZE);
++	writel((fb->height << 16) | fb->width, h->regs + AFBD_VIDEO_Y_SIZE);
++	writel(((fb->height / 2) << 16) | fb->width,
++	       h->regs + AFBD_VIDEO_C_SIZE);
+ 	writel(1, h->regs + AFBD_VIDEO_GATE);
+ 	writel(0, h->regs + AFBD_VIDEO_FIELD);
+ 	writel(0x00000122, h->regs + AFBD_VIDEO_RING_MUX);

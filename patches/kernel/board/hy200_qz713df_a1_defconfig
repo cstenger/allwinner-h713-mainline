@@ -42,6 +42,14 @@ CONFIG_DEVTMPFS_MOUNT=y
 # (pm_runtime_enable with no get; dec_enable only runs on runtime resume).
 CONFIG_SUNXI_DECD=m
 CONFIG_SUNXI_SCANOUT_DMABUF=m
+# DMA-BUF heaps: the VA driver allocates decoder capture memory from
+# /dev/dma_heap/system so each surface owns its pixels and the queues can be
+# renegotiated mid-stream. System, not CMA: the VE, the AV1 core and the
+# display are all IOMMU masters, and cma=128M cannot hold 4K pools. The CMA
+# heap is built for diagnostics only.
+CONFIG_DMABUF_HEAPS=y
+CONFIG_DMABUF_HEAPS_SYSTEM=y
+CONFIG_DMABUF_HEAPS_CMA=y
 CONFIG_BLK_DEV_SD=y
 CONFIG_ATA=y
 CONFIG_AHCI_SUNXI=y
@@ -70,11 +78,15 @@ CONFIG_RTL8XXXU=m
 CONFIG_RTL8XXXU_UNTESTED=y
 CONFIG_INPUT_EVDEV=y
 CONFIG_KEYBOARD_ADC=m
+CONFIG_KEYBOARD_GPIO=y
 CONFIG_KEYBOARD_SUN4I_LRADC=y
 # CONFIG_INPUT_MOUSE is not set
 CONFIG_INPUT_TOUCHSCREEN=y
 CONFIG_TOUCHSCREEN_SUN4I=y
 CONFIG_INPUT_MISC=y
+# uinput: a userspace bridge (e.g. a non-HID USB GPIO board) can inject KEY_POWER
+# and player keys as a real input device (docs/standby-plan.md).
+CONFIG_INPUT_UINPUT=m
 CONFIG_INPUT_AXP20X_PEK=y
 CONFIG_SERIO_SUN4I_PS2=y
 CONFIG_SERIAL_8250=y
@@ -94,6 +106,7 @@ CONFIG_BATTERY_AXP20X=y
 CONFIG_AXP20X_POWER=y
 CONFIG_THERMAL=y
 CONFIG_CPU_THERMAL=y
+CONFIG_DEVFREQ_THERMAL=y
 CONFIG_SUN8I_THERMAL=y
 CONFIG_WATCHDOG=y
 CONFIG_SUNXI_WATCHDOG=y
@@ -117,18 +130,41 @@ CONFIG_MEDIA_SUPPORT=y
 CONFIG_MEDIA_PLATFORM_SUPPORT=y
 CONFIG_V4L_PLATFORM_DRIVERS=y
 CONFIG_V4L_MEM2MEM_DRIVERS=y
+CONFIG_VIDEOBUF2_VMALLOC=y
 CONFIG_VIDEO_SUN4I_CSI=y
 CONFIG_VIDEO_SUN6I_CSI=y
 CONFIG_VIDEO_SUN8I_DEINTERLACE=y
 CONFIG_VIDEO_SUN8I_ROTATE=y
+# H713 AV1 decoder (Google IP): hantro variant, patch 0145
+CONFIG_VIDEO_HANTRO=m
 CONFIG_DRM=y
 # fbdev emulation gives the AFBD KMS driver a /dev/fb0 and a console on the
 # projector, which is the cheapest possible check that scanout is live.
 CONFIG_DRM_FBDEV_EMULATION=y
-# KMS over the AFBD scanout engine (patches 0037/0038). A module: it adopts a
-# display U-Boot has already brought up, so nothing is lost by loading it late,
-# and a bad load can be undone without reflashing a kernel.
-CONFIG_DRM_SUN50I_H713_AFBD=m
+# KMS over the AFBD scanout engine (patches 0037/0038). Built in, not a module.
+# It was =m on the reasoning that it only adopts a display U-Boot has already
+# brought up, so "nothing is lost by loading it late". Something is: the boot
+# log. As a module, udev did not modprobe it until 6.41 s, fbcon took over at
+# 6.49 s, and the 410 kernel lines printed before that never reached the panel.
+# A bad load is no longer undoable without reflashing a kernel -- that is the
+# price, and tools/install-kernel-fit.sh backs up the outgoing FIT for it.
+CONFIG_DRM_SUN50I_H713_AFBD=y
+# Match dummycon to the panel. Until the AFBD driver probes at 1.25 s the VT is
+# backed by dummycon, and everything console=tty0 prints before then lives only
+# in that buffer -- at the 80x25 default, kernel lines wrap past 80 columns and
+# only the last ~13 messages survive to be painted at the handover. 1280x720
+# with the 8x16 font is 160x45 (confirmed: "Console: switching to colour frame
+# buffer device 160x45"), so matching it retains ~45 unwrapped lines and makes
+# vc_resize at the handover a no-op instead of a truncation.
+#
+# This does NOT touch the serial console: ttyS0 is a UART tty sized by termios
+# (24x80 on the board), not a VT, and is unaffected either way.
+#
+# Do not raise these ABOVE the panel geometry -- the VC is resized down at the
+# handover and the excess is simply dropped. Both numbers are tied to this panel
+# and this font; change either and they need recomputing.
+CONFIG_DUMMY_CONSOLE_COLUMNS=160
+CONFIG_DUMMY_CONSOLE_ROWS=45
 CONFIG_DRM_SUN4I=y
 CONFIG_DRM_PANEL_LVDS=y
 CONFIG_DRM_PANEL_EDP=y
@@ -140,6 +176,7 @@ CONFIG_FB=y
 CONFIG_FB_VIRTUAL=y
 CONFIG_BACKLIGHT_CLASS_DEVICE=y
 CONFIG_BACKLIGHT_PWM=y
+CONFIG_BACKLIGHT_GPIO=y
 CONFIG_SOUND=y
 CONFIG_SND=y
 CONFIG_SND_SOC=y
@@ -191,9 +228,10 @@ CONFIG_HWSPINLOCK=y
 CONFIG_HWSPINLOCK_SUN6I=y
 CONFIG_MAILBOX=y
 CONFIG_SUN50I_IOMMU=y
-# CONFIG_HY310_CPU_COMM is not set
+CONFIG_HY310_CPU_COMM=m
 CONFIG_SUN50I_H713_PPU=y
 CONFIG_IIO=y
+CONFIG_IIO_ST_ACCEL_3AXIS=y
 CONFIG_AXP20X_ADC=y
 CONFIG_SUN20I_GPADC=y
 CONFIG_SUN50I_H713_LRADC=y
@@ -204,8 +242,10 @@ CONFIG_PHY_SUN9I_USB=y
 CONFIG_NVMEM_SUNXI_SID=y
 CONFIG_AUTOFS_FS=y
 CONFIG_EXT4_FS=y
+CONFIG_EXT4_FS_POSIX_ACL=y
 CONFIG_VFAT_FS=y
 CONFIG_TMPFS=y
+CONFIG_TMPFS_POSIX_ACL=y
 CONFIG_NFS_FS=y
 CONFIG_NFS_V3_ACL=y
 CONFIG_NFS_V4=y
@@ -227,7 +267,39 @@ CONFIG_DMA_CMA=y
 CONFIG_PRINTK_TIME=y
 CONFIG_DYNAMIC_DEBUG=y
 CONFIG_DEBUG_FS=y
+# Magic SysRq, in the SHIPPING config and not just the debug fragments.
+#
+# On 2026-08-22 a wedged rootfs cost a physical power cycle: the eMMC stopped
+# answering, so reboot and systemctl -- external binaries on the dead
+# filesystem -- could not run, /proc still worked but nothing that touched a
+# path did, and `exec 3>/dev/watchdog0` did not reset the board because systemd
+# already holds and pets the watchdog. That left no software path out.
+#
+# `echo b > /proc/sysrq-trigger` needs no filesystem, and neither does a UART
+# BREAK (tools/serial/sysrq.py). Note the standing finding that sysrq did NOT
+# rescue an earlier *hard* lockup still holds and is not contradicted here:
+# with every CPU spinning interrupts-disabled nothing runs the handler. This is
+# for the softer case, which is the one that actually cost a trip to the board
+# -- systemd was alive and printing throughout.
+#
+# MAGIC_SYSRQ_SERIAL is what makes the BREAK path work; the empty sequence
+# means BREAK alone arms it.
+#
+# Verified live on hardware 2026-08-22, not merely compiled in:
+# `echo h > /proc/sysrq-trigger` prints the banner including reboot(b),
+# show-blocked-tasks(w) and show-task-states(t) -- the three that would have
+# resolved the wedge above -- and /proc/sys/kernel/sysrq reads 1, so this
+# rootfs does not restrict the mask the way a stock Debian sysctl can.
+CONFIG_MAGIC_SYSRQ=y
+CONFIG_MAGIC_SYSRQ_SERIAL=y
+CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE=0x1
 # Reboot-to-fastboot handoff over the RTC GP7 nvmem cell (see the RTC section and
 # the reboot-mode node in sun50i-h713.dtsi). Replaces the earlier syscon window
 # that overlapped the RTC register region.
 CONFIG_NVMEM_REBOOT_MODE=y
+CONFIG_SUNXI_H713_AV1_PROBE=m
+# Standby phase 3 (docs/standby-plan.md): /sys/power/pm_test, so suspend can be
+# exercised one stage at a time and resume on its own, and pm_print_times.
+CONFIG_PM_DEBUG=y
+CONFIG_PM_ADVANCED_DEBUG=y
+CONFIG_PM_SLEEP_DEBUG=y

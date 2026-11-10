@@ -1,0 +1,243 @@
+From: h713 <h713@local>
+Date: Tue, 1 Sep 2026 04:20:00 -0700
+Subject: [PATCH] EXPERIMENT: enable DECD IOMMU master 2 at the first mapped frame
+
+The vendor DT starts DECD/GE2D master 2 bypassing, then HWC calls
+sunxi_enable_device_iommu(2, 1) at playback resume. Patches 0069/0070 instead
+started it translated during probe. That produced valid single IOVAs and no
+faults, but made the otherwise-proven DECD route black.
+
+Reproduce the vendor transition boundary instead:
+
+  - attach dec@5600000 to master 2 while leaving that master bypassing;
+  - identity-map the adopted logo and DECD metadata reservations so every
+    physical fetch already in flight remains valid after translation starts;
+  - expose a locked H713 per-master runtime toggle in sun50i-iommu;
+  - map the first image and info dma-bufs, flush the IOMMU, then enable
+    translation immediately before that frame enters DECD's queue.
+
+The first test deliberately retains patch 0074's physically contiguous Cedrus
+CAPTURE allocation. If this control displays through IOVAs, a second build can
+drop 0074 and prove that physically segmented CAPTURE pages coalesce into the
+one full-length IOVA required by patches 0072/0073.
+
+Master 2 stays translated until reboot. Switching it back while a shared
+AFBD/DECD fetch may still carry an IOVA is a separate lifetime problem, and the
+vendor evidence currently proves only the enable operation.
+
+OUT OF SERIES. Pairs with the out-of-series 0068 exclusive-owner patch. A
+single bad master-2 mapping can wedge AFBD for the rest of the boot, so test
+only from a RAM-loaded kernel and preserve the import guard.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/include/linux/sun50i-iommu.h b/include/linux/sun50i-iommu.h
+new file mode 100644
+--- /dev/null
++++ b/include/linux/sun50i-iommu.h
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef _LINUX_SUN50I_IOMMU_H
++#define _LINUX_SUN50I_IOMMU_H
++
++#include <linux/errno.h>
++#include <linux/kconfig.h>
++#include <linux/types.h>
++
++struct device;
++
++#if IS_ENABLED(CONFIG_SUN50I_IOMMU)
++int sun50i_iommu_set_master_translation(struct device *dev, bool enable);
++#else
++static inline int
++sun50i_iommu_set_master_translation(struct device *dev, bool enable)
++{
++	return -ENODEV;
++}
++#endif
++
++#endif
+diff --git a/drivers/iommu/sun50i-iommu.c b/drivers/iommu/sun50i-iommu.c
+--- a/drivers/iommu/sun50i-iommu.c
++++ b/drivers/iommu/sun50i-iommu.c
+@@ -25,8 +25,10 @@
+ #include <linux/sizes.h>
+ #include <linux/slab.h>
+ #include <linux/spinlock.h>
++#include <linux/sun50i-iommu.h>
+ #include <linux/types.h>
+ 
++#include "dma-iommu.h"
+ #include "iommu-pages.h"
+ 
+ #define IOMMU_RESET_REG			0x010
+@@ -730,6 +732,13 @@ sun50i_iommu_domain_alloc_paging(struct device *dev)
+ 	if (!sun50i_domain)
+ 		return NULL;
+ 
++	/*
++	 * Reserved direct mappings are created before attach_device(). Bind
++	 * the one H713 IOMMU instance now so their page-table flushes have the
++	 * controller pointer they need. attach_domain() assigns the same value.
++	 */
++	sun50i_domain->iommu = sun50i_iommu_from_dev(dev);
++
+ 	sun50i_domain->dt =
+ 		iommu_alloc_pages_sz(GFP_KERNEL | GFP_DMA32, DT_SIZE);
+ 	if (!sun50i_domain->dt)
+@@ -910,10 +919,62 @@ static int sun50i_iommu_of_xlate(struct device *dev,
+ 	return iommu_fwspec_add_ids(dev, &id, 1);
+ }
+ 
++int sun50i_iommu_set_master_translation(struct device *dev, bool enable)
++{
++	struct iommu_fwspec *fwspec;
++	struct sun50i_iommu *iommu;
++	unsigned long flags;
++	unsigned int id;
++	u32 before, after;
++	int ret = 0;
++
++	if (!dev)
++		return -EINVAL;
++
++	fwspec = dev_iommu_fwspec_get(dev);
++	iommu = dev_iommu_priv_get(dev);
++	if (!fwspec || !fwspec->num_ids || !iommu)
++		return -ENODEV;
++	if (iommu->variant->num_dt_cells < 2)
++		return -EOPNOTSUPP;
++
++	id = fwspec->ids[0];
++	if (id >= iommu->variant->num_masters)
++		return -EINVAL;
++
++	spin_lock_irqsave(&iommu->iommu_lock, flags);
++	before = iommu_read(iommu, IOMMU_BYPASS_REG);
++	if (enable) {
++		/* All DMA mappings must be live before the master starts translating. */
++		ret = sun50i_iommu_flush_all_tlb(iommu);
++		if (ret)
++			goto out_unlock;
++		iommu->bypass &= ~BIT(id);
++	} else {
++		iommu->bypass |= BIT(id);
++	}
++	iommu_write(iommu, IOMMU_BYPASS_REG, iommu->bypass);
++	after = iommu_read(iommu, IOMMU_BYPASS_REG);
++	if (!!(after & BIT(id)) == enable)
++		ret = -EIO;
++
++out_unlock:
++	spin_unlock_irqrestore(&iommu->iommu_lock, flags);
++	if (ret)
++		return ret;
++
++	dev_info(dev,
++		 "IOMMU master %u runtime translation %s: bypass %#x -> %#x\n",
++		 id, enable ? "on" : "off", before, after);
++	return 0;
++}
++EXPORT_SYMBOL_GPL(sun50i_iommu_set_master_translation);
++
+ static const struct iommu_ops sun50i_iommu_ops = {
+ 	.identity_domain = &sun50i_iommu_identity_domain,
+ 	.device_group	= generic_single_device_group,
+ 	.domain_alloc_paging = sun50i_iommu_domain_alloc_paging,
++	.get_resv_regions = iommu_dma_get_resv_regions,
+ 	.of_xlate	= sun50i_iommu_of_xlate,
+ 	.probe_device	= sun50i_iommu_probe_device,
+ 	.default_domain_ops = &(const struct iommu_domain_ops) {
+diff --git a/drivers/misc/sunxi_decd/decd_ioctl.c b/drivers/misc/sunxi_decd/decd_ioctl.c
+--- a/drivers/misc/sunxi_decd/decd_ioctl.c
++++ b/drivers/misc/sunxi_decd/decd_ioctl.c
+@@ -1,6 +1,7 @@
+ // SPDX-License-Identifier: GPL-2.0
+ 
+ #include <linux/pm_runtime.h>
++#include <linux/sun50i-iommu.h>
+ #include <linux/uaccess.h>
+ 
+ #include "decd_types.h"
+@@ -49,6 +50,7 @@ int dec_frame_submit(struct dec_device *dec,
+ 		     int *release_fence_fd, int repeat)
+ {
+ 	struct dec_frame_item *item;
++	int ret = 0;
+ 
+ 	if (!dec || !desc)
+ 		return 0;
+@@ -65,6 +67,23 @@ int dec_frame_submit(struct dec_device *dec,
+ 	if (!desc->blue_en) {
+ 		item = frame_item_create(dec, desc);
+ 		if (item) {
++			if (!dec->iommu_runtime_enabled) {
++				ret = sun50i_iommu_set_master_translation(dec->dev,
++								      true);
++				if (ret) {
++					dev_err(dec->dev,
++						"cannot enable runtime IOMMU translation: %d\n",
++						ret);
++					frame_item_release(item);
++					goto out;
++				}
++				dec->iommu_runtime_enabled = true;
++				dev_info(dec->dev,
++					 "first IOVA frame mapped: Y=%pad C=%#llx image=%zu bytes\n",
++					 &item->image_map->dma_addr,
++					 (unsigned long long)item->c_addr,
++					 item->image_map->dbuf->size);
++			}
+ 			do {
+ 				refcount_inc(&item->refcount);
+ 				dec_frame_manager_enqueue_frame(dec->fmgr,
+@@ -81,7 +100,7 @@ int dec_frame_submit(struct dec_device *dec,
+ 	dec_reg_enable(dec->regs, true);
+ out:
+ 	mutex_unlock(&dec->lock);
+-	return 0;
++	return ret;
+ }
+ 
+ /*
+diff --git a/drivers/misc/sunxi_decd/decd_types.h b/drivers/misc/sunxi_decd/decd_types.h
+--- a/drivers/misc/sunxi_decd/decd_types.h
++++ b/drivers/misc/sunxi_decd/decd_types.h
+@@ -267,6 +267,7 @@ struct dec_device {
+ 	wait_queue_head_t event_wait;
+ 	struct mutex lock;
+ 	bool enabled;
++	bool iommu_runtime_enabled;
+ };
+ 
+ extern struct dec_device *g_dec;
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -91,6 +91,7 @@
+ 		decd_reserved: decoder@4d941000 {
+ 			reg = <0x4d941000 0x20000>;
+ 			no-map;
++			iommu-addresses = <&dec 0x4d941000 0x20000>;
+ 		};
+ 
+ 		cpu_comm_reserved: cpu-comm@4e300000 {
+@@ -121,6 +122,7 @@
+ 		framebuf_reserved: uboot-scanout@6c100000 {
+ 			reg = <0x6c100000 0x800000>;
+ 			no-map;
++			iommu-addresses = <&dec 0x6c100000 0x800000>;
+ 		};
+ 	};
+ 
+@@ -1671,7 +1673,9 @@
+ 			clock-names = "clk_afbd", "clk_bus_disp";
+ 			resets = <&ccu RST_BUS_DISP>;
+ 			reset-names = "rst_bus_disp";
+-			memory-region = <&decd_reserved>;
++			memory-region = <&decd_reserved>, <&framebuf_reserved>;
++			/* Vendor initial state: master 2 attached but bypassing. */
++			iommus = <&iommu 2 0>;
+ 			/*
+ 			 * 100 MHz, not the vendor's 200: dec_enable() does
+ 			 * clk_set_rate(clk_afbd, this) on runtime resume, and

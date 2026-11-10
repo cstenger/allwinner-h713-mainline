@@ -1,0 +1,126 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Wed, 2 Sep 2026 03:00:00 -0700
+Subject: [PATCH] EXPERIMENT: misc: h713: hold bus-r-cpucfg and read the HPD register
+
+0x07091014 is the HPD pin register -- three bits, 0x00 all ports low, 0x07 all
+high -- and it is the last thing standing between this board and a source
+seeing it as a display. Reading it from Linux hard-locked the SoC: serial
+silent, network gone, power cycle to recover.
+
+The cause was found by reading rather than probing, since that block had cost a
+power cycle already. Neither device tree describes 0x07091000; stock declares
+only rtc@7090000 and rtc_ccu@7090000, both 0x3ff long, so stock's Linux does
+not describe it either, which fits the block being ARISC-private and driven by
+firmware. The R-domain CCU does expose a gate for the block that owns the
+region:
+
+  r-ahb         en=1     r-apb0        en=3      bus-r-ppu    en=1
+  bus-r-cpucfg  en=0     bus-r-timer   en=0      bus-r-twd    en=0
+
+R_CPUCFG is the ARISC/CPUS configuration block. Its gate is off while the R-bus
+fabric around it is up, so the fabric is not the problem and only the leaf is --
+exactly the shape of the TVFE/TVCAP hang that 0087 fixed by claiming the gate.
+
+So claim CLK_BUS_R_CPUCFG in the same minimal device and read the register from
+inside the driver, with a flushed line naming the access immediately before it.
+If the board stops there, the clock was not the cause and the last line says so.
+
+This is a hypothesis under test, not a fix. bus-r-rtc is also en=0 while the RTC
+works perfectly, because the RTC sits in an always-on domain -- so a gated bus
+clock does not universally imply an inaccessible block, and this could still
+hang.
+
+Deliberately reads only. If it reads, writing 0x07 asserts HPD on all three
+ports and the host GPU becomes a real instrument for every EDID question this
+round had to answer by inference -- but that is a separate change, because a
+write on top of an unproven read would make a hang ambiguous.
+
+OUT OF SERIES. Applies after 0089.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+diff --git a/drivers/misc/h713-tvcap-probe.c b/drivers/misc/h713-tvcap-probe.c
+--- a/drivers/misc/h713-tvcap-probe.c
++++ b/drivers/misc/h713-tvcap-probe.c
+@@ -154,6 +154,49 @@
+ 	dev_info(tv->dev, "%s: readable\n", what);
+ }
+ 
++/*
++ * The HPD pin register, and the last unexplained hard-lock on this board.
++ *
++ * 0x07091000 is described by no node in either our DT or stock's -- stock
++ * declares only rtc@7090000 and rtc_ccu@7090000, both 0x3ff long -- which fits
++ * the block being ARISC-private and driven by firmware. A read of it from
++ * Linux took the whole SoC down: serial silent, network gone, power cycle to
++ * recover.
++ *
++ * The candidate cause is CLK_BUS_R_CPUCFG, the gate for the ARISC/CPUS config
++ * block that owns this region. It reads en=0 at boot while r-ahb and r-apb0
++ * are up, so the R-bus fabric is alive and only the leaf is gated -- exactly
++ * the shape of the TVFE/TVCAP hang that patch 0087 fixed by claiming the gate.
++ *
++ * The clock is now held by this device, so this is that hypothesis under test.
++ * It is only a hypothesis: bus-r-rtc is also en=0 while the RTC works fine,
++ * because the RTC sits in an always-on domain, so a gated bus clock does not
++ * universally imply an inaccessible block.
++ */
++#define H713_HPD_BASE			0x07091000
++#define H713_HPD_SIZE			0x100
++#define H713_HPD_PORT_MASK		0x14
++
++static void h713_probe_hpd(struct h713_tvcap *tv)
++{
++	void __iomem *p;
++
++	p = devm_ioremap(tv->dev, H713_HPD_BASE, H713_HPD_SIZE);
++	if (!p) {
++		dev_err(tv->dev, "hpd: ioremap failed\n");
++		return;
++	}
++
++	dev_info(tv->dev, "hpd: about to READ 0x%08x with bus-r-cpucfg held -- if this is the last line, the clock was not the cause\n",
++		 H713_HPD_BASE + H713_HPD_PORT_MASK);
++
++	dev_info(tv->dev, "hpd: 0x%08x = 0x%08x\n",
++		 H713_HPD_BASE + H713_HPD_PORT_MASK,
++		 readl(p + H713_HPD_PORT_MASK));
++
++	dev_info(tv->dev, "hpd: readable\n");
++}
++
+ static void h713_probe_wrapper(struct h713_tvcap *tv)
+ {
+ 	/* Port-select lives at +0x8F1, so read the 0x800 neighbourhood. */
+@@ -230,6 +273,7 @@
+ 		 readl(tv->thdmirx + THDMIRX_DMA_CONFIG11));
+ 
+ 	h713_probe_wrapper(tv);
++	h713_probe_hpd(tv);
+ 
+ 	platform_set_drvdata(pdev, tv);
+ 	return 0;
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1587,9 +1587,18 @@
+ 			clocks = <&ccu CLK_BUS_TVCAP>,
+ 				 <&ccu CLK_BUS_CAP_300M>,
+ 				 <&ccu CLK_VINCAP_DMA>,
+-				 <&ccu CLK_TVFE_1296M>;
++				 <&ccu CLK_TVFE_1296M>,
++				 /*
++				  * R_CPUCFG is the ARISC/CPUS config block, and
++				  * 0x07091000 -- the HPD pin register -- lives
++				  * behind it. Its gate reads en=0 at boot while
++				  * r-ahb and r-apb0 are up, so the fabric is
++				  * alive and only this leaf is off, which is the
++				  * same shape as the TVFE/TVCAP hang.
++				  */
++				 <&r_ccu CLK_BUS_R_CPUCFG>;
+ 			clock-names = "bus_tvcap", "cap_300m", "vincap_dma",
+-				      "tvfe_1296m";
++				      "tvfe_1296m", "r_cpucfg";
+ 			power-domains = <&ppu 1>, <&ppu 2>;
+ 			power-domain-names = "tvfe", "tvcap";
+ 			status = "okay";
