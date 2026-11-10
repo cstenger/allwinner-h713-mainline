@@ -117,3 +117,62 @@ session is the next item on the critical path.
 The historical installer tests now check frozen, content-addressed copies of
 the payloads they deployed (`tools/hdmi/test-payloads/`), so later edits to
 the live scripts no longer break them.
+
+## User manager: device units for unused partitions
+
+`systemd --user` sat silent for 2.5 s at start-up, and capture waits for
+`user@1000.service`. A reload of either manager on an idle board took 2.1 s,
+1.65 s of it user-space CPU in systemd (sampled PCs: `unit_name_is_valid`,
+`string_table_lookup`, path hashing, i.e. per-name drop-in search). The cost
+scales with device units: the 27 kept Android partitions, the whole disk and
+boot0/1 gave ~300 units (about ten aliases each), and the 256 legacy BSD pty
+slaves (`CONFIG_LEGACY_PTYS=y`) another ~500.
+
+Hiding everything on `mmcblk0` except the root partition (partlabel `linux`)
+from systemd with `99-zz-h713-unused-partitions.rules` (`TAG-="systemd"`,
+after `99-systemd.rules`) leaves the `/dev` nodes and `/dev/disk` links in
+place. Warm reboots `49946366` and `91ccacf6`:
+
+| | Before | Rule |
+| --- | ---: | ---: |
+| `systemd --user` session open to default target queued | 2.90 s | 1.83 / 1.90 s |
+| `user@1000` active | 11.49 s | 9.18 / 9.37 s |
+| Video active | 13.99 s | **11.57 / 11.75 s** |
+
+No failed units, root mounted, HDMI locked. Prepare (ends ~9.5 s) is the
+critical path again. Hiding the legacy ptys as well brought an idle reload
+to 0.83 s (user) / 1.11 s (system) in a runtime test.
+
+Testing notes: `TAG-=` removes only the current tag; the sticky `TAGS` and
+`/run/udev/tags/systemd` entry stay, but systemd skips the device ("not
+tagged with systemd"). Moving tag entries aside measures nothing once the
+units already left; measure from a reboot or the second reload.
+
+## Legacy BSD ptys disabled in the kernel
+
+`# CONFIG_LEGACY_PTYS is not set` in the board defconfig removes the 256
+unused `/dev/ptyp*`/`/dev/ttyp*` pairs (and their ~500 systemd device units).
+The release kernel stage, rebuilt with the release epoch and identity,
+reproduced the installed FIT byte-for-byte (`6ccf040a`). The candidate
+(`b4fd5939`, 7613352 bytes) differs from it only in `CONFIG_LEGACY_PTYS` and
+`CONFIG_LEGACY_PTY_COUNT`: identical `Module.symvers`, kernel release and
+board DTB, so the installed modules are unchanged. The startup script changes
+only in the two lines that pin the FIT size (`0x7428ec` -> `0x742ba8`).
+
+`tools/hdmi/build-kernel-fit-bundle.py` enforces those checks;
+`tools/hdmi/install-kernel-fit.py` replaces the FIT and every script copy as
+one guarded transaction (bundle copies first, then FIT, then the FAT script;
+any failure restores all originals). Installed from boot `91ccacf6`; backup
+`kernel-fit-1d36583a...`.
+
+| | Partition rule | + no legacy ptys (warm `fcdec2f1` / cold `06098456`) |
+| --- | ---: | ---: |
+| `systemd --user` session open to default target queued | 1.83-1.90 s | 0.51 / 0.55 s |
+| `user@1000` active | 9.18-9.37 s | 6.83 / 6.91 s |
+| Idle reload (user / system) | 2.1 / 2.1 s | 0.73 / 0.96-1.27 s |
+| Video active | 11.57-11.75 s | 11.58 / 11.59 s |
+
+The cold boot carried the `h713,hdmi-boot-v1` handoff, so the script's
+image-size check accepted the new FIT. No failed units; WiFi, `hci0` and HDMI
+lock normal. Video did not move: `h713-hdmi-prepare` (ends ~9.44 s) is now
+the critical path, ~2.5 s after the user session.
