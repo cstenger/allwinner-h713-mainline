@@ -1,0 +1,29 @@
+{
+  "status": "FAIL initial connection without HPD retry; PASS five-minute recovered stream",
+  "source_host_boot": "9df6717c-ea4b-4585-b53f-270178c13431",
+  "board_boot": "d50d994e-b1f6-4afc-8b84-dccf6483c1b5",
+  "signal_version": "ddc-hpd-isolation-v1",
+  "ddc_cycles": 1,
+  "hpd_retries": 1,
+  "initial_ready_seconds": 14.876588,
+  "ddc_request_seconds": 18.294791382,
+  "ddc_completed_seconds": 20.423902674,
+  "ddc_no_lock_seconds": 25.45802326,
+  "hpd_completed_seconds": 37.608102,
+  "signal_lock_seconds": 38.880116,
+  "video_service_seconds": 38.927492,
+  "disk_rollback": "PASS; original three files restored, live module and services retained",
+  "diagnostic_audit": "PASS;75 file pins",
+  "conclusion": "One verified DDC-only reset did not recover the initial connection. HPD fallback recovered it. No untouched first-handshake fix established. Register readbacks do not establish electrical HPD waveform.",
+  "operator_confirmation": "Desktop visible",
+  "stream_fps": 59.70678805730352,
+  "stream_window_end": 339.12,
+  "stream_errors_at_end": {
+    "rejected": 0,
+    "xruns": 0,
+    "bad_guard": 0,
+    "invalid_pair": 0
+  },
+  "baseline_restored_audit": "PASS;75 file pins",
+  "remaining_issue": "First advertisement still requires one HPD retry on this fresh NVIDIA source boot. DDC-only reset is insufficient."
+}

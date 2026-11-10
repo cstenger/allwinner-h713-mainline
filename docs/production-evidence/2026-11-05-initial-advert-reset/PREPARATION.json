@@ -1,0 +1,16 @@
+{
+  "status": "Explicitly approved; V2 installed on disk with durable backup, exact readback and75-file audit PASS. Live owner not restarted; fresh-source V2 validation pending.",
+  "module_version": "first-advert-ddc-reset-v2",
+  "module_sha256": "1502ba37ce5a56c33345811be3733f6541f6a4edc7d5532c6ee29465c4ff291f",
+  "manifest_sha256": "3844916c04c274bf8150bd994116e09808eca0dee2b561b835903d677f147a7b",
+  "change": "Keep DDC disabled and HPD held after EDID copy/verify; owner waits2000ms, requests DDC-on with SCP readback, waits100ms, releases HPD once with full SCP readbacks. No preliminary advertisement or hidden retry.",
+  "offline_checks": "19 OR1K tests and two actual-C harnesses PASS, staged failure checks PASS; W=1 accepted RC module build PASS; existing two-target installer/rollback tests PASS. Legacy default payload remains opt-in unchanged.",
+  "before_boot": "e5350845-f145-4f0e-ba72-2519576cebee",
+  "disk_scope": [
+    "usr/lib/h713-hdmi/h713-hdmi-signal.ko",
+    "usr/lib/h713-hdmi/SHA256SUMS"
+  ],
+  "live_changes": false,
+  "next": "Obtain explicit V2 package transfer/installer/audit approval. Preview/apply/audit; orderly poweroff; operator fresh SOURCE-PC reboot while board off; rearm recorders and test. Preserve every retry outcome.",
+  "backup": "/var/lib/h713-hdmi-startup/initial-advert-326b7bd6f3d44e12b29c5bec265c4e51"
+}

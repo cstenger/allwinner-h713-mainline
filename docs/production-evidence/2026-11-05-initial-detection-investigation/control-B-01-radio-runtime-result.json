@@ -1,0 +1,40 @@
+{
+  "status": "PASS original global radio readiness and ordering",
+  "units": {
+    "systemd-modules-load.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "Id": "systemd-modules-load.service",
+      "Requires": "system.slice",
+      "After": "systemd-journald.socket system.slice",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "3664936",
+      "ActiveEnterTimestampMonotonic": "6507537"
+    },
+    "h713-hotspot.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "Id": "h713-hotspot.service",
+      "Requires": "system.slice sysinit.target",
+      "After": "systemd-modules-load.service system.slice systemd-journald.socket sysinit.target basic.target",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "7950352",
+      "ActiveEnterTimestampMonotonic": "7950352"
+    },
+    "h713-bt-attach.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "Id": "h713-bt-attach.service",
+      "Requires": "system.slice sysinit.target",
+      "After": "basic.target system.slice systemd-journald.socket systemd-modules-load.service sysinit.target",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "7912720",
+      "ActiveEnterTimestampMonotonic": "11204453"
+    }
+  },
+  "hci": "hci0:\tType: Primary  Bus: UART\n\tBD Address: 3C:3B:AD:78:F0:29  ACL MTU: 1021:9  SCO MTU: 255:4\n\tUP RUNNING \n\tRX bytes:755 acl:0 sco:0 events:48 errors:0\n\tTX bytes:781 acl:0 sco:0 commands:48 errors:0\n\n",
+  "sdio_drivers": {
+    "mmc1:6721:2": "aicbsp_sdio",
+    "mmc1:6721:1": "aicwf_sdio"
+  }
+}

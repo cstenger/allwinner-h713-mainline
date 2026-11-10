@@ -1,0 +1,31 @@
+{
+  "status": "Explicitly approved diagnostic installed on disk;75-file audit PASS, no live restart; fresh-source test pending",
+  "module_version": "ddc-hpd-isolation-v1",
+  "module_sha256": "00312097a6f96b6a7a652c7f6ffd4bc5be1c20e0f840eda7958a4d7f2d1bd71a",
+  "manifest_sha256": "93ede6203116fe3807884c4e8ca4a136863d46e036aebe5d17e63564d6310fe3",
+  "disk_scope": [
+    "usr/lib/h713-hdmi/h713-hdmi-signal.ko",
+    "usr/lib/h713-hdmi/h713-hdmi-readvertise.py",
+    "usr/lib/h713-hdmi/SHA256SUMS"
+  ],
+  "backup": "/var/lib/h713-hdmi-startup/ddc-isolation-31e8c5a0ac924e53b5233e7219b401a2",
+  "diagnostic": "Original initial advertisement. If signal remains none for3sec, power is not known absent and owner/count gates pass: disable only DDC2000ms, enable DDC and settle100ms, wait up to5sec for lock; then enter unchanged bounded HPD fallback. No programmed HPD writes in either DDC-only handler branch. Separate ddc_cycles/readvertised counts.",
+  "guarding": "One DDC-only cycle max before any HPD retry. SCP HPD/DDC full readbacks checked after both steps. Failure terminal and retains owner. Skip active/acquiring/holding/unsupported or known absent source; final gate recheck.",
+  "offline_checks": {
+    "OR1K_model": 24,
+    "diagnostic_policy": 6,
+    "existing_retry_policy": 16,
+    "actual_kernel_setter": "PASS success/one-shot/argument/owner gates and8injected stage failures",
+    "installer": "3tests PASS, including rollback after each of3write boundaries",
+    "module_build": "accepted RC kernel W=1 PASS",
+    "legacy_default_payload": "byte-identical"
+  },
+  "expected_test_outcomes": [
+    "DDC-only lock, ddc_cycles1 and readvertised0: no programmed HPD pulse needed for this recovery, not proof of electrical HPD waveform or untouched initial DDC handshake.",
+    "DDC-only no lock then HPD fallback lock: source requires the HPD sequence or another combined effect; no no-retry fix established.",
+    "Skip due source already active: first advert passed but does not qualify DDC-only intervention.",
+    "Owner/readback fault: stop and retain state; no automatic unsafe recovery."
+  ],
+  "notes": "Diagnostic may add about10sec before original HPD fallback if DDC-only does not recover. Standby soft start retained. No equipment available; no repeat of failed NVIDIA cache-reader packet.",
+  "next": "Orderly shutdown; operator removes board supply and manually reboots SOURCE PC, retains HDMI/UART preference, returns before board power. Rearm UART/observer. Match new signal version, diagnostic JSON logs and separate counters; preserve five-minute health and75pin audit."
+}

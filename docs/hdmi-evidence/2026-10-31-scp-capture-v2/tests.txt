@@ -1,0 +1,55 @@
+test_01_nominal (__main__.Tests.test_01_nominal) ... ok
+test_02_all_loop_phases_and_contexts (__main__.Tests.test_02_all_loop_phases_and_contexts) ... ok
+test_03_delayed_reordered_store_visibility (__main__.Tests.test_03_delayed_reordered_store_visibility) ... ok
+test_04_fast_core_slow_observer (__main__.Tests.test_04_fast_core_slow_observer) ... ok
+test_05_slow_core (__main__.Tests.test_05_slow_core) ... ok
+test_06_done_before_return_is_rejected (__main__.Tests.test_06_done_before_return_is_rejected) ... ok
+test_07_stale_return_marker_is_not_accepted (__main__.Tests.test_07_stale_return_marker_is_not_accepted) ... ok
+test_08_stale_hook_never_arms_sample (__main__.Tests.test_08_stale_hook_never_arms_sample) ... ok
+test_09_missing_echo_never_arms_sample (__main__.Tests.test_09_missing_echo_never_arms_sample) ... ok
+test_10_sticky_hook_remains_safe_after_unhook (__main__.Tests.test_10_sticky_hook_remains_safe_after_unhook) ... ok
+test_11_every_stalled_load_is_retained (__main__.Tests.test_11_every_stalled_load_is_retained) ... ok
+test_12_every_unsafe_SR_bit_refuses_reads (__main__.Tests.test_12_every_unsafe_SR_bit_refuses_reads) ... ok
+test_13_user_mode_refused (__main__.Tests.test_13_user_mode_refused) ... ok
+test_14_bad_context_refused (__main__.Tests.test_14_bad_context_refused) ... ok
+test_15_monitor_r0_guard_never_samples (__main__.Tests.test_15_monitor_r0_guard_never_samples) ... ok
+test_16_one_shot_latch_rejects_replay (__main__.Tests.test_16_one_shot_latch_rejects_replay) ... ok
+test_17_unknown_request_refused (__main__.Tests.test_17_unknown_request_refused) ... ok
+test_18_preimage_drift_is_clean_refusal (__main__.Tests.test_18_preimage_drift_is_clean_refusal) ... ok
+test_19_pending_stop_before_capture_refused (__main__.Tests.test_19_pending_stop_before_capture_refused) ... ok
+test_20_owner_absent (__main__.Tests.test_20_owner_absent) ... ok
+test_21_owner_unload_race (__main__.Tests.test_21_owner_unload_race) ... ok
+test_22_owner_not_ready (__main__.Tests.test_22_owner_not_ready) ... ok
+test_23_stop_stays_blocked_after_success (__main__.Tests.test_23_stop_stays_blocked_after_success) ... ok
+test_24_stop_stays_blocked_on_stall (__main__.Tests.test_24_stop_stays_blocked_on_stall) ... ok
+test_25_original_stop_delegation_after_later_release (__main__.Tests.test_25_original_stop_delegation_after_later_release) ... ok
+test_26_all_host_write_failures_retained (__main__.Tests.test_26_all_host_write_failures_retained) ... ok
+test_27_outside_corruption_after_capture_is_retained (__main__.Tests.test_27_outside_corruption_after_capture_is_retained) ... ok
+test_28_exception_marker_aborts_without_cleanup (__main__.Tests.test_28_exception_marker_aborts_without_cleanup) ... ok
+test_29_idle_error_marker_cannot_be_ignored (__main__.Tests.test_29_idle_error_marker_cannot_be_ignored) ... ok
+test_30_forged_entry_marker_still_needs_fresh_return (__main__.Tests.test_30_forged_entry_marker_still_needs_fresh_return) ... ok
+test_31_release_refuses_pending_stop (__main__.Tests.test_31_release_refuses_pending_stop) ... ok
+test_32_ARM_rechecks_unsafe_entry_frame (__main__.Tests.test_32_ARM_rechecks_unsafe_entry_frame) ... ok
+test_33_post_capture_frame_and_bytes (__main__.Tests.test_33_post_capture_frame_and_bytes) ... ok
+test_34_post_capture_wrong_boot_refused (__main__.Tests.test_34_post_capture_wrong_boot_refused) ... ok
+test_35_post_capture_release_refused (__main__.Tests.test_35_post_capture_release_refused) ... ok
+test_36_post_capture_frame_mismatch_refused (__main__.Tests.test_36_post_capture_frame_mismatch_refused) ... ok
+test_37_post_capture_guard_mismatch_refused (__main__.Tests.test_37_post_capture_guard_mismatch_refused) ... ok
+test_38_post_capture_code_mismatch_refused (__main__.Tests.test_38_post_capture_code_mismatch_refused) ... ok
+test_39_post_capture_outside_corruption_refused (__main__.Tests.test_39_post_capture_outside_corruption_refused) ... ok
+test_40_default_driver_is_offline (__main__.Tests.test_40_default_driver_is_offline) ... ok
+test_41_explicit_release_write_failures_keep_lock (__main__.Tests.test_41_explicit_release_write_failures_keep_lock) ... ok
+test_42_bad_context_return_parks_at_guard (__main__.Tests.test_42_bad_context_return_parks_at_guard) ... ok
+test_43_unexpected_stop_parks_without_HPD_path (__main__.Tests.test_43_unexpected_stop_parks_without_HPD_path) ... ok
+test_44_bootstrap_stale_slot_never_jumps_to_scratch (__main__.Tests.test_44_bootstrap_stale_slot_never_jumps_to_scratch) ... ok
+test_45_bootstrap_canary_and_sentinel_collisions (__main__.Tests.test_45_bootstrap_canary_and_sentinel_collisions) ... ok
+test_46_bootstrap_mixed_old_new_instruction_views (__main__.Tests.test_46_bootstrap_mixed_old_new_instruction_views) ... ok
+test_47_carry_overflow_context_preserved (__main__.Tests.test_47_carry_overflow_context_preserved) ... ok
+test_48_stale_psync_cannot_release_park_to_scratch (__main__.Tests.test_48_stale_psync_cannot_release_park_to_scratch) ... ok
+test_49_full_driver_and_peer_protocol (__main__.Tests.test_49_full_driver_and_peer_protocol) ... ok
+test_50_full_driver_retains_frozen_failure (__main__.Tests.test_50_full_driver_retains_frozen_failure) ... ok
+
+----------------------------------------------------------------------
+Ran 50 tests in 13.879s
+
+OK

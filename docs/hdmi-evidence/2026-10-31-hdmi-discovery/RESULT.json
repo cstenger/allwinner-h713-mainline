@@ -1,0 +1,68 @@
+{
+  "status": "Bad state preserved; failure localized to source discovery, root cause unresolved",
+  "boot_id": "2d8c3970-4164-4a38-8e86-375bb440c971",
+  "host_GPU": "RTX 3090",
+  "host_driver": "615.78.08",
+  "host_connector": "HDMI-A-1",
+  "host_status": "disconnected",
+  "host_edid_bytes": 0,
+  "compositor_lists_projector": false,
+  "DRM_connector_query_restored_discovery": false,
+  "board_signal": "none",
+  "bridge_transitions": 0,
+  "bridge_frames": 0,
+  "DDC_mux": "0x222222",
+  "SCP_reset_control": "0x1",
+  "SCP_program_matches_source": true,
+  "SCP_markers": {
+    "marker": "0x48444d49",
+    "ready": "0x48444d49",
+    "exception": "0x0",
+    "stop_request": "0x0",
+    "backup_complete": "0x48444d49",
+    "error": "0x0",
+    "done": "0x0",
+    "activate": "0x1",
+    "io_setup": "0x1"
+  },
+  "EDID_payload_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+  "EDID_payload_checksums": [
+    0,
+    0
+  ],
+  "MIPS_port1": {
+    "index": 1,
+    "object": "0x8b831468",
+    "port_id": 1,
+    "state": 3,
+    "freq_event_pending": 1,
+    "cached_count": 0,
+    "timing_update_tick": 19772,
+    "hactive": 0,
+    "vactive": 0,
+    "pixel_repeat": 0,
+    "link_base": "0x06840000"
+  },
+  "live_peripheral_HPD_DDC_state_observed": false,
+  "limitations": [
+    "SCP ready/error markers and active-register snapshots describe initialization, not continuous live peripheral health.",
+    "SCP core released and code intact do not independently prove forward progress in its wait loop.",
+    "No direct ARM receiver MMIO is permitted. No live SCP instrumentation has run."
+  ],
+  "software_probe_prototype": {
+    "model_cases": 100,
+    "peripheral_reads": 14,
+    "peripheral_writes": 0,
+    "hardware_executed": false,
+    "live_executor_included": false,
+    "ready_for_live_execution": false
+  },
+  "cable_reseated": false,
+  "HPD_pulse": false,
+  "compositor_settings_changed": false,
+  "services_restarted": false,
+  "board_writes": false,
+  "SCP_or_board_reset": false,
+  "UART_armed": false,
+  "migration_save_executed": false
+}

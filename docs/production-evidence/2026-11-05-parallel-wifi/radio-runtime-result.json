@@ -1,0 +1,40 @@
+{
+  "status": "PASS radio readiness, explicit dependencies and alias suppression",
+  "units": {
+    "h713-aic8800-modules.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "Id": "h713-aic8800-modules.service",
+      "Requires": "system.slice sysinit.target",
+      "After": "basic.target system.slice systemd-modules-load.service systemd-journald.socket sysinit.target",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "4621676",
+      "ActiveEnterTimestampMonotonic": "8200645"
+    },
+    "h713-hotspot.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "Id": "h713-hotspot.service",
+      "Requires": "h713-aic8800-modules.service system.slice sysinit.target",
+      "After": "h713-aic8800-modules.service systemd-journald.socket system.slice sysinit.target systemd-modules-load.service basic.target",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "8257284",
+      "ActiveEnterTimestampMonotonic": "8257284"
+    },
+    "h713-bt-attach.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "Id": "h713-bt-attach.service",
+      "Requires": "system.slice h713-aic8800-modules.service sysinit.target",
+      "After": "systemd-modules-load.service systemd-journald.socket system.slice basic.target h713-aic8800-modules.service sysinit.target",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "8233259",
+      "ActiveEnterTimestampMonotonic": "11551317"
+    }
+  },
+  "hci": "hci0:\tType: Primary  Bus: UART\n\tBD Address: 3C:3B:AD:78:F0:29  ACL MTU: 1021:9  SCO MTU: 255:4\n\tUP RUNNING \n\tRX bytes:755 acl:0 sco:0 events:48 errors:0\n\tTX bytes:781 acl:0 sco:0 commands:48 errors:0\n\n",
+  "sdio_drivers": {
+    "mmc1:6721:2": "aicbsp_sdio",
+    "mmc1:6721:1": "aicwf_sdio"
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "boot_id": "afe48e93-6604-44de-a220-acb9416e8363",
+  "model": "HY200 QZ713DF_A1 (Allwinner H713)",
+  "kernel": "Linux h713-arm64 6.18.38 #1 SMP Fri Oct 16 15:44:49 PDT 2026 aarch64 GNU/Linux",
+  "handoff_hex": "48444d49000000008b8f275c",
+  "parameters": {
+    "h713_hdmi_receiver": {
+      "armed": "Y",
+      "clients": "2",
+      "clock_count": "4",
+      "edid_ready": "Y",
+      "firmware_pin": "Y",
+      "init_error": "0",
+      "live_source3": "Y",
+      "park_failed": "N",
+      "parked": "N",
+      "shutdown_ready": "Y"
+    },
+    "h713_hdmi_signal": {
+      "armed": "Y",
+      "ready": "Y",
+      "failed": "N",
+      "restored": "N",
+      "recovery": "0"
+    },
+    "h713_hdmi_audio": {
+      "dsp_failed": "N",
+      "manage_dsp": "Y",
+      "manage_tvfe": "Y"
+    },
+    "h713_hdmi_v4l2": {
+      "sig_transitions": "0",
+      "sig_bad_guard": "0",
+      "frames_produced": "0",
+      "frames_delivered": "0",
+      "frames_rejected": "0",
+      "frames_overwritten": "0",
+      "afbd_invalid": "0"
+    }
+  },
+  "services": {
+    "h713-hdmi-capture-startup": [
+      "Result=success",
+      "NRestarts=0",
+      "ExecMainStatus=0",
+      "ActiveState=inactive",
+      "SubState=dead"
+    ],
+    "h713-hdmi-capture": [
+      "Result=success",
+      "NRestarts=0",
+      "ExecMainStatus=0",
+      "ActiveState=active",
+      "SubState=exited"
+    ],
+    "h713-hdmi-signal": [
+      "Result=success",
+      "NRestarts=0",
+      "ExecMainStatus=0",
+      "ActiveState=active",
+      "SubState=exited"
+    ],
+    "h713-hdmi-ring": [
+      "Result=success",
+      "NRestarts=0",
+      "ExecMainStatus=0",
+      "ActiveState=active",
+      "SubState=exited"
+    ],
+    "h713-hdmi-speaker": [
+      "Result=success",
+      "NRestarts=0",
+      "ExecMainStatus=0",
+      "ActiveState=active",
+      "SubState=running"
+    ],
+    "h713-hdmi-video": [
+      "Result=success",
+      "NRestarts=0",
+      "ExecMainStatus=0",
+      "ActiveState=inactive",
+      "SubState=dead"
+    ]
+  },
+  "diagnostic_modules": {
+    "h713_scp_sampler_v2": false,
+    "h713_scp_probe": false,
+    "h713_hdmi_dsp_probe": false
+  },
+  "coprocessor": {
+    "marker": {
+      "marker": "0x48444d49",
+      "ready": "0x48444d49",
+      "exception": "0x0",
+      "stop_request": "0x0",
+      "backup_complete": "0x48444d49",
+      "error": "0x0",
+      "done": "0x0"
+    },
+    "original_scp_code_matches": true,
+    "edid_payload_checksums_valid": true,
+    "edid_payload_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+    "SCP_reset_control": "0x1",
+    "DDC_mux": "0x222222",
+    "ports": [
+      {
+        "index": 1,
+        "state": 3,
+        "freq_event_pending": 1,
+        "cached_count": 0,
+        "timing_update_tick": 19621,
+        "hactive": 0,
+        "vactive": 0
+      },
+      {
+        "index": 2,
+        "state": 1,
+        "freq_event_pending": 0,
+        "cached_count": 0,
+        "timing_update_tick": 0,
+        "hactive": 0,
+        "vactive": 0
+      },
+      {
+        "index": 3,
+        "state": 1,
+        "freq_event_pending": 0,
+        "cached_count": 0,
+        "timing_update_tick": 0,
+        "hactive": 0,
+        "vactive": 0
+      }
+    ]
+  }
+}

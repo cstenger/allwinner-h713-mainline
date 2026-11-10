@@ -1,0 +1,127 @@
+{
+  "board_recovery_or_service_restarts": false,
+  "conclusion": "The requested delayed warm-boot experiment passed. Causality and cold-boot improvement remain unproven; earlier undelayed warm boots also passed.",
+  "delay_elapsed_ns": 2021350376,
+  "delay_elapsed_seconds": 2.021350376,
+  "delay_ms_requested": 2000,
+  "edid_block_checksums_pass": true,
+  "edid_bytes": 256,
+  "edid_matches_unchanged_board_payload": true,
+  "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+  "extra_reboot": false,
+  "failed_units": 0,
+  "files_verified": 56,
+  "frame_snapshots": [
+    {
+      "counters": {
+        "afbd_invalid": "0",
+        "frames_delivered": "1446",
+        "frames_overwritten": "2",
+        "frames_produced": "1448",
+        "frames_rejected": "0",
+        "sig_bad_guard": "0",
+        "sig_transitions": "2"
+      },
+      "uptime": "51.08 152.92"
+    },
+    {
+      "counters": {
+        "afbd_invalid": "0",
+        "frames_delivered": "5587",
+        "frames_overwritten": "2",
+        "frames_produced": "5589",
+        "frames_rejected": "0",
+        "sig_bad_guard": "0",
+        "sig_transitions": "2"
+      },
+      "uptime": "120.44 382.12"
+    }
+  ],
+  "host_cached_changes": [
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 5760111902756,
+      "host_utc": "2026-11-01T08:42:22.023073+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 1441,
+      "snapshot": {
+        "edid_bytes": 256,
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "enabled": "disabled",
+        "ok": true,
+        "status": "connected"
+      }
+    },
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 5760362732187,
+      "host_utc": "2026-11-01T08:42:22.273904+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 1442,
+      "snapshot": {
+        "edid_bytes": 256,
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "enabled": "enabled",
+        "ok": true,
+        "status": "connected"
+      }
+    }
+  ],
+  "host_max_heartbeat_gap_seconds": 5.100322271,
+  "host_monitor_read_errors": 0,
+  "installed_migration_regions_verified": 2,
+  "linux_timing": {
+    "acquiring": {
+      "linux_uptime_seconds": 26.163271,
+      "message": "[   26.163271] h713-hdmi-v4l2: signal acquiring 0x0"
+    },
+    "delay_complete": {
+      "linux_uptime_seconds": 25.041293552
+    },
+    "delay_start": {
+      "linux_uptime_seconds": 23.019943176
+    },
+    "dsp_graph": {
+      "linux_uptime_seconds": 22.509187,
+      "message": "[   22.509187] h713-hdmi-audio: managed DSP graph verified 22 words"
+    },
+    "edid_hpd_ready": {
+      "linux_uptime_seconds": 25.08658,
+      "message": "[   25.086580] h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry"
+    },
+    "initial_none": {
+      "linux_uptime_seconds": 25.71129,
+      "message": "[   25.711290] h713-hdmi-v4l2: initial signal none 0x0 after 20 samples"
+    },
+    "locked": {
+      "linux_uptime_seconds": 26.387334,
+      "message": "[   26.387334] h713-hdmi-v4l2: signal locked 1280x720 (source change)"
+    }
+  },
+  "new_boot_id": "7e9e206d-bd7b-493a-b3fe-af69ab3be77f",
+  "old_boot_id": "afe48e93-6604-44de-a220-acb9416e8363",
+  "ordinary_reboot_requests": 1,
+  "projector": {
+    "cable_or_host_output_change": false,
+    "host_desktop_shown": true,
+    "operator_answer": "Normal startup, then host desktop; no changes",
+    "projector_startup": "normal",
+    "source": "operator reply to post-reboot observation question"
+  },
+  "protected_storage_ranges_verified": 8,
+  "recorders_stopped_cleanly": true,
+  "reseat_or_forced_detection": false,
+  "schema": "h713-delay-warm-validation-v1",
+  "startup_check": "PASS",
+  "status": "PASS_ONE_DELAYED_WARM_BOOT",
+  "system_running": true,
+  "temporary_override_still_installed": true,
+  "uart_disconnects": 0,
+  "uart_kernel_restarts": 1,
+  "uart_spl_boots": 1,
+  "uart_tx": false
+}

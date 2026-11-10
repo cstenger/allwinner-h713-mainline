@@ -1,0 +1,133 @@
+{
+  "status": "SAFETY REVIEW COMPLETE: NO-GO for live insertion of the original prototype",
+  "tests": 12,
+  "nominal_register_phase_cases": 400,
+  "stalled_read_cases": 14,
+  "hardware_access": false,
+  "hardware_write": false,
+  "live_capture_ready": false,
+  "prototype_sha256": "20cfe3ee06c4467a91d450853a4cc0b1a0c81b92140117bbd44d8aaf308ca750",
+  "blockers": [
+    "Completion is observable before register restore and return.",
+    "SRAM hook readback does not prove the instruction-fetch view is coherent.",
+    "No supported synchronization with the installed private signal-owner lock.",
+    "A bus-stalled SCP has no proven non-reset recovery/cleanup path."
+  ],
+  "findings": {
+    "early_completion_counterexample": {
+      "done": true,
+      "original_wait_word": true,
+      "returned": false,
+      "context_restored": false,
+      "next_pc": "0x4ea8",
+      "instruction_count": 60
+    },
+    "noncoherent_fetch_counterexample": {
+      "done": true,
+      "original_wait_word": true,
+      "probe_entries": 2,
+      "returned": false
+    },
+    "stalled_reads": [
+      {
+        "register": "0x7091014",
+        "done": false,
+        "pc": "0x4dec",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091b00",
+        "done": false,
+        "pc": "0x4df8",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091b04",
+        "done": false,
+        "pc": "0x4e04",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091b08",
+        "done": false,
+        "pc": "0x4e10",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091020",
+        "done": false,
+        "pc": "0x4e1c",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091030",
+        "done": false,
+        "pc": "0x4e28",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091034",
+        "done": false,
+        "pc": "0x4e34",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091038",
+        "done": false,
+        "pc": "0x4e40",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091c00",
+        "done": false,
+        "pc": "0x4e4c",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091c04",
+        "done": false,
+        "pc": "0x4e58",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091d00",
+        "done": false,
+        "pc": "0x4e64",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091d04",
+        "done": false,
+        "pc": "0x4e70",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091e00",
+        "done": false,
+        "pc": "0x4e7c",
+        "hook_restored": false
+      },
+      {
+        "register": "0x7091e04",
+        "done": false,
+        "pc": "0x4e88",
+        "hook_restored": false
+      }
+    ]
+  },
+  "boot_id": "2d8c3970-4164-4a38-8e86-375bb440c971",
+  "SCP_SRAM_unchanged": true,
+  "owner_file_unchanged": true,
+  "current_board_signal": "none",
+  "current_host_connector": "disconnected",
+  "current_host_EDID_bytes": 0,
+  "UART_armed": false,
+  "cable_reseated": false,
+  "HPD_pulse": false,
+  "services_restarted": false,
+  "SCP_reset": false,
+  "reboot": false,
+  "live_executor_included": false,
+  "live_preparation_complete": false,
+  "review_complete": true
+}

@@ -1,0 +1,165 @@
+{
+  "agent_reseat_force_detect_or_display_reconfigure": false,
+  "board_recovery_or_service_restarts": false,
+  "conclusion": "One delayed power-off cold-start run passed, following the successful delayed warm boot. This supports further controlled timing tests but does not prove a repeatable production fix or isolate the delay as the cause.",
+  "delay_elapsed_ns": 2021728043,
+  "delay_elapsed_seconds": 2.021728043,
+  "delay_ms_requested": 2000,
+  "edid_block_checksums_pass": true,
+  "edid_bytes": 256,
+  "edid_matches_unchanged_board_payload": true,
+  "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+  "extra_boot": false,
+  "failed_units": 0,
+  "files_verified": 56,
+  "frame_snapshots": [
+    {
+      "counters": {
+        "afbd_invalid": "0",
+        "frames_delivered": "14656",
+        "frames_overwritten": "3",
+        "frames_produced": "14659",
+        "frames_rejected": "0",
+        "sig_bad_guard": "0",
+        "sig_transitions": "2"
+      },
+      "uptime": "272.23 892.11"
+    },
+    {
+      "counters": {
+        "afbd_invalid": "0",
+        "frames_delivered": "16565",
+        "frames_overwritten": "5",
+        "frames_produced": "16570",
+        "frames_rejected": "0",
+        "sig_bad_guard": "0",
+        "sig_transitions": "2"
+      },
+      "uptime": "304.25 996.49"
+    }
+  ],
+  "host_cached_changes": [
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 6330356295006,
+      "host_utc": "2026-11-01T08:51:52.267466+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 621,
+      "snapshot": {
+        "edid_bytes": 0,
+        "edid_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "enabled": "enabled",
+        "ok": true,
+        "status": "disconnected"
+      }
+    },
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 6333615504239,
+      "host_utc": "2026-11-01T08:51:55.526673+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 622,
+      "snapshot": {
+        "edid_bytes": 0,
+        "edid_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "enabled": "disabled",
+        "ok": true,
+        "status": "disconnected"
+      }
+    },
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 7266619933533,
+      "host_utc": "2026-11-01T09:07:28.531104+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 4345,
+      "snapshot": {
+        "edid_bytes": 256,
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "enabled": "disabled",
+        "ok": true,
+        "status": "disconnected"
+      }
+    },
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 7266870715611,
+      "host_utc": "2026-11-01T09:07:28.781889+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 4346,
+      "snapshot": {
+        "edid_bytes": 256,
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "enabled": "enabled",
+        "ok": true,
+        "status": "connected"
+      }
+    }
+  ],
+  "host_max_heartbeat_gap_seconds": 5.105513179,
+  "host_monitor_read_errors": 0,
+  "installed_migration_regions_verified": 2,
+  "linux_timing": {
+    "acquiring": {
+      "linux_uptime_seconds": 26.079363,
+      "message": "[   26.079363] h713-hdmi-v4l2: signal acquiring 0x0"
+    },
+    "delay_complete": {
+      "linux_uptime_seconds": 24.924708719
+    },
+    "delay_start": {
+      "linux_uptime_seconds": 22.902980676
+    },
+    "dsp_graph": {
+      "linux_uptime_seconds": 22.419615,
+      "message": "[   22.419615] h713-hdmi-audio: managed DSP graph verified 22 words"
+    },
+    "edid_hpd_ready": {
+      "linux_uptime_seconds": 24.967893,
+      "message": "[   24.967893] h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry"
+    },
+    "initial_none": {
+      "linux_uptime_seconds": 25.611424,
+      "message": "[   25.611424] h713-hdmi-v4l2: initial signal none 0x0 after 20 samples"
+    },
+    "locked": {
+      "linux_uptime_seconds": 26.283372,
+      "message": "[   26.283372] h713-hdmi-v4l2: signal locked 1280x720 (source change)"
+    }
+  },
+  "new_boot_id": "e6ccc77a-dfb2-411c-a2cf-139c35d4dceb",
+  "off_interval_basis": "operator confirmation",
+  "off_interval_minimum_seconds_reported": 60,
+  "old_boot_id": "7e9e206d-bd7b-493a-b3fe-af69ab3be77f",
+  "operator_power_on_count": 1,
+  "ordinary_poweroff_requests": 1,
+  "projector": {
+    "desktop_appeared_after_startup": true,
+    "intervention_reported": false,
+    "off_interval_basis": "operator report; not independently measured supply voltage",
+    "physical_off_interval": "Power removed for at least 60 seconds; board still off",
+    "postboot_report": "The board has booted into Linux. This time the desktop did appear after startup like I would expect.",
+    "requested_cable_and_host_conditions": "leave HDMI connected and host settings unchanged"
+  },
+  "protected_storage_ranges_verified": 8,
+  "reboot_requests": 0,
+  "recorders_stopped_cleanly": true,
+  "schema": "h713-delay-cold-validation-v1",
+  "staged_runtime_and_backups_unchanged": true,
+  "startup_check": "PASS",
+  "status": "PASS_ONE_DELAYED_COLD_BOOT",
+  "system_running": true,
+  "temporary_override_still_installed": true,
+  "uart_disconnects": 0,
+  "uart_kernel_restarts": 0,
+  "uart_spl_boots": 1,
+  "uart_tx": false
+}

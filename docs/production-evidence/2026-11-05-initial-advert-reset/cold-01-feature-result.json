@@ -1,0 +1,31 @@
+{
+  "status": "FAIL no-retry goal; V2 loaded/verified but one automatic HPD retry was needed",
+  "boot_id": "4d06d466-01c1-431b-969d-505c32f83319",
+  "version": "first-advert-ddc-reset-v2",
+  "initial_ddc_enabled_uptime": 17.028031,
+  "first_hpd_release_uptime": 17.132066,
+  "retry_request_uptime": 27.516572,
+  "retry_completed_uptime": 29.641024,
+  "signal_locked_uptime": 31.132107,
+  "video_service_active_uptime": 31.186461,
+  "five_minute_observation": {
+    "status": "INVALID matched observation",
+    "arm": "optimized",
+    "boot_id": "4d06d466-01c1-431b-969d-505c32f83319",
+    "issues": [
+      "HPD re-advertisement"
+    ],
+    "video_ready": 31.186461,
+    "window_end": 331.186461,
+    "first_live_sample": 32.36,
+    "last_live_sample": 331.4,
+    "fps": 59.70773140716962,
+    "rejected_at_window_end": 0,
+    "trace_lines": [],
+    "strict_zero_rejection_qualification": "not evaluated or waived by this experiment"
+  },
+  "stream_errors": "All0 through window",
+  "audit_files_verified": 75,
+  "disposition": "Both timing candidates rolled back on disk using exact guarded rollback; baseline75-file audit passed. Live V2 session was not restarted. A separately approved diagnostic was then installed for next boot.",
+  "diagnostic_equipment": "Operator has no HDMI breakout/scope/logic analyzer; next diagnostic isolates DDC-only operation in software."
+}

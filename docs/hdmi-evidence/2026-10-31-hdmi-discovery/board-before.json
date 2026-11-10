@@ -1,0 +1,61 @@
+{
+  "boot_id": "2d8c3970-4164-4a38-8e86-375bb440c971",
+  "signal": "none",
+  "parameters": {
+    "h713_hdmi_receiver": {
+      "armed": "Y",
+      "clients": "2",
+      "clock_count": "4",
+      "edid_ready": "Y",
+      "firmware_pin": "Y",
+      "init_error": "0",
+      "live_source3": "Y",
+      "park_failed": "N",
+      "parked": "N",
+      "shutdown_ready": "Y"
+    },
+    "h713_hdmi_signal": {
+      "armed": "Y",
+      "failed": "N",
+      "ready": "Y",
+      "recovery": "0",
+      "restored": "N"
+    },
+    "h713_hdmi_v4l2": {
+      "afbd_invalid": "0",
+      "afbd_phase0": "0",
+      "afbd_phase1": "0",
+      "afbd_phase2": "0",
+      "afbd_samples": "0",
+      "afbd_uv": "1289658368",
+      "afbd_y": "1283379200",
+      "allow_480p": "N",
+      "completion": "pair",
+      "frames_delivered": "0",
+      "frames_overwritten": "0",
+      "frames_produced": "0",
+      "frames_rejected": "0",
+      "grace_ms": "1500",
+      "height": "720",
+      "hold_ms": "100",
+      "lock_ms": "200",
+      "phase_from_hash": "Y",
+      "sig_bad_guard": "0",
+      "sig_transitions": "0",
+      "source_cached": "Y",
+      "use_vmalloc": "N",
+      "verify_full": "-1",
+      "width": "1280"
+    }
+  },
+  "service": {
+    "returncode": 0,
+    "stdout": "Result=success\nNRestarts=0\nActiveState=inactive\nSubState=dead\n",
+    "stderr": ""
+  },
+  "log": {
+    "returncode": 0,
+    "stdout": "[   12.991885] h713-hdmi-receiver: terminal parking prepared; 3 exclusive resets and 2 MIPS clock holds, no reset writes\n[   12.992104] h713-hdmi-receiver: domain 1 power event 2\n[   12.992174] h713-hdmi-receiver: domain 1 power event 3\n[   12.992187] h713-hdmi-receiver: domain 1 resumed\n[   12.992229] h713-hdmi-receiver: domain 2 resumed\n[   12.992236] h713-hdmi-receiver: 2 domains and 0 receiver clocks held on; no receiver MMIO\n[   12.994804] h713-hdmi-receiver: enabled clock 0 (bus-tvcap)\n[   14.789145] h713-hdmi-receiver: enabled clock 1 (bus-cap-300m)\n[   16.564597] h713-hdmi-receiver: enabled clock 2 (vincap-dma)\n[   18.326299] h713-hdmi-receiver: enabled clock 3 (tvfe-1296m)\n[   21.899189] h713-hdmi-audio: TVFE: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0\n[   21.899243] h713-hdmi-audio: TVFE: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1\n[   21.911226] h713-hdmi-audio: TVFE: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111\n[   21.911618] h713-hdmi-audio: clock=bus-hdmi-audio inherited_on=1 enabled_by_driver=0 rate=100000000\n[   21.911636] h713-hdmi-audio: clock=hdmi-audio inherited_on=1 enabled_by_driver=0 rate=1152000000\n[   21.911651] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000\n[   21.911665] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000\n[   21.911679] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000\n[   21.911803] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002\n[   21.911818] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00\n[   21.911831] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership\n[   21.912055] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped\n[   21.912143] h713-hdmi-audio: Audio Bridge private direct-DMA device ready\n[   21.917904] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written\n[   21.917938] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers\n[   21.917950] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207\n[   21.917965] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0\n[   21.918131] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336\n[   21.918144] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable\n[   21.918449] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000\n[   21.918469] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000\n[   21.918485] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1\n[   21.918720] h713-hdmi-audio: DSP versions 0000/0000\n[   22.833669] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1\n[   22.858916] h713-hdmi-audio: managed DSP graph verified 22 words\n[   22.863832] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically\n[   23.276502] h713-hdmi-signal: ready marker=48444d49 ready=48444d49 exception=0 error=0 done=00000000\n[   23.276529] h713-hdmi-signal: ready original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000\n[   23.276539] h713-hdmi-signal: ready readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff\n[   23.276550] h713-hdmi-signal: ready active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018\n[   23.276562] h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry\n[   23.431965] h713-hdmi-v4l2: completion from the AFBD capture pair\n[   23.432014] h713-hdmi-v4l2: using DMA-contiguous capture buffers\n[   23.903236] h713-hdmi-v4l2: initial signal none 0x0 after 20 samples\n[   23.903704] h713-hdmi-v4l2: read-only 1280x720 NV16/NV12 cacheable ring at /dev/video2",
+    "stderr": ""
+  }
+}

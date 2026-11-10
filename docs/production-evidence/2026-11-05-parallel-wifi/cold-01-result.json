@@ -1,0 +1,137 @@
+{
+  "status": "VALID matched observation",
+  "arm": "optimized",
+  "boot_id": "071a94ba-4847-4beb-9cc1-fd0cfaba47a7",
+  "issues": [],
+  "video_ready": 13.850639,
+  "window_end": 313.850639,
+  "first_live_sample": 55.32,
+  "last_live_sample": 314.11,
+  "fps": 59.70864407434599,
+  "rejected_at_window_end": 0,
+  "trace_lines": [],
+  "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+  "radio_services": {
+    "h713-aic8800-modules.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "8073836",
+      "ExecMainExitTimestampMonotonic": "8200218",
+      "ActiveState": "active",
+      "ActiveEnterTimestampMonotonic": "8200645"
+    },
+    "h713-hotspot.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "8243639",
+      "ExecMainExitTimestampMonotonic": "0",
+      "ActiveState": "active",
+      "ActiveEnterTimestampMonotonic": "8257284"
+    },
+    "h713-bt-attach.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "8226397",
+      "ExecMainExitTimestampMonotonic": "11551015",
+      "ActiveState": "active",
+      "ActiveEnterTimestampMonotonic": "11551317"
+    },
+    "systemd-modules-load.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "3695541",
+      "ExecMainExitTimestampMonotonic": "3952150",
+      "ActiveState": "active",
+      "ActiveEnterTimestampMonotonic": "3952543"
+    }
+  },
+  "radio_prepare_overlap_seconds": 3.557498,
+  "schema": "h713-parallel-wifi-cold-result-v1",
+  "runtime_audit": "PASS candidate runtime identity/startup checks",
+  "files_verified": 77,
+  "radio_readiness": "PASS radio readiness, explicit dependencies and alias suppression",
+  "loaded_capture_build_id_matches": true,
+  "startup_evidence": {
+    "ipc_seconds": [
+      0.427876,
+      0.428015,
+      0.428957,
+      0.449902,
+      0.435761
+    ],
+    "prepare_start": 4.633472,
+    "user_overlap_seconds": 3.228441,
+    "capture_ready": 12.136396,
+    "video_active": 13.850639,
+    "readvertised": 0,
+    "startup_time": "Startup finished in 2.306s (kernel) + 11.719s (userspace) = 14.026s \ngraphical.target reached after 11.718s in userspace.\n"
+  },
+  "baseline_video_ready_linux_seconds": 16.147241,
+  "video_ready_saving_seconds": 2.296602000000002,
+  "global_modules_load_duration_seconds": 0.256609,
+  "baseline_global_modules_load_duration_seconds": 2.858901,
+  "radio_activation_timing": {
+    "radio_service_activation_start": 4.621676,
+    "radio_service_active": 8.200645,
+    "radio_activation_duration_seconds": 3.578969,
+    "hdmi_prepare_activation_start": 4.643147,
+    "hdmi_prepare_active": 11.612431,
+    "overlap_seconds": 3.557498,
+    "note": "Use unit activation bounds: multiple ExecStart commands reset ExecMainStart; raw observer v1 last-command overlap is superseded by this measurement.",
+    "native_services": {
+      "h713-aic8800-modules.service": {
+        "ExecMainStartTimestampMonotonic": "8073836",
+        "ExecMainExitTimestampMonotonic": "8200218",
+        "Id": "h713-aic8800-modules.service",
+        "InactiveExitTimestampMonotonic": "4621676",
+        "ActiveEnterTimestampMonotonic": "8200645"
+      },
+      "h713-hdmi-prepare.service": {
+        "ExecMainStartTimestampMonotonic": "4633472",
+        "ExecMainExitTimestampMonotonic": "11610750",
+        "Id": "h713-hdmi-prepare.service",
+        "InactiveExitTimestampMonotonic": "4643147",
+        "ActiveEnterTimestampMonotonic": "11612431"
+      }
+    }
+  },
+  "raw_observer_last_command_overlap_seconds": 0.12638199999999955,
+  "first_aic_kernel_init_seconds": 4.848472,
+  "first_aic_after_owner_activation": true,
+  "clients_start_after_owner_success": true,
+  "transport_note": {
+    "host_wifi_initially": "disconnected",
+    "recovery": "Saved host hotspot profile reactivated; no board network/service recovery",
+    "first_live_sample": 55.32,
+    "early_outcomes": "Boot-wide kernel journal and cumulative counters; fixed deadline retained"
+  },
+  "uart_comparison": [
+    {
+      "log": "local/recovery/2026-11-05-autoboot-countdown/cold-01-uart/serial-timestamped.log",
+      "seconds_from_first_spl": {
+        "spl": 0.0,
+        "countdown": 2.074985,
+        "script": 2.083132,
+        "kernel": 9.729194
+      }
+    },
+    {
+      "log": "local/recovery/2026-11-05-parallel-wifi/cold-01-uart/serial-timestamped.log",
+      "seconds_from_first_spl": {
+        "spl": 0.0,
+        "countdown": 2.094305,
+        "script": 2.102279,
+        "kernel": 9.742866
+      }
+    }
+  ],
+  "user_observation": "Physical power/UART removed >1 minute; HDMI desktop returned; same desktop maintained",
+  "previous_shutdown": "Signal/DDC ownership restored, 22 DSP and 15 TVFE words restored, receiver parked/removed, capture before user-manager stop",
+  "limits": [
+    "One cold boot compared with preceding zero-countdown cold baseline; repeated reliability not claimed.",
+    "Video-service activation is not directly measured first-pixel time.",
+    "Host transport timing varies; no stream interruption or re-advertisement recorded.",
+    "Raw observer overlap used the last ExecStart timestamp; corrected unit-activation measurement is authoritative and collector source was fixed/tested for future runs.",
+    "Reject-trace-v1 remains installed with unchanged guard; historical rejected-copy evidence retained."
+  ]
+}

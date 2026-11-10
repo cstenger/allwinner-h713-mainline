@@ -1,0 +1,62 @@
+{
+  "board_actions": false,
+  "files": {
+    "host-hdmi-01/events.jsonl": {
+      "bytes": 61012,
+      "sha256": "48f12d8949152a3ec9bf36c0ff7d6b30d20215d7719001235ecacca4a1a789d1"
+    },
+    "host-hdmi-01/latest.json": {
+      "bytes": 1019,
+      "sha256": "f28d3cff70334f87ca2e8f2040261ab8be3d4750b5dead4f58853ca834dd0e12"
+    },
+    "uart-01/serial-timestamped.log": {
+      "bytes": 73322,
+      "sha256": "1672476612c56cc4b1fdb60bf0418405030fcb255e93044eb7886ec6da4bef56"
+    },
+    "uart-01/serial.log": {
+      "bytes": 55384,
+      "sha256": "8a3b4ad722618ab19a31f4ea349e2bd559f421e5a1c2f1f354b500e9d922c99b"
+    }
+  },
+  "hdmi_final": {
+    "connector": "/sys/class/drm/card1-HDMI-A-1",
+    "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+    "host_monotonic_ns": 5888799328909,
+    "host_utc": "2026-11-01T08:44:30.710497+00:00",
+    "mode": "cached sysfs reads only; no probe/ioctl",
+    "phase": "stop",
+    "samples": 1954,
+    "snapshot": {
+      "edid_bytes": 256,
+      "edid_hex": "00ffffffffffff00207013070000000026240103802012780fee91a3544c99260f505420000001010101010101010101010101010101011d007251d01e206e28550040b41000001e000000fc00483731332048444d4920494e0a000000fd003b3d1f2e08000a202020202020000000ff00483731332d303030303030310a0194020318c1420401230907018301000065030c001000e2004a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000073",
+      "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+      "enabled": "enabled",
+      "ok": true,
+      "status": "connected"
+    }
+  },
+  "host_utc": "2026-11-01T08:44:30.475605+00:00",
+  "services": {
+    "hdmi": {
+      "after": {
+        "ActiveState": "inactive",
+        "MainPID": "0",
+        "SubState": "dead"
+      },
+      "before": "InvocationID=7ef36932e5594acea6e9c77ccf5dbed2\nMainPID=57243\n",
+      "show_returncode": 0,
+      "unit": "h713-delay-boot-hdmi-20261101-01.service"
+    },
+    "uart": {
+      "after": {
+        "ActiveState": "inactive",
+        "MainPID": "0",
+        "SubState": "dead"
+      },
+      "before": "InvocationID=e2a7707d8a844fef836de8db6554b366\nMainPID=57240\n",
+      "show_returncode": 0,
+      "unit": "h713-delay-boot-uart-20261101-01.service"
+    }
+  },
+  "uart_released": true
+}

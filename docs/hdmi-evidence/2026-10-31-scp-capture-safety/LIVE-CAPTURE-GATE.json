@@ -1,0 +1,20 @@
+{
+  "schema": "h713-scp-capture-readiness-v1",
+  "review_complete": true,
+  "execution_permitted": false,
+  "live_capture_ready": false,
+  "hardware_execution_authorized": false,
+  "reason": "Original prototype fails live safety review; unresolved return acknowledgement, fetch coherence and owner coordination",
+  "allowed_now": [
+    "offline model tests",
+    "read-only state inspection"
+  ],
+  "forbidden": [
+    "write hook or scratch to live SRAM",
+    "load an unvalidated companion",
+    "reuse completion marker as proof of safe cleanup",
+    "HPD pulse or peripheral write",
+    "reset/restart/reboot/reseat"
+  ],
+  "rejected_probe_sha256": "20cfe3ee06c4467a91d450853a4cc0b1a0c81b92140117bbd44d8aaf308ca750"
+}

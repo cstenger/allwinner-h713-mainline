@@ -1,0 +1,34 @@
+{
+  "status": "Approved package installed on disk with durable backup/readback and75-file audit PASS; live owner not restarted; fresh-source cold test pending",
+  "hypothesis": "Initial DDC enable and HPD release had no settling gap; successful retry waits100ms. Candidate mirrors that100ms before the first release without an extra advertisement.",
+  "candidate_module_sha256": "3ef77261aa76b32b1dfa804913b1b80b7ec234b06aafdfcaa7c0dd0f8082aa6c",
+  "candidate_module_version": "first-advert-ddc-settle-v1",
+  "package_manifest_sha256": "07dd19f4bf89106b6bbbe57d855d6e4017a3f067a1fd19ef1010380310d00f54",
+  "disk_scope": [
+    "usr/lib/h713-hdmi/h713-hdmi-signal.ko",
+    "usr/lib/h713-hdmi/SHA256SUMS"
+  ],
+  "live_changes": false,
+  "guard_preservation": "No ARM receiver MMIO; SCP readbacks copied to SRAM. Owner resources/restoration remain pinned; failed first-release acknowledgement or readback is terminal. Retry policy and count remain unchanged. Initial HPD stays low until one release after EDID/DDC ready.",
+  "offline_checks": {
+    "legacy_payload": "byte-identical default; SHA2569f8d454f06d50de95c6ac75e8ddd21a703bec37c9643675d1f2e30d1dab1a926",
+    "OR1K_payload_model": "14 tests PASS including first-release history, retry and restore",
+    "actual_C_initial_advertise": "PASS one100ms settle/one release; request/error/exception/poisoned/missing readbacks rejected",
+    "retry_policy": "16 tests PASS",
+    "installer": "3 tests PASS plus two post-write rollback boundaries",
+    "shared_installer": "3 existing tests PASS",
+    "module": "W=1 build against accepted RC kernel PASS"
+  },
+  "fixed_context": {
+    "board_boot_before": "45c76aa6-337c-4935-9918-9341434ea99d",
+    "source_host_boot_before": "99d2aaac-0125-466a-9ba6-6349555f713c",
+    "radio": "original global control B",
+    "standby": "installed soft-start fix retained",
+    "capture": "reject-trace-power-v2 unchanged",
+    "retry": "unchanged, every fallback counts as first-advert miss",
+    "EDID": "same exact audio EDID"
+  },
+  "next": "Orderly board poweroff; operator removes board supply, manually reboots SOURCE PC with board kept off and HDMI retained. UART may remain connected per preference. Return to chat before applying board power. Verify new source boot ID, arm host-access UART and first-advert observers, then explicitly say apply board power.",
+  "backup": "/var/lib/h713-hdmi-startup/initial-advert-9e4c05aa9d2a48138f095f6515521f1c",
+  "after_install_audit": "75files PASS, standby fix/kernel/bootloader/package pins retained"
+}
