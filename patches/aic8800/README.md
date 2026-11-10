@@ -1,23 +1,32 @@
 # AIC8800 driver patches
 
 The AIC8800 WiFi/BT driver is carried as a **patch series applied to a pinned
-vendor tarball**, the same way the kernel is (see `../kernel/README.md`) rather
-than as a fork. Filenames are prefixed `aic8800-` so a patch is identifiable on
-sight even out of context — these are **not** kernel patches and are never
-applied to the kernel tree.
+upstream checkout**, the same way the kernel is (see `../kernel/README.md`)
+rather than as a fork. Filenames are prefixed `aic8800-` so a patch is
+identifiable on sight even out of context — these are **not** kernel patches and
+are never applied to the kernel tree.
 
 ## Base
 
 | | |
 |---|---|
-| Upstream | `radxa-pkg/aic8800`, commit `df4c783b` |
+| Upstream | `external/aic8800` submodule, `radxa-pkg/aic8800` at `df4c783b` |
 | Vendor driver release | `2026_0123_5f7be68d` |
 | Subtree used | `src/SDIO/driver_fw/driver/aic8800` |
 | Applied first | the repo's own `debian/patches/series` |
 
+**Where to read the source.** `external/aic8800` — that is the tree the build
+actually consumes. It was a downloaded tarball until 2026-08-24, and before that
+there was also a vendored copy under `modules/aic8800/` that had gone three
+releases stale while still looking authoritative. Both are gone; there is one
+tree now. `build/aic8800-<commit>-<digest>/` is still where the *patched* result
+is materialized, and it remains a build artifact.
+
 **Order matters.** Radxa's `debian/patches` are applied to the *whole* repo
 first (they patch `src/PCIE`, `src/SDIO` and `src/USB` together), and only then
 is the SDIO subtree extracted and this series applied on top.
+
+**0005 is deliberately not in `series`.** `aic8800-0005-D80-card-side-SDIO-iopad-controls.patch` sits in this directory unapplied. It configured the card-side SDIO iopad drive/pull registers, and it was superseded by the mmc1 work that landed in the kernel series instead (the SDIO link runs stock 4-bit SDR104/50 MHz with the driver-side compensations removed). It is kept for the record rather than deleted, the same way the kernel series keeps patches with negative results attached. The numbering gap between 0004 and 0006 is this, not a missing file.
 
 Two of Radxa's patches do not apply at this commit and that is expected:
 `fix-usb-firmware-path` (USB only, zero SDIO hunks) and
@@ -32,6 +41,28 @@ it as reversed/previously applied).
 | 0002 | H713 `wlan_regon` GPIO, power sequencing, SDIO rescan | The actual bring-up glue: PM1 (GPIO 385) power enable, `4021000.mmc` host lookup, `mmc_detect_change()` rescan, hostwake input, DDR50 disable. All inside `#ifdef CONFIG_PLATFORM_MAINLINE_SUNXI`. |
 | 0003 | SDIO clock and chip-up timeout tuning | See below — the most consequential patch in the series. |
 | 0004 | Guard the firmware-array include | Vendor `#include`s `aicwf_firmware_array.h` unconditionally even though its only caller is `#ifdef CONFIG_FIRMWARE_ARRAY`. `aicwf_firmware_array.c` is a **1.9 MB proprietary blob-as-C-array**; guarding the include is what lets the build exclude it. |
+| 0006 | Make the self-managed regulatory domain settable | The wiphy is self-managed, so `regulatory.db` never applies; the compiled-in `"00"` world domain is wider than ISM and DFS-unconstrained. Exposes the selector as a module parameter. |
+| 0007 | Route the association chatter through `aicwf_dbg_level` | Ten `printk()`/`netdev_info()` sites printed a six-line burst on **every** association, ignoring the driver's own log-level knob. Since the console is on the projector panel, a client that re-associates every few seconds buried the login prompt inside a minute. Logging only — no control flow touched. |
+| 0008 | Drain the `rc_stat` queue; fix an out-of-bounds write | `rwnx_rc_stat_work()` handled one ring entry per run while `schedule_work()` coalesces, so entries were silently dropped. Also sizes `dir_sta[]`/`rc_config[]` to the index range the code already validates — the `bc_mc` pseudo-stations were writing past the end. See below: this patch was written on a theory that turned out to be wrong, and is kept for what it actually fixes. |
+| 0009 | Compile in the AP-mode debugfs unregister | `#ifdef CONFIG_DEBUG_FS_AIC` — a macro defined nowhere — wrapped the unregister call in both AP station-delete paths, while the register used plain `CONFIG_DEBUG_FS`. The `rc/<mac>` directory was created and never removed, so every re-association collided. Two characters. |
+
+### 0008 and 0009: a wrong diagnosis, kept on the record
+
+The `debugfs: '<mac>' already exists in 'rc'` errors were first diagnosed as a
+race in the `rc_stat` workqueue — register and unregister genuinely *are* the
+same function, and the work genuinely *does* infer intent from whether
+`dir_sta[sta_idx]` is NULL when it runs. 0008 was written, built, installed and
+booted on that theory, and the errors returned unchanged, 6 for 6.
+
+The real cause was that the unregister was never compiled in. **A plausible
+mechanism is not evidence that it is the mechanism in play**, and the question
+never asked was whether the code ran at all. What settled it was looking at the
+filesystem instead of the source: one directory under `rc/`, timestamped at
+boot, unchanged across ten re-associations — nothing was removing it, so nothing
+could be racing.
+
+0008 is kept because both defects in it are real, and 0009 makes the
+out-of-bounds one reachable by turning the unregister path on.
 
 ## Patch 0003 deserves attention
 
@@ -69,7 +100,7 @@ never blind.
   `#if LINUX_VERSION_CODE`; ours hardcoded the new signatures and so only built
   on new kernels.
 - **`KDIR ?= /opt/captcha/kernel/linux-6.16.7`** and its `PWD`/`KVER` siblings —
-  a hardcoded path from someone else's build machine. `build/build.sh` passes
+  a hardcoded path from someone else's build machine. `tools/build/build.sh` passes
   `KDIR` itself.
 - **~1450 lines of vendor development** we were simply two years behind on
   (D80N/D80X2/DC chip support, refactoring, log-string fixes). Taking vendor's
