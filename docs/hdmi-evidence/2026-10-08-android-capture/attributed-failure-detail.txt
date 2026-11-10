@@ -1,0 +1,90 @@
+09-21 19:40:20.871  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:40:20.871  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:40:20.882  2623  4602 E AppOps  : startOperation
+09-21 19:40:20.882  2623  4602 E AppOps  : java.lang.SecurityException: Specified package uid:2000 under uid 2000 but it is really -1
+09-21 19:40:20.882  2623  4602 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(AppOpsService.java:3876)
+09-21 19:40:20.882  2623  4602 E AppOps  : 	at com.android.server.appop.AppOpsService.startOperation(AppOpsService.java:3400)
+09-21 19:40:20.882  2623  4602 E AppOps  : 	at com.android.internal.app.IAppOpsService$Stub.onTransact(IAppOpsService.java:473)
+09-21 19:40:20.882  2623  4602 E AppOps  : 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+09-21 19:40:20.882  2623  4602 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1123)
+09-21 19:40:20.883  2408  6382 E AudioPolicyIntefaceImpl: startInput permission denied: recording not allowed for uid 2000 pid 6355
+09-21 19:40:20.884  6355  6355 W AudioRecord: restoreRecord_l(30): failed status -1, retries 1
+09-21 19:40:20.885  6355  6355 E AudioRecord: start(30): status -1
+09-21 19:40:20.897  6355  6355 W AudioRecord: restoreRecord_l(30): dead IAudioRecord, creating a new one from obtainBuffer()
+09-21 19:40:21.107  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:40:21.110  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:40:21.110  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:40:21.112  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:40:21.112  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:40:41.106  2382  2661 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:42:45.884  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:45.942  2382  2430 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000004)
+09-21 19:42:45.942  2382  2430 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:42:45.943  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:45.944  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:45.949  7195  7195 W AudioRecord: restoreRecord_l(34): dead IAudioRecord, creating a new one from start()
+09-21 19:42:46.159  2382  2661 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:42:46.161  2382  2430 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:42:46.162  2382  2430 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:42:46.166  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:46.167  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:46.181  2623  3177 E AppOps  : startOperation
+09-21 19:42:46.181  2623  3177 E AppOps  : java.lang.SecurityException: Specified package android under uid 2000 but it is really 1000
+09-21 19:42:46.181  2623  3177 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(AppOpsService.java:3876)
+09-21 19:42:46.181  2623  3177 E AppOps  : 	at com.android.server.appop.AppOpsService.startOperation(AppOpsService.java:3400)
+09-21 19:42:46.181  2623  3177 E AppOps  : 	at com.android.internal.app.IAppOpsService$Stub.onTransact(IAppOpsService.java:473)
+09-21 19:42:46.181  2623  3177 E AppOps  : 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+09-21 19:42:46.181  2623  3177 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1123)
+09-21 19:42:46.181  2408  6382 E AudioPolicyIntefaceImpl: startInput permission denied: recording not allowed for uid 2000 pid 7195
+09-21 19:42:46.181  7195  7195 W AudioRecord: restoreRecord_l(36): failed status -1, retries 3
+09-21 19:42:46.892  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:42:46.896  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:42:46.897  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:42:46.898  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:46.899  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:46.918  2623  3177 E AppOps  : startOperation
+09-21 19:42:46.918  2623  3177 E AppOps  : java.lang.SecurityException: Specified package android under uid 2000 but it is really 1000
+09-21 19:42:46.918  2623  3177 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(AppOpsService.java:3876)
+09-21 19:42:46.918  2623  3177 E AppOps  : 	at com.android.server.appop.AppOpsService.startOperation(AppOpsService.java:3400)
+09-21 19:42:46.918  2623  3177 E AppOps  : 	at com.android.internal.app.IAppOpsService$Stub.onTransact(IAppOpsService.java:473)
+09-21 19:42:46.918  2623  3177 E AppOps  : 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+09-21 19:42:46.918  2623  3177 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1123)
+09-21 19:42:46.918  2408  6181 E AudioPolicyIntefaceImpl: startInput permission denied: recording not allowed for uid 2000 pid 7195
+09-21 19:42:46.919  7195  7195 W AudioRecord: restoreRecord_l(38): failed status -1, retries 2
+09-21 19:42:47.636  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:42:47.639  2382  2430 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:42:47.639  2382  2430 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:42:47.646  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:47.646  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:42:47.660  2623  7096 E AppOps  : startOperation
+09-21 19:42:47.660  2623  7096 E AppOps  : java.lang.SecurityException: Specified package android under uid 2000 but it is really 1000
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at com.android.server.appop.AppOpsService.verifyAndGetBypass(AppOpsService.java:3876)
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at com.android.server.appop.AppOpsService.startOperation(AppOpsService.java:3400)
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at com.android.internal.app.IAppOpsService$Stub.onTransact(IAppOpsService.java:473)
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at android.os.Binder.execTransactInternal(Binder.java:1159)
+09-21 19:42:47.660  2623  7096 E AppOps  : 	at android.os.Binder.execTransact(Binder.java:1123)
+09-21 19:42:47.660  2408  2588 E AudioPolicyIntefaceImpl: startInput permission denied: recording not allowed for uid 2000 pid 7195
+09-21 19:42:47.661  7195  7195 W AudioRecord: restoreRecord_l(40): failed status -1, retries 1
+09-21 19:42:47.666  7195  7195 E AudioRecord: start(40): status -1
+09-21 19:42:47.876  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:43:36.896  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:43:36.945  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000004)
+09-21 19:43:36.945  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:43:36.946  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:43:36.946  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:43:36.953  7338  7338 W AudioRecord: restoreRecord_l(42): dead IAudioRecord, creating a new one from start()
+09-21 19:43:37.161  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:43:37.163  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:43:37.163  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:43:37.164  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:43:37.164  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 19:43:37.176  2408  6382 E AudioPolicyIntefaceImpl: startInput permission denied: recording not allowed for uid 2000 pid 7338
+09-21 19:43:37.177  7338  7338 W AudioRecord: restoreRecord_l(44): failed status -1, retries 3
+09-21 19:43:37.681  2408  6382 E AudioPolicyIntefaceImpl: getInputForAttr permission denied: recording not allowed for uid 2000 pid 7338
+09-21 19:43:37.681  7338  7338 E AudioRecord: createRecord_l(44): AudioFlinger could not create record track, status: -1
+09-21 19:43:37.681  7338  7338 W AudioRecord: restoreRecord_l(44): failed status -1, retries 2
+09-21 19:43:38.186  2408  6382 E AudioPolicyIntefaceImpl: getInputForAttr permission denied: recording not allowed for uid 2000 pid 7338
+09-21 19:43:38.186  7338  7338 E AudioRecord: createRecord_l(44): AudioFlinger could not create record track, status: -1
+09-21 19:43:38.186  7338  7338 W AudioRecord: restoreRecord_l(44): failed status -1, retries 1
+09-21 19:43:38.187  7338  7338 E AudioRecord: start(44): status -1
+09-21 19:43:38.403  2382  2661 D audio_hw_primary: adev_close_input_stream set voice record status

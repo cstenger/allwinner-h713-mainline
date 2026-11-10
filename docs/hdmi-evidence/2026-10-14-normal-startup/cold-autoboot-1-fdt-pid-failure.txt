@@ -1,0 +1,14 @@
+First autonomous cold autoboot of the installed startup script (operator UART
+report, 2026-10-14, quoted verbatim). Launch, source-3 CALL and trace guards
+passed; the FDT handoff command then rejected the bare-hex PID.
+
+H713 source 3: callback-event0=1 worker-event0=1 transition-complete=1 worker-old=00000000 worker-new=00000003
+Working FDT set to 4f000000
+Sorry, I could not convert "b8f275c>"
+H713 HDMI source/boot failed - cold cycle required
+
+Cause: setexpr stores bare %lx (8b8f275c); cmd/fdt.c fdt_parse_prop parses
+cells with simple_strtoul(cp, &newp, 0), which read decimal 8 and stopped.
+An all-decimal-digit PID would have been accepted with the WRONG value.
+${hdmi_ccu} was unaffected: fdt get value stores 0x%08X.
+Fix: build-startup.py emits 0x${hdmi_pid}; regression tools/hdmi/test-build-startup.py.

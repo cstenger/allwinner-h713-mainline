@@ -1,0 +1,12 @@
+v4l2-ctl --list-devices:
+cedrus (platform:cedrus):
+    /dev/video0
+    /dev/media0
+
+v4l2-ctl -d /dev/video0 -D:
+Driver name: cedrus
+Card type: cedrus
+Bus info: platform:cedrus
+Driver version: 6.18.38
+Capabilities: Video Memory-to-Memory, Streaming, Extended Pix Format
+Device Caps: Video Memory-to-Memory, Streaming, Extended Pix Format

@@ -1,0 +1,35 @@
+{
+  "boot_id": "fe482468-f917-463c-afde-20f6baa83d3c",
+  "startup_check": "PASS",
+  "video_samples_pass": true,
+  "video_samples": 8,
+  "video_dimensions": [
+    1280,
+    720
+  ],
+  "video_caveat": "Single-copy read-only reserved DRAM samples; full double-copy mode could not obtain a stable sample. IDs/stripes agree across samples; not sustained full-rate or V4L2 validation.",
+  "digital_audio_pass": true,
+  "input_rates_hz": [
+    48000,
+    32000,
+    44100
+  ],
+  "capture_format": "48kHz stereo S16_LE",
+  "capture_xruns_each": [
+    0,
+    0,
+    0
+  ],
+  "audible_playback_returncode": 0,
+  "audible_operator_result": "Initial new-session HDMI replay silent; direct codec tone audible; identical waveform over HDMI audible after consumer stop/start and local codec playback",
+  "final_state": "same cold boot; capture/signal/speaker active, both PCMs RUNNING, cumulative capture XRUNs0, passive serial capture continues",
+  "hardware_firmware_or_boot_settings_changed": false,
+  "audible_recovery_caveat": "Earlier silence unexplained; subsequent clean cold startup audible with the previously audible peak6500 waveform. One clean cold listening pass does not establish long-term audio reliability.",
+  "latest_boot_id": "b3478260-5d3d-4bc8-96b6-8b3da5c8bee7",
+  "latest_digital_capture_48k_pass": true,
+  "latest_normal_hdmi_forwarding_audible": true,
+  "clean_cold_start_audible_pass": true,
+  "clean_cold_start_boot_id": "4b89c33b-9059-47c8-afce-6aa2dbeb4eac",
+  "clean_cold_start_interventions": "None: no speaker restart, direct codec playback or HDMI reseat",
+  "clean_cold_start_capture_xruns": 0
+}

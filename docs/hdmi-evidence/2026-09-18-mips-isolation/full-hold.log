@@ -1,0 +1,40 @@
+[sent 5 bytes: 'cmds']
+[reply: nothing]
+[sent 10 bytes: 'help elog']
+[reply: nothing]
+control block  0x4bd01000  acID b'RV\x00\x00\x00\x00 TERMINAL\x00'
+MIPS core      ALIVE (0x0306101c)
+  up[0]   buf=0x4bd01300 size=0x41c00 wr=1905 rd=1905 flags=0x0
+  up[1]   buf=0x4bd43000 size=0x7d000 wr=0 rd=0 flags=0x0
+  up[2]   buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+  down[0] buf=0x4bd01200 size=0x100 wr=34 rd=19 flags=0x0
+  down[1] buf=0x4bd42f00 size=0x100 wr=0 rd=0 flags=0x0
+  down[2] buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+domain                          status          children        performance
+    /device                         runtime status                  managed by
+------------------------------------------------------------------------------
+AV1                             off-0                           0
+VE                              off-0                           0
+    1c0e000.video-codec             suspended                   0           SW
+TVCAP                           on                              0
+    h713-hdmi-tvcap                 active                      0           SW
+TVFE                            on                              0
+    h713-hdmi-tvfe                  active                      0           SW
+GPU                             off-0                           0
+    1800000.gpu                     suspended                   0           SW
+[   99.325836] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[   99.333375] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[   99.335982] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[   99.344979] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[   99.353430] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[   99.362218] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[   99.370405] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[   99.375640] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[   99.383914] cpu_comm: IPC[handle_return] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[   99.392472] cpu_comm: IPC[dispatch] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[   99.400500] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  124.518688] h713-hdmi-power: domain 1 resumed
+[  124.523190] h713-hdmi-power: domain 2 resumed
+[  124.527599] h713-hdmi-power: TVFE/TVCAP and four receiver clocks held on; no receiver MMIO
+[  126.815220] h713-edid-clock-hold h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0

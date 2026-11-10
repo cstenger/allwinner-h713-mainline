@@ -1,0 +1,29 @@
+Input #0, video4linux2,v4l2, from '/dev/video1':
+  Duration: N/A, start: 10076.984079, bitrate: 294912 kb/s
+  Stream #0:0: Video: rawvideo, nv16, 640x480, 294912 kb/s, 60 fps, 60 tbr, 1000k tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> rawvideo (native))
+Output #0, rawvideo, to '/tmp/h713-motion-trial-20260925T100821Z-sparse.nv16':
+  Metadata:
+    encoder         : Lavf61.7.103
+  Stream #0:0: Video: rawvideo, nv16(progressive), 640x480, q=2-31, 294912 kb/s, 60 fps, 60 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 rawvideo
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7 >= 7
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10 >= 10
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20 >= 20
+frame=   29 fps=0.0 q=-0.0 size=   16640KiB time=00:00:00.50 bitrate=272629.8kbits/s speed=   1x
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 31 >= 31
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 44 >= 44
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 53 >= 53
+frame=   58 fps= 58 q=-0.0 size=   34048KiB time=00:00:01.00 bitrate=278921.2kbits/s speed=0.999x
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 62 >= 62
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 68 >= 68
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 80 >= 80
+frame=   88 fps= 59 q=-0.0 size=   51968KiB time=00:00:01.50 bitrate=283814.6kbits/s speed=0.999x
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 92 >= 92
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 105 >= 105
+[rawvideo @ 0xaaaad673dd20] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 116 >= 116
+frame=  117 fps= 58 q=-0.0 size=   69376KiB time=00:00:01.96 bitrate=288980.4kbits/s speed=0.983x
+[out#0/rawvideo @ 0xaaaad673dc50] video:72000KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000000%
+frame=  120 fps= 59 q=-0.0 Lsize=   72000KiB time=00:00:02.03 bitrate=290077.4kbits/s speed=0.999x

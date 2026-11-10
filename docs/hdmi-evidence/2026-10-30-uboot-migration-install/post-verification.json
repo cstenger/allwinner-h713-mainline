@@ -1,0 +1,137 @@
+{
+  "result": "PASS independently verified installed migration",
+  "boot_id": "3474b865-26f2-4b2d-bf37-1baddef732fe",
+  "manifest_sha256": "9efcb1e7488515a1df3a5a503764efea9c46a6b11e44040c4c01d65b2bdf4da9",
+  "journal_phase": "installed",
+  "installer_exit_code": 0,
+  "writes": [
+    {
+      "name": "environment",
+      "offset": 2480406528,
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "matches": true,
+      "direct_read": true,
+      "crc_valid": true
+    },
+    {
+      "name": "proper",
+      "offset": 2472017920,
+      "bytes": 961024,
+      "sha256": "cbd29de888e4b605e68b98de78c081525dd7d1b627abca846704efe527e8802a",
+      "matches": true,
+      "direct_read": true,
+      "fit_bytes": 955665
+    }
+  ],
+  "protected": [
+    {
+      "name": "disk-prefix-including-GPT-and-SPL",
+      "offset": 0,
+      "bytes": 65536,
+      "sha256": "7a3702e2ccb5c4639367fb615db94eaf13d26beae8d59fedd1d68650e21d4343",
+      "unchanged": true,
+      "direct_read": true
+    },
+    {
+      "name": "disk-suffix-including-backup-GPT",
+      "offset": 7818117120,
+      "bytes": 65536,
+      "sha256": "9b3e8a016ad6c6f7b9fd2e03eaa38beebd9735bb57213a44efc99b97026188a4",
+      "unchanged": true,
+      "direct_read": true
+    },
+    {
+      "name": "active-environment",
+      "offset": 1708654592,
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "unchanged": true,
+      "direct_read": true
+    },
+    {
+      "name": "rescue-full-region",
+      "offset": 2484600832,
+      "bytes": 2097152,
+      "sha256": "27a685f46a68daeeb98190fe9bd1c3f9200cfe1da3f53cfa78b24bfb06a48411",
+      "unchanged": true,
+      "direct_read": true
+    },
+    {
+      "name": "proper-region-tail",
+      "offset": 2472978944,
+      "bytes": 1136128,
+      "sha256": "df9b23d9d89fc108da150079a555216c62c42fba1451c48c8eab8ade6ba7ad11",
+      "unchanged": true,
+      "direct_read": true
+    },
+    {
+      "name": "intended-environment-prefix",
+      "offset": 2480340992,
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "unchanged": true,
+      "direct_read": true
+    },
+    {
+      "name": "intended-environment-suffix",
+      "offset": 2480472064,
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "unchanged": true,
+      "direct_read": true
+    },
+    {
+      "name": "boot-FAT",
+      "offset": 71303168,
+      "bytes": 33554432,
+      "sha256": "79c14f0566ada36158df2bef4995f73674a532987cfe8674c0c5e46789672de5",
+      "unchanged": true,
+      "direct_read": true
+    }
+  ],
+  "surrounding_proper_region_sha256": "8ef5d946963e1959e30ea53985ac0c9be869e6e49d38d674be5df84c9b0a1cc2",
+  "surrounding_environment_region_sha256": "3900fea28629d901e2c965d63a626310a69184a5f51f45bbc7b60400c79dcd06",
+  "spl_sha256": "cb9da87448a57aa1cafbc7ebf66200b5183304cef1eafe23d0818b99696a49ec",
+  "rescue_fit_bytes": 920169,
+  "rescue_fit_sha256": "2c22019f29e8a8b59151737406a20e1bca74fdcb73096229f967ef72bbd213a0",
+  "old_environment_crc_valid": true,
+  "old_and_new_environment_identical": true,
+  "bundle_checks": [
+    {
+      "path": "/usr/lib/h713-hdmi/SHA256SUMS",
+      "entries": 18,
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-health/SHA256SUMS",
+      "entries": 7,
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-video/SHA256SUMS",
+      "entries": 6,
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-speaker/SHA256SUMS",
+      "entries": 6,
+      "all_match": true
+    }
+  ],
+  "live_state": {
+    "result": "PASS live identity/protected storage/files/services/runtime preflight",
+    "boot_id": "3474b865-26f2-4b2d-bf37-1baddef732fe",
+    "cid_sha256": "1bb97b8b1f70d4455ee302889f38aa4e452cb4a7a3c4c9a68b30874903032512",
+    "protected_ranges": 8,
+    "files_verified": 56,
+    "board_writes": false
+  },
+  "services_and_start_identities_unchanged": true,
+  "runtime_counters_and_signal_unchanged": true,
+  "latches_unchanged": true,
+  "calibration_unchanged": true,
+  "verification_storage_writes": false,
+  "reboot": false,
+  "monotonic_duration_seconds": 10.157517503999998
+}

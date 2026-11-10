@@ -1,0 +1,25 @@
+{
+  "status": "Read-only ownership audit; no supported sampling API in installed owner",
+  "boot_id": "2d8c3970-4164-4a38-8e86-375bb440c971",
+  "runtime_kernel": "Linux h713-arm64 6.18.38 #1 SMP Fri Oct 16 15:44:49 PDT 2026 aarch64 GNU/Linux",
+  "owner_sha256": "0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497",
+  "reserved_resources": [
+    "00100000-00104fff : h713-hdmi-signal",
+    "07000400-07000403 : h713-hdmi-signal"
+  ],
+  "owner_parameters": {
+    "ready": "Y",
+    "failed": "N",
+    "restored": "N",
+    "recovery": "0"
+  },
+  "private_stop_lock": "static DEFINE_MUTEX(signal_lock); stop_signal takes it",
+  "stop_parameter_interface": "kernel module parameter store takes kernel_param_lock before calling stop_signal",
+  "kernel_param_lock_exported": true,
+  "sampling_interface_exported": false,
+  "companion_implemented": false,
+  "private_runtime_addresses_used_for_writes": false,
+  "local_kernel_build_version": "#define UTS_VERSION \"#2 SMP Sat Oct 24 02:39:05 PDT 2026\"",
+  "runtime_ABI_match_proven_for_new_companion": false,
+  "read_only": true
+}

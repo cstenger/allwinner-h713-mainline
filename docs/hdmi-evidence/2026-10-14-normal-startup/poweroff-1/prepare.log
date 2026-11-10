@@ -1,0 +1,8 @@
+{"argv": ["systemd-analyze", "verify", "/run/systemd/system/h713-hdmi-poweroff-relay.service", "/run/systemd/system/h713-hdmi-poweroff-recorder.service"], "rc": 0, "out": "", "err": ""}
+{"argv": ["systemctl", "daemon-reload"], "rc": 0, "out": "", "err": ""}
+{"argv": ["systemctl", "is-active", "h713-hdmi-capture.service"], "rc": 0, "out": "active\n", "err": ""}
+{"argv": ["systemctl", "is-active", "h713-hdmi-signal.service"], "rc": 0, "out": "active\n", "err": ""}
+ready Y
+failed N
+{"argv": ["systemctl", "start", "h713-hdmi-poweroff-relay.service"], "rc": 0, "out": "", "err": ""}
+Runtime units verified; persistent signal owner ready.

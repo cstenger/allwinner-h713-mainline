@@ -1,0 +1,30 @@
+{
+  "status": "FAIL initial-detection fix: first advertisement missed; one automatic retry recovered",
+  "boot_id": "e5350845-f145-4f0e-ba72-2519576cebee",
+  "signal_module_version": "first-advert-ddc-settle-v1",
+  "first_hpd_release_uptime": 15.180075,
+  "retry_requested_uptime": 25.585898,
+  "retry_completed_uptime": 27.720061,
+  "signal_locked_uptime": 28.944138,
+  "video_service_active_uptime": 29.001007,
+  "five_minute_observation": {
+    "status": "INVALID matched observation",
+    "arm": "optimized",
+    "boot_id": "e5350845-f145-4f0e-ba72-2519576cebee",
+    "issues": [
+      "HPD re-advertisement"
+    ],
+    "video_ready": 29.001007,
+    "window_end": 329.001007,
+    "first_live_sample": 29.96,
+    "last_live_sample": 329.18,
+    "fps": 59.70857562997125,
+    "rejected_at_window_end": 0,
+    "trace_lines": [],
+    "strict_zero_rejection_qualification": "not evaluated or waived by this experiment"
+  },
+  "audit_files_verified": 75,
+  "stream_error_counters": "All0 through five-minute window",
+  "conclusion": "100ms DDC-enabled settle alone did not prevent this reproduced first-advert miss. No no-retry success claimed.",
+  "next_hypothesis": "Match proven retry DDC-disabled dwell2000ms before enabling DDC and settling100ms, still one first HPD rise. V2 separate package approval pending."
+}

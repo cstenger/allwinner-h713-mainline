@@ -1,0 +1,47 @@
+{
+  "status": "PASS with documented scope",
+  "user_authorization": "Install update and restart HDMI video; ready for picture and sound verification",
+  "boot_id": "c8f3308e-5c02-4be1-bc0e-3ee5991761e8",
+  "installed_policy": "hdmi-priority-v1",
+  "player_sha256": "f50f679b22b7144de05b69e2806428d7d6d3a06e275b1ff48883923732e684d8",
+  "launcher_sha256": "1858570f45de37e5d3a0ba31b14de0369fdf08c664cf62f804e141d9f86dcd25",
+  "staged_and_installed_refusal_tests": "PASS: direct policy check and auto/plane/gpu launcher dry runs; no local decoder launched",
+  "allow_480p": false,
+  "delivered_fps": 59.63367844878497,
+  "rejected_increment": 0,
+  "capture_xruns_increment": 0,
+  "unchanged_service_start_times": [
+    "capture",
+    "signal",
+    "speaker"
+  ],
+  "deliberately_restarted": [
+    "ring",
+    "video"
+  ],
+  "automatic_restarts": 0,
+  "audio_delay_sec": 0.04,
+  "operator_confirmation": "Motion, colours and tone are correct",
+  "qualification": "Whole HDMI boot/session policy for supported launcher/player only; no physical 480p test, local-playback boot or reboot-persistence retest in this sequence. Raw decoder commands bypass this userspace policy.",
+  "cleanup": {
+    "player_stopped": true,
+    "host_sink": "alsa_output.pci-0000_0c_00.1.hdmi-stereo-extra2",
+    "restored_channel_volumes": [
+      "22937",
+      "22937"
+    ],
+    "restored_muted": false,
+    "board_power": "left on"
+  },
+  "backups": {
+    "host_archive": "build/hdmi-playback-policy-2026-10-28/installed-backups.tar.gz",
+    "sha256": "cf7b3f755c221804379f4236e8a800e74d95c48b640546a98f1db1f885859b1c",
+    "playback_backup": "/var/lib/h713-playback-policy/backup.iw1NyX",
+    "video_backup": "/var/lib/h713-hdmi-video/backup.qqVRof",
+    "stderr": ""
+  },
+  "repository_state_at_acceptance": {
+    "committed": false,
+    "pushed": false
+  }
+}

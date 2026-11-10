@@ -1,0 +1,18 @@
+usage: dsp-access-audit.py [-h] --bundle BUNDLE --expected-boot EXPECTED_BOOT
+                           [--expected-step EXPECTED_STEP]
+                           [--operation OPERATION]
+                           {load,step,status,release}
+
+One explicit read-only prefix step per invocation; never run a stage loop. A
+failed/uncertain operation consumes this boot. No DSP request, reset or boot.
+This helper must be staged with the new guard and a pinned manifest.
+
+positional arguments:
+  {load,step,status,release}
+
+options:
+  -h, --help            show this help message and exit
+  --bundle BUNDLE
+  --expected-boot EXPECTED_BOOT
+  --expected-step EXPECTED_STEP
+  --operation OPERATION

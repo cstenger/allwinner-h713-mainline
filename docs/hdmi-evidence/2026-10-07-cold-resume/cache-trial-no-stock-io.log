@@ -1,0 +1,18 @@
+Logs: /tmp/h713-hdmi-trial-20261007T193737Z
+{"port_cache": {"seconds": 0.729, "phase": "before", "returncode": 0, "output": "{\"hdmi\": \"0x8b83107c\", \"manager\": \"0x8b827fd4\", \"ports\": [{\"cached_count\": 0, \"freq_event_pending\": 1, \"hactive\": 0, \"index\": 1, \"link_base\": \"0x06840000\", \"object\": \"0x8b831468\", \"pixel_repeat\": 0, \"port_id\": 1, \"state\": 3, \"timing_update_tick\": 145291, \"vactive\": 0}, {\"cached_count\": 0, \"freq_event_pending\": 0, \"hactive\": 0, \"index\": 2, \"link_base\": \"0x06840000\", \"object\": \"0x8b8346b8\", \"pixel_repeat\": 0, \"port_id\": 2, \"state\": 1, \"timing_update_tick\": 0, \"vactive\": 0}, {\"cached_count\": 0, \"freq_event_pending\": 0, \"hactive\": 0, \"index\": 3, \"link_base\": \"0x06840000\", \"object\": \"0x8b837908\", \"pixel_repeat\": 0, \"port_id\": 3, \"state\": 1, \"timing_update_tick\": 0, \"vactive\": 0}]}\n"}}
+{"seconds": 0.73, "status": "disconnected", "edid_bytes": 0, "edid_sha256": null, "modes": [], "enabled": "disabled"}
+[  300.739939] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[  300.766133] h713-scp-probe: payload=ffffff00,00ffffff pre-enable EDID=ffffff00,ffffff00,ffffff00
+[  300.776178] h713-scp-probe: active HPD=00000000 b00=00a0a0a0 b04=07000007 b08=00c0c0c0 headers=00000000,00000000,00000000
+[  300.788483] h713-scp-probe: active IO 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[  300.798441] h713-scp-probe: EDID trial ready; holding HPD asserted for 30000 ms
+[  332.775321] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  332.788104] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+Y
+Y
+0
+
+07000400 0x00000000
+07022004 0x0000003F
+
+{"port_cache": {"seconds": 36.85, "phase": "after", "returncode": 0, "output": "{\"hdmi\": \"0x8b83107c\", \"manager\": \"0x8b827fd4\", \"ports\": [{\"cached_count\": 0, \"freq_event_pending\": 1, \"hactive\": 0, \"index\": 1, \"link_base\": \"0x06840000\", \"object\": \"0x8b831468\", \"pixel_repeat\": 0, \"port_id\": 1, \"state\": 3, \"timing_update_tick\": 145291, \"vactive\": 0}, {\"cached_count\": 0, \"freq_event_pending\": 0, \"hactive\": 0, \"index\": 2, \"link_base\": \"0x06840000\", \"object\": \"0x8b8346b8\", \"pixel_repeat\": 0, \"port_id\": 2, \"state\": 1, \"timing_update_tick\": 0, \"vactive\": 0}, {\"cached_count\": 0, \"freq_event_pending\": 0, \"hactive\": 0, \"index\": 3, \"link_base\": \"0x06840000\", \"object\": \"0x8b837908\", \"pixel_repeat\": 0, \"port_id\": 3, \"state\": 1, \"timing_update_tick\": 0, \"vactive\": 0}]}\n"}}

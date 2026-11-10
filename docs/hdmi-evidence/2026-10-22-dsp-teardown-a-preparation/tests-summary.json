@@ -1,0 +1,78 @@
+{
+  "new_suite": {
+    "command": "python3 tools/hdmi/test-dsp-teardown-a.py",
+    "tests": 26,
+    "result": "PASS"
+  },
+  "native_cases": [
+    "sham",
+    "preserved",
+    "missing-marker",
+    "missing-arm",
+    "health-bad",
+    "census-stage4",
+    "census-pcm",
+    "census-active",
+    "census-dma",
+    "lock-bad",
+    "busy-timeout",
+    "done-timeout",
+    "bad-positive",
+    "echo",
+    "lose-graph",
+    "lose-spdi",
+    "lose-bridge",
+    "lose-cfg",
+    "lose-ctl",
+    "context-drift",
+    "graph-failure",
+    "late-timeout",
+    "drift-before-spdi",
+    "spdi-bad-readback",
+    "bridge-bad-readback"
+  ],
+  "mutation_checks": {
+    "caught": [
+      "SPDI CTL0/CTL1 order swapped",
+      "stage-4 flush pulse added",
+      "route restore added",
+      "sham performs SPDI writes",
+      "changed pair not terminal",
+      "SPDI readback check removed",
+      "bridge address-high readback removed",
+      "census drift check removed",
+      "stage-3 census check removed",
+      "graph restore skipped in sham",
+      "helper census-vs-sham gate removed",
+      "helper common-prefix gate removed",
+      "helper stage acknowledgment removed"
+    ],
+    "redundant": [
+      "helper sham schema assert (analyzer independently rejects old schema; tested)",
+      "version guard on want_ctl (claim already refuses while control off; fake MMIO asserts no access while off)"
+    ]
+  },
+  "regressions": [
+    {
+      "command": "python3 tools/hdmi/test-dsp-owner-boundary.py",
+      "tests": 14,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-build-startup.py",
+      "tests": 11,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-managed-boot.py",
+      "tests": 7,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-dsp-minimum.py",
+      "tests": 11,
+      "result": "PASS"
+    }
+  ],
+  "total_tests": 69
+}

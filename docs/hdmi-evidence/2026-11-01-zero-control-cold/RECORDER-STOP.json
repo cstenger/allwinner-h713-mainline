@@ -1,0 +1,70 @@
+{
+  "board_actions": false,
+  "files": {
+    "host-hdmi-01/events.jsonl": {
+      "bytes": 320734,
+      "sha256": "92a57793675b11b19adbc154472fbd302c12e791a874207ac4bf52b8289997ac"
+    },
+    "host-hdmi-01/latest.json": {
+      "bytes": 1020,
+      "sha256": "16cb03ce6f396c8c9353a987c1e1c28dd21856b1f5234149c82aaa98c5a7fa1d"
+    },
+    "uart-01/serial-timestamped.log": {
+      "bytes": 73795,
+      "sha256": "c0f2d04237137b7af7588f932f81ce1eec8c3080d6d5a61357ac234a467d58f8"
+    },
+    "uart-01/serial.log": {
+      "bytes": 55744,
+      "sha256": "c99957d0be18de9c501963fded4f634fb21b256eebb0cb6ab6af760c96d4c6e4"
+    }
+  },
+  "hdmi_final": {
+    "connector": "/sys/class/drm/card1-HDMI-A-1",
+    "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+    "host_monotonic_ns": 10426504464431,
+    "host_utc": "2026-11-01T10:00:08.415622+00:00",
+    "mode": "cached sysfs reads only; no probe/ioctl",
+    "phase": "stop",
+    "samples": 7470,
+    "snapshot": {
+      "edid_bytes": 256,
+      "edid_hex": "00ffffffffffff00207013070000000026240103802012780fee91a3544c99260f505420000001010101010101010101010101010101011d007251d01e206e28550040b41000001e000000fc00483731332048444d4920494e0a000000fd003b3d1f2e08000a202020202020000000ff00483731332d303030303030310a0194020318c1420401230907018301000065030c001000e2004a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000073",
+      "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+      "enabled": "enabled",
+      "ok": true,
+      "status": "connected"
+    }
+  },
+  "host_utc": "2026-11-01T10:00:07.378489+00:00",
+  "services": {
+    "hdmi": {
+      "after": {
+        "ActiveState": "inactive",
+        "MainPID": "0",
+        "SubState": "dead"
+      },
+      "before": {
+        "ActiveState": "active",
+        "InvocationID": "4e62fe6d93d64380b8e48f93b64b45cf",
+        "MainPID": "90086"
+      },
+      "show_returncode": 0,
+      "unit": "h713-zero-cold-hdmi-20261101-01.service"
+    },
+    "uart": {
+      "after": {
+        "ActiveState": "inactive",
+        "MainPID": "0",
+        "SubState": "dead"
+      },
+      "before": {
+        "ActiveState": "active",
+        "InvocationID": "3ef2c33f6dd741858a8e4814b0e8ee1f",
+        "MainPID": "90083"
+      },
+      "show_returncode": 0,
+      "unit": "h713-zero-cold-uart-20261101-01.service"
+    }
+  },
+  "uart_released": true
+}

@@ -1,0 +1,3 @@
+printenv switch_vendor
+switch_vendor=mmc dev 1 && mmc read 0x48000000 0x100 0x40 && itest.l *0x48000004 == 0x4e4f4765 && mmc write 0x48000000 0x10 0x40 && echo VENDOR FIRST STAGE INSTALLED - POWER CYCLE TO BOOT IT
+=> 

@@ -1,0 +1,48 @@
+[
+  {
+    "command": [
+      "ao-reload"
+    ],
+    "reply": {
+      "data": null,
+      "request_id": 0,
+      "error": "success"
+    }
+  },
+  {
+    "command": [
+      "set_property",
+      "vo",
+      "null"
+    ],
+    "reply": {
+      "request_id": 1,
+      "error": "success"
+    }
+  },
+  {
+    "command": [
+      "set_property",
+      "vo",
+      "gpu"
+    ],
+    "reply": {
+      "request_id": 2,
+      "error": "success"
+    }
+  },
+  {
+    "command": [
+      "loadfile",
+      "/home/chris/Projects/h713/build/hdmi-warm-shared-source-2026-10-24/moving-720p-tone.mkv",
+      "replace"
+    ],
+    "reply": {
+      "data": {
+        "playlist_entry_id": 9
+      },
+      "request_id": 3,
+      "error": "success"
+    }
+  }
+]

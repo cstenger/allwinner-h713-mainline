@@ -1,0 +1,45 @@
+import datetime, errno, os, select, signal, termios, time
+from pathlib import Path
+out = Path('/home/chris/Projects/h713/docs/hdmi-evidence/2026-10-18-panel-initial-state-trial')
+fd = None
+signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(SystemExit()))
+with (out/'serial.log').open('ab', buffering=0) as raw, (out/'serial-timestamped.log').open('a', buffering=1) as stamped:
+    def note(s):
+        stamped.write(datetime.datetime.now().astimezone().isoformat()+' '+s+'\n')
+    note('CAPTURE START; passive recorder, reconnects after USB removal')
+    try:
+        while True:
+            if fd is None:
+                try:
+                    fd = os.open('/dev/ttyUSB0', os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+                    a = termios.tcgetattr(fd)
+                    a[0] = 0; a[1] = 0
+                    a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+                    a[3] = 0; a[4] = a[5] = termios.B115200
+                    a[6][termios.VMIN] = 1; a[6][termios.VTIME] = 0
+                    termios.tcsetattr(fd, termios.TCSANOW, a)
+                    note('OPEN /dev/ttyUSB0 115200')
+                    print('Serial capture ready on /dev/ttyUSB0', flush=True)
+                except OSError:
+                    if fd is not None:
+                        os.close(fd); fd = None
+                    time.sleep(0.5)
+                    continue
+            try:
+                readable, _, _ = select.select([fd], [], [], 1)
+                if readable:
+                    data = os.read(fd, 65536)
+                    if not data:
+                        raise OSError(errno.EIO, 'serial disconnected')
+                    raw.write(data)
+                    note(repr(data))
+            except BlockingIOError:
+                continue
+            except OSError as e:
+                note('DISCONNECTED '+str(e))
+                os.close(fd); fd = None
+                time.sleep(0.5)
+    finally:
+        note('CAPTURE STOP')
+        if fd is not None:
+            os.close(fd)

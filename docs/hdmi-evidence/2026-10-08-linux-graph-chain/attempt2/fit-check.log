@@ -1,0 +1,8 @@
+fatload mmc 1:2 0x50000000 h713-kernel.fit
+7789216 bytes read in 500 ms (14.9 MiB/s)
+=> fdt addr 0x50000000
+Working FDT set to 50000000
+=> fdt get size hdmi_trial_fdt_size /images/fdt-1 data
+=> printenv hdmi_trial_fdt_size
+hdmi_trial_fdt_size=8319
+=> 

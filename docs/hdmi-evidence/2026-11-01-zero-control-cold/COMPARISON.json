@@ -1,0 +1,17 @@
+{
+  "interpretation": "Both matched variants passed one cold start. The deliberate two-second wait was unnecessary on the observed zero-control boot; its causal benefit is unproven. Common instrumentation overhead and differing startup/source history remain possible contributors.",
+  "two_second_control": {
+    "desktop": true,
+    "graph_to_ready_seconds": 2.548278,
+    "interval_seconds": 2.021728043,
+    "locked_at_linux_seconds": 26.283372,
+    "requested_delay_ms": 2000
+  },
+  "zero_control": {
+    "desktop": true,
+    "graph_to_ready_seconds": 0.5530460000000019,
+    "interval_seconds": 0.021638583,
+    "locked_at_linux_seconds": 24.547561,
+    "requested_delay_ms": 0
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "status": "HARDWARE_QUALIFIED_FOR_DOCUMENTED_SCOPE_WITH_GF1_DISPOSITION",
+  "board_model": "HY200 QZ713DF_A1 DDR3",
+  "packet_sha256": "c2491f0f7a84ff14221d5ad35122895adf69259acecf5bf41656f23407894390",
+  "preboot_installed_user_area_sha256": "bb665353bf41129f618eec2daff893c2f4d794884220c5059f1dabb3df825048",
+  "final_runtime_boot_id": "446e81f5-4f1a-479d-bd92-d363b39d4ad2",
+  "qualification_evidence": "RESULT.json",
+  "finding_GF1": "../2026-11-04-guarded-discard-disposition/RESULT.json",
+  "frozen_artifacts_changed": false,
+  "full_rollback_write_tested": false,
+  "limits": [
+    "One reviewed protective discard in extended observation; exact old timing trigger not captured.",
+    "Non-writing FEL recovery entry/access and cold return tested; full rollback write not performed.",
+    "Codec coverage is the documented H.264/HEVC vectors and VP9/AV1 smoke checks, not exhaustive conformance."
+  ]
+}

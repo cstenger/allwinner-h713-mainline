@@ -1,0 +1,12 @@
+--- a/h713-hdmi-dsp.c
++++ b/h713-hdmi-dsp.c
+@@ -250,6 +250,9 @@
+ 	return ret;
+ }
+ 
++
++#include "owner-observer.inc"
++
+ void h713_hdmi_dsp_release(void)
+ {
+ 	int ret = 0;

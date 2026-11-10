@@ -1,0 +1,343 @@
+{
+  "schema": "h713-dsp-access-ext-v1",
+  "stages": {
+    "33": "prefix",
+    "40": "census",
+    "45": "power",
+    "53": "receiver",
+    "69": "tvfe-words",
+    "74": "audio",
+    "81": "display"
+  },
+  "last_read_only_step": 40,
+  "steps": [
+    {
+      "step": 1,
+      "operation": "claim-dsp-port"
+    },
+    {
+      "step": 2,
+      "operation": "claim-lock-window"
+    },
+    {
+      "step": 3,
+      "operation": "claim-audiotop"
+    },
+    {
+      "step": 4,
+      "operation": "claim-scp-reset"
+    },
+    {
+      "step": 5,
+      "operation": "map-mips-status"
+    },
+    {
+      "step": 6,
+      "operation": "map-scp-reset"
+    },
+    {
+      "step": 7,
+      "operation": "map-tv-ccu"
+    },
+    {
+      "step": 8,
+      "operation": "map-display-ccu"
+    },
+    {
+      "step": 9,
+      "operation": "read-mips-stopped"
+    },
+    {
+      "step": 10,
+      "operation": "read-scp-stopped"
+    },
+    {
+      "step": 11,
+      "operation": "read-demod-bus"
+    },
+    {
+      "step": 12,
+      "operation": "read-display-bus"
+    },
+    {
+      "step": 13,
+      "operation": "get-display-reset"
+    },
+    {
+      "step": 14,
+      "operation": "read-display-reset"
+    },
+    {
+      "step": 15,
+      "operation": "get-demod-reset"
+    },
+    {
+      "step": 16,
+      "operation": "read-demod-reset"
+    },
+    {
+      "step": 17,
+      "operation": "get-clock-pll-video0"
+    },
+    {
+      "step": 18,
+      "operation": "get-clock-pll-adc"
+    },
+    {
+      "step": 19,
+      "operation": "get-clock-bus-tvcap"
+    },
+    {
+      "step": 20,
+      "operation": "get-clock-bus-cap-300m"
+    },
+    {
+      "step": 21,
+      "operation": "get-clock-vincap-dma"
+    },
+    {
+      "step": 22,
+      "operation": "get-clock-tvfe-1296m"
+    },
+    {
+      "step": 23,
+      "operation": "get-clock-bus-hdmi-audio"
+    },
+    {
+      "step": 24,
+      "operation": "get-clock-hdmi-audio"
+    },
+    {
+      "step": 25,
+      "operation": "get-clock-audio-cpu"
+    },
+    {
+      "step": 26,
+      "operation": "get-clock-audio-umac"
+    },
+    {
+      "step": 27,
+      "operation": "get-clock-audio-ihb"
+    },
+    {
+      "step": 28,
+      "operation": "get-clock-pll-video2"
+    },
+    {
+      "step": 29,
+      "operation": "get-clock-deint"
+    },
+    {
+      "step": 30,
+      "operation": "get-clock-panel"
+    },
+    {
+      "step": 31,
+      "operation": "get-clock-svp-dtl"
+    },
+    {
+      "step": 32,
+      "operation": "get-clock-afbd"
+    },
+    {
+      "step": 33,
+      "operation": "get-clock-bus-disp"
+    },
+    {
+      "step": 34,
+      "operation": "map-ppu-status"
+    },
+    {
+      "step": 35,
+      "operation": "read-ppu-tvfe-status"
+    },
+    {
+      "step": 36,
+      "operation": "read-ppu-tvcap-status"
+    },
+    {
+      "step": 37,
+      "operation": "get-tvcap-reset"
+    },
+    {
+      "step": 38,
+      "operation": "read-tvcap-reset"
+    },
+    {
+      "step": 39,
+      "operation": "census-clock-enabled"
+    },
+    {
+      "step": 40,
+      "operation": "read-tv-ccu-words"
+    },
+    {
+      "step": 41,
+      "operation": "attach-tvfe"
+    },
+    {
+      "step": 42,
+      "operation": "resume-tvfe"
+    },
+    {
+      "step": 43,
+      "operation": "attach-tvcap"
+    },
+    {
+      "step": 44,
+      "operation": "resume-tvcap"
+    },
+    {
+      "step": 45,
+      "operation": "recheck-stopped-after-power"
+    },
+    {
+      "step": 46,
+      "operation": "deassert-tvcap-reset-if-asserted"
+    },
+    {
+      "step": 47,
+      "operation": "enable-clock-bus-tvcap"
+    },
+    {
+      "step": 48,
+      "operation": "enable-clock-bus-cap-300m"
+    },
+    {
+      "step": 49,
+      "operation": "enable-clock-vincap-dma"
+    },
+    {
+      "step": 50,
+      "operation": "enable-clock-tvfe-1296m"
+    },
+    {
+      "step": 51,
+      "operation": "deassert-demod-reset"
+    },
+    {
+      "step": 52,
+      "operation": "enable-clock-pll-video0"
+    },
+    {
+      "step": 53,
+      "operation": "enable-clock-pll-adc"
+    },
+    {
+      "step": 54,
+      "operation": "write-tv-word-d10"
+    },
+    {
+      "step": 55,
+      "operation": "write-tv-word-d20"
+    },
+    {
+      "step": 56,
+      "operation": "write-tv-word-d24"
+    },
+    {
+      "step": 57,
+      "operation": "write-tv-word-d28"
+    },
+    {
+      "step": 58,
+      "operation": "write-tv-word-d2c"
+    },
+    {
+      "step": 59,
+      "operation": "write-tv-word-d30"
+    },
+    {
+      "step": 60,
+      "operation": "write-tv-word-d34"
+    },
+    {
+      "step": 61,
+      "operation": "write-tv-word-d38"
+    },
+    {
+      "step": 62,
+      "operation": "write-tv-word-d40"
+    },
+    {
+      "step": 63,
+      "operation": "write-tv-word-d48"
+    },
+    {
+      "step": 64,
+      "operation": "write-tv-word-d4c"
+    },
+    {
+      "step": 65,
+      "operation": "write-tv-word-d50"
+    },
+    {
+      "step": 66,
+      "operation": "write-tv-word-d58"
+    },
+    {
+      "step": 67,
+      "operation": "write-tv-word-d5c"
+    },
+    {
+      "step": 68,
+      "operation": "write-tv-word-d60"
+    },
+    {
+      "step": 69,
+      "operation": "set-demod-bus-gate"
+    },
+    {
+      "step": 70,
+      "operation": "enable-clock-bus-hdmi-audio"
+    },
+    {
+      "step": 71,
+      "operation": "enable-clock-hdmi-audio"
+    },
+    {
+      "step": 72,
+      "operation": "enable-clock-audio-cpu"
+    },
+    {
+      "step": 73,
+      "operation": "enable-clock-audio-umac"
+    },
+    {
+      "step": 74,
+      "operation": "enable-clock-audio-ihb"
+    },
+    {
+      "step": 75,
+      "operation": "enable-clock-pll-video2"
+    },
+    {
+      "step": 76,
+      "operation": "enable-clock-deint"
+    },
+    {
+      "step": 77,
+      "operation": "enable-clock-panel"
+    },
+    {
+      "step": 78,
+      "operation": "enable-clock-svp-dtl"
+    },
+    {
+      "step": 79,
+      "operation": "enable-clock-afbd"
+    },
+    {
+      "step": 80,
+      "operation": "enable-clock-bus-disp"
+    },
+    {
+      "step": 81,
+      "operation": "deassert-display-reset-if-asserted"
+    },
+    {
+      "step": 82,
+      "operation": "final-recheck"
+    }
+  ]
+}

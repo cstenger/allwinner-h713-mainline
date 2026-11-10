@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "offline_only": true,
+  "candidate_fit_bytes": 955665,
+  "candidate_sectors": 1867,
+  "transaction_sectors": 1877,
+  "candidate_extent_sha256": "cbd29de888e4b605e68b98de78c081525dd7d1b627abca846704efe527e8802a",
+  "rollback_proper_sha256": "1b1f702fc7b52adf8246b124b8fbe209b7dadc651a37e53a600689810c45302e",
+  "fit_components": {
+    "bl31.bin": "5ea11b14cc59a85b3219b4969836948a1f99ab0381d620476e557f993c78636c",
+    "uboot.dtb": "8361009b1b72345c6d03d0e7ad98b6930753aea5c387e848677bdc0e587f464e"
+  },
+  "source_tree": "uboot-src-b3b5f2d2575fedc5016774e92caa14772d4f8ec7f1c25bf8c71510a8430f8396",
+  "config_sha256": "358629c40b8bc30d6939f09c7b7ebfeb96d5036b2fd12c304ca262f8100a97a6",
+  "rescue_fit_bytes": 920169,
+  "live_preflight_required": [
+    "model",
+    "CID",
+    "capacity",
+    "sector size",
+    "hardware partition",
+    "GPT ownership and hashes",
+    "boot ID",
+    "fresh proper and both environments",
+    "fresh SPL/rescue/full surrounding regions",
+    "filesystem and HDMI health"
+  ],
+  "limitation": "Retained historical inputs and synthetic fixture markers; block devices refused.",
+  "source_commit_at_build": "848339d02baaa229e2586b9a97f4419fb236b94d",
+  "new_work_committed": false,
+  "board_contact": false,
+  "board_installation": false,
+  "source_cases": 13,
+  "panel_cases": 11,
+  "rehearsal_cases": 29,
+  "source_mutations_caught": 9,
+  "migration_mutations_caught": 14,
+  "hardware_acceptance": false,
+  "package_manifest_sha256": "8679b056029efd19b9a54c0660dd91a7bf10a3aac6dcab6e3b6d9eacb09ac5af"
+}

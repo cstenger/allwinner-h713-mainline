@@ -1,0 +1,71 @@
+N
+/sys/module/h713_hdmi_audio/parameters/period_active
+3017
+/sys/module/h713_hdmi_audio/parameters/period_bytes
+3137760
+/sys/module/h713_hdmi_audio/parameters/period_irq_seen
+3017
+/sys/module/h713_hdmi_audio/parameters/period_irq_status
+3017
+/sys/module/h713_hdmi_audio/parameters/period_notifications
+3017
+/sys/module/h713_hdmi_audio/parameters/period_xruns
+0
+WirePlumber before=active
+[   99.062029] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[   99.096446] h713-hdmi-audio: managed DSP graph verified 22 words
+[   99.107035] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically
+[  110.128371] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[  110.151241] h713-scp-probe: payload=ffffff00,00ffffff pre-enable EDID=ffffff00,ffffff00,ffffff00
+[  110.161600] h713-scp-probe: active HPD=00000000 b00=00a0a0a0 b04=07000007 b08=00c0c0c0 headers=00000000,00000000,00000000
+[  110.174024] h713-scp-probe: active IO 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[  110.183626] h713-scp-probe: EDID trial ready; holding HPD asserted for 30000 ms
+[  140.263980] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  140.278361] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+[  144.952171] h713-ddc-pins: DDC pins returned to inputs and ownership released
+[  196.941348] h713-hdmi-audio: DSP restore 005a=8000 verified
+[  196.949625] h713-hdmi-audio: DSP restore 0059=8000 verified
+[  196.958074] h713-hdmi-audio: DSP restore 0103=0000 verified
+[  196.966145] h713-hdmi-audio: DSP restore 0102=0000 verified
+[  196.974246] h713-hdmi-audio: DSP restore 8103=0000 verified
+[  196.982285] h713-hdmi-audio: DSP restore 8102=0000 verified
+[  196.990219] h713-hdmi-audio: DSP restore 007e=8485 verified
+[  196.998145] h713-hdmi-audio: DSP restore 007d=8283 verified
+[  197.005939] h713-hdmi-audio: DSP restore 007c=8081 verified
+[  197.013778] h713-hdmi-audio: DSP restore 8017=0001 verified
+[  197.021570] h713-hdmi-audio: DSP restore 801a=0000 verified
+[  197.029314] h713-hdmi-audio: DSP restore 0017=2000 verified
+[  197.036990] h713-hdmi-audio: DSP restore 0012=0000 verified
+[  197.044642] h713-hdmi-audio: DSP restore 0130=0000 verified
+[  197.052263] h713-hdmi-audio: DSP restore 8059=0000 verified
+[  197.059875] h713-hdmi-audio: DSP restore 805a=0000 verified
+[  197.067467] h713-hdmi-audio: DSP restore 004d=0000 verified
+[  197.075041] h713-hdmi-audio: DSP restore 0077=0000 verified
+[  197.082609] h713-hdmi-audio: DSP restore 00ac=0000 verified
+[  197.090172] h713-hdmi-audio: DSP restore 800d=0000 verified
+[  197.097702] h713-hdmi-audio: DSP restore 800c=0000 verified
+[  197.105212] h713-hdmi-audio: DSP restore 0003=0000 verified
+[  197.111598] h713-hdmi-audio: managed DSP graph restored 22 words
+[  197.118425] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[  197.125944] h713-hdmi-audio: restored Audio Bridge output stream 0
+[  197.133046] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[  197.140624] h713-hdmi-audio: restored audio-IHB clock=81000002
+[  197.147311] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+[  197.184002] h713-hdmi-tvfe-hold: saved TVFE clock/reset state restored
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win
+command help of win
+for window debug only
+
+VS:/$ 
+Module                  Size  Used by
+h713_edid_clock        12288  0
+h713_hdmi_power        12288  0
+hci_uart               28672  1
+hy310_cpu_comm         98304  0
+sunxi_scanout_dmabuf    12288  0
+hantro_vpu            196608  0
+uinput                 20480  0
+sunxi_cedrus           81920  0
+v4l2_h264              16384  1 hantro_vpu

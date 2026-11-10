@@ -1,0 +1,71 @@
+{
+  "date": "2026-11-06",
+  "state": "fresh-01 complete: single launch keeps the first-advert retry (1 re-advertise). Stream healthy 5 min. Board running c18bcff8. UART recorder stopped.",
+  "uboot_patch": "patches/u-boot/0004-h713-single-display-firmware-launch.patch (added to series)",
+  "reproducible_build": "repro-uboot.sh: release env, SOURCE_DATE_EPOCH=1793693083. Baseline series reproduces installed SPL d593ab79 and proper 32666150 exactly.",
+  "candidate_proper_sha256": "7e7835d0966d9268cf4a60887ba439e06eb2aed56c9563dc66247eab2b9d6c0c",
+  "candidate_spl_sha256_not_installed": "af3823e40e4b5df49efee2d8f9447901bd29dae784eb2de125d8a4b66e00b562 (differs only by the version string; plan is proper-only write)",
+  "script_candidate": {
+    "cmd": "d2e8cb7a2744c0abb8bce97a441a75ff05d03c0a1a0df7959f215d3cd28e7ad2",
+    "scr": "7e833c6dcc28ba435efb19b240c5aa1f228e8464a0b67abb191cc7485eab0d99"
+  },
+  "generator": "tools/hdmi/build-startup.py single_launch=True (opt-in; default reproduces installed 33677778)",
+  "installer": "tools/hdmi/install-single-launch.py --phase proper|script --boot <id> [--apply] [--rollback BACKUP]; bundle at /root/single-launch-bundle on target and bundle/ here",
+  "board_side_changes": "/root/single-launch-bundle copied; /mnt/boot created and p2 mounted READ-ONLY",
+  "preview": "phase proper: proper=baseline script=baseline -> would write candidate; phase script: correctly refused (needs candidate proper)",
+  "next": [
+    "finish fresh-01 observer (5 min stream)",
+    "next first-advert arm: coherent EDID reset/clock/DDC-pin grouping (early review), keep single launch",
+    "warm repeats + abrupt reset on single launch",
+    "optional: drop 50 ms pre-release commit"
+  ],
+  "installed": {
+    "proper": "7e7835d0966d9268cf4a60887ba439e06eb2aed56c9563dc66247eab2b9d6c0c (SPL unchanged d593ab79)",
+    "script_scr": "7e833c6dcc28ba435efb19b240c5aa1f228e8464a0b67abb191cc7485eab0d99",
+    "script_cmd": "d2e8cb7a2744c0abb8bce97a441a75ff05d03c0a1a0df7959f215d3cd28e7ad2"
+  },
+  "backups": {
+    "proper": "/var/lib/h713-hdmi-startup/single-launch-proper-b15fa363f3f741b99de7add255baad14",
+    "script": "/var/lib/h713-hdmi-startup/single-launch-script-022f895bb1694582a7f572759178cd08"
+  },
+  "rollback_order": "mount p2 rw at /mnt/boot; --phase script --rollback <script backup>; then --phase proper --rollback <proper backup>",
+  "warm01": "boot 4308c84d: new proper + old double script; handoff verified; gate PASS; lock 16.00 s, no re-advertise",
+  "warm02": "boot 455f8e6a: single launch; one MIPS start, comm trace, source-3 worker proof, 720p re-latch, handoff; gate PASS; DSP 0/0->1/1; 7 services active 0 restarts; lock 16.79 s no re-advertise; audit-single-launch.py PASS 75 files",
+  "timing_uart_receipt_from_SPL": {
+    "double_warm01_kernel": 9.703,
+    "single_warm02_kernel": 8.609,
+    "saving_s": 1.094
+  },
+  "audit": "audit-single-launch.py (75 pins with the 7 intended changes)",
+  "uart": "warm-02 capture task stopped after this record; check device owner before reopening",
+  "warm02_operator": "Chris 2026-11-06: missed the logo (unconfirmed); saw Linux console, auto switch to HDMI desktop, H713 selectable as host audio output, clip played on speaker.",
+  "warm02_logo_finding": "Pre-release OSD commit TIMED OUT: irq 0->0->0 wait=50000us scan=00000000 (raster not scanning before MIPS release). Double path commit (after quiesce) completed wait=5600us scan live. Logo pixels hashed+published in both; firmware source-3 frame trace 0x6103 identical in both. Logo visibility depends on the firmware's source-3 AFBD commit; unproven until seen. Candidate fix if absent: keep pixels before release, move commit after readiness+720p latch (MIPS live). RESOLVED for visibility: cold-01 logo seen despite pre-release commit timeout, so the firmware's source-3 commit shows it. The 50 ms timeout is still wasted; candidate cleanup = drop or move the pre-release commit (needs its own test).",
+  "cold01": "boot 3f498f79 (primed source, no source-PC reboot): logo seen by Chris; single launch, source-3 proof, handoff; kernel 8.611 s after SPL vs 9.714 (11-05 cold double) = 1.10 s saving; gate PASS; DSP 0/0->1/1; services 7x active 0 restarts; HDMI lock 16.18 / video 16.22 Linux s, no re-advertise; audit PASS 75",
+  "fresh01": {
+    "previous_board_boot": "3f498f79-3b18-4913-956c-c71ba7ad72c5",
+    "source_boot_before_reboot": "9df6717c-ea4b-4585-b53f-270178c13431",
+    "after_host_reboot_steps": [
+      "cat /proc/sys/kernel/random/boot_id  -> must differ from 9df6717c...; record it",
+      "fuser the CP2102 by-id device; must be free",
+      "background: python3 -B tools/serial/capture-panel-validation.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 --output local/recovery/2026-11-06-single-launch/fresh-01-uart",
+      "background: python3 -B tools/hdmi/observe-matched-startup.py --previous-boot 3f498f79-3b18-4913-956c-c71ba7ad72c5 --arm optimized --module-version reject-trace-power-v2 --output local/recovery/2026-11-06-single-launch/fresh-01",
+      "verify UART log shows OPEN, THEN ask Chris to restore board power",
+      "result: first-advert no-retry PASS only if no 'HPD re-advertised' in the boot journal and lock occurs; record lock/video Linux times, kernel start after SPL, logo, audio; any failure is preserved evidence, not retried"
+    ],
+    "note": "single launch, original EDID/DDC + retry policy unchanged; diagnostics off",
+    "result": "FAIL no-retry: 1 HPD re-advertise; recovered by bounded fallback",
+    "source_boot": "a1bd2ec3-855a-4372-abf3-80f63a755ce6",
+    "board_boot": "c18bcff8-a470-41ba-b0ce-072e251cd667",
+    "timeline": {
+      "edid_hpd_ready": 15.013,
+      "initial_none": 15.64,
+      "readvertise": 27.5,
+      "source_power_present": 29.129,
+      "locked": 29.348,
+      "video": 29.399
+    },
+    "startup_gate": "PASS",
+    "stream": "5-min observer: 59.706 fps, rejected 0 at window end; INVALID only for HPD re-advertisement"
+  },
+  "observer_change": "tools/hdmi/observe-matched-startup.py --window-seconds N (default 300; <300 labelled 'quick development check only')"
+}

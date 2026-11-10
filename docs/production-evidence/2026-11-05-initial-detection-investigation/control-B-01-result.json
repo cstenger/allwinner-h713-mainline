@@ -1,0 +1,55 @@
+{
+  "schema": "h713-first-advert-control-result-v1",
+  "control": "B: original global radio startup, optimized HDMI, bootdelay=0, unchanged reject-trace-v1 guard",
+  "observation": {
+    "status": "INVALID matched observation",
+    "arm": "optimized",
+    "boot_id": "b98ade5e-f2c6-4f9e-a89f-65839843c788",
+    "issues": [
+      "HPD re-advertisement"
+    ],
+    "video_ready": 28.504287,
+    "window_end": 328.504287,
+    "first_live_sample": 60.81,
+    "last_live_sample": 328.69,
+    "fps": 59.709571449902946,
+    "rejected_at_window_end": 0,
+    "trace_lines": [],
+    "strict_zero_rejection_qualification": "not evaluated or waived by this experiment"
+  },
+  "source_history": {
+    "host_boot_id": "b9a4afd9-1d7d-4ec0-bb5a-0623dc7d748b",
+    "host_boot_start_utc": "2026-11-06T01:14:46.941709+00:00",
+    "first_spl_utc": "2026-11-06T01:20:11.869936+00:00",
+    "first_spl_after_host_start_seconds": 324.928227,
+    "note": "Host UART receive timestamp of first SPL text; not physical power-on time."
+  },
+  "milestones_seconds": {
+    "global_modules_done": 6.507537,
+    "hdmi_prepare_start": 7.920657,
+    "edid_hpd_ready": 14.683506,
+    "retry_requested": 25.023261,
+    "retry_hold_complete": 27.144064,
+    "signal_locked": 28.435287,
+    "video_service_active": 28.504287
+  },
+  "final_errors": {
+    "rejected": 0,
+    "xruns": 0,
+    "bad_guard": 0,
+    "invalid_pair": 0
+  },
+  "final_signal": "locked 1280x720",
+  "retries": 1,
+  "runtime_audit": {
+    "status": "PASS candidate runtime identity/startup checks",
+    "files_verified": 74
+  },
+  "radio_status": "PASS original global radio readiness and ordering",
+  "interpretation": "Initial miss reproduced without parallel AIC startup. Parallel radio is not necessary for the miss; startup timing and source-history effects remain unresolved. This is a failure of the no-retry gate, retained as a causal trial outcome.",
+  "observation_limit": "Five-minute deadline after video activation; live SSH samples began at 60.81s uptime. Whole-boot logs and cumulative error/retry counters retained.",
+  "raw_evidence": "local/recovery/2026-11-05-initial-detection-investigation/control-B-01",
+  "kernel_notes": [
+    "Bluetooth hci0 Opcode 0x0c03 failed -4 during initialization; subsequently HCI UP RUNNING and BT service success, no restarts."
+  ]
+}

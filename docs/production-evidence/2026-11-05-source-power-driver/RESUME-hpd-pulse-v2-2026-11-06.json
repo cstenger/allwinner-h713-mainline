@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-06",
+  "state": "v2 previewed read-only on board b4931962 (disk = hpd-pulse v1); not installed.",
+  "policy": "one mechanism: owners with hpd_pulse re-advertise with a 150 ms HPD-only pulse on schedule (2,10,20,40,80,160) for a fresh source (board start or source power returning), (10,20,40,80,160) after a streaming source goes away; polled every 0.25 s. Older owners: original 2 s HOLD schedule unchanged. startup_pulse() removed.",
+  "package": "package/ here; manifest a6d8c6dc9723c3c0285e3507cc78e1c918e08f06bde4fd81808b88131d62c2e3; before = hpd-pulse v1 installed state; only readvertise.py + SHA256SUMS change (module identical)",
+  "install": "copy package to /root/hpd-pulse2-package; python3 -B install-hpd-pulse2.py --package /root/hpd-pulse2-package --boot <id> --manifest-sha a6d8c6dc... [--apply]",
+  "tests": "hpd-pulse policy 9 OK (fresh pulse at 2 s, early lock never pulsed, bounded schedule, lost source 10 s, power return restarts fresh, absent/failed never, refused stops, old owner unchanged, spec length); readvertise/diag/signal/SCP model/startup/release suites OK",
+  "audit": "audit-hpd-pulse-v2.py",
+  "open": [
+    "board unreachable: needs operator check",
+    "pw-loopback SEGV at startup (q-fresh-01)",
+    "PL_DAT passive DDC tap check pending (needs board + sudo i2cdump -y 1 0x50 on host)"
+  ],
+  "board_events": {
+    "59e60000_end": "journal ends abruptly at 375.5 s right after the audit ssh sessions; no shutdown/standby lines; board found off by Chris; cause unknown (power loss or hard hang); no UART capture",
+    "b4931962": "primed source (PC not rebooted) but first advert still failed; v1 startup pulse at 18.54 s -> locked 19.78, video 19.83; speaker NRestarts=0; gate PASS"
+  },
+  "pl_dat_tap": "NOT possible: PL_DAT bits10-15 read 0 in 446k samples with pins on fn2 while a source is attached (idle DDC is high) -> data register does not reflect pads in peripheral mode"
+}

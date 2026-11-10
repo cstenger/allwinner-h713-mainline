@@ -1,0 +1,445 @@
+exit=0
+           PID: 124264 (mpv)
+           TID: 124287 (vo)
+           UID: 1000 (chris)
+           GID: 1000 (chris)
+        Signal: 11 (SEGV) si_code: SEGV_MAPERR
+     Timestamp: Tue 2026-10-27 03:43:19 PDT (2min 38s ago)
+  Command Line: mpv --no-config --no-terminal --loop-file=inf --fullscreen --screen-name=HDMI-A-1 --fs-screen-name=HDMI-A-1 --audio-device=pipewire/alsa_output.pci-0000_0c_00.1.hdmi-stereo-extra2 --volume=100 --mute=no --osc=no --osd-level=0 --input-ipc-server=/tmp/h713-prod-source-20261027.sock --log-file=/home/chris/Projects/h713/docs/hdmi-evidence/2026-10-27-shared-startup-production-install/source-player-details.log /home/chris/Projects/h713/build/hdmi-warm-shared-source-2026-10-24/moving-720p-tone.mkv
+    Executable: /usr/bin/mpv
+ Control Group: /user.slice/user-1000.slice/user@1000.service/app.slice/app-org.chromium.Chromium-5012.scope
+          Unit: user@1000.service
+     User Unit: app-org.chromium.Chromium-5012.scope
+         Slice: user-1000.slice
+     Owner UID: 1000 (chris)
+       Boot ID: e24a25885497474bb7d494b013463868
+    Machine ID: 7262b71d9c964f558f863e51d4920aea
+      Hostname: cachyos
+       Storage: /var/lib/systemd/coredump/core.mpv.1000.e24a25885497474bb7d494b013463868.124264.1793097799000000.zst (present)
+  Size on Disk: 18.2M
+       Message: Process 124264 (mpv) of user 1000 dumped core.
+                
+                Stack trace of thread 124287:
+                #0  0x0000562df07468fb n/a (mpv + 0x1ef8fb)
+                #1  0x00007f44d832a976 n/a (libffi.so.8 + 0x9976)
+                #2  0x00007f44d8325f29 n/a (libffi.so.8 + 0x4f29)
+                #3  0x00007f44d8329706 ffi_call (libffi.so.8 + 0x8706)
+                #4  0x00007f44de40d83a n/a (libwayland-client.so.0 + 0x483a)
+                #5  0x00007f44de40eb79 n/a (libwayland-client.so.0 + 0x5b79)
+                #6  0x00007f44de40ef8b wl_display_dispatch_queue_pending (libwayland-client.so.0 + 0x5f8b)
+                #7  0x0000562df074d948 n/a (mpv + 0x1f6948)
+                #8  0x0000562df0750970 n/a (mpv + 0x1f9970)
+                #9  0x0000562df076f650 n/a (mpv + 0x218650)
+                #10 0x0000562df06e0f11 n/a (mpv + 0x189f11)
+                #11 0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #12 0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124264:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabf2a pthread_cond_timedwait (libc.so.6 + 0xabf2a)
+                #3  0x0000562df060a47c n/a (mpv + 0xb347c)
+                #4  0x0000562df0670bf0 n/a (mpv + 0x119bf0)
+                #5  0x0000562df0669e22 n/a (mpv + 0x112e22)
+                #6  0x0000562df066b634 n/a (mpv + 0x114634)
+                #7  0x0000562df0588638 main (mpv + 0x31638)
+                #8  0x00007f44dde27d0e n/a (libc.so.6 + 0x27d0e)
+                #9  0x00007f44dde27e4b __libc_start_main (libc.so.6 + 0x27e4b)
+                #10 0x0000562df0588715 _start (mpv + 0x31715)
+                
+                Stack trace of thread 124266:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df06268ee mpv_wait_event (mpv + 0xcf8ee)
+                #4  0x0000562df071bfd9 n/a (mpv + 0x1c4fd9)
+                #5  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #6  0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #7  0x0000562df071d87a n/a (mpv + 0x1c687a)
+                #8  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #9  0x0000562df0718e3f n/a (mpv + 0x1c1e3f)
+                #10 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #11 0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #12 0x0000562df0719baa n/a (mpv + 0x1c2baa)
+                #13 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #14 0x00007f44dee1f881 lua_cpcall (libluajit-5.1.so.2 + 0x28881)
+                #15 0x0000562df0719e76 n/a (mpv + 0x1c2e76)
+                #16 0x0000562df067cbde n/a (mpv + 0x125bde)
+                #17 0x0000562df067ccbd n/a (mpv + 0x125cbd)
+                #18 0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #19 0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124267:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df06268ee mpv_wait_event (mpv + 0xcf8ee)
+                #4  0x0000562df071bfd9 n/a (mpv + 0x1c4fd9)
+                #5  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #6  0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #7  0x0000562df071d87a n/a (mpv + 0x1c687a)
+                #8  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #9  0x0000562df0718e3f n/a (mpv + 0x1c1e3f)
+                #10 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #11 0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #12 0x0000562df0719baa n/a (mpv + 0x1c2baa)
+                #13 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #14 0x00007f44dee1f881 lua_cpcall (libluajit-5.1.so.2 + 0x28881)
+                #15 0x0000562df0719e76 n/a (mpv + 0x1c2e76)
+                #16 0x0000562df067cbde n/a (mpv + 0x125bde)
+                #17 0x0000562df067ccbd n/a (mpv + 0x125cbd)
+                #18 0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #19 0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124265:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df05a7cde n/a (mpv + 0x50cde)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124270:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df06268ee mpv_wait_event (mpv + 0xcf8ee)
+                #4  0x0000562df071bfd9 n/a (mpv + 0x1c4fd9)
+                #5  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #6  0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #7  0x0000562df071d87a n/a (mpv + 0x1c687a)
+                #8  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #9  0x0000562df0718e3f n/a (mpv + 0x1c1e3f)
+                #10 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #11 0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #12 0x0000562df0719baa n/a (mpv + 0x1c2baa)
+                #13 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #14 0x00007f44dee1f881 lua_cpcall (libluajit-5.1.so.2 + 0x28881)
+                #15 0x0000562df0719e76 n/a (mpv + 0x1c2e76)
+                #16 0x0000562df067cbde n/a (mpv + 0x125bde)
+                #17 0x0000562df067ccbd n/a (mpv + 0x125cbd)
+                #18 0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #19 0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124285:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabf2a pthread_cond_timedwait (libc.so.6 + 0xabf2a)
+                #3  0x0000562df05b4460 n/a (mpv + 0x5d460)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124283:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddf3db92 __poll (libc.so.6 + 0x13db92)
+                #2  0x0000562df0702453 n/a (mpv + 0x1ab453)
+                #3  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #4  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124282:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddf3e388 ppoll (libc.so.6 + 0x13e388)
+                #2  0x0000562df074b950 n/a (mpv + 0x1f4950)
+                #3  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #4  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124289:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabf2a pthread_cond_timedwait (libc.so.6 + 0xabf2a)
+                #3  0x00007f4495ff569c n/a (libnvidia-glcore.so.615.78.08 + 0x9f569c)
+                #4  0x00007f4496435b61 n/a (libnvidia-glcore.so.615.78.08 + 0xe35b61)
+                #5  0x00007f4495ff5854 n/a (libnvidia-glcore.so.615.78.08 + 0x9f5854)
+                #6  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #7  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124271:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df06268ee mpv_wait_event (mpv + 0xcf8ee)
+                #4  0x0000562df071bfd9 n/a (mpv + 0x1c4fd9)
+                #5  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #6  0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #7  0x0000562df071d87a n/a (mpv + 0x1c687a)
+                #8  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #9  0x0000562df0718e3f n/a (mpv + 0x1c1e3f)
+                #10 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #11 0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #12 0x0000562df0719baa n/a (mpv + 0x1c2baa)
+                #13 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #14 0x00007f44dee1f881 lua_cpcall (libluajit-5.1.so.2 + 0x28881)
+                #15 0x0000562df0719e76 n/a (mpv + 0x1c2e76)
+                #16 0x0000562df067cbde n/a (mpv + 0x125bde)
+                #17 0x0000562df067ccbd n/a (mpv + 0x125cbd)
+                #18 0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #19 0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124290:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f4495ff563c n/a (libnvidia-glcore.so.615.78.08 + 0x9f563c)
+                #4  0x00007f4496429e9e n/a (libnvidia-glcore.so.615.78.08 + 0xe29e9e)
+                #5  0x00007f4495ff5854 n/a (libnvidia-glcore.so.615.78.08 + 0x9f5854)
+                #6  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #7  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124286:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df0608187 n/a (mpv + 0xb1187)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124293:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabf2a pthread_cond_timedwait (libc.so.6 + 0xabf2a)
+                #3  0x00007f4495ff569c n/a (libnvidia-glcore.so.615.78.08 + 0x9f569c)
+                #4  0x00007f449641dbed n/a (libnvidia-glcore.so.615.78.08 + 0xe1dbed)
+                #5  0x00007f4495ff5854 n/a (libnvidia-glcore.so.615.78.08 + 0x9f5854)
+                #6  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #7  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124272:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df06268ee mpv_wait_event (mpv + 0xcf8ee)
+                #4  0x0000562df071bfd9 n/a (mpv + 0x1c4fd9)
+                #5  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #6  0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #7  0x0000562df071d87a n/a (mpv + 0x1c687a)
+                #8  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #9  0x0000562df0718e3f n/a (mpv + 0x1c1e3f)
+                #10 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #11 0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #12 0x0000562df0719baa n/a (mpv + 0x1c2baa)
+                #13 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #14 0x00007f44dee1f881 lua_cpcall (libluajit-5.1.so.2 + 0x28881)
+                #15 0x0000562df0719e76 n/a (mpv + 0x1c2e76)
+                #16 0x0000562df067cbde n/a (mpv + 0x125bde)
+                #17 0x0000562df067ccbd n/a (mpv + 0x125cbd)
+                #18 0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #19 0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124273:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df06268ee mpv_wait_event (mpv + 0xcf8ee)
+                #4  0x0000562df071bfd9 n/a (mpv + 0x1c4fd9)
+                #5  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #6  0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #7  0x0000562df071d87a n/a (mpv + 0x1c687a)
+                #8  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #9  0x0000562df0718e3f n/a (mpv + 0x1c1e3f)
+                #10 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #11 0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #12 0x0000562df0719baa n/a (mpv + 0x1c2baa)
+                #13 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #14 0x00007f44dee1f881 lua_cpcall (libluajit-5.1.so.2 + 0x28881)
+                #15 0x0000562df0719e76 n/a (mpv + 0x1c2e76)
+                #16 0x0000562df067cbde n/a (mpv + 0x125bde)
+                #17 0x0000562df067ccbd n/a (mpv + 0x125cbd)
+                #18 0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #19 0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124292:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f4495ff563c n/a (libnvidia-glcore.so.615.78.08 + 0x9f563c)
+                #4  0x00007f449644b697 n/a (libnvidia-glcore.so.615.78.08 + 0xe4b697)
+                #5  0x00007f4495ff5854 n/a (libnvidia-glcore.so.615.78.08 + 0x9f5854)
+                #6  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #7  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124422:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabf2a pthread_cond_timedwait (libc.so.6 + 0xabf2a)
+                #3  0x00007f4495ff569c n/a (libnvidia-glcore.so.615.78.08 + 0x9f569c)
+                #4  0x00007f449655c139 n/a (libnvidia-glcore.so.615.78.08 + 0xf5c139)
+                #5  0x00007f44965538e6 n/a (libnvidia-glcore.so.615.78.08 + 0xf538e6)
+                #6  0x00007f4495ff5854 n/a (libnvidia-glcore.so.615.78.08 + 0x9f5854)
+                #7  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #8  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124444:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124468:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddf4f178 epoll_wait (libc.so.6 + 0x14f178)
+                #2  0x00007f44d3ff0569 n/a (libspa-support.so + 0x1d569)
+                #3  0x00007f44d3fd98e9 n/a (libspa-support.so + 0x68e9)
+                #4  0x00007f44de555471 n/a (libpipewire-0.3.so.0 + 0x25471)
+                #5  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #6  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124455:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124458:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124268:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x0000562df06268ee mpv_wait_event (mpv + 0xcf8ee)
+                #4  0x0000562df071bfd9 n/a (mpv + 0x1c4fd9)
+                #5  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #6  0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #7  0x0000562df071d87a n/a (mpv + 0x1c687a)
+                #8  0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #9  0x0000562df0718e3f n/a (mpv + 0x1c1e3f)
+                #10 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #11 0x00007f44dee1f804 lua_pcall (libluajit-5.1.so.2 + 0x28804)
+                #12 0x0000562df0719baa n/a (mpv + 0x1c2baa)
+                #13 0x00007f44dedfe27a n/a (libluajit-5.1.so.2 + 0x727a)
+                #14 0x00007f44dee1f881 lua_cpcall (libluajit-5.1.so.2 + 0x28881)
+                #15 0x0000562df0719e76 n/a (mpv + 0x1c2e76)
+                #16 0x0000562df067cbde n/a (mpv + 0x125bde)
+                #17 0x0000562df067ccbd n/a (mpv + 0x125cbd)
+                #18 0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #19 0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124452:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124451:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124445:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 137901:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddf3db92 __poll (libc.so.6 + 0x13db92)
+                #2  0x0000562df0704ac6 n/a (mpv + 0x1adac6)
+                #3  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #4  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124457:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124467:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddf4f178 epoll_wait (libc.so.6 + 0x14f178)
+                #2  0x00007f44d3ff0569 n/a (libspa-support.so + 0x1d569)
+                #3  0x00007f44d3fd98e9 n/a (libspa-support.so + 0x68e9)
+                #4  0x00007f44de5bdfc1 n/a (libpipewire-0.3.so.0 + 0x8dfc1)
+                #5  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #6  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124446:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124450:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124453:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124454:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124447:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124456:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124459:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124449:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                
+                Stack trace of thread 124448:
+                #0  0x00007f44ddeb5a22 n/a (libc.so.6 + 0xb5a22)
+                #1  0x00007f44ddea908a n/a (libc.so.6 + 0xa908a)
+                #2  0x00007f44ddeabc70 pthread_cond_wait (libc.so.6 + 0xabc70)
+                #3  0x00007f44e0dccdbf n/a (libavcodec.so.63 + 0x9ccdbf)
+                #4  0x00007f44ddeac93f n/a (libc.so.6 + 0xac93f)
+                #5  0x00007f44ddf4eeec n/a (libc.so.6 + 0x14eeec)
+                ELF object binary architecture: AMD x86-64

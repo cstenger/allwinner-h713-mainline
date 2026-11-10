@@ -1,0 +1,22 @@
+{
+  "primary_architecture": {
+    "url": "https://openrisc.io/or1k.html",
+    "version": "OpenRISC Architecture 1.1, revision 0, April 21 2014",
+    "sections": [
+      "4.6 supervision register",
+      "7.2 memory synchronization",
+      "9.2 cache management"
+    ],
+    "used_for": "Architectural limits on inferring instruction coherency from memory readback; not H713 implementation proof"
+  },
+  "local_source_sha256": {
+    "modules/hdmi-signal/h713-hdmi-signal.c": "c5fabd12496a8f8643952e938237db0cac867e7ec36750f142e30dfe06942fbf",
+    "modules/hdmi-signal/edid-trial-code.h": "1ab9fa5cc90728f11c9196416fca127e8a6cc3c610099b0b27c942506ee293aa",
+    "tools/hdmi/make-edid-trial-code.py": "1f2d4173bb5fa21d1a359f22f96664a653f3d4a53f13a20d9b3eeaa7f73ef284",
+    "build/test3-kernel/kernel/params.c": "05a20e222c27134ae867ab8719cd432a65985c52fea191d14e420643c4a2b022",
+    "build/test3-kernel/arch/arm64/include/asm/io.h": "39a3cc5a5456c6596feeac55135f03b2f0b567414f3b4c02921dc7ac33d7ae7b",
+    "build/hdmi-startup-signal-owner/h713-hdmi-signal.ko": "0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497"
+  },
+  "review_tool_sha256": "aa66db8b1b61b0fd02ce73b3101e65c9711f670306a72cd0922822a3942ea31c",
+  "source_kernel_abi_is_not_proven_match_to_running_kernel": true
+}

@@ -1,0 +1,245 @@
+{
+  "date": "2026-10-20",
+  "state": "offline repair verified; two clean mounts and one clean orderly shutdown",
+  "root_uuid": "956d9901-0eb3-4d75-bb44-e37a46ba9f40",
+  "root_partition_bytes": 2952790016,
+  "backup": {
+    "device": "/dev/sda",
+    "major_minor": "8:0",
+    "bytes": 2952790016,
+    "uuid": "956d9901-0eb3-4d75-bb44-e37a46ba9f40",
+    "usb_ids": [
+      [
+        "1f3a",
+        "1010"
+      ],
+      [
+        "1d6b",
+        "0002"
+      ]
+    ],
+    "sha256": "3b403159e64b0876f465504e3c64e57c95fa21b25ff5fc58bc986de47db73bfe",
+    "seconds": 375.0964348009993
+  },
+  "repair_image": {
+    "sha256": "391a026c736ca6a0f95eaeeaa0bf27babccc3614e86d49207c4d5a9baf1f079c",
+    "bytes": 2952790016,
+    "read_only_check_exit": 0,
+    "repair_mode": "e2fsck -f -p, exit 1"
+  },
+  "changed_blocks": {
+    "changed_bytes": 61440,
+    "ranges": [
+      [
+        0,
+        8192
+      ],
+      [
+        2150400,
+        4096
+      ],
+      [
+        2158592,
+        4096
+      ],
+      [
+        35811328,
+        4096
+      ],
+      [
+        35864576,
+        4096
+      ],
+      [
+        35917824,
+        4096
+      ],
+      [
+        35971072,
+        4096
+      ],
+      [
+        2013265920,
+        4096
+      ],
+      [
+        2147483648,
+        4096
+      ],
+      [
+        2147549184,
+        4096
+      ],
+      [
+        2147614720,
+        4096
+      ],
+      [
+        2147688448,
+        12288
+      ]
+    ],
+    "block_bytes": 4096
+  },
+  "offline_check_before_exit": 4,
+  "preen_repair_exit": 1,
+  "offline_check_after_exit": 0,
+  "local_evidence": {
+    "guarded-backup.py": {
+      "bytes": 1798,
+      "sha256": "a66810da77605d95a984d3b893781f0718918c64d8a3d2b42e98309c263d69ba"
+    },
+    "apply-repaired-image.py": {
+      "bytes": 3616,
+      "sha256": "b40beafd28a1879b8205b2e1ab4b3462a3a9387944e3384023be1e83a034d179"
+    },
+    "test-apply-helper.py": {
+      "bytes": 1877,
+      "sha256": "cc676aeb3141a60556869c240c5232ebdc1143e6fa03600ab282cacf65ed4912"
+    },
+    "backup-manifest.json": {
+      "bytes": 335,
+      "sha256": "9e02fc8c7d0ce086381ddb1f82f4444e126a1f248f768318087038f9617f6c42"
+    },
+    "repaired-image.json": {
+      "bytes": 176,
+      "sha256": "867dd64a0196138bd02005919f7648798dfb04b42a14c84d82cfa5e3753b2407"
+    },
+    "changed-blocks.json": {
+      "bytes": 552,
+      "sha256": "6c316e01be41dc1f0e12cf84cf3acf15a686437d9820149ff02ef645da39eca2"
+    },
+    "repair-image-result.json": {
+      "bytes": 21,
+      "sha256": "56296949d3a02e635b050fd6b4762f0f0b52c23d05b925203095f7daf8e19027"
+    },
+    "apply-fixture-tests.txt": {
+      "bytes": 302,
+      "sha256": "28b8cd366e6ce5a0ca0887c83d65bbc3d442e9d6a12703236ced30590bbb29d1"
+    },
+    "repaired-superblock.txt": {
+      "bytes": 2282,
+      "sha256": "783df6f133888de9c2db7eb9f569d6d2062fd878806f2b735cc2b20180108968"
+    },
+    "orphan-inode-131074.txt": {
+      "bytes": 803,
+      "sha256": "0c8d4412516a3b4f4662a87eccccb466e30dbeeb209babb7db8841f34bcb1602"
+    },
+    "orphan-inode-131381.txt": {
+      "bytes": 803,
+      "sha256": "913abc6cad9e332ec6a36bdfb3230743d9f1609970e4b77f668ee0cf65c96e47"
+    },
+    "uboot-inventory.txt": {
+      "bytes": 4726,
+      "sha256": "0556ecd214f8f439c2c26bf93c0e7a76e43fb49719b40bf28075d5c7c35bf7c9"
+    },
+    "uart/serial.log": {
+      "bytes": 1865,
+      "sha256": "84cb615f9b6421fdb264bd8173e11c3686a8d2e1aba577eb79138de0985d5aea"
+    },
+    "uart/serial-timestamped.log": {
+      "bytes": 3261,
+      "sha256": "a622141993cafbb681f5f0e579081e04c07aa07a37e67b49d44286294c40a13c"
+    },
+    "health-after-repair-uart.txt": {
+      "bytes": 3527,
+      "sha256": "ed68a3e6c64e970d8d2f7b2540ccd309d4f5a5f0078861a720085488458fab78"
+    },
+    "orderly-reboot-after-repair.txt": {
+      "bytes": 1622,
+      "sha256": "ab7d284c94901a1a31c36ea6aadd934703f2da3609f72e91d3203a4532ffa79b"
+    },
+    "superblock-after-orderly-reboot.txt": {
+      "bytes": 819,
+      "sha256": "0b5e85e68b176fe4b8d9836c0d19ae381e8c7ad16953108565b45d606aaa932a"
+    },
+    "second-boot-health.txt": {
+      "bytes": 917,
+      "sha256": "ad0b491418e1ce0c8da61cec08b11021cb1bfdd193f624eadc8108b785fa2d9c"
+    },
+    "shutdown-superblock.json": {
+      "bytes": 248,
+      "sha256": "1e8e5ed33f6402a5017b67a7a620249e21f1f9db8a2d7d4230ce70796b6234ac"
+    }
+  },
+  "apply": {
+    "state": "verified",
+    "before_sha256": "3b403159e64b0876f465504e3c64e57c95fa21b25ff5fc58bc986de47db73bfe",
+    "after_sha256": "391a026c736ca6a0f95eaeeaa0bf27babccc3614e86d49207c4d5a9baf1f079c",
+    "ranges": [
+      [
+        0,
+        8192
+      ],
+      [
+        2150400,
+        4096
+      ],
+      [
+        2158592,
+        4096
+      ],
+      [
+        35811328,
+        4096
+      ],
+      [
+        35864576,
+        4096
+      ],
+      [
+        35917824,
+        4096
+      ],
+      [
+        35971072,
+        4096
+      ],
+      [
+        2013265920,
+        4096
+      ],
+      [
+        2147483648,
+        4096
+      ],
+      [
+        2147549184,
+        4096
+      ],
+      [
+        2147614720,
+        4096
+      ],
+      [
+        2147688448,
+        12288
+      ]
+    ],
+    "changed_bytes": 61440,
+    "readback_sha256": "391a026c736ca6a0f95eaeeaa0bf27babccc3614e86d49207c4d5a9baf1f079c"
+  },
+  "shutdown_superblock": {
+    "method": "U-Boot mmc read 0x42000000 0x54c402 2; md.b 0x42000000 0x80",
+    "magic": "0xef53",
+    "state": 1,
+    "feature_incompat": "0x22c2",
+    "feature_ro_compat": "0x46b",
+    "clean": true,
+    "needs_recovery": false,
+    "orphan_present": false
+  },
+  "runtime": {
+    "first_boot_id": "24274ba0-41cc-458c-a54b-61054934f2e5",
+    "second_boot_id": "66f84444-13e2-47af-930b-388059812113",
+    "both_mounts": "rw,noatime; no ext4 error warnings",
+    "growfs_both_boots": {
+      "Result": "success",
+      "ExecMainStatus": 0
+    },
+    "orderly_shutdown": "no orphan-file warning; offline superblock state 1; needs_recovery and orphan_present clear",
+    "final_board_state": "Linux running, GP6 guarded warm path; sustained HDMI capture skipped",
+    "temporary_device_acl": "removed with USB export device node",
+    "cause": "not established; active-HDMI recurrence not qualified"
+  }
+}

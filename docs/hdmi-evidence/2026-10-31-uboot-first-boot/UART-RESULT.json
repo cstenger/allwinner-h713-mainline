@@ -1,0 +1,32 @@
+{
+  "status": "PASS captured migrated environment load and unattended Linux boot",
+  "uart_raw_sha256": "e246e00f41f38daa7d85fe7c21a1250aa831d4d9d227976299a96eddfedd784a",
+  "uart_timestamped_sha256": "9f8e1baf5863f369538c712618cbda3a8f1a4ebda7e61d8a9d29021deac331ba",
+  "bytes_captured": 54282,
+  "spl_boots": 1,
+  "proper_boots": 1,
+  "expected_source_digest": "b3b5f2d2",
+  "proper_banner": "U-Boot 2026.07-rc5-g320a17f71d41-h713-b3b5f2d2 (Oct 30 2026 - 02:09:43 -0700) Allwinner Technology",
+  "environment_line": "Loading Environment from MMC... Reading from MMC(1) at 0x93d80000... OK",
+  "environment_byte_offset": "0x93d80000",
+  "environment_lba": "0x49ec00",
+  "environment_load_ok": true,
+  "no_bad_CRC_or_default_environment": true,
+  "shared_handoff_verified": true,
+  "kernel_started": true,
+  "linux_login_reached": true,
+  "boot_sequence_order_verified": true,
+  "serial_transmission_by_recorder": false,
+  "no_capture_disconnect_recorded": true,
+  "recorder_graceful_stop_recorded": false,
+  "capture_qualification": "Complete SPL-to-Linux-prompt transcript retained. Original recorder remained alive in the host namespace until explicitly stopped cleanly for the fresh warm-test reader. Earlier restricted-namespace PID check was misinterpreted; see correction evidence. Original archived timestamped log hash identifies the pre-stop snapshot.",
+  "process_visibility_correction": {
+    "host_utc": "2026-10-31T10:05:26.447305+00:00",
+    "original_reader_pid": 10696,
+    "host_check_found_original_reader_alive": true,
+    "original_restricted_namespace_check_was_not_a_host_liveness_test": true,
+    "reader_subsequently_stopped_cleanly": true,
+    "evidence": "docs/hdmi-evidence/2026-10-31-uboot-warm-validation/prior-recorder-correction.json"
+  },
+  "restricted_namespace_reported_PID_absent": true
+}

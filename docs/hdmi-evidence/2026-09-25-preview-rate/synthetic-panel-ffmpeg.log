@@ -1,0 +1,20 @@
+Input #0, lavfi, from 'testsrc2=size=640x480:rate=60':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x480 [SAR 1:1 DAR 4:3], 60 fps, 60 tbr, 60 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> rawvideo (native))
+Output #0, rawvideo, to 'pipe:':
+  Metadata:
+    encoder         : Lavf61.7.103
+  Stream #0:0: Video: rawvideo (BGR[0] / 0x524742), bgr0(pc, gbr/unknown/unknown, progressive), 1280x720 [SAR 1:1 DAR 16:9], q=2-31, 1327104 kb/s, 60 fps, 60 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 rawvideo
+frame=   24 fps=0.0 q=-0.0 size=   82800KiB time=00:00:00.43 bitrate=1565303.4kbits/s speed=0.86x
+frame=   50 fps= 50 q=-0.0 size=  176400KiB time=00:00:00.95 bitrate=1521125.1kbits/s speed=0.946x
+frame=   74 fps= 49 q=-0.0 size=  262800KiB time=00:00:01.36 bitrate=1575261.3kbits/s speed=0.908x
+frame=   84 fps= 42 q=-0.0 size=  298800KiB time=00:00:01.53 bitrate=1596371.8kbits/s speed=0.765x
+frame=   94 fps= 38 q=-0.0 size=  334800KiB time=00:00:01.70 bitrate=1613342.1kbits/s speed=0.679x
+frame=  104 fps= 35 q=-0.0 size=  370800KiB time=N/A bitrate=N/A speed=N/A
+frame=  114 fps= 33 q=-0.0 size=  406800KiB time=N/A bitrate=N/A speed=N/A
+[out#0/rawvideo @ 0xaaaabd5172c0] video:432000KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000000%
+frame=  120 fps= 31 q=-0.0 Lsize=  432000KiB time=00:00:02.00 bitrate=1769472.0kbits/s speed=0.525x

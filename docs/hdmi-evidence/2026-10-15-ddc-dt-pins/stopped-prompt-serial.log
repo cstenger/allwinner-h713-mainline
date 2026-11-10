@@ -1,0 +1,9 @@
+md.l 0x0306101c 1
+0306101c: 00000000                             ....
+=> md.l 0x07090118 2
+07090118: 00000000 00000000                    ........
+=> printenv filesize hdmi_fdt_size bootcmd
+filesize=76dccc
+## Error: "hdmi_fdt_size" not defined
+bootcmd=if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi
+=> 

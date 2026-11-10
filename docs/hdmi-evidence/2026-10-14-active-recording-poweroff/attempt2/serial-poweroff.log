@@ -1,0 +1,84 @@
+[   55.655023] h713-ddc-pins: PL10-PL15 claimed and selected for three DDC ports
+[   55.678023] h713-scp-probe: payload=ffffff00,00ffffff pre-enable EDID=ffffff00,ffffff00,ffffff00
+[   55.688163] h713-scp-probe: active HPD=00000000 b00=00a0a0a0 b04=07000007 b08=00c0c0c0 headers=00000000,00000000,00000000
+[   55.700446] h713-scp-probe: active IO 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[   55.710187] h713-scp-probe: EDID trial ready; holding HPD asserted for 45000 ms
+[   28.062169] h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - Guarded H713 HDMI capture session...
+[   39.336104] h713-arm64 python3[759]: {"phase": "ready", "already_ready": false}
+[   39.416970] h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - Guarded H713 HDMI capture session.
+[   55.368667] h713-arm64 systemd[1]: Started h713-hdmi-poweroff-signal.service - Bounded HDMI signal owner for poweroff test.
+[   55.655361] h713-arm64 python3[926]: {"argv": ["insmod", "/tmp/h713-ddc-pins.ko", "run=1"], "rc": 0, "out": "", "err": ""}
+[   57.486932] h713-arm64 systemd[1]: Started h713-hdmi-poweroff-recorder.service - Active HDMI recorder for full poweroff test.
+H713 ACTIVE POWEROFF {"active_recording_poweroff_request": true, "recorder_pid": 953, "pcm_status": "state: RUNNING\nowner_pid   : 953\ntrigger_time: 57.559950942\ntstamp      : 0.000000000\ndelay       : 32\navail       : 32\navail_max   : 512\n-----\nhw_ptr      : 312828\nappl_ptr    : 312796\n", "boot_id": "cbf72a19-1adf-45cf-b1a5-8161b23a66b3"}
+
+Broadcast message from root@h713-arm64 (Mon 2026-04-13 19:39:06 UTC):
+
+The system will power off now!
+
+[?2004l[?2004h[?2004l
+[   64.329910] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[   64.350243] get_txpwr_max:txpwr_max:18 
+[   64.356867] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[   64.363871] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[   64.371376] change_if: 3 to 2, 8, 2
+[   64.371403] get_txpwr_max:txpwr_max:18 
+[!p]104[?7h[6n[32766;32766H[6n[   66.342004] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[  101.352029] h713-scp-probe: hpd_read=1 marker=48444d49 completed=1 hpd=00000007 exception=0 restored=1 reset=00000000 result=0
+[  101.364580] h713-scp-probe: edid_trial=1 peripheral_restored=1 mismatch=0 initial HPD=00000007 b00=00a0a0a0 b04=07000000 b08=00606060
+[  101.476581] h713-ddc-pins: DDC pins returned to inputs and ownership released
+[  102.258268] h713-hdmi-audio: DSP restore 005a=8000 verified
+[  102.268061] h713-hdmi-audio: DSP restore 0059=8000 verified
+[  102.277166] h713-hdmi-audio: DSP restore 0103=0000 verified
+[  102.285617] h713-hdmi-audio: DSP restore 0102=0000 verified
+[  102.294561] h713-hdmi-audio: DSP restore 8103=0000 verified
+[  102.303465] h713-hdmi-audio: DSP restore 8102=0000 verified
+[  102.312312] h713-hdmi-audio: DSP restore 007e=8485 verified
+[  102.320627] h713-hdmi-audio: DSP restore 007d=8283 verified
+[  102.328938] h713-hdmi-audio: DSP restore 007c=8081 verified
+[  102.337217] h713-hdmi-audio: DSP restore 8017=0001 verified
+[  102.345468] h713-hdmi-audio: DSP restore 801a=0000 verified
+[  102.353682] h713-hdmi-audio: DSP restore 0017=2000 verified
+[  102.361884] h713-hdmi-audio: DSP restore 0012=0000 verified
+[  102.369990] h713-hdmi-audio: DSP restore 0130=0000 verified
+[  102.377811] h713-hdmi-audio: DSP restore 8059=0000 verified
+[  102.385610] h713-hdmi-audio: DSP restore 805a=0000 verified
+[  102.393407] h713-hdmi-audio: DSP restore 004d=0000 verified
+[  102.401170] h713-hdmi-audio: DSP restore 0077=0000 verified
+[  102.408910] h713-hdmi-audio: DSP restore 00ac=0000 verified
+[  102.416624] h713-hdmi-audio: DSP restore 800d=0000 verified
+[  102.424327] h713-hdmi-audio: DSP restore 800c=0000 verified
+[  102.432022] h713-hdmi-audio: DSP restore 0003=0000 verified
+[  102.438476] h713-hdmi-audio: managed DSP graph restored 22 words
+[  102.445386] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[  102.453054] h713-hdmi-audio: restored Audio Bridge output stream 0
+[  102.460409] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[  102.467932] h713-hdmi-audio: restored audio-IHB clock=81000002
+[  102.474537] h713-hdmi-audio: managed TVFE clock/reset state restored; 15 clock words and bus verified
+[  102.484501] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+[  106.222320] h713-hdmi-receiver: terminal MIPS reset 0 asserted and verified
+[  106.231325] h713-hdmi-receiver: terminal MIPS reset 1 asserted and verified
+[  106.240198] h713-hdmi-receiver: terminal MIPS reset 2 asserted and verified
+[  106.249047] h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required
+[  106.503305] h713-receiver-edid h713-edid-clock-hold: EDID reset state and clock reference released
+[  107.328532] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  107.428753] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[  107.451799] systemd-journald[110]: Received SIGTERM from PID 1 (systemd-shutdow).
+[  107.480023] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[  107.501404] systemd-shutdown[1]: Unmounting file systems.
+[  107.510504] (sd-umount)[1170]: Unmounting '/run/credentials/systemd-journald.service'.
+[  107.523518] (sd-remount)[1171]: Remounting '/' read-only with options ''.
+[  107.558937] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[  107.580178] systemd-shutdown[1]: All filesystems unmounted.
+[  107.587463] systemd-shutdown[1]: Deactivating swaps.
+[  107.594104] systemd-shutdown[1]: All swaps deactivated.
+[  107.600905] systemd-shutdown[1]: Detaching loop devices.
+[  107.611611] systemd-shutdown[1]: All loop devices detached.
+[  107.618780] systemd-shutdown[1]: Stopping MD devices.
+[  107.625837] systemd-shutdown[1]: All MD devices stopped.
+[  107.632355] systemd-shutdown[1]: Detaching DM devices.
+[  107.638910] systemd-shutdown[1]: All DM devices detached.
+[  107.645481] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[  107.669082] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  107.677663] systemd-shutdown[1]: Powering off.
+[  107.715248] sun50i-h713-afbd 5600000.display: [drm] RGB fetch quiesced at physical vblank 6356
+[  107.725309] reboot: Power down

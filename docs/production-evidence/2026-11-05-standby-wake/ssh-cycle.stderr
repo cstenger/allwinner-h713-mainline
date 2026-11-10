@@ -1,0 +1,33 @@
++ set -u
++ RUN=/run/h713-standby
++ LAMP=/sys/class/backlight/lamp
++ POLICY=/sys/devices/system/cpu/cpufreq/policy0
++ PLAYERS=h713-play gst-plane-play mpv
++ enter
++ state
++ cat /run/h713-standby/state
++ echo off
++ [ off = on ]
++ [ -w /sys/class/backlight/lamp/bl_power ]
++ mkdir -p /run/h713-standby
++ stop_players
++ pkill -TERM -x h713-play
++ pkill -TERM -x gst-plane-play
++ pkill -TERM -x mpv
++ i=0
++ [ 0 -lt 30 ]
++ busy=
++ pgrep -x h713-play
++ pgrep -x gst-plane-play
++ pgrep -x mpv
++ [ -z  ]
++ return 0
++ echo 4
++ cat /sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq
++ cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq
++ echo on
++ say standby on
++ logger -t h713-standby standby on
++ [ -t 1 ]
++ return 0
+Timeout, server 192.168.4.1 not responding.

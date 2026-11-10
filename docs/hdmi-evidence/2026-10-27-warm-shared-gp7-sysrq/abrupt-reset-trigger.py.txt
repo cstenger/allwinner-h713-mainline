@@ -1,0 +1,46 @@
+import os,pathlib,subprocess
+P=pathlib.Path
+expected='0ab8fbc0-9cfe-43b4-992e-6349864d4537'
+def guard():
+    if P('/proc/sys/kernel/random/boot_id').read_text().strip()!=expected:raise RuntimeError('boot changed; no reset')
+    for u in ('capture','signal','speaker','ring','video'):
+        subprocess.run(['systemctl','is-active','--quiet','h713-hdmi-'+u],check=True)
+    for card,stream in (('H713HDMI','pcm0c'),('Codec','pcm0p')):
+        if not P('/proc/asound/'+card+'/'+stream+'/sub0/status').read_text().startswith('state: RUNNING'):raise RuntimeError('PCM not running')
+    if P('/sys/module/h713_hdmi_audio/parameters/dsp_failed').read_text().strip()!='N':raise RuntimeError('DSP failed')
+    if P('/sys/devices/platform/h713-hdmi-ring/signal').read_text().strip()!='locked 1280x720':raise RuntimeError('video not locked')
+guard()
+os.sync()
+guard()
+
+# Pin the RTC provider and the existing reboot-mode cell, never /dev/mem.
+dt=P('/sys/firmware/devicetree/base')
+rtc=dt/'soc/rtc@7090000';cell=rtc/'reboot-mode-magic@1c';mode=dt/'reboot-mode'
+if (rtc/'compatible').read_bytes()!=b'allwinner,sun50i-h713-rtc\0':raise RuntimeError('wrong RTC compatible')
+if (rtc/'reg').read_bytes()!=bytes.fromhex('0709000000000400'):raise RuntimeError('wrong RTC register range')
+if (cell/'reg').read_bytes()!=bytes.fromhex('0000001c00000004'):raise RuntimeError('wrong GP7 cell range')
+if (mode/'compatible').read_bytes()!=b'nvmem-reboot-mode\0':raise RuntimeError('wrong reboot-mode compatible')
+if (mode/'mode-bootloader').read_bytes()!=bytes.fromhex('b007c0de'):raise RuntimeError('wrong bootloader magic')
+if len((cell/'phandle').read_bytes())!=4 or (mode/'nvmem-cells').read_bytes()!=(cell/'phandle').read_bytes():raise RuntimeError('wrong reboot-mode cell reference')
+providers=[p for p in P('/sys/bus/nvmem/devices').iterdir()
+           if (p/'of_node').resolve()==rtc.resolve() and (p/'nvmem').is_file()]
+if len(providers)!=1:raise RuntimeError('RTC nvmem provider absent or ambiguous')
+provider=providers[0]
+if (provider.resolve().parent/'driver').resolve().name!='sun6i-rtc':raise RuntimeError('wrong RTC driver')
+fd=os.open(str(provider/'nvmem'),os.O_RDWR|os.O_CLOEXEC)
+try:
+    if os.fstat(fd).st_size!=32:raise RuntimeError('wrong RTC nvmem size')
+    before=os.pread(fd,8,0x18)
+    if len(before)!=8 or before[:4]!=bytes.fromhex('494d4448') or before[4:]!=bytes(4):raise RuntimeError('unexpected GP6/GP7; no arm')
+    guard()
+    print('GP7_ARM_INTENT provider='+str(provider)+' boot='+expected,flush=True)
+    # One aligned four-byte write at offset 0x1c. GP6 is read-only.
+    if os.pwrite(fd,bytes.fromhex('dec007b0'),0x1c)!=4:raise RuntimeError('short GP7 write; stop, no retry')
+    if os.pread(fd,8,0x18)!=before[:4]+bytes.fromhex('dec007b0'):raise RuntimeError('GP7 readback/GP6 mismatch; stop, no retry')
+    print('GP7_ARMED_READBACK_OK boot='+expected,flush=True)
+finally:os.close(fd)
+
+guard()
+with open('/dev/ttyS0','w') as f:f.write('H713_WARM_SHARED_SYNC_DONE gp7=b007c0de gp6=48444d49'+' boot='+expected+'\n');f.flush()
+with open('/proc/sysrq-trigger','w') as f:f.write('b')
+raise RuntimeError('SysRq returned unexpectedly')

@@ -1,0 +1,82 @@
+{
+  "status": "PASS read-only warm-reboot baseline",
+  "boot_id": "85768624-6a6e-4637-a50f-f45b2c156f31",
+  "uptime": "680.16 2513.72",
+  "storage": [
+    {
+      "name": "environment",
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "bytes": 65536,
+      "matches": true
+    },
+    {
+      "name": "proper",
+      "sha256": "cbd29de888e4b605e68b98de78c081525dd7d1b627abca846704efe527e8802a",
+      "bytes": 961024,
+      "matches": true
+    },
+    {
+      "name": "disk-prefix-including-GPT-and-SPL",
+      "sha256": "7a3702e2ccb5c4639367fb615db94eaf13d26beae8d59fedd1d68650e21d4343",
+      "bytes": 65536,
+      "matches": true
+    },
+    {
+      "name": "disk-suffix-including-backup-GPT",
+      "sha256": "9b3e8a016ad6c6f7b9fd2e03eaa38beebd9735bb57213a44efc99b97026188a4",
+      "bytes": 65536,
+      "matches": true
+    },
+    {
+      "name": "active-environment",
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "bytes": 65536,
+      "matches": true
+    },
+    {
+      "name": "rescue-full-region",
+      "sha256": "27a685f46a68daeeb98190fe9bd1c3f9200cfe1da3f53cfa78b24bfb06a48411",
+      "bytes": 2097152,
+      "matches": true
+    },
+    {
+      "name": "proper-region-tail",
+      "sha256": "df9b23d9d89fc108da150079a555216c62c42fba1451c48c8eab8ade6ba7ad11",
+      "bytes": 1136128,
+      "matches": true
+    },
+    {
+      "name": "intended-environment-prefix",
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "bytes": 65536,
+      "matches": true
+    },
+    {
+      "name": "intended-environment-suffix",
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "bytes": 65536,
+      "matches": true
+    },
+    {
+      "name": "boot-FAT",
+      "sha256": "79c14f0566ada36158df2bef4995f73674a532987cfe8674c0c5e46789672de5",
+      "bytes": 33554432,
+      "matches": true
+    }
+  ],
+  "file_pins_verified": 56,
+  "services": "NRestarts=0\nExecMainStartTimestampMonotonic=12543143\nId=h713-hdmi-capture.service\nActiveState=active\nSubState=exited\n\nNRestarts=0\nExecMainStartTimestampMonotonic=23612576\nId=h713-hdmi-signal.service\nActiveState=active\nSubState=exited\n\nNRestarts=0\nExecMainStartTimestampMonotonic=24014779\nId=h713-hdmi-ring.service\nActiveState=active\nSubState=exited\n\nNRestarts=0\nExecMainStartTimestampMonotonic=0\nId=h713-hdmi-video.service\nActiveState=inactive\nSubState=dead\n\nNRestarts=0\nExecMainStartTimestampMonotonic=24104786\nId=h713-hdmi-speaker.service\nActiveState=active\nSubState=running\n\nNRestarts=0\nExecMainStartTimestampMonotonic=24009521\nId=h713-hdmi-health-ack.service\nActiveState=active\nSubState=exited\n",
+  "runtime": {
+    "/sys/module/h713_hdmi_audio/parameters/period_xruns": "0",
+    "/sys/module/h713_hdmi_v4l2/parameters/frames_rejected": "0",
+    "/sys/devices/platform/h713-hdmi-ring/signal": "none"
+  },
+  "latches": "4b4f444800000000",
+  "filesystem_state": "clean",
+  "startup_stdout": "== boot 85768624-6a6e-4637-a50f-f45b2c156f31 6.18.38 up 679.65s\nhandoff 48444d49000000008b8f275c\nh713-hdmi-capture: success 0 active yes \nh713-hdmi-signal: success 0 active yes \nh713_hdmi_receiver.clock_count=4\nh713_hdmi_receiver.init_error=0\nh713_hdmi_receiver.firmware_pin=Y\nh713_hdmi_receiver.edid_ready=Y\nh713_hdmi_receiver.clients=2\nh713_hdmi_audio.dsp_failed=N\nh713_hdmi_audio.manage_dsp=Y\nh713_hdmi_audio.manage_tvfe=Y\nh713_hdmi_signal.ready=Y\nh713_hdmi_signal.failed=N\nh713_hdmi_signal.restored=N\n[   22.578128] h713-hdmi-audio: DSP versions 0000/0000\n[   23.493472] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1\nstate: RUNNING\nowner_pid   : 320\ntrigger_time: 25.401276802\ntstamp      : 679.934061322\ndelay       : 220\navail       : 220\navail_max   : 636\n-----\nhw_ptr      : 31417564\nappl_ptr    : 31417344\nrtc gp6 latch unknown from Linux (U-Boot checked)\nApr 13 19:38:15 h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...\nApr 13 19:38:26 h713-arm64 python3[321]: {\"phase\": \"ready\", \"already_ready\": false}\nApr 13 19:38:26 h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.\nApr 13 19:38:26 h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...\nApr 13 19:38:26 h713-arm64 python3[390]: EDID/HPD ready; receiver client and DDC pins retained\nApr 13 19:38:26 h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.\nPASS\n",
+  "startup_stderr": "",
+  "board_writes": false,
+  "reboot": false,
+  "cold_only_diagnostics_present": [],
+  "read_only": true
+}

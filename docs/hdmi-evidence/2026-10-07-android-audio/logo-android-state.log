@@ -1,0 +1,8 @@
+getprop sys.usb.state
+adb
+console:/ $ getprop sys.usb.config
+adb
+console:/ $ dumpsys activity activities | grep -E "mResumedActivity|mFocusedAcity activities | grep -E "mResumedActivity|mFocusedAc                         <tivity"
+    mResumedActivity: ActivityRecord{a5adc7b u0 com.htc.magcubicos/.activity.MainActivity t80}
+console:/ $ logcat -d -t 120 | grep -E "TvServer|tvserver|FATAL|SurfaceFlinger120 | grep -E "TvServer|tvserver|FATAL|SurfaceFlinger                         <|bootanim|Launcher" | taivserver|FATAL|SurfaceFlinger|bootanim|Launcher" | tai                         <l -15
+console:/ $ 

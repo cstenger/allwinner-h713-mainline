@@ -1,0 +1,35 @@
+{
+  "boot_id": "76a37f98-7df6-400e-8d59-45e4963bb0ea",
+  "uptime": "200.72 638.39",
+  "route": {
+    "verified": true,
+    "version": 1,
+    "boot_id": "76a37f98-7df6-400e-8d59-45e4963bb0ea",
+    "server_pid": 316,
+    "route": {
+      "source": {
+        "id": 51,
+        "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"
+      },
+      "sink": {
+        "id": 43,
+        "name": "alsa_output.platform-2030000.codec.stereo-fallback"
+      }
+    },
+    "nodes": {
+      "h713-hdmi-loop-capture": 56,
+      "h713-hdmi-loop-playback": 55
+    }
+  },
+  "ack": {
+    "boot_id": "76a37f98-7df6-400e-8d59-45e4963bb0ea",
+    "gp6_before": "48444f4b",
+    "gp7": "00000000",
+    "dry_run": true,
+    "written": false
+  },
+  "units": "Result=success\nNRestarts=0\nId=h713-hdmi-capture.service\nActiveState=active\n\nResult=success\nNRestarts=0\nId=h713-hdmi-signal.service\nActiveState=active\n\nResult=success\nNRestarts=0\nId=h713-hdmi-speaker.service\nActiveState=active\n\nResult=success\nNRestarts=0\nId=h713-hdmi-video.service\nActiveState=active\n\nResult=success\nNRestarts=0\nId=h713-hdmi-health-ack.service\nActiveState=active\n",
+  "capture_xruns": "0",
+  "video_rejects": "0",
+  "checksums": "alsa-ctl.c: OK\nenable-mixer.sh: OK\nh713-hdmi-speaker.service: OK\nhdmi-speaker.c: OK\ninstall-speaker.sh: OK\npipewire-speaker.py: OK\n"
+}

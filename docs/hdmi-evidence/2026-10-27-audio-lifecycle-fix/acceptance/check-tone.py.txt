@@ -1,0 +1,31 @@
+import subprocess,json,sys
+from pathlib import Path
+out=Path(sys.argv[1]);assert not out.exists()
+code=r'''
+import subprocess,os,array,math,json
+from pathlib import Path
+env=os.environ.copy();env['PIPEWIRE_RUNTIME_DIR']='/run/user/1000'
+route=json.loads(subprocess.check_output(['python3','/usr/lib/h713-hdmi-speaker/pipewire-speaker.py','check'],text=True));r={'route':route,'samples':{}}
+for name,label,props in [('capture','source','{ node.dont-fallback=true }'),('sink_monitor','sink','{ stream.capture.sink=true node.dont-fallback=true }')]:
+ cmd=['pw-cat','--record','--raw','--rate=48000','--channels=2','--format=s16','--latency=20ms','--target='+route['route'][label]['name'],'--properties='+props,'-']
+ p=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
+ try:b,e=p.communicate(timeout=2)
+ except subprocess.TimeoutExpired:p.terminate();b,e=p.communicate(timeout=5)
+ v=array.array('h',b[:len(b)//2*2]);assert len(v)>24000,(name,e)
+ channels=[]
+ for ch in range(2):
+  a=v[ch::2];x=a[12000:16800];n=len(x);power=sum(z*z for z in x)/n
+  real=sum(z*math.cos(2*math.pi*440*i/48000) for i,z in enumerate(x))
+  imag=sum(z*math.sin(2*math.pi*440*i/48000) for i,z in enumerate(x))
+  channels.append({'rms':math.sqrt(sum(z*z for z in a)/len(a))/32768,'peak':max(abs(z) for z in a)/32768,'tone_440_ratio':2*(real*real+imag*imag)/(n*n*power) if power else 0})
+ r['samples'][name]={'bytes':len(b),'channels':channels,'stderr':e.decode()}
+r['capture_pcm']=Path('/proc/asound/H713HDMI/pcm0c/sub0/status').read_text();r['playback_pcm']=Path('/proc/asound/Codec/pcm0p/sub0/status').read_text()
+print(json.dumps(r,indent=2))
+'''
+r=subprocess.run(['ssh','-F','/dev/null','-o','BatchMode=yes','-o','ConnectTimeout=5','root@192.168.4.1','python3 -'],input=code,capture_output=True,text=True,timeout=25)
+out.write_text(r.stdout);out.with_suffix('.stderr').write_text(r.stderr);assert r.returncode==0,r.stderr
+r=json.loads(r.stdout)
+for name,v in r['samples'].items():
+ for channel in v['channels']:
+  assert .16<channel['rms']<.25 and channel['tone_440_ratio']>.8,(name,channel)
+print('CONTENT PASS',r['route']['boot_id'],{k:v['channels'] for k,v in r['samples'].items()})

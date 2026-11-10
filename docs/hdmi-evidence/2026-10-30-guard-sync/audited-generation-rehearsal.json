@@ -1,0 +1,17 @@
+{
+  "scope": "offline exact audited-generation fixture; no board access",
+  "audited_backend_files_verified": 18,
+  "before_manifest": "5c57391a0b4e7acde446bf4e2b52319aeca8314693f183095abc08ae960a6631",
+  "after_manifest": "4373e9ecb77e087a1d26c00637c135028942ae84912fb8dbf57ac0c51cc2feac",
+  "changed_existing_files": [
+    "usr/lib/h713-hdmi/SHA256SUMS",
+    "usr/lib/h713-hdmi/h713-hdmi-hold-guard",
+    "usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard"
+  ],
+  "preview": "PASS: no writes",
+  "install": "PASS: only two guards and manifest change",
+  "idempotence": "PASS",
+  "rollback_preview": "PASS: no writes",
+  "rollback": "PASS: original bytes and modes restored",
+  "qualification": "Fixture ownership uses host user; target ownership preserved by installer but not live-verified."
+}

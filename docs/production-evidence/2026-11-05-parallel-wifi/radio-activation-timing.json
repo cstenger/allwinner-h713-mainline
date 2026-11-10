@@ -1,0 +1,25 @@
+{
+  "radio_service_activation_start": 4.621676,
+  "radio_service_active": 8.200645,
+  "radio_activation_duration_seconds": 3.578969,
+  "hdmi_prepare_activation_start": 4.643147,
+  "hdmi_prepare_active": 11.612431,
+  "overlap_seconds": 3.557498,
+  "note": "Use unit activation bounds: multiple ExecStart commands reset ExecMainStart; raw observer v1 last-command overlap is superseded by this measurement.",
+  "native_services": {
+    "h713-aic8800-modules.service": {
+      "ExecMainStartTimestampMonotonic": "8073836",
+      "ExecMainExitTimestampMonotonic": "8200218",
+      "Id": "h713-aic8800-modules.service",
+      "InactiveExitTimestampMonotonic": "4621676",
+      "ActiveEnterTimestampMonotonic": "8200645"
+    },
+    "h713-hdmi-prepare.service": {
+      "ExecMainStartTimestampMonotonic": "4633472",
+      "ExecMainExitTimestampMonotonic": "11610750",
+      "Id": "h713-hdmi-prepare.service",
+      "InactiveExitTimestampMonotonic": "4643147",
+      "ActiveEnterTimestampMonotonic": "11612431"
+    }
+  }
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "mutation": "video gate removed",
+    "test": "test_video_gate_rejects_missing_unlocked_stalled_or_rejected_video",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_video_gate_rejects_missing_unlocked_stalled_or_rejected_video (warm_tests.VideoAndAbrupt.test_video_gate_rejects_missing_unlocked_stalled_or_rejected_video)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 218, in test_video_gate_rejects_missing_unlocked_stalled_or_rejected_video\n    rec=self.video_rec();rec[key]=val;self.assertFalse(c.evaluate(rec,True)['passed'])\n                                      ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: True is not false\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "comparison ignores video",
+    "test": "test_compare_enforces_video_on_both_boots",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_compare_enforces_video_on_both_boots (warm_tests.VideoAndAbrupt.test_compare_enforces_video_on_both_boots)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 228, in test_compare_enforces_video_on_both_boots\n    saved=bad.pop('video');self.assertFalse(c.compare(a,b,True)['passed']);bad['video']=saved\n                           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: True is not false\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "abrupt accepts orderly markers",
+    "test": "test_abrupt_uart_requires_own_markers_and_exactly_one_reset",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_abrupt_uart_requires_own_markers_and_exactly_one_reset (warm_tests.VideoAndAbrupt.test_abrupt_uart_requires_own_markers_and_exactly_one_reset)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 231, in test_abrupt_uart_requires_own_markers_and_exactly_one_reset\n    self.assertEqual(feed(r.reboot_stage('sysrq-b'),data,size=1),['space','done'])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [] != ['space', 'done']\n\nSecond list contains 2 additional elements.\nFirst extra element 0:\n'space'\n\n- []\n+ ['space', 'done']\n\n----------------------------------------------------------------------\nRan 1 test in 0.006s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "extra reset accepted",
+    "test": "test_abrupt_uart_requires_own_markers_and_exactly_one_reset",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_abrupt_uart_requires_own_markers_and_exactly_one_reset (warm_tests.VideoAndAbrupt.test_abrupt_uart_requires_own_markers_and_exactly_one_reset)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 233, in test_abrupt_uart_requires_own_markers_and_exactly_one_reset\n    with self.assertRaises(RuntimeError):r.reboot_stage('sysrq-b').feed(data+data)\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^\nAssertionError: RuntimeError not raised\n\n----------------------------------------------------------------------\nRan 1 test in 0.006s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "boot guard disabled",
+    "test": "test_abrupt_trigger_guards_boot_and_health_before_and_after_sync",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_abrupt_trigger_guards_boot_and_health_before_and_after_sync (warm_tests.VideoAndAbrupt.test_abrupt_trigger_guards_boot_and_health_before_and_after_sync)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 252, in test_abrupt_trigger_guards_boot_and_health_before_and_after_sync\n    self.assertEqual('/proc/sysrq-trigger' in events,should_reset)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: True != False\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "post-sync guard removed",
+    "test": "test_abrupt_trigger_guards_boot_and_health_before_and_after_sync",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_abrupt_trigger_guards_boot_and_health_before_and_after_sync (warm_tests.VideoAndAbrupt.test_abrupt_trigger_guards_boot_and_health_before_and_after_sync)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 252, in test_abrupt_trigger_guards_boot_and_health_before_and_after_sync\n    self.assertEqual('/proc/sysrq-trigger' in events,should_reset)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: True != False\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "reset intent not persisted",
+    "test": "test_reset_intent_is_saved_before_a_failed_request_and_never_retried",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_reset_intent_is_saved_before_a_failed_request_and_never_retried (warm_tests.VideoAndAbrupt.test_reset_intent_is_saved_before_a_failed_request_and_never_retried)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 262, in test_reset_intent_is_saved_before_a_failed_request_and_never_retried\n    with self.assertRaisesRegex(RuntimeError,'uncertain'):run.reboot_from_cold(mock.Mock(data=b''))\n                                                          ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/chris/Projects/h713/tools/serial/run-warm-shared.py\", line 216, in reboot_from_cold\n    if self.reset=='orderly':self.ssh('reboot-request','systemctl reboot --no-block')\n                             ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/mock.py\", line 1176, in __call__\n    return self._mock_call(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/mock.py\", line 1180, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.14/unittest/mock.py\", line 1247, in _execute_mock_call\n    result = effect(*args, **kwargs)\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 259, in request\n    self.assertIn('REBOOT REQUESTED '+reset,(run.out/'events.log').read_text())\n    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'REBOOT REQUESTED orderly' not found in '2026-10-25T03:19:42.887825+00:00 reset without intent\\n'\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "baseline health gate removed",
+    "test": "test_unhealthy_baseline_never_requests_a_reset",
+    "caught": true,
+    "output": "E\n======================================================================\nERROR: test_unhealthy_baseline_never_requests_a_reset (warm_tests.VideoAndAbrupt.test_unhealthy_baseline_never_requests_a_reset)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 268, in test_unhealthy_baseline_never_requests_a_reset\n    with self.assertRaises(RuntimeError):run.reboot_from_cold(mock.Mock(data=b''))\n                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/chris/Projects/h713/tools/serial/run-warm-shared.py\", line 218, in reboot_from_cold\n    script=abrupt_script(rec['boot_id'])\n                         ~~~^^^^^^^^^^^\nKeyError: 'boot_id'\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (errors=1)\n"
+  }
+]

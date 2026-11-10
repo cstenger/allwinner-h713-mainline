@@ -1,0 +1,2 @@
+setenv bootcmd 'if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi'
+=> 

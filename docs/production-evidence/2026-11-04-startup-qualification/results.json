@@ -1,0 +1,267 @@
+{
+  "status": "HOLD: cold 2 strict frame check failed; cold 3 not run",
+  "installed_code_unchanged": true,
+  "warm_passes": 5,
+  "cold_passes": 1,
+  "cold_target": 3,
+  "completed": [
+    {
+      "run": "cold-01-recheck",
+      "boot_id": "4943b6a8-a036-4f03-95a1-f2f778f1238d",
+      "status": "PASS digital",
+      "files_verified": 73,
+      "capture_ready": 14.411427,
+      "video_active": 16.11788,
+      "user_overlap_seconds": 3.580045,
+      "ipc_seconds": [
+        0.42519,
+        0.434892,
+        0.449554,
+        0.44906,
+        0.417637
+      ],
+      "readvertised": 0,
+      "fps": 59.71993410214156,
+      "stability_seconds": 36.42000000000007,
+      "shutdown": "not requested for this baseline",
+      "operator": "pending observation"
+    },
+    {
+      "run": "warm-01-observed",
+      "boot_id": "77e2e862-2402-478f-8604-c6c9916a646e",
+      "status": "PASS digital",
+      "files_verified": 73,
+      "capture_ready": 14.864213,
+      "video_active": 16.567278,
+      "user_overlap_seconds": 3.2615800000000004,
+      "ipc_seconds": [
+        0.424978,
+        0.435052,
+        0.447148,
+        0.435897,
+        0.437268
+      ],
+      "readvertised": 0,
+      "fps": 59.72410062212605,
+      "stability_seconds": 36.97,
+      "shutdown": "PASS: consumers -> signal -> capture -> prepare/user-session",
+      "operator": "User saw desktop and noticed no issues during warm series; no separate per-boot/audio enumeration"
+    },
+    {
+      "run": "warm-02-observed",
+      "boot_id": "47a69dfc-87bb-4c89-867f-7d305f4c23c2",
+      "status": "PASS digital",
+      "files_verified": 73,
+      "capture_ready": 14.400749,
+      "video_active": 16.081305,
+      "user_overlap_seconds": 3.2664910000000003,
+      "ipc_seconds": [
+        0.435917,
+        0.435121,
+        0.447455,
+        0.445793,
+        0.419036
+      ],
+      "readvertised": 0,
+      "fps": 59.69289827255278,
+      "stability_seconds": 36.47,
+      "shutdown": "PASS: consumers -> signal -> capture -> prepare/user-session",
+      "operator": "User saw desktop and noticed no issues during warm series; no separate per-boot/audio enumeration"
+    },
+    {
+      "run": "warm-03",
+      "boot_id": "0d52969b-b5b5-43c4-bf4c-40449a23b65b",
+      "status": "PASS digital",
+      "files_verified": 73,
+      "capture_ready": 14.52006,
+      "video_active": 16.265297,
+      "user_overlap_seconds": 3.303044,
+      "ipc_seconds": [
+        0.437339,
+        0.435742,
+        0.439939,
+        0.437074,
+        0.430592
+      ],
+      "readvertised": 0,
+      "fps": 59.68741579089195,
+      "stability_seconds": 37.11,
+      "shutdown": "PASS: consumers -> signal -> capture -> prepare/user-session",
+      "operator": "User saw desktop and noticed no issues during warm series; no separate per-boot/audio enumeration"
+    },
+    {
+      "run": "warm-04",
+      "boot_id": "3a479719-1f52-41be-b842-48fe4e315ef3",
+      "status": "PASS digital",
+      "files_verified": 73,
+      "capture_ready": 14.406517,
+      "video_active": 16.110208,
+      "user_overlap_seconds": 3.2422009999999997,
+      "ipc_seconds": [
+        0.415209,
+        0.434962,
+        0.449888,
+        0.40781,
+        0.440684
+      ],
+      "readvertised": 0,
+      "fps": 59.691629955947135,
+      "stability_seconds": 36.32,
+      "shutdown": "PASS: consumers -> signal -> capture -> prepare/user-session",
+      "operator": "User saw desktop and noticed no issues during warm series; no separate per-boot/audio enumeration"
+    },
+    {
+      "run": "warm-05",
+      "boot_id": "5ba7d4a0-29e8-41d4-b07e-5634f9ea5022",
+      "status": "PASS digital",
+      "files_verified": 73,
+      "capture_ready": 14.604165,
+      "video_active": 16.342767,
+      "user_overlap_seconds": 3.2847860000000004,
+      "ipc_seconds": [
+        0.425737,
+        0.435362,
+        0.450243,
+        0.438563,
+        0.42075
+      ],
+      "readvertised": 0,
+      "fps": 59.729878721058434,
+      "stability_seconds": 36.28,
+      "shutdown": "PASS: consumers -> signal -> capture -> prepare/user-session",
+      "operator": "User saw desktop and noticed no issues during warm series; no separate per-boot/audio enumeration"
+    }
+  ],
+  "warm_ranges": {
+    "capture_ready": {
+      "min": 14.400749,
+      "max": 14.864213,
+      "median": 14.52006
+    },
+    "video_active": {
+      "min": 16.081305,
+      "max": 16.567278,
+      "median": 16.265297
+    },
+    "fps": {
+      "min": 59.68741579089195,
+      "max": 59.729878721058434,
+      "median": 59.69289827255278
+    },
+    "user_overlap_seconds": {
+      "min": 3.2422009999999997,
+      "max": 3.303044,
+      "median": 3.2664910000000003
+    }
+  },
+  "warm_ipc_seconds": {
+    "min": 0.40781,
+    "max": 0.450243
+  },
+  "notes": [
+    "Five reboot requests, one per warm run; no retry/recovery action.",
+    "First two host-driver transport failures preserved and continued read-only after UART restart proof.",
+    "All five preceding shutdowns verified consumers -> signal -> capture -> prepare/user session."
+  ],
+  "board_state": "Running unchanged; no recovery, service restart, reload, poweroff or further boot requested",
+  "next_previous_boot": "5ba7d4a0-29e8-41d4-b07e-5634f9ea5022",
+  "powerdown_uart": "2026-11-05T02:43:36.109596+00:00 b'[  158.881952] reboot: Power down\\r\\n'",
+  "operator_warm_observation": {
+    "scope": "five warm reboot series",
+    "user_statement": "I saw the desktop, didn't notice any issues",
+    "interpretation": "Desktop observed; no reported issues. Individual boot observations and audible source content were not separately enumerated."
+  },
+  "cold_attempts": 2,
+  "cold_failures": 1,
+  "cold_3": "not run",
+  "cold_02": {
+    "status": "FAIL strict zero-rejection gate; boot series stopped",
+    "boot_id": "f410f943-cb9a-4e72-8ee7-2c8a9c2cc650",
+    "files_verified": 73,
+    "identity_audit": "PASS",
+    "operator": "Confirmed physical cold cycle over one minute and HDMI desktop visible",
+    "first_error_sample": {
+      "uptime": 156.52,
+      "frames_produced": 8372,
+      "errors": {
+        "rejected": 2,
+        "xruns": 0,
+        "bad_guard": 0,
+        "invalid_pair": 0
+      }
+    },
+    "startup_information_not_a_qualification_pass": {
+      "ipc_checks": [
+        {
+          "schema": "h713-mips-ipc-v1",
+          "complete": true,
+          "command": "help win",
+          "reply_bytes": 66,
+          "stale_bytes": 8,
+          "elapsed_seconds": 0.405456
+        },
+        {
+          "schema": "h713-mips-ipc-v1",
+          "complete": true,
+          "command": "help win",
+          "reply_bytes": 66,
+          "stale_bytes": 0,
+          "elapsed_seconds": 0.444847
+        },
+        {
+          "schema": "h713-mips-ipc-v1",
+          "complete": true,
+          "command": "help win",
+          "reply_bytes": 66,
+          "stale_bytes": 0,
+          "elapsed_seconds": 0.4488
+        },
+        {
+          "schema": "h713-mips-ipc-v1",
+          "complete": true,
+          "command": "help win",
+          "reply_bytes": 66,
+          "stale_bytes": 0,
+          "elapsed_seconds": 0.436896
+        },
+        {
+          "schema": "h713-mips-ipc-v1",
+          "complete": true,
+          "command": "help win",
+          "reply_bytes": 66,
+          "stale_bytes": 0,
+          "elapsed_seconds": 0.427776
+        }
+      ],
+      "capture_ready": 14.350594,
+      "video_active": 16.071509,
+      "readvertised": 0
+    },
+    "preceding_shutdown": "PASS: consumers -> signal -> capture -> prepare/user-session",
+    "followup": {
+      "uptimes": [
+        221.98,
+        232.93,
+        243.92
+      ],
+      "frames_produced": [
+        12281,
+        12935,
+        13591
+      ],
+      "rejected": [
+        2,
+        2,
+        2
+      ],
+      "fps": 59.708295350957165,
+      "service_identities_unchanged": true
+    },
+    "unknowns": [
+      "Exact timing and trigger of the two rejected copies were not logged.",
+      "No causal relationship to the startup changes is established."
+    ],
+    "board_state": "Running unchanged; no recovery, service restart, reload, poweroff or further boot requested",
+    "next_cold_cycle": "NOT RUN pending investigation/disposition"
+  }
+}

@@ -1,0 +1,13 @@
+alsa-ctl.c: OK
+enable-mixer.sh: OK
+h713-hdmi-speaker.service: OK
+hdmi-speaker.c: OK
+install-speaker.sh: OK
+pipewire-speaker.py: OK
+{"verified": true, "version": 1, "boot_id": "ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac", "server_pid": 326, "route": {"source": {"id": 51, "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"}, "sink": {"id": 43, "name": "alsa_output.platform-2030000.codec.stereo-fallback"}}, "nodes": {"h713-hdmi-loop-capture": 63, "h713-hdmi-loop-playback": 59}}
+Result=success
+NRestarts=0
+ExecMainPID=1900
+ExecStart={ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 /usr/lib/h713-hdmi-speaker/pipewire-speaker.py run ; ignore_errors=no ; start_time=[Mon 2026-04-13 20:00:35 UTC] ; stop_time=[n/a] ; pid=1900 ; code=(null) ; status=0/0 }
+ExecStopPost={ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 /usr/lib/h713-hdmi-speaker/pipewire-speaker.py release ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+ActiveState=active

@@ -1,0 +1,64 @@
+{"02001d48": "80000002", "02001d4c": "80000002", "05001530": "00000000", "05001534": "00000000"}
+Y
+[    8.265941] bluetooth_set_power: end_block=0
+[    8.314978] Bluetooth: HCI UART driver ver 2.3
+[    8.320691] Bluetooth: HCI UART protocol H4 registered
+[    8.486129] get_txpwr_max:txpwr_max:18 
+[    8.491562] get_txpwr_max:txpwr_max:18 
+[    8.497358] get_txpwr_max:txpwr_max:18 
+[    8.502655] change_if: 2 to 3, 8, 2
+[    8.502688] get_txpwr_max:txpwr_max:18 
+[    8.513513] get_txpwr_max:txpwr_max:18 
+[    9.005887] get_txpwr_max:txpwr_max:18 
+[    9.012360] chan.flags 0 
+[    9.345388] aicwf_sdio mmc1:6721:1 wlan0: AP started: ch=0, bcmc_idx=32 channel=2437 bw=1
+[    9.588595] Bluetooth: MGMT ver 1.23
+[   11.458397] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[   11.495521] Bluetooth: MGMT ver 1.23
+[   11.756756] systemd-journald[107]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   11.781481] systemd-journald[107]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[   11.812151] systemd-journald[107]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   42.805945] h713-hdmi-power: domain 1 power event 2
+[   42.812431] h713-hdmi-power: domain 1 power event 3
+[   42.818762] h713-hdmi-power: domain 1 resumed
+[   42.824992] h713-hdmi-power: domain 2 resumed
+[   42.830421] h713-hdmi-power: 2 domains and 0 receiver clocks held on; no receiver MMIO
+[   43.387006] h713-hdmi-power: enabled clock 0 (bus-tvcap)
+[   45.858007] h713-hdmi-power: enabled clock 1 (bus-cap-300m)
+[   48.321105] h713-hdmi-power: enabled clock 2 (vincap-dma)
+[   50.609277] h713-hdmi-power: enabled clock 3 (tvfe-1296m)
+[   52.940478] h713-edid-clock-hold h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[   76.206999] h713-hdmi-tvfe-hold: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[   76.218243] h713-hdmi-tvfe-hold: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[   76.242990] h713-hdmi-tvfe-hold: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[   76.447707] h713-hdmi-bridge-trial: clock=bus-hdmi-audio inherited_on=1 enabled_by_probe=0 rate=100000000
+[   76.458810] h713-hdmi-bridge-trial: clock=hdmi-audio inherited_on=1 enabled_by_probe=0 rate=1152000000
+[   76.469536] h713-hdmi-bridge-trial: clock=audio-cpu inherited_on=1 enabled_by_probe=0 rate=100000000
+[   76.479990] h713-hdmi-bridge-trial: clock=audio-umac inherited_on=1 enabled_by_probe=0 rate=100000000
+[   76.490404] h713-hdmi-bridge-trial: clock=audio-ihb inherited_on=1 enabled_by_probe=0 rate=100000000
+[   76.500986] h713-hdmi-bridge-trial: audio-IHB clock stock word applied 81000002->81000002
+[   76.510282] h713-hdmi-bridge-trial: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   76.520770] h713-hdmi-bridge-trial: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[   76.533434] h713-hdmi-bridge-trial: Audio Bridge private direct-DMA device ready
+[   76.543192] h713-hdmi-bridge-trial: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   76.557770] h713-hdmi-bridge-trial: Audio Bridge entering stage 2: inert stream registers
+[   76.567090] h713-hdmi-bridge-trial: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   76.578824] h713-hdmi-bridge-trial: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   76.593295] h713-hdmi-bridge-trial: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   76.602474] h713-hdmi-bridge-trial: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   76.615254] h713-hdmi-bridge-trial: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   76.626268] h713-hdmi-bridge-trial: Audio Bridge entering stage 4: flush/start
+[   76.634647] h713-hdmi-bridge-trial: Audio Bridge stage 4 ready; output stream 0 started
+[   76.643800] h713-hdmi-bridge-trial: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   76.654516] h713-hdmi-bridge-trial: SPDI1 activated ctl0=00000000->90000000 ctl1=00000000->00003000 open=1
+[   76.665318] h713-hdmi-bridge-trial: armed; status snapshots available
+[   76.672904] h713-hdmi-bridge-trial: snapshot=1 audif_irq=00000000 audif_mask=00300052 audif_route=00000000 spds=00000000 spdi1_ctl0=90000000 spdi1_ctl1=00003000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000001 audbrg_mask=00000010 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[   76.710781] h713-hdmi-bridge-trial: bridge_snapshot=1 start=006c6000 end=006c6fff block=00000040 config=00002207 flush=00000000 addr_hi=00000070
+[   76.735742] h713-hdmi-bridge-trial: dma_snapshot=1 addr=0x0000000076c60000 changed=0 first=65536 last=0 fnv1a=62519dc5 bridge_irq_count=0 bridge_irq_last=00000000
+[   76.770691] h713-hdmi-dsp-probe: status=00000000; stock lock mapped; no command issued
+[   76.781549] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000000
+[   76.790151] h713-hdmi-dsp-probe: device=0 word=80ff value=0000 response=00000000 status=00000020
+[   76.800220] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[   76.807837] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[   76.816544] h713-hdmi-dsp-probe: device=1 word=80ff value=0000 response=00000000 status=00000120
+[   76.826850] h713-hdmi-dsp-probe: stock DSP lock released ret=0

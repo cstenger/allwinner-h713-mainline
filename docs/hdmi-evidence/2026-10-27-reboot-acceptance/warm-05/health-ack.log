@@ -1,0 +1,28 @@
+{"boot_id": "04be9b19-f2da-4351-b14e-462a62bb5ed9", "gp6_before": "48444f4b", "gp7": "00000000", "dry_run": true, "written": false}
+[   19.927440] h713-arm64 systemd[1]: Starting h713-hdmi-health-ack.service - Acknowledge healthy H713 HDMI shared startup...
+[   21.181738] h713-arm64 python3[415]: {"boot_id": "04be9b19-f2da-4351-b14e-462a62bb5ed9", "gp6_before": "48444d49", "gp7": "00000000", "dry_run": false, "written": true, "gp6_after": "48444f4b"}
+[   21.263103] h713-arm64 systemd[1]: Finished h713-hdmi-health-ack.service - Acknowledge healthy H713 HDMI shared startup.
+Result=success
+NRestarts=0
+Id=h713-hdmi-capture.service
+ActiveState=active
+
+Result=success
+NRestarts=0
+Id=h713-hdmi-signal.service
+ActiveState=active
+
+Result=success
+NRestarts=0
+Id=h713-hdmi-speaker.service
+ActiveState=active
+
+Result=success
+NRestarts=0
+Id=h713-hdmi-video.service
+ActiveState=active
+
+Result=success
+NRestarts=0
+Id=h713-hdmi-health-ack.service
+ActiveState=active

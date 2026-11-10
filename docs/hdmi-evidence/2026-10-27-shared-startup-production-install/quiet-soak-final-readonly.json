@@ -1,0 +1,31 @@
+{
+  "boot_id": "23410156-c962-4d95-99b5-ac5e2dd6e562",
+  "uptime": "27957.83 94293.47",
+  "units": "Result=success\nNRestarts=0\nId=h713-hdmi-capture.service\nActiveState=active\nSubState=exited\nActiveEnterTimestampMonotonic=19413800\n\nResult=success\nNRestarts=0\nId=h713-hdmi-signal.service\nActiveState=active\nSubState=exited\nActiveEnterTimestampMonotonic=19809141\n\nResult=success\nNRestarts=0\nId=h713-hdmi-speaker.service\nActiveState=active\nSubState=running\nActiveEnterTimestampMonotonic=19891350\n\nResult=success\nNRestarts=0\nId=h713-hdmi-video.service\nActiveState=active\nSubState=running\nActiveEnterTimestampMonotonic=21194860\n\nResult=success\nNRestarts=0\nId=h713-hdmi-health-ack.service\nActiveState=active\nSubState=exited\nActiveEnterTimestampMonotonic=21084459\n",
+  "samples": [
+    {
+      "t": 27957.941594164,
+      "video": {
+        "frames_produced": 1668031,
+        "frames_delivered": 1667937,
+        "frames_rejected": 0
+      },
+      "xruns": "0",
+      "capture": "state: RUNNING\nowner_pid   : 404\ntrigger_time: 20.993164051\ntstamp      : 27957.942935955\ndelay       : 160\navail       : 160\navail_max   : 704\n-----\nhw_ptr      : 1340973564\nappl_ptr    : 1340973404",
+      "playback": "state: RUNNING\nowner_pid   : 404\ntrigger_time: 27863.630644660\ntstamp      : 0.000000000\ndelay       : 3680\navail       : 160\navail_max   : 3840\n-----\nhw_ptr      : 4527040\nappl_ptr    : 4530720",
+      "signal": "locked 1280x720"
+    },
+    {
+      "t": 27960.94358354,
+      "video": {
+        "frames_produced": 1668210,
+        "frames_delivered": 1668116,
+        "frames_rejected": 0
+      },
+      "xruns": "0",
+      "capture": "state: RUNNING\nowner_pid   : 404\ntrigger_time: 20.993164051\ntstamp      : 27960.945719124\ndelay       : 256\navail       : 256\navail_max   : 544\n-----\nhw_ptr      : 1341117692\nappl_ptr    : 1341117440",
+      "playback": "state: RUNNING\nowner_pid   : 404\ntrigger_time: 27863.630644660\ntstamp      : 0.000000000\ndelay       : 3552\navail       : 288\navail_max   : 512\n-----\nhw_ptr      : 4671168\nappl_ptr    : 4674720",
+      "signal": "locked 1280x720"
+    }
+  ]
+}

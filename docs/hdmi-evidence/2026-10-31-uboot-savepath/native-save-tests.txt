@@ -1,0 +1,19 @@
+PASS actual native save/export/device: good, boot MMC2
+PASS actual native save/export/device: node-no-prop, boot MMC2
+PASS actual native save/export/device: init-fail, boot MMC2
+PASS actual native save/export/device: export-fail, boot MMC2
+PASS actual native save/export/device: offset-invalid, boot MMC2
+PASS actual native save/export/device: short, boot MMC2
+PASS actual native save/export/device: zero, boot MMC2
+PASS actual native save/export/device: good, boot MMC1
+CAUGHT original narrowing
+CAUGHT wrong old-slot write
+CAUGHT eMMC device wrong
+CAUGHT SD mapping wrong
+CAUGHT init error ignored
+CAUGHT export error ignored
+CAUGHT invalid-offset status ignored
+CAUGHT short/zero write accepted
+CAUGHT extent shortened
+CAUGHT partition restoration omitted
+PASS all 10 native-save mutations caught; all 8 cases fail under a relevant fault

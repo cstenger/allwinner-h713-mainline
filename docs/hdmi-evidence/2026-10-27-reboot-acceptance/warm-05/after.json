@@ -1,0 +1,83 @@
+{
+  "label": "warm",
+  "boot_id": "04be9b19-f2da-4351-b14e-462a62bb5ed9",
+  "uptime": 35.12,
+  "handoff": "48444d49000000008b8f275c",
+  "units": {
+    "h713-hdmi-capture": "active",
+    "h713-hdmi-signal": "active"
+  },
+  "check_startup": {
+    "rc": 0,
+    "output": "== boot 04be9b19-f2da-4351-b14e-462a62bb5ed9 6.18.38 up 35.20s\nhandoff 48444d49000000008b8f275c\nh713-hdmi-capture: success 0 active yes \nh713-hdmi-signal: success 0 active yes \nh713_hdmi_receiver.clock_count=4\nh713_hdmi_receiver.init_error=0\nh713_hdmi_receiver.firmware_pin=Y\nh713_hdmi_receiver.edid_ready=Y\nh713_hdmi_receiver.clients=2\nh713_hdmi_audio.dsp_failed=N\nh713_hdmi_audio.manage_dsp=Y\nh713_hdmi_audio.manage_tvfe=Y\nh713_hdmi_signal.ready=Y\nh713_hdmi_signal.failed=N\nh713_hdmi_signal.restored=N\n[   18.446070] h713-hdmi-audio: DSP versions 0000/0000\n[   19.366284] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1\nstate: RUNNING\nowner_pid   : 424\ntrigger_time: 21.151063383\ntstamp      : 35.498909390\ndelay       : 192\navail       : 192\navail_max   : 512\n-----\nhw_ptr      : 688668\nappl_ptr    : 688476\nrtc gp6 latch unknown from Linux (U-Boot checked)\nApr 13 19:38:10 h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...\nApr 13 19:38:22 h713-arm64 python3[205]: {\"phase\": \"ready\", \"already_ready\": false}\nApr 13 19:38:22 h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.\nApr 13 19:38:22 h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...\nApr 13 19:38:22 h713-arm64 python3[388]: EDID/HPD ready; receiver client and DDC pins retained\nApr 13 19:38:22 h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.\nPASS\n"
+  },
+  "speaker": "active",
+  "speaker_wait_s": 0.0,
+  "flow": [
+    {
+      "t": 35.62153889,
+      "periods": 2671,
+      "xruns": 0,
+      "capture_state": "state: RUNNING",
+      "capture_owner": "hdmi-speaker",
+      "capture_ptr": 694524,
+      "play_state": "state: RUNNING",
+      "play_owner": "hdmi-speaker",
+      "play_ptr": 693216
+    },
+    {
+      "t": 38.6289161,
+      "periods": 3226,
+      "xruns": 0,
+      "capture_state": "state: RUNNING",
+      "capture_owner": "hdmi-speaker",
+      "capture_ptr": 838876,
+      "play_state": "state: RUNNING",
+      "play_owner": "hdmi-speaker",
+      "play_ptr": 837568
+    }
+  ],
+  "dsp_lines": [
+    "h713-hdmi-audio: DSP versions 0000/0000",
+    "h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1"
+  ],
+  "video": [
+    {
+      "t": 38.679332975,
+      "signal": "locked 1280x720",
+      "units": {
+        "h713-hdmi-ring": "active",
+        "h713-hdmi-video": "active"
+      },
+      "counters": {
+        "frames_produced": 1030,
+        "frames_delivered": 1028,
+        "frames_rejected": 0
+      }
+    },
+    {
+      "t": 41.778897435,
+      "signal": "locked 1280x720",
+      "units": {
+        "h713-hdmi-ring": "active",
+        "h713-hdmi-video": "active"
+      },
+      "counters": {
+        "frames_produced": 1213,
+        "frames_delivered": 1212,
+        "frames_rejected": 0
+      }
+    }
+  ],
+  "video_status": "\u25cf h713-hdmi-ring.service - H713 HDMI-in capture bridge\n     Loaded: loaded (/etc/systemd/system/h713-hdmi-ring.service; enabled; preset: enabled)\n     Active: active (exited) since Mon 2026-04-13 19:38:23 UTC; 21s ago\n Invocation: f635f942f2e8465caf82174dbb5755ce\n    Process: 416 ExecStart=/sbin/insmod ${H713_BRIDGE} completion=pair (code=exited, status=0/SUCCESS)\n   Main PID: 416 (code=exited, status=0/SUCCESS)\n        CPU: 50ms\n\nApr 13 19:38:22 h713-arm64 systemd[1]: Starting h713-hdmi-ring.service - H713 HDMI-in capture bridge...\nApr 13 19:38:23 h713-arm64 systemd[1]: Finished h713-hdmi-ring.service - H713 HDMI-in capture bridge.\n\n\u25cf h713-hdmi-video.service - H713 HDMI input on the panel\n     Loaded: loaded (/etc/systemd/system/h713-hdmi-video.service; static)\n     Active: active (running) since Mon 2026-04-13 19:38:23 UTC; 20s ago\n Invocation: 9c36cc283d5d43c3b98607266c96c8a7\n   Main PID: 546 (gst-launch-1.0)\n        CPU: 2.541s\n     CGroup: /system.slice/h713-hdmi-video.service\n             \u2514\u2500546 /usr/bin/gst-launch-1.0 -e -q v4l2src device=/dev/h713-hdmi-in io-mode=dmabuf \"!\" video/x-raw,format=NV12 \"!\" kmssink driver-name=sun50i-h713-afbd sync=false skip-vsync=true\n\nApr 13 19:38:23 h713-arm64 systemd[1]: Started h713-hdmi-video.service - H713 HDMI input on the panel.\n",
+  "video_properties": "Result=success\nNRestarts=0\nExecMainStartTimestampMonotonic=21197241\nActiveState=active\nActiveEnterTimestampMonotonic=21199349\n",
+  "video_journal": "[   19.932204] h713-arm64 systemd[1]: Starting h713-hdmi-ring.service - H713 HDMI-in capture bridge...\n[   20.474982] h713-arm64 systemd[1]: Finished h713-hdmi-ring.service - H713 HDMI-in capture bridge.\n[   21.199445] h713-arm64 systemd[1]: Started h713-hdmi-video.service - H713 HDMI input on the panel.\n",
+  "bridge_dmesg": [
+    "h713-hdmi-v4l2: completion from the AFBD capture pair",
+    "h713-hdmi-v4l2: using DMA-contiguous capture buffers",
+    "h713-hdmi-v4l2: initial signal none 0x0 after 20 samples",
+    "h713-hdmi-v4l2: read-only 1280x720 NV16/NV12 cacheable ring at /dev/video2",
+    "h713-hdmi-v4l2: signal acquiring 0x0",
+    "h713-hdmi-v4l2: signal locked 1280x720 (source change)"
+  ]
+}

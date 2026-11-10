@@ -1,0 +1,54 @@
+{
+  "path": "build/hdmi-reset-baseline-2026-10-20/instrumented-cold.serial.log",
+  "sha256": "03ba48aaa2901685be4ea2fa328711bbc0a84c592bd32424f6d43506d7d838d9",
+  "records": [
+    {
+      "stage": "proper_preboot",
+      "occurrence": 1,
+      "line": 22,
+      "gp6": "00000000",
+      "gp7": "00000000",
+      "mips_clk": "00000000",
+      "mips_reset": "00000000",
+      "mips_status": "00000000"
+    },
+    {
+      "stage": "pre_workspace",
+      "occurrence": 1,
+      "line": 41,
+      "gp6": "48444d49",
+      "gp7": "00000000",
+      "mips_clk": "00000000",
+      "mips_reset": "00000000",
+      "mips_status": "00000000"
+    },
+    {
+      "stage": "post_logo",
+      "occurrence": 1,
+      "line": 106,
+      "gp6": "48444d49",
+      "gp7": "00000000",
+      "mips_clk": "80000002",
+      "mips_reset": "00000000",
+      "mips_status": "00000000"
+    },
+    {
+      "stage": "pre_workspace",
+      "occurrence": 2,
+      "line": 109,
+      "gp6": "48444d49",
+      "gp7": "00000000",
+      "mips_clk": "80000002",
+      "mips_reset": "00000000",
+      "mips_status": "00000000"
+    }
+  ],
+  "coverage": {
+    "spl_pre_dram": 0,
+    "spl_post_dram": 0,
+    "proper_preboot": 1,
+    "pre_workspace": 2,
+    "post_logo": 1,
+    "manual": 0
+  }
+}

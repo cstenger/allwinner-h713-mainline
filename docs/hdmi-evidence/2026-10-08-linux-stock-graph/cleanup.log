@@ -1,0 +1,46 @@
+[  176.087991] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  176.096754] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  176.107677] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  176.116433] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  176.127335] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  176.136101] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  176.146991] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  176.155741] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  176.166599] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  176.175299] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  176.186115] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  176.194781] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  176.205561] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  176.214188] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  176.224932] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  176.233493] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  176.243066] h713-hdmi-dsp-probe: fixed stock graph comparison=0 verified
+[  176.251054] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  206.984350] h713-hdmi-bridge-trial: restored SPDI1 ctl0=00000000 ctl1=00000000
+[  206.993291] h713-hdmi-bridge-trial: restored Audio Bridge output stream 0
+[  207.001837] h713-hdmi-bridge-trial: restored audio-top ctl=00000000 cfg=00000000
+[  207.010558] h713-hdmi-bridge-trial: restored audio-IHB clock=81000002
+[  207.018298] h713-hdmi-bridge-trial: removed; clocks enabled by the probe restored to off
+[  207.052521] h713-hdmi-tvfe-hold: saved TVFE clock/reset state restored
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win
+command help of win
+for window debug only
+
+VS:/$ 
+h713_edid_clock 12288 0 - Live 0xffff80007924f000 (O)
+h713_hdmi_power 12288 0 - Live 0xffff800079227000 (O)
+hci_uart 28672 1 - Live 0xffff80007920c000
+hy310_cpu_comm 98304 0 - Live 0xffff8000792ba000
+sunxi_scanout_dmabuf 12288 0 - Live 0xffff8000792b4000
+uinput 20480 0 - Live 0xffff8000792a9000
+hantro_vpu 196608 0 - Live 0xffff800079272000
+v4l2_h264 16384 1 hantro_vpu, Live 0xffff800079204000
+sunxi_cedrus 81920 0 - Live 0xffff800079253000 (O)
+v4l2_jpeg 12288 1 hantro_vpu, Live 0xffff800079249000
+panfrost 77824 0 - Live 0xffff800079229000
+v4l2_vp9 28672 2 hantro_vpu,sunxi_cedrus, Live 0xffff80007921b000
+aic8800_btlpm 12288 0 - Live 0xffff800079179000 (O)
+aic8800_fdrv 516096 0 - Live 0xffff800079182000 (O)
+aic8800_bsp 90112 2 aic8800_btlpm,aic8800_fdrv, Live 0xffff800079160000 (O)

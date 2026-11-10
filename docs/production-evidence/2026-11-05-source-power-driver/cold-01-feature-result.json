@@ -1,0 +1,35 @@
+{
+  "status": "Stream cold-window PASS; combined power/retry qualification FAIL; v2 correction installed for repeat",
+  "boot_id": "1a839574-8c2d-4ee0-ac20-4d361c81a701",
+  "stream": {
+    "status": "VALID matched observation",
+    "arm": "optimized",
+    "boot_id": "1a839574-8c2d-4ee0-ac20-4d361c81a701",
+    "issues": [],
+    "video_ready": 16.191347,
+    "window_end": 316.191347,
+    "first_live_sample": 61.36,
+    "last_live_sample": 316.37,
+    "fps": 59.707462452452845,
+    "rejected_at_window_end": 0,
+    "trace_lines": [],
+    "strict_zero_rejection_qualification": "not evaluated or waived by this experiment"
+  },
+  "control_initial": {
+    "kind": "initial",
+    "monotonic": 57.058649359,
+    "value": 1,
+    "flags": 4100,
+    "available": true,
+    "name": "Power Present"
+  },
+  "readonly_write": "EACCES13, passed",
+  "initial_ctrl_event": "received; value1 and READ_ONLY",
+  "failures": [
+    "Empty event queue returned ENOENT; original reader only accepted EAGAIN, causing retry to use unknown-status timeout fallback.",
+    "Cold firmware power cache starts0 with source physically attached. Initial negative must be unknown until a positive sample has qualified subsequent negatives."
+  ],
+  "preserved_evidence": "cold-01-power/events.jsonl and observer.stderr retain initial reader failure; events-fixed-reader.jsonl retains successful corrected reader",
+  "corrections": "source-v2 module, package-v2 retry script and manifests; ENOENT coverage and real driver cold-sample body tests pass",
+  "remaining": "Fresh-source cold boot and power/control-event plus retry-suppression physical tests"
+}

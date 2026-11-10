@@ -1,0 +1,86 @@
+--- a/drivers/pmdomain/sunxi/sun50i-h713-ppu.c
++++ b/drivers/pmdomain/sunxi/sun50i-h713-ppu.c
+@@ -100,10 +100,14 @@
+ 		stage, gate, tvfe, tvcap);
+ }
+ 
++#include "h713-retention-hold.inc"
++
+ static int __init h713_tvfe_trace_early(void)
+ {
+-	if (!h713_tvfe_trace_enabled)
++	if (!h713_tvfe_trace_enabled) {
++		h713_tvfe_retain_check();
+ 		return 0;
++	}
+ 	if (!of_machine_is_compatible("allwinner,sun50i-h713")) {
+ 		pr_err("H713 TVFE trace: wrong machine; disabled\n");
+ 		h713_tvfe_trace_enabled = false;
+@@ -120,6 +124,7 @@
+ 	}
+ 	/* Retain these read-only diagnostic mappings for later callbacks. */
+ 	h713_tvfe_boot_trace("linux_early_initcall");
++	h713_tvfe_retain_check();
+ 	return 0;
+ }
+ early_initcall(h713_tvfe_trace_early);
+@@ -185,6 +190,12 @@
+ 	void __iomem *pwr_reg    = h713_ppu_reg(pd, H713_PPU_PWR_CTRL);
+ 	u32 val;
+ 	int ret;
++
++	if (h713_tvfe_retain_requested && pd->hw_id == 1) {
++		h713_tvfe_retain_violated = true;
++		h713_tvfe_retain_applied = false;
++		pr_err("H713 RETENTION violated: TVFE power command on=%d\n", on);
++	}
+ 
+ 	/* Wait for domain idle before switching */
+ 	ret = readl_poll_timeout(status_reg, val,
+@@ -318,7 +329,8 @@
+ 
+ 	for (i = 0; i < H713_PPU_NUM_DOMAINS; i++) {
+ 		struct h713_ppu_pd *pd = &pds[i];
+-		bool always_on = h713_ppu_hw_ids[i] < 0 ||
++		bool retain = h713_tvfe_retain_eligible && i == 1;
++		bool always_on = retain || h713_ppu_hw_ids[i] < 0 ||
+ 			(keep_tvcap_on && i == H713_PPU_TVCAP_DOMAIN);
+ 
+ 		pd->base    = base;
+@@ -327,9 +339,18 @@
+ 		pd->genpd.power_on  = h713_ppu_power_on;
+ 		pd->genpd.power_off = h713_ppu_power_off;
+ 
++		if (retain && !h713_ppu_is_on(pd)) {
++			ret = -EIO;
++			goto err_remove_domains;
++		}
++
+ 		if (always_on) {
+ 			if (pd->hw_id >= 0)
+ 				h713_ppu_init_domain(pd);
++			if (retain && !h713_ppu_is_on(pd)) {
++				ret = -EIO;
++				goto err_remove_domains;
++			}
+ 			pd->genpd.flags = GENPD_FLAG_ALWAYS_ON;
+ 			ret = pm_genpd_init(&pd->genpd, NULL, false);
+ 		} else {
+@@ -352,6 +373,11 @@
+ 		goto err_remove_domains;
+ 	}
+ 
++	h713_tvfe_retain_applied = h713_tvfe_retain_eligible &&
++		!h713_tvfe_retain_violated && h713_ppu_is_on(&pds[1]);
++	if (h713_tvfe_retain_requested)
++		pr_notice("H713 RETENTION applied=%d; TVFE always-on bench flag\n",
++			h713_tvfe_retain_applied);
+ 	h713_tvfe_boot_trace("ppu_probe_complete");
+ 	dev_info(dev, "H713 PPU: %d power domains registered\n",
+ 		 H713_PPU_NUM_DOMAINS);
+@@ -391,3 +417,5 @@
+ MODULE_AUTHOR("HY310 Project <re@allwinner-h713>");
+ MODULE_DESCRIPTION("Allwinner H713 PRCM power domain driver (RE from stock kernel)");
+ MODULE_LICENSE("GPL");
++
++#include "h713-retention-observer.inc"

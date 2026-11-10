@@ -1,0 +1,80 @@
+[
+  {
+    "uptime": 387.065630891,
+    "command": "stop"
+  },
+  {
+    "uptime": 387.069037558,
+    "pcm": "state: RUNNING;trigger_time: 26.737585844",
+    "gpio": "gpio-2   (                    |allwinner,pa        ) out hi",
+    "regs": "324: 80808c44"
+  },
+  {
+    "uptime": 387.372704558,
+    "pcm": "",
+    "gpio": "gpio-2   (                    |allwinner,pa        ) out hi",
+    "regs": "324: 80808c44"
+  },
+  {
+    "uptime": 392.426642977,
+    "pcm": "",
+    "gpio": "gpio-2   (                    |allwinner,pa        ) out lo",
+    "regs": "324: 80800c44"
+  },
+  {
+    "uptime": 393.386117936,
+    "command": "start"
+  },
+  {
+    "uptime": 393.670202269,
+    "pcm": "state: OPEN;trigger_time: 0.000000000",
+    "gpio": "gpio-2   (                    |allwinner,pa        ) out lo",
+    "regs": "324: 80800c44"
+  },
+  {
+    "uptime": 393.696908019,
+    "pcm": "state: SETUP;trigger_time: 0.000000000",
+    "gpio": "gpio-2   (                    |allwinner,pa        ) out lo",
+    "regs": "324: 80808c44"
+  },
+  {
+    "uptime": 394.419888269,
+    "pcm": "state: PREPARED;trigger_time: 0.000000000",
+    "gpio": "gpio-2   (                    |allwinner,pa        ) out hi",
+    "regs": "324: 80808c44"
+  },
+  {
+    "uptime": 394.446765894,
+    "pcm": "state: RUNNING;trigger_time: 394.424478144",
+    "gpio": "gpio-2   (                    |allwinner,pa        ) out hi",
+    "regs": "324: 80808c44"
+  }
+]
+[   20.289460] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[   20.364798] h713-arm64 enable-mixer.sh[399]: DAC Playback Volume                          set to 43   [0..63]
+[   20.367664] h713-arm64 enable-mixer.sh[400]: Line Out Playback Volume                     set to 15   [0..31]
+[   20.369696] h713-arm64 enable-mixer.sh[401]: Line Out Playback Switch                     set to 1 1
+[   20.371675] h713-arm64 enable-mixer.sh[402]: Speaker Switch                               set to 1
+[   20.376931] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[   21.648861] h713-arm64 hdmi-speaker[404]: HDMI speaker ready; fading in after silent pre-roll
+[  387.100436] h713-arm64 systemd[1]: Stopping h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[  387.380108] h713-arm64 systemd[1]: h713-hdmi-speaker.service: Deactivated successfully.
+[  387.380658] h713-arm64 systemd[1]: Stopped h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[  387.381843] h713-arm64 systemd[1]: h713-hdmi-speaker.service: Consumed 32.675s CPU time.
+[  393.426847] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[  393.491800] h713-arm64 enable-mixer.sh[611]: DAC Playback Volume                          set to 43   [0..63]
+[  393.494109] h713-arm64 enable-mixer.sh[612]: Line Out Playback Volume                     set to 15   [0..31]
+[  393.496404] h713-arm64 enable-mixer.sh[613]: Line Out Playback Switch                     set to 1 1
+[  393.499551] h713-arm64 enable-mixer.sh[614]: Speaker Switch                               set to 1
+[  393.504649] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[  393.651312] h713-arm64 hdmi-speaker[616]: 0:00:00.087493917   616 0xffffa0000b70 INFO                    alsa gstalsasrc.c:342:gst_alsasrc_getcaps:<alsasrc0> template caps audio/x-raw, format=(string){ F64LE, F64BE, F32LE, F32BE, S32LE, S32BE, U32LE, U32BE, S24_32LE, S24_32BE, U24_32LE, U24_32BE, S24LE, S24BE, U24LE, U24BE, S20LE, S20BE, U20LE, U20BE, S18LE, S18BE, U18LE, U18BE, S16LE, S16BE, U16LE, U16BE, S8, U8 }, layout=(string)interleaved, rate=(int)[ 1, 2147483647 ], channels=(int)[ 1, 2147483647 ]
+[  393.652511] h713-arm64 hdmi-speaker[616]: 0:00:00.087755917   616 0xffffa0000b70 INFO                    alsa gstalsa.c:761:gst_alsa_probe_supported_formats:<alsasrc0> DSD support not detected
+[  393.652511] h713-arm64 hdmi-speaker[616]: 0:00:00.087811167   616 0xffffa0000b70 INFO                    alsa gstalsasrc.c:352:gst_alsasrc_getcaps:<alsasrc0> returning caps audio/x-raw, format=(string)S16LE, layout=(string)interleaved, rate=(int)48000, channels=(int)2, channel-mask=(bitmask)0x0000000000000003
+[  393.652804] h713-arm64 hdmi-speaker[616]: 0:00:00.088843500   616 0xffffa0000b70 INFO                    alsa gstalsa.c:761:gst_alsa_probe_supported_formats:<alsasink0> DSD support not detected
+[  393.652804] h713-arm64 hdmi-speaker[616]: 0:00:00.089043875   616 0xffffa0000b70 WARN                    alsa conf.c:5570:parse_args: alsalib error: Parameter DEV must be an integer
+[  393.653058] h713-arm64 hdmi-speaker[616]: 0:00:00.089083459   616 0xffffa0000b70 WARN                    alsa conf.c:5712:snd_config_expand: alsalib error: Parse arguments error: Invalid argument
+[  393.653058] h713-arm64 hdmi-speaker[616]: 0:00:00.089110625   616 0xffffa0000b70 WARN                    alsa pcm.c:2722:snd_pcm_open_noupdate: alsalib error: Unknown PCM plughw:Codec,0:{AES0 0x02 AES1 0x82 AES2 0x00 AES3 0x02}
+[  393.653058] h713-arm64 hdmi-speaker[616]: 0:00:00.089265125   616 0xffffa0000b70 INFO                    alsa gstalsasink.c:338:gst_alsasink_getcaps:<alsasink0> returning caps audio/x-raw, format=(string){ F64LE, F32LE, S32LE, U32LE, S24_32LE, U24_32LE, S24LE, U24LE, S16LE, U16LE, S8, U8 }, layout=(string)interleaved, rate=(int)[ 4000, 2147483647 ], channels=(int)2, channel-mask=(bitmask)0x0000000000000003; audio/x-raw, format=(string){ F64LE, F32LE, S32LE, U32LE, S24_32LE, U24_32LE, S24LE, U24LE, S16LE, U16LE, S8, U8 }, layout=(string)interleaved, rate=(int)[ 4000, 2147483647 ], channels=(int)1; audio/x-raw, format=(string){ F64LE, F32LE, S32LE, U32LE, S24_32LE, U24_32LE, S24LE, U24LE, S16LE, U16LE, S8, U8 }, layout=(string)interleaved, rate=(int)[ 4000, 2147483647 ], channels=(int)3, channel-mask=(bitmask)0x000000000000000b; audio/x-raw, format=(string){ F64LE, F32LE, S32LE, U32LE, S24_32LE, U24_32LE, S24LE, U24LE, S16LE, U16LE, S8, U8 }, layout=(string)interleaved, rate=(int)[ 4000, 2147483647 ], channels=(int)4, channel-mask=(bitmask)0x0000000000000033; audio/x-raw, format=(string){ F64LE, F32LE, S32LE, U32LE, S24_32LE, U24_32LE, S24LE, U24LE, S16LE, U16LE, S8, U8 }, layout=(string)interleaved, rate=(int)[ 4000, 2147483647 ], channels=(int)6, channel-mask=(bitmask)0x000000000000003f; audio/x-raw, format=(string){ F64LE, F32LE, S32LE, U32LE, S24_32LE, U24_32LE, S24LE, U24LE, S16LE, U16LE, S8, U8 }, layout=(string)interleaved, rate=(int)[ 4000, 2147483647 ], channels=(int)8, channel-mask=(bitmask)0x0000000000000c3f
+[  393.658405] h713-arm64 hdmi-speaker[616]: 0:00:00.094613209   616 0xffffa0000b70 WARN                    alsa pcm_hw.c:1445:snd_pcm_hw_get_chmap: alsalib error: Cannot read Channel Map ctl: No such file or directory
+[  394.397280] h713-arm64 hdmi-speaker[616]: 0:00:00.833477209   616 0xffffa0000b70 WARN                    alsa pcm_hw.c:1445:snd_pcm_hw_get_chmap: alsalib error: Cannot read Channel Map ctl: No such file or directory
+[  394.705306] h713-arm64 hdmi-speaker[616]: HDMI speaker ready; fading in after silent pre-roll

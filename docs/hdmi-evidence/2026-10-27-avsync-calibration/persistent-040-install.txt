@@ -1,0 +1,16 @@
+NRestarts=0
+Id=h713-hdmi-speaker.service
+ActiveState=active
+
+NRestarts=0
+Id=h713-hdmi-video.service
+ActiveState=active
+{"verified": true, "version": 1, "boot_id": "e0d594d9-32e8-458e-b674-2c19121eb64b", "server_pid": 322, "route": {"source": {"id": 51, "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"}, "sink": {"id": 43, "name": "alsa_output.platform-2030000.codec.stereo-fallback"}}, "nodes": {"h713-hdmi-loop-capture": 57, "h713-hdmi-loop-playback": 65}}
+
+# HY200 QZ713DF_A1 bench calibration, 2026-10-27
+# 720p60 HDMI, internal codec/speaker; camera-qualified, absolute camera bias unmeasured.
+# PipeWire target delay, not an additive delay; see A/V calibration evidence.
+H713_HDMI_AUDIO_DELAY_SEC=0.040
+
+Running command: pw-loopback --name=h713-hdmi-speaker --channels=2 --channel-map=[ FL, FR ] --latency=20 --delay=0.04 --capture=alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback --playback=alsa_output.platform-2030000.codec.stereo-fallback --capture-props={ node.name=h713-hdmi-loop-capture node.dont-fallback=true audio.rate=48000 } --playback-props={ node.name=h713-hdmi-loop-playback node.dont-fallback=true audio.rate=48000 } 
+Delay environment: ['H713_HDMI_AUDIO_DELAY_SEC=0.040']

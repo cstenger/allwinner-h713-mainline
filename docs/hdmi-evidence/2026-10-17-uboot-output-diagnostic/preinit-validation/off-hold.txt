@@ -1,0 +1,6 @@
+sleep 3; echo H713_PREINIT_HOLD_DONE; md.l 0x02000100 1; md.l 0x02000160 1; echo H713_PREINIT_HOLD_END
+H713_PREINIT_HOLD_DONE
+02000100: 00000000                             ....
+02000160: 00000000                             ....
+H713_PREINIT_HOLD_END
+=> 

@@ -1,0 +1,9 @@
+Commit review: 2026-10-28
+PASS 8 electronic analysis checks, 8 faulty variants caught
+PASS 3 independent camera checks, 3 faulty variants caught
+PASS host native compile -O2 -Wall -Wextra -Werror
+PASS 5 invalid probe durations rejected before hardware access
+PASS all evidence JSON parses and all electronic summaries reproduce
+PASS all 3 camera summaries reproduce from retained signals and original MOV hashes match
+Source alignment and shifted-source negative check: source-validation-v2.json
+Hardware saved-setting restart and warm reboot: persistent-040-* and warm-persistence/

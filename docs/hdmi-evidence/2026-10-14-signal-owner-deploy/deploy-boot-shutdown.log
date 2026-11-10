@@ -1,0 +1,18 @@
+[   80.544095] h713-arm64 h713-signal-owner-deploy: poweroff after update
+[   80.682518] h713-arm64 systemd[1]: Stopping h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[   80.984082] h713-arm64 kernel: h713-hdmi-signal: peripheral, SRAM and vectors restored; SCP stopped; receiver client released
+[   81.036047] h713-arm64 kernel: h713-ddc-pins: DDC pins returned to inputs and ownership released
+[   81.050792] h713-arm64 python3[642]: EDID/HPD, SCP SRAM/vectors and DDC ownership restored
+[   81.199053] h713-arm64 systemd[1]: h713-hdmi-signal.service: Deactivated successfully.
+[   81.199704] h713-arm64 systemd[1]: Stopped h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[   81.228801] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+[   82.083617] h713-arm64 kernel: h713-hdmi-audio: managed DSP graph restored 22 words
+[   82.128556] h713-arm64 kernel: h713-hdmi-audio: managed TVFE clock/reset state restored; 15 clock words and bus verified
+[   85.873444] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 0 asserted and verified
+[   85.873985] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 1 asserted and verified
+[   85.889050] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 2 asserted and verified
+[   85.889399] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required
+[   86.187197] h713-arm64 python3[659]: {"phase": "parked", "receiver_removed": true, "cold_boot_required": true, "audio_stop": {"phase": "stopped", "already_stopped": false, "receiver_retained": true, "dsp_restored_words": 22, "tvfe_restored_words": 15}}
+[   86.266343] h713-arm64 systemd[1]: h713-hdmi-capture.service: Deactivated successfully.
+[   86.267408] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+[   86.269778] h713-arm64 systemd[1]: h713-hdmi-capture.service: Consumed 1.671s CPU time.

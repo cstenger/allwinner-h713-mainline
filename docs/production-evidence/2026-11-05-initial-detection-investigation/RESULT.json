@@ -1,0 +1,35 @@
+{
+  "schema": "h713-first-advert-investigation-v1",
+  "status": "Control B reproduces initial miss without parallel radio; timing control pending",
+  "board_boot": "b98ade5e-f2c6-4f9e-a89f-65839843c788",
+  "current_board_configuration": "B: original global radio startup, optimized HDMI, bootdelay=0, unchanged reject-trace-v1 guard",
+  "observations": {
+    "first": "071a94ba-4847-4beb-9cc1-fd0cfaba47a7",
+    "second": "2f6e62e1-b588-43f4-9e12-af587acf5fd5",
+    "host_boot": "8746c44d-dc57-478b-90aa-9d4668c38270",
+    "first_board_spl_local": "2026-11-05T02:13:04.564799-08:00",
+    "second_board_spl_local": "2026-11-05T16:44:36.270417-08:00",
+    "host_start_local": "2026-11-05T16:41:49-08:00",
+    "second_after_host_start_seconds": 167.27041697502136,
+    "edid_ready_first": 12.43251,
+    "edid_ready_second": 12.511234,
+    "video_first": 13.850639,
+    "video_second": 26.251073,
+    "second_retries": 1,
+    "radio_and_rc_checks": "Both boots pass"
+  },
+  "interpretation": "Initial miss reproduced without parallel AIC startup. Parallel radio is not necessary for the miss; startup timing and source-history effects remain unresolved. This is a failure of the no-retry gate, retained as a causal trial outcome.",
+  "existing_events": {
+    "video_signal": "uevent states plus V4L2_SOURCE_CHANGE on resolution lock; none is not a cable indicator",
+    "source_power": "No validated/exposed 5V-present control in current H713 bridge",
+    "firmware_hotplug": "Known CPU_COMM callback IDs and per-fd observation transport; emitted semantics/registration and 5V meaning need validation",
+    "port_status_RPC": "Previously tested nibble 0x2 depended on EDID clock/reset and occurred both without video and with video; not a validated cable detector"
+  },
+  "retry_policy": {
+    "current": "10/20/40/80/160s no-signal deadlines, 2s HPD hold, suppress on acquiring/locked/holding/unsupported",
+    "proposed": "Event-informed source-power/handshake states plus bounded watchdog, only after observation is validated",
+    "limit": "Power-present with no video can mean a disabled/sleeping source or a missed handshake; no universal failure event distinguishes them. Already-connected sources may present no new insertion edge at boot."
+  },
+  "no_live_changes": true,
+  "latest_control": "control-B-01-result.json"
+}

@@ -1,0 +1,49 @@
+           CPU0       CPU1       CPU2       CPU3       
+ 19:     129243     124916     150250     136510     GIC-0  27 Level     arch_timer
+ 21:      10925          0          0          0     GIC-0  80 Level     timer@3060000
+ 22:          0          0          0          0  wakeupgen  71 Level     2010000.iommu
+ 27:          0          0          0          0  wakeupgen 107 Level     sunxi_go_ctx
+ 28:          0          0          0          0  wakeupgen  75 Level     cedar_dev
+ 38:          0          0          0          0  wakeupgen 115 Level     audio bridge irq
+ 39:          0          0          0          0  wakeupgen 113 Level     abp dtv irq
+ 43:         15          0          0          0  wakeupgen   0 Level     uart0
+ 44:      14182          0          0          0  wakeupgen   1 Level     uart1
+ 45:     113633          0          0          0  wakeupgen   8 Level     twi1
+ 46:          0          0          0          0  wakeupgen  45 Level     3002000.dma-controller
+ 47:        931          0          0          0  wakeupgen  46 Level     3003000.msgbox
+ 48:         94          0          0          0  wakeupgen 109 Level     3003000.msgbox
+ 49:        257          0          0          0  wakeupgen 108 Level     3003000.msgbox
+ 50:          1          0          0          0     GIC-0 187 Level     RemoteIR_RX
+ 52:      47792          0          0          0  wakeupgen  41 Level     mmc2
+ 53:      17456          0          0          0  wakeupgen  40 Level     mmc1
+ 55:          0          0          0          0  wakeupgen 147 Level     7090000.rtc
+ 60:          0          0          0          0  wakeupgen  22 Edge      sunxikbd
+ 61:          0          0          0          0  wakeupgen  20 Edge      sunxi-gpadc
+ 62:          0          0          0          0  wakeupgen  88 Level     6100000.demux
+ 63:          0          0          0          0  wakeupgen  89 Level     6100000.demux
+ 64:          0          0          0          0  wakeupgen  91 Level     6100000.demux
+ 65:          0          0          0          0  wakeupgen  92 Level     6100000.demux
+ 70:      34746          0          0          0  wakeupgen 101 Level     5240000.ge2d
+ 73:      15820          0          0          0  wakeupgen 112 Level     osd-afbd
+ 74:      15339          0          0          0  wakeupgen 110 Level     dec
+ 75:       1476          0          0          0  wakeupgen  32 Level     sunxi_usb_udc
+ 78:          0          0          0          0  wakeupgen  33 Level     ehci_hcd:usb1
+ 79:          0          0          0          0  wakeupgen  34 Level     ohci_hcd:usb3
+ 80:          0          0          0          0  wakeupgen  35 Level     ehci_hcd:usb2
+ 81:          0          0          0          0  wakeupgen  36 Level     ohci_hcd:usb4
+ 82:      25515          0          0          0  wakeupgen 117 Level     1800000.gpu
+ 83:         11          0          0          0  wakeupgen 118 Level     1800000.gpu
+ 84:      22153          0          0          0  wakeupgen  76 Level     1800000.gpu
+117:       6677          0          0          0  sunxi_pio_level  32 Level     stk_acc_irq
+290:      92937          0          0          1  sunxi_pio_edge 205 Edge      ƒÄ¿ˇˇˇˇ»Å¿
+313:          1          0          0          0  sunxi_pio_edge   4 Edge      sunxi_powerkey
+341:          0          0          0          0  sunxi_pio_level  32 Level     rwnx_hostwake_irq
+344:          1          0          0          0  sunxi_pio_edge  35 Edge      bluetooth hostwake
+IPI0:          0          0          0          0  CPU wakeup interrupts
+IPI1:          0       1712        784        841  Timer broadcast interrupts
+IPI2:     117152     188482     126933     126063  Rescheduling interrupts
+IPI3:        419        648        310        284  Function call interrupts
+IPI4:          0          0          0          0  CPU stop interrupts
+IPI5:       4365       3515       3244       2742  IRQ work interrupts
+IPI6:          0          0          0          0  completion interrupts
+Err:          0

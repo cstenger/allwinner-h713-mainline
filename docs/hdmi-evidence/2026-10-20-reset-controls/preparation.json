@@ -1,0 +1,104 @@
+{
+  "scope": "proper-only CCU/SCP controls, built and fixture-checked; not yet installed",
+  "source_commit": "5b6f2d9 plus working instrumentation changes",
+  "manifest": {
+    "schema": 1,
+    "purpose": "bench reset observation; not installed",
+    "source_pin": "320a17f71d41ed0d4be7aab25947ce015c98c48e",
+    "normal_inputs": "source 320a17f71d41ed0d4be7aab25947ce015c98c48e\nseries 68676e31f485208ee60b3863f7920df0a1f5bd6b40c6a6c230b170373905521d\npatch 0000-h713-shared-dt-panel-regulator-prerequisites.patch b2d365aede7f925846973bee750e5251f4f855d9ce7414900f654ec41df7cf8b\npatch 0001-h713-establish-initial-panel-power-state.patch eb23b1ca4119da3912ef981492c0c4c3828731af6188d9ce3dd5d97fac732ba1\ntool prepare-uboot.sh 8c3af43d19341933e94ca2f80a322d1ed9545c33601e2e843475b4ba2d28ef4f\ntool sync-uboot-dts.sh c28a2b61c72597624ac24fb2ecdec0964bb72bc6dbcfc487c3f6aa186129122e\ntool gen-uboot-h713-ccu.py a2c4b3ac4926f97c22358a5a51ee9d0b1d05ebf9c4ceed4742d0a29b694498dc\nkernel arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi aac9b045ef38d348a69254d8424daa4a692870df0f7c3ef3c820f089b8607970\nkernel arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts ab2bacd53a428c11d0f7703e53e34a1ed3bc948167128aca7a11cd36458ff7c2\nkernel arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts ee8976dfd7267f19f961d6fa972b829034ead1bf7674d31cc3e2c81c794f7166\nkernel include/dt-bindings/clock/sun50i-h713-ccu.h a202757b5e1764d8eea7448101edf0fe84251eb1ec94d54f82115cd832b8dcf4\nkernel include/dt-bindings/reset/sun50i-h713-ccu.h a9baacf2698cb6ab80c976fb9fd55f9c8c30aec1824c099a4e502f95a6e6ce4e\nkernel include/dt-bindings/clock/sun50i-h713-r-ccu.h fc25c9f9f14a0352057298e6859f66b5c80d02604b55cf57169cfff4eadda2f5\nkernel include/dt-bindings/reset/sun50i-h713-r-ccu.h 56861bf81e292ea2bdd60a0f204394cf6ecd41c1f6a966a846c1cf03c57c6230\nkernel include/dt-bindings/clock/sun20i-d1-r-ccu.h 9b7f7f964ebf42eb0dc99db2a47472878f018e322e53f923eafced5a9b8a7ab0\nkernel include/dt-bindings/reset/sun20i-d1-r-ccu.h 6f3d7eee7e9db0688c07ed2f63b1395dfb85c3d0a0e52e951f81f5ad7cd6af57\nkernel drivers/clk/sunxi-ng/ccu-sun50i-h713.c a45342bbc5fe15934173ff44a7fdb8755b9b8daa04cb04d2a610f0de0d5476c5\n",
+    "base_tree_sha256": "5f65867b502a55bc4d44c1180513d1cd6cb7603a9fadfe95ac77325ba4e6658a",
+    "optional_spl_probe": false,
+    "optional_domain_controls": true,
+    "patches": {
+      "0001-proper-reset-observation.patch": "0ee5f8ea5fc2ea48f6edb3dab974fe606011c9e32bdf8765b6bcf697c9b82204",
+      "0003-proper-domain-controls.patch": "58b9ac73730aa572c5aca46ce5ea92cc806397120aceedc5ca25b9a411fa309e"
+    },
+    "instrumented_tree_sha256": "0ee6defcb32020d299fedc9235605ad9d872541dc55aafefc8390a73be04f137"
+  },
+  "package": {
+    "scope": "proper-only bench controls; not installed",
+    "boot_id_precondition": "c21ffe52-9f0e-4bb5-9e2a-f823e6a721af",
+    "lba": 4828160,
+    "bytes": 961024,
+    "sectors": 1877,
+    "fit_bytes": 960817,
+    "before_region_sha256": "2a51c42bcd8e063b4b07682bf2da47319548f903ebf5eaed52d1892b94e5d910",
+    "after_region_sha256": "74b346e3b04516078ccbf8a0119c7eea162eeb074ffd84318f2afeee3f43ed25",
+    "before_extent_sha256": "dffd10fe06d32e329364fe53558786bd408ad1af42e5ef7ef800aa975e479317",
+    "after_extent_sha256": "1b1f702fc7b52adf8246b124b8fbe209b7dadc651a37e53a600689810c45302e",
+    "bl31_unchanged": true,
+    "dtb_unchanged": true,
+    "configured_env_lba": 4844544,
+    "active_env_lba": 3337216,
+    "rescue_lba": 4852736,
+    "previous_extent_sectors": 1867,
+    "extension_bytes": 5120,
+    "extension_preimage_sha256": "a11937f356a9b0ba592c82f5290bac8016cb33a3f9bc68d3490147c158ebb10d",
+    "extension_preimage_all_zero": true,
+    "files": {
+      "proper-controls.bin": {
+        "bytes": 961024,
+        "sha256": "1b1f702fc7b52adf8246b124b8fbe209b7dadc651a37e53a600689810c45302e"
+      },
+      "proper-rollback.bin": {
+        "bytes": 961024,
+        "sha256": "dffd10fe06d32e329364fe53558786bd408ad1af42e5ef7ef800aa975e479317"
+      },
+      "bl31.bin": {
+        "bytes": 45164,
+        "sha256": "5ea11b14cc59a85b3219b4969836948a1f99ab0381d620476e557f993c78636c"
+      },
+      "uboot.dtb": {
+        "bytes": 45968,
+        "sha256": "8361009b1b72345c6d03d0e7ad98b6930753aea5c387e848677bdc0e587f464e"
+      },
+      "check-regions.sh": {
+        "bytes": 1062,
+        "sha256": "3533d77e87d1d4150334c438fc16372132fa5e03cd55b4b9f7fa37a3452c8c29"
+      },
+      "install.sh": {
+        "bytes": 632,
+        "sha256": "c48fd76cf105c56fc02f32823eba5a32a25c8dcb60161e317de780346c7ad1b6"
+      },
+      "rollback.sh": {
+        "bytes": 550,
+        "sha256": "7c8e75b3533d7a38bec5b32fb58130aadbcad5abdaf32ec5f823fc1ae970b685"
+      }
+    }
+  },
+  "artifacts": {
+    "obj/u-boot-dtb.bin": {
+      "bytes": 913664,
+      "sha256": "e16ede6254491ea59fbcf36e8a295d744e6bc3a73d5b9594818c8530a97c72f9"
+    },
+    "obj/u-boot-sunxi-with-spl.fit.fit": {
+      "bytes": 960817,
+      "sha256": "4dd543533bc51e143087d1b746da15da244aa00ac854666cca2018721fd67754"
+    },
+    "obj/.config": {
+      "bytes": 53337,
+      "sha256": "ea0d027d55758b4e86a4f1ade4db7cc45c52db079d9a10925aeb7723361443f9"
+    },
+    "configure.log": {
+      "bytes": 457,
+      "sha256": "d8ccbb75344132d10b18dc1afb404ca194692968f548d9ded227925ee47b61c8"
+    },
+    "build.log": {
+      "bytes": 152857,
+      "sha256": "e20739b33b1c0a5bd76bd9b7c278a9a486b0a819768976a56d7c8a581113153c"
+    },
+    "package-fixture-tests.txt": {
+      "bytes": 157,
+      "sha256": "963281573b229ace74bf570b487b6e76179f6d7bab5ff775ec14ddabcd683308"
+    },
+    "domain-tests.txt": {
+      "bytes": 102,
+      "sha256": "5881331cc57622b2884914c47f46385e1fe99dd2438d03a49e89ce2f4d18d043"
+    },
+    "reset-tests.txt": {
+      "bytes": 104,
+      "sha256": "65378dcad145da2497120819bebfc3c46534dce9714ce064b3d809a56654aca2"
+    }
+  },
+  "compiler": "clang version 23.1.3\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n"
+}

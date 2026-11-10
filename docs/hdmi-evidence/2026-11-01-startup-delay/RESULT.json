@@ -1,0 +1,25 @@
+{
+  "board_contact_this_preparation": false,
+  "broken_variants_detected": 6,
+  "control_delay_ms": 0,
+  "date": "2026-11-01",
+  "delay_ms": 2000,
+  "delay_tests_passed": 24,
+  "excluded_boot_id": "afe48e93-6604-44de-a220-acb9416e8363",
+  "existing_wrapper_regressions_passed": 31,
+  "identical_runtime_rebuild": true,
+  "installed": false,
+  "isolated_systemd_unit_variants_verified": 2,
+  "limitations": [
+    "Offline safety and timing checks only; no live HDMI outcome tested.",
+    "Read-only checks/logging add common overhead to both bench variants.",
+    "No physical HPD-low or DDC-enable-to-HPD interval guarantee.",
+    "Later staging, fresh board preflight, merged-unit review and boot authorization required."
+  ],
+  "only_override_difference": "--bench-delay-ms=0 versus --bench-delay-ms=2000",
+  "production_wrapper_sha256": "2b6ac46d09e8af00a551bfe879bb46066c5a5106c82cf1a89bd148410c271445",
+  "rebooted": false,
+  "schema": "h713-delay-offline-result-v1",
+  "scope": "additional pre-initialization wait; no SCP/EDID/module/production wrapper/unit changes",
+  "status": "PASS_OFFLINE_ONLY"
+}

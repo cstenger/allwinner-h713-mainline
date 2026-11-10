@@ -1,0 +1,72 @@
+[    8.207375] Bluetooth: HCI UART protocol H4 registered
+[    8.362591] get_txpwr_max:txpwr_max:18 
+[    8.367928] get_txpwr_max:txpwr_max:18 
+[    8.373606] get_txpwr_max:txpwr_max:18 
+[    8.378893] change_if: 2 to 3, 8, 2
+[    8.378923] get_txpwr_max:txpwr_max:18 
+[    8.389496] get_txpwr_max:txpwr_max:18 
+[    8.877376] get_txpwr_max:txpwr_max:18 
+[    8.883284] chan.flags 0 
+[    9.215889] aicwf_sdio mmc1:6721:1 wlan0: AP started: ch=0, bcmc_idx=32 channel=2437 bw=2
+[    9.468328] Bluetooth: MGMT ver 1.23
+[   11.323925] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[   11.356346] Bluetooth: MGMT ver 1.23
+[   11.544578] systemd-journald[105]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   11.571819] systemd-journald[105]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[   11.607846] systemd-journald[105]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   80.924741] h713-hdmi-power: domain 1 power event 2
+[   80.932714] h713-hdmi-power: domain 1 power event 3
+[   80.939436] h713-hdmi-power: domain 1 resumed
+[   80.945945] h713-hdmi-power: domain 2 resumed
+[   80.952109] h713-hdmi-power: 2 domains and 0 receiver clocks held on; no receiver MMIO
+[   81.463019] h713-hdmi-power: enabled clock 0 (bus-tvcap)
+[   83.766613] h713-hdmi-power: enabled clock 1 (bus-cap-300m)
+[   86.223163] h713-hdmi-power: enabled clock 2 (vincap-dma)
+[   88.667135] h713-hdmi-power: enabled clock 3 (tvfe-1296m)
+[   91.291353] h713-edid-clock-hold h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[  133.021901] h713-hdmi-tvfe-hold: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[  133.032465] h713-hdmi-tvfe-hold: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[  133.054036] h713-hdmi-tvfe-hold: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[  134.844836] h713-hdmi-audio: clock=bus-hdmi-audio inherited_on=1 enabled_by_driver=0 rate=100000000
+[  134.855431] h713-hdmi-audio: clock=hdmi-audio inherited_on=1 enabled_by_driver=0 rate=1152000000
+[  134.865646] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000
+[  134.875676] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[  134.885765] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[  134.895981] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[  134.904968] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[  134.915212] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[  134.924103] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[  134.936455] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[  134.947749] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[  134.963820] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[  134.972511] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[  134.983649] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[  134.997514] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[  135.006079] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[  135.019035] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[  135.031450] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[  135.041585] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[  135.058221] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph must be prepared before recording
+[  135.087546] h713-hdmi-dsp-probe: status=00000000; stock lock mapped; no command issued
+[  135.098111] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000000
+[  135.106604] h713-hdmi-dsp-probe: device=0 word=80ff value=0000 response=00000000 status=00000020
+[  135.116572] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  135.123938] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[  135.132350] h713-hdmi-dsp-probe: device=1 word=80ff value=0000 response=00000000 status=00000120
+[  135.142299] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  152.183264] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  152.191889] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  152.200408] h713-hdmi-dsp-probe: beginning fixed stock init/724-pair volatile patch; physical cold boot required for teardown
+[  152.213038] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  152.222712] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  152.281174] h713-hdmi-dsp-probe: device=0 word=00ee slow completion-clear 50100 us ret=-110
+[  152.290645] h713-hdmi-dsp-probe: device=0 word=00ee phase=completion-clear timeout status=00000120; cold boot required
+[  152.302457] h713-hdmi-dsp-probe: stock-patch stopped phase=clock-init pair=0 error=-110; cold boot required
+[  152.313346] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+clear_fast_count
+5
+clear_slow_count
+1
+clear_timeout_count
+1
+closed

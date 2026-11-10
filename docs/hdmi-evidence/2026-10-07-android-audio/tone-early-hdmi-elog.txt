@@ -1,0 +1,106 @@
+ I/hdmirx       [184880] (./THDMIRx.cpp 605               ) Change Port(1) Map, from 1 to 0
+ I/hdmirx       [184881] (./THDMIRx_Event.cpp 514         ) port1 5V detect ret:1 !!!!!
+ I/hdmi_driver  [184881] (TV303_Drv/THDMIRx_TV303_Driver.cpp 326) HdmiRx_SendHPDCMD port1 cmd=176 tick=184881
+ I/hdmi_driver  [184883] (TV303_Drv/THDMIRx_TV303_Driver.cpp 320) port1 5VDetect bOn=1
+ I/hdmirx       [184884] (./THDMIRx.cpp 605               ) Change Port(2) Map, from 0 to 1
+ I/hdmirx       [184888] (./THDMIRx.cpp 605               ) Change Port(3) Map, from 2 to 2
+ E/hdmirx       [191422] (./THDMIRx.cpp 592               ) HDMIRx_SetHDCP22KeyData!!, size:912
+ I/hdmi_driver  [191423] (TV303_Drv/THDMIRx_TV303_Driver.cpp 816) test Decrypt hdcp22 key--- header :0x0
+ I/hdmi_driver  [191423] (TV303_Drv/THDMIRx_TV303_Driver.cpp 816) test Decrypt hdcp22 key--- header :0x0
+ I/hdmi_driver  [191423] (TV303_Drv/THDMIRx_TV303_Driver.cpp 816) test Decrypt hdcp22 key--- header :0x0
+ I/hdmi_driver  [191423] (TV303_Drv/THDMIRx_TV303_Driver.cpp 816) test Decrypt hdcp22 key--- header :0x2
+ E/hdmi_driver  [191423] (TV303_Drv/THDMIRx_TV303_Driver.cpp 760) HdmiRx_HDCP22_LoadKey ok!!
+ I/hdmirx       [191428] (./THDMIRx.cpp 617               ) SetHPDTimeInterval from 200 to 200
+ I/hdmirx       [287979] (./THDMIRx.cpp 89                ) SetActivePort 1 tick=287979
+ I/hdmirx       [287979] (./THDMIRx.cpp 65                ) port id=1 isActive=1 tick=287979
+ I/hdmirx       [287979] (./THDMIRx_DataPath.cpp 189      ) DDC and PHY select prot 1
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Driver.cpp 1112) HdmiRx_Port_Select base=6800800 port 1
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Driver.cpp 1129) HdmiRx_PHY_Reset!!!!!!
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Driver.cpp 1774) toggle SYSTEM_PD_HDCP SYSTEM_PD_DDC reset!
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Video_Driver.cpp 374) HdmiRx_Toggle_PD_IDCLK_Reset!
+ I/hdmirx       [287979] (./THDMIRx_Port.cpp 129          ) port 1 send HPD event
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 65) AUDIO PLL CALC: Stage 0 TMDS=ffffffff OutputFs=0 InterRslt=0
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 87) AUDIO PLL CALC: Stage 1 XDiv =0 SPad=-1 LCount=b Cond Pass !!!
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 108) AUDIO PLL CALC: Stage 2 Fin=-1 Fout=0
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 148) AUDIO PLL CALC: Stage 3 LoopCnt=0 Scpad=0 Calc Prog !!!
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 148) AUDIO PLL CALC: Stage 3 LoopCnt=1 Scpad=0 Calc Prog !!!
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 148) AUDIO PLL CALC: Stage 3 LoopCnt=2 Scpad=0 Calc Prog !!!
+ I/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 148) AUDIO PLL CALC: Stage 3 LoopCnt=3 Scpad=0 Calc Prog !!!
+ W/hdmi_driver  [287979] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 154) AUDIO PLL CALC: bPdivCalc Failed !!!
+ I/hdmirx       [287979] (./THDMIRx.cpp 204               ) call AfterEnable tick=287979
+ I/hdmirx       [287979] (./THDMIRx_DisplayModuleCtx.cpp 969) AfterEnable tick=287979
+ I/hdmirx       [287979] (./THDMIRx_DisplayModuleCtx.cpp 631) HDMIRX Send BlueScreen, bON=1
+ I/hdmi_driver  [287990] (TV303_Drv/THDMIRx_TV303_Driver.cpp 1408) Set SYSTEM_PD_HDCP SYSTEM_PD_DDC reset!
+ I/hdmi_driver  [287990] (TV303_Drv/THDMIRx_TV303_Driver.cpp 255) HdmiRxAEC_Enable bEnable = 0
+ I/hdmi_driver  [287990] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 18) HdmiRxAudioPllPowerDown success!
+ I/hdmirx       [287990] (./THDMIRx_Port.cpp 262          ) port1 SwitchState from 1 to 2
+ I/hdmirx       [287997] (./THDMIRx_Event.cpp 59          ) port id=1 HDP_Req=1 HPDState=4 tick=287997
+ I/hdmi_driver  [287997] (TV303_Drv/THDMIRx_TV303_Driver.cpp 326) HdmiRx_SendHPDCMD port1 cmd=160 tick=287997
+ I/hdmi_driver  [288000] (TV303_Drv/THDMIRx_TV303_Driver.cpp 1422) Release SYSTEM_PD_HDCP and SYSTEM_PD_DDC reset!
+ I/hdmi_driver  [288000] (TV303_Drv/THDMIRx_TV303_Driver.cpp 1425) Set SYSTEM_PD_TMDS reset!
+ I/hdmi_driver  [288000] (TV303_Drv/THDMIRx_TV303_Driver.cpp 255) HdmiRxAEC_Enable bEnable = 1
+ I/hdmi_driver  [288000] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 538) reset system_pd_audio_t!!!
+ I/hdmirx       [288000] (./THDMIRx_Port.cpp 262          ) port1 SwitchState from 2 to 3
+ I/hdmi_driver  [288226] (TV303_Drv/THDMIRx_TV303_Driver.cpp 326) HdmiRx_SendHPDCMD port1 cmd=144 tick=288226
+ I/hdmirx       [289300] (./THDMIRx_Port.cpp 262          ) port1 SwitchState from 3 to 4
+ I/hdmi_driver  [289310] (TV303_Drv/THDMIRx_TV303_Driver.cpp 1439) Release SYSTEM_PD_TMDS reset!
+ I/hdmi_driver  [289310] (TV303_Drv/THDMIRx_TV303_Video_Driver.cpp 374) HdmiRx_Toggle_PD_IDCLK_Reset!
+ I/hdmirx       [289310] (./THDMIRx_DisplayModuleCtx.cpp 710) hdmirx set AV mute:1 1
+ I/hdmi_driver  [289310] (TV303_Drv/THDMIRx_TV303_Video_Driver.cpp 261) MSG_HDMIRX_INTR_PHY_INT_FREQ_DET received!
+ I/hdmi_driver  [289310] (TV303_Drv/THDMIRx_TV303_Video_Driver.cpp 280) HdmiRxTMDS_FreqDetect success, cnt_val=0x113d4c div_num=0x14, tmds=0xb105984!
+ I/hdmirx       [289310] (./THDMIRx_Port.cpp 262          ) port1 SwitchState from 4 to 5
+ I/hdmirx       [289320] (./THDMIRx_PortCtx.cpp 100       ) pixel frequency is changed from 0 to 185620868, diff is 54548
+ I/hdmirx       [289320] (./THDMIRx_PortCtx.cpp 121       ) offsetFirstActiveLine is changed from 0 to 65534, diff is 65534
+ I/hdmirx       [289320] (./THDMIRx_DisplayModuleCtx.cpp 710) hdmirx set AV mute:1 1
+ I/hdmirx       [289390] (./THDMIRx_PortCtx.cpp 156       ) offsetFirstActivePixel is changed from 1 to 185, diff is 184
+ I/hdmirx       [289390] (./THDMIRx_PortCtx.cpp 168       ) numTotalPixelsPerLine is changed from 0 to 2750, diff is 2750
+ I/hdmirx       [289390] (./THDMIRx_PortCtx.cpp 180       ) numActivePixelsPerLine is changed from 0 to 2400, diff is 2400
+ I/hdmirx       [289390] (./THDMIRx_DisplayModuleCtx.cpp 710) hdmirx set AV mute:1 1
+ I/hdmi_driver  [289400] (TV303_Drv/THDMIRx_TV303_Video_Driver.cpp 296) Update HDMI mode to 1
+ I/hdmi_driver  [289400] (TV303_Drv/THDMIRx_TV303_Driver.cpp 1637) Receive MSG_HDMIRX_INTR_PKT_DIFF_AVI!!!
+ I/hdmirx       [289400] (./THDMIRx_PortCtx.cpp 110       ) field frequency is changed from f to f
+ I/hdmirx       [289400] (./THDMIRx_PortCtx.cpp 133       ) numTotalFrameLines is changed from 0 to 1083, diff is 1083
+ I/hdmirx       [289400] (./THDMIRx_PortCtx.cpp 145       ) numActiveLines is changed from 0 to 1080, diff is 1080
+ I/hdmirx       [289400] (./THDMIRx_PortCtx.cpp 156       ) offsetFirstActivePixel is changed from 185 to 148, diff is 37
+ I/hdmirx       [289400] (./THDMIRx_PortCtx.cpp 168       ) numTotalPixelsPerLine is changed from 2750 to 2200, diff is 550
+ I/hdmirx       [289400] (./THDMIRx_PortCtx.cpp 180       ) numActivePixelsPerLine is changed from 2400 to 1919, diff is 481
+ I/hdmirx       [289400] (./THDMIRx_DisplayModuleCtx.cpp 710) hdmirx set AV mute:1 1
+ I/hdmirx       [289420] (./THDMIRx_Packet.cpp 624        ) +-----------------------------------------------+
+ I/hdmirx       [289420] (./THDMIRx_Packet.cpp 625        ) | 2016 AVI Info Frame, Type 0x82 Version 0x02 Len 13 |
+ I/hdmirx       [289420] (./THDMIRx_Packet.cpp 626        ) +-----+-----+-----+-----+-----+-----+-----+-----+
+ I/hdmirx       [289420] (./THDMIRx_Packet.cpp 627        ) |	 Y=0 ( RGB ) Q=2
+ I/hdmirx       [289420] (./THDMIRx_Packet.cpp 633        ) +-----+-----+-----+-----+-----+-----+-----+-----+
+ I/hdmirx       [289420] (./THDMIRx_Packet.cpp 689        ) AVI Packet: C=0x0 EC=0x0
+ I/hdmirx       [289420] (./THDMIRx_PortCtx.cpp 121       ) offsetFirstActiveLine is changed from 65535 to 36, diff is 65499
+ I/hdmirx       [289420] (./THDMIRx_DisplayModuleCtx.cpp 710) hdmirx set AV mute:1 1
+ I/hdmirx       [289440] (./THDMIRx_PortCtx.cpp 133       ) numTotalFrameLines is changed from 1084 to 1126, diff is 42
+ I/hdmirx       [289440] (./THDMIRx_DisplayModuleCtx.cpp 710) hdmirx set AV mute:1 1
+ I/hdmirx       [289741] (./THDMIRx_Port.cpp 368          ) port1 new timing HActive:0x780 VActive:0x438 bPixelRep:0
+ I/hdmirx       [289741] (./THDMIRx_DisplayModuleCtx.cpp 310) Fine match index is 0
+ I/hdmirx       [289741] (./THDMIRx_DisplayModuleCtx.cpp 329) Matched best index = 0
+ I/hdmirx       [289741] (./THDMIRx_DisplayModuleCtx.cpp 160) Signal 0x20000 detected index=e
+ I/hdmi_driver  [289741] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 538) reset system_pd_audio_t!!!
+ I/hdmirx       [289741] (./THDMIRx_Packet.cpp 624        ) +-----------------------------------------------+
+ I/hdmirx       [289741] (./THDMIRx_Packet.cpp 625        ) | 2016 AVI Info Frame, Type 0x82 Version 0x02 Len 13 |
+ I/hdmirx       [289741] (./THDMIRx_Packet.cpp 626        ) +-----+-----+-----+-----+-----+-----+-----+-----+
+ I/hdmirx       [289741] (./THDMIRx_Packet.cpp 627        ) |	 Y=0 ( RGB ) Q=2
+ I/hdmirx       [289741] (./THDMIRx_Packet.cpp 633        ) +-----+-----+-----+-----+-----+-----+-----+-----+
+ I/hdmirx       [289741] (./THDMIRx_Packet.cpp 689        ) AVI Packet: C=0x0 EC=0x0
+ I/hdmirx       [289741] (./THDMIRx_Port.cpp 406          ) port1 detect new timing,signal ID=0x20000 index=14
+ D/hdmirx       [289741] (./THDMIRx_Port.cpp 413          ) CalcTmdsClk: 148632000, pixelFreq: 60000, rawHTotal: 2200, rawVTotal: 1126
+ I/hdmirx       [289741] (./THDMIRx_PortCtx.cpp 295       ) Signal changed from 0x0 to 0x20000
+ I/hdmirx       [289741] (./THDMIRx_PortCtx.cpp 302       ) Frame rate changed from 0x0 to 0x30000
+ I/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 710) hdmirx set AV mute:0 1
+ I/hdmirx       [290042] (./THDMIRx_PortCtx.cpp 394       ) Conver signalID,isDVI:0 signal:0x20000
+ I/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 848) SetSignal dwSignal = 0x20000 tick=290042
+ I/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 862) port1 linkID:0 Output channel:0x5e0000
+ W/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 867) Vrr mode is 0
+ I/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 890) bOutputEnabled[0]=1, index=0 dwSignal = 0x20000
+ I/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 915) Set output channel map to 0x00000000
+ I/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 890) bOutputEnabled[1]=0, index=1 dwSignal = 0x20000
+ I/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 927) Set Valid Signal dwSignal:0x20000 dwFrameRate:0x30000 signal_format:12 color_space:0x440000
+ I/hdmirx       [290042] (./THDMIRx_DisplayModuleCtx.cpp 489) get tfd hdr/edr mode is 0
+ I/hdmirx       [290064] (./THDMIRx_DisplayModuleCtx.cpp 710) hdmirx set AV mute:0 0
+ I/hdmirx       [290065] (./THDMIRx_PortCtx.cpp 350       ) prot:1 set signal ID:0x20000 framerate:0x30000 tick=290065
+ I/hdmi_driver  [444713] (TV303_Drv/THDMIRx_TV303_Audio_Driver.cpp 405) Audio N 0x1800 CTS 0x2d519
+ I/hdmirx       [444713] (./THDMIRx_Event.cpp 359         ) audio param:185625 6144 48000 48 16

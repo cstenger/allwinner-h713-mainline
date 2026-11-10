@@ -1,0 +1,23 @@
+PASS missing node high absolute
+PASS missing property high absolute
+PASS DT positive override
+PASS DT negative override preserved
+PASS relative fallback
+PASS invalid sentinel
+PASS redundant fallback
+PASS redundant property
+PASS named partition wins
+PASS GUID fallback wins
+PASS hardware partition skips GUID
+PASS no OF control
+PASS no OF redundant
+CAUGHT original narrowing : missing node high absolute, missing property high absolute, redundant fallback, hardware partition skips GUID
+CAUGHT cast narrowed fallback : missing node high absolute, missing property high absolute, redundant fallback, hardware partition skips GUID
+CAUGHT ignore DT overrides : DT positive override, DT negative override preserved, redundant property
+CAUGHT unsigned DT regression : DT negative override preserved
+CAUGHT redundant fallback wrong : redundant fallback
+CAUGHT partition priority lost : named partition wins, GUID fallback wins
+CAUGHT GUID used in boot hwpart : hardware partition skips GUID
+CAUGHT non-OF narrowed : no OF control, no OF redundant
+CAUGHT negative fallback lost : relative fallback, invalid sentinel
+PASS all 9 source mutations caught; every one of the 13 cases fails under a relevant mutation

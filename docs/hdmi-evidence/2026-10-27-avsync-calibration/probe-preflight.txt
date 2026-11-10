@@ -1,0 +1,6 @@
+Host compile: -O2 -Wall -Wextra -Werror PASS
+PASS invalid duration nan: rejected before hardware access
+PASS invalid duration inf: rejected before hardware access
+PASS invalid duration 0: rejected before hardware access
+PASS invalid duration 121: rejected before hardware access
+PASS invalid duration garbage: rejected before hardware access

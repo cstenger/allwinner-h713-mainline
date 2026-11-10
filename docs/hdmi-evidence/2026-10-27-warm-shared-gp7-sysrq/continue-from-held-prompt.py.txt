@@ -1,0 +1,45 @@
+"""Explicitly authorized one-time continuation after truncated reset ACK; no reset."""
+import importlib.util,json,os,pathlib,re,time,hashlib
+ROOT=pathlib.Path('/home/chris/Projects/h713')
+OUT=ROOT/'docs/hdmi-evidence/2026-10-27-warm-shared-gp7-sysrq'
+PREP=ROOT/'build/hdmi-warm-shared-gp7-sysrq-drain-2026-10-27'
+spec=importlib.util.spec_from_file_location('runner',ROOT/'tools/serial/run-warm-shared.py');r=importlib.util.module_from_spec(spec);spec.loader.exec_module(r)
+for name in ('continuation-attempted','launch-attempted','script-transfer.log','uart-warm-shared.log','warm-health.json'):
+    if (OUT/name).exists():raise RuntimeError(name+' already exists; no repeat')
+raw=(OUT/'uart-cold-and-reboot.log').read_bytes()
+if raw.count(b'sysrq: Resetting')!=1 or raw.count(b'U-Boot SPL ')!=2:raise RuntimeError('unexpected original reset count')
+if b'H713_WARM_SHARED_SYNC_DONE gp7=b' not in raw:raise RuntimeError('original partial acknowledgement absent')
+part=raw[raw.rindex(b'U-Boot SPL '):]
+stage=r.Stage('recorded-held-prompt',[b'U-Boot SPL ',b'stage=proper_preboot',b'=> '],1,
+              forbidden=r.BEFORE_INTERRUPT+(b'Starting kernel',b'## Executing script',b'boot logo published'))
+if stage.feed(part)!='done':raise RuntimeError('original prompt capture incomplete')
+r.check_warm_preboot(stage.preboot(),'gp7')
+rec=json.loads((OUT/'cold-health.json').read_text())
+c=r.load('checker',ROOT/'tools/hdmi/check-warm-shared.py')
+if not c.evaluate(rec,require_video=True)['passed']:raise RuntimeError('original cold health failed')
+class Continue(r.Run):
+    def health(self,label):
+        if label!='warm':raise RuntimeError('continuation may only collect warm health')
+        self.note('WAITING for warm-host-source-confirmed; no health checks before this gate')
+        deadline=time.monotonic()+900
+        while not (self.out/'warm-host-source-confirmed').exists():
+            if time.monotonic()>deadline:raise RuntimeError('warm source not confirmed; stopping')
+            time.sleep(1)
+        return super().health(label)
+run=Continue(OUT,'/dev/ttyUSB0',reset='sysrq-b',require_video=True,boot_stop='gp7')
+m=run.prepared(PREP)
+for name,folder in (('build-warm-shared.py','hdmi'),('check-warm-shared.py','hdmi'),('run-warm-shared.py','serial')):
+    if hashlib.sha256((ROOT/'tools'/folder/name).read_bytes()).hexdigest()!=m['tools'][name]:raise RuntimeError('tool hash changed')
+with (OUT/'continuation-attempted').open('x') as f:f.write('User authorized fresh prompt/census and first RAM launch, no reset.\n')
+(OUT/'continuation-manifest.json').write_text(json.dumps(m,indent=2)+'\n')
+run.note('CONTINUATION AUTHORIZED: fresh prompt/census then first RAM launch; original reset ACK truncated; no reset')
+fd=r.open_port(run.port)
+try:
+    with (OUT/'uart-continuation-census.log').open('xb',buffering=0) as log:
+        r.write_slow(fd,b'\n');prompt=r.drain(fd,1,echo=False);log.write(prompt)
+        if not re.search(rb'=>\s*$',prompt):raise RuntimeError('not held at U-Boot; no commands or launch')
+        run.note('HELD U-BOOT PROMPT VERIFIED')
+        run.census(fd,log,m)
+        run.note('CONTINUATION CENSUS/FIT VERIFIED')
+finally:os.close(fd)
+run.launch(PREP,rec['boot_id'],rec)

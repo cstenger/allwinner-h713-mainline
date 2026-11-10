@@ -1,0 +1,18 @@
+[video4linux2,v4l2 @ 0xaaaabb40bda0] ioctl(VIDIOC_G_PARM): Inappropriate ioctl for device
+[video4linux2,v4l2 @ 0xaaaabb40bda0] Time per frame unknown
+Input #0, video4linux2,v4l2, from '/dev/video1':
+  Duration: N/A, start: 8855.732123, bitrate: N/A
+  Stream #0:0: Video: rawvideo, nv16, 640x480, 1000k tbr, 1000k tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> rawvideo (native))
+Output #0, rawvideo, to '/tmp/h713-hdmi-trial-20260925T094817Z-v4l2.nv16':
+  Metadata:
+    encoder         : Lavf61.7.103
+  Stream #0:0: Video: rawvideo, nv16(progressive), 640x480, q=2-31, 4915200000 kb/s, 1000k fps, 1000k tbn
+      Metadata:
+        encoder         : Lavc61.19.101 rawvideo
+frame=   34 fps=0.0 q=-0.0 size=   19712KiB time=00:00:00.55 bitrate=291696.8kbits/s speed=1.11x
+frame=   63 fps= 63 q=-0.0 size=   37120KiB time=00:00:01.05 bitrate=289437.5kbits/s speed=1.05x
+frame=   92 fps= 61 q=-0.0 size=   54528KiB time=00:00:01.54 bitrate=288255.1kbits/s speed=1.03x
+[out#0/rawvideo @ 0xaaaabb40dcd0] video:60000KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000000%
+frame=  100 fps= 63 q=-0.0 Lsize=   60000KiB time=00:00:01.68 bitrate=291691.8kbits/s speed=1.06x

@@ -1,0 +1,230 @@
+[  122.852713] h713-hdmi-receiver: terminal parking prepared; 3 exclusive resets and 2 MIPS clock holds, no reset writes
+[  122.865030] h713-hdmi-receiver: domain 1 power event 2
+[  122.871291] h713-hdmi-receiver: domain 1 power event 3
+[  122.877514] h713-hdmi-receiver: domain 1 resumed
+[  122.883295] h713-hdmi-receiver: domain 2 resumed
+[  122.888785] h713-hdmi-receiver: 2 domains and 0 receiver clocks held on; no receiver MMIO
+[  122.901813] h713-hdmi-receiver: enabled clock 0 (bus-tvcap)
+[  124.672315] h713-hdmi-receiver: enabled clock 1 (bus-cap-300m)
+[  126.453260] h713-hdmi-receiver: enabled clock 2 (vincap-dma)
+[  128.245124] h713-hdmi-receiver: enabled clock 3 (tvfe-1296m)
+[  128.252329] h713-receiver-edid h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[  131.843241] h713-hdmi-audio: TVFE: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[  131.853731] h713-hdmi-audio: TVFE: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[  131.879004] h713-hdmi-audio: TVFE: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[  131.890874] h713-hdmi-audio: clock=bus-hdmi-audio inherited_on=1 enabled_by_driver=0 rate=100000000
+[  131.901124] h713-hdmi-audio: clock=hdmi-audio inherited_on=1 enabled_by_driver=0 rate=1152000000
+[  131.910853] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000
+[  131.920402] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[  131.930021] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[  131.939740] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[  131.948240] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[  131.957965] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[  131.966368] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[  131.978266] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[  131.987362] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[  132.001174] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[  132.009697] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[  132.020665] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[  132.034355] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[  132.042753] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[  132.054776] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[  132.065060] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[  132.075032] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[  132.086814] h713-hdmi-audio: DSP versions 0000/0000
+[  133.009835] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[  133.045027] h713-hdmi-audio: managed DSP graph verified 22 words
+[  133.054226] h713-hdmi-audio: Phase A teardown bench ready; PCM omitted, IRQs disabled, module pinned; DSP graph verified automatically
+[  147.589361] H713 TEARDOWN step=1 BEGIN arm=1 op=1 ctl=00000700 cfg=011a5e00
+[  147.597632] H713 TEARDOWN step=1 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  149.708248] H713 TEARDOWN step=2 BEGIN arm=1 op=2 ctl=00000700 cfg=011a5e00
+[  149.716668] H713 TEARDOWN step=2 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  152.207013] H713 TEARDOWN step=3 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  152.215826] H713 TEARDOWN pair=0 dev=0 BUSY_WAIT sent=0
+[  152.222824] H713 TEARDOWN pair=0 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  152.230810] H713 TEARDOWN pair=0 dev=0 COMMAND_SENT sent=1
+[  152.238016] H713 TEARDOWN pair=0 dev=0 DONE_WAIT sent=1
+[  152.244675] H713 TEARDOWN pair=0 dev=0 COMPLETE status=00000120 response=00000001
+[  152.253471] H713 TEARDOWN step=3 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  154.675178] H713 TEARDOWN step=4 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  154.683983] H713 TEARDOWN pair=0 dev=1 BUSY_WAIT sent=0
+[  154.690903] H713 TEARDOWN pair=0 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  154.699472] H713 TEARDOWN pair=0 dev=1 COMMAND_SENT sent=1
+[  154.706633] H713 TEARDOWN pair=0 dev=1 DONE_WAIT sent=1
+[  154.713552] H713 TEARDOWN pair=0 dev=1 COMPLETE status=00000120 response=00000001
+[  154.722531] H713 TEARDOWN step=4 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  155.793652] H713 TEARDOWN step=5 BEGIN arm=1 op=4 ctl=00000700 cfg=011a5e00
+[  155.801930] H713 TEARDOWN step=5 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  156.946767] H713 TEARDOWN step=6 BEGIN arm=1 op=5 ctl=00000700 cfg=011a5e00
+[  156.955538] H713 TEARDOWN step=6 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  159.192017] H713 TEARDOWN step=7 BEGIN arm=1 op=6 ctl=00000700 cfg=011a5e00
+[  159.201506] H713 TEARDOWN graph-restore address=005a value=8000 verified
+[  159.210988] H713 TEARDOWN graph-restore address=0059 value=8000 verified
+[  159.220484] H713 TEARDOWN graph-restore address=0103 value=0000 verified
+[  159.229938] H713 TEARDOWN graph-restore address=0102 value=0000 verified
+[  159.239370] H713 TEARDOWN graph-restore address=8103 value=0000 verified
+[  159.248170] H713 TEARDOWN graph-restore address=8102 value=0000 verified
+[  159.257242] H713 TEARDOWN graph-restore address=007e value=8485 verified
+[  159.266251] H713 TEARDOWN graph-restore address=007d value=8283 verified
+[  159.275259] H713 TEARDOWN graph-restore address=007c value=8081 verified
+[  159.284206] H713 TEARDOWN graph-restore address=8017 value=0001 verified
+[  159.292884] H713 TEARDOWN graph-restore address=801a value=0000 verified
+[  159.301940] H713 TEARDOWN graph-restore address=0017 value=2000 verified
+[  159.310716] H713 TEARDOWN graph-restore address=0012 value=0000 verified
+[  159.319471] H713 TEARDOWN graph-restore address=0130 value=0000 verified
+[  159.328118] H713 TEARDOWN graph-restore address=8059 value=0000 verified
+[  159.336751] H713 TEARDOWN graph-restore address=805a value=0000 verified
+[  159.345343] H713 TEARDOWN graph-restore address=004d value=0000 verified
+[  159.353906] H713 TEARDOWN graph-restore address=0077 value=0000 verified
+[  159.362433] H713 TEARDOWN graph-restore address=00ac value=0000 verified
+[  159.370936] H713 TEARDOWN graph-restore address=800d value=0000 verified
+[  159.379435] H713 TEARDOWN graph-restore address=800c value=0000 verified
+[  159.387891] H713 TEARDOWN graph-restore address=0003 value=0000 verified
+[  159.496220] H713 TEARDOWN step=7 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  161.832316] H713 TEARDOWN step=8 BEGIN arm=1 op=2 ctl=00000700 cfg=011a5e00
+[  161.840183] H713 TEARDOWN step=8 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  164.083162] H713 TEARDOWN step=9 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  164.091020] H713 TEARDOWN pair=1 dev=0 BUSY_WAIT sent=0
+[  164.097252] H713 TEARDOWN pair=1 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  164.105465] H713 TEARDOWN pair=1 dev=0 COMMAND_SENT sent=1
+[  164.111553] H713 TEARDOWN pair=1 dev=0 DONE_WAIT sent=1
+[  164.117372] H713 TEARDOWN pair=1 dev=0 COMPLETE status=00000120 response=00000001
+[  164.125461] H713 TEARDOWN step=9 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  166.551199] H713 TEARDOWN step=10 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  166.559164] H713 TEARDOWN pair=1 dev=1 BUSY_WAIT sent=0
+[  166.565005] H713 TEARDOWN pair=1 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  166.572494] H713 TEARDOWN pair=1 dev=1 COMMAND_SENT sent=1
+[  166.578579] H713 TEARDOWN pair=1 dev=1 DONE_WAIT sent=1
+[  166.584404] H713 TEARDOWN pair=1 dev=1 COMPLETE status=00000120 response=00000001
+[  166.592494] H713 TEARDOWN step=10 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  167.686770] H713 TEARDOWN step=11 BEGIN arm=1 op=4 ctl=00000700 cfg=011a5e00
+[  167.694564] H713 TEARDOWN step=11 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  168.859414] H713 TEARDOWN step=12 BEGIN arm=1 op=5 ctl=00000700 cfg=011a5e00
+[  168.867273] H713 TEARDOWN step=12 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  171.171846] H713 TEARDOWN step=13 BEGIN arm=1 op=7 ctl=00000700 cfg=011a5e00
+[  171.191259] H713 TEARDOWN step=13 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  173.681849] H713 TEARDOWN step=14 BEGIN arm=1 op=2 ctl=00000700 cfg=011a5e00
+[  173.689634] H713 TEARDOWN step=14 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  175.874595] H713 TEARDOWN step=15 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  175.882652] H713 TEARDOWN pair=2 dev=0 BUSY_WAIT sent=0
+[  175.889848] H713 TEARDOWN pair=2 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  175.897441] H713 TEARDOWN pair=2 dev=0 COMMAND_SENT sent=1
+[  175.903612] H713 TEARDOWN pair=2 dev=0 DONE_WAIT sent=1
+[  175.909514] H713 TEARDOWN pair=2 dev=0 COMPLETE status=00000120 response=00000001
+[  175.917691] H713 TEARDOWN step=15 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  178.160879] H713 TEARDOWN step=16 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  178.169860] H713 TEARDOWN pair=2 dev=1 BUSY_WAIT sent=0
+[  178.176271] H713 TEARDOWN pair=2 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  178.184352] H713 TEARDOWN pair=2 dev=1 COMMAND_SENT sent=1
+[  178.190596] H713 TEARDOWN pair=2 dev=1 DONE_WAIT sent=1
+[  178.196572] H713 TEARDOWN pair=2 dev=1 COMPLETE status=00000120 response=00000001
+[  178.204812] H713 TEARDOWN step=16 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  179.337233] H713 TEARDOWN step=17 BEGIN arm=1 op=4 ctl=00000700 cfg=011a5e00
+[  179.345452] H713 TEARDOWN step=17 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  180.389398] H713 TEARDOWN step=18 BEGIN arm=1 op=5 ctl=00000700 cfg=011a5e00
+[  180.397621] H713 TEARDOWN step=18 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  182.717640] H713 TEARDOWN step=19 BEGIN arm=1 op=8 ctl=00000700 cfg=011a5e00
+[  182.739265] H713 TEARDOWN step=19 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  184.984650] H713 TEARDOWN step=20 BEGIN arm=1 op=2 ctl=00000700 cfg=011a5e00
+[  184.992887] H713 TEARDOWN step=20 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  187.324117] H713 TEARDOWN step=21 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  187.332662] H713 TEARDOWN pair=3 dev=0 BUSY_WAIT sent=0
+[  187.339263] H713 TEARDOWN pair=3 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  187.347509] H713 TEARDOWN pair=3 dev=0 COMMAND_SENT sent=1
+[  187.353835] H713 TEARDOWN pair=3 dev=0 DONE_WAIT sent=1
+[  187.359903] H713 TEARDOWN pair=3 dev=0 COMPLETE status=00000120 response=00000001
+[  187.368230] H713 TEARDOWN step=21 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  189.494149] H713 TEARDOWN step=22 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  189.502690] H713 TEARDOWN pair=3 dev=1 BUSY_WAIT sent=0
+[  189.509301] H713 TEARDOWN pair=3 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  189.517549] H713 TEARDOWN pair=3 dev=1 COMMAND_SENT sent=1
+[  189.524400] H713 TEARDOWN pair=3 dev=1 DONE_WAIT sent=1
+[  189.530993] H713 TEARDOWN pair=3 dev=1 COMPLETE status=00000120 response=00000001
+[  189.539958] H713 TEARDOWN step=22 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  190.673923] H713 TEARDOWN step=23 BEGIN arm=1 op=4 ctl=00000700 cfg=011a5e00
+[  190.682174] H713 TEARDOWN step=23 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  191.829399] H713 TEARDOWN step=24 BEGIN arm=1 op=5 ctl=00000700 cfg=011a5e00
+[  191.837637] H713 TEARDOWN step=24 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  193.968427] H713 TEARDOWN step=25 BEGIN arm=1 op=9 ctl=00000700 cfg=011a5e00
+[  193.991257] H713 TEARDOWN step=25 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  196.125115] H713 TEARDOWN step=26 BEGIN arm=1 op=2 ctl=00000700 cfg=011a5e00
+[  196.133673] H713 TEARDOWN step=26 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  198.286181] H713 TEARDOWN step=27 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  198.294451] H713 TEARDOWN pair=4 dev=0 BUSY_WAIT sent=0
+[  198.300785] H713 TEARDOWN pair=4 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  198.308778] H713 TEARDOWN pair=4 dev=0 COMMAND_SENT sent=1
+[  198.315345] H713 TEARDOWN pair=4 dev=0 DONE_WAIT sent=1
+[  198.321642] H713 TEARDOWN pair=4 dev=0 COMPLETE status=00000120 response=00000001
+[  198.330207] H713 TEARDOWN step=27 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  200.436086] H713 TEARDOWN step=28 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  200.444177] H713 TEARDOWN pair=4 dev=1 BUSY_WAIT sent=0
+[  200.450263] H713 TEARDOWN pair=4 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  200.458550] H713 TEARDOWN pair=4 dev=1 COMMAND_SENT sent=1
+[  200.465429] H713 TEARDOWN pair=4 dev=1 DONE_WAIT sent=1
+[  200.471853] H713 TEARDOWN pair=4 dev=1 COMPLETE status=00000120 response=00000001
+[  200.480442] H713 TEARDOWN step=28 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  201.532852] H713 TEARDOWN step=29 BEGIN arm=1 op=4 ctl=00000700 cfg=011a5e00
+[  201.541104] H713 TEARDOWN step=29 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  202.785836] H713 TEARDOWN step=30 BEGIN arm=1 op=5 ctl=00000700 cfg=011a5e00
+[  202.793992] H713 TEARDOWN step=30 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  205.051317] H713 TEARDOWN step=31 BEGIN arm=1 op=10 ctl=00000700 cfg=011a5e00
+[  205.071238] H713 TEARDOWN step=31 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  207.399058] H713 TEARDOWN step=32 BEGIN arm=1 op=11 ctl=00000700 cfg=011a5e00
+[  207.419262] H713 TEARDOWN step=32 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  209.740120] H713 TEARDOWN step=33 BEGIN arm=1 op=2 ctl=00000700 cfg=011a5e00
+[  209.748649] H713 TEARDOWN step=33 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  211.943671] H713 TEARDOWN step=34 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  211.951906] H713 TEARDOWN pair=5 dev=0 BUSY_WAIT sent=0
+[  211.958553] H713 TEARDOWN pair=5 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  211.966676] H713 TEARDOWN pair=5 dev=0 COMMAND_SENT sent=1
+[  211.973260] H713 TEARDOWN pair=5 dev=0 DONE_WAIT sent=1
+[  211.979399] H713 TEARDOWN pair=5 dev=0 COMPLETE status=00000120 response=00000001
+[  211.987799] H713 TEARDOWN step=34 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  214.249484] H713 TEARDOWN step=35 BEGIN arm=1 op=3 ctl=00000700 cfg=011a5e00
+[  214.257736] H713 TEARDOWN pair=5 dev=1 BUSY_WAIT sent=0
+[  214.264069] H713 TEARDOWN pair=5 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  214.272061] H713 TEARDOWN pair=5 dev=1 COMMAND_SENT sent=1
+[  214.278644] H713 TEARDOWN pair=5 dev=1 DONE_WAIT sent=1
+[  214.284952] H713 TEARDOWN pair=5 dev=1 COMPLETE status=00000120 response=00000001
+[  214.293521] H713 TEARDOWN step=35 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  215.355323] H713 TEARDOWN step=36 BEGIN arm=1 op=4 ctl=00000700 cfg=011a5e00
+[  215.363559] H713 TEARDOWN step=36 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=0
+[  216.400325] H713 TEARDOWN step=37 BEGIN arm=1 op=5 ctl=00000700 cfg=011a5e00
+[  216.408903] H713 TEARDOWN step=37 DONE terminal=1 ctl=00000700 cfg=011a5e00 graph_remaining=0
+
+Broadcast message from root@h713-arm64 (Mon 2026-04-13 19:42:05 UTC):
+
+The system will power off now!
+
+[?2004l[?2004h[?2004l
+[  243.163268] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[  243.179484] get_txpwr_max:txpwr_max:18 
+[  243.198218] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[  243.205196] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[  243.212907] change_if: 3 to 2, 8, 2
+[  243.212943] get_txpwr_max:txpwr_max:18 
+[!p]104[?7h[6n[32766;32766H[6n[  245.159263] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[  245.458795] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  245.489352] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[  245.514312] systemd-journald[106]: Received SIGTERM from PID 1 (systemd-shutdow).
+[  245.543183] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[  245.568257] systemd-shutdown[1]: Unmounting file systems.
+[  245.577687] (sd-umount)[2365]: Unmounting '/run/credentials/systemd-journald.service'.
+[  245.589876] (sd-remount)[2366]: Remounting '/' read-only with options ''.
+[  245.621799] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[  245.638005] systemd-shutdown[1]: All filesystems unmounted.
+[  245.645041] systemd-shutdown[1]: Deactivating swaps.
+[  245.651868] systemd-shutdown[1]: All swaps deactivated.
+[  245.658744] systemd-shutdown[1]: Detaching loop devices.
+[  245.669516] systemd-shutdown[1]: All loop devices detached.
+[  245.676737] systemd-shutdown[1]: Stopping MD devices.
+[  245.683829] systemd-shutdown[1]: All MD devices stopped.
+[  245.690392] systemd-shutdown[1]: Detaching DM devices.
+[  245.697002] systemd-shutdown[1]: All DM devices detached.
+[  245.703626] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[  245.729272] h713-hdmi-hold-guard: poweroff with HDMI holds retained ( h713_hdmi_audio h713_hdmi_receiver ); cold cycle required
+[  245.746555] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  245.754729] systemd-shutdown[1]: Powering off.
+[  245.788883] sun50i-h713-afbd 5600000.display: [drm] RGB fetch quiesced at physical vblank 14582
+[  246.159241] sun50i-h713-afbd 5600000.display: panel powered down: supply off, reset line 0, PHY 18000000/00000030, route 40000000
+[  246.173968] reboot: Power down

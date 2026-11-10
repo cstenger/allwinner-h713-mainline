@@ -1,0 +1,12 @@
+alsa-ctl.c: OK
+enable-mixer.sh: OK
+h713-hdmi-speaker.service: OK
+install-speaker.sh: OK
+cf18eb76c191644387a4aafb889dd0b45267036ca128e6b72b3c4b30b112a65e  alsa-ctl
+f8868a1a9ed092acc537a5205ead63721cc18ba33436d593915d43ab0c474aa1  enable-mixer.sh
+c87fab458561cc6aad746d68ab814f46938ac86aa3a236697b95fca78dc529d8  /etc/systemd/system/h713-hdmi-speaker.service
+enabled
+BindsTo=h713-hdmi-signal.service h713-hdmi-capture.service
+Before=shutdown.target multi-user.target
+After=h713-hdmi-capture.service -.mount sysinit.target basic.target system.slice systemd-journald.socket h713-hdmi-signal.service
+Transient=no

@@ -1,0 +1,11 @@
+[  132.111731] h713-scp-probe: EDID trial ready; holding HPD asserted for 30000 ms
+[  134.717773] cpu_comm: MIPS callback channel pid=565 id=0x2351
+[  135.778067] cpu_comm: userspace callback comp=0x38d780e2 receivers=1
+[  137.693835] cpu_comm: CPUComm_CallEx: no RETURN after 5000 ms (session=0x16, interrupted)
+
+Host orchestration:
+  HPD assertion -> daemon callback channel: 2.606042 seconds
+  Connector connected: 1.502 seconds after host trial start
+  Connector enabled:   1.814 seconds after host trial start
+
+No later serial output was observed. SSH reset, then ping and SSH timed out.

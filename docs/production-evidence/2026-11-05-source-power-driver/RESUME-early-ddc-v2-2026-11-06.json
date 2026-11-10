@@ -1,0 +1,44 @@
+{
+  "date": "2026-11-06",
+  "state": "v2-fresh-01 FAIL no-retry; v2 ROLLED BACK on disk (session e8b0a1c3, signal 2b6ac46d, drop-in removed); single-launch audit PASS 75 on 7d472e55. Single launch remains installed. Board running; UART stopped.",
+  "hypothesis": "DDC block running clocked with its pins io_disabled (stock: microseconds; ours: 1.4-3.2 s) latches a bad bus state -> NAK until DDC re-enable/HPD pulse. v2 claims pins BEFORE clock_count=4 (EDID clock/reset), so that interval is zero.",
+  "session_sha256": "9396df21701463cdf8b747fa3e3f6c1bd031c427ed8c202e3e0e5e00facd67f2",
+  "signal_sha256": "2c9c4d3c88de2fe595b643267911e3f2651336bbf75c5fa80bdb73316843c7a3",
+  "dropin_sha256": "7437146a784dcfc5c07a47438e82b13f549cf406f486b5e71884e7d89b0668c9",
+  "bundle": "bundle/ here and /root/early-ddc-v2-bundle on target",
+  "installer": "/root/early-ddc-v2-bundle/install-early-ddc.py --boot <id> [--apply] [--rollback BACKUP]",
+  "audit": "audit-early-ddc-v2.py",
+  "tests": "session 28 OK, signal 34 OK",
+  "pass_criteria": "journal: 'h713-ddc-pins: PL10-PL15 claimed' BEFORE 'EDID clock held'; lock with no 'HPD re-advertised'",
+  "next": [
+    "Chris approval to apply",
+    "clean poweroff, supply off, source PC reboot, rearm UART + observer --window-seconds 30 (previous board boot = current boot id at poweroff)"
+  ],
+  "v2_fresh01": {
+    "previous_board_boot": "ff83b6b5-bfaa-4c80-877a-e5c14d76e7a1",
+    "source_boot_before_reboot": "f7cbe8f7-36d8-4e9b-bc86-b38710125771",
+    "after_host_reboot_steps": [
+      "new host boot id != f7cbe8f7; CP2102 free; recreate scratchpad b.sh if missing",
+      "background: python3 -B tools/serial/capture-panel-validation.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 --output local/recovery/2026-11-06-early-ddc-v2/fresh-01-uart",
+      "background: python3 -B tools/hdmi/observe-matched-startup.py --previous-boot ff83b6b5-bfaa-4c80-877a-e5c14d76e7a1 --arm optimized --module-version reject-trace-power-v2 --window-seconds 30 --output local/recovery/2026-11-06-early-ddc-v2/fresh-01",
+      "verify UART OPEN, ask Chris for board power",
+      "check ordering pins<EDID clock and no 'HPD re-advertised'; audit-early-ddc-v2.py; if FAIL roll back"
+    ],
+    "rollback": "python3 -B /root/early-ddc-v2-bundle/install-early-ddc.py --boot <id> --apply --rollback /var/lib/h713-hdmi-startup/early-ddc-9d247827ffb94595866b3737bf30f861",
+    "source_boot": "9d4f815b-13d5-42dd-a223-e6d88a3cdd94",
+    "board_boot": "7d472e55-b378-4f60-943b-371a060fdb94",
+    "timeline": {
+      "ddc_pins_claimed": 11.6,
+      "edid_clock": 11.604,
+      "adopted": 14.842,
+      "edid_hpd_ready": 14.864,
+      "initial_none": 15.472,
+      "readvertise": 27.372,
+      "locked": 28.863,
+      "video": 28.912
+    },
+    "result": "FAIL no-retry: pins 4 ms BEFORE EDID clock/reset, still 1 HPD re-advertise; 30 s stream 59.81 fps, 0 rejects",
+    "meaning": "EDID-clock/DDC-pin ordering fully ruled out (3.24 s, 1.43 s, -4 ms all fail).",
+    "rollback_backup": "/var/lib/h713-hdmi-startup/early-ddc-54c4f3f6fe3f4bc3ae6238adf90b5db5"
+  }
+}

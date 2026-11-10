@@ -1,0 +1,13 @@
+{
+  "hardware_validation": "open-callback fix not yet loaded; cold boot required after DSP restore timeout",
+  "fixes": [
+    "AudIf access and IRQ registration after IHB/AudioTop setup",
+    "Treat positive integer-constraint return as successful before attaching capture_stream"
+  ],
+  "sha256": {
+    "modules/hdmi-audio/h713-hdmi-audio.c": "b72356c51ffa6ffbce801b19fdb581ca9567b731e03f4e7c290a0a210f68d9b5",
+    "modules/hdmi-audio/h713-pcm-ring.h": "1405be1e1d8fd089ea0d9a5750081505e82ff6e078c42a514b0576a2cc719355",
+    "modules/hdmi-audio/h713-hdmi-audio.ko": "978a18103eec889f9578a8685081aeb35e13237480b6bd29d003c20e6858d6d3",
+    "tools/hdmi/run-alsa-capture-test.py": "9f69831bf6765fb81983f00412ded4bf8a3d916f7ddd65a5710b4d5754f14ea4"
+  }
+}

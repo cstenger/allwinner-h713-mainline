@@ -1,0 +1,25 @@
+
+from pathlib import Path
+import subprocess,time,json,signal,os
+p=Path('/run/h713-audio-inspect');r={};unit='h713-hdmi-speaker'
+assert Path('/proc/sys/kernel/random/boot_id').read_text().strip()=='ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac'
+assert subprocess.run(['systemctl','is-active','--quiet',unit]).returncode==0
+try:
+ subprocess.run(['systemctl','stop',unit],check=True,timeout=15)
+ with (p/'observe.log').open('xb') as f:
+  proc=subprocess.Popen([str(p/'speaker-observe')],stdout=f,stderr=subprocess.STDOUT)
+  try:
+   r['pid']=proc.pid;time.sleep(8)
+   assert proc.poll() is None
+   r['pre_pause_uptime']=Path('/proc/uptime').read_text().strip()
+   os.kill(proc.pid,signal.SIGSTOP);time.sleep(.6);os.kill(proc.pid,signal.SIGCONT)
+   r['post_pause_uptime']=Path('/proc/uptime').read_text().strip()
+   time.sleep(15)
+  finally:
+   if proc.poll() is None:proc.send_signal(signal.SIGCONT);proc.terminate()
+   try:r['diagnostic_exit']=proc.wait(timeout=8)
+   except subprocess.TimeoutExpired:proc.kill();proc.wait();r['diagnostic_killed']=True
+finally:
+ subprocess.run(['systemctl','start',unit],check=True,timeout=20)
+ r['restored_active']=subprocess.check_output(['systemctl','is-active',unit],text=True).strip()
+ (p/'observe-result.json').write_text(json.dumps(r,indent=2))

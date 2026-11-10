@@ -1,0 +1,20 @@
+
+from pathlib import Path
+import subprocess,time,json
+unit='h713-hdmi-speaker';r={}
+assert Path('/proc/sys/kernel/random/boot_id').read_text().strip()=='ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac'
+try:
+ s=subprocess.run(['systemctl','stop',unit],capture_output=True,text=True,timeout=25);r['stop_rc']=s.returncode;r['stop_output']=s.stdout+s.stderr
+ r['capture_after_stop']=Path('/proc/asound/H713HDMI/pcm0c/sub0/status').read_text()
+ r['capture_backend']=subprocess.check_output(['systemctl','is-active','h713-hdmi-capture','h713-hdmi-signal'],text=True)
+ assert s.returncode==0 and r['capture_after_stop'].strip()=='closed',r
+finally:
+ subprocess.run(['systemctl','start',unit],check=True,timeout=15)
+ deadline=time.monotonic()+15
+ while time.monotonic()<deadline:
+  c=subprocess.run(['python3','/usr/lib/h713-hdmi-speaker/pipewire-speaker.py','check'],capture_output=True,text=True,timeout=10)
+  if c.returncode==0:r['restarted_route']=json.loads(c.stdout);break
+  time.sleep(.5)
+ else:r['restart_error']=c.stdout+c.stderr
+ Path('/run/h713-audio-inspect/release-test.json').write_text(json.dumps(r,indent=2))
+print(json.dumps(r,indent=2))

@@ -1,0 +1,33 @@
+{
+  "dma_lines": [
+    "h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written"
+  ],
+  "codec": {
+    "0x0": "000: 80014000\n",
+    "0x10": "010: 01604f10\n",
+    "0x14": "014: 00003004\n",
+    "0x24": "024: 00dfba88\n",
+    "0x310": "310: 0015e80f\n",
+    "0x320": "320: 00000080\n",
+    "0x324": "324: 80808c44\n"
+  },
+  "clocks": [
+    "       bus-audio-codec               1       1        0        24000000    0          0     50000      Y         2030000.codec                   apb                      ",
+    "       bus-audio-hub                 0       0        0        24000000    0          0     50000      N         deviceless                      no_connection_id         ",
+    "    pll-audio-base                   1       1        0        196608000   0          0     50000      Y      deviceless                      no_connection_id         ",
+    "       pll-audio-4x                  0       0        0        98304000    0          0     50000      Y         deviceless                      no_connection_id         ",
+    "       pll-audio-2x                  1       1        0        49152000    0          0     50000      Y         deviceless                      no_connection_id         ",
+    "          audio-codec-dac            1       1        0        49152000    0          0     50000      Y            2030000.codec                   codec                    ",
+    "          audio-codec-adc            0       0        0        49152000    0          0     50000      N            deviceless                      no_connection_id         ",
+    "       pll-audio                     0       0        0        196608000   0          0     50000      Y         deviceless                      no_connection_id         ",
+    "          hdmi-audio                 0       0        0        1152000000  0          0     50000      Y            deviceless                      of_clk_get_from_provider ",
+    "       ve-core                       0       0        0        432000000   0          0     50000      N         1c0e000.video-codec             mod                      ",
+    "             mbus-ve3                0       0        0        400000000   0          0     50000      N               1c0e000.video-codec             ram                      ",
+    "          bus-hdmi-audio             0       0        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider ",
+    "          audio-ihb                  0       0        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider ",
+    "          audio-umac                 0       0        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider ",
+    "          audio-cpu                  0       0        0        100000000   0          0     50000      Y            deviceless                      of_clk_get_from_provider ",
+    "          bus-ve3                    0       0        0        100000000   0          0     50000      N            1c0e000.video-codec             bus_ve3                  ",
+    "          bus-ve                     0       0        0        100000000   0          0     50000      N            1c0e000.video-codec             ahb                      "
+  ]
+}

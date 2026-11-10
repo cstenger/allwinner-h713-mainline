@@ -1,0 +1,77 @@
+{
+  "status": "PASS candidate runtime identity/startup checks",
+  "boot_id": "d50d994e-b1f6-4afc-8b84-dccf6483c1b5",
+  "cpus": "0-3",
+  "files_verified": 75,
+  "package_set": "PASS",
+  "kernel_config": "PASS",
+  "raw": {
+    "proper": "PASS",
+    "spl": "PASS",
+    "environment": "PASS"
+  },
+  "bundles": [
+    {
+      "bundle": "h713-hdmi",
+      "stdout": "./firmware/h713/hdmi-audio-dsp.bin: OK\n./h713-ddc-pins.ko: OK\n./h713-hdmi-audio.ko: OK\n./h713-hdmi-capture.service: OK\n./h713-hdmi-hold-guard: OK\n./h713-hdmi-readvertise.py: OK\n./h713-hdmi-readvertise.service: OK\n./h713-hdmi-receiver.ko: OK\n./h713-hdmi-session.py: OK\n./h713-hdmi-signal.ko: OK\n./h713-hdmi-signal.py: OK\n./h713-hdmi-signal.service: OK\n./h713-hdmi.cmd: OK\n./h713-hdmi.scr: OK\n./mips-shell.py: OK\n./read-comm-trace.py: OK\n./h713-hdmi-prepare.service: OK\n"
+    },
+    {
+      "bundle": "h713-hdmi-health",
+      "stdout": "./check-startup.sh: OK\n./h713-hdmi-health-ack.py: OK\n./h713-hdmi-health-ack.service: OK\n./h713-hdmi.cmd: OK\n./h713-hdmi.scr: OK\n"
+    },
+    {
+      "bundle": "h713-hdmi-video",
+      "stdout": "./71-h713-hdmi-in.rules: OK\n./h713-hdmi-ring.service: OK\n./h713-hdmi-v4l2.ko: OK\n./h713-hdmi-video.service: OK\n"
+    },
+    {
+      "bundle": "h713-hdmi-speaker",
+      "stdout": "./alsa-ctl: OK\n./enable-mixer.sh: OK\n./h713-hdmi-speaker.service: OK\n./pipewire-speaker.py: OK\n"
+    }
+  ],
+  "startup": {
+    "argv": [
+      "sh",
+      "/usr/lib/h713-hdmi-health/check-startup.sh"
+    ],
+    "returncode": 0,
+    "stdout": "== boot d50d994e-b1f6-4afc-8b84-dccf6483c1b5 6.18.38 up 145.90s\nhandoff 48444d49000000008b8f275c\nh713-hdmi-capture: success 0 active yes \nh713-hdmi-signal: success 0 active yes \nh713_hdmi_receiver.clock_count=4\nh713_hdmi_receiver.init_error=0\nh713_hdmi_receiver.firmware_pin=Y\nh713_hdmi_receiver.edid_ready=Y\nh713_hdmi_receiver.clients=2\nh713_hdmi_audio.dsp_failed=N\nh713_hdmi_audio.manage_dsp=Y\nh713_hdmi_audio.manage_tvfe=Y\nh713_hdmi_signal.ready=Y\nh713_hdmi_signal.failed=N\nh713_hdmi_signal.restored=N\n[   13.097503] h713-hdmi-audio: DSP versions 0000/0000\n[   14.012850] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1\nstate: RUNNING\nowner_pid   : 328\ntrigger_time: 15.740794006\ntstamp      : 146.202662151\ndelay       : 380\navail       : 380\navail_max   : 604\n-----\nhw_ptr      : 6262140\nappl_ptr    : 6261760\n/tmp/h713-ddc-hpd-isolation\nrtc gp6 latch unknown from Linux (U-Boot checked)\nApr 13 19:38:16 h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...\nApr 13 19:38:17 h713-arm64 python3[346]: {\"phase\": \"ready\", \"already_ready\": true}\nApr 13 19:38:17 h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.\nApr 13 19:38:17 h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...\nApr 13 19:38:17 h713-arm64 python3[360]: EDID/HPD ready; receiver client and DDC pins retained\nApr 13 19:38:17 h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.\nPASS\n",
+    "stderr": ""
+  },
+  "services": {
+    "h713-hdmi-capture": "NRestarts=0\nActiveState=active\n",
+    "h713-hdmi-signal": "NRestarts=0\nActiveState=active\n",
+    "h713-hdmi-ring": "NRestarts=0\nActiveState=active\n",
+    "h713-hdmi-video": "NRestarts=0\nActiveState=active\n",
+    "h713-hdmi-speaker": "NRestarts=0\nActiveState=active\n",
+    "h713-hdmi-health-ack": "NRestarts=0\nActiveState=active\n",
+    "h713-hdmi-readvertise": "NRestarts=0\nActiveState=active\n"
+  },
+  "uname": {
+    "argv": [
+      "uname",
+      "-a"
+    ],
+    "returncode": 0,
+    "stdout": "Linux h713-arm64 6.18.38 #1 SMP Tue Nov 03 08:04:43 UTC 2026 aarch64 GNU/Linux\n",
+    "stderr": ""
+  },
+  "storage": {
+    "argv": [
+      "df",
+      "-B1",
+      "/"
+    ],
+    "returncode": 0,
+    "stdout": "Filesystem      1B-blocks       Used  Available Use% Mounted on\n/dev/root      2833047552 1143361536 1651437568  41% /\n",
+    "stderr": ""
+  },
+  "bluetooth": {
+    "argv": [
+      "bluetoothctl",
+      "list"
+    ],
+    "returncode": 0,
+    "stdout": "Controller 3C:3B:AD:78:F0:29 h713-arm64 [default]\n",
+    "stderr": ""
+  }
+}

@@ -1,0 +1,299 @@
+=== soak-capture start 2026-10-21 14:00:01 (deadline 240 min) ===
+[14:00:02 T+    1.2] [   57.520188] H713 TVTOP CONSOLE CHECK boot=046a1262-cc72-4d5e-b505-f174b90eccb6 notice-level; no module loaded
+[14:00:09 T+    7.4] [   63.713878] h713-dsp-access-audit: INIT software validation only; no MMIO
+[14:00:09 T+    7.4] [   63.720970] h713-dsp-access-audit: INIT DONE completed=0 extension=1; waiting for one explicit step
+[14:00:15 T+   13.3] [   69.659868] h713-dsp-access-audit: BEGIN step=1 operation=claim-dsp-port
+[14:00:15 T+   13.3] [   69.666675] h713-dsp-access-audit: DONE step=1 operation=claim-dsp-port value=00000000
+[14:00:20 T+   18.9] [   75.223629] h713-dsp-access-audit: BEGIN step=2 operation=claim-lock-window
+[14:00:20 T+   18.9] [   75.230694] h713-dsp-access-audit: DONE step=2 operation=claim-lock-window value=00000000
+[14:00:26 T+   24.9] [   81.265858] h713-dsp-access-audit: BEGIN step=3 operation=claim-audiotop
+[14:00:26 T+   24.9] [   81.272694] h713-dsp-access-audit: DONE step=3 operation=claim-audiotop value=00000000
+[14:00:32 T+   30.6] [   86.911529] h713-dsp-access-audit: BEGIN step=4 operation=claim-scp-reset
+[14:00:32 T+   30.6] [   86.918392] h713-dsp-access-audit: DONE step=4 operation=claim-scp-reset value=00000000
+[14:00:38 T+   36.3] [   92.608592] h713-dsp-access-audit: BEGIN step=5 operation=map-mips-status
+[14:00:38 T+   36.3] [   92.615484] h713-dsp-access-audit: DONE step=5 operation=map-mips-status value=00000000
+[14:00:43 T+   42.2] [   98.515740] h713-dsp-access-audit: BEGIN step=6 operation=map-scp-reset
+[14:00:43 T+   42.2] [   98.522514] h713-dsp-access-audit: DONE step=6 operation=map-scp-reset value=00000000
+[14:00:49 T+   47.8] [  104.143553] h713-dsp-access-audit: BEGIN step=7 operation=map-tv-ccu
+[14:00:49 T+   47.8] [  104.150064] h713-dsp-access-audit: DONE step=7 operation=map-tv-ccu value=00000000
+[14:00:55 T+   53.6] [  109.928167] h713-dsp-access-audit: BEGIN step=8 operation=map-display-ccu
+[14:00:55 T+   53.6] [  109.935049] h713-dsp-access-audit: DONE step=8 operation=map-display-ccu value=00000000
+[14:01:02 T+   60.5] [  116.846446] h713-dsp-access-audit: BEGIN step=9 operation=read-mips-stopped
+[14:01:02 T+   60.5] [  116.853530] h713-dsp-access-audit: DONE step=9 operation=read-mips-stopped value=00000000
+[14:01:08 T+   66.3] [  122.685571] h713-dsp-access-audit: BEGIN step=10 operation=read-scp-stopped
+[14:01:08 T+   66.3] [  122.692607] h713-dsp-access-audit: DONE step=10 operation=read-scp-stopped value=00000000
+[14:01:13 T+   72.1] [  128.377454] h713-dsp-access-audit: BEGIN step=11 operation=read-demod-bus
+[14:01:13 T+   72.1] [  128.384322] h713-dsp-access-audit: DONE step=11 operation=read-demod-bus value=00000000
+[14:01:19 T+   77.9] [  134.216164] h713-dsp-access-audit: BEGIN step=12 operation=read-display-bus
+[14:01:19 T+   77.9] [  134.223254] h713-dsp-access-audit: DONE step=12 operation=read-display-bus value=00010001
+[14:01:25 T+   83.5] [  139.812782] h713-dsp-access-audit: BEGIN step=13 operation=get-display-reset
+[14:01:25 T+   83.5] [  139.819933] h713-dsp-access-audit: DONE step=13 operation=get-display-reset value=00000000
+[14:01:30 T+   89.2] [  145.575707] h713-dsp-access-audit: BEGIN step=14 operation=read-display-reset
+[14:01:31 T+   89.3] [  145.582939] h713-dsp-access-audit: DONE step=14 operation=read-display-reset value=00000000
+[14:01:36 T+   94.9] [  151.220034] h713-dsp-access-audit: BEGIN step=15 operation=get-demod-reset
+[14:01:36 T+   94.9] [  151.227068] h713-dsp-access-audit: DONE step=15 operation=get-demod-reset value=00000000
+[14:01:42 T+  100.7] [  157.081036] h713-dsp-access-audit: BEGIN step=16 operation=read-demod-reset
+[14:01:42 T+  100.7] [  157.088070] h713-dsp-access-audit: DONE step=16 operation=read-demod-reset value=00000001
+[14:01:48 T+  106.4] [  162.697878] h713-dsp-access-audit: BEGIN step=17 operation=get-clock-pll-video0
+[14:01:48 T+  106.4] [  162.705258] h713-dsp-access-audit: DONE step=17 operation=get-clock-pll-video0 value=00000000
+[14:01:53 T+  112.2] [  168.491286] h713-dsp-access-audit: BEGIN step=18 operation=get-clock-pll-adc
+[14:01:53 T+  112.2] [  168.498410] h713-dsp-access-audit: DONE step=18 operation=get-clock-pll-adc value=00000000
+[14:01:59 T+  117.9] [  174.190467] h713-dsp-access-audit: BEGIN step=19 operation=get-clock-bus-tvcap
+[14:01:59 T+  117.9] [  174.197799] h713-dsp-access-audit: DONE step=19 operation=get-clock-bus-tvcap value=00000000
+[14:02:05 T+  124.0] [  180.301644] h713-dsp-access-audit: BEGIN step=20 operation=get-clock-bus-cap-300m
+[14:02:05 T+  124.0] [  180.309390] h713-dsp-access-audit: DONE step=20 operation=get-clock-bus-cap-300m value=00000000
+[14:02:11 T+  129.7] [  186.048744] h713-dsp-access-audit: BEGIN step=21 operation=get-clock-vincap-dma
+[14:02:11 T+  129.7] [  186.056168] h713-dsp-access-audit: DONE step=21 operation=get-clock-vincap-dma value=00000000
+[14:02:17 T+  135.7] [  192.007419] h713-dsp-access-audit: BEGIN step=22 operation=get-clock-tvfe-1296m
+[14:02:17 T+  135.7] [  192.014824] h713-dsp-access-audit: DONE step=22 operation=get-clock-tvfe-1296m value=00000000
+[14:02:23 T+  141.3] [  197.638204] h713-dsp-access-audit: BEGIN step=23 operation=get-clock-bus-hdmi-audio
+[14:02:23 T+  141.3] [  197.645941] h713-dsp-access-audit: DONE step=23 operation=get-clock-bus-hdmi-audio value=00000000
+[14:02:29 T+  147.5] [  203.839751] h713-dsp-access-audit: BEGIN step=24 operation=get-clock-hdmi-audio
+[14:02:29 T+  147.5] [  203.847158] h713-dsp-access-audit: DONE step=24 operation=get-clock-hdmi-audio value=00000000
+[14:02:35 T+  153.6] [  209.906766] h713-dsp-access-audit: BEGIN step=25 operation=get-clock-audio-cpu
+[14:02:35 T+  153.6] [  209.914073] h713-dsp-access-audit: DONE step=25 operation=get-clock-audio-cpu value=00000000
+[14:02:40 T+  159.1] [  215.418371] h713-dsp-access-audit: BEGIN step=26 operation=get-clock-audio-umac
+[14:02:40 T+  159.1] [  215.425772] h713-dsp-access-audit: DONE step=26 operation=get-clock-audio-umac value=00000000
+[14:02:46 T+  165.1] [  221.415828] h713-dsp-access-audit: BEGIN step=27 operation=get-clock-audio-ihb
+[14:02:46 T+  165.1] [  221.423139] h713-dsp-access-audit: DONE step=27 operation=get-clock-audio-ihb value=00000000
+[14:02:52 T+  170.9] [  227.266602] h713-dsp-access-audit: BEGIN step=28 operation=get-clock-pll-video2
+[14:02:52 T+  170.9] [  227.273983] h713-dsp-access-audit: DONE step=28 operation=get-clock-pll-video2 value=00000000
+[14:02:58 T+  176.9] [  233.240737] h713-dsp-access-audit: BEGIN step=29 operation=get-clock-deint
+[14:02:58 T+  176.9] [  233.247694] h713-dsp-access-audit: DONE step=29 operation=get-clock-deint value=00000000
+[14:03:04 T+  183.2] [  239.479654] h713-dsp-access-audit: BEGIN step=30 operation=get-clock-panel
+[14:03:04 T+  183.2] [  239.486643] h713-dsp-access-audit: DONE step=30 operation=get-clock-panel value=00000000
+[14:03:10 T+  188.9] [  245.211465] h713-dsp-access-audit: BEGIN step=31 operation=get-clock-svp-dtl
+[14:03:10 T+  188.9] [  245.218601] h713-dsp-access-audit: DONE step=31 operation=get-clock-svp-dtl value=00000000
+[14:03:16 T+  194.7] [  250.990417] h713-dsp-access-audit: BEGIN step=32 operation=get-clock-afbd
+[14:03:16 T+  194.7] [  250.997298] h713-dsp-access-audit: DONE step=32 operation=get-clock-afbd value=00000000
+[14:03:22 T+  200.4] [  256.786014] h713-dsp-access-audit: BEGIN step=33 operation=get-clock-bus-disp
+[14:03:22 T+  200.5] [  256.793241] h713-dsp-access-audit: DONE step=33 operation=get-clock-bus-disp value=00000000; prefix end, NO domain/clock/reset writes or DSP access
+[14:03:35 T+  213.7] [  270.032212] h713-dsp-access-audit: BEGIN step=34 operation=map-ppu-status
+[14:03:35 T+  213.7] [  270.039146] h713-dsp-access-audit: DONE step=34 operation=map-ppu-status value=00000000
+[14:03:41 T+  219.5] [  275.808199] h713-dsp-access-audit: BEGIN step=35 operation=read-ppu-tvfe-status
+[14:03:41 T+  219.5] [  275.815588] h713-dsp-access-audit: DONE step=35 operation=read-ppu-tvfe-status value=00020000
+[14:03:47 T+  225.4] [  281.755554] h713-dsp-access-audit: BEGIN step=36 operation=read-ppu-tvcap-status
+[14:03:47 T+  225.4] [  281.763034] h713-dsp-access-audit: DONE step=36 operation=read-ppu-tvcap-status value=00020000
+[14:03:53 T+  231.3] [  287.606832] h713-dsp-access-audit: BEGIN step=37 operation=get-tvcap-reset
+[14:03:53 T+  231.3] [  287.613796] h713-dsp-access-audit: DONE step=37 operation=get-tvcap-reset value=00000000
+[14:03:58 T+  237.1] [  293.445287] h713-dsp-access-audit: BEGIN step=38 operation=read-tvcap-reset
+[14:03:58 T+  237.1] [  293.452359] h713-dsp-access-audit: DONE step=38 operation=read-tvcap-reset value=00000001
+[14:04:04 T+  242.9] [  299.192958] h713-dsp-access-audit: BEGIN step=39 operation=census-clock-enabled
+[14:04:04 T+  242.9] [  299.200378] h713-dsp-access-audit: DONE step=39 operation=census-clock-enabled value=00010000
+[14:04:10 T+  249.1] [  305.365133] h713-dsp-access-audit: BEGIN step=40 operation=read-tv-ccu-words
+[14:04:10 T+  249.1] [  305.372262] h713-dsp-access-audit: DONE step=40 operation=read-tv-ccu-words value=00000000
+[14:04:24 T+  262.5] [  318.840116] h713-dsp-access-audit: BEGIN step=41 operation=attach-tvfe
+[14:04:24 T+  262.5] [  318.846823] h713-dsp-access-audit: DONE step=41 operation=attach-tvfe value=00000000
+[14:04:30 T+  268.3] [  324.668690] h713-dsp-access-audit: BEGIN step=42 operation=resume-tvfe
+[14:04:30 T+  268.3] [  324.675312] h713-dsp-access-audit: domain 0 genpd event 2
+[14:04:30 T+  268.3] [  324.680788] h713-dsp-access-audit: domain 0 genpd event 3
+[14:04:30 T+  268.4] [  324.686237] h713-dsp-access-audit: OP-DONE step=42
+[14:04:30 T+  268.4] [  324.691064] h713-dsp-access-audit: DONE step=42 operation=resume-tvfe value=00010000
+[14:04:35 T+  274.1] [  330.417656] h713-dsp-access-audit: BEGIN step=43 operation=attach-tvcap
+[14:04:35 T+  274.1] [  330.424424] h713-dsp-access-audit: DONE step=43 operation=attach-tvcap value=00000000
+[14:04:41 T+  279.9] [  336.223927] h713-dsp-access-audit: BEGIN step=44 operation=resume-tvcap
+[14:04:41 T+  279.9] [  336.230619] h713-dsp-access-audit: domain 1 genpd event 2
+[14:04:41 T+  279.9] [  336.236084] h713-dsp-access-audit: domain 1 genpd event 3
+[14:04:41 T+  279.9] [  336.241518] h713-dsp-access-audit: OP-DONE step=44
+[14:04:41 T+  279.9] [  336.246331] h713-dsp-access-audit: DONE step=44 operation=resume-tvcap value=00010000
+[14:04:47 T+  285.8] [  342.100688] h713-dsp-access-audit: BEGIN step=45 operation=recheck-stopped-after-power
+[14:04:47 T+  285.8] [  342.108694] h713-dsp-access-audit: DONE step=45 operation=recheck-stopped-after-power value=00000000
+[14:05:01 T+  299.3] [  355.615233] h713-dsp-access-audit: BEGIN step=46 operation=deassert-tvcap-reset-if-asserted
+[14:05:01 T+  299.3] [  355.623700] h713-dsp-access-audit: OP-DONE step=46
+[14:05:01 T+  299.3] [  355.628546] h713-dsp-access-audit: DONE step=46 operation=deassert-tvcap-reset-if-asserted value=00000001
+[14:05:06 T+  305.2] [  361.575753] h713-dsp-access-audit: BEGIN step=47 operation=enable-clock-bus-tvcap
+[14:05:06 T+  305.2] [  361.583326] h713-dsp-access-audit: OP-DONE step=47
+[14:05:06 T+  305.2] [  361.588149] h713-dsp-access-audit: DONE step=47 operation=enable-clock-bus-tvcap value=00000000
+[14:05:12 T+  311.0] [  367.317120] h713-dsp-access-audit: BEGIN step=48 operation=enable-clock-bus-cap-300m
+[14:05:12 T+  311.0] [  367.325046] h713-dsp-access-audit: OP-DONE step=48
+[14:05:12 T+  311.0] [  367.329917] h713-dsp-access-audit: DONE step=48 operation=enable-clock-bus-cap-300m value=00000000
+[14:05:18 T+  316.8] [  373.116077] h713-dsp-access-audit: BEGIN step=49 operation=enable-clock-vincap-dma
+[14:05:18 T+  316.8] [  373.123735] h713-dsp-access-audit: OP-DONE step=49
+[14:05:18 T+  316.8] [  373.128555] h713-dsp-access-audit: DONE step=49 operation=enable-clock-vincap-dma value=00000000
+[14:05:24 T+  322.9] [  379.158438] h713-dsp-access-audit: BEGIN step=50 operation=enable-clock-tvfe-1296m
+[14:05:24 T+  322.9] [  379.166086] h713-dsp-access-audit: OP-DONE step=50
+[14:05:24 T+  322.9] [  379.170899] h713-dsp-access-audit: DONE step=50 operation=enable-clock-tvfe-1296m value=00000000
+[14:05:30 T+  328.9] [  385.264779] h713-dsp-access-audit: BEGIN step=51 operation=deassert-demod-reset
+[14:05:30 T+  329.0] [  385.286591] h713-dsp-access-audit: OP-DONE step=51
+[14:05:30 T+  329.0] [  385.291442] h713-dsp-access-audit: DONE step=51 operation=deassert-demod-reset value=00000000
+[14:05:36 T+  335.2] [  391.537633] h713-dsp-access-audit: BEGIN step=52 operation=enable-clock-pll-video0
+[14:05:36 T+  335.2] [  391.545316] h713-dsp-access-audit: DONE step=52 operation=enable-clock-pll-video0 value=00000001
+[14:05:42 T+  341.0] [  397.325099] h713-dsp-access-audit: BEGIN step=53 operation=enable-clock-pll-adc
+[14:05:42 T+  341.0] [  397.332572] h713-dsp-access-audit: OP-DONE step=53
+[14:05:42 T+  341.0] [  397.337425] h713-dsp-access-audit: DONE step=53 operation=enable-clock-pll-adc value=00000000
+[14:05:57 T+  355.5] [  411.765156] h713-dsp-access-audit: BEGIN step=54 operation=write-tv-word-d10
+[14:05:57 T+  355.5] [  411.772277] h713-dsp-access-audit: OP-DONE step=54
+[14:05:57 T+  355.5] [  411.777100] h713-dsp-access-audit: DONE step=54 operation=write-tv-word-d10 value=80000017
+[14:06:02 T+  361.2] [  417.517803] h713-dsp-access-audit: BEGIN step=55 operation=write-tv-word-d20
+[14:06:02 T+  361.2] [  417.524921] h713-dsp-access-audit: OP-DONE step=55
+[14:06:02 T+  361.2] [  417.529749] h713-dsp-access-audit: DONE step=55 operation=write-tv-word-d20 value=80000000
+[14:06:08 T+  367.0] [  423.324954] h713-dsp-access-audit: BEGIN step=56 operation=write-tv-word-d24
+[14:06:08 T+  367.0] [  423.332116] h713-dsp-access-audit: OP-DONE step=56
+[14:06:08 T+  367.0] [  423.336963] h713-dsp-access-audit: DONE step=56 operation=write-tv-word-d24 value=81000005
+[14:06:14 T+  372.8] [  429.129578] h713-dsp-access-audit: BEGIN step=57 operation=write-tv-word-d28
+[14:06:14 T+  372.8] [  429.136704] h713-dsp-access-audit: OP-DONE step=57
+[14:06:14 T+  372.8] [  429.141521] h713-dsp-access-audit: DONE step=57 operation=write-tv-word-d28 value=80000002
+[14:06:20 T+  378.8] [  435.170065] h713-dsp-access-audit: BEGIN step=58 operation=write-tv-word-d2c
+[14:06:20 T+  378.8] [  435.177211] h713-dsp-access-audit: OP-DONE step=58
+[14:06:20 T+  378.8] [  435.182031] h713-dsp-access-audit: DONE step=58 operation=write-tv-word-d2c value=80000005
+[14:06:26 T+  384.7] [  441.038091] h713-dsp-access-audit: BEGIN step=59 operation=write-tv-word-d30
+[14:06:26 T+  384.7] [  441.045215] h713-dsp-access-audit: OP-DONE step=59
+[14:06:26 T+  384.7] [  441.050034] h713-dsp-access-audit: DONE step=59 operation=write-tv-word-d30 value=80000003
+[14:06:32 T+  390.9] [  447.195604] h713-dsp-access-audit: BEGIN step=60 operation=write-tv-word-d34
+[14:06:32 T+  390.9] [  447.202750] h713-dsp-access-audit: OP-DONE step=60
+[14:06:32 T+  390.9] [  447.207572] h713-dsp-access-audit: DONE step=60 operation=write-tv-word-d34 value=80000003
+[14:06:38 T+  396.5] [  452.824725] h713-dsp-access-audit: BEGIN step=61 operation=write-tv-word-d38
+[14:06:38 T+  396.5] [  452.831917] h713-dsp-access-audit: OP-DONE step=61
+[14:06:38 T+  396.5] [  452.836774] h713-dsp-access-audit: DONE step=61 operation=write-tv-word-d38 value=8000000b
+[14:06:44 T+  402.4] [  458.759857] h713-dsp-access-audit: BEGIN step=62 operation=write-tv-word-d40
+[14:06:44 T+  402.4] [  458.767002] h713-dsp-access-audit: OP-DONE step=62
+[14:06:44 T+  402.4] [  458.771857] h713-dsp-access-audit: DONE step=62 operation=write-tv-word-d40 value=80000117
+[14:06:50 T+  408.3] [  464.595542] h713-dsp-access-audit: BEGIN step=63 operation=write-tv-word-d48
+[14:06:50 T+  408.3] [  464.602654] h713-dsp-access-audit: OP-DONE step=63
+[14:06:50 T+  408.3] [  464.607471] h713-dsp-access-audit: DONE step=63 operation=write-tv-word-d48 value=80000002
+[14:06:55 T+  413.9] [  470.284568] h713-dsp-access-audit: BEGIN step=64 operation=write-tv-word-d4c
+[14:06:55 T+  413.9] [  470.291731] h713-dsp-access-audit: OP-DONE step=64
+[14:06:55 T+  413.9] [  470.296579] h713-dsp-access-audit: DONE step=64 operation=write-tv-word-d4c value=80000002
+[14:07:01 T+  419.8] [  476.135869] h713-dsp-access-audit: BEGIN step=65 operation=write-tv-word-d50
+[14:07:01 T+  419.8] [  476.143021] h713-dsp-access-audit: OP-DONE step=65
+[14:07:01 T+  419.8] [  476.147880] h713-dsp-access-audit: DONE step=65 operation=write-tv-word-d50 value=81000002
+[14:07:07 T+  425.7] [  482.005272] h713-dsp-access-audit: BEGIN step=66 operation=write-tv-word-d58
+[14:07:07 T+  425.7] [  482.012443] h713-dsp-access-audit: OP-DONE step=66
+[14:07:07 T+  425.7] [  482.017266] h713-dsp-access-audit: DONE step=66 operation=write-tv-word-d58 value=80000002
+[14:07:13 T+  431.5] [  487.836570] h713-dsp-access-audit: BEGIN step=67 operation=write-tv-word-d5c
+[14:07:13 T+  431.5] [  487.843749] h713-dsp-access-audit: OP-DONE step=67
+[14:07:13 T+  431.5] [  487.848587] h713-dsp-access-audit: DONE step=67 operation=write-tv-word-d5c value=8000020b
+[14:07:19 T+  437.5] [  493.787550] h713-dsp-access-audit: BEGIN step=68 operation=write-tv-word-d60
+[14:07:19 T+  437.5] [  493.794676] h713-dsp-access-audit: OP-DONE step=68
+[14:07:19 T+  437.5] [  493.799488] h713-dsp-access-audit: DONE step=68 operation=write-tv-word-d60 value=8000020b
+[14:07:25 T+  443.6] [  499.904475] h713-dsp-access-audit: BEGIN step=69 operation=set-demod-bus-gate
+[14:07:25 T+  443.6] [  499.926602] h713-dsp-access-audit: OP-DONE step=69
+[14:07:25 T+  443.6] [  499.931587] h713-dsp-access-audit: DONE step=69 operation=set-demod-bus-gate value=00010001
+[14:07:40 T+  459.1] [  515.389885] h713-dsp-access-audit: BEGIN step=70 operation=enable-clock-bus-hdmi-audio
+[14:07:40 T+  459.1] [  515.397970] h713-dsp-access-audit: OP-DONE step=70
+[14:07:40 T+  459.1] [  515.402844] h713-dsp-access-audit: DONE step=70 operation=enable-clock-bus-hdmi-audio value=00000000
+[14:07:46 T+  465.0] [  521.287206] h713-dsp-access-audit: BEGIN step=71 operation=enable-clock-hdmi-audio
+[14:07:46 T+  465.0] [  521.294877] h713-dsp-access-audit: OP-DONE step=71
+[14:07:46 T+  465.0] [  521.299694] h713-dsp-access-audit: DONE step=71 operation=enable-clock-hdmi-audio value=00000000
+[14:07:52 T+  470.8] [  527.098543] h713-dsp-access-audit: BEGIN step=72 operation=enable-clock-audio-cpu
+[14:07:52 T+  470.8] [  527.106121] h713-dsp-access-audit: DONE step=72 operation=enable-clock-audio-cpu value=00000001
+[14:07:58 T+  476.5] [  532.866508] h713-dsp-access-audit: BEGIN step=73 operation=enable-clock-audio-umac
+[14:07:58 T+  476.5] [  532.874208] h713-dsp-access-audit: DONE step=73 operation=enable-clock-audio-umac value=00000001
+[14:08:04 T+  482.6] [  538.914610] h713-dsp-access-audit: BEGIN step=74 operation=enable-clock-audio-ihb
+[14:08:04 T+  482.6] [  538.922155] h713-dsp-access-audit: DONE step=74 operation=enable-clock-audio-ihb value=00000001
+[14:08:17 T+  496.2] [  552.564776] h713-dsp-access-audit: BEGIN step=75 operation=enable-clock-pll-video2
+[14:08:17 T+  496.2] [  552.572509] h713-dsp-access-audit: DONE step=75 operation=enable-clock-pll-video2 value=00000001
+[14:08:23 T+  502.1] [  558.403018] h713-dsp-access-audit: BEGIN step=76 operation=enable-clock-deint
+[14:08:23 T+  502.1] [  558.410291] h713-dsp-access-audit: OP-DONE step=76
+[14:08:23 T+  502.1] [  558.415124] h713-dsp-access-audit: DONE step=76 operation=enable-clock-deint value=00000000
+[14:08:30 T+  508.3] [  564.602777] h713-dsp-access-audit: BEGIN step=77 operation=enable-clock-panel
+[14:08:30 T+  508.3] [  564.609978] h713-dsp-access-audit: OP-DONE step=77
+[14:08:30 T+  508.3] [  564.614797] h713-dsp-access-audit: DONE step=77 operation=enable-clock-panel value=00000000
+[14:08:36 T+  514.4] [  570.687842] h713-dsp-access-audit: BEGIN step=78 operation=enable-clock-svp-dtl
+[14:08:36 T+  514.4] [  570.695235] h713-dsp-access-audit: OP-DONE step=78
+[14:08:36 T+  514.4] [  570.700054] h713-dsp-access-audit: DONE step=78 operation=enable-clock-svp-dtl value=00000000
+[14:08:42 T+  520.4] [  576.723555] h713-dsp-access-audit: BEGIN step=79 operation=enable-clock-afbd
+[14:08:42 T+  520.4] [  576.730743] h713-dsp-access-audit: OP-DONE step=79
+[14:08:42 T+  520.4] [  576.735620] h713-dsp-access-audit: DONE step=79 operation=enable-clock-afbd value=00000000
+[14:08:48 T+  526.4] [  582.735814] h713-dsp-access-audit: BEGIN step=80 operation=enable-clock-bus-disp
+[14:08:48 T+  526.4] [  582.743310] h713-dsp-access-audit: DONE step=80 operation=enable-clock-bus-disp value=00000001
+[14:08:54 T+  532.7] [  589.020196] h713-dsp-access-audit: BEGIN step=81 operation=deassert-display-reset-if-asserted
+[14:08:54 T+  532.7] [  589.028805] h713-dsp-access-audit: DONE step=81 operation=deassert-display-reset-if-asserted value=00000000
+[14:09:07 T+  546.2] [  602.605041] h713-dsp-access-audit: BEGIN step=82 operation=final-recheck
+[14:09:08 T+  546.3] [  602.611833] h713-dsp-access-audit: DONE step=82 operation=final-recheck value=00010000; extension end, NO AudioTop/DSP/lock access yet
+[14:09:21 T+  559.9] [  616.246062] h713-dsp-access-audit: BEGIN step=83 operation=map-audiotop
+[14:09:21 T+  559.9] [  616.252781] h713-dsp-access-audit: DONE step=83 operation=map-audiotop value=00000000
+[14:09:27 T+  566.0] [  622.359646] h713-dsp-access-audit: BEGIN step=84 operation=read-audiotop-ctl
+[14:09:27 T+  566.0] [  622.366781] h713-dsp-access-audit: DONE step=84 operation=read-audiotop-ctl value=00000000
+[14:09:33 T+  572.0] [  628.305322] h713-dsp-access-audit: BEGIN step=85 operation=read-audiotop-cfg
+[14:09:33 T+  572.0] [  628.312462] h713-dsp-access-audit: DONE step=85 operation=read-audiotop-cfg value=00000000
+[14:09:39 T+  578.0] [  634.331908] h713-dsp-access-audit: BEGIN step=86 operation=read-tvfe-ctl
+[14:09:39 T+  578.0] [  634.338717] h713-dsp-access-audit: DONE step=86 operation=read-tvfe-ctl value=00000010
+[14:09:53 T+  591.9] [  648.207169] h713-dsp-access-audit: BEGIN step=87 operation=write-audiotop-ctl
+[14:09:53 T+  591.9] [  648.214371] h713-dsp-access-audit: OP-DONE step=87
+[14:09:53 T+  591.9] [  648.219183] h713-dsp-access-audit: DONE step=87 operation=write-audiotop-ctl value=00000700
+[14:09:59 T+  597.9] [  654.247584] h713-dsp-access-audit: BEGIN step=88 operation=write-audiotop-cfg
+[14:09:59 T+  597.9] [  654.254790] h713-dsp-access-audit: OP-DONE step=88
+[14:09:59 T+  597.9] [  654.259626] h713-dsp-access-audit: DONE step=88 operation=write-audiotop-cfg value=001a5e00
+[14:10:05 T+  604.2] [  660.482786] h713-dsp-access-audit: BEGIN step=89 operation=write-audiotop-cfg-latch
+[14:10:05 T+  604.2] [  660.490516] h713-dsp-access-audit: OP-DONE step=89
+[14:10:05 T+  604.2] [  660.495337] h713-dsp-access-audit: DONE step=89 operation=write-audiotop-cfg-latch value=011a5e00
+[14:10:12 T+  610.3] [  666.605370] h713-dsp-access-audit: BEGIN step=90 operation=recheck-stopped-after-audiotop
+[14:10:12 T+  610.3] [  666.613716] h713-dsp-access-audit: DONE step=90 operation=recheck-stopped-after-audiotop value=00000000
+[14:10:25 T+  623.5] [  679.808121] h713-dsp-access-audit: BEGIN step=91 operation=map-dsp-port
+[14:10:25 T+  623.5] [  679.815495] h713-dsp-access-audit: DONE step=91 operation=map-dsp-port value=00000000
+[14:10:31 T+  629.5] [  685.880445] h713-dsp-access-audit: BEGIN step=92 operation=read-dsp-status
+[14:10:31 T+  629.6] [  685.887422] h713-dsp-access-audit: DONE step=92 operation=read-dsp-status value=00000000
+[14:10:46 T+  644.3] [  700.700781] h713-dsp-access-audit: BEGIN step=93 operation=map-tvtop
+[14:10:46 T+  644.4] [  700.707227] h713-dsp-access-audit: DONE step=93 operation=map-tvtop value=00000000
+[14:10:52 T+  650.8] [  707.076093] h713-dsp-access-audit: BEGIN step=94 operation=read-tvtop-40
+[14:10:52 T+  650.8] [  707.082885] h713-dsp-access-audit: DONE step=94 operation=read-tvtop-40 value=00000010
+[14:10:59 T+  657.4] [  713.690405] h713-dsp-access-audit: BEGIN step=95 operation=read-tvtop-44
+[14:10:59 T+  657.4] [  713.697209] h713-dsp-access-audit: DONE step=95 operation=read-tvtop-44 value=00000010
+[14:11:05 T+  663.7] [  720.002124] h713-dsp-access-audit: BEGIN step=96 operation=read-tvtop-80
+[14:11:05 T+  663.7] [  720.008910] h713-dsp-access-audit: DONE step=96 operation=read-tvtop-80 value=00000010
+[14:11:21 T+  679.9] [  736.237918] h713-dsp-access-audit: BEGIN step=97 operation=write-tvtop-04
+[14:11:21 T+  679.9] [  736.244800] h713-dsp-access-audit: OP-DONE step=97
+[14:11:21 T+  679.9] [  736.249619] h713-dsp-access-audit: DONE step=97 operation=write-tvtop-04 value=00000001
+[14:11:27 T+  686.0] [  742.332658] h713-dsp-access-audit: BEGIN step=98 operation=write-tvtop-44
+[14:11:27 T+  686.0] [  742.339523] h713-dsp-access-audit: OP-DONE step=98
+[14:11:27 T+  686.0] [  742.344334] h713-dsp-access-audit: DONE step=98 operation=write-tvtop-44 value=11111111
+[14:11:33 T+  692.1] [  748.423017] h713-dsp-access-audit: BEGIN step=99 operation=write-tvtop-88
+[14:11:33 T+  692.1] [  748.429907] h713-dsp-access-audit: OP-DONE step=99
+[14:11:33 T+  692.1] [  748.434746] h713-dsp-access-audit: DONE step=99 operation=write-tvtop-88 value=11111111
+[14:11:45 T+  703.9] [  760.246740] h713-dsp-access-audit: BEGIN step=100 operation=write-tvtop-00
+[14:11:45 T+  703.9] [  760.253755] h713-dsp-access-audit: OP-DONE step=100
+[14:11:45 T+  703.9] [  760.258726] h713-dsp-access-audit: DONE step=100 operation=write-tvtop-00 value=fff11111
+[14:11:51 T+  710.1] [  766.425829] h713-dsp-access-audit: BEGIN step=101 operation=write-tvtop-40
+[14:11:51 T+  710.1] [  766.432804] h713-dsp-access-audit: OP-DONE step=101
+[14:11:51 T+  710.1] [  766.437713] h713-dsp-access-audit: DONE step=101 operation=write-tvtop-40 value=00011111
+[14:11:58 T+  716.3] [  772.695102] h713-dsp-access-audit: BEGIN step=102 operation=write-tvtop-80
+[14:11:58 T+  716.3] [  772.702077] h713-dsp-access-audit: OP-DONE step=102
+[14:11:58 T+  716.3] [  772.707012] h713-dsp-access-audit: DONE step=102 operation=write-tvtop-80 value=00001111
+[14:12:04 T+  722.8] [  779.141970] h713-dsp-access-audit: BEGIN step=103 operation=write-tvtop-84
+[14:12:04 T+  722.8] [  779.162573] h713-dsp-access-audit: OP-DONE step=103
+[14:12:04 T+  722.8] [  779.167619] h713-dsp-access-audit: DONE step=103 operation=write-tvtop-84 value=fff000ef
+[14:12:12 T+  730.3] [  786.641568] h713-dsp-access-audit: BEGIN step=104 operation=recheck-stopped-after-tvtop
+[14:12:12 T+  730.3] [  786.649701] h713-dsp-access-audit: DONE step=104 operation=recheck-stopped-after-tvtop value=00000000
+[14:12:27 T+  746.1] [  802.490458] h713-dsp-access-audit: BEGIN step=105 operation=map-lock-window
+[14:12:27 T+  746.1] [  802.497554] h713-dsp-access-audit: DONE step=105 operation=map-lock-window value=00000000
+[14:12:34 T+  753.1] [  809.368343] h713-dsp-access-audit: BEGIN step=106 operation=read-lock-peer
+[14:12:34 T+  753.1] [  809.375324] h713-dsp-access-audit: DONE step=106 operation=read-lock-peer value=fffffffe
+[14:12:42 T+  761.1] [  817.402682] h713-dsp-access-audit: BEGIN step=107 operation=read-lock-own
+[14:12:42 T+  761.1] [  817.409542] h713-dsp-access-audit: DONE step=107 operation=read-lock-own value=fffffffe
+[14:12:49 T+  768.1] [  824.450116] h713-dsp-access-audit: BEGIN step=108 operation=final-audiotop-recheck
+[14:12:49 T+  768.1] [  824.457789] h713-dsp-access-audit: DONE step=108 operation=final-audiotop-recheck value=fff11111; stage end, NO DSP request or lock write; poweroff only
+[14:13:11 T+  790.2] Broadcast message from root@h713-arm64 (Mon 2026-04-13 19:52:09 UTC):
+[14:13:11 T+  790.2] The system will power off now!
+[14:13:11 T+  790.2] [?2004l
+[14:13:11 T+  790.2] [?2004h[?2004l
+[14:13:11 T+  790.3] [  846.575177] Bluetooth: hci0: sending frame failed (-49)
+[14:13:11 T+  790.3] [  846.580691] Bluetooth: hci0: Opcode 0x0c03 failed: -49
+[14:13:11 T+  790.3] [  846.588702] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[14:13:11 T+  790.3] [  846.622952] get_txpwr_max:txpwr_max:18 
+[14:13:12 T+  790.3] [  846.632419] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[14:13:12 T+  790.3] [  846.638322] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[14:13:12 T+  790.3] [  846.649339] change_if: 3 to 2, 8, 2
+[14:13:12 T+  790.3] [  846.649375] get_txpwr_max:txpwr_max:18 
+[14:13:13 T+  791.4] [!p]104[?7h[6n[32766;32766H[6n[  847.746202] systemd-shutdown[1]: Syncing filesystems and block devices.
+[14:13:13 T+  791.5] [  847.797032] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[14:13:13 T+  791.5] [  847.822353] systemd-journald[110]: Received SIGTERM from PID 1 (systemd-shutdow).
+[14:13:13 T+  791.5] [  847.856015] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[14:13:13 T+  791.6] [  847.881746] systemd-shutdown[1]: Unmounting file systems.
+[14:13:13 T+  791.6] [  847.889933] (sd-umount)[4126]: Unmounting '/run/credentials/systemd-journald.service'.
+[14:13:13 T+  791.6] [  847.901811] (sd-remount)[4127]: Remounting '/' read-only with options ''.
+[14:13:13 T+  791.6] [  847.929200] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[14:13:13 T+  791.6] [  847.952888] systemd-shutdown[1]: All filesystems unmounted.
+[14:13:13 T+  791.6] [  847.958684] systemd-shutdown[1]: Deactivating swaps.
+[14:13:13 T+  791.6] [  847.963781] systemd-shutdown[1]: All swaps deactivated.
+[14:13:13 T+  791.6] [  847.969058] systemd-shutdown[1]: Detaching loop devices.
+[14:13:13 T+  791.7] [  847.979349] systemd-shutdown[1]: All loop devices detached.
+[14:13:13 T+  791.7] [  847.984985] systemd-shutdown[1]: Stopping MD devices.
+[14:13:13 T+  791.7] [  847.990535] systemd-shutdown[1]: All MD devices stopped.
+[14:13:13 T+  791.7] [  847.995925] systemd-shutdown[1]: Detaching DM devices.
+[14:13:13 T+  791.7] [  848.001404] systemd-shutdown[1]: All DM devices detached.
+[14:13:13 T+  791.7] [  848.006852] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[14:13:13 T+  791.7] [  848.029124] h713-hdmi-hold-guard: poweroff with HDMI holds retained ( h713_hdmi_dsp_access_audit ); cold cycle required
+[14:13:13 T+  791.7] [  848.043404] systemd-shutdown[1]: Syncing filesystems and block devices.
+[14:13:13 T+  791.7] [  848.050301] systemd-shutdown[1]: Powering off.
+[14:13:13 T+  791.7] [  848.072396] reboot: Power down

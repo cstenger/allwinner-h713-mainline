@@ -1,0 +1,241 @@
+{
+  "method": "Fold emitted stock-code writes for selected words after Sound_Path_Init plus Sound_Path_Connect(0x8f). Untouched bits remain unknown. Same hardware/read stubs as capture-init-code.json; not live measurement or ready-to-run recipe.",
+  "words": [
+    {
+      "device": 0,
+      "word": "0003",
+      "known_mask": "0f00",
+      "value_with_unknown_bits_zero": "0300",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "0f00",
+          "value": "0300"
+        },
+        {
+          "phase": "init",
+          "mask": "0f00",
+          "value": "0300"
+        },
+        {
+          "phase": "connect",
+          "mask": "0f00",
+          "value": "0300"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "0012",
+      "known_mask": "a3ff",
+      "value_with_unknown_bits_zero": "8180",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "8000",
+          "value": "ffff"
+        },
+        {
+          "phase": "init",
+          "mask": "23ff",
+          "value": "0180"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "0017",
+      "known_mask": "ff00",
+      "value_with_unknown_bits_zero": "2000",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "ff00",
+          "value": "2000"
+        },
+        {
+          "phase": "init",
+          "mask": "ff00",
+          "value": "2000"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "004d",
+      "known_mask": "ffff",
+      "value_with_unknown_bits_zero": "696a",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "ff00",
+          "value": "0000"
+        },
+        {
+          "phase": "init",
+          "mask": "00ff",
+          "value": "0000"
+        },
+        {
+          "phase": "connect",
+          "mask": "ff00",
+          "value": "6900"
+        },
+        {
+          "phase": "connect",
+          "mask": "00ff",
+          "value": "006a"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "0077",
+      "known_mask": "ffff",
+      "value_with_unknown_bits_zero": "1617",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "ff00",
+          "value": "0000"
+        },
+        {
+          "phase": "init",
+          "mask": "00ff",
+          "value": "0000"
+        },
+        {
+          "phase": "connect",
+          "mask": "ff00",
+          "value": "1600"
+        },
+        {
+          "phase": "connect",
+          "mask": "00ff",
+          "value": "0017"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "00ac",
+      "known_mask": "ffff",
+      "value_with_unknown_bits_zero": "0000",
+      "writes": [
+        {
+          "phase": "connect",
+          "mask": "ffff",
+          "value": "0000"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "0130",
+      "known_mask": "ffff",
+      "value_with_unknown_bits_zero": "696a",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "ff00",
+          "value": "0000"
+        },
+        {
+          "phase": "init",
+          "mask": "00ff",
+          "value": "0000"
+        },
+        {
+          "phase": "init",
+          "mask": "ff00",
+          "value": "6900"
+        },
+        {
+          "phase": "init",
+          "mask": "00ff",
+          "value": "006a"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "800c",
+      "known_mask": "00f8",
+      "value_with_unknown_bits_zero": "0080",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "0080",
+          "value": "ffff"
+        },
+        {
+          "phase": "connect",
+          "mask": "0078",
+          "value": "0000"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "800d",
+      "known_mask": "00ff",
+      "value_with_unknown_bits_zero": "0000",
+      "writes": [
+        {
+          "phase": "connect",
+          "mask": "00ff",
+          "value": "0000"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "801a",
+      "known_mask": "0002",
+      "value_with_unknown_bits_zero": "0000",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "0002",
+          "value": "0000"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "8059",
+      "known_mask": "00ff",
+      "value_with_unknown_bits_zero": "007c",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "00ff",
+          "value": "0000"
+        },
+        {
+          "phase": "connect",
+          "mask": "00ff",
+          "value": "007c"
+        }
+      ]
+    },
+    {
+      "device": 0,
+      "word": "805a",
+      "known_mask": "00ff",
+      "value_with_unknown_bits_zero": "007d",
+      "writes": [
+        {
+          "phase": "init",
+          "mask": "00ff",
+          "value": "0000"
+        },
+        {
+          "phase": "connect",
+          "mask": "00ff",
+          "value": "007d"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "status": "PASS alias autoload suppressed; explicit ordered loads retained; dry-run only",
+  "checks": [
+    {
+      "alias": "sdio:c07vC8A1d0082",
+      "current": "insmod /lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko \ninsmod /lib/modules/6.18.38/updates/aic8800/aic8800_fdrv.ko default_ccode=US aicwf_dbg_level=0x1 \ninsmod /lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko \n",
+      "candidate": ""
+    },
+    {
+      "alias": "sdio:c07vC8A1d0182",
+      "current": "insmod /lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko \n",
+      "candidate": ""
+    },
+    {
+      "explicit_module": "aic8800_bsp",
+      "stdout": "insmod /lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko \n"
+    },
+    {
+      "explicit_module": "aic8800_fdrv",
+      "stdout": "insmod /lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko \ninsmod /lib/modules/6.18.38/updates/aic8800/aic8800_fdrv.ko \n"
+    },
+    {
+      "explicit_module": "aic8800_btlpm",
+      "stdout": "insmod /lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko \ninsmod /lib/modules/6.18.38/updates/aic8800/aic8800_btlpm.ko \n"
+    }
+  ]
+}

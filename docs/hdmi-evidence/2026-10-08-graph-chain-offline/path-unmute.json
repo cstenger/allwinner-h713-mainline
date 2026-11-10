@@ -1,0 +1,79 @@
+{
+ "evidence": "Offline code execution with hardware/timing stubs",
+ "route": 143,
+ "hashes": {
+  "libmspsound.so": "61f349440c08dd28ef1289f463a7934b3213b15518113ff1044f881bf237e8c4",
+  "libmsp_util.so": "e949a32dcf0f3108d364425d1aaa5dea291ba0f09464b4d2ef07a35fe071e447",
+  "libmspdriver.so": "a03e6344ad0f672e5be965fd3008c8c44c74b367868318501a9d2a4798ce88ea"
+ },
+ "unmute": {
+  "rc": 0,
+  "events": [
+   {
+    "function": "MAPI_AUD_DisableUserMuteByType",
+    "args": [
+     14,
+     0,
+     1611657172,
+     0
+    ],
+    "rc": 0
+   }
+  ],
+  "writes": [
+   {
+    "function": "tdAudioDSPWriteRegMaskWord",
+    "args": [
+     0,
+     89,
+     65472,
+     0
+    ]
+   },
+   {
+    "function": "tdAudioDSPWriteRegMaskWord",
+    "args": [
+     0,
+     90,
+     65472,
+     0
+    ]
+   }
+  ]
+ },
+ "mute": {
+  "rc": 0,
+  "events": [
+   {
+    "function": "MAPI_AUD_EnableUserMuteByType",
+    "args": [
+     14,
+     0,
+     1611657172,
+     1
+    ],
+    "rc": 0
+   }
+  ],
+  "writes": [
+   {
+    "function": "tdAudioDSPWriteRegMaskWord",
+    "args": [
+     0,
+     89,
+     65472,
+     32768
+    ]
+   },
+   {
+    "function": "tdAudioDSPWriteRegMaskWord",
+    "args": [
+     0,
+     90,
+     65472,
+     32768
+    ]
+   }
+  ]
+ }
+}

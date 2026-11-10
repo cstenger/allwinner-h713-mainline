@@ -1,0 +1,223 @@
+{
+  "current_lba": 1,
+  "backup_lba": 15269887,
+  "first_usable": 9,
+  "last_usable": 15269879,
+  "table_lba": 2,
+  "count": 28,
+  "entry_size": 128,
+  "partitions": [
+    {
+      "number": 1,
+      "name": "bootloader_a",
+      "start_lba": 73728,
+      "end_lba": 139263
+    },
+    {
+      "number": 2,
+      "name": "bootloader_b",
+      "start_lba": 139264,
+      "end_lba": 204799
+    },
+    {
+      "number": 3,
+      "name": "env_a",
+      "start_lba": 204800,
+      "end_lba": 205311
+    },
+    {
+      "number": 4,
+      "name": "env_b",
+      "start_lba": 205312,
+      "end_lba": 205823
+    },
+    {
+      "number": 5,
+      "name": "boot_a",
+      "start_lba": 205824,
+      "end_lba": 336895
+    },
+    {
+      "number": 6,
+      "name": "boot_b",
+      "start_lba": 336896,
+      "end_lba": 467967
+    },
+    {
+      "number": 7,
+      "name": "vendor_boot_a",
+      "start_lba": 467968,
+      "end_lba": 533503
+    },
+    {
+      "number": 8,
+      "name": "vendor_boot_b",
+      "start_lba": 533504,
+      "end_lba": 599039
+    },
+    {
+      "number": 9,
+      "name": "super",
+      "start_lba": 599040,
+      "end_lba": 4793343
+    },
+    {
+      "number": 10,
+      "name": "misc",
+      "start_lba": 4793344,
+      "end_lba": 4826111
+    },
+    {
+      "number": 11,
+      "name": "vbmeta_a",
+      "start_lba": 4826112,
+      "end_lba": 4826367
+    },
+    {
+      "number": 12,
+      "name": "vbmeta_b",
+      "start_lba": 4826368,
+      "end_lba": 4826623
+    },
+    {
+      "number": 13,
+      "name": "vbmeta_system_a",
+      "start_lba": 4826624,
+      "end_lba": 4826751
+    },
+    {
+      "number": 14,
+      "name": "vbmeta_system_b",
+      "start_lba": 4826752,
+      "end_lba": 4826879
+    },
+    {
+      "number": 15,
+      "name": "vbmeta_vendor_a",
+      "start_lba": 4826880,
+      "end_lba": 4827007
+    },
+    {
+      "number": 16,
+      "name": "vbmeta_vendor_b",
+      "start_lba": 4827008,
+      "end_lba": 4827135
+    },
+    {
+      "number": 17,
+      "name": "frp",
+      "start_lba": 4827136,
+      "end_lba": 4828159
+    },
+    {
+      "number": 18,
+      "name": "empty",
+      "start_lba": 4828160,
+      "end_lba": 4858879
+    },
+    {
+      "number": 19,
+      "name": "metadata",
+      "start_lba": 4858880,
+      "end_lba": 4891647
+    },
+    {
+      "number": 20,
+      "name": "private",
+      "start_lba": 4891648,
+      "end_lba": 4924415
+    },
+    {
+      "number": 21,
+      "name": "dtbo_a",
+      "start_lba": 4924416,
+      "end_lba": 4928511
+    },
+    {
+      "number": 22,
+      "name": "dtbo_b",
+      "start_lba": 4928512,
+      "end_lba": 4932607
+    },
+    {
+      "number": 23,
+      "name": "media_data",
+      "start_lba": 4932608,
+      "end_lba": 5489663
+    },
+    {
+      "number": 24,
+      "name": "Reserve0_a",
+      "start_lba": 5489664,
+      "end_lba": 5522431
+    },
+    {
+      "number": 25,
+      "name": "Reserve0_b",
+      "start_lba": 5522432,
+      "end_lba": 5555199
+    },
+    {
+      "number": 26,
+      "name": "linux",
+      "start_lba": 5555200,
+      "end_lba": 11322367
+    },
+    {
+      "number": 27,
+      "name": "UDISK",
+      "start_lba": 11322368,
+      "end_lba": 15269854
+    }
+  ],
+  "protected": [
+    {
+      "name": "disk-prefix-including-GPT-and-SPL",
+      "offset": 0,
+      "bytes": 65536,
+      "sha256": "7a3702e2ccb5c4639367fb615db94eaf13d26beae8d59fedd1d68650e21d4343"
+    },
+    {
+      "name": "disk-suffix-including-backup-GPT",
+      "offset": 7818117120,
+      "bytes": 65536,
+      "sha256": "9b3e8a016ad6c6f7b9fd2e03eaa38beebd9735bb57213a44efc99b97026188a4"
+    },
+    {
+      "name": "active-environment",
+      "offset": 1708654592,
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc"
+    },
+    {
+      "name": "rescue-full-region",
+      "offset": 2484600832,
+      "bytes": 2097152,
+      "sha256": "27a685f46a68daeeb98190fe9bd1c3f9200cfe1da3f53cfa78b24bfb06a48411"
+    },
+    {
+      "name": "proper-region-tail",
+      "offset": 2472978944,
+      "bytes": 1136128,
+      "sha256": "df9b23d9d89fc108da150079a555216c62c42fba1451c48c8eab8ade6ba7ad11"
+    },
+    {
+      "name": "intended-environment-prefix",
+      "offset": 2480340992,
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31"
+    },
+    {
+      "name": "intended-environment-suffix",
+      "offset": 2480472064,
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31"
+    },
+    {
+      "name": "boot-FAT",
+      "offset": 71303168,
+      "bytes": 33554432,
+      "sha256": "79c14f0566ada36158df2bef4995f73674a532987cfe8674c0c5e46789672de5"
+    }
+  ]
+}

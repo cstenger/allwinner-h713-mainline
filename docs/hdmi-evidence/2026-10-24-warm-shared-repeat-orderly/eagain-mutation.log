@@ -1,0 +1,15 @@
+F
+======================================================================
+FAIL: test_uart_transient_eagain_keeps_reading_but_real_errors_stop (tests.Runner.test_uart_transient_eagain_keeps_reading_but_real_errors_stop)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py", line 199, in test_uart_transient_eagain_keeps_reading_but_real_errors_stop
+    self.assertIsNone(uart.error);self.assertEqual(uart.data,b'next UART bytes');self.assertEqual(uart.raw.getvalue(),uart.data)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: BlockingIOError(11, 'try again') is not None
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+PASS: reverting the EAGAIN fix makes the regression test fail.

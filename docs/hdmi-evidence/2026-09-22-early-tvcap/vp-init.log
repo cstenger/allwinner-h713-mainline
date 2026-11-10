@@ -1,0 +1,74 @@
+CPU_COMM_CALL_BEGIN component=1c6ff747 name=THal_Vp_Init_1_000 params=3 arg0=00000000 arg1=00000000 arg2=4e700000
+CPU_COMM_CALL_OK component=1c6ff747 elapsed_us=74480 nret=1 ret0=00000001
+MATCH 0x1c6ff747 THal_Vp_Init_1_000
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0
+MATCH 0x24efc7c9 THal_Vp_GetSource_1_000
+CPU_COMM_CALL_OK component=24efc7c9 elapsed_us=75362 nret=1 ret0=00000000
+{"verified_patch_words": 34, "mailbox": "4e341000"}
+{"seconds": 0.0, "tick": 633681, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.101, "tick": 633781, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.202, "tick": 633882, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.303, "tick": 633983, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.403, "tick": 634084, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.504, "tick": 634185, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.604, "tick": 634285, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.705, "tick": 634385, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.812, "tick": 634492, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.913, "tick": 634593, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.013, "tick": 634694, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.114, "tick": 634795, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.215, "tick": 634895, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.315, "tick": 634996, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.416, "tick": 635096, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.516, "tick": 635197, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.617, "tick": 635297, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.717, "tick": 635398, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.818, "tick": 635498, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.918, "tick": 635599, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.019, "tick": 635699, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.119, "tick": 635800, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.22, "tick": 635901, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.32, "tick": 636001, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.421, "tick": 636102, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.521, "tick": 636202, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.622, "tick": 636303, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.722, "tick": 636403, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.823, "tick": 636504, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.924, "tick": 636604, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.024, "tick": 636705, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.125, "tick": 636805, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.225, "tick": 636906, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.326, "tick": 637006, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.426, "tick": 637107, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.527, "tick": 637207, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.627, "tick": 637308, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.728, "tick": 637408, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.828, "tick": 637509, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 3.929, "tick": 637609, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 4.0, "tick": 637681, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}

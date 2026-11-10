@@ -1,0 +1,50 @@
+{
+  "schema": "h713-parallel-wifi-v1",
+  "boot_id": "3636858d-5ab9-49a8-9445-5e3ae5bd4048",
+  "applied": true,
+  "services_restarted": false,
+  "modules_reloaded": false,
+  "before": [
+    {
+      "sha256": "bd065eeb24c8c187efb10c97da84d3b32ed55b71b9936dedb98f4331b989cc19"
+    },
+    {
+      "sha256": "e034a3529650597cd3243f43027f9bf847852d1a446daf4a99edd642b42a35ee"
+    },
+    {
+      "sha256": "16e3f737f3f135ffc94c18fe15db904f97bf892b1b284142aaa6d02b22456822"
+    },
+    null,
+    null,
+    null
+  ],
+  "after": [
+    {
+      "sha256": "124c4e2cb5adc2278e5a1b0395b8cf76b5b58a5749ff7054657d905d43f6046c"
+    },
+    {
+      "sha256": "cc436b9fc2cfac6bb2b9f77c905733ec87902f8cb01a97f5d6f3ed79e199ac89"
+    },
+    {
+      "sha256": "596df55dcbda5dce808d4b60228a2439d7ff1238662b5ac0768e0c943da999b8"
+    },
+    {
+      "sha256": "b871f0ac14f5ff20f07406825a30807ed3d211f031c9f66cdfc8dc9815bbc6f5"
+    },
+    {
+      "sha256": "4b3c8b7f919ee9a3d23889f7524e4dbe331788dec8673bf60bbec11990107f8f"
+    },
+    {
+      "symlink": "../h713-aic8800-modules.service"
+    }
+  ],
+  "targets": [
+    "etc/modules-load.d/aic8800.conf",
+    "etc/systemd/system/h713-hotspot.service",
+    "etc/systemd/system/h713-bt-attach.service",
+    "etc/modprobe.d/h713-aic8800-startup.conf",
+    "etc/systemd/system/h713-aic8800-modules.service",
+    "etc/systemd/system/multi-user.target.wants/h713-aic8800-modules.service"
+  ],
+  "backup": "/var/lib/h713-hdmi-startup/parallel-wifi-16a62767967c4d379ff642d7f1ad64fd"
+}

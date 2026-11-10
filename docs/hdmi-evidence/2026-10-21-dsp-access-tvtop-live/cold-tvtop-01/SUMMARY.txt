@@ -1,0 +1,28 @@
+cold-tvtop-01 — 2026-10-21 (host time), boot 046a1262-cc72-4d5e-b505-f174b90eccb6
+TVTOP bundle: module ba785734…, helper 326740fb…, guard 96f37655… (live). boot-v4.
+
+Cold catch: one SPL; preboot gp6/gp7/MIPS 0; tvcap_bus=0. boot-v4 22/22 OK; bootm sha256 OK; boot IDs match;
+ext4 journal replay (previous run ended by hard lock + power cut), no errors; v1+v2 markers, flag absent;
+genpd TVCAP/TVFE off-0. Console 5->7, panic 5->0, notice marker on UART.
+
+Steps 1-92: identical to cold-at-01 (census PPU 00020000 x2, TVCAP reset 1, mask 00010000, TV words as U-Boot;
+  domains -> 00010000; resets released; clocks; 15 words exact; demod 00010001; audio/display clocks;
+  AudioTop ctl/cfg 0 -> 00000700/011a5e00; TVFE ctl 00000010; DSP status 0). clk tree at 53/69 identical
+  to cold-at-01 (excl. CPU). Every boundary snapshot reviewed before --stage-ack.
+TVTOP stage:
+  93 map-tvtop ok
+  94-96 cold TVTOP +0x40/+0x44/+0x80 = 00000010 each (SPL bit 4 only; production 00011111/11111111/00001111)
+  97-103 routing writes, exact readback: +04=00000001 +44=11111111 +88=11111111 +00=fff11111
+         +40=00011111 +80=00001111 +84=fff000ef (12 ms settle after +84)
+  104 MIPS/SCP still stopped
+Lock stage:
+  105 map-lock-window ok
+  106 read-lock-peer 0x05001530 = fffffffe   <- hard-locked in cold-at-01 without routing; COMPLETES now
+  107 read-lock-own  0x05001534 = fffffffe
+  108 final recheck: MIPS/SCP stopped, both PPU ON, AudioTop cfg 011a5e00, TVTOP +00 fff11111
+End: stage_complete=Y, 108 BEGIN/DONE pairs, 41 OP-DONE, 4 genpd events, no warn/err/RCU after boot.
+Orderly poweroff with module loaded: root ro; guard "poweroff with HDMI holds retained"; reboot: Power down.
+
+Conclusion: TVTOP routing (h713_display_prepare writes) is the lock-window prerequisite, confirmed live.
+The old bench's complete 'ready' state is reproduced with every precondition verified, no DSP request.
+Lock words read fffffffe (neither 0x55 nor 0xaa): their meaning at cold before any DSP contact is open.

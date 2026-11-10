@@ -1,0 +1,22 @@
+usage: dsp-access-audit.py [-h] --bundle BUNDLE --expected-boot EXPECTED_BOOT
+                           [--expected-step EXPECTED_STEP]
+                           [--operation OPERATION] [--stage-ack STAGE_ACK]
+                           {load,step,snapshot,status,release}
+
+One explicit staged-access step per invocation; never run a stage loop. A
+failed/uncertain operation consumes this boot. No AudioTop/DSP access, reset
+or reboot. Crossing a stage boundary needs a read-only `snapshot` and then
+`--stage-ack <stage>`. From step 41 on, the only supported end is an orderly
+poweroff with the module loaded; `release` is refused. This helper must be
+staged with the guard and a pinned manifest.
+
+positional arguments:
+  {load,step,snapshot,status,release}
+
+options:
+  -h, --help            show this help message and exit
+  --bundle BUNDLE
+  --expected-boot EXPECTED_BOOT
+  --expected-step EXPECTED_STEP
+  --operation OPERATION
+  --stage-ack STAGE_ACK

@@ -1,0 +1,4 @@
+{"argv": ["systemd-analyze", "verify", "/run/systemd/system/h713-hdmi-poweroff-relay.service", "/run/systemd/system/h713-hdmi-poweroff-signal.service", "/run/systemd/system/h713-hdmi-poweroff-recorder.service"], "rc": 0, "out": "", "err": ""}
+{"argv": ["systemctl", "daemon-reload"], "rc": 0, "out": "", "err": ""}
+{"argv": ["systemctl", "start", "h713-hdmi-poweroff-relay.service", "h713-hdmi-poweroff-signal.service"], "rc": 0, "out": "", "err": ""}
+Runtime units verified; bounded signal assertion started.

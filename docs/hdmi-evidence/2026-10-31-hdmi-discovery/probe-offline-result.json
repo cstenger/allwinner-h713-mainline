@@ -1,0 +1,39 @@
+{
+  "status": "PASS offline instruction model only; not hardware executed",
+  "boot_id": "2d8c3970-4164-4a38-8e86-375bb440c971",
+  "baseline_sram_sha256": "7d2e2219301225b946af3bd4c0b1d8f132463a707a0496861859e66be13dd2ed",
+  "SCP_SRAM_physical_base": "0x00100000",
+  "entry": "0x4404",
+  "scratch": "0x4dc0",
+  "result": "0x4f80",
+  "instruction_bytes": 260,
+  "hook_bytes": 4,
+  "peripheral_reads": [
+    "0x7091014",
+    "0x7091b00",
+    "0x7091b04",
+    "0x7091b08",
+    "0x7091020",
+    "0x7091030",
+    "0x7091034",
+    "0x7091038",
+    "0x7091c00",
+    "0x7091c04",
+    "0x7091d00",
+    "0x7091d04",
+    "0x7091e00",
+    "0x7091e04"
+  ],
+  "peripheral_writes": 0,
+  "model_cases": 100,
+  "model_steps": 67,
+  "live_executor_included": false,
+  "hardware_execution_authorized": false,
+  "limitations": [
+    "This model does not prove instruction-fetch coherency/atomicity or safe concurrent access to the running kernel owner.",
+    "A live bus read may stall the SCP. No automatic core reset/recovery is permitted.",
+    "Completed marker precedes final context restore and return; it is not alone proof of resumed wait-loop execution.",
+    "Scratch/output backups must be preserved; do not blindly restore while the SCP may still execute the probe.",
+    "Do not write this hook without a separately reviewed live protocol; a prepared packet is not permission to execute."
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "status": "INVALID matched observation",
+  "arm": "optimized",
+  "boot_id": "2f6e62e1-b588-43f4-9e12-af587acf5fd5",
+  "issues": [
+    "HPD re-advertisement"
+  ],
+  "video_ready": 26.251073,
+  "window_end": 326.251073,
+  "first_live_sample": 34.83,
+  "last_live_sample": 326.49,
+  "fps": 59.70993622711376,
+  "rejected_at_window_end": 0,
+  "trace_lines": [],
+  "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+  "radio_services": {
+    "h713-aic8800-modules.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "8176934",
+      "ExecMainExitTimestampMonotonic": "8289274",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "4722218",
+      "ActiveEnterTimestampMonotonic": "8289732"
+    },
+    "h713-hotspot.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "8331076",
+      "ExecMainExitTimestampMonotonic": "0",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "8341206",
+      "ActiveEnterTimestampMonotonic": "8341206"
+    },
+    "h713-bt-attach.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "8310858",
+      "ExecMainExitTimestampMonotonic": "11721916",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "8317359",
+      "ActiveEnterTimestampMonotonic": "11722353"
+    },
+    "systemd-modules-load.service": {
+      "Result": "success",
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "3746043",
+      "ExecMainExitTimestampMonotonic": "4016948",
+      "ActiveState": "active",
+      "InactiveExitTimestampMonotonic": "3747423",
+      "ActiveEnterTimestampMonotonic": "4017308"
+    }
+  },
+  "radio_prepare_overlap_seconds": 3.5570460000000006,
+  "schema": "h713-parallel-wifi-repeat-result-v1",
+  "outcome": "Initial source-detection/no-retry gate FAILED; automatic recovery followed by stable runtime",
+  "runtime_audit": "PASS candidate runtime identity/startup checks",
+  "files_verified": 77,
+  "radio_readiness": "PASS radio readiness, explicit dependencies and alias suppression",
+  "loaded_capture_build_id_matches": true,
+  "startup_evidence": {
+    "ipc_seconds": [
+      0.427845,
+      0.407547,
+      0.407304,
+      0.453587,
+      0.425272
+    ],
+    "prepare_start": 4.727052,
+    "user_overlap_seconds": 3.4655810000000002,
+    "capture_ready": 12.221815,
+    "video_active": 26.251073,
+    "readvertised": 1,
+    "startup_time": "Startup finished in 2.359s (kernel) + 14.729s (userspace) = 17.089s \ngraphical.target reached after 11.705s in userspace.\n"
+  },
+  "readvertised": 1,
+  "milestones_linux_seconds": {
+    "edid_hpd_ready": 12.504612,
+    "hpd_retry_hold_completed": 24.940058,
+    "source_locked": 26.196096,
+    "first_aic_init": 4.98203
+  },
+  "radio_activation_start": 4.722218,
+  "radio_active": 8.289732,
+  "radio_activation_duration_seconds": 3.567514000000001,
+  "global_modules_load_duration_seconds": 0.2709050000000004,
+  "radio_first_init_after_owner": true,
+  "radio_clients_after_owner": true,
+  "previous_shutdown_evidence": "NOT ESTABLISHED: signal restoration missing; preceding journal has no recorded shutdown sequence",
+  "user_observation": "Power/UART disconnected >1 minute; desktop visible; same desktop maintained",
+  "host_transport": "Host already connected to saved hotspot profile; no recovery required",
+  "new_hardware_or_config_changes": false,
+  "earlier_initial_detection_miss": {
+    "boot_id": "60f461e3-b6a5-461c-af32-9d9bcfceb1fe",
+    "before_startup_optimizations": true,
+    "readvertised": 1,
+    "evidence": "../2026-11-04-startup-timing/cold-01-result.json"
+  },
+  "conclusion": "Global module barrier reduction and radio dependencies remain effective. Initial-advertisement miss reproduced, as historically seen before optimizations. Existing history does not establish whether earlier startup changes miss probability.",
+  "next": "Investigate first-advertisement/source lock with unchanged current boot and controlled startup/source history; no further optimization or automatic retries to obtain a passing receipt.",
+  "limitations": [
+    "This repeat is retained as invalid for the no-retry gate, not discarded as a transport-only failure.",
+    "Earlier shutdown cannot be verified from preserved journal; cause of missing shutdown receipt is unknown.",
+    "Current boot recovered through the existing automatic policy, without manual board service recovery.",
+    "No new frame-copy rejection was observed; historical rejection evidence remains separate."
+  ]
+}

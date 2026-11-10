@@ -1,0 +1,26 @@
+{
+  "host_utc": "2026-10-31T10:05:26.447305+00:00",
+  "pid": 10696,
+  "argv": [
+    "python3",
+    "-B",
+    "/home/chris/Projects/h713/tools/serial/capture-panel-validation.py",
+    "--port",
+    "/dev/ttyUSB0",
+    "--output",
+    "/home/chris/Projects/h713/local/recovery/2026-10-31-uboot-first-boot/uart-cold-01"
+  ],
+  "fd_targets": [
+    "/dev/null",
+    "/home/chris/Projects/h713/local/recovery/2026-10-31-uboot-first-boot/recorder-process.log",
+    "/home/chris/Projects/h713/local/recovery/2026-10-31-uboot-first-boot/recorder-process.log",
+    "/home/chris/Projects/h713/local/recovery/2026-10-31-uboot-first-boot/uart-cold-01/serial.log",
+    "/home/chris/Projects/h713/local/recovery/2026-10-31-uboot-first-boot/uart-cold-01/serial-timestamped.log",
+    "/dev/ttyUSB0"
+  ],
+  "correction": "The original reader was alive and owned UART. Earlier restricted-namespace PID check falsely implied it stopped; previous boot transcript remains valid.",
+  "stopped_cleanly": true,
+  "uart_released": true,
+  "final_raw_sha256": "e246e00f41f38daa7d85fe7c21a1250aa831d4d9d227976299a96eddfedd784a",
+  "final_timestamped_sha256": "645408805bbc6e5e38c833e9f593662c55f20961e4e6bddb7016fac3462396de"
+}

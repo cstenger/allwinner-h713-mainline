@@ -1,0 +1,27 @@
+[video4linux2,v4l2 @ 0xaaaadacfbda0] ioctl(VIDIOC_G_PARM): Inappropriate ioctl for device
+[video4linux2,v4l2 @ 0xaaaadacfbda0] Time per frame unknown
+Input #0, video4linux2,v4l2, from '/dev/video1':
+  Duration: N/A, start: 8709.400596, bitrate: N/A
+  Stream #0:0: Video: rawvideo, nv16, 640x480, 26.83 tbr, 1000k tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> rawvideo (native))
+Output #0, rawvideo, to '/tmp/h713-hdmi-trial-20260925T094551Z-v4l2.nv16':
+  Metadata:
+    encoder         : Lavf61.7.103
+  Stream #0:0: Video: rawvideo, nv16(progressive), 640x480, q=2-31, 131891 kb/s, 26.83 fps, 26.83 tbn
+      Metadata:
+        encoder         : Lavc61.19.101 rawvideo
+frame=   13 fps=0.0 q=-0.0 size=    7168KiB time=00:00:00.59 bitrate=98478.8kbits/s speed=1.19x
+[rawvideo @ 0xaaaadacfdda0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19 >= 19
+frame=   23 fps= 23 q=-0.0 size=   13056KiB time=00:00:01.11 bitrate=95665.1kbits/s speed=1.12x
+frame=   32 fps= 21 q=-0.0 size=   18432KiB time=00:00:01.67 bitrate=90037.7kbits/s speed=1.12x
+frame=   41 fps= 20 q=-0.0 size=   23808KiB time=00:00:02.12 bitrate=91814.8kbits/s speed=1.06x
+frame=   49 fps= 20 q=-0.0 size=   28672KiB time=00:00:02.60 bitrate=90037.7kbits/s speed=1.04x
+frame=   57 fps= 19 q=-0.0 size=   33536KiB time=00:00:03.13 bitrate=87760.0kbits/s speed=1.04x
+frame=   66 fps= 19 q=-0.0 size=   38912KiB time=00:00:03.61 bitrate=88181.3kbits/s speed=1.03x
+frame=   75 fps= 19 q=-0.0 size=   44288KiB time=00:00:04.17 bitrate=86922.6kbits/s speed=1.04x
+frame=   82 fps= 18 q=-0.0 size=   48384KiB time=00:00:04.50 bitrate=87898.4kbits/s speed=   1x
+[rawvideo @ 0xaaaadacfdda0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 138 >= 138
+frame=   94 fps= 19 q=-0.0 size=   55552KiB time=00:00:05.18 bitrate=87851.6kbits/s speed=1.04x
+[out#0/rawvideo @ 0xaaaadacfdcd0] video:60000KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000000%
+frame=  100 fps= 19 q=-0.0 Lsize=   60000KiB time=00:00:05.51 bitrate=89115.7kbits/s speed=1.07x

@@ -1,0 +1,22 @@
+cold-prefix-02 — 2026-10-21 (host time), boot 36c40861-5bd6-4d21-875a-fce2fc1811b9
+Bundle v2: helper 432dd643…, module c57229a4…, guard 96f37655… (live guard already matched)
+
+Cold catch: single fresh SPL; proper_preboot gp6/gp7/mips clk/reset/status all 0; stopped at => before logo.
+RAM boot: boot-v3, 20/20 guarded steps OK, bootm sha256 OK. UART and SSH boot IDs match.
+Health: ext4 journal replay ("recovery complete", unrecorded prior shutdown), no ext4/I/O errors; growfs OK;
+  DT marker 44535031, display/cpu-comm disabled, no handoff, no CPU_COMM, HDMI units ConditionResult=no; no h713 modules.
+New preflight check: live load REFUSED at printk 5 (no state, not loaded) — preflight-refusal-check.txt.
+Console: printk 5->7, kernel.panic 5->0; notice marker seen on UART before load.
+Load: INIT + INIT DONE on UART; ack cursor 0. (Host runner parse bug on load only; ack verified from raw
+  load.txt and read-only status-after-load.txt. Fixed before step 1.)
+Steps 1-33: each one call, helper ack + exactly one UART BEGIN/DONE. Steps 1-8 gate checked before step 9.
+  Values: 9 mips-status 00000000; 10 scp-reset 00000000; 11 demod-bus(+0x54) 00000000;
+  12 display-bus 0x02001dd8 = 00010001 (sample only: gate on, reset deasserted, display node disabled);
+  14 display reset status 0 (deasserted); 16 demod reset status 1 (asserted). Others: handle/claim/map, value 0.
+End state: phase paused, completed=attempted=33, prefix_complete=Y, failed=N, released=N; module pinned.
+  No warnings/errors/RCU lines after boot. Board left RUNNING, paused at prefix-end; UART recorder still running.
+Scope: excludes only these initial operations in this cold context. No domain/clock enable/reset change/
+  TVFE/AudioTop/DSP access was performed. Says nothing about the omitted part of the old monolithic setup.
+Release: helper release acknowledged (phase released, completed 33); UART BEGIN/DONE software resource release;
+  module unloaded. Orderly `systemctl poweroff` (boot ID re-checked): root remounted ro, "reboot: Power down"
+  on UART at 546.3 s. Guard silent (no h713 module loaded). Recorder stopped after power-down.

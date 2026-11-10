@@ -1,0 +1,38 @@
+{
+  "status": "PASS installed and verified",
+  "host_utc": "2026-10-30T08:38:32.338103+00:00",
+  "authorization": "User approved installation and verification, powered on board, confirmed booted.",
+  "boot_id": "7ca604ba-a805-4f0a-9bd4-2df936f50479",
+  "guard_sha256": "96f37655b33bf78d95b33fa4f431721be5a7506c73c12dcd4df58032cad27113",
+  "manifest_sha256": "4373e9ecb77e087a1d26c00637c135028942ae84912fb8dbf57ac0c51cc2feac",
+  "verified_backend_entries": 18,
+  "all_four_bundle_manifests_pass": true,
+  "changed_existing_paths": [
+    "/usr/lib/h713-hdmi/SHA256SUMS",
+    "/usr/lib/h713-hdmi/h713-hdmi-hold-guard",
+    "/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard"
+  ],
+  "permissions_and_ownership_preserved": true,
+  "services_exactly_unchanged": true,
+  "runtime_counters_and_signal_unchanged": true,
+  "signal": "none",
+  "video_service_state": "inactive",
+  "calibration_defaults_unchanged": true,
+  "reboot_or_service_restart_performed": false,
+  "rollback_backup": {
+    "board_backup": "/var/lib/h713-hdmi-startup/guard-sync-537cfedf47f7420cb08aad5dbc323e21",
+    "host_archive": "local/recovery/2026-10-30-guard-sync/installed-guard-backup.tar.gz",
+    "sha256": "ab8cc24065ca3fb2af1d3491bfeb6fd2444813d175abb85642f68ed74203cb6d",
+    "original_payload_hashes_verified": true,
+    "committed_marker_present": true,
+    "incomplete_marker_present": false,
+    "stderr": ""
+  },
+  "rollback_preview": "PASS; no actual rollback",
+  "board_power": "left on",
+  "qualification": "File-only synchronization; no real guard execution, physical shutdown, picture/sound or reboot-persistence test. Original read-only audit remains a historical snapshot.",
+  "repository_state_at_installation": {
+    "committed": false,
+    "pushed": false
+  }
+}

@@ -1,0 +1,38 @@
+closed
+closed
+active
+active
+Line Out Playback Volume                     set to 0   [0..31]
+Line Out Playback Switch                     set to 0 0
+DAC Playback Volume                          int    63   [0..63]
+Line Out Playback Volume                     int    15   [0..31]
+Line Out Playback Switch                     bool   1 1
+Speaker Switch                               bool   1
+Line Out Source Playback Route               enum   0 0   [0..1]
+state: RUNNING
+owner_pid   : 1110
+trigger_time: 5693.170222254
+tstamp      : 5695.026874588
+delay       : 128
+avail       : 128
+avail_max   : 480
+-----
+hw_ptr      : 89084
+appl_ptr    : 88956
+state: RUNNING
+owner_pid   : 1110
+trigger_time: 5693.196951254
+tstamp      : 0.000000000
+delay       : 3680
+avail       : 160
+avail_max   : 3360
+-----
+hw_ptr      : 88000
+appl_ptr    : 91680
+enabled
+BindsTo=h713-hdmi-signal.service h713-hdmi-capture.service
+Before=shutdown.target multi-user.target
+After=systemd-journald.socket h713-hdmi-signal.service basic.target -.mount h713-hdmi-capture.service sysinit.target system.slice
+FragmentPath=/etc/systemd/system/h713-hdmi-speaker.service
+Transient=no
+2b0fa076-afda-4362-8191-fe52c99140a5

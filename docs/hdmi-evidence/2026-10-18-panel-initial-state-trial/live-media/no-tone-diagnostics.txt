@@ -1,0 +1,52 @@
+b3478260-5d3d-4bc8-96b6-8b3da5c8bee7
+1386.75 5192.80
+● h713-hdmi-speaker.service - H713 HDMI input to internal speaker
+     Loaded: loaded (/etc/systemd/system/h713-hdmi-speaker.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-04-13 19:38:22 UTC; 22min ago
+ Invocation: 3442a310977048c5a6f6356c9af78467
+    Process: 392 ExecStartPre=/usr/lib/h713-hdmi-speaker/enable-mixer.sh (code=exited, status=0/SUCCESS)
+   Main PID: 400 (hdmi-speaker)
+        CPU: 2min 2.120s
+     CGroup: /system.slice/h713-hdmi-speaker.service
+             └─400 /usr/lib/h713-hdmi-speaker/hdmi-speaker
+
+Apr 13 19:38:22 h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[395]: DAC Playback Volume                          set to 43   [0..63]
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[396]: Line Out Playback Volume                     set to 15   [0..31]
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[397]: Line Out Playback Switch                     set to 1 1
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[398]: Speaker Switch                               set to 1
+Apr 13 19:38:22 h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+Apr 13 19:38:23 h713-arm64 hdmi-speaker[400]: HDMI speaker ready; fading in after silent pre-roll
+state: RUNNING
+owner_pid   : 400
+trigger_time: 20.829342425
+tstamp      : 1386.817835326
+delay       : 96
+avail       : 96
+avail_max   : 512
+-----
+hw_ptr      : 65567420
+appl_ptr    : 65567324
+state: RUNNING
+owner_pid   : 400
+trigger_time: 762.345148612
+tstamp      : 0.000000000
+delay       : 3520
+avail       : 320
+avail_max   : 544
+-----
+hw_ptr      : 29974880
+appl_ptr    : 29978400
+DAC Playback Volume                          int    43   [0..63]
+Line Out Playback Volume                     int    15   [0..31]
+Line Out Playback Switch                     bool   1 1
+Speaker Switch                               bool   1
+Line Out Source Playback Route               enum   0 0   [0..1]
+0
+Apr 13 19:38:22 h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[395]: DAC Playback Volume                          set to 43   [0..63]
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[396]: Line Out Playback Volume                     set to 15   [0..31]
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[397]: Line Out Playback Switch                     set to 1 1
+Apr 13 19:38:22 h713-arm64 enable-mixer.sh[398]: Speaker Switch                               set to 1
+Apr 13 19:38:22 h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+Apr 13 19:38:23 h713-arm64 hdmi-speaker[400]: HDMI speaker ready; fading in after silent pre-roll

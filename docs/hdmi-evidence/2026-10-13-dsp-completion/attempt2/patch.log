@@ -1,0 +1,36 @@
+[   85.957720] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   85.969926] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   85.980358] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   85.990473] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   86.006997] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph must be prepared before recording
+[   86.039143] h713-hdmi-dsp-probe: status=00000000; stock lock mapped; no command issued
+[   86.049659] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000000
+[   86.058237] h713-hdmi-dsp-probe: device=0 word=80ff value=0000 response=00000000 status=00000020
+[   86.068204] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[   86.075610] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[   86.084063] h713-hdmi-dsp-probe: device=1 word=80ff value=0000 response=00000000 status=00000120
+[   86.094054] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[   94.414714] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[   94.423339] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[   94.431763] h713-hdmi-dsp-probe: beginning fixed stock init/724-pair volatile patch; physical cold boot required for teardown
+[   94.444112] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[   94.453508] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[   94.461828] h713-hdmi-dsp-probe: stock-init word=00ee before=0200 after=0180 expected=0180
+[   94.471126] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[   94.480502] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[   94.488788] h713-hdmi-dsp-probe: stock-init word=8034 before=0000 after=0010 expected=0010
+[   94.498100] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[   94.507457] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[   94.515715] h713-hdmi-dsp-probe: stock-init word=8017 before=0000 after=0001 expected=0001
+[   95.438236] h713-hdmi-dsp-probe: requesting device=0 word=fff7 status=00000120
+[   95.447731] h713-hdmi-dsp-probe: patch-word fff7=0000
+[   95.453807] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[   95.462047] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[   95.470254] h713-hdmi-dsp-probe: stock-patch pairs=724 version0=0001 version1=0001
+[   95.478798] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+clear_fast_count
+13
+clear_slow_count
+0
+clear_timeout_count
+0

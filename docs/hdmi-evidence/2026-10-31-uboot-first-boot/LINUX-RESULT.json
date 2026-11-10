@@ -1,0 +1,161 @@
+{
+  "status": "PASS read-only post-first-boot storage and Linux checks",
+  "boot_id": "85768624-6a6e-4637-a50f-f45b2c156f31",
+  "cid_sha256": "1bb97b8b1f70d4455ee302889f38aa4e452cb4a7a3c4c9a68b30874903032512",
+  "writes": [
+    {
+      "name": "environment",
+      "offset": 2480406528,
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "matches": true
+    },
+    {
+      "name": "proper",
+      "offset": 2472017920,
+      "bytes": 961024,
+      "sha256": "cbd29de888e4b605e68b98de78c081525dd7d1b627abca846704efe527e8802a",
+      "matches": true
+    }
+  ],
+  "protected": [
+    {
+      "name": "disk-prefix-including-GPT-and-SPL",
+      "offset": 0,
+      "bytes": 65536,
+      "sha256": "7a3702e2ccb5c4639367fb615db94eaf13d26beae8d59fedd1d68650e21d4343",
+      "matches": true
+    },
+    {
+      "name": "disk-suffix-including-backup-GPT",
+      "offset": 7818117120,
+      "bytes": 65536,
+      "sha256": "9b3e8a016ad6c6f7b9fd2e03eaa38beebd9735bb57213a44efc99b97026188a4",
+      "matches": true
+    },
+    {
+      "name": "active-environment",
+      "offset": 1708654592,
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "matches": true
+    },
+    {
+      "name": "rescue-full-region",
+      "offset": 2484600832,
+      "bytes": 2097152,
+      "sha256": "27a685f46a68daeeb98190fe9bd1c3f9200cfe1da3f53cfa78b24bfb06a48411",
+      "matches": true
+    },
+    {
+      "name": "proper-region-tail",
+      "offset": 2472978944,
+      "bytes": 1136128,
+      "sha256": "df9b23d9d89fc108da150079a555216c62c42fba1451c48c8eab8ade6ba7ad11",
+      "matches": true
+    },
+    {
+      "name": "intended-environment-prefix",
+      "offset": 2480340992,
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "matches": true
+    },
+    {
+      "name": "intended-environment-suffix",
+      "offset": 2480472064,
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "matches": true
+    },
+    {
+      "name": "boot-FAT",
+      "offset": 71303168,
+      "bytes": 33554432,
+      "sha256": "79c14f0566ada36158df2bef4995f73674a532987cfe8674c0c5e46789672de5",
+      "matches": true
+    }
+  ],
+  "both_GPT_copies_valid": true,
+  "old_and_new_environment_identical": true,
+  "migrated_environment_CRC_valid": true,
+  "bundles": [
+    {
+      "path": "/usr/lib/h713-hdmi/SHA256SUMS",
+      "entries": 18,
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-health/SHA256SUMS",
+      "entries": 7,
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-video/SHA256SUMS",
+      "entries": 6,
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-speaker/SHA256SUMS",
+      "entries": 6,
+      "all_match": true
+    }
+  ],
+  "installed_files_match": true,
+  "services": {
+    "h713-hdmi-capture.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "12543143",
+      "Id": "h713-hdmi-capture.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    "h713-hdmi-signal.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "23612576",
+      "Id": "h713-hdmi-signal.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    "h713-hdmi-ring.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "24014779",
+      "Id": "h713-hdmi-ring.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    "h713-hdmi-video.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "0",
+      "Id": "h713-hdmi-video.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "h713-hdmi-speaker.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "24104786",
+      "Id": "h713-hdmi-speaker.service",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "h713-hdmi-health-ack.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "24009521",
+      "Id": "h713-hdmi-health-ack.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    }
+  },
+  "runtime": {
+    "/sys/module/h713_hdmi_audio/parameters/period_xruns": "0",
+    "/sys/module/h713_hdmi_v4l2/parameters/frames_rejected": "0",
+    "/sys/module/h713_hdmi_v4l2/parameters/allow_480p": "N",
+    "/sys/devices/platform/h713-hdmi-ring/signal": "none",
+    "/proc/device-tree/chosen/h713,hdmi-boot-v1": "48444d49000000008b8f275c"
+  },
+  "latches": "4b4f444800000000",
+  "filesystem_state": "clean",
+  "filesystem_error_count": 0,
+  "board_writes": false,
+  "reboot_by_agent": false
+}

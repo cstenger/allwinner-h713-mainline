@@ -1,0 +1,101 @@
+{"current_status": 0, "dispatch_n": 0, "dispatch_sample_rate_hz": 0, "host_monotonic": 66.849647198, "monitor_calls": 0, "monitor_count_changed_during_read": false, "previous_status": 0, "status_change_dispatches": 0}
+usage: mips-shell.py [-h] [--status] [--drain] [--cmd CMD] [--wait WAIT]
+                     [--raw] [--unbind] [--release]
+
+Drive the MIPS display firmware's debug shell from the ARM side.
+
+RUNS ON THE BOARD (needs /dev/mem):
+
+    scp tools/mips/mips-shell.py root@192.168.4.1:/root/
+    ssh root@192.168.4.1 python3 -u /root/mips-shell.py --status
+    ssh root@192.168.4.1 python3 -u /root/mips-shell.py --cmd 'win wi'
+
+WHY THIS EXISTS.  display.bin spawns two shell threads.  `shell_thread_uart`
+polls UART4, whose only pin routes are unavailable to us.  `shell_thread_monitor`
+runs the *same command parser* over a ring buffer in DRAM, and 2026-08-07
+confirmed on hardware that the ring is registered, ARM-reachable and uncached.
+It has never been driven.  Doing so gives us the firmware's own `win` command --
+`win wi` dumps the live geometry of every WCE window node -- plus `regr`/`regw`,
+the MIPS's own view of the fabric.
+
+THE PROTOCOL, recovered from the firmware and confirmed against the live object.
+This is SEGGER-RTT-shaped.  A control block at MIPS 0xabd01000:
+
+    +0x00  char acID[16]
+    +0x10  MaxNumUpBuffers      (3)
+    +0x14  MaxNumDownBuffers    (3)
+    +0x18  aUp[3]               24 bytes each -- MIPS writes, we read
+    +0x60  aDown[3]             24 bytes each -- we write, MIPS reads
+
+    each descriptor: { sName, pBuffer, SizeOfBuffer, WrOff, RdOff, Flags }
+
+The firmware's own accessors pin the field order beyond doubt: the read path
+(`0x8b155af0`, reached from getc `0x8b19d3b4`) loads pBuffer from `+0x64`,
+SizeOfBuffer from `+0x68`, WrOff from `+0x6c` and RdOff from `+0x70` -- i.e.
+aDown[0] -- and the rx-ready predicate at `0x8b155f78` returns
+`WrOff != RdOff` over the same pair.  24-byte stride is explicit in the code as
+`(idx*2 + idx) << 3`.
+
+Read live on 2026-09-04 with the MIPS parked, which confirms every field:
+
+    aUp[0]    pBuffer 0xabd01300  size 0x41c00  WrOff 8  RdOff 0
+    aDown[0]  pBuffer 0xabd01200  size 0x100    WrOff 0  RdOff 0
+
+and those 8 pending output bytes are `1b 5b 32 4a 1b 5b 31 48` = `ESC[2J
+ESC[1H`, the shell clearing its screen during bring-up.  That is firmware
+output sitting in the ring, which is as direct a confirmation of the decode as
+this project is going to get without running the thing.
+
+ADDRESS WINDOW.  MIPS kseg0/kseg1 map to system addresses through the measured
++0x40000000 window: kseg0 `0x8b232c20` -> `0x4b232c20`, kseg1 `0xabd01000` ->
+`0x4bd01000`.
+
+LINE TERMINATOR.  The shell's key table binds both `0x0d` and `0x0a` to the
+"enter" handler at `0x8b18337c`, so either works; we send `\r`.
+
+THE MIPS MUST BE ALIVE, AND GETTING THERE IS THE HARD PART.  Nothing is
+consumed while the core is parked -- a staged command simply sits in the ring.
+So `--cmd` returning nothing with the core parked is not a failure of this tool.
+
+Releasing the core from a booted Linux **hard-locked the whole SoC** on
+2026-09-04: network and serial both dead, physical power cycle.  There was no
+video running, so the documented "MIPS + Cedrus traffic" rule did not cover it.
+The difference from every earlier, successful release at the U-Boot prompt is
+that our KMS driver was bound and owning the display when the window layer came
+up.  Hence `--unbind`, and `--release` refusing to run without it.
+
+WHY NOT DO THIS FROM U-BOOT INSTEAD, which is the obvious answer and does not
+work: U-Boot maps all DRAM from 0x40000000 as MT_NORMAL cacheable
+(`sunxi_mem_map` in arch/arm/mach-sunxi/board.c), D-cache is on
+(`CONFIG_SYS_DCACHE_OFF` unset) and `CONFIG_CMD_CACHE` is **not** set, so there
+is no `dcache off`.  `md`/`mw` do no cache maintenance, so a command written
+with `mw.l` would sit in the ARM's D-cache where the MIPS -- which reads this
+memory uncached through kseg1, outside the ARM's coherency domain -- cannot see
+it, and polling the up-ring offsets with `md.l` would be answered from a stale
+cache line.  U-Boot's own code proves the incoherency: `h713_mips.c` calls
+`flush_cache()` after loading the firmware and `invalidate_dcache_range()`
+before reading anything the MIPS wrote.  The 2026-08-07 probe that read this
+block from the U-Boot prompt only ever did a *cold first read*, which is the one
+case that works regardless.  Making the U-Boot route work means adding cache
+maintenance to U-Boot and flashing the bootloader, since FEL boot is documented
+as non-working on this SoC.
+
+Linux has no such problem: /dev/mem maps the carveout as Device memory, which is
+uncached -- proven the hard way by the SIGBUS documented on `Mem` below.
+
+PRIVILEGE CAVEAT, unresolved.  In the shell's command table `win` carries flag
+word `0x2000`, the same as `regw`, while `regr`/`cmds`/`keys` carry `0x2100`.
+There is a `users` command and a "default user" entry, so `0x2000` may be a
+privilege level the monitor stream does not have.  If `win` comes back
+rejected, that is the first thing to look at -- try `cmds` first, which is
+`0x2100` and should always work.
+
+options:
+  -h, --help   show this help message and exit
+  --status     describe the rings and exit
+  --drain      print pending output and exit
+  --cmd CMD    send a command line, then read the reply
+  --wait WAIT  seconds to wait for output
+  --raw        hex-dump output instead of decoding
+  --unbind     take the KMS driver off 5600000.display first
+  --release    release the MIPS core (refuses while the KMS driver is bound)

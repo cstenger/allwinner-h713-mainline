@@ -1,0 +1,148 @@
+{
+  "status": "PASS read-only identity/storage/startup checks; HOLD live save-path service gate",
+  "boot_id": "2d8c3970-4164-4a38-8e86-375bb440c971",
+  "cid_sha256": "1bb97b8b1f70d4455ee302889f38aa4e452cb4a7a3c4c9a68b30874903032512",
+  "capacity_bytes": 7818182656,
+  "sector_bytes": 512,
+  "environment_sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+  "environment_entries": 72,
+  "old_and_new_environment_identical": true,
+  "environment_CRC_valid": true,
+  "probe_present": false,
+  "bootdelay": "5",
+  "protected_regions": [
+    {
+      "name": "disk-prefix-including-GPT-and-SPL",
+      "bytes": 65536,
+      "sha256": "7a3702e2ccb5c4639367fb615db94eaf13d26beae8d59fedd1d68650e21d4343",
+      "matches": true
+    },
+    {
+      "name": "disk-suffix-including-backup-GPT",
+      "bytes": 65536,
+      "sha256": "9b3e8a016ad6c6f7b9fd2e03eaa38beebd9735bb57213a44efc99b97026188a4",
+      "matches": true
+    },
+    {
+      "name": "active-environment",
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "matches": true
+    },
+    {
+      "name": "rescue-full-region",
+      "bytes": 2097152,
+      "sha256": "27a685f46a68daeeb98190fe9bd1c3f9200cfe1da3f53cfa78b24bfb06a48411",
+      "matches": true
+    },
+    {
+      "name": "proper-region-tail",
+      "bytes": 1136128,
+      "sha256": "df9b23d9d89fc108da150079a555216c62c42fba1451c48c8eab8ade6ba7ad11",
+      "matches": true
+    },
+    {
+      "name": "intended-environment-prefix",
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "matches": true
+    },
+    {
+      "name": "intended-environment-suffix",
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "matches": true
+    },
+    {
+      "name": "boot-FAT",
+      "bytes": 33554432,
+      "sha256": "79c14f0566ada36158df2bef4995f73674a532987cfe8674c0c5e46789672de5",
+      "matches": true
+    },
+    {
+      "name": "installed-proper",
+      "bytes": 961024,
+      "sha256": "cbd29de888e4b605e68b98de78c081525dd7d1b627abca846704efe527e8802a",
+      "matches": true
+    }
+  ],
+  "GPT_valid": true,
+  "GPT_entries": 28,
+  "populated_partitions": 27,
+  "captured_file_pins": 50,
+  "all_file_pins_verified": 56,
+  "bundle_manifests": 4,
+  "services": [
+    {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "11867741",
+      "Id": "h713-hdmi-capture.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "22951261",
+      "Id": "h713-hdmi-signal.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "23352490",
+      "Id": "h713-hdmi-ring.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "0",
+      "Id": "h713-hdmi-video.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "23436762",
+      "Id": "h713-hdmi-speaker.service",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "23347065",
+      "Id": "h713-hdmi-health-ack.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    }
+  ],
+  "GP6_HDOK": true,
+  "GP7_zero": true,
+  "filesystem_clean": true,
+  "runtime": {
+    "/sys/module/h713_hdmi_audio/parameters/period_xruns": "0",
+    "/sys/module/h713_hdmi_v4l2/parameters/frames_rejected": "0",
+    "/sys/module/h713_hdmi_v4l2/parameters/allow_480p": "N",
+    "/sys/devices/platform/h713-hdmi-ring/signal": "none",
+    "/proc/device-tree/chosen/h713,hdmi-boot-v1": "48444d49000000008b8f275c"
+  },
+  "automatic_startup_pass": true,
+  "capture_sha256": "fe33c739b07396162b9f520cb54b18689dbfc55bd2d0ff48f944ed19896e86ea",
+  "capture_bytes": 38236160,
+  "controller_preflight_gate": {
+    "passed": false,
+    "reason": "service health gate failed"
+  },
+  "ready_for_live_save": false,
+  "board_writes": false,
+  "UART_armed": false,
+  "reboot": false,
+  "video_service_diagnostic": {
+    "result": "success",
+    "NRestarts": 0,
+    "started_this_boot": false,
+    "signal": "none",
+    "activation": "udev starts video when bridge is ready (signal locked or holding)",
+    "note": "No service crash observed; inactive video fits no-signal state. Prepared controller gate still requires six active services and is not waived."
+  }
+}

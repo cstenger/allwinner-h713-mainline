@@ -1,0 +1,81 @@
+{
+  "new_suite": {
+    "command": "python3 tools/hdmi/test-dsp-teardown-b.py",
+    "tests": 30,
+    "result": "PASS"
+  },
+  "native_cases": [
+    "sham",
+    "sham-driver-clock",
+    "preserved",
+    "missing-marker",
+    "census-reset-flag",
+    "census-words",
+    "census-bus-saved",
+    "lose-clock",
+    "lose-reset",
+    "lose-prefix",
+    "stuck-off",
+    "stuck-bus",
+    "unrouted",
+    "late-timeout",
+    "shared-reset",
+    "child-hold",
+    "driver-clock"
+  ],
+  "native_stall_model": "AudioTop/AudIf/bridge/DSP/lock access aborts unless AudioTop control is 700 and the TVFE-1296, audio CPU/UMAC/IHB gates and demod bus are on",
+  "mutation_checks": {
+    "caught": [
+      "off edge words forward",
+      "bus gate off after words",
+      "reacquire without reset deassert",
+      "sham performs off edge",
+      "no parent re-enable",
+      "no shared-reset status check",
+      "health reads AudioTop with gate closed",
+      "gate opens without TVTOP routing",
+      "no hold dwell",
+      "sham drops audio clocks (after adding sham-driver-clock)",
+      "no audio clock re-enable",
+      "changed pair continues",
+      "no IHB restore",
+      "reacquire bus before words",
+      "helper TV census gate",
+      "helper debug-summary gate",
+      "helper Phase A prefix gate",
+      "analyzer null clock edge",
+      "analyzer sham TV writes",
+      "analyzer TV compare (after self-consistent fixture)",
+      "analyzer reset status",
+      "analyzer gate/TVTOP context"
+    ]
+  },
+  "regressions": [
+    {
+      "command": "python3 tools/hdmi/test-dsp-teardown-a.py",
+      "tests": 26,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-dsp-owner-boundary.py",
+      "tests": 14,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-build-startup.py",
+      "tests": 11,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-managed-boot.py",
+      "tests": 7,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-dsp-minimum.py",
+      "tests": 11,
+      "result": "PASS"
+    }
+  ],
+  "total_tests": 99
+}

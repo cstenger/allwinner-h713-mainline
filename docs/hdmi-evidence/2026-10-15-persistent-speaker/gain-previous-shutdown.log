@@ -1,0 +1,30 @@
+Apr 13 19:42:55 h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+Apr 13 19:45:47 h713-arm64 systemd[1]: Stopping h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+Apr 13 19:45:47 h713-arm64 systemd[1]: h713-hdmi-speaker.service: Deactivated successfully.
+Apr 13 19:45:47 h713-arm64 systemd[1]: Stopped h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+Apr 13 19:45:47 h713-arm64 systemd[1]: h713-hdmi-speaker.service: Consumed 15.062s CPU time.
+Apr 13 19:45:47 h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+Apr 13 19:45:47 h713-arm64 enable-mixer.sh[734]: DAC Playback Volume                          set to 43   [0..63]
+Apr 13 19:45:47 h713-arm64 enable-mixer.sh[735]: Line Out Playback Volume                     set to 15   [0..31]
+Apr 13 19:45:47 h713-arm64 enable-mixer.sh[736]: Line Out Playback Switch                     set to 1 1
+Apr 13 19:45:47 h713-arm64 enable-mixer.sh[737]: Speaker Switch                               set to 1
+Apr 13 19:45:47 h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+Apr 13 19:47:01 h713-arm64 systemd[1]: Stopping h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+Apr 13 19:47:01 h713-arm64 systemd[1]: h713-hdmi-speaker.service: Deactivated successfully.
+Apr 13 19:47:01 h713-arm64 systemd[1]: Stopped h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+Apr 13 19:47:01 h713-arm64 systemd[1]: h713-hdmi-speaker.service: Consumed 6.720s CPU time.
+Apr 13 19:47:01 h713-arm64 systemd[1]: Stopping h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+Apr 13 19:47:02 h713-arm64 python3[795]: EDID/HPD, SCP SRAM/vectors and DDC ownership restored
+Apr 13 19:47:02 h713-arm64 systemd[1]: h713-hdmi-signal.service: Deactivated successfully.
+Apr 13 19:47:02 h713-arm64 systemd[1]: Stopped h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+Apr 13 19:47:02 h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+Apr 13 19:47:02 h713-arm64 runuser[813]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+Apr 13 19:47:02 h713-arm64 runuser[813]: pam_unix(runuser:session): session closed for user media
+Apr 13 19:47:02 h713-arm64 runuser[821]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+Apr 13 19:47:02 h713-arm64 runuser[821]: pam_unix(runuser:session): session closed for user media
+Apr 13 19:47:05 h713-arm64 runuser[834]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+Apr 13 19:47:05 h713-arm64 runuser[834]: pam_unix(runuser:session): session closed for user media
+Apr 13 19:47:07 h713-arm64 python3[811]: {"phase": "parked", "receiver_removed": true, "cold_boot_required": true, "audio_stop": {"phase": "stopped", "already_stopped": false, "receiver_retained": true, "dsp_restored_words": 22, "tvfe_restored_words": 15}}
+Apr 13 19:47:07 h713-arm64 systemd[1]: h713-hdmi-capture.service: Deactivated successfully.
+Apr 13 19:47:07 h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+Apr 13 19:47:07 h713-arm64 systemd[1]: h713-hdmi-capture.service: Consumed 1.641s CPU time.

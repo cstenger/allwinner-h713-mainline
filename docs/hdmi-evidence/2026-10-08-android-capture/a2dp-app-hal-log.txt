@@ -1,0 +1,74 @@
+--------- beginning of system
+--------- beginning of crash
+--------- beginning of main
+09-21 19:55:03.012  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:55:03.013  2408  9233 I AudioFlinger: AudioFlinger's thread 0xb1ab1c00 tid=9233 ready to run
+09-21 19:55:03.019  9206  9229 W AudioRecord: restoreRecord_l(51): dead IAudioRecord, creating a new one from start()
+09-21 19:55:03.227  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:55:03.229  2382  2430 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 19:55:03.229  2382  2430 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 19:55:03.232  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:55:03.233  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 19:55:03.235  2408  9235 I AudioFlinger: AudioFlinger's thread 0xb1ab1d40 tid=9235 ready to run
+09-21 19:55:03.260  2382  2430 D audio_hw_primary: adev_create_audio_patch 1: device; 2: thread; sources: 1, sinks: 2
+09-21 19:55:03.273  2382  9236 D audio_hw_primary: use card: 0 to capture audio
+09-21 19:55:03.283  2382  9236 D audio_hw_primary: do not use in resampler
+09-21 19:55:21.317  2382  2661 D audio_hw_primary: do_input_standby
+09-21 19:55:21.537  2382  2661 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 19:59:45.569  2382  2661 D audio_hw_primary: adev_get_parameters, audio_devices_out_active
+09-21 19:59:45.569  2382  2661 D audio_hw_primary: get_audio_devices_active: 
+09-21 19:59:45.569  2382  2661 D audio_hw_primary: get_audio_devices_active: AUDIO_SPEAKER
+09-21 20:01:42.062  2382  2661 D audio_hw_primary: adev_get_parameters, audio_devices_out_active
+09-21 20:01:42.062  2382  2661 D audio_hw_primary: get_audio_devices_active: 
+09-21 20:01:42.062  2382  2661 D audio_hw_primary: get_audio_devices_active: AUDIO_SPEAKER
+09-21 20:03:33.996  2382  2430 D audio_hw_primary: adev_get_parameters, audio_devices_out_active
+09-21 20:03:33.996  2382  2430 D audio_hw_primary: get_audio_devices_active: 
+09-21 20:03:33.996  2382  2430 D audio_hw_primary: get_audio_devices_active: AUDIO_SPEAKER
+09-21 20:03:34.000  2382  2430 D audio_hw_primary: adev_set_parameters, audio_devices_out_active=AUDIO_A2DP
+09-21 20:03:34.000  2382  2430 V audio_hw_primary: out AUDIO_PARAMETER_DEVICES_OUT_ACTIVE: AUDIO_A2DP
+09-21 20:03:34.001  2382  2430 V audio_hw_primary: set property vendor.audio.output.active: AUDIO_A2DP ok
+09-21 20:03:34.001  2382  2430 D audio_hw_primary: set_audio_devices_active sink: 1 -> 3
+09-21 20:03:34.001  2382  2430 D audio_hw_primary: [create_audio_patch] audio_source: 1, audio_sink: 3
+09-21 20:03:34.043  2382  2430 D audio_hw_primary: mytest: Check_Sound_Unmute, Audio_mute: 0 Lock_mute: 0
+09-21 20:03:34.044  2382  2430 D audio_hw_primary: [set_codec_speaker_mute] Now SPK Set Mute: 1
+09-21 20:03:34.212  2382  2430 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 20:03:34.214  2382  2430 D audio_hw_primary: adev_get_parameters, audio_devices_out_active
+09-21 20:03:34.214  2382  2430 D audio_hw_primary: get_audio_devices_active: 
+09-21 20:03:34.214  2382  2430 D audio_hw_primary: get_audio_devices_active: AUDIO_A2DP
+09-21 20:03:34.236  2382  2430 D audio_hw_primary: sample_rate = 48000
+09-21 20:03:34.247  2382  2430 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000004)
+09-21 20:03:34.247  2382  2430 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 20:03:34.249  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 20:03:34.249  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 20:03:34.250  2408 11354 I AudioFlinger: AudioFlinger's thread 0xb1ab1440 tid=11354 ready to run
+09-21 20:03:34.260 11328 11350 W AudioRecord: restoreRecord_l(56): dead IAudioRecord, creating a new one from start()
+09-21 20:03:34.471  2382  2661 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 20:03:34.473  2382  2661 D audio_hw_primary: adev_open_input_stream: enter: request format(0x1) sample_rate(48000) channel_mask(0xc) devices(0x80000020)
+09-21 20:03:34.473  2382  2661 V audio_hw_primary: to malloc in-buffer: period_size: 960, frame_size: 4
+09-21 20:03:34.475  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 20:03:34.477  2382  2661 D audio_hw_primary: sample_rate = 48000
+09-21 20:03:34.481  2408 11356 I AudioFlinger: AudioFlinger's thread 0xb1ab13c0 tid=11356 ready to run
+09-21 20:03:34.500  2382  2661 D audio_hw_primary: adev_create_audio_patch 1: device; 2: thread; sources: 1, sinks: 2
+09-21 20:03:34.526  2382 11357 D audio_hw_primary: [start_input_stream] --> 2534, soft_prescale_av_a2dp_val: 0.334966
+09-21 20:03:34.526  2382 11357 D audio_hw_primary: use card: 4 to capture audio
+09-21 20:03:34.536  2382 11357 D audio_hw_primary: do not use in resampler
+09-21 20:03:52.558  2382  2661 D audio_hw_primary: do_input_standby
+09-21 20:03:52.780  2382  2661 D audio_hw_primary: adev_set_parameters, audio_devices_out_active=AUDIO_SPEAKER
+09-21 20:03:52.780  2382  2661 V audio_hw_primary: out AUDIO_PARAMETER_DEVICES_OUT_ACTIVE: AUDIO_SPEAKER
+09-21 20:03:52.782  2382  2661 V audio_hw_primary: set property vendor.audio.output.active: AUDIO_SPEAKER ok
+09-21 20:03:52.782  2382  2661 D audio_hw_primary: init_codec_output_path output_device_id: 1
+09-21 20:03:52.782  2382  2661 D audio_hw_primary: output_route: media-speaker-i2s
+09-21 20:03:52.783  2382  2661 D audio_hw_primary: set_audio_devices_active sink: 3 -> 1
+09-21 20:03:52.783  2382  2661 D audio_hw_primary: [create_audio_patch] audio_source: 1, audio_sink: 1
+09-21 20:03:52.786  2382  2661 D audio_hw_primary: connect_hdmiin_path
+09-21 20:03:52.786  2382  2661 D audio_hw_primary: hdmiin format: 0
+09-21 20:03:52.977  2382  2661 D audio_hw_primary: mytest: Check_Sound_Unmute, Audio_mute: 0 Lock_mute: 0
+09-21 20:03:52.979  2382  2661 D audio_hw_primary: [set_codec_speaker_mute] Now SPK Set Mute: 1
+09-21 20:03:53.143  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 20:03:53.143  2382  2430 D audio_hw_primary: adev_close_input_stream set voice record status
+09-21 20:03:53.147  2382  2430 D audio_hw_primary: adev_get_parameters, audio_devices_out_active
+09-21 20:03:53.147  2382  2430 D audio_hw_primary: get_audio_devices_active: 
+09-21 20:03:53.147  2382  2430 D audio_hw_primary: get_audio_devices_active: AUDIO_SPEAKER
+09-21 20:04:02.512  2382  2430 D audio_hw_primary: adev_get_parameters, audio_devices_out_active
+09-21 20:04:02.512  2382  2430 D audio_hw_primary: get_audio_devices_active: 
+09-21 20:04:02.512  2382  2430 D audio_hw_primary: get_audio_devices_active: AUDIO_SPEAKER

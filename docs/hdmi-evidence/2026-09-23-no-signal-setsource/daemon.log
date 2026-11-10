@@ -1,0 +1,42 @@
+[hdmird] cpu_comm opened, cpu_id=0 slave_ready=0
+[hdmird] shared mem mapped at 0xffffa4400000 (5242880 bytes)
+[hdmird] cannot open /lib/firmware/hdcp_v22.bin: No such file or directory
+[hdmird] registered callback MipsHalCallback_OnNewSPDPacket (id=0xf0b55406)
+[hdmird] registered callback MipsHalCallback_SignalChange (id=0x3e7fbc46)
+[hdmird] registered callback MipsHalCallback_OnNewGCPacket (id=0x1727f0d0)
+[hdmird] registered callback MipsHalCallback_HdmiHotPlugByPortHandler (id=0x38d780e2)
+[hdmird] registered callback MipsHalCallback_OnNewAVIPacket (id=0xa3bf5110)
+[hdmird] registered callback MipsHalCallback_HdmiSignalValidCallback (id=0x819cd918)
+[hdmird] registered callback MipsHalCallback_OnNewACRPacket (id=0x12601a68)
+[hdmird] registered callback MipsHalCallback_DisplayLatencyChange (id=0xad9f0a86)
+[hdmird] registered callback MipsHalCallback_OnNewAudioInfoPacket (id=0xff9b970b)
+[hdmird] registered callback MipsHalCallback_OnNewVSIPacket (id=0xf87faf28)
+[hdmird] === stock init sequence ===
+[hdmird] THal_Vp_Init(0x0, 0x0, 0x4e700000) OK in 144ms result=0x1
+[hdmird] THal_Vp_RegisterSignalChangeCallback(0xb) OK in 95ms result=0x0
+[hdmird] THal_Vp_SetHDMIHotPlugByPortCallback(0x1) OK in 60ms result=0x0
+[hdmird] Thal_Vp_SetBacklightLevel(0x64) OK in 19ms result=0x1
+[hdmird] THal_Vp_SetBacklightWorkMode(0x0) OK in 95ms result=0x1
+[hdmird] THal_Vp_SetTNR(0x2) OK in 27ms result=0x0
+[hdmird] THal_Vp_SetSNR(0x1) OK in 47ms result=0x0
+[hdmird] THal_Vp_SetDCI(0x2) OK in 25ms result=0x0
+[hdmird] THal_Vp_SetBlackExtension(0x1) OK in 27ms result=0x0
+[hdmird] THal_Vp_SetPictureMode(0x1) OK in 29ms result=0x0
+[hdmird] THal_Vp_SetVideoRange(0x0) OK in 9ms result=0x0
+[hdmird] wce_set_window src=(0,1920,0,1080) dst=(0,1920,0,1080) aspect=2
+[hdmird] THal_Vp_Wce_SetWindow(0x4e337000, 0x4e337020, 0x4e337040) OK in 8ms result=0x1
+[hdmird] THal_Vp_CvbsSetPedestalMode(0x1) OK in 9ms result=0x0
+[hdmird] THal_Vp_HDMI_SetPortMap(0x1, 0x0) OK in 9ms result=0x0
+[hdmird] THal_Vp_HDMI_SetPortMap(0x2, 0x1) OK in 9ms result=0x0
+[hdmird] THal_Vp_HDMI_SetPortMap(0x3, 0x2) OK in 39ms result=0x0
+[hdmird] wce_set_window src=(0,1920,0,1080) dst=(0,1920,0,1080) aspect=2
+[hdmird] THal_Vp_Wce_SetWindow(0x4e337000, 0x4e337020, 0x4e337040) OK in 10ms result=0x1
+[hdmird] THal_Vp_DisableBlackScreen() OK in 9ms result=0x0
+[hdmird] THal_Vp_TurnOnARCAudioPath(0x1) OK in 9ms result=0x0
+[hdmird] THal_Vp_SwitchARCTXPath(0x0) OK in 10ms result=0x0
+[hdmird] WARNING: skipping SetHDCP22Key (no key)
+[hdmird] THal_Vp_HDMI_SetHPDTimeInterval(0xc8) OK in 9ms result=0x0
+[hdmird] === init sequence complete ===
+[hdmird] <- HdmiHotPlugByPortHandler port=1
+[hdmird] receiver started (cpu_comm callback dispatch)
+[hdmird] === set-source 3 ===

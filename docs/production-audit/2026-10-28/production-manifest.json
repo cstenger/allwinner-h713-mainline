@@ -1,0 +1,2413 @@
+{
+  "schema": "h713-production-audit-v1",
+  "source_commit": "d64aab0946dd09c32dda63485f1a4efee8bfeb3b",
+  "audit_host_utc": "2026-10-28T08:05:12.619726+00:00",
+  "scope": "HY200 QZ713DF_A1 DDR3 only; read-only board snapshot; no clean rebuild or functional retest",
+  "board_clock_untrusted": true,
+  "boot_id": "c8f3308e-5c02-4be1-bc0e-3ee5991761e8",
+  "clock_observation": {
+    "argv": [
+      "timedatectl",
+      "show"
+    ],
+    "returncode": 0,
+    "stdout": "Timezone=Etc/UTC\nLocalRTC=no\nCanNTP=no\nNTP=no\nNTPSynchronized=no\nTimeUSec=Mon 2026-04-13 20:43:36 UTC\nRTCTimeUSec=Fri 1970-01-02 01:40:27 UTC\n",
+    "stderr": ""
+  },
+  "local_build_output_ledger": [
+    {
+      "path": "build/out/bl31.bin",
+      "recorded_sha256": "b4ef2e7ff940ecfa918dfa57b348402f77941c4ff681cae2b9dd4323a87446c6",
+      "actual_sha256": "5ea11b14cc59a85b3219b4969836948a1f99ab0381d620476e557f993c78636c",
+      "matches": false
+    },
+    {
+      "path": "build/out/Image.gz",
+      "recorded_sha256": "a110ac70ff1b91228190d8d88740ab6cdc7ae9b1ad6ccc931e5b4707ab608649",
+      "actual_sha256": "0d2410f7852f7089e1178f852f6fe00192d3bbf4526e7a0a7371f2d2f68485e6",
+      "matches": false
+    },
+    {
+      "path": "build/out/sun50i-h713-hy200-qz713df-a1.dtb",
+      "recorded_sha256": "c12af0f69459d8eef941be6a586c58daed64244d2909bc769426b24e4587f625",
+      "actual_sha256": "4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940",
+      "matches": false
+    },
+    {
+      "path": "build/out/sun50i-h713-hy200-qz713-v2.dtb",
+      "recorded_sha256": "0083d7a27cfba59b138cc7d605efbbf8b2117a6405ba3ee0d5997e48c6650a11",
+      "actual_sha256": "122b811aff3a5e5de273f65235d0cf8f3fe54e3ca07007e1cc449b61eeba2e37",
+      "matches": false
+    },
+    {
+      "path": "build/out/h713-kernel.fit",
+      "recorded_sha256": "c5729b284fc6c26caf2609e6bf3bb232c838b45043b207f38a8d3d3e37d09abf",
+      "actual_sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+      "matches": false
+    },
+    {
+      "path": "build/out/u-boot-sunxi-with-spl-ddr3.bin",
+      "recorded_sha256": "cea5f805610ba7ed7f9ad2968366ab29450048be62d02fa16e36c13d231b1293",
+      "actual_sha256": "4aa6ffe0fd8b829a9bc2ea9f93addbdb3f77d5d247755e38cbe69a5d6e0589d5",
+      "matches": false
+    },
+    {
+      "path": "build/out/u-boot-sunxi-with-spl-lpddr3.bin",
+      "recorded_sha256": "36a5ff0808d2eb41e571f44a89b9e039df39afd3c47ead77343150f2634a4817",
+      "actual_sha256": "dd4e2d46c472f5ffd5f71d7e39de777210083ed448c39af43c4f4eeb9adc974c",
+      "matches": false
+    }
+  ],
+  "production_readiness": "Incomplete: exact full source-based recreation not demonstrated; known guard drift and environment migration remain.",
+  "findings": [
+    {
+      "id": "F1",
+      "kind": "source_difference",
+      "summary": "Both installed hold guards lack two diagnostic-module checks present in current source.",
+      "evidence": "hold-guard-difference.diff"
+    },
+    {
+      "id": "F2",
+      "kind": "intentional_recipe_difference",
+      "summary": "Installed proper is the recorded diagnostic reset-controls image, not the normal production U-Boot build."
+    },
+    {
+      "id": "F3",
+      "kind": "known_layout_defect",
+      "summary": "Active valid environment remains at unintended LBA 0x32ec00; configured LBA 0x49ec00 is empty."
+    },
+    {
+      "id": "F4",
+      "kind": "stale_build_metadata",
+      "summary": "All seven entries in build/out/SHA256SUMS differ from current host output bytes.",
+      "evidence": "local-build-ledger-check.json"
+    },
+    {
+      "id": "F5",
+      "kind": "configuration_gap",
+      "summary": "System/RTC calendars incorrect and time synchronization unavailable."
+    },
+    {
+      "id": "F6",
+      "kind": "recreation_gap",
+      "summary": "Startup regeneration succeeds with retained ignored inputs; no complete clean-checkout release assembly demonstrated."
+    }
+  ],
+  "status_counts": {
+    "recorded_manifest": 4,
+    "runtime_generated_cache": 4,
+    "recorded_configuration_snapshot": 1,
+    "pinned_firmware_match": 9,
+    "retained_artifact_match": 12,
+    "source_match": 43,
+    "source_difference": 2,
+    "regenerated_match": 5,
+    "historical_backup_or_log": 10,
+    "binary_rebuild_unproven": 30,
+    "rootfs_recipe_difference": 6,
+    "directory_metadata": 1,
+    "rootfs_recipe_match": 11,
+    "board_local_configuration": 5,
+    "board_configuration_match": 1,
+    "boot_pin_match": 1,
+    "accepted_binary_match": 1,
+    "installed_binary_fingerprinted": 3,
+    "absent_or_unreadable": 5,
+    "installation_provenance_stamp": 1
+  },
+  "installed_bundle_integrity": [
+    {
+      "path": "/usr/lib/h713-hdmi/SHA256SUMS",
+      "all_match": true,
+      "checks": [
+        {
+          "path": "/usr/lib/h713-hdmi/boot-environment.json",
+          "expected": "0f91d7c6ea547e03e78b7959f536225d71bd9de2c79e2cd7841365945b17015e",
+          "actual": "0f91d7c6ea547e03e78b7959f536225d71bd9de2c79e2cd7841365945b17015e",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/firmware/h713/hdmi-audio-dsp.bin",
+          "expected": "8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5",
+          "actual": "8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-ddc-pins.ko",
+          "expected": "1c2b11df000d6cfaa88a45b5a4873a151c64076e3e48bf012573393c248fd7aa",
+          "actual": "1c2b11df000d6cfaa88a45b5a4873a151c64076e3e48bf012573393c248fd7aa",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-audio.ko",
+          "expected": "633a8e7bda3244eafd3256030c0a182b3493a8a6da72ef98201e34e22981b778",
+          "actual": "633a8e7bda3244eafd3256030c0a182b3493a8a6da72ef98201e34e22981b778",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-capture.service",
+          "expected": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+          "actual": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-hold-guard",
+          "expected": "9140e3104042cd291496f3c238d1c3ef151184d362f32752c7179f9b25483db7",
+          "actual": "9140e3104042cd291496f3c238d1c3ef151184d362f32752c7179f9b25483db7",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-receiver.ko",
+          "expected": "5a68e9e03d6f985c24c88253901c6f1237200c0015cb8974a641d170fccf5f47",
+          "actual": "5a68e9e03d6f985c24c88253901c6f1237200c0015cb8974a641d170fccf5f47",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-session.py",
+          "expected": "b113aaf35d06132a8ec5d8e95c70dd08a93a3e5d7e451e93b68a990e1df29e77",
+          "actual": "b113aaf35d06132a8ec5d8e95c70dd08a93a3e5d7e451e93b68a990e1df29e77",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-signal.ko",
+          "expected": "0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497",
+          "actual": "0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-signal.py",
+          "expected": "2b6ac46d09e8af00a551bfe879bb46066c5a5106c82cf1a89bd148410c271445",
+          "actual": "2b6ac46d09e8af00a551bfe879bb46066c5a5106c82cf1a89bd148410c271445",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-signal.service",
+          "expected": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+          "actual": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi.cmd",
+          "expected": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+          "actual": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi.scr",
+          "expected": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+          "actual": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/install-startup.sh",
+          "expected": "3c49c52e9665ab3314afdbf22b93c6e7f57d9341c21f6cd9c2046e6807dff64b",
+          "actual": "3c49c52e9665ab3314afdbf22b93c6e7f57d9341c21f6cd9c2046e6807dff64b",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/mips-shell.py",
+          "expected": "5235c259fc8637b7309df483f0931795ed299b2363fb8914ec8e0cb72fea7615",
+          "actual": "5235c259fc8637b7309df483f0931795ed299b2363fb8914ec8e0cb72fea7615",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/read-comm-trace.py",
+          "expected": "43db0a3b5ff7dc89ee87229049b677f7f5c487df8ee856b050a6942efbdfc0b8",
+          "actual": "43db0a3b5ff7dc89ee87229049b677f7f5c487df8ee856b050a6942efbdfc0b8",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/update-signal-owner.sh",
+          "expected": "6fad351af73c10d13d15edc39f2d762700cbff5d8c5511e540c82588b77cd31f",
+          "actual": "6fad351af73c10d13d15edc39f2d762700cbff5d8c5511e540c82588b77cd31f",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/update-startup-script.sh",
+          "expected": "7990f44844ceb6a5da825bc20e768c4b2a688e2e06ae9d90ea02f7399ce40bd7",
+          "actual": "7990f44844ceb6a5da825bc20e768c4b2a688e2e06ae9d90ea02f7399ce40bd7",
+          "matches": true
+        }
+      ]
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-health/SHA256SUMS",
+      "all_match": true,
+      "checks": [
+        {
+          "path": "/usr/lib/h713-hdmi-health/check-startup.sh",
+          "expected": "4b2a76fbe863317366f9b723392ec75951c5c129157804a0170f600d52bd9f78",
+          "actual": "4b2a76fbe863317366f9b723392ec75951c5c129157804a0170f600d52bd9f78",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.py",
+          "expected": "179eb7da4fbefd7016aa4314c3ad2ab204ef0602e8d400902615b37a73a62658",
+          "actual": "179eb7da4fbefd7016aa4314c3ad2ab204ef0602e8d400902615b37a73a62658",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.service",
+          "expected": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+          "actual": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/h713-hdmi.cmd",
+          "expected": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+          "actual": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/h713-hdmi.scr",
+          "expected": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+          "actual": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/install-shared-startup.py",
+          "expected": "7d978ddc5ee24e48827fd230bc65db3bae59425262bf116b2d4d43c1db034514",
+          "actual": "7d978ddc5ee24e48827fd230bc65db3bae59425262bf116b2d4d43c1db034514",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/manifest.json",
+          "expected": "644ac24082539a55231864333c0ea355da5808837a0de2cc73c203fe316831b8",
+          "actual": "644ac24082539a55231864333c0ea355da5808837a0de2cc73c203fe316831b8",
+          "matches": true
+        }
+      ]
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-video/SHA256SUMS",
+      "all_match": true,
+      "checks": [
+        {
+          "path": "/usr/lib/h713-hdmi-video/71-h713-hdmi-in.rules",
+          "expected": "4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370",
+          "actual": "4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/h713-hdmi-ring.service",
+          "expected": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+          "actual": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko",
+          "expected": "582d16ac58f325c92b8abafb6d6072fda6fda353515f96ea146de3ae97b0b14e",
+          "actual": "582d16ac58f325c92b8abafb6d6072fda6fda353515f96ea146de3ae97b0b14e",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/h713-hdmi-video.service",
+          "expected": "f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9",
+          "actual": "f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/install-hdmi-video.sh",
+          "expected": "ced29313467041a6fdbb93718d5b83265bfcbfaf6270c2183efbdfa92a2aaee2",
+          "actual": "ced29313467041a6fdbb93718d5b83265bfcbfaf6270c2183efbdfa92a2aaee2",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/stage-hdmi-video.sh",
+          "expected": "35db67de3f8defe30af708b07f49c67c583430a111b502ccf39b584dba8f3200",
+          "actual": "35db67de3f8defe30af708b07f49c67c583430a111b502ccf39b584dba8f3200",
+          "matches": true
+        }
+      ]
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-speaker/SHA256SUMS",
+      "all_match": true,
+      "checks": [
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/alsa-ctl.c",
+          "expected": "a089b0e24bb29c9aea6410015d0b358ea5df778728073ad5958180f779492c73",
+          "actual": "a089b0e24bb29c9aea6410015d0b358ea5df778728073ad5958180f779492c73",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/enable-mixer.sh",
+          "expected": "a897c4c02c48e05f2b2b98b1ec56663462ad2e6326d3ba618ba73f25339bf530",
+          "actual": "a897c4c02c48e05f2b2b98b1ec56663462ad2e6326d3ba618ba73f25339bf530",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/h713-hdmi-speaker.service",
+          "expected": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+          "actual": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/hdmi-speaker.c",
+          "expected": "3fbfab1c8ce4f02d0510383e9e6deb8464114255b8825cdc5cdc70fa3d9d7486",
+          "actual": "3fbfab1c8ce4f02d0510383e9e6deb8464114255b8825cdc5cdc70fa3d9d7486",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/install-speaker.sh",
+          "expected": "5ac95eecbb21100b67483b9ffccaf2a05b0ee91f6621abbce183c9b8514b6e21",
+          "actual": "5ac95eecbb21100b67483b9ffccaf2a05b0ee91f6621abbce183c9b8514b6e21",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/pipewire-speaker.py",
+          "expected": "f30805e01d7b751e831025e9267ffdfd65567e1b0aaade52f3345adff4913200",
+          "actual": "f30805e01d7b751e831025e9267ffdfd65567e1b0aaade52f3345adff4913200",
+          "matches": true
+        }
+      ]
+    }
+  ],
+  "boot_files": {
+    "h713-kernel.fit": {
+      "sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+      "bytes": 7795668,
+      "local_artifact": "build/out/h713-kernel.fit",
+      "local_sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+      "local_artifact_present": true,
+      "matches_local": true
+    },
+    "h713-hdmi.scr": {
+      "sha256": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+      "bytes": 4414,
+      "local_artifact": "build/out/h713-hdmi.scr",
+      "local_sha256": null,
+      "local_artifact_present": false,
+      "matches_local": null,
+      "matches_installed_backend": true,
+      "matches_regenerated": true
+    }
+  },
+  "bootloader": {
+    "device": "/dev/mmcblk0",
+    "lba": 4828160,
+    "sectors": 1877,
+    "sha256": "1b1f702fc7b52adf8246b124b8fbe209b7dadc651a37e53a600689810c45302e",
+    "bytes": 961024,
+    "retained_artifact": "build/hdmi-reset-controls-2026-10-20/trial-package/proper-controls.bin",
+    "retained_sha256": "1b1f702fc7b52adf8246b124b8fbe209b7dadc651a37e53a600689810c45302e",
+    "matches_retained": true,
+    "normal_build_proper_padded_sha256": "641589d102041bebdb40fd49428ee1ecbb3dd6d2667b085f8ab4afafd88cab13",
+    "normal_build_inputs": "build/out/u-boot-ddr3.inputs",
+    "classification": "recorded_diagnostic_build_differs_from_normal_production_recipe"
+  },
+  "spl": {
+    "device": "/dev/mmcblk0",
+    "lba": 16,
+    "sectors": 64,
+    "sha256": "cb9da87448a57aa1cafbc7ebf66200b5183304cef1eafe23d0818b99696a49ec",
+    "bytes": 32768
+  },
+  "environment": {
+    "configured-unused": {
+      "lba": 4844544,
+      "bytes": 65536,
+      "sha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+      "crc_valid": false,
+      "all_zero": true
+    },
+    "documented-active": {
+      "lba": 3337216,
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "crc_valid": true,
+      "all_zero": false,
+      "selected_values": {
+        "bootcmd": "if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi",
+        "bootdelay": "5",
+        "h713_hdmi_previous_bootcmd": "fatload mmc 1:2 0x50000000 h713-kernel.fit; bootm 0x50000000",
+        "preboot": "if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi; usb start"
+      }
+    }
+  },
+  "video_source_stamps": {
+    "libva-v4l2_request": {
+      "current_series_id": "4daa2b3628930def",
+      "installed_stamp": "4daa2b3628930def",
+      "matches_stamp": true,
+      "binary_rebuild_proven": false
+    },
+    "mpv": {
+      "current_series_id": "8e52f2d7e35feebc",
+      "installed_stamp": "8e52f2d7e35feebc",
+      "matches_stamp": true,
+      "binary_rebuild_proven": false,
+      "qualification": "Retired patched mpv-direct stamp; active /usr/bin/mpv is a Debian package."
+    }
+  },
+  "live_environment_commands_match_current_generator": {
+    "preboot": true,
+    "bootcmd": true
+  },
+  "current_kernel_recipe_tree": {
+    "path": "/home/chris/Projects/h713/build/linux-6.18.38-e4d917fc5b2d4afd419249d7716cad28821159d1c37a3c4d32fd655dfa8b79a6",
+    "exists": false,
+    "running_config_available": false,
+    "qualification": "No current-input kernel build executed. Disk FIT identity is not an independent hash of the running kernel."
+  },
+  "files": [
+    {
+      "installed_path": "/usr/lib/h713-hdmi/SHA256SUMS",
+      "sha256": "5c57391a0b4e7acde446bf4e2b52319aeca8314693f183095abc08ae960a6631",
+      "size": 1562,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "recorded_manifest"
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/__pycache__/h713-hdmi-session.cpython-313.pyc",
+      "sha256": "7f38e3c51dcbd8e792dd3a3d5c05597250820deee705c92799c5060f710a1561",
+      "size": 23930,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "runtime_generated_cache"
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/__pycache__/h713-hdmi-signal.cpython-313.pyc",
+      "sha256": "d71e535703481dc8f39b5b5ae641302d9cf06dbac9d23f8dd48ecb68a57c016a",
+      "size": 12094,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "runtime_generated_cache"
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/__pycache__/mips-shell.cpython-313.pyc",
+      "sha256": "6682cdaa56b02db9e52b7bc1dd190defcb90baefc50aa22f8febb118bf1e2bd0",
+      "size": 25849,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "runtime_generated_cache"
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/boot-environment.json",
+      "sha256": "0f91d7c6ea547e03e78b7959f536225d71bd9de2c79e2cd7841365945b17015e",
+      "size": 372,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "recorded_configuration_snapshot",
+      "note": "Historical bundle configuration; live selected values were independently CRC-verified in the raw active environment."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/firmware/h713/hdmi-audio-dsp.bin",
+      "sha256": "8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5",
+      "size": 2896,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-session.py"
+      ],
+      "note": "Pinned proprietary DSP payload; bytes are not stored in this audit."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-ddc-pins.ko",
+      "sha256": "1c2b11df000d6cfaa88a45b5a4873a151c64076e3e48bf012573393c248fd7aa",
+      "size": 14864,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/hdmi-reset-baseline-2026-10-20/artifacts/installed/h713-ddc-pins.ko",
+        "build/speaker-pin-commit-check/h713-ddc-pins.ko",
+        "build/speaker-last-startup/h713-ddc-pins.ko",
+        "build/edid-wide/bundle-prod/h713-ddc-pins.ko",
+        "build/edid-wide/bundle/h713-ddc-pins.ko",
+        "build/hdmi-startup-lamp/h713-ddc-pins.ko",
+        "build/hdmi-startup-relatch/h713-ddc-pins.ko",
+        "build/signal-fault/h713-ddc-pins.ko",
+        "build/hdmi-startup-signal-owner/h713-ddc-pins.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi-audio.ko",
+      "sha256": "633a8e7bda3244eafd3256030c0a182b3493a8a6da72ef98201e34e22981b778",
+      "size": 79928,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/hdmi-reset-baseline-2026-10-20/artifacts/installed/h713-hdmi-audio.ko",
+        "build/speaker-pin-commit-check/h713-hdmi-audio.ko",
+        "build/speaker-last-startup/h713-hdmi-audio.ko",
+        "build/edid-wide/bundle-prod/h713-hdmi-audio.ko",
+        "build/edid-wide/bundle/h713-hdmi-audio.ko",
+        "build/hdmi-startup-lamp/h713-hdmi-audio.ko",
+        "build/hdmi-startup-relatch/h713-hdmi-audio.ko",
+        "build/hdmi-startup-signal-owner/h713-hdmi-audio.ko",
+        "build/hdmi-startup/h713-hdmi-audio.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi-capture.service",
+      "sha256": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+      "size": 611,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-capture-startup.service"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi-hold-guard",
+      "sha256": "9140e3104042cd291496f3c238d1c3ef151184d362f32752c7179f9b25483db7",
+      "size": 1212,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_difference",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-hold-guard"
+      ],
+      "note": "Installed hook lacks repository checks for h713_hdmi_dsp_observe and h713_hdmi_dsp_access_audit; see saved diff."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi-receiver.ko",
+      "sha256": "5a68e9e03d6f985c24c88253901c6f1237200c0015cb8974a641d170fccf5f47",
+      "size": 37224,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/hdmi-reset-baseline-2026-10-20/artifacts/installed/h713-hdmi-receiver.ko",
+        "build/speaker-pin-commit-check/h713-hdmi-receiver.ko",
+        "build/hdmi-dsp-teardown-b-2026-10-23/candidate/bundle/h713-hdmi-receiver.ko",
+        "build/hdmi-dsp-teardown-a-2026-10-22/candidate/bundle/h713-hdmi-receiver.ko",
+        "build/hdmi-dsp-owner-boundary-2026-10-22/candidate/bundle/h713-hdmi-receiver.ko",
+        "build/hdmi-dsp-owner-boundary-2026-10-22/before-format-check-fix/bundle/h713-hdmi-receiver.ko",
+        "build/hdmi-dsp-owner-boundary-2026-10-22/before-marker-guard/bundle/h713-hdmi-receiver.ko",
+        "build/hdmi-dsp-owner-boundary-2026-10-22/before-ledger-fix/bundle/h713-hdmi-receiver.ko",
+        "build/hdmi-dsp-owner-boundary-2026-10-22/before-final-verification/bundle/h713-hdmi-receiver.ko",
+        "build/hdmi-dsp-owner-boundary-2026-10-22/prototype-owner/bundle/h713-hdmi-receiver.ko",
+        "build/speaker-last-startup/h713-hdmi-receiver.ko",
+        "build/edid-wide/bundle-prod/h713-hdmi-receiver.ko",
+        "build/edid-wide/bundle/h713-hdmi-receiver.ko",
+        "build/hdmi-startup-lamp/h713-hdmi-receiver.ko",
+        "build/hdmi-startup-relatch/h713-hdmi-receiver.ko",
+        "build/hdmi-startup-signal-owner/h713-hdmi-receiver.ko",
+        "build/hdmi-startup/h713-hdmi-receiver.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi-session.py",
+      "sha256": "b113aaf35d06132a8ec5d8e95c70dd08a93a3e5d7e451e93b68a990e1df29e77",
+      "size": 13602,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-session.py"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi-signal.ko",
+      "sha256": "0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497",
+      "size": 32640,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/hdmi-reset-baseline-2026-10-20/artifacts/installed/h713-hdmi-signal.ko",
+        "build/speaker-pin-commit-check/h713-hdmi-signal.ko",
+        "build/speaker-last-startup/h713-hdmi-signal.ko",
+        "build/edid-wide/bundle-prod/h713-hdmi-signal.ko",
+        "build/hdmi-startup-signal-owner/h713-hdmi-signal.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi-signal.py",
+      "sha256": "2b6ac46d09e8af00a551bfe879bb46066c5a5106c82cf1a89bd148410c271445",
+      "size": 8989,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-signal.py"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi-signal.service",
+      "sha256": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+      "size": 477,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-signal.service"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi.cmd",
+      "sha256": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+      "size": 4342,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "regenerated_match",
+      "recipe": "tools/hdmi/build-shared-startup.py",
+      "note": "Exact regeneration succeeded using existing ignored baseline and pinned kernel artifacts; not a clean-checkout build."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/h713-hdmi.scr",
+      "sha256": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+      "size": 4414,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "regenerated_match",
+      "recipe": "tools/hdmi/build-shared-startup.py",
+      "note": "Exact regeneration succeeded using existing ignored baseline and pinned kernel artifacts; not a clean-checkout build."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/install-startup.sh",
+      "sha256": "3c49c52e9665ab3314afdbf22b93c6e7f57d9341c21f6cd9c2046e6807dff64b",
+      "size": 2114,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/install-startup.sh"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/mips-shell.py",
+      "sha256": "5235c259fc8637b7309df483f0931795ed299b2363fb8914ec8e0cb72fea7615",
+      "size": 18194,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "source_match",
+      "source_paths": [
+        "tools/mips/mips-shell.py"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/read-comm-trace.py",
+      "sha256": "43db0a3b5ff7dc89ee87229049b677f7f5c487df8ee856b050a6942efbdfc0b8",
+      "size": 10218,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "source_match",
+      "source_paths": [
+        "tools/mips/read-comm-trace.py"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/update-signal-owner.sh",
+      "sha256": "6fad351af73c10d13d15edc39f2d762700cbff5d8c5511e540c82588b77cd31f",
+      "size": 3256,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/update-signal-owner.sh"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi/update-startup-script.sh",
+      "sha256": "7990f44844ceb6a5da825bc20e768c4b2a688e2e06ae9d90ea02f7399ce40bd7",
+      "size": 1764,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/update-startup-script.sh"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/SHA256SUMS",
+      "sha256": "6231023109da2d4e8941d3e41bf3839dafd104b5bb2e62cbaf9677e57e3df500",
+      "size": 600,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "recorded_manifest"
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/__pycache__/install-shared-startup.cpython-313.pyc",
+      "sha256": "727085cc1f1c7567ba9a930a025d08b0e5dad5e359d2fdc793b8fed73a6de837",
+      "size": 17730,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "runtime_generated_cache"
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/check-startup.sh",
+      "sha256": "4b2a76fbe863317366f9b723392ec75951c5c129157804a0170f600d52bd9f78",
+      "size": 2794,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/check-startup.sh"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.py",
+      "sha256": "179eb7da4fbefd7016aa4314c3ad2ab204ef0602e8d400902615b37a73a62658",
+      "size": 4020,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-health-ack.py"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.service",
+      "sha256": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+      "size": 457,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-health-ack.service"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/h713-hdmi.cmd",
+      "sha256": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+      "size": 4342,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "regenerated_match",
+      "recipe": "tools/hdmi/build-shared-startup.py",
+      "note": "Exact regeneration succeeded using existing ignored baseline and pinned kernel artifacts; not a clean-checkout build."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/h713-hdmi.scr",
+      "sha256": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+      "size": 4414,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "regenerated_match",
+      "recipe": "tools/hdmi/build-shared-startup.py",
+      "note": "Exact regeneration succeeded using existing ignored baseline and pinned kernel artifacts; not a clean-checkout build."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/install-shared-startup.py",
+      "sha256": "7d978ddc5ee24e48827fd230bc65db3bae59425262bf116b2d4d43c1db034514",
+      "size": 9772,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/install-shared-startup.py"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/install.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-health/manifest.json",
+      "sha256": "644ac24082539a55231864333c0ea355da5808837a0de2cc73c203fe316831b8",
+      "size": 1066,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "regenerated_match",
+      "recipe": "tools/hdmi/build-shared-startup.py",
+      "note": "Exact regeneration succeeded using existing ignored baseline and pinned kernel artifacts; not a clean-checkout build."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-video/71-h713-hdmi-in.rules",
+      "sha256": "4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370",
+      "size": 1097,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/71-h713-hdmi-in.rules"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-video/SHA256SUMS",
+      "sha256": "40ab13a7adbe4960f95a42f55b29af42513659ca5570bc2559299c083419ed74",
+      "size": 525,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "recorded_manifest"
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-video/h713-hdmi-ring.service",
+      "sha256": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+      "size": 746,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-ring.service"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko",
+      "sha256": "582d16ac58f325c92b8abafb6d6072fda6fda353515f96ea146de3ae97b0b14e",
+      "size": 56760,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/hdmi-playback-policy-2026-10-28/bundle/hdmi-video/h713-hdmi-v4l2.ko",
+        "build/hdmi-playback-policy-2026-10-28/hdmi-video/h713-hdmi-v4l2.ko",
+        "build/route-b/bundle/h713-hdmi-v4l2.ko",
+        "build/route-b/module/h713-hdmi-v4l2.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-video/h713-hdmi-video.service",
+      "sha256": "f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9",
+      "size": 874,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-video.service"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-video/install-hdmi-video.sh",
+      "sha256": "ced29313467041a6fdbb93718d5b83265bfcbfaf6270c2183efbdfa92a2aaee2",
+      "size": 5555,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/install-hdmi-video.sh"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-video/stage-hdmi-video.sh",
+      "sha256": "35db67de3f8defe30af708b07f49c67c583430a111b502ccf39b584dba8f3200",
+      "size": 4243,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/stage-hdmi-video.sh"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/SHA256SUMS",
+      "sha256": "14a5fce26520fea3c1a3e0ff1b688929a94e13718a6f874b1f99b806d212be73",
+      "size": 503,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "recorded_manifest"
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/SHA256SUMS.before-gain-fix",
+      "sha256": "745bb8131898d4a9236a08cd49386cd9969d9d6cafc10c70ab13bbee08190e16",
+      "size": 336,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/alsa-ctl",
+      "sha256": "cf18eb76c191644387a4aafb889dd0b45267036ca128e6b72b3c4b30b112a65e",
+      "size": 71232,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "binary_rebuild_unproven",
+      "note": "Target-compiled utility; source/recipe exists, exact binary rebuild not performed. hdmi-speaker is retired from the active PipeWire route."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/alsa-ctl.c",
+      "sha256": "a089b0e24bb29c9aea6410015d0b358ea5df778728073ad5958180f779492c73",
+      "size": 4433,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/audio/alsa-ctl.c"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/enable-mixer.sh",
+      "sha256": "a897c4c02c48e05f2b2b98b1ec56663462ad2e6326d3ba618ba73f25339bf530",
+      "size": 801,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/enable-speaker-mixer.sh"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/enable-mixer.sh.before-gain-fix",
+      "sha256": "f8868a1a9ed092acc537a5205ead63721cc18ba33436d593915d43ab0c474aa1",
+      "size": 646,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/h713-hdmi-speaker.service",
+      "sha256": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+      "size": 813,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-speaker.service"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/hdmi-speaker",
+      "sha256": "10f184457f3a8fe8358311c86fbd909009164fe06c98d4bf845a7422781a533f",
+      "size": 71432,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "binary_rebuild_unproven",
+      "note": "Target-compiled utility; source/recipe exists, exact binary rebuild not performed. hdmi-speaker is retired from the active PipeWire route."
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/hdmi-speaker.c",
+      "sha256": "3fbfab1c8ce4f02d0510383e9e6deb8464114255b8825cdc5cdc70fa3d9d7486",
+      "size": 3493,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/hdmi-speaker.c"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/install-speaker.sh",
+      "sha256": "5ac95eecbb21100b67483b9ffccaf2a05b0ee91f6621abbce183c9b8514b6e21",
+      "size": 2742,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/install-speaker.sh"
+      ]
+    },
+    {
+      "installed_path": "/usr/lib/h713-hdmi-speaker/pipewire-speaker.py",
+      "sha256": "f30805e01d7b751e831025e9267ffdfd65567e1b0aaade52f3345adff4913200",
+      "size": 7266,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/pipewire-speaker.py"
+      ]
+    },
+    {
+      "installed_path": "/usr/local/share/h713/keystone.glsl",
+      "sha256": "95bbcc3d2d7706beb964271fbf5458aea87d398ef24b8ff08de92edefe45f6f4",
+      "size": 1118,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/video/shaders/keystone.glsl"
+      ]
+    },
+    {
+      "installed_path": "/usr/local/share/h713/keystone.lua",
+      "sha256": "a4a56a078e53a9c64909aea8ae985cbd0aefcab623acd87a43d41212f758551f",
+      "size": 23493,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/video/keystone.lua"
+      ]
+    },
+    {
+      "installed_path": "/usr/local/share/h713/lsb10.glsl",
+      "sha256": "68e755b2424e191485b9e64d507a6ccad94a0ad69f60c805eb54b2b02ab54982",
+      "size": 875,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/video/shaders/lsb10.glsl"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-bt-attach.service",
+      "sha256": "a804228f4336c25bc8dbb60a7ef4ec90617ecfd48a307394f53ddcfa0c0faebc",
+      "size": 261,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_difference",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review.",
+      "noncomment_lines_match": false,
+      "effective_timeout_qualification": "Installed unit receives the 10-second stop timeout via /etc/systemd/system/h713-bt-attach.service.d/10-stop-timeout.conf; template puts it in the unit."
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-bt-attach.service.d",
+      "size": 4096,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "directory_metadata"
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-hdmi-capture.service",
+      "sha256": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+      "size": 611,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-capture-startup.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-hdmi-health-ack.service",
+      "sha256": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+      "size": 457,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-health-ack.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-hdmi-ring.service",
+      "sha256": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+      "size": 746,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-ring.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-hdmi-signal.service",
+      "sha256": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+      "size": 477,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-signal.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-hdmi-speaker.service",
+      "sha256": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+      "size": 813,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-speaker.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-hdmi-video.service",
+      "sha256": "f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9",
+      "size": 874,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-video.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-hotspot.service",
+      "sha256": "e034a3529650597cd3243f43027f9bf847852d1a446daf4a99edd642b42a35ee",
+      "size": 271,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-keyd.service",
+      "sha256": "94a5293f31aaed9bc0f0d8ebc33b5425c4322133df8d6bf05c0182a01ad412e4",
+      "size": 218,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-keystone.service",
+      "sha256": "519223a3d7f4b32e52ffb4bd8f923e032418151a395608e7bf41d300731c5ec3",
+      "size": 239,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_difference",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review.",
+      "noncomment_lines_match": true
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-ssh-host-keys.service",
+      "sha256": "9d85e142895739987e1aebd2613b7665017502a7f699ba97c8ba4e1d19111af4",
+      "size": 146,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-wifi-recover.service",
+      "sha256": "403a6139e5868163e0a0eec29ef76051ac1ff9ff925db377b1d2d6f64986fb12",
+      "size": 214,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/etc/systemd/system/h713-bt-attach.service.d/10-stop-timeout.conf",
+      "sha256": "2593236a7f7c7c1b9f7efd394ba45b9aec986d693aa4d4c76df3ec0c767f00bf",
+      "size": 29,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "board_local_configuration",
+      "note": "Fingerprint recorded; no full image/configuration lock or exact template match established."
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-bt-attach.service",
+      "sha256": "a804228f4336c25bc8dbb60a7ef4ec90617ecfd48a307394f53ddcfa0c0faebc",
+      "size": 25,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "../h713-bt-attach.service",
+      "status": "rootfs_recipe_difference",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review.",
+      "noncomment_lines_match": false,
+      "effective_timeout_qualification": "Installed unit receives the 10-second stop timeout via /etc/systemd/system/h713-bt-attach.service.d/10-stop-timeout.conf; template puts it in the unit."
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-hdmi-capture.service",
+      "sha256": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+      "size": 45,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "/etc/systemd/system/h713-hdmi-capture.service",
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-capture-startup.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-hdmi-health-ack.service",
+      "sha256": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+      "size": 48,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "/etc/systemd/system/h713-hdmi-health-ack.service",
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-health-ack.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-hdmi-ring.service",
+      "sha256": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+      "size": 42,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "/etc/systemd/system/h713-hdmi-ring.service",
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-ring.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-hdmi-signal.service",
+      "sha256": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+      "size": 44,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "/etc/systemd/system/h713-hdmi-signal.service",
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-signal.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-hdmi-speaker.service",
+      "sha256": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+      "size": 45,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "/etc/systemd/system/h713-hdmi-speaker.service",
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-speaker.service"
+      ]
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-hotspot.service",
+      "sha256": "e034a3529650597cd3243f43027f9bf847852d1a446daf4a99edd642b42a35ee",
+      "size": 23,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "../h713-hotspot.service",
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-keyd.service",
+      "sha256": "94a5293f31aaed9bc0f0d8ebc33b5425c4322133df8d6bf05c0182a01ad412e4",
+      "size": 37,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "/etc/systemd/system/h713-keyd.service",
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/etc/systemd/system/multi-user.target.wants/h713-keystone.service",
+      "sha256": "519223a3d7f4b32e52ffb4bd8f923e032418151a395608e7bf41d300731c5ec3",
+      "size": 41,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "/etc/systemd/system/h713-keystone.service",
+      "status": "rootfs_recipe_difference",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review.",
+      "noncomment_lines_match": true
+    },
+    {
+      "installed_path": "/etc/udev/rules.d/70-h713-wifi-crashlog.rules",
+      "sha256": "48f2b0d6109ec3d6e58b261033884a25f14823e91f457aceadeaf8ab75bb19eb",
+      "size": 180,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/etc/udev/rules.d/71-h713-hdmi-in.rules",
+      "sha256": "4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370",
+      "size": 1097,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/hdmi/71-h713-hdmi-in.rules"
+      ]
+    },
+    {
+      "installed_path": "/etc/default/h713-hdmi-speaker",
+      "sha256": "52e4d7dc09684e137b7bf4ecf169a9bdc92951394f2d3513b64bfa960460e57d",
+      "size": 249,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "board_configuration_match",
+      "source_paths": [
+        "docs/hdmi-evidence/2026-10-27-avsync-calibration/installed-speaker-defaults.conf"
+      ],
+      "note": "Board-specific 40 ms calibration; generic installer does not create this defaults file."
+    },
+    {
+      "installed_path": "/etc/sysctl.d/10-h713-console.conf",
+      "sha256": "65b7c527e4af9c48b647cb69d19ca9a5c5e9b5a2b2514e26d463f240672f1ee1",
+      "size": 231,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/etc/systemd/journald.conf.d/h713-size.conf",
+      "sha256": "5cd46b9ba43027e653f3845ef8f733dcb70baff99760033e1f9e530f2c3c6456",
+      "size": 105,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/usr/local/bin/h713-keyd",
+      "sha256": "ac08c9f7c379d0192b2191393f8e66800a52e8c6389727622941f2d9483d3e0c",
+      "size": 71608,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "binary_rebuild_unproven",
+      "note": "Target-compiled utility; source/recipe exists, exact binary rebuild not performed. hdmi-speaker is retired from the active PipeWire route."
+    },
+    {
+      "installed_path": "/usr/local/bin/h713-keystone",
+      "sha256": "c37c5605e52d3fcd7aa0eea76b632b4ef33541692b77300b138fbe23c0502929",
+      "size": 21721,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/sensors/h713-keystone"
+      ]
+    },
+    {
+      "installed_path": "/usr/local/bin/h713-mirror",
+      "sha256": "91ee98b8a0d0913b9ddbef713245d6a9ca7e06d00c8929d4baa968e5053f953e",
+      "size": 3143,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/display/h713-mirror"
+      ]
+    },
+    {
+      "installed_path": "/usr/local/bin/h713-play",
+      "sha256": "1858570f45de37e5d3a0ba31b14de0369fdf08c664cf62f804e141d9f86dcd25",
+      "size": 16522,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/video/h713-play"
+      ]
+    },
+    {
+      "installed_path": "/usr/local/bin/h713-standby",
+      "sha256": "aeab9105711cb48ea71f9ddaee9f8b954f9fb521c4d52c44326bd65b656103ed",
+      "size": 3018,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_match",
+      "source_paths": [
+        "tools/standby/h713-standby"
+      ]
+    },
+    {
+      "installed_path": "/usr/local/sbin/h713-bt-attach",
+      "sha256": "53b1ef59ad585912d0d2024c0fbab0994cc4ad81a6de69eb03c0e540b0f205c6",
+      "size": 1606,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_difference",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review.",
+      "noncomment_lines_match": true
+    },
+    {
+      "installed_path": "/usr/local/sbin/h713-hotspot-up",
+      "sha256": "67632d13a05c14bbc645ff503ba1edabac8aa9d8a8ba9d3c3e235c323f3c67c4",
+      "size": 832,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/usr/local/sbin/h713-wifi-recover",
+      "sha256": "66d8353762b4cff36e77b8ab225ea443d0800b380c3f5c3eb608ba4b21e8fd66",
+      "size": 1508,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_difference",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard",
+      "sha256": "9140e3104042cd291496f3c238d1c3ef151184d362f32752c7179f9b25483db7",
+      "size": 1212,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "source_difference",
+      "source_paths": [
+        "tools/hdmi/h713-hdmi-hold-guard"
+      ],
+      "note": "Installed hook lacks repository checks for h713_hdmi_dsp_observe and h713_hdmi_dsp_access_audit; see saved diff."
+    },
+    {
+      "installed_path": "/usr/lib/systemd/system-shutdown/h713-off",
+      "sha256": "2397aa576ac49eed1afdf119179e2bee62a7eb5fd53a1ab8ad7fc8868acdb10a",
+      "size": 264,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "rootfs_recipe_match",
+      "source_paths": [
+        "tools/rootfs/customize.sh"
+      ],
+      "note": "Compared with inline template; byte differences can include comments, packaging or configuration and require review."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/bluetooth/hci_uart.ko",
+      "sha256": "e03d9f2ee526983dd7b03032f37ded20f0ed203123716102262b71aee618b851",
+      "size": 38144,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/gpu/drm/panfrost/panfrost.ko",
+      "sha256": "1d0aa9d5af4b166e6bcbaf905401023157f29d141307574e049202c5d03cfbf4",
+      "size": 132040,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/linux-6.18.38-9d9e9cd26abbe73dfb4b5d1ff95955c27d422069d379f9f1ba8ea3d46c84e54b/drivers/gpu/drm/panfrost/panfrost.ko",
+        "build/linux-6.18.38-4305d0bd3dd2f5b6336652df195adffbc460ecacc59f498aefdbd4284bf797fc/drivers/gpu/drm/panfrost/panfrost.ko",
+        "build/linux-6.18.38-2d22a214624b7439a2bc35f04472687d60c4759515751907c1b233cd64061540/drivers/gpu/drm/panfrost/panfrost.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/input/keyboard/adc-keys.ko",
+      "sha256": "8ec3df6c440a0ffb74194c29b7cae713dd5104cb24190fb8fc54d833c62dd627",
+      "size": 10560,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/input/misc/uinput.ko",
+      "sha256": "08505bb377c48bf333aed010fcfb204ec59b3211084c32ba4cee6fced31a5aee",
+      "size": 25296,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/linux-6.18.38-da69c5337270aaf75f17cb924473cf8b42e2d1247332924d073a5ad830dcf48f/drivers/input/misc/uinput.ko",
+        "build/test3-kernel/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-d4b197447f7e51f3010541495e5899a79dcd1f2156eef68ba9799202ec1f72a9/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-033c8832a3f805d56269c1516e2d42ba7fd186a9c25599cf620539c109a3e8d1/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-edffad3c91a035b25a5c2a7df05ef63af488d7e89c286a29c7efa9aaba677efc/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-524340e80fb573820c9f99319924e3f4b99ef82a6486e9f9d5014870aee10730/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-2a2ced73e505c450215680f0427646c1e7d6432ee82a314344022264b082af23/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-fd60461bc7ba839780e3ea0b766ce402de3c329f669fb72ad452f604ccce19c0/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-85fc480dadd4eaf8c6f0021933666a2c88803dc26ddc6f9702e51529f53c9597/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-eff1096695763c982a1c93f9f1d93c53749b688cf2d2c2623c900cf42a7460d9/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-0b40c55351a5ebc7b8b3d2a7e6c481393402000af1ee29c5742e2664641bcd6e/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-726ca9ee3deaa75e584ccbd4d7b64a67c9bd41006bfd4f20b64bb045fea2d7a8/drivers/input/misc/uinput.ko",
+        "build/linux-6.18.38-f992e3c188dad002848d4af223d9612cf0a6db367d3f5f8cdff6884aeab69fc6/drivers/input/misc/uinput.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/media/platform/verisilicon/hantro-vpu.ko",
+      "sha256": "7cb11da7ad1119abf4dc210a080e3d7bde1f7e4b52903dce033cf6f4da184dce",
+      "size": 345040,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/linux-6.18.38-9d9e9cd26abbe73dfb4b5d1ff95955c27d422069d379f9f1ba8ea3d46c84e54b/drivers/media/platform/verisilicon/hantro-vpu.ko",
+        "build/linux-6.18.38-4305d0bd3dd2f5b6336652df195adffbc460ecacc59f498aefdbd4284bf797fc/drivers/media/platform/verisilicon/hantro-vpu.ko",
+        "build/linux-6.18.38-2d22a214624b7439a2bc35f04472687d60c4759515751907c1b233cd64061540/drivers/media/platform/verisilicon/hantro-vpu.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/media/v4l2-core/v4l2-h264.ko",
+      "sha256": "f1acd67881e88908e42d2be27b0962ad5d2b839f763916ea907a9f03ecade345",
+      "size": 11864,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/media/v4l2-core/v4l2-jpeg.ko",
+      "sha256": "f26c5e5553fb910a2f4403261fb6115a0da122642dd6ac8a07ad3c14d1cede33",
+      "size": 10600,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/media/v4l2-core/v4l2-vp9.ko",
+      "sha256": "bf3d614b81a4be1756fc8c1003ff92b1cb078618f98208409756fbbc91bb605c",
+      "size": 30336,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/misc/sunxi-h713-av1-probe.ko",
+      "sha256": "8a56fc1cb0667dab1f6cb01562324109fb8b99f45f85a314ed9657b86a013d13",
+      "size": 20680,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/misc/sunxi-scanout-dmabuf.ko",
+      "sha256": "5a8d9024b92eaff7181a4d9c90a2378600bbfd606bdd071cf72d5e3a5ad49801",
+      "size": 11024,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/misc/sunxi_decd/sunxi-decd.ko",
+      "sha256": "2d1faf0a3addd38752c761ce03d78d4d03d5bf8a9f19f8bd097d4f18979b3797",
+      "size": 70144,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/phy/ax88796b.ko",
+      "sha256": "a7c8352e7b48013c0d2677b292214e4ff2fa7112d72c1bb3c6341e2ec67c4b47",
+      "size": 9304,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/phy/smsc.ko",
+      "sha256": "abc0c5588014f55b1de8fa48cd93a6fc54e4c11856a81405a012a552f093a804",
+      "size": 22952,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/asix.ko",
+      "sha256": "f9e945414eed665fcffa95094a482e93a8171eba16fbb95ea56fa3cd25041bb6",
+      "size": 97600,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/ax88179_178a.ko",
+      "sha256": "d6d69b898455179ae75781f7383d0a3cfa7c3bfcc3f13fdc9b1a479899d9c0ee",
+      "size": 54088,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/cdc_ether.ko",
+      "sha256": "801c89ffd3ad7e0df384d465ff2d1cf1e3f423ce10e6d3163d879dea6a78f812",
+      "size": 31264,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/cdc_ncm.ko",
+      "sha256": "e4274680922c7d5c60b4ffe8b3a433acf70f287277ddfc34d7c501992695b3c4",
+      "size": 61040,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/cdc_subset.ko",
+      "sha256": "a1f70db86fc554fef6ab87d6552b492741de41bfe39525371387a6b02d3b55af",
+      "size": 8832,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/net1080.ko",
+      "sha256": "85d4fd7d60cb09c25b4cf138a55b7a9c477292eed643f8e620ebf4f5756d999a",
+      "size": 20024,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/r8152.ko",
+      "sha256": "50b0c4372efcc7419fd3903179ee764df1c5d9300c5dece48799721a7c5076e4",
+      "size": 182160,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/r8153_ecm.ko",
+      "sha256": "04ec12d01c2d71799ea75988a3ed37b75df44150611284a2726327b3ac99a73f",
+      "size": 9000,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/rndis_host.ko",
+      "sha256": "ddadd49c1b52e3f3f17888080fb7fc199c71297ab8e6592955c7f5f4fd80ba3a",
+      "size": 24512,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/smsc95xx.ko",
+      "sha256": "d98446243e6994771be02c136f627da63e7702f22b2bd39bb4d8dc975e3b1c22",
+      "size": 71088,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/usbnet.ko",
+      "sha256": "ec84d679d54ccc8b7351a1bfe6a68ed55fbc48365690d0343e70f546ddea3468",
+      "size": 76672,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/usb/zaurus.ko",
+      "sha256": "5d17795ba2d1bcf19ccf58f2ea8fe69ac328d12e765e9c18ab1a2792df757457",
+      "size": 15448,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu.ko",
+      "sha256": "9532c7053b16ba2fc5e2865e4ca58b8fb2f91f3a36107b5b46f1b78a00cbde3d",
+      "size": 483104,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/soc/sunxi/cpu_comm/hy310-cpu-comm.ko",
+      "sha256": "9d1ceba7da79822033fdb254d41dcb0166993dfeec521fff58fd56ddfac87f6a",
+      "size": 190992,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko",
+      "sha256": "6b0e87932a3b3bff5d2fad1d7606c95f79ff0a7f5d55076facc494adc1dfff13",
+      "size": 125280,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/linux-6.18.38-2d22a214624b7439a2bc35f04472687d60c4759515751907c1b233cd64061540/drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/fs/efivarfs/efivarfs.ko",
+      "sha256": "644f686731709c751a001d950eab428f4f03e86a010e0145447674ce6be360b2",
+      "size": 29752,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/sound/soc/sunxi/sun4i-i2s.ko",
+      "sha256": "00ac7efcedb2958dcd486602ec138093f0c1afe028f2d35632b60b962e1f1221",
+      "size": 29328,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/kernel/sound/soc/sunxi/sun4i-spdif.ko",
+      "sha256": "e28f07af881e8a5631747fbe98c3df122c6388e46701d1e876891a33421cad01",
+      "size": 19048,
+      "mode": "0o644",
+      "uid": 1000,
+      "gid": 1000,
+      "status": "binary_rebuild_unproven",
+      "matching_artifacts": [],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko",
+      "sha256": "154bf8530c91c01f2154e68070b3c365ae6e598ff7ef9db7bdd21f8c2eb9c096",
+      "size": 184200,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/aic8800-df4c783b663e-46ee3278a45dac046986e823121d059b190dc4f6f572d2d2e34069ee0a5debdc/aic8800_bsp/aic8800_bsp.ko",
+        "build/out/modules/aic8800_bsp.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko.pre-1bit",
+      "sha256": "1159afa262fb10ec621cebcee8c633902e238b127410e4d99c019ac1f83180f2",
+      "size": 184264,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko.pre-25m-pre-rescan",
+      "sha256": "154bf8530c91c01f2154e68070b3c365ae6e598ff7ef9db7bdd21f8c2eb9c096",
+      "size": 184200,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko.pre-no-clock-override",
+      "sha256": "9c4fa192cbfe477cdd50c1fab4e15251904000951506bb77a90a33ab95154686",
+      "size": 184200,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko.pre-uhs-v5p3x-20260818",
+      "sha256": "e2189546172e5e26083725a3b16789a1f83f2dd56a3cf5d2cebf825b672be8a4",
+      "size": 184264,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_btlpm.ko",
+      "sha256": "d64e1803f37baf7f7b1b33926911c81215b060221d8ddbe98451bd1f531b0f67",
+      "size": 10496,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/aic8800-df4c783b663e-46ee3278a45dac046986e823121d059b190dc4f6f572d2d2e34069ee0a5debdc/aic8800_btlpm/aic8800_btlpm.ko",
+        "build/out/modules/aic8800_btlpm.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_fdrv.ko",
+      "sha256": "a959684beae1e36ac7a072824fbf02843205c38b6272038731ad7ee589146402",
+      "size": 907336,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "retained_artifact_match",
+      "matching_artifacts": [
+        "build/aic8800-df4c783b663e-46ee3278a45dac046986e823121d059b190dc4f6f572d2d2e34069ee0a5debdc/aic8800_fdrv/aic8800_fdrv.ko",
+        "build/out/modules/aic8800_fdrv.ko"
+      ],
+      "note": "Installed disk bytes only. Retained binary identity does not establish a current-source clean rebuild or loaded-module byte identity."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_fdrv.ko.pre-drainfix-20260824-210154",
+      "sha256": "383c07f0f2774d889cae939d6b25c67897c66682726199b39f2d275cfca923de",
+      "size": 907072,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_fdrv.ko.pre-quiet-20260824-164214",
+      "sha256": "396445b40237b2a87fc66bc847a3b251cec577b388d5e4cd43161d68ed575b0b",
+      "size": 905960,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/lib/modules/6.18.38/updates/aic8800/aic8800_fdrv.ko.pre-uhs-v5p3x-20260818",
+      "sha256": "8f640f733563bf123bd3c2970eb47295431e9b96ea0de0edf73d00d9d3803e64",
+      "size": 905392,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "historical_backup_or_log",
+      "note": "Retained historical material, not an active implementation."
+    },
+    {
+      "installed_path": "/usr/lib/firmware/aic8800_fw/SDIO/aic8800D80/aic_userconfig_8800d80.txt",
+      "sha256": "995dbb9e4f2e7b19db838291f52be39af9ab673ad51b270c988216ccff1a720e",
+      "size": 2683,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "modules/aic8800/firmware.sha256sums"
+      ],
+      "note": "Proprietary file is a local-only build input; hash match does not supply redistributable source."
+    },
+    {
+      "installed_path": "/usr/lib/firmware/aic8800_fw/SDIO/aic8800D80/fmacfw_8800d80_h_u02.bin",
+      "sha256": "6c197eacc6917e253c2085fd3b3da0879005d0ebe37ccde3bd4be38f261f9b4e",
+      "size": 341768,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "modules/aic8800/firmware.sha256sums"
+      ],
+      "note": "Proprietary file is a local-only build input; hash match does not supply redistributable source."
+    },
+    {
+      "installed_path": "/usr/lib/firmware/aic8800_fw/SDIO/aic8800D80/fmacfw_8800d80_u02.bin",
+      "sha256": "6d121e015ff1fb90a90649627d663511804771b37f6cb44c97066cfc313a067a",
+      "size": 331348,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "modules/aic8800/firmware.sha256sums"
+      ],
+      "note": "Proprietary file is a local-only build input; hash match does not supply redistributable source."
+    },
+    {
+      "installed_path": "/usr/lib/firmware/aic8800_fw/SDIO/aic8800D80/fmacfwbt_8800d80_u02.bin",
+      "sha256": "465106f3bb2945bbdebea99f6cde9465ae00d5829e188499d42449cbdf4fe82c",
+      "size": 333388,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "modules/aic8800/firmware.sha256sums"
+      ],
+      "note": "Proprietary file is a local-only build input; hash match does not supply redistributable source."
+    },
+    {
+      "installed_path": "/usr/lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_adid_8800d80_u02.bin",
+      "sha256": "a526cbd02fcdc495f049f3ad6b5933cb08cd984b16790c716a060d582fee1a56",
+      "size": 1708,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "modules/aic8800/firmware.sha256sums"
+      ],
+      "note": "Proprietary file is a local-only build input; hash match does not supply redistributable source."
+    },
+    {
+      "installed_path": "/usr/lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_8800d80_u02.bin",
+      "sha256": "26183182bf07f8f7581e82da8b606d222591a12c56772e75146588eef5196242",
+      "size": 30040,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "modules/aic8800/firmware.sha256sums"
+      ],
+      "note": "Proprietary file is a local-only build input; hash match does not supply redistributable source."
+    },
+    {
+      "installed_path": "/usr/lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_table_8800d80_u02.bin",
+      "sha256": "a9f663eb7443bc8046f2479cedfcdd93001eb64761f855317dbdbbc077f475cf",
+      "size": 1048,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "modules/aic8800/firmware.sha256sums"
+      ],
+      "note": "Proprietary file is a local-only build input; hash match does not supply redistributable source."
+    },
+    {
+      "installed_path": "/usr/lib/firmware/aic8800_fw/SDIO/aic8800D80/lmacfw_rf_8800d80_u02.bin",
+      "sha256": "19b2d6b2320b67cb874c5c5c266a8f348cf423d00c0b22d4ad2c737cc603beab",
+      "size": 237206,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "pinned_firmware_match",
+      "source_paths": [
+        "modules/aic8800/firmware.sha256sums"
+      ],
+      "note": "Proprietary file is a local-only build input; hash match does not supply redistributable source."
+    },
+    {
+      "installed_path": "/var/lib/h713-hdmi-startup/kernel.sha256",
+      "sha256": "1f4a6e6dba4ebbceb5748111c1158929b5664ab2a75d8ac4dfb7dbac97cd3ad5",
+      "size": 92,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "boot_pin_match"
+    },
+    {
+      "installed_path": "/usr/local/bin/gst-plane-play",
+      "sha256": "f50f679b22b7144de05b69e2806428d7d6d3a06e275b1ff48883923732e684d8",
+      "size": 73952,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "accepted_binary_match",
+      "source_paths": [
+        "tools/video/gst-plane-play.c"
+      ],
+      "note": "Matches recorded native-target compile/installation acceptance; no target build performed during read-only audit."
+    },
+    {
+      "installed_path": "/usr/bin/mpv",
+      "sha256": "7c931a63190d3317e0a8cec08281e657ae16085428ba2f1c49543307e033f849",
+      "size": 3023664,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "installed_binary_fingerprinted",
+      "note": "See installed package inventory or video-stack stamp. Exact binary-to-source rebuild not demonstrated by audit."
+    },
+    {
+      "installed_path": "/usr/local/bin/mpv",
+      "error": "[Errno 2] No such file or directory: '/usr/local/bin/mpv'",
+      "status": "absent_or_unreadable"
+    },
+    {
+      "installed_path": "/usr/local/bin/mpv-direct",
+      "sha256": "fb5bfc6c4eac480ec3538271c63a5bd01f28ea50c50e07866f8a09aaf3f99b93",
+      "size": 2287072,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "installed_binary_fingerprinted",
+      "note": "See installed package inventory or video-stack stamp. Exact binary-to-source rebuild not demonstrated by audit."
+    },
+    {
+      "installed_path": "/usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so",
+      "sha256": "c8622be891f4178631ce05b986e54a9be56647b386db932a1414cb062a3ae28d",
+      "size": 805160,
+      "mode": "0o755",
+      "uid": 0,
+      "gid": 0,
+      "status": "installed_binary_fingerprinted",
+      "note": "See installed package inventory or video-stack stamp. Exact binary-to-source rebuild not demonstrated by audit."
+    },
+    {
+      "installed_path": "/etc/h713-video-stack",
+      "sha256": "e444870bd40ed5ccea61658e5a7b70e262723b44cd7d784b6e7d1965a25852ed",
+      "size": 433,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "installation_provenance_stamp",
+      "note": "Series stamps checked separately; kernel-module stamp predates the boot FIT and is not a complete release manifest."
+    },
+    {
+      "installed_path": "/etc/h713-keystone.conf",
+      "sha256": "ff64d29a5fe428ed9220158f2cec21fa979f98312404a13009adcc161b0f5ef5",
+      "size": 90,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "board_local_configuration",
+      "note": "Fingerprint recorded; no full image/configuration lock or exact template match established."
+    },
+    {
+      "installed_path": "/etc/h713-mirror.conf",
+      "error": "[Errno 2] No such file or directory: '/etc/h713-mirror.conf'",
+      "status": "absent_or_unreadable"
+    },
+    {
+      "installed_path": "/etc/systemd/timesyncd.conf",
+      "error": "[Errno 2] No such file or directory: '/etc/systemd/timesyncd.conf'",
+      "status": "absent_or_unreadable"
+    },
+    {
+      "installed_path": "/etc/adjtime",
+      "sha256": "1725e0d9f776d896e733f4810939f3a620f6969acf0caa25244785fb6be703dd",
+      "size": 44,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "board_local_configuration",
+      "note": "Fingerprint recorded; no full image/configuration lock or exact template match established."
+    },
+    {
+      "installed_path": "/etc/timezone",
+      "error": "[Errno 2] No such file or directory: '/etc/timezone'",
+      "status": "absent_or_unreadable"
+    },
+    {
+      "installed_path": "/etc/os-release",
+      "sha256": "14c430da04c2d571793fc68a8f5e17fce3d7a746e316c3f23192590861b18bd7",
+      "size": 21,
+      "mode": "0o777",
+      "uid": 0,
+      "gid": 0,
+      "symlink": "../usr/lib/os-release",
+      "status": "board_local_configuration",
+      "note": "Fingerprint recorded; no full image/configuration lock or exact template match established."
+    },
+    {
+      "installed_path": "/etc/fstab",
+      "sha256": "5c67d6887d98dae7c4122ef9c99a83d070ab22b32dca2922e0599365b3f5e264",
+      "size": 66,
+      "mode": "0o644",
+      "uid": 0,
+      "gid": 0,
+      "status": "board_local_configuration",
+      "note": "Fingerprint recorded; no full image/configuration lock or exact template match established."
+    },
+    {
+      "installed_path": "/etc/fw_env.config",
+      "error": "[Errno 2] No such file or directory: '/etc/fw_env.config'",
+      "status": "absent_or_unreadable"
+    }
+  ],
+  "boot_display_assets": [
+    {
+      "fat_path": "/mips/LogoRegData.bin",
+      "sha256": "0d00bcdd1fcfb185fe61525c9afa4bf3ec9982d605f137c593e8323766cfa4e3",
+      "bytes": 15652,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0001.TSE",
+      "sha256": "93258b453b8cf4d33ef49df24a9413aa2d6263367057d53dd7b907330b9aca85",
+      "bytes": 19992,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0012.TSE",
+      "sha256": "8077c4465ff09d72817a36b32c00f4cec36b5d54f9bb6073b64480b039a4f39d",
+      "bytes": 48952,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0013.TSE",
+      "sha256": "56ab808d776c063101d8e93be277a7802f07a4acc03fb99b678d78aba5e6431b",
+      "bytes": 47880,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0014.TSE",
+      "sha256": "f87c1d990bcd4543c1d8a11254316d18390ef39d3412d650a53e542b53da2d91",
+      "bytes": 47880,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0015.TSE",
+      "sha256": "be1622babeada99b8ccf79d361b4565752d30ede8cf0368e062b2ae8acfe3ba9",
+      "bytes": 47880,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0016.TSE",
+      "sha256": "9acba93639323d35d1b9360ac6758b2b7b4619ae04c45fc4fa0ccd04decee55a",
+      "bytes": 47880,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0020.TSE",
+      "sha256": "e8090e174ecb5d150248f78e00033482f3778d6100a7701b8f0364dfc8dec342",
+      "bytes": 19992,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0030.TSE",
+      "sha256": "0b53eabb6be1ac215de97813379d1b44400f0319e74ba9c25648523022785a33",
+      "bytes": 19992,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0031.TSE",
+      "sha256": "a152f6da9d883a2a83c55f12f1778c0f92040900128c8f4a95119e20fa13d8d4",
+      "bytes": 19992,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0032.TSE",
+      "sha256": "3129551510a9bb126aa239fe65d9e086f6569de843ae400bfa192bf3acece7e4",
+      "bytes": 19992,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0033.TSE",
+      "sha256": "32bbb023bd37534b5a0622e23c78f47f7a5d3e2060e77d72106b2d517720185c",
+      "bytes": 19992,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0034.TSE",
+      "sha256": "6318080a9b990c9262766e8e9851756a961b3000ea2c908121a505b8de544c09",
+      "bytes": 17304,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/ProjectID_0x0035.TSE",
+      "sha256": "0a93397d0a1bf741fc06ab37e1de8680905e4c7cd1e72cb095bd9fadba8e89e2",
+      "bytes": 19992,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/database.TSE",
+      "sha256": "27e2abad947f319b7b5da229f1b078a6a986592718f98dcd745215338fcd4f81",
+      "bytes": 282464,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/display.bin",
+      "sha256": "4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce",
+      "bytes": 1255696,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/display_cfg.xml",
+      "sha256": "f97eec07346a4b95227970423da2b548c7f39f47e565f96efafaccf149200d8a",
+      "bytes": 4743,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/pq_custom.TSE",
+      "sha256": "bf3d8110c38570e1ba28973e3cee2d3401a428510be0dab3b978474d7dd5a394",
+      "bytes": 15016,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    },
+    {
+      "fat_path": "/mips/projecttable.TSE",
+      "sha256": "12f568f0f0d9e6269aa2e8bf918117e997264f47e642b1c3984acb04abd26e65",
+      "bytes": 1384,
+      "recreation": "Local vendor display assets; no clean public-source rebuild demonstrated."
+    }
+  ],
+  "recreation_gaps": [
+    "Installed diagnostic U-Boot differs from normal pinned production recipe; final integration and accepted environment migration are not provided by a unified release process.",
+    "Active saved environment remains at documented unintended LBA 0x32ec00 inside super; configured LBA 0x49ec00 is all zero. Correct source offset handling requires migration of saved guard configuration, not an isolated code swap.",
+    "Shared startup regenerates exactly only with ignored October 20 baseline plus pinned build/out kernel artifacts; current builder is a delta updater, not a clean backend installer.",
+    "Current kernel-input tree is absent and /proc/config.gz unavailable; no clean rebuild or current-input binary provenance proven for installed kernel/modules.",
+    "Generic rootfs workflow does not assemble the complete accepted HDMI installation; separate installers and board calibration are required.",
+    "Proprietary display/DSP/Wi-Fi inputs and local hotspot settings are not all supplied by the public checkout; credentials deliberately excluded from audit.",
+    "Package versions and binary hashes recorded, but no Debian snapshot, complete compiler/dependency lock or full rootfs byte-rebuild proof."
+  ]
+}

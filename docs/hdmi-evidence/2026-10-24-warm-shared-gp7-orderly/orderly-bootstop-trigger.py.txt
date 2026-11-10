@@ -1,0 +1,10 @@
+import pathlib,subprocess
+P=pathlib.Path
+if P('/proc/sys/kernel/random/boot_id').read_text().strip()!='c58dd5cc-610f-4669-a38b-6b791bb3220b':raise RuntimeError('boot changed; no reboot')
+dt=P('/proc/device-tree/reboot-mode')
+if (dt/'compatible').read_bytes()!=b'nvmem-reboot-mode\0':raise RuntimeError('wrong reboot-mode driver')
+if (dt/'mode-bootloader').read_bytes()!=bytes.fromhex('b007c0de'):raise RuntimeError('wrong bootloader magic')
+if not P('/sys/bus/platform/drivers/nvmem-reboot-mode/reboot-mode').is_dir():raise RuntimeError('reboot-mode driver not bound')
+help=subprocess.run(['systemctl','--help'],capture_output=True,text=True,check=True).stdout
+if '--reboot-argument=' not in help:raise RuntimeError('systemctl lacks reboot argument')
+subprocess.run(['systemctl','reboot','--no-block','--reboot-argument=bootloader'],check=True)

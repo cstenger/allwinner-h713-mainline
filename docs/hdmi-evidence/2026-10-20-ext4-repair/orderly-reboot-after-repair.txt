@@ -1,0 +1,38 @@
+systemctl reboot --reboot-argument=bootloader
+root@h713-arm64:~#
+[   56.627202] Bluetooth: hci0: sending frame failed (-49)
+[   56.627251] Bluetooth: hci0: Opcode 0x0c03 failed: -49
+[   56.673548] get_txpwr_max:txpwr_max:18
+[   56.694144] change_if: 3 to 2, 8, 2
+[   56.694178] get_txpwr_max:txpwr_max:18
+[   57.668657] watchdog: watchdog0: watchdog did not stop!
+[   57.852810] watchdog: watchdog0: watchdog did not stop!
+[   58.276268] reboot: Restarting system with command 'bootloader'
+
+U-Boot SPL 2026.07-rc5-g7b178056c329-dirty (Aug 25 2026 - 20:13:26 -0700)
+DRAM: 1024 MiB
+Trying to boot from MMC2
+NOTICE:  BL31: v2.15.0(release):47ee829f7
+NOTICE:  BL31: Built : 03:25:48, Jul 27 2026
+NOTICE:  BL31: Detected Allwinner H713 SoC (1860)
+NOTICE:  BL31: Found U-Boot DTB at 0x4a0d2950, model: HY200 QZ713DF_A1 (Allwinner H713)
+
+
+U-Boot 2026.07-rc5-g320a17f71d41-reset-trace-77307168a30b (Oct 20 2026 - 00:27:31 -0700) Allwinner Technology
+
+CPU:   Allwinner H713 (SUN50I)
+Model: HY200 QZ713DF_A1 (Allwinner H713)
+DRAM:  1 GiB
+Core:  50 devices, 19 uclasses, devicetree: separate
+WDT:   Not starting watchdog@2051000
+MMC:   mmc@4022000: 1
+Loading Environment from MMC... Reading from MMC(1)... OK
+In:    serial
+Out:   serial
+Err:   serial
+H713 RESET v1 stage=proper_preboot gp6=48444d49 gp7=b007c0de mips_clk=00000000 mips_reset=00000000 mips_status=00000000
+Net:   No ethernet found.
+starting USB...
+No USB controllers found
+       scanning usb for storage devices... 0 Storage Device(s) found
+=>

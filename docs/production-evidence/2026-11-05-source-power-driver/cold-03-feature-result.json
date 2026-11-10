@@ -1,0 +1,41 @@
+{
+  "status": "PASS cold V2 recovery checks; physical event qualification pending",
+  "checks": {
+    "exact_v2_build": true,
+    "initial_zero_unknown": true,
+    "write_rejected": true,
+    "power_present_event": true,
+    "source_change_event": true,
+    "zero_stream_errors": true,
+    "audio_running": true,
+    "audit_74": true,
+    "no_observer_error": true
+  },
+  "initial_advertisement": "MISSED; one automatic retry, strict no-retry qualification INVALID",
+  "matched_observation": {
+    "status": "INVALID matched observation",
+    "arm": "optimized",
+    "boot_id": "0480d97b-c54b-419c-abc7-dc73ef4abefc",
+    "issues": [
+      "HPD re-advertisement"
+    ],
+    "video_ready": 28.461496,
+    "window_end": 328.461496,
+    "first_live_sample": 29.89,
+    "last_live_sample": 328.64,
+    "fps": 59.70878661087866,
+    "rejected_at_window_end": 0,
+    "trace_lines": [],
+    "strict_zero_rejection_qualification": "not evaluated or waived by this experiment"
+  },
+  "power_initial": {
+    "kind": "initial",
+    "monotonic": 19.749007341,
+    "value": 0,
+    "flags": 4116,
+    "available": false,
+    "name": "Power Present"
+  },
+  "boot_id": "0480d97b-c54b-419c-abc7-dc73ef4abefc",
+  "remaining": "Physical HDMI disconnect, absent-source retry suppression, reconnect VALUE event and source-output-disabled control."
+}

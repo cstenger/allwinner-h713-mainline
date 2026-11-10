@@ -1,0 +1,27 @@
+c97ee123
+up 1 minute
+port 1 0 0
+polls=3801 (0.26 ms/poll) pair changes=0
+inactive
+inactive
+inactive
+inactive
+[    0.000000] OF: reserved mem: initialized node mips-firmware@4b100000, compatible id shared-dma-pool
+[    6.830632] hy310-cpu-comm 3003000.cpu-comm: shared memory: 0x4e300000 size 0x500000
+[    6.870497] cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff800081cf1000 size=0x500000
+[    6.896082] cpu_comm: initialising shared memory (valid=1 mips=0)
+[    7.010384] cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+○ h713-hdmi-capture.service - H713 HDMI audio capture
+     Loaded: loaded (/etc/systemd/system/h713-hdmi-capture.service; enabled; preset: enabled)
+     Active: inactive (dead)
+  Condition: start condition unmet at Mon 2026-04-13 19:38:10 UTC; 1min 17s ago
+             └─ ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1 was not met
+
+[    4.039588] h713-arm64 systemd[1]: Condition check resulted in -.slice - Root Slice being skipped.
+[    4.039658] h713-arm64 systemd[1]: Condition check resulted in system.slice - System Slice being skipped.
+[    4.044268] h713-arm64 systemd[1]: proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point skipped, unmet condition check ConditionPathExists=/proc/sys/fs/binfmt_misc
+[    4.044877] h713-arm64 systemd[1]: systemd-pcrextend.socket - TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-uki
+[    4.044938] h713-arm64 systemd[1]: systemd-pcrlock.socket - Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[    4.045117] h713-arm64 systemd[1]: dev-hugepages.mount - Huge Pages File System skipped, unmet condition check ConditionPathExists=/sys/kernel/mm/hugepages
+[    4.045181] h713-arm64 systemd[1]: dev-mqueue.mount - POSIX Message Queue File System skipped, unmet condition check ConditionPathExists=/proc/sys/fs/mqueue
+[    4.045371] h713-arm64 systemd[1]: sys-kernel-tracing.mount - Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing

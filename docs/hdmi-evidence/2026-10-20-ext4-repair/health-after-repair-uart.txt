@@ -1,0 +1,76 @@
+cat /proc/sys/kernel/random/boot_id; uptime; findmnt -n -o SO URCE,FSTYPE,OPTIONS /
+24274ba0-41cc-458c-a54b-61054934f2e5
+ 19:38:44 up 0 min,  1 user,  load average: 1.19, 0.34, 0.12
+/dev/mmcblk0p26 ext4 rw,noatime
+root@h713-arm64:~# dumpe2fs -h /dev/mmcblk0p26
+dumpe2fs 1.47.2 (1-Jan-2025)
+Filesystem volume name:   linux
+Last mounted on:          /
+Filesystem UUID:          956d9901-0eb3-4d75-bb44-e37a46ba9f40
+Filesystem magic number:  0xEF53
+Filesystem revision #:    1 (dynamic)
+Filesystem features:      has_journal ext_attr resize_inode dir_index orphan_file filetype needs_recovery extent 64bit flex_bg metadata_csum_seed sparse_super large_file huge_file dir_nlink extra_isize metadata_csum orphan_present
+Filesystem flags:         signed_directory_hash
+Default mount options:    user_xattr acl
+Filesystem state:         clean
+Errors behavior:          Continue
+Filesystem OS type:       Linux
+Inode count:              180224
+Block count:              720896
+Reserved block count:     6224
+Overhead clusters:        30770
+Free blocks:              72651
+Free inodes:              139266
+First block:              0
+Block size:               4096
+Fragment size:            4096
+Group descriptor size:    64
+Reserved GDT blocks:      511
+Blocks per group:         32768
+Fragments per group:      32768
+Inodes per group:         8192
+Inode blocks per group:   512
+Flex block group size:    16
+Filesystem created:       Sun Aug 16 23:56:08 2026
+Last mount time:          Fri Jan  2 00:39:46 1970
+Last write time:          Fri Jan  2 00:39:46 1970
+Mount count:              1
+Maximum mount count:      -1
+Last checked:             Tue Oct 20 08:28:26 2026
+Check interval:           0 (<none>)
+Lifetime writes:          121 GB
+Reserved blocks uid:      0 (user root)
+Reserved blocks gid:      0 (group root)
+First inode:              11
+Inode size:               256
+Required extra isize:     32
+Desired extra isize:      32
+Journal inode:            8
+Default directory hash:   half_md4
+Directory Hash Seed:      d046ff9f-2ec4-4045-a769-25f1a346c674
+Journal backup:           inode blocks
+Checksum type:            crc32c
+Checksum:                 0xe6428958
+Checksum seed:            0xf4781639
+Orphan file inode:        12
+Journal features:         journal_incompat_revoke journal_64bit journal_checksum_v3
+Total journal size:       64M
+Total journal blocks:     16384
+Max transaction length:   16384
+Fast commit length:       0
+Journal sequence:         0x0000d889
+Journal start:            3572
+Journal checksum type:    crc32c
+Journal checksum:         0x66cd86a3
+
+root@h713-arm64:~# systemctl show systemd-growfs-root.service -p ActiveState -p  SubState -p Result -p ExecMainStatus; dmesg | grep -Ei "EXT4|JBD2|I/O error"
+Result=success
+ExecMainStatus=0
+ActiveState=active
+SubState=exited
+[    0.000000] Kernel command line: console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M
+[    2.115762] EXT4-fs (mmcblk0p26): mounted filesystem 956d9901-0eb3-4d75-bb44-e37a46ba9f40 r/w with ordered data mode. Quota mode: disabled.
+[    2.129523] VFS: Mounted root (ext4 filesystem) on device 259:18.
+[    4.055475] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40.
+[    4.169017] EXT4-fs (mmcblk0p26): resizing filesystem from 720896 to 720896 blocks
+root@h713-arm64:~#

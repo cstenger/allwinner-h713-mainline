@@ -1,0 +1,178 @@
+{"event": "before-step", "boot": "5b3937e4-fc0a-47c9-8fe0-cd701e4eafd6", "number": 3, "operation": "enable-clock-pll-video0"}
+{
+  "warm_boot_id": "5b3937e4-fc0a-47c9-8fe0-cd701e4eafd6",
+  "state": {
+    "schema": "h713-dsp-boundary-v1",
+    "step": 3,
+    "attempted": 3,
+    "hold": 1,
+    "violated": 0,
+    "failed": 0,
+    "timeout": 0,
+    "claimed": 0,
+    "interface_inherited": 0,
+    "ctl_before": 0,
+    "cfg_before": 0,
+    "outcome0": 0,
+    "outcome1": 0,
+    "raw0": 4294967295,
+    "raw1": 4294967295,
+    "last": 1,
+    "demod_before": -1,
+    "tv_before": [
+      16777221,
+      0,
+      7,
+      2,
+      5,
+      4,
+      4,
+      11,
+      522,
+      2,
+      2,
+      7,
+      2,
+      523,
+      523
+    ],
+    "display_reset_before": -1,
+    "tvcap_reset_before": -1,
+    "route_writes": 0,
+    "routes_before": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "pairs": [
+      {
+        "outcome": [
+          0,
+          0
+        ],
+        "raw": [
+          4294967295,
+          4294967295
+        ],
+        "status": [
+          0,
+          0
+        ]
+      },
+      {
+        "outcome": [
+          0,
+          0
+        ],
+        "raw": [
+          4294967295,
+          4294967295
+        ],
+        "status": [
+          0,
+          0
+        ]
+      },
+      {
+        "outcome": [
+          0,
+          0
+        ],
+        "raw": [
+          4294967295,
+          4294967295
+        ],
+        "status": [
+          0,
+          0
+        ]
+      },
+      {
+        "outcome": [
+          0,
+          0
+        ],
+        "raw": [
+          4294967295,
+          4294967295
+        ],
+        "status": [
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  "baseline": {
+    "label": "cold-production-one-logo-boundary",
+    "time": 1776109111.087484,
+    "reads": {
+      "mips_status": "00000001",
+      "r_ccu_ppu": "00010001",
+      "ppu_tvfe": "00010000",
+      "ppu_tvcap": "00010000",
+      "tvtop_40": "00011111",
+      "tvtop_44": "11111111",
+      "tvtop_80": "00001111",
+      "tvtop_00": "fff11111",
+      "tvtop_04": "00000001",
+      "tvtop_84": "fff000ef",
+      "tvtop_88": "11111111",
+      "audiotop_ctl": "00000700",
+      "audiotop_cfg": "011a5e00",
+      "dsp_status": "00000120",
+      "lock_peer": "00000000",
+      "lock_own": "000000aa"
+    },
+    "skipped": [],
+    "boot_id": "013a628c-db47-4614-b89e-d663d4f9b2b2",
+    "hdmi_handoff": true,
+    "units": {
+      "capture": "active",
+      "signal": "active",
+      "speaker": "active"
+    },
+    "dsp_journal": [
+      "[   18.289086] h713-arm64 kernel: h713-hdmi-audio: DSP versions 0000/0000",
+      "[   19.208066] h713-arm64 kernel: h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1"
+    ],
+    "h713_modules": [
+      "h713_ddc_pins",
+      "h713_hdmi_audio",
+      "h713_hdmi_receiver",
+      "h713_hdmi_signal"
+    ],
+    "tv_domains_both_on": true,
+    "tvtop_routed": true
+  },
+  "preflight_valid": true,
+  "monotonic_ns": 112834284011,
+  "arm_proof": {
+    "schema": "h713-dsp-boundary-arm-v1",
+    "arm": "one-logo",
+    "cold_boot_id": "013a628c-db47-4614-b89e-d663d4f9b2b2",
+    "baseline_sha256": "274639bb6feba822ffe20ba9591e02e624b10f8c9b28c8b07add096328e67b56",
+    "warm_catch_sha256": "a9a921a7a6c9b65e843ec7e38bd90143f834a0e01c3d0b41cf37a189a498c090",
+    "verified": true,
+    "warm_boot_id": "5b3937e4-fc0a-47c9-8fe0-cd701e4eafd6",
+    "logo_sha256": "cae42e9c4e23ca148ef165f66030ba08c04f3311dae398c1d27f311fb829ea2e",
+    "fit_sha256": "bbadfaaa28b299ee6d4d4e514e9d38c2f11e180b7f8171aaeaca1d289e171a83"
+  },
+  "analysis": {
+    "classification": "inconclusive",
+    "pairs": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "first_observed_change": null,
+    "direct_reset_ram_erasure": "not measured",
+    "automatic_hdmi_recovery": "unproven",
+    "audiotop_was_inherited": false
+  }
+}

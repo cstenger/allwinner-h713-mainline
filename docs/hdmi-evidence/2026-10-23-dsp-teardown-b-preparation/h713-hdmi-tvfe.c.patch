@@ -1,0 +1,11 @@
+--- a/h713-hdmi-tvfe.c
++++ b/h713-hdmi-tvfe.c
+@@ -73,6 +73,8 @@
+ static bool tvfe_ready;
+ static u32 tvfe_saved;
+ 
++#include "teardown-tvfe.inc"
++
+ void h713_hdmi_tvfe_release(void)
+ {
+ 	int i;

@@ -1,0 +1,90 @@
+-rwxr-xr-x 1 root root  72408 Apr 13  2026 /root/cpu-comm-probe
+-rw-r--r-- 1 root root 185400 Apr 13  2026 /root/hy310-cpu-comm.ko
+[    7.474215] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    7.481622] bluetooth_set_power: end_block=0
+[    7.883237] bluetooth_set_power: start_block=0
+[    7.887888] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    7.894759] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    7.902240] bluetooth_set_power: end_block=0
+[    7.915731] Bluetooth: HCI UART driver ver 2.3
+[    7.920375] Bluetooth: HCI UART protocol H4 registered
+[    8.077039] get_txpwr_max:txpwr_max:18 
+[    8.081378] get_txpwr_max:txpwr_max:18 
+[    8.086025] get_txpwr_max:txpwr_max:18 
+[    8.091090] change_if: 2 to 3, 8, 2
+[    8.091114] get_txpwr_max:txpwr_max:18 
+[    8.101961] get_txpwr_max:txpwr_max:18 
+[    8.620787] get_txpwr_max:txpwr_max:18 
+[    8.626253] chan.flags 0 
+[    8.958245] aicwf_sdio mmc1:6721:1 wlan0: AP started: ch=0, bcmc_idx=32 channel=2437 bw=2
+[    9.204583] Bluetooth: MGMT ver 1.23
+[   11.070221] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[   11.103383] Bluetooth: MGMT ver 1.23
+[   75.788791] hy310-cpu-comm 3003000.cpu-comm: shared memory: 0x4e300000 size 0x500000
+[   75.796875] cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff8000819bc000 size=0x500000
+[   75.805787] cpu_comm: HW mapped \xe2\x80\x94 MIPS ctrl @ 000000003afb0897, msgbox @ 00000000b5a7e9f7 (version 0x00020000, tx fifo 0, rx fifo 0)
+[   75.817937] cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor running
+[   75.827521] cpu_comm: adopting the live shared region -- not reinitialising it
+[   75.834743] cpu_comm: wrote ShMemAddr=0x4e300000 to MIPS share regs
+[   75.841714] cpu_comm: /dev/cpu_comm_fd registered (major=242)
+[   75.847754] cpu_comm: MIPS elog BEFORE: mode=0 en2=0 wp2=0
+[   75.853343] cpu_comm: MIPS elog staying on Mode 1 (ring buffer) (2MB buffer)
+[   75.860472] cpu_comm: InitCommSeqMem(0): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[   75.868067] cpu_comm: InitCommSeqMem(1): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[   75.875651] cpu_comm: adopted shared memory: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[   75.884530] cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+[   75.891960] cpu_comm: msgbox RX by hrtimer poll (250 us busy / 4 ms idle) (IRQ 331 available, not requested)
+[   75.901799] cpu_comm: CPU ARM app ready
+[   75.905640] cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[   75.913472] cpu_comm: MIPS app-ready assumed (MIPS READY seen)
+[   76.428392] cpu_comm: POST-WAIT: ARM=0x5 MIPS=0x5
+[   76.433227] cpu_comm: auto-registered 18/18 MIPS VP routes
+[   76.438762] cpu_comm: channel row 0 live: chan=0x0000 pid=0x8b8f275c key=0xb8f275c0
+[   76.446431] cpu_comm: addressing CALLs to channel row 0 (chan=0x0 pid=0x8b8f275c)
+[   76.453949] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[   76.458830] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[   76.464428] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[   76.470701] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
+control block  0x4bd01000  acID b'RV\x00\x00\x00\x00 TERMINAL\x00'
+MIPS core      ALIVE (0x0306101c)
+  up[0]   buf=0x4bd01300 size=0x41c00 wr=1842 rd=1842 flags=0x0
+  up[1]   buf=0x4bd43000 size=0x7d000 wr=0 rd=0 flags=0x0
+  up[2]   buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+  down[0] buf=0x4bd01200 size=0x100 wr=10 rd=10 flags=0x0
+  down[1] buf=0x4bd42f00 size=0x100 wr=0 rd=0 flags=0x0
+  down[2] buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+ShMemAddr: 0x4e300000
+ShMemSize: 0x00500000
+ShMemAddrVir: 0xffff8000819bc000
+ShMemAddrBase: 0xffff8000819bc000
+ARM Ready: 1
+MIPS Ready: 1
+ARM App Ready: 1
+MIPS App Ready: 1
+Suspend: 0

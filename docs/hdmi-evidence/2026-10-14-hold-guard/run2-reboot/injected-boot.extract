@@ -1,0 +1,21 @@
+[  633.240085] h713-arm64 h713-hold-failure: injecting reboot with capture open
+[  633.263403] h713-arm64 systemd-logind[217]: The system will reboot now!
+[  633.270154] h713-arm64 systemd-logind[217]: System is rebooting.
+[  633.396805] h713-arm64 systemd[1]: Stopping h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[  633.678576] h713-arm64 python3[755]: capture is open; signal retained
+[  633.880632] h713-arm64 systemd[1]: h713-hdmi-signal.service: Control process exited, code=exited, status=1/FAILURE
+[  633.881146] h713-arm64 systemd[1]: h713-hdmi-signal.service: Failed with result 'exit-code'.
+[  633.881929] h713-arm64 systemd[1]: Stopped h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[  633.930257] h713-arm64 systemd[1]: Stopping h713-h2-busy-pcm.service - [systemd-run] /tmp/arecord -q -D hw:H713HDMI,0 -f S16_LE -r 48000 -c 2 -t raw /dev/null...
+[  633.935074] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+[  633.947727] h713-arm64 systemd[1]: h713-h2-busy-pcm.service: Main process exited, code=exited, status=1/FAILURE
+[  633.948110] h713-arm64 systemd[1]: h713-h2-busy-pcm.service: Failed with result 'exit-code'.
+[  633.948995] h713-arm64 systemd[1]: Stopped h713-h2-busy-pcm.service - [systemd-run] /tmp/arecord -q -D hw:H713HDMI,0 -f S16_LE -r 48000 -c 2 -t raw /dev/null.
+[  634.259205] h713-arm64 python3[770]: signal owner/helper must restore and stop before backend shutdown
+[  634.329816] h713-arm64 systemd[1]: h713-hdmi-capture.service: Control process exited, code=exited, status=1/FAILURE
+[  634.330318] h713-arm64 systemd[1]: h713-hdmi-capture.service: Failed with result 'exit-code'.
+[  634.331112] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+[  634.995582] h713-arm64 systemd[1]: systemd-reboot.service: Deactivated successfully.
+[  634.995740] h713-arm64 systemd[1]: Finished systemd-reboot.service - System Reboot.
+[  634.997675] h713-arm64 systemd[1]: Reached target reboot.target - System Reboot.
+[  634.999668] h713-arm64 systemd[1]: Shutting down.

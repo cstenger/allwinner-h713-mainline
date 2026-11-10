@@ -1,0 +1,36 @@
+2026-10-27T09:55:52.711378+00:00 OPEN /dev/ttyUSB0
+2026-10-27T09:59:19.360460+00:00 cold-boot: MARKER U-Boot SPL 
+2026-10-27T09:59:21.413565+00:00 cold-boot: MARKER stage=proper_preboot
+2026-10-27T09:59:21.463781+00:00 cold-boot: MARKER Hit any key to stop autoboot
+2026-10-27T09:59:33.832465+00:00 cold-boot: MARKER H713 panel 720p timing re-latched after source 3
+2026-10-27T09:59:33.832529+00:00 cold-boot: MARKER H713 HDMI cold startup handoff verified
+2026-10-27T09:59:34.283352+00:00 cold-boot: MARKER Starting kernel
+2026-10-27T09:59:49.316604+00:00 cold-boot: MARKER login:
+2026-10-27T09:59:49.316666+00:00 cold-boot: complete
+2026-10-27T09:59:53.423743+00:00 cold boot 6a1c0d18-2271-49ec-b8db-0e20ed1880d7
+2026-10-27T09:59:53.423797+00:00 WAITING for cold-host-source-confirmed; no health checks before this gate
+2026-10-27T10:01:01.434392+00:00 cold host source confirmed; beginning health checks
+2026-10-27T10:01:11.768438+00:00 cold health passed=True
+2026-10-27T10:01:11.768480+00:00 REBOOT REQUESTED sysrq-b boot_stop=gp7
+2026-10-27T10:01:13.295643+00:00 warm-reboot: MARKER H713_WARM_SHARED_SYNC_DONE gp7=b007c0de gp6=48444d49
+2026-10-27T10:01:13.295698+00:00 warm-reboot: MARKER sysrq: Resetting
+2026-10-27T10:01:14.046892+00:00 warm-reboot: MARKER U-Boot SPL 
+2026-10-27T10:01:16.250252+00:00 warm-reboot: MARKER stage=proper_preboot
+2026-10-27T10:01:16.300487+00:00 warm-reboot: MARKER => 
+2026-10-27T10:01:16.300548+00:00 warm-reboot: complete
+2026-10-27T10:01:47.821350+00:00 SOURCE SENT
+2026-10-27T10:01:47.871578+00:00 warm-shared: MARKER ## Executing script
+2026-10-27T10:01:55.183864+00:00 warm-shared: MARKER H713 panel 720p timing re-latched after source 3
+2026-10-27T10:01:55.183937+00:00 warm-shared: MARKER H713 WARM-SHARED startup handoff verified
+2026-10-27T10:01:55.634795+00:00 warm-shared: MARKER Starting kernel
+2026-10-27T10:02:10.466602+00:00 warm-shared: MARKER login:
+2026-10-27T10:02:10.466655+00:00 warm-shared: complete
+2026-10-27T10:02:21.402493+00:00 warm boot 57f6df2f-e9a9-44ff-a965-00cf5b5ab697
+2026-10-27T10:02:21.402547+00:00 WAITING for warm-host-source-confirmed; no health checks before this gate
+2026-10-27T10:02:51.407059+00:00 warm host source confirmed; beginning health checks
+2026-10-27T10:02:59.685549+00:00 warm health passed=True
+2026-10-27T10:02:59.771000+00:00 compare passed=True
+2026-10-27T10:03:57.456826+00:00 OPEN /dev/ttyUSB0 for poweroff
+2026-10-27T10:04:05.392973+00:00 poweroff: MARKER reboot: Power down
+2026-10-27T10:04:05.393035+00:00 poweroff: complete
+2026-10-27T10:04:05.466692+00:00 CLOSE

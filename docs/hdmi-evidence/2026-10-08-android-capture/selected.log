@@ -1,0 +1,61 @@
+/data/local/tmp/cap/audio/selected
+09-21 19:31:09.680  2382  2430 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3708
+09-21 19:31:10.336  2382  2430 D audio_hw_primary: adev_set_parameters, speaker_volume=64
+09-21 19:31:10.363  2382  2430 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.366  2382  2430 D audio_hw_primary: adev_set_parameters, headphone_volume=60
+09-21 19:31:10.377  2382  2430 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.381  2382  2661 D audio_hw_primary: adev_set_parameters, digital_volume=60
+09-21 19:31:10.381  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3699
+09-21 19:31:10.381  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3702
+09-21 19:31:10.381  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3708
+09-21 19:31:10.519  2382  2661 D audio_hw_primary: adev_set_parameters, speaker_volume=64
+09-21 19:31:10.527  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.530  2382  2661 D audio_hw_primary: adev_set_parameters, headphone_volume=60
+09-21 19:31:10.531  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.540  2382  2661 D audio_hw_primary: adev_set_parameters, digital_volume=60
+09-21 19:31:10.540  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3699
+09-21 19:31:10.540  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3702
+09-21 19:31:10.540  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3708
+09-21 19:31:10.734  2382  2661 D audio_hw_primary: adev_set_parameters, speaker_volume=64
+09-21 19:31:10.747  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.751  2382  2661 D audio_hw_primary: adev_set_parameters, headphone_volume=60
+09-21 19:31:10.759  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:10.763  2382  2430 D audio_hw_primary: adev_set_parameters, digital_volume=60
+09-21 19:31:10.763  2382  2430 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3699
+09-21 19:31:10.763  2382  2430 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3702
+09-21 19:31:10.763  2382  2430 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=2, line=3708
+09-21 19:31:16.945  2382  2661 D audio_hw_primary: adev_get_parameters, audio_devices_out
+09-21 19:31:16.945  2382  2661 D audio_hw_primary: getAudioDevices()
+09-21 19:31:16.945  2382  2661 D audio_hw_primary: out playback: AUDIO_SPEAKER,AUDIO_OWA,AUDIO_ARC,AUDIO_HEADPHONE,AUDIO_A2DP
+09-21 19:31:16.963  2382  2661 D audio_hw_primary: adev_set_parameters, mediasw.sft.rawdata=PCM
+09-21 19:31:16.965  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+09-21 19:31:16.969  2382  2661 D audio_hw_primary: adev_set_parameters, audio_devices_out_active=AUDIO_SPEAKER
+09-21 19:31:16.969  2382  2661 V audio_hw_primary: out AUDIO_PARAMETER_DEVICES_OUT_ACTIVE: AUDIO_SPEAKER
+09-21 19:31:16.970  2382  2661 V audio_hw_primary: set property vendor.audio.output.active: AUDIO_SPEAKER ok
+09-21 19:31:16.970  2382  2661 D audio_hw_primary: init_codec_output_path output_device_id: 1
+09-21 19:31:16.970  2382  2661 D audio_hw_primary: output_route: media-speaker-i2s
+09-21 19:31:17.136  2382  2661 D audio_hw_primary: set_audio_devices_active sink: 1 -> 1
+09-21 19:31:17.207  2382  2661 D audio_hw_primary: mytest: Check_Sound_Unmute, Audio_mute: 0 Lock_mute: 0
+09-21 19:31:17.209  2382  2661 D audio_hw_primary: [set_codec_speaker_mute] Now SPK Set Mute: 1
+09-21 19:31:17.375  2382  2661 D audio_hw_primary: [adev_set_parameters] --> digital_volume: 60, ret=-2, line=3699
+--------- beginning of crash
+09-21 19:33:37.276  5232  5232 D AwLiveTVMain: initData
+09-21 19:33:37.512  5232  5232 D AwLiveTVMain: initSource otherIntentSource: HDMI1 ,mCecActivePortId: -1 ,mSwitchChannelFromCec: false mManualSetSource: true
+09-21 19:33:37.513  5232  5232 W AwLiveTVMain: otherIntentSource: HDMI1
+09-21 19:33:37.515  5232  5232 W AwLiveTVMain: SettingProvider:HDMI1
+09-21 19:33:37.515  5232  5232 W AwLiveTVMain: Setting status true
+09-21 19:33:37.515  5232  5232 W AwLiveTVMain: updateSource HDMI1
+09-21 19:33:37.516  5232  5232 W AwLiveTVMain: source status: InputSource [id: com.softwinner.vis/.HdmiInputService/HW1, name: HDMI1, uri: content://android.media.tv/passthrough/com.softwinner.vis%2F.HdmiInputService%2FHW1 ,type: 1007 ,port: 1 ] 
+09-21 19:33:37.516  5232  5232 W AwLiveTVMain: source: com.softwinner.vis/.HdmiInputService/HW1 content://android.media.tv/passthrough/com.softwinner.vis%2F.HdmiInputService%2FHW1
+09-21 19:33:37.517  5232  5232 D AwLiveTVMain: setCurrentSource CurrentSource = InputSource [id: com.softwinner.vis/.HdmiInputService/HW1, name: HDMI1, uri: content://android.media.tv/passthrough/com.softwinner.vis%2F.HdmiInputService%2FHW1 ,type: 1007 ,port: 1 ]
+09-21 19:33:37.517  5232  5232 D AwLiveTVMain:  ============ id = com.softwinner.vis/.HdmiInputService/HW1 ,getCurrentHDMIChannelPortId: 1
+09-21 19:33:37.520  5232  5232 W AwLiveTVMain: mSourceManager.getCurrentSource()!!.id : com.softwinner.vis/.HdmiInputService/HW1
+09-21 19:33:37.520  5232  5232 W AwLiveTVMain: mSourceManager.getCurrentSource()!!.uri : content://android.media.tv/passthrough/com.softwinner.vis%2F.HdmiInputService%2FHW1
+09-21 19:33:37.520  5232  5232 W AwLiveTVMain: TvView is not null
+09-21 19:33:37.529  5232  5232 D AwLiveTVMain: onResume
+09-21 19:33:37.538  5232  5232 D AwLiveTVMain: registerReceiver
+09-21 19:33:37.541  5232  5232 D AwLiveTVMain: manual set source!!!
+09-21 19:33:37.716  5232  5232 W AwLiveTVMain: onVideoUnavailable mIsVideoUnavailable true inputId: com.softwinner.vis/.HdmiInputService/HW1
+09-21 19:33:37.716  5232  5232 D AwLiveTVMain: startTimer mHasRunTimerTask=false
+09-21 19:33:37.720  5232  5313 W AwLiveTVMain: mIsVideoUnavailable true mTimerCounter 0
+09-21 19:33:37.724  5232  5313 W AwLiveTVMain: mProgressView.mMaxProgress 30000

@@ -1,0 +1,33 @@
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0
+CPU_COMM_CALL_OK component=24efc7c9 elapsed_us=74722 nret=1 ret0=00000000
+[sent 9 bytes: 'help hal']
+[reply: 63 bytes]
+help hal
+command help of hal
+for hal debug only
+
+VS:/$ 
+ShMemAddr: 0x4e300000
+ShMemSize: 0x00500000
+ShMemAddrVir: 0xffff8000819bc000
+ShMemAddrBase: 0xffff8000819bc000
+ARM Ready: 1
+MIPS Ready: 1
+ARM App Ready: 1
+MIPS App Ready: 1
+Suspend: 0
+[   76.453949] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[   76.458830] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[   76.464428] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[   76.470701] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[   99.325836] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[   99.333375] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[   99.335982] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[   99.344979] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[   99.353430] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[   99.362218] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[   99.370405] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[   99.375640] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[   99.383914] cpu_comm: IPC[handle_return] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[   99.392472] cpu_comm: IPC[dispatch] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[   99.400500] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0

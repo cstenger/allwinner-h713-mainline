@@ -1,0 +1,39 @@
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win
+command help of win
+for window debug only
+
+VS:/$ 
+[ 1213.839936] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[ 1213.850169] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[ 1213.858277] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[ 1213.868535] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[ 1213.876658] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[ 1213.885831] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[ 1213.894234] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[ 1324.814842] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[ 1324.823086] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[ 1324.833397] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[ 1324.841920] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[ 1324.852521] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[ 1324.911002] h713-hdmi-dsp-probe: device=0 word=0103 slow completion-clear 50108 us ret=-110
+[ 1324.920496] h713-hdmi-dsp-probe: device=0 word=0103 phase=completion-clear timeout status=00000120; cold boot required
+[ 1324.932287] h713-hdmi-dsp-probe: graph trial stopped error=-110; cold boot required
+[ 1324.941052] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[ 1435.690033] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[ 1435.698590] h713-hdmi-audio: restored Audio Bridge output stream 0
+[ 1435.706854] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[ 1435.714685] h713-hdmi-audio: restored audio-IHB clock=81000002
+[ 1435.721512] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+[ 1435.762643] h713-hdmi-tvfe-hold: saved TVFE clock/reset state restored
+Module                  Size  Used by
+h713_edid_clock        12288  0
+h713_hdmi_power        12288  0
+hci_uart               28672  1
+hy310_cpu_comm         98304  0
+hantro_vpu            196608  0
+sunxi_cedrus           81920  0
+v4l2_h264              16384  1 hantro_vpu
+v4l2_jpeg              12288  1 hantro_vpu
+sunxi_scanout_dmabuf    12288  0

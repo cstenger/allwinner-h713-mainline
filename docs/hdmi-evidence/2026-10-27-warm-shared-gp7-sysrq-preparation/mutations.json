@@ -1,0 +1,74 @@
+[
+  {
+    "mutation": "write targets GP6",
+    "test": "test_single_aligned_gp7_write_preserves_gp6_and_resets_without_teardown",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_single_aligned_gp7_write_preserves_gp6_and_resets_without_teardown (tests.GP7Abrupt.test_single_aligned_gp7_write_preserves_gp6_and_resets_without_teardown)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 411, in test_single_aligned_gp7_write_preserves_gp6_and_resets_without_teardown\n    d=self.simulate();self.assertEqual(d['errors'],['SysRq returned unexpectedly'])\n                      ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: ['GP7 readback/GP6 mismatch; stop, no retry'] != ['SysRq returned unexpectedly']\n\nFirst differing element 0:\n'GP7 readback/GP6 mismatch; stop, no retry'\n'SysRq returned unexpectedly'\n\n- ['GP7 readback/GP6 mismatch; stop, no retry']\n+ ['SysRq returned unexpectedly']\n\n----------------------------------------------------------------------\nRan 1 test in 0.004s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "short write accepted",
+    "test": "test_failed_write_readback_or_post_arm_guard_never_retries_or_resets",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_failed_write_readback_or_post_arm_guard_never_retries_or_resets (tests.GP7Abrupt.test_failed_write_readback_or_post_arm_guard_never_retries_or_resets)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 436, in test_failed_write_readback_or_post_arm_guard_never_retries_or_resets\n    self.assertNotIn(('/proc/sysrq-trigger','b'),d['events']);self.assertIn('close',d['events'])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ('/proc/sysrq-trigger', 'b') unexpectedly found in ['sync', 'before', 'arm', 'readback', 'close', ('/dev/ttyS0', 'H713_WARM_SHARED_SYNC_DONE gp7=b007c0de gp6=48444d49 boot=B1\\n'), ('/proc/sysrq-trigger', 'b')]\n\n----------------------------------------------------------------------\nRan 1 test in 0.004s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "readback skipped",
+    "test": "test_failed_write_readback_or_post_arm_guard_never_retries_or_resets",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_failed_write_readback_or_post_arm_guard_never_retries_or_resets (tests.GP7Abrupt.test_failed_write_readback_or_post_arm_guard_never_retries_or_resets)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 436, in test_failed_write_readback_or_post_arm_guard_never_retries_or_resets\n    self.assertNotIn(('/proc/sysrq-trigger','b'),d['events']);self.assertIn('close',d['events'])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ('/proc/sysrq-trigger', 'b') unexpectedly found in ['sync', 'before', 'arm', 'close', ('/dev/ttyS0', 'H713_WARM_SHARED_SYNC_DONE gp7=b007c0de gp6=48444d49 boot=B1\\n'), ('/proc/sysrq-trigger', 'b')]\n\n----------------------------------------------------------------------\nRan 1 test in 0.007s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "ambiguous provider accepted",
+    "test": "test_bad_provider_cell_or_magic_refused_before_any_write",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_bad_provider_cell_or_magic_refused_before_any_write (tests.GP7Abrupt.test_bad_provider_cell_or_magic_refused_before_any_write)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 426, in test_bad_provider_cell_or_magic_refused_before_any_write\n    d=self.simulate(change=change);self.assertTrue(d['errors']);self.assertEqual(d['writes'],[]);self.assertNotIn(('/proc/sysrq-trigger','b'),d['events'])\n                                                                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [(b'\\xde\\xc0\\x07\\xb0', 28)] != []\n\nFirst list contains 1 additional elements.\nFirst extra element 0:\n(b'\\xde\\xc0\\x07\\xb0', 28)\n\n- [(b'\\xde\\xc0\\x07\\xb0', 28)]\n+ []\n\n----------------------------------------------------------------------\nRan 1 test in 0.026s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "RTC address check removed",
+    "test": "test_bad_provider_cell_or_magic_refused_before_any_write",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_bad_provider_cell_or_magic_refused_before_any_write (tests.GP7Abrupt.test_bad_provider_cell_or_magic_refused_before_any_write)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 426, in test_bad_provider_cell_or_magic_refused_before_any_write\n    d=self.simulate(change=change);self.assertTrue(d['errors']);self.assertEqual(d['writes'],[]);self.assertNotIn(('/proc/sysrq-trigger','b'),d['events'])\n                                                                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [(b'\\xde\\xc0\\x07\\xb0', 28)] != []\n\nFirst list contains 1 additional elements.\nFirst extra element 0:\n(b'\\xde\\xc0\\x07\\xb0', 28)\n\n- [(b'\\xde\\xc0\\x07\\xb0', 28)]\n+ []\n\n----------------------------------------------------------------------\nRan 1 test in 0.007s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "cell range check removed",
+    "test": "test_bad_provider_cell_or_magic_refused_before_any_write",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_bad_provider_cell_or_magic_refused_before_any_write (tests.GP7Abrupt.test_bad_provider_cell_or_magic_refused_before_any_write)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 426, in test_bad_provider_cell_or_magic_refused_before_any_write\n    d=self.simulate(change=change);self.assertTrue(d['errors']);self.assertEqual(d['writes'],[]);self.assertNotIn(('/proc/sysrq-trigger','b'),d['events'])\n                                                                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [(b'\\xde\\xc0\\x07\\xb0', 28)] != []\n\nFirst list contains 1 additional elements.\nFirst extra element 0:\n(b'\\xde\\xc0\\x07\\xb0', 28)\n\n- [(b'\\xde\\xc0\\x07\\xb0', 28)]\n+ []\n\n----------------------------------------------------------------------\nRan 1 test in 0.011s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "initial GP6 GP7 check skipped",
+    "test": "test_wrong_initial_gp6_gp7_or_unhealthy_session_cannot_arm",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_wrong_initial_gp6_gp7_or_unhealthy_session_cannot_arm (tests.GP7Abrupt.test_wrong_initial_gp6_gp7_or_unhealthy_session_cannot_arm)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 432, in test_wrong_initial_gp6_gp7_or_unhealthy_session_cannot_arm\n    d=self.simulate(change=change);self.assertTrue(d['errors']);self.assertFalse(d['writes']);self.assertNotIn(('/proc/sysrq-trigger','b'),d['events'])\n                                                                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^\nAssertionError: [(b'\\xde\\xc0\\x07\\xb0', 28)] is not false\n\n----------------------------------------------------------------------\nRan 1 test in 0.004s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "readback UART acknowledgement ignored",
+    "test": "test_gp7_abrupt_stream_requires_readback_ack_and_no_keypress",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_gp7_abrupt_stream_requires_readback_ack_and_no_keypress (tests.GP7Abrupt.test_gp7_abrupt_stream_requires_readback_ack_and_no_keypress)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 440, in test_gp7_abrupt_stream_requires_readback_ack_and_no_keypress\n    self.assertNotIn('done',feed(r.reboot_stage('sysrq-b','gp7'),trace.replace(r.ABRUPT_GP7_MARKER.encode(),r.ABRUPT_MARKER.encode())))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'done' unexpectedly found in ['done']\n\n----------------------------------------------------------------------\nRan 1 test in 0.008s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "runner fails to select GP7 arming",
+    "test": "test_sysrq_gp7_runner_selects_armed_script_once",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_sysrq_gp7_runner_selects_armed_script_once (tests.GP7Abrupt.test_sysrq_gp7_runner_selects_armed_script_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 450, in test_sysrq_gp7_runner_selects_armed_script_once\n    script=(run.out/'abrupt-reset-trigger.py.txt').read_text();self.assertEqual(script,r.abrupt_script('B1','gp7'));self.assertIn('os.pwrite',script)\n                                                               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"impo[832 chars])\\n\\nwith open('/dev/ttyS0','w') as f:f.write([168 chars]')\\n\" != \"impo[832 chars])\\n\\n# Pin the RTC provider and the existing r[2275 chars]')\\n\"\nDiff is 3311 characters long. Set self.maxDiff to None to see it.\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "sync omitted",
+    "test": "test_single_aligned_gp7_write_preserves_gp6_and_resets_without_teardown",
+    "caught": true,
+    "output": "E\n======================================================================\nERROR: test_single_aligned_gp7_write_preserves_gp6_and_resets_without_teardown (tests.GP7Abrupt.test_single_aligned_gp7_write_preserves_gp6_and_resets_without_teardown)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 414, in test_single_aligned_gp7_write_preserves_gp6_and_resets_without_teardown\n    e=d['events'];self.assertLess(e.index('sync'),e.index('arm'));self.assertLess(e.index('readback'),e.index('close'))\n                                  ~~~~~~~^^^^^^^^\nValueError: list.index(x): x not in list\n\n----------------------------------------------------------------------\nRan 1 test in 0.004s\n\nFAILED (errors=1)\n"
+  },
+  {
+    "mutation": "post-arm guard omitted",
+    "test": "test_failed_write_readback_or_post_arm_guard_never_retries_or_resets",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_failed_write_readback_or_post_arm_guard_never_retries_or_resets (tests.GP7Abrupt.test_failed_write_readback_or_post_arm_guard_never_retries_or_resets)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 436, in test_failed_write_readback_or_post_arm_guard_never_retries_or_resets\n    self.assertNotIn(('/proc/sysrq-trigger','b'),d['events']);self.assertIn('close',d['events'])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ('/proc/sysrq-trigger', 'b') unexpectedly found in ['sync', 'before', 'arm', 'readback', 'close', ('/dev/ttyS0', 'H713_WARM_SHARED_SYNC_DONE gp7=b007c0de gp6=48444d49 boot=B1\\n'), ('/proc/sysrq-trigger', 'b')]\n\n----------------------------------------------------------------------\nRan 1 test in 0.010s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "mutation": "timed interrupt enabled",
+    "test": "test_gp7_abrupt_stream_requires_readback_ack_and_no_keypress",
+    "caught": true,
+    "output": "F\n======================================================================\nFAIL: test_gp7_abrupt_stream_requires_readback_ack_and_no_keypress (tests.GP7Abrupt.test_gp7_abrupt_stream_requires_readback_ack_and_no_keypress)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/chris/Projects/h713/tools/hdmi/test-warm-shared.py\", line 439, in test_gp7_abrupt_stream_requires_readback_ack_and_no_keypress\n    s=r.reboot_stage('sysrq-b','gp7');self.assertEqual(feed(s,trace,size=1),['done']);self.assertFalse(s.sent);r.check_warm_preboot(s.preboot(),'gp7')\n                                      ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: ['space', 'done'] != ['done']\n\nFirst differing element 0:\n'space'\n'done'\n\nFirst list contains 1 additional elements.\nFirst extra element 1:\n'done'\n\n- ['space', 'done']\n+ ['done']\n\n----------------------------------------------------------------------\nRan 1 test in 0.007s\n\nFAILED (failures=1)\n"
+  }
+]

@@ -1,0 +1,25 @@
+import subprocess
+import time
+from pathlib import Path
+
+def uptime():
+    return float(Path('/proc/uptime').read_text().split()[0])
+
+boot_id = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+target = 238.07
+flag = Path('/tmp/h713-delayed-r1-black-confirmed')
+print('H713_DELAYED_R1_SECOND_ARMED', flush=True)
+print('boot_id='+boot_id, flush=True)
+print('arm_uptime=%.2f target_uptime=%.2f' % (uptime(),target), flush=True)
+if uptime() >= target:
+    print('H713_DELAYED_R1_WINDOW_MISSED_NO_REBOOT', flush=True)
+    raise SystemExit(1)
+while uptime() < target:
+    time.sleep(min(1.0, max(0.0,target-uptime())))
+if not flag.exists() or flag.read_text().strip() != boot_id:
+    print('H713_DELAYED_R1_NO_BLACK_CONFIRMATION_NO_REBOOT', flush=True)
+    raise SystemExit(1)
+print('H713_DELAYED_R1_SECOND_WARM_REBOOT', flush=True)
+print('reboot_uptime=%.2f' % uptime(), flush=True)
+subprocess.run(['dmesg','-n','7'], check=True)
+subprocess.run(['systemctl','reboot'], check=True)

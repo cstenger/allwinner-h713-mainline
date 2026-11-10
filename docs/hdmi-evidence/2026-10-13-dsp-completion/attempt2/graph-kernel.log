@@ -1,0 +1,1518 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 6.18.38 (chris@cachyos) (clang version 23.1.1, LLD 23.1.1) #1 SMP Wed Oct  7 18:57:16 PDT 2026
+[    0.000000] Machine model: HY200 QZ713DF_A1 (Allwinner H713)
+[    0.000000] earlycon: uart0 at MMIO32 0x0000000002500000 (options '115200n8')
+[    0.000000] printk: legacy bootconsole [uart0] enabled
+[    0.000000] efi: UEFI not found.
+[    0.000000] OF: reserved mem: 0x0000000040000000..0x00000000400fffff (1024 KiB) nomap non-reusable secure-bl31@40000000
+[    0.000000] Reserved memory: created DMA memory pool at 0x000000004b100000, size 14 MiB
+[    0.000000] OF: reserved mem: initialized node mips-firmware@4b100000, compatible id shared-dma-pool
+[    0.000000] OF: reserved mem: 0x000000004b100000..0x000000004bf40fff (14596 KiB) nomap non-reusable mips-firmware@4b100000
+[    0.000000] OF: reserved mem: 0x000000004d941000..0x000000004d960fff (128 KiB) nomap non-reusable decoder@4d941000
+[    0.000000] OF: reserved mem: 0x000000004e300000..0x000000004e7fffff (5120 KiB) nomap non-reusable cpu-comm@4e300000
+[    0.000000] OF: reserved mem: 0x000000004bf41000..0x000000004d940fff (26624 KiB) nomap non-reusable framebuf@4bf41000
+[    0.000000] OF: reserved mem: 0x000000006c100000..0x000000006c8fffff (8192 KiB) nomap non-reusable uboot-scanout@6c100000
+[    0.000000] OF: reserved mem: 0x000000004d980000..0x000000004d980fff (4 KiB) nomap non-reusable hdmi-trace@4d980000
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x00000000400fffff]
+[    0.000000]   node   0: [mem 0x0000000040100000-0x000000004b0fffff]
+[    0.000000]   node   0: [mem 0x000000004b100000-0x000000004d960fff]
+[    0.000000]   node   0: [mem 0x000000004d961000-0x000000004d97ffff]
+[    0.000000]   node   0: [mem 0x000000004d980000-0x000000004d980fff]
+[    0.000000]   node   0: [mem 0x000000004d981000-0x000000004e2fffff]
+[    0.000000]   node   0: [mem 0x000000004e300000-0x000000004e7fffff]
+[    0.000000]   node   0: [mem 0x000000004e800000-0x000000006c0fffff]
+[    0.000000]   node   0: [mem 0x000000006c100000-0x000000006c8fffff]
+[    0.000000]   node   0: [mem 0x000000006c900000-0x000000007fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000] cma: Reserved 128 MiB at 0x0000000076c00000
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: MIGRATE_INFO_TYPE not supported.
+[    0.000000] psci: SMC Calling Convention v1.5
+[    0.000000] percpu: Embedded 20 pages/cpu s42648 r8192 d31080 u81920
+[    0.000000] pcpu-alloc: s42648 r8192 d31080 u81920 alloc=20*4096
+[    0.000000] pcpu-alloc: [0] 0 [0] 1 [0] 2 [0] 3 
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] alternatives: applying boot alternatives
+[    0.000000] Kernel command line: console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M
+[    0.000000] printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes
+[    0.000000] Dentry cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 7, 524288 bytes, linear)
+[    0.000000] software IO TLB: SWIOTLB bounce buffer size adjusted to 1MB
+[    0.000000] software IO TLB: area num 4.
+[    0.000000] software IO TLB: mapped [mem 0x0000000076b00000-0x0000000076c00000] (1MB)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 262144
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=512 to nr_cpu_ids=4.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] Root IRQ handler: gic_handle_irq
+[    0.000000] GIC: Using split EOI/Deactivate mode
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] arch_timer: cp15 timer running at 24.00MHz (phys).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000000] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.008913] Console: colour dummy device 160x45
+[    0.013680] printk: legacy console [tty0] enabled
+[    0.018624] printk: legacy bootconsole [uart0] disabled
+[    0.024169] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[    0.024192] pid_max: default: 32768 minimum: 301
+[    0.024356] Mount-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.024378] Mountpoint-cache hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.025206] cacheinfo: Unable to detect cache hierarchy for CPU 0
+[    0.026231] rcu: Hierarchical SRCU implementation.
+[    0.026245] rcu: 	Max phase no-delay instances is 1000.
+[    0.026461] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[    0.026893] EFI services will not be available.
+[    0.027118] smp: Bringing up secondary CPUs ...
+[    0.027620] Detected VIPT I-cache on CPU1
+[    0.027716] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.028347] Detected VIPT I-cache on CPU2
+[    0.028405] CPU2: Booted secondary processor 0x0000000002 [0x410fd034]
+[    0.028909] Detected VIPT I-cache on CPU3
+[    0.028957] CPU3: Booted secondary processor 0x0000000003 [0x410fd034]
+[    0.029065] smp: Brought up 1 node, 4 CPUs
+[    0.029114] SMP: Total of 4 processors activated.
+[    0.029124] CPU: All CPU(s) started at EL2
+[    0.029133] CPU features: detected: 32-bit EL0 Support
+[    0.029143] CPU features: detected: CRC32 instructions
+[    0.029159] CPU features: detected: PMUv3
+[    0.029207] alternatives: applying system-wide alternatives
+[    0.030194] Memory: 818216K/1048576K available (11200K kernel code, 1542K rwdata, 3460K rodata, 896K init, 481K bss, 94980K reserved, 131072K cma-reserved)
+[    0.030804] devtmpfs: initialized
+[    0.035794] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.035849] posixtimers hash table entries: 2048 (order: 3, 32768 bytes, linear)
+[    0.035961] futex hash table entries: 1024 (65536 bytes on 1 NUMA nodes, total 64 KiB, linear).
+[    0.038847] 28320 pages in range for non-PLT usage
+[    0.038873] 519840 pages in range for PLT usage
+[    0.039005] pinctrl core: initialized pinctrl subsystem
+[    0.039748] DMI not present or invalid.
+[    0.040399] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.041726] DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations
+[    0.042183] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.043006] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[    0.043957] thermal_sys: Registered thermal governor 'step_wise'
+[    0.044109] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.044248] ASID allocator initialised with 65536 entries
+[    0.054533] iommu: Default domain type: Translated
+[    0.054570] iommu: DMA domain TLB invalidation policy: strict mode
+[    0.055396] SCSI subsystem initialized
+[    0.055589] libata version 3.00 loaded.
+[    0.055758] usbcore: registered new interface driver usbfs
+[    0.055819] usbcore: registered new interface driver hub
+[    0.055864] usbcore: registered new device driver usb
+[    0.056072] mc: Linux media interface: v0.10
+[    0.056122] videodev: Linux video capture interface: v2.00
+[    0.056182] pps_core: LinuxPPS API ver. 1 registered
+[    0.056197] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.056223] PTP clock support registered
+[    0.056584] Advanced Linux Sound Architecture Driver Initialized.
+[    0.057134] Bluetooth: Core ver 2.22
+[    0.057170] NET: Registered PF_BLUETOOTH protocol family
+[    0.057185] Bluetooth: HCI device and connection manager initialized
+[    0.057205] Bluetooth: HCI socket layer initialized
+[    0.057222] Bluetooth: L2CAP socket layer initialized
+[    0.057244] Bluetooth: SCO socket layer initialized
+[    0.057835] clocksource: Switched to clocksource arch_sys_counter
+[    0.064905] NET: Registered PF_INET protocol family
+[    0.065126] IP idents hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.066087] tcp_listen_portaddr_hash hash table entries: 512 (order: 1, 8192 bytes, linear)
+[    0.066123] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.066147] TCP established hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.066229] TCP bind hash table entries: 8192 (order: 6, 262144 bytes, linear)
+[    0.066517] TCP: Hash tables configured (established 8192 bind 8192)
+[    0.066645] UDP hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.066702] UDP-Lite hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.066870] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.067328] RPC: Registered named UNIX socket transport module.
+[    0.067347] RPC: Registered udp transport module.
+[    0.067360] RPC: Registered tcp transport module.
+[    0.067373] RPC: Registered tcp-with-tls transport module.
+[    0.067386] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.069077] Initialise system trusted keyrings
+[    0.069247] workingset: timestamp_bits=62 max_order=18 bucket_order=0
+[    0.069768] NFS: Registering the id_resolver key type
+[    0.069851] Key type id_resolver registered
+[    0.069868] Key type id_legacy registered
+[    0.113766] Key type asymmetric registered
+[    0.113784] Asymmetric key parser 'x509' registered
+[    0.113858] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.113877] io scheduler mq-deadline registered
+[    0.113892] io scheduler kyber registered
+[    0.113922] io scheduler bfq registered
+[    0.117157] gpio gpiochip0: Static allocation of GPIO base is deprecated, use dynamic allocation.
+[    0.123588] sun50i-h713-pinctrl 2000000.pinctrl: initialized sunXi PIO driver
+[    0.124854] sun8i-pwm 2000c00.pwm: Allwinner H713 PWM controller registered (8 channels)
+[    0.134465] sun50i-h713-ppu 7001014.power-controller: H713 PPU: 5 power domains registered
+[    0.134518] sun50i-h713-ppu 7001014.power-controller: TVCAP domain retained from boot
+[    0.176309] Serial: 8250/16550 driver, 8 ports, IRQ sharing disabled
+[    0.179187] printk: legacy console [ttyS0] disabled
+[    0.199744] 2500000.serial: ttyS0 at MMIO 0x2500000 (irq = 246, base_baud = 1500000) is a 16550A
+[    0.199918] printk: legacy console [ttyS0] enabled
+[    1.201974] 2500400.serial: ttyS1 at MMIO 0x2500400 (irq = 247, base_baud = 1500000) is a 16550A
+[    1.212013] platform 1c0e000.video-codec: Adding to iommu group 0
+[    1.218191] platform 1c0d000.av1: Adding to iommu group 0
+[    1.223713] platform 5600000.display: Adding to iommu group 0
+[    1.235232] sun50i-h713-afbd 5600000.display: framebuffers from the system CMA pool
+[    1.242931] sun50i-h713-afbd 5600000.display: [drm] adopting 1280x720, stride 5120, source 6c100000
+[    1.252100] sun50i-h713-afbd 5600000.display: [drm] hardware mirror: available, installation mode 0
+[    1.261158] sun50i-h713-afbd 5600000.display: [drm] video plane: pictures up to the panel size, magnified up to 4x and placed anywhere (letterbox)
+[    1.275261] [drm] Initialized sun50i-h713-afbd 1.0.0 for 5600000.display on minor 0
+[    1.313654] Console: switching to colour frame buffer device 160x45
+[    1.337858] sun50i-h713-afbd 5600000.display: [drm] fb0: sun50i-h713-afb frame buffer device
+[    1.350501] CAN device driver interface
+[    1.356463] usbcore: registered new interface driver usb-storage
+[    1.356662] ehci-platform 4300000.usb: EHCI Host Controller
+[    1.356724] phy phy-4100400.phy.0: Changing dr_mode to 1
+[    1.356733] ehci-platform 4101000.usb: EHCI Host Controller
+[    1.356755] ehci-platform 4101000.usb: new USB bus registered, assigned bus number 1
+[    1.356772] ehci-platform 4200000.usb: EHCI Host Controller
+[    1.356788] ehci-platform 4200000.usb: new USB bus registered, assigned bus number 2
+[    1.356899] ehci-platform 4200000.usb: irq 252, io mem 0x04200000
+[    1.356912] ehci-platform 4101000.usb: irq 250, io mem 0x04101000
+[    1.357621] ohci-platform 4200400.usb: Generic Platform OHCI controller
+[    1.357641] ohci-platform 4200400.usb: new USB bus registered, assigned bus number 3
+[    1.357761] ohci-platform 4300400.usb: Generic Platform OHCI controller
+[    1.357767] ohci-platform 4200400.usb: irq 254, io mem 0x04200400
+[    1.358987] ehci-platform 4300000.usb: new USB bus registered, assigned bus number 4
+[    1.359678] sun6i-rtc 7090000.rtc: registered as rtc0
+[    1.359785] sun6i-rtc 7090000.rtc: setting system clock to 1970-01-02T00:00:51 UTC (86451)
+[    1.360048] i2c_dev: i2c /dev entries driver
+[    1.360187] ohci-platform 4300400.usb: new USB bus registered, assigned bus number 5
+[    1.361344] IR NEC protocol handler initialized
+[    1.361354] IR RC5(x/sz) protocol handler initialized
+[    1.361358] IR RC6 protocol handler initialized
+[    1.361497] ehci-platform 4300000.usb: irq 251, io mem 0x04300000
+[    1.362690] ohci-platform 4300400.usb: irq 255, io mem 0x04300400
+[    1.363049] sunxi-wdt 2051000.watchdog: Watchdog enabled (timeout=16 sec, nowayout=0)
+[    1.363892] SMCCC: SOC_ID: ID = jep106:091e:1860 Revision = 0x00000001
+[    1.369848] ehci-platform 4200000.usb: USB 2.0 started, EHCI 1.00
+[    1.373021] usbcore: registered new interface driver usbhid
+[    1.374176] hub 2-0:1.0: USB hub found
+[    1.374590] usbhid: USB HID core driver
+[    1.375791] hub 2-0:1.0: 1 port detected
+[    1.377577] st-accel-i2c 0-0018: supply vdd not found, using dummy regulator
+[    1.377879] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    1.385842] ehci-platform 4101000.usb: USB 2.0 started, EHCI 1.00
+[    1.386216] st-accel-i2c 0-0018: supply vddio not found, using dummy regulator
+[    1.387946] hub 1-0:1.0: USB hub found
+[    1.391557] SPI driver st-accel-spi has no spi_device_id for st,lis302dl-spi
+[    1.395062] sunxi-mmc 4021000.mmc: initialized, max. request size: 1024 KB, uses new timings mode
+[    1.395062] sunxi-mmc 4022000.mmc: initialized, max. request size: 2048 KB, uses new timings mode
+[    1.395072] hub 1-0:1.0: 1 port detected
+[    1.396273] SPI driver st-accel-spi has no spi_device_id for st,lis3lv02dl-accel
+[    1.400892] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    1.404299] SPI driver st-accel-spi has no spi_device_id for st,lis3dh-accel
+[    1.404305] SPI driver st-accel-spi has no spi_device_id for st,lsm330d-accel
+[    1.404310] SPI driver st-accel-spi has no spi_device_id for st,lsm330dl-accel
+[    1.404315] SPI driver st-accel-spi has no spi_device_id for st,lsm330dlc-accel
+[    1.404336] ehci-platform 4300000.usb: USB 2.0 started, EHCI 1.00
+[    1.405071] hub 4-0:1.0: USB hub found
+[    1.405104] hub 4-0:1.0: 1 port detected
+[    1.408841] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    1.414518] SPI driver st-accel-spi has no spi_device_id for st,lis331dlh-accel
+[    1.422386] hub 3-0:1.0: USB hub found
+[    1.422519] SPI driver st-accel-spi has no spi_device_id for st,lsm330-accel
+[    1.423746] hub 3-0:1.0: 1 port detected
+[    1.424911] SPI driver st-accel-spi has no spi_device_id for st,lsm303agr-accel
+[    1.431292] hub 5-0:1.0: USB hub found
+[    1.435035] SPI driver st-accel-spi has no spi_device_id for st,lis2dh12-accel
+[    1.436238] hub 5-0:1.0: 1 port detected
+[    1.437383] SPI driver st-accel-spi has no spi_device_id for st,lng2dm-accel
+[    1.460081] mmc0: new HS400 MMC card at address 0001
+[    1.460853] SPI driver st-accel-spi has no spi_device_id for st,h3lis331dl-accel
+[    1.463010] mmcblk0: mmc0:0001 8GTF4R 7.28 GiB
+[    1.463288] SPI driver st-accel-spi has no spi_device_id for st,lis331dl-accel
+[    1.466924]  mmcblk0: p1 p2 p3 p4 p5 p6 p7 p8 p9 p10 p11 p12 p13 p14 p15 p16 p17 p18 p19 p20 p21 p22 p23 p24 p25 p26 p27
+[    1.473498] SPI driver st-accel-spi has no spi_device_id for st,lsm303c-accel
+[    1.478212] mmcblk0boot0: mmc0:0001 8GTF4R 4.00 MiB
+[    1.483597] sun50i-h713-lradc 2009800.lradc: H713 LRADC IIO registered (2 channels)
+[    1.486084] mmcblk0boot1: mmc0:0001 8GTF4R 4.00 MiB
+[    1.493425] NET: Registered PF_INET6 protocol family
+[    1.561913] ohci-platform 4101400.usb: Generic Platform OHCI controller
+[    1.563967] Segment Routing with IPv6
+[    1.564095] ohci-platform 4101400.usb: new USB bus registered, assigned bus number 6
+[    1.565294] In-situ OAM (IOAM) with IPv6
+[    1.566624] ohci-platform 4101400.usb: irq 253, io mem 0x04101400
+[    1.567722] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    1.627899] hub 6-0:1.0: USB hub found
+[    1.634432] NET: Registered PF_PACKET protocol family
+[    1.635133] hub 6-0:1.0: 1 port detected
+[    1.636344] can: controller area network core
+[    1.927368] NET: Registered PF_CAN protocol family
+[    1.933391] can: raw protocol
+[    1.937576] can: broadcast manager protocol
+[    1.942968] can: netlink gateway - max_hops=1
+[    1.948606] Key type dns_resolver registered
+[    1.960226] Loading compiled-in X.509 certificates
+[    1.979882] gpio gpiochip1: Static allocation of GPIO base is deprecated, use dynamic allocation.
+[    1.992270] sun50i-h713-r-pinctrl 7022000.pinctrl: initialized sunXi PIO driver
+[    2.000997] sunxi-mmc 4021000.mmc: Failed to create device link (0x180) with supplier 7022000.pinctrl for /soc/mmc@4021000/wifi@1
+[    2.014407] sun8i-pwm 7020c00.pwm: Allwinner H713 PWM controller registered (3 channels)
+[    2.024893] Registered IR keymap rc-hy200-projector
+[    2.031175] rc rc0: sunxi-ir as /devices/platform/soc/7040000.ir/rc/rc0
+[    2.039236] rc rc0: lirc_dev: driver sunxi-ir registered at minor = 0, raw IR receiver, no transmitter
+[    2.049980] input: sunxi-ir as /devices/platform/soc/7040000.ir/rc/rc0/input0
+[    2.058943] sunxi-ir 7040000.ir: h713-ir regs ctl=0xf3 rxctl=0x4 rxint=0x1313 rxsta=0x0 cir=0x2d04
+[    2.069339] sunxi-ir 7040000.ir: initialized sunXi IR driver
+[    2.083513] input: gpio-keys as /devices/platform/gpio-keys/input/input1
+[    2.091803] cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[    2.102190] Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
+[    2.109454] Loaded X.509 cert 'wens: 61c038651aabdcf94bd0ac7ff06c7248db18c600'
+[    2.117759] clk: Not disabling unused clocks
+[    2.123043] PM: genpd: Not disabling unused power domains
+[    2.129455] ALSA device list:
+[    2.133418]   #0: h713-audio-codec
+[    2.138056] check access for rdinit=/init failed: -2, ignoring
+[    2.138077] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2
+[    2.154967] cfg80211: failed to load regulatory.db
+[    2.246600] EXT4-fs (mmcblk0p26): recovery complete
+[    2.253533] EXT4-fs (mmcblk0p26): mounted filesystem 956d9901-0eb3-4d75-bb44-e37a46ba9f40 r/w with ordered data mode. Quota mode: disabled.
+[    2.267905] VFS: Mounted root (ext4 filesystem) on device 259:18.
+[    2.275824] devtmpfs: mounted
+[    2.280953] Freeing unused kernel memory: 896K
+[    2.286762] Run /sbin/init as init process
+[    2.292095]   with arguments:
+[    2.292103]     /sbin/init
+[    2.292110]   with environment:
+[    2.292116]     HOME=/
+[    2.292122]     TERM=linux
+[    2.492676] systemd[1]: System time advanced to built-in epoch: Mon 2026-04-13 19:38:05 UTC
+[    2.568564] systemd[1]: systemd 257.13-1~deb13u1 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +IPE +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBCRYPTSETUP_PLUGINS +LIBFDISK +PCRE2 +PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD +BPF_FRAMEWORK +BTF -XKBCOMMON -UTMP +SYSVINIT +LIBARCHIVE)
+[    2.611541] systemd[1]: Detected architecture arm64.
+[    2.634756] systemd[1]: Hostname set to <h713-arm64>.
+[    2.700983] systemd[1]: bpf-restrict-fs: BPF LSM hook not enabled in the kernel, BPF LSM not supported.
+[    3.273732] systemd[1]: Queued start job for default target graphical.target.
+[    3.299597] systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[    3.311026] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[    3.322688] systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[    3.334817] systemd[1]: Created slice user.slice - User and Session Slice.
+[    3.344682] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[    3.358663] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[    3.371983] systemd[1]: proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point skipped, unmet condition check ConditionPathExists=/proc/sys/fs/binfmt_misc
+[    3.391993] systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...
+[    3.401656] systemd[1]: Reached target paths.target - Path Units.
+[    3.410581] systemd[1]: Reached target remote-fs.target - Remote File Systems.
+[    3.420569] systemd[1]: Reached target slices.target - Slice Units.
+[    3.429636] systemd[1]: Reached target swap.target - Swaps.
+[    3.442531] systemd[1]: Listening on systemd-creds.socket - Credential Encryption/Decryption.
+[    3.454559] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[    3.466636] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[    3.478905] systemd[1]: Listening on systemd-journald.socket - Journal Sockets.
+[    3.489292] systemd[1]: systemd-pcrextend.socket - TPM PCR Measurements skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.502658] systemd[1]: systemd-pcrlock.socket - Make TPM PCR Policy skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.516149] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[    3.527560] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[    3.538826] systemd[1]: dev-hugepages.mount - Huge Pages File System skipped, unmet condition check ConditionPathExists=/sys/kernel/mm/hugepages
+[    3.553404] systemd[1]: dev-mqueue.mount - POSIX Message Queue File System skipped, unmet condition check ConditionPathExists=/proc/sys/fs/mqueue
+[    3.571033] systemd[1]: Mounting run-lock.mount - Legacy Locks Directory /run/lock...
+[    3.584972] systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...
+[    3.596836] systemd[1]: sys-kernel-tracing.mount - Kernel Trace File System skipped, unmet condition check ConditionPathExists=/sys/kernel/tracing
+[    3.612416] systemd[1]: tmp.mount: Directory /tmp to mount over is not empty, mounting anyway.
+[    3.627725] systemd[1]: Mounting tmp.mount - Temporary Directory /tmp...
+[    3.641535] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+[    3.657701] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+[    3.674804] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[    3.689270] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+[    3.705476] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+[    3.716824] systemd[1]: systemd-fsck-root.service - File System Check on Root Device skipped, unmet condition check ConditionPathIsReadWrite=!/
+[    3.731438] systemd[1]: systemd-hibernate-clear.service - Clear Stale Hibernate Storage Info skipped, unmet condition check ConditionPathExists=/sys/firmware/efi/efivars/HibernateLocation-8cf2644b-4b0b-428f-9387-6d876050dc67
+[    3.755128] systemd[1]: systemd-journald.service: unit configures an IP firewall, but the local system does not support BPF/cgroup firewalling.
+[    3.769467] systemd[1]: systemd-journald.service: (This warning is only shown for the first unit using IP firewalling.)
+[    3.786102] systemd[1]: Starting systemd-journald.service - Journal Service...
+[    3.801070] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[    3.812627] systemd[1]: systemd-pcrmachine.service - TPM PCR Machine ID Measurement skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.847880] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[    3.861063] systemd[1]: systemd-tpm2-setup-early.service - Early TPM SRK Setup skipped, unmet condition check ConditionSecurity=measured-uki
+[    3.875745] aic8800_bsp: loading out-of-tree module taints kernel.
+[    3.884824] aicbsp_init
+[    3.886863] systemd[1]: Starting systemd-udev-load-credentials.service - Load udev Rules from Credentials...
+[    3.888855] RELEASE_DATE:2026_0123_5f7be68d
+[    3.906006] aicbsp_resv_mem_init 
+[    3.916890] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[    3.929391] aicbsp: aicbsp_set_subsys, subsys: AIC_WIFI, state to: 1
+[    3.936216] systemd[1]: Mounted run-lock.mount - Legacy Locks Directory /run/lock.
+[    3.937296] aicbsp: aicbsp_set_subsys, power state change to 1 dure to AIC_WIFI
+[    3.947426] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40.
+[    3.947693] aicbsp: aicbsp_platform_power_on
+[    3.954519] systemd-journald[109]: Collecting audit messages is disabled.
+[    3.958016] aicbsp: wlan_regon GPIO 385 configured as output
+[    3.984874] aicbsp: 24MHz DCXO output already enabled (bootloader)
+[    3.992488] aicbsp: found mmc_host mmc1
+[    3.992497] aicbsp: disabled MMC_CAP_UHS_DDR50 for mmc1
+[    4.008723] systemd[1]: Mounted sys-kernel-debug.mount - Kernel Debug File System.
+[    4.020187] systemd[1]: Mounted tmp.mount - Temporary Directory /tmp.
+[    4.030430] systemd[1]: Started systemd-journald.service - Journal Service.
+[    4.042515] aicbsp: wlan_regon PM1 set to 0
+[    4.098064] aicbsp: wlan_regon PM1 set to 1
+[    4.153513] aicbsp: mmc_detect_change on mmc1 host=ffff000001cec000 mmc_hostname=mmc1
+[    4.162563] aicbsp: mmc_detect_change returned
+[    4.318090] EXT4-fs (mmcblk0p26): resizing filesystem from 720896 to 720896 blocks
+[    4.336743] systemd-journald[109]: Received client request to flush runtime journal.
+[    4.368651] systemd-journald[109]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/system.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[    4.386556] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    4.397220] systemd-journald[109]: Rotating system journal.
+[    4.418068] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    4.432140] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=1 DRV=00010000 NTSR=81710000
+[    4.465924] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=0 width=4 DRV=00010000 NTSR=81710000
+[    4.477870] sunxi-mmc 4021000.mmc: v5p3x delay: rate=400000 timing=6 width=4 DRV=00010000 NTSR=81710000
+[    4.488516] sunxi-mmc 4021000.mmc: v5p3x delay: rate=50000000 timing=6 width=4 DRV=00030000 NTSR=81710110
+[    4.500422] mmc1: new UHS-I speed SDR104 SDIO card at address 6721
+[    4.524074] aicbsp: aicbsp_sdio_probe:1 vid:0xC8A1  did:0x0082
+[    4.531287] aicbsp: aicbsp_sdio_probe:2 vid:0xC8A1  did:0x0182
+[    4.538279] aicbsp: aicbsp_sdio_probe after replace:1
+[    4.544439] aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    4.551862] aicbsp: aicwf_sdio_reg_init
+[    4.570349] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_table_8800d80_u02.bin  
+[    4.570383] aicbsp: sdio_err:<aicwf_sdio_hal_irqhandler,1775>: Interrupt but no data
+[    4.601179] file md5:0c9bf9c9c10f7a90a22a4c35fa58c967
+[    4.607890] rwnx_plat_bin_fw_upload_android
+[    4.613314] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_adid_8800d80_u02.bin  
+[    4.629969] file md5:f546881a81b960d89a672578eb45a809
+[    4.637146] rwnx_plat_bin_fw_upload_android
+[    4.642521] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_8800d80_u02.bin  
+[    4.655229] file md5:35d137b8a76daaeb4f5034df8e15bcde
+[    4.681100] aicbt_patch_table_load bt btmode[3]:5 
+[    4.687231] aicbt_patch_table_load bt uart_baud[3]:1500000 
+[    4.694106] aicbt_patch_table_load bt uart_flowctrl[3]:1 
+[    4.700766] aicbt_patch_table_load bt lpm_enable[3]:0 
+[    4.707104] aicbt_patch_table_load bt tx_pwr[3]:28463 
+[    4.816601] aicbsp: bt patch version: - Mar 07 2024 14:29:05 - git f94a3e4
+[    4.824878] rwnx_plat_bin_fw_upload_android
+[    4.830360] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fmacfw_8800d80_h_u02.bin  
+[    4.837347] file md5:5f3302e5557d8b5fc1526d30d2b20899
+[    4.949144] rd_version_val=06090101
+[    4.976292] aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    4.983764] aicsdio: aicwf_sdio_reg_init
+[    4.993926] aicbsp: aicbsp_resv_mem_alloc_skb, alloc resv_mem_txdata succuss, id: 0, size: 98304
+[    5.006217] aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[    5.014961] tcp_ack_init 
+[    5.021063] AICWFDBG(LOGERROR)	invalid cmd: loss_enable
+[    5.027582] AICWFDBG(LOGERROR)	invalid cmd: loss_value
+[    6.061853] random: crng init done
+[    6.464097] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[    6.471320] rwnx_reg_notifier Enter
+[    6.477228] ieee80211 phy0: 
+               *******************************************************
+               ** CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES **
+               *******************************************************
+[    6.515860] get_txpwr_max:txpwr_max:18 
+[    6.523698] aic_bluetooth_mod_init
+[    6.528709] -->rfkill_bluetooth_init
+[    6.533626] bluetooth_set_power: start_block=1
+[    6.539261] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 0
+[    6.547166] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    6.555660] bluetooth_set_power: end_block=1
+[    6.561046] <--rfkill_bluetooth_init
+[    6.569801] panfrost 1800000.gpu: clock rate = 600000000
+[    6.576341] panfrost 1800000.gpu: bus_clock rate = 100000000
+[    6.584849] panfrost 1800000.gpu: mali-g31 id 0x7093 major 0x0 minor 0x0 status 0x0
+[    6.593728] panfrost 1800000.gpu: features: 00000000,000027f7, issues: 00000000,00000400
+[    6.602910] panfrost 1800000.gpu: Features: L2:0x07100206 Shader:0x00000000 Tiler:0x00000209 Mem:0x1 MMU:0x00002821 AS:0xff JS:0x7
+[    6.615733] panfrost 1800000.gpu: shader_present=0x1 l2_present=0x1
+[    6.625495] [drm] Initialized panfrost 1.4.0 for 1800000.gpu on minor 1
+[    6.657447] cedrus 1c0e000.video-codec: Device registered as /dev/video0
+[    6.666911] hantro-vpu 1c0d000.av1: registered allwinner,sun50i-h713-av1-dec as /dev/video1
+[    6.681458] scanout-dmabuf: carveout 0x000000006c100000 + 8192 KiB
+[    6.902656] hy310-cpu-comm 3003000.cpu-comm: shared memory: 0x4e300000 size 0x500000
+[    6.913105] cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff800081d07000 size=0x500000
+[    6.923262] cpu_comm: HW mapped \xe2\x80\x94 MIPS ctrl @ 000000002df85b84, msgbox @ 0000000017d8d178 (version 0x00020000, tx fifo 0, rx fifo 0)
+[    6.936518] cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor running
+[    6.947266] cpu_comm: adopting the live shared region -- not reinitialising it
+[    6.955613] cpu_comm: wrote ShMemAddr=0x4e300000 to MIPS share regs
+[    6.990325] cpu_comm: /dev/cpu_comm_fd registered (major=241)
+[    7.004814] cpu_comm: MIPS elog BEFORE: mode=0 en2=0 wp2=0
+[    7.011505] cpu_comm: MIPS elog staying on Mode 1 (ring buffer) (2MB buffer)
+[    7.033392] cpu_comm: InitCommSeqMem(0): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[    7.042177] cpu_comm: InitCommSeqMem(1): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[    7.050914] cpu_comm: adopted shared memory: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[    7.060902] cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+[    7.069472] cpu_comm: msgbox RX by hrtimer poll (250 us busy / 4 ms idle) (IRQ 334 available, not requested)
+[    7.080520] cpu_comm: CPU ARM app ready
+[    7.085562] cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[    7.094528] cpu_comm: MIPS app-ready assumed (MIPS READY seen)
+[    7.106739] bluetooth_set_power: start_block=0
+[    7.112345] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    7.120240] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    7.128757] bluetooth_set_power: end_block=0
+[    7.625861] cpu_comm: POST-WAIT: ARM=0x5 MIPS=0x5
+[    7.631750] cpu_comm: auto-registered 18/18 MIPS VP routes
+[    7.638292] cpu_comm: channel row 0 live: chan=0x0000 pid=0x8b8f275c key=0xb8f275c0
+[    7.646967] cpu_comm: addressing CALLs to channel row 0 (chan=0x0 pid=0x8b8f275c)
+[    7.655491] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[    7.661371] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[    7.667984] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[    7.675299] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[    8.126218] bluetooth_set_power: start_block=0
+[    8.131872] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    8.139998] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    8.140017] bluetooth_set_power: end_block=0
+[    8.178840] Bluetooth: HCI UART driver ver 2.3
+[    8.184456] Bluetooth: HCI UART protocol H4 registered
+[    8.366734] get_txpwr_max:txpwr_max:18 
+[    8.371969] get_txpwr_max:txpwr_max:18 
+[    8.377663] get_txpwr_max:txpwr_max:18 
+[    8.377735] change_if: 2 to 3, 8, 2
+[    8.377745] get_txpwr_max:txpwr_max:18 
+[    8.378795] get_txpwr_max:txpwr_max:18 
+[    8.887111] get_txpwr_max:txpwr_max:18 
+[    8.893743] chan.flags 0 
+[    9.226053] aicwf_sdio mmc1:6721:1 wlan0: AP started: ch=0, bcmc_idx=32 channel=2437 bw=2
+[    9.419395] Bluetooth: MGMT ver 1.23
+[   11.293763] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[   11.324780] Bluetooth: MGMT ver 1.23
+[   11.619133] systemd-journald[109]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   11.644742] systemd-journald[109]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[   11.676082] systemd-journald[109]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   62.468531] h713-hdmi-power: domain 1 power event 2
+[   62.474610] h713-hdmi-power: domain 1 power event 3
+[   62.480590] h713-hdmi-power: domain 1 resumed
+[   62.486108] h713-hdmi-power: domain 2 resumed
+[   62.491526] h713-hdmi-power: 2 domains and 0 receiver clocks held on; no receiver MMIO
+[   63.055778] h713-hdmi-power: enabled clock 0 (bus-tvcap)
+[   65.452404] h713-hdmi-power: enabled clock 1 (bus-cap-300m)
+[   67.915551] h713-hdmi-power: enabled clock 2 (vincap-dma)
+[   70.368640] h713-hdmi-power: enabled clock 3 (tvfe-1296m)
+[   72.712039] h713-edid-clock-hold h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[   83.973843] h713-hdmi-tvfe-hold: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[   83.984404] h713-hdmi-tvfe-hold: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[   84.009484] h713-hdmi-tvfe-hold: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[   85.803680] h713-hdmi-audio: clock=bus-hdmi-audio inherited_on=1 enabled_by_driver=0 rate=100000000
+[   85.814098] h713-hdmi-audio: clock=hdmi-audio inherited_on=1 enabled_by_driver=0 rate=1152000000
+[   85.824009] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000
+[   85.833723] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[   85.843514] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[   85.853332] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[   85.862008] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[   85.871890] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[   85.880439] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[   85.892471] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[   85.901464] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[   85.915458] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[   85.924172] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   85.935301] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   85.949161] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   85.957720] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   85.969926] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   85.980358] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   85.990473] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   86.006997] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph must be prepared before recording
+[   86.039143] h713-hdmi-dsp-probe: status=00000000; stock lock mapped; no command issued
+[   86.049659] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000000
+[   86.058237] h713-hdmi-dsp-probe: device=0 word=80ff value=0000 response=00000000 status=00000020
+[   86.068204] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[   86.075610] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[   86.084063] h713-hdmi-dsp-probe: device=1 word=80ff value=0000 response=00000000 status=00000120
+[   86.094054] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[   94.414714] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[   94.423339] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[   94.431763] h713-hdmi-dsp-probe: beginning fixed stock init/724-pair volatile patch; physical cold boot required for teardown
+[   94.444112] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[   94.453508] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[   94.461828] h713-hdmi-dsp-probe: stock-init word=00ee before=0200 after=0180 expected=0180
+[   94.471126] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[   94.480502] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[   94.488788] h713-hdmi-dsp-probe: stock-init word=8034 before=0000 after=0010 expected=0010
+[   94.498100] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[   94.507457] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[   94.515715] h713-hdmi-dsp-probe: stock-init word=8017 before=0000 after=0001 expected=0001
+[   95.438236] h713-hdmi-dsp-probe: requesting device=0 word=fff7 status=00000120
+[   95.447731] h713-hdmi-dsp-probe: patch-word fff7=0000
+[   95.453807] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[   95.462047] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[   95.470254] h713-hdmi-dsp-probe: stock-patch pairs=724 version0=0001 version1=0001
+[   95.478798] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  114.891206] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  114.899567] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  114.907802] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  114.915985] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  114.924142] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  114.932296] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  114.940442] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  114.948600] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  114.956729] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  114.964839] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  114.972917] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  114.980944] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  114.988935] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  114.996928] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  115.004869] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  115.012823] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  115.020736] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  115.028625] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  115.036491] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  115.044348] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  115.052168] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  115.059998] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  115.067800] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  115.075591] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  115.084471] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  115.092223] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  115.102126] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  115.109933] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  115.119845] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  115.127621] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  115.137475] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  115.145272] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  115.155201] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  115.162987] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  115.172919] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  115.180702] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  115.190627] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  115.198414] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  115.208352] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  115.216165] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  115.226116] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  115.233905] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  115.243866] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  115.251726] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  115.261706] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  115.269557] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  115.279555] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  115.287412] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  115.297424] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  115.305296] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  115.315345] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  115.323249] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=0
+[  115.333312] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  115.341245] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=0
+[  115.351354] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  115.359328] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=0
+[  115.369456] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  115.377472] h713-hdmi-dsp-probe: graph word=8102 value=0086 saved=0000 mask=00ff restore=0
+[  115.387634] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  115.395641] h713-hdmi-dsp-probe: graph word=8103 value=0087 saved=0000 mask=00ff restore=0
+[  115.405812] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  115.413876] h713-hdmi-dsp-probe: graph word=0102 value=2000 saved=0000 mask=ff00 restore=0
+[  115.424084] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  115.432190] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[  115.442426] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  115.450516] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[  115.460782] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  115.468919] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[  115.478111] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[  115.486517] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  115.494609] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  115.502782] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[  115.513081] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  115.521247] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[  115.531559] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  115.539723] h713-hdmi-dsp-probe: graph word=0103 value=0000 saved=0000 mask=00ff restore=1
+[  115.550026] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  115.558183] h713-hdmi-dsp-probe: graph word=0102 value=0000 saved=0000 mask=ff00 restore=1
+[  115.568480] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  115.576635] h713-hdmi-dsp-probe: graph word=8103 value=0000 saved=0000 mask=00ff restore=1
+[  115.586938] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  115.595084] h713-hdmi-dsp-probe: graph word=8102 value=0000 saved=0000 mask=00ff restore=1
+[  115.605382] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  115.613554] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=1
+[  115.623876] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  115.632030] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=1
+[  115.642343] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  115.650489] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=1
+[  115.660789] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  115.668949] h713-hdmi-dsp-probe: graph word=8017 value=0001 saved=0001 mask=0001 restore=1
+[  115.679266] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  115.687421] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=1
+[  115.697718] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  115.705888] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=1
+[  115.716189] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  115.724333] h713-hdmi-dsp-probe: graph word=0012 value=0000 saved=0000 mask=a3ff restore=1
+[  115.734629] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  115.742778] h713-hdmi-dsp-probe: graph word=0130 value=0000 saved=0000 mask=ffff restore=1
+[  115.753073] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  115.761257] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  115.771582] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  115.779768] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  115.790090] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  115.798275] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  115.808580] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  115.816745] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  115.827050] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  115.835213] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  115.845475] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  115.853642] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  115.863958] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  115.872154] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  115.882485] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  115.890636] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  115.899824] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  115.908234] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  115.924133] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  115.932381] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  115.940547] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  115.948682] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  115.956818] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  115.964982] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  115.973091] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  115.981195] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  115.989268] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  115.997312] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  116.005355] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  116.013380] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  116.021399] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  116.029410] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  116.037391] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  116.045348] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  116.053336] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  116.061293] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  116.069235] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  116.077176] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  116.085076] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  116.092971] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  116.100832] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  116.108685] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  116.117621] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  116.125436] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  116.135423] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  116.143237] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  116.153202] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  116.161018] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  116.170997] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  116.178845] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  116.188820] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  116.196630] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  116.206599] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  116.214421] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  116.224381] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  116.232190] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  116.242152] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  116.249957] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  116.259925] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  116.267747] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  116.277726] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  116.285559] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  116.295549] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  116.303367] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  116.313346] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  116.321193] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  116.331209] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  116.339118] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  116.349169] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  116.357093] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=0
+[  116.367161] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  116.375108] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=0
+[  116.385209] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  116.393168] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=0
+[  116.403297] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  116.411278] h713-hdmi-dsp-probe: graph word=8102 value=0086 saved=0000 mask=00ff restore=0
+[  116.421418] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  116.429449] h713-hdmi-dsp-probe: graph word=8103 value=0087 saved=0000 mask=00ff restore=0
+[  116.439630] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  116.447682] h713-hdmi-dsp-probe: graph word=0102 value=2000 saved=0000 mask=ff00 restore=0
+[  116.457835] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  116.465940] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[  116.476165] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  116.484272] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[  116.494545] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  116.502672] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[  116.511845] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[  116.520251] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  116.528329] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  116.536487] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[  116.546789] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  116.554948] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[  116.565244] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  116.573412] h713-hdmi-dsp-probe: graph word=0103 value=0000 saved=0000 mask=00ff restore=1
+[  116.583732] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  116.591922] h713-hdmi-dsp-probe: graph word=0102 value=0000 saved=0000 mask=ff00 restore=1
+[  116.602248] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  116.610404] h713-hdmi-dsp-probe: graph word=8103 value=0000 saved=0000 mask=00ff restore=1
+[  116.620696] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  116.628862] h713-hdmi-dsp-probe: graph word=8102 value=0000 saved=0000 mask=00ff restore=1
+[  116.639166] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  116.647331] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=1
+[  116.657629] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  116.665783] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=1
+[  116.676100] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  116.684253] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=1
+[  116.694559] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  116.702733] h713-hdmi-dsp-probe: graph word=8017 value=0001 saved=0001 mask=0001 restore=1
+[  116.713033] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  116.721189] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=1
+[  116.731487] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  116.739626] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=1
+[  116.749839] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  116.757998] h713-hdmi-dsp-probe: graph word=0012 value=0000 saved=0000 mask=a3ff restore=1
+[  116.768293] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  116.776442] h713-hdmi-dsp-probe: graph word=0130 value=0000 saved=0000 mask=ffff restore=1
+[  116.786759] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  116.794918] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  116.805215] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  116.813374] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  116.823682] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  116.831848] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  116.842158] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  116.850303] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  116.860597] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  116.868762] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  116.879080] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  116.887241] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  116.897476] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  116.905651] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  116.915962] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  116.924124] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  116.933320] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  116.941731] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  116.957703] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  116.965968] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  116.974114] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  116.982266] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  116.990388] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  116.998487] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  117.006588] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  117.014677] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  117.022736] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  117.030792] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  117.038842] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  117.046868] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  117.054861] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  117.062844] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  117.070829] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  117.078791] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  117.086739] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  117.094694] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  117.102617] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  117.110567] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  117.119595] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  117.127898] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  117.136359] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  117.144227] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  117.153171] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  117.160983] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  117.170953] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  117.178770] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  117.188756] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  117.196613] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  117.206588] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  117.214413] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  117.224372] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  117.232190] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  117.242161] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  117.249976] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  117.259938] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  117.267748] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  117.277709] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  117.285543] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  117.295532] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  117.303387] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  117.313372] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  117.321215] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  117.331200] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  117.340038] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  117.351056] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  117.358956] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  117.369017] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  117.376894] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  117.386930] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  117.394831] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=0
+[  117.404907] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  117.412847] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=0
+[  117.422952] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  117.430908] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=0
+[  117.441023] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  117.449003] h713-hdmi-dsp-probe: graph word=8102 value=0086 saved=0000 mask=00ff restore=0
+[  117.459152] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  117.467185] h713-hdmi-dsp-probe: graph word=8103 value=0087 saved=0000 mask=00ff restore=0
+[  117.477367] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  117.485419] h713-hdmi-dsp-probe: graph word=0102 value=2000 saved=0000 mask=ff00 restore=0
+[  117.495628] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  117.503718] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[  117.513947] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  117.522058] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[  117.532312] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  117.540475] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[  117.549653] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[  117.558063] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  117.567219] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  117.576968] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[  117.588018] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  117.596174] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[  117.606482] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  117.614636] h713-hdmi-dsp-probe: graph word=0103 value=0000 saved=0000 mask=00ff restore=1
+[  117.624929] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  117.633090] h713-hdmi-dsp-probe: graph word=0102 value=0000 saved=0000 mask=ff00 restore=1
+[  117.643397] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  117.651561] h713-hdmi-dsp-probe: graph word=8103 value=0000 saved=0000 mask=00ff restore=1
+[  117.661834] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  117.669984] h713-hdmi-dsp-probe: graph word=8102 value=0000 saved=0000 mask=00ff restore=1
+[  117.680277] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  117.688425] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=1
+[  117.698731] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  117.706904] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=1
+[  117.717200] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  117.725370] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=1
+[  117.735673] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  117.743815] h713-hdmi-dsp-probe: graph word=8017 value=0001 saved=0001 mask=0001 restore=1
+[  117.754112] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  117.762271] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=1
+[  117.772570] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  117.780731] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=1
+[  117.791025] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  117.799178] h713-hdmi-dsp-probe: graph word=0012 value=0000 saved=0000 mask=a3ff restore=1
+[  117.809495] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  117.817679] h713-hdmi-dsp-probe: graph word=0130 value=0000 saved=0000 mask=ffff restore=1
+[  117.827993] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  117.836151] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  117.846451] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  117.854602] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  117.864895] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  117.873078] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  117.883400] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  117.891546] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  117.901834] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  117.909987] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  117.920287] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  117.928462] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  117.938772] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  117.946926] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  117.957222] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  117.965372] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  117.974567] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  117.982972] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  117.998906] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  118.007175] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  118.015341] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  118.023472] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  118.031585] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  118.039679] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  118.047797] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  118.055920] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  118.063985] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  118.072030] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  118.080077] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  118.088092] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  118.096099] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  118.104081] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  118.112050] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  118.120017] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  118.127982] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  118.135918] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  118.143843] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  118.151744] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  118.159637] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  118.167526] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  118.175380] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  118.183231] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  118.192166] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  118.199983] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  118.209948] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  118.217762] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  118.227737] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  118.235558] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  118.245475] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  118.253312] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  118.263279] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  118.271093] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  118.281068] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  118.288906] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  118.298881] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  118.306699] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  118.316658] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  118.324499] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  118.334471] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  118.342284] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  118.352239] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  118.360053] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  118.370026] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  118.377841] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  118.387819] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  118.395670] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  118.405673] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  118.413546] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  118.423589] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  118.431527] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=0
+[  118.441600] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  118.449530] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=0
+[  118.459624] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  118.467574] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=0
+[  118.477690] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  118.485669] h713-hdmi-dsp-probe: graph word=8102 value=0086 saved=0000 mask=00ff restore=0
+[  118.495828] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  118.503833] h713-hdmi-dsp-probe: graph word=8103 value=0087 saved=0000 mask=00ff restore=0
+[  118.514003] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  118.522051] h713-hdmi-dsp-probe: graph word=0102 value=2000 saved=0000 mask=ff00 restore=0
+[  118.532254] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  118.540344] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[  118.550575] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  118.558661] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[  118.568912] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  118.577046] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[  118.586232] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[  118.594637] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  118.603768] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  118.612510] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[  118.623420] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  118.631591] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[  118.641835] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  118.650005] h713-hdmi-dsp-probe: graph word=0103 value=0000 saved=0000 mask=00ff restore=1
+[  118.660298] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  118.668443] h713-hdmi-dsp-probe: graph word=0102 value=0000 saved=0000 mask=ff00 restore=1
+[  118.678744] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  118.686886] h713-hdmi-dsp-probe: graph word=8103 value=0000 saved=0000 mask=00ff restore=1
+[  118.697177] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  118.705326] h713-hdmi-dsp-probe: graph word=8102 value=0000 saved=0000 mask=00ff restore=1
+[  118.715623] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  118.723773] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=1
+[  118.734071] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  118.742232] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=1
+[  118.752534] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  118.760710] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=1
+[  118.771011] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  118.779153] h713-hdmi-dsp-probe: graph word=8017 value=0001 saved=0001 mask=0001 restore=1
+[  118.789470] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  118.797621] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=1
+[  118.807926] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  118.816096] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=1
+[  118.826420] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  118.834577] h713-hdmi-dsp-probe: graph word=0012 value=0000 saved=0000 mask=a3ff restore=1
+[  118.844879] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  118.853061] h713-hdmi-dsp-probe: graph word=0130 value=0000 saved=0000 mask=ffff restore=1
+[  118.863377] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  118.871534] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  118.881836] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  118.889984] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  118.900284] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  118.908454] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  118.918755] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  118.926901] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  118.937201] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  118.945384] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  118.955708] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  118.963883] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  118.974187] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  118.982350] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  118.992646] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  119.000797] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  119.010006] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  119.018417] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  119.034596] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  119.042849] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  119.050993] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  119.059176] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  119.067359] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  119.075468] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  119.083565] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  119.091633] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  119.099718] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  119.107776] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  119.115811] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  119.123820] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  119.131814] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  119.139823] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  119.147827] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  119.155794] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  119.163742] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  119.171670] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  119.179581] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  119.187502] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  119.195415] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  119.203284] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  119.211165] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  119.219024] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  119.227987] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  119.235824] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  119.245794] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  119.253638] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  119.263610] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  119.271434] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  119.281401] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  119.289245] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  119.299223] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  119.307060] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  119.317030] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  119.324845] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  119.334808] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  119.342668] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  119.352643] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  119.360465] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  119.370430] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  119.378266] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  119.388240] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  119.396072] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  119.406053] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  119.413906] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  119.423890] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  119.431744] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  119.441760] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  119.449645] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  119.459696] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  119.467619] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=0
+[  119.477694] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  119.485637] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=0
+[  119.495740] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  119.503692] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=0
+[  119.513809] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  119.521808] h713-hdmi-dsp-probe: graph word=8102 value=0086 saved=0000 mask=00ff restore=0
+[  119.531975] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  119.539997] h713-hdmi-dsp-probe: graph word=8103 value=0087 saved=0000 mask=00ff restore=0
+[  119.550180] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  119.558229] h713-hdmi-dsp-probe: graph word=0102 value=2000 saved=0000 mask=ff00 restore=0
+[  119.568432] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  119.576523] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[  119.586759] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  119.594845] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[  119.605104] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  119.613230] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[  119.622412] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[  119.630817] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  119.638923] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  119.647109] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[  119.657412] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  119.665592] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[  119.675907] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  119.684088] h713-hdmi-dsp-probe: graph word=0103 value=0000 saved=0000 mask=00ff restore=1
+[  119.694399] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  119.702556] h713-hdmi-dsp-probe: graph word=0102 value=0000 saved=0000 mask=ff00 restore=1
+[  119.712858] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  119.721024] h713-hdmi-dsp-probe: graph word=8103 value=0000 saved=0000 mask=00ff restore=1
+[  119.731333] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  119.739486] h713-hdmi-dsp-probe: graph word=8102 value=0000 saved=0000 mask=00ff restore=1
+[  119.749802] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  119.757973] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=1
+[  119.768270] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  119.776423] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=1
+[  119.786760] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  119.794936] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=1
+[  119.805239] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  119.813393] h713-hdmi-dsp-probe: graph word=8017 value=0001 saved=0001 mask=0001 restore=1
+[  119.823702] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  119.831849] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=1
+[  119.842151] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  119.850435] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=1
+[  119.860759] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  119.868928] h713-hdmi-dsp-probe: graph word=0012 value=0000 saved=0000 mask=a3ff restore=1
+[  119.879243] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  119.887390] h713-hdmi-dsp-probe: graph word=0130 value=0000 saved=0000 mask=ffff restore=1
+[  119.897692] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  119.905872] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  119.916180] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  119.924336] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  119.934634] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  119.942782] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  119.953100] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  119.961323] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  119.971651] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  119.979827] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  119.990138] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  119.998288] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  120.008579] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  120.016721] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  120.027020] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  120.035166] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  120.044360] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  120.052777] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  120.068908] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  120.077197] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  120.085353] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  120.093483] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  120.101596] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  120.109689] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  120.117775] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  120.125847] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  120.133892] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  120.141923] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  120.149937] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  120.157944] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  120.165937] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  120.173968] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  120.182008] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  120.189984] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  120.197930] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  120.205855] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  120.213770] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  120.221722] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  120.229650] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  120.237535] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  120.245410] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  120.253278] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  120.262226] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  120.270062] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  120.280026] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  120.287841] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  120.297804] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  120.305620] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  120.315587] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  120.323432] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  120.333404] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  120.341217] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  120.351177] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  120.358984] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  120.368958] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  120.376775] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  120.386738] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  120.394551] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  120.404506] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  120.412316] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  120.422277] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  120.430082] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  120.440040] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  120.447871] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  120.457836] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  120.465671] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  120.475703] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  120.483587] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  120.493626] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  120.501532] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=0
+[  120.511596] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  120.519537] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=0
+[  120.529623] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  120.537599] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=0
+[  120.547722] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  120.555703] h713-hdmi-dsp-probe: graph word=8102 value=0086 saved=0000 mask=00ff restore=0
+[  120.565834] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  120.573844] h713-hdmi-dsp-probe: graph word=8103 value=0087 saved=0000 mask=00ff restore=0
+[  120.584014] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  120.592066] h713-hdmi-dsp-probe: graph word=0102 value=2000 saved=0000 mask=ff00 restore=0
+[  120.602266] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  120.610337] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[  120.620562] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  120.628650] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[  120.638909] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  120.647051] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[  120.656228] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[  120.664634] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  120.672723] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  120.680917] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[  120.691234] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  120.699388] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[  120.709689] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  120.717842] h713-hdmi-dsp-probe: graph word=0103 value=0000 saved=0000 mask=00ff restore=1
+[  120.728132] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  120.736296] h713-hdmi-dsp-probe: graph word=0102 value=0000 saved=0000 mask=ff00 restore=1
+[  120.746602] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  120.754747] h713-hdmi-dsp-probe: graph word=8103 value=0000 saved=0000 mask=00ff restore=1
+[  120.765036] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  120.773185] h713-hdmi-dsp-probe: graph word=8102 value=0000 saved=0000 mask=00ff restore=1
+[  120.783494] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  120.791649] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=1
+[  120.801951] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  120.810094] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=1
+[  120.820385] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  120.828543] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=1
+[  120.838842] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  120.847014] h713-hdmi-dsp-probe: graph word=8017 value=0001 saved=0001 mask=0001 restore=1
+[  120.857312] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  120.865484] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=1
+[  120.875788] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  120.883956] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=1
+[  120.894262] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  120.902411] h713-hdmi-dsp-probe: graph word=0012 value=0000 saved=0000 mask=a3ff restore=1
+[  120.912700] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  120.920845] h713-hdmi-dsp-probe: graph word=0130 value=0000 saved=0000 mask=ffff restore=1
+[  120.931141] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  120.939292] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  120.949588] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  120.957738] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  120.968039] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  120.976186] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  120.986491] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  120.994662] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  121.004970] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  121.013149] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  121.023455] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  121.031607] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  121.041833] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  121.049979] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  121.060271] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  121.068423] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  121.077630] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  121.086055] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  121.102160] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  121.110418] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  121.118568] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  121.126718] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  121.134839] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  121.142946] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  121.151027] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  121.159106] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  121.167152] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  121.175191] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  121.183216] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  121.191226] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  121.199218] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  121.207200] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  121.215170] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  121.223151] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  121.231108] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  121.239040] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  121.246973] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  121.254871] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  121.262770] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  121.270662] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  121.278524] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  121.286363] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  121.295313] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  121.303189] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  121.313156] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  121.320966] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  121.330930] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  121.338738] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  121.348701] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  121.356508] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  121.366469] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  121.374276] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  121.384231] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  121.392069] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  121.402036] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  121.409847] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  121.419801] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  121.427627] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  121.437596] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  121.445414] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  121.455375] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  121.463178] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  121.473136] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  121.480960] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  121.490939] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  121.498787] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  121.508814] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  121.516693] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  121.526722] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  121.534613] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=0
+[  121.544672] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  121.552618] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=0
+[  121.562721] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  121.570682] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=0
+[  121.580793] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  121.588791] h713-hdmi-dsp-probe: graph word=8102 value=0086 saved=0000 mask=00ff restore=0
+[  121.598943] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  121.606952] h713-hdmi-dsp-probe: graph word=8103 value=0087 saved=0000 mask=00ff restore=0
+[  121.617128] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  121.625167] h713-hdmi-dsp-probe: graph word=0102 value=2000 saved=0000 mask=ff00 restore=0
+[  121.635371] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  121.643434] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[  121.653669] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  121.661788] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[  121.672057] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  121.680189] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[  121.689367] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[  121.697775] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  121.705839] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  121.714035] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[  121.724334] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  121.732489] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[  121.742783] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  121.750942] h713-hdmi-dsp-probe: graph word=0103 value=0000 saved=0000 mask=00ff restore=1
+[  121.761238] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  121.769408] h713-hdmi-dsp-probe: graph word=0102 value=0000 saved=0000 mask=ff00 restore=1
+[  121.779707] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  121.787852] h713-hdmi-dsp-probe: graph word=8103 value=0000 saved=0000 mask=00ff restore=1
+[  121.798151] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  121.806317] h713-hdmi-dsp-probe: graph word=8102 value=0000 saved=0000 mask=00ff restore=1
+[  121.816612] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  121.824780] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=1
+[  121.835080] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  121.843242] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=1
+[  121.853540] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  121.861708] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=1
+[  121.872019] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  121.880180] h713-hdmi-dsp-probe: graph word=8017 value=0001 saved=0001 mask=0001 restore=1
+[  121.890479] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  121.898621] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=1
+[  121.908924] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  121.917124] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=1
+[  121.927442] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  121.935589] h713-hdmi-dsp-probe: graph word=0012 value=0000 saved=0000 mask=a3ff restore=1
+[  121.945835] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  121.953978] h713-hdmi-dsp-probe: graph word=0130 value=0000 saved=0000 mask=ffff restore=1
+[  121.964270] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  121.972414] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  121.982708] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  121.990852] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  122.001138] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  122.009330] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  122.019649] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  122.027824] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  122.038136] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  122.046299] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  122.056599] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  122.064759] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  122.075056] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  122.083199] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  122.093496] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  122.101652] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  122.110870] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  122.119288] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  122.135161] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  122.143429] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  122.151584] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  122.159741] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  122.167883] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  122.175998] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  122.184090] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  122.192155] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  122.200210] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  122.208298] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  122.216333] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  122.224345] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  122.232347] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  122.240344] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  122.248330] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  122.256282] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  122.264235] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  122.272162] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  122.280069] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  122.287968] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  122.295867] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  122.303736] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  122.311596] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  122.319447] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  122.328408] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  122.336268] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  122.346235] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  122.354042] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  122.364000] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  122.371809] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  122.381773] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  122.389584] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  122.399545] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  122.407367] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  122.417339] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  122.425176] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  122.435150] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  122.442978] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  122.452938] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  122.460746] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  122.470703] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  122.478507] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  122.488463] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  122.496267] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  122.506226] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  122.514036] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  122.524011] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  122.531863] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  122.541834] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  122.549696] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  122.559732] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  122.567630] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=0
+[  122.577687] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  122.585630] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=0
+[  122.595725] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  122.603689] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=0
+[  122.613805] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  122.621797] h713-hdmi-dsp-probe: graph word=8102 value=0086 saved=0000 mask=00ff restore=0
+[  122.631951] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  122.639980] h713-hdmi-dsp-probe: graph word=8103 value=0087 saved=0000 mask=00ff restore=0
+[  122.650176] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  122.658230] h713-hdmi-dsp-probe: graph word=0102 value=2000 saved=0000 mask=ff00 restore=0
+[  122.668426] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  122.676483] h713-hdmi-dsp-probe: graph word=0103 value=0020 saved=0000 mask=00ff restore=0
+[  122.686709] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  122.694795] h713-hdmi-dsp-probe: graph word=0059 value=0000 saved=8000 mask=ffc0 restore=0
+[  122.705047] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  122.713184] h713-hdmi-dsp-probe: graph word=005a value=0000 saved=8000 mask=ffc0 restore=0
+[  122.722367] h713-hdmi-dsp-probe: fixed stock graph comparison=1 words=22 verified
+[  122.730783] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  122.738864] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  122.747071] h713-hdmi-dsp-probe: graph word=005a value=8000 saved=8000 mask=ffc0 restore=1
+[  122.757365] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  122.765529] h713-hdmi-dsp-probe: graph word=0059 value=8000 saved=8000 mask=ffc0 restore=1
+[  122.775833] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  122.783993] h713-hdmi-dsp-probe: graph word=0103 value=0000 saved=0000 mask=00ff restore=1
+[  122.794301] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  122.802454] h713-hdmi-dsp-probe: graph word=0102 value=0000 saved=0000 mask=ff00 restore=1
+[  122.812744] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  122.820889] h713-hdmi-dsp-probe: graph word=8103 value=0000 saved=0000 mask=00ff restore=1
+[  122.831202] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  122.839355] h713-hdmi-dsp-probe: graph word=8102 value=0000 saved=0000 mask=00ff restore=1
+[  122.849655] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  122.857806] h713-hdmi-dsp-probe: graph word=007e value=8485 saved=8485 mask=ffff restore=1
+[  122.868110] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  122.876254] h713-hdmi-dsp-probe: graph word=007d value=8283 saved=8283 mask=ffff restore=1
+[  122.886555] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  122.894725] h713-hdmi-dsp-probe: graph word=007c value=8081 saved=8081 mask=ffff restore=1
+[  122.905019] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  122.913179] h713-hdmi-dsp-probe: graph word=8017 value=0001 saved=0001 mask=0001 restore=1
+[  122.923485] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  122.931638] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=1
+[  122.941942] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  122.950136] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=1
+[  122.960429] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  122.968595] h713-hdmi-dsp-probe: graph word=0012 value=0000 saved=0000 mask=a3ff restore=1
+[  122.978892] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  122.987035] h713-hdmi-dsp-probe: graph word=0130 value=0000 saved=0000 mask=ffff restore=1
+[  122.997330] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  123.005481] h713-hdmi-dsp-probe: graph word=8059 value=0000 saved=0000 mask=00ff restore=1
+[  123.015780] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  123.023943] h713-hdmi-dsp-probe: graph word=805a value=0000 saved=0000 mask=00ff restore=1
+[  123.034252] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  123.042405] h713-hdmi-dsp-probe: graph word=004d value=0000 saved=0000 mask=ffff restore=1
+[  123.052705] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  123.060880] h713-hdmi-dsp-probe: graph word=0077 value=0000 saved=0000 mask=ffff restore=1
+[  123.071192] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  123.079337] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=1
+[  123.089629] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  123.097780] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=1
+[  123.108078] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  123.116240] h713-hdmi-dsp-probe: graph word=800c value=0000 saved=0000 mask=00f8 restore=1
+[  123.126537] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  123.134686] h713-hdmi-dsp-probe: graph word=0003 value=0000 saved=0000 mask=0f00 restore=1
+[  123.143874] h713-hdmi-dsp-probe: fixed stock graph comparison=0 words=22 verified
+[  123.152289] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  123.168256] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  123.176527] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  123.184674] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  123.192854] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  123.200980] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  123.209093] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  123.217194] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  123.225284] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  123.233345] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  123.241387] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  123.249420] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  123.257459] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  123.265468] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  123.273449] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  123.281416] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  123.289369] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  123.297329] h713-hdmi-dsp-probe: requesting device=0 word=007d status=00000120
+[  123.305300] h713-hdmi-dsp-probe: requesting device=0 word=007e status=00000120
+[  123.313226] h713-hdmi-dsp-probe: requesting device=0 word=8102 status=00000120
+[  123.321131] h713-hdmi-dsp-probe: requesting device=0 word=8103 status=00000120
+[  123.329014] h713-hdmi-dsp-probe: requesting device=0 word=0102 status=00000120
+[  123.336887] h713-hdmi-dsp-probe: requesting device=0 word=0103 status=00000120
+[  123.344765] h713-hdmi-dsp-probe: requesting device=0 word=0059 status=00000120
+[  123.352622] h713-hdmi-dsp-probe: requesting device=0 word=005a status=00000120
+[  123.361558] h713-hdmi-dsp-probe: requesting device=0 word=0003 status=00000120
+[  123.369394] h713-hdmi-dsp-probe: graph word=0003 value=0300 saved=0000 mask=0f00 restore=0
+[  123.379367] h713-hdmi-dsp-probe: requesting device=0 word=800c status=00000120
+[  123.387177] h713-hdmi-dsp-probe: graph word=800c value=0080 saved=0000 mask=00f8 restore=0
+[  123.397150] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  123.404988] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  123.414960] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  123.422789] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  123.432767] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  123.440601] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  123.450581] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  123.458404] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  123.468361] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  123.476174] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  123.486136] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  123.493943] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  123.503898] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  123.511710] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  123.521668] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  123.529477] h713-hdmi-dsp-probe: graph word=0012 value=8180 saved=0000 mask=a3ff restore=0
+[  123.539442] h713-hdmi-dsp-probe: requesting device=0 word=0017 status=00000120
+[  123.547278] h713-hdmi-dsp-probe: graph word=0017 value=2000 saved=2000 mask=ff00 restore=0
+[  123.557266] h713-hdmi-dsp-probe: requesting device=0 word=801a status=00000120
+[  123.565134] h713-hdmi-dsp-probe: graph word=801a value=0000 saved=0000 mask=0002 restore=0
+[  123.575140] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  123.583020] h713-hdmi-dsp-probe: graph word=8017 value=0000 saved=0001 mask=0001 restore=0
+[  123.593047] h713-hdmi-dsp-probe: requesting device=0 word=007c status=00000120
+[  123.651038] h713-hdmi-dsp-probe: device=0 word=007c slow completion-clear 50100 us ret=-110
+[  123.660104] h713-hdmi-dsp-probe: failed-read raw command-response=00008081 expected-request=007c0000
+[  123.669936] h713-hdmi-dsp-probe: device=0 word=007c phase=completion-clear timeout status=00000120; cold boot required
+[  123.681372] h713-hdmi-dsp-probe: graph trial stopped error=-110; cold boot required
+[  123.689781] h713-hdmi-dsp-probe: stock DSP lock released ret=0

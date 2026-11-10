@@ -1,0 +1,40 @@
+{
+  "suite": {
+    "command": "python3 tools/hdmi/test-warm-shared.py",
+    "tests": 23,
+    "result": "PASS"
+  },
+  "fixtures": "real UART from docs/hdmi-evidence/2026-10-22-dsp-retention-live: cold catch + cold production boot, orderly reboot from a production session into the warm prompt",
+  "mutation_checks_caught": [
+    "script keeps the GP6 write",
+    "script drops the census",
+    "script gate accepts any nonzero GP6",
+    "runner never sends the autoboot interrupt",
+    "runner ignores the hold-guard refusal",
+    "runner skips the warm preboot check",
+    "runner skips the prompt census comparison",
+    "runner allows extra resets",
+    "checker ignores silence",
+    "checker ignores PCM state",
+    "checker ignores a level change",
+    "checker accepts the same boot as warm"
+  ],
+  "regressions": [
+    {
+      "command": "python3 tools/hdmi/test-build-startup.py",
+      "tests": 11,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-managed-boot.py",
+      "tests": 7,
+      "result": "PASS"
+    },
+    {
+      "command": "python3 tools/hdmi/test-hdmi-hold-guard.py",
+      "tests": 3,
+      "result": "PASS"
+    }
+  ],
+  "board_access": false
+}

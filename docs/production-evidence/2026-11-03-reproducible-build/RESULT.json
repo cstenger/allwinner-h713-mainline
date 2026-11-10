@@ -1,0 +1,152 @@
+{
+  "schema": "h713-independent-build-comparison-v1",
+  "status": "PASS",
+  "same_source_lock": true,
+  "outputs": {
+    "boot-environment.json": {
+      "match": true,
+      "sha256": "959a426e654f67f4efc65f3403c9a714ad6517183347069b8e7a61fc45084d9b"
+    },
+    "boot.tar": {
+      "match": true,
+      "sha256": "523ae77e091d5649048dbc922b9693194f6f3dc152dce3c82a674bb71e6f5f32"
+    },
+    "firmware/bl31.bin": {
+      "match": true,
+      "sha256": "837c439bfad535c8861195f8d24c99cf588121417233d106e618569fc9aa6bd6"
+    },
+    "firmware/spl-region.bin": {
+      "match": true,
+      "sha256": "d593ab799b6d422523d67a33c7427c481765e5afac71f065cc2f16e162ce18cf"
+    },
+    "firmware/u-boot-proper.itb": {
+      "match": true,
+      "sha256": "eb3eef963578ffc0aadda91fc9d5459312455cdd10e99a8fc9cda26d343daf4c"
+    },
+    "firmware/u-boot-sunxi-with-spl-ddr3.bin": {
+      "match": true,
+      "sha256": "b5129aab640ec54c30ea12ce54e932c4f9d275b78b6bc8feed2609500184ee39"
+    },
+    "provenance/kernel.config": {
+      "match": true,
+      "sha256": "db4cc697b4ef40d30ce12a5728fea51fe34a7340c1397c81e2f778eeb9492311"
+    },
+    "provenance/kernel.symvers": {
+      "match": true,
+      "sha256": "23e549bf3bd2af01485082cb8716e4bb6824e589645c27a86828ce9663a7955f"
+    },
+    "provenance/uboot.config": {
+      "match": true,
+      "sha256": "358629c40b8bc30d6939f09c7b7ebfeb96d5036b2fd12c304ca262f8100a97a6"
+    },
+    "provenance/uboot.inputs": {
+      "match": true,
+      "sha256": "c85f6d19e01dc789892b3e1312c1799b1285d455386a4a8c84e7fb31b3d10782"
+    },
+    "release.json": {
+      "match": true,
+      "sha256": "0233d2a8d895429b4579644d3fc33d801c02e4a751e78963c26c995e3ac73770"
+    },
+    "rootfs/rootfs.ext4": {
+      "match": true,
+      "sha256": "f347b00da610500b4fc88c95035203c9caaf7be38876af855dfbeefbc4bd0c24"
+    },
+    "rootfs/rootfs.simg": {
+      "match": true,
+      "sha256": "8e3fcfd59c5cdf6e41fe9d0fd855973f96651a75a6da20f18727b9a12ad9e858"
+    },
+    "rootfs/rootfs.tar": {
+      "match": true,
+      "sha256": "aa85166d91e5ef8ed4bb1853351e8159e7393940a75af97e181b511712079fe2"
+    },
+    "source-lock.json": {
+      "match": true,
+      "sha256": "0fa568a613023537b38437d366171383ec4aa64aae5e968ad2f7f2bcf73cc25e"
+    }
+  },
+  "board_changes": false,
+  "qualification": "UNQUALIFIED CANDIDATE",
+  "boot_image": {
+    "match": true,
+    "sha256": "c73d86b43181fa61a319ca99a37e0ebecf41986aafa166eb25eb450200aa132a",
+    "fat_check": "PASS; 24 files"
+  },
+  "payload_check": {
+    "required_files": 21,
+    "forbidden_files": 12,
+    "status": "PASS production payload checks"
+  },
+  "runtime_modules": [
+    "usr/lib/h713-hdmi/h713-ddc-pins.ko",
+    "usr/lib/h713-hdmi/h713-hdmi-audio.ko",
+    "usr/lib/h713-hdmi/h713-hdmi-receiver.ko",
+    "usr/lib/h713-hdmi/h713-hdmi-signal.ko",
+    "usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/bluetooth/hci_uart.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/gpu/drm/panfrost/panfrost.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/input/keyboard/adc-keys.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/input/misc/uinput.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/media/platform/verisilicon/hantro-vpu.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/media/v4l2-core/v4l2-h264.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/media/v4l2-core/v4l2-jpeg.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/media/v4l2-core/v4l2-vp9.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/misc/sunxi-scanout-dmabuf.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/misc/sunxi_decd/sunxi-decd.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/phy/ax88796b.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/phy/smsc.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/asix.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/ax88179_178a.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/cdc_ether.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/cdc_ncm.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/cdc_subset.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/net1080.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/r8152.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/r8153_ecm.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/rndis_host.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/smsc95xx.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/usbnet.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/usb/zaurus.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/soc/sunxi/cpu_comm/hy310-cpu-comm.ko",
+    "usr/lib/modules/6.18.38/kernel/drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko",
+    "usr/lib/modules/6.18.38/kernel/fs/efivarfs/efivarfs.ko",
+    "usr/lib/modules/6.18.38/kernel/sound/soc/sunxi/sun4i-i2s.ko",
+    "usr/lib/modules/6.18.38/kernel/sound/soc/sunxi/sun4i-spdif.ko",
+    "usr/lib/modules/6.18.38/updates/aic8800/aic8800_bsp.ko",
+    "usr/lib/modules/6.18.38/updates/aic8800/aic8800_btlpm.ko",
+    "usr/lib/modules/6.18.38/updates/aic8800/aic8800_fdrv.ko"
+  ],
+  "runtime_units": [
+    "etc/systemd/system/h713-bt-attach.service",
+    "etc/systemd/system/h713-hdmi-capture.service",
+    "etc/systemd/system/h713-hdmi-health-ack.service",
+    "etc/systemd/system/h713-hdmi-readvertise.service",
+    "etc/systemd/system/h713-hdmi-ring.service",
+    "etc/systemd/system/h713-hdmi-signal.service",
+    "etc/systemd/system/h713-hdmi-speaker.service",
+    "etc/systemd/system/h713-hdmi-video.service",
+    "etc/systemd/system/h713-hotspot.service",
+    "etc/systemd/system/h713-keyd.service",
+    "etc/systemd/system/h713-keystone.service",
+    "etc/systemd/system/h713-ssh-host-keys.service",
+    "etc/systemd/system/h713-wifi-recover.service"
+  ],
+  "runtime_helpers": [
+    "usr/local/bin/gst-plane-play",
+    "usr/local/bin/h713-keyd",
+    "usr/local/bin/h713-keystone",
+    "usr/local/bin/h713-mirror",
+    "usr/local/bin/h713-play",
+    "usr/local/bin/h713-standby",
+    "usr/local/sbin/h713-bt-attach",
+    "usr/local/sbin/h713-hotspot-up",
+    "usr/local/sbin/h713-wifi-recover"
+  ],
+  "runtime_package_count": 535,
+  "scope": "Two independent work directories from the same isolated proposed-source snapshot on the recorded host; no reused prepared compiler trees.",
+  "external_sources": {
+    "external/arm-trusted-firmware": "47ee829f745f7c87273192b26c92dbd8f78b4ab1",
+    "external/u-boot": "9d35a4ecbd684a451e79e877b1a52f3cfe0544aa",
+    "external/aic8800": "df4c783b663eba1956579c681acd5e45f25c671d"
+  }
+}

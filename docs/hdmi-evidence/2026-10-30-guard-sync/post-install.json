@@ -1,0 +1,711 @@
+{
+  "model": "HY200 QZ713DF_A1 (Allwinner H713)",
+  "boot_id": "7ca604ba-a805-4f0a-9bd4-2df936f50479",
+  "files": {
+    "/etc/default/h713-hdmi-speaker": {
+      "sha256": "52e4d7dc09684e137b7bf4ecf169a9bdc92951394f2d3513b64bfa960460e57d",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 249
+    },
+    "/etc/systemd/system/h713-hdmi-capture.service": {
+      "sha256": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 611
+    },
+    "/etc/systemd/system/h713-hdmi-health-ack.service": {
+      "sha256": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 457
+    },
+    "/etc/systemd/system/h713-hdmi-ring.service": {
+      "sha256": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 746
+    },
+    "/etc/systemd/system/h713-hdmi-signal.service": {
+      "sha256": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 477
+    },
+    "/etc/systemd/system/h713-hdmi-speaker.service": {
+      "sha256": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 813
+    },
+    "/etc/systemd/system/h713-hdmi-video.service": {
+      "sha256": "f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 874
+    },
+    "/usr/lib/h713-hdmi/SHA256SUMS": {
+      "sha256": "4373e9ecb77e087a1d26c00637c135028942ae84912fb8dbf57ac0c51cc2feac",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 1562
+    },
+    "/usr/lib/h713-hdmi/boot-environment.json": {
+      "sha256": "0f91d7c6ea547e03e78b7959f536225d71bd9de2c79e2cd7841365945b17015e",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 372
+    },
+    "/usr/lib/h713-hdmi/firmware/h713/hdmi-audio-dsp.bin": {
+      "sha256": "8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 2896
+    },
+    "/usr/lib/h713-hdmi/h713-ddc-pins.ko": {
+      "sha256": "1c2b11df000d6cfaa88a45b5a4873a151c64076e3e48bf012573393c248fd7aa",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 14864
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi-audio.ko": {
+      "sha256": "633a8e7bda3244eafd3256030c0a182b3493a8a6da72ef98201e34e22981b778",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 79928
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi-capture.service": {
+      "sha256": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 611
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi-hold-guard": {
+      "sha256": "96f37655b33bf78d95b33fa4f431721be5a7506c73c12dcd4df58032cad27113",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 1309
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi-receiver.ko": {
+      "sha256": "5a68e9e03d6f985c24c88253901c6f1237200c0015cb8974a641d170fccf5f47",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 37224
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi-session.py": {
+      "sha256": "b113aaf35d06132a8ec5d8e95c70dd08a93a3e5d7e451e93b68a990e1df29e77",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 13602
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi-signal.ko": {
+      "sha256": "0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 32640
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi-signal.py": {
+      "sha256": "2b6ac46d09e8af00a551bfe879bb46066c5a5106c82cf1a89bd148410c271445",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 8989
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi-signal.service": {
+      "sha256": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 477
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi.cmd": {
+      "sha256": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 4342
+    },
+    "/usr/lib/h713-hdmi/h713-hdmi.scr": {
+      "sha256": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 4414
+    },
+    "/usr/lib/h713-hdmi/install-startup.sh": {
+      "sha256": "3c49c52e9665ab3314afdbf22b93c6e7f57d9341c21f6cd9c2046e6807dff64b",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 2114
+    },
+    "/usr/lib/h713-hdmi/mips-shell.py": {
+      "sha256": "5235c259fc8637b7309df483f0931795ed299b2363fb8914ec8e0cb72fea7615",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 18194
+    },
+    "/usr/lib/h713-hdmi/read-comm-trace.py": {
+      "sha256": "43db0a3b5ff7dc89ee87229049b677f7f5c487df8ee856b050a6942efbdfc0b8",
+      "mode": 420,
+      "uid": 1000,
+      "gid": 1000,
+      "bytes": 10218
+    },
+    "/usr/lib/h713-hdmi/update-signal-owner.sh": {
+      "sha256": "6fad351af73c10d13d15edc39f2d762700cbff5d8c5511e540c82588b77cd31f",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 3256
+    },
+    "/usr/lib/h713-hdmi/update-startup-script.sh": {
+      "sha256": "7990f44844ceb6a5da825bc20e768c4b2a688e2e06ae9d90ea02f7399ce40bd7",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 1764
+    },
+    "/usr/lib/h713-hdmi-health/SHA256SUMS": {
+      "sha256": "6231023109da2d4e8941d3e41bf3839dafd104b5bb2e62cbaf9677e57e3df500",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 600
+    },
+    "/usr/lib/h713-hdmi-health/check-startup.sh": {
+      "sha256": "4b2a76fbe863317366f9b723392ec75951c5c129157804a0170f600d52bd9f78",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 2794
+    },
+    "/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.py": {
+      "sha256": "179eb7da4fbefd7016aa4314c3ad2ab204ef0602e8d400902615b37a73a62658",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 4020
+    },
+    "/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.service": {
+      "sha256": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 457
+    },
+    "/usr/lib/h713-hdmi-health/h713-hdmi.cmd": {
+      "sha256": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 4342
+    },
+    "/usr/lib/h713-hdmi-health/h713-hdmi.scr": {
+      "sha256": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 4414
+    },
+    "/usr/lib/h713-hdmi-health/install-shared-startup.py": {
+      "sha256": "7d978ddc5ee24e48827fd230bc65db3bae59425262bf116b2d4d43c1db034514",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 9772
+    },
+    "/usr/lib/h713-hdmi-health/install.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 0
+    },
+    "/usr/lib/h713-hdmi-health/manifest.json": {
+      "sha256": "644ac24082539a55231864333c0ea355da5808837a0de2cc73c203fe316831b8",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 1066
+    },
+    "/usr/lib/h713-hdmi-speaker/SHA256SUMS": {
+      "sha256": "14a5fce26520fea3c1a3e0ff1b688929a94e13718a6f874b1f99b806d212be73",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 503
+    },
+    "/usr/lib/h713-hdmi-speaker/SHA256SUMS.before-gain-fix": {
+      "sha256": "745bb8131898d4a9236a08cd49386cd9969d9d6cafc10c70ab13bbee08190e16",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 336
+    },
+    "/usr/lib/h713-hdmi-speaker/alsa-ctl": {
+      "sha256": "cf18eb76c191644387a4aafb889dd0b45267036ca128e6b72b3c4b30b112a65e",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 71232
+    },
+    "/usr/lib/h713-hdmi-speaker/alsa-ctl.c": {
+      "sha256": "a089b0e24bb29c9aea6410015d0b358ea5df778728073ad5958180f779492c73",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 4433
+    },
+    "/usr/lib/h713-hdmi-speaker/enable-mixer.sh": {
+      "sha256": "a897c4c02c48e05f2b2b98b1ec56663462ad2e6326d3ba618ba73f25339bf530",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 801
+    },
+    "/usr/lib/h713-hdmi-speaker/enable-mixer.sh.before-gain-fix": {
+      "sha256": "f8868a1a9ed092acc537a5205ead63721cc18ba33436d593915d43ab0c474aa1",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 646
+    },
+    "/usr/lib/h713-hdmi-speaker/h713-hdmi-speaker.service": {
+      "sha256": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 813
+    },
+    "/usr/lib/h713-hdmi-speaker/hdmi-speaker": {
+      "sha256": "10f184457f3a8fe8358311c86fbd909009164fe06c98d4bf845a7422781a533f",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 71432
+    },
+    "/usr/lib/h713-hdmi-speaker/hdmi-speaker.c": {
+      "sha256": "3fbfab1c8ce4f02d0510383e9e6deb8464114255b8825cdc5cdc70fa3d9d7486",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 3493
+    },
+    "/usr/lib/h713-hdmi-speaker/install-speaker.sh": {
+      "sha256": "5ac95eecbb21100b67483b9ffccaf2a05b0ee91f6621abbce183c9b8514b6e21",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 2742
+    },
+    "/usr/lib/h713-hdmi-speaker/pipewire-speaker.py": {
+      "sha256": "f30805e01d7b751e831025e9267ffdfd65567e1b0aaade52f3345adff4913200",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 7266
+    },
+    "/usr/lib/h713-hdmi-video/71-h713-hdmi-in.rules": {
+      "sha256": "4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 1097
+    },
+    "/usr/lib/h713-hdmi-video/SHA256SUMS": {
+      "sha256": "40ab13a7adbe4960f95a42f55b29af42513659ca5570bc2559299c083419ed74",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 525
+    },
+    "/usr/lib/h713-hdmi-video/h713-hdmi-ring.service": {
+      "sha256": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 746
+    },
+    "/usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko": {
+      "sha256": "582d16ac58f325c92b8abafb6d6072fda6fda353515f96ea146de3ae97b0b14e",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 56760
+    },
+    "/usr/lib/h713-hdmi-video/h713-hdmi-video.service": {
+      "sha256": "f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 874
+    },
+    "/usr/lib/h713-hdmi-video/install-hdmi-video.sh": {
+      "sha256": "ced29313467041a6fdbb93718d5b83265bfcbfaf6270c2183efbdfa92a2aaee2",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 5555
+    },
+    "/usr/lib/h713-hdmi-video/stage-hdmi-video.sh": {
+      "sha256": "35db67de3f8defe30af708b07f49c67c583430a111b502ccf39b584dba8f3200",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 4243
+    },
+    "/usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard": {
+      "sha256": "96f37655b33bf78d95b33fa4f431721be5a7506c73c12dcd4df58032cad27113",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 1309
+    },
+    "/usr/lib/systemd/system-shutdown/h713-off": {
+      "sha256": "2397aa576ac49eed1afdf119179e2bee62a7eb5fd53a1ab8ad7fc8868acdb10a",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 264
+    },
+    "/usr/local/bin/gst-plane-play": {
+      "sha256": "f50f679b22b7144de05b69e2806428d7d6d3a06e275b1ff48883923732e684d8",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 73952
+    },
+    "/usr/local/bin/h713-play": {
+      "sha256": "1858570f45de37e5d3a0ba31b14de0369fdf08c664cf62f804e141d9f86dcd25",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 16522
+    },
+    "/var/lib/h713-hdmi-startup/kernel.sha256": {
+      "sha256": "1f4a6e6dba4ebbceb5748111c1158929b5664ab2a75d8ac4dfb7dbac97cd3ad5",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "bytes": 92
+    }
+  },
+  "bundle_checks": [
+    {
+      "path": "/usr/lib/h713-hdmi-health/SHA256SUMS",
+      "checks": [
+        {
+          "path": "/usr/lib/h713-hdmi-health/check-startup.sh",
+          "expected": "4b2a76fbe863317366f9b723392ec75951c5c129157804a0170f600d52bd9f78",
+          "actual": "4b2a76fbe863317366f9b723392ec75951c5c129157804a0170f600d52bd9f78",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.py",
+          "expected": "179eb7da4fbefd7016aa4314c3ad2ab204ef0602e8d400902615b37a73a62658",
+          "actual": "179eb7da4fbefd7016aa4314c3ad2ab204ef0602e8d400902615b37a73a62658",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/h713-hdmi-health-ack.service",
+          "expected": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+          "actual": "d4b2f2261a6622d63497ef1dcbfcaeb63d32b39cb4772dfb9176b15099362834",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/h713-hdmi.cmd",
+          "expected": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+          "actual": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/h713-hdmi.scr",
+          "expected": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+          "actual": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/install-shared-startup.py",
+          "expected": "7d978ddc5ee24e48827fd230bc65db3bae59425262bf116b2d4d43c1db034514",
+          "actual": "7d978ddc5ee24e48827fd230bc65db3bae59425262bf116b2d4d43c1db034514",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-health/manifest.json",
+          "expected": "644ac24082539a55231864333c0ea355da5808837a0de2cc73c203fe316831b8",
+          "actual": "644ac24082539a55231864333c0ea355da5808837a0de2cc73c203fe316831b8",
+          "matches": true
+        }
+      ],
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-video/SHA256SUMS",
+      "checks": [
+        {
+          "path": "/usr/lib/h713-hdmi-video/71-h713-hdmi-in.rules",
+          "expected": "4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370",
+          "actual": "4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/h713-hdmi-ring.service",
+          "expected": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+          "actual": "5355083021f62d3fcecf716ac026dd9733aa6a9fad756e140aaffb45dc4b7f2a",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko",
+          "expected": "582d16ac58f325c92b8abafb6d6072fda6fda353515f96ea146de3ae97b0b14e",
+          "actual": "582d16ac58f325c92b8abafb6d6072fda6fda353515f96ea146de3ae97b0b14e",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/h713-hdmi-video.service",
+          "expected": "f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9",
+          "actual": "f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/install-hdmi-video.sh",
+          "expected": "ced29313467041a6fdbb93718d5b83265bfcbfaf6270c2183efbdfa92a2aaee2",
+          "actual": "ced29313467041a6fdbb93718d5b83265bfcbfaf6270c2183efbdfa92a2aaee2",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-video/stage-hdmi-video.sh",
+          "expected": "35db67de3f8defe30af708b07f49c67c583430a111b502ccf39b584dba8f3200",
+          "actual": "35db67de3f8defe30af708b07f49c67c583430a111b502ccf39b584dba8f3200",
+          "matches": true
+        }
+      ],
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi/SHA256SUMS",
+      "checks": [
+        {
+          "path": "/usr/lib/h713-hdmi/boot-environment.json",
+          "expected": "0f91d7c6ea547e03e78b7959f536225d71bd9de2c79e2cd7841365945b17015e",
+          "actual": "0f91d7c6ea547e03e78b7959f536225d71bd9de2c79e2cd7841365945b17015e",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/firmware/h713/hdmi-audio-dsp.bin",
+          "expected": "8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5",
+          "actual": "8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-ddc-pins.ko",
+          "expected": "1c2b11df000d6cfaa88a45b5a4873a151c64076e3e48bf012573393c248fd7aa",
+          "actual": "1c2b11df000d6cfaa88a45b5a4873a151c64076e3e48bf012573393c248fd7aa",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-audio.ko",
+          "expected": "633a8e7bda3244eafd3256030c0a182b3493a8a6da72ef98201e34e22981b778",
+          "actual": "633a8e7bda3244eafd3256030c0a182b3493a8a6da72ef98201e34e22981b778",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-capture.service",
+          "expected": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+          "actual": "a0690a5218831fefa5a1f9980e47edd0e2ec3e9b6dfca3e54e87fc5acd4ff36d",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-hold-guard",
+          "expected": "96f37655b33bf78d95b33fa4f431721be5a7506c73c12dcd4df58032cad27113",
+          "actual": "96f37655b33bf78d95b33fa4f431721be5a7506c73c12dcd4df58032cad27113",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-receiver.ko",
+          "expected": "5a68e9e03d6f985c24c88253901c6f1237200c0015cb8974a641d170fccf5f47",
+          "actual": "5a68e9e03d6f985c24c88253901c6f1237200c0015cb8974a641d170fccf5f47",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-session.py",
+          "expected": "b113aaf35d06132a8ec5d8e95c70dd08a93a3e5d7e451e93b68a990e1df29e77",
+          "actual": "b113aaf35d06132a8ec5d8e95c70dd08a93a3e5d7e451e93b68a990e1df29e77",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-signal.ko",
+          "expected": "0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497",
+          "actual": "0a6987ced911cc12f2a36ff2a9550e397c1c0f5889f4b65e8453b298cefe4497",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-signal.py",
+          "expected": "2b6ac46d09e8af00a551bfe879bb46066c5a5106c82cf1a89bd148410c271445",
+          "actual": "2b6ac46d09e8af00a551bfe879bb46066c5a5106c82cf1a89bd148410c271445",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi-signal.service",
+          "expected": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+          "actual": "fa4c429fa2552fbd76479816e325facc1581f18f612c90eaa0b35b65159d170a",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi.cmd",
+          "expected": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+          "actual": "9be0cbe3d00d3bf3717f50f30d00b70eb4e546b1926e2becc7585df25593f60a",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/h713-hdmi.scr",
+          "expected": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+          "actual": "fcea3a9589432f9b44781178d70433486aac5872a618970039b3326744e7fe7b",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/install-startup.sh",
+          "expected": "3c49c52e9665ab3314afdbf22b93c6e7f57d9341c21f6cd9c2046e6807dff64b",
+          "actual": "3c49c52e9665ab3314afdbf22b93c6e7f57d9341c21f6cd9c2046e6807dff64b",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/mips-shell.py",
+          "expected": "5235c259fc8637b7309df483f0931795ed299b2363fb8914ec8e0cb72fea7615",
+          "actual": "5235c259fc8637b7309df483f0931795ed299b2363fb8914ec8e0cb72fea7615",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/read-comm-trace.py",
+          "expected": "43db0a3b5ff7dc89ee87229049b677f7f5c487df8ee856b050a6942efbdfc0b8",
+          "actual": "43db0a3b5ff7dc89ee87229049b677f7f5c487df8ee856b050a6942efbdfc0b8",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/update-signal-owner.sh",
+          "expected": "6fad351af73c10d13d15edc39f2d762700cbff5d8c5511e540c82588b77cd31f",
+          "actual": "6fad351af73c10d13d15edc39f2d762700cbff5d8c5511e540c82588b77cd31f",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi/update-startup-script.sh",
+          "expected": "7990f44844ceb6a5da825bc20e768c4b2a688e2e06ae9d90ea02f7399ce40bd7",
+          "actual": "7990f44844ceb6a5da825bc20e768c4b2a688e2e06ae9d90ea02f7399ce40bd7",
+          "matches": true
+        }
+      ],
+      "all_match": true
+    },
+    {
+      "path": "/usr/lib/h713-hdmi-speaker/SHA256SUMS",
+      "checks": [
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/alsa-ctl.c",
+          "expected": "a089b0e24bb29c9aea6410015d0b358ea5df778728073ad5958180f779492c73",
+          "actual": "a089b0e24bb29c9aea6410015d0b358ea5df778728073ad5958180f779492c73",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/enable-mixer.sh",
+          "expected": "a897c4c02c48e05f2b2b98b1ec56663462ad2e6326d3ba618ba73f25339bf530",
+          "actual": "a897c4c02c48e05f2b2b98b1ec56663462ad2e6326d3ba618ba73f25339bf530",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/h713-hdmi-speaker.service",
+          "expected": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+          "actual": "8e3e90dbd09feb04c01d85e8b2fbab82e5c1f12a2d95a5882dd859222ad7ebfd",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/hdmi-speaker.c",
+          "expected": "3fbfab1c8ce4f02d0510383e9e6deb8464114255b8825cdc5cdc70fa3d9d7486",
+          "actual": "3fbfab1c8ce4f02d0510383e9e6deb8464114255b8825cdc5cdc70fa3d9d7486",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/install-speaker.sh",
+          "expected": "5ac95eecbb21100b67483b9ffccaf2a05b0ee91f6621abbce183c9b8514b6e21",
+          "actual": "5ac95eecbb21100b67483b9ffccaf2a05b0ee91f6621abbce183c9b8514b6e21",
+          "matches": true
+        },
+        {
+          "path": "/usr/lib/h713-hdmi-speaker/pipewire-speaker.py",
+          "expected": "f30805e01d7b751e831025e9267ffdfd65567e1b0aaade52f3345adff4913200",
+          "actual": "f30805e01d7b751e831025e9267ffdfd65567e1b0aaade52f3345adff4913200",
+          "matches": true
+        }
+      ],
+      "all_match": true
+    }
+  ],
+  "services": {
+    "h713-hdmi-capture.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "11877887",
+      "Id": "h713-hdmi-capture.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    "h713-hdmi-signal.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "22911507",
+      "Id": "h713-hdmi-signal.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    "h713-hdmi-speaker.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "23393630",
+      "Id": "h713-hdmi-speaker.service",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "h713-hdmi-ring.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "23314482",
+      "Id": "h713-hdmi-ring.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    },
+    "h713-hdmi-video.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "0",
+      "Id": "h713-hdmi-video.service",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "h713-hdmi-health-ack.service": {
+      "NRestarts": "0",
+      "ExecMainStartTimestampMonotonic": "23307850",
+      "Id": "h713-hdmi-health-ack.service",
+      "ActiveState": "active",
+      "SubState": "exited"
+    }
+  },
+  "runtime": {
+    "/sys/module/h713_hdmi_audio/parameters/period_xruns": "0",
+    "/sys/module/h713_hdmi_v4l2/parameters/frames_rejected": "0",
+    "/sys/module/h713_hdmi_v4l2/parameters/allow_480p": "N",
+    "/sys/devices/platform/h713-hdmi-ring/signal": "none"
+  },
+  "host_utc": "2026-10-30T08:36:37.377623+00:00"
+}

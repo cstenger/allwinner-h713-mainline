@@ -1,0 +1,24 @@
+import os, time
+from pathlib import Path
+root=Path('/home/chris/Projects/h713/docs/hdmi-evidence/2026-10-17-uboot-output-diagnostic')
+log=root/'serial.log'
+offset=log.stat().st_size
+print('Watching new serial output for U-Boot prompt', flush=True)
+deadline=time.monotonic()+120
+sent=False
+while time.monotonic()<deadline:
+    data=log.read_bytes()[offset:]
+    if b'U-Boot 20' in data:
+        if b'=> ' in data[data.find(b'U-Boot 20'):]:
+            fd=os.open('/dev/ttyUSB0',os.O_WRONLY|os.O_NOCTTY)
+            os.write(fd,b'\x15echo H713_UBOOT_AUTO_HOLD_BEGIN; if itest.l *0x07090118 != 0 && itest.l *0x0306101c == 0; then sleep 5; gpio clear PB5; if h713_disp auto 0x34 logo; then gpio set PB5; echo H713_UBOOT_AUTO_HOLD_OK_NO_LINUX; else gpio set PB5; echo H713_UBOOT_AUTO_HOLD_FAILED; fi; else echo H713_UBOOT_AUTO_HOLD_REFUSED_STATE; fi\n')
+            os.close(fd)
+            print('U-Boot prompt intercepted; queued five-second wait and one warm logo initialization, no Linux boot', flush=True)
+            raise SystemExit(0)
+        if b'Hit any key' in data and not sent:
+            fd=os.open('/dev/ttyUSB0',os.O_WRONLY|os.O_NOCTTY)
+            os.write(fd,b' ');os.close(fd)
+            sent=True
+            print('Sent fallback autoboot interrupt', flush=True)
+    time.sleep(0.05)
+raise SystemExit('No U-Boot prompt within120 seconds; inspect capture')

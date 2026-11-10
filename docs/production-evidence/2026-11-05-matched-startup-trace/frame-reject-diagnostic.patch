@@ -1,0 +1,40 @@
+--- a/h713-hdmi-v4l2.c
++++ b/h713-hdmi-v4l2.c
+@@ -796,6 +796,7 @@
+ 	u64 copy_ns = 0, tick, completion_ns, last_black = 0;
+ 	unsigned long bad_since = 0, mismatch_since = 0;
+ 	int last = h713_afbd_pair_index(cap), idx;
++	int copy_result, pair_after;
+ 	struct h713_sig sig;
+ 	bool at_size, ok;
+ 	u8 *dst;
+@@ -880,12 +881,20 @@
+ 		 * It holds still until the pair moves on, so a copy that ends
+ 		 * with the pair unchanged is whole.
+ 		 */
+-		if (h713_copy_frame(cap, dst, (idx + 2) % 3) ||
+-		    h713_afbd_pair_index(cap) != idx) {
+-			copy_ns += ktime_get_ns() - tick;
++		copy_result = h713_copy_frame(cap, dst, (idx + 2) % 3);
++		/* Preserve short-circuit read order: -2 means not checked. */
++		pair_after = copy_result ? -2 : h713_afbd_pair_index(cap);
++		if (copy_result || pair_after != idx) {
++			u64 rejected_ns = ktime_get_ns() - tick;
++
++			copy_ns += rejected_ns;
+ 			unstable++;
+ 			frames_rejected++;
+ 			cap->sequence++;
++			/* Emit only after the original rejection decision and accounting. */
++			pr_info_ratelimited("h713-hdmi-v4l2: reject=%lu produced=%lu copy_rc=%d pair_before=%d pair_after=%d copy_ns=%llu\n",
++				frames_rejected, frames_produced, copy_result, idx,
++				pair_after, (unsigned long long)rejected_ns);
+ 			continue;
+ 		}
+ 		copy_ns += ktime_get_ns() - tick;
+@@ -1494,3 +1503,5 @@
+ module_exit(h713_exit);
+ MODULE_DESCRIPTION("Read-only V4L2 bridge for H713 HDMI firmware NV16 ring");
+ MODULE_LICENSE("GPL");
++
++MODULE_VERSION("reject-trace-v1");

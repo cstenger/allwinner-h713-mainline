@@ -1,0 +1,31 @@
+cold-ext-01 — 2026-10-21 (host time), boot 0c26fed5-c211-4dbd-8c68-7aa45b942bd9
+Ext bundle: module 39d2a2e9…, helper 7ca50c19…, guard 96f37655… (live guard matched). boot-v4.
+
+Cold catch: one SPL; preboot gp6/gp7/MIPS 0. U-Boot DOMAINS trace: tvcap_bus=00000000 (TVCAP reset asserted),
+  TV CCU words = 01000005 0 7 2 5 4 4 b 20a 2 2 7 2 20b 20b.
+boot-v4 RAM boot: 22/22 guarded steps OK incl. `fdt rm ... keep-tvcap-on`; bootm sha256 OK; no "TVCAP domain
+  retained from boot" line. Boot IDs match. ext4 clean mount (no replay). DT: v1+v2 markers, flag ABSENT.
+Pre-module genpd: TVCAP off-0, TVFE off-0. Clocks: only bus-disp (+ pll-periph0) hw-on.
+Console 5->7, panic 5->0, notice marker on UART. Load: INIT DONE extension=1.
+
+Steps 1-33: as cold-prefix-02 (9 MIPS 0, 10 SCP 0, 11 demod bus 0, 12 display bus 00010001, 14 disp reset 0,
+  16 demod reset 1). Gate 1-8 checked before step 9.
+Census 34-40: TVFE PPU 00020000 (off), TVCAP PPU 00020000 (OFF), TVCAP reset 1 (ASSERTED), clock mask 00010000
+  (bus-disp only), TV words identical to U-Boot trace. genpd off-0 agrees with PPU for both -> rule met.
+Power 41-45: TVFE PRE_ON/ON -> 00010000; TVCAP PRE_ON/ON -> 00010000; MIPS/SCP still stopped. genpd on/active.
+Receiver 46-53: TVCAP reset RELEASED (value 1 = deassert performed); bus-tvcap, bus-cap-300m, vincap-dma
+  (pulled pll-video2), tvfe-1296m 1296 MHz (pulled pll-video0); demod reset released; pll-video0 already on;
+  pll-adc enabled.
+TVFE words 54-68: all 15 stock words exact readback; 69 demod bus gate 00010001.
+Audio 70-74: bus-hdmi-audio, hdmi-audio (pulled pll-video3, 996 MHz) enabled; audio-cpu/umac/ihb already on
+  (raw words).
+Display 75-81: pll-video2 already on; deint, panel, svp-dtl, afbd enabled; bus-disp already on; display reset
+  already released (no-op).
+82 final-recheck: MIPS/SCP stopped, both PPU ON. extension_complete=Y.
+Every stage boundary: snapshot reviewed, then --stage-ack. 82 BEGIN/DONE pairs, 31 OP-DONE, 4 genpd events,
+  no warn/err/RCU lines after boot.
+End: orderly poweroff with module loaded; root ro; guard "poweroff with HDMI holds retained"; reboot: Power down.
+
+Conclusion: every power/clock/reset/TVFE-word operation before AudioTop completes in a cold logo-free boot
+when TVCAP is actually powered (boot-v4) and its reset released. The old bench (boot-v3 DT) reached
+AudioTop with TVCAP physically OFF (genpd lied) and TVCAP bus reset ASSERTED. AudioTop was not accessed here.

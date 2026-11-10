@@ -1,0 +1,48 @@
+{
+  "schema": "h713-owner-boundary-build-v1",
+  "purpose": "isolated no-reset patched owner control and shutdown boundary; not installed",
+  "module_note_sha256": "a16c9b5addf59b839fcd664af8c9f3f049baac97de32eadde451fad0b75fe35b",
+  "kernel_build": "/home/chris/Projects/h713/build/linux-6.18.38-edffad3c91a035b25a5c2a7df05ef63af488d7e89c286a29c7efa9aaba677efc",
+  "kernel_release": "6.18.38",
+  "kernel_uts_version": "#1 SMP Fri Oct 16 15:44:49 PDT 2026",
+  "kernel_symvers": "c70895af49e62c1821f8a1e1e22f518b365761f256f9842eb59a528107356f70",
+  "production_fit_sha256": "0877293b3a71b9ccd28c0f0ef9725752a86dffd243851a5213eb023cd3a51c70",
+  "base_script_sha256": "298fb56d6525e4984d75fd2a0dbe998dd6dba7e813393dd798a4a32371de99fb",
+  "production_source_sha256": {
+    "h713-hdmi-pcm.c": "0dc33b3ca0fb6bcb61df30b8d9009587ee833849f9a7c18af1f8b8dcae856e1a",
+    "h713-hdmi-dsp.c": "466baed82dcb9df4ba58ee3aafd2b23e9172460b51c0739f713e7cfd4d024be2",
+    "h713-hdmi-tvfe.c": "4a58038dff996db65fbdafd1c1ad368a8082bfa16b8a8c86f1b879ec635c23d7"
+  },
+  "build_command": [
+    "make",
+    "-C",
+    "/home/chris/Projects/h713/build/linux-6.18.38-edffad3c91a035b25a5c2a7df05ef63af488d7e89c286a29c7efa9aaba677efc",
+    "M=/home/chris/Projects/h713/build/hdmi-dsp-owner-boundary-2026-10-22/candidate/src/hdmi-audio",
+    "ARCH=arm64",
+    "LLVM=1",
+    "W=1",
+    "modules"
+  ],
+  "arm_names": {
+    "1": "sham",
+    "2": "shutdown-prefix"
+  },
+  "guard_sha256": "5ad26677ac791d2be659db88165d689d997705f45ee4d516015e786342ad764d",
+  "bundle": {
+    "h713-hdmi-audio.ko": "6cbc305cfcd14b20d9c72c25c293402cc2c7490d1cf3e977ba60654c5bf62001",
+    "h713-hdmi-receiver.ko": "5a68e9e03d6f985c24c88253901c6f1237200c0015cb8974a641d170fccf5f47",
+    "h713-hdmi-session.py": "f00d1541b9555df28b6ec29d6a8305b20ce6a22f815713bb9c7f33222bf002fd",
+    "read-owner-census.py": "21935371c54f371c8709284c136655dc211b1ebc0c20c705ff71206165a53b59",
+    "read-comm-trace.py": "43db0a3b5ff7dc89ee87229049b677f7f5c487df8ee856b050a6942efbdfc0b8",
+    "mips-shell.py": "5235c259fc8637b7309df483f0931795ed299b2363fb8914ec8e0cb72fea7615",
+    "dsp-owner-boundary.py": "1b3583e0ad94eeb763a749dc17c16597f72d7638e8b9d68a39eb2e614bccfa9e",
+    "analyze-dsp-owner-boundary.py": "db2d3911bae5bfcb27eec1067317167f2db3adf772ba80260f4868203a7ac2fd"
+  },
+  "firmware_sha256": "8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5",
+  "cold_script_sha256": "0f3245113d33501761e51aa87c59980e63e03c2569d6b05e3276b47d18e6e1d1",
+  "assets": {
+    "observer.inc": "8abe6f06ebcbedd80c2c0365d30eaf135911666b4b705aa9def603fd43106522",
+    "audiotop.inc": "163326956a33b7d0566e8e78607808f79a6807c82d53239c8ceabd50a00933d0",
+    "native-test.c": "3681ccb7c3878b0c2912af04e95858c7fc93e52be5e231d0f1574c29e0ae1ae8"
+  }
+}

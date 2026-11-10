@@ -1,0 +1,44 @@
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win\x0d
+command help of win\x0d
+for window debug only\x0d
+\x0d
+VS:/$ 
+[  130.640807] h713-hdmi-dsp-probe: requesting device=0 word=800d status=00000120
+[  130.648560] h713-hdmi-dsp-probe: graph word=800d value=0000 saved=0000 mask=00ff restore=0
+[  130.658448] h713-hdmi-dsp-probe: requesting device=0 word=00ac status=00000120
+[  130.666200] h713-hdmi-dsp-probe: graph word=00ac value=0000 saved=0000 mask=ffff restore=0
+[  130.676101] h713-hdmi-dsp-probe: requesting device=0 word=0077 status=00000120
+[  130.683855] h713-hdmi-dsp-probe: graph word=0077 value=1617 saved=0000 mask=ffff restore=0
+[  130.693777] h713-hdmi-dsp-probe: requesting device=0 word=004d status=00000120
+[  130.701556] h713-hdmi-dsp-probe: graph word=004d value=696a saved=0000 mask=ffff restore=0
+[  130.711485] h713-hdmi-dsp-probe: requesting device=0 word=805a status=00000120
+[  130.719307] h713-hdmi-dsp-probe: graph word=805a value=007d saved=0000 mask=00ff restore=0
+[  130.729252] h713-hdmi-dsp-probe: requesting device=0 word=8059 status=00000120
+[  130.737064] h713-hdmi-dsp-probe: graph word=8059 value=007c saved=0000 mask=00ff restore=0
+[  130.747011] h713-hdmi-dsp-probe: requesting device=0 word=0130 status=00000120
+[  130.754817] h713-hdmi-dsp-probe: graph word=0130 value=696a saved=0000 mask=ffff restore=0
+[  130.764775] h713-hdmi-dsp-probe: requesting device=0 word=0012 status=00000120
+[  130.822715] h713-hdmi-dsp-probe: device=0 word=0012 slow completion-clear 50102 us ret=-110
+[  130.831743] h713-hdmi-dsp-probe: device=0 word=0012 phase=completion-clear timeout status=00000120; cold boot required
+[  130.843150] h713-hdmi-dsp-probe: graph trial stopped error=-110; cold boot required
+[  130.851431] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  172.376787] h713-hdmi-bridge-trial: restored SPDI1 ctl0=00000000 ctl1=00000000
+[  172.384909] h713-hdmi-bridge-trial: restored Audio Bridge output stream 0
+[  172.392618] h713-hdmi-bridge-trial: restored audio-top ctl=00000000 cfg=00000000
+[  172.400974] h713-hdmi-bridge-trial: restored audio-IHB clock=81000002
+[  172.408138] h713-hdmi-bridge-trial: removed; clocks enabled by the probe restored to off
+[  172.436134] h713-hdmi-tvfe-hold: saved TVFE clock/reset state restored
+Module                  Size  Used by
+h713_edid_clock        12288  0
+h713_hdmi_power        12288  0
+hci_uart               28672  1
+hy310_cpu_comm         98304  0
+sunxi_scanout_dmabuf    12288  0
+hantro_vpu            196608  0
+uinput                 20480  0
+v4l2_h264              16384  1 hantro_vpu
+sunxi_cedrus           81920  0
+v4l2_jpeg              12288  1 hantro_vpu
+panfrost               77824  0

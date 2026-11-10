@@ -1,0 +1,12 @@
+ -3 eb7f026a33634035b974025d504a8504 Mon 2026-04-13 19:38:14 UTC Mon 2026-04-13 19:38:22 UTC
+ -2 c13cce86549c41088251f6c7757d0bcc Mon 2026-04-13 19:38:14 UTC Mon 2026-04-13 19:38:21 UTC
+ -1 4062c792230144df84c722235e7b9162 Mon 2026-04-13 19:38:06 UTC Mon 2026-04-13 19:39:13 UTC
+  0 9ddd0f1d836046a69f03352a12968fce Sun 2026-08-23 04:13:00 UTC Sun 2026-08-23 04:25:46 UTC
+===PREV
+[    3.872819] h713-arm64 systemd[1]: Queued start job for default target graphical.target.
+[    6.913228] h713-arm64 kernel: cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor parked
+[    7.560787] h713-arm64 kernel: cpu_comm: MIPS parked — no channel table to read; CALLs will not be dispatched
+[    8.068325] h713-arm64 systemd[1]: h713-hdmi-capture.service - H713 HDMI audio capture skipped, unmet condition check ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+[    8.068527] h713-arm64 systemd[1]: h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner skipped, unmet condition check ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+[    8.068624] h713-arm64 systemd[1]: h713-hdmi-speaker.service - H713 HDMI input to internal speaker skipped, unmet condition check ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+[   11.354512] h713-arm64 systemd[1]: Reached target graphical.target - Graphical Interface.

@@ -1,0 +1,55 @@
+{
+  "schema": "h713-first-advert-control-plan-v1",
+  "status": "Control B-01 completed: initial miss without parallel radio; delayed-advertisement control C pending",
+  "fixed": {
+    "kernel": "accepted RC",
+    "capture": "same reject-trace-v1, guard unchanged",
+    "countdown": 0,
+    "edid": "unchanged",
+    "source": "same NVIDIA PC/driver/content/HDMI cable; no manual detect or reseat",
+    "source_history": "fresh host reboot with board off before EVERY first-advert arm; return to chat and arm recorders before board power",
+    "retry": "existing automatic fallback retained; retries counted as outcomes, not discarded"
+  },
+  "arms": [
+    {
+      "id": "A",
+      "config": "Current early HDMI + parallel AIC",
+      "purpose": "Reproduce current first-after-host-boot behavior with full source-history recording",
+      "installed": false,
+      "evidence": "Existing cold-02 is A after a fresh source-PC boot, with one initial miss/retry."
+    },
+    {
+      "id": "B",
+      "config": "Same optimized HDMI/countdown/trace, original global AIC startup restored",
+      "purpose": "Does the miss also occur without radio overlap? Compare actual HPD-ready times; timing also changes, so this alone cannot separate phase from overlap.",
+      "restore_path": "/var/lib/h713-hdmi-startup/parallel-wifi-16a62767967c4d379ff642d7f1ad64fd",
+      "installer_manifest": "5a90c744730da441874b6723a6564e9ddff9590c55d9a40d31acacf1414a68e1",
+      "audit": "parallel-wifi/package/audit-before.py",
+      "installed": true,
+      "selection": "Original radio files restored exactly with tested installer; no live module/service restart; zero-countdown/HDMI/copy guard unchanged.",
+      "result": "control-B-01-result.json"
+    },
+    {
+      "id": "C",
+      "config": "Parallel AIC retained; separately reviewed diagnostic delay before initial signal activation toward old ~23s advertisement",
+      "purpose": "Separate early advertisement from radio configuration; identical owner/EDID/register order, measured actual readiness. Gate payload/installer still to prepare.",
+      "installed": false
+    }
+  ],
+  "order": "Initial screening A/B/C with a fresh host boot before each, then repeat/balance if any arm differs. One run per arm does not determine a probability change.",
+  "outcomes": [
+    "source-host boot ID/start and board SPL timestamp",
+    "actual source-power (if validated) / EDID/DDC/HPD / firmware lock / first rendered service milestones",
+    "MIPS/DSP checks; radio init interval and overlap; service states/restarts; audio and guard counters",
+    "record every no-lock/retry outcome and deadline; no manual source recovery",
+    "stop for initialization/hard guard/audio failures; preserve boot and evidence"
+  ],
+  "event_validation": [
+    "Audit exact firmware candidate and supported transport; do not use unproven port-status bit as cable presence",
+    "Trace powered-source +5V separately from TMDS clock/timing lock; check coldplug initial sample as well as edges",
+    "Distinguish DDC activity/read progress if a safe firmware-side status path is identified",
+    "Validate with unplugged, plugged/source off, powered source with output disabled, EDID-reading and sending-video cases",
+    "No ARM receiver MMIO access; no ad-hoc I2C/EDID probes or callback setters in preserved state"
+  ],
+  "operator_coordination": "User confirmed ability to reboot this source PC between arms. Source reboot is manual; leave board off and return to chat before board power-on."
+}

@@ -1,0 +1,42 @@
+test-dsp-boundary.py
+.........mode=lock-mismatch step=50 ret=-5 lastlog=H713 RETENTION step=50 FAILED ret=-5; poweroff only
+
+mode=power-loss step=52 ret=-5 lastlog=H713 RETENTION step=52 FAILED ret=-5; poweroff only
+
+mode=resource-denied step=1 ret=-16 lastlog=H713 RETENTION step=1 FAILED ret=-16; poweroff only
+
+.mode=done-timeout step=56 ret=-1 lastlog=H713 RETENTION step=56 FAILED ret=-1; poweroff only
+
+mode=busy-timeout step=56 ret=-1 lastlog=H713 RETENTION step=56 FAILED ret=-1; poweroff only
+
+mode=late-timeout step=68 ret=-1 lastlog=H713 RETENTION step=68 FAILED ret=-1; poweroff only
+
+.
+----------------------------------------------------------------------
+Ran 11 tests in 0.068s
+
+OK
+test-dsp-retention.py
+...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.092s
+
+OK
+test-tvfe-boot-trace.py
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.073s
+
+OK
+test-warm-retention.py
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 0.020s
+
+OK
+test-hdmi-hold-guard.py
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.044s
+
+OK

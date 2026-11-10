@@ -1,0 +1,22 @@
+active
+closed
+[   18.338433] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[   18.338445] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[   18.338582] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[   18.338592] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[   18.338852] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[   18.338867] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[   18.338880] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[   18.339080] h713-hdmi-audio: DSP versions 0000/0000
+[   19.260191] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[   19.285625] h713-hdmi-audio: managed DSP graph verified 22 words
+[   19.289995] h713-hdmi-audio: registered fixed 48-kHz stereo S16_LE capture; DSP graph verified automatically
+[   19.686000] h713-ddc-pins: PL10-PL15 claimed for three DDC ports (mux 222222, original ffffff)
+[   19.705544] h713-hdmi-signal: ready marker=48444d49 ready=48444d49 exception=0 error=0 done=00000000
+[   19.705574] h713-hdmi-signal: ready original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[   19.705585] h713-hdmi-signal: ready readback 1014=ffffffff 1b00=ffffffff 1b04=ffffffff 1b08=ffffffff 1020=ffffffff 1030=ffffffff 1034=ffffffff 1038=ffffffff
+[   19.705595] h713-hdmi-signal: ready active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[   19.705607] h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry
+[  316.391123] EXT4-fs (mmcblk0p26): error count since last fsck: 60
+[  316.391174] EXT4-fs (mmcblk0p26): initial error at time 1776109107: ext4_mark_recovery_complete:6280
+[  316.391204] EXT4-fs (mmcblk0p26): last error at time 1776109159: ext4_mark_recovery_complete:6280

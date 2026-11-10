@@ -1,0 +1,39 @@
+{
+  "pass": true,
+  "frames": 4320000,
+  "marker_count": 3,
+  "source_relative_drift_ppm": 19.4217314812839,
+  "latency_offset_frames": 8879.743918073926,
+  "maximum_timing_residual_frames": 0.2366727937478572,
+  "maximum_adjacent_interval_change_frames": 0.7100183796137571,
+  "rms_timing_residual_frames": 0.16735293701790352,
+  "final_second_all_zero": true,
+  "markers": [
+    {
+      "index": 0,
+      "source_frame": 96000,
+      "capture_frame": 104881.49006789975,
+      "correlation": 0.9982682211495871,
+      "tone_pass": true
+    },
+    {
+      "index": 1,
+      "source_frame": 1536000,
+      "capture_frame": 1544909.8123704228,
+      "correlation": 0.999722750782047,
+      "tone_pass": true
+    },
+    {
+      "index": 2,
+      "source_frame": 2976000,
+      "capture_frame": 2984937.424654566,
+      "correlation": 0.9987723132445845,
+      "tone_pass": true
+    }
+  ],
+  "acceptance": {
+    "minimum_correlation": 0.65,
+    "maximum_absolute_drift_ppm": 1000,
+    "maximum_adjacent_interval_change_frames": 48
+  }
+}

@@ -1,0 +1,225 @@
+{
+  "date": "2026-10-20",
+  "repository_before_trials": "5c6be3a",
+  "installed_proper_sha256": "314d81a3e17646c0250bbbadaac38762560acad8378e1f8b0b141487b068664c",
+  "comparison_result": "All five fields equal at proper_preboot, pre_workspace and post_logo; hardware recovery unproven",
+  "operator_confirmed": "Each trial began from a separate >=60-second disconnected cold cycle with same HDMI source. Additional board powerdown occurred after usage limit. User later clarified the board was powered down after reaching the usage limit.",
+  "source_format": "Not supplied; fixed capture format is not input-format proof",
+  "post_reset_correlation": "Clean post-reset Linux identified. Abrupt UART complete through login; intervening journal boot is consistent with skipped HDMI units. Later live collector is not attributed to abrupt reset.",
+  "local_evidence": {
+    "abrupt-after-health.txt": {
+      "bytes": 3050,
+      "sha256": "c851376b863c6667bfb7786cd332026aaa0b8f23c59da9c77d8394451edd9fc0"
+    },
+    "abrupt-after-linux.json": {
+      "bytes": 46288,
+      "sha256": "f8d9408b8f6d310455a73229970a5c8c283f92a9e2adec1b3879010d84dbc851"
+    },
+    "abrupt-after-settled-linux.json": {
+      "bytes": 49795,
+      "sha256": "e3f3a02ea31905208a15201d06d7b6695bfd3c2d0286b04d3257844805d0d147"
+    },
+    "abrupt-cold-health.txt": {
+      "bytes": 1679,
+      "sha256": "baf6927d38b3d5558be8b244aa90e4398804ff23dc5992694607217514ae5f9f"
+    },
+    "abrupt-cold-linux.json": {
+      "bytes": 50085,
+      "sha256": "696b331f5f648784ca25a21720289b32a5fea58934ec68df7c8caf9ff1452adb"
+    },
+    "abrupt-cold.serial.log": {
+      "bytes": 55249,
+      "sha256": "b85ed530c9c417330cebd896152eec43ee4dc82e0ad62a229fc8e475f162526e"
+    },
+    "abrupt-reset-request.txt": {
+      "bytes": 331,
+      "sha256": "03c9c327066f498eca271bf728619ca9e4d9f54d68da9b96aecb4eea80c7ac5d"
+    },
+    "abrupt-reset-trigger.py": {
+      "bytes": 1445,
+      "sha256": "6725e35f7b20cc588f65cb42ef6df708feba39cda14d1441f37f2b85dc2a0b22"
+    },
+    "abrupt-reset.serial.log": {
+      "bytes": 48186,
+      "sha256": "3170e0620ccd83fa473dccda95e56cced0959fb18019354ac116366090d0264f"
+    },
+    "abrupt-timeline-check.txt": {
+      "bytes": 50054,
+      "sha256": "e227fa81a8296d71a06ff0c95498681a763ec637a02671ab6bb589e2c27f50ec"
+    },
+    "abrupt-trial.json": {
+      "bytes": 1522,
+      "sha256": "8a30ee01138aac92961a7fedbba9e87626b6c4c1231806434652cd89a7474b54"
+    },
+    "abrupt-trigger-interval.serial.log": {
+      "bytes": 83,
+      "sha256": "78417dd0a19e8b1f4d5f4b89f660607039f0405ad0eab4c692bb25e53b7ead8f"
+    },
+    "abrupt-uart-crosscheck.txt": {
+      "bytes": 308,
+      "sha256": "a0579206b69293a23b51f23b5e09325baf9bf3680a102c7784cd1582c9400c0c"
+    },
+    "abrupt-unexpected-state.txt": {
+      "bytes": 2477,
+      "sha256": "2ccd471e3f0ee5eb2b42228d17ebbf2f2bf584d61d17c48fa23dc25ebdbe9092"
+    },
+    "artifact-preflight.txt": {
+      "bytes": 233,
+      "sha256": "dde638465e68b625a9346287a3ebdcd5464034e61c713dac9ec644e6178bb006"
+    },
+    "clean-after-linux.json": {
+      "bytes": 41892,
+      "sha256": "92322d96bbd375e59d7c59cfb8e620cb1b91fe6eea4d3b70845d268d83eb10f5"
+    },
+    "clean-cold-health.txt": {
+      "bytes": 1999,
+      "sha256": "90f290f46a855814d37f4ac68d7eb4da3df78a6ad9a463864b58a57c477fd29d"
+    },
+    "clean-cold-linux.json": {
+      "bytes": 50136,
+      "sha256": "f6a193806c77fe39f451f160624ec2c8055c360d47618ff52fd2e4230d0c5646"
+    },
+    "clean-cold.serial.log": {
+      "bytes": 62630,
+      "sha256": "eed10ff5c70548f88237508b8cd6368f7344769f2300b96a706e6d311b25e5ce"
+    },
+    "clean-markers.json": {
+      "bytes": 1014,
+      "sha256": "d8bca0dddc6ded6e7193877c0d9c1f9d533b6c2f948b2a894858fcf5de253ac4"
+    },
+    "clean-reset-request.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "clean-reset.serial.log": {
+      "bytes": 48010,
+      "sha256": "1a0492c3d006890d0bbd783e172fa2edcde9c55e1f1298be6f8a34bbe1730ed1"
+    },
+    "clean-shutdown-and-health.txt": {
+      "bytes": 3792,
+      "sha256": "6ddd2d8f0fc6b44b808f46c3cf603ee7f9cc27ea96ad0c09100285513cdd1a41"
+    },
+    "clean-trial.json": {
+      "bytes": 932,
+      "sha256": "778b9487c25550963557f323e8a77c0512cd7de4170849adcab1269b3362c255"
+    },
+    "intervening-boot-journal.txt": {
+      "bytes": 589,
+      "sha256": "653dac173511b83571f06b9f06ec9a3ffe02cbbda51f3ecbca18c74e2615fc30"
+    },
+    "poweroff-for-abrupt-cold.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "poweroff-for-cold.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "pre-cold-linux.json": {
+      "bytes": 42333,
+      "sha256": "ddd9356d15e36b2509867a460ac791450ca41622bf9e82f80a41bb8249536c3b"
+    },
+    "preflight.txt": {
+      "bytes": 1716,
+      "sha256": "427c0eb21e40eb8993631248db5445408bbe86800fe8a93f0af277ecd29c638e"
+    },
+    "preparation.json": {
+      "bytes": 1425,
+      "sha256": "6a123b2404fe7f1719d7489f324472ccc120f487ce1f2da0e9d6b217df83fe5f"
+    },
+    "recorder-clean.txt": {
+      "bytes": 74,
+      "sha256": "6ae749215b800dc1a524cfaaaff7cee0d7d56bd20ec21168eaaa34dfbfe47852"
+    },
+    "recorder-followup.txt": {
+      "bytes": 37,
+      "sha256": "8d4b65997ded470d85519f5ddb710e453477366e830386715d70bf97c741ee7b"
+    },
+    "reset-comparison.json": {
+      "bytes": 2967,
+      "sha256": "0a71f83ea0f779af1580e1b75b631866980973a8fe3edfb40e9b040173e16d56"
+    },
+    "uart-clean/serial.log": {
+      "bytes": 215679,
+      "sha256": "047298b88a4c6a3b4fc4a8735d427c58719f05f14feadb73eb602df5038898e1"
+    },
+    "uart-clean/serial-timestamped.log": {
+      "bytes": 300413,
+      "sha256": "9bd353e10b3d4593aceeed314f40b7507f8af85104b6e1981808d2e093147207"
+    }
+  },
+  "curated_evidence": {
+    "abrupt-after-settled-linux.json": {
+      "bytes": 5432,
+      "sha256": "04114ad206f323cf84432cc934b48d8d63486161e8a71ad20fa5e9ef85fe1c21"
+    },
+    "abrupt-cold-health.txt": {
+      "bytes": 1679,
+      "sha256": "baf6927d38b3d5558be8b244aa90e4398804ff23dc5992694607217514ae5f9f"
+    },
+    "abrupt-cold-linux.json": {
+      "bytes": 5429,
+      "sha256": "2e0d94fc49ec5c3ddfc4c950735020e59d9c57edd6011aa6bc6434cee2e8f407"
+    },
+    "abrupt-reset-request.txt": {
+      "bytes": 331,
+      "sha256": "03c9c327066f498eca271bf728619ca9e4d9f54d68da9b96aecb4eea80c7ac5d"
+    },
+    "abrupt-reset-trigger.py.txt": {
+      "bytes": 1445,
+      "sha256": "6725e35f7b20cc588f65cb42ef6df708feba39cda14d1441f37f2b85dc2a0b22"
+    },
+    "abrupt-reset.serial.log": {
+      "bytes": 48186,
+      "sha256": "3170e0620ccd83fa473dccda95e56cced0959fb18019354ac116366090d0264f"
+    },
+    "abrupt-trial.json": {
+      "bytes": 1522,
+      "sha256": "8a30ee01138aac92961a7fedbba9e87626b6c4c1231806434652cd89a7474b54"
+    },
+    "abrupt-trigger-interval.serial.log": {
+      "bytes": 83,
+      "sha256": "78417dd0a19e8b1f4d5f4b89f660607039f0405ad0eab4c692bb25e53b7ead8f"
+    },
+    "artifact-preflight.txt": {
+      "bytes": 233,
+      "sha256": "dde638465e68b625a9346287a3ebdcd5464034e61c713dac9ec644e6178bb006"
+    },
+    "clean-after-linux.json": {
+      "bytes": 3213,
+      "sha256": "7ac7ebb81b4391783bf8bc221470122c0c1b4a002dd835ffbca03a4d731241d0"
+    },
+    "clean-cold-health.txt": {
+      "bytes": 1999,
+      "sha256": "90f290f46a855814d37f4ac68d7eb4da3df78a6ad9a463864b58a57c477fd29d"
+    },
+    "clean-cold-linux.json": {
+      "bytes": 5434,
+      "sha256": "a09c5fda5ef3143eddfd1fc704298006b793b7ae71b6ea821149ee9c71daccfc"
+    },
+    "clean-reset.serial.log": {
+      "bytes": 48010,
+      "sha256": "1a0492c3d006890d0bbd783e172fa2edcde9c55e1f1298be6f8a34bbe1730ed1"
+    },
+    "clean-shutdown-and-health.txt": {
+      "bytes": 3792,
+      "sha256": "6ddd2d8f0fc6b44b808f46c3cf603ee7f9cc27ea96ad0c09100285513cdd1a41"
+    },
+    "clean-trial.json": {
+      "bytes": 932,
+      "sha256": "778b9487c25550963557f323e8a77c0512cd7de4170849adcab1269b3362c255"
+    },
+    "intervening-boot-journal.txt": {
+      "bytes": 589,
+      "sha256": "653dac173511b83571f06b9f06ec9a3ffe02cbbda51f3ecbca18c74e2615fc30"
+    },
+    "reset-comparison.json": {
+      "bytes": 2967,
+      "sha256": "0a71f83ea0f779af1580e1b75b631866980973a8fe3edfb40e9b040173e16d56"
+    },
+    "README.md": {
+      "bytes": 6892,
+      "sha256": "527b9b30426130e701eae31eb89acc1c4d302b85a0045216040934f2267e57a2"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+[  501.908084] h713-arm64 h713-signal-fault: poweroff after bench, backend must park
+[  502.070211] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+[  502.904276] h713-arm64 kernel: h713-hdmi-audio: managed DSP graph restored 22 words
+[  506.724611] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 0 asserted and verified
+[  506.724975] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 1 asserted and verified
+[  506.733405] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS reset 2 asserted and verified
+[  506.753219] h713-arm64 kernel: h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required
+[  507.035182] h713-arm64 python3[1306]: {"phase": "parked", "receiver_removed": true, "cold_boot_required": true, "audio_stop": {"phase": "stopped", "already_stopped": false, "receiver_retained": true, "dsp_restored_words": 22, "tvfe_restored_words": 15}}
+[  507.123380] h713-arm64 systemd[1]: h713-hdmi-capture.service: Deactivated successfully.
+[  507.123965] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+[  507.125247] h713-arm64 systemd[1]: h713-hdmi-capture.service: Consumed 1.677s CPU time.
+[  507.772288] h713-arm64 systemd[1]: Shutting down.

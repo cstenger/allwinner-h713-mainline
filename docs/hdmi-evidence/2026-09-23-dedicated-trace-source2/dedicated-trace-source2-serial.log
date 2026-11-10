@@ -1,0 +1,61 @@
+[  127.510033] h713-mips-trace: {"guards":"43414e31/43414e31","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","seconds":0.0}
+[  144.900412] cpu_comm: MIPS callback channel pid=470 id=0x1d61
+[  144.956718] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  144.964279] sunxi_cpu_comm_send_intr_to_mips: 32 callbacks suppressed
+[  144.964286] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  144.970753] cpu_comm_msgbox_drain: 32 callbacks suppressed
+[  144.970759] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  144.987725] cpu_comm_trace_ipc: 116 callbacks suppressed
+[  144.987734] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  145.001482] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  145.010270] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  145.018452] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  145.023678] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  145.031942] cpu_comm: IPC[handle_return] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  145.040378] cpu_comm: IPC[dispatch] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  145.048397] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  145.098515] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.106051] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  145.112161] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  145.117570] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  145.126014] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  145.134797] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  145.142974] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  145.148209] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  145.156496] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  145.206671] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.214239] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  145.220539] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  145.225999] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  145.231302] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  145.281543] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.289114] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  145.289791] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  145.300671] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  145.305951] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  145.356181] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.363765] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  145.364539] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  145.375317] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  145.380605] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0
+[  145.430834] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.508373] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.585745] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.645182] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.722499] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.782506] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.794733] h713-mips-trace: {"guards":"43414e31/43414e31","callback":"5102:callback-queued","worker":"5203:transition-complete","event":7,"new":0,"old":0,"source_queue":"00000000","vp_init":"7105","seconds":18.284}
+[  145.842354] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.901482] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  145.913250] h713-mips-trace: {"guards":"43414e31/43414e31","callback":"5102:callback-queued","worker":"5203:transition-complete","event":6,"new":1,"old":0,"source_queue":"00000000","vp_init":"7105","seconds":18.402}
+[  145.960711] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  146.020319] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  146.079719] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  146.139493] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  146.199165] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  146.259076] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  146.318722] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  146.378211] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  147.439155] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  147.450306] h713-mips-trace: {"guards":"43414e31/43414e31","callback":"5101:callback-event","worker":"5203:transition-complete","event":0,"new":2,"old":0,"source_queue":"00000000","vp_init":"7105","seconds":19.94}
+[  147.888833] cpu_comm: CPUComm_CallEx: no RETURN after 5000 ms (session=0x2b, interrupted)

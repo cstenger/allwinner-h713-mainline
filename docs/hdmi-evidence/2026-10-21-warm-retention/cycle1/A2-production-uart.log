@@ -1,0 +1,104 @@
+=== soak-capture start 2026-10-21 19:04:36 (deadline 60 min) ===
+[19:04:36 T+    0.1] set FEATURE_SDIO_CLOCK 0 MHz
+[19:04:36 T+    0.1] [    4.291473] aicbsp: aicwf_sdio_reg_init
+[19:04:36 T+    0.1] [    4.297444] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_table_8800d80_u02.bin  
+[19:04:36 T+    0.1] [    4.297483] aicbsp: sdio_err:<aicwf_sdio_hal_irqhandler,1775>: Interrupt but no data
+[19:04:36 T+    0.1] [    4.299608] file md5:0c9bf9c9c10f7a90a22a4c35fa58c967
+[19:04:36 T+    0.1] [    4.299738] rwnx_plat_bin_fw_upload_android
+[19:04:36 T+    0.1] [    4.331105] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_adid_8800d80_u02.bin  
+[19:04:36 T+    0.1] [    4.331843] file md5:f546881a81b960d89a672578eb45a809
+[19:04:36 T+    0.1] [    4.351611] rwnx_plat_bin_fw_upload_android
+[19:04:36 T+    0.1] [    4.351631] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fw_patch_8800d80_u02.bin  
+[19:04:36 T+    0.1] [    4.352700] file md5:35d137b8a76daaeb4f5034df8e15bcde
+[19:04:36 T+    0.2] [    4.399195] aicbt_patch_table_load bt btmode[3]:5 
+[19:04:36 T+    0.2] [    4.405403] aicbt_patch_table_load bt uart_baud[3]:1500000 
+[19:04:36 T+    0.2] [    4.405422] aicbt_patch_table_load bt uart_flowctrl[3]:1 
+[19:04:36 T+    0.2] [    4.405426] aicbt_patch_table_load bt lpm_enable[3]:0 
+[19:04:36 T+    0.2] [    4.405429] aicbt_patch_table_load bt tx_pwr[3]:28463 
+[19:04:36 T+    0.3] [    4.539024] aicbsp: bt patch version: - Mar 07 2024 14:29:05 - git f94a3e4
+[19:04:36 T+    0.3] [    4.547229] rwnx_plat_bin_fw_upload_android
+[19:04:36 T+    0.3] [    4.552633] rwnx_load_firmware :firmware path = /lib/firmware/aic8800_fw/SDIO/aic8800D80/fmacfw_8800d80_h_u02.bin  
+[19:04:36 T+    0.3] [    4.558537] file md5:5f3302e5557d8b5fc1526d30d2b20899
+[19:04:36 T+    0.5] [    4.694873] rd_version_val=06090101
+[19:04:36 T+    0.5] [    4.721874] aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[19:04:36 T+    0.5] [    4.729376] aicsdio: aicwf_sdio_reg_init
+[19:04:36 T+    0.5] [    4.739595] aicbsp: aicbsp_resv_mem_alloc_skb, alloc resv_mem_txdata succuss, id: 0, size: 98304
+[19:04:36 T+    0.5] [    4.749872] aicbsp: aicbsp_get_feature, set FEATURE_SDIO_CLOCK 0 MHz
+[19:04:36 T+    0.5] [    4.759925] tcp_ack_init 
+[19:04:36 T+    0.5] [    4.766870] AICWFDBG(LOGERROR)	invalid cmd: loss_enable
+[19:04:36 T+    0.5] [    4.773378] AICWFDBG(LOGERROR)	invalid cmd: loss_value
+[19:04:38 T+    1.7] [    5.895129] random: crng init done
+[19:04:38 T+    2.0] [    6.216853] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[19:04:38 T+    2.0] [    6.224191] rwnx_reg_notifier Enter
+[19:04:38 T+    2.0] [    6.229822] ieee80211 phy0: 
+[19:04:38 T+    2.0] [    6.229822] *******************************************************
+[19:04:38 T+    2.0] [    6.229822] ** CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES **
+[19:04:38 T+    2.0] [    6.229822] *******************************************************
+[19:04:38 T+    2.0] [    6.266533] get_txpwr_max:txpwr_max:18 
+[19:04:38 T+    2.0] [    6.273536] aic_bluetooth_mod_init
+[19:04:38 T+    2.0] [    6.278618] -->rfkill_bluetooth_init
+[19:04:38 T+    2.0] [    6.283561] bluetooth_set_power: start_block=1
+[19:04:38 T+    2.1] [    6.289131] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 0
+[19:04:38 T+    2.1] [    6.297112] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[19:04:38 T+    2.1] [    6.305640] bluetooth_set_power: end_block=1
+[19:04:38 T+    2.1] [    6.311153] <--rfkill_bluetooth_init
+[19:04:38 T+    2.1] [    6.338639] panfrost 1800000.gpu: clock rate = 600000000
+[19:04:38 T+    2.1] [    6.345140] panfrost 1800000.gpu: bus_clock rate = 100000000
+[19:04:38 T+    2.1] [    6.368873] panfrost 1800000.gpu: mali-g31 id 0x7093 major 0x0 minor 0x0 status 0x0
+[19:04:38 T+    2.2] [    6.372647] cedrus 1c0e000.video-codec: Device registered as /dev/video0
+[19:04:38 T+    2.2] [    6.377665] panfrost 1800000.gpu: features: 00000000,000027f7, issues: 00000000,00000400
+[19:04:38 T+    2.2] [    6.387221] scanout-dmabuf: carveout 0x000000006c100000 + 8192 KiB
+[19:04:38 T+    2.2] [    6.394595] panfrost 1800000.gpu: Features: L2:0x07100206 Shader:0x00000000 Tiler:0x00000209 Mem:0x1 MMU:0x00002821 AS:0xff JS:0x7
+[19:04:38 T+    2.2] [    6.407453] hantro-vpu 1c0d000.av1: registered allwinner,sun50i-h713-av1-dec as /dev/video1
+[19:04:38 T+    2.2] [    6.414718] panfrost 1800000.gpu: shader_present=0x1 l2_present=0x1
+[19:04:38 T+    2.2] [    6.478273] [drm] Initialized panfrost 1.4.0 for 1800000.gpu on minor 1
+[19:04:38 T+    2.4] [    6.670195] hy310-cpu-comm 3003000.cpu-comm: shared memory: 0x4e300000 size 0x500000
+[19:04:38 T+    2.4] [    6.680085] cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff800081d0d000 size=0x500000
+[19:04:38 T+    2.5] [    6.702132] cpu_comm: HW mapped — MIPS ctrl @ 00000000bc4dc8a2, msgbox @ 000000005a9009e6 (version 0x00020000, tx fifo 0, rx fifo 0)
+[19:04:38 T+    2.5] [    6.715469] cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor running
+[19:04:38 T+    2.5] [    6.726216] cpu_comm: adopting the live shared region -- not reinitialising it
+[19:04:38 T+    2.5] [    6.734661] cpu_comm: wrote ShMemAddr=0x4e300000 to MIPS share regs
+[19:04:38 T+    2.5] [    6.743695] cpu_comm: /dev/cpu_comm_fd registered (major=241)
+[19:04:38 T+    2.5] [    6.747226] bluetooth_set_power: start_block=0
+[19:04:38 T+    2.5] [    6.756259] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[19:04:38 T+    2.5] [    6.757715] cpu_comm: MIPS elog BEFORE: mode=0 en2=0 wp2=0
+[19:04:38 T+    2.5] [    6.764248] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[19:04:39 T+    2.6] [    6.765309] cpu_comm: MIPS elog staying on Mode 1 (ring buffer) (2MB buffer)
+[19:04:39 T+    2.6] [    6.766351] bluetooth_set_power: end_block=0
+[19:04:39 T+    2.6] [    6.767547] cpu_comm: InitCommSeqMem(0): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[19:04:39 T+    2.6] [    6.801621] cpu_comm: InitCommSeqMem(1): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[19:04:39 T+    2.6] [    6.801638] cpu_comm: adopted shared memory: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[19:04:39 T+    2.6] [    6.801647] cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+[19:04:39 T+    2.6] [    6.801790] cpu_comm: msgbox RX by hrtimer poll (250 us busy / 4 ms idle) (IRQ 334 available, not requested)
+[19:04:39 T+    2.6] [    6.801811] cpu_comm: CPU ARM app ready
+[19:04:39 T+    2.6] [    6.801816] cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[19:04:39 T+    2.6] [    6.801821] cpu_comm: MIPS app-ready assumed (MIPS READY seen)
+[19:04:39 T+    3.1] [    7.303124] cpu_comm: POST-WAIT: ARM=0x5 MIPS=0x5
+[19:04:39 T+    3.1] [    7.309051] cpu_comm: auto-registered 18/18 MIPS VP routes
+[19:04:39 T+    3.1] [    7.315668] cpu_comm: channel row 0 live: chan=0x0000 pid=0x8b8f275c key=0xb8f275c0
+[19:04:39 T+    3.1] [    7.324420] cpu_comm: addressing CALLs to channel row 0 (chan=0x0 pid=0x8b8f275c)
+[19:04:39 T+    3.1] [    7.333001] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[19:04:39 T+    3.1] [    7.338911] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[19:04:39 T+    3.1] [    7.345546] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[19:04:39 T+    3.1] [    7.352839] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[19:04:40 T+    3.7] [    7.921175] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[19:04:40 T+    3.7] [    7.929162] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[19:04:40 T+    4.0] [    8.213368] get_txpwr_max:txpwr_max:18 
+[19:04:40 T+    4.0] [    8.218986] get_txpwr_max:txpwr_max:18 
+[19:04:40 T+    4.0] [    8.226095] get_txpwr_max:txpwr_max:18 
+[19:04:40 T+    4.0] [    8.231498] change_if: 2 to 3, 8, 2
+[19:04:40 T+    4.0] [    8.231532] get_txpwr_max:txpwr_max:18 
+[19:04:40 T+    4.0] [    8.242434] get_txpwr_max:txpwr_max:18 
+[19:04:40 T+    4.5] [    8.721189] get_txpwr_max:txpwr_max:18 
+[19:04:40 T+    4.5] [    8.727406] chan.flags 0 
+[19:04:43 T+    6.9] [   11.148383] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[19:04:43 T+    7.3] [   11.517374] systemd-journald[109]: File /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal corrupted or uncleanly shut down, renaming and replacing.
+[19:04:46 T+    9.9] [!p]104[?7h[6n[32766;32766H[6n[!p]104[?7h[6n[32766;32766H[6n
+[19:04:46 T+    9.9] Debian GNU/Linux 13 h713-arm64 ttyS0
+[19:04:46 T+    9.9] h713-arm64 login: root (automatic login)
+[19:04:46 T+   10.0] Linux h713-arm64 6.18.38 #1 SMP Fri Oct 16 15:44:49 PDT 2026 aarch64
+[19:04:46 T+   10.0] The programs included with the Debian GNU/Linux system are free software;
+[19:04:46 T+   10.0] the exact distribution terms for each program are described in the
+[19:04:46 T+   10.0] individual files in /usr/share/doc/*/copyright.
+[19:04:46 T+   10.0] Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+[19:04:46 T+   10.0] permitted by applicable law.

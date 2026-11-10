@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+rd() {
+    for a in 0x0588000c 0x0588001c 0x05880038 0x0588003c 0x05880040; do
+        echo "$a $(busybox devmem "$a" 32)"
+    done
+}
+check() { [ "$(busybox devmem "$1" 32)" = "$2" ]; }
+restore() {
+    echo H713_MATCHED_RESTORE_BEGIN
+    cat /proc/uptime
+    busybox devmem 0x0588000c 32 0x00E40202
+    busybox devmem 0x0588001c 32 0x00000004
+    busybox devmem 0x05880038 32 0x00080008
+    busybox devmem 0x0588003c 32 0x00000000
+    busybox devmem 0x05880040 32 0x3FFFFFFF
+    rd
+    check 0x0588000c 0x00E40202
+    check 0x0588001c 0x00000004
+    check 0x05880038 0x00080008
+    check 0x0588003c 0x00000000
+    check 0x05880040 0x3FFFFFFF
+    echo H713_MATCHED_RESTORE_END
+}
+trap 'restore' EXIT
+busybox devmem 0x05880038 32 0x00800080
+busybox devmem 0x0588003c 32 0x3F000000
+busybox devmem 0x05880040 32 0x000000FF
+busybox devmem 0x0588001c 32 0x00000005
+busybox devmem 0x0588000c 32 0x00E4020A
+rd
+check 0x0588000c 0x00E4020A
+check 0x0588001c 0x00000005
+check 0x05880038 0x00800080
+check 0x0588003c 0x3F000000
+check 0x05880040 0x000000FF
+echo H713_MATCHED_PATTERN_VERIFIED_HOLD114_BEGIN
+cat /proc/uptime
+sleep 114
+restore
+trap - EXIT
+sleep 11
+echo H713_MATCHED_CONTROL_WARM_REBOOT
+cat /proc/uptime
+dmesg -n 7
+systemctl reboot

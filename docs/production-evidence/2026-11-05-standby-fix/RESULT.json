@@ -1,0 +1,90 @@
+{
+  "status": "PASS standby wake fix installed and verified before/after cold boot, including operator desktop/lamp/fan confirmation",
+  "boot_id": "72aba591-6346-482f-a905-5d4b50ee7bb7",
+  "fix": "Half-second,500Hz startup pulse ramp through existing gpio-backlight sysfs owner; ends with lamp/fan fully enabled. No receiver MMIO, firmware/module changes or steady fan PWM.",
+  "installed_files": {
+    "usr/local/bin/h713-standby": {
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "sha256": "95ed3e84c2ec1e04e35057340e789bd6ec2ea03f9fcc3b705b2760cdbd0b535e"
+    },
+    "usr/local/bin/h713-lamp-ramp": {
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "sha256": "76c8743fcfb2a8515e9d6129341ec3386ae682f22f843497f459c2eca2cf31f6"
+    }
+  },
+  "board_backup": "/var/lib/h713-standby-wake/20261105-softstart/h713-standby.before",
+  "negative_controls": {
+    "stop_hdmi_consumers": "reset persisted",
+    "restore_and_pin_cpu_before_lamp": "reset persisted at lamp enable"
+  },
+  "positive_cycles": {
+    "temporary_helper_trial": "PASS same boot, HDMI video/audio active",
+    "installed_script_3sec": "PASS same boot, lamp and CPU limits restored",
+    "installed_script_10sec": "PASS same boot, lamp and CPU limits restored",
+    "virtual_KEY_POWER_pair": "PASS on->off via real h713-keyd, same boot, zero new frame rejects or audio xruns"
+  },
+  "cumulative_frames_rejected": 1,
+  "frame_rejects_key_cycle_before_after": [
+    1,
+    1
+  ],
+  "audio_xruns_key_cycle": 0,
+  "offline_checks": {
+    "ramp_clock_sysfs_model": "PASS bounded duration/final-high/error-low/idempotent/preconditions",
+    "standby_shell_model": "3 PASS lifecycle/failure/missing-helper",
+    "release_tests": "6 PASS",
+    "strict_native_and_arm64_build": "PASS",
+    "shell_syntax_and_diff_check": "PASS"
+  },
+  "remaining": "No required standby-wake fix work remains. Electrical rail cause unmeasured; extended standby thermal qualification is separate.",
+  "audit": {
+    "status": "PASS candidate runtime identity/startup checks",
+    "files_verified": 75,
+    "boot_id": "72aba591-6346-482f-a905-5d4b50ee7bb7",
+    "package_set": "PASS",
+    "kernel_config": "PASS",
+    "raw": {
+      "proper": "PASS",
+      "spl": "PASS",
+      "environment": "PASS"
+    }
+  },
+  "operator_confirmation": "Desktop, lamp, and fan are back",
+  "current_operator_state": "Board left running; desktop, lamp, and fan confirmed back after cold-boot wake.",
+  "cold_boot_validation": {
+    "status": "PASS cold boot audit and ten-second standby/wake without reboot",
+    "boot_id": "45c76aa6-337c-4935-9918-9341434ea99d",
+    "audit_files_verified": 75,
+    "bootloader_environment_audit": {
+      "proper": "PASS",
+      "spl": "PASS",
+      "environment": "PASS"
+    },
+    "signal": "locked 1280x720",
+    "video_service": "active",
+    "speaker_service": "active",
+    "wake_same_boot": true,
+    "lamp_power_after": 0,
+    "cpu_limit_restored": true,
+    "error_counters_before": {
+      "frames_rejected": 0,
+      "audio_xruns": 0
+    },
+    "error_counters_after": {
+      "frames_rejected": 0,
+      "audio_xruns": 0,
+      "bad_guard": 0,
+      "invalid_pair": 0
+    },
+    "standby_enter_uptime": 174.6,
+    "wake_before_uptime": 184.61,
+    "wake_complete_uptime": 185.17,
+    "operator_visual_confirmation": "Confirmed: desktop, lamp, and fan all returned after post-cold-boot wake.",
+    "source_host_note": "Not a fresh-source first-advertisement repeat",
+    "connectivity": "Host saved spirits Wi-Fi profile reconnected to reach board after power cycle"
+  }
+}

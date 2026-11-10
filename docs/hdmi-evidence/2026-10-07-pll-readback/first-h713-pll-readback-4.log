@@ -1,0 +1,40 @@
+[stale output, discarded before the command: 109 bytes]
+10
+
+addr: 06880010, Value: 0x00000001
+
+
+VS:/$ regr 06880018
+
+addr: 06880018, Value: 0x00000002
+
+
+VS:/$ 
+[sent 14 bytes: 'regr 06880004']
+[reply: 5 bytes]
+regr 
+[stale output, discarded before the command: 6 bytes]
+068800
+[sent 14 bytes: 'regr 0688000c']
+[reply: 52 bytes]
+04
+
+addr: 06880004, Value: 0x00000003
+
+
+VS:/$ reg
+[stale output, discarded before the command: 6 bytes]
+r 0688
+[sent 14 bytes: 'regr 06880010']
+[reply: 51 bytes]
+000c
+
+addr: 0688000c, Value: 0x00000000
+
+
+VS:/$ 
+[stale output, discarded before the command: 6 bytes]
+regr 0
+[sent 14 bytes: 'regr 06880018']
+[reply: 5 bytes]
+68800

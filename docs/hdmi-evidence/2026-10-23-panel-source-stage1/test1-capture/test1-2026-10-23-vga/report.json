@@ -1,0 +1,114 @@
+{
+ "original_mode": {
+  "w": 1280,
+  "h": 720,
+  "hz": 60.0,
+  "current": true,
+  "preferred": true
+ },
+ "modes": [
+  {
+   "mode": "640x480@59.94",
+   "geometry": {
+    "ring": [
+     640,
+     480
+    ],
+    "stride": 640,
+    "input": [
+     640,
+     480
+    ],
+    "scaled": false
+   },
+   "psnr_y": 54.24,
+   "csc": {
+    "fit": [
+     [
+      0.1827,
+      0.6133,
+      0.0623,
+      15.6587
+     ],
+     [
+      -0.0996,
+      -0.3376,
+      0.4369,
+      127.8585
+     ],
+     [
+      0.4392,
+      -0.3987,
+      -0.0409,
+      127.8391
+     ]
+    ],
+    "rms": [
+     0.39,
+     0.32,
+     0.34
+    ],
+    "nearest": "BT.709 limited",
+    "max_coef_error": 0.0023,
+    "max_offset_error": 0.34,
+    "distances": {
+     "BT.601 limited": 0.1092,
+     "BT.601 full": 0.1163,
+     "BT.709 limited": 0.0023,
+     "BT.709 full": 0.1019
+    },
+    "flat_pixels": 143932
+   },
+   "rowmap_y": {
+    "best": [
+     0.25,
+     1.0,
+     0
+    ],
+    "best_half": [
+     57.03,
+     0.5,
+     24
+    ]
+   },
+   "rowmap_c": {
+    "best": [
+     0.3,
+     1.0,
+     0
+    ],
+    "best_half": [
+     22.07,
+     0.5,
+     24
+    ]
+   },
+   "chroma": {
+    "shift_chroma_samples": 0,
+    "error": 0.27
+   },
+   "interlace": {
+    "adjacent_pairs_identical": 0.033,
+    "comb_index": 1.321
+   },
+   "cadence": {
+    "rate": 64.02,
+    "slots": 3,
+    "expected_hz": 59.94,
+    "matches": true
+   },
+   "firmware": {
+    "afbd_source_mode": 1,
+    "nr_colour_format": 4,
+    "fb_in": {
+     "addr": "8b89bd40",
+     "w": 640,
+     "h": 480,
+     "compress": 0,
+     "colour_format": 4
+    }
+   }
+  }
+ ],
+ "restored": true
+}

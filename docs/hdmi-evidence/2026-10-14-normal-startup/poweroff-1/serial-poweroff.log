@@ -1,0 +1,97 @@
+[    8.211886] h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...
+[   19.908556] h713-arm64 python3[206]: {"phase": "ready", "already_ready": false}
+[   19.991550] h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.
+[   19.997909] h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[   20.341035] h713-arm64 python3[391]: EDID/HPD ready; receiver client and DDC pins retained
+[   20.410179] h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[ 3333.345249] h713-arm64 systemd[1]: Started h713-hdmi-poweroff-recorder.service - Active HDMI recorder for full poweroff test.
+H713 ACTIVE POWEROFF {"active_recording_poweroff_request": true, "recorder_pid": 1429, "pcm_status": "state: RUNNING\nowner_pid   : 1429\ntrigger_time: 3333.410697630\ntstamp      : 0.000000000\ndelay       : 96\navail       : 96\navail_max   : 512\n-----\nhw_ptr      : 302492\nappl_ptr    : 302396\n", "boot_id": "6aad1b44-bc23-4a7d-a808-2cc9f39e6620"}
+
+Broadcast message from root@h713-arm64 (Mon 2026-04-13 20:33:42 UTC):
+
+The system will power off now!
+
+[?2004l[?2004h[?2004l
+[ 3339.949638] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[ 3339.970331] get_txpwr_max:txpwr_max:18 
+[ 3339.977074] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[ 3339.984078] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[ 3339.991610] change_if: 3 to 2, 8, 2
+[ 3339.991636] get_txpwr_max:txpwr_max:18 
+[!p]104[?7h[6n[32766;32766H[6n[ 3339.912363] h713-arm64 systemd[1]: Stopping h713-hdmi-poweroff-recorder.service - Active HDMI recorder for full poweroff test...
+[ 3340.372268] h713-arm64 systemd[1]: h713-hdmi-poweroff-recorder.service: Deactivated successfully.
+[ 3340.372993] h713-arm64 systemd[1]: Stopped h713-hdmi-poweroff-recorder.service - Active HDMI recorder for full poweroff test.
+[ 3340.418484] h713-arm64 systemd[1]: Stopping h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...
+[ 3340.710654] h713-hdmi-signal: peripheral, SRAM and vectors restored; SCP stopped; receiver client released
+[ 3340.764934] h713-ddc-pins: DDC pins returned to inputs and ownership released
+[ 3340.779574] h713-arm64 python3[1549]: EDID/HPD, SCP SRAM/vectors and DDC ownership restored
+[ 3340.849203] h713-arm64 systemd[1]: h713-hdmi-signal.service: Deactivated successfully.
+[ 3340.849844] h713-arm64 systemd[1]: Stopped h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.
+[ 3340.858271] h713-arm64 systemd[1]: Stopping h713-hdmi-capture.service - H713 HDMI audio capture...
+[ 3341.185875] h713-arm64 runuser[1562]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[ 3341.263489] h713-arm64 runuser[1562]: pam_unix(runuser:session): session closed for user media
+[ 3341.317777] h713-arm64 runuser[1570]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[ 3341.554905] h713-hdmi-audio: DSP restore 005a=8000 verified
+[ 3341.563162] h713-hdmi-audio: DSP restore 0059=8000 verified
+[ 3341.571156] h713-hdmi-audio: DSP restore 0103=0000 verified
+[ 3341.579061] h713-hdmi-audio: DSP restore 0102=0000 verified
+[ 3341.586854] h713-hdmi-audio: DSP restore 8103=0000 verified
+[ 3341.594616] h713-hdmi-audio: DSP restore 8102=0000 verified
+[ 3341.602357] h713-hdmi-audio: DSP restore 007e=8485 verified
+[ 3341.610096] h713-hdmi-audio: DSP restore 007d=8283 verified
+[ 3341.617743] h713-hdmi-audio: DSP restore 007c=8081 verified
+[ 3341.625364] h713-hdmi-audio: DSP restore 8017=0001 verified
+[ 3341.632971] h713-hdmi-audio: DSP restore 801a=0000 verified
+[ 3341.640552] h713-hdmi-audio: DSP restore 0017=2000 verified
+[ 3341.648120] h713-hdmi-audio: DSP restore 0012=0000 verified
+[ 3341.469967] h[ 3341.655674] h713-hdmi-audio: DSP restore 0130=0000 verified
+713-arm64 runuser[1570]: pam_uni[ 3341.663448] h713-hdmi-audio: DSP restore 8059=0000 verified
+x(runuser:session): session clos[ 3341.672364] h713-hdmi-audio: DSP restore 805a=0000 verified
+ed for user media
+[ 3341.681242] h713-hdmi-audio: DSP restore 004d=0000 verified
+[ 3341.688963] h713-hdmi-audio: DSP restore 0077=0000 verified
+[ 3341.696411] h713-hdmi-audio: DSP restore 00ac=0000 verified
+[ 3341.703846] h713-hdmi-audio: DSP restore 800d=0000 verified
+[ 3341.711275] h713-hdmi-audio: DSP restore 800c=0000 verified
+[ 3341.718695] h713-hdmi-audio: DSP restore 0003=0000 verified
+[ 3341.724965] h713-hdmi-audio: managed DSP graph restored 22 words
+[ 3341.731691] h713-hdmi-audio: restored SPDI1 ctl0=00000000 ctl1=00000000
+[ 3341.739175] h713-hdmi-audio: restored Audio Bridge output stream 0
+[ 3341.746183] h713-hdmi-audio: restored audio-top ctl=00000000 cfg=00000000
+[ 3341.753679] h713-hdmi-audio: restored audio-IHB clock=81000002
+[ 3341.760253] h713-hdmi-audio: managed TVFE clock/reset state restored; 15 clock words and bus verified
+[ 3341.770165] h713-hdmi-audio: removed; clocks enabled by the driver restored to off
+[ 3341.958164] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[ 3343.634348] h713-arm64 runuser[1584]: pam_unix(runuser:session): session opened for user media(uid=1000) by (uid=0)
+[ 3343.707871] h713-arm64 runuser[1584]: pam_unix(runuser:session): session closed for user media
+[ 3345.544475] h713-hdmi-receiver: terminal MIPS reset 0 asserted and verified
+[ 3345.552693] h713-hdmi-receiver: terminal MIPS reset 1 asserted and verified
+[ 3345.561510] h713-hdmi-receiver: terminal MIPS reset 2 asserted and verified
+[ 3345.570265] h713-hdmi-receiver: terminal MIPS parked, hardware status zero; core clock holds released; cold boot required
+[ 3345.821819] h713-receiver-edid h713-edid-clock-hold: EDID reset state and clock reference released
+[ 3345.870854] h713-arm64 python3[1561]: {"phase": "parked", "receiver_removed": true, "cold_boot_required": true, "audio_stop": {"phase": "stopped", "already_stopped": false, "receiver_retained": true, "dsp_restored_words": 22, "tvfe_restored_words": 15}}
+[ 3345.949279] h713-arm64 systemd[1]: h713-hdmi-capture.service: Deactivated successfully.
+[ 3345.950179] h713-arm64 systemd[1]: Stopped h713-hdmi-capture.service - H713 HDMI audio capture.
+[ 3345.952209] h713-arm64 systemd[1]: h713-hdmi-capture.service: Consumed 1.687s CPU time.
+[ 3347.332926] systemd-shutdown[1]: Syncing filesystems and block devices.
+[ 3347.429256] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[ 3347.451925] systemd-journald[107]: Received SIGTERM from PID 1 (systemd-shutdow).
+[ 3347.483093] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[ 3347.503314] systemd-shutdown[1]: Unmounting file systems.
+[ 3347.512007] (sd-umount)[1655]: Unmounting '/run/credentials/systemd-journald.service'.
+[ 3347.524077] (sd-remount)[1656]: Remounting '/' read-only with options ''.
+[ 3347.557787] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[ 3347.582209] systemd-shutdown[1]: All filesystems unmounted.
+[ 3347.588957] systemd-shutdown[1]: Deactivating swaps.
+[ 3347.595009] systemd-shutdown[1]: All swaps deactivated.
+[ 3347.601273] systemd-shutdown[1]: Detaching loop devices.
+[ 3347.614462] systemd-shutdown[1]: All loop devices detached.
+[ 3347.622776] systemd-shutdown[1]: Stopping MD devices.
+[ 3347.629101] systemd-shutdown[1]: All MD devices stopped.
+[ 3347.635391] systemd-shutdown[1]: Detaching DM devices.
+[ 3347.641669] systemd-shutdown[1]: All DM devices detached.
+[ 3347.648028] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[ 3347.670267] systemd-shutdown[1]: Syncing filesystems and block devices.
+[ 3347.678321] systemd-shutdown[1]: Powering off.
+[ 3347.710870] sun50i-h713-afbd 5600000.display: [drm] RGB fetch quiesced at physical vblank 199810
+[ 3347.720866] reboot: Power down

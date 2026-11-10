@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "purpose": "bench TVFE boot trace; offline, not installed",
+  "bases": {
+    "kernel": "/home/chris/Projects/h713/build/linux-6.18.38-edffad3c91a035b25a5c2a7df05ef63af488d7e89c286a29c7efa9aaba677efc",
+    "uboot": "/home/chris/Projects/h713/build/hdmi-reset-controls-2026-10-20/src",
+    "obj": "/home/chris/Projects/h713/build/hdmi-reset-controls-2026-10-20/obj"
+  },
+  "baseline": {
+    "kernel_config": "1b2b9392fd8801b8199e20c6e09638b15b80efd77b866b5d237daa4d98ea8522",
+    "kernel_image": "ada92f56dd892eab8c4a4bf76e6d92ce609e6e620daccf8de2b419c5aae35d29",
+    "kernel_symvers": "c70895af49e62c1821f8a1e1e22f518b365761f256f9842eb59a528107356f70",
+    "dtb": "4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940",
+    "uboot_config": "ea0d027d55758b4e86a4f1ade4db7cc45c52db079d9a10925aeb7723361443f9",
+    "uboot_binary": "e16ede6254491ea59fbcf36e8a295d744e6bc3a73d5b9594818c8530a97c72f9"
+  },
+  "assets": {
+    "0001-kernel-ppu-observation.patch": "dce3abbe3c72b66b2668e35a2fe77aed3afe42dd7a5c375dead2b5ade346f13f",
+    "0002-uboot-handoff-observation.patch": "a2df5223235c717aec49a8fdceabeacdce4a13d5d64a073cc9072908f17c67cc",
+    "h713_tvfe_boot_trace.h": "2d57f672b5bfb011cd74d29d259a271fbe858265647e862eebbf03e8270091b1",
+    "kernel-trace.inc": "853e62ea6055e037998e50e5afd8bf81a108e7109a58af59c4cd0dc17fe6a221"
+  },
+  "kernel_trace_requires": "h713_tvfe_trace=1",
+  "built": true,
+  "commands": [
+    [
+      "make",
+      "-C",
+      "/home/chris/Projects/h713/build/hdmi-tvfe-boot-trace-2026-10-21/candidate/kernel",
+      "ARCH=arm64",
+      "LLVM=1",
+      "-j12",
+      "Image",
+      "modules"
+    ],
+    [
+      "make",
+      "-C",
+      "/home/chris/Projects/h713/build/hdmi-tvfe-boot-trace-2026-10-21/candidate/uboot-src",
+      "O=/home/chris/Projects/h713/build/hdmi-tvfe-boot-trace-2026-10-21/candidate/uboot-obj",
+      "ARCH=arm",
+      "HOSTCC=clang",
+      "CC=clang -target aarch64-linux-gnu",
+      "LD=ld.lld",
+      "AR=llvm-ar",
+      "NM=llvm-nm",
+      "OBJCOPY=llvm-objcopy",
+      "OBJDUMP=llvm-objdump",
+      "READELF=llvm-readelf",
+      "STRIP=llvm-strip",
+      "KAFLAGS=-fintegrated-as",
+      "KCFLAGS=-fintegrated-as -Wno-error=deprecated-non-prototype -fno-stack-protector",
+      "BL31=/home/chris/Projects/h713/build/out/bl31.bin",
+      "-j12"
+    ]
+  ],
+  "compiler": "clang version 23.1.3\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n",
+  "kernel_release": "6.18.38",
+  "symvers_unchanged": true,
+  "artifacts": {
+    "Image.gz": {
+      "size": 7711692,
+      "sha256": "863704429b61ebc84dcc46e95e02100af01acf48454280e0a00841a33f1793c9"
+    },
+    "board.dtb": {
+      "size": 34666,
+      "sha256": "4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940"
+    },
+    "kernel.fit": {
+      "size": 7747368,
+      "sha256": "54a691f727e3b405540ea806f11afe5da6178109adb3747094b55ea4f12fbf7e"
+    },
+    "kernel.its": {
+      "size": 869,
+      "sha256": "2c90625c4009c56a97e1df741127cd1cd873599c866c4c5f0ccf7502841cc237"
+    },
+    "proper.itb": {
+      "size": 959793,
+      "sha256": "171ed608bb7e4d2d97f0a2495160937bc1b53e3711ac370673709af6d1bfc074"
+    }
+  }
+}

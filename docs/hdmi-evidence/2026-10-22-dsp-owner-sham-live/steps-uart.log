@@ -1,0 +1,164 @@
+[  111.549739] h713-hdmi-receiver: terminal parking prepared; 3 exclusive resets and 2 MIPS clock holds, no reset writes
+[  111.562052] h713-hdmi-receiver: domain 1 power event 2
+[  111.568320] h713-hdmi-receiver: domain 1 power event 3
+[  111.574571] h713-hdmi-receiver: domain 1 resumed
+[  111.580479] h713-hdmi-receiver: domain 2 resumed
+[  111.586059] h713-hdmi-receiver: 2 domains and 0 receiver clocks held on; no receiver MMIO
+[  111.597720] h713-hdmi-receiver: enabled clock 0 (bus-tvcap)
+[  113.370314] h713-hdmi-receiver: enabled clock 1 (bus-cap-300m)
+[  115.151644] h713-hdmi-receiver: enabled clock 2 (vincap-dma)
+[  116.929659] h713-hdmi-receiver: enabled clock 3 (tvfe-1296m)
+[  116.936839] h713-receiver-edid h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[  120.511589] h713-hdmi-audio: TVFE: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[  120.522108] h713-hdmi-audio: TVFE: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[  120.543884] h713-hdmi-audio: TVFE: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[  120.556090] h713-hdmi-audio: clock=bus-hdmi-audio inherited_on=1 enabled_by_driver=0 rate=100000000
+[  120.566444] h713-hdmi-audio: clock=hdmi-audio inherited_on=1 enabled_by_driver=0 rate=1152000000
+[  120.576448] h713-hdmi-audio: clock=audio-cpu inherited_on=1 enabled_by_driver=0 rate=100000000
+[  120.586280] h713-hdmi-audio: clock=audio-umac inherited_on=1 enabled_by_driver=0 rate=100000000
+[  120.596068] h713-hdmi-audio: clock=audio-ihb inherited_on=1 enabled_by_driver=0 rate=100000000
+[  120.605863] h713-hdmi-audio: audio-IHB clock stock word applied 81000002->81000002
+[  120.614381] h713-hdmi-audio: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[  120.624107] h713-hdmi-audio: audio clocks initialized; checking SPDI1 ownership
+[  120.632504] h713-hdmi-audio: Audio Bridge stage 1 creating private direct-DMA device; disabled DT IRQ 0 remains unmapped
+[  120.644401] h713-hdmi-audio: Audio Bridge private direct-DMA device ready
+[  120.653345] h713-hdmi-audio: Audio Bridge stage 1 ready dma=0x0000000076c60000 size=65536; bridge IRQ unmapped and no bridge registers written
+[  120.667150] h713-hdmi-audio: Audio Bridge entering stage 2: inert stream registers
+[  120.675708] h713-hdmi-audio: Audio Bridge stage 2 ready start=006c6000 end=006c6fff block=1024 config=00002207
+[  120.686665] h713-hdmi-audio: Audio Bridge entering stage 3: pre-map status=00000000; clear all bridge W1C bits before mapping DT interrupt 0
+[  120.700364] h713-hdmi-audio: Audio Bridge DT interrupt 0 mapped to Linux IRQ 336
+[  120.708769] h713-hdmi-audio: Audio Bridge stage 3 post-map status=00000000; request stock-style threaded IRQ and enable
+[  120.720944] h713-hdmi-audio: Audio Bridge stage 3 ready enable=00000001 mask=00000010 status=00000000
+[  120.731491] h713-hdmi-audio: SPDI1 opened irq=335 mask=00000000->00300052 route=00000000->00000000
+[  120.741582] h713-hdmi-audio: SPDI1 configured (input disabled) ctl0=00000000->00000000 ctl1=00000000->00003000 open=1
+[  120.753400] h713-hdmi-audio: DSP versions 0000/0000
+[  121.674196] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1
+[  121.709410] h713-hdmi-audio: managed DSP graph verified 22 words
+[  121.718228] h713-hdmi-audio: owner bench ready; PCM omitted, IRQs disabled, module pinned; DSP graph verified automatically
+[  152.248344] H713 OWNER step=1 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  152.256428] H713 OWNER step=1 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  257.914928] H713 OWNER step=2 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  257.923062] H713 OWNER step=2 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  263.782740] H713 OWNER step=3 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  263.790457] H713 OWNER pair=0 dev=0 BUSY_WAIT sent=0
+[  263.796775] H713 OWNER pair=0 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  263.804740] H713 OWNER pair=0 dev=0 COMMAND_SENT sent=1
+[  263.811271] H713 OWNER pair=0 dev=0 DONE_WAIT sent=1
+[  263.817518] H713 OWNER pair=0 dev=0 COMPLETE status=00000120 response=00000001
+[  263.826029] H713 OWNER step=3 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  271.444281] H713 OWNER step=4 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  271.452338] H713 OWNER pair=0 dev=1 BUSY_WAIT sent=0
+[  271.458996] H713 OWNER pair=0 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  271.467299] H713 OWNER pair=0 dev=1 COMMAND_SENT sent=1
+[  271.474214] H713 OWNER pair=0 dev=1 DONE_WAIT sent=1
+[  271.480862] H713 OWNER pair=0 dev=1 COMPLETE status=00000120 response=00000001
+[  271.489575] H713 OWNER step=4 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  272.472363] H713 OWNER step=5 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  272.480035] H713 OWNER step=5 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  273.522994] H713 OWNER step=6 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  273.530719] H713 OWNER step=6 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  280.951173] H713 OWNER step=7 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  281.059673] H713 OWNER step=7 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  287.230246] H713 OWNER step=8 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  287.237960] H713 OWNER step=8 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  293.282912] H713 OWNER step=9 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  293.290512] H713 OWNER pair=1 dev=0 BUSY_WAIT sent=0
+[  293.296503] H713 OWNER pair=1 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  293.304782] H713 OWNER pair=1 dev=0 COMMAND_SENT sent=1
+[  293.311615] H713 OWNER pair=1 dev=0 DONE_WAIT sent=1
+[  293.317945] H713 OWNER pair=1 dev=0 COMPLETE status=00000120 response=00000001
+[  293.326397] H713 OWNER step=9 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  300.859367] H713 OWNER step=10 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  300.867055] H713 OWNER pair=1 dev=1 BUSY_WAIT sent=0
+[  300.872980] H713 OWNER pair=1 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  300.880515] H713 OWNER pair=1 dev=1 COMMAND_SENT sent=1
+[  300.886633] H713 OWNER pair=1 dev=1 DONE_WAIT sent=1
+[  300.892477] H713 OWNER pair=1 dev=1 COMPLETE status=00000120 response=00000001
+[  300.900581] H713 OWNER step=10 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  302.075987] H713 OWNER step=11 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  302.083580] H713 OWNER step=11 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  303.176164] H713 OWNER step=12 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  303.183777] H713 OWNER step=12 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  311.228038] H713 OWNER step=13 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  311.247648] H713 OWNER step=13 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  318.537877] H713 OWNER step=14 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  318.545439] H713 OWNER step=14 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  325.442127] H713 OWNER step=15 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  325.449731] H713 OWNER pair=2 dev=0 BUSY_WAIT sent=0
+[  325.455728] H713 OWNER pair=2 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  325.463212] H713 OWNER pair=2 dev=0 COMMAND_SENT sent=1
+[  325.469313] H713 OWNER pair=2 dev=0 DONE_WAIT sent=1
+[  325.475132] H713 OWNER pair=2 dev=0 COMPLETE status=00000120 response=00000001
+[  325.483226] H713 OWNER step=15 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  332.421062] H713 OWNER step=16 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  332.428638] H713 OWNER pair=2 dev=1 BUSY_WAIT sent=0
+[  332.435121] H713 OWNER pair=2 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  332.443147] H713 OWNER pair=2 dev=1 COMMAND_SENT sent=1
+[  332.449774] H713 OWNER pair=2 dev=1 DONE_WAIT sent=1
+[  332.456122] H713 OWNER pair=2 dev=1 COMPLETE status=00000120 response=00000001
+[  332.464585] H713 OWNER step=16 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  333.481550] H713 OWNER step=17 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  333.489048] H713 OWNER step=17 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  334.639311] H713 OWNER step=18 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  334.646893] H713 OWNER step=18 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  340.888246] H713 OWNER step=19 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  340.908095] H713 OWNER step=19 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  347.442109] H713 OWNER step=20 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  347.463605] H713 OWNER step=20 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  353.772211] H713 OWNER step=21 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  353.779538] H713 OWNER step=21 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  361.880135] H713 OWNER step=22 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  361.888031] H713 OWNER pair=3 dev=0 BUSY_WAIT sent=0
+[  361.894423] H713 OWNER pair=3 dev=0 COMMAND_WRITE_BEGIN status=00000120
+[  361.902479] H713 OWNER pair=3 dev=0 COMMAND_SENT sent=1
+[  361.909126] H713 OWNER pair=3 dev=0 DONE_WAIT sent=1
+[  361.915492] H713 OWNER pair=3 dev=0 COMPLETE status=00000120 response=00000001
+[  361.924118] H713 OWNER step=22 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  370.961128] H713 OWNER step=23 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  370.969009] H713 OWNER pair=3 dev=1 BUSY_WAIT sent=0
+[  370.975397] H713 OWNER pair=3 dev=1 COMMAND_WRITE_BEGIN status=00000120
+[  370.982919] H713 OWNER pair=3 dev=1 COMMAND_SENT sent=1
+[  370.989020] H713 OWNER pair=3 dev=1 DONE_WAIT sent=1
+[  370.994841] H713 OWNER pair=3 dev=1 COMPLETE status=00000120 response=00000001
+[  371.002938] H713 OWNER step=23 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  372.060965] H713 OWNER step=24 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  372.068490] H713 OWNER step=24 DONE terminal=0 ctl=00000700 cfg=011a5e00 graph_remaining=22
+[  373.243619] H713 OWNER step=25 BEGIN arm=1 ctl=00000700 cfg=011a5e00
+[  373.251167] H713 OWNER step=25 DONE terminal=1 ctl=00000700 cfg=011a5e00 graph_remaining=22
+
+Broadcast message from root@h713-arm64 (Mon 2026-04-13 19:44:53 UTC):
+
+The system will power off now!
+
+[?2004l[?2004h[?2004l
+[  411.249956] aicwf_sdio mmc1:6721:1 wlan0: AP Stopped
+[  411.256473] get_txpwr_max:txpwr_max:18 
+[  411.262675] aicwf_sdio mmc1:6721:1 wlan0: CLOSE
+[  411.268650] ieee80211 phy0: HT supp 1, VHT supp 1, HE supp 1
+[  411.276482] change_if: 3 to 2, 8, 2
+[  411.276510] get_txpwr_max:txpwr_max:18 
+[!p]104[?7h[6n[32766;32766H[6n[  413.255612] Bluetooth: hci0: Opcode 0x0c03 failed: -110
+[  413.533838] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  413.601743] systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+[  413.625393] systemd-journald[103]: Received SIGTERM from PID 1 (systemd-shutdow).
+[  413.653782] systemd-shutdown[1]: Sending SIGKILL to remaining processes...
+[  413.674398] systemd-shutdown[1]: Unmounting file systems.
+[  413.683330] (sd-umount)[1809]: Unmounting '/run/credentials/systemd-journald.service'.
+[  413.695661] (sd-remount)[1810]: Remounting '/' read-only with options ''.
+[  413.721482] EXT4-fs (mmcblk0p26): re-mounted 956d9901-0eb3-4d75-bb44-e37a46ba9f40 ro.
+[  413.740720] systemd-shutdown[1]: All filesystems unmounted.
+[  413.748061] systemd-shutdown[1]: Deactivating swaps.
+[  413.754734] systemd-shutdown[1]: All swaps deactivated.
+[  413.761628] systemd-shutdown[1]: Detaching loop devices.
+[  413.772397] systemd-shutdown[1]: All loop devices detached.
+[  413.779649] systemd-shutdown[1]: Stopping MD devices.
+[  413.786470] systemd-shutdown[1]: All MD devices stopped.
+[  413.793055] systemd-shutdown[1]: Detaching DM devices.
+[  413.799575] systemd-shutdown[1]: All DM devices detached.
+[  413.806093] systemd-shutdown[1]: All filesystems, swaps, loop devices, MD devices and DM devices detached.
+[  413.831081] h713-hdmi-hold-guard: poweroff with HDMI holds retained ( h713_hdmi_audio h713_hdmi_receiver ); cold cycle required
+[  413.849605] systemd-shutdown[1]: Syncing filesystems and block devices.
+[  413.858300] systemd-shutdown[1]: Powering off.
+[  413.889575] sun50i-h713-afbd 5600000.display: [drm] RGB fetch quiesced at physical vblank 24601
+[  414.259580] sun50i-h713-afbd 5600000.display: panel powered down: supply off, reset line 0, PHY 18000000/00000030, route 40000000
+[  414.276830] reboot: Power down

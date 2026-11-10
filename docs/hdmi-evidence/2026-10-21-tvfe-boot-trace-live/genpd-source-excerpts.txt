@@ -1,0 +1,94 @@
+drivers/pmdomain/core.c:956
+956: static void genpd_power_off(struct generic_pm_domain *genpd, bool one_dev_on,
+957: 			    unsigned int depth)
+958: {
+959: 	struct pm_domain_data *pdd;
+960: 	struct gpd_link *link;
+961: 	unsigned int not_suspended = 0;
+962: 
+963: 	/*
+964: 	 * Do not try to power off the domain in the following situations:
+965: 	 * The domain is already in the "power off" state.
+966: 	 * System suspend is in progress.
+967: 	 * The domain is configured as always on.
+968: 	 * The domain was on at boot and still need to stay on.
+969: 	 * The domain has a subdomain being powered on.
+970: 	 */
+971: 	if (!genpd_status_on(genpd) || genpd->prepared_count > 0 ||
+972: 	    genpd_is_always_on(genpd) || genpd_is_rpm_always_on(genpd) ||
+973: 	    genpd->stay_on || atomic_read(&genpd->sd_count) > 0)
+974: 		return;
+975: 
+976: 	/*
+977: 	 * The children must be in their deepest (powered-off) states to allow
+978: 	 * the parent to be powered off. Note that, there's no need for
+979: 	 * additional locking, as powering on a child, requires the parent's
+980: 	 * lock to be acquired first.
+
+drivers/pmdomain/core.c:1361
+1361: static bool pd_ignore_unused;
+1362: static int __init pd_ignore_unused_setup(char *__unused)
+1363: {
+1364: 	pd_ignore_unused = true;
+1365: 	return 1;
+1366: }
+1367: __setup("pd_ignore_unused", pd_ignore_unused_setup);
+1368: 
+1369: /**
+1370:  * genpd_power_off_unused - Power off all PM domains with no devices in use.
+1371:  */
+1372: static int __init genpd_power_off_unused(void)
+1373: {
+1374: 	struct generic_pm_domain *genpd;
+1375: 
+1376: 	if (pd_ignore_unused) {
+1377: 		pr_warn("genpd: Not disabling unused power domains\n");
+1378: 		return 0;
+1379: 	}
+1380: 
+1381: 	pr_info("genpd: Disabling unused power domains\n");
+1382: 	mutex_lock(&gpd_list_lock);
+1383: 
+1384: 	list_for_each_entry(genpd, &gpd_list, gpd_list_node) {
+1385: 		genpd_queue_power_off_work(genpd);
+1386: 	}
+1387: 
+1388: 	mutex_unlock(&gpd_list_lock);
+1389: 
+1390: 	return 0;
+1391: }
+1392: late_initcall_sync(genpd_power_off_unused);
+
+drivers/pmdomain/core.c:2652
+2652: static void genpd_sync_state(struct device *dev)
+2653: {
+2654: 	return of_genpd_sync_state(dev->of_node);
+2655: }
+
+drivers/pmdomain/core.c:3494
+3494: /**
+3495:  * of_genpd_sync_state() - A common sync_state function for genpd providers
+3496:  * @np: The device node the genpd provider is associated with.
+3497:  *
+3498:  * The @np that corresponds to a genpd provider may provide one or multiple
+3499:  * genpds. This function makes use @np to find the genpds that belongs to the
+3500:  * provider. For each genpd we try a power-off.
+3501:  */
+3502: void of_genpd_sync_state(struct device_node *np)
+3503: {
+3504: 	struct generic_pm_domain *genpd;
+3505: 
+3506: 	if (!np)
+3507: 		return;
+3508: 
+3509: 	mutex_lock(&gpd_list_lock);
+3510: 	list_for_each_entry(genpd, &gpd_list, gpd_list_node) {
+3511: 		if (genpd->provider == of_fwnode_handle(np)) {
+3512: 			genpd_lock(genpd);
+3513: 			genpd->stay_on = false;
+3514: 			genpd_power_off(genpd, false, 0);
+3515: 			genpd_unlock(genpd);
+3516: 		}
+3517: 	}
+3518: 	mutex_unlock(&gpd_list_lock);
+3519: }

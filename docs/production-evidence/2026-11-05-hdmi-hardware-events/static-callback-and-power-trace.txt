@@ -1,0 +1,303 @@
+
+power_reader 0x8b13eff0..0x8b13f038
+8b13eff0 addiu    $sp, $sp, -0x18
+8b13eff4 lui      $v1, 0x8b1f
+8b13eff8 addiu    $v1, $v1, 0x7b98
+8b13effc sll      $v0, $a1, 2
+8b13f000 addu     $v0, $v0, $v1
+8b13f004 lw       $a0, ($v0)
+8b13f008 sw       $s0, 0x10($sp)
+8b13f00c sw       $ra, 0x14($sp)
+8b13f010 addiu    $a0, $a0, 0x37a
+8b13f014 jal      0x8b180340
+8b13f018 move     $s0, $a1
+8b13f01c andi     $v0, $v0, 0xf
+8b13f020 srav     $v0, $v0, $s0
+8b13f024 lw       $ra, 0x14($sp)
+8b13f028 lw       $s0, 0x10($sp)
+8b13f02c andi     $v0, $v0, 1
+8b13f030 jr       $ra
+8b13f034 addiu    $sp, $sp, 0x18
+
+port_poll 0x8b13942c..0x8b1394a8
+8b13942c addiu    $sp, $sp, -0x20
+8b139430 sw       $s0, 0x14($sp)
+8b139434 sw       $s1, 0x18($sp)
+8b139438 move     $s0, $a0
+8b13943c addiu    $s1, $a0, 8
+8b139440 lw       $a0, 0x544($a0)
+8b139444 sw       $ra, 0x1c($sp)
+8b139448 jal      0x8b13611c
+8b13944c move     $a1, $s1
+8b139450 lbu      $v0, 0x51a($s0)
+8b139454 beqz     $v0, 0x8b139498
+8b139458 lui      $v0, 0x8b23
+8b13945c lbu      $a1, 0x51b($s0)
+8b139460 lw       $v0, -0xf68($v0)
+8b139464 jalr     $v0
+8b139468 lw       $a0, 0x520($s0)
+8b13946c lw       $a0, 0x544($s0)
+8b139470 move     $a1, $s1
+8b139474 jal      0x8b136234
+8b139478 sb       $v0, 0x532($s0)
+8b13947c lw       $a0, 0x544($s0)
+8b139480 move     $a1, $s1
+8b139484 lw       $s0, 0x14($sp)
+8b139488 lw       $s1, 0x18($sp)
+8b13948c lw       $ra, 0x1c($sp)
+8b139490 j        0x8b136278
+8b139494 addiu    $sp, $sp, 0x20
+8b139498 lw       $s0, 0x14($sp)
+8b13949c lw       $s1, 0x18($sp)
+8b1394a0 lw       $ra, 0x1c($sp)
+8b1394a4 jr       $ra
+
+change_detection 0x8b136278..0x8b1362b4
+8b136278 addiu    $sp, $sp, -0x38
+8b13627c lbu      $v0, 0x52a($a1)
+8b136280 lbu      $v1, 0xe($a0)
+8b136284 sw       $s0, 0x24($sp)
+8b136288 sw       $s1, 0x28($sp)
+8b13628c sw       $s2, 0x2c($sp)
+8b136290 sw       $s3, 0x30($sp)
+8b136294 sw       $ra, 0x34($sp)
+8b136298 move     $s1, $a0
+8b13629c beq      $v1, $v0, 0x8b13651c
+8b1362a0 move     $s0, $a1
+8b1362a4 lui      $s2, 0x8b27
+8b1362a8 lbu      $v1, 0x1c2c($s2)
+8b1362ac bnel     $v1, $zero, 0x8b136470
+8b1362b0 sb       $v0, 0xe($s1)
+
+power_log_and_dispatch 0x8b136470..0x8b13651c
+8b136470 lbu      $v1, 0x513($s0)
+8b136474 sw       $v0, 0x1c($sp)
+8b136478 lui      $v0, 0x8b1f
+8b13647c addiu    $v0, $v0, 0x5d84
+8b136480 sw       $v0, 0x14($sp)
+8b136484 lui      $a3, 0x8b1f
+8b136488 addiu    $v0, $zero, 0x202
+8b13648c lui      $a2, 0x8b1f
+8b136490 lui      $a1, 0x8b1f
+8b136494 sw       $v0, 0x10($sp)
+8b136498 addiu    $a3, $a3, 0x5d70
+8b13649c addiu    $a2, $a2, 0x5b38
+8b1364a0 addiu    $a1, $a1, 0x5104
+8b1364a4 addiu    $a0, $zero, 3
+8b1364a8 jal      0x8b150948
+8b1364ac sw       $v1, 0x18($sp)
+8b1364b0 lbu      $v0, 0xe($s1)
+8b1364b4 bnez     $v0, 0x8b136548
+8b1364b8 lbu      $v0, 0x529($s0)
+8b1364bc beqz     $v0, 0x8b1364dc
+8b1364c0 lui      $v0, 0x8b23
+8b1364c4 lui      $v0, 0x8b23
+8b1364c8 lw       $v0, -0xfc0($v0)
+8b1364cc move     $a1, $zero
+8b1364d0 jalr     $v0
+8b1364d4 move     $a0, $zero
+8b1364d8 lui      $v0, 0x8b23
+8b1364dc lw       $v0, -0xf80($v0)
+8b1364e0 lbu      $a1, 0x513($s0)
+8b1364e4 jalr     $v0
+8b1364e8 addiu    $a0, $zero, 0xa0
+8b1364ec lbu      $v0, 0x1c2c($s2)
+8b1364f0 beqz     $v0, 0x8b1362b8
+8b1364f4 lui      $s2, 0x8b23
+8b1364f8 lbu      $a1, 0x513($s0)
+8b1364fc jal      0x8b13d500
+8b136500 lbu      $a0, 0xe($s1)
+8b136504 lw       $v0, -0x1014($s2)
+8b136508 addiu    $v1, $zero, 3
+8b13650c bnel     $v0, $v1, 0x8b1362cc
+8b136510 addiu    $v1, $zero, 1
+8b136514 b        0x8b136360
+8b136518 lbu      $v1, 0x52a($s0)
+
+bsp_callback 0x8b13d500..0x8b13d5d4
+8b13d500 lui      $v0, 0x8b23
+8b13d504 lw       $v1, -0xfa4($v0)
+8b13d508 beqz     $v1, 0x8b13d5a8
+8b13d50c nop      
+8b13d510 addiu    $sp, $sp, -0x30
+8b13d514 lui      $v0, 0x8b23
+8b13d518 addiu    $v0, $v0, -0xe88
+8b13d51c sw       $s1, 0x28($sp)
+8b13d520 move     $s1, $a0
+8b13d524 lw       $a0, 4($v0)
+8b13d528 sw       $s0, 0x24($sp)
+8b13d52c sw       $ra, 0x2c($sp)
+8b13d530 beq      $a1, $a0, 0x8b13d5b0
+8b13d534 move     $s0, $a1
+8b13d538 lw       $a0, 0x10($v0)
+8b13d53c beql     $a1, $a0, 0x8b13d5b4
+8b13d540 addiu    $a1, $zero, 1
+8b13d544 lw       $a0, 0x1c($v0)
+8b13d548 beq      $s0, $a0, 0x8b13d5cc
+8b13d54c move     $a1, $zero
+8b13d550 jalr     $v1
+8b13d554 move     $a0, $s1
+8b13d558 lui      $v0, 0x8b1f
+8b13d55c addiu    $v0, $v0, 0x764c
+8b13d560 sw       $v0, 0x14($sp)
+8b13d564 lui      $a3, 0x8b1f
+8b13d568 addiu    $v0, $zero, 0x140
+8b13d56c lui      $a2, 0x8b1f
+8b13d570 lui      $a1, 0x8b1f
+8b13d574 sw       $s0, 0x18($sp)
+8b13d578 sw       $s1, 0x1c($sp)
+8b13d57c addiu    $a3, $a3, 0x7634
+8b13d580 addiu    $a2, $a2, 0x758c
+8b13d584 addiu    $a1, $a1, 0x7060
+8b13d588 addiu    $a0, $zero, 3
+8b13d58c jal      0x8b150948
+8b13d590 sw       $v0, 0x10($sp)
+8b13d594 lw       $s0, 0x24($sp)
+8b13d598 lw       $s1, 0x28($sp)
+8b13d59c lw       $ra, 0x2c($sp)
+8b13d5a0 jr       $ra
+8b13d5a4 addiu    $sp, $sp, 0x30
+8b13d5a8 jr       $ra
+8b13d5ac nop      
+8b13d5b0 move     $a1, $zero
+8b13d5b4 sll      $a0, $a1, 1
+8b13d5b8 addu     $a0, $a0, $a1
+8b13d5bc sll      $a0, $a0, 2
+8b13d5c0 addu     $v0, $v0, $a0
+8b13d5c4 b        0x8b13d550
+8b13d5c8 lw       $a1, ($v0)
+8b13d5cc b        0x8b13d5b4
+8b13d5d0 addiu    $a1, $zero, 2
+
+hal_callback 0x8b148d5c..0x8b148da8
+8b148d5c addiu    $sp, $sp, -0x18
+8b148d60 sw       $s0, 0x10($sp)
+8b148d64 move     $s0, $a0
+8b148d68 sw       $ra, 0x14($sp)
+8b148d6c jal      0x8b12bbdc
+8b148d70 move     $a0, $a1
+8b148d74 lui      $v1, 0x8b27
+8b148d78 lw       $t9, 0x28b4($v1)
+8b148d7c beqz     $t9, 0x8b148d98
+8b148d80 move     $a0, $s0
+8b148d84 lw       $ra, 0x14($sp)
+8b148d88 lw       $s0, 0x10($sp)
+8b148d8c move     $a1, $v0
+8b148d90 jr       $t9
+8b148d94 addiu    $sp, $sp, 0x18
+8b148d98 lw       $s0, 0x10($sp)
+8b148d9c lw       $ra, 0x14($sp)
+8b148da0 jr       $ra
+8b148da4 addiu    $sp, $sp, 0x18
+
+rpc_enable_adapter 0x8b10ad5c..0x8b10ada8
+8b10ad5c addiu    $sp, $sp, -0x18
+8b10ad60 lw       $v0, 4($a0)
+8b10ad64 sw       $s0, 0x10($sp)
+8b10ad68 sw       $ra, 0x14($sp)
+8b10ad6c bnez     $v0, 0x8b10ad88
+8b10ad70 move     $s0, $a1
+8b10ad74 lw       $ra, 0x14($sp)
+8b10ad78 sw       $zero, ($s0)
+8b10ad7c lw       $s0, 0x10($sp)
+8b10ad80 jr       $ra
+8b10ad84 addiu    $sp, $sp, 0x18
+8b10ad88 lui      $a0, 0x8b11
+8b10ad8c jal      0x8b1491e0
+8b10ad90 addiu    $a0, $a0, -0x5f64
+8b10ad94 lw       $ra, 0x14($sp)
+8b10ad98 sw       $zero, ($s0)
+8b10ad9c lw       $s0, 0x10($sp)
+8b10ada0 jr       $ra
+8b10ada4 addiu    $sp, $sp, 0x18
+
+hal_registration 0x8b1491e0..0x8b1492d8
+8b1491e0 addiu    $sp, $sp, -0x38
+8b1491e4 lui      $v0, 0x8b1f
+8b1491e8 sw       $s0, 0x24($sp)
+8b1491ec addiu    $v0, $v0, -0x4850
+8b1491f0 lui      $s0, 0x8b20
+8b1491f4 sw       $s1, 0x28($sp)
+8b1491f8 sw       $s2, 0x2c($sp)
+8b1491fc sw       $v0, 0x14($sp)
+8b149200 addiu    $s0, $s0, -0x7078
+8b149204 addiu    $v0, $zero, 0x8d
+8b149208 lui      $s2, 0x8b20
+8b14920c lui      $s1, 0x8b1f
+8b149210 sw       $s3, 0x30($sp)
+8b149214 addiu    $a1, $s1, -0x44e4
+8b149218 move     $s3, $a0
+8b14921c move     $a3, $s0
+8b149220 addiu    $a0, $zero, 4
+8b149224 sw       $v0, 0x10($sp)
+8b149228 sw       $s0, 0x18($sp)
+8b14922c sw       $ra, 0x34($sp)
+8b149230 jal      0x8b150948
+8b149234 addiu    $a2, $s2, -0x70dc
+8b149238 lui      $v0, 0x8b27
+8b14923c jal      0x8b184334
+8b149240 sw       $s3, 0x28b4($v0)
+8b149244 move     $a0, $v0
+8b149248 lw       $v0, ($v0)
+8b14924c lw       $v0, 0xc($v0)
+8b149250 jalr     $v0
+8b149254 addiu    $a1, $zero, 3
+8b149258 beqz     $v0, 0x8b149290
+8b14925c lui      $a1, 0x8b20
+8b149260 lui      $a2, 0x8b1f
+8b149264 move     $a0, $v0
+8b149268 addiu    $a1, $a1, 0x1c08
+8b14926c move     $a3, $zero
+8b149270 jal      0x8b1acb3c
+8b149274 addiu    $a2, $a2, -0x4a80
+8b149278 move     $a0, $v0
+8b14927c lw       $v0, ($v0)
+8b149280 lui      $a1, 0x8b15
+8b149284 lw       $v0, 0x6c($v0)
+8b149288 jalr     $v0
+8b14928c addiu    $a1, $a1, -0x72a4
+8b149290 lui      $v0, 0x8b1f
+8b149294 addiu    $v0, $v0, -0x4844
+8b149298 sw       $v0, 0x14($sp)
+8b14929c addiu    $v0, $zero, 0x97
+8b1492a0 move     $a3, $s0
+8b1492a4 addiu    $a2, $s2, -0x70dc
+8b1492a8 addiu    $a1, $s1, -0x44e4
+8b1492ac sw       $s0, 0x18($sp)
+8b1492b0 addiu    $a0, $zero, 4
+8b1492b4 jal      0x8b150948
+8b1492b8 sw       $v0, 0x10($sp)
+8b1492bc lw       $s0, 0x24($sp)
+8b1492c0 lw       $s1, 0x28($sp)
+8b1492c4 lw       $s2, 0x2c($sp)
+8b1492c8 lw       $s3, 0x30($sp)
+8b1492cc lw       $ra, 0x34($sp)
+8b1492d0 jr       $ra
+8b1492d4 addiu    $sp, $sp, 0x38
+
+receiver_callback_setter 0x8b13481c..0x8b134834
+8b13481c beqz     $a1, 0x8b13482c
+8b134820 nop      
+8b134824 lui      $v0, 0x8b23
+8b134828 sw       $a1, -0xfa4($v0)
+8b13482c jr       $ra
+8b134830 nop      
+
+callback_marshaller 0x8b10a09c..0x8b10a0e0
+8b10a09c addiu    $sp, $sp, -0x58
+8b10a0a0 move     $v1, $a0
+8b10a0a4 lui      $a0, 0x8b1f
+8b10a0a8 move     $v0, $a1
+8b10a0ac addiu    $a2, $zero, 2
+8b10a0b0 addiu    $a1, $sp, 0x10
+8b10a0b4 addiu    $a0, $a0, -0x4a10
+8b10a0b8 sw       $ra, 0x54($sp)
+8b10a0bc sw       $a2, 0x10($sp)
+8b10a0c0 sw       $v1, 0x14($sp)
+8b10a0c4 sw       $v0, 0x18($sp)
+8b10a0c8 sw       $zero, 0x3c($sp)
+8b10a0cc jal      0x8b1246ac
+8b10a0d0 sw       $zero, 0x40($sp)
+8b10a0d4 lw       $ra, 0x54($sp)
+8b10a0d8 jr       $ra
+8b10a0dc addiu    $sp, $sp, 0x58

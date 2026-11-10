@@ -1,0 +1,18 @@
+[
+  {
+    "source": "build/hdmi-avsync-2026-10-27/source-v2/hdmi-avsync-720p60.mkv",
+    "flash_count": 40,
+    "beep_count": 40,
+    "max_decoded_onset_error_ms": 0.020833333337577642,
+    "alignment_gate_pass": true,
+    "expected_pass": true
+  },
+  {
+    "source": "build/hdmi-avsync-2026-10-27/source-mutant/hdmi-avsync-720p60.mkv",
+    "flash_count": 24,
+    "beep_count": 24,
+    "max_decoded_onset_error_ms": 16.666666666669272,
+    "alignment_gate_pass": false,
+    "expected_pass": false
+  }
+]

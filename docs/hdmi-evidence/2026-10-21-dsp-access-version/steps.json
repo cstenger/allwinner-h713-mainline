@@ -1,0 +1,546 @@
+{
+  "schema": "h713-dsp-access-version-v1",
+  "stages": {
+    "33": "prefix",
+    "40": "census",
+    "45": "power",
+    "53": "receiver",
+    "69": "tvfe-words",
+    "74": "audio",
+    "81": "display",
+    "82": "extension",
+    "86": "audiotop-read",
+    "90": "audiotop-init",
+    "92": "dsp-status",
+    "96": "tvtop-census",
+    "104": "tvtop-routing",
+    "108": "lock-sampled",
+    "111": "lock-claimed",
+    "114": "dev0",
+    "117": "dev1",
+    "119": "versions"
+  },
+  "samples": {
+    "85": [
+      "audiotop_ctl",
+      "audiotop_cfg"
+    ],
+    "86": [
+      "tvfe_ctl"
+    ],
+    "92": [
+      "dsp_status"
+    ],
+    "96": [
+      "tvtop_cold"
+    ],
+    "103": [
+      "tvtop_set"
+    ],
+    "106": [
+      "lock_peer"
+    ],
+    "107": [
+      "lock_own"
+    ],
+    "109": [
+      "lock_own_before",
+      "lock_peer_before"
+    ],
+    "113": [
+      "dev0_outcome",
+      "dev0_status",
+      "dsp_timeout"
+    ],
+    "114": [
+      "version0"
+    ],
+    "116": [
+      "dev1_outcome",
+      "dev1_status",
+      "dsp_timeout"
+    ],
+    "117": [
+      "version1"
+    ]
+  },
+  "last_read_only_step": 40,
+  "steps": [
+    {
+      "step": 1,
+      "operation": "claim-dsp-port"
+    },
+    {
+      "step": 2,
+      "operation": "claim-lock-window"
+    },
+    {
+      "step": 3,
+      "operation": "claim-audiotop"
+    },
+    {
+      "step": 4,
+      "operation": "claim-scp-reset"
+    },
+    {
+      "step": 5,
+      "operation": "map-mips-status"
+    },
+    {
+      "step": 6,
+      "operation": "map-scp-reset"
+    },
+    {
+      "step": 7,
+      "operation": "map-tv-ccu"
+    },
+    {
+      "step": 8,
+      "operation": "map-display-ccu"
+    },
+    {
+      "step": 9,
+      "operation": "read-mips-stopped"
+    },
+    {
+      "step": 10,
+      "operation": "read-scp-stopped"
+    },
+    {
+      "step": 11,
+      "operation": "read-demod-bus"
+    },
+    {
+      "step": 12,
+      "operation": "read-display-bus"
+    },
+    {
+      "step": 13,
+      "operation": "get-display-reset"
+    },
+    {
+      "step": 14,
+      "operation": "read-display-reset"
+    },
+    {
+      "step": 15,
+      "operation": "get-demod-reset"
+    },
+    {
+      "step": 16,
+      "operation": "read-demod-reset"
+    },
+    {
+      "step": 17,
+      "operation": "get-clock-pll-video0"
+    },
+    {
+      "step": 18,
+      "operation": "get-clock-pll-adc"
+    },
+    {
+      "step": 19,
+      "operation": "get-clock-bus-tvcap"
+    },
+    {
+      "step": 20,
+      "operation": "get-clock-bus-cap-300m"
+    },
+    {
+      "step": 21,
+      "operation": "get-clock-vincap-dma"
+    },
+    {
+      "step": 22,
+      "operation": "get-clock-tvfe-1296m"
+    },
+    {
+      "step": 23,
+      "operation": "get-clock-bus-hdmi-audio"
+    },
+    {
+      "step": 24,
+      "operation": "get-clock-hdmi-audio"
+    },
+    {
+      "step": 25,
+      "operation": "get-clock-audio-cpu"
+    },
+    {
+      "step": 26,
+      "operation": "get-clock-audio-umac"
+    },
+    {
+      "step": 27,
+      "operation": "get-clock-audio-ihb"
+    },
+    {
+      "step": 28,
+      "operation": "get-clock-pll-video2"
+    },
+    {
+      "step": 29,
+      "operation": "get-clock-deint"
+    },
+    {
+      "step": 30,
+      "operation": "get-clock-panel"
+    },
+    {
+      "step": 31,
+      "operation": "get-clock-svp-dtl"
+    },
+    {
+      "step": 32,
+      "operation": "get-clock-afbd"
+    },
+    {
+      "step": 33,
+      "operation": "get-clock-bus-disp"
+    },
+    {
+      "step": 34,
+      "operation": "map-ppu-status"
+    },
+    {
+      "step": 35,
+      "operation": "read-ppu-tvfe-status"
+    },
+    {
+      "step": 36,
+      "operation": "read-ppu-tvcap-status"
+    },
+    {
+      "step": 37,
+      "operation": "get-tvcap-reset"
+    },
+    {
+      "step": 38,
+      "operation": "read-tvcap-reset"
+    },
+    {
+      "step": 39,
+      "operation": "census-clock-enabled"
+    },
+    {
+      "step": 40,
+      "operation": "read-tv-ccu-words"
+    },
+    {
+      "step": 41,
+      "operation": "attach-tvfe"
+    },
+    {
+      "step": 42,
+      "operation": "resume-tvfe"
+    },
+    {
+      "step": 43,
+      "operation": "attach-tvcap"
+    },
+    {
+      "step": 44,
+      "operation": "resume-tvcap"
+    },
+    {
+      "step": 45,
+      "operation": "recheck-stopped-after-power"
+    },
+    {
+      "step": 46,
+      "operation": "deassert-tvcap-reset-if-asserted"
+    },
+    {
+      "step": 47,
+      "operation": "enable-clock-bus-tvcap"
+    },
+    {
+      "step": 48,
+      "operation": "enable-clock-bus-cap-300m"
+    },
+    {
+      "step": 49,
+      "operation": "enable-clock-vincap-dma"
+    },
+    {
+      "step": 50,
+      "operation": "enable-clock-tvfe-1296m"
+    },
+    {
+      "step": 51,
+      "operation": "deassert-demod-reset"
+    },
+    {
+      "step": 52,
+      "operation": "enable-clock-pll-video0"
+    },
+    {
+      "step": 53,
+      "operation": "enable-clock-pll-adc"
+    },
+    {
+      "step": 54,
+      "operation": "write-tv-word-d10"
+    },
+    {
+      "step": 55,
+      "operation": "write-tv-word-d20"
+    },
+    {
+      "step": 56,
+      "operation": "write-tv-word-d24"
+    },
+    {
+      "step": 57,
+      "operation": "write-tv-word-d28"
+    },
+    {
+      "step": 58,
+      "operation": "write-tv-word-d2c"
+    },
+    {
+      "step": 59,
+      "operation": "write-tv-word-d30"
+    },
+    {
+      "step": 60,
+      "operation": "write-tv-word-d34"
+    },
+    {
+      "step": 61,
+      "operation": "write-tv-word-d38"
+    },
+    {
+      "step": 62,
+      "operation": "write-tv-word-d40"
+    },
+    {
+      "step": 63,
+      "operation": "write-tv-word-d48"
+    },
+    {
+      "step": 64,
+      "operation": "write-tv-word-d4c"
+    },
+    {
+      "step": 65,
+      "operation": "write-tv-word-d50"
+    },
+    {
+      "step": 66,
+      "operation": "write-tv-word-d58"
+    },
+    {
+      "step": 67,
+      "operation": "write-tv-word-d5c"
+    },
+    {
+      "step": 68,
+      "operation": "write-tv-word-d60"
+    },
+    {
+      "step": 69,
+      "operation": "set-demod-bus-gate"
+    },
+    {
+      "step": 70,
+      "operation": "enable-clock-bus-hdmi-audio"
+    },
+    {
+      "step": 71,
+      "operation": "enable-clock-hdmi-audio"
+    },
+    {
+      "step": 72,
+      "operation": "enable-clock-audio-cpu"
+    },
+    {
+      "step": 73,
+      "operation": "enable-clock-audio-umac"
+    },
+    {
+      "step": 74,
+      "operation": "enable-clock-audio-ihb"
+    },
+    {
+      "step": 75,
+      "operation": "enable-clock-pll-video2"
+    },
+    {
+      "step": 76,
+      "operation": "enable-clock-deint"
+    },
+    {
+      "step": 77,
+      "operation": "enable-clock-panel"
+    },
+    {
+      "step": 78,
+      "operation": "enable-clock-svp-dtl"
+    },
+    {
+      "step": 79,
+      "operation": "enable-clock-afbd"
+    },
+    {
+      "step": 80,
+      "operation": "enable-clock-bus-disp"
+    },
+    {
+      "step": 81,
+      "operation": "deassert-display-reset-if-asserted"
+    },
+    {
+      "step": 82,
+      "operation": "final-recheck"
+    },
+    {
+      "step": 83,
+      "operation": "map-audiotop"
+    },
+    {
+      "step": 84,
+      "operation": "read-audiotop-ctl"
+    },
+    {
+      "step": 85,
+      "operation": "read-audiotop-cfg"
+    },
+    {
+      "step": 86,
+      "operation": "read-tvfe-ctl"
+    },
+    {
+      "step": 87,
+      "operation": "write-audiotop-ctl"
+    },
+    {
+      "step": 88,
+      "operation": "write-audiotop-cfg"
+    },
+    {
+      "step": 89,
+      "operation": "write-audiotop-cfg-latch"
+    },
+    {
+      "step": 90,
+      "operation": "recheck-stopped-after-audiotop"
+    },
+    {
+      "step": 91,
+      "operation": "map-dsp-port"
+    },
+    {
+      "step": 92,
+      "operation": "read-dsp-status"
+    },
+    {
+      "step": 93,
+      "operation": "map-tvtop"
+    },
+    {
+      "step": 94,
+      "operation": "read-tvtop-40"
+    },
+    {
+      "step": 95,
+      "operation": "read-tvtop-44"
+    },
+    {
+      "step": 96,
+      "operation": "read-tvtop-80"
+    },
+    {
+      "step": 97,
+      "operation": "write-tvtop-04"
+    },
+    {
+      "step": 98,
+      "operation": "write-tvtop-44"
+    },
+    {
+      "step": 99,
+      "operation": "write-tvtop-88"
+    },
+    {
+      "step": 100,
+      "operation": "write-tvtop-00"
+    },
+    {
+      "step": 101,
+      "operation": "write-tvtop-40"
+    },
+    {
+      "step": 102,
+      "operation": "write-tvtop-80"
+    },
+    {
+      "step": 103,
+      "operation": "write-tvtop-84"
+    },
+    {
+      "step": 104,
+      "operation": "recheck-stopped-after-tvtop"
+    },
+    {
+      "step": 105,
+      "operation": "map-lock-window"
+    },
+    {
+      "step": 106,
+      "operation": "read-lock-peer"
+    },
+    {
+      "step": 107,
+      "operation": "read-lock-own"
+    },
+    {
+      "step": 108,
+      "operation": "final-audiotop-recheck"
+    },
+    {
+      "step": 109,
+      "operation": "check-lock-free"
+    },
+    {
+      "step": 110,
+      "operation": "claim-lock"
+    },
+    {
+      "step": 111,
+      "operation": "recheck-peer-after-claim"
+    },
+    {
+      "step": 112,
+      "operation": "wait-dev0-idle"
+    },
+    {
+      "step": 113,
+      "operation": "request-dev0-version"
+    },
+    {
+      "step": 114,
+      "operation": "read-dev0-response"
+    },
+    {
+      "step": 115,
+      "operation": "wait-dev1-idle"
+    },
+    {
+      "step": 116,
+      "operation": "request-dev1-version"
+    },
+    {
+      "step": 117,
+      "operation": "read-dev1-response"
+    },
+    {
+      "step": 118,
+      "operation": "release-lock"
+    },
+    {
+      "step": 119,
+      "operation": "final-version-recheck"
+    }
+  ]
+}

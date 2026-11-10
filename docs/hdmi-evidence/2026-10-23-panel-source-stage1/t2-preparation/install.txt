@@ -1,0 +1,4 @@
+PASS install-dry: all install guards pass; nothing written
+PASS install: trial proper written and read back; other regions unchanged; reboot separately
+rc=0
+PASS check: installed=trial; images, rescue, SPL, both environments and region tail verified

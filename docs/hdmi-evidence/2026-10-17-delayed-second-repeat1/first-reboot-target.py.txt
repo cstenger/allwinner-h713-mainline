@@ -1,0 +1,21 @@
+import subprocess
+import time
+from pathlib import Path
+
+def uptime():
+    return float(Path('/proc/uptime').read_text().split()[0])
+
+assert Path('/proc/sys/kernel/random/boot_id').read_text().strip() == '7f07f5c3-129e-4014-b01b-7e21c94d0526'
+target = 70.0
+print('H713_DELAYED_R1_FIRST_WAIT_BEGIN', flush=True)
+print('boot_id=' + Path('/proc/sys/kernel/random/boot_id').read_text().strip(), flush=True)
+print('start_uptime=%.2f target_uptime=%.2f' % (uptime(), target), flush=True)
+while True:
+    remaining = target - uptime()
+    if remaining <= 0:
+        break
+    time.sleep(min(remaining, 1.0))
+print('H713_DELAYED_R1_FIRST_WARM_REBOOT', flush=True)
+print('reboot_uptime=%.2f' % uptime(), flush=True)
+subprocess.run(['dmesg', '-n', '7'], check=True)
+subprocess.run(['systemctl', 'reboot'], check=True)

@@ -1,0 +1,51 @@
+ccf94dbb-b82a-4b51-9ffb-2f1c812e07ac
+127.59 405.21
+state: RUNNING
+owner_pid   : 422
+trigger_time: 21.089096675
+tstamp      : 127.595603392
+delay       : 160
+avail       : 160
+avail_max   : 512
+-----
+hw_ptr      : 5112284
+appl_ptr    : 5112124
+state: RUNNING
+owner_pid   : 422
+trigger_time: 30.976118554
+tstamp      : 0.000000000
+delay       : 3680
+avail       : 160
+avail_max   : 512
+-----
+hw_ptr      : 4637920
+appl_ptr    : 4641600
+DAC Playback Volume                          int    43   [0..63]
+Line Out Playback Volume                     int    15   [0..31]
+Line Out Playback Switch                     bool   1 1
+Speaker Switch                               bool   1
+Line Out Source Playback Route               enum   0 0   [0..1]
+gpiochip0: 256 GPIOs, parent: platform/2000000.pinctrl, 2000000.pinctrl:
+ gpio-37  (                    |lamp                ) out hi 
+ gpio-166 (                    |regulator-panel     ) out hi 
+ gpio-240 (                    |panel-reset         ) in  hi ACTIVE LOW
+
+gpiochip1: 64 GPIOs, parent: platform/7022000.pinctrl, 7022000.pinctrl:
+ gpio-2   (                    |allwinner,pa        ) out hi 
+ gpio-4   (                    |Power               ) in  hi IRQ ACTIVE LOW
+ gpio-33  (                    |wlan_regon          ) out hi 
+[   19.885390] h713-arm64 systemd[1]: Starting h713-hdmi-speaker.service - H713 HDMI input to internal speaker...
+[   19.937724] h713-arm64 enable-mixer.sh[417]: DAC Playback Volume                          set to 43   [0..63]
+[   19.941009] h713-arm64 enable-mixer.sh[418]: Line Out Playback Volume                     set to 15   [0..31]
+[   19.944892] h713-arm64 enable-mixer.sh[419]: Line Out Playback Switch                     set to 1 1
+[   19.946847] h713-arm64 enable-mixer.sh[420]: Speaker Switch                               set to 1
+[   19.954135] h713-arm64 systemd[1]: Started h713-hdmi-speaker.service - H713 HDMI input to internal speaker.
+[   21.396726] h713-arm64 hdmi-speaker[422]: HDMI speaker ready; fading in after silent pre-roll
+MainPID=422
+Result=success
+NRestarts=0
+Id=h713-hdmi-speaker.service
+0-0018
+2009400.thermal-sensor
+2030000.codec
+3000000.syscon

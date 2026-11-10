@@ -1,0 +1,160 @@
+Starting h713-t5.service - [systemd-run] /usr/bin/python3 -u /run/h713-t5/t5-board.py run --confirm-t5...
+Started h713-t5.service - [systemd-run] /usr/bin/python3 -u /run/h713-t5/t5-board.py run --confirm-t5.
+{"what": "pool identity map in group 0", "ok": true, "t": 3359.917, "ev": "check"}
+{"what": "HDMI locked (MemoryAgent +0xb5 == 1)", "ok": true, "t": 3359.917, "ev": "check"}
+{"what": "IOMMU bypass 0x58 (master 2 translates)", "ok": true, "t": 3359.917, "ev": "check"}
+{"what": "selector on the console", "ok": true, "t": 3359.917, "ev": "check"}
+{"what": "KMS video plane off", "ok": true, "t": 3359.917, "ev": "check"}
+{"what": "AFBD source 0 in capture config, off (0x10 == 03000200)", "ok": true, "t": 3359.917, "ev": "check"}
+{"what": "TCON 720p", "ok": true, "t": 3359.918, "ev": "check"}
+{"what": "IOMMU interrupt status 0", "ok": true, "t": 3359.918, "ev": "check"}
+{"what": "no kernel fault lines", "ok": true, "t": 3359.918, "ev": "check"}
+{"val": "04000000", "t": 3359.918, "ev": "gain_idle"}
+{"label": "pre", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["00000047", "0000003b"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "faults": 0, "t": 3359.954, "ev": "snap"}
+{"cmd": "memory_agent en 4", "reply": "[sent 18 bytes: 'memory_agent en 4']\n[reply: 29 bytes]\nmemory_agent en 4\n\n\n\nVS:/$ \n", "t": 3362.233, "ev": "shell"}
+{"label": "en4", "sel": "29000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "faults": 0, "t": 3365.281, "ev": "snap"}
+{"reg": "0x051c006c", "val": "39000000", "readback": "39000000", "t": 3365.326, "ev": "write"}
+{"label": "A-grey", "sel": "39000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000047", "0000003b"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "faults": 0, "t": 3365.375, "ev": "snap"}
+{"stage": "A-grey", "secs": 15.0, "fetch_values": 16, "t": 3380.538, "ev": "held"}
+{"label": "A-grey-end", "sel": "39000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "faults": 0, "t": 3380.585, "ev": "snap"}
+{"reg": "0x05140508", "val": "144c0000", "readback": "144c0000", "t": 3380.585, "ev": "write"}
+{"label": "B-colour", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "faults": 0, "t": 3380.626, "ev": "snap"}
+{"stage": "B-colour", "secs": 15.0, "fetch_values": 11, "t": 3395.828, "ev": "held"}
+{"label": "B-colour-end", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "faults": 0, "t": 3395.875, "ev": "snap"}
+{"reg": "0x05140508", "val": "04000000", "readback": "04000000", "t": 3395.876, "ev": "write"}
+{"reg": "0x051c006c", "val": "29000000", "readback": "29000000", "t": 3395.877, "ev": "write"}
+{"cmd": "memory_agent dis 4", "reply": "[sent 19 bytes: 'memory_agent dis 4']\n[reply: 30 bytes]\nmemory_agent dis 4\n\n\n\nVS:/$ \n", "t": 3398.156, "ev": "shell"}
+{"label": "reverted", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["00000047", "0000003b"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "faults": 0, "t": 3398.194, "ev": "snap"}
+{"ok": true, "t": 3398.195, "ev": "done"}
+h713-t5.service: Deactivated successfully.
+h713-t5.service: Consumed 5.672s CPU time.
+Starting h713-t5.service - [systemd-run] /usr/bin/python3 -u /run/h713-t5/t5-board.py run --confirm-t5 --with-nr...
+Started h713-t5.service - [systemd-run] /usr/bin/python3 -u /run/h713-t5/t5-board.py run --confirm-t5 --with-nr.
+{"what": "pool identity map in group 0", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "HDMI locked (MemoryAgent +0xb5 == 1)", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "IOMMU bypass 0x58 (master 2 translates)", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "selector on the console", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "KMS video plane off", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "AFBD source 0 in capture config, off (0x10 == 03000200)", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "TCON 720p", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "IOMMU interrupt status 0", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "no kernel fault lines", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "NR history addresses in the pool, as stock", "ok": true, "t": 5821.713, "ev": "check"}
+{"what": "NR history DMA off", "ok": true, "t": 5821.713, "ev": "check"}
+{"val": "04000000", "t": 5821.714, "ev": "gain_idle"}
+{"label": "pre", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["00000047", "0000003b"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 5821.748, "ev": "snap"}
+{"cmd": "memory_agent en 5", "reply": "[sent 18 bytes: 'memory_agent en 5']\n[reply: 29 bytes]\nmemory_agent en 5\n\n\n\nVS:/$ \n", "t": 5824.023, "ev": "shell"}
+{"cmd": "memory_agent en 6", "reply": "[sent 18 bytes: 'memory_agent en 6']\n[reply: 29 bytes]\nmemory_agent en 6\n\n\n\nVS:/$ \n", "t": 5826.297, "ev": "shell"}
+{"label": "nr-on", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["00000047", "0000003b"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["e0020168", "e00202d0", "e0020168", "e00202d0"], "faults": 0, "t": 5826.84, "ev": "snap"}
+{"cmd": "memory_agent en 4", "reply": "[sent 18 bytes: 'memory_agent en 4']\n[reply: 29 bytes]\nmemory_agent en 4\n\n\n\nVS:/$ \n", "t": 5829.174, "ev": "shell"}
+{"label": "en4", "sel": "29000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["e0020168", "e00202d0", "e0020168", "e00202d0"], "faults": 0, "t": 5832.227, "ev": "snap"}
+{"reg": "0x051c006c", "val": "39000000", "readback": "39000000", "t": 5832.264, "ev": "write"}
+{"label": "A-grey", "sel": "39000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000069", "0000003c"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["e0020168", "e00202d0", "e0020168", "e00202d0"], "faults": 0, "t": 5832.301, "ev": "snap"}
+{"stage": "A-grey", "secs": 15.0, "fetch_values": 10, "t": 5847.467, "ev": "held"}
+{"label": "A-grey-end", "sel": "39000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["e0020168", "e00202d0", "e0020168", "e00202d0"], "faults": 0, "t": 5847.512, "ev": "snap"}
+{"reg": "0x05140508", "val": "144c0000", "readback": "144c0000", "t": 5847.513, "ev": "write"}
+{"label": "B-colour", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["0000004a", "0000003f"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["e0020168", "e00202d0", "e0020168", "e00202d0"], "faults": 0, "t": 5847.561, "ev": "snap"}
+{"stage": "B-colour", "secs": 15.0, "fetch_values": 17, "t": 5862.755, "ev": "held"}
+{"label": "B-colour-end", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000069", "0000003c"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["e0020168", "e00202d0", "e0020168", "e00202d0"], "faults": 0, "t": 5862.795, "ev": "snap"}
+{"reg": "0x05140508", "val": "04000000", "readback": "04000000", "t": 5862.798, "ev": "write"}
+{"reg": "0x051c006c", "val": "29000000", "readback": "29000000", "t": 5862.799, "ev": "write"}
+{"cmd": "memory_agent dis 4", "reply": "[sent 19 bytes: 'memory_agent dis 4']\n[reply: 30 bytes]\nmemory_agent dis 4\n\n\n\nVS:/$ \n", "t": 5865.086, "ev": "shell"}
+{"cmd": "memory_agent dis 6", "reply": "[sent 19 bytes: 'memory_agent dis 6']\n[reply: 30 bytes]\nmemory_agent dis 6\n\n\n\nVS:/$ \n", "t": 5867.363, "ev": "shell"}
+{"cmd": "memory_agent dis 5", "reply": "[sent 19 bytes: 'memory_agent dis 5']\n[reply: 30 bytes]\nmemory_agent dis 5\n\n\n\nVS:/$ \n", "t": 5869.645, "ev": "shell"}
+{"label": "reverted", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["00000069", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 5869.689, "ev": "snap"}
+{"ok": true, "t": 5869.689, "ev": "done"}
+h713-t5.service: Deactivated successfully.
+h713-t5.service: Consumed 6.865s CPU time.
+Starting h713-t5.service - [systemd-run] /usr/bin/python3 -u /run/h713-t5/t5-board.py run --confirm-t5 --hold-b 60...
+Started h713-t5.service - [systemd-run] /usr/bin/python3 -u /run/h713-t5/t5-board.py run --confirm-t5 --hold-b 60.
+{"what": "pool identity map in group 0", "ok": true, "t": 9043.588, "ev": "check"}
+{"what": "HDMI locked (MemoryAgent +0xb5 == 1)", "ok": true, "t": 9043.588, "ev": "check"}
+{"what": "IOMMU bypass 0x58 (master 2 translates)", "ok": true, "t": 9043.588, "ev": "check"}
+{"what": "selector on the console", "ok": true, "t": 9043.589, "ev": "check"}
+{"what": "KMS video plane off", "ok": true, "t": 9043.589, "ev": "check"}
+{"what": "AFBD source 0 in capture config, off (0x10 == 03000200)", "ok": true, "t": 9043.589, "ev": "check"}
+{"what": "TCON 720p", "ok": true, "t": 9043.589, "ev": "check"}
+{"what": "IOMMU interrupt status 0", "ok": true, "t": 9043.589, "ev": "check"}
+{"what": "no kernel fault lines", "ok": true, "t": 9043.589, "ev": "check"}
+{"val": "04000000", "t": 9043.589, "ev": "gain_idle"}
+{"label": "pre", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["00000069", "0000003c"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 9043.625, "ev": "snap"}
+{"cmd": "memory_agent en 4", "reply": "[sent 18 bytes: 'memory_agent en 4']\n[reply: 29 bytes]\nmemory_agent en 4\n\n\n\nVS:/$ \n", "t": 9045.907, "ev": "shell"}
+{"label": "en4", "sel": "29000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 9048.95, "ev": "snap"}
+{"reg": "0x051c006c", "val": "39000000", "readback": "39000000", "t": 9048.985, "ev": "write"}
+{"label": "A-grey", "sel": "39000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000069", "0000003b"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 9049.025, "ev": "snap"}
+{"stage": "A-grey", "secs": 15.0, "fetch_values": 18, "t": 9064.141, "ev": "held"}
+{"label": "A-grey-end", "sel": "39000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000069", "0000003c"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 9064.183, "ev": "snap"}
+{"reg": "0x05140508", "val": "144c0000", "readback": "144c0000", "t": 9064.184, "ev": "write"}
+{"label": "B-colour", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000069", "0000003c"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 9064.223, "ev": "snap"}
+{"stage": "B-colour", "secs": 60.0, "fetch_values": 38, "t": 9124.346, "ev": "held"}
+{"label": "B-colour-end", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 9124.391, "ev": "snap"}
+{"reg": "0x05140508", "val": "04000000", "readback": "04000000", "t": 9124.392, "ev": "write"}
+{"reg": "0x051c006c", "val": "29000000", "readback": "29000000", "t": 9124.392, "ev": "write"}
+{"cmd": "memory_agent dis 4", "reply": "[sent 19 bytes: 'memory_agent dis 4']\n[reply: 30 bytes]\nmemory_agent dis 4\n\n\n\nVS:/$ \n", "t": 9126.669, "ev": "shell"}
+{"label": "reverted", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["00000047", "0000003c"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 9126.714, "ev": "snap"}
+{"ok": true, "t": 9126.714, "ev": "done"}
+h713-t5.service: Deactivated successfully.
+h713-t5.service: Consumed 12.093s CPU time.
+Starting h713-t5.service - [systemd-run] /usr/bin/python3 -u /run/h713-t5/t5-board.py run --confirm-t5 --matrix...
+Started h713-t5.service - [systemd-run] /usr/bin/python3 -u /run/h713-t5/t5-board.py run --confirm-t5 --matrix.
+{"what": "pool identity map in group 0", "ok": true, "t": 2834.886, "ev": "check"}
+{"what": "HDMI locked (MemoryAgent +0xb5 == 1)", "ok": true, "t": 2834.886, "ev": "check"}
+{"what": "IOMMU bypass 0x58 (master 2 translates)", "ok": true, "t": 2834.887, "ev": "check"}
+{"what": "selector on the console", "ok": true, "t": 2834.887, "ev": "check"}
+{"what": "KMS video plane off", "ok": true, "t": 2834.887, "ev": "check"}
+{"what": "AFBD source 0 in capture config, off (0x10 == 03000200)", "ok": true, "t": 2834.887, "ev": "check"}
+{"what": "TCON 720p", "ok": true, "t": 2834.887, "ev": "check"}
+{"what": "IOMMU interrupt status 0", "ok": true, "t": 2834.887, "ev": "check"}
+{"what": "no kernel fault lines", "ok": true, "t": 2834.887, "ev": "check"}
+{"val": "04000000", "t": 2834.887, "ev": "gain_idle"}
+{"label": "pre", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["00000000", "00000000"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2834.922, "ev": "snap"}
+{"cmd": "memory_agent en 4", "reply": "[sent 18 bytes: 'memory_agent en 4']\n[reply: 29 bytes]\nmemory_agent en 4\n\n\n\nVS:/$ \n", "t": 2837.21, "ev": "shell"}
+{"label": "en4", "sel": "29000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2840.262, "ev": "snap"}
+{"reg": "0x051c006c", "val": "39000000", "readback": "39000000", "t": 2840.303, "ev": "write"}
+{"label": "A-grey", "sel": "39000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000052", "00000047"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2840.345, "ev": "snap"}
+{"stage": "A-grey", "secs": 15.0, "fetch_values": 16, "t": 2855.504, "ev": "held"}
+{"label": "A-grey-end", "sel": "39000000", "gain": "04000000", "afbd10": "03000203", "fetch": ["00000069", "0000003b"], "pair": "4c7ed000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2855.544, "ev": "snap"}
+{"reg": "0x05140508", "val": "144c0000", "readback": "144c0000", "t": 2855.544, "ev": "write"}
+{"label": "B-colour", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000069", "0000003c"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2855.595, "ev": "snap"}
+{"stage": "B-colour", "secs": 15.0, "fetch_values": 16, "t": 2870.744, "ev": "held"}
+{"label": "B-colour-end", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2870.787, "ev": "snap"}
+{"0x05000030": "00400000", "0x05000040": "02090280", "0x05600010": "03000203", "0x0560004c": "02d00500", "t": 2870.788, "ev": "cell_base"}
+{"reg": "0x0560006c", "val": "00000001", "readback": "00000001", "t": 2870.789, "ev": "write"}
+{"reg": "0x05600014", "val": "00000001", "readback": "00000001", "t": 2870.789, "ev": "write"}
+{"label": "cell0-capture-422", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2870.839, "ev": "snap"}
+{"stage": "cell0-capture-422", "secs": 15.0, "fetch_values": 17, "t": 2886.016, "ev": "held"}
+{"reg": "0x05600010", "val": "03000003", "readback": "03000003", "t": 2886.018, "ev": "write"}
+{"reg": "0x0560004c", "val": "01680500", "readback": "01680500", "t": 2886.018, "ev": "write"}
+{"reg": "0x0560006c", "val": "00000001", "readback": "00000001", "t": 2886.019, "ev": "write"}
+{"reg": "0x05600014", "val": "00000001", "readback": "00000001", "t": 2886.019, "ev": "write"}
+{"label": "cell1-capture-420", "sel": "39000000", "gain": "144c0000", "afbd10": "03000003", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2886.071, "ev": "snap"}
+{"stage": "cell1-capture-420", "secs": 15.0, "fetch_values": 17, "t": 2901.249, "ev": "held"}
+{"reg": "0x05000030", "val": "00000c00", "readback": "00000c00", "t": 2901.25, "ev": "write"}
+{"reg": "0x05000040", "val": "02090208", "readback": "02090208", "t": 2901.25, "ev": "write"}
+{"reg": "0x05600010", "val": "03000203", "readback": "03000203", "t": 2901.252, "ev": "write"}
+{"reg": "0x0560004c", "val": "02d00500", "readback": "02d00500", "t": 2901.253, "ev": "write"}
+{"reg": "0x0560006c", "val": "00000001", "readback": "00000001", "t": 2901.253, "ev": "write"}
+{"reg": "0x05600014", "val": "00000001", "readback": "00000001", "t": 2901.253, "ev": "write"}
+{"label": "cell2-decoder-422", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000069", "0000003b"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2901.29, "ev": "snap"}
+{"stage": "cell2-decoder-422", "secs": 15.0, "fetch_values": 13, "t": 2916.536, "ev": "held"}
+{"reg": "0x05600010", "val": "03000003", "readback": "03000003", "t": 2916.537, "ev": "write"}
+{"reg": "0x0560004c", "val": "01680500", "readback": "01680500", "t": 2916.537, "ev": "write"}
+{"reg": "0x0560006c", "val": "00000001", "readback": "00000001", "t": 2916.539, "ev": "write"}
+{"reg": "0x05600014", "val": "00000001", "readback": "00000001", "t": 2916.539, "ev": "write"}
+{"label": "cell3-decoder-420", "sel": "39000000", "gain": "144c0000", "afbd10": "03000003", "fetch": ["00000047", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2916.58, "ev": "snap"}
+{"stage": "cell3-decoder-420", "secs": 15.0, "fetch_values": 12, "t": 2931.815, "ev": "held"}
+{"reg": "0x05000030", "val": "00400000", "readback": "00400000", "t": 2931.816, "ev": "write"}
+{"reg": "0x05000040", "val": "02090280", "readback": "02090280", "t": 2931.817, "ev": "write"}
+{"reg": "0x05600010", "val": "03000203", "readback": "03000203", "t": 2931.818, "ev": "write"}
+{"reg": "0x0560004c", "val": "02d00500", "readback": "02d00500", "t": 2931.818, "ev": "write"}
+{"reg": "0x0560006c", "val": "00000001", "readback": "00000001", "t": 2931.819, "ev": "write"}
+{"reg": "0x05600014", "val": "00000001", "readback": "00000001", "t": 2931.819, "ev": "write"}
+{"label": "cell4-capture-422", "sel": "39000000", "gain": "144c0000", "afbd10": "03000203", "fetch": ["00000069", "0000003b"], "pair": "4c5ee000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2931.858, "ev": "snap"}
+{"stage": "cell4-capture-422", "secs": 15.0, "fetch_values": 15, "t": 2947.056, "ev": "held"}
+{"reg": "0x05140508", "val": "04000000", "readback": "04000000", "t": 2947.057, "ev": "write"}
+{"reg": "0x051c006c", "val": "29000000", "readback": "29000000", "t": 2947.057, "ev": "write"}
+{"cmd": "memory_agent dis 4", "reply": "[sent 19 bytes: 'memory_agent dis 4']\n[reply: 30 bytes]\nmemory_agent dis 4\n\n\n\nVS:/$ \n", "t": 2949.332, "ev": "shell"}
+{"label": "reverted", "sel": "29000000", "gain": "04000000", "afbd10": "03000200", "fetch": ["0000007d", "0000003c"], "pair": "4c3ef000", "bypass": "00000058", "iommu_sta": "00000000", "tcon": ["00d00404", "02f80550", "02d00500"], "mirror": "80000000", "blue": ["00000000", "00000038", "f0000000"], "nr_en": ["60020168", "600202d0", "60020168", "600202d0"], "faults": 0, "t": 2949.378, "ev": "snap"}
+{"ok": true, "t": 2949.379, "ev": "done"}
+h713-t5.service: Deactivated successfully.
+h713-t5.service: Consumed 16.920s CPU time.

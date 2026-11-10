@@ -1,0 +1,72 @@
+Linux h713-arm64 6.18.38 #4 SMP Fri Sep 18 00:16:45 PDT 2026 aarch64 GNU/Linux
+60bbddeab6c985607b7feb7e3d2f15d4e98704016ce8773e10a2b52bdb689608  /root/hy310-cpu-comm.ko
+ee12416ccd97706a79dda57151e6cfebb0892d6d01fe0f4d6190e92ad7a6d041  /root/h713-hdmi-power-stepped.ko
+[stale output, discarded before the command: 8 bytes]
+[2J[1H
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0
+CPU_COMM_CALL_OK component=24efc7c9 elapsed_us=74709 nret=1 ret0=00000000
+[sent 9 bytes: 'help hal']
+[reply: 63 bytes]
+help hal
+command help of hal
+for hal debug only
+
+VS:/$ 
+control block  0x4bd01000  acID b'RV\x00\x00\x00\x00 TERMINAL\x00'
+MIPS core      ALIVE (0x0306101c)
+  up[0]   buf=0x4bd01300 size=0x41c00 wr=988 rd=988 flags=0x0
+  up[1]   buf=0x4bd43000 size=0x7d000 wr=0 rd=0 flags=0x0
+  up[2]   buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+  down[0] buf=0x4bd01200 size=0x100 wr=14 rd=14 flags=0x0
+  down[1] buf=0x4bd42f00 size=0x100 wr=0 rd=0 flags=0x0
+  down[2] buf=0x00000000 size=0x0 wr=0 rd=0 flags=0x0
+domain                          status          children        performance
+    /device                         runtime status                  managed by
+------------------------------------------------------------------------------
+AV1                             off-0                           0
+VE                              off-0                           0
+    1c0e000.video-codec             suspended                   0           SW
+TVCAP                           off-0                           0
+TVFE                            on                              0
+    h713-hdmi-tvfe                  active                      0           SW
+GPU                             off-0                           0
+    1800000.gpu                     suspended                   0           SW
+Module                  Size  Used by
+hy310_cpu_comm         90112  0
+h713_hdmi_power        12288  0
+hci_uart               28672  1
+panfrost               77824  0
+sunxi_scanout_dmabuf    12288  0
+sunxi_cedrus           69632  0
+aic8800_btlpm          12288  0
+aic8800_fdrv          516096  0
+aic8800_bsp            90112  2 aic8800_btlpm,aic8800_fdrv
+070010a4 0x00010000
+07001124 0x00020000
+07000400 0x00000000

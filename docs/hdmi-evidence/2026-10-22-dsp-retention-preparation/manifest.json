@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "purpose": "bench DSP warm retention; not installed",
+  "base": "/home/chris/Projects/h713/build/hdmi-tvfe-boot-trace-2026-10-21/candidate",
+  "baseline": {
+    "kernel_config": "1b2b9392fd8801b8199e20c6e09638b15b80efd77b866b5d237daa4d98ea8522",
+    "kernel_image": "ada92f56dd892eab8c4a4bf76e6d92ce609e6e620daccf8de2b419c5aae35d29",
+    "kernel_symvers": "c70895af49e62c1821f8a1e1e22f518b365761f256f9842eb59a528107356f70",
+    "dtb": "4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940",
+    "uboot_config": "ea0d027d55758b4e86a4f1ade4db7cc45c52db079d9a10925aeb7723361443f9",
+    "uboot_binary": "e16ede6254491ea59fbcf36e8a295d744e6bc3a73d5b9594818c8530a97c72f9"
+  },
+  "built": true,
+  "base_source_sha256": "3b5c2b2303d5c0c8b4a4917b5f25ef774ec135220a27530bf4d92734f99e60f4",
+  "patched_source_sha256": "25641dfbdbafbe2e1b467f3024aa1e385980f58462946af2c7e2fed7bfbd8cf0",
+  "assets": {
+    "native-test.c": "295d5e08342c6744e75230ec13694777cf2bf1023b34c9be193685bd408854d8",
+    "observer.inc": "933c08a0637d244cf5bd0b69135af68278c8f0087838f2935a79db5422ad8b52",
+    "retention-hold.inc": "47d5effc1892ba5d2bab69c16a29ce043fb851651982f986809898f8f6c590c3",
+    "retention-policy.h": "e8df852346ed33f17902148bb1c31b7a84e16bf1026a4055432740d10bfb585b"
+  },
+  "guard_previous_expected_sha256": "96f37655b33bf78d95b33fa4f431721be5a7506c73c12dcd4df58032cad27113",
+  "requires": [
+    "h713_tvfe_trace=1",
+    "h713_tvfe_retain=1",
+    "panic=0",
+    "loglevel=7"
+  ],
+  "bundle": {
+    "h713-hdmi-hold-guard": "5ad26677ac791d2be659db88165d689d997705f45ee4d516015e786342ad764d",
+    "dsp-retention.py": "8106b59a76021140069b7406baa00ce48f3b896a5c318ea28298c1e5528df129",
+    "analyze-dsp-retention.py": "46d1e9d8917910dcadd99d23b57605e28f3a545642fbfb55ced36184a2be4977",
+    "kernel.fit": "538224b413efa5bd7d92a4196c8a7327a223eebec32dc4fe124dbabc7b35c553"
+  },
+  "build_command": [
+    "make",
+    "-C",
+    "/home/chris/Projects/h713/build/hdmi-dsp-retention-2026-10-21/candidate-v2/kernel",
+    "ARCH=arm64",
+    "LLVM=1",
+    "-j12",
+    "Image",
+    "modules"
+  ],
+  "compiler": "clang version 23.1.3\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n",
+  "kernel_release": "6.18.38",
+  "symvers_unchanged": true,
+  "artifacts": {
+    "Image.gz": {
+      "size": 7717383,
+      "sha256": "f7910cc62fede9a4eb5de7a90882502f62fd6000da586acf3c1ef62a158c0604"
+    },
+    "board.dtb": {
+      "size": 34666,
+      "sha256": "4c4fe0c55fd0d3498af8e10d5f850321e5b56121a06ceee31ea22a204aae4940"
+    },
+    "kernel.its": {
+      "size": 869,
+      "sha256": "4efb906a625907f21a511f4c1986996ee0c5c04c0606047b106ac1a740e0d703"
+    },
+    "kernel.fit": {
+      "size": 7753056,
+      "sha256": "538224b413efa5bd7d92a4196c8a7327a223eebec32dc4fe124dbabc7b35c553"
+    }
+  },
+  "kernel_uts_version": "#3 SMP Thu Oct 22 00:04:05 PDT 2026"
+}

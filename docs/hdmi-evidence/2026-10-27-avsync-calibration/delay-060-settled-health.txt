@@ -1,0 +1,9 @@
+{"verified": true, "version": 1, "boot_id": "e0d594d9-32e8-458e-b674-2c19121eb64b", "server_pid": 322, "route": {"source": {"id": 51, "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"}, "sink": {"id": 43, "name": "alsa_output.platform-2030000.codec.stereo-fallback"}}, "nodes": {"h713-hdmi-loop-capture": 60, "h713-hdmi-loop-playback": 64}}
+NRestarts=0
+Id=h713-hdmi-speaker.service
+ActiveState=active
+
+NRestarts=0
+Id=h713-hdmi-video.service
+ActiveState=active
+pw-loopback --name=h713-hdmi-speaker --channels=2 --channel-map=[ FL, FR ] --latency=20 --delay=0.06 --capture=alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback --playback=alsa_output.platform-2030000.codec.stereo-fallback --capture-props={ node.name=h713-hdmi-loop-capture node.dont-fallback=true audio.rate=48000 } --playback-props={ node.name=h713-hdmi-loop-playback node.dont-fallback=true audio.rate=48000 }

@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""One approved orderly trial; pause cold checks until host media is confirmed."""
+import importlib.util,pathlib,time
+ROOT=pathlib.Path('/home/chris/Projects/h713')
+spec=importlib.util.spec_from_file_location('warm_runner',ROOT/'tools/serial/run-warm-shared.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+OUT=ROOT/'docs/hdmi-evidence/2026-10-24-warm-shared-repeat-orderly'
+class Gated(m.Run):
+    def health(self,label):
+        if label=='cold':
+            self.note('WAITING for host-source-confirmed; no reboot before this gate')
+            deadline=time.monotonic()+900
+            while not (self.out/'host-source-confirmed').exists():
+                if time.monotonic()>deadline:raise RuntimeError('source not confirmed; no reboot sent')
+                time.sleep(1)
+            self.note('Host moving picture and tone confirmed; beginning cold checks')
+        return super().health(label)
+Gated(OUT,'/dev/ttyUSB0',reset='orderly',require_video=True).run(ROOT/'build/hdmi-warm-shared-repeat-2026-10-24')

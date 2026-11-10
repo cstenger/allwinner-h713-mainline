@@ -1,0 +1,22 @@
+{
+  "schema": "h713-source-power-install-v1",
+  "before": {
+    "usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko": "422b17966c9b7211b9733e7b453282bec6ed444338689aeec039277606f5cada",
+    "usr/lib/h713-hdmi/h713-hdmi-readvertise.py": "4c54d1c2fb6662675fe622d99afbf6d410786e10c5f829e076aa0e334ded0b3d",
+    "usr/lib/h713-hdmi-video/SHA256SUMS": "75dbb0ca17a670dd05144e689bb07e421b888cda1205661ad4d9ead88553e8cb",
+    "usr/lib/h713-hdmi/SHA256SUMS": "a5ce192f98e2fb340a6fe19a00dae6f43f416255a3ed90473ff72dc7b95cc33d"
+  },
+  "after": {
+    "usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko": "5de83b884628b7c7c600b0b6b4e2d08e3a64e440642951345392830a076e9896",
+    "usr/lib/h713-hdmi/h713-hdmi-readvertise.py": "d108b4c461202993bac558a7d45aba7740177f81315417e373adc39c4ebd6138",
+    "usr/lib/h713-hdmi-video/SHA256SUMS": "8e2990de99e04b9c1cb3a0e74ac934aeadb301316d1355d88d685a055d8d457d",
+    "usr/lib/h713-hdmi/SHA256SUMS": "f44a726a54ca120e300b12f93b1494b14fdf895841b7b4b292ec53ce698f84a3"
+  },
+  "module_version": "reject-trace-power-v2",
+  "retry": "V4L2 power absent suppresses; present/unknown retain bounded schedule; no pulses while sending",
+  "corrections": [
+    "ENOENT is an empty V4L2 event queue",
+    "Cold zero is unknown until first positive power sample",
+    "Subscribe to source-change as well as power-control events"
+  ]
+}

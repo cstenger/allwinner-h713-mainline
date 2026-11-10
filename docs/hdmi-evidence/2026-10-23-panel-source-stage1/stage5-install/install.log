@@ -1,0 +1,15 @@
+signal before: 5 1280 720
+Created symlink '/etc/systemd/system/multi-user.target.wants/h713-hdmi-ring.service' → '/etc/systemd/system/h713-hdmi-ring.service'.
+582d16ac58f325c92b8abafb6d6072fda6fda353515f96ea146de3ae97b0b14e  /usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko
+edc2e17ba54e2e59f4e694bc75d90614531450b8401c6d3eb629b9452de2abcc  /etc/systemd/system/h713-hdmi-ring.service
+f1076b71e8e770ae6bbcb4c6ef791ace5fa9891fdb735111c8984846992aa7c9  /etc/systemd/system/h713-hdmi-video.service
+4541b3c715d4f86b955da8aa66b41105232ecd6d9cf1512157fe193db83f9370  /etc/udev/rules.d/71-h713-hdmi-in.rules
+install-hdmi-video: installed; the panel follows the HDMI signal. Revert: sh /usr/lib/h713-hdmi-video/install-hdmi-video.sh --remove
+rc=0
+signal: locked 1280x720
+h713-hdmi-ring.service             0 active exited 
+h713-hdmi-video.service            0 active running 
+dev-h713\x2dhdmi\x2din.device      active plugged 
+enabled
+static
+fps ~ 61

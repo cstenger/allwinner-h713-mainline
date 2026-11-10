@@ -1,0 +1,17 @@
+md.l 0x0306101c 1
+0306101c: 00000000                             ....
+=> md.l 0x07090118 2
+07090118: 00000000 00000000                    ........
+=> printenv bootcmd
+bootcmd=if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi
+=> printenv preboot bootdelay
+preboot=if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi; usb start
+bootdelay=5
+=> printenv hdmi_source
+## Error: "hdmi_source" not defined
+=> version
+U-Boot 2026.07-rc5-ga1358432003c-dirty (Sep 24 2026 - 10:58:54 -0700) Allwinner Technology
+
+clang version 22.1.8
+LLD 22.1.8 (compatible with GNU linkers)
+=> 

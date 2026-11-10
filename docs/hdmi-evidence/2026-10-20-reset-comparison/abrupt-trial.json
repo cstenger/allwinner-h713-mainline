@@ -1,0 +1,23 @@
+{
+  "status": "UART stages collected; journal corroborates guarded boot; immediate post-reset collector unavailable",
+  "capture_path": "uart-clean/serial.log",
+  "before_cold_offset": 112158,
+  "previous_boot_id": "18f37fd5-1962-4abc-9509-cf80a11b1144",
+  "cold_cycle_confirmed": true,
+  "starting_boot_id": "c7a1bbac-b6a6-4b55-ae49-be372459f0f5",
+  "uart_cold_start_offset": 112161,
+  "uart_reset_request_offset": 167410,
+  "method": "boot-ID-guarded, synced SysRq-b; no HDMI teardown",
+  "uart_reset_boot_offset": 167493,
+  "uart_extracted_end_offset": 215679,
+  "reset_log_sha256": "3170e0620ccd83fa473dccda95e56cced0959fb18019354ac116366090d0264f",
+  "reset_uptime_seconds": 51.716272,
+  "root_state_after": "saved UART: ext4 recovery complete without ext4 error warning; later live boot clean; no immediate dumpe2fs snapshot",
+  "journal_note": "journald replaced user-1000.journal as corrupted or uncleanly shut down; prior cold-boot unit journal query returned no entries",
+  "recovery": "unproven",
+  "later_observed_boot_id": "c21ffe52-9f0e-4bb5-9e2a-f823e6a721af",
+  "recording_gap": "Original recorder absent on continuation; raw log ends at UART login. Later SSH/UART show live HDMI, unlike saved parked-MIPS trace.",
+  "intervening_journal_boot_id": "75feb00e-aa3a-46b1-8c7a-360dc313f273",
+  "operator_followup": "User confirms board was powered down after hitting the usage limit; current live session belongs to a later boot.",
+  "probable_recorded_reset_boot_id": "75feb00e-aa3a-46b1-8c7a-360dc313f273"
+}

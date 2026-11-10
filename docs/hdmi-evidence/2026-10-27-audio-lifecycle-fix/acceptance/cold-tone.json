@@ -1,0 +1,58 @@
+{
+  "route": {
+    "verified": true,
+    "version": 1,
+    "boot_id": "772696a0-8ed2-4ed7-8635-e9830aea48d7",
+    "server_pid": 316,
+    "route": {
+      "source": {
+        "id": 51,
+        "name": "alsa_input._sys_devices_h713-hdmi-audio-dma_sound_card1.stereo-fallback"
+      },
+      "sink": {
+        "id": 43,
+        "name": "alsa_output.platform-2030000.codec.stereo-fallback"
+      }
+    },
+    "nodes": {
+      "h713-hdmi-loop-capture": 56,
+      "h713-hdmi-loop-playback": 55
+    }
+  },
+  "samples": {
+    "capture": {
+      "bytes": 352256,
+      "channels": [
+        {
+          "rms": 0.20469504762574084,
+          "peak": 0.28948974609375,
+          "tone_440_ratio": 0.9999966380262911
+        },
+        {
+          "rms": 0.20469504762574084,
+          "peak": 0.28948974609375,
+          "tone_440_ratio": 0.9999966380262911
+        }
+      ],
+      "stderr": ""
+    },
+    "sink_monitor": {
+      "bytes": 360448,
+      "channels": [
+        {
+          "rms": 0.2040773063130167,
+          "peak": 0.28948974609375,
+          "tone_440_ratio": 0.9999966044081132
+        },
+        {
+          "rms": 0.2040773063130167,
+          "peak": 0.28948974609375,
+          "tone_440_ratio": 0.9999966044081132
+        }
+      ],
+      "stderr": ""
+    }
+  },
+  "capture_pcm": "state: RUNNING\nowner_pid   : 316\ntrigger_time: 24.656519509\ntstamp      : 54.706179440\ndelay       : 60\navail       : 60\navail_max   : 604\n-----\nhw_ptr      : 1442364\nappl_ptr    : 1442304\n",
+  "playback_pcm": "state: RUNNING\nowner_pid   : 316\ntrigger_time: 24.668145384\ntstamp      : 54.706546649\ndelay       : 991\navail       : 31777\navail_max   : 32305\n-----\nhw_ptr      : 1441872\nappl_ptr    : 1442863\n"
+}

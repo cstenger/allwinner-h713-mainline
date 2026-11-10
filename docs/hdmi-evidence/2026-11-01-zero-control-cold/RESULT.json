@@ -1,0 +1,182 @@
+{
+  "agent_recovery_reseat_force_detect_or_reconfigure": false,
+  "bench_interval_meaning": "No deliberate wait; logged interval includes the unchanged completion preflight/checks.",
+  "bench_interval_ns": 21638583,
+  "bench_interval_seconds": 0.021638583,
+  "comparison": {
+    "interpretation": "Both matched variants passed one cold start. The deliberate two-second wait was unnecessary on the observed zero-control boot; its causal benefit is unproven. Common instrumentation overhead and differing startup/source history remain possible contributors.",
+    "two_second_control": {
+      "desktop": true,
+      "graph_to_ready_seconds": 2.548278,
+      "interval_seconds": 2.021728043,
+      "locked_at_linux_seconds": 26.283372,
+      "requested_delay_ms": 2000
+    },
+    "zero_control": {
+      "desktop": true,
+      "graph_to_ready_seconds": 0.5530460000000019,
+      "interval_seconds": 0.021638583,
+      "locked_at_linux_seconds": 24.547561,
+      "requested_delay_ms": 0
+    }
+  },
+  "conclusion": "Both matched variants passed one cold start. The deliberate two-second wait was unnecessary on the observed zero-control boot; its causal benefit is unproven. Common instrumentation overhead and differing startup/source history remain possible contributors.",
+  "delay_ms_requested": 0,
+  "edid_block_checksums_pass": true,
+  "edid_bytes": 256,
+  "edid_matches_unchanged_board_payload": true,
+  "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+  "extra_boot": false,
+  "failed_units": 0,
+  "files_verified": 56,
+  "frame_snapshots": [
+    {
+      "counters": {
+        "afbd_invalid": "0",
+        "frames_delivered": "64489",
+        "frames_overwritten": "2",
+        "frames_produced": "64493",
+        "frames_rejected": "2",
+        "sig_bad_guard": "0",
+        "sig_transitions": "2"
+      },
+      "uptime": "1105.12 3680.40"
+    },
+    {
+      "counters": {
+        "afbd_invalid": "0",
+        "frames_delivered": "67481",
+        "frames_overwritten": "2",
+        "frames_produced": "67485",
+        "frames_rejected": "2",
+        "sig_bad_guard": "0",
+        "sig_transitions": "2"
+      },
+      "uptime": "1155.25 3845.68"
+    }
+  ],
+  "host_cached_changes": [
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 8785442751259,
+      "host_utc": "2026-11-01T09:32:47.353920+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 934,
+      "snapshot": {
+        "edid_bytes": 0,
+        "edid_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "enabled": "enabled",
+        "ok": true,
+        "status": "disconnected"
+      }
+    },
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 8788819100629,
+      "host_utc": "2026-11-01T09:32:50.730269+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 936,
+      "snapshot": {
+        "edid_bytes": 0,
+        "edid_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "enabled": "disabled",
+        "ok": true,
+        "status": "disconnected"
+      }
+    },
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 9263442115450,
+      "host_utc": "2026-11-01T09:40:45.353286+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 2829,
+      "snapshot": {
+        "edid_bytes": 256,
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "enabled": "disabled",
+        "ok": true,
+        "status": "connected"
+      }
+    },
+    {
+      "connector": "/sys/class/drm/card1-HDMI-A-1",
+      "host_boot_id": "5f9b0386-5d0a-4b68-80d9-fc31276aab7e",
+      "host_monotonic_ns": 9263692918266,
+      "host_utc": "2026-11-01T09:40:45.604091+00:00",
+      "mode": "cached sysfs reads only; no probe/ioctl",
+      "phase": "change",
+      "samples": 2830,
+      "snapshot": {
+        "edid_bytes": 256,
+        "edid_sha256": "edab9bfc48547939fcb26f7775558c94569a11abb4beb1132e22f2ad4c173d34",
+        "enabled": "enabled",
+        "ok": true,
+        "status": "connected"
+      }
+    }
+  ],
+  "host_max_heartbeat_gap_seconds": 5.131451914,
+  "host_monitor_read_errors": 0,
+  "installed_migration_regions_verified": 2,
+  "linux_timing": {
+    "acquiring": {
+      "linux_uptime_seconds": 24.323575,
+      "message": "[   24.323575] h713-hdmi-v4l2: signal acquiring 0x0"
+    },
+    "delay_complete": {
+      "linux_uptime_seconds": 23.198600634
+    },
+    "delay_start": {
+      "linux_uptime_seconds": 23.176962051
+    },
+    "dsp_graph": {
+      "linux_uptime_seconds": 22.687333,
+      "message": "[   22.687333] h713-hdmi-audio: managed DSP graph verified 22 words"
+    },
+    "edid_hpd_ready": {
+      "linux_uptime_seconds": 23.240379,
+      "message": "[   23.240379] h713-hdmi-signal: EDID and HPD ready; explicit stop required, no timed expiry"
+    },
+    "initial_none": {
+      "linux_uptime_seconds": 23.860193,
+      "message": "[   23.860193] h713-hdmi-v4l2: initial signal none 0x0 after 20 samples"
+    },
+    "locked": {
+      "linux_uptime_seconds": 24.547561,
+      "message": "[   24.547561] h713-hdmi-v4l2: signal locked 1280x720 (source change)"
+    }
+  },
+  "new_boot_id": "275f5bce-8d22-4d20-9ba8-9551b05dac7f",
+  "off_interval_minimum_seconds_reported": 60,
+  "old_boot_id": "e6ccc77a-dfb2-411c-a2cf-139c35d4dceb",
+  "ordinary_poweroff_requests": 1,
+  "private_runtime_files_verified": 5,
+  "projector": {
+    "desktop_appeared": true,
+    "intervention_reported": false,
+    "off_interval_basis": "operator confirmation; not a supply-voltage measurement",
+    "physical_off_interval": "Power removed for at least 60 seconds; board still off",
+    "postboot_report": "The board booted and showed the host's desktop",
+    "requested_conditions": "HDMI connected and host settings unchanged"
+  },
+  "protected_storage_ranges_verified": 8,
+  "reboot_requests": 0,
+  "recorders_stopped_cleanly": true,
+  "schema": "h713-zero-cold-validation-v1",
+  "service_restarts": false,
+  "staged_runtime_and_backups_unchanged": true,
+  "startup_check": "PASS",
+  "status": "PASS_ONE_ZERO_CONTROL_COLD_BOOT",
+  "system_running": true,
+  "temporary_zero_override_still_installed": true,
+  "uart_disconnects": 0,
+  "uart_kernel_restarts": 0,
+  "uart_spl_boots": 1,
+  "uart_tx": false
+}

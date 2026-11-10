@@ -1,0 +1,27 @@
+import os, json, subprocess
+from pathlib import Path
+expected = "c7a1bbac-b6a6-4b55-ae49-be372459f0f5"
+def guard():
+    if Path("/proc/sys/kernel/random/boot_id").read_text().strip() != expected:
+        raise RuntimeError("Unexpected boot; no reset sent")
+    for unit in ("h713-hdmi-capture", "h713-hdmi-signal", "h713-hdmi-speaker"):
+        subprocess.run(["systemctl", "is-active", "--quiet", unit], check=True)
+    for card, stream in (("H713HDMI", "pcm0c"), ("Codec", "pcm0p")):
+        if "state: RUNNING" not in Path(f"/proc/asound/{card}/{stream}/sub0/status").read_text():
+            raise RuntimeError("PCM not running; no reset sent")
+    if Path("/sys/module/h713_hdmi_audio/parameters/dsp_failed").read_text().strip() != "N":
+        raise RuntimeError("DSP failed; no reset sent")
+guard()
+record = {"method": "synced SysRq-b immediate emergency reset", "boot_id": expected,
+          "pre_sync_uptime": Path("/proc/uptime").read_text().strip(),
+          "normal_shutdown_requested": False, "HDMI_services": "all active; both PCMs RUNNING"}
+print(json.dumps(record), flush=True)
+os.sync()
+guard()
+marker = "H713_PAIRED_ABRUPT_SYNC_DONE boot=" + expected + " uptime=" + Path("/proc/uptime").read_text().strip() + "\n"
+with open("/dev/ttyS0", "w") as stream:
+    stream.write(marker)
+    stream.flush()
+with open("/proc/sysrq-trigger", "w") as stream:
+    stream.write("b")
+raise RuntimeError("SysRq reset returned unexpectedly")

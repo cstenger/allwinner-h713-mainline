@@ -1,0 +1,17 @@
+{
+ "base_commit": "7fba9fcb5639ec6e5c7ee2203409915210900f0e",
+ "uncommitted_sources": [
+  "M modules/ddc-bringup/h713-ddc-pins.c",
+  " M modules/hdmi-signal/h713-hdmi-signal.c",
+  " M tools/hdmi/h713-hdmi-signal.py",
+  " M tools/hdmi/make-edid-trial-code.py",
+  "?? tools/hdmi/run-signal-lifetime.sh"
+ ],
+ "payload_header_sha256": "1ab9fa5cc90728f11c9196416fca127e8a6cc3c610099b0b27c942506ee293aa",
+ "payload_generator": "make-edid-trial-code.py --verify-restore --edid tools/hdmi/fixtures/hdmi-audio-edid.hex",
+ "vermagic": {
+  "h713-hdmi-signal.ko": "6.18.38 SMP mod_unload aarch64",
+  "h713-ddc-pins.ko": "6.18.38 SMP mod_unload aarch64"
+ },
+ "candidate_build_id": "166a2ca81c43bf56392d6c96a30180391b26a9d9"
+}

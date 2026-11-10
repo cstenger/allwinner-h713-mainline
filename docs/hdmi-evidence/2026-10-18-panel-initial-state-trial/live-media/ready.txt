@@ -1,0 +1,46 @@
+34.40 101.55
+active
+active
+active
+ 0 [Codec          ]: sun4i-codec - H713 Audio Codec
+                      h713-audio-codec
+ 1 [H713HDMI       ]: H713HDMI - H713 HDMI Input
+                      H713 HDMI input, DSP to Audio Bridge ostream0
+state: RUNNING
+owner_pid   : 433
+trigger_time: 21.213357800
+tstamp      : 34.443671306
+delay       : 96
+avail       : 96
+avail_max   : 512
+-----
+hw_ptr      : 635036
+appl_ptr    : 634940
+state: RUNNING
+owner_pid   : 433
+trigger_time: 21.239980425
+tstamp      : 0.000000000
+delay       : 3488
+avail       : 352
+avail_max   : 3360
+-----
+hw_ptr      : 633952
+appl_ptr    : 637440
+/sys/devices/h713-hdmi-audio-dma/:
+module
+power
+sound
+uevent
+
+/sys/devices/h713-hdmi-tvcap/:
+module
+power
+uevent
+
+/sys/devices/h713-hdmi-tvfe/:
+module
+power
+uevent
+/usr/bin/gst-launch-1.0
+/usr/bin/pw-midirecord
+/usr/bin/pw-record

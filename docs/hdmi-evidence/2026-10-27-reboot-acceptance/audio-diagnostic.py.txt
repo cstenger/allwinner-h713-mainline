@@ -1,0 +1,41 @@
+import json,pathlib,subprocess,time,traceback
+P=pathlib.Path
+expected='e8ebd15e-a1c5-4c95-afb5-e814c8fb1b0a'
+out=P('/run/h713-audio-acceptance-content-2026-10-27')
+unit='h713-hdmi-speaker.service'
+def boot_guard():
+    if P('/proc/sys/kernel/random/boot_id').read_text().strip()!=expected:raise RuntimeError('unexpected boot; no service action')
+def save(rec):
+    (out/'result.json').write_text(json.dumps(rec,indent=2)+'\n')
+boot_guard()
+subprocess.run(['systemctl','is-active','--quiet',unit],check=True,timeout=5)
+out.mkdir(exist_ok=False)
+rec={'boot_id':expected,'start_uptime':P('/proc/uptime').read_text().strip(),'stop_attempted':True}
+save(rec)
+try:
+    subprocess.run(['systemctl','stop',unit],check=True,timeout=15)
+    rec['stopped_uptime']=P('/proc/uptime').read_text().strip()
+    cmd=['gst-launch-1.0','-q','alsasrc','device=hw:H713HDMI,0','buffer-time=40000','latency-time=10000','num-buffers=300','!',
+         'audio/x-raw,format=S16LE,rate=48000,channels=2','!','fdsink','fd=1']
+    rec['capture_command']=cmd
+    with (out/'incoming.s16le').open('xb') as f:
+        result=subprocess.run(cmd,stdout=f,stderr=subprocess.PIPE,timeout=8)
+    rec['capture_rc']=result.returncode
+    (out/'capture-stderr.log').write_bytes(result.stderr)
+    if result.returncode:raise RuntimeError('capture failed')
+except BaseException as e:
+    rec['capture_error']=repr(e)
+finally:
+    rec['restore_attempted_uptime']=P('/proc/uptime').read_text().strip()
+    try:
+        boot_guard()
+        subprocess.run(['systemctl','start',unit],check=True,timeout=20)
+        rec['restored_active']=subprocess.run(['systemctl','is-active',unit],capture_output=True,text=True,timeout=5).stdout.strip()
+        time.sleep(2)
+        rec['capture_pcm']=P('/proc/asound/H713HDMI/pcm0c/sub0/status').read_text()
+        rec['playback_pcm']=P('/proc/asound/Codec/pcm0p/sub0/status').read_text()
+    except BaseException as e:rec['restore_error']=repr(e)
+    rec['end_uptime']=P('/proc/uptime').read_text().strip()
+    rec['sample_bytes']=(out/'incoming.s16le').stat().st_size if (out/'incoming.s16le').exists() else 0
+    save(rec)
+print(json.dumps(rec,indent=2))

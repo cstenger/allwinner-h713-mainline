@@ -1,0 +1,15 @@
+closed
+unit: inactive success
+signal+ddc unloaded
+1
+07022004 0x0000003F
+[   73.975365] h713-hdmi-signal: stop marker=48444d49 ready=48444d49 exception=0 error=0 done=48444d49
+[   73.985758] h713-hdmi-signal: stop original 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[   74.000902] h713-hdmi-signal: stop readback 1014=00000007 1b00=00a0a0a0 1b04=07000000 1b08=00606060 1020=00000000 1030=00000000 1034=00000000 1038=00000000
+[   74.016007] h713-hdmi-signal: stop active 1014=00000000 1b00=00a0a0a0 1b04=07000007 1b08=00c0c0c0 c00=00000000 d00=00000000 e00=00000000 1020=00000003 1030=00000000 1034=00000018 1038=00000018
+[   74.036043] h713-hdmi-signal: peripheral readback, SRAM and vectors restored; SCP stopped; receiver client released
+[   74.083568] h713-ddc-pins: DDC pins returned to inputs (mux 000000, original ffffff, differs: pinctrl has no disabled function); module may be removed
+[   74.108065] h713-ddc-pins: ownership released
+Apr 13 19:39:16 h713-arm64 python3[595]: EDID/HPD, SCP SRAM/vectors and DDC ownership restored
+Apr 13 19:39:16 h713-arm64 systemd[1]: h713-hdmi-signal.service: Deactivated successfully.
+Apr 13 19:39:16 h713-arm64 systemd[1]: Stopped h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.

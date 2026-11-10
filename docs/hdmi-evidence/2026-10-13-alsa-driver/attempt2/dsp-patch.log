@@ -1,0 +1,29 @@
+arecord: version 1.2.14 by Jaroslav Kysela <perex@perex.cz>
+**** List of CAPTURE Hardware Devices ****
+card 1: H713HDMI [H713 HDMI Input], device 0: HDMI Capture [HDMI Capture]
+  Subdevices: 1/1
+  Subdevice #0: subdevice #0
+[  213.147639] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000000
+[  213.156575] h713-hdmi-dsp-probe: device=0 word=80ff value=0000 response=00000000 status=00000020
+[  213.166919] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  213.174450] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[  213.182950] h713-hdmi-dsp-probe: device=1 word=80ff value=0000 response=00000000 status=00000120
+[  213.193021] h713-hdmi-dsp-probe: stock DSP lock released ret=0
+[  246.534129] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  246.542446] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  246.550674] h713-hdmi-dsp-probe: beginning fixed stock init/724-pair volatile patch; physical cold boot required for teardown
+[  246.563013] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  246.572413] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  246.580855] h713-hdmi-dsp-probe: stock-init word=00ee before=0200 after=0180 expected=0180
+[  246.590156] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[  246.599534] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[  246.607834] h713-hdmi-dsp-probe: stock-init word=8034 before=0000 after=0010 expected=0010
+[  246.617142] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  246.626513] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  246.634767] h713-hdmi-dsp-probe: stock-init word=8017 before=0000 after=0001 expected=0001
+[  247.557666] h713-hdmi-dsp-probe: requesting device=0 word=fff7 status=00000120
+[  247.568476] h713-hdmi-dsp-probe: patch-word fff7=0000
+[  247.576295] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  247.586216] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  247.594434] h713-hdmi-dsp-probe: stock-patch pairs=724 version0=0001 version1=0001
+[  247.602981] h713-hdmi-dsp-probe: stock DSP lock released ret=0

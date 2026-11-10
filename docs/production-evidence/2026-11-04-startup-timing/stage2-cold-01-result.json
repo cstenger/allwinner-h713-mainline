@@ -1,0 +1,98 @@
+{
+  "schema": "h713-parallel-cold-comparison-v1",
+  "boot_id": "4943b6a8-a036-4f03-95a1-f2f778f1238d",
+  "stage1_boot_id": "5110ffb9-3fd4-4ee5-9bb5-131fd2d9e828",
+  "linux_monotonic_seconds": {
+    "prepare_start": 7.83354,
+    "prepare_process_exit": 13.965552,
+    "prepare_active": 13.966162,
+    "capture_start": 13.970533,
+    "capture_active": 14.411427,
+    "capture_process_duration": 0.4403610000000011,
+    "user_manager_start": 8.431508,
+    "user_manager_active": 12.011553,
+    "video_service_active": 16.11788,
+    "speaker_service_active": 14.947489,
+    "edid_hpd_ready": 14.748425,
+    "hdmi_signal_locked": 16.058121
+  },
+  "mips_checks": [
+    {
+      "schema": "h713-mips-ipc-v1",
+      "complete": true,
+      "command": "help win",
+      "reply_bytes": 66,
+      "stale_bytes": 8,
+      "elapsed_seconds": 0.42519
+    },
+    {
+      "schema": "h713-mips-ipc-v1",
+      "complete": true,
+      "command": "help win",
+      "reply_bytes": 66,
+      "stale_bytes": 0,
+      "elapsed_seconds": 0.434892
+    },
+    {
+      "schema": "h713-mips-ipc-v1",
+      "complete": true,
+      "command": "help win",
+      "reply_bytes": 66,
+      "stale_bytes": 0,
+      "elapsed_seconds": 0.449554
+    },
+    {
+      "schema": "h713-mips-ipc-v1",
+      "complete": true,
+      "command": "help win",
+      "reply_bytes": 66,
+      "stale_bytes": 0,
+      "elapsed_seconds": 0.44906
+    },
+    {
+      "schema": "h713-mips-ipc-v1",
+      "complete": true,
+      "command": "help win",
+      "reply_bytes": 66,
+      "stale_bytes": 0,
+      "elapsed_seconds": 0.417637
+    }
+  ],
+  "user_manager_initialization_overlap_seconds": 3.580045,
+  "stage1_minus_stage2_seconds": {
+    "capture_active": 3.147716,
+    "edid_hpd_ready": 3.153778,
+    "video_service_active": 3.192448,
+    "speaker_service_active": 3.125113
+  },
+  "original_RC_minus_stage2_seconds": {
+    "capture_active": 8.213692,
+    "edid_hpd_ready": 8.209098,
+    "video_service_active": 20.5927,
+    "speaker_service_active": 8.176768
+  },
+  "hdmi_retry_this_boot": false,
+  "host_uart_seconds_from_first_SPL": {
+    "spl": 0.0,
+    "logo": 12.802317,
+    "kernel_entry_message": 14.751081,
+    "framebuffer_console": 17.089427
+  },
+  "approximate_SPL_to_renderer_seconds": 31.406,
+  "health": {
+    "four_bundle_manifests": "pass",
+    "both_stage_payload_identities": "pass",
+    "prepare_unit": "active and static (not independently enabled)",
+    "six_HDMI_services": "active; zero restarts",
+    "frames_rejected": 0,
+    "audio_period_xruns": 0,
+    "operator": "HDMI desktop visible; no separate audible-content confirmation",
+    "preceding_shutdown": "signal ownership restored; 22 DSP and 15 TVFE words restored; MIPS parked and receiver removed; capture stopped successfully"
+  },
+  "limits": [
+    "Single cold boot per stage; no repeated-boot distribution or post-stage2 warm-boot qualification.",
+    "Capture process duration is now adoption-only; initialization still takes place in prepare.",
+    "First SPL output and renderer process start are proxies, not physical power-on and first-pixel timestamps."
+  ],
+  "mips_reply_collection_total_seconds": 2.176333
+}

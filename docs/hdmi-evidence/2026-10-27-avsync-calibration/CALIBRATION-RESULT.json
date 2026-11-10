@@ -1,0 +1,38 @@
+{
+  "status": "PASS: recording-matched 40 ms calibration saved; orderly warm-reboot persistence verified",
+  "board_boot_id": "e0d594d9-32e8-458e-b674-2c19121eb64b",
+  "pipewire_target_delay_sec": 0.04,
+  "persistent_path": "/etc/default/h713-hdmi-speaker",
+  "temporary_override_removed": true,
+  "camera_recording": "local/lcd-photos/test_111/test2.mov",
+  "camera_pairs": 15,
+  "camera_real_span_sec": 14.5041666875,
+  "camera_offset_median_ms": -2.44378223668118,
+  "camera_offset_p05_p95_ms": [
+    -15.070715400887735,
+    3.0317067862613425
+  ],
+  "camera_threshold_median_range_ms": [
+    -9.13,
+    -0.35
+  ],
+  "speaker_phone_distance_ft": 1,
+  "sound_flight_time_approx_ms": 0.9,
+  "speaker_restart_saved_setting_verified": true,
+  "qualifications": [
+    "Camera/export A/V bias uncalibrated: no visible physical/acoustic reference.",
+    "Source is HDMI 720p60; internal codec and speaker, DAC 43 / Line Out 15.",
+    "Slow-motion source cadence and beep pitch identify 8x retiming; normal/ramp ends excluded.",
+    "Software plane/codec estimate differs from camera; software zero is not perceptual sync.",
+    "Absolute glass-to-glass latency and long-run drift not measured.",
+    "PC-end HDMI reseat required after fresh cold boot; managed host source setup.",
+    "Warm boot required host-only ao/video output reopen; no board service restarted after boot."
+  ],
+  "warm_reboot_persistence_verified": true,
+  "warm_boot_id": "c8f3308e-5c02-4be1-bc0e-3ee5991761e8",
+  "warm_timing_matches": 38,
+  "warm_software_offset_median_ms": -32.3534645,
+  "operator_after_warm": "Projected flashes correct; beeps clear and repeating normally",
+  "host_output_reopened_after_warm": true,
+  "final_bench_state": "Board on; saved 40 ms target active; host HDMI volume restored to 35%; test player and UART recorder stopped."
+}

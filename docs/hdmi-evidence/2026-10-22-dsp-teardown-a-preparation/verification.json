@@ -1,0 +1,43 @@
+{
+  "bundle_and_asset_hashes_verified": true,
+  "firmware_hash_verified": true,
+  "legacy_script_header_payload_crc_verified": true,
+  "exact_source_payload_verified": true,
+  "same_vermagic_as_production": "6.18.38 SMP mod_unload aarch64",
+  "production_kernel_symvers_unchanged": true,
+  "exact_production_kernel_config_and_image_verified": true,
+  "production_sources_unchanged": {
+    "h713-hdmi-pcm.c": "0dc33b3ca0fb6bcb61df30b8d9009587ee833849f9a7c18af1f8b8dcae856e1a",
+    "h713-hdmi-dsp.c": "466baed82dcb9df4ba58ee3aafd2b23e9172460b51c0739f713e7cfd4d024be2",
+    "h713-hdmi-tvfe.c": "4a58038dff996db65fbdafd1c1ad368a8082bfa16b8a8c86f1b879ec635c23d7"
+  },
+  "tvfe_source_identical_in_candidate": true,
+  "no_new_undefined_symbols_vs_qualified_owner_candidate": true,
+  "no_exported_symbols": true,
+  "module_params": [
+    "owner_arm",
+    "owner_state",
+    "owner_step"
+  ],
+  "dt_marker": "h713,dsp-teardown-a-v1 = 0x54445241 (old owner marker absent from module)",
+  "bootarg": "h713_teardown_a=1",
+  "cold_script_diff_vs_qualified_owner_script": "marker, bootarg and refusal echo only",
+  "module_sha256": "cffa83e665594461e20fcfe8fb142ecd4ac14d0386b501f6adca1ff3f2394419",
+  "module_note_sha256": "1f909fb60f14bb6ff6cf4572fef3bd3b0df960424b26880124ba6b70e727ec62",
+  "cold_script_sha256": "f92ed23f0e210c5a8c0f0a05b9f143ce574d7935285c6f0df4d66334628adb4d",
+  "manifest_sha256": "1950e8eefdf59fd2b6b8e472da52c76ad7cfab6c5adf10eda6ccfdbf3ee72072",
+  "plan_steps": 37,
+  "max_version_requests": 12,
+  "old_candidate_untouched": {
+    "module": "6cbc305cfcd14b20d9c72c25c293402cc2c7490d1cf3e977ba60654c5bf62001",
+    "cold_script": "0f3245113d33501761e51aa87c59980e63e03c2569d6b05e3276b47d18e6e1d1"
+  },
+  "host_tools_sha256": {
+    "hdmi/dsp-teardown-a-host.py": "b20ecb1c1ceec185dac89539c62a5f3880d99d5c28ca5fa8fbe5c2b307a4f9bb",
+    "serial/run-dsp-teardown-cold.py": "2a8ae02eef0426ce2edb896b7240fee9c21b32d16704a349fceeaea3d5da2c11",
+    "hdmi/prepare-dsp-teardown-a.py": "3d7ebcb34d8609fc5eeca8736cf85b9df127428a858a6e08ee37655a81ef80c2",
+    "hdmi/test-dsp-teardown-a.py": "3dffc225ac7203801bbe11c69a5bd1267cf14c34b3b7cb6fb80b78fca3df0119"
+  },
+  "compiler_note": "Kernel clang 23.1.1 versus host clang 23.1.3; only the Kbuild compiler-version notice; zero C diagnostics with W=1.",
+  "board_access": false
+}

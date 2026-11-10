@@ -1,0 +1,79 @@
+[    7.727680] cpu_comm: auto-registered 18/18 MIPS VP routes
+[    7.734212] cpu_comm: channel row 0 live: chan=0x0000 pid=0x8b8f275c key=0xb8f275c0
+[    7.742879] cpu_comm: addressing CALLs to channel row 0 (chan=0x0 pid=0x8b8f275c)
+[    7.751424] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[    7.757335] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[    7.763965] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[    7.771234] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[    8.351133] bluetooth_set_power: start_block=0
+[    8.356821] aicbsp: aicbsp_set_subsys, subsys: AIC_BLUETOOTH, state to: 1
+[    8.356840] aicbsp: aicbsp_set_subsys, power state no need to change, current: 1
+[    8.356844] bluetooth_set_power: end_block=0
+[    8.380111] Bluetooth: HCI UART driver ver 2.3
+[    8.390490] Bluetooth: HCI UART protocol H4 registered
+[    8.586360] get_txpwr_max:txpwr_max:18 
+[    8.592435] get_txpwr_max:txpwr_max:18 
+[    8.592972] get_txpwr_max:txpwr_max:18 
+[    8.603029] change_if: 2 to 3, 8, 2
+[    8.603062] get_txpwr_max:txpwr_max:18 
+[    8.613768] get_txpwr_max:txpwr_max:18 
+[    9.103806] get_txpwr_max:txpwr_max:18 
+[    9.110139] chan.flags 0 
+[    9.442567] aicwf_sdio mmc1:6721:1 wlan0: AP started: ch=0, bcmc_idx=32 channel=2437 bw=1
+[    9.635407] Bluetooth: MGMT ver 1.23
+[   11.499656] Bluetooth: hci0: Opcode 0x0c03 failed: -4
+[   11.533370] Bluetooth: MGMT ver 1.23
+[   11.831864] systemd-journald[111]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   11.857716] systemd-journald[111]: /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal: Realtime clock jumped backwards relative to last journal entry, rotating.
+[   11.887439] systemd-journald[111]: Failed to set ACL on /var/log/journal/919c0a2c9fc24766b18bb771e1db330c/user-1000.journal, ignoring: Operation not supported
+[   93.946944] h713-hdmi-power: domain 1 power event 2
+[   93.953232] h713-hdmi-power: domain 1 power event 3
+[   93.959459] h713-hdmi-power: domain 1 resumed
+[   93.965226] h713-hdmi-power: domain 2 resumed
+[   93.970759] h713-hdmi-power: 2 domains and 0 receiver clocks held on; no receiver MMIO
+[   94.383190] h713-hdmi-power: enabled clock 0 (bus-tvcap)
+[   96.689238] h713-hdmi-power: enabled clock 1 (bus-cap-300m)
+[   98.929236] h713-hdmi-power: enabled clock 2 (vincap-dma)
+[  101.236647] h713-hdmi-power: enabled clock 3 (tvfe-1296m)
+[  103.443582] h713-edid-clock-hold h713-edid-clock-hold: EDID clock held at 24000000 Hz, reset released (was_asserted=1); no peripheral access
+[  104.430497] h713-hdmi-tvfe-hold: parent=pll-video0 rate=324000000 inherited_on=1 enabled_by_probe=0
+[  104.441099] h713-hdmi-tvfe-hold: parent=pll-adc rate=1296000000 inherited_on=0 enabled_by_probe=1
+[  104.462484] h713-hdmi-tvfe-hold: stock-order clock hold active; bus 00000000->00010001 live tvfe preserved=00111111
+[  106.756131] h713-hdmi-audio-probe: clock=bus-hdmi-audio inherited_on=1 enabled_by_probe=0 rate=100000000
+[  106.767152] h713-hdmi-audio-probe: clock=hdmi-audio inherited_on=1 enabled_by_probe=0 rate=1152000000
+[  106.777797] h713-hdmi-audio-probe: clock=audio-cpu inherited_on=1 enabled_by_probe=0 rate=100000000
+[  106.788259] h713-hdmi-audio-probe: clock=audio-umac inherited_on=1 enabled_by_probe=0 rate=100000000
+[  106.798789] h713-hdmi-audio-probe: clock=audio-ihb inherited_on=1 enabled_by_probe=0 rate=100000000
+[  106.809354] h713-hdmi-audio-probe: audio-IHB clock stock word applied 81000002->81000002
+[  106.818873] h713-hdmi-audio-probe: audio-top initialized ctl=00000000->00000700 cfg=00000000->011a5e00
+[  106.829582] h713-hdmi-audio-probe: armed; status snapshots available
+[  106.837332] h713-hdmi-audio-probe: snapshot=1 audif_irq=00000000 audif_mask=00000000 audif_route=00000000 spds=00000000 spdi1_ctl0=00000000 spdi1_ctl1=00000000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000000 audbrg_mask=00000000 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[  106.895055] h713-hdmi-dsp-probe: status=00000000 user_owner=00000050 kernel_owner=00000000; no command issued
+[  106.908149] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000000
+[  106.916854] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000020
+[  106.927910] h713-hdmi-dsp-probe: beginning fixed stock init/724-pair volatile patch; physical cold boot required for teardown
+[  106.942359] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  106.953437] h713-hdmi-dsp-probe: requesting device=0 word=00ee status=00000120
+[  106.961878] h713-hdmi-dsp-probe: stock-init word=00ee before=0200 after=0180 expected=0180
+[  106.971308] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[  106.981511] h713-hdmi-dsp-probe: requesting device=0 word=8034 status=00000120
+[  106.990188] h713-hdmi-dsp-probe: stock-init word=8034 before=0000 after=0010 expected=0010
+[  106.999892] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  107.009635] h713-hdmi-dsp-probe: requesting device=0 word=8017 status=00000120
+[  107.018129] h713-hdmi-dsp-probe: stock-init word=8017 before=0000 after=0001 expected=0001
+[  107.939729] h713-hdmi-dsp-probe: requesting device=0 word=fff7 status=00000120
+[  107.949751] h713-hdmi-dsp-probe: patch-word fff7=0000
+[  107.957440] h713-hdmi-dsp-probe: requesting device=0 word=80ff status=00000120
+[  107.967241] h713-hdmi-dsp-probe: requesting device=1 word=80ff status=00000120
+[  107.977625] h713-hdmi-dsp-probe: device=1 word=80ff phase=completion-clear timeout status=00000120; cold boot required
+[  107.989297] h713-hdmi-dsp-probe: stock-patch stopped phase=patch-version pair=724 error=-110; cold boot required
+[  108.001943] h713-hdmi-dsp-probe: patch owner restored=00000050 kernel_owner=00000000
+[sent 9 bytes: 'help win']
+[reply: 66 bytes]
+help win\x0d
+command help of win\x0d
+for window debug only\x0d
+\x0d
+VS:/$ 
+N
+PLL_WORD_PROFILE_VERIFIED: 96 records, magic, both canaries

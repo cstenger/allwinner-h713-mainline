@@ -1,0 +1,163 @@
+{
+  "schema": 1,
+  "started_utc": "2026-04-13T19:38:58.851185+00:00",
+  "scope": "Linux-visible, non-atomic snapshot; not reset proof",
+  "hardware_reset_state": "unknown",
+  "files": {
+    "/proc/sys/kernel/random/boot_id": {
+      "value": "679a3e47-b729-40e1-a05c-d3c4b5bffd79\n",
+      "truncated": false
+    },
+    "/proc/uptime": {
+      "value": "56.21 181.27\n",
+      "truncated": false
+    },
+    "/proc/version": {
+      "value": "Linux version 6.18.38 (chris@cachyos) (clang version 23.1.1, LLD 23.1.1) #1 SMP Fri Oct 16 15:44:49 PDT 2026\n",
+      "truncated": false
+    },
+    "/proc/cmdline": {
+      "value": "console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused cma=128M\n",
+      "truncated": false
+    },
+    "/proc/modules": {
+      "value": "h713_hdmi_signal 20480 1 - Live 0xffff8000792c9000 (O)\nh713_ddc_pins 12288 1 - Live 0xffff8000792c3000 (O)\nh713_hdmi_audio 28672 2 - Live 0xffff8000792b9000 (O)\nh713_hdmi_receiver 16384 4 h713_hdmi_signal, Live 0xffff800079268000 (O)\nhci_uart 28672 1 - Live 0xffff800079225000\nhy310_cpu_comm 98304 0 - Live 0xffff8000792aa000\nsunxi_scanout_dmabuf 12288 0 - Live 0xffff80007920a000\nhantro_vpu 196608 0 - Live 0xffff800079277000\nv4l2_h264 16384 1 hantro_vpu, Live 0xffff80007926b000\nsunxi_cedrus 81920 0 - Live 0xffff80007924c000 (O)\nuinput 20480 0 - Live 0xffff80007920e000\nv4l2_jpeg 12288 1 hantro_vpu, Live 0xffff800079204000\npanfrost 77824 0 - Live 0xffff800079229000\nv4l2_vp9 28672 2 hantro_vpu,sunxi_cedrus, Live 0xffff80007921b000\naic8800_btlpm 12288 0 - Live 0xffff800079179000 (O)\naic8800_fdrv 516096 0 - Live 0xffff800079182000 (O)\naic8800_bsp 90112 2 aic8800_btlpm,aic8800_fdrv, Live 0xffff800079160000 (O)\n",
+      "truncated": false
+    },
+    "/proc/asound/cards": {
+      "value": " 0 [Codec          ]: sun4i-codec - H713 Audio Codec\n                      h713-audio-codec\n 1 [H713HDMI       ]: H713HDMI - H713 HDMI Input\n                      H713 HDMI input, DSP to Audio Bridge ostream0\n",
+      "truncated": false
+    },
+    "/proc/asound/H713HDMI/pcm0c/sub0/status": {
+      "value": "state: RUNNING\nowner_pid   : 427\ntrigger_time: 20.928894383\ntstamp      : 56.214869400\ndelay       : 32\navail       : 32\navail_max   : 512\n-----\nhw_ptr      : 1693692\nappl_ptr    : 1693660\n",
+      "truncated": false
+    },
+    "/run/h713-hdmi-session/state.json": {
+      "value": "{\"boot_id\": \"679a3e47-b729-40e1-a05c-d3c4b5bffd79\", \"phase\": \"ready\"}\n",
+      "truncated": false
+    },
+    "/sys/devices/h713-hdmi-tvfe/power/runtime_status": {
+      "value": "active\n",
+      "truncated": false
+    },
+    "/sys/devices/h713-hdmi-tvcap/power/runtime_status": {
+      "value": "active\n",
+      "truncated": false
+    },
+    "/proc/device-tree/chosen/h713,hdmi-boot-v1": {
+      "value": "48444d49000000008b8f275c",
+      "truncated": false
+    }
+  },
+  "modules": {
+    "h713_hdmi_receiver": {
+      "present": true,
+      "parameters": {
+        "armed": {
+          "value": "Y\n",
+          "truncated": false
+        },
+        "live_source3": {
+          "value": "Y\n",
+          "truncated": false
+        },
+        "clients": {
+          "value": "2\n",
+          "truncated": false
+        },
+        "init_error": {
+          "value": "0\n",
+          "truncated": false
+        },
+        "firmware_pin": {
+          "value": "Y\n",
+          "truncated": false
+        },
+        "clock_count": {
+          "value": "4\n",
+          "truncated": false
+        },
+        "edid_ready": {
+          "value": "Y\n",
+          "truncated": false
+        },
+        "shutdown_ready": {
+          "value": "Y\n",
+          "truncated": false
+        },
+        "parked": {
+          "value": "N\n",
+          "truncated": false
+        },
+        "park_failed": {
+          "value": "N\n",
+          "truncated": false
+        }
+      }
+    },
+    "h713_hdmi_audio": {
+      "present": true,
+      "parameters": {
+        "dsp_failed": {
+          "value": "N\n",
+          "truncated": false
+        },
+        "manage_dsp": {
+          "value": "Y\n",
+          "truncated": false
+        },
+        "manage_tvfe": {
+          "value": "Y\n",
+          "truncated": false
+        },
+        "period_xruns": {
+          "value": "0\n",
+          "truncated": false
+        },
+        "period_irq_seen": {
+          "value": "6514\n",
+          "truncated": false
+        },
+        "period_irq_status": {
+          "value": "6514\n",
+          "truncated": false
+        }
+      }
+    },
+    "h713_hdmi_signal": {
+      "present": true,
+      "parameters": {
+        "ready": {
+          "value": "Y\n",
+          "truncated": false
+        },
+        "failed": {
+          "value": "N\n",
+          "truncated": false
+        },
+        "restored": {
+          "value": "N\n",
+          "truncated": false
+        },
+        "recovery": {
+          "value": "0\n",
+          "truncated": false
+        }
+      }
+    },
+    "h713_ddc_pins": {
+      "present": true,
+      "parameters": {}
+    },
+    "h713_scp_probe": {
+      "present": false,
+      "parameters": {}
+    },
+    "h713_hdmi_v4l2": {
+      "present": false,
+      "parameters": {}
+    }
+  },
+  "finished_utc": "2026-04-13T19:38:59.019527+00:00",
+  "curation": "Commands omitted; original full collector retained locally and hashed in installation.json."
+}

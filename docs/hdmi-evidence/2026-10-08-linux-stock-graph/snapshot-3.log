@@ -1,0 +1,42 @@
+           CPU0       CPU1       CPU2       CPU3       
+ 11:      15703      12031      21244      43736    GICv2  30 Level     arch_timer
+245:          0          0          0          0    GICv2  77 Level     3002000.dma-controller
+246:         39          0          0          0    GICv2  32 Level     ttyS0
+247:        438          0          0          0    GICv2  33 Level     ttyS1
+248:          0          0          0          0    GICv2 103 Level     2010000.iommu
+249:       8234          0          0          0    GICv2 142 Level     h713-afbd
+250:          0          0          0          0    GICv2  67 Level     ehci_hcd:usb5
+251:          0          0          0          0    GICv2  65 Level     ehci_hcd:usb1
+252:          0          0          0          0    GICv2  62 Level     ehci_hcd:usb2
+253:          0          0          0          0    GICv2 179 Level     7090000.rtc
+254:          0          0          0          0    GICv2  63 Level     ohci_hcd:usb6
+255:          0          0          0          0    GICv2  66 Level     ohci_hcd:usb3
+256:          0          0          0          0    GICv2  68 Level     ohci_hcd:usb4
+257:     146120          0          0          0    GICv2  40 Level     mv64xxx_i2c
+258:       9212          0          0          0    GICv2  72 Level     sunxi-mmc
+259:       4775          0          0          0    GICv2  73 Level     sunxi-mmc
+260:          0          0          0          0    GICv2  52 Level     2009000.gpadc
+267:          1          0          0          0 sunxi_pio_edge   4 Edge      Power
+327:          0          0          0          0    GICv2 187 Level     sunxi-ir
+328:          0          0          0          0    GICv2  54 Level     ths
+329:          0          0          0          0    GICv2 139 Level     1c0d000.av1
+330:          0          0          0          0    GICv2 108 Level     panfrost-gpu
+331:          0          0          0          0    GICv2 150 Level     panfrost-mmu
+332:          0          0          0          0    GICv2 149 Level     panfrost-job
+333:          0          0          0          0    GICv2 107 Level     1c0e000.video-codec
+335:          0          0          0          0    GICv2 145 Level     h713-hdmi-audif-probe
+336:       4126          0          0          0    GICv2 147 Level     h713-hdmi-audbrg-probe
+IPI0:       618       1478       1669       1098       Rescheduling interrupts
+IPI1:      4704      19538      11759      12352       Function call interrupts
+IPI2:         0          0          0          0       CPU stop interrupts
+IPI3:         0          0          0          0       CPU stop NMIs
+IPI4:         0          0          0          0       Timer broadcast interrupts
+IPI5:      2100        473        320        944       IRQ work interrupts
+IPI6:         0          0          0          0       CPU backtrace interrupts
+IPI7:         0          0          0          0       KGDB roundup interrupts
+Err:          0
+[  136.166756] h713-hdmi-bridge-trial: bridge_snapshot=3 start=006c6000 end=006c6fff block=00000040 config=00002207 flush=00000000 addr_hi=00000070
+[  136.192450] h713-hdmi-bridge-trial: dma_snapshot=3 addr=0x0000000076c60000 changed=65536 first=0 last=65535 fnv1a=5e509dc5 bridge_irq_count=3587 bridge_irq_last=00000010
+[  139.099068] h713-hdmi-bridge-trial: snapshot=4 audif_irq=00000000 audif_mask=00300052 audif_route=00000000 spds=00000000 spdi1_ctl0=90000000 spdi1_ctl1=00003000 spdi1_status=00000000 spdi2_cfg=00000000 spdi2_status=00000000 audbrg_enable=00000001 audbrg_mask=00000010 audbrg_status=00000000 audbrg_sync=00000000 top_ctl=00000700 top_cfg=011a5e00 ihb_clk=81000002 irq_count=0 irq_last=00000000
+[  139.138716] h713-hdmi-bridge-trial: bridge_snapshot=4 start=006c6000 end=006c6fff block=00000040 config=00002207 flush=00000000 addr_hi=00000070
+[  139.164313] h713-hdmi-bridge-trial: dma_snapshot=4 addr=0x0000000076c60000 changed=65536 first=0 last=65535 fnv1a=5e509dc5 bridge_irq_count=4124 bridge_irq_last=00000010

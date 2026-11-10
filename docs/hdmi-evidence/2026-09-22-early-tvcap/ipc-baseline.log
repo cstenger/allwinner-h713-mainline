@@ -1,0 +1,102 @@
++ timeout 8s python3 -u /root/mips-shell.py --cmd cmds
+[stale output, discarded before the command: 8 bytes]
+[2J[1H
+[sent 5 bytes: 'cmds']
+[reply: 917 bytes]
+cmds
+
+Command List:
+app                   CMD   for app debug only
+bs                    CMD   for bs debug only
+crtc                  CMD   for crtc debug
+tcd3                  CMD   for app debug only
+dtv                   CMD   for dtv debug only
+hal                   CMD   for hal debug only
+elog                  CMD   elog command
+memory_agent          CMD   for memory_agent debug only
+pq                    CMD   for PQ debug only
+regw                  CMD   write register
+regr                  CMD   read register
+clear                 CMD   clear console
+keys                  CMD   list all key
+vars                  CMD   list all var
+cmds                  CMD   list all cmd
+users                 CMD   list all user
+help                  CMD   show command info
+setVar                CMD   set var
+win                   CMD   for window debug only
+
+VS:/$ 
++ insmod /root/hy310-cpu-comm.ko
++ sleep 1
+crw------- 1 root root 243, 0 Apr 13 19:39 /dev/cpu_comm
++ ls -l /dev/cpu_comm
++ timeout 8s /root/cpu-comm-probe THal_Vp_GetSource_1_000
+CPU_COMM_CALL_BEGIN component=24efc7c9 name=THal_Vp_GetSource_1_000 params=0
+CPU_COMM_CALL_OK component=24efc7c9 elapsed_us=74576 nret=1 ret0=00000000
+MATCH 0x24efc7c9 THal_Vp_GetSource_1_000
++ python3 /root/read-witness.py --watch 2
+{"verified_patch_words": 34, "mailbox": "4e341000"}
+{"seconds": 0.0, "tick": 221514, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.101, "tick": 221615, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.202, "tick": 221716, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.303, "tick": 221817, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.404, "tick": 221918, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.505, "tick": 222019, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.606, "tick": 222120, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.708, "tick": 222222, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.809, "tick": 222323, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 0.91, "tick": 222424, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.011, "tick": 222525, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.112, "tick": 222626, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.214, "tick": 222728, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.315, "tick": 222829, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.416, "tick": 222930, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.517, "tick": 223031, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.618, "tick": 223132, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.719, "tick": 223234, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.82, "tick": 223334, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 1.921, "tick": 223435, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
+{"seconds": 2.001, "tick": 223515, "exception": 0, "status": "00000000", "cause": "00000000", "epc": "00000000", "badvaddr": "00000000", "exc_code": 0, "branch_delay": false}
++ cat /sys/kernel/debug/pm_genpd/pm_genpd_summary
+domain                          status          children        performance
+TVCAP                           on                              0
+TVFE                            off-0                           0
++ grep -E 'domain|TVFE|TVCAP'
++ dmesg
++ tail -n 35
+[  107.829458] cpu_comm: shared memory mapped: phys=0x4e300000 virt=0xffff800081a04000 size=0x500000
+[  107.838373] cpu_comm: HW mapped \xe2\x80\x94 MIPS ctrl @ 000000008b59121f, msgbox @ 00000000e79c93f3 (version 0x00020000, tx fifo 0, rx fifo 0)
+[  107.850474] cpu_comm: on entry: ARM=0x5 MIPS=0x5 magic1=0xdeadbeef magic2=0xdeadbeef, coprocessor running
+[  107.860042] cpu_comm: adopting the live shared region -- not reinitialising it
+[  107.867265] cpu_comm: wrote ShMemAddr=0x4e300000 to MIPS share regs
+[  107.873927] cpu_comm: /dev/cpu_comm_fd registered (major=242)
+[  107.879809] cpu_comm: MIPS elog BEFORE: mode=0 en2=0 wp2=0
+[  107.885346] cpu_comm: MIPS elog staying on Mode 1 (ring buffer) (2MB buffer)
+[  107.892452] cpu_comm: InitCommSeqMem(0): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[  107.900038] cpu_comm: InitCommSeqMem(1): sock[248]=0x1 (remote sem @ offset 0x3E0)
+[  107.907607] cpu_comm: adopted shared memory: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[  107.916475] cpu_comm: shared memory initialized (base=0x4e300000 size=0x500000)
+[  107.923895] cpu_comm: msgbox RX by hrtimer poll (250 us busy / 4 ms idle) (IRQ 331 available, not requested)
+[  107.933729] cpu_comm: CPU ARM app ready
+[  107.937568] cpu_comm: POST-INIT: magic1=0xdeadbeef magic2=0xdeadbeef ARM=0x5 MIPS=0x5
+[  107.945396] cpu_comm: MIPS app-ready assumed (MIPS READY seen)
+[  108.460412] cpu_comm: POST-WAIT: ARM=0x5 MIPS=0x5
+[  108.465246] cpu_comm: auto-registered 18/18 MIPS VP routes
+[  108.470780] cpu_comm: channel row 0 live: chan=0x0000 pid=0x8b8f275c key=0xb8f275c0
+[  108.478451] cpu_comm: addressing CALLs to channel row 0 (chan=0x0 pid=0x8b8f275c)
+[  108.485977] cpu_comm: MIPS elog AFTER: mode=0 wp2=0
+[  108.490863] cpu_comm: MIPS elog Mode 2 buffer empty (wp2=0)
+[  108.496465] cpu_comm: initialized (ShMem=0x4e300000, 5242880 bytes)
+[  108.502738] hy310-cpu-comm 3003000.cpu-comm: probed successfully
+[  109.531814] cpu_comm: addressing channel chan=0x0 pid=0x8b8f275c (key 0xb8f275c0)
+[  109.539365] cpu_comm: msgbox tx raw=0x00000000 (CALL), fifo now 0
+[  109.540171] cpu_comm: msgbox rx raw=0x00000002 (CALL_ACK)
+[  109.550918] cpu_comm: IPC[msg_cb] type=2(CALL_ACK) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  109.559372] cpu_comm: IPC[handle_call_ack] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  109.568170] cpu_comm: IPC[dispatch] type=2(CALL_ACK) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  109.576363] cpu_comm: msgbox rx raw=0x00000001 (RETURN)
+[  109.581594] cpu_comm: IPC[msg_cb] type=1(RETURN) dir=2(REMOTE/MIPS) cpu=1 ARM=0x5 MIPS=0x5
+[  109.589866] cpu_comm: IPC[handle_return] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  109.598309] cpu_comm: IPC[dispatch] type=1(RETURN) dir=-1(OTHER) cpu=1 ARM=0x5 MIPS=0x5
+[  109.606333] cpu_comm: msgbox tx raw=0x00000003 (RETURN_ACK), fifo now 0

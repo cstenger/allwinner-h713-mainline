@@ -1,0 +1,9 @@
+fdt get addr hdmi_trial_fdt /images/fdt-1 data
+=> cp.b ${hdmi_trial_fdt} 0x4f000000 ${hdmi_trial_fdt_size}
+=> fdt addr 0x4f000000
+Working FDT set to 4f000000
+=> fdt resize 0x1000
+=> fdt set /soc/audio-bridge@203042c interrupts <0 115 4 0 113 4>
+=> fdt print /soc/audio-bridge@203042c interrupts
+interrupts = <0x00000000 0x00000073 0x00000004 0x00000000 0x00000071 0x00000004>
+=> 

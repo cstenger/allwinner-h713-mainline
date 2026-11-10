@@ -1,0 +1,118 @@
+{
+ "original_mode": {
+  "w": 1280,
+  "h": 720,
+  "hz": 60.0,
+  "current": true,
+  "preferred": true
+ },
+ "modes": [
+  {
+   "mode": "640x480@59.94",
+   "error": "TimeoutExpired: Command '['cosmic-screenshot', '--interactive=false', '--modal=false', '--notify=false', '-s', '/tmp/cc-shot-8huhg4dz']' timed out after 30 seconds"
+  },
+  {
+   "mode": "1280x720@60",
+   "geometry": {
+    "ring": [
+     1280,
+     720
+    ],
+    "stride": 1280,
+    "input": [
+     1280,
+     720
+    ],
+    "scaled": false
+   },
+   "psnr_y": 54.9,
+   "csc": {
+    "fit": [
+     [
+      0.1825,
+      0.6136,
+      0.0619,
+      15.6688
+     ],
+     [
+      -0.0997,
+      -0.3376,
+      0.4372,
+      127.8394
+     ],
+     [
+      0.4385,
+      -0.3983,
+      -0.0404,
+      127.788
+     ]
+    ],
+    "rms": [
+     0.39,
+     0.32,
+     0.34
+    ],
+    "nearest": "BT.709 limited",
+    "max_coef_error": 0.002,
+    "max_offset_error": 0.33,
+    "distances": {
+     "BT.601 limited": 0.1095,
+     "BT.601 full": 0.1165,
+     "BT.709 limited": 0.002,
+     "BT.709 full": 0.1016
+    },
+    "flat_pixels": 483136
+   },
+   "rowmap_y": {
+    "best": [
+     0.21,
+     1.0,
+     0
+    ],
+    "best_half": [
+     62.59,
+     0.5,
+     24
+    ]
+   },
+   "rowmap_c": {
+    "best": [
+     0.23,
+     1.0,
+     0
+    ],
+    "best_half": [
+     28.92,
+     0.5,
+     24
+    ]
+   },
+   "chroma": {
+    "shift_chroma_samples": 0,
+    "error": 0.22
+   },
+   "interlace": {
+    "adjacent_pairs_identical": 0.022,
+    "comb_index": 1.577
+   },
+   "cadence": {
+    "rate": 62.27,
+    "slots": 3,
+    "expected_hz": 60.0,
+    "matches": true
+   },
+   "firmware": {
+    "afbd_source_mode": 1,
+    "nr_colour_format": 4,
+    "fb_in": {
+     "addr": "8b89bd40",
+     "w": 1280,
+     "h": 720,
+     "compress": 0,
+     "colour_format": 4
+    }
+   }
+  }
+ ],
+ "restored": true
+}
