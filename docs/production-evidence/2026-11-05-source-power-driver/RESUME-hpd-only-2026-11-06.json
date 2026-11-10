@@ -1,0 +1,58 @@
+{
+  "date": "2026-11-06",
+  "state": "hpd-fresh-01 DONE: HPD-only pulse (DDC kept enabled) brought the stream up DURING the 2 s HPD-low hold; no DDC reset, no readvertise. Diagnostic still INSTALLED on disk (decision pending: repeat vs roll back). Board running 243b32b0; UART stopped.",
+  "diagnostic": "Original initial advert. If signal stays none 3 s (power not known absent, owner ready, zero counts): SCP request 6 forces HPD low WITHOUT writing DDC (readbacks: HPD|7, DDC unchanged 07000007), hold 2000 ms, request 4 releases HPD (readbacks HPD=orig&~7, DDC unchanged); wait 5 s for lock; else unchanged bounded fallback. Counts hpd_cycles separately from readvertised.",
+  "outcomes": {
+    "lock with hpd_cycles=1, readvertised=0": "the HPD edge alone recovers; DDC reset not needed -> fix targets the first HPD release (e.g. initial HPD low hold before first rise)",
+    "no lock then fallback lock": "neither HPD-only nor DDC-only alone suffices; the combined HPD+DDC sequence (or its timing) is needed"
+  },
+  "module": {
+    "version": "hpd-only-isolation-v1",
+    "sha256": "3da8008baaf32af9e8f5e35a024e6a709103c931132a6be7ddebd404995d3fe9",
+    "built_against": "local/recovery/2026-11-04-matched-startup-trace/kernel-build/linux-6.18.38-707eb6f7...",
+    "modversions": "off; imports only h713_receiver_acquire/release like the 11-05 module"
+  },
+  "policy": "h713-hdmi-readvertise.py with DIAGNOSTIC_HPD_ONLY=True only; run() AST-identical to installed d108b4c4",
+  "package": "package/ here, /root/hpd-only-package on target; manifest sha fab398d3b12b2625f52e7bac11a9041703ed00e13adbb45380a505be7da3f91d",
+  "install": "python3 -B /root/hpd-only-package/install-hpd-isolation.py --package /root/hpd-only-package --boot <id> --manifest-sha fab398d3... --apply",
+  "rollback": "same with --rollback <backup dir printed by apply> (backup prefix hpd-isolation-)",
+  "tests": "OR1K model 30 OK (2 new), hpd policy 7 OK, ddc policy 6 OK, readvertise OK, signal 34 OK; W=1 build clean",
+  "audit": "audit-hpd-only.py",
+  "next": [
+    "Chris approval",
+    "install, audit, clean poweroff",
+    "supply off + source PC reboot",
+    "rearm UART + observer --window-seconds 30 (expected module version hpd-only-isolation-v1 is signal, observer checks V4L2 reject-trace-power-v2)"
+  ],
+  "hpd_fresh01": {
+    "previous_board_boot": "7d472e55-b378-4f60-943b-371a060fdb94",
+    "source_boot_before_reboot": "9d4f815b-13d5-42dd-a223-e6d88a3cdd94",
+    "after_host_reboot_steps": [
+      "new host boot id != 9d4f815b; CP2102 free; recreate scratchpad b.sh if missing",
+      "background: python3 -B tools/serial/capture-panel-validation.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 --output local/recovery/2026-11-06-hpd-only/fresh-01-uart",
+      "background: python3 -B tools/hdmi/observe-matched-startup.py --previous-boot 7d472e55-b378-4f60-943b-371a060fdb94 --arm optimized --module-version reject-trace-power-v2 --window-seconds 30 --output local/recovery/2026-11-06-hpd-only/fresh-01",
+      "verify UART OPEN, ask Chris for board power",
+      "read journal: hpd_isolation JSON lines, 'diagnostic HPD-only pulse', 'HPD re-advertised', lock time; check /sys/module/h713_hdmi_signal/version and parameters hpd_cycles/readvertised; audit-hpd-only.py; then roll back"
+    ],
+    "rollback": "python3 -B /root/hpd-only-package/install-hpd-isolation.py --package /root/hpd-only-package --boot <id> --manifest-sha fab398d3b12b2625f52e7bac11a9041703ed00e13adbb45380a505be7da3f91d --apply --rollback /var/lib/h713-hdmi-startup/hpd-isolation-5072d0289c2a4f64ba7c6d91fb3fc2a7",
+    "source_boot": "296e17be-028c-40b3-b8fd-9282a8650d3f",
+    "board_boot": "243b32b0-ea42-4a22-ad7d-4e567d464648",
+    "timeline": {
+      "edid_hpd_ready": 14.74,
+      "initial_none": 15.365,
+      "hpd_low_request": 18.186,
+      "acquiring": 19.384,
+      "locked": 19.604,
+      "video": 19.664,
+      "hpd_release_done": 20.224
+    },
+    "counts": {
+      "hpd_cycles": 1,
+      "readvertised": 0
+    },
+    "stream": "30 s quick check 59.66 fps, 0 rejects; observer VALID (it only flags readvertise)",
+    "audit": "audit-hpd-only PASS 75",
+    "meaning": "Source started TMDS ~1.2 s after HPD went low with DDC enabled; DDC re-enable is not needed. Either the control-7 state is what the source sees as the sink asserting, or the source re-probes on the HPD falling edge and reads EDID while HPD is low. n=1. Still a programmed pulse (retry) after the first advert.",
+    "comparison": "video 19.66 s vs ~28.9 s for the readvertise fallback (3 prior fresh runs)"
+  }
+}

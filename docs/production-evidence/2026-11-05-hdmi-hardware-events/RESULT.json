@@ -1,0 +1,173 @@
+{
+  "schema": "h713-source-power-event-investigation-v1",
+  "status": "Passive source-power candidate validated against cable-loss and output-disabled controls; no driver/retry change installed",
+  "boot_id": "b98ade5e-f2c6-4f9e-a89f-65839843c788",
+  "configuration": "Original global AIC control B; accepted HDMI startup optimizations, bootdelay=0 and reject-trace-v1 retained",
+  "recording": {
+    "first_monotonic": 723.548574551,
+    "last_monotonic": 1201.685201612,
+    "sample_count": 110,
+    "requested_duration": 900,
+    "stop": "Intentional SIGTERM after operator tests; SSH reported255 as recorded by host collector. No spontaneous observer failure.",
+    "observer_closed": true,
+    "uart_closed": true
+  },
+  "edges": [
+    {
+      "monotonic": 723.550315343,
+      "power_candidate": 1,
+      "signal": "locked 1280x720",
+      "retries": "1"
+    },
+    {
+      "monotonic": 927.39109144,
+      "power_candidate": 0,
+      "signal": "holding 1280x720",
+      "retries": "1"
+    },
+    {
+      "monotonic": 929.012074066,
+      "power_candidate": 0,
+      "signal": "none",
+      "retries": "1"
+    },
+    {
+      "monotonic": 941.98998178,
+      "power_candidate": 0,
+      "signal": "none",
+      "retries": "2"
+    },
+    {
+      "monotonic": 943.604787989,
+      "power_candidate": 0,
+      "signal": "acquiring",
+      "retries": "2"
+    },
+    {
+      "monotonic": 943.806608614,
+      "power_candidate": 0,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 944.008755073,
+      "power_candidate": 1,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1053.00512675,
+      "power_candidate": 0,
+      "signal": "holding 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1054.623267834,
+      "power_candidate": 0,
+      "signal": "none",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1061.301347962,
+      "power_candidate": 0,
+      "signal": "acquiring",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1061.503591587,
+      "power_candidate": 0,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1061.906865837,
+      "power_candidate": 1,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1131.402567371,
+      "power_candidate": 1,
+      "signal": "holding 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1133.022901038,
+      "power_candidate": 1,
+      "signal": "none",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1140.703965958,
+      "power_candidate": 1,
+      "signal": "acquiring",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1140.905904708,
+      "power_candidate": 1,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    }
+  ],
+  "tests": [
+    {
+      "case": "Physical disconnect/reconnect, first observed interval",
+      "power": "1 -> 0 -> 1",
+      "video_recovered": true,
+      "additional_existing_retries": 1,
+      "kernel_lock": 943.644105,
+      "power_rise_observed": 944.008755073,
+      "rise_after_lock_seconds": 0.36465
+    },
+    {
+      "case": "Additional isolated physical disconnect/reconnect",
+      "power": "1 -> 0 -> 1",
+      "video_recovered": true,
+      "additional_existing_retries": 0,
+      "kernel_lock": 1061.447997,
+      "power_rise_observed": 1061.906866,
+      "rise_after_lock_seconds": 0.458869
+    },
+    {
+      "case": "HDMI connected; PC output disabled via monitor settings then enabled",
+      "power": "remained1",
+      "video": "holding -> none -> acquiring -> locked",
+      "additional_existing_retries": 0,
+      "kernel_no_signal": 1132.852099,
+      "kernel_lock": 1140.736104
+    }
+  ],
+  "callback_assessment": {
+    "copies": 0,
+    "slots": "Both BSP/HAL slots remained zero",
+    "registration": "Not enabled; static setter ignoreszero, so null restoration through the RPC is not established",
+    "meaning": "No callback delivery was validated; absence while unregistered does not indicate transport failure."
+  },
+  "driver_feasibility": "Existing guarded DRAM mapping can expose firmware-polled source power as a read-only V4L2_CID_DV_RX_POWER_PRESENT control, with control notifications. Report unknown/unavailable honestly; qualify coldplug, freshness and firmware identity before RC integration.",
+  "retry_assessment": "Power distinguishes an attached powered source with no video from a disconnected source in tested conditions. No proven dedicated IRQ or failed-handshake event. Rising cache transitions arrived after lock in both reconnect tests. Keep bounded timeout behavior unchanged.",
+  "retry_policy": {
+    "unchanged": true,
+    "hashes": {
+      "/usr/lib/h713-hdmi/h713-hdmi-readvertise.py": "47132f93ef29092f65ad04d660986ecdf9f4ecc5f9532951c3c3753a9840d061",
+      "/etc/systemd/system/h713-hdmi-readvertise.service": "6ae085892a564a08fe53ab1f3e376837ff465a0b8766a167540ea0675b00835a"
+    },
+    "service_start": "14763655",
+    "service_restarts": "0",
+    "before_total": 1,
+    "after_total": 2
+  },
+  "final_errors": {
+    "rejected": 0,
+    "xruns": 0,
+    "bad_guard": 0,
+    "invalid_pair": 0
+  },
+  "remaining_validation": [
+    "Coldplug and first-advertisement miss with candidate sampled before lock",
+    "Source powered off/standby and electrical +5V ground truth if absolute voltage semantics/timing are needed",
+    "Cache visibility/freshness and unavailable/disabled polling behavior",
+    "Callback activation and restoration in an isolated cold-boot test if firmware callbacks remain desirable"
+  ],
+  "operator_note": "Initial two reported unplug actions formed one continuous captured outage; additional isolated action supplied the second independent observed interval."
+}

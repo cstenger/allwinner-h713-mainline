@@ -1,0 +1,58 @@
+{
+  "date": "2026-11-06",
+  "state": "q-fresh-01 DONE: 150 ms startup pulse brought the stream up (video 19.82 s); 5-min stream 59.71 fps, 0 rejects. Separate NEW issue: h713-hdmi-speaker pw-loopback SEGV at 15.58 s (before the pulse), auto-restarted 18.25 s, audio RUNNING afterwards; audit FAILs only on speaker NRestarts=1. Candidate still installed; board running 59e60000; UART stopped.",
+  "design": "First advertisement unchanged. If the signal stays 'none' for PULSE_GRACE=3 s of continuous none (owner ready, source power not known absent, readvertised=0, hpd_pulses=0, rechecked just before), one HDMI-spec HPD low pulse of PULSE_MS=150 ms with DDC untouched (SCP request 6, readbacks verified), then wait PULSE_WAIT=5 s for any source activity; afterwards the unchanged bounded readvertise schedule (run() AST-identical to installed d108b4c4).",
+  "module": {
+    "version": "hpd-pulse-v1",
+    "sha256": "82daa7ec66c4b793f2d03062a5b8b46c4d18cb49e9131b43a47f8eb8f8c5099b",
+    "params": "hpd_pulse=<100..2000 ms> (write), hpd_pulses (count)"
+  },
+  "generator": "make-edid-trial-code.py --verify-restore --readvertise --hpd-pulse (SCP code identical to the hardware-proven --isolate-hpd)",
+  "observer": "observe-matched-startup.py now reports readvertised/hpd_pulses/hpd_cycles and flags 'HPD pulse re-advertisement' (a pulse is a second advertisement)",
+  "tests": "SCP model 47 OK; hpd-pulse policy 7 OK; hpd/ddc diag policy, readvertise, signal, startup-qualification, build-startup, shared-startup, release OK",
+  "package": "package/ here and /root/hpd-pulse-package on target; manifest 1b80892f766f601270cc3a5e83252095ea4cafe46eb70ed8cfdec0354aa2ac4c; before = HPD-only diagnostic state",
+  "install": "python3 -B /root/hpd-pulse-package/install-hpd-pulse.py --package /root/hpd-pulse-package --boot <id> --manifest-sha 1b80892f... --apply",
+  "rollback_chain": "candidate --rollback <hpd-pulse-* backup> -> HPD-only; then HPD-only rollback (../2026-11-06-hpd-only/RESUME.json) -> baseline",
+  "audit": "audit-hpd-pulse.py",
+  "qualification_plan": [
+    "fresh-source runs x3 (expect pulse, video ~19-20 s)",
+    "primed cold boot (expect not_needed, no pulse)",
+    "reconnect / source reboot with board on (pulse only at startup; fallback unchanged)",
+    "5-min stream on at least one"
+  ],
+  "not_done": "release build (tools/release/build.py) still generates without --hpd-pulse; integrate after qualification",
+  "q_fresh01": {
+    "previous_board_boot": "d35485bb-0641-4bdd-b2af-a68f52d031ad",
+    "source_boot_before_reboot": "ad78e3cb-3241-4ff7-94cd-25bb13f73b5f",
+    "after_host_reboot_steps": [
+      "new host boot id != ad78e3cb; CP2102 free; recreate scratchpad b.sh if missing",
+      "background: python3 -B tools/serial/capture-panel-validation.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 --output local/recovery/2026-11-06-hpd-pulse/fresh-01-uart",
+      "background: python3 -B tools/hdmi/observe-matched-startup.py --previous-boot d35485bb-0641-4bdd-b2af-a68f52d031ad --arm optimized --module-version reject-trace-power-v2 --window-seconds 300 --output local/recovery/2026-11-06-hpd-pulse/fresh-01",
+      "verify UART OPEN, ask Chris for board power",
+      "collect: journalctl -u h713-hdmi-readvertise (kind hpd_pulse), signal version, hpd_pulses/readvertised, lock/video times; audit-hpd-pulse.py"
+    ],
+    "rollback_chain": [
+      "python3 -B /root/hpd-pulse-package/install-hpd-pulse.py --package /root/hpd-pulse-package --boot <id> --manifest-sha 1b80892f766f601270cc3a5e83252095ea4cafe46eb70ed8cfdec0354aa2ac4c --apply --rollback /var/lib/h713-hdmi-startup/hpd-pulse-87e7a0761b414f498d1e45a1e821a666",
+      "then HPD-only rollback in ../2026-11-06-hpd-only/RESUME.json"
+    ],
+    "source_boot": "428e7895-3f57-426e-b2bf-2e6e25dc5920",
+    "board_boot": "59e60000-89be-4024-b9b9-fc81d0b3f1f3",
+    "timeline": {
+      "edid_hpd_ready": 14.801,
+      "initial_none": 15.449,
+      "pulse_request": 18.228,
+      "pulse_done": 18.392,
+      "acquiring": 19.54,
+      "locked": 19.764,
+      "video": 19.82
+    },
+    "counts": {
+      "hpd_pulses": 1,
+      "readvertised": 0
+    },
+    "stream": "300 s, 59.707 fps, 0 rejects, PCMs RUNNING at end",
+    "observer": "INVALID: 'HPD pulse re-advertisement' (by design) + 'service failure: h713-hdmi-speaker.service'",
+    "speaker_issue": "pw-loopback (PipeWire 1.4.2) killed by SIGSEGV 190 ms after exec at 15.58 s; Restart=on-failure restarted it at 18.25 s; first SEGV in 15 retained boots; not caused by the pulse (2.8 s earlier); no core (systemd-coredump absent)",
+    "audit": "FAIL only: service state/restarts h713-hdmi-speaker"
+  }
+}

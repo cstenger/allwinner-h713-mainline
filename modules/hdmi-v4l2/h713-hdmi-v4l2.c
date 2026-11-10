@@ -19,6 +19,7 @@
 #include <asm/cacheflush.h>
 
 #include <media/v4l2-device.h>
+#include <media/v4l2-ctrls.h>
 #include <linux/v4l2-dv-timings.h>
 #include <media/v4l2-dv-timings.h>
 #include <media/v4l2-event.h>
@@ -73,6 +74,11 @@ struct h713_capture {
 	struct platform_device *pdev;
 	struct v4l2_device v4l2_dev;
 	struct video_device vdev;
+	struct v4l2_ctrl_handler controls;
+	struct v4l2_ctrl *power_present;
+	bool power_firmware_ok;
+	bool power_valid;
+	bool power_seen_present;
 	struct vb2_queue queue;
 	struct mutex lock;
 	spinlock_t qlock;
@@ -368,6 +374,88 @@ static bool h713_read_port(struct h713_capture *cap, struct h713_sig_sample *s)
 	return true;
 }
 
+/* Board-B firmware's polled +5V cache; never access receiver MMIO from ARM. */
+static bool h713_power_firmware_matches(struct h713_capture *cap)
+{
+	static const struct { u32 address, bytes, crc; } pins[] = {
+		{ 0x8b13eff0, 72, 0xc6ae90a9 }, /* per-port hardware status reader */
+		{ 0x8b13942c, 112, 0xd39102cc }, /* store result at port +0x532 */
+		{ 0x8b136278, 64, 0xfad6119c }, /* event path uses port +8 */
+	};
+	unsigned int i, off;
+
+	for (i = 0; i < ARRAY_SIZE(pins); i++) {
+		u32 crc = ~0U;
+
+		for (off = 0; off < pins[i].bytes; off += 4) {
+			u32 value;
+			__le32 raw;
+
+			if (!h713_mips_word(cap, pins[i].address + off, &value))
+				return false;
+			raw = cpu_to_le32(value);
+			crc = crc32_le(crc, (u8 *)&raw, sizeof(raw));
+		}
+		if ((crc ^ ~0U) != pins[i].crc)
+			return false;
+	}
+	return true;
+}
+
+static bool h713_read_power(struct h713_capture *cap, unsigned int *present)
+{
+	u32 manager, hdmi, port, identity, cache;
+
+	if (!cap->power_firmware_ok ||
+	    !h713_mips_word(cap, 0x8bac1a70, &manager) ||
+	    !h713_mips_word(cap, manager, &identity) || identity != H713_MANAGER_VPTR ||
+	    !h713_mips_word(cap, manager + 0x18, &hdmi) ||
+	    !h713_mips_word(cap, hdmi, &identity) || identity != H713_HDMIRX_VPTR ||
+	    !h713_mips_word(cap, hdmi + 0xec, &port) ||
+	    !h713_mips_word(cap, port, &identity) ||
+	    !h713_mips_word(cap, port + 0x518, &identity) ||
+	    ((identity >> 24) & 0xff) != 1 || /* firmware port 1 */
+	    ((identity >> 16) & 0xff) != 1 || /* its polling is enabled */
+	    !h713_mips_word(cap, port + 0x520, &identity) || identity != H713_PORT_LINK_BASE ||
+	    !h713_mips_word(cap, port + 0x530, &cache))
+		return false;
+	cache = (cache >> 16) & 0xff;
+	if (cache > 1)
+		return false;
+	/* One exposed V4L2 input: bit0, independent of firmware port numbering. */
+	*present = cache;
+	return true;
+}
+
+static void h713_power_sample(struct h713_capture *cap)
+{
+	unsigned int present = 0;
+	bool valid = h713_read_power(cap, &present);
+	bool changed;
+
+	/* The cold firmware cache starts at zero even with a connected source.
+	 * Until the first positive sample, zero is unknown, not proof of absence.
+	 */
+	if (valid && present)
+		cap->power_seen_present = true;
+	if (!cap->power_seen_present)
+		valid = false;
+
+	/* Framework caching generates standard control VALUE/FLAGS events. */
+	v4l2_ctrl_lock(cap->power_present);
+	changed = valid != cap->power_valid ||
+		(valid && present != cap->power_present->cur.val);
+	cap->power_valid = valid;
+	if (valid)
+		__v4l2_ctrl_s_ctrl(cap->power_present, present);
+	/* Unknown retains the last value, explicitly marked INACTIVE. */
+	v4l2_ctrl_activate(cap->power_present, valid);
+	v4l2_ctrl_unlock(cap->power_present);
+	if (changed)
+		pr_info("h713-hdmi-v4l2: source power %s\n",
+			valid ? (present ? "present" : "absent") : "unknown");
+}
+
 static const struct v4l2_dv_timings h713_timings_720p = V4L2_DV_BT_CEA_1280X720P60;
 static const struct v4l2_dv_timings h713_timings_480p = V4L2_DV_BT_DMT_640X480P60;
 
@@ -441,6 +529,7 @@ static unsigned int h713_sig_sample_step(struct h713_capture *cap)
 	int idx;
 
 	cap->sig_last = now;
+	h713_power_sample(cap);
 	s.valid = h713_read_port(cap, &s);
 	if (!s.valid)
 		sig_bad_guard++;
@@ -1199,6 +1288,8 @@ static int h713_subscribe_event(struct v4l2_fh *fh,
 {
 	if (sub->type == V4L2_EVENT_SOURCE_CHANGE)
 		return v4l2_src_change_event_subscribe(fh, sub);
+	if (sub->type == V4L2_EVENT_CTRL)
+		return v4l2_ctrl_subscribe_event(fh, sub);
 	return -EINVAL;
 }
 
@@ -1394,6 +1485,19 @@ static int __init h713_init(void)
 		goto unmap_pair;
 
 	mutex_init(&cap->lock);
+	v4l2_ctrl_handler_init(&cap->controls, 1);
+	cap->power_present = v4l2_ctrl_new_std(&cap->controls, NULL,
+			V4L2_CID_DV_RX_POWER_PRESENT, 0, 1, 0, 0);
+	if (cap->controls.error) {
+		ret = cap->controls.error;
+		goto free_controls;
+	}
+	cap->power_present->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+	v4l2_ctrl_activate(cap->power_present, false);
+	cap->power_firmware_ok = h713_power_firmware_matches(cap);
+	if (!cap->power_firmware_ok)
+		pr_warn("h713-hdmi-v4l2: power cache firmware mismatch; control inactive\n");
+	cap->v4l2_dev.ctrl_handler = &cap->controls;
 	spin_lock_init(&cap->qlock);
 	INIT_LIST_HEAD(&cap->buffers);
 	cap->pair_offset = -1;
@@ -1411,7 +1515,7 @@ static int __init h713_init(void)
 	q->dev = &cap->pdev->dev;
 	ret = vb2_queue_init(q);
 	if (ret)
-		goto unregister_v4l2;
+		goto free_controls;
 	pr_info("h713-hdmi-v4l2: using %s capture buffers\n",
 		use_vmalloc ? "cached vmalloc" : "DMA-contiguous");
 	strscpy(cap->vdev.name, "h713-hdmi-in", sizeof(cap->vdev.name));
@@ -1451,7 +1555,8 @@ unregister_video:
 	video_unregister_device(&cap->vdev);
 release_queue:
 	vb2_queue_release(q);
-unregister_v4l2:
+free_controls:
+	v4l2_ctrl_handler_free(&cap->controls);
 	v4l2_device_unregister(&cap->v4l2_dev);
 unmap_pair:
 	iounmap(cap->afbd_pair);
@@ -1480,6 +1585,7 @@ static void __exit h713_exit(void)
 		afbd_phase2, afbd_y, afbd_uv);
 	video_unregister_device(&cap->vdev);
 	vb2_queue_release(&cap->queue);
+	v4l2_ctrl_handler_free(&cap->controls);
 	v4l2_device_unregister(&cap->v4l2_dev);
 	if (cap->afbd_pair)
 		iounmap(cap->afbd_pair);

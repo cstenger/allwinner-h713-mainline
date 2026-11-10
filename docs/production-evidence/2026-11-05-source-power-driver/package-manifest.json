@@ -1,0 +1,17 @@
+{
+  "schema": "h713-source-power-install-v1",
+  "before": {
+    "usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko": "03332147690daae6e3881171a2bd532265f7f95cac5e004a991b00e07e8f5548",
+    "usr/lib/h713-hdmi/h713-hdmi-readvertise.py": "47132f93ef29092f65ad04d660986ecdf9f4ecc5f9532951c3c3753a9840d061",
+    "usr/lib/h713-hdmi-video/SHA256SUMS": "039e1410b87eccc5d021a9707665c7b1db7f987c75a1139254bfeac74730b0a7",
+    "usr/lib/h713-hdmi/SHA256SUMS": "cb180caaf08a51995571a23a6196dd65bedbe0e4f79079dad42b6b790972e350"
+  },
+  "after": {
+    "usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko": "422b17966c9b7211b9733e7b453282bec6ed444338689aeec039277606f5cada",
+    "usr/lib/h713-hdmi/h713-hdmi-readvertise.py": "4c54d1c2fb6662675fe622d99afbf6d410786e10c5f829e076aa0e334ded0b3d",
+    "usr/lib/h713-hdmi-video/SHA256SUMS": "75dbb0ca17a670dd05144e689bb07e421b888cda1205661ad4d9ead88553e8cb",
+    "usr/lib/h713-hdmi/SHA256SUMS": "a5ce192f98e2fb340a6fe19a00dae6f43f416255a3ed90473ff72dc7b95cc33d"
+  },
+  "module_version": "reject-trace-power-v1",
+  "retry": "V4L2 power absent suppresses; present/unknown retain bounded schedule; no pulses while sending"
+}

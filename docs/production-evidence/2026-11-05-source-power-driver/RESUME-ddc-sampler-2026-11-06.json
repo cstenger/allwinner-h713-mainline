@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-06",
+  "state": "sampler-fresh-01 DONE. Sampler ROLLED BACK on disk to the HPD-only diagnostic (hpd-only-isolation-v1), audit-hpd-only PASS 75 on d35485bb. Board running; UART stopped. HPD-only remains installed (rollback in ../2026-11-06-hpd-only/RESUME.json).",
+  "probe": "SCP idle-loop sampler, read-only, of 12 stock-SCP-accessed receiver regs 0x07091000,1008,1014,1018,101c,1020,1030,1034,1038,1b00,1b04,1b08: per register first (owner ready), last, toggled-since-clear; seq counter. Report: /sys/module/h713_hdmi_signal/parameters/ddc_sample (SRAM copy only, no ARM receiver access). Policy logs it with every hpd_isolation phase and clears it just before the HPD-only pulse.",
+  "layout": "sampler code 0x4da0-0x4e7f (after 13 trap stubs), first 0x4e80, seq 0x4f80, clear 0x4f84, pairs 0x4f88-0x4fe7; whole page 0x4000-0x4fff is backed up/restored by the module",
+  "main_program_change": "one word: idle loop 'bnf wait' -> 'bnf 0x4da0'; default generator output byte-identical to HEAD",
+  "module": {
+    "version": "ddc-sampler-hpd-only-v1",
+    "sha256": "38f84add7828cdfa977b82d091ba2ca4e84e199129570cf970d411d2f865ff10"
+  },
+  "package": "package/ here, /root/ddc-sampler-package on target; manifest fec06a307890197bba5315077c138dec62bcf1033e8b66418c065bf33d9d6b79; before = HPD-only installed state",
+  "install": "python3 -B /root/ddc-sampler-package/install-ddc-sampler.py --package /root/ddc-sampler-package --boot <id> --manifest-sha fec06a30... --apply",
+  "rollback_chain": "1) install-ddc-sampler.py ... --apply --rollback <ddc-sampler-* backup> -> HPD-only state; 2) hpd-only rollback (local/recovery/2026-11-06-hpd-only/RESUME.json) -> baseline",
+  "tests": "SCP model 43 OK (sampler read-only, transient captured, clear, combined HPD pulse); hpd policy 8 OK; ddc policy, readvertise, signal OK; W=1 build clean",
+  "audit": "audit-ddc-sampler.py",
+  "what_to_look_for": "In a fresh failed first advert (before pulse) vs the pulse window: a bit in 0x1000/0x1008/0x1018/0x101c that toggles only when the source reads EDID. Also a primed boot (no pulse) shows a successful first read in 'skipped' records.",
+  "next": [
+    "Chris approval to install",
+    "fresh-source run (supply off + source PC reboot)",
+    "optionally a primed cold boot afterwards"
+  ],
+  "sampler_fresh01": {
+    "previous_board_boot": "243b32b0-ea42-4a22-ad7d-4e567d464648",
+    "source_boot_before_reboot": "296e17be-028c-40b3-b8fd-9282a8650d3f",
+    "after_host_reboot_steps": [
+      "new host boot id != 296e17be; CP2102 free; recreate scratchpad b.sh if missing",
+      "background: python3 -B tools/serial/capture-panel-validation.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 --output local/recovery/2026-11-06-ddc-sampler/fresh-01-uart",
+      "background: python3 -B tools/hdmi/observe-matched-startup.py --previous-boot 243b32b0-ea42-4a22-ad7d-4e567d464648 --arm optimized --module-version reject-trace-power-v2 --window-seconds 30 --output local/recovery/2026-11-06-ddc-sampler/fresh-01",
+      "verify UART OPEN, ask Chris for board power",
+      "collect: journalctl -u h713-hdmi-readvertise (hpd_isolation JSON with ddc_sample), cat /sys/module/h713_hdmi_signal/parameters/ddc_sample, version, hpd_cycles/readvertised; audit-ddc-sampler.py"
+    ],
+    "rollback_chain": [
+      "python3 -B /root/ddc-sampler-package/install-ddc-sampler.py --package /root/ddc-sampler-package --boot <id> --manifest-sha fec06a307890197bba5315077c138dec62bcf1033e8b66418c065bf33d9d6b79 --apply --rollback /var/lib/h713-hdmi-startup/ddc-sampler-e6892704f1fc40259ab82f87d609e458",
+      "then the HPD-only rollback in local/recovery/2026-11-06-hpd-only/RESUME.json"
+    ],
+    "source_boot": "ad78e3cb-3241-4ff7-94cd-25bb13f73b5f",
+    "board_boot": "d35485bb-0641-4bdd-b2af-a68f52d031ad",
+    "timeline": {
+      "edid_hpd_ready": 15.008,
+      "initial_none": 15.617,
+      "hpd_low_request": 18.437,
+      "acquiring": 19.495,
+      "locked": 19.888,
+      "video": 19.943,
+      "pulse_done": 20.448
+    },
+    "counts": {
+      "hpd_cycles": 1,
+      "readvertised": 0,
+      "sampler_passes": 325591
+    },
+    "stream": "30 s 59.70 fps, 0 rejects",
+    "result": "HPD-only pulse locks during hold again (2/2 fresh). Sampler: across the failed first advert AND the pulse (when the source must have read the EDID) none of the 12 stock-accessed registers changed except 0x07091014 (our own HPD write). 0x1000/0x1008 stayed 0 (latches never set; 0x101c interrupt-enable is 0, stock writes 3), 0x1018 constant 0xb, DDC/IO regs constant.",
+    "meaning": "No passive EDID-read/DDC-activity indicator exists in the registers stock touches, in their current (non-interrupt-enabled) configuration. Enabling 0x101c would be a receiver write plus possible SCP interrupt delivery into our trap vectors: needs its own design.",
+    "rollback_backup": "/var/lib/h713-hdmi-startup/ddc-sampler-3a57549f792e40ff951b6cb883ac658a"
+  }
+}

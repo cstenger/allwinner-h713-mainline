@@ -1,0 +1,259 @@
+diff --color -Naru a/h713-hdmi-session.py b/h713-hdmi-session.py
+--- a/tools/hdmi/h713-hdmi-session.py	2026-11-09 18:08:14.179553449 -0800
++++ b/tools/hdmi/h713-hdmi-session.py	2026-11-09 18:08:14.158884658 -0800
+@@ -24,6 +24,14 @@
+ STATE='/run/h713-hdmi-session/state.json'
+ HANDOFF='/proc/device-tree/chosen/h713,hdmi-boot-v1'
+ PATCH_SHA='8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5'
++DDC='h713_ddc_pins'
++# Opt-in (--early-ddc): claim the DDC pins immediately BEFORE the receiver
++# clock stage that clocks the EDID block and releases its reset (stage 4), so
++# the DDC block never runs clocked with its pins disabled. Stock does the pin
++# mux microseconds after its EDID clock; ours otherwise waited ~3 s.
++# The boot-ID marker records this service's hold until the signal service
++# adopts it (and deletes the marker); an unadopted hold is released here.
++EARLY_DDC='/run/h713-hdmi-signal/early-ddc'
+ 
+ 
+ class Board:
+@@ -31,6 +39,9 @@
+     def read(self,path):return Path(path).read_text()
+     def binary(self,path):return Path(path).read_bytes()
+     def write(self,path,text):Path(path).write_text(text)
++    def mark(self,path,text):
++        p=Path(path);p.parent.mkdir(mode=0o700,exist_ok=True);p.write_text(text);p.chmod(0o600)
++    def unlink(self,path):Path(path).unlink()
+     def state(self,value):
+         p=Path(STATE);p.parent.mkdir(parents=True,exist_ok=True)
+         tmp=p.with_suffix('.tmp');tmp.write_text(json.dumps(value)+'\n');tmp.chmod(0o600);os.replace(tmp,p)
+@@ -41,8 +52,25 @@
+ 
+ 
+ class Session:
+-    def __init__(self,board,bundle,boot_handoff=False):
++    def __init__(self,board,bundle,boot_handoff=False,early_ddc=False):
+         self.b=board;self.bundle=str(Path(bundle));self.boot=self.b.read(BOOT_ID).strip();self.boot_handoff=boot_handoff
++        self.early_ddc=early_ddc
++    def early_ddc_pending(self):
++        # Our hold, this boot, not yet adopted by the signal service.
++        return self.b.exists(EARLY_DDC) and self.b.read(EARLY_DDC).strip()==self.boot
++    def claim_early_ddc(self):
++        if self.loaded(DDC) or self.b.exists(EARLY_DDC):raise RuntimeError('DDC pins already held or recorded; refusing early claim')
++        self.b.mark(EARLY_DDC,self.boot+'\n')  # ownership recorded before the hold exists
++        self.b.run(['insmod',self.bundle+'/h713-ddc-pins.ko','run=1'])
++        if not self.loaded(DDC) or self.param(DDC,'released')!='N':raise RuntimeError('early DDC claim not verified; pins retained')
++        print('early DDC pins claimed before the EDID clock/reset (mux original '+self.param(DDC,'original_mux')+')',file=sys.stderr,flush=True)
++    def release_early_ddc(self):
++        # Same verified release protocol as the signal service.
++        try:self.b.write(BASE+DDC+'/parameters/release','1\n')
++        except OSError as error:raise RuntimeError('early DDC pin restore failed; DDC retained, cold cycle required') from error
++        self.b.run(['rmmod',DDC])
++        if self.loaded(DDC):raise RuntimeError('early DDC helper removal incomplete')
++        self.b.unlink(EARLY_DDC)
+     def param(self,module,name):return self.b.read(BASE+module+'/parameters/'+name).strip()
+     def loaded(self,module):return self.b.exists(BASE+module)
+     def save(self,phase,**extra):self.b.state({'boot_id':self.boot,'phase':phase,**extra})
+@@ -109,7 +137,9 @@
+             if self.param(OWNER,'init_error')!='0':raise RuntimeError('receiver partial setup failed; holds retained')
+             current=int(self.param(OWNER,'clock_count'))
+             if not 0<=current<=4:raise RuntimeError('invalid receiver clock stage')
++            if self.early_ddc and current>=4:raise RuntimeError('EDID block already clocked; early DDC claim impossible')
+             for stage in range(current+1,5):
++                if self.early_ddc and stage==4:self.claim_early_ddc()  # pins first, then EDID clock/reset
+                 self.b.write(BASE+OWNER+'/parameters/clock_count',str(stage)+'\n');self.ipc()
+             self.owner_ready(0);self.ipc()
+             original=self.b.read(FW_PATH).rstrip('\n')
+@@ -190,7 +220,9 @@
+             return {'phase':'parked','already_parked':True,'receiver_removed':True}
+         if prior.get('phase') in ('parking','parking_failed'):
+             raise RuntimeError('terminal parking already attempted; physical cold boot required')
+-        if self.loaded('h713_hdmi_signal') or self.loaded('h713_ddc_pins') or self.loaded('h713_scp_probe'):
++        if self.loaded(DDC) and not self.loaded('h713_hdmi_signal') and self.early_ddc_pending():
++            self.release_early_ddc()  # claimed here, never adopted by the signal service
++        if self.loaded('h713_hdmi_signal') or self.loaded(DDC) or self.loaded('h713_scp_probe'):
+             raise RuntimeError('signal owner/helper must restore and stop before backend shutdown')
+         # Check capability before stopping audio. Never leave a capture-only
+         # owner half transitioned because a shutdown drop-in was misapplied.
+@@ -210,12 +242,13 @@
+     parser.add_argument('--bundle',type=Path,default=Path('/tmp/h713-linux-return'))
+     parser.add_argument('--terminal-shutdown',action='store_true',help='Explicit terminal parking opt-in; no restart is provided')
+     parser.add_argument('--boot-handoff',action='store_true',help='Require the guarded normal-startup device-tree handoff')
++    parser.add_argument('--early-ddc',action='store_true',help='Claim DDC pins with the EDID clock/reset; the signal service adopts them')
+     args=parser.parse_args()
+     if args.action in ('park','shutdown') and not args.terminal_shutdown:parser.error(args.action+' requires --terminal-shutdown')
+     Path('/run/h713-hdmi-session').mkdir(exist_ok=True)
+     with open('/run/h713-hdmi-session/lock','w') as lock:
+         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+-        session=Session(Board(),args.bundle,args.boot_handoff)
++        session=Session(Board(),args.bundle,args.boot_handoff,args.early_ddc)
+         print(json.dumps(getattr(session,args.action)()),flush=True)
+ 
+ 
+diff --color -Naru a/h713-hdmi-signal.py b/h713-hdmi-signal.py
+--- a/tools/hdmi/h713-hdmi-signal.py	2026-11-09 18:08:14.181356906 -0800
++++ b/tools/hdmi/h713-hdmi-signal.py	2026-11-09 18:08:14.159876176 -0800
+@@ -22,6 +22,10 @@
+ ATTEMPTED=Path('/run/h713-hdmi-signal/attempted')
+ PROBE=Path('/sys/module/h713_scp_probe')
+ GRAPH=Path('/sys/module/h713_hdmi_audio/parameters/graph_ready')
++# Written by the capture session's opt-in early DDC claim (boot ID); the
++# presence of this marker for this boot is the only way to adopt a DDC hold.
++EARLY_DDC=Path('/run/h713-hdmi-signal/early-ddc')
++BOOT_ID=Path('/proc/sys/kernel/random/boot_id')
+ 
+ def require(ok,message):
+     if not ok:raise RuntimeError(message)
+@@ -120,13 +124,21 @@
+             require(param('restored')!='Y','signal owner already restored but not removed; run stop to finish (no hardware holds)')
+             require(param('ready')=='Y' and param('failed')=='N','signal owner failed; cold cycle required');return
+         require(not ATTEMPTED.exists() and not OWNED.exists(),'signal initialization already attempted on this boot; cold cycle required')
+-        require(not DDC.exists() and not PROBE.exists(),'competing signal helper')
++        early=EARLY_DDC.exists()
++        if early:
++            require(EARLY_DDC.read_text().strip()==BOOT_ID.read_text().strip(),'early DDC record is from another boot')
++            require(DDC.exists(),'early DDC hold recorded but the helper is not loaded')
++        else:require(not DDC.exists(),'competing signal helper')
++        require(not PROBE.exists(),'competing signal helper')
+         require(GRAPH.read_text().strip()=='Y','capture backend not ready')
+         # Both records precede the first hold, so no hold can exist that this
+         # service cannot later prove it owns.
+         mark(ATTEMPTED,'signal initialization attempted on this boot\n')
+         mark(OWNED,'DDC and signal owner acquired by signal service\n')
+-        run(['insmod',str(args.bundle/'h713-ddc-pins.ko'),'run=1'])
++        if early:
++            EARLY_DDC.unlink()  # adopted: OWNED now records the hold
++            print('adopted the early DDC pin hold',flush=True)
++        else:run(['insmod',str(args.bundle/'h713-ddc-pins.ko'),'run=1'])
+         launch(args.bundle,args.signal_arg)
+         if param('failed')=='Y':recover_init_failure()
+         require(param('ready')=='Y' and param('failed')=='N','signal setup failed; holds retained, cold cycle required')
+diff --color -Naru a/test-hdmi-session.py b/test-hdmi-session.py
+--- a/tools/hdmi/test-hdmi-session.py	2026-11-09 18:08:14.182126188 -0800
++++ b/tools/hdmi/test-hdmi-session.py	2026-11-09 18:08:14.160679591 -0800
+@@ -37,6 +37,8 @@
+             self.param(m.OWNER,'firmware_pin','N');self.param(m.OWNER,'edid_ready','N')
+         if p.endswith('/clock_count') and text.strip()=='4':self.files[m.BASE+m.OWNER+'/parameters/edid_ready']='Y'
+     def state(self,value):self.files[m.STATE]=json.dumps(value)
++    def mark(self,p,text):self.events.append(('mark',p));self.files[p]=text
++    def unlink(self,p):self.events.append(('unlink',p));del self.files[p]
+     def param(self,module,name,value):self.files[m.BASE+module+'/parameters/'+name]=str(value)
+     def run(self,argv,check=True,timeout=15):
+         self.events.append(('run',argv));self.commands.append(argv);out='';rc=0
+@@ -49,6 +51,11 @@
+             if self.ipc_count==self.fail_ipc_at:raise RuntimeError('MIPS IPC deadline expired')
+             out=self.ipc_result if self.ipc_result is not None else ('missing' if self.bad_ipc else json.dumps({'schema':'h713-mips-ipc-v1','complete':True,'command':'help win'}))
+         elif argv[0]=='insmod':
++            if argv[1].endswith('h713-ddc-pins.ko'):
++                assert self.files.get(m.EARLY_DDC)=='boot1\n'  # ownership recorded first
++                if not getattr(self,'fail_ddc',False):
++                    self.modules.add(m.DDC);self.param(m.DDC,'released','N');self.param(m.DDC,'original_mux','ffffff')
++                return SimpleNamespace(stdout='',stderr='',returncode=0)
+             if argv[1].endswith('h713-hdmi-receiver.ko'):
+                 self.modules.add(m.OWNER)
+                 for k,v in [('init_error',0),('clock_count',0),('clients',0),('firmware_pin','Y'),('edid_ready','N')]:self.param(m.OWNER,k,v)
+@@ -64,6 +71,9 @@
+             elif action=='start':self.wp=True
+         elif argv[0]=='dmesg':out=self.log
+         elif argv[0]=='rmmod':
++            if argv==['rmmod',m.DDC]:
++                assert self.files.get(m.BASE+m.DDC+'/parameters/release')=='1\n'
++                self.modules.remove(m.DDC);return SimpleNamespace(stdout='',stderr='',returncode=0)
+             if argv==['rmmod',m.OWNER]:
+                 self.modules.remove(m.OWNER)
+                 return SimpleNamespace(stdout='',stderr='',returncode=0)
+@@ -266,4 +276,55 @@
+ 
+ 
+ 
++class EarlyDdc(unittest.TestCase):
++    def setUp(self):self.b=FakeBoard()
++    def ddc_events(self):return [e for e in self.b.events if 'ddc' in str(e).lower()]
++    def test_default_start_never_touches_ddc(self):
++        m.Session(self.b,'/bundle').start()
++        self.assertEqual(self.ddc_events(),[]);self.assertNotIn(m.EARLY_DDC,self.b.files)
++    def test_early_claim_precedes_the_edid_clock_stage(self):
++        m.Session(self.b,'/bundle',early_ddc=True).start()
++        ev=self.b.events;cc=m.BASE+m.OWNER+'/parameters/clock_count'
++        stages=[i for i,e in enumerate(ev) if e==('write',cc)]
++        self.assertEqual([self.b.writes[[j for j,w in enumerate(self.b.writes) if w[0]==cc][k]][1] for k in range(4)],['1\n','2\n','3\n','4\n'])
++        marked=ev.index(('mark',m.EARLY_DDC))
++        claimed=ev.index(('run',['insmod','/bundle/h713-ddc-pins.ko','run=1']))
++        audio=next(i for i,e in enumerate(ev) if e[0]=='run' and e[1][0]=='insmod' and e[1][1].endswith('h713-hdmi-audio.ko'))
++        self.assertTrue(stages[2] < marked < claimed < stages[3] < audio)
++        between=[e for e in ev[claimed+1:stages[3]]]
++        self.assertEqual(between,[])  # nothing between the pin claim and the EDID clock stage
++        self.assertIn(m.DDC,self.b.modules)
++    def test_early_claim_refused_when_edid_already_clocked(self):
++        s=m.Session(self.b,'/bundle',early_ddc=True)
++        orig=self.b.run
++        def run(argv,check=True,timeout=15):
++            r=orig(argv,check,timeout)
++            if argv[0]=='insmod' and argv[1].endswith('h713-hdmi-receiver.ko'):self.b.param(m.OWNER,'clock_count',4)
++            return r
++        self.b.run=run
++        with self.assertRaisesRegex(RuntimeError,'already clocked'):s.start()
++        self.assertNotIn(m.DDC,self.b.modules)
++    def test_unverified_early_claim_fails_before_audio(self):
++        self.b.fail_ddc=True
++        with self.assertRaisesRegex(RuntimeError,'early DDC claim not verified'):m.Session(self.b,'/bundle',early_ddc=True).start()
++        self.assertNotIn(m.AUDIO,self.b.modules)
++        self.assertEqual(json.loads(self.b.files[m.STATE])['phase'],'failed')
++    def test_shutdown_releases_an_unadopted_early_hold_first(self):
++        s=m.Session(self.b,'/bundle',early_ddc=True);s.start();self.b.param(m.OWNER,'shutdown_ready','Y')
++        s.shutdown()
++        ev=self.b.events
++        released=ev.index(('write',m.BASE+m.DDC+'/parameters/release'))
++        removed=ev.index(('run',['rmmod',m.DDC]))
++        audio=ev.index(('run',['rmmod',m.AUDIO]))
++        self.assertTrue(released < removed < audio)
++        self.assertNotIn(m.EARLY_DDC,self.b.files);self.assertNotIn(m.DDC,self.b.modules)
++    def test_adopted_or_foreign_hold_still_blocks_shutdown(self):
++        s=m.Session(self.b,'/bundle',early_ddc=True);s.start();self.b.param(m.OWNER,'shutdown_ready','Y')
++        del self.b.files[m.EARLY_DDC]  # the signal service adopted it
++        before=len(self.b.events)
++        with self.assertRaisesRegex(RuntimeError,'signal owner/helper'):s.shutdown()
++        self.assertEqual(len(self.b.events),before)
++        self.b.files[m.EARLY_DDC]='other-boot\n'
++        with self.assertRaisesRegex(RuntimeError,'signal owner/helper'):s.shutdown()
++
+ if __name__=='__main__':unittest.main()
+diff --color -Naru a/test-hdmi-signal.py b/test-hdmi-signal.py
+--- a/tools/hdmi/test-hdmi-signal.py	2026-11-09 18:08:14.182831259 -0800
++++ b/tools/hdmi/test-hdmi-signal.py	2026-11-09 18:08:14.161452008 -0800
+@@ -17,7 +17,8 @@
+     def setUp(self):
+         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+         root=Path(self.tmp.name)
+-        for name in ('MODULE','DDC','OWNED','ATTEMPTED','PROBE','GRAPH','NO_RECLAIM'):setattr(m,name,root/name)
++        for name in ('MODULE','DDC','OWNED','ATTEMPTED','PROBE','GRAPH','NO_RECLAIM','EARLY_DDC','BOOT_ID'):setattr(m,name,root/name)
++        m.BOOT_ID.write_text('boot-a\n')
+         m.GRAPH.write_text('Y\n')
+         (m.MODULE/'parameters').mkdir(parents=True);m.DDC.mkdir();m.OWNED.write_text('owned');m.ATTEMPTED.write_text('attempted')
+         self.events=[];self.bad_restore=False;self.failed=False;self.init='ready';self.ddc_rmmod_fails=False
+@@ -245,4 +246,26 @@
+         shutil.rmtree(m.MODULE);self.action('stop')
+         self.assertEqual(self.events,[['rmmod','h713_ddc_pins']]);self.assertFalse(m.OWNED.exists())
+ 
++    def early(self,boot='boot-a'):
++        self.fresh();m.DDC.mkdir();(m.DDC/'parameters').mkdir();(m.DDC/'parameters/release').write_text('')
++        m.EARLY_DDC.write_text(boot+'\n')
++    def test_start_adopts_a_same_boot_early_ddc_hold(self):
++        self.early();self.action('start')
++        self.assertEqual([e[1].rsplit('/',1)[1] for e in self.events],['h713-hdmi-signal.ko'])
++        self.assertFalse(m.EARLY_DDC.exists());self.assertTrue(m.OWNED.exists() and m.DDC.exists())
++        self.events=[];self.action('stop')
++        self.assertEqual(self.events,[['rmmod','h713_hdmi_signal'],['rmmod','h713_ddc_pins']])
++    def test_early_record_from_another_boot_or_without_helper_is_refused(self):
++        for case in ('boot','helper'):
++            with self.subTest(case=case):
++                self.setUp();self.early('boot-b' if case=='boot' else 'boot-a')
++                if case=='helper':shutil.rmtree(m.DDC)
++                with self.assertRaises(RuntimeError):self.action('start')
++                self.assertEqual(self.events,[]);self.assertFalse(m.OWNED.exists() or m.ATTEMPTED.exists())
++                self.assertTrue(m.EARLY_DDC.exists())
++    def test_adopted_hold_is_released_when_signal_insmod_is_refused(self):
++        self.early();self.init='refused'
++        with self.assertRaisesRegex(RuntimeError,'nothing retained'):self.action('start')
++        self.assertFalse(m.DDC.exists() or m.EARLY_DDC.exists() or m.OWNED.exists())
++
+ if __name__=='__main__':unittest.main()

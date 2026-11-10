@@ -1,0 +1,14 @@
+{
+  "utc": "2026-11-06T02:32:08.828219+00:00",
+  "operator_report": "First power-button press flashed panel on/off; second press rebooted; desktop now visible.",
+  "previous_boot": "0480d97b-c54b-419c-abc7-dc73ef4abefc",
+  "current_boot": "7fe95ed5-f486-4f2b-aa9f-a7f14e4b93dc",
+  "current_signal": "locked 1280x720",
+  "current_readvertised": 0,
+  "current_module": "reject-trace-power-v2",
+  "visible_output": "Desktop confirmed by operator after reboot",
+  "standby_wake": "FAILED observation: flash/off followed by reported reboot; cause undetermined",
+  "evidence_limits": "Prior journal has standby-on but no standby-off or orderly shutdown entry in retained tail; UART shows fresh SPL without captured panic/shutdown trace. Cannot determine reset cause from this evidence. New board boot is on a primed source, not a fresh-source first-advertisement repeat.",
+  "power_observer": "Exited255 on reboot; prior samples preserved.",
+  "remaining": "Investigate standby wake/reset separately. Awake cable-event repeat and source-output-disabled control pending."
+}

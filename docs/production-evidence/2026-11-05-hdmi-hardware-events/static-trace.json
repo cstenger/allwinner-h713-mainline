@@ -1,0 +1,13 @@
+{
+  "firmware": "local/mips-display/board-b-mips/display.bin",
+  "bytes": 1255696,
+  "sha256": "4380f1b3ed7b62aa50582e7cb16a87bdface1b4300578fe3631a416354da30ce",
+  "candidate_port_field": "THDMIRx port object +0x532; polled firmware result; not yet physically validated",
+  "firmware_hardware_status": "0x0684037a per-port low-nibble bit, accessed only by existing MIPS firmware; no ARM MMIO",
+  "firmware_polling": "0x8b13942c -> table[0x8b22f098]=0x8b13eff0 -> store port+0x532; event context gets port+8",
+  "callback_arguments": "state first, mapped port second; 0x8b10a09c marshals two values",
+  "callback_registration": "enable adapter 0x8b10ad5c invokes HAL with marshaller 0x8b10a09c only when input nonzero; HAL stores pointer at0x8b2728b4 and installs translator0x8b148d5c through receiver vtable+0x6c; receiver stores BSP callback at0x8b22f05c",
+  "callback_restore_caveat": "RPC adapter ignores zero; receiver setter also ignores null. Do not assume that passing zero unregisters/restores prior null state.",
+  "current_callbacks": "Both pointer slots observed zero in the RC; processed-event power byte0 while raw power cache1. No registration or source initialization performed.",
+  "evidence": "static-callback-and-power-trace.txt"
+}

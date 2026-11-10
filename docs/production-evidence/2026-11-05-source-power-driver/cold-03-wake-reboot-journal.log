@@ -1,0 +1,94 @@
+[   25.065443] h713-arm64 python3[385]: no source for 10 s: re-advertising (1/5)
+[   27.176069] h713-arm64 kernel: h713-hdmi-signal: HPD re-advertised after a 2000 ms hold (1)
+[   28.180115] h713-arm64 kernel: h713-hdmi-v4l2: signal acquiring 0x0
+[   28.397073] h713-arm64 kernel: h713-hdmi-v4l2: signal locked 1280x720 (source change)
+[   28.455306] h713-arm64 systemd[1]: Condition check resulted in dev-v4l-by\x2dpath-platform\x2dh713\x2dhdmi\x2dring\x2dvideo\x2dindex0.device - /dev/v4l/by-path/platform-h713-hdmi-ring-video-index0 being skipped.
+[   28.455506] h713-arm64 systemd[1]: Condition check resulted in dev-video2.device - /dev/video2 being skipped.
+[   28.461577] h713-arm64 systemd[1]: Started h713-hdmi-video.service - H713 HDMI input on the panel.
+[   28.765101] h713-arm64 python3[385]: source power: present
+[   28.768051] h713-arm64 kernel: h713-hdmi-v4l2: source power present
+[   39.591285] h713-arm64 systemd[1]: systemd-hostnamed.service: Deactivated successfully.
+[   79.791664] h713-arm64 sshd-session[645]: Postponed publickey for root from 192.168.4.78 port 53104 ssh2 [preauth]
+[   79.840294] h713-arm64 unix_chkpwd[652]: account root has password changed in future
+[   79.854651] h713-arm64 sshd-session[645]: Accepted publickey for root from 192.168.4.78 port 53104 ssh2: ED25519 SHA256:Gbck/7/Day1OxHn1cjJ9o1F+CK+FbRCi1nfXCL6PFVA
+[   79.874202] h713-arm64 sshd-session[645]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[   79.894092] h713-arm64 systemd-logind[228]: New session c8 of user root.
+[   79.918100] h713-arm64 systemd[1]: Started session-c8.scope - Session c8 of User root.
+[   79.939862] h713-arm64 sshd-session[645]: pam_env(sshd:session): Unable to open env file: /etc/default/locale
+[   80.038653] h713-arm64 sshd-session[660]: Received disconnect from 192.168.4.78 port 53104:11: disconnected by user
+[   80.039065] h713-arm64 sshd-session[660]: Disconnected from user root 192.168.4.78 port 53104
+[   80.041364] h713-arm64 sshd-session[645]: pam_unix(sshd:session): session closed for user root
+[   80.094247] h713-arm64 systemd[1]: session-c8.scope: Deactivated successfully.
+[   80.101516] h713-arm64 systemd-logind[228]: Session c8 logged out. Waiting for processes to exit.
+[   80.105757] h713-arm64 systemd-logind[228]: Removed session c8.
+[  138.438553] h713-arm64 sshd-session[679]: Postponed publickey for root from 192.168.4.78 port 43424 ssh2 [preauth]
+[  138.485342] h713-arm64 unix_chkpwd[686]: account root has password changed in future
+[  138.498084] h713-arm64 sshd-session[679]: Accepted publickey for root from 192.168.4.78 port 43424 ssh2: ED25519 SHA256:Gbck/7/Day1OxHn1cjJ9o1F+CK+FbRCi1nfXCL6PFVA
+[  138.514023] h713-arm64 sshd-session[679]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[  138.539000] h713-arm64 systemd-logind[228]: New session c9 of user root.
+[  138.560772] h713-arm64 systemd[1]: Started session-c9.scope - Session c9 of User root.
+[  138.582768] h713-arm64 sshd-session[679]: pam_env(sshd:session): Unable to open env file: /etc/default/locale
+[  140.086236] h713-arm64 sshd-session[694]: Received disconnect from 192.168.4.78 port 43424:11: disconnected by user
+[  140.086754] h713-arm64 sshd-session[694]: Disconnected from user root 192.168.4.78 port 43424
+[  140.090750] h713-arm64 sshd-session[679]: pam_unix(sshd:session): session closed for user root
+[  140.134551] h713-arm64 systemd[1]: session-c9.scope: Deactivated successfully.
+[  140.135085] h713-arm64 systemd[1]: session-c9.scope: Consumed 1.145s CPU time.
+[  140.137867] h713-arm64 systemd-logind[228]: Session c9 logged out. Waiting for processes to exit.
+[  140.142851] h713-arm64 systemd-logind[228]: Removed session c9.
+[  329.310561] h713-arm64 sshd-session[555]: Received disconnect from 192.168.4.78 port 45534:11: disconnected by user
+[  329.310876] h713-arm64 sshd-session[555]: Disconnected from user root 192.168.4.78 port 45534
+[  329.313229] h713-arm64 sshd-session[536]: pam_unix(sshd:session): session closed for user root
+[  329.361438] h713-arm64 systemd[1]: session-c5.scope: Deactivated successfully.
+[  329.362332] h713-arm64 systemd[1]: session-c5.scope: Consumed 8.169s CPU time.
+[  329.370475] h713-arm64 systemd-logind[228]: Session c5 logged out. Waiting for processes to exit.
+[  329.375335] h713-arm64 systemd-logind[228]: Removed session c5.
+[  405.853902] h713-arm64 systemd-logind[228]: Power key pressed short.
+[  406.118269] h713-arm64 h713-standby[869]: standby on
+[  406.120402] h713-arm64 h713-keyd[210]: h713-keyd: /usr/local/bin/h713-standby toggle -> 0
+[  409.333209] h713-arm64 python3[385]: source power: absent
+[  409.336090] h713-arm64 kernel: h713-hdmi-v4l2: source power absent
+[  409.440087] h713-arm64 kernel: h713-hdmi-v4l2: signal holding 1280x720
+[  410.984108] h713-arm64 kernel: h713-hdmi-v4l2: signal none 0x0
+[  411.045872] h713-arm64 systemd[1]: Stopping h713-hdmi-video.service - H713 HDMI input on the panel...
+[  411.049363] h713-arm64 kernel: h713-hdmi-v4l2: pair stream polls=319874 completions=22719 no_buffer=1 copies=22718 unstable=0 delivered=22809 black=91 copy_us=65545459
+[  411.120641] h713-arm64 systemd[1]: h713-hdmi-video.service: Deactivated successfully.
+[  411.121688] h713-arm64 systemd[1]: Stopped h713-hdmi-video.service - H713 HDMI input on the panel.
+[  411.123266] h713-arm64 systemd[1]: h713-hdmi-video.service: Consumed 43.649s CPU time.
+[  454.141067] h713-arm64 sshd-session[882]: Postponed publickey for root from 192.168.4.78 port 42374 ssh2 [preauth]
+[  454.192904] h713-arm64 unix_chkpwd[889]: account root has password changed in future
+[  454.212284] h713-arm64 sshd-session[882]: Accepted publickey for root from 192.168.4.78 port 42374 ssh2: ED25519 SHA256:Gbck/7/Day1OxHn1cjJ9o1F+CK+FbRCi1nfXCL6PFVA
+[  454.238985] h713-arm64 sshd-session[882]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[  454.265413] h713-arm64 systemd-logind[228]: New session c10 of user root.
+[  454.289216] h713-arm64 systemd[1]: Started session-c10.scope - Session c10 of User root.
+[  454.317505] h713-arm64 sshd-session[882]: pam_env(sshd:session): Unable to open env file: /etc/default/locale
+[  454.672173] h713-arm64 sshd-session[897]: Received disconnect from 192.168.4.78 port 42374:11: disconnected by user
+[  454.672691] h713-arm64 sshd-session[897]: Disconnected from user root 192.168.4.78 port 42374
+[  454.673657] h713-arm64 sshd-session[882]: pam_unix(sshd:session): session closed for user root
+[  454.740994] h713-arm64 systemd[1]: session-c10.scope: Deactivated successfully.
+[  454.748274] h713-arm64 systemd-logind[228]: Session c10 logged out. Waiting for processes to exit.
+[  454.753850] h713-arm64 systemd-logind[228]: Removed session c10.
+[  493.736084] h713-arm64 kernel: h713-hdmi-v4l2: signal acquiring 0x0
+[  493.952102] h713-arm64 kernel: h713-hdmi-v4l2: signal locked 1280x720 (source change)
+[  494.035951] h713-arm64 systemd[1]: Condition check resulted in dev-h713\x2dhdmi\x2din.device - /dev/h713-hdmi-in being skipped.
+[  494.036405] h713-arm64 systemd[1]: Condition check resulted in dev-video2.device - /dev/video2 being skipped.
+[  494.036670] h713-arm64 systemd[1]: Condition check resulted in dev-v4l-by\x2dpath-platform\x2dh713\x2dhdmi\x2dring\x2dvideo\x2dindex0.device - /dev/v4l/by-path/platform-h713-hdmi-ring-video-index0 being skipped.
+[  494.050663] h713-arm64 systemd[1]: Started h713-hdmi-video.service - H713 HDMI input on the panel.
+[  494.325484] h713-arm64 python3[385]: source power: present
+[  494.328087] h713-arm64 kernel: h713-hdmi-v4l2: source power present
+[  520.793011] h713-arm64 sshd-session[929]: Postponed publickey for root from 192.168.4.78 port 54094 ssh2 [preauth]
+[  520.844632] h713-arm64 unix_chkpwd[936]: account root has password changed in future
+[  520.865149] h713-arm64 sshd-session[929]: Accepted publickey for root from 192.168.4.78 port 54094 ssh2: ED25519 SHA256:Gbck/7/Day1OxHn1cjJ9o1F+CK+FbRCi1nfXCL6PFVA
+[  520.893610] h713-arm64 sshd-session[929]: pam_unix(sshd:session): session opened for user root(uid=0) by (uid=0)
+[  520.920757] h713-arm64 systemd-logind[228]: New session c11 of user root.
+[  520.953225] h713-arm64 systemd[1]: Started session-c11.scope - Session c11 of User root.
+[  520.986537] h713-arm64 sshd-session[929]: pam_env(sshd:session): Unable to open env file: /etc/default/locale
+[  521.396253] h713-arm64 sshd-session[944]: Received disconnect from 192.168.4.78 port 54094:11: disconnected by user
+[  521.396769] h713-arm64 sshd-session[944]: Disconnected from user root 192.168.4.78 port 54094
+[  521.400836] h713-arm64 sshd-session[929]: pam_unix(sshd:session): session closed for user root
+[  521.469575] h713-arm64 systemd[1]: session-c11.scope: Deactivated successfully.
+[  521.477280] h713-arm64 systemd-logind[228]: Session c11 logged out. Waiting for processes to exit.
+[  521.484975] h713-arm64 systemd-logind[228]: Removed session c11.
+[   14.861921] h713-arm64 systemd[1]: Started h713-hdmi-readvertise.service - H713 HDMI re-advertise when no source sends.
+[   15.135510] h713-arm64 python3[376]: source power: unknown; timeout fallback
+[   16.522638] h713-arm64 python3[376]: source power: present
+reject-trace-power-v2

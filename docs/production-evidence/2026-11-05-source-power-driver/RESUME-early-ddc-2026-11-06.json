@@ -1,0 +1,45 @@
+{
+  "date": "2026-11-06",
+  "state": "ed-fresh-01 FAIL no-retry; experiment ROLLED BACK on disk (session e8b0a1c3 / signal 2b6ac46d, drop-in removed); single-launch audit PASS 75 on ff83b6b5. Live boot still holds the adopted early DDC hold until shutdown (normal signal stop releases it). Single launch remains installed.",
+  "hypothesis": "Stock groups EDID reset/clock with the DDC pin mux; ours claims PL10-PL15 ~3.24 s after the EDID clock/reset. In the failed first advert the board NAKs DDC (host i2c-1) until an HPD re-advertise.",
+  "change": "--early-ddc: session claims h713-ddc-pins right after clock4 (EDID clock/reset) and before audio, recording /run/h713-hdmi-signal/early-ddc (boot id) first; signal service adopts a same-boot hold; session shutdown releases an unadopted hold. SCP EDID/HPD owner, retry policy and audio dependency unchanged. Default (no flag) unchanged.",
+  "activation": "/etc/systemd/system/h713-hdmi-prepare.service.d/50-early-ddc.conf (prepare runs start; capture only adopts)",
+  "bundle": "bundle/ here and /root/early-ddc-bundle on target",
+  "installer": "install-early-ddc.py --boot <id> [--apply] [--rollback BACKUP]",
+  "tests": "test-hdmi-session.py 27 OK (5 new), test-hdmi-signal.py 34 OK (3 new); shared-startup/release/build-startup OK",
+  "audit": "audit-early-ddc.py = single-launch audit with session/signal/SHA256SUMS pins swapped",
+  "next": [
+    "Chris approval to apply",
+    "clean poweroff, supply off, source PC reboot (kills session), rearm UART + observer --window-seconds 30",
+    "pass = lock with no 'HPD re-advertised'; also check 'early DDC pins claimed' and 'adopted' journal lines and PL mux timing",
+    "one pass is not qualification; repeat fresh-source arms"
+  ],
+  "ed_fresh01": {
+    "previous_board_boot": "c18bcff8-a470-41ba-b0ce-072e251cd667",
+    "source_boot_before_reboot": "a1bd2ec3-855a-4372-abf3-80f63a755ce6",
+    "after_host_reboot_steps": [
+      "cat /proc/sys/kernel/random/boot_id -> must differ from a1bd2ec3; fuser CP2102 must be free",
+      "recreate scratchpad b.sh ssh wrapper if missing (see handoff access command)",
+      "background: python3 -B tools/serial/capture-panel-validation.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 --output local/recovery/2026-11-06-early-ddc/fresh-01-uart",
+      "background: python3 -B tools/hdmi/observe-matched-startup.py --previous-boot c18bcff8-a470-41ba-b0ce-072e251cd667 --arm optimized --module-version reject-trace-power-v2 --window-seconds 30 --output local/recovery/2026-11-06-early-ddc/fresh-01",
+      "verify UART OPEN then ask Chris for board power",
+      "check journal: 'early DDC pins claimed', 'adopted the early DDC pin hold', 'h713-ddc-pins: PL10-PL15 claimed' timestamp vs EDID clock line; PASS only with no 'HPD re-advertised'; run audit-early-ddc.py"
+    ],
+    "rollback": "python3 -B /root/early-ddc-bundle/install-early-ddc.py --boot <id> --apply --rollback /var/lib/h713-hdmi-startup/early-ddc-c32e07ecb1744d6fb02f3ff81230f0a0",
+    "source_boot": "f7cbe8f7-36d8-4e9b-bc86-b38710125771",
+    "board_boot": "ff83b6b5-bfaa-4c80-877a-e5c14d76e7a1",
+    "result": "FAIL no-retry: 1 HPD re-advertise at 27.37 s; lock 28.86, video 28.92; 30 s quick stream 59.72 fps, 0 rejects",
+    "timeline": {
+      "edid_clock": 11.596,
+      "ddc_pins_claimed": 13.028,
+      "adopted": 14.875,
+      "edid_hpd_ready": 14.894,
+      "initial_none": 15.529,
+      "readvertise": 27.368,
+      "locked": 28.864,
+      "video": 28.92
+    },
+    "meaning": "Clock->pin gap 3.24 s -> 1.43 s and pins live 1.87 s (was 20 ms) before HPD release: no effect. Pin-mux ordering/glitch at HPD release is not the cause.",
+    "rollback_backup": "/var/lib/h713-hdmi-startup/early-ddc-716a81599bcf4c5b800b2c214691c87a"
+  }
+}

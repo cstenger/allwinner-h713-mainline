@@ -1,0 +1,128 @@
+{
+  "status": "Two observed cable-loss/recovery intervals; video-disabled control pending",
+  "boot_id": "b98ade5e-f2c6-4f9e-a89f-65839843c788",
+  "edges": [
+    {
+      "monotonic": 723.550315343,
+      "port1_candidate": 1,
+      "signal": "locked 1280x720",
+      "retries": "1"
+    },
+    {
+      "monotonic": 927.39109144,
+      "port1_candidate": 0,
+      "signal": "holding 1280x720",
+      "retries": "1"
+    },
+    {
+      "monotonic": 929.012074066,
+      "port1_candidate": 0,
+      "signal": "none",
+      "retries": "1"
+    },
+    {
+      "monotonic": 941.98998178,
+      "port1_candidate": 0,
+      "signal": "none",
+      "retries": "2"
+    },
+    {
+      "monotonic": 943.604787989,
+      "port1_candidate": 0,
+      "signal": "acquiring",
+      "retries": "2"
+    },
+    {
+      "monotonic": 943.806608614,
+      "port1_candidate": 0,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 944.008755073,
+      "port1_candidate": 1,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1053.00512675,
+      "port1_candidate": 0,
+      "signal": "holding 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1054.623267834,
+      "port1_candidate": 0,
+      "signal": "none",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1061.301347962,
+      "port1_candidate": 0,
+      "signal": "acquiring",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1061.503591587,
+      "port1_candidate": 0,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1061.906865837,
+      "port1_candidate": 1,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1131.402567371,
+      "port1_candidate": 1,
+      "signal": "holding 1280x720",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1133.022901038,
+      "port1_candidate": 1,
+      "signal": "none",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1140.703965958,
+      "port1_candidate": 1,
+      "signal": "acquiring",
+      "retries": "2"
+    },
+    {
+      "monotonic": 1140.905904708,
+      "port1_candidate": 1,
+      "signal": "locked 1280x720",
+      "retries": "2"
+    }
+  ],
+  "callback_copies": 0,
+  "callback_registration": "unchanged; HAL/BSP pointers zero throughout",
+  "candidate_assessment": "Tracks cable loss/return in both observed intervals, but rises after video lock in both; not yet qualified as an early connection signal.",
+  "first_interval": {
+    "candidate_fall": 927.39109144,
+    "candidate_rise": 944.008755073,
+    "kernel_lock": 943.644105,
+    "extra_automatic_retries": 1
+  },
+  "second_interval": {
+    "candidate_fall": 1053.005127,
+    "candidate_rise": 1061.906866,
+    "extra_automatic_retries": 0
+  },
+  "retry_policy": "Unchanged hashes and same service process/start identity; existing retry acted automatically during first interval.",
+  "health": {
+    "rejected": 0,
+    "xruns": 0,
+    "bad_guard": 0,
+    "invalid_pair": 0
+  },
+  "limitations": [
+    "User originally performed two disconnect actions; capture merges them into one continuous outage. Additional isolated action supplies second observed interval.",
+    "Host/user physical cable edges were not independently timestamped.",
+    "Reading a firmware cache is not a direct voltage measurement; freshness and power-without-video remain under investigation."
+  ]
+}
