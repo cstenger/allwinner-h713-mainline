@@ -1,0 +1,253 @@
+From 5b373aa65cdbf39f247d0b681d3038313cb080e4 Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Tue, 22 Sep 2026 15:40:42 -0700
+Subject: [PATCH] Report a decode error to the client instead of dropping it
+
+The kernel says when a picture decoded badly -- V4L2_BUF_FLAG_ERROR on the
+dequeued CAPTURE buffer -- and this driver threw that away.
+v4l2_dequeue_buffer() filled a struct v4l2_buffer, checked the ioctl's return
+and looked at nothing else, so a half-decoded frame reached the client marked
+good. That is the worst shape of failure available: wrong output the client is
+told to trust.
+
+Measured on a truncated field-coded MPEG-2 extract. ffmpeg decoding
+field-shortfirst.m2v in software reports "ac-tex damaged at 0 22"; the same file
+through -hwaccel vaapi reports only the demuxer's "Packet corrupt", nothing
+decoder-level at all. strace of that hardware run shows 62 CAPTURE dequeues of
+which 2 carry V4L2_BUF_FLAG_ERROR. The signal was arriving and being discarded
+one layer above the kernel that goes to real trouble to preserve it -- cedrus
+carries a decode error across the jobs that share one held capture buffer
+precisely so it survives to this dequeue.
+
+Not an MPEG-2 problem. The hold capability has been granted to H.264 and HEVC
+all along, and nothing here is codec-specific.
+
+WHICH VA-API CHANNEL. vaQuerySurfaceStatus is the obvious candidate and is the
+wrong one twice over: VASurfaceStatus has four values (Ready, Rendering,
+Displaying, Skipped) and none of them means "damaged", and no client reads it.
+`nm -D --undefined-only` on the board's libavcodec and libavutil lists
+vaSyncSurface and nothing else from that family -- neither vaQuerySurfaceStatus
+nor vaQuerySurfaceError is imported, so a fix recorded there would be invisible
+in exactly the way advertising a VA profile without its entrypoints was.
+
+So VA_STATUS_ERROR_DECODING_ERROR, which is also what va.h specifies for this
+("After the application gets VA_STATUS_ERROR_DECODING_ERROR after calling
+vaSyncSurface()"). It reaches ffmpeg through vaEndPicture rather than
+vaSyncSurface, because decode here is synchronous: RequestEndPicture calls
+RequestSyncSurface and returns what it returns, and ff_vaapi_decode_issue()
+checks vaEndPicture. With libva 2.x that check jumps to `fail`, which destroys
+the parameter buffers and does not re-enter vaEndPicture, so the error path is
+one the driver already survives.
+
+Report it once, where it happened. The later map-time vaSyncSurface -- the one
+libavutil calls from vaapi_map_frame() and vaapi_map_to_drm_esh() -- keeps
+returning success, because by then the surface is Displaying and takes the early
+exit. Failing there instead would break av_hwframe_transfer_data() for a picture
+libavcodec had already accepted, and would turn one damaged frame into a dead
+stream rather than a reported one.
+
+A decode error still finishes the picture, so RequestEndPicture releases
+render_surface_id before returning it. The other failures there leave it set,
+which would aim the next vaRenderPicture at a surface the client has moved on
+from.
+
+Also keep the flag on the surface and clear it in RequestBeginPicture. Nothing
+reads it yet -- it is the state a vaQuerySurfaceError implementation would need,
+and it keeps the log line honest about which surface failed.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/picture.c | 14 ++++++++++++--
+ src/surface.c | 36 ++++++++++++++++++++++++++++++++++--
+ src/surface.h | 11 +++++++++++
+ src/v4l2.c    | 13 ++++++++++++-
+ src/v4l2.h    |  3 ++-
+ 5 files changed, 71 insertions(+), 6 deletions(-)
+
+diff --git a/src/picture.c b/src/picture.c
+index 0fd036e..5c218e0 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -235,6 +235,7 @@ VAStatus RequestBeginPicture(VADriverContextP context, VAContextID context_id,
+ 		RequestSyncSurface(context, surface_id);
+ 
+ 	surface_object->status = VASurfaceRendering;
++	surface_object->decode_error = false;
+ 	context_object->render_surface_id = surface_id;
+ 
+ 	return VA_STATUS_SUCCESS;
+@@ -343,10 +344,19 @@ VAStatus RequestEndPicture(VADriverContextP context, VAContextID context_id)
+ 	surface_object->slices_size = 0;
+ 
+ 	status = RequestSyncSurface(context, context_object->render_surface_id);
+-	if (status != VA_STATUS_SUCCESS)
++
++	/*
++	 * A decode error finishes the picture -- the hardware ran, the buffers
++	 * came back, only the result is damaged -- so release the render
++	 * surface and report it. Leaving render_surface_id set, as the other
++	 * failures here do, would aim the next vaRenderPicture at a surface
++	 * the client has already moved on from.
++	 */
++	if (status != VA_STATUS_SUCCESS &&
++	    status != VA_STATUS_ERROR_DECODING_ERROR)
+ 		return status;
+ 
+ 	context_object->render_surface_id = VA_INVALID_ID;
+ 
+-	return VA_STATUS_SUCCESS;
++	return status;
+ }
+diff --git a/src/surface.c b/src/surface.c
+index 53d88e7..b26cc4a 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -350,6 +350,7 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		}
+ 
+ 		surface_object->status = VASurfaceReady;
++		surface_object->decode_error = false;
+ 		surface_object->width = width;
+ 		surface_object->height = height;
+ 		surface_object->destination_width = format_width;
+@@ -472,6 +473,7 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 	VAStatus status;
+ 	struct video_format *video_format;
+ 	unsigned int output_type, capture_type;
++	unsigned int capture_flags = 0;
+ 	int request_fd = -1;
+ 	int rc;
+ 
+@@ -520,7 +522,7 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 	}
+ 
+ 	rc = v4l2_dequeue_buffer(driver_data->video_fd, -1, output_type,
+-				 surface_object->source_index, 1);
++				 surface_object->source_index, 1, NULL);
+ 	if (rc < 0) {
+ 		status = VA_STATUS_ERROR_OPERATION_FAILED;
+ 		goto error;
+@@ -528,7 +530,8 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 
+ 	rc = v4l2_dequeue_buffer(driver_data->video_fd, -1, capture_type,
+ 				 surface_object->destination_index,
+-				 surface_object->destination_buffers_count);
++				 surface_object->destination_buffers_count,
++				 &capture_flags);
+ 	if (rc < 0) {
+ 		status = VA_STATUS_ERROR_OPERATION_FAILED;
+ 		goto error;
+@@ -536,6 +539,35 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 
+ 	surface_object->status = VASurfaceDisplaying;
+ 
++	/*
++	 * The decode failed on the picture that was just dequeued: the engine
++	 * ran out of bitstream, faulted, or timed out, and the surface holds a
++	 * partially decoded frame. Say so.
++	 *
++	 * VA_STATUS_ERROR_DECODING_ERROR is the only channel a client of this
++	 * driver actually reads. ffmpeg imports neither vaQuerySurfaceStatus
++	 * nor vaQuerySurfaceError -- `nm -D --undefined-only` on libavcodec and
++	 * libavutil lists vaSyncSurface and nothing else from that family -- so
++	 * recording the failure in VASurfaceStatus, which has no value for it
++	 * anyway, would be a fix no client could see.
++	 *
++	 * This reaches ffmpeg through vaEndPicture, not vaSyncSurface: decode
++	 * here is synchronous, so RequestEndPicture calls this function and
++	 * returns what it returns, and ff_vaapi_decode_issue() checks that.
++	 * The frame is dropped and the stream carries on, which is the same
++	 * shape as the software decoder's "corrupt decoded frame". Reporting it
++	 * from the later map-time vaSyncSurface instead would fail
++	 * av_hwframe_transfer_data() for a picture libavcodec had already
++	 * accepted, so the early return above stays successful.
++	 */
++	if (capture_flags & V4L2_BUF_FLAG_ERROR) {
++		surface_object->decode_error = true;
++		request_log("Decode error reported on surface %u\n",
++			    surface_id);
++		status = VA_STATUS_ERROR_DECODING_ERROR;
++		goto complete;
++	}
++
+ 	status = VA_STATUS_SUCCESS;
+ 	goto complete;
+ 
+diff --git a/src/surface.h b/src/surface.h
+index 50cb40b..0359863 100644
+--- a/src/surface.h
++++ b/src/surface.h
+@@ -27,6 +27,8 @@
+ #ifndef _SURFACE_H_
+ #define _SURFACE_H_
+ 
++#include <stdbool.h>
++
+ #include <linux/videodev2.h>
+ 
+ #include <va/va_backend.h>
+@@ -41,6 +43,15 @@ struct object_surface {
+ 	struct object_base base;
+ 
+ 	VASurfaceStatus status;
++
++	/*
++	 * The hardware reported a decode error for the picture this surface
++	 * holds -- V4L2_BUF_FLAG_ERROR on its CAPTURE dequeue. VASurfaceStatus
++	 * has no value for it (Ready/Rendering/Displaying/Skipped), so it is
++	 * kept separately and cleared when the surface is rendered into again.
++	 */
++	bool decode_error;
++
+ 	int width;
+ 	int height;
+ 
+diff --git a/src/v4l2.c b/src/v4l2.c
+index f5a1868..6289afc 100644
+--- a/src/v4l2.c
++++ b/src/v4l2.c
+@@ -404,8 +404,16 @@ int v4l2_queue_buffer(int video_fd, int request_fd, unsigned int type,
+ 	return 0;
+ }
+ 
++/*
++ * The dequeued buffer's state comes back in buffer.flags, and
++ * V4L2_BUF_FLAG_ERROR is the only report a stateless decoder ever makes about
++ * the picture it just produced. Hand it to the caller when asked: a dequeue
++ * that drops it turns a hardware decode failure into output that userspace is
++ * told to trust.
++ */
+ int v4l2_dequeue_buffer(int video_fd, int request_fd, unsigned int type,
+-			unsigned int index, unsigned int buffers_count)
++			unsigned int index, unsigned int buffers_count,
++			unsigned int *flags)
+ {
+ 	struct v4l2_plane planes[buffers_count];
+ 	struct v4l2_buffer buffer;
+@@ -431,6 +439,9 @@ int v4l2_dequeue_buffer(int video_fd, int request_fd, unsigned int type,
+ 		return -1;
+ 	}
+ 
++	if (flags != NULL)
++		*flags = buffer.flags;
++
+ 	return 0;
+ }
+ 
+diff --git a/src/v4l2.h b/src/v4l2.h
+index ecefaa1..fb555a4 100644
+--- a/src/v4l2.h
++++ b/src/v4l2.h
+@@ -52,7 +52,8 @@ int v4l2_queue_buffer(int video_fd, int request_fd, unsigned int type,
+ 		      struct timeval *timestamp, unsigned int index,
+ 		      unsigned int size, unsigned int buffers_count);
+ int v4l2_dequeue_buffer(int video_fd, int request_fd, unsigned int type,
+-			unsigned int index, unsigned int buffers_count);
++			unsigned int index, unsigned int buffers_count,
++			unsigned int *flags);
+ int v4l2_export_buffer(int video_fd, unsigned int type, unsigned int index,
+ 		       unsigned int flags, int *export_fds,
+ 		       unsigned int export_fds_count);
+-- 
+2.55.0
+

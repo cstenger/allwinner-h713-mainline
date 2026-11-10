@@ -1,0 +1,706 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Hold a 1280x720 NV12 control card on the H713 video plane, with the
+ * letterbox Phase 1 and Phase 3 cards pre-rendered in the same buffer object.
+ * RUNS ON THE TARGET.
+ *
+ *   cc -O2 -Wall -o letterbox-card letterbox-card.c $(pkg-config --cflags --libs libdrm)
+ *   ARMED=yes letterbox-card [dwell-seconds]        # default 3600
+ *   ARMED=yes letterbox-card --primary [dwell]      # RGB card on the PRIMARY plane
+ *
+ * --primary (WP5 Phase 1, docs/mirror-plan.md): the same card, drawn in
+ * XRGB8888 and committed on the primary plane, which AFBD's OSD channel
+ * (0x05600140, selector RGB) scans out -- the console's and the GPU path's
+ * route. No sub-regions. The layout records `mode primary` and the OSD
+ * control and source address, for letterbox-apply.py's osd steps. On exit the
+ * plane gets the framebuffer it had back (the console's).
+ *
+ * CARD=<variant> (with --primary) draws something else, for the downstream
+ * signature probe (tools/display/panel-signature.sh): upright (default),
+ * x / y / xy (the card mirrored in SOFTWARE), shift (moved 1 px right),
+ * black, white, grey, red, green, blue.
+ *
+ * WP5 Phase 2 gate (docs/mirror-plan.md), for kernels with the mirror (0166):
+ *   ROTATION=x|y|xy|180   sets the plane's rotation property (REFLECT_X,
+ *                         REFLECT_Y, both, ROTATE_180); either plane. It is
+ *                         put back to ROTATE_0 on exit, because a plane keeps
+ *                         its rotation and the next client would inherit it.
+ *   COMMIT=REGION@X,Y     (video plane) commit that region's card as its own
+ *                         framebuffer at (X,Y), instead of the native card.
+ *
+ * WHY ONE BUFFER. The plane's atomic_check takes only a 1280x720, pitch-1280
+ * framebuffer, so a sub-panel card cannot be committed through KMS. Instead
+ * one dumb buffer holds every card at its own offset; the framebuffer covers
+ * the native control card only. letterbox-apply.py then points AFBD's slot
+ * registers at a step card's region, with the geometry from the recipe, and
+ * points them back afterwards. The whole object is mapped for the display
+ * (GEM DMA allocates it on the display device), so every region is fetchable,
+ * and no KMS commit happens between the native card and a step.
+ *
+ * Regions (all plane starts 64 KiB aligned):
+ *
+ *   native  1280x720  stride 1280, 768 rows allocated  -- the framebuffer
+ *   ab      1280x536  stride 1280, 544 rows (ALIGN16)  -- steps a and b
+ *   c        852x480  stride  864, 480 rows            -- step c; Phase 3 s2
+ *   s640     640x360  stride  640, 368 rows (ALIGN16)  -- Phase 3 s1, s5
+ *   s352     352x288  stride  352, 288 rows            -- Phase 3 s4
+ *   s720     720x576  stride  720, 576 rows            -- Phase 3 s3
+ *
+ * Phase 3 (proc magnification) shows the small cards scaled up, so the
+ * circles stay round only where both axes scale alike; s3 (720x576 -> 960x720,
+ * 4:3 from a 5:4 raster) is meant to come out about 7% wide (1.333 H vs 1.25 V).
+ *
+ * The layout, with the slot addresses AFBD reads for the native card, goes to
+ * /tmp/letterbox-card.layout once the card is on the plane. Nothing else is
+ * written to hardware here; the KMS driver programs AFBD for the native card.
+ *
+ * THE CARD. Mid grey, so black bars are distinguishable from the picture:
+ *   - a 2-px white frame on the picture's own edge, a 2-px black ring inside;
+ *   - ruler ticks every 16 px (short) and 64 px (long) on all four edges;
+ *   - a centred circle (radius 0.4 x min(W, H)) and four corner circles --
+ *     round means unscaled, an ellipse means an axis is wrong;
+ *   - both diagonals, which break into steps under any line shear;
+ *   - a centre cross;
+ *   - chroma patches near the corners: TL red, TR green, BL blue, BR yellow,
+ *     which show orientation and whether chroma lines up with luma.
+ * Padding (columns stride-W, rows past H) is MAGENTA: if any appears on the
+ * panel, the display is showing the aligned fetch, not the picture.
+ */
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
+#include <drm_fourcc.h>
+#include <xf86drm.h>
+#include <xf86drmMode.h>
+
+#define PANEL_W 1280u
+#define PANEL_H 720u
+#define AFBD_PHYS 0x05600000UL
+#define OSD_STRIDE (PANEL_W * 4)
+#define LAYOUT "/tmp/letterbox-card.layout"
+#define ALIGN(x, a) (((x) + (a) - 1) / (a) * (a))
+#define REGION_ALIGN 0x10000u
+
+struct region {
+	const char *name;
+	unsigned w, h, stride, rows;	/* rows: luma rows allocated */
+	size_t y_off, c_off;
+};
+
+static struct region regions[] = {
+	{ "native", 1280, 720, 1280, 768, 0, 0 },
+	{ "ab",     1280, 536, 1280, 544, 0, 0 },
+	{ "c",       852, 480,  864, 480, 0, 0 },
+	{ "s640",    640, 360,  640, 368, 0, 0 },
+	{ "s352",    352, 288,  352, 288, 0, 0 },
+	{ "s720",    720, 576,  720, 576, 0, 0 },
+};
+#define NREG (sizeof(regions) / sizeof(regions[0]))
+
+static volatile sig_atomic_t interrupted;
+
+static void on_signal(int sig)
+{
+	(void)sig;
+	interrupted = 1;
+}
+
+/* BT.601 limited range. */
+enum { GREY, WHITE, BLACK, RED, GREEN, BLUE, YELLOW, PAD };
+static const uint8_t ycc[][3] = {
+	[GREY]   = { 100, 128, 128 },
+	[WHITE]  = { 235, 128, 128 },
+	[BLACK]  = {  16, 128, 128 },
+	[RED]    = {  81,  90, 240 },
+	[GREEN]  = { 145,  54,  34 },
+	[BLUE]   = {  41, 240, 110 },
+	[YELLOW] = { 210,  16, 146 },
+	[PAD]    = { 105, 212, 234 },	/* magenta */
+};
+
+static int near_circle(long x, long y, long cx, long cy, long r, long t)
+{
+	long d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+
+	return d2 >= (r - t) * (r - t) && d2 <= r * r;
+}
+
+static int colour_at(unsigned x, unsigned y, unsigned w, unsigned h)
+{
+	unsigned m = w < h ? w : h;
+	long r = m * 2 / 5, rc = m / 10;
+	long lx = x, ly = y, lw = w, lh = h;
+
+	if (x < 2 || y < 2 || x >= w - 2 || y >= h - 2)
+		return WHITE;
+	if (x < 4 || y < 4 || x >= w - 4 || y >= h - 4)
+		return BLACK;
+	/* ruler ticks, 2 px wide, measured from the picture's own origin */
+	if ((x % 64 < 2 && (y < 28 || y >= h - 28)) ||
+	    (x % 16 < 2 && (y < 14 || y >= h - 14)) ||
+	    (y % 64 < 2 && (x < 28 || x >= w - 28)) ||
+	    (y % 16 < 2 && (x < 14 || x >= w - 14)))
+		return WHITE;
+	/* chroma patches, 48x48, inset 40 */
+	if (y >= 40 && y < 88) {
+		if (x >= 40 && x < 88)
+			return RED;
+		if (x >= w - 88 && x < w - 40)
+			return GREEN;
+	}
+	if (y >= h - 88 && y < h - 40) {
+		if (x >= 40 && x < 88)
+			return BLUE;
+		if (x >= w - 88 && x < w - 40)
+			return YELLOW;
+	}
+	if (near_circle(lx, ly, lw / 2, lh / 2, r, 3) ||
+	    near_circle(lx, ly, rc + 100, rc + 100, rc, 2) ||
+	    near_circle(lx, ly, lw - rc - 100, rc + 100, rc, 2) ||
+	    near_circle(lx, ly, rc + 100, lh - rc - 100, rc, 2) ||
+	    near_circle(lx, ly, lw - rc - 100, lh - rc - 100, rc, 2))
+		return WHITE;
+	/* diagonals: |x*h - y*w| < w*1.5 is about 1.5 px thick along x */
+	if (labs(lx * lh - ly * lw) < lw * 3 / 2 ||
+	    labs((lw - 1 - lx) * lh - ly * lw) < lw * 3 / 2)
+		return WHITE;
+	if (x == w / 2 || x == w / 2 - 1 || y == h / 2 || y == h / 2 - 1)
+		return WHITE;
+	return GREY;
+}
+
+static void render(uint8_t *bo, const struct region *rg)
+{
+	uint8_t *luma = bo + rg->y_off, *chroma = bo + rg->c_off;
+	unsigned x, y;
+
+	for (y = 0; y < rg->rows; y++)
+		for (x = 0; x < rg->stride; x++) {
+			int c = (x < rg->w && y < rg->h) ?
+				colour_at(x, y, rg->w, rg->h) : PAD;
+
+			luma[(size_t)y * rg->stride + x] = ycc[c][0];
+			if (!(x & 1) && !(y & 1)) {
+				uint8_t *uv = chroma + (size_t)(y / 2) * rg->stride + x;
+
+				uv[0] = ycc[c][1];
+				uv[1] = ycc[c][2];
+			}
+		}
+}
+
+/* BT.601 limited-range Y'CbCr -> full-range RGB, for the --primary card. */
+static uint32_t xrgb(int c)
+{
+	double y = 1.164 * (ycc[c][0] - 16), cb = ycc[c][1] - 128.0, cr = ycc[c][2] - 128.0;
+	double v[3] = { y + 1.596 * cr, y - 0.392 * cb - 0.813 * cr, y + 2.017 * cb };
+	uint32_t out = 0;
+	int i;
+
+	for (i = 0; i < 3; i++) {
+		long q = (long)(v[i] + 0.5);
+
+		out = out << 8 | (uint32_t)(q < 0 ? 0 : q > 255 ? 255 : q);
+	}
+	return out;
+}
+
+static int render_xrgb(uint8_t *bo, const char *variant)
+{
+	static const struct { const char *name; uint32_t rgb; } solid[] = {
+		{ "black", 0x000000 }, { "white", 0xffffff }, { "grey", 0x808080 },
+		{ "red", 0xff0000 }, { "green", 0x00ff00 }, { "blue", 0x0000ff },
+	};
+	int fx = 0, fy = 0, shift = 0;
+	unsigned x, y, i;
+
+	for (i = 0; i < sizeof(solid) / sizeof(solid[0]); i++)
+		if (!strcmp(variant, solid[i].name)) {
+			for (y = 0; y < PANEL_H; y++)
+				for (x = 0; x < PANEL_W; x++)
+					((uint32_t *)(bo + (size_t)y * OSD_STRIDE))[x] = solid[i].rgb;
+			return 0;
+		}
+	if (!strcmp(variant, "x") || !strcmp(variant, "xy"))
+		fx = 1;
+	if (!strcmp(variant, "y") || !strcmp(variant, "xy"))
+		fy = 1;
+	if (!strcmp(variant, "shift"))
+		shift = 1;
+	if (!fx && !fy && !shift && strcmp(variant, "upright")) {
+		fprintf(stderr, "unknown CARD=%s\n", variant);
+		return -1;
+	}
+	for (y = 0; y < PANEL_H; y++)
+		for (x = 0; x < PANEL_W; x++) {
+			unsigned sx = fx ? PANEL_W - 1 - x : x, sy = fy ? PANEL_H - 1 - y : y;
+			int c = shift && x == 0 ? GREY : colour_at(sx - shift, sy, PANEL_W, PANEL_H);
+
+			((uint32_t *)(bo + (size_t)y * OSD_STRIDE))[x] = xrgb(c);
+		}
+	return 0;
+}
+
+static uint32_t find_prop(int fd, uint32_t obj, const char *name)
+{
+	drmModeObjectProperties *props;
+	uint32_t i, id = 0;
+
+	props = drmModeObjectGetProperties(fd, obj, DRM_MODE_OBJECT_PLANE);
+	for (i = 0; props && i < props->count_props && !id; i++) {
+		drmModePropertyRes *p = drmModeGetProperty(fd, props->props[i]);
+
+		if (p && !strcmp(p->name, name))
+			id = p->prop_id;
+		drmModeFreeProperty(p);
+	}
+	drmModeFreeObjectProperties(props);
+	if (!id)
+		fprintf(stderr, "plane has no %s property\n", name);
+	return id;
+}
+
+/* The committed rectangle and rotation (COMMIT=, ROTATION=); see the header. */
+static unsigned rect_x, rect_y, rect_w = PANEL_W, rect_h = PANEL_H;
+static uint64_t rotation;	/* 0: leave the property alone */
+
+static uint64_t parse_rotation(const char *s)
+{
+	if (!s || !*s)
+		return 0;
+	if (!strcmp(s, "x"))
+		return DRM_MODE_ROTATE_0 | DRM_MODE_REFLECT_X;
+	if (!strcmp(s, "y"))
+		return DRM_MODE_ROTATE_0 | DRM_MODE_REFLECT_Y;
+	if (!strcmp(s, "xy"))
+		return DRM_MODE_ROTATE_0 | DRM_MODE_REFLECT_X | DRM_MODE_REFLECT_Y;
+	if (!strcmp(s, "180"))
+		return DRM_MODE_ROTATE_180;
+	if (!strcmp(s, "0"))
+		return DRM_MODE_ROTATE_0;
+	fprintf(stderr, "unknown ROTATION=%s\n", s);
+	exit(2);
+}
+
+static int plane_set(int fd, uint32_t plane, uint32_t crtc, uint32_t fb)
+{
+	static const char *const names[] = {
+		"CRTC_ID", "FB_ID", "CRTC_X", "CRTC_Y", "CRTC_W", "CRTC_H",
+		"SRC_X", "SRC_Y", "SRC_W", "SRC_H",
+	};
+	uint64_t on[] = { crtc, fb, rect_x, rect_y, rect_w, rect_h, 0, 0,
+			  (uint64_t)rect_w << 16, (uint64_t)rect_h << 16 };
+	unsigned i, n = fb ? 10 : 2;
+	drmModeAtomicReq *req = drmModeAtomicAlloc();
+	int ret;
+
+	for (i = 0; i < n; i++) {
+		uint32_t id = find_prop(fd, plane, names[i]);
+
+		if (!id || drmModeAtomicAddProperty(req, plane, id, on[i]) < 0) {
+			drmModeAtomicFree(req);
+			return -1;
+		}
+	}
+	if (rotation) {
+		/* callers reset it to ROTATE_0 before a disable or restore */
+		uint32_t id = find_prop(fd, plane, "rotation");
+
+		if (!id || drmModeAtomicAddProperty(req, plane, id, rotation) < 0) {
+			drmModeAtomicFree(req);
+			return -1;
+		}
+	}
+	ret = drmModeAtomicCommit(fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
+	drmModeAtomicFree(req);
+	return ret;
+}
+
+/* The slot addresses AFBD is actually fetching, after the driver's commit. */
+static int read_slots(uint32_t *y, uint32_t *c, uint32_t *ctrl)
+{
+	volatile uint32_t *r;
+	int fd = open("/dev/mem", O_RDONLY | O_SYNC);
+
+	if (fd < 0)
+		return -1;
+	r = mmap(NULL, 4096, PROT_READ, MAP_SHARED, fd, AFBD_PHYS);
+	close(fd);
+	if (r == MAP_FAILED)
+		return -1;
+	*ctrl = r[0x010 / 4];
+	*y = r[0x070 / 4];
+	*c = r[0x084 / 4];
+	munmap((void *)r, 4096);
+	return 0;
+}
+
+/* The OSD channel's control word and the source address it is fetching. */
+static int read_osd(uint32_t *ctrl, uint32_t *src)
+{
+	volatile uint32_t *r;
+	int fd = open("/dev/mem", O_RDONLY | O_SYNC);
+
+	if (fd < 0)
+		return -1;
+	r = mmap(NULL, 4096, PROT_READ, MAP_SHARED, fd, AFBD_PHYS);
+	close(fd);
+	if (r == MAP_FAILED)
+		return -1;
+	*ctrl = r[0x140 / 4];
+	*src = r[0x178 / 4];
+	munmap((void *)r, 4096);
+	return 0;
+}
+
+static int plane_type(int fd, uint32_t plane)
+{
+	drmModeObjectProperties *props;
+	uint32_t i;
+	int type = -1;
+
+	props = drmModeObjectGetProperties(fd, plane, DRM_MODE_OBJECT_PLANE);
+	for (i = 0; props && i < props->count_props; i++) {
+		drmModePropertyRes *p = drmModeGetProperty(fd, props->props[i]);
+
+		if (p && !strcmp(p->name, "type"))
+			type = (int)props->prop_values[i];
+		drmModeFreeProperty(p);
+	}
+	drmModeFreeObjectProperties(props);
+	return type;
+}
+
+/*
+ * Hold the RGB card on the primary plane until the dwell ends or a signal
+ * arrives, then put the plane's previous framebuffer back.
+ */
+static int run_primary(int fd, uint32_t crtc, drmModePlaneRes *pres, unsigned dwell)
+{
+	struct drm_mode_create_dumb create = { .width = PANEL_W, .height = PANEL_H, .bpp = 32 };
+	struct drm_mode_map_dumb map = { 0 };
+	struct drm_mode_destroy_dumb destroy = { 0 };
+	uint32_t handles[4] = { 0 }, pitches[4] = { 0 }, offsets[4] = { 0 };
+	uint32_t plane = 0, old_fb = 0, fb = 0, ctrl, src, i;
+	FILE *f;
+	uint8_t *p;
+	int rc = 1;
+
+	for (i = 0; pres && i < pres->count_planes && !plane; i++)
+		if (plane_type(fd, pres->planes[i]) == DRM_PLANE_TYPE_PRIMARY) {
+			drmModePlane *pl = drmModeGetPlane(fd, pres->planes[i]);
+
+			plane = pres->planes[i];
+			old_fb = pl ? pl->fb_id : 0;
+			drmModeFreePlane(pl);
+		}
+	if (!plane) {
+		fprintf(stderr, "no primary plane\n");
+		return 1;
+	}
+	if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create)) {
+		perror("CREATE_DUMB");
+		return 1;
+	}
+	if (create.pitch != OSD_STRIDE) {
+		fprintf(stderr, "dumb pitch %u, need %u\n", create.pitch, OSD_STRIDE);
+		goto out;
+	}
+	map.handle = create.handle;
+	if (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map)) {
+		perror("MAP_DUMB");
+		goto out;
+	}
+	p = mmap(NULL, create.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, map.offset);
+	if (p == MAP_FAILED) {
+		perror("mmap dumb");
+		goto out;
+	}
+	if (render_xrgb(p, getenv("CARD") ? getenv("CARD") : "upright")) {
+		munmap(p, create.size);
+		goto out;
+	}
+	munmap(p, create.size);
+	handles[0] = create.handle;
+	pitches[0] = OSD_STRIDE;
+	if (drmModeAddFB2(fd, PANEL_W, PANEL_H, DRM_FORMAT_XRGB8888, handles,
+			  pitches, offsets, &fb, 0)) {
+		perror("AddFB2 XRGB8888");
+		goto out;
+	}
+	printf("WATCH THE PANEL: 1280x720 RGB control card on PRIMARY plane %u "
+	       "(was fb %u) for %us\n", plane, old_fb, dwell);
+	fflush(stdout);
+	if (plane_set(fd, plane, crtc, fb)) {
+		perror("atomic primary");
+		goto out;
+	}
+	usleep(200000);
+	if (read_osd(&ctrl, &src)) {
+		perror("read OSD channel");
+		goto restore;
+	}
+	printf("OSD ctrl 0x%08x  source 0x%08x\n", ctrl, src);
+	f = fopen(LAYOUT ".tmp", "w");
+	if (!f || fprintf(f, "mode primary\nosd_ctrl 0x%08x\nosd_src 0x%08x\n",
+			  ctrl, src) < 0 || fclose(f) || rename(LAYOUT ".tmp", LAYOUT)) {
+		perror("write " LAYOUT);
+		goto restore;
+	}
+	printf("layout in " LAYOUT "\n");
+	fflush(stdout);
+
+	signal(SIGINT, on_signal);
+	signal(SIGTERM, on_signal);
+	signal(SIGHUP, on_signal);
+	while (dwell && !interrupted)
+		dwell = sleep(dwell);
+	rc = 0;
+restore:
+	unlink(LAYOUT);
+	/* The console's framebuffer back; failing that, closing restores it. */
+	if (rotation)
+		rotation = DRM_MODE_ROTATE_0;
+	if (old_fb && plane_set(fd, plane, crtc, old_fb))
+		fprintf(stderr, "could not put fb %u back (%s); the console restores "
+			"on exit\n", old_fb, strerror(errno));
+	else
+		printf("primary plane back on fb %u\n", old_fb);
+out:
+	if (fb)
+		drmModeRmFB(fd, fb);
+	destroy.handle = create.handle;
+	drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+	return rc;
+}
+
+static int write_layout(size_t bo_size, uint32_t y, uint32_t c)
+{
+	FILE *f = fopen(LAYOUT ".tmp", "w");
+	unsigned i;
+
+	if (!f)
+		return -1;
+	fprintf(f, "bo_size %zu\n", bo_size);
+	fprintf(f, "slot_y 0x%08x\nslot_c 0x%08x\n", y, c);
+	for (i = 0; i < NREG; i++)
+		fprintf(f, "region %s %u %u %u %u %zu %zu\n", regions[i].name,
+			regions[i].w, regions[i].h, regions[i].stride,
+			regions[i].rows, regions[i].y_off, regions[i].c_off);
+	if (fclose(f))
+		return -1;
+	return rename(LAYOUT ".tmp", LAYOUT);
+}
+
+int main(int argc, char **argv)
+{
+	struct drm_mode_create_dumb create = { .width = PANEL_W, .bpp = 8 };
+	struct drm_mode_map_dumb map = { 0 };
+	struct drm_mode_destroy_dumb destroy = { 0 };
+	uint32_t handles[4] = { 0 }, pitches[4] = { 0 }, offsets[4] = { 0 };
+	uint32_t crtc = 0, plane = 0, fb = 0, sy, sc, ctrl;
+	drmModePlaneRes *pres = NULL;
+	drmModeRes *res = NULL;
+	int primary = argc > 1 && !strcmp(argv[1], "--primary");
+	unsigned dwell = argc > 1 + primary ? (unsigned)atoi(argv[1 + primary]) : 3600;
+	size_t end = 0;
+	char path[32];
+	uint8_t *p;
+	uint32_t i, f;
+	int fd = -1, rc = 1;
+
+	if (!getenv("ARMED") || strcmp(getenv("ARMED"), "yes")) {
+		fprintf(stderr, "usage: ARMED=yes %s [--primary] [dwell-seconds]\n", argv[0]);
+		return 2;
+	}
+	unlink(LAYOUT);
+	rotation = parse_rotation(getenv("ROTATION"));
+
+	for (i = 0; i < NREG; i++) {
+		struct region *rg = &regions[i];
+
+		rg->y_off = ALIGN(end, REGION_ALIGN);
+		rg->c_off = ALIGN(rg->y_off + (size_t)rg->stride * rg->rows,
+				  REGION_ALIGN);
+		end = rg->c_off + (size_t)rg->stride * rg->rows / 2;
+	}
+	/* The framebuffer's chroma must sit where the driver will look for it. */
+	if (regions[0].y_off != 0) {
+		fprintf(stderr, "native region must start at 0\n");
+		return 1;
+	}
+	create.height = ALIGN(end, PANEL_W) / PANEL_W;
+
+	for (i = 0; i < 16 && !crtc; i++) {
+		snprintf(path, sizeof(path), "/dev/dri/card%u", i);
+		fd = open(path, O_RDWR | O_CLOEXEC);
+		if (fd < 0)
+			continue;
+		res = drmModeGetResources(fd);
+		if (res && res->count_crtcs == 1 && res->count_connectors)
+			crtc = res->crtcs[0];
+		else {
+			drmModeFreeResources(res);
+			res = NULL;
+			close(fd);
+			fd = -1;
+		}
+	}
+	if (!crtc) {
+		fprintf(stderr, "no single-CRTC KMS card\n");
+		return 1;
+	}
+	if (drmSetClientCap(fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) ||
+	    drmSetClientCap(fd, DRM_CLIENT_CAP_ATOMIC, 1)) {
+		perror("client caps");
+		goto out;
+	}
+	pres = drmModeGetPlaneResources(fd);
+	if (primary) {
+		rc = run_primary(fd, crtc, pres, dwell);
+		goto out;
+	}
+	for (i = 0; pres && i < pres->count_planes && !plane; i++) {
+		drmModePlane *pl = drmModeGetPlane(fd, pres->planes[i]);
+
+		for (f = 0; pl && f < pl->count_formats; f++)
+			if (pl->formats[f] == DRM_FORMAT_NV12)
+				plane = pl->plane_id;
+		drmModeFreePlane(pl);
+	}
+	if (!plane) {
+		fprintf(stderr, "no plane advertises NV12\n");
+		goto out;
+	}
+
+	if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create)) {
+		perror("CREATE_DUMB");
+		goto out;
+	}
+	if (create.pitch != PANEL_W || create.size < end) {
+		fprintf(stderr, "dumb pitch %u size %llu, need %u and %zu\n",
+			create.pitch, (unsigned long long)create.size, PANEL_W, end);
+		goto out;
+	}
+	map.handle = create.handle;
+	if (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map)) {
+		perror("MAP_DUMB");
+		goto out;
+	}
+	p = mmap(NULL, create.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+		 map.offset);
+	if (p == MAP_FAILED) {
+		perror("mmap dumb");
+		goto out;
+	}
+	memset(p, 0, create.size);
+	for (i = 0; i < NREG; i++) {
+		render(p, &regions[i]);
+		printf("region %-6s %4ux%-4u stride %4u rows %3u  Y +0x%06zx  C +0x%06zx\n",
+		       regions[i].name, regions[i].w, regions[i].h,
+		       regions[i].stride, regions[i].rows, regions[i].y_off,
+		       regions[i].c_off);
+	}
+	munmap(p, create.size);
+
+	{
+		/* COMMIT=REGION@X,Y: that region as its own placed framebuffer */
+		const struct region *cr = &regions[0];
+		const char *cm = getenv("COMMIT");
+
+		if (cm && *cm) {
+			char name[16];
+			unsigned x, y;
+
+			if (sscanf(cm, "%15[^@]@%u,%u", name, &x, &y) != 3) {
+				fprintf(stderr, "COMMIT=REGION@X,Y\n");
+				goto out;
+			}
+			for (i = 0; i < NREG && strcmp(regions[i].name, name); i++)
+				;
+			if (i == NREG) {
+				fprintf(stderr, "no region %s\n", name);
+				goto out;
+			}
+			cr = &regions[i];
+			rect_x = x;
+			rect_y = y;
+			rect_w = cr->w;
+			rect_h = cr->h;
+		}
+		handles[0] = handles[1] = create.handle;
+		pitches[0] = pitches[1] = cr->stride;
+		offsets[0] = cr->y_off;
+		offsets[1] = cr->c_off;
+		if (drmModeAddFB2(fd, cr->w, cr->h, DRM_FORMAT_NV12, handles,
+				  pitches, offsets, &fb, 0)) {
+			perror("AddFB2 NV12");
+			goto out;
+		}
+		printf("WATCH THE PANEL: %s %ux%u control card at (%u,%u) on plane %u "
+		       "for %us\n", cr->name, cr->w, cr->h, rect_x, rect_y, plane, dwell);
+	}
+	fflush(stdout);
+	if (plane_set(fd, plane, crtc, fb)) {
+		perror("atomic enable");
+		goto out;
+	}
+	usleep(200000);
+	if (read_slots(&sy, &sc, &ctrl)) {
+		perror("read AFBD slots");
+		goto off;
+	}
+	printf("AFBD ctrl 0x%08x  slot Y 0x%08x  slot C 0x%08x  (C - Y = 0x%x)\n",
+	       ctrl, sy, sc, sc - sy);
+	if (rect_w != PANEL_W || rect_h != PANEL_H) {
+		printf("(a placed region: no layout for letterbox-apply)\n");
+		fflush(stdout);
+		goto hold;
+	}
+	if (sc - sy != regions[0].c_off) {
+		fprintf(stderr, "slot C - slot Y = 0x%x, expected 0x%zx: refusing to "
+			"publish a layout the executor could misuse\n",
+			sc - sy, regions[0].c_off);
+		goto off;
+	}
+	if (write_layout(create.size, sy, sc)) {
+		perror("write " LAYOUT);
+		goto off;
+	}
+	printf("layout in " LAYOUT "\n");
+	fflush(stdout);
+hold:
+	signal(SIGINT, on_signal);
+	signal(SIGTERM, on_signal);
+	signal(SIGHUP, on_signal);
+	while (dwell && !interrupted)
+		dwell = sleep(dwell);
+	rc = 0;
+off:
+	unlink(LAYOUT);
+	if (rotation)
+		rotation = DRM_MODE_ROTATE_0;
+	if (plane_set(fd, plane, 0, 0))
+		fprintf(stderr, "atomic disable failed: %s\n", strerror(errno));
+	else
+		printf("video plane disabled; KMS RGB restored\n");
+out:
+	if (fb)
+		drmModeRmFB(fd, fb);
+	if (create.handle) {
+		destroy.handle = create.handle;
+		drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+	}
+	drmModeFreePlaneResources(pres);
+	drmModeFreeResources(res);
+	close(fd);
+	return rc;
+}

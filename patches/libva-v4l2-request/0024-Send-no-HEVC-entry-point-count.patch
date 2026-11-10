@@ -1,0 +1,47 @@
+Send no HEVC entry point count
+
+GStreamer's vah265dec decoded nothing. Every picture failed with
+vaEndPicture -> DECODING_ERROR and zero VE interrupts, while the kernel
+logged
+
+  cedrus 1c0e000.video-codec: Failed to setup decoding job: -34
+
+-ERANGE is cedrus_h265_setup's check that num_entry_point_offsets equals
+the length of the V4L2_CID_STATELESS_HEVC_ENTRY_POINT_OFFSETS array.
+VA-API carries the entry point count in VASliceParameterBufferHEVC but
+not the offsets, so this driver never sends that array, and any non-zero
+count is refused.
+
+ffmpeg never fills num_entry_point_offsets (libavcodec/vaapi_hevc.c, 7.1),
+so its slices always arrived with 0 and decode bit-exact; that is the
+path the HEVC gate validates. GStreamer (gstvah265dec.c, 1.26.2) copies
+the slice header's count, which is non-zero for any WPP or tiled stream.
+Send 0 whatever the client says, which is what the validated path
+already sends.
+
+---
+diff --git a/src/h265.c b/src/h265.c
+index e0838a6..87eb5f1 100644
+--- a/src/h265.c
++++ b/src/h265.c
+@@ -349,7 +349,19 @@ static void h265_fill_slice_params(VAPictureParameterBufferHEVC *picture,
+ 	/* DBO_EXPERIMENT */
+ 	slice_params->data_byte_offset =
+ 		slice->slice_data_offset + slice->slice_data_byte_offset;
+-	slice_params->num_entry_point_offsets = slice->num_entry_point_offsets;
++	/*
++	 * Always 0. VA-API carries the entry point COUNT in the slice
++	 * parameters but not the offsets, so the
++	 * V4L2_CID_STATELESS_HEVC_ENTRY_POINT_OFFSETS array is never sent, and
++	 * cedrus refuses a slice whose count differs from the array it got
++	 * (-ERANGE in cedrus_h265_setup, before the engine runs). ffmpeg never
++	 * fills the field, so its slices arrive with 0 and decode bit-exact --
++	 * that is the path the HEVC gate validates. GStreamer's vah265dec copies
++	 * the slice header's num_entry_point_offsets, and every one of its
++	 * WPP/tiled slices was refused: "Failed to setup decoding job: -34",
++	 * vaEndPicture -> DECODING_ERROR, zero VE interrupts.
++	 */
++	slice_params->num_entry_point_offsets = 0;
+ 	slice_params->nal_unit_type = nal_unit_type;
+ 	slice_params->nuh_temporal_id_plus1 = nuh_temporal_id_plus1;
+ 

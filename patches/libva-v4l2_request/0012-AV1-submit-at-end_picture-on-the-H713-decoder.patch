@@ -1,0 +1,92 @@
+From f34097c3e208ee786bf7810390476173a25cd338 Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 4 Oct 2026 18:26:08 -0700
+Subject: [PATCH] AV1: submit at end_picture on the H713 decoder
+
+The AV1 backend holds every frame until the next one's picture
+parameters arrive, because Rockchip's VPU981 kernel driver stores CDFs
+per reference slot by refresh_frame_flags, which VA-API does not pass,
+and only the next frame's ref_frame_map reveals it. The H713 AV1 core's
+kernel driver keeps the adapted CDFs per decoded frame and finds a
+frame's primary reference by timestamp, so it never reads
+refresh_frame_flags. There the hold-back bought nothing.
+
+It cost a consumer that reads exported dma-bufs without vaSyncSurface.
+GStreamer va into DMABuf caps syncs only when something maps the buffer
+through GStreamer, and V4L2 dma-bufs carry no fence. With the hold-back,
+the first two frames and the last (never submitted at EOS) were read
+before they were decoded: 57/60 bit-exact on a 720p clip.
+
+Recognise the decoder by its card name at init and submit each frame
+at end_picture, with the fallback mask the kernel ignores. Every other
+decoder keeps the deferral.
+
+Measured 2026-10-04: 60/60 bit-exact, 3 runs of 3. All gates pass. The
+FFmpeg VA-API AV1 matrix over 56 libdav1d-referenced clips gives the
+same 38 pass / 18 fail with and without this patch (tiles, film grain,
+resize and monochrome fail through VA-API either way).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/codec_av1.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/src/codec_av1.c b/src/codec_av1.c
+index cc3082c..19e0f96 100644
+--- a/src/codec_av1.c
++++ b/src/codec_av1.c
+@@ -12,6 +12,7 @@
+ 
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/ioctl.h>
+ 
+ #include <linux/videodev2.h>
+ #include <linux/v4l2-controls.h>
+@@ -74,6 +75,16 @@ struct av1_context {
+ 	uint32_t pend_current;		/* held frame's current_frame surface */
+ 	uint8_t pend_fallback;		/* mask to use if flushed before next frame */
+ 
++	/*
++	 * The H713 AV1 core's kernel driver keeps the adapted CDFs per decoded
++	 * frame and finds a frame's primary reference by timestamp, so it never
++	 * reads refresh_frame_flags. Holding a frame back buys nothing there and
++	 * costs a consumer that reads dma-bufs without vaSyncSurface (GStreamer
++	 * va into DMABuf caps): it saw the held frames, the first and the last,
++	 * before they were decoded. Submit those at end_picture.
++	 */
++	bool immediate;
++
+ 	/*
+ 	 * After a failed frame, nothing until the next key frame. Everything
+ 	 * in between predicts from the failure, so it could only be garbage -
+@@ -601,8 +612,16 @@ static VAStatus av1_init(struct v4l2r_context *ctx)
+ 		.id = V4L2_CID_STATELESS_AV1_FILM_GRAIN,
+ 	};
+ 
++	struct v4l2_capability cap = {0};
++
+ 	codec->has_film_grain = !v4l2r_query_control(ctx, &film_grain);
+ 
++	codec->immediate =
++		!ioctl(ctx->video_fd, VIDIOC_QUERYCAP, &cap) &&
++		strstr((const char *)cap.card, "sun50i-h713-av1");
++	if (codec->immediate)
++		v4l2r_log("av1: decoder keeps CDFs per frame, no submission deferral\n");
++
+ 	return VA_STATUS_SUCCESS;
+ }
+ 
+@@ -917,6 +936,9 @@ static VAStatus av1_end_picture_gated(struct v4l2r_context *ctx)
+ 		ctx->pic.target->decode_error = false;
+ 	}
+ 
++	if (codec->immediate)
++		return av1_submit_pending(ctx, codec->pend_fallback);
++
+ 	return VA_STATUS_SUCCESS;
+ }
+ 
+-- 
+2.55.0
+

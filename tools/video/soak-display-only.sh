@@ -2,7 +2,16 @@
 # The control this investigation never ran with adequate exposure: the display
 # path hot for an hour with the video engine never opened.
 #
-#     MINUTES=60 sh soak-display-only.sh
+#     MINUTES=60 sh soak-display-only.sh            # GPU renderer (panfrost)
+#     MINUTES=60 VO=drm sh soak-display-only.sh     # no GPU at all
+#
+# VO=drm is the arm that takes panfrost out of the picture: mpv renders frames
+# with the CPU into dumb buffers and page-flips them, so the KMS/CMA scanout is
+# exercised exactly as before while the GPU never runs. That matters because
+# panfrost was live in every run on record, clean and crashing alike, and it
+# maps the scanout dma-buf into its OWN page tables -- a mapping the sun50i
+# IOMMU cannot see and cannot fault on. If a stale one of those is the stray
+# writer, this arm is clean and the default arm is not.
 #
 # WHY. Every long run that crashed had cedrus decoding in it -- but so did
 # nearly every long run, so that correlation is far weaker than it looked, and
@@ -17,9 +26,21 @@
 #   ve=  must not move.   A flat count is positive proof that no frame ever
 #        reached the VE -- stronger than "we did not ask it to", because the
 #        driver is built in on this kernel and cannot be removed.
-#   gpu= must keep rising. If mpv dies into a still frame the run looks calm and
-#        means nothing, and a soak that silently stopped exercising the thing
-#        under test is exactly how you get a false "survived".
+#   gpu= rises on the default arm and must stay FLAT on VO=drm, where it is the
+#        same kind of positive proof ve= is: panfrost is loaded and could fire,
+#        so a flat count means the GPU genuinely never ran.
+#   afbd= must keep rising on BOTH arms. It counts scanout commits, so it is the
+#        exposure meter that survives changing the renderer -- gpu= cannot be
+#        that on an arm where the GPU is deliberately absent. If mpv dies into a
+#        still frame the run looks calm and means nothing, and a soak that
+#        silently stopped exercising the thing under test is exactly how you get
+#        a false "survived".
+#   mmu= is the IOMMU's own interrupt, and it is the honest fault meter. The
+#        driver's fault print is ratelimited (patch 0051), deliberately, so
+#        counting "Page fault for" lines in dmesg understates a storm by
+#        whatever the ratelimiter dropped. This counter does not. It is only
+#        meaningful on a kernel that translates the master under test -- on a
+#        stock kernel it sits at zero because nothing faults.
 #
 # Requires the panel to be up: `h713_disp auto 0x34 logo` at the U-Boot prompt
 # before boot, or there is no KMS device at all.
@@ -29,6 +50,12 @@ CLIP=${CLIP:-/var/tmp/long.mp4}
 MINUTES=${MINUTES:-60}
 PERIOD=${PERIOD:-30}
 MPVLOG=${MPVLOG:-/var/tmp/soak-display-only.mpv.log}
+VO=${VO:-gpu}
+# Which mpv. PATH finds /usr/local/bin/mpv first, the patched direct-path build
+# (patches/mpv), which has no DRM GPU context: on vo=gpu it exits with "Option
+# gpu-context: 'drm' isn't supported" and every restart dies the same way. The
+# GPU path is meant to be stock mpv, so name it.
+MPV=${MPV:-/usr/bin/mpv}
 
 # Sum the per-CPU columns of every /proc/interrupts line matching a pattern.
 # The column count comes from the header row rather than from "looks like a
@@ -58,13 +85,28 @@ if [ -z "$CARD" ]; then
 fi
 [ -r "$CLIP" ] || { echo "SOAK FATAL: no clip at $CLIP"; exit 1; }
 
-echo "SOAK start kernel=$(uname -r) card=$CARD clip=$CLIP minutes=$MINUTES"
+echo "SOAK start kernel=$(uname -r) card=$CARD clip=$CLIP minutes=$MINUTES vo=$VO mpv=$MPV"
 echo "SOAK cmdline: $(cat /proc/cmdline)"
-grep -E 'video-codec|panfrost|h713-afbd|decd' /proc/interrupts | sed 's/^/SOAK irq0 /'
+grep -E 'video-codec|panfrost|h713-afbd|decd|iommu' /proc/interrupts | sed 's/^/SOAK irq0 /'
+# Which masters are actually translated. "No fault" is only evidence if the
+# device under test was attached in the first place.
+for d in /sys/kernel/iommu_groups/*/devices/*; do
+	[ -e "$d" ] && echo "SOAK iommu-attach group $(basename "$(dirname "$(dirname "$d")")") $(basename "$d")"
+done
 
 VE0=$(irqsum 'video-codec')
 GPU0=$(irqsum 'panfrost')
+MMU0=$(irqsum 'iommu')
+AFBD0=$(irqsum 'h713-afbd')
+MIG0=$(awk '/^pgmigrate_success/ { print $2 }' /proc/vmstat)
+# panfrost-mmu on its own. It is inside the gpu= sum, which is right for
+# "did the GPU run at all", but wrong for "is the GPU touching addresses it
+# has no mapping for" -- and that second question is the one that matters
+# now that panfrost is the remaining suspect. Some panfrost MMU faults are
+# normal (growable heap), so read the RATE, not the presence.
+PMMU0=$(irqsum 'panfrost-mmu')
 PREVGPU=$GPU0
+PREVAFBD=$AFBD0
 
 # The first run of this control died here and told us almost nothing: mpv
 # vanished at ~250 s and the script stopped, so an hour's exposure became four
@@ -73,10 +115,33 @@ PREVGPU=$GPU0
 # printed a SIGSEGV even if one happened. Turn it on and say so in the log,
 # because "no fault reported" is only evidence when faults would be reported.
 echo 1 > /proc/sys/debug/exception-trace 2>/dev/null
+
+# The GPU's devfreq node and thermal zone. With an OPP table the GPU idles
+# down, and simple_ondemand may never reach the top point under this load, so
+# a "clean" soak at a ceiling it never ran at would qualify nothing. GPU_MIN_HZ
+# pins the floor (e.g. 600000000) the way the CPU runs were pinned, and
+# gpu_mhz= in every heartbeat is the proof that it held.
+GPUDF=$(ls -d /sys/class/devfreq/*.gpu 2>/dev/null | head -1)
+GPUTZ=
+for z in /sys/class/thermal/thermal_zone*; do
+	[ "$(cat "$z/type" 2>/dev/null)" = gpu-thermal ] && GPUTZ=$z
+done
+if [ -n "${GPU_MIN_HZ:-}" ]; then
+	[ -n "$GPUDF" ] || { echo "SOAK FATAL: GPU_MIN_HZ set but no GPU devfreq node"; exit 1; }
+	echo "$GPU_MIN_HZ" > "$GPUDF/min_freq" || { echo "SOAK FATAL: could not set GPU min_freq"; exit 1; }
+fi
+echo "SOAK gpu-devfreq ${GPUDF:-none} gov=$(cat "$GPUDF/governor" 2>/dev/null) min=$(cat "$GPUDF/min_freq" 2>/dev/null) max=$(cat "$GPUDF/max_freq" 2>/dev/null) avail=$(cat "$GPUDF/available_frequencies" 2>/dev/null)"
 echo "SOAK exception-trace=$(cat /proc/sys/debug/exception-trace 2>/dev/null)"
 
 start_mpv() {
-	mpv --hwdec=no --vo=gpu --gpu-context=drm --drm-device="$CARD" \
+	# --gpu-context is meaningful only to vo=gpu; vo=drm takes --drm-device
+	# directly and renders with the CPU, never opening a render node.
+	if [ "$VO" = gpu ]; then
+		set -- --vo=gpu --gpu-context=drm --drm-device="$CARD"
+	else
+		set -- --vo="$VO" --drm-device="$CARD"
+	fi
+	"$MPV" --hwdec=no "$@" \
 	    --loop-file=inf --no-audio --input-terminal=no \
 	    "$CLIP" >> "$MPVLOG" 2>&1 < /dev/null &
 	MPID=$!
@@ -119,13 +184,40 @@ while [ "$(date +%s)" -lt "$END" ]; do
 	fi
 	ve=$(irqsum 'video-codec')
 	gpu=$(irqsum 'panfrost')
+	mmu=$(irqsum 'iommu')
+	afbd=$(irqsum 'h713-afbd')
 	cma=$(awk '/CmaFree/ { print $2 }' /proc/meminfo)
-	echo "SOAK t=${t}s ve=${ve} ve_delta=$((ve - VE0)) gpu=${gpu} gpu_rate=$(((gpu - PREVGPU) / PERIOD))/s cma=${cma}kB deaths=${DEATHS}"
+	# Page migration. NOTE: the hypothesis this was added for is DEAD -- it
+	# supposed that CMA pages could be migrated out from under a live GPU
+	# mapping, but cma_alloc() takes the pages out of the buddy allocator, so
+	# an allocated CMA buffer is not a migration candidate. Kept as a cheap
+	# background counter, not as evidence for anything.
+	mig=$(awk '/^pgmigrate_success/ { print $2 }' /proc/vmstat)
+	pmmu=$(irqsum 'panfrost-mmu')
+	# The CPU's ACTUAL frequency, not the governor's name. Pinning to the
+	# performance governor does not stop thermal throttling from changing
+	# it, so a DVFS experiment that only checks the governor proves
+	# nothing. If khz= moves during a supposedly-pinned run, the run is
+	# void the same way a CMA drop voided the carveout arm.
+	khz=$(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq 2>/dev/null || echo 0)
+	gpu_mhz=$(( $(cat "$GPUDF/cur_freq" 2>/dev/null || echo 0) / 1000000 ))
+	gpu_mc=$(cat "$GPUTZ/temp" 2>/dev/null || echo 0)
+	echo "SOAK t=${t}s ve=${ve} ve_delta=$((ve - VE0)) gpu=${gpu} gpu_rate=$(((gpu - PREVGPU) / PERIOD))/s afbd_rate=$(((afbd - PREVAFBD) / PERIOD))/s mmu_delta=$((mmu - MMU0)) pmmu_delta=$((pmmu - PMMU0)) mig_delta=$((mig - MIG0)) khz=${khz} gpu_mhz=${gpu_mhz} gpu_mc=${gpu_mc} cma=${cma}kB deaths=${DEATHS}"
 	PREVGPU=$gpu
+	PREVAFBD=$afbd
 done
 
 kill "$MPID" 2>/dev/null
+[ -n "${GPU_MIN_HZ:-}" ] && echo 0 > "$GPUDF/min_freq"
 sleep 2
 ve=$(irqsum 'video-codec')
 gpu=$(irqsum 'panfrost')
-echo "SOAK DONE t=$(($(date +%s) - T0))s deaths=${DEATHS} ve_delta=$((ve - VE0)) gpu_delta=$((gpu - GPU0))"
+mmu=$(irqsum 'iommu')
+afbd=$(irqsum 'h713-afbd')
+mig=$(awk '/^pgmigrate_success/ { print $2 }' /proc/vmstat)
+pmmu=$(irqsum 'panfrost-mmu')
+echo "SOAK DONE vo=${VO} t=$(($(date +%s) - T0))s deaths=${DEATHS} ve_delta=$((ve - VE0)) gpu_delta=$((gpu - GPU0)) afbd_delta=$((afbd - AFBD0)) mmu_delta=$((mmu - MMU0)) pmmu_delta=$((pmmu - PMMU0)) mig_delta=$((mig - MIG0))"
+# The last few distinct fault addresses, if any. The count above is the truth;
+# these are the addresses the ratelimiter let through, which is what identifies
+# the master and tells you where it went.
+dmesg | grep -a 'Page fault for' | tail -20 | sed 's/^/SOAK fault /'

@@ -1,0 +1,173 @@
+From c9d829969af9d54dcbf1741b957e1d19459bce1c Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 3 Oct 2026 20:04:49 -0700
+Subject: [PATCH] Report a failed decode on its own frame through vaSyncSurface
+
+The kernel marks a CAPTURE buffer V4L2_BUF_FLAG_ERROR when a decode fails
+(an engine error or a watchdog timeout), but only the AV1 key-frame gate
+ever looked at it: every other codec handed the frame on as good.
+
+Keep the flag on the surface. vaSyncSurface() now returns
+VA_STATUS_ERROR_DECODING_ERROR for that frame, as VA-API defines, and
+vaQuerySurfaceError() describes it as one whole-picture record (the
+kernel does not say which blocks failed). The pixels stay readable
+through images and exports, nothing after the frame is refused, and the
+flag clears when the surface is decoded into again. The AV1 gate is
+unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/codec_av1.c    |  1 +
+ src/decode.c       |  3 +++
+ src/driver.c       |  1 +
+ src/surface.c      | 51 +++++++++++++++++++++++++++++++++++++++++++++-
+ src/v4l2_request.h | 10 +++++++++
+ 5 files changed, 65 insertions(+), 1 deletion(-)
+
+diff --git a/src/codec_av1.c b/src/codec_av1.c
+index 9610e42..cc3082c 100644
+--- a/src/codec_av1.c
++++ b/src/codec_av1.c
+@@ -914,6 +914,7 @@ static VAStatus av1_end_picture_gated(struct v4l2r_context *ctx)
+ 		ctx->pic.target->codec_tag = codec->va_pic.order_hint;
+ 		ctx->pic.target->ctx = ctx;
+ 		ctx->pic.target->status = VASurfaceRendering;
++		ctx->pic.target->decode_error = false;
+ 	}
+ 
+ 	return VA_STATUS_SUCCESS;
+diff --git a/src/decode.c b/src/decode.c
+index c1d8591..74638da 100644
+--- a/src/decode.c
++++ b/src/decode.c
+@@ -212,6 +212,8 @@ static int dequeue_buffer(struct v4l2r_context *ctx, enum v4l2_buf_type type)
+ 		    ctx->captures[buffer.index].surface) {
+ 			ctx->captures[buffer.index].surface->status =
+ 				VASurfaceReady;
++			ctx->captures[buffer.index].surface->decode_error =
++				buffer.flags & V4L2_BUF_FLAG_ERROR;
+ 			/* Start the format conversion right away so it
+ 			 * overlaps subsequent decodes. */
+ 			if (ctx->conv)
+@@ -536,6 +538,7 @@ static VAStatus queue_decode(struct v4l2r_context *ctx,
+ 
+ 	ctx->queued_request |= 1u << output->index;
+ 	target->status = VASurfaceRendering;
++	target->decode_error = false;
+ 
+ 	pthread_mutex_unlock(&ctx->mutex);
+ 	return VA_STATUS_SUCCESS;
+diff --git a/src/driver.c b/src/driver.c
+index 88515e2..d7df81d 100644
+--- a/src/driver.c
++++ b/src/driver.c
+@@ -1019,6 +1019,7 @@ VAStatus V4L2R_DRIVER_INIT(VADriverContextP va_ctx)
+ 	vtable->vaRenderPicture = v4l2r_RenderPicture;
+ 	vtable->vaEndPicture = v4l2r_EndPicture;
+ 	vtable->vaSyncSurface = v4l2r_SyncSurface;
++	vtable->vaQuerySurfaceError = v4l2r_QuerySurfaceError;
+ 	vtable->vaQuerySurfaceAttributes = v4l2r_QuerySurfaceAttributes;
+ 	vtable->vaQuerySurfaceStatus = v4l2r_QuerySurfaceStatus;
+ 	vtable->vaPutSurface = v4l2r_PutSurface;
+diff --git a/src/surface.c b/src/surface.c
+index b05a104..170a490 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -117,16 +117,65 @@ VAStatus v4l2r_DestroySurfaces(VADriverContextP va_ctx, VASurfaceID *surface_lis
+ 	return VA_STATUS_SUCCESS;
+ }
+ 
++/*
++ * A decode the kernel flagged as failed still leaves pixels in the surface -
++ * usually a partly decoded or concealed picture - so every path that reads
++ * them (images, exports, the converter) carries on as before. Only
++ * vaSyncSurface() says so, the way VA-API defines it: the client gets
++ * VA_STATUS_ERROR_DECODING_ERROR for that one frame and decides whether to
++ * show it. Nothing later is refused; the AV1 key-frame gate is separate.
++ */
+ VAStatus v4l2r_SyncSurface(VADriverContextP va_ctx, VASurfaceID render_target)
+ {
+ 	struct v4l2r_driver *drv = v4l2r_driver(va_ctx);
+ 	struct v4l2r_surface *surface;
++	VAStatus status;
+ 
+ 	surface = V4L2R_SURFACE_GET(drv, render_target);
+ 	if (!surface)
+ 		return VA_STATUS_ERROR_INVALID_SURFACE;
+ 
+-	return v4l2r_surface_ready(surface);
++	status = v4l2r_surface_ready(surface);
++	if (status == VA_STATUS_SUCCESS && surface->decode_error)
++		return VA_STATUS_ERROR_DECODING_ERROR;
++
++	return status;
++}
++
++VAStatus v4l2r_QuerySurfaceError(VADriverContextP va_ctx,
++				 VASurfaceID render_target,
++				 VAStatus error_status, void **error_info)
++{
++	struct v4l2r_driver *drv = v4l2r_driver(va_ctx);
++	struct v4l2r_surface *surface;
++	VASurfaceDecodeMBErrors *errors;
++	uint32_t mbs;
++
++	surface = V4L2R_SURFACE_GET(drv, render_target);
++	if (!surface)
++		return VA_STATUS_ERROR_INVALID_SURFACE;
++	if (!error_info)
++		return VA_STATUS_ERROR_INVALID_PARAMETER;
++
++	/* The kernel reports a failed frame, not which blocks failed, so the
++	 * one record covers the whole picture in 16x16 units. */
++	errors = surface->mb_errors;
++	memset(surface->mb_errors, 0, sizeof(surface->mb_errors));
++	if (error_status == VA_STATUS_ERROR_DECODING_ERROR &&
++	    surface->decode_error) {
++		mbs = ((surface->width + 15) / 16) *
++		      ((surface->height + 15) / 16);
++		errors->status = 1;
++		errors->start_mb = 0;
++		errors->end_mb = mbs ? mbs - 1 : 0;
++		errors->decode_error_type = VADecodeMBError;
++		errors->num_mb = mbs;
++		errors++;
++	}
++	errors->status = -1;
++
++	*error_info = surface->mb_errors;
++	return VA_STATUS_SUCCESS;
+ }
+ 
+ VAStatus v4l2r_QuerySurfaceStatus(VADriverContextP va_ctx,
+diff --git a/src/v4l2_request.h b/src/v4l2_request.h
+index 7728e03..cd68ed0 100644
+--- a/src/v4l2_request.h
++++ b/src/v4l2_request.h
+@@ -182,6 +182,13 @@ struct v4l2r_surface {
+ 	bool convert_pending;
+ 	/* Codec scratch, e.g. the AV1 order hint of the decoded frame. */
+ 	uint32_t codec_tag;
++	/* The kernel returned this surface's last decode with
++	 * V4L2_BUF_FLAG_ERROR. Cleared when the surface is submitted again.
++	 * Protected by ctx->mutex while set from the dequeue path. */
++	bool decode_error;
++	/* vaQuerySurfaceError's answer: one whole-frame record and the -1
++	 * terminator. Owned by the surface, valid until the next query. */
++	VASurfaceDecodeMBErrors mb_errors[2];
+ };
+ 
+ /*
+@@ -734,6 +741,9 @@ VAStatus v4l2r_CreateSurfaces2(VADriverContextP va_ctx, unsigned int format,
+ VAStatus v4l2r_DestroySurfaces(VADriverContextP va_ctx, VASurfaceID *surface_list,
+ 			       int num_surfaces);
+ VAStatus v4l2r_SyncSurface(VADriverContextP va_ctx, VASurfaceID render_target);
++VAStatus v4l2r_QuerySurfaceError(VADriverContextP va_ctx,
++				 VASurfaceID render_target,
++				 VAStatus error_status, void **error_info);
+ VAStatus v4l2r_QuerySurfaceStatus(VADriverContextP va_ctx,
+ 				  VASurfaceID render_target,
+ 				  VASurfaceStatus *status);
+-- 
+2.55.0
+

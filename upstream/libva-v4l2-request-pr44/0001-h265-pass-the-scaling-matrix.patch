@@ -1,0 +1,149 @@
+From 1943715211d4b66b1733ea52fd56651123fe9b4b Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 22 Aug 2026 18:01:26 -0700
+Subject: [PATCH] h265: pass the scaling matrix
+
+V4L2_CID_STATELESS_HEVC_SCALING_MATRIX is never set, so a stream whose SPS
+has scaling_list_enabled_flag = 1 is decoded against flat matrices. The
+failure is quiet: not a stall or a rejected control, but a decode that runs
+to completion with the wrong quantisation.
+
+picture.c already copies the client's VAIQMatrixBufferHEVC into
+surface_object->params.h265.iqmatrix and sets iqmatrix_set. Nothing read it.
+
+No scan conversion is needed, which is the opposite of what the bitstream
+syntax suggests. HEVC codes scaling lists in up-right diagonal order, but
+both APIs specify raster: va_dec_hevc.h says "Matrix entries are in raster
+scan order which follows HEVC spec", and the V4L2 control's kernel doc says
+"expected in raster scan order" for every member. ffmpeg's parser has
+already undone the scan -- scaling_list_data() in libavcodec/hevc/ps.c
+stores each coefficient at its raster position, and vaapi_hevc.c copies the
+arrays across unchanged (checked in 6.1 and 7.1). The 32x32 pair is
+matrixId 0 and 3 on both sides.
+
+The control is set only when the client actually sent a matrix, as mpeg2.c
+already does for its quantiser matrices. A matrix left from an earlier
+picture on the same surface cannot be applied by mistake on cedrus, which
+writes the scaling registers only when the SPS flag given for the current
+picture is set.
+
+Tested on an Allwinner H713 (Cedrus, kernel 6.18.38) through unmodified
+ffmpeg 7.1.5, on this PR rebased onto PR #38 for its format ordering.
+Two x265 vectors at 640x480, 25 frames:
+
+  --scaling-list default                 implicit HEVC default lists
+  --scaling-list <file>                  custom lists, non-flat at 4x4,
+                                         DC coefficients differing from
+                                         their own matrix
+
+Both decoded MISMATCH (ve+25, i.e. all 25 frames on the engine) before this
+change and bit-exact against a host software decode after it. GStreamer's
+v4l2slh265dec was bit-exact on both throughout, so the kernel side was
+never at fault. The three non-scaling-list vectors and an H.264 ladder are
+unregressed.
+
+Note for anyone writing a test: a stream encoded with x265's defaults has
+scaling_list_enabled_flag = 0, and cedrus writes its scaling SRAM only when
+that flag is set -- so a driver that passes no matrix at all still scores
+bit-exact. The gap is invisible without a vector that enables scaling
+lists.
+---
+ src/h265.c | 68 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 68 insertions(+)
+
+diff --git a/src/h265.c b/src/h265.c
+index 9e54319..8c1f5e8 100644
+--- a/src/h265.c
++++ b/src/h265.c
+@@ -178,6 +178,52 @@ static void h265_fill_sps(VAPictureParameterBufferHEVC *picture,
+ 		sps->flags |= V4L2_HEVC_SPS_FLAG_STRONG_INTRA_SMOOTHING_ENABLED;
+ }
+ 
++/*
++ * Both sides carry the six 4x4, six 8x8, six 16x16 and two 32x32 lists as
++ * ScalingList[sizeId][matrixId][i], and both specify i in RASTER order --
++ * va_dec_hevc.h says "Matrix entries are in raster scan order which follows
++ * HEVC spec", and the V4L2 control's kernel doc says "expected in raster scan
++ * order" for every member. So this is a straight correspondence and not a scan
++ * conversion: the bitstream's up-right diagonal order has already been undone
++ * by whoever parsed the SPS. In ffmpeg that is scaling_list_data() in
++ * libavcodec/hevc/ps.c, which stores each coefficient at its raster position
++ * and hands the array to VA-API unchanged (libavcodec/vaapi_hevc.c).
++ *
++ * The 32x32 pair is matrixId 0 and 3, intra and inter luma, on both sides.
++ */
++static void h265_fill_scaling_matrix(VAIQMatrixBufferHEVC *iqmatrix,
++				     struct v4l2_ctrl_hevc_scaling_matrix *matrix)
++{
++	unsigned int i, j;
++
++	memset(matrix, 0, sizeof(*matrix));
++
++	for (i = 0; i < 6; i++) {
++		for (j = 0; j < 16; j++)
++			matrix->scaling_list_4x4[i][j] =
++				iqmatrix->ScalingList4x4[i][j];
++
++		for (j = 0; j < 64; j++) {
++			matrix->scaling_list_8x8[i][j] =
++				iqmatrix->ScalingList8x8[i][j];
++			matrix->scaling_list_16x16[i][j] =
++				iqmatrix->ScalingList16x16[i][j];
++		}
++
++		matrix->scaling_list_dc_coef_16x16[i] =
++			iqmatrix->ScalingListDC16x16[i];
++	}
++
++	for (i = 0; i < 2; i++) {
++		for (j = 0; j < 64; j++)
++			matrix->scaling_list_32x32[i][j] =
++				iqmatrix->ScalingList32x32[i][j];
++
++		matrix->scaling_list_dc_coef_32x32[i] =
++			iqmatrix->ScalingListDC32x32[i];
++	}
++}
++
+ static void h265_fill_decode_params(VAPictureParameterBufferHEVC *picture,
+ 				    VASliceParameterBufferHEVC *slice,
+ 				    struct object_heap *surface_heap,
+@@ -397,6 +443,7 @@ int h265_set_controls(struct request_data *driver_data,
+ 		&surface_object->params.h265.slice;
+ 	struct v4l2_ctrl_hevc_pps pps;
+ 	struct v4l2_ctrl_hevc_sps sps;
++	struct v4l2_ctrl_hevc_scaling_matrix scaling_matrix;
+ 	struct v4l2_ctrl_hevc_decode_params decode_params;
+ 	struct v4l2_ctrl_hevc_slice_params slice_params;
+ 	int rc;
+@@ -408,6 +455,27 @@ int h265_set_controls(struct request_data *driver_data,
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
++	/*
++	 * Only when the client sent one, the same way mpeg2.c handles its
++	 * quantiser matrices: ffmpeg emits VAIQMatrixBufferHEVC on every
++	 * picture whose SPS has scaling_list_enabled_flag set and none at all
++	 * otherwise, so this is also the flag's own condition in practice. A
++	 * matrix left over from an earlier picture on the same surface cannot
++	 * be applied by mistake, because cedrus writes the scaling registers
++	 * only when the SPS flag it was given for THIS picture is set.
++	 */
++	if (surface_object->params.h265.iqmatrix_set) {
++		h265_fill_scaling_matrix(&surface_object->params.h265.iqmatrix,
++					 &scaling_matrix);
++
++		rc = v4l2_set_control(driver_data->video_fd,
++				      surface_object->request_fd,
++				      V4L2_CID_STATELESS_HEVC_SCALING_MATRIX,
++				      &scaling_matrix, sizeof(scaling_matrix));
++		if (rc < 0)
++			return VA_STATUS_ERROR_OPERATION_FAILED;
++	}
++
+ 	h265_fill_pps(picture, slice, &pps);
+ 
+ 	rc = v4l2_set_control(driver_data->video_fd, surface_object->request_fd,
+-- 
+2.55.0
+

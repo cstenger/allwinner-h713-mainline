@@ -1,0 +1,120 @@
+From dcbce8eb703735be1f2ea816d463390b9acf2f55 Mon Sep 17 00:00:00 2001
+From: build <build@localhost>
+Date: Thu, 3 Sep 2026 17:53:35 -0700
+Subject: vo_drm: refuse to scale on the PRIME plane, and stop retrying a
+ doomed flip
+
+The PRIME geometry guard established that the source was uncropped and the
+destination fullscreen, but never that the two were the SAME SIZE. Any video
+whose resolution differs from the mode therefore passed it and asked the plane
+to scale. A plane that cannot scale rejects every such commit with ERANGE.
+
+Because a failed flip was only a warning, mpv then retried forever without
+advancing the clock. Measured on an H713 with a 1080p file on a 1280x720
+panel: 890,454 failed commits, playback frozen at 00:00:00, audio playing
+normally, and the display hardware left in a state where the video plane
+showed black until a power cycle. Every retry reprograms the plane, so this is
+not a wasted-cycles problem -- it is sustained abuse of the hardware.
+
+Two changes:
+
+- reconfig() rejects a scaling request up front, naming the two geometries and
+  pointing at --hwdec=vaapi-copy, so the case fails in one line instead of
+  degrading into an infinite loop;
+- queue_flip() counts consecutive failures and abandons the direct path after
+  PRIME_FLIP_FAIL_LIMIT (60, about a second of vsyncs), disabling the video
+  plane. That backstop is independent of the geometry check and covers any
+  other configuration the kernel refuses.
+---
+ video/out/vo_drm.c | 50 +++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 47 insertions(+), 3 deletions(-)
+
+diff --git a/video/out/vo_drm.c b/video/out/vo_drm.c
+index e86ebb3cd1..e4d20f7e23 100644
+--- a/video/out/vo_drm.c
++++ b/video/out/vo_drm.c
+@@ -53,6 +53,11 @@
+ #define BYTES_PER_PIXEL 4
+ #define BITS_PER_PIXEL 32
+ 
++// Consecutive failed PRIME flips tolerated before the direct path is abandoned.
++// Roughly a second of vsyncs: long enough to ride out a transient, short enough
++// that a permanently-rejected configuration stops reprogramming the hardware.
++#define PRIME_FLIP_FAIL_LIMIT 60
++
+ struct drm_frame {
+     struct framebuffer *fb;
+     struct drm_prime_framebuffer prime_fb;
+@@ -76,6 +81,8 @@ struct priv {
+     struct mp_sws_context *sws;
+     struct mp_image_params target_params;
+     bool prime_mode;
++    int prime_flip_fails;
++    bool prime_broken;
+ 
+ #if HAVE_VAAPI
+     struct mp_hwdec_ctx vaapi_ctx;
+@@ -286,6 +293,23 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
+             MP_ERR(vo, "DRM PRIME plane requires uncropped, unrotated fullscreen video\n");
+             return -1;
+         }
++        // The tests above establish "uncropped" and "fullscreen" but NOT that
++        // the two are the same size, so any video whose resolution differs from
++        // the mode passed them and asked the plane to scale. A plane that
++        // cannot scale rejects every such commit with ERANGE, and because a
++        // failed flip is not fatal the player then retries forever without
++        // advancing -- observed at 890,454 failures on one 1080p file, which
++        // wedged the display hardware.
++        if (mp_rect_w(p->src) != mp_rect_w(p->dst) ||
++            mp_rect_h(p->src) != mp_rect_h(p->dst)) {
++            MP_ERR(vo, "DRM PRIME plane cannot scale %dx%d video to a %dx%d "
++                       "mode. Use --hwdec=vaapi-copy or --hwdec=no.\n",
++                   mp_rect_w(p->src), mp_rect_h(p->src),
++                   mp_rect_w(p->dst), mp_rect_h(p->dst));
++            return -1;
++        }
++        p->prime_flip_fails = 0;
++        p->prime_broken = false;
+ 
+         p->target_params = *params;
+         mp_mutex_lock(&vo->params_mutex);
+@@ -488,9 +512,23 @@ static void queue_flip(struct vo *vo, struct drm_frame *frame)
+ 
+         int flags = DRM_MODE_ATOMIC_NONBLOCK | DRM_MODE_PAGE_FLIP_EVENT;
+         int ret = drmModeAtomicCommit(drm->fd, request, flags, drm);
+-        if (ret)
+-            MP_WARN(vo, "Failed to queue DRM PRIME plane flip: %s\n",
+-                    mp_strerror(errno));
++        // Give up rather than retry forever. Every retry reprograms the plane,
++        // so a commit the kernel can never accept is not merely useless: it
++        // hammers the display hardware for as long as the file is open.
++        if (ret) {
++            if (++p->prime_flip_fails == PRIME_FLIP_FAIL_LIMIT) {
++                MP_ERR(vo, "DRM PRIME plane flip failed %d times in a row (%s); "
++                           "giving up on the direct path.\n",
++                       p->prime_flip_fails, mp_strerror(errno));
++                p->prime_broken = true;
++                disable_video_plane(vo);
++            } else if (p->prime_flip_fails < PRIME_FLIP_FAIL_LIMIT) {
++                MP_WARN(vo, "Failed to queue DRM PRIME plane flip: %s\n",
++                        mp_strerror(errno));
++            }
++        } else {
++            p->prime_flip_fails = 0;
++        }
+         drm->waiting_for_flip = !ret;
+         drmModeAtomicFree(request);
+         return;
+@@ -514,6 +552,12 @@ static void flip_page(struct vo *vo)
+         return;
+ 
+     while (drm->redraw || p->fb_queue_len > vo->opts->swapchain_depth) {
++        if (p->prime_broken) {
++            swapchain_step(vo);
++            if (p->fb_queue_len <= 1)
++                break;
++            continue;
++        }
+         if (drm->waiting_for_flip) {
+             vo_drm_wait_on_flip(vo->drm);
+             swapchain_step(vo);

@@ -1,0 +1,71 @@
+Request a 64-byte capture pitch so the GPU can import the frame
+
+Stock mpv on the GPU path (--vo=gpu --hwdec=vaapi) showed nothing for an
+852x480 H.264 stream. It decoded in hardware, then failed to map every
+frame and stalled:
+
+  MESA: error: panfrost: rejecting image due to unsupported offset or
+        stride alignment.
+  [vo/gpu/vaapi] Failed to import surface in EGL: 12291
+  [vo/gpu] Mapping hardware decoded surface failed.
+
+mpv imports NV12 one plane at a time, luma as R8 and chroma as GR88.
+Panfrost on Bifrost (v7) needs those linear imports 64-byte aligned in
+pitch and offset; only a planar NV12 import gets the looser 16. Mesa 25.0.7
+(pan_layout.c, format_minimum_alignment) and 26.1.6
+(pan_linear_or_tiled_row_align_req) are the same here, so a newer Mesa
+does not help. cedrus gives the smallest pitch it can, ALIGN(width, 32)
+since kernel patch 0125. That is 864 bytes for 852, which is 64-aligned
+for 640, 960, 1280 and 1920 and not for 352, 720 or 852.
+
+So ask for ALIGN(width, 64) when setting an NV12/NV21 CAPTURE format.
+cedrus honours a larger bytesperline (kernel 0125 clamps the request
+between ALIGN(width, 32) and its maximum). A driver that does not honour
+it overwrites the field, and the G_FMT that follows is what describes the
+surfaces either way. The chroma offset is pitch x a 16-aligned height, so
+it is 64-aligned too. Widths that were already 64-aligned are unchanged.
+
+---
+diff --git a/src/v4l2.c b/src/v4l2.c
+index ee43aed..cd87413 100644
+--- a/src/v4l2.c
++++ b/src/v4l2.c
+@@ -94,21 +94,38 @@ static void v4l2_setup_format(struct v4l2_format *format, unsigned int type,
+ 			      unsigned int pixelformat)
+ {
+ 	unsigned int sizeimage;
++	unsigned int bytesperline = 0;
+ 
+ 	memset(format, 0, sizeof(*format));
+ 	format->type = type;
+ 
+ 	sizeimage = v4l2_type_is_output(type) ? SOURCE_SIZE_MAX : 0;
+ 
++	/*
++	 * Ask for a capture pitch that is a multiple of 64 bytes. Panfrost
++	 * rejects any linear dma-buf plane imported as R8 or GR88 -- which is
++	 * how mpv and GStreamer bring NV12 into GL -- whose pitch or offset is
++	 * not 64-byte aligned ("rejecting image due to unsupported offset or
++	 * stride alignment"), in Mesa 25.0 and 26.1 alike. cedrus's minimum is
++	 * ALIGN(width, 32), so an 852-wide stream got an 864-byte pitch and
++	 * never reached the screen. cedrus honours a larger request; a driver
++	 * that does not simply overwrites it, and G_FMT reports what was used.
++	 */
++	if (!v4l2_type_is_output(type) &&
++	    (pixelformat == V4L2_PIX_FMT_NV12 || pixelformat == V4L2_PIX_FMT_NV21))
++		bytesperline = (width + 63) & ~63U;
++
+ 	if (v4l2_type_is_mplane(type)) {
+ 		format->fmt.pix_mp.width = width;
+ 		format->fmt.pix_mp.height = height;
+ 		format->fmt.pix_mp.plane_fmt[0].sizeimage = sizeimage;
++		format->fmt.pix_mp.plane_fmt[0].bytesperline = bytesperline;
+ 		format->fmt.pix_mp.pixelformat = pixelformat;
+ 	} else {
+ 		format->fmt.pix.width = width;
+ 		format->fmt.pix.height = height;
+ 		format->fmt.pix.sizeimage = sizeimage;
++		format->fmt.pix.bytesperline = bytesperline;
+ 		format->fmt.pix.pixelformat = pixelformat;
+ 	}
+ }

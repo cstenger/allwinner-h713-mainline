@@ -1,0 +1,80 @@
+From 720acd702cc2bb42b70c46a9c6b17aacb908ce06 Mon Sep 17 00:00:00 2001
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 4 Oct 2026 19:52:58 -0700
+Subject: [PATCH] AV1: derive tile_size_bytes from the tile layout
+
+VA-API does not carry the frame header's tile_size_bytes, and the
+backend filled in a fixed 4 for every multi-tile frame. Encoders pick
+the smallest width that fits: every frame of the seven tiled test clips
+(2x2 up to 8x4 at 2160p) uses 1 or 2 bytes, never 4. The H713 kernel
+skips each tile's size field by this width and finds the start of the
+tile data 4 bytes before the first tile, so it rejected every such
+frame ("cannot set up the frame: -22"), and FFmpeg VA-API decoded no
+tiled AV1 at all.
+
+Inside a tile group every tile but the last is preceded by its size
+field, so the gap between one tile's end and the next one's start is
+exactly that width. Take the first gap of 1-4 bytes; with one tile per
+group, the first tile's own offset; only then the old guess.
+
+Measured 2026-10-04 with FFmpeg VA-API against libdav1d: all seven
+tiled clips bit-exact (the AV1 matrix goes from 38 to 45 of 56); all
+gates pass.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/codec_av1.c | 31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/src/codec_av1.c b/src/codec_av1.c
+index 19e0f96..98c988b 100644
+--- a/src/codec_av1.c
++++ b/src/codec_av1.c
+@@ -853,6 +853,34 @@ static VAStatus av1_render_buffer(struct v4l2r_context *ctx,
+ 
+ static VAStatus av1_end_picture_gated(struct v4l2r_context *ctx);
+ 
++/*
++ * tile_size_bytes, which VA-API does not carry. Inside a tile group every
++ * tile but the last is preceded by a tile_size_bytes-wide size field, so the
++ * gap between one tile's end and the next one's start is that width. The
++ * old fixed guess of 4 was wrong for every tiled stream measured (encoders
++ * pick 1 or 2), and the H713 kernel rejects a frame whose first tile starts
++ * nearer the buffer than the size field it is told precedes it.
++ */
++static uint8_t av1_tile_size_bytes(const struct av1_context *codec)
++{
++	for (unsigned int i = 0; i + 1 < codec->num_tiles; i++) {
++		const struct v4l2_ctrl_av1_tile_group_entry *a = &codec->tiles[i];
++		const struct v4l2_ctrl_av1_tile_group_entry *b = &codec->tiles[i + 1];
++		uint32_t end = a->tile_offset + a->tile_size;
++
++		if (b->tile_offset > end && b->tile_offset - end <= 4)
++			return b->tile_offset - end;
++	}
++
++	/* One tile per group: the first tile's size field sits at the very
++	 * start of the frame's tile data. */
++	if (codec->num_tiles && codec->tiles[0].tile_offset >= 1 &&
++	    codec->tiles[0].tile_offset <= 4)
++		return codec->tiles[0].tile_offset;
++
++	return 4;
++}
++
+ static VAStatus av1_render_buffer_gated(struct v4l2r_context *ctx,
+ 					struct v4l2r_buffer *buf)
+ {
+@@ -906,6 +934,9 @@ static VAStatus av1_end_picture_gated(struct v4l2r_context *ctx)
+ 			return status;
+ 	}
+ 
++	if (codec->frame.tile_info.tile_cols * codec->frame.tile_info.tile_rows > 1)
++		codec->frame.tile_info.tile_size_bytes = av1_tile_size_bytes(codec);
++
+ 	/* Copy this frame's assembled state into the held slot instead of
+ 	 * submitting it: refresh_frame_flags is only known once the next
+ 	 * frame's ref_frame_map is seen (see struct av1_context). */
+-- 
+2.55.0
+

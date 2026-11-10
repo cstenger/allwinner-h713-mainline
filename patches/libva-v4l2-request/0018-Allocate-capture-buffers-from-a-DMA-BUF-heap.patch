@@ -1,0 +1,782 @@
+Allocate capture buffers from a DMA-BUF heap
+
+Every VA surface used to be a V4L2 MMAP buffer owned by the CAPTURE queue,
+named by its index, mapped with mmap and exported with EXPBUF. The queue
+owned the pixels, so it could not be released or renegotiated while any
+surface was still referenced: a client creating surfaces at a new size or
+depth with the old ones alive got EBUSY from S_FMT and fell back to
+software. ffmpeg does exactly that on a VP9 or HEVC resolution change
+(measured 2026-10-01 with ffmpeg 7.1.5).
+
+Now each surface owns its memory. Its buffer comes from /dev/dma_heap/system
+and is queued as V4L2_MEMORY_DMABUF, always with the same fd at the same
+index, so vb2 keeps the mapping across decodes. Both decoders accept DMABUF
+capture, and the system heap is right for them: the VE, the AV1 core and the
+display are all IOMMU masters, so scattered pages are contiguous in each
+device's address space (heap buffers on the H713 video plane were checked on
+the panel in NV12, P010 and P010+LSB10 before this was written), and the
+128 MB CMA pool could not hold a 4K surface pool anyway.
+
+- Capture memory is chosen per device whenever its queue is configured from
+  empty: DMABUF if the heap opened and the format is one buffer, otherwise
+  MMAP, which is the previous behaviour. V4L2_REQUEST_CAPTURE_MEMORY=mmap or
+  dmabuf forces either for A/B runs; a forced dmabuf that cannot be honoured
+  fails instead of quietly running the other one. The choice is logged.
+- Each heap buffer is sizeimage bytes, so it covers whatever the driver
+  keeps behind the picture.
+- Export (vaExportSurfaceHandle, vaAcquireBufferHandle) hands out a
+  duplicate of the surface's fd instead of calling EXPBUF.
+- CPU reads (vaDeriveImage, vaGetImage) are bracketed with
+  DMA_BUF_IOCTL_SYNC: heap memory is cached and vb2 no longer does that
+  maintenance.
+- OUTPUT (bitstream) buffers stay MMAP.
+
+No behaviour change is intended by this patch alone: the queues are still
+held while surfaces exist (0009). Renegotiating while old surfaces are
+alive is the next patch.
+
+diff --git a/src/buffer.c b/src/buffer.c
+index b075645..7687bc9 100644
+--- a/src/buffer.c
++++ b/src/buffer.c
+@@ -231,9 +231,15 @@ VAStatus RequestAcquireBufferHandle(VADriverContextP context,
+ 	if (surface_object->destination_buffers_count > 1)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+-	rc = v4l2_export_buffer(driver_data->video_fd, capture_type,
+-				surface_object->destination_index, O_RDONLY,
+-				&export_fd, 1);
++	if (surface_object->destination_fd >= 0) {
++		export_fd = fcntl(surface_object->destination_fd,
++				  F_DUPFD_CLOEXEC, 0);
++		rc = export_fd < 0 ? -1 : 0;
++	} else {
++		rc = v4l2_export_buffer(driver_data->video_fd, capture_type,
++					surface_object->destination_index,
++					O_RDONLY, &export_fd, 1);
++	}
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+diff --git a/src/context.c b/src/context.c
+index a583627..fb916f1 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -233,11 +233,13 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	    driver_data->video_format == NULL)
+ 		return VA_STATUS_SUCCESS;
+ 
+-	rc = v4l2_request_buffers(driver_data->video_fd, output_type, 0);
++	rc = v4l2_request_buffers(driver_data->video_fd, output_type,
++				  V4L2_MEMORY_MMAP, 0);
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+-	rc = v4l2_request_buffers(driver_data->video_fd, capture_type, 0);
++	rc = v4l2_request_buffers(driver_data->video_fd, capture_type,
++				  request_capture_memory(driver_data), 0);
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+diff --git a/src/dmaheap.c b/src/dmaheap.c
+new file mode 100644
+index 0000000..0b8aff4
+--- /dev/null
++++ b/src/dmaheap.c
+@@ -0,0 +1,100 @@
++/*
++ * Copyright (C) 2026 Christopher Stenger
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the
++ * "Software"), to deal in the Software without restriction, including
++ * without limitation the rights to use, copy, modify, merge, publish,
++ * distribute, sub license, and/or sell copies of the Software, and to
++ * permit persons to whom the Software is furnished to do so, subject to
++ * the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the
++ * next paragraph) shall be included in all copies or substantial portions
++ * of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
++ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
++ * IN NO EVENT SHALL PRECISION INSIGHT AND/OR ITS SUPPLIERS BE LIABLE FOR
++ * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
++ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
++ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
++ */
++
++
++/*
++ * Capture memory from a DMA-BUF heap.
++ *
++ * With V4L2_MEMORY_MMAP every surface's pixels belong to the CAPTURE queue,
++ * so the queue cannot be released, or its format changed, while a single
++ * surface is still referenced. Allocating each surface's buffer here and
++ * queueing it as V4L2_MEMORY_DMABUF makes the surface the owner instead: the
++ * queues only borrow the memory for the length of a decode.
++ *
++ * The system heap, not CMA. The decoders and the display that import these
++ * buffers all sit behind an IOMMU, so scattered pages are mapped contiguously
++ * in each device's address space, and the CMA pool is far too small to hold
++ * a 4K surface pool next to the framebuffers.
++ */
++
++#include <errno.h>
++#include <fcntl.h>
++#include <string.h>
++#include <sys/ioctl.h>
++#include <unistd.h>
++
++#include <linux/dma-buf.h>
++#include <linux/dma-heap.h>
++
++#include "dmaheap.h"
++#include "utils.h"
++
++#define DMAHEAP_PATH	"/dev/dma_heap/system"
++
++int dmaheap_open(void)
++{
++	return open(DMAHEAP_PATH, O_RDONLY | O_CLOEXEC);
++}
++
++int dmaheap_alloc(int heap_fd, size_t size)
++{
++	struct dma_heap_allocation_data data;
++	int rc;
++
++	memset(&data, 0, sizeof(data));
++	data.len = size;
++	data.fd_flags = O_RDWR | O_CLOEXEC;
++
++	rc = ioctl(heap_fd, DMA_HEAP_IOCTL_ALLOC, &data);
++	if (rc < 0) {
++		request_log("Unable to allocate %zu bytes from %s: %s\n", size,
++			    DMAHEAP_PATH, strerror(errno));
++		return -1;
++	}
++
++	return data.fd;
++}
++
++/*
++ * Bracket CPU access. Heap memory is cached, and nothing else does the cache
++ * maintenance for the CPU: vb2 only did it for buffers it allocated itself.
++ */
++int dmaheap_sync(int dmabuf_fd, bool start, bool write)
++{
++	struct dma_buf_sync sync;
++	int rc;
++
++	memset(&sync, 0, sizeof(sync));
++	sync.flags = (start ? DMA_BUF_SYNC_START : DMA_BUF_SYNC_END) |
++		     (write ? DMA_BUF_SYNC_WRITE : DMA_BUF_SYNC_READ);
++
++	do
++		rc = ioctl(dmabuf_fd, DMA_BUF_IOCTL_SYNC, &sync);
++	while (rc < 0 && (errno == EINTR || errno == EAGAIN));
++
++	if (rc < 0)
++		request_log("Unable to sync dma-buf: %s\n", strerror(errno));
++
++	return rc;
++}
+diff --git a/src/dmaheap.h b/src/dmaheap.h
+new file mode 100644
+index 0000000..48aeeed
+--- /dev/null
++++ b/src/dmaheap.h
+@@ -0,0 +1,36 @@
++/*
++ * Copyright (C) 2026 Christopher Stenger
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the
++ * "Software"), to deal in the Software without restriction, including
++ * without limitation the rights to use, copy, modify, merge, publish,
++ * distribute, sub license, and/or sell copies of the Software, and to
++ * permit persons to whom the Software is furnished to do so, subject to
++ * the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the
++ * next paragraph) shall be included in all copies or substantial portions
++ * of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
++ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
++ * IN NO EVENT SHALL PRECISION INSIGHT AND/OR ITS SUPPLIERS BE LIABLE FOR
++ * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
++ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
++ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
++ */
++
++
++#ifndef _DMAHEAP_H_
++#define _DMAHEAP_H_
++
++#include <stdbool.h>
++#include <stddef.h>
++
++int dmaheap_open(void);
++int dmaheap_alloc(int heap_fd, size_t size);
++int dmaheap_sync(int dmabuf_fd, bool start, bool write);
++
++#endif
+diff --git a/src/image.c b/src/image.c
+index 721a9b3..313da88 100644
+--- a/src/image.c
++++ b/src/image.c
+@@ -34,6 +34,7 @@
+ #include <stdint.h>
+ #include <string.h>
+ 
++#include "dmaheap.h"
+ #include "tiled_yuv.h"
+ #include "utils.h"
+ #include "v4l2.h"
+@@ -202,6 +203,11 @@ static VAStatus copy_surface_to_image (struct request_data *driver_data,
+ 	if (lsb10 != (image->format.fourcc == VA_FOURCC_P010))
+ 		return VA_STATUS_ERROR_INVALID_IMAGE_FORMAT;
+ 
++	/* The decoder wrote it behind the CPU's cache; vb2 no longer says so. */
++	if (surface_object->destination_fd >= 0 &&
++	    dmaheap_sync(surface_object->destination_fd, true, false) < 0)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
+ 	for (i = 0; i < surface_object->destination_planes_count; i++) {
+ #ifdef __arm__
+ 		if (!video_format_is_linear(driver_data->video_format))
+@@ -224,6 +230,9 @@ static VAStatus copy_surface_to_image (struct request_data *driver_data,
+ #endif
+ 	}
+ 
++	if (surface_object->destination_fd >= 0)
++		dmaheap_sync(surface_object->destination_fd, false, false);
++
+ 	return VA_STATUS_SUCCESS;
+ }
+ 
+diff --git a/src/meson.build b/src/meson.build
+index a52fe02..19d0880 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -42,6 +42,7 @@ sources = [
+ 	'video.c',
+ 	'media.c',
+ 	'v4l2.c',
++	'dmaheap.c',
+ 	'mpeg2.c',
+ 	'vp8.c',
+ 	'vp9.c',
+@@ -65,6 +66,7 @@ headers = [
+ 	'video.h',
+ 	'media.h',
+ 	'v4l2.h',
++	'dmaheap.h',
+ 	'mpeg2.h',
+ 	'vp8.h',
+ 	'vp9.h',
+diff --git a/src/picture.c b/src/picture.c
+index 3d6dc5c..c4177b0 100644
+--- a/src/picture.c
++++ b/src/picture.c
+@@ -462,9 +462,15 @@ VAStatus RequestEndPicture(VADriverContextP context, VAContextID context_id)
+ 		}
+ 	}
+ 
+-	rc = v4l2_queue_buffer(driver_data->video_fd, -1, capture_type, NULL,
+-			       capture_surface->destination_index, 0,
+-			       capture_surface->destination_buffers_count);
++	if (capture_surface->destination_fd >= 0)
++		rc = v4l2_queue_dmabuf(driver_data->video_fd, capture_type,
++				       capture_surface->destination_index,
++				       capture_surface->destination_fd,
++				       capture_surface->destination_map_lengths[0]);
++	else
++		rc = v4l2_queue_buffer(driver_data->video_fd, -1, capture_type,
++				       NULL, capture_surface->destination_index,
++				       0, capture_surface->destination_buffers_count);
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+diff --git a/src/request.c b/src/request.c
+index 022b56e..a2ac56e 100644
+--- a/src/request.c
++++ b/src/request.c
+@@ -38,9 +38,11 @@
+ #include <sys/stat.h>
+ #include <dirent.h>
+ 
++#include "dmaheap.h"
+ #include "request.h"
+ #include "utils.h"
+ #include "v4l2.h"
++#include "video.h"
+ 
+ #include <assert.h>
+ #include <errno.h>
+@@ -221,6 +223,61 @@ bool request_device_in_use(struct request_data *driver_data,
+ 	return false;
+ }
+ 
++unsigned int request_capture_memory(struct request_data *driver_data)
++{
++	unsigned int memory =
++		driver_data->devices[driver_data->device].capture_memory;
++
++	return memory ? memory : V4L2_MEMORY_MMAP;
++}
++
++/*
++ * Decide how the active device's CAPTURE buffers are provided. Only called
++ * while that queue holds no buffers, since a vb2 queue takes one memory type
++ * for all of them.
++ *
++ * DMABUF from the system heap whenever the heap is there and the format is a
++ * single buffer, otherwise MMAP, which is how every version before this one
++ * worked. V4L2_REQUEST_CAPTURE_MEMORY=mmap|dmabuf forces either for A/B runs;
++ * a forced dmabuf that cannot be honoured fails rather than quietly testing
++ * the other one.
++ */
++int request_select_capture_memory(struct request_data *driver_data,
++				  struct video_format *video_format)
++{
++	const char *value = getenv("V4L2_REQUEST_CAPTURE_MEMORY");
++	bool possible = driver_data->heap_fd >= 0 &&
++			video_format->v4l2_buffers_count == 1;
++	unsigned int memory;
++
++	if (value != NULL && !strcmp(value, "mmap")) {
++		memory = V4L2_MEMORY_MMAP;
++	} else if (value != NULL && !strcmp(value, "dmabuf")) {
++		if (!possible) {
++			request_log("V4L2_REQUEST_CAPTURE_MEMORY=dmabuf, but %s\n",
++				    driver_data->heap_fd < 0 ?
++				    "/dev/dma_heap/system is not available" :
++				    "the capture format is not a single buffer");
++			return -1;
++		}
++		memory = V4L2_MEMORY_DMABUF;
++	} else {
++		if (value != NULL)
++			request_log("Ignoring V4L2_REQUEST_CAPTURE_MEMORY=%s (mmap or dmabuf)\n",
++				    value);
++		memory = possible ? V4L2_MEMORY_DMABUF : V4L2_MEMORY_MMAP;
++	}
++
++	if (memory != driver_data->devices[driver_data->device].capture_memory)
++		request_log("Capture memory: %s\n",
++			    memory == V4L2_MEMORY_DMABUF ?
++			    "dma-buf from the system heap" : "mmap");
++
++	driver_data->devices[driver_data->device].capture_memory = memory;
++
++	return 0;
++}
++
+ #define ARRAY_SIZE(a)	(sizeof(a) / sizeof((a)[0]))
+ 
+ static const unsigned int request_coded_formats[] = {
+@@ -475,6 +532,9 @@ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context)
+ 	driver_data->device = 0;
+ 	driver_data->config_device = 0;
+ 
++	/* Optional: without it, capture memory stays MMAP. */
++	driver_data->heap_fd = dmaheap_open();
++
+ 	request_probe_devices(driver_data);
+ 
+ 	status = VA_STATUS_SUCCESS;
+@@ -566,6 +626,9 @@ VAStatus RequestTerminate(VADriverContextP context)
+ 		close(driver_data->devices[i].media_fd);
+ 	}
+ 
++	if (driver_data->heap_fd >= 0)
++		close(driver_data->heap_fd);
++
+ 	free(context->pDriverData);
+ 	context->pDriverData = NULL;
+ 
+diff --git a/src/request.h b/src/request.h
+index b2591b4..86790d0 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -65,6 +65,13 @@ struct request_device {
+ 	unsigned int configured_bit_depth;
+ 	/* the device speaks the multi-planar API (hantro does, cedrus not) */
+ 	bool mplane;
++	/*
++	 * V4L2_MEMORY_MMAP or V4L2_MEMORY_DMABUF: how the CAPTURE queue's
++	 * buffers are provided. Chosen each time the queue is configured from
++	 * empty (request_select_capture_memory) and never mirrored into
++	 * request_data, so this entry is current even for the active device.
++	 */
++	unsigned int capture_memory;
+ };
+ 
+ struct request_data {
+@@ -88,6 +95,9 @@ struct request_data {
+ 	struct request_device devices[V4L2_REQUEST_MAX_DEVICES];
+ 	unsigned int devices_count;
+ 	unsigned int device;
++
++	/* /dev/dma_heap/system, or -1: capture memory then stays MMAP. */
++	int heap_fd;
+ 	/*
+ 	 * The device of the most recently created config. Surfaces are created
+ 	 * with no reference to a config or a context, so -- like
+@@ -147,6 +157,9 @@ int request_find_device(struct request_data *driver_data,
+ 			unsigned int pixelformat);
+ bool request_device_in_use(struct request_data *driver_data,
+ 			   unsigned int device);
++unsigned int request_capture_memory(struct request_data *driver_data);
++int request_select_capture_memory(struct request_data *driver_data,
++				  struct video_format *video_format);
+ void request_parse_scale(struct request_data *driver_data);
+ void request_parse_crop(struct request_data *driver_data);
+ 
+diff --git a/src/surface.c b/src/surface.c
+index e57d12e..6bd23e4 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -42,6 +42,7 @@
+ #include <drm_fourcc.h>
+ #include <linux/videodev2.h>
+ 
++#include "dmaheap.h"
+ #include "media.h"
+ #include "utils.h"
+ #include "v4l2.h"
+@@ -119,6 +120,9 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	unsigned int destination_sizes[VIDEO_MAX_PLANES];
+ 	unsigned int destination_bytesperlines[VIDEO_MAX_PLANES];
+ 	unsigned int destination_planes_count;
++	unsigned int destination_sizeimage;
++	unsigned int capture_memory;
++	int destination_fd;
+ 	unsigned int format_width, format_height;
+ 	unsigned int capture_width = 0, capture_height = 0;
+ 	unsigned int capture_type;
+@@ -247,6 +251,12 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 
+ 		capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
++		/* The queue is empty here: the one time its memory can change. */
++		if (request_select_capture_memory(driver_data, video_format) < 0) {
++			driver_data->video_format = NULL;
++			return VA_STATUS_ERROR_OPERATION_FAILED;
++		}
++
+ 		/*
+ 		 * Ask now, not at driver init: the client cannot know the size
+ 		 * it needs until it has seen the stream, which is long after it
+@@ -326,9 +336,12 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 			    format_width, format_height);
+ 
+ 	destination_planes_count = video_format->planes_count;
++	/* Before the loop below rewrites destination_sizes[] per plane. */
++	destination_sizeimage = destination_sizes[0];
++	capture_memory = request_capture_memory(driver_data);
+ 
+ 	rc = v4l2_create_buffers(driver_data->video_fd, capture_type,
+-				 surfaces_count, &index_base);
++				 capture_memory, surfaces_count, &index_base);
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_ALLOCATION_FAILED;
+ 
+@@ -349,7 +362,8 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	 * context was allocating something it did not free.
+ 	 */
+ 	rc = v4l2_create_buffers(driver_data->video_fd, output_type,
+-				 surfaces_count, &source_index_base);
++				 V4L2_MEMORY_MMAP, surfaces_count,
++				 &source_index_base);
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_ALLOCATION_FAILED;
+ 
+@@ -361,24 +375,49 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		if (surface_object == NULL)
+ 			return VA_STATUS_ERROR_ALLOCATION_FAILED;
+ 
+-		rc = v4l2_query_buffer(driver_data->video_fd, capture_type,
+-				       index,
+-				       surface_object->destination_map_lengths,
+-				       surface_object->destination_map_offsets,
+-				       video_format->v4l2_buffers_count);
+-		if (rc < 0)
+-			return VA_STATUS_ERROR_ALLOCATION_FAILED;
++		surface_object->destination_fd = -1;
+ 
+-		for (j = 0; j < video_format->v4l2_buffers_count; j++) {
+-			surface_object->destination_map[j] =
+-				mmap(NULL,
+-				     surface_object->destination_map_lengths[j],
+-				     PROT_READ | PROT_WRITE, MAP_SHARED,
+-				     driver_data->video_fd,
+-				     surface_object->destination_map_offsets[j]);
++		/*
++		 * A dma-buf of the size the driver asked for (sizeimage, which
++		 * already covers anything it keeps behind the picture), owned
++		 * by the surface and mapped like the MMAP buffer was.
++		 */
++		if (capture_memory == V4L2_MEMORY_DMABUF) {
++			destination_fd = dmaheap_alloc(driver_data->heap_fd,
++						       destination_sizeimage);
++			if (destination_fd < 0)
++				return VA_STATUS_ERROR_ALLOCATION_FAILED;
+ 
+-			if (surface_object->destination_map[j] == MAP_FAILED)
++			surface_object->destination_fd = destination_fd;
++			surface_object->destination_map_lengths[0] =
++				destination_sizeimage;
++			surface_object->destination_map_offsets[0] = 0;
++			surface_object->destination_map[0] =
++				mmap(NULL, destination_sizeimage,
++				     PROT_READ | PROT_WRITE, MAP_SHARED,
++				     destination_fd, 0);
++			if (surface_object->destination_map[0] == MAP_FAILED)
+ 				return VA_STATUS_ERROR_ALLOCATION_FAILED;
++		} else {
++			rc = v4l2_query_buffer(driver_data->video_fd, capture_type,
++					       index,
++					       surface_object->destination_map_lengths,
++					       surface_object->destination_map_offsets,
++					       video_format->v4l2_buffers_count);
++			if (rc < 0)
++				return VA_STATUS_ERROR_ALLOCATION_FAILED;
++
++			for (j = 0; j < video_format->v4l2_buffers_count; j++) {
++				surface_object->destination_map[j] =
++					mmap(NULL,
++					     surface_object->destination_map_lengths[j],
++					     PROT_READ | PROT_WRITE, MAP_SHARED,
++					     driver_data->video_fd,
++					     surface_object->destination_map_offsets[j]);
++
++				if (surface_object->destination_map[j] == MAP_FAILED)
++					return VA_STATUS_ERROR_ALLOCATION_FAILED;
++			}
+ 		}
+ 
+ 		/*
+@@ -504,6 +543,9 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 		if (surface_object->request_fd > 0)
+ 			close(surface_object->request_fd);
+ 
++		if (surface_object->destination_fd >= 0)
++			close(surface_object->destination_fd);
++
+ 		object_heap_free(&driver_data->surface_heap,
+ 				 (struct object_base *)surface_object);
+ 	}
+@@ -528,9 +570,12 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 		output_type = v4l2_type_video_output(video_format->v4l2_mplane);
+ 		capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 		output_rc = v4l2_request_buffers(driver_data->video_fd,
+-						 output_type, 0);
++						 output_type, V4L2_MEMORY_MMAP,
++						 0);
+ 		capture_rc = v4l2_request_buffers(driver_data->video_fd,
+-						  capture_type, 0);
++						  capture_type,
++						  request_capture_memory(driver_data),
++						  0);
+ 		if (output_rc < 0 || capture_rc < 0)
+ 			status = VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+@@ -603,7 +648,8 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 	}
+ 
+ 	rc = v4l2_dequeue_buffer(driver_data->video_fd, -1, output_type,
+-				 surface_object->source_index, 1, NULL);
++				 V4L2_MEMORY_MMAP, surface_object->source_index,
++				 1, NULL);
+ 	if (rc < 0) {
+ 		status = VA_STATUS_ERROR_OPERATION_FAILED;
+ 		goto error;
+@@ -616,6 +662,8 @@ VAStatus RequestSyncSurface(VADriverContextP context, VASurfaceID surface_id)
+ 					  surface_object->capture_surface_id);
+ 
+ 	rc = v4l2_dequeue_buffer(driver_data->video_fd, -1, capture_type,
++				 capture_surface->destination_fd >= 0 ?
++				 V4L2_MEMORY_DMABUF : V4L2_MEMORY_MMAP,
+ 				 capture_surface->destination_index,
+ 				 capture_surface->destination_buffers_count,
+ 				 &capture_flags);
+@@ -859,9 +907,16 @@ VAStatus RequestExportSurfaceHandle(VADriverContextP context,
+ 
+ 	capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
+-	rc = v4l2_export_buffer(driver_data->video_fd, capture_type,
+-				surface_object->destination_index, O_RDONLY,
+-				export_fds, export_fds_count);
++	/* A heap-backed surface already is a dma-buf: hand out a duplicate. */
++	if (surface_object->destination_fd >= 0) {
++		export_fds[0] = fcntl(surface_object->destination_fd,
++				      F_DUPFD_CLOEXEC, 0);
++		rc = export_fds[0] < 0 ? -1 : 0;
++	} else {
++		rc = v4l2_export_buffer(driver_data->video_fd, capture_type,
++					surface_object->destination_index,
++					O_RDONLY, export_fds, export_fds_count);
++	}
+ 	if (rc < 0) {
+ 		status = VA_STATUS_ERROR_OPERATION_FAILED;
+ 		goto error;
+diff --git a/src/surface.h b/src/surface.h
+index 7877447..255c06e 100644
+--- a/src/surface.h
++++ b/src/surface.h
+@@ -83,6 +83,13 @@ struct object_surface {
+ 	unsigned int destination_bytesperlines[VIDEO_MAX_PLANES];
+ 	unsigned int destination_planes_count;
+ 	unsigned int destination_buffers_count;
++	/*
++	 * The dma-buf holding the picture when the CAPTURE queue is DMABUF, or
++	 * -1 when it is the queue's own MMAP buffer. The surface owns it:
++	 * destination_map[0] maps it, export hands out duplicates of it, and
++	 * only RequestDestroySurfaces closes it.
++	 */
++	int destination_fd;
+ 
+ 	unsigned int slices_size;
+ 	unsigned int slices_count;
+diff --git a/src/v4l2.c b/src/v4l2.c
+index f285949..ee43aed 100644
+--- a/src/v4l2.c
++++ b/src/v4l2.c
+@@ -291,7 +291,7 @@ int v4l2_get_format(int video_fd, unsigned int type, unsigned int *width,
+ 	return 0;
+ }
+ 
+-int v4l2_create_buffers(int video_fd, unsigned int type,
++int v4l2_create_buffers(int video_fd, unsigned int type, unsigned int memory,
+ 			unsigned int buffers_count, unsigned int *index_base)
+ {
+ 	struct v4l2_create_buffers buffers;
+@@ -299,7 +299,7 @@ int v4l2_create_buffers(int video_fd, unsigned int type,
+ 
+ 	memset(&buffers, 0, sizeof(buffers));
+ 	buffers.format.type = type;
+-	buffers.memory = V4L2_MEMORY_MMAP;
++	buffers.memory = memory;
+ 	buffers.count = buffers_count;
+ 
+ 	rc = ioctl(video_fd, VIDIOC_G_FMT, &buffers.format);
+@@ -365,7 +365,7 @@ int v4l2_query_buffer(int video_fd, unsigned int type, unsigned int index,
+ 	return 0;
+ }
+ 
+-int v4l2_request_buffers(int video_fd, unsigned int type,
++int v4l2_request_buffers(int video_fd, unsigned int type, unsigned int memory,
+ 			 unsigned int buffers_count)
+ {
+ 	struct v4l2_requestbuffers buffers;
+@@ -373,7 +373,7 @@ int v4l2_request_buffers(int video_fd, unsigned int type,
+ 
+ 	memset(&buffers, 0, sizeof(buffers));
+ 	buffers.type = type;
+-	buffers.memory = V4L2_MEMORY_MMAP;
++	buffers.memory = memory;
+ 	buffers.count = buffers_count;
+ 
+ 	rc = ioctl(video_fd, VIDIOC_REQBUFS, &buffers);
+@@ -426,6 +426,44 @@ int v4l2_queue_buffer(int video_fd, int request_fd, unsigned int type,
+ 	return 0;
+ }
+ 
++/*
++ * Queue a CAPTURE buffer whose memory is a dma-buf the caller owns. Always
++ * the same fd at the same index for a given surface: vb2 keeps the mapping
++ * from the previous QBUF when both match, so this costs no remapping.
++ */
++int v4l2_queue_dmabuf(int video_fd, unsigned int type, unsigned int index,
++		      int dmabuf_fd, unsigned int length)
++{
++	struct v4l2_plane plane;
++	struct v4l2_buffer buffer;
++	int rc;
++
++	memset(&plane, 0, sizeof(plane));
++	memset(&buffer, 0, sizeof(buffer));
++
++	buffer.type = type;
++	buffer.memory = V4L2_MEMORY_DMABUF;
++	buffer.index = index;
++
++	if (v4l2_type_is_mplane(type)) {
++		plane.m.fd = dmabuf_fd;
++		plane.length = length;
++		buffer.m.planes = &plane;
++		buffer.length = 1;
++	} else {
++		buffer.m.fd = dmabuf_fd;
++		buffer.length = length;
++	}
++
++	rc = ioctl(video_fd, VIDIOC_QBUF, &buffer);
++	if (rc < 0) {
++		request_log("Unable to queue dma-buf: %s\n", strerror(errno));
++		return -1;
++	}
++
++	return 0;
++}
++
+ /*
+  * The dequeued buffer's state comes back in buffer.flags, and
+  * V4L2_BUF_FLAG_ERROR is the only report a stateless decoder ever makes about
+@@ -434,8 +472,8 @@ int v4l2_queue_buffer(int video_fd, int request_fd, unsigned int type,
+  * told to trust.
+  */
+ int v4l2_dequeue_buffer(int video_fd, int request_fd, unsigned int type,
+-			unsigned int index, unsigned int buffers_count,
+-			unsigned int *flags)
++			unsigned int memory, unsigned int index,
++			unsigned int buffers_count, unsigned int *flags)
+ {
+ 	struct v4l2_plane planes[buffers_count];
+ 	struct v4l2_buffer buffer;
+@@ -445,7 +483,7 @@ int v4l2_dequeue_buffer(int video_fd, int request_fd, unsigned int type,
+ 	memset(&buffer, 0, sizeof(buffer));
+ 
+ 	buffer.type = type;
+-	buffer.memory = V4L2_MEMORY_MMAP;
++	buffer.memory = memory;
+ 	buffer.index = index;
+ 	buffer.length = buffers_count;
+ 	buffer.m.planes = planes;
+diff --git a/src/v4l2.h b/src/v4l2.h
+index a099f0e..ca85ddc 100644
+--- a/src/v4l2.h
++++ b/src/v4l2.h
+@@ -43,19 +43,21 @@ int v4l2_set_crop(int video_fd, unsigned int type, unsigned int *width,
+ int v4l2_get_format(int video_fd, unsigned int type, unsigned int *width,
+ 		    unsigned int *height, unsigned int *bytesperline,
+ 		    unsigned int *sizes, unsigned int *planes_count);
+-int v4l2_create_buffers(int video_fd, unsigned int type,
++int v4l2_create_buffers(int video_fd, unsigned int type, unsigned int memory,
+ 			unsigned int buffers_count, unsigned int *index_base);
+ int v4l2_query_buffer(int video_fd, unsigned int type, unsigned int index,
+ 		      unsigned int *lengths, unsigned int *offsets,
+ 		      unsigned int buffers_count);
+-int v4l2_request_buffers(int video_fd, unsigned int type,
++int v4l2_request_buffers(int video_fd, unsigned int type, unsigned int memory,
+ 			 unsigned int buffers_count);
+ int v4l2_queue_buffer(int video_fd, int request_fd, unsigned int type,
+ 		      struct timeval *timestamp, unsigned int index,
+ 		      unsigned int size, unsigned int buffers_count);
++int v4l2_queue_dmabuf(int video_fd, unsigned int type, unsigned int index,
++		      int dmabuf_fd, unsigned int length);
+ int v4l2_dequeue_buffer(int video_fd, int request_fd, unsigned int type,
+-			unsigned int index, unsigned int buffers_count,
+-			unsigned int *flags);
++			unsigned int memory, unsigned int index,
++			unsigned int buffers_count, unsigned int *flags);
+ int v4l2_export_buffer(int video_fd, unsigned int type, unsigned int index,
+ 		       unsigned int flags, int *export_fds,
+ 		       unsigned int export_fds_count);

@@ -1,0 +1,323 @@
+From fbe6b37d10e4bfcc5217420070243d0d7c2c0f9d Mon Sep 17 00:00:00 2001
+From: build <build@localhost>
+Date: Thu, 17 Sep 2026 04:07:09 -0700
+Subject: [PATCH] Negotiate a scaled CAPTURE size and export the real geometry
+
+The H713 VE can scale while it decodes, but nothing in this driver ever asked
+it to: RequestCreateSurfaces2 sets the CAPTURE format to the same coded size
+VA-API handed it, so every picture came out full size and the display had to
+scale. Adding the ability to ask is one S_FMT. Making the result usable is the
+rest of this commit.
+
+V4L2_REQUEST_SCALE gives the CAPTURE size to produce. A size rather than the
+ratio the hardware actually applies, because the size is what the consumer is
+constrained by -- the H713 display path accepts one framebuffer geometry and no
+other -- and because a ratio could not reach it: VA surfaces are allocated at
+the CODED size, so a 1080p H.264 stream arrives here as 1920x1088, and its 1088
+rows and its visible 1080 do not scale to 720 by the same factor. The kernel
+scales each axis independently, so an exact size is directly expressible where
+a ratio is not. The consequence is that the coded padding is scaled along with
+the picture instead of being cropped, which is the argument for teaching the VE
+an input crop.
+
+It is read at every capture negotiation, not once at driver init, because the
+client that knows the answer cannot supply it that early: the size depends on
+the stream, which is not known until the decoder has a first frame, and that is
+long after vaInitialize() -- which a player typically calls while setting up its
+video output, before it has opened the file. Reading it at init failed silently
+and completely: mpv set the variable, this driver never saw it, every buffer
+stayed full size, and the display rejected the geometry on every flip with a
+black screen and nothing naming the cause.
+
+The size the driver asks for is not necessarily the size it gets -- the kernel
+clamps to its validated range and to even pixels -- so the surfaces are
+described by the G_FMT that follows, and that geometry is what
+vaExportSurfaceHandle now reports. Those descriptor fields matter more than they
+look: FFmpeg's AV_PIX_FMT_DRM_PRIME mapping copies the objects and layers across
+but keeps the AVFrame's own coded dimensions, so this descriptor is the only
+channel through which a scaled picture's real width and height reach anyone. A
+consumer that builds a KMS framebuffer must call vaExportSurfaceHandle itself.
+
+RequestCreateImage refuses an image larger than the buffer behind it. That
+becomes reachable the moment the decoder scales: the client still believes the
+coded dimensions, so it asks for a 1920x1088 image over 1280x720 of memory, and
+is handed one carrying the smaller pitch. Everything downstream of that --
+hwdownload, vaapi-copy, vaDeriveImage -- then reads a frame's worth of bytes
+out of two thirds of a frame. The test is for a SMALLER allocation, not a
+different one, because an unscaled capture buffer is routinely taller than the
+coded picture wherever the pixel format aligns its height, and that has always
+worked.
+
+Scaling stays opt-in for exactly that reason: it is only usable by a consumer
+that reads the geometry back out of the export descriptor.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/image.c   | 20 +++++++++++++++++
+ src/request.c | 59 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ src/request.h | 10 +++++++++
+ src/surface.c | 55 ++++++++++++++++++++++++++++++++++++++++++++---
+ src/surface.h | 10 +++++++++
+ 5 files changed, 151 insertions(+), 3 deletions(-)
+
+diff --git a/src/image.c b/src/image.c
+index 05ed455..b81d399 100644
+--- a/src/image.c
++++ b/src/image.c
+@@ -73,6 +73,26 @@ VAStatus RequestCreateImage(VADriverContextP context, VAImageFormat *format,
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
++	/*
++	 * Refuse an image bigger than the capture buffer behind it, rather than
++	 * describe one that does not exist. This is reachable as soon as the
++	 * decoder is asked to scale: the buffers then hold a smaller picture
++	 * than the coded dimensions the client still believes in, and it would
++	 * be handed an image claiming 1920x1088 over 1280x726 of memory, with
++	 * the pitch of the smaller one. Every consumer of that -- hwdownload,
++	 * vaapi-copy, vaDeriveImage -- reads a frame's worth of bytes out of two
++	 * thirds of a frame. Failing makes the client fall back to software
++	 * decoding, which is the honest outcome for a path that cannot express
++	 * what the hardware produced.
++	 *
++	 * The test is for a SMALLER allocation, not a different one: an unscaled
++	 * capture buffer is routinely taller than the coded picture wherever the
++	 * pixel format aligns its height, and that has always worked.
++	 */
++	if (width < 0 || height < 0 || format_width < (unsigned int)width ||
++	    format_height < (unsigned int)height)
++		return VA_STATUS_ERROR_OPERATION_FAILED;
++
+ 	destination_planes_count = video_format->planes_count;
+ 	size = 0;
+ 
+diff --git a/src/request.c b/src/request.c
+index b54c0f5..28fa410 100644
+--- a/src/request.c
++++ b/src/request.c
+@@ -41,6 +41,8 @@
+ #include "v4l2.h"
+ 
+ #include <assert.h>
++#include <errno.h>
++#include <limits.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
+@@ -53,6 +55,63 @@
+ 
+ #include <linux/videodev2.h>
+ 
++/*
++ * V4L2_REQUEST_SCALE asks the decoder to produce a downscaled picture, as the
++ * exact CAPTURE size "WxH" the client needs. Anything malformed is ignored with
++ * a message rather than failing driver init: a bad environment variable must
++ * not cost the user hardware decoding altogether.
++ *
++ * A size and not a ratio, even though a ratio is what the hardware applies,
++ * because the size is what the consumer is actually constrained by. The H713
++ * display path accepts one framebuffer geometry and no other, so "produce
++ * 1280x720" is the real requirement; a ratio would have to be chosen to land on
++ * it and could not, since the coded picture's 1088 rows and its visible 1080 do
++ * not scale to 720 by the same factor. The kernel scales each axis
++ * independently, so an exact size is directly expressible and a ratio is not.
++ *
++ * The consequence is a picture whose visible part is very slightly squashed --
++ * the coded padding is scaled along with the image instead of being cropped --
++ * and it is why an input crop in the VE would be worth having.
++ *
++ * Deliberately opt-in. A scaled surface no longer matches the coded dimensions
++ * VA-API reports for it, so vaGetImage and vaDeriveImage -- the hwdownload and
++ * vaapi-copy paths -- cannot describe it and now refuse. Only a consumer that
++ * reads the real geometry back out of vaExportSurfaceHandle, as the DRM PRIME
++ * scanout path does, can use this.
++ *
++ * Read at every capture negotiation rather than once at driver init, because
++ * the client that knows the answer cannot supply it that early. The size
++ * depends on the stream, which is not known until the decoder has a first
++ * frame -- long after vaInitialize(), which a player typically calls while
++ * setting up its video output. Reading it at init produced a silent, total
++ * failure: mpv set the variable, the driver never saw it, every buffer stayed
++ * full size, and the display rejected the geometry with a black screen.
++ * Re-reading also means a resolution change gets a fresh answer.
++ */
++void request_parse_scale(struct request_data *driver_data)
++{
++	const char *value = getenv("V4L2_REQUEST_SCALE");
++	unsigned int width, height;
++	char extra;
++
++	driver_data->scale_width = 0;
++	driver_data->scale_height = 0;
++
++	if (value == NULL || *value == '\0')
++		return;
++
++	if (sscanf(value, "%ux%u%c", &width, &height, &extra) != 2 ||
++	    width == 0 || height == 0) {
++		request_log("Ignoring V4L2_REQUEST_SCALE=\"%s\": expected a capture size, as WxH\n",
++			    value);
++		return;
++	}
++
++	driver_data->scale_width = width;
++	driver_data->scale_height = height;
++	request_log("Asking for a %ux%u decoder output\n", width, height);
++}
++
+ /* Set default visibility for the init function only. */
+ VAStatus __attribute__((visibility("default")))
+ VA_DRIVER_INIT_FUNC(VADriverContextP context);
+diff --git a/src/request.h b/src/request.h
+index a3de42c..e80fb07 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -80,9 +80,19 @@ struct request_data {
+ 	unsigned int configured_pixelformat;
+ 	unsigned int configured_width;
+ 	unsigned int configured_height;
++
++	/*
++	 * Opt-in hardware downscale: the CAPTURE size requested through
++	 * V4L2_REQUEST_SCALE, or zero for untouched output. The kernel decides
++	 * what it can really produce, so this is what was asked for and not
++	 * what the surfaces ended up being.
++	 */
++	unsigned int scale_width;
++	unsigned int scale_height;
+ };
+ 
+ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP context);
+ VAStatus RequestTerminate(VADriverContextP context);
++void request_parse_scale(struct request_data *driver_data);
+ 
+ #endif
+diff --git a/src/surface.c b/src/surface.c
+index b26edf7..32ab25b 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -96,6 +96,7 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	unsigned int destination_bytesperlines[VIDEO_MAX_PLANES];
+ 	unsigned int destination_planes_count;
+ 	unsigned int format_width, format_height;
++	unsigned int capture_width = 0, capture_height = 0;
+ 	unsigned int capture_type;
+ 	unsigned int index_base;
+ 	unsigned int index;
+@@ -106,6 +107,7 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	unsigned int i, j;
+ 	VASurfaceID id;
+ 	bool found;
++	bool configured = false;
+ 	bool context_active;
+ 	int context_iterator;
+ 	int rc;
+@@ -175,10 +177,34 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 
+ 		capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+ 
++		/*
++		 * Ask now, not at driver init: the client cannot know the size
++		 * it needs until it has seen the stream, which is long after it
++		 * opened the display.
++		 */
++		request_parse_scale(driver_data);
++
++		/*
++		 * Ask for a smaller CAPTURE picture when a downscale ratio was
++		 * configured. The driver decides what it can really produce --
++		 * it clamps to the range its scaler is validated for and to an
++		 * even size -- so the G_FMT below, not this request, is what
++		 * the surfaces are described by.
++		 */
++		capture_width = width;
++		capture_height = height;
++		if (driver_data->scale_width != 0) {
++			capture_width = driver_data->scale_width;
++			capture_height = driver_data->scale_height;
++		}
++
+ 		rc = v4l2_set_format(driver_data->video_fd, capture_type,
+-				     video_format->v4l2_format, width, height);
++				     video_format->v4l2_format, capture_width,
++				     capture_height);
+ 		if (rc < 0)
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
++
++		configured = true;
+         } else {
+ 		video_format = driver_data->video_format;
+ 		capture_type = v4l2_type_video_capture(video_format->v4l2_mplane);
+@@ -192,6 +218,18 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 	if (rc < 0)
+ 		return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
++	/*
++	 * Say what was negotiated whenever scaling was asked for, including the
++	 * case where the driver declined and returned the coded size. A decoder
++	 * that silently keeps producing full-size pictures looks identical to
++	 * one that is scaling until something downstream draws the wrong
++	 * geometry, so make the outcome legible here.
++	 */
++	if (configured && driver_data->scale_width != 0)
++		request_log("Coded %ux%u, asked the driver for %ux%u, allocated %ux%u\n",
++			    width, height, capture_width, capture_height,
++			    format_width, format_height);
++
+ 	destination_planes_count = video_format->planes_count;
+ 
+ 	rc = v4l2_create_buffers(driver_data->video_fd, capture_type,
+@@ -289,6 +327,8 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		surface_object->status = VASurfaceReady;
+ 		surface_object->width = width;
+ 		surface_object->height = height;
++		surface_object->destination_width = format_width;
++		surface_object->destination_height = format_height;
+ 
+ 		rc = v4l2_query_buffer(driver_data->video_fd, output_type,
+ 				       source_index_base + i, &source_length,
+@@ -646,9 +686,18 @@ VAStatus RequestExportSurfaceHandle(VADriverContextP context,
+ 
+ 	planes_count = surface_object->destination_planes_count;
+ 
++	/*
++	 * Describe the memory, not the stream. These fields are the only place
++	 * a scaled picture's real geometry reaches a client: FFmpeg's
++	 * AV_PIX_FMT_DRM_PRIME mapping copies the objects and layers out of
++	 * this descriptor but carries the AVFrame's own coded width and height
++	 * forward, so a consumer that needs the true size -- anything creating
++	 * a KMS framebuffer from these planes -- has to call
++	 * vaExportSurfaceHandle itself and read it here.
++	 */
+ 	surface_descriptor->fourcc = VA_FOURCC_NV12;
+-	surface_descriptor->width = surface_object->width;
+-	surface_descriptor->height = surface_object->height;
++	surface_descriptor->width = surface_object->destination_width;
++	surface_descriptor->height = surface_object->destination_height;
+ 	surface_descriptor->num_objects = export_fds_count;
+ 
+ 	size = 0;
+diff --git a/src/surface.h b/src/surface.h
+index a9be915..50cb40b 100644
+--- a/src/surface.h
++++ b/src/surface.h
+@@ -44,6 +44,16 @@ struct object_surface {
+ 	int width;
+ 	int height;
+ 
++	/*
++	 * The geometry the CAPTURE queue actually allocated, which is the
++	 * coded width/height above unless the hardware scaler was asked for a
++	 * smaller picture. Kept separately because the two describe different
++	 * things: width/height is what the client believes the surface holds,
++	 * and this is what its memory really is.
++	 */
++	unsigned int destination_width;
++	unsigned int destination_height;
++
+ 	unsigned int source_index;
+ 	void *source_data;
+ 	unsigned int source_size;
+-- 
+2.55.0
+

@@ -1,0 +1,424 @@
+Decode 10-bit AV1 to LSB-aligned P010
+
+The H713's AV1 core decodes 10-bit AV1 bit-exactly, but writes it in P010's
+layout with each sample in bits 9:0 of its 16-bit word -- it has no way to
+MSB-align them. Local kernel patch 0150 names that: V4L2_PIX_FMT_P010_LSB
+('PL10') on the capture queue, and DRM_FORMAT_P010 with the new
+DRM_FORMAT_MOD_ALLWINNER_LSB10 modifier for scanout; the H713 video plane
+takes it directly. So 10-bit surfaces are real 10-bit surfaces here, unlike
+HEVC Main10 on cedrus, which is served 8-bit.
+
+VA-API has one AV1 profile for both depths, so the config claims YUV420 and
+YUV420_10, the pixel-format attribute offers NV12 and P010, and the depth is
+decided when the surfaces are created: ffmpeg asks for YUV420_10 for a 10-bit
+sequence. hantro then has to be told before the capture format is looked for,
+because it lists only the formats of its current depth; and after any OUTPUT
+S_FMT, which resets it to 8 bits. A sequence control carrying only the depth
+does that, as the HEVC SPS does for cedrus (0006). The configured depth joins
+the geometry in deciding when the queues must be renegotiated.
+
+Zero-copy: the export descriptor says P010 + LSB10, truthfully at the DRM
+level, and mpv's drm_prime path hands the modifier to
+drmModeAddFB2WithModifiers unchanged.
+
+CPU readback: vaDeriveImage here is a copy, not a mapping, so both it and
+vaGetImage hand out true P010 -- the copy is shifted into place (<<6). P010
+joins the image formats, and an 8-bit image of a 10-bit surface (or the
+reverse) is refused rather than misread.
+
+diff --git a/src/config.c b/src/config.c
+index dbf98ec..55677be 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -119,6 +119,13 @@ VAStatus RequestCreateConfig(VADriverContextP context, VAProfile profile,
+ 	 */
+ 	if (profile == VAProfileHEVCMain10)
+ 		config_object->attributes[0].value |= VA_RT_FORMAT_YUV420_10;
++	/*
++	 * AV1 Profile 0 is 8- and 10-bit, and 10-bit surfaces really are 10
++	 * bits (LSB-aligned P010; see video.c). Which one a stream gets is
++	 * decided when its surfaces are created.
++	 */
++	if (profile == VAProfileAV1Profile0)
++		config_object->attributes[0].value |= VA_RT_FORMAT_YUV420_10;
+ 	config_object->attributes_count = 1;
+ 
+ 	for (i = 1; i < attributes_count; i++) {
+@@ -272,6 +279,8 @@ VAStatus RequestGetConfigAttributes(VADriverContextP context, VAProfile profile,
+ 		switch (attributes[i].type) {
+ 		case VAConfigAttribRTFormat:
+ 			attributes[i].value = VA_RT_FORMAT_YUV420;
++			if (profile == VAProfileAV1Profile0)
++				attributes[i].value |= VA_RT_FORMAT_YUV420_10;
+ 			break;
+ 		default:
+ 			attributes[i].value = VA_ATTRIB_NOT_SUPPORTED;
+diff --git a/src/context.c b/src/context.c
+index 94165f7..a583627 100644
+--- a/src/context.c
++++ b/src/context.c
+@@ -244,6 +244,7 @@ VAStatus RequestDestroyContext(VADriverContextP context, VAContextID context_id)
+ 	driver_data->configured_pixelformat = 0;
+ 	driver_data->configured_width = 0;
+ 	driver_data->configured_height = 0;
++	driver_data->configured_bit_depth = 0;
+ 	driver_data->video_format = NULL;
+ 
+ 	return VA_STATUS_SUCCESS;
+diff --git a/src/image.c b/src/image.c
+index d2dfa80..721a9b3 100644
+--- a/src/image.c
++++ b/src/image.c
+@@ -31,6 +31,7 @@
+ #include "video.h"
+ 
+ #include <assert.h>
++#include <stdint.h>
+ #include <string.h>
+ 
+ #include "tiled_yuv.h"
+@@ -163,17 +164,44 @@ VAStatus RequestDestroyImage(VADriverContextP context, VAImageID image_id)
+ 	return VA_STATUS_SUCCESS;
+ }
+ 
++/* The fourcc a CPU sees a surface as: what its memory holds, MSB-aligned. */
++static unsigned int surface_image_fourcc(struct request_data *driver_data)
++{
++	return video_format_is_lsb10(driver_data->video_format) ?
++	       VA_FOURCC_P010 : VA_FOURCC_NV12;
++}
++
++/*
++ * LSB-aligned 10-bit samples into P010's MSB-aligned ones, in place: the
++ * copy is made first, so the device memory is read once and in bulk.
++ */
++static void lsb10_to_p010(void *data, unsigned int size)
++{
++	uint16_t *p = data;
++	unsigned int n = size / 2;
++
++	while (n--) {
++		*p = *p << 6;
++		p++;
++	}
++}
++
+ static VAStatus copy_surface_to_image (struct request_data *driver_data,
+ 				       struct object_surface *surface_object,
+ 				       VAImage *image)
+ {
+ 	struct object_buffer *buffer_object;
++	bool lsb10 = video_format_is_lsb10(driver_data->video_format);
+ 	unsigned int i;
+ 
+ 	buffer_object = BUFFER(driver_data, image->buf);
+ 	if (buffer_object == NULL)
+ 		return VA_STATUS_ERROR_INVALID_BUFFER;
+ 
++	/* An 8-bit image of a 10-bit surface, or the reverse, is not a copy. */
++	if (lsb10 != (image->format.fourcc == VA_FOURCC_P010))
++		return VA_STATUS_ERROR_INVALID_IMAGE_FORMAT;
++
+ 	for (i = 0; i < surface_object->destination_planes_count; i++) {
+ #ifdef __arm__
+ 		if (!video_format_is_linear(driver_data->video_format))
+@@ -187,6 +215,10 @@ static VAStatus copy_surface_to_image (struct request_data *driver_data,
+ 			memcpy(buffer_object->data + image->offsets[i],
+ 			       surface_object->destination_data[i],
+ 			       surface_object->destination_sizes[i]);
++			if (lsb10)
++				lsb10_to_p010(buffer_object->data +
++					      image->offsets[i],
++					      surface_object->destination_sizes[i]);
+ #ifdef __arm__
+ 		}
+ #endif
+@@ -216,7 +248,13 @@ VAStatus RequestDeriveImage(VADriverContextP context, VASurfaceID surface_id,
+ 			return status;
+ 	}
+ 
+-	format.fourcc = VA_FOURCC_NV12;
++	/*
++	 * This "derived" image is a copy (see copy_surface_to_image), not the
++	 * surface's memory, so a 10-bit surface can be handed out as true
++	 * P010: the copy is shifted into place.
++	 */
++	memset(&format, 0, sizeof(format));
++	format.fourcc = surface_image_fourcc(driver_data);
+ 
+ 	status = RequestCreateImage(context, &format, surface_object->width,
+ 				    surface_object->height, image);
+@@ -239,7 +277,8 @@ VAStatus RequestQueryImageFormats(VADriverContextP context,
+ 				  VAImageFormat *formats, int *formats_count)
+ {
+ 	formats[0].fourcc = VA_FOURCC_NV12;
+-	*formats_count = 1;
++	formats[1].fourcc = VA_FOURCC_P010;	/* 10-bit AV1 surfaces */
++	*formats_count = 2;
+ 
+ 	return VA_STATUS_SUCCESS;
+ }
+diff --git a/src/request.c b/src/request.c
+index 67cda4d..022b56e 100644
+--- a/src/request.c
++++ b/src/request.c
+@@ -159,6 +159,7 @@ void request_use_device(struct request_data *driver_data, unsigned int device)
+ 	from->configured_pixelformat = driver_data->configured_pixelformat;
+ 	from->configured_width = driver_data->configured_width;
+ 	from->configured_height = driver_data->configured_height;
++	from->configured_bit_depth = driver_data->configured_bit_depth;
+ 
+ 	to = &driver_data->devices[device];
+ 	driver_data->video_fd = to->video_fd;
+@@ -167,6 +168,7 @@ void request_use_device(struct request_data *driver_data, unsigned int device)
+ 	driver_data->configured_pixelformat = to->configured_pixelformat;
+ 	driver_data->configured_width = to->configured_width;
+ 	driver_data->configured_height = to->configured_height;
++	driver_data->configured_bit_depth = to->configured_bit_depth;
+ 	driver_data->device = device;
+ }
+ 
+diff --git a/src/request.h b/src/request.h
+index 9ddf9e3..b2591b4 100644
+--- a/src/request.h
++++ b/src/request.h
+@@ -62,6 +62,7 @@ struct request_device {
+ 	unsigned int configured_pixelformat;
+ 	unsigned int configured_width;
+ 	unsigned int configured_height;
++	unsigned int configured_bit_depth;
+ 	/* the device speaks the multi-planar API (hantro does, cedrus not) */
+ 	bool mplane;
+ };
+@@ -104,8 +105,9 @@ struct request_data {
+ 	 */
+ 	unsigned int coded_pixelformat;
+ 	/*
+-	 * 8 unless the config is a 10-bit profile. cedrus needs to know the
+-	 * depth BEFORE capture buffers exist -- see surface.c.
++	 * 8 unless the config is a 10-bit profile, or (AV1, whose Profile 0
++	 * covers both) the surfaces are created 10-bit. The decoder needs to
++	 * know the depth BEFORE capture buffers exist -- see surface.c.
+ 	 */
+ 	unsigned int coded_bit_depth;
+ 
+@@ -118,6 +120,7 @@ struct request_data {
+ 	unsigned int configured_pixelformat;
+ 	unsigned int configured_width;
+ 	unsigned int configured_height;
++	unsigned int configured_bit_depth;
+ 
+ 	/*
+ 	 * Opt-in hardware downscale: the CAPTURE size requested through
+diff --git a/src/surface.c b/src/surface.c
+index fc28ef5..e57d12e 100644
+--- a/src/surface.c
++++ b/src/surface.c
+@@ -83,6 +83,29 @@ static void surface_declare_bit_depth(struct request_data *driver_data)
+ 			 V4L2_CID_STATELESS_HEVC_SPS, &sps, sizeof(sps));
+ }
+ 
++/*
++ * The same for AV1, whose Profile 0 is 8- or 10-bit: hantro lists only the
++ * capture formats of its current bit depth (match_depth), so a 10-bit stream
++ * must say so before the capture format is looked for. And it must say so
++ * after any OUTPUT S_FMT, which resets hantro to 8 bits. A sequence carrying
++ * nothing but the depth is all hantro reads; the real one sent with the first
++ * frame is then an equal and changes nothing.
++ */
++static void surface_declare_av1_bit_depth(struct request_data *driver_data)
++{
++	struct v4l2_ctrl_av1_sequence seq;
++
++	if (driver_data->coded_bit_depth <= 8 ||
++	    driver_data->coded_pixelformat != V4L2_PIX_FMT_AV1_FRAME)
++		return;
++
++	memset(&seq, 0, sizeof(seq));
++	seq.bit_depth = driver_data->coded_bit_depth;
++
++	v4l2_set_control(driver_data->video_fd, -1,
++			 V4L2_CID_STATELESS_AV1_SEQUENCE, &seq, sizeof(seq));
++}
++
+ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 				unsigned int width, unsigned int height,
+ 				VASurfaceID *surfaces_ids,
+@@ -147,10 +170,21 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 			object_heap_next(&driver_data->context_heap,
+ 					 &context_iterator);
+ 	}
++	/*
++	 * AV1 learns its depth here, from the RT format the client asks for:
++	 * VA-API has one AV1 profile for 8 and 10 bits, and ffmpeg creates
++	 * YUV420_10 surfaces for a 10-bit sequence. Not while a context is
++	 * live -- an auxiliary surface then takes whatever the queue has.
++	 */
++	if (pixelformat == V4L2_PIX_FMT_AV1_FRAME && !context_active)
++		driver_data->coded_bit_depth =
++			format == VA_RT_FORMAT_YUV420_10 ? 10 : 8;
++
+ 	if (!context_active &&
+ 	    (driver_data->configured_pixelformat != pixelformat ||
+ 	     driver_data->configured_width != width ||
+-	     driver_data->configured_height != height)) {
++	     driver_data->configured_height != height ||
++	     driver_data->configured_bit_depth != driver_data->coded_bit_depth)) {
+ 		rc = v4l2_set_format(driver_data->video_fd, output_type,
+ 				     pixelformat, width, height);
+ 		if (rc < 0)
+@@ -159,6 +193,7 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		driver_data->configured_pixelformat = pixelformat;
+ 		driver_data->configured_width = width;
+ 		driver_data->configured_height = height;
++		driver_data->configured_bit_depth = driver_data->coded_bit_depth;
+ 		driver_data->video_format = NULL;
+ 	}
+ 
+@@ -174,6 +209,8 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 		return VA_STATUS_ERROR_UNSUPPORTED_RT_FORMAT;
+ 
+         if (!driver_data->video_format) {
++		surface_declare_av1_bit_depth(driver_data);
++
+ 		found = v4l2_find_format(driver_data->video_fd,
+ 					 v4l2_type_video_capture(mplane),
+ 					 V4L2_PIX_FMT_SUNXI_TILED_NV12);
+@@ -188,6 +225,21 @@ VAStatus RequestCreateSurfaces2(VADriverContextP context, unsigned int format,
+ 			video_format = video_format_find_mplane(V4L2_PIX_FMT_NV12,
+ 								mplane);
+ 
++		/*
++		 * 10-bit AV1. The only format hantro lists once the depth is
++		 * declared, so NV12 was not found above.
++		 */
++		if (driver_data->coded_bit_depth > 8 &&
++		    pixelformat == V4L2_PIX_FMT_AV1_FRAME) {
++			video_format = NULL;
++			found = v4l2_find_format(driver_data->video_fd,
++						 v4l2_type_video_capture(mplane),
++						 V4L2_PIX_FMT_P010_LSB);
++			if (found)
++				video_format = video_format_find_mplane(V4L2_PIX_FMT_P010_LSB,
++									mplane);
++		}
++
+ 		if (video_format == NULL)
+ 			return VA_STATUS_ERROR_OPERATION_FAILED;
+ 
+@@ -485,6 +537,7 @@ VAStatus RequestDestroySurfaces(VADriverContextP context,
+ 		driver_data->configured_pixelformat = 0;
+ 		driver_data->configured_width = 0;
+ 		driver_data->configured_height = 0;
++		driver_data->configured_bit_depth = 0;
+ 		driver_data->video_format = NULL;
+ 	}
+ 
+@@ -658,6 +711,21 @@ VAStatus RequestQuerySurfaceAttributes(VADriverContextP context,
+ 	attributes_list[i].value.value.i = VA_FOURCC_NV12;
+ 	i++;
+ 
++	/*
++	 * AV1 Profile 0 may be 10-bit: offer P010 too, so a client picks it
++	 * for a 10-bit sequence (and NV12 for an 8-bit one). The surface's
++	 * memory is LSB-aligned P010 -- the export descriptor says so with a
++	 * modifier, and a CPU readback shifts it into place.
++	 */
++	if (pixelformat == V4L2_PIX_FMT_AV1_FRAME) {
++		attributes_list[i].type = VASurfaceAttribPixelFormat;
++		attributes_list[i].flags = VA_SURFACE_ATTRIB_GETTABLE |
++					   VA_SURFACE_ATTRIB_SETTABLE;
++		attributes_list[i].value.type = VAGenericValueTypeInteger;
++		attributes_list[i].value.value.i = VA_FOURCC_P010;
++		i++;
++	}
++
+ 	attributes_list[i].type = VASurfaceAttribMinWidth;
+ 	attributes_list[i].flags = VA_SURFACE_ATTRIB_GETTABLE;
+ 	attributes_list[i].value.type = VAGenericValueTypeInteger;
+@@ -810,7 +878,8 @@ VAStatus RequestExportSurfaceHandle(VADriverContextP context,
+ 	 * a KMS framebuffer from these planes -- has to call
+ 	 * vaExportSurfaceHandle itself and read it here.
+ 	 */
+-	surface_descriptor->fourcc = VA_FOURCC_NV12;
++	surface_descriptor->fourcc = video_format->drm_format == DRM_FORMAT_P010 ?
++				     VA_FOURCC_P010 : VA_FOURCC_NV12;
+ 	/*
+ 	 * But not the padding. A driver may round the allocation up past the
+ 	 * picture -- hantro rounds heights to 64, so a 720-line picture sits in
+diff --git a/src/video.c b/src/video.c
+index f5bb803..e305b74 100644
+--- a/src/video.c
++++ b/src/video.c
+@@ -56,6 +56,22 @@ static struct video_format formats[] = {
+ 		.planes_count		= 2,
+ 		.bpp			= 16,
+ 	},
++	{
++		/*
++		 * 10-bit AV1 (hantro, multi-planar API): one buffer, both
++		 * planes, samples LSB-aligned. Exported as P010 with the
++		 * Allwinner LSB10 modifier, which the H713 video plane scans
++		 * out directly.
++		 */
++		.description		= "P010 YUV, LSB-aligned (multi-planar API)",
++		.v4l2_format		= V4L2_PIX_FMT_P010_LSB,
++		.v4l2_buffers_count	= 1,
++		.v4l2_mplane		= true,
++		.drm_format		= DRM_FORMAT_P010,
++		.drm_modifier		= DRM_FORMAT_MOD_ALLWINNER_LSB10,
++		.planes_count		= 2,
++		.bpp			= 24,
++	},
+ 	{
+ 		.description		= "Sunxi tiled NV12 YUV",
+ 		.v4l2_format		= V4L2_PIX_FMT_SUNXI_TILED_NV12,
+@@ -88,6 +104,12 @@ struct video_format *video_format_find_mplane(unsigned int pixelformat,
+ 	return NULL;
+ }
+ 
++bool video_format_is_lsb10(struct video_format *format)
++{
++	return format != NULL &&
++	       format->drm_modifier == DRM_FORMAT_MOD_ALLWINNER_LSB10;
++}
++
+ bool video_format_is_linear(struct video_format *format)
+ {
+ 	if (format == NULL)
+diff --git a/src/video.h b/src/video.h
+index 3f32fd6..68d4688 100644
+--- a/src/video.h
++++ b/src/video.h
+@@ -27,6 +27,24 @@
+ 
+ #include <stdbool.h>
+ 
++#include <drm_fourcc.h>
++#include <linux/videodev2.h>
++
++/*
++ * The H713 AV1 core's 10-bit output: P010's layout with each sample in bits
++ * 9:0 of its 16-bit word. Local kernel patch 0150 names it; the bundled
++ * drm_fourcc.h and the board's videodev2.h may predate it.
++ */
++#ifndef V4L2_PIX_FMT_P010_LSB
++#define V4L2_PIX_FMT_P010_LSB	v4l2_fourcc('P', 'L', '1', '0')
++#endif
++#ifndef DRM_FORMAT_P010
++#define DRM_FORMAT_P010		fourcc_code('P', '0', '1', '0')
++#endif
++#ifndef DRM_FORMAT_MOD_ALLWINNER_LSB10
++#define DRM_FORMAT_MOD_ALLWINNER_LSB10	fourcc_mod_code(ALLWINNER, 2)
++#endif
++
+ struct video_format {
+ 	char *description;
+ 	unsigned int v4l2_format;
+@@ -42,5 +60,6 @@ struct video_format *video_format_find(unsigned int pixelformat);
+ struct video_format *video_format_find_mplane(unsigned int pixelformat,
+ 					      bool mplane);
+ bool video_format_is_linear(struct video_format *format);
++bool video_format_is_lsb10(struct video_format *format);
+ 
+ #endif
