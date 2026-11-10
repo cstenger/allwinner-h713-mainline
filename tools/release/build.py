@@ -177,6 +177,7 @@ def source_lock():
     paths.update(ROOT/p for p in ['config/production-vendor.json','config/production-toolchain.json',
         'config/hy200-ddr3-calibration.json','patches/kernel/board/production.config',
         'tools/rootfs/cache-debs.py',
+        'tools/standby/h713-lamp-ramp.c',
         'modules/hdmi-dsp-probe/h713-dsp-lock.h','modules/hdmi-dsp-probe/h713-dsp-completion.h'])
     for name in MODULES.values():
         paths.update(module_sources(name))

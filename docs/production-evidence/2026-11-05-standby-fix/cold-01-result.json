@@ -1,0 +1,32 @@
+{
+  "status": "PASS cold boot audit and ten-second standby/wake without reboot",
+  "boot_id": "45c76aa6-337c-4935-9918-9341434ea99d",
+  "audit_files_verified": 75,
+  "bootloader_environment_audit": {
+    "proper": "PASS",
+    "spl": "PASS",
+    "environment": "PASS"
+  },
+  "signal": "locked 1280x720",
+  "video_service": "active",
+  "speaker_service": "active",
+  "wake_same_boot": true,
+  "lamp_power_after": 0,
+  "cpu_limit_restored": true,
+  "error_counters_before": {
+    "frames_rejected": 0,
+    "audio_xruns": 0
+  },
+  "error_counters_after": {
+    "frames_rejected": 0,
+    "audio_xruns": 0,
+    "bad_guard": 0,
+    "invalid_pair": 0
+  },
+  "standby_enter_uptime": 174.6,
+  "wake_before_uptime": 184.61,
+  "wake_complete_uptime": 185.17,
+  "operator_visual_confirmation": "Confirmed: desktop, lamp, and fan all returned after post-cold-boot wake.",
+  "source_host_note": "Not a fresh-source first-advertisement repeat",
+  "connectivity": "Host saved spirits Wi-Fi profile reconnected to reach board after power cycle"
+}

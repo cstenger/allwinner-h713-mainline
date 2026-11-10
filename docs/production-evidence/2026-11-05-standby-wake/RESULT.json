@@ -1,0 +1,56 @@
+{
+  "status": "REPRODUCED and isolated to lamp/fan enable; electrical reset mechanism not established",
+  "operator_report": {
+    "flash": "one second or less",
+    "next_press": "a few seconds later",
+    "hardware_changes": "none reported",
+    "fan_start": "not confirmed",
+    "long_press": "not confirmed"
+  },
+  "installed_standby_sha256": "aeab9105711cb48ea71f9ddaee9f8b954f9fb521c4d52c44326bd65b656103ed",
+  "installed_script_matches_repo": true,
+  "software_key_policy": "h713-keyd toggles standby only; effective logind short/long power-key actions ignore",
+  "cycle1": {
+    "boot_before": "7fe95ed5-f486-4f2b-aa9f-a7f14e4b93dc",
+    "enter_uptime": 278.25,
+    "before_leave_uptime": 283.26,
+    "uart_before_leave_utc": "2026-11-06T02:35:16.292572+00:00",
+    "next_spl_utc": "2026-11-06T02:35:16.479015+00:00",
+    "delta_seconds": 0.186443,
+    "max_sampled_temperature_millicelsius": 55909,
+    "cpu_at_standby_khz": 480000,
+    "signal_in_standby": "locked 1280x720",
+    "physical_button_used": false
+  },
+  "cycle2": {
+    "boot_before": "8e9d1c14-b38f-4ee0-a76a-67278ad62e20",
+    "enter_uptime": 57.13,
+    "before_lamp_on_uptime": 60.14,
+    "lamp_write": "0 to /sys/class/backlight/lamp/bl_power",
+    "after_lamp_marker_received": false,
+    "cpu_restore_attempted": false,
+    "uart_before_lamp_utc": "2026-11-06T02:36:26.931744+00:00",
+    "next_spl_utc": "2026-11-06T02:36:27.090126+00:00",
+    "delta_seconds": 0.158382,
+    "physical_button_used": false
+  },
+  "root_cause_limits": [
+    "Lamp/fan turn-on triggers reset in this HDMI-active condition. Power transient is a hypothesis, not a measured rail drop.",
+    "No captured panic or orderly shutdown; no usable watchdog bootstatus or pstore exposed.",
+    "First original wake versus second physical press cannot be temporally assigned with certainty.",
+    "Earlier November3 standby passes used the tested media-playback workload. Current HDMI services are not stopped by stop_players. HDMI load contribution has not been isolated."
+  ],
+  "current_state": {
+    "held_uboot_prompt": true,
+    "gp6": "48444f4b",
+    "gp7": "00000000",
+    "mips_status": "00000000",
+    "mips_clock": "00000000",
+    "mips_reset": "00000000",
+    "ppu_guard_070101ac": "00010001",
+    "guard_requires": "00000000",
+    "recovery": "Full power removal, including UART/USB backpower, then recorded cold start. Do not clear guard or rerun failed launch."
+  },
+  "persistent_board_changes": "none",
+  "next_experiment": "After cold recovery, compare lamp wake with HDMI consumer/audio stopped vs active; measure supply/CPU/reset rails during PB5 rising edge. No further reset tests run this session."
+}

@@ -9,6 +9,16 @@
 > keymap code — POWER 116, UP 103, mirror 149, input 202, mouse 148,
 > mute 113 — and the board stays up (logind ignores the key).
 
+**November 5 wake correction:** an abrupt PB5 enable reset the HDMI-active
+board. Stopping HDMI consumers and restoring CPU frequency before lamp enable
+did not fix it. A half-second pulse ramp through the existing gpio-backlight
+owner did: the lamp comes on with the same Linux boot ID and HDMI lock.
+`h713-standby` now requires `h713-lamp-ramp`, uses it on wake, and retains
+standby/CPU cap on ramp failure instead of attempting an abrupt enable.
+The helper ends fully on; it does not run the fan at reduced duty in steady
+state. The underlying rail transient remains unmeasured. See the
+[recorded fix validation](production-evidence/2026-11-05-standby-fix/README.md).
+
 ## Phase 1 findings (2026-10-07)
 
 - **The remote is NEC, address 0x00**, and every code matches stock's

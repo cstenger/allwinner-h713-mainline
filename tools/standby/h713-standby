@@ -26,11 +26,14 @@
 # min, the SoC went from 54 C to a 59.1 C peak and settled at 57-58 C; the
 # passive trip is 75 C. Leaving standby turns the lamp (and so the fan) on
 # before it lifts the CPU cap.
+# A hard PB5 rising edge can reset the board. Wake uses the bounded
+# half-second h713-lamp-ramp soft start, then holds lamp/fan power fully on.
 set -u
 RUN=/run/h713-standby
 LAMP=/sys/class/backlight/lamp
 POLICY=/sys/devices/system/cpu/cpufreq/policy0
 PLAYERS="h713-play gst-plane-play mpv"
+LAMP_RAMP=/usr/local/bin/h713-lamp-ramp
 
 state() { cat "$RUN/state" 2>/dev/null || echo off; }
 say() { logger -t h713-standby "$*"; [ -t 1 ] && echo "$*"; return 0; }   # once in the journal
@@ -50,6 +53,7 @@ stop_players() {
 
 enter() {
   [ "$(state)" = on ] && { echo on; return 0; }
+  [ -x "$LAMP_RAMP" ] || { echo "h713-standby: lamp soft-start helper missing" >&2; return 1; }
   [ -w "$LAMP/bl_power" ] || { echo "h713-standby: no $LAMP (kernel 0174)" >&2; exit 1; }
   mkdir -p "$RUN"
   stop_players
@@ -62,8 +66,12 @@ enter() {
 
 leave() {
   [ "$(state)" = off ] && { echo off; return 0; }
-  echo 0 > "$LAMP/bl_power"                         # lamp and fan on
-  [ -s "$RUN/max_freq" ] && cat "$RUN/max_freq" > "$POLICY/scaling_max_freq"
+  # Do not fall back to an abrupt enable if the ramp fails. Keep standby
+  # state and the CPU cap so a subsequent wake can be retried explicitly.
+  "$LAMP_RAMP" --enable || { say "lamp startup failed; still in standby"; return 1; }
+  if [ -s "$RUN/max_freq" ]; then
+    cat "$RUN/max_freq" > "$POLICY/scaling_max_freq" || return 1
+  fi
   echo off > "$RUN/state"
   say "standby off"
 }

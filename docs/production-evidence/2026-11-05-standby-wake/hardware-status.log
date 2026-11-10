@@ -1,0 +1,34 @@
+cpu-thermal
+gpu-thermal
+55304
+56044
+ regulator                      use open bypass  opmode voltage current     min     max
+---------------------------------------------------------------------------------------
+ regulator-dummy                  5    4      0 unknown     0mV     0mA     0mV     0mV 
+    2000000.pinctrl-vcc-pf        1                                 0mA     0mV     0mV
+    0-0018-vddio                  1                                 0mA     0mV     0mV
+    0-0018-vdd                    1                                 0mA     0mV     0mV
+    vdd-cpu                       2    1      0 unknown  1058mV     0mA   810mV  1160mV 
+       cpu0-cpu                   1                                 0mA  1060mV  1060mV
+ vcc-3v3                          9    8      0 unknown  3300mV     0mA  3300mV  3300mV 
+    7022000.pinctrl-vcc-pm        1                                 0mA     0mV     0mV
+    7022000.pinctrl-vcc-pl        1                                 0mA     0mV     0mV
+    4021000.mmc-vmmc              1                                 0mA  3300mV  3400mV
+    4022000.mmc-vmmc              1                                 0mA  3300mV  3400mV
+    2000000.pinctrl-vcc-pc        1                                 0mA     0mV     0mV
+    2000000.pinctrl-vcc-pg        1                                 0mA     0mV     0mV
+    2000000.pinctrl-vcc-ph        1                                 0mA     0mV     0mV
+    2000000.pinctrl-vcc-pb        1                                 0mA     0mV     0mV
+ vcc-1v8                          2    1      0 unknown  1800mV     0mA  1800mV  1800mV 
+    4022000.mmc-vqmmc             1                                 0mA     0mV     0mV
+ vdd_sys                          2    1      0 unknown   960mV     0mA   960mV   960mV 
+    1800000.gpu-mali              1                                 0mA   960mV   960mV
+ vcc-panel                        1    1      0 unknown     0mV     0mA     0mV     0mV 
+    5600000.display-power         1                                 0mA     0mV     0mV
+aeab9105711cb48ea71f9ddaee9f8b954f9fb521c4d52c44326bd65b656103ed  /usr/local/bin/h713-standby
+ac08c9f7c379d0192b2191393f8e66800a52e8c6389727622941f2d9483d3e0c  /usr/local/bin/h713-keyd
+RuntimeWatchdogUSec=0
+RebootWatchdogUSec=16s
+KExecWatchdogUSec=0
+3.13 1.63 0.66 1/147 651
+schedutil

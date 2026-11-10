@@ -587,6 +587,9 @@ if [ -n "${PLANE_PLAY_SRC:-}" ]; then
     install -m 0644 "$H713_STANDBY_DIR/h713-keyd.c" "$R/tmp/h713-keyd.c"
     chroot "$R" gcc -O2 -Wall -o /usr/local/bin/h713-keyd /tmp/h713-keyd.c
     rm -f "$R/tmp/h713-keyd.c"
+    install -m 0644 "$H713_STANDBY_DIR/h713-lamp-ramp.c" "$R/tmp/h713-lamp-ramp.c"
+    chroot "$R" gcc -O2 -Wall -Wextra -Werror -o /usr/local/bin/h713-lamp-ramp /tmp/h713-lamp-ramp.c
+    rm -f "$R/tmp/h713-lamp-ramp.c"
   fi
   # The VA-API driver, from the patched tree build.sh exported
   # (build-va-driver.sh --tree-tar). It must export __vaDriverInit for THIS
