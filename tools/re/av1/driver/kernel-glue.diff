@@ -1,0 +1,74 @@
+diff --color -Naur pa/drivers/media/platform/verisilicon/hantro_drv.c pb/drivers/media/platform/verisilicon/hantro_drv.c
+--- a/drivers/media/platform/verisilicon/hantro_drv.c
++++ b/drivers/media/platform/verisilicon/hantro_drv.c
+@@ -739,6 +739,7 @@
+ #endif
+ #ifdef CONFIG_VIDEO_HANTRO_SUNXI
+ 	{ .compatible = "allwinner,sun50i-h6-vpu-g2", .data = &sunxi_vpu_variant, },
++	{ .compatible = "allwinner,sun50i-h713-av1", .data = &sun50i_h713_av1_variant, },
+ #endif
+ #ifdef CONFIG_VIDEO_HANTRO_STM32MP25
+ 	{ .compatible = "st,stm32mp25-vdec", .data = &stm32mp25_vdec_variant, },
+diff --color -Naur pa/drivers/media/platform/verisilicon/hantro.h pb/drivers/media/platform/verisilicon/hantro.h
+--- a/drivers/media/platform/verisilicon/hantro.h
++++ b/drivers/media/platform/verisilicon/hantro.h
+@@ -245,7 +245,10 @@
+  * @hevc_dec:		HEVC-decoding context.
+  * @vp9_dec:		VP9-decoding context.
+  * @av1_dec:		AV1-decoding context.
++ * @h713_av1_dec:	H713 AV1-decoding context.
+  */
++struct sunxi_h713_av1_dec_ctx;
++
+ struct hantro_ctx {
+ 	struct hantro_dev *dev;
+ 	struct v4l2_fh fh;
+@@ -276,6 +279,7 @@
+ 		struct hantro_hevc_dec_hw_ctx hevc_dec;
+ 		struct hantro_vp9_dec_hw_ctx vp9_dec;
+ 		struct hantro_av1_dec_hw_ctx av1_dec;
++		struct sunxi_h713_av1_dec_ctx *h713_av1_dec;
+ 	};
+ };
+ 
+diff --color -Naur pa/drivers/media/platform/verisilicon/hantro_hw.h pb/drivers/media/platform/verisilicon/hantro_hw.h
+--- a/drivers/media/platform/verisilicon/hantro_hw.h
++++ b/drivers/media/platform/verisilicon/hantro_hw.h
+@@ -417,6 +417,7 @@
+ extern const struct hantro_variant rk3588_vpu981_variant;
+ extern const struct hantro_variant sama5d4_vdec_variant;
+ extern const struct hantro_variant sunxi_vpu_variant;
++extern const struct hantro_variant sun50i_h713_av1_variant;
+ extern const struct hantro_variant stm32mp25_vdec_variant;
+ extern const struct hantro_variant stm32mp25_venc_variant;
+ 
+diff --color -Naur pa/drivers/media/platform/verisilicon/Kconfig pb/drivers/media/platform/verisilicon/Kconfig
+--- a/drivers/media/platform/verisilicon/Kconfig
++++ b/drivers/media/platform/verisilicon/Kconfig
+@@ -61,9 +61,11 @@
+ 	bool "Hantro VPU Allwinner support"
+ 	depends on VIDEO_HANTRO
+ 	depends on ARCH_SUNXI || COMPILE_TEST
++	select VIDEO_HANTRO_AV1
+ 	default y
+ 	help
+-	  Enable support for H6 SoC.
++	  Enable support for the H6 SoC's G2 VPU and the H713 SoC's AV1
++	  decoder.
+ 
+ config VIDEO_HANTRO_STM32MP25
+ 	bool "Hantro STM32MP25 support"
+diff --color -Naur pa/drivers/media/platform/verisilicon/Makefile pb/drivers/media/platform/verisilicon/Makefile
+--- a/drivers/media/platform/verisilicon/Makefile
++++ b/drivers/media/platform/verisilicon/Makefile
+@@ -40,7 +40,9 @@
+ 		rockchip_av1_entropymode.o
+ 
+ hantro-vpu-$(CONFIG_VIDEO_HANTRO_SUNXI) += \
+-		sunxi_vpu_hw.o
++		sunxi_vpu_hw.o \
++		sunxi_h713_av1_hw.o \
++		sunxi_h713_av1_gen.o
+ 
+ hantro-vpu-$(CONFIG_VIDEO_HANTRO_STM32MP25) += \
+ 		stm32mp25_vpu_hw.o

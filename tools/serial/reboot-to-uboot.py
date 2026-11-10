@@ -4,6 +4,10 @@
 The autoboot delay is a couple of seconds and there is no way to ask for it
 after the fact, so this types into the console continuously across the whole
 reset rather than trying to time a single keypress.
+
+Pass ``--wait-for-power-cycle`` as the third argument to omit the initial
+``reboot`` command and only send interrupt keys.  That is required when the
+hardware must start from a cold power cycle rather than a warm reset.
 """
 import os
 import sys
@@ -12,6 +16,7 @@ import time
 
 PORT = sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyUSB0"
 SPAM_SECONDS = float(sys.argv[2]) if len(sys.argv) > 2 else 45.0
+WAIT_FOR_POWER_CYCLE = "--wait-for-power-cycle" in sys.argv[3:]
 
 
 def open_port(path):
@@ -38,7 +43,8 @@ def write_slow(fd, data, per_char=0.002):
 fd = open_port(PORT)
 out = b""
 
-write_slow(fd, b"reboot\n")
+if not WAIT_FOR_POWER_CYCLE:
+    write_slow(fd, b"reboot\n")
 
 end = time.time() + SPAM_SECONDS
 last_key = 0.0
