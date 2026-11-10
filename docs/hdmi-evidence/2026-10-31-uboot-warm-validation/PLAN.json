@@ -1,0 +1,45 @@
+{
+  "status": "PREPARED; no reboot issued",
+  "host_utc": "2026-10-31T10:09:07.107201+00:00",
+  "expected_preboot_id": "85768624-6a6e-4637-a50f-f45b2c156f31",
+  "recorder_service": "h713-uboot-warm-uart-20261031-01.service",
+  "recorder_pid": 18105,
+  "serial_transmit": false,
+  "proposed_action": "One detached ordinary sync and systemctl reboot, only after operator ready; no automatic retry.",
+  "source_baseline": "none",
+  "maximum_reboots": 1,
+  "no_GP6_GP7_arming": true,
+  "no_prompt_hold": true,
+  "no_RAM_startup_script": true,
+  "no_saveenv": true,
+  "no_service_recovery": true,
+  "expected_uart": [
+    "One new SPL/proper boot sequence",
+    "g320a17f71d41-h713-b3b5f2d2",
+    "Reading from MMC(1) at 0x93d80000... OK",
+    "H713 HDMI shared startup handoff verified",
+    "Starting kernel",
+    "Linux login"
+  ],
+  "expected_return": [
+    "Different stable Linux boot ID",
+    "Ready session and valid chosen handoff",
+    "GP6 HDOK and GP7 zero",
+    "DSP 0/0 to 1/1, startup checker PASS",
+    "Zero recovery restarts/xruns/rejected frames",
+    "Four bundle manifests and 56 file pins unchanged",
+    "Both installed write regions and eight protected ranges unchanged"
+  ],
+  "scope": "No-source ordinary warm boot of migrated proper/environment; no picture/audio or save-path acceptance claimed.",
+  "stop_conditions": [
+    "Environment CRC/default fallback or wrong address/build",
+    "Unexpected boot count/loop or shutdown guard converts reboot to poweroff",
+    "Failure to return to Linux within bounded observation window",
+    "Missing handoff/session/ack, filesystem error or service recovery",
+    "Any storage mismatch or operator-observed abnormal behavior"
+  ],
+  "failure_policy": "Record and stop. No blind reset/retry, GP6/GP7 write, service restart or reflash. Preserve UART and fresh health state.",
+  "next_step": "Wait for operator ready, then re-confirm user-service MainPID/sole UART ownership/OPEN and live baseline before issuing the one reboot.",
+  "board_writes": false,
+  "reboot_issued": false
+}

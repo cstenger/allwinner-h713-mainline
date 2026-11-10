@@ -52,6 +52,23 @@ def parse_cells(arg):
     return cells
 
 
+class SingleLaunch(unittest.TestCase):
+    def test_default_keeps_the_qualified_double_launch(self):
+        text=m.script()
+        self.assertIn(' && h713_disp auto 0x34 logo && h713_disp mips-comm-trace 0x34 && ',text)
+        self.assertNotIn('comm-trace && ',text.replace('mips-comm-trace','x'))
+    def test_single_launch_replaces_only_the_two_launch_commands(self):
+        double=m.script().split(' && ');single=m.script(single_launch=True).split(' && ')
+        i=double.index('h713_disp auto 0x34 logo')
+        self.assertEqual(double[i:i+2],m.LAUNCH_DOUBLE)
+        self.assertEqual(single[:i]+m.LAUNCH_DOUBLE+single[i+1:],double)
+        self.assertEqual(single[i+1],'itest.l *0x0306101c == 1')
+    def test_fallback_path_never_uses_the_single_launch(self):
+        tail=m.script(single_launch=True).split('\nif ',1)[1]
+        self.assertIn('h713_disp auto 0x34 logo; then',tail)
+        self.assertNotIn('comm-trace',tail)
+
+
 class StartupScript(unittest.TestCase):
     def setUp(self):
         self.text=m.script();self.formats=producers(self.text)

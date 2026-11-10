@@ -1,0 +1,59 @@
+{
+  "boot_id": "2d8c3970-4164-4a38-8e86-375bb440c971",
+  "signal": "none",
+  "checks": [
+    {
+      "argv": [
+        "systemctl",
+        "show",
+        "h713-hdmi-video.service",
+        "-p",
+        "ActiveState",
+        "-p",
+        "SubState",
+        "-p",
+        "Result",
+        "-p",
+        "ConditionResult",
+        "-p",
+        "ExecMainStatus",
+        "-p",
+        "NRestarts",
+        "-p",
+        "ExecMainStartTimestampMonotonic",
+        "-p",
+        "UnitFileState",
+        "-p",
+        "TriggeredBy"
+      ],
+      "returncode": 0,
+      "stdout": "Result=success\nNRestarts=0\nExecMainStartTimestampMonotonic=0\nExecMainStatus=0\nTriggeredBy=\nActiveState=inactive\nSubState=dead\nUnitFileState=static\nConditionResult=no\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "systemctl",
+        "cat",
+        "h713-hdmi-video.service"
+      ],
+      "returncode": 0,
+      "stdout": "# /etc/systemd/system/h713-hdmi-video.service\n[Unit]\nDescription=H713 HDMI input on the panel\n# Started by the udev rule when the bridge's device becomes ready (signal\n# locked or holding); stopped when it becomes not-ready or the bridge goes.\nBindsTo=dev-h713\\x2dhdmi\\x2din.device h713-hdmi-ring.service\nAfter=dev-h713\\x2dhdmi\\x2din.device h713-hdmi-ring.service\nBefore=shutdown.target\nStartLimitIntervalSec=60\nStartLimitBurst=3\n\n[Service]\nType=simple\n# Route B (design 10.25.6): NV12 from the bridge as dmabufs straight onto\n# the KMS video plane; the console returns when kmssink closes its DRM fd.\n# No size or rate in the caps: v4l2src takes them from the DV timings.\nExecStart=/usr/bin/gst-launch-1.0 -e -q v4l2src device=/dev/h713-hdmi-in io-mode=dmabuf ! video/x-raw,format=NV12 ! kmssink driver-name=sun50i-h713-afbd sync=false skip-vsync=true\nKillSignal=SIGINT\nTimeoutStopSec=5\nRestart=on-failure\nRestartSec=1\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "journalctl",
+        "-b",
+        "-u",
+        "h713-hdmi-video.service",
+        "--no-pager",
+        "-n",
+        "40"
+      ],
+      "returncode": 0,
+      "stdout": "-- No entries --\n",
+      "stderr": ""
+    }
+  ],
+  "board_writes": false
+}

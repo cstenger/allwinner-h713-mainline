@@ -1,0 +1,38 @@
+{
+  "result": "PASS fresh read-only preflight and live-pinned package finalization",
+  "host_utc": "2026-10-30T09:30:07.423578+00:00",
+  "boot_id": "7ca604ba-a805-4f0a-9bd4-2df936f50479",
+  "cid_sha256": "1bb97b8b1f70d4455ee302889f38aa4e452cb4a7a3c4c9a68b30874903032512",
+  "capacity_bytes": 7818182656,
+  "sector_bytes": 512,
+  "primary_and_backup_GPT_valid": true,
+  "partitions": 27,
+  "write_partition": {
+    "number": 18,
+    "name": "empty"
+  },
+  "old_environment_partition": "super (preserved)",
+  "protected_ranges": 8,
+  "files_verified": 56,
+  "candidate_extent_sha256": "cbd29de888e4b605e68b98de78c081525dd7d1b627abca846704efe527e8802a",
+  "manifest_sha256": "62b9284af5b22dec292e5434911e4d6553804d7be6fb411590af4798ab2ab216",
+  "source_cases_from_prior_build": 13,
+  "panel_cases_from_prior_build": 11,
+  "new_preflight_tests": 20,
+  "rehearsal_cases": 31,
+  "preflight_mutations_caught": 19,
+  "transaction_mutations_caught": 14,
+  "task_board_writes": false,
+  "board_files_staged": false,
+  "install": false,
+  "reboot": false,
+  "services_restarted": false,
+  "current_boot_and_exact_state_bound": true,
+  "new_work_committed": false,
+  "limitations": [
+    "No live write/rollback or power-loss test",
+    "No new boot/picture/acoustic acceptance",
+    "Recollect on boot/service/runtime generation change"
+  ],
+  "private_package_archive_sha256": "d47cbc557e853968b7374ab5a01a2b1a7918bc17a276d5eeefda4b16675d64de"
+}

@@ -1,0 +1,20 @@
+{
+  "status": "PASS offline installation preparation; awaiting board startup",
+  "host_utc": "2026-10-30T19:57:34.693057+00:00",
+  "authorization": "User explicitly requested installation and verification of both write regions and all protected storage, with no reboot. User states board is off.",
+  "manifest_sha256": "62b9284af5b22dec292e5434911e4d6553804d7be6fb411590af4798ab2ab216",
+  "archive_sha256": "d47cbc557e853968b7374ab5a01a2b1a7918bc17a276d5eeefda4b16675d64de",
+  "checksum_entries_verified": {
+    "local/recovery/2026-10-30-uboot-migration-live": 29,
+    "local/recovery/2026-10-30-uboot-migration-live/package": 30
+  },
+  "archived_package_bytes_match": true,
+  "candidate_and_rollback_payloads_verified": true,
+  "protected_ranges": 8,
+  "old_pinned_boot_id": "7ca604ba-a805-4f0a-9bd4-2df936f50479",
+  "next_step": "Operator power-on/boot confirmation; fresh read-only collection, reconcile storage and installation state, finalize for new boot without weakening guards, then install and verify under existing authorization. No reboot.",
+  "board_contact": false,
+  "files_staged_on_board": false,
+  "installation": false,
+  "reboot": false
+}

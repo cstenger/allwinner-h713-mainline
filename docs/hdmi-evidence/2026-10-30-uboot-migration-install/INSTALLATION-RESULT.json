@@ -1,0 +1,54 @@
+{
+  "status": "PASS installed and independently verified; no reboot",
+  "host_utc": "2026-10-30T20:08:40.783723+00:00",
+  "authorization": "User explicitly authorized installation, verification of both write regions and all protected storage, no reboot; then confirmed powered on and booted and requested proceeding.",
+  "boot_id": "3474b865-26f2-4b2d-bf37-1baddef732fe",
+  "manifest_sha256": "9efcb1e7488515a1df3a5a503764efea9c46a6b11e44040c4c01d65b2bdf4da9",
+  "write_regions_verified": 2,
+  "protected_regions_unchanged": 8,
+  "writes": [
+    {
+      "name": "environment",
+      "offset": 2480406528,
+      "bytes": 65536,
+      "sha256": "6eb7b7958139263f88cc0a0830b4ac33f4b4ca71b096081802b2f50f2cd205bc",
+      "matches": true,
+      "direct_read": true,
+      "crc_valid": true
+    },
+    {
+      "name": "proper",
+      "offset": 2472017920,
+      "bytes": 961024,
+      "sha256": "cbd29de888e4b605e68b98de78c081525dd7d1b627abca846704efe527e8802a",
+      "matches": true,
+      "direct_read": true,
+      "fit_bytes": 955665
+    }
+  ],
+  "all_four_installed_bundle_manifests_pass": true,
+  "files_and_metadata_pins_verified": 56,
+  "services_and_start_identities_unchanged": true,
+  "runtime_counters_and_signal_unchanged": true,
+  "latches_unchanged": true,
+  "calibration_preserved_ms": 40,
+  "old_environment_preserved": true,
+  "old_and_new_environment_identical": true,
+  "board_backup_directory": "/var/lib/h713-uboot-migration/20261030-9efcb1e7488515a1",
+  "host_backup_archive": "local/recovery/2026-10-30-uboot-migration-install/installed-board-backup.tar.gz",
+  "host_backup_sha256": "bef811238b9dfe4c36b4eab0a4aac234853cc11d8671e9039a69c691489271a9",
+  "journal_phase": "installed",
+  "installer_exit_code": 0,
+  "raw_write_order": [
+    "environment",
+    "proper"
+  ],
+  "board_left_powered_on": true,
+  "reboot_performed": false,
+  "service_restart_performed": false,
+  "clock_or_latch_write_performed": false,
+  "functional_boot_acceptance": false,
+  "qualification": "Storage install/readback only. New proper has not executed; no cold/warm, picture/acoustic, saveenv or live rollback qualification. Readback used direct I/O; all eight bounded protected ranges and surrounding proper/environment regions verify.",
+  "changes_committed": false,
+  "pushed": false
+}

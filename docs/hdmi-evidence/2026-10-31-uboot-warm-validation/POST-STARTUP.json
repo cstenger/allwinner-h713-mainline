@@ -1,0 +1,8 @@
+{
+  "boot_id": "b6849123-0398-4736-b06f-cfe25b19e593",
+  "file_pins_verified": 56,
+  "startup_exit_code": 0,
+  "startup_stdout": "== boot b6849123-0398-4736-b06f-cfe25b19e593 6.18.38 up 164.11s\nhandoff 48444d49000000008b8f275c\nh713-hdmi-capture: success 0 active yes \nh713-hdmi-signal: success 0 active yes \nh713_hdmi_receiver.clock_count=4\nh713_hdmi_receiver.init_error=0\nh713_hdmi_receiver.firmware_pin=Y\nh713_hdmi_receiver.edid_ready=Y\nh713_hdmi_receiver.clients=2\nh713_hdmi_audio.dsp_failed=N\nh713_hdmi_audio.manage_dsp=Y\nh713_hdmi_audio.manage_tvfe=Y\nh713_hdmi_signal.ready=Y\nh713_hdmi_signal.failed=N\nh713_hdmi_signal.restored=N\n[   21.486890] h713-hdmi-audio: DSP versions 0000/0000\n[   22.415315] h713-hdmi-audio: pinned 724-pair DSP patch verified versions 1/1\nstate: RUNNING\nowner_pid   : 316\ntrigger_time: 24.305143176\ntstamp      : 164.404483201\ndelay       : 124\navail       : 124\navail_max   : 700\n-----\nhw_ptr      : 6724732\nappl_ptr    : 6724608\nrtc gp6 latch unknown from Linux (U-Boot checked)\nApr 13 19:38:14 h713-arm64 systemd[1]: Starting h713-hdmi-capture.service - H713 HDMI audio capture...\nApr 13 19:38:25 h713-arm64 python3[317]: {\"phase\": \"ready\", \"already_ready\": false}\nApr 13 19:38:25 h713-arm64 systemd[1]: Finished h713-hdmi-capture.service - H713 HDMI audio capture.\nApr 13 19:38:25 h713-arm64 systemd[1]: Starting h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner...\nApr 13 19:38:25 h713-arm64 python3[385]: EDID/HPD ready; receiver client and DDC pins retained\nApr 13 19:38:25 h713-arm64 systemd[1]: Finished h713-hdmi-signal.service - H713 HDMI EDID and hotplug owner.\nPASS\n",
+  "startup_stderr": "",
+  "board_writes": false
+}

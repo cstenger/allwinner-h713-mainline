@@ -1,0 +1,99 @@
+{
+  "status": "VALID matched observation",
+  "arm": "optimized",
+  "boot_id": "3636858d-5ab9-49a8-9445-5e3ae5bd4048",
+  "issues": [],
+  "video_ready": 16.147241,
+  "window_end": 316.147241,
+  "first_live_sample": 59.83,
+  "last_live_sample": 316.32,
+  "fps": 59.709930211704155,
+  "rejected_at_window_end": 0,
+  "trace_lines": [],
+  "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+  "schema": "h713-zero-countdown-cold-result-v1",
+  "runtime_audit": "PASS candidate runtime identity/startup checks",
+  "files_verified": 73,
+  "loaded_build_id_matches": true,
+  "startup_evidence": {
+    "ipc_seconds": [
+      0.425135,
+      0.434919,
+      0.449878,
+      0.437266,
+      0.447653
+    ],
+    "prepare_start": 7.893449,
+    "user_overlap_seconds": 3.272162999999999,
+    "capture_ready": 14.418867,
+    "video_active": 16.147241,
+    "readvertised": 0,
+    "startup_time": "Startup finished in 2.263s (kernel) + 15.352s (userspace) = 17.615s \ngraphical.target reached after 14.031s in userspace.\n"
+  },
+  "transport_note": {
+    "host_wifi_initially": "disconnected",
+    "recovery": "Reactivated saved host hotspot profile; no board services/network changed",
+    "first_live_sample": 59.83,
+    "fixed_deadline": 316.147241,
+    "early_outcomes": "Boot-wide kernel journal/cumulative counters; no stream interruption observed"
+  },
+  "uart": {
+    "baseline_kernel_message_seconds_mean": 14.724999,
+    "zero_delay_kernel_message_seconds": 9.729194,
+    "kernel_message_saving_seconds": 4.995805000000001,
+    "baseline_countdown_to_script_seconds_mean": 5.023255,
+    "zero_delay_countdown_to_script_seconds": 0.008147,
+    "raw_comparison": [
+      {
+        "log": "local/recovery/2026-11-04-matched-startup-trace/optimized-01-uart/serial-timestamped.log",
+        "relative_seconds": {
+          "spl": 0.0,
+          "countdown": 2.068463,
+          "script": 7.091706,
+          "kernel": 14.733166
+        },
+        "countdown_to_script_seconds": 5.023243
+      },
+      {
+        "log": "local/recovery/2026-11-04-matched-startup-trace/optimized-02-uart/serial-timestamped.log",
+        "relative_seconds": {
+          "spl": 0.0,
+          "countdown": 2.066054,
+          "script": 7.089347,
+          "kernel": 14.731264
+        },
+        "countdown_to_script_seconds": 5.023293
+      },
+      {
+        "log": "local/recovery/2026-11-04-matched-startup-trace/optimized-03-uart/serial-timestamped.log",
+        "relative_seconds": {
+          "spl": 0.0,
+          "countdown": 2.04576,
+          "script": 7.068989,
+          "kernel": 14.710567
+        },
+        "countdown_to_script_seconds": 5.023229
+      },
+      {
+        "log": "local/recovery/2026-11-05-autoboot-countdown/cold-01-uart/serial-timestamped.log",
+        "relative_seconds": {
+          "spl": 0.0,
+          "countdown": 2.074985,
+          "script": 2.083132,
+          "kernel": 9.729194
+        },
+        "countdown_to_script_seconds": 0.008147
+      }
+    ]
+  },
+  "user_observation": "Power/UART removed >1 minute; desktop returned and same desktop maintained",
+  "bootloader_stop_validation": "PASS existing reboot bootloader path with saved zero-delay image",
+  "environment_sha256": "e6a56d4c6f2703c9360c29da4d1e1aec2d35bafd57bc6ca8232896e0296bc3ab",
+  "previous_shutdown": "Signal ownership restored, 22 DSP and 15 TVFE words restored, receiver parked/removed; capture before user stop",
+  "limitations": [
+    "One measured zero-countdown cold boot, compared to three prior optimized cold UART captures.",
+    "UART receive times exclude power-on-to-first-SPL and are not first visible pixel times.",
+    "Host Wi-Fi reconnection delayed live sampling; fixed deadline retained, boot-wide kernel journal/cumulative counters cover early rejection outcomes.",
+    "Diagnostic trace still installed; no waiver/reclassification of prior frame rejection."
+  ]
+}

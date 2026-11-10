@@ -10,7 +10,21 @@ matching CCU table. Both the orchestrator and quick helper use this tree.
 | --- | --- |
 | `0000-h713-shared-dt-panel-regulator-prerequisites.patch` | Tested DT/clock/PHY integration, DM panel supply/reset helpers, DDR3 lamp/fan policy |
 | `0001-h713-establish-initial-panel-power-state.patch` | Verified reset/supply-off control state and explicit minimum 3 s hold before logo replay |
-| `0003-env-mmc-preserve-configured-offset-width.patch` | Preserve the configured 64-bit environment-offset fallback and report the load address; source cases/mutations and production hardware validation pass. |
+| `0003-env-mmc-preserve-configured-offset-width.patch` | Preserve configured 64-bit fallback and report the singular-load byte offset; cold/one ordinary warm boot verified, paired environment migration required |
+
+**Paired environment migration is required for the unmigrated split layout.**
+The prior diagnostic image read saved environment at unintended LBA `0x32ec00`;
+this correction uses intended LBA `0x49ec00`, which was zero-filled in the
+audit. Do not install the new proper alone or flash the combined SPL image.
+Use the reviewed migration with fresh device/storage/boot pins; the earlier
+synthetic fixture package is not a deployment package.
+
+The paired [migration was installed and storage-verified October 30](../../docs/hdmi-evidence/2026-10-30-uboot-migration-install/README.md).
+The [October 31 cold boot](../../docs/hdmi-evidence/2026-10-31-uboot-first-boot/README.md)
+confirms the expected new proper, intended-address environment load and Linux
+startup. One [ordinary warm boot also passes](../../docs/hdmi-evidence/2026-10-31-uboot-warm-validation/README.md),
+with normal desktop return confirmed. Repeated lifecycle, audio and save-path
+qualification remain pending.
 
 The focused `0001` patch remains incremental to `0000` plus the shared kernel
 DT. Its resulting `h713_mips.c` SHA-256 is
@@ -43,8 +57,3 @@ are unproven. Earlier transient audio silence remains unexplained.
 See [the build/results/rollback runbook](../../docs/uboot-panel-initial-state.md)
 and [raw trial evidence](../../docs/hdmi-evidence/2026-10-18-panel-initial-state-trial/README.md).
 The installed trial proper remains unchanged by this source integration.
-
-The offset correction requires paired environment migration on an unmigrated
-split board. Use fresh identity/storage pins and the
-[production qualification plan](../../docs/production-qualification-plan.md);
-do not install the replacement proper alone at a guessed environment address.

@@ -1,0 +1,80 @@
+Subject: [PATCH] sunxi: h713: trace NRWinNode::WriteReg dirty masks
+
+Diagnostic only. The HDMI panel-source work needs to know which dirty mask
+the MIPS firmware passes to NRWinNode::WriteReg when an HDMI source locks:
+only bit 0x800 runs the AFBD source-0 frame programmer, and on our boots the
+programmer never runs in capture mode (docs/hdmi-panel-source-design-2026-
+10-23.md sections 10.7-10.8).
+
+Extend the comm-trace table with a 34-word cave in the unused zero run at
+0x4b100c40 and a two-word prologue hook at 0x4b1a48d0. The cave counts calls
+and records the mask, its OR, 0x800 hits, capture-mode (source mode 1) hits
+and a 16-entry ring at trace page +0x100..+0x19f, then re-executes the two
+displaced prologue instructions. It uses only t0/t1/t8/t9 and the direct
+0xad98 page base, so the installer's relocation counts are unchanged.
+
+tools/mips/make-nr-writereg-trace.py generates the rows and emulates the
+patched prologue against the original under unicorn.
+
+diff --git a/arch/arm/mach-sunxi/h713_mips.c b/arch/arm/mach-sunxi/h713_mips.c
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -2548,6 +2548,58 @@
+ 	{ 0x4b100ac0, 0x00000000, 0x03e00008 }, /* jr ra */
+ 	{ 0x4b100ac4, 0x00000000, 0x00000000 },
+ 	{ 0x4b1a47dc, 0xac43006c, 0x0ec402a8 }, /* jal 0x8b100aa0 */
++
++	/*
++	 * Diagnostic for the HDMI panel-source design (section 10.8): record the
++	 * dirty mask of every NRWinNode::WriteReg (0x8b1a48cc) call and the node's
++	 * m_afbd_source_mode (this+0x60).  Only bit 0x800 runs the AFBD source-0
++	 * frame programmer.  The prologue pair at 0x8b1a48d0/48d4 is displaced
++	 * into the cave and re-executed; the cave uses only t0/t1/t8/t9.  It loads
++	 * the trace page as 0xad98 directly and stores at +0x100..+0x19f, so the
++	 * relocation counts checked above are unchanged:
++	 *   +0x100 calls   +0x104 last mask   +0x108 OR of masks
++	 *   +0x10c calls with 0x800   +0x110 last mask with source mode 1
++	 *   +0x114 calls with source mode 1   +0x118 ring index
++	 *   +0x120 ring[16] {mask, source mode}
++	 * Generated and emulation-tested by tools/mips/make-nr-writereg-trace.py.
++	 */
++	/* NRWinNode::WriteReg entry -> record dirty mask/source mode (+0x100..). */
++	{ 0x4b100c40, 0x00000000, 0x3c18ad98 }, /* lui $t8, 0xad98 */
++	{ 0x4b100c44, 0x00000000, 0x8f190100 }, /* lw $t9, 0x100($t8) */
++	{ 0x4b100c48, 0x00000000, 0x27390001 }, /* addiu $t9, $t9, 1 */
++	{ 0x4b100c4c, 0x00000000, 0xaf190100 }, /* sw $t9, 0x100($t8) */
++	{ 0x4b100c50, 0x00000000, 0xaf050104 }, /* sw $a1, 0x104($t8) */
++	{ 0x4b100c54, 0x00000000, 0x8f190108 }, /* lw $t9, 0x108($t8) */
++	{ 0x4b100c58, 0x00000000, 0x0325c825 }, /* or $t9, $t9, $a1 */
++	{ 0x4b100c5c, 0x00000000, 0xaf190108 }, /* sw $t9, 0x108($t8) */
++	{ 0x4b100c60, 0x00000000, 0x30b90800 }, /* andi $t9, $a1, 0x800 */
++	{ 0x4b100c64, 0x00000000, 0x13200004 }, /* beqz $t9, 0x8b100c78 */
++	{ 0x4b100c68, 0x00000000, 0x00000000 }, /* nop */
++	{ 0x4b100c6c, 0x00000000, 0x8f19010c }, /* lw $t9, 0x10c($t8) */
++	{ 0x4b100c70, 0x00000000, 0x27390001 }, /* addiu $t9, $t9, 1 */
++	{ 0x4b100c74, 0x00000000, 0xaf19010c }, /* sw $t9, 0x10c($t8) */
++	{ 0x4b100c78, 0x00000000, 0x8c880060 }, /* lw $t0, 0x60($a0) */
++	{ 0x4b100c7c, 0x00000000, 0x2509ffff }, /* addiu $t1, $t0, -1 */
++	{ 0x4b100c80, 0x00000000, 0x15200005 }, /* bnez $t1, 0x8b100c98 */
++	{ 0x4b100c84, 0x00000000, 0x00000000 }, /* nop */
++	{ 0x4b100c88, 0x00000000, 0xaf050110 }, /* sw $a1, 0x110($t8) */
++	{ 0x4b100c8c, 0x00000000, 0x8f190114 }, /* lw $t9, 0x114($t8) */
++	{ 0x4b100c90, 0x00000000, 0x27390001 }, /* addiu $t9, $t9, 1 */
++	{ 0x4b100c94, 0x00000000, 0xaf190114 }, /* sw $t9, 0x114($t8) */
++	{ 0x4b100c98, 0x00000000, 0x8f190118 }, /* lw $t9, 0x118($t8) */
++	{ 0x4b100c9c, 0x00000000, 0x3329000f }, /* andi $t1, $t9, 0xf */
++	{ 0x4b100ca0, 0x00000000, 0x000948c0 }, /* sll $t1, $t1, 3 */
++	{ 0x4b100ca4, 0x00000000, 0x01384821 }, /* addu $t1, $t1, $t8 */
++	{ 0x4b100ca8, 0x00000000, 0xad250120 }, /* sw $a1, 0x120($t1) */
++	{ 0x4b100cac, 0x00000000, 0xad280124 }, /* sw $t0, 0x124($t1) */
++	{ 0x4b100cb0, 0x00000000, 0x27390001 }, /* addiu $t9, $t9, 1 */
++	{ 0x4b100cb4, 0x00000000, 0xaf190118 }, /* sw $t9, 0x118($t8) */
++	{ 0x4b100cb8, 0x00000000, 0x3c028b20 }, /* lui $v0, 0x8b20 */
++	{ 0x4b100cbc, 0x00000000, 0x24427024 }, /* addiu $v0, $v0, 0x7024 */
++	{ 0x4b100cc0, 0x00000000, 0x0ac69236 }, /* j 0x8b1a48d8 */
++	{ 0x4b100cc4, 0x00000000, 0x00000000 }, /* nop */
++	{ 0x4b1a48d0, 0x3c028b20, 0x0ac40310 }, /* j 0x8b100c40 */
++	{ 0x4b1a48d4, 0x24427024, 0x00000000 }, /* nop */
+ };
+ 
+ static void h713_mips_print_digest(const u8 *digest)

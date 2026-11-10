@@ -1,0 +1,67 @@
+PASS install, read-only preview, install no-op, exact rollback and rollback no-op
+PASS interruption/short-write/readback recovery: prepared
+PASS interruption/short-write/readback recovery: environment-short
+PASS interruption/short-write/readback recovery: environment-readback
+PASS interruption/short-write/readback recovery: environment-done
+PASS interruption/short-write/readback recovery: proper-short
+PASS interruption/short-write/readback recovery: proper-readback
+PASS interruption/short-write/readback recovery: proper-done
+PASS resumable rollback: rollback-proper-short
+PASS resumable rollback: rollback-proper-done
+PASS resumable rollback: rollback-environment-short
+PASS resumable rollback: rollback-environment-done
+PASS refuse protected drift: fixture-primary-marker
+PASS refuse protected drift: fixture-backup-marker
+PASS refuse protected drift: spl
+PASS refuse protected drift: active-environment
+PASS refuse protected drift: rescue-full-region
+PASS refuse protected drift: proper-region-tail
+PASS refuse unknown preimage: environment
+PASS refuse unknown preimage: proper
+PASS refuse wrong capacity
+PASS refuse concurrent image transaction
+PASS refuse absent/wrong-package recovery journal
+PASS refuse journal for another image inode
+PASS refuse rollback bytes outside durable intent
+PASS refuse symlink and device inputs
+PASS no implicit action or target
+PASS refuse corrupt payload
+PASS refuse overlapping transaction ranges
+{
+  "result": "PASS",
+  "cases": 29,
+  "tests": [
+    "install, read-only preview, install no-op, exact rollback and rollback no-op",
+    "interruption/short-write/readback recovery: prepared",
+    "interruption/short-write/readback recovery: environment-short",
+    "interruption/short-write/readback recovery: environment-readback",
+    "interruption/short-write/readback recovery: environment-done",
+    "interruption/short-write/readback recovery: proper-short",
+    "interruption/short-write/readback recovery: proper-readback",
+    "interruption/short-write/readback recovery: proper-done",
+    "resumable rollback: rollback-proper-short",
+    "resumable rollback: rollback-proper-done",
+    "resumable rollback: rollback-environment-short",
+    "resumable rollback: rollback-environment-done",
+    "refuse protected drift: fixture-primary-marker",
+    "refuse protected drift: fixture-backup-marker",
+    "refuse protected drift: spl",
+    "refuse protected drift: active-environment",
+    "refuse protected drift: rescue-full-region",
+    "refuse protected drift: proper-region-tail",
+    "refuse unknown preimage: environment",
+    "refuse unknown preimage: proper",
+    "refuse wrong capacity",
+    "refuse concurrent image transaction",
+    "refuse absent/wrong-package recovery journal",
+    "refuse journal for another image inode",
+    "refuse rollback bytes outside durable intent",
+    "refuse symlink and device inputs",
+    "no implicit action or target",
+    "refuse corrupt payload",
+    "refuse overlapping transaction ranges"
+  ],
+  "regular_sparse_images_only": true,
+  "real_GPT_CID_and_hardware_not_tested": true,
+  "capacity_bytes": 7818182656
+}

@@ -28,7 +28,14 @@ PREBOOT='if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastb
 BOOTCMD='if fatload mmc 1:2 0x52000000 h713-hdmi.scr; then source 0x52000000; else echo HDMI startup script missing - use h713_hdmi_previous_bootcmd for recovery; fi'
 
 
-def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE):
+# Single display-firmware launch (U-Boot patch 0004, `auto 0x34 logo
+# comm-trace`). Opt-in until hardware qualified: an older proper parses the
+# extra token as a custom logo file and the launch stage fails closed.
+LAUNCH_DOUBLE=['h713_disp auto 0x34 logo', 'h713_disp mips-comm-trace 0x34']
+LAUNCH_SINGLE=['h713_disp auto 0x34 logo comm-trace']
+
+
+def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE, single_launch=False):
     # Commands in each stage are chained: no partial stage can authorize Linux.
     stages={
       'image':[
@@ -62,8 +69,7 @@ def script(*, fit_size=FIT_SIZE, fdt_size=FDT_SIZE):
         'mw.l 0x07090118 0x48444d49',
         'itest.l *0x07090118 == 48444d49',
         'gpio clear PB5',
-        'h713_disp auto 0x34 logo',
-        'h713_disp mips-comm-trace 0x34',
+        *(LAUNCH_SINGLE if single_launch else LAUNCH_DOUBLE),
         'itest.l *0x0306101c == 1',
         # commdev refreshes the ARM cache for the pointer and all 16 records.
         'h713_disp commdev',
