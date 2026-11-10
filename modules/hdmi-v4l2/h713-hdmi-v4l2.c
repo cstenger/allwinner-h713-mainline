@@ -619,6 +619,30 @@ static void h713_fill_black(struct h713_capture *cap, u8 *dst)
 	memset(dst + cap->plane_size, 128, chroma);
 }
 
+/*
+ * A finished ring slot can still be empty. On a cold boot the capture ring
+ * starts zeroed, and right after lock the slot counter can run ahead of the
+ * pixel data: with the ring zeroed before a warm reboot, the first four
+ * frames copied after lock were all zero (2026-11-10), and all-zero NV12 is
+ * solid green on the panel. No source colour converts to U=V=0, so a frame
+ * whose samples are all zero is never a picture: it is shown as black.
+ * Samples cover the whole height of both planes (~900 each).
+ */
+static bool h713_frame_empty(struct h713_capture *cap, const u8 *dst)
+{
+	unsigned int chroma = cap->fourcc == V4L2_PIX_FMT_NV12 ?
+			      cap->plane_size / 2 : cap->plane_size;
+	unsigned int i;
+
+	for (i = 0; i < chroma; i += 499)
+		if (dst[cap->plane_size + i])
+			return false;
+	for (i = 0; i < cap->plane_size; i += 997)
+		if (dst[i])
+			return false;
+	return true;
+}
+
 static int h713_phase_thread(void *arg)
 {
 	struct h713_capture *cap = arg;
@@ -882,6 +906,7 @@ static int h713_capture_thread_pair(void *arg)
 	struct h713_buffer *buf = NULL;
 	unsigned int polls = 0, completion_events = 0, no_buffer = 0;
 	unsigned int copies = 0, unstable = 0, delivered = 0, black = 0;
+	unsigned int empty = 0, empty_lock = 0;
 	u64 copy_ns = 0, tick, completion_ns, last_black = 0;
 	unsigned long bad_since = 0, mismatch_since = 0;
 	int last = h713_afbd_pair_index(cap), idx;
@@ -926,6 +951,7 @@ static int h713_capture_thread_pair(void *arg)
 			break;
 		}
 		if (!ok) {
+			empty_lock = 0;
 			/* Track the pair so the first frame after HOLD is a fresh one. */
 			idx = h713_afbd_pair_index(cap);
 			if (idx >= 0)
@@ -978,6 +1004,15 @@ static int h713_capture_thread_pair(void *arg)
 			continue;
 		}
 		copy_ns += ktime_get_ns() - tick;
+		if (h713_frame_empty(cap, dst)) {
+			h713_fill_black(cap, dst);
+			empty++;
+			empty_lock++;
+		} else if (empty_lock) {
+			pr_info("h713-hdmi-v4l2: %u empty frame%s after lock shown as black\n",
+				empty_lock, empty_lock == 1 ? "" : "s");
+			empty_lock = 0;
+		}
 deliver:
 		vb2_set_plane_payload(&buf->vb.vb2_buf, 0, cap->frame_size);
 		buf->vb.vb2_buf.timestamp = completion_ns;
@@ -990,9 +1025,9 @@ deliver:
 	}
 	if (buf)
 		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
-	pr_info("h713-hdmi-v4l2: pair stream polls=%u completions=%u no_buffer=%u copies=%u unstable=%u delivered=%u black=%u copy_us=%llu\n",
+	pr_info("h713-hdmi-v4l2: pair stream polls=%u completions=%u no_buffer=%u copies=%u unstable=%u delivered=%u black=%u empty=%u copy_us=%llu\n",
 		polls, completion_events, no_buffer, copies, unstable, delivered,
-		black, (unsigned long long)div_u64(copy_ns, 1000));
+		black, empty, (unsigned long long)div_u64(copy_ns, 1000));
 	h713_park_until_stopped();
 	return 0;
 }

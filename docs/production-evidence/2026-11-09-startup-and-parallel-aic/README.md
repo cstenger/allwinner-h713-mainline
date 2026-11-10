@@ -320,3 +320,54 @@ false)`); the masked init, prefix and graph writes keep it, as does the
 100 ms wait before the version check. Installed module `45ba26fe`, warm boot
 `676a12bc`: versions to verified 122 ms (was 931 ms), tone check 3/3,
 prepare done 8.73 s (was 9.50 s), video 10.87 s (was 11.69 s).
+
+## HPD sooner: capture unit no longer re-runs the session
+
+From prepare done to video was ~2.1 s: capture 0.41 s, signal 0.33 s, then
+the source PC's reaction to hot-plug (1.1-1.8 s, outside the board's
+control). `h713-hdmi-capture.service` re-ran `h713-hdmi-session.py start`
+only to report "already ready": its checks take ~10 ms; the rest was
+interpreter start-up (~104 ms), imports (~140 ms) and argparse (23 ms).
+Prepare already verifies and saves "ready" before capture can start, so
+capture's `ExecStart` is now `/usr/bin/true`. Its role is unchanged: it owns
+the session teardown, and the signal unit still starts after it so it stops
+before that teardown.
+
+`check-startup.sh` (run by health-ack, which acknowledges U-Boot's RTC GP6
+crash-loop guard) looked for `--boot-handoff` in capture's start; the first
+warm boot ended degraded until it checked prepare instead (and requires
+prepare active). Fixed and re-acknowledged in that boot.
+
+| | Before | Warm 1 / 2 | Cold |
+| --- | ---: | ---: | ---: |
+| EDID/HPD up | 9.49 s | 9.10 / 8.96 s | 9.04 s |
+| Video active | 10.87 s | 10.53 / 10.79 s | 10.45 s |
+
+Shutdown teardown ran cleanly ("Deactivated successfully"); health-ack
+passed on its own; tone check 3/3 on every boot.
+
+## Empty capture slots shown as black, not green
+
+After the capture-unit change a cold boot showed a green flash at video
+start (not the closed green stall: stall words 0). Two recorded cold boots
+(`test_115`, `test_116`) were clean. A logging-only bridge build (the
+installed variant, rebuilt byte-for-byte first) sampled the first six frames
+copied after lock; a one-boot unit zeroed the six capture planes at
+shutdown, after the capture teardown, to give a warm boot a cold boot's
+empty ring. Right after lock the pair counter runs ahead of the pixel data:
+with the ring empty the first 4-5 copied frames are entirely zero, and
+all-zero NV12 is solid green. On a warm reboot those slots hold the last
+picture instead, which is why only cold boots showed it, and HPD coming up
+sooner made the stream start close enough to lock to catch them.
+
+No source colour converts to U=V=0, so `h713_frame_empty()` samples each
+copied frame (~900 points per plane, full height) and the pair thread
+delivers its black fill when all are zero, logging the count per lock. With
+the ring zeroed at shutdown, four of four warm boots logged "4 (or 5) empty
+frames after lock shown as black". Cold boot `2ce6b9f5` (`test_117`): no
+empty frames that time, no green, switch console -> one covered frame ->
+video. `test-frame-discard-contract.py` now compiles the real check, adds an
+empty-slot case, and a mutant without the check fails it.
+
+The board had been running a 2026-11-05 diagnostic bridge variant
+(`reject-trace-power-v2`); it now runs the committed source with this fix.
