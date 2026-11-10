@@ -1,0 +1,15 @@
+[Unit]
+Description=Prepare H713 HDMI capture alongside the media user session
+After=systemd-modules-load.service
+Before=h713-hdmi-capture.service
+RequiresMountsFor=/usr/lib/h713-hdmi /run/h713-hdmi-session
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi/h713-hdmi-session.py start --bundle /usr/lib/h713-hdmi --boot-handoff
+# Capture retains teardown ownership and its ordering after user@1000.
+# This unit is pulled in only by capture, including on isolated boot paths.
+Restart=no
+TimeoutStartSec=60

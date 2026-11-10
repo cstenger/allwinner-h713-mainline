@@ -22,7 +22,12 @@ and mips-shell implementation. The module takes a firmware lifetime reference
 to itself before attaching power domains. Both TVFE/TVCAP domains are resumed;
 four receiver clocks are enabled one step at a time in the validated order;
 skipped steps and decreases are rejected. The
-boot helper checks benign MIPS IPC after each increment. At clock4 the EDID
+boot helper checks benign MIPS IPC after each increment. The prepared
+completion-aware helper validates the full `help win` response and request
+consumption within a bounded deadline, rather than waiting the full reply
+window after success; it preserves all staged liveness/failure gates. See
+[startup optimization preparation](../../docs/production-evidence/2026-11-04-startup-timing/optimization-preparation.md)
+for offline validation and the pending hardware rollout. At clock4 the EDID
 platform driver registers and acquires its clock/reset. Until all resources
 are ready, ALSA acquisition returns EAGAIN.
 

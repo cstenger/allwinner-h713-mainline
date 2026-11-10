@@ -20,6 +20,7 @@ class FakeBoard:
         self.events=[];self.modules=set();self.commands=[];self.writes=[];self.log='baseline\n'
         self.wp=True;self.fail_audio=False;self.fail_remove=False;self.bad_restore=False
         self.fail_park=False;self.fail_release=False;self.bad_trace=False;self.bad_patch=False;self.bad_ipc=False;self.mips_live=True
+        self.ipc_count=0;self.fail_ipc_at=None;self.ipc_result=None
     def exists(self,p):return p in self.files or p.removeprefix(m.BASE) in self.modules
     def read(self,p):return self.files[p]
     def binary(self,p):
@@ -43,7 +44,10 @@ class FakeBoard:
         elif argv[0]=='modinfo':out='6.18.38 SMP mod_unload aarch64\n'
         elif '--status' in argv:out='MIPS core      ALIVE' if self.mips_live else 'MIPS core      parked'
         elif '--source-only' in argv:out=json.dumps({'guards':'bad' if self.bad_trace else '43414e31/43414e31','source3_transition_complete':1,'source3_worker_new':'00000003'})
-        elif '--cmd' in argv:out='missing' if self.bad_ipc else 'VS:/$'
+        elif '--check-ipc' in argv:
+            self.ipc_count+=1
+            if self.ipc_count==self.fail_ipc_at:raise RuntimeError('MIPS IPC deadline expired')
+            out=self.ipc_result if self.ipc_result is not None else ('missing' if self.bad_ipc else json.dumps({'schema':'h713-mips-ipc-v1','complete':True,'command':'help win'}))
         elif argv[0]=='insmod':
             if argv[1].endswith('h713-hdmi-receiver.ko'):
                 self.modules.add(m.OWNER)
@@ -227,6 +231,39 @@ class Lifecycle(unittest.TestCase):
         with self.assertRaises(RuntimeError):self.s.start()
         self.assertIn(m.OWNER,self.b.modules);self.assertEqual(self.s.prior()['phase'],'failed')
         self.assertFalse(any(c[0]=='rmmod' for c in self.b.commands))
+
+    def test_each_startup_ipc_failure_stops_before_next_stage_or_dsp(self):
+        for stage in range(1,6):
+            with self.subTest(stage=stage):
+                board=FakeBoard();board.fail_ipc_at=stage;session=m.Session(board,'/bundle')
+                with self.assertRaisesRegex(RuntimeError,'deadline'):session.start()
+                self.assertEqual(board.ipc_count,stage)
+                self.assertEqual(board.read(m.BASE+m.OWNER+'/parameters/clock_count').strip(),str(min(stage,4)))
+                self.assertIn(m.OWNER,board.modules);self.assertNotIn(m.AUDIO,board.modules)
+                self.assertEqual(session.prior()['phase'],'failed')
+                with self.assertRaisesRegex(RuntimeError,'physical cold boot'):session.start()
+                self.assertEqual(board.ipc_count,stage)
+
+    def test_completion_result_cannot_be_replaced_by_prompt_or_wrong_schema(self):
+        for result in ('VS:/$', '[]', 'null', '{}',
+                       json.dumps({'schema':'h713-mips-ipc-v1','complete':False,'command':'help win'}),
+                       json.dumps({'schema':'h713-mips-ipc-v1','complete':True,'command':'other'})):
+            board=FakeBoard();board.ipc_result=result;session=m.Session(board,'/bundle')
+            with self.subTest(result=result), self.assertRaises(RuntimeError):session.start()
+            self.assertNotIn(m.AUDIO,board.modules)
+            self.assertEqual(session.prior()['phase'],'failed')
+
+    def test_parallel_prepare_then_capture_handoff_does_not_repeat_hardware_work(self):
+        self.s.start()
+        commands=len(self.b.commands);writes=len(self.b.writes)
+        capture=m.Session(self.b,'/bundle')
+        self.assertTrue(capture.start()['already_ready'])
+        self.assertEqual((len(self.b.commands),len(self.b.writes)),(commands,writes))
+        self.assertEqual(self.b.ipc_count,5)
+        capture.stop()
+        self.assertTrue(capture.prior()['restore_verified'])
+        self.assertTrue(self.b.wp)
+
 
 
 if __name__=='__main__':unittest.main()

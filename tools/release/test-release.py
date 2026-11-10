@@ -106,6 +106,11 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('--boot-handoff',(units/'h713-hdmi-capture.service').read_text())
             self.assertTrue((units/'multi-user.target.wants/h713-hdmi-readvertise.service').is_symlink())
             self.assertFalse((units/'multi-user.target.wants/h713-hdmi-video.service').exists())
+            self.assertFalse((units/'multi-user.target.wants/h713-hdmi-prepare.service').exists())
+            self.assertEqual((units/'h713-hdmi-prepare.service').read_bytes(),
+                             (out/'usr/lib/h713-hdmi/h713-hdmi-prepare.service').read_bytes())
+            self.assertIn('Requires=h713-hdmi-prepare.service',
+                          (units/'h713-hdmi-capture.service').read_text())
             self.assertIn('H713_HDMI_AUDIO_DELAY_SEC=0.040',(out/'etc/default/h713-hdmi-speaker').read_text())
             self.assertFalse((out/'usr/lib/h713-hdmi-speaker/hdmi-speaker.c').exists())
             self.assertIn('== 4d2',(out/'usr/lib/h713-hdmi/h713-hdmi.cmd').read_text())

@@ -1,0 +1,282 @@
+{
+  "schema": "h713-matched-startup-trace-results-v1",
+  "status": "COMPLETE: three alternating cold boots per startup arm",
+  "summary": {
+    "original": {
+      "cold_boots": 3,
+      "fixed_seconds_per_boot": 300,
+      "total_fixed_window_seconds": 900,
+      "video_ready_mean_seconds": 24.426271,
+      "video_ready_min_seconds": 24.371631,
+      "video_ready_max_seconds": 24.467087,
+      "rejected_copies": 0,
+      "produced_at_window_ends": 53700,
+      "fps_min": 59.705322407085504,
+      "fps_max": 59.70699794689773
+    },
+    "optimized": {
+      "cold_boots": 3,
+      "fixed_seconds_per_boot": 300,
+      "total_fixed_window_seconds": 900,
+      "video_ready_mean_seconds": 16.239280333333333,
+      "video_ready_min_seconds": 16.105314,
+      "video_ready_max_seconds": 16.358156,
+      "rejected_copies": 0,
+      "produced_at_window_ends": 53707,
+      "fps_min": 59.70911044592832,
+      "fps_max": 59.71061537398991
+    }
+  },
+  "mean_video_service_improvement_seconds": 8.186990666666667,
+  "runs": [
+    {
+      "status": "VALID matched observation",
+      "arm": "original",
+      "boot_id": "12438d54-2226-478c-9fcf-8a642d65d885",
+      "issues": [],
+      "video_ready": 24.467087,
+      "window_end": 324.467087,
+      "first_live_sample": 37.28,
+      "last_live_sample": 324.65,
+      "fps": 59.70699794689773,
+      "rejected_at_window_end": 0,
+      "trace_lines": [],
+      "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+      "runtime_audit": "PASS candidate runtime identity/startup checks",
+      "files_verified": 71,
+      "loaded_build_id_matches": true,
+      "user_observation": "HDMI desktop visible; same desktop maintained",
+      "previous_shutdown": "Consumers stopped before signal/capture; DSP 22 and TVFE 15 words restored; receiver parked/removed; capture before user stop",
+      "run": "original-01",
+      "frames_produced_at_window_end": 17900,
+      "end_errors": {
+        "rejected": 0,
+        "xruns": 0,
+        "bad_guard": 0,
+        "invalid_pair": 0
+      }
+    },
+    {
+      "status": "VALID matched observation",
+      "arm": "optimized",
+      "boot_id": "f1a3574e-0347-48ae-9739-ea4631f58a34",
+      "issues": [],
+      "video_ready": 16.358156,
+      "window_end": 316.358156,
+      "first_live_sample": 26.97,
+      "last_live_sample": 316.55,
+      "fps": 59.71061537398991,
+      "rejected_at_window_end": 0,
+      "trace_lines": [],
+      "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+      "runtime_audit": "PASS candidate runtime identity/startup checks",
+      "files_verified": 73,
+      "loaded_build_id_matches": true,
+      "user_observation": "HDMI desktop visible; same desktop maintained",
+      "previous_shutdown": "Consumers before signal/capture; 22 DSP and 15 TVFE words restored; receiver parked/removed; capture before user stop",
+      "startup_evidence": {
+        "ipc_seconds": [
+          0.435023,
+          0.445031,
+          0.446665,
+          0.414752,
+          0.437227
+        ],
+        "prepare_start": 8.013247,
+        "user_overlap_seconds": 3.254760000000001,
+        "capture_ready": 14.58667,
+        "video_active": 16.358156,
+        "readvertised": 0,
+        "startup_time": "Startup finished in 2.289s (kernel) + 15.435s (userspace) = 17.725s \ngraphical.target reached after 14.137s in userspace.\n"
+      },
+      "run": "optimized-01",
+      "frames_produced_at_window_end": 17902,
+      "end_errors": {
+        "rejected": 0,
+        "xruns": 0,
+        "bad_guard": 0,
+        "invalid_pair": 0
+      }
+    },
+    {
+      "status": "VALID matched observation",
+      "arm": "original",
+      "boot_id": "607d1932-aef2-4d18-a5a7-a5722f17168f",
+      "issues": [],
+      "video_ready": 24.371631,
+      "window_end": 324.371631,
+      "first_live_sample": 91.17,
+      "last_live_sample": 324.56,
+      "fps": 59.70692831740863,
+      "rejected_at_window_end": 0,
+      "trace_lines": [],
+      "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+      "runtime_audit": "PASS candidate runtime identity/startup checks",
+      "files_verified": 71,
+      "loaded_build_id_matches": true,
+      "user_observation": "HDMI desktop visible, same desktop maintained",
+      "transport_note": {
+        "host_wifi_initially": "disconnected; SSH route fell back to wired default",
+        "board_unchanged": true,
+        "uart_at_uptime": 75.1,
+        "uart_frames_rejected": 0,
+        "diagnostic_version": "reject-trace-v1",
+        "recovery": "reactivated most recently used saved host NetworkManager profile; no board network or service changes",
+        "first_live_observer_sample": 91.17,
+        "first_live_observer_sample_note": "Read actual value from observations.jsonl; boot-wide kernel journal/cumulative counters cover early events",
+        "limitation": "Host reconnection time differs between runs; record transport/load variance when interpreting rare-event comparisons"
+      },
+      "previous_shutdown": "Consumers before signal/capture; 22 DSP and 15 TVFE words restored; receiver parked/removed; capture before user-manager stop",
+      "run": "original-02",
+      "frames_produced_at_window_end": 17901,
+      "end_errors": {
+        "rejected": 0,
+        "xruns": 0,
+        "bad_guard": 0,
+        "invalid_pair": 0
+      }
+    },
+    {
+      "status": "VALID matched observation",
+      "arm": "optimized",
+      "boot_id": "ce0753a3-0497-4d44-a073-792e546af7c0",
+      "issues": [],
+      "video_ready": 16.254371,
+      "window_end": 316.254371,
+      "first_live_sample": 33.32,
+      "last_live_sample": 316.44,
+      "fps": 59.709663746821136,
+      "rejected_at_window_end": 0,
+      "trace_lines": [],
+      "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+      "runtime_audit": "PASS candidate runtime identity/startup checks",
+      "files_verified": 73,
+      "loaded_build_id_matches": true,
+      "user_observation": "HDMI desktop visible; same desktop maintained",
+      "previous_shutdown": "Consumers before signal/capture; 22 DSP and 15 TVFE words restored; receiver parked/removed; capture before user-manager stop",
+      "host_connection": "Saved hotspot profile connected; no recovery required",
+      "startup_evidence": {
+        "ipc_seconds": [
+          0.435098,
+          0.434878,
+          0.447159,
+          0.416454,
+          0.448014
+        ],
+        "prepare_start": 7.961113,
+        "user_overlap_seconds": 3.281556,
+        "capture_ready": 14.513458,
+        "video_active": 16.254371,
+        "readvertised": 0,
+        "startup_time": "Startup finished in 2.283s (kernel) + 15.338s (userspace) = 17.621s \ngraphical.target reached after 14.080s in userspace.\n"
+      },
+      "run": "optimized-02",
+      "frames_produced_at_window_end": 17902,
+      "end_errors": {
+        "rejected": 0,
+        "xruns": 0,
+        "bad_guard": 0,
+        "invalid_pair": 0
+      }
+    },
+    {
+      "status": "VALID matched observation",
+      "arm": "original",
+      "boot_id": "4d51db35-a29f-480a-b032-549e65225ce5",
+      "issues": [],
+      "video_ready": 24.440095,
+      "window_end": 324.440095,
+      "first_live_sample": 83.0,
+      "last_live_sample": 324.62,
+      "fps": 59.705322407085504,
+      "rejected_at_window_end": 0,
+      "trace_lines": [],
+      "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+      "runtime_audit": "PASS candidate runtime identity/startup checks",
+      "files_verified": 71,
+      "loaded_build_id_matches": true,
+      "user_observation": "HDMI desktop visible; same desktop maintained",
+      "transport_note": {
+        "host_wifi_initially": "disconnected",
+        "recovery": "Reactivated saved host hotspot profile; no board service/network changes",
+        "first_live_observer_sample": 83.0,
+        "window_end": 324.440095,
+        "limitation": "Host reconnection timing/load differs between runs; boot-wide kernel journal and cumulative counters retain early rejection outcomes"
+      },
+      "previous_shutdown": "Consumers before signal/capture; 22 DSP and 15 TVFE words restored; receiver parked/removed; capture before user-manager stop",
+      "run": "original-03",
+      "frames_produced_at_window_end": 17899,
+      "end_errors": {
+        "rejected": 0,
+        "xruns": 0,
+        "bad_guard": 0,
+        "invalid_pair": 0
+      }
+    },
+    {
+      "status": "VALID matched observation",
+      "arm": "optimized",
+      "boot_id": "4ecfc48d-32bb-41eb-81e6-bd1c0522dcd8",
+      "issues": [],
+      "video_ready": 16.105314,
+      "window_end": 316.105314,
+      "first_live_sample": 55.73,
+      "last_live_sample": 316.31,
+      "fps": 59.70911044592832,
+      "rejected_at_window_end": 0,
+      "trace_lines": [],
+      "strict_zero_rejection_qualification": "not evaluated or waived by this experiment",
+      "runtime_audit": "PASS candidate runtime identity/startup checks",
+      "files_verified": 73,
+      "loaded_build_id_matches": true,
+      "user_observation": "HDMI desktop visible; same desktop maintained",
+      "transport_note": {
+        "host_wifi_initially": "disconnected",
+        "recovery": "Reactivated saved host hotspot profile; no board service/network changes",
+        "first_live_observer_sample": 55.73,
+        "window_end": 316.105314,
+        "limitation": "Host reconnection timing/load varies; boot-wide kernel logs and cumulative counters retain early rejection outcomes"
+      },
+      "previous_shutdown": "Consumers before signal/capture; 22 DSP and 15 TVFE words restored; receiver parked/removed; capture before user-manager stop",
+      "startup_evidence": {
+        "ipc_seconds": [
+          0.415159,
+          0.444994,
+          0.449294,
+          0.439347,
+          0.417778
+        ],
+        "prepare_start": 7.921375,
+        "user_overlap_seconds": 3.3027990000000003,
+        "capture_ready": 14.388959,
+        "video_active": 16.105314,
+        "readvertised": 0,
+        "startup_time": "Startup finished in 2.251s (kernel) + 15.436s (userspace) = 17.688s \ngraphical.target reached after 14.008s in userspace.\n"
+      },
+      "run": "optimized-03",
+      "frames_produced_at_window_end": 17903,
+      "end_errors": {
+        "rejected": 0,
+        "xruns": 0,
+        "bad_guard": 0,
+        "invalid_pair": 0
+      }
+    }
+  ],
+  "conclusion": "No rejection reproduced; consistent video-service startup reduction. No new event reason or evidence resolving startup causality.",
+  "qualification_status": "Historical cold-2 strict failure retained; no waiver. Instrumented matched comparison is separate from release qualification.",
+  "installed_state": {
+    "startup": "optimized; both changes enabled",
+    "module": "reject-trace-v1",
+    "module_sha256": "03332147690daae6e3881171a2bd532265f7f95cac5e004a991b00e07e8f5548",
+    "kernel": "accepted RC kernel unchanged",
+    "board": "running after optimized-03"
+  },
+  "limitations": [
+    "Three cold boots/fifteen minutes per arm do not establish absence of a rare rejection.",
+    "Some host hotspot reconnections delayed live polling; early outcome coverage uses boot-wide kernel journal and cumulative counters, with no stream restart. Reconnection load varies.",
+    "Video-service activation is a software milestone, not a directly measured first visible pixel.",
+    "Trace logging may perturb later timing; no physical rejection event occurred to exercise live message decoding.",
+    "No matched warm-boot diagnostic comparison is included; earlier five warm qualification boots used the uninstrumented optimized RC."
+  ]
+}

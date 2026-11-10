@@ -1,0 +1,71 @@
+{
+  "status": "INVESTIGATED: same pre-existing guard class; startup causality unresolved",
+  "qualification_status": "HOLD; cold-2 strict failure retained; cold 3 not run",
+  "boot_id": "f410f943-cb9a-4e72-8ee7-2c8a9c2cc650",
+  "source_sha256": "2fcb471c3e5f553efc557beb80b558e7640e7ec1b8c930b57d1f94f975a79b10",
+  "same_driver_source_as_GF1": true,
+  "historical_GF1": {
+    "rejected": 1,
+    "completions": 1211737,
+    "first_observed_uptime": 19154.59,
+    "exact_trigger": "not captured"
+  },
+  "new_event": {
+    "rejected": 2,
+    "first_observed_uptime": 156.52,
+    "frames_produced_at_first_observation": 8372,
+    "exact_rejection_times": "not captured"
+  },
+  "live_monitor": {
+    "first_uptime": 2191.82,
+    "last_uptime": 2255.89,
+    "produced": 133722,
+    "delivered": 133717,
+    "no_buffer_overwrites": 3,
+    "rejected": 2,
+    "counter_accounting_exact_at_all_five_samples": true,
+    "additional_rejections": 0,
+    "other_errors": 0,
+    "fps": 59.7159356953335
+  },
+  "runtime": {
+    "mode": "pair",
+    "verify_full": "-1",
+    "source_cached": "Y",
+    "phase_from_hash": "Y",
+    "use_vmalloc": "N",
+    "kernel_preemption": "CONFIG_PREEMPT_NONE",
+    "capture_thread": "SCHED_OTHER, nice 0",
+    "identity_audit": "PASS candidate runtime identity/startup checks",
+    "file_pins": 73,
+    "audit_added_rejections": 0,
+    "all_eight_service_identities_unchanged": true
+  },
+  "causal_assessment": {
+    "same_guard_mechanism": "confirmed",
+    "newly_introduced_capture_guard_or_driver": "ruled out by identical driver/source and pre-change GF1 event",
+    "startup_changes_affect_rejection_frequency": "not established or ruled out",
+    "delivered_corruption": "not established; guard rejects before delivery",
+    "ordinary_kernel_task_preemption": "not established; kernel is PREEMPT_NONE",
+    "exact_historical_guard_branch": "cannot determine retrospectively"
+  },
+  "prepared_diagnostic": {
+    "schema": "h713-frame-reject-diagnostic-source-v1",
+    "baseline_source_sha256": "2fcb471c3e5f553efc557beb80b558e7640e7ec1b8c930b57d1f94f975a79b10",
+    "diagnostic_source_sha256": "c8d8cf6772df76ead1dc2c166eef60b255d7307b50b744b50a4342257edde10c",
+    "installed": false,
+    "module_built": false,
+    "guard_semantics": "Original copy result and short-circuit pair read retained; same rejection/buffer decisions.",
+    "trace": "Rate-limited after rejection decision: count, produced, copy return, before/after pair, copy wall time.",
+    "pair_after_sentinel": {
+      "-2": "pair not re-read because copy guard failed"
+    },
+    "limits": [
+      "New events only; cannot reconstruct the two historical triggers.",
+      "Logging can perturb later scheduling; not proof of original hardware timing.",
+      "Source package only: exact accepted kernel build/ABI and guarded cold installation remain required."
+    ]
+  },
+  "board_changes": false,
+  "reboots_or_service_restarts": false
+}

@@ -51,8 +51,17 @@ class Session:
         state=json.loads(self.b.read(STATE))
         return state if state.get('boot_id')==self.boot else None
     def ipc(self):
-        p=self.b.run(['python3',self.bundle+'/mips-shell.py','--cmd','help win'],timeout=6)
-        if 'VS:/' not in p.stdout:raise RuntimeError('MIPS IPC prompt missing')
+        p=self.b.run(['python3',self.bundle+'/mips-shell.py','--check-ipc'],timeout=6)
+        try:
+            result=json.loads(p.stdout)
+        except ValueError as error:
+            raise RuntimeError('MIPS IPC completion result missing') from error
+        if (not isinstance(result,dict) or result.get('schema')!='h713-mips-ipc-v1' or
+                result.get('complete') is not True or result.get('command')!='help win'):
+            raise RuntimeError('MIPS IPC completion not verified')
+        # Preserve per-check latency in the service journal without changing
+        # the session CLI's machine-readable stdout result.
+        print('MIPS IPC completion '+p.stdout.strip(),file=sys.stderr,flush=True)
     def owner_ready(self,clients=None):
         for key,value in [('clock_count','4'),('init_error','0'),('firmware_pin','Y'),('edid_ready','Y')]:
             if self.param(OWNER,key)!=value:raise RuntimeError('receiver readiness failed: '+key)

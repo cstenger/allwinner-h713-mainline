@@ -1,0 +1,70 @@
+{
+  "method": "Host UTC timestamp on UART receive chunk containing milestone; first matching chunk, not exact physical event time. No power-switch timestamp. Archived installed-RC boots, not fresh measurements.",
+  "runs": [
+    {
+      "capture": "local/recovery/2026-11-03-production-install-03/candidate-first-cold-boot/serial-timestamped.log",
+      "sha256": "0d9fc544e074602199c865e2d119ed708843d09c10a32cf405aef15599590fb4",
+      "seconds_from_first_SPL_message": {
+        "spl": 0.0,
+        "countdown": 2.194254,
+        "script": 7.217421,
+        "panel_wait": 8.20686,
+        "logo": 12.914429,
+        "handoff": 14.397959,
+        "kernel": 14.862464
+      }
+    },
+    {
+      "capture": "local/recovery/2026-11-03-production-install-03/candidate-warm-01/serial-timestamped.log",
+      "sha256": "c610f26b4c08874f0ef0cbfe0d6e4e7c8290c226009a66ebe9eded98fb1a3f11",
+      "seconds_from_first_SPL_message": {
+        "spl": 0.0,
+        "countdown": 2.12926,
+        "script": 7.152449,
+        "panel_wait": 8.142223,
+        "logo": 12.849851,
+        "handoff": 14.328883,
+        "kernel": 14.793425
+      }
+    },
+    {
+      "capture": "local/recovery/2026-11-03-production-install-03/candidate-warm-02/serial-timestamped.log",
+      "sha256": "c33dab88da892c4a2c95386f9cbaeff02813de4457915ffedc3df944057f4908",
+      "seconds_from_first_SPL_message": {
+        "spl": 0.0,
+        "countdown": 2.059961,
+        "script": 7.083456,
+        "panel_wait": 8.072928,
+        "logo": 12.780452,
+        "handoff": 14.269575,
+        "kernel": 14.72354
+      }
+    },
+    {
+      "capture": "local/recovery/2026-11-03-production-install-03/candidate-return-hdmi-cold/serial-timestamped.log",
+      "sha256": "8c15cbc2078f2d57779dea36cb92882cf4666dca8811e7a910800ece92340d76",
+      "seconds_from_first_SPL_message": {
+        "spl": 0.0,
+        "countdown": 2.111116,
+        "script": 7.134288,
+        "panel_wait": 8.123852,
+        "logo": 12.831436,
+        "handoff": 14.313826,
+        "kernel": 14.77844
+      }
+    },
+    {
+      "capture": "local/recovery/2026-11-03-recovery-entry-rehearsal/candidate-return-cold/serial-timestamped.log",
+      "sha256": "76557e9bd2d3a73f6e58fa8e01161bdb9f0d92ab9c5ad492dc55ede9bb38774d",
+      "seconds_from_first_SPL_message": {
+        "spl": 0.0,
+        "countdown": 2.100768,
+        "script": 7.123955,
+        "panel_wait": 8.114006,
+        "logo": 12.821617,
+        "handoff": 14.316234,
+        "kernel": 14.77018
+      }
+    }
+  ]
+}

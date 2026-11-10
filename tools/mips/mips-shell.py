@@ -89,6 +89,9 @@ rejected, that is the first thing to look at -- try `cmds` first, which is
 """
 import argparse
 import ctypes
+import fcntl
+import json
+import math
 import mmap
 import os
 import struct
@@ -353,12 +356,52 @@ def mips_alive(mem):
     return mem.u32(MIPS_RESET_STATUS) == 1
 
 
+def ipc_reply_complete(reply):
+    """Match the pinned firmware's whole benign reply, never a stale prompt."""
+    return reply.replace(b"\r", b"").split(b"\n") == [
+        b"help win", b"command help of win", b"for window debug only",
+        b"", b"VS:/$ ",
+    ]
+
+
+def check_ipc(term, alive, timeout=1.5, *, clock=time.monotonic,
+              sleep=time.sleep):
+    """One bounded request; caller serializes ring users. No retry or reset."""
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("IPC deadline must be finite and positive")
+    if not alive:
+        raise RuntimeError("MIPS is parked; refusing IPC request")
+    down = term.down[0]
+    if down.wroff != down.rdoff:
+        raise RuntimeError("MIPS command ring is busy; refusing IPC request")
+    stale = term.drain()
+    started = clock()
+    if term.send("help win\r") != 9:
+        raise RuntimeError("incomplete MIPS IPC command publication")
+    deadline = started + timeout
+    reply = b""
+    while clock() < deadline:
+        reply += term.drain()
+        if len(reply) > 4096:
+            raise RuntimeError("MIPS IPC reply exceeds bounded response size")
+        if (ipc_reply_complete(reply) and down.wroff == down.rdoff
+                and clock() < deadline):
+            return {"schema": "h713-mips-ipc-v1", "complete": True,
+                    "command": "help win", "reply_bytes": len(reply),
+                    "stale_bytes": len(stale),
+                    "elapsed_seconds": round(clock() - started, 6)}
+        sleep(min(0.01, max(0, deadline - clock())))
+    raise RuntimeError("MIPS IPC deadline expired without a complete fresh reply")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--status", action="store_true", help="describe the rings and exit")
     parser.add_argument("--drain", action="store_true", help="print pending output and exit")
     parser.add_argument("--cmd", help="send a command line, then read the reply")
+    parser.add_argument("--check-ipc", action="store_true",
+                        help="validate help win reply and return immediately on completion")
     parser.add_argument("--wait", type=float, default=1.5, help="seconds to wait for output")
     parser.add_argument("--raw", action="store_true", help="hex-dump output instead of decoding")
     parser.add_argument("--unbind", action="store_true",
@@ -366,9 +409,34 @@ def main():
     parser.add_argument("--release", action="store_true",
                         help="release the MIPS core (refuses while the KMS driver is bound)")
     args = parser.parse_args()
+    if args.check_ipc and any((args.status, args.drain, args.cmd, args.raw,
+                              args.unbind, args.release)):
+        parser.error("--check-ipc cannot be combined with other terminal actions")
+    if args.check_ipc and (not math.isfinite(args.wait) or args.wait <= 0):
+        parser.error("--wait must be finite and positive")
 
+    # Cooperating CLI readers/writers must not steal one another's replies.
+    # Keep the lock for the entire transaction, including legacy reads.
+    if args.check_ipc or args.cmd or args.drain or args.release or args.unbind:
+        with open('/run/lock/h713-mips-shell.lock', 'a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                sys.exit("MIPS shell is busy; refusing concurrent terminal access")
+            return run_terminal(args)
+    return run_terminal(args)
+
+
+def run_terminal(args):
     term = Terminal()
     alive = mips_alive(term.mem)
+    if args.check_ipc:
+        try:
+            result = check_ipc(term, alive, args.wait)
+        except (RuntimeError, ValueError) as error:
+            sys.exit(str(error))
+        print(json.dumps(result))
+        return
 
     if args.unbind:
         print(f"[KMS driver: {unbind_display()}]", flush=True)

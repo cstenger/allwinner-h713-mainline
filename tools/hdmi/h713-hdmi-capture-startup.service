@@ -1,6 +1,7 @@
 [Unit]
 Description=H713 HDMI audio capture
-After=systemd-modules-load.service user@1000.service
+Requires=h713-hdmi-prepare.service
+After=systemd-modules-load.service user@1000.service h713-hdmi-prepare.service
 Before=shutdown.target
 RequiresMountsFor=/usr/lib/h713-hdmi /run/h713-hdmi-session
 ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1

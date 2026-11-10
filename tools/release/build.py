@@ -22,6 +22,7 @@ MODULES = {'receiver': 'hdmi-receiver', 'audio': 'hdmi-audio',
 BACKEND = {
     'h713-hdmi-session.py': 'tools/hdmi/h713-hdmi-session.py',
     'h713-hdmi-capture.service': 'tools/hdmi/h713-hdmi-capture-startup.service',
+    'h713-hdmi-prepare.service': 'tools/hdmi/h713-hdmi-prepare.service',
     'h713-hdmi-signal.py': 'tools/hdmi/h713-hdmi-signal.py',
     'h713-hdmi-signal.service': 'tools/hdmi/h713-hdmi-signal.service',
     'h713-hdmi-readvertise.py': 'tools/hdmi/h713-hdmi-readvertise.py',
@@ -241,7 +242,7 @@ def overlay(output, module_files, vendor, fit, dtb, board_calibration):
         for name in sources:
             if name.endswith('.service'):
                 copy(base/name, output/'etc/systemd/system'/name)
-                if name != 'h713-hdmi-video.service':
+                if name not in ('h713-hdmi-video.service', 'h713-hdmi-prepare.service'):
                     link = output/'etc/systemd/system/multi-user.target.wants'/name
                     link.parent.mkdir(parents=True, exist_ok=True)
                     link.symlink_to('../'+name)
