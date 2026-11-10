@@ -33,6 +33,7 @@ EDID_SHA256 = "1bf44b2172fb4e512d8a575c58f2abbcfd96d2f2902bea5b8a7a323248fb9013"
 PANEL_FRAMES = 360
 PANEL_FPS = 60
 TAIL_FRAME_BUDGET = 8
+SCANOUT_STATS = "/sys/kernel/debug/dri/0/h713_scanout_stats"
 
 
 def run(argv, timeout=30, check=True):
@@ -89,6 +90,62 @@ def display_error_count():
                "timed out draining retired framebuffers")
     result = remote(f"dmesg | grep -E -c '{pattern}' || true").stdout.strip()
     return int(result or "0")
+
+
+def scanout_stats():
+    text = remote(f"cat {SCANOUT_STATS}").stdout
+    values = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            raise RuntimeError(f"malformed physical scanout statistic: {line!r}")
+        try:
+            values[fields[0]] = int(fields[1], 0)
+        except ValueError as exc:
+            raise RuntimeError(f"non-integer physical scanout statistic: "
+                               f"{line!r}") from exc
+    required = {
+        "physical_vsyncs", "video_run", "video_active", "video_pending",
+        "video_submitted", "video_presented", "video_coalesced",
+        "video_aborted", "video_repeated_fb",
+        "video_interval_min_vblanks", "video_interval_max_vblanks",
+        "video_interval_gt_one", "video_submit_to_vsync_min_ns",
+        "video_submit_to_vsync_mean_ns", "video_submit_to_vsync_max_ns",
+        "last_submitted_fb_id", "last_presented_fb_id",
+        "last_presented_y", "last_presented_c",
+    }
+    missing = required - values.keys()
+    if missing:
+        raise RuntimeError("physical scanout statistics omitted: " +
+                           ", ".join(sorted(missing)))
+    return text, values
+
+
+def validate_scanout_stats(before, after):
+    if after["video_run"] != before["video_run"] + 1:
+        raise RuntimeError("physical scanout run counter did not advance once")
+    for name in ("video_submitted", "video_presented"):
+        if after[name] != PANEL_FRAMES:
+            raise RuntimeError(f"physical scanout {name} was {after[name]}, "
+                               f"expected {PANEL_FRAMES}")
+    for name in ("video_active", "video_pending", "video_coalesced",
+                 "video_aborted", "video_interval_gt_one"):
+        if after[name]:
+            raise RuntimeError(f"physical scanout {name} was nonzero")
+    if (after["video_interval_min_vblanks"],
+            after["video_interval_max_vblanks"]) != (1, 1):
+        raise RuntimeError("physical presentations did not land on consecutive "
+                           "vblanks")
+    if after["physical_vsyncs"] - before["physical_vsyncs"] < PANEL_FRAMES:
+        raise RuntimeError("physical-vsync counter advanced fewer times than "
+                           "the presented frame count")
+    if (not after["last_submitted_fb_id"] or
+            after["last_submitted_fb_id"] !=
+            after["last_presented_fb_id"]):
+        raise RuntimeError("last submitted framebuffer was not presented")
+    if not after["last_presented_y"] or not after["last_presented_c"]:
+        raise RuntimeError("last physical presentation omitted its DMA identity")
+    return after
 
 
 def primary_fb(state):
@@ -210,6 +267,7 @@ def main():
                "set -- $(modinfo -F vermagic /tmp/h713-scp-probe.ko); "
                "test \"$1\" = \"$(uname -r)\"; "
                "test -f /sys/kernel/debug/dri/0/state; "
+               f"test -r {SCANOUT_STATS}; "
                "command -v gst-launch-1.0 >/dev/null; "
                "gst-inspect-1.0 kmssink >/dev/null; "
                f"test \"$(sha256sum /tmp/h713-gst-native-720-panel.c | cut -d' ' -f1)\" = {runner_sha}; "
@@ -224,11 +282,13 @@ def main():
         raise
 
     kms_before = remote("cat /sys/kernel/debug/dri/0/state").stdout
+    scanout_before_text, scanout_before = scanout_stats()
     fb_before = primary_fb(kms_before)
     errors_before = display_error_count()
     if plane_state(kms_before, "video-0") != ("(null)", 0):
         raise RuntimeError("KMS NV12 overlay was already active before the test")
     (output / "kms-before.log").write_text(kms_before)
+    (output / "scanout-before.log").write_text(scanout_before_text)
     target = ("timeout -s INT 15s /tmp/h713-gst-native-720-panel "
               f"{PANEL_FRAMES}")
 
@@ -310,10 +370,13 @@ def main():
         if measured_fps < 55:
             raise RuntimeError(f"NV12 panel path ran at only {measured_fps:.2f} fps")
         kms_after = wait_overlay_released(fb_before)
+        scanout_after_text, scanout_after = scanout_stats()
+        validate_scanout_stats(scanout_before, scanout_after)
         errors_after = display_error_count()
         fb_during = primary_fb(kms_during)
         fb_after = primary_fb(kms_after)
         (output / "kms-after.log").write_text(kms_after)
+        (output / "scanout-after.log").write_text(scanout_after_text)
         if fb_during != fb_before or fb_after != fb_before:
             raise RuntimeError("KMS primary framebuffer changed during overlay playback")
         if errors_after != errors_before:
@@ -336,6 +399,25 @@ def main():
                   "conversion_max_us": pipeline["conversion_max_us"],
                   "nominal_display_fps": PANEL_FPS,
                   "measured_fps": round(measured_fps, 2),
+                  "physical_video_submitted":
+                  scanout_after["video_submitted"],
+                  "physical_video_presented":
+                  scanout_after["video_presented"],
+                  "physical_video_coalesced":
+                  scanout_after["video_coalesced"],
+                  "physical_video_aborted": scanout_after["video_aborted"],
+                  "physical_repeated_fb":
+                  scanout_after["video_repeated_fb"],
+                  "physical_interval_min_vblanks":
+                  scanout_after["video_interval_min_vblanks"],
+                  "physical_interval_max_vblanks":
+                  scanout_after["video_interval_max_vblanks"],
+                  "physical_submit_to_vsync_mean_us": round(
+                      scanout_after["video_submit_to_vsync_mean_ns"] / 1000,
+                      2),
+                  "physical_submit_to_vsync_max_us": round(
+                      scanout_after["video_submit_to_vsync_max_ns"] / 1000,
+                      2),
                   "driver_produced": counters["frames_produced"],
                   "driver_delivered": counters["frames_delivered"],
                   "driver_overwritten_total": counters["frames_overwritten"],
