@@ -43,6 +43,31 @@ class Bundle(unittest.TestCase):
             with self.subTest(old=hashlib.sha256(old).hexdigest(), new=hashlib.sha256(new).hexdigest()):
                 with self.assertRaises(SystemExit): b.check_pio_irq_dtb(old, new)
 
+    def test_cpu_comm_irq_change_is_narrow(self):
+        def dtb(msgbox='0 21 4', watchdog='0 46 4', extra=''):
+            source = ('/dts-v1/; / { soc { cpu-comm@3003000 { interrupts = <'+msgbox+'>; }; '
+                      'watchdog@2051000 { interrupts = <'+watchdog+'>; }; '+extra+' }; };')
+            return subprocess.check_output(['dtc', '-q', '-I', 'dts', '-O', 'dtb'], input=source.encode())
+        old = dtb(); new = dtb('0 46 4 0 109 4 0 108 4', '0 53 4')
+        b.check_cpu_comm_irq_dtb(old, new)
+        for bad in (dtb('0 46 4 0 108 4 0 109 4', '0 53 4'),
+                    dtb('0 46 4 0 109 4 0 108 4'),
+                    dtb('0 46 4 0 109 4 0 108 4', '0 53 4', 'foreign { status = "okay"; };')):
+            with self.assertRaises(SystemExit): b.check_cpu_comm_irq_dtb(old, bad)
+        with self.assertRaises(SystemExit): b.check_cpu_comm_irq_dtb(new, new)
+
+    def test_witness_reservation_change_is_narrow(self):
+        def dtb(size='0x1000', address='0x4d980000', no_map='no-map;', extra=''):
+            src=('/dts-v1/; / { reserved-memory { #address-cells=<1>; #size-cells=<1>; ranges; '
+                 'hdmi-trace@4d980000 { reg=<'+address+' '+size+'>; '+no_map+' }; }; '+extra+' };')
+            return subprocess.check_output(['dtc','-q','-I','dts','-O','dtb'],input=src.encode())
+        old=dtb();new=dtb('0x40000')
+        b.check_cpu_comm_witness_dtb(old,new)
+        for bad in (dtb('0x10000'),dtb('0x20000'),dtb('0x40000','0x4d990000'),
+                    dtb('0x40000',no_map=''),dtb('0x40000',extra='foreign {};')):
+            with self.assertRaises(SystemExit):b.check_cpu_comm_witness_dtb(old,bad)
+        with self.assertRaises(SystemExit):b.check_cpu_comm_witness_dtb(new,new)
+
     def check(self, base_config, cand_config, **kw):
         with tempfile.TemporaryDirectory() as d:
             base = work(d, 'base', base_config, b'old'); cand = work(d, 'cand', cand_config, b'new')

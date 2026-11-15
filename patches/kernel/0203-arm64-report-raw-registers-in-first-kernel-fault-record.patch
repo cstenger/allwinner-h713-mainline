@@ -1,0 +1,33 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 15 Nov 2026 00:50:00 -0800
+Subject: [PATCH] arm64: report raw frame in first kernel fault record
+
+DDR3 CPU_COMM IRQ trials stop reporting after the fault-address line,
+before the ESR decoder and normal Oops register dump. Emit raw PC, LR,
+SP, ESR and initial argument registers in that same first record so the
+faulting access can be identified from UART even when later reporting
+cannot progress. No pointer dereference, symbol lookup, delay or change
+to fault handling is added. This improves diagnosis; it is not a fix for
+the underlying corruption and does not qualify IRQ operation.
+
+--- a/arch/arm64/mm/fault.c
++++ b/arch/arm64/mm/fault.c
+@@ -301,8 +301,16 @@
+ {
+ 	bust_spinlocks(1);
+ 
+-	pr_alert("Unable to handle kernel %s at virtual address %016lx\n", msg,
+-		 addr);
++	/* Keep the raw frame in the first record: on a corrupted kernel,
++	 * later ESR/page-table/stack reporting may itself stop progressing.
++	 */
++	pr_alert("Unable to handle kernel %s at virtual address %016lx "
++		 "pc=%016llx lr=%016llx sp=%016llx esr=%016lx "
++		 "x0=%016llx x1=%016llx x2=%016llx x3=%016llx "
++		 "x4=%016llx x5=%016llx x6=%016llx x7=%016llx\n",
++		 msg, addr, regs->pc, regs->regs[30], regs->sp, esr,
++		 regs->regs[0], regs->regs[1], regs->regs[2], regs->regs[3],
++		 regs->regs[4], regs->regs[5], regs->regs[6], regs->regs[7]);
+ 
+ 	kasan_non_canonical_hook(addr);
+ 

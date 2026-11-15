@@ -1,0 +1,239 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 15 Nov 2026 01:30:00 -0800
+Subject: [PATCH] soc: sunxi: cpu_comm: add isolated private-reference witnesses
+
+IRQ trials still corrupt kernel/userspace state after the independently
+reproduced ownership fixes. Nulling the two wait-pointer fields alone did
+not cure it. Driver-private bus addresses also appear in FIFO/list fields.
+
+Add opt-in arena_witness=1 for the DDR3 bench. Grow its existing no-map
+trace reservation to 256 KiB, leaving the original first trace page intact.
+Peer-facing private references name separate poison-filled guarded windows;
+ARM decoding still resolves the original local objects. Read-only status
+reports changed words and a first changed-word sample. Firmware reads may
+see poison: this is a diagnostic, not a functional mode or production fix.
+Default protocol behavior is unchanged. Refuse an absent/wrong reservation.
+
+The window holds both real arenas, the 9984-byte socket pair and the
+119648-byte device state, each with a guard page either side; a build-time
+check enforces it. No per-arena size cap applies.
+
+The backing remains reserved from Linux until reboot, including after
+driver teardown, because firmware may retain the references. No firmware
+code is changed or included. A coherent-DMA allocator probe could not meet
+the MIPS direct-address window; no unreachable address is published.
+
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c
+@@ -21,6 +21,10 @@
+ #include <linux/slab.h>
+ #include <linux/delay.h>
+ #include <linux/sched.h>
++#include <linux/of_reserved_mem.h>
++#include <linux/mutex.h>
++#include <linux/moduleparam.h>
++#include <linux/sizes.h>
+ #include "cpu_comm.h"
+ 
+ /* ── Globals ───────────────────────────────────────────────── */
+@@ -512,9 +516,107 @@
+ 	unsigned long base;
+ 	size_t size;
+ 	u32 mid;
++	void __iomem *witness;
++	size_t witness_span;
+ } cc_arenas[CC_REF_ARENA_MAX];
+ 
+ static int cc_arena_count;
++
++/* Diagnostic references name a reserved poison-filled window, while
++ * ARM dereferences still resolve the original local objects. Firmware
++ * reads may see poison: this is not a functional/production mode.
++ */
++static bool cc_arena_witness;
++module_param_named(arena_witness, cc_arena_witness, bool, 0444);
++MODULE_PARM_DESC(arena_witness, "diagnostic isolated private-reference write witnesses");
++static void __iomem *cc_witness_window;
++static u32 cc_witness_mid;
++static size_t cc_witness_span, cc_witness_used;
++static DEFINE_MUTEX(cc_arena_mutex);
++
++int cc_arena_prepare(void)
++{
++	struct device_node *np;
++	struct reserved_mem *rmem;
++
++	if (!cc_arena_witness)
++		return 0;
++	/* Both real arenas, each with a guard page either side, must fit. */
++	BUILD_BUG_ON(PAGE_ALIGN(2 * COMM_SOCKET_SIZE) + PAGE_ALIGN(CPU_COMM_DEV_SIZE) +
++		     4 * PAGE_SIZE > SZ_256K - PAGE_SIZE);
++	np = of_find_node_by_path("/reserved-memory/hdmi-trace@4d980000");
++	if (!np)
++		return -ENODEV;
++	rmem = of_reserved_mem_lookup(np);
++	/* no-map and the enlarged reservation are required, before ioremap. */
++	if (!rmem || !of_property_read_bool(np, "no-map") ||
++	    rmem->base != 0x4d980000 || rmem->size != SZ_256K) {
++		of_node_put(np);
++		return -EINVAL;
++	}
++	of_node_put(np);
++	/* Keep the first page for the existing firmware progress trace. */
++	cc_witness_mid = rmem->base + PAGE_SIZE;
++	cc_witness_span = rmem->size - PAGE_SIZE;
++	cc_witness_window = ioremap(cc_witness_mid, cc_witness_span);
++	return cc_witness_window ? 0 : -ENOMEM;
++}
++
++void cc_arena_finish(void)
++{
++	mutex_lock(&cc_arena_mutex);
++	if (cc_witness_window)
++		iounmap(cc_witness_window);
++	cc_witness_window = NULL;
++	/* Backing remains reserved until reboot, even if firmware retained
++	 * a reference. It is never returned to the kernel allocator here.
++	 */
++	mutex_unlock(&cc_arena_mutex);
++}
++
++static int cc_arena_witness_status(char *buf, const struct kernel_param *kp)
++{
++	int i, len = 0;
++
++	mutex_lock(&cc_arena_mutex);
++	len += scnprintf(buf + len, PAGE_SIZE - len, "enabled=%c arenas=%d\n",
++			 cc_arena_witness ? 'Y' : 'N', cc_arena_count);
++	for (i = 0; i < cc_arena_count; i++) {
++		size_t off, first = SIZE_MAX;
++		unsigned int changed = 0, n;
++		u32 value = 0;
++
++		if (!cc_arenas[i].witness)
++			continue;
++		for (off = 0; off < cc_arenas[i].witness_span; off += 4) {
++			u32 v = readl(cc_arenas[i].witness + off);
++
++			if (v != 0xa5a5a5a5) {
++				if (first == SIZE_MAX) {
++					first = off;
++					value = v;
++				}
++				changed++;
++			}
++		}
++		len += scnprintf(buf + len, PAGE_SIZE - len,
++			"arena=%d token=%08x bytes=%zu span=%zu changed_words=%u first_offset=%zu first_value=%08x",
++			i, cc_arenas[i].mid, cc_arenas[i].size,
++			cc_arenas[i].witness_span, changed, first, value);
++		if (first != SIZE_MAX)
++			for (n = 0; n < 8 && first + n * 4 < cc_arenas[i].witness_span; n++)
++				len += scnprintf(buf + len, PAGE_SIZE - len, " %08x",
++					readl(cc_arenas[i].witness + first + n * 4));
++		len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
++	}
++	mutex_unlock(&cc_arena_mutex);
++	return len;
++}
++
++static const struct kernel_param_ops cc_arena_witness_ops = {
++	.get = cc_arena_witness_status,
++};
++module_param_cb(arena_witness_status, &cc_arena_witness_ops, NULL, 0444);
+ 
+ int cc_arena_register(void *base, size_t size)
+ {
+@@ -538,13 +640,31 @@
+ 	if (WARN_ON(mid > U32_MAX || size - 1 > U32_MAX - (u32)mid))
+ 		return -ERANGE;
+ 
+-	if (WARN_ON(cc_arena_count >= CC_REF_ARENA_MAX))
++	mutex_lock(&cc_arena_mutex);
++	if (WARN_ON(cc_arena_count >= CC_REF_ARENA_MAX)) {
++		mutex_unlock(&cc_arena_mutex);
+ 		return -ENOSPC;
+-
+-	i = cc_arena_count++;
++	}
++	i = cc_arena_count;
++	if (cc_arena_witness) {
++		size_t span = PAGE_ALIGN(size) + 2 * PAGE_SIZE;
++
++		if (!cc_witness_window ||
++		    span > cc_witness_span - cc_witness_used) {
++			mutex_unlock(&cc_arena_mutex);
++			return -ENOSPC;
++		}
++		cc_arenas[i].witness = cc_witness_window + cc_witness_used;
++		cc_arenas[i].witness_span = span;
++		memset_io(cc_arenas[i].witness, 0xa5, span);
++		mid = cc_witness_mid + cc_witness_used + PAGE_SIZE;
++		cc_witness_used += span;
++	}
+ 	cc_arenas[i].base = (unsigned long)base;
+ 	cc_arenas[i].size = size;
+ 	cc_arenas[i].mid = (u32)mid;
++	cc_arena_count++;
++	mutex_unlock(&cc_arena_mutex);
+ 
+ 	pr_debug("cpu_comm: arena %d = %p..%p, MID 0x%08x (%zu bytes)\n",
+ 		 i, base, (u8 *)base + size, cc_arenas[i].mid, size);
+@@ -553,8 +673,11 @@
+ 
+ void cc_arena_reset(void)
+ {
++	mutex_lock(&cc_arena_mutex);
+ 	memset(cc_arenas, 0, sizeof(cc_arenas));
+ 	cc_arena_count = 0;
++	cc_witness_used = 0;
++	mutex_unlock(&cc_arena_mutex);
+ }
+ 
+ u32 cc_ref(const void *ptr)
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
+@@ -1719,9 +1719,13 @@
+ 
+ 	/* Initialize CPU_COMM */
+ 	cpu_comm_mbox_dev = &pdev->dev;
++	ret = cc_arena_prepare();
++	if (ret)
++		return dev_err_probe(&pdev->dev, ret, "private-reference witness setup failed\n");
+ 	ret = cpu_comm_init(0);
+ 	if (ret) {
+ 		dev_err(&pdev->dev, "init failed: %d\n", ret);
++		cc_arena_finish();
+ 		return ret;
+ 	}
+ 
+@@ -1732,6 +1736,7 @@
+ static void cpu_comm_drv_remove(struct platform_device *pdev)
+ {
+ 	cpu_comm_cleanup();
++	cc_arena_finish();
+ }
+ 
+ static const struct of_device_id cpu_comm_of_match[] = {
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
+@@ -573,6 +573,8 @@
+ #define CC_REF_OFF_MASK		((1u << CC_REF_ARENA_SHIFT) - 1)
+ 
+ /* Registers a driver-private arena; returns its index or negative. */
++int cc_arena_prepare(void);
++void cc_arena_finish(void);
+ int  cc_arena_register(void *base, size_t size);
+ void cc_arena_reset(void);
+ 
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713df-a1.dts
+@@ -14,7 +14,7 @@
+ 	reserved-memory {
+ 		/* After decoder@4d941000; below U-Boot's 0x4e000000 logo. */
+ 		hdmi_trace_reserved: hdmi-trace@4d980000 {
+-			reg = <0x4d980000 0x1000>;
++			reg = <0x4d980000 0x40000>;
+ 			no-map;
+ 		};
+ 	};

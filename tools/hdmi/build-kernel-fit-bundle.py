@@ -14,6 +14,10 @@ from the installed sources and the candidate with the change. Refused unless:
     SPI 54..62 to SPI 54..60 parent-interrupt correction), and
   - the baseline script reproduces the installed startup script.
 
+--cpu-comm-irq-fix permits exactly msgbox SPI 21 -> 46/109/108 and watchdog
+SPI 46 -> 53. --installed-cpu-comm packages the baseline-reproduced CPU_COMM
+module in the same guarded transaction.
+
 --installed-cedrus also packages the changed in-tree decoder module, after its
 baseline rebuild matches the supplied installed SHA-256. It is then backed up,
 staged and rolled back with the FIT/script by the installer.
@@ -42,6 +46,7 @@ INSTALLED_CMD = '2dd9adb1bdd42a9325b429abfad68aabea3330f4012fe0a10a872896718c7b0
 INSTALLED_SCR = '4c2453a4ee311bc8cec1b069cf078ce3d471172c87157fdfb1f4d9150f1c02d8'
 DTB = 'sun50i-h713-hy200-qz713df-a1.dtb'
 CEDRUS = 'drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko'
+CPU_COMM = 'drivers/soc/sunxi/cpu_comm/hy310-cpu-comm.ko'
 # What rustc 1.99 (installed kernels up to 2026-11-09) wrote into .config.
 RUSTC_PROBE_SYMBOLS = {
     'CONFIG_RUSTC_VERSION': ('109900', '0'), 'CONFIG_RUSTC_LLVM_VERSION': ('230101', '0'),
@@ -93,8 +98,53 @@ def check_pio_irq_dtb(baseline, candidate):
         need(canonical(old) == canonical(new), 'DTB differs outside the PIO interrupt correction')
 
 
+def check_cpu_comm_irq_dtb(baseline, candidate):
+    """Allow only stock msgbox-bank and watchdog interrupt corrections."""
+    with tempfile.TemporaryDirectory(prefix='h713-cpu-comm-dtb-') as directory:
+        old, new = (Path(directory)/name for name in ('old.dtb', 'new.dtb'))
+        old.write_bytes(baseline); new.write_bytes(candidate)
+        for node, before, after in (
+            ('/soc/cpu-comm@3003000', [0, 21, 4], [0, 46, 4, 0, 109, 4, 0, 108, 4]),
+            ('/soc/watchdog@2051000', [0, 46, 4], [0, 53, 4]),
+        ):
+            def irqs(path):
+                out = subprocess.run(['fdtget', '-t', 'u', str(path), node, 'interrupts'],
+                                     capture_output=True, text=True)
+                need(out.returncode == 0, 'cannot read '+node+' interrupts: '+out.stderr)
+                return [int(v) for v in out.stdout.split()]
+            need(irqs(old) == before, 'unexpected baseline interrupts: '+node)
+            need(irqs(new) == after, 'unexpected candidate interrupts: '+node)
+            subprocess.run(['fdtput', '-t', 'i', str(old), node, 'interrupts',
+                            *map(str, after)], check=True, capture_output=True)
+        def canonical(path):
+            return subprocess.check_output(['dtc', '-q', '-s', '-I', 'dtb', '-O', 'dts', str(path)])
+        need(canonical(old) == canonical(new), 'DTB differs outside CPU_COMM/watchdog IRQ corrections')
+
+
+def check_cpu_comm_witness_dtb(baseline, candidate):
+    """Permit only growing the existing no-map trace reservation to 256 KiB."""
+    node = '/reserved-memory/hdmi-trace@4d980000'
+    with tempfile.TemporaryDirectory(prefix='h713-witness-dtb-') as directory:
+        old, new = (Path(directory)/name for name in ('old.dtb', 'new.dtb'))
+        old.write_bytes(baseline); new.write_bytes(candidate)
+        def cells(path):
+            out = subprocess.run(['fdtget', '-t', 'u', str(path), node, 'reg'],
+                                 capture_output=True, text=True)
+            need(out.returncode == 0, 'missing witness trace reservation')
+            return [int(v) for v in out.stdout.split()]
+        need(cells(old) == [0x4d980000, 0x1000], 'unexpected baseline trace reservation')
+        need(cells(new) == [0x4d980000, 0x40000], 'unexpected witness reservation')
+        need(subprocess.run(['fdtget', str(new), node, 'no-map'],
+                            capture_output=True).returncode == 0, 'witness reservation must be no-map')
+        subprocess.run(['fdtput', '-t', 'i', str(old), node, 'reg',
+                        str(0x4d980000), str(0x40000)], check=True, capture_output=True)
+        def canonical(path):
+            return subprocess.check_output(['dtc', '-q', '-s', '-I', 'dtb', '-O', 'dts', str(path)])
+        need(canonical(old) == canonical(new), 'DTB differs outside the witness reservation')
+
+
 def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=False,
-          pio_irq_fix=False):
+          pio_irq_fix=False, cpu_comm_irq_fix=False, cpu_comm_witness=False):
     bt, ct = tree(baseline), tree(candidate)
     bfit = (baseline/'build/out/h713-kernel-production.fit').read_bytes()
     cfit = (candidate/'build/out/h713-kernel-production.fit').read_bytes()
@@ -112,7 +162,12 @@ def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=Fa
     release = lambda t: (t/'include/config/kernel.release').read_text()
     need(release(bt) == release(ct), 'kernel release differs')
     bdtb, cdtb = ((w/'build/out'/DTB).read_bytes() for w in (baseline, candidate))
-    if pio_irq_fix:
+    need(sum((pio_irq_fix, cpu_comm_irq_fix, cpu_comm_witness)) <= 1, 'select only one DT correction')
+    if cpu_comm_witness:
+        check_cpu_comm_witness_dtb(bdtb, cdtb)
+    elif cpu_comm_irq_fix:
+        check_cpu_comm_irq_dtb(bdtb, cdtb)
+    elif pio_irq_fix:
         check_pio_irq_dtb(bdtb, cdtb)
     else:
         need(bdtb == cdtb, 'board DTB differs')
@@ -133,11 +188,17 @@ def main():
                    help='baseline built with H713_KERNEL_RUSTC (rustc 1.99), candidate without')
     p.add_argument('--pio-irq-fix', action='store_true',
                    help='allow only the H713 PIO interrupt-list correction from nine banks to seven')
+    p.add_argument('--cpu-comm-irq-fix', action='store_true',
+                   help='allow only stock CPU_COMM and watchdog interrupt corrections')
+    p.add_argument('--cpu-comm-witness', action='store_true',
+                   help='allow only the dedicated trace reservation growth from 4 to 256 KiB')
+    p.add_argument('--installed-cpu-comm',
+                   help='package CPU_COMM after reproducing this installed module SHA-256')
     p.add_argument('--installed-cedrus',
                    help='also package Cedrus; require this installed SHA-256 to match its baseline rebuild')
     a = p.parse_args()
     bfit, cfit, bdtb = check(a.baseline, a.candidate, a.installed_fit, a.config_diff,
-                           a.rustc_probe_transition, a.pio_irq_fix)
+                           a.rustc_probe_transition, a.pio_irq_fix, a.cpu_comm_irq_fix, a.cpu_comm_witness)
     cdtb = (a.candidate/'build/out'/DTB).read_bytes()
     if a.rustc_probe_transition: a.config_diff += list(RUSTC_PROBE_SYMBOLS)
     spec = importlib.util.spec_from_file_location('startup', ROOT/'tools/hdmi/build-startup.py')
@@ -156,6 +217,13 @@ def main():
         need(new_module != old_module, 'candidate Cedrus equals baseline')
         files['sunxi-cedrus.ko'] = new_module
         module_baseline['sunxi-cedrus.ko'] = a.installed_cedrus
+    if a.installed_cpu_comm:
+        old_module = (tree(a.baseline)/CPU_COMM).read_bytes()
+        new_module = (tree(a.candidate)/CPU_COMM).read_bytes()
+        need(sha(old_module) == a.installed_cpu_comm, 'baseline CPU_COMM does not reproduce the installed module')
+        need(new_module != old_module, 'candidate CPU_COMM equals baseline')
+        files['hy310-cpu-comm.ko'] = new_module
+        module_baseline['hy310-cpu-comm.ko'] = a.installed_cpu_comm
     for name, data in files.items(): (a.output/name).write_bytes(data)
     shutil.copy(ROOT/'tools/hdmi/install-kernel-fit.py', a.output/'install-kernel-fit.py')
     manifest = dict(schema='h713-kernel-fit-v1',
@@ -166,7 +234,10 @@ def main():
                                baseline_fdt=len(bdtb), fdt=len(cdtb)),
                     checks={'module_symvers_equal': True, 'kernel_release_equal': True,
                             'config_diff': sorted(a.config_diff),
-                            'dtb_change': 'pio-spi-54-60-only' if a.pio_irq_fix else 'none',
+                            'dtb_change': ('cpu-comm-witness-reservation-only' if a.cpu_comm_witness else
+                                           'cpu-comm-watchdog-irqs-only' if a.cpu_comm_irq_fix else
+                                           'pio-spi-54-60-only' if a.pio_irq_fix else 'none'),
+                            'cpu_comm_module_reproduced': bool(a.installed_cpu_comm),
                             'cedrus_module_reproduced': bool(a.installed_cedrus)},
                     installer=sha((a.output/'install-kernel-fit.py').read_bytes()))
     (a.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')

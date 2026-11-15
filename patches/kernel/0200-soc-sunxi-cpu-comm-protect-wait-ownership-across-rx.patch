@@ -1,0 +1,495 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 14 Nov 2026 18:00:00 -0800
+Subject: [PATCH] soc: sunxi: cpu_comm: protect ARM wait ownership across RX
+
+The IRQ trial exposed latent concurrency hazards: the packed counter
+helpers test then decrement without exclusion, and RETURN wakes the caller
+before it finishes using the shared ACK header. Timeout cleanup can also
+recycle a wait after lookup but before RX signals it.
+
+Serialize counter claims, use an uninterruptible wait for void down(),
+refuse recycling without a lock, and complete RETURN under the active-wait
+list lock. Match ARM sessions rather than following peer wait handles.
+Snapshot and echo all 64 bits of sender-owned ACK metadata before waking
+the caller. Bound reference translation to registered arenas or reserved
+shared memory; arbitrary peer values must not name kernel virtual memory.
+ACKs may signal only the current ARM-owned completion counter for that CPU.
+
+Keep IRQ opt-in. These source defects are independently testable; hardware
+qualification must establish whether they account for the observed crash.
+
+Link: https://github.com/cstenger/allwinner-h713-mainline/issues/4
+
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
+@@ -22,6 +22,7 @@
+ #include <linux/cdev.h>
+ #include <linux/wait.h>
+ #include <linux/atomic.h>
++#include <linux/spinlock.h>
+ #include <linux/sched.h>
+ 
+ /*
+@@ -39,49 +40,56 @@
+ 
+ extern wait_queue_head_t cpu_comm_sem_wq;
+ 
++/* Protect a claim and the decrement together, including packed/uncached
++ * counters on which native atomic instructions cannot safely be used.
++ */
++extern spinlock_t cpu_comm_sem_lock;
++
++static inline bool cpu_comm_sem_try_down(void *addr)
++{
++	u32 *count = addr;
++	unsigned long flags;
++	bool taken = false;
++
++	spin_lock_irqsave(&cpu_comm_sem_lock, flags);
++	if (READ_ONCE(*count)) {
++		WRITE_ONCE(*count, *count - 1);
++		taken = true;
++	}
++	spin_unlock_irqrestore(&cpu_comm_sem_lock, flags);
++	return taken;
++}
++
+ static inline void cpu_comm_sem_down(void *addr)
+ {
+-	u32 *count = (u32 *)addr;
+-
+-	wait_event_interruptible(cpu_comm_sem_wq, *count > 0);
+-	(*count)--;
++	/* A void lock acquisition must not proceed after an ignored signal. */
++	wait_event(cpu_comm_sem_wq, cpu_comm_sem_try_down(addr));
+ }
+ 
+ static inline int cpu_comm_sem_down_interruptible(void *addr)
+ {
+-	u32 *count = (u32 *)addr;
+-	int ret;
+-
+-	ret = wait_event_interruptible(cpu_comm_sem_wq, *count > 0);
+-	if (ret)
+-		return ret;
+-	(*count)--;
+-	return 0;
++	return wait_event_interruptible(cpu_comm_sem_wq,
++					cpu_comm_sem_try_down(addr));
+ }
+ 
+ static inline int cpu_comm_sem_down_timeout(void *addr, long jiffies)
+ {
+-	u32 *count = (u32 *)addr;
+-	long ret;
+-
+-	ret = wait_event_interruptible_timeout(cpu_comm_sem_wq,
+-					       *count > 0, jiffies);
+-	if (ret == 0)
+-		return -ETIME;	/* timeout */
+-	if (ret < 0)
+-		return (int)ret; /* interrupted */
+-	(*count)--;
+-	return 0;
++	long ret = wait_event_interruptible_timeout(cpu_comm_sem_wq,
++				cpu_comm_sem_try_down(addr), jiffies);
++
++	return ret > 0 ? 0 : ret == 0 ? -ETIME : (int)ret;
+ }
+ 
+ static inline void cpu_comm_sem_up(void *addr)
+ {
+-	u32 *count = (u32 *)addr;
++	u32 *count = addr;
++	unsigned long flags;
+ 
+ 	if (!count)
+ 		return;
+-
+-	(*count)++;
++	spin_lock_irqsave(&cpu_comm_sem_lock, flags);
++	WRITE_ONCE(*count, *count + 1);
++	spin_unlock_irqrestore(&cpu_comm_sem_lock, flags);
+ 	wake_up_all(&cpu_comm_sem_wq);
+ }
+ 
+@@ -643,7 +651,7 @@
+ int  SendCommLow(u8 *share_seq, u32 slot, u8 msg_type, u32 param, u32 sem_ref);
+ int  SendComm2CPUEx(unsigned long msg, u32 target_cpu, int from_user);
+ int  SendComm2CPU(unsigned long msg, int from_user);
+-void SendAckLow(void *data, u32 a2, u8 a3, u32 a4, u32 a5);
++void SendAckLow(void *data, u32 a2, u8 a3, u32 a4, u64 a5);
+ void command_action(u32 remote_cpu, u32 direction);
+ void comm_Action(int type, int cpu);
+ void ack_action(u32 cpu, u32 direction);
+@@ -668,6 +676,8 @@
+ int  GetFreeWaitComm(void *list, u32 **result);
+ int  GetWaitbySessionId(void *list, u32 session_id, u8 *result);
+ int  FindWaitBySessionId(void *list, u32 session_id, u32 **result);
++void cpu_comm_complete_return(u32 cpu, u32 session, unsigned long entry,
++			      u8 status, u32 param, u64 peer_wait);
+ void ReleaseWaitComm(u32 cpu_id, unsigned long wait_entry);
+ int  HasInList(void *list, void *item);
+ unsigned long Comm_GetFreeCall(void *share_seq);
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
+@@ -45,6 +45,7 @@
+ 
+ /* Global waitqueue for custom counting semaphore (BUG-19 fix) */
+ DECLARE_WAIT_QUEUE_HEAD(cpu_comm_sem_wq);
++DEFINE_SPINLOCK(cpu_comm_sem_lock);
+ 
+ /* ── File operations ───────────────────────────────────────── */
+ 
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_mem.c
+@@ -620,7 +620,12 @@
+ 		return cc_arenas[idx].base + off;
+ 	}
+ 
+-	return Mid2Vir(0, ref);
++	/* Only the reserved region is a shared reference. Never turn an
++	 * arbitrary peer word into a kernel VA outside that mapping.
++	 */
++	if (ShMemSize && ref >= ShMemAddr && ref - ShMemAddr < ShMemSize)
++		return Mid2Vir(0, ref);
++	return 0;
+ }
+ 
+ /* ── Sequence helpers ──────────────────────────────────────── */
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
+@@ -198,7 +198,19 @@
+ module_param_named(uboot_flags, cc_uboot_flags, bool, 0644);
+ MODULE_PARM_DESC(uboot_flags, "carry SENT in flags at +0x06, not flags2 at +0x0a");
+ 
+-unsigned long cc_pending_ack_sem;
++static unsigned long cc_pending_ack_sem[CPU_ID_MAX];
++static u32 cc_pending_ack_session[CPU_ID_MAX];
++static DEFINE_SPINLOCK(cc_pending_ack_lock);
++
++static void cpu_comm_set_pending_ack(u32 cpu, unsigned long sem, u32 session)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&cc_pending_ack_lock, flags);
++	cc_pending_ack_sem[cpu] = sem;
++	cc_pending_ack_session[cpu] = session;
++	spin_unlock_irqrestore(&cc_pending_ack_lock, flags);
++}
+ 
+ /* ── Interrupt semaphore array ─────────────────────────────── */
+ 
+@@ -685,14 +697,14 @@
+ 			       16, 1, call_slot, COMM_MSG_SIZE, false);
+ 
+ 	/* ── Step 18: dispatch via SendCommLow ── */
+-	cc_pending_ack_sem = (unsigned long)(sem_ptr + 16);
++	cpu_comm_set_pending_ack(dst_cpu, (unsigned long)(sem_ptr + 16), session_id);
+ 	SendCommLow(share_seq_w, (u32)slot_idx, msg_type, session_id,
+ 		    cc_ref(sem_ptr + 16));
+ 
+ 	/* ── Step 19: wait for ACK (500 jiffies) ── */
+ 	ret = cpu_comm_sem_down_timeout((void *)(sem_ptr + 16),
+ 			   SEND_TIMEOUT_JIFFIES);
+-	cc_pending_ack_sem = 0;
++	cpu_comm_set_pending_ack(dst_cpu, 0, 0);
+ 	if (ret) {
+ 		pr_err("cpu_comm: SendComm2CPUEx: ACK timeout (cpu=%u session=0x%08x)\n",
+ 		       dst_cpu, session_id);
+@@ -754,7 +766,7 @@
+  * Previously this was incorrectly delegating to SendCommLow which
+  * writes to offsets 16/20/24/4/8 instead — completely wrong!
+  */
+-void SendAckLow(void *data, u32 a2, u8 a3, u32 a4, u32 a5)
++void SendAckLow(void *data, u32 a2, u8 a3, u32 a4, u64 a5)
+ {
+ 	u8 *seq = data;
+ 	u8 src, dst, dir;
+@@ -909,9 +921,11 @@
+ 	u32 seq_idx;		/* current sequence index */
+ 	unsigned long entry_base;		/* virtual address of the call entry */
+ 	u16 component_id;
+-	u32 session_id;
+-
+-	if (WARN_ON(remote_cpu > 1))
++	u8 ack_status;
++	u32 ack_param;
++	u64 peer_wait;
++
++	if (WARN_ON(remote_cpu > 1 || direction > 1))
+ 		return;
+ 
+ 	share_seq_r = getShareSeqR(remote_cpu, direction);
+@@ -919,9 +933,17 @@
+ 	if (!share_seq_r || !share_seq_w)
+ 		return;
+ 
++	/* Snapshot all sender-owned metadata before any callback can wake a
++	 * caller or return a slot. The two wait-handle words are opaque.
++	 */
++	ack_status = READ_ONCE(*(u8 *)(share_seq_r + 8));
++	ack_param = READ_ONCE(*(u32 *)(share_seq_r + 20));
++	peer_wait = (u64)READ_ONCE(*(u32 *)(share_seq_r + 24)) |
++		    (u64)READ_ONCE(*(u32 *)(share_seq_r + 28)) << 32;
++
+ 	/* Read current sequence index */
+ 	seq_idx = *(u8 *)(share_seq_r + 16);	/* max_items field */
+-	if (seq_idx >= FIFO_DEFAULT_CAP) {
++	if (seq_idx >= FIFO_DEFAULT_CAP - 1) {
+ 		pr_warn("cpu_comm: command_action: seq_idx %u out of range\n", seq_idx);
+ 		return;
+ 	}
+@@ -981,84 +1003,21 @@
+ 		if (pcpu_comm_dev)
+ 			*(u32 *)((u8 *)pcpu_comm_dev + 4) += 1;
+ 	} else {
+-		/*
+-		 * Incoming RETURN from MIPS (response to our previous call).
+-		 * Add to return FIFO, then wake up the waiting thread.
++		/* Match only an active ARM session; the embedded wait handle
++		 * belongs to the sender and must never be dereferenced here.
+ 		 */
+-		/*
+-		 * First arg is the FIFO pointer (from share_seq + 32,
+-		 * which is the CallCmd/ReturnCmd FIFO embedded in the
+-		 * share sequence). Pass as pointer, not dereferenced.
+-		 */
+-		AddReturn2Fifo((u32 *)(share_seq_r + 32),
+-			       (void *)(share_seq_r + 104 * seq_idx + 360));
+-
+-		if (pcpu_comm_dev) {
+-			*(u32 *)pcpu_comm_dev += 1;
+-			*(u32 *)((u8 *)pcpu_comm_dev + 1628) += 1;
+-		}
+-
+-		/* Find and signal the waiting thread */
+-		session_id = *(u32 *)(entry_base + 12);
+-		if (*(u16 *)(entry_base + 6) & MSG_FLAG_RETURN_ACK) {
+-			/* Has return-ack flag — find wait by session ID */
+-			unsigned long seq_base = getSeq(remote_cpu);
+-			u32 *wait_obj = NULL;
+-
+-			FindWaitBySessionId((void *)(seq_base + 40),
+-					    session_id, &wait_obj);
+-			if (!wait_obj) {
+-				pr_err("cpu_comm: command_action: wait not found for session 0x%x\n",
+-				       session_id);
+-				BUG();
+-			}
+-
+-			/* Verify session match */
+-			if (*(u32 *)(entry_base + 12) != *wait_obj) {
+-				pr_err("cpu_comm: command_action: session mismatch (0x%x vs 0x%x)\n",
+-				       *(u32 *)(entry_base + 12), *wait_obj);
+-				return;
+-			}
+-
+-			dmb(ish);
+-			*(u16 *)(entry_base + 10) |= 0x40;
+-			cpu_comm_sem_up((void *)(wait_obj + 2));
+-		} else {
+-			/* No return-ack — use embedded wait pointer */
+-			unsigned long wait_ptr = cc_deref((u32)*(u64 *)(entry_base + 32));
+-
+-			/*
+-			 * A RETURN arriving with no wait pointer is a real
+-			 * state to report, not a reason to panic: it is what
+-			 * happens whenever the CALL published zero there, and
+-			 * it reaches this path straight from an ioctl.
+-			 */
+-			if (!wait_ptr) {
+-				pr_err("cpu_comm: command_action: RETURN carries no wait pointer (session=0x%x) — dropping\n",
+-				       *(u32 *)(entry_base + 12));
+-				return;
+-			}
+-
+-			/* Verify session match */
+-			if (*(u32 *)(entry_base + 12) != *(u32 *)wait_ptr) {
+-				pr_err("cpu_comm: command_action: session mismatch, embedded (0x%x vs 0x%x)\n",
+-				       *(u32 *)(entry_base + 12), *(u32 *)wait_ptr);
+-				return;
+-			}
+-
+-			dmb(ish);
+-			*(u16 *)(entry_base + 10) |= 0x40;
+-			cpu_comm_sem_up((void *)(wait_ptr + 8));
+-		}
++		*(u8 *)(share_seq_r + 16) = FIFO_DEFAULT_CAP - 1;
++		cpu_comm_complete_return(remote_cpu,
++			READ_ONCE(*(u32 *)(entry_base + 12)), entry_base,
++			ack_status, ack_param, peer_wait);
++		return;
+ 	}
+ 
+ 	/* Reset sequence index and send ACK */
+ 	*(u8 *)(share_seq_r + 16) = 20;
+ 	SendAckLow((void *)share_seq_w,
+ 		   *(u8 *)(share_seq_r + 16),
+-		   *(u8 *)(share_seq_r + 8),
+-		   *(u32 *)(share_seq_r + 20),
+-		   *(u32 *)(share_seq_r + 24));
++		   ack_status, ack_param, peer_wait);
+ }
+ 
+ /* ── ack_action — Process ACK from MIPS ────────────────────── */
+@@ -1100,24 +1059,24 @@
+ 	 * references must be resolved through cc_deref() before use.
+ 	 */
+ 	{
+-		u32 sem_ref = *(u32 *)(share_seq + 112);
+-		unsigned long sem_ptr = cc_deref(sem_ref);
+-
+-		/*
+-		 * With zero_wait_ptr the ACK carries no reference back, by
+-		 * design — fall back to the call this CPU has in flight.
++		u32 sem_ref = READ_ONCE(*(u32 *)(share_seq + 112));
++		u32 session = READ_ONCE(*(u32 *)(share_seq + 108));
++		unsigned long sem_ptr, flags;
++
++		/* Bind the echoed handle and session to the current ARM send.
++		 * The lock also excludes timeout cleanup/reuse while signalling.
+ 		 */
+-		if (!sem_ptr && !sem_ref && cc_pending_ack_sem) {
+-			sem_ptr = cc_pending_ack_sem;
+-			pr_info("cpu_comm: ack_action: zero ref, waking pending ACK sem\n");
+-		}
+-
+-		if (!sem_ptr) {
+-			pr_err("cpu_comm: ack_action: invalid semaphore ref 0x%08x "
+-			       "(cpu=%u dir=%u)\n", sem_ref, cpu, direction);
++		spin_lock_irqsave(&cc_pending_ack_lock, flags);
++		sem_ptr = cc_pending_ack_sem[cpu];
++		if (!sem_ptr || session != cc_pending_ack_session[cpu] ||
++		    READ_ONCE(*(u32 *)(share_seq + 116)) ||
++		    (sem_ref && sem_ref != cc_ref((void *)sem_ptr))) {
++			spin_unlock_irqrestore(&cc_pending_ack_lock, flags);
++			pr_warn_ratelimited("cpu_comm: stale/foreign ACK cpu=%u\n", cpu);
+ 			return;
+ 		}
+ 		cpu_comm_sem_up((void *)sem_ptr);
++		spin_unlock_irqrestore(&cc_pending_ack_lock, flags);
+ 	}
+ }
+ 
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_channel.c
+@@ -262,6 +262,10 @@
+ 	if (item) {
+ 		/* The slot holds a cc_ref to the wait object */
+ 		*result = (u32 *)cc_deref(*item);
++		if (!*result)
++			return 1;
++		(*result)[2] = 0;
++		(*result)[3] = 0;
+ 		fifo_ItemRdNext(f);
+ 		return 0;
+ 	}
+@@ -438,6 +442,58 @@
+ 	cpu_comm_sem_up((void *)(lb + 64));
+ 	*result = NULL;
+ 	return 1;
++}
++
++/* Complete under the active-wait list lock. Timeout cleanup uses that
++ * same lock, so it cannot recycle a wait while RX still holds a pointer.
++ * Publish the ACK before waking the caller: it may immediately recycle
++ * the return slot and wait object on another ARM CPU.
++ */
++void cpu_comm_complete_return(u32 cpu, u32 session, unsigned long entry,
++			      u8 status, u32 param, u64 peer_wait)
++{
++	u8 *list = (u8 *)(getSeq(cpu) + 40);
++	unsigned long sentinel = (unsigned long)(list + 56);
++	unsigned long node;
++	u32 *wait = NULL;
++	unsigned int walked = 0;
++	bool recycle = true;
++
++	cpu_comm_sem_down(list + 64);
++	node = cc_deref(*(u32 *)(list + 56));
++	while (node && node != sentinel && walked++ < MAX_WAIT_ENTRIES) {
++		unsigned long first = (unsigned long)&s_CommSockt[1248 * cpu + 73];
++		unsigned long candidate = node - 24;
++
++		/* Active-list nodes must be exact objects in this CPU's pool. */
++		if (candidate < first || candidate - first >= MAX_WAIT_ENTRIES * 32 ||
++		    (candidate - first) % 32)
++			break;
++		if (*(u32 *)candidate == session) {
++			wait = (u32 *)candidate;
++			break;
++		}
++		node = cc_deref(*(u32 *)node);
++	}
++	if (wait && !wait[3]) {
++		wait[3] = cc_ref((void *)entry); /* ARM-local completion claim */
++		AddReturn2Fifo((u32 *)(getShareSeqR(cpu, 1) + 32), (void *)entry);
++		*(u16 *)(entry + 10) |= 0x40;
++	} else {
++		/* A duplicate of a still-queued slot must not be freed. */
++		if (wait && wait[3] == cc_ref((void *)entry))
++			recycle = false;
++		wait = NULL;
++		pr_warn_ratelimited("cpu_comm: late/duplicate RETURN session=%x\n", session);
++	}
++
++	SendAckLow((void *)getShareSeqW(cpu, 1), FIFO_DEFAULT_CAP - 1,
++		   status, param, peer_wait);
++	if (wait)
++		cpu_comm_sem_up(wait + 2);
++	cpu_comm_sem_up(list + 64);
++	if (!wait && recycle)
++		Comm_ReleaseFreeCall((void *)getShareSeqR(cpu, 1), (void *)entry);
+ }
+ 
+ /*
+@@ -481,9 +537,10 @@
+ 	 * unkillably. There is no contention during bring-up, so a timeout
+ 	 * here means the index is wrong, not that the lock is busy.
+ 	 */
+-	if (cpu_comm_sem_down_timeout((void *)sem, msecs_to_jiffies(1000)))
+-		pr_warn("cpu_comm: ReleaseWaitComm: sem timeout (cpu=%u, count=%u) — proceeding\n",
+-			cpu_id, *sem);
++	if (cpu_comm_sem_down_timeout((void *)sem, msecs_to_jiffies(1000))) {
++		pr_warn("cpu_comm: ReleaseWaitComm: lock timeout, not recycling\n");
++		return;
++	}
+ 
+ 	wr_slot = (u32 *)fifo_getItemWr(fifo);
+ 	if (!wr_slot) {
+@@ -631,10 +688,30 @@
+ 	 */
+ 	sem = &s_CommSockt[1248 * remote_cpu + 235];
+ 
+-	if (cpu_comm_sem_down_timeout((void *)sem, msecs_to_jiffies(1000)))
+-		pr_warn("cpu_comm: Comm_ReleaseFreeCall: sem timeout (cpu=%u, count=%u) — proceeding\n",
+-			remote_cpu, *sem);
+-
++	if (cpu_comm_sem_down_timeout((void *)sem, msecs_to_jiffies(1000))) {
++		pr_warn("cpu_comm: Comm_ReleaseFreeCall: lock timeout, not recycling\n");
++		return;
++	}
++
++	/* A late duplicate can refer to a slot already returned to the pool. */
++	{
++		u32 rd = fifo[0], wr = fifo[1], cap = fifo[4];
++		u32 *ring = (u32 *)cc_deref(fifo[6]);
++		u32 ref = cc_ref(call);
++		unsigned int walked = 0;
++
++		if (WARN_ON(!ring || cap != FIFO_DEFAULT_CAP || rd >= cap || wr >= cap)) {
++			cpu_comm_sem_up((void *)sem);
++			return;
++		}
++		while (rd != wr && walked++ < cap) {
++			if (ring[rd] == ref) {
++				cpu_comm_sem_up((void *)sem);
++				return;
++			}
++			rd = (rd + 1) % cap;
++		}
++	}
+ 	wr_slot = (u32 *)fifo_getItemWr(fifo);
+ 	if (!wr_slot) {
+ 		pr_err("cpu_comm: Comm_ReleaseFreeCall: FIFO full!\n");

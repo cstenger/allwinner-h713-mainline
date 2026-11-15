@@ -1,0 +1,338 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 14 Nov 2026 23:55:00 -0800
+Subject: [PATCH] soc: sunxi: cpu_comm: honor firmware spinlock ownership
+
+A quiet four-client run reaches the firmware's tridspinlock.c:326
+assertion loop. Its saved stack and actual spinLock/enterCritical code
+identify a protocol mismatch: byte 0 gates entry and byte 1 holds the
+persistent owner. ARM instead wrote byte 3, ignored peer ownership, and
+could leave a free owner with a nonfree thread ID while MIPS entered.
+
+Use the actual two-level gate/owner protocol, never force entry on hardware
+lock timeout, preserve peer metadata on a failed try, and distinguish ARM
+threads by pid rather than tgid. Release metadata before publishing free.
+Keep byte 3 allocation bookkeeping separate and set policy at byte 2.
+
+No firmware binary is changed or included. This is our reconstruction from
+local pinned firmware analysis, not copied from well0nez's tree.
+
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
+@@ -632,12 +632,11 @@
+ 
+ /*
+  * SharedMem spinlock entry layout (12 bytes, from IDA comm_InitSpinLock):
+- *   [0]: type (init: 2)
+- *   [1]: status (init: 2)
+- *   [2]: mutex_flag (init: 0)
+- *   [3]: owner_cpu (SPINLOCK_FREE=2, ARM=0, MIPS=1)
+- *   [4..7]: ref_count (u32, init: 0)
+- *   [8..11]: thread_id (u32, init: 255=NONE)
++ *   [0]: entry gate (2 free, otherwise CPU), claimed under hardware lock
++ *   [1]: persistent software-lock owner (2 free, otherwise CPU)
++ *   [2]: nonrecursive/mutex policy flag
++ *   [3]: allocation bookkeeping, not a lock-owner byte
++ *   [4..7]: ref_count; [8..11]: thread_id (255 means NONE)
+  */
+ #define SPINLOCK_FREE		2	/* owner_cpu value for "free" */
+ #define SPINLOCK_HWID_NONE	255	/* unassigned hw lock id */
+@@ -647,7 +646,8 @@
+ #define SPINLOCK_OFF_TYPE	0
+ #define SPINLOCK_OFF_STATUS	1
+ #define SPINLOCK_OFF_MUTEX	2
+-#define SPINLOCK_OFF_OWNER	3	/* THE critical offset — was wrongly 1 */
++#define SPINLOCK_OFF_OWNER	1	/* persistent software-lock owner */
++#define SPINLOCK_OFF_GATE	0	/* hardware-lock-protected entry gate */
+ 
+ static u8 *getSpinLockMemArea(void)
+ {
+@@ -693,146 +693,74 @@
+ 	return 0;
+ }
+ 
+-/*
+- * enterCritical — Atomically claim ownership via HW lock + SharedMem.
+- * From IDA @ 0x97c4.
+- *
+- * 1. Spin until SharedMem entry shows "free" (owner==2)
+- * 2. Acquire HW lock (lock_id + 2)
+- * 3. Verify still free → set owner = our CPU
+- * 4. Release HW lock
+- *
+- * After this, the calling CPU "owns" the lock in SharedMem.
+- */
+-static void enterCritical(int lock_id)
+-{
+-	u8 *base = getSpinLockMemArea();
+-	u8 *entry = base + SPINLOCK_ENTRY_SIZE * lock_id;
++/* Firmware tridspinlock.c uses byte 0 as a short entry gate and byte 1
++ * as the persistent lock owner. Byte 3 is not either ownership field.
++ * Never enter by force after a hardware-lock timeout.
++ */
++static bool enterCritical(int lock_id, bool try_only)
++{
++	u8 *entry = getSpinLockMemArea() + SPINLOCK_ENTRY_SIZE * lock_id;
+ 	int hw_id = lock_id + SPINLOCK_HW_OFFSET;
+-	u8 cur_cpu;
+-
+-	pr_debug("cpu_comm: enterCritical(%d) hw_id=%d entry=[%02x %02x %02x %02x]\n",
+-		 lock_id, hw_id, entry[0], entry[1], entry[2], entry[3]);
+-
+-	/*
+-	 * Use hwspin_lock_timeout instead of trylock loop.
+-	 * MIPS may already hold HW locks — trylock would spin forever.
+-	 * Timeout of 50ms: if we can't get the HW lock, force-proceed
+-	 * because ARM needs to initialize regardless of MIPS state.
+-	 */
+-	{
+-		int ret = __hwspin_lock_timeout(hwlocks[hw_id], 50, HWLOCK_RAW, NULL);
+-
+-		if (ret) {
+-			/* HW lock timeout — MIPS probably holds it */
+-			pr_warn("cpu_comm: enterCritical(%d): HW lock %d timeout "
+-				"(ret=%d), force-claiming SharedMem entry\n",
+-				lock_id, hw_id, ret);
+-			/* Force-claim without HW lock protection */
+-			cur_cpu = (u8)getCurCPUID(0);
+-			entry[SPINLOCK_OFF_OWNER] = cur_cpu;
+-			dmb(ish);
+-			return;
++
++	for (;;) {
++		if (READ_ONCE(entry[SPINLOCK_OFF_GATE]) == SPINLOCK_FREE) {
++			if (!__hwspin_lock_timeout(hwlocks[hw_id], 50,
++						  HWLOCK_RAW, NULL)) {
++				if (READ_ONCE(entry[SPINLOCK_OFF_GATE]) == SPINLOCK_FREE) {
++					WRITE_ONCE(entry[SPINLOCK_OFF_GATE], getCurCPUID(0));
++					dmb(ish);
++					__hwspin_unlock(hwlocks[hw_id], HWLOCK_RAW, NULL);
++					return true;
++				}
++				__hwspin_unlock(hwlocks[hw_id], HWLOCK_RAW, NULL);
++			}
+ 		}
+-
+-		/* Got HW lock — claim SharedMem entry */
+-		cur_cpu = (u8)getCurCPUID(0);
+-		entry[SPINLOCK_OFF_OWNER] = cur_cpu;
+-		dmb(ish);
+-
+-		/* Release HW lock — we now own via SharedMem */
+-		__hwspin_unlock(hwlocks[hw_id], HWLOCK_RAW, NULL);
+-
+-		pr_debug("cpu_comm: enterCritical(%d) acquired OK\n", lock_id);
+-	}
+-}
+-
+-/*
+- * leaveCritical — Release ownership in SharedMem.
+- * From IDA @ 0x9914.
+- * Just sets owner back to 2 (free). No HW lock needed.
+- */
++		if (try_only)
++			return false;
++		schedule();
++	}
++}
++
+ static void leaveCritical(int lock_id)
+ {
+-	u8 *base = getSpinLockMemArea();
+-	u8 *entry = base + SPINLOCK_ENTRY_SIZE * lock_id;
+-
+-	entry[SPINLOCK_OFF_OWNER] = SPINLOCK_FREE;	/* set owner = free */
+-}
+-
+-/*
+- * spinLock — Full lock with ref_count tracking.
+- * From IDA @ 0x9a68.
+- *
+- * @lock_id: 0..11
+- * @mode: 0=try (non-blocking), 1=mutex (recursive), 2=exclusive (blocking)
+- *
+- * Returns: 0=failed (mode 0 only), 1=recursive re-lock, 2=new lock acquired
+- */
++	u8 *entry = getSpinLockMemArea() + SPINLOCK_ENTRY_SIZE * lock_id;
++
++	dmb(ish);
++	WRITE_ONCE(entry[SPINLOCK_OFF_GATE], SPINLOCK_FREE);
++}
++
+ static int spinLock(int lock_id, int mode)
+ {
+-	u8 *base = getSpinLockMemArea();
+-	u8 *entry = base + SPINLOCK_ENTRY_SIZE * lock_id;
+-	u8 cur_cpu;
+-
+-	if (lock_id > SPINLOCK_MAX_ID)
+-		BUG();
+-	if (*(int *)(entry + 4) < 0) /* ref_count sanity */
+-		BUG();
+-
+-	while (1) {
+-		enterCritical(lock_id);
+-		cur_cpu = (u8)getCurCPUID(0);
+-
+-		if (entry[SPINLOCK_OFF_OWNER] == cur_cpu) {
+-			/*
+-			 * We own this lock (entry[3] set by enterCritical).
+-			 * Two sub-cases:
+-			 *   a) First acquisition: thread_id == NONE (255)
+-			 *      → enterCritical claimed it but thread_id not set yet
+-			 *   b) Recursive lock: thread_id == our tgid
+-			 */
+-			if (readl(entry + 8) == SPINLOCK_HWID_NONE) {
+-				/* First acquisition — set thread_id + ref_count */
+-				writel((u32)current->tgid, entry + 8);
+-				writel(readl(entry + 4) + 1, entry + 4);
++	u8 *entry;
++	u32 tid = (u32)current->pid;
++	u8 cpu = getCurCPUID(0);
++
++	if (WARN_ON(lock_id < 0 || lock_id > SPINLOCK_MAX_ID))
++		return 0;
++	entry = getSpinLockMemArea() + SPINLOCK_ENTRY_SIZE * lock_id;
++	for (;;) {
++		if (!enterCritical(lock_id, mode == 0))
++			return 0;
++		if (READ_ONCE(entry[SPINLOCK_OFF_OWNER]) == SPINLOCK_FREE) {
++			if (!WARN_ON(readl(entry + 4) ||
++				     readl(entry + 8) != SPINLOCK_HWID_NONE)) {
++				writel(tid, entry + 8);
++				writel(1, entry + 4);
++				WRITE_ONCE(entry[SPINLOCK_OFF_OWNER], cpu);
+ 				leaveCritical(lock_id);
+-				return 2;	/* new lock acquired */
++				return 2;
+ 			}
+-			if (!entry[2] && /* mutex_flag clear */
+-			    readl(entry + 8) == (u32)current->tgid) {
+-				/* Same thread — recursive lock */
+-				writel(readl(entry + 4) + 1, entry + 4);
+-				leaveCritical(lock_id);
+-				return 1;	/* recursive */
+-			}
+-			/* Different thread holds it — release and retry */
++		} else if (mode == 1 && !READ_ONCE(entry[SPINLOCK_OFF_MUTEX]) &&
++			   READ_ONCE(entry[SPINLOCK_OFF_OWNER]) == cpu &&
++			   readl(entry + 8) == tid) {
++			writel(readl(entry + 4) + 1, entry + 4);
+ 			leaveCritical(lock_id);
+-			if (!mode)
+-				return 0;	/* non-blocking: fail */
+-			schedule();
+-			continue;
++			return 1;
+ 		}
+-
+-		if (entry[SPINLOCK_OFF_OWNER] == SPINLOCK_FREE) {
+-			/* Lock is free but enterCritical didn't claim it
+-			 * (shouldn't happen — enterCritical always claims).
+-			 * Handle defensively: claim it now.
+-			 */
+-			entry[SPINLOCK_OFF_OWNER] = cur_cpu;
+-			writel((u32)current->tgid, entry + 8);
+-			writel(readl(entry + 4) + 1, entry + 4);
+-			dmb(ish);
+-			leaveCritical(lock_id);
+-			return 2;	/* new lock acquired */
+-		}
+-
+-		/* Someone else owns it */
+ 		leaveCritical(lock_id);
+ 		if (!mode)
+-			return 0;	/* non-blocking: fail */
+-		if (mode >= 2)
+-			schedule();	/* blocking: yield and retry */
++			return 0;
++		schedule();
+ 	}
+ }
+ 
+@@ -853,32 +781,24 @@
+  */
+ void comm_SpinUnLock(int lock_id, int dummy)
+ {
+-	u8 *base = getSpinLockMemArea();
+-	u8 *entry = base + SPINLOCK_ENTRY_SIZE * lock_id;
+-
+-	if (lock_id > SPINLOCK_MAX_ID)
+-		BUG();
+-
+-	enterCritical(lock_id);
+-
+-	if (*(int *)(entry + 4) <= 0) {
+-		/* ref_count already 0 — double unlock */
++	u8 *entry;
++	u32 count;
++
++	if (WARN_ON(lock_id < 0 || lock_id > SPINLOCK_MAX_ID))
++		return;
++	entry = getSpinLockMemArea() + SPINLOCK_ENTRY_SIZE * lock_id;
++	enterCritical(lock_id, false);
++	count = readl(entry + 4);
++	if (WARN_ON(!count || READ_ONCE(entry[SPINLOCK_OFF_OWNER]) != getCurCPUID(0) ||
++		    readl(entry + 8) != (u32)current->pid)) {
+ 		leaveCritical(lock_id);
+ 		return;
+ 	}
+-
+-	if (entry[SPINLOCK_OFF_OWNER] == SPINLOCK_FREE)
+-		BUG(); /* unlocking a free lock */
+-	if (readl(entry + 8) == SPINLOCK_HWID_NONE)
+-		BUG(); /* unlocking with no thread_id */
+-
+-	/* Decrement ref_count */
+-	if ((writel(readl(entry + 4) - 1, entry + 4), readl(entry + 4)) == 0) {
+-		/* Last unlock — release fully */
+-		entry[SPINLOCK_OFF_OWNER] = SPINLOCK_FREE;
++	writel(--count, entry + 4);
++	if (!count) {
+ 		writel(SPINLOCK_HWID_NONE, entry + 8);
+-	}
+-
++		WRITE_ONCE(entry[SPINLOCK_OFF_OWNER], SPINLOCK_FREE);
++	}
+ 	leaveCritical(lock_id);
+ }
+ 
+@@ -906,7 +826,11 @@
+ 
+ 	if (!base)
+ 		return;
+-	base[SPINLOCK_ENTRY_SIZE * lock_id] = type;
++	if (WARN_ON(lock_id < 0 || lock_id > SPINLOCK_MAX_ID || type < 0 || type > 1))
++		return;
++	enterCritical(lock_id, false);
++	WRITE_ONCE(base[SPINLOCK_ENTRY_SIZE * lock_id + SPINLOCK_OFF_MUTEX], type);
++	leaveCritical(lock_id);
+ }
+ 
+ /*
+@@ -929,7 +853,7 @@
+ 
+ 	for (id = HW_SPINLOCK_APP_START; id <= HW_SPINLOCK_APP_END; id++) {
+ 		entry = base + SPINLOCK_ENTRY_SIZE * id;
+-		if (entry[SPINLOCK_OFF_OWNER] == SPINLOCK_FREE) {
++		if (entry[3 /* allocation */] == SPINLOCK_FREE) {
+ 			if (readl(entry + 4) != 0)
+ 				BUG();
+ 			if (entry[0] != SPINLOCK_FREE)
+@@ -937,7 +861,7 @@
+ 			if (readl(entry + 8) != SPINLOCK_HWID_NONE)
+ 				BUG();
+ 			entry[SPINLOCK_OFF_MUTEX] = 0;
+-			entry[SPINLOCK_OFF_OWNER] = getCurCPUID(0);
++			entry[3 /* allocation */] = getCurCPUID(0);
+ 			spinUnlockhwReg(1);
+ 			return id;
+ 		}
+@@ -970,7 +894,7 @@
+ 		return -1;
+ 	}
+ 
+-	entry[SPINLOCK_OFF_OWNER] = SPINLOCK_FREE;
++	entry[3 /* allocation */] = SPINLOCK_FREE;
+ 	spinUnlockhwReg(1);
+ 	return 0;
+ }

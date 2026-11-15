@@ -10,7 +10,7 @@ The startup script refuses any FIT whose size differs from the one it pins
   4. rename the FIT, then the script (the only window where the pair is
      mismatched is between these two renames), sync, verify every copy.
 
-An optional, baseline-reproduced sunxi-cedrus.ko is replaced on disk before the
+Optional, baseline-reproduced Cedrus and CPU_COMM modules are replaced before the
 FAT activation pair and included in the same backup/readback/rollback scope.
 Any failure restores every original. Preview by default; --apply installs;
 --rollback BACKUP restores exactly. No reboot, service, live module reload,
@@ -24,6 +24,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import struct
+import zlib
 import uuid
 
 MODEL = 'HY200 QZ713DF_A1 (Allwinner H713)'
@@ -34,7 +36,13 @@ SCRIPT_NAMES = ('h713-hdmi.cmd', 'h713-hdmi.scr')
 PREFIX = 'kernel-fit-'
 SUFFIX = '.kfit-new'
 SCHEMA = 'h713-kernel-fit-v1'
+# Explicit, script-only bench diagnostic. Kernel/module bytes cannot change.
+SLUB_PREFIX = ("setenv bootargs 'console=ttyS0,115200 console=tty0 earlycon "
+               "root=/dev/mmcblk0p26 rootwait rootfstype=ext4 rw net.ifnames=0 "
+               "panic=5 clk_ignore_unused pd_ignore_unused cma=128M "
+               "slub_debug=FZPU oops=panic'\n").encode()
 CEDRUS = 'usr/lib/modules/6.18.38/kernel/drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko'
+CPU_COMM = 'usr/lib/modules/6.18.38/kernel/drivers/soc/sunxi/cpu_comm/hy310-cpu-comm.ko'
 
 
 def sha(data): return hashlib.sha256(data).hexdigest()
@@ -92,13 +100,41 @@ def fat_mounted(root):
     return out.stdout.strip() == '/dev/mmcblk0p2'
 
 
+def verify_slub_script(bundle, manifest):
+    need(manifest.get('diagnostic_bootargs') == ['slub_debug=FZPU', 'oops=panic'],
+         'unsupported diagnostic bootargs')
+    for key in ('h713-kernel.fit', 'hy310-cpu-comm.ko', 'sunxi-cedrus.ko'):
+        if key in manifest['files']:
+            need(manifest['files'][key] == manifest['baseline'].get(key),
+                 'diagnostic changes kernel/module: '+key)
+    need(manifest.get('checks', {}).get('config_diff') == [],
+         'diagnostic changes configuration')
+    cmd = (bundle/'h713-hdmi.cmd').read_bytes()
+    need(cmd.startswith(SLUB_PREFIX) and
+         sha(cmd[len(SLUB_PREFIX):]) == manifest['baseline']['h713-hdmi.cmd'],
+         'diagnostic must only prepend the exact SLUB bootargs')
+    scr = (bundle/'h713-hdmi.scr').read_bytes()
+    need(len(scr) >= 72, 'diagnostic script truncated')
+    header = struct.unpack('>7I4B32s', scr[:64])
+    payload = scr[64:]
+    need(header[0] == 0x27051956 and header[3] == len(payload) and
+         header[8:11] == (22, 6, 0), 'diagnostic script header invalid')
+    need(zlib.crc32(scr[:4]+bytes(4)+scr[8:64]) == header[1] and
+         zlib.crc32(payload) == header[6], 'diagnostic script CRC invalid')
+    need(payload == struct.pack('>2I', len(cmd), 0)+cmd,
+         'diagnostic script differs from reviewed command')
+
+
 def load_bundle(bundle):
     m = json.loads((bundle/'manifest.json').read_text())
     need(m.get('schema') == SCHEMA, 'unknown bundle schema')
     for name, digest in m['files'].items():
         need(sha((bundle/name).read_bytes()) == digest, 'bundle file mismatch: '+name)
     need(set(m['files']) >= {'h713-kernel.fit', *SCRIPT_NAMES}, 'bundle incomplete')
-    for key in ('h713-kernel.fit', *SCRIPT_NAMES):
+    diagnostic = 'diagnostic_bootargs' in m
+    if diagnostic:
+        verify_slub_script(bundle, m)
+    for key in (*SCRIPT_NAMES,) if diagnostic else ('h713-kernel.fit', *SCRIPT_NAMES):
         need(m['baseline'][key] != m['files'][key], 'candidate equals baseline: '+key)
     checks = m.get('checks', {})
     need(checks.get('module_symvers_equal') is True and checks.get('kernel_release_equal') is True
@@ -106,6 +142,9 @@ def load_bundle(bundle):
     if 'sunxi-cedrus.ko' in m['files']:
         need(checks.get('cedrus_module_reproduced') is True
              and 'sunxi-cedrus.ko' in m['baseline'], 'Cedrus baseline checks missing')
+    if 'hy310-cpu-comm.ko' in m['files']:
+        need(checks.get('cpu_comm_module_reproduced') is True
+             and 'hy310-cpu-comm.ko' in m['baseline'], 'CPU_COMM baseline checks missing')
     return m
 
 
@@ -116,6 +155,8 @@ def targets(root, manifest=None):
         files += [b+'/'+n for n in SCRIPT_NAMES]+[b+'/SHA256SUMS']
     if manifest and 'sunxi-cedrus.ko' in manifest['files']:
         files += [CEDRUS]
+    if manifest and 'hy310-cpu-comm.ko' in manifest['files']:
+        files += [CPU_COMM]
     return files+[FAT+'/h713-kernel.fit', FAT+'/h713-hdmi.scr']
 
 
@@ -144,6 +185,8 @@ def state(root, m):
         k = kind(rel)
         if k == 'SHA256SUMS': continue
         digest = sha(under(root, rel).read_bytes())
+        if digest == m['baseline'][k] == m['files'][k]:
+            continue  # unchanged diagnostic payload is neutral, still hash-checked
         seen.add({m['baseline'][k]: 'baseline', m['files'][k]: 'candidate'}.get(digest, 'foreign:'+rel))
     for b in BUNDLES:
         listed = sums(under(root, b+'/SHA256SUMS').read_bytes())
@@ -223,6 +266,7 @@ def run(root, bundle, boot, apply=False, rollback=None):
         else:
             names = ['h713-kernel.fit', *SCRIPT_NAMES]
             if 'sunxi-cedrus.ko' in m['files']: names.append('sunxi-cedrus.ko')
+            if 'hy310-cpu-comm.ko' in m['files']: names.append('hy310-cpu-comm.ko')
             data = {k: (bundle/k).read_bytes() for k in names}
             wanted = {}
             for rel in targets(root, m):

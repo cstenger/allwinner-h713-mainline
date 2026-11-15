@@ -1,0 +1,42 @@
+From: well0nez <8986239+well0nez@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 12:00:00 -0800
+Subject: [PATCH] arm64: dts: h713: correct msgbox bank and watchdog IRQs
+
+Adapt well0nez's 0024d to our tree: stock msgbox bank order is SPI
+46/109/108. SPI 21 was unrelated to the ARM inbox; old storm observations
+using that mapping do not qualify the actual bank-0 IRQ. The watchdog is
+SPI 53, avoiding its erroneous overlap with msgbox bank 0.
+
+Keep the single 0x1000 register window. Our driver already requests only
+index 0; preserve that ownership rather than claiming ARISC/MIPS lines.
+Unlike the source patch, avoid assigning S/PDIF ownership to SPI 21: our
+saved stock DT gives OWA0 SPI 23.
+
+Link: https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0024d-arm64-dts-h713-msgbox-three-lines-watchdog-spi-53.patch
+Link: https://github.com/cstenger/allwinner-h713-mainline/issues/4
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1538,7 +1538,7 @@
+ 			compatible = "allwinner,sun50i-h713-wdt",
+ 				     "allwinner,sun55i-a523-wdt";
+ 			reg = <0x02051000 0x20>;
+-			interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
++			interrupts = <GIC_SPI 53 IRQ_TYPE_LEVEL_HIGH>;
+ 			clocks = <&osc24M>;
+ 		};
+ 
+@@ -1947,7 +1947,12 @@
+ 		cpu_comm: cpu-comm@3003000 {
+ 			compatible = "allwinner,sunxi-cpu-comm";
+ 			reg = <0x03003000 0x1000>;
+-			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>;
++			/* Stock bank order: ARM inbox, ARISC inbox, MIPS inbox.
++			 * CPU_COMM owns only bank 0; do not request the other lines.
++			 */
++			interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 109 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 108 IRQ_TYPE_LEVEL_HIGH>;
+ 			clocks = <&ccu CLK_BUS_MSGBOX>;
+ 			resets = <&ccu RST_BUS_MSGBOX>;
+ 			shared-memory = <&cpu_comm_reserved>;

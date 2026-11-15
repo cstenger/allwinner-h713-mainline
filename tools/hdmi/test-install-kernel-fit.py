@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import struct
+import zlib
 import unittest
 from unittest.mock import patch
 
@@ -56,6 +58,92 @@ class KernelFit(unittest.TestCase):
         self.manifest['checks']['cedrus_module_reproduced'] = False
         (self.bundle/'manifest.json').write_text(json.dumps(self.manifest))
         with self.assertRaisesRegex(RuntimeError, 'Cedrus baseline checks'): self.run_(True)
+
+    def with_cpu_comm(self):
+        p = self.root/m.CPU_COMM;p.parent.mkdir(parents=True);p.write_bytes(b'old cpu_comm')
+        (self.bundle/'hy310-cpu-comm.ko').write_bytes(b'new cpu_comm')
+        self.manifest['files']['hy310-cpu-comm.ko'] = sha(b'new cpu_comm')
+        self.manifest['baseline']['hy310-cpu-comm.ko'] = sha(b'old cpu_comm')
+        self.manifest['checks']['cpu_comm_module_reproduced'] = True
+        (self.bundle/'manifest.json').write_text(json.dumps(self.manifest))
+
+    def test_cpu_comm_is_paired_and_rolls_back(self):
+        self.with_cpu_comm();before = self.files()
+        self.assertEqual(self.run_()['state'], 'baseline');self.assertEqual(self.files(), before)
+        r = self.run_(True)
+        self.assertEqual((self.root/m.CPU_COMM).read_bytes(), b'new cpu_comm')
+        self.run_(True, rollback=Path(r['backup']))
+        self.assertEqual((self.root/m.CPU_COMM).read_bytes(), b'old cpu_comm')
+
+    def test_cpu_comm_failure_restores_fit_script_and_module(self):
+        self.with_cpu_comm();before = self.files();real = os.replace
+        def fail(src, dst):
+            if str(dst).endswith(m.FAT+'/h713-hdmi.scr') and str(src).endswith(m.SUFFIX):
+                raise OSError('injected script activation failure')
+            return real(src, dst)
+        with patch.object(m.os, 'replace', fail), self.assertRaises(OSError): self.run_(True)
+        self.assertEqual({k:v for k,v in self.files().items() if not k.startswith(m.STATE)}, before)
+
+    def test_cpu_comm_drift_or_unchecked_baseline_refused(self):
+        self.with_cpu_comm();(self.root/m.CPU_COMM).write_bytes(b'foreign')
+        before = self.files()
+        with self.assertRaisesRegex(RuntimeError, 'copies disagree'): self.run_(True)
+        self.assertEqual(self.files(), before)
+        (self.root/m.CPU_COMM).write_bytes(b'old cpu_comm')
+        self.manifest['checks']['cpu_comm_module_reproduced'] = False
+        (self.bundle/'manifest.json').write_text(json.dumps(self.manifest))
+        with self.assertRaisesRegex(RuntimeError, 'CPU_COMM baseline checks'): self.run_(True)
+
+    def slub_bundle(self):
+        cmd = m.SLUB_PREFIX+OLD['h713-hdmi.cmd']
+        payload = struct.pack('>2I', len(cmd), 0)+cmd
+        header = struct.pack('>7I4B32s', 0x27051956, 0, 0, len(payload),
+                             0, 0, zlib.crc32(payload), 5, 22, 6, 0, b'test')
+        header = header[:4]+struct.pack('>I', zlib.crc32(header))+header[8:]
+        files = {'h713-kernel.fit': OLD['h713-kernel.fit'],
+                 'h713-hdmi.cmd': cmd, 'h713-hdmi.scr': header+payload}
+        for name, data in files.items(): (self.bundle/name).write_bytes(data)
+        self.manifest['files'] = {n: sha(v) for n,v in files.items()}
+        self.manifest['checks']['config_diff'] = []
+        self.manifest['diagnostic_bootargs'] = ['slub_debug=FZPU', 'oops=panic']
+        self.write_manifest()
+
+    def write_manifest(self):
+        (self.bundle/'manifest.json').write_text(json.dumps(self.manifest))
+
+    def test_slub_script_only_install_and_exact_rollback(self):
+        self.slub_bundle();before=self.files()
+        r=self.run_(True)
+        self.assertEqual((self.root/m.FAT/'h713-kernel.fit').read_bytes(), OLD['h713-kernel.fit'])
+        self.assertTrue((self.root/m.BUNDLES[0]/'h713-hdmi.cmd').read_bytes().startswith(m.SLUB_PREFIX))
+        self.run_(True, rollback=Path(r['backup']))
+        self.assertEqual({k:v for k,v in self.files().items() if not k.startswith(m.STATE)}, before)
+
+    def test_slub_diagnostic_rejects_kernel_module_and_config_changes(self):
+        self.slub_bundle()
+        for key in ('h713-kernel.fit','hy310-cpu-comm.ko','sunxi-cedrus.ko'):
+            with self.subTest(key=key):
+                (self.bundle/key).write_bytes(b'changed')
+                self.manifest['files'][key]=sha(b'changed');self.write_manifest()
+                with self.assertRaisesRegex(RuntimeError,'diagnostic changes kernel/module'): self.run_(True)
+                self.slub_bundle()
+                self.manifest['files'].pop(key,None) if key!='h713-kernel.fit' else None
+                self.write_manifest()
+        self.slub_bundle();self.manifest['checks']['config_diff']=['CONFIG_X'];self.write_manifest()
+        with self.assertRaisesRegex(RuntimeError,'diagnostic changes configuration'): self.run_(True)
+
+    def test_slub_diagnostic_rejects_command_or_script_drift(self):
+        self.slub_bundle()
+        cmd=(self.bundle/'h713-hdmi.cmd').read_bytes()+b'unsafe'
+        (self.bundle/'h713-hdmi.cmd').write_bytes(cmd)
+        self.manifest['files']['h713-hdmi.cmd']=sha(cmd);self.write_manifest()
+        with self.assertRaisesRegex(RuntimeError,'only prepend'): self.run_(True)
+        self.slub_bundle();scr=(self.bundle/'h713-hdmi.scr').read_bytes()+b'junk'
+        (self.bundle/'h713-hdmi.scr').write_bytes(scr)
+        self.manifest['files']['h713-hdmi.scr']=sha(scr);self.write_manifest()
+        with self.assertRaisesRegex(RuntimeError,'script header'): self.run_(True)
+        self.slub_bundle();self.manifest['diagnostic_bootargs']=['other'];self.write_manifest()
+        with self.assertRaisesRegex(RuntimeError,'unsupported diagnostic'): self.run_(True)
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)

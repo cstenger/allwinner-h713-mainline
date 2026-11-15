@@ -1,0 +1,93 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 14 Nov 2026 19:30:00 -0800
+Subject: [PATCH] soc: sunxi: cpu_comm: quarantine sends after missing ACK
+
+A CALL_ACK timeout does not revoke the peer's ownership of a publication.
+The old error path cleared SENT and allowed the next sender to overwrite
+that shared header while the firmware could still be using it. Long
+firmware log flushes make this reachable with ordinary RPC calls.
+
+Keep the outstanding header intact and fail future sends with -EPIPE
+until a clean coprocessor/driver startup. Check both before and after the
+send semaphore, so callers already queued behind a timed-out sender do
+not reuse its publication. An outstanding SENT flag is also refused, so
+a module reload cannot silently adopt an in-flight publication. Expose the quarantine state read-only.
+
+Late RETURN handling remains active: patch 0200 matches only live sessions
+and acknowledges orphaned replies without signalling recycled waits.
+
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
+@@ -197,6 +197,36 @@
+ static bool cc_uboot_flags;
+ module_param_named(uboot_flags, cc_uboot_flags, bool, 0644);
+ MODULE_PARM_DESC(uboot_flags, "carry SENT in flags at +0x06, not flags2 at +0x0a");
++
++/* A missing CALL_ACK leaves ownership of the shared send header unknown.
++ * Do not let a later caller overwrite a publication the peer may still use.
++ * A clean coprocessor/driver startup is required to reopen this path.
++ */
++static bool cc_tx_desynced[CPU_ID_MAX];
++module_param_named(tx_desynced, cc_tx_desynced[CPU_ID_MIPS], bool, 0444);
++MODULE_PARM_DESC(tx_desynced, "MIPS send path quarantined after missing CALL_ACK");
++
++static bool cpu_comm_tx_available(u32 cpu)
++{
++	return cpu < CPU_ID_MAX && !READ_ONCE(cc_tx_desynced[cpu]);
++}
++
++static bool cpu_comm_tx_may_publish(u32 cpu, u8 status)
++{
++	if (!cpu_comm_tx_available(cpu))
++		return false;
++	if (status & MSG_FLAG_SENT) {
++		WRITE_ONCE(cc_tx_desynced[cpu], true);
++		return false;
++	}
++	return true;
++}
++
++static void cpu_comm_tx_ack_timeout(u32 cpu)
++{
++	if (cpu < CPU_ID_MAX)
++		WRITE_ONCE(cc_tx_desynced[cpu], true);
++}
+ 
+ static unsigned long cc_pending_ack_sem[CPU_ID_MAX];
+ static u32 cc_pending_ack_session[CPU_ID_MAX];
+@@ -443,6 +473,9 @@
+ 		return -EINVAL;
+ 	}
+ 
++	if (!cpu_comm_tx_available(dst_cpu))
++		return -EPIPE;
++
+ 	seq_base = getSeq(dst_cpu);
+ 
+ 	/*
+@@ -461,6 +494,12 @@
+ 		pr_err("cpu_comm: SendComm2CPUEx: down_interruptible interrupted (cpu=%u)\n",
+ 		       dst_cpu);
+ 		return ret;
++	}
++
++	/* Another sender can time out while this caller waits for the lock. */
++	if (!cpu_comm_tx_may_publish(dst_cpu, READ_ONCE(share_seq_w[8]))) {
++		ret = -EPIPE;
++		goto out_up_sem;
+ 	}
+ 
+ 	/* Re-check reset status after acquiring semaphore */
+@@ -709,8 +748,10 @@
+ 		pr_err("cpu_comm: SendComm2CPUEx: ACK timeout (cpu=%u session=0x%08x)\n",
+ 		       dst_cpu, session_id);
+ 
+-		/* Clear "sent" bit from share-seq status */
+-		share_seq_w[8] &= ~MSG_FLAG_SENT;
++		/* Timeout is not cancellation. Leave the peer-owned publication
++		 * intact and refuse subsequent sends until a clean restart.
++		 */
++		cpu_comm_tx_ack_timeout(dst_cpu);
+ 
+ 		/* Release the wait object if we allocated one */
+ 		if (direction == 0 && wait_ptr) {

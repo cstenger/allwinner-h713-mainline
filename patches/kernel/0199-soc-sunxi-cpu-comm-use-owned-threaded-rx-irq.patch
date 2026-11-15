@@ -1,0 +1,311 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sat, 14 Nov 2026 12:00:00 -0800
+Subject: [PATCH] soc: sunxi: cpu_comm: support owned threaded IRQ-only trials
+
+Adapt the bank ownership analysis from well0nez's 0014b/0014c to our
+sleepable callback and existing single-index registration. Do not import
+their hard-IRQ callback: ours can take semaphores. The corrected DT is a
+prerequisite; historical storm reports concern the wrong SPI 21.
+
+Mask only our bank-0 sub-block-1 port-1 RX bit, drain in the ONESHOT
+thread, acknowledge just that endpoint, then re-enable. Preserve other
+endpoints and do not clear remote bank or TX status. Start the polling
+timer only for fallback, not successful IRQ
+mode. Leave rx_irq opt-in: serial IRQ trials passed but concurrent calls
+and a repeat boot failed hardware qualification, including kernel memory
+corruption. Do not switch production to IRQ mode before the shared-memory
+publication/deferred-dispatch path is understood. rx_irq=false retains the
+known polling path. Expose active-mode
+and IRQ/poll message counters read-only for hardware qualification.
+
+Link: https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0014c-soc-sunxi-cpu-comm-request-only-the-line-of-the-bank-it-owns.patch
+Link: https://github.com/cstenger/allwinner-h713-mainline/issues/4
+
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
+@@ -158,21 +158,11 @@
+  * draining every stale port (several were stuck full at 8) and then
+  * writing 0xffffffff, which took every block's RX status to 0.
+  *
+- * NONE OF WHICH MAKES THE INTERRUPT USABLE, and that is the state of
+- * play: with every RX status at 0 and only our BIT(2) enabled, SPI 53
+- * still asserts continuously and the kernel masks it at exactly 100000.
+- * So the assertion source is not RX status. The prime suspect is TX
+- * status at +0x34, which reads 0xAA in every block and does NOT clear on
+- * write — it looks level-driven by something permanently true, and if it
+- * reaches the line ungated by +0x30 then this SPI cannot be quietened
+- * from here at all. The DT gives the whole msgbox a single
+- * <GIC_SPI 21 LEVEL_HIGH>, so there is no per-user line to fall back on.
+- *
+- * Next step if this is picked up again: find what gates SPI 53 — either a
+- * top-level mask outside these per-user blocks, or the MIPS-side enable
+- * the firmware itself writes (disassemble around its msgbox send at
+- * 0x8b12199c). Until then the poll is the supported path and rx_irq is a
+- * bench switch, not a feature.
++ * The previous storm measurements used a DT mapping of SPI 21 (GIC
++ * hwirq 53), not the stock ARM-inbox SPI 46. The corrected DT lists all
++ * three banks, but this driver requests index 0 only. ARISC's bank-0
++ * sub-block 0 and the remote inboxes remain outside this driver's scope.
++ * See well0nez's 0014b/0014c/0024d and the paired DT correction.
+  */
+ #define H713_MSGBOX_RX_IRQ_EN	0x120
+ #define H713_MSGBOX_RX_IRQ_STAT	0x124
+@@ -181,11 +171,22 @@
+ 
+ static bool msgbox_use_irq;
+ module_param_named(rx_irq, msgbox_use_irq, bool, 0444);
+-MODULE_PARM_DESC(rx_irq, "request the msgbox RX interrupt (default off: it storms and does not carry RX)");
+-
+-static unsigned int msgbox_rx_irq_en;
+-module_param_named(rx_irq_en, msgbox_rx_irq_en, uint, 0444);
+-MODULE_PARM_DESC(rx_irq_en, "value to write to the RX IRQ enable at 0x130 before requesting (0 = leave alone)");
++MODULE_PARM_DESC(rx_irq, "opt in to ARM-inbox RX IRQ trials (default false: polling)");
++
++/* Successful IRQ mode has no polling timer or polling worker. */
++module_param_named(rx_poll_active, msgbox_poll_active, bool, 0444);
++module_param_named(rx_irq_active, msgbox_irq_taken, bool, 0444);
++
++static int msgbox_counter_get(char *buf, const struct kernel_param *kp)
++{
++	return scnprintf(buf, PAGE_SIZE, "%d\n", atomic_read(kp->arg));
++}
++
++static const struct kernel_param_ops msgbox_counter_ops = {
++	.get = msgbox_counter_get,
++};
++module_param_cb(rx_messages_irq, &msgbox_counter_ops, &msgbox_rx_by_irq, 0444);
++module_param_cb(rx_messages_poll, &msgbox_counter_ops, &msgbox_rx_by_poll, 0444);
+ 
+ static const char *cpu_comm_msgbox_type_name(u32 raw)
+ {
+@@ -199,11 +200,8 @@
+ /*
+  * Polling work function — processes msgbox FIFO messages.
+  *
+- * The RX FIFO is drained on a timer rather than from the GIC line.
+- * The IRQ path is unverified on this board (no message has ever been
+- * received through it), and the FIFO holds 8 entries against a
+- * firmware sender that blocks when it fills, so a 1 ms drain is
+- * comfortably ahead of it. Revisit once the transport is proven.
++ * Drain only our MIPS -> ARM endpoint. The same sleepable callback is
++ * used by the threaded IRQ and the optional/fallback polling worker.
+  *
+  * The received word is a bare message type, 0..3 — the same encoding
+  * this driver sends. There is no packed type/direction pair: the
+@@ -239,49 +237,47 @@
+ 	return count;
+ }
+ 
+-/*
+- * Hard handler: decide only. Reading the FIFO count is the cheapest way to
+- * tell our line from a shared one, and it must not consume anything —
+- * dispatch sleeps (Comm_ReleaseFreeCall takes a semaphore), so the work
+- * belongs in the thread.
+- */
++/* Dispatch can sleep: the hard handler only masks our endpoint. */
+ static irqreturn_t cpu_comm_msgbox_hardirq(int irq, void *dev)
+ {
+-	u32 stat;
++	u32 en, stat;
+ 
+ 	if (!msgbox_ctrl_base)
+ 		return IRQ_NONE;
+ 
++	en = readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
+ 	stat = readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT);
+-	if (!(stat & H713_MSGBOX_RX_IRQ_BIT))
++	if (!(en & stat & H713_MSGBOX_RX_IRQ_BIT))
+ 		return IRQ_NONE;
+ 
+-	/*
+-	 * Acknowledge before draining. The line is level-triggered, so
+-	 * leaving this bit set is what previously re-asserted it forever;
+-	 * clearing early costs at most one spurious wake if a message lands
+-	 * in the gap, which the drain then picks up anyway.
++	writel(en & ~H713_MSGBOX_RX_IRQ_BIT,
++	       msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
++	return IRQ_WAKE_THREAD;
++}
++
++static irqreturn_t cpu_comm_msgbox_thread(int irq, void *dev)
++{
++	int n = cpu_comm_msgbox_drain();
++	u32 en;
++
++	if (n)
++		atomic_add(n, &msgbox_rx_by_irq);
++
++	/* RX status is latched over FIFO level: drain, W1C, then re-enable.
++	 * Leave other endpoints' enables and pending bits untouched.
++	 * IRQF_ONESHOT keeps the GIC line masked until this thread returns.
+ 	 */
+ 	writel(H713_MSGBOX_RX_IRQ_BIT,
+ 	       msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT);
+-
+-	return IRQ_WAKE_THREAD;
+-}
+-
+-static irqreturn_t cpu_comm_msgbox_thread(int irq, void *dev)
+-{
+-	int n = cpu_comm_msgbox_drain();
+-
+-	if (n)
+-		atomic_add(n, &msgbox_rx_by_irq);
+-
++	en = readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
++	writel(en | H713_MSGBOX_RX_IRQ_BIT,
++	       msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
+ 	return IRQ_HANDLED;
+ }
+ 
+ /*
+- * The RX path. Still primary: measured on hardware, the GIC line delivered
+- * 4 messages to this poll's 8, so anything counted here is a message the
+- * interrupt did not deliver.
++ * Polling fallback. No timer or polling work is started after successful
++ * IRQ registration, so there is only one FIFO consumer in either mode.
+  *
+  * Dispatch sleeps, so the hrtimer only spots the message and hands it to
+  * this work item.
+@@ -344,57 +340,34 @@
+ 			raw, cpu_comm_msgbox_type_name(raw));
+ 	}
+ 
+-	/*
+-	 * The RX interrupt is off by default, and that is a measurement, not
+-	 * caution. Requesting it on this board produces an immediate spurious
+-	 * storm: the line is level-triggered (GICv2 SPI 53) and something
+-	 * holds it asserted that draining the RX FIFO does not clear, so the
+-	 * kernel's spurious limiter masks it at exactly 100000 within
+-	 * milliseconds of request_threaded_irq(). In that window it delivered
+-	 * 4 messages against the poll's 8 — it is not carrying RX.
+-	 *
+-	 * The RX enable that would mirror TX's 0x830 reads 0 and never
+-	 * changes, and 0x034/0x134/0x834 sit at a constant 0xAA rather than
+-	 * behaving like status. Which register actually arms RX is not known,
+-	 * so `rx_irq_en` writes a candidate and `rx_irq` requests the line;
+-	 * both stay opt-in until a run shows IRQ delivery with a zero poll
+-	 * count.
+-	 *
+-	 * IRQF_ONESHOT is load-bearing when that experiment is run: it keeps
+-	 * the line masked until the thread has drained, which is the only
+-	 * reason the storm degrades into a masked IRQ instead of a livelock.
++	/* Only bank 0 / DT index 0 belongs to this ARM driver (SPI 46).
++	 * Request before enabling; do not clear any unrelated RX/TX status.
+ 	 */
+ 	if (irq > 0 && msgbox_use_irq) {
+-		u32 en = msgbox_rx_irq_en ? : H713_MSGBOX_RX_IRQ_BIT;
+-
+-		/*
+-		 * Order matters: acknowledge every stale bit before enabling,
+-		 * or the line comes up already asserted and the spurious
+-		 * limiter masks it before the first real message.
+-		 */
+-		pr_info("cpu_comm: msgbox stale status rx=0x%08x tx=0x%08x — clearing\n",
+-			readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT),
+-			readl(msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_STAT));
+-
+-		writel(0xffffffff, msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT);
+-		writel(0xffffffff, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_STAT);
+-
+-		writel(en, msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
+-		pr_info("cpu_comm: msgbox RX IRQ enable 0x%03x <- 0x%08x, reads back 0x%08x; status now rx=0x%08x\n",
+-			H713_MSGBOX_RX_IRQ_EN, en,
+-			readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN),
+-			readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT));
+-
+ 		ret = request_threaded_irq(irq, cpu_comm_msgbox_hardirq,
+ 					   cpu_comm_msgbox_thread,
+ 					   IRQF_ONESHOT | IRQF_SHARED,
+ 					   "cpu_comm_msgbox",
+ 					   &msgbox_rx_callback);
+-		if (ret)
+-			pr_warn("cpu_comm: msgbox IRQ %d request failed (%d) — poll only\n",
++		if (ret) {
++			pr_warn("cpu_comm: bank 0 IRQ %d request failed (%d), polling fallback\n",
+ 				irq, ret);
+-		else
+-			msgbox_irq = irq, msgbox_irq_taken = true;
++		} else {
++			u32 en = readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
++
++			msgbox_irq = irq;
++			msgbox_irq_taken = true;
++			writel(H713_MSGBOX_RX_IRQ_BIT,
++			       msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_STAT);
++			writel(en | H713_MSGBOX_RX_IRQ_BIT,
++			       msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
++			pr_info("cpu_comm: bank 0 IRQ %d registered; remote banks unclaimed\n", irq);
++		}
++	}
++
++	if (msgbox_irq_taken) {
++		pr_info("cpu_comm: msgbox RX by IRQ only (no polling timer)\n");
++		return 0;
+ 	}
+ 
+ 	INIT_WORK(&msgbox_rx_work, cpu_comm_msgbox_poll_fn);
+@@ -416,7 +389,15 @@
+ void cpu_comm_msgbox_free_irq(void)
+ {
+ 	if (msgbox_irq_taken) {
++		u32 en = readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
++
++		writel(en & ~H713_MSGBOX_RX_IRQ_BIT,
++		       msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
+ 		free_irq(msgbox_irq, &msgbox_rx_callback);
++		/* A running thread may have re-enabled RX before free_irq joined it. */
++		en = readl(msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
++		writel(en & ~H713_MSGBOX_RX_IRQ_BIT,
++		       msgbox_ctrl_base + H713_MSGBOX_RX_IRQ_EN);
+ 		msgbox_irq_taken = false;
+ 		msgbox_irq = -1;
+ 	}
+@@ -425,11 +406,10 @@
+ 		msgbox_poll_active = false;
+ 		hrtimer_cancel(&msgbox_poll_timer);
+ 		cancel_work_sync(&msgbox_rx_work);
+-		msgbox_rx_callback = NULL;
+-		pr_info("cpu_comm: msgbox RX stopped — %d message(s) by IRQ, %d by backstop poll\n",
+-			atomic_read(&msgbox_rx_by_irq),
+-			atomic_read(&msgbox_rx_by_poll));
+-	}
++	}
++	msgbox_rx_callback = NULL;
++	pr_info("cpu_comm: msgbox RX stopped — %d message(s) by IRQ, %d by poll\n",
++		atomic_read(&msgbox_rx_by_irq), atomic_read(&msgbox_rx_by_poll));
+ }
+ 
+ /* Legacy stubs — no longer needed but keep exports for now */
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
+@@ -1394,17 +1394,21 @@
+ 	}
+ 	pr_debug("cpu_comm: InitCommMem done\n");
+ 
+-	/* NOW start message reception — SharedMem is ready */
++	/* SharedMem is ready. Only bank 0 (DT index 0, SPI 46) carries
++	 * MIPS -> ARM RX. Banks 1/2 belong to ARISC/MIPS, not this driver.
++	 */
+ 	{
+ 		int irq = platform_get_irq(to_platform_device(cpu_comm_mbox_dev), 0);
+ 
+-		if (irq > 0) {
+-			ret = cpu_comm_msgbox_request_irq(irq, (void *)cpu_comm_msg_cb);
+-			if (ret)
+-				pr_err("cpu_comm: msgbox IRQ registration failed: %d\n", ret);
+-		} else {
+-			pr_warn("cpu_comm: no msgbox IRQ in DTS (err=%d)\n", irq);
+-		}
++		if (irq == -EPROBE_DEFER) {
++			ret = irq;
++			goto err_device;
++		}
++		if (irq <= 0)
++			pr_warn("cpu_comm: no bank 0 IRQ in DTS (%d), polling fallback\n", irq);
++		ret = cpu_comm_msgbox_request_irq(irq, (void *)cpu_comm_msg_cb);
++		if (ret)
++			goto err_device;
+ 	}
+ 
+ 	/*
