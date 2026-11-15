@@ -92,7 +92,7 @@ class Session:
         except (RuntimeError,ValueError) as error:
             raise RuntimeError('MIPS IPC check failed: '+str(error)) from None
         if (not isinstance(result,dict) or result.get('schema')!='h713-mips-ipc-v1' or
-                result.get('complete') is not True or result.get('command')!='help win'):
+                result.get('complete') is not True or result.get('command')!='cmds'):
             raise RuntimeError('MIPS IPC completion not verified')
         # Preserve per-check latency in the service journal without changing
         # the session CLI's machine-readable stdout result.
@@ -144,7 +144,11 @@ class Session:
             current=int(self.param(OWNER,'clock_count'))
             if not 0<=current<=4:raise RuntimeError('invalid receiver clock stage')
             for stage in range(current+1,5):
-                self.b.write(BASE+OWNER+'/parameters/clock_count',str(stage)+'\n');self.ipc()
+                self.b.write(BASE+OWNER+'/parameters/clock_count',str(stage)+'\n')
+                if stage < 4:
+                    self.ipc()
+            # Clock 4 also prepares EDID. Check its readiness before the final
+            # IPC gate, including when the owner was already at clock 4.
             self.owner_ready(0);self.ipc()
             original=self.b.read(FW_PATH).rstrip('\n')
             try:

@@ -356,12 +356,41 @@ def mips_alive(mem):
     return mem.u32(MIPS_RESET_STATUS) == 1
 
 
+# Pinned read-only command-list reply, verified against the live firmware.
+# See docs/production-evidence/2026-11-09-startup-and-parallel-aic/cmds-reply.reply.
+# The monitor processes one input byte per ~50 ms: cmds saves four bytes versus
+# help win while preserving a full handler reply at every receiver stage.
+IPC_REPLY_LINES = [
+    b'cmds',
+    b'',
+    b'Command List:',
+    b'app                   CMD   for app debug only',
+    b'bs                    CMD   for bs debug only',
+    b'crtc                  CMD   for crtc debug',
+    b'tcd3                  CMD   for app debug only',
+    b'dtv                   CMD   for dtv debug only',
+    b'hal                   CMD   for hal debug only',
+    b'elog                  CMD   elog command',
+    b'memory_agent          CMD   for memory_agent debug only',
+    b'pq                    CMD   for PQ debug only',
+    b'regw                  CMD   write register',
+    b'regr                  CMD   read register',
+    b'clear                 CMD   clear console',
+    b'keys                  CMD   list all key',
+    b'vars                  CMD   list all var',
+    b'cmds                  CMD   list all cmd',
+    b'users                 CMD   list all user',
+    b'help                  CMD   show command info',
+    b'setVar                CMD   set var',
+    b'win                   CMD   for window debug only',
+    b'',
+    b'VS:/$ ',
+]
+
+
 def ipc_reply_complete(reply):
     """Match the pinned firmware's whole benign reply, never a stale prompt."""
-    return reply.replace(b"\r", b"").split(b"\n") == [
-        b"help win", b"command help of win", b"for window debug only",
-        b"", b"VS:/$ ",
-    ]
+    return reply.replace(b"\r", b"").split(b"\n") == IPC_REPLY_LINES
 
 
 def check_ipc(term, alive, timeout=1.5, *, clock=time.monotonic,
@@ -376,7 +405,7 @@ def check_ipc(term, alive, timeout=1.5, *, clock=time.monotonic,
         raise RuntimeError("MIPS command ring is busy; refusing IPC request")
     stale = term.drain()
     started = clock()
-    if term.send("help win\r") != 9:
+    if term.send("cmds\r") != 5:
         raise RuntimeError("incomplete MIPS IPC command publication")
     deadline = started + timeout
     reply = b""
@@ -387,7 +416,7 @@ def check_ipc(term, alive, timeout=1.5, *, clock=time.monotonic,
         if (ipc_reply_complete(reply) and down.wroff == down.rdoff
                 and clock() < deadline):
             return {"schema": "h713-mips-ipc-v1", "complete": True,
-                    "command": "help win", "reply_bytes": len(reply),
+                    "command": "cmds", "reply_bytes": len(reply),
                     "stale_bytes": len(stale),
                     "elapsed_seconds": round(clock() - started, 6)}
         sleep(min(0.01, max(0, deadline - clock())))
@@ -401,7 +430,7 @@ def main():
     parser.add_argument("--drain", action="store_true", help="print pending output and exit")
     parser.add_argument("--cmd", help="send a command line, then read the reply")
     parser.add_argument("--check-ipc", action="store_true",
-                        help="validate help win reply and return immediately on completion")
+                        help="validate pinned cmds reply and return immediately on completion")
     parser.add_argument("--wait", type=float, default=1.5, help="seconds to wait for output")
     parser.add_argument("--raw", action="store_true", help="hex-dump output instead of decoding")
     parser.add_argument("--unbind", action="store_true",

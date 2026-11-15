@@ -57,7 +57,7 @@ class FakeBoard:
         if self.ipc_result is not None:
             try:return json.loads(self.ipc_result)
             except ValueError:return self.ipc_result
-        return 'missing' if self.bad_ipc else {'schema':'h713-mips-ipc-v1','complete':True,'command':'help win'}
+        return 'missing' if self.bad_ipc else {'schema':'h713-mips-ipc-v1','complete':True,'command':'cmds'}
     def run(self,argv,check=True,timeout=15):
         self.events.append(('run',argv));self.commands.append(argv);out='';rc=0
         if argv[0]=='uname':out='6.18.38\n'
@@ -259,21 +259,49 @@ class Lifecycle(unittest.TestCase):
         self.assertFalse(any(c[0]=='rmmod' for c in self.b.commands))
 
     def test_each_startup_ipc_failure_stops_before_next_stage_or_dsp(self):
-        for stage in range(1,6):
+        for stage in range(1,5):
             with self.subTest(stage=stage):
                 board=FakeBoard();board.fail_ipc_at=stage;session=m.Session(board,'/bundle')
                 with self.assertRaisesRegex(RuntimeError,'deadline'):session.start()
                 self.assertEqual(board.ipc_count,stage)
-                self.assertEqual(board.read(m.BASE+m.OWNER+'/parameters/clock_count').strip(),str(min(stage,4)))
+                self.assertEqual(board.read(m.BASE+m.OWNER+'/parameters/clock_count').strip(),str(stage))
                 self.assertIn(m.OWNER,board.modules);self.assertNotIn(m.AUDIO,board.modules)
                 self.assertEqual(session.prior()['phase'],'failed')
                 with self.assertRaisesRegex(RuntimeError,'physical cold boot'):session.start()
                 self.assertEqual(board.ipc_count,stage)
 
+    def test_existing_receiver_stages_keep_remaining_clock_gates_and_final_check(self):
+        for current in range(5):
+            with self.subTest(current=current):
+                board=FakeBoard()
+                board.run(['insmod','/bundle/h713-hdmi-receiver.ko'])
+                for stage in range(1,current+1):
+                    board.write(m.BASE+m.OWNER+'/parameters/clock_count',str(stage)+'\n')
+                before=len(board.writes)
+                session=m.Session(board,'/bundle')
+                session.start()
+                clocks=[int(value) for path,value in board.writes[before:] if path.endswith('/clock_count')]
+                self.assertEqual(clocks,list(range(current+1,5)))
+                self.assertEqual(board.ipc_count,max(1,4-current))
+                self.assertEqual(session.prior()['phase'],'ready')
+
+    def test_clock_four_readiness_precedes_final_ipc_and_audio(self):
+        write=self.b.write
+        def unready(path,value):
+            write(path,value)
+            if path.endswith('/clock_count') and value.strip()=='4':
+                self.b.param(m.OWNER,'edid_ready','N')
+        with mock.patch.object(self.b,'write',unready):
+            with self.assertRaisesRegex(RuntimeError,'edid_ready'):self.s.start()
+        self.assertEqual(self.b.ipc_count,3)
+        self.assertNotIn(m.AUDIO,self.b.modules)
+        self.assertEqual(self.s.prior()['phase'],'failed')
+
     def test_completion_result_cannot_be_replaced_by_prompt_or_wrong_schema(self):
         for result in ('VS:/$', '[]', 'null', '{}',
-                       json.dumps({'schema':'h713-mips-ipc-v0','complete':True,'command':'help win'}),
-                       json.dumps({'schema':'h713-mips-ipc-v1','complete':False,'command':'help win'}),
+                       json.dumps({'schema':'h713-mips-ipc-v0','complete':True,'command':'cmds'}),
+                       json.dumps({'schema':'h713-mips-ipc-v1','complete':False,'command':'cmds'}),
+                       json.dumps({'schema':'h713-mips-ipc-v1','complete':True,'command':'help win'}),
                        json.dumps({'schema':'h713-mips-ipc-v1','complete':True,'command':'other'})):
             board=FakeBoard();board.ipc_result=result;session=m.Session(board,'/bundle')
             with self.subTest(result=result), self.assertRaises(RuntimeError):session.start()
@@ -286,7 +314,7 @@ class Lifecycle(unittest.TestCase):
         capture=m.Session(self.b,'/bundle')
         self.assertTrue(capture.start()['already_ready'])
         self.assertEqual((len(self.b.commands),len(self.b.writes)),(commands,writes))
-        self.assertEqual(self.b.ipc_count,5)
+        self.assertEqual(self.b.ipc_count,4)
         capture.stop()
         self.assertTrue(capture.prior()['restore_verified'])
         self.assertTrue(self.b.wp)
@@ -308,7 +336,7 @@ def mips_alive(mem):
     CALLS.append(('alive', mem)); return True
 def check_ipc(term, alive, timeout):
     CALLS.append(('ipc', term.mem, alive, timeout))
-    return {'schema': 'h713-mips-ipc-v1', 'complete': True, 'command': 'help win'}
+    return {'schema': 'h713-mips-ipc-v1', 'complete': True, 'command': 'cmds'}
 """
 STUB_TRACE = """
 def source_snapshot(shell):
@@ -328,7 +356,7 @@ class InProcessHelpers(unittest.TestCase):
     def test_helpers_load_once_and_match_the_cli_calls(self):
         self.assertIs(self.board.mips_alive(self.bundle),True)
         result=self.board.mips_ipc(self.bundle)
-        self.assertEqual(result['command'],'help win')
+        self.assertEqual(result['command'],'cmds')
         self.assertEqual(self.board.source_trace(self.bundle),{'guards':'43414e31/43414e31'})
         self.assertEqual(self.shell().CALLS,[('alive','mem'),('alive','mem'),('ipc','mem',True,1.5),('trace',)])
         self.assertEqual(len(self.shell().LOADS),1)

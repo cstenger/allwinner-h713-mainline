@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Own DDC pins and the persistent, reversible SCP EDID/HPD module."""
-import argparse
 import errno
 import os
 import signal
@@ -108,12 +107,21 @@ def launch(bundle,extra=()):
         except Exception as error:raise RuntimeError('signal init refused before SCP release, and DDC release failed; DDC retained, cold cycle required') from error
         OWNED.unlink()
         raise RuntimeError('signal init refused before SCP release; nothing retained, retry needs a cold cycle') from None
-def main():
+def parse_args():
+    # The service uses exactly "start". Keep argparse for the bench CLI.
+    if sys.argv[1:] == ['start']:
+        return 'start', BUNDLE, ()
+    import argparse
+
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('action',choices=('start','stop'))
     parser.add_argument('--bundle',type=Path,default=BUNDLE,help='module directory (bench runs stage a candidate here)')
     parser.add_argument('--signal-arg',action='append',default=[],help='bench only: extra signal module parameter')
     args=parser.parse_args()
-    if args.action=='start':
+    return args.action, args.bundle, args.signal_arg
+
+def main():
+    action, bundle, signal_args = parse_args()
+    if action=='start':
         if MODULE.exists():
             require(OWNED.exists(),'signal module is not owned by this service')
             # Restored (holds already released) but an earlier rmmod failed.
@@ -126,8 +134,8 @@ def main():
         # service cannot later prove it owns.
         mark(ATTEMPTED,'signal initialization attempted on this boot\n')
         mark(OWNED,'DDC and signal owner acquired by signal service\n')
-        run(['insmod',str(args.bundle/'h713-ddc-pins.ko'),'run=1'])
-        launch(args.bundle,args.signal_arg)
+        run(['insmod',str(bundle/'h713-ddc-pins.ko'),'run=1'])
+        launch(bundle,signal_args)
         if param('failed')=='Y':recover_init_failure()
         require(param('ready')=='Y' and param('failed')=='N','signal setup failed; holds retained, cold cycle required')
         print('EDID/HPD ready; receiver client and DDC pins retained',flush=True)

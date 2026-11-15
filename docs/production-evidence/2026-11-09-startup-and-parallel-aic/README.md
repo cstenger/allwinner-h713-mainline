@@ -371,3 +371,337 @@ empty-slot case, and a mutant without the check fails it.
 
 The board had been running a 2026-11-05 diagnostic bridge variant
 (`reject-trace-power-v2`); it now runs the committed source with this fix.
+
+## One-frame green flash in test_118 — deferred 2026-11-11
+
+Operator recording `local/lcd-photos/test_118/IMG_1097.MOV` contains a green
+flash across the lower panel at playback **1:01.933**, frame **1858**. It sits
+between two dark frames immediately before the desktop. The initial review's
+full-screen threshold missed it. The cause remains unresolved.
+
+Subsequent controlled KMS handovers, two instrumented cold boots, a control
+warm reboot and three guarded zero-ring warm reboots did not reproduce it.
+Every reboot ended `running`, with no failed units and `HDOK` acknowledged.
+All three zero-ring trials verified the entire capture ring was zero after
+terminal teardown and again after 200 ms. None subsequently reported empty
+frames or delivered sampled black buffers. First-buffer delays after lock
+were 523, 523 and 325 ms, so late consumer startup alone cannot explain every
+clean result. The earlier four-empty-frame condition was not reproduced.
+
+The digital panel measurement was checked against deliberately injected
+single-frame patches. Histogram bins missed faint chroma-only patches, but
+LVDS `+0x310` current-content fields detected all 12 repetitions. Its low
+ten-bit field is delayed and filtered, and its decay during black is not
+evidence of a flash. Buffer summaries sampled four columns every 16 rows.
+These measurements cover the digital pipeline through the statistics tap;
+they do not measure optical behavior downstream.
+
+Source-0 fetch activity at AFBD `+0x304` bit 14 was verified against disabled
+controls. A complete scanout event has not been established, and no kernel
+handover change was made.
+
+The investigation is deferred at the operator's request. Revisit on a fresh
+occurrence or new evidence, preserving the first-frame sequence and boot
+journal. Sampling capture-ring contents before HPD is a possible next
+discriminating test. The issue is retained for release qualification.
+
+Evidence and reproduction scripts are preserved locally:
+- `local/recovery/2026-11-10-signal-startup/` — original frame comparison;
+- `local/recovery/2026-11-10-source0-test/` — KMS and injected-pulse controls;
+- `local/recovery/2026-11-10-cold-trace/` and
+  `local/recovery/2026-11-10-native-trace/` — cold traces;
+- `local/recovery/2026-11-11-zero-ring-trials/` — control, three zero trials,
+  comparison and rollback records.
+
+The diagnostic video overrides and early recorder service were removed using
+the recorded rollback. The board returned to the production native video
+command with empty `Environment` and `DropInPaths`, and health passed.
+Trace files, diagnostic binaries and rollback backups were retained.
+
+## Four startup IPC checks — warm and cold qualification, 2026-11-11
+
+The session previously checked MIPS after each of four receiver clock
+increments and again after read-only receiver readiness checks. The final two
+transactions followed the same clock-4/EDID setup. The session now checks
+after clocks 1–3, then checks clock-4/EDID readiness and performs one final IPC
+transaction before loading audio. An owner already at clock 4 still receives
+that final check. Shutdown/parking checks and the IPC protocol are unchanged.
+
+Installed session SHA-256 starts `fef5210d`, replacing `75106f95`; bundle
+manifest starts `6a250223`. The guarded install saved the original script and
+manifest under `/var/lib/h713-hdmi-startup/four-ipc-2026-11-11`. Exact preview
+and rollback commands, hashes and logs are in
+`local/recovery/2026-11-11-four-ipc/RESUME.md`.
+
+| Run | Prepare duration | IPC completions | Three-rate tone check |
+| --- | ---: | ---: | --- |
+| Measured baseline | 4.214 s | 5 | previously qualified |
+| Warm 1 (`bfb0c3f7`) | 3.770 s | 4 | 3/3 pass |
+| Warm 2 (`96c82ed2`) | 3.592 s | 4 | 3/3 pass |
+| Warm 3 (`c58573b0`) | 3.781 s | 4 | 3/3 pass |
+
+Median prepare duration improved by 0.445 s. Absolute HPD timing still varies
+with when prepare begins and the rest of boot. Each warm boot was running,
+with no failed units, receiver/domain/EDID/audio readiness and HDOK verified.
+The preceding shutdown journals confirmed consumer ordering, signal ownership
+restoration, 22 DSP/15 TVFE restored words and terminal parking. All nine tone
+trials passed, speaker state was restored, and final audio XRUN count was zero.
+
+Offline validation passed 30 session tests, 10 IPC completion tests, shared
+startup and systemd-ordering checks, and the frozen historical installer
+tests. All 11 negative mutations were caught, including skipped early gates
+and a missing final gate. Existing receiver clock counts 0–4 and failure
+before DSP loading are covered.
+
+Cold boot `1dd76235` passed qualification. The guarded U-Boot handoff was
+present and exactly four fresh, complete IPC replies were recorded.
+Prepare ran from 4.511 to 8.186 s (3.674 s). Kernel HPD readiness was 8.557 s,
+signal lock 9.896 s, and the video service started at 9.959 s. The preceding
+shutdown's signal/DSP/TVFE restoration and terminal parking passed.
+
+All three cold-boot tone trials at 48/32/44.1 kHz passed. Final health was
+running with no failed units, HDOK set, zero audio XRUNs, the original speaker
+volume/mute restored and temporary recordings removed. Bundle checksums passed.
+The cold data is under `local/recovery/2026-11-11-four-ipc/cold/`.
+
+No kernel/module changes or commits were made.
+
+## Shorter IPC probe comparison, 2026-11-11
+
+The four-check variant remains installed and qualified. A separate transient
+comparison found a cheaper probe without removing stage checks. The firmware
+`cmds` entry and listing/formatting routines were reviewed: they print command
+metadata without invoking the listed commands or changing hardware setup.
+Seven live code/table ranges matched the reviewed firmware bytes. Normal shell
+scratch/history and ring state change when issuing either diagnostic command.
+
+Preview and recovery instructions were recorded before ring writes in
+`local/recovery/2026-11-11-short-probe/ROLLBACK.md`. The script ran over SSH stdin
+under the existing terminal lock, without installation or service changes.
+After control/discovery requests, eight balanced pairs measured `help win`
+at 448.44 ms mean and `cmds` at 251.38 ms mean. Mean paired saving was
+197.06 ms, projecting to 0.788 s over four checks; boot-time gain remains
+unqualified. All nine `cmds` replies were the same complete 917-byte list,
+with consumed requests and zero stale bytes. Both rings ended empty.
+
+The board remained running on boot `1dd76235`, with no failed units or new
+kernel messages, active video/audio, zero audio XRUNs, receiver/EDID/DSP ready,
+and unchanged session/helper/unit hashes and bundle checksums. Thirteen
+comparison controls and the ten existing IPC completion tests passed.
+No startup implementation was changed. Raw replies, timings, live-code
+verification and the assessment are under
+`local/recovery/2026-11-11-short-probe/` (see `RESULT.md` and `result.json`).
+
+## Pinned cmds probe installed — warm qualification, 2026-11-13
+
+The user authorized replacing help-win with the verified read-only command-list
+probe, keeping all four stage gates. The helper pins the full echo, heading,
+19 command rows and final prompt (same CR normalization as before). The capture
+fixture is `cmds-reply.reply`, 917 bytes, SHA-256
+`abff1a9772c00c9ef81e9f90ddad5844c0c5dd0ca48de4dab3d705fe3cb44b0e`.
+Freshness, consumed-request, parked/busy/deadline/overflow checks and terminal
+lock are unchanged. Session completion validation now requires command `cmds`.
+
+Installed session/helper/manifest SHA prefixes are `06ab1e7a` / `5d0dd84e` /
+`a552c7f5`. Before board writes, exact rollback and qualification commands were
+recorded and install preview passed; wrong-boot preview was rejected. The
+installer saved all three original files under
+`/var/lib/h713-hdmi-startup/cmds-probe-2026-11-13` before replacing any file.
+No kernel/module or unit changes were made.
+
+| Warm run | Prepare duration | Kernel HPD | Video service start | Tone trials |
+| --- | ---: | ---: | ---: | --- |
+| 1 (`260893fc`) | 2.924 s | 8.073 s | 10.004 s | 3/3 pass |
+| 2 (`ab71d635`) | 3.032 s | 8.009 s | 9.996 s | 3/3 pass |
+| 3 (`ee151004`) | 2.664 s | 7.545 s | 9.792 s | 3/3 pass |
+
+Each boot recorded exactly four complete 917-byte replies. Median prepare
+2.924 s compares with 3.568 s on today's old-probe baseline; median aggregate
+IPC wait 0.969 s compares with 1.752 s, saving 0.783 s in IPC. Whole-boot timing
+also depends on scheduler/load and source-PC response. Preceding shutdowns
+passed consumer ordering, signal ownership restore, 22 DSP/15 TVFE restored
+words and terminal parking. Speaker state was restored and recordings removed;
+final health was running/no failed units, zero unit restarts and audio XRUNs,
+HDOK acknowledged and full bundle checksums passed.
+
+Eleven IPC tests, 30 session tests, 13 shared-startup tests, 2 ordering tests
+and the two historical 4-test installer suites passed. All 13 negative
+mutations were caught. Raw journals, tones, timings, install/readback evidence
+and rollback are under `local/recovery/2026-11-13-cmds-probe/`; see RESUME.md
+and warm-summary.json. Cold qualification remains pending. No commits or pushes.
+
+The board was subsequently powered off with the boot-ID-guarded recorded
+command and confirmed offline (three consecutive failed pings plus SSH timeout).
+It is ready for the operator cold cycle. The final shutdown's persisted journal
+will be retrieved after power-on; the three preceding shutdown checks passed.
+
+Cold boot `bc095368` subsequently passed qualification. Exactly four complete
+917-byte cmds replies consumed 0.964 s total, versus 1.754 s on the previous
+qualified help-win cold boot. Prepare was 2.811 s (previously 3.674 s), kernel
+HPD ready 7.745 s, signal lock 9.076 s and video-service start 9.131 s. The
+guarded cold handoff, HDOK and receiver/EDID/DSP readiness passed. The final
+poweroff journal confirmed ownership/DSP/TVFE restoration, terminal parking and
+consumer stop ordering.
+
+All three cold audio rates passed, completing 12 successful tone trials across
+three warm boots and one cold boot. Final state: running/no failed units,
+zero HDMI-unit restarts or audio XRUNs, original speaker state restored,
+recordings removed and full bundle/installed-file hashes verified. The board
+remains running on the qualified cmds four-check variant. Detailed cold
+evidence is under `local/recovery/2026-11-13-cmds-probe/cold/`, with result.json,
+raw journals, postflight and tone/RESULT.json. Rollback remains recorded and
+available; no commits, pushes or module/kernel changes were performed.
+
+## Remaining pre-clock time — read-only review, 2026-11-13
+
+The qualified cold prepare-to-first-clock interval is 1.551 s; three warm
+intervals span 1.367–1.750 s. Systemd's cold execution handoff accounts for
+79 ms. The visible tail from receiver parking-prepared through first clock
+is under 10 ms, but module insertion/park preparation before that first log
+is unmeasured. Original printk timestamps confirm this is not a one-second
+journal timestamp artifact.
+
+Seven guarded idle-board replays, stopped before state/module writes, measured
+188 ms top-level imports, 19 ms parsing and 48 ms preflight; fresh interpreter
+startup separately measured 101 ms. These cached measurements cannot attribute
+the rest of the boot interval. A matched in-memory exact-start/CLI-import
+experiment saved 33 ms; replacing uname and batching both modinfo checks offers
+another ~14 ms. No guard removal or kernel/module change is justified by this
+evidence. A lightweight boot wall/CPU span trace is proposed as the next
+discriminating measurement, subject to authorization/preview/rollback.
+
+No board or startup implementation changes were made; postflight remained
+healthy with unchanged hashes and zero XRUNs. Full methods, raw timings,
+limitations and proposed trace are in
+`local/recovery/2026-11-13-preclock-review/ASSESSMENT.md` and `summary.json`.
+
+## Lightweight pre-clock trace — collected and removed, 2026-11-13
+
+The operator authorized a temporary session-script trace for one warm boot.
+Exact preview/rollback was recorded before board writes; originals were backed
+up under `/var/lib/h713-hdmi-startup/preclock-trace-2026-11-13`. No unit, helper,
+kernel/module or hardware sequencing changes were made. Thirty existing session
+tests passed against the candidate, startup AST equivalence was verified after
+removing timing marks, and negative controls caught missing marks/stage gates.
+
+Boot `f1151ea9` recorded all four complete cmds checks and one buffered timing
+summary. Of 1.711 s before the first clock, 817 ms preceded the first Python
+statement and 612 ms were top-level imports (83.5% combined). Parser: 44 ms;
+preflight guards: 74 ms; attempted-state write: 0.9 ms; receiver insmod: 24 ms;
+first clock write: 0.5 ms. Imports consumed 248 ms parent CPU over 612 ms wall;
+the remaining elapsed time is not yet split into scheduling versus file I/O.
+Both clocks are monotonic/CPU counters; no RTC battery, NTP or wall-clock fix
+was needed. A separate guarded read-only -S comparison showed no meaningful
+cached-workload benefit, so no such flag was installed.
+
+The qualified session (`06ab1e7a`) and manifest (`a552c7f5`) were restored as
+soon as collection completed. Exact hashes/full bundle passed; board running,
+no failed units or HDMI-unit restarts, zero XRUNs and audio RUNNING. Prior
+shutdown restoration/parking passed. No instrumentation process remains, and
+no second reboot was needed. Evidence and conclusions are in
+`local/recovery/2026-11-13-preclock-trace/RESULT.md`, with raw trace/journals,
+summary.json, install/rollback records and restored-health.txt. No commits/pushes.
+
+## Python wait-attribution feasibility — read-only, 2026-11-13
+
+The shipping kernel lacks scheduler/task-I/O wait accounting, so elapsed minus
+CPU cannot be directly labeled storage or run-queue delay. Read-only probes
+validated per-child CPU-clock/state/wchan/stack sampling: timer sleep was
+classified as sleep, known host-only CPU contention yielded ~177 ms runnable
+delay, and 128 KiB of no-atime direct reads from an existing board file exposed
+blk_io_schedule waits. Major faults and I/O counters remained zero during that
+known storage control; zero counters must not be taken as proof of no I/O.
+
+Three cached guarded preflight probes had ~3–6 ms estimated runnable delay
+and no sampled storage sleep; boot behavior remains unmeasured. A stepped-CPU
+counter negative control exposed an estimator that falsely reported >100 ms
+delay. The corrected same-window aggregate estimator passes controls, but still
+requires explicit sampling uncertainty. No board settings/files/services were
+changed or reboot performed; qualified hashes and zero XRUNs passed postflight.
+
+A native-supervised warm-boot attribution test is proposed, preserving all four
+cmds gates, observing CPU/state/storage stacks/faults/frequency without changing
+policy, then restoring qualified files. It remains subject to authorization,
+exact preview and rollback. Evidence, limitations and the full next-test plan:
+`local/recovery/2026-11-13-python-waits-review/ASSESSMENT.md`.
+
+The user then requested preparation of that warm-boot test. A host-only package
+is ready at `local/recovery/2026-11-13-python-waits-test/README.md`: static native
+sampler, timing markers, byte-pinned unit/script/manifest payload, guarded
+installer, native control procedure, collector with automatic restoration, and
+conservative analyzer. Static linking avoids preloading Python's shared-library
+files. Sampling stops after first-clock observation; the child still completes
+all four checks. Local tests cover ownership/rollback/failure/status handling,
+sampling bias/uncertainty, unchanged startup logic and one-reboot recovery;
+cross-build reproducibility and AArch64 qemu smoke passed. Final board access
+was read-only preview/health checks only; qualified boot f1151ea9 remains
+unchanged, with zero XRUNs. No installation or reboot has been performed.
+
+## Resumed Python wait trace — 2026-11-14
+
+The authorized temporary revision-3 test completed one warm reboot after the
+user powered both machines back on. Preview/new rollback were recorded before
+writes. Current boot `7c9c1c7c-861f-4a7d-bb03-1c9dfd52f85d` is running with
+qualified session `06ab1e7a`, helper `5d0dd84e`, manifest `a552c7f5` and prepare
+unit `64d4ecd6`; full bundle/original ExecStart verified. No failed units,
+restarts or XRUNs; all four pinned cmds gates, HDOK and prior shutdown passed.
+Diagnostic sampler/RAM artifact removed after verified retrieval; backups remain.
+No kernel/module changes, host power operation, commit or push.
+
+Markers show 653 ms child-exec-to-first-statement and 383 ms imports, totaling
+1.036 s of 1.256 s before clock 1. Imports used 235 ms CPU. Native observer
+CPU 8.054 ms passed its budget; all frequency snapshots were 1.296 GHz.
+File-read/executable-page storage waits were witnessed, but their duration is
+unknown. Scheduler attribution FAILS coverage: combined loss/rejection counter
+10013, one sequence error; supplemental snapshots are also insufficient. Do
+not use the computed runnable/blocked split or claim another >=100 ms saving.
+The combined counter cannot identify actual kernel loss versus PID/parser
+rejection; improve diagnostics/negative controls locally before proposing any
+new board experiment. Qualified startup remains unchanged; no next test is
+authorized. Full result and evidence:
+`local/recovery/2026-11-13-python-waits-test/RESULT-2026-11-14.md`.
+
+## Recorder correction/stress tests — local only, 2026-11-14
+
+At user request, revision 4 was corrected and tested entirely on the host; no
+board access/write/reboot. Historical r3 bytes/results remain intact. R4 uses
+a 1 MiB perf ring, 131072 retained switches, independent 10 ms perf drains/50 ms
+proc samples, separate loss/rejection reasons, bounded wrong-ID examples and
+a process-CPU consistency gate. All four IPC checks and startup sequencing
+remain unchanged (30 session tests/startup AST equivalence passed).
+
+Three ~50000-switch runs and three real file-fault runs had zero loss and valid
+coverage. The old recorder, intentionally tiny ring and tiny event-array variants
+failed under the same load and were rejected. 26 package tests, three C guard
+mutations, six Python/status mutations and ASan/UBSan passed/caught expected
+failures. Static ARM64 build reproduced; qemu status/JSON smoke passed, not perf
+or performance qualification. CPU-accounting versus switch-timestamp discrepancy
+is reported/checked, not normalized away; host overhead is not ARM evidence.
+
+Next proposal: prepare guarded r4 deploy/collection, preview/new rollback before
+writes, run native timer/storage/cached/burst controls with <=20 ms observer CPU
+and zero loss, then ONE warm reboot and automatic qualified restoration. User
+approval is pending; nothing installed. Candidate sampler 7577ab68, manifest
+e198bdf8; qualified original hashes unchanged. Full details/results/limits:
+`local/recovery/2026-11-14-python-waits-r4/README.md`.
+
+## R4 native preflight halted/restored — 2026-11-14
+
+User authorized the revised warm test. Exact preview/new rollback preceded
+installation (backup python-waits-r4-2026-11-14). First native timer control
+used20.844958ms observer CPU, exceeding the fixed20ms budget. The failure path
+restored qualified files immediately. NO warm reboot/boot trace; storage, burst
+and cached native controls were not run. No retry/limit relaxation.
+
+Timer had47 switches, zero loss/rejections and valid switch/CPU coverage; CPU
+discrepancy0.420ms. This confirms basic native sideband delivery, not burst
+qualification or low enough overhead. Frequency varied480–1296MHz; do not
+attribute overhead solely to polling without further measurement.
+
+restored-health.txt verifies same boot7c9c1c7c, qualified session06ab1e7a,
+helper5d0dd84e, manifesta552c7f5, unit64d4ecd6, full bundle and original Python
+ExecStart; sampler/trace absent, running/no failed units/restarts/XRUNs. All
+four cmds gates unchanged; no fresh boot/audio qualification. Backups retained,
+no host power/kernel/module/commit/push action. Full outcome and follow-up
+proposal: local/recovery/2026-11-14-python-waits-r4/RESULT.md. Next proposed
+step is local observer-cost profiling/event-driven drains; not yet authorized.
