@@ -1,0 +1,75 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 15 Nov 2026 04:00:00 -0800
+Subject: [PATCH] soc: sunxi: cpu_comm: receive the ARM inbox by IRQ by default
+
+0199 kept RX IRQ reception opt-in because IRQ trials corrupted kernel
+memory. The cause was not the ARM driver: U-Boot's comm-trace markers
+stored through k0/k1 in task context, the display firmware's interrupt
+exit reloads k0/k1, and the faulting marker sent the firmware into its
+fatal dump, whose misaligned BadVAddr store recursed down physical DRAM.
+U-Boot 0006 moves the markers to t8/t9.
+
+With 0006, IRQ-only reception passed 6003 calls per boot (600 serial,
+4x150 concurrent, 8x600 serial) on a warm and a cold boot: 12006 RX
+messages by IRQ, none by polling, no firmware fault, no corruption.
+
+Make rx_irq default true. Because a pre-0006 bootloader would bring the
+corruption back, refuse IRQ mode, warn and poll whenever the firmware's
+otherwise-zero patch cave still holds any `lui k0` marker, or cannot be
+mapped. rx_irq=0 still selects polling explicitly.
+
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
+@@ -169,9 +169,41 @@ static atomic_t msgbox_rx_by_poll = ATOMIC_INIT(0);
+ #define H713_MSGBOX_TX_IRQ_STAT	0x134
+ #define H713_MSGBOX_RX_IRQ_BIT	BIT(2)	/* BIT(2*port), MIPS = port 1 */
+ 
+-static bool msgbox_use_irq;
++static bool msgbox_use_irq = true;
+ module_param_named(rx_irq, msgbox_use_irq, bool, 0444);
+-MODULE_PARM_DESC(rx_irq, "opt in to ARM-inbox RX IRQ trials (default false: polling)");
++MODULE_PARM_DESC(rx_irq, "receive the ARM inbox by IRQ (default true; false = hrtimer polling)");
++
++/*
++ * U-Boot before patch 0006 installed comm-trace markers that store through
++ * k0/k1 in task context. The display firmware's interrupt exit reloads k0/k1
++ * before eret, so dense RX interrupts make such a marker's store fault; the
++ * stock fatal dump then recurses down physical DRAM, corrupting Linux. Those
++ * markers live in the firmware's otherwise-zero patch cave, and 0006 leaves
++ * no `lui k0` there. Refuse IRQ mode while any is present: polling is safe
++ * with either bootloader. If the cave cannot be mapped, also poll.
++ */
++#define H713_FW_CAVE_PHYS	0x4b100300
++#define H713_FW_CAVE_SIZE	0x920
++#define H713_MIPS_LUI_K0	0x3c1a0000
++
++static bool cpu_comm_fw_kreg_markers(void)
++{
++	void __iomem *cave = ioremap(H713_FW_CAVE_PHYS, H713_FW_CAVE_SIZE);
++	unsigned int off, hits = 0;
++
++	if (!cave) {
++		pr_warn("cpu_comm: firmware patch cave unmapped; RX IRQ refused, polling\n");
++		return true;
++	}
++	for (off = 0; off < H713_FW_CAVE_SIZE; off += 4)
++		if ((readl(cave + off) & 0xffff0000) == H713_MIPS_LUI_K0)
++			hits++;
++	iounmap(cave);
++	if (hits)
++		pr_warn("cpu_comm: %u pre-0006 comm-trace marker(s) use k0/k1; RX IRQ refused, polling\n",
++			hits);
++	return hits;
++}
+ 
+ /* Successful IRQ mode has no polling timer or polling worker. */
+ module_param_named(rx_poll_active, msgbox_poll_active, bool, 0444);
+@@ -343,7 +375,7 @@ int cpu_comm_msgbox_request_irq(int irq, void *callback)
+ 	/* Only bank 0 / DT index 0 belongs to this ARM driver (SPI 46).
+ 	 * Request before enabling; do not clear any unrelated RX/TX status.
+ 	 */
+-	if (irq > 0 && msgbox_use_irq) {
++	if (irq > 0 && msgbox_use_irq && !cpu_comm_fw_kreg_markers()) {
+ 		ret = request_threaded_irq(irq, cpu_comm_msgbox_hardirq,
+ 					   cpu_comm_msgbox_thread,
+ 					   IRQF_ONESHOT | IRQF_SHARED,

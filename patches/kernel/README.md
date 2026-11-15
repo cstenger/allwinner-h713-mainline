@@ -349,3 +349,72 @@ and the full argument is in
 The afbd DT node drops back to three `reg` ranges, and the driver is built in
 (`CONFIG_DRM_SUN50I_H713_AFBD=y`), so deploying this needs a FIT flash and a
 cold boot — a module swap cannot carry it.
+
+## CPU_COMM interrupt follow-ups (November 14, 2026)
+
+**0198** adapts well0nez's stock-DT correction: CPU_COMM interrupt banks are
+SPI 46/109/108 in ARM/ARISC/MIPS order; watchdog is SPI 53. The register
+window remains 0x1000. Only DT index 0 belongs to this driver's RX endpoint;
+registering remote inbox lines can cause storms and steal ownership.
+
+**0199** retains our sleepable, ONESHOT threaded handler. It masks only the
+MIPS-to-ARM RX bit, drains in the thread, acknowledges that endpoint, and
+re-enables it without clearing other endpoints or TX status. IRQ reception
+remains opt-in with `rx_irq=true`; successful registration starts no polling timer. Explicit
+`rx_irq=false`, missing IRQ or registration failure selects polling.
+The attempted IRQ qualification failed concurrent/repeat testing, so the
+known polling path remains the default. Read-only module parameters `rx_irq_active`, `rx_poll_active`,
+`rx_messages_irq` and `rx_messages_poll` make fallback use observable.
+
+This pair requires deploying both the corrected FIT/DTB and matching
+`hy310-cpu-comm.ko`; a FIT-only change leaves the old polling driver active.
+The guarded bundle builder/installer support the exact DT change and
+baseline-reproduced CPU_COMM module in one backup/rollback transaction.
+[Validation and bench results](../../docs/reviews/well0nez-2026-11-14/cpu-comm-irqs.md).
+
+**0200** fixes shared-memory ownership and bounds defects uncovered before
+retrying IRQ reception: packed counters are claimed under a spinlock,
+peer references cannot escape the reserved mapping, slot index 20 is
+rejected, ACKs bind to the pending ARM session, and RETURN acknowledges
+before waking/recycling. The active-wait list lock excludes timeout cleanup
+while completion is in progress; opaque sender metadata retains all 64 bits.
+See [handoff regressions and board qualification](../../docs/reviews/well0nez-2026-11-14/cpu-comm-handoff.md).
+
+**0201** preserves a peer-owned send publication after CALL_ACK timeout and
+quarantines further sends with `-EPIPE` until clean firmware/driver startup.
+Queued callers and a pre-existing SENT publication are checked under the
+send semaphore. `tx_desynced` exposes the MIPS quarantine read-only.
+The matched polling/IRQ stall is associated with synchronous firmware
+UART log flushing; a timeout must not be treated as peer cancellation.
+
+**0202** corrects the firmware's shared spinlock ABI: byte 0 gates entry,
+byte 1 holds software ownership and byte 2 controls recursion policy.
+Hardware timeout never permits forced entry. Per-thread ownership and
+release ordering prevent ARM from corrupting a MIPS-held lock record.
+Source-derived peer-contention tests reproduce the old firmware assertion
+condition and validate the corrected arbitration.
+
+**0203** adds raw PC/LR/SP/ESR and initial argument registers to the first
+fatal arm64 fault record. The DDR3 IRQ fault repeatedly stopped reporting
+before the normal Oops register dump. This is diagnostic reporting only;
+IRQ corruption remains unresolved and IRQ reception remains default-off.
+
+**0204** adds an opt-in `arena_witness=1` diagnostic for the DDR3 bench.
+References the peer sees for the two driver-private arenas name a
+poison-filled window in the grown `hdmi-trace@4d980000` no-map
+reservation (256 KiB, first 4 KiB trace page kept). ARM still decodes them
+to the real local objects, and `arena_witness_status` reports any changed
+word. A build-time check requires both real arenas (9984-byte socket pair,
+119648-byte device state) plus guard pages to fit. A first 128 KiB version
+with a 64 KiB per-arena cap could not hold the device state and failed probe
+with -ENOSPC on hardware; its host test had used toy-sized arenas. This is
+a diagnostic, not a fix; IRQ reception remains default-off.
+
+**0205** makes ARM-inbox RX by IRQ the default (`rx_irq=1`; `rx_irq=0`
+still polls). The IRQ-mode corruption that kept 0199 opt-in came from U-Boot's
+k0/k1 comm-trace markers (fixed by U-Boot 0006), not from this driver. With
+0006, IRQ-only reception passed 6003 calls per boot on a warm and a cold boot
+(12006 IRQ RX, no polling, no fault). The driver refuses IRQ mode and polls
+whenever the firmware patch cave (0x4b100300..0x4b100c1f) still holds a
+pre-0006 `lui k0` marker or cannot be mapped, so a mismatched bootloader
+cannot reintroduce the corruption.

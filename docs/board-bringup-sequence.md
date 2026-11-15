@@ -288,6 +288,24 @@ Doorbell is `0x03003874`; the word written **is** the message type:
 `0 = CALL, 1 = RETURN, 2 = CALL_ACK, 3 = RETURN_ACK`. Ringing it requires
 pulsing `BIT(3)` in the msgbox TX IRQ enable (MIPS is port 1).
 
+### Receive interrupt mapping
+
+Stock firmware lists msgbox banks as **SPI 46/109/108** (ARM/ARISC/MIPS).
+The earlier single-SPI-21 DT entry was wrong; storm observations with GIC
+hwirq 53 describe that old mapping, not the ARM inbox. Patches **0198/0199**
+correct the DT and request only index 0, keeping remote inboxes unclaimed.
+The callback can sleep, so RX uses a threaded ONESHOT handler. Successful IRQ
+registration starts no polling timer. Since **0205** IRQ reception is the
+default (qualified on U-Boot 0006, warm and cold); `rx_irq=0`, a missing or
+failed registration, or a pre-0006 `lui k0` comm-trace marker in the firmware
+patch cave select polling. The read-only IRQ/poll counters distinguish
+these modes. See the [DDR3 validation](reviews/well0nez-2026-11-14/cpu-comm-irqs.md)
+for the initial results. The subsequent [handoff investigation](reviews/well0nez-2026-11-14/cpu-comm-handoff.md)
+reproduces the stall in a matched-length polling run and identifies synchronous
+firmware UART log flushing. Patches 0200/0201 guard wait/session ownership,
+shared-memory bounds and send reuse after timeout; final stress qualification
+is pending. Timeout does not revoke firmware ownership.
+
 ### Message lifecycle
 
 ```

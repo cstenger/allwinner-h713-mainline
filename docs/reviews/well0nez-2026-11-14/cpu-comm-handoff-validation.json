@@ -1,0 +1,282 @@
+{
+  "status": "256 KiB witness diagnostic ran: probe OK, no peer write observed; IRQ run ends in silent SoC reset after 1645 calls; board on normal 0202 polling",
+  "source_digest": "ec85ec36dc000a0fbafb1fbfeb26aff61d95176a7bb9347d2fe04f23f8b7246b",
+  "candidate": {
+    "schema": "h713-kernel-fit-v1",
+    "files": {
+      "h713-kernel.fit": "091cf636916d168664d60a47e9f6a13a682007c54b5a48db134b9e3314a19f54",
+      "h713-hdmi.cmd": "a9161a8641a3f0c4162f01f3ec07538cd16779cf4cb674fbcf2c38c217fb01e3",
+      "h713-hdmi.scr": "4c3495e2956dfa4b6d55c92f3fea7035580310a8a13ce431354a42483183e228",
+      "hy310-cpu-comm.ko": "abb731ff7b4137d15c7f8ef5423e088b44c0529e7b4bfe6a5cd6f96ac8ad32c2"
+    },
+    "baseline": {
+      "h713-kernel.fit": "22ee12d4bef763a6ee60e5c679e41262acfae19c2567b5c93abde3332e96cd83",
+      "h713-hdmi.cmd": "552e6574d0a0749212a5cf1ff813c1946e17244694374bfb137e6b0617c30869",
+      "h713-hdmi.scr": "79c039acb7e77087ec143f9f1214c877b5567a926f65c7a43a4b3a4ffc11badd",
+      "hy310-cpu-comm.ko": "8244df26b0b3a8ea1c2f2234f8d7a761b60cf1e045b440d5e8f008e6808f4352"
+    },
+    "sizes": {
+      "baseline_fit": 7613532,
+      "candidate_fit": 7613556,
+      "baseline_fdt": 34642,
+      "fdt": 34666
+    },
+    "checks": {
+      "module_symvers_equal": true,
+      "kernel_release_equal": true,
+      "config_diff": [],
+      "dtb_change": "cpu-comm-watchdog-irqs-only",
+      "cpu_comm_module_reproduced": true,
+      "cedrus_module_reproduced": false
+    },
+    "installer": "2259694ddc408622d0cc1789c2441f413698fe5a28ea2858a3f5c93e2005808f"
+  },
+  "host_tests": [
+    "production kernel and modules build",
+    "source-extracted semaphore/reference/completion/recycling/quarantine ASan+UBSan regressions",
+    "baseline semaphore/reference/slot-boundary failures reproduced",
+    "source-extracted IRQ ownership/mode/teardown regressions",
+    "0202 actual-source gate/owner arbitration, 3000 ARM/MIPS critical sections; baseline firmware assertion condition reproduced"
+  ],
+  "patches": {
+    "0200-soc-sunxi-cpu-comm-protect-wait-ownership-across-rx.patch": "c7f45f4752c0527e4d98ef77c5d83ae2a7127811ba1976390d2a256369848aeb",
+    "0201-soc-sunxi-cpu-comm-quarantine-sends-after-missing-ack.patch": "46df92f9f2166552c7f7de29d7a89707642a8f3cb8fd6fd212c2c4440969eb57",
+    "0202-soc-sunxi-cpu-comm-honor-firmware-spinlock-ownership.patch": "3ee776f1e70aade49c3fb32ba68ce3958cf91750645b43cfc5613da8573fcf38"
+  },
+  "hardware_0200": [
+    {
+      "mode": "polling",
+      "boot": "46d598d9-8fe1-4faa-a10d-46edf6313a80",
+      "calls_passed": 203,
+      "rx_poll": 406,
+      "rx_irq": 0
+    },
+    {
+      "mode": "irq",
+      "boot": "68f46015-0055-4b15-b9f8-e5020c87bb06",
+      "serial_passed": 203,
+      "concurrent_passed_before_timeout": 37,
+      "rx_irq": 481,
+      "rx_poll": 0,
+      "kernel_healthy": true
+    },
+    {
+      "mode": "polling matched-length",
+      "boot": "59a327f0-588a-424e-b746-d4b17f41c1a1",
+      "serial_passed": 203,
+      "concurrent": "stalled at approximately 240 cumulative calls",
+      "rx_poll": 482,
+      "kernel_healthy": true
+    }
+  ],
+  "interpretation": "Matched polling also stalls. Captured 2 MiB synchronous firmware UART log flush delays RETURN beyond timeout; no claim that old kernel corruption interleaving is uniquely established.",
+  "firmware_cli": "Native elog -l 2 verified against pinned firmware CLI in MIPS emulation; runtime readback and quiet stress still pending.",
+  "board_state": "Normal 0202 polling (FIT 091cf636, module abb731ff), boot 19e45dd2; IRQ override removed; 3 calls + no failed units",
+  "installation_backup": "/var/lib/h713-hdmi-startup/kernel-fit-787770fdceab411192a931dceabff979",
+  "hardware_0201": [
+    {
+      "boot": "b95e47b4-5194-4cd4-9bfd-53c8925f2dbb",
+      "mode": "polling",
+      "calls_passed": 3,
+      "rx_poll": 6,
+      "rx_irq": 0,
+      "failed_units": 0,
+      "tx_desynced": false,
+      "note": "Native elog -l 2 returned, ARM physical readback stayed5 (cached KSEG0 state not conclusive). Follow-up regr query lost SSH/UART before long test produced output. No IRQ run yet; SysRq failed, operator power-cycle requested."
+    },
+    {
+      "boot": "84835e4d-eba0-40c6-8a75-b46ea4991e5a",
+      "mode": "polling with native elog -l 2",
+      "serial_passed": 603,
+      "concurrent_requested": 600,
+      "concurrent_passed": 595,
+      "concurrent_return_timeouts": 2,
+      "parallel_clients_exit_codes": [
+        1,
+        0,
+        1,
+        0
+      ],
+      "rx_poll": 2398,
+      "rx_irq": 0,
+      "kernel_healthy": true,
+      "tx_desynced": false,
+      "elog_level_readback": 2,
+      "elog_write_count": "0x696cf",
+      "firmware_saved_context": "0x8b954450 contains assertion PC0x8b125a54 and tridspinlock.c line326 arguments",
+      "followup": "0202 fixes driver gate0/owner1 ABI mismatch, source-bound regression reproduces old conflict"
+    }
+  ],
+  "hardware_0202": [
+    {
+      "boot": "7528a362-acbd-485a-a205-ca41c7715ea9",
+      "mode": "polling",
+      "serial_passed": 603,
+      "concurrent_passed": 600,
+      "parallel_clients_exit_codes": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "rx_poll": 2406,
+      "rx_irq": 0,
+      "tx_desynced": false,
+      "elog_level": 2,
+      "elog_write_count": "0x69b79",
+      "failed_units": 0,
+      "transport_fault_warning_scan": "pass"
+    },
+    {
+      "mode": "irq",
+      "boot": "80cdc8dc-4931-4300-b63d-c2f8220ca714",
+      "initial_calls_passed": 3,
+      "initial_irq_rx": 6,
+      "initial_poll_rx": 0,
+      "long_serial": "failed, completions not retained on disk",
+      "kernel_fault": {
+        "uptime_s": 38.790472,
+        "address": "0015bd448baa0000"
+      },
+      "recovery": "automatic restart"
+    },
+    {
+      "mode": "irq null wait pointer",
+      "boot": "528704e1-bbfe-4a0d-8766-bcdc45c1e497",
+      "zero_wait_ptr": true,
+      "initial_calls_passed": 3,
+      "initial_irq_rx": 6,
+      "initial_poll_rx": 0,
+      "long_serial": "lost SSH/UART, completions not retained",
+      "recovery": "operator cold-cycle after serial SysRq failed"
+    },
+    {
+      "mode": "polling recovery",
+      "boot": "91014151-62a2-4b45-8fcd-a4110bb96b67",
+      "calls_passed": 3,
+      "rx_poll": 6,
+      "rx_irq": 0,
+      "startup_check": "PASS",
+      "irq_override": "removed"
+    },
+    {
+      "mode": "IRQ with SLUB FZPU and oops=panic",
+      "boot": "adfc7177-cdb7-4fb9-b994-7e11b9fca4a5",
+      "temporary_startup_files_restored_before_calls": true,
+      "irq_override_removed_before_calls": true,
+      "serial_passed": 600,
+      "parallel_passed": 600,
+      "parallel_exit_codes": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "rx_irq_after_first_1200_calls": 2400,
+      "rx_poll": 0,
+      "additional_serial_passed_before_failure": 837,
+      "total_completed_calls_before_failure": 2037,
+      "kernel_fault": {
+        "uptime_s": 102.321313,
+        "address": "0015bd448baa0018"
+      },
+      "allocator_report_before_fault": "none captured",
+      "note": "Full UART stops after first fault-address line. Host streaming retains all counted completions. No IRQ qualification."
+    }
+  ],
+  "early_frame_diagnostic": {
+    "status": "trial failed through init segfault/panic after12 calls; no die_kernel_fault register record triggered",
+    "source_digest": "f2713e1932c47afb66fc8a040e0558fd20fc8e067e32eabef72ca1ddeef8de90",
+    "patch_sha256": "c0a173db19ec2081e0b9e40428d88171c8ff5e65cf9483d843f9b8dda860d19e",
+    "bundle": {
+      "schema": "h713-kernel-fit-v1",
+      "files": {
+        "h713-kernel.fit": "ae2ea2558e90b9a12a01af5bf0f32b398c63928e5e933a815d3869311fd9799c",
+        "h713-hdmi.cmd": "40674d74c9357976a7846ed337f4b9240e75f0b727a760b3c2ea2233aad4ef72",
+        "h713-hdmi.scr": "483b42727de9132fe664c804d457777c9f12ac7161e9e3590e44cdedae3f4212"
+      },
+      "baseline": {
+        "h713-kernel.fit": "091cf636916d168664d60a47e9f6a13a682007c54b5a48db134b9e3314a19f54",
+        "h713-hdmi.cmd": "a9161a8641a3f0c4162f01f3ec07538cd16779cf4cb674fbcf2c38c217fb01e3",
+        "h713-hdmi.scr": "4c3495e2956dfa4b6d55c92f3fea7035580310a8a13ce431354a42483183e228"
+      },
+      "sizes": {
+        "baseline_fit": 7613556,
+        "candidate_fit": 7613640,
+        "baseline_fdt": 34666,
+        "fdt": 34666
+      },
+      "checks": {
+        "module_symvers_equal": true,
+        "kernel_release_equal": true,
+        "config_diff": [],
+        "dtb_change": "none",
+        "cpu_comm_module_reproduced": false,
+        "cedrus_module_reproduced": false
+      },
+      "installer": "e486273d6f40909e9dee82792f8c25020c9d8c7c3151753d5a4d13e9c6dfd0e3"
+    },
+    "cpu_comm_module_unchanged": "abb731ff7b4137d15c7f8ef5423e088b44c0529e7b4bfe6a5cd6f96ac8ad32c2",
+    "installation_backup": "/var/lib/h713-hdmi-startup/kernel-fit-42cc97891e8047d69224219117f46ff3",
+    "boot": "f96d7136-d992-4e28-abf5-64c932ad712f",
+    "completed_calls": 12,
+    "panic_uptime_s": 63.801007,
+    "panic": "Attempted to kill init! exitcode=0x0000008b; trace get_signal/el0_undef",
+    "recovery": "automatic restart into restored0202 polling"
+  },
+  "witness_diagnostic": {
+    "v1_128k": {
+      "bundle_fit": "d37b6a918a080d64b07c572e41df559d634cd1c9ddbf0fbe1a92c12d3e1f18cd",
+      "installed": true,
+      "boot": "c02ca457-6641-4457-b018-7cbee96f5f87",
+      "result": "probe -ENOSPC: CPU_COMM_DEV_SIZE 119648 B exceeds 64 KiB cap and 124 KiB window; host test used 96-byte arenas",
+      "rolled_back_to": "0202 via kernel-fit-442c8eec8f344c6a89ec9b4cd3b4f4df"
+    },
+    "v2_256k": {
+      "reservation": "0x4d980000 0x40000 no-map",
+      "bundle": {
+        "h713-kernel.fit": "7f1869243297518d6b60058f4233c69bf2f00e5943ec60ae3f65e6e02be0c89e",
+        "h713-hdmi.cmd": "672d1bacf92771a5b7ace4ca8ba6032c85680a205b37d1401bac56726e92f575",
+        "h713-hdmi.scr": "217f4a73bee02953cd5ead0facf1365ca5af01ae6b4f4e69e6f46647f5aaf236",
+        "hy310-cpu-comm.ko": "65556df33ec8279d6b52e033bc8a64118207f501106c1ad20d38f84ae442a2e7"
+      },
+      "host_tests": [
+        "real-size arena registration in probe order (sizes read from cpu_comm.h)",
+        "128 KiB variant fails old source at device-state registration",
+        "8 bundle-builder tests with 0x40000 guard"
+      ],
+      "boot": "db484cbe-105f-4265-972a-9df4c7c058e8",
+      "arenas": [
+        {
+          "token": "0x4d982000",
+          "bytes": 9984
+        },
+        {
+          "token": "0x4d987000",
+          "bytes": 119648
+        }
+      ],
+      "normal_files_restored_before_calls": true,
+      "elog_level": 2,
+      "control_calls": 3,
+      "serial_passed": 600,
+      "parallel_passed": 600,
+      "second_serial_passed_before_reset": 442,
+      "total_completed": 1645,
+      "witness_changed_words": 0,
+      "failure": {
+        "type": "silent SoC reset",
+        "uptime_s_approx": 180,
+        "kernel_fault_text": "none",
+        "linux_watchdog_device": "none"
+      },
+      "recovery": {
+        "boot": "19e45dd2-f958-4991-bd8a-bc52c3113c15",
+        "mode": "polling",
+        "calls_passed": 3,
+        "failed_units": 0,
+        "module": "abb731ff7b4137d15c7f8ef5423e088b44c0529e7b4bfe6a5cd6f96ac8ad32c2"
+      }
+    }
+  }
+}

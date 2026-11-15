@@ -1,0 +1,56 @@
+{
+  "status": "IRQ qualification FAILED; review keeps polling default; original installed pair restored",
+  "production_build": "PASS",
+  "host_tests": {
+    "bundle": 7,
+    "installer": 15,
+    "extracted_helpers": "PASS ASan/UBSan (leak checker disabled for sandbox ptrace restriction)",
+    "both_compiled_dtbs": "PASS exact CPU_COMM/watchdog IRQ-only change"
+  },
+  "patches": {
+    "0198-arm64-dts-h713-correct-msgbox-and-watchdog-irqs.patch": "6a88e19382d36dbea4213bc799a60ac5ab489a9c7c445090dea5d36d6ccc26f1",
+    "0199-soc-sunxi-cpu-comm-use-owned-threaded-rx-irq.patch": "6ba52cfc854f3a2216590db9f0c76ba49f0c4e289fbf668ad951f8a7147f0505"
+  },
+  "review_bundle_not_installed": {
+    "schema": "h713-kernel-fit-v1",
+    "files": {
+      "h713-kernel.fit": "091cf636916d168664d60a47e9f6a13a682007c54b5a48db134b9e3314a19f54",
+      "h713-hdmi.cmd": "a9161a8641a3f0c4162f01f3ec07538cd16779cf4cb674fbcf2c38c217fb01e3",
+      "h713-hdmi.scr": "4c3495e2956dfa4b6d55c92f3fea7035580310a8a13ce431354a42483183e228",
+      "hy310-cpu-comm.ko": "22c5667621fd0b3d3bcb10d87471c34a3fbd5d9118323c057ee795e84b39fab3"
+    },
+    "baseline": {
+      "h713-kernel.fit": "22ee12d4bef763a6ee60e5c679e41262acfae19c2567b5c93abde3332e96cd83",
+      "h713-hdmi.cmd": "552e6574d0a0749212a5cf1ff813c1946e17244694374bfb137e6b0617c30869",
+      "h713-hdmi.scr": "79c039acb7e77087ec143f9f1214c877b5567a926f65c7a43a4b3a4ffc11badd",
+      "hy310-cpu-comm.ko": "8244df26b0b3a8ea1c2f2234f8d7a761b60cf1e045b440d5e8f008e6808f4352"
+    },
+    "sizes": {
+      "baseline_fit": 7613532,
+      "candidate_fit": 7613556,
+      "baseline_fdt": 34642,
+      "fdt": 34666
+    },
+    "checks": {
+      "module_symvers_equal": true,
+      "kernel_release_equal": true,
+      "config_diff": [],
+      "dtb_change": "cpu-comm-watchdog-irqs-only",
+      "cpu_comm_module_reproduced": true,
+      "cedrus_module_reproduced": false
+    },
+    "installer": "2259694ddc408622d0cc1789c2441f413698fe5a28ea2858a3f5c93e2005808f"
+  },
+  "irq_trial_module_preliminary": "3a7576084ac22994ef518d420230657e6ab8f46f66cd38653f9ddb5e8c3b96b3",
+  "irq_trial_module_repeat_and_polling_comparison": "4a2bdb1d6d883dd6604c5839ecf5c22e876f7ac58f1ebb3449ca90f982b37401",
+  "restored_boot": "dbe874ad-94f7-4472-8402-51b1235a18b4",
+  "restored_hashes": {
+    "h713-kernel.fit": "22ee12d4bef763a6ee60e5c679e41262acfae19c2567b5c93abde3332e96cd83",
+    "h713-hdmi.cmd": "552e6574d0a0749212a5cf1ff813c1946e17244694374bfb137e6b0617c30869",
+    "h713-hdmi.scr": "79c039acb7e77087ec143f9f1214c877b5567a926f65c7a43a4b3a4ffc11badd",
+    "hy310-cpu-comm.ko": "8244df26b0b3a8ea1c2f2234f8d7a761b60cf1e045b440d5e8f008e6808f4352"
+  },
+  "cedrus_unchanged": "1c8c87bae78ad6fce0522faa89b37d02bda511af1535b669dcb655a85ce0d3f2",
+  "saved_environment_unchanged": "e6a56d4c6f2703c9360c29da4d1e1aec2d35bafd57bc6ca8232896e0296bc3ab",
+  "final_ssd": "No /dev/sda present after operator power cycle; no SSD writes; no USB requalification"
+}

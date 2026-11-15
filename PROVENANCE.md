@@ -32,6 +32,19 @@ well0nez's 0330 and regenerated for our 6.18.38 context with upstream
 authorship and trailers preserved. See the
 [integration record](docs/reviews/well0nez-2026-11-14/integration.md).
 
+The subsequent CPU_COMM **0198** adapts well0nez's 0024d stock-msgbox/watchdog
+IRQ correction. **0199** adapts the bank-ownership reasoning from their
+0014b/0014c to our existing single-bank, sleepable threaded callback, adds
+IRQ-only operation and observable IRQ/poll counters, and retains polling as
+an explicit opt-out or registration fallback. Pinned source links are in
+both patches; the threaded-handler implementation is marked as our work.
+
+**0200** is our follow-up ownership/bounds fix after the DDR3 IRQ trial:
+serialized packed semaphore claims, bounded reference translation, correct
+20-slot/21-entry distinction, session-bound ACK completion and ACK-before-wake
+RETURN handling. The [handoff investigation](docs/reviews/well0nez-2026-11-14/cpu-comm-handoff.md)
+records source regressions and hardware results separately from attribution.
+
 ## VA-API shim patches (`patches/libva-v4l2-request/`)
 
 [bootlin/libva-v4l2-request](https://github.com/bootlin/libva-v4l2-request),
@@ -53,3 +66,26 @@ commit and why `master` is the wrong starting point.
 
 Built with LLVM (clang / ld.lld) — no aarch64 GCC required. Verified host-tool
 versions are recorded in `config/toolchain.md`.
+
+Patch **0201** is our CPU_COMM send-ownership guard, derived from inspection
+of the existing driver and local DDR3 firmware logging/timeout captures.
+It preserves an outstanding peer-owned publication after missing CALL_ACK
+and refuses reuse. No firmware code or proprietary captures are included.
+
+Patch **0202** is our shared-spinlock ABI reconstruction from the pinned
+local firmware's `tridspinlock.c` code and the quiet DDR3 failure context.
+It is not copied from well0nez's tree. Only the GPL driver fix and a host
+regression are published; firmware bytes and raw context stay local.
+
+After developing and testing 0202 against our pinned firmware, comparison
+with well0nez's pinned tree found matching independent gate/owner analysis
+in [0259](https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0259-soc-sunxi-cpu_comm-the-software-spinlocks-as-the-vendor-and-the-firmware-run-them.patch).
+Their [0261](https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0261-soc-sunxi-cpu_comm-the-thread-word-of-a-held-lock-must-not-read-as-free.patch)
+also documents the reserved low-byte thread sentinel. These are relevant
+prior analyses; 0202 was not copied from their implementation. Our original
+pid-based unlock avoids their whole-word-255 rejection, but further protocol
+review should consider a separately encoded ARM thread token.
+
+Patch **0203** is our arm64 fatal-fault reporting diagnostic, motivated by
+DDR3 CPU_COMM captures that stop after the first fault-address record.
+It adds no protocol behavior and is not a corruption fix.
