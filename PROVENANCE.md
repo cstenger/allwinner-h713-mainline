@@ -23,6 +23,15 @@ board-mgr, cpu-comm, tvtop, decd, cedrus, …) originates from **well0nez**
 defconfig, the `SUN20I_D1_R_CCU` arm64 Kconfig enablement) are marked as such
 in the series.
 
+The November 14 follow-ups **0191–0194 and 0196–0197** come from well0nez's
+tree at `149f51d0df24c45b12674c81aab128b1fc8f5d4b` (their 0317, 0005a,
+0143/0144, 0309 and 0316). Each records the pinned source in `Link:`;
+the PIO fix omits a comment already corrected here. **0195** is Pengpeng
+Hou's upstream HEVC count validation (`afbe4bc252d9`), backported through
+well0nez's 0330 and regenerated for our 6.18.38 context with upstream
+authorship and trailers preserved. See the
+[integration record](docs/reviews/well0nez-2026-11-14/integration.md).
+
 ## VA-API shim patches (`patches/libva-v4l2-request/`)
 
 [bootlin/libva-v4l2-request](https://github.com/bootlin/libva-v4l2-request),

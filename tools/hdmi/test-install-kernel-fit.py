@@ -22,6 +22,41 @@ NEW = {'h713-kernel.fit': b'new fit'*90, 'h713-hdmi.cmd': b'new cmd', 'h713-hdmi
 
 
 class KernelFit(unittest.TestCase):
+    def with_cedrus(self):
+        p = self.root/m.CEDRUS;p.parent.mkdir(parents=True);p.write_bytes(b'old cedrus')
+        (self.bundle/'sunxi-cedrus.ko').write_bytes(b'new cedrus')
+        self.manifest['files']['sunxi-cedrus.ko'] = sha(b'new cedrus')
+        self.manifest['baseline']['sunxi-cedrus.ko'] = sha(b'old cedrus')
+        self.manifest['checks']['cedrus_module_reproduced'] = True
+        (self.bundle/'manifest.json').write_text(json.dumps(self.manifest))
+
+    def test_cedrus_is_paired_and_rolls_back(self):
+        self.with_cedrus();before = self.files()
+        self.assertEqual(self.run_()['state'], 'baseline');self.assertEqual(self.files(), before)
+        r = self.run_(True)
+        self.assertEqual((self.root/m.CEDRUS).read_bytes(), b'new cedrus')
+        self.run_(True, rollback=Path(r['backup']))
+        self.assertEqual((self.root/m.CEDRUS).read_bytes(), b'old cedrus')
+
+    def test_cedrus_failure_restores_fit_script_and_module(self):
+        self.with_cedrus();before = self.files();real = os.replace
+        def fail(src, dst):
+            if str(dst).endswith(m.FAT+'/h713-hdmi.scr') and str(src).endswith(m.SUFFIX):
+                raise OSError('injected script activation failure')
+            return real(src, dst)
+        with patch.object(m.os, 'replace', fail), self.assertRaises(OSError): self.run_(True)
+        self.assertEqual({k:v for k,v in self.files().items() if not k.startswith(m.STATE)}, before)
+
+    def test_cedrus_drift_or_unchecked_baseline_refused(self):
+        self.with_cedrus();(self.root/m.CEDRUS).write_bytes(b'foreign')
+        before = self.files()
+        with self.assertRaisesRegex(RuntimeError, 'copies disagree'): self.run_(True)
+        self.assertEqual(self.files(), before)
+        (self.root/m.CEDRUS).write_bytes(b'old cedrus')
+        self.manifest['checks']['cedrus_module_reproduced'] = False
+        (self.bundle/'manifest.json').write_text(json.dumps(self.manifest))
+        with self.assertRaisesRegex(RuntimeError, 'Cedrus baseline checks'): self.run_(True)
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)/'root';self.bundle = Path(temp.name)/'bundle'

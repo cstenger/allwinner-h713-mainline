@@ -32,6 +32,47 @@ the 32-bit port also builds on arm64. Six were adapted from their original
 | 0021 | media: sunxi-cir H713 vendor init |
 | 0022 | staging: cedrus H713 VE3 clock/reset |
 
+## November 14 follow-ups from well0nez
+
+Patches **0191–0197** integrate focused fixes reviewed from
+[`well0nez/allwinner-h713-linux` at `149f51d0`](https://github.com/well0nez/allwinner-h713-linux/tree/149f51d0df24c45b12674c81aab128b1fc8f5d4b).
+Each patch retains its author and records the exact source in `Link:`.
+0195 is Pengpeng Hou's upstream V4L2 fix, backported through well0nez's
+0330 with its original upstream attribution and trailers retained.
+
+| Patch | Change |
+| --- | --- |
+| 0191 | Save only VP9 tx/skip probabilities, reducing the temporary to 15 bytes |
+| 0192 | Clear HCI SIDDQ in Linux rather than relying on U-Boot USB initialization |
+| 0193–0194 | Index PIO parent interrupts by IRQ-bank order, then list the seven actual bank IRQs |
+| 0195 | Validate HEVC L0/L1 active counts in the V4L2 core; retain its missing-reference sentinel policy |
+| 0196–0197 | Reject Cedrus HEVC references with invalid indices, missing buffers/MV allocations, or out-of-range collocated references before enabling the engine |
+
+The core accepts missing-reference sentinels for other decoders' concealment
+policies; Cedrus refuses a job it cannot safely execute. Buffer allocation is
+not proof of a successful earlier decode. These guards prevent invalid
+indexing and missing MV-buffer access; they do not add decoded-picture
+provenance tracking or general damaged-stream recovery.
+
+The pinctrl patch omits well0nez 0143's separate comment change because our
+0171 already corrected that comment and the IRQ mux. The V4L2 core diff was
+regenerated for 6.18.38, without the newer HEVC extended-SPS context.
+
+Run the source-bound host checks after building the selected kernel and DTBs:
+
+```sh
+python3 tools/video/test-kernel-followups.py \
+  --kernel "$(tools/build/build.sh kernel-tree)" -v
+```
+
+Use the same `H713_BUILD_DIR` and `KERNEL_CONFIG` as the build. The tests use
+ASan/UBSan for extracted real HEVC/VP9 helpers, exercise boundary and invalid
+inputs, check four deliberate regressions are caught, and inspect both
+compiled DTBs. They do not validate hardware decode or interrupt/PHY delivery.
+
+See [the integration results](../../docs/reviews/well0nez-2026-11-14/integration.md)
+for build provenance, checks, and remaining board tests.
+
 ## Our arm64 additions
 
 - **`board/hy200_qz713df_a1_defconfig`** — the bench arm64 defconfig (base

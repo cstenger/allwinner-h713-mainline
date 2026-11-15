@@ -10,8 +10,13 @@ from the installed sources and the candidate with the change. Refused unless:
     source-only change),
   - Module.symvers and the kernel release are identical (the installed
     out-of-tree and in-tree modules keep loading),
-  - the board DTB is identical, and
+  - the board DTB is identical (or --pio-irq-fix permits exactly the
+    SPI 54..62 to SPI 54..60 parent-interrupt correction), and
   - the baseline script reproduces the installed startup script.
+
+--installed-cedrus also packages the changed in-tree decoder module, after its
+baseline rebuild matches the supplied installed SHA-256. It is then backed up,
+staged and rolled back with the FIT/script by the installer.
 
 --rustc-probe-transition is for the first bundle after build.sh stopped
 letting host rustc into .config (2026-11-09). FITs installed before it embed
@@ -26,6 +31,8 @@ import importlib.util
 import json
 import re
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +41,7 @@ INSTALLED_FIT = '9d49630823d0d8636fc192cb4db7b000dbbf57f30361ee845e9e2fe517675ca
 INSTALLED_CMD = '2dd9adb1bdd42a9325b429abfad68aabea3330f4012fe0a10a872896718c7b0b'
 INSTALLED_SCR = '4c2453a4ee311bc8cec1b069cf078ce3d471172c87157fdfb1f4d9150f1c02d8'
 DTB = 'sun50i-h713-hy200-qz713df-a1.dtb'
+CEDRUS = 'drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko'
 # What rustc 1.99 (installed kernels up to 2026-11-09) wrote into .config.
 RUSTC_PROBE_SYMBOLS = {
     'CONFIG_RUSTC_VERSION': ('109900', '0'), 'CONFIG_RUSTC_LLVM_VERSION': ('230101', '0'),
@@ -64,7 +72,29 @@ def config(path):
     return out
 
 
-def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=False):
+def check_pio_irq_dtb(baseline, candidate):
+    """Permit exactly the nine-to-seven PIO parent IRQ correction, nothing else."""
+    node = '/soc/pinctrl@2000000'
+    with tempfile.TemporaryDirectory(prefix='h713-pio-dtb-') as directory:
+        old, new = (Path(directory)/name for name in ('old.dtb', 'new.dtb'))
+        old.write_bytes(baseline); new.write_bytes(candidate)
+        def irqs(path):
+            run = subprocess.run(['fdtget', '-t', 'u', str(path), node, 'interrupts'],
+                                 capture_output=True, text=True)
+            need(run.returncode == 0, 'cannot read PIO interrupt property: '+run.stderr)
+            return [int(n) for n in run.stdout.split()]
+        expected = lambda end: [n for spi in range(54, end) for n in (0, spi, 4)]
+        need(irqs(old) == expected(63), 'baseline PIO interrupts are not SPI 54..62')
+        need(irqs(new) == expected(61), 'candidate PIO interrupts are not SPI 54..60')
+        subprocess.run(['fdtput', '-t', 'i', str(old), node, 'interrupts',
+                        *map(str, expected(61))], check=True, capture_output=True)
+        def canonical(path):
+            return subprocess.check_output(['dtc', '-q', '-s', '-I', 'dtb', '-O', 'dts', str(path)])
+        need(canonical(old) == canonical(new), 'DTB differs outside the PIO interrupt correction')
+
+
+def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=False,
+          pio_irq_fix=False):
     bt, ct = tree(baseline), tree(candidate)
     bfit = (baseline/'build/out/h713-kernel-production.fit').read_bytes()
     cfit = (candidate/'build/out/h713-kernel-production.fit').read_bytes()
@@ -82,7 +112,10 @@ def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=Fa
     release = lambda t: (t/'include/config/kernel.release').read_text()
     need(release(bt) == release(ct), 'kernel release differs')
     bdtb, cdtb = ((w/'build/out'/DTB).read_bytes() for w in (baseline, candidate))
-    need(bdtb == cdtb, 'board DTB differs')
+    if pio_irq_fix:
+        check_pio_irq_dtb(bdtb, cdtb)
+    else:
+        need(bdtb == cdtb, 'board DTB differs')
     return bfit, cfit, bdtb
 
 
@@ -98,26 +131,43 @@ def main():
                    help='a CONFIG_ symbol the candidate is meant to change (repeat)')
     p.add_argument('--rustc-probe-transition', action='store_true',
                    help='baseline built with H713_KERNEL_RUSTC (rustc 1.99), candidate without')
+    p.add_argument('--pio-irq-fix', action='store_true',
+                   help='allow only the H713 PIO interrupt-list correction from nine banks to seven')
+    p.add_argument('--installed-cedrus',
+                   help='also package Cedrus; require this installed SHA-256 to match its baseline rebuild')
     a = p.parse_args()
-    bfit, cfit, dtb = check(a.baseline, a.candidate, a.installed_fit, a.config_diff, a.rustc_probe_transition)
+    bfit, cfit, bdtb = check(a.baseline, a.candidate, a.installed_fit, a.config_diff,
+                           a.rustc_probe_transition, a.pio_irq_fix)
+    cdtb = (a.candidate/'build/out'/DTB).read_bytes()
     if a.rustc_probe_transition: a.config_diff += list(RUSTC_PROBE_SYMBOLS)
     spec = importlib.util.spec_from_file_location('startup', ROOT/'tools/hdmi/build-startup.py')
     st = importlib.util.module_from_spec(spec);spec.loader.exec_module(st)
-    old = st.script(fit_size=len(bfit), fdt_size=len(dtb)).encode()
-    new = st.script(fit_size=len(cfit), fdt_size=len(dtb)).encode()
+    old = st.script(fit_size=len(bfit), fdt_size=len(bdtb)).encode()
+    new = st.script(fit_size=len(cfit), fdt_size=len(cdtb)).encode()
     need(sha(old) == a.installed_cmd and sha(st.legacy_image(old)) == a.installed_scr,
          'baseline script does not reproduce the installed script')
     a.output.mkdir(parents=True, exist_ok=False)
     files = {'h713-kernel.fit': cfit, 'h713-hdmi.cmd': new, 'h713-hdmi.scr': st.legacy_image(new)}
+    module_baseline = {}
+    if a.installed_cedrus:
+        old_module = (tree(a.baseline)/CEDRUS).read_bytes()
+        new_module = (tree(a.candidate)/CEDRUS).read_bytes()
+        need(sha(old_module) == a.installed_cedrus, 'baseline Cedrus does not reproduce the installed module')
+        need(new_module != old_module, 'candidate Cedrus equals baseline')
+        files['sunxi-cedrus.ko'] = new_module
+        module_baseline['sunxi-cedrus.ko'] = a.installed_cedrus
     for name, data in files.items(): (a.output/name).write_bytes(data)
     shutil.copy(ROOT/'tools/hdmi/install-kernel-fit.py', a.output/'install-kernel-fit.py')
     manifest = dict(schema='h713-kernel-fit-v1',
                     files={n: sha(d) for n, d in files.items()},
                     baseline={'h713-kernel.fit': a.installed_fit, 'h713-hdmi.cmd': a.installed_cmd,
-                              'h713-hdmi.scr': a.installed_scr},
-                    sizes=dict(baseline_fit=len(bfit), candidate_fit=len(cfit), fdt=len(dtb)),
+                              'h713-hdmi.scr': a.installed_scr, **module_baseline},
+                    sizes=dict(baseline_fit=len(bfit), candidate_fit=len(cfit),
+                               baseline_fdt=len(bdtb), fdt=len(cdtb)),
                     checks={'module_symvers_equal': True, 'kernel_release_equal': True,
-                            'config_diff': sorted(a.config_diff)},
+                            'config_diff': sorted(a.config_diff),
+                            'dtb_change': 'pio-spi-54-60-only' if a.pio_irq_fix else 'none',
+                            'cedrus_module_reproduced': bool(a.installed_cedrus)},
                     installer=sha((a.output/'install-kernel-fit.py').read_bytes()))
     (a.output/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     print(json.dumps(manifest, indent=2))

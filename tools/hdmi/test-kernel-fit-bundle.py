@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 
 spec = importlib.util.spec_from_file_location('bundle', Path(__file__).with_name('build-kernel-fit-bundle.py'))
@@ -28,6 +29,20 @@ def work(root, name, config, fit):
 
 
 class Bundle(unittest.TestCase):
+    def dtb(self, end=63, extra=''):
+        values = ' '.join(str(n) for spi in range(54, end) for n in (0, spi, 4))
+        source = '/dts-v1/; / { model = "bench"; soc { pinctrl@2000000 { interrupts = <'+values+'>; '+extra+' }; }; };'
+        return subprocess.check_output(['dtc', '-q', '-I', 'dts', '-O', 'dtb'], input=source.encode())
+
+    def test_pio_irq_change_is_narrow(self):
+        b.check_pio_irq_dtb(self.dtb(), self.dtb(61))
+        for old, new in ((self.dtb(62), self.dtb(61)),
+                         (self.dtb(), self.dtb(62)),
+                         (self.dtb(), self.dtb(61, 'status = "disabled";')),
+                         (self.dtb(), b'not a dtb')):
+            with self.subTest(old=hashlib.sha256(old).hexdigest(), new=hashlib.sha256(new).hexdigest()):
+                with self.assertRaises(SystemExit): b.check_pio_irq_dtb(old, new)
+
     def check(self, base_config, cand_config, **kw):
         with tempfile.TemporaryDirectory() as d:
             base = work(d, 'base', base_config, b'old'); cand = work(d, 'cand', cand_config, b'new')

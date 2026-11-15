@@ -10,9 +10,11 @@ The startup script refuses any FIT whose size differs from the one it pins
   4. rename the FIT, then the script (the only window where the pair is
      mismatched is between these two renames), sync, verify every copy.
 
+An optional, baseline-reproduced sunxi-cedrus.ko is replaced on disk before the
+FAT activation pair and included in the same backup/readback/rollback scope.
 Any failure restores every original. Preview by default; --apply installs;
---rollback BACKUP restores exactly. No reboot, service, module, proper or RTC
-operation; the caller owns the boot. Out-of-tree modules are not touched: the
+--rollback BACKUP restores exactly. No reboot, service, live module reload,
+proper or RTC operation; the caller owns the boot. Out-of-tree modules are not touched: the
 bundle builder refuses a candidate whose Module.symvers or release differs.
 """
 import argparse
@@ -32,6 +34,7 @@ SCRIPT_NAMES = ('h713-hdmi.cmd', 'h713-hdmi.scr')
 PREFIX = 'kernel-fit-'
 SUFFIX = '.kfit-new'
 SCHEMA = 'h713-kernel-fit-v1'
+CEDRUS = 'usr/lib/modules/6.18.38/kernel/drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko'
 
 
 def sha(data): return hashlib.sha256(data).hexdigest()
@@ -100,14 +103,19 @@ def load_bundle(bundle):
     checks = m.get('checks', {})
     need(checks.get('module_symvers_equal') is True and checks.get('kernel_release_equal') is True
          and isinstance(checks.get('config_diff'), list), 'bundle checks missing')
+    if 'sunxi-cedrus.ko' in m['files']:
+        need(checks.get('cedrus_module_reproduced') is True
+             and 'sunxi-cedrus.ko' in m['baseline'], 'Cedrus baseline checks missing')
     return m
 
 
-def targets(root):
+def targets(root, manifest=None):
     """Every file the transaction owns, FAT activation pair last (FIT, then script)."""
     files = []
     for b in BUNDLES:
         files += [b+'/'+n for n in SCRIPT_NAMES]+[b+'/SHA256SUMS']
+    if manifest and 'sunxi-cedrus.ko' in manifest['files']:
+        files += [CEDRUS]
     return files+[FAT+'/h713-kernel.fit', FAT+'/h713-hdmi.scr']
 
 
@@ -132,7 +140,7 @@ def state(root, m):
         listed = sums(under(root, b+'/SHA256SUMS').read_bytes())
         for name, digest in listed.items():
             need(sha(under(root, b+'/'+name).read_bytes()) == digest, 'manifest mismatch: '+b+'/'+name)
-    for rel in targets(root):
+    for rel in targets(root, m):
         k = kind(rel)
         if k == 'SHA256SUMS': continue
         digest = sha(under(root, rel).read_bytes())
@@ -161,9 +169,9 @@ def identity(root, boot):
     for d in (STATE, FAT, *BUNDLES): need(under(root, d).is_dir(), 'missing directory: '+d)
 
 
-def apply_files(root, wanted, originals):
+def apply_files(root, wanted, originals, manifest=None):
     """Write wanted{rel: data}: bundle copies, then stage+rename FIT, then script."""
-    order = targets(root)
+    order = targets(root, manifest)
     fat = [r for r in order if r.startswith(FAT+'/')]
     try:
         for rel in order:
@@ -195,27 +203,29 @@ def run(root, bundle, boot, apply=False, rollback=None):
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         need(not list(under(root, STATE).glob('*/INCOMPLETE')), 'unfinished transaction exists')
-        for rel in targets(root):
+        for rel in targets(root, m):
             p = under(root, rel);need(not p.with_name(p.name+SUFFIX).exists(), 'staged file left: '+rel)
         now = state(root, m)
         want_from, want_to = ('candidate', 'baseline') if rollback else ('baseline', 'candidate')
         need(now == want_from, 'installed pair is '+now+', expected '+want_from)
-        originals = {rel: under(root, rel).read_bytes() for rel in targets(root)}
+        originals = {rel: under(root, rel).read_bytes() for rel in targets(root, m)}
         if rollback:
             old = Path(rollback)
             need(old.parent == under(root, STATE) and old.name.startswith(PREFIX) and not old.is_symlink(),
                  'invalid backup')
             need((old/'COMMITTED').exists(), 'backup is not a committed install')
             index = json.loads((old/'files.json').read_text())
-            need(sorted(index) == sorted(targets(root)), 'backup scope differs')
-            wanted = {rel: (old/index[rel]).read_bytes() for rel in targets(root)}
+            need(sorted(index) == sorted(targets(root, m)), 'backup scope differs')
+            wanted = {rel: (old/index[rel]).read_bytes() for rel in targets(root, m)}
             for rel, data in wanted.items():
                 k = kind(rel)
                 if k != 'SHA256SUMS': need(sha(data) == m['baseline'][k], 'backup is not the baseline: '+rel)
         else:
-            data = {k: (bundle/k).read_bytes() for k in ('h713-kernel.fit', *SCRIPT_NAMES)}
+            names = ['h713-kernel.fit', *SCRIPT_NAMES]
+            if 'sunxi-cedrus.ko' in m['files']: names.append('sunxi-cedrus.ko')
+            data = {k: (bundle/k).read_bytes() for k in names}
             wanted = {}
-            for rel in targets(root):
+            for rel in targets(root, m):
                 k = kind(rel)
                 wanted[rel] = (new_sums(originals[rel], {n: m['files'][n] for n in SCRIPT_NAMES})
                                if k == 'SHA256SUMS' else data[k])
@@ -226,13 +236,13 @@ def run(root, bundle, boot, apply=False, rollback=None):
         backup = under(root, STATE)/(PREFIX+('rollback-' if rollback else '')+uuid.uuid4().hex)
         backup.mkdir(mode=0o700)
         index = {}
-        for i, rel in enumerate(targets(root)):
+        for i, rel in enumerate(targets(root, m)):
             save(backup/('file-%d' % i), originals[rel]);index[rel] = 'file-%d' % i
         save(backup/'files.json', (json.dumps(index, indent=2)+'\n').encode())
         save(backup/'INCOMPLETE', b'kernel FIT/script transaction in progress; do not reboot\n')
         fsync_dir(backup);fsync_dir(backup.parent)
         try:
-            apply_files(root, wanted, originals)
+            apply_files(root, wanted, originals, m)
             identity(root, boot)
             need(state(root, m) == want_to, 'state after update differs')
         except BaseException:

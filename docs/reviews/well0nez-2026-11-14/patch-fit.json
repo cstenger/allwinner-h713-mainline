@@ -1,0 +1,58 @@
+[
+  {
+    "patch": "0005a-phy-sun4i-usb-h713-clear-siddq-on-the-hci-phys.patch",
+    "exit_code": 0,
+    "output": "checking file drivers/phy/allwinner/phy-sun4i-usb.c\n"
+  },
+  {
+    "patch": "0143-pinctrl-sunxi-index-the-bank-interrupts-by-irq-bank-not-by-hardware-bank.patch",
+    "exit_code": 1,
+    "output": "checking file drivers/pinctrl/sunxi/pinctrl-sunxi.c\nHunk #1 succeeded at 1645 (offset -8 lines).\nchecking file drivers/pinctrl/sunxi/pinctrl-sun50i-h713.c\nHunk #1 FAILED at 724.\n1 out of 1 hunk FAILED\n"
+  },
+  {
+    "patch": "0144-arm64-dts-h713-the-pio-has-seven-bank-interrupts-not-nine.patch",
+    "exit_code": 0,
+    "output": "checking file arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi\nHunk #1 succeeded at 554 (offset 8 lines).\n"
+  },
+  {
+    "patch": "0298-media-cedrus-a-job-of-another-codec-starts-from-a-reset-engine.patch",
+    "exit_code": 0,
+    "output": "checking file drivers/staging/media/sunxi/cedrus/cedrus.h\nchecking file drivers/staging/media/sunxi/cedrus/cedrus_dec.c\n"
+  },
+  {
+    "patch": "0309-media-cedrus-an-h265-reference-must-be-a-picture-decoded-here.patch",
+    "exit_code": 0,
+    "output": "checking file drivers/staging/media/sunxi/cedrus/cedrus_h265.c\nHunk #1 succeeded at 433 (offset 20 lines).\nHunk #2 succeeded at 541 (offset 20 lines).\n"
+  },
+  {
+    "patch": "0312-mmc-sunxi-a-failed-multi-block-read-re-initialises-the-controller-before-the-stop.patch",
+    "exit_code": 0,
+    "output": "checking file drivers/mmc/host/sunxi-mmc.c\n"
+  },
+  {
+    "patch": "0313-mmc-sunxi-the-emmc-host-starts-a-read-block-only-when-the-fifo-has-room-for-it.patch",
+    "exit_code": 0,
+    "output": "checking file drivers/mmc/host/sunxi-mmc.c\nHunk #1 succeeded at 1740 (offset -40 lines).\nHunk #2 succeeded at 1884 (offset -40 lines).\n"
+  },
+  {
+    "patch": "0316-media-cedrus-h265-the-collocated-picture-must-be-in-the-active-reference-list.patch",
+    "exit_code": 1,
+    "output": "checking file drivers/staging/media/sunxi/cedrus/cedrus_h265.c\nHunk #1 FAILED at 451.\nHunk #2 FAILED at 539.\n2 out of 2 hunks FAILED\n"
+  },
+  {
+    "patch": "0317-media-cedrus-vp9-keep-only-the-tx-and-skip-probabilities-across-load-probs.patch",
+    "exit_code": 0,
+    "output": "checking file drivers/staging/media/sunxi/cedrus/cedrus_vp9.c\n"
+  },
+  {
+    "patch": "0330-media-v4l2-ctrls-validate-hevc-active-reference-counts.patch",
+    "exit_code": 1,
+    "output": "checking file drivers/media/v4l2-core/v4l2-ctrls-core.c\nHunk #1 FAILED at 971.\nHunk #2 FAILED at 1260.\n2 out of 2 hunks FAILED\n"
+  },
+  {
+    "patch": "0316-media-cedrus-h265-the-collocated-picture-must-be-in-the-active-reference-list.patch",
+    "prerequisite": "0309",
+    "exit_code": 0,
+    "output": "checking file drivers/staging/media/sunxi/cedrus/cedrus_h265.c\nHunk #1 succeeded at 471 (offset 20 lines).\nHunk #2 succeeded at 584 (offset 20 lines).\n"
+  }
+]

@@ -181,3 +181,35 @@ Key findings worth remembering:
   `tools/hdmi/test-frame-discard-contract.py` extracts the bridge's capture
   loop and builds it against stubs. A new helper in that loop must be added
   to its extraction.
+
+## DDR3 kernel follow-ups — hardware checked, 2026-11-14
+
+At the user's request, kernel patches 0191–0197 from the attributed well0nez
+review were installed and tested. Release-equivalent baseline rebuilds match
+the formerly installed FIT and Cedrus module exactly. Current installed FIT
+is `22ee12d4`, Cedrus module `1c8c87ba`, and startup script `79c039ac`.
+The guarded FIT installer now supports the paired Cedrus file update; the
+bundle builder permits only the expected PIO DT interrupt-list change.
+
+Warm boot `14fa86b6` passed seven bit-exact HEVC/VP9 vectors (748 displayed
+frames), three malformed HEVC control/recovery checks and eight real PH17
+input IRQ edges. PH17 was restored to unclaimed/input/bias-disabled, and its
+test module was unloaded. The initial malformed-reference harness incorrectly
+required a nonzero pipeline exit; the preserved corrected run verifies the
+kernel rejection and clean recovery instead.
+
+Cold boot `0fa73d3d` enumerated the SanDisk SSD at 480 Mb/s on EHCI0 with
+preboot `usb start` temporarily removed. After the host-session interruption,
+boot `2f81b106-80ae-4fee-8883-d026a724f770` resumed and the **original saved
+environment was restored byte for byte** (`e6a56d4c…`). Current health is
+running/no failed units, four startup IPC gates pass, health ACK succeeds,
+and the SSD is read-only/unmounted. The candidate remains installed. This hardware verification preceded
+publication of the fixes and GitHub replies.
+
+Results and limits: [DDR3 hardware record](reviews/well0nez-2026-11-14/hardware.md).
+Exact recovery commands and receipts:
+`local/recovery/2026-11-14-kernel-followups/RESUME.json`. The paired original
+kernel/script/module backup is
+`/var/lib/h713-hdmi-startup/kernel-fit-74b3f9c8971d48cd9a5efe475b568547`.
+No general damaged-stream/AV1 concurrency, other USB ports, gadget operation,
+physical R_PIO-key/host-wake stimulus, or LPDDR3 tests are implied by this run.

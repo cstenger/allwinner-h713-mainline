@@ -1,0 +1,72 @@
+{
+  "schema": "h713-followup-integration-v1",
+  "date": "2026-11-14",
+  "base_commit": "10af96af825dfef18b51f22b949f2f204ca9047f",
+  "contributor_commit": "149f51d0df24c45b12674c81aab128b1fc8f5d4b",
+  "kernel": "6.18.38",
+  "profile": "production",
+  "prepared_tree": "build/well0nez-integration-20261114/linux-6.18.38-8c791fba68d5f9f46ca9061b5e1cbac2ee53ede7e09b175b8f6cf0435db9f40a",
+  "config_sha256": "9857134ce7ab8a6da51cb09a509023c5277ea3b8c699484f2976a67b92e81566",
+  "toolchain": "clang version 23.1.4",
+  "patch_sha256": {
+    "0191-media-cedrus-vp9-save-only-tx-and-skip-probabilities.patch": "caa8738582c3775b0a9140b1688b40c22158e1180f4962039a2345a249243cfb",
+    "0192-phy-sun4i-usb-h713-clear-hci-siddq.patch": "fc1aa9b10a41d07a42cab39dda1dd5215937e3fd4d001ccf0a644aab2460bca9",
+    "0193-pinctrl-sunxi-index-parent-irqs-by-irq-bank.patch": "03de26babb3ef3255d21ab6c8872d0466f9017c6b5925607e261cd4aeb330d88",
+    "0194-arm64-dts-h713-list-seven-pio-bank-irqs.patch": "70a527eb22d9a0f2b385c2c601a860ac1668c20b235da77fa0fd4f7760644fb6",
+    "0195-media-v4l2-ctrls-validate-hevc-active-reference-counts.patch": "14f23c98bd7f8899aded0c04f3b777dfa7b0d1b2dd4f8f58e8f4d696d858f2b3",
+    "0196-media-cedrus-h265-validate-reference-buffers.patch": "59e5af2f4475e7a2a867f838a4e8bd02dbba8b40d989173254bdcda4022a7b2e",
+    "0197-media-cedrus-h265-validate-collocated-reference.patch": "f9189e78c76f83946b1077c1aba1eb13484e9b76fef81caedc66d330e695170b"
+  },
+  "source_sha256": {
+    "arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi": "b0b0d1402c44bca3f8b0c8b834e9e76c3ecbbbc898bcc750964f202fed43b698",
+    "drivers/media/v4l2-core/v4l2-ctrls-core.c": "d1657074f878c786f1337567caf3373ee9eb8ace203283f5f55224d97bf36283",
+    "drivers/phy/allwinner/phy-sun4i-usb.c": "0ee9c71b055796633178b819ccd6fb2965290c056f84a90bd2e423ba066fe216",
+    "drivers/pinctrl/sunxi/pinctrl-sunxi.c": "cc3af7db23dbac2a4aaf3ee17b4ca1cc0d89c4163ea90690e32db47e7d618080",
+    "drivers/staging/media/sunxi/cedrus/cedrus_h265.c": "b1e6d7570ad3c401127de95d1eb02b554ab014c38254eec9f7677f0f578b8bcf",
+    "drivers/staging/media/sunxi/cedrus/cedrus_vp9.c": "71e17505499a7df0e511947112ea301e3cd58cfa8cf7456851d23b95de49f960"
+  },
+  "artifacts": {
+    "Image-production.gz": {
+      "path": "build/well0nez-integration-20261114/out/Image-production.gz",
+      "sha256": "6035dd2c37c85361366344e1ff1fdf8c1bb81ae04f15c4acfea080b8129d1f51",
+      "bytes": 7577922
+    },
+    "h713-kernel-production.fit": {
+      "path": "build/well0nez-integration-20261114/out/h713-kernel-production.fit",
+      "sha256": "bb199824b9afeb14c2448201f8c42c9dd7910f82ee2eb313dad71a34517f4724",
+      "bytes": 7613576
+    },
+    "sun50i-h713-hy200-qz713df-a1.dtb": {
+      "path": "build/well0nez-integration-20261114/out/sun50i-h713-hy200-qz713df-a1.dtb",
+      "sha256": "feb691ff798429a6fa8b0fb84e6dfc2c2798da8dcd8194b6dced2e8219ec9a2f",
+      "bytes": 34642
+    },
+    "sun50i-h713-hy200-qz713-v2.dtb": {
+      "path": "build/well0nez-integration-20261114/out/sun50i-h713-hy200-qz713-v2.dtb",
+      "sha256": "320d59a7e402e950947aaf052b9eb21d9d0c83091e2353bcd0ba2a6ecb8681d6",
+      "bytes": 33313
+    }
+  },
+  "validation": {
+    "kernel_build": "PASS Image dtbs modules FIT, default and production",
+    "zero_context_fuzz": "PASS all seven patches in order",
+    "host_tests": "PASS five groups with ASan/UBSan and four caught mutations",
+    "checkpatch": "0 errors; three commit-ID lookup warnings",
+    "hardware": "PASS bounded DDR3 decode, validation-rejection/recovery, PH17 IRQ and EHCI0 cold enumeration; see hardware.md for limits"
+  },
+  "hardware": {
+    "board": "HY200 QZ713DF_A1 DDR3",
+    "deployed_fit": "22ee12d4bef763a6ee60e5c679e41262acfae19c2567b5c93abde3332e96cd83",
+    "deployed_cedrus": "1c8c87bae78ad6fce0522faa89b37d02bda511af1535b669dcb655a85ce0d3f2",
+    "warm_boot": "14fa86b6-d223-49da-9d0d-1d9198e0c61b",
+    "cold_boot": "0fa73d3d-eb1b-47e1-9e21-d494f68d2df9",
+    "final_boot": "2f81b106-80ae-4fee-8883-d026a724f770",
+    "valid_vectors": 7,
+    "displayed_frames": 748,
+    "malformed_cases_with_clean_recovery": 3,
+    "ph17_edges": 8,
+    "cold_usb_speed_mbps": 480,
+    "original_environment_restored": true,
+    "final_health": "running; no failed units; health acknowledgement success"
+  }
+}
