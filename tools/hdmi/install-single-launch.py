@@ -12,6 +12,9 @@ Two separate phases, each previewed by default and applied with --apply:
                    copy last. Refused unless the candidate proper is in place:
                    an older proper parses `comm-trace` as a logo file name.
 
+A proper-only bundle (baseline script == candidate script, e.g. U-Boot 0006)
+has only the proper phase; the installed script reads as baseline.
+
 --rollback BACKUP restores one committed or interrupted transaction. A proper
 rollback is refused while the single-launch script is active. Nothing here
 reboots, starts services or touches RTC GP6/GP7; the caller owns the boot.
@@ -152,8 +155,10 @@ def script_state(m):
         else:
             raise RuntimeError('unknown startup script in ' + str(bundle))
     fat = sha((FAT / 'h713-hdmi.scr').read_bytes())
-    seen.add({m['script']['baseline']['h713-hdmi.scr']: 'baseline',
-              m['script']['candidate']['h713-hdmi.scr']: 'candidate'}.get(fat, 'foreign'))
+    # Candidate first, so a proper-only bundle (identical scripts) reads as
+    # baseline for the FAT copy too, matching the bundle copies above.
+    seen.add({m['script']['candidate']['h713-hdmi.scr']: 'candidate',
+              m['script']['baseline']['h713-hdmi.scr']: 'baseline'}.get(fat, 'foreign'))
     need(len(seen) == 1 and 'foreign' not in seen, 'startup script copies disagree: ' + str(sorted(seen)))
     return seen.pop()
 
@@ -246,6 +251,8 @@ def run(bundle_dir, phase, boot, apply=False, rollback=None):
             finish(backup, result, 'COMMITTED')
             return result
         # Script phase.
+        need(m['script']['baseline'] != m['script']['candidate'],
+             'proper-only bundle: the startup script does not change')
         want_from, want_to = ('candidate', 'baseline') if rollback else ('baseline', 'candidate')
         need(sstate == want_from, 'script is ' + sstate + ', expected ' + want_from)
         need(pstate == 'candidate', 'single-launch script requires the candidate proper')

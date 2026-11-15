@@ -73,9 +73,14 @@ ADAPTER_PATCHED_WORDS = (
     (0x4b101018, 0xaf190060),
     (0x4b10101c, 0x0ac52d12),
     (0x4b10a230, 0x0ac40410),
-    (0x4b101040, 0x3c1aad98),
-    (0x4b101048, 0xaf5b0058),
+    (0x4b101040, 0x3c18ad98),
+    (0x4b101048, 0xaf190058),
 )
+
+# The adapter-return marker before U-Boot 0006 used k0/k1, which the firmware's
+# interrupt exit clobbers (lui k0 / sw k1,0x58(k0)). Accept that pair only as a
+# whole, so a rolled-back proper still verifies but a mixed slot does not.
+ADAPTER_RETURN_PRE_0006 = {0x4b101040: 0x3c1aad98, 0x4b101048: 0xaf5b0058}
 
 CAPTURE_PATCHED_WORDS = (
     (0x4B100BA0, 0x27BDFFF8),
@@ -145,7 +150,10 @@ def open_trace(shell):
     adapter_site = mem.u32(0x4b10a228)
     adapter_enabled = adapter_site == ADAPTER_PATCHED_WORDS[0][1]
     if adapter_enabled:
+        legacy = all(mem.u32(a) == v for a, v in ADAPTER_RETURN_PRE_0006.items())
         for address, expected in ADAPTER_PATCHED_WORDS:
+            if legacy and address in ADAPTER_RETURN_PRE_0006:
+                expected = ADAPTER_RETURN_PRE_0006[address]
             actual = mem.u32(address)
             if actual != expected:
                 raise RuntimeError(f"adapter patch mismatch at {address:#x}: "

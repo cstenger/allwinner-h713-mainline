@@ -13,6 +13,7 @@ matching CCU table. Both the orchestrator and quick helper use this tree.
 | `0003-env-mmc-preserve-configured-offset-width.patch` | Preserve configured 64-bit fallback and report the singular-load byte offset; cold/one ordinary warm boot verified, paired environment migration required |
 | `0004-h713-single-display-firmware-launch.patch` | `h713_disp auto <id> logo comm-trace`: one firmware load and release instead of two; installed 2026-11-06, kernel starts 1.10 s earlier |
 | `0005-h713-early-panel-off-interval.patch` | `h713_disp panel-off`: enter the verified panel off state before the FIT/blob loads; the logo step re-verifies it and waits only the rest of the same 3 s; installed 2026-11-09, kernel starts 0.80 s earlier |
+| `0006-h713-comm-trace-markers-avoid-k0-k1.patch` | Comm-trace markers use t8/t9 instead of k0/k1 (the firmware's interrupt exit clobbers k0/k1, so a marker interrupted mid-sequence faulted and the firmware's dump recursion overwrote ARM DRAM); apply loop refuses k0/k1 in caves. Built 2026-11-15, **not yet installed** |
 
 **Paired environment migration is required for the unmigrated split layout.**
 The prior diagnostic image read saved environment at unintended LBA `0x32ec00`;
@@ -59,3 +60,22 @@ are unproven. Earlier transient audio silence remains unexplained.
 See [the build/results/rollback runbook](../../docs/uboot-panel-initial-state.md)
 and [raw trial evidence](../../docs/hdmi-evidence/2026-10-18-panel-initial-state-trial/README.md).
 The installed trial proper remains unchanged by this source integration.
+
+### 0006 checks
+
+`tests/t8t9-liveness.py` proves t8/t9 are dead at all 61 comm-trace hook
+sites in the pinned `display.bin` (SHA-256 `4380f1b3…`). It reads the patch
+table, follows both branch paths, and treats calls and `jr $ra` as kills. It
+reports 18, 35 and 38 unsafe sites when watching v0, a0 and s0, so it can
+fail. `tests/test-comm-trace-no-kregs.py OLD NEW` checks that exactly the 155
+cave words changed and only k0→t8 / k1→t9, that no k0/k1 is left, and that
+relocation stays at 61/80. It fails on the pre-0006 table. Production uses
+only the comm-trace table (`trace` and `stability` are mutually exclusive
+with it), so the remaining k0 caves in the bench-only `mips-trace` and
+`mips-stability` tables are unchanged.
+
+```sh
+python3 patches/u-boot/tests/t8t9-liveness.py local/mips-display/board-b-mips/display.bin \
+  "$(tools/build/build.sh uboot-tree)/arch/arm/mach-sunxi/h713_mips.c"
+```
+

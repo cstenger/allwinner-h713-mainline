@@ -1,0 +1,694 @@
+From: H713 maintainers
+Subject: [PATCH] h713: keep comm-trace markers off k0/k1
+
+The CALL/RETURN comm-trace markers stored their stage code with
+
+	lui  k0, <trace page>
+	ori  k1, zero, <stage>
+	sw   k1, off(k0)
+
+in ordinary task/HISR context. k0/k1 belong to exception handlers: the
+display firmware's interrupt exit (0x8b101c2c/0x8b101c30) loads k0 with the
+saved Status and k1 with the EPC immediately before eret. An interrupt
+between the lui/ori and the store left k0 holding Status, so the store
+faulted. The stock fatal-dump handler then faults on its own misaligned
+BadVAddr store (0x8b15bc70) and recurses, and its stack walks down through
+physical DRAM writing {0x8baa0000, 0x8b15bd44} every 32 bytes. Linux saw
+that as kernel paging faults on 0x8b15bd448baa0000, silent resets and, once,
+a corrupted inode-table block on disk.
+
+A bench run with the dump handler made survivable preserved the first
+fault: EPC 0x8b1004c8, the `sw k1, 0(k0)` of marker 0xa002. Dense CPU_COMM
+interrupts (Linux IRQ-driven reception) hit the window within a few hundred
+calls; polling hits it far more rarely.
+
+Rewrite every cave word in the comm-trace table from k0 to t8 and from k1
+to t9 (155 words: 52 lui, 51 ori, 52 stores). The hooks replace calls,
+returns or plain instructions at points where no path reads t8/t9 before
+writing them, as patches/u-boot/tests/t8t9-liveness.py proves for all 61
+sites in the pinned image; the existing data hooks already rely on t8/t9
+the same way, and the firmware's interrupt frame saves both. Relocation
+now recognises only t8 bases/stores and its 61/80 counts are unchanged.
+The apply loop refuses any cave word that names k0 or k1.
+
+diff --git a/arch/arm/mach-sunxi/h713_mips.c b/arch/arm/mach-sunxi/h713_mips.c
+index 175ee27..a4744f2 100644
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -1974,6 +1974,18 @@ static const struct h713_mips_patch h713_mips_trace_patches[] = {
+  * the immediate commit/dirty-latch readbacks.  These stores use only t8/t9 and
+  * preserve every displaced stock instruction.
+  */
++/*
++ * Every comm-trace cave runs in ordinary task, HISR or interrupt-handler
++ * context, never in an exception vector. It must not use k0/k1: the
++ * firmware's interrupt exit (0x8b101c2c/0x8b101c30) loads k0 with the saved
++ * Status and k1 with the EPC immediately before eret. An interrupt between a
++ * marker's lui/ori and its store left k0 holding Status, so the store faulted
++ * and entered the stock fatal dump, whose misaligned BadVAddr store recursed
++ * until the MIPS stack overran ARM DRAM. The markers use t8 (trace base) and
++ * t9 (value) instead; patches/u-boot/tests/t8t9-liveness.py proves both are
++ * dead at every hook site in the pinned image. The apply loop refuses any
++ * cave word that names k0 or k1.
++ */
+ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	/* Record the adapter's requested source before the actual SetSource call. */
+ 	{ 0x4b101000, 0x00000000, 0x3c18ae34 }, /* lui t8, trace page */
+@@ -1988,9 +2000,9 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	{ 0x4b10a228, 0x0ec52d12, 0x0ec40400 }, /* jal adapter trace */
+ 
+ 	/* Record a return, preserving the adapter's store and saved ra load. */
+-	{ 0x4b101040, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b101044, 0x00000000, 0x341b5302 },
+-	{ 0x4b101048, 0x00000000, 0xaf5b0058 },
++	{ 0x4b101040, 0x00000000, 0x3c18ae34 },
++	{ 0x4b101044, 0x00000000, 0x34195302 },
++	{ 0x4b101048, 0x00000000, 0xaf190058 },
+ 	{ 0x4b10104c, 0x00000000, 0x0ac4288e }, /* j 0x8b10a238 */
+ 	{ 0x4b101050, 0x00000000, 0x8fbf0014 }, /* lw ra, 0x14(sp) */
+ 	{ 0x4b10a230, 0x8fbf0014, 0x0ac40410 }, /* j return trace */
+@@ -2049,73 +2061,73 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	{ 0x4b100b9c, 0x00000000, 0x00000000 },
+ 
+ 	/* Release semaphore acquired -> marker a002 -> original logger. */
+-	{ 0x4b1004c0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1004c4, 0x00000000, 0x341ba002 },
+-	{ 0x4b1004c8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1004c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1004c4, 0x00000000, 0x3419a002 },
++	{ 0x4b1004c8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1004cc, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b1004d0, 0x00000000, 0x00000000 },
+ 	{ 0x4b118e5c, 0x0ec54252, 0x0ec40130 },
+ 
+ 	/* Pre-commit log returned -> marker a003 -> FIFO slot request. */
+-	{ 0x4b1004e0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1004e4, 0x00000000, 0x341ba003 },
+-	{ 0x4b1004e8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1004e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1004e4, 0x00000000, 0x3419a003 },
++	{ 0x4b1004e8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1004ec, 0x00000000, 0x0ac46097 },
+ 	{ 0x4b1004f0, 0x00000000, 0x00000000 },
+ 	{ 0x4b118e64, 0x0ec46097, 0x0ec40138 },
+ 
+ 	/* FIFO commit -> marker a004 -> fifo_requestItemWr. */
+-	{ 0x4b100500, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100504, 0x00000000, 0x341ba004 },
+-	{ 0x4b100508, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100500, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100504, 0x00000000, 0x3419a004 },
++	{ 0x4b100508, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10050c, 0x00000000, 0x0ac4610c },
+ 	{ 0x4b100510, 0x00000000, 0x00000000 },
+ 	{ 0x4b118e9c, 0x0ec4610c, 0x0ec40140 },
+ 
+ 	/* Release-semaphore post -> marker a005 -> osal_semaphore_set. */
+-	{ 0x4b100520, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100524, 0x00000000, 0x341ba005 },
+-	{ 0x4b100528, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100520, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100524, 0x00000000, 0x3419a005 },
++	{ 0x4b100528, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10052c, 0x00000000, 0x0ac57074 },
+ 	{ 0x4b100530, 0x00000000, 0x00000000 },
+ 	{ 0x4b118eac, 0x0ec57074, 0x0ec40148 },
+ 
+ 	/* Semaphore-post error log -> marker a105 -> original logger. */
+-	{ 0x4b100540, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100544, 0x00000000, 0x341ba105 },
+-	{ 0x4b100548, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100540, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100544, 0x00000000, 0x3419a105 },
++	{ 0x4b100548, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10054c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100550, 0x00000000, 0x00000000 },
+ 	{ 0x4b118eec, 0x0ec54252, 0x0ec40150 },
+ 
+ 	/* Semaphore-post success log -> marker a006 -> original logger. */
+-	{ 0x4b100560, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100564, 0x00000000, 0x341ba006 },
+-	{ 0x4b100568, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100560, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100564, 0x00000000, 0x3419a006 },
++	{ 0x4b100568, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10056c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100570, 0x00000000, 0x00000000 },
+ 	{ 0x4b118f64, 0x0ec54252, 0x0ec40158 },
+ 
+ 	/* Final release log -> marker a007 -> original logger. */
+-	{ 0x4b100580, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100584, 0x00000000, 0x341ba007 },
+-	{ 0x4b100588, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100580, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100584, 0x00000000, 0x3419a007 },
++	{ 0x4b100588, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10058c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100590, 0x00000000, 0x00000000 },
+ 	{ 0x4b118f8c, 0x0ec54252, 0x0ec40160 },
+ 
+ 	/* FreeCall recycle -> marker a001 -> original release helper. */
+-	{ 0x4b100400, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100404, 0x00000000, 0x341ba001 },
+-	{ 0x4b100408, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100400, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100404, 0x00000000, 0x3419a001 },
++	{ 0x4b100408, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10040c, 0x00000000, 0x0ac4632c },
+ 	{ 0x4b100410, 0x00000000, 0x00000000 },
+ 	{ 0x4b123dec, 0x0ec4632c, 0x0ec40100 },
+ 
+ 	/* Routine lookup -> marker b001 -> original lookup helper. */
+-	{ 0x4b100420, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100424, 0x00000000, 0x341bb001 },
+-	{ 0x4b100428, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100420, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100424, 0x00000000, 0x3419b001 },
++	{ 0x4b100428, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10042c, 0x00000000, 0x0ac4717a },
+ 	{ 0x4b100430, 0x00000000, 0x00000000 },
+ 	{ 0x4b123df8, 0x0ec4717a, 0x0ec40108 },
+@@ -2125,9 +2137,9 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	 * beqz: zero is the found path at 0x8b123eb0; non-zero is the error
+ 	 * path at 0x8b123e08.
+ 	 */
+-	{ 0x4b100440, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100444, 0x00000000, 0x341bb002 },
+-	{ 0x4b100448, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100440, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100444, 0x00000000, 0x3419b002 },
++	{ 0x4b100448, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10044c, 0x00000000, 0x10400003 },
+ 	{ 0x4b100450, 0x00000000, 0x00000000 },
+ 	{ 0x4b100454, 0x00000000, 0x0ac48f82 },
+@@ -2137,170 +2149,170 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	{ 0x4b123e00, 0x1040002b, 0x0ac40110 },
+ 
+ 	/* Pre-handler log -> marker b003 -> original logger. */
+-	{ 0x4b100480, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100484, 0x00000000, 0x341bb003 },
+-	{ 0x4b100488, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100480, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100484, 0x00000000, 0x3419b003 },
++	{ 0x4b100488, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10048c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100490, 0x00000000, 0x00000000 },
+ 	{ 0x4b123f3c, 0x0ec54252, 0x0ec40120 },
+ 
+ 	/* Dynamic handler call -> marker b004 -> original target in v0. */
+-	{ 0x4b1004a0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1004a4, 0x00000000, 0x341bb004 },
+-	{ 0x4b1004a8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1004a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1004a4, 0x00000000, 0x3419b004 },
++	{ 0x4b1004a8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1004ac, 0x00000000, 0x00400008 },
+ 	{ 0x4b1004b0, 0x00000000, 0x00000000 },
+ 	{ 0x4b123f4c, 0x0040f809, 0x0ec40128 },
+ 
+ 	/* Handler-return branch -> marker c001 -> original branch target. */
+-	{ 0x4b1002c4, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1002c8, 0x00000000, 0x341bc001 },
+-	{ 0x4b1002cc, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1002c4, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1002c8, 0x00000000, 0x3419c001 },
++	{ 0x4b1002cc, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1002d0, 0x00000000, 0x0ac48f8f },
+ 	{ 0x4b1002d4, 0x00000000, 0x00000000 },
+ 	{ 0x4b123f54, 0x1000ffb9, 0x0ac400b1 },
+ 
+ 	/* Worker SendComm2CPUEx call -> marker c002 -> original callee. */
+-	{ 0x4b1002e0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1002e4, 0x00000000, 0x341bc002 },
+-	{ 0x4b1002e8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1002e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1002e4, 0x00000000, 0x3419c002 },
++	{ 0x4b1002e8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1002ec, 0x00000000, 0x0ac48232 },
+ 	{ 0x4b1002f0, 0x00000000, 0x00000000 },
+ 	{ 0x4b123e68, 0x0ec48232, 0x0ec400b8 },
+ 
+ 	/* Send semaphore wait -> marker c003 -> osal_semaphore_get. */
+-	{ 0x4b100300, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100304, 0x00000000, 0x341bc003 },
+-	{ 0x4b100308, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100300, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100304, 0x00000000, 0x3419c003 },
++	{ 0x4b100308, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10030c, 0x00000000, 0x0ac5703f },
+ 	{ 0x4b100310, 0x00000000, 0x00000000 },
+ 	{ 0x4b12002c, 0x0ec5703f, 0x0ec400c0 },
+ 
+ 	/* First success-path log -> marker c004 -> original logger. */
+-	{ 0x4b100320, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100324, 0x00000000, 0x341bc004 },
+-	{ 0x4b100328, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100320, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100324, 0x00000000, 0x3419c004 },
++	{ 0x4b100328, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10032c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100330, 0x00000000, 0x00000000 },
+ 	{ 0x4b1200e8, 0x0ec54252, 0x0ec400c8 },
+ 
+ 	/* Staging-space test -> marker c005 -> fifo_isNearlyFull. */
+-	{ 0x4b100340, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100344, 0x00000000, 0x341bc005 },
+-	{ 0x4b100348, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100340, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100344, 0x00000000, 0x3419c005 },
++	{ 0x4b100348, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10034c, 0x00000000, 0x0ac46017 },
+ 	{ 0x4b100350, 0x00000000, 0x00000000 },
+ 	{ 0x4b120164, 0x0ec46017, 0x0ec400d0 },
+ 
+ 	/* FIFO fall-through -> marker c006, restore sll, resume at +0x18c. */
+-	{ 0x4b100360, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100364, 0x00000000, 0x341bc006 },
+-	{ 0x4b100368, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100360, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100364, 0x00000000, 0x3419c006 },
++	{ 0x4b100368, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10036c, 0x00000000, 0x00161040 },
+ 	{ 0x4b100370, 0x00000000, 0x0ac48063 },
+ 	{ 0x4b100374, 0x00000000, 0x00000000 },
+ 	{ 0x4b120184, 0x00161040, 0x0ac400d8 },
+ 
+ 	/* FreeReturn allocation -> marker c007 -> original allocator. */
+-	{ 0x4b100380, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100384, 0x00000000, 0x341bc007 },
+-	{ 0x4b100388, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100380, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100384, 0x00000000, 0x3419c007 },
++	{ 0x4b100388, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10038c, 0x00000000, 0x0ac462fa },
+ 	{ 0x4b100390, 0x00000000, 0x00000000 },
+ 	{ 0x4b12065c, 0x0ec462fa, 0x0ec400e0 },
+ 
+ 	/* RETURN publication -> marker c008 -> SendLow. */
+-	{ 0x4b1003a0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1003a4, 0x00000000, 0x341bc008 },
+-	{ 0x4b1003a8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1003a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1003a4, 0x00000000, 0x3419c008 },
++	{ 0x4b1003a8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1003ac, 0x00000000, 0x0ac47e7b },
+ 	{ 0x4b1003b0, 0x00000000, 0x00000000 },
+ 	{ 0x4b12046c, 0x0ec47e7b, 0x0ec400e8 },
+ 
+ 	/* RETURN_ACK wait -> marker c009 -> osal_semaphore_get. */
+-	{ 0x4b1003c0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1003c4, 0x00000000, 0x341bc009 },
+-	{ 0x4b1003c8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1003c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1003c4, 0x00000000, 0x3419c009 },
++	{ 0x4b1003c8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1003cc, 0x00000000, 0x0ac5703f },
+ 	{ 0x4b1003d0, 0x00000000, 0x00000000 },
+ 	{ 0x4b1204b4, 0x0ec5703f, 0x0ec400f0 },
+ 
+ 	/* ACK interrupt queued action -> marker d001 -> queueAction. */
+-	{ 0x4b1005a0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1005a4, 0x00000000, 0x341bd001 },
+-	{ 0x4b1005a8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1005a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1005a4, 0x00000000, 0x3419d001 },
++	{ 0x4b1005a8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1005ac, 0x00000000, 0x0ac47bc0 },
+ 	{ 0x4b1005b0, 0x00000000, 0x00000000 },
+ 	{ 0x4b11f9dc, 0x0ec47bc0, 0x0ec40168 },
+ 
+ 	/* queueAction returned -> marker d005 -> original handler tail. */
+-	{ 0x4b100660, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100664, 0x00000000, 0x341bd005 },
+-	{ 0x4b100668, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100660, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100664, 0x00000000, 0x3419d005 },
++	{ 0x4b100668, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10066c, 0x00000000, 0x0ac47e42 },
+ 	{ 0x4b100670, 0x00000000, 0x00000000 },
+ 	{ 0x4b11f9e4, 0x1000ffc8, 0x0ac40198 },
+ 
+ 	/* ACK action wakeup path -> marker d002 -> original logger. */
+-	{ 0x4b1005c0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1005c4, 0x00000000, 0x341bd002 },
+-	{ 0x4b1005c8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1005c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1005c4, 0x00000000, 0x3419d002 },
++	{ 0x4b1005c8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1005cc, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b1005d0, 0x00000000, 0x00000000 },
+ 	{ 0x4b11eda4, 0x0ec54252, 0x0ec40170 },
+ 
+ 	/* Sender wakeup -> marker d003 -> osal_semaphore_set. */
+-	{ 0x4b1005e0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1005e4, 0x00000000, 0x341bd003 },
+-	{ 0x4b1005e8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1005e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1005e4, 0x00000000, 0x3419d003 },
++	{ 0x4b1005e8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1005ec, 0x00000000, 0x0ac57074 },
+ 	{ 0x4b1005f0, 0x00000000, 0x00000000 },
+ 	{ 0x4b11edb4, 0x0ec57074, 0x0ec40178 },
+ 
+ 	/* Wakeup error log -> marker d103 -> original logger. */
+-	{ 0x4b100600, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100604, 0x00000000, 0x341bd103 },
+-	{ 0x4b100608, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100600, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100604, 0x00000000, 0x3419d103 },
++	{ 0x4b100608, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10060c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100610, 0x00000000, 0x00000000 },
+ 	{ 0x4b11edf4, 0x0ec54252, 0x0ec40180 },
+ 
+ 	/* Wakeup success log -> marker d004 -> original logger. */
+-	{ 0x4b100620, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100624, 0x00000000, 0x341bd004 },
+-	{ 0x4b100628, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100620, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100624, 0x00000000, 0x3419d004 },
++	{ 0x4b100628, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10062c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100630, 0x00000000, 0x00000000 },
+ 	{ 0x4b11eed0, 0x0ec54252, 0x0ec40188 },
+ 
+ 	/* ACK wait resumed -> marker c010 -> original logger. */
+-	{ 0x4b100640, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100644, 0x00000000, 0x341bc010 },
+-	{ 0x4b100648, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100640, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100644, 0x00000000, 0x3419c010 },
++	{ 0x4b100648, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10064c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100650, 0x00000000, 0x00000000 },
+ 	{ 0x4b12052c, 0x0ec54252, 0x0ec40190 },
+ 
+ 	/* Send-semaphore release -> marker c011 -> osal_semaphore_set. */
+-	{ 0x4b100680, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100684, 0x00000000, 0x341bc011 },
+-	{ 0x4b100688, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100680, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100684, 0x00000000, 0x3419c011 },
++	{ 0x4b100688, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10068c, 0x00000000, 0x0ac57074 },
+ 	{ 0x4b100690, 0x00000000, 0x00000000 },
+ 	{ 0x4b120588, 0x0ec57074, 0x0ec401a0 },
+ 
+ 	/* Send-semaphore release error -> marker c111 -> original logger. */
+-	{ 0x4b100700, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100704, 0x00000000, 0x341bc111 },
+-	{ 0x4b100708, 0x00000000, 0xaf5b0000 },
++	{ 0x4b100700, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100704, 0x00000000, 0x3419c111 },
++	{ 0x4b100708, 0x00000000, 0xaf190000 },
+ 	{ 0x4b10070c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100710, 0x00000000, 0x00000000 },
+ 	{ 0x4b1203ec, 0x0ec54252, 0x0ec401c0 },
+ 
+ 	/* Send-semaphore release success -> marker c012 -> original logger. */
+-	{ 0x4b1006a0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1006a4, 0x00000000, 0x341bc012 },
+-	{ 0x4b1006a8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1006a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1006a4, 0x00000000, 0x3419c012 },
++	{ 0x4b1006a8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1006ac, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b1006b0, 0x00000000, 0x00000000 },
+ 	{ 0x4b1205c0, 0x0ec54252, 0x0ec401a8 },
+@@ -2310,9 +2322,9 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	 * branch-likely. The displaced success-only load is harmless on the error
+ 	 * path and remains in the original jump's delay slot.
+ 	 */
+-	{ 0x4b1006c0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1006c4, 0x00000000, 0x341bc013 },
+-	{ 0x4b1006c8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1006c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1006c4, 0x00000000, 0x3419c013 },
++	{ 0x4b1006c8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1006cc, 0x00000000, 0x10400003 },
+ 	{ 0x4b1006d0, 0x00000000, 0x00000000 },
+ 	{ 0x4b1006d4, 0x00000000, 0x0ac48f9e },
+@@ -2322,113 +2334,113 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	{ 0x4b123e70, 0x5040ffaa, 0x0ac401b0 },
+ 
+ 	/* Preserve osa_queue_send's result, then emulate osa_hisr_activate. */
+-	{ 0x4b100720, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100724, 0x00000000, 0xaf420008 },
++	{ 0x4b100720, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100724, 0x00000000, 0xaf020008 },
+ 	{ 0x4b100728, 0x00000000, 0x24020001 },
+ 	{ 0x4b10072c, 0x00000000, 0x0ac48749 },
+ 	{ 0x4b100730, 0x00000000, 0x00000000 },
+ 	{ 0x4b121d1c, 0x24020001, 0x0ac401c8 },
+ 
+ 	/* CALL interrupt -> marker e001 -> queueAction. */
+-	{ 0x4b100740, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100744, 0x00000000, 0x341be001 },
+-	{ 0x4b100748, 0x00000000, 0xaf5b000c },
++	{ 0x4b100740, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100744, 0x00000000, 0x3419e001 },
++	{ 0x4b100748, 0x00000000, 0xaf19000c },
+ 	{ 0x4b10074c, 0x00000000, 0x0ac47bc0 },
+ 	{ 0x4b100750, 0x00000000, 0x00000000 },
+ 	{ 0x4b11f350, 0x0ec47bc0, 0x0ec401d0 },
+ 
+ 	/* queueAction returned -> marker e004 -> original CALL-handler tail. */
+-	{ 0x4b100780, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100784, 0x00000000, 0x341be004 },
+-	{ 0x4b100788, 0x00000000, 0xaf5b000c },
++	{ 0x4b100780, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100784, 0x00000000, 0x3419e004 },
++	{ 0x4b100788, 0x00000000, 0xaf19000c },
+ 	{ 0x4b10078c, 0x00000000, 0x0ac47cc1 },
+ 	{ 0x4b100790, 0x00000000, 0x00000000 },
+ 	{ 0x4b11f358, 0x1000ffea, 0x0ac401e0 },
+ 
+ 	/* CALL HISR wrapper -> marker e005 -> dispatcher. */
+-	{ 0x4b1007a0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1007a4, 0x00000000, 0x341be005 },
+-	{ 0x4b1007a8, 0x00000000, 0xaf5b000c },
++	{ 0x4b1007a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1007a4, 0x00000000, 0x3419e005 },
++	{ 0x4b1007a8, 0x00000000, 0xaf19000c },
+ 	{ 0x4b1007ac, 0x00000000, 0x0ac484b3 },
+ 	{ 0x4b1007b0, 0x00000000, 0x00000000 },
+ 	{ 0x4b1213c4, 0x0ec484b3, 0x0ec401e8 },
+ 
+ 	/* Dispatcher CALL arm -> marker e006 -> command_action. */
+-	{ 0x4b1007c0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1007c4, 0x00000000, 0x341be006 },
+-	{ 0x4b1007c8, 0x00000000, 0xaf5b000c },
++	{ 0x4b1007c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1007c4, 0x00000000, 0x3419e006 },
++	{ 0x4b1007c8, 0x00000000, 0xaf19000c },
+ 	{ 0x4b1007cc, 0x00000000, 0x0ac482f0 },
+ 	{ 0x4b1007d0, 0x00000000, 0x00000000 },
+ 	{ 0x4b1212e4, 0x0ac482f0, 0x0ac401f0 },
+ 
+ 	/* CALL worker enqueue -> marker e007 -> Comm_Add2Call2WQ. */
+-	{ 0x4b1007e0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1007e4, 0x00000000, 0x341be007 },
+-	{ 0x4b1007e8, 0x00000000, 0xaf5b000c },
++	{ 0x4b1007e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1007e4, 0x00000000, 0x3419e007 },
++	{ 0x4b1007e8, 0x00000000, 0xaf19000c },
+ 	{ 0x4b1007ec, 0x00000000, 0x0ac47551 },
+ 	{ 0x4b1007f0, 0x00000000, 0x00000000 },
+ 	{ 0x4b1212b0, 0x0ec47551, 0x0ec401f8 },
+ 
+ 	/* CALL_ACK send -> marker e008 -> SendAckLow. */
+-	{ 0x4b100800, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100804, 0x00000000, 0x341be008 },
+-	{ 0x4b100808, 0x00000000, 0xaf5b000c },
++	{ 0x4b100800, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100804, 0x00000000, 0x3419e008 },
++	{ 0x4b100808, 0x00000000, 0xaf19000c },
+ 	{ 0x4b10080c, 0x00000000, 0x0ac48234 },
+ 	{ 0x4b100810, 0x00000000, 0x00000000 },
+ 	{ 0x4b120fac, 0x0ec48234, 0x0ec40200 },
+ 
+ 	/* SendAckLow returned -> marker e009 -> original command-action tail. */
+-	{ 0x4b100820, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100824, 0x00000000, 0x341be009 },
+-	{ 0x4b100828, 0x00000000, 0xaf5b000c },
++	{ 0x4b100820, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100824, 0x00000000, 0x3419e009 },
++	{ 0x4b100828, 0x00000000, 0xaf19000c },
+ 	{ 0x4b10082c, 0x00000000, 0x0ac48373 },
+ 	{ 0x4b100830, 0x00000000, 0x00000000 },
+ 	{ 0x4b120fb4, 0x1000ff85, 0x0ac40208 },
+ 
+ 	/* command_action return -> marker e010 -> original caller. */
+-	{ 0x4b100840, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100844, 0x00000000, 0x341be010 },
+-	{ 0x4b100848, 0x00000000, 0xaf5b000c },
++	{ 0x4b100840, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100844, 0x00000000, 0x3419e010 },
++	{ 0x4b100848, 0x00000000, 0xaf19000c },
+ 	{ 0x4b10084c, 0x00000000, 0x03e00008 },
+ 	{ 0x4b100850, 0x00000000, 0x00000000 },
+ 	{ 0x4b120e18, 0x03e00008, 0x0ac40210 },
+ 
+ 	/* CALL dispatcher returned -> marker e011 -> original logger. */
+-	{ 0x4b100860, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100864, 0x00000000, 0x341be011 },
+-	{ 0x4b100868, 0x00000000, 0xaf5b000c },
++	{ 0x4b100860, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100864, 0x00000000, 0x3419e011 },
++	{ 0x4b100868, 0x00000000, 0xaf19000c },
+ 	{ 0x4b10086c, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b100870, 0x00000000, 0x00000000 },
+ 	{ 0x4b1213ec, 0x0ec54252, 0x0ec40218 },
+ 
+ 	/* ack_action return -> marker f001 -> original caller. */
+-	{ 0x4b100880, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100884, 0x00000000, 0x341bf001 },
+-	{ 0x4b100888, 0x00000000, 0xaf5b0010 },
++	{ 0x4b100880, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100884, 0x00000000, 0x3419f001 },
++	{ 0x4b100888, 0x00000000, 0xaf190010 },
+ 	{ 0x4b10088c, 0x00000000, 0x03e00008 },
+ 	{ 0x4b100890, 0x00000000, 0x00000000 },
+ 	{ 0x4b11eef0, 0x03e00008, 0x0ac40220 },
+ 
+ 	/* RETURN_ACK dispatcher returned -> marker f002 -> original logger. */
+-	{ 0x4b1008a0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1008a4, 0x00000000, 0x341bf002 },
+-	{ 0x4b1008a8, 0x00000000, 0xaf5b0010 },
++	{ 0x4b1008a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1008a4, 0x00000000, 0x3419f002 },
++	{ 0x4b1008a8, 0x00000000, 0xaf190010 },
+ 	{ 0x4b1008ac, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b1008b0, 0x00000000, 0x00000000 },
+ 	{ 0x4b121620, 0x0ec54252, 0x0ec40228 },
+ 
+ 	/* RETURN_ACK wrapper return -> marker f003 -> original caller. */
+-	{ 0x4b1008c0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1008c4, 0x00000000, 0x341bf003 },
+-	{ 0x4b1008c8, 0x00000000, 0xaf5b0010 },
++	{ 0x4b1008c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1008c4, 0x00000000, 0x3419f003 },
++	{ 0x4b1008c8, 0x00000000, 0xaf190010 },
+ 	{ 0x4b1008cc, 0x00000000, 0x03e00008 },
+ 	{ 0x4b1008d0, 0x00000000, 0x00000000 },
+ 	{ 0x4b12163c, 0x03e00008, 0x0ac40230 },
+ 
+ 	/* Semaphore failure log -> marker c103 -> original logger. */
+-	{ 0x4b1003e0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1003e4, 0x00000000, 0x341bc103 },
+-	{ 0x4b1003e8, 0x00000000, 0xaf5b0000 },
++	{ 0x4b1003e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1003e4, 0x00000000, 0x3419c103 },
++	{ 0x4b1003e8, 0x00000000, 0xaf190000 },
+ 	{ 0x4b1003ec, 0x00000000, 0x0ac54252 },
+ 	{ 0x4b1003f0, 0x00000000, 0x00000000 },
+ 	{ 0x4b12006c, 0x0ec54252, 0x0ec400f8 },
+@@ -2483,9 +2495,9 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	{ 0x4b1095a0, 0x1000ff66, 0x0ac40268 }, /* j 0x8b1009a0 */
+ 
+ 	/* THal_Vp_Init entry -> marker 7101 -> local state reset. */
+-	{ 0x4b1009c0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1009c4, 0x00000000, 0x341b7101 },
+-	{ 0x4b1009c8, 0x00000000, 0xaf5b0038 },
++	{ 0x4b1009c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1009c4, 0x00000000, 0x34197101 },
++	{ 0x4b1009c8, 0x00000000, 0xaf190038 },
+ 	{ 0x4b1009cc, 0x00000000, 0x0ec5275c }, /* jal 0x8b149d70 */
+ 	{ 0x4b1009d0, 0x00000000, 0x00000000 },
+ 	{ 0x4b1009d4, 0x00000000, 0x0ac427c8 }, /* j 0x8b109f20 */
+@@ -2493,9 +2505,9 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	{ 0x4b109f18, 0x0ec5275c, 0x0ac40270 }, /* j 0x8b1009c0 */
+ 
+ 	/* State reset returned -> marker 7102 -> local VP initializer. */
+-	{ 0x4b1009e0, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b1009e4, 0x00000000, 0x341b7102 },
+-	{ 0x4b1009e8, 0x00000000, 0xaf5b0038 },
++	{ 0x4b1009e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1009e4, 0x00000000, 0x34197102 },
++	{ 0x4b1009e8, 0x00000000, 0xaf190038 },
+ 	{ 0x4b1009ec, 0x00000000, 0x0ec525d5 }, /* jal 0x8b149754 */
+ 	{ 0x4b1009f0, 0x00000000, 0x00000000 },
+ 	{ 0x4b1009f4, 0x00000000, 0x0ac427ca }, /* j 0x8b109f28 */
+@@ -2503,27 +2515,27 @@ static const struct h713_mips_patch h713_mips_comm_trace_patches[] = {
+ 	{ 0x4b109f20, 0x0ec525d5, 0x0ac40278 }, /* j 0x8b1009e0 */
+ 
+ 	/* VP initializer returned -> marker 7103 -> original buffer load. */
+-	{ 0x4b100a00, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100a04, 0x00000000, 0x341b7103 },
+-	{ 0x4b100a08, 0x00000000, 0xaf5b0038 },
++	{ 0x4b100a00, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100a04, 0x00000000, 0x34197103 },
++	{ 0x4b100a08, 0x00000000, 0xaf190038 },
+ 	{ 0x4b100a0c, 0x00000000, 0x8e24000c }, /* lw a0, 0xc(s1) */
+ 	{ 0x4b100a10, 0x00000000, 0x03e00008 }, /* jr ra */
+ 	{ 0x4b100a14, 0x00000000, 0x00000000 },
+ 	{ 0x4b109f28, 0x8e24000c, 0x0ec40280 }, /* jal 0x8b100a00 */
+ 
+ 	/* Bulk copy returned -> marker 7104 -> original result setup. */
+-	{ 0x4b100a20, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100a24, 0x00000000, 0x341b7104 },
+-	{ 0x4b100a28, 0x00000000, 0xaf5b0038 },
++	{ 0x4b100a20, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100a24, 0x00000000, 0x34197104 },
++	{ 0x4b100a28, 0x00000000, 0xaf190038 },
+ 	{ 0x4b100a2c, 0x00000000, 0x24020001 }, /* addiu v0, zero, 1 */
+ 	{ 0x4b100a30, 0x00000000, 0x03e00008 }, /* jr ra */
+ 	{ 0x4b100a34, 0x00000000, 0x00000000 },
+ 	{ 0x4b109f50, 0x24020001, 0x0ec40288 }, /* jal 0x8b100a20 */
+ 
+ 	/* Output prepared -> marker 7105 -> original callback-install tail. */
+-	{ 0x4b100a40, 0x00000000, 0x3c1aae34 },
+-	{ 0x4b100a44, 0x00000000, 0x341b7105 },
+-	{ 0x4b100a48, 0x00000000, 0xaf5b0038 },
++	{ 0x4b100a40, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100a44, 0x00000000, 0x34197105 },
++	{ 0x4b100a48, 0x00000000, 0xaf190038 },
+ 	{ 0x4b100a4c, 0x00000000, 0x0ac5305d }, /* j 0x8b14c174 */
+ 	{ 0x4b100a50, 0x00000000, 0x00000000 },
+ 	{ 0x4b109f74, 0x0ac5305d, 0x0ac40290 }, /* j 0x8b100a40 */
+@@ -3330,12 +3342,17 @@ static int h713_mips_apply_comm_trace(void)
+ 			       patch->addr);
+ 			return -EINVAL;
+ 		}
+-		if (op == 0x0f && (reg == 24 || reg == 26) &&
+-		    (word & 0xffff) == 0xae34)
++		/* Cave words never name k0/k1 (see the table comment). */
++		if (!patch->expected && op != 0x02 && op != 0x03 &&
++		    (((word >> 21) & 0x1e) == 0x1a || (reg & 0x1e) == 0x1a ||
++		     (!op && ((word >> 11) & 0x1e) == 0x1a))) {
++			printf("H713 MIPS: comm trace cave 0x%08lx uses k0/k1\n",
++			       patch->addr);
++			return -EINVAL;
++		}
++		if (op == 0x0f && reg == 24 && (word & 0xffff) == 0xae34)
+ 			base_count++;
+-		else if (op == 0x2b &&
+-			 (((word >> 21) & 0x1f) == 24 ||
+-			  ((word >> 21) & 0x1f) == 26) &&
++		else if (op == 0x2b && ((word >> 21) & 0x1f) == 24 &&
+ 			 (word & 0xffff) <= 0x7c)
+ 			store_count++;
+ 	}
+@@ -3358,18 +3375,15 @@ static int h713_mips_apply_comm_trace(void)
+ 		u32 reg = (word >> 16) & 0x1f;
+ 
+ 		/*
+-		 * Retarget only this trace's stores: lui t8/k0,0xae34 and
+-		 * sw <value>,offset(t8/k0).  The original patch table remains
++		 * Retarget only this trace's stores: lui t8,0xae34 and
++		 * sw <value>,offset(t8).  The original patch table remains
+ 		 * readable alongside the exact-image guards above.  The low address
+ 		 * half is zero for this page; unrelated firmware stores are untouched.
+ 		 */
+-		if (op == 0x0f && (reg == 24 || reg == 26) &&
+-		    (word & 0xffff) == 0xae34)
++		if (op == 0x0f && reg == 24 && (word & 0xffff) == 0xae34)
+ 			word = (word & 0xffff0000) |
+ 				H713_MIPS_COMM_TRACE_MIPS_HI;
+-		else if (op == 0x2b &&
+-			 (((word >> 21) & 0x1f) == 24 ||
+-			  ((word >> 21) & 0x1f) == 26) &&
++		else if (op == 0x2b && ((word >> 21) & 0x1f) == 24 &&
+ 			 (word & 0xffff) <= 0x7c)
+ 			word += H713_MIPS_COMM_TRACE_MIPS_LO;
+ 		writel(word, patch->addr);

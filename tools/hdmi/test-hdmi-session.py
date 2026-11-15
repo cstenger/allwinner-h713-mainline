@@ -396,6 +396,13 @@ class TraceReader(unittest.TestCase):
         mem,a,c=self.t.open_trace(self.shell)
         self.assertEqual(snap,self.t.sample(mem,a,c,source_only=True))
         self.assertNotIn('comm',snap)
+    def test_adapter_return_marker_0006_or_whole_legacy_pair(self):
+        self.t.open_trace(self.shell)                       # 0006: lui t8 / sw t9
+        self.words.update(self.t.ADAPTER_RETURN_PRE_0006)
+        self.t.open_trace(self.shell)                       # pre-0006 proper: lui k0 / sw k1
+        self.words[0x4b101048]=0xaf190058                   # mixed slot
+        with self.assertRaisesRegex(RuntimeError,'adapter patch mismatch at 0x4b101040'):
+            self.t.open_trace(self.shell)
     def test_bad_guard_or_patch_raises_instead_of_exiting(self):
         self.words[self.t.MAILBOX+0xffc]=0
         with self.assertRaisesRegex(RuntimeError,'page guard'):self.t.source_snapshot(self.shell)
