@@ -438,3 +438,20 @@ helper now returns its result without changing the legacy callers' behavior;
 its CMD53 argument uses an unsigned high-bit shift. See the
 [recovery verification](../../docs/reviews/well0nez-2026-11-14/emmc-recovery.md)
 for host failure tests, mutation checks and natural full-FIFO hardware errors.
+
+**0208** reserves ARM → MIPS msgbox FIFO room before a CPU_COMM message is
+published. The doorbell runs under one lock: the driver is the FIFO's only
+writer, so a count below eight under the lock reserves the word, and the
+shared header and its SENT flag are written only after that. With no room
+within 100 ms the send returns `-EBUSY` with shared memory untouched
+(`tx_fifo_full` counts refusals). The lock also keeps concurrent senders'
+data writes and TX_IRQ_EN pulses from interleaving; the pulse itself is
+unchanged. `SendComm2CPUEx` now propagates the send result, clearing the
+pending ACK, releasing the unpublished wait object and keeping the
+unpublished slot cached; a failed `copy_to_user` no longer leaks its wait.
+`SendAckLow` returns an error and quarantines instead of `BUG()` on a
+still-published ACK, and a late RETURN is recycled only after its ACK is
+published. The FIFO depth check follows well0nez's 0014f.
+`tools/mips/test-cpu-comm-tx.py` tests the actual prepared functions
+(`--mutations`, `--baseline`); see the
+[TX record](../../docs/reviews/well0nez-2026-11-14/cpu-comm-tx.md).

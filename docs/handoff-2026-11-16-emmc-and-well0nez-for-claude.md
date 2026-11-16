@@ -216,8 +216,10 @@ claims about later upstream changes.
 
 Suggested next topics, pending the user's choice:
 
-1. **CPU_COMM TX FIFO guard (0014f).** Our send routine still writes without
-   checking capacity. Adapt error propagation through CALL/ACK/RETURN_ACK
+1. **CPU_COMM TX FIFO guard (0014f).** *Update: kernel 0208 is written,
+   built and host-tested, not installed; see
+   [the TX record](reviews/well0nez-2026-11-14/cpu-comm-tx.md).* Our send
+   routine still writes without checking capacity. Adapt error propagation through CALL/ACK/RETURN_ACK
    publication, ownership and timeout cleanup; a count check alone is not a
    recovery protocol. Keep the qualified receive path.
 2. **Small whitelist cleanup (0014e).** Two unused entries still name msgbox

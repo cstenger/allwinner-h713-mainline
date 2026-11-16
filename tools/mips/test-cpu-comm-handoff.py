@@ -148,6 +148,10 @@ static void queueAction(u32 t,u32 c){assert(0);}
 static void sunxi_cpu_comm_send_intr_to_mips(u32 t,u32 k,u32 v){
     assert(t==3);assert(shared[0x1000+104]==20);assert(*(u64*)(shared+0x1000+112)==expected_handle);sent++;
 }
+/* 0208 transport: publication runs inside the doorbell reservation. */
+int cpu_comm_msgbox_send(u32 t,void (*publish)(void *),void *ctx){
+    publish(ctx);sunxi_cpu_comm_send_intr_to_mips(t,0,0);return 0;
+}
 void cpu_comm_complete_return(u32,u32,unsigned long,u8,u32,u64);
 '''
 HANDOFF_CASES = r'''
@@ -274,12 +278,21 @@ int main(void){
                 run_case(directory,'baseline-slot-boundary',COMMON+baseline_stubs+helpers+boundary_case,True)
             if label=='candidate':
                 if 'static bool cpu_comm_tx_available(' in s['cpu_comm_proto']:
-                    gates='\n'.join(function(s['cpu_comm_proto'],m) for m in ('static bool cpu_comm_tx_available(', 'static bool cpu_comm_tx_may_publish(', 'static void cpu_comm_tx_ack_timeout('))
+                    markers=['static bool cpu_comm_tx_available(', 'static bool cpu_comm_tx_may_publish(', 'static void cpu_comm_tx_ack_timeout(']
+                    if 'static void cpu_comm_tx_quarantine(' in s['cpu_comm_proto']:
+                        markers.insert(2,'static void cpu_comm_tx_quarantine(')
+                    gates='\n'.join(function(s['cpu_comm_proto'],m) for m in markers)
                     run_case(directory,'quarantine',COMMON+QUARANTINE+gates+QUARANTINE_CASES)
                     sender=function(s['cpu_comm_proto'],'int SendComm2CPUEx(')
                     assert 'share_seq_w[8] &=' not in sender
                     assert sender.index('cpu_comm_sem_down_interruptible(')<sender.index('cpu_comm_tx_may_publish(')<sender.index('memcpy(call_slot,')
-                helpers='\n'.join([function(s['cpu_comm_proto'],'void SendAckLow('),function(s['cpu_comm_channel'],'void cpu_comm_complete_return('),
+                if 'int SendAckLow(' in s['cpu_comm_proto']:
+                    proto=s['cpu_comm_proto'];start=proto.index('struct cc_ack_publication {')
+                    ack=QUARANTINE+function(proto,'static void cpu_comm_tx_quarantine(')+'\n'+proto[start:proto.index('};',start)+2]+'\n'+\
+                        function(proto,'static void cc_publish_ack(')+'\n'+function(proto,'int SendAckLow(')
+                else:
+                    ack=function(s['cpu_comm_proto'],'void SendAckLow(')
+                helpers='\n'.join([ack,function(s['cpu_comm_channel'],'void cpu_comm_complete_return('),
                                    function(s['cpu_comm_proto'],'void command_action('),function(s['cpu_comm_proto'],'void ack_action(')])
                 run_case(directory,'handoff',COMMON+HANDOFF+helpers+HANDOFF_CASES)
                 ring_stubs=HANDOFF.replace('static void Comm_ReleaseFreeCall(void *s,void *e){assert(sent);recycled++;}', '')

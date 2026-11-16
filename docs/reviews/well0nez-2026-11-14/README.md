@@ -18,7 +18,10 @@ The [eMMC threshold comparison](emmc-threshold.md) reproduces a CMD18 stall
 under read-only combined load on the baseline and verifies H713-scoped patch
 0206 on the bench. The subsequent [checked 0312 adaptation](emmc-recovery.md),
 0207, recovers three natural full-FIFO read errors and is installed without
-diagnostics. Coupled decoder-reset changes remain open. The candidate table
+diagnostics. [Kernel 0208](cpu-comm-tx.md) adapts 0014f's TX FIFO depth
+check by reserving room before publication, with send-error unwinding;
+it is built and host-tested, not yet installed. Coupled decoder-reset
+changes remain open. The candidate table
 below is the historical inventory.
 
 ## Sources and overlap
