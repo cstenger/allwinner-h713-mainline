@@ -2,8 +2,8 @@
 
 Kernel **0208** adapts the TX FIFO depth check from well0nez's pinned
 [0014f](https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0014f-soc-sunxi-cpu-comm-never-write-into-a-full-tx-fifo.patch).
-It is **installed** (module only) and **passes the warm-boot 6003-call
-qualification**. The operator cold-boot repeat is pending.
+It is **installed** (module only) and **passes the 6003-call qualification on
+warm and cold boot**.
 
 ## What was wrong
 
@@ -212,17 +212,24 @@ traffic.
 The [validation summary](cpu-comm-tx-validation.json) holds evidence
 digests; raw logs are in `local/recovery/2026-11-16-cpu-comm-tx/qual/`.
 
-## Hardware qualification still needed
+## Cold-boot qualification — PASS
 
-Repeat
-the CPU_COMM transport runs from the
-[IRQ qualification](cpu-comm-handoff.md#irq-qualification-on-u-boot-0006--pass-one-run)
-on an operator cold boot (warm passed above): 3 + 600 serial + 4×150 concurrent
-+ 8×600 serial calls, with `rx_irq_active=Y`, `rx_poll_active=N`,
-`tx_desynced=N` and `tx_fifo_full=0` after every phase, IRQ-only RX counts,
-startup health and no CPU_COMM warnings. A full FIFO is not reproduced on
-the board: forcing one would need a parked MIPS or injected words, and the
-host tests cover that case instead.
+After the operator unplugged serial and USB and power-cycled the board
+(boot `41b98df8-d8eb-491f-aedf-3796ec5783d1`), the same checks passed:
+
+- **Before traffic.** Startup check PASS and acknowledgement dry-run clean.
+  Both manifests verify, no units have failed and ext4's error counter is
+  zero. eMMC runs HS400 at 200 MHz, eight-bit. The module is `9864701f…`
+  with `tx_fifo_full=0`, and the automatic filter reports level 2, verified.
+- **Traffic.** All **6003 calls** completed: 12006 IRQ RX, zero polling RX,
+  `tx_desynced=N` and `tx_fifo_full=0` after every phase. The ELOG pointer
+  stayed at `0x5f284` and the fault magic was zero.
+- **After traffic.** The startup checker still passes. The CPU_COMM
+  error/refusal/late-RETURN scan finds zero lines.
+
+0208 is qualified on this DDR3 bench for warm and cold boot. A full TX FIFO
+was not reproduced on hardware; that case rests on the host tests. Rollback
+remains available from backup `kernel-fit-b4d327c9…`.
 
 Private working state (scratch tree, release build and logs) is under
 `local/recovery/2026-11-16-cpu-comm-tx/`.

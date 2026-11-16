@@ -36,5 +36,31 @@
       "verify.py": "eb5f298bcc48fc2c81731bd00341060c9897a04b45cfcb5ed6bb0e89ec10bee0"
     }
   },
-  "cold": "pending (operator cold boot)"
+  "cold": {
+    "boot": "41b98df8-d8eb-491f-aedf-3796ec5783d1",
+    "operator_cold_cycle": true,
+    "startup_check": "PASS",
+    "calls": 6003,
+    "phases": "3 + 600 serial + 4x150 concurrent + 8x600 serial",
+    "rx_irq": 12006,
+    "rx_poll": 0,
+    "tx_desynced": "N",
+    "tx_fifo_full": 0,
+    "elog_filter": 2,
+    "elog_pointer": "0x5f284",
+    "fault_magic": [
+      0,
+      0
+    ],
+    "failed_units": 0,
+    "ext4_errors": 0,
+    "manifests": "verified",
+    "emmc": "HS400 200 MHz 8-bit",
+    "cpu_comm_error_lines": 0,
+    "evidence": {
+      "cold-postboot.txt": "d59feddf09e8a87dca44f36d9712e3a5c9dfa5c75b41b60f58092553876d3f27",
+      "cold-stress.txt": "b8a5f379a1510328c2593b417bfab88926520bd5aa5d42dd33278b353b7b479b",
+      "cold-postflight.txt": "ff392756e8b434562b8eaf966c1c1a9ad83323df8a0886e4d3ead79eb2fdd70b"
+    }
+  }
 }

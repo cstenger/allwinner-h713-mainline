@@ -218,8 +218,8 @@ Suggested next topics, pending the user's choice:
 
 1. **CPU_COMM TX FIFO guard (0014f).** *Update: kernel 0208 is written,
    built, host-tested and its module (9864701f…) installed on disk on
-   2026-11-16 (backup kernel-fit-b4d327c9…); warm 6003-call run PASS on
-   boot 0259a3cf, cold repeat pending; see
+   2026-11-16 (backup kernel-fit-b4d327c9…); 6003-call runs PASS warm
+   (0259a3cf) and operator-cold (41b98df8); DONE; see
    [the TX record](reviews/well0nez-2026-11-14/cpu-comm-tx.md).* Our send
    routine still writes without checking capacity. Adapt error propagation through CALL/ACK/RETURN_ACK
    publication, ownership and timeout cleanup; a count check alone is not a
