@@ -129,6 +129,10 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('--boot-handoff',(units/'h713-hdmi-prepare.service').read_text())
             self.assertIn('ExecStart=/usr/bin/true',(units/'h713-hdmi-capture.service').read_text())
             self.assertTrue((units/'multi-user.target.wants/h713-hdmi-readvertise.service').is_symlink())
+            elog=units/'h713-mips-elog-level.service'
+            self.assertTrue((units/'multi-user.target.wants/h713-mips-elog-level.service').is_symlink())
+            self.assertIn('mips-shell.py --elog-level 2',elog.read_text())
+            self.assertIn('After=h713-hdmi-capture.service',elog.read_text())
             self.assertFalse((units/'multi-user.target.wants/h713-hdmi-video.service').exists())
             self.assertFalse((units/'multi-user.target.wants/h713-hdmi-prepare.service').exists())
             self.assertEqual((units/'h713-hdmi-prepare.service').read_bytes(),

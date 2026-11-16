@@ -136,4 +136,86 @@ class Completion(unittest.TestCase):
                 terminal.assert_not_called()
 
 
+ELOG_REPLY = b'elog -l 2\r\r\n\r\r\nVS:/$ '
+
+
+class Mem:
+    """Pinned handler words plus a filter word whose update can lag the reply."""
+    def __init__(self, clock, before=5, takes_effect_at=0.3, level=2):
+        self.clock = clock; self.before = before; self.at = takes_effect_at; self.level = level
+        self.words = dict(m.ELOG_HANDLER_WORDS)
+    def u32(self, address):
+        if address == m.ELOG_LEVEL_WORD:
+            low = self.level if self.at is not None and self.clock() >= self.at else self.before
+            return 0x00000100 | low
+        return self.words[address]
+
+
+class ElogLevel(unittest.TestCase):
+    def run_set(self, term, alive=True, level=2, timeout=0.5, settle=1.0):
+        return m.set_elog_level(term, alive, level, timeout, settle, clock=term.clock, sleep=term.clock.sleep)
+    def term(self, chunks=None, **mem):
+        clock = Clock()
+        t = Terminal(clock, chunks if chunks is not None else [(0.06, ELOG_REPLY)])
+        t.mem = Mem(clock, **mem)
+        return t
+    def test_native_command_and_lagging_readback_verify(self):
+        t = self.term()
+        r = self.run_set(t)
+        self.assertEqual(t.sent, ['elog -l 2\r'])
+        self.assertEqual((r['schema'], r['level'], r['before'], r['verified'], r['reply_bytes']),
+                         ('h713-mips-elog-v1', 2, 5, True, 21))
+        self.assertGreaterEqual(r['elapsed_seconds'], 0.3)
+    def test_every_split_of_reply_is_supported(self):
+        for split in range(1, len(ELOG_REPLY)):
+            t = self.term([(0.01, ELOG_REPLY[:split]), (0.05, ELOG_REPLY[split:])])
+            self.assertTrue(self.run_set(t)['verified'])
+    def test_stale_partial_wrong_and_unconsumed_replies_fail(self):
+        for fresh in ([(0.01, b'VS:/$ ')], []):     # a stale reply alone never completes
+            clock = Clock(); t = Terminal(clock, fresh, stale=ELOG_REPLY); t.mem = Mem(clock)
+            with self.subTest(fresh=fresh), self.assertRaisesRegex(RuntimeError, 'deadline'): self.run_set(t)
+        for data in (ELOG_REPLY[:-1], ELOG_REPLY.replace(b'2', b'3', 1), b'noise' + ELOG_REPLY,
+                     b'elog -l 2\r\r\nunknown\r\r\nVS:/$ '):
+            with self.subTest(data=data), self.assertRaisesRegex(RuntimeError, 'deadline'):
+                self.run_set(self.term([(0.01, data)]))
+        clock = Clock(); t = Terminal(clock, [(0.01, ELOG_REPLY)], consume_at=9); t.mem = Mem(clock)
+        with self.assertRaisesRegex(RuntimeError, 'deadline'): self.run_set(t)
+    def test_filter_that_never_changes_is_not_verified(self):
+        t = self.term(takes_effect_at=None)
+        with self.assertRaisesRegex(RuntimeError, 'not verified'): self.run_set(t)
+        self.assertEqual(t.sent, ['elog -l 2\r'])
+    def test_wrong_firmware_parked_busy_bad_filter_and_arguments_never_send(self):
+        t = self.term(); t.mem.words[m.ELOG_HANDLER_WORDS[1][0]] ^= 1
+        with self.assertRaisesRegex(RuntimeError, 'pinned firmware'): self.run_set(t)
+        t = self.term(before=0x41)
+        with self.assertRaisesRegex(RuntimeError, 'outside'): self.run_set(t)
+        t = self.term()
+        with self.assertRaisesRegex(RuntimeError, 'parked'): self.run_set(t, alive=False)
+        t.down[0].wroff = 1
+        with self.assertRaisesRegex(RuntimeError, 'busy'): self.run_set(t)
+        t.down[0].wroff = 0
+        for level in (-1, 8, 2.0, True, '2'):
+            with self.subTest(level=level), self.assertRaises(ValueError): self.run_set(t, level=level)
+        for timeout in (0, float('nan'), float('inf')):
+            with self.assertRaises(ValueError): self.run_set(t, timeout=timeout)
+        self.assertEqual(t.sent, [])
+    def test_cli_rejects_mixed_elog_actions_before_terminal_access(self):
+        for args in (['--check-ipc'], ['--status'], ['--cmd', 'cmds'], ['--release'], ['--lock-wait', '500']):
+            with patch('sys.argv', ['mips-shell.py', '--elog-level', '2', *args]), \
+                 patch.object(m, 'Terminal') as terminal, contextlib.redirect_stderr(io.StringIO()), \
+                 self.assertRaises(SystemExit):
+                m.main()
+            terminal.assert_not_called()
+    def test_cli_waits_for_the_lock_then_refuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'lock'
+            with path.open('a') as held:
+                fcntl.flock(held, fcntl.LOCK_EX)
+                with patch('sys.argv', ['mips-shell.py', '--elog-level', '2', '--lock-wait', '0.3']), \
+                     patch('builtins.open', side_effect=lambda *a: path.open('a')), \
+                     patch.object(m, 'Terminal') as terminal, self.assertRaisesRegex(SystemExit, 'busy'):
+                    m.main()
+                terminal.assert_not_called()
+
+
 if __name__ == '__main__': unittest.main()

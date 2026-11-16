@@ -476,3 +476,33 @@ a cold boot before deciding whether IRQ reception becomes the default.
 `475220c5`): 6003 calls completed, 12006 RX by IRQ, none by polling, no fault or
 corruption. IRQ reception on U-Boot 0006 is qualified on warm and cold boot. It
 remains opt-in (`rx_irq=1`); changing the default is a separate decision.
+
+### 0205 installed — IRQ reception by default (2026-11-15)
+
+FIT `ed111cb3…`, module `137d93c4…`, installed with the guarded kernel-FIT
+installer. On a warm boot the normal startup completes, all HDMI services and
+the health acknowledgement succeed, and CPU_COMM registers IRQ-only by default
+with the pre-0006 guard silent.
+
+A short stress run on the plain default stalled after 238 calls (CALL_ACK
+timeout, sends quarantined until reboot). The firmware log was at level 5 with
+its 2 MiB buffer exactly full, which triggers the synchronous UART flush
+described above. That limit affects polling equally. After `elog -l 2` the same
+run passes (3 + 600 + 4×150, 2406 IRQ RX, no desync). **Open:** set the firmware
+log filter at startup so heavy CPU_COMM traffic cannot hit the flush.
+
+### Firmware log filter set at startup (2026-11-15)
+
+`h713-mips-elog-level.service` runs `mips-shell.py --elog-level 2` once after
+`h713-hdmi-prepare`/`h713-hdmi-capture`. The action pins the firmware `elog` handler,
+requires an idle shell ring and the exact 21-byte reply, and reads back the
+filter byte at `0x4b48bdb0`. It is part of the release overlay and installed on
+the board with `tools/hdmi/install-elog-level.py` (shell `5d0dd84e…` → `d7e505bb…`,
+manifest `5652cf77…` → `06674f3a…`).
+
+Warm boot `06fc390d`: the unit started 16 ms after prepare exited and logged
+`before 5 → level 2, verified` within 1.9 s. The system is `running` with all HDMI
+services and the health ack active. On the plain default configuration (IRQ, no
+manual step), 3 + 600 serial + 4×150 concurrent + 1200 serial = 2403 calls all
+returned rc 0, with 4806 RX by IRQ and 0 by polling, `tx_desynced=N`, and no
+CPU_COMM warnings. The previous run stalled at call 238. **Closed.**

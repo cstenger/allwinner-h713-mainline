@@ -1,0 +1,20 @@
+[Unit]
+Description=Quiet the H713 display firmware log so its 2 MiB flush cannot stall CPU_COMM
+# At the stock level 5 the firmware's log fills a few hundred CPU_COMM calls
+# after boot and is then printed synchronously through its UART; a CALL_ACK
+# times out and the driver quarantines sends until reboot. Set level 2 once
+# the HDMI startup (the only other MIPS-shell user) has finished, so this adds
+# nothing to the path to video.
+After=h713-hdmi-capture.service h713-hdmi-prepare.service
+ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
+ConditionPathExists=/sys/module/hy310_cpu_comm
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi/mips-shell.py --elog-level 2 --lock-wait 20
+TimeoutStartSec=45
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

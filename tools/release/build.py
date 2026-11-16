@@ -28,6 +28,7 @@ BACKEND = {
     'h713-hdmi-readvertise.py': 'tools/hdmi/h713-hdmi-readvertise.py',
     'h713-hdmi-readvertise.service': 'tools/hdmi/h713-hdmi-readvertise.service',
     'h713-hdmi-hold-guard': 'tools/hdmi/h713-hdmi-hold-guard',
+    'h713-mips-elog-level.service': 'tools/hdmi/h713-mips-elog-level.service',
     'mips-shell.py': 'tools/mips/mips-shell.py',
     'read-comm-trace.py': 'tools/mips/read-comm-trace.py',
 }

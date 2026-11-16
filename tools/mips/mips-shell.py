@@ -423,6 +423,87 @@ def check_ipc(term, alive, timeout=1.5, *, clock=time.monotonic,
     raise RuntimeError("MIPS IPC deadline expired without a complete fresh reply")
 
 
+# Firmware log filter (pinned display.bin, SHA-256 4380f1b3...). At the stock
+# level 5 the 2 MiB log fills a few hundred CPU_COMM calls after boot, and the
+# firmware then prints all of it synchronously through its UART: long enough
+# for a CALL_ACK to time out, after which the driver quarantines sends until
+# reboot. Level 2 keeps the log far below that boundary. The native `elog -l`
+# command sets byte 0 of the filter word below; ARM readback of that cached
+# MIPS global can lag, so it is polled. The handler words pin the build.
+ELOG_LEVEL_WORD = 0x4B48BDB0
+ELOG_HANDLER_WORDS = ((0x4B151B34, 0x28820003), (0x4B151B38, 0x1440001E),
+                      (0x4B151B40, 0x27BDFFE0))
+
+
+def elog_reply_complete(reply, command):
+    return reply.replace(b"\r", b"").split(b"\n") == [command.encode(), b"", b"VS:/$ "]
+
+
+def set_elog_level(term, alive, level, timeout=3.0, settle=5.0, *,
+                   clock=time.monotonic, sleep=time.sleep):
+    """Set the firmware's global log filter natively and verify it took effect.
+
+    One bounded request; caller serializes ring users. No retry or reset.
+    """
+    if not isinstance(level, int) or isinstance(level, bool) or not 0 <= level <= 7:
+        raise ValueError("elog level must be an integer 0..7")
+    for value in (timeout, settle):
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("elog deadlines must be finite and positive")
+    if not alive:
+        raise RuntimeError("MIPS is parked; refusing elog request")
+    for address, word in ELOG_HANDLER_WORDS:
+        if term.mem.u32(address) != word:
+            raise RuntimeError(f"elog handler word {address:#x} differs: not the pinned firmware")
+    before = term.mem.u32(ELOG_LEVEL_WORD) & 0xff
+    if before > 7:
+        raise RuntimeError(f"elog filter reads {before}, outside 0..7: refusing")
+    down = term.down[0]
+    if down.wroff != down.rdoff:
+        raise RuntimeError("MIPS command ring is busy; refusing elog request")
+    stale = term.drain()
+    command = f"elog -l {level}"
+    started = clock()
+    if term.send(command + "\r") != len(command) + 1:
+        raise RuntimeError("incomplete MIPS elog command publication")
+    deadline = started + timeout
+    reply = bytes()
+    while True:
+        reply += term.drain()
+        if len(reply) > 256:
+            raise RuntimeError("MIPS elog reply exceeds bounded response size")
+        if elog_reply_complete(reply, command) and down.rdoff == down.wroff:
+            break
+        if clock() >= deadline:
+            raise RuntimeError("MIPS elog deadline expired without a complete fresh reply")
+        sleep(min(0.01, max(0, deadline - clock())))
+    answered = clock()
+    verify_deadline = answered + settle
+    while True:
+        after = term.mem.u32(ELOG_LEVEL_WORD) & 0xff
+        if after == level:
+            return {"schema": "h713-mips-elog-v1", "level": level, "before": before,
+                    "verified": True, "reply_bytes": len(reply), "stale_bytes": len(stale),
+                    "reply_seconds": round(answered - started, 6),
+                    "elapsed_seconds": round(clock() - started, 6)}
+        if clock() >= verify_deadline:
+            raise RuntimeError(f"elog filter still reads {after} after the command; not verified")
+        sleep(min(0.1, max(0, verify_deadline - clock())))
+
+
+def lock_terminal(lock, wait):
+    """Take the shared CLI lock; wait up to `wait` seconds (0 = refuse if busy)."""
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                sys.exit("MIPS shell is busy; refusing concurrent terminal access")
+            time.sleep(0.1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -431,6 +512,10 @@ def main():
     parser.add_argument("--cmd", help="send a command line, then read the reply")
     parser.add_argument("--check-ipc", action="store_true",
                         help="validate pinned cmds reply and return immediately on completion")
+    parser.add_argument("--elog-level", type=int, metavar="N",
+                        help="set the firmware log filter natively (0..7) and verify it")
+    parser.add_argument("--lock-wait", type=float, default=0.0,
+                        help="seconds to wait for the shared terminal lock (--elog-level)")
     parser.add_argument("--wait", type=float, default=1.5, help="seconds to wait for output")
     parser.add_argument("--raw", action="store_true", help="hex-dump output instead of decoding")
     parser.add_argument("--unbind", action="store_true",
@@ -443,15 +528,18 @@ def main():
         parser.error("--check-ipc cannot be combined with other terminal actions")
     if args.check_ipc and (not math.isfinite(args.wait) or args.wait <= 0):
         parser.error("--wait must be finite and positive")
+    if args.elog_level is not None and any((args.status, args.drain, args.cmd, args.raw,
+                                            args.unbind, args.release, args.check_ipc)):
+        parser.error("--elog-level cannot be combined with other terminal actions")
+    if not math.isfinite(args.lock_wait) or not 0 <= args.lock_wait <= 120:
+        parser.error("--lock-wait must be 0..120 seconds")
 
     # Cooperating CLI readers/writers must not steal one another's replies.
     # Keep the lock for the entire transaction, including legacy reads.
-    if args.check_ipc or args.cmd or args.drain or args.release or args.unbind:
+    if (args.check_ipc or args.cmd or args.drain or args.release or args.unbind
+            or args.elog_level is not None):
         with open('/run/lock/h713-mips-shell.lock', 'a') as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                sys.exit("MIPS shell is busy; refusing concurrent terminal access")
+            lock_terminal(lock, args.lock_wait if args.elog_level is not None else 0)
             return run_terminal(args)
     return run_terminal(args)
 
@@ -459,6 +547,13 @@ def main():
 def run_terminal(args):
     term = Terminal()
     alive = mips_alive(term.mem)
+    if args.elog_level is not None:
+        try:
+            result = set_elog_level(term, alive, args.elog_level)
+        except (RuntimeError, ValueError) as error:
+            sys.exit(str(error))
+        print(json.dumps(result))
+        return
     if args.check_ipc:
         try:
             result = check_ipc(term, alive, args.wait)
