@@ -2,8 +2,8 @@
 
 Kernel **0208** adapts the TX FIFO depth check from well0nez's pinned
 [0014f](https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0014f-soc-sunxi-cpu-comm-never-write-into-a-full-tx-fifo.patch).
-It is **built, host-tested and installed on disk** (module only). It takes
-effect at the next boot; no board trial has run yet.
+It is **installed** (module only) and **passes the warm-boot 6003-call
+qualification**. The operator cold-boot repeat is pending.
 
 ## What was wrong
 
@@ -186,12 +186,38 @@ unmounted afterwards. The result is `candidate`. Verified afterwards:
 
 The running module remains 0207 until the next boot; no module was reloaded.
 
+## Warm-boot qualification — PASS
+
+After a warm reboot into boot `0259a3cf-0770-4253-87a1-e8bfac16244f`, the
+running module is `9864701f…` and `tx_fifo_full` is present and zero. The
+startup checker passes, the acknowledgement dry-run writes nothing, both
+manifests verify, no units have failed and ext4's error counter is zero.
+The automatic log filter reports level 2, verified.
+
+The existing qualification script, extended to pin the module hash and
+require `tx_fifo_full=0`, completed all **6003 calls** on the default
+configuration. The phases were 3 controls, 600 serial, 4 × 150 concurrent
+and 8 × 600 serial. After every phase:
+
+- the boot ID was unchanged;
+- IRQ reception was active and polling inactive;
+- `tx_desynced=N` and `tx_fifo_full=0`;
+- the filter read 2 and the firmware fault-save magic was zero.
+
+Final counts are **12006 IRQ RX, zero polling RX**, and the ELOG pointer
+stayed at `0x5f284`. The kernel log contains no send-refusal, quarantine,
+timeout or late-RETURN messages. The startup checker still passes after the
+traffic.
+
+The [validation summary](cpu-comm-tx-validation.json) holds evidence
+digests; raw logs are in `local/recovery/2026-11-16-cpu-comm-tx/qual/`.
+
 ## Hardware qualification still needed
 
-Apply the module-only bundle with the guarded installer. Then repeat
+Repeat
 the CPU_COMM transport runs from the
 [IRQ qualification](cpu-comm-handoff.md#irq-qualification-on-u-boot-0006--pass-one-run)
-on a warm boot and an operator cold boot: 3 + 600 serial + 4×150 concurrent
+on an operator cold boot (warm passed above): 3 + 600 serial + 4×150 concurrent
 + 8×600 serial calls, with `rx_irq_active=Y`, `rx_poll_active=N`,
 `tx_desynced=N` and `tx_fifo_full=0` after every phase, IRQ-only RX counts,
 startup health and no CPU_COMM warnings. A full FIFO is not reproduced on

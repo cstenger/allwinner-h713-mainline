@@ -1,0 +1,40 @@
+{
+  "schema": "h713-cpu-comm-tx-validation-v1",
+  "patch": "0208",
+  "board": "HY200 QZ713DF_A1 DDR3",
+  "module": "9864701f4d4d3cca545b8c932716f8902321252fafc5af4e56f27d91207fe35a",
+  "fit_unchanged": "845494c372b62d3f1ba6e3eb2b8166041398dc440c217dd58f5de140e004f2ac",
+  "install": {
+    "boot": "75218eb8-0937-4f0b-85ca-30f5a6c3ceb3",
+    "fat_mount": "read-only",
+    "backup": "/var/lib/h713-hdmi-startup/kernel-fit-b4d327c9ed554935bfe797dc23e4c39d",
+    "bundle_manifest": "375f34a86cf01dc494eaae22d07fd1690a5fd29d535454d5960a3e9bab82b189"
+  },
+  "warm": {
+    "boot": "0259a3cf-0770-4253-87a1-e8bfac16244f",
+    "startup_check": "PASS",
+    "calls": 6003,
+    "phases": "3 + 600 serial + 4x150 concurrent + 8x600 serial",
+    "rx_irq": 12006,
+    "rx_poll": 0,
+    "tx_desynced": "N",
+    "tx_fifo_full": 0,
+    "elog_filter": 2,
+    "elog_pointer": "0x5f284",
+    "fault_magic": [
+      0,
+      0
+    ],
+    "failed_units": 0,
+    "ext4_errors": 0,
+    "manifests": "verified",
+    "cpu_comm_error_lines": 0,
+    "evidence": {
+      "warm-postboot.txt": "91462f40f9ace60e681ace98efb7055ca0bbb439ba150f136f8d618e2d688888",
+      "warm-stress.txt": "db36b8713f316ceec7ec5d61e288c98f232798ce6cee3b86a6c6956db191faae",
+      "warm-postflight.txt": "db7d95a129a35916ce21e5e33a67a922f61e2c228af8b3c6f23efd9cec3d2fcb",
+      "verify.py": "eb5f298bcc48fc2c81731bd00341060c9897a04b45cfcb5ed6bb0e89ec10bee0"
+    }
+  },
+  "cold": "pending (operator cold boot)"
+}
