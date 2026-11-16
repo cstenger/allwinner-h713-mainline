@@ -21,6 +21,7 @@ detail belongs in the file it points at.
 
 | file | what it is |
 | --- | --- |
+| [`Claude handoff — November 16`](handoff-2026-11-16-emmc-and-well0nez-for-claude.md) | Board off; 0207 recovery installed and verified; current hashes, evidence, rollback and remaining well0nez work. |
 | [`First HDMI advert: cause and event-driven fix — November 8`](hdmi-first-advert-root-cause-2026-11-08.md) | Source reads EDID but our slave NAKs until an HPD edge; SCP DDC-line watch + failed-read pulse (`hpd-event-v1`): lock owner +2.12 s; qualification table; AFBD green stall closed as a rare known limit (1/9 boots). |
 | [`Claude board-completion handoff — November 6`](handoff-2026-11-06-claude-board-completion.md) | Current live/disk state, single-launch and EDID/DDC boot work, retry evidence, remaining optimization and DDR3 completion gates before LPDDR3. |
 | [`Early HDMI boot review — November 6`](hdmi-early-boot-review-2026-11-06.md) | U-Boot's two firmware launches, resource ordering, stock comparison and prepared-only observation checkpoints. |
