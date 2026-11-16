@@ -2,8 +2,8 @@
 
 Kernel **0208** adapts the TX FIFO depth check from well0nez's pinned
 [0014f](https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0014f-soc-sunxi-cpu-comm-never-write-into-a-full-tx-fifo.patch).
-It is **built and host-tested, and its install bundle passes a board
-preview. It has not been applied** and no board trial has run.
+It is **built, host-tested and installed on disk** (module only). It takes
+effect at the next boot; no board trial has run yet.
 
 ## What was wrong
 
@@ -168,8 +168,23 @@ The 0208 bundle (`local/recovery/2026-11-16-cpu-comm-tx/bundle/`, manifest
   restores the tree exactly.
 - **Board preview.** On boot `75218eb8-0937-4f0b-85ca-30f5a6c3ceb3`, with
   the FAT mounted read-only and unmounted afterwards, the preview reports
-  state `baseline` and would write only the module. **Not applied.** The
-  procedure is in that directory's `RUNBOOK.md`.
+  state `baseline` and would write only the module. The procedure is in
+  that directory's `RUNBOOK.md`.
+
+**Installed November 16, 2026** on the same boot, uptime about 2290 s. The
+installer ran a fresh preview (`baseline`) and then `--apply`, with the boot
+FAT mounted **read-only** so the transaction could not write it; it was
+unmounted afterwards. The result is `candidate`. Verified afterwards:
+
+- The on-disk module is `9864701f…`, vermagic `6.18.38 SMP mod_unload aarch64`.
+- The FAT FIT is still `845494c3…` and the scr still `c565a05a…`, with no
+  staged files left.
+- Both bundle manifests verify, and the system is `running`.
+- The committed backup is
+  `/var/lib/h713-hdmi-startup/kernel-fit-b4d327c9ed554935bfe797dc23e4c39d`.
+  It holds only the 0207 module `137d93c4…`.
+
+The running module remains 0207 until the next boot; no module was reloaded.
 
 ## Hardware qualification still needed
 
