@@ -1,0 +1,81 @@
+From: well0nez <8986239+well0nez@users.noreply.github.com>
+Subject: [PATCH] mmc: sunxi: enable the H713 eMMC read-block threshold
+
+Adapt well0nez's 0313: enable the card read threshold for blocks up to
+512 bytes in HS200/HS400, and clear the read threshold for writes and
+slower timings. Preserve unrelated THLD bits.
+
+Unlike the original non-v5p3x/supports_hs400 predicate, opt in only the
+sun50i_h713_emmc_cfg. Other sunxi eMMC controllers and the H713 v5p3x
+SDIO path retain their existing behavior. Reject a zero block size as
+well. This changes admission of read blocks, not error recovery; 0312's
+controller reset is a separate proposal.
+
+Original implementation and HY310 measurements: well0nez. H713-only cfg
+selection, zero-size exclusion and local validation: Christopher Stenger.
+
+Link: https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0313-mmc-sunxi-the-emmc-host-starts-a-read-block-only-when-the-fifo-has-room-for-it.patch
+
+---
+
+--- a/drivers/mmc/host/sunxi-mmc.c
++++ b/drivers/mmc/host/sunxi-mmc.c
+@@ -299,6 +299,9 @@
+ 	 * When false, HS400 caps are masked out in probe.
+ 	 */
+ 	bool supports_hs400;
++
++	/* H713 eMMC read-block threshold; independent of the SDIO variant. */
++	bool emmc_read_threshold;
+ };
+ 
+ /*
+@@ -1740,6 +1743,32 @@
+ 	writel(rval, host->reg_base + SDXC_REG_THLD);
+ }
+ 
++/*
++ * On H713 eMMC, admit an HS200/HS400 read block only when the FIFO has
++ * room for it. This avoids holding the card clock partway through a block
++ * when DMA falls behind under combined video/GPU/storage load.
++ * The cfg flag deliberately excludes other sunxi eMMC and v5p3x SDIO IP.
++ */
++static void sunxi_mmc_thld_ctl_emmc(struct sunxi_mmc_host *host,
++				    struct mmc_data *data)
++{
++	unsigned char timing = host->mmc->ios.timing;
++	u32 rval;
++
++	if (!host->cfg->emmc_read_threshold)
++		return;
++
++	rval = readl(host->reg_base + SDXC_REG_THLD);
++	rval &= ~(SDXC_THLD_SIZE_MASK | SDXC_THLD_READ_EN);
++
++	if ((data->flags & MMC_DATA_READ) && data->blksz &&
++	    data->blksz <= 512 &&
++	    (timing == MMC_TIMING_MMC_HS200 || timing == MMC_TIMING_MMC_HS400))
++		rval |= (data->blksz << 16) | SDXC_THLD_READ_EN;
++
++	writel(rval, host->reg_base + SDXC_REG_THLD);
++}
++
+ static void sunxi_mmc_request(struct mmc_host *mmc, struct mmc_request *mrq)
+ {
+ 	struct sunxi_mmc_host *host = mmc_priv(mmc);
+@@ -1848,6 +1877,7 @@
+ 
+ 	if (data) {
+ 		sunxi_mmc_thld_ctl_v5p3x(host, data);
++		sunxi_mmc_thld_ctl_emmc(host, data);
+ 		mmc_writel(host, REG_BLKSZ, data->blksz);
+ 		mmc_writel(host, REG_BCNTR, data->blksz * data->blocks);
+ 		sunxi_mmc_start_dma(host, data);
+@@ -1996,6 +2026,7 @@
+ 	.mask_data0 = true,
+ 	.needs_new_timings = true,
+ 	.supports_hs400 = true,
++	.emmc_read_threshold = true,
+ };
+ 
+ static const struct sunxi_mmc_cfg sun50i_h713_cfg = {

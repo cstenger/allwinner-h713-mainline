@@ -418,3 +418,11 @@ k0/k1 comm-trace markers (fixed by U-Boot 0006), not from this driver. With
 whenever the firmware patch cave (0x4b100300..0x4b100c1f) still holds a
 pre-0006 `lui k0` marker or cannot be mapped, so a mismatched bootloader
 cannot reintroduce the corruption.
+
+**0206** adapts well0nez's 0313 eMMC read-block threshold. Only the H713
+eMMC configuration opts in: HS200/HS400 reads of 1–512 bytes enable the
+threshold, while writes and other timings clear it, preserving unrelated
+register bits. Other sunxi eMMC controllers and the H713 v5p3x SDIO path
+retain their existing behavior. This does not add 0312's controller-reset
+recovery. `tools/storage/test-emmc-threshold.py` exercises the actual
+prepared helpers under ASan/UBSan, including transitions and device scope.

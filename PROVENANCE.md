@@ -89,3 +89,11 @@ review should consider a separately encoded ARM thread token.
 Patch **0203** is our arm64 fatal-fault reporting diagnostic, motivated by
 DDR3 CPU_COMM captures that stop after the first fault-address record.
 It adds no protocol behavior and is not a corruption fix.
+
+Patch **0206** adapts well0nez's
+[0313](https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0313-mmc-sunxi-the-emmc-host-starts-a-read-block-only-when-the-fifo-has-room-for-it.patch)
+eMMC read-block threshold implementation. Original authorship and HY310
+measurements remain attributed to well0nez. Our adaptation introduces an
+explicit H713-eMMC-only configuration flag, excludes zero-sized blocks and
+adds source-derived host tests and a read-only DDR3 load comparison. It does
+not import their separate 0312 error-recovery reset.

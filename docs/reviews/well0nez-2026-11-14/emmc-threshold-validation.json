@@ -1,0 +1,287 @@
+{
+  "date": "2026-11-16",
+  "status": "PASS bounded comparison: baseline stalls; threshold candidate completes matched load",
+  "board": "HY200 QZ713DF_A1 (DDR3)",
+  "controller": "4022000.mmc / allwinner,sun50i-h713-emmc",
+  "timing": "HS400, 200 MHz, 8-bit, 1.8 V",
+  "upstream_revision": "149f51d0df24c45b12674c81aab128b1fc8f5d4b",
+  "upstream_patch": "0313",
+  "local_patch": "0206-mmc-sunxi-enable-h713-emmc-read-threshold.patch",
+  "scope": "Explicit H713 eMMC cfg flag; no other eMMC or v5p3x SDIO change; no 0312 reset recovery",
+  "host_tests": {
+    "sanitizer_cases": 2754,
+    "cfg_scope_and_pre_dma_order": "PASS",
+    "bundle_tests": 8,
+    "installer_tests": 18,
+    "checkpatch_errors": 0,
+    "checkpatch_warnings": 0
+  },
+  "baseline": {
+    "boot_id": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+    "fit_sha256": "ed111cb3402a2c52c23c9e96a3ead4aa59b871301aa4bb4824b9740500d54671",
+    "idle": {
+      "phase": "round",
+      "mode": "idle",
+      "round": 1,
+      "seconds": 25.966363969999975,
+      "mib_per_second": 78.87126601037173,
+      "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+      "irq_delta": {
+        "ve": 0,
+        "gpu": 0
+      },
+      "samples": 21948,
+      "fifo_full": 0,
+      "thresholds": {
+        "0x0": 21948
+      },
+      "max_temp_millic": 60143
+    },
+    "mixed": "First 2 GiB round stalls; no complete valid mixed round",
+    "failure": {
+      "uptime": 2083.744115,
+      "command": "CMD18",
+      "rint": "0x00000020",
+      "status": "0x02009109",
+      "threshold": "0x00000000",
+      "stop_failed_uptime": 2084.774857,
+      "reader_wait": "mmc_wait_for_req_done",
+      "recovery": "Operator cold cycle; ext4 journal recovery; errors_count=0; manifests verify"
+    },
+    "rejected_probe": "Earlier GL-pipeline attempt had VE IRQs but zero GPU IRQs and was rejected; GBM GL probe crashed in userspace; neither is counted as a successful combined baseline."
+  },
+  "candidate": {
+    "boot_id": "c8ce1e43-f271-4eab-bdb1-b07ae0f5f490",
+    "bundle": {
+      "schema": "h713-kernel-fit-v1",
+      "files": {
+        "h713-kernel.fit": "796e1fb10da50bb9dd5510b90bc41024d71b07be522002b2642f1905ea6fec4c",
+        "h713-hdmi.cmd": "c2221b27cb6b19f0cc1bc032d310d1e40d19e10db388c44378476f1134e9689c",
+        "h713-hdmi.scr": "5b4bbf12046da45043e2e90ace16b9c29c8c899f33d15975644a6008a82eafa9"
+      },
+      "baseline": {
+        "h713-kernel.fit": "ed111cb3402a2c52c23c9e96a3ead4aa59b871301aa4bb4824b9740500d54671",
+        "h713-hdmi.cmd": "ad3cdfc456f12307eed65594355a64d792a934ee3c09ab5890efaa667cda0cd1",
+        "h713-hdmi.scr": "4ea247c087739ebbd74eaf1544caec0f0f76b0243bf96b1e56e8f0b9ed2c9c7a"
+      },
+      "sizes": {
+        "baseline_fit": 7613592,
+        "candidate_fit": 7613748,
+        "baseline_fdt": 34666,
+        "fdt": 34666
+      },
+      "checks": {
+        "module_symvers_equal": true,
+        "kernel_release_equal": true,
+        "config_diff": [],
+        "dtb_change": "none",
+        "cpu_comm_module_reproduced": false,
+        "cedrus_module_reproduced": false
+      },
+      "installer": "e486273d6f40909e9dee82792f8c25020c9d8c7c3151753d5a4d13e9c6dfd0e3"
+    },
+    "compiler": "clang/LLD 23.1.4 extracted from cached packages; no system toolchain modification",
+    "config_diff": [],
+    "dtb_identical": true,
+    "module_symvers_identical": true,
+    "kernel_release_identical": true,
+    "idle": {
+      "phase": "round",
+      "mode": "idle",
+      "round": 1,
+      "seconds": 25.950807888,
+      "mib_per_second": 78.91854499632062,
+      "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+      "irq_delta": {
+        "ve": 0,
+        "gpu": 0
+      },
+      "samples": 21781,
+      "fifo_full": 0,
+      "thresholds": {
+        "0x0": 13,
+        "0x2000001": 21768
+      },
+      "max_temp_millic": 60412
+    },
+    "mixed": [
+      {
+        "phase": "round",
+        "mode": "mixed",
+        "round": 1,
+        "seconds": 27.751690263,
+        "mib_per_second": 73.79730677992254,
+        "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+        "irq_delta": {
+          "ve": 640,
+          "gpu": 1656
+        },
+        "samples": 22443,
+        "fifo_full": 0,
+        "thresholds": {
+          "0x0": 25,
+          "0x2000001": 22418
+        },
+        "max_temp_millic": 70559
+      },
+      {
+        "phase": "round",
+        "mode": "mixed",
+        "round": 2,
+        "seconds": 27.93486722099999,
+        "mib_per_second": 73.31339661641275,
+        "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+        "irq_delta": {
+          "ve": 644,
+          "gpu": 1667
+        },
+        "samples": 22613,
+        "fifo_full": 0,
+        "thresholds": {
+          "0x0": 19,
+          "0x2000001": 22594
+        },
+        "max_temp_millic": 72978
+      },
+      {
+        "phase": "round",
+        "mode": "mixed",
+        "round": 3,
+        "seconds": 27.67969809600001,
+        "mib_per_second": 73.98924630236326,
+        "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+        "irq_delta": {
+          "ve": 628,
+          "gpu": 1652
+        },
+        "samples": 22438,
+        "fifo_full": 0,
+        "thresholds": {
+          "0x0": 8,
+          "0x2000001": 22430
+        },
+        "max_temp_millic": 74860
+      }
+    ],
+    "mixed_bytes": 6442450944,
+    "mixed_samples": 67494,
+    "fifo_full_samples": 0,
+    "max_temp_millic": 74860,
+    "pm_resume": {
+      "policy": "auto",
+      "before": "suspended",
+      "bytes": 4194304,
+      "after": "active"
+    },
+    "decode_results": [
+      {
+        "file": "h01-640x480-main.h265",
+        "bytes": 11520000,
+        "sha256": "8d7a73ae1418552d775433a74b551a366c1a72d35258a04ce2b05f2f6c89fbf8",
+        "frames": 25,
+        "ve_irq": 25,
+        "rc": 0,
+        "seconds": 0.443469666999988,
+        "stderr": ""
+      },
+      {
+        "file": "h04-640x480-scaling.h265",
+        "bytes": 11520000,
+        "sha256": "49d8846782f94f2766d01a1b22827cba3605ff5cd870e5d45964fb9e0a38c40d",
+        "frames": 25,
+        "ve_irq": 25,
+        "rc": 0,
+        "seconds": 0.45021837600000936,
+        "stderr": ""
+      },
+      {
+        "file": "h05-640x480-scaling-custom.h265",
+        "bytes": 11520000,
+        "sha256": "8d788898a682bbb62e7e32344d7116178f4c8ffbe36a0139d1c3f8785732d3db",
+        "frames": 25,
+        "ve_irq": 25,
+        "rc": 0,
+        "seconds": 0.4476076249999892,
+        "stderr": ""
+      },
+      {
+        "file": "h06-640x480-lossless.h265",
+        "bytes": 11520000,
+        "sha256": "77fdc148bbcc83f55471bedd3586f7e54d8947eb7989655ac27ccd6d92a9ea73",
+        "frames": 25,
+        "ve_irq": 25,
+        "rc": 0,
+        "seconds": 0.4588614580000012,
+        "stderr": ""
+      },
+      {
+        "file": "native-hevc.mp4",
+        "bytes": 414720000,
+        "sha256": "714244b0b65f6542aea92672ec9b54740adadf8f3fb05de2f0cfea0b9d734bd5",
+        "frames": 300,
+        "ve_irq": 300,
+        "rc": 0,
+        "seconds": 10.69569937999998,
+        "stderr": ""
+      },
+      {
+        "file": "native-vp9.webm",
+        "bytes": 414720000,
+        "sha256": "a9bb83369452003c6401ff620a98725a0a36344ca6fb982b225d63b2e557da88",
+        "frames": 300,
+        "ve_irq": 308,
+        "rc": 0,
+        "seconds": 10.802701630000001,
+        "stderr": ""
+      },
+      {
+        "file": "vp9-short-gop.webm",
+        "bytes": 16588800,
+        "sha256": "979f14c782e7e02614208f8dff816ef4d9a4e87e7805b1bee5a30378277ec6c0",
+        "frames": 48,
+        "ve_irq": 48,
+        "rc": 0,
+        "seconds": 0.42261233299998935,
+        "stderr": ""
+      }
+    ],
+    "decode_frames": 748,
+    "final_health": "PASS; system running; zero failed units; ext4 errors_count=0; both manifests pass; IRQ active/poll inactive/no TX desync",
+    "backup": "/var/lib/h713-hdmi-startup/kernel-fit-9b9c1b0ecbeb4c23b3dbd312d41d73e4"
+  },
+  "limits": [
+    "Three loaded rounds, not a long soak or other-board qualification.",
+    "No injected fault recovery, eMMC write stress, or hardware HS200 test.",
+    "Read throughput includes hashing and sampling overhead; failed baseline has no valid mixed throughput comparator.",
+    "Runtime PM is pinned on during register sampling and restored afterward; a separate auto-policy suspend/read-resume check passes."
+  ],
+  "raw_evidence_directory": "local/recovery/2026-11-16-emmc-threshold",
+  "evidence_sha256": {
+    "baseline-failure.txt": "66b36277d4057d00eb2f5d09300e7208b60db78ee91455c2810b09a3bf6ac5cb",
+    "baseline-idle.jsonl": "f28f51107e0885d880220a5060857a9fcf98ec2276a5f2735c97a1b05cd60ddd",
+    "baseline-mixed-v2.jsonl": "ad93789e9c5ead59c451e978427374d4b4cf6935703bb1ac413347cd6ac816ca",
+    "baseline-mixed.jsonl": "e454c9c8e487340f093b3f2bdba7d23b8761d55b672816c14f1996b2ec7a5b66",
+    "bundle-build.txt": "40cbc68923bda00a48dee0e0e5c308ec5bd9fd1ce245053d0cef3a50ae7d7ad7",
+    "candidate-boot.txt": "a567e0461d3672335e17c0093c8c1873a8c540fac4e7c8b1a0040b1f63e3fb3d",
+    "candidate-build-pinned.log": "8e732ee177125538c7e3461f95cb125f644fc4fba555164c2c55f961641b60e6",
+    "candidate-build.log": "429ee4fc9203d28be0b00c132e386ea5e1f607b859ccc921bf50e3754c9673ae",
+    "candidate-idle.jsonl": "0cd77310007b20d5959a4bf7e508c681a25017ac4592abdca39dd3ced9ed7fed",
+    "candidate-mixed.jsonl": "d7fa078d493843f3300aa0523ac3bf812adfdb358fdd4b6b174394324a852061",
+    "candidate-read-harness.py": "08897db3511f83afd0387e707cc90a3813139fd26f92cd29a4af03d54b37ca51",
+    "decode-check.py": "4b87405dae3e6aada539cfa42cfbff996cf0584a1c4831985e9ff2480d40a105",
+    "decode-results.jsonl": "e3d35247d6a9a3ee0ed975ce4e02b2538d5a14328275cafab4272ab29f805e4d",
+    "final-health.txt": "7b162768c97ef86c18129e3b834e01cf63ba15de0ca261a3e5421edde6855d99",
+    "gpu-memory-load.py": "9391c7085519334c9b27cd9f9fa2c52d71061bdae4fabb491cc302d601a2d189",
+    "gpu-probe.txt": "bb41c3b143c9171b8e41c7c6f8ea1e751746c295b47ef3120b8ae29d199f97d5",
+    "host-tests.txt": "4309d84f06815ece113b540e2b35c9a893512aba09afb0636e04f0409cf21698",
+    "install.txt": "a9c4ca2ece22d1989c9f7a8c4114787a14a9d99b38f9fd5f70d19d02fe1766c4",
+    "load-probe.txt": "5961f440a17ece33868144494b752ea826a2d8ee70117a0011eae642dc41c3bf",
+    "mpv-probe.txt": "f6d413868fddc98144fa52a6583747fd2eecd3c9deda5ed18ea57d5c969a9a87",
+    "offscreen-probe.txt": "0daa9ef8050dfd35ddfa8cc18264eee1534e9c1a8a379056fc3fd493a8a1d4dc",
+    "pm-check.py": "04f71095e2959b1580ece0f2b92209ddf302caeec8e587f394619f643289f72b",
+    "pm-result.json": "64af59f2da48348293e913cf83472af353c7df4e281aa1dbdc5c45dbb8699231",
+    "read-harness.py": "dbef030a40ca68a0edc28a78994d84120571cfa28c0ee795241998430f81102d",
+    "recovery.txt": "5472e176def2a6dc52bd9f5a34289159801a82a474da9d29e23b335b877f4608"
+  },
+  "patch_sha256": "a894b8bd5d21e82f2a1f11ed02279c31c6e7e2248e49be48fba390611ab706d6"
+}
