@@ -16,6 +16,11 @@ Any failure restores every original. Preview by default; --apply installs;
 --rollback BACKUP restores exactly. No reboot, service, live module reload,
 proper or RTC operation; the caller owns the boot. Out-of-tree modules are not touched: the
 bundle builder refuses a candidate whose Module.symvers or release differs.
+
+A bundle with scope "modules" (a source change confined to loadable modules, so the
+release build reproduces the installed FIT and script) writes only those modules. The
+FAT FIT/script and both bundle script copies are then read-only preconditions that must
+match the pinned installed hashes; nothing on the FAT is staged or renamed.
 """
 import argparse
 import fcntl
@@ -43,6 +48,12 @@ SLUB_PREFIX = ("setenv bootargs 'console=ttyS0,115200 console=tty0 earlycon "
                "slub_debug=FZPU oops=panic'\n").encode()
 CEDRUS = 'usr/lib/modules/6.18.38/kernel/drivers/staging/media/sunxi/cedrus/sunxi-cedrus.ko'
 CPU_COMM = 'usr/lib/modules/6.18.38/kernel/drivers/soc/sunxi/cpu_comm/hy310-cpu-comm.ko'
+MODULES = {'sunxi-cedrus.ko': CEDRUS, 'hy310-cpu-comm.ko': CPU_COMM}
+PINNED = ('h713-kernel.fit', *SCRIPT_NAMES)
+
+
+def modules_only(manifest):
+    return bool(manifest) and manifest.get('scope') == 'modules'
 
 
 def sha(data): return hashlib.sha256(data).hexdigest()
@@ -130,13 +141,24 @@ def load_bundle(bundle):
     need(m.get('schema') == SCHEMA, 'unknown bundle schema')
     for name, digest in m['files'].items():
         need(sha((bundle/name).read_bytes()) == digest, 'bundle file mismatch: '+name)
-    need(set(m['files']) >= {'h713-kernel.fit', *SCRIPT_NAMES}, 'bundle incomplete')
-    diagnostic = 'diagnostic_bootargs' in m
-    if diagnostic:
-        verify_slub_script(bundle, m)
-    for key in (*SCRIPT_NAMES,) if diagnostic else ('h713-kernel.fit', *SCRIPT_NAMES):
-        need(m['baseline'][key] != m['files'][key], 'candidate equals baseline: '+key)
     checks = m.get('checks', {})
+    if 'scope' in m:
+        need(modules_only(m), 'unknown bundle scope')
+        need('diagnostic_bootargs' not in m, 'module-only bundle cannot carry diagnostics')
+        need(m['files'] and set(m['files']) <= set(MODULES), 'module-only bundle may hold only modules')
+        need(all(isinstance(m['baseline'].get(k), str) for k in PINNED), 'module-only pins missing')
+        need(checks.get('fit_unchanged') is True and checks.get('script_unchanged') is True
+             and checks.get('dtb_change') == 'none' and checks.get('config_diff') == [],
+             'module-only bundle changes more than modules')
+        for key in m['files']:
+            need(m['baseline'].get(key) not in (None, m['files'][key]), 'candidate equals baseline: '+key)
+    else:
+        need(set(m['files']) >= {'h713-kernel.fit', *SCRIPT_NAMES}, 'bundle incomplete')
+        diagnostic = 'diagnostic_bootargs' in m
+        if diagnostic:
+            verify_slub_script(bundle, m)
+        for key in (*SCRIPT_NAMES,) if diagnostic else ('h713-kernel.fit', *SCRIPT_NAMES):
+            need(m['baseline'][key] != m['files'][key], 'candidate equals baseline: '+key)
     need(checks.get('module_symvers_equal') is True and checks.get('kernel_release_equal') is True
          and isinstance(checks.get('config_diff'), list), 'bundle checks missing')
     if 'sunxi-cedrus.ko' in m['files']:
@@ -150,6 +172,8 @@ def load_bundle(bundle):
 
 def targets(root, manifest=None):
     """Every file the transaction owns, FAT activation pair last (FIT, then script)."""
+    if modules_only(manifest):
+        return [MODULES[n] for n in MODULES if n in manifest['files']]
     files = []
     for b in BUNDLES:
         files += [b+'/'+n for n in SCRIPT_NAMES]+[b+'/SHA256SUMS']
@@ -181,6 +205,23 @@ def state(root, m):
         listed = sums(under(root, b+'/SHA256SUMS').read_bytes())
         for name, digest in listed.items():
             need(sha(under(root, b+'/'+name).read_bytes()) == digest, 'manifest mismatch: '+b+'/'+name)
+    if modules_only(m):
+        # The modules are built for exactly this kernel and script; read-only here.
+        pins = [(FAT+'/h713-kernel.fit', 'h713-kernel.fit'), (FAT+'/h713-hdmi.scr', 'h713-hdmi.scr')]
+        pins += [(b+'/'+n, n) for b in BUNDLES for n in SCRIPT_NAMES]
+        for rel, k in pins:
+            need(sha(under(root, rel).read_bytes()) == m['baseline'][k], 'not the pinned kernel/script: '+rel)
+        for b in BUNDLES:
+            listed = sums(under(root, b+'/SHA256SUMS').read_bytes())
+            for n in SCRIPT_NAMES:
+                need(listed.get(n) == m['baseline'][n], 'manifest does not pin the script: '+b+'/'+n)
+        for rel in targets(root, m):
+            k = kind(rel)
+            digest = sha(under(root, rel).read_bytes())
+            seen.add({m['baseline'][k]: 'baseline', m['files'][k]: 'candidate'}.get(digest, 'foreign:'+rel))
+        need(len(seen) == 1 and not next(iter(seen)).startswith('foreign'),
+             'module copies disagree: '+str(sorted(seen)))
+        return seen.pop()
     for rel in targets(root, m):
         k = kind(rel)
         if k == 'SHA256SUMS': continue
@@ -264,7 +305,7 @@ def run(root, bundle, boot, apply=False, rollback=None):
                 k = kind(rel)
                 if k != 'SHA256SUMS': need(sha(data) == m['baseline'][k], 'backup is not the baseline: '+rel)
         else:
-            names = ['h713-kernel.fit', *SCRIPT_NAMES]
+            names = [] if modules_only(m) else ['h713-kernel.fit', *SCRIPT_NAMES]
             if 'sunxi-cedrus.ko' in m['files']: names.append('sunxi-cedrus.ko')
             if 'hy310-cpu-comm.ko' in m['files']: names.append('hy310-cpu-comm.ko')
             data = {k: (bundle/k).read_bytes() for k in names}

@@ -94,6 +94,77 @@ class KernelFit(unittest.TestCase):
         (self.bundle/'manifest.json').write_text(json.dumps(self.manifest))
         with self.assertRaisesRegex(RuntimeError, 'CPU_COMM baseline checks'): self.run_(True)
 
+    def module_only(self):
+        """CPU_COMM-only bundle pinned to the installed (OLD) FIT and script."""
+        p = self.root/m.CPU_COMM;p.parent.mkdir(parents=True, exist_ok=True);p.write_bytes(b'old cpu_comm')
+        for n in NEW: (self.bundle/n).unlink(missing_ok=True)
+        (self.bundle/'hy310-cpu-comm.ko').write_bytes(b'new cpu_comm')
+        self.manifest.update(scope='modules', files={'hy310-cpu-comm.ko': sha(b'new cpu_comm')},
+                             baseline={**{n: sha(d) for n, d in OLD.items()},
+                                       'hy310-cpu-comm.ko': sha(b'old cpu_comm')},
+                             checks={'module_symvers_equal': True, 'kernel_release_equal': True,
+                                     'config_diff': [], 'dtb_change': 'none', 'fit_unchanged': True,
+                                     'script_unchanged': True, 'cpu_comm_module_reproduced': True})
+        self.write_manifest()
+
+    def test_module_only_writes_only_the_module_and_rolls_back(self):
+        self.module_only();before = self.files();real = os.replace;renamed = []
+        r = self.run_();self.assertEqual(r['state'], 'baseline');self.assertEqual(list(r['would']), [m.CPU_COMM])
+        def record(src, dst):
+            renamed.append(str(Path(dst).relative_to(self.root)));return real(src, dst)
+        with patch.object(m.os, 'replace', record): r = self.run_(True)
+        self.assertEqual(renamed, [m.CPU_COMM]);self.assertEqual(r['state'], 'candidate')
+        changed = {k for k, v in self.files().items() if not k.startswith(m.STATE) and before.get(k) != v}
+        self.assertEqual(changed, {m.CPU_COMM})
+        self.assertEqual((self.root/m.CPU_COMM).read_bytes(), b'new cpu_comm')
+        with self.assertRaisesRegex(RuntimeError, 'expected baseline'): self.run_(True)
+        self.run_(True, rollback=Path(r['backup']))
+        self.assertEqual({k: v for k, v in self.files().items() if not k.startswith(m.STATE)}, before)
+
+    def test_module_only_refuses_unpinned_kernel_or_script(self):
+        self.module_only()
+        cases = [(m.FAT+'/h713-kernel.fit', NEW['h713-kernel.fit']), (m.FAT+'/h713-hdmi.scr', b'other'),
+                 (m.BUNDLES[1]+'/h713-hdmi.cmd', b'other')]
+        for rel, data in cases:
+            with self.subTest(rel=rel):
+                p = self.root/rel;old = p.read_bytes();p.write_bytes(data)
+                if p.parent.name != 'boot':
+                    s = self.root/m.BUNDLES[1]/'SHA256SUMS';olds = s.read_bytes()
+                    s.write_bytes(m.new_sums(olds, {p.name: sha(data)}))
+                before = self.files()
+                with self.assertRaisesRegex(RuntimeError, 'not the pinned'): self.run_(True)
+                self.assertEqual(self.files(), before);p.write_bytes(old)
+                if p.parent.name != 'boot': s.write_bytes(olds)
+        (self.root/m.CPU_COMM).write_bytes(b'foreign')
+        with self.assertRaisesRegex(RuntimeError, 'module copies disagree'): self.run_(True)
+
+    def test_module_only_manifest_must_be_narrow(self):
+        for edit, message in (
+                (lambda: self.manifest['files'].update({'h713-kernel.fit': sha(OLD['h713-kernel.fit'])}),
+                 'only modules'),
+                (lambda: self.manifest['checks'].update(fit_unchanged=False), 'more than modules'),
+                (lambda: self.manifest['checks'].update(config_diff=['CONFIG_X']), 'more than modules'),
+                (lambda: self.manifest['checks'].update(dtb_change='pio-spi-54-60-only'), 'more than modules'),
+                (lambda: self.manifest['baseline'].pop('h713-hdmi.scr'), 'pins missing'),
+                (lambda: self.manifest['baseline'].update({'hy310-cpu-comm.ko': sha(b'new cpu_comm')}),
+                 'equals baseline'),
+                (lambda: self.manifest.update(scope='everything'), 'unknown bundle scope'),
+                (lambda: self.manifest['checks'].update(cpu_comm_module_reproduced=False), 'CPU_COMM baseline')):
+            with self.subTest(message=message):
+                self.module_only();edit()
+                if 'h713-kernel.fit' in self.manifest['files']:
+                    (self.bundle/'h713-kernel.fit').write_bytes(OLD['h713-kernel.fit'])
+                self.write_manifest()
+                with self.assertRaisesRegex(RuntimeError, message): self.run_(True)
+
+    def test_module_only_failure_restores_module(self):
+        self.module_only();before = self.files()
+        def fail(src, dst): raise OSError('injected module rename failure')
+        with patch.object(m.os, 'replace', fail), self.assertRaises(OSError): self.run_(True)
+        self.assertEqual({k: v for k, v in self.files().items() if not k.startswith(m.STATE)}, before)
+        backup = next((self.root/m.STATE).glob(m.PREFIX+'*'))
+        self.assertTrue((backup/'RESTORED').exists())
+
     def slub_bundle(self):
         cmd = m.SLUB_PREFIX+OLD['h713-hdmi.cmd']
         payload = struct.pack('>2I', len(cmd), 0)+cmd

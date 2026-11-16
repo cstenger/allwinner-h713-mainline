@@ -2,7 +2,8 @@
 
 Kernel **0208** adapts the TX FIFO depth check from well0nez's pinned
 [0014f](https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0014f-soc-sunxi-cpu-comm-never-write-into-a-full-tx-fifo.patch).
-It is **built and host-tested, not installed**. No board trial has run.
+It is **built and host-tested, and its install bundle passes a board
+preview. It has not been applied** and no board trial has run.
 
 ## What was wrong
 
@@ -129,14 +130,50 @@ Compared with the installed 0207 build:
   (full hash `9864701f4d4d3cca545b8c932716f8902321252fafc5af4e56f27d91207fe35a`).
 - The same build reproduces the installed `137d93c4…` module before 0208.
 
-Installing 0208 therefore replaces one module and its manifest entries, not
-the FIT. The bundle builder's `--installed-cpu-comm` option packages a
-CPU_COMM module in the guarded transaction. Whether the builder and
-installer accept an unchanged FIT has not been checked.
+Installing 0208 therefore replaces one module and nothing on the boot FAT.
+
+## Install bundle
+
+The bundle builder and guarded installer gained an explicit **module-only
+scope** (`build-kernel-fit-bundle.py --module-only`). Before this, the
+builder refused a candidate whose FIT equalled the baseline. The installer
+also could not represent the case: with identical baseline and candidate
+script hashes, its state check would read a baseline board as "candidate".
+
+In module-only scope, the builder requires an unchanged FIT, startup script,
+configuration and board DTB, plus at least one changed, baseline-reproduced
+module. The installer then treats the FAT FIT and script, both bundle script
+copies and their `SHA256SUMS` entries as read-only preconditions pinned to
+the installed hashes. It stages, backs up and rolls back only the module
+files. Installer tests (22) cover:
+
+- preview;
+- module-only writes and renames;
+- exact rollback;
+- refusal when the FIT, FAT script or a bundle script differs from its pin;
+- foreign module drift;
+- eight manifest-widening variants;
+- restoration after an injected rename failure.
+
+Three installer mutants (dropped pins, wrong targets, unchecked scope) each
+fail them. Builder tests (9) cover the FIT equality rules.
+
+The 0208 bundle (`local/recovery/2026-11-16-cpu-comm-tx/bundle/`, manifest
+`375f34a8…`) carries only `hy310-cpu-comm.ko` `9864701f…`. It pins FIT
+`845494c3…`, cmd `41faabdc…`, scr `c565a05a…` and installed module
+`137d93c4…`.
+
+- **Offline rehearsal.** On a fake root built from the real installed
+  bytes, preview writes nothing and apply changes only the module. Rollback
+  restores the tree exactly.
+- **Board preview.** On boot `75218eb8-0937-4f0b-85ca-30f5a6c3ceb3`, with
+  the FAT mounted read-only and unmounted afterwards, the preview reports
+  state `baseline` and would write only the module. **Not applied.** The
+  procedure is in that directory's `RUNBOOK.md`.
 
 ## Hardware qualification still needed
 
-Install the module with the guarded installer, previewing first. Then repeat
+Apply the module-only bundle with the guarded installer. Then repeat
 the CPU_COMM transport runs from the
 [IRQ qualification](cpu-comm-handoff.md#irq-qualification-on-u-boot-0006--pass-one-run)
 on a warm boot and an operator cold boot: 3 + 600 serial + 4×150 concurrent

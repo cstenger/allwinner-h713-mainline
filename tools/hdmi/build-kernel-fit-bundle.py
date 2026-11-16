@@ -18,6 +18,12 @@ from the installed sources and the candidate with the change. Refused unless:
 SPI 46 -> 53. --installed-cpu-comm packages the baseline-reproduced CPU_COMM
 module in the same guarded transaction.
 
+--module-only is for a change confined to loadable modules: the candidate FIT
+and startup script must equal the installed ones, the configuration and board
+DTB must be unchanged, and at least one module (--installed-cpu-comm and/or
+--installed-cedrus) must change. The bundle then carries only the modules, with
+the FIT and script hashes as read-only installer preconditions.
+
 --installed-cedrus also packages the changed in-tree decoder module, after its
 baseline rebuild matches the supplied installed SHA-256. It is then backed up,
 staged and rolled back with the FIT/script by the installer.
@@ -144,12 +150,17 @@ def check_cpu_comm_witness_dtb(baseline, candidate):
 
 
 def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=False,
-          pio_irq_fix=False, cpu_comm_irq_fix=False, cpu_comm_witness=False):
+          pio_irq_fix=False, cpu_comm_irq_fix=False, cpu_comm_witness=False, module_only=False):
     bt, ct = tree(baseline), tree(candidate)
     bfit = (baseline/'build/out/h713-kernel-production.fit').read_bytes()
     cfit = (candidate/'build/out/h713-kernel-production.fit').read_bytes()
     need(sha(bfit) == installed_fit, 'baseline build does not reproduce the installed FIT')
-    need(cfit != bfit, 'candidate FIT equals the baseline')
+    if module_only:
+        need(cfit == bfit, 'module-only bundle needs the installed FIT unchanged')
+        need(not (expected_diff or rustc_transition or pio_irq_fix or cpu_comm_irq_fix or cpu_comm_witness),
+             'module-only bundle cannot change configuration or DTB')
+    else:
+        need(cfit != bfit, 'candidate FIT equals the baseline')
     bc, cc = config(bt/'.config'), config(ct/'.config')
     diff = sorted(k for k in set(bc) | set(cc) if bc.get(k) != cc.get(k))
     if rustc_transition:
@@ -194,11 +205,16 @@ def main():
                    help='allow only the dedicated trace reservation growth from 4 to 256 KiB')
     p.add_argument('--installed-cpu-comm',
                    help='package CPU_COMM after reproducing this installed module SHA-256')
+    p.add_argument('--module-only', action='store_true',
+                   help='FIT/script unchanged; package and install only the changed modules')
     p.add_argument('--installed-cedrus',
                    help='also package Cedrus; require this installed SHA-256 to match its baseline rebuild')
     a = p.parse_args()
     bfit, cfit, bdtb = check(a.baseline, a.candidate, a.installed_fit, a.config_diff,
-                           a.rustc_probe_transition, a.pio_irq_fix, a.cpu_comm_irq_fix, a.cpu_comm_witness)
+                           a.rustc_probe_transition, a.pio_irq_fix, a.cpu_comm_irq_fix, a.cpu_comm_witness,
+                           a.module_only)
+    need(not a.module_only or a.installed_cpu_comm or a.installed_cedrus,
+         'module-only bundle needs --installed-cpu-comm and/or --installed-cedrus')
     cdtb = (a.candidate/'build/out'/DTB).read_bytes()
     if a.rustc_probe_transition: a.config_diff += list(RUSTC_PROBE_SYMBOLS)
     spec = importlib.util.spec_from_file_location('startup', ROOT/'tools/hdmi/build-startup.py')
@@ -207,8 +223,11 @@ def main():
     new = st.script(fit_size=len(cfit), fdt_size=len(cdtb)).encode()
     need(sha(old) == a.installed_cmd and sha(st.legacy_image(old)) == a.installed_scr,
          'baseline script does not reproduce the installed script')
+    if a.module_only:
+        need(new == old, 'module-only bundle needs the installed script unchanged')
     a.output.mkdir(parents=True, exist_ok=False)
-    files = {'h713-kernel.fit': cfit, 'h713-hdmi.cmd': new, 'h713-hdmi.scr': st.legacy_image(new)}
+    files = ({} if a.module_only else
+             {'h713-kernel.fit': cfit, 'h713-hdmi.cmd': new, 'h713-hdmi.scr': st.legacy_image(new)})
     module_baseline = {}
     if a.installed_cedrus:
         old_module = (tree(a.baseline)/CEDRUS).read_bytes()
@@ -226,7 +245,7 @@ def main():
         module_baseline['hy310-cpu-comm.ko'] = a.installed_cpu_comm
     for name, data in files.items(): (a.output/name).write_bytes(data)
     shutil.copy(ROOT/'tools/hdmi/install-kernel-fit.py', a.output/'install-kernel-fit.py')
-    manifest = dict(schema='h713-kernel-fit-v1',
+    manifest = dict(schema='h713-kernel-fit-v1', **({'scope': 'modules'} if a.module_only else {}),
                     files={n: sha(d) for n, d in files.items()},
                     baseline={'h713-kernel.fit': a.installed_fit, 'h713-hdmi.cmd': a.installed_cmd,
                               'h713-hdmi.scr': a.installed_scr, **module_baseline},
@@ -237,6 +256,7 @@ def main():
                             'dtb_change': ('cpu-comm-witness-reservation-only' if a.cpu_comm_witness else
                                            'cpu-comm-watchdog-irqs-only' if a.cpu_comm_irq_fix else
                                            'pio-spi-54-60-only' if a.pio_irq_fix else 'none'),
+                            **({'fit_unchanged': True, 'script_unchanged': True} if a.module_only else {}),
                             'cpu_comm_module_reproduced': bool(a.installed_cpu_comm),
                             'cedrus_module_reproduced': bool(a.installed_cedrus)},
                     installer=sha((a.output/'install-kernel-fit.py').read_bytes()))

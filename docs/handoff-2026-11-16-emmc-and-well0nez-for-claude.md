@@ -217,7 +217,8 @@ claims about later upstream changes.
 Suggested next topics, pending the user's choice:
 
 1. **CPU_COMM TX FIFO guard (0014f).** *Update: kernel 0208 is written,
-   built and host-tested, not installed; see
+   built and host-tested; its module-only bundle passed a board preview
+   but is not applied; see
    [the TX record](reviews/well0nez-2026-11-14/cpu-comm-tx.md).* Our send
    routine still writes without checking capacity. Adapt error propagation through CALL/ACK/RETURN_ACK
    publication, ownership and timeout cleanup; a count check alone is not a

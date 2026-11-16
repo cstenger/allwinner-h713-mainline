@@ -73,6 +73,18 @@ class Bundle(unittest.TestCase):
             base = work(d, 'base', base_config, b'old'); cand = work(d, 'cand', cand_config, b'new')
             return b.check(base, cand, hashlib.sha256(b'old').hexdigest(), [], **kw)
 
+    def test_module_only_requires_an_unchanged_fit(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = work(d, 'base', NO_RUSTC, b'old'); same = work(d, 'same', NO_RUSTC, b'old')
+            new = work(d, 'new', NO_RUSTC, b'new'); pin = hashlib.sha256(b'old').hexdigest()
+            b.check(base, same, pin, [], module_only=True)
+            with self.assertRaisesRegex(SystemExit, 'installed FIT unchanged'):
+                b.check(base, new, pin, [], module_only=True)
+            with self.assertRaisesRegex(SystemExit, 'candidate FIT equals'):
+                b.check(base, same, pin, [])
+            with self.assertRaisesRegex(SystemExit, 'cannot change configuration'):
+                b.check(base, same, pin, [], cpu_comm_irq_fix=True, module_only=True)
+
     def test_rustc_transition_accepts_exactly_the_probe_symbols(self):
         self.check(RUSTC_199, NO_RUSTC, rustc_transition=True)
 
