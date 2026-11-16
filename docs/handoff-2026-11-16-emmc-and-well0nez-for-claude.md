@@ -226,7 +226,17 @@ Suggested next topics, pending the user's choice:
    recovery protocol. Keep the qualified receive path.
 2. **Small whitelist cleanup (0014e).** Two unused entries still name msgbox
    addresses instead of hardware-spinlock status registers. Current callers
-   do not use them; low functional urgency.
+   do not use them; low functional urgency. *Assessed 2026-11-16, decision:
+   batch into the next CPU_COMM module patch, no standalone install.* The
+   stock `cpu_comm_dev.ko` (`.data+0x3a0`, 4-word loop in `is_known_reg`)
+   confirms the vendor words `0x03061024 0x03061028 0x03004000 0x03004010`.
+   Do not copy 0014e's swap: `hwspinlock@3004000` is owned by the in-tree
+   sun6i driver, which already serves our locks, and `reg_to_iomem()` cannot
+   map it. Instead reduce `known_regs[]` to the two addresses actually used,
+   `0x03061024`/`0x03061028`. That drops the msgbox `+0x00`/`+0x10` entries,
+   which would let a future generic caller write into the qualified
+   transport, and the unused `0x0306101c`. Record the vendor words in the
+   comment.
 3. **Coupled decoder reset work (0298 and 0305–0308).** Reproduce mixed-codec
    failures first. Do not import codec-switch reset alone: Cedrus and AV1
    share the reset domain. Audit forced reset timeout and reset operations
