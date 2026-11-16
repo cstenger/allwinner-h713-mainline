@@ -1,0 +1,292 @@
+{
+  "date": "2026-11-15",
+  "status": "PASS: cold boot with automatic log filter and default IRQ reception",
+  "boot_id": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+  "cold_boot_evidence": "Operator confirmed removing and reconnecting board power.",
+  "ssh_identity": "Project-pinned local/recovery/2026-11-03-production-install-03/known_hosts; global stale entry unchanged.",
+  "manual_log_filter_command": false,
+  "manual_irq_override": false,
+  "service_restart_or_module_reload": false,
+  "installed": {
+    "mips_shell": "d7e505bb84278f36b952fb524b8a86a85422a46f6accbcc49c16373060fd9c06",
+    "unit": "31b07edd92def47d24068e638f409c8832a02e33362ea2816a24675164786b56",
+    "manifest": "06674f3ac859f1ffd62f68e4bd9f424dc78a910b49aa7ff2dfc1b50211f11046"
+  },
+  "cpu_comm_module_sha256": "137d93c4141395ebe0ce08c63ed8bc783ba6787b82c274fb30d6d680ebe8fbc5",
+  "service": {
+    "enabled": true,
+    "result": "success",
+    "before": 5,
+    "level": 2,
+    "verified": true,
+    "reply_bytes": 21,
+    "start_uptime_seconds": 7.761394,
+    "verified_uptime_seconds": 10.85193,
+    "transaction_seconds": 2.574362
+  },
+  "workload": {
+    "control": 3,
+    "serial_initial": 600,
+    "concurrent_clients": 4,
+    "calls_per_client": 150,
+    "serial_rounds": 8,
+    "calls_per_serial_round": 600,
+    "total": 6003,
+    "all_return_codes_zero": true,
+    "concurrent_exit_codes": [
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "phase_checks": [
+    {
+      "stage": "initial",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 0,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "0",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "control",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 3,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "6",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-1",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 603,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "1206",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "parallel",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 1203,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "2406",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-2",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 1803,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "3606",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-3",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 2403,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "4806",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-4",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 3003,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "6006",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-5",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 3603,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "7206",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-6",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 4203,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "8406",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-7",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 4803,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "9606",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-8",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 5403,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "10806",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    },
+    {
+      "stage": "serial-9",
+      "boot": "a269f15e-d12e-454e-9b87-595f880cf2a1",
+      "completed_calls": 6003,
+      "parameters": {
+        "rx_irq": "Y",
+        "rx_irq_active": "Y",
+        "rx_poll_active": "N",
+        "rx_messages_irq": "12006",
+        "rx_messages_poll": "0",
+        "tx_desynced": "N"
+      },
+      "filter": 2,
+      "log_pointer": "0x5f26a",
+      "fault_magic": [
+        0,
+        0
+      ]
+    }
+  ],
+  "system_state": "running",
+  "failed_units": 0,
+  "health_ack": "active, success",
+  "alsa_capture": "RUNNING",
+  "backend_manifest": "PASS before and after traffic",
+  "kernel_fault_or_transport_warning_matches": [],
+  "startup_check": {
+    "before": "PASS",
+    "after": "Historical DSP startup lines displaced from dmesg by per-call CPU_COMM logging; checker stops at no DSP version log. Passing preflight preserves DSP 0/0 and patch 1/1. Runtime parameters and services remain healthy."
+  },
+  "raw_evidence_directory": "local/recovery/2026-11-15-elog-level/cold-auto-a269f15e",
+  "evidence_sha256": {
+    "final.txt": "0f91d2d40539943be4cab339490a5d91c538eb923dc5fdb39e23cdcb3c234811",
+    "kernel-final.txt": "b110f1ebd2aa921e62c848fb11d92d58117e437a29e9967d1fea8923b2c782fb",
+    "postflight.txt": "0bae8839cf64c420b7adc6fd81d5340898da2221d6f7e201abe0f7ba7b663b2a",
+    "preflight.txt": "f1e0b0de13c53251057045015c79eadbbfd9d6aa3dcbc80abfd5d4728a015b3a",
+    "stress.txt": "3f3d5cb3493ce9910da20ef4ea23dac75478a83e46c8e95e6530e44e6fc060e0",
+    "verify.py": "64ec0855b05ba150c99f83c5066360dc64d6066866a4411552107696b3f4423d"
+  }
+}

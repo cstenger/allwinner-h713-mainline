@@ -1,6 +1,13 @@
 # CPU_COMM IRQ trials — November 14, 2026
 
-**Historical IRQ trials; IRQ-driven operation is not qualified for production.**
+**Historical failed trials, superseded by the November 15 qualification.**
+U-Boot 0006 fixes the comm-trace register corruption; warm and cold IRQ-only
+qualification passed, and kernel 0205 now enables IRQ reception by default.
+The startup log-filter service also passed warm- and cold-boot
+default-configuration stress runs. See the
+[current handoff](cpu-comm-handoff.md#current-state--review-follow-up)
+for the final state and verification.
+
 Follow-up [shared-memory handoff investigation](cpu-comm-handoff.md) fixes
 independent corruption paths and reproduces the approximately 240-call
 stall in a matched-length polling test. The original short polling

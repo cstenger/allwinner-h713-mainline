@@ -2,9 +2,11 @@
 
 This follows the [failed IRQ trials](cpu-comm-irqs.md). Patches **0200–0201** fix
 independently reproducible ownership and bounds defects before retrying IRQ
-operation. IRQ remains opt-in in the kernel module; the DDR3 bench uses an
-explicit module option for the trial. Results below distinguish source
-proof from hardware qualification.
+operation. The sections below preserve the investigation in order, including
+earlier opt-in and default-off decisions. The final state is IRQ reception by
+default with kernel **0205** and U-Boot **0006**; see the
+[review follow-up](#current-state--review-follow-up). Results below distinguish
+source proof from hardware qualification.
 
 ## Defects and fixes
 
@@ -506,3 +508,70 @@ services and the health ack active. On the plain default configuration (IRQ, no
 manual step), 3 + 600 serial + 4×150 concurrent + 1200 serial = 2403 calls all
 returned rc 0, with 4806 RX by IRQ and 0 by polling, `tx_desynced=N`, and no
 CPU_COMM warnings. The previous run stalled at call 238. **Closed.**
+
+## Current state — review follow-up
+
+Reviewed on November 15, 2026 against commits `a679f007`, `2d6cf28f` and
+`ba7829fc`. The recorded DDR3 installation has U-Boot 0006, kernel 0205 and
+the startup level-2 log-filter service. Warm and cold IRQ qualification each
+completed 6003 calls; the subsequent warm boot with the automatic log filter
+completed 2403 calls on the default configuration. These are the hardware
+results recorded above, not new board trials from this review.
+
+The follow-up host checks passed:
+
+- The actual 0205 production build's extracted IRQ, handoff, spinlock and
+  witness helpers, under ASan/UBSan. This includes IRQ-only operation,
+  pre-0006 and unmapped-cave fallback, teardown, ACK/session ownership,
+  timeout quarantine and 3000 ARM/MIPS critical sections.
+- U-Boot's 155-word register-only table comparison and t8/t9 liveness
+  analysis of the pinned firmware: 61 hook sites, zero unsafe sites.
+- IPC/log-filter completion (18 tests), log-filter installation and rollback
+  (2), trace-reader installation (2), single-launch installation checks,
+  fatal-dump patch guards/decoding and release packaging (8).
+- Startup mutation checks: all 20 broken variants were rejected.
+
+No runtime code change was needed from these checks. The earlier cached
+top-level kernel tree predates 0205; the current helper checks use
+`local/recovery/2026-11-15-irq-default/build/linux-6.18.38-ab31b74663ba3f31dfdb117f1dcd0d985aa178a466f42b8ad9009bff8bc0f2a8`.
+
+The first read-only board check timed out. The follow-up below closes the
+remaining cold-boot integration check with the automatic log-filter service;
+the earlier cold IRQ qualification used a manual level-2 bench condition.
+
+### Automatic log-filter cold-boot verification — PASS
+
+On November 15, 2026, the operator confirmed that boot
+`a269f15e-d12e-454e-9b87-595f880cf2a1` followed removal and reconnection of
+board power. SSH succeeded with the project's dedicated pinned host-key file,
+`local/recovery/2026-11-03-production-install-03/known_hosts`; the global SSH
+entry is stale and was not changed.
+
+The installed shell, service, manifest and CPU_COMM module match the recorded
+0205/log-filter installation. All backend manifest entries verify. The
+enabled service starts at uptime 7.761 s and reports `before=5`, `level=2`,
+`verified=true` at 10.852 s, with a 2.574 s transaction. No manual log-filter
+command, service restart, module reload or IRQ override was used.
+
+The default configuration completed **6003 calls**: three controls, 600
+serial, four clients with 150 calls each, and eight further 600-call serial
+rounds. All calls returned zero; all four concurrent clients exited zero.
+After every phase the boot ID was unchanged, IRQ reception remained active,
+polling remained inactive, the filter read 2, `tx_desynced=N`, and the firmware
+fault-save magic remained zero. Final counts are **12006 IRQ RX, zero polling
+RX**. The observed ELOG write pointer stayed at `0x5f26a`, below its 2 MiB
+flush boundary.
+
+The full startup checker passed before traffic. After traffic, the system
+remains `running`, no units are failed, the health acknowledgement and
+log-filter services remain successful, ALSA capture remains `RUNNING`, and
+backend checksums still verify. The final startup-checker invocation stops
+at `no DSP version log`: per-call CPU_COMM messages displaced the boot-time
+DSP lines from the kernel ring. Those exact DSP 0/0 and patch 1/1 lines are
+preserved in the passing preflight. This is a limitation of rerunning that
+historical-log check after stress, not a new DSP failure.
+
+The [validation summary](cpu-comm-cold-auto-validation.json) records counts,
+service timings and evidence digests. Raw host-streamed output and the exact
+verification script remain ignored under
+`local/recovery/2026-11-15-elog-level/cold-auto-a269f15e/`.
