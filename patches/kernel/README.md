@@ -426,3 +426,15 @@ register bits. Other sunxi eMMC controllers and the H713 v5p3x SDIO path
 retain their existing behavior. This does not add 0312's controller-reset
 recovery. `tools/storage/test-emmc-threshold.py` exercises the actual
 prepared helpers under ASan/UBSan, including transitions and device scope.
+
+**0207** adapts well0nez's 0312 reset-before-CMD12 approach only for H713
+eMMC CMD18 read errors. Reset, host initialization, IDMA reset completion
+and clock restoration must all succeed before CMD12. Restore/stop failure
+latches a terminal error independent of `set_ios`; later requests fail
+before DMA mapping or MMIO until reprobe/reboot. The original request is
+completed once after clearing its pending-stop ownership. CMD17, writes,
+CMD53 and other controllers retain their prior recovery paths. The stop
+helper now returns its result without changing the legacy callers' behavior;
+its CMD53 argument uses an unsigned high-bit shift. See the
+[recovery verification](../../docs/reviews/well0nez-2026-11-14/emmc-recovery.md)
+for host failure tests, mutation checks and natural full-FIFO hardware errors.

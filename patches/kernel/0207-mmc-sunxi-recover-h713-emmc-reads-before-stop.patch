@@ -1,0 +1,208 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] mmc: sunxi: recover H713 eMMC read errors before CMD12
+
+Adapt well0nez's 0312 controller-reset-before-stop approach to the H713
+eMMC only. Our read-only combined decode/GPU/storage baseline reproduced
+the full-FIFO CMD18 error, failed CMD12 and permanently blocked reader.
+
+Check reset, initialization, IDMA reset completion and clock restoration
+before issuing CMD12. A failed restore or stop latches a separate
+terminal error; set_ios cannot accidentally clear it. Finish the
+outstanding request once and refuse subsequent requests before DMA
+mapping or MMIO, until reprobe/reboot. Preserve the existing CMD17,
+write, CMD53 and other-controller paths. Successful restoration retains
+the original transfer error for the MMC core's normal retry/recovery.
+
+Original reset-before-CMD12 approach: well0nez. Checked restoration,
+H713-specific configuration, terminal failure handling and tests are ours.
+
+Link: https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0312-mmc-sunxi-a-failed-multi-block-read-re-initialises-the-controller-before-the-stop.patch
+
+---
+
+--- a/drivers/mmc/host/sunxi-mmc.c
++++ b/drivers/mmc/host/sunxi-mmc.c
+@@ -302,6 +302,9 @@
+ 
+ 	/* H713 eMMC read-block threshold; independent of the SDIO variant. */
+ 	bool emmc_read_threshold;
++
++	/* Restore the H713 eMMC controller before stopping a failed CMD18. */
++	bool recover_read_errors;
+ };
+ 
+ /*
+@@ -351,6 +354,8 @@
+ 	struct mmc_request *mrq;
+ 	struct mmc_request *manual_stop_mrq;
+ 	int		ferror;
++	/* A failed recovery is terminal until reprobe; set_ios cannot clear it. */
++	int recovery_error;
+ 
+ 	/* vqmmc */
+ 	bool		vqmmc_enabled;
+@@ -634,10 +639,11 @@
+ 		   SDXC_IDMAC_FIX_BURST | SDXC_IDMAC_IDMA_ON);
+ }
+ 
+-static void sunxi_mmc_send_manual_stop(struct sunxi_mmc_host *host,
++static int sunxi_mmc_send_manual_stop(struct sunxi_mmc_host *host,
+ 				       struct mmc_request *req)
+ {
+ 	u32 arg, cmd_val, ri;
++	int ret = 0;
+ 	unsigned long expire = jiffies + msecs_to_jiffies(1000);
+ 
+ 	cmd_val = SDXC_START | SDXC_RESP_EXPIRE |
+@@ -645,7 +651,7 @@
+ 
+ 	if (req->cmd->opcode == SD_IO_RW_EXTENDED) {
+ 		cmd_val |= SD_IO_RW_DIRECT;
+-		arg = (1 << 31) | (0 << 28) | (SDIO_CCCR_ABORT << 9) |
++		arg = (1U << 31) | (0 << 28) | (SDIO_CCCR_ABORT << 9) |
+ 		      ((req->cmd->arg >> 28) & 0x7);
+ 	} else {
+ 		cmd_val |= MMC_STOP_TRANSMISSION;
+@@ -661,6 +667,7 @@
+ 		 time_before(jiffies, expire));
+ 
+ 	if (!(ri & SDXC_COMMAND_DONE) || (ri & SDXC_INTERRUPT_ERROR_BIT)) {
++		ret = -ETIMEDOUT;
+ 		dev_err(mmc_dev(host->mmc), "send stop command failed\n");
+ 		if (req->stop)
+ 			req->stop->resp[0] = -ETIMEDOUT;
+@@ -670,6 +677,7 @@
+ 	}
+ 
+ 	mmc_writel(host, REG_RINTR, 0xffff);
++	return ret;
+ }
+ 
+ static void sunxi_mmc_dump_errinfo(struct sunxi_mmc_host *host)
+@@ -910,6 +918,93 @@
+ 	spin_unlock_irqrestore(&host->lock, iflags);
+ 
+ 	mmc_request_done(host->mmc, mrq);
++}
++
++static void sunxi_mmc_set_bus_width(struct sunxi_mmc_host *host,
++				   unsigned char width);
++static void sunxi_mmc_set_clk(struct sunxi_mmc_host *host, struct mmc_ios *ios);
++
++/* finalize_request() has stopped/unmapped DMA. Run outside host->lock in
++ * the IRQ thread; a full RX FIFO can otherwise hold the card clock and
++ * prevent CMD12, then every subsequent command, from completing.
++ */
++static int sunxi_mmc_reinit_after_read_error(struct sunxi_mmc_host *host)
++{
++	struct mmc_host *mmc = host->mmc;
++	int ret;
++
++	if (IS_ERR_OR_NULL(host->reset))
++		return -ENODEV;
++	ret = reset_control_reset(host->reset);
++	if (ret)
++		return ret;
++	ret = sunxi_mmc_init_host(host);
++	if (ret)
++		return ret;
++	/* init_host's bounded IDMA reset wait does not report expiration. */
++	if (mmc_readl(host, REG_DMAC) & SDXC_IDMAC_SOFT_RESET)
++		return -ETIMEDOUT;
++	sunxi_mmc_set_bus_width(host, mmc->ios.bus_width);
++	sunxi_mmc_set_clk(host, &mmc->ios);
++	return host->ferror;
++}
++
++static bool sunxi_mmc_needs_read_recovery(struct sunxi_mmc_host *host,
++					struct mmc_request *mrq)
++{
++	return host->cfg->recover_read_errors && mrq->data &&
++	       (mrq->data->flags & MMC_DATA_READ) &&
++	       mrq->cmd->opcode == MMC_READ_MULTIPLE_BLOCK;
++}
++
++static void sunxi_mmc_finish_manual_stop(struct sunxi_mmc_host *host,
++				       struct mmc_request *mrq)
++{
++	unsigned long flags;
++	int ret;
++
++	if (sunxi_mmc_needs_read_recovery(host, mrq)) {
++		ret = sunxi_mmc_reinit_after_read_error(host);
++		if (!ret)
++			ret = sunxi_mmc_send_manual_stop(host, mrq);
++		if (ret) {
++			WRITE_ONCE(host->recovery_error, ret);
++			mrq->cmd->error = ret;
++			mrq->data->error = ret;
++			if (mrq->stop)
++				mrq->stop->error = ret;
++			dev_err(mmc_dev(host->mmc),
++				"read recovery failed (%d); reprobe or reboot required\n",
++				ret);
++		} else {
++			dev_warn_ratelimited(mmc_dev(host->mmc),
++				"read error: controller restored, CMD12 completed\n");
++		}
++	} else {
++		sunxi_mmc_send_manual_stop(host, mrq);
++	}
++
++	spin_lock_irqsave(&host->lock, flags);
++	host->manual_stop_mrq = NULL;
++	spin_unlock_irqrestore(&host->lock, flags);
++	mmc_request_done(host->mmc, mrq);
++}
++
++/* Refuse before DMA mapping or MMIO, even if set_ios cleared ferror. */
++static bool sunxi_mmc_refuse_failed_recovery(struct sunxi_mmc_host *host,
++					  struct mmc_request *mrq)
++{
++	int ret = READ_ONCE(host->recovery_error);
++
++	if (!ret)
++		return false;
++	mrq->cmd->error = ret;
++	if (mrq->data)
++		mrq->data->error = ret;
++	if (mrq->stop)
++		mrq->stop->error = ret;
++	mmc_request_done(host->mmc, mrq);
++	return true;
+ }
+ 
+ static irqreturn_t sunxi_mmc_handle_manual_stop(int irq, void *dev_id)
+@@ -1221,13 +1316,7 @@
+ 	 * Additionally we have wait states within this function
+ 	 * so having it in a lock is a very bad idea.
+ 	 */
+-	sunxi_mmc_send_manual_stop(host, mrq);
+-
+-	spin_lock_irqsave(&host->lock, iflags);
+-	host->manual_stop_mrq = NULL;
+-	spin_unlock_irqrestore(&host->lock, iflags);
+-
+-	mmc_request_done(host->mmc, mrq);
++	sunxi_mmc_finish_manual_stop(host, mrq);
+ 
+ 	return IRQ_HANDLED;
+ }
+@@ -1780,6 +1869,9 @@
+ 	bool wait_dma = host->wait_dma;
+ 	int ret;
+ 
++	if (sunxi_mmc_refuse_failed_recovery(host, mrq))
++		return;
++
+ 	/* Check for set_ios errors (should never happen) */
+ 	if (host->ferror) {
+ 		mrq->cmd->error = host->ferror;
+@@ -2027,6 +2119,7 @@
+ 	.needs_new_timings = true,
+ 	.supports_hs400 = true,
+ 	.emmc_read_threshold = true,
++	.recover_read_errors = true,
+ };
+ 
+ static const struct sunxi_mmc_cfg sun50i_h713_cfg = {

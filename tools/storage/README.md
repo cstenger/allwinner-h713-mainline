@@ -39,3 +39,29 @@ This compiles the actual eMMC and SDIO threshold helpers under ASan/UBSan.
 It checks device scope, timing/direction/block-size boundaries, preservation
 of unrelated THLD bits and clearing after read-to-write/timing transitions.
 It does not establish real FIFO semantics without the hardware observations.
+
+## Checked CMD18 recovery (0207)
+
+`test-emmc-recovery.py --kernel /absolute/prepared/tree` compiles the actual
+restore, CMD12, completion and terminal-refusal helpers under ASan/UBSan.
+It injects reset/init/IDMA/clock/stop failures, checks that failed restoration
+skips CMD12, and verifies exact-once completion and refusal before DMA/MMIO.
+The separate recovery error cannot be cleared by an unrelated `set_ios` call.
+
+`make-emmc-recovery-diagnostic.py` generates an **opt-in bench-only patch**;
+do not put its output in the production series. It adds a bounded threshold
+bypass for plain CMD18 reads wholly within this board's vendor partition.
+It changes no timing registers and never selects write/rootfs-sector
+requests. The default count is zero; counts above 2048 do nothing. Its
+read-only counters distinguish selected requests from successful recoveries.
+`test-emmc-recovery-diagnostic.py` checks the generated patch and target
+bounds, including absent data, other boards/controllers, directions and
+commands, overflow candidates and requests crossing the partition boundary.
+
+Restore the normal image on disk before arming a diagnostic boot and keep
+root read-only during fault trials. A synthetic error after a completed
+transfer is not a valid test of recovery from an active full-FIFO read: it
+can make CMD12 fail and correctly latch terminal I/O failure. Use the bounded
+read-threshold bypass under the verified load to seek a natural in-flight
+error instead. Read success alone does not exercise recovery; require the
+recovery counter/log and a matching full-partition hash.

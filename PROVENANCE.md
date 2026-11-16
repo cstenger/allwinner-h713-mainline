@@ -97,3 +97,13 @@ measurements remain attributed to well0nez. Our adaptation introduces an
 explicit H713-eMMC-only configuration flag, excludes zero-sized blocks and
 adds source-derived host tests and a read-only DDR3 load comparison. It does
 not import their separate 0312 error-recovery reset.
+
+Patch **0207** adapts the reset-before-CMD12 approach from well0nez's pinned
+[0312](https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0312-mmc-sunxi-a-failed-multi-block-read-re-initialises-the-controller-before-the-stop.patch).
+Their original HY310 investigation and reset sequencing are credited in the
+patch. Our implementation adds H713-only scope, checked restoration, a
+terminal failure latch independent of `set_ios`, checked stop completion and
+source-derived failure/mutation tests. The bench-only threshold-bypass
+generator and its bounds tests are our diagnostic tooling, outside the
+production kernel series. No proprietary firmware or raw vendor data is
+included.

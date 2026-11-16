@@ -1,0 +1,358 @@
+{
+  "date": "2026-11-16",
+  "status": "INSTALLED AND VERIFIED: checked H713 eMMC recovery, no diagnostic controls in final kernel",
+  "upstream": {
+    "revision": "149f51d0df24c45b12674c81aab128b1fc8f5d4b",
+    "patch": "0312"
+  },
+  "patch": "0207-mmc-sunxi-recover-h713-emmc-reads-before-stop.patch",
+  "scope": "H713 eMMC config + CMD18 + read data; unchanged CMD17/write/CMD53/other-controller recovery",
+  "failure_contract": "Check reset/init/IDMA-reset completion/clock before CMD12; checked CMD12; separate sticky error until reprobe/reboot; clear stop ownership before exact-once completion; later requests refused before DMA/MMIO.",
+  "host_validation": {
+    "sanitizers": "ASan/UBSan, UBSAN halt_on_error=1",
+    "stages": [
+      "missing reset",
+      "reset failure",
+      "init failure",
+      "IDMA reset stuck",
+      "clock failure",
+      "CMD12 error",
+      "CMD12 timeout"
+    ],
+    "mutation_checks": {
+      "ignored_reset": "caught",
+      "ignored_clock": "caught",
+      "ignored_stop": "caught",
+      "missing_cfg_guard": "caught",
+      "nonsticky_refusal": "caught",
+      "uncleared_request": "caught"
+    },
+    "diagnostic_bounds": "PASS board/controller/read/CMD18/size/vendor-sector boundaries and missing data",
+    "threshold_cases": 2754,
+    "bundle_tests": 8,
+    "installer_tests": 18,
+    "checkpatch_errors": 0,
+    "checkpatch_warnings": 0,
+    "final_patch_applies_without_fuzz_and_matches_built_source": true
+  },
+  "build": {
+    "compiler": "clang/LLD 23.1.4 isolated cached toolchain",
+    "full_kernel_modules_both_dtbs_fit": "PASS",
+    "bundle": {
+      "schema": "h713-kernel-fit-v1",
+      "files": {
+        "h713-kernel.fit": "845494c372b62d3f1ba6e3eb2b8166041398dc440c217dd58f5de140e004f2ac",
+        "h713-hdmi.cmd": "41faabdca2b406a52955bf315f3d56dec8787695d6cc5ec52af7d137d30ac1b5",
+        "h713-hdmi.scr": "c565a05a17ebb3adc599fd48a10b19e660f77fe07190f0fa913e7f2c99bd045d"
+      },
+      "baseline": {
+        "h713-kernel.fit": "796e1fb10da50bb9dd5510b90bc41024d71b07be522002b2642f1905ea6fec4c",
+        "h713-hdmi.cmd": "c2221b27cb6b19f0cc1bc032d310d1e40d19e10db388c44378476f1134e9689c",
+        "h713-hdmi.scr": "5b4bbf12046da45043e2e90ace16b9c29c8c899f33d15975644a6008a82eafa9"
+      },
+      "sizes": {
+        "baseline_fit": 7613748,
+        "candidate_fit": 7612588,
+        "baseline_fdt": 34666,
+        "fdt": 34666
+      },
+      "checks": {
+        "module_symvers_equal": true,
+        "kernel_release_equal": true,
+        "config_diff": [],
+        "dtb_change": "none",
+        "cpu_comm_module_reproduced": false,
+        "cedrus_module_reproduced": false
+      },
+      "installer": "e486273d6f40909e9dee82792f8c25020c9d8c7c3151753d5a4d13e9c6dfd0e3"
+    },
+    "config_diff": [],
+    "dtb_identical": true,
+    "module_symvers_identical": true,
+    "kernel_release_identical": true,
+    "production_fit_reproduced_after_diagnostic_removal": true,
+    "final_patch_preamble_wrapped_after_build": "Code hunks unchanged; source comparison against applied final patch passed."
+  },
+  "initial_synthetic_probe": {
+    "boot_id": "9ccfb495-bc9c-462d-9ca1-b5a9dcb49e4d",
+    "result": "Not a positive active-read recovery trial: synthetic error after completed transfer; CMD12 failed; terminal refusal returned EIO.",
+    "injected": 1,
+    "successful_recoveries": 0,
+    "root_policy": "read-only; normal next-boot image restored before arm",
+    "root_effect": "Uncached root reads and ext4 error bookkeeping also failed under terminal refusal; no offline fsck claim.",
+    "recovery": "Operator cold cycle into normal image; startup running and ext4 errors_count=0.",
+    "removed_from_final_diagnostic": true
+  },
+  "natural_error_trial": {
+    "boot_id": "b92a0347-04a2-47cd-afd0-4a4d273e542e",
+    "root_policy": "read-only; normal image restored on disk before arm",
+    "stimulus": "At most 2048 plain CMD18 reads wholly within unmounted vendor partition bypass 0206 threshold; no synthetic interrupt or timing-register changes.",
+    "round": {
+      "phase": "round",
+      "mode": "mixed",
+      "round": 1,
+      "seconds": 27.991836970999998,
+      "mib_per_second": 73.16418719220755,
+      "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+      "irq_delta": {
+        "ve": 643,
+        "gpu": 1667
+      },
+      "samples": 22626,
+      "fifo_full": 100,
+      "thresholds": {
+        "0x0": 22602,
+        "0x2000001": 24
+      },
+      "max_temp_millic": 70357
+    },
+    "selected_requests": 1539,
+    "natural_recoveries": [
+      {
+        "error_uptime_seconds": 103.358038,
+        "register_record": "data error cmd18 RINT=0x00000020 MINT=0x00000000 IDST=0x0000a000 NTSR=0x81710000 clk=200000000Hz GCTRL=0x20000010 DMAC=0x00000200 DLBA=0x1080c000 IDIE=0x00000000 FTRGL=0x20070008 STAS=0x02009109 CBCR=0x0013f0c6 BBCR=0x0013e8c4 CHDA=0x1080c27c CBDA=0x19181231 DRV_DL=0x00010000 THLD=0x00000000",
+        "recovered_uptime_seconds": 103.392655,
+        "interval_ms": 34.617
+      },
+      {
+        "error_uptime_seconds": 113.843692,
+        "register_record": "data error cmd18 RINT=0x00000020 MINT=0x00000000 IDST=0x0000a000 NTSR=0x81710000 clk=200000000Hz GCTRL=0x20000010 DMAC=0x00000200 DLBA=0x1080c000 IDIE=0x00000000 FTRGL=0x20070008 STAS=0x02009009 CBCR=0x000a34f6 BBCR=0x000a2de4 CHDA=0x1080c144 CBDA=0x191d9f79 DRV_DL=0x00010000 THLD=0x00000000",
+        "recovered_uptime_seconds": 113.880143,
+        "interval_ms": 36.451
+      },
+      {
+        "error_uptime_seconds": 115.605624,
+        "register_record": "data error cmd18 RINT=0x00010020 MINT=0x00000000 IDST=0x0000a000 NTSR=0x81710000 clk=200000000Hz GCTRL=0x20000010 DMAC=0x00000200 DLBA=0x1080c000 IDIE=0x00000000 FTRGL=0x20070008 STAS=0x02009009 CBCR=0x00021732 BBCR=0x000212e4 CHDA=0x1080c040 CBDA=0x18bff0b9 DRV_DL=0x00010000 THLD=0x00000000",
+        "recovered_uptime_seconds": 115.642052,
+        "interval_ms": 36.428
+      }
+    ],
+    "remaining_allowance_cleared": true,
+    "health_after": "PASS; no failed CMD12 or terminal recovery; ext4 errors_count=0; root/journal policy restored before reboot"
+  },
+  "final_production": {
+    "boot_id": "8371b96d-56a0-46d2-a0fe-b602791c8e5d",
+    "diagnostic_parameters_absent": true,
+    "idle": {
+      "phase": "round",
+      "mode": "idle",
+      "round": 1,
+      "seconds": 25.93746238700001,
+      "mib_per_second": 78.95915064638197,
+      "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+      "irq_delta": {
+        "ve": 0,
+        "gpu": 0
+      },
+      "samples": 21741,
+      "fifo_full": 0,
+      "thresholds": {
+        "0x0": 35,
+        "0x2000001": 21706
+      },
+      "max_temp_millic": 61621
+    },
+    "mixed": [
+      {
+        "phase": "round",
+        "mode": "mixed",
+        "round": 1,
+        "seconds": 27.948103305000018,
+        "mib_per_second": 73.27867575305568,
+        "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+        "irq_delta": {
+          "ve": 642,
+          "gpu": 1668
+        },
+        "samples": 22518,
+        "fifo_full": 0,
+        "thresholds": {
+          "0x0": 55,
+          "0x2000001": 22463
+        },
+        "max_temp_millic": 71231
+      },
+      {
+        "phase": "round",
+        "mode": "mixed",
+        "round": 2,
+        "seconds": 27.964354471999997,
+        "mib_per_second": 73.23609068289457,
+        "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+        "irq_delta": {
+          "ve": 643,
+          "gpu": 1668
+        },
+        "samples": 22540,
+        "fifo_full": 0,
+        "thresholds": {
+          "0x2000001": 22540
+        },
+        "max_temp_millic": 74188
+      },
+      {
+        "phase": "round",
+        "mode": "mixed",
+        "round": 3,
+        "seconds": 27.87510138800002,
+        "mib_per_second": 73.47058478795867,
+        "sha256": "336a55d66d0dbdad6c2f05c75bdf8b6945a4d91133190755d3419329a5ac1c2d",
+        "irq_delta": {
+          "ve": 633,
+          "gpu": 1663
+        },
+        "samples": 22426,
+        "fifo_full": 0,
+        "thresholds": {
+          "0x2000001": 22426
+        },
+        "max_temp_millic": 75599
+      }
+    ],
+    "total_direct_read_bytes": 8589934592,
+    "fifo_full_samples": 0,
+    "mixed_samples": 67484,
+    "pm_resume": {
+      "policy": "auto",
+      "before": "suspended",
+      "bytes": 4194304,
+      "after": "active"
+    },
+    "decode_results": [
+      {
+        "file": "h01-640x480-main.h265",
+        "bytes": 11520000,
+        "sha256": "8d7a73ae1418552d775433a74b551a366c1a72d35258a04ce2b05f2f6c89fbf8",
+        "frames": 25,
+        "ve_irq": 25,
+        "rc": 0,
+        "seconds": 0.45199712499999123,
+        "stderr": ""
+      },
+      {
+        "file": "h04-640x480-scaling.h265",
+        "bytes": 11520000,
+        "sha256": "49d8846782f94f2766d01a1b22827cba3605ff5cd870e5d45964fb9e0a38c40d",
+        "frames": 25,
+        "ve_irq": 25,
+        "rc": 0,
+        "seconds": 0.4486492499999599,
+        "stderr": ""
+      },
+      {
+        "file": "h05-640x480-scaling-custom.h265",
+        "bytes": 11520000,
+        "sha256": "8d788898a682bbb62e7e32344d7116178f4c8ffbe36a0139d1c3f8785732d3db",
+        "frames": 25,
+        "ve_irq": 25,
+        "rc": 0,
+        "seconds": 0.4461295000000405,
+        "stderr": ""
+      },
+      {
+        "file": "h06-640x480-lossless.h265",
+        "bytes": 11520000,
+        "sha256": "77fdc148bbcc83f55471bedd3586f7e54d8947eb7989655ac27ccd6d92a9ea73",
+        "frames": 25,
+        "ve_irq": 25,
+        "rc": 0,
+        "seconds": 0.4601532919999727,
+        "stderr": ""
+      },
+      {
+        "file": "native-hevc.mp4",
+        "bytes": 414720000,
+        "sha256": "714244b0b65f6542aea92672ec9b54740adadf8f3fb05de2f0cfea0b9d734bd5",
+        "frames": 300,
+        "ve_irq": 300,
+        "rc": 0,
+        "seconds": 10.688684797000008,
+        "stderr": ""
+      },
+      {
+        "file": "native-vp9.webm",
+        "bytes": 414720000,
+        "sha256": "a9bb83369452003c6401ff620a98725a0a36344ca6fb982b225d63b2e557da88",
+        "frames": 300,
+        "ve_irq": 308,
+        "rc": 0,
+        "seconds": 10.806505256000037,
+        "stderr": ""
+      },
+      {
+        "file": "vp9-short-gop.webm",
+        "bytes": 16588800,
+        "sha256": "979f14c782e7e02614208f8dff816ef4d9a4e87e7805b1bee5a30378277ec6c0",
+        "frames": 48,
+        "ve_irq": 48,
+        "rc": 0,
+        "seconds": 0.42150508299999956,
+        "stderr": ""
+      }
+    ],
+    "decode_frames": 748,
+    "health": "PASS; acknowledgement dry-run written=false; system running; no failed units; ext4 errors_count=0; both manifests and installed FIT hash verify; CPU_COMM IRQ only/no desync"
+  },
+  "backups": {
+    "before_diagnostic_v1": "/var/lib/h713-hdmi-startup/kernel-fit-c3a00225c29c4e8393ad419c127dc27a",
+    "production_restore_v1": "/var/lib/h713-hdmi-startup/kernel-fit-633238b20ec3481f9ff0b889bbefa527",
+    "before_diagnostic_v2": "/var/lib/h713-hdmi-startup/kernel-fit-984faa3966b44a5fb4bbee4f28575db8",
+    "production_restore_v2": "/var/lib/h713-hdmi-startup/kernel-fit-7fcc6a657d2d412f88eef15dd87402f7"
+  },
+  "limits": [
+    "DDR3/HY200 only; no hardware HS200 or other-board qualification.",
+    "Reset/init/IDMA/clock negative stages are host-tested, not induced on the live root controller.",
+    "No write stress or long-duration reliability qualification; retain 0206 threshold."
+  ],
+  "raw_evidence_directory": "local/recovery/2026-11-16-emmc-recovery",
+  "patch_sha256": "8122f0abb93c8760a2080a2d5e34f2f3028433db4b23f528f8d21655df0fa52f",
+  "evidence_sha256": {
+    "build-diagnostic-v2-final.log": "36205c210657df9c1b5fbde6d4b31d3774d2d35fba1270a3f87cb5f62ea55a33",
+    "build-diagnostic-v2.log": "096c11e88983271e476db997bc77f7c85004effa0d19a91e19841f6067adcc35",
+    "build-diagnostic.log": "096c11e88983271e476db997bc77f7c85004effa0d19a91e19841f6067adcc35",
+    "build-final.log": "ff583c1ee32c768991a94250809b115067f62366ee03c7a75763920f0dd9b90d",
+    "build-restored-v2.log": "23cad5845bb36764972461f4b91fadab3d7cae49e47d72f339d06fadbb0ee932",
+    "build-restored.log": "23cad5845bb36764972461f4b91fadab3d7cae49e47d72f339d06fadbb0ee932",
+    "build.log": "cc315cdca29f5ff79ea2629f1925fe89b333cf53a1eb43f210362f2d2a91929d",
+    "bundle-build.txt": "301b8a0f53fcf73185eb2f65cfa9602fe3f52ec49048ae8c591d06b0c29c9061",
+    "decode-check.py": "cdeb6da5cb84952f7dc5e784c50b1e272620699709fe51dc8c735c8e823ca92d",
+    "diagnostic-boot.txt": "5a8e1a99e8bb630b421e15e8f6ab6f7479f85003d83545e3b4c9834e58d443f8",
+    "diagnostic-bundle.json": "e3e0c4f87c060b665f9af5369eb2ab71391d55247e789a1f2b79d020dccf8466",
+    "diagnostic-host-tests.txt": "a2bd6b8934a3b2671fd1486a88c674a0b30fb342d517ebbdebd1b5c59e774bff",
+    "diagnostic-install.txt": "95afb7ecf4eab35fe0047f00d54ef9d826bf300e316fea84d41838dde55606e5",
+    "diagnostic-v2-boot.txt": "6c8b095aff457cfd98d16d2380f9b47a9f86a86729ffbc98d7ef12081f31a06d",
+    "diagnostic-v2-bundle.json": "03602b4993406a19de6631f37fd02c69b0b059d3fa0b3debf13b2da35792bbda",
+    "diagnostic-v2-install.txt": "ea0b140d5e72c27713d86dc6db83bc7f01777482ff7c4a73e71db04be42ac448",
+    "diagnostic-v2.patch": "8102c96adad9395e1f829c76017207054d5689d5516279d7524d20b552f26a99",
+    "diagnostic.patch": "09e99c45001b6e9405913bf31c5ee913327c0b9ac42f422c1aca7cd07657d260",
+    "emmc-read-baseline-natural.py": "e9cbc1a3596af2054a76df517ba3b411fb20e51d7ca48c0275f91810cd57b0c1",
+    "failed-probe-reboot.txt": "0915ff6f1d8420ec5728f00fdbbd19a2674cf8afa6eb6b336923e10fd0360bc1",
+    "final-health.txt": "7f2b69ffb6b50e78023fd6822ecd1cdb8e997bf1df1f55c98fa9b48b7e0b2a84",
+    "host-tests-final.txt": "aab5b2ba150bb0e2c2f9e3764862655b5b8ddf0b25bdf326c0ff9d3433c636c4",
+    "host-tests.txt": "abd822e47e0ab85835d92ce698ee7abc27ccc036229e2abc551987ae8572ed5f",
+    "make-patch.py": "ae67696ef987cc378646ffa89c8f1e87dee4e44ad2df45cc1b4d2f3a6f67f522",
+    "natural-final-state.txt": "661ced8cc3292408eed6249147c637f2d48d1a2833ea2e607ed0f57b5ae740dc",
+    "natural-read.py": "94f7b81ed96f09be4c6466d247809b6b11654f28f6eeee2a898410e20fe2f26c",
+    "natural-result.txt": "8c94ddaa671bde68c5a0d5b309ae935b85f2ea75f47468a7307f98e1fb6ffb1b",
+    "production-boot.txt": "00d9d5c2873014a2113353ea2b77a59f33fc3bcb397bbdd38307f9f3d6f989fa",
+    "production-decode.jsonl": "ed3df2eb1e6a97faedfddfa60b181a9075fde2487cfa981ae25af7afecbd592d",
+    "production-files-restored-v2.txt": "3af9fdfbef2e72b333124b0681f53c2d6fe09e45ab2d495d8229c714106342af",
+    "production-files-restored.txt": "7413de84cd3b9a287340eea6e7d6f3c3c01c5f7efe730c080a41ec11072e3976",
+    "production-idle.jsonl": "da2d2c7c9ba1e502f82a0303541ebf50bfb23b67daf98f38d25e2e329aff0c47",
+    "production-mixed.jsonl": "eadb9f9850f638080faed9c6b025ede1ac3c3a06f9fbe3796e55998b0b4bb06a",
+    "production-pm.json": "64af59f2da48348293e913cf83472af353c7df4e281aa1dbdc5c45dbb8699231",
+    "production-source.c": "dba768b3a7fbde67b86c6cd8e361a9a381a977f6fd980c0b8ec388e60ce97437",
+    "restore-bundle.json": "97bae700f76ed035348f83fe9bb3549e5b0f0d7d50be4c629e8fd3ed1ca4a6c0",
+    "restore-v2-bundle.json": "8500ddf2d02ed0804651890296ccf6ef224a461fcf99f624900d46dd03cf7e1c",
+    "root-emergency-readonly.txt": "4104823cbd64fb6aa5d07393e18dbfff294e3d94d0945001e83424cd1c32a57c",
+    "root-readonly-2.txt": "4a4197e040a6fb82e0f6c306426dc1a48224ddabcbad33356ea79e9170243a53",
+    "root-readonly-v2.txt": "adf70eb7f2e3db1669f359ef92dabf51667e8dc315e16c9c76d49ea2c26bf9da",
+    "root-readonly.txt": "6895889a95e81223800b813d155362038f28427e6c450a41b70d7335aab17bde",
+    "root-writers.py": "79fc12b5229c319717f4d3f23db6c229aa13e2e21399f95c7382103374318898",
+    "source.c": "dba768b3a7fbde67b86c6cd8e361a9a381a977f6fd980c0b8ec388e60ce97437",
+    "synthetic-failure-kmsg.txt": "c03f5d54ed9964be74366b3b48fb35fb8c5ec906e66db6d4f4799a0a4fa3a3a9",
+    "synthetic-failure-state.txt": "e3f26cd2369087a92205238b815fcfe2f158ef898ea248788c35af07d4734e48",
+    "synthetic-read.py": "50021a3bf7e47aa5b0316cd15504e99c9d43fc5b64b123dbf865dffd82dce43c",
+    "synthetic-result.txt": "542873960bdb4ed1a84844979aed05ab8ef7a6192426431ca1b0a9eb15545645"
+  }
+}

@@ -5,6 +5,11 @@ passes the bounded DDR3 comparison below. The unpatched kernel reproduced a
 real eMMC stall under the read-only workload. The candidate completes the
 same workload with matching data hashes and the threshold active.
 
+**Subsequent recovery work:** [0207](emmc-recovery.md) adapts the separate
+0312 reset-before-CMD12 path with checked errors and H713-only scope, and
+qualifies three natural full-FIFO error recoveries. The original limits below
+describe the threshold-only qualification.
+
 ## Scope and provenance
 
 The original implementation and HY310 measurements are well0nez's; the patch

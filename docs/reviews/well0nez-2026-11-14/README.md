@@ -16,8 +16,10 @@ selected fixes are still absent locally.
 default; see the [current handoff](cpu-comm-handoff.md#current-state--review-follow-up).
 The [eMMC threshold comparison](emmc-threshold.md) reproduces a CMD18 stall
 under read-only combined load on the baseline and verifies H713-scoped patch
-0206 on the bench. The separate 0312 recovery reset and coupled decoder-reset
-changes remain open. The candidate table below is the historical inventory.
+0206 on the bench. The subsequent [checked 0312 adaptation](emmc-recovery.md),
+0207, recovers three natural full-FIFO read errors and is installed without
+diagnostics. Coupled decoder-reset changes remain open. The candidate table
+below is the historical inventory.
 
 ## Sources and overlap
 
