@@ -575,3 +575,27 @@ The [validation summary](cpu-comm-cold-auto-validation.json) records counts,
 service timings and evidence digests. Raw host-streamed output and the exact
 verification script remain ignored under
 `local/recovery/2026-11-15-elog-level/cold-auto-a269f15e/`.
+
+### Startup health check after log wrap — fixed
+
+`check-startup.sh` now requires the live managed DSP graph (`manage_dsp=Y`,
+`graph_ready=Y`, `dsp_failed=N`) and audio module `initstate=live`, rather than
+searching historical DSP messages. The driver sets `graph_ready` only after
+the initial 0/0 version check, patch 1/1 readback and all 22 graph settings
+verify; its userspace setter refuses changes in managed mode. Existing ALSA,
+receiver, signal and power-domain checks remain required.
+
+On the same stressed boot `a269f15e`, the old checker reproduces
+`FAIL: no DSP version log`; the new checker passes. Installed checker
+`83fd544a…` and the updated health manifest verify, and the acknowledgement's
+`--dry-run` passes with `written=false`. No services were restarted or modules
+reloaded. Counters remain 12006 IRQ RX / zero polling, `tx_desynced=N`, with
+the system `running` and no failed units.
+
+Four fixture tests run the actual checker with empty logs, stale good logs
+over failed/unmanaged graph state, missing graph status, incomplete/unloaded
+modules and unrelated health failures. Those tests, 13 shared-startup tests
+and eight release tests pass. Evidence and the guarded two-file installation
+script are under `local/recovery/2026-11-15-startup-health-live-dsp/`; the
+board backup is
+`/var/lib/h713-hdmi-startup/startup-health-11838e911e914d76ace30327de59d25b`.

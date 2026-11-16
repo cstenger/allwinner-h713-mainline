@@ -19,7 +19,8 @@ grep -q '"phase": "ready"' /run/h713-hdmi-session/state.json || fail 'session st
 r() { cat "$P/$1/parameters/$2" 2>/dev/null; }
 for kv in h713_hdmi_receiver:clock_count:4 h713_hdmi_receiver:init_error:0 h713_hdmi_receiver:firmware_pin:Y \
           h713_hdmi_receiver:edid_ready:Y h713_hdmi_receiver:clients:2 h713_hdmi_audio:dsp_failed:N \
-          h713_hdmi_audio:manage_dsp:Y h713_hdmi_audio:manage_tvfe:Y h713_hdmi_signal:ready:Y \
+          h713_hdmi_audio:manage_dsp:Y h713_hdmi_audio:graph_ready:Y \
+          h713_hdmi_audio:manage_tvfe:Y h713_hdmi_signal:ready:Y \
           h713_hdmi_signal:failed:N h713_hdmi_signal:restored:N; do
   m=${kv%%:*}; rest=${kv#*:}; k=${rest%%:*}; want=${rest#*:}
   got=$(r "$m" "$k"); echo "$m.$k=$got"
@@ -33,9 +34,12 @@ done
 for m in h713_scp_probe h713_hdmi_dsp_probe h713_hdmi_power h713_edid_clock h713_hdmi_tvfe_hold; do
   [ ! -d $P/$m ] || fail "diagnostic module $m loaded"
 done
-dmesg | grep -E 'DSP versions|patch verified' || fail 'no DSP version log'
-dmesg | grep 'DSP versions' | head -1 | grep -q '0000/0000' || fail 'DSP did not start at 0/0'
-dmesg | grep -q 'patch verified versions 1/1' || fail 'DSP patch not 1/1'
+# In managed mode graph_ready is set only after DSP 0/0 admission, patch 1/1
+# readback and all 22 graph words verify. Its userspace setter refuses writes
+# while manage_dsp=Y. Require completed module initialization too; startup log
+# messages can disappear from both dmesg and the journal under CPU_COMM stress.
+[ "$(cat "$P/h713_hdmi_audio/initstate" 2>/dev/null)" = live ] || fail 'audio module not live'
+echo 'DSP patch and graph verified by live managed state'
 grep -q H713HDMI /proc/asound/cards || fail 'no ALSA card'
 cat /proc/asound/H713HDMI/pcm0c/sub0/status
 # No dependency on a bench bundle or host-provided proof.
