@@ -501,3 +501,12 @@ how `h713-standby` takes it down and up; suspend, shutdown and removal take it
 down. It replaces the per-stream PA gate of 0180/0181. Host test:
 `tools/audio/test-speaker-power.py <tree>/sound/soc/sunxi/sun4i-codec.c --mutations`;
 see [the speaker power plan](../../docs/speaker-power-plan.md).
+
+**0213** corrects the `motor_ctr` description: the stepper is the HY310's
+focus motor, not a keystone motor (well0nez's 0024b finding). Only the
+comment changes; the driver and compatible keep the `hy310-keystone-motor`
+name, and both board DTBs are byte-identical.
+
+`series` files may carry `#` comments and blank lines; `tools/build/build.sh`
+reads every series through `series_entries`, so hashing and applying see the
+same list.

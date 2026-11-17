@@ -62,6 +62,21 @@ hash_file() {
   sha256sum "$1" | awk '{print $1}'
 }
 
+# series_entries FILE: the patch names in a series file, one per line.
+# Blank lines and '#' comments are skipped, surrounding whitespace trimmed,
+# and a last line without a trailing newline still counts. Every loop that
+# hashes or applies a series reads it through here, so the digest and the
+# applied set cannot disagree.
+series_entries() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%%#*}
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    if [ -n "$line" ]; then printf '%s\n' "$line"; fi
+  done < "$1"
+}
+
 kernel_inputs_digest() {
   local p
   {
@@ -77,10 +92,9 @@ kernel_inputs_digest() {
     for p in ${KERNEL_CONFIG//,/ }; do
       printf 'fragment %s %s\n' "$p" "$(hash_file "$ROOT/patches/kernel/board/$p.config")"
     done
-    while IFS= read -r p || [ -n "$p" ]; do
-      [ -n "$p" ] || continue
+    while IFS= read -r p; do
       printf '%s %s\n' "$p" "$(hash_file "$ROOT/patches/kernel/$p")"
-    done < "$ROOT/patches/kernel/series"
+    done < <(series_entries "$ROOT/patches/kernel/series")
   } | sha256sum | awk '{print $1}'
 }
 
@@ -174,14 +188,13 @@ prepare_kernel() {
   log "extract + patch linux-$KERNEL_VERSION" >&2
   tar -C "$tmp" --strip-components=1 -xf "$tarball"
   local n=0 p
-  while read -r p; do
-    [ -n "$p" ] || continue
+  while IFS= read -r p; do
     if ! patch -s -d "$tmp" -p1 < "$ROOT/patches/kernel/$p"; then
       rm -rf "$tmp"
       return 1
     fi
     n=$((n+1))
-  done < "$ROOT/patches/kernel/series"
+  done < <(series_entries "$ROOT/patches/kernel/series")
   # our arm64 defconfig (the R-CCU arm64 enable is patch 0023; see patches/kernel/README.md)
   cp "$ROOT/patches/kernel/board/$KERNEL_DEFCONFIG" "$tmp/arch/arm64/configs/"
   : > "$tmp/.h713-inputs-$digest"
@@ -296,10 +309,9 @@ aic8800_inputs_digest() {
   {
     printf 'commit %s\n' "$AIC8800_COMMIT"
     printf 'series %s\n' "$(hash_file "$ROOT/patches/aic8800/series")"
-    while IFS= read -r p || [ -n "$p" ]; do
-      [ -n "$p" ] || continue
+    while IFS= read -r p; do
       printf '%s %s\n' "$p" "$(hash_file "$ROOT/patches/aic8800/$p")"
-    done < "$ROOT/patches/aic8800/series"
+    done < <(series_entries "$ROOT/patches/aic8800/series")
   } | sha256sum | awk '{print $1}'
 }
 
@@ -380,8 +392,7 @@ prepare_aic8800() {
   git -C "$stage" -c user.email=build@h713 -c user.name=h713 commit -qm \
     "aic8800 vendor $AIC8800_COMMIT + vendor compat series"
   local m=0
-  while IFS= read -r p || [ -n "$p" ]; do
-    [ -n "$p" ] || continue
+  while IFS= read -r p; do
     if ! git -C "$stage" -c user.email=build@h713 -c user.name=h713 \
            am -3 --keep-non-patch "$ROOT/patches/aic8800/$p" >/dev/null 2>&1; then
       git -C "$stage" am --abort >/dev/null 2>&1 || true
@@ -390,7 +401,7 @@ prepare_aic8800() {
       return 1
     fi
     m=$((m+1))
-  done < "$ROOT/patches/aic8800/series"
+  done < <(series_entries "$ROOT/patches/aic8800/series")
   note "aic8800 series: $m patches applied" >&2
 
   : > "$stage/.h713-inputs-$digest"

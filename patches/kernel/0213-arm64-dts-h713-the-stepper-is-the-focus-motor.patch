@@ -1,0 +1,32 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] arm64: dts: h713: the stepper is the focus motor
+
+The motor_ctr comment called it a keystone motor. well0nez found that the
+HY310 has exactly one stepper and it drives the focus: the stock DTB has a
+single motor_ctr node (four phases PH4-PH7, limiter PH14) and the word
+"keystone" appears nowhere in the vendor firmware; the name came from the
+HY300 tree. Keystone correction in this project is digital.
+
+Correct the description only. The driver, Kconfig symbol and compatible
+keep the hy310-keystone-motor name, so the DTB and kernel are unchanged;
+well0nez's 0024b renames those too if we ever want it.
+
+Reported-by: well0nez <8986239+well0nez@users.noreply.github.com>
+Link: https://github.com/well0nez/allwinner-h713-linux/blob/main/mainline/patches/kernel/0024b-misc-hy310-keystone-motor-ist-der-fokusmotor.patch
+Link: https://github.com/cstenger/allwinner-h713-mainline/issues/4
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -2178,8 +2178,10 @@
+ 	 */
+ 
+ 	/*
+-	 * Keystone motor driver (hy310-keystone-motor).
+-	 * Stepper motor for projector keystone correction.
++	 * Focus motor (driver and compatible still named hy310-keystone-motor).
++	 * The HY310 has exactly one stepper, the focus drive: stock has a single
++	 * motor_ctr node and "keystone" appears nowhere in the vendor firmware
++	 * (well0nez 0024b). Keystone correction here is digital, not a motor.
+ 	 * 4-phase half-step sequence, 1 limit switch (PH14, active HIGH).
+ 	 * Values extracted from stock hy310-board.dtb via raw FDT parsing.
+ 	 * GPIO format: <&pio bank pin flags>  bank 7 = PH
