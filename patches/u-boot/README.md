@@ -14,6 +14,7 @@ matching CCU table. Both the orchestrator and quick helper use this tree.
 | `0004-h713-single-display-firmware-launch.patch` | `h713_disp auto <id> logo comm-trace`: one firmware load and release instead of two; installed 2026-11-06, kernel starts 1.10 s earlier |
 | `0005-h713-early-panel-off-interval.patch` | `h713_disp panel-off`: enter the verified panel off state before the FIT/blob loads; the logo step re-verifies it and waits only the rest of the same 3 s; installed 2026-11-09, kernel starts 0.80 s earlier |
 | `0006-h713-comm-trace-markers-avoid-k0-k1.patch` | Comm-trace markers use t8/t9 instead of k0/k1 (the firmware's interrupt exit clobbers k0/k1, so a marker interrupted mid-sequence faulted and the firmware's dump recursion overwrote ARM DRAM); apply loop refuses k0/k1 in caves. Built 2026-11-15, **not yet installed** |
+| `0007-h713-host-tools-without-openssl.patch` | Both H713 defconfigs turn off `TOOLS_LIBCRYPTO`/`TOOLS_KWBIMAGE`: mkimage no longer links host OpenSSL (OpenSSL 4 removed the ENGINE API it used). Host tools only; SPL+proper byte-identical to the libcrypto build (2026-11-17) |
 
 **Paired environment migration is required for the unmigrated split layout.**
 The prior diagnostic image read saved environment at unintended LBA `0x32ec00`;

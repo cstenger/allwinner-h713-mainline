@@ -1,0 +1,32 @@
+From: H713 maintainers
+Subject: [PATCH] h713: build the host tools without OpenSSL
+
+The H713 boards do not sign images: the FIT the build packages is
+unsigned and U-Boot does not verify signatures at boot. Even so, the
+default host-tool configuration links mkimage against OpenSSL's
+libcrypto (TOOLS_LIBCRYPTO, also selected by TOOLS_KWBIMAGE for Marvell
+images). OpenSSL 4 removed the ENGINE API that lib/rsa/rsa-sign.c uses,
+so on an up-to-date host the tools no longer link and the whole U-Boot
+build fails.
+
+Turn both host-tool options off for the two H713 boards. They affect
+host tools only ("does not affect target features"); the target SPL and
+proper are byte-identical with and without them. The build then no
+longer depends on the host's OpenSSL at all.
+
+--- a/configs/hy200_qz713df_a1_defconfig
++++ b/configs/hy200_qz713df_a1_defconfig
+@@ -61,3 +61,5 @@
+ CONFIG_H713_VENDOR_CHAINLOAD=y
+ CONFIG_CMD_WDT=y
+ CONFIG_CMD_GPIO=y
++# CONFIG_TOOLS_KWBIMAGE is not set
++# CONFIG_TOOLS_LIBCRYPTO is not set
+--- a/configs/hy200_qz713_v2_defconfig
++++ b/configs/hy200_qz713_v2_defconfig
+@@ -53,3 +53,5 @@
+ CONFIG_ENV_IS_IN_MMC=y
+ CONFIG_ENV_OFFSET=0x400000
+ CONFIG_CMD_WDT=y
++# CONFIG_TOOLS_KWBIMAGE is not set
++# CONFIG_TOOLS_LIBCRYPTO is not set

@@ -210,6 +210,12 @@ find_mkimage() {
   if [ ! -x "$m" ]; then
     log "building mkimage (u-boot tools-only)" >&2
     make -C "$UBOOT" O="$BUILD/uboot-tools" HOSTCC=clang tools-only_defconfig >/dev/null 2>&1
+    # Unsigned FITs only: keep host OpenSSL out of mkimage, as U-Boot 0007
+    # does for the board builds (OpenSSL 4 removed the ENGINE API it links).
+    sed -i -e 's/^CONFIG_TOOLS_LIBCRYPTO=y$/# CONFIG_TOOLS_LIBCRYPTO is not set/' \
+           -e 's/^CONFIG_TOOLS_KWBIMAGE=y$/# CONFIG_TOOLS_KWBIMAGE is not set/' \
+      "$BUILD/uboot-tools/.config"
+    make -C "$UBOOT" O="$BUILD/uboot-tools" HOSTCC=clang olddefconfig >/dev/null 2>&1
     make -C "$UBOOT" O="$BUILD/uboot-tools" HOSTCC=clang -j"$JOBS" tools-only >/dev/null 2>&1
   fi
   [ -x "$m" ] && echo "$m"
