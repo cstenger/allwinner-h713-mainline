@@ -243,7 +243,9 @@ Suggested next topics, pending the user's choice:
    a diagnostic `RST_BUS_VE3`-only pulse at a codec switch makes all pairs
    bit-exact, like 0298's full VE pulse (AV1 unbound during the arms); AV1
    then decoded 40/40 exact beside 5064 VE3 pulses (no guard needed); kernel
-   0210 carries it (release-built, bundle rehearsed, not installed).* Reproduce mixed-codec
+   0210 carries it: installed and qualified (pairs exact, AV1 65/65 exact beside
+   switching, clean reboot). Open: H.264/MPEG-2/VP8 pairs; watchdog path
+   beside AV1.* Reproduce mixed-codec
    failures first. Do not import codec-switch reset alone: Cedrus and AV1
    share the reset domain. Audit forced reset timeout and reset operations
    under locking, preserving this tree's working AV1 support.

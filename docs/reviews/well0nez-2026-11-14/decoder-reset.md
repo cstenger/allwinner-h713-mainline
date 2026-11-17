@@ -3,8 +3,7 @@
 **Status: the 0298 failure reproduces on our tree. A `RST_BUS_VE3`-only
 pulse at a codec switch fixes it in a diagnostic module, and AV1 decodes
 bit-exact beside 5064 such pulses. Kernel **0210** carries the VE3-only
-reset; it is release-built with a rehearsed module-only bundle, not yet
-installed.**
+reset. It is installed and qualified on the bench.**
 
 ## Assessment
 
@@ -194,9 +193,7 @@ The UART capture and scripts are listed in `digests.txt` alongside.
      and 0158 exposure.
 3. **Arbitration only if step 2 shows it is needed,** and without a forced
    pulse after a timeout. The codec-switch reset does not need it.
-4. **Series patch: done as 0210** (see below). Still to do: install it,
-   then run the pair test, the AV1 coexistence run and the decode suites on
-   the installed module.
+4. **Series patch: done as 0210, installed and qualified** (see below).
 
 ## 0210
 
@@ -228,3 +225,35 @@ reproduces the installed module.
 (`local/recovery/2026-11-16-cedrus-0210/bundle/`, manifest `adb821ec…`)
 passed a fake-root rehearsal: preview, apply changing only the cedrus
 module, and exact rollback.
+
+### Installation and qualification
+
+**Install.** On boot `53018056`, the guarded installer ran preview
+(`baseline`) then apply, with the FAT mounted read-only. Cedrus became
+`f820dffa…`, the FIT/scr were unchanged and both manifests verified. The
+backup is `/var/lib/h713-hdmi-startup/kernel-fit-0da4837ecc22464c9da0b04ba9c5cf57`,
+holding `1c8c87ba…`.
+
+**Qualification**, on boot `5c23f8c0` with the UART logged. The loaded
+build ID `9c460a60…` matches the release module, and AV1 is bound.
+
+| Check | Result |
+| --- | --- |
+| All 7 pinned HEVC/VP9 vectors as singles | 7/7 exact, full VE IRQ counts |
+| Pair test: controls, 4 VP9+H.265 pair runs, recovery | **all exact**, no kernel lines |
+| AV1 alone | 4/4 exact |
+| AV1 ×20 beside H.265+H.265 | 20/20 exact; cedrus 20/20 |
+| AV1 ×40 beside VP9+H.265 switching (138.9 s) | **40/40 exact**; cedrus 40/40 |
+| AV1 afterwards | exact |
+| Timeouts / IOMMU faults | 0 |
+
+**Reboot check.** A reboot after this traffic printed `reboot: Restarting
+system` on the UART. Boot `ff0aa58f` then passed startup with 0210 loaded,
+AV1 bound and a clean capture teardown. Evidence digests are in the
+[validation summary](decoder-reset-validation.json).
+
+**Remaining limits:**
+
+- No H.264, MPEG-2 or VP8 pairs; their vectors are not staged on the board.
+- The unchanged watchdog path (full `RST_BUS_VE` pulse plus 0158 IOMMU
+  reset after a cedrus timeout beside AV1) is untested.

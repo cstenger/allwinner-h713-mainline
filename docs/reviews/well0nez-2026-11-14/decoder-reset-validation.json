@@ -1,0 +1,49 @@
+{
+  "schema": "h713-cedrus-codec-switch-validation-v1",
+  "patch": "0210",
+  "board": "HY200 QZ713DF_A1 DDR3",
+  "module": "f820dffabe9407fd1137df0d6949677cc758f9d40bda4195bc7fc9aa4c60e52f",
+  "module_build_id": "9c460a603315827d17c45937b94b1566f8fbfba1",
+  "previous_module": "1c8c87bae78ad6fce0522faa89b37d02bda511af1535b669dcb655a85ce0d3f2",
+  "fit_unchanged": "845494c372b62d3f1ba6e3eb2b8166041398dc440c217dd58f5de140e004f2ac",
+  "install": {
+    "boot": "53018056-3e52-4ad1-a37b-0762866cbdeb",
+    "fat_mount": "read-only",
+    "backup": "/var/lib/h713-hdmi-startup/kernel-fit-0da4837ecc22464c9da0b04ba9c5cf57",
+    "bundle_manifest": "adb821ec0d326b6777e08a607e43c0b0d4a7d56509f7e40447df6aef7716d8e2"
+  },
+  "qualification": {
+    "boot": "5c23f8c0-494d-4f81-9bc2-b77f5242a5d8",
+    "loaded_build_id_matches": true,
+    "av1_bound": true,
+    "singles": "7/7 exact",
+    "pairs": "controls, 4 VP9+H.265 pair runs and recovery all exact; 0 kernel lines",
+    "av1": {
+      "gate_passes": 65,
+      "alone": 4,
+      "beside_same_codec": 20,
+      "beside_switching": 40,
+      "after": 1,
+      "cedrus_streams_exact": "60/60",
+      "hantro_errors": 0
+    },
+    "timeouts_faults": 0
+  },
+  "reboot_check": {
+    "to_boot": "ff0aa58f-f622-4255-80d9-d8bb01716f7c",
+    "uart": "reboot: Restarting system",
+    "startup": "PASS",
+    "capture_teardown": "clean"
+  },
+  "evidence": {
+    "run.log": "20eca78bc12833baeba8f65fac7d85b0c54e590f30d394a2588d3eac9817b0b4",
+    "pairs.json": "ffdb8f332db71cfc43b72ca93680fe0f8831a8cb01114dcb0be7b93bcf4ede66",
+    "storm-switch.json": "8dab1af6310edef117802990785479141578424af044f413b451c4f1498a8e40",
+    "postboot.txt": "524a65445f673a9ced5ba00f231497cacd0a17582caa05264695ca5fda62bcf9",
+    "reboot-check.txt": "98d7eecbd72150f18a77bbb41bf232524c21520c5c5e8724990c1d80b0e90c99",
+    "uart.log": "f6666b31970e62563b56165e393d6cc32dba4b7cc051b223cdfa7159bd32750a",
+    "qualify.sh": "7b37483359f07fed31f4c214c7c12f5ddecad977fbe17a426dd5d05587d179cd",
+    "singles.py": "39a60ffa4438ce317dec6b2d17bf9d7bc9437c5493a6ea8ac0bad2b574396ebc",
+    "av1-coexist-0210.sh": "81ea0b6f6fe7b0dab6c75b41fa8146dee6c7942102e11203b24b9a6717d387bf"
+  }
+}
