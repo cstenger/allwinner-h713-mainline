@@ -189,8 +189,8 @@ The UART capture and scripts are listed in `digests.txt` alongside.
 2. **AV1 interplay, with the operator present and UART connected:**
    - ~~AV1 beside cedrus codec switching under the VE3-only pulse~~: done
      above, 40/40 exact;
-   - AV1 beside a damaged cedrus stream, to measure our existing watchdog
-     and 0158 exposure.
+   - ~~AV1 beside a damaged cedrus stream (watchdog and 0158 exposure)~~:
+     done, 30/30 clean.
 3. **Arbitration only if step 2 shows it is needed,** and without a forced
    pulse after a timeout. The codec-switch reset does not need it.
 4. **Series patch: done as 0210, installed and qualified** (see below).
@@ -255,5 +255,66 @@ AV1 bound and a clean capture teardown. Evidence digests are in the
 **Remaining limits:**
 
 - No H.264, MPEG-2 or VP8 pairs; their vectors are not staged on the board.
-- The unchanged watchdog path (full `RST_BUS_VE` pulse plus 0158 IOMMU
-  reset after a cedrus timeout beside AV1) is untested.
+- The watchdog path beside AV1 was tested afterwards; see below.
+
+## Watchdog path beside AV1 (0158 + full `RST_BUS_VE` pulse)
+
+This is the path `cedrus_watchdog()` already had before this work: on a job
+timeout it pulses `RST_BUS_VE` and calls `sun50i_iommu_reset_masters()`.
+well0nez measured this class of pulse stalling the AV1 core and then the
+SoC.
+
+**Phase A: the trigger alone.** Boot `ff0aa58f`, 0210 installed, no AV1
+activity. `b03-h-bitflip-payload.h265` (damaged slice payload) still reaches
+the watchdog: 1–2 `frame processing timed out!` per roughly 2 s run, and a
+good H.265 vector is bit-exact after every run. `b08` (halved NALs) times out
+occasionally. `b04` (damaged headers) only produces setup errors. No IOMMU
+faults occurred: the HEVC validation patches appear to stop the stray reads
+seen in October.
+
+**Phase B: beside continuous AV1.** Setup:
+
+- Root was made read-only first: journal relinquished to RAM, `sync`, then
+  a SysRq emergency remount, verified `ro`. All output went to `/run`, with
+  the run log and `dmesg -w` streamed live to the host and the UART logged.
+- A background loop decoded `stock.ivf` on the AV1 core continuously to
+  fakesink.
+- In the foreground, 30 runs of `b03` each fired the cedrus watchdog. After
+  each run, an AV1 gate decode (scored against libdav1d per-frame MD5s) and
+  a good H.265 decode were checked.
+
+| Measure | Result |
+| --- | --- |
+| Cedrus watchdog firings (full VE pulse + IOMMU master reset) | **30** |
+| AV1 interrupts during the 30 runs | 7157 |
+| AV1 gate after each run | **30/30 exact**, plus 1080p at the end |
+| Cedrus good-vector check after each run | 30/30 exact |
+| hantro errors / IOMMU faults / stall | **none** |
+
+**Restore.** The board was rebooted to bring root back read-write. On the
+UART, `reboot: Restarting system`. Boot `a2cb8f4b` has root `rw`, startup
+PASS, ext4 error counter zero, manifests verified and AV1 bound.
+
+**What this shows.** With 30 full-VE watchdog pulses landing while the AV1
+core was continuously busy, there was no AV1 stall, error or loss of
+exactness on this board. well0nez reported the opposite (stall within 0.4 s,
+SoC down about 15 s later). Our AV1 DT node is identical to theirs (theirs
+was taken from ours), so the difference lies elsewhere: driver, clocking,
+timing, or their measurement conditions. It is not explained here.
+
+**Limits:**
+
+- The AV1 frames decoding at the moment of each pulse came from the
+  unverified fakesink loader. Exactness was checked by the gate *after*
+  each pulse, together with the absence of hantro errors or stalls.
+- Whether a given pulse hit an AV1 frame in flight is probabilistic,
+  though very likely across 30 pulses with the core continuously loaded.
+- One board, 30 pulses.
+
+Evidence digests (SHA-256, `local/recovery/2026-11-16-watchdog-av1/`) are
+in `digests.txt`. The key files are `phase-b.log` `af7ac503…` and
+`dmesg-stream.log` `02c1f7e4…`.
+
+**Conclusion.** No AV1 arbitration is needed for the watchdog path on this
+bench either. If it ever shows up, the guard design is still available, but
+there is no evidence here to justify importing 0305–0308.
