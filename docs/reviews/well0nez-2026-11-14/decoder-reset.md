@@ -2,7 +2,9 @@
 
 **Status: the 0298 failure reproduces on our tree. A `RST_BUS_VE3`-only
 pulse at a codec switch fixes it in a diagnostic module, and AV1 decodes
-bit-exact beside 5064 such pulses. Nothing is in the series yet.**
+bit-exact beside 5064 such pulses. Kernel **0210** carries the VE3-only
+reset; it is release-built with a rehearsed module-only bundle, not yet
+installed.**
 
 ## Assessment
 
@@ -192,6 +194,37 @@ The UART capture and scripts are listed in `digests.txt` alongside.
      and 0158 exposure.
 3. **Arbitration only if step 2 shows it is needed,** and without a forced
    pulse after a timeout. The codec-switch reset does not need it.
-4. **Series patch:** a VE3 codec-switch reset in `cedrus_device_run()`,
-   attributed to well0nez's 0298 finding, qualified with the pair test,
-   the AV1 coexistence run and the decode suites.
+4. **Series patch: done as 0210** (see below). Still to do: install it,
+   then run the pair test, the AV1 coexistence run and the decode suites on
+   the installed module.
+
+## 0210
+
+`0210-media-cedrus-reset-the-decode-engine-on-a-codec-switch.patch` adds
+`cedrus_reset_on_codec_switch()` to `cedrus_hw.c`:
+
+- It acts only when the optional `ve3` reset exists. It pulses
+  `RST_BUS_VE3` when a job's codec differs from the last recorded one, and
+  never touches `RST_BUS_VE`.
+- A failed pulse leaves the codec unrecorded, so the next job retries.
+- `cedrus_device_run()` calls it before request setup or any register
+  write. `cedrus_hw_resume()` clears the record after releasing VE3.
+
+**Host checks.**
+[`test-cedrus-codec-switch-reset.py`](../../../tools/video/test-cedrus-codec-switch-reset.py)
+runs the real helper under ASan/UBSan and checks its placement. It rejects
+8 mutants: shared-line pulse, pulse on the first job, pulse on the same
+codec, no pulse on a switch, recording after a failure, no VE3 guard, call
+after request setup, and resume keeping the record. The 0209 tree fails it.
+The sources build with `W=1` and no warnings, checkpatch is clean, and the
+patch applies with zero fuzz.
+
+**Release build.** 172 patches apply. Config, `Module.symvers`, the kernel
+release, every DTB and the FIT `845494c3…` are unchanged. Only
+`sunxi-cedrus.ko` changes, `1c8c87ba…` → `f820dffa…`, and the 0209 baseline
+reproduces the installed module.
+
+**Bundle.** The module-only bundle
+(`local/recovery/2026-11-16-cedrus-0210/bundle/`, manifest `adb821ec…`)
+passed a fake-root rehearsal: preview, apply changing only the cedrus
+module, and exact rollback.

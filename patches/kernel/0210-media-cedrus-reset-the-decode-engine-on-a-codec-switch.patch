@@ -1,0 +1,129 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] media: cedrus: reset the decode engine on a codec switch
+
+VP9 runs on the H.265 engine and leaves registers set that H.265 never
+writes. With VP9 and H.265 decoding at once on the H713, every H.265 job
+fails its slice-header setup ("Failed to setup decoding job: -22") while
+VP9 stays bit-exact; GStreamer hands out stale buffers with exit status
+0. Each codec alone, and two H.265 streams at once, are bit-exact.
+Sequential streams are unaffected because runtime PM resets the engine
+between them. Reproduced 4/4 on the H713 bench.
+
+well0nez found this and resets the engine with RST_BUS_VE whenever a job's
+codec differs from the last one's (their 0298). On the H713 that line
+also gates the AV1 core's bus. They measured that a pulse into an AV1
+frame in flight stalls the core and then the SoC, which led to a reset
+guard (0305-0307).
+
+The H713 decode engine has its own reset, RST_BUS_VE3, which the AV1 core
+does not use. Pulse only that line, and only where the VE3 reset exists,
+before a job's first register write; m2m runs one job at a time, so the
+engine is idle. A failed pulse leaves the codec unrecorded so the next job
+retries. Runtime resume clears the record, since the engine leaves reset
+clean.
+
+Measured with a diagnostic build:
+
+- With no reset, H.265 fails in 4/4 VP9+H.265 pairs.
+- A VE3-only pulse and a full VE pulse both make all pairs bit-exact
+  (about 1000 pulses each, no measurable cost).
+- With AV1 bound, AV1 decoded 40/40 clips bit-exact (720p and 1080p) beside
+  138 s of VP9+H.265 switching and 5064 VE3 pulses. Cedrus stayed 40/40
+  exact, with no AV1 errors or timeouts.
+
+So the codec-switch reset needs no AV1 arbitration.
+
+Link: https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0298-media-cedrus-a-job-of-another-codec-starts-from-a-reset-engine.patch
+
+---
+
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.h
+@@ -268,6 +268,8 @@
+ 
+ 	struct reset_control	*rstc;
+ 	struct reset_control	*rstc_ve3;
++	/* codec of the last job, to reset the decode engine on a switch */
++	u32			last_codec;
+ 
+ 	unsigned int		capabilities;
+ 
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+@@ -30,6 +30,8 @@
+ 	struct media_request *src_req;
+ 	int error;
+ 
++	cedrus_reset_on_codec_switch(dev, ctx->src_fmt.pixelformat);
++
+ 	run.src = v4l2_m2m_next_src_buf(ctx->fh.m2m_ctx);
+ 	run.dst = v4l2_m2m_next_dst_buf(ctx->fh.m2m_ctx);
+ 
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -474,6 +474,47 @@
+ 					 VB2_BUF_STATE_ERROR);
+ }
+ 
++/*
++ * A job of another codec than the last one starts from a reset decode
++ * engine. VP9 runs on the H.265 engine and leaves registers set that H.265
++ * never writes, such as its frame header at +0x504: with VP9 and H.265
++ * decoding at once, every H.265 job failed its slice-header setup
++ * (-EINVAL) while VP9 stayed bit-exact (found by well0nez, their 0298).
++ * Sequential streams are unaffected, because runtime PM resets the engine
++ * between them. Every codec programs the engine in full for each job.
++ *
++ * Their fix pulses RST_BUS_VE. On the H713 that line also gates the AV1
++ * core's bus; well0nez measured that a pulse into an AV1 frame in flight
++ * stalls the core and then the SoC. The decode engine has its own reset,
++ * RST_BUS_VE3, which
++ * the AV1 core does not use: pulsing it clears the residue (VP9+H.265
++ * pairs bit-exact), and AV1 decoded bit-exact beside thousands of such
++ * pulses. So only VE3 is pulsed, and only where it exists.
++ *
++ * Called before a job's first register write; m2m runs one job at a time,
++ * so the engine is idle. A failed pulse leaves the codec unrecorded so the
++ * next job tries again.
++ */
++void cedrus_reset_on_codec_switch(struct cedrus_dev *dev, u32 codec)
++{
++	int ret;
++
++	if (!dev->rstc_ve3)
++		return;
++
++	if (dev->last_codec && dev->last_codec != codec) {
++		ret = reset_control_reset(dev->rstc_ve3);
++		if (ret) {
++			dev_warn_ratelimited(dev->dev,
++					     "decode engine reset on codec switch failed: %d\n",
++					     ret);
++			return;
++		}
++	}
++
++	dev->last_codec = codec;
++}
++
+ int cedrus_hw_suspend(struct device *device)
+ {
+ 	struct cedrus_dev *dev = dev_get_drvdata(device);
+@@ -513,6 +554,8 @@
+ 			goto err_rst;
+ 		}
+ 	}
++	/* The engine leaves reset clean; no codec state to clear yet. */
++	dev->last_codec = 0;
+ 
+ 	ret = clk_prepare_enable(dev->ahb_clk);
+ 	if (ret) {
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.h
+@@ -30,5 +30,6 @@
+ void cedrus_hw_remove(struct cedrus_dev *dev);
+ 
+ void cedrus_watchdog(struct work_struct *work);
++void cedrus_reset_on_codec_switch(struct cedrus_dev *dev, u32 codec);
+ 
+ #endif

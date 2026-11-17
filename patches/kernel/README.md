@@ -467,3 +467,15 @@ share registers its callers use: well0nez's 0014e found the transcription
 error, but the hwspinlock words belong to the sun6i hwspinlock driver and are
 not carried. `tools/mips/test-cpu-comm-tx.py` now fails any TX_IRQ_EN write
 and cross-checks the whitelist against every accessor caller.
+
+**0210** resets the cedrus decode engine when a job's codec differs from the
+previous job's. VP9 leaves state in the H.265 engine, so concurrent
+VP9+H.265 decoding failed every H.265 job's setup (well0nez's 0298 finding).
+Their fix pulses `RST_BUS_VE`, which on the H713 also gates the AV1 core's
+bus. This patch pulses only `RST_BUS_VE3`, the decode engine's own reset,
+which AV1 does not use, and only where that reset exists. A diagnostic build
+made all VP9+H.265 pairs bit-exact, and AV1 decoded 40/40 bit-exact beside
+5064 such pulses. See the
+[decoder-reset record](../../docs/reviews/well0nez-2026-11-14/decoder-reset.md);
+`tools/video/test-cedrus-codec-switch-reset.py --mutations` checks the
+helper and its placement.
