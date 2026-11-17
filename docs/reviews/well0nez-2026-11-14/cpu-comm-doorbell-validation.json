@@ -16,7 +16,12 @@
     "shutdown": "orderly to journald stop, watchdog armed 16 s",
     "next_boot": "no journal record; no ping or hotspot for 5+ min; UART silent (connection not confirmed)",
     "recovered_by": "operator power-cycle",
-    "cause": "undetermined"
+    "cause": "not a hang: H2 hold guard powered off (\"reboot refused, HDMI holds retained ( h713_hdmi_receiver ); powering off\"). h713-hdmi-capture stop failed with \"kernel log changed during restore; verification unavailable\": h713-hdmi-session.py stop() requires dmesg-after to start with dmesg-before, which fails once the kernel ring is full; the 6003-call run fills it. DSP 22-word and TVFE 15-word restores were logged as verified. Pre-existing, not 0209.",
+    "uart_retry": {
+      "from_boot": "a0f8f6a9",
+      "evidence": "edacd48bad63b44a0993ab3b3518677c721571d849cf90bb8028d2ab68329ef9",
+      "shutdown_units": "70c49695a480c3b89ee2d102ef36c1bfb6ed3c0ef2b0ed01cb2b487044545871"
+    }
   },
   "power_cycle_boot": {
     "boot": "a0f8f6a9-5413-4ee6-b66b-dcea0dc605a3",
@@ -54,5 +59,31 @@
       "verify.py": "70ebc38d91c5dde864ce0ee72080a63ad386e8416c4eebf7b6a382dd82ecd7e6"
     }
   },
-  "warm": "pending: retry warm reboot with UART logging"
+  "warm": {
+    "boot": "0459e48c-944e-4178-829f-95f8b8e508bd",
+    "reboot_from": "8142459f (no stress, ring not wrapped): \"reboot: Restarting system\", U-Boot, kernel",
+    "startup_check": "PASS",
+    "loaded_build_id": "57b58b47fc3283f6dbed9ad37d23f5bf6fcce8f8",
+    "control_calls": 3,
+    "calls": 6003,
+    "rx_irq": 12012,
+    "rx_poll": 0,
+    "tx_desynced": "N",
+    "tx_fifo_full": 0,
+    "tx_irq_en_every_phase": 0,
+    "elog_pointer": "0x5f284",
+    "fault_magic": [
+      0,
+      0
+    ],
+    "failed_units": 0,
+    "ext4_errors": 0,
+    "cpu_comm_error_lines": 0,
+    "evidence": {
+      "warm2-preboot.txt": "c698867b845045070710a2dedaf4c9cd1a0a159017a78c262681a454261fde15",
+      "warm2-postboot.txt": "5412c8a6a5639de293e35d9143c16bd9d7908903c92be5dba6afb3e0fdc43601",
+      "warm-stress.txt": "44089b0d56b8727116b237a2bfc15a5ec7276a7c8a276d746e42b44eee46b1c2",
+      "warm-postflight.txt": "1e14885f6c66a115570bdc4deefe7c90f25f999b338444f45eeba3dd6a73fdcd"
+    }
+  }
 }

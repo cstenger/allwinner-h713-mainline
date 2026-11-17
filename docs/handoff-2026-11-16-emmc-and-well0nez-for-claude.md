@@ -242,9 +242,11 @@ Suggested next topics, pending the user's choice:
    under locking, preserving this tree's working AV1 support.
 4. Doorbell pulse/no-pulse experiment. *Resolved 2026-11-16: the MIPS
    wakes on the FIFO write alone (20/20 clean no-pulse probes, median 36 µs);
-   the pulse only enables an unhandled TX-room IRQ. Removed by kernel 0209 together with item 2 (installed; power-cycle 6003-call
-   run PASS on a0f8f6a9; first warm reboot after install hung, cause open, warm
-   retry with UART pending); see
+   the pulse only enables an unhandled TX-room IRQ. Removed by kernel 0209 together with item 2 (installed; 6003-call runs PASS
+   from power-on a0f8f6a9 and warm 0459e48c). **Open defect found:**
+   `h713-hdmi-session.py` stop's `dmesg` prefix check fails once the kernel
+   ring wraps (e.g. after CPU_COMM stress). The receiver hold is then
+   retained and the H2 guard turns reboot into power-off; see
    [the doorbell record](reviews/well0nez-2026-11-14/cpu-comm-doorbell.md).* HDMI
    allocator/EDID/port fixes are research inputs for our distinct ownership
    model, not drop-in replacements.

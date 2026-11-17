@@ -186,17 +186,24 @@ verify. The backup is
 `/var/lib/h713-hdmi-startup/kernel-fit-ec4c3ad882a543c785efafab14f29d04`,
 holding 0208 `9864701f…`.
 
-**The warm reboot after install did not return, cause undetermined.**
+**The warm reboots after the stress runs powered off. They did not hang, and
+0209 is not the cause.** A UART capture of the retry from boot `a0f8f6a9`
+ends with:
 
-- The old boot, still running 0208, shut down cleanly through journald's
-  stop, with the hardware watchdog armed at 16 s.
-- No following boot reached the persistent journal. For more than five
-  minutes there was no ping or hotspot, and the UART stayed silent. The
-  serial connection after the earlier cold boot was not confirmed.
-- The operator power-cycled the board.
-- 0209 cannot have run before that shutdown. Without UART output an early
-  hang in the next boot is not excluded, but the power-cycle boot ran 0209
-  normally. Warm reboots have stopped in U-Boot on this bench before.
+> `h713-hdmi-hold-guard: reboot refused, HDMI holds retained ( h713_hdmi_receiver ); powering off, cold cycle required`
+
+The H2 hold guard (a `systemd-shutdown` hook that runs after journald stops)
+did exactly what it was designed to do. The receiver was still held because
+`h713-hdmi-capture`'s stop exited 1 with
+`kernel log changed during restore; verification unavailable`.
+
+`tools/hdmi/h713-hdmi-session.py` `stop()` snapshots `dmesg`, runs `rmmod`,
+and requires the new log to start with the snapshot. Once the kernel ring is
+full, every new line evicts the oldest, so the check fails even though the
+journal shows all 22 DSP words and 15 TVFE clock words restored and
+verified. The 6003-call run fills the ring with per-call CPU_COMM lines.
+`41b98df8` hit the same failure under 0208, so this is a pre-existing
+teardown bug.
 
 **Power-cycle boot `a0f8f6a9` — PASS.**
 
@@ -212,6 +219,18 @@ holding 0208 `9864701f…`.
   0.62 ms and 2.9 ms for 0208 cold.
 - The CPU_COMM error scan is clean after traffic.
 
-**Still open:** a warm-reboot run of 0209, retried with UART logging so a
-repeat failure can be located. See the
+**Warm boot `0459e48c` — PASS.** It was rebooted from `8142459f` before any
+stress, with the ring not yet wrapped. The UART shows `reboot: Restarting
+system`, then U-Boot, then the kernel, with no guard refusal.
+
+- The loaded build ID is the 0209 module's. Startup check PASS, manifests
+  verify, no failed units, ext4 errors zero.
+- The previous boot's capture stop succeeded.
+- 3 control calls, then all **6003 calls**: 12012 IRQ RX, zero polling,
+  `tx_desynced=N`, `tx_fifo_full=0` and `TX_IRQ_EN` 0 after every phase.
+  Fault magic zero, ELOG pointer `0x5f284`, no CPU_COMM errors.
+
+**0209 is qualified warm and from power-on.** The teardown's log check
+remains a separate defect: until it is fixed, any reboot after the kernel
+ring wraps is turned into a power-off by the guard. See the
 [validation summary](cpu-comm-doorbell-validation.json).
