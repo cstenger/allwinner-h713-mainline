@@ -153,5 +153,5 @@ no longer stops the clock. On our bench, 46 stop/close/power/standby events and 
 pop; a test impulse is still detected 3/3. Before 0212, every close popped. This may explain your mains-off pop
 too, if PA is still on when the rails take the clock away.
 
-**Focus motor and AFBD:** agreed on both. Since we park the MIPS and program the blocks ourselves, your 1080p pieces
+**Focus motor and AFBD:** agreed on both. One correction on our side: we don't park the MIPS in production. U-Boot starts `display.bin` once and it keeps running (panel timing, the HDMI receiver, the audio DSP graph over CPU_COMM); parking was only a bring-up diagnostic. Our AFBD driver does program the video planes and geometry itself on top of the running firmware, so your 1080p pieces
 are a reference for us rather than a drop-in.
