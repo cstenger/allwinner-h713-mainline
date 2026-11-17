@@ -455,3 +455,15 @@ published. The FIFO depth check follows well0nez's 0014f.
 `tools/mips/test-cpu-comm-tx.py` tests the actual prepared functions
 (`--mutations`, `--baseline`); see the
 [TX record](../../docs/reviews/well0nez-2026-11-14/cpu-comm-tx.md).
+
+**0209** stops pulsing TX_IRQ_EN after each ARM → MIPS doorbell word. The
+firmware arms its own RX interrupt for our FIFO (`0x03003820` BIT(2)) when
+it registers its channel and never handles the TX-room interrupt the pulse
+enabled. A protocol-free probe drained 20/20 no-pulse words (median 36 µs);
+see the [doorbell record](../../docs/reviews/well0nez-2026-11-14/cpu-comm-doorbell.md).
+The data write is now the whole doorbell, which also removes a 10 µs
+busy-wait under `msgbox_tx_lock`. It also narrows `known_regs[]` to the two
+share registers its callers use: well0nez's 0014e found the transcription
+error, but the hwspinlock words belong to the sun6i hwspinlock driver and are
+not carried. `tools/mips/test-cpu-comm-tx.py` now fails any TX_IRQ_EN write
+and cross-checks the whitelist against every accessor caller.

@@ -89,7 +89,7 @@ HW = r'''
 #define USEC_PER_MSEC 1000L
 typedef long long ktime_t;
 static pthread_mutex_t regs_lock=PTHREAD_MUTEX_INITIALIZER;
-static volatile int fifo_count, en_level, delivered, overflow, interleave, writer=-1, published_outside;
+static volatile int fifo_count, en_level, en_writes, delivered, overflow, interleave, pending=-1, published_outside;
 static volatile int lock_owner=-1, lock_depth;
 static volatile int stick_full;   /* simulated MIPS never drains */
 static long long now_us;
@@ -105,12 +105,13 @@ static void writel(u32 v,void *a){
     pthread_mutex_lock(&regs_lock);
     if(off==H713_MSGBOX_TX_DATA){
         if(fifo_count>=8)overflow++; else fifo_count++;
-        if(writer!=-1)interleave++; writer=tid;
+        /* the word must follow this thread's own publication, under the lock */
+        if(lock_owner!=tid || pending!=tid)interleave++;
+        pending=-1;
     }else{
         assert(off==H713_MSGBOX_TX_IRQ_EN);
-        if(writer!=tid)interleave++;
-        if(v==H713_MSGBOX_TX_IRQ_BIT)en_level=1;
-        else {assert(v==0);en_level=0;writer=-1;}
+        en_writes++;   /* 0209: the MIPS wakes on the data write; no pulse */
+        en_level=(v==H713_MSGBOX_TX_IRQ_BIT);
     }
     pthread_mutex_unlock(&regs_lock);
 }
@@ -134,7 +135,8 @@ HW_CASES = r'''
 static int publishes;
 static void publish(void *ctx){
     if(lock_owner!=tid)published_outside++;
-    assert(writer==-1);   /* publication precedes the doorbell word */
+    if(pending!=-1)interleave++;   /* another publication awaits its word */
+    pending=tid;
     publishes++; if(ctx)++*(int*)ctx;
 }
 static void *drainer(void *arg){
@@ -157,7 +159,7 @@ int main(void){
     tid=99;
     /* Accepted: publish then data then pulse 1 -> 0. */
     int c=0;assert(cpu_comm_msgbox_send(2,publish,&c)==0);
-    assert(c==1 && fifo_count==1 && en_level==0 && !overflow && !interleave);
+    assert(c==1 && fifo_count==1 && !en_writes && !overflow && !interleave);
     /* Full and never drained: refused, nothing published or written. */
     fifo_count=8;stick_full=1;c=0;
     assert(cpu_comm_msgbox_send(0,publish,&c)==-EBUSY);
@@ -172,9 +174,9 @@ int main(void){
     for(int i=0;i<4;i++)assert(!pthread_join(t[i],0));
     while(fifo_count)usleep(100);
     __atomic_store_n(&stop,1,__ATOMIC_SEQ_CST);assert(!pthread_join(d,0));
-    assert(!overflow && !interleave && !published_outside);
+    assert(!overflow && !interleave && !published_outside && !en_writes);
     assert(delivered==8+1200);
-    puts("PASS doorbell reserves FIFO room before publication; serialized, lossless under contention");
+    puts("PASS doorbell reserves FIFO room before publication; data write only, serialized, lossless under contention");
 }
 '''
 
@@ -322,6 +324,20 @@ int main(void){
 }
 '''
 
+# ── Register whitelist ────────────────────────────────────────────
+WHITELIST_CASES = r'''
+int main(void){
+    const u32 used[]={0x03061024,0x03061028};
+    const u32 refused[]={0x03003000,0x03003010,0x0306101c,0x03004000,0x03004010,
+                         0x03003874,0x03003830,0x03061000,0,0xffffffff};
+    for(unsigned i=0;i<sizeof(used)/sizeof(*used);i++)assert(is_known_reg(used[i]));
+    for(unsigned i=0;i<sizeof(refused)/sizeof(*refused);i++)assert(!is_known_reg(refused[i]));
+    assert(sizeof(known_regs)/sizeof(*known_regs)==2);
+    puts("PASS whitelist holds exactly the two share registers callers use");
+}
+'''
+
+
 # ── Late RETURN recycle after a refused RETURN_ACK ───────────────────
 RETURN = r'''
 static u32 sockets[2496], *s_CommSockt=sockets;
@@ -403,6 +419,8 @@ def candidate_parts(s):
         'gates': gates,
         'sender': function(proto, 'static void cc_release_send_wait(')+'\n'+function(proto, 'int SendComm2CPUEx('),
         'complete': function(chan, 'void cpu_comm_complete_return('),
+        'whitelist': hw[hw.index('static const u32 known_regs[]'):hw.index('};', hw.index('static const u32 known_regs[]'))+2]
+                     +'\n'+function(hw, 'static int is_known_reg('),
     }
 
 
@@ -413,6 +431,7 @@ def programs(p):
         'tx-publish': COMMON+PROTO+gates_decl+p['gates']+p['publish']+PROTO_CASES,
         'tx-sender': COMMON+SENDER+p['gates']+p['sender']+SENDER_CASES,
         'tx-late-return': COMMON+RETURN+RETURN_ACK_STUB+p['complete']+RETURN_CASES,
+        'tx-whitelist': COMMON+'#define ARRAY_SIZE(a) (sizeof(a)/sizeof(*(a)))\n'+p['whitelist']+WHITELIST_CASES,
     }
 
 
@@ -421,8 +440,14 @@ MUTATIONS = [
      ('\tpublish(ctx);\n\n\t/*', '\t/*')),
     ('no-capacity-check', 'hw', ('if (fifo < H713_MSGBOX_TX_FIFO_DEPTH)', 'if (1)')),
     ('unlocked-doorbell', 'hw', ('\tpublish(ctx);\n', '\tspin_unlock(&msgbox_tx_lock);\n\tpublish(ctx);\n'),
-     ('\twritel(0, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);\n\tspin_unlock(&msgbox_tx_lock);',
-      '\twritel(0, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);')),
+     ('\twritel(raw, msgbox_ctrl_base + H713_MSGBOX_TX_DATA);\n\tspin_unlock(&msgbox_tx_lock);',
+      '\twritel(raw, msgbox_ctrl_base + H713_MSGBOX_TX_DATA);')),
+    ('pulse-restored', 'hw', ('\twritel(raw, msgbox_ctrl_base + H713_MSGBOX_TX_DATA);\n',
+      '\twritel(raw, msgbox_ctrl_base + H713_MSGBOX_TX_DATA);\n'
+      '\twritel(H713_MSGBOX_TX_IRQ_BIT, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);\n'
+      '\tudelay(10);\n\twritel(0, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);\n')),
+    ('whitelist-msgbox-entry', 'whitelist', ('\t0x03061028,', '\t0x03061028,\n\t0x03003010,')),
+    ('whitelist-hwspinlock-entry', 'whitelist', ('\t0x03061028,', '\t0x03061028,\n\t0x03004000,')),
     ('ignored-send-result', 'sender', ('\tif (ret) {\n\t\t/* Refused before publication', '\tif (0) {\n\t\t/* Refused before publication')),
     ('copy-to-user-leaks-wait', 'sender', ('\t\t\tgoto out_release_wait;\n\t\t}\n\t} else {', '\t\t\tgoto out_up_sem;\n\t\t}\n\t} else {')),
     ('cache-cleared-on-failure', 'sender', ('out_up_sem:\n', 'out_up_sem:\n\tcomm_intrsem[cache_idx] = 0;\n')),
@@ -444,6 +469,23 @@ def mutate(parts, edits):
     return out
 
 
+def check_whitelist_callers(tree, whitelist):
+    """Every literal register a caller passes to the generic accessors is listed."""
+    directory = tree/'drivers/soc/sunxi/cpu_comm'
+    if not directory.exists():
+        directory = tree
+    listed = {int(v, 16) for v in re.findall(r'^\t(0x[0-9a-fA-F]+),', whitelist, re.M)}
+    wanted = set()
+    for source in sorted(directory.glob('*.c')):
+        text = source.read_text()
+        wanted |= {int(v, 16) for v in re.findall(r'comm_(?:Read|Write)RegWord\(\s*(0x[0-9a-fA-F]+)', text)}
+        if 'int getShareRegbyID(' in text:
+            wanted |= {int(v, 16) for v in re.findall(r'return (0x[0-9a-fA-F]+);', function(text, 'int getShareRegbyID('))}
+    assert wanted, 'no accessor callers found: the scan could not have seen one'
+    assert wanted == listed, 'whitelist %s != callers %s' % (sorted(map(hex, listed)), sorted(map(hex, wanted)))
+    print('PASS accessor callers', sorted(map(hex, wanted)), 'match the whitelist exactly')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--kernel', type=Path, required=True)
@@ -455,12 +497,13 @@ def main():
         parts = candidate_parts(sources(args.kernel))
         for name, code in programs(parts).items():
             run_case(directory, name, code)
+        check_whitelist_callers(args.kernel, parts['whitelist'])
         if args.mutations:
             for label, key, *edits in MUTATIONS:
                 assert all(old in parts[key] for old, _ in edits), 'mutation anchor missing: '+label
                 broken = mutate(parts, edits)
                 prog = {'hw': 'tx-doorbell', 'publish': 'tx-publish', 'sender': 'tx-sender',
-                        'complete': 'tx-late-return'}[key]
+                        'complete': 'tx-late-return', 'whitelist': 'tx-whitelist'}[key]
                 run_case(directory, 'mutant-'+label, programs(broken)[prog], expect_failure=True)
         if args.baseline:
             b = sources(args.baseline)

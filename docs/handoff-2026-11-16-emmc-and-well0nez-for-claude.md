@@ -226,8 +226,7 @@ Suggested next topics, pending the user's choice:
    recovery protocol. Keep the qualified receive path.
 2. **Small whitelist cleanup (0014e).** Two unused entries still name msgbox
    addresses instead of hardware-spinlock status registers. Current callers
-   do not use them; low functional urgency. *Assessed 2026-11-16, decision:
-   batch into the next CPU_COMM module patch, no standalone install.* The
+   do not use them; low functional urgency. *Assessed 2026-11-16; carried in kernel 0209 with the doorbell change.* The
    stock `cpu_comm_dev.ko` (`.data+0x3a0`, 4-word loop in `is_known_reg`)
    confirms the vendor words `0x03061024 0x03061028 0x03004000 0x03004010`.
    Do not copy 0014e's swap: `hwspinlock@3004000` is owned by the in-tree
@@ -243,8 +242,7 @@ Suggested next topics, pending the user's choice:
    under locking, preserving this tree's working AV1 support.
 4. Doorbell pulse/no-pulse experiment. *Resolved 2026-11-16: the MIPS
    wakes on the FIFO write alone (20/20 clean no-pulse probes, median 36 µs);
-   the pulse only enables an unhandled TX-room IRQ. Remove it in the next
-   CPU_COMM module patch together with item 2; see
+   the pulse only enables an unhandled TX-room IRQ. Removed by kernel 0209 together with item 2; see
    [the doorbell record](reviews/well0nez-2026-11-14/cpu-comm-doorbell.md).* HDMI
    allocator/EDID/port fixes are research inputs for our distinct ownership
    model, not drop-in replacements.

@@ -1,0 +1,162 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] soc: sunxi: cpu_comm: ring the doorbell with the FIFO write
+
+The driver pulsed TX_IRQ_EN (0x03003830 BIT(3)) for 10 us after every
+ARM -> MIPS word, on the belief that the msgbox was edge-triggered and a
+bare FIFO write did not wake the display MIPS. The firmware shows
+otherwise. When it registers its channel (0x8b121950) it sets its own RX
+interrupt enable, 0x03003820 BIT(2); its LISR (0x8b121698) drains the
+port's +0x60/+0x70 and acks RX status only, and no code in the image
+touches +0x30/+0x34. Its own send to the ARM (0x8b12199c) never pulses,
+and our IRQ reception of those words is qualified.
+
+The pulse therefore enabled the level "FIFO has room" interrupt on the
+MIPS (status 0x834 reads 0xaa), which the firmware never handles. A
+protocol-free board probe, writing the ignored word 0x4 with no pulse
+while the kernel's RX counter stayed still, drained 20 of 20 words in a
+median 36 us. The earlier "count 0 -> 1, never drained" observation fits
+a parked MIPS or one that had not yet registered its channel; sends stay
+gated on isCPUAppReady().
+
+Write the data word only. This removes a spurious MIPS interrupt per
+message and a 10 us busy-wait held under msgbox_tx_lock. Correct the
+register comments.
+
+Also narrow known_regs[] to the two share registers its callers use. The
+stock module's array is 0x03061024, 0x03061028, 0x03004000, 0x03004010;
+our 0x03003000/0x03003010 mistranscribed the last two and would have let
+a generic caller write the msgbox transport. Do not carry the hwspinlock
+words, as well0nez's 0014e does: that block belongs to the sun6i
+hwspinlock driver and reg_to_iomem() has no window for it. 0x0306101c is
+read directly by cpu_comm_mips_running().
+
+well0nez's 0014e found the whitelist transcription error, and their 0014f
+retracted the edge-trigger claim; the firmware analysis, probe and the
+narrower whitelist are ours.
+
+Link: https://github.com/well0nez/allwinner-h713-linux/blob/149f51d0df24c45b12674c81aab128b1fc8f5d4b/mainline/patches/kernel/0014e-soc-sunxi-cpu-comm-the-whitelist-is-the-hwspinlock-s.patch
+
+---
+
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_hw.c
+@@ -29,15 +29,21 @@
+ u32 hwlock_counters[HW_SPINLOCK_COUNT];
+ 
+ /*
+- * Known register addresses — the only registers io_accessor will touch.
+- * From IDA: known_regs @ 0x16350 in cpu_comm_dev.ko
++ * Registers comm_ReadRegWord()/comm_WriteRegWord() may touch: exactly the
++ * two share registers their callers use.
++ *
++ * The stock cpu_comm_dev.ko's known_regs (.data+0x3a0, a four-word loop in
++ * is_known_reg) holds 0x03061024, 0x03061028, 0x03004000, 0x03004010. The
++ * last two are hwspinlock@3004000 status words; that block belongs to the
++ * sun6i hwspinlock driver, which serves our locks, and reg_to_iomem() has
++ * no window for it, so they are not carried. Earlier entries 0x03003000 and
++ * 0x03003010 were a mistranscription of those words that would have let a
++ * generic caller write the msgbox transport; 0x0306101c (MIPS status) is
++ * read directly by cpu_comm_mips_running().
+  */
+ static const u32 known_regs[] = {
+-	0x0306101c,	/* MIPS status — bit 0 set when out of reset */
+ 	0x03061024,	/* MIPS ShareReg14 — SharedMemAddr */
+ 	0x03061028,	/* MIPS ShareReg13 — SharedMemSize */
+-	0x03003000,	/* Msgbox channel register */
+-	0x03003010,	/* Msgbox channel register */
+ };
+ 
+ static void __iomem *mips_ctrl_base;	/* ioremap of 0x03061000 */
+@@ -61,7 +67,7 @@
+  * without re-deriving it — the obvious one does not reproduce them.
+  *
+  *   0x03003810  version    reads 0x00020000 on a live (clocked) msgbox
+- *   0x03003830  TX_IRQ_EN  pulse BIT(2*port + 1); MIPS is port 1
++ *   0x03003820  MIPS RX IRQ enable, BIT(2*port); firmware-owned, reads 0x4
+  *   0x03003864  TX count   ARM -> MIPS FIFO occupancy
+  *   0x03003874  doorbell   ARM -> MIPS MSG_DATA
+  *   0x03003164  RX count   MIPS -> ARM FIFO occupancy
+@@ -69,23 +75,28 @@
+  *
+  * Two properties of this block that are easy to get wrong:
+  *
+- *  - It is edge-triggered, unlike H6's. Writing MSG_DATA alone leaves
+- *    the word in the FIFO without waking the receiver — observed
+- *    directly, count went 0 -> 1 and the MIPS never drained it. Every
+- *    doorbell write must be followed by a TX_IRQ_EN pulse.
++ *  - The data write alone is the doorbell. Once the firmware registers its
++ *    channel (0x8b121950) it sets its RX IRQ enable, 0x03003820 BIT(2), and
++ *    a word in the FIFO raises its RX interrupt; its LISR drains +0x60/+0x70
++ *    and acks RX status only. A word written before that registration, or
++ *    while the MIPS is parked, stays in the FIFO; isCPUAppReady() gates
++ *    sends against that. This driver used to pulse TX_IRQ_EN (0x830 BIT(3))
++ *    after each word on the belief that the block was edge-triggered. That
++ *    enabled the level "FIFO has room" interrupt (status 0x834 reads 0xaa)
++ *    on the MIPS, which the firmware never handles. Twenty no-pulse probes
++ *    drained in a median 36 us (docs/reviews/well0nez-2026-11-14/
++ *    cpu-comm-doorbell.md). Do not write TX_IRQ_EN.
+  *  - An unclocked msgbox swallows the doorbell silently. The bus gate
+  *    and reset are claimed in the probe; the version register is the
+  *    proof that it worked.
+  */
+ #define H713_MSGBOX_VERSION	0x810	/* expect 0x00020000 when clocked */
+-#define H713_MSGBOX_TX_IRQ_EN	0x830	/* TX interrupt enable            */
+ #define H713_MSGBOX_TX_FIFO	0x864	/* ARM -> MIPS FIFO count         */
+ #define H713_MSGBOX_TX_DATA	0x874	/* ARM -> MIPS MSG_DATA, doorbell */
+ #define H713_MSGBOX_RX_FIFO	0x164	/* MIPS -> ARM FIFO count         */
+ #define H713_MSGBOX_RX_DATA	0x174	/* MIPS -> ARM MSG_DATA           */
+ 
+ #define H713_MSGBOX_VERSION_ALIVE 0x00020000
+-#define H713_MSGBOX_TX_IRQ_BIT	BIT(3)	/* BIT(2*port + 1), MIPS = port 1 */
+ 
+ /*
+  * Every word in the RX FIFO is sent by the display MIPS, so the source
+@@ -145,8 +156,8 @@
+  *
+  * That reproduces every address already proven here: 0x164/0x174 are the
+  * ARM's receive block at 0x100 with port 1, 0x864/0x874 the same fields in
+- * the 0x800 block we transmit through, and TX_IRQ_EN 0x830 with BIT(3) =
+- * TX_IRQ_BIT(1) is exactly the doorbell pulse. Source: the vendor driver's
++ * the 0x800 block we transmit through, and 0x820 BIT(2) the MIPS's own RX
++ * enable for the FIFO we write. Source: the vendor driver's
+  * sx_read_irq_enable/sx_write_irq_disable, via the peer RE tree.
+  *
+  * An earlier guess put the RX enable at 0x130 by mirroring TX across the
+@@ -1009,7 +1020,7 @@
+ #define H713_MSGBOX_TX_FIFO_DEPTH	8
+ #define H713_MSGBOX_TX_SPACE_TIMEOUT_US	(100 * USEC_PER_MSEC)
+ 
+-/* Serializes the capacity check, publication, data write and pulse. */
++/* Serializes the capacity check, publication and data write. */
+ static DEFINE_SPINLOCK(msgbox_tx_lock);
+ static atomic_t msgbox_tx_full = ATOMIC_INIT(0);
+ module_param_cb(tx_fifo_full, &msgbox_counter_ops, &msgbox_tx_full, 0444);
+@@ -1035,9 +1046,8 @@
+  * depth observed under the lock therefore reserves room for this word.
+  * @publish, which writes the shared-memory message including its SENT flag,
+  * runs only after that reservation: a refusal leaves shared memory untouched,
+- * so the caller can unwind with nothing the peer could act on. The lock also
+- * keeps one sender's data write and TX_IRQ_EN pulse from interleaving with
+- * another's, whatever the receiver's trigger turns out to be.
++ * so the caller can unwind with nothing the peer could act on. It also keeps
++ * one sender's publication and data word together.
+  *
+  * May sleep while waiting for room. Returns 0 once published and rung,
+  * -ENODEV if the msgbox is not mapped, or -EBUSY if no room appeared within
+@@ -1076,15 +1086,8 @@
+ 
+ 	publish(ctx);
+ 
+-	/*
+-	 * The data write is followed by a TX_IRQ_EN pulse. This is the
+-	 * transport qualified on this board; whether the receiver needs the
+-	 * edge or treats TX_IRQ_EN as a level is not settled, so it is kept.
+-	 */
++	/* The FIFO write raises the MIPS RX interrupt; nothing else is needed. */
+ 	writel(raw, msgbox_ctrl_base + H713_MSGBOX_TX_DATA);
+-	writel(H713_MSGBOX_TX_IRQ_BIT, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);
+-	udelay(10);
+-	writel(0, msgbox_ctrl_base + H713_MSGBOX_TX_IRQ_EN);
+ 	spin_unlock(&msgbox_tx_lock);
+ 
+ 	/* A reply can only follow a send — poll fast for a while now. */

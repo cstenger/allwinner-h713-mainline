@@ -3,9 +3,8 @@
 **Result: the display MIPS wakes on the FIFO write alone.** The TX_IRQ_EN
 pulse our driver sends after every doorbell word is not needed while the
 firmware is running. It enables an interrupt that the firmware never handles.
-Nothing has been changed in the driver yet. Removing the pulse is planned as
-part of the next CPU_COMM module patch, together with the
-[0014e whitelist narrowing](../../handoff-2026-11-16-emmc-and-well0nez-for-claude.md).
+Kernel **0209** removes the pulse and narrows the 0014e whitelist; see
+[0209](#0209) below.
 
 This closes the question left open in the [review index](README.md): our
 original edge-trigger claim was never established, and well0nez's 0014f
@@ -123,3 +122,59 @@ Evidence digests (SHA-256):
 | `doorbell-probe.txt` | `9b782571…` |
 | `doorbell-probe-typed.txt` | `539388a1…` |
 | `doorbell-postcheck.txt` | `4fe92df4…` |
+
+## 0209
+
+`0209-soc-sunxi-cpu-comm-ring-the-doorbell-with-the-fifo-write.patch`
+changes only `cpu_comm_hw.c`:
+
+- `cpu_comm_msgbox_send()` writes the data word under `msgbox_tx_lock` and
+  nothing else. The TX_IRQ_EN defines are gone, and the register comments
+  now describe the RX-enable mechanism.
+- `known_regs[]` holds exactly `0x03061024` and `0x03061028`. The comment
+  records the stock module's four words and why the hwspinlock pair is not
+  carried.
+
+`test-cpu-comm-tx.py` changes:
+
+- **Doorbell model.** It now counts TX_IRQ_EN writes as a failure and
+  checks that each data word follows its own thread's publication under the
+  lock.
+- **New whitelist case.** It accepts only the two share registers and
+  refuses the old msgbox and hwspinlock words, the MIPS status register and
+  transport registers. It also scans every `comm_Read/WriteRegWord` literal
+  and `getShareRegbyID` return in the driver, requiring that set to equal
+  the whitelist.
+- **Results.** All 6 cases pass. 14 mutants are rejected, including a
+  restored pulse and re-added msgbox/hwspinlock entries. The three 0207
+  baseline defects are still reproduced. The 0208 tree itself now fails the
+  doorbell case on its pulse writes.
+
+The handoff, IRQ, spinlock and witness suites still pass. The module builds
+with `W=1` and no new warnings. Checkpatch is clean, and the patch applies
+with zero fuzz to byte-identical source.
+
+### Release build and bundle
+
+The pinned release build (clang/LLD 23.1.4, production config, fixed epoch)
+applies 171 patches. Compared with 0208:
+
+- `.config`, `Module.symvers`, the kernel release and every DTB are
+  identical, and the FIT is still `845494c3…`.
+- Only `hy310-cpu-comm.ko` changes: `9864701f…` → `828dbb724297bbae273ed358a9de14b6c0ad3e3625aa3d1e0e437b12bbbd2156`.
+- The release-built `cpu_comm_hw.c` matches the tested source byte for byte.
+- The 0208 baseline rebuild reproduces the installed module.
+
+All 23 TX checks and the other CPU_COMM suites pass again on the release
+tree.
+
+The module-only bundle (`local/recovery/2026-11-16-cpu-comm-0209/bundle/`,
+manifest `163fe82a…`) pins FIT `845494c3…`, cmd `41faabdc…`, scr
+`c565a05a…` and installed module `9864701f…`. On a fake root built from the
+real installed bytes:
+
+- preview writes nothing;
+- apply changes only the module;
+- rollback restores the tree exactly.
+
+**Not yet previewed on the board or installed.**
