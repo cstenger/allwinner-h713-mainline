@@ -20,12 +20,20 @@ Cedrus compliance is **49/49, zero warnings**, with 53 passing pixel captures.
 Playback integration and coded-padding/crop handling are next. Start with
 [the current handoff](docs/handoff-2026-09-17-shared-scaler.md).
 
-Two physically different H713 boards exist — **know which one you have**:
+This project has two H713 boards — **know which one you have**:
 
 | Board | Silkscreen | DRAM | Notes |
 |-------|-----------|------|-------|
-| **Bench** | HY200_QZ713DF_A1 | **DDR3** (Samsung K4B2G, 1 GiB) | All FEL/bring-up runs on this one |
-| **Projector** | HY200_QZ713_V2 | **LPDDR3** (1 GiB) | Inside a projector; do not risk it |
+| **Bench** | HY200_QZ713DF_A1 | **DDR3** (Samsung K4B2G, 1 GiB), 624 MHz | All FEL/bring-up runs on this one |
+| **Projector** | HY200_QZ713_V2 | **LPDDR3** (1 GiB), 720 MHz | Inside a projector; never booted with our SPL |
+
+These are *our* two boards, not the whole family. Being inside a projector
+does not imply LPDDR3: an HY260_QZ713_V3.1 runs DDR3 at 792 MHz
+([issue #3](https://github.com/cstenger/allwinner-h713-mainline/issues/3)), and
+the same HY200_QZ713DF_A1 PCB shipped with 792 MHz and 624 MHz firmwares.
+well0nez's [board list](https://github.com/well0nez/allwinner-h713-linux/blob/main/boards/README.md)
+records ten. Take DRAM parameters from the unit's own boot0, never from the
+board name.
 
 Feeding the wrong DRAM parameters trains "OK" but reads hang. Always name the
 board a test ran on. Neither board has an SD slot — boot media is **eMMC or
