@@ -1,0 +1,58 @@
+{
+  "schema": "h713-cpu-comm-doorbell-validation-v1",
+  "patch": "0209",
+  "board": "HY200 QZ713DF_A1 DDR3",
+  "module": "828dbb724297bbae273ed358a9de14b6c0ad3e3625aa3d1e0e437b12bbbd2156",
+  "module_build_id": "57b58b47fc3283f6dbed9ad37d23f5bf6fcce8f8",
+  "fit_unchanged": "845494c372b62d3f1ba6e3eb2b8166041398dc440c217dd58f5de140e004f2ac",
+  "install": {
+    "boot": "41b98df8-d8eb-491f-aedf-3796ec5783d1",
+    "fat_mount": "read-only",
+    "backup": "/var/lib/h713-hdmi-startup/kernel-fit-ec4c3ad882a543c785efafab14f29d04",
+    "bundle_manifest": "163fe82ad707bc62170d0717337363f8959e973750ac93452025e94bbae2c678"
+  },
+  "failed_warm_reboot": {
+    "from_boot": "41b98df8 (running 0208)",
+    "shutdown": "orderly to journald stop, watchdog armed 16 s",
+    "next_boot": "no journal record; no ping or hotspot for 5+ min; UART silent (connection not confirmed)",
+    "recovered_by": "operator power-cycle",
+    "cause": "undetermined"
+  },
+  "power_cycle_boot": {
+    "boot": "a0f8f6a9-5413-4ee6-b66b-dcea0dc605a3",
+    "startup_check": "PASS",
+    "loaded_build_id_matches_0209": true,
+    "mips_rx_en_0x3820": "0x4",
+    "tx_irq_en_0x3830": 0,
+    "calls": 6003,
+    "rx_irq": 12006,
+    "rx_poll": 0,
+    "tx_desynced": "N",
+    "tx_fifo_full": 0,
+    "tx_irq_en_every_phase": 0,
+    "elog_pointer": "0x5f2cc",
+    "fault_magic": [
+      0,
+      0
+    ],
+    "failed_units": 0,
+    "ext4_errors": 0,
+    "cpu_comm_error_lines": 0,
+    "serial_latency_ms": {
+      "median": 0.61,
+      "p99": 3.173
+    },
+    "serial_latency_ms_0208_cold": {
+      "median": 0.619,
+      "p99": 2.863
+    },
+    "evidence": {
+      "failed-warm-journal.txt": "534e571efa79ac28c1e1c5cece7176c9c8c24a6a4db000925c7b46ef783f198f",
+      "cold-postboot.txt": "6e286f1d0363fec1200180aed566aa2a75cf4f4cdee173cd896fd973d4680e5c",
+      "cold-stress.txt": "a72a4a90c67547dd135864b7eb2129852c023782b2c96c3c338bdea981ba0678",
+      "cold-postflight.txt": "26bada62f555c18db725613bccffdc264634e69d9966c31aee6be99aaa28d4b6",
+      "verify.py": "70ebc38d91c5dde864ce0ee72080a63ad386e8416c4eebf7b6a382dd82ecd7e6"
+    }
+  },
+  "warm": "pending: retry warm reboot with UART logging"
+}

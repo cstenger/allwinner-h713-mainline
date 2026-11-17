@@ -242,7 +242,9 @@ Suggested next topics, pending the user's choice:
    under locking, preserving this tree's working AV1 support.
 4. Doorbell pulse/no-pulse experiment. *Resolved 2026-11-16: the MIPS
    wakes on the FIFO write alone (20/20 clean no-pulse probes, median 36 µs);
-   the pulse only enables an unhandled TX-room IRQ. Removed by kernel 0209 together with item 2; see
+   the pulse only enables an unhandled TX-room IRQ. Removed by kernel 0209 together with item 2 (installed; power-cycle 6003-call
+   run PASS on a0f8f6a9; first warm reboot after install hung, cause open, warm
+   retry with UART pending); see
    [the doorbell record](reviews/well0nez-2026-11-14/cpu-comm-doorbell.md).* HDMI
    allocator/EDID/port fixes are research inputs for our distinct ownership
    model, not drop-in replacements.

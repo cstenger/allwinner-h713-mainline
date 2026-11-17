@@ -177,4 +177,41 @@ real installed bytes:
 - apply changes only the module;
 - rollback restores the tree exactly.
 
-**Not yet previewed on the board or installed.**
+### Installation and qualification
+
+**Installed** on boot `41b98df8` with the guarded installer: preview
+`baseline`, then apply. The boot FAT was mounted read-only. Afterwards the
+module is `828dbb72…`, the FAT FIT/scr are unchanged and both manifests
+verify. The backup is
+`/var/lib/h713-hdmi-startup/kernel-fit-ec4c3ad882a543c785efafab14f29d04`,
+holding 0208 `9864701f…`.
+
+**The warm reboot after install did not return, cause undetermined.**
+
+- The old boot, still running 0208, shut down cleanly through journald's
+  stop, with the hardware watchdog armed at 16 s.
+- No following boot reached the persistent journal. For more than five
+  minutes there was no ping or hotspot, and the UART stayed silent. The
+  serial connection after the earlier cold boot was not confirmed.
+- The operator power-cycled the board.
+- 0209 cannot have run before that shutdown. Without UART output an early
+  hang in the next boot is not excluded, but the power-cycle boot ran 0209
+  normally. Warm reboots have stopped in U-Boot on this bench before.
+
+**Power-cycle boot `a0f8f6a9` — PASS.**
+
+- The loaded module's GNU build ID is `57b58b47…`, the 0209 release module
+  (0208's is `3587b024…`).
+- Startup check PASS, acknowledgement dry-run clean, manifests verified, no
+  failed units, ext4 errors zero, eMMC HS400 at 200 MHz.
+- Live registers: MIPS RX enable `0x3820=0x4`, TX enable `0x3830=0`.
+- All **6003 calls** completed: 12006 IRQ RX, zero polling RX,
+  `tx_desynced=N`, `tx_fifo_full=0`, and `TX_IRQ_EN` read 0 after every
+  phase. The fault magic was zero and the ELOG pointer stayed at `0x5f2cc`.
+- Serial-call latency is unchanged: median 0.61 ms and p99 3.2 ms, against
+  0.62 ms and 2.9 ms for 0208 cold.
+- The CPU_COMM error scan is clean after traffic.
+
+**Still open:** a warm-reboot run of 0209, retried with UART logging so a
+repeat failure can be located. See the
+[validation summary](cpu-comm-doorbell-validation.json).
