@@ -1,6 +1,8 @@
 # Coupled decoder reset (0298, 0305–0308) — November 16, 2026
 
-**Status: the 0298 failure reproduces on our tree. No fix is chosen yet.**
+**Status: the 0298 failure reproduces on our tree, and a `RST_BUS_VE3`-only
+pulse at a codec switch fixes it in a diagnostic module. AV1 interplay is
+not yet tested and nothing is in the series.**
 
 ## Assessment
 
@@ -76,14 +78,75 @@ cedrus.
 Raw evidence (SHA-256): `repro-results.json` `b72fffec…`, `repro.log`
 `d21953dc…`, in `local/recovery/2026-11-16-decoder-reset/`.
 
+## Codec-switch reset arms (diagnostic module)
+
+A diagnostic cedrus (`switch-reset-diagnostic.patch`, not in the series),
+built out of tree from the 0209 release sources with matching vermagic,
+adds a runtime `switch_reset` parameter to `cedrus_device_run()`. When a job's
+codec differs from the previous job's, it pulses:
+
+- `0`: nothing;
+- `1`: `RST_BUS_VE3` only;
+- `2`: `RST_BUS_VE`, as in 0298.
+
+The pulse happens before any of that job's register writes. m2m serializes
+jobs, so the engine is idle at that point. A `switch_pulses` counter
+records the pulses.
+
+**Setup.** Loading it required unloading production cedrus. The driver core
+then unbound `hantro-vpu` from `1c0d000.av1` through the VE device link, so
+**AV1 was absent for all three arms**. Boot `2cfc0d6c`, diagnostic module
+`517c9c63…`. Each arm ran the same pair test as the reproduction, two rounds.
+
+| Arm | VP9+H.265 pairs | VE IRQs, long pair | Pulses | Long pair time | Kernel errors |
+| --- | --- | ---: | ---: | ---: | --- |
+| 0, none | H.265 wrong, 4/4 | 310–312 | 0 | 13.6–13.8 s | setup `-EINVAL` |
+| **1, VE3 only** | **all exact, 4/4** | 608 | 1034 | 12.0–12.1 s | none |
+| 2, VE (0298) | all exact, 4/4 | 608 | 1036 | 12.1 s | none |
+
+- **Unaffected phases.** In every arm the single-stream controls (about
+  10.8 s each), the H.265+H.265 control and the recovery singles were
+  exact. There were zero timeouts and zero IOMMU faults for the whole run.
+- **Arm 0 noise.** Arm 0's recovery H.265 phase lists 12 kernel lines; the
+  previous pair's errors fall inside its one-second journal window, and the
+  decode itself was exact.
+- **Cost.** About 1000 pulses over the four pairs cost nothing measurable;
+  the failing pairs were slower than the fixed ones.
+- **No side effects.** HDMI capture stayed `RUNNING`, and the system
+  stayed `running` with no reset or oops lines.
+- **Restored.** A reboot restored production: boot `a88c5e28`, startup
+  PASS, production cedrus `1c8c87ba…` without the diagnostic parameters,
+  AV1 bound again, clean capture teardown.
+
+**What this shows.** VP9's leftover state lives behind `RST_BUS_VE3`, the
+reset our DT gives cedrus alone. A VE3-only pulse is as effective as 0298's
+full bus pulse for this failure.
+
+**What it does not show yet:**
+
+- whether the AV1 core is truly independent of `RST_BUS_VE3`;
+- other codec pairs (H.264, MPEG-2, VP8). The board's pinned vector set is
+  H.265/VP9 only, and VP8 pairing was one of well0nez's passing cases.
+
+Evidence (SHA-256, `local/recovery/2026-11-16-decoder-reset/`):
+
+| File | Digest |
+| --- | --- |
+| `diag/switch-reset-diagnostic.patch` | `14e59348…` |
+| `arms/arms.log` | `49889f9c…` |
+| `arms/arm0.json` | `96021f13…` |
+| `arms/arm1.json` | `b3253b4f…` |
+| `arms/arm2.json` | `b750b22f…` |
+
 ## Next steps
 
-1. **Narrow fix first.** A diagnostic cedrus that pulses only `RST_BUS_VE3`
-   at a codec switch, scored with the same pairs (plus VP8 and H.264 pairs).
-   0298's full `RST_BUS_VE` pulse is the comparison arm. Neither has run
-   beside AV1 yet.
+1. ~~Narrow fix first.~~ Done above: a VE3-only pulse fixes the pairs.
+   Still to do: stage the H.264, MPEG-2 and VP8 vectors on the board and add
+   those pairs.
 2. **AV1 interplay, with the operator present and UART connected:**
-   - AV1 beside cedrus codec switching, under the chosen reset;
+   - AV1 beside cedrus codec switching, under the VE3-only pulse. This
+     needs a VE3 diagnostic loaded with AV1 bound, i.e. one built into a
+     FIT or reloaded with an AV1 rebind;
    - AV1 beside a damaged cedrus stream, to measure our existing watchdog
      and 0158 exposure.
 3. **Arbitration only if step 2 shows it is needed,** and without a forced

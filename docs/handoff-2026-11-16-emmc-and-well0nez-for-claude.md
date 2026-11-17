@@ -240,7 +240,9 @@ Suggested next topics, pending the user's choice:
    concurrent failure reproduced 4/4 on 0209 (H.265 setup -EINVAL, VP9 exact,
    contained); assessment and plan in
    [the decoder-reset record](reviews/well0nez-2026-11-14/decoder-reset.md);
-   next: VE3-only reset candidate.* Reproduce mixed-codec
+   a diagnostic `RST_BUS_VE3`-only pulse at a codec switch makes all pairs
+   bit-exact, like 0298's full VE pulse (AV1 unbound during the arms); next:
+   AV1 beside VE3 pulses, then a series patch.* Reproduce mixed-codec
    failures first. Do not import codec-switch reset alone: Cedrus and AV1
    share the reset domain. Audit forced reset timeout and reset operations
    under locking, preserving this tree's working AV1 support.
