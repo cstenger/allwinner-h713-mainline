@@ -1,0 +1,62 @@
+{
+ "rec_host_t0": 42562.970489187,
+ "offset": -23657.36908673,
+ "rtt": 0.0016124980029417202,
+ "plan": [
+  {
+   "name": "quiet",
+   "cmd": null,
+   "settle": 4
+  },
+  {
+   "name": "step",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/tone-step.wav",
+   "settle": 2
+  },
+  {
+   "name": "step",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/tone-step.wav",
+   "settle": 2
+  },
+  {
+   "name": "step",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/tone-step.wav",
+   "settle": 2
+  },
+  {
+   "name": "impulse",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/impulse.wav",
+   "settle": 2
+  },
+  {
+   "name": "impulse",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/impulse.wav",
+   "settle": 2
+  },
+  {
+   "name": "impulse",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/impulse.wav",
+   "settle": 2
+  },
+  {
+   "name": "faded",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/tone-faded.wav",
+   "settle": 2
+  },
+  {
+   "name": "faded",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/tone-faded.wav",
+   "settle": 2
+  },
+  {
+   "name": "faded",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/tone-faded.wav",
+   "settle": 2
+  },
+  {
+   "name": "quiet",
+   "cmd": null,
+   "settle": 4
+  }
+ ]
+}

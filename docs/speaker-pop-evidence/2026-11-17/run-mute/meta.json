@@ -1,0 +1,67 @@
+{
+ "rec_host_t0": 43037.804550604,
+ "offset": -23657.3602418835,
+ "rtt": 0.0016408090014010668,
+ "plan": [
+  {
+   "name": "quiet",
+   "cmd": null,
+   "settle": 4
+  },
+  {
+   "name": "spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 12
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 12
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "mute",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'DAC Playback Volume' 0",
+   "settle": 2
+  },
+  {
+   "name": "muted-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 12
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "mute",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'DAC Playback Volume' 0",
+   "settle": 2
+  },
+  {
+   "name": "muted-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 12
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "quiet",
+   "cmd": null,
+   "settle": 4
+  }
+ ]
+}

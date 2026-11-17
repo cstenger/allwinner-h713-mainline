@@ -19,7 +19,10 @@
 #
 # Playback is stopped, not paused: none of the players has a control
 # channel, and a muted, paused player would keep the VE and the plane busy.
-# Stopping them also silences the speaker, so there is no separate mute.
+# The speaker itself is taken down with the codec's "Speaker Power" control
+# (kernel 0212): amplifier off, then the codec clock 300 ms later, the only
+# order that does not pop. The HDMI speaker loopback keeps running silently.
+# Leaving standby brings it back up (700 ms settle before the amplifier).
 #
 # Fan off is safe only because the SoC is idle and capped: measured
 # 2026-10-07 (tools/standby/thermal-fan-off.py), PB5 low at 480 MHz for 15
@@ -34,9 +37,26 @@ LAMP=/sys/class/backlight/lamp
 POLICY=/sys/devices/system/cpu/cpufreq/policy0
 PLAYERS="h713-play gst-plane-play mpv"
 LAMP_RAMP=/usr/local/bin/h713-lamp-ramp
+ALSA_CTL=/usr/lib/h713-hdmi-speaker/alsa-ctl
 
 state() { cat "$RUN/state" 2>/dev/null || echo off; }
 say() { logger -t h713-standby "$*"; [ -t 1 ] && echo "$*"; return 0; }   # once in the journal
+
+# speaker 0|1: the codec's speaker power state. Never fatal: an older kernel
+# without the control keeps the previous per-stream behaviour.
+speaker() {
+  ctl=
+  for id in /sys/class/sound/card*/id; do
+    [ "$(cat "$id" 2>/dev/null)" = Codec ] || continue
+    n=${id%/id}; ctl=/dev/snd/controlC${n##*/card}
+  done
+  if [ -z "$ctl" ] || [ ! -x "$ALSA_CTL" ]; then
+    say "speaker power: no Codec card or $ALSA_CTL"; return 0
+  fi
+  CTL=$ctl "$ALSA_CTL" set 'Speaker Power' "$1" >/dev/null 2>&1 ||
+    say "speaker power $1 failed (kernel without 0212?)"
+  return 0
+}
 
 stop_players() {
   for p in $PLAYERS; do pkill -TERM -x "$p"; done
@@ -57,6 +77,7 @@ enter() {
   [ -w "$LAMP/bl_power" ] || { echo "h713-standby: no $LAMP (kernel 0174)" >&2; exit 1; }
   mkdir -p "$RUN"
   stop_players
+  speaker 0                                         # PA off, then codec clock
   echo 4 > "$LAMP/bl_power"                         # lamp and fan off
   cat "$POLICY/scaling_max_freq" > "$RUN/max_freq"
   cat "$POLICY/cpuinfo_min_freq" > "$POLICY/scaling_max_freq"
@@ -69,6 +90,7 @@ leave() {
   # Do not fall back to an abrupt enable if the ramp fails. Keep standby
   # state and the CPU cap so a subsequent wake can be retried explicitly.
   "$LAMP_RAMP" --enable || { say "lamp startup failed; still in standby"; return 1; }
+  speaker 1                                         # settle, then PA on
   if [ -s "$RUN/max_freq" ]; then
     cat "$RUN/max_freq" > "$POLICY/scaling_max_freq" || return 1
   fi

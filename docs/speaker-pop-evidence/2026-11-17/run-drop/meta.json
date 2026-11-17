@@ -1,0 +1,47 @@
+{
+ "rec_host_t0": 43202.357655043,
+ "offset": -23657.356224274,
+ "rtt": 0.001581821998115629,
+ "plan": [
+  {
+   "name": "quiet",
+   "cmd": null,
+   "settle": 4
+  },
+  {
+   "name": "spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 10
+  },
+  {
+   "name": "drop-close",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 3 3",
+   "settle": 8
+  },
+  {
+   "name": "drop-close",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 3 3",
+   "settle": 8
+  },
+  {
+   "name": "drop-close",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 3 3",
+   "settle": 8
+  },
+  {
+   "name": "drop-close",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 3 3",
+   "settle": 8
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "quiet",
+   "cmd": null,
+   "settle": 4
+  }
+ ]
+}

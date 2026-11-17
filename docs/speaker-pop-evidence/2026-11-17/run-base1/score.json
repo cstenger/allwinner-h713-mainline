@@ -1,0 +1,470 @@
+{
+ "median_block": 0.0021079831077163544,
+ "rms_dbfs": -33.9,
+ "clock_rtt_ms": 1.7,
+ "steps": [
+  {
+   "step": "00-quiet",
+   "from_s": 0.703,
+   "to_s": 4.712,
+   "max_score": 2.0,
+   "at_s": 1.334,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.3,
+   "hiband_dbfs": -52.3,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "01-spk-stop",
+   "from_s": 4.712,
+   "to_s": 21.991,
+   "max_score": 8.1,
+   "at_s": 10.069,
+   "blocks_over_flag": 3,
+   "rms_dbfs": -32.1,
+   "hiband_dbfs": -52.1,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "02-spk-start",
+   "from_s": 21.991,
+   "to_s": 30.19,
+   "max_score": 2.0,
+   "at_s": 24.113,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.1,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "03-spk-stop",
+   "from_s": 30.19,
+   "to_s": 47.502,
+   "max_score": 6.3,
+   "at_s": 35.553,
+   "blocks_over_flag": 2,
+   "rms_dbfs": -32.1,
+   "hiband_dbfs": -52.2,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "04-spk-start",
+   "from_s": 47.502,
+   "to_s": 55.79,
+   "max_score": 2.4,
+   "at_s": 55.032,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.3,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "05-spk-stop",
+   "from_s": 55.79,
+   "to_s": 73.103,
+   "max_score": 7.5,
+   "at_s": 61.147,
+   "blocks_over_flag": 1,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.3,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "06-spk-start",
+   "from_s": 73.103,
+   "to_s": 81.292,
+   "max_score": 2.0,
+   "at_s": 76.933,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.2,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "07-standby-on",
+   "from_s": 81.292,
+   "to_s": 93.581,
+   "max_score": 4.6,
+   "at_s": 82.175,
+   "blocks_over_flag": 1,
+   "rms_dbfs": -38.2,
+   "hiband_dbfs": -54.5,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "08-sb-quiet-ampon",
+   "from_s": 93.581,
+   "to_s": 103.592,
+   "max_score": 2.6,
+   "at_s": 93.622,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -42.3,
+   "hiband_dbfs": -54.7,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "09-sb-spk-stop",
+   "from_s": 103.592,
+   "to_s": 120.916,
+   "max_score": 8.8,
+   "at_s": 109.025,
+   "blocks_over_flag": 2,
+   "rms_dbfs": -41.6,
+   "hiband_dbfs": -54.5,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "10-sb-quiet-ampoff",
+   "from_s": 120.916,
+   "to_s": 128.939,
+   "max_score": 2.4,
+   "at_s": 126.701,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -41.7,
+   "hiband_dbfs": -54.8,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "11-sb-spk-start",
+   "from_s": 128.939,
+   "to_s": 137.2,
+   "max_score": 2.6,
+   "at_s": 136.253,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -42.6,
+   "hiband_dbfs": -54.7,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "12-standby-off",
+   "from_s": 137.2,
+   "to_s": 147.909,
+   "max_score": 2.4,
+   "at_s": 138.303,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -33.1,
+   "hiband_dbfs": -52.6,
+   "rc": "0",
+   "out": "lamp startup ramp complete; PB5 held high"
+  },
+  {
+   "step": "13-quiet",
+   "from_s": 147.909,
+   "to_s": 153.25,
+   "max_score": 1.9,
+   "at_s": 151.813,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.6,
+   "hiband_dbfs": -52.5,
+   "rc": "0",
+   "out": ""
+  }
+ ],
+ "edges": [
+  {
+   "t_s": -1.087,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 10.102,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 15.108,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "-"
+  },
+  {
+   "t_s": 23.618,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 23.879,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 35.589,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 40.709,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "-"
+  },
+  {
+   "t_s": 49.122,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 49.339,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 61.182,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 66.307,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "-"
+  },
+  {
+   "t_s": 74.722,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 74.988,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 78.007,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 78.213,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 104.076,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 104.284,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 109.063,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 114.181,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "-"
+  },
+  {
+   "t_s": 131.042,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "-"
+  },
+  {
+   "t_s": 131.334,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "-"
+  }
+ ],
+ "top_peaks": [
+  {
+   "ms": 109025,
+   "t_s": 109.025,
+   "score": 8.8,
+   "nearest_edge": {
+    "dt_ms": -38,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 10069,
+   "t_s": 10.069,
+   "score": 8.1,
+   "nearest_edge": {
+    "dt_ms": -33,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 61147,
+   "t_s": 61.147,
+   "score": 7.5,
+   "nearest_edge": {
+    "dt_ms": -35,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 35553,
+   "t_s": 35.553,
+   "score": 6.3,
+   "nearest_edge": {
+    "dt_ms": -36,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 82175,
+   "t_s": 82.175,
+   "score": 4.6,
+   "nearest_edge": {
+    "dt_ms": 3962,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 120734,
+   "t_s": 120.734,
+   "score": 2.8,
+   "nearest_edge": {
+    "dt_ms": 6553,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 136253,
+   "t_s": 136.253,
+   "score": 2.6,
+   "nearest_edge": {
+    "dt_ms": 4919,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 92655,
+   "t_s": 92.655,
+   "score": 2.6,
+   "nearest_edge": {
+    "dt_ms": -11421,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 113002,
+   "t_s": 113.002,
+   "score": 2.6,
+   "nearest_edge": {
+    "dt_ms": -1179,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 93622,
+   "t_s": 93.622,
+   "score": 2.6,
+   "nearest_edge": {
+    "dt_ms": -10454,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 137077,
+   "t_s": 137.077,
+   "score": 2.6,
+   "nearest_edge": {
+    "dt_ms": 5743,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 90481,
+   "t_s": 90.481,
+   "score": 2.5,
+   "nearest_edge": {
+    "dt_ms": 12268,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 113752,
+   "t_s": 113.752,
+   "score": 2.5,
+   "nearest_edge": {
+    "dt_ms": -429,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 119885,
+   "t_s": 119.885,
+   "score": 2.5,
+   "nearest_edge": {
+    "dt_ms": 5704,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "-"
+   }
+  },
+  {
+   "ms": 89173,
+   "t_s": 89.173,
+   "score": 2.5,
+   "nearest_edge": {
+    "dt_ms": 10960,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "-"
+   }
+  }
+ ]
+}

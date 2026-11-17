@@ -1,0 +1,476 @@
+{
+ "median_block": 0.0023283535767307196,
+ "rms_dbfs": -32.2,
+ "clock_rtt_ms": 1.6,
+ "steps": [
+  {
+   "step": "00-quiet",
+   "from_s": 0.709,
+   "to_s": 4.721,
+   "max_score": 1.9,
+   "at_s": 4.384,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.1,
+   "hiband_dbfs": -52.1,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "01-spk-stop",
+   "from_s": 4.721,
+   "to_s": 20.014,
+   "max_score": 5.5,
+   "at_s": 10.082,
+   "blocks_over_flag": 2,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.1,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "02-drop-close",
+   "from_s": 20.014,
+   "to_s": 34.807,
+   "max_score": 2.2,
+   "at_s": 30.887,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.0,
+   "hiband_dbfs": -52.2,
+   "rc": "0",
+   "out": "mark 19565.419075 open | mark 19566.140901 play | mark 19569.040409 drop | mark 19572.040783 close | mark 19572.041283 c"
+  },
+  {
+   "step": "03-drop-close",
+   "from_s": 34.807,
+   "to_s": 49.58,
+   "max_score": 2.1,
+   "at_s": 42.64,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.2,
+   "rc": "0",
+   "out": "mark 19580.207307 open | mark 19580.925546 play | mark 19583.825109 drop | mark 19586.825596 close | mark 19586.826111 c"
+  },
+  {
+   "step": "04-drop-close",
+   "from_s": 49.58,
+   "to_s": 64.361,
+   "max_score": 2.1,
+   "at_s": 60.694,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.2,
+   "rc": "0",
+   "out": "mark 19594.980087 open | mark 19595.709428 play | mark 19598.608871 drop | mark 19601.609398 close | mark 19601.609900 c"
+  },
+  {
+   "step": "05-drop-close",
+   "from_s": 64.361,
+   "to_s": 79.25,
+   "max_score": 2.0,
+   "at_s": 68.195,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.2,
+   "rc": "0",
+   "out": "mark 19609.761175 open | mark 19610.493331 play | mark 19613.392762 drop | mark 19616.393223 close | mark 19616.393679 c"
+  },
+  {
+   "step": "06-spk-start",
+   "from_s": 79.25,
+   "to_s": 87.442,
+   "max_score": 1.9,
+   "at_s": 86.33,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.2,
+   "hiband_dbfs": -52.2,
+   "rc": "0",
+   "out": ""
+  },
+  {
+   "step": "07-quiet",
+   "from_s": 87.442,
+   "to_s": 92.75,
+   "max_score": 1.9,
+   "at_s": 90.93,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -32.3,
+   "hiband_dbfs": -52.2,
+   "rc": "0",
+   "out": ""
+  }
+ ],
+ "edges": [
+  {
+   "t_s": -1.076,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 10.112,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 15.157,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 21.139,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "PREPARED"
+  },
+  {
+   "t_s": 21.143,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 21.346,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 24.04,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "SETUP"
+  },
+  {
+   "t_s": 27.043,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 32.053,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 35.924,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "PREPARED"
+  },
+  {
+   "t_s": 35.928,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 36.134,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 38.825,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "SETUP"
+  },
+  {
+   "t_s": 38.828,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "SETUP"
+  },
+  {
+   "t_s": 41.825,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 46.902,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 49.979,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "OPEN"
+  },
+  {
+   "t_s": 50.708,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "PREPARED"
+  },
+  {
+   "t_s": 50.711,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 50.918,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 53.611,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "SETUP"
+  },
+  {
+   "t_s": 56.612,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 61.75,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 65.492,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "PREPARED"
+  },
+  {
+   "t_s": 65.495,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 65.7,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 68.394,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "SETUP"
+  },
+  {
+   "t_s": 71.394,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 76.596,
+   "pa": "lo",
+   "speaker": "Off",
+   "pcm": "closed"
+  },
+  {
+   "t_s": 80.884,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "PREPARED"
+  },
+  {
+   "t_s": 80.899,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 80.942,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "XRUN"
+  },
+  {
+   "t_s": 80.949,
+   "pa": "lo",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  },
+  {
+   "t_s": 81.151,
+   "pa": "hi",
+   "speaker": "On",
+   "pcm": "RUNNING"
+  }
+ ],
+ "top_peaks": [
+  {
+   "ms": 10082,
+   "t_s": 10.082,
+   "score": 5.5,
+   "nearest_edge": {
+    "dt_ms": -30,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "closed"
+   }
+  },
+  {
+   "ms": 0,
+   "t_s": 0.0,
+   "score": 2.4,
+   "nearest_edge": {
+    "dt_ms": 1076,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "RUNNING"
+   }
+  },
+  {
+   "ms": 30887,
+   "t_s": 30.887,
+   "score": 2.2,
+   "nearest_edge": {
+    "dt_ms": -1166,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "closed"
+   }
+  },
+  {
+   "ms": 19537,
+   "t_s": 19.537,
+   "score": 2.1,
+   "nearest_edge": {
+    "dt_ms": -1602,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "PREPARED"
+   }
+  },
+  {
+   "ms": 42640,
+   "t_s": 42.64,
+   "score": 2.1,
+   "nearest_edge": {
+    "dt_ms": 815,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "closed"
+   }
+  },
+  {
+   "ms": 60694,
+   "t_s": 60.694,
+   "score": 2.1,
+   "nearest_edge": {
+    "dt_ms": -1056,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "closed"
+   }
+  },
+  {
+   "ms": 51866,
+   "t_s": 51.866,
+   "score": 2.1,
+   "nearest_edge": {
+    "dt_ms": 948,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "RUNNING"
+   }
+  },
+  {
+   "ms": 62927,
+   "t_s": 62.927,
+   "score": 2.1,
+   "nearest_edge": {
+    "dt_ms": 1177,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "closed"
+   }
+  },
+  {
+   "ms": 28503,
+   "t_s": 28.503,
+   "score": 2.0,
+   "nearest_edge": {
+    "dt_ms": 1460,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "closed"
+   }
+  },
+  {
+   "ms": 50308,
+   "t_s": 50.308,
+   "score": 2.0,
+   "nearest_edge": {
+    "dt_ms": 329,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "OPEN"
+   }
+  },
+  {
+   "ms": 37956,
+   "t_s": 37.956,
+   "score": 2.0,
+   "nearest_edge": {
+    "dt_ms": -869,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "SETUP"
+   }
+  },
+  {
+   "ms": 51599,
+   "t_s": 51.599,
+   "score": 2.0,
+   "nearest_edge": {
+    "dt_ms": 681,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "RUNNING"
+   }
+  },
+  {
+   "ms": 22159,
+   "t_s": 22.159,
+   "score": 2.0,
+   "nearest_edge": {
+    "dt_ms": 813,
+    "pa": "hi",
+    "speaker": "On",
+    "pcm": "RUNNING"
+   }
+  },
+  {
+   "ms": 68195,
+   "t_s": 68.195,
+   "score": 2.0,
+   "nearest_edge": {
+    "dt_ms": -199,
+    "pa": "lo",
+    "speaker": "On",
+    "pcm": "SETUP"
+   }
+  },
+  {
+   "ms": 32681,
+   "t_s": 32.681,
+   "score": 2.0,
+   "nearest_edge": {
+    "dt_ms": 628,
+    "pa": "lo",
+    "speaker": "Off",
+    "pcm": "closed"
+   }
+  }
+ ]
+}

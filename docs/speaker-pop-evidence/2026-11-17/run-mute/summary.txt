@@ -1,0 +1,44 @@
+room RMS -32.2 dBFS, clock RTT 1.6 ms
+flag threshold 3.5
+step                            max     at_s  flag     rms  hiband  rc
+00-quiet                        2.0    3.911     0   -32.3   -52.3  0 
+01-spk-stop                     3.4   10.112     0   -32.2   -52.1  0 
+02-spk-start                    2.1   28.379     0   -32.3   -52.2  0 
+03-spk-stop                     6.2   35.580     1   -32.2   -52.2  0 
+04-spk-start                    2.0   50.789     0   -32.3   -52.3  0 
+05-mute                         1.9   56.276     0   -32.2   -52.2  0 DAC Playback Volume set to 0 [0..63]
+06-muted-stop                   9.2   63.195     3   -32.2   -52.2  0 
+07-spk-start                    2.1   78.300     0   -32.3   -52.3  0 
+08-mute                         1.9   85.074     0   -32.3   -52.1  0 DAC Playback Volume set to 0 [0..63]
+09-muted-stop                  10.1   90.842     2   -32.1   -52.2  0 
+10-spk-start                    2.2  104.022     0   -32.2   -52.2  0 
+11-quiet                        2.2  114.316     0   -32.2   -52.2  0 
+PA/Speaker edges:
+    -1.087  pa=hi speaker=On pcm=RUNNING
+    10.119  pa=lo speaker=On pcm=closed
+    15.362  pa=lo speaker=Off pcm=closed
+    23.649  pa=lo speaker=On pcm=PREPARED
+    23.666  pa=lo speaker=On pcm=RUNNING
+    23.710  pa=lo speaker=On pcm=XRUN
+    23.713  pa=lo speaker=On pcm=RUNNING
+    23.917  pa=hi speaker=On pcm=RUNNING
+    35.588  pa=lo speaker=On pcm=closed
+    40.706  pa=lo speaker=Off pcm=closed
+    49.121  pa=lo speaker=On pcm=PREPARED
+    49.138  pa=lo speaker=On pcm=RUNNING
+    49.342  pa=hi speaker=On pcm=RUNNING
+    63.203  pa=lo speaker=On pcm=closed
+    68.353  pa=lo speaker=Off pcm=closed
+    76.769  pa=lo speaker=On pcm=PREPARED
+    76.787  pa=lo speaker=On pcm=RUNNING
+    76.828  pa=lo speaker=On pcm=XRUN
+    76.834  pa=lo speaker=On pcm=RUNNING
+    77.036  pa=hi speaker=On pcm=RUNNING
+    90.851  pa=lo speaker=On pcm=closed
+    96.003  pa=lo speaker=Off pcm=closed
+   103.708  pa=lo speaker=Off pcm=OPEN
+   104.421  pa=lo speaker=On pcm=PREPARED
+   104.439  pa=lo speaker=On pcm=RUNNING
+   104.480  pa=lo speaker=On pcm=XRUN
+   104.486  pa=lo speaker=On pcm=RUNNING
+   104.690  pa=hi speaker=On pcm=RUNNING

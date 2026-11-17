@@ -486,3 +486,18 @@ is also off in our defconfig. The compatible is deliberately not fixed, because
 that driver's probe resets the live bus QoS controller and programs
 unverified registers. Both compiled board DTBs differ only in that node's
 `status`; there is no runtime change.
+
+**0212** makes the H713 speaker one power state instead of per-stream. Every
+close of the playback PCM popped: `sun4i_codec_shutdown()` stopped the module
+clock microseconds after trigger STOP dropped PA, while the amplifier was still
+winding down. A microphone measurement found close-only pops at 0–10 ms between
+the two, faint at 30 ms with the fan off, and silence from 100 ms
+([evidence](../../docs/speaker-pop-evidence/2026-11-17/README.md)).
+Power-up: clock on, the DAC → headphone-amp → line-out path forced on in DAPM,
+700 ms, then PA. Power-down: PA off, 300 ms, then path and clock. Streams no
+longer touch PA or stop the clock, and a rate-family change takes PA down
+around `clk_set_rate()`. The "Speaker Power" card control (default on) is
+how `h713-standby` takes it down and up; suspend, shutdown and removal take it
+down. It replaces the per-stream PA gate of 0180/0181. Host test:
+`tools/audio/test-speaker-power.py <tree>/sound/soc/sunxi/sun4i-codec.c --mutations`;
+see [the speaker power plan](../../docs/speaker-power-plan.md).

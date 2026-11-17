@@ -1,0 +1,28 @@
+{
+  "schema": "h713-kernel-fit-v1",
+  "files": {
+    "h713-kernel.fit": "966eba3c8b5d13cc14d92469810849c513d823d8eaa502e33bf53225c2453245",
+    "h713-hdmi.cmd": "ab7b941f0915a4449720c49efde902f925dc2d6bbfa8eb7872fa804807ed2b0a",
+    "h713-hdmi.scr": "645f75f9ca34ae83402f2b7a3b659cd067d8ec5dc405e6850e0d497f3d9e3393"
+  },
+  "baseline": {
+    "h713-kernel.fit": "845494c372b62d3f1ba6e3eb2b8166041398dc440c217dd58f5de140e004f2ac",
+    "h713-hdmi.cmd": "41faabdca2b406a52955bf315f3d56dec8787695d6cc5ec52af7d137d30ac1b5",
+    "h713-hdmi.scr": "c565a05a17ebb3adc599fd48a10b19e660f77fe07190f0fa913e7f2c99bd045d"
+  },
+  "sizes": {
+    "baseline_fit": 7612588,
+    "candidate_fit": 7615588,
+    "baseline_fdt": 34666,
+    "fdt": 34670
+  },
+  "checks": {
+    "module_symvers_equal": true,
+    "kernel_release_equal": true,
+    "config_diff": [],
+    "dtb_change": "nsi-status-disabled-only",
+    "cpu_comm_module_reproduced": false,
+    "cedrus_module_reproduced": false
+  },
+  "installer": "a16de9a7011906fa4c8b9a856a0e71728515aa0f3a28c7153011a0b58f3e581e"
+}

@@ -1,0 +1,257 @@
+{
+ "rec_host_t0": 46154.210118924,
+ "offset": -46012.148559084,
+ "rtt": 0.0017860480002127588,
+ "plan": [
+  {
+   "name": "quiet",
+   "cmd": null,
+   "settle": 4
+  },
+  {
+   "name": "impulse",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/impulse.wav",
+   "settle": 2
+  },
+  {
+   "name": "impulse",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/impulse.wav",
+   "settle": 2
+  },
+  {
+   "name": "impulse",
+   "cmd": "pw-play --target=alsa_output.platform-2030000.codec.stereo-fallback /var/tmp/pop/impulse.wav",
+   "settle": 2
+  },
+  {
+   "name": "spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 8
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 4
+  },
+  {
+   "name": "gap0",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 48000",
+   "settle": 4
+  },
+  {
+   "name": "gap0",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 48000",
+   "settle": 4
+  },
+  {
+   "name": "gap0",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 48000",
+   "settle": 4
+  },
+  {
+   "name": "rate44k",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 44100",
+   "settle": 4
+  },
+  {
+   "name": "rate44k",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 44100",
+   "settle": 4
+  },
+  {
+   "name": "rate44k",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 44100",
+   "settle": 4
+  },
+  {
+   "name": "spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "power-off",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 0",
+   "settle": 4
+  },
+  {
+   "name": "power-on",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 1",
+   "settle": 4
+  },
+  {
+   "name": "power-off",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 0",
+   "settle": 4
+  },
+  {
+   "name": "power-on",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 1",
+   "settle": 4
+  },
+  {
+   "name": "power-off",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 0",
+   "settle": 4
+  },
+  {
+   "name": "power-on",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 1",
+   "settle": 4
+  },
+  {
+   "name": "standby-on",
+   "cmd": "h713-standby on",
+   "settle": 10
+  },
+  {
+   "name": "sb-power-on",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 1",
+   "settle": 5
+  },
+  {
+   "name": "sb-power-off",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 0",
+   "settle": 5
+  },
+  {
+   "name": "sb-power-on",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 1",
+   "settle": 5
+  },
+  {
+   "name": "sb-power-off",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 0",
+   "settle": 5
+  },
+  {
+   "name": "sb-power-on",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 1",
+   "settle": 5
+  },
+  {
+   "name": "sb-power-off",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 0",
+   "settle": 5
+  },
+  {
+   "name": "sb-power-on",
+   "cmd": "CTL=/dev/snd/controlC0 /usr/lib/h713-hdmi-speaker/alsa-ctl set 'Speaker Power' 1",
+   "settle": 4
+  },
+  {
+   "name": "sb-spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "sb-spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "sb-spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "sb-spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 6
+  },
+  {
+   "name": "sb-spk-stop",
+   "cmd": "systemctl stop h713-hdmi-speaker",
+   "settle": 4
+  },
+  {
+   "name": "sb-gap0",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 48000",
+   "settle": 4
+  },
+  {
+   "name": "sb-gap0",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 48000",
+   "settle": 4
+  },
+  {
+   "name": "sb-rate44k",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 44100",
+   "settle": 4
+  },
+  {
+   "name": "sb-rate44k",
+   "cmd": "python3 /var/tmp/pop/pcm-drop-close.py hw:Codec,0 2 0 44100",
+   "settle": 4
+  },
+  {
+   "name": "sb-spk-start",
+   "cmd": "systemctl start h713-hdmi-speaker",
+   "settle": 5
+  },
+  {
+   "name": "standby-off",
+   "cmd": "h713-standby off",
+   "settle": 8
+  },
+  {
+   "name": "standby-on",
+   "cmd": "h713-standby on",
+   "settle": 8
+  },
+  {
+   "name": "standby-off",
+   "cmd": "h713-standby off",
+   "settle": 8
+  },
+  {
+   "name": "standby-on",
+   "cmd": "h713-standby on",
+   "settle": 8
+  },
+  {
+   "name": "standby-off",
+   "cmd": "h713-standby off",
+   "settle": 8
+  },
+  {
+   "name": "quiet",
+   "cmd": null,
+   "settle": 4
+  }
+ ]
+}
