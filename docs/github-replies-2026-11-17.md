@@ -1,12 +1,16 @@
-# Draft responses to well0nez — 2026-11-17
+# Responses to well0nez — 2026-11-17
 
-**Status: DRAFTS, NOT POSTED.** Chris has not approved these. Nothing has been
-sent to GitHub.
+**Posted 2026-11-17** at Chris's request; each body was read back and matches
+this file (paragraphs unwrapped for GitHub):
+
+- [Issue #1](https://github.com/cstenger/allwinner-h713-mainline/issues/1#issuecomment-6947719170)
+- [Issue #2](https://github.com/cstenger/allwinner-h713-mainline/issues/2#issuecomment-6947719479)
+- [Issue #3](https://github.com/cstenger/allwinner-h713-mainline/issues/3#issuecomment-6947719815)
+- [Issue #4](https://github.com/cstenger/allwinner-h713-mainline/issues/4#issuecomment-6947720173)
 
 These answer well0nez's comments of 2026-11-16 on issues #1–#4. Record links
 are pinned to `e8e37ada`, which is on `origin/main`. The #4 reply also links
-0211 (`158c30ff`) and 0212 (`146ca6d3`), which are committed but **not pushed**:
-push `main` before posting, or those two links are dead.
+0211 (`158c30ff`) and 0212 (`146ca6d3`), both on `origin/main`.
 
 Source comments:
 
@@ -149,8 +153,8 @@ line, the DAPM state and the PCM state logged every 2 ms, this is what we found 
 So on our board the stream-end pop is the clock stopping under a live amp. Kernel 0212 ([146ca6d3](https://github.com/cstenger/allwinner-h713-mainline/commit/146ca6d3)) now ties the module clock and
 the analog path to one power state. PA comes up 700 ms after they settle, and goes down 300 ms before they stop.
 The state stays up while the projector is awake and goes down for standby, suspend and shutdown, so a PCM close
-no longer stops the clock. On our bench, 46 stop/close/power/standby events and two reboots now show no flagged
-pop; a test impulse is still detected 3/3. Before 0212, every close popped. This may explain your mains-off pop
+no longer stops the clock. On our bench, 46 stop/close/power/standby events and a reboot from 0212 into itself now
+show no flagged pop; a test impulse is still detected 3/3. Before 0212, every close popped. This may explain your mains-off pop
 too, if PA is still on when the rails take the clock away.
 
 **Focus motor and AFBD:** agreed on both. One correction on our side: we don't park the MIPS in production. U-Boot starts `display.bin` once and it keeps running (panel timing, the HDMI receiver, the audio DSP graph over CPU_COMM); parking was only a bring-up diagnostic. Our AFBD driver does program the video planes and geometry itself on top of the running firmware, so your 1080p pieces
