@@ -1,0 +1,33 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] arm64: dts: h713: leave the focus motor disabled by default
+
+The SoC dtsi enabled motor_ctr, the HY310's focus stepper on PH4-PH7 with
+its PH14 limit switch. Not every H713 projector has that motor: the
+projector board here (HY200_QZ713_V2) has none, yet its DTB described
+one because only the bench board overrode the node to disabled.
+
+Disable it in the dtsi, like other board-specific peripherals; a board
+that has the motor enables it in its own .dts. The bench DTB is
+unchanged (it already disabled the node). The projector DTB now reads
+disabled. The driver (CONFIG_HY310_KEYSTONE_MOTOR) is not built in our
+configs, so nothing ever drove these pins; this corrects the description.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -2182,13 +2182,15 @@
+ 	 * The HY310 has exactly one stepper, the focus drive: stock has a single
+ 	 * motor_ctr node and "keystone" appears nowhere in the vendor firmware
+ 	 * (well0nez 0024b). Keystone correction here is digital, not a motor.
++	 * Not every H713 projector has it (the HY200_QZ713_V2 projector here
++	 * does not), so it is disabled by default; a board with it enables it.
+ 	 * 4-phase half-step sequence, 1 limit switch (PH14, active HIGH).
+ 	 * Values extracted from stock hy310-board.dtb via raw FDT parsing.
+ 	 * GPIO format: <&pio bank pin flags>  bank 7 = PH
+ 	 */
+ 	motor_ctr: motor-ctr {
+ 		compatible = "allwinner,hy310-keystone-motor", "motor-control";
+-		status = "okay";
++		status = "disabled";
+ 
+ 		motor-phase-num = <4>;
+ 		motor-gpio-phase0 = <&pio 7 4 0>;	/* PH4 */

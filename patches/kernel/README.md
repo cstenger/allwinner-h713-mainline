@@ -507,6 +507,12 @@ focus motor, not a keystone motor (well0nez's 0024b finding). Only the
 comment changes; the driver and compatible keep the `hy310-keystone-motor`
 name, and both board DTBs are byte-identical.
 
+**0214** disables `motor_ctr` in the SoC dtsi. Not every H713 projector has
+the focus motor (the HY200_QZ713_V2 projector here does not), but only the
+bench board overrode the node, so the projector DTB described a motor. A board
+with the motor enables it in its own .dts. The bench DTB is unchanged; the
+driver is not built in our configs, so this corrects the description only.
+
 `series` files may carry `#` comments and blank lines; `tools/build/build.sh`
 reads every series through `series_entries`, so hashing and applying see the
 same list.
