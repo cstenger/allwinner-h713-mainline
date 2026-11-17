@@ -12,10 +12,6 @@ cd "$(dirname "$0")"
 grep -q 'HY200 QZ713DF_A1' /proc/device-tree/model
 sha256sum -c SHA256SUMS
 command -v cc >/dev/null
-pkg-config --exists gstreamer-1.0
-command -v gst-launch-1.0 >/dev/null
-gst-inspect-1.0 alsasrc >/dev/null
-gst-inspect-1.0 alsasink >/dev/null
 command -v pw-loopback >/dev/null
 command -v pw-dump >/dev/null
 command -v pw-cli >/dev/null
@@ -33,7 +29,6 @@ fi
 stage=$(mktemp -d /tmp/h713-speaker-install.XXXXXX)
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 cc -O2 -Wall -Wextra -Werror alsa-ctl.c -o "$stage/alsa-ctl"
-cc -O2 -Wall -Wextra -Werror hdmi-speaker.c -o "$stage/hdmi-speaker" $(pkg-config --cflags --libs gstreamer-1.0)
 python3 -m py_compile pipewire-speaker.py
 systemd-analyze verify "$PWD/h713-hdmi-speaker.service"
 if [ -e "$target/SHA256SUMS" ] && [ "$update" = 1 ]; then
@@ -48,10 +43,11 @@ if [ "$(systemctl show h713-hdmi-speaker.service -p LoadState --value)" != not-f
 fi
 install -d -m 0755 "$target"
 install -m 0755 "$stage/alsa-ctl" "$target/alsa-ctl"
-install -m 0755 "$stage/hdmi-speaker" "$target/hdmi-speaker"
 install -m 0755 enable-mixer.sh "$target/enable-mixer.sh"
 install -m 0755 pipewire-speaker.py "$target/pipewire-speaker.py"
-install -m 0644 alsa-ctl.c hdmi-speaker.c SHA256SUMS install-speaker.sh h713-hdmi-speaker.service "$target/"
+install -m 0644 alsa-ctl.c SHA256SUMS install-speaker.sh h713-hdmi-speaker.service "$target/"
+# The retired GStreamer fade consumer (removed 2026-11-17, kernel 0212).
+rm -f "$target/hdmi-speaker" "$target/hdmi-speaker.c"
 install -m 0644 h713-hdmi-speaker.service /etc/systemd/system/h713-hdmi-speaker.service
 systemctl daemon-reload
 systemd-analyze verify /etc/systemd/system/h713-hdmi-speaker.service

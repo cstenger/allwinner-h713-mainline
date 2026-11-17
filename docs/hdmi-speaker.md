@@ -26,80 +26,62 @@ recreation and a PC-end cable reseat are explicit source qualifications. [Design
 
 [Completed acceptance and qualifications](hdmi-evidence/2026-10-27-audio-lifecycle-fix/acceptance/README.md).
 
-## Historical direct GStreamer consumer
+## Speaker power: no pops (kernel 0212)
 
-# Persistent HDMI-to-speaker playback
+The codec driver owns the amplifier. Kernel 0212 makes the module clock,
+the DAC → headphone-amp → line-out path and the external amplifier (PA, PL2)
+one power state. It is held while the projector is awake, independent of
+streams. Up: clock, path, 700 ms settle, then PA. Down: PA off, 300 ms, then
+path and clock. Streams, PCM closes and this service stopping never move PA,
+so the route needs no fades or silent pre-roll.
 
-The board's optional `h713-hdmi-speaker.service` forwards `hw:H713HDMI,0`
-(48 kHz stereo S16_LE capture) to `plughw:Codec,0`. The computer's selected
-HDMI output controls the volume; the route adds no steady-state attenuation. No computer
-default selection or application routing is modified.
+`h713-standby` turns the codec's `Speaker Power` control off on entry and on
+on exit. Suspend, reboot and power-off take it down in the same order.
+Measured with a microphone: before 0212, every PCM close popped. The codec
+clock stopped microseconds after PA fell. After 0212: no flagged pop in 46
+events and a reboot. See the
+[speaker power plan](speaker-power-plan.md) and the
+[evidence](speaker-pop-evidence/2026-11-17/README.md).
 
-Each service start resolves the internal `Codec` ALSA card by identity and sets
+## Install and diagnostics
+
+Build the bundle with `python3 tools/hdmi/build-speaker.py build/hdmi-speaker`,
+copy it to the board and run `sh install-speaker.sh` inside it as root (or
+`--update` over an existing installation). The installer:
+
+- verifies source checksums, the board model, the installed HDMI units and
+  the PipeWire tools;
+- compiles the mixer utility (`tools/audio/alsa-ctl.c`) with warnings as
+  errors;
+- replaces only the speaker consumer under `/usr/lib/h713-hdmi-speaker` and
+  `/etc/systemd/system`;
+- verifies, enables and starts the unit.
+
+`--update` verifies the old installed files and unit and backs up the old
+generation under `/var/lib/h713-hdmi-speaker`. Without it, the installer
+refuses a different existing bundle. No bootloader, kernel, HDMI owner or
+installed backend manifest is replaced.
+
+Each service start resolves the internal `Codec` card by identity and sets
 DAC Playback Volume 43, Line Out Playback Volume 15, both Line Out Playback
-Switch channels on, and Speaker Switch on. These are the settings that restored
-audible HDMI music on the bench board. The original DAC setting of 63 distorted
-when the source HDMI volume reached 100%; the operator confirmed clean music
-at 43. This provides about 23 dB of additional amplifier headroom. The installed utility is built from
-`tools/audio/alsa-ctl.c`; nothing depends on `/root/tools` or `/tmp` at runtime.
-
-`BindsTo=` and `After=` both the signal owner and capture backend enforce
-startup after HDMI is ready and stop before either owner tears down. SIGTERM
-closes GStreamer's capture/playback handles; the ten-second stop timeout and
-control-group kill policy bound a stalled consumer. The existing backend's
-restoration and shutdown guards remain unchanged. Stopping this consumer alone
-is reversible and does not stop or relaunch HDMI firmware. Normal audio
-driver/DAPM behavior controls amplifier power after the PCM closes.
-
-The `hdmi-speaker` native GStreamer consumer initially feeds zero-valued audio.
-After the pipeline reaches PLAYING, it waits 300 ms and fades the samples in
-over 500 ms. On SIGTERM it fades out over 100 ms, flushes 100 ms of silence
-through the output ring, then closes both PCMs. This targets discontinuities
-at audio startup/stop; analog amplifier power-up transients may require a driver
-fix. A failed startup never fades in, and errors or unexpected EOS trigger the
-service's consumer-only restart policy.
-
-The matching device-tree handoff condition skips the consumer on the guarded
-warm boot path. Only a physical cold cycle authorizes capture startup; this
-service does not bypass that rule. A crash restarts only the GStreamer consumer,
-not the DSP or receiver. This consumer owns the capture PCM exclusively; stop
-it before running an independent HDMI recording test.
-
-Build an independent consumer bundle, preserving the pinned backend manifest:
-
-```
-python3 tools/hdmi/build-speaker.py build/hdmi-speaker
-```
-
-Copy the bundle to the board and run `sh install-speaker.sh` inside it as root.
-The installer verifies source checksums, the board model, installed HDMI units,
-and GStreamer ALSA plugins; compiles the mixer utility and fade consumer with warnings as errors;
-replaces only the speaker consumer; installs under `/usr/lib/h713-hdmi-speaker`
-and `/etc/systemd/system`; verifies, enables and starts the unit. Target `cc`
-and kernel userspace headers are installation prerequisites, not runtime ones.
-An explicit `sh install-speaker.sh --update` verifies the old installed files
-and unit, compiles replacements before stopping playback, and backs up the old
-generation under `/var/lib/h713-hdmi-speaker`. Without that flag it refuses a
-different existing bundle manifest. No bootloader, kernel, HDMI
-owner or installed backend manifest is replaced.
+Switch channels and Speaker Switch on. The original DAC setting of 63
+distorted at 100% source volume; 43 was confirmed clean.
 
 Diagnostics: `systemctl status h713-hdmi-speaker`,
 `journalctl -b -u h713-hdmi-speaker`, and
-`/usr/lib/h713-hdmi-speaker/alsa-ctl list`.
-Disable automatic forwarding with
-`systemctl disable --now h713-hdmi-speaker.service`.
+`/usr/lib/h713-hdmi-speaker/alsa-ctl list`. Disable automatic forwarding
+with `systemctl disable --now h713-hdmi-speaker.service`.
 
-Validation and cold-boot status are recorded in
-[persistent speaker evidence](hdmi-evidence/2026-10-15-persistent-speaker/README.md).
+## History
 
-The speaker-startup kernel candidates are tracked in
-[the speaker-last evidence](hdmi-evidence/2026-10-15-speaker-last/README.md).
-Patch 0180 delayed external PA enable until after analog settling, but the
-operator still heard two clicks on its cold test. Candidate 0181 additionally
-requires running playback and delays PA enable by 200 ms after START; STOP
-mutes PA immediately instead of waiting for the five-second DAPM timeout.
-Its locking/deadline helper tests and kernel build pass. On the first 0181
-physical cold cycle, the operator reported no startup clicks and successful
-music; gain 43 was reapplied automatically. The preceding shutdown click
-occurred while 0180 was still running, so shutdown-click suppression on 0181
-remains unverified. See the evidence for the exact kernel and test scope.
+The first route (October 15) was a native GStreamer consumer from
+`hw:H713HDMI,0` to `plughw:Codec,0`. It fed silence, faded the samples in
+after 300 ms and out on stop, to mask startup and stop clicks. It was replaced
+by the PipeWire loopback on October 27, and its source
+(`tools/hdmi/hdmi-speaker.c`) was removed on November 17 once 0212 had
+removed the pops at their source.
+
+Records of that period:
+- [persistent speaker evidence](hdmi-evidence/2026-10-15-persistent-speaker/README.md);
+- [speaker-last evidence](hdmi-evidence/2026-10-15-speaker-last/README.md),
+  covering the per-stream PA gates 0180/0181, which 0212 replaces.

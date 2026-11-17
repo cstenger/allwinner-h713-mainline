@@ -53,7 +53,7 @@ out['speaker']=subprocess.run(['systemctl','is-active','h713-hdmi-speaker'],capt
 speaker_exec=subprocess.run(['systemctl','show','h713-hdmi-speaker','-p','ExecStart','--value'],capture_output=True,text=True).stdout
 out['route_kind']='pipewire' if 'pipewire-speaker.py' in speaker_exec else 'direct'
 if r.returncode==0 and P('/sys/module/h713_hdmi_audio').exists():
-    # The speaker fades in after a silent pre-roll (cold boot: playback from ~80 s).
+    # The speaker loopback starts after HDMI capture (cold boot: playback from ~80 s).
     deadline=time.monotonic()+150
     while time.monotonic()<deadline and not status('/proc/asound/Codec/pcm0p/sub0/status').startswith('state: RUNNING'):time.sleep(2)
     out['speaker_wait_s']=round(150-(deadline-time.monotonic()),1)
