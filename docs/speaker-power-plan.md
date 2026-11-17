@@ -1,6 +1,6 @@
 # Speaker power plan — no pops, amp up while awake
 
-**Status, 2026-11-17: phases 0–3 DONE.** Kernel 0212 is installed and the standby hook is live. Zero flagged pops in 46 events and 2 reboots (one pop on the first reboot was the old kernel going down); the positive control is still caught ([evidence](speaker-pop-evidence/2026-11-17/README.md#after-0212-same-day)). Open: a cold power cycle and Chris's listening pass.
+**Status, 2026-11-17: phases 0–3 DONE.** Kernel 0212 is installed and the standby hook is live. Zero flagged pops in 46 events and 2 reboots (one pop on the first reboot was the old kernel going down); the positive control is still caught ([evidence](speaker-pop-evidence/2026-11-17/README.md#after-0212-same-day)). A mains power cycle (`run-cold1`) is also pop-free, by microphone and by Chris's ear; every flagged event there was his own typing or mic handling.
 
 ## Requirement
 

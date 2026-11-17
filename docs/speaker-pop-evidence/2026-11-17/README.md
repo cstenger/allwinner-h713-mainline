@@ -146,3 +146,37 @@ Stream starts, stops and closes never moved PA.
 - Rate changes cost about 1 s of silence at the start of the first stream
   in the other family. PipeWire runs at 48 kHz, so only raw-ALSA 44.1 kHz
   clients pay it.
+
+### Mains power cycle (`run-cold1`)
+
+Run on 0212: `systemctl poweroff` over ssh, then serial, USB and mains
+unplugged, then power restored. Chris reports hearing nothing. The board
+came back as boot `b6546bcc` (startup PASS, nothing failed, lamp on, PA
+high).
+
+The board's journal and uptime map onto the recording as follows. `board.log`
+holds these as approximate phase markers; there was no UART.
+
+| Phase | Recording time | Max score | Verdict |
+| --- | --- | --- | --- |
+| `poweroff`, 0212 shutdown (PA off, then clock), power cut | 10.6–18 s | 3.2 | clean |
+| Board off, cables and mains handled | 18–41 s | 14.9 | handling: the board was unpowered |
+| Power restored (SPL about 42.7 s) | 41.2 s | 20.4 | spectrum and length match the handling event, not a speaker pop |
+| Kernel boot | 50.5 s | 2.9 | clean |
+| Codec probe and PA up (about 55 s) | 54–58 s | 2.9 | clean |
+| Speaker service and after | 58.8 s on | 9.3 | 76.7 s and 115.9 s are long low-mid bursts (speech or handling); 65.2 s is a 15 ms blip with energy only at 3–6 kHz |
+
+Reference shapes:
+- A known speaker pop (fan off) is 10 ms, +8 to +13 dB at 1.1–6 kHz, with
+  nothing above 6 kHz.
+- The power-on event is 170 ms long, +20 dB at 3–6 kHz and +13 dB above
+  6 kHz, the same shape as the cable handling at 25.1 s.
+
+Chris confirms that every flagged event in this run is his own typing or
+handling of the microphone. None came from the speaker, and none was audible
+from it.
+
+**Result: the mains power cycle is pop-free on 0212**, through power-off,
+the 0212 shutdown, power-on, boot and amp power-up. That matches the
+microphone and the listening check. One limit: mains was off for only about
+25–30 s, not a minute or more.

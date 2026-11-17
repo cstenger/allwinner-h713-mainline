@@ -1,0 +1,184 @@
+{
+ "median_block": 0.0016410398133636607,
+ "rms_dbfs": -28.4,
+ "clock_rtt_ms": 0,
+ "steps": [
+  {
+   "step": "00-running",
+   "from_s": 0.0,
+   "to_s": 10.0,
+   "max_score": 4.4,
+   "at_s": 0.0,
+   "blocks_over_flag": 1,
+   "rms_dbfs": -34.8,
+   "hiband_dbfs": -54.1,
+   "rc": "?",
+   "out": ""
+  },
+  {
+   "step": "01-poweroff-and-shutdown",
+   "from_s": 10.0,
+   "to_s": 18.0,
+   "max_score": 3.2,
+   "at_s": 15.365,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -41.8,
+   "hiband_dbfs": -54.6,
+   "rc": "?",
+   "out": ""
+  },
+  {
+   "step": "02-off-mains-handling",
+   "from_s": 18.0,
+   "to_s": 41.0,
+   "max_score": 14.9,
+   "at_s": 25.089,
+   "blocks_over_flag": 55,
+   "rms_dbfs": -38.4,
+   "hiband_dbfs": -52.8,
+   "rc": "?",
+   "out": ""
+  },
+  {
+   "step": "03-power-on-spl-uboot",
+   "from_s": 41.0,
+   "to_s": 50.5,
+   "max_score": 20.4,
+   "at_s": 41.218,
+   "blocks_over_flag": 53,
+   "rms_dbfs": -39.5,
+   "hiband_dbfs": -51.1,
+   "rc": "?",
+   "out": ""
+  },
+  {
+   "step": "04-kernel-boot",
+   "from_s": 50.5,
+   "to_s": 54.0,
+   "max_score": 2.9,
+   "at_s": 53.132,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -37.2,
+   "hiband_dbfs": -54.6,
+   "rc": "?",
+   "out": ""
+  },
+  {
+   "step": "05-codec-probe-amp-up",
+   "from_s": 54.0,
+   "to_s": 58.0,
+   "max_score": 2.9,
+   "at_s": 57.548,
+   "blocks_over_flag": 0,
+   "rms_dbfs": -41.0,
+   "hiband_dbfs": -54.7,
+   "rc": "?",
+   "out": ""
+  },
+  {
+   "step": "06-speaker-service-and-after",
+   "from_s": 58.0,
+   "to_s": 147.375,
+   "max_score": 9.3,
+   "at_s": 115.854,
+   "blocks_over_flag": 54,
+   "rms_dbfs": -26.5,
+   "hiband_dbfs": -53.4,
+   "rc": "?",
+   "out": ""
+  }
+ ],
+ "edges": [],
+ "top_peaks": [
+  {
+   "ms": 41218,
+   "t_s": 41.218,
+   "score": 20.4,
+   "nearest_edge": null
+  },
+  {
+   "ms": 25089,
+   "t_s": 25.089,
+   "score": 14.9,
+   "nearest_edge": null
+  },
+  {
+   "ms": 115854,
+   "t_s": 115.854,
+   "score": 9.3,
+   "nearest_edge": null
+  },
+  {
+   "ms": 76678,
+   "t_s": 76.678,
+   "score": 6.7,
+   "nearest_edge": null
+  },
+  {
+   "ms": 76912,
+   "t_s": 76.912,
+   "score": 6.1,
+   "nearest_edge": null
+  },
+  {
+   "ms": 65218,
+   "t_s": 65.218,
+   "score": 5.6,
+   "nearest_edge": null
+  },
+  {
+   "ms": 0,
+   "t_s": 0.0,
+   "score": 4.4,
+   "nearest_edge": null
+  },
+  {
+   "ms": 118984,
+   "t_s": 118.984,
+   "score": 4.3,
+   "nearest_edge": null
+  },
+  {
+   "ms": 68743,
+   "t_s": 68.743,
+   "score": 4.1,
+   "nearest_edge": null
+  },
+  {
+   "ms": 135939,
+   "t_s": 135.939,
+   "score": 4.1,
+   "nearest_edge": null
+  },
+  {
+   "ms": 135335,
+   "t_s": 135.335,
+   "score": 4.0,
+   "nearest_edge": null
+  },
+  {
+   "ms": 140216,
+   "t_s": 140.216,
+   "score": 4.0,
+   "nearest_edge": null
+  },
+  {
+   "ms": 142514,
+   "t_s": 142.514,
+   "score": 3.7,
+   "nearest_edge": null
+  },
+  {
+   "ms": 139629,
+   "t_s": 139.629,
+   "score": 3.5,
+   "nearest_edge": null
+  },
+  {
+   "ms": 139223,
+   "t_s": 139.223,
+   "score": 3.5,
+   "nearest_edge": null
+  }
+ ]
+}
