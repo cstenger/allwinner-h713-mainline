@@ -236,7 +236,11 @@ Suggested next topics, pending the user's choice:
    which would let a future generic caller write into the qualified
    transport, and the unused `0x0306101c`. Record the vendor words in the
    comment.
-3. **Coupled decoder reset work (0298 and 0305–0308).** Reproduce mixed-codec
+3. **Coupled decoder reset work (0298 and 0305–0308).** *2026-11-16: VP9+H.265
+   concurrent failure reproduced 4/4 on 0209 (H.265 setup -EINVAL, VP9 exact,
+   contained); assessment and plan in
+   [the decoder-reset record](reviews/well0nez-2026-11-14/decoder-reset.md);
+   next: VE3-only reset candidate.* Reproduce mixed-codec
    failures first. Do not import codec-switch reset alone: Cedrus and AV1
    share the reset domain. Audit forced reset timeout and reset operations
    under locking, preserving this tree's working AV1 support.
