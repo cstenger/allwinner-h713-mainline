@@ -246,8 +246,8 @@ Suggested next topics, pending the user's choice:
    0210 carries it: installed and qualified (pairs exact, AV1 65/65 exact beside
    switching, clean reboot). The watchdog path beside AV1 also tested
    clean (30 full-VE watchdog pulses during continuous AV1, AV1 30/30 exact,
-   no stall), so 0305-0308 are not needed here. Open: H.264/MPEG-2/VP8
-   pairs.* Reproduce mixed-codec
+   no stall), so 0305-0308 are not needed here. H.264/MPEG-2/VP8 cross-codec
+   pairs (9 pairs x 2 rounds) are all bit-exact on 0210. Nothing open here.* Reproduce mixed-codec
    failures first. Do not import codec-switch reset alone: Cedrus and AV1
    share the reset domain. Audit forced reset timeout and reset operations
    under locking, preserving this tree's working AV1 support.

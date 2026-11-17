@@ -14,13 +14,17 @@ import threading
 import time
 from pathlib import Path
 
-# usage: decode-codec-pair-test.py OUT_DIR [ROUNDS] [VECTOR_DIR]
+# usage: decode-codec-pair-test.py OUT_DIR [ROUNDS] [VECTOR_DIR] [PLAN.json]
 # VECTOR_DIR holds the pinned vectors and their manifest.json (file,
-# input_sha256, raw_sha256, raw_bytes, frames), as staged for the 2026-11-14
-# kernel follow-ups.
+# input_sha256, raw_bytes, frames, and raw_sha256 -- or raw_md5 for MPEG-2,
+# whose reference is the hardware's own pinned output), as staged for the
+# 2026-11-14 kernel follow-ups. PLAN.json, if given, is
+# {"singles": [file, ...], "pairs": [[file, file], ...]}: singles run as
+# controls before and as recovery checks after ROUNDS rounds of the pairs.
 VEC = Path(sys.argv[3]) if len(sys.argv) > 3 else Path('/root/kernel-followups-20261114/vectors')
 OUT = Path(sys.argv[1])
 ROUNDS = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+PLAN = json.loads(Path(sys.argv[4]).read_text()) if len(sys.argv) > 4 else None
 MANIFEST = {row['file']: row for row in json.loads((VEC / 'manifest.json').read_text())}
 
 
@@ -29,6 +33,12 @@ def pipeline(name):
     args = ['gst-launch-1.0', '-q', 'filesrc', 'location=' + str(p), '!']
     if p.suffix == '.webm':
         args += ['matroskademux', '!', 'vp9parse', '!', 'v4l2slvp9dec', '!']
+    elif p.suffix == '.h264':
+        args += ['h264parse', '!', 'v4l2slh264dec', '!']
+    elif p.suffix == '.m2v':
+        args += ['mpegvideoparse', '!', 'v4l2slmpeg2dec', '!']
+    elif p.suffix == '.ivf':   # VP8 vectors are IVF (AV1 is not decoded by cedrus)
+        args += ['ivfparse', '!', 'v4l2slvp8dec', '!']
     else:
         if p.suffix == '.mp4':
             args += ['qtdemux', '!']
@@ -46,17 +56,22 @@ def ve_irq():
 def decode(name, result):
     row = MANIFEST[name]
     h = hashlib.sha256()
+    md5 = hashlib.md5()
     size = 0
     start = time.monotonic()
     proc = subprocess.Popen(pipeline(name), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     while chunk := proc.stdout.read(1 << 20):
         h.update(chunk)
+        md5.update(chunk)
         size += len(chunk)
     err = proc.stderr.read().decode(errors='replace')[-400:]
     rc = proc.wait(timeout=180)
-    got = h.hexdigest() if size else None
+    if 'raw_md5' in row:
+        match = md5.hexdigest() == row['raw_md5']
+    else:
+        match = h.hexdigest() == row['raw_sha256']
     result.update(file=name, rc=rc, bytes=size, expected_bytes=row['raw_bytes'],
-                  exact=(size == row['raw_bytes'] and got == row['raw_sha256']),
+                  exact=(size == row['raw_bytes'] and bool(size) and match),
                   seconds=round(time.monotonic() - start, 2), stderr_tail=err.strip())
 
 
@@ -96,6 +111,16 @@ def main():
     print(json.dumps({'boot': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
                       'cedrus_ko': hashlib.sha256(Path(subprocess.check_output(['modinfo', '-n', 'sunxi_cedrus'], text=True).strip()).read_bytes()).hexdigest()}), flush=True)
     results = []
+    if PLAN:
+        for name in PLAN['singles']:
+            run('control-' + name, [name], results)
+        for r in range(ROUNDS):
+            for pair in PLAN['pairs']:
+                run('pair-%s+%s-%d' % (pair[0].split('-')[0], pair[1].split('-')[0], r), pair, results)
+        for name in PLAN['singles']:
+            run('recovery-' + name, [name], results)
+        print('DONE', json.dumps({p['phase']: p['all_exact'] for p in results}), flush=True)
+        return
     run('control-vp9', ['native-vp9.webm'], results)
     run('control-hevc', ['native-hevc.mp4'], results)
     run('control-hevc+hevc', ['native-hevc.mp4', 'h01-640x480-main.h265'], results)

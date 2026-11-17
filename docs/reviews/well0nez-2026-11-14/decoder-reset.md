@@ -254,7 +254,7 @@ AV1 bound and a clean capture teardown. Evidence digests are in the
 
 **Remaining limits:**
 
-- No H.264, MPEG-2 or VP8 pairs; their vectors are not staged on the board.
+- Cross-codec pairs were added afterwards; see below.
 - The watchdog path beside AV1 was tested afterwards; see below.
 
 ## Watchdog path beside AV1 (0158 + full `RST_BUS_VE` pulse)
@@ -318,3 +318,55 @@ in `digests.txt`. The key files are `phase-b.log` `af7ac503…` and
 **Conclusion.** No AV1 arbitration is needed for the watchdog path on this
 bench either. If it ever shows up, the guard design is still available, but
 there is no evidence here to justify importing 0305–0308.
+
+## Cross-codec pairs on 0210 (H.264, MPEG-2, VP8)
+
+**Vectors.** `tools/video/make-test-streams.sh` regenerated the ladder into
+`local/video-test-gen-20261116`, a fresh directory, so the originals were
+untouched. The run is deterministic:
+
+- the H.264 streams are byte-identical to the August originals;
+- the H.264 and VP8 NV12 references match the pinned MD5s in
+  `reference-md5.txt` and `vp8-reference-md5.txt`;
+- MPEG-2's IDCT is not bit-defined, so its references are the hardware's own
+  pinned MD5s (`mpeg2-reference-md5.txt`), and the board's single decodes
+  match them.
+
+Staged on the board: `v03` (H.264 Main 720p, 60 frames), `v05` (H.264 High
+1080p, 60), `p02` (VP8 720p, 25), `p06` (VP8 partitions, 25), `m02` (MPEG-2
+progressive, 50) and `m04` (MPEG-2 interlaced, 50), plus `h01` (H.265) and
+`vp9-short-gop`.
+
+**Runner.**
+[`decode-codec-pair-test.py`](../../../tools/video/decode-codec-pair-test.py)
+gained `.h264`/`.m2v`/`.ivf` (VP8) pipelines, MD5 scoring for rows that
+carry `raw_md5`, and a plan file
+([`codec-pairs-plan.json`](../../../tools/video/codec-pairs-plan.json)).
+
+**Result.** Boot `a2cb8f4b`, 0210 installed (cedrus `f820dffa…`), two
+rounds:
+
+| Pair | Rounds exact |
+| --- | --- |
+| H.264 `v03` + H.265 `h01` | 2/2 |
+| MPEG-2 `m02` + H.264 `v03` | 2/2 |
+| VP8 `p02` + H.265 `h01` | 2/2 |
+| VP8 `p02` + VP9 | 2/2 |
+| MPEG-2 interlaced `m04` + VP9 | 2/2 |
+| H.264 1080p `v05` + VP9 | 2/2 |
+| VP8 `p06` + MPEG-2 `m02` | 2/2 |
+| H.264 `v03` + VP8 `p06` | 2/2 |
+| VP9 + H.265 `h01` | 2/2 |
+
+- **All 34 phases exact:** 8 single-stream controls, 18 pair runs and 8
+  recovery singles.
+- **No kernel lines.** Each pair's VE interrupt count equals the sum of its
+  streams' frames, so both streams decoded in hardware.
+- **Scope.** This confirms that 0210's codec-switch reset does not disturb
+  any other codec combination. It does not show which of these pairs would
+  have failed without 0210; the production module has no switch to disable
+  the reset, and well0nez found only the VP9/H.265 combinations failing.
+
+Evidence (SHA-256, `local/recovery/2026-11-16-codec-pairs/`): `run.log`
+`91820969…`, `results.json` `82e46d0c…`, `manifest.json`
+`dafdafbd…`.
