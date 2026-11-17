@@ -88,7 +88,8 @@ Module inputs are enumerated from tracked source files; leftover Kbuild
 regenerated in the isolated build directory from its tracked generator/fixture.
 Two complete builds in separate work directories have produced identical boot,
 firmware, rootfs tar/ext4/sparse and release metadata bytes on the recorded
-host/toolchain; see the [offline result](production-evidence/2026-11-03-reproducible-build/README.md).
+host/toolchain; see the [offline result](production-evidence/2026-11-03-reproducible-build/README.md)
+and the [November 17 final build](production-evidence/2026-11-17-final-build/README.md).
 This does not establish hardware acceptance or cross-host reproducibility.
 TF-A, U-Boot
 and AIC8800 submodules must match their checkout gitlinks without tracked
