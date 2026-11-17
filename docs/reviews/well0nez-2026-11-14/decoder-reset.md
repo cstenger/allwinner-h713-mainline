@@ -1,8 +1,8 @@
 # Coupled decoder reset (0298, 0305–0308) — November 16, 2026
 
-**Status: the 0298 failure reproduces on our tree, and a `RST_BUS_VE3`-only
-pulse at a codec switch fixes it in a diagnostic module. AV1 interplay is
-not yet tested and nothing is in the series.**
+**Status: the 0298 failure reproduces on our tree. A `RST_BUS_VE3`-only
+pulse at a codec switch fixes it in a diagnostic module, and AV1 decodes
+bit-exact beside 5064 such pulses. Nothing is in the series yet.**
 
 ## Assessment
 
@@ -138,16 +138,60 @@ Evidence (SHA-256, `local/recovery/2026-11-16-decoder-reset/`):
 | `arms/arm1.json` | `b3253b4f…` |
 | `arms/arm2.json` | `b750b22f…` |
 
+## AV1 beside VE3 codec-switch resets
+
+Boot `a88c5e28`, with the UART logged. The run unloaded `hantro_vpu` and
+production cedrus, loaded the diagnostic cedrus with `switch_reset=1`, and
+reloaded `hantro_vpu`, so `1c0d000.av1` was **bound** again. AV1 was scored
+by `av1-gate.sh` against host libdav1d per-frame MD5s; cedrus by the pair
+runner's software references. Any AV1 failure stopped the run.
+
+| Phase | AV1 | Cedrus | VE3 pulses | AV1 kernel errors |
+| --- | --- | --- | ---: | --- |
+| AV1 alone (720p stock, 1080p, error-resilient, film grain) | 4/4 exact | — | 0 | none |
+| AV1 ×20 beside H.265+H.265 (no switches, 62 s) | 20/20 exact | 20/20 exact | 0 | none |
+| **AV1 ×40 beside VP9+H.265 switching (138 s)** | **40/40 exact** (36 × 720p, 4 × 1080p) | **40/40 exact** | **5064** | none |
+| AV1 alone afterwards | exact | — | — | none |
+
+- There were zero timeouts or faults for the whole run. A reboot restored
+  production cleanly: boot `53018056`, startup PASS, production cedrus, AV1
+  bound, `reboot: Restarting system` on the UART.
+- For comparison, well0nez's unguarded `RST_BUS_VE` pulse stalled the AV1
+  core within 0.4 s of a codec switch.
+- **Conclusion.** The VP9 residue is behind `RST_BUS_VE3`, and pulsing that
+  line does not disturb the AV1 core. A VE3-only codec-switch reset needs
+  none of 0305–0307's guard.
+
+**Limits:**
+
+- One board and short clips, looped: 600-odd AV1 frames overlapped by
+  continuous switching.
+- No H.264, MPEG-2 or VP8 pairs yet.
+- The **existing** watchdog path (full `RST_BUS_VE` pulse plus the 0158
+  IOMMU master reset beside AV1, reached only after a cedrus timeout) is
+  unchanged and untested beside AV1.
+
+Evidence (SHA-256, `local/recovery/2026-11-16-decoder-reset/av1/`):
+
+| File | Digest |
+| --- | --- |
+| `run.log` | `b7336101…` |
+| `storm-switch.json` | `38333928…` |
+
+The UART capture and scripts are listed in `digests.txt` alongside.
+
 ## Next steps
 
 1. ~~Narrow fix first.~~ Done above: a VE3-only pulse fixes the pairs.
    Still to do: stage the H.264, MPEG-2 and VP8 vectors on the board and add
    those pairs.
 2. **AV1 interplay, with the operator present and UART connected:**
-   - AV1 beside cedrus codec switching, under the VE3-only pulse. This
-     needs a VE3 diagnostic loaded with AV1 bound, i.e. one built into a
-     FIT or reloaded with an AV1 rebind;
+   - ~~AV1 beside cedrus codec switching under the VE3-only pulse~~: done
+     above, 40/40 exact;
    - AV1 beside a damaged cedrus stream, to measure our existing watchdog
      and 0158 exposure.
 3. **Arbitration only if step 2 shows it is needed,** and without a forced
-   pulse after a timeout.
+   pulse after a timeout. The codec-switch reset does not need it.
+4. **Series patch:** a VE3 codec-switch reset in `cedrus_device_run()`,
+   attributed to well0nez's 0298 finding, qualified with the pair test,
+   the AV1 coexistence run and the decode suites.
