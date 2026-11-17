@@ -241,8 +241,11 @@ Suggested next topics, pending the user's choice:
    failures first. Do not import codec-switch reset alone: Cedrus and AV1
    share the reset domain. Audit forced reset timeout and reset operations
    under locking, preserving this tree's working AV1 support.
-4. Doorbell pulse/no-pulse experiment remains unresolved. IRQ reception being
-   fixed does not establish the electrical TX trigger mechanism. HDMI
+4. Doorbell pulse/no-pulse experiment. *Resolved 2026-11-16: the MIPS
+   wakes on the FIFO write alone (20/20 clean no-pulse probes, median 36 µs);
+   the pulse only enables an unhandled TX-room IRQ. Remove it in the next
+   CPU_COMM module patch together with item 2; see
+   [the doorbell record](reviews/well0nez-2026-11-14/cpu-comm-doorbell.md).* HDMI
    allocator/EDID/port fixes are research inputs for our distinct ownership
    model, not drop-in replacements.
 

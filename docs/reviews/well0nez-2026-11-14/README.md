@@ -107,7 +107,9 @@ older pulse experiment was confounded by a parked MIPS. They retain the pulse
 pending a device test. Our emulator experiment establishes the **message
 encoding**, not the electrical interrupt trigger mechanism. Retain our tested
 transport while designing a controlled pulse/no-pulse test; do not repeat the
-edge-trigger claim as settled fact.
+edge-trigger claim as settled fact. **Resolved November 16:** the
+[doorbell probe](cpu-comm-doorbell.md) shows the FIFO write alone wakes the
+MIPS; the pulse is redundant.
 
 Their 0326 checks firmware allocator break position before using fixed shared
 scratch pages. That is a useful ownership principle for our firmware tooling,
