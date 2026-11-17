@@ -68,6 +68,18 @@ class Bundle(unittest.TestCase):
             with self.assertRaises(SystemExit):b.check_cpu_comm_witness_dtb(old,bad)
         with self.assertRaises(SystemExit):b.check_cpu_comm_witness_dtb(new,new)
 
+    def test_nsi_disabled_change_is_narrow(self):
+        def dtb(status='okay', compat='allwinner,sun50i-nsi', extra=''):
+            src=('/dts-v1/; / { soc { nsi@2020000 { compatible="'+compat+'"; status="'+status+'"; }; '
+                 +extra+' }; };')
+            return subprocess.check_output(['dtc','-q','-I','dts','-O','dtb'],input=src.encode())
+        old=dtb();new=dtb('disabled')
+        b.check_nsi_disabled_dtb(old,new)
+        for bad in (dtb('okay'),dtb('disabled','allwinner,sun50i-h713-nsi'),
+                    dtb('disabled',extra='foreign { status="okay"; };')):
+            with self.assertRaises(SystemExit):b.check_nsi_disabled_dtb(old,bad)
+        with self.assertRaises(SystemExit):b.check_nsi_disabled_dtb(new,new)
+
     def check(self, base_config, cand_config, **kw):
         with tempfile.TemporaryDirectory() as d:
             base = work(d, 'base', base_config, b'old'); cand = work(d, 'cand', cand_config, b'new')

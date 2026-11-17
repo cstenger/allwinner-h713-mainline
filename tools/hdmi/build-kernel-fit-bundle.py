@@ -149,15 +149,37 @@ def check_cpu_comm_witness_dtb(baseline, candidate):
         need(canonical(old) == canonical(new), 'DTB differs outside the witness reservation')
 
 
+def check_nsi_disabled_dtb(baseline, candidate):
+    """Permit only the never-bound NSI node going from okay to disabled (0211)."""
+    node = '/soc/nsi@2020000'
+    with tempfile.TemporaryDirectory(prefix='h713-nsi-dtb-') as directory:
+        old, new = (Path(directory)/name for name in ('old.dtb', 'new.dtb'))
+        old.write_bytes(baseline); new.write_bytes(candidate)
+        def status(path):
+            out = subprocess.run(['fdtget', '-t', 's', str(path), node, 'status'],
+                                 capture_output=True, text=True)
+            need(out.returncode == 0, 'cannot read NSI status: '+out.stderr)
+            return out.stdout.strip()
+        need(status(old) == 'okay', 'baseline NSI node is not okay')
+        need(status(new) == 'disabled', 'candidate NSI node is not disabled')
+        subprocess.run(['fdtput', '-t', 's', str(old), node, 'status', 'disabled'],
+                       check=True, capture_output=True)
+        def canonical(path):
+            return subprocess.check_output(['dtc', '-q', '-s', '-I', 'dtb', '-O', 'dts', str(path)])
+        need(canonical(old) == canonical(new), 'DTB differs outside the NSI status')
+
+
 def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=False,
-          pio_irq_fix=False, cpu_comm_irq_fix=False, cpu_comm_witness=False, module_only=False):
+          pio_irq_fix=False, cpu_comm_irq_fix=False, cpu_comm_witness=False, module_only=False,
+          nsi_disabled=False):
     bt, ct = tree(baseline), tree(candidate)
     bfit = (baseline/'build/out/h713-kernel-production.fit').read_bytes()
     cfit = (candidate/'build/out/h713-kernel-production.fit').read_bytes()
     need(sha(bfit) == installed_fit, 'baseline build does not reproduce the installed FIT')
     if module_only:
         need(cfit == bfit, 'module-only bundle needs the installed FIT unchanged')
-        need(not (expected_diff or rustc_transition or pio_irq_fix or cpu_comm_irq_fix or cpu_comm_witness),
+        need(not (expected_diff or rustc_transition or pio_irq_fix or cpu_comm_irq_fix or cpu_comm_witness
+                  or nsi_disabled),
              'module-only bundle cannot change configuration or DTB')
     else:
         need(cfit != bfit, 'candidate FIT equals the baseline')
@@ -173,8 +195,11 @@ def check(baseline, candidate, installed_fit, expected_diff, rustc_transition=Fa
     release = lambda t: (t/'include/config/kernel.release').read_text()
     need(release(bt) == release(ct), 'kernel release differs')
     bdtb, cdtb = ((w/'build/out'/DTB).read_bytes() for w in (baseline, candidate))
-    need(sum((pio_irq_fix, cpu_comm_irq_fix, cpu_comm_witness)) <= 1, 'select only one DT correction')
-    if cpu_comm_witness:
+    need(sum((pio_irq_fix, cpu_comm_irq_fix, cpu_comm_witness, nsi_disabled)) <= 1,
+         'select only one DT correction')
+    if nsi_disabled:
+        check_nsi_disabled_dtb(bdtb, cdtb)
+    elif cpu_comm_witness:
         check_cpu_comm_witness_dtb(bdtb, cdtb)
     elif cpu_comm_irq_fix:
         check_cpu_comm_irq_dtb(bdtb, cdtb)
@@ -203,6 +228,8 @@ def main():
                    help='allow only stock CPU_COMM and watchdog interrupt corrections')
     p.add_argument('--cpu-comm-witness', action='store_true',
                    help='allow only the dedicated trace reservation growth from 4 to 256 KiB')
+    p.add_argument('--nsi-disabled', action='store_true',
+                   help='allow only the unbound NSI node going from okay to disabled (0211)')
     p.add_argument('--installed-cpu-comm',
                    help='package CPU_COMM after reproducing this installed module SHA-256')
     p.add_argument('--module-only', action='store_true',
@@ -212,7 +239,7 @@ def main():
     a = p.parse_args()
     bfit, cfit, bdtb = check(a.baseline, a.candidate, a.installed_fit, a.config_diff,
                            a.rustc_probe_transition, a.pio_irq_fix, a.cpu_comm_irq_fix, a.cpu_comm_witness,
-                           a.module_only)
+                           a.module_only, a.nsi_disabled)
     need(not a.module_only or a.installed_cpu_comm or a.installed_cedrus,
          'module-only bundle needs --installed-cpu-comm and/or --installed-cedrus')
     cdtb = (a.candidate/'build/out'/DTB).read_bytes()
@@ -253,7 +280,8 @@ def main():
                                baseline_fdt=len(bdtb), fdt=len(cdtb)),
                     checks={'module_symvers_equal': True, 'kernel_release_equal': True,
                             'config_diff': sorted(a.config_diff),
-                            'dtb_change': ('cpu-comm-witness-reservation-only' if a.cpu_comm_witness else
+                            'dtb_change': ('nsi-status-disabled-only' if a.nsi_disabled else
+                                           'cpu-comm-witness-reservation-only' if a.cpu_comm_witness else
                                            'cpu-comm-watchdog-irqs-only' if a.cpu_comm_irq_fix else
                                            'pio-spi-54-60-only' if a.pio_irq_fix else 'none'),
                             **({'fit_unchanged': True, 'script_unchanged': True} if a.module_only else {}),

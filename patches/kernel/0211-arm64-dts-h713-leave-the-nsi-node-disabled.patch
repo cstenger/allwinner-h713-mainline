@@ -1,0 +1,50 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] arm64: dts: h713: leave the NSI node disabled
+
+well0nez pointed out that this node cannot bind: sunxi-nsi (0011) matches
+"allwinner,sun50i-h713-nsi" and "allwinner,sunxi-nsi", while the node says
+"allwinner,sun50i-nsi". CONFIG_SUNXI_NSI is also off in our defconfig, so
+nothing has ever probed it.
+
+Do not fix the compatible string. The driver's probe is an unverified
+decompilation: it writes a controller reset and enable into the live bus
+QoS block at 0x02020000, programs a "MIPS shared memory" window, takes the
+MBUS reset line and requests SPI 63. None of that has been checked against
+stock behaviour, and the running display firmware depends on the bus
+setup U-Boot leaves behind. Binding it would change a working system for
+no measured benefit.
+
+Mark the node disabled so the description no longer claims an active
+device, and say why. Keep its contents as the record of what 0011 expects.
+No runtime change: the node was never bound.
+
+Reported-by: well0nez <8986239+well0nez@users.noreply.github.com>
+Link: https://github.com/cstenger/allwinner-h713-mainline/issues/4#issuecomment-6924775553
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -1911,7 +1911,14 @@
+ 			status = "okay";
+ 		};
+ 
+-		/* NSI Bus Priority Controller */
++		/*
++		 * NSI bus priority controller. Deliberately disabled: the
++		 * 0011 driver (CONFIG_SUNXI_NSI, off) matches neither this
++		 * compatible nor verified registers, and its probe resets the
++		 * live controller. U-Boot's bus setup is what the running
++		 * display firmware has been qualified against. Do not enable
++		 * without checking the probe against stock first.
++		 */
+ 		nsi: nsi@2020000 {
+ 			compatible = "allwinner,sun50i-nsi";
+ 			reg = <0x02020000 0x10000>;
+@@ -1921,7 +1928,7 @@
+ 				 <&ccu CLK_DRAM>;
+ 			clock-names = "pll", "bus", "sdram";
+ 			resets = <&ccu RST_MBUS>;
+-			status = "okay";
++			status = "disabled";
+ 		};
+ 
+ 		/*

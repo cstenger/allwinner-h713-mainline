@@ -479,3 +479,10 @@ made all VP9+H.265 pairs bit-exact, and AV1 decoded 40/40 bit-exact beside
 [decoder-reset record](../../docs/reviews/well0nez-2026-11-14/decoder-reset.md);
 `tools/video/test-cedrus-codec-switch-reset.py --mutations` checks the
 helper and its placement.
+
+**0211** marks the `nsi@2020000` node disabled. well0nez noticed it cannot
+bind: its compatible matches neither string in 0011's sunxi-nsi driver, which
+is also off in our defconfig. The compatible is deliberately not fixed, because
+that driver's probe resets the live bus QoS controller and programs
+unverified registers. Both compiled board DTBs differ only in that node's
+`status`; there is no runtime change.
