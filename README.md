@@ -1,4 +1,5 @@
 # H713 mainline bring-up
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/cstenger)
 
 Mainline firmware and Linux for the **Allwinner H713 (sun50iw12)** SoC — a
 fully open boot chain (U-Boot SPL → TF-A BL31 → U-Boot → Linux) with a
