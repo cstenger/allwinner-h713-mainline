@@ -230,7 +230,56 @@ system`, then U-Boot, then the kernel, with no guard refusal.
   `tx_desynced=N`, `tx_fifo_full=0` and `TX_IRQ_EN` 0 after every phase.
   Fault magic zero, ELOG pointer `0x5f284`, no CPU_COMM errors.
 
-**0209 is qualified warm and from power-on.** The teardown's log check
-remains a separate defect: until it is fixed, any reboot after the kernel
-ring wraps is turned into a power-off by the guard. See the
+**0209 is qualified warm and from power-on.**
+
+### Teardown fix: `/dev/kmsg` cursor (installed, verified)
+
+`h713-hdmi-session.py` `stop()` now takes a `/dev/kmsg` cursor before
+`rmmod`: non-blocking, seeked to the end. It reads only the records logged
+after it. The verification is unchanged: 22 `DSP restore … verified`
+lines, `managed DSP graph restored 22 words` and
+`15 clock words and bus verified`. Older records rolling off the ring no
+longer matter. Only an overrun past the cursor itself (`EPIPE`) refuses, and
+it says so. If `rmmod` fails, the cursor is discarded without masking that
+error.
+
+Host tests:
+
+- `test-hdmi-session.py` passes 35 tests. New ones cover:
+  - a stop after a 2000-line flood has wrapped a bounded ring;
+  - an overrun refusal;
+  - restore lines logged before the cursor not counting;
+  - no leaked cursor on a failed `rmmod`.
+- The old script fails the wrapped-ring test with the board's exact error.
+- `install-session-kmsg.py`, modelled on the in-process IPC installer, pins
+  the installed session `06ab1e7a…`, the live capture unit `35883a89…`,
+  the parallel prepare unit and the manifest `999ebe1e…`. It replaces the
+  script and its manifest entry only. Its 5 tests cover preview, install,
+  exact rollback, foreign-state refusal, partial-write latch and recovery,
+  and payload identity.
+
+On the board:
+
+- The real cursor read exactly the three marker records written after it
+  on the already-wrapped ring, read empty when nothing was logged, and
+  discarded cleanly.
+- **Install.** On boot `0459e48c`: preview, then apply. Session
+  `69c67f72…`, manifest `7e4aa73b…`, backup
+  `/var/lib/h713-hdmi-startup/session-kmsg-278c42ebbd9f4707bf5107b0582c4285`,
+  no services changed.
+- **Reboot.** The same boot, with its ring wrapped by the 6003-call run, was
+  then rebooted. The UART shows `reboot: Restarting system`, U-Boot and the
+  kernel, with no guard refusal. The capture stop returned
+  `dsp_restored_words: 22, tvfe_restored_words: 15`. The receiver parked,
+  released its holds and was removed.
+- **New boot.** `2cfc0d6c` passes startup health and the acknowledgement
+  dry-run. Manifests verify, no units failed, ext4 errors are zero, and
+  CPU_COMM 0209 is IRQ-only with no desync.
+
+Still open, lower priority:
+
+- `tools/hdmi/bench-receiver-only.py`, a bench tool not used in production,
+  keeps the same prefix check.
+- The per-call `cpu_comm: addressing channel …` info line is what fills
+  the ring during stress; rate-limiting it is a separate kernel change. See the
 [validation summary](cpu-comm-doorbell-validation.json).

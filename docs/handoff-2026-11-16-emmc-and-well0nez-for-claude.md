@@ -243,10 +243,12 @@ Suggested next topics, pending the user's choice:
 4. Doorbell pulse/no-pulse experiment. *Resolved 2026-11-16: the MIPS
    wakes on the FIFO write alone (20/20 clean no-pulse probes, median 36 µs);
    the pulse only enables an unhandled TX-room IRQ. Removed by kernel 0209 together with item 2 (installed; 6003-call runs PASS
-   from power-on a0f8f6a9 and warm 0459e48c). **Open defect found:**
-   `h713-hdmi-session.py` stop's `dmesg` prefix check fails once the kernel
-   ring wraps (e.g. after CPU_COMM stress). The receiver hold is then
-   retained and the H2 guard turns reboot into power-off; see
+   from power-on a0f8f6a9 and warm 0459e48c). A teardown defect found
+   here is **fixed and installed**: `h713-hdmi-session.py` stop's `dmesg`
+   prefix check failed once the kernel ring wrapped (after CPU_COMM
+   stress), so the H2 guard turned reboot into power-off. It now reads a
+   `/dev/kmsg` cursor (`install-session-kmsg.py`, session `69c67f72…`); a
+   post-stress reboot restarts normally; see
    [the doorbell record](reviews/well0nez-2026-11-14/cpu-comm-doorbell.md).* HDMI
    allocator/EDID/port fixes are research inputs for our distinct ownership
    model, not drop-in replacements.

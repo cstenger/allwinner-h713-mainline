@@ -5,6 +5,7 @@ Requires the proven live source3 trace. Receiver lifetime remains independent
 of this service. A boot-ID latch forbids retry after stop or failed setup.
 """
 import argparse
+import errno
 import fcntl
 import hashlib
 import importlib.util
@@ -40,6 +41,31 @@ class Board:
         p=subprocess.run(argv,text=True,capture_output=True,timeout=timeout)
         if check and p.returncode:raise RuntimeError(f'{argv[0]} failed: {p.stderr or p.stdout}')
         return p
+    # Kernel records logged after a cursor. A dmesg prefix comparison fails as
+    # soon as the ring is full and new lines evict old ones (CPU_COMM stress
+    # fills it), which retained the receiver and turned reboot into the hold
+    # guard's power-off. /dev/kmsg reads by sequence from the cursor, so only
+    # an overrun past the cursor itself (EPIPE) loses verification.
+    def kmsg_cursor(self):
+        fd=os.open('/dev/kmsg',os.O_RDONLY|os.O_NONBLOCK)
+        os.lseek(fd,0,os.SEEK_END)
+        return fd
+    def kmsg_since(self,fd):
+        lines=[]
+        try:
+            while True:
+                try:record=os.read(fd,8192)
+                except BlockingIOError:break
+                except OSError as error:
+                    if error.errno==errno.EPIPE:raise RuntimeError('kernel log overran the restore records; verification unavailable') from None
+                    raise
+                if not record:break
+                header,_,text=record.decode('utf-8','replace').partition(';')
+                lines.append(text.split('\n',1)[0])
+        finally:
+            os.close(fd)
+        return '\n'.join(lines)+'\n'
+    def kmsg_discard(self,fd):os.close(fd)
     # The bundle's MIPS helpers, loaded once and called in this process: a
     # separate interpreter per check cost ~0.3 s each (7 per start) at boot.
     # Their own checks and the CLI's shared lock are unchanged; their exits
@@ -180,12 +206,14 @@ class Session:
         try:
             if restore:self.b.run(wp+['stop','wireplumber.service'])
             if self.b.read(PCM).strip()!='closed':raise RuntimeError('capture opened during stop; retained audio')
-            before=self.b.run(['dmesg','--color=never']).stdout
-            self.b.run(['rmmod',AUDIO])
-            self.save('stopped',cold_boot_required=True)
-            after=self.b.run(['dmesg','--color=never']).stdout
-            if not after.startswith(before):raise RuntimeError('kernel log changed during restore; verification unavailable')
-            tail=after[len(before):]
+            cursor=self.b.kmsg_cursor()
+            try:
+                self.b.run(['rmmod',AUDIO])
+                self.save('stopped',cold_boot_required=True)
+            except BaseException:
+                self.b.kmsg_discard(cursor)
+                raise
+            tail=self.b.kmsg_since(cursor)
             if len(re.findall(r'DSP restore [0-9a-f]{4}=[0-9a-f]{4} verified',tail))!=22 or 'managed DSP graph restored 22 words' not in tail or '15 clock words and bus verified' not in tail:
                 raise RuntimeError('DSP/TVFE restore verification missing; cold boot required')
             if self.loaded(AUDIO):raise RuntimeError('audio removal incomplete')

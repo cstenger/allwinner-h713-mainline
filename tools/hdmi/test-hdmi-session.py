@@ -21,6 +21,9 @@ class FakeBoard:
     def __init__(self):
         self.files={m.BOOT_ID:'boot1\n',m.FW_PATH:'\n',m.PCM:'closed\n','/bundle/cold-boot-proof.json':json.dumps({'boot_id':'boot1','cold_boot_confirmed':True,'parked_status_before_launch':0,'source3_verified':True})}
         self.events=[];self.modules=set();self.commands=[];self.writes=[];self.log='baseline\n'
+        # Kernel ring model: ring_limit bounds the retained text (oldest lines
+        # evicted, as on a full /dev/kmsg); overrun loses records at a cursor.
+        self.ring_limit=None;self.evicted=0;self.overrun=False;self.cursors=set()
         self.wp=True;self.fail_audio=False;self.fail_remove=False;self.bad_restore=False
         self.fail_park=False;self.fail_release=False;self.bad_trace=False;self.bad_patch=False;self.bad_ipc=False;self.mips_live=True
         self.ipc_count=0;self.fail_ipc_at=None;self.ipc_result=None
@@ -40,6 +43,19 @@ class FakeBoard:
             self.param(m.OWNER,'firmware_pin','N');self.param(m.OWNER,'edid_ready','N')
         if p.endswith('/clock_count') and text.strip()=='4':self.files[m.BASE+m.OWNER+'/parameters/edid_ready']='Y'
     def state(self,value):self.files[m.STATE]=json.dumps(value)
+    def klog(self,text):
+        self.log+=text
+        if self.ring_limit is not None and len(self.log)>self.ring_limit:
+            cut=len(self.log)-self.ring_limit;self.evicted+=cut;self.log=self.log[cut:]
+    def kmsg_cursor(self):
+        cursor=object();self.cursors.add(cursor);self.events.append(('kmsg','cursor'))
+        self._cursor_at={**getattr(self,'_cursor_at',{}),cursor:self.evicted+len(self.log)}
+        return cursor
+    def kmsg_since(self,cursor):
+        self.cursors.remove(cursor);at=self._cursor_at.pop(cursor)
+        if self.overrun or at<self.evicted:raise RuntimeError('kernel log overran the restore records; verification unavailable')
+        return self.log[at-self.evicted:]
+    def kmsg_discard(self,cursor):self.cursors.remove(cursor);self._cursor_at.pop(cursor)
     def param(self,module,name,value):self.files[m.BASE+module+'/parameters/'+name]=str(value)
     # In-process MIPS helpers: logged as pseudo-commands so the tests that
     # count hardware work still see every check.
@@ -76,7 +92,6 @@ class FakeBoard:
             if action=='is-active':rc=0 if self.wp else 3
             elif action=='stop':self.wp=False
             elif action=='start':self.wp=True
-        elif argv[0]=='dmesg':out=self.log
         elif argv[0]=='rmmod':
             if argv==['rmmod',m.OWNER]:
                 self.modules.remove(m.OWNER)
@@ -85,8 +100,8 @@ class FakeBoard:
             if self.fail_remove:raise RuntimeError('in use')
             self.modules.remove(m.AUDIO);self.param(m.OWNER,'clients',0)
             if not self.bad_restore:
-                self.log+=''.join(f'DSP restore {i:04x}=0000 verified\n' for i in range(22))
-                self.log+='managed DSP graph restored 22 words\n15 clock words and bus verified\n'
+                self.klog(''.join(f'DSP restore {i:04x}=0000 verified\n' for i in range(22)))
+                self.klog('managed DSP graph restored 22 words\n15 clock words and bus verified\n')
         else:raise AssertionError(argv)
         return SimpleNamespace(stdout=out,stderr='',returncode=rc)
 
@@ -237,6 +252,34 @@ class Lifecycle(unittest.TestCase):
         self.assertTrue(self.b.wp);self.assertEqual(self.s.prior()['phase'],'stopped')
         self.assertIsNot(self.s.prior().get('restore_verified'),True)
         with self.assertRaisesRegex(RuntimeError,'cold boot'):self.s.start()
+    def test_stop_verifies_restore_after_the_ring_has_wrapped(self):
+        # The 2026-11-16 failure: CPU_COMM stress filled the ring, so a dmesg
+        # prefix check failed although every restore line was logged.
+        self.s.start();self.b.ring_limit=4096
+        self.b.klog(''.join(f'cpu_comm: addressing channel {i}\n' for i in range(2000)))
+        self.assertGreater(self.b.evicted,0)
+        result=self.s.stop()
+        self.assertEqual((result['dsp_restored_words'],result['tvfe_restored_words']),(22,15))
+        self.assertTrue(self.s.prior()['restore_verified']);self.assertFalse(self.b.cursors)
+        self.assertNotIn('dmesg',[c[0] for c in self.b.commands])
+        cursor=self.b.events.index(('kmsg','cursor'));rmmod=self.b.events.index(('run',['rmmod',m.AUDIO]))
+        self.assertLess(cursor,rmmod)
+    def test_stop_refuses_when_the_restore_records_were_overrun(self):
+        self.s.start();self.b.overrun=True
+        with self.assertRaisesRegex(RuntimeError,'overran'):self.s.stop()
+        self.assertEqual(self.s.prior()['phase'],'stopped')
+        self.assertIsNot(self.s.prior().get('restore_verified'),True);self.assertTrue(self.b.wp)
+    def test_restore_lines_logged_before_the_cursor_do_not_count(self):
+        self.s.start()
+        self.b.klog(''.join(f'DSP restore {i:04x}=0000 verified\n' for i in range(22)))
+        self.b.klog('managed DSP graph restored 22 words\n15 clock words and bus verified\n')
+        self.b.bad_restore=True
+        with self.assertRaisesRegex(RuntimeError,'verification missing'):self.s.stop()
+        self.assertIsNot(self.s.prior().get('restore_verified'),True)
+    def test_failed_removal_releases_the_kmsg_cursor(self):
+        self.s.start();self.b.fail_remove=True
+        with self.assertRaisesRegex(RuntimeError,'in use'):self.s.stop()
+        self.assertFalse(self.b.cursors);self.assertTrue(self.b.wp)
     def test_inactive_wireplumber_stays_inactive(self):
         self.s.start();self.b.wp=False;self.s.stop();self.assertFalse(self.b.wp)
     def test_warm_linux_boot_cannot_reuse_old_cold_proof(self):
