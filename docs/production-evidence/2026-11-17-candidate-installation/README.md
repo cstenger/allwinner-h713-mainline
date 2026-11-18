@@ -249,10 +249,10 @@ a full rollback write has still never been rehearsed.
 
 ## Not yet covered
 
-Folding the readvertise and elog fixes (items 14 and 17) into a rebuilt
-candidate (the board now differs from `cb939748` by `h713-hdmi-readvertise.py`,
-`mips-shell.py`, the elog unit, the bundle manifest and the 0.115 s speaker
-delay); decoder/playback, keys, mirror/keystone. Private
+The fixes in items 14, 17 and 20 are folded into the
+[November 18 release build](../2026-11-18-release-build/README.md) of
+`4e1277b0`, which matches the board's files except one informational record;
+decoder/playback, keys, mirror/keystone. Private
 receipts, transcripts and the packet:
 `local/recovery/2026-11-17-deployment-packet/` and
 `local/releases/h713-ddr3-installation-packet-20261117b/`.
