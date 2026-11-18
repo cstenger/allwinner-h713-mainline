@@ -184,6 +184,61 @@ class ElogLevel(unittest.TestCase):
         t = self.term(takes_effect_at=None)
         with self.assertRaisesRegex(RuntimeError, 'not verified'): self.run_set(t)
         self.assertEqual(t.sent, ['elog -l 2\r'])
+
+    # 2026-11-18 no-source boot: the reply arrived, but the idle firmware left
+    # the new value unwritten until a source locked minutes later.
+    def run_sourced(self, t, source_at, settle=5.0, grace=60.0):
+        active = lambda: source_at is not None and t.clock() >= source_at
+        with contextlib.redirect_stderr(io.StringIO()):
+            return m.set_elog_level(t, True, 2, 0.5, settle, clock=t.clock, sleep=t.clock.sleep,
+                                    source_active=active, grace=grace)
+    def test_stale_readback_without_a_source_waits_for_one(self):
+        t = self.term(takes_effect_at=471.0)          # value lands once activity resumes
+        r = self.run_sourced(t, source_at=470.0)
+        self.assertTrue(r['verified']); self.assertTrue(r['waited_for_source'])
+        self.assertGreaterEqual(r['elapsed_seconds'], 471.0)
+        self.assertEqual(t.sent, ['elog -l 2\r'])     # never re-sent
+    def test_no_source_never_fails_on_a_clock(self):
+        t = self.term(takes_effect_at=None)
+        with self.assertRaisesRegex(RuntimeError, 'not verified'):
+            self.run_sourced(t, source_at=3600.0)
+        self.assertGreaterEqual(t.clock(), 3600.0 + 60.0)   # only after a source and its grace
+        self.assertLess(t.clock(), 3600.0 + 60.0 + 6.0)
+    def test_wrong_level_with_a_source_present_still_fails(self):
+        t = self.term(takes_effect_at=None)
+        with self.assertRaisesRegex(RuntimeError, 'not verified'):
+            self.run_sourced(t, source_at=0.0)
+        self.assertLess(t.clock(), 60.0 + 1.0)
+    def test_normal_boot_with_a_source_verifies_quickly(self):
+        t = self.term()                               # word changes at 0.3 s
+        r = self.run_sourced(t, source_at=0.0)
+        self.assertTrue(r['verified']); self.assertFalse(r['waited_for_source'])
+        self.assertLess(r['elapsed_seconds'], 1.0)
+    def test_cli_releases_the_ring_lock_before_confirming(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'lock'; seen = {}
+            def confirm(mem, sent, **kw):
+                with path.open('a') as other:          # another ring user must get the lock now
+                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB); seen['free'] = True
+                seen['source'] = kw['source_active']
+                return {'verified': True}
+            with patch('sys.argv', ['mips-shell.py', '--elog-level', '2']), \
+                 patch('builtins.open', side_effect=lambda *a: path.open('a')), \
+                 patch.object(m, 'Terminal'), patch.object(m, 'mips_alive', return_value=True), \
+                 patch.object(m, 'send_elog_level', return_value={'level': 2}) as send, \
+                 patch.object(m, 'confirm_elog_level', side_effect=confirm), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                m.main()
+            send.assert_called_once()
+            self.assertTrue(seen['free']); self.assertIs(seen['source'], m.hdmi_source_active)
+    def test_source_state_reads_the_ring_signal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'signal'
+            for text, active in (('none\n', False), ('locked 1280x720\n', True),
+                                 ('acquiring\n', True), ('', False)):
+                path.write_text(text)
+                with self.subTest(text=text): self.assertIs(m.hdmi_source_active(str(path)), active)
+            self.assertFalse(m.hdmi_source_active(str(path) + '.missing'))
     def test_wrong_firmware_parked_busy_bad_filter_and_arguments_never_send(self):
         t = self.term(); t.mem.words[m.ELOG_HANDLER_WORDS[1][0]] ^= 1
         with self.assertRaisesRegex(RuntimeError, 'pinned firmware'): self.run_set(t)

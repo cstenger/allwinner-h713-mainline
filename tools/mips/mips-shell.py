@@ -430,26 +430,48 @@ def check_ipc(term, alive, timeout=1.5, *, clock=time.monotonic,
 # reboot. Level 2 keeps the log far below that boundary. The native `elog -l`
 # command sets byte 0 of the filter word below; ARM readback of that cached
 # MIPS global can lag, so it is polled. The handler words pin the build.
+# With no HDMI source the firmware idles and the new value can stay in its
+# cache for minutes (2026-11-18: still 5 at 385 s, 2 once a source locked at
+# 470 s, nothing re-sent), so confirmation waits for activity, not a clock.
 ELOG_LEVEL_WORD = 0x4B48BDB0
 ELOG_HANDLER_WORDS = ((0x4B151B34, 0x28820003), (0x4B151B38, 0x1440001E),
                       (0x4B151B40, 0x27BDFFE0))
+HDMI_SIGNAL = '/sys/devices/platform/h713-hdmi-ring/signal'
+ELOG_SOURCE_GRACE = 60.0    # s allowed after a source appears; with one, ~1.3 s is typical
 
 
 def elog_reply_complete(reply, command):
     return reply.replace(b"\r", b"").split(b"\n") == [command.encode(), b"", b"VS:/$ "]
 
 
+def hdmi_source_active(path=HDMI_SIGNAL):
+    """True while a source sends (any state but 'none'); False for none or unreadable."""
+    try:
+        with open(path) as handle:
+            state = handle.read().split()
+    except OSError:
+        return False
+    return bool(state) and state[0] != 'none'
+
+
 def set_elog_level(term, alive, level, timeout=3.0, settle=5.0, *,
-                   clock=time.monotonic, sleep=time.sleep):
-    """Set the firmware's global log filter natively and verify it took effect.
+                   clock=time.monotonic, sleep=time.sleep, source_active=None,
+                   grace=ELOG_SOURCE_GRACE):
+    """Set the firmware's global log filter natively and confirm it took effect."""
+    sent = send_elog_level(term, alive, level, timeout, clock=clock, sleep=sleep)
+    return confirm_elog_level(term.mem, sent, settle, clock=clock, sleep=sleep,
+                              source_active=source_active, grace=grace)
+
+
+def send_elog_level(term, alive, level, timeout=3.0, *, clock=time.monotonic, sleep=time.sleep):
+    """Publish `elog -l N` and require the exact fresh reply. Needs the ring lock.
 
     One bounded request; caller serializes ring users. No retry or reset.
     """
     if not isinstance(level, int) or isinstance(level, bool) or not 0 <= level <= 7:
         raise ValueError("elog level must be an integer 0..7")
-    for value in (timeout, settle):
-        if not math.isfinite(value) or value <= 0:
-            raise ValueError("elog deadlines must be finite and positive")
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("elog deadlines must be finite and positive")
     if not alive:
         raise RuntimeError("MIPS is parked; refusing elog request")
     for address, word in ELOG_HANDLER_WORDS:
@@ -477,18 +499,47 @@ def set_elog_level(term, alive, level, timeout=3.0, settle=5.0, *,
         if clock() >= deadline:
             raise RuntimeError("MIPS elog deadline expired without a complete fresh reply")
         sleep(min(0.01, max(0, deadline - clock())))
-    answered = clock()
-    verify_deadline = answered + settle
+    return {"level": level, "before": before, "reply_bytes": len(reply),
+            "stale_bytes": len(stale), "started": started, "answered": clock()}
+
+
+def confirm_elog_level(mem, sent, settle=5.0, *, clock=time.monotonic, sleep=time.sleep,
+                       source_active=None, grace=ELOG_SOURCE_GRACE):
+    """Poll the filter word until it reads the sent level. Reads DRAM only: no lock.
+
+    Without source_active the deadline is `settle` after the reply. With it, the
+    deadline is extended while no source sends (the idle firmware may not have
+    written the value back) and gets `grace` more once one appears. A word that
+    still disagrees after that is a real failure.
+    """
+    for value in (settle, grace):
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("elog deadlines must be finite and positive")
+    level, started, answered = sent["level"], sent["started"], sent["answered"]
+    deadline, waited, seen_source = answered + settle, False, False
     while True:
-        after = term.mem.u32(ELOG_LEVEL_WORD) & 0xff
+        after = mem.u32(ELOG_LEVEL_WORD) & 0xff
         if after == level:
-            return {"schema": "h713-mips-elog-v1", "level": level, "before": before,
-                    "verified": True, "reply_bytes": len(reply), "stale_bytes": len(stale),
+            return {"schema": "h713-mips-elog-v1", "level": level, "before": sent["before"],
+                    "verified": True, "reply_bytes": sent["reply_bytes"],
+                    "stale_bytes": sent["stale_bytes"],
                     "reply_seconds": round(answered - started, 6),
-                    "elapsed_seconds": round(clock() - started, 6)}
-        if clock() >= verify_deadline:
+                    "elapsed_seconds": round(clock() - started, 6),
+                    "waited_for_source": waited}
+        now = clock()
+        if source_active is not None:
+            if source_active():
+                if not seen_source:
+                    seen_source, deadline = True, max(deadline, now + grace)
+            elif now >= deadline:
+                if not waited:
+                    print(f"elog filter reads {after}; no HDMI source, so the idle firmware may "
+                          "not have written it back: waiting for a source", file=sys.stderr, flush=True)
+                waited, seen_source, deadline = True, False, now + settle
+        if now >= deadline:
             raise RuntimeError(f"elog filter still reads {after} after the command; not verified")
-        sleep(min(0.1, max(0, verify_deadline - clock())))
+        # A floor keeps the loop advancing even when the remaining slice rounds to zero.
+        sleep(min(1.0 if waited else 0.1, max(0.001, deadline - now)))
 
 
 def lock_terminal(lock, wait):
@@ -534,26 +585,34 @@ def main():
     if not math.isfinite(args.lock_wait) or not 0 <= args.lock_wait <= 120:
         parser.error("--lock-wait must be 0..120 seconds")
 
+    if args.elog_level is not None:
+        return run_elog(args)
     # Cooperating CLI readers/writers must not steal one another's replies.
     # Keep the lock for the entire transaction, including legacy reads.
-    if (args.check_ipc or args.cmd or args.drain or args.release or args.unbind
-            or args.elog_level is not None):
+    if args.check_ipc or args.cmd or args.drain or args.release or args.unbind:
         with open('/run/lock/h713-mips-shell.lock', 'a') as lock:
             lock_terminal(lock, args.lock_wait if args.elog_level is not None else 0)
             return run_terminal(args)
     return run_terminal(args)
 
 
+def run_elog(args):
+    """Send under the shared lock; confirm after releasing it, so the HDMI
+    session's IPC is never held up while an idle firmware's readback lags."""
+    try:
+        with open('/run/lock/h713-mips-shell.lock', 'a') as lock:
+            lock_terminal(lock, args.lock_wait)
+            term = Terminal()
+            sent = send_elog_level(term, mips_alive(term.mem), args.elog_level)
+        result = confirm_elog_level(term.mem, sent, source_active=hdmi_source_active)
+    except (RuntimeError, ValueError) as error:
+        sys.exit(str(error))
+    print(json.dumps(result), flush=True)
+
+
 def run_terminal(args):
     term = Terminal()
     alive = mips_alive(term.mem)
-    if args.elog_level is not None:
-        try:
-            result = set_elog_level(term, alive, args.elog_level)
-        except (RuntimeError, ValueError) as error:
-            sys.exit(str(error))
-        print(json.dumps(result))
-        return
     if args.check_ipc:
         try:
             result = check_ipc(term, alive, args.wait)

@@ -10,10 +10,13 @@ ConditionPathExists=/proc/device-tree/chosen/h713,hdmi-boot-v1
 ConditionPathExists=/sys/module/hy310_cpu_comm
 
 [Service]
-Type=oneshot
+# The command is sent within seconds; with no HDMI source the idle firmware can
+# leave the new value unwritten for minutes, and confirmation waits for a
+# source (2026-11-18). Type=exec so that wait never holds boot in "starting";
+# the unit fails only if the level is still wrong with a source present.
+Type=exec
 RemainAfterExit=yes
 ExecStart=/usr/bin/python3 /usr/lib/h713-hdmi/mips-shell.py --elog-level 2 --lock-wait 20
-TimeoutStartSec=45
 Restart=no
 
 [Install]

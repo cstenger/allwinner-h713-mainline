@@ -9,8 +9,10 @@ spec = importlib.util.spec_from_file_location('installer', HERE / 'install-elog-
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 sha = lambda b: hashlib.sha256(b).hexdigest()
 OLD = (HERE / 'test-payloads' / m.OLD_SHELL).read_bytes()
-NEW = (HERE.parent / 'mips/mips-shell.py').read_bytes()
-UNIT = (HERE / 'h713-mips-elog-level.service').read_bytes()
+# Frozen copies of this installer's pinned payloads: the tree's mips-shell.py and
+# unit have moved on since (2026-11-18 elog confirmation), this transaction has not.
+NEW = (HERE / 'test-payloads' / m.NEW_SHELL).read_bytes()
+UNIT = (HERE / 'test-payloads' / m.NEW_UNIT).read_bytes()
 
 
 class ElogInstall(unittest.TestCase):

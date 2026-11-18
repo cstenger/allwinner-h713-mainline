@@ -153,6 +153,52 @@ pending; nothing here marks the release qualified.
     go absent on this unplug (no `source power absent` logged), so this run
     shows automatic recovery but does not itself reproduce the stale-absent
     deadlock; the replay unit test covers that case.
+16. **No-source boot: HDMI PASS; elog unit false failure.** HDMI unplugged
+    at the board (`source power absent` logged), ordinary reboot to boot
+    `c4e38f5e`. All HDMI owner units active with 0 restarts, video unit
+    waiting for lock, `signal none`, owner ready, startup check PASS. The
+    fresh schedule sent exactly 6 pulses (2/10/20/40/80/160 s, last at
+    321.6 s) and then stayed quiet. With the schedule exhausted, Chris
+    plugged HDMI in: `failed EDID read (busy 2 passes)` at 469.12 s → event
+    pulse → `locked 1280x720` at 470.55 s; PC `connected`, picture
+    confirmed; observer samples show 59.7 fps, zero errors, no restarts. (The
+    `recovery` analyzer needs a locked baseline and does not apply to a boot
+    that starts with no source.)
+    - `h713-mips-elog-level.service` **failed** on this boot (`elog filter
+      still reads 5 after the command; not verified`), leaving the system
+      `degraded`. On all 9 earlier boots with a source it verified level 2
+      in about 1.8 s. The word still read 5 at 60 s and 385 s, then **2** at
+      494 s, after the input arrived, with nothing re-sent. The firmware
+      applied the setting; the ARM read of that cached MIPS global stayed
+      stale while the firmware sat idle without input, beyond the unit's 5 s
+      settle window. A verification false negative; needs a fix.
+17. **Fix: source-aware elog confirmation; no-source boot rerun PASS.**
+    `mips-shell.py --elog-level` now sends `elog -l N` (pinned handler words,
+    idle ring, exact reply) under the shared lock, releases the lock, then
+    confirms the word: no deadline while no HDMI source sends, 60 s once one
+    does, so a level still wrong with a source present fails. The unit is
+    `Type=exec` with `RemainAfterExit=yes`, so the wait never holds boot. The
+    IPC path the HDMI session uses is unchanged. Tests (24) cover stale-while-
+    idle, no clock failure without a source, failure with a source present,
+    the quick normal path and the released lock; with only the source wait
+    disabled the stale and no-source cases fail. The 11-15 installer's test
+    read the tree's files and broke on this change; it now uses frozen copies
+    of its pinned payloads. Installed with `tools/hdmi/install-elog-confirm.py`
+    (shell `d7e505bb…` → `58b1183f…`, unit `31b07edd…` → `002631aa…` in the
+    bundle and `/etc/systemd/system`, manifest `f937bd39…` → `73c0150d…`;
+    readback, `systemd-analyze verify` clean, backup).
+    - No-source reboot to `74ef6805`: system **`running`**, no failed units;
+      the unit is active and logged at 13.6 s that the word reads 5 with no
+      source and it is waiting; HDMI prepare completed 4 IPC probes through
+      the new shell; startup check PASS.
+    - Late plug-in after all 6 timed pulses (the first replug attempt had no
+      cable connected: link byte `0x06840096` stayed `0x03` with zero DDC
+      activity and the PC read `disconnected`, as expected):
+      `failed EDID read` at 1211.20 s → event pulse → `locked 1280x720` at
+      1212.74 s; the unit confirmed `level 2, verified, waited_for_source` at
+      1213.76 s, 1.0 s after lock, and exited successfully. System `running`,
+      owner units 0 restarts, startup check PASS, PC `connected`, picture
+      confirmed.
 
 ## Rollback
 
@@ -162,9 +208,11 @@ a full rollback write has still never been rehearsed.
 
 ## Not yet covered
 
-Folding the readvertise fix (item 14) into a rebuilt candidate; speaker
-delay measurement; the rest of the lifecycle regression (abrupt reset, no-source
-boot), standby thermal from the completion checklist; decoder/playback, keys, mirror/keystone. Private
+Folding the readvertise and elog fixes (items 14 and 17) into a rebuilt
+candidate (the board now differs from `cb939748` by `h713-hdmi-readvertise.py`,
+`mips-shell.py`, the elog unit and the bundle manifest); speaker delay
+measurement; the abrupt-reset lifecycle case and standby thermal from the
+completion checklist; decoder/playback, keys, mirror/keystone. Private
 receipts, transcripts and the packet:
 `local/recovery/2026-11-17-deployment-packet/` and
 `local/releases/h713-ddr3-installation-packet-20261117b/`.
