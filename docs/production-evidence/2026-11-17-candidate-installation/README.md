@@ -214,6 +214,27 @@ pending; nothing here marks the release qualified.
     11.648 s. `startup-qualification.py` was not used: its audit is pinned to
     `cb939748` and the board differs by the item 14/17 fixes. Chris confirmed
     picture and sound after the reset.
+19. **HDMI-active light standby, one hour, fan off: PASS.** New tracked tool
+    `tools/standby/standby-thermal-soak.py` uses the product path
+    (`h713-standby on`: players stopped, lamp and fan off via the lamp
+    backlight, CPU capped at its lowest OPP; HDMI capture keeps running;
+    `h713-standby off` wakes through the lamp ramp), logs both zones, CPU
+    frequency, load, HDMI frames and lamp state every 10 s, and wakes at once
+    if a zone reaches 70 C (passive trip 75 C). Its tests cover completion,
+    the hot abort (fails with the abort removed), refusal and failed entry.
+    The 2026-10-07 `thermal-fan-off.py` (raw PB5 writes, pre-HDMI) was not
+    used. Run detached on boot `9b2557ee` from uptime 983 s:
+    - 360 samples over 3593 s, lamp off (`bl_power` 4) and 480 MHz cap held
+      throughout, HDMI locked at **59.71 fps** for the whole hour.
+    - CPU 59.2 C at entry, **peak 63.2 C** (first ~5 min), 60.7 C at 30 min,
+      59.7 C mean of the last ten samples; GPU peak **64.5 C**, 61.3 C at the
+      end. About 12 C under the CPU passive trip and 20 C under the GPU's;
+      the abort never fired; no kernel warning or thermal event.
+    - Woke cleanly through the ramp: same boot, lamp on, cap lifted to
+      1296 MHz, all HDMI units active with 0 restarts, startup check PASS,
+      59 fps, 0 rejected, 0 xruns, both PCMs RUNNING. Chris confirmed picture
+      and sound after the wake. No power meter was available, so no power
+      figure is claimed.
 
 ## Rollback
 
@@ -226,7 +247,7 @@ a full rollback write has still never been rehearsed.
 Folding the readvertise and elog fixes (items 14 and 17) into a rebuilt
 candidate (the board now differs from `cb939748` by `h713-hdmi-readvertise.py`,
 `mips-shell.py`, the elog unit and the bundle manifest); speaker delay
-measurement; standby thermal from the completion checklist; decoder/playback, keys, mirror/keystone. Private
+measurement; decoder/playback, keys, mirror/keystone. Private
 receipts, transcripts and the packet:
 `local/recovery/2026-11-17-deployment-packet/` and
 `local/releases/h713-ddr3-installation-packet-20261117b/`.
