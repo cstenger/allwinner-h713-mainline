@@ -9,10 +9,14 @@ import subprocess
 import time
 
 REPO=Path(__file__).resolve().parents[2]
-KNOWN=REPO/'local/recovery/2026-11-03-production-install-03/known_hosts'
-SSH=['ssh','-F','/dev/null','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',
-     '-o','UserKnownHostsFile='+str(KNOWN),'-o','ConnectTimeout=5',
-     '-o','ServerAliveInterval=2','-o','ServerAliveCountMax=2','root@192.168.4.1']
+CMDS_REPLY_BYTES=(REPO/'docs/production-evidence/2026-11-09-startup-and-parallel-aic/cmds-reply.reply').stat().st_size
+# Filled from the required --known-hosts: each install regenerates the board's
+# SSH host keys, so the pin belongs to an install record, not to this file.
+SSH=[]
+def ssh_argv(known):
+    return ['ssh','-F','/dev/null','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',
+            '-o','UserKnownHostsFile='+str(known),'-o','ConnectTimeout=5',
+            '-o','ServerAliveInterval=2','-o','ServerAliveCountMax=2','root@192.168.4.1']
 UNITS=['h713-hdmi-'+name+'.service' for name in
        ('prepare','capture','signal','ring','video','speaker','health-ack','readvertise')]
 
@@ -74,12 +78,16 @@ def startup_evidence(row):
     healthy(row)
     journal=row['journal']
     checks=[json.loads(line.split('MIPS IPC completion ',1)[1]) for line in journal.splitlines() if 'MIPS IPC completion ' in line]
-    need(len(checks)==5,'expected exactly five startup IPC completions')
+    # A fresh guarded start (h713-hdmi-session.py start) checks IPC after
+    # receiver clock stages 1-3 and once more after stage 4: four `cmds` probes
+    # (2026-11-15), each returning the pinned reply.
+    need(len(checks)==4,'expected exactly four startup IPC completions')
     for check in checks:
         need(check.get('schema')=='h713-mips-ipc-v1' and check.get('complete') is True
-             and check.get('command')=='help win' and check.get('reply_bytes')==66
+             and check.get('command')=='cmds' and check.get('reply_bytes')==CMDS_REPLY_BYTES
              and 0<=check.get('elapsed_seconds',-1)<1.5,'invalid IPC completion')
-    need('"already_ready": true' in journal,'capture did not adopt prepared backend')
+    # The start runs once, in prepare; capture's start is a no-op (2026-11-10).
+    need('{"phase": "ready", "already_ready": false}' in journal,'prepare did not complete a fresh guarded start')
     acknowledgements=[]
     for line in journal.splitlines():
         if '{' not in line:continue
@@ -150,7 +158,7 @@ def read_remote(script,path):
 
 def collect(directory,audit,expected=None,previous=None):
     identity=read_remote(audit,directory/'identity.json')
-    need(identity.get('status','').startswith('PASS'),'73-file/runtime audit failed')
+    need(identity.get('status','').startswith('PASS'),'runtime identity audit failed: '+str(identity.get('error')))
     row=read_remote(REMOTE+f'\nprint(json.dumps(gather({previous!r})))\n',directory/'initial.json')
     need(row['boot_id']==identity['boot_id'],'boot changed across collection')
     if expected:need(row['boot_id']==expected,'unexpected boot ID')
@@ -174,7 +182,11 @@ def main():
     parser.add_argument('--root',type=Path,required=True);parser.add_argument('--label',required=True)
     parser.add_argument('--from-boot',required=True);parser.add_argument('--audit',type=Path,required=True)
     parser.add_argument('--previous-boot',help='For read-only continuation after a reboot transport disconnect')
+    parser.add_argument('--known-hosts',type=Path,required=True,
+                        help='pinned board host key from the current install record (UART-verified)')
     args=parser.parse_args()
+    need(args.known_hosts.is_file() and 'ssh-ed25519' in args.known_hosts.read_text(),'pinned known_hosts missing or empty')
+    SSH[:]=ssh_argv(args.known_hosts.resolve())
     need(re.fullmatch(r'[a-z0-9-]+',args.label),'invalid run label')
     need(re.fullmatch(r'[0-9a-f-]{36}',args.from_boot),'invalid expected boot ID')
     if args.previous_boot:need(re.fullmatch(r'[0-9a-f-]{36}',args.previous_boot),'invalid preceding boot ID')

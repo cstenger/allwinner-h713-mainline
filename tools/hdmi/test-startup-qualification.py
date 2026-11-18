@@ -22,10 +22,10 @@ def fixture():
                    'ExecMainExitTimestampMonotonic':'14000000',
                    'ActiveEnterTimestampMonotonic':'14500000'} for name in q.UNITS}
     services['user@1000.service']={'ExecMainStartTimestampMonotonic':'8500000','ActiveEnterTimestampMonotonic':'12000000'}
-    ipc={'schema':'h713-mips-ipc-v1','complete':True,'command':'help win','reply_bytes':66,'elapsed_seconds':0.43}
+    ipc={'schema':'h713-mips-ipc-v1','complete':True,'command':'cmds','reply_bytes':q.CMDS_REPLY_BYTES,'elapsed_seconds':0.25}
     ack={'boot_id':'B1','gp6_after':'48444f4b','gp7':'00000000'}
-    journal='\n'.join('MIPS IPC completion '+json.dumps(ipc) for _ in range(5))
-    journal+='\n'+json.dumps(ack)+'\n{"already_ready": true}'
+    journal='\n'.join('MIPS IPC completion '+json.dumps(ipc) for _ in range(4))
+    journal+='\n{"phase": "ready", "already_ready": false}\n'+json.dumps(ack)
     return {'boot_id':'B1','uptime':100,'frames':10000,'services':services,
             'errors':{'rejected':0,'xruns':0,'bad_guard':0,'invalid_pair':0},
             'signal':'locked 1280x720','capture_pcm':'state: RUNNING','playback_pcm':'state: RUNNING',
@@ -52,7 +52,9 @@ class Evidence(unittest.TestCase):
             return {'status':'PASS fixture','boot_id':old} if path.name=='before-identity.json' else before
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);audit=root/'audit.py';audit.write_text('# never executed fixture')
-            argv=['qualification','warm','--root',directory,'--label','warm-01','--from-boot',old,'--audit',str(audit)]
+            known=root/'known_hosts';known.write_text('192.168.4.1 ssh-ed25519 AAAAfixture\n')
+            argv=['qualification','warm','--root',directory,'--label','warm-01','--from-boot',old,'--audit',str(audit),
+                  '--known-hosts',str(known)]
             with patch('sys.argv',argv),patch.object(q,'remote',remote),patch.object(q,'read_remote',read),patch.object(q,'collect',return_value={'status':'PASS'}) as collect,contextlib.redirect_stdout(io.StringIO()):
                 q.main()
                 collect.assert_called_once()
@@ -90,11 +92,13 @@ class Evidence(unittest.TestCase):
             else:changed=changed[:2]
             with self.subTest(mutation=mutation),self.assertRaises(RuntimeError):q.stable(changed)
     def test_missing_ipc_ack_adoption_overlap_or_health_refuses(self):
-        for mutation in ('ipc','ack','adoption','overlap','pcm','failed','service'):
+        for mutation in ('ipc','count','command','ack','adoption','overlap','pcm','failed','service'):
             row=fixture()
             if mutation=='ipc':row['journal']=row['journal'].replace('"complete": true','"complete": false',1)
+            elif mutation=='count':row['journal']=row['journal'].replace('MIPS IPC completion ','',1)
+            elif mutation=='command':row['journal']=row['journal'].replace('"cmds"','"help win"',1)
             elif mutation=='ack':row['journal']=row['journal'].replace('48444f4b','00000000')
-            elif mutation=='adoption':row['journal']=row['journal'].replace('"already_ready": true','"already_ready": false')
+            elif mutation=='adoption':row['journal']=row['journal'].replace('"already_ready": false','"already_ready": true')
             elif mutation=='overlap':row['services']['user@1000.service']['ActiveEnterTimestampMonotonic']='7000000'
             elif mutation=='pcm':row['capture_pcm']='state: XRUN'
             elif mutation=='failed':row['failed_units']='unexpected.service failed'

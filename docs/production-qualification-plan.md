@@ -77,6 +77,18 @@ before first boot and file/package/configuration identity afterward.
 
 ## Acceptance gates
 
+Lifecycle evidence uses `tools/hdmi/startup-qualification.py` (`collect` for
+an observed boot, `warm` for one guarded reboot). Generate its `--audit` from
+the installed candidate and packet, never from the board:
+
+```sh
+python3 tools/release/make-runtime-audit.py --candidate <sealed candidate> \
+  --packet <installation packet> --output <new audit.py>
+```
+
+Pass `--known-hosts` with the host key read over UART after that install;
+each install regenerates the board's keys.
+
 - UART boot chain identifies the candidate; no new storage/kernel errors;
   four CPUs, matching loaded modules, Wi-Fi/hotspot, Bluetooth and SSH work.
   Verify newly generated SSH host-key fingerprints through UART.
