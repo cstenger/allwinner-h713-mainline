@@ -21,7 +21,7 @@ def decode(path):
     meta = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(path)]))
     frames = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'frame=best_effort_timestamp_time', '-of', 'json', str(path)]))
     t = np.array([float(f['best_effort_timestamp_time']) for f in frames['frames']])
-    v = np.frombuffer(subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:v:0', '-vf', 'crop=200:200:860:440,scale=1:1', '-pix_fmt', 'gray', '-f', 'rawvideo', '-']), dtype=np.uint8).astype(float)
+    v = np.frombuffer(subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:v:0', '-fps_mode', 'passthrough', '-vf', 'crop=200:200:(iw-200)/2:(ih-200)/2,scale=1:1', '-pix_fmt', 'gray', '-f', 'rawvideo', '-']), dtype=np.uint8).astype(float)
     audio = np.frombuffer(subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:a:0', '-ac', '1', '-ar', str(RATE), '-f', 'f32le', '-']), dtype='<f4')
     assert len(t) == len(v) and np.all(np.diff(t) > 0)
     # 40 ms lock-in window at the slowed 1 kHz tone, centred every 5 ms.
@@ -47,10 +47,14 @@ def measure(t, v, at, e, start, end, video_fraction=.5, audio_fraction=.5):
         slope, intercept = np.polyfit(source, flashes, 1)
         fits.append((float(np.max(abs(flashes-(source*slope+intercept)))), slope, phase))
     residual, fitted_slow, phase = min(fits)
-    assert abs(fitted_slow-SLOW) < .1 and residual < .2, (fitted_slow, residual)
+    # Export-time limits were tuned at 8x; scale them so they mean the same
+    # real time at any retime (identical at 8x). The residual keeps a floor of
+    # 1.5 video frames, the quantisation of a normal-speed 30 fps recording.
+    scale = SLOW/8
+    assert abs(fitted_slow-SLOW) < .1*max(scale, .5) and residual < max(.2*scale, 1.5/30), (fitted_slow, residual)
     pairs = []
     for i, flash in zip(vi, flashes):
-        region = np.flatnonzero(abs(at-flash) < .8)
+        region = np.flatnonzero(abs(at-flash) < .8*scale)
         local = e[region]
         floor = float(np.percentile(local, 20))
         peak = float(np.max(local))
@@ -58,7 +62,7 @@ def measure(t, v, at, e, start, end, video_fraction=.5, audio_fraction=.5):
         crossing = region[1:][(local[1:] >= threshold) & (local[:-1] < threshold)]
         assert len(crossing) >= 1, (flash, len(crossing))
         # Envelope may recross on the trailing echo of the same 0.4 s beep.
-        assert at[crossing[-1]]-at[crossing[0]] < .65, (flash, at[crossing])
+        assert at[crossing[-1]]-at[crossing[0]] < .65*scale, (flash, at[crossing])
         j = crossing[0]
         beep = at[j-1]+(at[j]-at[j-1])*(threshold-e[j-1])/(e[j]-e[j-1])
         pairs.append({'flash_frame': int(i), 'flash_midpoint_export_sec': float(flash),
@@ -75,11 +79,34 @@ def measure(t, v, at, e, start, end, video_fraction=.5, audio_fraction=.5):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--only', choices=('baseline', 'test', 'test2'))
+    # A later 8x slow-motion recording, analysed by the same method: its file,
+    # the export-time window that excludes the normal-speed/ramp ends, a name
+    # for the outputs and a directory for them (the 2026-10-27 set by default).
+    parser.add_argument('--file', type=Path)
+    parser.add_argument('--start', type=float)
+    parser.add_argument('--end', type=float)
+    parser.add_argument('--name')
+    parser.add_argument('--out', type=Path)
+    # Slow-motion retime of that recording (8 for the 240 fps 2026-10-27 set;
+    # 4 for a 120 fps capture; 1 for normal-speed video, whose audio is not
+    # time-stretched). Scales time and the tone detector; the cadence fit must
+    # still confirm it independently.
+    parser.add_argument('--slow', type=int, default=8, choices=(1, 2, 4, 8))
     args = parser.parse_args()
-    for name, start, end in [('baseline', 4, 46), ('test', 8, 111), ('test2', 8, 134)]:
+    global OUTPUT, SLOW
+    if args.slow != 8 and not args.file:
+        parser.error('--slow applies to a --file recording')
+    SLOW = args.slow
+    runs = [('baseline', 4, 46), ('test', 8, 111), ('test2', 8, 134)]
+    if args.file:
+        if None in (args.start, args.end, args.name, args.out) or args.only:
+            parser.error('--file needs --start, --end, --name and --out, and not --only')
+        runs, OUTPUT = [(args.name, args.start, args.end)], args.out
+        OUTPUT.mkdir(parents=True, exist_ok=True)
+    for name, start, end in runs:
         if args.only and name != args.only:
             continue
-        path = Path('local/lcd-photos/test_111')/(name+'.mov')
+        path = args.file if args.file else Path('local/lcd-photos/test_111')/(name+'.mov')
         meta, t, v, at, envelope = decode(path)
         result = measure(t, v, at, envelope, start, end)
         sensitivity = []

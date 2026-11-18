@@ -235,6 +235,11 @@ pending; nothing here marks the release qualified.
       59 fps, 0 rejected, 0 xruns, both PCMs RUNNING. Chris confirmed picture
       and sound after the wake. No power meter was available, so no power
       figure is claimed.
+20. **Speaker delay recalibrated to 0.115 s.** Normal-speed phone recordings
+    with a tap reference showed the speaker 70–80 ms ahead of the picture at
+    0.040 s; at 0.115 s the corrected offset is −5..+13 ms. Board file
+    changed with a backup; `config/hy200-ddr3-calibration.json` updated.
+    See [the recalibration record](../../hdmi-evidence/2026-11-18-avsync-recalibration/README.md).
 
 ## Rollback
 
@@ -246,8 +251,8 @@ a full rollback write has still never been rehearsed.
 
 Folding the readvertise and elog fixes (items 14 and 17) into a rebuilt
 candidate (the board now differs from `cb939748` by `h713-hdmi-readvertise.py`,
-`mips-shell.py`, the elog unit and the bundle manifest); speaker delay
-measurement; decoder/playback, keys, mirror/keystone. Private
+`mips-shell.py`, the elog unit, the bundle manifest and the 0.115 s speaker
+delay); decoder/playback, keys, mirror/keystone. Private
 receipts, transcripts and the packet:
 `local/recovery/2026-11-17-deployment-packet/` and
 `local/releases/h713-ddr3-installation-packet-20261117b/`.

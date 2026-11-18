@@ -109,7 +109,7 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'calibration.json'
             data=json.loads((b.ROOT/'config/hy200-ddr3-calibration.json').read_text())
-            path.write_text(json.dumps(data));self.assertEqual(b.calibration(path)['hdmi_audio_delay_seconds'],'0.040')
+            path.write_text(json.dumps(data));self.assertEqual(b.calibration(path)['hdmi_audio_delay_seconds'],data['hdmi_audio_delay_seconds'])
             for value in ['0.04; reboot', '-1', '2', 'NaN', '0\n1']:
                 data['hdmi_audio_delay_seconds']=value;path.write_text(json.dumps(data))
                 with self.subTest(value=value),self.assertRaises(ValueError):b.calibration(path)
@@ -139,7 +139,8 @@ class ReleaseTests(unittest.TestCase):
                              (out/'usr/lib/h713-hdmi/h713-hdmi-prepare.service').read_bytes())
             self.assertIn('Requires=h713-hdmi-prepare.service',
                           (units/'h713-hdmi-capture.service').read_text())
-            self.assertIn('H713_HDMI_AUDIO_DELAY_SEC=0.040',(out/'etc/default/h713-hdmi-speaker').read_text())
+            delay=json.loads((b.ROOT/'config/hy200-ddr3-calibration.json').read_text())['hdmi_audio_delay_seconds']
+            self.assertIn('H713_HDMI_AUDIO_DELAY_SEC='+delay+'\n',(out/'etc/default/h713-hdmi-speaker').read_text())
             self.assertFalse((out/'usr/lib/h713-hdmi-speaker/hdmi-speaker.c').exists())
             self.assertIn('== 4d2',(out/'usr/lib/h713-hdmi/h713-hdmi.cmd').read_text())
 
