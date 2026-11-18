@@ -107,26 +107,20 @@ class Readvertise(unittest.TestCase):
                 self.closed = True
         return FakePower()
 
-    def test_known_absent_never_pulses(self):
-        power = self.power(lambda now: False)
-        m.main(clock=lambda: self.now, sleep=self.sleep, polls=400, power=power)
-        self.assertEqual(self.requests, [])
-        self.assertTrue(power.closed)
-
-    def test_reconnect_starts_a_full_wait(self):
-        power = self.power(lambda now: now >= 100)
-        m.main(clock=lambda: self.now, sleep=self.sleep, polls=200, power=power)
-        self.assertEqual([t for t, _ in self.requests], [110, 130, 170])
-
-    def test_disconnect_resets_an_exhausted_schedule(self):
-        power = self.power(lambda now: not 320 <= now < 400)
-        m.main(clock=lambda: self.now, sleep=self.sleep, polls=440, power=power)
-        self.assertEqual([t for t, _ in self.requests], [10, 30, 70, 150, 310, 410, 430])
-
-    def test_unknown_after_absent_preserves_timeout_fallback(self):
-        power = self.power(lambda now: False if now < 100 else None)
-        m.main(clock=lambda: self.now, sleep=self.sleep, polls=180, power=power)
-        self.assertEqual([t for t, _ in self.requests], [109, 129, 169])
+    # The firmware "+5V" flag follows link activity (present only after lock):
+    # it is logged but never gates, holds or restarts the schedule (2026-11-18).
+    def test_power_flag_never_changes_the_schedule(self):
+        for name, sample in (('absent', lambda now: False),
+                             ('returns at 100 s', lambda now: now >= 100),
+                             ('absent window', lambda now: not 320 <= now < 400),
+                             ('absent then unknown', lambda now: False if now < 100 else None)):
+            with self.subTest(power=name):
+                self.now, self.requests = 0.0, []
+                power = self.power(sample)
+                with redirect_stdout(io.StringIO()):
+                    m.main(clock=lambda: self.now, sleep=self.sleep, polls=440, power=power)
+                self.assertEqual([t for t, _ in self.requests], [10, 30, 70, 150, 310])
+                self.assertTrue(power.closed)
 
     def test_reconnect_does_not_pulse_acquiring_video(self):
         m.SIGNAL.write_text('acquiring\n')
@@ -134,11 +128,12 @@ class Readvertise(unittest.TestCase):
         m.main(clock=lambda: self.now, sleep=self.sleep, polls=400, power=power)
         self.assertEqual(self.requests, [])
 
-    def test_absent_at_final_recheck_prevents_request(self):
+    def test_absent_at_final_recheck_does_not_block_the_request(self):
         reads = [True] * 11 + [False] * 100
         power = self.power(lambda now: reads.pop(0))
-        m.main(clock=lambda: self.now, sleep=self.sleep, polls=40, power=power)
-        self.assertEqual(self.requests, [])
+        with redirect_stdout(io.StringIO()):
+            m.main(clock=lambda: self.now, sleep=self.sleep, polls=40, power=power)
+        self.assertEqual([t for t, _ in self.requests], [10, 30])
 
     def test_native_empty_event_queue_keeps_power_status_available(self):
         for empty_errno in (errno.ENOENT, errno.EAGAIN):

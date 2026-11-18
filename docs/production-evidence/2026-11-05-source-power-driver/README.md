@@ -1,5 +1,13 @@
 # Read-only HDMI source-power control and event-aware retry
 
+> **Superseded 2026-11-18:** the "known absence suppresses HPD pulses" rule
+> below is retired. The firmware cache follows link activity, not the +5V pin
+> (it reads present only after lock), and gating on "absent" deadlocked a
+> physical reconnect. The control is still exposed and logged but no longer
+> gates re-advertising. See
+> [the 2026-11-17 installation record](../2026-11-17-candidate-installation/README.md),
+> items 13–15.
+
 The user authorized adding V4L2 source-power reporting and later extended the
 scope to updating retry policy. The module and retry script are installed on
 disk with durable four-file backup and exact manifest/readback checks. The

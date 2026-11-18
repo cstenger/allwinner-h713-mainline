@@ -30,7 +30,7 @@ DIAGNOSTIC_DDC_ONLY = False
 DIAGNOSTIC_HPD_ONLY = False
 # Owners with hpd_pulse (hpd-pulse-v1) re-advertise with an HDMI-spec HPD low
 # pulse of PULSE_MS, DDC left enabled, instead of the 2 s HPD+DDC hold. A
-# fresh source (board start, or source power returning) gets a first step of
+# fresh source (board start) gets a first step of
 # PULSE_FIRST s: on 9 boots whose first advertisement worked, video started
 # 1.31-1.37 s after the owner was ready. A source that was streaming and went
 # away keeps the original 10 s first step, so a long source modeset is not
@@ -289,18 +289,14 @@ def run(power, clock, sleep, polls):
         if polls is not None:
             polls -= 1
         state = read(SIGNAL).split(' ')[0]
+        # Logged as evidence only, never a gate. The firmware's "+5V" cache
+        # follows link activity, not the +5V pin: it reads present only after
+        # lock (2026-11-05 and 2026-11-18). Gating on "absent" deadlocked a
+        # physical reconnect: no HPD edge, so no link, so never "present".
         present = power.read()
         if present != previous_power:
-            print('source power: ' + {None: 'unknown; timeout fallback', False: 'absent', True: 'present'}[present], flush=True)
-            if present is True and previous_power is False:
-                since, attempt, schedule = clock(), 0, fresh
-                events, watch = 0, None
-                if event:  # the returning source's first read must be judged on its own
-                    ddc_activity('source_power_returned', clock, rearm=True)
+            print('source power: ' + {None: 'unknown', False: 'absent', True: 'present'}[present], flush=True)
             previous_power = present
-        if present is False:
-            # Never request HPD for a known disconnected/unpowered source.
-            since, attempt = clock(), 0
         if state == '':
             pass  # unreadable: act on nothing
         elif state != 'none':
@@ -315,14 +311,15 @@ def run(power, clock, sleep, polls):
                 events, watch = 0, None
                 if event:  # forget the old good read so a failed return read is seen
                     ddc_activity('source_lost', clock, rearm=True)
-            if event and present is not False and events < EVENT_MAX and owner_ready() and \
+            if event and events < EVENT_MAX and owner_ready() and \
                     (clock() - since >= EVENT_GAP or (attempt == 0 and events == 0)):
                 c = ddc_counters()
                 if c and c['act'] and c['busy'] < FAILED_READ_BUSY:
                     if watch is None or watch[0] != c['last']:
                         watch = (c['last'], clock())
                     elif clock() - watch[1] >= FAILED_READ_QUIET:
-                        if read(SIGNAL).split(' ')[0] != 'none' or power.read() is False or not owner_ready():
+                        # A failed EDID read is itself proof of an attached, powered source.
+                        if read(SIGNAL).split(' ')[0] != 'none' or not owner_ready():
                             power.wait(EVENT_POLL, sleep)
                             continue
                         events, attempt, watch = events + 1, max(attempt, 1), None
@@ -339,10 +336,11 @@ def run(power, clock, sleep, polls):
                         continue
                 else:
                     watch = None
-            if present is not False and attempt < len(schedule) and clock() - since >= schedule[attempt] and owner_ready():
+            if attempt < len(schedule) and clock() - since >= schedule[attempt] and owner_ready():
                 # Close the sample-to-request window as far as possible;
                 # preserve the owner gate and refuse to pulse any active state.
-                if read(SIGNAL).split(' ')[0] != 'none' or power.read() is False or not owner_ready():
+                # With no cable a pulse reaches nobody; the schedule is bounded.
+                if read(SIGNAL).split(' ')[0] != 'none' or not owner_ready():
                     power.wait(step, sleep)
                     continue
                 attempt += 1

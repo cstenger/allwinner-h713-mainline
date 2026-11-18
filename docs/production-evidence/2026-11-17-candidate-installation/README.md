@@ -103,6 +103,56 @@ pending; nothing here marks the release qualified.
     their start times with 0 restarts. The `recovery` analyzer was not run, as
     no samples cover the loss. Chris confirmed picture and sound after the
     PC reboot.
+13. **HDMI physical reconnect: FAIL (needed a manual HPD pulse).** Board
+    boot `5395fbf9`, detached observer running. Chris unplugged HDMI at the
+    board for about 30 s and plugged it back in; the panel fell back to the
+    Linux console and stayed there.
+    - 17176.6 s `source power: absent`, 17178.3 s `signal none`, video unit
+      stopped as designed. After that: no `source power: present`, no HPD
+      pulse, no re-advert. The PC reported `card1-HDMI-A-1 disconnected`
+      with no EDID. Re-seating without unplugging changed nothing.
+    - Read-only firmware state: port 1 polling enabled (`+0x51a` = 1), the
+      +5V cache byte `+0x532` = 0, port state 0x3, no timing.
+    - The SCP DDC scan (re-armed at the loss) shows link byte `0x06840096`
+      back from `0x03` to `0x33` (its locked value) at about 17208 s, and
+      the firmware port's timing tick reads 17,207,984 ms: the replug was
+      physically detected, but the firmware's +5V cache stayed 0.
+    - With Chris's approval, one 150 ms HPD pulse (the readvertise request)
+      at 17817.80 s: acquiring at 17818.80 s, `locked 1280x720 (source
+      change)` at 17819.00 s, `source power: present` at 17819.37 s; PC
+      `connected` within 3 s. Owner units kept their start times with 0
+      restarts; startup check PASS.
+    - **Diagnosis:** the firmware "+5V" cache follows link activity (it
+      turned present 0.37 s *after* lock, as on 2026-11-05), not the +5V pin.
+      After an unplug the board's HPD stays low, the PC needs an HPD edge to
+      drive the link, the cache needs a live link to read present, and
+      `h713-hdmi-readvertise.py` suppresses every pulse while the cache says
+      absent. On 2026-11-05 the source drove the link first, so the loop did
+      not form. Without intervention the board stays without input
+      indefinitely.
+14. **Fix: the +5V flag no longer gates re-advertising.** As Chris pointed
+    out, `hpd-event-v1` already watches DDC for a failed EDID read, and the
+    scan above held one (38 toggling passes, under the 120 threshold); its
+    pulse was blocked by the same `present is not False` gate. The flag adds
+    nothing over the signal state, so `h713-hdmi-readvertise.py` now logs it
+    but never gates, holds or restarts on it (the timed schedule stays
+    bounded at 5 pulses). New tests replay the field case (failed read while
+    the flag reads absent → one immediate pulse) and fail against the old
+    script; an older test that re-entered `setUp()` could not fail and was
+    replaced. Installed with `tools/hdmi/install-readvertise-ungated.py`
+    (script `c05ddb37…` → `31aa3177…`, manifest `2ae3b26e…` → `f937bd39…`,
+    readback and backup; `/var/lib/h713-hdmi-startup` had to be created on
+    the fresh image). The board now differs from the `cb939748` candidate by
+    this script. Ordinary reboot to boot `b5c5a18d`: healthy, new script live.
+15. **HDMI reconnect rerun: PASS.** Unplug at 130.55 s; timed pulses at
+    140.63 s (empty port) and 160.87 s; at 162.66 s `failed EDID read (busy
+    2 passes)` → event pulse; `locked 1280x720` at 164.70 s, with no manual
+    step. `regression-observer.py recovery` PASS (30 samples, zero errors,
+    same board boot); owner units 0 restarts, startup check PASS, PC
+    `connected`, Chris saw the picture return. Caveat: the +5V flag did not
+    go absent on this unplug (no `source power absent` logged), so this run
+    shows automatic recovery but does not itself reproduce the stale-absent
+    deadlock; the replay unit test covers that case.
 
 ## Rollback
 
@@ -112,9 +162,9 @@ a full rollback write has still never been rehearsed.
 
 ## Not yet covered
 
-Speaker delay measurement; the rest of the lifecycle regression (abrupt
-reset, no-source boot, physical reconnect), standby thermal from the
-completion checklist; decoder/playback, keys, mirror/keystone. Private
+Folding the readvertise fix (item 14) into a rebuilt candidate; speaker
+delay measurement; the rest of the lifecycle regression (abrupt reset, no-source
+boot), standby thermal from the completion checklist; decoder/playback, keys, mirror/keystone. Private
 receipts, transcripts and the packet:
 `local/recovery/2026-11-17-deployment-packet/` and
 `local/releases/h713-ddr3-installation-packet-20261117b/`.

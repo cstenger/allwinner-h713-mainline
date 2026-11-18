@@ -108,26 +108,36 @@ class Pulse(unittest.TestCase):
         self.assertLess(self.pulses[0][0], 60.3)
         self.assertAlmostEqual(self.pulses[1][0] - self.pulses[0][0], m.SCHEDULE[1], delta=0.5)
 
-    def test_returning_source_power_restarts_the_fresh_schedule(self):
+    # The firmware "+5V" flag follows link activity (present only after lock),
+    # so it is logged but never gates or restarts anything (2026-11-18).
+    def unanswered_times(self, seconds):
         self.respond = False
-        self.power.value = False
-        self.power_script = {30: True}
-        self.run_for(50)
-        self.assertEqual(len(self.pulses), 2)
-        self.assertGreaterEqual(self.pulses[0][0], 30 + m.PULSE_FIRST)
-        self.assertLess(self.pulses[0][0], 30 + m.PULSE_FIRST + 0.3)
-        self.assertAlmostEqual(self.pulses[1][0] - self.pulses[0][0], m.SCHEDULE[0], delta=0.5)
+        self.run_for(seconds)
+        return [t for t, _ in self.pulses]
 
-    def test_absent_power_or_failed_owner_is_never_pulsed(self):
-        for case in ('absent', 'failed'):
-            with self.subTest(case=case):
-                self.setUp()
-                if case == 'absent':
-                    self.power.value = False
-                else:
-                    (self.params / 'failed').write_text('Y')
-                self.run_for(60)
-                self.assertEqual(self.pulses, [])
+    def test_stale_absent_power_still_follows_the_bounded_schedule(self):
+        self.power.value = False
+        times = self.unanswered_times(1000)
+        steps = [round(b - a) for a, b in zip([0.0] + times, times)]
+        self.assertEqual(steps, [m.PULSE_FIRST] + list(m.SCHEDULE))   # bounded: then it stops
+
+    def test_power_flag_changes_never_move_the_schedule(self):
+        self.power.value = False
+        self.power_script = {30: True, 60: False, 90: None}
+        times = self.unanswered_times(400)
+        steps = [round(b - a) for a, b in zip([0.0] + times, times)]
+        self.assertEqual(steps, [m.PULSE_FIRST] + list(m.SCHEDULE))
+
+    def test_failed_owner_is_never_pulsed(self):
+        (self.params / 'failed').write_text('Y')
+        self.run_for(60)
+        self.assertEqual(self.pulses, [])
+
+    def test_a_locked_source_is_never_pulsed_whatever_the_power_flag(self):
+        self.signal.write_text('locked 1280x720')
+        self.power.value = False
+        self.run_for(400)
+        self.assertEqual(self.pulses, [])
 
     def test_refused_pulse_stops_the_service_like_a_refused_readvertise(self):
         self.refuse = True
@@ -281,11 +291,22 @@ class Event(Pulse):
         self.assertGreaterEqual(self.pulses[0][0], 6.0 + m.FAILED_READ_QUIET)
         self.assertLess(self.pulses[0][0], 6.5)          # not the 10 s lost-source step
 
-    def test_returning_power_rearms_the_watch(self):
-        self.power.value = False
-        self.power_script = {3: True}
-        out = self.run_events(4)
-        self.assertIn('"phase": "source_power_returned"', out)
+    def test_reconnect_failed_read_pulses_although_power_reads_absent(self):
+        # 2026-11-18 field case: unplug drops the link and the firmware flag
+        # reads absent; on replug the source's EDID read fails while the flag
+        # still reads absent (it only turns present after lock).
+        self.signal.write_text('locked 1280x720')
+        self.scan.write_text(GOOD)
+        self.power.value = True
+        self.respond = False
+        self.script = {5: 'none'}
+        self.power_script = {5: False}
+        self.ddc = {25.0: FAILED}
+        out = self.run_events(30)
+        self.assertIn('source power: absent', out)
+        event = [t for t, _ in self.pulses if 25.0 + m.FAILED_READ_QUIET <= t < 25.5]
+        self.assertEqual(len(event), 1, self.pulses)
+        self.assertIn('failed EDID read (busy 46 passes)', out)
 
     def test_owner_without_the_event_version_keeps_the_timer(self):
         (self.params.parent / 'version').write_text('hpd-pulse-v1\n')
