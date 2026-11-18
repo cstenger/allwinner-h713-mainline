@@ -82,6 +82,27 @@ pending; nothing here marks the release qualified.
     93-file audit PASS each time, no re-adverts, 59.7 fps throughout; the
     AIC8800 `bus err` seen on the cold boot did not recur. Chris confirmed
     picture and sound on the final boot (`5395fbf9`).
+11. **Endurance (4 h continuous input):** `regression-observer.py watch` ran
+    on the board as a detached transient unit from board uptime 418 s to its
+    4-hour bound (2778 samples, 5 s apart, boot `5395fbf9`). `soak` PASS for
+    7200 s and for the whole 14,397 s: locked 1280x720 throughout, at least
+    50 frames/s, zero rejected/xrun/guard/AFBD errors, no service restarts or
+    start changes, no re-adverts.
+12. **Source PC reboot, board left on:** Chris rebooted the source PC once
+    (host boot `923cdb9b` → `c83a49fd`); board boot stayed `5395fbf9`. The
+    reboot fell ~15 min after the observer's 4-hour bound, so the 5 s
+    samples do not span it; the board journal does. Source lost at 15729.07 s;
+    after 10 s without a source the readvertise path pulsed HPD for 150 ms
+    (1 of 5); source seen at 15750.22 s and `signal locked 1280x720 (source
+    change)` at 15750.38 s, 0.16 s after it returned (the 21.3 s gap is the
+    PC's own shutdown and boot). No further pulses were needed after the host
+    boot. Afterwards: 59.7 fps, zero errors, startup check PASS, no failed
+    units, ext4 errors 0. Only `h713-hdmi-video.service` has a new start time,
+    by design (bound to the bridge device; udev stops it on loss and starts it
+    on lock); capture, signal, ring, speaker, health-ack and readvertise kept
+    their start times with 0 restarts. The `recovery` analyzer was not run, as
+    no samples cover the loss. Chris confirmed picture and sound after the
+    PC reboot.
 
 ## Rollback
 
@@ -92,9 +113,8 @@ a full rollback write has still never been rehearsed.
 ## Not yet covered
 
 Speaker delay measurement; the rest of the lifecycle regression (abrupt
-reset, source PC reboot while the board stays on, no-source boot, physical
-reconnect), standby thermal and two-hour endurance from the completion
-checklist; decoder/playback, keys, mirror/keystone. Private
+reset, no-source boot, physical reconnect), standby thermal from the
+completion checklist; decoder/playback, keys, mirror/keystone. Private
 receipts, transcripts and the packet:
 `local/recovery/2026-11-17-deployment-packet/` and
 `local/releases/h713-ddr3-installation-packet-20261117b/`.
