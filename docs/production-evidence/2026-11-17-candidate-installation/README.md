@@ -54,6 +54,15 @@ pending; nothing here marks the release qualified.
    environment from `0x93d80000` and booted Linux; the same health checks pass.
 8. **HDMI:** Chris confirmed HDMI picture and sound on the projector on that
    boot (`24bb4c30`), with no intervention or service restart.
+9. **Cold boot:** clean `systemctl poweroff` from `24bb4c30` (previous-boot
+   journal ends in an ordinary systemd shutdown), serial and USB unplugged,
+   power off at least one minute. Boot `6a4a8b2f`: Chris saw the picture; system
+   running, no failed units, ext4 errors 0, startup check PASS, CPU_COMM IRQ,
+   Bluetooth up. All eight HDMI units active/success with 0 restarts; video
+   active at 9.67 s monotonic (11.6 s on 2026-11-09). `systemd-analyze`:
+   2.258 s kernel + 9.101 s userspace = 11.360 s. One kernel error not seen on
+   the earlier boots: AIC8800 `sdio_err ... bus err` during Wi-Fi bring-up;
+   Wi-Fi came up and carried SSH.
 
 ## Rollback
 
@@ -63,7 +72,7 @@ a full rollback write has still never been rehearsed.
 
 ## Not yet covered
 
-Speaker delay measurement; a physical cold boot;
+Speaker delay measurement;
 the lifecycle regression, standby thermal and two-hour endurance from the
 completion checklist; decoder/playback, keys, mirror/keystone. Private
 receipts, transcripts and the packet:
