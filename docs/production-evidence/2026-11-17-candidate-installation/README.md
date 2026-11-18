@@ -199,6 +199,21 @@ pending; nothing here marks the release qualified.
       1213.76 s, 1.0 s after lock, and exited successfully. System `running`,
       owner units 0 restarts, startup check PASS, PC `connected`, picture
       confirmed.
+18. **Abrupt reset: PASS.** The established synced SysRq-b
+    (`2026-10-27-warm-shared-gp7-sysrq-clean`; its GP7 arm belonged to the
+    old experimental warm RAM launch and is not part of the production path).
+    Baseline on boot `74ef6805` with HDMI live: locked 720p, frames
+    advancing, zero errors, both PCMs RUNNING, startup check and manifest
+    PASS; a marker file written and synced. `sync; echo b >
+    /proc/sysrq-trigger` at 2026-11-18T09:49:35Z (uptime 1439.53 s); the old
+    journal ends mid-session with no shutdown entries. New boot `9b2557ee`:
+    ext4 `recovery complete`, errors 0, marker intact; `locked 1280x720` at
+    10.0 s; all 8 HDMI units active with 0 restarts; 4 IPC completions;
+    startup check and manifest PASS; CPU_COMM IRQ; elog verified in 1.7 s
+    (source present); 59 fps, 0 rejected, 0 xruns, both PCMs RUNNING; boot
+    11.648 s. `startup-qualification.py` was not used: its audit is pinned to
+    `cb939748` and the board differs by the item 14/17 fixes. Chris confirmed
+    picture and sound after the reset.
 
 ## Rollback
 
@@ -211,8 +226,7 @@ a full rollback write has still never been rehearsed.
 Folding the readvertise and elog fixes (items 14 and 17) into a rebuilt
 candidate (the board now differs from `cb939748` by `h713-hdmi-readvertise.py`,
 `mips-shell.py`, the elog unit and the bundle manifest); speaker delay
-measurement; the abrupt-reset lifecycle case and standby thermal from the
-completion checklist; decoder/playback, keys, mirror/keystone. Private
+measurement; standby thermal from the completion checklist; decoder/playback, keys, mirror/keystone. Private
 receipts, transcripts and the packet:
 `local/recovery/2026-11-17-deployment-packet/` and
 `local/releases/h713-ddr3-installation-packet-20261117b/`.
