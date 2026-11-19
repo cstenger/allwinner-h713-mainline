@@ -45,8 +45,13 @@ speaker, light, fan and IR attached. Nothing has been written to its eMMC.
   - A fresh FEL session without the button: write GP2 `0x5aa5a55a`, then
     reset with the watchdog (`0x02051010`/`14` = `0x16aa0001`, `0x0205100c`
     = `0x14af`).
-  - Still to do: `mtest` needs a proper built with `CMD_MEMTEST`. Free DRAM
-    under it is `0x40100000-0x7aec9fff`.
+  - `mtest 0x40100000 0x7ae00000 0 1` (alternate test with bit-flip, 939
+    MiB) ran on 2026-11-19: **1 iteration, 0 errors**, in 16 min. The
+    rescue proper is built with `CMD_MEMTEST` + `SYS_ALT_MEMTEST`.
+  - Phase 2 still needs reliable DRAM init across 5 or more cold boots, and
+    a long stress run (`memtester` in Phase 3).
+  - From the FEL U-Boot prompt, `mw.l 0x07090108 0x5aa5a55a; reset` gives
+    a fresh FEL session with no button.
 - The black panel under stock was a disconnected ribbon cable, now fixed.
 
 ## What we already know (offline, from the 2026-06-22 capture)
