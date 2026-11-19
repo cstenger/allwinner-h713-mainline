@@ -1,0 +1,104 @@
+From: H713 maintainers
+Subject: [PATCH] h713: SPL enters BROM FEL when the RTC marker asks
+
+Stock Android's "reboot efex" reaches FEL with no button: the vendor
+boot0 sees its RTC flag and branches to the BROM's FEL entry at 0x20
+(disassembled from the projector's boot0, 2026-11-18). Give our stack
+the same recovery path.
+
+Linux writes 0x0fe1b007 to RTC GP7 ("reboot fel" / "reboot efex", via
+the existing nvmem-reboot-mode cell). After the warm reset the BROM
+loads our SPL and runs its AArch32 boot0 hook at EL3. The hook now
+checks GP7 first: on a match it clears the marker and branches to 0x20,
+in the same state the BROM handed over, before the RMR switch to
+AArch64. A later reset boots normally.
+
+The check cannot live in the AArch64 SPL. return_to_fel() on H713 goes
+back by eret, which leaves the BROM at Secure EL1. FEL then still reads
+and writes memory, but the next SPL's RMR write faults, so no SPL can
+run in that session (confirmed on the projector 2026-11-18: a second
+"sunxi-fel spl" in one session hangs with no output).
+
+---
+diff --git a/arch/arm/include/asm/arch-sunxi/boot0.h b/arch/arm/include/asm/arch-sunxi/boot0.h
+index d79aea97..dd0d66ce 100644
+--- a/arch/arm/include/asm/arch-sunxi/boot0.h
++++ b/arch/arm/include/asm/arch-sunxi/boot0.h
+@@ -40,6 +40,28 @@
+ 	.word	0xe580e018	// str     lr, [r0, #24]
+ 	.word	0xee1ceffc	// mrc     15, 0, lr, cr12, cr12, {7}
+ 	.word	0xe580e01c	// str     lr, [r0, #28]
++#endif
++#if defined(CONFIG_H713_SPL_FEL_MARKER) && defined(CONFIG_XPL_BUILD)
++	/*
++	 * Still AArch32 at EL3, exactly as the BROM handed over: if Linux
++	 * asked for FEL ("reboot fel"/"reboot efex": RTC GP7 = 0x0fe1b007),
++	 * clear the marker and enter the BROM's FEL loop at 0x20, as the
++	 * stock boot0 does.  Must happen here: once in AArch64, FEL can only
++	 * be re-entered at EL1, where it cannot run another SPL.
++	 */
++	.word	0xe59f0024	// ldr     r0, [pc, #36] ; RTC GP7
++	.word	0xe5901000	// ldr     r1, [r0]
++	.word	0xe59f2020	// ldr     r2, [pc, #32] ; FEL marker
++	.word	0xe1510002	// cmp     r1, r2
++	.word	0x1a000007	// bne     past the literals
++	.word	0xe3a01000	// mov     r1, #0
++	.word	0xe5801000	// str     r1, [r0]      ; one shot
++	.word	0xf57ff04f	// dsb     sy
++	.word	0xf57ff06f	// isb     sy
++	.word	0xe3a00020	// mov     r0, #0x20     ; BROM FEL entry
++	.word	0xe12fff10	// bx      r0
++	.word	0x0709011c	// RTC GP7
++	.word	0x0fe1b007	// FEL marker
+ #endif
+ 	.word	0xe59f1034	// ldr     r1, [pc, #52] ; RVBAR_ADDRESS
+ 	.word	0xe59f0034	// ldr     r0, [pc, #52] ; SUNXI_SRAMC_BASE
+diff --git a/arch/arm/mach-sunxi/rmr_switch.S b/arch/arm/mach-sunxi/rmr_switch.S
+index a6d75c32..69d9df0f 100644
+--- a/arch/arm/mach-sunxi/rmr_switch.S
++++ b/arch/arm/mach-sunxi/rmr_switch.S
+@@ -66,6 +66,23 @@ start32:
+ 1:
+ //#endif
+ 
++#if defined(CONFIG_H713_SPL_FEL_MARKER) && defined(CONFIG_XPL_BUILD)
++	ldr	r0, 2f			// RTC GP7
++	ldr	r1, [r0]
++	ldr	r2, 3f			// FEL marker
++	cmp	r1, r2
++	bne	4f
++	mov	r1, #0			// one shot
++	str	r1, [r0]
++	dsb	sy
++	isb	sy
++	mov	r0, #0x20		// BROM FEL entry, as stock boot0
++	bx	r0
++2:	.word	0x0709011c
++3:	.word	0x0fe1b007
++4:
++#endif
++
+ 	ldr	r1, =CONFIG_SUNXI_RVBAR_ADDRESS
+ 	ldr	r0, =SUNXI_SRAMC_BASE
+ 	ldr	r0, [r0, #36]			// SRAM_VER_REG
+diff --git a/board/sunxi/Kconfig b/board/sunxi/Kconfig
+index 2c85c44b..ff5057cb 100644
+--- a/board/sunxi/Kconfig
++++ b/board/sunxi/Kconfig
+@@ -23,6 +23,16 @@ config SPL_IMAGE_TYPE
+ 	default "sunxi_egon" if SPL_IMAGE_TYPE_SUNXI_EGON
+ 	default "sunxi_toc0" if SPL_IMAGE_TYPE_SUNXI_TOC0
+ 
++config H713_SPL_FEL_MARKER
++	bool "H713: enter BROM FEL when the RTC marker asks for it"
++	depends on MACH_SUN50I_H713 && SPL
++	default y
++	help
++	  When RTC GP7 holds 0x0fe1b007 (written by Linux "reboot fel" or
++	  "reboot efex"), the SPL's AArch32 boot0 hook clears it and branches
++	  to the BROM's FEL entry, still at EL3, the same way the stock boot0
++	  handles "efex".  This gives a USB recovery path that needs no button.
++
+ config H713_VENDOR_CHAINLOAD
+ 	bool "H713: one-shot chainload of the vendor boot chain"
+ 	depends on MACH_SUN50I_H713

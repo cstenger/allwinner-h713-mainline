@@ -19,7 +19,8 @@ of_node and is phandle-referenceable with no driver change.
 
 nvmem-reboot-mode writes a per-mode magic to that cell: mode-fastboot
 (0xfa57b007) on "reboot fastboot", mode-bootloader (0xb007c0de) on "reboot
-bootloader"; a plain reboot writes nothing (the reboot-mode core skips a zero
+bootloader", mode-fel/mode-efex (0x0fe1b007) on "reboot fel" or "reboot
+efex"; a plain reboot writes nothing (the reboot-mode core skips a zero
 magic). U-Boot's preboot reads GP7, clears it on a match, and either runs
 fastboot or sets bootdelay -1 to fall through to its prompt. Clearing on consume
 plus an indeterminate-but-typically-zero cold-boot value keeps a stale magic
@@ -32,7 +33,7 @@ defconfig, and with a U-Boot preboot that dispatches on the two magics.
 
 --- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
 +++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
-@@ -30,6 +30,20 @@
+@@ -30,6 +30,24 @@
  		stdout-path = "serial0:115200n8";
  	};
  
@@ -40,7 +41,9 @@ defconfig, and with a U-Boot preboot that dispatches on the two magics.
 +	 * survives the warm PSCI/watchdog reset). `reboot fastboot` writes the
 +	 * fastboot magic and `reboot bootloader` the bootloader magic; U-Boot's
 +	 * preboot reads GP7 and, per magic, enters fastboot or drops to its
-+	 * prompt. Magics are unchanged on the U-Boot side. */
++	 * prompt. Magics are unchanged on the U-Boot side. `reboot fel` (or
++	 * the stock name, `reboot efex`) is answered by the SPL's AArch32
++	 * boot0 hook, which enters the BROM's FEL mode (U-Boot patch 0008). */
 +	reboot-mode {
 +		compatible = "nvmem-reboot-mode";
 +		nvmem-cells = <&reboot_mode_magic>;
@@ -48,12 +51,14 @@ defconfig, and with a U-Boot preboot that dispatches on the two magics.
 +		mode-fastboot = <0xfa57b007>;
 +		mode-bootloader = <0xb007c0de>;
 +		mode-vendor = <0x001db007>;
++		mode-fel = <0x0fe1b007>;
++		mode-efex = <0x0fe1b007>;
 +	};
 +
  	aliases {
  		serial0 = &uart0;
  		mmc0 = &mmc2;
-@@ -1169,6 +1182,15 @@
+@@ -1169,6 +1187,15 @@
  			interrupts = <GIC_SPI 147 IRQ_TYPE_LEVEL_HIGH>;
  			clock-output-names = "osc32k", "osc32k-out", "iosc";
  			#clock-cells = <1>;
