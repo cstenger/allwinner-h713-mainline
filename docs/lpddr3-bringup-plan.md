@@ -85,8 +85,22 @@ speaker, light, fan and IR attached. Nothing has been written to its eMMC.
       66 min, 0 FAILURE**, no kernel errors. About 20 min per loop.
     - CPU 45.8 °C at start, settling at 56–57 °C, peak 60.1 °C.
     - Log: `local/recovery/2026-11-18-v2-bringup/linux-ram-uart.log`.
-    - Phase 3 item 1 is met. A cold and a warm boot of the RAM kernel are
-      still open.
+    - Phase 3 item 1 is met.
+  - **Cold boot of the RAM kernel passes (2026-11-19).** Power, serial and
+    USB off for 1 min or more, then FEL button. `tools/fel-uboot.sh` trained
+    DRAM, re-entered FEL and verified every image. The U-Boot prompt came up,
+    and `bootm` reached the shell about 13 s later (954496 kB, 4 CPUs, HS400
+    eMMC, CPU 46.6 °C). dmesg has only the three expected errors above (no
+    display, Wi-Fi device link, `regulatory.db`).
+    Log: `local/recovery/2026-11-18-v2-bringup/linux-ram-cold-uart.log`.
+  - **Warm boot of the RAM kernel passes (2026-11-19).** From that shell,
+    `devmem 0x07090108 32 0x5aa5a55a; reboot -f`: stock boot0 printed
+    `rtc[2] value = 0x5aa5a55a` and jumped to FEL, no button. The same
+    `fel-uboot.sh` load and `bootm` reached the shell (HS400 eMMC, 46.7 °C)
+    with the same three expected dmesg errors and nothing else. Same log.
+  - **Phase 3 exit is met:** memtester clean, and no new kernel errors across
+    a cold and a warm boot. Item 2 (re-check the 1296 MHz ceiling) is still
+    open.
   - Linux → FEL with no button: `devmem 0x07090108 32 0x5aa5a55a; reboot -f`
     (stock boot0 is still the first stage).
   - Still to do: a cold boot and a warm boot of the RAM kernel.
