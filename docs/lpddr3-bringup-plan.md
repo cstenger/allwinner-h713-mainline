@@ -66,8 +66,19 @@ speaker, light, fan and IR attached. Nothing has been written to its eMMC.
     - CPU 50 °C at idle.
   - The only errors are expected: no display (`h713_disp` was not run), the
     Wi-Fi device-link notice, and no `regulatory.db`.
-  - Still to do: a memory stress run. There is no `memtester` in our rootfs
-    or cache. Then a cold boot and a warm boot.
+  - **Kernel memtest passes (2026-11-19).**
+    - Built with `KERNEL_CONFIG=memtest tools/build/build.sh kernel`
+      (`patches/kernel/board/memtest.config`, `CONFIG_MEMTEST=y`). Booted
+      over FEL with `memtest=17`.
+    - Result: 17 patterns × 11 free ranges, **948.8 MiB of 1024 MiB per
+      pattern**, 0 `bad mem` reports. It took about 54 s, and available
+      memory was the same as without memtest.
+    - This tests stuck bits and patterns at boot, not timing margin under
+      load. A sustained `memtester` or stress run (well0nez's tRP note) is
+      still open. It needs a `memtester` binary, which our cache lacks.
+  - Linux → FEL with no button: `devmem 0x07090108 32 0x5aa5a55a; reboot -f`
+    (stock boot0 is still the first stage).
+  - Still to do: a cold boot and a warm boot of the RAM kernel.
 - The black panel under stock was a disconnected ribbon cable, now fixed.
 
 ## What we already know (offline, from the 2026-06-22 capture)
