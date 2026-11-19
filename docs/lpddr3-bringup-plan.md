@@ -74,8 +74,19 @@ speaker, light, fan and IR attached. Nothing has been written to its eMMC.
       pattern**, 0 `bad mem` reports. It took about 54 s, and available
       memory was the same as without memtest.
     - This tests stuck bits and patterns at boot, not timing margin under
-      load. A sustained `memtester` or stress run (well0nez's tRP note) is
-      still open. It needs a `memtester` binary, which our cache lacks.
+      load. That is the `memtester` run below.
+  - **memtester passes (2026-11-19).**
+    - Debian trixie `memtester_4.7.1-1_arm64.deb`, checked by signature
+      (InRelease, Debian 13 release key) and hash chain (Packages.xz, .deb).
+      Copies and hashes are in `local/recovery/2026-11-18-v2-bringup/memtester/`.
+    - Added to the initramfs with `BIN=... tools/build-ram-initramfs.sh`;
+      normal (non-memtest) kernel, booted over FEL.
+    - `memtester 800M` (800 MB locked): **3 full loops plus most of a 4th in
+      66 min, 0 FAILURE**, no kernel errors. About 20 min per loop.
+    - CPU 45.8 °C at start, settling at 56–57 °C, peak 60.1 °C.
+    - Log: `local/recovery/2026-11-18-v2-bringup/linux-ram-uart.log`.
+    - Phase 3 item 1 is met. A cold and a warm boot of the RAM kernel are
+      still open.
   - Linux → FEL with no button: `devmem 0x07090108 32 0x5aa5a55a; reboot -f`
     (stock boot0 is still the first stage).
   - Still to do: a cold boot and a warm boot of the RAM kernel.

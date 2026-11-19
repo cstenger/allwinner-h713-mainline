@@ -10,6 +10,9 @@
 # root. /init mounts proc, sys, devtmpfs and tmpfs only, prints the memory,
 # CPU and eMMC facts, and starts a shell. It never mounts or writes eMMC.
 #
+# BIN="FILE ..." adds more arm64 programs to /bin. They may only need the three
+# libraries above (e.g. Debian's memtester: libc.so.6).
+#
 # Boot it over FEL (see tools/fel-uboot.sh):
 #   EXTRA="0x50000000=build/out/h713-kernel.fit 0x58000000=OUT.cpio.gz
 #          0x4fa00000=build/out/sun50i-h713-hy200-qz713-v2.dtb" \
@@ -59,6 +62,10 @@ EOF
   echo "nod /dev/console 600 0 0 c 5 1"
   echo "file /bin/busybox $work/usr/bin/busybox 755 0 0"
   for l in "${libs[@]}"; do echo "file /lib/$l $work/usr/lib/aarch64-linux-gnu/$l 755 0 0"; done
+  for b in ${BIN:-}; do
+    [ -f "$b" ] || { echo "missing BIN $b" >&2; exit 1; }
+    echo "file /bin/$(basename "$b" | sed 's/-arm64$//') $(readlink -f "$b") 755 0 0"
+  done
   echo "file /init $work/init 755 0 0"
 } > "$work/spec"
 
