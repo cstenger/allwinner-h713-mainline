@@ -442,6 +442,9 @@ attached, the display path can be brought up here, not only on the projector
 
 ## Phase 3 — Projector board bring-up (`HY200_QZ713_V2`, LPDDR3)
 
+> **2026-11-18:** the current plan is [lpddr3-bringup-plan.md](lpddr3-bringup-plan.md);
+> the bullets below are the original outline.
+
 - Build U-Boot with `hy200_qz713_v2_defconfig` — the **LPDDR3 params are
   replay-verified only, never run on hardware**.
 - **FEL-boot first**, verify DRAM + console, *before* writing anything to its
