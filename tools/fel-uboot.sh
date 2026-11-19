@@ -14,6 +14,8 @@
 # The board must be in a FRESH FEL session (button or "reboot fel"): only one
 # SPL can run per session.
 #
+# EXTRA="ADDR=FILE ..." loads more images into DRAM before the start.
+#
 # TTY (default: the CP2102 by-id path, if present) gets keystrokes for a few
 # seconds after the start, to stop autoboot at the prompt. TTY= disables it.
 set -euo pipefail
@@ -95,6 +97,13 @@ load() {	# addr file: write, then read back in <= 1 MiB pieces and compare
 }
 load "$BL31_ADDR" "$bl31"
 load "$UBOOT_ADDR" "$uboot"
+# EXTRA="ADDR=FILE ...": more images for U-Boot to use from RAM (a kernel
+# FIT, an initramfs, a DTB). Keep them clear of BL31 (0x40000000-0x400fffff),
+# U-Boot's load copy (0x4a000000-0x4a0fffff) and its relocated top
+# (0x7aec0000 and up on V2).
+for pair in ${EXTRA:-}; do
+  load "${pair%%=*}" "${pair#*=}"
+done
 
 say "starting BL31 at $BL31_ADDR (reset64)"
 "$F" reset64 "$BL31_ADDR" || true

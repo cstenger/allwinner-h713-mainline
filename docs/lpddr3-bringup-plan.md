@@ -52,6 +52,22 @@ speaker, light, fan and IR attached. Nothing has been written to its eMMC.
     a long stress run (`memtester` in Phase 3).
   - From the FEL U-Boot prompt, `mw.l 0x07090108 0x5aa5a55a; reset` gives
     a fresh FEL session with no button.
+- **Phase 3 step 1: Linux from RAM over FEL boots (2026-11-19).**
+  - `tools/build-ram-initramfs.sh` builds a busybox initramfs from a release
+    `rootfs.tar`.
+  - `EXTRA=` in `tools/fel-uboot.sh` loads the kernel FIT, the initramfs and
+    the V2 DTB alongside U-Boot. All five images read back identical, in
+    46 s.
+  - `bootm` with the V2 DTB reaches a shell:
+    - Linux 6.18.38, `HY200 QZ713_V2`, 4 CPUs, `MemTotal` 954 496 kB.
+    - eMMC at **HS400** (`FNX2MB`, 7.28 GiB, all 26 partitions seen,
+      nothing mounted).
+    - The kernel feeds the 16 s watchdog until userspace opens it.
+    - CPU 50 °C at idle.
+  - The only errors are expected: no display (`h713_disp` was not run), the
+    Wi-Fi device-link notice, and no `regulatory.db`.
+  - Still to do: a memory stress run. There is no `memtester` in our rootfs
+    or cache. Then a cold boot and a warm boot.
 - The black panel under stock was a disconnected ribbon cable, now fixed.
 
 ## What we already know (offline, from the 2026-06-22 capture)
