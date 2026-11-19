@@ -1,0 +1,106 @@
+From: H713 maintainers
+Subject: [PATCH] h713: FEL rescue SPL re-enters FEL at EL3 after DRAM init
+
+"sunxi-fel uboot" has never worked on H713 (docs/flash.md, "Known
+gap"). The SPL returns to the BROM by eret, which leaves FEL at Secure
+EL1. sunxi-fel can still move memory there, but starting BL31 needs an
+RMR write, which is EL3-only.
+
+CONFIG_H713_SPL_FEL_REENTER (default n, FEL rescue builds only) trains
+DRAM and then warm-resets the core into AArch32 with both FEL flags set:
+RTC GP7 for our boot0 hook (0008) and GP2 for the stock boot0. A core
+reset leaves the DRAM controller alone. The BROM reloads the first stage
+from LBA 0x10 at EL3, and that stage branches back into FEL before it
+touches DRAM. The host then loads BL31 and U-Boot proper into the
+trained DRAM and starts them with reset64.
+
+---
+diff --git a/arch/arm/mach-sunxi/board.c b/arch/arm/mach-sunxi/board.c
+index 19975d26..95372163 100644
+--- a/arch/arm/mach-sunxi/board.c
++++ b/arch/arm/mach-sunxi/board.c
+@@ -213,9 +213,60 @@ static int gpio_init(void)
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_H713_SPL_FEL_REENTER
++#include <asm/system.h>
++#include <linux/delay.h>
++
++#define H713_RTC_GP2		0x07090108UL	/* stock boot0's efex flag */
++#define H713_RTC_GP7		0x0709011cUL	/* our boot0 hook's marker */
++#define H713_STOCK_EFEX_FLAG	0x5aa5a55a
++#define H713_FEL_MARKER		0x0fe1b007
++
++/*
++ * return_to_fel() on H713 erets into the BROM at Secure EL1, where sunxi-fel
++ * can still read and write memory but can never start BL31 or another SPL:
++ * both need RMR, which is EL3-only.  Instead, leave DRAM trained and
++ * warm-reset this core into AArch32.  A core reset does not touch the DRAM
++ * controller.  The BROM runs again at EL3 and loads the first stage from
++ * LBA 0x10; ours (boot0 hook, GP7) and the stock boot0 (GP2) both branch
++ * straight back into FEL on their flag, before touching DRAM.  The host then
++ * writes BL31 and U-Boot proper and starts them with "reset64".
++ *
++ * Both flags are set because either first stage may be installed; whichever
++ * runs clears its own, and the host clears the other.  A first stage that
++ * honours neither boots normally, so this is for FEL rescue builds only.
++ */
++static void h713_fel_reenter(void)
++{
++	if (current_el() != 3) {
++		printf("H713: not at EL3, plain FEL return\n");
++		return;
++	}
++
++	writel(H713_FEL_MARKER, H713_RTC_GP7);
++	writel(H713_STOCK_EFEX_FLAG, H713_RTC_GP2);
++	printf("H713: DRAM ready, warm reset to re-enter FEL at EL3\n");
++	udelay(2000);	/* let the UART drain */
++
++	if (dcache_status())
++		flush_dcache_all();
++
++	/* RMR_EL3: RR=1 requests the warm reset, AA64=0 resets into AArch32 */
++	asm volatile("dsb sy\n"
++		     "isb\n"
++		     "msr RMR_EL3, %0\n"
++		     "isb\n"
++		     "1: wfi\n"
++		     "b 1b\n" : : "r"(2UL) : "memory");
++}
++#endif
++
+ static int spl_board_load_image(struct spl_image_info *spl_image,
+ 				struct spl_boot_device *bootdev)
+ {
++#ifdef CONFIG_H713_SPL_FEL_REENTER
++	h713_fel_reenter();
++#endif
+ 	debug("Returning to FEL sp=%x, lr=%x\n", fel_stash.sp, fel_stash.lr);
+ 	return_to_fel(fel_stash.sp, fel_stash.lr);
+ 
+diff --git a/board/sunxi/Kconfig b/board/sunxi/Kconfig
+index ff5057cb..57b9fb3c 100644
+--- a/board/sunxi/Kconfig
++++ b/board/sunxi/Kconfig
+@@ -33,6 +33,19 @@ config H713_SPL_FEL_MARKER
+ 	  to the BROM's FEL entry, still at EL3, the same way the stock boot0
+ 	  handles "efex".  This gives a USB recovery path that needs no button.
+ 
++config H713_SPL_FEL_REENTER
++	bool "H713 FEL rescue: re-enter FEL at EL3 after DRAM init"
++	depends on MACH_SUN50I_H713 && SPL
++	default n
++	help
++	  When started over FEL, train DRAM and then warm-reset the core into
++	  AArch32 with both FEL flags set (RTC GP7 for our boot0 hook, GP2 for
++	  the stock boot0), instead of returning to the BROM at EL1.  The
++	  first stage on eMMC sends the board straight back into FEL at EL3,
++	  with DRAM still trained, so the host can load BL31 and U-Boot proper
++	  and start them.  Needs a first stage that honours one of the flags.
++	  FEL rescue builds only; never enable this in a shipping image.
++
+ config H713_VENDOR_CHAINLOAD
+ 	bool "H713: one-shot chainload of the vendor boot chain"
+ 	depends on MACH_SUN50I_H713

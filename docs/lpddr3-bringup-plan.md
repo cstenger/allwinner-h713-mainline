@@ -32,6 +32,21 @@ speaker, light, fan and IR attached. Nothing has been written to its eMMC.
   - U-Boot 0008 and kernel 0029 add `reboot fel` / `reboot efex`.
   - The SPL hook was FEL-tested on this board. The Linux end-to-end path
     waits for Phase 4.
+- **U-Boot proper over FEL works (2026-11-19).** That was the H713 "known
+  gap" in `docs/flash.md`.
+  - `tools/fel-uboot.sh build/out/h713-v2-felrescue.bin` gets from a fresh
+    FEL session to the `=>` prompt, all in RAM.
+  - The sequence: the rescue SPL (U-Boot 0009) trains DRAM, then
+    warm-resets the core. Stock boot0's efex flag returns the board to FEL
+    at EL3. The script writes the SRAM eGON header (the BROM zeroes it),
+    loads BL31 and proper, and runs `reset64`.
+  - Proper reports `DRAM: 1 GiB` and the V2 model, and falls back to the
+    default environment on a bad CRC. Never `saveenv` there.
+  - A fresh FEL session without the button: write GP2 `0x5aa5a55a`, then
+    reset with the watchdog (`0x02051010`/`14` = `0x16aa0001`, `0x0205100c`
+    = `0x14af`).
+  - Still to do: `mtest` needs a proper built with `CMD_MEMTEST`. Free DRAM
+    under it is `0x40100000-0x7aec9fff`.
 - The black panel under stock was a disconnected ribbon cable, now fixed.
 
 ## What we already know (offline, from the 2026-06-22 capture)

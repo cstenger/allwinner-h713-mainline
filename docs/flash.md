@@ -362,6 +362,17 @@ apply board power only, then plug USB and serial, and
 Keep the spare slot holding a proper you trust. Evidence:
 [hdmi-evidence/2026-10-16-uboot-lamp](hdmi-evidence/2026-10-16-uboot-lamp/README.md).
 
+> **Resolved 2026-11-19 (projector), with a different route:**
+> `tools/fel-uboot.sh` plus U-Boot 0009 (`CONFIG_H713_SPL_FEL_REENTER`).
+>
+> The root cause: the SPL's `eret` return leaves FEL at Secure EL1, where
+> `RMR`, and so `reset64`, faults. The rescue SPL instead warm-resets the
+> core after DRAM init. The first stage on eMMC, ours via 0008 or stock
+> boot0 via GP2, then branches back into FEL at EL3. The script writes the
+> SRAM eGON header, which the BROM zeroes, loads BL31 and proper, and runs
+> `reset64`. The result is a U-Boot prompt in RAM. The history below is
+> kept for the record.
+
 **Known gap — `sunxi-fel uboot` does not work on H713.** Loading the SPL alone
 is reliable (`sunxi-fel spl ...` returns and FEL still responds afterwards), but
 transferring U-Boot proper fails, and the transfer completes yet the SPL still
