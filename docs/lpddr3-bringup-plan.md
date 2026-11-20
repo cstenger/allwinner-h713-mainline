@@ -447,6 +447,264 @@ local/h713-lab/captures/board-a/board-a-mmcblk0-20261118.img` gives
    bandwidth differs, so rerun the eMMC 0206/0207 loaded-read bench. It is
    DRAM-contention sensitive.
 
+### Phase 4 step 1 runbook (stage 1 done 2026-11-19; stages 2–3 not yet run)
+
+Three stages, each ending somewhere safe. Every write is read back and
+compared before the next. Every stage's first step is a read-only check that
+the board still looks as expected. Writes are made from the FEL U-Boot
+(`tools/fel-uboot.sh`, in RAM), which works whatever is on the eMMC. That is
+also the route back.
+
+**Facts this relies on**, from the 2026-11-18 capture: LBA 16 and 0x100 hold
+the stock boot0 (type 7, 720 MHz, identical); `empty` (LBA `0x49ac00`, 15 MiB)
+is all zeros; `bootloader_b` is the vendor's FAT16 B copy (`BOOTLOGO.BMP`
+etc.); `UDISK` is Android's f2fs userdata. V2's default environment has
+`bootdelay=2`, `bootcmd=run distro_bootcmd` and `switch_vendor`.
+
+**Stage 1 — our U-Boot on eMMC, Android untouched except LBA 16.**
+1. Build: `BOARD=lpddr3 tools/build/build.sh uboot` (tree with 0011), and a
+   rescue SPL plus proper rebuilt from the same tree. Split the image into the
+   SPL (first 32 KiB) and the proper, as `boot-switch.sh split_ours` does.
+   Record the hashes.
+2. Fresh FEL session. `tools/fel-uboot.sh` with `EXTRA` loading the SPL and
+   proper into RAM, then stop at the `=>` prompt.
+3. Read-only checks at the prompt: `part list mmc 1` is the 26-entry
+   layout; CRC32 of LBA 16 and 0x100 equals the stock boot0's; CRC32 of the
+   `empty` region equals that of zeros. Any mismatch: stop.
+4. Writes, in this order, each followed by `mmc read` to another address and
+   `cmp.b`:
+   1. proper → LBA `0x49ac00`;
+   2. spare proper → `0x4a0c00`;
+   3. our SPL stash → `0x49cc00`;
+   4. **our SPL → LBA `0x10` (last)**.
+   Until step 4 the board still boots stock exactly as before.
+5. Cold boot (no FEL button): our SPL, then U-Boot from `0x49ac00`. Stop
+   autoboot within 2 s. Check the banner, `DRAM: 1 GiB`, the V2 model, and
+   the bad-CRC fallback to the default environment. Then `saveenv` (the
+   environment goes to `0x93d80000`, inside `empty`) and `fastboot getvar
+   serialno`, which must equal `boards/hy200-qz713-v2` `UBOOT_SERIAL`
+   (computed so far).
+6. Prove the round trip: `run switch_vendor`, power cycle, stock boot0,
+   Android (press the power button at the gate). Back: FEL, then the FEL
+   U-Boot writes our SPL from RAM to LBA `0x10`; cold boot to ours.
+   **Fallback if our SPL ever fails to boot:** FEL, then the V2 restore SPL
+   (proven) puts stock boot0 back.
+
+**Stage 1 result (2026-11-19, 18:33–19:15): done.** Image
+`build/out/u-boot-sunxi-with-spl-lpddr3.bin` (tree `3e88ce00`, with 0011;
+SPL crc32 `a784a750`, proper 0x675 sectors crc32 `0df4c805`; manifest in
+`build/out/v2-install/MANIFEST.txt`).
+- Pre-write checks at the FEL U-Boot (the same proper being installed): 26
+  partitions; LBA 16 and 0x100 crc32 `8ec0d62f` (stock); `empty` crc32 that
+  of zeros.
+- The writes in order (proper, spare, stash, SPL at LBA 16) each read back
+  identical.
+- First boot from eMMC: our SPL, then BL31 and proper from `0x49ac00`, the
+  V2 model, 1 GiB. `saveenv` wrote LBA `0x49ec00`, and the next reset loads
+  it (`Reading from MMC(1) at 0x93d80000... OK`).
+- **U-Boot's serial# is `034000427a29544e`**, not the value computed as
+  sid[0] sid[3]. U-Boot replaces sid[3] with crc32 of sid[1..3].
+  `boards/hy200-qz713-v2/board.env` and the guard's FEL mode are fixed. The
+  guard over fastboot confirms V2 and refuses the bench on the real board.
+- Round trip: `run switch_vendor` put stock boot0 at LBA 16 (crc32
+  `8ec0d62f`); power cycle, then the power button at stock's gate, then
+  Android `boot_completed=1` with LBA 16 sha `f8ac16e4…`. Back: `adb reboot
+  efex`, then the FEL U-Boot copied the on-board stash (`0x49cc00`, still
+  identical) to LBA 16. A reset boots ours with the saved environment.
+  0x100 and the proper were unchanged throughout.
+- **Board whine (not ours):** a ~4.4–4.7 kHz tone, +8–17 dB over its
+  surroundings, at our U-Boot prompt **and** at stock U-Boot's power gate,
+  gone when unplugged, and masked by the fan in Android. It is unchanged with
+  PB5 floating or driven low, and its pitch moves when USB is plugged in.
+  Likely a regulator's light-load pulse-skipping coil whine. Recordings in
+  `local/recovery/whine/`. To do once Linux boots from eMMC: record the
+  production states (running, idle, light standby, s2idle) with the same
+  rig. Light standby turns the fan off, so it is the likely audible state.
+- Log: `local/recovery/2026-11-18-v2-bringup/install-stage1-uart.log`.
+
+**Stage 2 — kernel and Debian (layout decided 2026-11-19).** This board is
+production and needs no working Android, so Linux reuses existing Android
+partitions and the 26-entry GPT is never rewritten. **Single slot, with FEL
+as the recovery path** (decided 2026-11-19, after a best-practice review): a
+paired A/B root would have needed `UDISK` split now, and kernel-only A/B adds
+complexity without real protection, because the modules live in the root.
+The rootfs is 1.4 GiB.
+
+| partition | LBA / size | Linux role |
+| --- | --- | --- |
+| `boot_a` p5 | `0x32400`, 64 MiB | kernel FIT, raw |
+| `super` p9 | `0x92400`, 2 GiB | **rootfs**, ext4, **read-only** |
+| `UDISK` p26 | `0x54c400`, 4.63 GiB | data: `/data`, `/media`, `/var`, `/etc` overlay upper |
+| `boot_b` p6 | `0x52400`, 64 MiB | unused (left as is) |
+
+Recovery when the installed system will not boot: FEL, then the FEL U-Boot
+(`tools/fel-uboot.sh`) rewrites any region from RAM. If our SPL itself is
+broken, the V2 restore SPL puts stock boot0 back (both proven on this board).
+
+Fixes from the review (sources in the 2026-11-19 session notes), all part of
+this stage:
+1. **Boot command built into U-Boot's default environment.** Production
+   `bootcmd` (`mmc dev 1; mmc read 0x50000000 0x32400 0x8000; bootm
+   0x50000000`) and `bootargs` go into the V2 default environment (a U-Boot
+   patch), so a corrupt saved environment still boots Linux rather than the
+   distro scan.
+2. **Redundant environment.** `CONFIG_SYS_REDUNDAND_ENVIRONMENT` with
+   `ENV_OFFSET_REDUND = 0x93d90000` (right after the 64 KiB primary, still
+   in `empty`), so a power cut during `saveenv` leaves one good copy. Bench
+   config is checked separately (its resolved `.config` must stay as is unless
+   decided otherwise).
+3. **Read-only root.** `super` mounted `ro`; `/var` (including `/var/tmp`,
+   which must survive reboots) on the data partition; an overlay over the
+   parts of `/etc` that change, with the upper layer on the data partition.
+   `/tmp` stays tmpfs in RAM: the release rootfs (Debian 13) already enables
+   systemd's `tmp.mount` (`size=50%`, about 466 MB here). Cap it lower
+   (128–256 MiB) with a `tmp.mount` drop-in so a runaway `/tmp` cannot squeeze
+   video decode on a 1 GiB board. Handle systemd's
+   machine-id (generate at image build, or bind from data).
+4. **`PARTUUID` naming.** `root=PARTUUID=<super>` on the command line and the
+   same in fstab (the release fstab says `/dev/mmcblk0p26`, which is now
+   wrong for V2). Renaming partitions keeps their GUIDs.
+5. **A V2 kernel FIT. DONE (build side, 2026-11-19).** The FIT now carries
+   both DTBs: `conf-1` (bench, still the default, so the bench's `bootm
+   0x50000000` is unchanged) and `conf-v2` (projector). V2's `bootcmd` must
+   say `bootm 0x50000000#conf-v2`; a bare `bootm` on V2 would boot the bench
+   DTB. Consider LZ4 for the kernel (today gzip, 7.4 → 16.8 MiB) for faster
+   decompression; measure first.
+6. **Kernel config for the read-only root. DONE (build side, 2026-11-19).**
+   The defconfig adds EROFS (lz4, lzma, zstd), SquashFS (zstd, per-CPU
+   decompressors) and `OVERLAY_FS`, all built in. EROFS is the intended root;
+   SquashFS is the comparison control and is dropped once the root is chosen.
+   The read-only layout is `tools/rootfs/ro-root.sh`: the kernel runs
+   `init=/usr/lib/h713/preinit`, which checks and mounts the data partition at
+   `/data` (`h713.data=`, default `/dev/mmcblk0p26`; `PARTUUID=` works), puts
+   an overlay on `/etc` with its upper layer in `/data/overlay/etc`, seeds
+   `/data/var` from the image on first boot and binds it over `/var`, then
+   execs systemd. If the data partition cannot be mounted it boots on a
+   volatile tmpfs `/data` and says so on the console. `/tmp` is systemd's
+   tmpfs capped at 256 MiB; the empty `machine-id` is filled through the
+   overlay on first boot. `tools/rootfs/make-ro-images.sh ROOTFS_TAR` turns
+   any `rootfs.tar` into the four comparison images (ext4 ro, EROFS plain,
+   EROFS lz4hc, SquashFS zstd). Sizes, fresh production rootfs (2026-11-19,
+   new kernel, `build/out/ro-root/`, source tar `658499ac`):
+
+   | image | size | fits a 1 GiB A/B slot |
+   | --- | --- | --- |
+   | ext4 ro | 1292 MiB | no (single slot only) |
+   | EROFS uncompressed | 1073 MiB | no (single slot only) |
+   | EROFS lz4hc | 555 MiB | yes |
+   | SquashFS zstd | 338 MiB | yes |
+
+   The 11-18 release rootfs (with its overlay) gives the same within 5 MiB.
+   So an A/B layout means a compressed root: uncompressed EROFS cannot be the
+   "match ext4" answer. Owners, groups and all 16 setuid/setgid files match
+   the source tar in every image (`dump.erofs` hides the setuid bit; an
+   extraction shows it). **Not yet run on hardware.**
+7. Optional, not required: `WATCHDOG_AUTOSTART` in U-Boot, so a hang before the
+   kernel arms its watchdog still resets the board. With one slot, a reset only
+   helps transient hangs.
+
+**Stage 2 step 3 first pass (2026-11-19/20, log `install-stage2-uart.log`):**
+- `super` holds `root-lz4hc.erofs` (555 MiB, sha256 `a82188ed`). Written
+  over UMS with `tools/v2-root-write.sh`; the host's direct read-back found
+  a difference. U-Boot `mmc read` + `crc32` per 16 MiB, then per MiB, 64 KiB
+  and 4 KiB, located **four bad 4 KiB pages in MiB 526** (two 8 KiB runs at
+  image offsets `0x20e78000` and `0x20e96000`) holding foreign data, found
+  neither in the image nor in the 11-18 capture. The console printed
+  `musb-hdrc: peripheral reset irq lost!` during UMS. Repaired with
+  `fastboot stage` of that MiB (crc32 checked in RAM) and `mmc write` at LBA
+  `0x199400`; the whole image read from eMMC then gives crc32 `de510f0a`, as
+  on the host. (First read as a UMS bug; it is not, see below.)
+- **eMMC write faults (2026-11-20, on the power block).** A UMS stress test
+  (`tools/ums-stress.sh`, random data into `super`'s unused tail) reproduced
+  the 8 KiB runs, and the same foreign pages recurred. U-Boot reads of those
+  LBAs return a `4d03034d` structure whose counter rises with every read
+  (reset to `0x49` at power-up) or all-`0xff`: the eMMC (Samsung `FNX2MB`,
+  fw rev 6, 07/2019, wear `0x01/0x01`, pre-EOL normal) maps them to its own
+  RAM. The foreign pages are in neither the board's DRAM nor the host. Pass 3
+  hung the gadget. After a power cycle Linux multi-block writes fail after
+  2–7 MiB at HS400, HS200 and DDR52 (`data error cmd25`, all interrupt
+  status zero, stop fails, `cache flush error -110`); single-block ioctl
+  writes, flushes and CMD13 (`tran`, no error bits) are fine; reads are fine
+  everywhere. EXT_CSD: WR_REL_SET `0x1f`, 64 MiB cache, BKOPS_EN `0`. Root,
+  FIT, SPL and stock boot0 verified intact by crc32. The data partition does
+  not mount (preinit's volatile fallback works).
+- **Fixed (2026-11-20): it was the eMMC out of free blocks.** Nothing had
+  been discarded after the 4.6 GiB format, the root and ~4 GB of stress data,
+  and BKOPS was off, so garbage collection ran inside writes. Fix:
+  `BLKDISCARD` of `super` +640 MiB..end and `blkdiscard` of UDISK, auto-BKOPS
+  on (CMD6 set-bits, BKOPS_EN `0x02`, AUTO_EN only; the OTP manual bit is
+  untouched), 5 minutes idle. Then: five 8 MiB writes at DDR52 with 0 errors
+  (two slow, 2.6–3.4 MB/s, still completing); at HS400 four 128 MiB raw
+  writes read back identical, 256 MiB through ext4 at 34.9 MiB/s identical
+  after remount and cache drop, `fstrim` 4.2 GiB, `e2fsck` clean, 0 kernel
+  errors. The live-counter LBAs read stable after being rewritten. Root
+  (sha256 `a82188ed88a6ae6c`) and FIT (`5dc0347e`) unchanged.
+  **Production requirements:** discard before writing a new root image into
+  `super` (stock `blkdiscard`, now in `tools/v2-root-write.sh`); trim on
+  `/data` is already there: Debian's `fstrim.timer` is enabled in the image
+  (weekly, `--listed-in /etc/fstab:/proc/self/mountinfo`, so it covers the
+  preinit-mounted `/data`) and `mkfs.ext4` discards by default; auto-BKOPS
+  enabled at boot if it does not survive a power cycle (not yet checked; the
+  stock tool is `mmc bkops_en auto` from Debian's `mmc-utils`); verify every
+  bulk write on the board. UMS itself was never the fault.
+- `UDISK` was formatted on the board (`mkfs.ext4 -L data`, from the booted
+  system, no USB in the path); `e2fsck -fn` clean. GPT name and PARTUUID
+  (`a0085546-4166-744a-a353-fca9272b8e5e`) unchanged.
+- Boots with the FIT loaded into RAM by `fastboot stage` (crc32 checked),
+  `bootm 0x42000000#conf-v2`, `root=/dev/mmcblk0p9 rootfstype=erofs ro
+  init=/usr/lib/h713/preinit`; `boot_a` is not written yet.
+  1. UDISK still f2fs: preinit fell back to the volatile `/data` and said so;
+     systemd `running`, no failed units; 3.1 s kernel + 9.9 s userspace.
+  2. After the format: `/data` ext4 rw, `/var` bound from it, `/etc` overlay;
+     the first boot wrote machine-id and ssh host keys into the overlay;
+     13.9 s (includes seeding `/var`).
+  3. Next boot: same machine-id and host keys, no reseed, no failed units;
+     2.3 s kernel + 8.4 s userspace = 10.7 s (single sample, warm reboot, not
+     the power-on measurement).
+
+**Single slot vs A/B: measure before deciding (2026-11-19).** If an A/B
+split of `super` (two 1 GiB slots, the second by repurposing the
+`vbmeta_vendor_b` GPT entry so the count stays 26) boots as fast as the single
+slot, A/B costs little. The runtime is identical; what differs is the root
+filesystem (ext4 in 2 GiB versus a compressed image in 1 GiB) and a few
+U-Boot env writes for slot choice and boot counting. Measure on the
+projector, one FIT, the root chosen by U-Boot `bootargs`
+(`root=/dev/mmcblk0p9 rootfstype=… ro rootwait init=/usr/lib/h713/preinit`),
+at least five boots each from power-on (UART timestamps to the shell and to
+`multi-user.target`, `systemd-analyze`), plus cold-cache runtime tests (start
+of `mpv`/GStreamer, `find /usr`, a package-sized read):
+1. ext4 ro (single-slot baseline);
+2. EROFS uncompressed (single slot only: 1073 MiB);
+3. EROFS lz4hc;
+4. SquashFS zstd (control);
+5. the winner with U-Boot slot logic (bootcount env writes) added.
+A second-half placement test needs the GPT edit, so it runs only if A/B
+wins. All variants need `UDISK` reformatted ext4 and `super` written, i.e.
+stage 2 step 3 approved first.
+
+Steps:
+1. **U-Boot.** Patch for items 1 and 2; rebuild; install the new proper and
+   SPL from the FEL U-Boot as in stage 1 (stash and spare too), read back.
+2. **Kernel.** Write `h713-kernel.fit` raw to `boot_a`, read back.
+3. **Partitions.** Over UMS from our U-Boot (`ums 0 mmc 1`), with a V2-only
+   script (the bench tools assume its 28-entry GPT) run with
+   `H713_BOARD=hy200-qz713-v2`: `mkfs.ext4` `super` and `UDISK`; rename them
+   off their Android names (stock finds userdata by the name `UDISK`, and
+   reformatting `super` makes Android unbootable); unpack the rootfs into
+   `super`; set up fstab, the `/etc` overlay and the data mounts; read back.
+4. **First boot from eMMC**, console only: dmesg against the RAM-kernel
+   boots; root mounted `ro` from `super`, data `rw` from `UDISK`; `fastboot` and
+   `reboot fel` work from the installed system. Then a deliberate power cut
+   during `saveenv`, to show the redundant environment recovers.
+5. Android's old contents remain recoverable from the 11-18 capture.
+
+**Stage 3 — display** is Phase 4 step 2 (PH19 panel power, `H713_MIPS_BOOT`
+on V2, the `display.bin` (a)/(b) test).
+
+**Not covered by this runbook:** `tools/release/prepare-install.py` (the
+production packet) is DDR3-only (`MODEL` pinned), so V2 production installs
+need it extended once Stage 2 is proven by hand.
+
 ### Phase 5: the remaining hardware
 
 In order: fan (tach PH17; PB5 also powers the fan) → audio and speaker (the
