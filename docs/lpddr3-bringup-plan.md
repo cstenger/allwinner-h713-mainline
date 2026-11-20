@@ -380,6 +380,46 @@ Exit: memtester clean, and no kernel errors across a cold and a warm boot.
 
 ### Phase 4: install, then the display
 
+**Gate before the first eMMC write (checked 2026-11-19):** done — our SPL and
+U-Boot from FEL on this board, the fresh capture, and the V2 restore SPL
+(below), proven on this board. Not done — Phase 0.2 V2 config de-drift
+(`ENV_OFFSET` is still `0x400000`), Phase 0.6 installer board guards, and the
+Phase 2 five-cold-boot DRAM check.
+
+**V2 restore SPL built (2026-11-19).** U-Boot 0010
+(`CONFIG_H713_SPL_RESTORE_BOOT0`) plus `tools/build-v2-restore-spl.sh
+local/h713-lab/captures/board-a/board-a-mmcblk0-20261118.img` gives
+`build/out/h713-v2-restore-spl.bin` (65 536 B, sha256 `77e3610f…`).
+- The payload is the projector's stock boot0 from the capture, LBA 16..79:
+  `eGON.BT0`, 32 768 B, checksum ok, DRAM type 7 at 720 MHz, sha256
+  `f8ac16e4…`. It is byte-identical to the capture and embedded in the
+  SPL's read-only data.
+- It runs only from the FEL load path (`spl_board_load_image` calls
+  `h713_restore_boot0`). It brings the eMMC up as the SPL's MMC2 loader
+  does (`mmc_initialize`, device 1), refuses an SD card, reports whether
+  LBA 16..79 already match, writes, reads back and compares, then halts.
+  Unlike the bench hook it needs no U-Boot of ours on the eMMC.
+- Both DRAM-type guards were checked: the tool refused the bench DDR3
+  defconfig with this boot0 ("type 7, board config wants 3"), and a forced
+  type-7 payload in a DDR3 build stopped at the `#error`.
+- **Proven on the projector (2026-11-19, 17:05).** This was the first write
+  to its eMMC. In a fresh FEL session (the efex jump after arm F),
+  `sunxi-fel -p spl build/out/h713-v2-restore-spl.bin` printed
+  `DRAM: 1024 MiB`, `mmc1: eMMC, 15269888 sectors`, `before: already
+  identical`, `wrote 64/64, read back identical: RESTORED-OK`. sunxi-fel
+  times out (exit 124) because the SPL halts and never returns.
+  - After a power cycle without the FEL button, stock boot0 ran from the
+    rewritten sectors (`DRAM Type = 7`, 720 MHz, `simple test OK`) into
+    stock U-Boot 2018.05. Android booted to `sys.boot_completed=1` with the
+    same fingerprint. LBA 16..79 read on the board hashes to `f8ac16e4…`.
+  - Log: `local/recovery/2026-11-18-v2-bringup/restore-proof-uart.log`.
+- **Stock power-on gate:** after a cold plug-in, stock U-Boot stops silently
+  after `[SCP] :sunxi-arisc driver v1.10 is starting` and waits in standby
+  for the **power button**. Pressing it continues to the kernel. The
+  "wedged stock U-Boot" after the first 1296 MHz reset (03:03) was this
+  gate, not a hang.
+
+
 1. Install the bench layout: our boot0 at LBA 16, vendor boot0 at `0x100`,
    U-Boot at `0x49ac00` plus the spare at `0x4a0c00`, Debian on UDISK. Read
    every region back after writing. First prove `switch_vendor` → Android →
