@@ -32,6 +32,7 @@ import shlex
 import struct
 import subprocess
 import sys
+import zlib
 
 ROOT = Path(__file__).resolve().parent.parent
 BOOT0_LBAS = (16, 0x100)
@@ -118,7 +119,16 @@ def fastboot_serial():
     for line in (r.stdout + r.stderr).splitlines():
         if line.startswith('serialno:'):
             return line.split(':', 1)[1].strip()
-    raise Unknown('fastboot getvar serialno gave no answer')
+    # getvar reads U-Boot's serial# variable, which a reset environment lacks
+    # ("Value not set"). The USB descriptor carries the same serial: accept it
+    # when exactly one fastboot device is attached.
+    r = subprocess.run(['fastboot', 'devices'], capture_output=True, text=True,
+                       timeout=30)
+    devs = [l.split()[0] for l in r.stdout.splitlines() if l.strip()]
+    if len(devs) == 1:
+        return devs[0]
+    raise Unknown(f'fastboot getvar serialno gave no answer and {len(devs)} '
+                  'fastboot devices are attached')
 
 
 def fel_serial():
@@ -127,7 +137,14 @@ def fel_serial():
     words = r.stdout.strip().split(':')
     if r.returncode or len(words) != 4:
         raise Unknown(f'sunxi-fel sid gave {r.stdout.strip() or r.stderr.strip()!r}')
-    return words[0] + words[3]     # U-Boot's serial#: sid[0] then sid[3]
+    # U-Boot's serial# (board/sunxi/board.c): sid[0], then sid[3] replaced by
+    # crc32 of sid[1..3] as little-endian words, with bit 23 forced on if its
+    # low 24 bits are zero. Checked against the projector 2026-11-19.
+    w = [int(x, 16) for x in words]
+    s3 = zlib.crc32(struct.pack('<3I', *w[1:]))
+    if s3 & 0xffffff == 0:
+        s3 |= 0x800000
+    return f'{w[0]:08x}{s3:08x}'
 
 
 def main():
