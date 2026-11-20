@@ -8,28 +8,27 @@
 # OUT_DIR defaults to build/out/ro-root/. Every image holds the same tree:
 # rootfs.tar with tools/rootfs/ro-root.sh applied (preinit, fstab, tmp cap).
 #
-#   root-ext4.img         ext4, mounted ro            (single-slot baseline)
-#   root-plain.erofs      EROFS, uncompressed
-#   root-lz4hc.erofs      EROFS, lz4hc level 12, 4 KiB physical clusters
-#   root-zstd.sqfs        SquashFS, zstd, 128 KiB blocks (control)
+#   root-lz4hc.erofs      EROFS, lz4hc level 12, 4 KiB physical clusters (the
+#                         production root, chosen 2026-11-20)
+#   root-plain.erofs      EROFS, uncompressed          (comparison only)
+#   root-ext4.img         ext4, mounted ro             (comparison only)
 #
-# IMAGES="plain lz4hc" limits the set. Each must fit super (2 GiB); each is
+# IMAGES selects the set (default "lz4hc"; e.g. IMAGES="lz4hc plain ext4"). Each must fit super (2 GiB); each is
 # reported as fitting a 1 GiB A/B slot (half of super) or single slot only.
 # Kernel command line for each (U-Boot setenv bootargs ...):
-#   root=/dev/mmcblk0p9 rootfstype=erofs|squashfs|ext4 ro rootwait
+#   root=/dev/mmcblk0p9 rootfstype=erofs|ext4 ro rootwait
 #   init=/usr/lib/h713/preinit
 # SOURCE_DATE_EPOCH, if set, pins timestamps.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tar_in=$(realpath "${1:?ROOTFS_TAR}")
 out=$(realpath -m "${2:-$ROOT/build/out/ro-root}")
-images=${IMAGES:-ext4 plain lz4hc zstd-sqfs}
+images=${IMAGES:-lz4hc}
 SLOT=$((1024 * 1024 * 1024)); SUPER=$((2 * SLOT))
 
 need() { command -v "$1" >/dev/null || { echo "error: $1 not installed${2:+ ($2)}" >&2; exit 1; }; }
 need unshare; need mke2fs
 case " $images " in *" plain "*|*" lz4hc "*) need mkfs.erofs erofs-utils ;; esac
-case " $images " in *" zstd-sqfs "*) need mksquashfs squashfs-tools ;; esac
 [ -f "$tar_in" ] || { echo "error: no $tar_in" >&2; exit 1; }
 mkdir -p "$out"
 work=$(mktemp -d "$out/.work.XXXXXX")
@@ -60,10 +59,6 @@ unshare --map-auto --map-root-user bash -ceu '
     lz4hc)
       f=root-lz4hc.erofs
       mkfs.erofs --quiet -zlz4hc,12 -C4096 ${epoch:+-T "$epoch"} -Lroot "$work/$f" "$T" ;;
-    zstd-sqfs)
-      f=root-zstd.sqfs
-      mksquashfs "$T" "$work/$f" -comp zstd -b 131072 -xattrs -noappend -quiet -no-progress \
-        ${epoch:+-all-time "$epoch" -mkfs-time "$epoch"} ;;
     *) echo "error: unknown image $i" >&2; exit 2 ;;
     esac
     sz=$(stat -c %s "$work/$f")
