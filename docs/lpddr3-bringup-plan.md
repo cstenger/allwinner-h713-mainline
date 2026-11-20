@@ -382,9 +382,11 @@ Exit: memtester clean, and no kernel errors across a cold and a warm boot.
 
 **Gate before the first eMMC write (checked 2026-11-19):** done — our SPL and
 U-Boot from FEL on this board, the fresh capture, and the V2 restore SPL
-(below), proven on this board. Not done — Phase 0.2 V2 config de-drift
-(`ENV_OFFSET` is still `0x400000`), Phase 0.6 installer board guards, and the
-Phase 2 five-cold-boot DRAM check.
+(below), proven on this board, and the Phase 0.2 V2 config de-drift (U-Boot
+0011: shared `configs/hy200_h713.config`; bench `.config` identical; V2 env at
+`0x93d80000`, proper at `0x49ac00`, chainload, handshake; no display yet).
+Not done — Phase 0.6 installer board guards and the Phase 2 five-cold-boot
+DRAM check.
 
 **V2 restore SPL built (2026-11-19).** U-Boot 0010
 (`CONFIG_H713_SPL_RESTORE_BOOT0`) plus `tools/build-v2-restore-spl.sh

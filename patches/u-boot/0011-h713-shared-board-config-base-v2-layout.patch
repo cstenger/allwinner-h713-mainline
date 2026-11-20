@@ -1,0 +1,163 @@
+From: H713 maintainers
+Subject: [PATCH] h713: shared board config base; V2 gets the bench layout
+
+The V2 (LPDDR3 projector) defconfig had drifted from the bench's. It
+still had ENV_OFFSET 0x400000, so a saveenv would write 4 MiB into the
+eMMC. It also lacked the U-Boot sector layout, the vendor chainload,
+the fastboot/bootloader-hold handshake, and gpio/poweroff.
+
+Move everything the boards share into configs/hy200_h713.config. Each
+board defconfig now includes it and adds only its device tree, DRAM
+words and DRAM type, plus what is board-specific:
+
+- A1 (bench): H713_MIPS_BOOT and the PREBOOT that ends in
+  "h713_disp auto 0x34 logo". Its resolved .config is unchanged.
+- V2: the same layout as the bench (proper at LBA 0x49ac00, environment
+  at 0x93d80000, both in the GPT partition "empty", which is all zeros on
+  both boards), the vendor chainload, the handshake and gpio/poweroff.
+  Not the display: H713_MIPS_BOOT is documented as untested on V2, and its
+  panel power is on PH19.
+
+---
+--- /dev/null
++++ b/configs/hy200_h713.config
+@@ -0,0 +1,43 @@
++# Shared U-Boot base for the HY200 QZ713 H713 boards. Each board defconfig
++# pulls this in and adds only its DRAM words, device tree and the
++# board-specific options (configs/hy200_qz713df_a1_defconfig,
++# configs/hy200_qz713_v2_defconfig).
++#
++# Layout: U-Boot proper at the start of the GPT partition "empty"
++# (LBA 0x49ac00, spare at 0x4a0c00) and the environment at byte 0x93d80000
++# (LBA 0x49ec00), both inside "empty". The two boards share a byte-identical
++# GPT, and "empty" is all zeros in both factory images.
++CONFIG_ARM=y
++CONFIG_ARCH_SUNXI=y
++CONFIG_SPL=y
++CONFIG_MACH_SUN50I_H713=y
++# CONFIG_H713_POWERON_LIGHT_FAN is not set
++CONFIG_MMC_SUNXI_SLOT_EXTRA=2
++CONFIG_MMC0_CD_PIN=""
++# CONFIG_SYS_MALLOC_CLEAR_ON_INIT is not set
++CONFIG_SUPPORT_EMMC_BOOT=y
++CONFIG_USB_EHCI_HCD=y
++CONFIG_USB_OHCI_HCD=y
++# CONFIG_WATCHDOG is not set
++CONFIG_WDT=y
++CONFIG_USB_MUSB_GADGET=y
++CONFIG_CMD_USB_MASS_STORAGE=y
++# CONFIG_USB_ETHER is not set
++CONFIG_CONSOLE_MUX=y
++CONFIG_SYS_CONSOLE_IS_IN_ENV=y
++CONFIG_USB_FUNCTION_ACM=y
++# CONFIG_USB_FUNCTION_ACM_WAIT_FOR_CONNECTION is not set
++CONFIG_SYSRESET=y
++CONFIG_SYSRESET_PSCI=y
++CONFIG_CMD_POWEROFF=y
++CONFIG_FASTBOOT_CMD_OEM_POWEROFF=y
++# CONFIG_ENV_IS_IN_FAT is not set
++CONFIG_ENV_IS_IN_MMC=y
++CONFIG_ENV_OFFSET=0x93d80000
++CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x49ac00
++CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_DATA_PART_OFFSET=0x0
++CONFIG_H713_VENDOR_CHAINLOAD=y
++CONFIG_CMD_WDT=y
++CONFIG_CMD_GPIO=y
++# CONFIG_TOOLS_KWBIMAGE is not set
++# CONFIG_TOOLS_LIBCRYPTO is not set
+--- a/configs/hy200_qz713df_a1_defconfig
++++ b/configs/hy200_qz713df_a1_defconfig
+@@ -1,8 +1,6 @@
+-CONFIG_ARM=y
+-CONFIG_ARCH_SUNXI=y
++#include <configs/hy200_h713.config>
+ CONFIG_DEFAULT_DEVICE_TREE="allwinner/sun50i-h713-hy200-qz713df-a1"
+ CONFIG_DRAM_CLK=624
+-CONFIG_SPL=y
+ # HY200 QZ713DF_A1 (bench): DDR3 (type 3) stock BT0, clk=624.
+ CONFIG_DRAM_SUNXI_DX_ODT=0x03030303
+ CONFIG_DRAM_SUNXI_DX_DRI=0x0e0e0e0e
+@@ -29,37 +27,7 @@
+ CONFIG_DRAM_SUNXI_TPR11=0x44340000
+ CONFIG_DRAM_SUNXI_TPR12=0x00006666
+ CONFIG_DRAM_SUNXI_TPR13=0xb4016103
+-CONFIG_MACH_SUN50I_H713=y
+-# CONFIG_H713_POWERON_LIGHT_FAN is not set
+-CONFIG_H713_MIPS_BOOT=y
+ CONFIG_SUNXI_DRAM_H713_DDR3_STOCK=y
+-CONFIG_MMC_SUNXI_SLOT_EXTRA=2
+-CONFIG_MMC0_CD_PIN=""
+-# CONFIG_SYS_MALLOC_CLEAR_ON_INIT is not set
+-CONFIG_SUPPORT_EMMC_BOOT=y
+-CONFIG_USB_EHCI_HCD=y
+-CONFIG_USB_OHCI_HCD=y
+-# CONFIG_WATCHDOG is not set
+-CONFIG_WDT=y
+-CONFIG_USB_MUSB_GADGET=y
+-CONFIG_CMD_USB_MASS_STORAGE=y
+-# CONFIG_USB_ETHER is not set
+-CONFIG_CONSOLE_MUX=y
+-CONFIG_SYS_CONSOLE_IS_IN_ENV=y
+-CONFIG_USB_FUNCTION_ACM=y
+-# CONFIG_USB_FUNCTION_ACM_WAIT_FOR_CONNECTION is not set
+-CONFIG_SYSRESET=y
+-CONFIG_SYSRESET_PSCI=y
+-CONFIG_CMD_POWEROFF=y
+-CONFIG_FASTBOOT_CMD_OEM_POWEROFF=y
++# Display coprocessor and boot logo: validated on this board only.
++CONFIG_H713_MIPS_BOOT=y
+ CONFIG_PREBOOT="if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi; usb start; h713_disp auto 0x34 logo"
+-# CONFIG_ENV_IS_IN_FAT is not set
+-CONFIG_ENV_IS_IN_MMC=y
+-CONFIG_ENV_OFFSET=0x93d80000
+-CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x49ac00
+-CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_DATA_PART_OFFSET=0x0
+-CONFIG_H713_VENDOR_CHAINLOAD=y
+-CONFIG_CMD_WDT=y
+-CONFIG_CMD_GPIO=y
+-# CONFIG_TOOLS_KWBIMAGE is not set
+-# CONFIG_TOOLS_LIBCRYPTO is not set
+--- a/configs/hy200_qz713_v2_defconfig
++++ b/configs/hy200_qz713_v2_defconfig
+@@ -1,8 +1,6 @@
+-CONFIG_ARM=y
+-CONFIG_ARCH_SUNXI=y
++#include <configs/hy200_h713.config>
+ CONFIG_DEFAULT_DEVICE_TREE="allwinner/sun50i-h713-hy200-qz713-v2"
+ CONFIG_DRAM_CLK=720
+-CONFIG_SPL=y
+ # HY200 QZ713_V2 projector stock BT0: clk=720, type=7 (LPDDR3), zq=0x003f3ffb,
+ # odt/flags=0x31, para1=0x10f410f4, para2=0x04000000.
+ CONFIG_DRAM_SUNXI_DX_ODT=0x03030303
+@@ -30,28 +28,7 @@
+ CONFIG_DRAM_SUNXI_TPR11=0x44650000
+ CONFIG_DRAM_SUNXI_TPR12=0x00005544
+ CONFIG_DRAM_SUNXI_TPR13=0xb4036223
+-CONFIG_MACH_SUN50I_H713=y
+ CONFIG_SUNXI_DRAM_H713_LPDDR3_STOCK=y
+-CONFIG_MMC_SUNXI_SLOT_EXTRA=2
+-CONFIG_MMC0_CD_PIN=""
+-# CONFIG_SYS_MALLOC_CLEAR_ON_INIT is not set
+-CONFIG_SUPPORT_EMMC_BOOT=y
+-CONFIG_USB_EHCI_HCD=y
+-CONFIG_USB_OHCI_HCD=y
+-# CONFIG_WATCHDOG is not set
+-CONFIG_WDT=y
+-CONFIG_USB_MUSB_GADGET=y
+-CONFIG_CMD_USB_MASS_STORAGE=y
+-# CONFIG_USB_ETHER is not set
+-CONFIG_CONSOLE_MUX=y
+-CONFIG_SYS_CONSOLE_IS_IN_ENV=y
+-CONFIG_USB_FUNCTION_ACM=y
+-# CONFIG_USB_FUNCTION_ACM_WAIT_FOR_CONNECTION is not set
+-CONFIG_SYSRESET=y
+-CONFIG_SYSRESET_PSCI=y
+-# CONFIG_ENV_IS_IN_FAT is not set
+-CONFIG_ENV_IS_IN_MMC=y
+-CONFIG_ENV_OFFSET=0x400000
+-CONFIG_CMD_WDT=y
+-# CONFIG_TOOLS_KWBIMAGE is not set
+-# CONFIG_TOOLS_LIBCRYPTO is not set
++# No H713_MIPS_BOOT and no h713_disp in PREBOOT yet: the display path is
++# untested here and panel power differs (PH19). Phase 4 step 2 adds them.
++CONFIG_PREBOOT="if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi; usb start"
