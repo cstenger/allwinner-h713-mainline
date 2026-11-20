@@ -385,8 +385,12 @@ U-Boot from FEL on this board, the fresh capture, and the V2 restore SPL
 (below), proven on this board, and the Phase 0.2 V2 config de-drift (U-Boot
 0011: shared `configs/hy200_h713.config`; bench `.config` identical; V2 env at
 `0x93d80000`, proper at `0x49ac00`, chainload, handshake; no display yet).
-Not done — Phase 0.6 installer board guards and the Phase 2 five-cold-boot
-DRAM check.
+Also done, Phase 0.6 installer board guards (2026-11-19):
+`tools/board-guard.py` plus `boards/<id>/board.env` for both boards, wired into
+every host installer (see `tools/README.md`). `boot-switch.sh` is bench-only.
+The projector's `UBOOT_SERIAL` (`034000425c821e57`) is computed from its SID,
+so confirm it with `fastboot getvar serialno` at the first install. Not done —
+the Phase 2 five-cold-boot DRAM check.
 
 **V2 restore SPL built (2026-11-19).** U-Boot 0010
 (`CONFIG_H713_SPL_RESTORE_BOOT0`) plus `tools/build-v2-restore-spl.sh

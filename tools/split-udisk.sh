@@ -57,6 +57,11 @@ done
 [ -n "$DEV" ] || die "--dev is required"
 [ -b "$DEV" ] || die "$DEV is not a block device"
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"
+# Refuse before touching the wrong board: H713_BOARD names boards/<id>/
+# (default: the bench). See tools/board-guard.py.
+H713_BOARD=${H713_BOARD:-hy200-qz713df-a1}
+python3 -I "$(dirname "$0")/board-guard.py" --expect "$H713_BOARD" --dev "$DEV" \
+	|| die "refusing: $DEV is not $H713_BOARD"
 
 for tool in blockdev blkid e2fsck resize2fs tune2fs e2label sgdisk \
 	partprobe udevadm make_f2fs fsck.f2fs lsblk; do

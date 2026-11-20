@@ -17,6 +17,11 @@ SZ=$(stat -c%s "$FIT")
 MAX=$((64 * 1024 * 1024))   # boot_a is 64 MiB
 [ "$SZ" -le "$MAX" ] || { echo "FIT is $SZ B, larger than boot_a ($MAX B)" >&2; exit 1; }
 
+# Refuse before touching the wrong board: H713_BOARD names boards/<id>/
+# (default: the bench). See tools/board-guard.py.
+H713_BOARD=${H713_BOARD:-hy200-qz713df-a1}
+"$ROOT/tools/board-guard.py" --expect "$H713_BOARD" --fastboot || exit 1
+
 echo "==> flashing $FIT ($SZ bytes) to boot_a"
 fastboot flash boot_a "$FIT"
 

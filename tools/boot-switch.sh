@@ -250,6 +250,20 @@ cmd_install() {
 	echo "The environment is at LBA 0x49ec00; re-run saveenv after booting."
 }
 
+# Every image this script writes is the bench's (its DDR3 first stage, the
+# bench restore SPL, the bench vendor boot0), so it only ever targets the
+# bench. On the LPDDR3 projector those images "train OK, reads hang".
+# tools/board-guard.py identifies the board by the transport about to be used.
+guard_bench() {  # via dev
+	[ "$DRY" = 1 ] && return 0
+	local g="$ROOT/tools/board-guard.py" b=hy200-qz713df-a1
+	case "$1" in
+	fastboot) "$g" --expect $b --fastboot ;;
+	fel)      "$g" --expect $b --fel ;;
+	dev)      sudo python3 -I "$g" --expect $b --dev "$2" ;;
+	esac || die "refusing: the target is not the bench (boards/$b)"
+}
+
 [ $# -ge 1 ] || die "usage: $(basename "$0") status|stage|vendor|ours|install [--via X] [--dev /dev/sdX]"
 CMD="$1"; shift
 VIA=""; DEV=""
@@ -265,9 +279,9 @@ done
 case "$CMD" in
 status)  [ -n "$DEV" ] || die "status needs --dev (a running U-Boot cannot be read from the host)"
          cmd_status "$DEV" ;;
-stage)   cmd_stage  "${VIA:-fastboot}" "$DEV" ;;
-vendor)  cmd_vendor "${VIA:-fastboot}" "$DEV" ;;
-ours)    cmd_ours   "${VIA:-fel}" "$DEV" ;;
-install) cmd_install "${VIA:-fastboot}" "$DEV" ;;
+stage)   guard_bench "${VIA:-fastboot}" "$DEV"; cmd_stage  "${VIA:-fastboot}" "$DEV" ;;
+vendor)  guard_bench "${VIA:-fastboot}" "$DEV"; cmd_vendor "${VIA:-fastboot}" "$DEV" ;;
+ours)    guard_bench "${VIA:-fel}" "$DEV";      cmd_ours   "${VIA:-fel}" "$DEV" ;;
+install) guard_bench "${VIA:-fastboot}" "$DEV"; cmd_install "${VIA:-fastboot}" "$DEV" ;;
 *)       die "unknown command: $CMD" ;;
 esac

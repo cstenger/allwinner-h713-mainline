@@ -263,6 +263,27 @@ shared with the adopted logo path. Results in
 and
 [../docs/reference/cedrus-decd-first-visible-playback-2026-08-31.md](../docs/reference/cedrus-decd-first-visible-playback-2026-08-31.md).
 
+`board-guard.py` — **refuses to write to the wrong H713 board.** The bench
+(`HY200_QZ713DF_A1`, DDR3) and the projector (`HY200_QZ713_V2`, LPDDR3) share a
+GPT and most of a boot chain. `--expect BOARD_ID` names `boards/<id>/board.env`
+and checks what the transport allows:
+- the DT compatible (on the board, or over ssh with `--ssh-cmd`);
+- the stock boot0's declared DRAM type and clock (LBA 16, or the vendor's
+  second copy at LBA 0x100 when 16 holds our SPL; on the board, over ssh, or on
+  a `--dev` block device);
+- U-Boot's `serialno` (`--fastboot`), or the SID as U-Boot forms it (`--fel`).
+
+It exits 0 on a match, 3 on a mismatch and 2 when it can't tell, and never
+writes. `install-kernel-fit.sh`, `install-kernel-module.sh`,
+`flash-standalone.sh`, `split-udisk.sh` and `reclaim-android.sh` call it with
+`H713_BOARD` (default the bench). `boot-switch.sh` always expects the bench,
+because every image it writes is the bench's. The on-board `hdmi/install-*.py`
+transactions are already bench-only: they compare the DT model with the bench's,
+or pin exact installed file hashes. Tests: `test-board-guard.py` (synthetic
+images, every identity case) and `test-installer-guards.sh` (fake fastboot/ssh;
+each installer refuses the projector with no write and passes the bench). Both
+were mutation-checked on 2026-11-19.
+
 `flash-standalone.sh` — flash the kernel FIT to the `boot_a` partition (via
 fastboot) and print the U-Boot `bootcmd` for power-on → Debian. See
 [../docs/standalone-boot.md](../docs/standalone-boot.md).

@@ -40,6 +40,11 @@ MOD=${NAME//-/_}
 sum=$(md5sum "$KO" | cut -d' ' -f1)
 echo "==> $KO ($(stat -c%s "$KO") bytes, md5 $sum) -> $BOARD as $MOD"
 
+# Refuse before touching the wrong board: H713_BOARD names boards/<id>/
+# (default: the bench). See tools/board-guard.py.
+H713_BOARD=${H713_BOARD:-hy200-qz713df-a1}
+"$(dirname "$0")/board-guard.py" --expect "$H713_BOARD" --ssh-cmd "${SSH[*]}" || exit 1
+
 # vermagic must match the RUNNING kernel, not the one that happens to be on the
 # FAT. Checking here turns a silent "module verification failed" at modprobe
 # time into a refusal with both strings side by side.
