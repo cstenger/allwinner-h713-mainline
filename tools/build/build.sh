@@ -4,9 +4,10 @@
 #   TF-A BL31  ->  U-Boot (SPL + BL31 + proper)  ->  Linux kernel  ->  images
 #
 # Sources are git submodules under external/ and curated patch series;
-# U-Boot exports its validated commit and applies patches/u-boot/, while
-# Linux and AIC8800 use pinned upstream tarballs (see
-# patches/README.md); versions are pinned in config/versions.env. LLVM-only
+# U-Boot exports its validated commit and applies patches/u-boot/, AIC8800
+# builds from the external/aic8800 submodule at its pinned commit, and Linux
+# uses the pinned upstream tarball (see patches/README.md); versions are
+# pinned in config/versions.env. LLVM-only
 # (clang / ld.lld) — see config/toolchain.md.
 #
 # Usage:
@@ -306,7 +307,8 @@ build_kernel() {
 }
 
 # --- AIC8800 WiFi/BT out-of-tree modules (SDIO WiFi + UART BT) ---------------
-# Source is a pinned radxa-pkg/aic8800 tarball, not vendored: their debian/
+# Source is the external/aic8800 submodule (radxa-pkg/aic8800 at
+# AIC8800_COMMIT), not vendored: their debian/
 # patches are applied to the whole repo first (they patch PCIE/SDIO/USB in the
 # same hunks), then the SDIO subtree is extracted and patches/aic8800/ applied
 # on top. See patches/aic8800/README.md.
