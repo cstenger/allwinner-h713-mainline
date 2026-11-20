@@ -684,7 +684,7 @@ stage 2 step 3 approved first.
 
 **Root filesystem timing (2026-11-20, power block, HS400).** One FIT, one
 data partition; each image installed from U-Boot by
-`tools/v2-uboot-write-super.sh` (fastboot erase + flash, crc32 read-back
+`tools/v2-uboot-write-super.sh` (since replaced by `tools/v2-ab-install.sh`) (fastboot erase + flash, crc32 read-back
 from the eMMC), then `tools/boot-timing.sh`: `systemctl reboot` x6, the first
 a warm-up, 5 measured. A reboot clears Linux's page cache like a power-on;
 power-on only adds the fixed SPL + DRAM training ahead of U-Boot, the same for
@@ -703,6 +703,56 @@ U-Boot → "Starting kernel" is 3.9 s in every case (2 s of it `bootdelay`).
 the root filesystem. SquashFS is 0.8 s slower (decompression in the kernel
 and userspace start). Not yet measured: U-Boot's slot selection and boot
 counting (a few env reads and one write per boot); true power-on boots.
+
+**A/B with RAUC: installed and tested (2026-11-20).** Decision: U-Boot's own
+`bootmeth_rauc` plus Debian's `rauc` (no custom slot code). Layout: the GPT
+keeps 26 entries; p9 `super` became `root_a` (0x92400, 1 GiB) and p16
+`vbmeta_vendor_b` became `root_b` (0x292400, 1 GiB) (`tools/v2-gpt-ab-split.py`,
+originals in `local/recovery/2026-11-20-v2-ab/`). A slot is a vfat boot
+partition (`boot_a`/`boot_b`: FIT + `boot.scr`, `tools/v2-boot-image.sh`) and
+an EROFS root. U-Boot 0012: `BOOTMETH_RAUC` (`"5,9 6,16"`, 3 tries, refill
+when all run out), `BOOTSTD_FULL`, redundant environment at 0x93d90000,
+`bootcmd` = `setenv boot_targets mmc1; bootmeth order rauc; bootflow scan
+-lbH`. Why not `bootflow scan -lb mmc1`: with a bootmeth order set, U-Boot
+refuses any label (`bootmeth_setup_iter_order()` returns `-EPERM` when
+global bootmeths are skipped, and the command prints nothing); without an
+order the label scan works. The sunxi default `boot_targets` (`fel mmc_auto
+usb0 pxe dhcp`) are `distro_bootcmd` names that bootstd resolves to nothing
+bootable here, and ordering plus `boot_targets` need `BOOTSTD_FULL`. A scan
+hang seen once with the non-`BOOTSTD_FULL` build did not reproduce from RAM
+(that configuration is not used). Linux: `rauc` + `rauc-service`, `/etc/rauc/system.conf` (two raw
+rootfs + two vfat boot slots, status in `/data/rauc`), a meta-rauc-style
+`rauc-mark-good.service` (Debian ships none), `fw_env.config` naming the
+environment by partition (`/dev/disk/by-partlabel/empty` +0x800000/+0x810000):
+libubootenv (0.3.5 in Debian 13, unchanged on upstream master) stores
+`lseek()`'s 64-bit result in an `int` in `fileread()`/`filewrite()`, so any
+offset at or past 2^31 fails before the read or write. Found with a
+syscall trace on the board (`lseek(fd, 0x80000000) = 2147483648`, then no
+`read`); 0x7ffe0000 works, 0x80000000 fails, on a plain file too. `/var`
+is now an overlay like `/etc` (image below, `/data/overlay/var` above), so
+the package database follows the image. Installed with
+`tools/v2-ab-install.sh` (fastboot from U-Boot, crc32 read-back of every
+region).
+- Unattended boot: defaults → `bootmeth_rauc` takes an attempt from A →
+  `boot.scr` (FIT 7.9 MB in 0.52 s) → `root=PARTUUID` of `root_a`,
+  `rauc.slot=A` → `/data`, `/etc` and `/var` overlays → `rauc-mark-good`
+  refills A. `rauc status`: booted A, both good. 11.24 s systemd total (one
+  sample, first boot of the `/var` overlay; not yet re-timed).
+- Slot B: `rauc status mark-active other` → `BOOT_ORDER=B A` → boots
+  `root_b` with `rauc.slot=B`; the environment alternates copies.
+- Fallback: with mark-good disabled, B was tried 3 times (B 2→1→0) and the
+  fourth boot fell back to A by itself. Restored afterwards (A active, both
+  good, mark-good enabled; the `/etc` overlay's wants directory checked
+  identical to the image's).
+- **The eMMC fault recurred during the install:** one 1 MiB region of
+  `root_b` (6 pages, the same `00/ff` bitmap and live-counter structure)
+  after ~1.4 GB of writes, despite the discard fix. Caught by the
+  read-back, repaired, everything re-verified; a second full slot rewrite
+  verified clean. Every bulk write on this part must be verified; whether
+  the part is fit for production is open.
+- Not yet tested: a slot that hangs (needs a watchdog: U-Boot
+  `WATCHDOG_AUTOSTART` and systemd `RuntimeWatchdogSec`); a RAUC bundle
+  install (needs signing keys); power-on timing with the A/B layout.
 
 Steps:
 1. **U-Boot.** Patch for items 1 and 2; rebuild; install the new proper and

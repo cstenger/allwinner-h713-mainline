@@ -70,7 +70,7 @@ ORIGINAL_ARGS=("$@")
 #                              already come with mpv; this adds the CLIs.
 #                              Added 2026-10-03 (WP4).
 VIDEO_RUNTIME_PACKAGES=pipewire,wireplumber,gstreamer1.0-alsa,pipewire-alsa,gstreamer1.0-pipewire,ffmpeg,libgles2,libegl1,libgl1-mesa-dri,gstreamer1.0-tools,gstreamer1.0-plugins-base,gstreamer1.0-plugins-good,gstreamer1.0-plugins-bad,gstreamer1.0-gl,gstreamer1.0-libav,v4l-utils,mpv
-BASE_PACKAGES=systemd-sysv,udev,dbus,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
+BASE_PACKAGES=systemd-sysv,udev,dbus,libubootenv-tool,rauc,rauc-service,ifupdown,isc-dhcp-client,iproute2,openssh-server,ca-certificates,e2fsprogs,kmod,debian-archive-keyring,wpasupplicant,iw,wireless-regdb,rfkill,bluez,hostapd,dnsmasq,util-linux-extra,busybox,$VIDEO_RUNTIME_PACKAGES
 
 # --profile dev: rebuild tools/video ON the board. This half is genuinely
 # optional -- the product never compiles its own tools -- but without it a

@@ -5,12 +5,12 @@
 #
 #   tools/rootfs/ro-root.sh TREE
 #
-# The image is mounted read-only (EROFS, SquashFS or ext4 ro) from super. One
+# The image (EROFS) is mounted read-only from its root slot (root_a or root_b). One
 # writable data partition (UDISK, ext4) carries everything that changes:
 #
 #   /data                the data partition itself (media, user files)
 #   /etc                 overlay: image /etc below, /data/overlay/etc above
-#   /var                 bind of /data/var, seeded from the image on first boot
+#   /var                 overlay: image /var below, /data/overlay/var above
 #   /tmp                 tmpfs (systemd tmp.mount), capped
 #
 # /etc must be writable before systemd starts (machine-id, ssh host keys), so
@@ -69,13 +69,13 @@ mount -t overlay h713-etc \
 	-o lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work /etc ||
 	say "/etc overlay failed: /etc is read-only"
 
-# First boot (or after a data wipe): seed /var from the image. Copy to a
-# temporary name and rename, so an interrupted copy is redone, not used.
-if [ ! -d /data/var ]; then
-	rm -rf /data/var.seed
-	cp -a /var /data/var.seed && mv /data/var.seed /data/var && say "seeded /data/var from the image"
-fi
-[ -d /data/var ] && mount --bind /data/var /var || say "/var bind failed: /var is read-only"
+# /var is an overlay too, not a copy: the image's /var (package database,
+# shipped state) stays underneath and is updated with the image; only what
+# changes at runtime lands on /data.
+mkdir -p /data/overlay/var/upper /data/overlay/var/work
+mount -t overlay h713-var \
+	-o lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work /var ||
+	say "/var overlay failed: /var is read-only"
 
 umount /proc
 exec /sbin/init "$@"
@@ -109,10 +109,76 @@ install -d -m 0755 "$systemd_dir/local-fs.target.wants"
 ln -sfn /usr/lib/systemd/system/tmp.mount "$systemd_dir/local-fs.target.wants/tmp.mount"
 
 # systemd needs device units for the partitions it tracks mounts on: the root
-# (super) and the data partition, by either name it carries.
+# (super, or root_a/root_b once the GPT is split) and the data partition.
 cat > "$R/etc/udev/rules.d/99-zz-h713-unused-partitions.rules" <<'EOF'
-SUBSYSTEM=="block", KERNEL=="mmcblk0*", ENV{ID_PART_ENTRY_NAME}!="linux|UDISK|super", TAG-="systemd"
+SUBSYSTEM=="block", KERNEL=="mmcblk0*", ENV{ID_PART_ENTRY_NAME}!="linux|UDISK|super|root_a|root_b", TAG-="systemd"
 EOF
+
+# A/B with RAUC (U-Boot patch 0012, bootmeth_rauc): U-Boot takes one attempt
+# from the slot it boots and passes rauc.slot=A|B; RAUC reads and writes the
+# U-Boot environment (BOOT_ORDER, BOOT_<slot>_LEFT) with Debian's fw_setenv,
+# marks the booted slot good, and installs updates into the other slot. Two
+# environment copies, 64 KiB each, in the GPT partition "empty".
+cat > "$R/etc/fw_env.config" <<'EOF'
+# U-Boot environment of the HY200_QZ713_V2 (redundant; U-Boot patch 0012):
+# disk offsets 0x93d80000 and 0x93d90000, i.e. 8 MiB into GPT partition
+# "empty". Named by partition, with offsets below 2 GiB, because libubootenv
+# (0.3.5 in Debian 13, unchanged on upstream master) stores lseek()'s off_t
+# result in an int in fileread()/filewrite(): any offset >= 2^31 wraps
+# negative and fails before read()/write() (traced on the board 2026-11-20).
+/dev/disk/by-partlabel/empty	0x800000	0x10000
+/dev/disk/by-partlabel/empty	0x810000	0x10000
+EOF
+install -d -m 0755 "$R/etc/rauc"
+cat > "$R/etc/rauc/system.conf" <<'EOF'
+# RAUC on the HY200_QZ713_V2 projector: a slot is a boot partition (vfat: the
+# kernel FIT and boot.scr) and its read-only root (EROFS image).
+[system]
+compatible=hy200-qz713-v2
+bootloader=uboot
+data-directory=/data/rauc
+
+[slot.rootfs.0]
+device=/dev/disk/by-partlabel/root_a
+type=raw
+bootname=A
+
+[slot.rootfs.1]
+device=/dev/disk/by-partlabel/root_b
+type=raw
+bootname=B
+
+[slot.boot.0]
+device=/dev/disk/by-partlabel/boot_a
+type=vfat
+parent=rootfs.0
+
+[slot.boot.1]
+device=/dev/disk/by-partlabel/boot_b
+type=vfat
+parent=rootfs.1
+EOF
+# Mark the booted slot good once the system is up. Debian ships RAUC as rauc
+# (CLI) + rauc-service (D-Bus service) with no mark-good unit; this is the
+# same unit Yocto's meta-rauc provides: `rauc status mark-good`.
+if [ ! -x "$R/usr/bin/rauc" ] || [ ! -e "$R/usr/lib/systemd/system/rauc.service" ]; then
+  echo "ro-root: the image lacks rauc / rauc-service" >&2; exit 1
+fi
+cat > "$systemd_dir/rauc-mark-good.service" <<'EOF'
+[Unit]
+Description=RAUC: mark the booted slot good
+ConditionKernelCommandLine=rauc.slot
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/rauc status mark-good
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -sfn ../rauc-mark-good.service \
+  "$systemd_dir/multi-user.target.wants/rauc-mark-good.service"
 
 # Nothing in the image may be written at runtime; the machine id is created
 # on the data partition (through the /etc overlay) on first boot.
