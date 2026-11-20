@@ -1,0 +1,42 @@
+From: Christopher Stenger
+Subject: h713: V2 A/B boot through U-Boot's RAUC boot method
+
+The projector (HY200_QZ713_V2) boots A/B with U-Boot's own bootmeth_rauc
+(no board code): slot A is boot_a (p5) + root_a (p9), slot B is boot_b (p6) +
+root_b (p16). bootmeth_rauc takes an attempt from the first slot in
+BOOT_ORDER with BOOT_<slot>_LEFT left, saves the environment, and runs the
+boot.scr on that slot's vfat boot partition with rauc.slot=<slot>; when no
+slot has attempts left it refills them all and resets. RAUC in Linux marks
+the booted slot good and drives updates.
+
+The environment is now written on every boot, so it becomes redundant: a
+second 64 KiB copy at 0x93d90000, right after the first, still inside the
+GPT partition "empty". The bench (A1) is untouched.
+
+diff --color -ruN a/configs/hy200_qz713_v2_defconfig b/configs/hy200_qz713_v2_defconfig
+--- a/configs/hy200_qz713_v2_defconfig	2026-11-20 02:30:31.078366523 -0800
++++ b/configs/hy200_qz713_v2_defconfig	2026-11-20 02:30:41.240759243 -0800
+@@ -32,3 +32,21 @@
+ # No H713_MIPS_BOOT and no h713_disp in PREBOOT yet: the display path is
+ # untested here and panel power differs (PH19). Phase 4 step 2 adds them.
+ CONFIG_PREBOOT="if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi; usb start"
++# A/B boot with U-Boot's own RAUC boot method (boot/bootmeth_rauc.c): slot A
++# is boot_a (p5) + root_a (p9), slot B is boot_b (p6) + root_b (p16). It takes
++# an attempt from the first slot in BOOT_ORDER with BOOT_<slot>_LEFT > 0, saves
++# the environment, and runs boot.scr from that slot's boot partition (vfat)
++# with rauc.slot=<slot> in raucargs; Linux's RAUC marks the slot good. The
++# environment is saved on every boot, so keep two copies (both in the GPT
++# partition "empty"). The eMMC is chosen with boot_targets, not a label:
++# with a bootmeth order set, "bootflow scan <label>" is refused (-EPERM in
++# bootmeth_setup_iter_order, printed nowhere), and the sunxi default
++# boot_targets are distro_bootcmd names (fel mmc_auto usb0 pxe dhcp) that
++# name nothing bootable here. Ordering and boot_targets need BOOTSTD_FULL.
++CONFIG_ENV_REDUNDANT=y
++CONFIG_ENV_OFFSET_REDUND=0x93d90000
++CONFIG_BOOTMETH_RAUC=y
++CONFIG_BOOTMETH_RAUC_BOOT_ORDER="A B"
++CONFIG_BOOTMETH_RAUC_PARTITIONS="5,9 6,16"
++CONFIG_BOOTMETH_RAUC_DEFAULT_TRIES=3
++CONFIG_BOOTMETH_RAUC_RESET_ALL_ZERO_TRIES=y
++CONFIG_BOOTCOMMAND="setenv boot_targets mmc1; bootmeth order rauc; bootflow scan -lbH"
++CONFIG_BOOTSTD_FULL=y
