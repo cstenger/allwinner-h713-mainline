@@ -389,8 +389,17 @@ Also done, Phase 0.6 installer board guards (2026-11-19):
 `tools/board-guard.py` plus `boards/<id>/board.env` for both boards, wired into
 every host installer (see `tools/README.md`). `boot-switch.sh` is bench-only.
 The projector's `UBOOT_SERIAL` (`034000425c821e57`) is computed from its SID,
-so confirm it with `fastboot getvar serialno` at the first install. Not done —
-the Phase 2 five-cold-boot DRAM check.
+so confirm it with `fastboot getvar serialno` at the first install. Also done,
+the Phase 2 five-cold-boot DRAM check (below). **The gate is met.**
+
+**Five cold boots from FEL (2026-11-19, Phase 2 exit met).** Boots 1 and 2 were
+the earlier FEL DRAM runs and the cold RAM-kernel boot. Boots 3–5 used
+`tools/fel-dram-check.sh` with the SPL that will be installed: the current V2
+build including 0011 (`build/out/u-boot-sunxi-with-spl-lpddr3-3e88ce00.bin`,
+sha256 `a394bda0…`). Each boot: serial and USB unplugged, power off for 1 min
+or more, FEL button. Each printed `DRAM: 1024 MiB`, and 32 MiB random patterns
+at `0x42000000` and `0x7c000000` read back identical, in 1 MiB pieces (17:42,
+17:52, 18:20). Logs: `local/recovery/fel-dram-check/cold{3,4,5}-*.log`.
 
 **V2 restore SPL built (2026-11-19).** U-Boot 0010
 (`CONFIG_H713_SPL_RESTORE_BOOT0`) plus `tools/build-v2-restore-spl.sh
