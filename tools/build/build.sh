@@ -475,13 +475,28 @@ build_kernel_fit() {
 				algo = "sha256";
 			};
 		};
+		fdt-v2 {
+			description = "$KERNEL_DTB_PROJECTOR";
+			data = /incbin/("$OUT/$KERNEL_DTB_PROJECTOR.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			hash-1 {
+				algo = "sha256";
+			};
+		};
 	};
 	configurations {
 		default = "conf-1";
 		conf-1 {
-			description = "H713 HY200";
+			description = "H713 HY200 QZ713DF_A1 (bench, DDR3)";
 			kernel = "kernel";
 			fdt = "fdt-1";
+		};
+		conf-v2 {
+			description = "H713 HY200 QZ713_V2 (projector, LPDDR3): bootm ADDR#conf-v2";
+			kernel = "kernel";
+			fdt = "fdt-v2";
 		};
 	};
 };
