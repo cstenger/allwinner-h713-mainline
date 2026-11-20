@@ -682,6 +682,28 @@ A second-half placement test needs the GPT edit, so it runs only if A/B
 wins. All variants need `UDISK` reformatted ext4 and `super` written, i.e.
 stage 2 step 3 approved first.
 
+**Root filesystem timing (2026-11-20, power block, HS400).** One FIT, one
+data partition; each image installed from U-Boot by
+`tools/v2-uboot-write-super.sh` (fastboot erase + flash, crc32 read-back
+from the eMMC), then `tools/boot-timing.sh`: `systemctl reboot` x6, the first
+a warm-up, 5 measured. A reboot clears Linux's page cache like a power-on;
+power-on only adds the fixed SPL + DRAM training ahead of U-Boot, the same for
+every variant. Logs in `local/recovery/boot-timing/`.
+
+| root | size | systemd total (kernel + userspace), mean [min..max] | U-Boot banner → autologin |
+| --- | --- | --- | --- |
+| EROFS lz4hc | 555 MiB | **10.63 s** (2.28 + 8.35) [10.55..10.72] | 15.80 s |
+| EROFS uncompressed | 1073 MiB | 10.74 s (2.28 + 8.45) [10.63..10.88] | 15.84 s |
+| ext4 read-only | 1292 MiB | 10.87 s (2.31 + 8.56) [10.68..11.00], one outlier of 16.95 s excluded | 15.94 s |
+| SquashFS zstd | 338 MiB | 11.43 s (2.57 + 8.85) [11.25..11.60] | 16.48 s |
+
+U-Boot → "Starting kernel" is 3.9 s in every case (2 s of it `bootdelay`).
+**EROFS lz4hc is at least as fast as the single-slot ext4 baseline and fits a
+1 GiB A/B slot**, so splitting `super` into A/B slots costs no boot time from
+the root filesystem. SquashFS is 0.8 s slower (decompression in the kernel
+and userspace start). Not yet measured: U-Boot's slot selection and boot
+counting (a few env reads and one write per boot); true power-on boots.
+
 Steps:
 1. **U-Boot.** Patch for items 1 and 2; rebuild; install the new proper and
    SPL from the FEL U-Boot as in stage 1 (stash and spare too), read back.
