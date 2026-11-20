@@ -1,0 +1,125 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: h713 <h713@local>
+Date: Fri, 20 Nov 2026 03:11:14 -0800
+Subject: [PATCH] aic8800: unregister the SDIO driver when aic8800_bsp unloads
+
+rmmod of aic8800_bsp, then insmod of a new aic8800_bsp and aic8800_fdrv,
+oopsed the LPDDR3 projector in the next SDIO enumeration and hard-hung it:
+
+    Workqueue: events_freezable mmc_rescan
+    pc : __device_attach_driver+0x20/0x1bc
+     __device_attach_driver
+     __device_attach
+     bus_probe_device
+     device_add
+     sdio_add_func
+     mmc_attach_sdio
+     mmc_rescan
+    Modules linked in: aic8800_fdrv(O+) aic8800_bsp(O) ...
+                       [last unloaded: aic8800_bsp(O)]
+
+aicbsp_exit() only calls aicbsp_sdio_exit() under CONFIG_PLATFORM_ROCKCHIP.
+On every other platform the driver is unregistered only by
+aicbsp_set_subsys() when *all* subsystems have powered off, and not at all on
+init's probe-timeout path (aicbsp_sdio_init() returns with the driver
+registered and err1 goes straight to power-off). So the unloaded module's
+sdio_driver stayed on the bus in freed memory, and the bus walk of the next
+enumeration dereferenced it.
+
+Unregister on exit for CONFIG_PLATFORM_MAINLINE_SUNXI too, before
+aicbsp_mainline_cleanup() drops wlan_regon so remove() still sees a powered
+chip. remove() is the vendor's own teardown, the one the all-off path already
+runs. driver_unregister() does not clear drv->p, so a second unregister would
+be a use-after-free of its own: aicbsp_sdio_exit() now tracks whether the
+driver is registered and unregisters at most once, which also makes the
+existing all-off path and the new exit path safe in either order.
+
+aicbsp_mainline_cleanup() then cuts wlan_regon, but mmc1 is not
+non-removable, so the MMC core kept the dead card's functions until the next
+detect. The next load's dummy driver bound them, and sdio_bus_probe() timed
+out setting the block size before the vendor probe ran:
+
+    aicbsp_dummy_sdmmc mmc1:6721:1: probe with driver aicbsp_dummy_sdmmc
+    failed with error -110
+
+(the power-on rescan then removed the card and enumerated it fresh). Cleanup
+now calls aicbsp_mainline_rescan() after cutting power, as
+aicbsp_platform_power_off() already does, so the card is gone at unload.
+---
+ aic8800_bsp/aic_bsp_main.c | 10 ++++++++++
+ aic8800_bsp/aicsdio.c      | 20 ++++++++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/aic8800_bsp/aic_bsp_main.c b/aic8800_bsp/aic_bsp_main.c
+index f959e62..f3a5558 100644
+--- a/aic8800_bsp/aic_bsp_main.c
++++ b/aic8800_bsp/aic_bsp_main.c
+@@ -456,6 +456,16 @@ static void __exit aicbsp_exit(void)
+     if(aicbsp_sdiodev){
+     	aicbsp_sdio_exit();
+     }
++#endif
++#ifdef CONFIG_PLATFORM_MAINLINE_SUNXI
++	/*
++	 * aicbsp_set_subsys() only unregisters when every subsystem has powered
++	 * off, and init's probe-timeout path never does. Either way the driver
++	 * would outlive this module on the SDIO bus and the next enumeration
++	 * would walk into freed memory. Before cleanup cuts wlan_regon, so
++	 * remove() still talks to a powered chip.
++	 */
++	aicbsp_sdio_exit();
+ #endif
+ 	sysfs_remove_group(&(aicbsp_pdev->dev.kobj), &aicbsp_attribute_group);
+ 	platform_device_del(aicbsp_pdev);
+diff --git a/aic8800_bsp/aicsdio.c b/aic8800_bsp/aicsdio.c
+index e0838a7..f3f2bad 100644
+--- a/aic8800_bsp/aicsdio.c
++++ b/aic8800_bsp/aicsdio.c
+@@ -157,6 +157,15 @@ void aicbsp_mainline_cleanup(void)
+ 		aicbsp_wlan_regon_requested = false;
+ 		pr_info("aicbsp: wlan_regon GPIO %d released\n",
+ 			aicbsp_wlan_regon_gpio);
++		/*
++		 * The chip is off now, but mmc1 is not non-removable, so the core
++		 * keeps the card until something asks it to look. Ask now, as
++		 * aicbsp_platform_power_off() does; otherwise the next load's
++		 * dummy driver binds the dead functions and sdio_bus_probe()
++		 * times out setting the block size (-110). The rescan runs in
++		 * the core's own work, so nothing of this module is left in it.
++		 */
++		aicbsp_mainline_rescan();
+ 	}
+ 	if (aicbsp_wlan_hostwake_gpio >= 0)
+ 		gpio_free(aicbsp_wlan_hostwake_gpio);
+@@ -819,12 +828,20 @@ static void aicbsp_platform_power_off(void)
+ }
+ 
+ 
++/*
++ * Whether aicbsp_sdio_driver is on the SDIO bus. driver_unregister() leaves
++ * drv->p dangling, so a second unregister is a use-after-free: every caller
++ * goes through aicbsp_sdio_exit(), which unregisters at most once.
++ */
++static bool aicbsp_sdio_registered;
++
+ int aicbsp_sdio_init(void)
+ {
+ 
+ 	if (sdio_register_driver(&aicbsp_sdio_driver)) {
+ 		return -1;
+ 	} else {
++		aicbsp_sdio_registered = true;
+ 		//may add mmc_rescan here
+ 	}
+ 	if (down_timeout(&aicbsp_probe_semaphore, msecs_to_jiffies(2000)) != 0){
+@@ -838,7 +855,10 @@ int aicbsp_sdio_init(void)
+ 
+ void aicbsp_sdio_exit(void)
+ {
++	if (!aicbsp_sdio_registered)
++		return;
+ 	sdio_unregister_driver(&aicbsp_sdio_driver);
++	aicbsp_sdio_registered = false;
+ }
+ 
+ void aicbsp_sdio_release(struct aic_sdio_dev *sdiodev)

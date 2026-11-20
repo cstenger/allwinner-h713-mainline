@@ -10,8 +10,9 @@ are never applied to the kernel tree.
 
 | | |
 |---|---|
-| Upstream | `external/aic8800` submodule, `radxa-pkg/aic8800` at `df4c783b` |
-| Vendor driver release | `2026_0123_5f7be68d` |
+| Upstream | `external/aic8800` submodule, `radxa-pkg/aic8800` at `5562c254` (2026-11-10) |
+| Radxa package release | `5.0+git20260123.5f7be68d-11` |
+| Vendor driver release | `2026_0123_5f7be68d` (unchanged since `df4c783b`) |
 | Subtree used | `src/SDIO/driver_fw/driver/aic8800` |
 | Applied first | the repo's own `debian/patches/series` |
 
@@ -31,7 +32,25 @@ is the SDIO subtree extracted and this series applied on top.
 Two of Radxa's patches do not apply at this commit and that is expected:
 `fix-usb-firmware-path` (USB only, zero SDIO hunks) and
 `fix-Lower-the-debugging-log-level` (already merged upstream — `patch` reports
-it as reversed/previously applied).
+it as reversed/previously applied). Re-checked at `5562c254`: 31 of 33 apply,
+these same two fail, so `AIC8800_VENDOR_PATCH_SKIP` is unchanged.
+
+**What the `df4c783b` → `5562c254` bump changed for us.** Diffing the
+vendor-patched SDIO subtree at both commits: on our 6.18 kernel the only live
+change is the per-chip firmware-path refactor described under "firmware
+consequences" below, plus a `u64 cookie = 0` initialisation in `rwnx_tdls.c`.
+Everything else Radxa added in those 13 commits (6.12.101 backports, 7.3 cfg80211
+cookie ownership, 7.4 key-op signatures, USB-only fixes) is behind
+`LINUX_VERSION_CODE` guards that are false here, or under `src/USB`.
+
+Hardware-verified 2026-11-20 on the LPDDR3 projector (HY200_QZ713_V2, kernel
+6.18.38 #1 Fri Nov 20 02:37:31), booted from RAUC slot B with 0001-0010
+installed: firmware loads from `aic8800_fw/SDIO/aic8800D80/`
+(`fmacfw_8800d80_h_u02.bin`), `iw scan` sees 17 BSSs, a WPA2 AP on wlan0 took
+a host station at 54 Mbit/s (300 × 1400-byte pings, 0 lost, tx failed 0), and
+`hci0` is UP RUNNING with 134 LE advertising reports in 12 s. The
+`hci0: Opcode 0x0c03 failed: -4` at boot is not new: the old driver logs it on
+every slot-A boot too.
 
 ## The series
 
@@ -45,6 +64,7 @@ it as reversed/previously applied).
 | 0007 | Route the association chatter through `aicwf_dbg_level` | Ten `printk()`/`netdev_info()` sites printed a six-line burst on **every** association, ignoring the driver's own log-level knob. Since the console is on the projector panel, a client that re-associates every few seconds buried the login prompt inside a minute. Logging only — no control flow touched. |
 | 0008 | Drain the `rc_stat` queue; fix an out-of-bounds write | `rwnx_rc_stat_work()` handled one ring entry per run while `schedule_work()` coalesces, so entries were silently dropped. Also sizes `dir_sta[]`/`rc_config[]` to the index range the code already validates — the `bc_mc` pseudo-stations were writing past the end. See below: this patch was written on a theory that turned out to be wrong, and is kept for what it actually fixes. |
 | 0009 | Compile in the AP-mode debugfs unregister | `#ifdef CONFIG_DEBUG_FS_AIC` — a macro defined nowhere — wrapped the unregister call in both AP station-delete paths, while the register used plain `CONFIG_DEBUG_FS`. The `rc/<mac>` directory was created and never removed, so every re-association collided. Two characters. |
+| 0010 | Unregister the SDIO driver when `aic8800_bsp` unloads | `aicbsp_exit()` only unregistered `aicbsp_sdio_driver` on Rockchip; elsewhere it came off the bus only when every subsystem powered off. `rmmod aic8800_bsp` left it registered in freed memory, and the next SDIO enumeration oopsed in `__device_attach_driver` and hard-hung the LPDDR3 projector (2026-11-20, hot-swapping the driver for the `5562c254` bump). Now unregistered on exit, at most once, because `driver_unregister()` leaves `drv->p` dangling. Cleanup also asks the MMC core to rescan after cutting `wlan_regon`, so the dead card is removed at unload rather than bound by the next load's dummy driver (which failed with -110). Hardware-verified 2026-11-20 on the LPDDR3 projector (slot B): three unload/reload cycles (stop `h713-bt-attach`, `rmmod` btlpm, fdrv, bsp; `modprobe` back), no SDIO driver or card left after unload (`mmc1: card 6721 removed`), no -110 on reload, no oops, `wlan0` and `hci0` back every time, scan and WPA2 association after the third. A build without 0010 must still never be unloaded. |
 
 ### 0008 and 0009: a wrong diagnosis, kept on the record
 
@@ -116,6 +136,14 @@ and both were found the hard way:
    the 2024 driver used `aic8800_sdio/aic8800`. `AIC8800_FW_DEST` in
    `config/versions.env` must match, or the driver enumerates the chip and then
    fails every firmware open.
+   Since `5562c254` (Radxa `516e3b0`, `fix-sdio-per-chip-firmware-path`) the
+   compiled-in path is only the parent, `/lib/firmware/aic8800_fw/SDIO`, and
+   `get_fw_path()` appends a subdirectory picked from the probed chip ID —
+   `/aic8800D80` for `PRODUCT_ID_AIC8800D80`, ours. The resolved directory is
+   therefore unchanged and so is `AIC8800_FW_DEST`. Two things to know: an
+   unrecognised chip ID now falls back to the bare parent (no subdirectory),
+   and setting the `aic_fw_path` module parameter bypasses the subdirectory
+   entirely (and is `memcpy`d without a terminator) — we set neither.
 2. **This board needs `_h_` firmware.** The chip reports `is_chip_id_h` from
    register `0x40500000` (`((memdata >> 16) & 0xC0) == 0xC0`). Both drivers
    compute it, but only the 2026 one has a D80 `_h_` firmware list, so it loads
