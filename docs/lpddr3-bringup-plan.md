@@ -712,15 +712,19 @@ originals in `local/recovery/2026-11-20-v2-ab/`). A slot is a vfat boot
 partition (`boot_a`/`boot_b`: FIT + `boot.scr`, `tools/v2-boot-image.sh`) and
 an EROFS root. U-Boot 0012: `BOOTMETH_RAUC` (`"5,9 6,16"`, 3 tries, refill
 when all run out), `BOOTSTD_FULL`, redundant environment at 0x93d90000,
-`bootcmd` = `setenv boot_targets mmc1; bootmeth order rauc; bootflow scan
--lbH`. Why not `bootflow scan -lb mmc1`: with a bootmeth order set, U-Boot
-refuses any label (`bootmeth_setup_iter_order()` returns `-EPERM` when
-global bootmeths are skipped, and the command prints nothing); without an
-order the label scan works. The sunxi default `boot_targets` (`fel mmc_auto
-usb0 pxe dhcp`) are `distro_bootcmd` names that bootstd resolves to nothing
-bootable here, and ordering plus `boot_targets` need `BOOTSTD_FULL`. A scan
-hang seen once with the non-`BOOTSTD_FULL` build did not reproduce from RAM
-(that configuration is not used). Linux: `rauc` + `rauc-service`, `/etc/rauc/system.conf` (two raw
+boot device and method declared in the V2 `-u-boot.dtsi` bootstd node
+(`bootdev-order = "mmc1"`, a single `rauc` bootmeth node), so `bootcmd` is
+Standard Boot's default `bootflow scan -lb`; V2 drops the deprecated
+`DISTRO_DEFAULTS`, and `sunxi-common.h` includes the `distro_bootcmd`
+environment only for boards that keep it (its `boot_targets`, `fel mmc_auto
+usb0 pxe dhcp`, overrides any devicetree order and names nothing bootable
+here). Why not `bootflow scan -lb mmc1` with `bootmeth order rauc`: U-Boot
+refuses any label while a bootmeth order is set (`bootmeth_setup_iter_order()`
+returns `-EPERM` when global bootmeths are skipped, and the command prints
+nothing). A scan hang seen once with the non-`BOOTSTD_FULL` build did not
+reproduce from RAM (that configuration is not used). (The first install used
+`setenv boot_targets mmc1; bootmeth order rauc; bootflow scan -lbH`.)
+Linux: `rauc` + `rauc-service`, `/etc/rauc/system.conf` (two raw
 rootfs + two vfat boot slots, status in `/data/rauc`), a meta-rauc-style
 `rauc-mark-good.service` (Debian ships none), `fw_env.config` naming the
 environment by partition (`/dev/disk/by-partlabel/empty` +0x800000/+0x810000):
