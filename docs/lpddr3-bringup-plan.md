@@ -101,6 +101,114 @@ speaker, light, fan and IR attached. Nothing has been written to its eMMC.
   - **Phase 3 exit is met:** memtester clean, and no new kernel errors across
     a cold and a warm boot. Item 2 (re-check the 1296 MHz ceiling) is still
     open.
+  - **1296 MHz all-core stress: silent reset at about 17 min (2026-11-19).**
+    - Load: four `memtester 190M`, one pinned to each core,
+      `scaling_min_freq=1296000`, RAM kernel after the warm boot. One sample
+      a minute: temperature, frequency, vdd-cpu, FAILURE count.
+    - 1296 MHz / 1058 mV until 72 °C. From then the 75 °C passive trip
+      throttled the CPU across 1104/1200/1296 MHz (960/999/1058 mV) at
+      73–76 °C. memtester: 0 FAILURE in 56 passed subtests.
+    - Last sample 03:02:03 (1104 MHz, 73.4 °C). Stock boot0 started at
+      03:03:00. Nothing in between: no oops, no panic (`panic=0` would have
+      halted), no thermal message. That fits a hard hang caught by the
+      16 s watchdog, or a supply reset.
+    - Not yet known which. One candidate: our `regulator-ramp-delay = <2500>`
+      (µV/µs, kernel 0028) against stock's `<0x19>` (25) for the same PWM
+      buck. If the filtered PWM rail really settles in milliseconds, each
+      upward DVFS step runs the new frequency on the old voltage for a
+      while. Throttling made those steps frequent here; the 66-min
+      single-core memtester stayed at 1296 MHz with none.
+    - n=1. Log: `local/recovery/2026-11-18-v2-bringup/linux-ram-cold-uart.log`.
+  - **Ramp-delay arms (2026-11-19): ramp delay is not the cause.** RTC GP2
+    was armed before each run, so any reset lands in FEL and the next arm
+    runs unattended.
+    - A, repeat (ramp 2500, read back as `00 00 09 c4`): reset again after
+      about 9 min. Last sample 1296 MHz, 72.8 °C, 0 FAILURE in 28 subtests.
+    - B, stock ramp 25 (read back `00 00 00 19`, so a 98 mV step waits
+      3.9 ms instead of 40 µs): reset about 8 s after the load started,
+      while the CPU was still cool. The reset cut a console line mid-character
+      and boot0 started in the same second. That is an immediate reset, not
+      a hang followed by the 16 s watchdog.
+    - Every time, boot0 found the GP2 flag and went to FEL. The RTC domain
+      kept its power, so this was not a whole-board power loss.
+    - Three resets at 17 min, 9 min and 8 s, from 50 to 76 °C, with
+      memtester never reporting an error. That points away from DRAM, heat
+      and the DVFS ramp, and towards a supply or reset event when all four
+      cores are loaded. The 66-min single-core run never reset.
+  - **Four cores fixed at 1008 MHz survive (2026-11-19).** Arm C: same load
+    with `scaling_min_freq = scaling_max_freq = 1008000` (939 mV), so there
+    were no DVFS steps. 35 min clean: 0 FAILURE in 112 passed subtests,
+    65–72 °C (under the 75 °C trip, so no throttling), then a clean
+    `reboot -f` into FEL.
+    - So four-core load as such is fine at 1008 MHz. The resets need the
+      1104–1296 MHz points, DVFS steps, or both. Arm B (reset 8 s after
+      stepping up to 1296 MHz) suggests 1296 MHz under four-core load is
+      enough on its own.
+  - **Four cores at 1200 MHz survive (2026-11-19).** Arm D: `scaling_min_freq
+    = scaling_max_freq = 1200000` (999 mV). 35 min clean: 0 FAILURE in 112
+    subtests, 70–75 °C. The 75 °C trip stepped it down to 1104 MHz (960 mV)
+    in at least 4 of 35 samples and back up to 1200, so 1104↔1200 DVFS steps
+    were exercised too. Clean `reboot -f` into FEL.
+  - **Conclusion so far:** on this projector, four-core load resets the
+    board only when 1296 MHz (1058 mV) is in use. 1200 MHz holds, including
+    with throttle steps. The **ceiling is 1200 MHz** until 1296 is shown safe.
+    1296 at 1060 mV is the stock table's value too, so this unit may just
+    lack margin there. A 1296 MHz arm at 1100 mV (the stock 1392 MHz
+    voltage, under the bench's 1.127 V measured peak) would tell undervolt
+    from something else.
+  - **More voltage does not save 1296 MHz (2026-11-19).** Arm E: the V2 DTB
+    with only `opp-1296000000` changed to 1100000 µV (read back 1100 mV
+    on the board), min = max = 1296 MHz. It ran 1296 MHz for about 3 min,
+    then the 75 °C trip cycled it through 1104/1200/1296. It **reset after
+    17 min** (last sample 1200 MHz, 74.2 °C, 0 FAILURE in 56 subtests),
+    and boot0 found the GP2 flag and went to FEL.
+    - Arm D cycled through 1104/1200 for 35 min without a reset. Arm E, the
+      same plus 1296 MHz with 42 mV more, reset. The fault follows the
+      **1296 MHz point**, and 1058 → 1100 mV does not move it. Undervolt at
+      1296 is unlikely; something tied to running at, or stepping to,
+      1296 MHz (PLL_CPU setting, CPU/AXI divider) is more likely. Not
+      diagnosed.
+  - **⚠ Supply not controlled (noted 2026-11-19 afternoon).** The projector
+    was probably on USB power, not its power block, for arms A–E (not
+    certain). On USB power the bench reset-looped with this exact signature:
+    an instant reset with no kernel message, at a current spike (AIC8800
+    firmware load). The arm results also fit a supply limit: every reset arm
+    drew the most current (1296 MHz; 1100 mV draws more than 1058 mV), and
+    the lower-current arms (1200, 1008) held. **The 1200 MHz ceiling is
+    unproven.** Rerun the 1296 MHz arm on the power block before changing
+    any OPP.
+  - **Bench arm at 1296 MHz: no reset, but not a test of 1296 (2026-11-19).**
+    QZ713DF_A1 on its power block, booted from its eMMC (our 6.18.38 install),
+    driven over UART only. memtester sent as base64 and its sha256 checked
+    (`e4bd807b…`). Four `memtester 170M` (827 MB available under systemd),
+    min = max = 1296 MHz, ramp 2500. 35 min, 0 FAILURE in 112 subtests,
+    no reset.
+    - But it reached 81.6 °C within 2 min, then ran at **85–92 °C**,
+      throttled by the 85 °C trip to **480–1008 MHz** for nearly the whole
+      run. 1296 MHz appears in one sample. Trips are 75/85/105 °C. Idle
+      after the stop was still 82 °C. The bench fan was unplugged, but it
+      sits on the lamp's cooling block and does little for the SoC, so the
+      bench simply has less SoC cooling than the assembled projector.
+    - So neither board has a valid 1296 MHz result yet: the projector's
+      supply was not controlled, and the bench was thermally limited. A valid
+      bench arm would need added SoC cooling (a heatsink or airflow on the
+      SoC), not the fan.
+  - **On its power block the projector holds 1296 MHz: arms A–E were the
+    supply (2026-11-19).** Arm F repeats arm A exactly (stock V2 DTB,
+    1296 MHz / 1058 mV, ramp 2500, four `memtester 190M`, GP2 armed) with
+    the projector on its power block. **35 min, no reset**, 0 FAILURE in 112
+    subtests, 58–76.5 °C. The 75 °C trip cycled it through 1104/1200/1296
+    (1296 MHz in 12 of 35 samples), the same pattern arm A reset under after
+    9 min. Clean `reboot -f` into FEL.
+    - The resets in arms A, B and E were the USB supply, not 1296 MHz. That
+      also explains why the higher-current arms reset and the lower ones did
+      not. **The 1296 MHz ceiling stands; no OPP change.**
+    - **Phase 3 item 2 is met** (n=1 on proper power): memtester clean at the
+      1296 MHz ceiling, with throttle steps, on the power block.
+    - **Rule for these boards: run stress tests on the power block, and
+      record the power source with the result.** USB power cannot carry
+      four cores plus DRAM traffic at 1296 MHz, nor the bench's AIC8800
+      firmware load.
   - Linux → FEL with no button: `devmem 0x07090108 32 0x5aa5a55a; reboot -f`
     (stock boot0 is still the first stage).
   - Still to do: a cold boot and a warm boot of the RAM kernel.
