@@ -184,9 +184,8 @@ including the route, install, RAUC journal and post-reboot checks.
 2. Paused the RAUC daemon with `SIGSTOP` once the eMMC partition counter
    showed 75,497,472 bytes (72 MiB) of the 583,835,648-byte root image written.
    Cut physical power while the install was paused and before slot
-   activation. The pause made the test repeatable with an operator. A cut
-   while the eMMC is actively writing or while RAUC activates the slot
-   remains to be tested.
+   activation. The pause made the test repeatable with an operator. The
+   separate activation test below covers the gap between environment saves.
 3. After power returned, the projector booted A unattended. Both full
    slot-A partition hashes matched their pre-cut values. RAUC marked A
    good, and B still reported bad with zero attempts and remained out of
@@ -202,6 +201,30 @@ Local evidence in `build/rauc-power-cut-test/` includes
 `retry-install.log`, and `retry-boot-check.log`. The first attempt finished
 without a cut because its pause check expected B to remain in `BOOT_ORDER`
 with zero attempts. The measured cut used the observed `BOOT_ORDER=A`.
+
+### Power cut between slot-activation saves (2026-11-21)
+
+1. Started from known-good B and hashed the full `boot_b` and `root_b`
+   partitions. RAUC verified the signed bundle and wrote `boot_a` and
+   `root_a`. Direct read-back SHA-256 matched both build images before the cut.
+2. A temporary `fw_setenv` wrapper held the pending `BOOT_ORDER=A B` write
+   after RAUC had saved `BOOT_A_LEFT=3`. At the cut, `BOOT_ORDER=B` still
+   selected only B. The test interrupted activation between two environment
+   saves. Testing a cut inside either save remains open.
+3. On power-up, U-Boot selected B without intervention. Both full B partition
+   hashes matched their pre-cut values, and RAUC marked B good. A's retry
+   counter was still three, but A stayed out of the boot order and RAUC
+   reported it as bad. Both staged A images still matched the build hashes.
+   The temporary wrapper and service override cleared on reboot.
+4. Retried the same signed bundle from B. RAUC verified the signature,
+   rewrote both A partitions, and set `BOOT_ORDER=A B`. Both A images passed
+   direct SHA-256 read-back before reboot. The projector booted A and the
+   boot-time RAUC service marked it good. Both slots reported good with
+   three attempts left.
+
+Local evidence is under `build/rauc-activation-cut-test/` in
+`held-activation.log`, `cold-recovery-uart.log`, `baseline-b.log`,
+`recovery-b.log`, `retry-install.log`, and `retry-boot-check.log`.
 
 ## RAUC vs systemd-sysupdate: facts gathered
 
@@ -274,11 +297,11 @@ with zero attempts. The measured cut used the observed `BOOT_ORDER=A`.
 
 ## Remaining validation
 
-- Test power cuts during active eMMC writes, redundant environment saves
-  and slot activation. Verify unattended retry after a bootloader-stage
-  failure, an early Linux hang and a product-service failure. The existing
-  mark-good unit checks boot progress through systemd ordering. Product
-  health gating remains open.
+- For storage qualification, test cuts during active eMMC I/O and inside an
+  individual redundant environment save. Verify unattended retry after a
+  bootloader-stage failure, an early Linux hang and a product-service failure.
+  The existing mark-good unit checks boot progress through systemd ordering.
+  Product health gating remains open.
 - Establish release signing, version-floor and key-rotation policy. Test
   fallback after the new slot has changed persistent state in the shared
   `/etc` and `/var` overlays.
