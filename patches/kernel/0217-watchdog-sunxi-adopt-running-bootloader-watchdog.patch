@@ -1,0 +1,57 @@
+Subject: watchdog: sunxi: keep the bootloader watchdog running on opt-in
+
+The H713 V2 arms its watchdog at the Linux handoff to recover a stalled
+trial slot. The driver's probe currently disarms it before userspace.
+
+When boot_handoff is requested and the timer is already running, keep it
+armed and let the watchdog core feed it until userspace opens the
+device or the configured open deadline expires.
+
+--- a/drivers/watchdog/sunxi_wdt.c
++++ b/drivers/watchdog/sunxi_wdt.c
+@@ -34,6 +34,7 @@
+ #define DRV_VERSION		"1.0"
+ 
+ static bool nowayout = WATCHDOG_NOWAYOUT;
++static bool boot_handoff;
+ static unsigned int timeout;
+ 
+ /*
+@@ -259,6 +260,7 @@
+ {
+ 	struct device *dev = &pdev->dev;
+ 	struct sunxi_wdt_dev *sunxi_wdt;
++	const struct sunxi_wdt_reg *regs;
+ 	int err;
+ 
+ 	sunxi_wdt = devm_kzalloc(dev, sizeof(*sunxi_wdt), GFP_KERNEL);
+@@ -286,7 +288,18 @@
+ 
+ 	watchdog_set_drvdata(&sunxi_wdt->wdt_dev, sunxi_wdt);
+ 
+-	sunxi_wdt_stop(&sunxi_wdt->wdt_dev);
++	regs = sunxi_wdt->wdt_regs;
++	if (boot_handoff &&
++	    (readl(sunxi_wdt->wdt_base + regs->wdt_mode) & WDT_MODE_EN)) {
++		/* Apply the Linux timeout without stopping the bootloader timer. */
++		err = sunxi_wdt_start(&sunxi_wdt->wdt_dev);
++		if (err)
++			return err;
++		set_bit(WDOG_HW_RUNNING, &sunxi_wdt->wdt_dev.status);
++		dev_info(dev, "adopted running bootloader watchdog\n");
++	} else {
++		sunxi_wdt_stop(&sunxi_wdt->wdt_dev);
++	}
+ 
+ 	watchdog_stop_on_reboot(&sunxi_wdt->wdt_dev);
+ 	err = devm_watchdog_register_device(dev, &sunxi_wdt->wdt_dev);
+@@ -309,6 +322,9 @@
+ 
+ module_platform_driver(sunxi_wdt_driver);
+ 
++module_param(boot_handoff, bool, 0);
++MODULE_PARM_DESC(boot_handoff, "Adopt an already running bootloader watchdog");
++
+ module_param(timeout, uint, 0);
+ MODULE_PARM_DESC(timeout, "Watchdog heartbeat in seconds");
+ 

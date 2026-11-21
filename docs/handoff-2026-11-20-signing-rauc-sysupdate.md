@@ -91,6 +91,24 @@ that design is revisited.
   autoboot reads the value. Tested: `-1` saved at the prompt, and the next
   boot still counted down and booted.
 
+### Production watchdog handoff
+
+1. The V2 `boot.scr` uses U-Boot 2026.07-rc5's `wdt dev watchdog@2051000`
+   and `wdt start 16000` after loading the FIT, immediately before `bootm`.
+   If `bootm` returns, the script stops the timer and returns failure to
+   `bootmeth_rauc` for its normal retry handling.
+2. Linux 6.18.38 patch 0217 adds `sunxi_wdt.boot_handoff=1`. When the
+   script supplies this option and the timer is already running,
+   `sunxi-wdt` keeps it armed and sets `WDOG_HW_RUNNING`. The watchdog
+   core services it until userspace opens the device or the
+   `watchdog.open_timeout=60` deadline expires. The 60-second deadline
+   allows for early boot work such as checking `/data`.
+3. Debian 13's systemd 257.13 takes over `/dev/watchdog0` with
+   `systemd.watchdog_sec=16s` on the V2 kernel command line. The hardware
+   interval is 16 seconds. If early userspace stalls before opening the
+   device, the kernel schedules its last keepalive so the hardware timer
+   expires at the 60-second deadline.
+
 ## Bundle build and trust policy
 
 | File | Role |
@@ -256,6 +274,34 @@ Local evidence is under `build/rauc-missing-fit-fixed-test/` in
 `unattended-uart.log`, `fallback-a.log`, `restore-b.log`,
 `verified-restored-b.log`, and `final-a.log`.
 
+### Early Linux stall with the production watchdog (2026-11-21)
+
+1. Backed up `boot_b` and hashed the full `boot_a`, `root_a`, and
+   `root_b` partitions. Installed the production FIT and script to
+   `boot_b` and verified the image on read-back. On a normal B boot, Linux
+   logged that it adopted the running watchdog, systemd PID 1 held
+   `/dev/watchdog0` with a 16-second runtime timeout, and RAUC marked B
+   good. B stayed up for at least 77 seconds, past the handoff deadline.
+2. Returned to A and staged the same kernel and production watchdog
+   settings in B. The test script selected `init=/usr/bin/sleep` and
+   appended `-- infinity` to the kernel command line. This stalled PID 1
+   before systemd or RAUC could start. Activated B with `BOOT_ORDER=B A`
+   and three B tries.
+3. Passive UART recorded all three B attempts, selected with three, two,
+   and one tries left. On each, U-Boot armed the hardware watchdog, Linux
+   adopted it, and PID 1 stalled. The watchdog reset B each time, with
+   U-Boot SPL reappearing about 60.4 seconds after Linux logged adoption.
+   U-Boot then booted A without console input. RAUC marked A good, with
+   `BOOT_A_LEFT=3` and `BOOT_B_LEFT=0`.
+4. Full-partition SHA-256 read-back matched the baseline for `boot_a`,
+   `root_a`, and `root_b`. Restored the verified production boot image
+   to B and checked it on read-back. The projector was left running A
+   with `BOOT_ORDER=A B` and both counters at three.
+
+Local evidence is under `build/rauc-production-watchdog-test/` in
+`healthy-b-uart.log`, `healthy-b-after-deadline.log`, `fault-uart.log`,
+`fallback-intervals.log`, `fallback-a.log`, and `restore-b.log`.
+
 ## RAUC vs systemd-sysupdate: facts gathered
 
 **RAUC (review snapshot).**
@@ -328,10 +374,10 @@ Local evidence is under `build/rauc-missing-fit-fixed-test/` in
 ## Remaining validation
 
 - For storage qualification, test cuts during active eMMC I/O and inside an
-  individual redundant environment save. Verify unattended retry after an
-  early Linux hang and a product-service failure.
-  The existing mark-good unit checks boot progress through systemd ordering.
-  Product health gating remains open.
+  individual redundant environment save.
+- Verify unattended retry after a product-service failure. The existing
+  mark-good unit checks boot progress through systemd ordering. Product
+  health gating remains open.
 - Establish release signing, version-floor and key-rotation policy. Test
   fallback after the new slot has changed persistent state in the shared
   `/etc` and `/var` overlays.
