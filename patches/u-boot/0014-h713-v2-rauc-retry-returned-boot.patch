@@ -1,0 +1,96 @@
+Subject: h713: retry RAUC boot when the slot cannot start Linux
+
+Bootstd sees a single RAUC flow for the whole MMC device. If the slot's
+script is missing or returns, the scan ends without trying the other
+slot. On the V2 this leaves the projector at an inaccessible prompt.
+
+Once the attempted boot has been saved, reset on a slot-local failure so
+the next boot can consume another attempt or select the other slot.
+Keep the prompt available if no listed slot has attempts left. Failures
+before the attempt is saved keep the existing behavior.
+
+--- a/boot/Kconfig
++++ b/boot/Kconfig
+@@ -926,6 +926,13 @@
+ 
+ 	  This prevents a system from remaining in an unbootable state, after
+ 	  all slot tries were decremented to zero.
++
++config BOOTMETH_RAUC_RESET_ON_BOOT_FAILURE
++	bool "Reset after a failed RAUC boot attempt if another attempt remains"
++	help
++	  If the boot script cannot be loaded or returns control, reset so
++	  the saved RAUC counters can select the next boot attempt. Stop
++	  resetting when no slot in BOOT_ORDER has an attempt left.
+ 
+ endif # BOOTMETH_RAUC
+ 
+--- a/configs/hy200_qz713_v2_defconfig
++++ b/configs/hy200_qz713_v2_defconfig
+@@ -63,3 +63,4 @@
+ CONFIG_BOOTMETH_RAUC_PARTITIONS="5,9 6,16"
+ CONFIG_BOOTMETH_RAUC_DEFAULT_TRIES=3
+ CONFIG_BOOTMETH_RAUC_RESET_ALL_ZERO_TRIES=y
++CONFIG_BOOTMETH_RAUC_RESET_ON_BOOT_FAILURE=y
+--- a/boot/bootmeth_rauc.c
++++ b/boot/bootmeth_rauc.c
+@@ -361,6 +361,39 @@
+ 	return 0;
+ }
+ 
++static int distro_rauc_boot_failed(int err)
++{
++	const char *boot_order;
++	const char **slots;
++	char boot_left[BOOT_LEFT_LEN];
++	bool retry;
++	int i;
++
++	if (!IS_ENABLED(CONFIG_BOOTMETH_RAUC_RESET_ON_BOOT_FAILURE))
++		return err;
++
++	boot_order = env_get("BOOT_ORDER");
++	if (!boot_order)
++		return err;
++	slots = str_to_list(boot_order);
++	if (!slots)
++		return err;
++	for (i = 0; slots[i]; i++) {
++		snprintf(boot_left, sizeof(boot_left), "BOOT_%s_LEFT", slots[i]);
++		if (env_get_ulong(boot_left, 10, 0))
++			break;
++	}
++	retry = slots[i] != NULL;
++	str_free_list(slots);
++
++	/* The current attempt was already saved. Do not reset once exhausted. */
++	if (retry) {
++		log_warning("RAUC boot failed; resetting for the next attempt\n");
++		do_reset(NULL, 0, 0, NULL);
++	}
++	return err;
++}
++
+ static int distro_rauc_boot(struct udevice *dev, struct bootflow *bflow)
+ {
+ 	struct blk_desc *desc;
+@@ -418,7 +451,7 @@
+ 	/* Load distro boot script */
+ 	ret = distro_rauc_load_boot_script(bflow, slot);
+ 	if (ret)
+-		return log_msg_ret("load", ret);
++		return distro_rauc_boot_failed(log_msg_ret("load", ret));
+ 
+ 	log_info("INFO: Booting slot %s, %lu of %d tries left\n",
+ 		 active_slot, active_slot_tries, CONFIG_BOOTMETH_RAUC_DEFAULT_TRIES);
+@@ -443,7 +476,9 @@
+ 	addr = map_to_sysmem(bflow->buf);
+ 	ret = cmd_source_script(addr, NULL, NULL);
+ 	if (ret)
+-		return log_msg_ret("boot", ret);
++		return distro_rauc_boot_failed(log_msg_ret("boot", ret));
++	if (IS_ENABLED(CONFIG_BOOTMETH_RAUC_RESET_ON_BOOT_FAILURE))
++		return distro_rauc_boot_failed(-EFAULT);
+ 
+ 	distro_rauc_priv_free(priv);
+ 
