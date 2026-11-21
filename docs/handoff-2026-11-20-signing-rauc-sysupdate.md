@@ -175,6 +175,34 @@ both slots good, and the hotspot active. Local bench evidence is under
 `build/rauc-network-test/` in the `wifi-*.log` and `usb-*.log` files,
 including the route, install, RAUC journal and post-reboot checks.
 
+### Power cut during an inactive-slot update (2026-11-21)
+
+1. Started from known-good slot A and recorded SHA-256 hashes of the full
+   `boot_a` and `root_a` partitions. Started installing the same signed
+   bundle into B. RAUC set `BOOT_ORDER=A` and `BOOT_B_LEFT=0` before writing
+   `root_b`.
+2. Paused the RAUC daemon with `SIGSTOP` once the eMMC partition counter
+   showed 75,497,472 bytes (72 MiB) of the 583,835,648-byte root image written.
+   Cut physical power while the install was paused and before slot
+   activation. The pause made the test repeatable with an operator. A cut
+   while the eMMC is actively writing or while RAUC activates the slot
+   remains to be tested.
+3. After power returned, the projector booted A unattended. Both full
+   slot-A partition hashes matched their pre-cut values. RAUC marked A
+   good, and B still reported bad with zero attempts and remained out of
+   the boot order.
+4. Retried the same signed bundle from A. RAUC verified the signature,
+   rewrote `boot_b` and `root_b`, and selected `BOOT_ORDER=B A`. Direct
+   read-back SHA-256 checks matched both build images over their full image
+   lengths before reboot. The projector booted B, and the boot-time
+   mark-good service restored B to three attempts. Both slots reported good.
+
+Local evidence in `build/rauc-power-cut-test/` includes
+`partial-write-2.log`, `baseline-a.log`, `recovery-a.log`,
+`retry-install.log`, and `retry-boot-check.log`. The first attempt finished
+without a cut because its pause check expected B to remain in `BOOT_ORDER`
+with zero attempts. The measured cut used the observed `BOOT_ORDER=A`.
+
 ## RAUC vs systemd-sysupdate: facts gathered
 
 **RAUC (review snapshot).**
@@ -246,11 +274,11 @@ including the route, install, RAUC journal and post-reboot checks.
 
 ## Remaining validation
 
-- Fault-test eMMC writes, redundant environment saves and activation. A
-  known-good slot must survive an interrupted install. Verify unattended
-  retry after a bootloader-stage failure, an early Linux hang and a
-  product-service failure. The existing mark-good unit checks boot progress
-  through systemd ordering. Product health gating remains open.
+- Test power cuts during active eMMC writes, redundant environment saves
+  and slot activation. Verify unattended retry after a bootloader-stage
+  failure, an early Linux hang and a product-service failure. The existing
+  mark-good unit checks boot progress through systemd ordering. Product
+  health gating remains open.
 - Establish release signing, version-floor and key-rotation policy. Test
   fallback after the new slot has changed persistent state in the shared
   `/etc` and `/var` overlays.
