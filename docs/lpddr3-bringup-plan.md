@@ -791,6 +791,80 @@ that puts DRAM into self-refresh is DRAM-type-specific. Finish by running
 `docs/production-qualification-plan.md` on V2, then mark the board `verified`
 with date and boot ID.
 
+#### USB port roles (2026-11-20)
+
+The V2 has one USB-A socket, SoC port 0. Its 5 V is hard-wired on, and it
+has no ID pin and no VBUS sense (the PHY's VBUS comparator reads 0). So
+nothing can tell a PC from a stick, and the role is chosen, never detected.
+Stock does the same thing: `persist.sys.usb0device` picks host or device by
+hand. Never drive PL5 low: it hard-hung the board. PL3 is a power latch.
+
+- **Kernel 0215.** It enables musb with `dr_mode = "otg"` on V2 only. With no
+  `id_det` GPIO the PHY polls nothing; the role changes only through musb's
+  `mode` attribute (`phy_set_mode`), and the PHY's route bit (OTGCTL bit 0)
+  sends the port to musb or to ehci0/ohci0. At probe ehci0/ohci0 set it to
+  host (`usb_add_hcd` → `phy_set_mode(HOST)`, "Changing dr_mode to 1"), so
+  the port boots as a host whatever the probe order. The patch also adds the
+  configfs NCM and ACM functions to the defconfig, and a `usbdev` reboot
+  magic, `0x05bdb007`.
+- **Kernel 0216.** sunxi's musb glue dropped a mode change written while the
+  controller was disabled (no gadget bound): `echo host > mode` returned
+  success and did nothing, and a repeat was a no-op. Found on hardware;
+  fixed in the glue.
+- **`h713-usb host|device [--persist]`** (`tools/usb/h713-usb`,
+  `h713-usb.service`).
+  - Device mode is a configfs NCM + ACM gadget. The interface is named
+    `usbdev0`, never `usb0`, so DHCP is never served on a phone's tethered
+    `usb0` in host mode.
+  - The board is `192.168.7.1`; dnsmasq hands the PC an address in
+    `.2–.20` with no router and no DNS, so the PC keeps its own default route.
+  - There is an autologin getty on `ttyGS0`.
+  - udev starts the DHCP server and the getty when the gadget's interface
+    and tty appear; systemd stops them when they go.
+  - The role sticks when the cable is pulled.
+  - The boot role is `h713.usb=` on the command line, then
+    `/etc/default/h713-usb`, then host.
+- **`reboot usbdev`** (`systemctl reboot --reboot-argument=usbdev`) gives
+  one boot in device mode. boot.scr reads and clears GP7 itself:
+  bootmeth_rauc saves the environment before the script runs, so a variable
+  set in PREBOOT would persist into every later boot.
+- **Measured 2026-11-20** (0215 kernel RAM-booted on root_a, A-to-C cable
+  into the PC):
+  - The PC enumerated `1d6b:0104` and bound `cdc_ncm`.
+  - DHCP gave the PC `192.168.7.7` and its default route was unchanged.
+  - The SSH host key was checked over the UART.
+  - Over SSH, 128 MiB went in at 12.1 MiB/s (sha256 match) and came out at
+    14.7 MiB/s.
+  - Switching back to host with the gadget bound worked; with it unbound it
+    did not, which led to 0216.
+  - Leaving host mode prints one `VBUS_ERROR in b_idle`: musb's own host
+    side started a session it cannot see VBUS for, because the port is
+    routed to ehci0. It looks harmless.
+  - With 0216, `h713-usb` was run from `/run` with the customize.sh units
+    under `/run/systemd` and `/run/udev`. Results:
+    - host → device → host all switch, whether or not a gadget is bound.
+    - udev started `h713-usb-net` and the `ttyGS0` getty on device, and
+      both stopped on host.
+    - The PC got `192.168.7.8`, and the ACM console answered on the PC's
+      `ttyACM1`.
+    - `h713-usb host` run inside the SSH session dropped the link and
+      completed (route bit back to 0).
+  - The ACM getty first ran without `--wait-cr`, and the PC's ttyACM, open
+    in cooked mode, echoed the shell's output back as input. The root shell
+    ran fragments of its own output as commands. With `--wait-cr` nothing is
+    printed until a CR arrives; a terminal program in raw mode then gets a
+    clean shell.
+  - Not yet run: the installed units at boot (`h713-usb.service`, the
+    `--persist` file), `reboot usbdev` (needs the new boot.scr in a slot), and
+    host mode with a stick after a switch.
+- **Back-feed.** The 5 V is on in both roles. In device mode use an A-to-C
+  cable into a compliant USB-C port (measured: it sources nothing to this
+  plug) or a VBUS-cut cable. A plain A-to-A cable ties the board's 5 V to the
+  PC's. Software cannot prevent this.
+- **Not done:**
+  - U-Boot keyboard input (host mode at power-on, `usb start`, usbkbd).
+  - RAUC bundles over USB, which need signing keys.
+
 ## Open questions for Chris
 
 1. How physically accessible is the projector (UART, FEL button, USB OTG)?

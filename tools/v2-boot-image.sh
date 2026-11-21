@@ -22,9 +22,15 @@ for t in mkfs.vfat mcopy mdir; do command -v "$t" >/dev/null || { echo "$t not i
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/boot.cmd" <<'EOF'
 # HY200_QZ713_V2 slot boot script, run by U-Boot's bootmeth_rauc.
+# `reboot usbdev` (RTC GP7 = 0x05bdb007, kernel 0215) asks for the USB port
+# in device mode for this one boot. Read and cleared here, not in PREBOOT:
+# bootmeth_rauc saves the environment before this script runs, so a variable
+# set earlier would persist and every later boot would come up in device mode.
+setenv h713_usbargs
+if itest.l *0x0709011c == 0x05bdb007; then mw.l 0x0709011c 0; setenv h713_usbargs h713.usb=device; fi
 part uuid ${devtype} ${devnum}:${distro_rootpart} h713_rootuuid
 load ${devtype} ${devnum}:${distro_bootpart} 0x50000000 /h713-kernel.fit
-setenv bootargs "console=ttyS0,115200 console=tty0 earlycon root=PARTUUID=${h713_rootuuid} rootfstype=erofs ro rootwait init=/usr/lib/h713/preinit net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused hy310_board_mgr.no_rpm_shutdown=1 cma=128M ${raucargs}"
+setenv bootargs "console=ttyS0,115200 console=tty0 earlycon root=PARTUUID=${h713_rootuuid} rootfstype=erofs ro rootwait init=/usr/lib/h713/preinit net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused hy310_board_mgr.no_rpm_shutdown=1 cma=128M ${raucargs} ${h713_usbargs}"
 bootm 0x50000000#conf-v2
 EOF
 "$mkimage" -A arm64 -T script -C none -n "h713 v2 slot boot" -d "$tmp/boot.cmd" "$tmp/boot.scr" >/dev/null

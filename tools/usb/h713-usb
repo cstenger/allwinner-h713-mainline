@@ -1,0 +1,157 @@
+#!/bin/sh
+# h713-usb -- the role of the projector's one USB-A port.
+# RUNS ON THE TARGET, as root. Kernel 0215 (musb dual-role on the V2).
+#
+#   h713-usb                          print the role and what is attached
+#   h713-usb host|device [--persist]  switch now; --persist also at every boot
+#   h713-usb boot                     apply the boot role (h713-usb.service)
+#
+# host     the port is a USB host (ehci0/ohci0): sticks, keyboards, hubs.
+# device   the port is a USB device (musb) for a PC: NCM networking (the
+#          board is 192.168.7.1, it hands the PC an address by DHCP, so
+#          `ssh root@192.168.7.1`) and an ACM serial console (ttyGS0).
+#
+# Nothing in the hardware can tell a PC from a stick (no ID pin, no VBUS
+# sense, 5 V always on), so the role is always chosen, never detected, and
+# it stays as chosen when the cable is pulled. The boot role is, first match:
+# h713.usb=host|device on the kernel command line (`reboot usbdev` asks
+# U-Boot for device mode once), /etc/default/h713-usb (USB_ROLE=, written by
+# --persist), else host.
+#
+# The 5 V stays on in both roles. In device mode use an A-to-C cable into a
+# compliant USB-C port, or a VBUS-cut cable: a plain A-to-A cable ties the
+# board's 5 V to the PC's.
+set -u
+CONF=/etc/default/h713-usb
+RUN=/run/h713-usb
+CFS=/sys/kernel/config
+G=$CFS/usb_gadget/h713
+IFNAME=usbdev0
+
+die() { echo "h713-usb: $*" >&2; exit 1; }
+usage() { sed -n '5,7p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+mode_attr() { ls /sys/bus/platform/devices/musb-hdrc.*/mode 2>/dev/null | head -1; }
+
+# A stable, locally administered MAC from the machine id: the PC sees the same
+# interface every time. $1 = last byte, so host and device differ.
+mac() {
+	h=$(md5sum /etc/machine-id 2>/dev/null | cut -c1-8)
+	[ ${#h} = 8 ] || h=00000000
+	echo "02:$(echo "$h" | sed 's/\(..\)/\1:/g')$1"
+}
+
+gadget_remove() {
+	[ -d "$G" ] || return 0
+	echo "" > "$G/UDC" 2>/dev/null
+	for l in "$G"/configs/c.1/*.*; do [ -L "$l" ] && rm "$l"; done
+	rmdir "$G"/configs/c.1/strings/0x409 "$G"/configs/c.1 2>/dev/null
+	rmdir "$G"/functions/* 2>/dev/null
+	rmdir "$G"/strings/0x409 "$G" 2>/dev/null
+	[ ! -d "$G" ] || die "could not remove the gadget at $G"
+}
+
+gadget_create() {
+	mountpoint -q "$CFS" || mount -t configfs none "$CFS" || die "no configfs"
+	[ -d "$CFS/usb_gadget" ] || die "no usb_gadget in configfs -- kernel without USB_CONFIGFS?"
+	[ -d "$G" ] && return 0
+	mkdir "$G" || die "could not create $G"
+	echo 0x1d6b > "$G/idVendor"		# Linux Foundation
+	echo 0x0104 > "$G/idProduct"		# Multifunction Composite Gadget
+	echo 0x0100 > "$G/bcdDevice"
+	echo 0x0200 > "$G/bcdUSB"
+	echo 0xef > "$G/bDeviceClass"		# IAD composite: Windows binds NCM and ACM
+	echo 0x02 > "$G/bDeviceSubClass"
+	echo 0x01 > "$G/bDeviceProtocol"
+	mkdir -p "$G/strings/0x409"
+	echo "h713" > "$G/strings/0x409/manufacturer"
+	echo "H713 projector" > "$G/strings/0x409/product"
+	cut -c1-16 /etc/machine-id > "$G/strings/0x409/serialnumber" 2>/dev/null
+	mkdir -p "$G/configs/c.1/strings/0x409"
+	echo "NCM + ACM" > "$G/configs/c.1/strings/0x409/configuration"
+	echo 0xc0 > "$G/configs/c.1/bmAttributes"	# self-powered
+	echo 2 > "$G/configs/c.1/MaxPower"
+	mkdir "$G/functions/ncm.usb0" || die "no NCM function -- kernel without USB_CONFIGFS_NCM?"
+	echo "usbdev%d" > "$G/functions/ncm.usb0/ifname"
+	mac 01 > "$G/functions/ncm.usb0/dev_addr"
+	mac 02 > "$G/functions/ncm.usb0/host_addr"
+	ln -s "$G/functions/ncm.usb0" "$G/configs/c.1/"
+	if mkdir "$G/functions/acm.GS0" 2>/dev/null; then
+		ln -s "$G/functions/acm.GS0" "$G/configs/c.1/"
+	fi
+}
+
+set_role() {
+	attr=$(mode_attr)
+	[ -n "$attr" ] || die "no musb mode attribute -- this board's port is host-only (kernel without 0215, or not the V2)"
+	case $1 in
+	host)
+		gadget_remove
+		echo host > "$attr" || die "musb refused host mode"
+		;;
+	device)
+		echo peripheral > "$attr" || die "musb refused peripheral mode"
+		gadget_create
+		udc=$(ls /sys/class/udc 2>/dev/null | head -1)
+		[ -n "$udc" ] || die "no USB device controller"
+		[ "$(cat "$G/UDC")" = "$udc" ] || echo "$udc" > "$G/UDC" || die "could not bind the gadget to $udc"
+		;;
+	esac
+	mkdir -p "$RUN" && echo "$1" > "$RUN/role"
+}
+
+boot_role() {
+	for w in $(cat /proc/cmdline); do
+		case $w in h713.usb=host|h713.usb=device) echo "${w#h713.usb=}"; return ;; esac
+	done
+	USB_ROLE=
+	[ -f "$CONF" ] && . "$CONF"
+	case ${USB_ROLE:-} in device) echo device ;; *) echo host ;; esac
+}
+
+persist() {
+	mkdir -p "$(dirname "$CONF")"
+	{
+		echo "# Written by h713-usb -- the USB port's role at boot."
+		echo "USB_ROLE=$1"
+	} > "$CONF.tmp" && mv "$CONF.tmp" "$CONF" || die "could not write $CONF"
+	echo "h713-usb: $1 at every boot ($CONF)"
+}
+
+status() {
+	role=$(cat "$RUN/role" 2>/dev/null || echo "host (not set by h713-usb)")
+	echo "role: $role"
+	case $role in
+	device)
+		udc=$(ls /sys/class/udc 2>/dev/null | head -1)
+		echo "PC: $(cat /sys/class/udc/"$udc"/state 2>/dev/null || echo unknown)"
+		ip -br addr show "$IFNAME" 2>/dev/null
+		;;
+	*)
+		for d in /sys/bus/usb/devices/[0-9]*-[0-9]*; do
+			[ -f "$d/idVendor" ] || continue
+			case $d in *:*) continue ;; esac
+			echo "device: ${d##*/} $(cat "$d/idVendor"):$(cat "$d/idProduct") $(cat "$d/product" 2>/dev/null)"
+		done
+		;;
+	esac
+}
+
+role=; save=0
+for a in "$@"; do
+	case $a in
+	host|device) role=$a ;;
+	boot) role=$(boot_role) ;;
+	--persist) save=1 ;;
+	-h|--help) usage ;;
+	*) echo "h713-usb: unknown argument '$a'" >&2; usage ;;
+	esac
+done
+
+[ -z "$role" ] && [ $save = 0 ] && { status; exit 0; }
+[ -n "$role" ] || role=$(cat "$RUN/role" 2>/dev/null || echo host)
+[ "$(id -u)" = 0 ] || die "run as root"
+set_role "$role"
+echo "h713-usb: $role"
+[ $save = 1 ] && persist "$role"
+exit 0

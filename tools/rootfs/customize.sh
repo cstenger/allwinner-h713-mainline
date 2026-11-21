@@ -786,6 +786,75 @@ EOF
   echo "[customize] installed h713-keystone + h713-keystone.service"
 fi
 
+# USB port role (kernel 0215): h713-usb switches the V2's one USB-A port
+# between host (sticks, keyboards) and device (NCM networking + ACM console
+# for a PC). Nothing polls: h713-usb.service applies the boot role once, and
+# udev starts the DHCP server and the console getty when the gadget's
+# interface and tty appear, and systemd stops them when they go. On a board
+# whose port is host-only (no musb mode attribute) the service fails and
+# changes nothing.
+if [ -n "${H713_USB_SRC:-}" ]; then
+  install -d -m 0755 "$R/usr/local/bin" "$R/etc/udev/rules.d" \
+    "$systemd_dir/serial-getty@ttyGS0.service.d"
+  install -m 0755 "$H713_USB_SRC" "$R/usr/local/bin/h713-usb"
+  cat > "$systemd_dir/h713-usb.service" <<EOF
+[Unit]
+Description=USB port role at boot (host, or device for a PC)
+After=sys-kernel-config.mount
+Wants=sys-kernel-config.mount
+ConditionPathExistsGlob=/sys/bus/platform/devices/musb-hdrc.*/mode
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/h713-usb boot
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  ln -sfn ../h713-usb.service \
+    "$systemd_dir/multi-user.target.wants/h713-usb.service"
+  # The gadget names its interface usbdev0, so this never serves DHCP on a
+  # phone's tethered usb0 in host mode. No router or DNS is handed out: the
+  # PC keeps its own default route.
+  cat > "$systemd_dir/h713-usb-net.service" <<EOF
+[Unit]
+Description=Address and DHCP for a PC on the USB port (usbdev0)
+BindsTo=sys-subsystem-net-devices-usbdev0.device
+After=sys-subsystem-net-devices-usbdev0.device
+
+[Service]
+ExecStartPre=/usr/sbin/ip addr replace 192.168.7.1/24 dev usbdev0
+ExecStartPre=/usr/sbin/ip link set usbdev0 up
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/dev/null \\
+  --interface=usbdev0 --bind-interfaces --except-interface=lo --port=0 \\
+  --dhcp-range=192.168.7.2,192.168.7.20,255.255.255.0,12h \\
+  --dhcp-option=3 --dhcp-option=6 --dhcp-authoritative \\
+  --dhcp-leasefile=/run/h713-usb-dhcp.leases
+EOF
+  # Same policy as ttyS0: whoever holds the cable has the console. Device
+  # mode is only ever entered on purpose (h713-usb or reboot usbdev).
+  # --wait-cr: nothing is printed and no shell starts until a CR arrives. A
+  # PC process that opens the ttyACM in cooked mode echoes everything back,
+  # and with an eager shell that loop fed the shell's own output to it as
+  # root commands (seen 2026-11-20). Terminal programs use raw mode.
+  cat > "$systemd_dir/serial-getty@ttyGS0.service.d/autologin.conf" <<EOF
+[Unit]
+BindsTo=dev-ttyGS0.device
+After=dev-ttyGS0.device
+
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --wait-cr --noclear %I \$TERM
+EOF
+  cat > "$R/etc/udev/rules.d/70-h713-usb-gadget.rules" <<'EOF'
+# h713-usb's gadget: start the PC's DHCP and console when they appear.
+SUBSYSTEM=="net", KERNEL=="usbdev0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="h713-usb-net.service"
+SUBSYSTEM=="tty", KERNEL=="ttyGS0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="serial-getty@ttyGS0.service"
+EOF
+  echo "[customize] installed h713-usb + h713-usb.service (USB port role)"
+fi
+
 # Standby (docs/standby-plan.md): the case button (kernel 0170/0171) and the
 # remote both send KEY_POWER. logind's default for it is poweroff, and on this
 # board poweroff only parks the CPUs -- rails, backlight and the last frame

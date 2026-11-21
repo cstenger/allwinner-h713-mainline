@@ -429,6 +429,7 @@ env \
   H713_MIRROR_SRC="$PROJECT_ROOT/tools/display/h713-mirror" \
   H713_KEYSTONE_SRC="$PROJECT_ROOT/tools/sensors/h713-keystone" \
   H713_STANDBY_DIR="$PROJECT_ROOT/tools/standby" \
+  H713_USB_SRC="$PROJECT_ROOT/tools/usb/h713-usb" \
   RELEASE_OVERLAY="$RELEASE_OVERLAY" \
   bash -ceu '
     mkdir -p "$ROOTFS_TREE"
