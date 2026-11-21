@@ -513,6 +513,20 @@ bench board overrode the node, so the projector DTB described a motor. A board
 with the motor enables it in its own .dts. The bench DTB is unchanged; the
 driver is not built in our configs, so this corrects the description only.
 
+**0215** makes the projector's one USB-A port (port 0) dual-role: musb is
+enabled with `dr_mode = "otg"` on V2 only. The port has no ID pin or VBUS
+sense, so the PHY polls nothing and the role changes only through musb's
+`mode` attribute, which `h713-usb` writes (`tools/usb/h713-usb`). It also adds
+the `usbdev` reboot-mode magic (`0x05bdb007`), which boot.scr turns into
+`h713.usb=device` for one boot. The defconfig gains the configfs NCM and ACM
+gadget functions. The bench DTB is unchanged.
+
+**0216** fixes sunxi's musb glue dropping a mode change written while the
+controller is disabled (no gadget bound). `echo host > mode` returned success,
+but the PHY stayed in peripheral and the port stayed routed to musb. The work
+now applies a pending `phy_set_mode()` in that case too. Found on the
+projector.
+
 `series` files may carry `#` comments and blank lines; `tools/build/build.sh`
 reads every series through `series_entries`, so hashing and applying see the
 same list.

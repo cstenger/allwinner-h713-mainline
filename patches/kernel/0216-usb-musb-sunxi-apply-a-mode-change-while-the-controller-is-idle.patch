@@ -1,0 +1,45 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] usb: musb: sunxi: apply a mode change while the controller is idle
+
+Writing musb's `mode` attribute ends in sunxi_musb_set_mode(), which
+records the new PHY mode in glue->phy_mode, sets PHY_MODE_PEND and leaves
+phy_set_mode() to sunxi_musb_work(). The work returns at once when the
+controller is not enabled, so with no gadget bound and no host session
+the request is dropped. The next write of the same mode is then a no-op,
+because glue->phy_mode already holds it, and the port stays where it was
+with no error anywhere.
+
+Seen on the H713 projector (kernel 0215): after unbinding the gadget,
+`echo host > mode` returned success, but the PHY never left peripheral
+and the port stayed routed to musb (OTGCTL bit 0 still set), so a stick
+in the port was never seen by ehci0. Written while the gadget was still
+bound, the same request switched at once ("Changing dr_mode to 1").
+
+The PHY is initialised in sunxi_musb_init() and released in
+sunxi_musb_exit(), which cancels this work first, so phy_set_mode() is
+valid whenever the work runs. Apply a pending mode change in the
+disabled case too. The enabled path is unchanged.
+
+--- a/drivers/usb/musb/sunxi.c
++++ b/drivers/usb/musb/sunxi.c
+@@ -99,8 +99,19 @@
+ 	struct sunxi_glue *glue = container_of(work, struct sunxi_glue, work);
+ 	bool vbus_on, phy_on;
+ 
+-	if (!test_bit(SUNXI_MUSB_FL_ENABLED, &glue->flags))
++	if (!test_bit(SUNXI_MUSB_FL_ENABLED, &glue->flags)) {
++		/*
++		 * The PHY is live from sunxi_musb_init() to sunxi_musb_exit(),
++		 * which cancels this work, whether or not the controller is
++		 * enabled. A mode change written while it is disabled (a
++		 * dual-role port with no gadget bound) must still reach the
++		 * PHY, or it is lost: sunxi_musb_set_mode() has already taken
++		 * the new mode as current and will not ask again.
++		 */
++		if (test_and_clear_bit(SUNXI_MUSB_FL_PHY_MODE_PEND, &glue->flags))
++			phy_set_mode(glue->phy, glue->phy_mode);
+ 		return;
++	}
+ 
+ 	if (test_and_clear_bit(SUNXI_MUSB_FL_HOSTMODE_PEND, &glue->flags)) {
+ 		struct musb *musb = glue->musb;

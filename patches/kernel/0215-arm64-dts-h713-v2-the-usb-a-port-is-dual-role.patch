@@ -1,0 +1,69 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] arm64: dts: h713: v2: the USB-A port is dual-role
+
+The projector's one USB-A socket is port 0, shared by musb (device) and
+ehci0/ohci0 (host) through the PHY's route bit. Until now musb was
+disabled, so the port could only be a host: ehci0's usb_add_hcd() sets
+the PHY to host mode and nothing else ever asked for a role.
+
+The port has no ID pin and no VBUS sense, and its 5 V is always on, so
+no hardware event can say whether a PC or a stick is plugged in.
+Enable musb with dr_mode = "otg": with no id_det GPIO the PHY falls back
+to peripheral and polls nothing, and a role change happens only when
+musb's `mode` attribute calls phy_set_mode(). Userspace (h713-usb)
+writes that attribute at boot and on request, so which of musb and
+ehci0 probed last does not decide the role.
+
+Add an nvmem reboot-mode magic, `usbdev` (0x05bdb007), so `reboot
+usbdev` can ask the next boot for device mode the same way `reboot
+fastboot` asks U-Boot for fastboot. U-Boot clears it and passes
+h713.usb=device on the kernel command line.
+
+The bench board keeps musb disabled.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713.dtsi
+@@ -46,6 +46,7 @@
+ 		mode-vendor = <0x001db007>;
+ 		mode-fel = <0x0fe1b007>;
+ 		mode-efex = <0x0fe1b007>;
++		mode-usbdev = <0x05bdb007>;
+ 	};
+ 
+ 	aliases {
+@@ -1102,9 +1103,11 @@
+ 		/*
+ 		 * === USB OTG (DRD port, device side) ===
+ 		 * The musb controller on the DRD port; ehci0/ohci0 below are the same
+-		 * port's host side. U-Boot uses it as a peripheral (fastboot); Linux
+-		 * does not, so it is disabled here. Interrupt from the stock
+-		 * udc-controller@4100000 node.
++		 * port's host side, and the PHY routes the port to one or the other
++		 * (phy0_dual_route). U-Boot uses it as a peripheral (fastboot). A board
++		 * whose port can be a peripheral in Linux enables it with dr_mode =
++		 * "otg"; with no ID pin the role is chosen through musb's `mode`
++		 * attribute. Interrupt from the stock udc-controller@4100000 node.
+ 		 */
+ 		usb_otg: usb@4100000 {
+ 			compatible = "allwinner,sun20i-d1-musb",
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts
+@@ -10,3 +10,18 @@
+ 		bootargs = "console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused hy310_board_mgr.no_rpm_shutdown=1 cma=128M";
+ 	};
+ };
++
++/*
++ * The one USB-A socket is port 0. Its 5 V is always on (no switch is
++ * fitted) and it has no ID pin or VBUS sense, so nothing can tell a PC
++ * from a stick: the role is chosen, never detected. dr_mode = "otg" lets
++ * userspace pick it through musb's `mode` attribute (h713-usb); "host"
++ * routes the port to ehci0/ohci0, "peripheral" to musb for the NCM and
++ * ACM gadget. The 5 V stays on in either role: a plain A-to-A cable ties
++ * it to the PC's own 5 V. Use an A-to-C cable into a compliant USB-C
++ * port (which sources nothing to this plug) or a VBUS-cut cable.
++ */
++&usb_otg {
++	dr_mode = "otg";
++	status = "okay";
++};
