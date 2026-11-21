@@ -20,6 +20,8 @@
 #   4. boot_a and boot_b get BOOT_IMAGE, root_a and root_b get ROOT_IMAGE,
 #      each erased first (fastboot erase + flash, host-side sparse split).
 # STEPS="gpt uboot slots" selects steps (default all, in that order).
+# SLOTS="boot_b root_b" limits the slots step to those partitions (default all
+# four), e.g. to update the inactive slot while the other keeps a known-good system.
 set -uo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 gdir=${1:?GPT_DIR}; rootimg=${2:?ROOT_IMAGE}
@@ -120,8 +122,8 @@ EOF
 fi
 
 if [[ " $steps " == *" slots "* ]]; then
-	for pair in "boot_a:$bootimg" "boot_b:$bootimg" "root_a:$rootimg" "root_b:$rootimg"; do
-		part=${pair%%:*}; img=${pair#*:}
+	for part in ${SLOTS:-boot_a boot_b root_a root_b}; do
+		case $part in boot_a|boot_b) img=$bootimg ;; root_a|root_b) img=$rootimg ;; *) die "unknown slot partition $part" ;; esac
 		lba=$(part_lba "$part"); [ -n "$lba" ] || die "U-Boot has no partition $part"
 		say "$part (LBA 0x$lba): $(basename "$img")"
 		fastboot_on

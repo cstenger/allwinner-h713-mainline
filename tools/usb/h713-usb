@@ -41,8 +41,41 @@ mac() {
 	echo "02:$(echo "$h" | sed 's/\(..\)/\1:/g')$1"
 }
 
+# Port 0's host controllers, next to musb (0x4100000). A role change hands the
+# port from one owner to the other explicitly: the old owner is stopped before
+# the PHY reroutes, and the new one starts fresh after. Never rely on the old
+# owner noticing. When the PHY routes the port to musb it simply stops
+# passing EHCI's signals, so EHCI never sees a disconnect: it kept a stick
+# from host mode as present, and when the port came back it timed out (-110)
+# resetting a device that was not the one it remembered (2026-11-20).
+HCDS="ehci-platform:4101000.usb ohci-platform:4101400.usb"
+
+hcd_unbind() {
+	for h in $HCDS; do
+		d=/sys/bus/platform/drivers/${h%%:*}
+		[ -e "$d/${h#*:}" ] && { echo "${h#*:}" > "$d/unbind" || die "could not unbind ${h#*:}"; }
+	done
+	return 0
+}
+
+# Binding EHCI also sets the PHY to host (usb_add_hcd -> phy_set_mode) and
+# enumerates whatever is plugged in, from scratch.
+hcd_bind() {
+	for h in $HCDS; do
+		d=/sys/bus/platform/drivers/${h%%:*}
+		[ -e "$d/${h#*:}" ] || { echo "${h#*:}" > "$d/bind" || die "could not bind ${h#*:}"; }
+	done
+	return 0
+}
+
 gadget_remove() {
 	[ -d "$G" ] || return 0
+	# Stop the gadget's users before removing its functions. Removing the
+	# ACM function waits for every opener of ttyGS0 to close it
+	# (gserial_free_port). With a PC attached, unbinding hangs the tty up and
+	# the getty exits; with none, nothing does, and the removal blocked for
+	# good in the kernel (2026-11-20).
+	systemctl stop serial-getty@ttyGS0.service h713-usb-net.service 2>/dev/null
 	echo "" > "$G/UDC" 2>/dev/null
 	for l in "$G"/configs/c.1/*.*; do [ -L "$l" ] && rm "$l"; done
 	rmdir "$G"/configs/c.1/strings/0x409 "$G"/configs/c.1 2>/dev/null
@@ -88,8 +121,10 @@ set_role() {
 	host)
 		gadget_remove
 		echo host > "$attr" || die "musb refused host mode"
+		hcd_bind
 		;;
 	device)
+		hcd_unbind
 		echo peripheral > "$attr" || die "musb refused peripheral mode"
 		gadget_create
 		udc=$(ls /sys/class/udc 2>/dev/null | head -1)

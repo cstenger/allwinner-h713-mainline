@@ -854,9 +854,84 @@ hand. Never drive PL5 low: it hard-hung the board. PL3 is a power latch.
     ran fragments of its own output as commands. With `--wait-cr` nothing is
     printed until a CR arrives; a terminal program in raw mode then gets a
     clean shell.
-  - Not yet run: the installed units at boot (`h713-usb.service`, the
-    `--persist` file), `reboot usbdev` (needs the new boot.scr in a slot), and
-    host mode with a stick after a switch.
+  - **Slot B install (2026-11-20).** A production rootfs with these units
+    went to root_b (EROFS lz4hc, 556 MiB) and the 0216 FIT and new boot.scr
+    to boot_b, with `STEPS=slots SLOTS="boot_b root_b" tools/v2-ab-install.sh`.
+    Both were verified by crc read back. Slot A was not touched. Results:
+    - B booted and RAUC marked it good.
+    - `h713-usb.service` applied host by default.
+    - After `h713-usb device --persist` and a reboot, the port came up as a
+      device with nothing typed, and the PC had DHCP before login.
+    - After `h713-usb host --persist` and `systemctl reboot
+      --reboot-argument=usbdev`, the command line had `h713.usb=device`, the
+      port was a device, and GP7 read 0. The next plain reboot came back as
+      host.
+    - The saved environment holds `h713_usbargs` empty. Each boot.scr clears
+      it before anything else, so it cannot leak device mode, but what saves
+      it is not yet understood.
+  - **Trap found: `bootdelay=-1` can be saved.** PREBOOT answers `reboot
+    bootloader` with `setenv bootdelay -1`. Any `saveenv` at that prompt
+    stores it, and so does typing `boot`, because bootmeth_rauc saves the
+    environment on every boot. Every later boot then stops at the U-Boot
+    prompt, which on a sealed projector means it never boots again. It
+    happened here once and was repaired with `env default -f bootdelay;
+    saveenv`. **Fixed by U-Boot 0013:** PREBOOT starts with `env default -f
+    bootdelay`, before autoboot reads it. Tested: `-1` saved at the held
+    prompt, and the next boot still counted down 2 s and booted slot B.
+  - **UEFI boot cost (2026-11-20), the systemd-sysupdate question.**
+    systemd-boot needs U-Boot's UEFI path, so its cost was measured without
+    systemd-boot: the same slot B kernel started through `bootefi` (the
+    kernel's EFI stub) instead of `bootm`, from a boot.scr variant. The
+    variant reads the gzip kernel's data from the FIT with `fdt get addr`
+    (`imxtract` will not extract a compressed image without a destination,
+    and `CONFIG_SYS_XIMG_LEN` is only 8 MiB), runs `unzip`, then `bootefi
+    addr:size fdt`. `EFI_LOADER`, `CMD_BOOTEFI` and the kernel's `EFI_STUB`
+    were already on. Five measured rounds each, `tools/boot-timing.sh`
+    (`local/recovery/boot-timing/v2-slotb-{bootm,bootefi}.csv`):
+
+    | path | U-Boot→login s | kernel s | userspace s | systemd total s |
+    | --- | --- | --- | --- | --- |
+    | bootm | 15.08 [14.10..15.50] | 2.34 [2.27..2.37] | 8.91 [8.76..9.17] | 11.25 |
+    | bootefi | 14.92 [14.40..15.70] | 2.47 [2.44..2.52] | 9.24 [8.81..9.60] | 11.71 |
+
+    - Time to login is the same within noise.
+    - systemd's kernel phase is about 0.13 s longer every time (the ranges
+      do not overlap): the EFI stub and EFI runtime services.
+    - Userspace is about 0.3 s longer on average, but the ranges overlap.
+    - The U-Boot side is somewhat shorter, because the variant skipped the
+      FIT's sha256 check.
+    - All memory reservations matched, and the EFI runtime services came
+      up.
+    - One EFI boot had extra Bluetooth timeouts; the other six matched
+      `bootm` exactly, so this is not the EFI path.
+    - Not covered: systemd-boot itself (an ESP, entry scan, and a FAT rename
+      per boot), and the display carveouts, because V2 U-Boot does not
+      draw the display yet. Recheck both once Phase 4 step 2 lands.
+    - boot_b was restored to the `bootm` image afterwards.
+  - **Host mode with a stick after a switch (2026-11-20): failed, then
+    fixed.** Two hangs, both from an owner that was never told the hardware
+    had moved on:
+    - Routing the port to musb silently cuts EHCI off (the PHY's passby).
+      EHCI never saw a disconnect and kept the stick (`sda`) as present.
+      Back in host mode it timed out resetting it (`port 1 reset error
+      -110`, then `unable to enumerate`).
+    - Removing the gadget blocked for good in `gserial_free_port`: removing
+      the ACM function waits for `ttyGS0` to close, and the getty held it
+      open. With a PC attached, the unbind hangs the tty up and the getty
+      exits; with none, nothing does. This was the hang in the first try.
+    - Fix in `h713-usb`: every role change is an explicit handover.
+      1. Stop the gadget's users (the `ttyGS0` getty, `h713-usb-net`)
+         before removing the gadget.
+      2. Unbind ehci0/ohci0 (`4101000.usb`, `4101400.usb`) before routing
+         the port to musb.
+      3. Bind them again after routing back to host. A fresh EHCI probe sets
+         the PHY to host itself and enumerates from scratch.
+    - Tested with the stick in and no PC: one traced device → host switch,
+      then three more full cycles. In device mode `sda` was gone every time;
+      in host mode it was back every time and read 16–64 MiB (37 MB/s).
+      No reset errors.
+    - Not yet run: the new script in the image (it was uploaded to `/run`
+      over the UART), and device mode with a PC since this change.
 - **Back-feed.** The 5 V is on in both roles. In device mode use an A-to-C
   cable into a compliant USB-C port (measured: it sources nothing to this
   plug) or a VBUS-cut cable. A plain A-to-A cable ties the board's 5 V to the
