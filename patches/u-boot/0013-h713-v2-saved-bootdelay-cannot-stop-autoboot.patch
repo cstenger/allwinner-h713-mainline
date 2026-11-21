@@ -1,0 +1,37 @@
+From: Christopher Stenger
+Subject: h713: V2: a saved bootdelay cannot stop autoboot
+
+`reboot bootloader` holds U-Boot's prompt: PREBOOT sees the RTC GP7 magic
+and runs `setenv bootdelay -1`. That value lives in the environment, so
+any save before the next reset stores it. A `saveenv` at the prompt does,
+and so does typing `boot`, because bootmeth_rauc saves the environment
+on every boot to count attempts. From then on every boot stops at the
+prompt. On the sealed projector that is a board that never boots again;
+on the bench it happened once (2026-11-20), after a saveenv made to set
+BOOT_ORDER.
+
+PREBOOT runs before autoboot reads bootdelay (main_loop():
+run_preboot_environment_command() then bootdelay_process()), so start it
+with `env default -f bootdelay`. A saved value is then overridden on
+every boot and only the GP7 magic can hold the prompt for one boot.
+bootdelay becomes a build-time setting (CONFIG_BOOTDELAY) on this board.
+
+--- a/configs/hy200_qz713_v2_defconfig
++++ b/configs/hy200_qz713_v2_defconfig
+@@ -34,7 +34,15 @@
+ # No "usb start" either: U-Boot has no USB host on this board ("No USB
+ # controllers found"), only the gadget for fastboot/UMS, and CMD_USB goes
+ # with DISTRO_DEFAULTS.
+-CONFIG_PREBOOT="if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi"
++# PREBOOT first restores bootdelay to its built-in value. `reboot bootloader`
++# holds the prompt with `setenv bootdelay -1`, and any environment save made
++# before the next reset stores that -1: a `saveenv` at the prompt, or typing
++# `boot`, because bootmeth_rauc saves the environment on every boot. Every
++# later boot would then stop at the prompt, which on a sealed projector is a
++# board that never boots again (it happened once, 2026-11-20). PREBOOT runs
++# before autoboot reads bootdelay, so resetting it here makes a saved value
++# harmless; bootdelay is a build-time setting on this board.
++CONFIG_PREBOOT="env default -f bootdelay; if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi"
+ # A/B boot with Standard Boot's RAUC method (boot/bootmeth_rauc.c): slot A is
+ # boot_a (p5) + root_a (p9), slot B is boot_b (p6) + root_b (p16). It takes
+ # an attempt from the first slot in BOOT_ORDER with BOOT_<slot>_LEFT > 0, saves
