@@ -19,6 +19,9 @@
 #   root=/dev/mmcblk0p9 rootfstype=erofs|ext4 ro rootwait
 #   init=/usr/lib/h713/preinit
 # SOURCE_DATE_EPOCH, if set, pins timestamps.
+# By default the image trusts the automatically generated local RAUC CA.
+# Set H713_RAUC_KEYDIR to use an existing CA/signing directory, or set
+# H713_RAUC_KEYRING to build with just a public CA file.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tar_in=$(realpath "${1:?ROOTFS_TAR}")
@@ -30,6 +33,14 @@ need() { command -v "$1" >/dev/null || { echo "error: $1 not installed${2:+ ($2)
 need unshare; need mke2fs
 case " $images " in *" plain "*|*" lz4hc "*) need mkfs.erofs erofs-utils ;; esac
 [ -f "$tar_in" ] || { echo "error: no $tar_in" >&2; exit 1; }
+if [ -z "${H713_RAUC_KEYRING:-}" ]; then
+  if [ -z "${H713_RAUC_KEYDIR:-}" ]; then
+    "$ROOT/tools/keys/make-dev-keys.sh"
+  fi
+  H713_RAUC_KEYRING=${H713_RAUC_KEYDIR:-$ROOT/local/keys/rauc}/ca.cert.pem
+fi
+[ -s "$H713_RAUC_KEYRING" ] || { echo "error: no RAUC keyring at $H713_RAUC_KEYRING" >&2; exit 1; }
+export H713_RAUC_KEYRING
 mkdir -p "$out"
 work=$(mktemp -d "$out/.work.XXXXXX")
 trap 'unshare --map-auto --map-root-user rm -rf "$work"' EXIT

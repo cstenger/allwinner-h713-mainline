@@ -261,6 +261,15 @@ CONFIG_EROFS_FS=y
 CONFIG_EROFS_FS_XATTR=y
 CONFIG_EROFS_FS_POSIX_ACL=y
 CONFIG_EROFS_FS_ZIP=y
+
+# RAUC mounts signed verity bundles as a SquashFS on a loop and dm-verity
+# device. The installed root filesystem itself is still EROFS.
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_MD=y
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_VERITY=y
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_ZLIB=y
 CONFIG_OVERLAY_FS=y
 CONFIG_TMPFS=y
 CONFIG_TMPFS_POSIX_ACL=y

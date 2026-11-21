@@ -3,7 +3,7 @@
 # (docs/lpddr3-bringup-plan.md, Phase 4 stage 2). Run by tools/rootfs/build.sh
 # --root-layout ro after customize.sh.
 #
-#   tools/rootfs/ro-root.sh TREE
+#   H713_RAUC_KEYRING=CA_PEM tools/rootfs/ro-root.sh TREE
 #
 # The image (EROFS) is mounted read-only from its root slot (root_a or root_b). One
 # writable data partition (UDISK, ext4) carries everything that changes:
@@ -129,14 +129,30 @@ cat > "$R/etc/fw_env.config" <<'EOF'
 /dev/disk/by-partlabel/empty	0x800000	0x10000
 /dev/disk/by-partlabel/empty	0x810000	0x10000
 EOF
-install -d -m 0755 "$R/etc/rauc"
-cat > "$R/etc/rauc/system.conf" <<'EOF'
+# Remove the older image's config if repacking an existing read-only root.
+rm -f "$R/etc/rauc/system.conf"
+install -m 0644 "${H713_RAUC_KEYRING:?Set H713_RAUC_KEYRING to the public CA file}" \
+  "$R/usr/lib/h713/rauc-keyring.pem"
+cat > "$R/usr/lib/h713/rauc-system.conf" <<'EOF'
 # RAUC on the HY200_QZ713_V2 projector: a slot is a boot partition (vfat: the
 # kernel FIT and boot.scr) and its read-only root (EROFS image).
 [system]
 compatible=hy200-qz713-v2
 bootloader=uboot
 data-directory=/data/rauc
+bundle-formats=verity
+
+# Bundles must be signed by a certificate that chains to this CA
+# (tools/keys/make-dev-keys.sh, tools/v2-rauc-bundle.sh). The keyring sits
+# on the read-only root, not in /etc: /etc is an overlay whose upper layer
+# lives on /data, where a stale copy could shadow the image's keyring.
+[keyring]
+path=/usr/lib/h713/rauc-keyring.pem
+# The signer certificate carries extendedKeyUsage codeSigning.
+check-purpose=codesign
+# The RTC loses its calendar on power loss. Offline updates use the CMS
+# signing time for certificate validity; it is supplied by the signer.
+use-bundle-signing-time=true
 
 [slot.rootfs.0]
 device=/dev/disk/by-partlabel/root_a
@@ -164,6 +180,14 @@ EOF
 if [ ! -x "$R/usr/bin/rauc" ] || [ ! -e "$R/usr/lib/systemd/system/rauc.service" ]; then
   echo "ro-root: the image lacks rauc / rauc-service" >&2; exit 1
 fi
+# Pin the daemon to the config shipped with this slot, even if /etc contains
+# a config left over from a previous image.
+install -d -m 0755 "$R/usr/lib/systemd/system/rauc.service.d"
+cat > "$R/usr/lib/systemd/system/rauc.service.d/h713-config.conf" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/rauc --conf=/usr/lib/h713/rauc-system.conf --mount=/run/rauc/mnt service
+EOF
 cat > "$systemd_dir/rauc-mark-good.service" <<'EOF'
 [Unit]
 Description=RAUC: mark the booted slot good
