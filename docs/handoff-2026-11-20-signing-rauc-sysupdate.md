@@ -155,6 +155,26 @@ Local bench evidence is under `build/rauc-signing-time-test/` in
 and `validate-a.log`. The install was initiated over UART. Automatic
 installation on stick insertion was outside this test.
 
+### Wi-Fi and USB networking install tests (2026-11-21)
+
+Transferred the same signed bundle over SSH on each link and checked its
+SHA-256 on the projector before running `rauc install` on the staged file
+in `/data`. For each install, the RAUC journal records successful signature
+verification and writes to both inactive partitions. Before rebooting,
+read back each target directly from eMMC and matched its SHA-256 to the
+build image over the full image length.
+
+| Transport | Started from | Inactive partitions verified on read-back | Result after reboot |
+| --- | --- | --- | --- |
+| Wi-Fi hotspot (`wlan0`, projector `192.168.4.1`) | A | `boot_b`, `root_b` | Booted B, and the boot-time RAUC service marked B good. |
+| USB networking (CDC NCM, projector `usbdev0` at `192.168.7.1`) | B | `boot_a`, `root_a` | Booted A, and the boot-time RAUC service marked A good. |
+
+The Wi-Fi test reboot enabled USB device mode for one boot. The second
+reboot returned the USB port to host mode. Final state was slot A running,
+both slots good, and the hotspot active. Local bench evidence is under
+`build/rauc-network-test/` in the `wifi-*.log` and `usb-*.log` files,
+including the route, install, RAUC journal and post-reboot checks.
+
 ## RAUC vs systemd-sysupdate: facts gathered
 
 **RAUC (review snapshot).**
@@ -226,8 +246,6 @@ installation on stick insertion was outside this test.
 
 ## Remaining validation
 
-- Run the signed install over USB networking and Wi-Fi. The offline USB
-  test used Wi-Fi to put the artifact on the stick before the power cut.
 - Fault-test eMMC writes, redundant environment saves and activation. A
   known-good slot must survive an interrupted install. Verify unattended
   retry after a bootloader-stage failure, an early Linux hang and a
