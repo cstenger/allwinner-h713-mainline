@@ -73,7 +73,16 @@ that design is revisited.
 **Linux.**
 - Debian's `rauc` 1.13 and `rauc-service`, with the `uboot` backend; `fw_setenv`
   comes from libubootenv.
-- A meta-rauc-style `rauc-mark-good.service`.
+- `rauc-mark-good.service` runs after `multi-user.target` and requires a
+  successful `h713-boot-health.service` run. `tools/rootfs/ro-root.sh`
+  installs the check and the mark-good drop-in under
+  `/usr/lib/systemd/system/` on the slot's read-only root, so an older
+  base mark-good unit in the shared `/etc` overlay still gets the dependency.
+- The health check starts and waits for `h713-usb.service`, the boot-time
+  USB port-role setup used for offline updates. It requires
+  `systemctl is-active --quiet h713-usb.service` to succeed. If the USB
+  unit never becomes active, the check blocks the mark-good job and
+  `FailureAction=reboot` lets U-Boot use the remaining slot attempts.
 
 **Tested on the projector:**
 - A boots unattended and is marked good.
@@ -302,6 +311,36 @@ Local evidence is under `build/rauc-production-watchdog-test/` in
 `healthy-b-uart.log`, `healthy-b-after-deadline.log`, `fault-uart.log`,
 `fallback-intervals.log`, `fallback-a.log`, and `restore-b.log`.
 
+### USB service failure and health-gated fallback (2026-11-21)
+
+1. Before the fix, forcing `h713-usb.service` to fail in B still let
+   `rauc-mark-good.service` run after `multi-user.target`. RAUC marked B
+   good and restored its three tries. B was still running at 98 seconds
+   with systemd feeding the watchdog. See
+   `build/rauc-product-service-failure-test/observe-b.log`.
+2. From known-good A, installed the signed health-gate bundle into B and
+   verified `boot_b` and `root_b` by direct SHA-256 read-back. On a healthy
+   B boot, `h713-usb.service` set the port to host mode, the health check
+   passed, and RAUC marked B good with three tries.
+3. Returned to A and used the same B-only fault as the control test. B's
+   boot script supplied a systemd credential that generated a transient
+   drop-in with `ExecStartPre=/usr/bin/false` for `h713-usb.service`.
+   Activated B with `BOOT_ORDER=B A` and three tries. Passive UART showed
+   B selected with three, two, and one tries left. The journal for each
+   boot records the USB failure, the failed health check, the dependency
+   failure that kept `rauc-mark-good.service` from running, and a systemd
+   reboot.
+4. U-Boot selected A without console input. RAUC marked A good, with
+   `BOOT_A_LEFT=3` and `BOOT_B_LEFT=0`. Full-partition SHA-256 read-back
+   matched the starting hashes for `boot_a` and `root_a`. Restored and
+   verified B's normal boot image and retained the health-gate root on B.
+   The projector was left running A with `BOOT_ORDER=A B` and three
+   tries per slot.
+
+Local evidence is under `build/rauc-usb-health-gate-test/` in
+`install.log`, `healthy-b.log`, `fault-uart.log`, `slot-attempts.log`,
+`fallback-a.log`, and `restore-b.log`.
+
 ## RAUC vs systemd-sysupdate: facts gathered
 
 **RAUC (review snapshot).**
@@ -375,9 +414,8 @@ Local evidence is under `build/rauc-production-watchdog-test/` in
 
 - For storage qualification, test cuts during active eMMC I/O and inside an
   individual redundant environment save.
-- Verify unattended retry after a product-service failure. The existing
-  mark-good unit checks boot progress through systemd ordering. Product
-  health gating remains open.
+- Define any additional product-service health checks required before
+  mark-good. The current gate covers USB port-role initialization.
 - Establish release signing, version-floor and key-rotation policy. Test
   fallback after the new slot has changed persistent state in the shared
   `/etc` and `/var` overlays.

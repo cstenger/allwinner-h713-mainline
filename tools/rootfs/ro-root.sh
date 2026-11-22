@@ -174,9 +174,7 @@ device=/dev/disk/by-partlabel/boot_b
 type=vfat
 parent=rootfs.1
 EOF
-# Mark the booted slot good once the system is up. Debian ships RAUC as rauc
-# (CLI) + rauc-service (D-Bus service) with no mark-good unit; this is the
-# same unit Yocto's meta-rauc provides: `rauc status mark-good`.
+# Debian ships the RAUC CLI and daemon without a mark-good unit.
 if [ ! -x "$R/usr/bin/rauc" ] || [ ! -e "$R/usr/lib/systemd/system/rauc.service" ]; then
   echo "ro-root: the image lacks rauc / rauc-service" >&2; exit 1
 fi
@@ -203,6 +201,31 @@ WantedBy=multi-user.target
 EOF
 ln -sfn ../rauc-mark-good.service \
   "$systemd_dir/multi-user.target.wants/rauc-mark-good.service"
+
+# Keep the dependency with the image so it also applies to an older
+# rauc-mark-good.service in the shared /etc overlay.
+vendor_units="$R/usr/lib/systemd/system"
+install -d -m 0755 "$vendor_units/rauc-mark-good.service.d"
+cat > "$vendor_units/rauc-mark-good.service.d/20-h713-boot-health.conf" <<'EOF'
+[Unit]
+Requires=h713-boot-health.service
+After=h713-boot-health.service
+EOF
+cat > "$vendor_units/h713-boot-health.service" <<'EOF'
+[Unit]
+Description=Check the H713 USB port role before accepting this boot
+ConditionKernelCommandLine=rauc.slot
+# Check the actual result even if USB startup failed, was skipped, or is
+# missing. An ordered Requires= here could skip this check on job failure.
+Wants=h713-usb.service
+After=h713-usb.service
+FailureAction=reboot
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/systemctl is-active --quiet h713-usb.service
+EOF
 
 # Nothing in the image may be written at runtime; the machine id is created
 # on the data partition (through the /etc overlay) on first boot.
