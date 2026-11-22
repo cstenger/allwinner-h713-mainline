@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Read-only V4L2 bridge for the board-B firmware's HDMI NV16 frame ring. */
+/* Read-only V4L2 bridge for the H713 firmware's HDMI NV16 frame ring. */
 
 #include <linux/crc32.h>
 #include <linux/delay.h>
@@ -57,9 +57,6 @@
 #define H713_MIPS_WINDOW 0x4b100000ULL
 #define H713_MIPS_WINDOW_END 0x4bf41000ULL
 #define H713_MIPS_PHYS_DELTA 0x40000000U	/* MIPS 0x8bxxxxxx = ARM 0x4bxxxxxx */
-#define H713_PORT_ROOT 0x4bac1a70ULL
-#define H713_MANAGER_VPTR 0x8b201d24
-#define H713_HDMIRX_VPTR 0x8b1f5390
 #define H713_PORT_LINK_BASE 0x06840000
 #define H713_SIG_PERIOD_MS 20
 #define H713_BACKSTOP_MS 1000		/* NO_SIGNAL while streaming: EIO after this */
@@ -70,12 +67,40 @@ struct h713_buffer {
 	struct list_head list;
 };
 
+struct h713_port_layout {
+	u32 root, manager_vptr, hdmirx_vptr;
+	u16 state, flags, link, power;
+	struct { u32 address, bytes, crc; } pins[3];
+};
+
+static const struct h713_port_layout h713_a1_port = {
+	.root = 0x8bac1a70, .manager_vptr = 0x8b201d24, .hdmirx_vptr = 0x8b1f5390,
+	.state = 0xc0, .flags = 0x518, .link = 0x520, .power = 0x530,
+	.pins = {
+		{ 0x8b13eff0, 72, 0xc6ae90a9 },
+		{ 0x8b13942c, 112, 0xd39102cc },
+		{ 0x8b136278, 64, 0xfad6119c },
+	},
+};
+
+/* Native V2 image 16c74a28. The port tail fields start four bytes earlier. */
+static const struct h713_port_layout h713_v2_port = {
+	.root = 0x8bac1a5c, .manager_vptr = 0x8b20213c, .hdmirx_vptr = 0x8b1f590c,
+	.state = 0xbc, .flags = 0x514, .link = 0x51c, .power = 0x52c,
+	.pins = {
+		{ 0x8b13e864, 72, 0xdbd5fce9 },
+		{ 0x8b139050, 112, 0x2e198e10 },
+		{ 0x8b1360bc, 64, 0x87534c1f },
+	},
+};
+
 struct h713_capture {
 	struct platform_device *pdev;
 	struct v4l2_device v4l2_dev;
 	struct video_device vdev;
 	struct v4l2_ctrl_handler controls;
 	struct v4l2_ctrl *power_present;
+	const struct h713_port_layout *port_layout;
 	bool power_firmware_ok;
 	bool power_valid;
 	bool power_seen_present;
@@ -348,24 +373,24 @@ static bool h713_mips_word(struct h713_capture *cap, u32 mips_addr, u32 *val)
 
 static bool h713_read_port(struct h713_capture *cap, struct h713_sig_sample *s)
 {
+	const struct h713_port_layout *layout = cap->port_layout;
 	u32 manager, hdmi, port, v, size_w, size_h;
 
-	manager = le32_to_cpu(READ_ONCE(*(__le32 *)(cap->mips +
-					(H713_PORT_ROOT - H713_MIPS_WINDOW))));
-	if (!manager || !h713_mips_word(cap, manager, &v) || v != H713_MANAGER_VPTR)
+	if (!h713_mips_word(cap, layout->root, &manager) || !manager ||
+	    !h713_mips_word(cap, manager, &v) || v != layout->manager_vptr)
 		return false;
 	/* +0x18 is the real THDMIRx; +0x1c is THDMIDummy. */
 	if (!h713_mips_word(cap, manager + 0x18, &hdmi) || !hdmi ||
-	    !h713_mips_word(cap, hdmi, &v) || v != H713_HDMIRX_VPTR)
+	    !h713_mips_word(cap, hdmi, &v) || v != layout->hdmirx_vptr)
 		return false;
 	if (!h713_mips_word(cap, hdmi + 0xec, &port) || !port ||
-	    !h713_mips_word(cap, port + 0x530, &v))	/* whole object in the window */
+	    !h713_mips_word(cap, port + layout->power, &v))	/* whole object in the window */
 		return false;
-	if (!h713_mips_word(cap, port + 0x518, &v) || ((v >> 24) & 0xff) != 1)
-		return false;	/* port id byte at +0x51b */
-	if (!h713_mips_word(cap, port + 0x520, &v) || v != H713_PORT_LINK_BASE)
+	if (!h713_mips_word(cap, port + layout->flags, &v) || ((v >> 24) & 0xff) != 1)
 		return false;
-	if (!h713_mips_word(cap, port + 0xc0, &s->port_state) ||
+	if (!h713_mips_word(cap, port + layout->link, &v) || v != H713_PORT_LINK_BASE)
+		return false;
+	if (!h713_mips_word(cap, port + layout->state, &s->port_state) ||
 	    !h713_mips_word(cap, port + 0x4c, &size_w) ||	/* hactive at +0x4e */
 	    !h713_mips_word(cap, port + 0x48, &size_h))		/* vactive at +0x48 */
 		return false;
@@ -374,29 +399,25 @@ static bool h713_read_port(struct h713_capture *cap, struct h713_sig_sample *s)
 	return true;
 }
 
-/* Board-B firmware's polled +5V cache; never access receiver MMIO from ARM. */
+/* Firmware's polled +5V cache; never access receiver MMIO from ARM. */
 static bool h713_power_firmware_matches(struct h713_capture *cap)
 {
-	static const struct { u32 address, bytes, crc; } pins[] = {
-		{ 0x8b13eff0, 72, 0xc6ae90a9 }, /* per-port hardware status reader */
-		{ 0x8b13942c, 112, 0xd39102cc }, /* store result at port +0x532 */
-		{ 0x8b136278, 64, 0xfad6119c }, /* event path uses port +8 */
-	};
+	const struct h713_port_layout *layout = cap->port_layout;
 	unsigned int i, off;
 
-	for (i = 0; i < ARRAY_SIZE(pins); i++) {
+	for (i = 0; i < ARRAY_SIZE(layout->pins); i++) {
 		u32 crc = ~0U;
 
-		for (off = 0; off < pins[i].bytes; off += 4) {
+		for (off = 0; off < layout->pins[i].bytes; off += 4) {
 			u32 value;
 			__le32 raw;
 
-			if (!h713_mips_word(cap, pins[i].address + off, &value))
+			if (!h713_mips_word(cap, layout->pins[i].address + off, &value))
 				return false;
 			raw = cpu_to_le32(value);
 			crc = crc32_le(crc, (u8 *)&raw, sizeof(raw));
 		}
-		if ((crc ^ ~0U) != pins[i].crc)
+		if ((crc ^ ~0U) != layout->pins[i].crc)
 			return false;
 	}
 	return true;
@@ -404,20 +425,21 @@ static bool h713_power_firmware_matches(struct h713_capture *cap)
 
 static bool h713_read_power(struct h713_capture *cap, unsigned int *present)
 {
+	const struct h713_port_layout *layout = cap->port_layout;
 	u32 manager, hdmi, port, identity, cache;
 
 	if (!cap->power_firmware_ok ||
-	    !h713_mips_word(cap, 0x8bac1a70, &manager) ||
-	    !h713_mips_word(cap, manager, &identity) || identity != H713_MANAGER_VPTR ||
+	    !h713_mips_word(cap, layout->root, &manager) ||
+	    !h713_mips_word(cap, manager, &identity) || identity != layout->manager_vptr ||
 	    !h713_mips_word(cap, manager + 0x18, &hdmi) ||
-	    !h713_mips_word(cap, hdmi, &identity) || identity != H713_HDMIRX_VPTR ||
+	    !h713_mips_word(cap, hdmi, &identity) || identity != layout->hdmirx_vptr ||
 	    !h713_mips_word(cap, hdmi + 0xec, &port) ||
 	    !h713_mips_word(cap, port, &identity) ||
-	    !h713_mips_word(cap, port + 0x518, &identity) ||
+	    !h713_mips_word(cap, port + layout->flags, &identity) ||
 	    ((identity >> 24) & 0xff) != 1 || /* firmware port 1 */
 	    ((identity >> 16) & 0xff) != 1 || /* its polling is enabled */
-	    !h713_mips_word(cap, port + 0x520, &identity) || identity != H713_PORT_LINK_BASE ||
-	    !h713_mips_word(cap, port + 0x530, &cache))
+	    !h713_mips_word(cap, port + layout->link, &identity) || identity != H713_PORT_LINK_BASE ||
+	    !h713_mips_word(cap, port + layout->power, &cache))
 		return false;
 	cache = (cache >> 16) & 0xff;
 	if (cache > 1)
@@ -1409,14 +1431,24 @@ static const struct v4l2_file_operations h713_fops = {
 
 static int __init h713_init(void)
 {
+	bool v2 = of_machine_is_compatible("cstenger,hy200-qz713-v2");
 	struct h713_capture *cap;
 	struct vb2_queue *q;
 	u8 *firmware;
 	u32 hook0, hook1, hook2, hook3;
 	int ret;
 
-	if (!of_machine_is_compatible("cstenger,hy200-qz713df-a1"))
+	if (!v2 && !of_machine_is_compatible("cstenger,hy200-qz713df-a1"))
 		return -ENODEV;
+	if (v2) {
+		u32 handoff[3];
+
+		if (strcmp(completion, "pair") ||
+		    of_property_read_u32_array(of_chosen, "h713,hdmi-boot-v1",
+					       handoff, ARRAY_SIZE(handoff)) ||
+		    handoff[0] != 0x48444d49 || handoff[1] || !handoff[2])
+			return -ENODEV;
+	}
 	if (!((width == 640 && height == 480) ||
 	      (width == 1280 && height == 720))) {
 		pr_err("h713-hdmi-v4l2: supported sizes are 640x480 and 1280x720\n");
@@ -1426,6 +1458,7 @@ static int __init h713_init(void)
 	cap = kzalloc(sizeof(*cap), GFP_KERNEL);
 	if (!cap)
 		return -ENOMEM;
+	cap->port_layout = v2 ? &h713_v2_port : &h713_a1_port;
 	/*
 	 * The "signal" attribute lives on this platform device, the video
 	 * node's parent, and exists before the node's "add" uevent (udev reads
@@ -1469,6 +1502,12 @@ static int __init h713_init(void)
 	if (!cap->mips) {
 		ret = -ENOMEM;
 		goto unmap_trace;
+	}
+	cap->power_firmware_ok = h713_power_firmware_matches(cap);
+	if (v2 && !cap->power_firmware_ok) {
+		pr_err("h713-hdmi-v4l2: V2 port firmware does not match\n");
+		ret = -ENODEV;
+		goto unmap_mips;
 	}
 	if (strcmp(completion, "auto") && strcmp(completion, "hook") &&
 	    strcmp(completion, "pair")) {
@@ -1529,7 +1568,6 @@ static int __init h713_init(void)
 	}
 	cap->power_present->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 	v4l2_ctrl_activate(cap->power_present, false);
-	cap->power_firmware_ok = h713_power_firmware_matches(cap);
 	if (!cap->power_firmware_ok)
 		pr_warn("h713-hdmi-v4l2: power cache firmware mismatch; control inactive\n");
 	cap->v4l2_dev.ctrl_handler = &cap->controls;

@@ -1077,6 +1077,163 @@ Local evidence is under `build/v2-native-display/audio-slot-a/` in
 `run-2/score.json`, `run-2-playback.log`, `run-2-edges.log`, and
 `uart-return-check.log`. The mic recordings are kept locally.
 
+#### V2 slot A HDMI input and audio capture preflight (2026-11-22)
+
+Checked the installed V2 slot A boot (`eea82965`, Linux 6.18.38). HDMI
+video and audio capture were blocked by missing startup and capture
+components. The HDMI prepare, capture, signal, ring, and video services
+were absent, along with the receiver, V4L2 capture, and HDMI audio
+modules and the audio DSP firmware. The existing production HDMI build
+targets the [DDR3 A1 bench](production-qualification-plan.md).
+
+- **Video input:** `VIDIOC_QUERYCAP` identified `/dev/video0` as Cedrus
+  and `/dev/video1` as the H713 AV1 decoder. Both are memory-to-memory
+  devices. There was no standalone HDMI V4L2 capture endpoint, so no
+  HDMI mode lock or frame capture was verified.
+- **Audio capture:** ALSA listed no sound cards. Opening the expected
+  capture PCM, `hw:H713HDMI,0`, returned `ENODEV` (`-19`). No HDMI audio
+  samples were captured.
+
+The host HDMI connector reported `disconnected` and the host had no
+projector audio ELD. Cable presence and HDMI signal lock remain
+unverified. The measurements require a V2 HDMI startup and capture
+bundle and a source with a confirmed link. This preflight used the
+installed image without changing it or rebooting the board.
+
+Local evidence is under `build/v2-native-display/hdmi-slot-a/` in
+`preflight.log`, `receiver-diagnostics.log`, `startup-units.log`,
+`endpoints.log`, and `host-source.log`.
+
+##### HDMI device-tree comparison (2026-11-22)
+
+Compared the live V2 slot A FDT with the A1 production FIT's DTB and
+the stock Android `vendor_boot_a` DTBs extracted from both boards'
+eMMC captures. The stock A1 and V2 trees differ only in fan tach,
+focus motor settings, and panel power. Their HDMI-related descriptions
+match, including the audio bridge and its SPI 115 and SPI 113 IRQs.
+
+| HDMI startup resource | Live V2 slot A | A1 production FIT |
+| --- | --- | --- |
+| DDC pinmux owner and EDID clock/reset consumer | Absent | `h713-ddc-pins` for PL10–PL15, and `h713-edid-clock-hold` |
+| TVCAP power retention across Linux boot | No `allwinner,keep-tvcap-on` | Property set on the PPU |
+| MIPS trace buffer | Absent | `hdmi-trace@4d980000`, 256 KiB, `no-map` |
+| Audio bridge and TVTOP nodes | Both `okay` | Both `disabled`, with the capture stack managing these resources |
+| Audio bridge and AudIf IRQ order | SPI 115, SPI 113 | SPI 115, SPI 113 |
+
+The A1 HDMI boot script also adds `/chosen/h713,hdmi-boot-v1` after
+verifying the live MIPS source 3 transition, and adds
+`/soc/hdmi-mips-shutdown` with the clocks and resets used for receiver
+parking. The live V2 FDT has neither, and the installed V2 display
+boot quiesces MIPS after committing the logo. A V2 capture boot needs
+the HDMI resources, the live MIPS handoff, and the capture modules and
+firmware identified in the preflight. The internal speaker codec at
+`0x02030000` is a separate path. [A1 startup script](../tools/hdmi/build-startup.py)
+
+The extracted trees and diffs are under
+`build/v2-native-display/hdmi-slot-a/dt/`. This comparison used the
+running board and local images without changing the device tree on disk.
+
+##### V2 HDMI test candidate (2026-11-22)
+
+Added an [offline DTB builder](../tools/hdmi/prepare-v2-capture-dtb.sh)
+and an [opt-in overlay](../tools/hdmi/v2-capture.dtso). The overlay adds
+the DDC and EDID resources, TVCAP retention, MIPS trace reservation, and
+receiver shutdown resources. It leaves the display, USB, internal codec,
+and boot arguments from the base DTB in place. The builder was tested on
+the V2 DTB extracted from the installed slot A FIT. It checks the board
+compatible, bridge IRQs, and trace reservation boundaries.
+
+The receiver, DDC, signal, HDMI audio and V4L2 modules built against the
+kernel tree whose `Image` byte-matches the installed slot A FIT's
+decompressed kernel. The candidate also includes the pinned A1 DSP
+payload for evaluation. The files are staged locally under
+`build/v2-native-display/hdmi-slot-a/candidate/` in `v2-hdmi-test.dtb`
+and `runtime-files/`. The overlay and module build did not change the
+board or its installed boot path.
+
+##### Native V2 MIPS handoff port (2026-11-22)
+
+U-Boot patch 0018 selects a trace table for the authenticated native V2
+`display.bin` (`16c74a28…`). It relocates the CPU_COMM and source worker
+hooks and the firmware channel-table pointer. All 446 expected words
+match the native image, and the existing scratch-register liveness tool
+found zero unsafe sites across 61 hooks. The Linux trace reader selects
+the V2 offsets using the board compatible and rejects A1 words on V2.
+
+The explicit `h713_disp hdmi-source-v2` command checks the live channel
+table, waits for CPU_COMM RETURN and a fresh source 3 worker completion,
+and verifies the trace page guards before exporting the handoff PID.
+The FEL candidate builds successfully and pauses at UART, leaving the
+installed boot path in place. Offline evidence is under
+`build/v2-native-display/hdmi-slot-a/candidate/` in `trace-map.txt`,
+`v2-liveness.log`, `uboot-ram-build.log`, and `handoff-baseline.log`.
+
+The host HDMI cable was connected for the trial. The USB connection
+check did not see a configured gadget, so live handoff and capture
+verification are pending the FEL data connection. A normal reboot
+restored the slot A USB host role after the temporary gadget probe.
+Before-and-after SHA-256 read-back matched for SPL, the checked U-Boot
+region, and all four slot partitions. RAUC still reported boot order
+`A B` with three tries per slot. See `normal-boot-storage.log`.
+
+##### Live V2 HDMI handoff and capture over FEL (2026-11-22)
+
+`reboot fel` from slot A entered BROM FEL, and
+[`fel-uboot.sh`](../tools/fel-uboot.sh) loaded the U-Boot 0018 RAM
+candidate and `v2-hdmi-test.dtb`. From the U-Boot prompt, the single
+logo launch with comm-trace and `h713_disp hdmi-source-v2` completed
+source 3 (PID `8b8f261c`). The RAM boot script then set
+`/chosen/h713,hdmi-boot-v1` and booted the installed slot A FIT and
+root. The installed boot path was not written.
+
+Linux read the handoff trace with both guards intact. It showed a
+source 3 transition with callback event 0 and worker event 0, which
+completed from `00000000` to `00000003`. The receiver, DDC, signal, and
+HDMI audio modules loaded from the staged runtime files, and each file
+matched its build hash. EDID and HPD came up, and after one HPD pulse
+the host reported the projector ELD (`H713 HDMI IN`, 2-channel LPCM at
+32, 44.1, and 48 kHz).
+
+- **Audio:** `hw:H713HDMI,0` captured a 48 kHz host tone at
+  2954 periods with zero xruns. All three tone windows passed the rate
+  check (tone fraction 0.9999996 at 48 kHz), and the final second
+  after the host stopped was all zero.
+- **Video lock:** The first V4L2 build used the A1 port-object offsets
+  and never saw a signal. In native V2 firmware the port's state,
+  flags, link, and power-cache fields sit 4 bytes earlier (`+0xbc`,
+  `+0x514`, `+0x51c`, `+0x52c`), and the port root and vtables move.
+  The bridge now selects a V2 port layout from the board compatible and
+  refuses to load on V2 unless the power-reader code CRCs match and the
+  handoff property is present. The rebuilt module locked 1280×720
+  after 11 samples and exposed `/dev/video2` (`h713-hdmi-in`).
+- **Frame capture:** With the host playing the 60 Hz frame-ID pattern,
+  seventeen 120-frame captures from `/dev/video2` had every frame
+  patterned and zero band or stripe errors. In each one, the driver
+  delivered every completion with zero unstable copies. Run 6 is
+  excluded: its two-output FFmpeg consumer could not keep up
+  (`no_buffer` 195). In the
+  low-overhead NUT run, which kept the buffer timestamps, all 480
+  completion gaps were 16.0–17.7 ms. The three skipped IDs in that run
+  each arrived about 17.0 ms after the previous frame, so the skipped
+  frames never reached the wire. They are host compositor drops, not
+  missed completions. The 1280×720 frame shows the red and cyan edge
+  columns, so the crop is full width.
+- **Panel route B:** The A1 product pipeline (`v4l2src io-mode=dmabuf`
+  → NV12 → `kmssink driver-name=sun50i-h713-afbd`) ran for 19.4 s and
+  delivered 1159 frames (59.6 fps, 2 `no_buffer`, 0 unstable). DRM
+  showed a 1280×720 NV12 framebuffer on `video-0`, and its id changed
+  between snapshots. The IOMMU and Panfrost MMU counters stayed at zero,
+  and the console plane returned when the pipeline stopped. In a
+  27.5-second repeat (1637 frames, 59.6 fps, 0 unstable), the operator
+  saw the moving pattern on the panel. Motion was smooth and the image
+  was correct.
+
+Evidence is under `build/v2-native-display/hdmi-slot-a/candidate/`:
+`fel-load-live.log`, `fel-uart.log`, `v2-handoff-uart.log`,
+`live-*.log`, `live-audio-analysis.json`, `video-capture/` (runs 1–7,
+raw NV16 zstd-compressed; `run-7-nut` has the timestamps),
+`panel-route-b/`, and `panel-optical/`.
+
 #### USB port roles (2026-11-20)
 
 The V2 has one USB-A socket, SoC port 0. Its 5 V is hard-wired on, and it

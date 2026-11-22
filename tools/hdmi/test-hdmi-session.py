@@ -452,5 +452,21 @@ class TraceReader(unittest.TestCase):
         self.words[self.t.MAILBOX+0xffc]=self.t.CANARY;self.words[self.t.PATCHED_WORDS[0][0]]=0
         with self.assertRaisesRegex(RuntimeError,'patch mismatch'):self.t.source_snapshot(self.shell)
 
+    def test_native_v2_relocation_and_adapter_are_required(self):
+        compatible = SimpleNamespace(read_bytes=lambda: b'cstenger,hy200-qz713-v2\0allwinner,sun50i-h713\0')
+        with mock.patch.object(self.t, 'BOARD_COMPATIBLE', compatible):
+            with self.assertRaisesRegex(RuntimeError, 'patch mismatch'):
+                self.t.source_snapshot(self.shell)
+            for address, (native_address, word) in self.t.V2_PATCH_WORDS.items():
+                self.words.pop(address)
+                self.words[native_address] = word
+            self.words[self.t.V2_CAPTURE_SITE] = 0x8c470008
+            snap = self.t.source_snapshot(self.shell)
+            self.assertEqual(snap['source3_worker_new'], '00000003')
+            self.assertEqual(snap['source3_transition_complete'], 1)
+            self.words[0x4b10a228] = 0x0ec52d12
+            with self.assertRaisesRegex(RuntimeError, 'unrecognized adapter'):
+                self.t.source_snapshot(self.shell)
+
 
 if __name__=='__main__':unittest.main()

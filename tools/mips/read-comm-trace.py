@@ -82,6 +82,19 @@ ADAPTER_PATCHED_WORDS = (
 # whole, so a rolled-back proper still verifies but a mixed slot does not.
 ADAPTER_RETURN_PRE_0006 = {0x4b101040: 0x3c1aad98, 0x4b101048: 0xaf5b0058}
 
+# Native V2 display.bin relocates these hooks and firmware targets. The
+# trace caves and mailbox are shared with A1.
+V2_PATCH_WORDS = {
+    0x4b123f4c: (0x4b123e20, 0x0ec40128),
+    0x4b123f54: (0x4b123e28, 0x0ac400b1),
+    0x4b1204b4: (0x4b120388, 0x0ec400f0),
+    0x4b12052c: (0x4b120400, 0x0ec40190),
+    0x4b100b68: (0x4b100b68, 0x0ac56ee0),
+    0x4b10101c: (0x4b10101c, 0x0ac52ada),
+}
+V2_CAPTURE_SITE = 0x4b185ac4
+BOARD_COMPATIBLE = Path('/proc/device-tree/compatible')
+
 CAPTURE_PATCHED_WORDS = (
     (0x4B100BA0, 0x27BDFFF8),
     (0x4B100BA4, 0xAFB80000),
@@ -141,8 +154,14 @@ def open_trace(shell):
     session) keep their own failure handling.
     """
     mem = shell.Mem()
+    try:
+        v2 = b'cstenger,hy200-qz713-v2' in BOARD_COMPATIBLE.read_bytes().split(b'\0')
+    except FileNotFoundError:
+        v2 = False
 
     for address, expected in PATCHED_WORDS:
+        if v2:
+            address, expected = V2_PATCH_WORDS.get(address, (address, expected))
         actual = mem.u32(address)
         if actual != expected:
             raise RuntimeError(f"comm-trace patch mismatch at {address:#x}: "
@@ -150,18 +169,20 @@ def open_trace(shell):
     adapter_site = mem.u32(0x4b10a228)
     adapter_enabled = adapter_site == ADAPTER_PATCHED_WORDS[0][1]
     if adapter_enabled:
-        legacy = all(mem.u32(a) == v for a, v in ADAPTER_RETURN_PRE_0006.items())
+        legacy = not v2 and all(mem.u32(a) == v for a, v in ADAPTER_RETURN_PRE_0006.items())
         for address, expected in ADAPTER_PATCHED_WORDS:
-            if legacy and address in ADAPTER_RETURN_PRE_0006:
+            if v2:
+                address, expected = V2_PATCH_WORDS.get(address, (address, expected))
+            elif legacy and address in ADAPTER_RETURN_PRE_0006:
                 expected = ADAPTER_RETURN_PRE_0006[address]
             actual = mem.u32(address)
             if actual != expected:
                 raise RuntimeError(f"adapter patch mismatch at {address:#x}: "
                                  f"{actual:#010x} != {expected:#010x}")
-    elif adapter_site != 0x0ec52d12:
+    elif v2 or adapter_site != 0x0ec52d12:
         raise RuntimeError(f"unrecognized adapter call patch {adapter_site:#010x}")
-    capture_site = mem.u32(0x4B1863A4)
-    capture_enabled = capture_site == CAPTURE_PATCHED_WORDS[-1][1]
+    capture_site = mem.u32(V2_CAPTURE_SITE if v2 else 0x4B1863A4)
+    capture_enabled = not v2 and capture_site == CAPTURE_PATCHED_WORDS[-1][1]
     if capture_enabled:
         for address, expected in CAPTURE_PATCHED_WORDS:
             actual = mem.u32(address)

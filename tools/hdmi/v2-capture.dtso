@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+/plugin/;
+
+/ {
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			h713-ddc-pins {
+				compatible = "h713-lab,ddc-pins";
+				pinctrl-names = "default", "sleep";
+				pinctrl-0 = <&ddc0>, <&ddc1>, <&ddc2>;
+				pinctrl-1 = <&ddc_disabled>;
+			};
+
+			h713-edid-clock-hold {
+				compatible = "h713-lab,edid-clock-hold";
+				clocks = <&r_ccu 11>; /* CLK_R_EDID */
+				resets = <&r_ccu 7>; /* RST_R_EDID */
+			};
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/pinctrl@7022000";
+		__overlay__ {
+			ddc0: r-ddc0-pins {
+				pins = "PL10", "PL11";
+				function = "s_twi0";
+			};
+
+			ddc1: r-ddc1-pins {
+				pins = "PL12", "PL13";
+				function = "s_twi1";
+			};
+
+			ddc2: r-ddc2-pins {
+				pins = "PL14", "PL15";
+				function = "s_twi2";
+			};
+
+			ddc_disabled: r-ddc-disabled-pins {
+				pins = "PL10", "PL11", "PL12", "PL13", "PL14", "PL15";
+				function = "io_disabled";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/reserved-memory";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			hdmi-trace@4d980000 {
+				reg = <0x4d980000 0x40000>;
+				no-map;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc/power-controller@7001014";
+		__overlay__ {
+			allwinner,keep-tvcap-on;
+		};
+	};
+
+	/* Let the guarded receiver and capture drivers own these resources. */
+	fragment@4 {
+		target-path = "/soc/audio-bridge@203042c";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@5 {
+		target-path = "/soc/tvtop@5700000";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@6 {
+		target-path = "/soc";
+		__overlay__ {
+			hdmi-mips-shutdown {
+				compatible = "h713,hdmi-mips-shutdown-bench";
+				resets = <&ccu 1>, <&ccu 2>, <&ccu 3>;
+				clocks = <&ccu 19>, <&ccu 20>;
+			};
+		};
+	};
+};

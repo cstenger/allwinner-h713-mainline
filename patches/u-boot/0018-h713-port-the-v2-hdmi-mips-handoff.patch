@@ -1,0 +1,817 @@
+Subject: sunxi: H713: port the guarded HDMI MIPS handoff to V2
+
+Relocate the trace hooks and trampoline transfers to the authenticated
+native V2 firmware. Keep the original-word and scratch-register checks
+and select the table only after the board-specific firmware hash passes.
+
+Select source 3 explicitly from the live V2 channel table, then wait for
+CPU_COMM RETURN and the asynchronous source worker. Export the PID to the
+temporary boot script only after both trace canaries and completion agree.
+
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -2590,6 +2590,8 @@
+ 	{ 0x4b1a47dc, 0xac43006c, 0x0ec402a8 }, /* jal 0x8b100aa0 */
+ };
+ 
++#include "h713_mips_v2_comm_trace.h"
++
+ static void h713_mips_print_digest(const u8 *digest)
+ {
+ 	int i;
+@@ -3339,14 +3341,18 @@
+ 
+ static int h713_mips_apply_comm_trace(void)
+ {
++	bool v2 = h713_display_v2();
++	const struct h713_mips_patch *patches = v2 ?
++		h713_mips_v2_comm_trace_patches : h713_mips_comm_trace_patches;
++	size_t count = v2 ? ARRAY_SIZE(h713_mips_v2_comm_trace_patches) :
++		ARRAY_SIZE(h713_mips_comm_trace_patches);
+ 	ulong trace = H713_MIPS_COMM_TRACE_ADDR;
+ 	int base_count = 0;
+ 	int store_count = 0;
+-	int i;
++	size_t i;
+ 
+-	for (i = 0; i < ARRAY_SIZE(h713_mips_comm_trace_patches); i++) {
+-		const struct h713_mips_patch *patch =
+-			&h713_mips_comm_trace_patches[i];
++	for (i = 0; i < count; i++) {
++		const struct h713_mips_patch *patch = &patches[i];
+ 		u32 word = patch->replacement;
+ 		u32 op = word >> 26;
+ 		u32 reg = (word >> 16) & 0x1f;
+@@ -3380,9 +3386,8 @@
+ 	memset((void *)trace, 0, H713_MIPS_COMM_TRACE_SIZE);
+ 	flush_cache(trace, H713_MIPS_COMM_TRACE_SIZE);
+ 
+-	for (i = 0; i < ARRAY_SIZE(h713_mips_comm_trace_patches); i++) {
+-		const struct h713_mips_patch *patch =
+-			&h713_mips_comm_trace_patches[i];
++	for (i = 0; i < count; i++) {
++		const struct h713_mips_patch *patch = &patches[i];
+ 
+ 		u32 word = patch->replacement;
+ 		u32 op = word >> 26;
+@@ -3435,8 +3440,8 @@
+ 	flush_cache(trace, H713_MIPS_COMM_TRACE_SIZE);
+ 	flush_cache(H713_MIPS_FW_ADDR, H713_MIPS_FW_WINDOW_SIZE);
+ 	h713_comm_trace_active = true;
+-	printf("H713 MIPS: CPU_COMM RETURN progress trace installed at 0x%08lx\n",
+-	       trace);
++	printf("H713 MIPS: CPU_COMM %s RETURN progress trace installed at 0x%08lx\n",
++	       v2 ? "V2" : "A1", trace);
+ 
+ 	return 0;
+ }
+@@ -3750,7 +3755,7 @@
+ 	    (stability && comm_trace))
+ 		return -EINVAL;
+ 
+-	if (h713_display_v2() && (trace || stability || comm_trace)) {
++	if (h713_display_v2() && (trace || stability)) {
+ 		printf("H713 MIPS: these patch tables are for A1 firmware\n");
+ 		return -EOPNOTSUPP;
+ 	}
+@@ -10164,6 +10169,7 @@
+  *
+  * Read-only, no messages, does not consume a launch.
+  */
++#define H713_COMM_V2_DEV_PTR	0x8b22f1f4UL
+ #define H713_COMM_DEV_PTR	0x8b22efe4UL	/* -> pcpu_comm_dev           */
+ #define H713_COMM_CHAN_OFF	0xa8UL		/* dev + 0x18 + 0x90          */
+ #define H713_COMM_CHAN_STRIDE	48
+@@ -10171,6 +10177,9 @@
+ 
+ static int h713_disp_comm_dev(void)
+ {
++	bool v2 = h713_display_v2();
++	ulong dev_ptr = v2 ? H713_COMM_V2_DEV_PTR : H713_COMM_DEV_PTR;
++	ulong reader = v2 ? 0x8b122688UL : 0x8b1227b4UL;
+ 	ulong dev, tbl;
+ 	uint i, live = 0;
+ 
+@@ -10187,21 +10196,23 @@
+ 	 * these do not match, every other number below is meaningless.
+ 	 */
+ 	{
+-		u32 a = h713_mips_read_fw(0x8b1227b4UL);
+-		u32 b = h713_mips_read_fw(0x8b1227b8UL);
++		u32 a = h713_mips_read_fw(reader);
++		u32 b = h713_mips_read_fw(reader + 4);
+ 		bool ok = a == 0x03e00008 && b == 0x24020001;
+ 
+-		printf("H713 comm: reader self-test @0x8b1227b4 -> %08x %08x "
++		printf("H713 comm: reader self-test @0x%08lx -> %08x %08x "
+ 		       "(expect 03e00008 24020001) %s\n",
+-		       a, b, ok ? "OK" : "*** FAILED ***");
++		       reader, a, b, ok ? "OK" : "*** FAILED ***");
++		if (!ok && v2)
++			return -EIO;
+ 		if (!ok)
+ 			printf("H713 comm: KSEG reads are not landing where "
+ 			       "expected -- treat the dump below as void\n");
+ 	}
+ 
+-	dev = h713_mips_read_fw(H713_COMM_DEV_PTR);
++	dev = h713_mips_read_fw(dev_ptr);
+ 	printf("H713 comm: pcpu_comm_dev = 0x%08lx (via 0x%08lx)\n",
+-	       dev, H713_COMM_DEV_PTR);
++	       dev, dev_ptr);
+ 
+ 	if (dev < 0x80000000UL || dev >= 0xa0000000UL) {
+ 		printf("H713 comm: dev pointer not a KSEG address -- "
+@@ -11124,6 +11135,81 @@
+ 	return 0;
+ }
+ 
++/* Explicit V2 bench operation. Leave the normal logo-only path alone. */
++static int h713_disp_v2_hdmi_source(void)
++{
++	ulong trace = H713_MIPS_COMM_TRACE_ADDR;
++	ulong dev, table;
++	u32 pid = 0, source = 3;
++	uint i, live = 0;
++	int ret;
++
++	if (!h713_display_v2() || !h713_comm_trace_active ||
++	    readl(H713_MIPS_STATUS_REG) != 1)
++		return -ENODEV;
++
++	if (env_get("h713_v2_hdmi_pid") && env_set("h713_v2_hdmi_pid", NULL))
++		return -EIO;
++	invalidate_dcache_range(trace, trace + H713_MIPS_COMM_TRACE_SIZE);
++	if (readl(trace + 4) != H713_MIPS_COMM_TRACE_MAGIC ||
++	    readl(trace + 0x80) != H713_MIPS_COMM_TRACE_CANARY ||
++	    readl(trace + 0xffc) != H713_MIPS_COMM_TRACE_CANARY ||
++	    readl(trace + 0x7c))
++		return -EIO;
++	if (h713_mips_read_fw(0x8b122688UL) != 0x03e00008 ||
++	    h713_mips_read_fw(0x8b12268cUL) != 0x24020001)
++		return -EIO;
++	dev = h713_mips_read_fw(H713_COMM_V2_DEV_PTR);
++	if (dev < 0x8b100000UL || dev >= 0x8bffff00UL)
++		return -EINVAL;
++
++	table = dev + H713_COMM_CHAN_OFF;
++	for (i = 0; i < H713_COMM_CHAN_SLOTS; i++) {
++		ulong record = table + i * H713_COMM_CHAN_STRIDE;
++		u32 chan = h713_mips_read_fw(record);
++		u32 record_pid = h713_mips_read_fw(record + 8);
++		u32 key = h713_mips_read_fw(record + 12);
++
++		if (key == ~0U || !(key || record_pid || chan))
++			continue;
++		if (chan >> 16 || !record_pid)
++			return -EINVAL;
++		pid = record_pid;
++		live++;
++	}
++	if (live != 1) {
++		printf("H713 V2 HDMI: expected one live channel, found %u\n", live);
++		return -EINVAL;
++	}
++
++	ret = h713_comm_call(0xeaf13de5, &source, 1, 0, pid, NULL);
++	if (ret)
++		return ret;
++
++	/* RETURN and the asynchronous source transition are distinct. */
++	for (i = 0; i < 1000; i++) {
++		invalidate_dcache_range(trace, trace + H713_MIPS_COMM_TRACE_SIZE);
++		if (readl(trace + 0x7c))
++			break;
++		mdelay(1);
++	}
++	if (readl(trace + 4) != H713_MIPS_COMM_TRACE_MAGIC ||
++	    readl(trace + 0x80) != H713_MIPS_COMM_TRACE_CANARY ||
++	    readl(trace + 0xffc) != H713_MIPS_COMM_TRACE_CANARY ||
++	    readl(trace + 0x78) != source || readl(trace + 0x7c) != 1)
++		return -EIO;
++
++	h713_disp_latch_panel_timing();
++	ret = h713_disp_backlight_set(75);
++	if (ret)
++		return ret;
++	h713_disp_v2_lamp_set(true);
++	ret = env_set_hex("h713_v2_hdmi_pid", pid);
++	if (!ret)
++		printf("H713 V2 HDMI: source 3 completed, PID %08x\n", pid);
++	return ret;
++}
++
+ static int h713_disp_auto_logo(u32 project, const char *logo_file)
+ {
+ 	return h713_disp_auto_logo_mode(project, logo_file, true);
+@@ -11307,6 +11393,9 @@
+ 		return h713_disp_panel_off_early() ? CMD_RET_FAILURE :
+ 		       CMD_RET_SUCCESS;
+ 
++	if (argc == 2 && !strcmp(argv[1], "hdmi-source-v2"))
++		return h713_disp_v2_hdmi_source() ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
++
+ 	if (argc == 2 && !strcmp(argv[1], "commdev"))
+ 		return h713_disp_comm_dev() ?
+ 		       CMD_RET_FAILURE : CMD_RET_SUCCESS;
+@@ -11563,6 +11652,7 @@
+ 	   "h713_disp regscan [base] [words]    - find which registers move, and what they count\n"
+ 	   "h713_disp clkfind [index]           - list, or test ONE clock candidate (see docs)\n"
+ 	   "h713_disp commdev                   - read the firmware channel table\n"
++	   "h713_disp hdmi-source-v2            - select source 3 after a native V2 comm trace launch\n"
+ 	   "h713_disp fwmd <mips-va> [words]    - dump firmware memory (cache-safe)\n"
+ 	   "h713_disp commcall <id> [chan=<hex>] [pid=<hex>] [args..]\n"
+ 	   "                                    - send one CPU_COMM CALL (writes!)\n"
+--- /dev/null
++++ b/arch/arm/mach-sunxi/h713_mips_v2_comm_trace.h
+@@ -0,0 +1,590 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++static const struct h713_mips_patch h713_mips_v2_comm_trace_patches[] = {
++	/* Record the adapter's requested source before the actual SetSource call. */
++	{ 0x4b101000, 0x00000000, 0x3c18ae34 }, /* lui t8, trace page */
++	{ 0x4b101004, 0x00000000, 0x34195301 }, /* ori t9, zero, 0x5301 */
++	{ 0x4b101008, 0x00000000, 0xaf190058 }, /* sw t9, +0x58(t8) */
++	{ 0x4b10100c, 0x00000000, 0xaf04005c }, /* sw a0, +0x5c(t8) */
++	{ 0x4b101010, 0x00000000, 0x3c198b25 }, /* lui t9, 0x8b25 */
++	{ 0x4b101014, 0x00000000, 0x8f393578 }, /* lw t9, 0x3578(t9) */
++	{ 0x4b101018, 0x00000000, 0xaf190060 }, /* sw t9, +0x60(t8) */
++	{ 0x4b10101c, 0x00000000, 0x0ac52ada }, /* j 0x8b14ab68 */
++	{ 0x4b101020, 0x00000000, 0x00000000 },
++	{ 0x4b10a228, 0x0ec52ada, 0x0ec40400 }, /* jal adapter trace */
++
++	/* Record a return, preserving the adapter's store and saved ra load. */
++	{ 0x4b101040, 0x00000000, 0x3c18ae34 },
++	{ 0x4b101044, 0x00000000, 0x34195302 },
++	{ 0x4b101048, 0x00000000, 0xaf190058 },
++	{ 0x4b10104c, 0x00000000, 0x0ac4288e }, /* j 0x8b10a238 */
++	{ 0x4b101050, 0x00000000, 0x8fbf0014 }, /* lw ra, 0x14(sp) */
++	{ 0x4b10a230, 0x8fbf0014, 0x0ac40410 }, /* j return trace */
++
++	/* Record the actual virtual callback target and source at the dispatch
++	 * site. Preserve the original a1 delay-slot setup, call/return semantics,
++	 * and the dispatcher's saved ra. A null object skips this hook entirely. */
++	{ 0x4b1010c0, 0x00000000, 0x3c18ae34 }, /* lui t8, trace page */
++	{ 0x4b1010c4, 0x00000000, 0xaf020064 }, /* sw v0, +0x64(t8) */
++	{ 0x4b1010c8, 0x00000000, 0xaf100068 }, /* sw s0, +0x68(t8) */
++	{ 0x4b1010cc, 0x00000000, 0x0040f809 }, /* jalr v0 */
++	{ 0x4b1010d0, 0x00000000, 0x00000000 },
++	{ 0x4b1010d4, 0x00000000, 0x0ac42478 }, /* j 0x8b1091e0 */
++	{ 0x4b1010d8, 0x00000000, 0x00000000 },
++	{ 0x4b1091d8, 0x0040f809, 0x0ac40430 }, /* j 0x8b1010c0 */
++
++	/* Count source-3 dequeues before the original equal/transition branch.
++	 * t8 is the uncached trace-page base, t9 scratch. Replay the displaced
++	 * old-source store, then return to the unmodified branch. */
++	{ 0x4b100b00, 0x00000000, 0xaf16002c }, /* sw s6, +0x2c(t8) */
++	{ 0x4b100b04, 0x00000000, 0x3bd90003 }, /* xori t9, fp, 3 */
++	{ 0x4b100b08, 0x00000000, 0x17200006 }, /* bnez t9, 0x8b100b24 */
++	{ 0x4b100b0c, 0x00000000, 0x00000000 },
++	{ 0x4b100b10, 0x00000000, 0x8f190070 }, /* lw t9, count(t8) */
++	{ 0x4b100b14, 0x00000000, 0x27390001 }, /* addiu t9, t9, 1 */
++	{ 0x4b100b18, 0x00000000, 0xaf190070 }, /* sw t9, count(t8) */
++	{ 0x4b100b1c, 0x00000000, 0xaf1e0078 }, /* sw fp, last-new(t8) */
++	{ 0x4b100b20, 0x00000000, 0xaf160074 }, /* sw s6, last-old(t8) */
++	{ 0x4b100b24, 0x00000000, 0x0ac4025d }, /* j 0x8b100974 */
++	{ 0x4b100b28, 0x00000000, 0x00000000 },
++
++	/* The callback's last-event slots can be overwritten by a later event-1
++	 * notification. Keep a separate event-zero/source-3 enqueue counter. */
++	{ 0x4b100b40, 0x00000000, 0x8cb90000 }, /* lw t9, 0(a1): event */
++	{ 0x4b100b44, 0x00000000, 0x17200008 }, /* bnez t9, 0x8b100b68 */
++	{ 0x4b100b48, 0x00000000, 0x00000000 },
++	{ 0x4b100b4c, 0x00000000, 0x8cb90004 }, /* lw t9, 4(a1): source */
++	{ 0x4b100b50, 0x00000000, 0x3b390003 }, /* xori t9, t9, 3 */
++	{ 0x4b100b54, 0x00000000, 0x17200004 }, /* bnez t9, 0x8b100b68 */
++	{ 0x4b100b58, 0x00000000, 0x00000000 },
++	{ 0x4b100b5c, 0x00000000, 0x8f19006c }, /* lw t9, count(t8) */
++	{ 0x4b100b60, 0x00000000, 0x27390001 }, /* addiu t9, t9, 1 */
++	{ 0x4b100b64, 0x00000000, 0xaf19006c }, /* sw t9, count(t8) */
++	{ 0x4b100b68, 0x00000000, 0x0ac56ee0 }, /* j 0x8b15bb80 */
++	{ 0x4b100b6c, 0x00000000, 0x00000000 },
++
++	/* Count source-3 transitions only after the general transition path
++	 * finishes, then replay its original jump to the worker loop. */
++	{ 0x4b100b80, 0x00000000, 0x3bd90003 }, /* xori t9, fp, 3 */
++	{ 0x4b100b84, 0x00000000, 0x17200004 }, /* bnez t9, 0x8b100b98 */
++	{ 0x4b100b88, 0x00000000, 0x00000000 },
++	{ 0x4b100b8c, 0x00000000, 0x8f19007c }, /* lw t9, count(t8) */
++	{ 0x4b100b90, 0x00000000, 0x27390001 }, /* addiu t9, t9, 1 */
++	{ 0x4b100b94, 0x00000000, 0xaf19007c }, /* sw t9, count(t8) */
++	{ 0x4b100b98, 0x00000000, 0x0ac424cf }, /* j 0x8b10933c */
++	{ 0x4b100b9c, 0x00000000, 0x00000000 },
++
++	/* Release semaphore acquired -> marker a002 -> original logger. */
++	{ 0x4b1004c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1004c4, 0x00000000, 0x3419a002 },
++	{ 0x4b1004c8, 0x00000000, 0xaf190000 },
++	{ 0x4b1004cc, 0x00000000, 0x0ac5401a },
++	{ 0x4b1004d0, 0x00000000, 0x00000000 },
++	{ 0x4b118d30, 0x0ec5401a, 0x0ec40130 },
++
++	/* Pre-commit log returned -> marker a003 -> FIFO slot request. */
++	{ 0x4b1004e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1004e4, 0x00000000, 0x3419a003 },
++	{ 0x4b1004e8, 0x00000000, 0xaf190000 },
++	{ 0x4b1004ec, 0x00000000, 0x0ac4604c },
++	{ 0x4b1004f0, 0x00000000, 0x00000000 },
++	{ 0x4b118d38, 0x0ec4604c, 0x0ec40138 },
++
++	/* FIFO commit -> marker a004 -> fifo_requestItemWr. */
++	{ 0x4b100500, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100504, 0x00000000, 0x3419a004 },
++	{ 0x4b100508, 0x00000000, 0xaf190000 },
++	{ 0x4b10050c, 0x00000000, 0x0ac460c1 },
++	{ 0x4b100510, 0x00000000, 0x00000000 },
++	{ 0x4b118d70, 0x0ec460c1, 0x0ec40140 },
++
++	/* Release-semaphore post -> marker a005 -> osal_semaphore_set. */
++	{ 0x4b100520, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100524, 0x00000000, 0x3419a005 },
++	{ 0x4b100528, 0x00000000, 0xaf190000 },
++	{ 0x4b10052c, 0x00000000, 0x0ac56e3c },
++	{ 0x4b100530, 0x00000000, 0x00000000 },
++	{ 0x4b118d80, 0x0ec56e3c, 0x0ec40148 },
++
++	/* Semaphore-post error log -> marker a105 -> original logger. */
++	{ 0x4b100540, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100544, 0x00000000, 0x3419a105 },
++	{ 0x4b100548, 0x00000000, 0xaf190000 },
++	{ 0x4b10054c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100550, 0x00000000, 0x00000000 },
++	{ 0x4b118dc0, 0x0ec5401a, 0x0ec40150 },
++
++	/* Semaphore-post success log -> marker a006 -> original logger. */
++	{ 0x4b100560, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100564, 0x00000000, 0x3419a006 },
++	{ 0x4b100568, 0x00000000, 0xaf190000 },
++	{ 0x4b10056c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100570, 0x00000000, 0x00000000 },
++	{ 0x4b118e38, 0x0ec5401a, 0x0ec40158 },
++
++	/* Final release log -> marker a007 -> original logger. */
++	{ 0x4b100580, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100584, 0x00000000, 0x3419a007 },
++	{ 0x4b100588, 0x00000000, 0xaf190000 },
++	{ 0x4b10058c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100590, 0x00000000, 0x00000000 },
++	{ 0x4b118e60, 0x0ec5401a, 0x0ec40160 },
++
++	/* FreeCall recycle -> marker a001 -> original release helper. */
++	{ 0x4b100400, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100404, 0x00000000, 0x3419a001 },
++	{ 0x4b100408, 0x00000000, 0xaf190000 },
++	{ 0x4b10040c, 0x00000000, 0x0ac462e1 },
++	{ 0x4b100410, 0x00000000, 0x00000000 },
++	{ 0x4b123cc0, 0x0ec462e1, 0x0ec40100 },
++
++	/* Routine lookup -> marker b001 -> original lookup helper. */
++	{ 0x4b100420, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100424, 0x00000000, 0x3419b001 },
++	{ 0x4b100428, 0x00000000, 0xaf190000 },
++	{ 0x4b10042c, 0x00000000, 0x0ac4712f },
++	{ 0x4b100430, 0x00000000, 0x00000000 },
++	{ 0x4b123ccc, 0x0ec4712f, 0x0ec40108 },
++
++	/*
++	 * Routine-lookup return -> marker b002, then reproduce the original
++	 * beqz: zero is the found path at 0x8b123eb0; non-zero is the error
++	 * path at 0x8b123e08.
++	 */
++	{ 0x4b100440, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100444, 0x00000000, 0x3419b002 },
++	{ 0x4b100448, 0x00000000, 0xaf190000 },
++	{ 0x4b10044c, 0x00000000, 0x10400003 },
++	{ 0x4b100450, 0x00000000, 0x00000000 },
++	{ 0x4b100454, 0x00000000, 0x0ac48f37 },
++	{ 0x4b100458, 0x00000000, 0x00000000 },
++	{ 0x4b10045c, 0x00000000, 0x0ac48f61 },
++	{ 0x4b100460, 0x00000000, 0x00000000 },
++	{ 0x4b123cd4, 0x1040002b, 0x0ac40110 },
++
++	/* Pre-handler log -> marker b003 -> original logger. */
++	{ 0x4b100480, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100484, 0x00000000, 0x3419b003 },
++	{ 0x4b100488, 0x00000000, 0xaf190000 },
++	{ 0x4b10048c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100490, 0x00000000, 0x00000000 },
++	{ 0x4b123e10, 0x0ec5401a, 0x0ec40120 },
++
++	/* Dynamic handler call -> marker b004 -> original target in v0. */
++	{ 0x4b1004a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1004a4, 0x00000000, 0x3419b004 },
++	{ 0x4b1004a8, 0x00000000, 0xaf190000 },
++	{ 0x4b1004ac, 0x00000000, 0x00400008 },
++	{ 0x4b1004b0, 0x00000000, 0x00000000 },
++	{ 0x4b123e20, 0x0040f809, 0x0ec40128 },
++
++	/* Handler-return branch -> marker c001 -> original branch target. */
++	{ 0x4b1002c4, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1002c8, 0x00000000, 0x3419c001 },
++	{ 0x4b1002cc, 0x00000000, 0xaf190000 },
++	{ 0x4b1002d0, 0x00000000, 0x0ac48f44 },
++	{ 0x4b1002d4, 0x00000000, 0x00000000 },
++	{ 0x4b123e28, 0x1000ffb9, 0x0ac400b1 },
++
++	/* Worker SendComm2CPUEx call -> marker c002 -> original callee. */
++	{ 0x4b1002e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1002e4, 0x00000000, 0x3419c002 },
++	{ 0x4b1002e8, 0x00000000, 0xaf190000 },
++	{ 0x4b1002ec, 0x00000000, 0x0ac481e7 },
++	{ 0x4b1002f0, 0x00000000, 0x00000000 },
++	{ 0x4b123d3c, 0x0ec481e7, 0x0ec400b8 },
++
++	/* Send semaphore wait -> marker c003 -> osal_semaphore_get. */
++	{ 0x4b100300, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100304, 0x00000000, 0x3419c003 },
++	{ 0x4b100308, 0x00000000, 0xaf190000 },
++	{ 0x4b10030c, 0x00000000, 0x0ac56e07 },
++	{ 0x4b100310, 0x00000000, 0x00000000 },
++	{ 0x4b11ff00, 0x0ec56e07, 0x0ec400c0 },
++
++	/* First success-path log -> marker c004 -> original logger. */
++	{ 0x4b100320, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100324, 0x00000000, 0x3419c004 },
++	{ 0x4b100328, 0x00000000, 0xaf190000 },
++	{ 0x4b10032c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100330, 0x00000000, 0x00000000 },
++	{ 0x4b11ffbc, 0x0ec5401a, 0x0ec400c8 },
++
++	/* Staging-space test -> marker c005 -> fifo_isNearlyFull. */
++	{ 0x4b100340, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100344, 0x00000000, 0x3419c005 },
++	{ 0x4b100348, 0x00000000, 0xaf190000 },
++	{ 0x4b10034c, 0x00000000, 0x0ac45fcc },
++	{ 0x4b100350, 0x00000000, 0x00000000 },
++	{ 0x4b120038, 0x0ec45fcc, 0x0ec400d0 },
++
++	/* FIFO fall-through -> marker c006, restore sll, resume at +0x18c. */
++	{ 0x4b100360, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100364, 0x00000000, 0x3419c006 },
++	{ 0x4b100368, 0x00000000, 0xaf190000 },
++	{ 0x4b10036c, 0x00000000, 0x00161040 },
++	{ 0x4b100370, 0x00000000, 0x0ac48018 },
++	{ 0x4b100374, 0x00000000, 0x00000000 },
++	{ 0x4b120058, 0x00161040, 0x0ac400d8 },
++
++	/* FreeReturn allocation -> marker c007 -> original allocator. */
++	{ 0x4b100380, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100384, 0x00000000, 0x3419c007 },
++	{ 0x4b100388, 0x00000000, 0xaf190000 },
++	{ 0x4b10038c, 0x00000000, 0x0ac462af },
++	{ 0x4b100390, 0x00000000, 0x00000000 },
++	{ 0x4b120530, 0x0ec462af, 0x0ec400e0 },
++
++	/* RETURN publication -> marker c008 -> SendLow. */
++	{ 0x4b1003a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1003a4, 0x00000000, 0x3419c008 },
++	{ 0x4b1003a8, 0x00000000, 0xaf190000 },
++	{ 0x4b1003ac, 0x00000000, 0x0ac47e30 },
++	{ 0x4b1003b0, 0x00000000, 0x00000000 },
++	{ 0x4b120340, 0x0ec47e30, 0x0ec400e8 },
++
++	/* RETURN_ACK wait -> marker c009 -> osal_semaphore_get. */
++	{ 0x4b1003c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1003c4, 0x00000000, 0x3419c009 },
++	{ 0x4b1003c8, 0x00000000, 0xaf190000 },
++	{ 0x4b1003cc, 0x00000000, 0x0ac56e07 },
++	{ 0x4b1003d0, 0x00000000, 0x00000000 },
++	{ 0x4b120388, 0x0ec56e07, 0x0ec400f0 },
++
++	/* ACK interrupt queued action -> marker d001 -> queueAction. */
++	{ 0x4b1005a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1005a4, 0x00000000, 0x3419d001 },
++	{ 0x4b1005a8, 0x00000000, 0xaf190000 },
++	{ 0x4b1005ac, 0x00000000, 0x0ac47b75 },
++	{ 0x4b1005b0, 0x00000000, 0x00000000 },
++	{ 0x4b11f8b0, 0x0ec47b75, 0x0ec40168 },
++
++	/* queueAction returned -> marker d005 -> original handler tail. */
++	{ 0x4b100660, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100664, 0x00000000, 0x3419d005 },
++	{ 0x4b100668, 0x00000000, 0xaf190000 },
++	{ 0x4b10066c, 0x00000000, 0x0ac47df7 },
++	{ 0x4b100670, 0x00000000, 0x00000000 },
++	{ 0x4b11f8b8, 0x1000ffc8, 0x0ac40198 },
++
++	/* ACK action wakeup path -> marker d002 -> original logger. */
++	{ 0x4b1005c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1005c4, 0x00000000, 0x3419d002 },
++	{ 0x4b1005c8, 0x00000000, 0xaf190000 },
++	{ 0x4b1005cc, 0x00000000, 0x0ac5401a },
++	{ 0x4b1005d0, 0x00000000, 0x00000000 },
++	{ 0x4b11ec78, 0x0ec5401a, 0x0ec40170 },
++
++	/* Sender wakeup -> marker d003 -> osal_semaphore_set. */
++	{ 0x4b1005e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1005e4, 0x00000000, 0x3419d003 },
++	{ 0x4b1005e8, 0x00000000, 0xaf190000 },
++	{ 0x4b1005ec, 0x00000000, 0x0ac56e3c },
++	{ 0x4b1005f0, 0x00000000, 0x00000000 },
++	{ 0x4b11ec88, 0x0ec56e3c, 0x0ec40178 },
++
++	/* Wakeup error log -> marker d103 -> original logger. */
++	{ 0x4b100600, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100604, 0x00000000, 0x3419d103 },
++	{ 0x4b100608, 0x00000000, 0xaf190000 },
++	{ 0x4b10060c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100610, 0x00000000, 0x00000000 },
++	{ 0x4b11ecc8, 0x0ec5401a, 0x0ec40180 },
++
++	/* Wakeup success log -> marker d004 -> original logger. */
++	{ 0x4b100620, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100624, 0x00000000, 0x3419d004 },
++	{ 0x4b100628, 0x00000000, 0xaf190000 },
++	{ 0x4b10062c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100630, 0x00000000, 0x00000000 },
++	{ 0x4b11eda4, 0x0ec5401a, 0x0ec40188 },
++
++	/* ACK wait resumed -> marker c010 -> original logger. */
++	{ 0x4b100640, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100644, 0x00000000, 0x3419c010 },
++	{ 0x4b100648, 0x00000000, 0xaf190000 },
++	{ 0x4b10064c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100650, 0x00000000, 0x00000000 },
++	{ 0x4b120400, 0x0ec5401a, 0x0ec40190 },
++
++	/* Send-semaphore release -> marker c011 -> osal_semaphore_set. */
++	{ 0x4b100680, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100684, 0x00000000, 0x3419c011 },
++	{ 0x4b100688, 0x00000000, 0xaf190000 },
++	{ 0x4b10068c, 0x00000000, 0x0ac56e3c },
++	{ 0x4b100690, 0x00000000, 0x00000000 },
++	{ 0x4b12045c, 0x0ec56e3c, 0x0ec401a0 },
++
++	/* Send-semaphore release error -> marker c111 -> original logger. */
++	{ 0x4b100700, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100704, 0x00000000, 0x3419c111 },
++	{ 0x4b100708, 0x00000000, 0xaf190000 },
++	{ 0x4b10070c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100710, 0x00000000, 0x00000000 },
++	{ 0x4b1202c0, 0x0ec5401a, 0x0ec401c0 },
++
++	/* Send-semaphore release success -> marker c012 -> original logger. */
++	{ 0x4b1006a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1006a4, 0x00000000, 0x3419c012 },
++	{ 0x4b1006a8, 0x00000000, 0xaf190000 },
++	{ 0x4b1006ac, 0x00000000, 0x0ac5401a },
++	{ 0x4b1006b0, 0x00000000, 0x00000000 },
++	{ 0x4b120494, 0x0ec5401a, 0x0ec401a8 },
++
++	/*
++	 * SendComm2CPUEx returned -> marker c013, then reproduce the original
++	 * branch-likely. The displaced success-only load is harmless on the error
++	 * path and remains in the original jump's delay slot.
++	 */
++	{ 0x4b1006c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1006c4, 0x00000000, 0x3419c013 },
++	{ 0x4b1006c8, 0x00000000, 0xaf190000 },
++	{ 0x4b1006cc, 0x00000000, 0x10400003 },
++	{ 0x4b1006d0, 0x00000000, 0x00000000 },
++	{ 0x4b1006d4, 0x00000000, 0x0ac48f53 },
++	{ 0x4b1006d8, 0x00000000, 0x00000000 },
++	{ 0x4b1006dc, 0x00000000, 0x0ac48efc },
++	{ 0x4b1006e0, 0x00000000, 0x00000000 },
++	{ 0x4b123d44, 0x5040ffaa, 0x0ac401b0 },
++
++	/* Preserve osa_queue_send's result, then emulate osa_hisr_activate. */
++	{ 0x4b100720, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100724, 0x00000000, 0xaf020008 },
++	{ 0x4b100728, 0x00000000, 0x24020001 },
++	{ 0x4b10072c, 0x00000000, 0x0ac486fe },
++	{ 0x4b100730, 0x00000000, 0x00000000 },
++	{ 0x4b121bf0, 0x24020001, 0x0ac401c8 },
++
++	/* CALL interrupt -> marker e001 -> queueAction. */
++	{ 0x4b100740, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100744, 0x00000000, 0x3419e001 },
++	{ 0x4b100748, 0x00000000, 0xaf19000c },
++	{ 0x4b10074c, 0x00000000, 0x0ac47b75 },
++	{ 0x4b100750, 0x00000000, 0x00000000 },
++	{ 0x4b11f224, 0x0ec47b75, 0x0ec401d0 },
++
++	/* queueAction returned -> marker e004 -> original CALL-handler tail. */
++	{ 0x4b100780, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100784, 0x00000000, 0x3419e004 },
++	{ 0x4b100788, 0x00000000, 0xaf19000c },
++	{ 0x4b10078c, 0x00000000, 0x0ac47c76 },
++	{ 0x4b100790, 0x00000000, 0x00000000 },
++	{ 0x4b11f22c, 0x1000ffea, 0x0ac401e0 },
++
++	/* CALL HISR wrapper -> marker e005 -> dispatcher. */
++	{ 0x4b1007a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1007a4, 0x00000000, 0x3419e005 },
++	{ 0x4b1007a8, 0x00000000, 0xaf19000c },
++	{ 0x4b1007ac, 0x00000000, 0x0ac48468 },
++	{ 0x4b1007b0, 0x00000000, 0x00000000 },
++	{ 0x4b121298, 0x0ec48468, 0x0ec401e8 },
++
++	/* Dispatcher CALL arm -> marker e006 -> command_action. */
++	{ 0x4b1007c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1007c4, 0x00000000, 0x3419e006 },
++	{ 0x4b1007c8, 0x00000000, 0xaf19000c },
++	{ 0x4b1007cc, 0x00000000, 0x0ac482a5 },
++	{ 0x4b1007d0, 0x00000000, 0x00000000 },
++	{ 0x4b1211b8, 0x0ac482a5, 0x0ac401f0 },
++
++	/* CALL worker enqueue -> marker e007 -> Comm_Add2Call2WQ. */
++	{ 0x4b1007e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1007e4, 0x00000000, 0x3419e007 },
++	{ 0x4b1007e8, 0x00000000, 0xaf19000c },
++	{ 0x4b1007ec, 0x00000000, 0x0ac47506 },
++	{ 0x4b1007f0, 0x00000000, 0x00000000 },
++	{ 0x4b121184, 0x0ec47506, 0x0ec401f8 },
++
++	/* CALL_ACK send -> marker e008 -> SendAckLow. */
++	{ 0x4b100800, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100804, 0x00000000, 0x3419e008 },
++	{ 0x4b100808, 0x00000000, 0xaf19000c },
++	{ 0x4b10080c, 0x00000000, 0x0ac481e9 },
++	{ 0x4b100810, 0x00000000, 0x00000000 },
++	{ 0x4b120e80, 0x0ec481e9, 0x0ec40200 },
++
++	/* SendAckLow returned -> marker e009 -> original command-action tail. */
++	{ 0x4b100820, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100824, 0x00000000, 0x3419e009 },
++	{ 0x4b100828, 0x00000000, 0xaf19000c },
++	{ 0x4b10082c, 0x00000000, 0x0ac48328 },
++	{ 0x4b100830, 0x00000000, 0x00000000 },
++	{ 0x4b120e88, 0x1000ff85, 0x0ac40208 },
++
++	/* command_action return -> marker e010 -> original caller. */
++	{ 0x4b100840, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100844, 0x00000000, 0x3419e010 },
++	{ 0x4b100848, 0x00000000, 0xaf19000c },
++	{ 0x4b10084c, 0x00000000, 0x03e00008 },
++	{ 0x4b100850, 0x00000000, 0x00000000 },
++	{ 0x4b120cec, 0x03e00008, 0x0ac40210 },
++
++	/* CALL dispatcher returned -> marker e011 -> original logger. */
++	{ 0x4b100860, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100864, 0x00000000, 0x3419e011 },
++	{ 0x4b100868, 0x00000000, 0xaf19000c },
++	{ 0x4b10086c, 0x00000000, 0x0ac5401a },
++	{ 0x4b100870, 0x00000000, 0x00000000 },
++	{ 0x4b1212c0, 0x0ec5401a, 0x0ec40218 },
++
++	/* ack_action return -> marker f001 -> original caller. */
++	{ 0x4b100880, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100884, 0x00000000, 0x3419f001 },
++	{ 0x4b100888, 0x00000000, 0xaf190010 },
++	{ 0x4b10088c, 0x00000000, 0x03e00008 },
++	{ 0x4b100890, 0x00000000, 0x00000000 },
++	{ 0x4b11edc4, 0x03e00008, 0x0ac40220 },
++
++	/* RETURN_ACK dispatcher returned -> marker f002 -> original logger. */
++	{ 0x4b1008a0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1008a4, 0x00000000, 0x3419f002 },
++	{ 0x4b1008a8, 0x00000000, 0xaf190010 },
++	{ 0x4b1008ac, 0x00000000, 0x0ac5401a },
++	{ 0x4b1008b0, 0x00000000, 0x00000000 },
++	{ 0x4b1214f4, 0x0ec5401a, 0x0ec40228 },
++
++	/* RETURN_ACK wrapper return -> marker f003 -> original caller. */
++	{ 0x4b1008c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1008c4, 0x00000000, 0x3419f003 },
++	{ 0x4b1008c8, 0x00000000, 0xaf190010 },
++	{ 0x4b1008cc, 0x00000000, 0x03e00008 },
++	{ 0x4b1008d0, 0x00000000, 0x00000000 },
++	{ 0x4b121510, 0x03e00008, 0x0ac40230 },
++
++	/* Semaphore failure log -> marker c103 -> original logger. */
++	{ 0x4b1003e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1003e4, 0x00000000, 0x3419c103 },
++	{ 0x4b1003e8, 0x00000000, 0xaf190000 },
++	{ 0x4b1003ec, 0x00000000, 0x0ac5401a },
++	{ 0x4b1003f0, 0x00000000, 0x00000000 },
++	{ 0x4b11ff40, 0x0ec5401a, 0x0ec400f8 },
++
++	/* Source callback entry: capture its event and tail-call queue send. */
++	{ 0x4b1008e0, 0x00000000, 0x3c18ae34 }, /* lui t8, 0xae34 */
++	{ 0x4b1008e4, 0x00000000, 0x34195101 }, /* ori t9, zero, 0x5101 */
++	{ 0x4b1008e8, 0x00000000, 0xaf190020 }, /* sw t9, 0x20(t8) */
++	{ 0x4b1008ec, 0x00000000, 0x8cb90000 }, /* lw t9, 0(a1) */
++	{ 0x4b1008f0, 0x00000000, 0xaf190024 }, /* sw t9, 0x24(t8) */
++	{ 0x4b1008f4, 0x00000000, 0x8cb90004 }, /* lw t9, 4(a1) */
++	{ 0x4b1008f8, 0x00000000, 0xaf190028 }, /* sw t9, 0x28(t8) */
++	{ 0x4b1008fc, 0x00000000, 0x0ac402d0 }, /* j filtered source-3 counter */
++	{ 0x4b100900, 0x00000000, 0x00000000 },
++	{ 0x4b107580, 0x0ec56ee0, 0x0ec40238 }, /* jal 0x8b1008e0 */
++
++	/* Source callback return: retain raw queue status before bool conversion. */
++	{ 0x4b100920, 0x00000000, 0x3c18ae34 }, /* lui t8, 0xae34 */
++	{ 0x4b100924, 0x00000000, 0xaf020030 }, /* sw v0, 0x30(t8) */
++	{ 0x4b100928, 0x00000000, 0x34195102 }, /* ori t9, zero, 0x5102 */
++	{ 0x4b10092c, 0x00000000, 0xaf190020 }, /* sw t9, 0x20(t8) */
++	{ 0x4b100930, 0x00000000, 0x8fbf0014 }, /* lw ra, 0x14(sp) */
++	{ 0x4b100934, 0x00000000, 0x2c420001 }, /* sltiu v0, v0, 1 */
++	{ 0x4b100938, 0x00000000, 0x0ac41d64 }, /* j 0x8b107590 */
++	{ 0x4b10093c, 0x00000000, 0x00000000 },
++	{ 0x4b107588, 0x8fbf0014, 0x0ac40248 }, /* j 0x8b100920 */
++	{ 0x4b10758c, 0x2c420001, 0x00000000 },
++
++	/* Source-worker event zero: publish requested and previous source. */
++	{ 0x4b100960, 0x00000000, 0x3c18ae34 }, /* lui t8, 0xae34 */
++	{ 0x4b100964, 0x00000000, 0x34195201 }, /* ori t9, zero, 0x5201 */
++	{ 0x4b100968, 0x00000000, 0xaf190034 }, /* sw t9, 0x34(t8) */
++	{ 0x4b10096c, 0x00000000, 0x0ac402c0 }, /* j source-3 worker counter */
++	{ 0x4b100970, 0x00000000, 0xaf1e0028 }, /* delay: sw fp, +0x28 */
++	{ 0x4b100974, 0x00000000, 0x13d60003 }, /* beq fp, s6, equal */
++	{ 0x4b100978, 0x00000000, 0x00000000 },
++	{ 0x4b10097c, 0x00000000, 0x0ac42557 }, /* j 0x8b10955c */
++	{ 0x4b100980, 0x00000000, 0x00000000 },
++	{ 0x4b100984, 0x00000000, 0x34195202 }, /* equal: source unchanged */
++	{ 0x4b100988, 0x00000000, 0xaf190034 },
++	{ 0x4b10098c, 0x00000000, 0x0ac424e8 }, /* j 0x8b1093a0 */
++	{ 0x4b100990, 0x00000000, 0x24020001 }, /* original branch delay */
++	{ 0x4b109554, 0x8fbe00d0, 0x0ac40258 }, /* j 0x8b100960 */
++	{ 0x4b109558, 0x13d6ff91, 0x8fbe00d0 }, /* delay: lw fp, 0xd0(sp) */
++
++	/* The general source-transition path returned to the worker loop. */
++	{ 0x4b1009a0, 0x00000000, 0x3c18ae34 }, /* lui t8, 0xae34 */
++	{ 0x4b1009a4, 0x00000000, 0x34195203 }, /* ori t9, zero, 0x5203 */
++	{ 0x4b1009a8, 0x00000000, 0xaf190034 }, /* sw t9, 0x34(t8) */
++	{ 0x4b1009ac, 0x00000000, 0x0ac402e0 }, /* j source-3 completion counter */
++	{ 0x4b1009b0, 0x00000000, 0x00000000 },
++	{ 0x4b1095a0, 0x1000ff66, 0x0ac40268 }, /* j 0x8b1009a0 */
++
++	/* THal_Vp_Init entry -> marker 7101 -> local state reset. */
++	{ 0x4b1009c0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1009c4, 0x00000000, 0x34197101 },
++	{ 0x4b1009c8, 0x00000000, 0xaf190038 },
++	{ 0x4b1009cc, 0x00000000, 0x0ec52524 }, /* jal 0x8b149490 */
++	{ 0x4b1009d0, 0x00000000, 0x00000000 },
++	{ 0x4b1009d4, 0x00000000, 0x0ac427c8 }, /* j 0x8b109f20 */
++	{ 0x4b1009d8, 0x00000000, 0x00000000 },
++	{ 0x4b109f18, 0x0ec52524, 0x0ac40270 }, /* j 0x8b1009c0 */
++
++	/* State reset returned -> marker 7102 -> local VP initializer. */
++	{ 0x4b1009e0, 0x00000000, 0x3c18ae34 },
++	{ 0x4b1009e4, 0x00000000, 0x34197102 },
++	{ 0x4b1009e8, 0x00000000, 0xaf190038 },
++	{ 0x4b1009ec, 0x00000000, 0x0ec5239d }, /* jal 0x8b148e74 */
++	{ 0x4b1009f0, 0x00000000, 0x00000000 },
++	{ 0x4b1009f4, 0x00000000, 0x0ac427ca }, /* j 0x8b109f28 */
++	{ 0x4b1009f8, 0x00000000, 0x00000000 },
++	{ 0x4b109f20, 0x0ec5239d, 0x0ac40278 }, /* j 0x8b1009e0 */
++
++	/* VP initializer returned -> marker 7103 -> original buffer load. */
++	{ 0x4b100a00, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100a04, 0x00000000, 0x34197103 },
++	{ 0x4b100a08, 0x00000000, 0xaf190038 },
++	{ 0x4b100a0c, 0x00000000, 0x8e24000c }, /* lw a0, 0xc(s1) */
++	{ 0x4b100a10, 0x00000000, 0x03e00008 }, /* jr ra */
++	{ 0x4b100a14, 0x00000000, 0x00000000 },
++	{ 0x4b109f28, 0x8e24000c, 0x0ec40280 }, /* jal 0x8b100a00 */
++
++	/* Bulk copy returned -> marker 7104 -> original result setup. */
++	{ 0x4b100a20, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100a24, 0x00000000, 0x34197104 },
++	{ 0x4b100a28, 0x00000000, 0xaf190038 },
++	{ 0x4b100a2c, 0x00000000, 0x24020001 }, /* addiu v0, zero, 1 */
++	{ 0x4b100a30, 0x00000000, 0x03e00008 }, /* jr ra */
++	{ 0x4b100a34, 0x00000000, 0x00000000 },
++	{ 0x4b109f50, 0x24020001, 0x0ec40288 }, /* jal 0x8b100a20 */
++
++	/* Output prepared -> marker 7105 -> original callback-install tail. */
++	{ 0x4b100a40, 0x00000000, 0x3c18ae34 },
++	{ 0x4b100a44, 0x00000000, 0x34197105 },
++	{ 0x4b100a48, 0x00000000, 0xaf190038 },
++	{ 0x4b100a4c, 0x00000000, 0x0ac52e25 }, /* j 0x8b14b894 */
++	{ 0x4b100a50, 0x00000000, 0x00000000 },
++	{ 0x4b109f74, 0x0ac52e25, 0x0ac40290 }, /* j 0x8b100a40 */
++
++	/* PanelWinNode dirty bit 0x800 -> capture mask/mode -> frame programmer. */
++	{ 0x4b100a60, 0x00000000, 0x3c18ae34 }, /* lui t8, 0xae34 */
++	{ 0x4b100a64, 0x00000000, 0x34196101 }, /* ori t9, zero, 0x6101 */
++	{ 0x4b100a68, 0x00000000, 0xaf190040 }, /* sw t9, 0x40(t8) */
++	{ 0x4b100a6c, 0x00000000, 0xaf110044 }, /* sw s1, 0x44(t8) */
++	{ 0x4b100a70, 0x00000000, 0x8e190060 }, /* lw t9, 0x60(s0) */
++	{ 0x4b100a74, 0x00000000, 0xaf190048 }, /* sw t9, 0x48(t8) */
++	{ 0x4b100a78, 0x00000000, 0x0ac68f16 }, /* j 0x8b1a3c58 */
++	{ 0x4b100a7c, 0x00000000, 0x02002025 }, /* move a0, s0 */
++	{ 0x4b1a44e0, 0x0ec68f16, 0x0ec40298 }, /* jal 0x8b100a60 */
++
++	/* Preserve source-0 commit store and capture final control first. */
++	{ 0x4b100a80, 0x00000000, 0xac450014 }, /* sw a1, 0x14(v0) */
++	{ 0x4b100a84, 0x00000000, 0x3c18ae34 }, /* lui t8, 0xae34 */
++	{ 0x4b100a88, 0x00000000, 0x34196102 }, /* ori t9, zero, 0x6102 */
++	{ 0x4b100a8c, 0x00000000, 0xaf190040 }, /* sw t9, 0x40(t8) */
++	{ 0x4b100a90, 0x00000000, 0x8c590010 }, /* lw t9, 0x10(v0) */
++	{ 0x4b100a94, 0x00000000, 0xaf19004c }, /* sw t9, 0x4c(t8) */
++	{ 0x4b100a98, 0x00000000, 0x03e00008 }, /* jr ra */
++	{ 0x4b100a9c, 0x00000000, 0x00000000 },
++	{ 0x4b1a3ef0, 0xac450014, 0x0ec402a0 }, /* jal 0x8b100a80 */
++
++	/* Preserve AFBD dirty store, then capture immediate latch readbacks. */
++	{ 0x4b100aa0, 0x00000000, 0xac43006c }, /* sw v1, 0x6c(v0) */
++	{ 0x4b100aa4, 0x00000000, 0x3c18ae34 }, /* lui t8, 0xae34 */
++	{ 0x4b100aa8, 0x00000000, 0x34196103 }, /* ori t9, zero, 0x6103 */
++	{ 0x4b100aac, 0x00000000, 0xaf190040 }, /* sw t9, 0x40(t8) */
++	{ 0x4b100ab0, 0x00000000, 0x8c590014 }, /* lw t9, 0x14(v0) */
++	{ 0x4b100ab4, 0x00000000, 0xaf190050 }, /* sw t9, 0x50(t8) */
++	{ 0x4b100ab8, 0x00000000, 0x8c59006c }, /* lw t9, 0x6c(v0) */
++	{ 0x4b100abc, 0x00000000, 0xaf190054 }, /* sw t9, 0x54(t8) */
++	{ 0x4b100ac0, 0x00000000, 0x03e00008 }, /* jr ra */
++	{ 0x4b100ac4, 0x00000000, 0x00000000 },
++	{ 0x4b1a3efc, 0xac43006c, 0x0ec402a8 }, /* jal 0x8b100aa0 */
++};

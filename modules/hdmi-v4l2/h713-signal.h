@@ -38,7 +38,7 @@ enum h713_sig_state {
 
 struct h713_sig_sample {
 	bool valid;		/* port-object guards passed */
-	u32 port_state;		/* port +0xC0; 5 = live timing */
+	u32 port_state;		/* firmware port state, 5 = live timing */
 	u16 width;		/* port +0x4E */
 	u16 height;		/* port +0x48 */
 	bool moving;		/* ring pair advanced since the last sample */
