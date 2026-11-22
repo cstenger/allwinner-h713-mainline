@@ -1,0 +1,72 @@
+Subject: sunxi: H713: restart the display PLL during native V2 timing
+
+Native V2 project 0x34 commits the logo framebuffer but projects black.
+On a fresh FEL boot, inserting a single enable pulse at 0x058c0014 after
+the PLL setup delay and before the routing records restored the logo.
+Replay the native sequence with this one pulse, leaving its register
+values, delays, and reset sequence in place. Preserve the A1 path and
+the explicit A1 timing override for bench diagnostics.
+
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -4731,6 +4731,8 @@
+ #define H713_DISP_DESC_SIZE	0x18
+ #define H713_DISP_HDR_TABLE_LEN	8
+ 
++#define H713_DISP_PLL_REG	0x058c0014UL
++
+ #define H713_V2_LOGOREG_SIZE		0x382c
+ #define H713_V2_A1_TIMING_ADDR		0x60000000UL
+ #define H713_V2_A1_TIMING_SIZE		0x288
+@@ -4761,6 +4763,33 @@
+ 	{ 0x072c, 0x0a04 }, { 0x15d4, 0x180c }, { 0x34ac, 0x382c },
+ };
+ 
++static int h713_disp_apply_timing(ulong blob,
++				 const struct h713_disp_block *timing)
++{
++	const ulong v2_pll_restart = 0x1684;
++	u32 pll;
++	int ret;
++
++	if (timing != &h713_disp_v2_blocks[1])
++		return h713_logo_walk(blob, timing->start, timing->end, true);
++
++	/*
++	 * The native V2 table leaves the panel black with our boot sequence.
++	 * Restart the PLL after its last setup delay, before the routing
++	 * writes. A single enable pulse restores the logo on the V2.
++	 */
++	ret = h713_logo_walk(blob, timing->start, v2_pll_restart, true);
++	if (ret)
++		return ret;
++
++	pll = readl(H713_DISP_PLL_REG);
++	writel(pll & ~BIT(31), H713_DISP_PLL_REG);
++	writel(pll | BIT(31), H713_DISP_PLL_REG);
++	printf("H713 disp: restarted PLL during native V2 timing\n");
++
++	return h713_logo_walk(blob, v2_pll_restart, timing->end, true);
++}
++
+ struct h713_disp_sel {
+ 	u32 project, prologue, timing, de;
+ 	const struct h713_disp_block *blocks[3];
+@@ -5877,8 +5906,7 @@
+ 			     sel.blocks[0]->end, true);
+ 	if (ret)
+ 		return ret;
+-	ret = h713_logo_walk(blob, sel.blocks[1]->start,
+-			     sel.blocks[1]->end, true);
++	ret = h713_disp_apply_timing(blob, sel.blocks[1]);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -8979,7 +9007,6 @@
+  * Each step verifies itself: the counter must track N proportionally, and a
+  * step where it does not is reported and its visual result disclaimed.
+  */
+-#define H713_DISP_PLL_REG	0x058c0014UL
+ #define H713_DISP_PLL_N_NOW	43
+ 
+ static const u8 h713_n_sweep[] = { 32, 36, 40, 43, 47, 52 };

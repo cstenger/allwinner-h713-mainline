@@ -826,30 +826,40 @@ The RAM-only U-Boot candidate ran with autoboot disabled.
 
 | Timing used with native V2 firmware | FEL result |
 |---|---|
-| Native V2 timing, with the corrected table boundary | The firmware reported application readiness, the raster counter advanced, and the committed 1280×720 framebuffer had CRC32 `e906064c`. The lamp was on and the operator saw a black screen. |
+| Native V2 timing, with the corrected table boundary | The firmware reported application readiness, the display counter at `0x05880000` advanced, and the committed 1280×720 framebuffer had CRC32 `e906064c`. The lamp was on and the operator saw a black screen. |
 | A1 timing block 6, staged in RAM | The operator saw a recognizable boot logo. The loader kept the native V2 firmware, configuration, project data, prologue, display engine records, and bitmap. |
+| Native V2 timing plus one display PLL restart | The operator saw a recognizable boot logo on both the isolated diagnostic run and the final FEL build. The final build used the V2's own display files and had no A1 timing data staged in RAM. The framebuffer CRC32 was still `e906064c`. |
 
-The final candidate makes the second case an explicit bench option.
+The full A1 PLL startup sequence also restored the logo with the rest of
+the V2 timing block in place. A follow-up test after a fresh FEL boot
+isolated the sufficient change to one pulse. The loader now clears and
+sets bit 31 at `0x058c0014` after the native 20 µs setup delay and before
+the routing records at offset `0x1684`. It preserves the native clock
+register values, delays, and reset sequence.
+
+The A1 timing override remains available as an explicit bench option.
 Stage the 648-byte block at offset `0x1654` in the A1 `LogoRegData.bin`
 at address `0x60000000` over FEL. Set `h713_v2_a1_timing=yes` in the
 RAM environment and run `h713_disp auto 0x34 logo`. The loader verifies the
-staged block's SHA-256 before using it. The final run confirmed the
-override, firmware readiness, the same framebuffer CRC32, and advancing
-scanout. Lamp and brightness were controlled manually. The timing change
-responsible for the black screen, automatic lamp sequencing, and the
-Linux display handoff remain open.
+staged block's SHA-256 before using it. Lamp and brightness were
+controlled manually. Automatic lamp sequencing and the Linux display
+handoff remain open.
 
-After panel teardown, the projector booted normally from the installed
-bootloader into slot A and RAUC marked it good. SHA-256 read-back matched
-the pre-test baseline for SPL, the installed U-Boot region, and all four
-slot partitions (`boot_a`, `root_a`, `boot_b`, and `root_b`). Boot order
-was `A B` with three tries per slot.
+After the final run and panel teardown, the projector booted normally
+from the installed bootloader into slot A and RAUC marked it good.
+SHA-256 read-back matched the pre-test baseline for SPL, the installed
+U-Boot region, and all four slot partitions (`boot_a`, `root_a`,
+`boot_b`, and `root_b`). Boot order was `A B` with three tries per slot.
 
-Local evidence is under `build/v2-native-display/` in
+Local evidence for the initial comparison is under `build/v2-native-display/` in
 `corrected-native-panel.log`, `corrected-native-scanout.log`,
 `timing-panel.log`, `final-fel-load.log`, `final-panel.log`,
 `final-scanout.log`, `final-return-a-uart.log`, `baseline.log`,
 `after.log`, and `after-mark-good.log`.
+Evidence for the single-pulse fix is under `build/v2-native-display/minimal/`
+in `optical-observations.md`, `variant-2.log`, `variant-3.log`,
+`final-fel.log`, `final-panel.log`, `final-regs.log`, `return-uart.log`,
+`baseline.log`, `after.log`, and `after-good.log`.
 
 ### Phase 5: the remaining hardware
 
