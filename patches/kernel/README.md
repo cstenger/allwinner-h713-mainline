@@ -538,6 +538,16 @@ guarded drivers. Nothing binds them without U-Boot's
 the bench board. Without it the V2 had no ALSA card for the speaker, so the
 HDMI speaker service could not start.
 
+**0220** makes cpu_comm identify the loaded display firmware before reading
+anything out of it. Channel discovery pinned the A1 build (`4380f1b3…`), so on
+the projector's native `16c74a28…` the reader self-test failed every boot and
+kernel CALLs were never dispatched. A table holds both builds, recognised by
+their own code (`getCurCPUID`, a load of the channel-table pointer, and the
+`elog -m` store); an unknown firmware is refused. The elog readout uses the
+same table: its old fixed addresses were the V2 build's and read unrelated
+bytes on the A1. Addresses come from `tools/mips/map-fw-pins.py`, and
+`tools/mips/test-cpu-comm-fw-identity.py` runs the code against both images.
+
 `series` files may carry `#` comments and blank lines; `tools/build/build.sh`
 reads every series through `series_entries`, so hashing and applying see the
 same list.
