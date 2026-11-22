@@ -946,6 +946,32 @@ in `boot-region-before.bin`, `spl-before.bin`, `stock-boot0-before.bin`,
 `backup.sha256`, `write.log`, `timeline.log`, `optical-observation.md`, and
 `cold-storage-check.log`.
 
+### V2 local 720p H.264 playback on slot A (2026-11-21)
+
+On the installed V2 bootloader and slot A, played a 77.344-second
+1280×720 H.264 High clip from tmpfs. The video-only clip ran at
+30000/1001 fps. `h713-play` selected `plane-native`
+(`v4l2slh264dec` → `kmssink`). The player held Cedrus (`/dev/video0`),
+and the video engine recorded 2,318 interrupts during playback. DRM
+showed an active 1280×720 NV12 framebuffer on the video plane.
+
+The sink rendered all 2,318 frames with zero drops. The operator saw
+smooth playback without visible glitches and confirmed that the live
+Linux console returned at end of file. The display IOMMU and Panfrost
+MMU interrupt counters stayed at zero, and the kernel journal had no
+new entries during the test. The active VT was `tty1`, and the KMS state
+after playback matched the initial console state.
+
+Before-and-after SHA-256 hashes matched for all four slot partitions
+(`boot_a`, `root_a`, `boot_b`, and `root_b`). The SPL and U-Boot
+read-back hashes also matched. The staged clip and temporary logs were
+removed from the projector's RAM after evidence collection.
+
+Local evidence is under `build/v2-native-display/playback-720p/` in
+`optical-observation.md`, `live-decoder.log`, `playback.log`,
+`kernel-during.log`, `kms-before.log`, `kms-after.log`, `baseline.log`,
+and `after.log`.
+
 ### Phase 5: the remaining hardware
 
 In order: fan (tach PH17; PB5 also powers the fan) → audio and speaker (the
