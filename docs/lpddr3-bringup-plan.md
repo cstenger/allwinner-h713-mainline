@@ -1323,11 +1323,17 @@ display fetch side, where AFBD stops at line 719. Evidence is in
 `build/v2-hdmi-normal/green-stall/`.
 
 **Open items.**
-- **Firmware log level.** `h713-mips-elog-level` is not shipped on the
-  V2. The V2 handler words map 0x8e0 lower and the filter word maps to
-  `0x4b48bd9c` (all 18 A1 references agree). The firmware replies to
-  `elog -l 2` and `-l 0`, but that word stays at 1 in DRAM, so the level
-  cannot be verified. `mips-shell.py` carries the V2 pins.
+- **Firmware log level: CLOSED, not needed (2026-11-22).**
+  `h713-mips-elog-level` is not shipped on the V2. The V2 boots the
+  vendor's `display_cfg.xml` (`b3e6e8f6…`). Its `elog_init_setting` is
+  mode 1 (async) at level 1. The firmware's `elog_init`
+  (`0x8b15102c`) stores that level at `0x8b48bd9c`, and the `-l` arm
+  stores there too. The live readback was 1 (the loaded copy at
+  `0x4be01000` is the same file), so the readback was correct. The bench's
+  mode 2 (buf) at level 5 (`f97eec07…`) was our 2026-09-04 debugging
+  edit, and it reached the A1 production inputs. Only buf mode has the
+  2 MiB ring whose flush stalled CPU_COMM. On the V2, `elog -l 2` would
+  raise the level.
 - **Release gate.** `verify_rootfs` rejects V2 images because they ship
   the AV1 probe module. V2 kernels use the plain defconfig, not the
   `production` fragment, and the existing V2 images ship it too.
@@ -1340,6 +1346,221 @@ display fetch side, where AFBD stops at line 719. Evidence is in
 
 Evidence is under `build/v2-hdmi-normal/`: `fel-slot-a/`, `old-uboot-b/`,
 `fel-slot-b2/`, `uboot-install/`, `green-stall/`, and `cold-boot/`.
+
+#### V2 boot qualification (2026-11-22, in progress)
+
+This repeats the A1 sign-off matrix (2026-11-17 candidate, steps 9–16) on
+slot B (`2026.11.22.1048-40489d5a`). It uses the same guarded
+`tools/hdmi/startup-qualification.py`, whose checks pass unchanged on the
+V2: unit states, zero error counters, 720p lock, both PCMs running, four
+`cmds` IPC probes (917-byte reply), the HDOK acknowledgement, and the
+shutdown order and restoration.
+
+- **Identity audit.** `tools/hdmi/make-v2-runtime-audit.py` replaces the
+  A1 audit, which needs a sealed release. The V2 root is read-only, so it
+  pins whole slots instead of files. The root and boot partitions must
+  hash to the bundle manifest, the U-Boot primary at `0x49ac00` must hash
+  to the installed FIT, `/` must be `root_b`, and nothing in the `/etc`
+  overlay may shadow the HDMI runtime. It takes 7.5 s on the board. A
+  wrong rootfs hash, a wrong primary hash and a shadow rule that matches
+  each failed it.
+- **Driver.** `tools/hdmi/v2-qualification-run.py` chains runs. After each
+  one it reads the AFBD stall words and `0x050c0c94`/`0x05040814`, and it
+  stops on a stall or a failure without rebooting. Pins and known_hosts
+  are in `local/recovery/2026-11-22-v2-boot-qualification/`, and the runs
+  are in `build/v2-boot-qualification/`.
+
+| Run | Boot | Video active | Boot time | Frames / 36 s | AFBD | `0x050c0c94` | `0x05040814` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | `2af685ed` | 11.96 s | 14.143 s | — | clean | `40282804` | `00666000` |
+| warm-01 | `78ea1ea4` | 11.75 s | 13.895 s | 2449 | clean | `00282804` | `00666000` |
+| warm-02 | `e41fa6d8` | 11.49 s | 13.737 s | 2465 | clean | `40282804` | `006e6000` |
+| warm-03 | `1b4336d7` | 11.73 s | 13.793 s | 2468 | clean | `00282804` | `006e6000` |
+| warm-04 | `6f5db755` | 11.70 s | 13.942 s | 2462 | clean | `40282804` | `00666000` |
+| warm-05 | `6b0870ec` | 11.47 s | 13.661 s | 2465 | clean | `00282804` | `006e6000` |
+
+All five warm runs passed: PASS digital at 59.7 fps, no re-adverts, and a
+correct shutdown order before each boot. The green stall is now 1 in 10 V2
+boots. **The two candidate words do not separate green from good.** Bit 30
+of `0x050c0c94` was clear on 3 of 6 healthy boots, and `0x05040814` changes
+between healthy boots. Record them on a stall, but don't treat either as
+the cause.
+
+**4-hour soak: PASS.** `regression-observer.py watch` ran detached
+(transient unit `h713-v2-soak`, log on `/data/qual/`) on boot `6b0870ec`
+after warm-05. `soak` PASS for 7200 s and for the whole 14,397 s (2,795
+samples, 5 s apart). It stayed locked at 1280×720 with at least 50 frames/s.
+Rejected, xrun, guard and AFBD-invalid counters stayed at 0. There were no
+service restarts or start changes and no re-adverts. Afterwards the AFBD
+words were clean (`0x050c0c94` = `00282804`, bit 30 clear on a healthy
+boot) and dmesg had no CPU_COMM timeout, desync or quarantine. Evidence:
+`build/v2-boot-qualification/soak/`.
+
+**Found during the soak: no CALL channel on the V2.** Every V2 boot, back
+to the first FEL boots, logs `cpu_comm: firmware reader self-test failed
+(00a08025 00809025, expect 03e00008 24020001)`. The self-test pins
+`getCurCPUID` at its A1 address `0x8b1227b4`, so `cc_discover_channel()`
+skips the table and `channel_pid` stays 0. HDMI does not depend on it
+(U-Boot selects the source, and Linux uses the MIPS shell ring). Any
+kernel CALL on the V2 would still be acknowledged and then never
+dispatched. The driver's `MIPS elog staying on Mode 1 (ring buffer)` line
+is an old label: in `display_cfg.xml`, mode 1 is async, and the driver
+reads A1 offsets.
+
+**Slot A (kernel 0220) cold and warm boots: PASS.** The CPU_COMM session
+installed `2026.11.22.1229-4c5ff9c3-0220` into slot A (root `3e10f301…`,
+the same boot image as slot B, with only `hy310-cpu-comm.ko` different), and
+the board boots A first. The remaining runs therefore qualify A, the image
+to ship. `make-v2-runtime-audit.py --slot A` matches that session's audit
+byte for byte. Each cold boot started with a guarded poweroff
+(`v2-qualification-run.py --poweroff`), and the previous journal ends in a
+normal shutdown. The operator then unplugged serial and USB, left the power
+off for at least a minute and powered on. `--cold N --previous-boot`
+collected each boot.
+
+| Run | Boot | Video active | Boot time | AFBD | `0x050c0c94` | `0x05040814` |
+| --- | --- | --- | --- | --- | --- | --- |
+| cold-01 | `35eb8c65` | 9.91 s | 12.168 s | clean | `40282804` | `00666000` |
+| cold-02 | `10ea1a4e` | 10.14 s | 13.034 s | clean | `40282804` | `00666000` |
+| cold-03 | `d907150d` | 9.86 s | 11.866 s | clean | `40282804` | `00666000` |
+| warm-06 | `b227df38` | 10.20 s | 12.508 s | clean | `00282804` | `006e6000` |
+| warm-07 | `7dc9e77b` | 9.86 s | 11.914 s | clean | `40282804` | `00666000` |
+| warm-08 | `0e69035f` | 9.83 s | 11.947 s | clean | `00282804` | `006e6000` |
+| warm-09 | `dc3b7221` | 10.79 s | 13.901 s | clean | `40282804` | `00666000` |
+| warm-10 | `8e1361fd` | 9.87 s | 11.824 s | clean | `00282804` | `006e6000` |
+
+All 8 runs passed: PASS digital, 59.7 fps, no re-adverts, the shutdown
+order and restoration of the boot before, and channel row 0 found with the
+handoff PID on every boot. Video starts about 1.6 s earlier on slot A than
+in the slot B warm runs. That has not been explained: 0220 changes only
+channel discovery.
+
+The green stall is now 1 in 18 V2 boots. **Bit 30 of `0x050c0c94` flips
+on almost every warm reboot** and is set after every cold boot. On slot A
+it also moves with `0x05040814` (`666000` with bit 30 set, `6e6000` with
+it clear). It looks like a buffer or phase bit carried across a warm
+reboot, not a fault flag. The A1 green boot happened to read with it
+clear.
+
+**HDMI unplug/replug at the board: PASS, automatic.** This was on slot A
+boot `8e1361fd`, with a detached observer (`h713-v2-replug`, 27 samples).
+The operator unplugged the cable at the board for about 30 s:
+- At 223.6 s `source power: absent`, at 225.3 s `signal none`, and the
+  video unit stopped by design.
+- At 235.4 s the timed schedule sent an HPD pulse (1/5) to an empty port.
+- After the replug, at 255.6 s: `failed EDID read (busy 2 passes)`, then
+  an event pulse. At 257.1 s `signal locked 1280x720 (source change)`,
+  the video unit restarted, and at 257.5 s `source power: present`.
+
+There was no manual step. This unplug did log `source power: absent`,
+unlike the A1 rerun on 2026-11-17, so it exercises on hardware the
+stale-absent case that the ungated readvertise fixed. The owner units have
+0 restarts, the startup check passes, there are no failed units, and AFBD
+is clean afterwards. `regression-observer.py recovery` first refused:
+`frames_produced` restarts with the stream, one sample after the lock (it
+read 12439 while stale, then 281), and the check compared across that
+restart. The analyzer now measures from the last counter restart. On this
+file the old analyzer fails, and the new one passes over 134 s. Cut off
+before the restart (`--end 262`), the new one still fails. Evidence:
+`build/v2-boot-qualification/replug/`.
+
+**No-source boot: PASS.** HDMI was unplugged at the board, the board
+logged `source power absent`, and then took a guarded reboot (the guard
+required `signal none`). On boot `1d2723b3` (slot A), all owner units were
+active with 0 restarts, video was waiting, the owner was ready, HDOK was
+written and the startup check passed. The fresh schedule sent exactly 6
+pulses, at 2, 10, 20, 40, 80 and 160 s without a source (the last at
+322.3 s), and then stayed quiet. With the schedule used up, the operator
+plugged HDMI in. At 532.98 s: `failed EDID read (busy 2 passes)`, then an
+event pulse. At 534.50 s `signal locked 1280x720 (source change)`, the
+video unit started, and both PCMs ran. That gave 59.7 frames/s, zero
+counters, 0 restarts, a passing startup check and clean AFBD. Evidence:
+`build/v2-boot-qualification/no-source/`.
+
+**But the panel stayed black (operator, about 4 min after the lock): a
+FAIL that the digital checks cannot see.** The host was sending its
+extended COSMIC workspace (screenshot of `HDMI-A-1`: wallpaper and panel
+bar). Read-only state on boot `1d2723b3`:
+- The capture ring holds that exact picture: one frame from
+  `read-coherent-frame.py --copies 1`, with the live clock. Capture is
+  correct.
+- AFBD is as on healthy boots: format `0x03000013`, geometry, enable, the
+  address queue advancing, all stall words 0. TCON 720p timing is the
+  same and its counter runs. Backlight 75/100, lamp on, LVDS DPMS on.
+  Route blue screen `0x05140d54`, panel blue screen
+  `0x051c00b0–b8`/`0x364` and panel selector `0x051c006c` all equal good.
+- The display sweep diff (`display-sweep.py --no-raw` ×2 against good2
+  and good3 from `2af685ed`, `diff-display-sweeps.py`) has 105 CONFIG
+  words. These words are equal on two separate healthy boots and on the
+  green boot, but differ here: `0x050c0824` (`910`→`8f0`), `0x050c08d4`,
+  `0x050c08e8`, `0x050c0970` (`00000006`→`FFFF0006`),
+  `0x050c09c4/9c8/9d0/9d8`, `0x05140e68` (`14`→`1104`), and LVDS
+  `0x051c0168/16c`. The DETN counters `0x050c0884/894/8ac/914/918/92c/930`
+  read 0. The route status bit `0x05140614` bit 0 is 0 (read-only, 1 on
+  stock and on healthy boots).
+- What sets this boot apart from every healthy V2 boot: U-Boot's
+  `boot-v2` started HDMI (source 3) with **no source connected**, and the
+  source first appeared 534 s later.
+
+So the picture is lost after the AFBD fetch, in the firmware-owned
+processing path (the `0x050c0000` block and the route), which looks like
+the firmware's no-signal state never cleared.
+
+Discriminating tests on the same boot, with the operator watching the
+glass each time:
+- On the source-present boot `8e1361fd`, the replug recovered the
+  picture. So it fails only when the boot **starts** without a source.
+- `systemctl restart h713-hdmi-video` (plane set up again, frames
+  flowing): still black, and the words above unchanged. The cause is not
+  Linux's plane setup.
+- An HDMI unplug for about 10 s and replug (1325.1 s `signal none`,
+  failed-EDID event pulse, 1330.8 s relock, video restarted): still black,
+  words unchanged. A source cycle does not clear the state set at
+  start-up.
+
+- A guarded **warm reboot with HDMI connected** (boot `fb29d7c8`, locked
+  720p, every check normal): **still black**. The state survives a warm
+  reset, like A1's lit-but-black episode of 2026-10-16, which only a long
+  power-off cleared. The firmware port object (state 5, 1280×720) is the
+  same as on `1d2723b3`. Its dumps (`build/v2-boot-qualification/good-ref/`)
+  were meant as a good reference but are a second black state. Do not use
+  them as good.
+
+So the no-source boot left something black that a warm reset does not
+clear. The panel, the LVDS PHY or an always-on domain are candidates. The
+last confirmed picture was `8e1361fd` (warm-10, after the replug).
+
+**Localised to the panel's power state (2026-11-22).** The operator
+confirmed the glass at each step:
+- A cold power cycle with HDMI connected (`146d6ecd`) brought the picture
+  back.
+- A cold power-on **without** a source, then a plug-in at 149 s
+  (`760d300a`): desktop. Starting without a source is not the trigger.
+- A **warm reboot taken while unplugged**, then a plug-in at 68 s
+  (`0b84940f`): **black**, with the same read-only signature (DETN counters
+  0, `0x05140614` bit 0 = 0). This reproduces it.
+- The TCON test pattern (`0x0588000c/1c/38/3c/40`, the October trial 26
+  values, read first and restored exactly): still black. The fault is after
+  the TCON: LVDS or the panel. The panel is physically the same one the
+  bench used.
+- Panel pins (bank stride 0x30): PH19 (supply enable, U-Boot's V2
+  `vcc-panel`) output high, PH16 (reset, active low) output high, PF6
+  disabled. All three are unclaimed by Linux: **the V2 kernel tree has no
+  `vcc-panel` or panel reset**, unlike A1's 0183/0184.
+- **An ordered supply cycle from Linux cleared it live:** save and quiet
+  the LVDS words (`0x051c00d4–e0`, `0x051c0014`, `0x051c0028`,
+  `0x05140054`), PH16 low, 75 ms, PH19 low, **5 s**, PH19 high, 2 ms, PH16
+  high, then restore the LVDS words (read back equal). The operator saw the
+  desktop.
+
+So this is A1's October latch-up on the V2 board. U-Boot's initial-off hold
+(0001: PH19 off **3 s** on every boot) does not clear it there. The open
+question is which difference from the live cycle matters: the off time, or
+the sequence and context. Evidence: `build/v2-boot-qualification/warm-unplugged/`. Evidence:
+`build/v2-boot-qualification/black-panel/` (sweeps, diff, frame).
+
+Still to run: a source-PC reboot with the board left on (it ends the Claude
+session on that PC).
 
 #### USB port roles (2026-11-20)
 
