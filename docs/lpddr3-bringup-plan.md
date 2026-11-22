@@ -1033,6 +1033,50 @@ had no new entries during the test.
 Local evidence is under `build/v2-native-display/fan-slot-a/` in
 `preflight.log`, `probe.py`, `probe.log`, and `after.log`.
 
+#### V2 slot A internal speaker and pop test (2026-11-21)
+
+The installed slot A device tree leaves `/soc/codec@2030000` disabled.
+The built-in `sun4i-codec` driver was present, but ALSA showed no cards
+and PipeWire had no audio sink. Patch 0082 enables the codec on the A1
+bench DTS. To test V2, U-Boot verified and copied the slot A FIT's V2
+DTB to RAM, set the codec status to `okay` in that copy, and booted the
+same kernel and slot A root. The temporary boot (`e1655477`) registered
+`H713 Audio Codec`, one playback PCM, and a PipeWire sink for the speaker.
+
+Recorded Scarlett 2i2 input 1 at 48 kHz with the microphone by the
+speaker and the fan running. The first take clipped on the playback
+tone and had transients in quiet windows. Repeated the full matrix with
+a lower playback tone and fixed mic gain. The repeat peaked at −5.0 dBFS.
+The mic picked up 1 kHz in all three faded playback runs at −12.6 to
+−12.4 dBFS, versus −78.3 to −62.9 dBFS at 1 kHz in the quiet windows.
+
+Using the [speaker pop test](speaker-pop-evidence/2026-11-17/README.md#rig)
+and its 3.5 threshold, all three deliberate 0.5 FS impulse controls
+flagged (37.2–47.9). Zero of twelve ordinary trials flagged. The quiet
+windows scored up to 2.2.
+
+| Event | Trials | Max pop score | Flagged |
+| --- | ---: | ---: | ---: |
+| Faded PipeWire playback start and end | 3 | 2.1 | 0 |
+| 48 kHz ALSA PCM stop and immediate close, digital silence | 3 | 2.4 | 0 |
+| `Speaker Power` off and on, three round trips | 6 | 2.4 | 0 |
+
+PL2 stayed high during playback and PCM close and changed state on every
+explicit amplifier power command. A 1.1–6 kHz check around PCM close and
+power transitions also stayed within the quiet reference range. These
+measurements cover awake local playback and amplifier power transitions.
+Cold boot, mains power-off, standby, and HDMI audio remain pending on V2.
+
+Restored the mixer settings and rebooted normally into slot A (`eea82965`).
+UART confirmed the installed codec status was again `disabled`, the test
+files in `/run` were gone, and the boot order was `A B` with three tries
+per slot. The codec enable was confined to the temporary boot.
+
+Local evidence is under `build/v2-native-display/audio-slot-a/` in
+`diagnostics.log`, `uart-codec-boot.log`, `routing.log`, `run-2/board.log`,
+`run-2/score.json`, `run-2-playback.log`, `run-2-edges.log`, and
+`uart-return-check.log`. The mic recordings are kept locally.
+
 #### USB port roles (2026-11-20)
 
 The V2 has one USB-A socket, SoC port 0. Its 5 V is hard-wired on, and it
