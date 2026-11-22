@@ -1008,6 +1008,31 @@ that puts DRAM into self-refresh is DRAM-type-specific. Finish by running
 `docs/production-qualification-plan.md` on V2, then mark the board `verified`
 with date and boot ID.
 
+#### V2 slot A fan and shared lamp enable (2026-11-21)
+
+Verified on the HY200 QZ713 V2 running Linux 6.18.38 from slot A
+(boot ID `a7bdc760-9370-4270-a5a5-0b323379c159`). With the board idle,
+sampled PH17 as a GPIO input at approximately 2 kHz with its bias left
+unchanged. With `lamp/bl_power=0`, Linux reported PB5 high and PH17
+showed 511 rising and 511 falling transitions over three seconds, with
+a median pulse frequency of 168.8 Hz.
+
+Writing `4` to `/sys/class/backlight/lamp/bl_power` drove PB5 low for
+five seconds. PH17 pulses slowed during fan coast-down, then the signal
+stayed high with zero transitions in the final two-second window.
+Writing `0` drove PB5 high again. After spin-up, PH17 showed 512 rising
+and 511 falling transitions over three seconds, with a median pulse
+frequency of 168.9 Hz. This confirms that the lamp driver's PB5 output
+also switches fan power and that PH17 carries the fan tach signal.
+
+The test left the lamp enabled with the original 75% dimmer setting.
+PH17 was released and returned to its original unclaimed, bias-disabled
+state. The board stayed on the same slot A boot, and the kernel journal
+had no new entries during the test.
+
+Local evidence is under `build/v2-native-display/fan-slot-a/` in
+`preflight.log`, `probe.py`, `probe.log`, and `after.log`.
+
 #### USB port roles (2026-11-20)
 
 The V2 has one USB-A socket, SoC port 0. Its 5 V is hard-wired on, and it
