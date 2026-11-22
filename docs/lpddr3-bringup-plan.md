@@ -883,9 +883,9 @@ FEL loaded BL31 and the V2 U-Boot candidate into RAM. UART stayed passive
 through the optical check. The operator saw a recognizable boot logo
 without any console commands, using the native V2 timing with the single
 PLL restart. UART recorded the logo commit, PWM2 setup, and PB5 enable in
-that order. The framebuffer CRC32 was `e906064c`. The test build held
-the image in U-Boot for inspection. The Linux display handoff remains
-open.
+that order. The framebuffer CRC32 was `e906064c`. This test build held
+the image in U-Boot for inspection. The
+[Linux handoff test](#v2-linux-display-handoff-over-fel-2026-11-21) followed.
 
 After teardown and reset, the installed bootloader started slot A, and
 RAUC marked it good. Before-and-after SHA-256 read-back matched for SPL,
@@ -896,6 +896,29 @@ Local evidence is under `build/v2-native-display/automatic-lamp/` in
 `optical-observation.md`, `fel-load.log`, `boot-uart.log`,
 `display-readback.log`, `return-uart.log`, `baseline.log`, `after.log`,
 and `after-good.log`.
+
+### V2 Linux display handoff over FEL (2026-11-21)
+
+The RAM-loaded V2 U-Boot candidate showed the native logo in `PREBOOT`
+and booted the installed slot A through the normal RAUC boot path with
+passive UART capture. The test build suppressed U-Boot's MMC environment
+save so its updated `preboot` stayed in RAM. Linux 6.18.38 logged that
+`sun50i-h713-afbd` adopted the 1280×720 framebuffer at `0x6c100000` with
+a 5120-byte stride. Debian reached the login prompt, and RAUC marked
+slot A good.
+
+On the repeat boot, the operator saw the logo give way to the live Linux
+console with no perceptible blackout and no visible green flash. A black
+frame too brief to register remains possible.
+
+Before-and-after SHA-256 read-back matched for SPL, the installed U-Boot
+region, and both slots' boot and root partitions (`boot_a`, `root_a`,
+`boot_b`, and `root_b`). The saved `preboot` and `bootdelay` values also
+matched.
+
+Local evidence is under `build/v2-native-display/linux-handoff/repeat/`
+in `optical-observation.md`, `timeline.log`, `boot-uart.log`,
+`baseline.log`, `after.log`, `after-good.log`, and `storage-check.log`.
 
 ### Phase 5: the remaining hardware
 
