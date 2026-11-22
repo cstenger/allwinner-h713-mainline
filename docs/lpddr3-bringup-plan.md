@@ -972,6 +972,32 @@ Local evidence is under `build/v2-native-display/playback-720p/` in
 `kernel-during.log`, `kms-before.log`, `kms-after.log`, `baseline.log`,
 and `after.log`.
 
+### V2 local 1080p H.264 playback on slot A (2026-11-21)
+
+On the installed V2 bootloader and slot A, played a 77.344-second,
+video-only 1920×1080 H.264 High clip at 30000/1001 fps from tmpfs.
+`h713-play` selected `plane-ve` (`vah264dec` → `kmssink`). The VA-API
+driver used Cedrus (`/dev/video0`) for hardware decoding, cropped the
+coded 1920×1088 frame to 1920×1080, and used the video engine scaler to
+output 1280×720 NV12. DRM scanned out that buffer on the video plane.
+The video engine recorded 2,318 interrupts, and the sink rendered all
+2,318 frames with zero drops.
+
+The operator saw smooth playback with no visible glitches and confirmed
+that the live Linux console returned at end of file. The display IOMMU
+and Panfrost interrupt counters stayed at zero, and the kernel journal
+had no new entries during playback. The active VT was `tty1`, and the
+KMS state after playback matched the initial console state.
+
+Before-and-after SHA-256 hashes matched for all four slot partitions
+(`boot_a`, `root_a`, `boot_b`, and `root_b`), SPL, and U-Boot. Boot
+order and the remaining tries for both slots also matched.
+
+Local evidence is under `build/v2-native-display/playback-1080p/` in
+`optical-observation.md`, `player.log`, `playback.log`, `irq-before.log`,
+`irq-after.log`, `kernel-during.log`, `kms-before.log`, `kms-during.log`,
+`kms-after.log`, `baseline.log`, and `after.log`.
+
 ### Phase 5: the remaining hardware
 
 In order: fan (tach PH17; PB5 also powers the fan) → audio and speaker (the
