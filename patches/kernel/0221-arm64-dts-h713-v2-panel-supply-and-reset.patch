@@ -1,0 +1,63 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 22 Nov 2026 16:30:00 -0800
+Subject: [PATCH] arm64: dts: h713: v2: the panel's supply and reset
+
+Describe the V2 panel's power as 0183 does for the bench board: PH19
+enables its power switch, so it is the fixed regulator vcc-panel, the
+display's power-supply; PH16 is its reset; the lamp is its backlight.
+These are the V2 TOC1's panel_power_en and panel_gpio_0, and the lines
+U-Boot's V2 tree already drives for its initial-off hold. The panel is
+physically the bench's; only the board's supply switch moved from PF6.
+
+Without them the display driver never claimed the supply, so 0184's
+ordered power-down at shutdown never ran on the V2. A warm reboot taken
+while the HDMI source was away then left the panel lit but black with
+every SoC register correct and the TCON test pattern black too, through
+warm reboots and U-Boot's 3 s hold, until a power cycle. An ordered
+PH19 supply cycle from Linux cleared it live.
+
+regulator-boot-on because U-Boot leaves the panel powered;
+off-on-delay-us is the panel's PanelOffTiming1, as on the bench.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts
+@@ -104,3 +104,37 @@
+ /* The HDMI receiver and capture drivers own these from the boot handoff. */
+ &audio_bridge { status = "disabled"; };
+ &tvtop { status = "disabled"; };
++
++/*
++ * The panel's supply and reset, as U-Boot drives them to bring it up (V2
++ * TOC1: panel_power_en = PH19, panel_gpio_0 = PH16; the bench board's
++ * supply is PF6, 0183). It is the bench's panel; only the board's switch
++ * moved. The display driver keeps the panel up and, at shutdown, takes it
++ * down in order -- lamp, signal, reset, rail -- before the SoC resets
++ * (0184). Without these nodes that never ran on the V2: a warm reboot taken
++ * while the HDMI source was away reset the SoC with the panel powered and
++ * its LVDS lanes driven, and the panel stayed lit but black, through warm
++ * reboots and U-Boot's 3 s initial-off hold, until a power cycle or an
++ * ordered PH19 supply cycle (2026-11-22).
++ */
++/ {
++	reg_panel: regulator-panel {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc-panel";
++		gpio = <&pio 7 19 GPIO_ACTIVE_HIGH>;	/* PH19 */
++		enable-active-high;
++		/*
++		 * U-Boot leaves the panel powered: keep it on when this
++		 * registers, instead of driving the enable low.
++		 */
++		regulator-boot-on;
++		/* panel_config.ini PanelOffTiming1: the rail's discharge. */
++		off-on-delay-us = <250000>;
++	};
++};
++
++&display {
++	backlight = <&lamp>;
++	power-supply = <&reg_panel>;
++	panel-reset-gpios = <&pio 7 16 GPIO_ACTIVE_LOW>;	/* PH16 */
++};

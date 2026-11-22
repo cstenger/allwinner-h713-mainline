@@ -1557,8 +1557,8 @@ confirmed the glass at each step:
 So this is A1's October latch-up on the V2 board. U-Boot's initial-off hold
 (0001: PH19 off **3 s** on every boot) does not clear it there. The open
 question is which difference from the live cycle matters: the off time, or
-the sequence and context. Evidence: `build/v2-boot-qualification/warm-unplugged/`. Evidence:
-`build/v2-boot-qualification/black-panel/` (sweeps, diff, frame).
+the sequence and context. Evidence: `build/v2-boot-qualification/warm-unplugged/`
+and `build/v2-boot-qualification/black-panel/` (sweeps, diff, frame).
 
 Still to run: a source-PC reboot with the board left on (it ends the Claude
 session on that PC).

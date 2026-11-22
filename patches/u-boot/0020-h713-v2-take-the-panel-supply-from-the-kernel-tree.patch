@@ -1,0 +1,52 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Date: Sun, 22 Nov 2026 16:35:00 -0800
+Subject: [PATCH] h713: v2: take the panel supply from the kernel tree
+
+Kernel 0221 describes the V2 panel's supply (vcc-panel on PH19) and
+reset (PH16) in the tree U-Boot shares, so drop the private copy 0015
+added here. Both were named /regulator-panel and would merge, taking the
+kernel's regulator-boot-on, which U-Boot reads as "switch on at init"
+ahead of h713_disp_panel_initial_off(). Delete it for U-Boot, as the
+bench board's -u-boot.dtsi does. The pins and the off delay are unchanged,
+so U-Boot drives the panel exactly as before.
+
+Signed-off-by: Christopher Stenger <chris.h.stenger@gmail.com>
+---
+--- a/arch/arm/dts/sun50i-h713-hy200-qz713-v2-u-boot.dtsi
++++ b/arch/arm/dts/sun50i-h713-hy200-qz713-v2-u-boot.dtsi
+@@ -1,17 +1,8 @@
+ // SPDX-License-Identifier: GPL-2.0+
+ 
+-#include <dt-bindings/gpio/gpio.h>
+ #include "sun50i-h713-u-boot.dtsi"
+ 
+ / {
+-	reg_panel_v2: regulator-panel {
+-		compatible = "regulator-fixed";
+-		regulator-name = "vcc-panel";
+-		gpio = <&pio 7 19 GPIO_ACTIVE_HIGH>;	/* PH19 */
+-		enable-active-high;
+-		off-on-delay-us = <250000>;
+-	};
+-
+ 	/*
+ 	 * Standard Boot: boot only from the eMMC (mmc1) and only through the
+ 	 * RAUC A/B method. Declaring a bootmeth here binds just that one,
+@@ -27,7 +18,14 @@
+ 	};
+ };
+ 
+-&display {
+-	power-supply = <&reg_panel_v2>;
+-	panel-reset-gpios = <&pio 7 16 GPIO_ACTIVE_LOW>;	/* PH16 */
++/*
++ * The panel's supply (PH19) and reset (PH16) now come from the kernel tree
++ * (0221), as the bench board's do. In U-Boot, regulator-boot-on means
++ * "switch on at init"; the panel must come up inside the display sequence,
++ * after h713_disp_panel_initial_off(), so U-Boot leaves the supply off until
++ * h713_disp enables it. Linux keeps the property: there it means the
++ * bootloader left the supply on.
++ */
++&reg_panel {
++	/delete-property/ regulator-boot-on;
+ };

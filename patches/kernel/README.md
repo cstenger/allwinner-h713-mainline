@@ -548,6 +548,13 @@ same table: its old fixed addresses were the V2 build's and read unrelated
 bytes on the A1. Addresses come from `tools/mips/map-fw-pins.py`, and
 `tools/mips/test-cpu-comm-fw-identity.py` runs the code against both images.
 
+**0221** describes the projector panel's supply and reset as 0183 does for the
+bench: `vcc-panel` on PH19 (the bench uses PF6; the panel itself is the same),
+reset on PH16, and the lamp as its backlight. Without them the display driver
+never claimed the supply, so 0184's ordered power-down at shutdown never ran on
+the V2, and a warm reboot taken while the HDMI source was away could leave the
+panel lit but black until a power cycle.
+
 `series` files may carry `#` comments and blank lines; `tools/build/build.sh`
 reads every series through `series_entries`, so hashing and applying see the
 same list.
