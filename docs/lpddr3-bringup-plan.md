@@ -442,12 +442,14 @@ local/h713-lab/captures/board-a/board-a-mmcblk0-20261118.img` gives
 2. Display. Panel power on PH19, then the console on the panel, then the MIPS
    launch and logo. Run the `display.bin` option (a) and (b) test from
    Phase 0.7 here: one cold boot each, comparing the MIPS state and the logo.
+   See the [V2 RAM-only FEL display test](#v2-ram-only-fel-display-test-2026-11-21)
+   for the first visible-output result.
 3. Then the production stack: startup/health scripts, video planes,
    letterbox/mirror, VE decode matrix (AV1 at PLL_VE ≤ 432 MHz). The DRAM
    bandwidth differs, so rerun the eMMC 0206/0207 loaded-read bench. It is
    DRAM-contention sensitive.
 
-### Phase 4 step 1 runbook (stage 1 done 2026-11-19; stages 2–3 not yet run)
+### Phase 4 step 1 runbook (stage 1 done 2026-11-19)
 
 Three stages, each ending somewhere safe. Every write is read back and
 compared before the next. Every stage's first step is a read-only check that
@@ -780,6 +782,38 @@ on V2, the `display.bin` (a)/(b) test).
 **Not covered by this runbook:** `tools/release/prepare-install.py` (the
 production packet) is DDR3-only (`MODEL` pinned), so V2 production installs
 need it extended once Stage 2 is proven by hand.
+
+### V2 RAM-only FEL display test (2026-11-21)
+
+1. Confirmed the V2 SID in FEL and used `tools/fel-uboot.sh` to load and
+   read back BL31, the V2 U-Boot candidate, and a FAT image of the known
+   DDR3 bench display assets in RAM. The test build had autoboot disabled.
+   Its device tree supplied the panel power GPIO on PH19 and the active-low
+   reset on PH16. The asset image was mounted in U-Boot through `blkmap`.
+2. Ran `h713_disp auto 0x34 logo` and manually enabled the shared lamp and
+   fan line on PB5 and the brightness PWM on PB4 at the stock 75% duty.
+   Read-back showed PH19 high and PH16 released. The 1280×720 framebuffer
+   CRC32 matched the source logo (`e906064c`), and the raster counter advanced.
+   The operator saw the boot logo on the screen.
+3. With illumination steady, alternated the panel's internal source
+   between black and white twice. The operator saw the projected field
+   switch between bright and black, then saw the logo return after the
+   original registers were restored.
+4. Turned off illumination, ran `h713_disp teardown`, and reset into the
+   installed bootloader. The projector booted slot A and RAUC marked it
+   good. Full SHA-256 read-back matched the pre-test baseline for the
+   installed SPL and U-Boot region and for `boot_a`, `root_a`, `boot_b`,
+   and `root_b`. The final boot order was `A B` with three tries per slot.
+
+This verifies visible output on the V2 with the bench asset set. The V2's
+native `display.bin` has a different length and hash. The current loader
+expects the bench firmware's length. Native firmware, automatic lamp
+sequencing, and the Linux display handoff still need validation.
+
+Local evidence is under `build/v2-display-bringup/fel-panel-test/` in
+`pattern-fel-load.log`, `framebuffer-verify.log`, `pattern.log`,
+`optical-observation.md`, `pattern-return-a-uart.log`, and
+`pattern-after.log`.
 
 ### Phase 5: the remaining hardware
 
