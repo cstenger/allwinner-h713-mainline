@@ -842,8 +842,7 @@ Stage the 648-byte block at offset `0x1654` in the A1 `LogoRegData.bin`
 at address `0x60000000` over FEL. Set `h713_v2_a1_timing=yes` in the
 RAM environment and run `h713_disp auto 0x34 logo`. The loader verifies the
 staged block's SHA-256 before using it. Lamp and brightness were
-controlled manually. Automatic lamp sequencing and the Linux display
-handoff remain open.
+controlled manually in these timing tests.
 
 After the final run and panel teardown, the projector booted normally
 from the installed bootloader into slot A and RAUC marked it good.
@@ -860,6 +859,43 @@ Evidence for the single-pulse fix is under `build/v2-native-display/minimal/`
 in `optical-observations.md`, `variant-2.log`, `variant-3.log`,
 `final-fel.log`, `final-panel.log`, `final-regs.log`, `return-uart.log`,
 `baseline.log`, `after.log`, and `after-good.log`.
+
+### Automatic V2 boot-logo illumination over FEL (2026-11-21)
+
+The V2 normal-boot `PREBOOT` runs `h713_disp auto 0x34 logo` using the
+compiled policy even when the saved RAUC environment contains the old
+`preboot` value. The loader keeps the shared PB5 lamp and fan enable low
+while it initializes the panel and commits the logo. It then starts PWM2
+on PB4, checks that the programmed duty and advancing counter read back,
+and raises PB5. Teardown lowers PB5 and disables PWM2 before dropping the
+panel supply.
+
+The setting comes from the extracted stock V2 device tree. It declares
+PWM2 at 25 kHz, active high, and `panel_backlight = 75` on a 0–100 scale.
+The FEL test confirmed 720 active cycles out of 960 in our loader. The
+stock A1 U-Boot trace recorded a runtime request for PWM5 that failed,
+so the device-tree default alone leaves the shipping V2 runtime waveform
+unverified. The V2 FEL test verified the projected logo and PWM register
+state. Optical dimming from PWM2 remains unverified.
+[Stock PWM investigation](backlight-investigation.md#0-the-answer-from-the-vendors-own-u-boot)
+
+FEL loaded BL31 and the V2 U-Boot candidate into RAM. UART stayed passive
+through the optical check. The operator saw a recognizable boot logo
+without any console commands, using the native V2 timing with the single
+PLL restart. UART recorded the logo commit, PWM2 setup, and PB5 enable in
+that order. The framebuffer CRC32 was `e906064c`. The test build held
+the image in U-Boot for inspection. The Linux display handoff remains
+open.
+
+After teardown and reset, the installed bootloader started slot A, and
+RAUC marked it good. Before-and-after SHA-256 read-back matched for SPL,
+the installed U-Boot region, and `boot_a`, `root_a`, `boot_b`, and
+`root_b`.
+
+Local evidence is under `build/v2-native-display/automatic-lamp/` in
+`optical-observation.md`, `fel-load.log`, `boot-uart.log`,
+`display-readback.log`, `return-uart.log`, `baseline.log`, `after.log`,
+and `after-good.log`.
 
 ### Phase 5: the remaining hardware
 

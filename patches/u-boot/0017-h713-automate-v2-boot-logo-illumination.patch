@@ -1,0 +1,182 @@
+Subject: sunxi: H713: sequence the V2 lamp at boot logo commit
+
+Show the native V2 logo from PREBOOT on normal boots. Use the compiled
+PREBOOT policy even with an existing RAUC environment. The fastboot and
+bootloader reboot modes take their existing branches.
+
+Keep the V2 shared lamp and fan enable low until the logo frame has
+committed and PWM2 is running at the vendor DTB's 75% default. Disable the
+lamp before tearing down scanout and the panel supply.
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -210,7 +210,7 @@
+ static bool h713_disp_single_launch_logo;
+ 
+ static int h713_disp_publish_vendor_bootlogo(bool load, bool chroma);
+-static void h713_disp_commit_osd_frame(void);
++static bool h713_disp_commit_osd_frame(void);
+ static bool h713_comm_trace_active;
+ 
+ /* Previous value of every trace slot, so streaming reports only changes. */
+@@ -6592,7 +6592,7 @@
+ 	printf("bl-gpio: done, PB5 restored high\n");
+ }
+ 
+-static void h713_disp_backlight_set(uint percent)
++static int h713_disp_backlight_set(uint percent)
+ {
+ 	const uint ch = H713_BL_PWM_CH;
+ 	u32 period = 24000000u / H713_BL_PWM_HZ;	/* 960 cycles at 25 kHz */
+@@ -6646,8 +6646,26 @@
+ 		printf("H713 backlight: PWM%u counter is static -- the channel "
+ 		       "is configured but not running, so this step says "
+ 		       "nothing about the panel\n", ch);
++
++	if (!(readl(H713_PWM_CLK_GATE) & BIT(ch)) ||
++	    !(readl(H713_PWM_ENABLE) & BIT(ch)) ||
++	    readl(H713_PWM_PERIOD(ch)) != (((period - 1) << 16) | act) ||
++	    sunxi_gpio_get_cfgpin(SUNXI_GPB(4)) != H713_BL_PWM_MUX ||
++	    cnt_a == cnt_b)
++		return -EIO;
++
++	return 0;
+ }
+ 
++static void h713_disp_v2_lamp_set(bool enable)
++{
++	/* PB5 is the shared lamp and fan enable. Set its latch before its mux. */
++	if (enable)
++		setbits_le32((void *)H713_PB_DATA, BIT(5));
++	else
++		clrbits_le32((void *)H713_PB_DATA, BIT(5));
++	sunxi_gpio_set_cfgpin(SUNXI_GPB(5), SUNXI_GPIO_OUTPUT);
++}
+ 
+ static void h713_disp_teardown(const char *why)
+ {
+@@ -6657,6 +6675,13 @@
+ 
+ 	printf("H713 teardown: %s\n", why);
+ 
++	if (h713_display_v2()) {
++		h713_disp_v2_lamp_set(false);
++		if ((readl(H713_CCU_PWM_BGR) & (BIT(0) | BIT(16))) ==
++		    (BIT(0) | BIT(16)))
++			clrbits_le32((void *)H713_PWM_ENABLE, BIT(H713_BL_PWM_CH));
++	}
++
+ 	/*
+ 	 * 0. Make the display blocks reachable before touching one.
+ 	 *
+@@ -7734,7 +7759,7 @@
+ 	st->completed = !!(st->done & BIT(1));
+ }
+ 
+-static void h713_disp_commit_osd_frame(void)
++static bool h713_disp_commit_osd_frame(void)
+ {
+ 	struct h713_disp_commit_stat st;
+ 
+@@ -7747,6 +7772,7 @@
+ 	       readl(H713_DISP_AFBD_READY_REG),
+ 	       readl(H713_DISP_OSD_CTRL_REG),
+ 	       readl(H713_DISP_LVDS_SCAN_REG));
++	return st.completed;
+ }
+ 
+ /*
+@@ -10965,6 +10991,7 @@
+ static int h713_disp_auto_logo_mode(u32 project, const char *logo_file,
+ 				    bool quiesce)
+ {
++	bool v2_logo = quiesce && h713_display_v2();
+ 	u32 phy14, phy28, route54;
+ 	int ret;
+ 
+@@ -10974,6 +11001,9 @@
+ 		h713_disp_teardown("second run this boot, tearing down first");
+ 	h713_panel_test_ran = true;
+ 
++	if (v2_logo)
++		h713_disp_v2_lamp_set(false);
++
+ 	ret = h713_disp_load(project);
+ 	if (ret)
+ 		return h713_disp_fail(ret);
+@@ -11018,10 +11048,20 @@
+ 		ret = h713_disp_publish_vendor_bootlogo(true, false);
+ 	if (ret)
+ 		return h713_disp_fail(ret);
+-	h713_disp_commit_osd_frame();
++	if (!h713_disp_commit_osd_frame() && v2_logo)
++		return h713_disp_fail(-ETIMEDOUT);
+ 
+ 	printf("H713 disp: boot logo published and committed\n");
+ 
++	if (v2_logo) {
++		ret = h713_disp_backlight_set(75);
++		if (ret)
++			return h713_disp_fail(ret);
++
++		h713_disp_v2_lamp_set(true);
++		printf("H713 disp: V2 lamp and fan enabled after logo commit\n");
++	}
++
+ 	/*
+ 	 * Sample the raster twice after the commit. With the core running this
+ 	 * is the only cheap evidence that the firmware has not taken the display
+--- a/arch/arm/mach-sunxi/Kconfig
++++ b/arch/arm/mach-sunxi/Kconfig
+@@ -673,11 +673,8 @@
+ 	select SHA256
+ 	help
+ 	  Add the manual h713_mips command for loading, SHA-256 checking, and
+-	  releasing the H713 display coprocessor. The command deliberately has
+-	  no automatic boot hook: firmware execution must first be validated on
+-	  the HY200 QZ713DF_A1 DDR3 bench board.
+-
+-	  Do not enable this on the untested HY200 QZ713_V2 projector.
++	  releasing the H713 display coprocessor, and h713_disp for the
++	  display sequence. Board defconfigs may run the logo in PREBOOT.
+ 
+ config MACH_SUN50I_A133
+ 	bool "sun50i (Allwinner A133)"
+--- a/board/sunxi/board.c
++++ b/board/sunxi/board.c
+@@ -1001,6 +1001,14 @@
+ 
+ int board_late_init(void)
+ {
++#if defined(CONFIG_H713_MIPS_BOOT) && defined(CONFIG_USE_PREBOOT)
++	/*
++	 * V2's RAUC environment can contain the previous build's PREBOOT.
++	 * Use the current board policy and retain the rest of the environment.
++	 */
++	if (ofnode_device_is_compatible(ofnode_root(), "cstenger,hy200-qz713-v2"))
++		env_set("preboot", CONFIG_PREBOOT);
++#endif
+ #ifdef CONFIG_USB_ETHER
+ 	usb_ether_init();
+ #endif
+--- a/configs/hy200_qz713_v2_defconfig
++++ b/configs/hy200_qz713_v2_defconfig
+@@ -29,8 +29,8 @@
+ CONFIG_DRAM_SUNXI_TPR12=0x00005544
+ CONFIG_DRAM_SUNXI_TPR13=0xb4036223
+ CONFIG_SUNXI_DRAM_H713_LPDDR3_STOCK=y
+-# No H713_MIPS_BOOT and no h713_disp in PREBOOT yet: the display path is
+-# untested here and panel power differs (PH19). Phase 4 step 2 adds them.
++CONFIG_H713_MIPS_BOOT=y
++# Show the native V2 boot logo on normal boots. Keep recovery modes dark.
+ # No "usb start" either: U-Boot has no USB host on this board ("No USB
+ # controllers found"), only the gadget for fastboot/UMS, and CMD_USB goes
+ # with DISTRO_DEFAULTS.
+@@ -42,7 +42,7 @@
+ # board that never boots again (it happened once, 2026-11-20). PREBOOT runs
+ # before autoboot reads bootdelay, so resetting it here makes a saved value
+ # harmless; bootdelay is a build-time setting on this board.
+-CONFIG_PREBOOT="env default -f bootdelay; if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; fi"
++CONFIG_PREBOOT="env default -f bootdelay; if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; else h713_disp auto 0x34 logo; fi"
+ # A/B boot with Standard Boot's RAUC method (boot/bootmeth_rauc.c): slot A is
+ # boot_a (p5) + root_a (p9), slot B is boot_b (p6) + root_b (p16). It takes
+ # an attempt from the first slot in BOOT_ORDER with BOOT_<slot>_LEFT > 0, saves
