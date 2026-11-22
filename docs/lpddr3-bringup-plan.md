@@ -920,6 +920,32 @@ Local evidence is under `build/v2-native-display/linux-handoff/repeat/`
 in `optical-observation.md`, `timeline.log`, `boot-uart.log`,
 `baseline.log`, `after.log`, `after-good.log`, and `storage-check.log`.
 
+### Installed V2 U-Boot display handoff (2026-11-21)
+
+Before installing the production build, backed up the entire 15 MiB
+bootloader region (`empty`, `/dev/mmcblk0p18`), the installed SPL at LBA
+`0x10`, and vendor boot0 at LBA `0x100`. Verified those files against
+`backup.sha256`. Wrote the production FIT to the primary U-Boot at LBA
+`0x49ac00` and verified the write by reading back the whole bootloader
+region. The previous spare U-Boot at LBA `0x4a0c00` remained in place.
+
+After a clean Linux shutdown, the operator disconnected projector power
+for approximately 10–15 seconds and restored it. The runbook's one-minute
+discharge interval was longer than this test's power-off interval. UART
+confirmed that the installed SPL loaded U-Boot from eMMC, the native logo
+was committed, and slot A booted. The operator saw the logo stay visible
+until the Linux console appeared. Linux adopted the 1280×720 framebuffer
+at `0x6c100000`, and RAUC marked slot A good.
+
+Post-boot read-back verified the new primary U-Boot and the unchanged
+spare. Before-and-after SHA-256 hashes matched for SPL, vendor boot0, and
+`boot_a`, `root_a`, `boot_b`, and `root_b`.
+
+The backups and evidence are under `build/v2-native-display/installed-handoff/`
+in `boot-region-before.bin`, `spl-before.bin`, `stock-boot0-before.bin`,
+`backup.sha256`, `write.log`, `timeline.log`, `optical-observation.md`, and
+`cold-storage-check.log`.
+
 ### Phase 5: the remaining hardware
 
 In order: fan (tach PH17; PB5 also powers the fan) → audio and speaker (the
