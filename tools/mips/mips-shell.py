@@ -436,6 +436,25 @@ def check_ipc(term, alive, timeout=1.5, *, clock=time.monotonic,
 ELOG_LEVEL_WORD = 0x4B48BDB0
 ELOG_HANDLER_WORDS = ((0x4B151B34, 0x28820003), (0x4B151B38, 0x1440001E),
                       (0x4B151B40, 0x27BDFFE0))
+# Native V2 display.bin (16c74a28...): the same handler 0x8e0 lower, and the
+# filter word 0x14 lower (all 18 A1 references map to 0x8b48bd9c). The shell
+# device global does not move.
+V2_ELOG_LEVEL_WORD = 0x4B48BD9C
+V2_ELOG_HANDLER_WORDS = ((0x4B151254, 0x28820003), (0x4B151258, 0x1440001E),
+                         (0x4B151260, 0x27BDFFE0))
+BOARD_COMPATIBLE = '/proc/device-tree/compatible'
+
+
+def elog_pins():
+    """The filter word and pinned handler words for this board's firmware."""
+    try:
+        with open(BOARD_COMPATIBLE, 'rb') as f:
+            v2 = b'cstenger,hy200-qz713-v2' in f.read().split(b'\0')
+    except FileNotFoundError:
+        v2 = False
+    if v2:
+        return V2_ELOG_LEVEL_WORD, V2_ELOG_HANDLER_WORDS
+    return ELOG_LEVEL_WORD, ELOG_HANDLER_WORDS
 HDMI_SIGNAL = '/sys/devices/platform/h713-hdmi-ring/signal'
 ELOG_SOURCE_GRACE = 60.0    # s allowed after a source appears; with one, ~1.3 s is typical
 
@@ -474,10 +493,11 @@ def send_elog_level(term, alive, level, timeout=3.0, *, clock=time.monotonic, sl
         raise ValueError("elog deadlines must be finite and positive")
     if not alive:
         raise RuntimeError("MIPS is parked; refusing elog request")
-    for address, word in ELOG_HANDLER_WORDS:
+    level_word, handler_words = elog_pins()
+    for address, word in handler_words:
         if term.mem.u32(address) != word:
             raise RuntimeError(f"elog handler word {address:#x} differs: not the pinned firmware")
-    before = term.mem.u32(ELOG_LEVEL_WORD) & 0xff
+    before = term.mem.u32(level_word) & 0xff
     if before > 7:
         raise RuntimeError(f"elog filter reads {before}, outside 0..7: refusing")
     down = term.down[0]
@@ -517,8 +537,9 @@ def confirm_elog_level(mem, sent, settle=5.0, *, clock=time.monotonic, sleep=tim
             raise ValueError("elog deadlines must be finite and positive")
     level, started, answered = sent["level"], sent["started"], sent["answered"]
     deadline, waited, seen_source = answered + settle, False, False
+    level_word = elog_pins()[0]
     while True:
-        after = mem.u32(ELOG_LEVEL_WORD) & 0xff
+        after = mem.u32(level_word) & 0xff
         if after == level:
             return {"schema": "h713-mips-elog-v1", "level": level, "before": sent["before"],
                     "verified": True, "reply_bytes": sent["reply_bytes"],

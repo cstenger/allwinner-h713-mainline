@@ -144,5 +144,23 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse((out/'usr/lib/h713-hdmi-speaker/hdmi-speaker.c').exists())
             self.assertIn('== 4d2',(out/'usr/lib/h713-hdmi/h713-hdmi.cmd').read_text())
 
+    def test_projector_payload_has_the_runtime_without_a_startup_script(self):
+        # The V2's U-Boot (boot-v2) owns the launch; only the bench board ships a script.
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);dsp=root/'dsp.bin';dsp.write_bytes(b'fixture')
+            modules={}
+            for kind,name in [('receiver','h713-hdmi-receiver'),('audio','h713-hdmi-audio'),
+                              ('signal','h713-hdmi-signal'),('ddc','h713-ddc-pins'),('video','h713-hdmi-v4l2')]:
+                path=root/(name+'.ko');path.write_bytes(name.encode());modules[kind]=path
+            out=root/'overlay';out.mkdir();b.hdmi_payload(out,modules,dsp,'0.115')
+            units=out/'etc/systemd/system'
+            for unit in ('h713-hdmi-capture','h713-hdmi-signal','h713-hdmi-ring','h713-hdmi-health-ack'):
+                self.assertTrue((units/'multi-user.target.wants'/(unit+'.service')).is_symlink())
+            self.assertEqual((out/'usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko').read_bytes(),b'h713-hdmi-v4l2')
+            self.assertEqual((out/'usr/lib/h713-hdmi/firmware/h713/hdmi-audio-dsp.bin').read_bytes(),b'fixture')
+            self.assertIn('H713_HDMI_AUDIO_DELAY_SEC=0.115\n',(out/'etc/default/h713-hdmi-speaker').read_text())
+            self.assertEqual(list(out.rglob('h713-hdmi.scr'))+list(out.rglob('h713-hdmi.cmd')),[])
+            self.assertFalse((out/'etc/h713-keystone.conf').exists())
+
 
 if __name__=='__main__':unittest.main()

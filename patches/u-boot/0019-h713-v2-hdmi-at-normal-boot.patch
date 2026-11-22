@@ -1,0 +1,286 @@
+Subject: sunxi: H713: start V2 HDMI input on normal boots
+
+Run the V2 HDMI startup from PREBOOT instead of the logo-only sequence.
+Use the bench board's RTC GP6 launch latch: after power loss (0) or a
+boot whose HDMI start Linux acknowledged (HDOK), write HDMI, launch the
+display firmware once with the CPU_COMM trace, select source 3 and boot
+Linux with the handoff. Any other latch value, or a running MIPS core,
+takes the existing logo-only path.
+
+A failure after the latch is set resets the SoC rather than launching
+the firmware a second time in one boot. The latch sends the next boot
+down the logo-only path. PREBOOT runs before bootmeth_rauc, so no slot
+attempt is used.
+
+Publish the handoff from ft_board_setup() as /chosen/h713,hdmi-boot-v1,
+so the slot's boot.scr and FIT stay unchanged, and only to a V2 tree that
+describes the HDMI resources (kernel 0218). The running firmware keeps
+writing its CPU_COMM trace page, so add a /memreserve/ for it when an
+older slot's tree does not reserve it. Keep the PID out of the
+environment on normal boots: bootmeth_rauc saves it, and a stale PID
+must never reach a later boot.
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -26,6 +26,8 @@
+ #include <asm/io.h>
+ #include <asm/unaligned.h>
+ #include <u-boot/sha256.h>
++#include <fdt_support.h>
++#include <linux/libfdt.h>
+ 
+ #define H713_MIPS_FW_ADDR		0x4b100000UL
+ #define H713_MIPS_A1_FW_SIZE		0x00132910UL
+@@ -11135,8 +11137,27 @@
+ 	return 0;
+ }
+ 
+-/* Explicit V2 bench operation. Leave the normal logo-only path alone. */
+-static int h713_disp_v2_hdmi_source(void)
++/*
++ * RTC GP6, the once-per-power-cycle HDMI launch latch shared with the bench
++ * board's startup script. 0 after power loss. U-Boot writes HDMI before it
++ * launches the firmware for capture; Linux's h713-hdmi-health-ack writes
++ * HDOK once the HDMI services started healthily. Any other value at the next
++ * boot means that start never finished, so that boot shows the logo only.
++ * GP7 (0x0709011c) remains the reboot-mode word.
++ */
++#define H713_RTC_GP6_REG	0x07090118UL
++#define H713_HDMI_LATCH		0x48444d49	/* "HDMI" */
++#define H713_HDMI_LATCH_OK	0x48444f4b	/* "HDOK" */
++
++/* Source 3 PID from this boot's completed handoff; 0 = no handoff. */
++static u32 h713_v2_handoff_pid;
++
++/*
++ * Select source 3 after a native V2 comm-trace single launch and verify the
++ * asynchronous transition. On success, record the PID for the kernel FDT
++ * (h713_mips_ft_setup) and light the panel.
++ */
++static int h713_disp_v2_select_source(u32 *pid_out)
+ {
+ 	ulong trace = H713_MIPS_COMM_TRACE_ADDR;
+ 	ulong dev, table;
+@@ -11144,12 +11165,11 @@
+ 	uint i, live = 0;
+ 	int ret;
+ 
++	h713_v2_handoff_pid = 0;
+ 	if (!h713_display_v2() || !h713_comm_trace_active ||
+ 	    readl(H713_MIPS_STATUS_REG) != 1)
+ 		return -ENODEV;
+ 
+-	if (env_get("h713_v2_hdmi_pid") && env_set("h713_v2_hdmi_pid", NULL))
+-		return -EIO;
+ 	invalidate_dcache_range(trace, trace + H713_MIPS_COMM_TRACE_SIZE);
+ 	if (readl(trace + 4) != H713_MIPS_COMM_TRACE_MAGIC ||
+ 	    readl(trace + 0x80) != H713_MIPS_COMM_TRACE_CANARY ||
+@@ -11204,10 +11224,28 @@
+ 	if (ret)
+ 		return ret;
+ 	h713_disp_v2_lamp_set(true);
+-	ret = env_set_hex("h713_v2_hdmi_pid", pid);
+-	if (!ret)
+-		printf("H713 V2 HDMI: source 3 completed, PID %08x\n", pid);
+-	return ret;
++	h713_v2_handoff_pid = pid;
++	*pid_out = pid;
++	printf("H713 V2 HDMI: source 3 completed, PID %08x\n", pid);
++	return 0;
++}
++
++/*
++ * Bench command: also export the PID to a hand-written RAM boot script.
++ * Normal boots use h713_disp_v2_boot(), which keeps the PID out of the
++ * environment that bootmeth_rauc saves.
++ */
++static int h713_disp_v2_hdmi_source(void)
++{
++	u32 pid;
++	int ret;
++
++	if (env_get("h713_v2_hdmi_pid") && env_set("h713_v2_hdmi_pid", NULL))
++		return -EIO;
++	ret = h713_disp_v2_select_source(&pid);
++	if (ret)
++		return ret;
++	return env_set_hex("h713_v2_hdmi_pid", pid);
+ }
+ 
+ static int h713_disp_auto_logo(u32 project, const char *logo_file)
+@@ -11215,6 +11253,113 @@
+ 	return h713_disp_auto_logo_mode(project, logo_file, true);
+ }
+ 
++/*
++ * Normal V2 boot, run from PREBOOT. After power loss, or after a boot whose
++ * HDMI start Linux acknowledged, launch the display firmware once with the
++ * CPU_COMM trace and select source 3, then boot with the handoff. Otherwise
++ * show the logo with the core quiesced, as before HDMI.
++ *
++ * A failure after the latch is set resets the SoC instead of attempting a
++ * second launch in this boot. The latch then routes the next boot to the
++ * logo-only path, which the bench board recovered through after an
++ * emergency reset with the firmware running (2026-10-18). No slot attempt
++ * is spent: bootmeth_rauc has not run yet.
++ */
++static int h713_disp_v2_boot(void)
++{
++	u32 latch = readl(H713_RTC_GP6_REG);
++	u32 status = readl(H713_MIPS_STATUS_REG);
++	u32 pid;
++	int ret;
++
++	if (!h713_display_v2())
++		return -ENODEV;
++
++	if ((latch && latch != H713_HDMI_LATCH_OK) || status) {
++		printf("H713 V2 HDMI: latch %08x, MIPS status %08x: logo only "
++		       "this boot\n", latch, status);
++		return h713_disp_auto_logo(0x34, NULL);
++	}
++
++	writel(H713_HDMI_LATCH, H713_RTC_GP6_REG);
++	if (readl(H713_RTC_GP6_REG) != H713_HDMI_LATCH) {
++		printf("H713 V2 HDMI: launch latch did not stick: logo only\n");
++		return h713_disp_auto_logo(0x34, NULL);
++	}
++
++	/* PB5 also runs the fan: low only for the launch and source switch. */
++	h713_disp_v2_lamp_set(false);
++	ret = h713_disp_auto_logo_single(0x34);
++	if (!ret)
++		ret = h713_disp_comm_dev();
++	if (!ret)
++		ret = h713_disp_v2_select_source(&pid);
++	if (!ret)
++		return 0;
++
++	printf("H713 V2 HDMI: startup failed (%d); resetting for a logo-only "
++	       "boot\n", ret);
++	h713_v2_handoff_pid = 0;
++	mdelay(100);
++	reset_cpu();
++	return ret;
++}
++
++/* The kernel trees reserve 256 KiB here (hdmi-trace@4d980000, no-map). */
++#define H713_MIPS_COMM_TRACE_RESERVE	0x40000UL
++
++/*
++ * bootm FDT fixup (board/sunxi/board.c ft_board_setup).
++ *
++ * While the CPU_COMM trace is installed, the running firmware keeps writing
++ * its trace page. A kernel tree without the trace reservation (a slot built
++ * before kernel 0218) would hand that memory to Linux, so reserve it here
++ * whenever the tree does not.
++ *
++ * Then publish this boot's source 3 handoff as /chosen/h713,hdmi-boot-v1 =
++ * <"HDMI" 0 pid>, only to a V2 tree that describes the HDMI resources.
++ * Without a handoff, or on any FDT error, boot without one: the HDMI
++ * services stay off and the latch makes the next boot logo-only.
++ */
++int h713_mips_ft_setup(void *blob)
++{
++	bool described = fdt_path_offset(blob,
++		"/reserved-memory/hdmi-trace@4d980000") >= 0;
++	fdt32_t handoff[3];
++	int node, ret;
++
++	if (h713_comm_trace_active && !described) {
++		ret = fdt_add_mem_rsv(blob, H713_MIPS_COMM_TRACE_ADDR,
++				      H713_MIPS_COMM_TRACE_RESERVE);
++		printf("H713 MIPS: boot FDT lacks the trace reservation; "
++		       "/memreserve/ added (%s)\n",
++		       ret ? fdt_strerror(ret) : "ok");
++		if (ret)
++			return ret;
++	}
++	if (!h713_v2_handoff_pid)
++		return 0;
++	if (fdt_node_check_compatible(blob, 0, "cstenger,hy200-qz713-v2") ||
++	    !described || fdt_path_offset(blob, "/soc/hdmi-mips-shutdown") < 0) {
++		printf("H713 V2 HDMI: boot FDT lacks the V2 HDMI resources; "
++		       "no handoff\n");
++		return 0;
++	}
++	handoff[0] = cpu_to_fdt32(H713_HDMI_LATCH);
++	handoff[1] = cpu_to_fdt32(0);
++	handoff[2] = cpu_to_fdt32(h713_v2_handoff_pid);
++	node = fdt_find_or_add_subnode(blob, 0, "chosen");
++	ret = node < 0 ? node : fdt_setprop(blob, node, "h713,hdmi-boot-v1",
++					     handoff, sizeof(handoff));
++	if (ret)
++		printf("H713 V2 HDMI: FDT handoff failed (%s); booting without "
++		       "it\n", fdt_strerror(ret));
++	else
++		printf("H713 V2 HDMI: handoff PID %08x in /chosen\n",
++		       h713_v2_handoff_pid);
++	return 0;
++}
++
+ static int do_h713_disp(struct cmd_tbl *cmdtp, int flag, int argc,
+ 			char *const argv[])
+ {
+@@ -11393,6 +11538,9 @@
+ 		return h713_disp_panel_off_early() ? CMD_RET_FAILURE :
+ 		       CMD_RET_SUCCESS;
+ 
++	if (argc == 2 && !strcmp(argv[1], "boot-v2"))
++		return h713_disp_v2_boot() ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
++
+ 	if (argc == 2 && !strcmp(argv[1], "hdmi-source-v2"))
+ 		return h713_disp_v2_hdmi_source() ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+ 
+@@ -11652,6 +11800,7 @@
+ 	   "h713_disp regscan [base] [words]    - find which registers move, and what they count\n"
+ 	   "h713_disp clkfind [index]           - list, or test ONE clock candidate (see docs)\n"
+ 	   "h713_disp commdev                   - read the firmware channel table\n"
++	   "h713_disp boot-v2                   - V2 normal boot: HDMI handoff once per power cycle, else logo\n"
+ 	   "h713_disp hdmi-source-v2            - select source 3 after a native V2 comm trace launch\n"
+ 	   "h713_disp fwmd <mips-va> [words]    - dump firmware memory (cache-safe)\n"
+ 	   "h713_disp commcall <id> [chan=<hex>] [pid=<hex>] [args..]\n"
+--- a/board/sunxi/board.c
++++ b/board/sunxi/board.c
+@@ -1069,6 +1069,10 @@
+ 	}
+ }
+ 
++#ifdef CONFIG_H713_MIPS_BOOT
++int h713_mips_ft_setup(void *blob);	/* arch/arm/mach-sunxi/h713_mips.c */
++#endif
++
+ int ft_board_setup(void *blob, struct bd_info *bd)
+ {
+ 	int __maybe_unused r;
+@@ -1083,6 +1087,9 @@
+ 
+ 	bluetooth_dt_fixup(blob);
+ 	board_dt_fixup(blob);
++#ifdef CONFIG_H713_MIPS_BOOT
++	h713_mips_ft_setup(blob);
++#endif
+ 
+ #ifdef CONFIG_VIDEO_DT_SIMPLEFB
+ 	r = sunxi_simplefb_setup(blob);
+--- a/configs/hy200_qz713_v2_defconfig
++++ b/configs/hy200_qz713_v2_defconfig
+@@ -30,7 +30,9 @@
+ CONFIG_DRAM_SUNXI_TPR13=0xb4036223
+ CONFIG_SUNXI_DRAM_H713_LPDDR3_STOCK=y
+ CONFIG_H713_MIPS_BOOT=y
+-# Show the native V2 boot logo on normal boots. Keep recovery modes dark.
++# Normal boots: once per power cycle (RTC GP6 latch) launch the display
++# firmware for HDMI input and hand source 3 to Linux; otherwise show the
++# native V2 boot logo. Keep recovery modes dark.
+ # No "usb start" either: U-Boot has no USB host on this board ("No USB
+ # controllers found"), only the gadget for fastboot/UMS, and CMD_USB goes
+ # with DISTRO_DEFAULTS.
+@@ -42,7 +44,7 @@
+ # board that never boots again (it happened once, 2026-11-20). PREBOOT runs
+ # before autoboot reads bootdelay, so resetting it here makes a saved value
+ # harmless; bootdelay is a build-time setting on this board.
+-CONFIG_PREBOOT="env default -f bootdelay; if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; else h713_disp auto 0x34 logo; fi"
++CONFIG_PREBOOT="env default -f bootdelay; if itest.l *0x0709011c == 0xfa57b007; then mw.l 0x0709011c 0; run fastboot_mode; elif itest.l *0x0709011c == 0xb007c0de; then mw.l 0x0709011c 0; setenv bootdelay -1; else h713_disp boot-v2; fi"
+ # A/B boot with Standard Boot's RAUC method (boot/bootmeth_rauc.c): slot A is
+ # boot_a (p5) + root_a (p9), slot B is boot_b (p6) + root_b (p16). It takes
+ # an attempt from the first slot in BOOT_ORDER with BOOT_<slot>_LEFT > 0, saves

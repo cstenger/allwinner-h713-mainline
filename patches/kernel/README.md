@@ -527,6 +527,17 @@ but the PHY stayed in peripheral and the port stayed routed to musb. The work
 now applies a pending `phy_set_mode()` in that case too. Found on the
 projector.
 
+**0218** gives the projector's tree the HDMI input resources the bench tree
+already carries: the 256 KiB CPU_COMM trace reservation at `0x4d980000`, the
+EDID clock/reset consumer, the PL10–PL15 DDC pin owner, TVCAP retention, the
+receiver's terminal MIPS parking node, and Audio Bridge/TVTOP disabled for the
+guarded drivers. Nothing binds them without U-Boot's
+`/chosen/h713,hdmi-boot-v1` handoff. The bench DTB is unchanged.
+
+**0219** enables the internal audio codec on the projector, as 0082 does on
+the bench board. Without it the V2 had no ALSA card for the speaker, so the
+HDMI speaker service could not start.
+
 `series` files may carry `#` comments and blank lines; `tools/build/build.sh`
 reads every series through `series_entries`, so hashing and applying see the
 same list.

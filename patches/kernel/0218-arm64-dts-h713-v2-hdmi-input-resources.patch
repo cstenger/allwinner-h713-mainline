@@ -1,0 +1,110 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] arm64: dts: h713: v2: describe the HDMI input resources
+
+The projector boots its HDMI input the way the bench board does: U-Boot
+starts the display firmware with the CPU_COMM trace, selects source 3,
+and hands the result to Linux in /chosen. Give the V2 the resources the
+receiver, signal owner and capture bridge take from that handoff, as the
+bench board's tree already does:
+
+- reserve U-Boot's 256 KiB CPU_COMM trace at 0x4d980000;
+- the EDID clock/reset consumer and the PL10-PL15 DDC pin owner;
+- keep the TVCAP power domain on from boot;
+- the receiver's terminal parking node, so a shutdown parks the MIPS
+  core before a warm reboot reaches U-Boot;
+- leave the Audio Bridge and TVTOP to the guarded HDMI drivers.
+
+The stock A1 and V2 vendor trees describe HDMI identically, and this
+tree matches the overlay that captured audio, video and panel output on
+the V2 over a FEL RAM boot (2026-11-22). Nothing binds these nodes
+unless the boot carries the handoff.
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts
+@@ -9,6 +9,78 @@
+ 	chosen {
+ 		bootargs = "console=ttyS0,115200 console=tty0 earlycon root=/dev/mmcblk0p26 rootwait rootfstype=ext4 net.ifnames=0 panic=5 clk_ignore_unused pd_ignore_unused hy310_board_mgr.no_rpm_shutdown=1 cma=128M";
+ 	};
++
++	reserved-memory {
++		/*
++		 * U-Boot's CPU_COMM RETURN trace (h713_disp, comm-trace). The
++		 * HDMI services read it to prove the boot's source 3 handoff.
++		 * After decoder@4d941000; below U-Boot's 0x4e000000 logo.
++		 */
++		hdmi_trace_reserved: hdmi-trace@4d980000 {
++			reg = <0x4d980000 0x40000>;
++			no-map;
++		};
++	};
++
++	h713-edid-clock-hold {
++		compatible = "h713-lab,edid-clock-hold";
++		clocks = <&r_ccu CLK_R_EDID>;
++		resets = <&r_ccu RST_R_EDID>;
++	};
++
++	/*
++	 * PL10-PL15 carry the three HDMI ports' DDC (s_twi0/1/2) to the
++	 * receiver's EDID slaves. Nothing binds this at boot, so the pins
++	 * stay in their reset state, I/O disabled; the HDMI signal owner's
++	 * helper binds it for the firmware lifetime ("default") and returns
++	 * the pins with "sleep" before it lets go.
++	 */
++	h713-ddc-pins {
++		compatible = "h713-lab,ddc-pins";
++		pinctrl-names = "default", "sleep";
++		pinctrl-0 = <&r_ddc0_pins>, <&r_ddc1_pins>, <&r_ddc2_pins>;
++		pinctrl-1 = <&r_ddc_disabled_pins>;
++	};
++};
++
++&r_pio {
++	r_ddc0_pins: r-ddc0-pins {
++		pins = "PL10", "PL11";
++		function = "s_twi0";
++	};
++
++	r_ddc1_pins: r-ddc1-pins {
++		pins = "PL12", "PL13";
++		function = "s_twi1";
++	};
++
++	r_ddc2_pins: r-ddc2-pins {
++		pins = "PL14", "PL15";
++		function = "s_twi2";
++	};
++
++	r_ddc_disabled_pins: r-ddc-disabled-pins {
++		pins = "PL10", "PL11", "PL12", "PL13", "PL14", "PL15";
++		function = "io_disabled";
++	};
++};
++
++&ppu {
++	allwinner,keep-tvcap-on;
++};
++
++&{/soc} {
++	/*
++	 * Terminal parking for the HDMI receiver: the MIPS core, debug and
++	 * config resets, and the two MIPS clocks the receiver holds. The
++	 * receiver asserts these at shutdown so a warm reboot starts U-Boot
++	 * with the display firmware parked.
++	 */
++	hdmi-mips-shutdown {
++		compatible = "h713,hdmi-mips-shutdown-bench";
++		resets = <&ccu 1>, <&ccu 2>, <&ccu 3>;
++		clocks = <&ccu 19>, <&ccu 20>;
++	};
+ };
+ 
+ /*
+@@ -25,3 +97,7 @@
+ 	dr_mode = "otg";
+ 	status = "okay";
+ };
++
++/* The HDMI receiver and capture drivers own these from the boot handoff. */
++&audio_bridge { status = "disabled"; };
++&tvtop { status = "disabled"; };

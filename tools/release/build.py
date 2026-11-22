@@ -244,8 +244,12 @@ def modules(kernel, work, env):
     return outputs
 
 
-def overlay(output, module_files, vendor, fit, dtb, board_calibration):
-    output.mkdir()
+def hdmi_payload(output, module_files, dsp, audio_delay_seconds):
+    """The HDMI runtime both boards ship: bundles, units, modules and DSP patch.
+
+    The boot handoff that starts it is board specific: the bench board's
+    startup script, or the projector's U-Boot (boot-v2).
+    """
     for bundle, sources in [('h713-hdmi', BACKEND), ('h713-hdmi-health', HEALTH),
                             ('h713-hdmi-video', VIDEO), ('h713-hdmi-speaker', SPEAKER)]:
         base = output/'usr/lib'/bundle
@@ -261,19 +265,25 @@ def overlay(output, module_files, vendor, fit, dtb, board_calibration):
     for kind in ('receiver', 'audio', 'signal', 'ddc'):
         copy(module_files[kind], output/'usr/lib/h713-hdmi'/module_files[kind].name)
     copy(module_files['video'], output/'usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko')
-    copy(vendor/'hdmi/hdmi-audio-dsp.bin', output/'usr/lib/h713-hdmi/firmware/h713/hdmi-audio-dsp.bin')
+    copy(dsp, output/'usr/lib/h713-hdmi/firmware/h713/hdmi-audio-dsp.bin')
     copy(ROOT/'tools/hdmi/71-h713-hdmi-in.rules', output/'etc/udev/rules.d/71-h713-hdmi-in.rules')
     copy(ROOT/'tools/hdmi/h713-hdmi-hold-guard', output/'usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard', 0o755)
+    defaults = output/'etc/default/h713-hdmi-speaker'
+    defaults.parent.mkdir(parents=True, exist_ok=True)
+    defaults.write_text('# Explicit per-board calibration supplied to the release build.\n'
+                        'H713_HDMI_AUDIO_DELAY_SEC='+audio_delay_seconds+'\n')
+
+
+def overlay(output, module_files, vendor, fit, dtb, board_calibration):
+    output.mkdir()
+    hdmi_payload(output, module_files, vendor/'hdmi/hdmi-audio-dsp.bin',
+                 board_calibration['hdmi_audio_delay_seconds'])
     startup = load_module(ROOT/'tools/hdmi/build-startup.py')
     text = startup.script(fit_size=fit.stat().st_size, fdt_size=dtb.stat().st_size)
     for bundle in ('h713-hdmi', 'h713-hdmi-health'):
         base = output/'usr/lib'/bundle
         (base/'h713-hdmi.cmd').write_text(text)
         (base/'h713-hdmi.scr').write_bytes(startup.legacy_image(text.encode()))
-    defaults = output/'etc/default/h713-hdmi-speaker'
-    defaults.parent.mkdir(parents=True, exist_ok=True)
-    defaults.write_text('# Explicit per-board calibration supplied to the release build.\n'
-                        'H713_HDMI_AUDIO_DELAY_SEC='+board_calibration['hdmi_audio_delay_seconds']+'\n')
     (output/'etc/h713-keystone.conf').write_text(''.join(key+'='+value+'\n' for key,value in board_calibration['keystone'].items()))
     release = output/'usr/share/h713-release'
     release.mkdir(parents=True)

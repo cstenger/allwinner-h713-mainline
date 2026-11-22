@@ -1,0 +1,22 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] arm64: dts: h713: v2: enable the internal audio codec
+
+The projector's speaker sits on the internal codec, as on the bench
+board (0082). The V2 tree left codec@2030000 disabled, so ALSA had no
+card, PipeWire had no sink, and the HDMI speaker service could not
+start. Enable it. A RAM copy of the V2 tree with only this change
+registered "H713 Audio Codec" and passed the speaker playback and pop
+tests on the projector (2026-11-21).
+
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h713-hy200-qz713-v2.dts
+@@ -98,6 +98,9 @@
+ 	status = "okay";
+ };
+ 
++/* The speaker is on the internal codec (bench board: 0082). */
++&codec { status = "okay"; };
++
+ /* The HDMI receiver and capture drivers own these from the boot handoff. */
+ &audio_bridge { status = "disabled"; };
+ &tvtop { status = "disabled"; };

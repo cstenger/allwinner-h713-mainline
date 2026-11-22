@@ -1234,6 +1234,113 @@ Evidence is under `build/v2-native-display/hdmi-slot-a/candidate/`:
 raw NV16 zstd-compressed; `run-7-nut` has the timestamps),
 `panel-route-b/`, and `panel-optical/`.
 
+#### V2 HDMI input at normal boot (2026-11-22)
+
+The FEL bench path is now the normal boot path. Four pieces are involved:
+
+- **Device tree (kernel 0218).** The V2 tree carries the HDMI resources the
+  bench tree already has: the trace reservation, the EDID clock hold, the
+  DDC pin owner, TVCAP retention, the receiver's MIPS parking node, and
+  the Audio Bridge and TVTOP left to the guarded drivers. It matches the
+  FEL test overlay apart from overlay label symbols.
+- **U-Boot (0019).** PREBOOT runs `h713_disp boot-v2` in place of the
+  logo-only sequence. It uses the bench board's RTC GP6 latch
+  (`0x07090118`). After power loss (0) or a boot whose HDMI start Linux
+  acknowledged (`HDOK`), U-Boot writes `HDMI` and verifies it. It then
+  runs the single firmware launch with the CPU_COMM trace, refreshes the
+  channel table, and selects source 3. Any other latch value, or a
+  running MIPS core, takes the existing logo-only path. A failure after
+  the latch is set resets the SoC, and the latch makes the next boot
+  logo-only. PREBOOT runs before `bootmeth_rauc`, so no slot attempt is
+  spent. `ft_board_setup()` publishes `/chosen/h713,hdmi-boot-v1` into
+  the slot's own FIT DTB, so `boot.scr` is unchanged. The PID never
+  enters the environment that `bootmeth_rauc` saves.
+- **Older slots.** While the trace is installed, the firmware keeps
+  writing its trace page. A slot tree without the 0218 reservation gets a
+  `/memreserve/` for `0x4d980000`–`0x4d9bffff` and no handoff, so its
+  HDMI services stay off.
+- **Root image.** `tools/hdmi/build-v2-overlay.py` builds the five HDMI
+  modules against the slot kernel. It assembles the same runtime the
+  bench release ships through `tools/release/build.py`'s
+  `hdmi_payload()`: session, signal owner, capture bridge, health ack,
+  speaker, hold guard, and udev rule. `tools/rootfs/build.sh
+  --release-overlay` installs it. The V2 needs no startup script. The
+  speaker delay is the bench board's 0.115 s until the V2 is measured.
+- **Codec (kernel 0219).** The V2 tree left `codec@2030000` disabled, so
+  the speaker service had no ALSA card and restarted indefinitely. 0219
+  enables it, which is the change the 2026-11-21 speaker test made in a RAM
+  copy of the tree.
+
+**Results.** All tests used the HDMI cable from the host GPU's
+`HDMI-A-1` port.
+
+1. **FEL, old slot A tree.** The RAM U-Boot set the latch, completed
+   source 3 (PID `8b8f261c`) and added the `/memreserve/` without a
+   handoff. Linux reserved `0x4d980000`–`0x4d9bffff` and RAUC kept A good.
+2. **Old installed U-Boot, new slot B.** The logo-only path ran (MIPS was
+   parked at entry even though the last boot had left it running). Every
+   HDMI unit skipped on its `ConditionPathExists`, and B was marked good.
+3. **FEL, slot B with 0219.** The handoff reached Linux. Prepare,
+   capture, signal, ring, readvertise, speaker and video were active, and
+   `check-startup.sh` passed. The health ack wrote `HDOK` and the system
+   state was `running`. Video locked 1280×720 on `/dev/h713-hdmi-in`. During a
+   host tone, the HDMI capture and the codec playback ran in step at 48 kHz
+   with zero xruns.
+4. **Installed U-Boot.** The 15 MiB region, SPL and boot0 were backed up
+   first (copy in `local/recovery/2026-11-22-v2-hdmi-uboot`). The new FIT
+   (976,384 bytes) was written to the primary at LBA `0x49ac00`, and the
+   whole region read back as expected. SPL, boot0 and the spare at
+   `0x4a0c00` were unchanged.
+5. **Warm reboots on the installed U-Boot (2).** Both took the HDMI path
+   with the latch at `HDOK`, published the handoff and acknowledged
+   again.
+6. **Cold boot.** After a power cut with serial and USB unplugged, GP6
+   read 0. U-Boot launched HDMI, video reached the panel at 12 s and
+   `check-startup.sh` passed. The operator saw the correct picture.
+
+Slot A keeps the pre-HDMI `2026.11.21.0842` image as the fallback. Slot B
+holds `2026.11.22.1048-40489d5a` (root `e7077fad…`).
+
+**Green stall seen again.** On the step 3 FEL boot the operator saw the
+bench board's green/magenta picture. It had the same four AFBD status
+words: `0x05600038=10`, `0x338=01000001`, `0x1cc=02cf0130` and
+`0x1fc=02cf04f0`, all 0 when healthy
+([closed A1 write-up](hdmi-first-advert-root-cause-2026-11-08.md)).
+A video service restart and a plane stop/start did not clear it, but a
+warm reboot did. It is not tied to an early video start: the next boot
+held video for a minute and the one after started it automatically, and
+both were clean, as was the cold boot. The first green-versus-good diff
+suggested the firmware had set up composition for another input format.
+Three healthy sweeps rule that out. The flagged composition words
+(`0x05000a2c`/`a34` and bit 3 of `0x05000a18`–`a20`) also change on a
+healthy boot. The firmware never writes them: it reads `a34 & 7` in a
+status poller, and `0x05000a00` is an interrupt-status page. Of the
+registers that are stable when healthy, the green state differs mainly in
+picture statistics. Two configuration-like differences have no direct
+firmware writer: `0x050c0c94` bit 30 (set when good) and `0x05040814`.
+A1's green boot captured correct NV12 frames, so the stall is on the
+display fetch side, where AFBD stops at line 719. Evidence is in
+`build/v2-hdmi-normal/green-stall/`.
+
+**Open items.**
+- **Firmware log level.** `h713-mips-elog-level` is not shipped on the
+  V2. The V2 handler words map 0x8e0 lower and the filter word maps to
+  `0x4b48bd9c` (all 18 A1 references agree). The firmware replies to
+  `elog -l 2` and `-l 0`, but that word stays at 1 in DRAM, so the level
+  cannot be verified. `mips-shell.py` carries the V2 pins.
+- **Release gate.** `verify_rootfs` rejects V2 images because they ship
+  the AV1 probe module. V2 kernels use the plain defconfig, not the
+  `production` fragment, and the existing V2 images ship it too.
+- **Shutdown hold guard.** The guard is inherited from the bench board.
+  If HDMI teardown fails, it turns a reboot into a poweroff. On the
+  sealed projector that needs a power-button press.
+- **Latch timing.** As on the bench board, a reboot before the health
+  ack (about 10 s into userspace) gives a logo-only boot. After a failed
+  start, HDMI stays off until power is removed.
+
+Evidence is under `build/v2-hdmi-normal/`: `fel-slot-a/`, `old-uboot-b/`,
+`fel-slot-b2/`, `uboot-install/`, `green-stall/`, and `cold-boot/`.
+
 #### USB port roles (2026-11-20)
 
 The V2 has one USB-A socket, SoC port 0. Its 5 V is hard-wired on, and it

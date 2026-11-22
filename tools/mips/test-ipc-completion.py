@@ -239,6 +239,18 @@ class ElogLevel(unittest.TestCase):
                 path.write_text(text)
                 with self.subTest(text=text): self.assertIs(m.hdmi_source_active(str(path)), active)
             self.assertFalse(m.hdmi_source_active(str(path) + '.missing'))
+    def test_native_v2_firmware_uses_its_own_pins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            compatible = Path(directory) / 'compatible'
+            compatible.write_bytes(b'cstenger,hy200-qz713-v2\0allwinner,sun50i-h713\0')
+            with patch.object(m, 'BOARD_COMPATIBLE', str(compatible)):
+                t = self.term()  # A1 firmware: nothing at the V2 handler addresses
+                t.mem.words.update({address: 0 for address, _ in m.V2_ELOG_HANDLER_WORDS})
+                with self.assertRaisesRegex(RuntimeError, 'pinned firmware'): self.run_set(t)
+                self.assertEqual(t.sent, [])
+                t = self.term(); t.mem.words = dict(m.V2_ELOG_HANDLER_WORDS)
+                with patch.object(m, 'ELOG_LEVEL_WORD', m.V2_ELOG_LEVEL_WORD):
+                    self.assertTrue(self.run_set(t)['verified'])
     def test_wrong_firmware_parked_busy_bad_filter_and_arguments_never_send(self):
         t = self.term(); t.mem.words[m.ELOG_HANDLER_WORDS[1][0]] ^= 1
         with self.assertRaisesRegex(RuntimeError, 'pinned firmware'): self.run_set(t)
