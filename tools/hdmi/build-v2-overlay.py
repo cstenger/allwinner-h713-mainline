@@ -30,9 +30,12 @@ DSP_SHA256 = '8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5'
 # The bench board's measured HDMI-to-speaker delay (2026-11-18). The V2 has
 # the same panel pipeline; replace it once the V2 is measured.
 DEFAULT_AUDIO_DELAY = '0.115'
-# Not shipped on the V2: the native firmware accepts `elog -l N` but its
-# filter word (0x4b48bd9c, mapped from the bench build) never changes in DRAM,
-# so the unit cannot verify the level and fails every boot (2026-11-22).
+# Not needed on the V2: it boots the vendor's display_cfg.xml (b3e6e8f6...),
+# whose elog_init_setting is mode 1 (async) level 1. The firmware's elog_init
+# stores that level at 0x4b48bd9c, which reads 1 live. The 2 MiB flush stall
+# the unit prevents needs buf mode (2) at level 5, the bench's own 2026-09-04
+# debugging edit (f97eec07). `elog -l 2` would raise the V2's level.
+# (2026-11-22, firmware 16c74a28 disassembly + live read on slot B.)
 V2_OMITTED_UNITS = ('h713-mips-elog-level.service',)
 
 

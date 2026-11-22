@@ -106,6 +106,13 @@ def analyze(samples, mode, seconds=7200):
         if not any(row['signal'] == 'locked 1280x720' for row in samples[last_loss+1:]):
             raise ValueError('source did not recover')
         stable = [row for row in samples[last_loss+1:] if row['signal'] == 'locked 1280x720']
+        # frames_produced restarts with the stream when udev starts the video
+        # unit again, a sample or so after the lock, so measure from the last
+        # restart (2026-11-22 V2 replug: 12439 locked-but-stale, then 281).
+        for i in range(len(stable) - 1, 0, -1):
+            if stable[i]['frames'] < stable[i-1]['frames']:
+                stable = stable[i:]
+                break
         if len(stable) < 2 or stable[-1]['uptime'] - stable[0]['uptime'] < 10 or stable[-1]['frames'] <= stable[0]['frames']:
             raise ValueError('insufficient recovered video evidence')
     return dict(result='PASS',mode=mode,boot_id=baseline['boot_id'],samples=len(samples),
