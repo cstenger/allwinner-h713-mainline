@@ -1404,8 +1404,9 @@ skips the table and `channel_pid` stays 0. HDMI does not depend on it
 (U-Boot selects the source, and Linux uses the MIPS shell ring). Any
 kernel CALL on the V2 would still be acknowledged and then never
 dispatched. The driver's `MIPS elog staying on Mode 1 (ring buffer)` line
-is an old label: in `display_cfg.xml`, mode 1 is async, and the driver
-reads A1 offsets.
+is an old label: in `display_cfg.xml`, mode 1 is async. Fixed by kernel
+0220 (see "V2 CPU_COMM channel discovery" below), which also found that
+0014's elog addresses were the V2 build's, not the A1's.
 
 **Slot A (kernel 0220) cold and warm boots: PASS.** The CPU_COMM session
 installed `2026.11.22.1229-4c5ff9c3-0220` into slot A (root `3e10f301…`,
@@ -1561,6 +1562,72 @@ the sequence and context. Evidence: `build/v2-boot-qualification/warm-unplugged/
 
 Still to run: a source-PC reboot with the board left on (it ends the Claude
 session on that PC).
+
+#### V2 CPU_COMM channel discovery (2026-11-22)
+
+**Problem.** Every V2 boot logged `cpu_comm: firmware reader self-test failed
+(00a08025 00809025, expect 03e00008 24020001)`. `cc_discover_channel()` (0014)
+pinned the A1 firmware: `getCurCPUID` at `0x8b1227b4` and the `pcpu_comm_dev`
+pointer at `0x8b22efe4`. The V2 runs its native `display.bin` (`16c74a28…`),
+which is the same source relinked, so `channel_pid` stayed 0. A kernel CALL
+would have been acknowledged and then never dispatched. HDMI was not
+affected, because U-Boot selects the source and Linux uses the MIPS shell ring.
+
+**Mapping, from code.** `tools/mips/map-fw-pins.py A1 V2 --cpu-comm` finds the
+code around every A1 reference in the V2 image. It masks only relocations, and
+it reads the address that the matching V2 instruction forms.
+
+| Pin | A1 (`4380f1b3`) | V2 (`16c74a28`) | Evidence |
+| --- | --- | --- | --- |
+| `getCurCPUID` (self-test) | `0x8b1227b4` | `0x8b122688` | all 40 `jal` sites map; body identical |
+| `pcpu_comm_dev` pointer | `0x8b22efe4` | `0x8b22f1f4` | 42 of 46 loads accepted, all agree (+0x210) |
+| channel walk at `dev + 0xa8` | `0x8b11e378` | `0x8b11e24c` | identical code |
+| elog mode byte | `0x8b48beaf` | `0x8b48be9b` | `elog -m` handler stores sync=0, async=1, buf=2 |
+| elog buf enable, write offset, ring | `…c2c1`, `…c2cc`, `0x8b28bdb0` | `…c2ad`, `…c2b8`, `0x8b28bd9c` | 2/2, 7/7, 2/2 refs (−0x14) |
+
+U-Boot 0018 already uses the same V2 reader and pointer. A correction to
+earlier notes, which said the driver's elog reads used A1 offsets: the elog
+addresses in 0014 were the **V2** build's,
+and on the A1 they read bytes 0x14 too low. That is why every A1 log shows
+`mode=0`, while the V2 correctly shows mode 1, as `display_cfg.xml` sets
+(0 sync, 1 async, 2 buf). The VP route IDs that 0014 registers start at the
+same addresses in both builds.
+
+**Kernel 0220.** cpu_comm keeps a table of both builds and picks the one
+whose code matches at three sites: `getCurCPUID`, a `lui/lw` pair loading the
+pointer, and the `lui/sb` pair in `elog -m sync`. Each pair must also form
+its table address. An unknown firmware is refused, so the self-test still
+guards the reads. The elog readout uses the same table, reports the mode by
+name and writes nothing.
+
+`tools/mips/test-cpu-comm-fw-identity.py` compiles the patched code against the
+images. A1 and V2 are recognised. Empty DRAM, the stock Android build
+(`22a7df11`) and four one-word corruptions are refused. The existing
+cpu_comm host tests still pass.
+
+**Install.** The 0220 tree differs from slot B's build only in
+`hy310-cpu-comm.ko`. The Image differs only in its 45-byte build timestamp, and
+System.map, the V2 DTB and the other 30 modules are identical. The bundle
+`2026.11.22.1229-4c5ff9c3-0220` therefore combines slot B's `boot.vfat`
+(unchanged, `d94e684f…`) with slot B's `rootfs.tar` carrying the new module.
+Extracting both EROFS roots shows that one file differs; the new root is
+`3e10f301…`. `rauc install` wrote slot A, replacing the 11-21 fallback, and
+slot B remains the qualified image.
+
+**Result (warm reboot into slot A, boot `109baa24`).**
+- The dmesg identity line names the V2 build (`getCurCPUID 0x8b122688`,
+  `dev_ptr 0x8b22f1f4`). Channel row 0 is live with chan 0, pid `0x8b8f261c`
+  and key `0xb8f261c0`, matching `/chosen/h713,hdmi-boot-v1` bytes 8–11.
+  The elog readout is mode 1 (async).
+- One read-only `THal_Vp_GetSource` CALL through `/dev/cpu_comm` returned
+  `nret=1 ret=0` in 10.7 ms. The driver logged the RETURN and sent
+  RETURN_ACK. Its handler always returns 0 (2026-08-31 handoff).
+- `check-startup.sh` passed before and after the CALL, with video locked at
+  1280×720. There were no failed units and no CPU_COMM timeout, desync or
+  quarantine. The slot A identity audit (`make-v2-runtime-audit.py
+  --slot A`) passed.
+
+Evidence is in `build/v2-cpucomm-0220/` (`before/`, `after/`, `rauc-install.log`).
 
 #### USB port roles (2026-11-20)
 

@@ -1,0 +1,412 @@
+From: Christopher Stenger <chris.h.stenger@gmail.com>
+Subject: [PATCH] soc: sunxi: cpu_comm: identify the display firmware before reading it
+
+Channel discovery pinned the A1 firmware (display.bin 4380f1b3...):
+getCurCPUID at 0x8b1227b4 as the reader self-test and the pcpu_comm_dev
+pointer at 0x8b22efe4. The V2 projector runs its native 16c74a28...,
+the same source relinked, where code sits 0x12c lower and that global
+0x210 higher. Every V2 boot failed the self-test (00a08025 00809025),
+left channel_pid 0, and any kernel CALL was ACKed and never dispatched.
+
+Keep a table of known builds and recognise the loaded one by its own
+code: getCurCPUID (still the reader self-test), a lui/lw pair loading
+the dev pointer, and the lui/sb pair in `elog -m sync` storing the elog
+mode byte. Each pair must also form its table address. A firmware that
+matches no entry is unknown and nothing is read from its data, so the
+self-test still refuses what it cannot vouch for. The V2 entries were
+mapped from A1 by matching the code around every reference
+(tools/mips/map-fw-pins.py): 40 getCurCPUID calls and 46 dev pointer
+loads, every accepted match agreeing, and the channel-table walk at
+dev + 0xa8 is identical in both.
+
+The probe-time elog readout had the opposite problem: its fixed
+addresses were the V2 build's, so on the A1 it read unrelated bytes
+(every bench log reads "mode=0 en2=0 wp2=0"). Take them from the
+same table, report the mode by its display_cfg.xml name (0 sync,
+1 async, 2 buf; the old "Mode 1 (ring buffer)" label was wrong), and
+drop the commented-out writes. Nothing is written to the firmware.
+
+The VP route IDs registered at probe start at the same addresses in
+both builds and are unchanged.
+
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm.h
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm.h
+@@ -593,6 +593,33 @@
+ bool cpu_comm_mips_running(void);
+ 
+ /*
++ * cpu_comm_proto.c — display firmware identity. A code site is two
++ * instruction words at a MIPS KSEG address.
++ */
++struct cc_fw_site {
++	u32 addr;
++	u32 w0, w1;
++};
++
++struct cc_fw_build {
++	const char *name;
++	u32 cpuid;			/* getCurCPUID */
++	struct cc_fw_site dev_ref;	/* loads dev_ptr */
++	u32 dev_ptr;			/* -> pcpu_comm_dev */
++	struct cc_fw_site elog_ref;	/* stores elog_mode */
++	u32 elog_mode;			/* u8: 0 sync, 1 async, 2 buf */
++	u32 elog_buf_en;		/* u8: buf-mode ring enabled */
++	u32 elog_buf_wp;		/* u32: ring write offset */
++	u32 elog_buf;			/* 2 MiB ring */
++};
++
++/* NULL when the loaded display firmware is not one we have mapped. */
++const struct cc_fw_build *cc_fw_identify(void);
++phys_addr_t cc_kseg_to_phys(u32 kseg);
++int  cc_fw_read(u32 kseg, u32 *out);
++int  cc_fw_readb(u32 kseg, u8 *out);
++
++/*
+  * Read the firmware's channel table and pick a live row to address CALLs
+  * to. Negative on failure, which is not fatal: the driver still loads,
+  * but CALLs are ACKed by the firmware and never dispatched.
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_dev.c
+@@ -1347,39 +1347,25 @@
+ 	init_intrsem(0);
+ 
+ 	/*
+-	 * MIPS elog intercept — switch MIPS firmware logging to Mode 2
+-	 * (2MB linear buffer) BEFORE we trigger MIPS to continue.
+-	 * This captures all MIPS logs from the moment it sees ARM READY.
+-	 *
+-	 * MIPS virtual → ARM physical: subtract 0x40000000
+-	 *   Mode flag:       MIPS 0x8B48BE9B → phys 0x4B48BE9B
+-	 *   Mode2 enable:    MIPS 0x8B48C2AD → phys 0x4B48C2AD
+-	 *   Mode2 write ptr: MIPS 0x8B48C2B8 → phys 0x4B48C2B8
+-	 *   Mode2 buffer:    MIPS 0x8B28BD9C → phys 0x4B28BD9C (2MB)
++	 * Report the firmware's elog settings as found. Nothing is changed:
++	 * display_cfg.xml chooses them. The addresses are build-specific
++	 * (see cc_fw_identify()); the pre-2026-11-22 fixed addresses were
++	 * the V2 build's and read unrelated bytes on the A1.
+ 	 */
+ 	{
+-		void __iomem *elog_ctl;
+-
+-		/* Map MIPS elog control region (flags + pointers) */
+-		elog_ctl = ioremap(0x4B48BE00, 0x500);
+-		if (elog_ctl) {
+-			u8 old_mode = readb(elog_ctl + 0x9B);  /* 0x4B48BE9B */
+-			u8 old_en2  = readb(elog_ctl + 0x4AD);  /* 0x4B48C2AD */
+-			u32 old_wp2 = readl(elog_ctl + 0x4B8); /* 0x4B48C2B8 */
+-
+-			pr_info("cpu_comm: MIPS elog BEFORE: mode=%u en2=%u wp2=%u\n",
+-				old_mode, old_en2, old_wp2);
+-
+-			/* Switch to Mode 2 (2MB linear buffer) */
+-			/* writeb(2, elog_ctl + 0x9B); -- keep Mode 1 ring buffer */   /* mode = 2 */
+-			/* writeb(1, elog_ctl + 0x4AD); */  /* mode2 enable = 1 */
+-			/* writel(0, elog_ctl + 0x4B8); */  /* mode2 write ptr = 0 */
+-
+-			pr_info("cpu_comm: MIPS elog staying on Mode 1 (ring buffer) (2MB buffer)\n");
+-			iounmap(elog_ctl);
+-		} else {
+-			pr_warn("cpu_comm: failed to ioremap MIPS elog control\n");
+-		}
++		static const char *const elog_modes[] = { "sync", "async", "buf" };
++		const struct cc_fw_build *fw =
++			cpu_comm_mips_running() ? cc_fw_identify() : NULL;
++		u8 mode, en;
++		u32 wp;
++
++		if (fw && !cc_fw_readb(fw->elog_mode, &mode) &&
++		    !cc_fw_readb(fw->elog_buf_en, &en) &&
++		    !cc_fw_read(fw->elog_buf_wp, &wp))
++			pr_info("cpu_comm: MIPS elog at probe: mode %u (%s), buf ring %s, write offset %u\n",
++				mode, mode < ARRAY_SIZE(elog_modes) ?
++				elog_modes[mode] : "?",
++				en ? "on" : "off", wp);
+ 	}
+ 
+ 	/* Initialize shared memory structures FIRST — before enabling
+@@ -1483,19 +1469,21 @@
+ 	 */
+ 	cc_discover_channel();
+ 
+-	/* Dump MIPS elog Mode 2 buffer */
++	/* Dump the start of the MIPS elog buf-mode ring */
+ 	{
+-		void __iomem *elog_ctl, *elog_buf;
+-		u32 wp2;
+-
+-		elog_ctl = ioremap(0x4B48BE00, 0x500);
+-		elog_buf = ioremap(0x4B28BD9C, 0x200000);
+-
+-		if (elog_ctl && elog_buf) {
+-			u8 cur_mode = readb(elog_ctl + 0x9B);
+-			wp2 = readl(elog_ctl + 0x4B8);
++		const struct cc_fw_build *fw =
++			cpu_comm_mips_running() ? cc_fw_identify() : NULL;
++		void __iomem *elog_buf = NULL;
++		u8 cur_mode = 0;
++		u32 wp2 = 0;
++
++		if (fw && !cc_fw_readb(fw->elog_mode, &cur_mode) &&
++		    !cc_fw_read(fw->elog_buf_wp, &wp2))
++			elog_buf = ioremap(cc_kseg_to_phys(fw->elog_buf),
++					   0x200000);
+ 
+-			pr_info("cpu_comm: MIPS elog AFTER: mode=%u wp2=%u\n",
++		if (elog_buf) {
++			pr_info("cpu_comm: MIPS elog after init: mode %u, write offset %u\n",
+ 				cur_mode, wp2);
+ 
+ 			if (wp2 > 0 && wp2 <= 0x200000) {
+@@ -1532,14 +1520,10 @@
+ 				}
+ 				pr_info("cpu_comm: === END MIPS ELOG ===\n");
+ 			} else {
+-				pr_info("cpu_comm: MIPS elog Mode 2 buffer empty (wp2=%u)\n", wp2);
++				pr_info("cpu_comm: MIPS elog buf ring empty (write offset %u)\n", wp2);
+ 			}
+-		}
+-
+-		if (elog_buf)
+ 			iounmap(elog_buf);
+-		if (elog_ctl)
+-			iounmap(elog_ctl);
++		}
+ 	}
+ 
+ 	/* Create proc entries */
+--- a/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
++++ b/drivers/soc/sunxi/cpu_comm/cpu_comm_proto.c
+@@ -22,7 +22,8 @@
+ /*
+  * Firmware channel to address CALLs to. Read a live row out of the
+  * channel table (U-Boot: `h713_disp commdev`; from Linux the table is at
+- * *(0x4b22efe4) + 0xa8, 16 rows of 48 bytes, key 0xffffffff = free).
++ * *(dev_ptr) + 0xa8, 16 rows of 48 bytes, key 0xffffffff = free, with
++ * dev_ptr taken from the identified firmware build below).
+  * Zero pid keeps the pre-existing behaviour.
+  */
+ static unsigned int cc_channel_pid;
+@@ -41,7 +42,7 @@
+  * The table is firmware-owned, so read it rather than be told about it.
+  *
+  * Layout, same as U-Boot's `h713_disp commdev`:
+- *   *(0x8b22efe4)          -> pcpu_comm_dev (a KSEG pointer)
++ *   *(dev_ptr)             -> pcpu_comm_dev (a KSEG pointer)
+  *   dev + 0xa8             -> 16 rows of 48 bytes
+  *   row +0x00 >> 16        -> chan
+  *   row +0x08              -> pid
+@@ -54,16 +55,64 @@
+  * ══════════════════════════════════════════════════════════════
+  */
+ 
+-#define CC_FW_DEV_PTR_MIPS	0x8b22efe4u
+-#define CC_FW_SELFTEST_MIPS	0x8b1227b4u	/* getCurCPUID: jr ra; li v0,1 */
+-#define CC_FW_SELFTEST_W0	0x03e00008u
+-#define CC_FW_SELFTEST_W1	0x24020001u
++#define CC_FW_SELFTEST_W0	0x03e00008u	/* getCurCPUID: jr ra */
++#define CC_FW_SELFTEST_W1	0x24020001u	/*              li v0,1 */
+ #define CC_FW_CHAN_OFF		0xa8u
+ #define CC_FW_CHAN_STRIDE	48u
+ #define CC_FW_CHAN_SLOTS	16u
+ #define CC_CHAN_FREE		0xffffffffu
+ 
+-static phys_addr_t cc_kseg_to_phys(u32 kseg)
++/*
++ * ══════════════════════════════════════════════════════════════
++ * Display firmware identity
++ *
++ * The A1 bench board runs display.bin 4380f1b3...; the V2 projector runs
++ * its native 16c74a28.... They are one source relinked: code slides by a
++ * few hundred bytes and data by a different amount, so every address this
++ * driver reads out of the firmware is build-specific. Each build below
++ * was mapped from A1 by matching the code that uses each address
++ * (tools/mips/map-fw-pins.py; every A1 reference agrees) and checked
++ * against the live V2.
++ *
++ * A build is recognised by the firmware's own code, not by the board:
++ *   cpuid    getCurCPUID, `jr ra; li v0,1` -- also the reader self-test
++ *   dev_ref  `lui v0,0x8b23; lw a0,lo(v0)` loading the dev_ptr global
++ *   elog_ref `lui v0,0x8b49; sb zero,lo(v0)`, `elog -m sync` storing the
++ *            elog mode byte
++ * All three must hold, and each ref must form its own global. A firmware
++ * that matches no entry is unknown: nothing is read from its data.
++ *
++ * elog (display_cfg.xml elog_init_setting): mode 0 sync, 1 async, 2 buf.
++ * Only buf mode fills the 2 MiB ring at elog_buf: buf_en gates it and
++ * buf_wp is the write offset, wrapping to 0 at 2 MiB.
++ * ══════════════════════════════════════════════════════════════
++ */
++static const struct cc_fw_build cc_fw_builds[] = {
++	{
++		.name		= "A1 display.bin 4380f1b3",
++		.cpuid		= 0x8b1227b4,
++		.dev_ref	= { 0x8b11e7a0, 0x3c028b23, 0x8c44efe4 },
++		.dev_ptr	= 0x8b22efe4,
++		.elog_ref	= { 0x8b151c7c, 0x3c028b49, 0xa040beaf },
++		.elog_mode	= 0x8b48beaf,
++		.elog_buf_en	= 0x8b48c2c1,
++		.elog_buf_wp	= 0x8b48c2cc,
++		.elog_buf	= 0x8b28bdb0,
++	},
++	{
++		.name		= "V2 display.bin 16c74a28",
++		.cpuid		= 0x8b122688,
++		.dev_ref	= { 0x8b11e674, 0x3c028b23, 0x8c44f1f4 },
++		.dev_ptr	= 0x8b22f1f4,
++		.elog_ref	= { 0x8b15139c, 0x3c028b49, 0xa040be9b },
++		.elog_mode	= 0x8b48be9b,
++		.elog_buf_en	= 0x8b48c2ad,
++		.elog_buf_wp	= 0x8b48c2b8,
++		.elog_buf	= 0x8b28bd9c,
++	},
++};
++
++phys_addr_t cc_kseg_to_phys(u32 kseg)
+ {
+ 	return (phys_addr_t)(kseg & 0x1fffffff) + 0x40000000;
+ }
+@@ -74,7 +123,7 @@
+ }
+ 
+ /* Read one u32 of firmware memory named by its MIPS KSEG address. */
+-static int cc_fw_read(u32 kseg, u32 *out)
++int cc_fw_read(u32 kseg, u32 *out)
+ {
+ 	void __iomem *p = ioremap(cc_kseg_to_phys(kseg), sizeof(u32));
+ 
+@@ -85,10 +134,105 @@
+ 	return 0;
+ }
+ 
++int cc_fw_readb(u32 kseg, u8 *out)
++{
++	u32 w;
++	int ret = cc_fw_read(kseg & ~3u, &w);
++
++	if (!ret)
++		*out = w >> (8 * (kseg & 3));
++	return ret;
++}
++
++/* The address `lui rX,hi; <op> rY,lo(rX)` forms. */
++static u32 cc_fw_pair_addr(u32 lui, u32 op)
++{
++	return (lui << 16) + (u32)(s32)(s16)(op & 0xffff);
++}
++
++static bool cc_fw_site_matches(const struct cc_fw_site *s, u32 global)
++{
++	u32 w0, w1;
++
++	if (cc_fw_pair_addr(s->w0, s->w1) != global)
++		return false;	/* table typo: the site must form its own global */
++	if (cc_fw_read(s->addr, &w0) || cc_fw_read(s->addr + 4, &w1))
++		return false;
++	return w0 == s->w0 && w1 == s->w1;
++}
++
++static bool cc_fw_build_matches(const struct cc_fw_build *b)
++{
++	u32 w0, w1;
++
++	if (cc_fw_read(b->cpuid, &w0) || cc_fw_read(b->cpuid + 4, &w1))
++		return false;
++	return w0 == CC_FW_SELFTEST_W0 && w1 == CC_FW_SELFTEST_W1 &&
++	       cc_fw_site_matches(&b->dev_ref, b->dev_ptr) &&
++	       cc_fw_site_matches(&b->elog_ref, b->elog_mode);
++}
++
++/*
++ * Which display firmware is loaded, or NULL if none we know. Firmware
++ * code does not change after U-Boot loads it, so a match is cached; a
++ * miss is not, because an unloaded image can become loaded later. A miss
++ * is reported once.
++ */
++const struct cc_fw_build *cc_fw_identify(void)
++{
++	static const struct cc_fw_build *known;
++	static bool reported;
++	const struct cc_fw_build *hit = NULL;
++	unsigned int i;
++
++	if (known)
++		return known;
++
++	for (i = 0; i < ARRAY_SIZE(cc_fw_builds); i++) {
++		if (!cc_fw_build_matches(&cc_fw_builds[i]))
++			continue;
++		if (hit) {
++			pr_err("cpu_comm: display firmware matches both %s and %s -- treating it as unknown\n",
++			       hit->name, cc_fw_builds[i].name);
++			return NULL;
++		}
++		hit = &cc_fw_builds[i];
++	}
++
++	if (!hit && reported)
++		return NULL;
++	if (!hit) {
++		/*
++		 * The reader self-test, per known build. If no getCurCPUID
++		 * reads back, the KSEG mapping is wrong or no image is loaded;
++		 * if one does but its refs do not, the build is new.
++		 */
++		for (i = 0; i < ARRAY_SIZE(cc_fw_builds); i++) {
++			const struct cc_fw_build *b = &cc_fw_builds[i];
++			u32 w0 = 0, w1 = 0;
++
++			cc_fw_read(b->cpuid, &w0);
++			cc_fw_read(b->cpuid + 4, &w1);
++			pr_err("cpu_comm: firmware reader self-test (%s) @0x%08x: %08x %08x, expect %08x %08x\n",
++			       b->name, b->cpuid, w0, w1,
++			       CC_FW_SELFTEST_W0, CC_FW_SELFTEST_W1);
++		}
++		pr_err("cpu_comm: unknown display firmware -- not reading its data\n");
++		reported = true;
++		return NULL;
++	}
++
++	pr_info("cpu_comm: display firmware is %s (getCurCPUID 0x%08x, dev_ptr 0x%08x)\n",
++		hit->name, hit->cpuid, hit->dev_ptr);
++	known = hit;
++	return known;
++}
++
+ int cc_discover_channel(void)
+ {
++	const struct cc_fw_build *fw;
+ 	void __iomem *tbl;
+-	u32 w0, w1, dev;
++	u32 dev;
+ 	unsigned int i;
+ 	int found = -1;
+ 
+@@ -104,20 +248,18 @@
+ 	}
+ 
+ 	/*
+-	 * Prove the reader before trusting anything it returns. These two
+-	 * words are getCurCPUID and are known byte for byte; if they do not
+-	 * match, the KSEG mapping is wrong and every row below is noise.
++	 * Prove the reader before trusting anything it returns. The
++	 * identity check includes getCurCPUID, known byte for byte; if no
++	 * build matches, the KSEG mapping is wrong or the firmware is one
++	 * whose dev_ptr we do not know, and every row below would be noise.
+ 	 */
+-	if (cc_fw_read(CC_FW_SELFTEST_MIPS, &w0) ||
+-	    cc_fw_read(CC_FW_SELFTEST_MIPS + 4, &w1))
+-		return -EIO;
+-	if (w0 != CC_FW_SELFTEST_W0 || w1 != CC_FW_SELFTEST_W1) {
+-		pr_err("cpu_comm: firmware reader self-test failed (%08x %08x, expect %08x %08x) — not reading the channel table\n",
+-		       w0, w1, CC_FW_SELFTEST_W0, CC_FW_SELFTEST_W1);
++	fw = cc_fw_identify();
++	if (!fw) {
++		pr_err("cpu_comm: not reading the channel table\n");
+ 		return -EIO;
+ 	}
+ 
+-	if (cc_fw_read(CC_FW_DEV_PTR_MIPS, &dev))
++	if (cc_fw_read(fw->dev_ptr, &dev))
+ 		return -EIO;
+ 	if (!cc_kseg_valid(dev)) {
+ 		pr_err("cpu_comm: pcpu_comm_dev 0x%08x is not a KSEG address\n",
