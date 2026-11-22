@@ -243,7 +243,7 @@ with zero attempts. The measured cut used the observed `BOOT_ORDER=A`.
 2. A temporary `fw_setenv` wrapper held the pending `BOOT_ORDER=A B` write
    after RAUC had saved `BOOT_A_LEFT=3`. At the cut, `BOOT_ORDER=B` still
    selected only B. The test interrupted activation between two environment
-   saves. Testing a cut inside either save remains open.
+   saves. The next test covers an incomplete `BOOT_ORDER` save.
 3. On power-up, U-Boot selected B without intervention. Both full B partition
    hashes matched their pre-cut values, and RAUC marked B good. A's retry
    counter was still three, but A stayed out of the boot order and RAUC
@@ -258,6 +258,32 @@ with zero attempts. The measured cut used the observed `BOOT_ORDER=A`.
 Local evidence is under `build/rauc-activation-cut-test/` in
 `held-activation.log`, `cold-recovery-uart.log`, `baseline-b.log`,
 `recovery-b.log`, `retry-install.log`, and `retry-boot-check.log`.
+
+### Power cut inside the BOOT_ORDER save (2026-11-21)
+
+1. Started from known-good A and hashed all four slot partitions. RAUC
+   verified and reinstalled the signed health-gate bundle into B. Direct
+   read-back of both B images matched the bundle before the cut.
+2. A temporary interposer scoped to RAUC's final
+   `fw_setenv BOOT_ORDER 'B A'` call wrote and flushed the first 512 bytes
+   of the 64 KiB replacement environment at offset `0x800000` in
+   `empty`, then paused before the remainder. Direct eMMC read-back
+   confirmed that the partially written copy failed CRC validation and
+   the untouched copy at `0x810000` still had a valid CRC and
+   `BOOT_ORDER=A`. The operator cut projector power at that point.
+3. On power-up, passive UART recorded U-Boot reading the redundant copy
+   successfully and booting A without console input. RAUC marked A good.
+   Both raw environment copies passed CRC validation after boot and held
+   `BOOT_ORDER=A`. Full-partition SHA-256 hashes for both slots matched
+   the pre-test baseline. Restored the normal `BOOT_ORDER=A B` with
+   three attempts per slot.
+
+The cut landed between writes inside the instrumented save. It verified
+recovery from a CRC-invalid environment copy with a real power loss.
+Power loss while an eMMC command is in flight remains untested.
+Local evidence is under `build/rauc-environment-save-cut-test/` in
+`paused-readback.log`, `precut-crc.log`, `recovery-uart.log`,
+`recovery-crc.log`, `recovery.log`, and `final-state.log`.
 
 ### Unattended fallback with B's FIT missing (2026-11-21)
 
@@ -412,8 +438,9 @@ Local evidence is under `build/rauc-usb-health-gate-test/` in
 
 ## Remaining validation
 
-- For storage qualification, test cuts during active eMMC I/O and inside an
-  individual redundant environment save.
+- For storage qualification, test cuts during active eMMC I/O. The
+  environment-save test cut power with a partially written copy already
+  on eMMC.
 - Define any additional product-service health checks required before
   mark-good. The current gate covers USB port-role initialization.
 - Establish release signing, version-floor and key-rotation policy. Test
