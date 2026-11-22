@@ -443,7 +443,9 @@ local/h713-lab/captures/board-a/board-a-mmcblk0-20261118.img` gives
    launch and logo. Run the `display.bin` option (a) and (b) test from
    Phase 0.7 here: one cold boot each, comparing the MIPS state and the logo.
    See the [V2 RAM-only FEL display test](#v2-ram-only-fel-display-test-2026-11-21)
-   for the first visible-output result.
+   for the first visible-output result and the
+   [native V2 firmware follow-up](#native-v2-display-firmware-over-fel-2026-11-21)
+   for the timing comparison.
 3. Then the production stack: startup/health scripts, video planes,
    letterbox/mirror, VE decode matrix (AV1 at PLL_VE ≤ 432 MHz). The DRAM
    bandwidth differs, so rerun the eMMC 0206/0207 loaded-read bench. It is
@@ -805,15 +807,49 @@ need it extended once Stage 2 is proven by hand.
    installed SPL and U-Boot region and for `boot_a`, `root_a`, `boot_b`,
    and `root_b`. The final boot order was `A B` with three tries per slot.
 
-This verifies visible output on the V2 with the bench asset set. The V2's
-native `display.bin` has a different length and hash. The current loader
-expects the bench firmware's length. Native firmware, automatic lamp
-sequencing, and the Linux display handoff still need validation.
+This verifies visible output on the V2 with the bench asset set. At the
+time of this test the loader accepted only the bench firmware revision.
 
 Local evidence is under `build/v2-display-bringup/fel-panel-test/` in
 `pattern-fel-load.log`, `framebuffer-verify.log`, `pattern.log`,
 `optical-observation.md`, `pattern-return-a-uart.log`, and
 `pattern-after.log`.
+
+### Native V2 display firmware over FEL (2026-11-21)
+
+The loader selects the firmware length, SHA-256 digest, and guarded
+initialization patch by board compatible. For V2 project `0x34`, it reads
+the stock assets from `mmc 1:2` and checks the native register table before
+using it. The native V2 `display.bin` was 1,256,216 bytes with SHA-256
+`16c74a28187f342de657828fab65145b140ac9411c40cccc02eed25047472ee9`.
+The RAM-only U-Boot candidate ran with autoboot disabled.
+
+| Timing used with native V2 firmware | FEL result |
+|---|---|
+| Native V2 timing, with the corrected table boundary | The firmware reported application readiness, the raster counter advanced, and the committed 1280×720 framebuffer had CRC32 `e906064c`. The lamp was on and the operator saw a black screen. |
+| A1 timing block 6, staged in RAM | The operator saw a recognizable boot logo. The loader kept the native V2 firmware, configuration, project data, prologue, display engine records, and bitmap. |
+
+The final candidate makes the second case an explicit bench option.
+Stage the 648-byte block at offset `0x1654` in the A1 `LogoRegData.bin`
+at address `0x60000000` over FEL. Set `h713_v2_a1_timing=yes` in the
+RAM environment and run `h713_disp auto 0x34 logo`. The loader verifies the
+staged block's SHA-256 before using it. The final run confirmed the
+override, firmware readiness, the same framebuffer CRC32, and advancing
+scanout. Lamp and brightness were controlled manually. The timing change
+responsible for the black screen, automatic lamp sequencing, and the
+Linux display handoff remain open.
+
+After panel teardown, the projector booted normally from the installed
+bootloader into slot A and RAUC marked it good. SHA-256 read-back matched
+the pre-test baseline for SPL, the installed U-Boot region, and all four
+slot partitions (`boot_a`, `root_a`, `boot_b`, and `root_b`). Boot order
+was `A B` with three tries per slot.
+
+Local evidence is under `build/v2-native-display/` in
+`corrected-native-panel.log`, `corrected-native-scanout.log`,
+`timing-panel.log`, `final-fel-load.log`, `final-panel.log`,
+`final-scanout.log`, `final-return-a-uart.log`, `baseline.log`,
+`after.log`, and `after-mark-good.log`.
 
 ### Phase 5: the remaining hardware
 

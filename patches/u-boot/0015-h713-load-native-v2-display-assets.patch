@@ -1,0 +1,391 @@
+Subject: sunxi: H713: support the native V2 display assets
+
+Select the firmware length, digest and guarded HDMI initialization
+timeout site from the board's device tree. Pin V2's native fastlogo
+table and use its project 0x34 ranges. Keep the A1 diagnostic patches
+scoped to their original firmware revision.
+
+Declare the V2 panel supply and reset in U-Boot's control tree so the
+manual display sequence can drive them.
+
+For FEL testing, the operator can stage the 648-byte timing block 6
+(offset 0x1654 in the A1 LogoRegData.bin) at 0x60000000 and set
+h713_v2_a1_timing=yes before running h713_disp auto 0x34 logo. Only
+substitute the block after its digest matches. This keeps the native V2
+firmware, project data, prologue, and DE block in use.
+
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -12,6 +12,7 @@
+ #include <bmp_layout.h>
+ #include <console.h>
+ #include <cpu_func.h>
++#include <env.h>
+ #include <fs.h>
+ #include <linux/delay.h>
+ #include <time.h>
+@@ -27,7 +28,8 @@
+ #include <u-boot/sha256.h>
+ 
+ #define H713_MIPS_FW_ADDR		0x4b100000UL
+-#define H713_MIPS_FW_SIZE		0x00132910UL
++#define H713_MIPS_A1_FW_SIZE		0x00132910UL
++#define H713_MIPS_V2_FW_SIZE		0x00132b18UL
+ #define H713_MIPS_FW_WINDOW_SIZE	0x00500000UL
+ #define H713_MIPS_BSS_START		0x4b232c00UL
+ #define H713_MIPS_BSS_END		0x4bac7c40UL
+@@ -151,12 +153,7 @@
+ #define H713_TVCAP_HDMI_AUDIO_CLK_REG	0x02001d84UL
+ #define H713_TVCAP_BGR_REG		0x02001d88UL
+ 
+-/*
+- * The board's own display.bin, read from its stock bootloader partition. An
+- * earlier pin (16c74a28..., 0x132b18 bytes) came from a different firmware
+- * revision in a captured dump and does not match this hardware; every run
+- * against it was executing a mismatched image.
+- */
++/* Stock display.bin from the HY200 QZ713DF A1 bootloader partition. */
+ static const u8 h713_mips_fw_sha256[SHA256_SUM_LEN] = {
+ 	0x43, 0x80, 0xf1, 0xb3, 0xed, 0x7b, 0x62, 0xaa,
+ 	0x50, 0x58, 0x2e, 0x7c, 0xb1, 0x6a, 0x87, 0xbd,
+@@ -164,6 +161,23 @@
+ 	0x63, 0x1a, 0x41, 0x63, 0x54, 0xda, 0x30, 0xce,
+ };
+ 
++static const u8 h713_mips_v2_sha256[SHA256_SUM_LEN] = {
++	0x16, 0xc7, 0x4a, 0x28, 0x18, 0x7f, 0x34, 0x2d,
++	0xe6, 0x57, 0x82, 0x8f, 0xab, 0x65, 0x14, 0x5b,
++	0x14, 0x0a, 0xc9, 0x41, 0x1c, 0x40, 0xcc, 0xcc,
++	0x02, 0xee, 0xd2, 0x50, 0x47, 0x47, 0x2e, 0xe9,
++};
++
++static bool h713_display_v2(void)
++{
++	return ofnode_device_is_compatible(ofnode_root(), "cstenger,hy200-qz713-v2");
++}
++
++static ulong h713_mips_fw_size(void)
++{
++	return h713_display_v2() ? H713_MIPS_V2_FW_SIZE : H713_MIPS_A1_FW_SIZE;
++}
++
+ /* Board-B bootloader_a/bootlogo.bmp from the 2026-07-05 full-board dump. */
+ static const u8 h713_vendor_bootlogo_sha256[SHA256_SUM_LEN] = {
+ 	0xe8, 0x12, 0xcd, 0x92, 0x8c, 0x67, 0xb8, 0x96,
+@@ -2689,7 +2703,7 @@
+  */
+ static void h713_mips_clear_workspace(void)
+ {
+-	ulong tail = H713_MIPS_FW_ADDR + H713_MIPS_FW_SIZE;
++	ulong tail = H713_MIPS_FW_ADDR + h713_mips_fw_size();
+ 
+ 	memset((void *)tail, 0, H713_MIPS_CFG_ADDR - tail);
+ 	memset((void *)H713_MIPS_FB_ADDR, 0, H713_MIPS_FB_SIZE);
+@@ -3554,16 +3568,18 @@
+ 
+ static int h713_mips_verify(void)
+ {
++	const u8 *expected = h713_display_v2() ? h713_mips_v2_sha256 :
++					    h713_mips_fw_sha256;
+ 	u8 digest[SHA256_SUM_LEN];
+ 
+-	sha256_csum_wd((const u8 *)H713_MIPS_FW_ADDR, H713_MIPS_FW_SIZE,
++	sha256_csum_wd((const u8 *)H713_MIPS_FW_ADDR, h713_mips_fw_size(),
+ 		       digest, CHUNKSZ_SHA256);
+ 
+ 	printf("H713 MIPS: display.bin SHA-256 ");
+ 	h713_mips_print_digest(digest);
+ 	printf("\n");
+ 
+-	if (memcmp(digest, h713_mips_fw_sha256, sizeof(digest))) {
++	if (memcmp(digest, expected, sizeof(digest))) {
+ 		printf("H713 MIPS: firmware identity rejected\n");
+ 		return -EPERM;
+ 	}
+@@ -3591,9 +3607,9 @@
+ 		return ret;
+ 	}
+ 
+-	if (file_size != H713_MIPS_FW_SIZE) {
++	if (file_size != h713_mips_fw_size()) {
+ 		printf("H713 MIPS: rejected size 0x%llx (expected 0x%lx)\n",
+-		       file_size, H713_MIPS_FW_SIZE);
++		       file_size, h713_mips_fw_size());
+ 		return -EINVAL;
+ 	}
+ 
+@@ -3640,8 +3656,8 @@
+ 	 * tail. Match the filesystem load path so BSS/heap never inherit stale
+ 	 * DRAM from an earlier boot.
+ 	 */
+-	memset((void *)(H713_MIPS_FW_ADDR + H713_MIPS_FW_SIZE), 0,
+-	       H713_MIPS_FW_WINDOW_SIZE - H713_MIPS_FW_SIZE);
++	memset((void *)(H713_MIPS_FW_ADDR + h713_mips_fw_size()), 0,
++	       H713_MIPS_FW_WINDOW_SIZE - h713_mips_fw_size());
+ 	flush_cache(H713_MIPS_FW_ADDR, H713_MIPS_FW_WINDOW_SIZE);
+ 
+ 	/*
+@@ -3713,6 +3729,7 @@
+  * writing, so a wrong offset reports rather than corrupting the firmware.
+  */
+ #define H713_MIPS_HDCP_WAIT_INSN	0x4b13d6f8UL
++#define H713_MIPS_V2_HDCP_WAIT_INSN	0x4b13d0a4UL
+ #define H713_MIPS_HDCP_WAIT_ORIG	0x2c630033
+ #define H713_MIPS_HDCP_WAIT_NONE	0x2c630000
+ 
+@@ -3733,15 +3750,22 @@
+ 	    (stability && comm_trace))
+ 		return -EINVAL;
+ 
++	if (h713_display_v2() && (trace || stability || comm_trace)) {
++		printf("H713 MIPS: these patch tables are for A1 firmware\n");
++		return -EOPNOTSUPP;
++	}
++
+ 	if (skip_hdcp_wait) {
+-		u32 insn = readl(H713_MIPS_HDCP_WAIT_INSN);
++		ulong addr = h713_display_v2() ? H713_MIPS_V2_HDCP_WAIT_INSN :
++						H713_MIPS_HDCP_WAIT_INSN;
++		u32 insn = readl(addr);
+ 
+ 		if (insn != H713_MIPS_HDCP_WAIT_ORIG) {
+ 			printf("H713 MIPS: HDCP wait site is 0x%08x, expected 0x%08x\n",
+ 			       insn, H713_MIPS_HDCP_WAIT_ORIG);
+ 			return -EINVAL;
+ 		}
+-		writel(H713_MIPS_HDCP_WAIT_NONE, H713_MIPS_HDCP_WAIT_INSN);
++		writel(H713_MIPS_HDCP_WAIT_NONE, addr);
+ 		printf("H713 MIPS: HDCP key-load wait defeated\n");
+ 	}
+ 
+@@ -3957,6 +3981,10 @@
+ 		h713_mips_stop();
+ 		return ret;
+ 	}
++	if (h713_display_v2()) {
++		printf("H713 MIPS: legacy probe uses A1 firmware patch sites\n");
++		return -EOPNOTSUPP;
++	}
+ 
+ 	h713_mips_clear_workspace();
+ 	h713_mips_seed_witness();
+@@ -4703,7 +4731,40 @@
+ #define H713_DISP_DESC_SIZE	0x18
+ #define H713_DISP_HDR_TABLE_LEN	8
+ 
+-struct h713_disp_sel { u32 project, prologue, timing, de; };
++#define H713_V2_LOGOREG_SIZE		0x382c
++#define H713_V2_A1_TIMING_ADDR		0x60000000UL
++#define H713_V2_A1_TIMING_SIZE		0x288
++#define H713_V2_A1_TIMING_OFFSET	0x4000
++
++static const u8 h713_v2_logoreg_sha256[SHA256_SUM_LEN] = {
++	0x15, 0x4e, 0x31, 0xe9, 0xd6, 0x22, 0x41, 0x08,
++	0x1c, 0xa8, 0xc5, 0x35, 0xd9, 0x52, 0x64, 0x56,
++	0x95, 0xf4, 0xeb, 0x67, 0x69, 0x66, 0x2b, 0x0f,
++	0x41, 0xa1, 0xf4, 0xaf, 0x20, 0x65, 0xb9, 0x0e,
++};
++
++/* A1 LogoRegData timing block 6, staged by the operator in RAM. */
++static const u8 h713_v2_a1_timing_sha256[SHA256_SUM_LEN] = {
++	0x43, 0x36, 0x00, 0x13, 0xb9, 0xb1, 0xa7, 0xf8,
++	0x62, 0x6b, 0xbf, 0xea, 0xc1, 0x71, 0x74, 0xf2,
++	0x90, 0x7d, 0xd9, 0x65, 0x2a, 0x29, 0xcf, 0xd1,
++	0x4b, 0xd6, 0xd5, 0xb9, 0xba, 0xb1, 0x14, 0x4a,
++};
++
++static const struct h713_disp_block h713_disp_v2_a1_timing = {
++	H713_V2_A1_TIMING_OFFSET,
++	H713_V2_A1_TIMING_OFFSET + H713_V2_A1_TIMING_SIZE,
++};
++
++/* Native V2 LogoRegData revision 24-6-3-82, project 0x34. */
++static const struct h713_disp_block h713_disp_v2_blocks[] = {
++	{ 0x072c, 0x0a04 }, { 0x15d4, 0x180c }, { 0x34ac, 0x382c },
++};
++
++struct h713_disp_sel {
++	u32 project, prologue, timing, de;
++	const struct h713_disp_block *blocks[3];
++};
+ 
+ /*
+  * Descriptor count is in the header, not fixed: this board's file carries 15
+@@ -4742,6 +4803,19 @@
+ 		sel->timing   = w3 >> 16;
+ 		sel->de       = w4 & 0xffff;
+ 
++		if (h713_display_v2()) {
++			if (project != 0x34 || sel->prologue != 3 ||
++			    sel->timing != 6 || sel->de != 6) {
++				printf("H713 disp: unsupported V2 table selection\n");
++				return -EINVAL;
++			}
++			for (int j = 0; j < ARRAY_SIZE(sel->blocks); j++)
++				sel->blocks[j] = &h713_disp_v2_blocks[j];
++			if (env_get_yesno("h713_v2_a1_timing") == 1)
++				sel->blocks[1] = &h713_disp_v2_a1_timing;
++			return 0;
++		}
++
+ 		if (!sel->prologue ||
+ 		    sel->prologue > ARRAY_SIZE(h713_disp_prologue) ||
+ 		    sel->timing >= ARRAY_SIZE(h713_disp_timing) ||
+@@ -4751,6 +4825,9 @@
+ 			       sel->timing, sel->de);
+ 			return -EINVAL;
+ 		}
++		sel->blocks[0] = &h713_disp_prologue[sel->prologue - 1];
++		sel->blocks[1] = &h713_disp_timing[sel->timing];
++		sel->blocks[2] = &h713_disp_de[sel->de];
+ 		return 0;
+ 	}
+ 
+@@ -5274,19 +5351,14 @@
+ 		 */
+ 		{ 0x0528008c,  0, 0xffff, 0 },
+ 	};
+-	const struct h713_disp_block *ranges[] = {
+-		&h713_disp_prologue[sel->prologue - 1],
+-		&h713_disp_timing[sel->timing],
+-		&h713_disp_de[sel->de],
+-	};
+ 	int patched = 0, guarded = 0;
+ 	uint i, r;
+ 
+-	for (r = 0; r < ARRAY_SIZE(ranges); r++) {
++	for (r = 0; r < ARRAY_SIZE(sel->blocks); r++) {
+ 		ulong off;
+ 
+-		for (off = ranges[r]->start;
+-		     off + sizeof(struct h713_logo_rec) <= ranges[r]->end; ) {
++		for (off = sel->blocks[r]->start;
++		     off + sizeof(struct h713_logo_rec) <= sel->blocks[r]->end; ) {
+ 			struct h713_logo_rec rec;
+ 
+ 			rec.addr = readl(blob + off);
+@@ -5801,20 +5873,20 @@
+ 			return ret;
+ 	}
+ 
+-	ret = h713_logo_walk(blob, h713_disp_prologue[sel.prologue - 1].start,
+-			     h713_disp_prologue[sel.prologue - 1].end, true);
++	ret = h713_logo_walk(blob, sel.blocks[0]->start,
++			     sel.blocks[0]->end, true);
+ 	if (ret)
+ 		return ret;
+-	ret = h713_logo_walk(blob, h713_disp_timing[sel.timing].start,
+-			     h713_disp_timing[sel.timing].end, true);
++	ret = h713_logo_walk(blob, sel.blocks[1]->start,
++			     sel.blocks[1]->end, true);
+ 	if (ret)
+ 		return ret;
+ 
+ 	h713_disp_fifo_reset();
+ 	writel(H713_DISPLAY_MIXER_CTRL_VALUE, H713_DISPLAY_MIXER_CTRL_REG);
+ 
+-	ret = h713_logo_walk(blob, h713_disp_de[sel.de].start,
+-			     h713_disp_de[sel.de].end, true);
++	ret = h713_logo_walk(blob, sel.blocks[2]->start,
++			     sel.blocks[2]->end, true);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -6128,9 +6200,9 @@
+ 	ret = h713_disp_read("mips/display.bin", H713_MIPS_FW_ADDR, &len);
+ 	if (ret)
+ 		return ret;
+-	if (len != H713_MIPS_FW_SIZE) {
++	if (len != h713_mips_fw_size()) {
+ 		printf("H713 disp: display.bin is %llu bytes, expected 0x%lx\n",
+-		       len, H713_MIPS_FW_SIZE);
++		       len, h713_mips_fw_size());
+ 		return -EINVAL;
+ 	}
+ 
+@@ -6155,6 +6227,34 @@
+ 	ret = h713_disp_read("mips/LogoRegData.bin", H713_DISP_LOGO_ADDR, &len);
+ 	if (ret)
+ 		return ret;
++	if (h713_display_v2()) {
++		u8 digest[SHA256_SUM_LEN];
++
++		if (len != H713_V2_LOGOREG_SIZE)
++			return -EINVAL;
++		sha256_csum_wd((const u8 *)H713_DISP_LOGO_ADDR, len, digest,
++			       CHUNKSZ_SHA256);
++		if (memcmp(digest, h713_v2_logoreg_sha256, sizeof(digest))) {
++			printf("H713 disp: V2 logo register table identity rejected\n");
++			return -EPERM;
++		}
++		printf("H713 disp: native V2 logo register table verified\n");
++
++		if (env_get_yesno("h713_v2_a1_timing") == 1) {
++			const void *timing = (const void *)H713_V2_A1_TIMING_ADDR;
++
++			sha256_csum_wd(timing, H713_V2_A1_TIMING_SIZE, digest,
++				       CHUNKSZ_SHA256);
++			if (memcmp(digest, h713_v2_a1_timing_sha256,
++				   sizeof(digest))) {
++				printf("H713 disp: staged A1 timing identity rejected\n");
++				return -EPERM;
++			}
++			memcpy((void *)(H713_DISP_LOGO_ADDR + H713_V2_A1_TIMING_OFFSET),
++			       timing, H713_V2_A1_TIMING_SIZE);
++			printf("H713 disp: using the verified A1 timing block from RAM\n");
++		}
++	}
+ 
+ 	return 0;
+ }
+@@ -9167,8 +9267,8 @@
+ 	/* Stock writes the mixer control ahead of the DE table; keep parity. */
+ 	writel(H713_DISPLAY_MIXER_CTRL_VALUE, H713_DISPLAY_MIXER_CTRL_REG);
+ 
+-	ret = h713_logo_walk(blob, h713_disp_de[sel.de].start,
+-			     h713_disp_de[sel.de].end, true);
++	ret = h713_logo_walk(blob, sel.blocks[2]->start,
++			     sel.blocks[2]->end, true);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -11358,6 +11458,10 @@
+ 	if (argc == 4 && strcmp(argv[3], "nowait"))
+ 		return CMD_RET_USAGE;
+ 
++	if (h713_display_v2()) {
++		printf("H713 disp: use the V2 file loader to verify the register table\n");
++		return CMD_RET_FAILURE;
++	}
+ 	blob = hextoul(argv[1], NULL);
+ 
+ 	return h713_disp_run(blob, hextoul(argv[2], NULL), argc == 4, false,
+--- a/arch/arm/dts/sun50i-h713-hy200-qz713-v2-u-boot.dtsi
++++ b/arch/arm/dts/sun50i-h713-hy200-qz713-v2-u-boot.dtsi
+@@ -1,8 +1,17 @@
+ // SPDX-License-Identifier: GPL-2.0+
+ 
++#include <dt-bindings/gpio/gpio.h>
+ #include "sun50i-h713-u-boot.dtsi"
+ 
+ / {
++	reg_panel_v2: regulator-panel {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc-panel";
++		gpio = <&pio 7 19 GPIO_ACTIVE_HIGH>;	/* PH19 */
++		enable-active-high;
++		off-on-delay-us = <250000>;
++	};
++
+ 	/*
+ 	 * Standard Boot: boot only from the eMMC (mmc1) and only through the
+ 	 * RAUC A/B method. Declaring a bootmeth here binds just that one,
+@@ -17,3 +26,8 @@
+ 		};
+ 	};
+ };
++
++&display {
++	power-supply = <&reg_panel_v2>;
++	panel-reset-gpios = <&pio 7 16 GPIO_ACTIVE_LOW>;	/* PH16 */
++};
