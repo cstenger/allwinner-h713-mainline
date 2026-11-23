@@ -1,0 +1,259 @@
+Subject: sunxi: H713: delay V2 panel power until HDMI timing is latched
+
+Keep the V2 panel supply off and reset held during LVDS setup and the
+MIPS launch. Wait for the HDMI source transition, latch 720p again and
+verify the panel is still off before running the existing power-on
+sequence. Enable the lamp after panel power-up.
+
+Three HDMI-connected warm FEL trials showed the boot logo, including
+one started by Linux shutdown and two by U-Boot teardown. Normal warm
+reboot qualification remains pending.
+
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -5106,16 +5106,20 @@
+ 	return 0;
+ }
+ 
+-/* The early off state is still in force: MIPS parked, reset held, supply off. */
+-static bool h713_disp_panel_still_off(void)
++static bool h713_disp_panel_rail_off(void)
+ {
+ 	struct udevice *supply;
+ 
+-	return readl(H713_MIPS_STATUS_REG) == 0 &&
+-	       dm_gpio_get_value(&h713_panel_reset) == 1 &&
++	return dm_gpio_get_value(&h713_panel_reset) == 1 &&
+ 	       !h713_panel_supply(&supply) && regulator_get_enable(supply) == 0;
+ }
+ 
++/* The early off state is still in force: MIPS parked, reset held, supply off. */
++static bool h713_disp_panel_still_off(void)
++{
++	return readl(H713_MIPS_STATUS_REG) == 0 && h713_disp_panel_rail_off();
++}
++
+ static int h713_disp_panel_off_early(void)
+ {
+ 	u32 hold_us;
+@@ -5876,9 +5880,15 @@
+ 	       readl(H713_DISP_LAYER_XOFF_REG));
+ }
+ 
++enum h713_panel_power {
++	H713_PANEL_KEEP_POWER,
++	H713_PANEL_STOCK_POWER,
++	H713_PANEL_DEFER_POWER,
++};
++
+ static int h713_disp_run(ulong blob, u32 project, bool skip_hdcp_wait,
+ 			 bool prove_ready, bool trace, bool stability,
+-			 bool comm_trace, bool stock_panel_power,
++			 bool comm_trace, enum h713_panel_power panel_power,
+ 			 bool release_mips)
+ {
+ 	struct h713_disp_sel sel;
+@@ -5906,7 +5916,7 @@
+ 		return ret;
+ 
+ 	/* The trace/source relaunch intentionally keeps the panel powered. */
+-	if (stock_panel_power) {
++	if (panel_power != H713_PANEL_KEEP_POWER) {
+ 		ret = h713_disp_panel_initial_off();
+ 		if (ret)
+ 			return ret;
+@@ -5929,14 +5939,14 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	if (stock_panel_power) {
++	if (panel_power == H713_PANEL_STOCK_POWER) {
+ 		ret = h713_disp_stock_panel_power();
+ 		if (ret)
+ 			return ret;
+ 	}
+ 
+ 	h713_disp_clocks();
+-	if (stock_panel_power)
++	if (panel_power == H713_PANEL_STOCK_POWER)
+ 		h713_panel_print_power("after display clocks");
+ 
+ 	writel(1, 0x06940000);			/* INCAP */
+@@ -5961,7 +5971,7 @@
+ 
+ 	if (h713_disp_single_launch_logo) {
+ 		if (!release_mips || !prove_ready || !comm_trace ||
+-		    !stock_panel_power)
++		    panel_power == H713_PANEL_KEEP_POWER)
+ 			return -EINVAL;
+ 		ret = h713_disp_publish_vendor_bootlogo(true, false);
+ 		if (ret)
+@@ -10563,7 +10573,7 @@
+ 		return h713_disp_fail(ret);
+ 
+ 	ret = h713_disp_run(H713_DISP_LOGO_ADDR, project, true, true, false,
+-			    false, false, true, release_mips);
++			    false, false, H713_PANEL_STOCK_POWER, release_mips);
+ 	if (ret)
+ 		return h713_disp_fail(ret);
+ 
+@@ -10653,7 +10663,7 @@
+ 		h713_disp_fill_pattern(0);
+ 	}
+ 	ret = h713_disp_run(H713_DISP_LOGO_ADDR, project, true, true, false,
+-			    false, false, true, release_mips);
++			    false, false, H713_PANEL_STOCK_POWER, release_mips);
+ 	if (ret)
+ 		return h713_disp_fail(ret);
+ 
+@@ -10969,7 +10979,7 @@
+ 	h713_cfg_set(H713_CFG_OFF_ELOG_LEVEL, '0' + level, "elog level");
+ 
+ 	ret = h713_disp_run(H713_DISP_LOGO_ADDR, project, false, false, false,
+-			    false, false, false, true);
++			    false, false, H713_PANEL_KEEP_POWER, true);
+ 	if (ret)
+ 		return h713_disp_fail(ret);
+ 
+@@ -11039,9 +11049,9 @@
+ 	if (ret)
+ 		return h713_disp_fail(ret);
+ 
+-	/* Panel powered (stock_panel_power=true), MIPS released. */
++	/* Use the stock panel power sequence and release the MIPS. */
+ 	ret = h713_disp_run(H713_DISP_LOGO_ADDR, project, true, true, false,
+-			    false, false, true, true);
++			    false, false, H713_PANEL_STOCK_POWER, true);
+ 	if (ret)
+ 		return h713_disp_fail(ret);
+ 
+@@ -11119,16 +11129,16 @@
+ }
+ 
+ /*
+- * Production single launch: one cold firmware instance from panel power-up to
+- * the Linux handoff. Panel power/reset sequencing, the HDCP wait override,
+- * the CPU_COMM RETURN trace, readiness proof and the authenticated vendor logo
+- * are the same as the former `auto <id> logo` + `mips-comm-trace <id>` pair;
+- * the first instance's quiesce/DE-replay and the second firmware/asset reload
+- * are gone. The core is deliberately left running for the caller's source
+- * selection. The firmware rewrites TCON timing during its startup, so 720p is
+- * latched here and must be latched again after every later source change.
++ * Launch one firmware instance with the HDCP wait override, CPU_COMM RETURN
++ * trace, readiness proof and authenticated vendor logo. Leave the core
++ * running for source selection. The firmware rewrites TCON timing during
++ * startup, so latch 720p here and again after each later source change.
++ *
++ * Normal V2 HDMI startup holds the panel off through source selection.
++ * The explicit single-launch logo command uses the stock power sequence.
+  */
+-static int h713_disp_auto_logo_single(u32 project)
++static int h713_disp_auto_logo_single(u32 project,
++				     enum h713_panel_power panel_power)
+ {
+ 	int ret;
+ 
+@@ -11142,7 +11152,7 @@
+ 
+ 	h713_disp_single_launch_logo = true;
+ 	ret = h713_disp_run(H713_DISP_LOGO_ADDR, project, true, true, false,
+-			    false, true, true, true);
++			    false, true, panel_power, true);
+ 	h713_disp_single_launch_logo = false;
+ 	if (ret)
+ 		return h713_disp_fail(ret);
+@@ -11172,10 +11182,10 @@
+ 
+ /*
+  * Select source 3 after a native V2 comm-trace single launch and verify the
+- * asynchronous transition. On success, record the PID for the kernel FDT
+- * (h713_mips_ft_setup) and light the panel.
++ * asynchronous transition. Latch 720p before powering a deferred panel.
++ * Then light the lamp and record the PID for the kernel FDT.
+  */
+-static int h713_disp_v2_select_source(u32 *pid_out)
++static int h713_disp_v2_select_source(u32 *pid_out, bool power_panel)
+ {
+ 	ulong trace = H713_MIPS_COMM_TRACE_ADDR;
+ 	ulong dev, table;
+@@ -11238,6 +11248,17 @@
+ 		return -EIO;
+ 
+ 	h713_disp_latch_panel_timing();
++	if (power_panel) {
++		if (!h713_disp_panel_rail_off()) {
++			printf("H713 V2 HDMI: panel off state lost before power-up\n");
++			return -EIO;
++		}
++		printf("H713 V2 HDMI: source 3 selected and 720p latched; "
++		       "powering panel\n");
++		ret = h713_disp_stock_panel_power();
++		if (ret)
++			return ret;
++	}
+ 	ret = h713_disp_backlight_set(75);
+ 	if (ret)
+ 		return ret;
+@@ -11260,7 +11281,7 @@
+ 
+ 	if (env_get("h713_v2_hdmi_pid") && env_set("h713_v2_hdmi_pid", NULL))
+ 		return -EIO;
+-	ret = h713_disp_v2_select_source(&pid);
++	ret = h713_disp_v2_select_source(&pid, false);
+ 	if (ret)
+ 		return ret;
+ 	return env_set_hex("h713_v2_hdmi_pid", pid);
+@@ -11307,11 +11328,11 @@
+ 
+ 	/* PB5 also runs the fan: low only for the launch and source switch. */
+ 	h713_disp_v2_lamp_set(false);
+-	ret = h713_disp_auto_logo_single(0x34);
++	ret = h713_disp_auto_logo_single(0x34, H713_PANEL_DEFER_POWER);
+ 	if (!ret)
+ 		ret = h713_disp_comm_dev();
+ 	if (!ret)
+-		ret = h713_disp_v2_select_source(&pid);
++		ret = h713_disp_v2_select_source(&pid, true);
+ 	if (!ret)
+ 		return 0;
+ 
+@@ -11701,7 +11722,8 @@
+ 		if (h713_disp_load(project))
+ 			return CMD_RET_FAILURE;
+ 		ret = h713_disp_run(H713_DISP_LOGO_ADDR, project, true, true,
+-				    trace, stability, comm_trace, false, true);
++				    trace, stability, comm_trace,
++			    H713_PANEL_KEEP_POWER, true);
+ 		printf("H713 disp: MIPS test complete; power-cycle before "
+ 		       "another MIPS run\n");
+ 		return ret ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+@@ -11754,7 +11776,8 @@
+ 		if (comm) {
+ 			if (nowait || logo_file)
+ 				return CMD_RET_USAGE;
+-			return h713_disp_auto_logo_single(project) ?
++			return h713_disp_auto_logo_single(project,
++						 H713_PANEL_STOCK_POWER) ?
+ 			       CMD_RET_FAILURE : CMD_RET_SUCCESS;
+ 		}
+ 
+@@ -11766,7 +11789,8 @@
+ 		if (h713_disp_load(project))
+ 			return CMD_RET_FAILURE;
+ 		return h713_disp_run(H713_DISP_LOGO_ADDR, project, nowait,
+-				     false, false, false, false, false, true) ?
++				     false, false, false, false,
++				     H713_PANEL_KEEP_POWER, true) ?
+ 		       CMD_RET_FAILURE : CMD_RET_SUCCESS;
+ 	}
+ 
+@@ -11787,7 +11811,8 @@
+ 	blob = hextoul(argv[1], NULL);
+ 
+ 	return h713_disp_run(blob, hextoul(argv[2], NULL), argc == 4, false,
+-			     false, false, false, false, true) ?
++			     false, false, false, H713_PANEL_KEEP_POWER,
++		     true) ?
+ 	       CMD_RET_FAILURE : CMD_RET_SUCCESS;
+ }
+ 
