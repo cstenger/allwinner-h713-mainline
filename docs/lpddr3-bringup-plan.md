@@ -1596,9 +1596,31 @@ Results on slot B, with the operator confirming the glass each time:
 serial console. The evidence is the glass. Evidence:
 `build/v2-panel-0221/`.
 
+**0221 is necessary but not sufficient (same day).** The same bundle was
+installed in slot A (`root_a`/`boot_a` blkdiscarded, both read back
+equal), with `BOOT_ORDER=A B`. Warm reboots **with HDMI connected** from a
+0221 slot came up black 2 of 2 (`615aa675`, then `5de2b3ed`, the second
+after the live PH19 cycle had restored the desktop). A serial capture
+(`build/v2-panel-0221/serial-reboot-1/`, console at `dmesg -n 8`) shows
+the whole sequence running. 0184 logs `panel powered down: supply off,
+reset line 0, PHY 18000000/00000030, route 40000000` 13 ms before `reboot:
+Restarting system`. U-Boot then logs `initial supply off… 3000000 us`,
+`restarted PLL during native V2 timing`, `FIFO status 0x00000002; reset
+applied`, the 550 ms pre-delay and `supply on, reset released`, then the
+logo, the single launch, and source 3 with 720p latched twice. On a
+watched repeat (`serial-reboot-2/`) the operator saw the panel **never
+light**: no logo. So the latch forms at U-Boot's panel power-up, after a
+correct power-down and a 3 s off hold.
+
+**Lead:** the native V2 timing block needed 0016's single PLL enable pulse
+(`0x058c0014` bit 31) to show anything. That was chosen from one fresh FEL
+boot. On the same V2, the A1 timing block 6 and the full A1 PLL startup
+sequence both gave a logo. The panel is physically the bench's. Handoff:
+`docs/handoff-2026-11-22-v2-panel-latch-for-chatgpt.md`.
+
 Still to do:
-- Install 0221 in slot A too: a fallback boot into A would lose the ordered
-  power-down.
+- Find the power-up step that latches the panel (see the handoff), and fix
+  it.
 - A source-PC reboot with the board left on (it ends the Claude session on
   that PC).
 
