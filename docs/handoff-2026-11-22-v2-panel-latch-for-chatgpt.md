@@ -242,9 +242,12 @@ delay values to import.
 
 1. Boot testing: slot B passed a baseline, 5 warm reboots and a 4 h soak;
    slot A passed 3 cold and 5 warm, a replug, and a no-source boot. Those
-   were digital checks without glass. Continue the optical qualification above.
-   Still to do: a source-PC reboot with the board left on. It kills a
-   Claude session running on that PC, so run board-side work detached.
+   were digital checks without glass. The optical qualification above
+   is complete. A source-PC reboot with the board left on passed once
+   (2026-11-22): one drop, then a 720p lock 0.7 s after host nvidia-drm
+   loaded, and the desktop came back with no cable touch. Evidence is in
+   `local/recovery/2026-11-22-v2-host-reboot/`. That reboot kills a Claude
+   session running on the PC, so run board-side work detached in `/run`.
 2. Green stall: 1 in 18+ boots. `0x050c0c94` bit 30 and `0x05040814` toggle
    on healthy warm boots, so they are not markers.
 3. Firmware log level: closed. The V2 runs the vendor's `mode 1 level 1`.

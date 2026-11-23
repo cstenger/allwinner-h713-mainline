@@ -1649,9 +1649,23 @@ SPI1 were inactive over the sampled instrumented 0022 and 0021 startup
 windows. No black boot was captured in those runs.
 
 See [the current handoff](handoff-2026-11-22-v2-panel-latch-for-chatgpt.md)
-for per-boot optical results, evidence paths and a plan if black recurs. A source-PC reboot with the board left on is
-still pending. Run board-side collection detached if rebooting the PC
-would terminate the session.
+for per-boot optical results, evidence paths and a plan if black recurs.
+
+**Source-PC reboot with the board left on: PASS (2026-11-22, one run).**
+The board stayed on cold boot `249c4de1` while the NVIDIA host
+rebooted (host boot `55859037`). A detached transient unit
+(`h713-v2-host-reboot`, script and log in `/run`) sampled HDMI every 5 s.
+The board saw one drop: `signal none` 8 s after the host journal ended.
+The video unit stopped by design, and the signal owner sent one HPD
+pulse 10 s later, during host firmware. `signal locked 1280x720 (source
+change)` came 0.7 s after host nvidia-drm loaded, about 18 s after the
+drop, and the video unit restarted. The greeter and login caused no
+further drop. `regression-observer.py recovery` PASS (101 samples, 515 s,
+counters 0, no board reboot), with 0 unit restarts and no failed units.
+Chris saw the desktop come back with the cable untouched. The A1's
+first-advert miss after an NVIDIA host boot did not occur, and this run
+cannot tell whether the HPD pulse helped. Evidence:
+`local/recovery/2026-11-22-v2-host-reboot/`.
 
 #### V2 CPU_COMM channel discovery (2026-11-22)
 
