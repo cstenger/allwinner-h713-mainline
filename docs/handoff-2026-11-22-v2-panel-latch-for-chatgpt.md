@@ -1,9 +1,30 @@
 # Handoff: V2 projector panel stays black after some warm boots
 
-2026-11-22, from Claude to ChatGPT. Read this, then the "V2 boot
-qualification" section of `docs/lpddr3-bringup-plan.md`, which has the full
-evidence trail. Main is at the commit that adds this file. Nothing is
-pushed.
+Updated 2026-11-22 for Claude. Read this first, then the **V2 boot
+qualification** section of `docs/lpddr3-bringup-plan.md` for the earlier
+evidence and bring-up context. The latest production change on `main` is
+`244194ba` (U-Boot 0022). No pushes were made.
+
+## Current state and next step
+
+- The eMMC primary at LBA `0x49ac00` runs production **U-Boot 0022**, which
+  includes 0020 and 0021. The 0021 and 0022 installs were individually authorized.
+  Each guarded install backed up the previous primary and verified the payload and
+  surrounding region after writing. The 0022 record, rollback and readback are in
+  `local/recovery/2026-11-22-v2-uboot-0022.EZo6qV/`.
+- Both RAUC slots retain `2026.11.22.2314-1f15ffa6-0221`, with
+  `BOOT_ORDER=A B`. Last Linux boot was `5e44e0e1` on slot A, with the desktop
+  visible. The projector is now at the **RAM U-Boot prompt** after LVDS-quiet
+  trial 3. Chris saw the lamp come on and the logo. HDMI, FEL USB and UART
+  were connected for the trial. The diagnostic image never wrote eMMC.
+- **Provisionally mitigated by 0022.** Keep it installed. Continue qualification
+  on normal boots with HDMI connected. A practical target is ten observed
+  warm reboots total (seven more) and one genuine cold boot on 0022. Record
+  lamp, logo and desktop separately. Start only when Chris is at the glass
+  and authorizes the test. First return from the RAM prompt to installed
+  0022 and Linux. Count qualification reboots only from Linux, so each
+  exercises the kernel's ordered shutdown. Keep the LVDS-quiet and SPI
+  builds as diagnostics.
 
 ## The bug in one paragraph
 
@@ -17,7 +38,7 @@ physically the same part the A1 bench board used. This is the A1's October
 2026 "lit but black" latch-up (`docs/panel-investigation-history/README.md`,
 `docs/uboot-panel-initial-state.md`) on a different board.
 
-## What is proven (operator confirmed the glass at every step)
+## Baseline before U-Boot 0021 (operator observations)
 
 | Observation | Result |
 | --- | --- |
@@ -33,89 +54,143 @@ physically the same part the A1 bench board used. This is the A1's October
 | Warm reboot with HDMI connected, **with** 0221 | **black 2 of 2** |
 | Watched warm reboot with 0221 (serial captured) | **panel never lit, no logo** |
 
-Registers cannot tell black from good: the only differences are read-only
-status words (DETN `0x050c0894/8ac/914/918/92c/930` = 0 and
-`0x05140614` bit 0 = 0 when black). Trust the glass, not register diffs.
+The captured black/working diffs yielded two read-only status clues. DETN
+`0x050c0894/8ac/914/918/92c/930` and `0x05140614` bit 0 read zero on the
+black boot. Their value as failure markers remains unverified across boots.
+The optical result decides whether a boot passed.
 
-## What was done
+## Changes and optical results
 
-- **Kernel 0221** (`1f15ffa6`): the V2 tree now describes `vcc-panel` on
-  **PH19**, `panel-reset-gpios` on **PH16** and `backlight = <&lamp>`, as
-  0183 does for the bench. That makes 0184's ordered power-down at shutdown
-  run. Serial proves it runs: `panel powered down: supply off, reset line 0,
-  PHY 18000000/00000030, route 40000000` just before `reboot: Restarting
-  system`. It is correct and should stay, **but it is not sufficient.**
-- **U-Boot 0020**: the V2 `-u-boot.dtsi` uses the kernel's `reg_panel`
-  with `/delete-property/ regulator-boot-on`, as the bench's does. A V2
-  build was checked. It is **not installed**, and the installed U-Boot
-  behaves identically.
-- Both RAUC slots hold bundle `2026.11.22.2314-1f15ffa6-0221`
-  (`build/v2-panel-0221/h713-v2-panel-0221.raucb`; root `3e10f301…` with
-  kernel 0220's cpu_comm fix, boot `058f681b…`). `BOOT_ORDER=A B`. The
-  board was last left on boot `f3e4b1f9` (slot A), black. A power cycle
-  or the PH19 cycle restores it.
+- **Kernel 0221** (`1f15ffa6`) describes the V2 panel supply on **PH19**,
+  active-low **PH16** reset and the lamp. It enables the existing 0184
+  shutdown sequence. UART confirms the panel is quieted and powered down
+  before the restart. That ran even on black boots. Keep it.
+- **U-Boot 0020** removes `regulator-boot-on` from the V2 U-Boot panel
+  supply description. **0021** (`713d9731`) replaces 0016's single PLL pulse
+  with the A1 PLL startup while retaining V2 timing/routing. A1 block 6
+  and native V2 timing evidence are under `build/v2-native-display/`.
+- **U-Boot 0022** (`244194ba`) keeps PH19 off and PH16 asserted while the
+  LVDS setup and MIPS launch run. It waits for the asynchronous HDMI source
+  3 transition, latches final 720p, then runs the existing 550 ms pre-power
+  delay, enables PH19, waits 2 ms before releasing PH16, waits the existing
+  5 ms and 20 ms, and enables the lamp. With earlier U-Boot, the panel was
+  already awake when MIPS started and changed source. 0022 changes both
+  the order and elapsed panel-off time.
 
-## Where it latches: U-Boot's warm panel power-up
+All trials below had HDMI connected. A FEL boot ends at the U-Boot prompt.
+The normal boots reach Linux and are the closest match to the original
+failure. The operator confirmed each optical result.
 
-Serial on a black boot (`build/v2-panel-0221/serial-reboot-2/serial.txt`),
-in order:
+| Build | Boot path | Observations |
+| --- | --- | --- |
+| Single-pulse control | Warm FEL | Logo 2/2 |
+| A1 PLL candidate for 0021 | Warm FEL | Logo 3/3 |
+| Installed 0021 | Normal warm from slot A | Logo and desktop 2/3. Trial 3 (`6ac287a1`) had lamp on, no logo and black glass. Live ordered PH19 cycle restored the desktop on that boot. |
+| Delayed-power candidate for 0022 | Warm FEL | Logo 3/3 |
+| Installed 0022 | Normal warm from slot A | Desktop 3/3 (`86c98c25`, `a85a4db2`, `5e44e0e1`). Logo confirmed on trials 1 and 3. |
+| Instrumented 0022 and 0021 | Warm FEL | Logo 1/1 and 3/3 respectively. Instrumented 0021 did not reproduce black. |
+| 0022 with LVDS held quiet during panel power-up | Warm FEL | Lamp and logo 3/3. All five off-state checkpoints and restoration passed each time. |
 
-```
-panel powered down: supply off, reset line 0 ...      (kernel 0184)
-reboot: Restarting system
-H713 panel: initial supply off, reset held; waiting 3000000 us   (U-Boot 0001)
-H713 disp: restarted PLL during native V2 timing                  (U-Boot 0016)
-H713 disp: FIFO status 0x00000002; reset applied
-H713 panel: stock power pre-delay 550 ms
-H713 panel: stock power phase complete: supply on, reset released
-H713 panel: after display clocks: supply on, reset released
-... logo committed, single MIPS launch, 720p latched, source 3, 720p latched
-```
+Evidence is in `build/v2-panel-fel-pll-trial/`,
+`build/v2-panel-late-power-trial/`, and the optical records under
+`local/recovery/2026-11-22-v2-uboot-0021.mmgSJA/` and
+`local/recovery/2026-11-22-v2-uboot-0022.EZo6qV/`.
+The older serial baseline is `build/v2-panel-0221/serial-reboot-2/serial.txt`.
+The missing boot logo puts the failure before Linux. A three-second
+U-Boot off hold and the A1 PLL alone both allowed failures. The live PH19
+cycle shows that the panel path can recover without restarting the SoC.
 
-The operator saw no logo at all, so the panel fails at this power-up, after a
-correct power-down and a 3 s off hold.
+## PH10–PH13 and SPI1
 
-## The lead to pursue first
+The panel ribbon reads **Z20HD720M-V03**, with 30 contacts. The photos are
+in `local/device-photos/panel/`. No controller part number, pinout, or
+readable panel status was verified. The MIPS is the H713 display firmware
+processor. It writes host-side LVDS settings. That does not identify the
+separate controller on the LCD assembly.
 
-U-Boot **0016** (`patches/u-boot/0016-h713-restart-pll-during-native-v2-timing.patch`)
-exists because the **native V2 timing block** "commits the logo framebuffer
-but projects black". A single enable pulse on the display PLL
-(`0x058c0014` bit 31, after the 20 µs setup delay, before the routing
-records at offset `0x1684`) restored the logo **on one fresh FEL boot**.
-That was one observation of what we now know is an intermittent failure. In
-the same bring-up (`docs/lpddr3-bringup-plan.md` around the "A1 timing
-block 6" table, evidence `build/v2-native-display/` and `.../minimal/`):
-- the **A1 timing block 6** (648 bytes at `0x1654` of the A1
-  `LogoRegData.bin`, staged at `0x60000000` with `h713_v2_a1_timing=yes`)
-  gave a logo on the V2;
-- the **full A1 PLL startup sequence**, with the rest of the V2 block in
-  place, also gave a logo.
+The stock V2 DT has `spi_cs/scl/sda` GPIO definitions on PH10/11/12,
+and an alternate SPI1 pin group that includes PH13. SPI0 and SPI1 both
+have disabled controller nodes. See
+`build/v2-native-display/hdmi-slot-a/dt/stock-v2.dts`.
+On Linux boot `6ac287a1`, after the supply cycle recovered the picture,
+7,029 samples showed all four muxes disabled, GPIO data bits zero, and
+SPI1 clocks off/reset asserted. Linux exposed no SPI masters or devices.
+The same values held across 83,369 samples in instrumented 0022, and
+82,388, 82,543 and 82,529 samples in the three instrumented 0021 trials.
+These were selected startup intervals, all with a visible logo. GPIO
+data bits with mux disabled do not establish electrical pin levels.
+There was no stock-startup or failing-boot trace, no SPI1 enable test,
+and no verified PH12/PH13 reply. Leave this branch of the investigation
+parked unless there is a schematic, a stock trace, or other new evidence.
+See `working-boot-ph10-13-spi1.log` in the 0021 recovery directory and
+`build/v2-panel-002{1,2}-spi-trace/`.
 
-Since the panel is the bench's, the A1 timing and PLL startup are proven on
-it across all the A1 testing. The hypothesis is that the native V2 PLL
-startup, with one pulse, leaves the LVDS clock marginal at panel power-up
-on warm boots, where clock and PHY state survive the reset. The live PH19
-cycle works because it powers the panel up into an already stable 720p
-signal.
+## RAM-only LVDS-quiet experiment
 
-Suggested order:
-1. Diff the A1 block 6 and the V2 timing block record by record, especially
-   the `0x058c0010/14` PLL records and delays. `adapt.py`, `a1-timing.bin`
-   and `native-tested.c` are in `build/v2-native-display/`.
-2. Over **FEL RAM boot** (no eMMC write, `tools/fel-uboot.sh`; see the plan
-   doc), test the A1 PLL startup or A1 block 6 on the V2 across **repeated
-   warm reboots with HDMI connected**. That is the failing case, black 2 of
-   2 now. Count operator-confirmed glass results; one good boot proves
-   nothing.
-3. If that holds, make it the V2 default in U-Boot (replacing 0016's single
-   pulse), build with `BOARD=lpddr3 tools/build/build.sh uboot`, and
-   install with the existing guarded procedure
-   (`local/recovery/2026-11-22-v2-hdmi-uboot/board-write-primary.sh`
-   pattern: back up first, write the primary at LBA `0x49ac00`, read back).
-   **Ask Chris before any eMMC U-Boot write.**
-4. Alternatives if not: power the panel up only after the timing is latched
-   (keep it off through the PLL restart and FIFO reset), or an ordered
-   PH19 cycle at the end of U-Boot's sequence (costs seconds of boot time).
+The A1 staged test already showed that applying and restoring the PHY
+and route words can leave the 720p timing readbacks intact with MIPS
+parked. That earlier attempt to recover an existing black screen without
+cycling the panel supply failed. See
+`docs/review-2026-10-17-panel-black-chatgpt.md` under “isolated LVDS output
+restart”. V2 logs show MIPS programs the PHY and route during startup.
+The new trial applies the off state **after** the source switch and final
+720p latch while MIPS is still running.
+
+The FEL image saves and quiets `0x051c00d4/d8/dc/e0` (zero),
+`0x051c0014` (`0x18000000`), `0x051c0028` (`0x00000030`), and
+`0x05140054` (`0x40000000`). It checks the values immediately and after
+the existing 550, 2, 5 and 20 ms waits. It restores the saved words after
+the last wait, before backlight PWM and lamp enable. Every trial logged
+`mismatch checkpoints=0x00, restored=yes`. The readbacks verify the
+sampled register states. A differential measurement is needed to establish
+whether the lanes were electrically quiet or high impedance. The trial also
+leaves open whether a longer off interval or the absence of a timing
+transition at panel wake is what helps on 0022.
+
+Reproducibility artifacts under `build/v2-panel-0022-lvds-quiet/`:
+
+- `trial.diff` is the diagnostic source change against the prepared 0022
+  FEL source. `uboot/.config` sets `ENV_IS_NOWHERE`, `BOOTDELAY=-1` and
+  `PREBOOT=h713_disp boot-v2` so it shows the logo and stops at a prompt.
+- `uboot/u-boot.bin` SHA-256 is
+  `caa2e04167bfeaec2666bcebc926a847c6a291a4258af4d57cc68481ea8f8643`.
+  UART/FEL logs are in `warm-01.7yWdzh/`, `warm-02.0AwIvm/`, and
+  `warm-03.NzZiok/`. Each FEL load verified the image by RAM readback.
+- The FEL workflow used ordered U-Boot teardown, a warm reset into fresh
+  FEL, `tools/board-guard.py --expect hy200-qz713-v2 --fel`, and
+  `tools/fel-uboot.sh build/out/h713-v2-felrescue.bin <U-Boot binary>`.
+  See the saved teardown and loader logs. Check the live state again before
+  using those steps. The current RAM session is a console hold, not Linux.
+
+## If black recurs on installed 0022
+
+1. Record the optical result and boot ID. If Linux comes up, preserve the
+   failing boot for the read-only comparison before recovery. Sample DETN
+   and `0x05140614[0]` on black and again after the ordered PH19 cycle on
+   that same boot. Ask Chris to confirm each optical state.
+2. Vary the panel-off dwell while holding 0022 startup order fixed, or
+   compare stock 0022 with the LVDS-quiet diagnostic while holding panel
+   power and reset timings fixed. A FEL result alone cannot qualify the
+   intermittent normal reboot path. Avoid rolling back 0022 just to
+   reproduce black.
+3. When the case is next open, measure actual panel-side VDD, PH16 reset
+   and the LVDS clock across the warm restart. PH19 reports the supply
+   command. It cannot establish how far the rail discharged, how fast it
+   rose, or whether the LVDS lanes were quiet.
+
+English and Chinese searches found no public datasheet for the exact panel
+or verified fix on this board. A related H713 report attributes its black
+screen to Android boot video and input selection. The V2 failure was visible
+before Linux, at the U-Boot logo. Comparable LVDS designs separate panel VDD,
+valid LVDS, and lamp enable. An upstream i915 fix on a different (DSI)
+panel enforced minimum rail-off time after reproducing a black screen.
+These are precedents for the comparisons above, with no panel-specific
+delay values to import.
+[杭州旭虹 LVDS guide](https://www.hzxuhong.com/solutions/202206011719.html) ·
+[TI FlatLink sequencing](https://www.ti.com/lit/an/slla300/slla300.pdf#page=15) ·
+[Linux i915 fix](https://lkml.indiana.edu/hypermail/linux/kernel/2104.2/02588.html) ·
+[Chinese Allwinner R128 display guide](https://aw-r128.100ask.net/developer-guide/part1/chapter4/) ·
+[HY300 Pro+ report](https://github.com/erikhric/magcubic-hy300-fix/blob/main/README.md#symptoms)
 
 ## How to run the tests
 
@@ -153,13 +228,15 @@ Suggested order:
 - Read `0x07091000–0x07091fff`, `0x0694xxxx` or the `0x0500153x` lock
   window (hard locks).
 - Treat register equality or "PASS digital" as a picture.
-- Write U-Boot to eMMC without Chris's go-ahead.
+- Write U-Boot to eMMC or push without Chris's go-ahead. Approved pushes
+  go only to `cstenger/*` forks. Production changes belong in `patches/`;
+  generated trees and FEL diagnostics are local artifacts.
 
 ## Rest of the V2 open-items list (from Chris's list)
 
 1. Boot testing: slot B passed a baseline, 5 warm reboots and a 4 h soak;
    slot A passed 3 cold and 5 warm, a replug, and a no-source boot. Those
-   were digital checks without glass. This latch-up is the open finding.
+   were digital checks without glass. Continue the optical qualification above.
    Still to do: a source-PC reboot with the board left on. It kills a
    Claude session running on that PC, so run board-side work detached.
 2. Green stall: 1 in 18+ boots. `0x050c0c94` bit 30 and `0x05040814` toggle

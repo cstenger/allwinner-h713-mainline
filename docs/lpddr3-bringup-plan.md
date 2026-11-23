@@ -1609,20 +1609,34 @@ Restarting system`. U-Boot then logs `initial supply off… 3000000 us`,
 applied`, the 550 ms pre-delay and `supply on, reset released`, then the
 logo, the single launch, and source 3 with 720p latched twice. On a
 watched repeat (`serial-reboot-2/`) the operator saw the panel **never
-light**: no logo. So the latch forms at U-Boot's panel power-up, after a
-correct power-down and a 3 s off hold.
+light** and saw no logo. The failure was already present during U-Boot,
+after the ordered power-down and a 3 s off hold.
 
-**Lead:** the native V2 timing block needed 0016's single PLL enable pulse
-(`0x058c0014` bit 31) to show anything. That was chosen from one fresh FEL
-boot. On the same V2, the A1 timing block 6 and the full A1 PLL startup
-sequence both gave a logo. The panel is physically the bench's. Handoff:
-`docs/handoff-2026-11-22-v2-panel-latch-for-chatgpt.md`.
+**U-Boot 0021 and 0022 follow-up.** The A1 PLL startup passed three
+HDMI-connected warm FEL boots. Installed 0021 still failed on the third
+normal warm reboot (`6ac287a1`, lamp on, no logo). The live ordered PH19
+cycle restored the desktop on that boot. U-Boot 0022 waits until MIPS has
+selected HDMI source 3 and U-Boot has latched final 720p before powering
+the panel. It passed three warm FEL boots with the logo and, after a
+guarded install with verified readback, three normal warm reboots with
+the desktop. Stock 0022 remains installed. Both RAUC slots retain kernel
+0221. Treat this as provisional mitigation pending more observed normal
+warm reboots and a true cold boot.
 
-Still to do:
-- Find the power-up step that latches the panel (see the handoff), and fix
-  it.
-- A source-PC reboot with the board left on (it ends the Claude session on
-  that PC).
+A RAM-only 0022 diagnostic held the LVDS PHY and route registers in their
+off state after the final latch through panel power-up and reset release,
+then restored the saved words before the lamp. HDMI stayed connected and
+the existing power and reset delays were preserved. All three trials
+showed the logo and had matching register checkpoints. Pad-level behavior
+and any reliability benefit beyond 0022 remain unverified. PH10–PH13 and
+SPI1 were inactive over the sampled instrumented 0022 and 0021 startup
+windows. No black boot was captured in those runs.
+
+See [the current handoff](handoff-2026-11-22-v2-panel-latch-for-chatgpt.md)
+for per-boot optical results, evidence paths, the current RAM prompt state,
+and a plan if black recurs. A source-PC reboot with the board left on is
+still pending. Run board-side collection detached if rebooting the PC
+would terminate the session.
 
 #### V2 CPU_COMM channel discovery (2026-11-22)
 
