@@ -1,0 +1,134 @@
+Subject: sunxi: H713: use the A1 panel PLL startup on V2
+
+Replace the single pulse in the native V2 timing path with the A1 PLL
+startup sequence. Its longer delays bracket divider programming and
+the PLL enable pulse. Keep the V2 clock gate, routing and TVTOP reset
+records, and stage the combined timing block before the panel config
+pass so both divider records use the configured panel clock.
+
+The operator saw a logo in three HDMI-connected warm FEL trials of
+this sequence after U-Boot teardown. The single-pulse controls also
+showed a logo. Qualification across ordinary Linux warm reboots is
+still pending.
+
+--- a/arch/arm/mach-sunxi/h713_mips.c
++++ b/arch/arm/mach-sunxi/h713_mips.c
+@@ -4743,7 +4743,11 @@
+ #define H713_V2_LOGOREG_SIZE		0x382c
+ #define H713_V2_A1_TIMING_ADDR		0x60000000UL
+ #define H713_V2_A1_TIMING_SIZE		0x288
+-#define H713_V2_A1_TIMING_OFFSET	0x4000
++#define H713_V2_TIMING_OFFSET		0x4000
++#define H713_V2_TIMING_START		0x15d4
++#define H713_V2_PLL_FIRST_DELAY		0x1634
++#define H713_V2_ROUTING_START		0x1684
++#define H713_V2_TIMING_END		0x180c
+ 
+ static const u8 h713_v2_logoreg_sha256[SHA256_SUM_LEN] = {
+ 	0x15, 0x4e, 0x31, 0xe9, 0xd6, 0x22, 0x41, 0x08,
+@@ -4761,41 +4765,40 @@
+ };
+ 
+ static const struct h713_disp_block h713_disp_v2_a1_timing = {
+-	H713_V2_A1_TIMING_OFFSET,
+-	H713_V2_A1_TIMING_OFFSET + H713_V2_A1_TIMING_SIZE,
++	H713_V2_TIMING_OFFSET,
++	H713_V2_TIMING_OFFSET + H713_V2_A1_TIMING_SIZE,
+ };
+ 
+-/* Native V2 LogoRegData revision 24-6-3-82, project 0x34. */
+-static const struct h713_disp_block h713_disp_v2_blocks[] = {
+-	{ 0x072c, 0x0a04 }, { 0x15d4, 0x180c }, { 0x34ac, 0x382c },
++/*
++ * A1 timing block 6 from its first PLL delay through the final settle
++ * delay. Keep the V2 clock gate, routing records and TVTOP reset.
++ */
++static const struct h713_logo_rec h713_v2_a1_pll_startup[] = {
++	{ 0x00000000, 0x00000014, 0x00000001, 0xff },
++	{ 0x058c0014, 0x20000000, 0x20000000, 0x04 },
++	{ 0x00000000, 0x00000014, 0x00000001, 0xff },
++	{ 0x058c0014, 0x08000000, 0x08000000, 0x04 },
++	{ 0x00000000, 0x000001f4, 0x00000001, 0xff },
++	{ 0x058c0028, 0x00000000, 0xffffffff, 0x04 },
++	{ 0x058c0014, 0x0000001e, 0x0000fffe, 0x04 },
++	{ 0x00000000, 0x00003a98, 0x00000001, 0xff },
++	{ 0x058c0014, 0x00000000, 0x80000000, 0xfe },
++	{ 0x00000000, 0x00003a98, 0x00000001, 0xff },
++	{ 0x058c0014, 0x00002a00, 0x0000ffff, 0x04 },
++	{ 0x058c0028, 0x00030000, 0xffffffff, 0x04 },
++	{ 0x00000000, 0x000001f4, 0x00000001, 0xff },
+ };
+ 
+-static int h713_disp_apply_timing(ulong blob,
+-				 const struct h713_disp_block *timing)
+-{
+-	const ulong v2_pll_restart = 0x1684;
+-	u32 pll;
+-	int ret;
+-
+-	if (timing != &h713_disp_v2_blocks[1])
+-		return h713_logo_walk(blob, timing->start, timing->end, true);
++#define H713_V2_PLL_PREFIX_SIZE	(H713_V2_PLL_FIRST_DELAY - H713_V2_TIMING_START)
++#define H713_V2_TIMING_TAIL_SIZE	(H713_V2_TIMING_END - H713_V2_ROUTING_START)
+ 
+-	/*
+-	 * The native V2 table leaves the panel black with our boot sequence.
+-	 * Restart the PLL after its last setup delay, before the routing
+-	 * writes. A single enable pulse restores the logo on the V2.
+-	 */
+-	ret = h713_logo_walk(blob, timing->start, v2_pll_restart, true);
+-	if (ret)
+-		return ret;
+-
+-	pll = readl(H713_DISP_PLL_REG);
+-	writel(pll & ~BIT(31), H713_DISP_PLL_REG);
+-	writel(pll | BIT(31), H713_DISP_PLL_REG);
+-	printf("H713 disp: restarted PLL during native V2 timing\n");
+-
+-	return h713_logo_walk(blob, v2_pll_restart, timing->end, true);
+-}
++/* Native V2 LogoRegData revision 24-6-3-82, project 0x34. */
++static const struct h713_disp_block h713_disp_v2_blocks[] = {
++	{ 0x072c, 0x0a04 },
++	{ H713_V2_TIMING_OFFSET, H713_V2_TIMING_OFFSET + H713_V2_PLL_PREFIX_SIZE +
++	  sizeof(h713_v2_a1_pll_startup) + H713_V2_TIMING_TAIL_SIZE },
++	{ 0x34ac, 0x382c },
++};
+ 
+ struct h713_disp_sel {
+ 	u32 project, prologue, timing, de;
+@@ -5913,7 +5916,8 @@
+ 			     sel.blocks[0]->end, true);
+ 	if (ret)
+ 		return ret;
+-	ret = h713_disp_apply_timing(blob, sel.blocks[1]);
++	ret = h713_logo_walk(blob, sel.blocks[1]->start,
++			     sel.blocks[1]->end, true);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -6285,9 +6289,23 @@
+ 				printf("H713 disp: staged A1 timing identity rejected\n");
+ 				return -EPERM;
+ 			}
+-			memcpy((void *)(H713_DISP_LOGO_ADDR + H713_V2_A1_TIMING_OFFSET),
++			memcpy((void *)(H713_DISP_LOGO_ADDR + H713_V2_TIMING_OFFSET),
+ 			       timing, H713_V2_A1_TIMING_SIZE);
+ 			printf("H713 disp: using the verified A1 timing block from RAM\n");
++		} else {
++			const u8 *native = (const u8 *)H713_DISP_LOGO_ADDR;
++			u8 *timing = (u8 *)H713_DISP_LOGO_ADDR + H713_V2_TIMING_OFFSET;
++
++			/* Stage before the panel config pass adjusts the divider. */
++			memcpy(timing, native + H713_V2_TIMING_START,
++			       H713_V2_PLL_PREFIX_SIZE);
++			timing += H713_V2_PLL_PREFIX_SIZE;
++			memcpy(timing, h713_v2_a1_pll_startup,
++			       sizeof(h713_v2_a1_pll_startup));
++			timing += sizeof(h713_v2_a1_pll_startup);
++			memcpy(timing, native + H713_V2_ROUTING_START,
++			       H713_V2_TIMING_TAIL_SIZE);
++			printf("H713 disp: using A1 PLL startup with native V2 timing\n");
+ 		}
+ 	}
+ 
