@@ -1724,6 +1724,23 @@ product could check the four words after video starts and warm-reboot,
 since that clears the stall. Evidence, kept locally:
 `build/v2-green-chain/2026-11-23-fel-0019/`.
 
+**Green-stall chain from a logo-only boot: clean, 0 in 20 (2026-11-23).**
+The stalled FEL boot followed a logo-only boot that ran 161 s with no HDMI
+session, so it had no HDMI teardown before the reboot. Each cycle repeats
+that: set the GP6 latch to HDMI so the installed 0022 U-Boot boots logo
+only, check that boot (no handoff, HDMI units inactive), wait to 161 s
+uptime, restore HDOK, then `reboot fel` into the 0019 RAM U-Boot and an HDMI
+boot (`v2-qualification-run.py --logo-fel N`, `startup-qualification.py
+--from-logo-only`). Chris saw lamp, logo and desktop OK on the attended
+first cycle. Serial confirmed the logo-only latch path and the FEL rescue
+SPL plus 10106a8d on every captured boot. All 20 HDMI boots streamed at
+59.7 fps, video 9.86–10.30 s, with all four stall words 0, and the words
+were 0 on every logo boot too. So the predecessor state is not the trigger
+either: 0 in 141 across the four chains. Still untested from the stalled
+V2 boot: slot B, kernel 0219, the first boot of a freshly installed rootfs,
+and the host tone playing; from the A1, the late HPD-pulse stream.
+Evidence, kept locally: `build/v2-green-chain/2026-11-23-logo-fel-0019/`.
+
 #### V2 CPU_COMM channel discovery (2026-11-22)
 
 **Problem.** Every V2 boot logged `cpu_comm: firmware reader self-test failed

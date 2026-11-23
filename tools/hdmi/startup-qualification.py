@@ -183,6 +183,8 @@ def main():
     parser.add_argument('--root',type=Path,required=True);parser.add_argument('--label',required=True)
     parser.add_argument('--from-boot',required=True);parser.add_argument('--audit',type=Path,required=True)
     parser.add_argument('--previous-boot',help='For read-only continuation after a reboot transport disconnect')
+    parser.add_argument('--from-logo-only',action='store_true',
+                        help='warm/fel from a logo-only boot: no HDMI to check before, no HDMI teardown to check after')
     parser.add_argument('--known-hosts',type=Path,required=True,
                         help='pinned board host key from the current install record (UART-verified)')
     args=parser.parse_args()
@@ -192,13 +194,18 @@ def main():
     need(re.fullmatch(r'[0-9a-f-]{36}',args.from_boot),'invalid expected boot ID')
     if args.previous_boot:need(re.fullmatch(r'[0-9a-f-]{36}',args.previous_boot),'invalid preceding boot ID')
     audit=args.audit.read_text();directory=args.root/args.label;directory.mkdir(exist_ok=False)
-    save(directory/'request.json',{'action':args.action,'expected_boot':args.from_boot,'host_utc':datetime.now(timezone.utc).isoformat()})
+    save(directory/'request.json',{'action':args.action,'expected_boot':args.from_boot,'from_logo_only':args.from_logo_only,'host_utc':datetime.now(timezone.utc).isoformat()})
     if args.action=='collect':return collect(directory,audit,expected=args.from_boot,previous=args.previous_boot)
     try:
         identity=read_remote(audit,directory/'before-identity.json')
         need(identity.get('status','').startswith('PASS') and identity['boot_id']==args.from_boot,'pre-reboot audit/boot mismatch')
-        before=read_remote(REMOTE+'\nprint(json.dumps(gather()))\n',directory/'before.json')
-        need(before['boot_id']==args.from_boot,'pre-reboot boot changed');startup_evidence(before)
+        if args.from_logo_only:
+            # The logo-only boot has no handoff and runs no HDMI unit: only its identity is checked.
+            need(read_remote('import json\nprint(json.dumps({"boot_id":open("/proc/sys/kernel/random/boot_id").read().strip()}))\n',
+                             directory/'before.json')['boot_id']==args.from_boot,'pre-reboot boot changed')
+        else:
+            before=read_remote(REMOTE+'\nprint(json.dumps(gather()))\n',directory/'before.json')
+            need(before['boot_id']==args.from_boot,'pre-reboot boot changed');startup_evidence(before)
         reboot=['systemctl','reboot','--no-block']+(['--reboot-argument=fel'] if args.action=='fel' else [])
         script="from pathlib import Path\nimport subprocess\nassert Path('/proc/sys/kernel/random/boot_id').read_text().strip()=="+repr(args.from_boot)+"\nsubprocess.run(['sync'],check=True)\nsubprocess.run("+repr(reboot)+",check=True)\n"
         timed_out=False
@@ -236,7 +243,7 @@ def main():
             time.sleep(3)
         else:raise RuntimeError(f'new healthy boot not observed within {window} seconds')
         print('New healthy boot '+newboot+'; collecting audit and 30-second stability interval',flush=True)
-        return collect(directory,audit,expected=newboot,previous=args.from_boot)
+        return collect(directory,audit,expected=newboot,previous=None if args.from_logo_only else args.from_boot)
     except BaseException as error:
         save(directory/'FAILED.json',{'error':str(error),'no_recovery_attempted':True})
         raise

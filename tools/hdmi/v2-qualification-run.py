@@ -15,6 +15,10 @@ the chain and is left running for inspection: nothing reboots it.
                                       chain N boots through FEL: reboot fel, load the
                                       rescue SPL, BL31 and U-Boot over USB (RAM only)
 
+    ... --logo-fel N --fel-images ...  N cycles of: GP6 HDOK->HDMI, warm reboot into a
+                                      logo-only boot, dwell, GP6 HDMI->HDOK, then a FEL
+                                      boot from that logo-only boot (the stalled boot's start)
+
 A FEL step stops the chain, with no retry, if FEL never appears (the board is
 then in FEL or booted another way and needs a look), if the loader fails, or
 if the board comes back without having been loaded over FEL.
@@ -66,6 +70,104 @@ def words(known, directory, boot):
     return row
 
 
+GP6 = r'''
+import json, os, struct, sys
+from pathlib import Path
+boot, expect, new = sys.argv[1], int(sys.argv[2], 16), int(sys.argv[3], 16)
+def nvmem():
+    rtc = Path('/sys/firmware/devicetree/base/soc/rtc@7090000')
+    assert (rtc / 'compatible').read_bytes() == b'allwinner,sun50i-h713-rtc\0', 'wrong RTC'
+    assert (rtc / 'reg').read_bytes() == bytes.fromhex('0709000000000400'), 'wrong RTC range'
+    found = [p / 'nvmem' for p in Path('/sys/bus/nvmem/devices').iterdir()
+             if (p / 'of_node').resolve() == rtc.resolve() and (p / 'nvmem').is_file()]
+    assert len(found) == 1, 'RTC nvmem absent or ambiguous'
+    return found[0]
+assert Path('/proc/sys/kernel/random/boot_id').read_text().strip() == boot, 'boot changed'
+fd = os.open(nvmem(), os.O_RDWR | os.O_CLOEXEC)
+try:
+    before = os.pread(fd, 8, 0x18)
+    gp6, gp7 = struct.unpack('<II', before)
+    assert gp7 == 0, 'GP7 reboot-mode request pending'
+    assert gp6 == expect, 'GP6 is %08x, expected %08x' % (gp6, expect)
+    assert os.pwrite(fd, struct.pack('<I', new), 0x18) == 4, 'short write'
+    after = os.pread(fd, 8, 0x18)
+    assert after == struct.pack('<II', new, 0), 'readback mismatch %s' % after.hex()
+finally:
+    os.close(fd)
+print(json.dumps({'boot_id': boot, 'gp6_before': '%08x' % gp6, 'gp6_after': '%08x' % new, 'gp7': '%08x' % gp7}))
+'''
+LOGO_STATE = r'''
+import json, os, struct, subprocess
+from pathlib import Path
+rtc = Path('/sys/firmware/devicetree/base/soc/rtc@7090000')
+nv = [p / 'nvmem' for p in Path('/sys/bus/nvmem/devices').iterdir()
+      if (p / 'of_node').resolve() == rtc.resolve() and (p / 'nvmem').is_file()][0]
+gp6, gp7 = struct.unpack('<II', nv.read_bytes()[0x18:0x20])
+units = subprocess.run(['systemctl', 'is-active', 'h713-hdmi-prepare', 'h713-hdmi-capture', 'h713-hdmi-video'],
+                       capture_output=True, text=True).stdout.split()
+print(json.dumps({'boot_id': open('/proc/sys/kernel/random/boot_id').read().strip(),
+                  'uptime': float(open('/proc/uptime').read().split()[0]),
+                  'handoff': Path('/proc/device-tree/chosen/h713,hdmi-boot-v1').exists(),
+                  'gp6': '%08x' % gp6, 'gp7': '%08x' % gp7, 'units': units,
+                  'cmdline': open('/proc/cmdline').read().strip()}))
+'''
+HDMI_LATCH, HDOK = '48444d49', '48444f4b'
+
+
+def set_gp6(args, boot, expect, new, path):
+    out = ssh(args.known_hosts, 'python3', '-', boot, expect, new, stdin=GP6, timeout=30)
+    path.write_text(out)
+    return json.loads(out)
+
+
+def logo_only_boot(args, label, boot):
+    """GP6 HDOK -> HDMI, one guarded warm reboot, and proof that the new boot is logo-only."""
+    directory = args.root / label
+    directory.mkdir(exist_ok=False)
+    set_gp6(args, boot, HDOK, HDMI_LATCH, directory / 'gp6-to-hdmi.json')
+    stop = threading.Event()
+    if args.uart:
+        target = argparse.Namespace(uart=args.uart, log=args.root / f'{label}-serial.log')
+        threading.Thread(target=uart_capture, args=(target, stop), daemon=True).start()
+    script = ("from pathlib import Path\nimport subprocess\n"
+              f"assert Path('/proc/sys/kernel/random/boot_id').read_text().strip()=={boot!r}\n"
+              "subprocess.run(['sync'],check=True)\n"
+              "subprocess.run(['systemctl','reboot','--no-block'],check=True)\nprint('requested')\n")
+    try:
+        ssh(args.known_hosts, 'python3', '-', stdin=script, timeout=20)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        pass  # the shutdown may close SSH first; never resend
+    deadline = time.monotonic() + 180
+    row = None
+    while time.monotonic() < deadline:
+        time.sleep(5)
+        try:
+            row = json.loads(ssh(args.known_hosts, 'python3', '-', stdin=LOGO_STATE, timeout=20))
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, json.JSONDecodeError):
+            continue
+        if row['boot_id'] != boot:
+            break
+    else:
+        sys.exit(f'{label}: no new boot within 180 s after the warm reboot; chain stopped')
+    (directory / 'logo-state.json').write_text(json.dumps(row, indent=2) + '\n')
+    stop.set()
+    if row['handoff'] or row['gp6'] != HDMI_LATCH or row['gp7'] != '00000000':
+        sys.exit(f'{label}: boot {row["boot_id"]} is not the expected logo-only boot ({row}); chain stopped')
+    if any(u == 'active' for u in row['units']):
+        sys.exit(f'{label}: HDMI units active on a logo-only boot ({row["units"]}); chain stopped')
+    new = row['boot_id']
+    # The stalled boot's predecessor had been up 161 s when it rebooted into FEL.
+    while row['uptime'] < args.logo_dwell:
+        time.sleep(min(10, args.logo_dwell - row['uptime']))
+        row = json.loads(ssh(args.known_hosts, 'python3', '-', stdin=LOGO_STATE, timeout=20))
+        if row['boot_id'] != new:
+            sys.exit(f'{label}: logo-only boot changed during the dwell; chain stopped')
+    words(args.known_hosts, directory, new)
+    set_gp6(args, new, HDMI_LATCH, HDOK, directory / 'gp6-to-hdok.json')
+    print(f'{label}: logo-only boot {new[:8]} up {row["uptime"]:.0f} s, GP6 HDMI -> HDOK', flush=True)
+    return new
+
+
 def fel_present():
     return subprocess.run(['lsusb', '-d', FEL_ID], capture_output=True).returncode == 0
 
@@ -113,11 +215,13 @@ def fel_load(args, label, log):
     return None
 
 
-def step(args, action, label, boot, previous=None):
+def step(args, action, label, boot, previous=None, from_logo_only=False):
     cmd = [sys.executable, str(QUAL), action, '--root', str(args.root), '--label', label,
            '--from-boot', boot, '--audit', str(args.audit), '--known-hosts', str(args.known_hosts)]
     if previous:
         cmd += ['--previous-boot', previous]
+    if from_logo_only:
+        cmd += ['--from-logo-only']
     if action != 'fel':
         proc = subprocess.run(cmd, capture_output=True, text=True)
     else:
@@ -173,13 +277,15 @@ def main():
     parser.add_argument('--fel-images', nargs=3, type=Path, metavar=('RESCUE', 'UBOOT', 'BL31'),
                         help='rescue SPL, U-Boot proper and BL31 for tools/fel-uboot.sh')
     parser.add_argument('--uart', help='serial port to log passively during FEL steps')
+    parser.add_argument('--logo-fel', type=int, default=0, help='logo-only boot then FEL boot, N cycles')
+    parser.add_argument('--logo-dwell', type=float, default=160, help='uptime of the logo-only boot before FEL')
     args = parser.parse_args()
     if args.cold is not None and not args.previous_boot:
         parser.error('--cold needs --previous-boot')
-    if args.fel and not args.fel_images:
-        parser.error('--fel needs --fel-images')
+    if (args.fel or args.logo_fel) and not args.fel_images:
+        parser.error('--fel/--logo-fel need --fel-images')
     args.root.mkdir(parents=True, exist_ok=True)
-    if args.fel:
+    if args.fel or args.logo_fel:
         for f in args.fel_images:
             if not f.is_file():
                 parser.error(f'missing {f}')
@@ -199,6 +305,9 @@ def main():
         boot = step(args, 'warm', f'warm-{n:02d}', boot)
     for n in range(args.first, args.first + args.fel):
         boot = step(args, 'fel', f'fel-{n:02d}', boot)
+    for n in range(args.first, args.first + args.logo_fel):
+        boot = logo_only_boot(args, f'logo-{n:02d}', boot)
+        boot = step(args, 'fel', f'fel-{n:02d}', boot, from_logo_only=True)
     if args.poweroff:
         script = ("from pathlib import Path\nimport subprocess\n"
                   f"assert Path('/proc/sys/kernel/random/boot_id').read_text().strip()=={boot!r}\n"
