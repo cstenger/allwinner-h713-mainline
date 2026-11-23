@@ -1688,6 +1688,25 @@ boot, or FEL boots) and needs the operator. Evidence, kept locally:
 `build/v2-green-chain/2026-11-22/` (`chain.log`, `README.md`,
 `healthy-sweeps/`, `afbd_scan.py`).
 
+**Green-stall catch chain over FEL: clean, 0 in 30 (2026-11-23).**
+Every boot followed the path of the stalled FEL boot. Linux ran
+`systemctl reboot --reboot-argument=fel`, and the SPL entered boot-ROM FEL.
+`board-guard --fel` checked the SID. `tools/fel-uboot.sh` then ran the
+rescue SPL to train DRAM and re-enter FEL, and loaded BL31 and U-Boot into
+RAM. U-Boot ran `boot-v2` into Linux. The RAM U-Boot, its DTB and BL31 are
+byte-identical to the installed 0022, so only the boot path differed from
+the warm chain. `fel-01` ran attended, and `fel-02`–`30` ran unattended
+(about 1.7 min each). All 30 loads verified, and every serial log shows
+`Trying to boot from FEL` and the 0022 U-Boot powering the panel. All 30
+boots were PASS digital at 59.7 fps, with video starting 9.79–10.59 s after
+boot and all four stall words 0. Zero in 30 puts the FEL-path rate below
+about 10% (95%), so a FEL boot alone is not the trigger. What still
+differs from the stalled boot: it ran the 0019-era RAM U-Boot, before
+0022's late panel power, and it was the first boot of a freshly installed
+slot B. The tools are `startup-qualification.py fel` and
+`v2-qualification-run.py --fel N --fel-images RESCUE UBOOT BL31 --uart PORT`.
+Evidence, kept locally: `build/v2-green-chain/2026-11-22-fel/`.
+
 #### V2 CPU_COMM channel discovery (2026-11-22)
 
 **Problem.** Every V2 boot logged `cpu_comm: firmware reader self-test failed
