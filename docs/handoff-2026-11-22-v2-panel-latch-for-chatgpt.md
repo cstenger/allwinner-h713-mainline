@@ -3,7 +3,7 @@
 Updated 2026-11-22 for Claude. Read this first, then the **V2 boot
 qualification** section of `docs/lpddr3-bringup-plan.md` for the earlier
 evidence and bring-up context. The latest production change on `main` is
-`244194ba` (U-Boot 0022). No pushes were made.
+`244194ba` (U-Boot 0022). `main` is pushed to the `cstenger` fork.
 
 ## Current state and next step
 
@@ -255,5 +255,5 @@ delay values to import.
 5. V2 release builds: still separate scripts, and the AV1 probe fails the
    production check.
 6. Rollout: both slots now carry 0221. The hold-guard poweroff and the
-   one-HDMI-start-per-power-cycle latch still need design work. Nothing is
-   pushed.
+   one-HDMI-start-per-power-cycle latch still need design work. `main` is
+   pushed to `cstenger/allwinner-h713-mainline`.
