@@ -178,7 +178,8 @@ def collect(directory,audit,expected=None,previous=None):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=('collect','warm'))
+    parser.add_argument('action',choices=('collect','warm','fel'),
+                        help='fel: as warm, but reboot into FEL; the caller loads U-Boot over USB')
     parser.add_argument('--root',type=Path,required=True);parser.add_argument('--label',required=True)
     parser.add_argument('--from-boot',required=True);parser.add_argument('--audit',type=Path,required=True)
     parser.add_argument('--previous-boot',help='For read-only continuation after a reboot transport disconnect')
@@ -198,7 +199,8 @@ def main():
         need(identity.get('status','').startswith('PASS') and identity['boot_id']==args.from_boot,'pre-reboot audit/boot mismatch')
         before=read_remote(REMOTE+'\nprint(json.dumps(gather()))\n',directory/'before.json')
         need(before['boot_id']==args.from_boot,'pre-reboot boot changed');startup_evidence(before)
-        script="from pathlib import Path\nimport subprocess\nassert Path('/proc/sys/kernel/random/boot_id').read_text().strip()=="+repr(args.from_boot)+"\nsubprocess.run(['sync'],check=True)\nsubprocess.run(['systemctl','reboot','--no-block'],check=True)\n"
+        reboot=['systemctl','reboot','--no-block']+(['--reboot-argument=fel'] if args.action=='fel' else [])
+        script="from pathlib import Path\nimport subprocess\nassert Path('/proc/sys/kernel/random/boot_id').read_text().strip()=="+repr(args.from_boot)+"\nsubprocess.run(['sync'],check=True)\nsubprocess.run("+repr(reboot)+",check=True)\n"
         timed_out=False
         try:response=remote(script,timeout=20)
         except subprocess.TimeoutExpired as error:
@@ -214,8 +216,10 @@ def main():
         need(response.returncode in (0,255),'reboot command failed; no automatic retry')
         if response.returncode==255:
             print('SSH closed during reboot; observing only, no command retry',flush=True)
-        print('Warm reboot requested once; waiting for new boot and healthy HDMI',flush=True)
-        deadline=time.monotonic()+180;attempts=[];newboot=None
+        print(('FEL' if args.action=='fel' else 'Warm')+' reboot requested once; waiting for new boot and healthy HDMI',flush=True)
+        # A FEL boot adds the USB load (rescue SPL, BL31, U-Boot) before U-Boot runs.
+        window=300 if args.action=='fel' else 180
+        deadline=time.monotonic()+window;attempts=[];newboot=None
         while time.monotonic()<deadline:
             response=remote(REMOTE+'\nprint(json.dumps(snapshot()))\n',timeout=30)
             attempts.append({'host_utc':datetime.now(timezone.utc).isoformat(),'returncode':response.returncode,'stdout':response.stdout,'stderr':response.stderr})
@@ -230,7 +234,7 @@ def main():
                     except RuntimeError:pass
                     else:break
             time.sleep(3)
-        else:raise RuntimeError('new healthy boot not observed within 180 seconds')
+        else:raise RuntimeError(f'new healthy boot not observed within {window} seconds')
         print('New healthy boot '+newboot+'; collecting audit and 30-second stability interval',flush=True)
         return collect(directory,audit,expected=newboot,previous=args.from_boot)
     except BaseException as error:
