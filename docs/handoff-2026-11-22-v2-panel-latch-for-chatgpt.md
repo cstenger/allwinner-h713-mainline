@@ -266,8 +266,12 @@ delay values to import.
 4. Speaker A/V delay: closed. The V2 measured +19.5 ms by phone at the
    A1's 0.115 s, -5..+14 ms after the phone's bias, so 0.115 s stays
    (`docs/hdmi-evidence/2026-11-23-v2-avsync/`).
-5. V2 release builds: still separate scripts, and the AV1 probe fails the
-   production check.
+5. V2 release builds: closed. `tools/release/build.py --board v2` builds
+   the signed RAUC bundle, slot images and LPDDR3 U-Boot with the
+   production kernel (no AV1 probe); two builds matched byte for byte
+   apart from the bundle signature
+   (`docs/production-evidence/2026-11-23-v2-release-build/`). The
+   candidate is not installed; its root and U-Boot are new binaries.
 6. Rollout: both slots now carry 0221. The hold-guard poweroff and the
    one-HDMI-start-per-power-cycle latch still need design work. `main` is
    pushed to `cstenger/allwinner-h713-mainline`.

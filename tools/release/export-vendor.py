@@ -9,9 +9,14 @@ import shutil
 ROOT=Path(__file__).resolve().parents[2]
 
 
-def export(boot,wifi,dsp,output):
+LOCKS={'ddr3':'config/production-vendor.json','v2':'config/production-vendor-v2.json'}
+
+
+def export(boot,wifi,dsp,output,board='ddr3'):
     if output.exists():raise ValueError('output must be new')
-    pins=json.loads((ROOT/'config/production-vendor.json').read_text())['files']
+    pins=json.loads((ROOT/LOCKS[board]).read_text())['files']
+    if boot is None and any(name.startswith('boot/') for name in pins):
+        raise ValueError('this board locks boot assets; --boot-directory is required')
     sources={}
     for name,pin in pins.items():
         category,relative=name.split('/',1)
@@ -29,8 +34,10 @@ def export(boot,wifi,dsp,output):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--boot-directory',required=True,type=Path)
+    p.add_argument('--board',choices=sorted(LOCKS),default='ddr3',
+                   help='which vendor lock to export (v2 needs no boot assets)')
+    p.add_argument('--boot-directory',type=Path)
     p.add_argument('--wifi-directory',required=True,type=Path)
     p.add_argument('--dsp',required=True,type=Path)
     p.add_argument('--output',required=True,type=Path)
-    a=p.parse_args();export(a.boot_directory,a.wifi_directory,a.dsp,a.output)
+    a=p.parse_args();export(a.boot_directory,a.wifi_directory,a.dsp,a.output,a.board)

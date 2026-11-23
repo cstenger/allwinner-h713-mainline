@@ -163,4 +163,120 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse((out/'etc/h713-keystone.conf').exists())
 
 
+    def test_v2_calibration_is_explicitly_without_keystone(self):
+        v2=b.ROOT/'config/hy200-v2-calibration.json'
+        cal=b.calibration(v2,'v2')
+        self.assertEqual(cal['hdmi_audio_delay_seconds'],'0.115')
+        self.assertIsNone(cal['keystone'])
+        self.assertTrue((b.ROOT/cal['evidence']).is_file())
+        with self.assertRaisesRegex(ValueError,'wrong calibration board'):b.calibration(v2,'ddr3')
+        with self.assertRaisesRegex(ValueError,'wrong calibration board'):
+            b.calibration(b.ROOT/'config/hy200-ddr3-calibration.json','v2')
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'calibration.json'
+            data=json.loads(v2.read_text())
+            for keystone in ({'bias_y':'0'},{},'none'):
+                path.write_text(json.dumps(dict(data,keystone=keystone)))
+                with self.subTest(keystone=keystone),self.assertRaisesRegex(ValueError,'keystone'):b.calibration(path,'v2')
+            path.write_text(json.dumps({k:v for k,v in data.items() if k!='keystone'}))
+            with self.assertRaisesRegex(ValueError,'keystone'):b.calibration(path,'v2')
+            # The bench board still needs its measured pose.
+            a1=json.loads((b.ROOT/'config/hy200-ddr3-calibration.json').read_text())
+            path.write_text(json.dumps(dict(a1,keystone=None)))
+            with self.assertRaisesRegex(ValueError,'lens calibration required'):b.calibration(path,'ddr3')
+
+    def test_v2_vendor_lock_is_the_bench_bytes_without_boot_assets(self):
+        a1=json.loads((b.ROOT/'config/production-vendor.json').read_text())
+        v2=json.loads((b.ROOT/'config/production-vendor-v2.json').read_text())
+        self.assertEqual(v2['board'],b.BOARDS['v2']['name'])
+        self.assertEqual(set(v2['files']),{n for n in a1['files'] if not n.startswith('boot/')})
+        for name,pin in v2['files'].items():
+            self.assertEqual(pin,a1['files'][name],name)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for name in a1['files']:
+                (root/name).parent.mkdir(parents=True,exist_ok=True)
+            # An A1 vendor directory is not a V2 one: the lock names the exact set.
+            with self.assertRaisesRegex(ValueError,'missing vendor file'):b.vendor_inputs(root,'v2')
+
+    def test_v2_overlay_omits_bench_only_parts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);dsp=root/'dsp.bin';dsp.write_bytes(b'fixture')
+            modules={}
+            for kind,name in [('receiver','h713-hdmi-receiver'),('audio','h713-hdmi-audio'),
+                              ('signal','h713-hdmi-signal'),('ddc','h713-ddc-pins'),('video','h713-hdmi-v4l2')]:
+                path=root/(name+'.ko');path.write_bytes(name.encode());modules[kind]=path
+            cal=b.calibration(b.ROOT/'config/hy200-v2-calibration.json','v2')
+            out=root/'overlay';b.v2_overlay(out,modules,dsp,cal)
+            self.assertEqual([p for p in out.rglob('*') if 'elog' in p.name],[])
+            self.assertEqual(list(out.rglob('h713-hdmi.scr'))+list(out.rglob('h713-hdmi.cmd')),[])
+            self.assertFalse((out/'etc/h713-keystone.conf').exists())
+            self.assertIn('H713_HDMI_AUDIO_DELAY_SEC=0.115\n',(out/'etc/default/h713-hdmi-speaker').read_text())
+            self.assertEqual(json.loads((out/'usr/share/h713-release/calibration.json').read_text()),cal)
+            self.assertTrue((out/'.h713-release-overlay').is_file())
+            self.assertTrue((out/'etc/systemd/system/multi-user.target.wants/h713-hdmi-health-ack.service').is_symlink())
+
+    def _rootfs_fixture(self,root,extra=()):
+        tree=root/'tree'
+        if tree.exists():shutil.rmtree(tree)
+        names=['usr/bin/python3','usr/bin/pw-loopback','usr/bin/pw-dump','usr/bin/pw-cli',
+               'usr/local/bin/h713-play','usr/local/bin/gst-plane-play',
+               'usr/lib/aarch64-linux-gnu/dri/v4l2_request_drv_video.so',
+               'usr/lib/h713-hdmi-speaker/alsa-ctl','usr/lib/h713-hdmi-speaker/pipewire-speaker.py',
+               'etc/default/h713-hdmi-speaker','usr/lib/systemd/system-shutdown/h713-hdmi-hold-guard',
+               'usr/lib/h713-hdmi-video/h713-hdmi-v4l2.ko','usr/lib/h713-hdmi/firmware/h713/hdmi-audio-dsp.bin']
+        names+=['usr/lib/h713-hdmi/'+n+'.ko' for n in ('h713-hdmi-receiver','h713-hdmi-audio','h713-hdmi-signal','h713-ddc-pins')]
+        names+=['usr/lib/'+n+'/SHA256SUMS' for n in ('h713-hdmi','h713-hdmi-health','h713-hdmi-video','h713-hdmi-speaker')]
+        for name in [*names,*extra]:
+            path=tree/name;path.parent.mkdir(parents=True,exist_ok=True)
+            path.write_text('' if name.endswith('SHA256SUMS') else 'x')
+        tar=root/'rootfs.tar'
+        subprocess.run(['tar','-C',str(tree),'-cf',str(tar),'.'],check=True)
+        return tar
+
+    def test_v2_rootfs_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for board in ('ddr3','v2'):
+                self.assertEqual(b.verify_rootfs(self._rootfs_fixture(root),board)['status'],'PASS production payload checks')
+            # The plain defconfig's AV1 probe is what failed the V2 images.
+            probe=self._rootfs_fixture(root,['usr/lib/modules/6.18.38/kernel/drivers/misc/sunxi-h713-av1-probe.ko'])
+            for board in ('ddr3','v2'):
+                with self.subTest(board=board),self.assertRaisesRegex(ValueError,'diagnostic kernel module'):
+                    b.verify_rootfs(probe,board)
+            for extra in ('etc/systemd/system/h713-mips-elog-level.service',
+                          'etc/systemd/system/multi-user.target.wants/h713-mips-elog-level.service',
+                          'usr/lib/h713-hdmi/h713-mips-elog-level.service',
+                          'etc/h713-keystone.conf','usr/lib/h713-hdmi/h713-hdmi.scr'):
+                tar=self._rootfs_fixture(root,[extra])
+                with self.subTest(extra=extra),self.assertRaisesRegex(ValueError,'shipped'):b.verify_rootfs(tar,'v2')
+                b.verify_rootfs(tar,'ddr3')
+
+    def test_rauc_keys_are_explicit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            with self.assertRaisesRegex(ValueError,'ca.cert.pem'):b.rauc_keys(root)
+            for name in ('ca.cert.pem','signer.cert.pem','signer.key.pem'):(root/name).write_text(name)
+            self.assertEqual(set(b.rauc_keys(root)),{'ca.cert.pem','signer.cert.pem','signer.key.pem'})
+            (root/'signer.key.pem').write_text('')
+            with self.assertRaisesRegex(ValueError,'signer.key.pem'):b.rauc_keys(root)
+
+    @unittest.skipUnless(shutil.which('mkfs.vfat') and shutil.which('mcopy') and
+                         (b.ROOT/'build/uboot-lpddr3/tools/mkimage').is_file(),
+                         'mtools, dosfstools and a built LPDDR3 mkimage required')
+    def test_v2_boot_image_is_reproducible(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);fit=root/'kernel.fit';fit.write_bytes(os.urandom(4096))
+            env=dict(os.environ,SOURCE_DATE_EPOCH='1793693083',H713_BUILD_DIR=str(b.ROOT/'build'))
+            images=[]
+            for name,epoch in (('first','1793693083'),('second','1793693083'),('control','1793693084')):
+                image=root/(name+'.vfat')
+                subprocess.run([b.ROOT/'tools/v2-boot-image.sh',fit,image],check=True,
+                               env=dict(env,SOURCE_DATE_EPOCH=epoch),capture_output=True)
+                images.append(b.sha(image))
+            self.assertEqual(images[0],images[1])
+            # Control: the comparison sees a one-second difference in the build time.
+            self.assertNotEqual(images[0],images[2])
+
+
 if __name__=='__main__':unittest.main()

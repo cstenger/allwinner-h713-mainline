@@ -1335,9 +1335,11 @@ display fetch side, where AFBD stops at line 719. Evidence is in
   edit, and it reached the A1 production inputs. Only buf mode has the
   2 MiB ring whose flush stalled CPU_COMM. On the V2, `elog -l 2` would
   raise the level.
-- **Release gate.** `verify_rootfs` rejects V2 images because they ship
-  the AV1 probe module. V2 kernels use the plain defconfig, not the
-  `production` fragment, and the existing V2 images ship it too.
+- **Release gate: CLOSED (2026-11-23).** `verify_rootfs` rejected V2
+  images because the plain defconfig ships the AV1 probe module.
+  `tools/release/build.py --board v2` builds with the `production`
+  fragment and passes; two builds were byte-identical apart from the bundle
+  signature (`docs/production-evidence/2026-11-23-v2-release-build/`).
 - **Shutdown hold guard.** The guard is inherited from the bench board.
   If HDMI teardown fails, it turns a reboot into a poweroff. On the
   sealed projector that needs a power-button press.

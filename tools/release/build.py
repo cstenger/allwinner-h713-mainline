@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Build a complete candidate from source and explicit private firmware inputs.
 
+--board ddr3 (default) builds the HY200 QZ713DF_A1 bench release: a boot FAT
+archive with the startup script, the rootfs images and the combined U-Boot.
+--board v2 builds the HY200_QZ713_V2 projector release: the read-only EROFS
+root and slot boot partition image, a RAUC bundle signed with an explicit
+signer, and the LPDDR3 U-Boot. Both use the production kernel configuration.
+
 No board access, flash, service operation or historical bundle import exists here.
 """
 import argparse
@@ -41,6 +47,24 @@ SPEAKER = {'h713-hdmi-speaker.service': 'tools/hdmi/h713-hdmi-speaker.service',
            'pipewire-speaker.py': 'tools/hdmi/pipewire-speaker.py',
            'alsa-ctl.c': 'tools/audio/alsa-ctl.c'}
 
+BOARDS = {
+    'ddr3': dict(name='HY200 QZ713DF_A1 (Allwinner H713)', uboot='ddr3',
+                 vendor='config/production-vendor.json', keystone=True),
+    # The projector. U-Boot 0019+ (`h713_disp boot-v2`) launches the display
+    # firmware from the vendor partitions, so no boot assets or startup
+    # script ship; RAUC (U-Boot bootmeth_rauc) installs slot pairs.
+    'v2': dict(name='HY200 QZ713_V2 (Allwinner H713)', uboot='lpddr3',
+               vendor='config/production-vendor-v2.json', keystone=False,
+               compatible='hy200-qz713-v2'),
+}
+# Not shipped on the V2: it boots the vendor's display_cfg.xml, whose
+# elog_init_setting is mode 1 (async) level 1. The firmware's elog_init
+# stores that level at 0x4b48bd9c, which reads 1 live. The 2 MiB flush stall
+# the unit prevents needs buf mode (2) at level 5, the bench's own 2026-09-04
+# debugging edit (f97eec07). `elog -l 2` would raise the V2's level.
+# (2026-11-22, firmware 16c74a28 disassembly + live read on slot B.)
+V2_OMITTED_UNITS = ('h713-mips-elog-level.service',)
+
 
 # Kconfig writes the host rustc it probes into .config even with CONFIG_RUST
 # off, and IKCONFIG embeds .config in the FIT. build.sh pins RUSTC to a tool
@@ -77,8 +101,9 @@ def load_module(path):
     return result
 
 
-def vendor_inputs(directory):
-    lock = json.loads((ROOT/'config/production-vendor.json').read_text())
+def vendor_inputs(directory, board='ddr3'):
+    lock = json.loads((ROOT/BOARDS[board]['vendor']).read_text())
+    need(lock.get('board') == BOARDS[board]['name'], 'vendor lock is for another board')
     for name, pin in lock['files'].items():
         path = directory/name
         need(path.is_file() and not path.is_symlink(), 'missing vendor file: '+name)
@@ -91,14 +116,20 @@ def vendor_inputs(directory):
     return lock
 
 
-def calibration(path):
+def calibration(path, board='ddr3'):
     data = json.loads(path.read_text())
     need(data.get('schema') == 'h713-calibration-v1', 'wrong calibration schema')
-    need(data.get('board') == 'HY200 QZ713DF_A1 (Allwinner H713)', 'wrong calibration board')
+    need(data.get('board') == BOARDS[board]['name'], 'wrong calibration board')
     delay = data['hdmi_audio_delay_seconds']
     need(isinstance(delay, str) and delay.replace('.', '', 1).isdigit() and 0 <= float(delay) <= 1,
          'invalid audio delay')
+    if not BOARDS[board]['keystone']:
+        # Explicitly uncalibrated: the key must be present and null.
+        need('keystone' in data and data['keystone'] is None,
+             'this board ships no keystone calibration; record "keystone": null')
+        return data
     pose=data.get('keystone',{})
+    need(isinstance(pose,dict), 'explicit accelerometer/lens calibration required')
     need(set(pose)=={'bias_y','bias_x','bias_z','lens_s','lens_tb','lens_tt'},
          'explicit accelerometer/lens calibration required')
     for key,value in pose.items():
@@ -120,7 +151,7 @@ def manifest(directory):
             for p in sorted(directory.rglob('*')) if p.is_file() and not p.is_symlink()}
 
 
-def verify_rootfs(path):
+def verify_rootfs(path, board='ddr3'):
     """Check the delivered image, after all target compilation and purging."""
     required = ['usr/bin/python3','usr/bin/pw-loopback','usr/bin/pw-dump','usr/bin/pw-cli',
                 'usr/local/bin/h713-play', 'usr/local/bin/gst-plane-play',
@@ -140,6 +171,12 @@ def verify_rootfs(path):
                  'usr/include/va/va.h', 'usr/lib/h713-hdmi-speaker/hdmi-speaker',
                  'usr/local/sbin/wifi-baseline',
                  'usr/lib/h713-hdmi-speaker/alsa-ctl.c']
+    if board == 'v2':
+        forbidden += [base+unit for unit in V2_OMITTED_UNITS for base in
+                      ('etc/systemd/system/', 'etc/systemd/system/multi-user.target.wants/',
+                       'usr/lib/h713-hdmi/')]
+        forbidden += ['etc/h713-keystone.conf', 'usr/lib/h713-hdmi/h713-hdmi.scr',
+                      'usr/lib/h713-hdmi/h713-hdmi.cmd']
     with tarfile.open(path) as archive:
         members = {m.name.removeprefix('./'): m for m in archive.getmembers()}
         for name in required:
@@ -187,6 +224,8 @@ def source_lock():
     paths.update(p for p in (ROOT/'tools/release').glob('*.py'))
     paths.update(ROOT/p for p in ['config/production-vendor.json','config/production-toolchain.json',
         'config/hy200-ddr3-calibration.json','patches/kernel/board/production.config',
+        'config/production-vendor-v2.json','config/hy200-v2-calibration.json',
+        'tools/v2-boot-image.sh','tools/v2-rauc-bundle.sh',
         'tools/rootfs/cache-debs.py',
         'tools/standby/h713-lamp-ramp.c',
         'modules/hdmi-dsp-probe/h713-dsp-lock.h','modules/hdmi-dsp-probe/h713-dsp-completion.h'])
@@ -292,19 +331,65 @@ def overlay(output, module_files, vendor, fit, dtb, board_calibration):
     return startup
 
 
+def v2_overlay(output, module_files, dsp, board_calibration):
+    """The projector's overlay: the shared HDMI runtime without a startup
+    script (U-Boot boot-v2 launches it), the elog unit or keystone settings."""
+    output.mkdir()
+    hdmi_payload(output, module_files, dsp, board_calibration['hdmi_audio_delay_seconds'])
+    for unit in V2_OMITTED_UNITS:
+        for path in (output/'etc/systemd/system'/unit,
+                     output/'etc/systemd/system/multi-user.target.wants'/unit,
+                     output/'usr/lib/h713-hdmi'/unit):
+            path.unlink()
+    release = output/'usr/share/h713-release'
+    release.mkdir(parents=True)
+    (release/'calibration.json').write_text(json.dumps(board_calibration, indent=2)+'\n')
+    (output/'.h713-release-overlay').write_text('h713-production-overlay-v1\n')
+
+
+def verify_v2_root(image, keyring):
+    """The EROFS root trusts exactly the supplied RAUC CA and is a V2 slot.
+
+    dump.erofs exits 0 for a missing path, so compare contents, never status."""
+    def cat(path):
+        return subprocess.run(['dump.erofs', '--cat', '--path='+path, str(image)],
+                              capture_output=True, check=True).stdout
+    need(cat('/usr/lib/h713/rauc-keyring.pem') == keyring.read_bytes(),
+         'root image RAUC keyring differs from the supplied CA')
+    need(b'compatible='+BOARDS['v2']['compatible'].encode()+b'\n' in cat('/usr/lib/h713/rauc-system.conf'),
+         'root image RAUC system.conf is not for the V2')
+    need(cat('/usr/lib/h713/preinit'), 'root image has no read-only preinit')
+
+
+def rauc_keys(directory):
+    keys = {name: directory/name for name in ('ca.cert.pem', 'signer.cert.pem', 'signer.key.pem')}
+    for name, path in keys.items():
+        need(path.is_file() and path.stat().st_size > 0, 'RAUC key directory lacks '+name)
+    return keys
+
+
 def build(a):
     os.umask(0o022)
     work = a.work.resolve()
     need(not work.exists(), 'work directory must be new; existing builds are never overwritten')
+    v2 = a.board == 'v2'
     vendor = a.vendor.resolve()
-    vendor_lock = vendor_inputs(vendor)
-    cal = calibration(a.calibration)
+    vendor_lock = vendor_inputs(vendor, a.board)
+    cal = calibration(a.calibration, a.board)
     need(a.ssh_key.is_file(), 'explicit SSH public key required')
-    private_inputs={'ssh_public_key':sha(a.ssh_key),'calibration':sha(a.calibration)}
-    if a.hotspot:private_inputs['hotspot_configuration']=sha(a.hotspot)
+    need(v2 == bool(a.rauc_keydir), '--rauc-keydir is required for, and only for, --board v2')
+    keys = rauc_keys(a.rauc_keydir.resolve()) if v2 else {}
+    def private():
+        result={'ssh_public_key':sha(a.ssh_key),'calibration':sha(a.calibration)}
+        if a.hotspot:result['hotspot_configuration']=sha(a.hotspot)
+        if v2:result.update(rauc_ca_certificate=sha(keys['ca.cert.pem']),
+                            rauc_signer_certificate=sha(keys['signer.cert.pem']))
+        return result
+    private_inputs=private()
     need(a.mirror.startswith('https://snapshot.debian.org/archive/debian/') and a.mirror.rstrip('/').split('/')[-1].endswith('Z'),
          'use an explicit immutable Debian snapshot URL')
-    for command in ['clang', 'ld.lld', 'llvm-objcopy', 'make', 'dtc', 'mmdebstrap', 'qemu-aarch64-static']:
+    v2_tools = ['mkfs.erofs', 'dump.erofs', 'mkfs.vfat', 'mcopy', 'mksquashfs', 'unshare'] if v2 else []
+    for command in ['clang', 'ld.lld', 'llvm-objcopy', 'make', 'dtc', 'mmdebstrap', 'qemu-aarch64-static', *v2_tools]:
         need(shutil.which(command), 'missing host build tool: '+command)
     # Images contain the explicitly supplied private hotspot configuration.
     work.mkdir(parents=True,mode=0o700)
@@ -331,7 +416,7 @@ def build(a):
         for file in a.source_cache.glob('linux-*.tar.xz'):
             # build.sh always verifies the configured SHA-256 before extraction.
             copy(file,cache/file.name)
-    env = dict(host_env, H713_BUILD_DIR=str(work/'build'), BOARD='ddr3', KERNEL_CONFIG='production',
+    env = dict(host_env, H713_BUILD_DIR=str(work/'build'), BOARD=BOARDS[a.board]['uboot'], KERNEL_CONFIG='production',
                SOURCE_DATE_EPOCH=str(a.epoch), KBUILD_BUILD_USER='builder', KBUILD_BUILD_HOST='h713',
                KBUILD_BUILD_VERSION='1', TZ='UTC', LC_ALL='C',
                KBUILD_BUILD_TIMESTAMP=datetime.fromtimestamp(a.epoch,timezone.utc).strftime('%a %b %d %H:%M:%S UTC %Y'))
@@ -357,7 +442,10 @@ def build(a):
     dtb = kout/'sun50i-h713-hy200-qz713df-a1.dtb'
     built = modules(kernel, work, env)
     ov = work/'overlay'
-    startup = overlay(ov, built, vendor, fit, dtb, cal)
+    if v2:
+        v2_overlay(ov, built, vendor/'hdmi/hdmi-audio-dsp.bin', cal)
+    else:
+        startup = overlay(ov, built, vendor, fit, dtb, cal)
     # build.sh's generic rootfs expects an explicit firmware location. Stage only
     # the pinned vendor files at the configured source path in this source tree.
     # The release invocation provides an override, avoiding local/ lookup.
@@ -368,16 +456,32 @@ def build(a):
          '--release-overlay', ov]
     if a.debian_cache:rootfs_args+=['--debian-cache',a.debian_cache.resolve()]
     run(rootfs_args, env)
-    payload_check = verify_rootfs(work/'rootfs/rootfs.tar')
-    boot = work/'boot'
-    shutil.copytree(vendor/'boot', boot)
-    copy(fit, boot/'h713-kernel.fit')
-    copy(ov/'usr/lib/h713-hdmi/h713-hdmi.scr', boot/'h713-hdmi.scr')
+    payload_check = verify_rootfs(work/'rootfs/rootfs.tar', a.board)
+    if v2:
+        # The slot pair a RAUC bundle carries: EROFS root and boot partition.
+        slot = work/'slot'
+        run([ROOT/'tools/rootfs/make-ro-images.sh', work/'rootfs/rootfs.tar', slot],
+            dict(env, H713_RAUC_KEYRING=str(keys['ca.cert.pem']), IMAGES='lz4hc'))
+        root_image = slot/'root-lz4hc.erofs'
+        verify_v2_root(root_image, keys['ca.cert.pem'])
+        boot_image = slot/'boot.vfat'
+        run([ROOT/'tools/v2-boot-image.sh', fit, boot_image], env)
+        version = (datetime.fromtimestamp(a.epoch, timezone.utc).strftime('%Y.%m.%d.%H%M')
+                   +'-'+sha(work/'source-lock.json')[:8])
+        bundle = work/'h713-v2.raucb'
+        run([ROOT/'tools/v2-rauc-bundle.sh', root_image, boot_image, bundle, version],
+            dict(env, H713_RAUC_KEYDIR=str(keys['ca.cert.pem'].parent),
+                 RAUC_SYSROOT=str(work/'rauc-sysroot'), ROOTFS_TAR=str(work/'rootfs/rootfs.tar')))
+    else:
+        boot = work/'boot'
+        shutil.copytree(vendor/'boot', boot)
+        copy(fit, boot/'h713-kernel.fit')
+        copy(ov/'usr/lib/h713-hdmi/h713-hdmi.scr', boot/'h713-hdmi.scr')
+    uboot_image='u-boot-sunxi-with-spl-'+BOARDS[a.board]['uboot']+'.bin'
     firmware=work/'firmware';firmware.mkdir()
-    for name, source in [('bl31.bin',kout/'bl31.bin'),
-                         ('u-boot-sunxi-with-spl-ddr3.bin',kout/'u-boot-sunxi-with-spl-ddr3.bin')]:
+    for name, source in [('bl31.bin',kout/'bl31.bin'),(uboot_image,kout/uboot_image)]:
         copy(source,firmware/name)
-    combined=(firmware/'u-boot-sunxi-with-spl-ddr3.bin').read_bytes()
+    combined=(firmware/uboot_image).read_bytes()
     proper=combined[32768:]
     need(len(proper)>=8 and struct.unpack('>II',proper[:8])==(0xd00dfeed,len(proper)),
          'unexpected combined SPL/proper layout; refuse guessed extraction')
@@ -385,16 +489,15 @@ def build(a):
     (firmware/'u-boot-proper.itb').write_bytes(proper)
     provenance=work/'provenance';provenance.mkdir()
     for name,source in [('kernel.config',kernel/'.config'),('kernel.symvers',kernel/'Module.symvers'),
-                        ('uboot.config',work/'build/uboot-ddr3/.config'),
-                        ('uboot.inputs',kout/'u-boot-ddr3.inputs')]:
+                        ('uboot.config',work/('build/uboot-'+BOARDS[a.board]['uboot'])/'.config'),
+                        ('uboot.inputs',kout/('u-boot-'+BOARDS[a.board]['uboot']+'.inputs'))]:
         copy(source,provenance/name)
-    (work/'boot-environment.json').write_text(json.dumps(dict(bootcmd=startup.BOOTCMD,preboot=startup.PREBOOT,
-        note='Review with board identity and recovery plan before installing; never auto-save environment.'),indent=2)+'\n')
+    if not v2:
+        (work/'boot-environment.json').write_text(json.dumps(dict(bootcmd=startup.BOOTCMD,preboot=startup.PREBOOT,
+            note='Review with board identity and recovery plan before installing; never auto-save environment.'),indent=2)+'\n')
     need(source_lock() == before, 'source inputs changed during build')
     need(external_sources() == external_before, 'external source inputs changed during build')
-    current_private={'ssh_public_key':sha(a.ssh_key),'calibration':sha(a.calibration)}
-    if a.hotspot:current_private['hotspot_configuration']=sha(a.hotspot)
-    need(current_private==private_inputs,'private configuration changed during build')
+    need(private()==private_inputs,'private configuration changed during build')
     result = dict(schema='h713-production-release-v1', qualification='UNQUALIFIED CANDIDATE; no board changes',
                   source_date_epoch=a.epoch, debian_snapshot=a.mirror, vendor_inputs=vendor_lock,
                   external_sources=external_before,
@@ -403,17 +506,28 @@ def build(a):
                   private_input_sha256=private_inputs,
                   fit_sha256=sha(fit), tools={n:subprocess.check_output([n,'--version'],text=True).splitlines()[0]
                                              for n in ('clang','ld.lld','make')},
-                  files=manifest(work/'rootfs'), boot_files=manifest(boot),
+                  files=manifest(work/'rootfs'), boot_files=manifest(slot if v2 else boot),
                   firmware_files=manifest(firmware), provenance_files=manifest(provenance))
+    if v2:
+        # The bundle's CMS signature carries a signing time, so the bundle
+        # bytes differ between builds; the slot images inside it do not.
+        result.update(board='hy200-qz713-v2', rauc=dict(
+            compatible=BOARDS['v2']['compatible'], version=version,
+            root_image_sha256=sha(root_image), boot_image_sha256=sha(boot_image),
+            bundle_sha256=sha(bundle)))
     (work/'release.json').write_text(json.dumps(result,indent=2)+'\n')
-    with tarfile.open(work/'boot.tar','w',format=tarfile.USTAR_FORMAT) as archive:
-        for p in sorted(boot.rglob('*')):
-            if p.is_file():
-                info=archive.gettarinfo(str(p),str(p.relative_to(boot)))
-                info.uid=info.gid=0;info.uname=info.gname='root';info.mtime=a.epoch
-                with p.open('rb') as f:archive.addfile(info,f)
-    sealed=[work/'release.json',work/'source-lock.json',work/'boot-environment.json',
-            work/'boot.tar',work/'rootfs/rootfs.tar',work/'rootfs/rootfs.ext4',work/'rootfs/rootfs.simg']
+    if v2:
+        sealed=[work/'release.json',work/'source-lock.json',work/'rootfs/rootfs.tar',
+                root_image,boot_image,bundle]
+    else:
+        with tarfile.open(work/'boot.tar','w',format=tarfile.USTAR_FORMAT) as archive:
+            for p in sorted(boot.rglob('*')):
+                if p.is_file():
+                    info=archive.gettarinfo(str(p),str(p.relative_to(boot)))
+                    info.uid=info.gid=0;info.uname=info.gname='root';info.mtime=a.epoch
+                    with p.open('rb') as f:archive.addfile(info,f)
+        sealed=[work/'release.json',work/'source-lock.json',work/'boot-environment.json',
+                work/'boot.tar',work/'rootfs/rootfs.tar',work/'rootfs/rootfs.ext4',work/'rootfs/rootfs.simg']
     sealed+=list(firmware.iterdir())+list(provenance.iterdir())
     (work/'SHA256SUMS').write_text(''.join(sha(p)+'  '+str(p.relative_to(work))+'\n' for p in sorted(sealed)))
     print(json.dumps(dict(status='CANDIDATE BUILT; hardware qualification required',directory=str(work)),indent=2))
@@ -421,6 +535,8 @@ def build(a):
 
 if __name__ == '__main__':
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--board',choices=sorted(BOARDS),default='ddr3')
+    p.add_argument('--rauc-keydir',type=Path,help='--board v2: directory with ca.cert.pem (trusted by the image) and signer.{cert,key}.pem (signs the bundle)')
     p.add_argument('--work',type=Path,required=True)
     p.add_argument('--vendor',type=Path,required=True)
     p.add_argument('--calibration',type=Path,required=True)

@@ -10,11 +10,17 @@
 # distro_bootpart and distro_rootpart (hex) set for the chosen slot, and
 # raucargs = "rauc.slot=A|B". The script names the root by PARTUUID, so the
 # same image works in either slot. Built without root (mtools).
+# With SOURCE_DATE_EPOCH set the image is byte-reproducible: it fixes the
+# boot.scr header time and the file times mtools records, and --invariant
+# keeps mkfs.vfat from drawing a random volume ID. H713_BUILD_DIR picks the U-Boot build
+# whose mkimage is used (default build/).
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-fit=${1:-$ROOT/build/out/h713-kernel.fit}
-out=${2:-$ROOT/build/out/v2-boot.vfat}
-mkimage=$ROOT/build/uboot-lpddr3/tools/mkimage
+# shellcheck source=../config/paths.sh
+source "$ROOT/config/paths.sh"
+fit=${1:-$H713_BUILD_DIR/out/h713-kernel.fit}
+out=${2:-$H713_BUILD_DIR/out/v2-boot.vfat}
+mkimage=$H713_BUILD_DIR/uboot-lpddr3/tools/mkimage
 [ -f "$fit" ] || { echo "missing $fit" >&2; exit 1; }
 [ -x "$mkimage" ] || { echo "missing $mkimage (BOARD=lpddr3 tools/build/build.sh uboot)" >&2; exit 1; }
 for t in mkfs.vfat mcopy mdir; do command -v "$t" >/dev/null || { echo "$t not installed (dosfstools/mtools)" >&2; exit 1; }; done
@@ -43,7 +49,7 @@ exit 1
 EOF
 "$mkimage" -A arm64 -T script -C none -n "h713 v2 slot boot" -d "$tmp/boot.cmd" "$tmp/boot.scr" >/dev/null
 rm -f "$out"
-mkfs.vfat -C -n BOOT "$out" 65536 >/dev/null
+mkfs.vfat --invariant -C -n BOOT "$out" 65536 >/dev/null
 mcopy -i "$out" "$fit" ::/h713-kernel.fit
 mcopy -i "$out" "$tmp/boot.scr" ::/boot.scr
 mcopy -i "$out" "$tmp/boot.cmd" ::/boot.cmd

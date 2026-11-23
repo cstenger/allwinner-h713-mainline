@@ -1,0 +1,85 @@
+{
+ "schema": "h713-independent-build-comparison-v1",
+ "builds": [
+  "work-A",
+  "work-B"
+ ],
+ "status": "PASS",
+ "release_json_equal_except_bundle_hash": true,
+ "outputs": {
+  "SHA256SUMS": {
+   "match": false,
+   "a": "59c1aa5bc68e05cfdffee119f94c0cc7077a5af44e0f0577a7d39407bf3e889e",
+   "b": "aafc52e93ddeb7e6b29b09f1a07002768242a95f5be0c8ec41ee286239d43d13",
+   "expected_difference": true
+  },
+  "firmware/bl31.bin": {
+   "match": true,
+   "sha256": "837c439bfad535c8861195f8d24c99cf588121417233d106e618569fc9aa6bd6"
+  },
+  "firmware/spl-region.bin": {
+   "match": true,
+   "sha256": "86b17102d2ed6d13aa6e2967b314a263a5bb0ff103d094185bbbeb6658bbd5a8"
+  },
+  "firmware/u-boot-proper.itb": {
+   "match": true,
+   "sha256": "8d5ad0b7e736633899a674d33faa7eb73450fa208e2f10baabcd466efdb40921"
+  },
+  "firmware/u-boot-sunxi-with-spl-lpddr3.bin": {
+   "match": true,
+   "sha256": "0fa14d20eb570a4e6a1f0647c96a78c0681a3ec6f3116b4f6eccaf89a55bc461"
+  },
+  "h713-v2.raucb": {
+   "match": false,
+   "a": "4b3bd2e44e789d0f7948df4c2f289d5f97f3d0ca9efef7e2770ebb81c214968c",
+   "b": "b28c9d2561f2a9fa902c00af3c285d135f7ccfbda6c79c160099326dd716856b",
+   "expected_difference": true
+  },
+  "provenance/kernel.config": {
+   "match": true,
+   "sha256": "516bbfa9162c611e08a3964859699ecd17df4c1831d828c4c1ea58924f2ca374"
+  },
+  "provenance/kernel.symvers": {
+   "match": true,
+   "sha256": "143ea0e6020a33dabcc4784063068d10a28d89d8ead5c9d4a9f77ca8167ba72e"
+  },
+  "provenance/uboot.config": {
+   "match": true,
+   "sha256": "05c81955af8dc00c9dc501408981cb2b0b3dc2d3c1762e938de875c559e829be"
+  },
+  "provenance/uboot.inputs": {
+   "match": true,
+   "sha256": "5667c642660e3bd16b2f16cfaa66ceacf99732761d393439b9bb67a7f9e39193"
+  },
+  "release.json": {
+   "match": false,
+   "a": "5e0673c5c12bd679bc88820e27176d79ed8ef79dec28e5bb54fa407272cd7131",
+   "b": "f1dae3c8f0a3c4aaa76a5a61fd844ddb2a3f0495ef695f7dde1d0144f35988e0",
+   "expected_difference": true
+  },
+  "rootfs/rootfs.tar": {
+   "match": true,
+   "sha256": "73f6d19efc98735e5203b3745060b6a8bbceada8625cbfacaeda7694709c0b31"
+  },
+  "slot/SHA256SUMS": {
+   "match": true,
+   "sha256": "995e6bb0a58d614218cd1a182791173950fcf21554ed8bc24e8d27464f0ab8c1"
+  },
+  "slot/SOURCE": {
+   "match": true,
+   "sha256": "9556079626edd4d8e1a1fda93b50b21635bd77c4d6645049f190f72a38155b7f"
+  },
+  "slot/boot.vfat": {
+   "match": true,
+   "sha256": "2b8e47ee7c736bc2f93f2b00a1bc55a4036078d56e489f237a2eaa5d33b61493"
+  },
+  "slot/root-lz4hc.erofs": {
+   "match": true,
+   "sha256": "17df69788ade947cdbe4e28c915f4aaebb9843994b09137f6f4bcb8819746b30"
+  },
+  "source-lock.json": {
+   "match": true,
+   "sha256": "6157269aea22684e85d70e9ea79c17e4d06e332866096c2d8a0be18f47197896"
+  }
+ }
+}

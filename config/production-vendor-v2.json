@@ -1,0 +1,38 @@
+{
+  "schema": "h713-vendor-inputs-v1",
+  "board": "HY200 QZ713_V2 (Allwinner H713)",
+  "note": "The V2 build ships only the Wi-Fi firmware and the HDMI audio DSP patch. Its display firmware and boot logo stay in the vendor partitions that U-Boot reads, so no boot/ assets are inputs. Pins are the same bytes as config/production-vendor.json.",
+  "files": {
+    "wifi/aic_userconfig_8800d80.txt": {
+      "sha256": "995dbb9e4f2e7b19db838291f52be39af9ab673ad51b270c988216ccff1a720e"
+    },
+    "wifi/fmacfw_8800d80_h_u02.bin": {
+      "sha256": "6c197eacc6917e253c2085fd3b3da0879005d0ebe37ccde3bd4be38f261f9b4e"
+    },
+    "wifi/fmacfw_8800d80_u02.bin": {
+      "sha256": "6d121e015ff1fb90a90649627d663511804771b37f6cb44c97066cfc313a067a"
+    },
+    "wifi/fmacfwbt_8800d80_h_u02.bin": {
+      "sha256": "f7fa0a1a296589568fbea1de89ab8feeb13ef2e6db6c7fafa682a34fb583a1bd"
+    },
+    "wifi/fmacfwbt_8800d80_u02.bin": {
+      "sha256": "465106f3bb2945bbdebea99f6cde9465ae00d5829e188499d42449cbdf4fe82c"
+    },
+    "wifi/fw_adid_8800d80_u02.bin": {
+      "sha256": "a526cbd02fcdc495f049f3ad6b5933cb08cd984b16790c716a060d582fee1a56"
+    },
+    "wifi/fw_patch_8800d80_u02.bin": {
+      "sha256": "26183182bf07f8f7581e82da8b606d222591a12c56772e75146588eef5196242"
+    },
+    "wifi/fw_patch_table_8800d80_u02.bin": {
+      "sha256": "a9f663eb7443bc8046f2479cedfcdd93001eb64761f855317dbdbbc077f475cf"
+    },
+    "wifi/lmacfw_rf_8800d80_u02.bin": {
+      "sha256": "19b2d6b2320b67cb874c5c5c266a8f348cf423d00c0b22d4ad2c737cc603beab"
+    },
+    "hdmi/hdmi-audio-dsp.bin": {
+      "sha256": "8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5",
+      "bytes": 2896
+    }
+  }
+}

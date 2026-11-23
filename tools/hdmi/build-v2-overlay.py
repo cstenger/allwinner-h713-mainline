@@ -4,9 +4,11 @@
   tools/hdmi/build-v2-overlay.py --kernel-tree DIR --output DIR
 
 Builds the five HDMI modules against the V2 slot kernel tree and assembles
-the same HDMI runtime the bench release ships (tools/release/build.py
-hdmi_payload): session, signal owner, capture bridge, health ack, speaker
-and their units. Pass the result to tools/rootfs/build.sh --release-overlay.
+the V2 release overlay (tools/release/build.py v2_overlay, the same code
+`build.py --board v2` uses): session, signal owner, capture bridge, health
+ack, speaker and their units, with the V2 calibration
+(config/hy200-v2-calibration.json). Pass the result to tools/rootfs/build.sh
+--release-overlay. For a release, use tools/release/build.py --board v2.
 
 The V2 needs no startup script: U-Boot's `h713_disp boot-v2` (patch 0019)
 launches the display firmware, selects source 3 and publishes
@@ -27,17 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 # pins the same bytes as hdmi/hdmi-audio-dsp.bin).
 DSP = ROOT/'docs/hdmi-evidence/2026-10-07-android-audio/audio-dsp-patch.bin'
 DSP_SHA256 = '8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5'
-# HDMI-to-speaker delay. Measured on the bench board (2026-11-18) and checked
-# on the V2 at the same value: +19.5 ms by phone, -5..+14 ms after the phone's
-# bias (docs/hdmi-evidence/2026-11-23-v2-avsync/).
-DEFAULT_AUDIO_DELAY = '0.115'
-# Not needed on the V2: it boots the vendor's display_cfg.xml (b3e6e8f6...),
-# whose elog_init_setting is mode 1 (async) level 1. The firmware's elog_init
-# stores that level at 0x4b48bd9c, which reads 1 live. The 2 MiB flush stall
-# the unit prevents needs buf mode (2) at level 5, the bench's own 2026-09-04
-# debugging edit (f97eec07). `elog -l 2` would raise the V2's level.
-# (2026-11-22, firmware 16c74a28 disassembly + live read on slot B.)
-V2_OMITTED_UNITS = ('h713-mips-elog-level.service',)
+# The V2's HDMI-to-speaker delay and keystone state live in this file
+# (docs/hdmi-evidence/2026-11-23-v2-avsync/ for the delay).
+CALIBRATION = ROOT/'config/hy200-v2-calibration.json'
 
 
 def release_builder():
@@ -51,10 +45,14 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--kernel-tree', type=Path, required=True, help='built V2 slot kernel tree')
     p.add_argument('--output', type=Path, required=True, help='new overlay directory')
-    p.add_argument('--audio-delay', default=DEFAULT_AUDIO_DELAY,
-                   help=f'HDMI-to-speaker delay in seconds (default {DEFAULT_AUDIO_DELAY})')
+    p.add_argument('--audio-delay',
+                   help='override the calibrated HDMI-to-speaker delay in seconds (trials only)')
     a = p.parse_args()
     b = release_builder()
+    cal = b.calibration(CALIBRATION, 'v2')
+    if a.audio_delay is not None:
+        b.need(0 <= float(a.audio_delay) <= 1, 'invalid audio delay')
+        cal = dict(cal, hdmi_audio_delay_seconds=a.audio_delay)
     kernel = a.kernel_tree.resolve()
     output = a.output.resolve()
     b.need(not output.exists(), 'output must be new: '+str(output))
@@ -63,7 +61,6 @@ def main():
     b.need(dtb.is_file(), 'kernel tree has no V2 DTB')
     b.need(b'hdmi-mips-shutdown' in dtb.read_bytes(), 'V2 DTB lacks the HDMI resources (kernel 0218)')
     b.need(hashlib.sha256(DSP.read_bytes()).hexdigest() == DSP_SHA256, 'DSP patch hash mismatch')
-    float(a.audio_delay)
 
     with tempfile.TemporaryDirectory(prefix='h713-v2-overlay-') as work:
         work = Path(work)
@@ -71,22 +68,13 @@ def main():
         env['KCFLAGS'] = '-ffile-prefix-map='+str(work)+'=.'
         built = b.modules(kernel, work, env)
         staging = work/'overlay'
-        staging.mkdir()
-        b.hdmi_payload(staging, built, DSP, a.audio_delay)
-        for unit in V2_OMITTED_UNITS:
-            for path in (staging/'etc/systemd/system'/unit,
-                         staging/'etc/systemd/system/multi-user.target.wants'/unit,
-                         staging/'usr/lib/h713-hdmi'/unit):
-                path.unlink()
-        release = staging/'usr/share/h713-release'
-        release.mkdir(parents=True)
-        (release/'v2-hdmi-overlay.json').write_text(json.dumps(dict(
+        b.v2_overlay(staging, built, DSP, cal)
+        (staging/'usr/share/h713-release/v2-hdmi-overlay.json').write_text(json.dumps(dict(
             board='hy200-qz713-v2', kernel_tree=kernel.name,
-            hdmi_audio_delay_seconds=a.audio_delay,
-            omitted_units=list(V2_OMITTED_UNITS),
+            hdmi_audio_delay_seconds=cal['hdmi_audio_delay_seconds'],
+            omitted_units=list(b.V2_OMITTED_UNITS),
             modules={k: b.sha(v) for k, v in sorted(built.items())},
             dsp_sha256=DSP_SHA256), indent=2)+'\n')
-        (staging/'.h713-release-overlay').write_text('h713-production-overlay-v1\n')
         shutil.copytree(staging, output, symlinks=True)
     print(f'{output}: V2 HDMI overlay for {kernel.name}')
 

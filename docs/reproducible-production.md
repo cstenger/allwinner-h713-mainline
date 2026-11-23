@@ -15,7 +15,7 @@ acceptance; the builder never connects to or installs anything on a board.
 - Exactly the files in `config/production-vendor.json`: display firmware and
   tables, the stock boot logo, Wi-Fi/BT firmware, and the HDMI audio DSP patch.
 - An explicit calibration JSON, SSH public key, and optional private hotspot
-  configuration. The supplied DDR3 calibration records the accepted 40 ms
+  configuration. The supplied DDR3 calibration records the accepted 0.115 s
   HDMI speaker delay plus measured accelerometer offsets and lens geometry;
   they are not silently inferred from an old installation.
 - An explicit source timestamp and immutable Debian snapshot URL.
@@ -99,6 +99,49 @@ modifications; their commits are included in the release metadata.
 On hosts where a Perl upgrade invalidated generated `syscall.ph`/`ioctl.ph`,
 the workflow regenerates those bindings inside its own work directory and
 requires mmdebstrap to load them. It never modifies host Perl installation.
+
+## Projector (HY200_QZ713_V2) release
+
+`--board v2` builds the projector release with the same pins and checks, plus
+an explicit RAUC key directory (the CA its slots trust and the signer):
+
+```sh
+python3 tools/release/export-vendor.py --board v2 \
+  --wifi-directory /private/aic8800D80 --dsp /private/hdmi-audio-dsp.bin \
+  --output /private/hy200-v2-vendor-inputs
+
+python3 tools/release/build.py --board v2 \
+  --rauc-keydir /private/rauc-keys \
+  --work /scratch/h713-v2-candidate \
+  --vendor /private/hy200-v2-vendor-inputs \
+  --calibration config/hy200-v2-calibration.json \
+  --ssh-key /private/authorized-key.pub \
+  --hotspot /private/hotspot.conf \
+  --mirror https://snapshot.debian.org/archive/debian/20261102T000000Z \
+  --epoch 1793693083
+```
+
+The V2 vendor lock (`config/production-vendor-v2.json`) names only the Wi-Fi
+firmware and HDMI DSP patch; U-Boot 0019+ launches the display firmware from
+the board's vendor partitions, so no boot assets or startup script ship. The
+kernel is the same `production` configuration (no AV1 probe). The overlay
+omits the elog-level unit and keystone settings (`"keystone": null` in the V2
+calibration). Outputs:
+
+- `slot/root-lz4hc.erofs`: the read-only root (`make-ro-images.sh`, with the
+  supplied CA as RAUC keyring); `slot/boot.vfat`: the slot boot partition
+  (`v2-boot-image.sh`);
+- `h713-v2.raucb`: both, signed with the supplied signer and verified against
+  the root's keyring; `rauc install` writes the inactive slot pair;
+- `firmware/`: BL31 and the LPDDR3 U-Boot, split as for the A1. RAUC does not
+  install U-Boot.
+
+The slot images, U-Boot and rootfs are byte-reproducible (the EROFS UUID is
+pinned to the release UUID, the boot image uses `mkfs.vfat --invariant` and
+`SOURCE_DATE_EPOCH`). The bundle is not: its signature carries a signing time
+and the verity format a random salt, so `release.json` records the image
+hashes the bundle must carry. See the
+[November 23 V2 build](production-evidence/2026-11-23-v2-release-build/README.md).
 
 ## Qualification and deployment
 

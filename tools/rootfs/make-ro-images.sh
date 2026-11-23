@@ -18,7 +18,8 @@
 # Kernel command line for each (U-Boot setenv bootargs ...):
 #   root=/dev/mmcblk0p9 rootfstype=erofs|ext4 ro rootwait
 #   init=/usr/lib/h713/preinit
-# SOURCE_DATE_EPOCH, if set, pins timestamps.
+# SOURCE_DATE_EPOCH, if set, pins timestamps; H713_RELEASE_UUID, if set, pins
+# the filesystem UUID (mkfs.erofs otherwise draws a random one).
 # By default the image trusts the automatically generated local RAUC CA.
 # Set H713_RAUC_KEYDIR to use an existing CA/signing directory, or set
 # H713_RAUC_KEYRING to build with just a public CA file.
@@ -45,7 +46,7 @@ mkdir -p "$out"
 work=$(mktemp -d "$out/.work.XXXXXX")
 trap 'unshare --map-auto --map-root-user rm -rf "$work"' EXIT
 
-export tar_in out work images SLOT SUPER ROOT
+export tar_in out work images SLOT SUPER ROOT H713_RELEASE_UUID=${H713_RELEASE_UUID:-}
 unshare --map-auto --map-root-user bash -ceu '
   T=$work/tree; mkdir -p "$T"
   tar --numeric-owner --xattrs --acls --exclude="./dev/*" -C "$T" -xf "$tar_in"
@@ -66,10 +67,10 @@ unshare --map-auto --map-root-user bash -ceu '
       e2fsck -fn "$work/$f" >/dev/null ;;
     plain)
       f=root-plain.erofs
-      mkfs.erofs --quiet ${epoch:+-T "$epoch"} -Lroot "$work/$f" "$T" ;;
+      mkfs.erofs --quiet ${epoch:+-T "$epoch"} ${H713_RELEASE_UUID:+-U "$H713_RELEASE_UUID"} -Lroot "$work/$f" "$T" ;;
     lz4hc)
       f=root-lz4hc.erofs
-      mkfs.erofs --quiet -zlz4hc,12 -C4096 ${epoch:+-T "$epoch"} -Lroot "$work/$f" "$T" ;;
+      mkfs.erofs --quiet -zlz4hc,12 -C4096 ${epoch:+-T "$epoch"} ${H713_RELEASE_UUID:+-U "$H713_RELEASE_UUID"} -Lroot "$work/$f" "$T" ;;
     *) echo "error: unknown image $i" >&2; exit 2 ;;
     esac
     sz=$(stat -c %s "$work/$f")
