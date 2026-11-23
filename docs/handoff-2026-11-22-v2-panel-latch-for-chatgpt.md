@@ -248,8 +248,13 @@ delay values to import.
    loaded, and the desktop came back with no cable touch. Evidence is in
    `local/recovery/2026-11-22-v2-host-reboot/`. That reboot kills a Claude
    session running on the PC, so run board-side work detached in `/run`.
-2. Green stall: 1 in 18+ boots. `0x050c0c94` bit 30 and `0x05040814` toggle
-   on healthy warm boots, so they are not markers.
+2. Green stall: not reproduced in 60 unattended warm reboots plus the
+   baseline boot (0 in 61, 2026-11-22), so the warm-boot rate is under
+   about 5%. Across those boots `0x050c0c94` bit 30 and `0x05040814`
+   toggled, so they are not markers. Nothing writes the four stall words.
+   Both known stalls followed unusual starts (a late HPD-pulse stream on
+   the A1, a FEL boot on the V2). The next arm copies those starts and
+   needs the operator. See the plan's "Green-stall catch chain" paragraph.
 3. Firmware log level: closed. The V2 runs the vendor's `mode 1 level 1`.
 4. Speaker A/V delay: V2 still uses the A1's 0.115 s.
 5. V2 release builds: still separate scripts, and the AV1 probe fails the

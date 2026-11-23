@@ -1667,6 +1667,27 @@ first-advert miss after an NVIDIA host boot did not occur, and this run
 cannot tell whether the HPD pulse helped. Evidence:
 `local/recovery/2026-11-22-v2-host-reboot/`.
 
+**Green-stall catch chain: clean, 0 in 61 (2026-11-22).** An unattended
+`v2-qualification-run.py --baseline --warm 60` ran from 21:36 to 23:11 on
+installed 0022 and kernel 0221, with HDMI connected. It covered baseline
+`249c4de1` and 60 guarded warm reboots from Linux. All 61 boots were PASS
+digital at 59.7 fps, with readvertised 0 and video starting 9.61–10.16 s
+after boot. All four AFBD stall words (`0x05600038/338/1cc/1fc`) read 0 on
+every boot. The chain would have stopped on a stall without rebooting the
+board. Zero in 61 puts the stall rate on normal warm reboots below about
+4.9% (95%). The two candidate words varied on healthy boots:
+`0x050c0c94` bit 30 was set 40 times and clear 21 times, and `0x05040814`
+read `00666000` 39 times and `006e6000` 22 times. So they are not
+markers. A register lookup found no writer of the four words in stock
+`decd.ko`, our KMS driver, or the 29 AFBD sites in V2 `display.bin`. They
+look like hardware status, and nothing supports clearing them by writing
+them back. Both known stalls followed unusual starts: on the A1 the stream
+came up late through an HPD pulse, and on the V2 the board had booted over
+FEL. The next arm would copy those starts (HDMI plugged in late after
+boot, or FEL boots) and needs the operator. Evidence, kept locally:
+`build/v2-green-chain/2026-11-22/` (`chain.log`, `README.md`,
+`healthy-sweeps/`, `afbd_scan.py`).
+
 #### V2 CPU_COMM channel discovery (2026-11-22)
 
 **Problem.** Every V2 boot logged `cpu_comm: firmware reader self-test failed
