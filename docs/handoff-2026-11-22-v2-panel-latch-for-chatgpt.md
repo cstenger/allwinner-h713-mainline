@@ -255,9 +255,11 @@ delay values to import.
    Both known stalls followed unusual starts (a late HPD-pulse stream on
    the A1, a FEL boot on the V2). A 30-boot FEL chain with the 0022 U-Boot
    loaded into RAM was also clean (0 in 30, 2026-11-23), so FEL alone is not
-   the trigger. Untested: the 0019-era U-Boot that the stalled FEL boot ran,
-   a first boot of a fresh slot, and a late HPD-pulse stream. See the plan's
-   two "Green-stall catch chain" paragraphs.
+   the trigger. The same 30 with the exact 0019 U-Boot that the stalled
+   boot ran were clean too, so it is 0 in 121 across the three chains.
+   Untested: a first boot of a fresh slot and a late HPD-pulse stream.
+   The stall stays closed as rare. See the plan's three green-stall chain
+   paragraphs.
 3. Firmware log level: closed. The V2 runs the vendor's `mode 1 level 1`.
 4. Speaker A/V delay: V2 still uses the A1's 0.115 s.
 5. V2 release builds: still separate scripts, and the AV1 probe fails the

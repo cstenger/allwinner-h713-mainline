@@ -1707,6 +1707,23 @@ slot B. The tools are `startup-qualification.py fel` and
 `v2-qualification-run.py --fel N --fel-images RESCUE UBOOT BL31 --uart PORT`.
 Evidence, kept locally: `build/v2-green-chain/2026-11-22-fel/`.
 
+**Green-stall FEL chain with the 0019 U-Boot: clean, 0 in 30
+(2026-11-23).** This used the exact U-Boot the stalled FEL boot ran
+(`h713-10106a8d`, per its serial log). The RAM image is the 0019 install's
+`uboot.bin` plus `v2.dtb` from `local/recovery/2026-11-22-v2-hdmi-uboot/`,
+928,840 bytes, the same size that boot loaded. BL31 is identical. The
+kernel was 0221. Chris saw lamp, logo and desktop OK on the attended first
+boot. All 30 boots ran the rescue SPL and 0019's old panel power-up,
+streamed at 59.7 fps with video starting 9.61–10.38 s after boot, and read
+all four stall words as 0. Neither FEL nor the pre-0022 panel power-up
+reproduces the stall. Across the three chains it is 0 in 121 boots. Still
+untested from the two stalled boots: the first boot of a freshly installed
+slot (V2) and a stream that came up late through an HPD pulse (A1). The
+stall stays closed as a rare known limit. If it ever needs a guard, the
+product could check the four words after video starts and warm-reboot,
+since that clears the stall. Evidence, kept locally:
+`build/v2-green-chain/2026-11-23-fel-0019/`.
+
 #### V2 CPU_COMM channel discovery (2026-11-22)
 
 **Problem.** Every V2 boot logged `cpu_comm: firmware reader self-test failed
