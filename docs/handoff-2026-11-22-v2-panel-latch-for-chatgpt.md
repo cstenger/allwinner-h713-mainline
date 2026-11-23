@@ -13,18 +13,19 @@ evidence and bring-up context. The latest production change on `main` is
   surrounding region after writing. The 0022 record, rollback and readback are in
   `local/recovery/2026-11-22-v2-uboot-0022.EZo6qV/`.
 - Both RAUC slots retain `2026.11.22.2314-1f15ffa6-0221`, with
-  `BOOT_ORDER=A B`. Last Linux boot was `5e44e0e1` on slot A, with the desktop
-  visible. The projector is now at the **RAM U-Boot prompt** after LVDS-quiet
-  trial 3. Chris saw the lamp come on and the logo. HDMI, FEL USB and UART
-  were connected for the trial. The diagnostic image never wrote eMMC.
-- **Provisionally mitigated by 0022.** Keep it installed. Continue qualification
-  on normal boots with HDMI connected. A practical target is ten observed
-  warm reboots total (seven more) and one genuine cold boot on 0022. Record
-  lamp, logo and desktop separately. Start only when Chris is at the glass
-  and authorizes the test. First return from the RAM prompt to installed
-  0022 and Linux. Count qualification reboots only from Linux, so each
-  exercises the kernel's ordered shutdown. Keep the LVDS-quiet and SPI
-  builds as diagnostics.
+  `BOOT_ORDER=A B`. The board is running Linux on slot A, cold boot
+  `249c4de1`, with the desktop visible. Serial and USB are unplugged.
+- **0022 qualified on the glass: 10/10 normal warm reboots from Linux and
+  1/1 true cold boot**, all with HDMI connected and lamp, logo and desktop
+  confirmed by Chris (table below). It stays the production U-Boot.
+  The LVDS-quiet and SPI builds stay parked as diagnostics. If black ever
+  recurs, follow "If black recurs on installed 0022".
+- The return from the RAM diagnostic prompt used the FEL-trial teardown
+  without the GP7 FEL marker (`h713_disp teardown`, HDOK, `reset`, with GP7
+  checked zero). The eMMC SPL then ran installed 0022 into slot A.
+- Use `audit-slot-a-0022.py` from the 0022 recovery directory for this
+  install. `audit-slot-a-0221.py` in the qualification directory still pins
+  the 0021 primary (`2b945e2f…`) and fails against 0022.
 
 ## The bug in one paragraph
 
@@ -88,13 +89,16 @@ failure. The operator confirmed each optical result.
 | Installed 0021 | Normal warm from slot A | Logo and desktop 2/3. Trial 3 (`6ac287a1`) had lamp on, no logo and black glass. Live ordered PH19 cycle restored the desktop on that boot. |
 | Delayed-power candidate for 0022 | Warm FEL | Logo 3/3 |
 | Installed 0022 | Normal warm from slot A | Desktop 3/3 (`86c98c25`, `a85a4db2`, `5e44e0e1`). Logo confirmed on trials 1 and 3. |
+| Installed 0022 | Normal warm from Linux, slot A | Lamp, logo and desktop 7/7 (`397aed2a`, `8221795a`, `c5fd5b2d`, `1ddd0e21`, `3eed8cea`, `ec6e74d0`, `06d93cce`). UART showed ordered shutdown and 0022 order each time. Startup check PASS, 59.7 fps. |
+| Installed 0022 | True cold (serial and USB out, ≥1 min off) | Lamp, logo and desktop 1/1 (`249c4de1`). Prior shutdown PASS, AFBD clean. |
 | Instrumented 0022 and 0021 | Warm FEL | Logo 1/1 and 3/3 respectively. Instrumented 0021 did not reproduce black. |
 | 0022 with LVDS held quiet during panel power-up | Warm FEL | Lamp and logo 3/3. All five off-state checkpoints and restoration passed each time. |
 
 Evidence is in `build/v2-panel-fel-pll-trial/`,
 `build/v2-panel-late-power-trial/`, and the optical records under
 `local/recovery/2026-11-22-v2-uboot-0021.mmgSJA/` and
-`local/recovery/2026-11-22-v2-uboot-0022.EZo6qV/`.
+`local/recovery/2026-11-22-v2-uboot-0022.EZo6qV/` (later runs in its
+`qual-linux/` and `return-to-0022/`).
 The older serial baseline is `build/v2-panel-0221/serial-reboot-2/serial.txt`.
 The missing boot logo puts the failure before Linux. A three-second
 U-Boot off hold and the A1 PLL alone both allowed failures. The live PH19
@@ -204,7 +208,9 @@ delay values to import.
   `tools/hdmi/v2-qualification-run.py --poweroff` does the poweroff
   variant.
 - Collection: `tools/hdmi/startup-qualification.py collect --previous-boot`
-  with `local/recovery/2026-11-22-v2-boot-qualification/audit-slot-{a,b}-0221.py`.
+  (or `warm --from-boot ID`, which also does the guarded reboot) with
+  `local/recovery/2026-11-22-v2-uboot-0022.EZo6qV/audit-slot-a-0022.py`.
+  The `audit-slot-{a,b}-0221.py` files pin the 0021 primary.
   Make new audits with `tools/hdmi/make-v2-runtime-audit.py --slot X --bundle ...`.
 - Serial: the CP2102 is `/dev/ttyUSB0` and is connected to the board UART.
   Run `python3 tools/serial/console.py --port /dev/ttyUSB0 --listen 120 > file &`,

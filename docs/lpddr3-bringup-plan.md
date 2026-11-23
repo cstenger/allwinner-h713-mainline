@@ -1620,8 +1620,24 @@ selected HDMI source 3 and U-Boot has latched final 720p before powering
 the panel. It passed three warm FEL boots with the logo and, after a
 guarded install with verified readback, three normal warm reboots with
 the desktop. Stock 0022 remains installed. Both RAUC slots retain kernel
-0221. Treat this as provisional mitigation pending more observed normal
-warm reboots and a true cold boot.
+0221.
+
+**0022 optical qualification complete (2026-11-22).** Seven more
+operator-observed normal warm reboots from Linux with HDMI connected
+(boots `397aed2a`, `8221795a`, `c5fd5b2d`, `1ddd0e21`, `3eed8cea`,
+`ec6e74d0`, `06d93cce`) and one true cold boot (`249c4de1`: guarded
+poweroff, serial and USB unplugged, at least 1 min off) all showed lamp,
+logo and desktop. That is **10/10 warm and 1/1 cold** on installed 0022.
+Each warm boot had the kernel's ordered panel power-down on UART, then
+0022's order: 3 s off with reset held, source 3 and the 720p latch, then
+supply and reset release. Every boot passed the startup check (59.7 fps,
+no re-advert, slot A and the 0022 primary audited). The cold boot's AFBD
+words were clean. If 0022 still failed at 0021's observed 1-in-3 rate,
+ten straight passes would have had about a 2% chance. That rate came from
+three boots, so this is strong evidence, not proof. 0022 is the
+production U-Boot. Evidence is in
+`local/recovery/2026-11-22-v2-uboot-0022.EZo6qV/optical-observations.md`
+and `qual-linux/`.
 
 A RAM-only 0022 diagnostic held the LVDS PHY and route registers in their
 off state after the final latch through panel power-up and reset release,
@@ -1633,8 +1649,7 @@ SPI1 were inactive over the sampled instrumented 0022 and 0021 startup
 windows. No black boot was captured in those runs.
 
 See [the current handoff](handoff-2026-11-22-v2-panel-latch-for-chatgpt.md)
-for per-boot optical results, evidence paths, the current RAM prompt state,
-and a plan if black recurs. A source-PC reboot with the board left on is
+for per-boot optical results, evidence paths and a plan if black recurs. A source-PC reboot with the board left on is
 still pending. Run board-side collection detached if rebooting the PC
 would terminate the session.
 
