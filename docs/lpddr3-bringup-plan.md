@@ -1555,13 +1555,52 @@ confirmed the glass at each step:
   desktop.
 
 So this is A1's October latch-up on the V2 board. U-Boot's initial-off hold
-(0001: PH19 off **3 s** on every boot) does not clear it there. The open
-question is which difference from the live cycle matters: the off time, or
-the sequence and context. Evidence: `build/v2-boot-qualification/warm-unplugged/`
-and `build/v2-boot-qualification/black-panel/` (sweeps, diff, frame).
+(0001: PH19 off **3 s** on every boot) does not clear it there. Evidence:
+`build/v2-boot-qualification/warm-unplugged/` and
+`build/v2-boot-qualification/black-panel/` (sweeps, diff, frame). A further
+repro attempt (`38b3607c`) came up good, so the trigger is intermittent:
+black on 2 of 3 warm reboots taken while unplugged.
 
-Still to run: a source-PC reboot with the board left on (it ends the Claude
-session on that PC).
+**The missing half of the bench fix: kernel 0221 (2026-11-22).** The bench
+is protected twice: U-Boot's initial-off hold (0001), and the display
+driver's ordered panel power-down at shutdown (0184), which runs only when
+the tree describes the panel. The V2 tree described neither supply nor
+reset, so 0184 never ran on the V2: every warm reboot reset the SoC with
+the panel powered and the LVDS lanes driven. Kernel 0221 gives the V2 tree
+`vcc-panel` on PH19 (`regulator-boot-on`, 250 ms off delay),
+`panel-reset-gpios` on PH16 and `backlight = <&lamp>`, as 0183 does on the
+bench. U-Boot 0020 makes its V2 `-u-boot.dtsi` use that node without
+`regulator-boot-on`. A V2 U-Boot build from the series has one PH19
+regulator, no boot-on and the display wired to it, so the installed U-Boot
+already behaves the same and was not reinstalled.
+
+Install: bundle `2026.11.22.2314-1f15ffa6-0221`, made of slot A's root
+`3e10f301…` (0220) and a new boot image `058f681b…`. Its kernel Image
+differs from slot A's only in the 41-byte build timestamp, and the V2 DTB
+adds only the panel nodes. `root_b` and `boot_b` were blkdiscarded before
+`rauc install`, and both read back equal to the manifest. Slot A keeps
+0220.
+
+Results on slot B, with the operator confirming the glass each time:
+- First boot `906daf54` (warm, from slot A, HDMI connected): PASS digital
+  (slot B audit, video 9.70 s), and `vcc-panel` claimed (use count 1),
+  with PH19/PH16 still high at 70 s. The glass was **black**, because the
+  latch was inherited from slot A's shutdown, which has no ordered
+  power-down. The live PH19 cycle cleared it.
+- From there, 3 warm reboots taken while unplugged, each followed by a
+  plug-in: **desktop 3/3** (`7dd6fade` lock 70.1 s, `8be792b4` 48.9 s,
+  `f153ab23` 48.6 s; startup check PASS). Before the fix it was black on 2
+  of 3. At that rate, three good results by chance would be about a 4% event.
+
+0184's power-down runs after journald stops, so its log reaches only the
+serial console. The evidence is the glass. Evidence:
+`build/v2-panel-0221/`.
+
+Still to do:
+- Install 0221 in slot A too: a fallback boot into A would lose the ordered
+  power-down.
+- A source-PC reboot with the board left on (it ends the Claude session on
+  that PC).
 
 #### V2 CPU_COMM channel discovery (2026-11-22)
 
