@@ -1265,7 +1265,8 @@ The FEL bench path is now the normal boot path. Four pieces are involved:
   `hdmi_payload()`: session, signal owner, capture bridge, health ack,
   speaker, hold guard, and udev rule. `tools/rootfs/build.sh
   --release-overlay` installs it. The V2 needs no startup script. The
-  speaker delay is the bench board's 0.115 s until the V2 is measured.
+  speaker delay is the bench board's 0.115 s, which the V2 measured as
+  correct too (2026-11-23, `docs/hdmi-evidence/2026-11-23-v2-avsync/`).
 - **Codec (kernel 0219).** The V2 tree left `codec@2030000` disabled, so
   the speaker service had no ALSA card and restarted indefinitely. 0219
   enables it, which is the change the 2026-11-21 speaker test made in a RAM

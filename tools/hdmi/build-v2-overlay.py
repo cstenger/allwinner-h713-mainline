@@ -27,8 +27,9 @@ ROOT = Path(__file__).resolve().parents[2]
 # pins the same bytes as hdmi/hdmi-audio-dsp.bin).
 DSP = ROOT/'docs/hdmi-evidence/2026-10-07-android-audio/audio-dsp-patch.bin'
 DSP_SHA256 = '8e31db199e0078d142f622436ff0b7249b333dbb6df8ec3fbabc0d8fea6ea0c5'
-# The bench board's measured HDMI-to-speaker delay (2026-11-18). The V2 has
-# the same panel pipeline; replace it once the V2 is measured.
+# HDMI-to-speaker delay. Measured on the bench board (2026-11-18) and checked
+# on the V2 at the same value: +19.5 ms by phone, -5..+14 ms after the phone's
+# bias (docs/hdmi-evidence/2026-11-23-v2-avsync/).
 DEFAULT_AUDIO_DELAY = '0.115'
 # Not needed on the V2: it boots the vendor's display_cfg.xml (b3e6e8f6...),
 # whose elog_init_setting is mode 1 (async) level 1. The firmware's elog_init

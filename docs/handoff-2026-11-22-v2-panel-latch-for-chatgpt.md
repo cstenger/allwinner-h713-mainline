@@ -263,7 +263,9 @@ delay values to import.
    stream. The stall stays closed as rare. See the plan's four green-stall
    chain paragraphs.
 3. Firmware log level: closed. The V2 runs the vendor's `mode 1 level 1`.
-4. Speaker A/V delay: V2 still uses the A1's 0.115 s.
+4. Speaker A/V delay: closed. The V2 measured +19.5 ms by phone at the
+   A1's 0.115 s, -5..+14 ms after the phone's bias, so 0.115 s stays
+   (`docs/hdmi-evidence/2026-11-23-v2-avsync/`).
 5. V2 release builds: still separate scripts, and the AV1 probe fails the
    production check.
 6. Rollout: both slots now carry 0221. The hold-guard poweroff and the
