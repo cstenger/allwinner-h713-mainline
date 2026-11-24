@@ -876,7 +876,8 @@ The FEL test confirmed 720 active cycles out of 960 in our loader. The
 stock A1 U-Boot trace recorded a runtime request for PWM5 that failed,
 so the device-tree default alone leaves the shipping V2 runtime waveform
 unverified. The V2 FEL test verified the projected logo and PWM register
-state. Optical dimming from PWM2 remains unverified.
+state. A later FEL test found that PB4 does not affect the lamp converter
+([V2 lamp feed and the PB4 dimmer](#v2-lamp-feed-and-the-pb4-dimmer-over-brom-fel-2026-11-24)).
 [Stock PWM investigation](backlight-investigation.md#0-the-answer-from-the-vendors-own-u-boot)
 
 FEL loaded BL31 and the V2 U-Boot candidate into RAM. UART stayed passive
@@ -1032,6 +1033,67 @@ had no new entries during the test.
 
 Local evidence is under `build/v2-native-display/fan-slot-a/` in
 `preflight.log`, `probe.py`, `probe.log`, and `after.log`.
+
+#### V2 lamp feed and the PB4 dimmer over BROM FEL (2026-11-24)
+
+**Result: PB4 has no measurable effect on the V2 lamp converter.** The
+`LED` connector stayed at 49.6 V across every PB4 state tested,
+including a steady low.
+
+The board was in BROM FEL, with no SPL, DRAM, U-Boot or Linux running.
+Every access used `sunxi-fel readl`/`writel` from `external/sunxi-tools`.
+The PIO bank B registers use the 0x30 bank stride, with `PB_CFG0` at
+`0x02000030` and `PB_DATA` at `0x02000040`. In FEL, `PB_CFG0` read
+`0x0fffffff` and `PB_DATA` read `0`, so PB4 and PB5 were disabled. To
+turn the lamp on, the test set the PB5 latch (bit 5) first and then set
+PB5's function (bits [23:20]) to output. That is the order U-Boot uses.
+Driving PB5 high started the lamp and the fan, and FEL kept responding.
+Driving it low turned both off.
+
+The PWM states repeated U-Boot's `h713_disp_backlight_set()` step by
+step:
+1. Set the bus gate (bit 0) of CCU `0x020017ac`, then release reset
+   (bit 16). The register read back `0x00010001`.
+2. Set PB4 to mux 3.
+3. Clear `PCCR` `0x02000c24` (HOSC, divide by 1) and set `CTL`
+   `0x02000d40` to `0x100`.
+4. Write `PERIOD` `0x02000d44` = `0x03bf0000 | active`, where 960
+   cycles give 25 kHz.
+5. Set bit 2 in `GATE` `0x02000c40` and `EN` `0x02000c80`.
+
+The channel counter at `0x02000d48` changed between reads in every PWM
+state.
+
+The operator read the `LED` connector with a DMM, with PB5 held high
+throughout:
+
+| PB4 state | `LED` connector |
+| --- | --- |
+| Not configured (floating) | 49.5 V, then 49.6 V |
+| PWM2 at 75% (`PERIOD` `0x03bf02d0`, the normal-boot setting) | 49.6 V |
+| PWM2 at 25% (`0x03bf00f0`) | 49.6 V |
+| PWM2 at 0% (`0x03bf0000`) | 49.6 V |
+| GPIO output, high | 49.6 V |
+| GPIO output, low | 49.6 V |
+
+The GPIO rows do not use the PWM block. A PWM setup error therefore
+cannot explain the null. This replaces "optical dimming from PWM2
+remains unverified" in the
+[automatic logo section](#automatic-v2-boot-logo-illumination-over-fel-2026-11-21),
+and it matches the A1 result in
+[the backlight investigation](backlight-investigation.md). On both
+boards only PB5 controls the converter.
+
+**Limits:**
+- The level was not probed at the PB4 pad.
+- The test judged the converter by its output voltage, not by light
+  output. A converter that dims on PB4 would normally change voltage
+  with a steady-low input.
+- The A1's 52.6 V reading was taken in a normal boot. This V2 reading
+  was taken in FEL.
+
+At the end of the test, PB5 was low, PB4 was disabled, and PWM2 was
+disabled.
 
 #### V2 slot A internal speaker and pop test (2026-11-21)
 

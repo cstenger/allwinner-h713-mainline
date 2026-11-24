@@ -189,6 +189,7 @@ cannot be dimmed", and only the second one was resting on the missing driver.
 | the vendor kernel has **no backlight support at all** | vendor `vmlinux` (ARM 32-bit 5.4.99, full DWARF): zero backlight-class symbols, zero references to any `panel_*` property, no `Thal_Vp`/`SetBacklight` strings |
 | stock sets the backlight once, in U-Boot fastlogo | stock U-Boot contains `pwm_request`, `sunxi_pwm_pin_set_state`, `Display fastlogo finish!`, and reads the `panel_pwm_*` / `[PWMSetting]` keys |
 | the shipping DTB's backlight config is ch2 / 25 kHz / active-high / 75 | `sunxi.fex` from the retail OTA: `panel_pwm_ch=2`, `panel_pwm_freq=0x61a8`, `panel_pwm_pol=0`, `panel_backlight=0x4b` |
+| **on the V2 board, PB4 does not affect the lamp converter** | BROM FEL test, 2026-11-24, with PB5 held high. The `LED` connector read 49.6 V with PB4 floating, with PWM2 at 75/25/0% (counter running), and with PB4 as a GPIO driven high or low. Details are in [lpddr3-bringup-plan.md](lpddr3-bringup-plan.md#v2-lamp-feed-and-the-pb4-dimmer-over-brom-fel-2026-11-24) |
 | **`pwm5` cannot be muxed on this product** | `sunxi.fex` has a `pwm5@2000c15` controller node but **no pwm5 pin group**; pin groups exist only for pwm0–pwm4. Stock calls `sunxi_pwm_pin_set_state`, which needs one |
 
 **Net:** the only backlight configuration stock can successfully apply is
